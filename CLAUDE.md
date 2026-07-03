@@ -71,6 +71,16 @@ Lib = `sift_lib`. MSRV Rust 1.77.2.
 Détective (théorie → preuve → correctif), **fail fast**, **pas de fallback** silencieux,
 changements chirurgicaux. Vérifier avant d'agir.
 
+**Jamais `window.confirm()`/`alert()`/`prompt()` comme garde-fou avant une action
+destructive/coûteuse** (rangement de masse, suppression, écrasement) : vérifié le
+2026-07-03 que `window.confirm()` peut ne pas bloquer un clic (notamment via un
+outil d'automatisation) dans ce Tauri/WebView2 — un clic a traversé la boîte de
+dialogue sans qu'elle s'affiche, déclenchant un vrai rangement de masse avant
+qu'un Stop reprenne la main. Construire la confirmation dans l'UI de l'app
+elle-même (ex. cycle armé/confirmé à deux clics, horodaté pour rejeter un
+double-clic/évènement dupliqué — voir `sift-live.ts` : `BATCH_CONFIRM_THRESHOLD`
+/ `batchConfirmArmed`).
+
 **RÈGLE IMPÉRATIVE — routage skills (arrêt obligatoire avant toute tâche non-triviale,
 tous domaines : Rust, frontend, UI/design, audit, refactor, release, méthode).**
 1. NE PAS agir directement sur une tâche substantielle.
@@ -194,3 +204,20 @@ IDs connus (à confirmer à la résolution, ne pas inventer) :
   appelé en boucle (sature le thread UI → feedback noyé, bug invisible à la lecture).
 - En écrivant un handler sur événement, **nommer la fréquence supposée** de l'événement,
   pour que le risque de saturation soit visible à la revue, pas découvert au runtime.
+
+## Vérification UI — app réelle, pas la maquette navigateur
+
+`sift-live.ts` / `filing.ts` / `report-view.ts` / `ecartes-view.ts` /
+`library-detail.ts` (et globalement tout ce qui touche l'IPC Tauri) ne
+s'exécutent QUE dans le vrai shell Tauri (`main.ts` : `if (inTauri) {
+installLiveWiring(); ... }`, testé via `__TAURI_INTERNALS__`). Le serveur vite
+dev ouvert dans un navigateur classique (`preview_start`/`preview_*`) ne fait
+tourner que la maquette statique `app.js` — ces fichiers n'y sont jamais
+exercés, quelles que soient les captures qui en sortent.
+
+**Toute vérification touchant ces fichiers passe par `computer-use` sur l'app
+Tauri réelle** (le `.exe` lancé, pas le navigateur). Les outils `preview_*`
+restent valables seulement pour ce qui est strictement dans la maquette
+(ex. une chaîne statique de `app.js`) — vérifier si le code touché est dans un
+bloc `if (inTauri)` avant de faire confiance à une vérification par preview
+navigateur.
