@@ -903,6 +903,12 @@ function updateRevueBadge(count: number) {
   badge.textContent = count ? String(count) : "";
 }
 
+/** Holds the currently-attached `sift:usb-format-done` window listener, if any, so
+ * `renderReglagesLive()` can remove it before attaching a new one. Without this, every re-render
+ * of Réglages (each nav visit to the screen) piles up another listener on `window` — unlike DOM
+ * nodes, a `window` listener has no parent to disappear with, so it accumulates forever. */
+let usbFormatDoneHandler: (() => void) | null = null;
+
 /** Live Réglages view: a single scrolling page of real cards (Discogs, Bibliothèque, Apparence),
  * replacing the mockup's static placeholder rows (Dossiers source, Format lossless…), which have
  * no backing data and led nowhere — same "lean Tauri UI" pattern as home-sources.ts (hide the mock
@@ -1097,7 +1103,11 @@ async function renderReglagesLive() {
   usbBlock
     .querySelector("#sift-usb-refresh")
     ?.addEventListener("click", () => void renderUsbList());
-  window.addEventListener("sift:usb-format-done", () => void renderUsbList());
+  if (usbFormatDoneHandler) {
+    window.removeEventListener("sift:usb-format-done", usbFormatDoneHandler);
+  }
+  usbFormatDoneHandler = () => void renderUsbList();
+  window.addEventListener("sift:usb-format-done", usbFormatDoneHandler);
 
   content.appendChild(block);
   content.appendChild(libBlock);
