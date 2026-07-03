@@ -70,9 +70,13 @@ pub struct RekordboxXml {
 
 impl RekordboxXml {
     /// Look up the `TrackID` for a filesystem path (normalized the same way `Location` is),
-    /// or `None` if this XML doesn't reference that path.
+    /// or `None` if this XML doesn't reference that path. `path` is re-normalized for the
+    /// case-insensitive lookup key (see `path_index_key`) so a caller passing a path that
+    /// differs from the stored `Location` only by drive-letter/segment casing (Sift's own
+    /// scanner, or a user-typed path) still matches — Sift targets Windows/macOS, both
+    /// case-insensitive-preserving filesystems by default.
     pub fn track_id_for_path(&self, path: &Path) -> Option<i64> {
-        self.path_index.get(path).copied()
+        self.path_index.get(&path_index_key(path)).copied()
     }
 }
 
@@ -86,6 +90,20 @@ fn normalize_path(location: &str) -> PathBuf {
         .unwrap_or(location);
     let decoded = percent_decode(stripped);
     PathBuf::from(decoded)
+}
+
+/// FIX-6: the `path_index` HashMap key, additionally lowercased on top of `normalize_path`'s
+/// separator/percent-decoding. A plain `PathBuf` equality (what the index used before this fix)
+/// is case-SENSITIVE, so a drive-letter or segment casing difference between the XML's `Location`
+/// and the path a caller looks up with (e.g. Sift rewrote a filing to `House/Deep/x.aiff` while
+/// the XML still had `house/deep/x.aiff`) silently missed the lookup — the exact scenario
+/// `patch_location`/`merge_filed_tracks` exist to catch. Both Windows and macOS default to
+/// case-insensitive-preserving filesystems (Sift's only two targets), so lowercasing the whole
+/// path for the comparison key is correct on both, not just the drive letter. The ORIGINAL casing
+/// is still preserved in `CollectionTrack.location`/the written XML — only this lookup key is
+/// case-folded.
+fn path_index_key(path: &Path) -> PathBuf {
+    PathBuf::from(path.to_string_lossy().to_lowercase())
 }
 
 /// Minimal percent-decoder for the subset Rekordbox actually emits (`%20`, `%23`, etc.) — no
@@ -204,7 +222,7 @@ pub fn parse(xml_bytes: &[u8]) -> Result<RekordboxXml, String> {
 
     let mut path_index = HashMap::new();
     for t in &collection {
-        path_index.insert(normalize_path(&t.location), t.track_id);
+        path_index.insert(path_index_key(&normalize_path(&t.location)), t.track_id);
     }
 
     Ok(RekordboxXml { collection, playlists, raw_xml, path_index })
@@ -289,7 +307,8 @@ pub fn merge_filed_tracks(xml: &mut RekordboxXml, filed: &[crate::library::Libra
 
     for track in filed {
         let norm = normalize_path(&track.path);
-        if xml.path_index.contains_key(&norm) {
+        let key = path_index_key(&norm);
+        if xml.path_index.contains_key(&key) {
             continue; // already tracked — merge is idempotent by design
         }
         let track_id = next_id;
@@ -303,7 +322,7 @@ pub fn merge_filed_tracks(xml: &mut RekordboxXml, filed: &[crate::library::Libra
             name: track.title.clone(),
             artist: track.artist.clone(),
         });
-        xml.path_index.insert(norm, track_id);
+        xml.path_index.insert(key, track_id);
 
         if let Some(folder) = &track.folder {
             let root_children = root_folder_children(&mut xml.playlists);
@@ -422,8 +441,8 @@ pub fn patch_location(xml: &mut RekordboxXml, from_path: &str, to_path: &str) ->
     }
     xml.raw_xml = xml.raw_xml.replacen(&old_location_attr, &new_location_attr, 1);
 
-    xml.path_index.remove(&from_norm);
-    xml.path_index.insert(normalize_path(to_path), track_id);
+    xml.path_index.remove(&path_index_key(&from_norm));
+    xml.path_index.insert(path_index_key(&normalize_path(to_path)), track_id);
     track.location = new_location_value;
     true
 }
@@ -660,7 +679,13 @@ mod tests {
         let t2 = parsed.collection.iter().find(|t| t.track_id == 2).unwrap();
         assert_eq!(normalize_path(&t2.location), PathBuf::from("C:/Music/House/Deep/strings.aiff"));
         assert_eq!(parsed.track_id_for_path(Path::new("C:/Music/House/Deep/strings.aiff")), Some(2));
-        assert_eq!(parsed.track_id_for_path(Path::new("C:/Music/House/deep/strings.aiff")), None);
+        // FIX-6: the path_index lookup key is case-folded, and "deep" vs "Deep" is the ONLY
+        // difference between the old and new path here — so the pre-patch (lowercase) path still
+        // resolves to the same track post-patch, same as it would pre-fix for a genuinely
+        // unrelated recase-only rename with no other change. This is the fix, not a leftover stale
+        // pointer: see `patch_location_old_path_stops_resolving_after_a_real_move` below for the
+        // case that must still return None (moving to an actually different path).
+        assert_eq!(parsed.track_id_for_path(Path::new("C:/Music/House/deep/strings.aiff")), Some(2));
 
         // raw_xml: EXACTLY one substring differs (the Location value) — verify by diffing line
         // by line, every other line must be byte-identical, and the TrackID="2" line must still
@@ -686,6 +711,39 @@ mod tests {
         let mut parsed = parse(&fixture()).unwrap();
         let patched = patch_location(&mut parsed, "C:/not/tracked.mp3", "C:/elsewhere.mp3");
         assert!(!patched);
+    }
+
+    /// FIX-6 regression: `track_id_for_path` must not miss a lookup that differs from the XML's
+    /// stored `Location` only by drive-letter/segment casing — a plain `PathBuf` equality is
+    /// case-sensitive, but Windows/macOS (Sift's only targets) are case-insensitive-preserving
+    /// filesystems, so a caller (Sift's own scanner, a user-typed path) can legitimately pass a
+    /// differently-cased-but-identical path and must still get a hit.
+    #[test]
+    fn track_id_for_path_matches_across_drive_letter_and_segment_casing() {
+        let parsed = parse(&fixture()).unwrap();
+        // Fixture Location is "file://localhost/C:/Music/House/mr-fingers.mp3" (TrackID 1).
+        assert_eq!(parsed.track_id_for_path(Path::new("c:/music/house/mr-fingers.mp3")), Some(1));
+        assert_eq!(parsed.track_id_for_path(Path::new("C:/MUSIC/HOUSE/MR-FINGERS.MP3")), Some(1));
+    }
+
+    /// Counterpart to the case-insensitivity fix above: moving to a genuinely DIFFERENT path (not
+    /// just a recase) must still make the OLD path stop resolving — the fix folds case, it does
+    /// not make every old path a permanent alias forever.
+    #[test]
+    fn patch_location_old_path_stops_resolving_after_a_real_move() {
+        let mut parsed = parse(&fixture()).unwrap();
+        let patched = patch_location(
+            &mut parsed,
+            "C:/Music/House/deep/strings.aiff",
+            "C:/Music/Techno/deep/strings.aiff", // genuinely different folder, not just recased
+        );
+        assert!(patched);
+        assert_eq!(parsed.track_id_for_path(Path::new("C:/Music/Techno/deep/strings.aiff")), Some(2));
+        assert_eq!(
+            parsed.track_id_for_path(Path::new("C:/Music/House/deep/strings.aiff")),
+            None,
+            "the old (now-vacated) path must no longer resolve"
+        );
     }
 
     #[test]
