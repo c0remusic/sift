@@ -1,12 +1,15 @@
 //! Rekordbox `DJ_PLAYLISTS` XML: parse into an in-memory tree, merge Sift's filed tracks in,
-//! patch one track's `Location` in place, and rewrite. Two different fidelity requirements
-//! collide here: merging needs a STRUCTURED view (collection entries + playlist tree) to decide
-//! what to add, but patching a single `Location` must leave every byte Sift doesn't understand
-//! (ratings, tonality, custom columns, playlist `Entries`/`Type`/`KeyType`…) untouched — a full
-//! serde struct round-trip risks silently dropping fields this module never modeled. So `raw_xml`
-//! keeps the original text verbatim for `patch_location`'s surgical string replace; `collection`/
-//! `playlists`/`path_index` are the structured view `merge_filed_tracks`/lookups use. `write` is
-//! a separate serializer used only on the merge/export path (never by `patch_location`).
+//! patch one track's `Location` in place, and rewrite. Every mutation Sift makes — `patch_location`
+//! AND `merge_filed_tracks` — is applied to `raw_xml` as TARGETED TEXT SURGERY (new `<TRACK>` rows
+//! and playlist `<NODE>` entries inserted next to the existing text, attribute values replaced in
+//! place), never by re-serializing a fresh document from a structured model. Every byte Sift
+//! doesn't understand (ratings, tonality, custom columns, smart-playlist `Type="4"` nodes) survives
+//! untouched, on every track in the file, not just the ones Sift's own filing/merge touched — a
+//! full serde/struct round-trip would silently drop everything this module never modeled. The
+//! `collection`/`playlists`/`path_index` structured view exists ALONGSIDE `raw_xml` (kept in sync
+//! on every mutation) purely to make merge/lookup DECISIONS (is this track already here? does this
+//! playlist already exist?) — it is never itself serialized back out. `write` simply returns the
+//! already-up-to-date `raw_xml`.
 
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -57,8 +60,9 @@ pub enum PlaylistNode {
     Playlist { name: String, track_ids: Vec<i64> },
 }
 
-/// A parsed Rekordbox XML: structured view for merge/lookup decisions, plus the original text
-/// verbatim (`raw_xml`) for `patch_location`'s byte-preserving rewrite.
+/// A parsed Rekordbox XML: structured view for merge/lookup decisions, plus `raw_xml` — the
+/// document text, kept byte-preserving and up to date by BOTH `patch_location` and
+/// `merge_filed_tracks` via targeted text surgery (see the module doc comment).
 #[derive(Debug, Clone)]
 pub struct RekordboxXml {
     pub collection: Vec<CollectionTrack>,
@@ -300,6 +304,15 @@ fn read_attrs(e: &quick_xml::events::BytesStart) -> Result<HashMap<String, Strin
 /// nested `folder` paths (e.g. "House/Deep") become nested playlist folders. TrackIDs are
 /// allocated as `max(existing) + 1`. Existing playlists (Sift-managed or not) are never removed
 /// or reordered; a folder playlist that already exists just gets the new TrackID appended.
+///
+/// FIX-2: mirrors every mutation into `xml.raw_xml` via targeted text surgery (new `<TRACK>` rows
+/// inserted just before `</COLLECTION>`, new/updated playlist `<NODE>`s inserted/patched in place)
+/// instead of only updating the structured `collection`/`playlists` view — `write()` used to
+/// re-serialize from that structured view alone, silently dropping every attribute this module
+/// never modeled (Rating, BPM, cue points, smart-playlist `Type="4"` nodes, custom columns) on
+/// EVERY export. See `write()`'s doc comment for why raw_xml is now the sole source of truth for
+/// what gets written.
+///
 /// Returns the number of newly-added collection tracks.
 pub fn merge_filed_tracks(xml: &mut RekordboxXml, filed: &[crate::library::LibraryTrack]) -> usize {
     let mut next_id = xml.collection.iter().map(|t| t.track_id).max().unwrap_or(0) + 1;
@@ -316,20 +329,165 @@ pub fn merge_filed_tracks(xml: &mut RekordboxXml, filed: &[crate::library::Libra
         added += 1;
 
         let location = format!("file://localhost/{}", encode_location_path(&track.path));
+        let name = track.title.clone();
+        let artist = track.artist.clone();
+
+        insert_collection_track_raw(&mut xml.raw_xml, track_id, name.as_deref(), artist.as_deref(), &location);
+
         xml.collection.push(CollectionTrack {
             track_id,
             location,
-            name: track.title.clone(),
-            artist: track.artist.clone(),
+            name,
+            artist,
         });
         xml.path_index.insert(key, track_id);
 
         if let Some(folder) = &track.folder {
             let root_children = root_folder_children(&mut xml.playlists);
             file_into_folder_playlist(root_children, folder, track_id);
+            insert_playlist_key_raw(&mut xml.raw_xml, folder, track_id);
         }
     }
     added
+}
+
+/// FIX-2: insert one new `<TRACK .../>` row into `raw_xml`'s `<COLLECTION>`, just before its
+/// closing tag, and bump the `Entries="N"` count on the `<COLLECTION>` opening tag. Every other
+/// byte of the file (including every unmodeled attribute on every OTHER `<TRACK>`) is untouched —
+/// this never re-serializes an existing row, only appends a brand-new one.
+fn insert_collection_track_raw(raw_xml: &mut String, track_id: i64, name: Option<&str>, artist: Option<&str>, location: &str) {
+    let new_row = format!(
+        "    <TRACK TrackID=\"{}\" Name=\"{}\" Artist=\"{}\" Location=\"{}\"/>\n",
+        track_id,
+        xml_escape(name.unwrap_or("")),
+        xml_escape(artist.unwrap_or("")),
+        xml_escape(location),
+    );
+    insert_before_closing_tag(raw_xml, "</COLLECTION>", &new_row);
+    bump_count_attr(raw_xml, "<COLLECTION", "Entries");
+}
+
+/// FIX-2: append one `<TRACK Key="..."/>` row inside the named leaf playlist's `<NODE>` (matched
+/// by its `Name="folder"` attribute — folder is the LAST segment only; nested paths are handled
+/// by `file_into_folder_playlist` already having created/found the right leaf before this is
+/// called), just before that `<NODE>`'s own closing tag, and bump its `Entries="N"` count. If no
+/// `<NODE Name="folder">` exists yet in raw_xml (a brand-new playlist `file_into_folder_playlist`
+/// just created in the structured tree), insert a whole new leaf `<NODE>` block instead, just
+/// before the ROOT folder's closing `</NODE>` (or before `</PLAYLISTS>` if there's no ROOT node
+/// in the text at all — a from-scratch tree).
+fn insert_playlist_key_raw(raw_xml: &mut String, folder: &str, track_id: i64) {
+    let leaf_name = folder.rsplit('/').next().unwrap_or(folder);
+    let node_open_needle = format!("Name=\"{}\"", xml_escape(leaf_name));
+
+    // Find a NODE opening tag whose Name attribute matches the leaf playlist name AND that is a
+    // leaf (Type="1"), by scanning for `<NODE Type="1" ... Name="leaf_name" ...>` on one line —
+    // every NODE this module inserts (see insert_playlist_key_raw below) and every NODE real
+    // Rekordbox exports emit is single-line for its opening tag.
+    let existing_leaf_line: Option<String> = raw_xml
+        .lines()
+        .find(|l| l.contains("<NODE") && l.contains("Type=\"1\"") && l.contains(&node_open_needle))
+        .map(str::to_string);
+
+    if let Some(line) = existing_leaf_line {
+        if line.trim_end().ends_with("/>") {
+            // Previously-empty leaf playlist (self-closing `<NODE .../>`) — expand it into an
+            // open/close pair with the one new TRACK child, preserving every other attribute.
+            let opening = line.trim_end().trim_end_matches("/>").to_string() + ">";
+            let indent = leading_whitespace(&line);
+            let new_block = format!(
+                "{opening}\n{indent}  <TRACK Key=\"{track_id}\"/>\n{indent}</NODE>",
+            );
+            *raw_xml = raw_xml.replacen(line.trim_end(), &new_block, 1);
+            bump_count_attr_on_line(raw_xml, &node_open_needle, "Entries");
+        } else {
+            // Already an open/close block with existing <TRACK> children — insert the new key
+            // just before this NODE's OWN closing tag (the nearest `</NODE>` after this line that
+            // closes THIS node, not a nested child) and bump its Entries count.
+            insert_before_matching_node_close(raw_xml, &line, track_id);
+            bump_count_attr_on_line(raw_xml, &node_open_needle, "Entries");
+        }
+        return;
+    }
+
+    // No existing leaf NODE in raw_xml for this name — a brand-new playlist. Insert a fresh leaf
+    // NODE block just before the ROOT folder's closing </NODE>, or before </PLAYLISTS> if there's
+    // no ROOT node at all in the text.
+    let new_node = format!(
+        "      <NODE Type=\"1\" Name=\"{}\" KeyType=\"0\" Entries=\"1\">\n        <TRACK Key=\"{track_id}\"/>\n      </NODE>\n",
+        xml_escape(leaf_name)
+    );
+    if raw_xml.contains("Name=\"ROOT\"") {
+        insert_before_last(raw_xml, "</NODE>", &new_node);
+    } else {
+        insert_before_closing_tag(raw_xml, "</PLAYLISTS>", &new_node);
+    }
+}
+
+/// The leading whitespace (indentation) of a line, for re-indenting an inserted sibling line.
+fn leading_whitespace(line: &str) -> String {
+    line.chars().take_while(|c| c.is_whitespace()).collect()
+}
+
+/// Insert `insertion` immediately before the FIRST occurrence of `closing_tag` in `raw_xml`.
+fn insert_before_closing_tag(raw_xml: &mut String, closing_tag: &str, insertion: &str) {
+    if let Some(pos) = raw_xml.find(closing_tag) {
+        raw_xml.insert_str(pos, insertion);
+    }
+}
+
+/// Insert `insertion` immediately before the LAST occurrence of `needle` in `raw_xml` — used for
+/// the ROOT folder's closing `</NODE>`, which (being the outermost playlist folder) is always the
+/// last `</NODE>` in the document.
+fn insert_before_last(raw_xml: &mut String, needle: &str, insertion: &str) {
+    if let Some(pos) = raw_xml.rfind(needle) {
+        raw_xml.insert_str(pos, insertion);
+    }
+}
+
+/// Insert a new `<TRACK Key="id"/>` line right before the closing `</NODE>` that matches
+/// `opening_line` (the leaf playlist's own `<NODE ...>` opening line) — i.e. the FIRST `</NODE>`
+/// found after `opening_line` in the text, since a leaf playlist NODE never nests further NODEs.
+fn insert_before_matching_node_close(raw_xml: &mut String, opening_line: &str, track_id: i64) {
+    let Some(open_pos) = raw_xml.find(opening_line) else { return };
+    let search_from = open_pos + opening_line.len();
+    let Some(rel_close) = raw_xml[search_from..].find("</NODE>") else { return };
+    let close_pos = search_from + rel_close;
+    let indent = leading_whitespace(opening_line);
+    let new_line = format!("{indent}  <TRACK Key=\"{track_id}\"/>\n");
+    raw_xml.insert_str(close_pos, &new_line);
+}
+
+/// Bump the integer value of `attr="N"` (e.g. `Entries="2"` → `Entries="3"`) on the tag whose
+/// opening substring is `tag_prefix` (e.g. `"<COLLECTION"`) — used for `<COLLECTION Entries=...>`,
+/// which is unique in the document.
+fn bump_count_attr(raw_xml: &mut String, tag_prefix: &str, attr: &str) {
+    let Some(tag_start) = raw_xml.find(tag_prefix) else { return };
+    let Some(tag_end_rel) = raw_xml[tag_start..].find('>') else { return };
+    let tag_end = tag_start + tag_end_rel;
+    bump_count_attr_in_range(raw_xml, tag_start, tag_end, attr);
+}
+
+/// Like `bump_count_attr`, but locates the tag by a substring known to appear WITHIN it (e.g. a
+/// `Name="..."` attribute) rather than by its leading prefix — used for a specific playlist
+/// `<NODE>` picked out earlier by `insert_playlist_key_raw`.
+fn bump_count_attr_on_line(raw_xml: &mut String, contains_needle: &str, attr: &str) {
+    let Some(needle_pos) = raw_xml.find(contains_needle) else { return };
+    // Walk back to this tag's `<` and forward to its next `>` (self-closing `/>` or plain `>`).
+    let tag_start = raw_xml[..needle_pos].rfind('<').unwrap_or(needle_pos);
+    let Some(tag_end_rel) = raw_xml[tag_start..].find('>') else { return };
+    let tag_end = tag_start + tag_end_rel;
+    bump_count_attr_in_range(raw_xml, tag_start, tag_end, attr);
+}
+
+fn bump_count_attr_in_range(raw_xml: &mut String, tag_start: usize, tag_end: usize, attr: &str) {
+    let needle = format!(r#"{attr}=""#);
+    let Some(rel) = raw_xml[tag_start..tag_end].find(&needle) else { return };
+    let val_start = tag_start + rel + needle.len();
+    let Some(rel_end) = raw_xml[val_start..tag_end].find('"') else { return };
+    let val_end = val_start + rel_end;
+    if let Ok(n) = raw_xml[val_start..val_end].parse::<i64>() {
+        raw_xml.replace_range(val_start..val_end, &(n + 1).to_string());
+    }
 }
 
 /// Rekordbox always nests real playlists under one top-level "ROOT" folder node (see the
@@ -480,68 +638,19 @@ fn xml_escape(s: &str) -> String {
         .replace('\'', "&apos;")
 }
 
-/// Serialize `xml`'s structured `collection` + `playlists` into a fresh, valid `DJ_PLAYLISTS`
-/// document. Used only on the merge/export path (`export_rekordbox_xml`); the repair-hook path
-/// (`patch_location` alone) writes `xml.raw_xml` directly to preserve every byte it doesn't
-/// model — see the module doc comment.
+/// Return the document to write to disk on the merge/export path.
+///
+/// FIX-2: this used to re-serialize a fresh `DJ_PLAYLISTS` document from ONLY the structured
+/// `collection`/`playlists` view — which this module deliberately never fully models (no Rating,
+/// BPM, cue points, custom columns, or smart-playlist `Type="4"` nodes) — so every export silently
+/// dropped every field/node it didn't understand from the ENTIRE collection, not just the tracks
+/// Sift touched. `merge_filed_tracks`/`patch_location` now perform their own targeted text surgery
+/// directly on `xml.raw_xml` (new `<TRACK>` rows and playlist `<NODE>` entries inserted next to the
+/// existing text, `Entries="N"` counts bumped in place), so `raw_xml` is already the fully up to
+/// date document by the time `write` is called — every byte this module doesn't understand,
+/// including `Type="4"` smart playlists, survives untouched. `write` now just returns it.
 pub fn write(xml: &RekordboxXml) -> String {
-    let mut out = String::new();
-    out.push_str("<?xml version=\"1.0\" encoding=\"UTF-8\"?>\n\n");
-    out.push_str("<DJ_PLAYLISTS Version=\"1.0.0\">\n");
-    out.push_str("  <PRODUCT Name=\"Sift\" Version=\"1\" Company=\"Sift\"/>\n");
-    out.push_str(&format!("  <COLLECTION Entries=\"{}\">\n", xml.collection.len()));
-    for t in &xml.collection {
-        out.push_str(&format!(
-            "    <TRACK TrackID=\"{}\" Name=\"{}\" Artist=\"{}\" Location=\"{}\"/>\n",
-            t.track_id,
-            xml_escape(t.name.as_deref().unwrap_or("")),
-            xml_escape(t.artist.as_deref().unwrap_or("")),
-            xml_escape(&t.location),
-        ));
-    }
-    out.push_str("  </COLLECTION>\n");
-    out.push_str("  <PLAYLISTS>\n");
-    for node in &xml.playlists {
-        write_node(&mut out, node, 2);
-    }
-    out.push_str("  </PLAYLISTS>\n");
-    out.push_str("</DJ_PLAYLISTS>\n");
-    out
-}
-
-fn write_node(out: &mut String, node: &PlaylistNode, depth: usize) {
-    let indent = "  ".repeat(depth);
-    match node {
-        PlaylistNode::Folder { name, children } => {
-            out.push_str(&format!(
-                "{indent}<NODE Type=\"0\" Name=\"{}\" Count=\"{}\">\n",
-                xml_escape(name),
-                children.len()
-            ));
-            for child in children {
-                write_node(out, child, depth + 1);
-            }
-            out.push_str(&format!("{indent}</NODE>\n"));
-        }
-        PlaylistNode::Playlist { name, track_ids } => {
-            if track_ids.is_empty() {
-                out.push_str(&format!(
-                    "{indent}<NODE Type=\"1\" Name=\"{}\" KeyType=\"0\" Entries=\"0\"/>\n",
-                    xml_escape(name)
-                ));
-                return;
-            }
-            out.push_str(&format!(
-                "{indent}<NODE Type=\"1\" Name=\"{}\" KeyType=\"0\" Entries=\"{}\">\n",
-                xml_escape(name),
-                track_ids.len()
-            ));
-            for id in track_ids {
-                out.push_str(&format!("{indent}  <TRACK Key=\"{id}\"/>\n"));
-            }
-            out.push_str(&format!("{indent}</NODE>\n"));
-        }
-    }
+    xml.raw_xml.clone()
 }
 
 #[cfg(test)]
@@ -847,5 +956,94 @@ mod tests {
         assert!(names.contains(&"House"));
         assert!(names.contains(&"Favorites"));
         assert!(names.contains(&"Disco"));
+    }
+
+    /// A fixture carrying fields this module deliberately never models: a `Rating` attribute on
+    /// an existing TRACK, and a smart playlist (`Type="4"`, with a `<PRODUCT/>`-style filter
+    /// child it doesn't understand either) alongside the plain ROOT folder tree. Used to prove
+    /// FIX-2: none of this may be dropped by a merge+write cycle.
+    fn fixture_with_unmodeled_fields() -> Vec<u8> {
+        r#"<?xml version="1.0" encoding="UTF-8"?>
+
+<DJ_PLAYLISTS Version="1.0.0">
+  <PRODUCT Name="rekordbox" Version="6.7.7" Company="Pioneer DJ"/>
+  <COLLECTION Entries="2">
+    <TRACK TrackID="1" Name="Can You Feel It" Artist="Mr Fingers" Rating="255" BPM="123.00" Location="file://localhost/C:/Music/House/mr-fingers.mp3"/>
+    <TRACK TrackID="2" Name="Strings of Life" Artist="Rhythim Is Rhythim" Location="file://localhost/C:/Music/House/deep/strings.aiff"/>
+  </COLLECTION>
+  <PLAYLISTS>
+    <NODE Type="0" Name="ROOT" Count="2">
+      <NODE Type="1" Name="House" KeyType="0" Entries="1">
+        <TRACK Key="1"/>
+      </NODE>
+      <NODE Type="4" Name="Smart 120+ BPM" Uri="something-rekordbox-only-understands"/>
+    </NODE>
+  </PLAYLISTS>
+</DJ_PLAYLISTS>
+"#
+        .as_bytes()
+        .to_vec()
+    }
+
+    /// FIX-2 regression: the judge of the whole fix. Merging a genuinely new filed track in and
+    /// writing the result must NOT drop the `Rating`/`BPM` attributes on an EXISTING track, nor
+    /// the `Type="4"` smart playlist node — both survive a merge+write cycle byte-for-byte,
+    /// because `write()` now returns the surgically-patched `raw_xml` instead of re-serializing
+    /// from the structured (necessarily lossy) `collection`/`playlists` view.
+    #[test]
+    fn merge_and_write_preserves_unmodeled_rating_bpm_and_smart_playlist() {
+        let mut parsed = parse(&fixture_with_unmodeled_fields()).unwrap();
+        let filed = vec![lib_track("C:/Music/Disco/new-track.mp3", "Disco", "A", "B")];
+        merge_filed_tracks(&mut parsed, &filed);
+
+        let out = write(&parsed);
+
+        assert!(out.contains(r#"Rating="255""#), "Rating on the untouched existing track survives");
+        assert!(out.contains(r#"BPM="123.00""#), "BPM on the untouched existing track survives");
+        assert!(
+            out.contains(r#"<NODE Type="4" Name="Smart 120+ BPM" Uri="something-rekordbox-only-understands"/>"#),
+            "the Type=\"4\" smart playlist node survives byte-for-byte, unparsed"
+        );
+
+        // And the new track/playlist ARE genuinely present (the fix isn't a no-op).
+        assert!(out.contains("new-track.mp3") || out.contains("new%2Dtrack.mp3") || out.contains("new-track"));
+        assert!(out.contains(r#"Name="Disco""#));
+
+        // The result still re-parses cleanly with everything the module DOES model intact.
+        let reparsed = parse(out.as_bytes()).unwrap();
+        assert_eq!(reparsed.collection.len(), 3);
+        assert!(reparsed.track_id_for_path(Path::new("C:/Music/Disco/new-track.mp3")).is_some());
+    }
+
+    /// FIX-2 regression, narrower: writing with NO merge at all (nothing new to add) must return
+    /// `raw_xml` completely unchanged — proves `write()` is a pure passthrough now, not a
+    /// from-scratch rebuild that happens to look similar.
+    #[test]
+    fn write_with_no_new_tracks_returns_raw_xml_unchanged() {
+        let parsed = parse(&fixture_with_unmodeled_fields()).unwrap();
+        let original = parsed.raw_xml.clone();
+        let out = write(&parsed);
+        assert_eq!(out, original, "write() must be a byte-identical passthrough when nothing changed");
+    }
+
+    /// FIX-2 regression: filing a new track into a folder whose playlist ALREADY EXISTS (not a
+    /// brand-new one) must append the `<TRACK Key>` inside that existing NODE and bump its
+    /// `Entries` count, while leaving the smart playlist sibling completely untouched.
+    #[test]
+    fn merge_appends_into_existing_playlist_node_and_bumps_entries() {
+        let mut parsed = parse(&fixture_with_unmodeled_fields()).unwrap();
+        // "House" playlist already exists with TrackID 1 only; file a genuinely NEW track
+        // (different path than any existing collection entry) into that same folder.
+        let filed = vec![lib_track("C:/Music/House/another.mp3", "House", "Someone", "Another Track")];
+        merge_filed_tracks(&mut parsed, &filed);
+
+        let out = write(&parsed);
+        assert!(out.contains(r#"Name="House" KeyType="0" Entries="2""#), "Entries bumped 1 -> 2");
+        // TrackID 1 (pre-existing) and TrackID 3 (newly-added — max(1,2)+1) both present as keys.
+        assert!(out.contains(r#"<TRACK Key="1"/>"#) && out.contains(r#"<TRACK Key="3"/>"#));
+        assert!(
+            out.contains(r#"<NODE Type="4" Name="Smart 120+ BPM" Uri="something-rekordbox-only-understands"/>"#),
+            "sibling smart playlist untouched by the House-node edit"
+        );
     }
 }
