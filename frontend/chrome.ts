@@ -121,12 +121,12 @@ export function injectLeanStyle() {
   document.head.appendChild(st);
 }
 
-/** Bascule l'icône/label du bouton "Agrandir" selon l'état maximisé courant. */
+/** Bascule le title/aria-label du bouton "Agrandir" selon l'état maximisé courant — l'icône
+ * reste volontairement identique (ti-square) dans les deux états. */
 function syncMaxButton(btn: HTMLElement, maximized: boolean): void {
   const label = maximized ? "Restaurer" : "Agrandir";
   btn.title = label;
   btn.setAttribute("aria-label", label);
-  btn.innerHTML = `<i class="ti ${maximized ? "ti-restore" : "ti-square"}"></i>`;
 }
 
 /** Inject the custom window titlebar (the native one is off via decorations:false) and wire
