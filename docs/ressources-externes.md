@@ -246,6 +246,57 @@ En creusant l'alternative "demander à Claude Design de juger à ma place" :
 
 ---
 
+## Évaluation 4 — `/design-sync` et Open Design pour le sync design↔code (2026-07-03)
+
+**Question** : deux outils évalués pour automatiser la synchronisation entre
+`Sift.dc.html` (mockup Claude Design) et `styles.css`/le code réel, en
+continuation de l'Évaluation 3 ci-dessus.
+
+**`/design-sync` (outil natif `DesignSync`, disponible dans cette install
+CLI)** — écarté après lecture du schéma complet de l'outil et vérification
+réelle du projet cible. L'outil synchronise une **bibliothèque de composants**
+vers un projet Claude Design de type `PROJECT_TYPE_DESIGN_SYSTEM`
+(marqueurs `@dsCard`, `register_assets`...) — pas un mockup applicatif
+unique. Vérifié via `get_project` : le projet "Refonte UI Sift" (celui qui a
+produit `Sift.dc.html`) est de type `PROJECT_TYPE_PROJECT`, pas
+`DESIGN_SYSTEM`, et ce type est immuable à la création. `/design-sync` ne
+s'applique donc pas à l'artefact actuel sans le reconstruire entièrement en
+composants cardés.
+
+**Open Design (`nexu-io/open-design`, GitHub, vérifié via `gh api`)** — projet
+réel et actif (74 629 ⭐, créé 2026-04-28, push quotidien), écarté quand même.
+Architecture : daemon Node/Express + SQLite (persistant, à faire tourner en
+continu, Electron ou Docker) qui spawn le CLI d'un agent de code en
+sous-processus. Import `/api/import/claude-design` : **plus permissif que
+supposé** — lu le code source (`claude-design-import.ts`), c'est un parseur
+ZIP maison qui cherche juste un fichier `.html` dedans, sans validation de
+schéma Claude Design (`Sift.dc.html` + `support.js` zippés fonctionneraient
+mécaniquement). Mais la fonctionnalité qui résoudrait vraiment le problème
+(pipeline `code-migration` : `design-extract`/`token-map`, crosswalk de
+tokens source→cible) est **non implémentée** — les deux atomes concernés sont
+explicitement marqués `Status: Reserved id, prompt-only fragment in v1` dans
+leur propre `SKILL.md`. Rejeté pour deux raisons cumulées : service
+persistant à maintenir pour un outil solo desktop (contradiction avec le
+principe déjà appliqué à `tauri-plugin-updater`/`tauri-specta`, reportés pour
+la même raison), et la fonctionnalité de fond n'existe pas encore.
+
+**Root cause du vrai problème (pas un outil manquant)** : l'infidélité
+design→code venait de deux causes distinctes, pas d'une absence de sync
+automatique — (1) absence de vérification par état (hover/sélectionné/thème)
+avant de déclarer un portage fini (voir `sift-audit-fidelite-methode`), et
+(2) `Sift.dc.html` encode de la vraie logique JS conditionnelle par état
+(ex. `M={green,amber,neutral,muted}` dans le fichier), pas de simples valeurs
+statiques — la lire correctement demande de simuler cette logique, pas de la
+copier.
+
+**Décision** : pas d'outil de sync adopté. `docs/design-system-states.md`
+(catalogue d'états par composant réel, alimenté 2026-07-03) sert de source de
+vérité pour le portage — extrait du vrai code une fois, réutilisé à chaque
+nouveau design plutôt que re-dérivé de `Sift.dc.html` à chaque fois. `Sift.dc.html`
+reste un artefact d'exploration figé, jamais resynchronisé en continu.
+
+---
+
 ## Veille concurrente — MediaMonkey (2026-06-24)
 
 Gestionnaire de biblio musicale ([mediamonkey.com](https://www.mediamonkey.com/)),
