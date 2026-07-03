@@ -15,6 +15,13 @@ pub const DISCOGS_TOKEN: &str = "discogs_token";
 pub const CURRENT_SESSION_ID: &str = "current_session_id";
 /// Absolute path of the linked Rekordbox XML file (`DJ_PLAYLISTS` format). Unset = no XML linked.
 pub const REKORDBOX_XML_PATH: &str = "rekordbox_xml_path";
+/// FIX-7: set to "1" when `actions::repair_rekordbox_xml_if_linked` hits an AMBIGUOUS
+/// `patch_location` match (0 or >1 occurrences of the expected Location text in raw_xml — the
+/// linked XML has drifted from what Sift's DB thinks a track's path is) and the repair could not
+/// proceed. Unset/absent = no known drift. Surfaced on `RekordboxLinkStatus.drift_detected` so the
+/// dashboard can show it instead of the failure being visible only in the server log. Cleared on
+/// a fresh `link_rekordbox_xml` (re-linking is the user's explicit "I've resolved it" signal).
+pub const REKORDBOX_XML_DRIFT: &str = "rekordbox_xml_drift";
 
 /// The default filename template when the setting is unset.
 pub const DEFAULT_TEMPLATE: &str = "{artist} - {title}{version}";

@@ -89,6 +89,22 @@ pub struct RekordboxLinkStatus {
     /// Set (linked=false is NOT implied) when the linked file is unreadable/corrupt at last
     /// check — the card shows this and blocks further auto-repair until the user re-links.
     pub error: Option<String>,
+    /// FIX-7: true when a prior filing/move's Rekordbox repair hit an AMBIGUOUS `patch_location`
+    /// match (`settings::REKORDBOX_XML_DRIFT` — see `actions::repair_rekordbox_xml_if_linked`) —
+    /// the linked XML's raw text no longer matches what Sift's DB expects for some track, and the
+    /// repair could not safely proceed. Previously only visible in the server log. Cleared by a
+    /// fresh `link_rekordbox_xml` or the next successful repair.
+    pub drift_detected: bool,
+}
+
+/// Read the persisted drift flag (see `settings::REKORDBOX_XML_DRIFT`) for building a
+/// `RekordboxLinkStatus`. Absent/unset or any value other than "1" = no known drift.
+fn drift_detected(conn: &Connection) -> bool {
+    crate::settings::get(conn, crate::settings::REKORDBOX_XML_DRIFT)
+        .ok()
+        .flatten()
+        .as_deref()
+        == Some("1")
 }
 
 fn count_playlists(nodes: &[crate::rekordbox_xml::PlaylistNode]) -> usize {
@@ -108,12 +124,16 @@ fn link_rekordbox_xml_inner(conn: &Connection, path: &str) -> Result<RekordboxLi
     let bytes = std::fs::read(path).map_err(|e| format!("lecture impossible: {e}"))?;
     let parsed = crate::rekordbox_xml::parse(&bytes)?;
     crate::settings::set(conn, crate::settings::REKORDBOX_XML_PATH, path).map_err(|e| e.to_string())?;
+    // FIX-7: (re-)linking is the user's explicit "I've dealt with it" signal — clear any drift
+    // flagged against the PREVIOUSLY linked file so a stale warning doesn't linger forever.
+    crate::settings::set(conn, crate::settings::REKORDBOX_XML_DRIFT, "0").map_err(|e| e.to_string())?;
     Ok(RekordboxLinkStatus {
         path: Some(path.to_string()),
         linked: true,
         playlist_count: count_playlists(&parsed.playlists),
         track_count: parsed.collection.len(),
         error: None,
+        drift_detected: false,
     })
 }
 
@@ -132,8 +152,16 @@ pub fn link_rekordbox_xml(
 fn rekordbox_status_inner(conn: &Connection) -> Result<RekordboxLinkStatus, String> {
     let path = crate::settings::get(conn, crate::settings::REKORDBOX_XML_PATH).map_err(|e| e.to_string())?;
     let Some(path) = path else {
-        return Ok(RekordboxLinkStatus { path: None, linked: false, playlist_count: 0, track_count: 0, error: None });
+        return Ok(RekordboxLinkStatus {
+            path: None,
+            linked: false,
+            playlist_count: 0,
+            track_count: 0,
+            error: None,
+            drift_detected: false,
+        });
     };
+    let drift = drift_detected(conn);
     match std::fs::read(&path).map_err(|e| e.to_string()).and_then(|b| crate::rekordbox_xml::parse(&b)) {
         Ok(parsed) => Ok(RekordboxLinkStatus {
             path: Some(path),
@@ -141,6 +169,7 @@ fn rekordbox_status_inner(conn: &Connection) -> Result<RekordboxLinkStatus, Stri
             playlist_count: count_playlists(&parsed.playlists),
             track_count: parsed.collection.len(),
             error: None,
+            drift_detected: drift,
         }),
         Err(e) => Ok(RekordboxLinkStatus {
             path: Some(path),
@@ -148,6 +177,7 @@ fn rekordbox_status_inner(conn: &Connection) -> Result<RekordboxLinkStatus, Stri
             playlist_count: 0,
             track_count: 0,
             error: Some(e),
+            drift_detected: drift,
         }),
     }
 }
@@ -180,6 +210,7 @@ fn export_rekordbox_xml_inner(conn: &Connection) -> Result<RekordboxLinkStatus, 
         playlist_count: count_playlists(&parsed.playlists),
         track_count: parsed.collection.len(),
         error: None,
+        drift_detected: drift_detected(conn),
     })
 }
 
@@ -263,5 +294,39 @@ mod rekordbox_tests {
 
         let rewritten = std::fs::read_to_string(&xml_path).unwrap();
         assert!(rewritten.contains("Disco/new.mp3") || rewritten.contains("Disco%2Fnew.mp3"));
+    }
+
+    /// FIX-7 regression: `RekordboxLinkStatus.drift_detected` reflects the persisted
+    /// `settings::REKORDBOX_XML_DRIFT` flag — false by default, true once set (as
+    /// `actions::repair_rekordbox_xml_if_linked` would on an ambiguous `patch_location` match).
+    #[test]
+    fn rekordbox_status_reports_drift_detected_flag() {
+        let dir = tempfile::tempdir().unwrap();
+        let xml_path = dir.path().join("export.xml");
+        std::fs::write(&xml_path, crate::rekordbox_xml::SAMPLE_XML).unwrap();
+        let conn = db();
+        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+
+        let status = rekordbox_status_inner(&conn).unwrap();
+        assert!(!status.drift_detected, "no drift by default");
+
+        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_DRIFT, "1").unwrap();
+        let status = rekordbox_status_inner(&conn).unwrap();
+        assert!(status.drift_detected, "drift flag surfaced once set");
+    }
+
+    /// FIX-7 regression: re-linking (the user's explicit "I've dealt with it" signal) clears a
+    /// previously-set drift flag.
+    #[test]
+    fn link_rekordbox_xml_clears_a_previously_set_drift_flag() {
+        let dir = tempfile::tempdir().unwrap();
+        let xml_path = dir.path().join("export.xml");
+        std::fs::write(&xml_path, crate::rekordbox_xml::SAMPLE_XML).unwrap();
+        let conn = db();
+        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_DRIFT, "1").unwrap();
+
+        let status = link_rekordbox_xml_inner(&conn, xml_path.to_str().unwrap()).unwrap();
+        assert!(!status.drift_detected, "re-linking clears prior drift");
+        assert!(!rekordbox_status_inner(&conn).unwrap().drift_detected);
     }
 }

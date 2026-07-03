@@ -568,18 +568,35 @@ fn file_into_level(level: &mut Vec<PlaylistNode>, segments: &[&str], track_id: i
     }
 }
 
+/// Outcome of `patch_location`. FIX-7: distinguishes the ordinary "this path isn't tracked at all"
+/// no-op from the genuinely alarming "it's tracked, but the raw text is ambiguous" case — a caller
+/// (namely `actions::repair_rekordbox_xml_if_linked`) needs to tell them apart to surface real
+/// drift to the user instead of only ever logging it server-side.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PatchLocationResult {
+    /// The Location was found and rewritten.
+    Patched,
+    /// `from_path` isn't referenced by this XML at all — ordinary, not an error (e.g. a file
+    /// filed before this XML was ever linked).
+    NotTracked,
+    /// `from_path` IS tracked, but the exact `Location="..."` text expected in `raw_xml` occurs
+    /// zero or more-than-one times — the raw text and the structured model have drifted (e.g. two
+    /// tracks sharing byte-identical Location, or a prior mutation not reflected in raw_xml).
+    /// Refuses to guess which occurrence to touch; nothing is changed.
+    Drifted,
+}
+
 /// Rewrite one `TrackID`'s `Location` in place: in `raw_xml` (a targeted string replace of just
 /// that attribute's value, so every other byte of the file — including fields this module never
 /// modeled — survives untouched), and mirrored in the structured `collection`/`path_index` so
 /// subsequent `merge_filed_tracks`/`track_id_for_path` calls see the new path immediately.
-/// Returns `false` (no-op) if `from_path` isn't tracked by this XML at all.
-pub fn patch_location(xml: &mut RekordboxXml, from_path: &str, to_path: &str) -> bool {
+pub fn patch_location(xml: &mut RekordboxXml, from_path: &str, to_path: &str) -> PatchLocationResult {
     let from_norm = normalize_path(from_path);
     let Some(track_id) = xml.track_id_for_path(&from_norm) else {
-        return false;
+        return PatchLocationResult::NotTracked;
     };
     let Some(track) = xml.collection.iter_mut().find(|t| t.track_id == track_id) else {
-        return false; // index/collection out of sync — treat as not-found, never guess
+        return PatchLocationResult::NotTracked; // index/collection out of sync — never guess
     };
 
     let old_location_attr = format!(r#"Location="{}""#, xml_escape(&track.location));
@@ -595,14 +612,14 @@ pub fn patch_location(xml: &mut RekordboxXml, from_path: &str, to_path: &str) ->
         log::error!(
             "patch_location: expected exactly 1 occurrence of {old_location_attr:?} in raw_xml, found {occurrences}; refusing to guess"
         );
-        return false;
+        return PatchLocationResult::Drifted;
     }
     xml.raw_xml = xml.raw_xml.replacen(&old_location_attr, &new_location_attr, 1);
 
     xml.path_index.remove(&path_index_key(&from_norm));
     xml.path_index.insert(path_index_key(&normalize_path(to_path)), track_id);
     track.location = new_location_value;
-    true
+    PatchLocationResult::Patched
 }
 
 /// FIX-3: the characters `normalize_path`/`percent_decode` above already know how to reverse,
@@ -841,7 +858,7 @@ mod tests {
             "C:/Music/House/deep/strings.aiff",
             "C:/Music/House/Deep Cuts/strings.aiff",
         );
-        assert!(patched);
+        assert_eq!(patched, PatchLocationResult::Patched);
         let t2 = parsed.collection.iter().find(|t| t.track_id == 2).unwrap();
         assert!(
             t2.location.contains("Deep%20Cuts/strings.aiff"),
@@ -861,7 +878,7 @@ mod tests {
             "C:/Music/House/deep/strings.aiff",
             "C:/Music/House/Deep/strings.aiff", // recased/moved
         );
-        assert!(patched);
+        assert_eq!(patched, PatchLocationResult::Patched);
 
         // Structured view updated.
         let t2 = parsed.collection.iter().find(|t| t.track_id == 2).unwrap();
@@ -895,10 +912,37 @@ mod tests {
     }
 
     #[test]
-    fn patch_location_returns_false_when_path_unknown() {
+    fn patch_location_returns_not_tracked_when_path_unknown() {
         let mut parsed = parse(&fixture()).unwrap();
         let patched = patch_location(&mut parsed, "C:/not/tracked.mp3", "C:/elsewhere.mp3");
-        assert!(!patched);
+        assert_eq!(patched, PatchLocationResult::NotTracked);
+    }
+
+    /// FIX-7 regression: when the SAME Location text appears twice in raw_xml (two collection
+    /// tracks sharing a byte-identical Location — a drifted/corrupt file), patch_location must
+    /// report `Drifted`, distinct from the ordinary `NotTracked` no-op, so a caller can surface
+    /// genuine drift to the user instead of it only ever reaching a server log.
+    #[test]
+    fn patch_location_reports_drifted_on_ambiguous_raw_xml_match() {
+        let dup_location_xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+
+<DJ_PLAYLISTS Version="1.0.0">
+  <PRODUCT Name="rekordbox" Version="6.7.7" Company="Pioneer DJ"/>
+  <COLLECTION Entries="2">
+    <TRACK TrackID="1" Name="A" Artist="X" Location="file://localhost/C:/Music/dup.mp3"/>
+    <TRACK TrackID="2" Name="B" Artist="Y" Location="file://localhost/C:/Music/dup.mp3"/>
+  </COLLECTION>
+  <PLAYLISTS>
+    <NODE Type="0" Name="ROOT" Count="0"/>
+  </PLAYLISTS>
+</DJ_PLAYLISTS>
+"#;
+        let mut parsed = parse(dup_location_xml.as_bytes()).unwrap();
+        let original_raw = parsed.raw_xml.clone();
+
+        let result = patch_location(&mut parsed, "C:/Music/dup.mp3", "C:/Music/moved.mp3");
+        assert_eq!(result, PatchLocationResult::Drifted);
+        assert_eq!(parsed.raw_xml, original_raw, "nothing changed on a Drifted result");
     }
 
     /// FIX-6 regression: `track_id_for_path` must not miss a lookup that differs from the XML's
@@ -925,7 +969,7 @@ mod tests {
             "C:/Music/House/deep/strings.aiff",
             "C:/Music/Techno/deep/strings.aiff", // genuinely different folder, not just recased
         );
-        assert!(patched);
+        assert_eq!(patched, PatchLocationResult::Patched);
         assert_eq!(parsed.track_id_for_path(Path::new("C:/Music/Techno/deep/strings.aiff")), Some(2));
         assert_eq!(
             parsed.track_id_for_path(Path::new("C:/Music/House/deep/strings.aiff")),
