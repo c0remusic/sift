@@ -23,7 +23,7 @@ serde = { version = "1.0", features = ["derive"] }
 log = "0.4"
 tauri = { version = "2.11.3", features = ["protocol-asset"] }
 tauri-plugin-log = "2"
-rusqlite = { version = "0.40", features = ["bundled"] }
+rusqlite = { version = "0.40", features = ["bundled", "serialize"] }
 ffmpeg-sidecar = "2.5.0"
 walkdir = "2.5.0"
 tauri-plugin-dialog = "2.7.1"
@@ -38,6 +38,13 @@ rusty-chromaprint = "0.3"
 symphonia = { version = "0.6", features = ["mp3", "flac", "wav", "aiff", "isomp4", "aac", "alac"] }
 ureq = { version = "3", features = ["json"] }
 dirs = "5"
+pbkdf2 = "0.12"
+hmac = "0.12"
+sha2 = "0.10"
+aes = "0.8"
+cbc = { version = "0.1", features = ["alloc"] }
+flate2 = "1.1.9"
+base85 = "2.0.0"
 
 [dev-dependencies]
 tempfile = "3.27.0"

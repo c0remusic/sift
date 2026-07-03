@@ -16,6 +16,7 @@ mod library;
 mod metadata;
 mod naming;
 mod queue;
+mod rekordbox_masterdb;
 mod scanner;
 mod settings;
 mod sources;
