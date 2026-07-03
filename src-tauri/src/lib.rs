@@ -12,6 +12,7 @@ mod ipc;
 mod ipc_filing;
 mod ipc_identify;
 mod ipc_library;
+mod ipc_usb;
 mod library;
 mod metadata;
 mod naming;
@@ -118,7 +119,9 @@ pub fn run() {
             ipc_library::library_folders,
             ipc_library::update_metadata,
             ipc_library::scan_library_duplicates,
-            ipc_library::library_stats
+            ipc_library::library_stats,
+            ipc_usb::list_removable_drives,
+            ipc_usb::format_drive
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

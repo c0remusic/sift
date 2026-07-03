@@ -46,8 +46,6 @@ pub enum TargetFs {
 /// `FilingError`/`"RAIL_MISMATCH"` convention) so the frontend can pattern-match distinctly.
 #[derive(Debug, Clone, PartialEq)]
 pub enum UsbFormatError {
-    /// A drive was requested for formatting but isn't (or is no longer) confidently removable.
-    NotRemovable,
     /// The drive last seen at this id/serial is no longer present at format time.
     DriveVanished,
     /// The anti-race check: the volume serial at format time doesn't match what was listed.
@@ -61,7 +59,6 @@ pub enum UsbFormatError {
 impl std::fmt::Display for UsbFormatError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            UsbFormatError::NotRemovable => write!(f, "NOT_REMOVABLE"),
             UsbFormatError::DriveVanished => write!(f, "DRIVE_VANISHED"),
             UsbFormatError::IdentityMismatch => write!(f, "IDENTITY_MISMATCH"),
             UsbFormatError::Enumeration(m) => write!(f, "enumeration: {m}"),

@@ -3,10 +3,8 @@
 //! pure parsing/filter functions below are unit tested here; the `RemovableDriveBackend` impl
 //! (which shells out to `diskutil`) is gated `#[cfg(target_os = "macos")]` and has never run.
 
-use super::{RemovableDrive, TargetFs, UsbFormatError};
-
 #[cfg(target_os = "macos")]
-use super::RemovableDriveBackend;
+use super::{RemovableDrive, RemovableDriveBackend, TargetFs, UsbFormatError};
 #[cfg(target_os = "macos")]
 use std::process::Command;
 
@@ -15,6 +13,10 @@ pub struct MacBackend;
 
 /// The two `diskutil` plist flags the removable filter needs, isolated from all other plist
 /// content so the filter has zero parsing/process dependency and can be unit tested directly.
+/// Only consumed by `MacBackend::list` (macOS-only) outside of tests — `allow(dead_code)` on
+/// non-macOS is deliberate: this struct exists specifically so the logic below is verifiable on
+/// any OS via `cargo test`, per the M7 design's cross-platform-testability requirement.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub(crate) struct RawDiskEntry {
     pub removable_media: Option<bool>,
     pub internal: Option<bool>,
@@ -22,11 +24,14 @@ pub(crate) struct RawDiskEntry {
 
 /// Conservative removable check, matching the Windows filter's shape: BOTH flags must agree
 /// removable AND external. Any missing flag excludes the disk.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub(crate) fn is_confidently_removable(disk: &RawDiskEntry) -> bool {
     matches!(disk.removable_media, Some(true)) && matches!(disk.internal, Some(false))
 }
 
-/// One partition entry parsed out of `diskutil list -plist` output.
+/// One partition entry parsed out of `diskutil list -plist` output. Same cross-platform-testing
+/// rationale as `RawDiskEntry` above.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 #[derive(Debug, Clone, PartialEq)]
 pub(crate) struct ParsedDisk {
     pub id: String,
@@ -39,6 +44,7 @@ pub(crate) struct ParsedDisk {
 /// `Partitions` arrays. Deliberately narrow -- not a general plist parser -- because only these
 /// three fields are needed and pulling in a full plist crate for them isn't justified (repo
 /// dependency-minimalism convention, CLAUDE.md dependency audit).
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub(crate) fn parse_disk_entries(plist_xml: &str) -> Vec<ParsedDisk> {
     let mut result = Vec::new();
     let mut id: Option<String> = None;
