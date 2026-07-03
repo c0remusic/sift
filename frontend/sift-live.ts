@@ -908,8 +908,12 @@ function updateRevueBadge(count: number) {
 async function renderReglagesLive() {
   const content = requireEl("#content", "renderReglagesLive");
 
-  // Remove any previous live-settings block so we don't duplicate on re-render.
+  // Remove any previous live-settings wrapper so we don't duplicate on re-render.
+  // All cards live inside this single wrapper (not as separate #content siblings)
+  // so a future card can't be forgotten here the way libBlock/themeBlock once were.
   document.getElementById("sift-reglages-live")?.remove();
+  const wrap = document.createElement("div");
+  wrap.id = "sift-reglages-live";
 
   // Hide the mockup's static rows (no real data behind them); keep only the page title.
   let title: Element | null = null;
@@ -950,7 +954,7 @@ async function renderReglagesLive() {
   // Divergence assumée : le jeton reste un input à sauvegarde auto (fonctionnel) au lieu du
   // "•••• 4471 + Modifier" de la maquette, dont le bouton est un onNotImpl de démo.
   const block = document.createElement("div");
-  block.id = "sift-reglages-live";
+  block.id = "sift-reglages-discogs";
   block.dataset.section = "discogs";
   block.className = "sift-settings-card";
   block.style.cssText = "margin-top:14px";
@@ -1041,9 +1045,10 @@ async function renderReglagesLive() {
     }),
   );
 
-  content.appendChild(block);
-  content.appendChild(libBlock);
-  content.appendChild(themeBlock);
+  wrap.appendChild(block);
+  wrap.appendChild(libBlock);
+  wrap.appendChild(themeBlock);
+  content.appendChild(wrap);
 
   const inp = block.querySelector<HTMLInputElement>("#sift-discogs-token");
   const status = block.querySelector<HTMLElement>("#sift-discogs-status");
