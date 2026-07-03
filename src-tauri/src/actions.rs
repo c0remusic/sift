@@ -65,7 +65,76 @@ pub fn record_with_meta(
                 (SELECT value FROM settings WHERE key='current_session_id'))",
         params![track_id, kind, from_path, to_path, batch_id, meta],
     )?;
-    Ok(conn.last_insert_rowid())
+    let id = conn.last_insert_rowid();
+
+    // M7: if a Rekordbox XML is linked and this action moved/renamed/converted a file it already
+    // references, patch that Location immediately so the track doesn't silently vanish from its
+    // Rekordbox playlists. Journaling the action must never fail because of this side effect —
+    // any repair error is logged and swallowed, never propagated to the caller.
+    //
+    // Restricted to `move`/`convert`: those are the only kinds where `to_path` is a new location
+    // for the SAME library file Rekordbox should keep pointing at. `trash`/`reject` also carry
+    // (from, to) pairs, but `to` there is Sift's internal trash/bin path, not a relocation within
+    // the library — patching Location to it would make Rekordbox point a "jeté" track at Sift's
+    // trash folder. `tag_edit` never sets `to_path` (None) so it's excluded by the match anyway;
+    // the `from != to` guard below additionally skips the common no-op case (a conformant filing
+    // where the file didn't move) so a same-path `tag_edit`-adjacent action doesn't force a
+    // pointless read+reparse+write of the linked XML.
+    if matches!(kind, "move" | "convert") {
+        if let (Some(from), Some(to)) = (from_path, to_path) {
+            if from != to {
+                repair_rekordbox_xml_if_linked(conn, from, to);
+            }
+        }
+    }
+
+    Ok(id)
+}
+
+/// If a Rekordbox XML is linked (`settings::REKORDBOX_XML_PATH`) and it references `from_path`,
+/// patch its `Location` to `to_path` and rewrite the file immediately. No-op (returns `None`) if
+/// nothing is linked. On a read/parse failure of the linked file, logs the error and returns
+/// `None` — fails fast, no panic, no silent corruption of the file. The dashboard card's
+/// `rekordbox_status` IPC (not this hook) is what surfaces the error state to the user.
+///
+/// FIX-7: an AMBIGUOUS `patch_location` match (the linked XML's raw text has drifted from what
+/// Sift's DB thinks) used to only `log::error!` — invisible unless someone was tailing the server
+/// log. It now also persists `settings::REKORDBOX_XML_DRIFT`, which `rekordbox_status`/
+/// `RekordboxLinkStatus.drift_detected` surface to the dashboard card. A subsequent SUCCESSFUL
+/// patch clears the flag (the drift that mattered got resolved); re-linking also clears it (the
+/// user's explicit "I've dealt with it" signal) — see `ipc_library::link_rekordbox_xml_inner`.
+pub fn repair_rekordbox_xml_if_linked(conn: &Connection, from_path: &str, to_path: &str) -> Option<usize> {
+    let path = crate::settings::get(conn, crate::settings::REKORDBOX_XML_PATH).ok().flatten()?;
+    let bytes = match std::fs::read(&path) {
+        Ok(b) => b,
+        Err(e) => {
+            log::error!("rekordbox repair: linked XML {path} unreadable: {e}");
+            return None;
+        }
+    };
+    let mut parsed = match crate::rekordbox_xml::parse(&bytes) {
+        Ok(p) => p,
+        Err(e) => {
+            log::error!("rekordbox repair: linked XML {path} unparseable: {e}");
+            return None;
+        }
+    };
+    use crate::rekordbox_xml::PatchLocationResult;
+    match crate::rekordbox_xml::patch_location(&mut parsed, from_path, to_path) {
+        PatchLocationResult::NotTracked => Some(0), // linked, but this path wasn't tracked — nothing to repair
+        PatchLocationResult::Drifted => {
+            let _ = crate::settings::set(conn, crate::settings::REKORDBOX_XML_DRIFT, "1");
+            None
+        }
+        PatchLocationResult::Patched => {
+            if let Err(e) = std::fs::write(&path, &parsed.raw_xml) {
+                log::error!("rekordbox repair: failed writing patched XML {path}: {e}");
+                return None;
+            }
+            let _ = crate::settings::set(conn, crate::settings::REKORDBOX_XML_DRIFT, "0");
+            Some(1)
+        }
+    }
 }
 
 /// Reverse one action's filesystem effect. Guards refuse to overwrite or act on stale
@@ -361,6 +430,107 @@ mod tests {
             .unwrap();
         assert_eq!(kind, "move");
         assert_eq!(undone, 0);
+    }
+
+    #[test]
+    fn record_with_meta_repairs_linked_rekordbox_xml_on_move() {
+        let conn = db();
+        let dir = tempfile::tempdir().unwrap();
+        let xml_path = dir.path().join("export.xml");
+        std::fs::write(&xml_path, crate::rekordbox_xml::SAMPLE_XML).unwrap();
+        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+
+        // TrackID 2 in the fixture is at "C:/Music/House/deep/strings.aiff" — journal a move
+        // away from that exact path (matches Location after normalization).
+        record(
+            &conn,
+            "b1",
+            None,
+            "move",
+            Some("C:/Music/House/deep/strings.aiff"),
+            Some("C:/Music/House/Deep/strings.aiff"),
+        )
+        .unwrap();
+
+        let rewritten = std::fs::read_to_string(&xml_path).unwrap();
+        assert!(
+            rewritten.contains("House/Deep/strings.aiff") || rewritten.contains("House%2FDeep%2Fstrings.aiff"),
+            "Location patched in the linked XML file on disk"
+        );
+    }
+
+    #[test]
+    fn record_with_meta_is_noop_on_rekordbox_when_nothing_linked() {
+        let conn = db();
+        // No REKORDBOX_XML_PATH setting at all — must not error, must not create a file.
+        let id = record(&conn, "b2", None, "move", Some("/a"), Some("/b")).unwrap();
+        assert!(id > 0);
+    }
+
+    /// FIX-1 regression: journaling a `trash` (Jeter) must NEVER patch the linked Rekordbox XML.
+    /// `to_path` for a `trash` row is Sift's internal trash folder, not a relocation within the
+    /// library — patching Location to it would silently repoint the track at Sift's trash bin in
+    /// the user's real Rekordbox file. The linked XML on disk must stay byte-for-byte unchanged.
+    #[test]
+    fn record_trash_does_not_patch_linked_rekordbox_xml() {
+        let conn = db();
+        let dir = tempfile::tempdir().unwrap();
+        let xml_path = dir.path().join("export.xml");
+        std::fs::write(&xml_path, crate::rekordbox_xml::SAMPLE_XML).unwrap();
+        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+        let before = std::fs::read_to_string(&xml_path).unwrap();
+
+        // Same TrackID-2 path as the "on_move" test above, but journaled as `trash` this time.
+        record(
+            &conn,
+            "b1",
+            None,
+            "trash",
+            Some("C:/Music/House/deep/strings.aiff"),
+            Some("C:/Users/x/Documents/Sift/Trash/1__strings.aiff"),
+        )
+        .unwrap();
+
+        let after = std::fs::read_to_string(&xml_path).unwrap();
+        assert_eq!(before, after, "trash must never touch the linked Rekordbox XML");
+    }
+
+    /// FIX-7 regression: an AMBIGUOUS `patch_location` match (two collection tracks sharing a
+    /// byte-identical Location — a drifted/corrupt linked XML) must persist
+    /// `settings::REKORDBOX_XML_DRIFT`, surfaced by `RekordboxLinkStatus.drift_detected`, instead
+    /// of only reaching the server log.
+    #[test]
+    fn record_move_sets_drift_flag_on_ambiguous_rekordbox_match() {
+        let conn = db();
+        let dir = tempfile::tempdir().unwrap();
+        let xml_path = dir.path().join("export.xml");
+        let dup_location_xml = r#"<?xml version="1.0" encoding="UTF-8"?>
+
+<DJ_PLAYLISTS Version="1.0.0">
+  <PRODUCT Name="rekordbox" Version="6.7.7" Company="Pioneer DJ"/>
+  <COLLECTION Entries="2">
+    <TRACK TrackID="1" Name="A" Artist="X" Location="file://localhost/C:/Music/dup.mp3"/>
+    <TRACK TrackID="2" Name="B" Artist="Y" Location="file://localhost/C:/Music/dup.mp3"/>
+  </COLLECTION>
+  <PLAYLISTS>
+    <NODE Type="0" Name="ROOT" Count="0"/>
+  </PLAYLISTS>
+</DJ_PLAYLISTS>
+"#;
+        std::fs::write(&xml_path, dup_location_xml).unwrap();
+        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+        assert_eq!(crate::settings::get(&conn, crate::settings::REKORDBOX_XML_DRIFT).unwrap(), None);
+
+        record(&conn, "b1", None, "move", Some("C:/Music/dup.mp3"), Some("C:/Music/moved.mp3")).unwrap();
+
+        assert_eq!(
+            crate::settings::get(&conn, crate::settings::REKORDBOX_XML_DRIFT).unwrap(),
+            Some("1".to_string()),
+            "ambiguous match must set the drift flag"
+        );
+        // And the file on disk is untouched — Drifted never writes.
+        let after = std::fs::read_to_string(&xml_path).unwrap();
+        assert_eq!(after, dup_location_xml);
     }
 
     #[test]

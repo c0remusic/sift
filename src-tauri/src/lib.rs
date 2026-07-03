@@ -17,6 +17,7 @@ mod metadata;
 mod naming;
 mod queue;
 mod rekordbox_masterdb;
+mod rekordbox_xml;
 mod scanner;
 mod settings;
 mod sources;
@@ -118,7 +119,10 @@ pub fn run() {
             ipc_library::library_folders,
             ipc_library::update_metadata,
             ipc_library::scan_library_duplicates,
-            ipc_library::library_stats
+            ipc_library::library_stats,
+            ipc_library::link_rekordbox_xml,
+            ipc_library::rekordbox_status,
+            ipc_library::export_rekordbox_xml
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

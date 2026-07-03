@@ -1,5 +1,5 @@
 //! Typed access to the `settings(key, value)` table: the few app-wide preferences the
-//! filing loop needs (library root, filename template, trash purge window). String values
+//! filing loop needs (library root, filename template). String values
 //! only; callers parse as needed. Created in migration v4.
 
 use rusqlite::{params, Connection};
@@ -8,13 +8,20 @@ use rusqlite::{params, Connection};
 pub const LIBRARY_ROOT: &str = "library_root";
 /// Output filename template (placeholders {artist} {title} {version}).
 pub const FILENAME_TEMPLATE: &str = "filename_template";
-/// Days a trashed file is kept in `.sift-trash` before purge.
-pub const TRASH_PURGE_DAYS: &str = "trash_purge_days";
 /// Discogs personal access token (entered in Réglages). Empty/unset = identification disabled.
 pub const DISCOGS_TOKEN: &str = "discogs_token";
 /// Key under which the current session's unique ID is stored at app launch.
 /// Written once at startup; read by the `actions` INSERT via SQL subquery.
 pub const CURRENT_SESSION_ID: &str = "current_session_id";
+/// Absolute path of the linked Rekordbox XML file (`DJ_PLAYLISTS` format). Unset = no XML linked.
+pub const REKORDBOX_XML_PATH: &str = "rekordbox_xml_path";
+/// FIX-7: set to "1" when `actions::repair_rekordbox_xml_if_linked` hits an AMBIGUOUS
+/// `patch_location` match (0 or >1 occurrences of the expected Location text in raw_xml — the
+/// linked XML has drifted from what Sift's DB thinks a track's path is) and the repair could not
+/// proceed. Unset/absent = no known drift. Surfaced on `RekordboxLinkStatus.drift_detected` so the
+/// dashboard can show it instead of the failure being visible only in the server log. Cleared on
+/// a fresh `link_rekordbox_xml` (re-linking is the user's explicit "I've resolved it" signal).
+pub const REKORDBOX_XML_DRIFT: &str = "rekordbox_xml_drift";
 
 /// The default filename template when the setting is unset.
 pub const DEFAULT_TEMPLATE: &str = "{artist} - {title}{version}";

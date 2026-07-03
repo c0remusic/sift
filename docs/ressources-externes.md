@@ -542,6 +542,30 @@ Détail complet, table des doublons par job, et commandes `npx skills` :
 
 ---
 
+## Dette technique — nettoyage clippy `m7-rekordbox-xml` (2026-07-04)
+
+`cargo clippy --all-targets -- -D warnings` échouait sur 2 erreurs pré-existantes,
+sans rapport avec le travail M7 en cours sur cette branche. Corrigées en 2 commits
+dédiés (`34cf912`, `83fad93`) :
+
+- **`settings.rs` — `TRASH_PURGE_DAYS` mort** (`dead_code`) : constante jamais lue
+  nulle part. Déjà signalée comme dette connue dans les reviews M4
+  (`docs/superpowers/reviews/2026-06-12-m4-review.md`, `2026-06-13-full-audit.md`) —
+  la purge de `.sift-trash` (M4b) s'est faite « sur demande » plutôt que sur une
+  fenêtre de rétention configurable ; le champ n'a jamais eu de consommateur.
+  Constante supprimée, pas de fallback ni de feature à câbler derrière (aucun plan
+  de purge programmée à court terme).
+- **`dedup.rs:134` — `needless_range_loop`** dans `scan_library_duplicates` : boucle
+  interne `for j in (i+1)..n { ... fps[j] ... }` réécrite en
+  `for (j, fj) in fps.iter().enumerate().skip(i+1)`, en gardant l'index `j` pour les
+  appels `union`/`find_root` (pas juste un `#[allow]` — l'index restait nécessaire).
+
+Vérifié : clippy clean, `cargo test` 193/196 verts (3 échecs pré-existants sans
+rapport : 2 tests `analysis::decode` sur fixture manquante, 1 test `rekordbox_xml`
+sur du travail M7 en cours non lié à ce nettoyage).
+
+---
+
 ## Écarté
 
 - **[vykee.co](https://vykee.co)** — écarté le 2026-06-24. SDK SaaS d'**onboarding
