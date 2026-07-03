@@ -65,7 +65,49 @@ pub fn record_with_meta(
                 (SELECT value FROM settings WHERE key='current_session_id'))",
         params![track_id, kind, from_path, to_path, batch_id, meta],
     )?;
-    Ok(conn.last_insert_rowid())
+    let id = conn.last_insert_rowid();
+
+    // M7: if a Rekordbox XML is linked and this action moved/renamed/converted a file it already
+    // references, patch that Location immediately so the track doesn't silently vanish from its
+    // Rekordbox playlists. Journaling the action must never fail because of this side effect —
+    // any repair error is logged and swallowed, never propagated to the caller.
+    if let (Some(from), Some(to)) = (from_path, to_path) {
+        repair_rekordbox_xml_if_linked(conn, from, to);
+    }
+
+    Ok(id)
+}
+
+/// If a Rekordbox XML is linked (`settings::REKORDBOX_XML_PATH`) and it references `from_path`,
+/// patch its `Location` to `to_path` and rewrite the file immediately. No-op (returns `None`) if
+/// nothing is linked. On a read/parse failure of the linked file, logs the error and returns
+/// `None` — fails fast, no panic, no silent corruption of the file. The dashboard card's
+/// `rekordbox_status` IPC (not this hook) is what surfaces the error state to the user.
+pub fn repair_rekordbox_xml_if_linked(conn: &Connection, from_path: &str, to_path: &str) -> Option<usize> {
+    let path = crate::settings::get(conn, crate::settings::REKORDBOX_XML_PATH).ok().flatten()?;
+    let bytes = match std::fs::read(&path) {
+        Ok(b) => b,
+        Err(e) => {
+            log::error!("rekordbox repair: linked XML {path} unreadable: {e}");
+            return None;
+        }
+    };
+    let mut parsed = match crate::rekordbox_xml::parse(&bytes) {
+        Ok(p) => p,
+        Err(e) => {
+            log::error!("rekordbox repair: linked XML {path} unparseable: {e}");
+            return None;
+        }
+    };
+    let patched = crate::rekordbox_xml::patch_location(&mut parsed, from_path, to_path);
+    if !patched {
+        return Some(0); // linked, but this path wasn't tracked in it — nothing to repair
+    }
+    if let Err(e) = std::fs::write(&path, &parsed.raw_xml) {
+        log::error!("rekordbox repair: failed writing patched XML {path}: {e}");
+        return None;
+    }
+    Some(1)
 }
 
 /// Reverse one action's filesystem effect. Guards refuse to overwrite or act on stale
@@ -361,6 +403,41 @@ mod tests {
             .unwrap();
         assert_eq!(kind, "move");
         assert_eq!(undone, 0);
+    }
+
+    #[test]
+    fn record_with_meta_repairs_linked_rekordbox_xml_on_move() {
+        let conn = db();
+        let dir = tempfile::tempdir().unwrap();
+        let xml_path = dir.path().join("export.xml");
+        std::fs::write(&xml_path, crate::rekordbox_xml::SAMPLE_XML).unwrap();
+        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+
+        // TrackID 2 in the fixture is at "C:/Music/House/deep/strings.aiff" — journal a move
+        // away from that exact path (matches Location after normalization).
+        record(
+            &conn,
+            "b1",
+            None,
+            "move",
+            Some("C:/Music/House/deep/strings.aiff"),
+            Some("C:/Music/House/Deep/strings.aiff"),
+        )
+        .unwrap();
+
+        let rewritten = std::fs::read_to_string(&xml_path).unwrap();
+        assert!(
+            rewritten.contains("House/Deep/strings.aiff") || rewritten.contains("House%2FDeep%2Fstrings.aiff"),
+            "Location patched in the linked XML file on disk"
+        );
+    }
+
+    #[test]
+    fn record_with_meta_is_noop_on_rekordbox_when_nothing_linked() {
+        let conn = db();
+        // No REKORDBOX_XML_PATH setting at all — must not error, must not create a file.
+        let id = record(&conn, "b2", None, "move", Some("/a"), Some("/b")).unwrap();
+        assert!(id > 0);
     }
 
     #[test]
