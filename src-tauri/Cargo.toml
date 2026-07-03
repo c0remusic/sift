@@ -38,9 +38,10 @@ rusty-chromaprint = "0.3"
 symphonia = { version = "0.6", features = ["mp3", "flac", "wav", "aiff", "isomp4", "aac", "alac"] }
 ureq = { version = "3", features = ["json"] }
 dirs = "5"
+wmi = "0.18"
+tempfile = "3.27.0"
 
 [dev-dependencies]
-tempfile = "3.27.0"
 
 # Audio DSP is unusably slow in an unoptimised debug build (rustfft + per-sample loops).
 # Optimise dependencies fully, and our own code lightly, while keeping dev compile fast.
