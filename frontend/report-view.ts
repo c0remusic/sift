@@ -213,6 +213,7 @@ function playerRowHtml(name: string, path: string, closeBtn = false): string {
     `<span class="sift-time-total">0:00</span>` +
     `</div>` +
     `</div>` +
+    `<div class="sift-player-error" hidden></div>` +
     `<div class="sift-player-controls">` +
     `<div class="sift-slider-block">` +
     `<span class="sift-slider-label">Volume</span>` +
@@ -469,6 +470,7 @@ async function mountPlayer(root: HTMLElement, path: string, peaks?: number[], du
   const tempoTrack = root.querySelector<HTMLElement>(".sift-tempo-track");
   const tempoFill = root.querySelector<HTMLElement>(".sift-tempo-fill");
   const tempoThumb = root.querySelector<HTMLElement>(".sift-tempo-thumb");
+  const errorEl = root.querySelector<HTMLElement>(".sift-player-error");
 
   ensureStyles();
   destroyPlayer();
@@ -578,6 +580,7 @@ async function mountPlayer(root: HTMLElement, path: string, peaks?: number[], du
   ws.on("ready", () => {
     applyRate();
     updateTime();
+    if (errorEl) errorEl.hidden = true;
   });
   ws.on("timeupdate", updateTime);
 
@@ -663,6 +666,10 @@ async function mountPlayer(root: HTMLElement, path: string, peaks?: number[], du
     void invoke("report_smoke", { ok: false, detail: `wavesurfer ${path}: ${String(e)}` });
     // Audio always loads via loadDecoded, which already cascades Web Audio → backend transcode,
     // so there's nothing further to retry here — just surface the error.
+    if (errorEl) {
+      errorEl.textContent = "Lecture impossible — fichier illisible.";
+      errorEl.hidden = false;
+    }
   });
   playBtn?.addEventListener("click", () => void ws.playPause());
 }
