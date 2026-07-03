@@ -147,6 +147,23 @@ function renderQueueWindow(ql: HTMLElement): void {
   ql.innerHTML = html;
 }
 
+let queueScrollWired = false;
+/** One-time (guarded) scroll listener on #ql, rAF-throttled: re-renders the visible window on
+ * scroll without doing so on every fired scroll event (which can be dozens per second). */
+function ensureQueueScroll(ql: HTMLElement): void {
+  if (queueScrollWired) return;
+  queueScrollWired = true;
+  let ticking = false;
+  ql.addEventListener("scroll", () => {
+    if (ticking) return;
+    ticking = true;
+    requestAnimationFrame(() => {
+      ticking = false;
+      renderQueueWindow(ql);
+    });
+  });
+}
+
 // Review mode: "detail" = one track at a time (filing pane), "batch" = triage many at once
 // (board's Detail|Batch segmented control). `batchSel` holds the ticked track ids; it is
 // pruned to the currently-ready set on every batch render so a filed/removed id can't linger.
@@ -304,6 +321,7 @@ async function renderQueue(touchDetail = true) {
     }
   }
   renderQueueWindow(ql);
+  ensureQueueScroll(ql);
 }
 
 // Global progress zone — feed the "analyze" row from the EXISTING analysis poll/events (no engine
