@@ -24,6 +24,172 @@ pub struct DupMatch {
     pub score: f32,
 }
 
+/// One member of a duplicate group (a `filed` track acoustically identical to the others).
+#[derive(Debug, Clone, Serialize)]
+pub struct DupGroupMember {
+    pub id: i64,
+    pub path: String,
+    pub filename: Option<String>,
+    pub folder: Option<String>,
+    pub format: Option<String>,
+    pub bitrate: Option<i64>,
+    pub duration: Option<f64>,
+    pub truncated: bool,
+    pub recommend_keep: bool,
+    /// Human-readable reason, set only on the recommended member (e.g. "lossless, 1411 kbps").
+    pub reason: Option<String>,
+}
+
+/// A group of 2+ `filed` tracks that are acoustically the same recording.
+#[derive(Debug, Clone, Serialize)]
+pub struct DupGroup {
+    pub members: Vec<DupGroupMember>,
+    /// Weakest pairwise similarity that linked the group together.
+    pub similarity: f32,
+}
+
+fn is_lossless_fmt(fmt: &Option<String>) -> bool {
+    fmt.as_deref()
+        .map(|f| matches!(f.to_lowercase().as_str(), "aiff" | "aif" | "wav" | "flac"))
+        .unwrap_or(false)
+}
+
+/// Index of the member to recommend keeping: lossless > lossy, then higher bitrate, then
+/// longer duration, then non-truncated; ties keep the first occurrence.
+fn pick_keep(members: &[DupGroupMember]) -> usize {
+    let key = |m: &DupGroupMember| {
+        (
+            is_lossless_fmt(&m.format),
+            m.bitrate.unwrap_or(-1),
+            m.duration.map(|d| (d * 1000.0) as i64).unwrap_or(-1),
+            !m.truncated,
+        )
+    };
+    let mut best = 0usize;
+    for i in 1..members.len() {
+        if key(&members[i]) > key(&members[best]) {
+            best = i;
+        }
+    }
+    best
+}
+
+fn find_root(parent: &mut [usize], x: usize) -> usize {
+    if parent[x] != x {
+        parent[x] = find_root(parent, parent[x]);
+    }
+    parent[x]
+}
+
+fn union(parent: &mut [usize], a: usize, b: usize) {
+    let (ra, rb) = (find_root(parent, a), find_root(parent, b));
+    if ra != rb {
+        parent[ra] = rb;
+    }
+}
+
+/// Group every `filed` track into duplicate clusters by acoustic fingerprint similarity
+/// (reuses the same cache + threshold as `find_duplicate`). O(n²) fingerprint comparisons —
+/// fine at library-browsing scale; revisit only if profiling shows it matters.
+pub fn scan_library_duplicates(conn: &Connection) -> rusqlite::Result<Vec<DupGroup>> {
+    struct Row {
+        id: i64,
+        path: String,
+        filename: Option<String>,
+        folder: Option<String>,
+        format: Option<String>,
+        bitrate: Option<i64>,
+        duration: Option<f64>,
+        truncated: bool,
+    }
+    let mut stmt = conn.prepare(
+        "SELECT id, path, filename, folder, format, bitrate, duration, truncated \
+         FROM tracks WHERE status='filed'",
+    )?;
+    let rows: Vec<Row> = stmt
+        .query_map([], |r| {
+            Ok(Row {
+                id: r.get(0)?,
+                path: r.get(1)?,
+                filename: r.get(2)?,
+                folder: r.get(3)?,
+                format: r.get(4)?,
+                bitrate: r.get(5)?,
+                duration: r.get(6)?,
+                truncated: r.get::<_, Option<i64>>(7)?.unwrap_or(0) != 0,
+            })
+        })?
+        .collect::<rusqlite::Result<_>>()?;
+
+    let fps: Vec<Option<Vec<u32>>> = rows
+        .iter()
+        .map(|r| get_or_compute_fp(conn, r.id, &r.path))
+        .collect();
+
+    let n = rows.len();
+    let mut parent: Vec<usize> = (0..n).collect();
+    let mut min_sim: HashMap<usize, f32> = HashMap::new();
+    for i in 0..n {
+        let Some(fi) = &fps[i] else { continue };
+        for j in (i + 1)..n {
+            let Some(fj) = &fps[j] else { continue };
+            let s = fingerprint::similarity(fi, fj);
+            if s >= fingerprint::MATCH_THRESHOLD {
+                union(&mut parent, i, j);
+                let root = find_root(&mut parent, i);
+                let e = min_sim.entry(root).or_insert(s);
+                if s < *e {
+                    *e = s;
+                }
+            }
+        }
+    }
+
+    let mut groups: HashMap<usize, Vec<usize>> = HashMap::new();
+    for i in 0..n {
+        let root = find_root(&mut parent, i);
+        groups.entry(root).or_default().push(i);
+    }
+
+    let mut out = Vec::new();
+    for (root, idxs) in groups {
+        if idxs.len() < 2 {
+            continue;
+        }
+        let mut members: Vec<DupGroupMember> = idxs
+            .iter()
+            .map(|&i| {
+                let r = &rows[i];
+                DupGroupMember {
+                    id: r.id,
+                    path: r.path.clone(),
+                    filename: r.filename.clone(),
+                    folder: r.folder.clone(),
+                    format: r.format.clone(),
+                    bitrate: r.bitrate,
+                    duration: r.duration,
+                    truncated: r.truncated,
+                    recommend_keep: false,
+                    reason: None,
+                }
+            })
+            .collect();
+        let keep = pick_keep(&members);
+        members[keep].recommend_keep = true;
+        let lossless = is_lossless_fmt(&members[keep].format);
+        members[keep].reason = Some(match members[keep].bitrate {
+            Some(b) => format!("{}, {b} kbps", if lossless { "lossless" } else { "lossy" }),
+            None => (if lossless { "lossless" } else { "lossy" }).to_string(),
+        });
+        out.push(DupGroup {
+            similarity: *min_sim.get(&root).unwrap_or(&1.0),
+            members,
+        });
+    }
+    out.sort_by(|a, b| a.members[0].id.cmp(&b.members[0].id));
+    Ok(out)
+}
+
 /// Name key for a track derived from its FILENAME only (no tag read — cheap). Uses the
 /// filename parser when the name is clean, else normalizes the whole stem.
 fn key_for_path(path: &str) -> String {
@@ -248,5 +414,87 @@ mod tests {
         let cur = add(&conn, "/dl/Unique Artist - Unique Title.mp3", "pending");
         add(&conn, "/dl/Someone Else - Other Song.mp3", "pending");
         assert!(find_duplicate(&conn, cur).unwrap().is_none());
+    }
+
+    #[test]
+    fn scan_library_duplicates_groups_filed_tracks_by_sound() {
+        let (Some(mp3), Some(flac)) = (fixture("real_320.mp3"), fixture("real_lossless.flac"))
+        else {
+            eprintln!("skip: no fixtures");
+            return;
+        };
+        crate::ffmpeg::init_ffmpeg_path();
+        let conn = db();
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("a.mp3");
+        let b = dir.path().join("b.flac");
+        std::fs::copy(&mp3, &a).unwrap();
+        std::fs::copy(&flac, &b).unwrap();
+        conn.execute(
+            "INSERT INTO tracks(path, filename, status, format, bitrate, duration) \
+             VALUES(?1, 'a.mp3', 'filed', 'mp3', 320, 30.0)",
+            params![a.to_str().unwrap()],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO tracks(path, filename, status, format, bitrate, duration) \
+             VALUES(?1, 'b.flac', 'filed', 'flac', 1411, 30.0)",
+            params![b.to_str().unwrap()],
+        )
+        .unwrap();
+        // a lone unrelated filed track must not be grouped
+        conn.execute(
+            "INSERT INTO tracks(path, filename, status, format) \
+             VALUES('/lib/lone.wav', 'lone.wav', 'filed', 'wav')",
+            [],
+        )
+        .unwrap();
+
+        let groups = scan_library_duplicates(&conn).unwrap();
+
+        assert_eq!(groups.len(), 1, "only the a/b pair forms a group");
+        let g = &groups[0];
+        assert_eq!(g.members.len(), 2);
+        assert!(g.similarity >= fingerprint::MATCH_THRESHOLD);
+        let keep = g.members.iter().find(|m| m.recommend_keep).unwrap();
+        assert_eq!(keep.format.as_deref(), Some("flac"), "lossless wins over lossy");
+        assert!(keep.reason.is_some());
+        assert_eq!(g.members.iter().filter(|m| m.recommend_keep).count(), 1);
+    }
+
+    #[test]
+    fn scan_library_duplicates_recommend_keep_prefers_higher_bitrate_when_same_lossiness() {
+        let conn = db();
+        conn.execute(
+            "INSERT INTO tracks(id, path, filename, status, format, bitrate, duration, truncated) \
+             VALUES(1, '/lib/low.mp3', 'low.mp3', 'filed', 'mp3', 128, 30.0, 0)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO tracks(id, path, filename, status, format, bitrate, duration, truncated) \
+             VALUES(2, '/lib/high.mp3', 'high.mp3', 'filed', 'mp3', 320, 30.0, 0)",
+            [],
+        )
+        .unwrap();
+        // Fake-match the pair directly via a shared cached fingerprint (bypasses real decode).
+        let fp = fingerprint::encode(&[1, 2, 3, 4, 5, 6, 7, 8]);
+        conn.execute("UPDATE tracks SET fingerprint=?1 WHERE id IN (1,2)", params![fp])
+            .unwrap();
+
+        let groups = scan_library_duplicates(&conn).unwrap();
+
+        assert_eq!(groups.len(), 1);
+        let keep = groups[0].members.iter().find(|m| m.recommend_keep).unwrap();
+        assert_eq!(keep.id, 2, "same lossiness → higher bitrate wins");
+    }
+
+    #[test]
+    fn scan_library_duplicates_ignores_pending_and_lone_tracks() {
+        let conn = db();
+        add(&conn, "/dl/pending.mp3", "pending");
+        add(&conn, "/lib/lone.flac", "filed");
+        let groups = scan_library_duplicates(&conn).unwrap();
+        assert!(groups.is_empty());
     }
 }
