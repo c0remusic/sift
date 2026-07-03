@@ -55,6 +55,15 @@ positionnement du popover de destination).
   directement la piste (au lieu de chercher un nœud DOM à cliquer).
   `filing.ts installFilingKeys()` garde Space/Enter/Backspace/I ;
   `sift-live.ts` appelle les deux au montage.
+- **Surlignage `.cur` de la piste ouverte** : aujourd'hui `renderQueue()`
+  construit toutes les lignes puis fait une passe séparée
+  (`sift-live.ts:249-251`) pour ajouter `.cur` au nœud DOM correspondant à
+  l'id ouvert. Avec la virtualisation, cette ligne peut ne pas exister dans le
+  DOM (piste ouverte hors fenêtre visible) — la fonction de rendu de la
+  fenêtre doit connaître l'id actuellement ouvert et poser la classe `.cur`
+  directement à la construction de la ligne (même mécanisme que
+  `home-sources.ts rowHtml(s, active)`), pas via un `querySelector` a
+  posteriori qui ne voit que les lignes déjà montées.
 
 **Hors scope, noté pour suite** : `batch-tracklist.ts:47`
 (`startBatchTracklist`) crée aussi un nœud DOM par item, sans virtualisation.
@@ -88,6 +97,11 @@ bibliothèque entière) — pas de fix spéculatif sans preuve du même bug.
   d'origine (un `window.confirm()` est une boîte de dialogue OS bloquante
   qu'un clic synthétique a pu traverser sans s'afficher dans ce contexte
   Tauri/WebView2 — un bouton DOM classique n'a pas cette propriété).
+- Cycle de vie de l'overlay identique aux patterns existants
+  (`openReportModal`, `usb-format-modal.ts`) : id dédié (ex.
+  `sift-confirm-overlay`), toute instance précédente est retirée
+  (`document.getElementById(...)?.remove()`) avant qu'une nouvelle ne soit
+  créée — jamais deux confirmations empilées.
 - Pas de cycle armé/tapé façon USB (`usb-format-modal.ts`) — ce niveau de
   friction supplémentaire est volontairement réservé à une action
   irréversible de disque ; ces 3 sites restent au même niveau de friction
