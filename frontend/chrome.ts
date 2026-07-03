@@ -3,6 +3,7 @@
 // (audit P-3) — self-contained UI shell, no shared app state; imports only Tauri + ipc.
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
+import { platform } from "@tauri-apps/plugin-os";
 import { importPaths } from "./ipc";
 
 // One-time style: while dragging, an existing zone gets an outline + an overlaid hint
@@ -98,34 +99,67 @@ export function injectLeanStyle() {
     // custom frameless titlebar (decorations are off in tauri.conf — Tauri only)
     "#sift-titlebar{height:30px;flex:none;display:flex;align-items:center;justify-content:space-between;" +
     "background:var(--color-background-tertiary);-webkit-user-select:none;user-select:none}" +
-    "#sift-tb-title{padding-left:13px;font-size:var(--text-sm);letter-spacing:.04em;color:var(--color-text-tertiary)}" +
+    "#sift-tb-title{padding-left:13px;font-size:var(--text-sm);letter-spacing:.04em;color:var(--color-text-tertiary);" +
+    "overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}" +
     "#sift-tb-controls{display:flex;height:100%}" +
     ".sift-win{width:44px;height:100%;display:flex;align-items:center;justify-content:center;border:none;" +
     "background:transparent;color:var(--color-text-tertiary);cursor:pointer;border-radius:0;padding:0}" +
     ".sift-win:hover{background:var(--color-background-secondary);color:var(--color-text-primary)}" +
     ".sift-win-close:hover{background:#e81123;color:#fff}.sift-win i{font-size:15px}" +
+    // macOS: 3 small round traffic lights on the left instead of square right-aligned buttons.
+    // Reuses the same buttons/click-wiring; only placement (markup order) and this styling differ.
+    ".sift-tb-mac#sift-titlebar{justify-content:flex-start;gap:8px;padding-left:12px}" +
+    ".sift-tb-mac #sift-tb-title{padding-left:12px}" +
+    ".sift-tb-mac .sift-win{width:12px;height:12px;border-radius:50%;color:transparent;font-size:0}" +
+    ".sift-tb-mac .sift-win:hover{color:inherit;font-size:8px}" +
+    '.sift-tb-mac .sift-win[data-win="close"]{background:var(--color-text-danger)}' +
+    '.sift-tb-mac .sift-win[data-win="min"]{background:var(--color-text-warning)}' +
+    '.sift-tb-mac .sift-win[data-win="max"]{background:var(--color-text-success)}' +
+    ".sift-tb-mac .sift-win-close:hover{background:var(--color-text-danger)}" +
     // make room for the 30px bar: shrink the app shell so nothing is clipped
     "#pa{height:calc(100vh - 30px)!important}";
   document.head.appendChild(st);
 }
 
+/** Bascule l'icône/label du bouton "Agrandir" selon l'état maximisé courant. */
+function syncMaxButton(btn: HTMLElement, maximized: boolean): void {
+  const label = maximized ? "Restaurer" : "Agrandir";
+  btn.title = label;
+  btn.setAttribute("aria-label", label);
+  btn.innerHTML = `<i class="ti ${maximized ? "ti-restore" : "ti-square"}"></i>`;
+}
+
 /** Inject the custom window titlebar (the native one is off via decorations:false) and wire
- * its minimise / maximise / close buttons. The bar + its title are drag regions. */
-export function injectTitlebar() {
+ * its minimise / maximise / close buttons. The bar + its title are drag regions. macOS gets
+ * traffic lights on the left (sift-tb-mac class); everyone else keeps today's right-aligned
+ * layout — same markup order, so the non-mac branch renders byte-identical to before. */
+export async function injectTitlebar(): Promise<void> {
   if (document.getElementById("sift-titlebar")) return;
+
+  let isMac = false;
+  try {
+    isMac = platform() === "macos";
+  } catch (e) {
+    console.error("platform() failed, defaulting to the Windows titlebar layout", e);
+  }
+
   const bar = document.createElement("div");
   bar.id = "sift-titlebar";
+  if (isMac) bar.classList.add("sift-tb-mac");
   bar.setAttribute("data-tauri-drag-region", "");
-  bar.innerHTML =
-    '<span id="sift-tb-title" data-tauri-drag-region>Sift</span>' +
+  const title = '<span id="sift-tb-title" data-tauri-drag-region title="Sift">Sift</span>';
+  const controls =
     '<div id="sift-tb-controls">' +
     '<button class="sift-win" data-win="min" title="Réduire" aria-label="Réduire"><i class="ti ti-minus"></i></button>' +
     '<button class="sift-win" data-win="max" title="Agrandir" aria-label="Agrandir"><i class="ti ti-square"></i></button>' +
     '<button class="sift-win sift-win-close" data-win="close" title="Fermer" aria-label="Fermer"><i class="ti ti-x"></i></button>' +
     "</div>";
+  bar.innerHTML = isMac ? controls + title : title + controls;
   document.body.insertBefore(bar, document.body.firstChild);
 
   const w = getCurrentWindow();
+  const maxBtn = bar.querySelector<HTMLElement>('[data-win="max"]');
+
   bar.querySelectorAll<HTMLElement>(".sift-win").forEach((b) =>
     b.addEventListener("click", () => {
       const act = b.dataset.win;
@@ -134,6 +168,17 @@ export function injectTitlebar() {
       else if (act === "close") void w.close();
     }),
   );
+
+  if (maxBtn) {
+    try {
+      syncMaxButton(maxBtn, await w.isMaximized());
+      await w.onResized(() => {
+        void w.isMaximized().then((m) => syncMaxButton(maxBtn, m));
+      });
+    } catch (e) {
+      console.error("maximize-state sync failed, keeping the default Agrandir icon", e);
+    }
+  }
 }
 
 /** Reveal a scroll area's thumb while it scrolls, then hide it ~700ms after it stops (the

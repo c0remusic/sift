@@ -1260,7 +1260,7 @@ export function installLiveWiring() {
   window.__siftBiblio = () => void renderBiblioLive();
   window.__siftJournal = () => void renderJournal();
   injectLeanStyle();
-  injectTitlebar();
+  void injectTitlebar();
   void initTheme();
   installUndoShortcut();
   installFilingKeys();
