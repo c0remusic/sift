@@ -404,6 +404,76 @@ s'est avéré un non-besoin après vérification des consommateurs réels).
 
 ---
 
+## Évaluation 7 — spike d'écriture `master.db` (2026-07-04)
+
+**Contexte** : suite de l'Évaluation 5 (lecture seule validée). M8 est
+gelé (`docs/plan-implementation.md:236-243`) jusqu'à preuve qu'un
+round-trip d'écriture ne corrompt pas `master.db`. Ce spike teste
+exactement ça, sur une copie jetable (`~/Desktop/sift-masterdb-write-probe/`,
+jamais le fichier live).
+
+**Méthode** : `pyrekordbox` (déjà utilisé en lecture) pour 3 scénarios —
+réparation de `FolderPath`, dédup d'une entrée de playlist dupliquée,
+détection de verrou fichier. Chaque test relit avec une connexion fraîche
+pour confirmer le round-trip (pas juste l'état en mémoire).
+
+**Résultat** : les 4 tests passent, aucun échec.
+
+- Baseline (Task 2) : `track_count=2828`, `playlist_count=24` — cohérent
+  avec l'Évaluation 5 (même bibliothèque, lecture seule).
+- Task 3 (réparation de chemin) — **PASS**. `db.commit()` persiste
+  correctement une modification de `FolderPath` ; round-trip
+  écriture→fermeture→réouverture fraîche→relecture fidèle. `track_count`
+  inchangé (2828), autres champs (`Title`) intacts. Aucun signal de
+  corruption SQLCipher/HMAC.
+- Task 4 (dédup playlist) — **PASS**. Une entrée dupliquée injectée dans
+  `djmdSongPlaylist` puis supprimée jusqu'à n'en garder qu'une, vérifié via
+  connexion fraîche : aucune référence orpheline, le track existe toujours
+  dans `djmdContent`. Note : l'API réelle de pyrekordbox 0.4.4 utilise des
+  arguments positionnels (`add_to_playlist(playlist, content)` /
+  `remove_from_playlist(playlist, song)`), pas les kwargs
+  `playlist_id=`/`content_id=`/`song=` supposés dans le plan initial.
+- Task 5 (verrou fichier) — **PASS**, avec nuance importante.
+  `master.db.copy` est chiffré SQLCipher (pas du SQLite en clair) — le
+  blocker de test a dû utiliser `sqlcipher3` plutôt que le module stdlib
+  `sqlite3` pour même pouvoir ouvrir le fichier. Une transaction `BEGIN
+  EXCLUSIVE` concurrente a bien fait lever
+  `sqlalchemy.exc.OperationalError: database is locked` sur `db.commit()`
+  côté pyrekordbox — donc SQLite protège nativement contre une corruption
+  par écriture concurrente. Mais ceci n'est qu'un filet de rattrapage a
+  posteriori : une vraie implémentation de prod doit faire sa propre
+  vérification de verrou/process AVANT d'écrire (ex.
+  `pyrekordbox.utils.get_rekordbox_pid()` pour détecter si Rekordbox
+  tourne), pas se reposer uniquement sur le fait de catcher cette exception.
+
+**Implication pour M8** : les 3 scénarios d'écriture critiques (réparation
+de chemin, dédup de playlist, comportement sous verrou) passent tous sur
+une copie de la vraie bibliothèque de l'utilisateur, via `pyrekordbox`
+(Python). Ceci valide la **faisabilité et la sûreté fonctionnelle** de
+l'approche d'écriture — mais ce spike reste en Python via une lib tierce,
+pas le portage Rust pur (symétrique au lecteur SQLCipher M7) qui serait
+nécessaire pour la prod. M8 peut donc passer d'un statut "gelé, design non
+prouvé" à "prouvé faisable en Python, portage Rust restant à
+spécifier/faire" — ce n'est **pas** encore un feu vert pour écrire du code
+de production Rust sans une étape de portage supplémentaire, et le point de
+verrou (Task 5) doit être traité explicitement dans ce portage (vérifier
+qu'aucun process Rekordbox ne tourne, pas seulement catcher une exception
+SQLite).
+
+**Décision** : le gel de M8 (`docs/plan-implementation.md:236-243`) peut
+être levé pour la partie "écriture est possible et sûre en principe" mais
+reste conditionné à : (1) un futur portage Rust du write path (symétrique
+au lecteur déjà écrit pour M7), (2) l'implémentation d'une vérification
+explicite de process Rekordbox avant écriture (pas seulement une exception
+catchée), avant tout code de prod. Documenter ceci comme prochaine étape,
+ne pas encore lancer l'implémentation Rust dans le cadre de cette tâche.
+
+Probe conservé à `~/Desktop/sift-masterdb-write-probe/` (hors repo,
+jetable — supprimable). Scripts : `baseline.py`, `test_path_repair.py`,
+`test_playlist_dedup.py`, `test_file_lock.py`.
+
+---
+
 ## Veille concurrente — MediaMonkey (2026-06-24)
 
 Gestionnaire de biblio musicale ([mediamonkey.com](https://www.mediamonkey.com/)),
