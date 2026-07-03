@@ -38,6 +38,7 @@ rusty-chromaprint = "0.3"
 symphonia = { version = "0.6", features = ["mp3", "flac", "wav", "aiff", "isomp4", "aac", "alac"] }
 ureq = { version = "3", features = ["json"] }
 dirs = "5"
+quick-xml = { version = "0.37", features = ["serialize"] }
 
 [dev-dependencies]
 tempfile = "3.27.0"
