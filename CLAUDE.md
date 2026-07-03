@@ -44,11 +44,16 @@ Lib = `sift_lib`. MSRV Rust 1.77.2.
 - **impeccable** (plugin) → priorité n°1 pour retouche/polish d'un écran existant.
   Register `product` (PRODUCT.md créé 30/06). `/impeccable critique|audit|polish …`.
 - **interface-design** (skill) → priorité n°2 retouche. `.interface-design/system.md`
-  est **PÉRIMÉ sur toute la palette/direction visuelle** depuis 2026-07-01 (dark
+  est **PÉRIMÉ sur la palette/direction visuelle** depuis 2026-07-01 (dark
   "table du digger" remplacé par le clair gris chaud actuel, vert/ambre seulement)
-  — ne pas s'y fier pour les couleurs. Espacement/radius/hauteur/typo restent
-  valides. Source de vérité couleur réelle = `frontend/styles.css` (`:root`) +
-  `docs/design-system-states.md`.
+  — ne pas s'y fier pour les couleurs. **Périmé aussi sur la typo** (audit
+  `/design-system` 2026-07-03) : sa spec "track title 30/600" ne correspond à
+  aucun layout actuel — vérifié, `--text-hero` (ex-token pour ce rôle) n'était
+  utilisé nulle part comme titre, renommé `--text-2xl`. Espacement/radius/hauteur
+  restent valides comme échelle déclarée, mais leur couverture réelle (quels
+  tokens sont effectivement câblés vs juste déclarés) doit se vérifier au
+  grep, pas se supposer. Source de vérité réelle = `frontend/styles.css`
+  (`:root`) + `docs/design-system-states.md`.
 - **design-flow** (skill) → priorité n°1 pour un **nouveau chantier UI** (nouveau
   screen, refonte significative). Orchestre en séquence : `grill-me` → `design-brief`
   → `information-architecture` → `design-tokens` → `brief-to-tasks` → `frontend-design`
