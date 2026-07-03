@@ -315,7 +315,7 @@ pub fn merge_filed_tracks(xml: &mut RekordboxXml, filed: &[crate::library::Libra
         next_id += 1;
         added += 1;
 
-        let location = format!("file://localhost/{}", track.path.replace('\\', "/"));
+        let location = format!("file://localhost/{}", encode_location_path(&track.path));
         xml.collection.push(CollectionTrack {
             track_id,
             location,
@@ -425,7 +425,7 @@ pub fn patch_location(xml: &mut RekordboxXml, from_path: &str, to_path: &str) ->
     };
 
     let old_location_attr = format!(r#"Location="{}""#, xml_escape(&track.location));
-    let new_location_value = format!("file://localhost/{}", to_path.replace('\\', "/"));
+    let new_location_value = format!("file://localhost/{}", encode_location_path(to_path));
     let new_location_attr = format!(r#"Location="{}""#, xml_escape(&new_location_value));
 
     // The old attribute string must appear EXACTLY once — if it appears zero or >1 times, the
@@ -445,6 +445,29 @@ pub fn patch_location(xml: &mut RekordboxXml, from_path: &str, to_path: &str) ->
     xml.path_index.insert(path_index_key(&normalize_path(to_path)), track_id);
     track.location = new_location_value;
     true
+}
+
+/// FIX-3: the characters `normalize_path`/`percent_decode` above already know how to reverse,
+/// plus the other RFC 3986 reserved characters that show up in real DJ filenames often enough to
+/// matter (space above all — virtually every real track name has one). Deliberately does NOT
+/// include `/` (path separator, must survive) or `:` (the Windows drive-letter colon, e.g.
+/// `C:/Music/...`, must survive unescaped exactly like Rekordbox's own exports).
+const LOCATION_PATH_ENCODE_SET: &percent_encoding::AsciiSet = &percent_encoding::CONTROLS
+    .add(b' ')
+    .add(b'#')
+    .add(b'%')
+    .add(b'?')
+    .add(b'[')
+    .add(b']');
+
+/// Percent-encode a plain filesystem path (already `/`-separated) for use as a `Location` value.
+/// Without this, a path containing a space or another reserved character (virtually every real
+/// track filename) produced a `Location` Rekordbox itself would never emit and can't reliably
+/// re-parse on import — this mirrors what real Rekordbox XML exports do (see the module's own
+/// `SAMPLE_XML` fixture, whose paths are all already-safe ASCII so the bug was invisible there).
+fn encode_location_path(path: &str) -> String {
+    percent_encoding::utf8_percent_encode(&path.replace('\\', "/"), LOCATION_PATH_ENCODE_SET)
+        .to_string()
 }
 
 /// Escape the 5 XML-significant characters in an attribute value the same way Rekordbox itself
@@ -661,6 +684,62 @@ mod tests {
         let second = merge_filed_tracks(&mut parsed, &filed);
         assert_eq!(first, 1);
         assert_eq!(second, 0, "re-running merge on an already-merged track adds nothing");
+    }
+
+    /// FIX-3 regression: a path containing a space (virtually every real track filename) must be
+    /// percent-encoded in the written `Location`, matching what Rekordbox itself emits — an
+    /// unescaped space in a `file://` URI is not what Rekordbox writes/expects and risks a broken
+    /// re-import. `/` and the Windows drive-letter `:` must survive unescaped.
+    #[test]
+    fn merge_percent_encodes_spaces_in_the_written_location() {
+        let mut parsed = parse(&fixture()).unwrap();
+        let filed = vec![lib_track(
+            "C:/Music/Disco/Diana Ross - Love Hangover.mp3",
+            "Disco",
+            "Diana Ross",
+            "Love Hangover",
+        )];
+        merge_filed_tracks(&mut parsed, &filed);
+
+        let new_track = parsed
+            .collection
+            .iter()
+            .find(|t| t.artist.as_deref() == Some("Diana Ross"))
+            .expect("new track added");
+        assert!(
+            new_track.location.contains("Diana%20Ross%20-%20Love%20Hangover.mp3"),
+            "spaces percent-encoded in Location, got: {}",
+            new_track.location
+        );
+        assert!(new_track.location.starts_with("file://localhost/C:/Music/Disco/"), "drive letter and separators untouched");
+
+        // And the lookup by the plain (unencoded) filesystem path still resolves — the encoding
+        // is a write-time concern only, `normalize_path` decodes it back on read.
+        assert_eq!(
+            parsed.track_id_for_path(Path::new("C:/Music/Disco/Diana Ross - Love Hangover.mp3")),
+            Some(new_track.track_id)
+        );
+    }
+
+    /// FIX-3 regression, `patch_location` side: the SAME percent-encoding must apply when
+    /// repairing a Location after a filing/move, not just on initial merge — a track whose new
+    /// path contains a space must not end up with a raw, unescaped space in the linked XML.
+    #[test]
+    fn patch_location_percent_encodes_spaces_in_the_new_location() {
+        let mut parsed = parse(&fixture()).unwrap();
+        let patched = patch_location(
+            &mut parsed,
+            "C:/Music/House/deep/strings.aiff",
+            "C:/Music/House/Deep Cuts/strings.aiff",
+        );
+        assert!(patched);
+        let t2 = parsed.collection.iter().find(|t| t.track_id == 2).unwrap();
+        assert!(
+            t2.location.contains("Deep%20Cuts/strings.aiff"),
+            "space percent-encoded, got: {}",
+            t2.location
+        );
+        assert!(parsed.raw_xml.contains("Deep%20Cuts/strings.aiff"), "raw_xml carries the encoded form");
     }
 
     #[test]
