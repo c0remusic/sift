@@ -297,6 +297,63 @@ reste un artefact d'exploration figé, jamais resynchronisé en continu.
 
 ---
 
+## Évaluation 5 — spike lecture native `master.db` Rekordbox (2026-07-03)
+
+**Contexte** : en brainstormant M7 (export/suivi de playlists Rekordbox via XML),
+question posée : peut-on sync Sift↔Rekordbox nativement plutôt que par
+export/réimport XML manuel ? Ça revient à la question déjà tranchée pour M8
+(écriture directe `master.db`, **gelée** — voir plus haut) : ce spike teste la
+**moitié lecture seule**, low-risk, de cette question, sans lever le gel sur
+l'écriture.
+
+**Méthode** : probe jetable hors repo (`~/Desktop/sift-rekordbox-probe/`,
+**jamais le fichier live** — `master.db` copié une fois en `master.db.copy`,
+tout le spike travaille sur cette copie). `pip install pyrekordbox` (0.4.4,
+inclut `sqlcipher3-wheels` — déchiffrement SQLCipher géré nativement par la
+lib, pas de clé à extraire manuellement). Script `probe.py` : ouverture via
+`Rekordbox6Database(path=...)`, `get_content()` (tracks), `get_playlist()`
+(playlists + hiérarchie dossier/liste), puis `playlist.Songs` pour la
+composition d'une playlist.
+
+**Résultat : succès complet.** Sur la vraie bibliothèque de l'utilisateur (via
+la copie) : **2828 tracks**, **24 playlists** (structure plate ici, mais l'API
+expose `is_folder`/`ParentID` pour la hiérarchie dossier). Chemins de fichiers
+(`FolderPath`) lisibles et corrects (`D:/MUSIQUE 2025/MP3/...`). Appartenance
+track↔playlist vérifiée sur `BACKUP DD A TRIER` (698 morceaux, chemins réels
+cohérents). Seul warning : `masterPlaylists6.xml` absent du dossier de la copie
+(fichier de checksums d'intégrité que Rekordbox place à côté de `master.db` en
+prod — non bloquant pour une lecture, juste absent ici car on n'a copié que
+le `.db`).
+
+**Implication pour l'architecture M7/M8** :
+- **Lecture native `master.db` est un remplacement viable** pour l'étape
+  d'import XML de la brique 1/2 (plus besoin que l'utilisateur exporte
+  manuellement une collection XML depuis Rekordbox — Sift peut lire
+  directement l'état courant des playlists/tracks, en lecture seule, sans
+  toucher au fichier live).
+- Ça ne change **rien** à la question de l'écriture (toujours gelée, M8) : ce
+  spike n'a testé aucune écriture, `db.update()`/`db.commit()` existent dans
+  l'API pyrekordbox mais n'ont pas été exercés — le risque de corruption sur
+  écriture reste entier et non évalué.
+- Portage Rust : `pyrekordbox` est Python — à réévaluer si on veut porter cette
+  lecture en Rust pur (candidats déjà en veille : `rekordcrate`, mais son parsing
+  cible plutôt les exports device PDB/ANLZ, pas `master.db` directement ; pas
+  encore vérifié qu'il gère le SQLCipher de `master.db`). Alternative : appeler
+  `pyrekordbox` via un sidecar Python packagé, à évaluer côté coût de
+  distribution (Sift est un seul binaire Rust aujourd'hui, un sidecar Python
+  serait une vraie rupture d'architecture — à peser).
+
+**Décision** : lecture seule de `master.db` validée comme faisable et sûre.
+Reste à décider si M7 doit l'adopter à la place du round-trip XML (élimine
+l'export manuel initial, garde le gel sur l'écriture) — discussion en cours
+avec l'utilisateur, décision pas encore actée au moment de la rédaction de
+cette entrée.
+
+Probe conservé à `~/Desktop/sift-rekordbox-probe/` (hors repo, jetable —
+supprimable). Code : `probe.py`.
+
+---
+
 ## Veille concurrente — MediaMonkey (2026-06-24)
 
 Gestionnaire de biblio musicale ([mediamonkey.com](https://www.mediamonkey.com/)),
