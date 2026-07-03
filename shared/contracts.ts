@@ -240,6 +240,7 @@ export interface LibraryFilter {
   quality?: "lossless" | "mp3" | null;
   genre?: string | null;
   q?: string | null;
+  verdict?: "fake" | null;
 }
 
 /** User-edited metadata for a filed track (Bibliothèque inline edit). Mirror of
@@ -272,4 +273,17 @@ export interface DupGroupMember {
 export interface DupGroup {
   members: DupGroupMember[];
   similarity: number;
+}
+
+// ---- M6b Lot 4: dashboard (mirror of src-tauri/src/library.rs) ----
+
+export interface GenreCount { genre: string; count: number; }
+
+export interface DashboardStats {
+  total: number;
+  lossless: number;
+  mp3: number;
+  duplicates: number;
+  fake: number;
+  genres: GenreCount[];
 }
