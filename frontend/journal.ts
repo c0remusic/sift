@@ -10,6 +10,7 @@
 import type { JournalEntry } from "../shared/contracts";
 import { listJournal, getSessionId, revertBatch } from "./ipc";
 import { requireEl } from "./dom";
+import { confirmAction } from "./confirm-modal";
 
 // ---------------------------------------------------------------------------
 // Pure helpers
@@ -176,14 +177,14 @@ function installDelegate(root: HTMLElement, allEntries: JournalEntry[]): void {
   // Direct listener: stopPropagation() keeps the section open, then handles mass revert.
   // Dies on next render with the old nodes — no accumulation.
   root.querySelectorAll<HTMLButtonElement>(".jrnl-mass").forEach(btn => {
-    btn.addEventListener("click", ev => {
+    btn.addEventListener("click", async ev => {
       ev.stopPropagation();
       const catId = btn.dataset.cat!;
       const catEntries = filterByCat(allEntries, catId);
       const totalTracks = catEntries.reduce((s, e) => s + e.track_count, 0);
       const label =
         catId === "filed" ? "Défiler" : catId === "trash" ? "Restaurer" : "Remettre en file";
-      if (!window.confirm(`${label} les ${totalTracks} morceaux affichés ?`)) return;
+      if (!(await confirmAction(`${label} les ${totalTracks} morceaux affichés ?`))) return;
       btn.disabled = true;
       // Sequential — rusqlite Mutex is non-reentrant; concurrent IPC calls would deadlock.
       // Per-entry DOM update so the user sees progress as each track is processed.
@@ -246,7 +247,7 @@ function installDelegate(root: HTMLElement, allEntries: JournalEntry[]): void {
   // Delegated listener for last-batch and mode switches only.
   // (.jrnl-mass and [data-jact='revert'] use direct listeners above — stopPropagation
   // on .jrnl-mass would block them from reaching here anyway.)
-  root.addEventListener("click", (ev: MouseEvent) => {
+  root.addEventListener("click", async (ev: MouseEvent) => {
     const t = ev.target as Element;
 
     // Last-batch revert (confirm only if > 10 tracks)
@@ -255,7 +256,7 @@ function installDelegate(root: HTMLElement, allEntries: JournalEntry[]): void {
       const bid = lbBtn.dataset.batchId;
       if (!bid) { console.error("[journal] missing data-batch-id on last-batch"); return; }
       const n = Number(lbBtn.dataset.trackCount ?? 0);
-      if (n > 10 && !window.confirm(`Annuler le batch de ${n} morceaux ?`)) return;
+      if (n > 10 && !(await confirmAction(`Annuler le batch de ${n} morceaux ?`))) return;
       lbBtn.disabled = true;
       revertBatch(bid)
         .then(() => {
