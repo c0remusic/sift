@@ -21,11 +21,13 @@ import {
   setSetting,
   listLibrary,
   libraryFolders,
+  scanLibraryDuplicates,
 } from "./ipc";
 import type {
   LibraryTrack,
   LibraryFacets,
   LibraryFilter,
+  DupGroup,
 } from "../shared/contracts";
 import { openLibraryDetailInto } from "./library-detail";
 import { emptyStateHtml, wireEmptyState } from "./empty-state";
@@ -126,6 +128,11 @@ const bibState: { filter: LibraryFilter; facet: "folder" | "genre"; tracks: Libr
   facet: "folder",
   tracks: [],
 };
+
+// Doublons internes panel state (Bibliothèque). `null` = not run yet this session.
+let dupGroups: DupGroup[] | null = null;
+let dupLoading = false;
+let dupShown = false; // toggled by the "Doublons" chip
 
 // Verdict = meaning only, vert/ambre uniquement (voir brief refonte 2026-07) — jamais un hex en
 // dur ici (l'ancien `#e2685e` rouge cassait cette règle) : lire les tokens CSS, pas une 3e teinte.
@@ -1095,6 +1102,31 @@ function verdictBadge(v: string | null): string {
   return "";
 }
 
+function dupMemberHtml(m: DupGroup["members"][number]): string {
+  const name = esc(m.filename || m.path.split(/[\\/]/).pop() || m.path);
+  const fmt = (m.format || "?").toUpperCase();
+  const br = m.bitrate ? `${m.bitrate} kbps` : "";
+  return (
+    `<div style="display:flex;align-items:center;gap:8px;padding:4px 0${m.recommend_keep ? "" : ";opacity:.6"}">` +
+    `<span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${name}</span>` +
+    `<span class="pill" style="flex:none">${esc(fmt)}</span>` +
+    `<span style="flex:none;width:80px;text-align:right;font-size:var(--text-sm);color:var(--color-text-tertiary)">${esc(br)}</span>` +
+    (m.recommend_keep
+      ? `<span class="pill" style="flex:none;background:var(--color-background-success);color:var(--color-text-success)" title="${esc(m.reason || "")}">Recommandé</span>`
+      : "") +
+    `</div>`
+  );
+}
+
+function dupGroupHtml(g: DupGroup, idx: number): string {
+  return (
+    `<div class="sift-dup-group" style="border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:10px 12px;margin-bottom:8px">` +
+    g.members.map((m) => dupMemberHtml(m)).join("") +
+    `<div style="margin-top:6px"><button class="lk" data-bib="dupresolve" data-idx="${idx}">Résoudre</button></div>` +
+    `</div>`
+  );
+}
+
 /** Live Bibliothèque view: lists filed tracks with search + quality chips + folder/genre
  * facets, wired to real data. Actions go through the #pa delegated handler (data-bib). */
 async function renderBiblioLive() {
@@ -1110,13 +1142,15 @@ async function renderBiblioLive() {
     return;
   }
 
-  const chips = (["all", "lossless", "mp3"] as const)
-    .map((q) => {
-      const on = (bibState.filter.quality ?? "all") === q;
-      const label = q === "all" ? "Tous" : q === "lossless" ? "Lossless" : "MP3";
-      return `<span class="chip${on ? " on" : ""}" data-bib="qual" data-q="${q}">${label}</span>`;
-    })
-    .join("");
+  const chips =
+    (["all", "lossless", "mp3"] as const)
+      .map((q) => {
+        const on = (bibState.filter.quality ?? "all") === q;
+        const label = q === "all" ? "Tous" : q === "lossless" ? "Lossless" : "MP3";
+        return `<span class="chip${on ? " on" : ""}" data-bib="qual" data-q="${q}">${label}</span>`;
+      })
+      .join("") +
+    `<span class="chip${dupShown ? " on" : ""}" data-bib="dupscan">Doublons</span>`;
 
   const facetList = bibState.facet === "folder" ? facets.folders : facets.genres;
   const sideKey = bibState.facet === "folder" ? "folder" : "genre";
@@ -1148,6 +1182,16 @@ async function renderBiblioLive() {
     !bibState.filter.q && !bibState.filter.quality && !bibState.filter.folder && !bibState.filter.genre;
   const trulyEmpty = bibState.tracks.length === 0 && noFilter;
 
+  const dupSection = !dupShown
+    ? ""
+    : dupLoading
+      ? `<div style="margin-top:10px;font-size:var(--text-md);color:var(--color-text-tertiary)">Scan en cours…</div>`
+      : dupGroups === null
+        ? ""
+        : dupGroups.length === 0
+          ? `<div style="margin-top:10px;font-size:var(--text-md);color:var(--color-text-tertiary)">Aucun doublon.</div>`
+          : `<div style="margin-top:10px">${dupGroups.map((g, i) => dupGroupHtml(g, i)).join("")}</div>`;
+
   // Export (Rekordbox/Clé USB) lives in the nav rail now, not here — matches the maquette's
   // persistent Export section (index.html nav-export items, wired in installLiveWiring below).
   const header =
@@ -1167,6 +1211,7 @@ async function renderBiblioLive() {
       `<div style="flex:1;min-width:0"><div style="display:flex;justify-content:space-between;margin-bottom:5px"><span style="font-size:var(--text-base);font-weight:500">${esc(activeFacetVal || "Tous")}</span><span style="font-size:var(--text-sm);color:var(--color-text-tertiary)">${bibState.tracks.length} piste${bibState.tracks.length > 1 ? "s" : ""}</span></div>` +
       (rows ||
         `<div style="font-size:var(--text-md);color:var(--color-text-tertiary)">Aucun résultat pour ce filtre.</div>`) +
+      dupSection +
       `<div id="bibplayer"></div></div></div>`;
   wireEmptyState(content);
 
@@ -1320,6 +1365,37 @@ export function installLiveWiring() {
       } else if (act === "play" || act === "row" || act === "identify") {
         // Open the unified detail/edit panel (report + inline editor + identify + actions).
         openBiblioDetail(Number(bibEl.dataset.id));
+      } else if (act === "dupscan") {
+        dupShown = !dupShown;
+        if (dupShown && dupGroups === null) {
+          dupLoading = true;
+          void renderBiblioLive();
+          void scanLibraryDuplicates()
+            .then((groups) => {
+              dupGroups = groups;
+            })
+            .catch((e) => {
+              console.error("scan_library_duplicates failed", e);
+              dupGroups = [];
+            })
+            .finally(() => {
+              dupLoading = false;
+              void renderBiblioLive();
+            });
+        } else {
+          void renderBiblioLive();
+        }
+      } else if (act === "dupresolve") {
+        const idx = Number(bibEl.dataset.idx);
+        const group = dupGroups?.[idx];
+        if (!group) return;
+        const losers = group.members.filter((m) => !m.recommend_keep).map((m) => m.id);
+        void Promise.all(losers.map((id) => trashTrack(id)))
+          .then(() => {
+            dupGroups = (dupGroups || []).filter((_, i) => i !== idx);
+            return renderBiblioLive();
+          })
+          .catch((e) => console.error("dupresolve failed", e));
       }
       return;
     }
