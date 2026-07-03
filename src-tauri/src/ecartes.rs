@@ -98,6 +98,15 @@ pub fn list_ecartes(conn: &Connection) -> rusqlite::Result<Vec<EcarteItem>> {
 /// Move a trashed track's file back from `.sift-trash` to its original location and re-queue
 /// it (`status='pending'`). Guarded: refuses if the trashed file is gone or the original
 /// location is occupied. Marks the `trash` action undone.
+///
+/// FIX-5 (reviewed, no repair call added): does this need to re-trigger a linked Rekordbox XML
+/// repair? No. Since the FIX-1 fix (`actions::record_with_meta` no longer calls
+/// `repair_rekordbox_xml_if_linked` for a `trash` action), the linked XML's Location for this
+/// track was NEVER touched by the original trashing — it still points at `from` (the track's
+/// pre-trash path), the exact path this restore moves the file back TO. There is no stale
+/// Location to fix: the XML was correct before the trash, stayed correct (untouched) throughout,
+/// and is still correct after this restore. A repair call here would be a no-op at best (nothing
+/// to patch — `from == from`) — not added.
 pub fn restore_track(conn: &Connection, track_id: i64) -> Result<(), String> {
     let (action_id, from, to): (i64, Option<String>, Option<String>) = conn
         .query_row(
