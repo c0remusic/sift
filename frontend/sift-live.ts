@@ -189,11 +189,23 @@ export function stepQueueSelection(delta: 1 | -1): void {
     else if (rowBottom > ql.scrollTop + ql.clientHeight) ql.scrollTop = rowBottom - ql.clientHeight;
     renderQueueWindow(ql);
   }
-  if (reviewMode === "batch") setReviewMode("detail");
   // Debounced like the row-click handler in installLiveWiring — arrow-key repeat shouldn't fire a
   // full decode load per row flicked through.
+  //
+  // setReviewMode("detail") and openFilingInto(mid, next) MUST fire together, in that order, from
+  // this single deferred callback rather than one synchronously here and the other 150ms later.
+  // setReviewMode("detail") synchronously calls renderQueue(true), which awaits listQueue() before
+  // calling syncDetail on a later tick; syncDetail's guard is `state.track && paneIsOurs` (both set
+  // synchronously at the top of openFilingInto, before its own first await). If setReviewMode ran
+  // immediately while openFilingInto(mid, next) was still 150ms away, that later syncDetail tick
+  // would see state.track/paneIsOurs stale (still pointing at whatever was open before, or null),
+  // fall through to "load the first pending track", and clobber currentOpenId back to items[0] —
+  // disagreeing with the `next` this function just highlighted. Firing both from the same callback
+  // means by the time renderQueue's later tick runs, openFilingInto has already set state.track to
+  // `next` synchronously, so syncDetail's guard sees the correct track and returns its id.
   clearTimeout(queueStepTimer);
   queueStepTimer = setTimeout(() => {
+    if (reviewMode === "batch") setReviewMode("detail");
     const mid = document.getElementById("mid");
     if (mid) void openFilingInto(mid, next);
   }, 150);
@@ -208,7 +220,17 @@ function installQueueNavKeys(): void {
     const t = e.target as HTMLElement | null;
     if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
     if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
-    if (currentOpenId == null) return; // only with a track open, same guard as installFilingKeys
+    // Same gate as filing.ts's installFilingKeys (`if (!state.track) return`), but reached without
+    // importing filing.ts's internal `state` (would violate the one-directional import rule —
+    // filing.ts must never import from sift-live.ts, and sift-live.ts already imports FROM
+    // filing.ts, so a reverse re-export isn't an option either). currentOpenId alone is NOT
+    // equivalent: it's set once a track opens in Revue and is never cleared on nav-away (no
+    // `currentOpenId = null` reset exists outside syncDetail returning null for an empty queue) —
+    // so checking it alone let ↑/↓ still fire from Bibliothèque/Réglages after visiting Revue once.
+    // Mirror filing.ts's syncDetail `paneIsOurs` check instead: only act if #mid currently shows
+    // the real filing pane (not app.js's mock redrawn over it on nav-away).
+    const mid = document.getElementById("mid");
+    if (currentOpenId == null || !mid || !mid.querySelector(".sift-fil")) return;
     e.preventDefault();
     stepQueueSelection(e.key === "ArrowDown" ? 1 : -1);
   });
