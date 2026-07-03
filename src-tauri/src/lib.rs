@@ -20,6 +20,7 @@ mod scanner;
 mod settings;
 mod sources;
 mod tagging;
+mod usb_format;
 mod watcher;
 mod worker;
 
