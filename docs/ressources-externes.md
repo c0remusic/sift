@@ -398,10 +398,89 @@ Trois briques distinctes (et `tauri-plugin-os` n'en couvre qu'UNE) :
 
 ---
 
+## Design system Sift — audit tokens hauteur/radius/typo (2026-07-03)
+
+**Contexte** : `/design-system audit` sur `frontend/styles.css` (603 lignes),
+en continuation de l'audit d'états par composant du 2026-07-03
+(`docs/design-system-states.md`).
+
+**Findings** : (1) les 4 tokens `--h-32/36/40/44` avaient **zéro lecteur**
+(`grep -rn "var(--h-"` sur tout `frontend/` : aucun match) — scale déclarée
+jamais consommée. (2) `--border-radius-md`(6)/`-lg`(10) ne couvraient que 2
+des 4 valeurs annoncées par `.interface-design/system.md` (sharp 4/pill 999
+manquants), avec des littéraux 999px/4px répétés partout. (3) `--text-hero`
+(26px) prétendait à un rôle de titre de morceau "30/600" qui n'existe plus
+dans le layout actuel — son seul vrai usage était une icône de repli
+(`library-detail.ts:57`), pas un titre.
+
+**Décision** : correctif chirurgical plutôt que refonte de l'échelle —
+(1) `--h-32`/`--h-44` supprimés (0 usage, pas de plan), `--h-36`/`--h-40`
+gardés et câblés sur leurs 2 vrais consommateurs (`.sift-play-btn`,
+`.jrnl-insp-revert`) ; (2) `--border-radius-sm`(4)/`-pill`(999) ajoutés et
+câblés sur les 10 sites où le littéral correspondait exactement — le reste
+des valeurs hors échelle (7px, 8px, 9px, 11px, 12px…) **laissé tel quel**,
+étendre l'échelle pour les couvrir serait une décision de design, pas un
+câblage de token existant ; (3) `--text-hero` renommé `--text-2xl` (valeur
+inchangée), `.interface-design/system.md` confirmé stale sur la typo en plus
+de la palette (déjà noté périmé côté couleurs le 2026-07-01).
+
+**Détail complet** (par composant, historique des passes) :
+`docs/design-system-states.md`. Note CLAUDE.md sur `system.md` étendue à la
+typo en conséquence. Commits `b3569f8` (fixes) + `272fff0` (doc).
+
+---
+
 ## Infra / Release — décisions en attente
 
 - **tauri-plugin-updater** (2026-06-30) : pas encore intégré. Nécessite des décisions d'infra d'abord (clé de signature, hébergement du manifeste : GitHub Releases vs CrabNebula, config `tauri.conf.json`, signature au build). Reporté à la phase release — infra avant code.
 - **tauri-specta** (IPC type-safe, 2026-06-30) : évalué et reporté post-RC. Mieux sur le papier, mais conversion invasive (~45 commandes), dépendance RC dans une couche critique, perte de la doc métier des wrappers manuels actuels. Le double-miroir `ipc.ts` + `shared/contracts.ts` reste la solution tant que le risque de migration dépasse le gain.
+
+---
+
+## Outillage Claude Code — purge plugins/skills cross-projet (2026-07-03)
+
+Audit demandé par Antoine sur son setup global (pas spécifique à Sift, mais
+loggé ici car Sift est le repo où la décision a été prise et où
+`docs/skills-registre.md` sert de référence pour le routage skills). Portée :
+22 plugins `claude plugin` + ~150 skills en session, 4 projets actifs (Sift,
+Tuple, Tupline, tuple-controller).
+
+**Constat clé** : les skills en session viennent de **deux sources
+indépendantes** — les plugins `claude plugin`, et un installateur séparé par
+lockfile (`~/.agents/.skill-lock.json`, outil `npx skills`) qui gère la
+quasi-totalité des skills business/marketing/design-taste. `claude plugin
+disable` n'a aucun effet sur cette deuxième source.
+
+**Désinstallés** (`claude plugin uninstall`) : `appwrite`, `brightdata-plugin`,
+`outputai`, `qdrant-skills` (déjà rejeté par écrit ci-dessus, voir section
+Écarté), `coderabbit`, `frontend-design@claude-plugins-official` (collision de
+nom avec le skill `frontend-design` réel utilisé par Sift/`design-flow` —
+désinstaller l'officiel lève l'ambiguïté notée sans réponse dans
+`docs/skills-registre.md:109`).
+
+**Désactivé** : `code-modernization` (zéro usage sur les 4 projets, gardé au
+cas où).
+
+**Supprimés du lockfile skills** (`npx skills remove -g`, 28 skills) : tout le
+pack business/stratégie/marketing/vente installé via `wondelai/skills`
+(`blue-ocean-strategy`, `lean-startup`, `jobs-to-be-done`, `traction-eos`,
+`storybrand-messaging`, etc.) — confirmé inutilisé sur les 4 projets, supprimé
+malgré le risque signalé que Tuple en veuille pour sa page marketing
+(`site/index.html`) ; réinstallable à la carte via `npx skills add
+wondelai/skills -s <nom> -g -y` si le besoin se présente. Gardés : les
+clusters code-craftsmanship, systems-architecture, ux-design du même bundle
+(référencés par Sift/Tuple).
+
+**Cassé, pas touché** : `maxmcp@signalcompose` (`Marketplace signalcompose not
+found`) — pertinent pour Tuple/Max for Live selon son registre, mais aucune
+URL de marketplace connue pour corriger sans deviner.
+
+**Décision propagée** : `ecc` était off sur Sift depuis 2026-07-01 mais encore
+listé comme actif dans les `CLAUDE.md` de Tuple et Tupline — corrigé le
+2026-07-03 dans les deux fichiers.
+
+Détail complet, table des doublons par job, et commandes `npx skills` :
+`~/.claude/skills-registre-global.md` (hors repo, cross-projet).
 
 ---
 
