@@ -159,6 +159,42 @@ function verdictDot(v: string | null): string {
   return `<span title="en attente d'analyse" style="flex:none;width:9px;height:9px;border-radius:50%;border:1.5px solid var(--color-text-tertiary);box-sizing:border-box"></span>`;
 }
 
+function verdictWord(v: string | null): [string, string] {
+  return v === "fake"
+    ? ["faux", "var(--color-text-warning)"]
+    : v === "grey"
+      ? ["à vérifier", "var(--color-text-warning)"]
+      : v === "ok"
+        ? ["", "var(--color-text-success)"]
+        : ["analyse…", "var(--color-text-tertiary)"];
+}
+
+/** One queue row's markup. `active` stamps the `.cur` highlight at creation time — required so
+ * the highlight survives virtualization (Task 2): once #ql only mounts the visible window, a
+ * row for the open track may not exist in the DOM to be found and classed after the fact. */
+function queueRowHtml(it: QueueItem, active: boolean): string {
+  const [word, wordColor] = verdictWord(it.verdict);
+  const title = esc(it.filename || it.path);
+  const artist = it.artist ? esc(it.artist) : "";
+  return (
+    `<div class="qi${active ? " cur" : ""}" data-id="${it.id}" data-path="${esc(it.path)}" title="Écouter et ranger" style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:5px 7px">` +
+    `<div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">` +
+    `<div style="display:flex;align-items:center;gap:6px;min-width:0">` +
+    verdictDot(it.verdict) +
+    `<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;font-weight:500">${title}</span>` +
+    (it.dup
+      ? '<span title="Doublon possible (même nom)" style="flex:none;display:inline-flex;align-items:center;font-size:var(--text-base);line-height:1;color:var(--color-text-warning)">⧉</span>'
+      : "") +
+    `</div>` +
+    `<div style="padding-left:15px;font-size:var(--text-xs);color:var(--color-text-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${artist || "&nbsp;"}</div>` +
+    `</div>` +
+    (word
+      ? `<span style="flex:none;font-size:var(--text-xs);color:${wordColor}">${word}</span>`
+      : "") +
+    `</div>`
+  );
+}
+
 const esc = (s: string) =>
   s.replace(/[&<>"']/g, (c) =>
     c === "&" ? "&amp;" : c === "<" ? "&lt;" : c === ">" ? "&gt;" : c === '"' ? "&quot;" : "&#39;",
@@ -189,48 +225,9 @@ async function renderQueue(touchDetail = true) {
   // Background-analysis progress moved to the global progress zone (bottom of #nav, persistent
   // across views) — see pushAnalyzeProgress, fed by the analysis:changed event below.
 
-  // "ok" renders no word (just the green dot) — with a healthy library near-100% lossless, writing
-  // "lossless" on every single row is redundant with the dot and drowns the rare real signals
-  // (fake/à vérifier/analyse…) in repetition (audit UI/UX 2026-07-03, fix 5). "fake" now reads
-  // "faux" to match the same wording used in Écartés (fix 1).
-  const verdictWord = (v: string | null): [string, string] =>
-    v === "fake"
-      ? ["faux", "var(--color-text-warning)"]
-      : v === "grey"
-        ? ["à vérifier", "var(--color-text-warning)"]
-        : v === "ok"
-          ? ["", "var(--color-text-success)"]
-          : ["analyse…", "var(--color-text-tertiary)"];
-
   ql.innerHTML =
-    (items
-      .map((it) => {
-        const [word, wordColor] = verdictWord(it.verdict);
-        const title = esc(it.filename || it.path);
-        const artist = it.artist ? esc(it.artist) : "";
-        return (
-          `<div class="qi" data-id="${it.id}" data-path="${esc(it.path)}" title="Écouter et ranger" style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:5px 7px">` +
-          `<div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">` +
-          `<div style="display:flex;align-items:center;gap:6px;min-width:0">` +
-          verdictDot(it.verdict) +
-          `<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;font-weight:500">${title}</span>` +
-          (it.dup
-            ? '<span title="Doublon possible (même nom)" style="flex:none;display:inline-flex;align-items:center;font-size:var(--text-base);line-height:1;color:var(--color-text-warning)">⧉</span>'
-            : "") +
-          `</div>` +
-          // Always render the second line (never conditionally omit it) — otherwise a
-          // not-yet-identified track (no artist) renders one line shorter than an identified
-          // one, making queue rows visibly uneven heights next to each other.
-          `<div style="padding-left:15px;font-size:var(--text-xs);color:var(--color-text-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${artist || "&nbsp;"}</div>` +
-          `</div>` +
-          (word
-            ? `<span style="flex:none;font-size:var(--text-xs);color:${wordColor}">${word}</span>`
-            : "") +
-          `</div>`
-        );
-      })
-      .join("") ||
-      '<div style="font-size:var(--text-md);color:var(--color-text-tertiary);padding:6px 4px">File vide.</div>');
+    items.map((it) => queueRowHtml(it, false)).join("") ||
+    '<div style="font-size:var(--text-md);color:var(--color-text-tertiary);padding:6px 4px">File vide.</div>';
 
   // Live destination bins + neutral detail prompt (replace the mockup's hardcoded ones).
   const fldz = requireEl("#fldz", "renderQueue");
