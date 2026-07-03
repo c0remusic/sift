@@ -25,6 +25,7 @@ import type {
   FileTags,
   DupGroup,
   DashboardStats,
+  RekordboxLinkStatus,
 } from "../shared/contracts";
 
 export const appInfo = (): Promise<AppInfo> => invoke("app_info");
@@ -257,3 +258,17 @@ export const scanLibraryDuplicates = (): Promise<DupGroup[]> =>
 
 /** Dashboard aggregate stats for the Bibliothèque. */
 export const libraryStats = (): Promise<DashboardStats> => invoke("library_stats");
+
+// ---- M7 Rekordbox XML export + playlist path repair ----
+
+/** Parse+validate a chosen Rekordbox XML file and persist it as the linked file. Rejects
+ * (nothing persisted) if the file can't be read or parsed. */
+export const linkRekordboxXml = (path: string): Promise<RekordboxLinkStatus> =>
+  invoke("link_rekordbox_xml", { path });
+
+/** Current linked-XML status (re-read fresh from disk each call). */
+export const rekordboxStatus = (): Promise<RekordboxLinkStatus> => invoke("rekordbox_status");
+
+/** Merge every filed track missing from the linked XML and rewrite it. Rejects if no XML is
+ * linked yet, or if the linked file is unreadable/corrupt. */
+export const exportRekordboxXml = (): Promise<RekordboxLinkStatus> => invoke("export_rekordbox_xml");

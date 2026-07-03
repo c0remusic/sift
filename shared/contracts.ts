@@ -287,3 +287,13 @@ export interface DashboardStats {
   fake: number;
   genres: GenreCount[];
 }
+
+// ---- M7 Rekordbox XML export + playlist path repair (mirror of src-tauri/src/ipc_library.rs) ----
+
+export interface RekordboxLinkStatus {
+  path: string | null;
+  linked: boolean;
+  playlist_count: number;
+  track_count: number;
+  error: string | null;
+}

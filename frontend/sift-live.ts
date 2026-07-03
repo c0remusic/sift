@@ -23,6 +23,9 @@ import {
   libraryFolders,
   scanLibraryDuplicates,
   libraryStats,
+  exportRekordboxXml,
+  rekordboxStatus,
+  linkRekordboxXml,
 } from "./ipc";
 import type {
   LibraryTrack,
@@ -30,6 +33,7 @@ import type {
   LibraryFilter,
   DupGroup,
   DashboardStats,
+  RekordboxLinkStatus,
 } from "../shared/contracts";
 import { openLibraryDetailInto } from "./library-detail";
 import { emptyStateHtml, wireEmptyState } from "./empty-state";
@@ -331,35 +335,6 @@ function onFileStop() {
   void fileCancel();
 }
 
-// No Rekordbox/USB backend exists yet (rbox/rekordcrate are still candidates, not integrated —
-// see docs/ressources-externes.md). This drives a REAL "export" row in the progress zone (not a
-// placeholder), but the work itself is simulated: a fake per-track tick, same ~450ms pace and
-// done→auto-hide convention as the other rows (pushAnalyzeProgress/pushFileProgress above).
-let exportTimer: ReturnType<typeof setInterval> | undefined;
-let exportClearTimer: ReturnType<typeof setTimeout> | undefined;
-
-/** Start (or ignore if one is already running) a simulated export of `total` filed tracks to
- * `target`. Ticks "export" done/total once per track, then flashes done and auto-hides — mirrors
- * pushFileProgress's done-state handling exactly. */
-function startExportSim(target: "rekordbox" | "usb", total: number): void {
-  if (exportTimer) return; // one export run at a time, like every other TaskKind
-  if (total <= 0) return;
-  clearTimeout(exportClearTimer);
-  let done = 0;
-  setTask("export", { done, total, state: "running" });
-  exportTimer = setInterval(() => {
-    done += 1;
-    if (done >= total) {
-      clearInterval(exportTimer);
-      exportTimer = undefined;
-      setTask("export", { done: total, total, state: "done" });
-      exportClearTimer = setTimeout(() => clearTask("export"), 1200);
-    } else {
-      setTask("export", { done, total, state: "running" });
-    }
-  }, 450);
-}
-
 /** A transient bottom-right toast (mirrors filing.ts/library-detail.ts, no undo affordance). */
 function toast(message: string): void {
   document.getElementById("sift-toast")?.remove();
@@ -372,25 +347,41 @@ function toast(message: string): void {
   setTimeout(() => el.remove(), 4000);
 }
 
-/** Nav "Export" click (Rekordbox/Clé USB, index.html's `.nv-export` items) — the maquette's
- * `exportTo` action: guards on an empty library and on a run already in flight, else fetches the
- * real filed-track count and starts the simulated export. Doesn't switch screens (these are
- * one-click actions, not real screens yet — see the capture-phase click listener below, which
- * pre-empts app.js's mockup view switch for data-view="rkb"/"cle"). */
+/** Guards a single in-flight export (Rekordbox only — USB has no backend, out of M7 scope). */
+let exportRunning = false;
+
+/** Nav "Export" click (Rekordbox/Clé USB, index.html's `.nv-export` items). Rekordbox now runs
+ * the REAL merge+rewrite (`export_rekordbox_xml`); USB has no backend (unchanged, out of M7
+ * scope — see docs/superpowers/specs/2026-07-03-m7-rekordbox-xml-export-design.md, "hors scope").
+ * Doesn't switch screens (see the capture-phase click listener below, which pre-empts app.js's
+ * mockup view switch for data-view="rkb"/"cle"). */
 async function runNavExport(target: "rekordbox" | "usb"): Promise<void> {
-  if (exportTimer) return; // one export run at a time
-  let total = 0;
+  if (target === "usb") {
+    toast("Export clé USB : Rekordbox recopie lui-même une fois le XML réimporté");
+    return;
+  }
+  if (exportRunning) return; // one export run at a time
+  exportRunning = true;
+  setTask("export", { done: 0, total: 1, state: "running" });
   try {
-    total = (await listLibrary()).length;
+    const status = await exportRekordboxXml();
+    setTask("export", { done: 1, total: 1, state: "done" });
+    setTimeout(() => clearTask("export"), 1200);
+    toast(
+      `${status.track_count} pistes dans ${status.playlist_count} playlists Rekordbox — réimporte le XML dans Rekordbox pour resynchroniser.`,
+    );
   } catch (e) {
-    console.error("listLibrary failed (nav export)", e);
-    return;
+    console.error("export_rekordbox_xml failed", e);
+    setTask("export", { done: 0, total: 1, state: "error" });
+    const msg = e instanceof Error ? e.message : String(e);
+    toast(
+      msg.includes("aucun XML")
+        ? "Aucun XML Rekordbox lié — relie un fichier depuis la Bibliothèque"
+        : `Export Rekordbox échoué : ${msg}`,
+    );
+  } finally {
+    exportRunning = false;
   }
-  if (total === 0) {
-    toast("Bibliothèque vide — rien à exporter");
-    return;
-  }
-  startExportSim(target, total);
 }
 
 /** Detail|Batch segmented control (board `topseg`), injected once at the top of the queue
@@ -1146,17 +1137,38 @@ function statsCardsHtml(s: DashboardStats): string {
   );
 }
 
+/** The M7 Rekordbox link-status card — same visual family as the M6b stat cards
+ * (border+radius token, no accent stripe per the CSS ban on border-left/-right accents). Shows
+ * the linked XML path, playlist/track counts, and a "changer de XML lié" action; an explicit
+ * error state (unreadable/corrupt file) blocks nothing else on the page, it's just a card state. */
+function rekordboxCardHtml(s: RekordboxLinkStatus): string {
+  const body = !s.linked
+    ? `<div style="font-size:var(--text-md);color:var(--color-text-tertiary)">Aucun XML Rekordbox lié.</div>`
+    : s.error
+      ? `<div style="font-size:var(--text-md);color:var(--color-text-danger)">XML Rekordbox illisible — relie un fichier.</div>`
+      : `<div style="font-size:var(--text-md)">${esc(s.path || "")}</div>` +
+        `<div style="font-size:var(--text-sm);color:var(--color-text-tertiary)">${s.playlist_count} playlists · ${s.track_count} pistes</div>`;
+  return (
+    `<div style="border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:10px 12px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:12px">` +
+    `<div style="min-width:0">${body}</div>` +
+    `<button class="lk" data-bib="rkblink" style="flex:none">${s.linked ? "Changer de XML lié" : "Lier un XML Rekordbox"}</button>` +
+    `</div>`
+  );
+}
+
 /** Live Bibliothèque view: lists filed tracks with search + quality chips + folder/genre
  * facets, wired to real data. Actions go through the #pa delegated handler (data-bib). */
 async function renderBiblioLive() {
   const content = requireEl("#content", "renderBiblioLive");
   let facets: LibraryFacets = { folders: [], genres: [] };
   let stats: DashboardStats | null = null;
+  let rkbStatus: RekordboxLinkStatus | null = null;
   try {
-    [bibState.tracks, facets, stats] = await Promise.all([
+    [bibState.tracks, facets, stats, rkbStatus] = await Promise.all([
       listLibrary(bibState.filter),
       libraryFolders(),
       libraryStats(),
+      rekordboxStatus(),
     ]);
   } catch (e) {
     console.error("library load failed", e);
@@ -1228,6 +1240,7 @@ async function renderBiblioLive() {
         backToRevue: true,
       })
     : (stats ? statsCardsHtml(stats) : "") +
+      (rkbStatus ? rekordboxCardHtml(rkbStatus) : "") +
       header +
       `<div style="display:flex;gap:14px"><div style="width:150px;flex:none"><div class="col-h">Bibliothèque</div>${side}</div>` +
       `<div style="flex:1;min-width:0"><div style="display:flex;justify-content:space-between;margin-bottom:5px"><span style="font-size:var(--text-base);font-weight:500">${esc(activeFacetVal || "Tous")}</span><span style="font-size:var(--text-sm);color:var(--color-text-tertiary)">${bibState.tracks.length} piste${bibState.tracks.length > 1 ? "s" : ""}</span></div>` +
@@ -1393,6 +1406,28 @@ export function installLiveWiring() {
           bibState.filter.verdict = "fake";
         }
         void renderBiblioLive();
+        return;
+      } else if (act === "rkblink") {
+        void (async () => {
+          try {
+            const chosen = await openFolderDialog({
+              multiple: false,
+              directory: false,
+              filters: [{ name: "Rekordbox XML", extensions: ["xml"] }],
+            });
+            if (!chosen || Array.isArray(chosen)) return;
+            const status = await linkRekordboxXml(chosen);
+            toast(
+              status.error
+                ? "XML Rekordbox illisible — relie un autre fichier"
+                : `XML Rekordbox lié : ${status.track_count} pistes, ${status.playlist_count} playlists`,
+            );
+            void renderBiblioLive();
+          } catch (e) {
+            console.error("link_rekordbox_xml failed", e);
+            toast("Liaison du XML Rekordbox échouée");
+          }
+        })();
         return;
       } else if (act === "qual") {
         const q = bibEl.dataset.q;
