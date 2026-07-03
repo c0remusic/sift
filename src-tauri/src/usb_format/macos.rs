@@ -44,12 +44,27 @@ pub(crate) struct ParsedDisk {
 /// `Partitions` arrays. Deliberately narrow -- not a general plist parser -- because only these
 /// three fields are needed and pulling in a full plist crate for them isn't justified (repo
 /// dependency-minimalism convention, CLAUDE.md dependency audit).
+///
+/// **Whole-disk vs partition identifier**: `diskutil list -plist`'s `AllDisksAndPartitions`
+/// array holds one dict per *whole disk* (e.g. `disk4`), each with its own top-level
+/// `DeviceIdentifier` and a nested `Partitions` array whose dicts have their *own*
+/// `DeviceIdentifier` (e.g. `disk4s1`) for each partition/slice. `diskutil eraseDisk` takes the
+/// whole-disk identifier, not a partition's -- so `ParsedDisk.id` must come from the outer dict's
+/// `DeviceIdentifier`, captured before the nested `Partitions` array's own `DeviceIdentifier`
+/// keys are seen (`whole_disk_id` tracks it separately from the per-partition `id` below).
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 pub(crate) fn parse_disk_entries(plist_xml: &str) -> Vec<ParsedDisk> {
     let mut result = Vec::new();
-    let mut id: Option<String> = None;
+    let mut whole_disk_id: Option<String> = None;
     let mut name: Option<String> = None;
     let mut size: Option<u64> = None;
+    // `<array>` nesting depth, plus the depth at which the current `Partitions` array (if any)
+    // was opened. Depth-based rather than a plain bool: with multiple whole disks in
+    // `AllDisksAndPartitions`, a bool would stay stuck "true" forever after the first disk's
+    // `Partitions` array, causing every later disk's own DeviceIdentifier to be mistaken for a
+    // partition id.
+    let mut array_depth = 0u32;
+    let mut partitions_depth: Option<u32> = None;
 
     let mut pending_key: Option<String> = None;
 
@@ -60,9 +75,26 @@ pub(crate) fn parse_disk_entries(plist_xml: &str) -> Vec<ParsedDisk> {
             idx += 1;
             continue;
         }
-        if rest.starts_with("<key>") {
+        if rest.starts_with("</array>") {
+            if partitions_depth == Some(array_depth) {
+                partitions_depth = None;
+            }
+            array_depth = array_depth.saturating_sub(1);
+            idx += "</array>".len();
+            continue;
+        } else if rest.starts_with("<array>") {
+            array_depth += 1;
+            idx += "<array>".len();
+            continue;
+        } else if rest.starts_with("<key>") {
             if let Some(end) = rest.find("</key>") {
-                pending_key = Some(rest[5..end].to_string());
+                let key = rest[5..end].to_string();
+                if key == "Partitions" {
+                    // The array opening tag for this key comes right after it; record the
+                    // depth it will open at.
+                    partitions_depth = Some(array_depth + 1);
+                }
+                pending_key = Some(key);
                 idx += end + "</key>".len();
                 continue;
             }
@@ -70,8 +102,12 @@ pub(crate) fn parse_disk_entries(plist_xml: &str) -> Vec<ParsedDisk> {
             if let Some(end) = rest.find("</string>") {
                 if let Some(key) = pending_key.take() {
                     let value = rest[8..end].to_string();
+                    // Outside any `Partitions` array, DeviceIdentifier is the whole disk's own
+                    // id -- update it. Inside one, it belongs to a partition and must not
+                    // overwrite the whole-disk id it's nested under.
+                    let in_partitions = partitions_depth.is_some_and(|d| array_depth >= d);
                     match key.as_str() {
-                        "DeviceIdentifier" => id = Some(value),
+                        "DeviceIdentifier" if !in_partitions => whole_disk_id = Some(value),
                         "VolumeName" => name = Some(value),
                         _ => {}
                     }
@@ -93,15 +129,16 @@ pub(crate) fn parse_disk_entries(plist_xml: &str) -> Vec<ParsedDisk> {
         }
         idx += 1;
 
-        // A partition record is complete once we have id+name+size together (VolumeName is the
-        // last of the three fields to appear in real diskutil output for a given partition).
-        if let (Some(pid), Some(pname), Some(psize)) = (&id, &name, size) {
+        // A partition record is complete once we have the whole-disk id + name + size together
+        // (VolumeName is the last of the three fields to appear in real diskutil output for a
+        // given partition). whole_disk_id is intentionally NOT cleared afterwards: a disk can
+        // have multiple partitions, all belonging to the same whole disk.
+        if let (Some(pid), Some(pname), Some(psize)) = (&whole_disk_id, &name, size) {
             result.push(ParsedDisk {
                 id: pid.clone(),
                 name: pname.clone(),
                 size_bytes: psize,
             });
-            id = None;
             name = None;
             size = None;
         }
@@ -271,8 +308,76 @@ mod tests {
 </plist>"#;
         let entries = parse_disk_entries(plist);
         assert_eq!(entries.len(), 1);
-        assert_eq!(entries[0].id, "disk4s1");
+        // Must be the WHOLE-DISK identifier ("disk4"), not the partition slice ("disk4s1") --
+        // `diskutil eraseDisk` takes the whole disk. Regression test for the id-capture bug.
+        assert_eq!(entries[0].id, "disk4");
         assert_eq!(entries[0].name, "SIFT_USB");
         assert_eq!(entries[0].size_bytes, 16_000_000_000);
+    }
+
+    #[test]
+    fn parse_disk_entries_uses_whole_disk_id_with_multiple_partitions() {
+        // Realistic case: a USB key partitioned into two slices under the same physical disk
+        // (e.g. a small EFI/reserved partition + the main data partition). Both entries must
+        // report the SAME whole-disk id ("disk5"), never a partition slice id ("disk5s1"/"disk5s2").
+        let plist = r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <key>AllDisksAndPartitions</key>
+    <array>
+        <dict>
+            <key>DeviceIdentifier</key>
+            <string>disk3</string>
+            <key>Partitions</key>
+            <array>
+                <dict>
+                    <key>DeviceIdentifier</key>
+                    <string>disk3s1</string>
+                    <key>VolumeName</key>
+                    <string>Macintosh HD</string>
+                    <key>Size</key>
+                    <integer>500000000000</integer>
+                </dict>
+            </array>
+        </dict>
+        <dict>
+            <key>DeviceIdentifier</key>
+            <string>disk5</string>
+            <key>Partitions</key>
+            <array>
+                <dict>
+                    <key>DeviceIdentifier</key>
+                    <string>disk5s1</string>
+                    <key>VolumeName</key>
+                    <string>EFI</string>
+                    <key>Size</key>
+                    <integer>209715200</integer>
+                </dict>
+                <dict>
+                    <key>DeviceIdentifier</key>
+                    <string>disk5s2</string>
+                    <key>VolumeName</key>
+                    <string>SIFT_USB</string>
+                    <key>Size</key>
+                    <integer>15790284800</integer>
+                </dict>
+            </array>
+        </dict>
+    </array>
+</dict>
+</plist>"#;
+        let entries = parse_disk_entries(plist);
+        assert_eq!(entries.len(), 3);
+
+        assert_eq!(entries[0].id, "disk3");
+        assert_eq!(entries[0].name, "Macintosh HD");
+
+        // Both partitions on the second physical disk must resolve to "disk5", not "disk5s1"/
+        // "disk5s2" -- this is the exact scenario the bug would get wrong.
+        assert_eq!(entries[1].id, "disk5");
+        assert_eq!(entries[1].name, "EFI");
+        assert_eq!(entries[2].id, "disk5");
+        assert_eq!(entries[2].name, "SIFT_USB");
     }
 }
