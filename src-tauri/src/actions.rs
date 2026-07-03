@@ -71,8 +71,21 @@ pub fn record_with_meta(
     // references, patch that Location immediately so the track doesn't silently vanish from its
     // Rekordbox playlists. Journaling the action must never fail because of this side effect —
     // any repair error is logged and swallowed, never propagated to the caller.
-    if let (Some(from), Some(to)) = (from_path, to_path) {
-        repair_rekordbox_xml_if_linked(conn, from, to);
+    //
+    // Restricted to `move`/`convert`: those are the only kinds where `to_path` is a new location
+    // for the SAME library file Rekordbox should keep pointing at. `trash`/`reject` also carry
+    // (from, to) pairs, but `to` there is Sift's internal trash/bin path, not a relocation within
+    // the library — patching Location to it would make Rekordbox point a "jeté" track at Sift's
+    // trash folder. `tag_edit` never sets `to_path` (None) so it's excluded by the match anyway;
+    // the `from != to` guard below additionally skips the common no-op case (a conformant filing
+    // where the file didn't move) so a same-path `tag_edit`-adjacent action doesn't force a
+    // pointless read+reparse+write of the linked XML.
+    if matches!(kind, "move" | "convert") {
+        if let (Some(from), Some(to)) = (from_path, to_path) {
+            if from != to {
+                repair_rekordbox_xml_if_linked(conn, from, to);
+            }
+        }
     }
 
     Ok(id)
@@ -438,6 +451,34 @@ mod tests {
         // No REKORDBOX_XML_PATH setting at all — must not error, must not create a file.
         let id = record(&conn, "b2", None, "move", Some("/a"), Some("/b")).unwrap();
         assert!(id > 0);
+    }
+
+    /// FIX-1 regression: journaling a `trash` (Jeter) must NEVER patch the linked Rekordbox XML.
+    /// `to_path` for a `trash` row is Sift's internal trash folder, not a relocation within the
+    /// library — patching Location to it would silently repoint the track at Sift's trash bin in
+    /// the user's real Rekordbox file. The linked XML on disk must stay byte-for-byte unchanged.
+    #[test]
+    fn record_trash_does_not_patch_linked_rekordbox_xml() {
+        let conn = db();
+        let dir = tempfile::tempdir().unwrap();
+        let xml_path = dir.path().join("export.xml");
+        std::fs::write(&xml_path, crate::rekordbox_xml::SAMPLE_XML).unwrap();
+        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+        let before = std::fs::read_to_string(&xml_path).unwrap();
+
+        // Same TrackID-2 path as the "on_move" test above, but journaled as `trash` this time.
+        record(
+            &conn,
+            "b1",
+            None,
+            "trash",
+            Some("C:/Music/House/deep/strings.aiff"),
+            Some("C:/Users/x/Documents/Sift/Trash/1__strings.aiff"),
+        )
+        .unwrap();
+
+        let after = std::fs::read_to_string(&xml_path).unwrap();
+        assert_eq!(before, after, "trash must never touch the linked Rekordbox XML");
     }
 
     #[test]
