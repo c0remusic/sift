@@ -27,6 +27,9 @@ color-scheme:light;
 --overlay-hover:rgba(40,34,28,.035);--overlay-selected:rgba(40,34,28,.06);
 --overlay-bar:rgba(40,34,28,.55);--overlay-badge:rgba(40,34,28,.06);
 --border-radius-md:6px;--border-radius-lg:10px;
+/* Elevation shadows — only the two floating surfaces that need them (toast, modal overlay).
+   Black at fixed alpha reads fine on both themes, same as the rest of the app's overlay tints. */
+--shadow-toast:0 8px 28px rgba(0,0,0,.4);--shadow-overlay:0 12px 48px rgba(0,0,0,.5);
 /* Deliberate 3rd hue (gold), documented exception to the "green/amber only" rule above: the
    Identifier button is the primary call-to-action of the identification flow, meant to stand
    out from status colors. Was hardcoded with no dark variant (audit 2026-07-03,
@@ -417,7 +420,7 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-verdict-stub{display:flex;align-items:center;gap:6px;margin:2px 0 12px;font-size:var(--text-sm);color:var(--color-text-tertiary)}
 .sift-analysis-fail{margin-bottom:12px;font-size:var(--text-sm);color:var(--color-text-warning)}
 .sift-report-overlay{position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px}
-.sift-report-overlay-card{background:var(--color-background-primary);color:var(--color-text-primary);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-lg,12px);box-shadow:0 12px 48px rgba(0,0,0,.5)}
+.sift-report-overlay-card{background:var(--color-background-primary);color:var(--color-text-primary);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-lg,12px);box-shadow:var(--shadow-overlay)}
 .sift-report-overlay-loading{padding:22px 26px;font-size:var(--text-base);display:flex;align-items:center;gap:8px}
 .sift-report-overlay-error{padding:22px 26px;font-size:var(--text-base);color:var(--color-text-danger)}
 .sift-report-overlay-modal{max-width:760px;width:100%;max-height:90vh;overflow:auto;padding:20px}
@@ -470,7 +473,7 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-cand-error-icon{font-size:var(--text-md);vertical-align:-2px;margin-right:4px}
 .sift-searching-icon{font-size:var(--text-sm);vertical-align:-1px}
 .sift-goto-reglages{margin-top:5px;font-size:var(--text-sm);padding:3px 9px}
-.sift-toast{position:fixed;right:18px;bottom:18px;z-index:9998;display:flex;align-items:center;gap:12px;background:var(--color-background-secondary);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:9px 13px;font-size:var(--text-md);color:var(--color-text-primary);box-shadow:0 8px 28px rgba(0,0,0,.4)}
+.sift-toast{position:fixed;right:18px;bottom:18px;z-index:9998;display:flex;align-items:center;gap:12px;background:var(--color-background-secondary);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:9px 13px;font-size:var(--text-md);color:var(--color-text-primary);box-shadow:var(--shadow-toast)}
 .sift-toast-undo{font-size:var(--text-sm);padding:2px 9px}
 .sift-filed-banner{margin-top:12px;padding:7px 10px;background:var(--color-background-success);border-radius:var(--border-radius-md);font-size:var(--text-sm)}
 .sift-filed-banner-head{display:flex;align-items:center;gap:6px;margin-bottom:5px}

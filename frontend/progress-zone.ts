@@ -123,7 +123,7 @@ function rowInner(kind: TaskKind, p: TaskProgress): string {
     `<span class="sift-pz-name"><i class="ti ${ICONS[kind]}" aria-hidden="true"></i>${label}</span>` +
     `<span class="sift-pz-end"><span class="sift-pz-count">${p.done}/${p.total}</span>${stop}</span>` +
     `</div>` +
-    `<div class="sift-pz-track"><div class="sift-pz-fill" style="width:${pct}%"></div></div>`
+    `<div class="sift-pz-track"><div class="sift-pz-fill" style="transform:scaleX(${pct / 100})"></div></div>`
   );
 }
 
@@ -187,7 +187,7 @@ function render(): void {
       // Same structure → write only the two moving values. No innerHTML, no node churn.
       const pct = p.total > 0 ? Math.min(100, Math.round((p.done / p.total) * 100)) : 0;
       cached.countEl.textContent = `${p.done}/${p.total}`;
-      cached.fillEl.style.width = `${pct}%`;
+      cached.fillEl.style.transform = `scaleX(${pct / 100})`;
     }
   }
 }
