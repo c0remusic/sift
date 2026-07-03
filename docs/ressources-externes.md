@@ -354,6 +354,56 @@ supprimable). Code : `probe.py`.
 
 ---
 
+## Évaluation 6 — re-vérification `/design-sync` vs Open Design pour le drift `Sift.dc.html`↔`styles.css` (2026-07-04)
+
+**Contexte** : suite de l'Évaluation 4. Investigation détective sur le mécanisme
+exact du drift (pas seulement la faisabilité des outils) : où et comment
+`Sift.dc.html` diverge de `styles.css` aujourd'hui.
+
+**Mécanisme du drift, confirmé sur le code réel** : `Sift.dc.html` n'a pas de
+`:root{}` statique — les custom properties sont sérialisées à la volée en
+style inline depuis un objet JS `theme()` (`Sift.dc.html:836-846`, 17 clés,
+deux variantes clair/sombre), injecté ligne `Sift.dc.html:1067`. Diff des 17
+clés contre `:root` de `styles.css:11-52` : **16/17 correctement portées**
+(avec renommage non trivial par endroits — `nav`→`--color-background-tertiary`,
+`card`→`--color-background-secondary`), **1/17 (`disabled`) absente** au
+premier passage. Investigation plus poussée (voir
+`docs/design-system-states.md`, section "Token `disabled`") : ce n'est pas un
+oubli mais un non-besoin confirmé — les 3 usages réels de `T.disabled` dans la
+maquette ont chacun un équivalent déjà en place dans le vrai code (réutilisation
+de `--color-text-tertiary`, atténuation par `opacity` sur `button:disabled`,
+canvas de waveform volontairement fixe). **Verdict : le drift constaté est
+minime (0 vraie divergence sur 17 clés) et de nature transcription manuelle
+valeur-par-valeur avec renommage** — pas un problème de volume qui justifierait
+un outil de sync.
+
+**`/design-sync` (outil natif `DesignSync`) — schéma relu en détail** :
+confirme et durcit le rejet de l'Évaluation 4. L'outil ne connaît que des
+méthodes sur arbres de fichiers (`list_files`/`get_file`/`write_files`/
+`delete_files`, plus `register_assets` pour des cards `@dsCard`) vers un projet
+`type: PROJECT_TYPE_DESIGN_SYSTEM`, **immuable à la création** (le schéma de
+`get_project` le dit explicitement). Aucune méthode d'extraction de valeurs
+depuis un objet JS conditionnel — même en reconstruisant "Refonte UI Sift" en
+design system, l'outil n'aurait aucune prise sur le mécanisme réel du drift
+(objet `theme()` → chaîne de style inline). Mauvais niveau d'abstraction,
+confirmé indépendamment de la question de type de projet.
+
+**Open Design (`nexu-io/open-design`)** — aucune ré-vérification réseau
+nécessaire : les deux blocages notés le 2026-07-03 (daemon persistant à
+maintenir pour un outil desktop solo ; fonctionnalité crosswalk de tokens
+`design-extract`/`token-map` marquée "Reserved id, prompt-only fragment in v1"
+dans son propre `SKILL.md`) sont structurels, pas des questions de version —
+rien n'indique qu'ils aient changé en un jour.
+
+**Décision confirmée** : statu quo. `docs/design-system-states.md` reste la
+source de vérité, alimentée manuellement lors des audits ponctuels — un
+diff périodique des ~17 clés de `theme()` contre `:root` (comme fait ici) est
+suffisant vu le faible volume et l'absence de vrai gain d'un outil externe.
+Aucun code modifié suite à cette évaluation (le seul candidat, `disabled`,
+s'est avéré un non-besoin après vérification des consommateurs réels).
+
+---
+
 ## Veille concurrente — MediaMonkey (2026-06-24)
 
 Gestionnaire de biblio musicale ([mediamonkey.com](https://www.mediamonkey.com/)),

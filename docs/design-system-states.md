@@ -254,6 +254,25 @@ n'ont pas été retouchées : les tokeniser demanderait d'étendre l'échelle
 elle-même (décision de design, pas un simple câblage de token existant vers
 un littéral identique).
 
+## Token `disabled` de `Sift.dc.html` — vérifié non manquant (2026-07-04)
+
+Investigation drift `Sift.dc.html`↔`styles.css` (docs/ressources-externes.md,
+Évaluation 6) : sur les 17 clés de l'objet `theme()` (`Sift.dc.html:836-846`),
+16 sont portées et câblées ; `disabled` (#CFC9BF clair / #57554D sombre)
+semblait absente de `styles.css`. Vérification des 3 usages réels de
+`T.disabled` dans la maquette (`Sift.dc.html:1135` dot "pending",
+`1170`/`1210` barres de waveform inactives, `1339` fond de bouton primaire
+désactivé) : **chacun a déjà un équivalent dans le vrai code**, avec un
+mécanisme différent mais volontaire — dot "En analyse"
+(`sift-live.ts:559`) réutilise `--color-text-tertiary` plutôt qu'une 5ᵉ
+teinte neutre ; bouton désactivé hérite de `button:disabled{opacity:.4}`
+(atténuation, pas couleur de substitution — voir `.sift-ranger-btn`
+ci-dessus) ; waveform reste un canvas toujours sombre (voir note plus bas).
+**Décision : ne pas ajouter de token `--color-disabled`** — aucun
+consommateur réel n'en a besoin, cohérent avec le retrait de `--h-32`/`--h-44`
+(audit du même jour, zéro lecteur). Cas classé non-bug, pas juste priorité
+basse.
+
 ## Autres couleurs non tokenisées (audit complémentaire "tokens pour toutes les fonctions ?") — restant, pas classées bug
 
 - `.sift-time-elapsed{color:#ff5500}` (`styles.css:371`) — orange en dur,
