@@ -186,6 +186,9 @@ function queueRowHtml(it: QueueItem, active: boolean): string {
       ? '<span title="Doublon possible (même nom)" style="flex:none;display:inline-flex;align-items:center;font-size:var(--text-base);line-height:1;color:var(--color-text-warning)">⧉</span>'
       : "") +
     `</div>` +
+    // Always render the second line (never conditionally omit it) — otherwise a
+    // not-yet-identified track (no artist) renders one line shorter than an identified
+    // one, making queue rows visibly uneven heights next to each other.
     `<div style="padding-left:15px;font-size:var(--text-xs);color:var(--color-text-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${artist || "&nbsp;"}</div>` +
     `</div>` +
     (word
