@@ -1616,19 +1616,13 @@ export function installFilingKeys(): void {
     const t = e.target as HTMLElement | null;
     if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
     if (!state.track) return; // only with a track open (i.e. on Revue)
+    // ArrowUp/ArrowDown: handled by sift-live.ts's installQueueNavKeys, not here. The queue is
+    // virtualized (renderQueue only mounts the visible window) — walking `#ql .qi` DOM nodes (the
+    // old approach) silently stopped at the edge of whatever happened to be rendered.
+    // sift-live.ts already owns currentItems and can step by index instead.
     if (e.key === " ") {
       e.preventDefault(); // also stops Space from activating a focused button
       togglePlay();
-    } else if (e.key === "ArrowDown" || e.key === "ArrowUp") {
-      // ↑/↓ moves focus through the live queue: click the prev/next row, which opens it in
-      // the detail pane via the #pa delegated handler (reuses the existing open path).
-      e.preventDefault();
-      const rows = Array.from(document.querySelectorAll<HTMLElement>("#ql .qi"));
-      if (!rows.length) return;
-      const cur = document.querySelector<HTMLElement>("#ql .qi.cur");
-      const i = cur ? rows.indexOf(cur) : -1;
-      const next = e.key === "ArrowDown" ? rows[i + 1] : rows[i - 1];
-      next?.click();
     } else if (e.key === "Enter") {
       e.preventDefault();
       document.querySelector<HTMLElement>('[data-fil="ranger"]')?.click();

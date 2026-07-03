@@ -164,6 +164,56 @@ function ensureQueueScroll(ql: HTMLElement): void {
   });
 }
 
+let queueStepTimer: ReturnType<typeof setTimeout> | undefined;
+
+/** ArrowUp/ArrowDown queue navigation. Kept separate from filing.ts's installFilingKeys (Space/
+ * Enter/Backspace/I) because stepping through a virtualized queue needs currentItems + the
+ * ability to scroll a not-yet-rendered row into view — both owned here, not in filing.ts (which
+ * would need a circular import to reach them; sift-live.ts already imports from filing.ts, not
+ * the reverse). */
+export function stepQueueSelection(delta: 1 | -1): void {
+  if (!currentItems.length) return;
+  const curIndex = currentOpenId != null ? currentItems.findIndex((it) => it.id === currentOpenId) : -1;
+  const nextIndex = curIndex + delta;
+  if (nextIndex < 0 || nextIndex >= currentItems.length) return;
+  const next = currentItems[nextIndex];
+  currentOpenId = next.id;
+  const ql = document.getElementById("ql");
+  if (ql) {
+    const rowH = measureQueueRowHeight(ql);
+    // Keep the target row inside the rendered window: scroll just enough that nextIndex sits
+    // within view, never a full jump-to-top/bottom for a one-row step.
+    const rowTop = nextIndex * rowH;
+    const rowBottom = rowTop + rowH;
+    if (rowTop < ql.scrollTop) ql.scrollTop = rowTop;
+    else if (rowBottom > ql.scrollTop + ql.clientHeight) ql.scrollTop = rowBottom - ql.clientHeight;
+    renderQueueWindow(ql);
+  }
+  if (reviewMode === "batch") setReviewMode("detail");
+  // Debounced like the row-click handler in installLiveWiring — arrow-key repeat shouldn't fire a
+  // full decode load per row flicked through.
+  clearTimeout(queueStepTimer);
+  queueStepTimer = setTimeout(() => {
+    const mid = document.getElementById("mid");
+    if (mid) void openFilingInto(mid, next);
+  }, 150);
+}
+
+/** Guarded so installLiveWiring can call this once even if it ever re-runs. */
+let queueNavKeysWired = false;
+function installQueueNavKeys(): void {
+  if (queueNavKeysWired) return;
+  queueNavKeysWired = true;
+  document.addEventListener("keydown", (e) => {
+    const t = e.target as HTMLElement | null;
+    if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
+    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+    if (currentOpenId == null) return; // only with a track open, same guard as installFilingKeys
+    e.preventDefault();
+    stepQueueSelection(e.key === "ArrowDown" ? 1 : -1);
+  });
+}
+
 // Review mode: "detail" = one track at a time (filing pane), "batch" = triage many at once
 // (board's Detail|Batch segmented control). `batchSel` holds the ticked track ids; it is
 // pruned to the currently-ready set on every batch render so a filed/removed id can't linger.
@@ -1446,6 +1496,7 @@ export function installLiveWiring() {
   void initTheme();
   installUndoShortcut();
   installFilingKeys();
+  installQueueNavKeys();
   installScrollAutohide();
   void installDragDrop();
 
