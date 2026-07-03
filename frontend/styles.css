@@ -438,6 +438,10 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-usbfmt-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:4px}
 .sift-usbfmt-confirm-btn{padding:6px 14px;border-radius:var(--border-radius-md);border:none;background:var(--color-background-danger);color:var(--color-text-danger);cursor:pointer;font-family:inherit}
 .sift-usbfmt-confirm-btn:disabled{opacity:.4;cursor:not-allowed}
+.sift-confirm-card{padding:20px;width:360px;display:flex;flex-direction:column;gap:14px}
+.sift-confirm-msg{font-size:var(--text-sm);color:var(--color-text-secondary);white-space:pre-line}
+.sift-confirm-actions{display:flex;justify-content:flex-end;gap:8px}
+.sift-confirm-btn{padding:6px 14px;border-radius:var(--border-radius-md);border:none;background:var(--color-background-info);color:var(--color-text-info);cursor:pointer;font-family:inherit}
 .sift-usbfmt-error{font-size:var(--text-sm);color:var(--color-text-danger)}
 .sift-usb-list{display:flex;flex-direction:column;gap:6px;margin:10px 0}
 .sift-usb-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 9px;background:var(--color-background-primary);border-radius:var(--border-radius-md)}
