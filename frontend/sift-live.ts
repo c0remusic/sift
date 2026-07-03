@@ -23,6 +23,7 @@ import {
   libraryFolders,
   scanLibraryDuplicates,
   libraryStats,
+  listRemovableDrives,
 } from "./ipc";
 import type {
   LibraryTrack,
@@ -31,7 +32,9 @@ import type {
   DupGroup,
   DashboardStats,
 } from "../shared/contracts";
+import type { RemovableDrive } from "./ipc";
 import { openLibraryDetailInto } from "./library-detail";
+import { openUsbFormatModal } from "./usb-format-modal";
 import { emptyStateHtml, wireEmptyState } from "./empty-state";
 import {
   openFilingInto,
@@ -1041,9 +1044,66 @@ async function renderReglagesLive() {
     }),
   );
 
+  // M7: "Formater une clé USB" card — same card family as Discogs/Bibliothèque/Apparence
+  // above. Backend-side conservative filter means this list only ever shows removable disks
+  // (see usb_format::windows/macos) — no client-side re-filtering needed here.
+  const usbBlock = document.createElement("div");
+  usbBlock.id = "sift-reglages-usb";
+  usbBlock.dataset.section = "usb";
+  usbBlock.className = "sift-settings-card";
+  usbBlock.style.cssText = "margin-top:14px";
+  usbBlock.innerHTML =
+    '<div class="sift-settings-title">Formater une clé USB</div>' +
+    '<div class="sift-settings-desc">Formate un disque amovible en FAT32 (contourne la limite ' +
+    "32 Go de l'assistant Windows) ou exFAT. Seuls les disques amovibles sont proposés — " +
+    "aucun disque interne n'apparaît ici.</div>" +
+    '<div id="sift-usb-list" class="sift-usb-list"></div>' +
+    '<button id="sift-usb-refresh" class="sift-settings-btn">Actualiser la liste</button>';
+
+  async function renderUsbList() {
+    const listEl = usbBlock.querySelector<HTMLElement>("#sift-usb-list");
+    if (!listEl) return;
+    listEl.textContent = "Recherche des disques amovibles…";
+    let drives: RemovableDrive[] = [];
+    try {
+      drives = await listRemovableDrives();
+    } catch (e) {
+      console.error("listRemovableDrives failed", e);
+      listEl.textContent = "Impossible de lister les disques amovibles.";
+      return;
+    }
+    if (!drives.length) {
+      listEl.textContent = "Aucun disque amovible détecté.";
+      return;
+    }
+    listEl.innerHTML = "";
+    for (const d of drives) {
+      const row = document.createElement("div");
+      row.className = "sift-usb-row";
+      const sizeGb = (d.size_bytes / 1_000_000_000).toFixed(1);
+      row.innerHTML =
+        '<div class="sift-usb-row-info">' +
+        `<span class="sift-usb-row-id">${esc(d.id)}</span>` +
+        `<span class="sift-usb-row-meta">${esc(d.label || "Disque amovible")} · ${sizeGb} Go · ${esc(d.current_fs)}</span>` +
+        "</div>" +
+        '<button type="button" class="sift-settings-btn" data-usb-format>Formater…</button>';
+      row.querySelector("[data-usb-format]")?.addEventListener("click", () => {
+        openUsbFormatModal(d);
+      });
+      listEl.appendChild(row);
+    }
+  }
+
+  usbBlock
+    .querySelector("#sift-usb-refresh")
+    ?.addEventListener("click", () => void renderUsbList());
+  window.addEventListener("sift:usb-format-done", () => void renderUsbList());
+
   content.appendChild(block);
   content.appendChild(libBlock);
   content.appendChild(themeBlock);
+  content.appendChild(usbBlock);
+  void renderUsbList();
 
   const inp = block.querySelector<HTMLInputElement>("#sift-discogs-token");
   const status = block.querySelector<HTMLElement>("#sift-discogs-status");
