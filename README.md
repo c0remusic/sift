@@ -19,7 +19,7 @@
 | **M4b — Écartés** | ✅ **fait** — re-sourcer/corbeille, liens d'achat, copie Soulseek (`ecartes.rs`) |
 | **M5 — Dédup par empreinte** | ✅ **fait** (flux entrant) — `name_key` + `rusty-chromaprint` à la demande (`dedup.rs`, `fingerprint.rs`) |
 | **M6a — Identification Discogs** | ✅ **fait** — trait `MetadataProvider`, cascade, pochette + genres + `release_id` (`metadata/discogs.rs`, `ipc_identify.rs`) |
-| **M6b — Bibliothèque** | 🚧 **en cours** — parcourir/éditer/re-ranger (`library.rs`, `library-detail.ts`) |
+| **M6b — Bibliothèque** | ✅ **fait** — parcourir/éditer/re-ranger, doublons internes (empreinte), dashboard de stats cliquable (`library.rs`, `dedup.rs`, `ipc_library.rs`, `library-detail.ts`, `sift-live.ts`) |
 | M7 (Rekordbox XML + batch + clé USB) · M8 (écriture Rekordbox, **gelée**) | à venir — voir [`docs/plan-implementation.md`](docs/plan-implementation.md) |
 
 La maquette UI/UX d'origine vit dans `index.html` + `frontend/` (migrée comme shell frontend
