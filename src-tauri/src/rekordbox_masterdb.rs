@@ -95,6 +95,14 @@ pub enum MasterDbError {
     Io(String),
     /// The file is smaller than one SQLCipher page — not a valid `master.db`.
     FileTooShort,
+    /// The file's size is not an exact multiple of `PAGE_SIZE` — a truncated
+    /// or partially-written file. Refuses to silently drop the trailing
+    /// partial page (and whatever rows might live on it) via integer
+    /// division.
+    TruncatedFile {
+        /// Total size on disk, in bytes.
+        len: usize,
+    },
     /// Deobfuscating the static passphrase constant failed (base85/zlib).
     KeyDeobfuscation(String),
     /// A page's HMAC did not match — refuses to trust its decrypted content.
@@ -120,6 +128,10 @@ impl std::fmt::Display for MasterDbError {
         match self {
             MasterDbError::Io(m) => write!(f, "io: {m}"),
             MasterDbError::FileTooShort => write!(f, "file too short to be a master.db"),
+            MasterDbError::TruncatedFile { len } => write!(
+                f,
+                "file size ({len} bytes) is not a multiple of the {PAGE_SIZE}-byte page size — truncated or corrupted"
+            ),
             MasterDbError::KeyDeobfuscation(m) => write!(f, "key deobfuscation: {m}"),
             MasterDbError::HmacMismatch { page } => {
                 write!(f, "HMAC mismatch on page {page} — refusing to trust decrypted content")
@@ -220,6 +232,14 @@ fn decrypt_page_body(
 fn decrypt_masterdb(raw: &[u8]) -> Result<Vec<u8>, MasterDbError> {
     if raw.len() < PAGE_SIZE {
         return Err(MasterDbError::FileTooShort);
+    }
+    if raw.len() % PAGE_SIZE != 0 {
+        // A partial trailing page would otherwise be silently dropped by the
+        // integer division below — whatever rows live on it (e.g. tracks in
+        // a large djmdContent B-tree) would vanish from the returned index
+        // without any signal. Fail fast instead, consistent with this
+        // module's strict HMAC verification elsewhere.
+        return Err(MasterDbError::TruncatedFile { len: raw.len() });
     }
     let passphrase = deobfuscate_key()?;
     let mut salt = [0u8; SALT_LEN];
@@ -350,6 +370,18 @@ mod tests {
     fn rejects_truncated_file() {
         let err = decrypt_masterdb(&[0u8; 10]).unwrap_err();
         assert_eq!(err, MasterDbError::FileTooShort);
+    }
+
+    #[test]
+    fn rejects_file_size_not_a_multiple_of_page_size() {
+        let mut raw = std::fs::read(FIXTURE).expect("read fixture bytes");
+        // Fixture is an exact multiple of PAGE_SIZE (7 full pages); truncate
+        // a few trailing bytes to simulate a partial last page (e.g.
+        // interrupted copy / partial read over a network share).
+        let truncated_len = raw.len() - 10;
+        raw.truncate(truncated_len);
+        let err = decrypt_masterdb(&raw).unwrap_err();
+        assert_eq!(err, MasterDbError::TruncatedFile { len: truncated_len });
     }
 
     #[test]
