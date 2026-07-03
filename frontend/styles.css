@@ -426,6 +426,23 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-report-overlay-card{background:var(--color-background-primary);color:var(--color-text-primary);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-lg,12px);box-shadow:var(--shadow-overlay)}
 .sift-report-overlay-loading{padding:22px 26px;font-size:var(--text-base);display:flex;align-items:center;gap:8px}
 .sift-report-overlay-error{padding:22px 26px;font-size:var(--text-base);color:var(--color-text-danger)}
+.sift-usbfmt-card{padding:20px;width:380px;display:flex;flex-direction:column;gap:10px}
+.sift-usbfmt-title{font-size:var(--text-lg);font-weight:600;color:var(--color-text-primary)}
+.sift-usbfmt-desc{font-size:var(--text-sm);color:var(--color-text-secondary)}
+.sift-usbfmt-warning{font-size:var(--text-sm);color:var(--color-text-warning);background:var(--color-background-warning);border-radius:var(--border-radius-md);padding:8px 10px}
+.sift-usbfmt-fsrow{display:flex;gap:8px}
+.sift-usbfmt-exfat-warning{font-size:var(--text-sm);color:var(--color-text-warning);background:var(--color-background-warning);border-radius:var(--border-radius-md);padding:8px 10px}
+.sift-usbfmt-typerow{display:flex;flex-direction:column;gap:4px;font-size:var(--text-sm);color:var(--color-text-secondary)}
+.sift-usbfmt-typerow input{font-size:var(--text-md);padding:4px 7px;background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);color:var(--color-text-primary);font-family:var(--font-mono)}
+.sift-usbfmt-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:4px}
+.sift-usbfmt-confirm-btn{padding:6px 14px;border-radius:var(--border-radius-md);border:none;background:var(--color-background-danger);color:var(--color-text-danger);cursor:pointer;font-family:inherit}
+.sift-usbfmt-confirm-btn:disabled{opacity:.4;cursor:not-allowed}
+.sift-usbfmt-error{font-size:var(--text-sm);color:var(--color-text-danger)}
+.sift-usb-list{display:flex;flex-direction:column;gap:6px;margin:10px 0}
+.sift-usb-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 9px;background:var(--color-background-primary);border-radius:var(--border-radius-md)}
+.sift-usb-row-info{display:flex;flex-direction:column;gap:2px;min-width:0}
+.sift-usb-row-id{font-size:var(--text-md);font-family:var(--font-mono);color:var(--color-text-primary)}
+.sift-usb-row-meta{font-size:var(--text-sm);color:var(--color-text-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sift-report-overlay-modal{max-width:760px;width:100%;max-height:90vh;overflow:auto;padding:20px}
 
 /* ── Revue filing rail (filing.ts) — extracted inline styles, byte-identical values ───── */
