@@ -3,6 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="https://unpkg.com/react@18.3.1/umd/react.development.js" integrity="sha384-hD6/rw4ppMLGNu3tX5cjIb+uRZ7UkRJ6BPkLpg4hAu/6onKUg4lLsHAs9EBPT82L" crossorigin="anonymous"></script>
+<script src="https://unpkg.com/react-dom@18.3.1/umd/react-dom.development.js" integrity="sha384-u6aeetuaXnQ38mYT8rp6sbXaQe3NL9t+IBXmnYxwkUI2Hw4bsp2Wvmx4yRQF1uAm" crossorigin="anonymous"></script>
 <script src="./support.js"></script>
 </head>
 <body>
@@ -1084,7 +1086,7 @@ class Component extends DCLogic {
 
     // queue rows
     const rowPad=dens==='compact'?'7px 9px 7px 8px':'10px 9px 10px 8px';
-    const vMeta=(v)=>v==='fake'?{l:'fake',c:this.AMBER}:v==='pending'?{l:'analyse…',c:this.MUTED}:{l:'lossless',c:this.GREEN};
+    const vMeta=(v)=>v==='fake'?{l:'faux',c:this.AMBER}:v==='pending'?{l:'analyse…',c:this.MUTED}:{l:'',c:this.GREEN};
     const rows=(showTrackRows?list:[]).map((x,i)=>{ const on=i===s.focus; const sel=s.selection.indexOf(x.id)>=0; const vm=vMeta(x.verdict); return {
       title:x.title, artist:x.artist, verdict:vm.l, vColor:vm.c,
       onClick:()=>{ clearInterval(this._p); this.setState({focus:i,openChip:null,isPlaying:false,progress:0}); },
@@ -1154,7 +1156,7 @@ class Component extends DCLogic {
       var genreTags=(t.genres||[]).map(g=>({label:g}));
       var isIdentified = !!(t.label && t.label!=='—');
       verdictColor = v==='fake'?this.semAmber() : v==='pending'?this.MUTED : this.semGreen();
-      verdictStatus = v==='fake'?'À vérifier' : v==='pending'?'Analyse en cours…' : 'Prêt à filer';
+      verdictStatus = v==='fake'?'À vérifier' : v==='pending'?'Analyse en cours…' : 'Prêt à ranger';
       verdictNote = v==='fake'?'Coupure spectrale à 16 kHz · transcodé depuis une source lossy.' : v==='pending'?'Empreinte + analyse spectrale en cours.' : 'True lossless vérifié · métadonnées Discogs concordantes.';
       const ck=(k)=>({onClick:()=>this.openChip(k),chev:s.openChip===k?'180deg':'0deg'});
       const c1=this.chipStyle(v==='fake'?'amber':v==='pending'?'muted':'green',s.openChip==='lossless');
@@ -1243,7 +1245,7 @@ class Component extends DCLogic {
 
     // palette
     const cmds=[
-      {label:'Filer la piste actuelle',hint:'↵',run:()=>{this.setState({paletteOpen:false});this.primary();}},
+      {label:'Ranger la piste actuelle',hint:'↵',run:()=>{this.setState({paletteOpen:false});this.primary();}},
       {label:'Écarter la piste actuelle',hint:'⌫',run:()=>{this.setState({paletteOpen:false});this.discardOne();}},
       {label:'Réidentifier avec Discogs',hint:'I',run:()=>{this.setState({paletteOpen:false});this.toast('Réidentification via Discogs…','ok');}},
       {label:'Annuler la dernière action',hint:'⌘Z',run:()=>{this.setState({paletteOpen:false});this.undo();}},

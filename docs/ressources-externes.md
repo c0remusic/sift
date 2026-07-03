@@ -160,6 +160,57 @@ chromaprint-next ; sinon → statu quo.
 
 ---
 
+## Évaluation 3 — workflow d'itération UI en direct (2026-07-03)
+
+**Question** : comment itérer sur l'UI (couleur/spacing/cohérence) sans rebuild
+Tauri complet à chaque changement, avec Claude capable de voir le rendu avant
+d'éditer.
+
+**Constat (root cause confirmé sur le repo)** : trois implémentations UI
+parallèles coexistent, pas deux — `design_handoff_sift_refonte/Sift.dc.html`
+(maquette figée, DSL propriétaire, son propre `README.md` dit explicitement
+« pas du code de production à copier tel quel ») ; `frontend/app.js` (355
+lignes, aucun import, data bidon en dur, ses propres fonctions
+`renderHome()`/`renderRevue()` — un **mock navigateur autonome**) ; le vrai
+code (`chrome.ts`, `home-sources.ts`, `report-view.ts`…). `frontend/main.ts`
+ne charge le vrai câblage (`installLiveWiring()`) que si `__TAURI_INTERNALS__`
+existe ; `app.js` a le garde-fou inverse par vue (`if(!('__TAURI_INTERNALS__'
+in window)){...}`). **Vérifié en lançant le serveur Vite et en screenshotant** :
+le navigateur affiche bien le mock `app.js` (data "Mr. Fingers" en dur), jamais
+le vrai `chrome.ts`.
+
+**Pistes écartées** : Storybook / Pattern Lab (recréent une double
+implémentation via un langage de template séparé) ; Cursor Visual Editor
+(optimisé React, fiabilité douteuse sur `var(--token)`) ; migration React (ne
+traite pas la root cause, non chirurgical).
+
+**Piste testée : Claude in Chrome** (`mcp__claude-in-chrome__*`, équivalent de
+`claude --chrome`/`/chrome` — pas de flag CLI de ce nom dans ce harnais).
+Fonctionne réellement (navigateur connecté, screenshot obtenu), mais regarde le
+même onglet Vite que ci-dessus → **voit le mock, pas le vrai code**. Valide
+uniquement pour `styles.css` (fichier de tokens partagé par les trois
+implémentations, non gated par `inTauri`), pas pour le markup.
+
+**Piste retenue — `tauri dev` + HMR + computer-use** : `src-tauri/tauri.conf.json`
+(`devUrl: http://localhost:5173`, `beforeDevCommand: npm run dev`) fait pointer
+la vraie fenêtre Tauri sur le même serveur Vite. Dans cette fenêtre,
+`__TAURI_INTERNALS__` existe réellement → le mock `app.js` se tait, le vrai
+code s'affiche avec les vraies données IPC, et le HMR Vite s'applique en direct
+à tout fichier `frontend/*.ts`/`styles.css` **sans rebuild Rust** (seul
+`src-tauri/*.rs` en nécessite un). C'est littéralement l'app elle-même,
+éditable en direct — il n'y a plus besoin de maquette. Reste à valider : que
+`computer-use` (fenêtre desktop native, pas un onglet Chrome) peut effectivement
+voir/cliquer cette fenêtre — nécessite l'autorisation `request_access` de
+l'utilisateur, pas encore testé en pratique.
+
+**Recommandation** : `styles.css` reste itérable via Chrome DevTools
+Workspaces/`preview_*`/Claude in Chrome sur le serveur Vite nu (couleur/
+spacing/tokens uniquement). Tout changement de markup/structure (`chrome.ts`,
+`report-view.ts`, `home-sources.ts`…) doit être vérifié dans la vraie fenêtre
+`tauri dev` via `computer-use`, jamais via le navigateur seul.
+
+---
+
 ## Veille concurrente — MediaMonkey (2026-06-24)
 
 Gestionnaire de biblio musicale ([mediamonkey.com](https://www.mediamonkey.com/)),
