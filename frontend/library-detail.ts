@@ -54,7 +54,7 @@ function coverHtml(st: EditState): string {
   const src = coverSrc(st);
   const inner = src
     ? `<img src="${esc(src)}" alt="" style="width:100%;height:100%;object-fit:cover">`
-    : `<i class="ti ti-vinyl" style="font-size:var(--text-hero);color:var(--color-text-tertiary)"></i>`;
+    : `<i class="ti ti-vinyl" style="font-size:var(--text-2xl);color:var(--color-text-tertiary)"></i>`;
   return (
     `<button data-lib="cover" title="Changer la pochette" aria-label="Changer la pochette" style="position:relative;width:72px;height:72px;flex:none;border-radius:var(--border-radius-md);overflow:hidden;background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);display:flex;align-items:center;justify-content:center;padding:0;cursor:pointer">` +
     inner +

@@ -176,7 +176,7 @@ visible, pas besoin d'`aria-label`. ✅ Titlebar (`chrome.ts:122-124`, boutons
 min/max/close) corrigée 2026-07-03 — n'avait que `title`, `aria-label` ajouté
 sur les 3 boutons (seul manque trouvé dans cette catégorie).
 
-## Barre de progression — `.pbar`/`.pfill` (`styles.css:149`) et `.sift-pz-fill` (`styles.css:133-134`, JS `progress-zone.ts`)
+## Barre de progression — `.pbar`/`.pfill` (`styles.css:149`) et `.sift-pz-fill` (`styles.css:135-136`, JS `progress-zone.ts`)
 
 `.sift-pz-row.error .sift-pz-fill` bascule vers `var(--color-text-danger)` en
 cas d'erreur — cohérent avec les tokens. ✅ Perf corrigée 2026-07-03 (audit
@@ -224,6 +224,36 @@ remplacé par `var(--shadow-toast)`/`var(--shadow-overlay)`, définis dans
 `:root` (mêmes valeurs, noir fixe volontaire, lisible dans les deux thèmes —
 pas besoin de variante sombre pour une ombre).
 
+## Échelles hauteur/radius (`/design-system audit`, 2026-07-03)
+
+**Hauteur** (`--h-*`, `styles.css:47-48`) — les 4 tokens déclarés (32/36/40/44)
+avaient **0 lecteur** (`grep -rn "var(--h-"` sur tout `frontend/` : aucun
+match). `--h-32`/`--h-44` **supprimés** (aucun composant réel ne les utilise,
+déclarés sans plan). `--h-36`/`--h-40` **gardés et câblés** sur leurs deux
+vrais consommateurs : `.sift-play-btn` (`styles.css:348`, était `36px` en
+dur) et `.jrnl-insp-revert` (`styles.css:591`, était `40px` en dur). Deux
+autres 36px/40px existants (`.cov` avatar, `.sift-cand img/noart` vignette,
+`styles.css:209`/`228`) **laissés en littéral, exprès** : ce sont des tailles
+de cadre image/avatar, pas des hauteurs de contrôle — l'échelle ne couvre que
+les boutons/contrôles interactifs.
+
+**Radius** (`--border-radius-*`, `styles.css:29`) — `system.md` déclare 4
+valeurs (sharp 4 / default 6 / soft 10 / pill 999) mais seuls `md`(6)/`lg`(10)
+existaient. Ajouté `--border-radius-sm:4px` et `--border-radius-pill:999px`,
+et câblés partout où la valeur littérale correspondait exactement : 3
+occurrences de `4px` (`.sift-cand img/noart`, `.sift-bgrp-box`,
+`.sift-time-elapsed`/`.sift-time-total`) → `var(--border-radius-sm)` ; 7
+occurrences de `999px` (`.nv-export-dot`, `.nav-badge`, `.sift-genre-chip`,
+`.jrnl-cat-badge`, `.sift-vchip`, `.jrnl-qrow-dot`, `.jrnl-insp-dot`) →
+`var(--border-radius-pill)`.
+
+**Reste hors scope, pas corrigé** : les valeurs qui ne correspondent à aucune
+des 4 tailles déclarées (1px, 2px, 3px, 7px, 8px, 9px, 11px, 12px — ex.
+`.jrnl-qmode`/`.sift-settings-seg`/`.jrnl-qrow` à `7px`, `.jrnl-cat` à `12px`)
+n'ont pas été retouchées : les tokeniser demanderait d'étendre l'échelle
+elle-même (décision de design, pas un simple câblage de token existant vers
+un littéral identique).
+
 ## Autres couleurs non tokenisées (audit complémentaire "tokens pour toutes les fonctions ?") — restant, pas classées bug
 
 - `.sift-time-elapsed{color:#ff5500}` (`styles.css:371`) — orange en dur,
@@ -235,6 +265,18 @@ pas besoin de variante sombre pour une ombre).
   manque de token, ne pas "corriger" à tort.
 - `.tog::after{background:#fff}` — blanc en dur sur pastille colorée, mineur,
   pattern courant (curseur blanc sur fond coloré), pas de token nécessaire.
+
+## `--text-hero` → `--text-2xl` (échelle typo, 2026-07-03)
+
+Token renommé, valeur inchangée (26px). Il s'appelait "hero" pour un rôle de
+titre de morceau en 30px/600 (`system.md:103`) qui n'existe plus dans le
+layout actuel — sa seule vraie utilisation (`library-detail.ts:57`) est la
+taille de l'icône vinyle de repli dans le cadre pochette 72×72
+(`library-detail.ts:59`), pas un titre. Renommé selon la convention de
+l'échelle existante (`xs`→`2xl`) plutôt que de prétendre encore à un rôle
+"hero" qu'il ne joue pas ; valeur gardée telle quelle (26px reste la bonne
+taille visuelle pour cette icône, aucun changement rendu). Le vrai titre de
+morceau (`.sift-player-name`) reste sur `--text-lg` (14px), non affecté.
 
 ---
 
@@ -248,6 +290,14 @@ pochette (`alt`), `.cbx` (suppression code mort).
 `.sift-filed-banner`, `aria-label` titlebar (`chrome.ts`), transitions
 `width`/`left`/`right` → `transform` (`.sift-pz-fill`, `.tog::after`), ombres
 portées tokenisées.
+
+**2026-07-03, passe 3 (`/design-system audit`)** : correction de dérive de
+ligne (`.sift-pz-fill` 133-134 → 135-136, décalé par un ajout antérieur) ;
+échelle hauteur (`--h-32`/`--h-44` supprimés — 0 lecteur —, `--h-36`/`--h-40`
+câblés sur `.sift-play-btn`/`.jrnl-insp-revert`) ; échelle radius (`sm`/`pill`
+ajoutés, câblés sur 10 sites où le littéral correspondait exactement) ;
+`--text-hero` renommé `--text-2xl` (rôle "hero"/track-title jamais tenu,
+seul usage réel = icône de repli `library-detail.ts:57`).
 
 Vérification : `npx tsc --noEmit` clean après chaque passe. Composants CSS
 purs (non gated `inTauri`) vérifiés par inspection de style calculé via
