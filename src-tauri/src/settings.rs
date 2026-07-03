@@ -15,6 +15,8 @@ pub const DISCOGS_TOKEN: &str = "discogs_token";
 /// Key under which the current session's unique ID is stored at app launch.
 /// Written once at startup; read by the `actions` INSERT via SQL subquery.
 pub const CURRENT_SESSION_ID: &str = "current_session_id";
+/// Absolute path of the linked Rekordbox XML file (`DJ_PLAYLISTS` format). Unset = no XML linked.
+pub const REKORDBOX_XML_PATH: &str = "rekordbox_xml_path";
 
 /// The default filename template when the setting is unset.
 pub const DEFAULT_TEMPLATE: &str = "{artist} - {title}{version}";
