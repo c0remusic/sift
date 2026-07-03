@@ -81,6 +81,16 @@ let currentItems: QueueItem[] = [];
 // (board's Detail|Batch segmented control). `batchSel` holds the ticked track ids; it is
 // pruned to the currently-ready set on every batch render so a filed/removed id can't linger.
 let reviewMode: "detail" | "batch" = "detail";
+// Above this many tracks, Ranger requires a second confirming click first (same threshold as the
+// Journal's mass-revert) — a batch run has no recap screen, so it's the only guard before
+// moving+encoding a very large selection in one click (audit UI/UX 2026-07-03, fix 3).
+// A real two-click arm/confirm cycle IN THE RAIL, not window.confirm(): a live test found a
+// synthetic click ran straight through confirm() in this Tauri webview (no dialog, no block),
+// filing ~265 real tracks before Stop could catch up — a native dialog is not a trustworthy
+// guard here regardless of the cause, so the guard must be the app's own UI.
+const BATCH_CONFIRM_THRESHOLD = 10;
+let batchConfirmArmed: { fileN: number; fakeN: number; at: number } | null = null;
+let batchConfirmTimer: ReturnType<typeof setTimeout> | undefined;
 const batchSel = new Set<number>();
 // Auto-fill the ticks to "all ready" ONCE, on the first batch render that has ready items. Without
 // this guard renderBatch re-filled whenever batchSel hit 0, which silently undid "Aucun (clear)".
@@ -120,9 +130,9 @@ const bibState: { filter: LibraryFilter; facet: "folder" | "genre"; tracks: Libr
 // Verdict = meaning only, vert/ambre uniquement (voir brief refonte 2026-07) — jamais un hex en
 // dur ici (l'ancien `#e2685e` rouge cassait cette règle) : lire les tokens CSS, pas une 3e teinte.
 const VERDICT_DOT: Record<string, [string, string]> = {
-  ok: ["var(--color-text-success)", "authentic"],
-  fake: ["var(--color-text-warning)", "fake / over-encoded"],
-  grey: ["var(--color-text-warning)", "grey zone"],
+  ok: ["var(--color-text-success)", "authentique"],
+  fake: ["var(--color-text-warning)", "faux / sur-encodé"],
+  grey: ["var(--color-text-warning)", "zone grise"],
 };
 function verdictDot(v: string | null): string {
   if (v && VERDICT_DOT[v]) {
@@ -130,7 +140,7 @@ function verdictDot(v: string | null): string {
     return `<span title="${title}" style="flex:none;width:9px;height:9px;border-radius:50%;background:${c}"></span>`;
   }
   // not analysed yet
-  return `<span title="awaiting analysis" style="flex:none;width:9px;height:9px;border-radius:50%;border:1.5px solid var(--color-text-tertiary);box-sizing:border-box"></span>`;
+  return `<span title="en attente d'analyse" style="flex:none;width:9px;height:9px;border-radius:50%;border:1.5px solid var(--color-text-tertiary);box-sizing:border-box"></span>`;
 }
 
 const esc = (s: string) =>
@@ -142,6 +152,15 @@ const esc = (s: string) =>
 async function renderQueue(touchDetail = true) {
   const ql = document.getElementById("ql");
   if (!ql) return;
+  // First paint has nothing to show yet (the mockup skeleton leaves #ql empty) — on a large
+  // library listQueue() can take a couple of seconds, otherwise that's a blank screen the whole
+  // time (audit UI/UX 2026-07-03, fix 4). Gated on "no rows yet" so later polls (queue:changed,
+  // the 300ms debounce) never flash this over the still-valid existing rows.
+  if (!ql.childElementCount) {
+    ql.innerHTML =
+      '<div style="display:flex;align-items:center;gap:8px;padding:8px 7px;color:var(--color-text-tertiary);font-size:var(--text-md)">' +
+      '<i class="ti ti-loader sift-spin" style="font-size:var(--text-md)"></i> Chargement…</div>';
+  }
   let items: QueueItem[] = [];
   try {
     items = await listQueue();
@@ -154,13 +173,17 @@ async function renderQueue(touchDetail = true) {
   // Background-analysis progress moved to the global progress zone (bottom of #nav, persistent
   // across views) — see pushAnalyzeProgress, fed by the analysis:changed event below.
 
+  // "ok" renders no word (just the green dot) — with a healthy library near-100% lossless, writing
+  // "lossless" on every single row is redundant with the dot and drowns the rare real signals
+  // (fake/à vérifier/analyse…) in repetition (audit UI/UX 2026-07-03, fix 5). "fake" now reads
+  // "faux" to match the same wording used in Écartés (fix 1).
   const verdictWord = (v: string | null): [string, string] =>
     v === "fake"
-      ? ["fake", "var(--color-text-warning)"]
+      ? ["faux", "var(--color-text-warning)"]
       : v === "grey"
         ? ["à vérifier", "var(--color-text-warning)"]
         : v === "ok"
-          ? ["lossless", "var(--color-text-success)"]
+          ? ["", "var(--color-text-success)"]
           : ["analyse…", "var(--color-text-tertiary)"];
 
   ql.innerHTML =
@@ -170,13 +193,13 @@ async function renderQueue(touchDetail = true) {
         const title = esc(it.filename || it.path);
         const artist = it.artist ? esc(it.artist) : "";
         return (
-          `<div class="qi" data-id="${it.id}" data-path="${esc(it.path)}" title="Listen and file" style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:5px 7px">` +
+          `<div class="qi" data-id="${it.id}" data-path="${esc(it.path)}" title="Écouter et ranger" style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:5px 7px">` +
           `<div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">` +
           `<div style="display:flex;align-items:center;gap:6px;min-width:0">` +
           verdictDot(it.verdict) +
           `<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;font-weight:500">${title}</span>` +
           (it.dup
-            ? '<span title="Possible duplicate (same name)" style="flex:none;display:inline-flex;align-items:center;font-size:var(--text-base);line-height:1;color:var(--color-text-warning)">⧉</span>'
+            ? '<span title="Doublon possible (même nom)" style="flex:none;display:inline-flex;align-items:center;font-size:var(--text-base);line-height:1;color:var(--color-text-warning)">⧉</span>'
             : "") +
           `</div>` +
           // Always render the second line (never conditionally omit it) — otherwise a
@@ -184,7 +207,9 @@ async function renderQueue(touchDetail = true) {
           // one, making queue rows visibly uneven heights next to each other.
           `<div style="padding-left:15px;font-size:var(--text-xs);color:var(--color-text-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${artist || "&nbsp;"}</div>` +
           `</div>` +
-          `<span style="flex:none;font-size:var(--text-xs);color:${wordColor}">${word}</span>` +
+          (word
+            ? `<span style="flex:none;font-size:var(--text-xs);color:${wordColor}">${word}</span>`
+            : "") +
           `</div>`
         );
       })
@@ -519,7 +544,7 @@ function renderBatch() {
         groupHead("file", "var(--color-text-success)", "Prêts · lossless", ready.map((it) => it.id)) +
         (batchCollapsed.has("file") ? "" : ready.map(readyRow).join("")) +
         `</div>`
-      : '<div class="col-h" style="margin:0 0 6px">Prêts · lossless · 0</div><div style="font-size:var(--text-md);color:var(--color-text-tertiary);padding:4px 9px 14px">Rien à filer pour l’instant.</div>') +
+      : '<div class="col-h" style="margin:0 0 6px">Prêts · lossless · 0</div><div style="font-size:var(--text-md);color:var(--color-text-tertiary);padding:4px 9px 14px">Rien à ranger pour l’instant.</div>') +
     (fakes.length
       ? `<div style="margin:2px 0 16px">` +
         groupHead("fake", "var(--color-text-warning)", "À vérifier · fake", fakes.map((it) => it.id)) +
@@ -579,8 +604,10 @@ function ensureBatchDestUI(): void {
   }
 }
 
-/** The single rail action button. Adaptive before a run (Filer / Discarder / both / disabled),
- *  "Stop" during one. `running` swaps to the Stop affordance (wired to onFileStop). */
+/** The single rail action button. Adaptive before a run (Ranger / Discarder / both / disabled),
+ *  "Stop" during one. `running` swaps to the Stop affordance (wired to onFileStop).
+ *  "Ranger" (not "Filer") to match the Détail rail's verb — one action, one name (audit UI/UX
+ *  2026-07-03, fix 2). */
 function actionButtonHtml(running: boolean): string {
   if (running) {
     return '<button data-sift="batchstop" class="sift-baction" style="background:var(--color-background-danger);color:var(--color-text-danger)"><i class="ti ti-player-stop" style="font-size:var(--text-md);vertical-align:-2px"></i> Stop</button>';
@@ -588,12 +615,23 @@ function actionButtonHtml(running: boolean): string {
   const fileN = batchSel.size;
   const fakeN = batchFakeSel.size;
   if (fileN === 0 && fakeN === 0)
-    return '<button class="sift-baction" disabled style="background:var(--color-background-info);color:var(--color-text-info);opacity:.5;pointer-events:none">Filer (0)</button>';
+    return '<button class="sift-baction" disabled style="background:var(--color-background-info);color:var(--color-text-info);opacity:.5;pointer-events:none">Ranger (0)</button>';
+  // Second-click confirm for large batches (see BATCH_CONFIRM_THRESHOLD) — armed only for the
+  // exact selection it was requested for, so ticking/unticking a track after arming falls back
+  // to asking again instead of silently confirming a changed selection. The button looks like a
+  // plain Ranger button until the first click arms it (the click handler re-renders this as the
+  // danger "Confirmer" state below) — a distinct button for the actual destructive click, not a
+  // permanent scary button sitting there before the user has done anything.
+  const armed =
+    !!batchConfirmArmed && batchConfirmArmed.fileN === fileN && batchConfirmArmed.fakeN === fakeN;
+  if (armed) {
+    return `<button data-sift="batchaction" class="sift-baction" style="background:var(--color-background-danger);color:var(--color-text-danger)"><i class="ti ti-alert-triangle" style="font-size:var(--text-md);vertical-align:-2px"></i> Confirmer — ranger ${fileN} ?</button>`;
+  }
   if (fakeN === 0)
-    return `<button data-sift="batchaction" class="sift-baction" style="background:var(--color-background-info);color:var(--color-text-info)"><i class="ti ti-corner-down-left" style="font-size:var(--text-md);vertical-align:-2px"></i> Filer (${fileN})</button>`;
+    return `<button data-sift="batchaction" class="sift-baction" style="background:var(--color-background-info);color:var(--color-text-info)"><i class="ti ti-corner-down-left" style="font-size:var(--text-md);vertical-align:-2px"></i> Ranger (${fileN})</button>`;
   if (fileN === 0)
     return `<button data-sift="batchaction" class="sift-baction" style="background:var(--color-background-danger);color:var(--color-text-danger)"><i class="ti ti-trash" style="font-size:var(--text-md);vertical-align:-2px"></i> Écarter (${fakeN})</button>`;
-  return `<button data-sift="batchaction" class="sift-baction" style="background:var(--color-background-info);color:var(--color-text-info)">Filer (${fileN}) · Écarter (${fakeN})</button>`;
+  return `<button data-sift="batchaction" class="sift-baction" style="background:var(--color-background-info);color:var(--color-text-info)">Ranger (${fileN}) · Écarter (${fakeN})</button>`;
 }
 
 /** Right-rail summary for batch mode (board's SELECTION / DESTINATION / WILL ENCODE / EXCLUDED).
@@ -644,7 +682,7 @@ function renderBatchRail(reviewN: number) {
     `<div class="sift-rail-spacer"></div>` +
     `<span style="font-size:var(--text-sm);color:var(--color-text-secondary);white-space:nowrap">${
       batchSel.size
-    } à filer${jeter}${exclus}</span>` +
+    } à ranger${jeter}${exclus}</span>` +
     `<div id="sift-batch-progress" style="flex-basis:100%"></div>` +
     `<div id="sift-batch-tracks" style="flex-basis:100%"></div>` +
     `<div class="sift-baction-slot">${actionButtonHtml(batchRunning)}</div>`;
@@ -916,7 +954,12 @@ async function renderReglagesLive() {
     '<a id="sift-discogs-link" style="font-size:var(--text-sm);color:var(--color-text-secondary);cursor:pointer;text-decoration:none">' +
     '<i class="ti ti-external-link" style="font-size:var(--text-sm);vertical-align:-1px"></i> obtenir un jeton</a>' +
     "</div>" +
-    `<input id="sift-discogs-token" type="text" placeholder="Jeton Discogs…" value="${esc(token ?? "")}" style="${inputCss}">` +
+    // Masked like any credential (audit UI/UX 2026-07-03, fix 8) — a screenshot/share of Réglages
+    // must not leak the token in clear text. Eye toggle to check it without retyping.
+    '<div style="position:relative;width:100%">' +
+    `<input id="sift-discogs-token" type="password" placeholder="Jeton Discogs…" value="${esc(token ?? "")}" style="${inputCss};padding-right:30px">` +
+    '<button type="button" id="sift-discogs-token-toggle" title="Afficher le jeton" aria-label="Afficher le jeton" style="position:absolute;right:2px;top:50%;transform:translateY(-50%);width:26px;height:26px;padding:0;border:none;background:transparent;color:var(--color-text-tertiary);cursor:pointer;display:flex;align-items:center;justify-content:center"><i class="ti ti-eye" style="font-size:var(--text-md)"></i></button>' +
+    "</div>" +
     '<div id="sift-discogs-status" style="font-size:var(--text-sm);color:var(--color-text-tertiary);min-height:14px"></div>' +
     "</div>";
 
@@ -996,6 +1039,16 @@ async function renderReglagesLive() {
   const inp = block.querySelector<HTMLInputElement>("#sift-discogs-token");
   const status = block.querySelector<HTMLElement>("#sift-discogs-status");
   const link = block.querySelector<HTMLElement>("#sift-discogs-link");
+  const toggle = block.querySelector<HTMLButtonElement>("#sift-discogs-token-toggle");
+
+  toggle?.addEventListener("click", () => {
+    if (!inp) return;
+    const shown = inp.type === "text";
+    inp.type = shown ? "password" : "text";
+    toggle.title = shown ? "Afficher le jeton" : "Masquer le jeton";
+    toggle.setAttribute("aria-label", toggle.title);
+    toggle.innerHTML = `<i class="ti ${shown ? "ti-eye" : "ti-eye-off"}" style="font-size:var(--text-md)"></i>`;
+  });
 
   link?.addEventListener("click", () =>
     void openUrl("https://www.discogs.com/settings/developers").catch((e) =>
@@ -1060,7 +1113,7 @@ async function renderBiblioLive() {
   const chips = (["all", "lossless", "mp3"] as const)
     .map((q) => {
       const on = (bibState.filter.quality ?? "all") === q;
-      const label = q === "all" ? "All" : q === "lossless" ? "Lossless" : "MP3";
+      const label = q === "all" ? "Tous" : q === "lossless" ? "Lossless" : "MP3";
       return `<span class="chip${on ? " on" : ""}" data-bib="qual" data-q="${q}">${label}</span>`;
     })
     .join("");
@@ -1070,7 +1123,7 @@ async function renderBiblioLive() {
   const activeFacetVal = bibState.facet === "folder" ? bibState.filter.folder : bibState.filter.genre;
   const side =
     `<div style="display:flex;gap:4px;margin-bottom:8px">` +
-    `<span class="chip${bibState.facet === "folder" ? " on" : ""}" data-bib="facet" data-f="folder">Folders</span>` +
+    `<span class="chip${bibState.facet === "folder" ? " on" : ""}" data-bib="facet" data-f="folder">Dossiers</span>` +
     `<span class="chip${bibState.facet === "genre" ? " on" : ""}" data-bib="facet" data-f="genre">Genres</span></div>` +
     facetList
       .map(
@@ -1083,9 +1136,9 @@ async function renderBiblioLive() {
     .map((t) => {
       const name = esc(t.artist && t.title ? `${t.artist} — ${t.title}` : t.path.split(/[\\/]/).pop() || t.path);
       const link = t.discogs_release_id
-        ? `<button class="lk" data-bib="link" data-rid="${esc(t.discogs_release_id)}" aria-label="Discogs page"><i class="ti ti-external-link" style="font-size:var(--text-base);color:var(--color-text-tertiary)"></i></button>`
-        : `<button class="lk" data-bib="identify" data-id="${t.id}" aria-label="Identify"><i class="ti ti-search" style="font-size:var(--text-md);color:var(--color-text-tertiary)"></i></button>`;
-      return `<div class="lr" data-bib="row" data-id="${t.id}"><button class="pb" data-bib="play" data-id="${t.id}" aria-label="Listen"><i class="ti ti-player-play" style="font-size:var(--text-md)"></i></button><span class="bib-name" style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${name}</span>${verdictBadge(t.verdict)}${qualPill(t)}<span style="flex:none;width:40px;text-align:right;font-family:var(--font-mono);color:var(--color-text-tertiary)">${fmtDur(t.duration)}</span>${link}</div>`;
+        ? `<button class="lk" data-bib="link" data-rid="${esc(t.discogs_release_id)}" aria-label="Page Discogs"><i class="ti ti-external-link" style="font-size:var(--text-base);color:var(--color-text-tertiary)"></i></button>`
+        : `<button class="lk" data-bib="identify" data-id="${t.id}" aria-label="Identifier"><i class="ti ti-search" style="font-size:var(--text-md);color:var(--color-text-tertiary)"></i></button>`;
+      return `<div class="lr" data-bib="row" data-id="${t.id}"><button class="pb" data-bib="play" data-id="${t.id}" aria-label="Écouter"><i class="ti ti-player-play" style="font-size:var(--text-md)"></i></button><span class="bib-name" style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${name}</span>${verdictBadge(t.verdict)}${qualPill(t)}<span style="flex:none;width:40px;text-align:right;font-family:var(--font-mono);color:var(--color-text-tertiary)">${fmtDur(t.duration)}</span>${link}</div>`;
     })
     .join("");
   // Truly empty (no filed track at all, no filter narrowing it) vs. a filter that just matches
@@ -1099,7 +1152,7 @@ async function renderBiblioLive() {
   // persistent Export section (index.html nav-export items, wired in installLiveWiring below).
   const header =
     `<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">` +
-    `<div style="flex:1;display:flex;align-items:center;gap:7px;border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:6px 10px"><i class="ti ti-search" style="font-size:var(--text-lg);color:var(--color-text-tertiary)"></i><input id="bibq" placeholder="Search…" value="${esc(bibState.filter.q || "")}" style="flex:1;border:0;background:transparent;color:inherit;font-size:var(--text-md);outline:none"></div>` +
+    `<div style="flex:1;display:flex;align-items:center;gap:7px;border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:6px 10px"><i class="ti ti-search" style="font-size:var(--text-lg);color:var(--color-text-tertiary)"></i><input id="bibq" placeholder="Rechercher…" value="${esc(bibState.filter.q || "")}" style="flex:1;border:0;background:transparent;color:inherit;font-size:var(--text-md);outline:none"></div>` +
     chips +
     `</div>`;
 
@@ -1110,8 +1163,8 @@ async function renderBiblioLive() {
         backToRevue: true,
       })
     : header +
-      `<div style="display:flex;gap:14px"><div style="width:150px;flex:none"><div class="col-h">Library</div>${side}</div>` +
-      `<div style="flex:1;min-width:0"><div style="display:flex;justify-content:space-between;margin-bottom:5px"><span style="font-size:var(--text-base);font-weight:500">${esc(activeFacetVal || "All")}</span><span style="font-size:var(--text-sm);color:var(--color-text-tertiary)">${bibState.tracks.length} tracks</span></div>` +
+      `<div style="display:flex;gap:14px"><div style="width:150px;flex:none"><div class="col-h">Bibliothèque</div>${side}</div>` +
+      `<div style="flex:1;min-width:0"><div style="display:flex;justify-content:space-between;margin-bottom:5px"><span style="font-size:var(--text-base);font-weight:500">${esc(activeFacetVal || "Tous")}</span><span style="font-size:var(--text-sm);color:var(--color-text-tertiary)">${bibState.tracks.length} piste${bibState.tracks.length > 1 ? "s" : ""}</span></div>` +
       (rows ||
         `<div style="font-size:var(--text-md);color:var(--color-text-tertiary)">Aucun résultat pour ce filtre.</div>`) +
       `<div id="bibplayer"></div></div></div>`;
@@ -1335,6 +1388,29 @@ export function installLiveWiring() {
       if (item && mid) void openFilingInto(mid, item);
     } else if (act === "batchaction") {
       e.stopPropagation();
+      const fileN = batchSel.size;
+      const fakeN = batchFakeSel.size;
+      const armed =
+        !!batchConfirmArmed &&
+        batchConfirmArmed.fileN === fileN &&
+        batchConfirmArmed.fakeN === fakeN;
+      if (fileN > BATCH_CONFIRM_THRESHOLD && !(armed && Date.now() - batchConfirmArmed!.at >= 400)) {
+        // Arm (or re-arm): re-render as the danger "Confirmer" button, don't file yet. The 400ms
+        // floor on the confirming click rejects an accidental doubleclick/duplicate-event landing
+        // on the same spot right after arming — the exact failure mode that filed ~265 real
+        // tracks during this fix's own verification (audit UI/UX 2026-07-03, fix 3 incident).
+        // Auto-disarms after 5s of no second click.
+        clearTimeout(batchConfirmTimer);
+        batchConfirmArmed = { fileN, fakeN, at: Date.now() };
+        batchConfirmTimer = setTimeout(() => {
+          batchConfirmArmed = null;
+          renderBatchRail(currentItems.filter((it) => it.verdict !== "ok").length);
+        }, 5000);
+        renderBatchRail(currentItems.filter((it) => it.verdict !== "ok").length);
+        return;
+      }
+      clearTimeout(batchConfirmTimer);
+      batchConfirmArmed = null;
       // Adaptive dispatch. Combined (both ticked): file runs with its progress UI (Stop follows it);
       // discard fires in parallel as a fast fire-and-forget — IDs captured before clear.
       if (batchSel.size && batchFakeSel.size) {

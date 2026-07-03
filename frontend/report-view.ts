@@ -175,6 +175,15 @@ export function keyboardHintsHtml(): string {
  *  version + raw path, optionally a close button (`openReportModal`'s popup only). Keeps the
  *  shared `.sift-report-cover`/`.sift-report-name`/`.sift-report-sub` hooks that filing.ts writes
  *  into (cover src on identify, clean displayName on reconcile). */
+/** Last 2 segments of a path ("…\parent\file.aiff"), so the ellipsis truncation (CSS
+ *  text-overflow, which cuts from the right) never hides the filename — the one part of the
+ *  raw path actually worth reading. Full path stays available via the title tooltip
+ *  (audit UI/UX 2026-07-03, fix 7). */
+function shortPath(path: string): string {
+  const parts = path.split(/[\\/]/).filter(Boolean);
+  return parts.length > 2 ? `…${parts.slice(-2).join("/")}` : path;
+}
+
 function playerHeaderHtml(name: string, path: string, closeBtn: boolean): string {
   return (
     `<div class="sift-player-header">` +
@@ -184,7 +193,7 @@ function playerHeaderHtml(name: string, path: string, closeBtn: boolean): string
     `<div class="sift-player-header-body">` +
     `<div class="sift-report-name sift-player-name">${esc(name)}</div>` +
     `<div class="sift-report-sub sift-player-sub"></div>` +
-    `<div class="sift-player-path">${esc(path)}</div>` +
+    `<div class="sift-player-path" title="${esc(path)}">${esc(shortPath(path))}</div>` +
     `</div>` +
     (closeBtn ? `<button class="sift-close sift-report-close">fermer</button>` : "") +
     `</div>`

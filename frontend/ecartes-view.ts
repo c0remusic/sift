@@ -70,18 +70,22 @@ export async function renderEcartes() {
       it.filename || it.path,
     )}</div>`;
 
+  // The 6 store links only show on hover/focus of the row (.sift-ec-stores, styled in
+  // styles.css) — with ~90 rows in Écartés, rendering them open on every row was a wall of
+  // ~650 links; "Copier le nom" (the one action most re-sourcing actually starts with) stays
+  // always visible (audit UI/UX 2026-07-03, fix 6).
   const resRows = res
     .map(
       (it) =>
-        `<div style="padding:8px 4px;border-bottom:0.5px solid var(--color-border-tertiary)"><div style="display:flex;align-items:center;gap:8px"><div style="flex:1;min-width:0"><div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:var(--text-md);font-weight:500">${name(
+        `<div class="sift-ec-row" style="padding:8px 4px;border-bottom:0.5px solid var(--color-border-tertiary)"><div style="display:flex;align-items:center;gap:8px"><div style="flex:1;min-width:0"><div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:var(--text-md);font-weight:500">${name(
           it,
         )}</div>${fileLine(it)}</div>${ecReason(
           it,
         )}<button class="lk" data-ec="requeue" data-id="${it.id}" title="Restaurer — remettre en file" aria-label="Restaurer — remettre en file"><i class="ti ti-arrow-back-up" style="font-size:var(--text-base);color:var(--color-text-tertiary)"></i></button><button class="lk" data-ec="trash" data-id="${it.id}" title="Envoyer à la corbeille" aria-label="Envoyer à la corbeille"><i class="ti ti-trash" style="font-size:var(--text-md);color:var(--color-text-tertiary)"></i></button></div><div style="margin-top:5px;display:flex;flex-wrap:wrap;align-items:center;gap:4px"><button data-ec="slsk" data-q="${esc(
           ecSlsk(it),
-        )}" title="Copier « Artiste Titre » pour chercher sur Soulseek" style="font-size:var(--text-xs);padding:2px 8px;color:var(--color-text-secondary)"><i class="ti ti-copy" style="font-size:var(--text-xs);vertical-align:-1px"></i> Copier le nom</button><span style="color:var(--color-border-secondary)">·</span>${ecStoreLinks(
+        )}" title="Copier « Artiste Titre » pour chercher sur Soulseek" style="font-size:var(--text-xs);padding:2px 8px;color:var(--color-text-secondary)"><i class="ti ti-copy" style="font-size:var(--text-xs);vertical-align:-1px"></i> Copier le nom</button><span class="sift-ec-stores" style="display:flex;flex-wrap:wrap;align-items:center;gap:4px"><span style="color:var(--color-border-secondary)">·</span>${ecStoreLinks(
           it,
-        )}</div></div>`,
+        )}</span></div></div>`,
     )
     .join("");
 
