@@ -278,6 +278,28 @@ l'échelle existante (`xs`→`2xl`) plutôt que de prétendre encore à un rôle
 taille visuelle pour cette icône, aucun changement rendu). Le vrai titre de
 morceau (`.sift-player-name`) reste sur `--text-lg` (14px), non affecté.
 
+## Cartes Réglages — `.sift-settings-card` (`styles.css:536-549`, structure `sift-live.ts` `renderReglagesLive()`)
+
+| État | Sélecteur | Valeur |
+|---|---|---|
+| Carte | `.sift-settings-card` | fond `var(--color-background-secondary)`, bordure `var(--color-border-tertiary)` |
+| Bouton (ex. "Changer…") | `.sift-settings-btn` | fond `var(--color-surface-raised)` |
+| Bouton hover | `.sift-settings-btn:hover` | `filter:brightness(0.95)` |
+| Lien "Oublier" | `.sift-settings-forget` | `color: var(--color-text-quaternary)` |
+| Lien "Oublier" hover | `.sift-settings-forget:hover` | `color: var(--color-text-secondary)` |
+
+**Structure DOM (corrigée 2026-07-04)** : `renderReglagesLive()` construit
+plusieurs cartes (`Discogs` id `sift-reglages-discogs`, `Bibliothèque` id
+`sift-reglages-bibliotheque`, `Apparence` id `sift-reglages-apparence`, et
+tout futur ajout — ex. clé USB, M7) à l'intérieur d'un **wrapper unique**
+`<div id="sift-reglages-live">`, retiré/recréé en un point avant chaque
+re-render. Avant ce fix, chaque carte était un sibling direct de `#content`
+et seule la 1ʳᵉ (Discogs) était nettoyée — un second appel (ex. via
+"Changer…"/"Oublier" sur le dossier racine) dupliquait Bibliothèque/Apparence
+et leurs listeners. **Toute nouvelle carte doit s'ajouter à l'intérieur de ce
+wrapper**, pas comme sibling direct de `#content` — sinon le bug se
+reproduit.
+
 ---
 
 ## Historique des corrections

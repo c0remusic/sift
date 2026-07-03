@@ -18,6 +18,10 @@ Lib = `sift_lib`. MSRV Rust 1.77.2.
 - Dev : `npm run tauri dev` (Vite 5173 + backend Rust)
 - Build installeurs : `npm run tauri build` → `src-tauri/target/release/bundle/`
 - Tests Rust : `cargo test --manifest-path src-tauri/Cargo.toml`
+  ⚠️ `src-tauri/fixtures/*` (audio .flac/.wav utilisés par `analysis::decode::tests`)
+  est **gitignoré** — un nouveau worktree (ex. `dj-assistant-m7-usb`) ne les a pas
+  et les tests decode échouent en `file not found`, pas un vrai bug. Copier les
+  fichiers depuis un worktree qui les a déjà (`dj-assistant-m6a/src-tauri/fixtures/`).
 - Lint : `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings`
 - Type-check front : `npx tsc --noEmit`
 
@@ -209,6 +213,14 @@ IDs connus (à confirmer à la résolution, ne pas inventer) :
 - Bon exemple déjà en place : `progress-zone.ts` compare l'état précédent/nouveau et
   n'écrit que les deux valeurs qui bougent (pas de reconstruction DOM) sur l'événement
   de progression encodage — modèle à suivre pour tout futur handler à haute fréquence.
+- Un `render*()` qui ajoute **plusieurs blocs siblings** à `#content` (ex.
+  plusieurs cartes) doit les envelopper dans **un seul wrapper** retiré/recréé
+  en un point unique — jamais un `document.getElementById(id)?.remove()` par
+  bloc. Bug réel trouvé le 2026-07-04 dans `renderReglagesLive()`
+  (`sift-live.ts`) : seul le 1er bloc (Discogs) était nettoyé au re-render,
+  Bibliothèque/Apparence dupliquaient carte + listeners à chaque appel
+  (`sift-live.ts:995`/`1007`, déclenché par "Changer…"/"Oublier"). Corrigé en
+  enveloppant les cartes dans un `wrap` unique (`id="sift-reglages-live"`).
 
 ## Front — CSS (conventions trouvées via audit Impeccable, 2026-07-03)
 - **Jamais de `border-left`/`border-right` coloré comme accent** (side-stripe) sur

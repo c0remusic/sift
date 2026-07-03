@@ -68,6 +68,17 @@ garde-fou doit être construit dans l'UI de l'app, pas dans une boîte système 
 - exFAT accessible seulement via un choix explicite secondaire, avec un
   avertissement inline sur la compatibilité CDJ (pas un simple tooltip).
 
+## Intégration frontend (carte Réglages)
+
+La carte "Formater la clé USB" s'ajoute dans `renderReglagesLive()`
+(`frontend/sift-live.ts`) comme une carte de plus **à l'intérieur du wrapper
+existant** `<div id="sift-reglages-live">` (voir `wrap.appendChild(...)` —
+fix 2026-07-04, doc `docs/design-system-states.md` § Cartes Réglages) — jamais
+comme sibling direct de `#content` avec son propre `document.getElementById(
+id)?.remove()`, sinon le bug de duplication déjà corrigé une fois
+(Bibliothèque/Apparence dupliquées au re-render) se reproduit pour cette
+nouvelle carte.
+
 ## Hors scope
 
 - Pas de vérification post-formatage du contenu (juste confirmation que la
