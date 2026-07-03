@@ -6,18 +6,22 @@
 > la maquette navigateur jetable, ni `Sift.dc.html`, qui a son propre vocabulaire
 > de tokens et sa propre logique). Alimenté au fur et à mesure d'un audit
 > composant-par-composant (méthode : cataloguer un à la fois, vérifier, avant de
-> continuer — voir la conversation qui a lancé ce fichier, 2026-07-03).
+> continuer — démarré 2026-07-03).
 >
 > Usage : avant de porter un nouveau design, vérifier ici si le composant existe
 > déjà et quels états il a réellement, plutôt que de re-déduire toute la logique
 > depuis `Sift.dc.html`. Avant de déclarer un portage "fini", cocher chaque état
 > listé contre une preuve fraîche (voir `sift-audit-fidelite-methode` en mémoire).
 >
-> `.interface-design/system.md` reste la source pour direction/ressenti/layout ;
-> ce fichier est le complément état-par-état, plus étroit et plus à jour sur les
-> valeurs exactes.
+> `.interface-design/system.md` est **périmé sur la palette/direction visuelle**
+> (dark superseded, 2026-07-01) — ne pas s'y fier pour les couleurs, seulement
+> pour espacement/radius/typo. Ce fichier-ci est la source à jour état-par-état,
+> couleurs et comportements réels.
+>
+> Numéros de ligne vérifiés à jour le 2026-07-03 (après les fixes de cette
+> session) — `styles.css` bouge vite, revérifier au grep si un doute.
 
-## Ligne de queue — `.qi` (`styles.css:130-135`)
+## Ligne de queue — `.qi` (`styles.css:143-148`)
 
 | État | Sélecteur | Valeur (clair) | Valeur (sombre) |
 |---|---|---|---|
@@ -28,7 +32,7 @@
 
 RAS — 4 états déclarés explicitement, cohérents.
 
-## Item de navigation — `.nv` (`styles.css:93-103`)
+## Item de navigation — `.nv` (`styles.css:106-116`)
 
 | État | Sélecteur | Valeur |
 |---|---|---|
@@ -39,12 +43,12 @@ RAS — 4 états déclarés explicitement, cohérents.
 
 RAS.
 
-## Bouton d'action principal — `.sift-ranger-btn` (`styles.css:157`, `filing.ts:924`)
+## Bouton d'action principal — `.sift-ranger-btn` (`styles.css:170`, `filing.ts:924`)
 
 | État | Source | Valeur |
 |---|---|---|
 | Normal | `.sift-ranger-btn` | `background: var(--color-background-info)`, `color: var(--color-text-info)` |
-| Hover | **hérité de `button:hover`** générique (`styles.css:203`), pas déclaré sur la classe | `background: var(--color-background-secondary)` |
+| Hover | **hérité de `button:hover`** générique, pas déclaré sur la classe | `background: var(--color-background-secondary)` |
 | Disabled | **hérité de `button:disabled`** générique | `opacity:.4` |
 | Focus | **hérité de `:focus-visible`** générique | outline 2px `var(--color-text-info)` |
 
@@ -53,29 +57,26 @@ la classe elle-même — tout vient de la cascade sur l'élément `<button>` nat
 Un futur design montrant un hover différent du gris générique serait un vrai
 changement à faire, pas un oubli à "ajouter".
 
-## Chip/tag — `.chip` (`styles.css:189`)
+## Chip/tag — `.chip` (`styles.css:202`)
 
 | État | Sélecteur | Valeur |
 |---|---|---|
 | Normal | `.chip` | `color: var(--color-text-secondary)`, bordure `var(--color-border-tertiary)` |
+| Hover | `.chip:hover` | `background: var(--color-background-secondary)` |
 | Sélectionné | `.chip.on` | `background: var(--color-background-info)`, `color: var(--color-text-info)` |
-| Disabled | `.sift-chip-disabled` (classe séparée, `styles.css:431`) | `opacity:.4;cursor:not-allowed` |
-| **Hover** | ❌ **aucune règle** | — |
+| Sélectionné + hover | `.chip.on:hover` | reste `var(--color-background-info)` (ne pas écraser l'état sélectionné) |
+| Disabled | `.sift-chip-disabled` (classe séparée) | `opacity:.4;cursor:not-allowed` |
 
-🔴 **TROU RÉEL (pas un héritage caché comme le bouton)** : `.chip` est rendu en
-`<span>` (formats MP3/AIFF/WAV du rail de classement `filing.ts`, facettes
-qualité/genre de la Bibliothèque `sift-live.ts`), donc n'hérite d'aucun style
-`button`. Cliquable (`cursor:pointer`) mais **zéro retour visuel au survol**.
-**Pas encore corrigé** — noté ici en attendant, voir décision de priorité.
+✅ Corrigé 2026-07-03 (était sans hover — cliquable sans retour visuel).
 
-## Case à cocher — `.cbx` (`styles.css:195-196`)
+## Case à cocher — `.cbx`
 
-⚠️ **CODE MORT côté vraie app** — grep confirme aucun usage dans `sift-live.ts`,
-`batch-tracklist.ts`, ou tout autre fichier réel ; seulement dans `app.js` (la
-maquette navigateur jetable). Si un futur design montre une case à cocher, ne
-pas supposer qu'elle existe déjà dans le vrai code — elle est à construire.
+✅ **Supprimée 2026-07-03** — c'était du code mort côté vraie app (aucun usage
+dans `sift-live.ts`/`batch-tracklist.ts`, seulement dans `app.js`, la maquette
+jetable). N'existe plus dans `styles.css`. Si un futur design montre une case à
+cocher, elle est à construire, pas à réutiliser.
 
-## Segmented control — `.sift-seg-opt` (`styles.css:529-531`)
+## Segmented control — `.sift-seg-opt` (`styles.css:542-544`)
 
 | État | Sélecteur | Valeur |
 |---|---|---|
@@ -85,7 +86,7 @@ pas supposer qu'elle existe déjà dans le vrai code — elle est à construire.
 
 RAS.
 
-## Ligne de journal — `.jrnl-qrow` (`styles.css:548-558`)
+## Ligne de journal — `.jrnl-qrow` (`styles.css:561-571`)
 
 | État | Sélecteur | Valeur |
 |---|---|---|
@@ -95,49 +96,39 @@ RAS.
 
 RAS — même famille visuelle que `.qi`, cohérent.
 
-## Toggle switch — `.tog` (`styles.css:190`)
+## Toggle switch — `.tog` (`styles.css:203`)
 
 | État | Sélecteur | Valeur |
 |---|---|---|
-| On (défaut) | `.tog` | `background: var(--color-text-info)`, curseur à droite |
-| Off | `.tog.off` | `background: var(--color-border-secondary)`, curseur à gauche |
+| On (défaut) | `.tog` | `background: var(--color-text-info)`, curseur `transform:translateX(13px)` |
+| Off | `.tog.off` | `background: var(--color-border-secondary)`, curseur `transform:translateX(0)` |
 
-Pas de hover/focus/disabled déclarés — à vérifier si c'est un manque ou un choix (composant discret, faible priorité).
+✅ Retouché 2026-07-03 (audit Impeccable, perf) : le curseur bougeait via
+`left`/`right` (propriété de layout, recalcul à chaque frame) — passé à
+`transform:translateX()`. Comportement visuel identique, juste plus performant.
+Toujours pas de hover/focus/disabled déclarés — composant discret, faible
+priorité, pas classé bug.
 
-## 🔴 Carte verdict — `.sift-verdict-card` (`styles.css:374`, `report-view.ts:258-270`) — PRIORITAIRE
+## Carte verdict — `.sift-verdict-card` (`styles.css:387`, couleurs en JS `report-view.ts:259-263`)
 
-Le cœur du produit (détection faux-lossless). Contrairement à tous les composants
-ci-dessus, **la couleur de fond n'est pas en CSS** — elle est calculée en JS et
-injectée en style inline :
+Le cœur du produit (détection faux-lossless). La couleur de fond n'est pas en
+CSS — elle est calculée en JS et injectée en style inline :
 
 ```ts
 const map = {
-  ok:   [..., "var(--color-text-success)", "rgba(91,192,140,.2)"],
-  fake: [..., "var(--color-text-danger)",  "rgba(226,104,94,.16)"],
-  grey: [..., "var(--color-text-warning)", "rgba(221,166,63,.16)"],
+  ok:   [..., "var(--color-text-success)", "var(--color-background-success)"],
+  fake: [..., "var(--color-text-danger)",  "var(--color-background-danger)"],
+  grey: [..., "var(--color-text-warning)", "var(--color-background-warning)"],
 } as const;
 ```
 
-**Incohérence trouvée** : `styles.css` (commentaire ligne 9-10) documente une
-décision explicite — *"--color-text-danger/--color-text-warning pointent tous
-deux vers l'ambre... l'ancien 'danger' rouge fusionne avec 'doute'"* — donc plus
-aucun rouge dans la palette. Mais le fond de la carte verdict pour `fake` (LE
-verdict le plus important de l'app : fichier détecté faux-lossless) utilise
-`rgba(226,104,94,.16)`, qui **est un rouge**, pas l'ambre attendu. Le texte (`fg`)
-utilise bien le token ambre `var(--color-text-danger)`, mais le fond ne
-correspond à aucun token de `styles.css` — ni `--color-background-danger`
-(rgba(176,122,40,.14), ambre) ni `--color-background-warning` (même valeur). Les
-trois valeurs `panelBg` (`ok`/`fake`/`grey`) sont des rgba à la main, différentes
-des tokens `--color-background-success/danger/warning` déjà définis dans
-`styles.css` pour le même usage.
+✅ **Corrigé 2026-07-03** — avant, les trois `panelBg` étaient des `rgba(...)`
+en dur, dont un vrai rouge pour `fake` qui contredisait la décision de palette
+documentée en tête de `styles.css` ("plus de rouge, danger fusionne dans
+l'ambre"). Remplacés par les tokens `--color-background-success/danger/warning`
+déjà existants — élimine la duplication de valeurs ET la contradiction.
 
-**Pas encore corrigé** — c'est la trouvaille la plus significative de cet audit
-(composant signature, contradiction avec une décision de palette déjà actée).
-À traiter en priorité une fois l'audit terminé, ou avant si tu préfères.
-
----
-
-## Ligne candidat (identification) — `.sift-cand` (`styles.css:215-219`)
+## Ligne candidat (identification) — `.sift-cand` (`styles.css:226-235`)
 
 | État | Sélecteur | Valeur |
 |---|---|---|
@@ -150,109 +141,118 @@ pas de fond), cohérent avec une liste de résultats de recherche. Différent
 pattern des lignes `.qi`/`.jrnl-qrow` (fond au survol), à garder en tête pour ne
 pas "corriger" par erreur vers l'uniformité lors d'un futur portage.
 
-## Bouton Destination — `.sift-dest-btn` (`styles.css:148`, `filing.ts:917`)
+## Bouton Destination — `.sift-dest-btn` (`styles.css:161`, `filing.ts:917`)
 
 Même famille que `.sift-ranger-btn` — vrai `<button>`, hérite hover/disabled/focus
 du sélecteur générique. RAS.
 
-## Sliders (volume, tempo) — `.sift-slider-*` (`styles.css:363-369`)
+## Sliders (volume, tempo) — `.sift-slider-*` (`styles.css:377-382`, drag wiring `report-view.ts` `dragSlider()`)
 
 | État | Sélecteur | Valeur |
 |---|---|---|
-| Normal | `.sift-slider-thumb`/`-track`/`-fill` | statique, curseur `pointer` sur la track |
-| Hover / actif (en train de glisser) | ❌ **aucune règle** | — |
+| Normal | `.sift-slider-thumb` | `transform:translate(-50%,-50%) scale(1)` |
+| Hover (survol de la track) | `.sift-slider-track:hover .sift-slider-thumb` | `scale(1.15)` |
+| Drag actif | `.sift-slider-track.dragging .sift-slider-thumb` | `scale(1.3)` + halo `box-shadow:0 0 0 4px var(--overlay-selected)` |
 
-🔴 **TROU** : le curseur (thumb) du volume et du tempo ne réagit visuellement ni
-au survol ni pendant le drag — aucune classe d'état (`:hover`, `.dragging`, etc.)
-n'existe. Pour un composant qu'on manipule activement à la souris, l'absence de
-feedback est un vrai manque, pas un choix délibéré comme `.sift-cand`.
+✅ Corrigé 2026-07-03 — avant, aucun feedback visuel. La classe `.dragging` est
+posée/retirée en JS (`mousedown`/`mouseup` dans `dragSlider()`, partagée par
+volume et tempo) car le thumb a `pointer-events:none` (le drag est géré par la
+track parente).
 
-## Pochette / cover — `.sift-cover-frame` (`styles.css:345`, `report-view.ts:190-191`)
+## Pochette / cover — `.sift-cover-frame` (`styles.css:356-357`, markup `report-view.ts` `playerHeaderHtml()`)
 
-`<img class="sift-report-cover sift-player-cover" hidden alt="">` — **`alt=""`
-en dur** sur une image de contenu réel (la pochette de l'album), pas une image
-décorative. `alt=""` est correct pour du décoratif, pas pour une pochette qui
-porte de l'information (identifie visuellement le morceau). Devrait être
-`alt="Pochette — {artiste} – {titre}"` ou similaire, rempli dynamiquement.
+✅ Corrigé 2026-07-03 — `alt=""` (vide, sur une image de contenu réel, pas
+décorative) remplacé par `alt="Pochette — {nom du morceau}"`, rempli
+dynamiquement depuis le paramètre `name` déjà disponible dans la fonction.
+`hidden` + pas de `src` au premier rendu reste volontaire (divulgation
+progressive, pochette affichée une fois chargée) — pas une image cassée.
 
-## Boutons icon-only (lecture, lien Discogs) — vérifiés, RAS
+## Boutons icon-only (lecture, lien Discogs, titlebar) — vérifiés
 
 `sift-play-btn` (`report-view.ts:208`) a `title` + `aria-label`. Lien Discogs
 icon-only dans la Bibliothèque (`sift-live.ts:1139`) a `aria-label="Page
 Discogs"`. Le bouton "Voir la release" (`library-detail.ts:70`) a du texte
-visible, pas besoin d'`aria-label`. Le souci a11y noté historiquement dans
-`docs/` (icon-only sans label) semble déjà corrigé sur ces trois — pas de
-nouvelle action ici, juste confirmation par preuve.
+visible, pas besoin d'`aria-label`. ✅ Titlebar (`chrome.ts:122-124`, boutons
+min/max/close) corrigée 2026-07-03 — n'avait que `title`, `aria-label` ajouté
+sur les 3 boutons (seul manque trouvé dans cette catégorie).
 
-## Barre de progression — `.pbar`/`.pfill` et `.sift-pz-fill` — RAS
+## Barre de progression — `.pbar`/`.pfill` (`styles.css:149`) et `.sift-pz-fill` (`styles.css:133-134`, JS `progress-zone.ts`)
 
 `.sift-pz-row.error .sift-pz-fill` bascule vers `var(--color-text-danger)` en
-cas d'erreur — cohérent avec les tokens, pas de valeur en dur ici contrairement
-à la carte verdict.
+cas d'erreur — cohérent avec les tokens. ✅ Perf corrigée 2026-07-03 (audit
+Impeccable) : `.sift-pz-fill` animait `width` (propriété de layout) — passé à
+`transform:scaleX()` + `transform-origin:left`, `width:100%` fixe désormais.
+`progress-zone.ts` mis à jour en conséquence (`style.transform` au lieu de
+`style.width`, deux points d'écriture).
 
-## Popover Destination — `.sift-dest-popover` — RAS (scope limité)
+## Popover Destination — `.sift-dest-popover` (`styles.css:176-182`) — RAS (scope limité)
 
 Seul état géré en CSS : `[hidden]` (fermé). Pas de transition d'ouverture ni
 d'état focus-trap dédié, mais rien qui contredise un token ou une décision
 actée — pas classé bug, juste minimal.
 
----
-
-## 🔴 Bouton Identifier — `.sift-id-btn` (`styles.css:225-227`) — 3e teinte non documentée
+## Bouton Identifier — `.sift-id-btn` (`styles.css:237-238`)
 
 ```css
-/* [C1] Identifier primary button: gold fill, stands out as the first action */
-.sift-id-btn{background:#FFdc82;border-color:rgba(0,0,0,.12);color:#1d1c1a;...}
-.sift-id-btn:hover{background:#f0cc6a}
+/* Deliberate 3rd hue (gold), documented exception... */
+.sift-id-btn{background:var(--color-accent-identify);border-color:var(--color-accent-identify-border);color:var(--color-accent-identify-text);...}
+.sift-id-btn:hover{background:var(--color-accent-identify-hover)}
 ```
 
-Même famille de problème que la carte verdict, mais plus direct : le
-commentaire d'en-tête du fichier (`styles.css:6-7`) dit explicitement
-*"Color = meaning only: green (ok/lossless), amber (doute/pending/erreur) —
-PAS de 3e teinte, PAS d'accent décoratif."* Ce bouton est un **doré/jaune**,
-une vraie 3e teinte, en dur, sans token — et **sans variante sombre du tout**
-(aucune règle dans les blocs `@media (prefers-color-scheme:dark)` ni
-`[data-theme="dark"]`). En mode sombre, il garde exactement les mêmes couleurs
-qu'en mode clair, sans qu'on sache si c'est voulu ou oublié.
+✅ **Corrigé 2026-07-03** — avant, doré (`#FFdc82`/`#f0cc6a`/`#1d1c1a`) en dur,
+sans token, **sans variante sombre du tout** (même couleurs en mode sombre).
+Contredisait la règle documentée en tête de fichier ("2 couleurs sémantiques
+seulement, pas de 3e teinte"). Tokenisé (`--color-accent-identify`/`-hover`/
+`-text`/`-border`, défini dans `:root` + les deux blocs sombres) et **gardé
+comme exception documentée** — c'est le CTA de l'identification, pas un statut,
+donc une 3e teinte assumée plutôt que supprimée. Commentaire inline explique le
+choix pour la prochaine lecture.
 
-## Autres couleurs non tokenisées (audit complémentaire "tokens pour toutes les fonctions ?")
+## Bordure latérale colorée — `.sift-filed-banner` (`styles.css:478`)
 
-- `.sift-time-elapsed{color:#ff5500}` (`styles.css:360`) — orange en dur,
-  horodatage sur la waveform, aucun token, aucune variante sombre.
+✅ **Corrigé 2026-07-03** (audit Impeccable, anti-pattern) — avait un
+`border-left:2px solid var(--color-text-success)`, ban explicite Impeccable
+("side-stripe borders... never intentional", tell reconnaissable d'UI générée
+par IA). Retiré, fond teinté (`background:var(--color-background-success)`)
+conservé + `border-radius` ajouté pour ne pas perdre toute délimitation
+visuelle.
+
+## Ombres portées — `.sift-toast` (`styles.css:476`) / `.sift-report-overlay-card` (`styles.css:423`)
+
+✅ **Tokenisées 2026-07-03** — `box-shadow` en `rgba(0,0,0,.4)`/`.5` en dur
+remplacé par `var(--shadow-toast)`/`var(--shadow-overlay)`, définis dans
+`:root` (mêmes valeurs, noir fixe volontaire, lisible dans les deux thèmes —
+pas besoin de variante sombre pour une ombre).
+
+## Autres couleurs non tokenisées (audit complémentaire "tokens pour toutes les fonctions ?") — restant, pas classées bug
+
+- `.sift-time-elapsed{color:#ff5500}` (`styles.css:371`) — orange en dur,
+  horodatage sur la waveform, aucun token, aucune variante sombre. Pas
+  corrigé — priorité basse, élément mineur sur canvas déjà fixe.
 - Overlays waveform/spectrogramme (`rgba(255,255,255,.6)`, fond `#000`,
-  badges temps `rgba(0,0,0,.55)`) — **probablement volontaire** : ce canvas
-  reste toujours sombre indépendamment du thème de l'app, comme un lecteur
-  audio pro. Pas classé bug, juste noté pour ne pas le "corriger" à tort.
-- Ombres portées (`.sift-toast`, `.sift-report-overlay-card`) — `rgba(0,0,0,
-  .4/.5/.6)` en dur, faible priorité, discret dans les deux thèmes.
-- `.tog::after`/`.cbx.on{color:#fff}` — blanc en dur sur pastille colorée,
-  mineur.
+  badges temps `rgba(0,0,0,.55)`) — **volontaire** : ce canvas reste toujours
+  sombre indépendamment du thème de l'app, comme un lecteur audio pro. Pas un
+  manque de token, ne pas "corriger" à tort.
+- `.tog::after{background:#fff}` — blanc en dur sur pastille colorée, mineur,
+  pattern courant (curseur blanc sur fond coloré), pas de token nécessaire.
 
 ---
 
-## ✅ Bugs trouvés — corrigés (2026-07-03)
+## Historique des corrections
 
-1. **✅ `.sift-id-btn` — 3e teinte non documentée, sans variante sombre** —
-   tokenisé (`--color-accent-identify`/`-hover`/`-text`/`-border`), variante
-   sombre ajoutée dans les deux blocs (`@media` + `[data-theme="dark"]`).
-   Gardé comme exception documentée à la règle "2 couleurs sémantiques" (CTA
-   de l'identification, pas un statut) plutôt que remplacé.
-2. **✅ Carte verdict hors-tokens** — les 3 `panelBg` (`ok`/`fake`/`grey`)
-   remplacés par `var(--color-background-success/danger/warning)`.
-3. **✅ `.chip` sans hover** — `.chip:hover{background:var(--color-background-secondary)}`
-   ajouté, + `.chip.on:hover` pour ne pas écraser l'état sélectionné.
-4. **✅ Sliders sans état hover/drag** — `.sift-slider-track:hover` fait
-   grossir le curseur (scale 1.15), `.dragging` (classe posée en JS au
-   mousedown/mouseup dans `dragSlider()`, `report-view.ts`) l'agrandit plus
-   (scale 1.3) + halo `box-shadow`.
-5. **✅ `alt=""` sur la pochette** — `alt="Pochette — {nom du morceau}"`.
-6. **✅ `.cbx` mort** — supprimé de `styles.css`.
+**2026-07-03, passe 1 (audit design-system, 6 bugs)** : `.sift-id-btn` (3e
+teinte + dark), carte verdict (tokens), `.chip` (hover), sliders (hover/drag),
+pochette (`alt`), `.cbx` (suppression code mort).
 
-Vérification : `npx tsc --noEmit` clean. **Reste à vérifier visuellement dans
-`tauri dev`** (règle CLAUDE.md : ces fichiers ne s'exécutent pas dans le
-navigateur/mockup) — hover chip, hover/drag sliders, bouton Identifier en
-sombre, carte verdict fake.
+**2026-07-03, passe 2 (`/impeccable audit`, 4 findings)** : bordure latérale
+`.sift-filed-banner`, `aria-label` titlebar (`chrome.ts`), transitions
+`width`/`left`/`right` → `transform` (`.sift-pz-fill`, `.tog::after`), ombres
+portées tokenisées.
 
-Priorité suggérée : #1 et #2 (contredisent une règle déjà écrite dans le
-fichier, composants importants) > #3 et #4 (vrais trous de feedback) > #5
-(a11y mineur) > #6 (nettoyage).
+Vérification : `npx tsc --noEmit` clean après chaque passe. Composants CSS
+purs (non gated `inTauri`) vérifiés par inspection de style calculé via
+`preview_eval`. `chrome.ts` (gated) reste à confirmer visuellement dans
+`tauri dev` — changement d'attribut seul, régression improbable mais non vue.
+
+**Reste ouvert, priorité basse** : `.sift-time-elapsed` non tokenisé (mineur,
+voir section ci-dessus).

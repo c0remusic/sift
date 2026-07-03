@@ -43,8 +43,12 @@ Lib = `sift_lib`. MSRV Rust 1.77.2.
 #### UI / Design — ordre de priorité strict
 - **impeccable** (plugin) → priorité n°1 pour retouche/polish d'un écran existant.
   Register `product` (PRODUCT.md créé 30/06). `/impeccable critique|audit|polish …`.
-- **interface-design** (skill) → priorité n°2 retouche, source de vérité tokens
-  (`.interface-design/system.md` — section Mode Batch PÉRIMÉE, reste valide).
+- **interface-design** (skill) → priorité n°2 retouche. `.interface-design/system.md`
+  est **PÉRIMÉ sur toute la palette/direction visuelle** depuis 2026-07-01 (dark
+  "table du digger" remplacé par le clair gris chaud actuel, vert/ambre seulement)
+  — ne pas s'y fier pour les couleurs. Espacement/radius/hauteur/typo restent
+  valides. Source de vérité couleur réelle = `frontend/styles.css` (`:root`) +
+  `docs/design-system-states.md`.
 - **design-flow** (skill) → priorité n°1 pour un **nouveau chantier UI** (nouveau
   screen, refonte significative). Orchestre en séquence : `grill-me` → `design-brief`
   → `information-architecture` → `design-tokens` → `brief-to-tasks` → `frontend-design`
@@ -197,6 +201,18 @@ IDs connus (à confirmer à la résolution, ne pas inventer) :
   appelé en boucle (sature le thread UI → feedback noyé, bug invisible à la lecture).
 - En écrivant un handler sur événement, **nommer la fréquence supposée** de l'événement,
   pour que le risque de saturation soit visible à la revue, pas découvert au runtime.
+- Bon exemple déjà en place : `progress-zone.ts` compare l'état précédent/nouveau et
+  n'écrit que les deux valeurs qui bougent (pas de reconstruction DOM) sur l'événement
+  de progression encodage — modèle à suivre pour tout futur handler à haute fréquence.
+
+## Front — CSS (conventions trouvées via audit Impeccable, 2026-07-03)
+- **Jamais de `border-left`/`border-right` coloré comme accent** (side-stripe) sur
+  carte/ligne/bannière — ban explicite Impeccable, tell reconnaissable d'UI générée
+  par IA. Utiliser un fond teinté (déjà le pattern `--color-background-*`) à la place.
+- **Animer `transform`/`opacity`, jamais `width`/`height`/`left`/`right`/`padding`/
+  `margin`** — ces propriétés déclenchent un recalcul de layout à chaque frame.
+  Barre de progression → `transform:scaleX()` + `transform-origin`, pas `width`.
+  Curseur qui se déplace → `transform:translateX()`, pas `left`/`right`.
 
 ## Vérification UI — app réelle, pas la maquette navigateur
 
