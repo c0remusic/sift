@@ -112,6 +112,13 @@ const MIGRATIONS: &[&str] = &[
     r#"
     ALTER TABLE actions ADD COLUMN session_id TEXT;
     "#,
+    // v9 — report_json is otherwise unversioned: a content-only change to the analysis engine
+    // (e.g. spectrogram resolution) leaves old cached rows structurally valid but stale, so
+    // nothing would ever invalidate them. Rows from before this migration get NULL, which never
+    // matches analysis::REPORT_CACHE_VERSION — ipc.rs treats that as a cache miss and self-heals.
+    r#"
+    ALTER TABLE tracks ADD COLUMN report_cache_ver INTEGER;
+    "#,
 ];
 
 /// Applies any migrations the DB hasn't seen yet, tracked via PRAGMA user_version.

@@ -243,20 +243,27 @@ pub fn analyze_path(
         // spectrogram too (worker.rs analyzes with_spectrogram=true), so a spectrogram request
         // can also be served from cache — unless this row predates that fix (empty grid), in
         // which case fall through to a fresh decode below.
-        let cached: Option<String> = conn
+        let cached: Option<(String, Option<i64>)> = conn
             .query_row(
-                "SELECT report_json FROM tracks WHERE path=?1",
+                "SELECT report_json, report_cache_ver FROM tracks WHERE path=?1",
                 rusqlite::params![path],
-                |r| r.get::<_, Option<String>>(0),
+                |r| Ok((r.get::<_, Option<String>>(0)?.unwrap_or_default(), r.get(1)?)),
             )
-            .ok()
-            .flatten();
-        if let Some(json) = cached {
-            if !json.is_empty() {
-                let report: crate::analysis::AnalysisReport =
-                    serde_json::from_str(&json).map_err(|e| e.to_string())?;
-                if !with_spectrogram || !report.spectrogram.mag_db.is_empty() {
-                    return Ok(report);
+            .ok();
+        if let Some((json, cache_ver)) = cached {
+            // report_cache_ver guards against content-only changes to analyze() (e.g. spectrogram
+            // resolution) that don't touch AnalysisReport's JSON shape — see its doc comment.
+            if !json.is_empty() && cache_ver == Some(crate::analysis::REPORT_CACHE_VERSION) {
+                // report_json can also predate an AnalysisReport field being added (e.g. FIX-11's
+                // est_kbps) and fail to deserialize even at the right cache version. Treat that
+                // the same as a cache miss — fall through to a fresh decode, which self-heals the
+                // row below — instead of hard-failing analyze_path for every pre-existing track.
+                if let Ok(report) =
+                    serde_json::from_str::<crate::analysis::AnalysisReport>(&json)
+                {
+                    if !with_spectrogram || !report.spectrogram.mag_db.is_empty() {
+                        return Ok(report);
+                    }
                 }
             }
         }
@@ -267,8 +274,8 @@ pub fn analyze_path(
     if let Ok(conn) = conn.lock() {
         if let Ok(json) = serde_json::to_string(&report) {
             let _ = conn.execute(
-                "UPDATE tracks SET report_json=?2 WHERE path=?1",
-                rusqlite::params![path, json],
+                "UPDATE tracks SET report_json=?2, report_cache_ver=?3 WHERE path=?1",
+                rusqlite::params![path, json, crate::analysis::REPORT_CACHE_VERSION],
             );
         }
     }

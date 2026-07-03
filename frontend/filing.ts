@@ -687,20 +687,13 @@ function onIdentityApplied(
   if (state.track) releaseCache.set(state.track.id, { label: applied.label, year: applied.year });
   refreshReleaseLine();
 
-  // Verdict-panel MATCH chip — qualitative (the backend has no % score). Only shown when there's
-  // real doubt (CHECK MATCH, amber): a confident green match shows nothing, per the maquette rule
-  // that the chip exists only to flag something worth checking, not to confirm the obvious.
-  const vchips = mid.querySelector<HTMLElement>(".sift-vchips");
-  if (vchips) {
-    vchips.querySelector('[data-chip="match"]')?.remove();
-    const green = applied.canonical.confidence === "green";
-    if (!green) {
-      vchips.insertAdjacentHTML(
-        "beforeend",
-        vchipHtml("CHECK MATCH", "warning").replace("<span ", '<span data-chip="match" '),
-      );
-    }
-  }
+  // MATCH badge — qualitative (the backend has no % score), shown INSIDE the Identification card's
+  // bottom row (Sift.dc.html:349-354), NOT in the Preuves chips (the maquette keeps those rows
+  // distinct). Only shown when there's real doubt (CHECK MATCH, amber): a confident green match
+  // shows nothing, per the maquette rule that the badge exists only to flag something worth
+  // checking, not to confirm the obvious.
+  const matchRow = editor.querySelector<HTMLElement>(".sift-match-row");
+  if (matchRow) matchRow.hidden = applied.canonical.confidence === "green";
 
   // Show the cover if we have a local path. Every match, not just the first — the Hero and the
   // player's mini header both carry this class now. Probe non-throw — the report pane may be
@@ -722,6 +715,9 @@ function onIdentityApplied(
   // Re-labelling the Identifier button to "Ré-identifier" is also handled here.
   host.hidden = false;
   host.innerHTML = identifiedLineHtml(applied.canonical.artist, applied.canonical.title, applied.cover_path);
+  // Read-only unidentified card (sift-ident-idle): the idle note ("Aucune correspondance…") is now
+  // false — drop it, keeping the search button (relabelled Ré-identifier below) next to the line.
+  editor.querySelector(".sift-ident-idle-note")?.remove();
 
   const changerBtn = host.querySelector<HTMLElement>('[data-fil="cand-changer"]');
   changerBtn?.addEventListener("click", () => {
@@ -1061,7 +1057,15 @@ function renderEditor(host: HTMLElement, mid: HTMLElement, rail: string, report:
         `<input data-fil="version" placeholder="Version" value="${esc(c.version ?? "")}" class="${inputCss}">` +
         `</div>` +
         `<button data-fil="ident-done" class="sift-ident-done-btn">Terminé</button>`
-      : `<div class="sift-ident-display">${esc(displayName)}</div>`) +
+      : c.artist && c.title
+        ? `<div class="sift-ident-display">${esc(displayName)}</div>`
+        : // Unidentified + read-only: the maquette's simplified card (Sift.dc.html:357-362) — a
+          // direct "Rechercher sur Discogs" entry point, without having to open edit mode first.
+          // Same data-fil="identifier" + .sift-cands contract as edit mode, so the existing
+          // doIdentify wiring below and the [m9] I shortcut find them unchanged.
+          `<div class="sift-ident-idle"><span class="sift-ident-idle-note">Aucune correspondance Discogs pour l'instant.</span>` +
+          `<button data-fil="identifier" class="sift-ident-search-btn">Rechercher sur Discogs</button></div>` +
+          `<div class="sift-cands sift-cands-host" hidden></div>`) +
     // Read-only release facts (Label · Année) between the editable identity and Genres. Filled by
     // refreshReleaseLine() below from state; stays empty (no gap) when neither value is known.
     `<div class="sift-release"></div>` +
@@ -1083,7 +1087,11 @@ function renderEditor(host: HTMLElement, mid: HTMLElement, rail: string, report:
     // Discrepancy banner — sits JUST BELOW Apply. Hidden by default via inline display:none; the LONE
     // visibility mechanism is refreshDiscrepancy toggling style.display (no `hidden`+display conflict).
     // Look lives in .sift-tag-warn (styles.css). Shown only when the display diverges from the file.
-    `<div class="sift-tag-warn" style="display:none"><i class="ti ti-alert-triangle sift-icon-inline-md sift-icon-flex-none"></i><span>Tags non écrits dans le fichier — <strong>Ranger</strong> ou <strong>Appliquer</strong> pour les graver</span></div>`;
+    `<div class="sift-tag-warn" style="display:none"><i class="ti ti-alert-triangle sift-icon-inline-md sift-icon-flex-none"></i><span>Tags non écrits dans le fichier — <strong>Ranger</strong> ou <strong>Appliquer</strong> pour les graver</span></div>` +
+    // MATCH row slot — bottom of the Identification card, per the maquette (Sift.dc.html:349-354:
+    // question + amber pill under a border-top). Hidden until an applyIdentity with real doubt
+    // unhides it (onIdentityApplied); a confident green match keeps it hidden (never a green badge).
+    `<div class="sift-match-row" hidden><span class="sift-match-q">Cette identification Discogs correspond-elle bien à ce fichier ?</span>${vchipHtml("CHECK MATCH", "warning")}</div>`;
 
   const upd = () => {
     const a = host.querySelector<HTMLInputElement>('[data-fil="artist"]');
@@ -1585,8 +1593,9 @@ export async function openFilingInto(mid: HTMLElement, item: QueueItem): Promise
 
   // Verdict-panel chip (board: LOSSLESS · DUPLICATE): only appended when dedup found a real match —
   // no "UNIQUE" chip for the common case, per the maquette rule that a chip exists to flag
-  // something worth checking, not to confirm the absence of a problem. The MATCH/CHECK MATCH chip
-  // is added later by onIdentityApplied.
+  // something worth checking, not to confirm the absence of a problem. The MATCH/CHECK MATCH badge
+  // lives in the Identification card's .sift-match-row (Sift.dc.html:349-354), toggled by
+  // onIdentityApplied — it is NOT one of these chips.
   void dupP.then((m) => {
     if (myseq !== openSeq) return;
     const chips = mid.querySelector<HTMLElement>(".sift-vchips");

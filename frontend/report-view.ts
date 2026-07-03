@@ -83,21 +83,49 @@ function spectroCaption(v: AnalysisReport["verdict"]): string {
   return "énergie pleine bande = encodage conforme";
 }
 
+/** Audacity-style heat colormap: black (silence) → blue → magenta → orange → pale yellow (loudest).
+ *  `val` is the quantized dB magnitude already produced by the backend (0 = -100 dBFS, 255 = 0 dBFS). */
+const SPECTRO_STOPS: readonly [number, number, number][] = [
+  [0, 0, 0],
+  [30, 15, 90],
+  [110, 15, 130],
+  [200, 50, 90],
+  [255, 140, 20],
+  [255, 240, 150],
+];
+function spectroColor(val: number): [number, number, number] {
+  const n = SPECTRO_STOPS.length - 1;
+  const pos = (Math.min(255, Math.max(0, val)) / 255) * n;
+  const i = Math.min(n - 1, Math.floor(pos));
+  const t = pos - i;
+  const [r0, g0, b0] = SPECTRO_STOPS[i];
+  const [r1, g1, b1] = SPECTRO_STOPS[i + 1];
+  return [r0 + (r1 - r0) * t, g0 + (g1 - g0) * t, b0 + (b1 - b0) * t];
+}
+
 function drawSpectrogram(canvas: HTMLCanvasElement, r: AnalysisReport) {
   const ctx = canvas.getContext("2d");
   const sg = r.spectrogram;
   if (!ctx || sg.frames === 0 || sg.bins === 0) return;
-  const w = canvas.width, h = canvas.height;
+  // The canvas backing store was hardcoded to width="720" in the HTML while CSS stretches it to
+  // 100% of its container (.sift-spectro-canvas) — most Revue panels render wider than 720px, so
+  // the browser upscaled the low-res bitmap to fill the box, showing a blurry/pixelated "zoomed
+  // in" spectrogram. Match the backing store to the real rendered width so 1 image px = 1 CSS px.
+  const measuredW = Math.round(canvas.getBoundingClientRect().width);
+  const w = measuredW > 0 ? measuredW : canvas.width;
+  if (canvas.width !== w) canvas.width = w;
+  const h = canvas.height;
   const img = ctx.createImageData(w, h);
   for (let x = 0; x < w; x++) {
     const f = Math.min(sg.frames - 1, Math.floor((x / w) * sg.frames));
     for (let y = 0; y < h; y++) {
       const b = Math.min(sg.bins - 1, Math.floor(((h - 1 - y) / h) * sg.bins));
       const val = sg.mag_db[f * sg.bins + b] || 0;
+      const [cr, cg, cb] = spectroColor(val);
       const i = (y * w + x) * 4;
-      img.data[i] = val;
-      img.data[i + 1] = val;
-      img.data[i + 2] = Math.min(255, 60 + val);
+      img.data[i] = cr;
+      img.data[i + 1] = cg;
+      img.data[i + 2] = cb;
       img.data[i + 3] = 255;
     }
   }
@@ -274,6 +302,7 @@ function spectroAndTagsHtml(r: AnalysisReport): string {
     `<span class="sift-sg-hint sift-spectro-hint">afficher</span>` +
     `</button>` +
     `<div class="sift-sg-body sift-spectro-body">` +
+    `<div class="sift-spectro-body-inner">` +
     `<div class="sift-spectro-declared">Déclaré <span class="pill">${esc(r.declared_format)}</span> ${r.declared_rail}${r.declared_bitrate ? " · " + r.declared_bitrate + " kbps" : ""} · coupure ${fmt(r.cutoff_hz, 0)} Hz — ${spectroCaption(r.verdict)}</div>` +
     `<canvas class="sift-sg sift-spectro-canvas" width="720" height="180"></canvas>` +
     `<div class="sift-spectro-rows">` +
@@ -291,7 +320,7 @@ function spectroAndTagsHtml(r: AnalysisReport): string {
     row("Conteneur OK", yn(r.container_ok)) +
     row("Fréquence d'échantillonnage", r.sample_rate + " Hz") +
     row("Pics (couverture)", peaksCoverage(r)) +
-    `</div></div></div>` +
+    `</div></div></div></div>` +
     // Tags CDJ OK / Version ID3 moved to the Identification card (filing.ts, alongside Label/
     // Année/Genre) — Pochette dropped entirely (redondant avec la pochette déjà visible dans le
     // hero). Nothing meaningful was left in the old "Tags" box, so it's gone too; codec_error is
@@ -642,21 +671,21 @@ function wireSpectrogram(root: HTMLElement, r: AnalysisReport) {
     if (busy) return;
     if (open) {
       open = false;
-      body.style.maxHeight = "0";
+      body.classList.remove("is-open");
       caret.style.transform = "";
-      hint.textContent = "show";
+      hint.textContent = "afficher";
       return;
     }
     if (!loaded) {
       busy = true;
-      hint.textContent = "computing…";
+      hint.textContent = "calcul…";
       try {
         const full = r.spectrogram.frames > 0 ? r : await analyzePath(r.path, true);
         drawSpectrogram(sg, full);
         loaded = true;
       } catch (e) {
         console.error("spectrogram analyze failed", e);
-        hint.textContent = "failed — retry";
+        hint.textContent = "échec — réessayer";
         busy = false;
         return;
       }
@@ -664,8 +693,8 @@ function wireSpectrogram(root: HTMLElement, r: AnalysisReport) {
     }
     open = true;
     caret.style.transform = "rotate(90deg)";
-    hint.textContent = "hide";
-    body.style.maxHeight = body.scrollHeight + "px";
+    hint.textContent = "masquer";
+    body.classList.add("is-open");
   });
 }
 

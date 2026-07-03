@@ -895,43 +895,51 @@ async function renderReglagesLive() {
   }
 
   const inputCss =
-    "font-size:var(--text-md);padding:4px 7px;background:var(--color-background-secondary);" +
+    "font-size:var(--text-md);padding:4px 7px;background:var(--color-background-primary);" +
     "border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);" +
     "color:var(--color-text-primary);width:100%;font-family:var(--font-mono)";
 
+  // Cartes bordées + titre 16px/600 + texte explicatif, per la maquette (Sift.dc.html:642-691).
+  // Divergence assumée : le jeton reste un input à sauvegarde auto (fonctionnel) au lieu du
+  // "•••• 4471 + Modifier" de la maquette, dont le bouton est un onNotImpl de démo.
   const block = document.createElement("div");
   block.id = "sift-reglages-live";
   block.dataset.section = "discogs";
+  block.className = "sift-settings-card";
   block.style.cssText = "margin-top:14px";
   block.innerHTML =
-    '<div class="col-h">Discogs</div>' +
-    '<div class="srow" style="flex-direction:column;align-items:flex-start;gap:6px;padding-bottom:10px">' +
+    '<div class="sift-settings-title">Discogs</div>' +
+    '<div class="sift-settings-desc">Le jeton permet à Sift d\'interroger l\'API Discogs pour identifier tes morceaux (label, année, genre). Sans jeton, les recherches sont limitées et plus lentes.</div>' +
+    '<div class="sift-settings-row" style="flex-direction:column;align-items:flex-start;gap:6px">' +
     '<div style="display:flex;align-items:center;justify-content:space-between;width:100%">' +
-    '<span style="font-size:var(--text-md)">Authentication token</span>' +
-    '<a id="sift-discogs-link" style="font-size:var(--text-sm);color:var(--color-text-info);cursor:pointer;text-decoration:none">' +
-    '<i class="ti ti-external-link" style="font-size:var(--text-sm);vertical-align:-1px"></i> get a token</a>' +
+    '<span class="sift-settings-label">Jeton d\'accès</span>' +
+    '<a id="sift-discogs-link" style="font-size:var(--text-sm);color:var(--color-text-secondary);cursor:pointer;text-decoration:none">' +
+    '<i class="ti ti-external-link" style="font-size:var(--text-sm);vertical-align:-1px"></i> obtenir un jeton</a>' +
     "</div>" +
-    `<input id="sift-discogs-token" type="text" placeholder="Discogs token…" value="${esc(token ?? "")}" style="${inputCss}">` +
+    `<input id="sift-discogs-token" type="text" placeholder="Jeton Discogs…" value="${esc(token ?? "")}" style="${inputCss}">` +
     '<div id="sift-discogs-status" style="font-size:var(--text-sm);color:var(--color-text-tertiary);min-height:14px"></div>' +
     "</div>";
 
   const libBlock = document.createElement("div");
   libBlock.id = "sift-reglages-bibliotheque";
   libBlock.dataset.section = "bibliotheque";
+  libBlock.className = "sift-settings-card";
   libBlock.style.cssText = "margin-top:14px";
   libBlock.innerHTML =
-    '<div class="col-h">Bibliothèque</div>' +
-    '<div class="srow" style="flex-direction:column;align-items:flex-start;gap:6px;padding-bottom:10px">' +
-    '<div style="display:flex;align-items:center;justify-content:space-between;width:100%;gap:12px">' +
-    `<span style="font-size:var(--text-md);font-family:var(--font-mono);color:${
-      root ? "var(--color-text-primary)" : "var(--color-text-tertiary)"
-    };overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(root || "Aucun dossier sélectionné")}</span>` +
-    '<button id="sift-lib-root-change" style="flex:none;font-size:var(--text-sm);padding:2px 10px">Changer…</button>' +
+    '<div class="sift-settings-title">Bibliothèque</div>' +
+    '<div class="sift-settings-desc">Le dossier racine est l\'endroit réel sur ton disque où Sift range les morceaux filés. L\'arborescence de destination (House/Deep, Techno…) vit à l\'intérieur.</div>' +
+    '<div class="sift-settings-row">' +
+    '<div style="min-width:0">' +
+    '<div class="sift-settings-label" style="margin-bottom:3px">Dossier racine</div>' +
+    `<div style="font-size:var(--text-md);font-family:var(--font-mono);color:${
+      root ? "var(--color-text-tertiary)" : "var(--color-text-quaternary)"
+    };overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(root || "Aucun dossier sélectionné")}</div>` +
+    "</div>" +
+    '<button id="sift-lib-root-change" class="sift-settings-btn">Changer…</button>' +
     "</div>" +
     (root
-      ? '<div id="sift-lib-root-forget" style="font-size:var(--text-sm);color:var(--color-text-tertiary);cursor:pointer;text-decoration:underline">Oublier le dossier racine</div>'
-      : "") +
-    "</div>";
+      ? '<div id="sift-lib-root-forget" class="sift-settings-forget">Oublier le dossier racine</div>'
+      : "");
   libBlock.querySelector("#sift-lib-root-change")?.addEventListener("click", () => {
     void (async () => {
       const dir = await openFolderDialog({ directory: true, multiple: false });
@@ -958,13 +966,16 @@ async function renderReglagesLive() {
   const themeBlock = document.createElement("div");
   themeBlock.id = "sift-reglages-apparence";
   themeBlock.dataset.section = "apparence";
+  themeBlock.className = "sift-settings-card";
   themeBlock.style.cssText = "margin-top:14px";
   const themeBtn = (v: ThemeChoice, label: string) =>
-    `<span class="chip${theme === v ? " on" : ""}" data-theme-choice="${v}">${label}</span>`;
+    `<span class="sift-seg-opt${theme === v ? " on" : ""}" data-theme-choice="${v}">${label}</span>`;
   themeBlock.innerHTML =
-    '<div class="col-h">Apparence</div>' +
-    '<div class="srow" style="padding-bottom:10px">' +
-    '<div style="display:flex;gap:5px">' +
+    '<div class="sift-settings-title">Apparence</div>' +
+    '<div class="sift-settings-desc">Auto suit le réglage clair/sombre de ton système. Clair et Sombre forcent un mode fixe, quel que soit le système.</div>' +
+    '<div class="sift-settings-row">' +
+    '<span class="sift-settings-label">Thème</span>' +
+    '<div class="sift-settings-seg">' +
     themeBtn("auto", "Auto") +
     themeBtn("light", "Clair") +
     themeBtn("dark", "Sombre") +
@@ -1000,13 +1011,13 @@ async function renderReglagesLive() {
       try {
         await setSetting("discogs_token", val);
         if (status) {
-          status.textContent = val ? "Token saved." : "Token cleared.";
+          status.textContent = val ? "Jeton enregistré." : "Jeton effacé.";
           setTimeout(() => {
             if (status) status.textContent = "";
           }, 2000);
         }
       } catch (e) {
-        if (status) status.textContent = "Save error.";
+        if (status) status.textContent = "Erreur d'enregistrement.";
         console.error("setSetting(discogs_token) failed", e);
       }
     }, 600);

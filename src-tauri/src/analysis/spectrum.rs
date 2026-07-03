@@ -49,7 +49,7 @@ impl SpectrumAccumulator {
             buf: Vec::with_capacity(fft_size * 2),
             ltas: vec![0.0; bins],
             frames_total: 0,
-            spec_stride: 4,
+            spec_stride: 2,
             spec_cols: Vec::new(),
             collect_display,
             bins,
@@ -162,8 +162,8 @@ impl SpectrumAccumulator {
     /// bounded regardless of track length. Cutoff detection is unaffected — it runs on the
     /// full-resolution LTAS, not on these display columns.
     fn build_spectrogram(&self) -> Spectrogram {
-        const MAX_COLS: usize = 800;
-        const DISPLAY_BINS: usize = 256;
+        const MAX_COLS: usize = 1200;
+        const DISPLAY_BINS: usize = 384;
 
         let src_cols = self.spec_cols.len();
         if src_cols == 0 || self.bins == 0 {

@@ -73,6 +73,14 @@ pub struct AnalysisReport {
     pub has_cover: bool,
 }
 
+/// Bump whenever a change alters what `analyze()` produces WITHOUT changing `AnalysisReport`'s
+/// JSON shape — e.g. spectrogram resolution constants (spectrum.rs), cutoff-detection tuning,
+/// the kbps table — so rows cached under the old behavior (structurally still valid JSON) are
+/// treated as stale and recomputed, instead of silently serving outdated data forever. Struct
+/// field additions/removals are already caught by `serde_json::from_str` failing outright; this
+/// constant is for the content changes that a schema check can't see.
+pub const REPORT_CACHE_VERSION: i64 = 2;
+
 use dynamics::{ClipAccumulator, DcAccumulator, TruePeakAccumulator};
 use peaks::PeaksAccumulator;
 use phase::PhaseAccumulator;

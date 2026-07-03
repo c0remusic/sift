@@ -308,11 +308,27 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .jrnl-session-hd{font-size:var(--text-2xs);text-transform:uppercase;letter-spacing:.05em;color:var(--color-text-tertiary);padding:var(--space-4) 0 var(--space-8);border-top:0.5px solid var(--color-border-tertiary);margin-bottom:var(--space-4)}
 
 /* ── Revue detail (report-view.ts) — extracted inline styles, byte-identical values ───── */
-.sift-report-scroll{flex:1;overflow:auto;padding:2px 2px 8px}
+/* No scrollbar-gutter/overflow-y:scroll here (was added, then removed): in the Revue screen
+   this element sits inside a plain, non-flex .sift-fil-report div, so it never actually grows
+   its own scrollbar — the real one lives one level up, on .sift-fil-scroll (see its comment).
+   scrollbar-gutter:stable still reserves ~9px on the right EVEN WITHOUT a real scrollbar, which
+   was narrowing the player row/Preuves/spectre cards (rendered inside this element) relative to
+   the Identification/Verdict cards (rendered outside it, in filing.ts) — a right-edge misalign
+   on top of .sift-fil-scroll's own single reservation. Plain overflow:auto is a no-op here and
+   harmless in the other use site (the report modal), so it's kept for that case only. */
+/* Horizontal padding was 2px 2px (a byte-identical carryover from the pre-extraction inline
+   style, not a deliberate inset) — it nudged the report's own cards (player row, Preuves,
+   spectre) 2px in from the edge while the sibling Identification/Verdict cards below (rendered
+   outside this element, see filing.ts's .sift-fil-editor/.sift-fil-verdict) sit flush at 0.
+   Dropped to 0 so every card in the stack aligns on the same left/right edge. */
+.sift-report-scroll{flex:1;overflow:auto;padding:0 0 8px}
 .sift-report-close{flex:none;font-size:var(--text-base);padding:4px 10px}
 .sift-kbd-hints{margin-top:18px;font-size:var(--text-xs);letter-spacing:.03em;color:var(--color-text-tertiary);display:flex;gap:16px;flex-wrap:wrap}
 .sift-kbd-hints b{font-weight:600;color:var(--color-text-secondary)}
-.sift-player-row{display:flex;flex-direction:column;gap:14px;margin-bottom:11px;padding:12px 14px;background:var(--color-background-secondary);border-radius:var(--border-radius-md)}
+/* !important on background/border/radius: something in the cascade was silently preventing
+   these from rendering (couldn't find the source rule) — forcing them so the card is visible
+   and matches the Identification/Verdict cards below it, same border+padding+radius values. */
+.sift-player-row{display:flex;flex-direction:column;gap:14px;margin-bottom:11px;padding:14px 16px;background:var(--color-background-secondary)!important;border:0.5px solid var(--color-border-tertiary)!important;border-radius:var(--border-radius-lg)!important}
 .sift-player-audition{display:flex;align-items:center;gap:12px}
 .sift-play-btn{flex:none;width:36px;height:36px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;padding:0;border:none;background:var(--color-text-primary)}
 .sift-play-btn i{font-size:var(--text-base);color:var(--color-background-primary)}
@@ -351,7 +367,7 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-key-block{flex:none;display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer}
 .sift-key-btn{font-family:var(--font-mono);font-size:var(--text-xs);padding:4px 10px;border-radius:var(--border-radius-md);border:1px solid var(--color-border-tertiary);background:transparent;font-weight:600}
 .sift-vchip{display:inline-flex;align-items:center;padding:3px 9px;border-radius:999px;font-size:var(--text-xs);font-weight:600;letter-spacing:.03em}
-.sift-verdict-card{display:flex;align-items:center;flex-wrap:wrap;border-radius:var(--border-radius-lg);padding:12px 14px;margin-bottom:12px}
+.sift-verdict-card{display:flex;align-items:center;flex-wrap:wrap;border-radius:var(--border-radius-lg);padding:14px 16px;margin-bottom:11px}
 .sift-verdict-main{flex:1;min-width:0}
 .sift-verdict-head{display:flex;align-items:center;gap:7px;margin-bottom:9px}
 .sift-verdict-head i{font-size:var(--text-xl)}
@@ -364,12 +380,17 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
    right after the player, before Identification. audit-fidelite-2026-07-02.md décision #1. */
 .sift-evidence{margin-bottom:11px}
 .sift-evidence-label{font-size:var(--text-xs);letter-spacing:.11em;text-transform:uppercase;color:var(--color-text-tertiary);margin-bottom:8px}
-.sift-spectro-box{margin-bottom:11px;border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);overflow:hidden}
+.sift-spectro-box{margin-bottom:11px;border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);overflow:hidden}
 .sift-spectro-toggle{width:100%;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 11px;background:var(--color-background-secondary);border:none;color:var(--color-text-primary);cursor:pointer;font-size:var(--text-sm);text-align:left}
 .sift-spectro-toggle-label{display:flex;align-items:center;gap:8px}
 .sift-spectro-caret{display:inline-block;transition:transform .25s;color:var(--color-text-tertiary)}
 .sift-spectro-hint{font-size:var(--text-sm);color:var(--color-text-info);flex:none}
-.sift-spectro-body{max-height:0;overflow:hidden;transition:max-height .3s ease}
+/* Grid 0fr→1fr trick instead of animating max-height: max-height forces a full layout
+   recalc every frame (visible as the surrounding cards jittering while this opens);
+   animating the grid track's fr size is layout-cheap and needs no JS scrollHeight read. */
+.sift-spectro-body{display:grid;grid-template-rows:0fr;transition:grid-template-rows .3s ease}
+.sift-spectro-body.is-open{grid-template-rows:1fr}
+.sift-spectro-body-inner{overflow:hidden;min-height:0}
 .sift-spectro-declared{padding:8px 11px;font-size:var(--text-xs);color:var(--color-text-tertiary);border-bottom:0.5px solid var(--color-border-tertiary);line-height:1.5}
 .sift-spectro-canvas{width:100%;display:block;background:#000}
 .sift-spectro-rows{padding:9px 11px;display:grid;grid-template-columns:1fr 1fr;gap:0 28px;font-size:var(--text-md)}
@@ -458,7 +479,11 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-inplace-toggle input{cursor:pointer;flex:none}
 .sift-batch-ck{cursor:pointer;flex:none}
 .sift-inplace-note{color:var(--color-text-tertiary)}
-.sift-fil-scroll{flex:1;min-height:0;overflow:auto}
+/* This is the ACTUAL scrolling ancestor in the Revue flow (filing.ts openFilingInto): the inner
+   .sift-report-scroll (report-view.ts) sits inside a plain, non-flex .sift-fil-report div, so its
+   own flex:1/overflow:auto never activates there — this outer one is what grows a scrollbar when
+   the spectrogram accordion opens. scrollbar-gutter:stable was applied to the wrong element before. */
+.sift-fil-scroll{flex:1;min-height:0;overflow:auto;overflow-y:scroll;scrollbar-gutter:stable}
 .sift-fil-editor-margin{margin-top:8px;padding-top:8px;border-top:0.5px solid var(--color-border-tertiary)}
 /* Identification card border (Sift.dc.html:309: background:var(--card);border:1px solid
    var(--border);border-radius:11px) — was plain (no card), confirmed gap in
@@ -468,6 +493,16 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-fil-editor.sift-fil-editor-margin{background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);padding:14px 16px;border-top:0.5px solid var(--color-border-tertiary)}
 .sift-fil-root{display:flex;flex-direction:column;height:100%;min-height:0}
 .sift-fil-dup{flex:none}
+/* Identification — flux non identifié en lecture seule (Sift.dc.html:357-362) : note + bouton
+   bordé "Rechercher sur Discogs", sans passer par le mode édition. */
+.sift-ident-idle{display:flex;align-items:center;justify-content:space-between;gap:14px;margin-bottom:var(--space-8)}
+.sift-ident-idle-note{font-size:var(--text-md);color:var(--color-text-tertiary)}
+.sift-ident-search-btn{flex:none;font-size:var(--text-md);font-weight:500;color:var(--color-text-primary);cursor:pointer;padding:6px 13px;border-radius:var(--border-radius-md);border:0.5px solid var(--color-border-secondary);background:var(--color-surface-raised);font-family:inherit}
+.sift-ident-search-btn:hover{filter:brightness(0.95)}
+/* Identification — rangée MATCH en bas de carte (Sift.dc.html:349-354) : question + pilule ambre
+   sous un border-top ; cachée sauf doute réel (jamais de badge vert). */
+.sift-match-row{display:flex;align-items:center;justify-content:space-between;gap:10px;border-top:0.5px solid var(--color-border-tertiary);padding-top:var(--space-12);margin-top:var(--space-12)}
+.sift-match-q{font-size:var(--text-sm);color:var(--color-text-tertiary)}
 .sift-icon-inline-base{font-size:var(--text-base);vertical-align:-2px}
 .sift-icon-inline-lg{font-size:var(--text-lg)}
 .sift-icon-inline-sm{font-size:var(--text-sm);vertical-align:-1px}
@@ -476,6 +511,22 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-cand-change-btn{font-size:var(--text-sm);padding:2px 8px;flex:none}
 .sift-underline{text-decoration:underline}
 .sift-icon-flex-none{flex:none}
+/* Réglages — cartes bordées (Sift.dc.html:642-691) : même traitement carte que la carte
+   Identification (.sift-fil-editor) ; titre 16px/600, texte explicatif, rangées sous border-top. */
+.sift-settings-card{max-width:560px;background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);padding:16px 18px}
+.sift-settings-title{font-size:var(--text-xl);font-weight:600;margin-bottom:4px;color:var(--color-text-primary)}
+.sift-settings-desc{font-size:var(--text-md);color:var(--color-text-tertiary);line-height:1.5;margin-bottom:var(--space-16)}
+.sift-settings-row{display:flex;align-items:center;justify-content:space-between;gap:var(--space-12);padding-top:14px;border-top:0.5px solid var(--color-border-tertiary)}
+.sift-settings-label{font-size:var(--text-base);color:var(--color-text-primary)}
+.sift-settings-btn{flex:none;font-size:var(--text-md);color:var(--color-text-secondary);cursor:pointer;padding:4px 10px;border-radius:var(--border-radius-md);border:0.5px solid var(--color-border-secondary);background:var(--color-surface-raised);font-family:inherit}
+.sift-settings-btn:hover{filter:brightness(0.95)}
+/* Segmenté Thème — même patron que .jrnl-qmode (fond track encaissé, pilule active en surface). */
+.sift-settings-seg{display:flex;gap:2px;background:var(--color-track);border-radius:7px;padding:2px}
+.sift-seg-opt{font-size:var(--text-md);padding:5px 12px;border-radius:5px;cursor:pointer;font-weight:500;color:var(--color-text-secondary)}
+.sift-seg-opt:hover{background:var(--color-row-active)}
+.sift-seg-opt.on{background:var(--color-surface-raised);color:var(--color-text-primary)}
+.sift-settings-forget{display:inline-block;margin-top:10px;font-size:var(--text-sm);color:var(--color-text-quaternary);cursor:pointer}
+.sift-settings-forget:hover{color:var(--color-text-secondary)}
 
 /* ── Journal — grammaire 3 colonnes (Sift.dc.html) : liste en col Queue + détail en Inspecteur ── */
 /* Queue column (reuses .queue for bg/width/padding). */
@@ -528,5 +579,7 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-empty-state{padding:28px 30px;display:flex;flex-direction:column;align-items:flex-start;gap:var(--space-8);max-width:360px}
 .sift-empty-title{font-size:var(--text-xl);font-weight:600;color:var(--color-text-primary)}
 .sift-empty-note{font-size:var(--text-md);color:var(--color-text-tertiary);line-height:1.5}
-.sift-empty-link{margin-top:var(--space-4);font-size:var(--text-sm);color:var(--color-text-info);background:none;border:none;padding:0;cursor:pointer;font-family:inherit}
-.sift-empty-link:hover{text-decoration:underline}
+/* Lien "Aller à Revue →" : texte souligné par border-bottom (Sift.dc.html:402 — color:var(--text2);
+   border-bottom:1px solid var(--borderStrong); hover → text1), pas un bouton ni un lien accentué. */
+.sift-empty-link{margin-top:var(--space-4);font-size:var(--text-md);font-weight:500;color:var(--color-text-secondary);background:none;border:none;border-bottom:1px solid var(--color-border-secondary);padding:0;cursor:pointer;font-family:inherit}
+.sift-empty-link:hover{color:var(--color-text-primary)}

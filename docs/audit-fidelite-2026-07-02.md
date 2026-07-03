@@ -92,10 +92,10 @@ n'était plus en cause, les écarts ci-dessous sont confirmés sur du code à jo
 | Ordre Preuve → Identification → Verdict | ✅ | Ordre globalement correct sur la capture fraîche (verdict bien en dernier). Décision #3 de l'audit RÉSOLUE : ne pas toucher à l'ordre, il est bon. Reste vrai après le split Preuves : `.sift-fil-report` (player+Preuves+spectre) → `.sift-fil-editor` (Identification) → `.sift-fil-verdict` (conclusion), DOM inchangé. |
 | Bandeau verdict "Prêt à ranger" + nom final | ✅ **corrigé** | `refreshPreview()` n'était jamais appelée à l'ouverture initiale (seulement après un edit/identify/changement de format) → `.sift-verdict-finalname` restait vide tant qu'on ne touchait à rien. Ajouté un appel à `refreshPreview()` en fin de `openFilingInto` (`filing.ts:1515-1518`). |
 | Genres en tags séparés | ✅ | Conforme. |
-| Popover Destination (arborescence, filtre) | ⚠️ | Pas dans cette capture, toujours à vérifier. |
-| Doublon détecté (bannière) | ❓ | Pas testé. |
-| Non identifié (bouton "Rechercher sur Discogs") | ❓ | Pas testé. |
-| MATCH/CHECK MATCH ambre | ❓ | Pas testé. |
+| Popover Destination (arborescence, filtre) | ⚠️ | Pas dans cette capture, toujours à vérifier. Fermeture Échap : ✅ prouvée en lecture statique (`filing.ts` `ensureDestPopoverAutoClose`, keydown Escape → `toggleDestPopover(false)`). |
+| Doublon détecté (bannière) | ❌ **écart structurel — AMBIGUÏTÉ #2 (2026-07-03)** | Maquette (`Sift.dc.html:273-302`) : le dédoublonnage vit DANS le panneau Preuves déplié — 2 cartes côte à côte ("Ce fichier" / "Déjà en Bibliothèque" teintée ambre) + boutons "Garder celui-ci"/"Garder l'existant" + état "Aucun doublon" (point vert + nb d'empreintes). Réel : bannière en haut de pane (`filing.ts::dupBanner`) + chip DUPLICATE, modèle plus riche (filed/pending, both/name) et PAS d'action "Garder" mappée. Porter le bloc 2-cartes exige de trancher des actions produit — voir Ambiguïtés en attente #2, rien touché. |
+| Non identifié (bouton "Rechercher sur Discogs") | ❌ → ✅ **corrigé (2026-07-03)** | Maquette `Sift.dc.html:357-362` : carte simplifiée avec note "Aucune correspondance Discogs pour l'instant." + bouton bordé "Rechercher sur Discogs" en LECTURE SEULE. Réel : le bouton n'existait qu'en mode édition (crayon d'abord). Fix : `filing.ts::renderEditor` rend la rangée idle + hôte `.sift-cands` en lecture seule pour un morceau non identifié (même contrat `data-fil="identifier"` → doIdentify + raccourci I inchangés) ; `onIdentityApplied` retire la note devenue fausse. CSS `.sift-ident-idle*`/`.sift-ident-search-btn` (styles.css). Les états recherche/candidats/erreurs existaient déjà (`doIdentify`). |
+| MATCH/CHECK MATCH ambre | ❌ → ✅ **corrigé (2026-07-03)** | Maquette `Sift.dc.html:349-354` : le badge vit en BAS de la carte Identification, sous un border-top, avec la question "Cette identification Discogs correspond-elle bien à ce fichier ?" — jamais dans la rangée Preuves (le `matchLabel` n'apparaît nulle part ailleurs, vérifié par grep, et seulement si `matchKind==='amber'`, ligne 1316). Réel : chip inséré dans `.sift-vchips` (Preuves). Fix : slot `.sift-match-row` en fin de carte (`filing.ts::renderEditor`), togglé par `onIdentityApplied` (hidden si confidence green) ; plus d'insertion vchips. Sémantique de déclenchement inchangée (identify frais, non restauré au reopen — comme avant). |
 
 **Contradiction avec `refonte-ui-plan.md` maintenant précisément localisée** : sur
 6 sous-éléments vérifiés, 3 sont conformes (lecteur, volume, ordre) et 3 sont de
@@ -151,10 +151,10 @@ faux pour au moins 4 points sur ~10.
 
 | État | Statut | Note |
 |---|---|---|
-| Page scroll unique par carte | ⚠️ | — |
-| Scroll-to depuis le rail Queue | ⚠️ | — |
-| Toggle Apparence (Auto/Clair/Sombre) | ❓ | — |
-| Carte Discogs (jeton + Modifier) | ❓ | — |
+| Page scroll unique par carte | ✅ | Confirmé §6bis (commentaire code citant la règle maquette). |
+| Scroll-to depuis le rail Queue | ⚠️ | `dataset.section` conservé sur les 3 cartes (2026-07-03) — le wiring scroll-to n'a pas bougé, pas revu en live. |
+| Toggle Apparence (Auto/Clair/Sombre) | ❌ → ✅ **corrigé (2026-07-03)** | Maquette `Sift.dc.html:683-690` : rangée "Thème" + segmenté encaissé (fond track, padding 2px, pilule active en surface). Réel : 3 chips `.chip.on` flottants sans rangée ni fond track. Fix : `.sift-settings-seg`/`.sift-seg-opt` (même patron que `.jrnl-qmode`), wiring `data-theme-choice` inchangé. |
+| Carte Discogs (jeton + Modifier) | ❌ → ✅ **corrigé (2026-07-03)** | Maquette `Sift.dc.html:642-652` : carte bordée (`var(--card)` + border radius 11px padding 16-18px), titre 16px/600, texte explicatif, rangée "Jeton d'accès" sous border-top. Réel : rangées `.col-h`/`.srow` plates + chaînes ANGLAISES ("Authentication token", "get a token", "Token saved."). Fix : `sift-live.ts::renderReglagesLive` — 3 cartes `.sift-settings-card` (Discogs `:642`, Bibliothèque `:654-665`, Apparence `:680-691`) avec titres/descriptions de la maquette, tout en français. Divergence assumée : le jeton reste un input à sauvegarde auto (le "•••• 4471 + Modifier" de la maquette est un `onNotImpl` de démo) ; input passé sur fond `--color-background-primary` (encaissé dans la carte). Carte "Fichiers" ABSENTE → Ambiguïté #3. |
 
 ## Transverse
 
@@ -202,6 +202,12 @@ DOM exact, classes, valeurs, commentaires du designer inclus.
    var(--borderStrong)`), pas un bouton comme dans notre `.sift-empty-link`
    actuel. Cosmétique, pas fonctionnel — à corriger si on vise le
    pixel-perfect strict, sinon acceptable tel quel.
+   **TRANCHÉ (2026-07-03)** : lien corrigé (`styles.css::.sift-empty-link` —
+   texte `--color-text-secondary` + border-bottom `--color-border-secondary`,
+   hover → primary, reproduit `Sift.dc.html:402`). Titre GARDÉ à `--text-xl`
+   (16px) : `DESIGN.md` (source de vérité déclarée des tokens) fixe "titres de
+   carte 16px" et l'échelle typo du repo (`styles.css`, audit P-1) n'admet pas
+   17px — le one-off 17px de la maquette perd contre le système.
 5. **Pochette manquante — encore ouvert.** `heroHtml` a
    `<img class="sift-report-cover" hidden>` — reste à vérifier si l'attribut
    `hidden` est bien retiré quand une pochette est disponible, ou si le
@@ -320,6 +326,23 @@ a rien à comparer, donc rien à corriger — pas la même chose qu'un écart co
      (b) ajouter un champ backend (`src-tauri/`, donc **hors scope** de cette
      session par contrainte explicite) pour une détection plus riche.
    Rien implémenté pour l'instant (banière absente), pas de guess fait.
+
+2. **Bloc dédoublonnage du panneau Preuves (Revue-Détail, §2, 2026-07-03).** La maquette
+   (`Sift.dc.html:273-302`) met le dédoublonnage DANS le panneau Preuves déplié : 2 cartes
+   comparatives + boutons "Garder celui-ci"/"Garder l'existant" + état "Aucun doublon" avec
+   compteur d'empreintes. Le réel a une bannière haut-de-pane (`filing.ts::dupBanner`) + chip
+   DUPLICATE, avec un modèle PLUS riche que le `isDup` binaire de la maquette (doublon en biblio
+   vs en file ; confirmé au son vs même nom seulement). Porter le bloc maquette littéralement
+   impose de mapper "Garder l'existant" sur une action réelle (écarter ce fichier ?) et de
+   choisir où vit l'info (bannière OU panneau Preuves, pas les deux). Décision produit → Antoine.
+
+3. **Carte Réglages "Fichiers" — format par défaut au filing (§7, 2026-07-03).** La maquette
+   (`Sift.dc.html:667-678`) a une carte "Fichiers" avec segmenté MP3/AIFF/WAV "format par
+   défaut". Le réel n'a AUCUN réglage équivalent : le défaut est dérivé du rail analysé
+   (`filing.ts:478-481`, lossless → AIFF, sinon MP3 320) — plus intelligent qu'un défaut fixe.
+   Ajouter la carte = créer un vrai réglage backend + décider sa précédence sur la dérivation
+   par rail (et FIX-12 remainder note déjà une duplication default-format-by-rail à résorber).
+   Pas implémenté — une carte qui ne pilote rien serait une UI mensongère (contre l'ADN Sift).
 
 ## Prochaine étape
 
