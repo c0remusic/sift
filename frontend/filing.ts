@@ -34,6 +34,7 @@ import type { Bin, Canonical, Target, QueueItem, AnalysisReport } from "../share
 import { FILE_IN_PLACE, EXTERNAL_DEST_PREFIX } from "../shared/contracts";
 import { requireEl } from "./dom";
 import { emptyStateHtml } from "./empty-state";
+import { confirmAction } from "./confirm-modal";
 
 /** Banner label when a track was filed in place (its own source folder, not a tree bin). */
 const IN_PLACE_BIN_LABEL = "source folder";
@@ -1309,7 +1310,7 @@ async function doRanger(mid: HTMLElement): Promise<void> {
         const msg = String(e);
         if (!allowRailMismatch && msg.includes("RAIL_MISMATCH")) {
           const ext = (track.path.split(".").pop() || "").toUpperCase();
-          const proceed = window.confirm(
+          const proceed = await confirmAction(
             `Ce fichier est déclaré ${ext} mais son contenu réel est compressé (lossy) — ` +
               `le convertir créerait un faux fichier lossless.\n\nRanger quand même ?`,
           );
