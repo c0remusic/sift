@@ -44,6 +44,8 @@ pub struct LibraryFilter {
     pub genre: Option<String>,
     /// Free text over artist/title/path (case-insensitive contains).
     pub q: Option<String>,
+    /// Restrict to a verdict (currently only "fake" is used, by the dashboard's "À re-sourcer" card).
+    pub verdict: Option<String>,
 }
 
 /// A facet bucket (folder or genre) with its filed-track count.
@@ -58,6 +60,74 @@ pub struct LibraryFolder {
 pub struct LibraryFacets {
     pub folders: Vec<LibraryFolder>,
     pub genres: Vec<LibraryFolder>,
+}
+
+/// One genre with its `filed`-track count, ordered by count desc then name.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GenreCount {
+    pub genre: String,
+    pub count: i64,
+}
+
+/// Aggregate stats for the Bibliothèque dashboard.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct DashboardStats {
+    pub total: i64,
+    pub lossless: i64,
+    pub mp3: i64,
+    /// Number of duplicate groups still unresolved (`scan_library_duplicates(conn).len()`).
+    pub duplicates: i64,
+    /// Tracks with verdict = 'fake', i.e. to re-source.
+    pub fake: i64,
+    pub genres: Vec<GenreCount>,
+}
+
+/// Aggregate counts for the Bibliothèque dashboard. Read-only.
+pub fn library_stats(conn: &rusqlite::Connection) -> rusqlite::Result<DashboardStats> {
+    let total: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM tracks WHERE status='filed'",
+        [],
+        |r| r.get(0),
+    )?;
+    let lossless: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM tracks WHERE status='filed' AND lower(format) IN ('aiff','aif','wav','flac')",
+        [],
+        |r| r.get(0),
+    )?;
+    let mp3: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM tracks WHERE status='filed' AND lower(format)='mp3'",
+        [],
+        |r| r.get(0),
+    )?;
+    let fake: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM tracks WHERE status='filed' AND verdict='fake'",
+        [],
+        |r| r.get(0),
+    )?;
+    let duplicates = crate::dedup::scan_library_duplicates(conn)?.len() as i64;
+
+    let mut stmt = conn.prepare(
+        "SELECT g.genre, COUNT(*) FROM track_genres g \
+         JOIN tracks t ON t.id = g.track_id AND t.status='filed' \
+         GROUP BY g.genre ORDER BY COUNT(*) DESC, g.genre",
+    )?;
+    let genres = stmt
+        .query_map([], |r| {
+            Ok(GenreCount {
+                genre: r.get(0)?,
+                count: r.get(1)?,
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+
+    Ok(DashboardStats {
+        total,
+        lossless,
+        mp3,
+        duplicates,
+        fake,
+        genres,
+    })
 }
 
 /// All `filed` tracks joined to their metadata + genres, filtered. Read-only.
@@ -81,6 +151,9 @@ pub fn list_filed(
             _ => {}
         }
     }
+    if f.verdict.is_some() {
+        sql.push_str(" AND t.verdict = :verdict");
+    }
     if f.q.is_some() {
         sql.push_str(" AND (m.artist LIKE :like OR m.title LIKE :like OR t.path LIKE :like)");
     }
@@ -95,6 +168,9 @@ pub fn list_filed(
         let mut p: Vec<(&str, &dyn rusqlite::ToSql)> = Vec::new();
         if let Some(folder) = &f.folder {
             p.push((":folder", folder));
+        }
+        if let Some(v) = &f.verdict {
+            p.push((":verdict", v));
         }
         if let Some(l) = &like {
             p.push((":like", l));
@@ -457,6 +533,25 @@ mod tests {
     }
 
     #[test]
+    fn list_filed_filters_by_verdict() {
+        let conn = db();
+        conn.execute(
+            "INSERT INTO tracks(id, path, status, verdict) VALUES(1, '/lib/a.mp3', 'filed', 'fake')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO tracks(id, path, status, verdict) VALUES(2, '/lib/b.mp3', 'filed', 'ok')",
+            [],
+        )
+        .unwrap();
+        let f = LibraryFilter { verdict: Some("fake".into()), ..Default::default() };
+        let rows = list_filed(&conn, &f).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].id, 1);
+    }
+
+    #[test]
     fn folder_facets_counts_filed_by_folder_and_genre() {
         let conn = db();
         for (id, folder) in [(1, "House"), (2, "House"), (3, "Techno")] {
@@ -488,5 +583,46 @@ mod tests {
         );
         let g_house = f.genres.iter().find(|x| x.name == "House").unwrap();
         assert_eq!(g_house.count, 2);
+    }
+
+    #[test]
+    fn library_stats_aggregates_counts() {
+        let conn = db();
+        conn.execute(
+            "INSERT INTO tracks(id, path, status, format, verdict) \
+             VALUES(1, '/lib/a.flac', 'filed', 'flac', 'ok')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO tracks(id, path, status, format, verdict) \
+             VALUES(2, '/lib/b.mp3', 'filed', 'mp3', 'ok')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO tracks(id, path, status, format, verdict) \
+             VALUES(3, '/lib/c.mp3', 'filed', 'mp3', 'fake')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO tracks(id, path, status, format) VALUES(9, '/in/p.mp3', 'pending', 'mp3')",
+            [],
+        )
+        .unwrap();
+        crate::genres::set_genres(&conn, 1, &["House".into()]).unwrap();
+        crate::genres::set_genres(&conn, 2, &["House".into()]).unwrap();
+        crate::genres::set_genres(&conn, 3, &["Techno".into()]).unwrap();
+
+        let stats = library_stats(&conn).unwrap();
+
+        assert_eq!(stats.total, 3, "only filed tracks count");
+        assert_eq!(stats.lossless, 1);
+        assert_eq!(stats.mp3, 2);
+        assert_eq!(stats.fake, 1);
+        assert_eq!(stats.duplicates, 0, "no fingerprint-matched pair seeded");
+        let house = stats.genres.iter().find(|g| g.genre == "House").unwrap();
+        assert_eq!(house.count, 2);
     }
 }

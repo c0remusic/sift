@@ -24,6 +24,7 @@ import type {
   TrackRelease,
   FileTags,
   DupGroup,
+  DashboardStats,
 } from "../shared/contracts";
 
 export const appInfo = (): Promise<AppInfo> => invoke("app_info");
@@ -253,3 +254,6 @@ export const updateMetadata = (trackId: number, edit: MetadataEdit): Promise<voi
 /** Scan `filed` tracks for acoustic duplicates, grouped with a recommended keeper. */
 export const scanLibraryDuplicates = (): Promise<DupGroup[]> =>
   invoke("scan_library_duplicates");
+
+/** Dashboard aggregate stats for the Bibliothèque. */
+export const libraryStats = (): Promise<DashboardStats> => invoke("library_stats");

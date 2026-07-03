@@ -116,7 +116,8 @@ pub fn run() {
             ipc_library::list_library,
             ipc_library::library_folders,
             ipc_library::update_metadata,
-            ipc_library::scan_library_duplicates
+            ipc_library::scan_library_duplicates,
+            ipc_library::library_stats
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

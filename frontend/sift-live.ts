@@ -22,12 +22,14 @@ import {
   listLibrary,
   libraryFolders,
   scanLibraryDuplicates,
+  libraryStats,
 } from "./ipc";
 import type {
   LibraryTrack,
   LibraryFacets,
   LibraryFilter,
   DupGroup,
+  DashboardStats,
 } from "../shared/contracts";
 import { openLibraryDetailInto } from "./library-detail";
 import { emptyStateHtml, wireEmptyState } from "./empty-state";
@@ -1127,15 +1129,34 @@ function dupGroupHtml(g: DupGroup, idx: number): string {
   );
 }
 
+function statsCardsHtml(s: DashboardStats): string {
+  const card = (label: string, value: number, action: string, extra = "") =>
+    `<button data-bib="stat" data-stat="${action}" style="flex:1;min-width:90px;text-align:left;border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:8px 10px;background:transparent;cursor:pointer">` +
+    `<div style="font-size:var(--text-xl);font-weight:600">${value}</div>` +
+    `<div style="font-size:var(--text-sm);color:var(--color-text-tertiary)">${esc(label)}${extra}</div>` +
+    `</button>`;
+  return (
+    `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">` +
+    card("Total", s.total, "all") +
+    card("Lossless", s.lossless, "lossless") +
+    card("MP3", s.mp3, "mp3") +
+    card("Doublons", s.duplicates, "duplicates") +
+    card("À re-sourcer", s.fake, "fake") +
+    `</div>`
+  );
+}
+
 /** Live Bibliothèque view: lists filed tracks with search + quality chips + folder/genre
  * facets, wired to real data. Actions go through the #pa delegated handler (data-bib). */
 async function renderBiblioLive() {
   const content = requireEl("#content", "renderBiblioLive");
   let facets: LibraryFacets = { folders: [], genres: [] };
+  let stats: DashboardStats | null = null;
   try {
-    [bibState.tracks, facets] = await Promise.all([
+    [bibState.tracks, facets, stats] = await Promise.all([
       listLibrary(bibState.filter),
       libraryFolders(),
+      libraryStats(),
     ]);
   } catch (e) {
     console.error("library load failed", e);
@@ -1206,7 +1227,8 @@ async function renderBiblioLive() {
         note: "Les pistes que tu ranges depuis Revue apparaissent ici, prêtes à exporter vers Rekordbox ou une clé USB.",
         backToRevue: true,
       })
-    : header +
+    : (stats ? statsCardsHtml(stats) : "") +
+      header +
       `<div style="display:flex;gap:14px"><div style="width:150px;flex:none"><div class="col-h">Bibliothèque</div>${side}</div>` +
       `<div style="flex:1;min-width:0"><div style="display:flex;justify-content:space-between;margin-bottom:5px"><span style="font-size:var(--text-base);font-weight:500">${esc(activeFacetVal || "Tous")}</span><span style="font-size:var(--text-sm);color:var(--color-text-tertiary)">${bibState.tracks.length} piste${bibState.tracks.length > 1 ? "s" : ""}</span></div>` +
       (rows ||
@@ -1343,7 +1365,36 @@ export function installLiveWiring() {
     const bibEl = (e.target as HTMLElement).closest<HTMLElement>("[data-bib]");
     if (bibEl) {
       const act = bibEl.dataset.bib;
-      if (act === "qual") {
+      if (act === "stat") {
+        const stat = bibEl.dataset.stat;
+        if (stat === "all") {
+          bibState.filter.quality = undefined;
+          bibState.filter.verdict = undefined;
+        } else if (stat === "lossless" || stat === "mp3") {
+          bibState.filter.quality = stat;
+          bibState.filter.verdict = undefined;
+        } else if (stat === "duplicates") {
+          dupShown = true;
+          if (dupGroups === null) {
+            dupLoading = true;
+            void renderBiblioLive();
+            void scanLibraryDuplicates()
+              .then((groups) => {
+                dupGroups = groups;
+              })
+              .finally(() => {
+                dupLoading = false;
+                void renderBiblioLive();
+              });
+            return;
+          }
+        } else if (stat === "fake") {
+          bibState.filter.quality = undefined;
+          bibState.filter.verdict = "fake";
+        }
+        void renderBiblioLive();
+        return;
+      } else if (act === "qual") {
         const q = bibEl.dataset.q;
         bibState.filter.quality = q === "all" ? undefined : (q as "lossless" | "mp3");
         void renderBiblioLive();

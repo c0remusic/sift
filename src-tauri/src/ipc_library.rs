@@ -68,3 +68,11 @@ pub fn scan_library_duplicates(
     let conn = conn.lock().map_err(|e| e.to_string())?;
     crate::dedup::scan_library_duplicates(&conn).map_err(|e| e.to_string())
 }
+
+/// Dashboard aggregate stats for the Bibliothèque (totals, lossless/mp3 split, duplicates,
+/// tracks to re-source, genre breakdown).
+#[tauri::command]
+pub fn library_stats(conn: State<'_, Mutex<Connection>>) -> Result<library::DashboardStats, String> {
+    let conn = conn.lock().map_err(|e| e.to_string())?;
+    library::library_stats(&conn).map_err(|e| e.to_string())
+}
