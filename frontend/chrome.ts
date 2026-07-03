@@ -119,9 +119,9 @@ export function injectTitlebar() {
   bar.innerHTML =
     '<span id="sift-tb-title" data-tauri-drag-region>Sift</span>' +
     '<div id="sift-tb-controls">' +
-    '<button class="sift-win" data-win="min" title="Réduire"><i class="ti ti-minus"></i></button>' +
-    '<button class="sift-win" data-win="max" title="Agrandir"><i class="ti ti-square"></i></button>' +
-    '<button class="sift-win sift-win-close" data-win="close" title="Fermer"><i class="ti ti-x"></i></button>' +
+    '<button class="sift-win" data-win="min" title="Réduire" aria-label="Réduire"><i class="ti ti-minus"></i></button>' +
+    '<button class="sift-win" data-win="max" title="Agrandir" aria-label="Agrandir"><i class="ti ti-square"></i></button>' +
+    '<button class="sift-win sift-win-close" data-win="close" title="Fermer" aria-label="Fermer"><i class="ti ti-x"></i></button>' +
     "</div>";
   document.body.insertBefore(bar, document.body.firstChild);
 

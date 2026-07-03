@@ -188,7 +188,7 @@ function playerHeaderHtml(name: string, path: string, closeBtn: boolean): string
   return (
     `<div class="sift-player-header">` +
     `<div class="sift-cover-frame">` +
-    `<img class="sift-report-cover sift-player-cover" hidden alt="">` +
+    `<img class="sift-report-cover sift-player-cover" hidden alt="Pochette — ${esc(name)}">` +
     `</div>` +
     `<div class="sift-player-header-body">` +
     `<div class="sift-report-name sift-player-name">${esc(name)}</div>` +
@@ -257,9 +257,9 @@ export function vchipHtml(label: string, tone: "success" | "neutral" | "danger" 
  *  the MATCH% (identify) and UNIQUE/DUPLICATE (dedup) chips it owns the data for. */
 export function verdictCardHtml(r: AnalysisReport): string {
   const map = {
-    ok: ["ti-circle-check", "Prêt à ranger", "var(--color-text-success)", "rgba(91,192,140,.2)"],
-    fake: ["ti-alert-triangle", "Sur-encodé — à re-sourcer", "var(--color-text-danger)", "rgba(226,104,94,.16)"],
-    grey: ["ti-help-circle", "À vérifier d'abord", "var(--color-text-warning)", "rgba(221,166,63,.16)"],
+    ok: ["ti-circle-check", "Prêt à ranger", "var(--color-text-success)", "var(--color-background-success)"],
+    fake: ["ti-alert-triangle", "Sur-encodé — à re-sourcer", "var(--color-text-danger)", "var(--color-background-danger)"],
+    grey: ["ti-help-circle", "À vérifier d'abord", "var(--color-text-warning)", "var(--color-background-warning)"],
   } as const;
   const [icon, label, fg, panelBg] = map[r.verdict];
   // Chips (LOSSLESS/MATCH/DUPLICATE) live in the separate "Preuves" block (evidenceChipsHtml,
@@ -519,9 +519,11 @@ async function mountPlayer(root: HTMLElement, path: string, peaks?: number[], du
       onMove(Math.max(0, Math.min(1, (clientX - rect.left) / Math.max(1, rect.width))));
     };
     track.addEventListener("mousedown", (e) => {
+      track.classList.add("dragging");
       update(e.clientX);
       const onMouseMove = (ev: MouseEvent) => update(ev.clientX);
       const onMouseUp = () => {
+        track.classList.remove("dragging");
         window.removeEventListener("mousemove", onMouseMove);
         window.removeEventListener("mouseup", onMouseUp);
       };

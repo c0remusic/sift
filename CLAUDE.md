@@ -67,6 +67,9 @@ Lib = `sift_lib`. MSRV Rust 1.77.2.
 ## Décisions techniques
 @docs/ressources-externes.md
 
+## États réels des composants (portage design→code)
+@docs/design-system-states.md
+
 ## Méthode
 Détective (théorie → preuve → correctif), **fail fast**, **pas de fallback** silencieux,
 changements chirurgicaux. Vérifier avant d'agir.
@@ -81,24 +84,17 @@ elle-même (ex. cycle armé/confirmé à deux clics, horodaté pour rejeter un
 double-clic/évènement dupliqué — voir `sift-live.ts` : `BATCH_CONFIRM_THRESHOLD`
 / `batchConfirmArmed`).
 
-**RÈGLE IMPÉRATIVE — routage skills (arrêt obligatoire avant toute tâche non-triviale,
-tous domaines : Rust, frontend, UI/design, audit, refactor, release, méthode).**
-1. NE PAS agir directement sur une tâche substantielle.
-2. Identifier le domaine de la tâche.
-3. Consulter `docs/skills-registre.md` pour ce domaine — verdicts déjà vérifiés
-   (skill adaptée vs hors-scope) plutôt que deviner depuis le nom ou l'auto-déclenchement
-   heuristique seul.
-4. Invoquer EXPLICITEMENT la/les skills trouvées — les nommer dans le raisonnement
-   avant d'agir, pas se contenter qu'elles se déclenchent en silence.
-5. Si aucune skill ne correspond après consultation, continuer sans en inventer une.
+**Routage skills** : procédure complète (5 étapes) déjà posée dans
+`~/.claude/CLAUDE.md` (RÈGLE IMPÉRATIVE, s'applique tous projets) — ne pas la
+redupliquer ici. Spécifique à Sift : consulter `docs/skills-registre.md` (pas
+un registre générique) pour le verdict par domaine.
 
 Exemples de routage (non exhaustif, voir le registre complet) :
 - Rust/backend → `rust-best-practices`, `error-handling-patterns`, `rust-engineer`.
-- UI/design retouche/polish → `impeccable` (priorité 1) ou `interface-design` (priorité 2).
-- UI/design nouveau chantier → `design-flow` (orchestre tout) ou steps individuels :
-  `grill-me` → `design-brief` → `information-architecture` → `brief-to-tasks` →
-  `frontend-design` → `design-review`. JAMAIS `design-taste-frontend` /
-  `redesign-existing-projects` / `gpt-taste` / `top-design` sur Sift.
+- UI/design retouche/polish ou nouveau chantier → voir priorités et
+  orchestration détaillées dans `Outillage → UI / Design` ci-dessus. JAMAIS
+  `design-taste-frontend` / `redesign-existing-projects` / `gpt-taste` /
+  `top-design` sur Sift.
 - Exploration direction visuelle (prototype rapide) → `enhance-prompt` puis
   `stitch-generate-design` (génère HTML Stitch), puis porter en vanilla TS.
 - Review post-implémentation → `design-review`.
@@ -108,9 +104,6 @@ Exemples de routage (non exhaustif, voir le registre complet) :
 - Planification d'une tâche non-triviale → `superpowers` (writing-plans, etc.) ou
   `feature-dev` (manuel `/feature-dev`) pour une feature précise avec questions
   de clarification.
-
-Prime sur toute impulsion à agir directement sans passer par la skill correspondante
-— même pour un changement qui semble petit.
 
 ## Structure frontend/ (état réel)
 - `main.ts` — boot
@@ -215,9 +208,12 @@ dev ouvert dans un navigateur classique (`preview_start`/`preview_*`) ne fait
 tourner que la maquette statique `app.js` — ces fichiers n'y sont jamais
 exercés, quelles que soient les captures qui en sortent.
 
-**Toute vérification touchant ces fichiers passe par `computer-use` sur l'app
-Tauri réelle** (le `.exe` lancé, pas le navigateur). Les outils `preview_*`
-restent valables seulement pour ce qui est strictement dans la maquette
-(ex. une chaîne statique de `app.js`) — vérifier si le code touché est dans un
-bloc `if (inTauri)` avant de faire confiance à une vérification par preview
-navigateur.
+**Défaut : Antoine regarde lui-même la fenêtre `tauri dev` (HMR, retour
+instantané, zéro coût)** — ne pas driver l'app à sa place. `computer-use` est
+écarté par défaut (coût token, décision confirmée le 2026-07-03, voir mémoire
+`prefer-ask-user-to-test-over-computeruse`) ; un screenshot ponctuel via
+`claude-in-chrome` reste acceptable pour un point précis, jamais une session
+interactive complète. Les outils `preview_*` restent valables seulement pour
+ce qui est strictement dans la maquette (ex. une chaîne statique de `app.js`)
+— vérifier si le code touché est dans un bloc `if (inTauri)` avant de faire
+confiance à une vérification par preview navigateur.

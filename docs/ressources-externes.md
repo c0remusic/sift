@@ -209,6 +209,41 @@ spacing/tokens uniquement). Tout changement de markup/structure (`chrome.ts`,
 `report-view.ts`, `home-sources.ts`…) doit être vérifié dans la vraie fenêtre
 `tauri dev` via `computer-use`, jamais via le navigateur seul.
 
+**Suite testée le même jour — `computer-use` écarté, `mcp__claude_design__*`
+confirmé réel.** Antoine a explicitement écarté `computer-use` comme défaut
+("ça bouffe trop de tokens") — voir mémoire
+`prefer-ask-user-to-test-over-computeruse`. Le défaut redevient donc : Antoine
+regarde lui-même la fenêtre `tauri dev` (retour instantané, zéro coût), avec
+un screenshot ponctuel via `claude-in-chrome` seulement si un point précis a
+vraiment besoin d'être vu — jamais une session interactive complète.
+
+En creusant l'alternative "demander à Claude Design de juger à ma place" :
+- `mcp__claude_design__*` est un accès réel et authentifié au compte
+  claude.ai/design (`list_projects` a listé les projets existants, dont
+  "Refonte UI Sift", celui qui a produit `Sift.dc.html`). Rôle confirmé :
+  outil d'**exploration/wireframe pour une nouvelle direction** (génère des
+  options, donne un lien à ouvrir), jamais un mécanisme de sync live avec le
+  code réel — le réutiliser comme "maquette toujours à jour" recréerait
+  exactement le problème diagnostiqué plus haut.
+- `render_preview(render:true)` (rendu headless serveur → screenshot direct)
+  est **désactivé sur ce compte** ("Server-side rendering not enabled here")
+  — pas de raccourci gratuit pour que Claude Design "voie" à la place de
+  Claude ou d'Antoine.
+- `write_files` n'accepte que du contenu inline complet (`local_path` non
+  implémenté côté serveur) — pousser un fix, même d'une ligne, sur un gros
+  `.dc.html` coûte de faire transiter le fichier entier. À réserver aux vrais
+  bugs, pas aux micro-syncs cosmétiques.
+- **Bug structurel trouvé et corrigé** : `Sift.dc.html` ouvert seul (`file://`,
+  hors de l'éditeur Claude Design) affichait des `{{...}}` bruts, aucune
+  erreur console. Cause : `support.js` (le runtime dc, vérifié identique sur
+  l'ancienne version restaurée ET sur une version fraîchement régénérée via
+  `create_support_js`) exige `window.React`/`window.ReactDOM` déjà présents
+  sur la page — fournis silencieusement par l'éditeur hébergé Claude Design,
+  jamais par le fichier exporté lui-même. Fix : ajouter les balises
+  `<script>` React 18.3.1 UMD (version épinglée + hash SRI) avant
+  `support.js` dans `<head>`. Appliqué au fichier local et à la copie cloud,
+  vérifié sans erreur console et avec les vraies données interpolées.
+
 ---
 
 ## Veille concurrente — MediaMonkey (2026-06-24)
