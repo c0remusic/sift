@@ -253,3 +253,23 @@ export interface MetadataEdit {
   genres: string[];
   cover_path: string | null;
 }
+
+// ---- M6b Lot 3: internal duplicates (mirror of src-tauri/src/dedup.rs) ----
+
+export interface DupGroupMember {
+  id: number;
+  path: string;
+  filename: string | null;
+  folder: string | null;
+  format: string | null;
+  bitrate: number | null;
+  duration: number | null;
+  truncated: boolean;
+  recommend_keep: boolean;
+  reason: string | null;
+}
+
+export interface DupGroup {
+  members: DupGroupMember[];
+  similarity: number;
+}

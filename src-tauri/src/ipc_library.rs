@@ -58,3 +58,13 @@ pub fn update_metadata(
     let conn = conn.lock().map_err(|e| e.to_string())?;
     metadata::update_metadata_db(&conn, track_id, &edit).map_err(|e| e.to_string())
 }
+
+/// Group `filed` tracks by acoustic fingerprint into duplicate clusters, each with a
+/// recommended keeper. Read-only — resolving a group is a plain `trash_track` per loser.
+#[tauri::command]
+pub fn scan_library_duplicates(
+    conn: State<'_, Mutex<Connection>>,
+) -> Result<Vec<crate::dedup::DupGroup>, String> {
+    let conn = conn.lock().map_err(|e| e.to_string())?;
+    crate::dedup::scan_library_duplicates(&conn).map_err(|e| e.to_string())
+}

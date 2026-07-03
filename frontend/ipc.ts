@@ -23,6 +23,7 @@ import type {
   MetadataEdit,
   TrackRelease,
   FileTags,
+  DupGroup,
 } from "../shared/contracts";
 
 export const appInfo = (): Promise<AppInfo> => invoke("app_info");
@@ -248,3 +249,7 @@ export const libraryFolders = (): Promise<LibraryFacets> =>
  * Discogs release link. Rejects (DB untouched) if the file write fails. */
 export const updateMetadata = (trackId: number, edit: MetadataEdit): Promise<void> =>
   invoke("update_metadata", { trackId, edit });
+
+/** Scan `filed` tracks for acoustic duplicates, grouped with a recommended keeper. */
+export const scanLibraryDuplicates = (): Promise<DupGroup[]> =>
+  invoke("scan_library_duplicates");
