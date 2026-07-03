@@ -20,7 +20,8 @@
 | **M5 — Dédup par empreinte** | ✅ **fait** (flux entrant) — `name_key` + `rusty-chromaprint` à la demande (`dedup.rs`, `fingerprint.rs`) |
 | **M6a — Identification Discogs** | ✅ **fait** — trait `MetadataProvider`, cascade, pochette + genres + `release_id` (`metadata/discogs.rs`, `ipc_identify.rs`) |
 | **M6b — Bibliothèque** | ✅ **fait** — parcourir/éditer/re-ranger, doublons internes (empreinte), dashboard de stats cliquable (`library.rs`, `dedup.rs`, `ipc_library.rs`, `library-detail.ts`, `sift-live.ts`) |
-| M7 (Rekordbox XML + batch + clé USB) · M8 (écriture Rekordbox, **gelée**) | à venir — voir [`docs/plan-implementation.md`](docs/plan-implementation.md) |
+| **M7 — Export Rekordbox + clé USB** | ✅ **fait** — export/suivi XML Rekordbox (playlists protégées d'un renommage/déplacement/reformat via le `TrackID`, jamais le chemin), formatage clé USB FAT32/exFAT Windows+macOS (`rekordbox_xml.rs`, `usb_format/`, `ipc_library.rs`, `ipc_usb.rs`) |
+| M8 (écriture directe `master.db` Rekordbox, **gelée**) | à venir — lecture seule déjà explorée (`rekordbox_masterdb.rs`), écriture non conçue — voir [`docs/plan-implementation.md`](docs/plan-implementation.md) |
 
 La maquette UI/UX d'origine vit dans `index.html` + `frontend/` (migrée comme shell frontend
 de l'app). Le découpage complet et les décisions de cadrage : [`docs/plan-implementation.md`](docs/plan-implementation.md).
