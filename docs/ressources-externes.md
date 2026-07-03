@@ -350,26 +350,40 @@ voisin de Sift. Ce qu'il fait et comment :
 
 ---
 
-## Titlebar custom (chantier UI prévu, pas démarré)
+## Titlebar custom (Windows fait, macOS/OS-detection reste à faire)
 
-> Décision 2026-06-30 (option « noter sans coder ») : remplacer la titlebar
-> native par une barre custom est **prévu** mais **pas en chantier**. Aucune
-> dépendance ajoutée pour l'instant (éviter le bloat d'une dep qui dort).
-> À attaquer comme un vrai chantier UI — routage CLAUDE.md : `design-flow`
-> (nouveau screen) ou `impeccable`.
+> Statut mis à jour 2026-07-03 (vérifié contre le code réel via
+> `docs/handoff-verdict-card-titlebar.md`, généré par `/design-handoff`) —
+> corrige la décision 2026-06-30 ci-dessous, devenue partiellement fausse :
+> **2 des 3 briques sont déjà livrées**, pas "pas en chantier".
+> `decorations:false` est posé (`tauri.conf.json:21`) et la barre custom
+> Windows (min/max/close, drag region, tokens CSS) est fonctionnelle dans
+> `frontend/chrome.ts:112-137`. Seule la brique 1 (détection OS + variante
+> macOS feux tricolores) n'a pas commencé — `tauri-plugin-os` absent de
+> `Cargo.toml`/`package.json` (vérifié par grep). Gaps connus à traiter avec
+> cette brique : pas de tooltip sur nom de fenêtre tronqué, icône `max` ne
+> bascule pas vers un glyphe "restore" quand déjà maximisé, hover du bouton
+> fermer en rouge Windows en dur (`#e81123`, OK pour Windows, pas transposable
+> tel quel à macOS).
+>
+> Décision 2026-06-30 d'origine (pour mémoire) : chantier noté sans coder,
+> aucune dépendance ajoutée pour éviter le bloat d'une dep qui dort. Toujours
+> valable pour la brique 1 seule — à attaquer comme un vrai chantier UI quand
+> on s'y met, routage CLAUDE.md : `design-flow` (nouveau screen) ou `impeccable`.
 
-Trois briques distinctes le jour où on s'y met (et `tauri-plugin-os` n'en
-couvre qu'UNE) :
+Trois briques distinctes (et `tauri-plugin-os` n'en couvre qu'UNE) :
 
 1. **Détecter l'OS** → `tauri-plugin-os` (officiel, suit la version majeure
    Tauri). Sert à placer les contrôles au bon endroit : feux tricolores à
    gauche sur macOS, minimize/maximize/close à droite sur Windows. C'est le
-   SEUL rôle du plugin ici. _Statut : à ajouter au moment du chantier, pas avant._
+   SEUL rôle du plugin ici. _Statut : **pas commencé** — seule brique restante._
 2. **Fenêtre sans décoration** → `decorations: false` dans `tauri.conf.json`
    + recréer la barre en HTML/CSS. Pas de plugin, config + DOM.
+   _Statut : **fait** (`tauri.conf.json:21`, `chrome.ts`)._
 3. **Actions fenêtre** → `@tauri-apps/api/window` (`getCurrentWindow().minimize()`
    / `.toggleMaximize()` / `.close()`) + attribut `data-tauri-drag-region`
    sur la zone de déplacement. Pas de plugin.
+   _Statut : **fait** (`chrome.ts:128-136`)._
 
 - **[agmmnn/tauri-controls](https://github.com/agmmnn/tauri-controls)** —
   contrôles de fenêtre d'apparence native pour Tauri 2 (boutons dessinés selon
