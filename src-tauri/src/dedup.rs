@@ -131,8 +131,8 @@ pub fn scan_library_duplicates(conn: &Connection) -> rusqlite::Result<Vec<DupGro
     let mut min_sim: HashMap<usize, f32> = HashMap::new();
     for i in 0..n {
         let Some(fi) = &fps[i] else { continue };
-        for j in (i + 1)..n {
-            let Some(fj) = &fps[j] else { continue };
+        for (j, fj) in fps.iter().enumerate().skip(i + 1) {
+            let Some(fj) = fj else { continue };
             let s = fingerprint::similarity(fi, fj);
             if s >= fingerprint::MATCH_THRESHOLD {
                 union(&mut parent, i, j);
