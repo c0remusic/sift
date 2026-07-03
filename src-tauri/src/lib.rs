@@ -12,6 +12,7 @@ mod ipc;
 mod ipc_filing;
 mod ipc_identify;
 mod ipc_library;
+mod ipc_usb;
 mod library;
 mod metadata;
 mod naming;
@@ -22,6 +23,7 @@ mod scanner;
 mod settings;
 mod sources;
 mod tagging;
+mod usb_format;
 mod watcher;
 mod worker;
 
@@ -122,7 +124,9 @@ pub fn run() {
             ipc_library::library_stats,
             ipc_library::link_rekordbox_xml,
             ipc_library::rekordbox_status,
-            ipc_library::export_rekordbox_xml
+            ipc_library::export_rekordbox_xml,
+            ipc_usb::list_removable_drives,
+            ipc_usb::format_drive
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

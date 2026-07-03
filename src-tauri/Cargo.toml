@@ -47,9 +47,10 @@ flate2 = "1.1.9"
 base85 = "2.0.0"
 quick-xml = { version = "0.37", features = ["serialize"] }
 percent-encoding = "2.3"
+wmi = "0.18"
+tempfile = "3.27.0"
 
 [dev-dependencies]
-tempfile = "3.27.0"
 
 # Audio DSP is unusably slow in an unoptimised debug build (rustfft + per-sample loops).
 # Optimise dependencies fully, and our own code lightly, while keeping dev compile fast.

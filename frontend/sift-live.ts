@@ -26,6 +26,7 @@ import {
   exportRekordboxXml,
   rekordboxStatus,
   linkRekordboxXml,
+  listRemovableDrives,
 } from "./ipc";
 import type {
   LibraryTrack,
@@ -35,7 +36,9 @@ import type {
   DashboardStats,
   RekordboxLinkStatus,
 } from "../shared/contracts";
+import type { RemovableDrive } from "./ipc";
 import { openLibraryDetailInto } from "./library-detail";
+import { openUsbFormatModal } from "./usb-format-modal";
 import { emptyStateHtml, wireEmptyState } from "./empty-state";
 import {
   openFilingInto,
@@ -891,6 +894,12 @@ function updateRevueBadge(count: number) {
   badge.textContent = count ? String(count) : "";
 }
 
+/** Holds the currently-attached `sift:usb-format-done` window listener, if any, so
+ * `renderReglagesLive()` can remove it before attaching a new one. Without this, every re-render
+ * of Réglages (each nav visit to the screen) piles up another listener on `window` — unlike DOM
+ * nodes, a `window` listener has no parent to disappear with, so it accumulates forever. */
+let usbFormatDoneHandler: (() => void) | null = null;
+
 /** Live Réglages view: a single scrolling page of real cards (Discogs, Bibliothèque, Apparence),
  * replacing the mockup's static placeholder rows (Dossiers source, Format lossless…), which have
  * no backing data and led nowhere — same "lean Tauri UI" pattern as home-sources.ts (hide the mock
@@ -1036,9 +1045,73 @@ async function renderReglagesLive() {
     }),
   );
 
+  // M7: "Formater une clé USB" card — same card family as Discogs/Bibliothèque/Apparence
+  // above. Backend-side conservative filter means this list only ever shows removable disks
+  // (see usb_format::windows/macos) — no client-side re-filtering needed here.
+  const usbBlock = document.createElement("div");
+  usbBlock.id = "sift-reglages-usb";
+  usbBlock.dataset.section = "usb";
+  usbBlock.className = "sift-settings-card";
+  usbBlock.style.cssText = "margin-top:14px";
+  usbBlock.innerHTML =
+    '<div class="sift-settings-title">Formater une clé USB</div>' +
+    '<div class="sift-settings-desc">Formate un disque amovible en FAT32 (contourne la limite ' +
+    "32 Go de l'assistant Windows) ou exFAT. Seuls les disques amovibles sont proposés — " +
+    "aucun disque interne n'apparaît ici.</div>" +
+    '<div id="sift-usb-list" class="sift-usb-list"></div>' +
+    '<button id="sift-usb-refresh" class="sift-settings-btn">Actualiser la liste</button>';
+
+  async function renderUsbList() {
+    const listEl = usbBlock.querySelector<HTMLElement>("#sift-usb-list");
+    if (!listEl) return;
+    listEl.textContent = "Recherche des disques amovibles…";
+    let drives: RemovableDrive[] = [];
+    try {
+      drives = await listRemovableDrives();
+    } catch (e) {
+      console.error("listRemovableDrives failed", e);
+      listEl.textContent = "Impossible de lister les disques amovibles.";
+      return;
+    }
+    if (!drives.length) {
+      listEl.textContent = "Aucun disque amovible détecté.";
+      return;
+    }
+    listEl.innerHTML = "";
+    for (const d of drives) {
+      const row = document.createElement("div");
+      row.className = "sift-usb-row";
+      const sizeGb = (d.size_bytes / 1_000_000_000).toFixed(1);
+      row.innerHTML =
+        '<div class="sift-usb-row-info">' +
+        `<span class="sift-usb-row-id">${esc(d.id)}</span>` +
+        `<span class="sift-usb-row-meta">${esc(d.label || "Disque amovible")} · ${sizeGb} Go · ${esc(d.current_fs)}</span>` +
+        "</div>" +
+        '<button type="button" class="sift-settings-btn" data-usb-format>Formater…</button>';
+      row.querySelector("[data-usb-format]")?.addEventListener("click", () => {
+        openUsbFormatModal(d);
+      });
+      listEl.appendChild(row);
+    }
+  }
+
+  usbBlock
+    .querySelector("#sift-usb-refresh")
+    ?.addEventListener("click", () => void renderUsbList());
+  if (usbFormatDoneHandler) {
+    window.removeEventListener("sift:usb-format-done", usbFormatDoneHandler);
+  }
+  usbFormatDoneHandler = () => void renderUsbList();
+  window.addEventListener("sift:usb-format-done", usbFormatDoneHandler);
+  void renderUsbList();
+
+  // Single wrapper: only #sift-reglages-live is removed/recreated per render (see the
+  // 2026-07-04 fix), so every settings card — present or future — must build inside `wrap`
+  // rather than as a direct sibling of `content`, or it duplicates on re-render.
   wrap.appendChild(block);
   wrap.appendChild(libBlock);
   wrap.appendChild(themeBlock);
+  wrap.appendChild(usbBlock);
   content.appendChild(wrap);
 
   const inp = block.querySelector<HTMLInputElement>("#sift-discogs-token");

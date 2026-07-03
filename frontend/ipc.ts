@@ -272,3 +272,29 @@ export const rekordboxStatus = (): Promise<RekordboxLinkStatus> => invoke("rekor
 /** Merge every filed track missing from the linked XML and rewrite it. Rejects if no XML is
  * linked yet, or if the linked file is unreadable/corrupt. */
 export const exportRekordboxXml = (): Promise<RekordboxLinkStatus> => invoke("export_rekordbox_xml");
+
+// ---- M7 USB format utility (mirror of ipc_usb.rs) ----
+
+export interface RemovableDrive {
+  id: string;
+  label: string;
+  size_bytes: number;
+  current_fs: string;
+  volume_serial: string;
+}
+
+/** Matches `usb_format::TargetFs`'s `#[serde(rename_all = "snake_case")]`: `ExFat` -> "ex_fat". */
+export type TargetFs = "fat32" | "ex_fat";
+
+/** Drives Sift is confident are removable (conservative filter, backend-side). */
+export const listRemovableDrives = (): Promise<RemovableDrive[]> =>
+  invoke("list_removable_drives");
+
+/** Format `driveId` to `fs`. `volumeSerial` must be the value last read for this drive — the
+ * backend re-checks it against a fresh listing immediately before formatting and rejects with
+ * "IDENTITY_MISMATCH"/"DRIVE_VANISHED" if the drive was swapped since the list was fetched. */
+export const formatDrive = (
+  driveId: string,
+  volumeSerial: string,
+  fs: TargetFs,
+): Promise<void> => invoke("format_drive", { driveId, volumeSerial, fs });
