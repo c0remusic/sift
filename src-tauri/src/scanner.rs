@@ -94,6 +94,17 @@ pub fn upsert_file(conn: &Connection, source_id: i64, f: &DiskFile) -> rusqlite:
     }
 }
 
+/// Queues a single dropped-in file with no `source_id` (a lone file, not a watched folder).
+/// Returns 1 if a new row was inserted, 0 if the path was already queued.
+pub fn add_loose_file(conn: &Connection, path: &str, filename: &str) -> rusqlite::Result<usize> {
+    conn.execute(
+        "INSERT INTO tracks (path, filename, status, created_at)
+         VALUES (?1, ?2, 'pending', datetime('now'))
+         ON CONFLICT(path) DO NOTHING",
+        rusqlite::params![path, filename],
+    )
+}
+
 /// Removes a single file from the queue if (and only if) its row is still `pending`.
 /// Returns rows affected. Used by the live watcher on delete events.
 pub fn forget_path(conn: &Connection, path: &str) -> rusqlite::Result<usize> {

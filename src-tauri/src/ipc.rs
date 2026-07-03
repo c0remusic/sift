@@ -184,13 +184,7 @@ pub fn import_paths(
                     .and_then(|n| n.to_str())
                     .unwrap_or("")
                     .to_string();
-                files_added += conn
-                    .execute(
-                        "INSERT INTO tracks (path, filename, status, created_at)
-                         VALUES (?1, ?2, 'pending', datetime('now'))
-                         ON CONFLICT(path) DO NOTHING",
-                        rusqlite::params![p, filename],
-                    )
+                files_added += scanner::add_loose_file(&conn, p, &filename)
                     .map_err(|e| e.to_string())?;
             }
         }

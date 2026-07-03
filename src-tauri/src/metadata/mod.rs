@@ -20,20 +20,85 @@ pub struct MetadataEdit {
     pub cover_path: Option<String>,
 }
 
+/// Whether an upsert overwrites `cover_path` unconditionally (a fresh Discogs cover download,
+/// which may legitimately be `None`) or only when a new value is actually provided (a manual
+/// metadata edit, where "no new cover chosen" must not erase the existing one).
+enum CoverWrite {
+    Always,
+    OnlyIfSome,
+}
+
+/// Whether an upsert overwrites `discogs_release_id`/`source` (a fresh Discogs match) or leaves
+/// them untouched (a manual edit must not wipe an existing release link).
+enum ReleaseLink<'a> {
+    Set { release_id: &'a str, source: &'a str },
+    Preserve,
+}
+
+/// The single-value columns every upsert writes, grouped so `upsert_metadata_row` takes a
+/// reasonable number of arguments instead of one per column.
+struct MetadataFields<'a> {
+    artist: &'a str,
+    title: &'a str,
+    version: Option<&'a str>,
+    label: Option<&'a str>,
+    year: Option<i64>,
+    cover_path: Option<&'a str>,
+}
+
+/// Shared upsert into `metadata` for `artist`/`title`/`version`/`label`/`year`/`cover_path`, with
+/// the two axes (`cover`, `release`) that previously made `update_metadata_db` and
+/// `apply_identity` diverge into two near-identical hand-written SQL statements.
+fn upsert_metadata_row(
+    conn: &Connection,
+    track_id: i64,
+    f: &MetadataFields,
+    cover: CoverWrite,
+    release: ReleaseLink,
+) -> rusqlite::Result<()> {
+    let cover_set_clause = match cover {
+        CoverWrite::Always => "cover_path=excluded.cover_path",
+        CoverWrite::OnlyIfSome => {
+            "cover_path=CASE WHEN excluded.cover_path IS NOT NULL THEN excluded.cover_path ELSE cover_path END"
+        }
+    };
+    match release {
+        ReleaseLink::Set { release_id, source } => conn.execute(
+            &format!(
+                "INSERT INTO metadata(track_id, artist, title, version, label, year, cover_path, discogs_release_id, source)
+                 VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)
+                 ON CONFLICT(track_id) DO UPDATE SET
+                    artist=excluded.artist, title=excluded.title, version=excluded.version,
+                    label=excluded.label, year=excluded.year, {cover_set_clause},
+                    discogs_release_id=excluded.discogs_release_id, source=excluded.source"
+            ),
+            params![track_id, f.artist, f.title, f.version, f.label, f.year, f.cover_path, release_id, source],
+        ),
+        ReleaseLink::Preserve => conn.execute(
+            &format!(
+                "INSERT INTO metadata(track_id, artist, title, version, label, year, cover_path)
+                 VALUES(?1,?2,?3,?4,?5,?6,?7)
+                 ON CONFLICT(track_id) DO UPDATE SET
+                    artist=excluded.artist, title=excluded.title, version=excluded.version,
+                    label=excluded.label, year=excluded.year, {cover_set_clause}"
+            ),
+            params![track_id, f.artist, f.title, f.version, f.label, f.year, f.cover_path],
+        ),
+    }?;
+    Ok(())
+}
+
 /// DB-only part (unit-tested): upsert the editable metadata fields + replace genres.
 /// Preserves `discogs_release_id` and `source` — a manual edit must not wipe the release link.
 /// On INSERT (no prior metadata row) those columns stay NULL.
 pub fn update_metadata_db(conn: &Connection, track_id: i64, e: &MetadataEdit) -> rusqlite::Result<()> {
-    conn.execute(
-        "INSERT INTO metadata(track_id, artist, title, label, year, cover_path)
-         VALUES(?1,?2,?3,?4,?5,?6)
-         ON CONFLICT(track_id) DO UPDATE SET
-            artist=excluded.artist,
-            title=excluded.title,
-            label=excluded.label,
-            year=excluded.year,
-            cover_path=CASE WHEN excluded.cover_path IS NOT NULL THEN excluded.cover_path ELSE cover_path END",
-        params![track_id, e.artist, e.title, e.label, e.year, e.cover_path],
+    upsert_metadata_row(
+        conn, track_id,
+        &MetadataFields {
+            artist: &e.artist, title: &e.title, version: None,
+            label: e.label.as_deref(), year: e.year, cover_path: e.cover_path.as_deref(),
+        },
+        CoverWrite::OnlyIfSome, ReleaseLink::Preserve,
     )?;
     crate::genres::set_genres(conn, track_id, &e.genres)?;
     if e.cover_path.is_some() {
@@ -111,14 +176,13 @@ pub fn apply_identity(
     // reads back the chosen identity (the file tags still hold the old name until filing). The
     // returned canonical keeps the FULL title — the front splits it for its live display.
     let (base_title, version) = split_title_version(&c.title);
-    conn.execute(
-        "INSERT INTO metadata(track_id, artist, title, version, label, year, cover_path, discogs_release_id, source)
-         VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9)
-         ON CONFLICT(track_id) DO UPDATE SET
-            artist=excluded.artist, title=excluded.title, version=excluded.version,
-            label=excluded.label, year=excluded.year, cover_path=excluded.cover_path,
-            discogs_release_id=excluded.discogs_release_id, source=excluded.source",
-        params![track_id, c.artist, base_title, version, c.label, c.year, cover_path, c.release_id, c.source],
+    upsert_metadata_row(
+        conn, track_id,
+        &MetadataFields {
+            artist: &c.artist, title: &base_title, version: version.as_deref(),
+            label: c.label.as_deref(), year: c.year, cover_path: cover_path.as_deref(),
+        },
+        CoverWrite::Always, ReleaseLink::Set { release_id: &c.release_id, source: &c.source },
     )?;
     crate::genres::set_genres(conn, track_id, &c.styles)?;
     if cover_path.is_some() {
