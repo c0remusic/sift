@@ -88,6 +88,65 @@ import {
 // verdict) the filing pane needs.
 let currentItems: QueueItem[] = [];
 
+// Single source of truth for which queue row shows `.cur` — NOT read from filing.ts's internal
+// state (would risk a race: filing.ts may set its own state before this module's DOM catches up).
+// Updated in 3 places: the row click handler, renderQueue's touchDetail branch (via syncDetail's
+// return value), and stepQueueSelection (Task 4).
+let currentOpenId: number | null = null;
+
+const QUEUE_ROW_BUFFER = 15; // rows rendered above/below the visible window
+let queueRowHeightCache: number | null = null;
+
+/** Real rendered height of a queue row, measured once via an offscreen probe (never assumed —
+ * same discipline as the spectrogram canvas width / destination-popover positioning elsewhere in
+ * this codebase). Cached: the row markup/CSS don't change at runtime. */
+function measureQueueRowHeight(ql: HTMLElement): number {
+  if (queueRowHeightCache != null) return queueRowHeightCache;
+  const probe = document.createElement("div");
+  probe.style.position = "absolute";
+  probe.style.visibility = "hidden";
+  probe.style.pointerEvents = "none";
+  probe.style.cssText += ";display:flex;align-items:center;gap:8px;padding:5px 7px;width:100%";
+  probe.innerHTML =
+    `<div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">` +
+    `<div style="display:flex;align-items:center;gap:6px;min-width:0"><span style="flex:1">probe</span></div>` +
+    `<div style="padding-left:15px;font-size:var(--text-xs)">&nbsp;</div></div>`;
+  ql.appendChild(probe);
+  const h = probe.getBoundingClientRect().height;
+  probe.remove();
+  queueRowHeightCache = h > 0 ? h : 34; // 34px fallback: never divide by zero if measured off-DOM
+  return queueRowHeightCache;
+}
+
+/** Renders only the rows within the visible scroll window (+ QUEUE_ROW_BUFFER above/below) into
+ * `ql`, framed by two spacer divs so the scrollbar stays proportional to the full list. Fixes the
+ * 7000+-track freeze (memory: sift-large-queue-black-screen) — rebuilding thousands of DOM nodes
+ * on every 300ms analysis-progress redraw (see the onAnalysisChanged listener further down) was
+ * the actual cost, not just paint. */
+function renderQueueWindow(ql: HTMLElement): void {
+  const items = currentItems;
+  if (!items.length) {
+    ql.innerHTML =
+      '<div style="font-size:var(--text-md);color:var(--color-text-tertiary);padding:6px 4px">File vide.</div>';
+    return;
+  }
+  const rowH = measureQueueRowHeight(ql);
+  const viewportH = ql.clientHeight || 400;
+  const start = Math.max(0, Math.floor(ql.scrollTop / rowH) - QUEUE_ROW_BUFFER);
+  const visibleCount = Math.ceil(viewportH / rowH) + QUEUE_ROW_BUFFER * 2;
+  const end = Math.min(items.length, start + visibleCount);
+  // Batch mode never shows a "current" row in the queue rail — matches pre-virtualization
+  // behavior exactly (a row click always drops back to detail mode first, so a highlighted row
+  // while actually IN batch mode never happened before either).
+  const highlightId = reviewMode === "batch" ? null : currentOpenId;
+  const topSpacer = start * rowH;
+  const bottomSpacer = (items.length - end) * rowH;
+  let html = topSpacer > 0 ? `<div style="height:${topSpacer}px"></div>` : "";
+  for (let i = start; i < end; i++) html += queueRowHtml(items[i], items[i].id === highlightId);
+  if (bottomSpacer > 0) html += `<div style="height:${bottomSpacer}px"></div>`;
+  ql.innerHTML = html;
+}
+
 // Review mode: "detail" = one track at a time (filing pane), "batch" = triage many at once
 // (board's Detail|Batch segmented control). `batchSel` holds the ticked track ids; it is
 // pruned to the currently-ready set on every batch render so a filed/removed id can't linger.
@@ -228,10 +287,6 @@ async function renderQueue(touchDetail = true) {
   // Background-analysis progress moved to the global progress zone (bottom of #nav, persistent
   // across views) — see pushAnalyzeProgress, fed by the analysis:changed event below.
 
-  ql.innerHTML =
-    items.map((it) => queueRowHtml(it, false)).join("") ||
-    '<div style="font-size:var(--text-md);color:var(--color-text-tertiary);padding:6px 4px">File vide.</div>';
-
   // Live destination bins + neutral detail prompt (replace the mockup's hardcoded ones).
   const fldz = requireEl("#fldz", "renderQueue");
   void refreshBins(fldz);
@@ -244,15 +299,11 @@ async function renderQueue(touchDetail = true) {
     } else {
       const mid = requireEl("#mid", "renderQueue");
       if (mid) {
-        // auto-load the current/first pending track into the main pane + highlight its row
-        const curId = syncDetail(mid, items);
-        document.querySelectorAll(".qi.cur").forEach((n) => n.classList.remove("cur"));
-        if (curId != null) {
-          document.querySelector(`.qi[data-id="${curId}"]`)?.classList.add("cur");
-        }
+        currentOpenId = syncDetail(mid, items);
       }
     }
   }
+  renderQueueWindow(ql);
 }
 
 // Global progress zone — feed the "analyze" row from the EXISTING analysis poll/events (no engine
@@ -1413,9 +1464,9 @@ export function installLiveWiring() {
       const id = Number(qi.dataset.id);
       const item = currentItems.find((it) => it.id === id);
       const mid = requireEl("#mid", "qi-click");
-      // highlight the active row
-      document.querySelectorAll(".qi.cur").forEach((n) => n.classList.remove("cur"));
-      qi.classList.add("cur");
+      currentOpenId = id;
+      const ql = document.getElementById("ql");
+      if (ql) renderQueueWindow(ql);
       clearTimeout(queueSelectTimer);
       queueSelectTimer = setTimeout(() => {
         if (item && mid) void openFilingInto(mid, item);
