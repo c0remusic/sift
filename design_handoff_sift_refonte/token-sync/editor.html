@@ -1,5 +1,5 @@
 <!doctype html>
-<html>
+<html lang="fr">
 <head>
 <meta charset="utf-8">
 <title>Sift — Éditeur de couleurs</title>
@@ -29,18 +29,18 @@
     display: flex; align-items: center; justify-content: space-between; background: #f7f5f0;
   }
   details.group summary::-webkit-details-marker { display: none; }
-  details.group summary::after { content: "▸"; font-size: 11px; color: #918a7d; transition: transform .15s; }
+  details.group summary::after { content: "▸"; font-size: 11px; color: #6b6459; transition: transform .15s; }
   details.group[open] summary::after { transform: rotate(90deg); }
-  details.group summary .group-hint { font-size: 11px; font-weight: 400; color: #918a7d; }
+  details.group summary .group-hint { font-size: 11px; font-weight: 400; color: #6b6459; }
   .group-body { padding: 10px 14px 14px; }
 
   .token-row { padding: 10px 0; border-bottom: 1px solid #eee6d9; }
   .token-row:last-child { border-bottom: none; }
   .token-label { font-size: 13px; font-weight: 600; margin-bottom: 1px; }
-  .token-name { font-size: 10px; font-family: "JetBrains Mono", monospace; color: #a39c8f; margin-bottom: 8px; }
+  .token-name { font-size: 10px; font-family: "JetBrains Mono", monospace; color: #6b6459; margin-bottom: 8px; }
   .mode-pair { display: flex; gap: 16px; }
   .mode-slot { flex: 1; display: flex; align-items: center; gap: 8px; }
-  .mode-slot .mode-tag { font-size: 10px; text-transform: uppercase; letter-spacing: .04em; color: #918a7d; width: 44px; flex: none; }
+  .mode-slot .mode-tag { font-size: 10px; text-transform: uppercase; letter-spacing: .04em; color: #6b6459; width: 44px; flex: none; }
   .mode-slot input[type="color"] { width: 28px; height: 28px; padding: 0; border: 1px solid #ddd5c8; border-radius: 6px; cursor: pointer; flex: none; }
   .mode-slot .swatch-plain { width: 28px; height: 28px; border-radius: 6px; border: 1px solid #ddd5c8; flex: none; }
   .mode-slot input[type="text"] { width: 100%; min-width: 0; font-family: "JetBrains Mono", monospace; font-size: 11px; padding: 5px 6px; border: 1px solid #ddd5c8; border-radius: 5px; }
@@ -78,7 +78,7 @@
   #report .consumer-group { margin: 4px 0 10px; }
   #report .consumer-group b { font-family: "JetBrains Mono", monospace; font-size: 11.5px; }
   #report .consumer { font-family: "JetBrains Mono", monospace; font-size: 10.5px; color: #6b6459; margin: 2px 0 2px 10px; }
-  #report .empty-note { color: #918a7d; font-style: italic; }
+  #report .empty-note { color: #6b6459; font-style: italic; }
 </style>
 </head>
 <body>
@@ -130,14 +130,14 @@
     <div id="full-preview" style="display:none;width:100%">
       <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;max-width:1440px">
         <button id="refresh-mockup-btn">↻ Rafraîchir la maquette avec mes couleurs</button>
-        <span style="font-size:11.5px;color:#918a7d">
+        <span style="font-size:11.5px;color:#6b6459">
           C'est la vraie maquette Sift.dc.html — navigue entre les écrans, teste le mode Lot,
           ouvre le popover Destination. Elle ne se met pas à jour à chaque frappe, clique
           "Rafraîchir" une fois content·e de tes réglages. Fais défiler si ta fenêtre est plus
           étroite que la maquette (conçue pour 1440×900).
         </span>
       </div>
-      <iframe id="mockup-frame" style="width:1440px;height:900px;max-width:none;border:1px solid #ccc;border-radius:10px;background:#fff;flex:none"></iframe>
+      <iframe id="mockup-frame" title="Maquette interactive Sift" style="width:1440px;height:900px;max-width:none;border:1px solid #ccc;border-radius:10px;background:#fff;flex:none"></iframe>
     </div>
   </div>
 </main>
@@ -252,7 +252,7 @@ function refreshPreview() {
   document.getElementById("overrides").textContent = buildOverrideCss();
 }
 
-function makeModeSlot(key, mode) {
+function makeModeSlot(key, label, mode) {
   const wrap = document.createElement("div");
   wrap.className = "mode-slot";
   const tag = document.createElement("span");
@@ -274,6 +274,10 @@ function makeModeSlot(key, mode) {
   const text = document.createElement("input");
   text.type = "text";
   text.value = value;
+
+  const modeText = mode === "light" ? "Clair" : "Sombre";
+  if (picker.tagName === "INPUT") picker.setAttribute("aria-label", `${label} — ${modeText}`);
+  text.setAttribute("aria-label", `${label} — ${modeText}, valeur`);
 
   function apply(newValue) {
     tokens.colors[key][mode] = newValue;
@@ -318,7 +322,7 @@ function renderColorGroups() {
       rowName.textContent = key;
       const pair = document.createElement("div");
       pair.className = "mode-pair";
-      pair.append(makeModeSlot(key, "light"), makeModeSlot(key, "dark"));
+      pair.append(makeModeSlot(key, label, "light"), makeModeSlot(key, label, "dark"));
       row.append(rowLabel, rowName, pair);
       body.appendChild(row);
     }
@@ -342,6 +346,7 @@ function renderColorGroups() {
       const input = document.createElement("input");
       input.type = "text";
       input.value = tokens.static[key];
+      input.setAttribute("aria-label", label);
       input.addEventListener("input", () => {
         tokens.static[key] = input.value;
         refreshPreview();
