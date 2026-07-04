@@ -152,6 +152,15 @@
   </div>
 </main>
 <script>
+// Fix: frontend-styles.css's dark media rule is `:root:not([data-theme="light"])`,
+// specificity 0,2,0 -- higher than this tool's own live-preview `:root{}` override
+// block (0,1,0). Without this explicit attribute, an unset data-theme matches
+// `:not([data-theme="light"])` whenever the browser prefers dark, so that static
+// rule always wins over live edits -- editing colors would show no visible change
+// at all until the toggle below was clicked once. Match the toggle button's own
+// declared initial state so the override block actually applies from first load.
+document.documentElement.dataset.theme = "light";
+
 let tokens = null;
 let mockupTabActive = false;
 let refreshMockupTimer = null;
