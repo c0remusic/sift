@@ -4,8 +4,7 @@
     {"path": "docs/design-system-states.md", "topic": "états visuels réels par composant", "summary": "Catalogue des états (hover/actif/disabled...) de chaque composant CSS/TS réel — source de vérité pour tout portage design→code ; system.md périmé sur palette/typo."},
     {"path": "docs/skills-registre.md", "topic": "registre skills/agents/plugins", "summary": "Verdict par domaine (Rust, UI/design, revue de code...) sur quelle skill invoquer sur Sift, tenu à jour à la main."},
     {"path": "docs/plan-implementation.md", "topic": "plan d'implémentation actif", "summary": "Plan d'implémentation Sift par jalons M0-M8, mis à jour en continu (fichier actif, pas figé)."},
-    {"path": "docs/brand-logo-direction.md", "topic": "direction logo & marque", "summary": "Direction logo validée (carrés ambre/vert en point du i, Outfit Bold) — production reportée."},
-    {"path": "docs/chat-project-instructions.md", "topic": "instructions Claude Chat", "summary": "Miroir de CLAUDE.md pour les sessions Claude Chat (hors Claude Code) sur le projet Sift."}
+    {"path": "docs/brand-logo-direction.md", "topic": "direction logo & marque", "summary": "Direction logo validée (carrés ambre/vert en point du i, Outfit Bold) — production reportée."}
   ],
   "specs": [
     {"path": "docs/superpowers/specs/2026-06-12-m1-watcher-queue-design.md", "date": "2026-06-12", "topic": "M1 watcher + file à traiter", "summary": "Design M1 (watcher + file à traiter), source de vérité fonctionnelle plan-implementation.md."},
