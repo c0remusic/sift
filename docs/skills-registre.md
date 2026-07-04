@@ -1,9 +1,19 @@
 # Registre des skills / agents / plugins disponibles
 
 > Consulté avant d'invoquer un outil, pour éviter d'en référencer un qui n'existe
-> pas ou de manquer celui qui était pertinent. Mis à jour à la main quand un
-> outil est ajouté/retiré. Recensé le 2026-06-30. **Mis à jour 2026-06-30 soir** :
-> ajout skills Google Stitch (7 skills) + designer-skills Oczkowski (8 skills).
+> pas ou de manquer celui qui était pertinent.
+>
+> **Règle d'entretien** (même principe que `docs/INDEX.json`) : à chaque
+> install/désinstall d'un plugin ou d'une skill, ou à chaque changement de
+> verdict (scopé off, périmé, revalorisé...), mettre à jour ce fichier **dans le
+> même geste**, pas en rattrapage différé.
+>
+> Recensé le 2026-06-30. Mis à jour 2026-06-30 soir : ajout skills Google Stitch
+> (7 skills) + designer-skills Oczkowski (8 skills).
+> **Dernière mise à jour : 2026-07-04** — répercussion de la purge
+> plugins/skills du 2026-07-03 (voir `docs/ressources-externes.md`, section
+> "Outillage Claude Code — purge") et des décisions CLAUDE.md (ecc off,
+> MCP stitch supprimé, system.md périmé palette+typo).
 
 Trois portées : **projet** (ce repo uniquement, `.claude/`), **global**
 (tous les projets, `~/.claude/`), **plugin** (global, packagé, peut contenir
@@ -54,10 +64,11 @@ seul — noté `disable-model-invocation: true` dans le SKILL.md).
 
 ## Skills Google Stitch (génération UI par IA — installées 30/06, fusion des deux passes)
 
-Pont complet pour explorer des directions visuelles via Google Stitch, installé en
-deux temps ce soir : serveur MCP `stitch` (`~/.claude.json`, `npx @_davideast/stitch-mcp
-proxy`, authentifié via gcloud) + 14 skills de `google-labs-code/stitch-skills`
-installées globalement. **Noms de dossier réels vérifiés** (`~/.claude/skills/` ET
+Pont pour explorer des directions visuelles via Google Stitch : 14 skills de
+`google-labs-code/stitch-skills` installées globalement. ⚠️ **Le serveur MCP
+`stitch` a été supprimé le 2026-07-01** (down/inutilisable — cf. CLAUDE.md) :
+les skills restent installées et s'utilisent via la skill web directement, pas
+via un MCP. **Noms de dossier réels vérifiés** (`~/.claude/skills/` ET
 `~/.agents/skills/` — symlink confirmé fonctionnel par double timestamp identique,
 PAS le bug connu vercel-labs/skills#851) : tirets, pas `::` (le `::` n'apparaît que
 dans le `name` interne du frontmatter SKILL.md, pas le nom de dossier).
@@ -106,7 +117,7 @@ courte (pas besoin de la chaîne complète).
 | `information-architecture` | auto ("IA", "site structure", "navigation", "user flows") | **Étape 2** — structure pages/nav/hiérarchie de contenu avant tout design visuel. |
 | `design-tokens` | auto ("tokens", "design system", "CSS variables") | **Étape 3** — génère les CSS custom properties. **À SAUTER sur Sift** : `.interface-design/system.md` + `styles.css` tokens existent déjà — ne pas écraser. |
 | `brief-to-tasks` | auto ("break down", "tasks", "breakdown") | **Étape 4** — décompose le brief en tâches ordonnées par dépendances (vertical slices). |
-| `frontend-design` | auto ("build this", "generate component", "build page") | **Étape 5** — phase de build. **Sur Sift** : subordonner aux tokens de `.interface-design/system.md`, ne pas partir de zéro. **CONFLIT DE NOM RÉSOLU (30/06)** : c'est un fichier DIFFÉRENT du plugin officiel Anthropic du même nom (déjà recensé dans la section "Frontend / design visuel" plus bas) — celui-ci (Oczkowski, `~/.claude/skills/frontend-design/`) parle aussi de "named aesthetic philosophies", même famille probablement hors-scope desktop-dense que les autres skills "goût visuel". Les deux skills portent le MÊME nom de dossier `frontend-design` — collision potentielle si les deux sont installées (laquelle Claude Code charge en cas de description ambiguë ? non vérifié). À surveiller : si un comportement bizarre apparaît sur une invocation "frontend-design", vérifier laquelle des deux a été chargée. |
+| `frontend-design` | auto ("build this", "generate component", "build page") | **Étape 5** — phase de build. **Sur Sift** : subordonner aux tokens de `.interface-design/system.md`, ne pas partir de zéro. **COLLISION DE NOM RÉSOLUE (2026-07-03)** : le plugin officiel Anthropic homonyme a été désinstallé lors de la purge — cette skill (Oczkowski, `~/.claude/skills/frontend-design/`) est désormais la SEULE `frontend-design` installée, plus d'ambiguïté de chargement. Elle parle de "named aesthetic philosophies", même famille probablement hors-scope desktop-dense que les autres skills "goût visuel". |
 | `design-review` | auto ("design review", "critique", "QA pass", "polish") | **Étape 6** — audit post-build : hiérarchie visuelle, cohérence, responsive, a11y, fidélité au brief. Playwright optionnel. |
 | `design-flow` | auto ("full design flow", "design process", "start from scratch") | **Orchestrateur** — lance les 7 steps en séquence guidée. |
 
@@ -140,8 +151,8 @@ Sift**, vérifié par lecture du contenu réel, pas du nom :
 | `design-taste-frontend` | global | auto | **HORS SCOPE SIFT.** Lu en entier (1206 lignes). C'est un manuel pour landing pages / portfolios / redesigns marketing : React/Next.js, Tailwind v4, Motion/GSAP, système de dials VARIANCE/MOTION/DENSITY, ~50 items de Pre-Flight Check anti-"AI tells" (em-dash banni, eyebrows rationnés, etc.). Section 13 "OUT OF SCOPE" exclut explicitement les dashboards / dense product UI — exactement ce qu'est Sift. Ne pas invoquer sur le batch/détail/journal. |
 | `ui-ux-pro-max` (plugin, 7 sous-skills) | global | auto probable | **PARTIELLEMENT PERTINENT.** Lu le sous-skill `ui-ux-pro-max` (661 lignes). La "Quick Reference" (priorités 1-10 : accessibilité, touch targets, perf, contraste) est générique et valide pour Sift. Mais le bas du fichier porte la mention explicite *"Scope notice: rules below are for App UI (iOS/Android/React Native/Flutter), not desktop-web"* — et le CLI de recherche (`search.py --design-system`) cible React Native par défaut, conçu pour générer un design system depuis zéro, pas auditer un re-skin existant vanilla TS. Utile en lecture ponctuelle (Quick Reference seulement), pas à invoquer en pilote automatique. |
 | **`impeccable`** (plugin) | global | manuel `/impeccable [cmd] [target]` | **LE PLUS PERTINENT DES TROIS, mais nécessitait une précondition.** Lu en entier (168 lignes + init.md). 23 commandes (`craft`, `shape`, `critique`, `audit`, `polish`, `bolder`, `quieter`, `distill`, `harden`, `onboard`, `animate`, `colorize`, `typeset`...). Distinction explicite **register `brand`** (design EST le produit, marketing/landing) vs **register `product`** (design SERT le produit, app UI/dashboard/tool) — Sift = `product`. Étape 3 du protocole force la lecture des conventions existantes avant d'agir ("don't reinvent the wheel"). **Bloquait sur `NO_PRODUCT_MD`** : `PRODUCT.md` n'existait pas à la racine de Sift → **créé le 30/06** (register `product`, anti-références "pas d'app grand public colorée/ludique", design principles "réemployer l'existant", pas de contrainte WCAG formelle). Utilisable maintenant : `/impeccable audit batch`, `/impeccable critique journal`, etc. `DESIGN.md` et le live config ne sont PAS encore créés (étapes optionnelles suivantes, à faire à la 1ère invocation réelle via `/impeccable document`). |
-| `frontend-design` (plugin officiel Anthropic) | global | ? — non lu | Existe en plus de design-taste-frontend — pas encore lu, vérifier doublon avant usage. |
-| **`interface-design`** | global | auto ("dashboard", "admin panel", "tool", "data interface" — explicitement "Not for landing pages") | **DEUXIÈME MEILLEUR CANDIDAT après impeccable, déjà UTILISÉE sur Sift dans le passé.** Lu en entier (406 lignes). Scope exact : "dashboards, admin panels, SaaS apps, tools... Not for landing pages, marketing." Insiste sur l'intent-first (qui est l'utilisateur, quelle tâche, quel ressenti) avant tout choix visuel, et sur le craft invisible (layering subtil, hiérarchie de texte à 4 niveaux primary/secondary/tertiary/muted — exactement nos tokens `--color-text-tertiary` déjà en place). Mécanisme `.interface-design/system.md` : **CE FICHIER EXISTE DÉJÀ** dans Sift (`dj-assistant-m6a/.interface-design/system.md`, 156 lignes) — cette skill a donc déjà tourné sur le projet. Contient tokens couleur exacts (#2c2c2a bg, #3b7df0 accent unique, etc.), échelle d'espacement 4/8/12/16/24/32, radius, typo (Outfit + JetBrains Mono), lexique (File/LOSSLESS/DUPLICATE), interdits ("jamais ranger un FAUX en masse"). **MAIS sa section "Mode Batch" est confirmée PÉRIMÉE par Antoine (30/06)** — décrit un tableau ☑/titre/chip/format avec barre d'action en bas, remplacé par le re-skin de cette session (groupes repliables, sélection tri-état, bouton adaptatif). Les fondations (couleurs/espacement/typo/règles de profondeur) restent valides. **DETTE IDENTIFIÉE, PAS RÉSOLUE** : actualiser la section Mode Batch de ce system.md pour refléter le re-skin réel — à faire dans une session dédiée avec lecture du code actuel comme preuve, pas de mémoire. |
+| ~~`frontend-design` (plugin officiel Anthropic)~~ | — | — | **DÉSINSTALLÉ 2026-07-03** (purge) — retiré pour lever la collision de nom avec la skill `frontend-design` d'Oczkowski (section design process ci-dessus), qui reste la seule installée. |
+| **`interface-design`** | global | auto ("dashboard", "admin panel", "tool", "data interface" — explicitement "Not for landing pages") | **DEUXIÈME MEILLEUR CANDIDAT après impeccable, déjà UTILISÉE sur Sift dans le passé.** Lu en entier (406 lignes). Scope exact : "dashboards, admin panels, SaaS apps, tools... Not for landing pages, marketing." Insiste sur l'intent-first (qui est l'utilisateur, quelle tâche, quel ressenti) avant tout choix visuel, et sur le craft invisible (layering subtil, hiérarchie de texte à 4 niveaux primary/secondary/tertiary/muted — exactement nos tokens `--color-text-tertiary` déjà en place). Mécanisme `.interface-design/system.md` : **CE FICHIER EXISTE DÉJÀ** dans Sift (`dj-assistant-m6a/.interface-design/system.md`, 156 lignes) — cette skill a donc déjà tourné sur le projet. ⚠️ **`system.md` est PÉRIMÉ sur la palette/direction visuelle (2026-07-01 : dark "table du digger" remplacé par le clair gris chaud) ET sur la typo (audit `/design-system` 2026-07-03 : spec "track title 30/600" ne correspond à aucun layout, `--text-hero` renommé `--text-2xl`)** — ne s'y fier ni pour les couleurs ni pour la typo. Sa section "Mode Batch" était déjà confirmée périmée (30/06). Espacement/radius restent valides comme échelle déclarée, mais leur couverture réelle se vérifie au grep. **Source de vérité réelle = `frontend/styles.css` (`:root`) + `docs/design-system-states.md`.** La skill elle-même reste le 2e candidat pour la retouche UI ; c'est son fichier d'état local qui est stale. |
 | `minimalist-ui` | global | manuel/explicite | Direction esthétique nommée (palette monochrome chaud, bento grid, éditorial). VERDICT CORRIGÉ (30/06) : à reconsidérer comme option réelle pour Sift puisque sa direction visuelle est ouverte — ce n'est PLUS écarté pour "incompatibilité avec une direction existante" (qui était une confusion avec Tuple). Reste un choix de style parmi d'autres, pas le scope qui pose problème. |
 | `industrial-brutalist-ui` | global | manuel/explicite | Esthétique "tactical/industrielle" (Swiss typographic + terminal militaire, scanlines, dithering), cible explicitement "data-heavy dashboards" — donc DANS LE SCOPE desktop-dense. VERDICT CORRIGÉ (30/06) : à reconsidérer comme option réelle, écarté précédemment sur la base d'une confusion avec la direction Tuple. Pertinent si Antoine veut une direction "instrument professionnel" plutôt que purement sobre. |
 | `microinteractions` | global | auto ("button feedback", "loading state", "animation detail") | Lu (frontmatter). Triggers/rules/feedback/loops — exactement le langage du PRODUCT.md Sift ("petits détails avec intention"). Pertinent pour la prochaine passe de polish UI (barres, transitions Journal). |
@@ -168,24 +179,30 @@ utiliser pour toute évolution d'interface" doit être affinée. Préférer `imp
 ponctuelle de sa Quick Reference (accessibilité/perf) ; ne jamais invoquer
 design-taste-frontend sur Sift.
 
-## Produit / business (probablement hors scope Sift technique, utiles pour Tuple marketing ou roadmap)
+## Produit / business — SUPPRIMÉES DU LOCKFILE le 2026-07-03
 
-`jobs-to-be-done`, `lean-startup`, `lean-ux`, `lean-analytics`, `continuous-discovery`,
-`inspired-product`, `obviously-awesome`, `crossing-the-chasm`, `blue-ocean-strategy`,
-`good-strategy-bad-strategy`, `traction-eos`, `high-output-management`,
-`cro-methodology`, `scorecard-marketing`, `one-page-marketing`, `storybrand-messaging`,
-`made-to-stick`, `contagious`, `influence-psychology`, `negotiation`,
-`cold-start-problem`, `drive-motivation`, `improve-retention`, `mom-test`,
-`brandkit` — non lues en détail, probablement pour decisions produit/marketing
-(pertinentes pour la campagne promo Tuple notée dans les mémoires, pas pour Sift backend).
+Le pack business/stratégie/marketing/vente `wondelai/skills` (28 skills :
+`blue-ocean-strategy`, `lean-startup`, `jobs-to-be-done`, `traction-eos`,
+`storybrand-messaging`, `lean-analytics`, `continuous-discovery`,
+`inspired-product`, `obviously-awesome`, `crossing-the-chasm`,
+`good-strategy-bad-strategy`, `high-output-management`, `cro-methodology`,
+`scorecard-marketing`, `one-page-marketing`, `made-to-stick`, `contagious`,
+`influence-psychology`, `negotiation`, `cold-start-problem`, `drive-motivation`,
+`mom-test`, etc.) a été **supprimé du lockfile** (`npx skills remove -g`) lors
+de la purge du 2026-07-03 — zéro usage confirmé sur les 4 projets.
+Réinstallable à la carte : `npx skills add wondelai/skills -s <nom> -g -y`.
+Encore présentes en session (gardées ou hors pack) : `lean-ux`,
+`improve-retention`, `brandkit`, `product-manager`, `hooked-ux` — les clusters
+code-craftsmanship / systems-architecture / ux-design du même bundle sont
+gardés (référencés par Sift/Tuple).
 
 ⚠️ **MONÉTISATION SIFT EN SUSPENS (30/06)** : Antoine envisage potentiellement de
 rendre Sift payant/freemium, pas encore décidé ("à explorer"). PRODUCT.md NON modifié
 sur ce point (toujours "gratuit" — ne pas figer une décision non prise). Si la
-monétisation se précise, ces skills deviennent pertinentes pour Sift, pas juste Tuple :
-`hundred-million-offers` (Value Equation, pricing irrésistible), `monetizing-innovation`
-(willingness-to-pay, freemium vs trial, packaging good-better-best),
-`predictable-revenue` (si vente outbound B2B — probablement pas pour un outil DJ indé).
+monétisation se précise, les skills du pack wondelai (`hundred-million-offers`,
+`monetizing-innovation`, `predictable-revenue`...) redeviennent pertinentes —
+mais elles ont été supprimées du lockfile le 2026-07-03 : à réinstaller à la
+carte le moment venu (`npx skills add wondelai/skills -s <nom> -g -y`).
 
 ⚠️ **BRANDKIT REVALORISÉ (30/06)** : `brandkit` (génération d'images logo/identité)
 écartée plus haut comme "pas de chantier en cours" — reconsidérée : utile pour la
@@ -201,7 +218,7 @@ est nécessaire.
 | `github-actions-docs` | global | auto | CI build cross-platform Win+Mac. |
 | `context7` (plugin) | global | auto (docs libs) | Doc à jour de libs externes (déjà vu dans mes outils Claude.ai aussi). |
 | `rust-analyzer-lsp` (plugin) | global | connecteur LSP (pas une skill invocable) | Lu le README (34 lignes) : c'est juste un connecteur du Language Server `.rs` (rustup/brew/apt), pas de mécanisme d'invocation. CORRECTION : `rust-lsp` mentionné dans CLAUDE.md Sift original n'existe PAS comme plugin séparé — `installed_plugins.json` ne liste que `rust-analyzer-lsp`. Pas un doublon réel, une référence imprécise à corriger dans CLAUDE.md. |
-| `ecc` (Everything-Claude-Code) | global | mixte (60+ agents, 271 skills, commandes epic-*) | Méga-framework, trop large pour audit exhaustif. Contient `rust-reviewer` (agent générique : cargo check/clippy/fmt/test) — lu et comparé : REDONDANT avec `rust-best-practices`/`rust-engineer` déjà personnalisés pour Sift (MSRV 1.77.2, fail-fast). Ne pas invoquer ses agents Rust génériques sur Sift, préférer les versions projet. Contient aussi des skills hors-scope évidentes (`defi-amm-security`, `customs-trade-compliance`, `cisco-ios-patterns`) — confirme que c'est un fourre-tout multi-domaines, pas un outil ciblé. |
+| `ecc` (Everything-Claude-Code) | global | **SCOPÉ OFF SUR SIFT depuis 2026-07-01** (`.claude/settings.local.json` — coût ~250 skills en session pour un usage jamais confirmé ici). Toute référence `ecc:*` est indisponible sur Sift ; fallbacks : review Rust → `rust-engineer`, revue générale → `code-review` natif, a11y → `ui-ux-pro-max` Quick Reference. | Méga-framework, trop large pour audit exhaustif. Contient `rust-reviewer` (agent générique : cargo check/clippy/fmt/test) — lu et comparé : REDONDANT avec `rust-best-practices`/`rust-engineer` déjà personnalisés pour Sift (MSRV 1.77.2, fail-fast). Ne pas invoquer ses agents Rust génériques sur Sift, préférer les versions projet. Contient aussi des skills hors-scope évidentes (`defi-amm-security`, `customs-trade-compliance`, `cisco-ios-patterns`) — confirme que c'est un fourre-tout multi-domaines, pas un outil ciblé. |
 | `learned` | global | n/a — dossier vide | Vérifié : dossier vide, aucun contenu actuel. Probablement un emplacement réservé pour un mécanisme d'apprentissage futur, rien à invoquer aujourd'hui. |
 
 ## Spécifiques à d'autres projets d'Antoine (PAS Sift — ne pas invoquer ici)
@@ -210,21 +227,30 @@ est nécessaire.
 
 ## Non recensés en détail (à vérifier avant 1ère invocation)
 
-`vercel`, `figma`, `qdrant-skills` (Sift a écarté Qdrant — probablement inutile),
-`maxmcp` (Max for Live, hors Sift), `brightdata-plugin`, `outputai`, `coderabbit`,
-`appwrite`, `adobe-for-creativity`, `discord`, `feature-dev`.
+`vercel`, `figma`, `maxmcp` (Max for Live, hors Sift — cassé, marketplace
+introuvable), `adobe-for-creativity`, `discord`, `feature-dev`.
+
+**Désinstallés le 2026-07-03** (purge cross-projet, détail dans
+`~/.claude/skills-registre-global.md` et `docs/ressources-externes.md`) :
+`appwrite`, `brightdata-plugin`, `outputai`, `qdrant-skills`, `coderabbit`,
+`frontend-design@claude-plugins-official` (le plugin officiel Anthropic — sa
+désinstallation **résout la collision de nom** avec la skill `frontend-design`
+d'Oczkowski signalée plus haut : une seule skill de ce nom reste installée).
+`code-modernization` désactivé (zéro usage, gardé au cas où).
 
 ---
 
-## Pont Stitch MCP (installé 30/06, pour exploration visuelle Sift)
+## Pont Stitch (installé 30/06, pour exploration visuelle Sift)
 
-Serveur MCP `stitch` configuré dans `~/.claude.json` (`npx @_davideast/stitch-mcp proxy`,
-authentifié via gcloud). 14 skills de `google-labs-code/stitch-skills` installées
-globalement (`~/.agents/skills/`, symlinkées vers Claude Code) :
+⚠️ **Serveur MCP `stitch` SUPPRIMÉ le 2026-07-01** (down/inutilisable, décision
+actée dans CLAUDE.md). Les 14 skills de `google-labs-code/stitch-skills` restent
+installées globalement (`~/.agents/skills/`, symlinkées vers Claude Code) et
+s'utilisent via la skill web directement — toute mention "utilise le MCP stitch"
+ci-dessous est caduque :
 
 | Skill | Pertinence Sift |
 |---|---|
-| `stitch::generate-design` | **PRIORITAIRE pour l'exploration page-blanche.** Génère des écrans depuis texte/image, pipeline d'enrichissement de prompt automatique, édite avec tokens de design system. Utilise le MCP `stitch` configuré. |
+| `stitch::generate-design` | **PRIORITAIRE pour l'exploration page-blanche.** Génère des écrans depuis texte/image, pipeline d'enrichissement de prompt automatique, édite avec tokens de design system. (MCP `stitch` supprimé 2026-07-01 — passer par la skill web.) |
 | `stitch::extract-design-md` | Génère un DESIGN.md depuis un projet Stitch existant — utile une fois une direction choisie, pour la documenter au format `.interface-design/system.md` équivalent. |
 | `stitch::extract-static-html` | Récupère le HTML/CSS produit par Stitch — c'est le pont retour vers le code, à adapter ensuite en vanilla TS (Stitch ne génère PAS vanilla TS nativement). |
 | `stitch::manage-design-system` | Gestion de design system Stitch (tokens, cohérence inter-écrans). |
