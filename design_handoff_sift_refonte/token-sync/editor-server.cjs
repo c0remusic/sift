@@ -45,6 +45,28 @@ function readBody(req) {
   });
 }
 
+function validateTokensShape(tokens) {
+  if (!tokens || typeof tokens !== "object") {
+    throw new Error("expected a JSON object with { colors, static }");
+  }
+  if (!tokens.colors || typeof tokens.colors !== "object") {
+    throw new Error("expected tokens.colors to be an object");
+  }
+  for (const [key, value] of Object.entries(tokens.colors)) {
+    if (!value || typeof value !== "object" || typeof value.light !== "string" || typeof value.dark !== "string") {
+      throw new Error(`tokens.colors["${key}"] must be { light: string, dark: string }, got ${JSON.stringify(value)}`);
+    }
+  }
+  if (!tokens.static || typeof tokens.static !== "object") {
+    throw new Error("expected tokens.static to be an object");
+  }
+  for (const [key, value] of Object.entries(tokens.static)) {
+    if (typeof value !== "string") {
+      throw new Error(`tokens.static["${key}"] must be a string, got ${JSON.stringify(value)}`);
+    }
+  }
+}
+
 const server = http.createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
 
@@ -71,7 +93,9 @@ const server = http.createServer(async (req, res) => {
 
     if (req.method === "POST" && url.pathname === "/preview-tokens") {
       const body = await readBody(req);
-      pendingTokens = JSON.parse(body);
+      const parsed = JSON.parse(body);
+      validateTokensShape(parsed);
+      pendingTokens = parsed;
       return sendJson(res, 200, { ok: true });
     }
 
@@ -93,9 +117,7 @@ const server = http.createServer(async (req, res) => {
     if (req.method === "POST" && url.pathname === "/validate") {
       const body = await readBody(req);
       const edited = JSON.parse(body);
-      if (!edited.colors || !edited.static) {
-        return sendJson(res, 400, { error: "expected { colors, static }" });
-      }
+      validateTokensShape(edited);
       fs.writeFileSync(tokensPath, JSON.stringify(edited, null, 2), "utf8");
 
       const results = {
