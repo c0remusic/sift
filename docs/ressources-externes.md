@@ -537,6 +537,60 @@ scope, risque faible sur un outil interne).
 
 ---
 
+## Évaluation 9 — token-sync tool v2 : 4 outils externes + spec DTCG officielle (2026-07-04)
+
+**Contexte** : suite de l'Évaluation 8. 4 outils trouvés par Antoine
+(`TrySound/engramma`, Tokens Studio, Style Dictionary, Magic Patterns) plus 2
+sources DTCG faisant autorité (designtokens.org/tr/drafts/resolver/,
+alwaystwisted.com — design tokens workflow part 7) évalués pour voir s'ils
+remplacent notre outil ou apportent des idées à incorporer.
+
+**Verdict par outil** :
+- **Style Dictionary** : prior art le plus proche pour la partie push
+  (canonique → N formats), mais ses formats ne couvrent aucune de nos 2
+  cibles propriétaires (`Sift.dc.html`, `DESIGN.md`) — écarté comme
+  dépendance.
+- **Engramma** : éditeur web avec live-preview réel (comparable à notre
+  `editor.html`), mais I/O JSON(DTCG)/CSS/SCSS seulement, pas de vraie
+  reconciliation bidirectionnelle avec conflit — idée d'auto-refresh
+  incorporée, pas l'outil lui-même.
+- **Tokens Studio** : plugin Figma. Idée de format DTCG + cascade de token
+  sets incorporée (voir Section A du design v2), outil lui-même écarté (on
+  n'est pas sur Figma).
+- **Magic Patterns** : hors sujet (génération de code UI par prompt).
+
+**Figma comme remplacement de Claude Design — écarté** : creusé suite à la
+question d'Antoine sur pourquoi tout l'écosystème pointe vers Figma plutôt
+que Claude Design. Root cause confirmée : `Sift.dc.html` est un format
+propriétaire que rien d'externe ne comprend (d'où `pull-theme-html.cjs`
+maison). Migration vers Figma jugée non rentable : **l'API REST Variables de
+Figma (lecture ET écriture) est réservée aux comptes Enterprise** (vérifié
+sur developers.figma.com — "This API is available to full members of
+Enterprise orgs"), donc même après migration le sync resterait manuel (export
+JSON via le plugin Tokens Studio, pas d'automatisation), pour le coût de
+reconstruire toute la maquette `Sift.dc.html` dans Figma. Pas de doc dédiée
+pour l'instant, actée dans la conversation.
+
+**Spec DTCG officielle vs conventions tierces (correction faite en session)** :
+la première passe de design confondait la convention de theming de Tokens
+Studio (cascade de "token sets", pas dans le spec DTCG) avec le vrai module
+Resolver DTCG (`resolver.json` : `sets`/`modifiers`/`contexts`/`resolutionOrder`,
+vérifié sur designtokens.org). Après lecture du spec officiel + d'un workflow
+réel (alwaystwisted.com, qui n'utilise PAS de resolver formel pour un cas à 2
+modes), décision : format de token réellement DTCG (`$type`/`$value`
+structuré) mais **sans** le module Resolver formel ni Terrazzo comme
+dépendance — jugés être de la machinerie disproportionnée pour 2 modes fixes.
+
+**Décision finale + implémentation** : voir
+`docs/superpowers/specs/2026-07-04-token-sync-tool-v2-design.md` (design complet,
+4 sections : architecture DTCG, consolidation partielle des générateurs,
+navigation barre latérale+recherche façon panneau Variables Figma, aperçu
+auto-rafraîchi façon engramma) et
+`docs/superpowers/plans/2026-07-04-token-sync-tool-v2.md` (plan à 8 tâches,
+exécution laissée à une session ultérieure).
+
+---
+
 ## Veille concurrente — MediaMonkey (2026-06-24)
 
 Gestionnaire de biblio musicale ([mediamonkey.com](https://www.mediamonkey.com/)),

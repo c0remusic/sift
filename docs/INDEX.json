@@ -21,7 +21,9 @@
     {"path": "docs/superpowers/specs/2026-07-03-rekordbox-masterdb-sqlcipher-reader-design.md", "date": "2026-07-03", "topic": "lecteur SQLCipher master.db", "summary": "Design du lecteur SQLCipher pur Rust pour master.db Rekordbox, exploratoire hors M7."},
     {"path": "docs/superpowers/specs/2026-07-03-titlebar-os-detection-design.md", "date": "2026-07-03", "topic": "titlebar détection OS", "summary": "Design titlebar : détection OS + 2 gaps résiduels."},
     {"path": "docs/superpowers/specs/2026-07-04-docs-reorg-and-index-design.md", "date": "2026-07-04", "topic": "réorg docs + index JSON", "summary": "Design de cette réorganisation docs/audit + index JSON (méta, ce document)."},
-    {"path": "docs/superpowers/specs/2026-07-04-review-fixes-design.md", "date": "2026-07-04", "topic": "3 fixes revue Steve Jobs", "summary": "Design des 3 fixes retenus après la revue Steve Jobs (verdict NOT DONE 7/10)."}
+    {"path": "docs/superpowers/specs/2026-07-04-review-fixes-design.md", "date": "2026-07-04", "topic": "3 fixes revue Steve Jobs", "summary": "Design des 3 fixes retenus après la revue Steve Jobs (verdict NOT DONE 7/10)."},
+    {"path": "docs/superpowers/specs/2026-07-04-token-editor-undo-design.md", "date": "2026-07-04", "topic": "undo éditeur de tokens", "summary": "Design du bouton Annuler (1 niveau, sans confirmation avant écriture) pour l'éditeur de tokens, suite à un clic Valider accidentel."},
+    {"path": "docs/superpowers/specs/2026-07-04-token-sync-tool-v2-design.md", "date": "2026-07-04", "topic": "token-sync tool v2 (DTCG, nav, preview live)", "summary": "Design v2 de l'outil de sync de tokens : format DTCG réel (2 fichiers light/dark), consolidation partielle des générateurs, navigation barre latérale+recherche, aperçu auto-rafraîchi — inspiré de 4 outils externes + 2 sources DTCG faisant autorité."}
   ],
   "plans": [
     {"path": "docs/superpowers/plans/2026-06-12-m0-scaffolding.md", "date": "2026-06-12", "topic": "M0 scaffolding", "summary": "Plan M0 : scaffolding Tauri v2 + FFmpeg sidecar + SQLite + IPC typé."},
@@ -54,7 +56,8 @@
     {"path": "docs/superpowers/plans/2026-07-03-titlebar-os-detection.md", "date": "2026-07-03", "topic": "titlebar détection OS", "summary": "Plan : titlebar détection OS + gaps résiduels."},
     {"path": "docs/superpowers/plans/2026-07-04-m8-masterdb-write-spike.md", "date": "2026-07-04", "topic": "M8 spike écriture master.db", "summary": "Plan : spike d'écriture master.db (validation avant code de prod)."},
     {"path": "docs/superpowers/plans/2026-07-04-review-fixes.md", "date": "2026-07-04", "topic": "fixes revue (queue/erreur/confirm)", "summary": "Plan : 3 fixes issus de la revue (virtualisation queue, bannière erreur lecture, overlay confirmation)."},
-    {"path": "docs/superpowers/plans/2026-07-04-docs-reorg-and-index.md", "date": "2026-07-04", "topic": "réorg docs + index JSON", "summary": "Plan d'implémentation de cette réorganisation docs/audit + index JSON (méta, ce document)."}
+    {"path": "docs/superpowers/plans/2026-07-04-docs-reorg-and-index.md", "date": "2026-07-04", "topic": "réorg docs + index JSON", "summary": "Plan d'implémentation de cette réorganisation docs/audit + index JSON (méta, ce document)."},
+    {"path": "docs/superpowers/plans/2026-07-04-token-sync-tool-v2.md", "date": "2026-07-04", "topic": "token-sync tool v2 (DTCG, nav, preview live)", "summary": "Plan à 8 tâches : migration DTCG (2 fichiers light/dark), consolidation partielle des 3 générateurs, nav barre latérale+recherche editor.html, aperçu auto-rafraîchi."}
   ],
   "reviews": [
     {"path": "docs/superpowers/reviews/2026-06-12-m4-review.md", "date": "2026-06-12", "topic": "revue multi-agent M4", "summary": "Revue multi-agent M4 (sécurité/archi/correctness) sur toute la boucle filing."},
