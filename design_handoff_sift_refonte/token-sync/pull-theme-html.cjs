@@ -6,7 +6,6 @@
 // Dry-run by default; --write persists the pull and updates the shared baseline.
 const fs = require("fs");
 const path = require("path");
-const { escapeRegex } = require("./regex-utils.cjs");
 
 const tokenDir = __dirname;
 const htmlPath = path.join(tokenDir, "..", "Sift.dc.html");
