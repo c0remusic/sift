@@ -289,3 +289,63 @@ Remplace les accordéons `<details>` empilés de `editor.html` par :
 3. **Section D** (restructuration de navigation dans `editor.html`).
 4. **Section C** (aperçu auto-rafraîchi, indépendant, risque le plus faible — bien
    pour finir).
+
+---
+
+## Addendum (2026-07-04, mid-implémentation) — gap rgba/alpha non spécifié
+
+**Trouvé par l'implémenteur de Task 1** (subagent-driven-development), avant
+tout code écrit : la spec ci-dessus (Section A) ne parle que de couleurs hex
+6 chiffres. En réalité, **13 des 33 tokens couleur réels** de
+`design-tokens.json` sont des `rgba(r,g,b,a)` — tous les overlays
+(`--overlay-hover/selected/bar/badge`), les fonds sémantiques teintés
+(`--color-background-info/danger/success/warning`), les bordures
+(`--color-border-tertiary/secondary/info/danger`) et
+`--color-accent-identify-border`. Ni `hexToComponents`/`colorEntry` du plan
+ni le reste de la spec n'ont de branche pour ça — le plan aurait crashé au
+premier `rgba(...)` rencontré (`--color-background-info`).
+
+Impact plus large que Task 1 seul : `border`/`borderStrong` dans
+`alias-map.json` (→ `--color-border-tertiary`/`-secondary`) sont référencés
+par `Sift.dc.html` (Task 3) ET par les bullets `lightBullets`/`darkBullets`
+de `generate-design-md.cjs` (Task 4) — donc Tasks 2, 3, 4, 5, 6 touchent
+toutes potentiellement des valeurs rgba, pas seulement Task 1/2.
+
+**Vérifié séparément** : le contrat de fil `editor-server.cjs`↔`editor.html`
+n'a *jamais* exigé du hex strict — `validateTokensShape()` ne vérifie que
+`typeof value.light/dark === "string"`. Le "hex strings" mentionné dans les
+Global Constraints du plan d'implémentation était une simplification
+inexacte de l'auteur, pas une contrainte réelle du wire contract.
+
+**Décision (choix utilisateur, option recommandée)** : ajouter un champ
+`alpha` au DTCG `$value`, garder `components`. Forme exacte :
+
+```js
+function parseColorValue(raw) {
+  const hexMatch = /^#([0-9a-fA-F]{2})([0-9a-fA-F]{2})([0-9a-fA-F]{2})$/.exec(raw);
+  if (hexMatch) {
+    return { $type: "color", $value: { colorSpace: "srgb", components: hexToComponents(raw), hex: raw } };
+  }
+  const rgbaMatch = /^rgba\((\d+),(\d+),(\d+),([\d.]+)\)$/.exec(raw);
+  if (rgbaMatch) {
+    const [, r, g, b, a] = rgbaMatch;
+    const components = [r, g, b].map((c) => Math.round((Number(c) / 255) * 10000) / 10000);
+    return { $type: "color", $value: { colorSpace: "srgb", components, alpha: Number(a), hex: null, raw } };
+  }
+  throw new Error(`parseColorValue: "${raw}" is neither a 6-digit hex nor an rgba(r,g,b,a) color`);
+}
+function cssColorLiteral(entry) {
+  return entry.$value.hex ?? entry.$value.raw; // exact original string preserved for rgba — no reformatting, guarantees no-op round-trip
+}
+```
+
+`raw` garde la chaîne exacte lue (préserve le formatage original, ex. `.08`
+vs `0.08`, pour garantir un no-op byte-exact). `parseColorValue` remplace
+tous les usages de `colorEntry(hex)`/construction manuelle `{$type:"color",
+$value:{...,hex}}` à travers migrate-to-dtcg.cjs et les 2 scripts pull.
+`cssColorLiteral(entry)` remplace tous les usages de `entry.$value.hex` dans
+generate-styles-css.cjs, generate-theme-html.cjs, generate-design-md.cjs,
+editor-server.cjs (toClientShape) et la règle de pruning (comparer les
+littéraux, pas seulement `.hex`, sinon un pruning sur token rgba ne
+détecterait jamais l'égalité). Les deux fonctions vivent dans `sync-core.cjs`
+aux côtés de `hexToComponents`, exportées pour tous les consommateurs.
