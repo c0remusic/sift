@@ -21,9 +21,10 @@
   cibles propriétaires (Sift.dc.html, DESIGN.md), donc on écrirait quand même ces
   2 générateurs à la main — le seul gain réel (CSS custom-properties standard +
   validation) ne justifie pas la dépendance + le config file.
-- **Registre de formats façon Style Dictionary** pour consolider les 3
-  `generate-*.cjs` (DRY sur la mécanique lire/diff/écrire dupliquée 3 fois), sans
-  système de plugin générique pour une 4e cible hypothétique.
+- **Consolidation partielle** du chargement canonique + de la mécanique finale
+  lire/écrire, dupliquée 3 fois dans `generate-*.cjs` — **pas** un registre de
+  formats façon Style Dictionary (voir Section B : vérifié contre le code réel,
+  ce modèle ne colle pas à nos 3 générateurs).
 - **Aperçu auto-rafraîchi** (façon engramma) dans l'onglet "Maquette complète" de
   `editor.html`.
 - **Navigation par barre latérale + recherche** (façon panneau Variables de Figma,
@@ -134,7 +135,7 @@ Appelée par tout script qui a besoin de la valeur effective d'un mode donné
 `hex` est la seule valeur qu'un humain ou `editor.html` édite jamais (color
 picker natif, champ texte) — `components` n'est **jamais lu-modifié-écrit**,
 il est **recalculé à neuf depuis `hex`** à chaque écriture (`sync-core.cjs`,
-au moment de `runFormat`/`/validate`), jamais accumulé d'une édition à
+au moment de `finalizeRun`/`/validate`), jamais accumulé d'une édition à
 l'autre. Ça élimine structurellement tout risque de dérive d'arrondi entre
 `hex` et `components` au fil des cycles d'édition (pas besoin de prouver
 qu'une précision décimale donnée round-trip parfaitement les 256 valeurs
@@ -164,43 +165,78 @@ fichier de baseline, toujours partagé entre `pull-styles-css.cjs` et
 baseline représente l'état canonique au dernier sync, pas une propriété
 d'un seul fichier source).
 
+### Frontière client/serveur (précisée après lecture de editor-server.cjs)
+
+Le DTCG reste une préoccupation **stockage + générateurs uniquement**. Le
+contrat de données navigateur↔serveur (`{colors: {clé: {light, dark: hex}},
+static: {clé: valeur}}`, exactement la forme actuelle) **ne change pas** :
+`editor-server.cjs` fait toute la conversion aux 3 points frontière :
+- `GET /tokens.json` : lit les 2 fichiers DTCG, résout, convertit vers la forme
+  simple pour le navigateur.
+- `POST /preview-tokens` / `POST /validate` : reçoit la forme simple (inchangée),
+  la convertit vers la forme DTCG (recalcule `components` depuis `hex`, applique
+  le pruning de `dark.json`) avant d'écrire/consommer.
+
+Conséquence : `editor.html` et `validateTokensShape()` **ne changent pas du
+tout** pour la Section A — seule la Section D (navigation) touche `editor.html`.
+Ça réduit le nombre de fichiers réellement impactés par la migration DTCG.
+
 ### Fichiers touchés
 
 Les 6 scripts (`generate-styles-css.cjs`, `generate-theme-html.cjs`,
 `generate-design-md.cjs`, `pull-styles-css.cjs`, `pull-theme-html.cjs`,
-`apply-tokens.cjs`), tout le contrat de données de `editor-server.cjs`
-(`/tokens.json`, `/preview-tokens`, `/validate`, `validateTokensShape()`),
-la lecture/écriture de `editor.html`, et la forme de `last-sync.json`. `locate.cjs`
-n'est pas touché (travaille sur les noms `--color-*` de production, pas la forme
-des fichiers de tokens).
+`apply-tokens.cjs` — ce dernier sans changement de code, juste par dépendance
+transitive aux générateurs), la couche de conversion dans `editor-server.cjs`
+(nouvelles fonctions internes, PAS `validateTokensShape()` ni le contrat des
+routes), et la forme de `last-sync.json`. `locate.cjs`, `editor.html` (hors
+Section D) et `apply-tokens.cjs` (code) ne sont pas touchés.
 
-## Section B — Registre de formats (façon Style Dictionary)
+## Section B — Consolidation partielle (pas un registre de formats)
 
-Nouveau `sync-core.cjs`, qui porte la mécanique aujourd'hui dupliquée 3 fois :
-charger les 2 fichiers canoniques + `resolveTheme()`, charger `alias-map.json`,
-lire le fichier cible, comparer, écrire si `--write` et qu'il y a un changement,
-imprimer le rapport (no-op / valeurs changées).
+**Correction faite en relisant le code réel** (les 3 `generate-*.cjs`) avant
+d'écrire le plan : le modèle Style Dictionary (`format() => contenu de fichier
+complet`, diffé tel quel) ne colle pas. Les 3 générateurs actuels font tous du
+**patch chirurgical par regex** sur des fichiers rédigés à la main — chacun ne
+touche qu'un bloc précis (les 3 blocs CSS de `styles.css`, les 2 littéraux objet
+de `theme()` dans `Sift.dc.html`, les bullets de `DESIGN.md` + une vérification
+de dérive de comptage) et laisse tout le reste du fichier intact. Faire produire
+à un `format()` le contenu entier du fichier forcerait chaque générateur à
+reconstruire fidèlement tout ce qu'il ne touche pas aujourd'hui — pas de vraie
+simplification, et un risque réel de corruption si la reconstruction dérive
+(viole le principe « changements chirurgicaux » du projet). Ce modèle est
+abandonné.
+
+**Ce qui est réellement dupliqué et vaut la peine d'être extrait** dans un
+nouveau `sync-core.cjs` :
+- Charger les 2 fichiers canoniques (`design-tokens.light.json`/`.dark.json`)
+  et exposer `resolveTheme()`.
+- Charger `alias-map.json`.
+- La mécanique finale commune : comparer `original` vs `updated` (déjà calculé
+  par la logique propre à chaque générateur), logger le message standard,
+  écrire si `--write` et qu'il y a un changement, retourner `{noOp, changedKeys}`.
 
 ```js
 // sync-core.cjs
-function runFormat({ name, targetFile, format }, { write }) {
+function loadCanonical() {
   const light = loadJSON("design-tokens.light.json");
   const dark = loadJSON("design-tokens.dark.json");
-  const aliasMap = loadJSON("alias-map.json");
-  const desired = format({ light, dark, resolveTheme }, aliasMap);
-  const current = fs.readFileSync(targetFile, "utf8");
-  if (desired === current) { console.log(`No-op: ${name} déjà à jour.`); return { noOp: true }; }
-  console.log(`${name} : contenu différent.`);
-  if (write) fs.writeFileSync(targetFile, desired, "utf8");
-  return { noOp: false };
+  return { light, dark, resolveTheme: (mode) => resolveTheme(light, dark, mode) };
 }
-module.exports = { runFormat, resolveTheme };
+function loadAliasMap() { return loadJSON("alias-map.json"); }
+function finalizeRun({ targetPath, original, updated, changedKeys, write, label }) {
+  if (updated === original) { console.log(`No-op: ${label}.`); return { noOp: true, changedKeys: [] }; }
+  console.log(`Changed: ${changedKeys.join(", ")}`);
+  if (write) fs.writeFileSync(targetPath, updated, "utf8");
+  console.log(write ? `Written to ${targetPath}.` : "Dry run only — pass --write to persist.");
+  return { noOp: false, changedKeys };
+}
+module.exports = { loadCanonical, loadAliasMap, finalizeRun, resolveTheme };
 ```
 
-Chaque `generate-*.cjs` garde son nom de fichier (aucun changement pour
-`apply-tokens.cjs` ni pour l'usage CLI existant) mais se réduit à sa fonction
-`format()` propre, enregistrée via `runFormat()`. Pas de découverte de plugins,
-pas de config déclarative — juste la mécanique lire/diff/écrire mutualisée.
+Chaque `generate-*.cjs` garde **sa logique de repérage/remplacement de bloc
+propre** (regex CSS, littéraux `theme()`, bullets + drift-check DESIGN.md) —
+seuls le chargement canonique et la mécanique finale sont mutualisés. Nom de
+fichier et usage CLI inchangés pour `apply-tokens.cjs` et les autres scripts.
 
 ## Section C — Aperçu auto-rafraîchi (façon engramma)
 
