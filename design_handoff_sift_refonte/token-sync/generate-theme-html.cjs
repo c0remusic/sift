@@ -1,4 +1,4 @@
-// Generator #2: design-tokens.json + alias-map.json -> theme() literals in Sift.dc.html.
+// Generator #2: design-tokens.{light,dark}.json + alias-map.json -> theme() literals in Sift.dc.html.
 // Only touches the two theme() object literals (dark branch, light branch). Keys mapped to
 // null in alias-map.json (e.g. "disabled") are left untouched — no production equivalent,
 // not this generator's business.
@@ -8,19 +8,19 @@
 const fs = require("fs");
 const path = require("path");
 const { escapeRegex } = require("./regex-utils.cjs");
+const { loadCanonical, loadAliasMap, resolveTheme, cssColorLiteral, finalizeRun } = require("./sync-core.cjs");
 
 const tokenDir = __dirname;
 const htmlPath = path.join(tokenDir, "..", "Sift.dc.html");
-const tokensPath = path.join(tokenDir, "design-tokens.json");
-const aliasPath = path.join(tokenDir, "alias-map.json");
 
-function buildEntries(tokens, aliasMap, mode) {
+function buildEntries(resolved, aliasMap) {
   const entries = [];
   for (const [legacyKey, prodKey] of Object.entries(aliasMap)) {
     if (prodKey === null) continue;
-    const canonical = tokens.colors[prodKey];
-    if (!canonical) throw new Error(`alias-map points ${legacyKey} -> ${prodKey}, missing from design-tokens.json`);
-    entries.push([legacyKey, canonical[mode]]);
+    const dtcgPath = prodKey.replace(/^--(color|overlay)-/, "");
+    const canonical = resolved.color[dtcgPath];
+    if (!canonical) throw new Error(`alias-map points ${legacyKey} -> ${prodKey}, missing from resolved DTCG tokens`);
+    entries.push([legacyKey, cssColorLiteral(canonical)]);
   }
   return entries;
 }
@@ -40,16 +40,16 @@ function replaceKeysInObjectLiteral(blockText, entries) {
   return { text, changedKeys };
 }
 
-// Pure text transform, no filesystem — reused by run() (writes to the real Sift.dc.html)
-// and by editor-server.cjs's /preview.html (patches an in-memory copy for the live full-
-// mockup preview, never touching disk).
-function transform(html, tokens, aliasMap) {
+// Pure text transform, no filesystem — reused by run() and by editor-server.cjs's
+// /preview.html (patches an in-memory copy for the live full-mockup preview).
+// Signature change: takes already-resolved light/dark trees, not raw {colors} tokens.
+function transform(html, resolvedLight, resolvedDark, aliasMap) {
   const wholeRegex = /isDark\(\)\s*\?\s*(\{[\s\S]*?\})\s*:\s*(\{[\s\S]*?\})\s*;/;
   const m = html.match(wholeRegex);
   if (!m) throw new Error("Could not locate theme()'s isDark() ? {dark} : {light} literal in Sift.dc.html");
 
-  const darkResult = replaceKeysInObjectLiteral(m[1], buildEntries(tokens, aliasMap, "dark"));
-  const lightResult = replaceKeysInObjectLiteral(m[2], buildEntries(tokens, aliasMap, "light"));
+  const darkResult = replaceKeysInObjectLiteral(m[1], buildEntries(resolvedDark, aliasMap));
+  const lightResult = replaceKeysInObjectLiteral(m[2], buildEntries(resolvedLight, aliasMap));
 
   let newWhole = m[0].replace(m[1], darkResult.text);
   newWhole = newWhole.replace(m[2], lightResult.text);
@@ -60,29 +60,16 @@ function transform(html, tokens, aliasMap) {
 }
 
 function run({ write = false } = {}) {
-  const tokens = JSON.parse(fs.readFileSync(tokensPath, "utf8"));
-  const aliasMap = JSON.parse(fs.readFileSync(aliasPath, "utf8"));
+  const { light, dark } = loadCanonical();
+  const aliasMap = loadAliasMap();
   const original = fs.readFileSync(htmlPath, "utf8");
 
-  const result = transform(original, tokens, aliasMap);
-  if (!result.changed) {
-    return { noOp: true, changedKeys: [] };
-  }
-  if (write) {
-    fs.writeFileSync(htmlPath, result.html, "utf8");
-  }
-  return { noOp: false, changedKeys: result.changedKeys };
+  const result = transform(original, resolveTheme(light, dark, "light"), resolveTheme(light, dark, "dark"), aliasMap);
+  return finalizeRun({
+    targetPath: htmlPath, original, updated: result.html, changedKeys: result.changedKeys, write,
+    label: "Sift.dc.html theme() already matches design-tokens.{light,dark}.json for every mapped key",
+  });
 }
 
 module.exports = { run, transform };
-
-if (require.main === module) {
-  const writeFlag = process.argv.includes("--write");
-  const result = run({ write: writeFlag });
-  if (result.noOp) {
-    console.log("No-op: Sift.dc.html theme() already matches design-tokens.json for every mapped key.");
-  } else {
-    console.log(`Changed: ${result.changedKeys.join(", ")}`);
-    console.log(writeFlag ? "Written to Sift.dc.html." : "Dry run only — pass --write to persist.");
-  }
-}
+if (require.main === module) run({ write: process.argv.includes("--write") });
