@@ -474,6 +474,69 @@ jetable — supprimable). Scripts : `baseline.py`, `test_path_repair.py`,
 
 ---
 
+## Évaluation 8 — outil de sync de tokens design↔code, construit (2026-07-04)
+
+**Contexte** : suite des Évaluations 4/6 (drift `Sift.dc.html`↔`styles.css`, outils
+externes rejetés). Plutôt qu'un outil externe, un petit outillage maison a été
+construit et livré cette session : `design_handoff_sift_refonte/token-sync/`.
+
+**Ce qui existe** :
+- **Canonique** : `design-tokens.json` (clair/sombre) + `alias-map.json` (noms
+  legacy `theme()` ↔ noms de prod `--color-*`).
+- **3 générateurs** (`generate-styles-css.cjs`, `generate-theme-html.cjs`,
+  `generate-design-md.cjs`) : canonique → `styles.css` / `Sift.dc.html` /
+  `DESIGN.md`, dry-run par défaut, `--write` pour persister, no-op vérifié à
+  chaque fois.
+- **2 scripts `pull-*`** (sens inverse, remontée vers le canonique) :
+  `pull-styles-css.cjs` (édit à la main sur `styles.css`) et
+  `pull-theme-html.cjs` (édit dans Claude Design sur `Sift.dc.html`) —
+  partagent la même baseline `last-sync.json`, avec détection de conflit
+  explicite (jamais de résolution automatique silencieuse).
+- **`apply-tokens.cjs`** : CLI que j'utilise moi-même (pas besoin de navigateur
+  ni de serveur) — édite `design-tokens.json`, lance ce script avec `--write`.
+- **`editor.html` + `editor-server.cjs`** : UI pensée pour un usage non-technique
+  (groupes repliables, libellés en français, sélecteurs de couleur natifs,
+  preview live incluant la maquette complète interactive), plus un aperçu des
+  "consommateurs réels" (`locate.cjs`, grep+contexte sur `frontend/`) pour
+  chaque token modifié.
+- **`dev_locate.rs` + `dev-inspector.ts`** : inspecteur Alt+Clic dans la vraie
+  app `tauri dev` (debug-only), pointe un élément cliqué vers son fichier/ligne
+  réel.
+
+**Workflow de sync avec Claude Design** (le vrai projet cloud "Refonte UI Sift",
+`mcp__claude_design__*`) :
+1. Antoine édite les couleurs dans Claude Design (interface web).
+2. Fetch à la demande : `list_files` (compare l'`etag` du fichier à la dernière
+   valeur connue, sans tout retélécharger) puis `read_file` si ça a changé —
+   écrase la copie locale de `Sift.dc.html`.
+3. `pull-theme-html.cjs` remonte les valeurs dans le canonique (conflit
+   signalé si le canonique a aussi bougé depuis le dernier sync).
+4. `apply-tokens.cjs --write` repropage vers `styles.css`/`DESIGN.md`.
+5. Rien de plus à faire : l'app réelle se recharge via HMR `tauri dev`, et
+   `editor.html` refait un `GET /tokens.json` à chaque chargement de page.
+
+**Décision actée : pas de veille automatique (cron)**. `CronCreate` permettrait
+de poller l'`etag` du projet Claude Design à intervalle régulier (ex. 15-30 min)
+et déclencher fetch + pull + `PushNotification` sans computer-use (l'accès
+Claude Design est déjà une API directe, jamais un navigateur piloté). Écarté
+pour l'instant : le déclenchement manuel ("je te dis fetch") coûte zéro effort
+supplémentaire pour un usage solo, alors qu'un cron ajoute une vraie surface
+(job à surveiller, expiration à 7 jours, notifications à calibrer) pour un
+gain marginal. À reconsidérer seulement si le besoin réel apparaît ("je veux
+bosser une heure dans Design sans avoir à te le redire à chaque fois").
+
+**Audité et corrigé le même jour** : 2 agents de revue parallèles (bugs +
+nettoyage/conventions) + `/impeccable audit` sur `editor.html`, 8 correctifs
+identifiés et livrés via `subagent-driven-development` (5 tâches, chacune
+implémentée + revue par un agent frais, revue finale de branche "Ready to
+merge: Yes"). Un suivi tracé, non bloquant : `generate-design-md.cjs`'s
+`expectedDarkCount` dépend d'un "+2" lié à une section sans rapport
+(`## Composants`) à cause d'une variable préexistante (`restFromDark`) non
+bornée — faux positif possible si cette section change, pas corrigé (hors
+scope, risque faible sur un outil interne).
+
+---
+
 ## Veille concurrente — MediaMonkey (2026-06-24)
 
 Gestionnaire de biblio musicale ([mediamonkey.com](https://www.mediamonkey.com/)),
