@@ -82,6 +82,15 @@ function replaceCtaBullet(text, tokens, aliasMap, mode) {
   return { text: after, changedKeys: after !== before ? [`ctaBg/ctaText (${mode})`] : [] };
 }
 
+// Counts real "- Label : `value`" bullet lines in a section of DESIGN.md's prose.
+// Used to detect when the file gained/lost a bullet the hardcoded lightBullets/
+// darkBullets lists don't know about yet (a case the per-bullet regex above can't
+// catch, since it only checks "is my known label still there").
+function countBulletLines(text) {
+  const matches = text.match(/^- .+ : `[^`]+`$/gm);
+  return matches ? matches.length : 0;
+}
+
 function run({ write = false } = {}) {
   const tokens = JSON.parse(fs.readFileSync(tokensPath, "utf8"));
   const aliasMap = JSON.parse(fs.readFileSync(aliasPath, "utf8"));
@@ -91,6 +100,33 @@ function run({ write = false } = {}) {
   const parts = original.split(splitRe);
   if (parts.length !== 3) throw new Error("Could not split DESIGN.md into light/dark palette sections");
   const [lightSection, darkHeading, restFromDark] = parts;
+
+  // +1 for "Désactivé" (an intentionally-unmanaged bullet that still matches this
+  // shape; CTA does NOT match — its value is two backtick-spans, "fond `x`, texte `y`",
+  // not the single-backtick shape this regex looks for, so it never counts here).
+  const expectedLightCount = lightBullets.length + 1;
+  // Dark's "rest of file" continues past the palette section to end-of-file, so it
+  // also picks up 2 unrelated bullets from the later "## Composants" section
+  // ("Carte", "CTA primaire (pill...)") that happen to match this same shape —
+  // +1 for "Désactivé" and +2 for those Composants bullets.
+  const expectedDarkCount = darkBullets.length + 1 + 2;
+  const actualLightCount = countBulletLines(lightSection);
+  const actualDarkCount = countBulletLines(restFromDark);
+  if (actualLightCount !== expectedLightCount) {
+    throw new Error(
+      `DESIGN.md's light section has ${actualLightCount} bullet(s) matching the "- Label : \`value\`" ` +
+      `shape, but generate-design-md.cjs's lightBullets list only knows about ${expectedLightCount} ` +
+      `(${lightBullets.length} entries + 1 for "Désactivé"). Update lightBullets in this file to match.`
+    );
+  }
+  if (actualDarkCount !== expectedDarkCount) {
+    throw new Error(
+      `DESIGN.md's dark section has ${actualDarkCount} bullet(s) matching the "- Label : \`value\`" ` +
+      `shape, but generate-design-md.cjs's darkBullets list only knows about ${expectedDarkCount} ` +
+      `(${darkBullets.length} entries + 1 for "Désactivé" + 2 for "## Composants" bullets that fall ` +
+      `inside this section too). Update darkBullets in this file to match.`
+    );
+  }
 
   let lightResult = replaceSimpleBullets(lightSection, lightBullets, tokens, aliasMap, "light");
   const lightCta = replaceCtaBullet(lightResult.text, tokens, aliasMap, "light");
