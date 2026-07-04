@@ -129,6 +129,41 @@ Appelée par tout script qui a besoin de la valeur effective d'un mode donné
 - `alias-map.json` (mapping des clés legacy `theme()` → noms `--color-*`) reste
   **inchangé** — indépendant de la forme interne des fichiers de tokens.
 
+### Source de vérité hex vs. components (ambiguïté résolue)
+
+`hex` est la seule valeur qu'un humain ou `editor.html` édite jamais (color
+picker natif, champ texte) — `components` n'est **jamais lu-modifié-écrit**,
+il est **recalculé à neuf depuis `hex`** à chaque écriture (`sync-core.cjs`,
+au moment de `runFormat`/`/validate`), jamais accumulé d'une édition à
+l'autre. Ça élimine structurellement tout risque de dérive d'arrondi entre
+`hex` et `components` au fil des cycles d'édition (pas besoin de prouver
+qu'une précision décimale donnée round-trip parfaitement les 256 valeurs
+d'un octet — la question ne se pose plus, `components` est toujours dérivé,
+jamais source). Formule : `components[i] = round(byte[i] / 255, 4)`
+(4 décimales, uniquement pour l'affichage/interop DTCG — sans conséquence
+sur la fidélité puisque `hex` reste la valeur qui fait autorité).
+
+### Pruning des overrides `dark.json` convergents
+
+Si une valeur pulée (`pull-styles-css.cjs`/`pull-theme-html.cjs`) ou éditée
+dans `design-tokens.dark.json` redevient **identique** à sa valeur `light`
+correspondante (ex. après un revert), le token doit être **retiré** de
+`design-tokens.dark.json` plutôt que d'y rester en doublon inutile — sinon
+`dark.json` accumule des overrides qui ne servent plus à rien et deviennent
+trompeurs (« pourquoi ce token est dans dark.json s'il ne diffère pas ? »).
+Cette règle de pruning s'applique dans les 3 points d'écriture de
+`design-tokens.dark.json` : `/validate`, `pull-styles-css.cjs --write`,
+`pull-theme-html.cjs --write`.
+
+### Forme de `last-sync.json` (précisée)
+
+Devient `{ "light": { ...snapshot complet de design-tokens.light.json... },
+"dark": { ...snapshot complet de design-tokens.dark.json... } }` — un seul
+fichier de baseline, toujours partagé entre `pull-styles-css.cjs` et
+`pull-theme-html.cjs` (même raisonnement que l'architecture actuelle : la
+baseline représente l'état canonique au dernier sync, pas une propriété
+d'un seul fichier source).
+
 ### Fichiers touchés
 
 Les 6 scripts (`generate-styles-css.cjs`, `generate-theme-html.cjs`,
