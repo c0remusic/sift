@@ -1,0 +1,446 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<title>Sift — Éditeur de couleurs</title>
+<link rel="stylesheet" href="/frontend-styles.css">
+<style id="overrides"></style>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; height: 100vh; overflow: hidden; display: flex; flex-direction: column;
+    font-family: -apple-system, "Segoe UI", sans-serif; background: #f4f2ee; color: #34302B;
+  }
+  header {
+    flex: none; padding: 10px 20px; background: #fff; border-bottom: 1px solid #e3ddd3;
+    display: flex; align-items: baseline; gap: 12px;
+  }
+  header h1 { font-size: 15px; font-weight: 700; margin: 0; white-space: nowrap; }
+  header p { font-size: 12px; color: #6b6459; margin: 0; line-height: 1.4; }
+
+  main { flex: 1; display: flex; overflow: hidden; }
+  #form-col { width: 480px; flex: none; overflow-y: auto; padding: 16px 20px; background: #fff; border-right: 1px solid #e3ddd3; }
+  #preview-col { flex: 1; overflow: auto; padding: 20px; display: flex; flex-direction: column; align-items: center; gap: 16px; }
+
+  details.group { margin-bottom: 10px; border: 1px solid #e3ddd3; border-radius: 10px; overflow: hidden; }
+  details.group[open] { background: #fdfcfa; }
+  details.group summary {
+    padding: 12px 14px; cursor: pointer; font-size: 14px; font-weight: 600; list-style: none;
+    display: flex; align-items: center; justify-content: space-between; background: #f7f5f0;
+  }
+  details.group summary::-webkit-details-marker { display: none; }
+  details.group summary::after { content: "▸"; font-size: 11px; color: #918a7d; transition: transform .15s; }
+  details.group[open] summary::after { transform: rotate(90deg); }
+  details.group summary .group-hint { font-size: 11px; font-weight: 400; color: #918a7d; }
+  .group-body { padding: 10px 14px 14px; }
+
+  .token-row { padding: 10px 0; border-bottom: 1px solid #eee6d9; }
+  .token-row:last-child { border-bottom: none; }
+  .token-label { font-size: 13px; font-weight: 600; margin-bottom: 1px; }
+  .token-name { font-size: 10px; font-family: "JetBrains Mono", monospace; color: #a39c8f; margin-bottom: 8px; }
+  .mode-pair { display: flex; gap: 16px; }
+  .mode-slot { flex: 1; display: flex; align-items: center; gap: 8px; }
+  .mode-slot .mode-tag { font-size: 10px; text-transform: uppercase; letter-spacing: .04em; color: #918a7d; width: 44px; flex: none; }
+  .mode-slot input[type="color"] { width: 28px; height: 28px; padding: 0; border: 1px solid #ddd5c8; border-radius: 6px; cursor: pointer; flex: none; }
+  .mode-slot .swatch-plain { width: 28px; height: 28px; border-radius: 6px; border: 1px solid #ddd5c8; flex: none; }
+  .mode-slot input[type="text"] { width: 100%; min-width: 0; font-family: "JetBrains Mono", monospace; font-size: 11px; padding: 5px 6px; border: 1px solid #ddd5c8; border-radius: 5px; }
+
+  .static-row { display: flex; align-items: center; gap: 10px; padding: 8px 0; border-bottom: 1px solid #eee6d9; }
+  .static-row:last-child { border-bottom: none; }
+  .static-row .token-label { flex: 1; margin: 0; font-size: 12.5px; font-weight: 500; }
+  .static-row input { width: 160px; font-family: "JetBrains Mono", monospace; font-size: 11px; padding: 5px 6px; border: 1px solid #ddd5c8; border-radius: 5px; }
+
+  #theme-toggle {
+    padding: 7px 14px; font-size: 12.5px; border-radius: 999px; border: 1px solid #ddd5c8;
+    background: #fff; cursor: pointer;
+  }
+  .preview-tabs { display: flex; gap: 6px; margin-bottom: 4px; }
+  .preview-tab {
+    padding: 7px 16px; font-size: 12.5px; font-weight: 500; border: 1px solid #ddd5c8;
+    border-radius: 999px; background: #fff; cursor: pointer; color: #6b6459;
+  }
+  .preview-tab.on { background: #3A352F; color: #F7F4EF; border-color: #3A352F; }
+  #refresh-mockup-btn {
+    flex: none; padding: 8px 14px; font-size: 12.5px; font-weight: 600; border: none;
+    border-radius: 8px; background: #3A352F; color: #F7F4EF; cursor: pointer;
+  }
+  #refresh-mockup-btn:hover { filter: brightness(1.1); }
+  #validate-btn {
+    position: sticky; bottom: 0; width: 100%; margin-top: 14px; padding: 13px; font-size: 14px;
+    font-weight: 600; border: none; border-radius: 9px; background: #3A352F; color: #F7F4EF;
+    cursor: pointer;
+  }
+  #validate-btn:hover { filter: brightness(1.1); }
+
+  #report { font-size: 12.5px; }
+  #report .ok-line { color: #3f6d4c; margin: 6px 0; }
+  #report .changed-line { color: #8f6318; margin: 6px 0; }
+  #report .consumer-group { margin: 4px 0 10px; }
+  #report .consumer-group b { font-family: "JetBrains Mono", monospace; font-size: 11.5px; }
+  #report .consumer { font-family: "JetBrains Mono", monospace; font-size: 10.5px; color: #6b6459; margin: 2px 0 2px 10px; }
+  #report .empty-note { color: #918a7d; font-style: italic; }
+</style>
+</head>
+<body>
+<header>
+  <h1>Couleurs et style de Sift</h1>
+  <p>Ouvre une section, change une pastille, regarde l'aperçu — puis Valider pour tout appliquer.</p>
+</header>
+<main>
+  <div id="form-col">
+    <div id="groups"></div>
+    <button id="validate-btn">✓ Appliquer partout dans Sift</button>
+    <div id="report"></div>
+  </div>
+  <div id="preview-col">
+    <div class="preview-tabs">
+      <button id="tab-quick" class="preview-tab on">Aperçu rapide</button>
+      <button id="tab-full" class="preview-tab">Maquette complète</button>
+    </div>
+
+    <div id="quick-preview">
+      <button id="theme-toggle" data-theme="light">Voir en mode sombre</button>
+      <div class="pa" style="height:340px;width:100%;max-width:560px;border-radius:10px;overflow:hidden;border:1px solid #ccc;box-shadow:0 4px 20px rgba(0,0,0,.08)">
+        <div class="sb">
+          <div class="nav-brand">Sift</div>
+          <div class="nv on">Revue</div>
+          <div class="nv">Écartés</div>
+          <div class="nv">Bibliothèque</div>
+        </div>
+        <div class="queue" style="width:200px">
+          <div class="qi cur"><span>Piste sélectionnée</span></div>
+          <div class="qi"><span>Piste normale</span></div>
+          <div class="qi done"><span>Piste terminée</span></div>
+        </div>
+        <div style="flex:1;padding:16px;background:var(--color-background-primary);overflow:auto">
+          <span class="chip on" style="margin-right:6px">LOSSLESS</span>
+          <span class="chip">FAKE</span>
+          <div style="margin-top:12px;display:flex;gap:14px;align-items:center">
+            <div class="tog"></div>
+            <div class="tog off"></div>
+            <button class="sift-ranger-btn" style="padding:8px 14px;border-radius:8px;border:none;cursor:pointer">Ranger</button>
+          </div>
+          <p style="color:var(--color-text-primary)">Texte primaire</p>
+          <p style="color:var(--color-text-secondary)">Texte secondaire</p>
+          <p style="color:var(--color-text-tertiary)">Texte tertiaire</p>
+        </div>
+      </div>
+    </div>
+
+    <div id="full-preview" style="display:none;width:100%">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;max-width:1440px">
+        <button id="refresh-mockup-btn">↻ Rafraîchir la maquette avec mes couleurs</button>
+        <span style="font-size:11.5px;color:#918a7d">
+          C'est la vraie maquette Sift.dc.html — navigue entre les écrans, teste le mode Lot,
+          ouvre le popover Destination. Elle ne se met pas à jour à chaque frappe, clique
+          "Rafraîchir" une fois content·e de tes réglages. Fais défiler si ta fenêtre est plus
+          étroite que la maquette (conçue pour 1440×900).
+        </span>
+      </div>
+      <iframe id="mockup-frame" style="width:1440px;height:900px;max-width:none;border:1px solid #ccc;border-radius:10px;background:#fff;flex:none"></iframe>
+    </div>
+  </div>
+</main>
+<script>
+let tokens = null;
+
+// Human-readable groups. Each entry: [key, plain-French label].
+const COLOR_GROUPS = [
+  ["Fonds", "surfaces de l'app", [
+    ["--color-background-primary", "Fond général de l'app"],
+    ["--color-background-secondary", "Fond des cartes"],
+    ["--color-background-tertiary", "Fond de la barre latérale"],
+    ["--color-background-queue", "Fond de la colonne liste"],
+    ["--color-surface-raised", "Fond des boutons/popovers élevés"],
+    ["--color-track", "Fond des interrupteurs"],
+    ["--color-row-active", "Fond d'une ligne survolée/sélectionnée"],
+    ["--color-nav-active", "Fond d'un item de navigation actif"],
+  ]],
+  ["Textes", "couleur du texte", [
+    ["--color-text-primary", "Texte principal"],
+    ["--color-text-secondary", "Texte secondaire"],
+    ["--color-text-tertiary", "Texte discret"],
+    ["--color-text-quaternary", "Micro-étiquettes"],
+    ["--color-text-info", "Texte neutre interactif"],
+    ["--color-cta-text", "Texte sur le bouton principal"],
+  ]],
+  ["États (vert / ambre)", "verdicts et alertes", [
+    ["--color-background-success", "Fond vert — OK"],
+    ["--color-text-success", "Texte vert — OK"],
+    ["--color-background-danger", "Fond ambre — doute/erreur"],
+    ["--color-text-danger", "Texte ambre — doute/erreur"],
+    ["--color-background-warning", "Fond ambre — attention"],
+    ["--color-text-warning", "Texte ambre — attention"],
+    ["--color-background-info", "Fond neutre teinté"],
+  ]],
+  ["Bordures", "contours", [
+    ["--color-border-tertiary", "Bordure fine"],
+    ["--color-border-secondary", "Bordure marquée"],
+    ["--color-border-info", "Bordure neutre teintée"],
+    ["--color-border-danger", "Bordure ambre"],
+  ]],
+  ["Survol / sélection", "effets au clic ou survol", [
+    ["--overlay-hover", "Survol léger"],
+    ["--overlay-selected", "Sélection légère"],
+    ["--overlay-bar", "Barre de sélection"],
+    ["--overlay-badge", "Fond de badge"],
+  ]],
+  ["Bouton Identifier", "seule 3e teinte autorisée", [
+    ["--color-accent-identify", "Fond du bouton"],
+    ["--color-accent-identify-hover", "Fond au survol"],
+    ["--color-accent-identify-text", "Texte du bouton"],
+    ["--color-accent-identify-border", "Bordure du bouton"],
+  ]],
+];
+
+const STATIC_GROUPS = [
+  ["Coins arrondis", [
+    ["--border-radius-sm", "Coins — petit"],
+    ["--border-radius-md", "Coins — normal"],
+    ["--border-radius-lg", "Coins — grand"],
+    ["--border-radius-pill", "Coins — pilule"],
+  ]],
+  ["Ombres", [
+    ["--shadow-toast", "Ombre — notification"],
+    ["--shadow-overlay", "Ombre — fenêtre flottante"],
+  ]],
+  ["Police", [
+    ["--font-ui", "Police de l'interface"],
+    ["--font-mono", "Police des chiffres/chemins"],
+  ]],
+  ["Tailles de texte", [
+    ["--text-3xs", "Très très petit"],
+    ["--text-2xs", "Très petit"],
+    ["--text-xs", "Petit"],
+    ["--text-sm", "Discret"],
+    ["--text-md", "Normal-"],
+    ["--text-base", "Normal"],
+    ["--text-lg", "Normal+"],
+    ["--text-xl", "Grand"],
+    ["--text-2xl", "Très grand"],
+  ]],
+  ["Espacements", [
+    ["--space-4", "Très serré"],
+    ["--space-8", "Serré"],
+    ["--space-12", "Normal-"],
+    ["--space-16", "Normal"],
+    ["--space-24", "Large"],
+    ["--space-32", "Très large"],
+  ]],
+  ["Hauteur des boutons", [
+    ["--h-36", "Bouton normal"],
+    ["--h-40", "Bouton large"],
+  ]],
+];
+
+function escapeHtml(s) {
+  return s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+}
+
+function isHex6(v) {
+  return /^#[0-9a-fA-F]{6}$/.test(v);
+}
+
+function buildOverrideCss() {
+  const light = Object.entries(tokens.colors).map(([k, v]) => `${k}:${v.light};`).join("")
+    + Object.entries(tokens.static).map(([k, v]) => `${k}:${v};`).join("");
+  const dark = Object.entries(tokens.colors).map(([k, v]) => `${k}:${v.dark};`).join("");
+  return `:root{${light}}\n:root[data-theme="dark"]{${dark}}`;
+}
+
+function refreshPreview() {
+  document.getElementById("overrides").textContent = buildOverrideCss();
+}
+
+function makeModeSlot(key, mode) {
+  const wrap = document.createElement("div");
+  wrap.className = "mode-slot";
+  const tag = document.createElement("span");
+  tag.className = "mode-tag";
+  tag.textContent = mode === "light" ? "Clair" : "Sombre";
+
+  const value = tokens.colors[key][mode];
+  let picker = null;
+  if (isHex6(value)) {
+    picker = document.createElement("input");
+    picker.type = "color";
+    picker.value = value;
+  } else {
+    picker = document.createElement("div");
+    picker.className = "swatch-plain";
+    picker.style.background = value;
+  }
+
+  const text = document.createElement("input");
+  text.type = "text";
+  text.value = value;
+
+  function apply(newValue) {
+    tokens.colors[key][mode] = newValue;
+    text.value = newValue;
+    if (picker.tagName === "INPUT") picker.value = isHex6(newValue) ? newValue : picker.value;
+    else picker.style.background = newValue;
+    refreshPreview();
+  }
+
+  if (picker.tagName === "INPUT") {
+    picker.addEventListener("input", () => apply(picker.value));
+  }
+  text.addEventListener("input", () => {
+    tokens.colors[key][mode] = text.value;
+    if (picker.tagName === "INPUT" && isHex6(text.value)) picker.value = text.value;
+    else if (picker.tagName !== "INPUT") picker.style.background = text.value;
+    refreshPreview();
+  });
+
+  wrap.append(tag, picker, text);
+  return wrap;
+}
+
+function renderColorGroups() {
+  const container = document.getElementById("groups");
+  for (const [title, hint, entries] of COLOR_GROUPS) {
+    const details = document.createElement("details");
+    details.className = "group";
+    if (title === "Fonds" || title === "Textes" || title === "États (vert / ambre)") details.open = true;
+    const summary = document.createElement("summary");
+    summary.innerHTML = `<span>${escapeHtml(title)}</span><span class="group-hint">${escapeHtml(hint)}</span>`;
+    const body = document.createElement("div");
+    body.className = "group-body";
+    for (const [key, label] of entries) {
+      const row = document.createElement("div");
+      row.className = "token-row";
+      const rowLabel = document.createElement("div");
+      rowLabel.className = "token-label";
+      rowLabel.textContent = label;
+      const rowName = document.createElement("div");
+      rowName.className = "token-name";
+      rowName.textContent = key;
+      const pair = document.createElement("div");
+      pair.className = "mode-pair";
+      pair.append(makeModeSlot(key, "light"), makeModeSlot(key, "dark"));
+      row.append(rowLabel, rowName, pair);
+      body.appendChild(row);
+    }
+    details.append(summary, body);
+    container.appendChild(details);
+  }
+
+  for (const [title, entries] of STATIC_GROUPS) {
+    const details = document.createElement("details");
+    details.className = "group";
+    const summary = document.createElement("summary");
+    summary.innerHTML = `<span>${escapeHtml(title)}</span>`;
+    const body = document.createElement("div");
+    body.className = "group-body";
+    for (const [key, label] of entries) {
+      const row = document.createElement("div");
+      row.className = "static-row";
+      const rowLabel = document.createElement("div");
+      rowLabel.className = "token-label";
+      rowLabel.textContent = label;
+      const input = document.createElement("input");
+      input.type = "text";
+      input.value = tokens.static[key];
+      input.addEventListener("input", () => {
+        tokens.static[key] = input.value;
+        refreshPreview();
+      });
+      row.append(rowLabel, input);
+      body.appendChild(row);
+    }
+    details.append(summary, body);
+    container.appendChild(details);
+  }
+}
+
+async function validate() {
+  const report = document.getElementById("report");
+  report.innerHTML = `<div class="empty-note">Application en cours…</div>`;
+  const res = await fetch("/validate", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(tokens),
+  });
+  const data = await res.json();
+  if (data.error) {
+    report.innerHTML = `<div class="changed-line">Erreur : ${escapeHtml(data.error)}</div>`;
+    return;
+  }
+  const names = { stylesCss: "Sift (styles.css)", themeHtml: "Maquette (Sift.dc.html)", designMd: "Documentation (DESIGN.md)" };
+  let html = "";
+  let anyChange = false;
+  for (const [key, result] of Object.entries(data.results)) {
+    if (result.noOp) {
+      html += `<div class="ok-line">✓ ${names[key]} — déjà à jour</div>`;
+    } else {
+      anyChange = true;
+      html += `<div class="changed-line">✎ ${names[key]} — mis à jour</div>`;
+    }
+  }
+  const consumerEntries = Object.entries(data.consumers);
+  if (anyChange && consumerEntries.length > 0) {
+    html += `<div style="margin-top:10px;font-weight:600">Où ça se voit dans le vrai code :</div>`;
+    for (const [key, matches] of consumerEntries) {
+      html += `<div class="consumer-group"><b>${escapeHtml(key)}</b>`;
+      if (matches.length === 0) {
+        html += `<div class="consumer">(aucun endroit trouvé)</div>`;
+      }
+      for (const m of matches) {
+        html += `<div class="consumer">${escapeHtml(m.file)}:${m.line}</div>`;
+      }
+      html += `</div>`;
+    }
+  }
+  report.innerHTML = html;
+}
+
+document.getElementById("validate-btn").addEventListener("click", validate);
+document.getElementById("theme-toggle").addEventListener("click", (e) => {
+  const current = e.target.dataset.theme;
+  const next = current === "light" ? "dark" : "light";
+  e.target.dataset.theme = next;
+  e.target.textContent = next === "light" ? "Voir en mode sombre" : "Voir en mode clair";
+  document.documentElement.dataset.theme = next;
+});
+
+const tabQuick = document.getElementById("tab-quick");
+const tabFull = document.getElementById("tab-full");
+const quickPreview = document.getElementById("quick-preview");
+const fullPreview = document.getElementById("full-preview");
+const mockupFrame = document.getElementById("mockup-frame");
+
+tabQuick.addEventListener("click", () => {
+  tabQuick.classList.add("on");
+  tabFull.classList.remove("on");
+  quickPreview.style.display = "";
+  fullPreview.style.display = "none";
+});
+tabFull.addEventListener("click", () => {
+  tabFull.classList.add("on");
+  tabQuick.classList.remove("on");
+  fullPreview.style.display = "";
+  quickPreview.style.display = "none";
+  if (!mockupFrame.src) refreshMockup();
+});
+
+async function refreshMockup() {
+  await fetch("/preview-tokens", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(tokens),
+  });
+  mockupFrame.src = "/preview.html?t=" + Date.now();
+}
+document.getElementById("refresh-mockup-btn").addEventListener("click", refreshMockup);
+
+fetch("/tokens.json")
+  .then((r) => r.json())
+  .then((data) => {
+    tokens = data;
+    renderColorGroups();
+    refreshPreview();
+  });
+</script>
+</body>
+</html>

@@ -1,0 +1,19 @@
+{
+  "canvas": "--color-background-primary",
+  "nav": "--color-background-tertiary",
+  "queue": "--color-background-queue",
+  "card": "--color-background-secondary",
+  "surface": "--color-surface-raised",
+  "track": "--color-track",
+  "rowActive": "--color-row-active",
+  "navActive": "--color-nav-active",
+  "text1": "--color-text-primary",
+  "text2": "--color-text-secondary",
+  "text3": "--color-text-tertiary",
+  "text4": "--color-text-quaternary",
+  "border": "--color-border-tertiary",
+  "borderStrong": "--color-border-secondary",
+  "ctaBg": "--color-text-info",
+  "ctaText": "--color-cta-text",
+  "disabled": null
+}

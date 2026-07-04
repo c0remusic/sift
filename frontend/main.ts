@@ -38,4 +38,9 @@ if (inTauri) {
       setTimeout(() => void m.runSelfTest(), 2500);
     }
   });
+
+  // Click-to-source inspector (Alt+Click), dev builds only — never in a shipped app.
+  if (import.meta.env.DEV) {
+    void import("./dev-inspector").then((m) => m.installDevInspector());
+  }
 }

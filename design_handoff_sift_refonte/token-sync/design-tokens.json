@@ -1,0 +1,163 @@
+{
+  "colors": {
+    "--color-background-primary": {
+      "light": "#E7E2DB",
+      "dark": "#282825"
+    },
+    "--color-background-secondary": {
+      "light": "#F1EDE7",
+      "dark": "#3B3A35"
+    },
+    "--color-background-tertiary": {
+      "light": "#EDE9E2",
+      "dark": "#323230"
+    },
+    "--color-background-queue": {
+      "light": "#EAE5DE",
+      "dark": "#2E2E2B"
+    },
+    "--color-surface-raised": {
+      "light": "#FBF9F4",
+      "dark": "#46453F"
+    },
+    "--color-track": {
+      "light": "#E0DAD1",
+      "dark": "#46453F"
+    },
+    "--color-row-active": {
+      "light": "#F3EFE9",
+      "dark": "#413F38"
+    },
+    "--color-nav-active": {
+      "light": "#E1DBD2",
+      "dark": "#3D3B35"
+    },
+    "--color-background-info": {
+      "light": "rgba(58,53,47,.08)",
+      "dark": "rgba(240,237,230,.08)"
+    },
+    "--color-background-danger": {
+      "light": "rgba(176,122,40,.14)",
+      "dark": "rgba(176,122,40,.14)"
+    },
+    "--color-background-success": {
+      "light": "rgba(76,123,87,.14)",
+      "dark": "rgba(76,123,87,.14)"
+    },
+    "--color-background-warning": {
+      "light": "rgba(176,122,40,.14)",
+      "dark": "rgba(176,122,40,.14)"
+    },
+    "--color-text-primary": {
+      "light": "#34302B",
+      "dark": "#F5F1E9"
+    },
+    "--color-text-secondary": {
+      "light": "#5C554E",
+      "dark": "#C9C2B7"
+    },
+    "--color-text-tertiary": {
+      "light": "#8A857D",
+      "dark": "#9C968D"
+    },
+    "--color-text-quaternary": {
+      "light": "#B3AEA5",
+      "dark": "#847E75"
+    },
+    "--color-text-info": {
+      "light": "#3A352F",
+      "dark": "#F5F1E9"
+    },
+    "--color-cta-text": {
+      "light": "#F7F4EF",
+      "dark": "#26251F"
+    },
+    "--color-text-danger": {
+      "light": "#8f6318",
+      "dark": "#f2c274"
+    },
+    "--color-text-success": {
+      "light": "#3f6d4c",
+      "dark": "#9fe0af"
+    },
+    "--color-text-warning": {
+      "light": "#8f6318",
+      "dark": "#f2c274"
+    },
+    "--color-border-tertiary": {
+      "light": "rgba(40,34,28,0.09)",
+      "dark": "rgba(255,255,255,0.12)"
+    },
+    "--color-border-secondary": {
+      "light": "rgba(40,34,28,0.16)",
+      "dark": "rgba(255,255,255,0.22)"
+    },
+    "--color-border-info": {
+      "light": "rgba(58,53,47,.35)",
+      "dark": "rgba(240,237,230,.30)"
+    },
+    "--color-border-danger": {
+      "light": "rgba(176,122,40,.45)",
+      "dark": "rgba(221,166,63,.45)"
+    },
+    "--overlay-hover": {
+      "light": "rgba(40,34,28,.035)",
+      "dark": "rgba(255,255,255,.03)"
+    },
+    "--overlay-selected": {
+      "light": "rgba(40,34,28,.06)",
+      "dark": "rgba(255,255,255,.06)"
+    },
+    "--overlay-bar": {
+      "light": "rgba(40,34,28,.55)",
+      "dark": "rgba(255,255,255,.32)"
+    },
+    "--overlay-badge": {
+      "light": "rgba(40,34,28,.06)",
+      "dark": "rgba(255,255,255,.06)"
+    },
+    "--color-accent-identify": {
+      "light": "#FFdc82",
+      "dark": "#FFdc82"
+    },
+    "--color-accent-identify-hover": {
+      "light": "#f0cc6a",
+      "dark": "#f0cc6a"
+    },
+    "--color-accent-identify-text": {
+      "light": "#1d1c1a",
+      "dark": "#1d1c1a"
+    },
+    "--color-accent-identify-border": {
+      "light": "rgba(0,0,0,.12)",
+      "dark": "rgba(255,255,255,.12)"
+    }
+  },
+  "static": {
+    "--border-radius-sm": "4px",
+    "--border-radius-md": "6px",
+    "--border-radius-lg": "10px",
+    "--border-radius-pill": "999px",
+    "--shadow-toast": "0 8px 28px rgba(0,0,0,.4)",
+    "--shadow-overlay": "0 12px 48px rgba(0,0,0,.5)",
+    "--font-ui": "\"Outfit\",-apple-system,BlinkMacSystemFont,\"Segoe UI\",Roboto,sans-serif",
+    "--font-mono": "\"JetBrains Mono\",ui-monospace,SFMono-Regular,Menlo,monospace",
+    "--text-3xs": "8px",
+    "--text-2xs": "9px",
+    "--text-xs": "10px",
+    "--text-sm": "11px",
+    "--text-md": "12px",
+    "--text-base": "13px",
+    "--text-lg": "14px",
+    "--text-xl": "16px",
+    "--text-2xl": "26px",
+    "--space-4": "4px",
+    "--space-8": "8px",
+    "--space-12": "12px",
+    "--space-16": "16px",
+    "--space-24": "24px",
+    "--space-32": "32px",
+    "--h-36": "36px",
+    "--h-40": "40px"
+  }
+}

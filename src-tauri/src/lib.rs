@@ -2,6 +2,7 @@ mod actions;
 pub mod analysis;
 mod db;
 mod dedup;
+mod dev_locate;
 mod ecartes;
 mod encode;
 mod ffmpeg;
@@ -126,7 +127,8 @@ pub fn run() {
             ipc_library::rekordbox_status,
             ipc_library::export_rekordbox_xml,
             ipc_usb::list_removable_drives,
-            ipc_usb::format_drive
+            ipc_usb::format_drive,
+            dev_locate::locate_source
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
