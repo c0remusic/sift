@@ -47,15 +47,15 @@ git mv audit/REVUE-UI-UX-2026-07-03.md docs/superpowers/reviews/2026-07-03-revue
 git mv docs/plans/2026-06-12-m0-scaffolding.md docs/superpowers/plans/2026-06-12-m0-scaffolding.md
 ```
 
-- [ ] **Step 1: Run all 15 `git mv` commands above**
+- [x] **Step 1: Run all 15 `git mv` commands above**
 
-- [ ] **Step 2: Remove the now-empty source directories**
+- [x] **Step 2: Remove the now-empty source directories**
 
 ```bash
 rmdir audit docs/plans
 ```
 
-- [ ] **Step 3: Verify the moves**
+- [x] **Step 3: Verify the moves**
 
 Run: `git status --short`
 Expected: 15 lines starting with `R ` (renames), nothing under `audit/` or `docs/plans/` remaining, no unexpected modifications.
@@ -63,7 +63,7 @@ Expected: 15 lines starting with `R ` (renames), nothing under `audit/` or `docs
 Run: `ls audit docs/plans 2>&1`
 Expected: `No such file or directory` for both (or PowerShell equivalent "Cannot find path").
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add -A
@@ -96,7 +96,7 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 - Consumes: destination paths from Task 1
 - Produces: nothing consumed by later tasks — this task is self-contained
 
-- [ ] **Step 1: Apply the exact substitutions**
+- [x] **Step 1: Apply the exact substitutions**
 
 `frontend/filing.ts` — 4 occurrences (lines 777, 1283, 1500, 1592 before this edit; line numbers may shift after Task 1 since no code changed, they should still match):
 
@@ -144,7 +144,7 @@ sed -i 's#docs/audit-fidelite-2026-07-02\.md#2026-07-02-audit-fidelite-ecran-par
   docs/superpowers/reviews/2026-07-03-audit-conformite-m6b-lot5.md
 ```
 
-- [ ] **Step 2: Verify no stale references remain in the live surfaces touched above**
+- [x] **Step 2: Verify no stale references remain in the live surfaces touched above**
 
 Run:
 ```bash
@@ -160,7 +160,7 @@ Expected: no output (empty).
 
 Known, intentional exceptions (do NOT touch, do NOT expect them to disappear from a repo-wide grep): `docs/superpowers/plans/2026-07-02-revue-rail-layout-fix.md:18` and `docs/superpowers/plans/2026-07-03-m6b-lot5-audit-conformite.md:26,58,65` — historical plan content describing paths as they were when those plans were written and executed.
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add frontend/filing.ts frontend/home-sources.ts frontend/library-detail.ts \
@@ -187,7 +187,7 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 - Consumes: final paths from Task 1
 - Produces: `docs/INDEX.json`, consumed by Task 4 (CLAUDE.md `@import`)
 
-- [ ] **Step 1: Write the file**
+- [x] **Step 1: Write the file**
 
 ```json
 {
@@ -267,12 +267,12 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 }
 ```
 
-- [ ] **Step 2: Validate it's well-formed JSON**
+- [x] **Step 2: Validate it's well-formed JSON**
 
 Run: `node -e "JSON.parse(require('fs').readFileSync('docs/INDEX.json','utf8')); console.log('OK')"`
 Expected: `OK`
 
-- [ ] **Step 3: Cross-check every path in the index actually exists**
+- [x] **Step 3: Cross-check every path in the index actually exists**
 
 Run (Git Bash):
 ```bash
@@ -290,7 +290,7 @@ console.log(missing.length ? 'MISSING: ' + missing.join(', ') : 'ALL PATHS EXIST
 ```
 Expected: `ALL PATHS EXIST`
 
-- [ ] **Step 4: Commit**
+- [x] **Step 4: Commit**
 
 ```bash
 git add docs/INDEX.json
@@ -315,7 +315,7 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 - Consumes: `docs/INDEX.json` from Task 3
 - Produces: nothing further
 
-- [ ] **Step 1: Add the `@import` and a maintenance note**
+- [x] **Step 1: Add the `@import` and a maintenance note**
 
 Find this block in `CLAUDE.md`:
 
@@ -347,12 +347,12 @@ ou manuel), ajouter son entrée ici dans le même geste, pas en rattrapage
 différé.
 ```
 
-- [ ] **Step 2: Verify the edit**
+- [x] **Step 2: Verify the edit**
 
 Run: `grep -n "docs/INDEX.json" CLAUDE.md`
 Expected: two matches (the `@import` line and the mention in the note).
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add CLAUDE.md
@@ -365,6 +365,16 @@ Co-Authored-By: Claude Sonnet 5 <noreply@anthropic.com>"
 
 ## Final Verification
 
-- [ ] Run `git log --oneline -5` — expect 4 new commits from this plan, one per task, in order.
-- [ ] Run `git status --short` — expect clean (nothing uncommitted).
-- [ ] Re-run the Task 2 Step 2 grep — expect empty output (no stale references in live surfaces).
+- [x] Run `git log --oneline -5` — expect 4 new commits from this plan, one per task, in order.
+- [x] Run `git status --short` — expect clean (nothing uncommitted).
+- [x] Re-run the Task 2 Step 2 grep — expect empty output (no stale references in live surfaces).
+
+## Status: complete (2026-07-04)
+
+Executed via subagent-driven-development, 4 tasks + 1 whole-branch review
+fix. Commits: `979457a` (move, 1 fix round for commit scope), `45e6d2d`
+(reference repair), `af4843f` (INDEX.json), `a05a3f5` (CLAUDE.md wiring),
+`4243812` (final-review fix: dropped a dangling INDEX.json entry for
+`docs/chat-project-instructions.md`, an untracked pre-existing file out of
+scope for this plan). `tsc --noEmit` clean. Pushed to `origin/m6a-discogs`,
+tracked by existing PR #1.
