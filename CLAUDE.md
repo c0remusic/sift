@@ -127,6 +127,7 @@ Exemples de routage (non exhaustif, voir le registre complet) :
 - `ecartes-view.ts` — écran Écartés
 - `report-view.ts` — écran Revue (son-d'abord, waveform, verdict)
 - `filing.ts` — rail de classement (destination, format, actions filer/écarter)
+- `confirm-modal.ts` — overlay de confirmation in-app partagé (remplace window.confirm())
 - `batch-tracklist.ts` — tracklist batch (multi-sélection, barre de progression)
 - `journal.ts` — journal d'actions post-batch (toasts, revert)
 - `progress-zone.ts` — zone de progression encodage
