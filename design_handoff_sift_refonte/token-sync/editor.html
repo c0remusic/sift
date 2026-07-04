@@ -19,6 +19,13 @@
   header p { font-size: 12px; color: #6b6459; margin: 0; line-height: 1.4; }
 
   main { flex: 1; display: flex; overflow: hidden; }
+  #sidebar { width: 220px; flex: none; overflow-y: auto; background: #fff; border-right: 1px solid #e3ddd3; padding: 12px 10px; }
+  #sidebar-search { width: 100%; box-sizing: border-box; padding: 7px 10px; font-size: 12.5px; border: 1px solid #ddd5c8; border-radius: 7px; margin-bottom: 10px; }
+  .sidebar-group { display: flex; align-items: center; justify-content: space-between; width: 100%; text-align: left; padding: 8px 10px; border: none; background: none; border-radius: 7px; cursor: pointer; font-size: 12.5px; color: #34302B; }
+  .sidebar-group:hover { background: #f3efe9; }
+  .sidebar-group.on { background: #3A352F; color: #F7F4EF; }
+  .sidebar-group .count { font-size: 10.5px; color: #6b6459; }
+  .sidebar-group.on .count { color: #cfc9bd; }
   #form-col { width: 480px; flex: none; overflow-y: auto; padding: 16px 20px; background: #fff; border-right: 1px solid #e3ddd3; }
   #preview-col { flex: 1; overflow: auto; padding: 20px; display: flex; flex-direction: column; align-items: center; gap: 16px; }
 
@@ -87,6 +94,10 @@
   <p>Ouvre une section, change une pastille, regarde l'aperçu — puis Valider pour tout appliquer.</p>
 </header>
 <main>
+  <div id="sidebar">
+    <input id="sidebar-search" type="text" placeholder="Chercher un token…" aria-label="Chercher un token">
+    <div id="sidebar-groups"></div>
+  </div>
   <div id="form-col">
     <div id="groups"></div>
     <button id="validate-btn">✓ Appliquer partout dans Sift</button>
@@ -301,63 +312,115 @@ function makeModeSlot(key, label, mode) {
   return wrap;
 }
 
-function renderColorGroups() {
-  const container = document.getElementById("groups");
-  for (const [title, hint, entries] of COLOR_GROUPS) {
-    const details = document.createElement("details");
-    details.className = "group";
-    if (title === "Fonds" || title === "Textes" || title === "États (vert / ambre)") details.open = true;
-    const summary = document.createElement("summary");
-    summary.innerHTML = `<span>${escapeHtml(title)}</span><span class="group-hint">${escapeHtml(hint)}</span>`;
-    const body = document.createElement("div");
-    body.className = "group-body";
-    for (const [key, label] of entries) {
-      const row = document.createElement("div");
-      row.className = "token-row";
-      const rowLabel = document.createElement("div");
-      rowLabel.className = "token-label";
-      rowLabel.textContent = label;
-      const rowName = document.createElement("div");
-      rowName.className = "token-name";
-      rowName.textContent = key;
-      const pair = document.createElement("div");
-      pair.className = "mode-pair";
-      pair.append(makeModeSlot(key, label, "light"), makeModeSlot(key, label, "dark"));
-      row.append(rowLabel, rowName, pair);
-      body.appendChild(row);
-    }
-    details.append(summary, body);
-    container.appendChild(details);
-  }
+const ALL_GROUPS = [
+  ...COLOR_GROUPS.map(([title, hint, entries]) => ({ title, hint, entries, kind: "color" })),
+  ...STATIC_GROUPS.map(([title, entries]) => ({ title, hint: "", entries, kind: "static" })),
+];
 
-  for (const [title, entries] of STATIC_GROUPS) {
-    const details = document.createElement("details");
-    details.className = "group";
-    const summary = document.createElement("summary");
-    summary.innerHTML = `<span>${escapeHtml(title)}</span>`;
-    const body = document.createElement("div");
-    body.className = "group-body";
-    for (const [key, label] of entries) {
-      const row = document.createElement("div");
-      row.className = "static-row";
-      const rowLabel = document.createElement("div");
-      rowLabel.className = "token-label";
-      rowLabel.textContent = label;
-      const input = document.createElement("input");
-      input.type = "text";
-      input.value = tokens.static[key];
-      input.setAttribute("aria-label", label);
-      input.addEventListener("input", () => {
-        tokens.static[key] = input.value;
-        refreshPreview();
-      });
-      row.append(rowLabel, input);
-      body.appendChild(row);
-    }
-    details.append(summary, body);
-    container.appendChild(details);
+let activeGroupTitle = ALL_GROUPS[0].title;
+
+function renderSidebar() {
+  const container = document.getElementById("sidebar-groups");
+  container.innerHTML = "";
+  for (const g of ALL_GROUPS) {
+    const btn = document.createElement("button");
+    btn.className = "sidebar-group" + (g.title === activeGroupTitle ? " on" : "");
+    btn.innerHTML = `<span>${escapeHtml(g.title)}</span><span class="count">${g.entries.length}</span>`;
+    btn.addEventListener("click", () => {
+      activeGroupTitle = g.title;
+      document.getElementById("sidebar-search").value = "";
+      renderSidebar();
+      renderGroupPanel(g);
+    });
+    container.appendChild(btn);
   }
 }
+
+function renderGroupPanel(group) {
+  const container = document.getElementById("groups");
+  container.innerHTML = "";
+  const heading = document.createElement("div");
+  heading.style.cssText = "font-size:14px;font-weight:700;margin-bottom:10px";
+  heading.textContent = group.title;
+  container.appendChild(heading);
+
+  const body = document.createElement("div");
+  if (group.kind === "color") {
+    for (const [key, label] of group.entries) body.appendChild(renderColorRow(key, label));
+  } else {
+    for (const [key, label] of group.entries) body.appendChild(renderStaticRow(key, label));
+  }
+  container.appendChild(body);
+}
+
+function renderColorRow(key, label) {
+  const row = document.createElement("div");
+  row.className = "token-row";
+  const rowLabel = document.createElement("div");
+  rowLabel.className = "token-label";
+  rowLabel.textContent = label;
+  const rowName = document.createElement("div");
+  rowName.className = "token-name";
+  rowName.textContent = key;
+  const pair = document.createElement("div");
+  pair.className = "mode-pair";
+  pair.append(makeModeSlot(key, label, "light"), makeModeSlot(key, label, "dark"));
+  row.append(rowLabel, rowName, pair);
+  return row;
+}
+
+function renderStaticRow(key, label) {
+  const row = document.createElement("div");
+  row.className = "static-row";
+  const rowLabel = document.createElement("div");
+  rowLabel.className = "token-label";
+  rowLabel.textContent = label;
+  const input = document.createElement("input");
+  input.type = "text";
+  input.value = tokens.static[key];
+  input.setAttribute("aria-label", label);
+  input.addEventListener("input", () => {
+    tokens.static[key] = input.value;
+    refreshPreview();
+  });
+  row.append(rowLabel, input);
+  return row;
+}
+
+// Search: filters across ALL groups by key or French label, replaces the group panel with a flat results list.
+function renderSearchResults(query) {
+  const q = query.trim().toLowerCase();
+  const container = document.getElementById("groups");
+  container.innerHTML = "";
+  const heading = document.createElement("div");
+  heading.style.cssText = "font-size:14px;font-weight:700;margin-bottom:10px";
+  heading.textContent = `Résultats pour « ${query} »`;
+  container.appendChild(heading);
+
+  let count = 0;
+  for (const g of ALL_GROUPS) {
+    for (const [key, label] of g.entries) {
+      if (!key.toLowerCase().includes(q) && !label.toLowerCase().includes(q)) continue;
+      count++;
+      container.appendChild(g.kind === "color" ? renderColorRow(key, label) : renderStaticRow(key, label));
+    }
+  }
+  if (count === 0) {
+    const empty = document.createElement("div");
+    empty.className = "empty-note";
+    empty.textContent = "Aucun token ne correspond.";
+    container.appendChild(empty);
+  }
+}
+
+document.getElementById("sidebar-search").addEventListener("input", (e) => {
+  const q = e.target.value;
+  if (q.trim() === "") {
+    renderGroupPanel(ALL_GROUPS.find((g) => g.title === activeGroupTitle));
+  } else {
+    renderSearchResults(q);
+  }
+});
 
 async function validate() {
   const report = document.getElementById("report");
@@ -443,7 +506,8 @@ fetch("/tokens.json")
   .then((r) => r.json())
   .then((data) => {
     tokens = data;
-    renderColorGroups();
+    renderSidebar();
+    renderGroupPanel(ALL_GROUPS[0]);
     refreshPreview();
   });
 </script>
