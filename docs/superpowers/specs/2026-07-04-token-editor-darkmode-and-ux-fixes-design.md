@@ -11,13 +11,19 @@
 détection `prefers-color-scheme` — l'outil devient sombre en permanence, le
 CSS clair actuel est **remplacé**, pas conservé en réserve.
 
-**Base de la palette** : snapshot des valeurs sombres réelles de Sift
-(`design-tokens.dark.json` / `design-tokens.light.json` via `sync-core.cjs`,
-lu au moment de la conception — pas généré dynamiquement à chaque requête).
-Un snapshot figé, pas un couplage live : si les tokens sombres de Sift
-changent plus tard, cette palette peut dériver et nécessiter une resynchro
-manuelle — accepté comme compromis YAGNI (outil interne solo, même logique
-que l'abandon du polling cron pour la sync de tokens).
+**Base de la palette — MISE À JOUR (revert du non-goal initial, sur demande
+d'Antoine)** : lue dynamiquement depuis `/tokens.json` à chaque chargement de
+la page, pas un snapshot figé. `editor.html` fait déjà ce fetch au boot pour
+peupler son propre modèle de données (`tokens = data`) — le chrome sombre
+réutilise cette même réponse, sans requête réseau supplémentaire. Chaque
+couleur de chrome devient une CSS custom property (`--ed-*`) posée via
+`document.documentElement.style.setProperty(...)` juste après le fetch,
+avec une valeur de repli littérale dans le CSS (`var(--ed-bg, #282825)`)
+pour éviter un flash avant que le JS s'exécute. Conséquence : si les tokens
+sombres de Sift changent plus tard, un simple rechargement de la page suffit
+à refléter la nouvelle palette — plus de resynchro manuelle à faire pour ce
+fichier (le compromis YAGNI initial est retiré, plus nécessaire vu la
+simplicité de l'implémentation cliente).
 
 **Scope explicite** : uniquement le chrome de l'outil (page, header, sidebar,
 panneaux, bordures, boutons, texte d'aide). **Exclu** : les color pickers,
@@ -83,5 +89,6 @@ quand la query est vidée (comportement déjà correct aujourd'hui).
 ## Non-goals
 
 - Pas de toggle, pas de persistance, pas de détection OS.
-- Pas de génération dynamique de la palette depuis le JSON à chaque requête.
 - Pas de retouche des CSS/pickers qui affichent les valeurs réelles des tokens.
+- Pas d'injection côté serveur (`editor-server.cjs` inchangé) — tout se fait
+  côté client, dans le fetch déjà existant de `/tokens.json`.
