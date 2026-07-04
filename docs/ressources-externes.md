@@ -591,6 +591,77 @@ exécution laissée à une session ultérieure).
 
 ---
 
+## Évaluation 10 — token-sync tool v2 exécuté + audit UX post-plan (2026-07-04)
+
+**Contexte** : exécution du plan à 8 tâches de l'Évaluation 9
+(`docs/superpowers/plans/2026-07-04-token-sync-tool-v2.md`) via
+subagent-driven-development, suivie d'un audit UX/UI et de plusieurs
+sessions de debug en direct sur `editor.html`.
+
+**Migration DTCG (Tasks 1-8) : terminée, revue finale "Ready to merge".**
+Un vrai gap trouvé pendant l'exécution (pas dans le design initial) : 13 des
+33 tokens couleur réels sont des `rgba(r,g,b,a)`, pas du hex — le plan
+original ne gérait que le hex. Addendum ajouté à
+`docs/superpowers/specs/2026-07-04-token-sync-tool-v2-design.md` (fonctions
+`parseColorValue`/`cssColorLiteral` dans `sync-core.cjs`), tous les
+générateurs/pull-scripts migrés en conséquence. Task 5 (pull scripts)
+contenait un vrai bug de perte de données : le code du plan comparait
+`.$value.hex` pour la purge de `dark.json`, ce qui aurait effacé silencieusement
+toute valeur rgba divergente en dark (`null === null` toujours vrai) — corrigé
+par comparaison de la valeur littérale (`cssColorLiteral`), confirmé par la
+revue finale comme un vrai risque de perte de données évité, pas hypothétique.
+
+**Suivi immédiat — mode sombre permanent + fixes UX (hors plan initial,
+demandé par Antoine après coup)** : chrome de l'éditeur passé en sombre
+permanent (pas de toggle), lu dynamiquement depuis `/tokens.json` (pas un
+snapshot figé — un rechargement de page reflète toujours l'état réel des
+tokens dark de Sift). 2 bugs UX trouvés en auditant : le hint de groupe
+("surfaces de l'app" etc., dont un documente la règle "seule 3e teinte
+autorisée" du bouton Identifier) disparu silencieusement lors du refactor
+sidebar+recherche (Task 7) — restauré ; highlight sidebar figé sur l'ancien
+groupe actif pendant une recherche transversale — corrigé.
+
+**Bug racine trouvé en investiguant "les éditions ne montrent aucun
+changement"** : `frontend-styles.css`'s règle média sombre utilise le
+sélecteur `:root:not([data-theme="light"])` (spécificité 0,2,0) — plus
+élevée que le bloc `:root{}` de live-preview de l'éditeur (0,1,0,
+`buildOverrideCss()`). `document.documentElement` n'avait jamais son
+attribut `data-theme` initialisé avant le premier clic sur le toggle — donc
+dans n'importe quel navigateur préférant le mode sombre, cette règle statique
+gagnait toujours sur les éditions en direct, quel que soit le mode édité.
+Fix : initialiser `data-theme="light"` au chargement, correspondant à l'état
+initial déclaré du bouton toggle.
+
+**Découverte plus large en creusant le rapport "Texte vert — OK ne change
+rien"** : ce n'est pas un bug de rafraîchissement — `alias-map.json` ne
+mappe que 16 des 33 tokens réels vers des clés legacy de `Sift.dc.html`.
+**17 tokens n'ont donc aucune voie d'aperçu live nulle part**, ni Aperçu
+rapide ni Maquette complète (tout "États vert/ambre" - 7, tout
+"Survol/sélection" - 4, tout "Bouton Identifier" - 4, 2 des 4 "Bordures").
+Le seul moyen de vérifier ces 17 tokens aujourd'hui : éditer, Valider, puis
+regarder la vraie app Sift qui tourne. Scindé en deux, avec Antoine : Groupe
+A (3 tokens texte de verdict, `semGreen()`/`semAmber()` déjà présents dans
+`Sift.dc.html` mais non branchés sur `theme()` — pur rewiring bas risque,
+design écrit dans
+`docs/superpowers/specs/2026-07-04-mockup-verdict-text-color-rewire-design.md`,
+implémentation laissée à une session dédiée) ; Groupe B (10 tokens restants,
+fonds de verdict + survol + bouton Identifier — nécessite de la vraie
+nouvelle UI dans la maquette, décision de scope séparée non actée).
+
+**Incident méthodologique à retenir** : pendant le debug en direct de
+l'éditeur (test du rafraîchissement debounced), une série d'appels
+`/validate` de test a laissé `frontend/styles.css` +
+`design-tokens.{light,dark}.json` avec des couleurs de test polluantes
+(`#ff0095`/`#fe3401` sur `text-success`) non révertées — découvert
+seulement en vérifiant les VRAIES valeurs des tokens danger/warning pour la
+conception du Groupe A. Corrigé (`git checkout`), confirmé propre par la
+chaîne de sync complète. **Leçon retenue** : après toute session de test en
+direct qui appelle `/validate` (même via des edits synthétiques automatisés),
+vérifier `git status`/`git diff` sur les 3 fichiers cibles avant de
+continuer — ne pas supposer qu'un revert manuel isolé suffit.
+
+---
+
 ## Veille concurrente — MediaMonkey (2026-06-24)
 
 Gestionnaire de biblio musicale ([mediamonkey.com](https://www.mediamonkey.com/)),
@@ -776,6 +847,12 @@ listé comme actif dans les `CLAUDE.md` de Tuple et Tupline — corrigé le
 
 Détail complet, table des doublons par job, et commandes `npx skills` :
 `~/.claude/skills-registre-global.md` (hors repo, cross-projet).
+
+**Répercuté dans `docs/skills-registre.md` le 2026-07-04** (commit `13ed62c`) :
+le registre Sift, figé au 2026-06-30, a été mis en cohérence avec cette purge
+et les décisions CLAUDE.md (ecc off, MCP stitch supprimé, system.md périmé
+palette+typo, collision `frontend-design` résolue), et porte désormais une
+règle d'entretien "dans le même geste" + une date de dernière mise à jour.
 
 ---
 
