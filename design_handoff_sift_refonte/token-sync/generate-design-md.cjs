@@ -8,6 +8,7 @@
 // (via run({ write }) -> { noOp, changedKeys }).
 const fs = require("fs");
 const path = require("path");
+const { escapeRegex } = require("./regex-utils.cjs");
 
 const tokenDir = __dirname;
 const mdPath = path.join(tokenDir, "..", "DESIGN.md");
@@ -54,10 +55,6 @@ const darkBullets = [
   ["border", "Bordure fine"],
   ["borderStrong", "Bordure forte"],
 ];
-
-function escapeRegex(s) {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
 
 function replaceSimpleBullets(text, bullets, tokens, aliasMap, mode) {
   let result = text;

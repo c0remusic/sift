@@ -7,14 +7,11 @@
 // (via run({ write }) -> { noOp, changedKeys }) so editor-server.cjs can call it directly.
 const fs = require("fs");
 const path = require("path");
+const { escapeRegex } = require("./regex-utils.cjs");
 
 const tokenDir = __dirname;
 const stylesPath = path.join(tokenDir, "..", "..", "frontend", "styles.css");
 const tokensPath = path.join(tokenDir, "design-tokens.json");
-
-function escapeRegex(s) {
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
 
 function replaceTokensInBlock(blockText, entries) {
   const changedKeys = [];

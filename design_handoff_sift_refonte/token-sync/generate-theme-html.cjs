@@ -7,6 +7,7 @@
 // (via run({ write }) -> { noOp, changedKeys }).
 const fs = require("fs");
 const path = require("path");
+const { escapeRegex } = require("./regex-utils.cjs");
 
 const tokenDir = __dirname;
 const htmlPath = path.join(tokenDir, "..", "Sift.dc.html");
@@ -28,7 +29,7 @@ function replaceKeysInObjectLiteral(blockText, entries) {
   let text = blockText;
   const changedKeys = [];
   for (const [key, value] of entries) {
-    const re = new RegExp(`${key}\\s*:\\s*'[^']*'`);
+    const re = new RegExp(`${escapeRegex(key)}\\s*:\\s*'[^']*'`);
     if (!re.test(text)) {
       throw new Error(`Key "${key}" not found in theme() object literal — refusing to guess.`);
     }

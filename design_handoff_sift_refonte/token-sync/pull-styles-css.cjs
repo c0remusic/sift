@@ -5,6 +5,7 @@
 // Dry-run by default; --write persists the pull into design-tokens.json and updates the baseline.
 const fs = require("fs");
 const path = require("path");
+const { escapeRegex } = require("./regex-utils.cjs");
 
 const tokenDir = __dirname;
 const stylesPath = path.join(tokenDir, "..", "..", "frontend", "styles.css");
@@ -17,7 +18,7 @@ const css = fs.readFileSync(stylesPath, "utf8");
 function extractBlockValues(blockText, keys) {
   const values = {};
   for (const key of keys) {
-    const re = new RegExp(`${key.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}:([^;]+);`);
+    const re = new RegExp(`${escapeRegex(key)}:([^;]+);`);
     const m = blockText.match(re);
     if (!m) throw new Error(`Token ${key} not found while reading styles.css — refusing to guess.`);
     values[key] = m[1];
