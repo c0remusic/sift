@@ -326,7 +326,7 @@ export function openLibraryDetailInto(
   const reportEl = requireEl<HTMLElement>(".lib-report", "openLibraryDetailInto", host);
   const editEl = requireEl<HTMLElement>(".lib-edit", "openLibraryDetailInto", host);
   // Verdict is the CONCLUSION — rendered last, after Identification, matching the maquette
-  // (see docs/refonte-ui-plan.md, décision du 2026-07-02).
+  // (see docs/superpowers/plans/2026-07-02-refonte-ui-plan.md, décision du 2026-07-02).
   const verdictEl = requireEl<HTMLElement>(".lib-verdict", "openLibraryDetailInto", host);
 
   void openReportInto(reportEl, track.path, verdictEl);

@@ -166,7 +166,7 @@ Stack : Vite vanilla TS + Tauri. Fichiers à modifier/étendre par écran :
   panneau Preuves déplié de la maquette — ne pas en inventer d'autres.
 
 Documents de contexte déjà lus côté repo (à consulter si besoin de creuser une décision produit) :
-`PRODUCT.md`, `docs/brief-refonte-ui-2026-07-01.md`, `docs/plan-implementation.md`,
+`PRODUCT.md`, `docs/superpowers/specs/2026-07-01-brief-refonte-ui.md`, `docs/plan-implementation.md`,
 `docs/superpowers/plans/m2a-analysis-engine`, `docs/superpowers/plans/m4b-ecartes`.
 
 ## Assets

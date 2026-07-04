@@ -18,7 +18,7 @@
 
 Le vrai écran (`frontend/home-sources.ts`) a été **entièrement reconstruit
 le 2026-07-02** (voir en-tête du fichier, home-sources.ts:1-7 : "rebuilt
-2026-07-02, docs/audit-fidelite-2026-07-02.md §1"). Il ne s'agit plus d'un
+2026-07-02, 2026-07-02-audit-fidelite-ecran-par-ecran.md §1"). Il ne s'agit plus d'un
 portage direct de la grille de stat-cards de la maquette hors-Tauri
 (app.js:44-71 : cartes Rangés/À re-sourcer/Corbeille/Sans métadonnées + bandeau
 "fichiers à trier" + barres par dossier), mais d'un écran deux-colonnes
@@ -51,7 +51,7 @@ fusionne dans un seul `renderMid`.
 | Élément maquette (app.js:LIGNE) | Réel (file:LIGNE) | Statut |
 |---|---|---|
 | Header fichier + cover + titre + badge verdict (app.js:119-120) | `playerHeaderHtml` fusionné dans la carte lecteur (report-view.ts:187-201) — un seul header au lieu de deux (hero + player dupliqués dans une ancienne version) | Amélioré — dédup explicite documentée (report-view.ts:172-177 : "2026-07-02: the standalone Hero above the player was pure duplication") |
-| Bandeau doublon "Déjà en bibliothèque" (app.js:121) | Chip DUPLICATE ajouté par filing.ts sur `.sift-vchips` (report-view.ts:257, 282-302) — même info, forme différente (chip vs bandeau dédié) | Conforme — équivalent fonctionnel, décision de structure actée (report-view.ts:265-268, "Confirmé écart de structure, docs/audit-fidelite-2026-07-02.md décision #1") |
+| Bandeau doublon "Déjà en bibliothèque" (app.js:121) | Chip DUPLICATE ajouté par filing.ts sur `.sift-vchips` (report-view.ts:257, 282-302) — même info, forme différente (chip vs bandeau dédié) | Conforme — équivalent fonctionnel, décision de structure actée (report-view.ts:265-268, "Confirmé écart de structure, 2026-07-02-audit-fidelite-ecran-par-ecran.md décision #1") |
 | Lecteur : play/pause, waveform, curseur temps, tempo (app.js:127-135) | `mountPlayer` (report-view.ts:462-668) : vrai WaveSurfer, vrai décodage audio, drag sliders volume/tempo, key-lock, hover-scrub sur la waveform | Amélioré — vraie lecture audio + fonctionnalités absentes du mockup (key-lock, hover preview, curseur qui suit la souris précisément) |
 | Toggle écoulé/restant (`timemodetog`, app.js:126,131) | Remplacé par affichage simultané écoulé (gauche) + restant (droite), toujours visibles (report-view.ts:569-577, commentaire explicite "SoundCloud-style… no elapsed/remaining toggle needed") | Amélioré — décision UX documentée, pas un oubli |
 | Verdict pill + encodage + spectrogramme (app.js:136-141) | `verdictCardHtml` (report-view.ts:258-280) + `spectroAndTagsHtml` (report-view.ts:304-339), spectrogramme réel calculé depuis l'analyse (`drawSpectrogram`, report-view.ts:106-146) au lieu du faux bruit procédural de `drawSpec` (app.js:161-172) | Amélioré — vrai signal FFT vs génération procédurale factice |

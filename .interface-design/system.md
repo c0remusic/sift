@@ -5,7 +5,7 @@
 > handoff `frontend/Refonte UI Sift-handoff.zip`) : gris chaud clair, vert/ambre uniquement
 > (plus de bleu ni de rouge), CTA neutre foncé. Palette déjà appliquée dans le code
 > (`frontend/styles.css`) pour l'écran Revue (2026-07-01). Espacement/radius/hauteur/typo
-> restent valides (inchangés par la refonte). Voir `docs/brief-refonte-ui-2026-07-01.md`
+> restent valides (inchangés par la refonte). Voir `docs/superpowers/specs/2026-07-01-brief-refonte-ui.md`
 > pour la nouvelle direction ; ce fichier reste une référence historique du process Penpot
 > tant qu'il n'est pas réécrit pour la nouvelle direction.
 

@@ -25,7 +25,7 @@
 
 La maquette UI/UX d'origine vit dans `index.html` + `frontend/` (migrée comme shell frontend
 de l'app). Le découpage complet et les décisions de cadrage : [`docs/plan-implementation.md`](docs/plan-implementation.md).
-Le plan détaillé de M0 : [`docs/plans/2026-06-12-m0-scaffolding.md`](docs/plans/2026-06-12-m0-scaffolding.md).
+Le plan détaillé de M0 : [`docs/superpowers/plans/2026-06-12-m0-scaffolding.md`](docs/superpowers/plans/2026-06-12-m0-scaffolding.md).
 
 ## Pile technique
 

@@ -3,7 +3,7 @@
 // of watched sources in the queue rail (#homequeue), and a detail inspector for the
 // selected one (#homeinspector) — breadcrumb, "Dossier surveillé" card, watch toggle,
 // bottom-bar "+ Ajouter un dossier". Extracted from sift-live.ts (audit P-3), rebuilt
-// 2026-07-02 (docs/audit-fidelite-2026-07-02.md §1: the old single-column list was a
+// 2026-07-02 (docs/superpowers/reviews/2026-07-02-audit-fidelite-ecran-par-ecran.md §1: the old single-column list was a
 // confirmed structural gap vs the maquette).
 import { listSources, addSource, removeSource, setSourceWatched, getSetting } from "./ipc";
 import { open } from "@tauri-apps/plugin-dialog";

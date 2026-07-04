@@ -266,7 +266,7 @@ export function verdictCardHtml(r: AnalysisReport): string {
   // Chips (LOSSLESS/MATCH/DUPLICATE) live in the separate "Preuves" block (evidenceChipsHtml,
   // rendered right after the player — Sift.dc.html:221-232) — the conclusion bandeau is dot +
   // status + note + Nom final only, matching the maquette's CONCLUSION block exactly
-  // (Sift.dc.html:381-392). Confirmé écart de structure, docs/audit-fidelite-2026-07-02.md décision #1.
+  // (Sift.dc.html:381-392). Confirmé écart de structure, docs/superpowers/reviews/2026-07-02-audit-fidelite-ecran-par-ecran.md décision #1.
   return (
     `<div class="sift-verdict-card" style="background:${panelBg}">` +
     `<div class="sift-verdict-main">` +
@@ -283,7 +283,7 @@ export function verdictCardHtml(r: AnalysisReport): string {
 /** The "Preuves" chip row (LOSSLESS from analysis; MATCH/DUPLICATE appended later by filing.ts
  *  onto the same `.sift-vchips` node). Positioned right after the player, before Identification —
  *  Sift.dc.html:221-232 ("EVIDENCE chips"). Was fused into the verdict conclusion bandeau before;
- *  split out per docs/audit-fidelite-2026-07-02.md décision #1. */
+ *  split out per docs/superpowers/reviews/2026-07-02-audit-fidelite-ecran-par-ecran.md décision #1. */
 function evidenceChipsHtml(r: AnalysisReport): string {
   const rq = realQuality(r);
   const qualityChip =

@@ -556,7 +556,7 @@ function ensureReviewSeg() {
  * (selectable → File), À vérifier · fake (selectable → Écarter, never filed — Sift ne range
  * jamais un fake lossless), En analyse (read-only, encore en cours d'analyse). One shared
  * format selector for the whole file-able selection (renderBatchRail) — no per-source-rail
- * split; a lossy-sourced file CAN be asked for AIFF/WAV here (see docs/refonte-ui-plan.md,
+ * split; a lossy-sourced file CAN be asked for AIFF/WAV here (see docs/superpowers/plans/2026-07-02-refonte-ui-plan.md,
  * décision "maquette prime" du 2026-07-01 — seule la règle fakes-jamais-filés est gardée).
  * Every control is bound to a real command (`fileBatch` / `rejectBatch`); nothing is mocked. */
 function renderBatch() {
@@ -804,7 +804,7 @@ function renderBatchRail(reviewN: number) {
     ? ` · <span style="color:var(--color-text-tertiary)">${reviewN} exclus (en review)</span>`
     : "";
   // Single global format selector (maquette `formats`) — applies to the whole file-able selection,
-  // no per-source-rail split (décision "maquette prime" du 2026-07-01, docs/refonte-ui-plan.md).
+  // no per-source-rail split (décision "maquette prime" du 2026-07-01, docs/superpowers/plans/2026-07-02-refonte-ui-plan.md).
   const formatBlock =
     `<div class="sift-rail-fmt-group"><span class="col-h">Format</span><div style="display:flex;background:var(--color-track);border-radius:8px;padding:2px;gap:2px">` +
     (["mp3_320", "aiff_16_44", "wav_16_44"] as Target[])

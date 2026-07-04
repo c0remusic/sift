@@ -774,7 +774,7 @@ function restoreIdentifiedLine(
   host.innerHTML = identifiedLineHtml(artist, title, coverPath);
   // Cover was only ever set on a FRESH identify this session (onIdentityApplied) — never on
   // reopen of an already-identified track, so the hero/player cover stayed hidden until you
-  // re-ran Identify (docs/audit-fidelite-2026-07-02.md décision #5, bug de branchement confirmé).
+  // re-ran Identify (docs/superpowers/reviews/2026-07-02-audit-fidelite-ecran-par-ecran.md décision #5, bug de branchement confirmé).
   if (coverPath) {
     const src = convertFileSrc(coverPath);
     mid.querySelectorAll<HTMLImageElement>(".sift-report-cover").forEach((covEl) => {
@@ -1280,7 +1280,7 @@ async function doRanger(mid: HTMLElement): Promise<void> {
   // FIX-1: a RAIL_MISMATCH rejection means the source's extension claims lossless but its real
   // content is lossy (e.g. an MP3 renamed .flac) — retry once with explicit confirmation instead
   // of a plain toast. A retry loop (not recursion) so this function's own `finally` stays the
-  // single owner of `acting` — see audit/HANDOFF-FIX1-2026-07-02.md for why recursion would race it.
+  // single owner of `acting` — see docs/superpowers/reviews/2026-07-02-handoff-fix1-anti-upscale.md for why recursion would race it.
   let allowRailMismatch = false;
   try {
     for (;;) {
@@ -1497,7 +1497,7 @@ export async function openFilingInto(mid: HTMLElement, item: QueueItem): Promise
     "</div>";
   const reportEl = requireEl<HTMLElement>(".sift-fil-report", "openFilingInto", mid);
   // Verdict is the CONCLUSION — rendered last, after Identification, matching the maquette
-  // (see docs/refonte-ui-plan.md, décision du 2026-07-02). Passed to openReportInto below.
+  // (see docs/superpowers/plans/2026-07-02-refonte-ui-plan.md, décision du 2026-07-02). Passed to openReportInto below.
   const verdictEl = requireEl<HTMLElement>(".sift-fil-verdict", "openFilingInto", mid);
   // The validation footer now lives in the right rail (#filfoot in the .dest column), below the
   // destination tree — so #mid is a pure son-first detail and the rail holds the filing stack.
@@ -1589,7 +1589,7 @@ export async function openFilingInto(mid: HTMLElement, item: QueueItem): Promise
   updateHeaderName(mid); // show the clean proposed name in the report header
   // Paint "Nom final" on first open — previously only set on a later edit/identify/format
   // click, so the verdict panel's name field stayed empty until the user touched something
-  // (docs/audit-fidelite-2026-07-02.md §2, bug confirmé sur capture fraîche).
+  // (docs/superpowers/reviews/2026-07-02-audit-fidelite-ecran-par-ecran.md §2, bug confirmé sur capture fraîche).
   refreshPreview();
 
   // Verdict-panel chip (board: LOSSLESS · DUPLICATE): only appended when dedup found a real match —
