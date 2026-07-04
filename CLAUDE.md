@@ -83,6 +83,16 @@ Lib = `sift_lib`. MSRV Rust 1.77.2.
 ## États réels des composants (portage design→code)
 @docs/design-system-states.md
 
+## Index des documents docs/
+@docs/INDEX.json
+
+Catalogue de chaque document sous `docs/` (racine + `superpowers/*`), par
+catégorie (`reference`/`specs`/`plans`/`reviews`) avec chemin/topic/résumé —
+pour trouver un doc sans lister/grep `docs/`. Maintenu à la main : à chaque
+nouveau document créé sous `docs/` (brainstorming/writing-plans/code-review
+ou manuel), ajouter son entrée ici dans le même geste, pas en rattrapage
+différé.
+
 ## Méthode
 Détective (théorie → preuve → correctif), **fail fast**, **pas de fallback** silencieux,
 changements chirurgicaux. Vérifier avant d'agir.
