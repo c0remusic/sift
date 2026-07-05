@@ -236,9 +236,14 @@ empreintes Chromaprint).
 ## M8 — Profond & rétroactif (Phase ultérieure, isolé, risqué)
 > Note cadrage : le **scan + traitement** de la biblio existante est remonté en V1 (M5)
 > avec garde-fou lecture seule. Ce qui reste ici = la **réparation automatique** qui
-> *écrit* dans Rekordbox, plus risquée. **Feature gelée** : on ne fixe pas le design
-> tant que des **tests réels sur Rekordbox** (vraies bibliothèques, backup/restore,
-> liens cassés) ne l'ont pas validée.
+> *écrit* dans Rekordbox, plus risquée. **Feature partiellement dégelée** (2026-07-04,
+> voir `docs/ressources-externes.md` Évaluation 7) : un spike sur une copie de la
+> vraie bibliothèque a validé les 3 scénarios critiques d'écriture (réparation de
+> chemin, dédup de playlist, comportement sous verrou) via `pyrekordbox` (Python).
+> Ce n'est **pas** un feu vert pour du code de prod : reste à faire avant toute
+> implémentation — (1) portage Rust du write path (symétrique au lecteur SQLCipher
+> M7), (2) vérification explicite qu'aucun process Rekordbox ne tourne avant
+> d'écrire (pas seulement catcher l'exception SQLite).
 - **Rekordbox `master.db`** (pyrekordbox) : remplacement in-situ, **dédup des playlists existantes**, **réparation/prévention des liens cassés** (chemin change au changement de format) — c'est la bascule garde-fou → **réparation intégrée (option A)**. ⚠️ non-officiel, **backup obligatoire**, Rekordbox fermé.
 - **Normalisation loudness** (option, OFF par défaut).
 

@@ -662,6 +662,91 @@ continuer — ne pas supposer qu'un revert manuel isolé suffit.
 
 ---
 
+## Évaluation 11 — chantier triple exécuté : token-sync v3 + spike CDP + spike M8 n°2 (2026-07-05)
+
+**Contexte** : exécution du design
+`docs/superpowers/specs/2026-07-04-token-sync-v3-cdp-spike-m8-spike-design.md`
+(3 volets parallèles par agents Sonnet, audit final Fable). Rien de committé
+par les agents ; état vérifié indépendamment par la session principale.
+
+**Volet A — token-sync v3, livré.** `frontend/styles.css` est désormais le
+canonique unique. Nouveau cœur `styles-css.cjs` (parse/write des 3 blocs,
+substitution in-place, round-trip no-op octet-identique, fail-fast partout :
+blocs sombres divergents, token/préfixe inconnu, doublon) + `verify-v3.cjs`
+(6 assertions, remplace les 2 anciens scripts de vérif). `editor-server.cjs`
+parse styles.css à chaque `GET /tokens.json` et écrit via le writer sur
+`/validate` ; `generate-theme-html`/`generate-design-md`/`apply-tokens`
+lisent styles.css ; `editor.html` inchangé (shapes JSON conservées).
+**Supprimés** : `design-tokens.{light,dark}.json`, `last-sync.json`,
+`pull-styles-css.cjs`, `pull-theme-html.cjs`, `migrate-to-dtcg.cjs`,
+`sync-core{,.verify}.cjs`, `verify-roundtrip.cjs`, `generate-styles-css.cjs`
+(styles.css n'est plus une cible). L'heuristique `colorProdKey`
+(startsWith) disparaît avec les pulls — classification par tables de
+préfixes explicites, préfixe inconnu = throw. La baseline et la détection de
+conflit n'ont plus d'objet (un seul fichier fait foi). Le DTCG v2 (Éval 9/10)
+est abandonné : il ne servait que l'interop, qu'on n'a pas. Vérifié en
+audit : `verify-v3.cjs` tout vert, `apply-tokens` no-op, `git diff` vide sur
+`frontend/styles.css`.
+
+**Volet B — spike CDP WebView2 : VALIDÉ.** Lancer `tauri dev` avec
+`WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222` expose
+un endpoint CDP standard (`http://localhost:9222/json`, WebView2/Edg 149) sur
+la vraie fenêtre Tauri. Preuves obtenues depuis la session Claude (Node 26,
+WebSocket natif, zéro dépendance) : `Runtime.evaluate` →
+`__TAURI_INTERNALS__: true`, titlebar custom `#sift-tb-title="Sift"`, écran
+Revue actif, aucune trace du mock (`Mr. Fingers` absent) ;
+`Page.captureScreenshot` → capture de la vraie app avec vraies données.
+**C'est la première voie qui permet à Claude de voir/inspecter le code gated
+`inTauri` sans mobiliser Antoine ni computer-use** — coût : 2-3 appels
+ponctuels. Reste le défaut : Antoine regarde lui-même la fenêtre HMR ; le CDP
+sert à la vérification ponctuelle par preuve (screenshot, style calculé,
+DOM réel).
+
+Complément vérifié dans les sources de notre version exacte (tauri 2.11.3 /
+tauri-utils 2.9.3, `config.rs:2081-2083`) : Tauri expose aussi une option de
+config par fenêtre `additionalBrowserArgs` (Windows-only) qui ferait la même
+chose via `tauri.conf.json`. **Écartée volontairement, garder la variable
+d'environnement** : (1) l'option écrase les arguments par défaut de wry
+(`--disable-features=msWebOOUI,msPdfOOUI,msSmartScreenProtection` — à
+re-fournir soi-même si on l'utilise, dixit le doc-comment de la struct) ;
+(2) surtout, une valeur dans `tauri.conf.json` ouvrirait le port de debug
+**aussi dans les builds de prod** — inacceptable. La variable
+`WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` est ad-hoc par session de dev,
+n'altère pas les défauts wry, et ne peut pas fuiter dans un installeur.
+
+**Volet C — spike M8 n°2 (masterPlaylists6.xml + colonnes USN) : exécuté,
+verdict Rekordbox en attente.** Détail complet :
+`~/Desktop/sift-masterdb-write-probe/FINDINGS-m8-spike-2.md` (run faisant
+foi : `full-copy-main\`, artefacts `m8s2_*`). Résultats clés : (1) une modif
+`FolderPath` via pyrekordbox change **exactement 3 colonnes** (`FolderPath`,
+`rb_local_usn`, `updated_at` — posé par l'ORM, pas par un trigger SQLite) ;
+(2) USN global `agentRegistry.localUpdateCount.int_1` +1 par changement, la
+ligne reçoit la **nouvelle valeur globale** (vérifié code
+`registry.py:311-347`) ; (3) `masterPlaylists6.xml` **est réécrit** par
+`commit()` (tous les Timestamps resynchronisés depuis
+`djmdPlaylist.updated_at`, seuil >1 s, `database.py:428-450`) — mais
+probablement par décalage de fuseau dans le parsing pyrekordbox, pas par
+nécessité sémantique pour une réparation de chemin pure ; (4) `commit()`
+refuse si Rekordbox tourne (`get_rekordbox_pid()`, `database.py:418-422`) —
+confirme l'invariant n°2 de la spec Rust. **Étape restante (Antoine,
+manuelle, §6 du FINDINGS)** : swap backup→copie modifiée→ouvrir
+Rekordbox→vérifier acceptation→restaurer. Le verdict conditionne le design
+Rust (répliquer ou non la réécriture XML). La spec
+`2026-07-04-m8-masterdb-write-path-rust-design.md` reste bloquante tant que
+ce verdict n'est pas noté.
+
+**Incident méthodologique à retenir (orchestration d'agents)** : les agents
+Sonnet spawnés en arrière-plan ont **délégué récursivement** au lieu
+d'exécuter (4 niveaux de cascade sur les volets A/C, chaque maillon "lançant"
+le travail puis s'arrêtant), et deux exécuteurs concurrents du volet C se
+sont écrasés mutuellement les artefacts (`full-copy\` pollué, run refait dans
+`full-copy-main\`). Correctif efficace : reprendre chaque maillon via
+SendMessage avec interdiction explicite de l'outil Agent + obligation
+d'exécuter avec les outils directs. Pour un prochain fan-out : mettre cette
+interdiction dans le prompt initial des agents.
+
+---
+
 ## Veille concurrente — MediaMonkey (2026-06-24)
 
 Gestionnaire de biblio musicale ([mediamonkey.com](https://www.mediamonkey.com/)),
