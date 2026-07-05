@@ -38,7 +38,11 @@ le calcul de risque plutôt que de simplement l'étendre :
    flag grossier `Analysed` ("analysis status"). C'est un indice fort qu'un
    canal metadata-only existe, mais les docstrings sont la meilleure
    supposition de l'auteur pyrekordbox, pas la spec Pioneer — à vérifier
-   empiriquement (spike n°3, Test 1) avant tout code.
+   empiriquement (spike n°3, Test 1) avant tout code. **Note de typage** :
+   `AnalysisUpdated`/`TrackInfoUpdated`/`CueUpdated` sont `VARCHAR(255)`
+   (chaîne), pas `Integer` comme `Analysed` — donc probablement des
+   timestamps/versions en chaîne, pas des booléens 0/1 ; le spike n°3
+   détermine le format réel avant d'écrire quoi que ce soit (voir Test 1).
 
 ## Règle non négociable (actée en brainstorm)
 

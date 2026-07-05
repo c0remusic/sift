@@ -29,7 +29,13 @@ Deux idées ont émergé du brainstorm qui changent la nature du risque M8 :
    ("cue updated status") — trois colonnes séparées dans
    `db6/tables.py:709-712`. C'est un indice fort, pas une preuve : la
    sémantique réelle vient de Pioneer, pas de pyrekordbox (docstrings = best
-   guess de l'auteur pyrekordbox, jamais vérifié empiriquement).
+   guess de l'auteur pyrekordbox, jamais vérifié empiriquement). **Détail de
+   schéma à ne pas perdre** : les 3 colonnes (`AnalysisUpdated`,
+   `TrackInfoUpdated`, `CueUpdated`) sont typées `VARCHAR(255)` (chaîne), pas
+   entier — contrairement à `Analysed` (`Integer`). Donc ce ne sont
+   probablement pas des booléens 0/1 mais des **timestamps ou versions en
+   chaîne** — le Test 1 doit lire les valeurs réelles existantes avant de
+   deviner un format à écrire (voir protocole ci-dessous).
 
 Ce spike vérifie empiriquement, sur une copie complète, avant tout
 engagement Rust.
@@ -64,13 +70,21 @@ sur l'acceptation.
 1. Choisir une piste canary avec une **grille corrigée à la main** (nécessite
    qu'Antoine en ait une dans sa bibliothèque, ou en corriger une exprès sur
    la copie de test).
-2. Modifier son tag fichier réel (ex. `Artist`) sans passer par master.db.
-3. Sur la copie DB : `UPDATE djmdContent SET TrackInfoUpdated = <valeur non
-   vue en pratique par le spike, à définir après lecture des valeurs
-   existantes> WHERE ID = ...` — **ne toucher ni `Analysed` ni
+2. **Inventaire préalable** : sur la copie, lire les valeurs réelles actuelles
+   de `TrackInfoUpdated`/`AnalysisUpdated`/`CueUpdated` sur un échantillon de
+   pistes (colonnes `VARCHAR(255)` — probablement des timestamps ou versions
+   en chaîne, pas des booléens 0/1, voir Intention). Choisir la valeur à
+   écrire à partir de ce qui est observé (ex. si le format est un timestamp
+   ISO, écrire l'heure courante dans ce format ; si c'est un compteur,
+   l'incrémenter) — ne jamais écrire une valeur inventée sans base dans les
+   données réelles.
+3. Modifier le tag fichier réel de la piste canary (ex. `Artist`) sans passer
+   par master.db.
+4. Sur la copie DB : `UPDATE djmdContent SET TrackInfoUpdated = <valeur
+   déterminée à l'étape 2> WHERE ID = ...` — **ne toucher ni `Analysed` ni
    `AnalysisUpdated`**.
-4. Swap, ouvrir le vrai Rekordbox.
-5. Observer : (a) le nouveau tag apparaît-il ? (b) la grille a-t-elle bougé
+5. Swap, ouvrir le vrai Rekordbox.
+6. Observer : (a) le nouveau tag apparaît-il ? (b) la grille a-t-elle bougé
    (comparer un screenshot/export avant-après) ? (c) y a-t-il eu une
    ré-analyse visible (icône de progression, changement de `Analysed`) ?
 
