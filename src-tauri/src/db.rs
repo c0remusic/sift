@@ -119,6 +119,12 @@ const MIGRATIONS: &[&str] = &[
     r#"
     ALTER TABLE tracks ADD COLUMN report_cache_ver INTEGER;
     "#,
+    // v10 — composite indexes for the dashboard/facet queries: folder facets filter on
+    // (status='filed', folder) and the "à re-sourcer" card on (status='filed', verdict).
+    r#"
+    CREATE INDEX IF NOT EXISTS idx_tracks_status_folder ON tracks(status, folder);
+    CREATE INDEX IF NOT EXISTS idx_tracks_status_verdict ON tracks(status, verdict);
+    "#,
 ];
 
 /// Applies any migrations the DB hasn't seen yet, tracked via PRAGMA user_version.

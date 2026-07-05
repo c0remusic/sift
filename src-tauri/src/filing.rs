@@ -9,6 +9,7 @@ use crate::naming::{self, Canonical};
 use crate::{actions, library, tagging};
 use rusqlite::{params, Connection};
 use serde::Serialize;
+use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 /// Sentinel destination meaning "file in place": the track's destination is its OWN source
@@ -275,6 +276,15 @@ pub struct FilePlan {
     extras: TagExtras,
 }
 
+impl FilePlan {
+    /// The resolved destination path (as it will land on disk). Exposed so the batch dispatcher can
+    /// reserve each planned dest across in-flight plans (phase 2 writes it later) — see
+    /// `ipc_filing::run_file_batch`.
+    pub fn dest_path(&self) -> &str {
+        &self.dest
+    }
+}
+
 /// One filesystem effect performed in phase 2, to be journaled in phase 3. `meta` carries the
 /// optional JSON payload of the journal's `meta` column — used by the conformant filing's `tag_edit`
 /// row to stash the OLD tags (so a revert can restore them); `None` for the plain move/convert/trash.
@@ -300,6 +310,37 @@ fn target_str(target: Target) -> &'static str {
 /// lossless but whose CONTENT is actually lossy (FIX-1 / BUG-1) is refused with
 /// `FilingError::RailMismatch` instead of silently filed — the front shows a confirmation and
 /// retries with `true` if the user proceeds anyway.
+/// Like `library::ensure_unique`, but also treats every path in `reserved` as taken. In a
+/// parallel batch, phase 1 (`plan_file`) is resolved serially under the DB lock, yet the file it
+/// names is only WRITTEN in the concurrent phase 2 — so a plain `ensure_unique` (FS-existence
+/// only) could hand the SAME destination to two tracks that reconcile to the same name (e.g. two
+/// copies of one song filed into one bin), because neither file exists on disk yet when the
+/// second plan resolves. Reserving each planned dest closes that window: the second plan skips
+/// past the first's not-yet-written path. `ignore` keeps the conformant "file in place" self-name
+/// exemption. Bounded bump identical to `ensure_unique`'s (" (N)" before the extension).
+fn ensure_unique_reserved(path: &Path, ignore: Option<&Path>, reserved: &HashSet<String>) -> PathBuf {
+    let taken = |p: &Path| reserved.contains(&p.to_string_lossy().to_string());
+    // First let ensure_unique settle FS collisions; then bump further past any reserved sibling.
+    let mut candidate = library::ensure_unique(path, ignore);
+    if !taken(&candidate) {
+        return candidate;
+    }
+    let parent = path.parent().unwrap_or_else(|| Path::new("."));
+    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("file");
+    let ext = path.extension().and_then(|e| e.to_str());
+    for n in 2..10_000 {
+        candidate = match ext {
+            Some(e) => parent.join(format!("{stem} ({n}).{e}")),
+            None => parent.join(format!("{stem} ({n})")),
+        };
+        // Not on disk AND not reserved by an earlier in-flight plan.
+        if (!candidate.exists() || ignore.is_some_and(|ig| ig == candidate)) && !taken(&candidate) {
+            return candidate;
+        }
+    }
+    parent.join(format!("{stem} ({}).bak", std::process::id()))
+}
+
 #[allow(clippy::too_many_arguments)] // each param is an independent, orthogonal input to the
 // plan (DB handle, library context, track identity, user overrides) — bundling them into a
 // struct here would just move the same 8 fields one level up without reducing real complexity.
@@ -312,6 +353,10 @@ pub fn plan_file(
     override_target: Option<Target>,
     edited: Option<Canonical>,
     allow_rail_mismatch: bool,
+    // Destinations already claimed by earlier plans in this same batch whose files aren't written
+    // yet (phase 2 is deferred/concurrent). Empty for the interactive single-file path, where the
+    // file is written before the next plan runs. See `ensure_unique_reserved`.
+    reserved: &HashSet<String>,
 ) -> Result<FilePlan, FilingError> {
     let source = track_path(conn, track_id)?;
     let canonical = match edited {
@@ -375,7 +420,7 @@ pub fn plan_file(
     // it to " (2)". The non-conformant path ENCODES source → dest, so dest must never equal source
     // (FFmpeg reading and writing the same file would corrupt it) — keep the normal collision bump.
     let ignore_self = if conformant { Some(Path::new(&source)) } else { None };
-    let dest = library::ensure_unique(&dest_dir.join(&filename), ignore_self);
+    let dest = ensure_unique_reserved(&dest_dir.join(&filename), ignore_self, reserved);
 
     let extras = load_tag_extras(conn, track_id);
 
@@ -467,32 +512,59 @@ fn rollback_fs(log: &[FsLog]) {
 }
 
 /// Phase 3 (under the DB lock): journal the effects + mark the track filed. On any DB error,
-/// reverse the filesystem effects and the partial journal so nothing is left half-filed.
+/// reverse the filesystem effects so nothing is left half-filed.
+///
+/// All DB writes for the track (its journal rows + the `tracks` UPDATE + the `metadata` upsert)
+/// run in ONE SQLite transaction (`unchecked_transaction`, since we only hold `&Connection`)
+/// instead of 4-5 implicit auto-commits per track — one WAL fsync per track instead of several.
+/// A DB error rolls the whole transaction back (no partial journal) AND reverses the filesystem
+/// effects, then returns `Db` — the fail-fast contract callers already handle per track.
+///
+/// The linked-Rekordbox-XML repair (read+parse+rewrite of an external file — disk I/O) is
+/// DEFERRED until AFTER the transaction commits, via `actions::maybe_repair_rekordbox_xml`, so
+/// the slow file I/O never runs inside the write transaction. Its behaviour is unchanged
+/// (`move`/`convert` rows only, `from != to`) — only its timing moves from mid-insert to
+/// post-commit. It cannot fail the filing (errors are logged and swallowed, as before).
 pub fn commit_file(conn: &Connection, plan: &FilePlan, log: Vec<FsLog>) -> Result<FileResult, FilingError> {
-    let undo = |conn: &Connection| {
-        rollback_fs(&log);
-        let _ = conn.execute("DELETE FROM actions WHERE batch_id=?1", params![plan.batch_id]);
-    };
-    for fs in &log {
-        if let Err(e) = actions::record_with_meta(
-            conn, &plan.batch_id, Some(plan.track_id), fs.kind, Some(&fs.from), Some(&fs.to), fs.meta.as_deref(),
-        ) {
-            undo(conn);
-            return Err(FilingError::Db(e.to_string()));
-        }
-    }
     let conf = match plan.canonical.confidence {
         naming::Confidence::Green => "green",
         naming::Confidence::Yellow => "yellow",
     };
-    if let Err(e) = conn.execute(
-        "UPDATE tracks SET status='filed', folder=?2, target_format=?3, confidence=?4 WHERE id=?1",
-        params![plan.track_id, plan.bin_rel, target_str(plan.target), conf],
-    ) {
-        undo(conn);
+
+    // One transaction for every DB write of this track. Dropping it without `commit()` (the `?`
+    // early-returns below) rolls back all inserts/updates automatically — no manual DELETE needed.
+    let db_result: Result<(), FilingError> = (|| {
+        let tx = conn.unchecked_transaction()?;
+        for fs in &log {
+            actions::record_row_only(
+                &tx, &plan.batch_id, Some(plan.track_id), fs.kind, Some(&fs.from), Some(&fs.to), fs.meta.as_deref(),
+            )?;
+        }
+        tx.execute(
+            "UPDATE tracks SET status='filed', folder=?2, target_format=?3, confidence=?4 WHERE id=?1",
+            params![plan.track_id, plan.bin_rel, target_str(plan.target), conf],
+        )?;
+        save_metadata(&tx, plan.track_id, &plan.canonical)?;
+        tx.commit()?;
+        Ok(())
+    })();
+
+    if let Err(e) = db_result {
+        // Transaction already rolled back the DB rows; reverse the filesystem effects too so
+        // nothing is left half-filed.
+        rollback_fs(&log);
         return Err(FilingError::Db(e.to_string()));
     }
-    save_metadata(conn, plan.track_id, &plan.canonical)?;
+
+    // A track just became 'filed' — invalidate the dashboard duplicate-count cache. The cache key
+    // (COUNT, MAX(id) of filed) misses an in-place re-filing that leaves both unchanged, so we
+    // invalidate explicitly rather than rely on the key changing (coordination with R1's cache).
+    crate::library::invalidate_duplicate_count_cache();
+
+    // Committed — now (and only now) patch a linked Rekordbox XML for the move/convert rows.
+    for fs in &log {
+        actions::maybe_repair_rekordbox_xml(conn, fs.kind, Some(&fs.from), Some(&fs.to));
+    }
     Ok(FileResult { path: plan.dest.clone(), batch_id: plan.batch_id.clone() })
 }
 
@@ -513,7 +585,7 @@ pub fn file_track(
     edited: Option<Canonical>,
     allow_rail_mismatch: bool,
 ) -> Result<FileResult, FilingError> {
-    let plan = plan_file(conn, root, template, track_id, bin_rel, override_target, edited, allow_rail_mismatch)?;
+    let plan = plan_file(conn, root, template, track_id, bin_rel, override_target, edited, allow_rail_mismatch, &HashSet::new())?;
     let log = execute_file(&plan)?;
     commit_file(conn, &plan, log)
 }
@@ -745,7 +817,7 @@ mod tests {
         let plan = plan_file(&conn, &root, "{artist} - {title}", id, "House", None, Some(Canonical {
             artist: "Larry Heard".into(), title: "Can You Feel It".into(), version: None,
             confidence: crate::naming::Confidence::Green,
-        }), false).unwrap();
+        }), false, &HashSet::new()).unwrap();
         let log = execute_file(&plan).unwrap();
         // Phase 2 already ran: the file really moved.
         assert!(!src.exists());
@@ -859,7 +931,7 @@ mod tests {
         let bin_rel = format!("{EXTERNAL_DEST_PREFIX}{}", external.to_str().unwrap());
         let plan = plan_file(&conn, &root, "{artist} - {title}", id, &bin_rel, None, Some(Canonical {
             artist: "X".into(), title: "Y".into(), version: None, confidence: crate::naming::Confidence::Green,
-        }), false).unwrap();
+        }), false, &HashSet::new()).unwrap();
         let dest = Path::new(&plan.dest);
         assert!(dest.starts_with(&external), "dest {dest:?} should land under the external dir, not the library root");
         assert!(!dest.starts_with(&root), "dest {dest:?} must NOT be under the library root");
@@ -879,7 +951,7 @@ mod tests {
         let bin_rel = format!("{EXTERNAL_DEST_PREFIX}{}", missing.to_str().unwrap());
         let err = plan_file(&conn, &root, "{artist} - {title}", id, &bin_rel, None, Some(Canonical {
             artist: "X".into(), title: "Y".into(), version: None, confidence: crate::naming::Confidence::Green,
-        }), false);
+        }), false, &HashSet::new());
         assert_eq!(
             err.err(),
             Some(FilingError::Io(format!(
@@ -1022,13 +1094,13 @@ mod tests {
         });
 
         // Default (allow_rail_mismatch=false): refused, nothing touched.
-        let blocked = plan_file(&conn, &root, "{artist} - {title}", id, "House", None, canonical.clone(), false);
+        let blocked = plan_file(&conn, &root, "{artist} - {title}", id, "House", None, canonical.clone(), false, &HashSet::new());
         assert_eq!(blocked.err(), Some(FilingError::RailMismatch));
         assert!(disguised.exists(), "refused plan must not touch the source file");
 
         // Explicit confirmation (allow_rail_mismatch=true): proceeds normally.
         crate::ffmpeg::init_ffmpeg_path();
-        let allowed = plan_file(&conn, &root, "{artist} - {title}", id, "House", None, canonical, true);
+        let allowed = plan_file(&conn, &root, "{artist} - {title}", id, "House", None, canonical, true, &HashSet::new());
         assert!(allowed.is_ok(), "an explicitly confirmed mismatch must proceed: {:?}", allowed.err());
     }
 
@@ -1046,7 +1118,7 @@ mod tests {
         crate::ffmpeg::init_ffmpeg_path();
         let res = plan_file(&conn, &root, "{artist} - {title}", id, "House", None, Some(Canonical {
             artist: "X".into(), title: "Y".into(), version: None, confidence: crate::naming::Confidence::Green,
-        }), false);
+        }), false, &HashSet::new());
         assert!(res.is_ok(), "a genuine FLAC must not be blocked: {:?}", res.err());
     }
 }

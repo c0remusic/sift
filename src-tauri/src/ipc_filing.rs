@@ -245,7 +245,9 @@ pub fn file_track(
         let conn = conn.lock().map_err(|e| e.to_string())?;
         let root = library_root(&conn)?;
         let tmpl = template(&conn);
-        filing::plan_file(&conn, &root, &tmpl, track_id, &bin_rel, target, edited, allow_rail_mismatch.unwrap_or(false))
+        // Interactive single-file path: phase 2 runs before any next plan, so no in-flight dest
+        // reservation is needed (empty set).
+        filing::plan_file(&conn, &root, &tmpl, track_id, &bin_rel, target, edited, allow_rail_mismatch.unwrap_or(false), &std::collections::HashSet::new())
             .map_err(|e| e.to_string())?
     };
     // Phase 2 WITHOUT the lock: the multi-second ffmpeg encode + file moves.
@@ -311,12 +313,49 @@ struct FileProgress {
     total: usize,
 }
 
-/// Background body of `file_batch` (off the main thread). Files each id by REUSING the three
-/// filing primitives with a PER-FILE lock window: phase 1 `plan_file` (lock) → phase 2
-/// `execute_file` (NO lock: the slow ffmpeg encode + fs moves) → phase 3 `commit_file` (lock:
-/// journal `actions` + mark filed). A track with no auto-file canonical (yellow + no Discogs
-/// identity) or that errors mid-filing is left pending and reported in `needs_validation` — same
-/// outcome as the old in-process `filing::file_batch`. Emits `file:done` with the summary.
+/// Bounded phase-2 worker count. FFmpeg already uses several internal threads per process, so we
+/// deliberately UNDER-subscribe (half the cores) and cap at 4 — spawning one ffmpeg per core would
+/// oversubscribe the CPU and thrash the disk without going faster. Min 1 (never zero).
+fn phase2_worker_count() -> usize {
+    std::thread::available_parallelism()
+        .map(|n| (n.get() / 2).max(1))
+        .unwrap_or(2)
+        .min(4)
+}
+
+/// A planned track ready for phase 2 (the concurrent encode). Carries its position in the original
+/// batch order so phase 3 can commit and report in a stable order regardless of encode finish order.
+struct PlannedJob {
+    idx: usize,
+    id: i64,
+    plan: filing::FilePlan,
+}
+
+/// The outcome of one job's phase 2, sent back to the dispatcher for the serial phase 3.
+struct Phase2Outcome {
+    idx: usize,
+    id: i64,
+    plan: filing::FilePlan,
+    /// `Some(log)` = encode+moves succeeded, ready to commit. `None` = execute_file failed (the FS
+    /// is left clean by execute_file itself) → the track goes to needs_validation.
+    log: Option<Vec<filing::FsLog>>,
+}
+
+/// Background body of `file_batch` (off the main thread). Three stages:
+///  - **Phase 1 (serial, DB lock per file)**: pick the auto-file canonical + `plan_file`. Resolving
+///    every destination serially, under the lock, BEFORE any file is written lets each plan reserve
+///    its dest so two tracks reconciling to the same name never collide (see `plan_file`'s
+///    `reserved` set). No fileable name / plan error → needs_validation.
+///  - **Phase 2 (CONCURRENT, NO lock)**: a bounded pool of `phase2_worker_count()` std threads runs
+///    the slow ffmpeg encode + fs moves (`execute_file`) in parallel. No DB access here.
+///  - **Phase 3 (serial, DB lock per file)**: `commit_file` (journal + mark filed) for each
+///    successfully-encoded job, IN ORIGINAL BATCH ORDER, emitting one progress tick per file.
+///
+/// Cancellation (`FilingCancel`): checked (1) in phase 1 — a cancelled batch stops PLANNING new
+/// tracks, and (2) by each worker before it pulls a new job — an in-flight encode finishes cleanly,
+/// but no not-yet-started job begins. Cancelled/unstarted planned jobs are reported in
+/// needs_validation (they were never filed). A track with no auto-file name is untouched, exactly
+/// as before — only the execution shape (serial → pooled phase 2) changed.
 fn run_file_batch(
     app: &AppHandle,
     root: PathBuf,
@@ -325,88 +364,158 @@ fn run_file_batch(
     bin_rel: String,
     targets: Option<HashMap<i64, Target>>,
 ) {
+    use std::collections::HashSet;
+    use std::sync::mpsc;
+
     let state = app.state::<Mutex<Connection>>();
     let cancel = app.state::<FilingCancel>();
     let total = track_ids.len();
-    let mut filed = 0usize;
     let mut needs_validation = Vec::new();
     let mut cancelled = false;
 
-    for id in track_ids {
-        // Stop-net cancel (sous-étape 3): checked BETWEEN files, never mid `execute_file`, so no
-        // file is left half-processed and the DB stays consistent. The in-flight file (if any) has
-        // already finished its three phases; we simply don't start a new one. Nothing is rolled
-        // back — what is filed stays filed.
+    // ---- Phase 1 (serial, under the lock): plan every fileable track, reserving each dest. ----
+    let mut jobs: Vec<PlannedJob> = Vec::new();
+    let mut reserved: HashSet<String> = HashSet::new();
+    for (idx, id) in track_ids.iter().copied().enumerate() {
+        // Cancel: stop planning new tracks. Ones not yet planned are simply never started.
         if cancel.0.load(Ordering::SeqCst) {
             cancelled = true;
             break;
         }
-        // Progress (sous-étape 2): files completed before this one (filed or bounced). Emitted at
-        // the TOP so it also covers the iterations that `continue`/`break` out of the body below —
-        // the filing logic itself is untouched. The front feeds the zone's kind="file" row from it.
-        app.emit("file:progress", &FileProgress { done: filed + needs_validation.len(), total }).ok();
-        // Phase 1 (lock): pick the auto-file canonical + build the plan. No fileable name → pending.
-        let plan = {
-            let conn = match state.lock() {
-                Ok(c) => c,
-                Err(e) => {
-                    log::error!("file_batch: DB lock poisoned before file {id}: {e}");
-                    break;
-                }
-            };
-            match filing::batch_canonical(&conn, id) {
-                Some(c) => match filing::plan_file(
-                    &conn,
-                    &root,
-                    &tmpl,
-                    id,
-                    &bin_rel,
-                    targets.as_ref().and_then(|m| m.get(&id)).copied(),
-                    Some(c),
-                    // Batch never force-confirms a rail mismatch on the user's behalf — a track
-                    // with a disguised source lands in needs_validation like any other filing
-                    // error, so the user reviews and confirms it explicitly in Detail mode.
-                    false,
-                ) {
-                    Ok(p) => p,
-                    Err(_) => {
-                        needs_validation.push(id);
-                        continue;
-                    }
-                },
-                None => {
+        let conn = match state.lock() {
+            Ok(c) => c,
+            Err(e) => {
+                log::error!("file_batch: DB lock poisoned planning file {id}: {e}");
+                cancelled = true;
+                break;
+            }
+        };
+        let plan = match filing::batch_canonical(&conn, id) {
+            Some(c) => match filing::plan_file(
+                &conn,
+                &root,
+                &tmpl,
+                id,
+                &bin_rel,
+                targets.as_ref().and_then(|m| m.get(&id)).copied(),
+                Some(c),
+                // Batch never force-confirms a rail mismatch on the user's behalf — a track with a
+                // disguised source lands in needs_validation like any other filing error.
+                false,
+                &reserved,
+            ) {
+                Ok(p) => p,
+                Err(_) => {
                     needs_validation.push(id);
                     continue;
                 }
-            }
-        };
-        // Phase 2 (NO lock): the slow ffmpeg encode + file moves.
-        let log = match filing::execute_file(&plan) {
-            Ok(l) => l,
-            Err(_) => {
+            },
+            None => {
                 needs_validation.push(id);
                 continue;
             }
         };
-        // Phase 3 (lock): journal the effects + mark filed (rolls back the FS on a DB error).
-        let conn = match state.lock() {
-            Ok(c) => c,
-            Err(e) => {
-                log::error!("file_batch: DB lock poisoned committing file {id}: {e}");
-                break;
+        drop(conn);
+        // Reserve this dest so a later plan for a same-named track bumps past it (the file isn't
+        // written until the concurrent phase 2 below).
+        reserved.insert(plan.dest_path().to_string());
+        jobs.push(PlannedJob { idx, id, plan });
+    }
+
+    // ---- Phase 2 (concurrent, NO lock): pooled ffmpeg encode + fs moves. ----
+    // A shared job queue (Mutex<vec-as-stack drained via pop>) feeds N workers; each worker checks
+    // the cancel flag before taking a job so an in-flight encode finishes but no new one starts.
+    let (result_tx, result_rx) = mpsc::channel::<Phase2Outcome>();
+    let dispatched = jobs.len();
+    let queue = std::sync::Arc::new(Mutex::new(jobs));
+    let worker_n = phase2_worker_count().min(dispatched.max(1));
+    let cancel_flag = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+
+    let mut handles = Vec::new();
+    for _ in 0..worker_n {
+        let queue = std::sync::Arc::clone(&queue);
+        let tx = result_tx.clone();
+        let wcancel = std::sync::Arc::clone(&cancel_flag);
+        handles.push(std::thread::spawn(move || {
+            loop {
+                // Cancel between jobs: an in-flight execute_file finishes, no new job is pulled.
+                if wcancel.load(Ordering::SeqCst) {
+                    break;
+                }
+                let job = { queue.lock().ok().and_then(|mut q| q.pop()) };
+                let Some(job) = job else { break };
+                let log = filing::execute_file(&job.plan)
+                    .map_err(|e| log::error!("file_batch: execute failed for track {}: {e:?}", job.id))
+                    .ok();
+                if tx
+                    .send(Phase2Outcome { idx: job.idx, id: job.id, plan: job.plan, log })
+                    .is_err()
+                {
+                    break; // dispatcher gone — stop
+                }
             }
-        };
-        match filing::commit_file(&conn, &plan, log) {
-            Ok(_) => filed += 1,
-            Err(_) => needs_validation.push(id),
+        }));
+    }
+    drop(result_tx); // so result_rx closes once every worker has dropped its clone
+
+    // Poll the cancel flag while collecting: propagate a user cancel to the workers so they stop
+    // pulling new jobs. Collect outcomes as they finish (any order), then commit in batch order.
+    let mut outcomes: Vec<Phase2Outcome> = Vec::with_capacity(dispatched);
+    loop {
+        if cancel.0.load(Ordering::SeqCst) {
+            cancel_flag.store(true, Ordering::SeqCst);
+            cancelled = true;
+        }
+        match result_rx.recv_timeout(std::time::Duration::from_millis(100)) {
+            Ok(o) => outcomes.push(o),
+            Err(mpsc::RecvTimeoutError::Timeout) => {}
+            Err(mpsc::RecvTimeoutError::Disconnected) => break,
+        }
+    }
+    for h in handles {
+        let _ = h.join();
+    }
+
+    // Commit in original batch order so progress ticks and journal ids advance monotonically.
+    outcomes.sort_by_key(|o| o.idx);
+
+    // ---- Phase 3 (serial, DB lock per file): commit each encoded job, emit progress per file. ----
+    let mut filed = 0usize;
+    // `done` = every track whose fate is settled: planning-time needs_validation + each processed
+    // outcome. Emitted before the loop (settles the planning-time bounces) and after each commit.
+    app.emit("file:progress", &FileProgress { done: needs_validation.len(), total }).ok();
+    for o in outcomes {
+        match o.log {
+            Some(log) => {
+                let conn = match state.lock() {
+                    Ok(c) => c,
+                    Err(e) => {
+                        log::error!("file_batch: DB lock poisoned committing file {}: {e}", o.id);
+                        // Can't commit — treat as unfiled; execute_file already left the FS clean.
+                        needs_validation.push(o.id);
+                        app.emit("file:progress", &FileProgress { done: filed + needs_validation.len(), total }).ok();
+                        continue;
+                    }
+                };
+                match filing::commit_file(&conn, &o.plan, log) {
+                    Ok(_) => filed += 1,
+                    Err(_) => needs_validation.push(o.id),
+                }
+            }
+            None => needs_validation.push(o.id), // execute_file failed (FS left clean by it)
+        }
+        app.emit("file:progress", &FileProgress { done: filed + needs_validation.len(), total }).ok();
+    }
+
+    // Planned-but-never-started jobs (cancelled before any worker popped them) remain in `queue`:
+    // they were never encoded → report as unfiled.
+    if let Ok(q) = queue.lock() {
+        for job in q.iter() {
+            needs_validation.push(job.id);
         }
     }
 
-    // Final progress (processed so far) so the zone settles — emitted before `needs_validation`
-    // is moved into the summary below.
     app.emit("file:progress", &FileProgress { done: filed + needs_validation.len(), total }).ok();
-    // Done: hand the (possibly partial, if cancelled) summary to the front, which refreshes the
-    // view (replacing the end-of-batch `queue:changed` the synchronous command used to emit).
     app.emit("file:done", &BatchResult { filed, needs_validation, cancelled }).ok();
 }
 

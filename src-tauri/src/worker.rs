@@ -116,7 +116,7 @@ pub fn init(app: &AppHandle) {
     let n = std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(2)
-        .clamp(1, 4);
+        .clamp(1, 8);
     let worker = AnalysisWorker {
         inner: Arc::new((
             Mutex::new(Queue {

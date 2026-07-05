@@ -82,6 +82,60 @@ pub struct DashboardStats {
     pub genres: Vec<GenreCount>,
 }
 
+/// Cheap signature of the `filed` set: (count, max id). Any filing commit, revert, or purge
+/// changes the filed count and/or the max id, so a mismatch means the cached duplicate scan is
+/// stale. Fingerprint recomputes don't change grouping outcomes, so they're intentionally not
+/// part of the key. Cheap enough to recheck on every dashboard load.
+fn filed_signature(conn: &rusqlite::Connection) -> rusqlite::Result<(i64, i64)> {
+    conn.query_row(
+        "SELECT COUNT(*), COALESCE(MAX(id), 0) FROM tracks WHERE status='filed'",
+        [],
+        |r| Ok((r.get(0)?, r.get(1)?)),
+    )
+}
+
+/// Memoised result of the O(n²) `scan_library_duplicates(...).len()`, keyed on `filed_signature`.
+/// The full scan is the dominant cost of `library_stats`; the dashboard is re-fetched on every
+/// visit, but the filed set rarely changes between visits, so we recompute only on a signature
+/// change. `invalidate_duplicate_count_cache()` forces a recompute for callers that mutate the
+/// filed set through a path the signature can't see.
+/// `(filed_signature, duplicate-group count)` — the cache slot's single entry.
+type DupCountEntry = ((i64, i64), i64);
+
+static DUP_COUNT_CACHE: std::sync::OnceLock<std::sync::Mutex<Option<DupCountEntry>>> =
+    std::sync::OnceLock::new();
+
+fn dup_count_cache() -> &'static std::sync::Mutex<Option<DupCountEntry>> {
+    DUP_COUNT_CACHE.get_or_init(|| std::sync::Mutex::new(None))
+}
+
+/// Duplicate-group count, served from cache when the filed set is unchanged since the last scan.
+fn duplicate_count_cached(conn: &rusqlite::Connection) -> rusqlite::Result<i64> {
+    let sig = filed_signature(conn)?;
+    // Poisoned mutex → treat as no cache and recompute (never serve a possibly-stale value).
+    if let Ok(guard) = dup_count_cache().lock() {
+        if let Some((cached_sig, count)) = *guard {
+            if cached_sig == sig {
+                return Ok(count);
+            }
+        }
+    }
+    let count = crate::dedup::scan_library_duplicates(conn)?.len() as i64;
+    if let Ok(mut guard) = dup_count_cache().lock() {
+        *guard = Some((sig, count));
+    }
+    Ok(count)
+}
+
+/// Drops the cached duplicate-group count so the next `library_stats` recomputes it. Call after
+/// any change to the `filed` set that `filed_signature` might not observe (e.g. an in-place
+/// re-filing that leaves the filed count and max id unchanged). Safe to call from any thread.
+pub fn invalidate_duplicate_count_cache() {
+    if let Ok(mut guard) = dup_count_cache().lock() {
+        *guard = None;
+    }
+}
+
 /// Aggregate counts for the Bibliothèque dashboard. Read-only.
 pub fn library_stats(conn: &rusqlite::Connection) -> rusqlite::Result<DashboardStats> {
     let total: i64 = conn.query_row(
@@ -104,7 +158,7 @@ pub fn library_stats(conn: &rusqlite::Connection) -> rusqlite::Result<DashboardS
         [],
         |r| r.get(0),
     )?;
-    let duplicates = crate::dedup::scan_library_duplicates(conn)?.len() as i64;
+    let duplicates = duplicate_count_cached(conn)?;
 
     let mut stmt = conn.prepare(
         "SELECT g.genre, COUNT(*) FROM track_genres g \

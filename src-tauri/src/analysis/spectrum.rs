@@ -2,9 +2,26 @@
 //! and a downsampled spectrogram. Online over mono f32 blocks.
 
 use crate::analysis::Spectrogram;
-use rustfft::{num_complex::Complex, FftPlanner};
+use rustfft::{num_complex::Complex, Fft, FftPlanner};
 use std::f32::consts::PI;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
+
+/// The FFT size is fixed for the whole app (4096). Planning is not free, so the forward
+/// plan is built once and shared across every file's accumulator. `rustfft`'s plans are
+/// `Send + Sync`, so an `Arc` behind a `OnceLock` is safe to hand out to the worker threads.
+const FFT_SIZE: usize = 4096;
+static FFT_PLAN: OnceLock<Arc<dyn Fft<f32>>> = OnceLock::new();
+
+fn shared_fft(fft_size: usize) -> Arc<dyn Fft<f32>> {
+    // The shared plan is only valid for the canonical size; any other size (tests) plans ad hoc.
+    if fft_size == FFT_SIZE {
+        FFT_PLAN
+            .get_or_init(|| FftPlanner::<f32>::new().plan_fft_forward(FFT_SIZE))
+            .clone()
+    } else {
+        FftPlanner::<f32>::new().plan_fft_forward(fft_size)
+    }
+}
 
 /// Result of the spectral pass.
 pub struct SpectrumResult {
@@ -21,6 +38,10 @@ pub struct SpectrumAccumulator {
     fft: Arc<dyn rustfft::Fft<f32>>,
     window: Vec<f32>,
     buf: Vec<f32>,
+    /// Reused per-frame FFT input/output buffer (len `fft_size`) — avoids one alloc per frame.
+    scratch: Vec<Complex<f32>>,
+    /// Reused per-frame magnitude buffer (len `bins`) — avoids one alloc per frame.
+    mags: Vec<f32>,
     ltas: Vec<f64>,
     frames_total: u64,
     spec_stride: u64,
@@ -34,8 +55,7 @@ impl SpectrumAccumulator {
     /// still runs for the LTAS/cutoff, so the verdict is unchanged — only the heavy display
     /// grid is not built). The batch worker (M2b) passes false; the UI passes true.
     pub fn new(sr: u32, fft_size: usize, collect_display: bool) -> Self {
-        let mut planner = FftPlanner::<f32>::new();
-        let fft = planner.plan_fft_forward(fft_size);
+        let fft = shared_fft(fft_size);
         let window: Vec<f32> = (0..fft_size)
             .map(|i| 0.5 - 0.5 * (2.0 * PI * i as f32 / (fft_size as f32 - 1.0)).cos())
             .collect();
@@ -47,6 +67,8 @@ impl SpectrumAccumulator {
             fft,
             window,
             buf: Vec::with_capacity(fft_size * 2),
+            scratch: vec![Complex { re: 0.0, im: 0.0 }; fft_size],
+            mags: vec![0.0f32; bins],
             ltas: vec![0.0; bins],
             frames_total: 0,
             spec_stride: 2,
@@ -65,18 +87,17 @@ impl SpectrumAccumulator {
     }
 
     fn process_frame(&mut self) {
-        let mut scratch: Vec<Complex<f32>> = (0..self.fft_size)
-            .map(|i| Complex { re: self.buf[i] * self.window[i], im: 0.0 })
-            .collect();
-        self.fft.process(&mut scratch);
-        let mut mags = vec![0.0f32; self.bins];
+        for i in 0..self.fft_size {
+            self.scratch[i] = Complex { re: self.buf[i] * self.window[i], im: 0.0 };
+        }
+        self.fft.process(&mut self.scratch);
         for k in 0..self.bins {
-            let m2 = scratch[k].norm_sqr();
+            let m2 = self.scratch[k].norm_sqr();
             self.ltas[k] += m2 as f64;
-            mags[k] = m2;
+            self.mags[k] = m2;
         }
         if self.collect_display && self.frames_total % self.spec_stride == 0 {
-            let col: Vec<u8> = mags.iter().map(|&m2| {
+            let col: Vec<u8> = self.mags.iter().map(|&m2| {
                 let db = if m2 <= 1e-12 { -100.0 } else { 10.0 * m2.log10() };
                 let clamped = db.clamp(-100.0, 0.0);
                 ((clamped + 100.0) / 100.0 * 255.0) as u8

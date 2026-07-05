@@ -59,6 +59,7 @@ pub fn requeue_track(conn: &Connection, track_id: i64) -> Result<(), String> {
     .map_err(|e| e.to_string())?;
     conn.execute("UPDATE tracks SET status='pending' WHERE id=?1", params![track_id])
         .map_err(|e| e.to_string())?;
+    crate::library::invalidate_duplicate_count_cache();
     Ok(())
 }
 
@@ -131,6 +132,7 @@ pub fn restore_track(conn: &Connection, track_id: i64) -> Result<(), String> {
         .map_err(|e| e.to_string())?;
     conn.execute("UPDATE tracks SET status='pending' WHERE id=?1", params![track_id])
         .map_err(|e| e.to_string())?;
+    crate::library::invalidate_duplicate_count_cache();
     Ok(())
 }
 
@@ -149,21 +151,32 @@ pub fn purge_trash(conn: &Connection) -> Result<usize, String> {
         .map_err(|e| e.to_string())?
         .collect::<rusqlite::Result<_>>()
         .map_err(|e| e.to_string())?;
+    // One SQLite transaction for the whole purge (all the per-row status flips + the orphan
+    // sweep) instead of 2 implicit auto-commits per trashed track. `unchecked_transaction` since
+    // we only hold `&Connection`. The file deletions (`remove_file`) are irreversible and stay
+    // best-effort outside the transaction's rollback semantics — a failed DB commit would leave
+    // already-deleted files gone, but the DB status flips (the only thing the transaction guards)
+    // roll back atomically. `n` counts rows scheduled for purge, unchanged from before.
+    let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
     let mut n = 0;
     for (tid, aid, to) in rows {
         if let Some(p) = &to {
             let _ = std::fs::remove_file(p);
         }
-        conn.execute("UPDATE actions SET undone=1 WHERE id=?1", params![aid])
+        tx.execute("UPDATE actions SET undone=1 WHERE id=?1", params![aid])
             .map_err(|e| e.to_string())?;
-        conn.execute("UPDATE tracks SET status='purged' WHERE id=?1", params![tid])
+        tx.execute("UPDATE tracks SET status='purged' WHERE id=?1", params![tid])
             .map_err(|e| e.to_string())?;
         n += 1;
     }
     // Sweep any trashed track without a live trash action (orphaned journal) so it doesn't
     // linger in Écartés forever — there's no file path to delete, just clear the status.
-    conn.execute("UPDATE tracks SET status='purged' WHERE status='trash'", [])
+    tx.execute("UPDATE tracks SET status='purged' WHERE status='trash'", [])
         .map_err(|e| e.to_string())?;
+    tx.commit().map_err(|e| e.to_string())?;
+    // The filed set can shift around trash lifecycle changes — drop the dashboard duplicate-count
+    // cache so it recomputes (coordination with R1's cache; cheap, a purge is a rare action).
+    crate::library::invalidate_duplicate_count_cache();
     Ok(n)
 }
 

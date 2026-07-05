@@ -88,9 +88,16 @@ fn union(parent: &mut [usize], a: usize, b: usize) {
     }
 }
 
+/// Two `filed` tracks whose durations differ by more than this can't be the same recording,
+/// so we skip the (expensive) fingerprint comparison. Only applied when BOTH durations are
+/// known — a missing duration falls through to the full comparison (fail-open, no false skip).
+const DURATION_MATCH_TOL_SEC: f64 = 2.0;
+
 /// Group every `filed` track into duplicate clusters by acoustic fingerprint similarity
-/// (reuses the same cache + threshold as `find_duplicate`). O(n²) fingerprint comparisons —
-/// fine at library-browsing scale; revisit only if profiling shows it matters.
+/// (reuses the same cache + threshold as `find_duplicate`). Still O(n²) in the worst case,
+/// but the initial SELECT now also reads the cached `fingerprint` (no per-track N+1 SELECT)
+/// and a cheap duration pre-filter skips comparisons that can't possibly match — enough for
+/// a full 15k-track library dashboard scan.
 pub fn scan_library_duplicates(conn: &Connection) -> rusqlite::Result<Vec<DupGroup>> {
     struct Row {
         id: i64,
@@ -101,9 +108,11 @@ pub fn scan_library_duplicates(conn: &Connection) -> rusqlite::Result<Vec<DupGro
         bitrate: Option<i64>,
         duration: Option<f64>,
         truncated: bool,
+        /// Cached fingerprint as stored (may be empty/NULL → recompute lazily below).
+        fingerprint: Option<String>,
     }
     let mut stmt = conn.prepare(
-        "SELECT id, path, filename, folder, format, bitrate, duration, truncated \
+        "SELECT id, path, filename, folder, format, bitrate, duration, truncated, fingerprint \
          FROM tracks WHERE status='filed'",
     )?;
     let rows: Vec<Row> = stmt
@@ -117,13 +126,19 @@ pub fn scan_library_duplicates(conn: &Connection) -> rusqlite::Result<Vec<DupGro
                 bitrate: r.get(5)?,
                 duration: r.get(6)?,
                 truncated: r.get::<_, Option<i64>>(7)?.unwrap_or(0) != 0,
+                fingerprint: r.get(8)?,
             })
         })?
         .collect::<rusqlite::Result<_>>()?;
 
+    // Use the fingerprint the scan already read; only fall back to compute+cache when the
+    // cached value is missing/empty (get_or_compute_fp then does the single UPDATE).
     let fps: Vec<Option<Vec<u32>>> = rows
         .iter()
-        .map(|r| get_or_compute_fp(conn, r.id, &r.path))
+        .map(|r| match r.fingerprint.as_deref() {
+            Some(s) if !s.is_empty() => Some(fingerprint::decode(s)),
+            _ => get_or_compute_fp(conn, r.id, &r.path),
+        })
         .collect();
 
     let n = rows.len();
@@ -131,8 +146,15 @@ pub fn scan_library_duplicates(conn: &Connection) -> rusqlite::Result<Vec<DupGro
     let mut min_sim: HashMap<usize, f32> = HashMap::new();
     for i in 0..n {
         let Some(fi) = &fps[i] else { continue };
+        let di = rows[i].duration;
         for (j, fj) in fps.iter().enumerate().skip(i + 1) {
             let Some(fj) = fj else { continue };
+            // Cheap pre-filter: known durations too far apart → not the same recording.
+            if let (Some(a), Some(b)) = (di, rows[j].duration) {
+                if (a - b).abs() > DURATION_MATCH_TOL_SEC {
+                    continue;
+                }
+            }
             let s = fingerprint::similarity(fi, fj);
             if s >= fingerprint::MATCH_THRESHOLD {
                 union(&mut parent, i, j);
@@ -487,6 +509,57 @@ mod tests {
         assert_eq!(groups.len(), 1);
         let keep = groups[0].members.iter().find(|m| m.recommend_keep).unwrap();
         assert_eq!(keep.id, 2, "same lossiness → higher bitrate wins");
+    }
+
+    #[test]
+    fn scan_library_duplicates_duration_prefilter_skips_far_apart() {
+        // Same cached fingerprint on both, but durations 30s vs 200s (> 2s tol) → the pre-filter
+        // must skip the comparison so they are NOT grouped. Guards against a wrong match by
+        // fingerprint alone when the recordings are plainly different lengths.
+        let conn = db();
+        conn.execute(
+            "INSERT INTO tracks(id, path, filename, status, format, bitrate, duration, truncated) \
+             VALUES(1, '/lib/short.mp3', 'short.mp3', 'filed', 'mp3', 320, 30.0, 0)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO tracks(id, path, filename, status, format, bitrate, duration, truncated) \
+             VALUES(2, '/lib/long.mp3', 'long.mp3', 'filed', 'mp3', 320, 200.0, 0)",
+            [],
+        )
+        .unwrap();
+        let fp = fingerprint::encode(&[1, 2, 3, 4, 5, 6, 7, 8]);
+        conn.execute("UPDATE tracks SET fingerprint=?1 WHERE id IN (1,2)", params![fp])
+            .unwrap();
+
+        let groups = scan_library_duplicates(&conn).unwrap();
+        assert!(groups.is_empty(), "durations 170s apart must not be grouped");
+    }
+
+    #[test]
+    fn scan_library_duplicates_duration_prefilter_allows_close() {
+        // Same cached fingerprint, durations within tolerance (30.0 vs 31.5) → still grouped.
+        let conn = db();
+        conn.execute(
+            "INSERT INTO tracks(id, path, filename, status, format, bitrate, duration, truncated) \
+             VALUES(1, '/lib/a.mp3', 'a.mp3', 'filed', 'mp3', 320, 30.0, 0)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO tracks(id, path, filename, status, format, bitrate, duration, truncated) \
+             VALUES(2, '/lib/b.mp3', 'b.mp3', 'filed', 'mp3', 320, 31.5, 0)",
+            [],
+        )
+        .unwrap();
+        let fp = fingerprint::encode(&[1, 2, 3, 4, 5, 6, 7, 8]);
+        conn.execute("UPDATE tracks SET fingerprint=?1 WHERE id IN (1,2)", params![fp])
+            .unwrap();
+
+        let groups = scan_library_duplicates(&conn).unwrap();
+        assert_eq!(groups.len(), 1, "durations within 2s tolerance stay grouped");
+        assert_eq!(groups[0].members.len(), 2);
     }
 
     #[test]

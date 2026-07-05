@@ -62,12 +62,28 @@ pub fn add_source(
         sources::add(&conn, &path).map_err(|e| e.to_string())?
     };
     spawn_scan(app, id);
+    // Fetch just the inserted row instead of re-listing every source and filtering in memory.
+    // Mirrors the shape of `sources::list` (pending_count + on-disk accessibility) for one id.
     let conn = conn.lock().map_err(|e| e.to_string())?;
-    sources::list(&conn)
-        .map_err(|e| e.to_string())?
-        .into_iter()
-        .find(|s| s.id == id)
-        .ok_or_else(|| "source not found after insert".to_string())
+    conn.query_row(
+        "SELECT s.id, s.path,
+                (SELECT count(*) FROM tracks t WHERE t.source_id=s.id AND t.status='pending'),
+                s.watched
+         FROM sources s WHERE s.id=?1",
+        rusqlite::params![id],
+        |r| {
+            let path: String = r.get(1)?;
+            let accessible = std::path::Path::new(&path).is_dir();
+            Ok(sources::Source {
+                id: r.get(0)?,
+                path,
+                pending_count: r.get(2)?,
+                accessible,
+                watched: r.get::<_, i64>(3)? != 0,
+            })
+        },
+    )
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]

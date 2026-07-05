@@ -59,27 +59,56 @@ pub fn record_with_meta(
     to_path: Option<&str>,
     meta: Option<&str>,
 ) -> rusqlite::Result<i64> {
+    let id = record_row_only(conn, batch_id, track_id, kind, from_path, to_path, meta)?;
+    maybe_repair_rekordbox_xml(conn, kind, from_path, to_path);
+    Ok(id)
+}
+
+/// Insert ONLY the journal row (no Rekordbox XML side effect). Split out of `record_with_meta` so
+/// a caller that groups several rows in ONE SQLite transaction (see `filing::commit_file`) can do
+/// all the DB inserts inside the transaction and run the file-I/O XML repair AFTER the commit —
+/// keeping slow disk I/O out of the write transaction. `record_with_meta` remains the all-in-one
+/// entry point (insert + immediate repair) for every non-transactional caller.
+pub fn record_row_only(
+    conn: &Connection,
+    batch_id: &str,
+    track_id: Option<i64>,
+    kind: &str,
+    from_path: Option<&str>,
+    to_path: Option<&str>,
+    meta: Option<&str>,
+) -> rusqlite::Result<i64> {
     conn.execute(
         "INSERT INTO actions(track_id, type, from_path, to_path, batch_id, meta, session_id)
          VALUES(?1, ?2, ?3, ?4, ?5, ?6,
                 (SELECT value FROM settings WHERE key='current_session_id'))",
         params![track_id, kind, from_path, to_path, batch_id, meta],
     )?;
-    let id = conn.last_insert_rowid();
+    Ok(conn.last_insert_rowid())
+}
 
-    // M7: if a Rekordbox XML is linked and this action moved/renamed/converted a file it already
-    // references, patch that Location immediately so the track doesn't silently vanish from its
-    // Rekordbox playlists. Journaling the action must never fail because of this side effect —
-    // any repair error is logged and swallowed, never propagated to the caller.
-    //
-    // Restricted to `move`/`convert`: those are the only kinds where `to_path` is a new location
-    // for the SAME library file Rekordbox should keep pointing at. `trash`/`reject` also carry
-    // (from, to) pairs, but `to` there is Sift's internal trash/bin path, not a relocation within
-    // the library — patching Location to it would make Rekordbox point a "jeté" track at Sift's
-    // trash folder. `tag_edit` never sets `to_path` (None) so it's excluded by the match anyway;
-    // the `from != to` guard below additionally skips the common no-op case (a conformant filing
-    // where the file didn't move) so a same-path `tag_edit`-adjacent action doesn't force a
-    // pointless read+reparse+write of the linked XML.
+/// M7: if a Rekordbox XML is linked and this action moved/renamed/converted a file it already
+/// references, patch that Location immediately so the track doesn't silently vanish from its
+/// Rekordbox playlists. Journaling the action must never fail because of this side effect —
+/// any repair error is logged and swallowed, never propagated to the caller.
+///
+/// Restricted to `move`/`convert`: those are the only kinds where `to_path` is a new location
+/// for the SAME library file Rekordbox should keep pointing at. `trash`/`reject` also carry
+/// (from, to) pairs, but `to` there is Sift's internal trash/bin path, not a relocation within
+/// the library — patching Location to it would make Rekordbox point a "jeté" track at Sift's
+/// trash folder. `tag_edit` never sets `to_path` (None) so it's excluded by the match anyway;
+/// the `from != to` guard additionally skips the common no-op case (a conformant filing where the
+/// file didn't move) so a same-path action doesn't force a pointless read+reparse+write of the XML.
+///
+/// Extracted from `record_with_meta` so a transactional caller (`filing::commit_file`) can defer
+/// this file I/O until AFTER its SQLite transaction commits — the behaviour (which kinds, the
+/// `from != to` guard) is unchanged.
+pub fn maybe_repair_rekordbox_xml(
+    conn: &Connection,
+    kind: &str,
+    from_path: Option<&str>,
+    to_path: Option<&str>,
+) {
     if matches!(kind, "move" | "convert") {
         if let (Some(from), Some(to)) = (from_path, to_path) {
             if from != to {
@@ -87,8 +116,6 @@ pub fn record_with_meta(
             }
         }
     }
-
-    Ok(id)
 }
 
 /// If a Rekordbox XML is linked (`settings::REKORDBOX_XML_PATH`) and it references `from_path`,
@@ -318,6 +345,9 @@ pub fn revert_batch(conn: &Connection, batch_id: &str) -> Result<(), RevertError
                  WHERE id=?1",
                 params![tid],
             )?;
+            // A filed track went back to pending — the dashboard duplicate-count cache's
+            // (COUNT, MAX(id)) key can miss this, so invalidate explicitly (R1 coordination).
+            crate::library::invalidate_duplicate_count_cache();
         }
     }
     Ok(())
