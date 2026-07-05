@@ -263,10 +263,11 @@ export function verdictCardHtml(r: AnalysisReport): string {
     grey: ["ti-help-circle", "À vérifier d'abord", "var(--color-text-warning)", "var(--color-background-warning)"],
   } as const;
   const [icon, label, fg, panelBg] = map[r.verdict];
-  // Chips (LOSSLESS/MATCH/DUPLICATE) live in the separate "Preuves" block (evidenceChipsHtml,
-  // rendered right after the player — Sift.dc.html:221-232) — the conclusion bandeau is dot +
-  // status + note + Nom final only, matching the maquette's CONCLUSION block exactly
-  // (Sift.dc.html:381-392). Confirmé écart de structure, docs/superpowers/reviews/2026-07-02-audit-fidelite-ecran-par-ecran.md décision #1.
+  // Chips (LOSSLESS/MATCH/DUPLICATE) live outside this bandeau: the quality chip moved into the
+  // "Preuve (spectre)" disclosure header (qualityChipTone/spectroAndTagsHtml below), CDJ moved to
+  // the Métadonnées disclosure (filing.ts) — the conclusion bandeau is dot + status + note + Nom
+  // final only, matching the maquette's CONCLUSION block exactly (Sift.dc.html:381-392).
+  // Confirmé écart de structure, docs/superpowers/reviews/2026-07-02-audit-fidelite-ecran-par-ecran.md décision #1.
   return (
     `<div class="sift-verdict-card" style="background:${panelBg}">` +
     `<div class="sift-verdict-main">` +
@@ -284,32 +285,25 @@ export function verdictCardHtml(r: AnalysisReport): string {
  *  onto the same `.sift-vchips` node). Positioned right after the player, before Identification —
  *  Sift.dc.html:221-232 ("EVIDENCE chips"). Was fused into the verdict conclusion bandeau before;
  *  split out per docs/superpowers/reviews/2026-07-02-audit-fidelite-ecran-par-ecran.md décision #1. */
-function evidenceChipsHtml(r: AnalysisReport): string {
+/** Quality label + tone, reused by both the standalone chip (below) and the new header badge —
+ *  single source so the two never drift (report-view.ts's own qualityChipHtml() vs a copy). */
+function qualityChipTone(r: AnalysisReport): { label: string; tone: "success" | "danger" | "warning" | "neutral" } {
   const rq = realQuality(r);
-  const qualityChip =
-    r.verdict === "ok" && r.declared_rail === "lossless"
-      ? vchipHtml("LOSSLESS", "success")
-      : vchipHtml(rq.label, r.verdict === "fake" ? "danger" : r.verdict === "grey" ? "warning" : "neutral");
-  // FIX-4: name CDJ explicitly right under the verdict — no audited competitor targets CDJ
-  // compatibility, it's the differentiator, and it used to be a generic yes/no row buried under
-  // Genres in the Identification card (filing.ts) with no mention of "CDJ" nearby.
-  const cdjChip = vchipHtml(r.tags_cdj_ok ? "CDJ compatible" : "CDJ incompatible", r.tags_cdj_ok ? "success" : "warning");
-  return (
-    `<div class="sift-evidence">` +
-    `<div class="sift-evidence-label">Preuves</div>` +
-    `<div class="sift-vchips sift-vchips-row">${qualityChip}${cdjChip}</div>` +
-    `</div>`
-  );
+  if (r.verdict === "ok" && r.declared_rail === "lossless") return { label: "LOSSLESS", tone: "success" };
+  return { label: rq.label, tone: r.verdict === "fake" ? "danger" : r.verdict === "grey" ? "warning" : "neutral" };
 }
 
 function spectroAndTagsHtml(r: AnalysisReport): string {
   const yn = (b: boolean) => (b ? "oui" : "non");
+  const { label: qualityLabel, tone: qualityTone } = qualityChipTone(r);
   return (
-    evidenceChipsHtml(r) +
     `<div class="sift-spectro-box">` +
-    `<button class="sift-sg-toggle sift-spectro-toggle">` +
-    `<span class="sift-spectro-toggle-label"><span class="sift-sg-caret sift-spectro-caret">▸</span> Preuve (spectre)</span>` +
-    `<span class="sift-sg-hint sift-spectro-hint">afficher</span>` +
+    `<button class="sift-sg-toggle sift-spectro-toggle sift-zone-toggle">` +
+    `<span class="sift-spectro-toggle-label"><span class="sift-sg-caret sift-spectro-caret sift-zone-toggle-car">▸</span> Preuve (spectre)</span>` +
+    `<span class="sift-zone-toggle-right">` +
+    `${vchipHtml(qualityLabel, qualityTone).replace('class="sift-vchip"', 'class="sift-vchip sift-chip-badge" id="sift-quality-badge"')}` +
+    `<span class="sift-sg-hint sift-spectro-hint sift-zone-toggle-hint">afficher</span>` +
+    `</span>` +
     `</button>` +
     `<div class="sift-sg-body sift-spectro-body">` +
     `<div class="sift-spectro-body-inner">` +
@@ -664,6 +658,7 @@ function wireSpectrogram(root: HTMLElement, r: AnalysisReport) {
   const body = root.querySelector<HTMLElement>(".sift-sg-body");
   const caret = root.querySelector<HTMLElement>(".sift-sg-caret");
   const hint = root.querySelector<HTMLElement>(".sift-sg-hint");
+  const qualityBadge = root.querySelector<HTMLElement>("#sift-quality-badge");
   if (!sg || !toggle || !body || !caret || !hint) return;
 
   let open = false, loaded = false, busy = false;
@@ -674,6 +669,7 @@ function wireSpectrogram(root: HTMLElement, r: AnalysisReport) {
       body.classList.remove("is-open");
       caret.style.transform = "";
       hint.textContent = "afficher";
+      if (qualityBadge) qualityBadge.hidden = false;
       return;
     }
     if (!loaded) {
@@ -694,6 +690,7 @@ function wireSpectrogram(root: HTMLElement, r: AnalysisReport) {
     open = true;
     caret.style.transform = "rotate(90deg)";
     hint.textContent = "masquer";
+    if (qualityBadge) qualityBadge.hidden = true;
     body.classList.add("is-open");
   });
 }
