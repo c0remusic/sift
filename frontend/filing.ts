@@ -708,6 +708,10 @@ function onIdentityApplied(
   if (applied.cover_path) {
     const src = convertFileSrc(applied.cover_path);
     mid.querySelectorAll<HTMLImageElement>(".sift-report-cover").forEach((covEl) => {
+      // Discogs sometimes returns a placeholder ("no image") instead of real art — the file
+      // downloads fine but fails to decode/display as a photo. Re-hide on error so the vinyl
+      // ::before fallback shows instead of a broken-image glyph on top of it.
+      covEl.onerror = () => { covEl.hidden = true; };
       covEl.src = src;
       covEl.hidden = false;
     });
@@ -797,6 +801,8 @@ function restoreIdentifiedLine(
   if (coverPath) {
     const src = convertFileSrc(coverPath);
     mid.querySelectorAll<HTMLImageElement>(".sift-report-cover").forEach((covEl) => {
+      // See onIdentityApplied: Discogs placeholder art can fail to render — re-hide on error.
+      covEl.onerror = () => { covEl.hidden = true; };
       covEl.src = src;
       covEl.hidden = false;
     });

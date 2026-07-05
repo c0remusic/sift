@@ -376,7 +376,12 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
    no external asset, so a track always shows *something* here instead of empty/broken. */
 .sift-cover-frame{width:48px;height:48px;border-radius:6px;flex:none;position:relative;overflow:hidden;background:var(--color-background-tertiary)}
 .sift-cover-frame::before{content:"";position:absolute;inset:3px;border-radius:50%;background:radial-gradient(circle at 50% 50%,#111 0 9%,transparent 9.5%),repeating-radial-gradient(circle at 50% 50%,rgba(255,255,255,.12) 0 1px,transparent 1px 5px),#2c2822}
-.sift-player-cover{position:relative;z-index:1;width:100%;height:100%;object-fit:cover;display:block}
+/* :not([hidden]) matters: any author rule beats the UA [hidden]{display:none} regardless of
+   specificity (origin wins before specificity), so a plain .sift-player-cover{display:block}
+   would force the element visible even with the hidden attribute/property set — exactly what
+   silently defeated the onIdentityApplied/restoreIdentifiedLine onerror fallback (hidden=true
+   had zero visual effect, so a failed cover load stayed on-screen as a broken-image glyph). */
+.sift-player-cover:not([hidden]){position:relative;z-index:1;width:100%;height:100%;object-fit:cover;display:block}
 .sift-player-header-body{min-width:0;flex:1}
 .sift-player-name{font-size:var(--text-lg);font-weight:600;color:var(--color-text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sift-player-sub{font-size:var(--text-sm);color:var(--color-text-secondary);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
