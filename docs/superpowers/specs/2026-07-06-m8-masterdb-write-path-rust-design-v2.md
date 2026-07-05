@@ -1,6 +1,6 @@
 # M8 — Write path Rust pour `master.db` Rekordbox (design v2)
 
-> Statut : **design, bloqué sur le spike n°4.** Remplace
+> Statut : **design, Tier 1 confirmé sûr, Tier 3 reste à tester.** Remplace
 > `2026-07-04-m8-masterdb-write-path-rust-design.md` (v1, gardé pour
 > historique — ne plus l'utiliser comme référence active). Suite du
 > brainstorm du 2026-07-06 (`superpowers:brainstorming`) : élargit le
@@ -9,16 +9,20 @@
 > (au lieu d'écrire les tables normalisées nous-même), et précise la
 > machinerie de sûreté.
 >
-> **Mise à jour 2026-07-06 (spike n°3 exécuté)** : Test 4 (grille) et Test 2
-> (acceptation XML) PASS. Mais Test 3 (réparation de chemin) a **échoué de
-> façon inattendue** — Rekordbox a silencieusement ignoré notre `FolderPath`
-> et résolu vers un fichier tiers non modifié (voir
-> `~/Desktop/sift-masterdb-write-probe/FINDINGS-m8-spike-3.md`, section 5).
-> Test 1 (flag `TrackInfoUpdated`) reste **non testé** en conséquence (le
-> mauvais fichier a été ouvert). Nouveau **Risque ouvert n°3** ci-dessous,
-> bloquant, résolu par
-> `docs/superpowers/specs/2026-07-06-m8-masterdb-spike-4-relink-mystery-design.md`
-> avant de pouvoir continuer.
+> **Mise à jour 2026-07-06 (spikes n°3 et n°4 exécutés)** : Test 4 (grille) et
+> Test 2 (acceptation XML) PASS. Test 3 (réparation de chemin) avait d'abord
+> semblé échouer — Rekordbox affichait un chemin ni le nôtre ni l'original —
+> mais l'investigation du spike n°4 a montré que c'était une **fausse alerte** :
+> deux pistes distinctes (même Titre/Artiste/Album, doublon réel préexistant
+> dans la bibliothèque d'Antoine) prêtaient à confusion, pas un comportement
+> de Rekordbox. Re-vérifié par ID exact au spike n°4 : **la réparation de
+> chemin fonctionne correctement.** Le "Risque ouvert n°3" ci-dessous est
+> **levé** — gardé en historique pour ne pas répéter l'investigation. Reste
+> réellement ouvert : Test 1 (flag `TrackInfoUpdated`), jamais validé (les
+> deux tentatives ont été confondues par le même problème de piste), à refaire
+> avec vérification explicite par ID (voir
+> `~/Desktop/sift-masterdb-write-probe/FINDINGS-m8-spike-3.md`, section 5, et
+> `FINDINGS-m8-spike-4.md`).
 
 ## Intention (pourquoi ce chantier existe, et pourquoi v2)
 
@@ -77,54 +81,43 @@ Chaque tier est un incrément livrable séparément, gated par sa propre preuve
   `UPDATE` SQL nu ne les touche pas) : `rb_local_usn` (nouvelle valeur du
   compteur global `agentRegistry.localUpdateCount.int_1`, incrémenté de 1),
   `updated_at`. Valeurs exactes confirmées Éval 11 (spike n°2).
-- Statut : **BLOQUÉ, plus le gate le plus proche d'être levé.** L'acceptation
-  XML (spike n°3 Test 2) est confirmée, mais le spike n°3 a révélé que
-  **l'écriture `FolderPath` elle-même n'a pas été respectée par Rekordbox** :
-  la piste test a résolu vers un fichier tiers non modifié, jamais mentionné
-  dans aucune valeur écrite en base (voir Risque ouvert n°3 ci-dessous).
-  Tier 1 ne peut pas avancer vers un plan Rust tant que ce risque n'est pas
-  résolu par le spike n°4.
+- Statut : **CONFIRMÉ SÛR — gate levé.** L'acceptation XML (spike n°3 Test 2)
+  et la réparation de chemin elle-même (spike n°4 Test A, vérifié par ID
+  exact) sont toutes deux confirmées fonctionnelles. Tier 1 peut avancer vers
+  un plan Rust.
 
-## Risque ouvert n°3 — relink silencieux de Rekordbox sur `FolderPath` (nouveau, 2026-07-06)
+## Risque ouvert n°3 — relink silencieux de Rekordbox sur `FolderPath` (LEVÉ, 2026-07-06)
 
-**Constat** (spike n°3, détail complet dans
-`~/Desktop/sift-masterdb-write-probe/FINDINGS-m8-spike-3.md` section 5) : un
-`UPDATE djmdContent SET FolderPath=...` (+ `FileNameL`/`FileNameS` cohérents)
-a été committé, le fichier écrit existe bien au chemin indiqué avec le bon
-contenu (vérifié par hash) — mais à l'ouverture réelle de Rekordbox, la piste
-a résolu vers un **troisième fichier**, un doublon octet-identique de
-l'original, situé dans un tout autre dossier jamais mentionné dans master.db.
-Aucun dialogue, aucune erreur — la substitution est silencieuse.
+> **Statut : résolu, fausse alerte.** Gardé ci-dessous pour que la prochaine
+> lecture de ce document ne re-découvre pas la même piste — pas parce que
+> le risque est encore réel.
 
-**Hypothèses écartées avec preuve** : que Rekordbox lisait une colonne
-annexe (`rb_LocalFolderPath`/`OrgFolderPath`) contenant encore l'ancien
-chemin — vérifié `None`/vide avant ET après sur les dumps du spike, écarté.
+**Constat initial** (spike n°3) : un `UPDATE djmdContent SET FolderPath=...`
+committé, fichier vérifié par hash au bon chemin — mais à l'ouverture réelle
+de Rekordbox, un chemin tiers s'affichait, ni l'original ni celui écrit.
 
-**Hypothèses restantes, non départagées** :
-1. Rekordbox valide l'identité du fichier par empreinte (hash/taille) au
-   chargement ; notre modification de tag (partie normale du flux Sift —
-   Sift re-tague TOUJOURS en rangeant) change ce hash, provoquant un rejet
-   silencieux et une recherche de relink qui retrouve un doublon intact
-   ailleurs.
-2. Rekordbox déclenche cette recherche de relink dès qu'un chemin pointe
-   vers un dossier qu'il ne reconnaît pas comme surveillé — indépendamment
-   du contenu du fichier.
+**Cause réelle, identifiée au spike n°4** : ce n'était **pas** un
+comportement de Rekordbox. Requête directe sur `master.db` a montré
+**deux lignes `djmdContent` distinctes** partageant le même Titre/Artiste/
+Album (`ID=165700329`, notre canary, et `ID=26492393`, une piste préexistante
+et sans rapport pointant depuis toujours vers un doublon octet-identique
+ailleurs sur le disque). En cherchant par titre dans le navigateur Rekordbox,
+il est impossible de distinguer les deux visuellement — la première
+vérification manuelle a consulté la mauvaise piste. Reproduit et confirmé au
+spike n°4 (Test A) : en vérifiant explicitement `ID=165700329`, `Emplacement`
+affiche exactement le chemin écrit par le script. **Le mécanisme naïf
+`UPDATE FolderPath`/`FileNameL`/`FileNameS` fonctionne correctement.**
 
-**Implication si l'hypothèse 1 se confirme** : bloquant pour Tier 1 tel que
-conçu — toute réparation de chemin accompagnant un re-tag (le cas d'usage
-réel de Sift) serait silencieusement annulée par Rekordbox. Nécessiterait de
-séparer réparation de chemin et re-tag en deux opérations, ou de comprendre
-et satisfaire le mécanisme de validation exact de Rekordbox.
+**Découverte annexe (hors scope M8, notée séparément)** : le doublon réel
+trouvé par accident (deux pistes identiques en apparence, fichiers
+octets-identiques à deux emplacements) n'avait jamais été détecté avant ce
+spike — voir mémoire projet `sift-m8-rekordbox-dedup-awareness` pour la
+piste de fonctionnalité que ça ouvre (détection de doublons côté Rekordbox,
+pas seulement côté Sift), explicitement reportée par Antoine pour l'instant.
 
-**Implication si l'hypothèse 2 se confirme (ou les deux réfutées)** : le
-problème est spécifique au dossier de spike (jamais scanné par Rekordbox) et
-n'affecterait pas un déploiement réel (fichiers déplacés dans la
-bibliothèque déjà connue de l'utilisateur) — Tier 1 resterait viable tel
-que conçu.
-
-**Résolution** : spike n°4, protocole à 2 tests isolant chaque variable —
-voir `docs/superpowers/specs/2026-07-06-m8-masterdb-spike-4-relink-mystery-design.md`.
-Bloquant pour tout plan Rust tant que non résolu.
+Détail complet des deux investigations :
+`~/Desktop/sift-masterdb-write-probe/FINDINGS-m8-spike-3.md` (section 5) et
+`FINDINGS-m8-spike-4.md`.
 
 ### Tier 2 — Synchro playlist (existante uniquement, pas de création)
 
@@ -234,19 +227,22 @@ Symétrique du lecteur, même philosophie « ne pas réimplémenter SQLite » :
 ## Séquencement recommandé
 
 1. ~~**Spike n°3**~~ — exécuté 2026-07-06. Grille (Test 4) et acceptation XML
-   (Test 2) PASS. Réparation de chemin (Test 3) a révélé le Risque ouvert
-   n°3 (relink silencieux) au lieu de confirmer le gate. Test 1 (flag
-   `TrackInfoUpdated`) reste non testé en conséquence.
-2. **Spike n°4** (`2026-07-06-m8-masterdb-spike-4-relink-mystery-design.md`)
-   — isole la cause du relink (contenu modifié vs dossier non reconnu).
-   **Bloquant**, à exécuter avant toute suite.
-3. Mise à jour de ce design avec le verdict du spike n°4 — en particulier
-   retester Tier 3 (flag `TrackInfoUpdated`) dans les conditions qui
-   évitent le relink, une fois celui-ci compris.
+   (Test 2) PASS. Réparation de chemin (Test 3) avait d'abord semblé
+   échouer, Test 1 (flag `TrackInfoUpdated`) resté non testé en conséquence.
+2. ~~**Spike n°4**~~ — exécuté 2026-07-06 (Test A). A résolu le "relink" comme
+   une fausse alerte (confusion entre 2 pistes distinctes, pas un
+   comportement Rekordbox) — Tier 1 confirmé fonctionnel. Test B (isolation
+   H1/H2) devenu sans objet, non exécuté.
+3. **Retest Tier 3** — Test 1 (flag `TrackInfoUpdated`) n'a jamais été
+   validé correctement (les deux tentatives précédentes ont consulté la
+   mauvaise piste). À refaire avec vérification explicite par `ID`
+   (`165700329`), pas par titre affiché. **Reste le seul point bloquant
+   avant de considérer M8 entièrement dé-risqué.**
 4. `superpowers:writing-plans` — plan d'implémentation Rust : extension de
    `rekordbox_masterdb.rs` (encrypt/write/verify), TDD sur fixture
    synthétique existante, puis test sur copie réelle, tier par tier
-   (Tier 1 d'abord). **Pas avant que le Risque ouvert n°3 soit résolu.**
+   (Tier 1 d'abord — confirmé sûr, peut démarrer sans attendre le retest
+   Tier 3).
 5. Design UI d'intégration (séparé, après le moteur prouvé au moins pour
    Tier 1).
 
@@ -260,7 +256,11 @@ Symétrique du lecteur, même philosophie « ne pas réimplémenter SQLite » :
   le scope réel du path repair (3 colonnes, pas 1), ajoute le spike n°3
   comme gate bloquant avant tout code.
 - **v2 mise à jour** (2026-07-06, même jour) : spike n°3 exécuté — grille et
-  acceptation XML confirmées sûres, mais réparation de chemin a échoué de
-  façon inattendue (relink silencieux Rekordbox vers un fichier tiers).
-  Ajoute le Risque ouvert n°3, bloquant, avec le spike n°4 comme condition
-  de déblocage.
+  acceptation XML confirmées sûres, réparation de chemin d'abord semblée
+  échouer (relink apparent). Ajoute le Risque ouvert n°3, bloquant.
+- **v2 mise à jour n°2** (2026-07-06, même jour) : spike n°4 exécuté — le
+  Risque ouvert n°3 était une fausse alerte (confusion entre 2 pistes
+  distinctes de même titre, pas un comportement Rekordbox). Tier 1 confirmé
+  fonctionnel par vérification directe sur ID. Seul point réellement ouvert
+  restant : retester Tier 3 (flag `TrackInfoUpdated`) avec vérification par
+  ID, jamais fait correctement jusqu'ici.
