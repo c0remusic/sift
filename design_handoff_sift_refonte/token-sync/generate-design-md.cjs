@@ -1,4 +1,4 @@
-// Generator #3: design-tokens.{light,dark}.json + alias-map.json -> DESIGN.md palette bullets.
+// Generator: frontend/styles.css (canonical, via styles-css.cjs) + alias-map.json -> DESIGN.md palette bullets.
 // DESIGN.md is prose, not a data format: bullets are matched by their exact known label
 // text (read from the real file), not by position/order — the light and dark sections do
 // NOT have the same set of bullets (dark has no "Track" line at all; this generator leaves
@@ -9,18 +9,18 @@
 const fs = require("fs");
 const path = require("path");
 const { escapeRegex } = require("./regex-utils.cjs");
-const { loadCanonical, loadAliasMap, resolveTheme, cssColorLiteral, finalizeRun } = require("./sync-core.cjs");
+const stylesCss = require("./styles-css.cjs");
 
 const tokenDir = __dirname;
 const mdPath = path.join(tokenDir, "..", "DESIGN.md");
 
-function prodValue(resolved, aliasMap, legacyKey) {
+// tokens = client shape from styles-css.parse(); mode = "light" | "dark".
+function prodValue(tokens, aliasMap, legacyKey, mode) {
   const prodKey = aliasMap[legacyKey];
   if (prodKey === null) return null;
-  const dtcgPath = prodKey.replace(/^--(color|overlay)-/, "");
-  const canonical = resolved.color[dtcgPath];
-  if (!canonical) throw new Error(`alias-map points ${legacyKey} -> ${prodKey}, missing from resolved DTCG tokens`);
-  return cssColorLiteral(canonical);
+  const color = tokens.colors[prodKey];
+  if (!color) throw new Error(`alias-map points ${legacyKey} -> ${prodKey}, missing from styles.css tokens`);
+  return color[mode];
 }
 
 const lightBullets = [
@@ -56,11 +56,11 @@ const darkBullets = [
   ["borderStrong", "Bordure forte"],
 ];
 
-function replaceSimpleBullets(text, bullets, resolved, aliasMap) {
+function replaceSimpleBullets(text, bullets, tokens, aliasMap, mode) {
   let result = text;
   const changedKeys = [];
   for (const [key, label] of bullets) {
-    const value = prodValue(resolved, aliasMap, key);
+    const value = prodValue(tokens, aliasMap, key, mode);
     const re = new RegExp(`(- ${escapeRegex(label)} : \`)[^\`]+(\`)`);
     if (!re.test(result)) {
       throw new Error(`Bullet "${label}" not found in DESIGN.md — refusing to guess.`);
@@ -72,9 +72,9 @@ function replaceSimpleBullets(text, bullets, resolved, aliasMap) {
   return { text: result, changedKeys };
 }
 
-function replaceCtaBullet(text, resolved, aliasMap) {
-  const bg = prodValue(resolved, aliasMap, "ctaBg");
-  const txt = prodValue(resolved, aliasMap, "ctaText");
+function replaceCtaBullet(text, tokens, aliasMap, mode) {
+  const bg = prodValue(tokens, aliasMap, "ctaBg", mode);
+  const txt = prodValue(tokens, aliasMap, "ctaText", mode);
   const re = /(- CTA primaire : fond `)[^`]+(`, texte `)[^`]+(`)/;
   if (!re.test(text)) throw new Error(`CTA primaire bullet not found in DESIGN.md`);
   const before = text;
@@ -92,10 +92,8 @@ function countBulletLines(text) {
 }
 
 function run({ write = false } = {}) {
-  const { light, dark } = loadCanonical();
-  const aliasMap = loadAliasMap();
-  const resolvedLight = resolveTheme(light, dark, "light");
-  const resolvedDark = resolveTheme(light, dark, "dark");
+  const tokens = stylesCss.parse();
+  const aliasMap = stylesCss.loadAliasMap();
   const original = fs.readFileSync(mdPath, "utf8");
 
   const splitRe = /(## Palette — mode sombre)/;
@@ -130,19 +128,19 @@ function run({ write = false } = {}) {
     );
   }
 
-  let lightResult = replaceSimpleBullets(lightSection, lightBullets, resolvedLight, aliasMap);
-  const lightCta = replaceCtaBullet(lightResult.text, resolvedLight, aliasMap);
+  let lightResult = replaceSimpleBullets(lightSection, lightBullets, tokens, aliasMap, "light");
+  const lightCta = replaceCtaBullet(lightResult.text, tokens, aliasMap, "light");
   lightResult = { text: lightCta.text, changedKeys: [...lightResult.changedKeys, ...lightCta.changedKeys] };
 
-  let darkResult = replaceSimpleBullets(restFromDark, darkBullets, resolvedDark, aliasMap);
-  const darkCta = replaceCtaBullet(darkResult.text, resolvedDark, aliasMap);
+  let darkResult = replaceSimpleBullets(restFromDark, darkBullets, tokens, aliasMap, "dark");
+  const darkCta = replaceCtaBullet(darkResult.text, tokens, aliasMap, "dark");
   darkResult = { text: darkCta.text, changedKeys: [...darkResult.changedKeys, ...darkCta.changedKeys] };
 
   const newMd = lightResult.text + darkHeading + darkResult.text;
-  return finalizeRun({
+  return stylesCss.finalizeRun({
     targetPath: mdPath, original, updated: newMd,
     changedKeys: [...lightResult.changedKeys, ...darkResult.changedKeys], write,
-    label: "DESIGN.md bullets already match design-tokens.{light,dark}.json for every present bullet",
+    label: "DESIGN.md bullets already match styles.css for every present bullet",
   });
 }
 
