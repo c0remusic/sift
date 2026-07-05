@@ -397,9 +397,53 @@ via subagent-driven-development (4 tâches, chacune approuvée + revue finale
 de branche "Ready to merge"). `tsc --noEmit` clean après chaque tâche ;
 vérification `tauri dev` par Antoine restante (code gated `inTauri`).
 
+## Écran Revue — zones repliables Diagnostic/Métadonnées (2026-07-05)
+
+Refonte de `#mid` : la zone Diagnostic (`report-view.ts`, spectre + mesures)
+et la zone Métadonnées (`filing.ts::renderEditor`, ex-« Identification ·
+Discogs ») partagent maintenant un même mécanisme de disclosure — repliées
+par défaut, badge de statut visible dans l'en-tête replié, caché déplié.
+
+| État | Condition | Rendu |
+|---|---|---|
+| Badge qualité (Diagnostic) | zone repliée | `LOSSLESS` / `MP3 ≈ X kbps` dans l'en-tête, ton success/danger/warning selon `qualityChipTone(r)` |
+| Badge CDJ (Métadonnées) | zone repliée | `CDJ compatible`/`CDJ incompatible`, calculé depuis `report.tags_cdj_ok` |
+| Zone dépliée | clic sur l'en-tête | badge caché, corps affiché (`.sift-zone-toggle-body-open`) |
+| Tag-warn | `!tags_cdj_ok` | bandeau explicite nommant Artiste+Titre (pas un « tags non écrits » générique) + bouton Appliquer les tags |
+| CTA Discogs | `c.artist && c.title` | `.sift-id-btn-neutral` (« Rechercher à nouveau ») au lieu du gold plein — le gold reste réservé à « rien identifié » |
+| Sélection candidat | choix appliqué | flash bref sur `.sift-identified-line` (`.sift-identified-flash`), PAS un état permanent — la liste de candidats est remplacée par cette ligne, aucun `.sift-cand` ne survit à la sélection |
+
+**Correction importante trouvée en cours de chantier** : `tags_cdj_ok`
+(`tags.rs:73-76`) n'est PAS un signal de qualité audio — c'est littéralement
+« Artiste+Titre déjà gravés dans les tags du fichier ». Le badge CDJ vit
+donc désormais avec son critère et son fix (Métadonnées), pas avec le
+diagnostic audio — retour en arrière volontaire par rapport à la décision
+FIX-4 de `report-view.ts` (qui l'avait sorti vers les chips Preuves comme
+différenciateur produit). En creusant `Sift.dc.html` pour la reconciliation
+maquette, la maquette Claude Design portait déjà CDJ+ID3 dans Identification
+depuis le début — FIX-4 avait donc dévié du design original, pas l'inverse.
+
+Design/plan : `docs/superpowers/specs/2026-07-05-revue-screen-redesign-design.md`,
+`docs/superpowers/plans/2026-07-05-revue-screen-redesign.md`. Prototype HTML
+autonome itéré avant l'écriture du spec (jetable, jamais un livrable).
+Construit via subagent-driven-development (4 tâches + revue finale « Ready to
+merge with fixes », 3 minor fixés directement : docstring périmé, nom de
+fonction obsolète en commentaire, CSS `.sift-highlight-flash` jamais câblée
+— morte par décision, pas un oubli). `app.js` et `Sift.dc.html` réactualisés
+dans la foulée (voir Historique ci-dessous) ; `tauri dev` restant à vérifier
+par Antoine (code gated `inTauri`).
+
 ---
 
 ## Historique des corrections
+
+**2026-07-05 (refonte écran Revue + réconciliation des 2 maquettes)** : voir
+section dédiée ci-dessus. `app.js` réactualisé et vérifié en direct
+(preview_*, partage `frontend/styles.css` — mêmes classes réelles
+réutilisées). `Sift.dc.html` réactualisé (nouvel état `metaOpen`, pattern
+`openChip` suivi) mais **non vérifié par rendu** — ce format propriétaire a
+besoin de React+ReactDOM injectés (l'éditeur Claude Design le fait, pas un
+navigateur nu).
 
 **2026-07-05 (chantier 3 prompts : CTA Accueil, lien rebuy, unification
 drop↔rail)** : ajout du CTA « Revoir N → » (Accueil), du lien rebuy Beatport
