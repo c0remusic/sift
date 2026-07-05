@@ -12,13 +12,19 @@ export interface ElementCapture {
   rect: { w: number; h: number };
 }
 
-export interface Annotation {
-  note: string;
-  view: string | null;
+export interface ElementContext {
   element: ElementCapture;
   ancestors: { tag: string; id: string | null; classes: string[] }[];
   siblings: ElementCapture[];
   code: { file: string; line: number; excerpt: string }[];
+}
+
+export interface Annotation {
+  note: string;
+  view: string | null;
+  // Un seul élément dans le cas courant, plusieurs si sélection multi (Alt+Clic répété) —
+  // pour un problème qui ne s'explique qu'en comparant deux zones (ex. incohérence entre écrans).
+  elements: ElementContext[];
 }
 
 // Propriétés pertinentes pour un problème visuel — pas les ~350 brutes.
@@ -52,8 +58,8 @@ function activeView(): string | null {
   return on?.dataset.view ?? null;
 }
 
-export async function buildAnnotation(el: HTMLElement, note: string): Promise<Annotation> {
-  const ancestors: Annotation["ancestors"] = [];
+async function buildElementContext(el: HTMLElement): Promise<ElementContext> {
+  const ancestors: ElementContext["ancestors"] = [];
   for (let a = el.parentElement; a && a !== document.body && ancestors.length < 8; a = a.parentElement) {
     ancestors.push({ tag: a.tagName.toLowerCase(), id: a.id || null, classes: [...a.classList] });
   }
@@ -64,7 +70,7 @@ export async function buildAnnotation(el: HTMLElement, note: string): Promise<An
 
   // Localisation code : même identifiants que l'inspecteur (id d'abord, puis classes).
   const identifiers = el.id ? [`#${el.id}`, ...el.classList] : [...el.classList];
-  const code: Annotation["code"] = [];
+  const code: ElementContext["code"] = [];
   for (const ident of identifiers.slice(0, 3)) {
     try {
       const matches = await invoke<{ file: string; line: number; excerpt: string }[]>(
@@ -78,7 +84,13 @@ export async function buildAnnotation(el: HTMLElement, note: string): Promise<An
     if (code.length >= 20) break;
   }
 
-  return { note, view: activeView(), element: captureElement(el), ancestors, siblings, code: code.slice(0, 20) };
+  return { element: captureElement(el), ancestors, siblings, code: code.slice(0, 20) };
+}
+
+export async function buildAnnotation(els: HTMLElement[], note: string): Promise<Annotation> {
+  const elements: ElementContext[] = [];
+  for (const el of els) elements.push(await buildElementContext(el));
+  return { note, view: activeView(), elements };
 }
 
 export async function sendAnnotation(annotation: Annotation): Promise<void> {
