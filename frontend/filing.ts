@@ -1054,6 +1054,14 @@ function renderEditor(host: HTMLElement, mid: HTMLElement, rail: string, report:
   const displayName =
     c.artist && c.title ? `${c.artist} — ${c.title}${c.version ? ` (${c.version})` : ""}` : "Non identifié";
   host.innerHTML =
+    `<button class="sift-zone-toggle" id="sift-meta-toggle" aria-expanded="false">` +
+    `<span><span class="sift-zone-toggle-car">▸</span>Métadonnées</span>` +
+    `<span class="sift-zone-toggle-right">` +
+    `<span class="sift-chip-badge" id="sift-cdj-badge" hidden></span>` +
+    `<span class="sift-zone-toggle-hint">afficher</span>` +
+    `</span>` +
+    `</button>` +
+    `<div class="sift-zone-toggle-body" id="sift-meta-body">` +
     `<div class="sift-ident-head">` +
     `<span class="col-h sift-editor-title">Identification · Discogs</span>` +
     `<button data-fil="ident-edit" class="sift-ident-edit-btn" title="Modifier manuellement" aria-label="Modifier manuellement"><i class="ti ti-pencil"></i></button>` +
@@ -1105,7 +1113,18 @@ function renderEditor(host: HTMLElement, mid: HTMLElement, rail: string, report:
     // MATCH row slot — bottom of the Identification card, per the maquette (Sift.dc.html:349-354:
     // question + amber pill under a border-top). Hidden until an applyIdentity with real doubt
     // unhides it (onIdentityApplied); a confident green match keeps it hidden (never a green badge).
-    `<div class="sift-match-row" hidden><span class="sift-match-q">Cette identification Discogs correspond-elle bien à ce fichier ?</span>${vchipHtml("CHECK MATCH", "warning")}</div>`;
+    `<div class="sift-match-row" hidden><span class="sift-match-q">Cette identification Discogs correspond-elle bien à ce fichier ?</span>${vchipHtml("CHECK MATCH", "warning")}</div>` +
+    `</div>`; // ferme #sift-meta-body ouvert au début de host.innerHTML
+
+  const metaToggle = host.querySelector<HTMLButtonElement>("#sift-meta-toggle");
+  const metaBody = host.querySelector<HTMLElement>("#sift-meta-body");
+  const metaHint = host.querySelector<HTMLElement>(".sift-zone-toggle-hint");
+  metaToggle?.addEventListener("click", () => {
+    const open = metaBody?.classList.toggle("sift-zone-toggle-body-open") ?? false;
+    metaToggle.classList.toggle("sift-zone-toggle-open", open);
+    metaToggle.setAttribute("aria-expanded", String(open));
+    if (metaHint) metaHint.textContent = open ? "masquer" : "afficher";
+  });
 
   const upd = () => {
     const a = host.querySelector<HTMLInputElement>('[data-fil="artist"]');
