@@ -281,12 +281,8 @@ export function verdictCardHtml(r: AnalysisReport): string {
   );
 }
 
-/** The "Preuves" chip row (LOSSLESS from analysis; MATCH/DUPLICATE appended later by filing.ts
- *  onto the same `.sift-vchips` node). Positioned right after the player, before Identification —
- *  Sift.dc.html:221-232 ("EVIDENCE chips"). Was fused into the verdict conclusion bandeau before;
- *  split out per docs/superpowers/reviews/2026-07-02-audit-fidelite-ecran-par-ecran.md décision #1. */
-/** Quality label + tone, reused by both the standalone chip (below) and the new header badge —
- *  single source so the two never drift (report-view.ts's own qualityChipHtml() vs a copy). */
+/** Quality label + tone for the spectral-disclosure header badge (verdict-derived: LOSSLESS,
+ *  "MP3 ≈ X kbps", etc.) — single source consumed by spectroAndTagsHtml() below. */
 function qualityChipTone(r: AnalysisReport): { label: string; tone: "success" | "danger" | "warning" | "neutral" } {
   const rq = realQuality(r);
   if (r.verdict === "ok" && r.declared_rail === "lossless") return { label: "LOSSLESS", tone: "success" };

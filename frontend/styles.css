@@ -443,14 +443,6 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
    .sift-vchip existant mais sans dépendre de sa mise en page en ligne de "Preuves". */
 .sift-chip-badge{font-size:var(--text-2xs);font-weight:600;padding:4px 9px;
   border-radius:var(--border-radius-pill);border:none;font-family:inherit}
-/* Halo discret (pas de changement de couleur de fond — trop voyant sur un bouton entier) pour
-   attirer l'œil vers un fix ailleurs dans la même zone (ex. bouton Appliquer les tags). Classe
-   retirée par JS après `animationend` (voir filing.ts) pour ne rien laisser traîner. */
-.sift-highlight-flash{animation:sift-highlight .6s ease-out forwards}
-@keyframes sift-highlight{
-  0%{box-shadow:0 0 0 2px var(--overlay-selected)}
-  100%{box-shadow:0 0 0 0 transparent}
-}
 /* Flash de confirmation sur .sift-identified-line au moment où un choix Discogs vient d'être
    appliqué (onIdentityApplied, Task 4 Step 5) — jamais sur une réouverture
    (restoreIdentifiedLine). Le vert n'apparaît qu'un instant, pas un état permanent (retour
