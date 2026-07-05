@@ -726,6 +726,15 @@ function onIdentityApplied(
   // Re-labelling the Identifier button to "Ré-identifier" is also handled here.
   host.hidden = false;
   host.innerHTML = identifiedLineHtml(applied.canonical.artist, applied.canonical.title, applied.cover_path);
+  const identifiedLineEl = host.querySelector<HTMLElement>(".sift-identified-line");
+  if (identifiedLineEl) {
+    identifiedLineEl.classList.add("sift-identified-flash");
+    identifiedLineEl.addEventListener(
+      "animationend",
+      () => identifiedLineEl.classList.remove("sift-identified-flash"),
+      { once: true },
+    );
+  }
   // Read-only unidentified card (sift-ident-idle): the idle note ("Aucune correspondance…") is now
   // false — drop it, keeping the search button (relabelled Ré-identifier below) next to the line.
   editor.querySelector(".sift-ident-idle-note")?.remove();
@@ -1068,7 +1077,7 @@ function renderEditor(host: HTMLElement, mid: HTMLElement, rail: string, report:
     `</div>` +
     (identEditing
       ? `<div class="sift-editor-badge-row">${badge}</div>` +
-        `<button data-fil="identifier" class="sift-id-btn sift-id-btn-full" title="Rechercher les métadonnées sur Discogs (pochette, label, année, genres)"><i class="ti ti-search sift-icon-inline-sm"></i> Récupérer les métadonnées Discogs <span class="kbd sift-kbd-hint-id">I</span></button>` +
+        `<button data-fil="identifier" class="sift-id-btn sift-id-btn-full${c.artist && c.title ? " sift-id-btn-neutral" : ""}" title="Rechercher les métadonnées sur Discogs (pochette, label, année, genres)"><i class="ti ti-search sift-icon-inline-sm"></i> ${c.artist && c.title ? "Rechercher à nouveau" : "Récupérer les métadonnées Discogs"} <span class="kbd sift-kbd-hint-id">I</span></button>` +
         `<div class="sift-cands sift-cands-host" hidden></div>` +
         `<div class="sift-editor-fields">` +
         `<input data-fil="artist" placeholder="Artist" value="${esc(c.artist)}" class="${inputCss}">` +
@@ -1109,7 +1118,7 @@ function renderEditor(host: HTMLElement, mid: HTMLElement, rail: string, report:
     // Discrepancy banner — sits JUST BELOW Apply. Hidden by default via inline display:none; the LONE
     // visibility mechanism is refreshDiscrepancy toggling style.display (no `hidden`+display conflict).
     // Look lives in .sift-tag-warn (styles.css). Shown only when the display diverges from the file.
-    `<div class="sift-tag-warn" style="display:none"><i class="ti ti-alert-triangle sift-icon-inline-md sift-icon-flex-none"></i><span>Tags non écrits dans le fichier — <strong>Ranger</strong> ou <strong>Appliquer</strong> pour les graver</span></div>` +
+    `<div class="sift-tag-warn" style="display:none"><i class="ti ti-alert-triangle sift-icon-inline-md sift-icon-flex-none"></i><span>Artiste et Titre pas encore gravés dans le fichier (seulement identifiés ci-dessus) — un CDJ ne peut pas les lire tant que ce n'est pas fait. <strong>Ranger</strong> ou <strong>Appliquer les tags</strong> pour corriger.</span></div>` +
     // MATCH row slot — bottom of the Identification card, per the maquette (Sift.dc.html:349-354:
     // question + amber pill under a border-top). Hidden until an applyIdentity with real doubt
     // unhides it (onIdentityApplied); a confident green match keeps it hidden (never a green badge).
@@ -1119,11 +1128,22 @@ function renderEditor(host: HTMLElement, mid: HTMLElement, rail: string, report:
   const metaToggle = host.querySelector<HTMLButtonElement>("#sift-meta-toggle");
   const metaBody = host.querySelector<HTMLElement>("#sift-meta-body");
   const metaHint = host.querySelector<HTMLElement>(".sift-zone-toggle-hint");
+  const cdjBadge = host.querySelector<HTMLElement>("#sift-cdj-badge");
+  if (cdjBadge && report) {
+    const ok = report.tags_cdj_ok;
+    cdjBadge.textContent = ok ? "CDJ compatible" : "CDJ incompatible";
+    cdjBadge.style.background = ok ? "var(--color-background-success)" : "var(--color-background-warning)";
+    cdjBadge.style.color = ok ? "var(--color-text-success)" : "var(--color-text-warning)";
+    cdjBadge.title = "Un CDJ a besoin d'Artiste + Titre gravés dans les tags du fichier";
+    // Visible uniquement repliée (le corps affiche déjà la même info en détail une fois ouvert)
+    cdjBadge.hidden = metaBody?.classList.contains("sift-zone-toggle-body-open") ?? false;
+  }
   metaToggle?.addEventListener("click", () => {
     const open = metaBody?.classList.toggle("sift-zone-toggle-body-open") ?? false;
     metaToggle.classList.toggle("sift-zone-toggle-open", open);
     metaToggle.setAttribute("aria-expanded", String(open));
     if (metaHint) metaHint.textContent = open ? "masquer" : "afficher";
+    if (cdjBadge) cdjBadge.hidden = open;
   });
 
   const upd = () => {
@@ -1241,6 +1261,12 @@ async function doApplyTags(btn: HTMLButtonElement): Promise<void> {
     if (myseq !== openSeq) return; // another track opened meanwhile — leave its state/UI alone
     state.fileTags = snap;
     refreshDiscrepancy(); // file == display now → marker clears
+    const cdjBadgeAfterApply = document.querySelector<HTMLElement>("#sift-cdj-badge");
+    if (cdjBadgeAfterApply) {
+      cdjBadgeAfterApply.textContent = "CDJ compatible";
+      cdjBadgeAfterApply.style.background = "var(--color-background-success)";
+      cdjBadgeAfterApply.style.color = "var(--color-text-success)";
+    }
     setApplyApplied(btn, batchId);
   } catch (e) {
     console.error("apply_tags failed", e);
