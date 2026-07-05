@@ -17,10 +17,17 @@ export interface EmptyStateOpts {
   note: string;
   /** Show the "Aller à Revue →" link. Omit for Revue itself — already the entry point. */
   backToRevue?: boolean;
+  /** Pre-built button/link markup for a screen-specific action (e.g. Rekordbox's "Lier un
+   *  fichier XML Rekordbox"). Rendered after the back-to-Revue link, if both are present. The
+   *  caller is responsible for its own click wiring (e.g. a `data-bib`/`data-sift` attribute
+   *  already handled by an existing delegate) — wireEmptyState() does not touch it. */
+  actionHtml?: string;
 }
 
 /** Markup for the empty state. Insert into the view's content container; call `wireEmptyState`
- *  afterwards (once, on the same container) to hook up the optional back-to-Revue link. */
+ *  afterwards (once, on the same container) to hook up the optional back-to-Revue link.
+ *  `actionHtml` (if provided) needs no extra wiring call — the caller already owns its click
+ *  handler. */
 export function emptyStateHtml(opts: EmptyStateOpts): string {
   const link = opts.backToRevue
     ? `<button type="button" data-empty="revue" class="sift-empty-link">Aller à Revue →</button>`
@@ -30,6 +37,7 @@ export function emptyStateHtml(opts: EmptyStateOpts): string {
     `<div class="sift-empty-title">${esc(opts.title)}</div>` +
     `<div class="sift-empty-note">${esc(opts.note)}</div>` +
     link +
+    (opts.actionHtml ?? "") +
     `</div>`
   );
 }
