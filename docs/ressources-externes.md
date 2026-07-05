@@ -58,6 +58,22 @@ Feature signature. Le gros du gisement est dans l'algorithme de détection.
   development », API susceptible de casser._
 - **[pyrekordbox](https://pypi.org/project/pyrekordbox/)** — Python ; précieux
   comme **doc vivante des formats** Rekordbox même si non utilisé. _Référence-only._
+- **[rekordbox-repair](https://github.com/edkennard/rekordbox-repair)**
+  (edkennard, Scala) — répare les références de fichiers cassées après
+  déplacement sur disque (pistes marquées "missing"). **Travaille sur l'export
+  XML, pas sur `master.db`** : aucun accès DB, pas de SQLCipher, pas de
+  verrou/USN/`masterPlaylists6.xml` — donc c'est la **voie XML** que le spike M8
+  (Éval 5/7/11) cherche justement à dépasser, pas une avancée sur l'écriture
+  native. _Statut : référence-only (Scala hors stack)._ **3 idées récupérables**
+  (pas le code) : (1) le cas d'usage "réparation de chemins cassés" est un vrai
+  besoin DJ concret, proche du spike M8 Task 3 (réparation `FolderPath`), plus
+  simple et moins risqué que la synchro playlists complète ; (2) garde-fou
+  multi-match — **refuse d'agir quand plusieurs fichiers matchent** le même nom
+  et liste les candidats pour décision manuelle (cohérent méthode Sift :
+  fail-fast, pas de fallback silencieux, jamais deviner sur une action
+  coûteuse) ; (3) cas limites à couvrir non encore listés côté Sift : chemins
+  > 255 caractères, fichiers réellement supprimés à retirer, fichiers non
+  importés qui traînent.
 
 ## Renommage Discogs
 
@@ -797,6 +813,64 @@ Vérifs : `cargo test dev_annotate` 2/2, clippy `-D warnings` clean, `tsc
 --noEmit` clean. Spec/plan :
 `docs/superpowers/specs/2026-07-05-visual-pointer-annotation-design.md`,
 `docs/superpowers/plans/2026-07-05-visual-pointer-annotation.md`.
+
+---
+
+## Évaluation 13 — prompt externe « Figma local » (éditeur visuel DOM), audité et rejeté tel quel (2026-07-05)
+
+**Contexte** : Antoine a soumis un prompt généré par un autre modèle
+(« SIFT — STUDIO DESIGN-TO-CODE ») proposant de construire un éditeur visuel
+DOM natif type Figma local (sélection hover/click, bounding box, panneau
+`getComputedStyle`, drag/resize → écriture disque). Audit demandé avant tout
+usage. **Verdict : rejeté tel quel** — bien structuré en surface, mais
+factuellement faux sur le projet, redondant avec l'outillage déjà livré, et
+muet sur le seul problème réellement difficile.
+
+**Trois défauts rédhibitoires** :
+1. **Faits faux sur le repo** : source of truth annoncée `theme.css`
+   (n'existe pas ; le canonique est `frontend/styles.css` depuis token-sync
+   v3, et créer un fichier de thème parallèle est interdit par CLAUDE.md) ;
+   `app.js` présenté comme la logique DOM réelle (c'est la maquette figée —
+   le piège n°1 documenté du repo) ; stack « Vanilla JS » alors que le front
+   est en vanilla TypeScript modulaire.
+2. **Sa « première tâche » est déjà livrée** : hover/click + bounding box +
+   lock + styles calculés = `dev-inspector.ts`/`dev-annotate.ts`/
+   `dev_locate.rs` (Évaluation 12), avec en plus la localisation
+   fichier:ligne que le prompt ne prévoit pas ; l'écriture de variables CSS
+   sur disque = `editor.html`/`editor-server.cjs` (token-sync v3).
+3. **Le problème dur est esquivé** : le cœur d'un Figma local est le
+   **mapping inverse mutation DOM → édition source**. Le DOM de Sift est
+   généré par des fonctions de rendu TS (template strings, conditionnels,
+   état) — pas de correspondance 1:1 DOM↔markup. Le prompt ne dit jamais ce
+   qu'un drag/resize écrit ni où (style inline ? positionnement absolu ? les
+   deux détruisent flex/grid + tokens), et sa boucle « mutation DOM d'abord,
+   disque ensuite » est à l'envers : le premier re-render/HMR écrase la
+   mutation. C'est exactement le mur qui a fait rejeter les outils de sync
+   aux Évaluations 3/4/6 et pivoter vers le modèle annotation (Antoine
+   pointe et décrit, Claude édite le code).
+
+**Défauts secondaires** : aucune étape de vérification (pas de critère
+d'acceptation, pas de mention du piège preview≠`inTauri` ni du CDP validé
+en Évaluation 11) ; « PowerShell uniquement » arbitraire ; « code complet ou
+patch » invite aux réécritures full-file ; sections finales = discours
+commercial du modèle générateur, pas des instructions ; alternance
+MODE CONCEPTION/IMPLEMENTATION sans gate, traversée en une réponse.
+
+**Récupérable** : le format de sortie discipliné (fichier concerné → patch →
+explication courte) et l'idée d'un contrat produit explicite en tête de
+prompt. Rien d'autre.
+
+**Si l'idée est poursuivie un jour** : le bon chantier n'est pas la
+sélection DOM (faite) mais le **mapping inverse contraint** — un éditeur qui
+n'autorise que des mutations exprimables dans le système existant (changer
+un token, une classe, une valeur d'échelle `--space-*`/`--text-*`), jamais
+de freeform drag écrivant des pixels ; ancré sur les vrais fichiers
+(`styles.css`, `dev-inspector.ts`, `dev_locate.rs`), vérifié par CDP, avec
+une réponse explicite à « que devient l'édit quand le render re-run ». Reste
+la question de scope non tranchée (brainstorm du même jour, interrompu) :
+job « éditer l'existant » (pile actuelle ≈ complète) vs job « explorer un
+design qui n'existe pas encore » (rôle actuel de Claude Design, non couvert
+localement).
 
 ---
 
