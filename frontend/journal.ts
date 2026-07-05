@@ -97,20 +97,12 @@ function rowHtml(e: JournalEntry): string {
 </div>`;
 }
 
-function sectionHtml(cat: Cat, filedEntries: JournalEntry[]): string {
+// Note: no separate "annuler le dernier batch" footer — it was redundant with the header's
+// mass-revert action whenever every displayed entry belonged to that same batch (audit
+// 2026-07-05, annotation #11). Per-row revert + the mass action above cover both scopes.
+function sectionHtml(cat: Cat): string {
   if (cat.entries.length === 0) return "";
   const rows = cat.entries.map(rowHtml).join("");
-
-  let footer = "";
-  if (cat.id === "filed" && filedEntries.length > 0) {
-    const last = filedEntries[0];
-    const n = last.track_count;
-    footer = `<div class="jrnl-cat-foot">\
-<button class="jrnl-last-batch" data-jact="last-batch" data-batch-id="${last.batch_id}" data-track-count="${n}">\
-↩ Annuler le dernier batch (${n} morceau${n > 1 ? "x" : ""})\
-</button>\
-</div>`;
-  }
 
   return `<details class="jrnl-cat" open data-cat="${cat.id}">\
 <summary class="jrnl-cat-hd">\
@@ -120,7 +112,6 @@ function sectionHtml(cat: Cat, filedEntries: JournalEntry[]): string {
 <button class="jrnl-mass" data-jact="mass-revert" data-cat="${cat.id}" style="color:${cat.massColor}">${cat.massLabel}</button>\
 </summary>\
 <div class="jrnl-rows">${rows}</div>\
-${footer}\
 </details>`;
 }
 
@@ -168,7 +159,11 @@ function injectBanner(root: HTMLElement, text: string, kind: "ok" | "warn"): voi
   wrap.prepend(el);
 }
 
-function installDelegate(root: HTMLElement, allEntries: JournalEntry[]): void {
+function installDelegate(
+  root: HTMLElement,
+  allEntries: JournalEntry[],
+  rerender: () => Promise<void>,
+): void {
   // Abort previous delegated listener before adding a new one.
   _delegateAbort?.abort();
   _delegateAbort = new AbortController();
@@ -207,13 +202,21 @@ function installDelegate(root: HTMLElement, allEntries: JournalEntry[]): void {
           }
         }
         const ok = catEntries.length - failCount;
+        let msg: string, kind: "ok" | "warn";
         if (ok > 0 && failCount === 0) {
-          injectBanner(root, `↩ ${ok} action${ok > 1 ? "s" : ""} annulée${ok > 1 ? "s" : ""}`, "ok");
+          msg = `↩ ${ok} action${ok > 1 ? "s" : ""} annulée${ok > 1 ? "s" : ""}`;
+          kind = "ok";
         } else if (ok > 0) {
-          injectBanner(root, `↩ ${ok} ok — ${failCount} introuvable${failCount > 1 ? "s" : ""}`, "warn");
+          msg = `↩ ${ok} ok — ${failCount} introuvable${failCount > 1 ? "s" : ""}`;
+          kind = "warn";
         } else {
-          injectBanner(root, `${failCount} morceau${failCount > 1 ? "x" : ""} introuvable${failCount > 1 ? "s" : ""} — déjà revertés ?`, "warn");
+          msg = `${failCount} morceau${failCount > 1 ? "x" : ""} introuvable${failCount > 1 ? "s" : ""} — déjà revertés ?`;
+          kind = "warn";
         }
+        // Re-render so the section counts, header ("Défiler les N") and footer reflect the
+        // now-reverted entries — otherwise they stay stale until the next tab switch.
+        await rerender();
+        injectBanner(root, msg, kind);
       })();
     });
   });
@@ -230,9 +233,8 @@ function installDelegate(root: HTMLElement, allEntries: JournalEntry[]): void {
       btn.disabled = true;
       row?.classList.add("jrnl-row--loading");
       revertBatch(bid)
-        .then(() => {
-          btn.textContent = "✓";
-          row?.classList.replace("jrnl-row--loading", "jrnl-row--reverted");
+        .then(async () => {
+          await rerender();
           injectBanner(root, "↩ Remis en file", "ok");
         })
         .catch(err => {
@@ -244,29 +246,11 @@ function installDelegate(root: HTMLElement, allEntries: JournalEntry[]): void {
     });
   });
 
-  // Delegated listener for last-batch and mode switches only.
+  // Delegated listener for mode switches only.
   // (.jrnl-mass and [data-jact='revert'] use direct listeners above — stopPropagation
   // on .jrnl-mass would block them from reaching here anyway.)
-  root.addEventListener("click", async (ev: MouseEvent) => {
+  root.addEventListener("click", (ev: MouseEvent) => {
     const t = ev.target as Element;
-
-    // Last-batch revert (confirm only if > 10 tracks)
-    const lbBtn = t.closest<HTMLButtonElement>("[data-jact='last-batch']");
-    if (lbBtn) {
-      const bid = lbBtn.dataset.batchId;
-      if (!bid) { console.error("[journal] missing data-batch-id on last-batch"); return; }
-      const n = Number(lbBtn.dataset.trackCount ?? 0);
-      if (n > 10 && !(await confirmAction(`Annuler le batch de ${n} morceaux ?`))) return;
-      lbBtn.disabled = true;
-      revertBatch(bid)
-        .then(() => {
-          root.querySelector<HTMLElement>(`.jrnl-row[data-batch-id="${bid}"]`)
-            ?.classList.add("jrnl-row--reverted");
-          injectBanner(root, `↩ Batch de ${n} morceau${n > 1 ? "x" : ""} annulé`, "ok");
-        })
-        .catch(err => { lbBtn.disabled = false; injectBanner(root, humanError(err), "warn"); });
-      return;
-    }
 
     // Mode switches
     if (t.closest("[data-jact='mode-session']")) { void renderJournal(); return; }
@@ -286,10 +270,9 @@ export async function renderJournal(toast?: string, warn?: string): Promise<void
   const content = requireEl<HTMLElement>("#content", "renderJournal");
 
   const cats = buildCategories(entries);
-  const filedEntries = cats.find(c => c.id === "filed")!.entries;
   const hasAny = cats.some(c => c.entries.length > 0);
 
-  const sectionsHtml = cats.map(c => sectionHtml(c, filedEntries)).join("");
+  const sectionsHtml = cats.map(sectionHtml).join("");
   const emptyHtml = hasAny ? "" : `<div class="jrnl-empty">Aucune action dans cette session.</div>`;
   const voirToutHtml = hasAny
     ? `<button class="jrnl-voir-tout" data-jact="mode-all">Voir tout l'historique →</button>`
@@ -305,7 +288,7 @@ ${sectionsHtml}\
 ${voirToutHtml}\
 </div>`;
 
-  installDelegate(content, entries);
+  installDelegate(content, entries, () => renderJournal());
 }
 
 // ---------------------------------------------------------------------------
@@ -315,8 +298,7 @@ ${voirToutHtml}\
 function sessionGroupHtml(sessionId: string | null, entries: JournalEntry[]): string {
   const label = sessionId ?? "Antérieur";
   const cats = buildCategories(entries);
-  const filedEntries = cats.find(c => c.id === "filed")!.entries;
-  const sectionsHtml = cats.map(c => sectionHtml(c, filedEntries)).join("");
+  const sectionsHtml = cats.map(sectionHtml).join("");
   return `<div class="jrnl-session-group">\
 <div class="jrnl-session-hd">${label}</div>\
 ${sectionsHtml}\
@@ -355,5 +337,5 @@ ${headerHtml("all")}\
 ${bodyHtml}\
 </div>`;
 
-  installDelegate(content, all);
+  installDelegate(content, all, () => renderJournalExtended());
 }

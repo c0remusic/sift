@@ -31,6 +31,35 @@ function openLink(u){window.open(u,'_blank','noopener');}
   function byFolder(){var b={};T.forEach(function(x){if(x.status==="filed")b[x.folder]=(b[x.folder]||0)+1;});return b;}
   function nSel(){var n=0;for(var k in sel)if(sel[k])n++;return n;}
   function block(){content.style.display="block";content.style.padding="14px 18px";content.style.overflowY="auto";}
+  // Queue column (#qcol, Revue) width: user-resized via the drag handle, persisted across
+  // renders/sessions (renderRevue rebuilds #qcol from scratch on every nav click, so the width
+  // must be re-read from storage rather than kept in a live JS var). Real feature — runs in
+  // both the mock and the Tauri app, unlike the fake queue data it's clobbered by (audit
+  // 2026-07-05, annotation #8: "la barre devrait pouvoir être redimensionnable").
+  var QCOL_MIN=220,QCOL_MAX=480,QCOL_DEFAULT=272;
+  function qcolWidth(){
+    try{var v=parseInt(localStorage.getItem('sift-qcol-w'),10);if(v>=QCOL_MIN&&v<=QCOL_MAX)return v;}catch(e){}
+    return QCOL_DEFAULT;
+  }
+  function installQueueResize(qcolEl,handleEl){
+    handleEl.addEventListener('mousedown',function(e){
+      e.preventDefault();
+      var startX=e.clientX,startW=qcolEl.getBoundingClientRect().width;
+      handleEl.classList.add('sift-qresize--active');
+      function onMove(ev){
+        var w=Math.max(QCOL_MIN,Math.min(QCOL_MAX,startW+(ev.clientX-startX)));
+        qcolEl.style.width=w+'px';
+      }
+      function onUp(){
+        document.removeEventListener('mousemove',onMove);
+        document.removeEventListener('mouseup',onUp);
+        handleEl.classList.remove('sift-qresize--active');
+        try{localStorage.setItem('sift-qcol-w',parseInt(qcolEl.style.width,10));}catch(e){}
+      }
+      document.addEventListener('mousemove',onMove);
+      document.addEventListener('mouseup',onUp);
+    });
+  }
   function render(){Array.prototype.forEach.call(nav.querySelectorAll('.nv'),function(n){n.classList.toggle('on',n.dataset.view===view);});
     if(view==="revue")return revMode==="batch"?renderBatch():renderRevue();
     if(view==="home")return renderHome();if(view==="biblio")return renderBiblio();if(view==="rkb")return renderRkb();if(view==="cle")return renderCle();if(view==="ecarts")return renderEcarts();if(view==="journal")return renderJournal();return renderReglages();}
@@ -82,7 +111,8 @@ function openLink(u){window.open(u,'_blank','noopener');}
   function renderRevue(){
     content.style.display="flex";content.style.padding="0";content.style.flexDirection="";content.style.overflowY="";
     var pendingCount=cnt("pending"),doneCount=T.length-pendingCount;
-    content.innerHTML='<div class="queue" id="qcol" style="width:272px"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px"><span class="col-h" style="margin:0">File</span><span style="display:flex;gap:3px"><span data-act="revmode" data-m="detail" title="Vue détail" style="cursor:pointer;color:var(--color-text-info)"><i class="ti ti-layout-list" style="font-size:14px"></i></span><span data-act="revmode" data-m="batch" title="Mode batch" style="cursor:pointer;color:var(--color-text-tertiary)"><i class="ti ti-table" style="font-size:14px"></i></span></span></div><div class="pbar"><div class="pfill" id="pf" style="width:0%"></div></div><div id="ql"></div>'+(doneCount?'<div style="padding:5px 4px 0"><span data-act="togglequeue" style="font-size:10px;color:var(--color-text-tertiary);cursor:pointer;text-decoration:underline">'+(queueShowAll?'Masquer les traités':'+ '+doneCount+' traités')+'</span></div>':'')+'</div><div class="sift-inspector"><div class="mid" id="mid"></div><div class="sift-action-rail" id="filfoot"></div><div class="sift-dest-popover" id="fldz" hidden></div></div>';
+    content.innerHTML='<div class="queue" id="qcol" style="width:'+qcolWidth()+'px"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px"><span class="col-h" style="margin:0">File</span><span style="display:flex;gap:3px"><span data-act="revmode" data-m="detail" title="Vue détail" style="cursor:pointer;color:var(--color-text-info)"><i class="ti ti-layout-list" style="font-size:14px"></i></span><span data-act="revmode" data-m="batch" title="Mode batch" style="cursor:pointer;color:var(--color-text-tertiary)"><i class="ti ti-table" style="font-size:14px"></i></span></span></div><div class="pbar"><div class="pfill" id="pf" style="width:0%"></div></div><div id="ql"></div>'+(doneCount?'<div style="padding:5px 4px 0"><span data-act="togglequeue" style="font-size:10px;color:var(--color-text-tertiary);cursor:pointer;text-decoration:underline">'+(queueShowAll?'Masquer les traités':'+ '+doneCount+' traités')+'</span></div>':'')+'</div><div class="sift-qresize" title="Redimensionner la file"></div><div class="sift-inspector"><div class="mid" id="mid"></div><div class="sift-action-rail" id="filfoot"></div><div class="sift-dest-popover" id="fldz" hidden></div></div>';
+    installQueueResize(document.getElementById('qcol'),content.querySelector('.sift-qresize'));
     // Live (Tauri): window.__siftQueue() below overwrites #ql/#fldz/#mid with the real data —
     // this whole block would just be a wasted mock render (fake queue rows, fake destination
     // folders, and renderMid()'s canvas spectrogram draw, ~18k pixels) immediately clobbered.

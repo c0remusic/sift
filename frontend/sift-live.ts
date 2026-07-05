@@ -433,7 +433,7 @@ function queueRowHtml(it: QueueItem, active: boolean): string {
     verdictDot(it.verdict) +
     `<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;font-weight:500">${title}</span>` +
     (it.dup
-      ? '<span title="Doublon possible (même nom)" style="flex:none;display:inline-flex;align-items:center;font-size:var(--text-base);line-height:1;color:var(--color-text-warning)">⧉</span>'
+      ? '<span title="Doublon possible (même nom)" style="flex:none;display:inline-flex;align-items:center;justify-content:center;overflow:visible;font-size:var(--text-base);line-height:normal;color:var(--color-text-warning)">⧉</span>'
       : "") +
     `</div>` +
     // Always render the second line (never conditionally omit it) — otherwise a
@@ -871,7 +871,7 @@ function ensureBatchDestUI(): void {
  *  2026-07-03, fix 2). */
 function actionButtonHtml(running: boolean): string {
   if (running) {
-    return '<button data-sift="batchstop" class="sift-baction" style="background:var(--color-background-danger);color:var(--color-text-danger)"><i class="ti ti-player-stop" style="font-size:var(--text-md);vertical-align:-2px"></i> Stop</button>';
+    return '<button data-sift="batchstop" class="sift-baction" style="background:var(--color-background-danger);color:var(--color-text-danger)"><i class="ti ti-player-stop sift-icon-inline-md"></i> Stop</button>';
   }
   const fileN = batchSel.size;
   const fakeN = batchFakeSel.size;
@@ -886,12 +886,12 @@ function actionButtonHtml(running: boolean): string {
   const armed =
     !!batchConfirmArmed && batchConfirmArmed.fileN === fileN && batchConfirmArmed.fakeN === fakeN;
   if (armed) {
-    return `<button data-sift="batchaction" class="sift-baction" style="background:var(--color-background-danger);color:var(--color-text-danger)"><i class="ti ti-alert-triangle" style="font-size:var(--text-md);vertical-align:-2px"></i> Confirmer — ranger ${fileN} ?</button>`;
+    return `<button data-sift="batchaction" class="sift-baction" style="background:var(--color-background-danger);color:var(--color-text-danger)"><i class="ti ti-alert-triangle sift-icon-inline-md"></i> Confirmer — ranger ${fileN} ?</button>`;
   }
   if (fakeN === 0)
-    return `<button data-sift="batchaction" class="sift-baction" style="background:var(--color-background-info);color:var(--color-text-info)"><i class="ti ti-corner-down-left" style="font-size:var(--text-md);vertical-align:-2px"></i> Ranger (${fileN})</button>`;
+    return `<button data-sift="batchaction" class="sift-baction" style="background:var(--color-background-info);color:var(--color-text-info)"><i class="ti ti-corner-down-left sift-icon-inline-md"></i> Ranger (${fileN})</button>`;
   if (fileN === 0)
-    return `<button data-sift="batchaction" class="sift-baction" style="background:var(--color-background-danger);color:var(--color-text-danger)"><i class="ti ti-trash" style="font-size:var(--text-md);vertical-align:-2px"></i> Écarter (${fakeN})</button>`;
+    return `<button data-sift="batchaction" class="sift-baction" style="background:var(--color-background-danger);color:var(--color-text-danger)"><i class="ti ti-trash sift-icon-inline-md"></i> Écarter (${fakeN})</button>`;
   return `<button data-sift="batchaction" class="sift-baction" style="background:var(--color-background-info);color:var(--color-text-info)">Ranger (${fileN}) · Écarter (${fakeN})</button>`;
 }
 
@@ -922,21 +922,24 @@ function renderBatchRail(reviewN: number) {
     : "";
   // Single global format selector (maquette `formats`) — applies to the whole file-able selection,
   // no per-source-rail split (décision "maquette prime" du 2026-07-01, docs/superpowers/plans/2026-07-02-refonte-ui-plan.md).
+  // Same chip markup as the Détail rail (filing.ts renderFoot) — clickable affordance (hover +
+  // "on" state) instead of a bespoke pill track, per audit 2026-07-05 (annotation: "pas clair
+  // que les boutons sont clickables").
   const formatBlock =
-    `<div class="sift-rail-fmt-group"><span class="col-h">Format</span><div style="display:flex;background:var(--color-track);border-radius:8px;padding:2px;gap:2px">` +
+    `<div class="sift-rail-fmt-group"><span class="col-h">Format</span><div class="sift-fmt-chips">` +
     (["mp3_320", "aiff_16_44", "wav_16_44"] as Target[])
       .map(
         (t) =>
-          `<span data-sift="batchformat" data-t="${t}" style="flex:1;text-align:center;font-family:var(--font-mono);font-size:var(--text-sm);padding:6px 0;border-radius:6px;cursor:pointer;background:${
-            batchFormat === t ? "var(--color-surface-raised)" : "transparent"
-          };color:var(--color-text-${batchFormat === t ? "primary" : "tertiary"})">${TARGET_LABEL[t]}</span>`,
+          `<span class="chip${batchFormat === t ? " on" : ""}" data-sift="batchformat" data-t="${t}">${TARGET_LABEL[t]}</span>`,
       )
-      .join("") +
+      .join(" ") +
     `</div></div>`;
-  // Rail order (one row, matching the Detail rail restructure): Destination → Format → spacer →
-  // Selection count → progress/tracks (each flex-basis:100% so they wrap to their own line, empty/
-  // invisible while idle) → action. "Final name" motif dropped — redundant with Selection + the
-  // per-track list once a run starts (see batchNameMotifHtml removal, Task 3).
+  // Rail order (one row, matching the Detail rail): Destination → Format → spacer → Selection
+  // count → action, all on the first line — then progress/tracks (each flex-basis:100%, empty/
+  // invisible while idle) wrap below since they come AFTER the action button in DOM order
+  // (audit 2026-07-05, annotation: "même style et logique que dans détail, tout sur une ligne").
+  // "Final name" motif dropped — redundant with Selection + the per-track list once a run
+  // starts (see batchNameMotifHtml removal, Task 3).
   foot.innerHTML =
     destBlock +
     formatBlock +
@@ -944,9 +947,9 @@ function renderBatchRail(reviewN: number) {
     `<span id="sift-batch-selcount" style="font-size:var(--text-sm);color:var(--color-text-secondary);white-space:nowrap">${
       batchSel.size
     } à ranger${jeter}${exclus}</span>` +
+    `<div class="sift-baction-slot">${actionButtonHtml(batchRunning)}</div>` +
     `<div id="sift-batch-progress" style="flex-basis:100%"></div>` +
-    `<div id="sift-batch-tracks" style="flex-basis:100%"></div>` +
-    `<div class="sift-baction-slot">${actionButtonHtml(batchRunning)}</div>`;
+    `<div id="sift-batch-tracks" style="flex-basis:100%"></div>`;
   if (keepNote) foot.insertAdjacentElement("afterbegin", keepNote);
   if (keepTracks) foot.querySelector("#sift-batch-tracks")!.replaceWith(keepTracks);
   else refreshBatchTracksPreview(); // idle → keep the per-track list empty (it is a run-only artifact)
