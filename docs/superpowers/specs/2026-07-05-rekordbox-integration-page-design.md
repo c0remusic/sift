@@ -25,6 +25,20 @@
   window)){...}` suivi d'un appel `if(window.__siftX)window.__siftX();` vers le vrai rendu
   (`sift-live.ts`). `renderRkb()` actuel n'a **ni garde ni hook** — c'est le seul écran mock
   jamais branché.
+- **Nav = markup statique** : les items de nav (labels, `data-view`, groupe) sont dans
+  `index.html` (pas `app.js`) — `<div class="nv-grp" data-grp="export">Export</div>` et
+  `<div class="nv nv-export" data-view="rkb" title="Rekordbox">...</div>`. `#nav` est un
+  descendant de `#pa`, donc les clics `[data-view]` traversent bien le délégué capture-phase de
+  `sift-live.ts:1688` avant d'atteindre le routeur bubble-phase d'`app.js` — retirer
+  l'interception pour "rkb" suffit, **aucune nouvelle plomberie de routing à écrire** (le clic
+  sur un `[data-view]` set déjà `view` + appelle `render()`, généricement, pour tout écran).
+- **`.nv-export` marque visuellement "action secondaire"** (`styles.css:121-123` :
+  `opacity:.55` + puce `.nv-export-dot` au lieu d'une icône, plutôt qu'un `.nv` normal comme
+  Bibliothèque/Journal). Une page réelle sous cette classe se lirait comme une action
+  mineure/désactivée — contredit l'objectif même de ce brainstorm.
+- **`empty-state.ts` ne supporte qu'un seul CTA fixe** ("Aller à Revue →", `backToRevue`) — pas
+  de mécanisme pour un bouton d'action arbitraire ("Lier un fichier XML"). Le réutiliser tel
+  quel pour l'état non-lié, comme envisagé initialement, ne marche pas sans extension.
 
 ## Décisions actées (brainstorm)
 
@@ -50,7 +64,15 @@
 - Nav : "Rekordbox" dans le groupe "Intégrations" **navigue** vers `data-view="rkb"` au lieu de
   déclencher l'export directement. Le bloc d'interception capture-phase dans
   `installLiveWiring()` (`sift-live.ts:1688-1699`) est retiré **pour "rkb" seulement** — "cle"
-  garde son comportement actuel (toast) tant que son propre brainstorm n'a pas eu lieu.
+  garde son comportement actuel (toast) tant que son propre brainstorm n'a pas eu lieu. Le
+  routing lui-même (clic `[data-view]` → `view` + `render()`) existe déjà génériquement dans
+  `app.js` ; retirer l'interception suffit à l'activer pour "rkb".
+- `index.html:20-21` : le label du groupe passe de "Export" à "Intégrations" (texte seulement —
+  l'attribut `data-grp="export"` n'est lu nulle part, inchangé). L'item Rekordbox perd la classe
+  `.nv-export` (opacity .55 + puce `nv-export-dot`, réservée aux actions secondaires) — il
+  devient un `.nv` normal avec une icône (ex. `ti-disc`), même traitement que Bibliothèque/
+  Journal. "Clé USB" **garde** `.nv-export`/la puce — reste une action, pas une page, jusqu'à
+  son propre brainstorm.
 - `app.js`'s `renderRkb()` reçoit le même patron que les autres écrans réels : garde
   `if(!('__TAURI_INTERNALS__' in window)){ /* contenu mock existant, inchangé — démo web */ }`
   puis `if(window.__siftRkb)window.__siftRkb();`. Le contenu mock actuel (chips XML/master.db,
@@ -59,6 +81,11 @@
 - Nouvelle fonction `renderRekordboxLive()` dans `sift-live.ts`, exposée via
   `window.__siftRkb = renderRekordboxLive` dans `installLiveWiring()` (même schéma que
   `window.__siftBiblio`/`window.__siftJournal`).
+- Le docstring de `runNavExport` (`sift-live.ts:599-603`) devient inexact sur deux points une
+  fois "rkb" retiré de l'interception — à corriger dans le même geste : "Doesn't switch screens"
+  ne vaut plus que pour "cle", et "USB has no backend" est déjà faux aujourd'hui (`ipc_usb.rs`/
+  `usb_format/` existent, seulement sans UI — trouvé pendant ce brainstorm, sans rapport avec le
+  changement lui-même mais dans la même fonction).
 
 ### Layout (un seul écran, `block()` : padding 14/18, scroll vertical — cohérent avec
 Bibliothèque/Réglages)
@@ -86,17 +113,26 @@ Bibliothèque/Réglages)
 └─────────────────────────────────────────────┘
 ```
 
-### États de la carte de statut (4, tous déjà représentés par `RekordboxLinkStatus`)
+### États de la carte de statut (tous déjà représentés par `RekordboxLinkStatus`)
 
-1. **Non lié** (`linked=false`) → composant `empty-state.ts` partagé (cohérence avec les autres
-   écrans) : titre "Aucun XML Rekordbox lié", note reprenant le bloc explicatif, CTA "Lier un
-   fichier XML Rekordbox" (réutilise l'action `data-bib="rkblink"` existante).
+`drift_detected` n'est **pas exclusif** des 3 autres états ci-dessous (c'est un flag séparé,
+`linked`/`error` en sont d'autres) — la bannière drift (3) s'affiche **au-dessus de n'importe
+quel état lié** (sain ou en erreur) quand le flag est vrai, pas seulement en alternative à
+l'état sain. Ne pas implémenter comme un `if/else if` à 4 branches mutuellement exclusives.
+
+1. **Non lié** (`linked=false`) → composant `empty-state.ts`, **étendu** : `EmptyStateOpts` gagne
+   un champ optionnel `actionHtml?: string` (markup de bouton fourni par l'appelant, rendu après
+   le lien "Aller à Revue →" quand `backToRevue` est fourni — les deux champs sont indépendants).
+   Rekordbox omet `backToRevue` (pas pertinent ici) et passe `actionHtml` avec le bouton
+   `data-bib="rkblink"` existant ("Lier un fichier XML Rekordbox") — déjà géré par le délégué
+   global `#pa`, `wireEmptyState()` n'a besoin d'aucune modification. Titre "Aucun XML Rekordbox
+   lié", note reprenant le bloc explicatif.
 2. **Lié, sain** (`linked=true, error=null, drift_detected=false`) → chemin (`s.path`),
-   compteurs (`N playlists · N pistes`), deux boutons : "Réexporter maintenant" (appelle
-   `exportRekordboxXml()`, ex-`runNavExport("rekordbox")`, avec le même `setTask`/toast et le
-   même garde `exportRunning` — un seul export à la fois, inchangé) et "Changer de XML lié"
-   (`data-bib="rkblink"` — déjà géré par le délégué global `#pa`, aucun re-branchement requis
-   pour cette nouvelle page).
+   compteurs (`N playlists · N pistes`), deux boutons : "Réexporter maintenant" **appelle la
+   même fonction `runNavExport("rekordbox")` inchangée** (pas l'IPC brut `exportRekordboxXml()`
+   directement) — elle gère déjà `exportRunning`/`setTask`/toast/erreurs, `runNavExport` continue
+   de servir aussi "cle" (toast usb) ; et "Changer de XML lié" (`data-bib="rkblink"` — déjà géré
+   par le délégué global `#pa`, aucun re-branchement requis pour cette nouvelle page).
 3. **Lié, drift détecté** (`drift_detected=true`) → même carte que l'état sain, **plus** une
    bannière au-dessus : fond `--color-background-warning`, texte `--color-text-warning`, icône
    `ti-alert-triangle` — "Une correction de chemin a échoué lors d'un rangement récent — vérifie
