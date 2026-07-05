@@ -296,4 +296,7 @@ export interface RekordboxLinkStatus {
   playlist_count: number;
   track_count: number;
   error: string | null;
+  /** True when a prior filing/move's Rekordbox repair hit an ambiguous match and could not
+   *  safely patch the linked XML — surfaced as a warning banner (see Task 3). */
+  drift_detected: boolean;
 }
