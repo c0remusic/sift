@@ -48,6 +48,11 @@ pub struct SpectrumAccumulator {
     spec_cols: Vec<Vec<u8>>,
     collect_display: bool,
     bins: usize,
+    /// `norm_sqr()` of a full-scale sine at this window's coherent gain — the 0 dBFS
+    /// reference for the display-only `db` conversion in `process_frame`. Unnormalized FFT
+    /// output scales with `fft_size`, so without this a full-scale signal reads as +50 to
+    /// +100 dB and gets clipped straight to the `.clamp(-100.0, 0.0)` ceiling.
+    ref_mag_sqr: f32,
 }
 
 impl SpectrumAccumulator {
@@ -60,6 +65,10 @@ impl SpectrumAccumulator {
             .map(|i| 0.5 - 0.5 * (2.0 * PI * i as f32 / (fft_size as f32 - 1.0)).cos())
             .collect();
         let bins = fft_size / 2;
+        // Coherent gain = mean window value; a full-scale sine's FFT peak magnitude is
+        // `coherent_gain * fft_size / 2` (the /2 from splitting energy across +/- frequency).
+        let coherent_gain = window.iter().sum::<f32>() / fft_size as f32;
+        let ref_mag = coherent_gain * fft_size as f32 / 2.0;
         Self {
             sr,
             fft_size,
@@ -75,6 +84,7 @@ impl SpectrumAccumulator {
             spec_cols: Vec::new(),
             collect_display,
             bins,
+            ref_mag_sqr: ref_mag * ref_mag,
         }
     }
 
@@ -98,7 +108,11 @@ impl SpectrumAccumulator {
         }
         if self.collect_display && self.frames_total % self.spec_stride == 0 {
             let col: Vec<u8> = self.mags.iter().map(|&m2| {
-                let db = if m2 <= 1e-12 { -100.0 } else { 10.0 * m2.log10() };
+                let db = if m2 <= 1e-12 {
+                    -100.0
+                } else {
+                    10.0 * (m2 / self.ref_mag_sqr).log10()
+                };
                 let clamped = db.clamp(-100.0, 0.0);
                 ((clamped + 100.0) / 100.0 * 255.0) as u8
             }).collect();
