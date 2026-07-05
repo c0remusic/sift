@@ -65,6 +65,7 @@ import type { ThemeChoice } from "./theme";
 import type { QueueItem, BatchResult, FileProgress, Target } from "../shared/contracts";
 import { FILE_IN_PLACE, EXTERNAL_DEST_PREFIX } from "../shared/contracts";
 import { requireEl } from "./dom";
+import { createVirtualList, type VirtualList } from "./list-virtual";
 import { renderJournal } from "./journal";
 import { open as openFolderDialog } from "@tauri-apps/plugin-dialog";
 
@@ -165,6 +166,20 @@ function ensureQueueScroll(ql: HTMLElement): void {
 }
 
 let queueStepTimer: ReturnType<typeof setTimeout> | undefined;
+let prefetchTimer: ReturnType<typeof setTimeout> | undefined;
+
+/** Warm the track FOLLOWING the one just opened (analysis report + AIFF pre-transcode via
+ *  report-view's prefetchTrack) so the next switch paints instantly. Fires once per
+ *  user-initiated open (click / arrow step / batchopen), never from a burst event; the 400ms
+ *  delay + debounce keeps it out of the open's own critical path when flicking through rows. */
+function prefetchNextAfter(id: number): void {
+  clearTimeout(prefetchTimer);
+  prefetchTimer = setTimeout(() => {
+    const idx = currentItems.findIndex((t) => t.id === id);
+    const next = idx >= 0 ? currentItems[idx + 1] : undefined;
+    if (next) void import("./report-view").then((m) => m.prefetchTrack(next.path));
+  }, 400);
+}
 
 /** ArrowUp/ArrowDown queue navigation. Kept separate from filing.ts's installFilingKeys (Space/
  * Enter/Backspace/I) because stepping through a virtualized queue needs currentItems + the
@@ -207,7 +222,10 @@ export function stepQueueSelection(delta: 1 | -1): void {
   queueStepTimer = setTimeout(() => {
     if (reviewMode === "batch") setReviewMode("detail");
     const mid = document.getElementById("mid");
-    if (mid) void openFilingInto(mid, next);
+    if (mid) {
+      void openFilingInto(mid, next);
+      prefetchNextAfter(next.id);
+    }
   }, 150);
 }
 
@@ -263,6 +281,20 @@ const batchFakeSel = new Set<number>();
 // pending) buries the other two groups thousands of rows down, making them unreachable in
 // practice. Collapsing "Prêts" solves that without reordering the groups. Default: all expanded.
 const batchCollapsed = new Set<"file" | "fake" | "readonly">();
+// Progressive-disclosure cap per group (Task 3b). "Prêts" can reach thousands (see the collapse
+// note above); mounting them all is the batch board's version of the queue's black-screen freeze.
+// The group's collapsible structure (headers, tri-state, per-group empty states) makes true
+// scroll-windowing invasive, so instead each group renders at most BATCH_GROUP_PAGE rows and a
+// "afficher les N suivants" control bumps its cap (same progressive-disclosure grammar already used
+// for the queue's "+ N traités" and Écartés' hover-revealed links). Selection state is unaffected —
+// it lives entirely in the Sets, never in the mounted DOM, so a select-all still covers rows below
+// the cap. Caps reset when leaving batch mode (setReviewMode).
+const BATCH_GROUP_PAGE = 200;
+const batchGroupCap: Record<"file" | "fake" | "readonly", number> = {
+  file: BATCH_GROUP_PAGE,
+  fake: BATCH_GROUP_PAGE,
+  readonly: BATCH_GROUP_PAGE,
+};
 // Batch "file in place" toggle (FILE_IN_PLACE). Kept apart from batchBin so the picked folder is
 // remembered while in-place is on. Effective destination = batchInPlace ? FILE_IN_PLACE : batchBin.
 let batchInPlace = false;
@@ -285,6 +317,15 @@ const bibState: { filter: LibraryFilter; facet: "folder" | "genre"; tracks: Libr
   facet: "folder",
   tracks: [],
 };
+
+// Virtualized library list controller. Torn down and recreated on each full renderBiblioLive
+// (which replaces #content.innerHTML, orphaning the old #biblist host — its scroll listener sits
+// on the PERMANENT #content, so it must be explicitly destroyed or it leaks + double-renders).
+let bibVirtual: VirtualList<LibraryTrack> | null = null;
+// Which library row is open in the detail panel — stamped as `.cur` at row-creation time so the
+// highlight survives virtualization (a row scrolled out of the window and back is rebuilt from
+// data; setting the class after the fact wouldn't stick, same reasoning as the queue's `active`).
+let bibOpenId: number | null = null;
 
 // Doublons internes panel state (Bibliothèque). `null` = not run yet this session.
 let dupGroups: DupGroup[] | null = null;
@@ -315,6 +356,67 @@ function verdictWord(v: string | null): [string, string] {
       : v === "ok"
         ? ["", "var(--color-text-success)"]
         : ["analyse…", "var(--color-text-tertiary)"];
+}
+
+/** The group-header tri-state checkbox glyph for a batch group (Prêts/À vérifier). Selection state
+ * is read from the live Sets — reused by renderBatch's initial paint AND by mutateBatchTick's
+ * targeted refresh, so both agree. "readonly" has no selection → empty string. */
+function groupBoxHtml(kind: "file" | "fake" | "readonly", ids: number[]): string {
+  const sel = kind === "file" ? batchSel : kind === "fake" ? batchFakeSel : null;
+  if (!sel) return "";
+  const n = ids.filter((id) => sel.has(id)).length;
+  const st = ids.length === 0 || n === 0 ? "empty" : n === ids.length ? "full" : "partial";
+  return st === "full"
+    ? '<span class="sift-bgrp-box on"><i class="ti ti-check"></i></span>'
+    : st === "partial"
+      ? '<span class="sift-bgrp-box partial"><i class="ti ti-minus"></i></span>'
+      : '<span class="sift-bgrp-box"></span>';
+}
+
+/** Targeted update after a single batch tick (Task 3a). Mutates ONLY: (1) the clicked row's
+ * checkbox + highlight, (2) its group-header tri-state box, (3) the rail's selection count + action
+ * button. Replaces the previous full renderBatch() on every checkbox click — that rebuilt every
+ * group (thousands of rows in "Prêts") on a per-click event, the audit's worst frontend hotspot
+ * (2026-07-05 P2). Structural changes (select-all, collapse, mode) still call renderBatch. */
+function mutateBatchTick(kind: "file" | "fake", id: number, row: HTMLElement): void {
+  const on = (kind === "file" ? batchSel : batchFakeSel).has(id);
+  // Row: checkbox checked state + selected background (mirrors readyRow/fakeRow at build time).
+  const cb = row.querySelector<HTMLInputElement>("input.sift-batch-ck");
+  if (cb) cb.checked = on;
+  row.style.background = on ? "var(--overlay-hover)" : "";
+  // Group header tri-state box: rebuild just that one glyph from the live set.
+  const ids =
+    kind === "file"
+      ? currentItems.filter((it) => it.verdict === "ok").map((it) => it.id)
+      : currentItems.filter((it) => it.verdict === "fake").map((it) => it.id);
+  const head = document.querySelector<HTMLElement>(`.sift-bgrp-head[data-grouphead="${kind}"]`);
+  const oldBox = head?.querySelector(".sift-bgrp-box");
+  if (oldBox) {
+    const tmp = document.createElement("div");
+    tmp.innerHTML = groupBoxHtml(kind, ids);
+    const newBox = tmp.firstElementChild;
+    if (newBox) oldBox.replaceWith(newBox);
+  }
+  // Rail: the only data-dependent pieces are the "N à ranger" count line and the action button.
+  // Update them in place instead of renderBatchRail (which remounts the progress zone + dest tree).
+  updateBatchRailSelection();
+}
+
+/** In-place refresh of the batch rail's selection count + action button after a tick — avoids the
+ * full renderBatchRail rebuild (progress-zone remount, dest-tree re-render) on a mere selection
+ * change. The count span + action slot are given stable hooks by renderBatchRail. */
+function updateBatchRailSelection(): void {
+  const count = document.getElementById("sift-batch-selcount");
+  if (count) {
+    const jeter = batchFakeSel.size ? ` · ${batchFakeSel.size} à jeter` : "";
+    const reviewN = currentItems.filter((it) => it.verdict !== "ok").length;
+    const exclus = reviewN
+      ? ` · <span style="color:var(--color-text-tertiary)">${reviewN} exclus (en review)</span>`
+      : "";
+    count.innerHTML = `${batchSel.size} à ranger${jeter}${exclus}`;
+  }
+  const slot = document.querySelector(".sift-baction-slot");
+  if (slot) slot.innerHTML = actionButtonHtml(batchRunning);
 }
 
 /** One queue row's markup. `active` stamps the `.cur` highlight at creation time — required so
@@ -653,29 +755,44 @@ function renderBatch() {
     ids: number[],
   ) => {
     const sel = kind === "file" ? batchSel : kind === "fake" ? batchFakeSel : null;
-    const n = sel ? ids.filter((id) => sel.has(id)).length : 0;
-    const st = !sel || ids.length === 0 ? "empty" : n === 0 ? "empty" : n === ids.length ? "full" : "partial";
-    const box = !sel
-      ? ""
-      : st === "full"
-        ? '<span class="sift-bgrp-box on"><i class="ti ti-check"></i></span>'
-        : st === "partial"
-          ? '<span class="sift-bgrp-box partial"><i class="ti ti-minus"></i></span>'
-          : '<span class="sift-bgrp-box"></span>';
+    const box = groupBoxHtml(kind, ids);
     const clickable = sel ? ` data-sift="batchgroup" data-kind="${kind}" style="cursor:pointer"` : "";
     const collapsed = batchCollapsed.has(kind);
     const caret =
       `<span data-sift="batchcollapse" data-kind="${kind}" style="flex:none;display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;cursor:pointer;transform:rotate(${
         collapsed ? "0deg" : "90deg"
       });transition:transform .12s"><i class="ti ti-chevron-right" style="font-size:var(--text-xs);color:var(--color-text-tertiary)"></i></span>`;
+    // data-grouphead lets mutateBatchTick (Task 3a) find and refresh just this header's tri-state
+    // box after a single tick, instead of re-rendering the whole batch board.
     return (
-      `<div class="sift-bgrp-head"${clickable}>` +
+      `<div class="sift-bgrp-head" data-grouphead="${kind}"${clickable}>` +
       caret +
       box +
       `<span style="width:6px;height:6px;border-radius:999px;background:${dotColor};flex:none"></span>` +
       `<span class="col-h" style="margin:0">${esc(label)} · ${ids.length}</span>` +
       `</div>`
     );
+  };
+
+  // Render a group's rows capped at batchGroupCap[kind] (Task 3b), with a "afficher les N suivants"
+  // control when there are more. Collapsed → nothing. The cap bounds DOM size on huge groups
+  // ("Prêts" can be thousands) without windowing the collapsible structure.
+  const cappedBody = <T extends QueueItem>(
+    kind: "file" | "fake" | "readonly",
+    list: T[],
+    rowFn: (it: T) => string,
+  ): string => {
+    if (batchCollapsed.has(kind)) return "";
+    const cap = batchGroupCap[kind];
+    const shown = list.slice(0, cap);
+    let html = shown.map(rowFn).join("");
+    const remaining = list.length - shown.length;
+    if (remaining > 0) {
+      const next = Math.min(remaining, BATCH_GROUP_PAGE);
+      html +=
+        `<button data-sift="batchmore" data-kind="${kind}" style="width:100%;margin-top:4px;padding:7px 9px;font-size:var(--text-sm);color:var(--color-text-info);cursor:pointer;background:transparent;border:none;text-align:center">Afficher les ${next} suivants (${remaining} restants)</button>`;
+    }
+    return html;
   };
 
   // No center action bar: the destination + adaptive File/Discard/Stop button now live solely in the
@@ -686,19 +803,19 @@ function renderBatch() {
     (ready.length
       ? `<div style="margin:2px 0 16px">` +
         groupHead("file", "var(--color-text-success)", "Prêts · lossless", ready.map((it) => it.id)) +
-        (batchCollapsed.has("file") ? "" : ready.map(readyRow).join("")) +
+        cappedBody("file", ready, readyRow) +
         `</div>`
       : '<div class="col-h" style="margin:0 0 6px">Prêts · lossless · 0</div><div style="font-size:var(--text-md);color:var(--color-text-tertiary);padding:4px 9px 14px">Rien à ranger pour l’instant.</div>') +
     (fakes.length
       ? `<div style="margin:2px 0 16px">` +
         groupHead("fake", "var(--color-text-warning)", "À vérifier · fake", fakes.map((it) => it.id)) +
-        (batchCollapsed.has("fake") ? "" : fakes.map(fakeRow).join("")) +
+        cappedBody("fake", fakes, fakeRow) +
         `</div>`
       : "") +
     (pending.length
       ? `<div style="margin:2px 0 16px">` +
         groupHead("readonly", "var(--color-text-tertiary)", "En analyse", pending.map((it) => it.id)) +
-        (batchCollapsed.has("readonly") ? "" : pending.map(pendingRow).join("")) +
+        cappedBody("readonly", pending, pendingRow) +
         `</div>`
       : "") +
     `</div></div>`;
@@ -824,7 +941,7 @@ function renderBatchRail(reviewN: number) {
     destBlock +
     formatBlock +
     `<div class="sift-rail-spacer"></div>` +
-    `<span style="font-size:var(--text-sm);color:var(--color-text-secondary);white-space:nowrap">${
+    `<span id="sift-batch-selcount" style="font-size:var(--text-sm);color:var(--color-text-secondary);white-space:nowrap">${
       batchSel.size
     } à ranger${jeter}${exclus}</span>` +
     `<div id="sift-batch-progress" style="flex-basis:100%"></div>` +
@@ -853,6 +970,11 @@ function setReviewMode(m: "detail" | "batch") {
   // #fldz is now the destination popover (hidden by default, toggled by the rail's Destination
   // button in either mode — see renderFoot/renderBatchRail) — no static column visibility to manage.
   if (m === "batch") {
+    // Fresh entry into batch mode starts each group at one page (Task 3b) — a prior session's
+    // expanded caps shouldn't silently carry over and re-mount thousands of rows on re-entry.
+    batchGroupCap.file = BATCH_GROUP_PAGE;
+    batchGroupCap.fake = BATCH_GROUP_PAGE;
+    batchGroupCap.readonly = BATCH_GROUP_PAGE;
     renderBatch();
     // Drive the #fldz tree in batch pick mode (loads bins, clicks set batchBin via onBatchBinPick).
     void refreshBinsForBatch(fldz, batchBin, onBatchBinPick, batchInPlace);
@@ -1379,6 +1501,11 @@ function rekordboxCardHtml(s: RekordboxLinkStatus): string {
  * facets, wired to real data. Actions go through the #pa delegated handler (data-bib). */
 async function renderBiblioLive() {
   const content = requireEl("#content", "renderBiblioLive");
+  // Tear down any previous virtual list first: its scroll listener sits on the permanent #content,
+  // which this render is about to overwrite — leaving it attached would leak the listener and fire
+  // renders against a detached host.
+  bibVirtual?.destroy();
+  bibVirtual = null;
   let facets: LibraryFacets = { folders: [], genres: [] };
   let stats: DashboardStats | null = null;
   let rkbStatus: RekordboxLinkStatus | null = null;
@@ -1418,15 +1545,11 @@ async function renderBiblioLive() {
       )
       .join("");
 
-  const rows = bibState.tracks
-    .map((t) => {
-      const name = esc(t.artist && t.title ? `${t.artist} — ${t.title}` : t.path.split(/[\\/]/).pop() || t.path);
-      const link = t.discogs_release_id
-        ? `<button class="lk" data-bib="link" data-rid="${esc(t.discogs_release_id)}" aria-label="Page Discogs"><i class="ti ti-external-link" style="font-size:var(--text-base);color:var(--color-text-tertiary)"></i></button>`
-        : `<button class="lk" data-bib="identify" data-id="${t.id}" aria-label="Identifier"><i class="ti ti-search" style="font-size:var(--text-md);color:var(--color-text-tertiary)"></i></button>`;
-      return `<div class="lr" data-bib="row" data-id="${t.id}"><button class="pb" data-bib="play" data-id="${t.id}" aria-label="Écouter"><i class="ti ti-player-play" style="font-size:var(--text-md)"></i></button><span class="bib-name" style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${name}</span>${verdictBadge(t.verdict)}${qualPill(t)}<span style="flex:none;width:40px;text-align:right;font-family:var(--font-mono);color:var(--color-text-tertiary)">${fmtDur(t.duration)}</span>${link}</div>`;
-    })
-    .join("");
+  // The list is virtualized (createVirtualList below) — this placeholder is the mount host, filled
+  // with only the visible window of rows after content.innerHTML. Rendering all bibState.tracks
+  // here would reintroduce the 15k-track freeze (audit 2026-07-05 P2). `rows` non-empty iff there's
+  // at least one track, used only to pick the "no result" fallback below.
+  const rows = bibState.tracks.length ? '<div id="biblist"></div>' : "";
   // Truly empty (no filed track at all, no filter narrowing it) vs. a filter that just matches
   // nothing right now — only the former is DESIGN.md's "État vide" dead-end with a back-to-Revue
   // link; the latter keeps the search/chips/facets on screen so the filter can be cleared.
@@ -1477,11 +1600,40 @@ async function renderBiblioLive() {
     clearTimeout((q as unknown as { _t?: number })._t);
     (q as unknown as { _t?: number })._t = window.setTimeout(() => void renderBiblioLive(), 250);
   });
+
+  // Virtualize the filed-track list: #content is the scroll container (app.js's block() set it to
+  // overflow-y:auto), but the list is only ONE section of it (stats/rekordbox/header/facets sit
+  // above) — createVirtualList handles that offset. #biblist exists iff bibState.tracks non-empty.
+  const biblist = document.getElementById("biblist");
+  if (biblist) {
+    bibVirtual = createVirtualList<LibraryTrack>({
+      host: biblist,
+      scrollContainer: content,
+      items: bibState.tracks,
+      rowHtml: (t) => biblioRowHtml(t),
+      // Probe: a real .lr row so the measured height matches mounted rows exactly.
+      probeHtml:
+        `<div class="lr"><button class="pb"><i class="ti ti-player-play" style="font-size:var(--text-md)"></i></button><span class="bib-name">probe</span></div>`,
+      fallbackRowH: 34, // .lr: 5px×2 padding + ~23px .pb button + 0.5px border
+    });
+  }
 }
 
 /** Display name for a library row (artist — title, else filename). Mirrors the row template. */
 function bibName(t: LibraryTrack): string {
   return t.artist && t.title ? `${t.artist} — ${t.title}` : t.path.split(/[\\/]/).pop() || t.path;
+}
+
+/** One library-list row. Extracted from renderBiblioLive so the virtual list (createVirtualList)
+ * can mount just the visible window. Fixed single-line height (`.lr` never wraps) — required by the
+ * windowing scheme, which relies on one measured row height for every row. */
+function biblioRowHtml(t: LibraryTrack): string {
+  const name = esc(bibName(t));
+  const cur = t.id === bibOpenId ? " cur" : "";
+  const link = t.discogs_release_id
+    ? `<button class="lk" data-bib="link" data-rid="${esc(t.discogs_release_id)}" aria-label="Page Discogs"><i class="ti ti-external-link" style="font-size:var(--text-base);color:var(--color-text-tertiary)"></i></button>`
+    : `<button class="lk" data-bib="identify" data-id="${t.id}" aria-label="Identifier"><i class="ti ti-search" style="font-size:var(--text-md);color:var(--color-text-tertiary)"></i></button>`;
+  return `<div class="lr${cur}" data-bib="row" data-id="${t.id}"><button class="pb" data-bib="play" data-id="${t.id}" aria-label="Écouter"><i class="ti ti-player-play" style="font-size:var(--text-md)"></i></button><span class="bib-name" style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${name}</span>${verdictBadge(t.verdict)}${qualPill(t)}<span style="flex:none;width:40px;text-align:right;font-family:var(--font-mono);color:var(--color-text-tertiary)">${fmtDur(t.duration)}</span>${link}</div>`;
 }
 
 /** Open the unified detail/edit panel for a filed track into #bibplayer, highlighting its row.
@@ -1490,6 +1642,10 @@ function openBiblioDetail(id: number): void {
   const t = bibState.tracks.find((x) => x.id === id);
   const host = requireEl("#bibplayer", "openBiblioDetail");
   if (!t) return;
+  // Track the open id so the `.cur` highlight is re-stamped by biblioRowHtml when a scrolled-away
+  // row re-enters the virtualized window. Clear the class on currently-mounted rows immediately for
+  // instant feedback (rows outside the window aren't in the DOM — bibOpenId covers them on mount).
+  bibOpenId = id;
   document.querySelectorAll(".lr.cur").forEach((n) => n.classList.remove("cur"));
   document.querySelector(`.lr[data-id="${id}"]`)?.classList.add("cur");
   openLibraryDetailInto(
@@ -1560,8 +1716,10 @@ export function installLiveWiring() {
       if (ql) renderQueueWindow(ql);
       clearTimeout(queueSelectTimer);
       queueSelectTimer = setTimeout(() => {
-        if (item && mid) void openFilingInto(mid, item);
-        else if (qi.dataset.path)
+        if (item && mid) {
+          void openFilingInto(mid, item);
+          prefetchNextAfter(item.id);
+        } else if (qi.dataset.path)
           void import("./report-view").then((m) => m.openReportModal(qi.dataset.path!));
       }, 150);
       return;
@@ -1728,7 +1886,10 @@ export function installLiveWiring() {
       const id = Number(el.dataset.id);
       if (batchSel.has(id)) batchSel.delete(id);
       else batchSel.add(id);
-      renderBatch();
+      // Targeted mutation of the clicked row + its group header + rail counts (Task 3a) — NOT a full
+      // renderBatch (which rebuilt every group on each tick, the audit's worst UI hotspot). `el` is
+      // the .bx-row (it carries data-sift="batchpick").
+      mutateBatchTick("file", id, el);
     } else if (act === "batchgroup") {
       // Group-header tri-state toggle (maquette `onToggleAll`) — "file" selects/clears every
       // ready row, "fake" every fake row. Empty/partial → select all; full → clear.
@@ -1756,6 +1917,15 @@ export function installLiveWiring() {
       const id = Number(el.dataset.id);
       if (batchFakeSel.has(id)) batchFakeSel.delete(id);
       else batchFakeSel.add(id);
+      // Same targeted mutation as batchpick, on the fake-discard set (Task 3a).
+      mutateBatchTick("fake", id, el);
+    } else if (act === "batchmore") {
+      // Progressive disclosure (Task 3b): bump this group's render cap by one page, re-render. A
+      // structural change (more rows mounted) → full renderBatch is correct here, not a tick.
+      e.stopPropagation();
+      const kind =
+        el.dataset.kind === "fake" ? "fake" : el.dataset.kind === "readonly" ? "readonly" : "file";
+      batchGroupCap[kind] += BATCH_GROUP_PAGE;
       renderBatch();
     } else if (act === "batchformat") {
       e.stopPropagation();
@@ -1767,7 +1937,10 @@ export function installLiveWiring() {
       const item = currentItems.find((it) => it.id === id);
       setReviewMode("detail");
       const mid = requireEl("#mid", "batchopen");
-      if (item && mid) void openFilingInto(mid, item);
+      if (item && mid) {
+        void openFilingInto(mid, item);
+        prefetchNextAfter(item.id);
+      }
     } else if (act === "batchaction") {
       e.stopPropagation();
       const fileN = batchSel.size;

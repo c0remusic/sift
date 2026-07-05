@@ -352,12 +352,9 @@ function reportHtml(r: AnalysisReport, closeBtn: boolean): string {
   );
 }
 
-// One shared AudioContext for decoding formats the <audio> element can't play (AIFF).
-let decodeCtx: AudioContext | null = null;
-
 /** Wrap a decoded AudioBuffer as an in-memory 16-bit PCM WAV blob (lossless container swap;
- * AIFF and WAV are both PCM). Lets wavesurfer's media element play AIFF content the browser
- * decoded natively via Web Audio. */
+ * AIFF and WAV are both PCM). The player no longer uses this (it streams via the media
+ * element); kept for selftest.ts, which exercises the decode → WAV → wavesurfer chain. */
 export function audioBufferToWav(buf: AudioBuffer): Blob {
   const numCh = buf.numberOfChannels;
   const sr = buf.sampleRate;
@@ -395,71 +392,56 @@ export function audioBufferToWav(buf: AudioBuffer): Blob {
   return new Blob([ab], { type: "audio/wav" });
 }
 
-// Session cache of already-decoded audio (path → WAV blob), so switching back to a track
-// already opened this session skips the fetch + full decodeAudioData entirely — that decode
-// (not analysis) is the real cost of a queue switch. Capped small: an 8-min stereo 16-bit
-// WAV is ~80MB, so this is a short "recently played" window, not a full-library cache.
-const MAX_DECODED_CACHE = 4;
-const decodedCache = new Map<string, Blob>();
-
-function cacheDecoded(path: string, blob: Blob): void {
-  decodedCache.delete(path);
-  decodedCache.set(path, blob);
-  if (decodedCache.size > MAX_DECODED_CACHE) {
-    const oldest = decodedCache.keys().next().value;
-    if (oldest !== undefined) decodedCache.delete(oldest);
-  }
+/** Resolve a URL the webview's media element can play directly: the file itself for the
+ * formats Chromium decodes natively (mp3/wav/flac/m4a/ogg), or the backend's cached WAV
+ * transcode for AIFF (`playback_url`, mtime-guarded temp file, re-encoded only when stale).
+ * The old path here fetched the WHOLE file into an ArrayBuffer, decoded it fully with Web
+ * Audio, then re-encoded a 40-80MB WAV blob sample-by-sample in JS — for every format, on
+ * every cache-miss open. The media element streams instead; with pre-computed peaks passed
+ * to `ws.load` there is nothing left to decode up-front. */
+async function playableUrl(path: string): Promise<string> {
+  const ext = path.split(".").pop()?.toLowerCase() ?? "";
+  if (ext === "aif" || ext === "aiff") return invoke<string>("playback_url", { path });
+  return path;
 }
 
-/** Drops cached decoded audio (call alongside clearReportCache when a file's content
- *  may have changed, e.g. re-analysed/replaced) so a stale decode is never replayed. */
-export function clearDecodedCache(path?: string): void {
-  if (path) decodedCache.delete(path);
-  else decodedCache.clear();
-}
-
-/** Load a file the browser can't play natively (AIFF) by decoding it with Web Audio and
- * feeding the player a WAV blob. Falls back to the backend transcode if Web Audio refuses. */
-async function loadDecoded(ws: WaveSurfer, path: string): Promise<void> {
-  const cached = decodedCache.get(path);
-  if (cached) {
-    cacheDecoded(path, cached); // bump recency
-    if (ws !== currentWs) return;
-    await ws.loadBlob(cached);
-    return;
-  }
-  // Each await yields the event loop; the user may switch tracks meanwhile, which
-  // destroys this ws and creates a new currentWs. Bail if we're no longer current,
-  // so we never call loadBlob/load on a destroyed instance.
+/** Point the player's media element at the track (streaming, no up-front decode). `peaks`/
+ * `duration` (from the Rust analysis report) let wavesurfer render without decoding audio;
+ * without them (fresh, never-analyzed track) wavesurfer decodes for display itself.
+ * Each await yields the event loop; the user may switch tracks meanwhile, which destroys
+ * this ws and creates a new currentWs — bail so we never load into a destroyed instance. */
+async function loadAudio(ws: WaveSurfer, path: string, peaks?: number[], duration?: number): Promise<void> {
   try {
-    const resp = await fetch(convertFileSrc(path));
-    const arr = await resp.arrayBuffer();
+    const src = await playableUrl(path);
     if (ws !== currentWs) return;
-    if (!decodeCtx) decodeCtx = new AudioContext();
-    const audioBuf = await decodeCtx.decodeAudioData(arr);
-    if (ws !== currentWs) return;
-    const wav = audioBufferToWav(audioBuf);
-    cacheDecoded(path, wav);
-    await ws.loadBlob(wav);
+    await ws.load(convertFileSrc(src), peaks?.length ? [peaks] : undefined, duration || undefined);
   } catch (e) {
-    if (ws !== currentWs) return;
-    console.error("web-audio decode failed, falling back to transcode", e);
-    try {
-      const src = await invoke<string>("playback_url", { path });
-      if (ws !== currentWs) return;
-      await ws.load(convertFileSrc(src));
-    } catch (e2) {
-      console.error("playback fallback failed", e2);
-    }
+    if (ws !== currentWs) return; // AbortError from a track switch mid-load: expected, silent
+    console.error("audio load failed", e);
   }
+}
+
+/** Warm everything the NEXT track's open needs, so queue navigation feels instant: the
+ * analysis report (verdict + peaks — a DB hit when the worker already analyzed it) and,
+ * for AIFF, the backend's transcoded WAV. Failures are silent by design: a prefetch must
+ * never surface UI errors — the real open retries and reports. Called from the queue-open
+ * sites at most once per user track-switch (not a burst event). */
+export function prefetchTrack(path: string): void {
+  if (!reportCache.has(path)) {
+    void analyzePath(path, false)
+      .then((r) => reportCache.set(path, r))
+      .catch(() => {});
+  }
+  const ext = path.split(".").pop()?.toLowerCase() ?? "";
+  if (ext === "aif" || ext === "aiff") void invoke<string>("playback_url", { path }).catch(() => {});
 }
 
 /** Mounts a wavesurfer player on the report's player row. Tempo uses the browser's native
  * time-stretch (`preservesPitch`) for key-lock — adequate for the ±8% DJ nudge; SoundTouch.js
  * was evaluated and skipped (would require re-architecting playback to Web Audio for marginal
  * gain at this range). See docs/ressources-externes.md.
- * `peaks` and `duration` are optional hints for the initial waveform display — audio
- * loads via the Web-Audio decode path regardless (direct asset-protocol load aborts). */
+ * `peaks` and `duration` (from the Rust analysis report) render the waveform instantly AND
+ * spare wavesurfer its own display decode; audio streams via the media element (loadAudio). */
 async function mountPlayer(root: HTMLElement, path: string, peaks?: number[], duration?: number) {
   const container = requireEl<HTMLElement>(".sift-wave", "mountPlayer", root);
   const playBtn = root.querySelector<HTMLButtonElement>(".sift-play");
@@ -488,7 +470,7 @@ async function mountPlayer(root: HTMLElement, path: string, peaks?: number[], du
     duration: duration || undefined,
   });
   currentWs = ws;
-  void loadDecoded(ws, path);
+  void loadAudio(ws, path, peaks, duration);
 
   const setIcon = (name: string) => {
     const i = playBtn?.querySelector("i");
@@ -664,7 +646,7 @@ async function mountPlayer(root: HTMLElement, path: string, peaks?: number[], du
     console.error("wavesurfer error", e);
     // route to the Rust log so it shows in the dev console (webview console isn't readable here)
     void invoke("report_smoke", { ok: false, detail: `wavesurfer ${path}: ${String(e)}` });
-    // Audio always loads via loadDecoded, which already cascades Web Audio → backend transcode,
+    // Audio loads via loadAudio (native media element, AIFF pre-transcoded backend-side),
     // so there's nothing further to retry here — just surface the error.
     if (errorEl) {
       errorEl.textContent = "Lecture impossible — fichier illisible.";
@@ -744,7 +726,8 @@ const reportCache = new Map<string, AnalysisReport>();
 export function clearReportCache(path?: string) {
   if (path) reportCache.delete(path);
   else reportCache.clear();
-  clearDecodedCache(path);
+  // No decoded-audio cache to drop anymore: the player streams the file (or the backend's
+  // mtime-guarded AIFF transcode), so a replaced file is never replayed stale from JS memory.
 }
 
 // Monotonic token: the latest openReportInto call wins. A slow analyse that resolves after the
