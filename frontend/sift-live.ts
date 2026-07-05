@@ -1546,7 +1546,10 @@ async function renderRekordboxLive(): Promise<void> {
       `<i class="ti ti-alert-triangle" style="color:var(--color-text-warning)"></i>` +
       `<div class="sift-dup-banner-body">` +
       `<div class="sift-dup-banner-head" style="color:var(--color-text-warning)">Une correction de chemin a échoué lors d'un rangement récent</div>` +
-      `<div class="sift-dup-banner-where">Vérifie les pistes déplacées dans Rekordbox.</div>` +
+      // .sift-dup-banner-where is built for a truncated file path (nowrap+ellipsis) — this is a
+      // full sentence, the entire payload of a warning that was previously invisible anywhere in
+      // the UI, so it must never silently clip on a narrow window.
+      `<div class="sift-dup-banner-where" style="white-space:normal;overflow:visible;text-overflow:clip">Vérifie les pistes déplacées dans Rekordbox.</div>` +
       `</div></div>`
     : "";
 
