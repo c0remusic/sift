@@ -319,9 +319,67 @@ et leurs listeners. **Toute nouvelle carte doit s'ajouter à l'intérieur de ce
 wrapper**, pas comme sibling direct de `#content` — sinon le bug se
 reproduit.
 
+## Zone de dépôt drag OS — `.sift-dz-on` (`chrome.ts` `ensureDropStyle`/`setDropActive`)
+
+Overlay de dépôt affiché **pendant un drag OS seulement** (jamais au repos —
+`setDropActive` pose/retire `.sift-dz-on`). Style injecté une fois
+(`ensureDropStyle`, un `<style>` partagé par les 3 zones). Chaque zone montre son
+propre texte via `::after{content:attr(data-dz)}`.
+
+| Élément | Valeur |
+|---|---|
+| Contour | `outline:1.5px dashed var(--color-text-info)` + `outline-offset:-4px` (affordance drop conventionnelle, gardée) |
+| Voile `::after` | `background:var(--overlay-drop)` + `color:var(--color-text-info)`, centré |
+| Zones cibles | `#filfoot` (→ nouvelle destination), `#ql` (→ file audio), `#sift-sources` (→ dossier surveillé) ; fallback `#content` |
+
+✅ **Corrigé 2026-07-05** (chantier unification drop↔rail, grill-me) — le voile
+était `rgba(20,20,24,.55)` **codé en dur, sombre, ignorant le thème clair chaud
+actuel**. Remplacé par le token thème-aware `--overlay-drop`
+(`styles.css`, `:root` + les 2 blocs sombres : clair `rgba(214,209,202,.93)`,
+sombre `rgba(60,60,57,.93)` = base + ~10% tint info, à 93 % d'opacité). Le drop
+adopte ainsi le langage info du rail (bordure+texte étaient **déjà** en
+`--color-text-info`). Décisions grill-me : dashed gardé, même info pour les 3
+zones, mouvement (pulse Destination au drop) **reporté**. Découvrabilité au repos
+non ajoutée (drop reste drag-only, choix acté). Vérifié live par CDP :
+`--overlay-drop` résout bien dans la vraie app Tauri.
+
+## Lien rebuy Beatport — `.sift-rebuy-btn` (`styles.css:489`, `filing.ts` `refreshRebuyLink()`)
+
+| État | Valeur |
+|---|---|
+| Absent | `.sift-rebuy` vide → `:empty{margin-bottom:0}`, aucun gap |
+| Présent | `<button>` texte+icône, `background:var(--color-background-warning)` + `color:var(--color-text-warning)` + bordure `--color-border-tertiary`, `border-radius:var(--border-radius-md)`, pleine largeur |
+
+Créé 2026-07-05. Gating strict : affiché **seulement** quand
+`state.track.verdict === "fake"` **ET** `state.identified` (identité Discogs
+appliquée) — chercher un nom de fichier brut est inutile. Container create-once
+`.sift-rebuy` (après les genres dans `renderEditor`), rempli par
+`refreshRebuyLink()` sur open / renderEditor / identify frais. Ouvre
+`beatport.com/search?q=artiste+titre` via `openUrl` (commande Rust `open_url`,
+http(s) uniquement, pas de whitelist domaine). Teinte ambre volontaire (cohérent
+« le danger fusionne dans l'ambre »), pas de side-stripe.
+
+## CTA « Revoir N morceaux → » — Accueil (`home-sources.ts` `listColumnHtml()`)
+
+Bouton pill dans l'en-tête de la colonne Sources, affiché **seulement quand**
+`pending_count` cumulé sur toutes les sources > 0.
+`background:var(--color-background-success)` + `color:var(--color-text-success)` +
+`border-radius:var(--border-radius-pill)` — vert « prêt à revoir ». Clic →
+dispatch un clic sur `[data-view="revue"]` (le pont Accueil→Revue). Créé
+2026-07-05.
+
 ---
 
 ## Historique des corrections
+
+**2026-07-05 (chantier 3 prompts : CTA Accueil, lien rebuy, unification
+drop↔rail)** : ajout du CTA « Revoir N → » (Accueil), du lien rebuy Beatport
+(Revue, gated fake+identifié), et tokenisation du voile de dépôt
+(`--overlay-drop`, remplace un `rgba` sombre codé en dur). 3 nouvelles entrées
+composant ci-dessus. `tsc --noEmit` clean, vérifié live par CDP (vraie app
+Tauri, token `--overlay-drop` résout). Audit `/impeccable audit filing.ts` :
+15/20, mes ajouts propres (0 finding détecteur), findings a11y chips/arbre
+pré-existants non traités (chantier `harden` séparé).
 
 **2026-07-03, passe 1 (audit design-system, 6 bugs)** : `.sift-id-btn` (3e
 teinte + dark), carte verdict (tokens), `.chip` (hover), sliders (hover/drag),

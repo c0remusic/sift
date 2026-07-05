@@ -20,6 +20,7 @@ import {
   findDuplicate,
   identify,
   applyIdentity,
+  openUrl,
   trackRelease,
   trackFileTags,
   previewFilename,
@@ -81,6 +82,10 @@ interface RevueState {
   // After a Detail-mode filing, the just-filed track's batch_id + bin label → drives the
   // persistent "Filed ↩" confirmation in #mid (targeted revert via the journal). Null = none up.
   filedConfirm: { batchId: string; bin: string } | null;
+  // True once a Discogs identity is applied to the open track (fresh fetch OR persisted-identified
+  // reopen). Gates the "rebuy on Beatport" link: searching a raw filename is useless — only a
+  // confirmed artist+title is worth a store search.
+  identified: boolean;
 }
 
 const state: RevueState = {
@@ -99,6 +104,7 @@ const state: RevueState = {
   genres: [],
   fileTags: null,
   filedConfirm: null,
+  identified: false,
 };
 
 // Identification card display mode: false = read-only grid (maquette default), true = the
@@ -712,6 +718,10 @@ function onIdentityApplied(
   state.genres = applied.styles;
   renderGenres();
 
+  // A Discogs match now exists → if the file is a fake/transcode, offer the rebuy search link.
+  state.identified = true;
+  refreshRebuyLink();
+
   // [C3] Collapse candidate zone to a confirmation row + "changer" link (no dead-end).
   // Re-labelling the Identifier button to "Ré-identifier" is also handled here.
   host.hidden = false;
@@ -1072,6 +1082,9 @@ function renderEditor(host: HTMLElement, mid: HTMLElement, rail: string, report:
     `<div class="sift-release"></div>` +
     `<div class="col-h sift-col-h-tight">Genres</div>` +
     `<div class="sift-genres sift-genres-box"></div>` +
+    // Rebuy link slot — filled by refreshRebuyLink() only for a fake track that also has a Discogs
+    // match (empty, no gap, otherwise). Placed after genres so the identity block reads whole first.
+    `<div class="sift-rebuy"></div>` +
     // Version ID3: moved here from the spectral-proof box (report-view.ts) — the maquette groups
     // it with Label/Année/Genre in Identification, not with the spectrum evidence. Compatibilité
     // CDJ moved OUT of this card (FIX-4): it now surfaces as an explicit "CDJ" chip right under
@@ -1129,6 +1142,37 @@ function renderEditor(host: HTMLElement, mid: HTMLElement, rail: string, report:
   });
 
   refreshReleaseLine(); // read-only Label · Année from state (restored from cache on open); empty when none
+  refreshRebuyLink(); // rebuy-on-Beatport link when the open track is fake AND already identified
+}
+
+/** Beatport search URL for the open track's identified artist + title. A search page (not an API):
+ *  robust to spelling/pressing variants — the user picks the authentic release themselves. Null when
+ *  there's nothing worth searching. */
+function beatportSearchUrl(): string | null {
+  const c = state.canonical;
+  if (!c || !c.title.trim()) return null;
+  const q = [c.artist, c.title].map((s) => (s ?? "").trim()).filter(Boolean).join(" ");
+  return q ? `https://www.beatport.com/search?q=${encodeURIComponent(q)}` : null;
+}
+
+/** Show a "chercher sur Beatport" link ONLY when the open track is a fake/transcode AND a Discogs
+ *  identity exists (state.identified) — searching a raw filename is useless. Fills a create-once
+ *  `.sift-rebuy` container; empty (no link, no gap) otherwise. Called on open, on renderEditor, and
+ *  after a fresh identify (onIdentityApplied). */
+function refreshRebuyLink(): void {
+  const el = document.querySelector<HTMLElement>(".sift-rebuy");
+  if (!el) return; // editor not mounted
+  const url = state.track?.verdict === "fake" && state.identified ? beatportSearchUrl() : null;
+  if (!url) {
+    el.innerHTML = "";
+    return;
+  }
+  el.innerHTML =
+    `<button class="sift-rebuy-btn" data-fil="rebuy" title="Ce fichier est un faux — chercher une version authentique sur Beatport">` +
+    `<i class="ti ti-shopping-cart sift-icon-inline-md"></i> Chercher sur Beatport</button>`;
+  el.querySelector('[data-fil="rebuy"]')?.addEventListener("click", () => {
+    void openUrl(url).catch((e) => console.error("openUrl (rebuy) failed", e));
+  });
 }
 
 // Apply-button state machine. ONE button toggles between "Apply ID3 tags" (writes the file) and
@@ -1435,6 +1479,7 @@ function clearPane(mid: HTMLElement, emptyQueue = false): void {
   state.genres = [];
   state.fileTags = null;
   state.filedConfirm = null;
+  state.identified = false;
   mid.innerHTML = emptyQueue
     ? emptyStateHtml({
         title: "Rien à revoir",
@@ -1563,6 +1608,7 @@ export async function openFilingInto(mid: HTMLElement, item: QueueItem): Promise
   // both cached here for the in-memory discrepancy check. fileTags may be null (read failed → no marker).
   state.genres = release.genres;
   state.fileTags = fileTags;
+  state.identified = release.identified; // gates the rebuy link (fake + identified only)
   releaseCache.set(item.id, { label: release.label, year: release.year });
   // Tidy the casing of a version parsed from a (often lowercase) filename: "original mix"
   // → "Original Mix". Title/artist are left as reconciled.

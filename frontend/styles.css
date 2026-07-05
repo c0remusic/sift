@@ -26,6 +26,10 @@ color-scheme:light;
    invisible the moment dark mode is active (see fix 2026-07-01: .nv/.qi selection). */
 --overlay-hover:rgba(40,34,28,.035);--overlay-selected:rgba(40,34,28,.06);
 --overlay-bar:rgba(40,34,28,.55);--overlay-badge:rgba(40,34,28,.06);
+/* Voile de zone de dépôt (drag OS) : surface quasi-opaque teintée info, même langage que le
+   bouton Destination du rail (base + tint info), thème-aware. Remplace l'ancien rgba sombre
+   codé en dur qui ignorait le thème clair. Voir chrome.ts ensureDropStyle. */
+--overlay-drop:rgba(214,209,202,.93);
 --border-radius-sm:4px;--border-radius-md:6px;--border-radius-lg:10px;--border-radius-pill:999px;
 /* Elevation shadows — only the two floating surfaces that need them (toast, modal overlay).
    Black at fixed alpha reads fine on both themes, same as the rest of the app's overlay tints. */
@@ -65,7 +69,7 @@ color-scheme:light;
     --color-border-tertiary:rgba(255,255,255,0.12);--color-border-secondary:rgba(255,255,255,0.22);
     --color-border-info:rgba(240,237,230,.30);--color-border-danger:rgba(221,166,63,.45);
     --overlay-hover:rgba(255,255,255,.03);--overlay-selected:rgba(255,255,255,.06);
-    --overlay-bar:rgba(255,255,255,.32);--overlay-badge:rgba(255,255,255,.06);
+    --overlay-bar:rgba(255,255,255,.32);--overlay-badge:rgba(255,255,255,.06);--overlay-drop:rgba(60,60,57,.93);
     --color-accent-identify:#FFdc82;--color-accent-identify-hover:#f0cc6a;
     --color-accent-identify-text:#1d1c1a;--color-accent-identify-border:rgba(255,255,255,.12);
   }
@@ -79,7 +83,7 @@ color-scheme:light;
   --color-border-tertiary:rgba(255,255,255,0.12);--color-border-secondary:rgba(255,255,255,0.22);
   --color-border-info:rgba(240,237,230,.30);--color-border-danger:rgba(221,166,63,.45);
   --overlay-hover:rgba(255,255,255,.03);--overlay-selected:rgba(255,255,255,.06);
-  --overlay-bar:rgba(255,255,255,.32);--overlay-badge:rgba(255,255,255,.06);
+  --overlay-bar:rgba(255,255,255,.32);--overlay-badge:rgba(255,255,255,.06);--overlay-drop:rgba(60,60,57,.93);
   --color-accent-identify:#FFdc82;--color-accent-identify-hover:#f0cc6a;
   --color-accent-identify-text:#1d1c1a;--color-accent-identify-border:rgba(255,255,255,.12);
 }
@@ -486,6 +490,9 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-editor-input{font-size:var(--text-md);padding:4px 7px;background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);color:var(--color-text-primary);min-width:0}
 .sift-genres-box{margin-bottom:10px;min-height:1px}
 .sift-applytags-btn{width:100%;font-size:var(--text-sm);color:var(--color-text-secondary)}
+.sift-rebuy{margin-bottom:10px}
+.sift-rebuy:empty{margin-bottom:0}
+.sift-rebuy-btn{width:100%;font-size:var(--text-sm);font-weight:500;color:var(--color-text-warning);background:var(--color-background-warning);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md)}
 .sift-kbd-hint-id{font-size:var(--text-2xs);border-color:rgba(0,0,0,.18);color:rgba(0,0,0,.5)}
 .sift-release-line{display:flex;align-items:center;gap:6px;font-size:var(--text-sm);color:var(--color-text-secondary);margin-bottom:10px}
 .sift-release-line i{font-size:var(--text-md);color:var(--color-text-tertiary)}

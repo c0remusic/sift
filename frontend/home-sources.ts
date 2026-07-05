@@ -49,9 +49,16 @@ function rowHtml(s: Source, active: boolean): string {
 }
 
 function listColumnHtml(sources: Source[]): string {
+  // Total morceaux prêts à revoir, toutes sources confondues — le pont Accueil→Revue : quand il
+  // y en a, un CTA compteur mène droit à la Revue (sinon rien, l'Accueil reste un écran de config).
+  const pending = sources.reduce((n, s) => n + s.pending_count, 0);
+  const revueCta = pending
+    ? `<button data-sift="gotorevue" style="display:inline-flex;align-items:center;gap:6px;background:var(--color-background-success);color:var(--color-text-success);font-weight:600;font-size:var(--text-sm);padding:5px 12px;border-radius:var(--border-radius-pill)">Revoir ${pending} morceau${pending > 1 ? "x" : ""} <i class="ti ti-arrow-right" style="font-size:var(--text-base);vertical-align:-2px"></i></button>`
+    : "";
   const header =
-    `<div style="display:flex;align-items:center;justify-content:space-between;padding:0 2px 11px">` +
+    `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:0 2px 11px">` +
     `<span style="font-size:var(--text-lg);font-weight:600">Sources <span style="font-family:var(--font-mono);font-weight:400;font-size:var(--text-sm);color:var(--color-text-tertiary)">${sources.length}</span></span>` +
+    revueCta +
     `</div>`;
   const rows = sources.length
     ? sources.map((s) => rowHtml(s, s.id === selectedSourceId)).join("")
@@ -149,6 +156,11 @@ export async function renderHomeSources() {
   });
   queueCol.querySelector('[data-sift="addsrc"]')?.addEventListener("click", () => {
     void pickAndAddFolder(renderHomeSources);
+  });
+  queueCol.querySelector('[data-sift="gotorevue"]')?.addEventListener("click", () => {
+    document
+      .querySelector('[data-view="revue"]')
+      ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
   });
 
   inspectorCol.querySelector('[data-sift="gotoreglages"]')?.addEventListener("click", () => {
