@@ -9,6 +9,24 @@ App desktop **Tauri v2** (Win+Mac), gratuite, de prépa de musique pour DJ : ana
 (détection faux lossless), dédoublonnage, identification, rangement.
 Principe : « déplacer = encoder + ranger ».
 
+## Vision de travail — studio design-to-code 1:1
+La maquette n'est pas une étape avant le produit : **l'app réelle est la surface
+de design**. Toute évolution visuelle/UX se fait directement dans le code de
+production (`frontend/*.ts` + `styles.css`), visible immédiatement via HMR dans
+la fenêtre `tauri dev` — jamais dans une maquette parallèle à resynchroniser
+(`app.js` et `Sift.dc.html` sont des artefacts d'exploration figés, pas des
+livrables). Corollaires :
+- **Ordre de réflexion** : besoin utilisateur → parcours → UX → UI → perf →
+  code. Jamais l'inverse.
+- **Sources de vérité design** : `frontend/styles.css` (`:root`, canonique
+  unique des tokens depuis token-sync v3) + `docs/design-system-states.md`.
+  Ne jamais créer de fichier de thème/design-system parallèle.
+- **Stack assumé** : vanilla TS sans framework — les patterns React
+  (hooks/stores/providers) ne s'appliquent pas ici, et une migration de
+  framework est explicitement écartée (Évaluation 3, ressources-externes).
+- Vérification, routage skills, conventions CSS : sections dédiées plus bas
+  (Vérification UI, Outillage, Front — CSS) — règles non dupliquées ici.
+
 ## Stack
 Tauri v2 (Rust) · frontend Vite vanilla · **Symphonia** (décode analyse) + FFmpeg sidecar
 bundlé (encode) · SQLite (`rusqlite`) · `rustfft` · `lofty` · `rusty-chromaprint` · `ureq`.
