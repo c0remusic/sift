@@ -167,6 +167,23 @@ dynamiquement depuis le paramètre `name` déjà disponible dans la fonction.
 `hidden` + pas de `src` au premier rendu reste volontaire (divulgation
 progressive, pochette affichée une fois chargée) — pas une image cassée.
 
+✅ **Corrigé 2026-07-05 — vraie image cassée trouvée et corrigée** (rapportée
+via l'outil d'annotation Alt+Clic, voir Évaluation 12). Root cause : CSS, pas
+réseau/backend. `.sift-player-cover{display:block}` (`styles.css:379`) n'avait
+aucun garde `:not([hidden])` — une règle auteur bat toujours le user-agent
+stylesheet (`[hidden]{display:none}`) quelle que soit la spécificité comparée,
+donc poser `covEl.hidden = true` en JS n'avait **aucun effet visuel**. Résultat :
+tout échec de chargement de la pochette (même transitoire) restait affiché comme
+glyphe "image cassée" du navigateur **pour toujours**, par-dessus le vinyle,
+puisque rien ne pouvait jamais le recacher. Vérifié en direct par CDP
+(`getComputedStyle(img).display` restait `"block"` avec `hidden=true` avant
+fix, bascule correctement `none`/`block` après). Fix : sélecteur changé en
+`.sift-player-cover:not([hidden])`. Durci en même temps : `cover.rs` rejette les
+téléchargements < 1 Ko (le "spacer" placeholder que Discogs sert parfois à la
+place d'une vraie pochette) avant de les mettre en cache ; `filing.ts` pose un
+`onerror` qui recache l'image en cas d'échec (inefficace avant ce fix CSS,
+fonctionne maintenant).
+
 ## Boutons icon-only (lecture, lien Discogs, titlebar) — vérifiés
 
 `sift-play-btn` (`report-view.ts:208`) a `title` + `aria-label`. Lien Discogs
@@ -436,6 +453,13 @@ par Antoine (code gated `inTauri`).
 ---
 
 ## Historique des corrections
+
+**2026-07-05 (pochette réellement cassée + sélection multi Alt+Clic)** :
+signalée via l'outil d'annotation, corrigée après reproduction en direct par
+CDP (voir section Pochette/cover ci-dessus pour le détail). En parallèle,
+l'outil d'annotation lui-même a gagné la sélection multi-éléments (répéter
+Alt+Clic accumule au lieu de remplacer) pour porter le contexte de plusieurs
+zones dans une seule note.
 
 **2026-07-05 (refonte écran Revue + réconciliation des 2 maquettes)** : voir
 section dédiée ci-dessus. `app.js` réactualisé et vérifié en direct
