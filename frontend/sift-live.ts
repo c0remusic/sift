@@ -596,11 +596,12 @@ function toast(message: string): void {
 /** Guards a single in-flight export (Rekordbox only — USB has no backend, out of M7 scope). */
 let exportRunning = false;
 
-/** Nav "Export" click (Rekordbox/Clé USB, index.html's `.nv-export` items). Rekordbox now runs
- * the REAL merge+rewrite (`export_rekordbox_xml`); USB has no backend (unchanged, out of M7
- * scope — see docs/superpowers/specs/2026-07-03-m7-rekordbox-xml-export-design.md, "hors scope").
- * Doesn't switch screens (see the capture-phase click listener below, which pre-empts app.js's
- * mockup view switch for data-view="rkb"/"cle"). */
+/** Rekordbox export (real merge+rewrite via `export_rekordbox_xml`, called from the Rekordbox
+ * page's "Réexporter maintenant" button — see renderRekordboxLive) and the "Clé USB" nav click
+ * (still a one-click toast, index.html's `.nv-export`/`data-view="cle"` — its own brainstorm is
+ * pending). USB formatting DOES have a backend (`ipc_usb.rs`/`usb_format/`) and even a UI (the
+ * "Formater une clé USB" card in Réglages, below) — this toast is unrelated to that, just an
+ * explainer for why the nav item itself doesn't do anything yet. */
 async function runNavExport(target: "rekordbox" | "usb"): Promise<void> {
   if (target === "usb") {
     toast("Export clé USB : Rekordbox recopie lui-même une fois le XML réimporté");
@@ -1481,23 +1482,75 @@ function statsCardsHtml(s: DashboardStats): string {
   );
 }
 
-/** The M7 Rekordbox link-status card — same visual family as the M6b stat cards
- * (border+radius token, no accent stripe per the CSS ban on border-left/-right accents). Shows
- * the linked XML path, playlist/track counts, and a "changer de XML lié" action; an explicit
- * error state (unreadable/corrupt file) blocks nothing else on the page, it's just a card state. */
+/** Rekordbox link-status card, now the Rekordbox page's centerpiece (moved out of Bibliothèque,
+ * audit 2026-07-05 — see docs/superpowers/specs/2026-07-05-rekordbox-integration-page-design.md).
+ * Same visual family as the M6b stat cards (border+radius token, no accent stripe per the CSS ban
+ * on border-left/-right accents). Only called for `s.linked === true` — the not-linked case is a
+ * full empty-state (see renderRekordboxLive). */
 function rekordboxCardHtml(s: RekordboxLinkStatus): string {
-  const body = !s.linked
-    ? `<div style="font-size:var(--text-md);color:var(--color-text-tertiary)">Aucun XML Rekordbox lié.</div>`
-    : s.error
-      ? `<div style="font-size:var(--text-md);color:var(--color-text-danger)">XML Rekordbox illisible — relie un fichier.</div>`
-      : `<div style="font-size:var(--text-md)">${esc(s.path || "")}</div>` +
-        `<div style="font-size:var(--text-sm);color:var(--color-text-tertiary)">${s.playlist_count} playlists · ${s.track_count} pistes</div>`;
+  const body = s.error
+    ? `<div style="font-size:var(--text-md);color:var(--color-text-danger)">XML Rekordbox illisible — relie un fichier.</div>`
+    : `<div style="font-size:var(--text-md)">${esc(s.path || "")}</div>` +
+      `<div style="font-size:var(--text-sm);color:var(--color-text-tertiary)">${s.playlist_count} playlists · ${s.track_count} pistes</div>`;
+  // No "Réexporter" while the linked file is unreadable — the backend already refuses the export
+  // in that case (export_rekordbox_xml_inner reads the same path before merging).
+  const reexport = s.error
+    ? ""
+    : `<button class="lk" data-sift="rkbreexport" style="flex:none">Réexporter maintenant</button>`;
   return (
     `<div style="border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:10px 12px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:12px">` +
     `<div style="min-width:0">${body}</div>` +
-    `<button class="lk" data-bib="rkblink" style="flex:none">${s.linked ? "Changer de XML lié" : "Lier un XML Rekordbox"}</button>` +
+    `<div style="display:flex;gap:8px;flex:none">${reexport}<button class="lk" data-bib="rkblink" style="flex:none">Changer de XML lié</button></div>` +
     `</div>`
   );
+}
+
+/** Rekordbox integration page (data-view="rkb") — real screen replacing the old one-click nav
+ * export (audit 2026-07-05, docs/superpowers/specs/2026-07-05-rekordbox-integration-page-design.md).
+ * Renders the whole page fresh each call, same pattern as renderBiblioLive/renderJournal — no mock
+ * DOM survives. `drift_detected` is independent of linked/error, so the banner can appear on top
+ * of either linked state (never modeled as a 4-way exclusive if/else). */
+async function renderRekordboxLive(): Promise<void> {
+  const content = requireEl("#content", "renderRekordboxLive");
+  let status: RekordboxLinkStatus;
+  try {
+    status = await rekordboxStatus();
+  } catch (e) {
+    console.error("rekordbox_status failed", e);
+    content.innerHTML =
+      `<div class="h1">Rekordbox</div>` +
+      `<div style="font-size:var(--text-md);color:var(--color-text-tertiary)">Statut Rekordbox indisponible.</div>`;
+    return;
+  }
+
+  const intro =
+    `<div class="h1">Rekordbox</div>` +
+    `<div style="font-size:var(--text-md);color:var(--color-text-tertiary);margin-bottom:12px">` +
+    `Sift range tes morceaux → l'export fusionne les nouveaux dans le XML lié → réimporte-le dans Rekordbox pour les voir apparaître.` +
+    `</div>`;
+
+  if (!status.linked) {
+    content.innerHTML =
+      intro +
+      emptyStateHtml({
+        title: "Aucun XML Rekordbox lié",
+        note: "Relie le fichier XML exporté depuis Rekordbox pour commencer à synchroniser tes rangements.",
+        actionHtml: `<button class="lk" data-bib="rkblink">Lier un fichier XML Rekordbox</button>`,
+      });
+    wireEmptyState(content);
+    return;
+  }
+
+  const driftBanner = status.drift_detected
+    ? `<div class="sift-dup-banner" style="background:var(--color-background-warning)">` +
+      `<i class="ti ti-alert-triangle" style="color:var(--color-text-warning)"></i>` +
+      `<div class="sift-dup-banner-body">` +
+      `<div class="sift-dup-banner-head" style="color:var(--color-text-warning)">Une correction de chemin a échoué lors d'un rangement récent</div>` +
+      `<div class="sift-dup-banner-where">Vérifie les pistes déplacées dans Rekordbox.</div>` +
+      `</div></div>`
+    : "";
+
+  content.innerHTML = intro + driftBanner + rekordboxCardHtml(status);
 }
 
 /** Live Bibliothèque view: lists filed tracks with search + quality chips + folder/genre
@@ -1511,13 +1564,11 @@ async function renderBiblioLive() {
   bibVirtual = null;
   let facets: LibraryFacets = { folders: [], genres: [] };
   let stats: DashboardStats | null = null;
-  let rkbStatus: RekordboxLinkStatus | null = null;
   try {
-    [bibState.tracks, facets, stats, rkbStatus] = await Promise.all([
+    [bibState.tracks, facets, stats] = await Promise.all([
       listLibrary(bibState.filter),
       libraryFolders(),
       libraryStats(),
-      rekordboxStatus(),
     ]);
   } catch (e) {
     console.error("library load failed", e);
@@ -1585,7 +1636,6 @@ async function renderBiblioLive() {
         backToRevue: true,
       })
     : (stats ? statsCardsHtml(stats) : "") +
-      (rkbStatus ? rekordboxCardHtml(rkbStatus) : "") +
       header +
       `<div style="display:flex;gap:14px"><div style="width:150px;flex:none"><div class="col-h">Bibliothèque</div>${side}</div>` +
       `<div style="flex:1;min-width:0"><div style="display:flex;justify-content:space-between;margin-bottom:5px"><span style="font-size:var(--text-base);font-weight:500">${esc(activeFacetVal || "Tous")}</span><span style="font-size:var(--text-sm);color:var(--color-text-tertiary)">${bibState.tracks.length} piste${bibState.tracks.length > 1 ? "s" : ""}</span></div>` +
@@ -1672,6 +1722,7 @@ export function installLiveWiring() {
   window.__siftReglages = () => void renderReglagesLive();
   window.__siftBiblio = () => void renderBiblioLive();
   window.__siftJournal = () => void renderJournal();
+  window.__siftRkb = () => void renderRekordboxLive();
   injectLeanStyle();
   void injectTitlebar();
   void initTheme();
@@ -1681,19 +1732,19 @@ export function installLiveWiring() {
   installScrollAutohide();
   void installDragDrop();
 
-  // Nav Export (Rekordbox/Clé USB) is a one-click action, not a real screen (renderRkb/renderCle
-  // in app.js are unbuilt mock content) — capture phase so this runs BEFORE app.js's own bubble-
-  // phase `#pa` listener (registered first, at import time) can switch `view` to the mock screen.
-  // stopPropagation() during capture halts the whole path, including that bubble-phase listener.
+  // Nav "Clé USB" is still a one-click action, not a real screen (Clé USB's own brainstorm is
+  // pending — see docs/ressources-externes.md) — capture phase so this runs BEFORE app.js's own
+  // bubble-phase `#pa` listener (registered first, at import time) can switch `view` to the mock
+  // screen. stopPropagation() during capture halts the whole path, including that bubble-phase
+  // listener. "Rekordbox" is a real page now (renderRekordboxLive, window.__siftRkb above) — its
+  // click is left alone so it reaches app.js's router and navigates normally.
   requireEl("#pa", "installLiveWiring").addEventListener(
     "click",
     (e) => {
-      const exp = (e.target as HTMLElement).closest<HTMLElement>(
-        '[data-view="rkb"],[data-view="cle"]',
-      );
+      const exp = (e.target as HTMLElement).closest<HTMLElement>('[data-view="cle"]');
       if (!exp) return;
       e.stopPropagation();
-      void runNavExport(exp.dataset.view === "cle" ? "usb" : "rekordbox");
+      void runNavExport("usb");
     },
     { capture: true },
   );
@@ -1803,7 +1854,7 @@ export function installLiveWiring() {
                 ? "XML Rekordbox illisible — relie un autre fichier"
                 : `XML Rekordbox lié : ${status.track_count} pistes, ${status.playlist_count} playlists`,
             );
-            void renderBiblioLive();
+            void renderRekordboxLive();
           } catch (e) {
             console.error("link_rekordbox_xml failed", e);
             toast("Liaison du XML Rekordbox échouée");
@@ -1986,6 +2037,9 @@ export function installLiveWiring() {
     } else if (act === "batchstop") {
       e.stopPropagation();
       onFileStop();
+    } else if (act === "rkbreexport") {
+      e.stopPropagation();
+      void runNavExport("rekordbox");
     }
   });
 
@@ -2056,5 +2110,6 @@ declare global {
     __siftReglages?: () => void;
     __siftBiblio?: () => void;
     __siftJournal?: () => void;
+    __siftRkb?: () => void;
   }
 }
