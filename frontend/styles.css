@@ -430,6 +430,48 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-spectro-body.is-open{grid-template-rows:1fr}
 .sift-spectro-body-inner{overflow:hidden;min-height:0}
 .sift-spectro-declared{padding:8px 11px;font-size:var(--text-xs);color:var(--color-text-tertiary);border-bottom:0.5px solid var(--color-border-tertiary);line-height:1.5}
+/* Toggle de zone partagé (Diagnostic ET Métadonnées) — un seul style pour les deux disclosures,
+   pour qu'elles lisent comme le même composant (retour utilisateur 2026-07-05 : elles avaient
+   deux styles différents et une seule des deux zones avait un fond teinté). */
+.sift-zone-toggle{width:100%;display:flex;align-items:center;justify-content:space-between;
+  background:none;border:none;cursor:pointer;text-align:left;padding:2px 0 10px;
+  font-size:var(--text-sm);color:var(--color-text-secondary);font-family:inherit}
+.sift-zone-toggle-car{display:inline-block;margin-right:6px;color:var(--color-text-tertiary);
+  transition:transform .15s ease}
+.sift-zone-toggle-open .sift-zone-toggle-car{transform:rotate(90deg)}
+.sift-zone-toggle-right{display:flex;align-items:center;gap:8px}
+.sift-zone-toggle-hint{font-size:var(--text-xs);color:var(--color-text-tertiary)}
+.sift-zone-toggle-body{display:none}
+.sift-zone-toggle-body.sift-zone-toggle-body-open{display:block}
+/* Badge d'en-tête (ex. "MP3 ≈ X kbps", "CDJ incompatible") — visible replié, cohérent avec
+   .sift-vchip existant mais sans dépendre de sa mise en page en ligne de "Preuves". */
+.sift-chip-badge{font-size:var(--text-2xs);font-weight:600;padding:4px 9px;
+  border-radius:var(--border-radius-pill);border:none;font-family:inherit}
+/* Halo discret (pas de changement de couleur de fond — trop voyant sur un bouton entier) pour
+   attirer l'œil vers un fix ailleurs dans la même zone (ex. bouton Appliquer les tags). Classe
+   retirée par JS après `animationend` (voir filing.ts) pour ne rien laisser traîner. */
+.sift-highlight-flash{animation:sift-highlight .6s ease-out forwards}
+@keyframes sift-highlight{
+  0%{box-shadow:0 0 0 2px var(--overlay-selected)}
+  100%{box-shadow:0 0 0 0 transparent}
+}
+/* Flash de confirmation sur .sift-identified-line au moment où un choix Discogs vient d'être
+   appliqué (onIdentityApplied, Task 4 Step 5) — jamais sur une réouverture
+   (restoreIdentifiedLine). Le vert n'apparaît qu'un instant, pas un état permanent (retour
+   utilisateur : un aplat vert en continu est trop appuyé une fois le travail fait).
+   Fond final = background réel de .sift-identified-line héritée de .sift-fil-editor-margin. */
+.sift-identified-flash{animation:sift-identified-flash .7s ease}
+@keyframes sift-identified-flash{
+  0%{background:var(--color-surface-raised)}
+  30%{background:var(--color-text-success)}
+  100%{background:var(--color-background-secondary)}
+}
+/* CTA Discogs contextuel : gold plein (.sift-id-btn, existant) réservé à "rien identifié pour
+   l'instant" ; neutre ici une fois une identité déjà appliquée — re-rechercher est une action
+   secondaire de correction, pas le focus de l'écran (retour utilisateur 2026-07-05). */
+.sift-id-btn-neutral{background:var(--color-surface-raised);border-color:var(--color-border-tertiary);
+  color:var(--color-text-secondary);font-weight:500}
+.sift-id-btn-neutral:hover{background:var(--color-row-active)}
 .sift-spectro-canvas{width:100%;display:block;background:#000}
 .sift-spectro-rows{padding:9px 11px;display:grid;grid-template-columns:1fr 1fr;gap:0 28px;font-size:var(--text-md)}
 .sift-row{display:flex;justify-content:space-between;gap:16px;padding:3px 0;border-bottom:0.5px solid var(--color-border-tertiary)}
