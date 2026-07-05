@@ -2,8 +2,12 @@
 
 > Suite de l'audit UI 2026-07-05 (annotation Alt+Clic #3 : "actuellement 'rekordbox' et 'clef
 > usb' ont des fonctions d'export, ce n'est pas le but"). Périmètre de ce brainstorm : Rekordbox
-> uniquement. Clé USB est un brainstorm séparé, décidé explicitement (backend déjà construit —
-> `ipc_usb.rs`/`usb_format/` — mais zéro UI ; traité plus tard).
+> uniquement. Clé USB est un brainstorm séparé, décidé explicitement — correction après vérif
+> pendant l'écriture du plan : le formatage USB a déjà une UI réelle (carte "Formater une clé
+> USB", `sift-live.ts:1314+`, id `sift-reglages-usb`), mais dans **Réglages**, jamais reliée à
+> l'item de nav "Clé USB" (qui reste un simple toast). Le futur brainstorm USB portera donc sur
+> "faut-il migrer/dupliquer cette carte vers une page dédiée", pas sur "construire une UI de
+> zéro".
 
 ## Constat (état réel vérifié, pas supposé)
 
