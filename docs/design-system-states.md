@@ -368,6 +368,35 @@ Bouton pill dans l'en-tête de la colonne Sources, affiché **seulement quand**
 dispatch un clic sur `[data-view="revue"]` (le pont Accueil→Revue). Créé
 2026-07-05.
 
+## Page Rekordbox — `renderRekordboxLive()` (`sift-live.ts`, `data-view="rkb"`)
+
+Écran dédié (audit UI 2026-07-05, annotation « rekordbox = fonction d'export,
+ce n'est pas le but ») remplaçant l'ancien comportement one-click nav → toast.
+Déplacé depuis Bibliothèque (`rekordboxCardHtml()` n'y vit plus). Nav :
+groupe renommé « Export » → « Intégrations », item Rekordbox passé de
+`.nv-export` (puce ambrée, opacité .55) à `.nv` plein avec icône `ti-disc` —
+même traitement que Bibliothèque/Journal. « Clé USB » reste `.nv-export`
+inchangé (son propre brainstorm est à venir).
+
+| État | Condition | Rendu |
+|---|---|---|
+| Non lié | `linked=false` | `empty-state.ts` (étendu ce chantier avec `actionHtml?`) : titre + note + bouton `data-bib="rkblink"` |
+| Lié, sain | `linked=true, error=null` | Carte : chemin + compteurs, boutons « Réexporter maintenant » (`data-sift="rkbreexport"`) + « Changer de XML lié » |
+| Lié, erreur | `linked=true, error≠null` | Carte : message illisible/corrompu, pas de bouton réexport (backend refuse déjà l'export) |
+| Drift détecté | `drift_detected=true` | **Nouveau** — bannière `.sift-dup-banner` (fond `--color-background-warning`), **orthogonale** aux 3 états ci-dessus (peut s'afficher au-dessus de sain OU erreur, pas un `if/else if` à 4 branches). Signal backend existant depuis FIX-7, jusqu'ici invisible sauf en log serveur. |
+
+`.sift-dup-banner-where` est conçu pour un chemin de fichier tronqué
+(`nowrap`+`ellipsis`) — la bannière drift porte une phrase complète (tout le
+message d'un warning auparavant invisible), donc override inline
+`white-space:normal;overflow:visible;text-overflow:clip` sur cette instance
+précise (trouvé en revue finale, corrigé avant merge).
+
+Design/plan : `docs/superpowers/specs/2026-07-05-rekordbox-integration-page-design.md`,
+`docs/superpowers/plans/2026-07-05-rekordbox-integration-page.md`. Construit
+via subagent-driven-development (4 tâches, chacune approuvée + revue finale
+de branche "Ready to merge"). `tsc --noEmit` clean après chaque tâche ;
+vérification `tauri dev` par Antoine restante (code gated `inTauri`).
+
 ---
 
 ## Historique des corrections
