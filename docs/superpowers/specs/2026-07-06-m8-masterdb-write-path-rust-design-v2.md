@@ -1,16 +1,24 @@
 # M8 — Write path Rust pour `master.db` Rekordbox (design v2)
 
-> Statut : **design, bloqué sur le spike n°3.** Remplace
+> Statut : **design, bloqué sur le spike n°4.** Remplace
 > `2026-07-04-m8-masterdb-write-path-rust-design.md` (v1, gardé pour
 > historique — ne plus l'utiliser comme référence active). Suite du
 > brainstorm du 2026-07-06 (`superpowers:brainstorming`) : élargit le
 > scope de v1 (2 opérations figées) à 3 tiers priorisés par surface
 > d'écriture, ajoute la stratégie "flag de reload" pour la metadata
 > (au lieu d'écrire les tables normalisées nous-même), et précise la
-> machinerie de sûreté. **Bloqué** tant que
-> `2026-07-06-m8-masterdb-spike-3-design.md` n'a pas produit ses FINDINGS
-> (en particulier Test 1 — flag `TrackInfoUpdated` — et Test 2 —
-> acceptation `masterPlaylists6.xml`).
+> machinerie de sûreté.
+>
+> **Mise à jour 2026-07-06 (spike n°3 exécuté)** : Test 4 (grille) et Test 2
+> (acceptation XML) PASS. Mais Test 3 (réparation de chemin) a **échoué de
+> façon inattendue** — Rekordbox a silencieusement ignoré notre `FolderPath`
+> et résolu vers un fichier tiers non modifié (voir
+> `~/Desktop/sift-masterdb-write-probe/FINDINGS-m8-spike-3.md`, section 5).
+> Test 1 (flag `TrackInfoUpdated`) reste **non testé** en conséquence (le
+> mauvais fichier a été ouvert). Nouveau **Risque ouvert n°3** ci-dessous,
+> bloquant, résolu par
+> `docs/superpowers/specs/2026-07-06-m8-masterdb-spike-4-relink-mystery-design.md`
+> avant de pouvoir continuer.
 
 ## Intention (pourquoi ce chantier existe, et pourquoi v2)
 
@@ -69,9 +77,54 @@ Chaque tier est un incrément livrable séparément, gated par sa propre preuve
   `UPDATE` SQL nu ne les touche pas) : `rb_local_usn` (nouvelle valeur du
   compteur global `agentRegistry.localUpdateCount.int_1`, incrémenté de 1),
   `updated_at`. Valeurs exactes confirmées Éval 11 (spike n°2).
-- Statut : **gate le plus proche d'être levé** — ne manque que la
-  confirmation d'acceptation `masterPlaylists6.xml` (spike n°3 Test 2, commun
-  aux 3 tiers).
+- Statut : **BLOQUÉ, plus le gate le plus proche d'être levé.** L'acceptation
+  XML (spike n°3 Test 2) est confirmée, mais le spike n°3 a révélé que
+  **l'écriture `FolderPath` elle-même n'a pas été respectée par Rekordbox** :
+  la piste test a résolu vers un fichier tiers non modifié, jamais mentionné
+  dans aucune valeur écrite en base (voir Risque ouvert n°3 ci-dessous).
+  Tier 1 ne peut pas avancer vers un plan Rust tant que ce risque n'est pas
+  résolu par le spike n°4.
+
+## Risque ouvert n°3 — relink silencieux de Rekordbox sur `FolderPath` (nouveau, 2026-07-06)
+
+**Constat** (spike n°3, détail complet dans
+`~/Desktop/sift-masterdb-write-probe/FINDINGS-m8-spike-3.md` section 5) : un
+`UPDATE djmdContent SET FolderPath=...` (+ `FileNameL`/`FileNameS` cohérents)
+a été committé, le fichier écrit existe bien au chemin indiqué avec le bon
+contenu (vérifié par hash) — mais à l'ouverture réelle de Rekordbox, la piste
+a résolu vers un **troisième fichier**, un doublon octet-identique de
+l'original, situé dans un tout autre dossier jamais mentionné dans master.db.
+Aucun dialogue, aucune erreur — la substitution est silencieuse.
+
+**Hypothèses écartées avec preuve** : que Rekordbox lisait une colonne
+annexe (`rb_LocalFolderPath`/`OrgFolderPath`) contenant encore l'ancien
+chemin — vérifié `None`/vide avant ET après sur les dumps du spike, écarté.
+
+**Hypothèses restantes, non départagées** :
+1. Rekordbox valide l'identité du fichier par empreinte (hash/taille) au
+   chargement ; notre modification de tag (partie normale du flux Sift —
+   Sift re-tague TOUJOURS en rangeant) change ce hash, provoquant un rejet
+   silencieux et une recherche de relink qui retrouve un doublon intact
+   ailleurs.
+2. Rekordbox déclenche cette recherche de relink dès qu'un chemin pointe
+   vers un dossier qu'il ne reconnaît pas comme surveillé — indépendamment
+   du contenu du fichier.
+
+**Implication si l'hypothèse 1 se confirme** : bloquant pour Tier 1 tel que
+conçu — toute réparation de chemin accompagnant un re-tag (le cas d'usage
+réel de Sift) serait silencieusement annulée par Rekordbox. Nécessiterait de
+séparer réparation de chemin et re-tag en deux opérations, ou de comprendre
+et satisfaire le mécanisme de validation exact de Rekordbox.
+
+**Implication si l'hypothèse 2 se confirme (ou les deux réfutées)** : le
+problème est spécifique au dossier de spike (jamais scanné par Rekordbox) et
+n'affecterait pas un déploiement réel (fichiers déplacés dans la
+bibliothèque déjà connue de l'utilisateur) — Tier 1 resterait viable tel
+que conçu.
+
+**Résolution** : spike n°4, protocole à 2 tests isolant chaque variable —
+voir `docs/superpowers/specs/2026-07-06-m8-masterdb-spike-4-relink-mystery-design.md`.
+Bloquant pour tout plan Rust tant que non résolu.
 
 ### Tier 2 — Synchro playlist (existante uniquement, pas de création)
 
@@ -180,16 +233,21 @@ Symétrique du lecteur, même philosophie « ne pas réimplémenter SQLite » :
 
 ## Séquencement recommandé
 
-1. **Spike n°3** (`2026-07-06-m8-masterdb-spike-3-design.md`) — flag reload +
-   acceptation XML + colonnes path repair. Bloquant.
-2. Mise à jour de ce design avec les FINDINGS réels (remplacer toute
-   hypothèse par une valeur vérifiée) — en particulier trancher Tier 3
-   (flag confirmé vs fallback à re-designer).
-3. `superpowers:writing-plans` — plan d'implémentation Rust : extension de
+1. ~~**Spike n°3**~~ — exécuté 2026-07-06. Grille (Test 4) et acceptation XML
+   (Test 2) PASS. Réparation de chemin (Test 3) a révélé le Risque ouvert
+   n°3 (relink silencieux) au lieu de confirmer le gate. Test 1 (flag
+   `TrackInfoUpdated`) reste non testé en conséquence.
+2. **Spike n°4** (`2026-07-06-m8-masterdb-spike-4-relink-mystery-design.md`)
+   — isole la cause du relink (contenu modifié vs dossier non reconnu).
+   **Bloquant**, à exécuter avant toute suite.
+3. Mise à jour de ce design avec le verdict du spike n°4 — en particulier
+   retester Tier 3 (flag `TrackInfoUpdated`) dans les conditions qui
+   évitent le relink, une fois celui-ci compris.
+4. `superpowers:writing-plans` — plan d'implémentation Rust : extension de
    `rekordbox_masterdb.rs` (encrypt/write/verify), TDD sur fixture
    synthétique existante, puis test sur copie réelle, tier par tier
-   (Tier 1 d'abord — gate le plus proche d'être levé).
-4. Design UI d'intégration (séparé, après le moteur prouvé au moins pour
+   (Tier 1 d'abord). **Pas avant que le Risque ouvert n°3 soit résolu.**
+5. Design UI d'intégration (séparé, après le moteur prouvé au moins pour
    Tier 1).
 
 ## Historique
@@ -201,3 +259,8 @@ Symétrique du lecteur, même philosophie « ne pas réimplémenter SQLite » :
   pour la metadata (évite l'écriture directe des tables normalisées), corrige
   le scope réel du path repair (3 colonnes, pas 1), ajoute le spike n°3
   comme gate bloquant avant tout code.
+- **v2 mise à jour** (2026-07-06, même jour) : spike n°3 exécuté — grille et
+  acceptation XML confirmées sûres, mais réparation de chemin a échoué de
+  façon inattendue (relink silencieux Rekordbox vers un fichier tiers).
+  Ajoute le Risque ouvert n°3, bloquant, avec le spike n°4 comme condition
+  de déblocage.
