@@ -270,3 +270,16 @@ interactive complète. Les outils `preview_*` restent valables seulement pour
 ce qui est strictement dans la maquette (ex. une chaîne statique de `app.js`)
 — vérifier si le code touché est dans un bloc `if (inTauri)` avant de faire
 confiance à une vérification par preview navigateur.
+
+**Alternative validée (2026-07-05, voir `docs/ressources-externes.md`
+Évaluation 11)** : `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222`
+au lancement de `tauri dev` expose un endpoint CDP standard sur la vraie
+fenêtre WebView2 — Claude peut alors inspecter/screenshot le code `inTauri`
+réel par WebSocket (Node natif, zéro dépendance), sans `computer-use` ni
+`claude-in-chrome`. Reste ponctuel (2-3 appels ciblés), jamais une session
+interactive complète — le défaut reste qu'Antoine regarde sa fenêtre. **Ne
+JAMAIS** poser ce port via l'option de config `additionalBrowserArgs` de
+`tauri.conf.json` : elle s'appliquerait aussi aux builds de prod distribués
+(fuite du port de debug) et écrase les arguments par défaut de wry sans
+qu'on les refournisse — toujours passer par la variable d'environnement au
+lancement de la commande dev.

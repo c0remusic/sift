@@ -10,10 +10,11 @@
 >
 > Recensé le 2026-06-30. Mis à jour 2026-06-30 soir : ajout skills Google Stitch
 > (7 skills) + designer-skills Oczkowski (8 skills).
-> **Dernière mise à jour : 2026-07-04** — répercussion de la purge
+> **Dernière mise à jour : 2026-07-05** — répercussion de la purge
 > plugins/skills du 2026-07-03 (voir `docs/ressources-externes.md`, section
 > "Outillage Claude Code — purge") et des décisions CLAUDE.md (ecc off,
-> MCP stitch supprimé, system.md périmé palette+typo).
+> MCP stitch supprimé, system.md périmé palette+typo). Ajout : garde-fous
+> fan-out d'agents (incident cascade de délégation, 2026-07-04/05).
 
 Trois portées : **projet** (ce repo uniquement, `.claude/`), **global**
 (tous les projets, `~/.claude/`), **plugin** (global, packagé, peut contenir
@@ -22,6 +23,46 @@ plusieurs sous-skills).
 Deux modes d'invocation : **auto** (Claude Code la charge seul si la description
 matche la tâche) vs **manuel** (commande explicite `/nom`, ne se déclenche jamais
 seul — noté `disable-model-invocation: true` dans le SKILL.md).
+
+---
+
+## Garde-fous obligatoires pour tout fan-out d'agents sur Sift (ajouté 2026-07-05)
+
+Complète `superpowers:dispatching-parallel-agents` (méthode générale) avec
+les contraintes spécifiques à ce repo — incident vécu le 2026-07-04/05 :
+plusieurs agents lancés sans ces clauses ont délégué en cascade au lieu
+d'exécuter (chaque maillon relançait un sous-agent puis s'arrêtait), et deux
+exécuteurs concurrents sur le même dossier de travail se sont écrasé leurs
+fichiers. Une deuxième vague d'agents lancée AVEC ces clauses dans le prompt
+initial n'a reproduit ni l'un ni l'autre problème. Inclure dans CHAQUE prompt
+d'agent lancé en parallèle sur Sift :
+
+1. **Interdiction explicite de l'outil Agent et de toute tâche de fond** —
+   « n'utilise JAMAIS l'outil Agent ni de tâche de fond, implémente toi-même
+   avec Read/Edit/Write/Bash ». Sans cette phrase, un agent Sonnet/Opus a
+   tendance à "lancer le travail en arrière-plan" puis rendre un rapport vide
+   en attendant une notification qui n'arrivera jamais (il n'est pas
+   notifié des sous-agents d'un autre agent).
+2. **Interdiction de `cargo`/`tauri dev` si un autre agent Rust tourne en
+   parallèle, ou si `tauri dev` est actif** — le cache incrémental Rust ne
+   supporte pas les builds concurrents (voir mémoire `avoid-concurrent-cargo-tauri-dev`,
+   LNK2019). Toujours arrêter `tauri dev` avant un fan-out qui touche
+   `src-tauri/`, et donner à chaque agent Rust parallèle un périmètre de
+   fichiers strictement disjoint (cargo lui-même sérialise via son lock, donc
+   deux agents peuvent compiler l'un après l'autre sans casser, mais pas
+   éditer les mêmes fichiers).
+3. **Périmètre de fichiers explicite et disjoint** — lister les fichiers
+   autorisés pour CET agent et rappeler que d'autres agents travaillent en
+   parallèle sur d'autres fichiers nommés. Sans ça, deux agents peuvent
+   éditer le même fichier et s'écraser silencieusement.
+4. **Vérification obligatoire avant de rapporter** — commande exacte à lancer
+   (`cargo test`/`clippy`/`tsc --noEmit`) et consigne explicite de ne pas
+   rendre un rapport sans l'avoir exécutée pour de vrai.
+
+Si un agent revient avec un rapport qui décrit un travail "lancé" plutôt que
+"fait" (verbes au futur/en cours, pas de sortie de commande citée), le
+relancer immédiatement via SendMessage avec ces 4 clauses rappelées — ne pas
+attendre une notification qui ne viendra pas.
 
 ---
 
