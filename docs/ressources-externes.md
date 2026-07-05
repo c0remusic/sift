@@ -747,6 +747,59 @@ interdiction dans le prompt initial des agents.
 
 ---
 
+## Évaluation 12 — pointeur visuel d'annotation, construit (2026-07-05)
+
+**Contexte** : suite de l'inspecteur Alt+Clic dev-only existant
+(`dev-inspector.ts` + `dev_locate.rs`, qui ne faisait que localiser un élément
+cliqué vers son fichier:ligne). Besoin exprimé par Antoine : pouvoir **pointer
+un problème visuel** dans la vraie app en marche et le décrire en langage
+libre, pour que Claude le corrige — sans qu'Antoine touche au code, et sans
+décrire l'emplacement avec des mots (frustration principale : Claude ne trouve
+pas toujours le bon endroit). Écarté explicitement pendant le brainstorm :
+éditeur visuel où Antoine édite lui-même, capture d'écran (mauvais canal, cf.
+mémoire `screenshot-not-a-value-source`), serveur/daemon, migration de
+framework (Electron/Neutralino/React — vérifié qu'aucun n'offre nativement
+« clic → réécrit le fichier source », c'est toujours de l'outillage maison).
+
+**Ce qui a été livré** (commits `5437a34`, `f370169`, `2ba1093`) :
+- **`src-tauri/src/dev_annotate.rs`** : commande `save_annotation(annotation:
+  serde_json::Value)`, gated `cfg!(debug_assertions)`, ajoute un champ `ts`
+  epoch et **append** une ligne JSON dans `docs/annotations.jsonl`. Jamais
+  d'écriture dans les sources. Seule cible d'écriture de tout l'outil.
+- **`frontend/dev-annotate.ts`** : capture de contexte — identité de l'élément,
+  **valeurs calculées réelles** (`getComputedStyle` filtré à ~25 propriétés
+  visuelles, pas une image), ancêtres (≤8) et frères (≤6), écran actif
+  (`#nav .nv.on` → `data-view`), et localisation code via `locate_source`.
+- **`frontend/dev-inspector.ts`** (refondu) : Alt+Clic pose un **cadre de
+  highlight** sur l'élément, bouton « ⬆ bloc parent » pour remonter au
+  conteneur logique, `<textarea>` note libre + « Envoyer » (garde note-vide,
+  bouton désactivé pendant l'envoi, fail-fast affiché sans retry). Les boutons
+  de localisation restent à la demande dans le même panneau.
+
+**Double gating dev-only** : `import.meta.env.DEV` (import dynamique dans
+`main.ts:44`) côté front + `cfg!(debug_assertions)` côté Rust — ne peut pas
+fuiter dans un build de prod.
+
+**Workflow** : Antoine ouvre `tauri dev`, Alt+Clic sur ce qui le gêne, tape une
+remarque (« trop tassé », « pas cohérent avec la Bibliothèque »), Envoyer. Puis
+dans la session il dit « regarde » → Claude lit `docs/annotations.jsonl`,
+traite chaque entrée (localise, compare contre l'autre écran ou `Sift.dc.html`
+si la note évoque cohérence/maquette), applique le fix, et **retire l'entrée
+traitée** du fichier. Aucune veille automatique (déclenchement conversationnel
+seulement). Le fichier `docs/annotations.jsonl` est non gitignoré exprès : le
+voir dans `git status` rappelle qu'il reste des notes à traiter.
+
+**Hors scope v1** : problèmes de comportement animé (la note texte décrit la
+séquence, le pointage donne l'élément de départ), capture d'image, édition dans
+le panneau. **Construit via subagent-driven-development** (3 tâches Opus,
+chacune revue PASS spec+qualité, revue finale de branche « Ready to merge »).
+Vérifs : `cargo test dev_annotate` 2/2, clippy `-D warnings` clean, `tsc
+--noEmit` clean. Spec/plan :
+`docs/superpowers/specs/2026-07-05-visual-pointer-annotation-design.md`,
+`docs/superpowers/plans/2026-07-05-visual-pointer-annotation.md`.
+
+---
+
 ## Veille concurrente — MediaMonkey (2026-06-24)
 
 Gestionnaire de biblio musicale ([mediamonkey.com](https://www.mediamonkey.com/)),

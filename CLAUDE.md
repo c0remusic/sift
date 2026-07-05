@@ -148,6 +148,12 @@ Exemples de routage (non exhaustif, voir le registre complet) :
 - `dom.ts` — helpers DOM partagés
 - `ipc.ts` — wrappers IPC Tauri typés
 - `selftest.ts` — smoke tests IPC au démarrage
+- `dev-inspector.ts` — outil dev-only (Alt+Clic) : cadre de sélection +
+  localisation source + panneau d'annotation (note libre → envoi). Chargé
+  seulement si `import.meta.env.DEV` (`main.ts`).
+- `dev-annotate.ts` — dev-only : capture de contexte (styles calculés,
+  ancêtres/frères, écran actif, localisation code) pour une annotation, envoyée
+  via `save_annotation` → `docs/annotations.jsonl`. Voir la section Outillage.
 - `styles.css` — tokens CSS + composants
 
 ## Structure src-tauri/src/ (état réel)
@@ -160,6 +166,9 @@ Fichiers plats (pas de sous-dossiers sauf `analysis/` et `metadata/`) :
 - `dedup.rs` · `fingerprint.rs` · `ecartes.rs` · `library.rs` · `genres.rs`
 - `ffmpeg.rs`
 - `ipc.rs` · `ipc_filing.rs` · `ipc_identify.rs` · `ipc_library.rs`
+- `dev_locate.rs` · `dev_annotate.rs` — commandes dev-only (gated
+  `cfg!(debug_assertions)`) pour l'outil d'annotation Alt+Clic : `locate_source`
+  (grep source) et `save_annotation` (append `docs/annotations.jsonl`).
 
 ## Audit des dépendances (versions à jour)
 
