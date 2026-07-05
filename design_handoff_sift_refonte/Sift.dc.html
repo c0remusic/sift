@@ -307,10 +307,22 @@ html,body{margin:0;padding:0;height:100%;}
           </sc-if>
         </div>
 
-        <!-- IDENTIFICATION -->
+        <!-- MÉTADONNÉES (ex-"Identification · Discogs" — libellé générique : un futur enrichissement
+             pourra venir d'ailleurs que Discogs, ex. une release digital-only) : repliable, badge de
+             compatibilité CDJ visible dans l'en-tête quand repliée, colocalisé avec le critère
+             (Artiste/Titre gravés) et le fix — refonte 2026-07-05, voir
+             docs/superpowers/specs/2026-07-05-revue-screen-redesign-design.md -->
         <div style="background:var(--card);border:1px solid var(--border);border-radius:11px;padding:14px 16px;margin-bottom:16px;">
           <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:13px;gap:10px;">
-            <span style="font-size:10px;letter-spacing:0.11em;text-transform:uppercase;color:var(--text4);">Identification · Discogs</span>
+            <div onClick="{{onToggleMeta}}" style="display:flex;align-items:center;gap:8px;cursor:pointer;">
+              <sc-if value="{{isIdentified}}" hint-placeholder-val="{{true}}">
+                <span style="font-size:9px;color:var(--text4);transform:rotate({{metaChev}});transition:transform .15s;display:inline-block;">▸</span>
+              </sc-if>
+              <span style="font-size:10px;letter-spacing:0.11em;text-transform:uppercase;color:var(--text4);">Métadonnées</span>
+              <sc-if value="{{metaCollapsedBadge}}" hint-placeholder-val="{{false}}">
+                <span style="font-family:'JetBrains Mono',monospace;font-size:10px;font-weight:600;padding:2px 8px;border-radius:999px;background:{{cdjBg}};color:{{cdjColor}};">{{cdjBadgeLabel}}</span>
+              </sc-if>
+            </div>
             <sc-if value="{{isIdentified}}" hint-placeholder-val="{{true}}">
               <div style="position:relative;">
                 <div onClick="{{onChange}}" style="display:flex;align-items:center;gap:6px;font-size:12px;color:var(--text2);cursor:pointer;padding:4px 10px;border-radius:6px;border:1px solid var(--borderStrong);background:var(--surface);" style-hover="filter:brightness(0.95);">Modifier<span style="font-size:9px;color:var(--text3);">▾</span></div>
@@ -333,6 +345,7 @@ html,body{margin:0;padding:0;height:100%;}
           </div>
 
           <sc-if value="{{isIdentified}}" hint-placeholder-val="{{true}}">
+            <sc-if value="{{metaOpen}}" hint-placeholder-val="{{true}}">
             <div style="display:flex;gap:34px;flex-wrap:wrap;margin-bottom:14px;">
               <div><div style="font-size:10px;letter-spacing:0.06em;text-transform:uppercase;color:var(--text4);margin-bottom:4px;">Label</div><div style="font-size:13px;">{{track.label}}</div></div>
               <div><div style="font-size:10px;letter-spacing:0.06em;text-transform:uppercase;color:var(--text4);margin-bottom:4px;">Année</div><div style="font-family:'JetBrains Mono',monospace;font-size:13px;">{{track.year}}</div></div>
@@ -345,7 +358,7 @@ html,body{margin:0;padding:0;height:100%;}
               </div>
             </div>
             <div style="display:flex;gap:34px;flex-wrap:wrap;margin-bottom:14px;">
-              <div><div style="font-size:10px;letter-spacing:0.06em;text-transform:uppercase;color:var(--text4);margin-bottom:4px;">Compatibilité CDJ</div><div style="font-size:13px;">{{tagsCdjOk}}</div></div>
+              <div><div style="font-size:10px;letter-spacing:0.06em;text-transform:uppercase;color:var(--text4);margin-bottom:4px;">Compatibilité CDJ</div><div style="font-size:13px;color:{{cdjColor}};">{{tagsCdjOk}}</div></div>
               <div><div style="font-size:10px;letter-spacing:0.06em;text-transform:uppercase;color:var(--text4);margin-bottom:4px;">Version ID3</div><div style="font-family:'JetBrains Mono',monospace;font-size:13px;">{{id3Version}}</div></div>
             </div>
             <sc-if value="{{matchNeedsCheck}}" hint-placeholder-val="{{false}}">
@@ -353,6 +366,7 @@ html,body{margin:0;padding:0;height:100%;}
                 <span style="font-size:11.5px;color:var(--text3);">Cette identification Discogs correspond-elle bien à ce fichier ?</span>
                 <span style="flex:none;font-family:'JetBrains Mono',monospace;font-size:11px;font-weight:600;letter-spacing:0.03em;padding:5px 11px;border-radius:999px;background:{{matchBg}};color:{{matchColor}};">{{matchLabel}}</span>
               </div>
+            </sc-if>
             </sc-if>
           </sc-if>
 
@@ -734,7 +748,7 @@ class Component extends DCLogic {
     try{ savedTheme=localStorage.getItem('sift-theme')||'auto'; }catch(e){}
     this.state = {
       screen:'review', focus:0, mode:'detail', selection:[],
-      openChip:null, destOpen:false, destQuery:'', destination:null, format:'AIFF', inPlace:false,
+      openChip:null, metaOpen:false, destOpen:false, destQuery:'', destination:null, format:'AIFF', inPlace:false,
       isPlaying:false, progress:0, tempo:0, keyLock:true, volume:80,
       toast:null, toastKind:'ok', paletteOpen:false, pq:'',
       queue:this.buildTracks(), library:this.buildLibrary(), discarded:[], journal:this.buildJournal(),
@@ -862,8 +876,8 @@ class Component extends DCLogic {
   notImpl(){ this.toast('Pas encore implémenté','warn'); }
 
   // ---- nav / motion ----
-  go(screen){ clearInterval(this._p); this.setState({screen,focus:0,openChip:null,mode:'detail',selection:[],isPlaying:false,progress:0,destOpen:false}); }
-  move(d){ const l=this.curList(); if(!l.length)return; clearInterval(this._p); const f=Math.min(Math.max(0,this.state.focus+d),l.length-1); this.setState({focus:f,openChip:null,isPlaying:false,progress:0}); }
+  go(screen){ clearInterval(this._p); this.setState({screen,focus:0,openChip:null,metaOpen:false,mode:'detail',selection:[],isPlaying:false,progress:0,destOpen:false}); }
+  move(d){ const l=this.curList(); if(!l.length)return; clearInterval(this._p); const f=Math.min(Math.max(0,this.state.focus+d),l.length-1); this.setState({focus:f,openChip:null,metaOpen:false,isPlaying:false,progress:0}); }
   toggleMode(){ if(this.state.screen!=='review')return; this.setState({mode:this.state.mode==='batch'?'detail':'batch',selection:[]}); }
   toggleSel(){ const t=this.active(); if(!t)return; this.toggleSelId(t.id); }
   toggleSelId(id){ const s=this.state.selection.slice(); const i=s.indexOf(id); if(i>=0)s.splice(i,1); else s.push(id); this.setState({selection:s}); }
@@ -892,6 +906,7 @@ class Component extends DCLogic {
 
   // ---- chips ----
   openChip(k){ this.setState({openChip:this.state.openChip===k?null:k}); }
+  toggleMeta(){ this.setState({metaOpen:!this.state.metaOpen}); }
 
   // ---- destination / format ----
   destToggle(){ const opening=!this.state.destOpen; this.setState({destOpen:opening,destQuery:'',creating:false}); if(opening) setTimeout(()=>this.updateDestRect(),0); }
@@ -991,8 +1006,8 @@ class Component extends DCLogic {
   }
 
   destName(){ return this.state.inPlace?'dossier source':(this.state.destination||this.active()&&this.active().artist||'Unsorted'); }
-  fileOne(){ const s=this.state; const q=s.queue.slice(); if(!q.length)return; const t=this.active(); if(t.verdict==='pending'){ this.toast('Analyse en cours…','warn'); return;} const idx=Math.min(s.focus,q.length-1); q.splice(idx,1); const dest=this.destName(); const e={id:'j'+Date.now(),action:'Filé',dot:'#4C7B57',title:t.title,artist:t.artist,dest,time:this.fmtClock(Date.now())}; clearInterval(this._p); this.setState({queue:q,library:[t].concat(s.library),journal:[e].concat(s.journal),undo:[{type:'file',track:t,index:idx,entry:e.id}].concat(s.undo),focus:Math.min(idx,q.length-1),openChip:null,isPlaying:false,progress:0,sFiled:s.sFiled+1}); this.toast('Filé → '+dest+'.'+this.state.format.split(' ')[0].toLowerCase(),'ok'); }
-  discardOne(){ const s=this.state; const q=s.queue.slice(); if(!q.length)return; const t=this.active(); const idx=Math.min(s.focus,q.length-1); q.splice(idx,1); const e={id:'j'+Date.now(),action:'Écarté',dot:'#8A857D',title:t.title,artist:t.artist,dest:'—',time:this.fmtClock(Date.now())}; clearInterval(this._p); this.setState({queue:q,discarded:[t].concat(s.discarded),journal:[e].concat(s.journal),undo:[{type:'discard',track:t,index:idx,entry:e.id}].concat(s.undo),focus:Math.min(idx,q.length-1),openChip:null,isPlaying:false,progress:0,sDiscarded:s.sDiscarded+1}); this.toast('Écarté','ok'); }
+  fileOne(){ const s=this.state; const q=s.queue.slice(); if(!q.length)return; const t=this.active(); if(t.verdict==='pending'){ this.toast('Analyse en cours…','warn'); return;} const idx=Math.min(s.focus,q.length-1); q.splice(idx,1); const dest=this.destName(); const e={id:'j'+Date.now(),action:'Filé',dot:'#4C7B57',title:t.title,artist:t.artist,dest,time:this.fmtClock(Date.now())}; clearInterval(this._p); this.setState({queue:q,library:[t].concat(s.library),journal:[e].concat(s.journal),undo:[{type:'file',track:t,index:idx,entry:e.id}].concat(s.undo),focus:Math.min(idx,q.length-1),openChip:null,metaOpen:false,isPlaying:false,progress:0,sFiled:s.sFiled+1}); this.toast('Filé → '+dest+'.'+this.state.format.split(' ')[0].toLowerCase(),'ok'); }
+  discardOne(){ const s=this.state; const q=s.queue.slice(); if(!q.length)return; const t=this.active(); const idx=Math.min(s.focus,q.length-1); q.splice(idx,1); const e={id:'j'+Date.now(),action:'Écarté',dot:'#8A857D',title:t.title,artist:t.artist,dest:'—',time:this.fmtClock(Date.now())}; clearInterval(this._p); this.setState({queue:q,discarded:[t].concat(s.discarded),journal:[e].concat(s.journal),undo:[{type:'discard',track:t,index:idx,entry:e.id}].concat(s.undo),focus:Math.min(idx,q.length-1),openChip:null,metaOpen:false,isPlaying:false,progress:0,sDiscarded:s.sDiscarded+1}); this.toast('Écarté','ok'); }
   fileBatch(){ const s=this.state; const ids=s.selection; if(!ids.length){ this.toast('Aucune sélection','warn'); return;} const kept=[],moved=[]; s.queue.forEach(t=>{ if(ids.indexOf(t.id)>=0)moved.push(t); else kept.push(t); }); const dest=this.state.destination||'Unsorted'; const e={id:'j'+Date.now(),action:'Filé '+moved.length+' pistes',dot:'#4C7B57',title:moved.length+' pistes',artist:'lot',dest,time:this.fmtClock(Date.now()),tracks:moved.map(mt=>({title:mt.title,artist:mt.artist,verdict:mt.verdict}))}; this.setState({queue:kept,library:moved.concat(s.library),journal:[e].concat(s.journal),undo:[{type:'batch',tracks:moved,entry:e.id}].concat(s.undo),selection:[],focus:0,mode:'detail',sFiled:s.sFiled+moved.length}); this.toast('Filé '+moved.length+' → '+dest,'ok'); }
   requeue(){ const s=this.state; const t=this.active(); if(!t)return; const lib=s.library.filter(x=>x.id!==t.id); this.setState({library:lib,queue:[t].concat(s.queue),focus:Math.min(s.focus,lib.length-1)}); this.toast('Remis en revue','ok'); }
   restore(){ const s=this.state; const t=this.active(); if(!t)return; const dis=s.discarded.filter(x=>x.id!==t.id); this.setState({discarded:dis,queue:[t].concat(s.queue),focus:Math.min(s.focus,dis.length-1)}); this.toast('Restauré','ok'); }
@@ -1200,6 +1215,13 @@ class Component extends DCLogic {
         {l:'Pics (couverture)',v:peaksPts+' pts ≈ '+t.dur.toFixed(1)+'s / '+t.dur.toFixed(1)+'s (100%)'},
       ];
       var tagsCdjOk=pr(10)>0.85?'non':'oui', id3Version=pr(11)>0.5?'ID3v2.3':'ID3v2.4', hasCover='oui';
+      // Métadonnées (ex-Identification · Discogs) repliable, repliée par défaut, avec un badge
+      // de statut CDJ dans l'en-tête visible replié — même refonte que le vrai report-view.ts/
+      // filing.ts (2026-07-05) : rien à cacher tant qu'il n'y a pas d'identité, donc le toggle
+      // n'apparaît que pour un morceau identifié.
+      var metaOpen=!!s.metaOpen, metaCollapsedBadge=isIdentified&&!metaOpen, metaHint=metaOpen?'masquer':'afficher';
+      var cdjBg=(tagsCdjOk==='oui')?'rgba(76,123,87,0.14)':'rgba(176,122,40,0.14)', cdjColor=(tagsCdjOk==='oui')?'#3f6d4c':'#8f6318';
+      var cdjBadgeLabel=(tagsCdjOk==='oui')?'CDJ compatible':'CDJ incompatible', metaChev=metaOpen?'90deg':'0deg';
       isDup=!!t.dup; dupExisting='FLAC · 1006 kbps · 44.1 kHz\nBibliothèque / Deep House'; matchPct=(t.match||0)+'%';
       matchColor=(v==='pending')?this.MUTED:(v==='fake'?this.semAmber():this.semGreen()); matchLabel=(v==='pending')?'en cours':(v==='fake'?'CHECK MATCH':'MATCH');
       matchKind=(v==='pending')?'muted':(v==='fake'?'amber':'green');
@@ -1308,6 +1330,10 @@ class Component extends DCLogic {
       proofLeft:(typeof proofLeft!=='undefined')?proofLeft:[], proofRight:(typeof proofRight!=='undefined')?proofRight:[],
       genreTags:(typeof genreTags!=='undefined')?genreTags:[],
       isIdentified:(typeof isIdentified!=='undefined')?isIdentified:true,
+      metaOpen:(typeof metaOpen!=='undefined')?metaOpen:false, metaCollapsedBadge:(typeof metaCollapsedBadge!=='undefined')?metaCollapsedBadge:false,
+      metaHint:(typeof metaHint!=='undefined')?metaHint:'afficher', onToggleMeta:()=>this.toggleMeta(),
+      cdjBg:(typeof cdjBg!=='undefined')?cdjBg:T.track, cdjColor:(typeof cdjColor!=='undefined')?cdjColor:T.text3,
+      cdjBadgeLabel:(typeof cdjBadgeLabel!=='undefined')?cdjBadgeLabel:'—', metaChev:(typeof metaChev!=='undefined')?metaChev:'0deg',
       onSearchDiscogs:()=>this.searchDiscogs(),
       dsIdle: !(s.discogsSearch && isTrackScreen && s.discogsSearch.trackId===t.id),
       dsSearching: !!(s.discogsSearch && isTrackScreen && s.discogsSearch.trackId===t.id && s.discogsSearch.state==='searching'),

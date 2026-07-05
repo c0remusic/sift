@@ -19,7 +19,7 @@ function openLink(u){window.open(u,'_blank','noopener');}
     x.wave=[];for(var k=0;k<32;k++){var h=18+Math.round(Math.abs(Math.sin((k+i*3)*0.7))*60+((k*7+i*13)%15));x.wave.push(h>96?96:h);}
     x.spec=[];for(var m=0;m<32;m++){var b=56+((m*5+i*11)%40);if(x.fake&&m>22)b=10+((m*3)%14);x.spec.push(b);}});
   var LIB=[["Mr. Fingers — Can You Feel It","AIFF","120","7:48","30521"],["Chez Damier — Can You Feel It","AIFF","122","7:02","41822"],["Marshall Jefferson — Move Your Body","MP3","118","6:30","18743"],["Lil Louis — French Kiss","WAV","120","9:55","9210"],["Robert Owens — Bring Down the Walls","AIFF","121","7:30","55190"],["Fingers Inc. — Distant Planet","AIFF","119","8:10","73004"]];
-  var view="home",cur=0,playing=false,tempo=0,selFolder=0,playPos=0,bibPlaying=-1,bibPos=0.3,creating=false,rkbSynced=false,outFmt=null,revMode="detail",midTab="ecoute",sel={},queueShowAll=false,dupScanDone=false,dupDismissed={},timeMode="elapsed",qw=180,bibHL=-1;
+  var view="home",cur=0,playing=false,tempo=0,selFolder=0,playPos=0,bibPlaying=-1,bibPos=0.3,creating=false,rkbSynced=false,outFmt=null,revMode="detail",midTab="ecoute",sel={},queueShowAll=false,dupScanDone=false,dupDismissed={},timeMode="elapsed",qw=180,bibHL=-1,diagOpen=false,metaOpen=false;
   var content=document.getElementById('content'),nav=document.getElementById('nav');
   function extOf(f){return f==="MP3 320"?"mp3":(f==="WAV"?"wav":"aiff");}
   function defFmt(i){if(i<0)return "AIFF";return /AIFF|WAV/.test(T[i].fmt)?"AIFF":"MP3 320";}
@@ -165,26 +165,48 @@ function openLink(u){window.open(u,'_blank','noopener');}
       +'</div>';
     var realPill=x.fake?'<span class="pill" style="background:var(--color-background-danger);color:var(--color-text-danger)"><i class="ti ti-alert-triangle" style="font-size:10px"></i> '+x.real+'</span>':'<span class="pill" style="background:var(--color-background-success);color:var(--color-text-success)"><i class="ti ti-check" style="font-size:10px"></i> conforme</span>';
     var specCap=x.fake?'<span style="color:var(--color-text-danger)"><i class="ti ti-alert-triangle" style="font-size:9px;vertical-align:-1px"></i> coupure nette ~16 kHz = transcodé</span>':"énergie jusqu'en haut = encodage conforme";
-    // 2. ENCODAGE + SPECTROGRAMME
-    var encoding='<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;font-size:11px;flex-wrap:wrap"><span style="color:var(--color-text-tertiary)">Encodage</span><span class="pill">'+x.fmt+'</span><i class="ti ti-arrow-right" style="font-size:12px;color:var(--color-text-tertiary)"></i>'+realPill+'<span class="pill">'+x.dur+'</span></div>'
+    // 2. DIAGNOSTIC (repliable, badge qualité dans l'en-tête — même pattern que le vrai
+    // report-view.ts/wireSpectrogram : visible replié, caché déplié, repliée par défaut)
+    var qualityBadge=x.fake?'<span class="sift-chip-badge" style="background:var(--color-background-danger);color:var(--color-text-danger)">'+x.real+'</span>':'<span class="sift-chip-badge" style="background:var(--color-background-success);color:var(--color-text-success)">LOSSLESS</span>';
+    var encodingBody='<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;font-size:11px;flex-wrap:wrap"><span style="color:var(--color-text-tertiary)">Encodage</span><span class="pill">'+x.fmt+'</span><i class="ti ti-arrow-right" style="font-size:12px;color:var(--color-text-tertiary)"></i>'+realPill+'<span class="pill">'+x.dur+'</span></div>'
       +'<canvas id="spc" width="400" height="46" style="width:100%;height:46px;border-radius:4px;display:block"></canvas>'
       +'<div style="font-size:9px;color:var(--color-text-tertiary);margin:2px 0 9px">'+specCap+'</div>';
-    // 3. FORMAT SORTIE
-    var chips=OUTF.map(function(f){return '<span class="chip'+(outFmt===f?' on':'')+'" data-act="fmtsel" data-f="'+f+'">'+f+'</span>';}).join(' ');
-    var nm=x.a+' - '+x.t+' (Original Mix) ['+x.lbl+'].'+extOf(outFmt);
-    var sortir='<div style="padding-top:8px;border-top:0.5px solid var(--color-border-tertiary)"><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:5px"><span style="font-size:10px;color:var(--color-text-tertiary)">Sortir en</span>'+chips+'</div><div style="font-size:10px;color:var(--color-text-tertiary);word-break:break-all;line-height:1.5">→ <span style="font-family:var(--font-mono);color:var(--color-text-secondary)">'+nm+'</span></div></div>';
-    var meta='<div style="margin-top:10px;padding-top:9px;border-top:0.5px solid var(--color-border-tertiary)"><div style="display:flex;align-items:center;gap:5px;margin-bottom:6px"><span style="font-size:9px;letter-spacing:.04em;text-transform:uppercase;color:var(--color-text-tertiary)">Métadonnées</span><span class="pill" style="background:var(--color-background-info);color:var(--color-text-info);font-size:9px;padding:1px 6px"><i class="ti ti-download" style="font-size:9px"></i> pullé de Discogs</span></div>'
+    var diagZone='<button class="sift-zone-toggle'+(diagOpen?' sift-zone-toggle-open':'')+'" data-act="togglediag"><span><span class="sift-zone-toggle-car">▸</span> Analyse spectrale (spectre + mesures)</span><span class="sift-zone-toggle-right">'+(diagOpen?'':qualityBadge)+'<span class="sift-zone-toggle-hint">'+(diagOpen?'masquer':'afficher')+'</span></span></button>'
+      +'<div class="sift-zone-toggle-body'+(diagOpen?' sift-zone-toggle-body-open':'')+'">'+encodingBody+'</div>';
+    // 3. MÉTADONNÉES (repliable, badge CDJ dans l'en-tête — colocalisé avec le critère et le fix,
+    // comme dans le vrai filing.ts::renderEditor. Simplification démo : la compatibilité CDJ
+    // suit x.fake (le vrai signal — tags Artiste/Titre gravés — est indépendant de l'authenticité
+    // audio, mais T n'a pas de champ dédié ; réutiliser fake évite de changer le modèle de données
+    // juste pour la démo).
+    var cdjOk=!x.fake;
+    var cdjBadge=cdjOk?'<span class="sift-chip-badge" style="background:var(--color-background-success);color:var(--color-text-success)">CDJ compatible</span>':'<span class="sift-chip-badge" style="background:var(--color-background-warning);color:var(--color-text-warning)">CDJ incompatible</span>';
+    var tagWarn=cdjOk?'':'<div style="display:flex;gap:7px;margin-top:8px;padding:8px 10px;font-size:10px;border-radius:var(--border-radius-sm);background:var(--color-background-warning);color:var(--color-text-warning)"><i class="ti ti-alert-triangle" style="font-size:12px;flex:none;margin-top:1px"></i><span>Artiste et Titre pas encore gravés dans le fichier — un CDJ ne peut pas les lire tant que ce n\'est pas fait. <strong>Ranger</strong> pour corriger.</span></div>';
+    var metaBody='<div style="display:flex;align-items:center;gap:5px;margin-bottom:6px"><span class="pill" style="background:var(--color-background-info);color:var(--color-text-info);font-size:9px;padding:1px 6px"><i class="ti ti-download" style="font-size:9px"></i> pullé de Discogs</span></div>'
       +'<div style="display:grid;grid-template-columns:auto 1fr auto 1fr;gap:3px 8px;font-size:11px;align-items:center">'
       +'<span style="color:var(--color-text-tertiary)">Label</span><span>'+x.lbl+'</span><span style="color:var(--color-text-tertiary)">Année</span><span>'+x.yr+'</span>'
       +'<span style="color:var(--color-text-tertiary)">Genre</span><span>'+x.gen+'</span><span style="color:var(--color-text-tertiary)">BPM</span><span>'+(120+(cur*3)%9)+'</span></div>'
-      +'<div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-top:6px"><span style="color:var(--color-text-tertiary);font-size:11px">Tags</span><span class="pill" style="font-size:10px">peak-time</span><span class="pill" style="font-size:10px">classic</span><span class="pill" style="font-size:10px;color:var(--color-text-tertiary)"><i class="ti ti-plus" style="font-size:9px"></i></span></div></div>';
+      +'<div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-top:6px"><span style="color:var(--color-text-tertiary);font-size:11px">Tags</span><span class="pill" style="font-size:10px">peak-time</span><span class="pill" style="font-size:10px">classic</span><span class="pill" style="font-size:10px;color:var(--color-text-tertiary)"><i class="ti ti-plus" style="font-size:9px"></i></span></div>'
+      +tagWarn;
+    var metaZone='<button class="sift-zone-toggle'+(metaOpen?' sift-zone-toggle-open':'')+'" data-act="togglemeta"><span><span class="sift-zone-toggle-car">▸</span> Métadonnées</span><span class="sift-zone-toggle-right">'+(metaOpen?'':cdjBadge)+'<span class="sift-zone-toggle-hint">'+(metaOpen?'masquer':'afficher')+'</span></span></button>'
+      +'<div class="sift-zone-toggle-body'+(metaOpen?' sift-zone-toggle-body-open':'')+'">'+metaBody+'</div>';
+    // 4. CONCLUSION (bandeau verdict, en dernier — après Métadonnées, jamais avant, matching la
+    // refonte 2026-07-05 : le jugement ne doit plus enterrer les métadonnées)
+    var chips=OUTF.map(function(f){return '<span class="chip'+(outFmt===f?' on':'')+'" data-act="fmtsel" data-f="'+f+'">'+f+'</span>';}).join(' ');
+    var nm=x.a+' - '+x.t+' (Original Mix) ['+x.lbl+'].'+extOf(outFmt);
+    var concIcon=x.fake?'ti-alert-triangle':x.duplicate?'ti-copy':'ti-circle-check';
+    var concLabel=x.fake?'Sur-encodé, à re-sourcer':x.duplicate?'Déjà en bibliothèque':'Prêt à ranger';
+    var conclusion='<div class="sift-verdict-card" style="background:'+vb+'"><div class="sift-verdict-head"><i class="ti '+concIcon+'" style="color:'+(x.fake?'var(--color-text-danger)':x.duplicate?'var(--color-text-secondary)':'var(--color-text-success)')+'"></i><span class="sift-verdict-label" style="color:'+(x.fake?'var(--color-text-danger)':x.duplicate?'var(--color-text-secondary)':'var(--color-text-success)')+'">'+concLabel+'</span></div><div class="sift-verdict-finalname-col"><div class="sift-verdict-finalname-label">Nom final</div><div class="sift-verdict-finalname" style="color:'+(x.fake?'var(--color-text-danger)':x.duplicate?'var(--color-text-secondary)':'var(--color-text-success)')+'">'+nm+'</div></div></div>';
+    // RAIL (Destination/Format/Ranger/Écarter) — hors périmètre de la refonte Diagnostic/
+    // Métadonnées, reste tel quel dans la barre fixe du bas.
+    var sortir='<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:8px"><span style="font-size:10px;color:var(--color-text-tertiary)">Sortir en</span>'+chips+'</div>';
     var jBtn=x.fake
       ?'<button data-act="jeter" style="color:var(--color-text-warning)" title="Fichier faux — ira dans Écartés pour re-sourcer"><span class="kbd">X</span> ⚠ Re-sourcer</button>'
       :x.duplicate
       ?'<button data-act="jeter" style="color:var(--color-text-danger)" title="Envoyer dans Écartés"><span class="kbd">X</span> Écarter (doublon)</button>'
       :'<button data-act="jeter" style="color:var(--color-text-danger)" title="Envoyer dans Écartés"><span class="kbd">X</span> Écarter</button>';
-    mid.innerHTML='<div class="mid-scroll">'+head+dupBanner+player+encoding+sortir+meta+'</div>'
-      +'<div style="flex:none;padding-top:10px;display:flex;gap:8px;border-top:0.5px solid var(--color-border-tertiary)"><button data-act="commit" style="flex:1;background:var(--color-background-info);color:var(--color-text-info);border:none;font-weight:500"><span class="kbd">&crarr;</span> Ranger &rarr; '+FOLDERS[selFolder]+'</button>'+jBtn+'</div>';
+    mid.innerHTML='<div class="mid-scroll">'+head+dupBanner+player+diagZone+metaZone+conclusion+'</div>'
+      +'<div style="flex:none;padding-top:10px;border-top:0.5px solid var(--color-border-tertiary)">'+sortir
+      +'<div style="display:flex;gap:8px"><button data-act="commit" style="flex:1;background:var(--color-background-info);color:var(--color-text-info);border:none;font-weight:500"><span class="kbd">&crarr;</span> Ranger &rarr; '+FOLDERS[selFolder]+'</button>'+jBtn+'</div></div>';
     if(midTab==="ecoute"&&cur>=0)drawSpec(x);
   }
 
@@ -346,7 +368,7 @@ function openLink(u){window.open(u,'_blank','noopener');}
   pa.addEventListener('click',function(e){
     var v=e.target.closest('[data-view]');if(v){view=v.dataset.view;creating=false;if(view!=='biblio')bibHL=-1;render();return;}
     var el=e.target.closest('[data-act]');if(!el)return;var act=el.dataset.act;
-    if(act==='sel'){cur=+el.dataset.i;playPos=0;outFmt=null;midTab="ecoute";render();}
+    if(act==='sel'){cur=+el.dataset.i;playPos=0;outFmt=null;midTab="ecoute";diagOpen=false;metaOpen=false;render();}
     else if(act==='play'){playing=!playing;renderMid();}
     else if(act==='timemodetog'){timeMode=timeMode==="elapsed"?"remaining":"elapsed";renderMid();}
     else if(act==='file'){selFolder=+el.dataset.i;renderRevue();}
@@ -358,6 +380,8 @@ function openLink(u){window.open(u,'_blank','noopener');}
     else if(act==='mtab'){midTab=el.dataset.m;renderMid();}
     else if(act==='revmode'){revMode=el.dataset.m;sel={};render();}
     else if(act==='togglequeue'){queueShowAll=!queueShowAll;renderRevue();}
+    else if(act==='togglediag'){diagOpen=!diagOpen;renderMid();}
+    else if(act==='togglemeta'){metaOpen=!metaOpen;renderMid();}
     else if(act==='bcheck'){var bi=+el.dataset.i;sel[bi]=!sel[bi];renderBatch();}
     else if(act==='brange'){for(var k in sel){if(sel[k]&&T[k].status==="pending"){T[k].status="filed";T[k].folder=selFolder;}}sel={};rkbSynced=false;render();}
     else if(act==='bjeter'){for(var k2 in sel){if(sel[k2]&&T[k2].status==="pending")T[k2].status=T[k2].fake?"resource":"trash";}sel={};render();}
