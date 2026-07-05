@@ -268,6 +268,13 @@ IDs connus (à confirmer à la résolution, ne pas inventer) :
   `margin`** — ces propriétés déclenchent un recalcul de layout à chaque frame.
   Barre de progression → `transform:scaleX()` + `transform-origin`, pas `width`.
   Curseur qui se déplace → `transform:translateX()`, pas `left`/`right`.
+- **Un état confirmé/permanent reste neutre ; seule la transition qui y mène est
+  colorée/animée.** Vu 3 fois en session (badge CDJ, sélection de candidat
+  Discogs, CTA Discogs) : un aplat vert/doré permanent une fois l'action faite
+  lit comme trop appuyé. Un flash bref (~0.6-0.7s) au moment de la confirmation,
+  puis retour à un état neutre (`--overlay-selected`, `--color-surface-raised`)
+  est le bon pattern — pas une couleur sémantique qui reste allumée
+  indéfiniment pour signaler "c'est fait".
 
 ## Vérification UI — app réelle, pas la maquette navigateur
 
