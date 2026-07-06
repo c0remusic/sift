@@ -300,3 +300,21 @@ export interface RekordboxLinkStatus {
    *  safely patch the linked XML — surfaced as a warning banner (see Task 3). */
   drift_detected: boolean;
 }
+
+// ---- M8 Tier 1 master.db path-repair candidates (mirror of src-tauri/src/ipc_library.rs) ----
+
+export interface PendingMasterdbRepair {
+  id: number;
+  track_id: string | null;
+  candidate_track_ids: string | null;
+  from_path: string;
+  to_path: string;
+  status: "pending" | "ambiguous";
+  detected_at: string;
+}
+
+export interface ApplyRepairOutcome {
+  id: number;
+  ok: boolean;
+  error: string | null;
+}

@@ -3,8 +3,9 @@
 use crate::library::{self, LibraryFacets, LibraryFilter, LibraryTrack};
 use crate::metadata::{self, MetadataEdit};
 use rusqlite::Connection;
+use std::path::Path;
 use std::sync::Mutex;
-use tauri::State;
+use tauri::{AppHandle, Manager, State};
 
 /// Filed tracks joined to metadata + genres, filtered (folder / quality / genre / q).
 #[tauri::command]
@@ -223,6 +224,228 @@ pub fn export_rekordbox_xml(conn: State<'_, Mutex<Connection>>) -> Result<Rekord
     export_rekordbox_xml_inner(&conn)
 }
 
+// ── M8 Tier 1: master.db path-repair candidates ──────────────────────────────
+
+/// One candidate `master.db` path repair, detected read-only on filing
+/// (`actions::detect_masterdb_repair_if_linked`) and surfaced for manual, batch-confirmed
+/// application. Never applied automatically.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct PendingMasterdbRepair {
+    pub id: i64,
+    /// `djmdContent.ID` — `None` when `status == "ambiguous"`.
+    pub track_id: Option<String>,
+    /// Comma-joined candidate `djmdContent.ID`s — set only when `status == "ambiguous"`.
+    pub candidate_track_ids: Option<String>,
+    pub from_path: String,
+    pub to_path: String,
+    /// "pending" | "ambiguous".
+    pub status: String,
+    pub detected_at: String,
+}
+
+/// Result of attempting to apply one pending repair.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ApplyRepairOutcome {
+    pub id: i64,
+    pub ok: bool,
+    /// Humanized message on failure; `None` on success.
+    pub error: Option<String>,
+}
+
+fn basename(path: &str) -> String {
+    std::path::Path::new(path)
+        .file_name()
+        .and_then(|f| f.to_str())
+        .unwrap_or(path)
+        .to_string()
+}
+
+fn humanize_masterdb_error(e: &crate::rekordbox_masterdb::MasterDbError) -> String {
+    use crate::rekordbox_masterdb::MasterDbError;
+    match e {
+        MasterDbError::RekordboxRunning => "Rekordbox est ouvert — ferme-le avant de synchroniser".to_string(),
+        MasterDbError::RegistryRowMissing => "structure de master.db inattendue — synchronisation impossible".to_string(),
+        MasterDbError::TrackNotFound { track_id } => format!(
+            "piste {track_id} introuvable dans master.db — la bibliothèque Rekordbox a peut-être changé depuis la détection"
+        ),
+        MasterDbError::WriteVerificationFailedRolledBack(m) => {
+            format!("l'écriture a échoué à la vérification, la sauvegarde a été restaurée automatiquement : {m}")
+        }
+        MasterDbError::WriteVerificationFailedRollbackFailed(m) => format!(
+            "l'écriture ET la restauration de la sauvegarde ont échoué — intervention manuelle nécessaire : {m}"
+        ),
+        other => other.to_string(),
+    }
+}
+
+/// Plain (testable) implementation of `rekordbox_masterdb_pending_repairs`.
+fn rekordbox_masterdb_pending_repairs_inner(conn: &Connection) -> Result<Vec<PendingMasterdbRepair>, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT id, track_id, candidate_track_ids, from_path, to_path, status, detected_at
+             FROM rekordbox_masterdb_repairs
+             WHERE status IN ('pending', 'ambiguous')
+             ORDER BY detected_at",
+        )
+        .map_err(|e| e.to_string())?;
+    let rows = stmt
+        .query_map([], |r| {
+            Ok(PendingMasterdbRepair {
+                id: r.get(0)?,
+                track_id: r.get(1)?,
+                candidate_track_ids: r.get(2)?,
+                from_path: r.get(3)?,
+                to_path: r.get(4)?,
+                status: r.get(5)?,
+                detected_at: r.get(6)?,
+            })
+        })
+        .map_err(|e| e.to_string())?;
+    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+}
+
+/// Candidate `master.db` path repairs detected so far, excluding ones already `applied` or
+/// `dismissed`.
+#[tauri::command]
+pub fn rekordbox_masterdb_pending_repairs(
+    conn: State<'_, Mutex<Connection>>,
+) -> Result<Vec<PendingMasterdbRepair>, String> {
+    let conn = conn.lock().map_err(|e| e.to_string())?;
+    rekordbox_masterdb_pending_repairs_inner(&conn)
+}
+
+/// Plain (testable) implementation of `rekordbox_masterdb_dismiss_repair`.
+fn rekordbox_masterdb_dismiss_repair_inner(conn: &Connection, id: i64) -> Result<(), String> {
+    conn.execute(
+        "UPDATE rekordbox_masterdb_repairs SET status='dismissed' WHERE id=?1",
+        rusqlite::params![id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Mark a pending/ambiguous repair as dismissed — it stops appearing in `pending_repairs`.
+/// Never applies anything.
+#[tauri::command]
+pub fn rekordbox_masterdb_dismiss_repair(conn: State<'_, Mutex<Connection>>, id: i64) -> Result<(), String> {
+    let conn = conn.lock().map_err(|e| e.to_string())?;
+    rekordbox_masterdb_dismiss_repair_inner(&conn, id)
+}
+
+/// Attempts one repair row. Never calls `repair_track_path` for a row that isn't `pending`
+/// with a known `track_id`, or whose `to_path` no longer exists on disk.
+fn apply_one_repair(
+    conn: &Connection,
+    pioneer_dir: &Path,
+    backup_root: &Path,
+    batch_stamp: &str,
+    id: i64,
+) -> ApplyRepairOutcome {
+    let row = conn.query_row(
+        "SELECT track_id, to_path, status FROM rekordbox_masterdb_repairs WHERE id=?1",
+        rusqlite::params![id],
+        |r| {
+            Ok((
+                r.get::<_, Option<String>>(0)?,
+                r.get::<_, String>(1)?,
+                r.get::<_, String>(2)?,
+            ))
+        },
+    );
+    let (track_id, to_path, status) = match row {
+        Ok(v) => v,
+        Err(e) => return ApplyRepairOutcome { id, ok: false, error: Some(e.to_string()) },
+    };
+
+    let Some(track_id) = track_id.filter(|_| status == "pending") else {
+        return ApplyRepairOutcome {
+            id,
+            ok: false,
+            error: Some("piste ambiguë ou déjà traitée — résolution manuelle requise".to_string()),
+        };
+    };
+
+    if !std::path::Path::new(&to_path).exists() {
+        return ApplyRepairOutcome {
+            id,
+            ok: false,
+            error: Some(
+                "le fichier n'existe plus à l'emplacement attendu — la piste a peut-être été déplacée ou annulée depuis"
+                    .to_string(),
+            ),
+        };
+    }
+
+    let file_name = basename(&to_path);
+    let repair = crate::rekordbox_masterdb::PathRepair {
+        track_id,
+        new_folder_path: to_path,
+        new_file_name_l: file_name.clone(),
+        new_file_name_s: file_name,
+    };
+    let backup_dir = backup_root.join(batch_stamp).join(id.to_string());
+
+    match crate::rekordbox_masterdb::repair_track_path(pioneer_dir, &backup_dir, &repair) {
+        Ok(()) => {
+            if let Err(e) = conn.execute(
+                "UPDATE rekordbox_masterdb_repairs SET status='applied', applied_at=datetime('now') WHERE id=?1",
+                rusqlite::params![id],
+            ) {
+                return ApplyRepairOutcome { id, ok: false, error: Some(e.to_string()) };
+            }
+            ApplyRepairOutcome { id, ok: true, error: None }
+        }
+        Err(e) => ApplyRepairOutcome { id, ok: false, error: Some(humanize_masterdb_error(&e)) },
+    }
+}
+
+/// Plain (testable) implementation of `rekordbox_masterdb_apply_repairs`. `backup_root` is the
+/// caller-resolved base directory for backups (production: `app_data_dir()/rekordbox-backups`)
+/// — kept as a parameter so this stays testable without a Tauri runtime.
+fn rekordbox_masterdb_apply_repairs_inner(
+    conn: &Connection,
+    backup_root: &Path,
+    ids: &[i64],
+) -> Result<Vec<ApplyRepairOutcome>, String> {
+    let xml_path = crate::settings::get(conn, crate::settings::REKORDBOX_XML_PATH)
+        .map_err(|e| e.to_string())?
+        .ok_or("aucun XML Rekordbox lié — relie un fichier avant de synchroniser")?;
+    let pioneer_dir = std::path::Path::new(&xml_path)
+        .parent()
+        .ok_or("aucun XML Rekordbox lié — relie un fichier avant de synchroniser")?;
+
+    // One timestamp per BATCH (not per row) — two rows in the same call must land under the
+    // same batch directory, each still isolated by its own <id> subdirectory below it.
+    let batch_stamp = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
+
+    let mut outcomes = Vec::with_capacity(ids.len());
+    for &id in ids {
+        outcomes.push(apply_one_repair(conn, pioneer_dir, backup_root, &batch_stamp, id));
+    }
+    Ok(outcomes)
+}
+
+/// Applies the given pending/ambiguous repair `id`s against the linked Rekordbox's `master.db`,
+/// one at a time (never in parallel — one `master.db`). Never invoked automatically — this is
+/// the explicit, user-confirmed write step. A failure on one `id` does not stop the rest of the
+/// batch. Backups land under `app_data_dir()/rekordbox-backups/<batch timestamp>/<id>/`, one
+/// subdirectory per row so a later row's backup in the same batch never overwrites an earlier
+/// row's.
+#[tauri::command]
+pub fn rekordbox_masterdb_apply_repairs(
+    app: AppHandle,
+    conn: State<'_, Mutex<Connection>>,
+    ids: Vec<i64>,
+) -> Result<Vec<ApplyRepairOutcome>, String> {
+    let backup_root = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| e.to_string())?
+        .join("rekordbox-backups");
+    let conn = conn.lock().map_err(|e| e.to_string())?;
+    rekordbox_masterdb_apply_repairs_inner(&conn, &backup_root, &ids)
+}
+
 #[cfg(test)]
 mod rekordbox_tests {
     use super::*;
@@ -328,5 +551,205 @@ mod rekordbox_tests {
         let status = link_rekordbox_xml_inner(&conn, xml_path.to_str().unwrap()).unwrap();
         assert!(!status.drift_detected, "re-linking clears prior drift");
         assert!(!rekordbox_status_inner(&conn).unwrap().drift_detected);
+    }
+
+    fn seed_pioneer_dir(dir: &std::path::Path) -> std::path::PathBuf {
+        std::fs::create_dir_all(dir).unwrap();
+        std::fs::copy(
+            concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/rekordbox_master.db"),
+            dir.join("master.db"),
+        )
+        .unwrap();
+        let xml_path = dir.join("masterPlaylists6.xml");
+        std::fs::write(&xml_path, b"<DJ_PLAYLISTS/>").unwrap();
+        xml_path
+    }
+
+    fn seed_repair_row(
+        conn: &Connection,
+        from_path: &str,
+        to_path: &str,
+        track_id: Option<&str>,
+        status: &str,
+    ) -> i64 {
+        conn.execute(
+            "INSERT INTO actions(type, from_path, to_path) VALUES('move', ?1, ?2)",
+            rusqlite::params![from_path, to_path],
+        )
+        .unwrap();
+        let action_id = conn.last_insert_rowid();
+        conn.execute(
+            "INSERT INTO rekordbox_masterdb_repairs (action_id, track_id, from_path, to_path, status)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+            rusqlite::params![action_id, track_id, from_path, to_path, status],
+        )
+        .unwrap();
+        conn.last_insert_rowid()
+    }
+
+    #[test]
+    fn pending_repairs_excludes_applied_and_dismissed() {
+        let conn = db();
+        seed_repair_row(&conn, "a", "a2", Some("1"), "pending");
+        seed_repair_row(&conn, "b", "b2", None, "ambiguous");
+        seed_repair_row(&conn, "c", "c2", Some("3"), "applied");
+        seed_repair_row(&conn, "d", "d2", Some("4"), "dismissed");
+
+        let rows = rekordbox_masterdb_pending_repairs_inner(&conn).unwrap();
+        let statuses: Vec<&str> = rows.iter().map(|r| r.status.as_str()).collect();
+        assert_eq!(statuses.len(), 2);
+        assert!(statuses.contains(&"pending"));
+        assert!(statuses.contains(&"ambiguous"));
+    }
+
+    #[test]
+    fn dismiss_repair_hides_it_from_pending_list() {
+        let conn = db();
+        let id = seed_repair_row(&conn, "a", "a2", Some("1"), "pending");
+        rekordbox_masterdb_dismiss_repair_inner(&conn, id).unwrap();
+        let rows = rekordbox_masterdb_pending_repairs_inner(&conn).unwrap();
+        assert!(rows.is_empty());
+    }
+
+    #[test]
+    fn apply_repairs_applies_a_pending_row() {
+        let conn = db();
+        let tmp = tempfile::tempdir().unwrap();
+        let pioneer_dir = tmp.path().join("pioneer");
+        let xml_path = seed_pioneer_dir(&pioneer_dir);
+        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+
+        let new_path = tmp.path().join("track1.flac");
+        std::fs::write(&new_path, b"fake audio").unwrap();
+        let id = seed_repair_row(&conn, "D:/FIXTURE/track1.mp3", new_path.to_str().unwrap(), Some("40000001"), "pending");
+
+        let backup_root = tmp.path().join("backups");
+        let outcomes = rekordbox_masterdb_apply_repairs_inner(&conn, &backup_root, &[id]).unwrap();
+        assert_eq!(outcomes.len(), 1);
+        assert!(outcomes[0].ok, "expected success, got {:?}", outcomes[0].error);
+
+        let (status, applied_at): (String, Option<String>) = conn
+            .query_row(
+                "SELECT status, applied_at FROM rekordbox_masterdb_repairs WHERE id=?1",
+                rusqlite::params![id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(status, "applied");
+        assert!(applied_at.is_some());
+    }
+
+    #[test]
+    fn apply_repairs_two_rows_get_isolated_per_row_backups() {
+        let conn = db();
+        let tmp = tempfile::tempdir().unwrap();
+        let pioneer_dir = tmp.path().join("pioneer");
+        let xml_path = seed_pioneer_dir(&pioneer_dir);
+        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+
+        let new_path_1 = tmp.path().join("track1.flac");
+        std::fs::write(&new_path_1, b"fake audio 1").unwrap();
+        let new_path_2 = tmp.path().join("track2.flac");
+        std::fs::write(&new_path_2, b"fake audio 2").unwrap();
+        let id1 = seed_repair_row(&conn, "D:/FIXTURE/track1.mp3", new_path_1.to_str().unwrap(), Some("40000001"), "pending");
+        let id2 = seed_repair_row(&conn, "D:/FIXTURE/track2.flac", new_path_2.to_str().unwrap(), Some("40000002"), "pending");
+
+        let backup_root = tmp.path().join("backups");
+        let outcomes = rekordbox_masterdb_apply_repairs_inner(&conn, &backup_root, &[id1, id2]).unwrap();
+        assert!(outcomes[0].ok, "row 1: {:?}", outcomes[0].error);
+        assert!(outcomes[1].ok, "row 2: {:?}", outcomes[1].error);
+
+        let batch_dirs: Vec<_> = std::fs::read_dir(&backup_root).unwrap().collect();
+        assert_eq!(batch_dirs.len(), 1, "both rows share one batch timestamp directory");
+        let batch_dir = batch_dirs[0].as_ref().unwrap().path();
+        assert!(batch_dir.join(id1.to_string()).join("master.db").exists());
+        assert!(batch_dir.join(id2.to_string()).join("master.db").exists());
+    }
+
+    #[test]
+    fn apply_repairs_continues_after_one_row_fails() {
+        let conn = db();
+        let tmp = tempfile::tempdir().unwrap();
+        let pioneer_dir = tmp.path().join("pioneer");
+        let xml_path = seed_pioneer_dir(&pioneer_dir);
+        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+
+        let new_path = tmp.path().join("track1.flac");
+        std::fs::write(&new_path, b"fake audio").unwrap();
+        let id_ok = seed_repair_row(&conn, "D:/FIXTURE/track1.mp3", new_path.to_str().unwrap(), Some("40000001"), "pending");
+        // track_id "99999999" doesn't exist in the fixture — simulates master.db having
+        // changed since detection.
+        let id_missing_track = seed_repair_row(&conn, "D:/nope.mp3", new_path.to_str().unwrap(), Some("99999999"), "pending");
+
+        let backup_root = tmp.path().join("backups");
+        let outcomes = rekordbox_masterdb_apply_repairs_inner(&conn, &backup_root, &[id_ok, id_missing_track]).unwrap();
+        assert!(outcomes[0].ok, "row 1 should succeed: {:?}", outcomes[0].error);
+        assert!(!outcomes[1].ok, "row 2 should fail");
+        assert!(outcomes[1].error.is_some());
+
+        let status_ok: String = conn
+            .query_row("SELECT status FROM rekordbox_masterdb_repairs WHERE id=?1", rusqlite::params![id_ok], |r| r.get(0))
+            .unwrap();
+        assert_eq!(status_ok, "applied");
+        let status_failed: String = conn
+            .query_row("SELECT status FROM rekordbox_masterdb_repairs WHERE id=?1", rusqlite::params![id_missing_track], |r| r.get(0))
+            .unwrap();
+        assert_eq!(status_failed, "pending", "failed row stays pending, retryable");
+    }
+
+    #[test]
+    fn apply_repairs_skips_ambiguous_row_without_calling_repair_track_path() {
+        let conn = db();
+        let tmp = tempfile::tempdir().unwrap();
+        let pioneer_dir = tmp.path().join("pioneer");
+        let xml_path = seed_pioneer_dir(&pioneer_dir);
+        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+
+        let before = std::fs::read(pioneer_dir.join("master.db")).unwrap();
+        let id = seed_repair_row(&conn, "D:/FIXTURE/track1.mp3", "D:/FIXTURE/renamed/track1.flac", None, "ambiguous");
+
+        let backup_root = tmp.path().join("backups");
+        let outcomes = rekordbox_masterdb_apply_repairs_inner(&conn, &backup_root, &[id]).unwrap();
+        assert!(!outcomes[0].ok);
+        assert_eq!(outcomes[0].error.as_deref(), Some("piste ambiguë ou déjà traitée — résolution manuelle requise"));
+
+        // master.db must be byte-identical — repair_track_path was never called.
+        let after = std::fs::read(pioneer_dir.join("master.db")).unwrap();
+        assert_eq!(before, after);
+        assert!(!backup_root.exists(), "no backup should have been created either");
+    }
+
+    #[test]
+    fn apply_repairs_fails_fast_when_target_file_missing() {
+        let conn = db();
+        let tmp = tempfile::tempdir().unwrap();
+        let pioneer_dir = tmp.path().join("pioneer");
+        let xml_path = seed_pioneer_dir(&pioneer_dir);
+        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+
+        let before = std::fs::read(pioneer_dir.join("master.db")).unwrap();
+        // to_path deliberately points at a file that doesn't exist on disk.
+        let missing_path = tmp.path().join("never-created.flac");
+        let id = seed_repair_row(&conn, "D:/FIXTURE/track1.mp3", missing_path.to_str().unwrap(), Some("40000001"), "pending");
+
+        let backup_root = tmp.path().join("backups");
+        let outcomes = rekordbox_masterdb_apply_repairs_inner(&conn, &backup_root, &[id]).unwrap();
+        assert!(!outcomes[0].ok);
+        assert_eq!(
+            outcomes[0].error.as_deref(),
+            Some("le fichier n'existe plus à l'emplacement attendu — la piste a peut-être été déplacée ou annulée depuis")
+        );
+
+        let after = std::fs::read(pioneer_dir.join("master.db")).unwrap();
+        assert_eq!(before, after);
+    }
+
+    #[test]
+    fn apply_repairs_fails_all_when_no_xml_linked() {
+        let conn = db();
+        let id = seed_repair_row(&conn, "a", "a2", Some("1"), "pending");
+        let backup_root = tempfile::tempdir().unwrap().path().join("backups");
+        let err = rekordbox_masterdb_apply_repairs_inner(&conn, &backup_root, &[id]).unwrap_err();
+        assert_eq!(err, "aucun XML Rekordbox lié — relie un fichier avant de synchroniser");
     }
 }

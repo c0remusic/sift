@@ -26,6 +26,8 @@ import type {
   DupGroup,
   DashboardStats,
   RekordboxLinkStatus,
+  PendingMasterdbRepair,
+  ApplyRepairOutcome,
 } from "../shared/contracts";
 
 export const appInfo = (): Promise<AppInfo> => invoke("app_info");
@@ -272,6 +274,21 @@ export const rekordboxStatus = (): Promise<RekordboxLinkStatus> => invoke("rekor
 /** Merge every filed track missing from the linked XML and rewrite it. Rejects if no XML is
  * linked yet, or if the linked file is unreadable/corrupt. */
 export const exportRekordboxXml = (): Promise<RekordboxLinkStatus> => invoke("export_rekordbox_xml");
+
+// ---- M8 Tier 1 master.db path-repair candidates ----
+
+/** Candidate master.db path repairs detected so far (excludes applied/dismissed). */
+export const rekordboxMasterdbPendingRepairs = (): Promise<PendingMasterdbRepair[]> =>
+  invoke("rekordbox_masterdb_pending_repairs");
+
+/** Apply the given repair ids against the linked Rekordbox's master.db. Never automatic —
+ * only call this after explicit user confirmation. A failure on one id doesn't stop the rest. */
+export const rekordboxMasterdbApplyRepairs = (ids: number[]): Promise<ApplyRepairOutcome[]> =>
+  invoke("rekordbox_masterdb_apply_repairs", { ids });
+
+/** Mark a pending/ambiguous repair as dismissed — it stops appearing in pending_repairs. */
+export const rekordboxMasterdbDismissRepair = (id: number): Promise<void> =>
+  invoke("rekordbox_masterdb_dismiss_repair", { id });
 
 // ---- M7 USB format utility (mirror of ipc_usb.rs) ----
 
