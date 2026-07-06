@@ -236,11 +236,24 @@ pub struct PendingMasterdbRepair {
     pub track_id: Option<String>,
     /// Comma-joined candidate `djmdContent.ID`s — set only when `status == "ambiguous"`.
     pub candidate_track_ids: Option<String>,
+    /// Each candidate's current `master.db` path, resolved fresh at query time so the user can
+    /// tell them apart. `None` when `status != "ambiguous"`, or when `master.db`/the linked XML
+    /// couldn't be read at all (degrades gracefully — the row itself still lists, just without
+    /// enrichment; never fails the whole `pending_repairs` call for this reason alone).
+    pub candidate_tracks: Option<Vec<CandidateTrack>>,
     pub from_path: String,
     pub to_path: String,
     /// "pending" | "ambiguous".
     pub status: String,
     pub detected_at: String,
+}
+
+/// One ambiguous-repair candidate, enriched with its current `master.db` path for display.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct CandidateTrack {
+    pub track_id: String,
+    /// `None` if this `track_id` no longer exists in `master.db` (library changed since detection).
+    pub folder_path: Option<String>,
 }
 
 /// Result of attempting to apply one pending repair.
@@ -278,6 +291,16 @@ fn humanize_masterdb_error(e: &crate::rekordbox_masterdb::MasterDbError) -> Stri
     }
 }
 
+/// Resolves `pioneer_dir` from the linked XML and reads `master.db` once, returning a
+/// `track_id -> folder_path` map. `None` if no XML is linked or `master.db` can't be read —
+/// callers must degrade gracefully, never treat this as a hard error.
+fn read_masterdb_path_map(conn: &Connection) -> Option<std::collections::HashMap<String, String>> {
+    let xml_path = crate::settings::get(conn, crate::settings::REKORDBOX_XML_PATH).ok().flatten()?;
+    let pioneer_dir = std::path::Path::new(&xml_path).parent()?;
+    let index = crate::rekordbox_masterdb::read_rekordbox_masterdb(&pioneer_dir.join("master.db")).ok()?;
+    Some(index.tracks.into_iter().map(|t| (t.track_id, t.folder_path)).collect())
+}
+
 /// Plain (testable) implementation of `rekordbox_masterdb_pending_repairs`.
 fn rekordbox_masterdb_pending_repairs_inner(conn: &Connection) -> Result<Vec<PendingMasterdbRepair>, String> {
     let mut stmt = conn
@@ -288,20 +311,41 @@ fn rekordbox_masterdb_pending_repairs_inner(conn: &Connection) -> Result<Vec<Pen
              ORDER BY detected_at",
         )
         .map_err(|e| e.to_string())?;
-    let rows = stmt
+    let mut rows: Vec<PendingMasterdbRepair> = stmt
         .query_map([], |r| {
             Ok(PendingMasterdbRepair {
                 id: r.get(0)?,
                 track_id: r.get(1)?,
                 candidate_track_ids: r.get(2)?,
+                candidate_tracks: None,
                 from_path: r.get(3)?,
                 to_path: r.get(4)?,
                 status: r.get(5)?,
                 detected_at: r.get(6)?,
             })
         })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
         .map_err(|e| e.to_string())?;
-    rows.collect::<Result<Vec<_>, _>>().map_err(|e| e.to_string())
+
+    // Resolve master.db exactly once for the whole batch, not once per ambiguous row.
+    if rows.iter().any(|r| r.status == "ambiguous") {
+        if let Some(path_map) = read_masterdb_path_map(conn) {
+            for row in rows.iter_mut().filter(|r| r.status == "ambiguous") {
+                if let Some(ids) = &row.candidate_track_ids {
+                    row.candidate_tracks = Some(
+                        ids.split(',')
+                            .map(|id| CandidateTrack {
+                                track_id: id.to_string(),
+                                folder_path: path_map.get(id).cloned(),
+                            })
+                            .collect(),
+                    );
+                }
+            }
+        }
+    }
+    Ok(rows)
 }
 
 /// Candidate `master.db` path repairs detected so far, excluding ones already `applied` or
@@ -751,5 +795,82 @@ mod rekordbox_tests {
         let backup_root = tempfile::tempdir().unwrap().path().join("backups");
         let err = rekordbox_masterdb_apply_repairs_inner(&conn, &backup_root, &[id]).unwrap_err();
         assert_eq!(err, "aucun XML Rekordbox lié — relie un fichier avant de synchroniser");
+    }
+
+    #[test]
+    fn pending_repairs_enriches_ambiguous_candidates_with_paths() {
+        let conn = db();
+        let tmp = tempfile::tempdir().unwrap();
+        let pioneer_dir = tmp.path().join("pioneer");
+        let xml_path = seed_pioneer_dir(&pioneer_dir);
+        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+
+        let id = seed_repair_row(&conn, "D:/FIXTURE/track1.mp3", "D:/FIXTURE/renamed/track1.flac", None, "ambiguous");
+        conn.execute(
+            "UPDATE rekordbox_masterdb_repairs SET candidate_track_ids='40000001,40000002' WHERE id=?1",
+            rusqlite::params![id],
+        )
+        .unwrap();
+
+        let index = crate::rekordbox_masterdb::read_rekordbox_masterdb(&pioneer_dir.join("master.db")).unwrap();
+        let expected: std::collections::HashMap<String, String> =
+            index.tracks.into_iter().map(|t| (t.track_id, t.folder_path)).collect();
+
+        let rows = rekordbox_masterdb_pending_repairs_inner(&conn).unwrap();
+        let row = rows.iter().find(|r| r.id == id).unwrap();
+        let candidates = row.candidate_tracks.as_ref().expect("candidate_tracks populated");
+        assert_eq!(candidates.len(), 2);
+        for c in candidates {
+            assert_eq!(
+                c.folder_path.as_deref(),
+                expected.get(&c.track_id).map(|s| s.as_str()),
+                "candidate {} path mismatch",
+                c.track_id
+            );
+        }
+    }
+
+    #[test]
+    fn pending_repairs_candidate_with_unknown_id_has_no_path() {
+        let conn = db();
+        let tmp = tempfile::tempdir().unwrap();
+        let pioneer_dir = tmp.path().join("pioneer");
+        let xml_path = seed_pioneer_dir(&pioneer_dir);
+        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+
+        let id = seed_repair_row(&conn, "D:/FIXTURE/track1.mp3", "D:/FIXTURE/renamed/track1.flac", None, "ambiguous");
+        conn.execute(
+            "UPDATE rekordbox_masterdb_repairs SET candidate_track_ids='40000001,99999999' WHERE id=?1",
+            rusqlite::params![id],
+        )
+        .unwrap();
+
+        let rows = rekordbox_masterdb_pending_repairs_inner(&conn).unwrap();
+        let row = rows.iter().find(|r| r.id == id).unwrap();
+        let candidates = row.candidate_tracks.as_ref().expect("candidate_tracks populated");
+        let unknown = candidates.iter().find(|c| c.track_id == "99999999").unwrap();
+        assert!(unknown.folder_path.is_none());
+        let known = candidates.iter().find(|c| c.track_id == "40000001").unwrap();
+        assert!(known.folder_path.is_some());
+    }
+
+    #[test]
+    fn pending_repairs_degrades_gracefully_when_masterdb_unreadable() {
+        // No XML linked at all — pioneer_dir can't be resolved.
+        let conn = db();
+        let id_pending = seed_repair_row(&conn, "a", "a2", Some("1"), "pending");
+        let id_ambig = seed_repair_row(&conn, "b", "b2", None, "ambiguous");
+        conn.execute(
+            "UPDATE rekordbox_masterdb_repairs SET candidate_track_ids='1,2' WHERE id=?1",
+            rusqlite::params![id_ambig],
+        )
+        .unwrap();
+
+        let rows = rekordbox_masterdb_pending_repairs_inner(&conn).unwrap();
+        assert_eq!(rows.len(), 2, "both rows still listed despite unresolved pioneer_dir");
+        let pending = rows.iter().find(|r| r.id == id_pending).unwrap();
+        assert!(pending.candidate_tracks.is_none());
+        let ambig = rows.iter().find(|r| r.id == id_ambig).unwrap();
+        assert!(ambig.candidate_tracks.is_none(), "no XML linked -> None, not an error");
     }
 }
