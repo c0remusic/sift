@@ -100,18 +100,19 @@ function run({ write = false } = {}) {
   const parts = original.split(splitRe);
   if (parts.length !== 3) throw new Error("Could not split DESIGN.md into light/dark palette sections");
   const [lightSection, darkHeading, restFromDark] = parts;
+  // The dark palette owns content until the next level-2 section; later sections
+  // must stay untouched even if their prose contains palette-shaped bullets.
+  const nextSectionIndex = restFromDark.search(/\n## /);
+  const darkSection = nextSectionIndex === -1 ? restFromDark : restFromDark.slice(0, nextSectionIndex);
+  const afterDarkSection = nextSectionIndex === -1 ? "" : restFromDark.slice(nextSectionIndex);
 
   // +1 for "Désactivé" (an intentionally-unmanaged bullet that still matches this
   // shape; CTA does NOT match — its value is two backtick-spans, "fond `x`, texte `y`",
   // not the single-backtick shape this regex looks for, so it never counts here).
   const expectedLightCount = lightBullets.length + 1;
-  // Dark's "rest of file" continues past the palette section to end-of-file, so it
-  // also picks up 2 unrelated bullets from the later "## Composants" section
-  // ("Carte", "CTA primaire (pill...)") that happen to match this same shape —
-  // +1 for "Désactivé" and +2 for those Composants bullets.
-  const expectedDarkCount = darkBullets.length + 1 + 2;
+  const expectedDarkCount = darkBullets.length + 1;
   const actualLightCount = countBulletLines(lightSection);
-  const actualDarkCount = countBulletLines(restFromDark);
+  const actualDarkCount = countBulletLines(darkSection);
   if (actualLightCount !== expectedLightCount) {
     throw new Error(
       `DESIGN.md's light section has ${actualLightCount} bullet(s) matching the "- Label : \`value\`" ` +
@@ -123,8 +124,7 @@ function run({ write = false } = {}) {
     throw new Error(
       `DESIGN.md's dark section has ${actualDarkCount} bullet(s) matching the "- Label : \`value\`" ` +
       `shape, but generate-design-md.cjs's darkBullets list only knows about ${expectedDarkCount} ` +
-      `(${darkBullets.length} entries + 1 for "Désactivé" + 2 for "## Composants" bullets that fall ` +
-      `inside this section too). Update darkBullets in this file to match.`
+      `(${darkBullets.length} entries + 1 for "Désactivé"). Update darkBullets in this file to match.`
     );
   }
 
@@ -132,11 +132,11 @@ function run({ write = false } = {}) {
   const lightCta = replaceCtaBullet(lightResult.text, tokens, aliasMap, "light");
   lightResult = { text: lightCta.text, changedKeys: [...lightResult.changedKeys, ...lightCta.changedKeys] };
 
-  let darkResult = replaceSimpleBullets(restFromDark, darkBullets, tokens, aliasMap, "dark");
+  let darkResult = replaceSimpleBullets(darkSection, darkBullets, tokens, aliasMap, "dark");
   const darkCta = replaceCtaBullet(darkResult.text, tokens, aliasMap, "dark");
   darkResult = { text: darkCta.text, changedKeys: [...darkResult.changedKeys, ...darkCta.changedKeys] };
 
-  const newMd = lightResult.text + darkHeading + darkResult.text;
+  const newMd = lightResult.text + darkHeading + darkResult.text + afterDarkSection;
   return stylesCss.finalizeRun({
     targetPath: mdPath, original, updated: newMd,
     changedKeys: [...lightResult.changedKeys, ...darkResult.changedKeys], write,
