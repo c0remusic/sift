@@ -236,15 +236,23 @@ empreintes Chromaprint).
 ## M8 — Profond & rétroactif (Phase ultérieure, isolé, risqué)
 > Note cadrage : le **scan + traitement** de la biblio existante est remonté en V1 (M5)
 > avec garde-fou lecture seule. Ce qui reste ici = la **réparation automatique** qui
-> *écrit* dans Rekordbox, plus risquée. **Feature partiellement dégelée** (2026-07-04,
-> voir `docs/ressources-externes.md` Évaluation 7) : un spike sur une copie de la
-> vraie bibliothèque a validé les 3 scénarios critiques d'écriture (réparation de
-> chemin, dédup de playlist, comportement sous verrou) via `pyrekordbox` (Python).
-> Ce n'est **pas** un feu vert pour du code de prod : reste à faire avant toute
-> implémentation — (1) portage Rust du write path (symétrique au lecteur SQLCipher
-> M7), (2) vérification explicite qu'aucun process Rekordbox ne tourne avant
-> d'écrire (pas seulement catcher l'exception SQLite).
-- **Rekordbox `master.db`** (pyrekordbox) : remplacement in-situ, **dédup des playlists existantes**, **réparation/prévention des liens cassés** (chemin change au changement de format) — c'est la bascule garde-fou → **réparation intégrée (option A)**. ⚠️ non-officiel, **backup obligatoire**, Rekordbox fermé.
+> *écrit* dans Rekordbox, plus risquée.
+>
+> **État réel (2026-07-06)** : Tier 1 (réparation de chemin `FolderPath`/`FileNameL`/
+> `FileNameS`) est **livré et câblé** — moteur Rust pur (`src-tauri/src/rekordbox_masterdb.rs`,
+> `repair_track_path` : garde process Rekordbox → backup horodaté → écriture
+> transactionnelle → vérification round-trip → rollback auto), audité indépendamment,
+> **et maintenant relié à l'app** (`docs/superpowers/plans/2026-07-06-m8-tier1-ipc-wiring.md`) :
+> détection lecture-seule des candidats à chaque filing, table `rekordbox_masterdb_repairs`,
+> 3 commandes IPC (lister/appliquer par lot/ignorer). **Aucune écriture automatique** —
+> confirmation manuelle utilisateur requise (décidée en brainstorm, plus stricte que
+> le repair XML existant vu le risque). Reste à faire avant tout usage réel : écran UI
+> (chantier séparé), vérification contre une copie d'un vrai `master.db` + validation
+> manuelle Antoine dans le vrai Rekordbox. **Tier 2** (sync playlists existantes, sans
+> création) et **Tier 3** (flag `TrackInfoUpdated` pour la synchro metadata) restent
+> non commencés — Tier 3 bloqué sur un spike jamais correctement terminé (retest par
+> ID exact, voir `docs/superpowers/specs/2026-07-06-m8-tier1-write-path-rust-design-v2.md`).
+- **Rekordbox `master.db`** : remplacement in-situ (Tier 1 livré ci-dessus), **dédup des playlists existantes** (Tier 2, non commencé), **réparation/prévention des liens cassés** (chemin change au changement de format — Tier 1). ⚠️ backup obligatoire (déjà implémenté), Rekordbox fermé (garde déjà implémentée).
 - **Normalisation loudness** (option, OFF par défaut).
 
 ---
