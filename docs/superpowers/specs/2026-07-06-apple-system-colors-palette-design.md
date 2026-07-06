@@ -171,6 +171,25 @@ réductible à un symbole universel appris. La règle existante ("texte
 seul, jamais icon-only sur les boutons de rail") reste en place, non
 remise en cause par ce design.
 
+## 6. Waveform (portion écoutée) — passe au bleu info
+
+Revu pendant la relecture du spec : `--color-waveform-elapsed` avait été
+posé sur `--color-text-success` (vert) plus tôt dans une session
+précédente, en réutilisant le premier token dispo au moment du fix
+dBFS — sans intention sémantique. L'utilisateur note à juste titre que le
+vert lit comme "ce morceau est bon/validé", un faux signal de verdict sur
+un simple indicateur de lecture. Comparé en mockup contre une teinte cyan
+dédiée : le bleu info/accent l'emporte (cohérent avec "le bleu = l'élément
+actif/interactif" déjà acquis pour Identifier/focus/chips), malgré le
+chevauchement visuel avec un chip actif si les deux sont visibles
+ensemble — jugé acceptable.
+
+**Décision** : `--color-waveform-elapsed` passe de `var(--color-text-success)`
+à `var(--color-text-info)`. Le reste du canvas waveform/spectrogramme
+(overlays blanc/noir, badges temps) reste inchangé — volontairement
+toujours sombre indépendamment du thème, comme un lecteur audio pro (déjà
+noté dans `docs/design-system-states.md`).
+
 ## Portée de l'implémentation
 
 Fichiers à toucher :
@@ -188,6 +207,8 @@ Fichiers à toucher :
   — flou ponctuel.
 - `frontend/styles.css` — `.sift-id-btn` retargeté sur les tokens `info`,
   suppression de `--color-accent-identify*` (`:root` + 2 blocs sombres).
+- `frontend/styles.css` — `--color-waveform-elapsed` retargeté sur
+  `var(--color-text-info)` (était `--color-text-success`).
 - Persistance de la couleur de source : mécanisme exact (DB vs settings
   JSON) à trancher pendant le plan d'implémentation, pas ici.
 
