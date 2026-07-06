@@ -1,8 +1,11 @@
-//! Read-only, pure-Rust reader for Rekordbox's SQLCipher-encrypted `master.db`.
-//!
-//! Exploratory module, separate from M7 (see
-//! `docs/superpowers/specs/2026-07-03-rekordbox-masterdb-sqlcipher-reader-design.md`).
-//! No write path exists or is planned here — writing `master.db` stays frozen (M8).
+//! Pure-Rust reader **and** Tier 1 write engine for Rekordbox's SQLCipher-encrypted
+//! `master.db` (see `docs/superpowers/specs/2026-07-03-rekordbox-masterdb-sqlcipher-reader-design.md`
+//! for the reader, `docs/superpowers/specs/2026-07-06-m8-tier1-write-path-rust-design-v2.md`
+//! for the write engine). Reads (`read_rekordbox_masterdb`) are always safe; the write
+//! path (`repair_track_path`) is only ever reached through an explicit, user-confirmed
+//! IPC call (`ipc_library::rekordbox_masterdb_apply_repairs`) and owns its own
+//! guard/backup/verify/rollback safety chain — nothing here writes `master.db` as a side
+//! effect of a read.
 //!
 //! # Approach
 //!
@@ -39,13 +42,10 @@
 //!
 //! # Status
 //!
-//! Not yet wired to any IPC command or other module — deliberately
-//! out-of-scope for this chantier (see the design doc's "Intégration"
-//! section). `#[allow(dead_code)]` below is intentional: everything here is
-//! exercised by this module's own tests, just not yet called from the rest
-//! of the app.
-
-#![allow(dead_code)]
+//! Wired to IPC: `read_rekordbox_masterdb` (via `actions::detect_masterdb_repair_if_linked`,
+//! read-only) and `repair_track_path` (via `ipc_library::rekordbox_masterdb_apply_repairs`,
+//! the only write path). No UI screen consumes these commands yet (a separate,
+//! later plan) — that's the only remaining "not yet" here.
 
 use std::io::Cursor;
 use std::path::Path;
