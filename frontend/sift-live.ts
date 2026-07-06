@@ -27,6 +27,10 @@ import {
   rekordboxStatus,
   linkRekordboxXml,
   listRemovableDrives,
+  rekordboxMasterdbPendingRepairs,
+  rekordboxMasterdbApplyRepairs,
+  rekordboxMasterdbDismissRepair,
+  rekordboxMasterdbResolveAmbiguous,
 } from "./ipc";
 import type {
   LibraryTrack,
@@ -35,6 +39,8 @@ import type {
   DupGroup,
   DashboardStats,
   RekordboxLinkStatus,
+  PendingMasterdbRepair,
+  CandidateTrack,
 } from "../shared/contracts";
 import type { RemovableDrive } from "./ipc";
 import { openLibraryDetailInto } from "./library-detail";
@@ -56,6 +62,7 @@ import {
   toggleDestPopover,
   repositionDestPopoverIfOpen,
 } from "./filing";
+import { confirmAction } from "./confirm-modal";
 // Views/chrome extracted from this god-module (audit P-3) — kept stateless, wired here.
 import { renderEcartes } from "./ecartes-view";
 import { renderHomeSources, pickAndAddFolder } from "./home-sources";
@@ -96,6 +103,14 @@ let currentItems: QueueItem[] = [];
 let currentOpenId: number | null = null;
 
 const QUEUE_ROW_BUFFER = 15; // rows rendered above/below the visible window
+
+// M8 Tier 1 repairs section state — module-level like batchSel (sift-live.ts:271), NOT reset on
+// every render. Filtered against the live pending/ambiguous rows each render so a stale id (one
+// that got applied/dismissed elsewhere) drops out without touching the rest of the selection.
+const mdbRepairSel = new Set<number>();
+// Per-row apply failure message, transient (never persisted) — cleared when the row is
+// reselected or the next apply_repairs batch touches it again.
+const mdbErrorById = new Map<number, string>();
 let queueRowHeightCache: number | null = null;
 
 /** Real rendered height of a queue row, measured once via an offscreen probe (never assumed —
@@ -1514,6 +1529,87 @@ function rekordboxCardHtml(s: RekordboxLinkStatus): string {
  * Renders the whole page fresh each call, same pattern as renderBiblioLive/renderJournal — no mock
  * DOM survives. `drift_detected` is independent of linked/error, so the banner can appear on top
  * of either linked state (never modeled as a 4-way exclusive if/else). */
+/** M8 Tier 1 section: lists master.db path-repair candidates detected passively at filing time
+ * (`rekordbox_masterdb_repairs`, actions.rs::detect_masterdb_repair_if_linked) and lets the user
+ * resolve/apply/dismiss them. Independent of `driftBanner` above (XML repair signal, unrelated
+ * mechanism) — see docs/superpowers/specs/2026-07-06-m8-tier1-ui-screen-design.md. Renders "" when
+ * there is nothing pending/ambiguous, same show-nothing-when-empty rule as driftBanner. */
+function masterdbRepairsSectionHtml(rows: PendingMasterdbRepair[]): string {
+  if (rows.length === 0) return "";
+  // Drop stale selection ids without touching the rest — same discipline as batchSel's own
+  // re-filter (sift-live.ts:679).
+  const liveIds = new Set(rows.map((r) => r.id));
+  for (const id of [...mdbRepairSel]) if (!liveIds.has(id)) mdbRepairSel.delete(id);
+
+  const ambiguous = rows.filter((r) => r.status === "ambiguous");
+  const pending = rows.filter((r) => r.status === "pending");
+
+  const pathBlock = (r: PendingMasterdbRepair) =>
+    `<div style="min-width:0;flex:1">` +
+    `<div style="font-family:var(--font-mono);font-size:var(--text-sm);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.to_path)}</div>` +
+    `<div style="font-family:var(--font-mono);font-size:var(--text-xs);color:var(--color-text-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><span style="opacity:.55">was</span> ${esc(r.from_path)}</div>` +
+    (mdbErrorById.has(r.id)
+      ? `<div style="font-size:var(--text-xs);color:var(--color-text-danger);margin-top:2px">${esc(mdbErrorById.get(r.id)!)}</div>`
+      : "") +
+    `</div>`;
+
+  const candidateList = (r: PendingMasterdbRepair): CandidateTrack[] =>
+    r.candidate_tracks && r.candidate_tracks.length
+      ? r.candidate_tracks
+      : (r.candidate_track_ids || "")
+          .split(",")
+          .filter(Boolean)
+          .map((track_id) => ({ track_id, folder_path: null }));
+
+  const ambiguousRows = ambiguous
+    .map((r) => {
+      const candidateBtns = candidateList(r)
+        .map(
+          (c) =>
+            `<button class="lk" data-sift="mdbresolve" data-id="${r.id}" data-track="${esc(c.track_id)}" style="display:block;text-align:left;font-family:var(--font-mono);font-size:var(--text-xs)">` +
+            `Choisir cette piste — ${esc(c.folder_path || c.track_id)}</button>`,
+        )
+        .join("");
+      return (
+        `<div style="border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:9px 11px;margin-bottom:6px">` +
+        `<div style="display:flex;gap:10px;align-items:flex-start">${pathBlock(r)}` +
+        `<button class="lk" data-sift="mdbdismiss" data-id="${r.id}" style="flex:none">Ignorer</button></div>` +
+        `<div style="margin-top:6px;display:flex;flex-direction:column;gap:3px">${candidateBtns}</div>` +
+        `</div>`
+      );
+    })
+    .join("");
+
+  const pendingRows = pending
+    .map((r) => {
+      const checked = mdbRepairSel.has(r.id);
+      return (
+        `<div class="bx-row" data-sift="mdbpick" data-id="${r.id}" style="display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:var(--border-radius-md);cursor:pointer;${
+          checked ? "background:var(--overlay-hover)" : ""
+        }">` +
+        `<input type="checkbox" class="sift-batch-ck" ${checked ? "checked" : ""} tabindex="-1">` +
+        pathBlock(r) +
+        `<button class="lk" data-sift="mdbdismiss" data-id="${r.id}" style="flex:none">Ignorer</button>` +
+        `</div>`
+      );
+    })
+    .join("");
+
+  const applyBar =
+    mdbRepairSel.size > 0
+      ? `<div style="margin-top:8px"><button class="lk" data-sift="mdbapply" style="font-weight:500">Appliquer la sélection (${mdbRepairSel.size})</button></div>`
+      : "";
+
+  return (
+    `<div style="margin-bottom:12px">` +
+    `<div class="col-h">Réparations master.db en attente</div>` +
+    (ambiguousRows ? `<div style="margin-bottom:8px">${ambiguousRows}</div>` : "") +
+    pendingRows +
+    applyBar +
+    `</div>`
+  );
+}
+
 async function renderRekordboxLive(): Promise<void> {
   const content = requireEl("#content", "renderRekordboxLive");
   let status: RekordboxLinkStatus;
@@ -1557,7 +1653,15 @@ async function renderRekordboxLive(): Promise<void> {
       `</div></div>`
     : "";
 
-  content.innerHTML = intro + driftBanner + rekordboxCardHtml(status);
+  let masterdbSection = "";
+  try {
+    const repairs = await rekordboxMasterdbPendingRepairs();
+    masterdbSection = masterdbRepairsSectionHtml(repairs);
+  } catch (e) {
+    console.error("rekordbox_masterdb_pending_repairs failed", e);
+  }
+
+  content.innerHTML = intro + driftBanner + rekordboxCardHtml(status) + masterdbSection;
 }
 
 /** Live Bibliothèque view: lists filed tracks with search + quality chips + folder/genre
@@ -2047,6 +2151,75 @@ export function installLiveWiring() {
     } else if (act === "rkbreexport") {
       e.stopPropagation();
       void runNavExport("rekordbox");
+    } else if (act === "mdbpick") {
+      e.stopPropagation();
+      const id = Number(el.dataset.id);
+      if (mdbRepairSel.has(id)) {
+        mdbRepairSel.delete(id);
+      } else {
+        mdbRepairSel.add(id);
+        mdbErrorById.delete(id);
+      }
+      void renderRekordboxLive();
+    } else if (act === "mdbdismiss") {
+      e.stopPropagation();
+      const id = Number(el.dataset.id);
+      void (async () => {
+        try {
+          await rekordboxMasterdbDismissRepair(id);
+        } catch (e) {
+          console.error("rekordbox_masterdb_dismiss_repair failed", e);
+          toast("Action impossible — réessaie");
+        }
+        void renderRekordboxLive();
+      })();
+    } else if (act === "mdbresolve") {
+      e.stopPropagation();
+      const id = Number(el.dataset.id);
+      const trackId = el.dataset.track || "";
+      void (async () => {
+        try {
+          await rekordboxMasterdbResolveAmbiguous(id, trackId);
+        } catch (e) {
+          console.error("rekordbox_masterdb_resolve_ambiguous failed", e);
+          toast("Choix impossible — réessaie");
+        }
+        void renderRekordboxLive();
+      })();
+    } else if (act === "mdbapply") {
+      e.stopPropagation();
+      const ids = [...mdbRepairSel];
+      if (!ids.length) return;
+      void (async () => {
+        const proceed = await confirmAction(
+          `Appliquer ${ids.length} réparation${ids.length > 1 ? "s" : ""} de chemin dans master.db ? Ferme Rekordbox avant de continuer.`,
+          "Appliquer",
+        );
+        if (!proceed) return;
+        try {
+          const outcomes = await rekordboxMasterdbApplyRepairs(ids);
+          let ok = 0;
+          for (const o of outcomes) {
+            mdbRepairSel.delete(o.id);
+            if (o.ok) {
+              mdbErrorById.delete(o.id);
+              ok++;
+            } else {
+              mdbErrorById.set(o.id, o.error || "échec inconnu");
+            }
+          }
+          const failed = outcomes.length - ok;
+          toast(
+            failed > 0
+              ? `${ok} réparation(s) appliquée(s), ${failed} échouée(s)`
+              : `${ok} réparation(s) appliquée(s)`,
+          );
+        } catch (e) {
+          console.error("rekordbox_masterdb_apply_repairs failed", e);
+          toast("Action impossible — réessaie");
+        }
+        void renderRekordboxLive();
+      })();
     }
   });
 
