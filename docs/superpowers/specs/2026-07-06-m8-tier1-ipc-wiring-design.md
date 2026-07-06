@@ -141,6 +141,29 @@ pub fn rekordbox_masterdb_dismiss_repair(
    d'abandonner — un `RekordboxRunning` sur la ligne 2 ne doit pas cacher que
    la ligne 1 a réussi.
 
+## Messages d'erreur exacts (`humanize`, pas de "TBD" à l'implémentation)
+
+Mêmes conventions de ton que l'existant M7 (`export_rekordbox_xml_inner`'s
+`"aucun XML Rekordbox lié — relie un fichier avant d'exporter"`) :
+
+| Cas | Message |
+|---|---|
+| Aucun XML Rekordbox lié (résolution `pioneer_dir`) | `aucun XML Rekordbox lié — relie un fichier avant de synchroniser` |
+| Ligne `ambiguous` ou déjà `applied`/`dismissed` passée à `apply_repairs` | `piste ambiguë ou déjà traitée — résolution manuelle requise` |
+| `to_path` absent du disque (garde-fou indépendant) | `le fichier n'existe plus à l'emplacement attendu — la piste a peut-être été déplacée ou annulée depuis` |
+| `MasterDbError::RekordboxRunning` | `Rekordbox est ouvert — ferme-le avant de synchroniser` |
+| `MasterDbError::RegistryRowMissing` | `structure de master.db inattendue — synchronisation impossible` |
+| `MasterDbError::TrackNotFound{track_id}` | `piste {track_id} introuvable dans master.db — la bibliothèque Rekordbox a peut-être changé depuis la détection` |
+| `MasterDbError::WriteVerificationFailedRolledBack(m)` | `l'écriture a échoué à la vérification, la sauvegarde a été restaurée automatiquement : {m}` |
+| `MasterDbError::WriteVerificationFailedRollbackFailed(m)` | `l'écriture ET la restauration de la sauvegarde ont échoué — intervention manuelle nécessaire : {m}` |
+| Toute autre `MasterDbError` (`Io`/`Sqlite`/…) | `err.to_string()` tel quel (déjà un `Display` lisible) |
+
+Format du répertoire de backup : `app_data_dir()/rekordbox-backups/<horodatage-du-lot>/<id>/`,
+`<horodatage-du-lot>` = `chrono::Local::now().format("%Y%m%d-%H%M%S")` calculé
+**une fois par appel `apply_repairs`** (pas par ligne — sinon deux lignes du
+même lot pourraient collisionner sur la même seconde), `<id>` = l'`id` de la
+ligne `rekordbox_masterdb_repairs`.
+
 ## Tests
 
 Convention `_inner` existante (`link_rekordbox_xml_inner` etc. — fonctions
