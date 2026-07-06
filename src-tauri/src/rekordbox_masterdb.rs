@@ -125,6 +125,24 @@ pub enum MasterDbError {
         /// 1-indexed page number that failed to decrypt.
         page: u32,
     },
+    /// A write was refused because Rekordbox is currently running — write
+    /// must never proceed while Rekordbox might also be touching the file.
+    RekordboxRunning,
+    /// `agentRegistry` has no `localUpdateCount` row — the file's shape
+    /// doesn't match what Tier 1 assumes, refuse rather than guess a USN.
+    RegistryRowMissing,
+    /// No `djmdContent` row with the given `ID` — nothing to repair.
+    TrackNotFound {
+        /// The `djmdContent.ID` that was not found.
+        track_id: String,
+    },
+    /// The write succeeded but re-reading the file afterwards didn't show
+    /// the expected value — backup was restored automatically.
+    WriteVerificationFailedRolledBack(String),
+    /// The write succeeded, re-reading it failed verification, AND
+    /// restoring the backup also failed — the live file may now be in a
+    /// bad state and needs manual attention.
+    WriteVerificationFailedRollbackFailed(String),
 }
 
 impl std::fmt::Display for MasterDbError {
@@ -142,6 +160,21 @@ impl std::fmt::Display for MasterDbError {
             }
             MasterDbError::Sqlite(m) => write!(f, "sqlite: {m}"),
             MasterDbError::Decrypt { page } => write!(f, "AES-CBC decrypt failed on page {page}"),
+            MasterDbError::RekordboxRunning => {
+                write!(f, "refusing to write: Rekordbox is currently running")
+            }
+            MasterDbError::RegistryRowMissing => {
+                write!(f, "agentRegistry has no localUpdateCount row")
+            }
+            MasterDbError::TrackNotFound { track_id } => {
+                write!(f, "no djmdContent row with ID {track_id}")
+            }
+            MasterDbError::WriteVerificationFailedRolledBack(m) => {
+                write!(f, "write verification failed, backup restored: {m}")
+            }
+            MasterDbError::WriteVerificationFailedRollbackFailed(m) => {
+                write!(f, "write verification failed AND rollback failed — manual attention needed: {m}")
+            }
         }
     }
 }
@@ -165,6 +198,21 @@ pub struct RekordboxTrack {
 pub struct RekordboxIndex {
     /// All tracks found in `djmdContent`.
     pub tracks: Vec<RekordboxTrack>,
+}
+
+/// One Tier 1 path-repair operation: the 3 `djmdContent` path columns that
+/// must move together (`FolderPath`, `FileNameL`, `FileNameS` — confirmed by
+/// the M8 spike to always change as a set, never `FolderPath` alone).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PathRepair {
+    /// Rekordbox `djmdContent.ID` of the row to repair.
+    pub track_id: String,
+    /// New `FolderPath`.
+    pub new_folder_path: String,
+    /// New `FileNameL`.
+    pub new_file_name_l: String,
+    /// New `FileNameS`.
+    pub new_file_name_s: String,
 }
 
 /// Reverses Rekordbox's own obfuscation of the static `master.db` passphrase:
@@ -455,6 +503,128 @@ pub(crate) fn restore_rekordbox_backup(pioneer_dir: &Path, backup_dir: &Path) ->
     Ok(())
 }
 
+/// Repairs one track's `FolderPath`/`FileNameL`/`FileNameS` in a Rekordbox
+/// `master.db`, bumping the global USN counter (`agentRegistry`) and the
+/// row's own `rb_local_usn`/`updated_at`, per the M8 Tier 1 design
+/// (`docs/superpowers/specs/2026-07-06-m8-masterdb-write-path-rust-design-v2.md`).
+///
+/// Deliberately does **not** touch `masterPlaylists6.xml`. The M8 spike
+/// found that a pure `FolderPath` change doesn't semantically require an
+/// XML resync (design doc Tier 1 section), but the spike's own real-Rekordbox
+/// acceptance test happened to run through `pyrekordbox`, which rewrites the
+/// XML as a side effect of *any* `commit()` — so that spike proved
+/// "XML-rewritten copies are accepted", not "leaving the XML untouched is
+/// equally accepted". This function takes the documented-but-not-fully-proven
+/// position that leaving it untouched is fine (no playlists are touched by
+/// Tier 1) — flagged here so a future session doesn't mistake this for a
+/// fully closed question.
+///
+/// Also deliberately does **not** touch `Analysed`/`AnalysisUpdated`/
+/// `CueUpdated` (the M8 non-negotiable rule — metadata/path writes must
+/// never look like an analysis change).
+///
+/// Safety sequence: refuse if Rekordbox is running → backup → decrypt →
+/// update inside a transaction → re-encrypt → atomic rename → round-trip
+/// verify via the existing read-only reader → on verification failure,
+/// automatically restore the backup and report which case happened.
+pub fn repair_track_path(
+    pioneer_dir: &Path,
+    backup_dir: &Path,
+    repair: &PathRepair,
+) -> Result<(), MasterDbError> {
+    if is_rekordbox_running() {
+        return Err(MasterDbError::RekordboxRunning);
+    }
+
+    let db_path = pioneer_dir.join("master.db");
+    backup_rekordbox_files(pioneer_dir, backup_dir)?;
+
+    let raw = std::fs::read(&db_path).map_err(|e| MasterDbError::Io(e.to_string()))?;
+    let plaintext = decrypt_masterdb(&raw)?;
+
+    let mut conn = Connection::open_in_memory().map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+    let len = plaintext.len();
+    conn.deserialize_read_exact(rusqlite::MAIN_DB, Cursor::new(plaintext), len, false)
+        .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+
+    let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.6f").to_string();
+
+    let tx = conn.transaction().map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+
+    let old_usn: i64 = tx
+        .query_row(
+            "SELECT int_1 FROM agentRegistry WHERE registry_id = 'localUpdateCount'",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => MasterDbError::RegistryRowMissing,
+            other => MasterDbError::Sqlite(other.to_string()),
+        })?;
+    let new_usn = old_usn + 1;
+
+    tx.execute(
+        "UPDATE agentRegistry SET int_1 = ?1, updated_at = ?2 WHERE registry_id = 'localUpdateCount'",
+        rusqlite::params![new_usn, now],
+    )
+    .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+
+    let rows_changed = tx
+        .execute(
+            "UPDATE djmdContent SET FolderPath = ?1, FileNameL = ?2, FileNameS = ?3, rb_local_usn = ?4, updated_at = ?5 WHERE ID = ?6",
+            rusqlite::params![
+                repair.new_folder_path,
+                repair.new_file_name_l,
+                repair.new_file_name_s,
+                new_usn,
+                now,
+                repair.track_id,
+            ],
+        )
+        .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+    if rows_changed != 1 {
+        return Err(MasterDbError::TrackNotFound { track_id: repair.track_id.clone() });
+    }
+
+    tx.commit().map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+
+    let plaintext2 = conn
+        .serialize(rusqlite::MAIN_DB)
+        .map_err(|e| MasterDbError::Sqlite(e.to_string()))?
+        .to_vec();
+    let raw2 = encrypt_masterdb(&plaintext2)?;
+
+    let tmp_path = pioneer_dir.join("master.db.sift-write-tmp");
+    std::fs::write(&tmp_path, &raw2).map_err(|e| MasterDbError::Io(e.to_string()))?;
+    std::fs::rename(&tmp_path, &db_path).map_err(|e| MasterDbError::Io(e.to_string()))?;
+
+    match read_rekordbox_masterdb(&db_path) {
+        Ok(index) => {
+            let ok = index
+                .tracks
+                .iter()
+                .any(|t| t.track_id == repair.track_id && t.folder_path == repair.new_folder_path);
+            if ok {
+                Ok(())
+            } else {
+                let msg = format!("track {} not found with expected path after write", repair.track_id);
+                match restore_rekordbox_backup(pioneer_dir, backup_dir) {
+                    Ok(()) => Err(MasterDbError::WriteVerificationFailedRolledBack(msg)),
+                    Err(restore_err) => Err(MasterDbError::WriteVerificationFailedRollbackFailed(
+                        format!("{msg}; rollback also failed: {restore_err}"),
+                    )),
+                }
+            }
+        }
+        Err(read_err) => match restore_rekordbox_backup(pioneer_dir, backup_dir) {
+            Ok(()) => Err(MasterDbError::WriteVerificationFailedRolledBack(read_err.to_string())),
+            Err(restore_err) => Err(MasterDbError::WriteVerificationFailedRollbackFailed(format!(
+                "{read_err}; rollback also failed: {restore_err}"
+            ))),
+        },
+    }
+}
+
 // Fixture provenance: `tests/fixtures/rekordbox_master.db` is a synthetic
 // SQLCipher v4 database (3 fake tracks, 1 fake playlist, 1 fake
 // agentRegistry row, no personal data), generated by
@@ -681,5 +851,67 @@ mod tests {
         // correctly, not a bug.
         let running = is_rekordbox_running();
         assert!(!running, "Rekordbox should not be running in the test environment");
+    }
+
+    #[test]
+    fn repair_track_path_updates_path_and_bumps_usn() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let pioneer_dir = tmp.path().join("pioneer");
+        let backup_dir = tmp.path().join("backup");
+        std::fs::create_dir_all(&pioneer_dir).expect("mkdir pioneer");
+        std::fs::copy(FIXTURE, pioneer_dir.join("master.db")).expect("copy fixture as master.db");
+        std::fs::write(pioneer_dir.join("masterPlaylists6.xml"), b"<DJ_PLAYLISTS/>")
+            .expect("write fake xml");
+
+        let repair = PathRepair {
+            track_id: "40000001".to_string(),
+            new_folder_path: "D:/FIXTURE/renamed/track1.flac".to_string(),
+            new_file_name_l: "track1.flac".to_string(),
+            new_file_name_s: "track1.flac".to_string(),
+        };
+        repair_track_path(&pioneer_dir, &backup_dir, &repair).expect("repair path");
+
+        // Round-trip via the existing read-only reader.
+        let index = read_rekordbox_masterdb(&pioneer_dir.join("master.db")).expect("reread");
+        let repaired = index
+            .tracks
+            .iter()
+            .find(|t| t.track_id == "40000001")
+            .expect("track 40000001 present");
+        assert_eq!(repaired.folder_path, "D:/FIXTURE/renamed/track1.flac");
+
+        // Other two tracks untouched.
+        let other = index
+            .tracks
+            .iter()
+            .find(|t| t.track_id == "40000002")
+            .expect("track 40000002 present");
+        assert_eq!(other.folder_path, "D:/FIXTURE/track2.flac");
+        assert_eq!(index.tracks.len(), 3);
+
+        // Backup exists and matches the original fixture.
+        let backed_up = std::fs::read(backup_dir.join("master.db")).expect("read backup");
+        let original = std::fs::read(FIXTURE).expect("read fixture");
+        assert_eq!(backed_up, original);
+    }
+
+    #[test]
+    fn repair_track_path_rejects_unknown_track_id() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let pioneer_dir = tmp.path().join("pioneer");
+        let backup_dir = tmp.path().join("backup");
+        std::fs::create_dir_all(&pioneer_dir).expect("mkdir pioneer");
+        std::fs::copy(FIXTURE, pioneer_dir.join("master.db")).expect("copy fixture as master.db");
+        std::fs::write(pioneer_dir.join("masterPlaylists6.xml"), b"<DJ_PLAYLISTS/>")
+            .expect("write fake xml");
+
+        let repair = PathRepair {
+            track_id: "99999999".to_string(),
+            new_folder_path: "D:/nope.mp3".to_string(),
+            new_file_name_l: "nope.mp3".to_string(),
+            new_file_name_s: "nope.mp3".to_string(),
+        };
+        let err = repair_track_path(&pioneer_dir, &backup_dir, &repair).unwrap_err();
+        assert_eq!(err, MasterDbError::TrackNotFound { track_id: "99999999".to_string() });
     }
 }

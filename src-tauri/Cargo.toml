@@ -47,6 +47,7 @@ flate2 = "1.1.9"
 base85 = "2.0.0"
 rand = "0.8"
 sysinfo = "0.39"
+chrono = "0.4"
 quick-xml = { version = "0.37", features = ["serialize"] }
 percent-encoding = "2.3"
 wmi = "0.18"
