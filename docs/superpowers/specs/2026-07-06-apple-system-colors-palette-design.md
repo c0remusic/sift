@@ -139,14 +139,27 @@ correspond déjà au traitement plat en place. Le flou pur CSS
 ci-dessus pour limiter le coût de repaint et la fragilité de lisibilité du
 texte sur fond variable.
 
-## 4. Exception dorée (bouton Identifier) — inchangée
+## 4. Bouton Identifier — l'exception dorée est retirée
 
-`--color-accent-identify` (et ses variantes `-hover`/`-text`/`-border`)
-restent tels quels. Ce n'est ni un rôle sémantique (danger/warning/success/
-info) ni une teinte catégorielle (genre/source/intégration) — c'est le CTA
-de l'identification, une exception déjà documentée et volontaire, cohérente
-avec le principe HIG "réserver la couleur aux éléments qui en bénéficient
-vraiment" (matériaux/couleur). Rien à changer ici.
+Revu pendant la relecture du spec : un doré fait maison, ne correspondant à
+aucune des 9 teintes Apple, ressortirait comme une incohérence maintenant
+que la palette complète existe (les 9 teintes Apple sont déjà toutes prises
+par les 4 rôles sémantiques + les 5 catégorielles — lui donner une 10e
+teinte à part violerait la règle Apple "ne jamais réutiliser une couleur
+pour deux significations différentes" si elle recyclait une teinte
+catégorielle existante).
+
+**Décision** : `.sift-id-btn` abandonne `--color-accent-identify`/`-hover`/
+`-text`/`-border` et adopte les tokens `info` (bleu) déjà définis pour le
+rôle sémantique — cohérent avec l'usage réel Apple, où le bleu **est** la
+couleur d'action standard (boutons, liens, éléments interactifs), pas
+seulement un statut "info" passif. Le bouton Identifier devient donc visuellement
+de la même famille que les autres éléments interactifs (`.sift-ranger-btn`,
+`.chip.on`, focus ring), au prix de perdre le cachet "CTA à part" qu'avait
+le doré — jugé acceptable par l'utilisateur pour la cohérence globale.
+
+Tokens `--color-accent-identify*` à supprimer de `styles.css` (les 2 blocs
+sombres + `:root`) une fois `.sift-id-btn` retargeté.
 
 ## 5. Icônes — pas de changement
 
@@ -173,6 +186,8 @@ Fichiers à toucher :
   `.sift-bgrp-box` (bascule vers `info` bleu).
 - `frontend/confirm-modal.ts`, popover Destination (`filing.ts`/`styles.css`)
   — flou ponctuel.
+- `frontend/styles.css` — `.sift-id-btn` retargeté sur les tokens `info`,
+  suppression de `--color-accent-identify*` (`:root` + 2 blocs sombres).
 - Persistance de la couleur de source : mécanisme exact (DB vs settings
   JSON) à trancher pendant le plan d'implémentation, pas ici.
 
