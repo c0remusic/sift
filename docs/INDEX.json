@@ -7,6 +7,7 @@
     {"path": "docs/brand-logo-direction.md", "topic": "direction logo & marque", "summary": "Direction logo validée (carrés ambre/vert en point du i, Outfit Bold) — production reportée."}
   ],
   "specs": [
+    {"path": "docs/superpowers/specs/2026-07-06-m8-tier1-ipc-wiring-design.md", "date": "2026-07-06", "topic": "M8 Tier 1 câblage IPC (repair_track_path)", "summary": "Design du câblage IPC pour le moteur repair_track_path déjà prouvé : table rekordbox_masterdb_repairs (pending/ambiguous/applied/dismissed), détection via hook existant (actions.rs, lecture seule), 3 commandes IPC (pending_repairs/apply_repairs/dismiss_repair), backup par-ligne horodaté, garde-fou fichier-absent compensant la limite revert non gérée. UI et Tier 2/3 hors scope, chantiers séparés."},
     {"path": "docs/superpowers/specs/2026-06-12-m1-watcher-queue-design.md", "date": "2026-06-12", "topic": "M1 watcher + file à traiter", "summary": "Design M1 (watcher + file à traiter), source de vérité fonctionnelle plan-implementation.md."},
     {"path": "docs/superpowers/specs/2026-06-12-m2a-analysis-engine-design.md", "date": "2026-06-12", "topic": "M2a moteur d'analyse", "summary": "Design du moteur d'analyse audio pur Rust (détection faux-lossless)."},
     {"path": "docs/superpowers/specs/2026-06-12-m2b-analysis-worker-design.md", "date": "2026-06-12", "topic": "M2b worker d'analyse", "summary": "Design du worker d'analyse en fond + cache DB, suite de M2a."},
