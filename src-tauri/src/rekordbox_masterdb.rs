@@ -263,11 +263,17 @@ fn decrypt_masterdb(raw: &[u8]) -> Result<Vec<u8>, MasterDbError> {
 
         if page_no == 1 {
             // Byte 20 of a standard SQLite header ("reserved space per
-            // page") must read 0 here: our reconstructed buffer declares
-            // full-size, no-reserve pages (the reserve bytes below are
-            // stripped from every page's usable content and replaced with
-            // zero padding instead, keeping all pages a fixed PAGE_SIZE).
-            plain[4] = 0; // offset 4 within `plain`, i.e. file offset 20 (16-byte magic prefix + 4)
+            // page") must read the *true* reserve (RESERVE = 80), matching
+            // what real SQLCipher pages always declare — verified against a
+            // genuine page 1 (manual PBKDF2+AES-CBC decrypt showed byte 20
+            // = 80, not 0). Declaring it truthfully costs nothing for reads
+            // (those trailing bytes were never real SQLite content) and is
+            // required for writes: if we declared 0, SQLite would believe
+            // the full page is usable and could write real cell content
+            // into the last RESERVE bytes, which the re-encryption path
+            // (`encrypt_masterdb`) discards as padding — silently dropping
+            // data.
+            plain[4] = RESERVE as u8; // offset 4 within `plain`, i.e. file offset 20 (16-byte magic prefix + 4)
             out.extend_from_slice(b"SQLite format 3\0");
         }
         out.extend_from_slice(&plain);
@@ -412,5 +418,13 @@ mod tests {
             )
             .expect("agentRegistry has localUpdateCount row");
         assert_eq!(usn, 1000);
+    }
+
+    #[test]
+    fn reconstructed_buffer_declares_true_reserve() {
+        let raw = std::fs::read(FIXTURE).expect("read fixture bytes");
+        let plaintext = decrypt_masterdb(&raw).expect("decrypt fixture");
+        // SQLite file header offset 20 = "reserved space per page".
+        assert_eq!(plaintext[20], RESERVE as u8);
     }
 }
