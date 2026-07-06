@@ -329,8 +329,9 @@ fn decrypt_masterdb(raw: &[u8]) -> Result<Vec<u8>, MasterDbError> {
             out.extend_from_slice(b"SQLite format 3\0");
         }
         out.extend_from_slice(&plain);
-        // Reassembled pages must stay a fixed PAGE_SIZE (no on-disk reserve
-        // region anymore — the plaintext file declares reserve=0).
+        // Reassembled pages stay a fixed PAGE_SIZE; the trailing RESERVE
+        // bytes are zero padding (the header at offset 20 declares the
+        // true reserve, set above — this padding is never real content).
         out.extend(std::iter::repeat(0u8).take(RESERVE));
     }
 
