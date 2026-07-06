@@ -359,7 +359,11 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
    Dropped to 0 so every card in the stack aligns on the same left/right edge. */
 .sift-report-scroll{flex:1;overflow:auto;padding:0 0 8px}
 .sift-report-close{flex:none;font-size:var(--text-base);padding:4px 10px}
-.sift-kbd-hints{margin-top:18px;font-size:var(--text-xs);letter-spacing:.03em;color:var(--color-text-tertiary);display:flex;gap:16px;flex-wrap:wrap}
+/* No margin-top: this now sits inline among the rail's buttons (#filfoot, a horizontal flex row
+   with align-items:center) — the 18px top margin was a leftover from when it sat under the hero
+   in a vertical stack (moved into the rail 2026-07-0x, see filing.ts renderFoot) and was pushing
+   its text below the vertical center of the neighboring button labels. */
+.sift-kbd-hints{font-size:var(--text-xs);letter-spacing:.03em;color:var(--color-text-tertiary);display:flex;gap:16px;flex-wrap:wrap}
 .sift-kbd-hints b{font-weight:600;color:var(--color-text-secondary)}
 /* !important on background/border/radius: something in the cascade was silently preventing
    these from rendering (couldn't find the source rule) — forcing them so the card is visible
@@ -368,7 +372,11 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-player-audition{display:flex;align-items:center;gap:12px}
 .sift-play-btn{flex:none;width:var(--h-36);height:var(--h-36);border-radius:50%;display:inline-flex;align-items:center;justify-content:center;padding:0;border:none;background:var(--color-text-primary)}
 .sift-play-btn i{font-size:var(--text-base);color:var(--color-background-primary)}
-.sift-play-btn:hover{filter:brightness(0.9)}
+/* background re-asserted here: the generic button:hover{background:var(--color-background-secondary)}
+   (specificity 0,1,1) otherwise beats this button's own non-hover background rule (0,1,0), so on
+   hover the circle silently repainted to the card's own background color — same token as
+   .sift-player-row's card behind it — and visually vanished into its case. */
+.sift-play-btn:hover{background:var(--color-text-primary);filter:brightness(0.9)}
 .sift-player-header{display:flex;align-items:center;gap:12px;margin-bottom:11px}
 /* Cover frame: real art fills it once identified (.sift-player-cover unhides, sits above the
    ::before at z-index 1 and covers it completely). Until then the ::before pseudo-element draws
@@ -421,7 +429,6 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-verdict-finalname{font-family:var(--font-mono);font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sift-spectro-box{margin-bottom:11px;background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);overflow:hidden}
 .sift-spectro-toggle{width:100%;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 11px;background:var(--color-background-secondary);border:none;color:var(--color-text-primary);cursor:pointer;font-size:var(--text-sm);text-align:left}
-.sift-spectro-toggle-label{display:flex;align-items:center;gap:8px}
 .sift-spectro-caret{display:inline-block;transition:transform .25s;color:var(--color-text-tertiary)}
 .sift-spectro-hint{font-size:var(--text-sm);color:var(--color-text-info);flex:none}
 /* Grid 0fr→1fr trick instead of animating max-height: max-height forces a full layout
@@ -435,8 +442,21 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
    pour qu'elles lisent comme le même composant (retour utilisateur 2026-07-05 : elles avaient
    deux styles différents et une seule des deux zones avait un fond teinté). */
 .sift-zone-toggle{width:100%;display:flex;align-items:center;justify-content:space-between;
-  background:none;border:none;cursor:pointer;text-align:left;padding:2px 0 10px;
+  background:none;border:none;cursor:pointer;text-align:left;padding:6px 0;
   font-size:var(--text-sm);color:var(--color-text-secondary);font-family:inherit}
+/* Measured via CDP against the real running app: the row's tallest child (the badge, 19px) sat
+   ~4px above true center because the old padding was 2px top / 10px bottom (asymmetric) —
+   consistent between both toggles, so they matched each other, but neither was actually centered.
+   6px/6px keeps the same 31px total button height, just balanced.
+   Not trying to make the two outer cards' total collapsed height match here — .sift-fil-editor
+   (padded card) and .sift-spectro-box (zero padding, so the canvas below can bleed edge to edge)
+   are different container shapes by design, and inflating this toggle's own padding to compensate
+   for that (tried: 16/16/24 — looked oversized/goofy) was solving the wrong problem. Match
+   Métadonnées's toggle at the row level instead: same vertical padding as .sift-zone-toggle
+   already gives it, just enough horizontal (11px) to line up with the sibling rows below
+   (.sift-spectro-declared/.sift-spectro-rows, both 11px) instead of sitting flush against the
+   box edge. */
+.sift-zone-toggle.sift-spectro-toggle{padding:6px 11px}
 .sift-zone-toggle-car{display:inline-block;margin-right:6px;color:var(--color-text-tertiary);
   transition:transform .15s ease}
 .sift-zone-toggle-open .sift-zone-toggle-car{transform:rotate(90deg)}
@@ -468,6 +488,9 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-spectro-canvas{width:100%;display:block;background:#000}
 .sift-spectro-rows{padding:9px 11px;display:grid;grid-template-columns:1fr 1fr;gap:0 28px;font-size:var(--text-md)}
 .sift-row{display:flex;justify-content:space-between;gap:16px;padding:3px 0;border-bottom:0.5px solid var(--color-border-tertiary)}
+/* Last visual row (2-col grid, row() called an even number of times below) sits flush against
+   .sift-spectro-box's own border — its border-bottom just doubled that edge as a second line. */
+.sift-spectro-rows .sift-row:nth-last-child(-n+2){border-bottom:none}
 .sift-row-label{color:var(--color-text-tertiary)}
 .sift-row-value{font-family:var(--font-mono);text-align:right;color:var(--color-text-secondary)}
 .sift-tags-box{margin-bottom:4px}
@@ -589,6 +612,13 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
    .sift-fil-editor-margin border-top above (equal specificity would tie by source order —
    this makes the override explicit rather than accidental). */
 .sift-fil-editor.sift-fil-editor-margin{background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);padding:14px 16px;border-top:0.5px solid var(--color-border-tertiary)}
+/* Collapsed (body hidden): the card's own 14px top/bottom padding was framing a single 31px row
+   the same as it frames the full Identification section when open — measured via CDP against the
+   real running app: 61px tall vs. Preuve's naturally snug 33px (.sift-spectro-box has no padding
+   of its own), which is what actually read as "too big" / goofy. Zero out only the vertical
+   padding while collapsed — horizontal stays at 16px so the toggle's text doesn't jump sideways
+   when it opens back up to the full padding. */
+.sift-fil-editor.sift-fil-editor-margin:has(> .sift-zone-toggle:not(.sift-zone-toggle-open)){padding-top:0;padding-bottom:0}
 .sift-fil-root{display:flex;flex-direction:column;height:100%;min-height:0}
 .sift-fil-dup{flex:none}
 /* Identification — flux non identifié en lecture seule (Sift.dc.html:357-362) : note + bouton

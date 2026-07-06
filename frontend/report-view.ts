@@ -83,19 +83,36 @@ function spectroCaption(v: AnalysisReport["verdict"]): string {
   return "énergie pleine bande = encodage conforme";
 }
 
-/** Audacity-style heat colormap: black (silence) → blue → magenta → orange → pale yellow (loudest).
- *  `val` is the quantized dB magnitude already produced by the backend (0 = -100 dBFS, 255 = 0 dBFS). */
+/** Audacity's own spectrogram convention (manual.audacityteam.org/man/spectrogram_view.html,
+ *  default Color scheme): black (silence) → blue → magenta → orange → white (loudest). Not a
+ *  percentile/gamma guess (tried both, 2026-07-06) — Audacity's real model is a fixed Gain/Range:
+ *  content within GAIN_DB of full scale reads as pure white; the color gradient covers the
+ *  RANGE_DB span below that ceiling; everything quieter is black. `val` is the quantized dB
+ *  magnitude from the backend (0 = -100 dBFS, 255 = 0 dBFS, ~0.39dB/step). Known caveat: a
+ *  separate backend bug (spectrum.rs's dB conversion isn't normalized against a true full-scale
+ *  reference, see docs/superpowers — tracked as its own task) currently pins an unrealistic
+ *  fraction of bins at the literal ceiling regardless of this mapping; this colormap is the
+ *  correct target shape for once that's fixed, not a workaround for it. */
 const SPECTRO_STOPS: readonly [number, number, number][] = [
   [0, 0, 0],
-  [30, 15, 90],
-  [110, 15, 130],
-  [200, 50, 90],
-  [255, 140, 20],
-  [255, 240, 150],
+  [20, 20, 110],
+  [130, 20, 140],
+  [230, 110, 40],
+  [255, 255, 255],
 ];
+const SPECTRO_GAIN_DB = 20; // content within this many dB of full scale reads as pure white
+const SPECTRO_RANGE_DB = 80; // span of the color gradient below that ceiling
+const SPECTRO_CEILING_RAW = 255 - (SPECTRO_GAIN_DB / 100) * 255;
+const SPECTRO_FLOOR_RAW = SPECTRO_CEILING_RAW - (SPECTRO_RANGE_DB / 100) * 255;
+
 function spectroColor(val: number): [number, number, number] {
   const n = SPECTRO_STOPS.length - 1;
-  const pos = (Math.min(255, Math.max(0, val)) / 255) * n;
+  const clamped = Math.min(255, Math.max(0, val));
+  const norm = Math.max(
+    0,
+    Math.min(1, (clamped - SPECTRO_FLOOR_RAW) / (SPECTRO_CEILING_RAW - SPECTRO_FLOOR_RAW)),
+  );
+  const pos = norm * n;
   const i = Math.min(n - 1, Math.floor(pos));
   const t = pos - i;
   const [r0, g0, b0] = SPECTRO_STOPS[i];
@@ -133,15 +150,48 @@ function drawSpectrogram(canvas: HTMLCanvasElement, r: AnalysisReport) {
   const nyquist = sg.bins * sg.hz_per_bin;
   if (r.cutoff_hz > 0 && nyquist > 0) {
     const y = h - (r.cutoff_hz / nyquist) * h;
-    ctx.strokeStyle = "#ff5050";
+    // Verdict-toned instead of a hardcoded alarm red: a cutoff sitting near Nyquist on a genuine
+    // full-band file reads as the same "success" green used everywhere else in the app, while a
+    // real lossy cliff (fake) still reads as danger — the line now carries meaning instead of
+    // always looking like an alarm regardless of what it's actually reporting.
+    const toneVar =
+      r.verdict === "fake"
+        ? "--color-text-danger"
+        : r.verdict === "grey"
+          ? "--color-text-warning"
+          : "--color-text-success";
+    const color = getComputedStyle(canvas).getPropertyValue(toneVar).trim() || "#ff5050";
+
+    // Dashed, slightly transparent: reads as a reference/threshold annotation layered over the
+    // data rather than a solid line competing with the actual spectrogram detail.
+    ctx.save();
+    ctx.globalAlpha = 0.8;
+    ctx.strokeStyle = color;
     ctx.lineWidth = 1.5;
+    ctx.setLineDash([5, 4]);
     ctx.beginPath();
     ctx.moveTo(0, y);
     ctx.lineTo(w, y);
     ctx.stroke();
-    ctx.fillStyle = "#ff5050";
+    ctx.restore();
+
+    // Label on a dark pill background, not bare text: cutoff sits right where the loud high end
+    // drops off, so bare colored text directly on the spectrogram was a real contrast risk.
+    const label = `cutoff ${(r.cutoff_hz / 1000).toFixed(1)} kHz`;
     ctx.font = "11px monospace";
-    ctx.fillText(`cutoff ${(r.cutoff_hz / 1000).toFixed(1)} kHz`, 6, Math.max(12, y - 4));
+    const textW = ctx.measureText(label).width;
+    const padX = 6;
+    const padY = 4;
+    const boxW = textW + padX * 2;
+    const boxH = 11 + padY * 2;
+    const boxX = 6;
+    const boxY = y - 4 - boxH >= 2 ? y - 4 - boxH : y + 4;
+    ctx.fillStyle = "rgba(0,0,0,0.55)";
+    ctx.beginPath();
+    ctx.roundRect(boxX, boxY, boxW, boxH, 4);
+    ctx.fill();
+    ctx.fillStyle = color;
+    ctx.fillText(label, boxX + padX, boxY + boxH - padY - 2);
   }
 }
 
@@ -238,18 +288,66 @@ function playerRowHtml(name: string, path: string, closeBtn = false): string {
   );
 }
 
+type ChipTone = "success" | "neutral" | "danger" | "warning";
+
+function toneCss(tone: ChipTone): string {
+  return tone === "success"
+    ? "background:var(--color-background-success);color:var(--color-text-success)"
+    : tone === "danger"
+      ? "background:var(--color-background-danger);color:var(--color-text-danger)"
+      : tone === "warning"
+        ? "background:var(--color-background-warning);color:var(--color-text-warning)"
+        : "background:var(--overlay-selected);color:var(--color-text-secondary)";
+}
+
 /** A verdict-panel chip: `success` = green-tinted (LOSSLESS), `neutral` = white@.06 (MATCH/UNIQUE),
  *  matching the Penpot `badge-*` shapes (see .interface-design/penpot-detail-spec.md). */
-export function vchipHtml(label: string, tone: "success" | "neutral" | "danger" | "warning"): string {
-  const css =
-    tone === "success"
-      ? "background:var(--color-background-success);color:var(--color-text-success)"
-      : tone === "danger"
-        ? "background:var(--color-background-danger);color:var(--color-text-danger)"
-        : tone === "warning"
-          ? "background:var(--color-background-warning);color:var(--color-text-warning)"
-          : "background:var(--overlay-selected);color:var(--color-text-secondary)";
-  return `<span class="sift-vchip" style="${css}">${esc(label)}</span>`;
+export function vchipHtml(label: string, tone: ChipTone): string {
+  return `<span class="sift-vchip" style="${toneCss(tone)}">${esc(label)}</span>`;
+}
+
+/** Shared zone-toggle header (Métadonnées in filing.ts, Preuve/spectre below) — one markup shape
+ *  so the two disclosures can't quietly drift again. Audit 2026-07-05 found the Preuve toggle's
+ *  own label wrapper (flex gap + a literal leading space) added spacing on top of
+ *  `.sift-zone-toggle-car`'s margin that the Métadonnées toggle didn't have, and its badge reused
+ *  `.sift-vchip` (inline-flex + letter-spacing) instead of the plain `.sift-chip-badge` box the
+ *  CDJ badge uses — same class name, different box model. */
+export function zoneToggleHtml(opts: {
+  label: string;
+  badgeId: string;
+  toggleId?: string;
+  toggleExtraClass?: string;
+  caretExtraClass?: string;
+  hintExtraClass?: string;
+  badgeLabel?: string;
+  badgeTone?: ChipTone;
+  badgeHidden?: boolean;
+}): string {
+  const toggleCls = opts.toggleExtraClass
+    ? `sift-zone-toggle ${opts.toggleExtraClass}`
+    : "sift-zone-toggle";
+  const carCls = opts.caretExtraClass
+    ? `sift-zone-toggle-car ${opts.caretExtraClass}`
+    : "sift-zone-toggle-car";
+  const hintCls = opts.hintExtraClass
+    ? `sift-zone-toggle-hint ${opts.hintExtraClass}`
+    : "sift-zone-toggle-hint";
+  const badgeHidden = opts.badgeHidden ?? true;
+  const badgeStyle = opts.badgeTone ? ` style="${toneCss(opts.badgeTone)}"` : "";
+  // No "afficher"/"masquer" text: the caret already rotates on toggle and the button carries
+  // aria-expanded, so that was pure redundancy (user feedback 2026-07-06). The hint span itself
+  // stays, empty by default — Preuve's version still needs it for transient "calcul…"/"échec —
+  // réessayer" text while the spectrogram is being computed (wireSpectrogram in this file), which
+  // has no other UI feedback path. Métadonnées never sets it, so it just stays empty there.
+  return (
+    `<button class="${toggleCls}"${opts.toggleId ? ` id="${opts.toggleId}"` : ""} aria-expanded="false">` +
+    `<span><span class="${carCls}">▸</span>${opts.label}</span>` +
+    `<span class="sift-zone-toggle-right">` +
+    `<span class="sift-chip-badge" id="${opts.badgeId}"${badgeStyle}${badgeHidden ? " hidden" : ""}>${esc(opts.badgeLabel ?? "")}</span>` +
+    `<span class="${hintCls}"></span>` +
+    `</span>` +
+    `</button>`
+  );
 }
 
 /** ACTUAL verdict panel, faithful to the Penpot board: a verdict-tinted panel (`vb`) with an
@@ -294,13 +392,16 @@ function spectroAndTagsHtml(r: AnalysisReport): string {
   const { label: qualityLabel, tone: qualityTone } = qualityChipTone(r);
   return (
     `<div class="sift-spectro-box">` +
-    `<button class="sift-sg-toggle sift-spectro-toggle sift-zone-toggle">` +
-    `<span class="sift-spectro-toggle-label"><span class="sift-sg-caret sift-spectro-caret sift-zone-toggle-car">▸</span> Preuve (spectre)</span>` +
-    `<span class="sift-zone-toggle-right">` +
-    `${vchipHtml(qualityLabel, qualityTone).replace('class="sift-vchip"', 'class="sift-vchip sift-chip-badge" id="sift-quality-badge"')}` +
-    `<span class="sift-sg-hint sift-spectro-hint sift-zone-toggle-hint">afficher</span>` +
-    `</span>` +
-    `</button>` +
+    zoneToggleHtml({
+      label: "Preuve (spectre)",
+      badgeId: "sift-quality-badge",
+      toggleExtraClass: "sift-sg-toggle sift-spectro-toggle",
+      caretExtraClass: "sift-sg-caret sift-spectro-caret",
+      hintExtraClass: "sift-sg-hint sift-spectro-hint",
+      badgeLabel: qualityLabel,
+      badgeTone: qualityTone,
+      badgeHidden: false,
+    }) +
     `<div class="sift-sg-body sift-spectro-body">` +
     `<div class="sift-spectro-body-inner">` +
     `<div class="sift-spectro-declared">Déclaré <span class="pill">${esc(r.declared_format)}</span> ${r.declared_rail}${r.declared_bitrate ? " · " + r.declared_bitrate + " kbps" : ""} · coupure ${fmt(r.cutoff_hz, 0)} Hz — ${spectroCaption(r.verdict)}</div>` +
@@ -664,7 +765,6 @@ function wireSpectrogram(root: HTMLElement, r: AnalysisReport) {
       open = false;
       body.classList.remove("is-open");
       caret.style.transform = "";
-      hint.textContent = "afficher";
       if (qualityBadge) qualityBadge.hidden = false;
       return;
     }
@@ -682,10 +782,10 @@ function wireSpectrogram(root: HTMLElement, r: AnalysisReport) {
         return;
       }
       busy = false;
+      hint.textContent = ""; // clear the transient "calcul…" now that it's loaded
     }
     open = true;
     caret.style.transform = "rotate(90deg)";
-    hint.textContent = "masquer";
     if (qualityBadge) qualityBadge.hidden = true;
     body.classList.add("is-open");
   });

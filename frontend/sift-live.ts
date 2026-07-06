@@ -640,13 +640,17 @@ function ensureReviewSeg() {
   if (!seg) {
     seg = document.createElement("div");
     seg.id = "sift-revseg";
+    // align-self:flex-start: #qcol is a flex column (align-items:stretch by default), so without
+    // this the segmented control stretched to the column's full width and its flex:1 tabs grew
+    // with it whenever the column was resized wider (annotation 2026-07-06: fixed size/position
+    // expected, not a stretchy control).
     seg.style.cssText =
-      "display:flex;gap:2px;padding:2px;margin-bottom:10px;background:var(--color-background-secondary);border-radius:var(--border-radius-md)";
+      "display:flex;gap:2px;padding:2px;margin-bottom:10px;background:var(--color-background-secondary);border-radius:var(--border-radius-md);align-self:flex-start";
     qcol.insertBefore(seg, qcol.firstChild);
   }
   const tab = (m: "detail" | "batch", label: string, icon: string) => {
     const on = reviewMode === m;
-    return `<button data-sift="reviewmode" data-m="${m}" style="flex:1;display:inline-flex;align-items:center;justify-content:center;gap:5px;padding:5px 0;border:none;border-radius:6px;font-size:var(--text-sm);font-weight:${
+    return `<button data-sift="reviewmode" data-m="${m}" style="flex:none;display:inline-flex;align-items:center;justify-content:center;gap:5px;padding:5px 10px;border:none;border-radius:6px;font-size:var(--text-sm);font-weight:${
       on ? 600 : 400
     };cursor:pointer;background:${
       on ? "var(--color-background-primary)" : "transparent"
@@ -872,7 +876,7 @@ function ensureBatchDestUI(): void {
  *  2026-07-03, fix 2). */
 function actionButtonHtml(running: boolean): string {
   if (running) {
-    return '<button data-sift="batchstop" class="sift-baction" style="background:var(--color-background-danger);color:var(--color-text-danger)"><i class="ti ti-player-stop sift-icon-inline-md"></i> Stop</button>';
+    return '<button data-sift="batchstop" class="sift-baction" style="background:var(--color-background-danger);color:var(--color-text-danger)">Stop</button>';
   }
   const fileN = batchSel.size;
   const fakeN = batchFakeSel.size;
@@ -887,12 +891,12 @@ function actionButtonHtml(running: boolean): string {
   const armed =
     !!batchConfirmArmed && batchConfirmArmed.fileN === fileN && batchConfirmArmed.fakeN === fakeN;
   if (armed) {
-    return `<button data-sift="batchaction" class="sift-baction" style="background:var(--color-background-danger);color:var(--color-text-danger)"><i class="ti ti-alert-triangle sift-icon-inline-md"></i> Confirmer — ranger ${fileN} ?</button>`;
+    return `<button data-sift="batchaction" class="sift-baction" style="background:var(--color-background-danger);color:var(--color-text-danger)">Confirmer — ranger ${fileN} ?</button>`;
   }
   if (fakeN === 0)
-    return `<button data-sift="batchaction" class="sift-baction" style="background:var(--color-background-info);color:var(--color-text-info)"><i class="ti ti-corner-down-left sift-icon-inline-md"></i> Ranger (${fileN})</button>`;
+    return `<button data-sift="batchaction" class="sift-baction" style="background:var(--color-background-info);color:var(--color-text-info)">Ranger (${fileN})</button>`;
   if (fileN === 0)
-    return `<button data-sift="batchaction" class="sift-baction" style="background:var(--color-background-danger);color:var(--color-text-danger)"><i class="ti ti-trash sift-icon-inline-md"></i> Écarter (${fakeN})</button>`;
+    return `<button data-sift="batchaction" class="sift-baction" style="background:var(--color-background-danger);color:var(--color-text-danger)">Écarter (${fakeN})</button>`;
   return `<button data-sift="batchaction" class="sift-baction" style="background:var(--color-background-info);color:var(--color-text-info)">Ranger (${fileN}) · Écarter (${fakeN})</button>`;
 }
 

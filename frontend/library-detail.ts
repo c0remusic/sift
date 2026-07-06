@@ -94,8 +94,8 @@ function renderEdit(edit: HTMLElement, st: EditState): void {
     `<div style="display:flex;align-items:center;gap:6px;margin-top:9px;flex-wrap:wrap">${releaseRowHtml(st)}</div>` +
     `<div class="sift-cands" style="margin-top:7px" hidden></div>` +
     `<div style="display:flex;gap:8px;margin-top:10px">` +
-    `<button data-lib="save" style="flex:1;background:var(--color-background-info);color:var(--color-text-info);border:none;font-weight:500"><i class="ti ti-device-floppy" style="font-size:var(--text-md);vertical-align:-2px"></i> Enregistrer</button>` +
-    `<button data-lib="trash" class="sift-secondary-trash" title="Envoyer à la corbeille" aria-label="Envoyer à la corbeille"><i class="ti ti-trash" style="font-size:var(--text-md);vertical-align:-2px"></i> Supprimer</button>` +
+    `<button data-lib="save" style="flex:1;background:var(--color-background-info);color:var(--color-text-info);border:none;font-weight:500">Enregistrer</button>` +
+    `<button data-lib="trash" class="sift-secondary-trash" title="Envoyer à la corbeille" aria-label="Envoyer à la corbeille">Supprimer</button>` +
     `</div>`;
 
   wireEdit(edit, st);

@@ -29,7 +29,14 @@ import type { Candidate, AppliedIdentity } from "./ipc";
 import type { DupMatch, TrackRelease, FileTags } from "../shared/contracts";
 import { open } from "@tauri-apps/plugin-dialog";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { openReportInto, togglePlay, vchipHtml, row, keyboardHintsHtml } from "./report-view";
+import {
+  openReportInto,
+  togglePlay,
+  vchipHtml,
+  row,
+  keyboardHintsHtml,
+  zoneToggleHtml,
+} from "./report-view";
 import { renderCandidates } from "./identify-shared";
 import type { Bin, Canonical, Target, QueueItem, AnalysisReport } from "../shared/contracts";
 import { FILE_IN_PLACE, EXTERNAL_DEST_PREFIX } from "../shared/contracts";
@@ -932,8 +939,8 @@ function renderFoot(foot: HTMLElement, mid: HTMLElement, rail: string): void {
 
   const fake = state.track?.verdict === "fake";
   const secondary = fake
-    ? '<button data-fil="resource" class="sift-secondary-resource" title="Fichier faux — va dans Écartés (⌫)"><span class="kbd">⌫</span> <i class="ti ti-alert-triangle sift-icon-inline-md"></i> Re-source</button>'
-    : '<button data-fil="trash" class="sift-secondary-trash" title="Envoyer à la corbeille (⌫)"><span class="kbd">⌫</span> <i class="ti ti-trash sift-icon-inline-md"></i> Jeter</button>';
+    ? '<button data-fil="resource" class="sift-secondary-resource" title="Fichier faux — va dans Écartés (⌫)"><span class="kbd">⌫</span> Re-source</button>'
+    : '<button data-fil="trash" class="sift-secondary-trash" title="Envoyer à la corbeille (⌫)"><span class="kbd">⌫</span> Jeter</button>';
 
   // Destination button opens the tree as a popover (#fldz, a sibling of #filfoot — see styles.css)
   // instead of the old persistent .dest column. The rail keeps the system.md stack tail: FORMAT →
@@ -947,7 +954,7 @@ function renderFoot(foot: HTMLElement, mid: HTMLElement, rail: string): void {
     // detail content — moved here from report-view.ts, which used to inject them under the hero.
     keyboardHintsHtml() +
     secondary +
-    `<button data-fil="ranger" class="sift-ranger-btn"><i class="ti ti-corner-down-left sift-icon-inline-md"></i> Ranger → <span class="sift-fil-bin">${esc(binLabel())}</span> <span class="kbd">⏎</span></button>`;
+    `<button data-fil="ranger" class="sift-ranger-btn">Ranger → <span class="sift-fil-bin">${esc(binLabel())}</span> <span class="kbd">⏎</span></button>`;
   if (filedBanner) foot.append(filedBanner); // restore the banner below the freshly-rendered controls
 
   foot.querySelector('[data-fil="destbtn"]')?.addEventListener("click", (e) => {
@@ -1069,13 +1076,7 @@ function renderEditor(host: HTMLElement, mid: HTMLElement, rail: string, report:
   const displayName =
     c.artist && c.title ? `${c.artist} — ${c.title}${c.version ? ` (${c.version})` : ""}` : "Non identifié";
   host.innerHTML =
-    `<button class="sift-zone-toggle" id="sift-meta-toggle" aria-expanded="false">` +
-    `<span><span class="sift-zone-toggle-car">▸</span>Métadonnées</span>` +
-    `<span class="sift-zone-toggle-right">` +
-    `<span class="sift-chip-badge" id="sift-cdj-badge" hidden></span>` +
-    `<span class="sift-zone-toggle-hint">afficher</span>` +
-    `</span>` +
-    `</button>` +
+    zoneToggleHtml({ label: "Métadonnées", toggleId: "sift-meta-toggle", badgeId: "sift-cdj-badge" }) +
     `<div class="sift-zone-toggle-body" id="sift-meta-body">` +
     `<div class="sift-ident-head">` +
     `<span class="col-h sift-editor-title">Identification · Discogs</span>` +
@@ -1133,7 +1134,6 @@ function renderEditor(host: HTMLElement, mid: HTMLElement, rail: string, report:
 
   const metaToggle = host.querySelector<HTMLButtonElement>("#sift-meta-toggle");
   const metaBody = host.querySelector<HTMLElement>("#sift-meta-body");
-  const metaHint = host.querySelector<HTMLElement>(".sift-zone-toggle-hint");
   const cdjBadge = host.querySelector<HTMLElement>("#sift-cdj-badge");
   if (cdjBadge && report) {
     const ok = report.tags_cdj_ok;
@@ -1148,7 +1148,6 @@ function renderEditor(host: HTMLElement, mid: HTMLElement, rail: string, report:
     const open = metaBody?.classList.toggle("sift-zone-toggle-body-open") ?? false;
     metaToggle.classList.toggle("sift-zone-toggle-open", open);
     metaToggle.setAttribute("aria-expanded", String(open));
-    if (metaHint) metaHint.textContent = open ? "masquer" : "afficher";
     if (cdjBadge) cdjBadge.hidden = open;
   });
 
