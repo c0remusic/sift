@@ -52,10 +52,12 @@ use std::path::Path;
 
 use aes::Aes256;
 use cbc::cipher::block_padding::NoPadding;
-use cbc::cipher::{BlockDecryptMut, KeyIvInit};
+use cbc::cipher::{BlockDecryptMut, BlockEncryptMut, KeyIvInit};
 use flate2::read::ZlibDecoder;
 use hmac::{Hmac, Mac};
 use pbkdf2::pbkdf2_hmac;
+use rand::rngs::OsRng;
+use rand::RngCore;
 use rusqlite::Connection;
 use sha2::Sha512;
 use std::io::Read;
@@ -74,6 +76,7 @@ const HMAC_SALT_XOR: u8 = 0x3a;
 const SALT_LEN: usize = 16;
 
 type Aes256CbcDec = cbc::Decryptor<Aes256>;
+type Aes256CbcEnc = cbc::Encryptor<Aes256>;
 type HmacSha512 = Hmac<Sha512>;
 
 /// Deobfuscated Rekordbox `master.db` passphrase, base85(RFC1924)+XOR+zlib
@@ -285,6 +288,61 @@ fn decrypt_masterdb(raw: &[u8]) -> Result<Vec<u8>, MasterDbError> {
     Ok(out)
 }
 
+/// Inverse of [`decrypt_masterdb`]: takes a plaintext SQLite buffer shaped
+/// exactly like that function's output (fixed `PAGE_SIZE` pages, true
+/// reserve declared per Task 2's fix) and re-encrypts it as a SQLCipher v4
+/// file. Generates a fresh random salt for the output — equivalent to a
+/// passphrase-preserving rekey on every full rewrite, which is simpler and
+/// just as valid as trying to reuse the original file's salt.
+pub(crate) fn encrypt_masterdb(plaintext: &[u8]) -> Result<Vec<u8>, MasterDbError> {
+    if plaintext.len() < PAGE_SIZE || plaintext.len() % PAGE_SIZE != 0 {
+        return Err(MasterDbError::TruncatedFile { len: plaintext.len() });
+    }
+    let passphrase = deobfuscate_key()?;
+    let mut salt = [0u8; SALT_LEN];
+    OsRng.fill_bytes(&mut salt);
+    let (key, hmac_key) = derive_keys(&passphrase, &salt);
+
+    let n_pages = plaintext.len() / PAGE_SIZE;
+    let mut out = Vec::with_capacity(plaintext.len());
+
+    for i in 0..n_pages {
+        let page_no = (i + 1) as u32;
+        let page = &plaintext[i * PAGE_SIZE..(i + 1) * PAGE_SIZE];
+
+        // Mirrors decrypt_masterdb's page1 special case in reverse: page1's
+        // reconstructed plaintext is [16-byte magic][4000-byte body][80-byte
+        // pad]; every other page is [4016-byte body][80-byte pad].
+        let body = if page_no == 1 {
+            &page[SALT_LEN..SALT_LEN + (PAGE_SIZE - RESERVE - SALT_LEN)]
+        } else {
+            &page[..PAGE_SIZE - RESERVE]
+        };
+
+        let mut iv = [0u8; 16];
+        OsRng.fill_bytes(&mut iv);
+
+        let encryptor = Aes256CbcEnc::new((&key).into(), (&iv).into());
+        let ciphertext = encryptor.encrypt_padded_vec_mut::<NoPadding>(body);
+
+        let mut mac = <HmacSha512 as Mac>::new_from_slice(&hmac_key)
+            .expect("HMAC-SHA512 accepts any key length");
+        mac.update(&ciphertext);
+        mac.update(&iv);
+        mac.update(&page_no.to_le_bytes());
+        let stored_hmac = mac.finalize().into_bytes();
+
+        if page_no == 1 {
+            out.extend_from_slice(&salt);
+        }
+        out.extend_from_slice(&ciphertext);
+        out.extend_from_slice(&iv);
+        out.extend_from_slice(&stored_hmac);
+    }
+
+    Ok(out)
+}
+
 /// Reads a Rekordbox `master.db` file and returns its path→TrackID index.
 ///
 /// Read-only: no write path exists here (and none is planned — see M8,
@@ -426,5 +484,34 @@ mod tests {
         let plaintext = decrypt_masterdb(&raw).expect("decrypt fixture");
         // SQLite file header offset 20 = "reserved space per page".
         assert_eq!(plaintext[20], RESERVE as u8);
+    }
+
+    #[test]
+    fn encrypt_then_decrypt_round_trips_byte_identical() {
+        let raw = std::fs::read(FIXTURE).expect("read fixture bytes");
+        let plaintext = decrypt_masterdb(&raw).expect("decrypt fixture");
+
+        let reencrypted = encrypt_masterdb(&plaintext).expect("encrypt plaintext");
+        assert_eq!(reencrypted.len(), raw.len());
+
+        let roundtripped = decrypt_masterdb(&reencrypted).expect("decrypt reencrypted");
+        assert_eq!(roundtripped, plaintext);
+    }
+
+    #[test]
+    fn encrypt_then_decrypt_still_reads_via_rusqlite() {
+        let raw = std::fs::read(FIXTURE).expect("read fixture bytes");
+        let plaintext = decrypt_masterdb(&raw).expect("decrypt fixture");
+        let reencrypted = encrypt_masterdb(&plaintext).expect("encrypt plaintext");
+
+        std::fs::write(FIXTURE.replace(".db", "_reencrypted_tmp.db"), &reencrypted)
+            .expect("write temp reencrypted file");
+        let index = read_rekordbox_masterdb(std::path::Path::new(
+            &FIXTURE.replace(".db", "_reencrypted_tmp.db"),
+        ))
+        .expect("read reencrypted file");
+        std::fs::remove_file(FIXTURE.replace(".db", "_reencrypted_tmp.db")).ok();
+
+        assert_eq!(index.tracks.len(), 3);
     }
 }

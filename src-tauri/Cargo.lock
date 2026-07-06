@@ -3949,6 +3949,7 @@ dependencies = [
  "pbkdf2",
  "percent-encoding",
  "quick-xml 0.37.5",
+ "rand",
  "rusqlite",
  "rustfft",
  "rusty-chromaprint",
