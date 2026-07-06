@@ -533,12 +533,14 @@ pub fn commit_file(conn: &Connection, plan: &FilePlan, log: Vec<FsLog>) -> Resul
 
     // One transaction for every DB write of this track. Dropping it without `commit()` (the `?`
     // early-returns below) rolls back all inserts/updates automatically — no manual DELETE needed.
-    let db_result: Result<(), FilingError> = (|| {
+    let db_result: Result<Vec<i64>, FilingError> = (|| {
         let tx = conn.unchecked_transaction()?;
+        let mut action_ids = Vec::with_capacity(log.len());
         for fs in &log {
-            actions::record_row_only(
+            let id = actions::record_row_only(
                 &tx, &plan.batch_id, Some(plan.track_id), fs.kind, Some(&fs.from), Some(&fs.to), fs.meta.as_deref(),
             )?;
+            action_ids.push(id);
         }
         tx.execute(
             "UPDATE tracks SET status='filed', folder=?2, target_format=?3, confidence=?4 WHERE id=?1",
@@ -546,24 +548,29 @@ pub fn commit_file(conn: &Connection, plan: &FilePlan, log: Vec<FsLog>) -> Resul
         )?;
         save_metadata(&tx, plan.track_id, &plan.canonical)?;
         tx.commit()?;
-        Ok(())
+        Ok(action_ids)
     })();
 
-    if let Err(e) = db_result {
-        // Transaction already rolled back the DB rows; reverse the filesystem effects too so
-        // nothing is left half-filed.
-        rollback_fs(&log);
-        return Err(FilingError::Db(e.to_string()));
-    }
+    let action_ids = match db_result {
+        Ok(ids) => ids,
+        Err(e) => {
+            // Transaction already rolled back the DB rows; reverse the filesystem effects too so
+            // nothing is left half-filed.
+            rollback_fs(&log);
+            return Err(FilingError::Db(e.to_string()));
+        }
+    };
 
     // A track just became 'filed' — invalidate the dashboard duplicate-count cache. The cache key
     // (COUNT, MAX(id) of filed) misses an in-place re-filing that leaves both unchanged, so we
     // invalidate explicitly rather than rely on the key changing (coordination with R1's cache).
     crate::library::invalidate_duplicate_count_cache();
 
-    // Committed — now (and only now) patch a linked Rekordbox XML for the move/convert rows.
-    for fs in &log {
+    // Committed — now (and only now) patch a linked Rekordbox XML for the move/convert rows, and
+    // detect (read-only) any master.db repair candidates for the same rows (M8 Tier 1 IPC wiring).
+    for (fs, action_id) in log.iter().zip(action_ids.iter()) {
         actions::maybe_repair_rekordbox_xml(conn, fs.kind, Some(&fs.from), Some(&fs.to));
+        actions::maybe_detect_masterdb_repair(conn, fs.kind, Some(&fs.from), Some(&fs.to), *action_id);
     }
     Ok(FileResult { path: plan.dest.clone(), batch_id: plan.batch_id.clone() })
 }
@@ -1120,5 +1127,73 @@ mod tests {
             artist: "X".into(), title: "Y".into(), version: None, confidence: crate::naming::Confidence::Green,
         }), false, &HashSet::new());
         assert!(res.is_ok(), "a genuine FLAC must not be blocked: {:?}", res.err());
+    }
+
+    #[test]
+    fn commit_file_detects_masterdb_repair_with_correct_action_id() {
+        let conn = db();
+        let tmp = tempfile::tempdir().unwrap();
+
+        let pioneer_dir = tmp.path().join("pioneer");
+        std::fs::create_dir_all(&pioneer_dir).unwrap();
+        std::fs::copy(
+            concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/rekordbox_master.db"),
+            pioneer_dir.join("master.db"),
+        )
+        .unwrap();
+        let xml_path = pioneer_dir.join("masterPlaylists6.xml");
+        std::fs::write(&xml_path, b"<DJ_PLAYLISTS/>").unwrap();
+        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+
+        conn.execute("INSERT INTO tracks(path, status) VALUES('irrelevant', 'pending')", [])
+            .unwrap();
+        let track_id = conn.last_insert_rowid();
+
+        let plan = FilePlan {
+            track_id,
+            batch_id: "b1".to_string(),
+            source: "irrelevant-source".to_string(),
+            dest: "irrelevant-dest".to_string(),
+            conformant: false,
+            target: Target::Mp3320,
+            canonical: Canonical {
+                artist: "A".to_string(),
+                title: "T".to_string(),
+                version: None,
+                confidence: naming::Confidence::Green,
+            },
+            bin_rel: "House".to_string(),
+            extras: TagExtras { label: None, year: None, genres: vec![], cover_path: None },
+        };
+        let log = vec![FsLog {
+            kind: "move",
+            from: "D:/FIXTURE/track1.mp3".to_string(),
+            to: "D:/FIXTURE/renamed/track1.flac".to_string(),
+            meta: None,
+        }];
+
+        commit_file(&conn, &plan, log).expect("commit_file");
+
+        let action_id: i64 = conn
+            .query_row(
+                "SELECT id FROM actions WHERE type='move' AND from_path='D:/FIXTURE/track1.mp3'",
+                [],
+                |r| r.get(0),
+            )
+            .expect("move action row exists");
+
+        let (repair_action_id, repair_track_id, status): (i64, String, String) = conn
+            .query_row(
+                "SELECT action_id, track_id, status FROM rekordbox_masterdb_repairs WHERE from_path='D:/FIXTURE/track1.mp3'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .expect("repair row created");
+        assert_eq!(
+            repair_action_id, action_id,
+            "the repair row must reference the SAME action_id commit_file just created for this row"
+        );
+        assert_eq!(repair_track_id, "40000001");
+        assert_eq!(status, "pending");
     }
 }
