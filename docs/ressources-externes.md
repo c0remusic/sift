@@ -1245,3 +1245,93 @@ visuel qui « ne marche pas », mesurer la distribution réelle des valeurs
 brutes (histogramme exact, pas un échantillon strié — un stride naïf peut
 aliaser) avant de changer la courbe une 3e fois. Voir
 [[sift-cdp-webview2-verification]] et [[sift-spectrum-dbfs-normalization-fix]].
+
+---
+
+## Évaluation 16 — délégation Claude→Codex CLI, premier test réel + coût en tokens (2026-07-06)
+
+**Contexte** : `mcp__codex__codex` (Codex MCP, `codex mcp-server`) est connecté
+depuis la session précédente. Cette session en a fait le premier vrai test de
+délégation (pas juste une vérification de connexion), sur une tâche réelle et
+scopée : fragilité documentée dans
+`design_handoff_sift_refonte/token-sync/generate-design-md.cjs` (Évaluation 8,
+le "+2" de compensation pour la section `## Composants`).
+
+**Panne d'infra trouvée et réparée (Windows)** : le paquet CLI standalone
+(`~/.codex/packages/standalone/current/bin/`, symlinké depuis
+`AppData\Local\Programs\OpenAI\Codex\bin\`) ne contient QUE `codex.exe` —
+aucun binaire de sandboxing. Toute commande sous `-s workspace-write`
+échouait immédiatement (`orchestrator_helper_launch_failed`). Le binaire
+manquant (`codex-windows-sandbox-setup.exe`) existe dans l'appli desktop
+séparée (`WindowsApps\OpenAI.Codex_*\app\resources\`) — copié dans le dossier
+du CLI standalone. Un 2e échec est apparu ensuite
+(`CreateProcessWithLogonW failed: 2`, un compte de logon restreint manquant) ;
+réparé via deux shims (`sandboxcli.cmd`/`sandbox-cli.cmd` → `codex.exe
+sandbox %*`) qui déclenchent le mécanisme de jeton restreint (`codex sandbox`,
+"Windows restricted token sandbox") au lieu de `CreateProcessWithLogonW`.
+Après ces deux fixes, `codex exec -s workspace-write` fonctionne normalement.
+
+**Visibilité — `mcp__codex__codex` natif est inutilisable en confiance** :
+l'appel bloque jusqu'à la fin sans aucun événement intermédiaire. Sur un
+premier essai, Antoine a interrompu l'appel après un silence perçu comme
+anormalement long, faute de moyen de distinguer "ça travaille" de "ça a
+planté". **Pattern retenu** : `codex exec - -s workspace-write -C <repo>
+--json < mission.txt > run.jsonl` lancé en arrière-plan (Bash
+`run_in_background`), avec relecture périodique du JSONL (`thread.started` →
+`turn.started` → `item.*` → `turn.completed`) pour donner un vrai statut
+pendant l'exécution. Coût : setup plus lourd (fichier prompt temporaire,
+process background, polling) — comparable à faire la tâche soi-même pour un
+scope petit, rentable seulement si l'implémentation réelle (pas sa
+description) est ce qui coûte cher.
+
+**Test A/B sur la vraie mission (3 runs, même prompt de base, mesure du
+`usage.input_tokens` de `turn.completed`)** :
+
+| Run | Config | Input tokens |
+|---|---|---|
+| 2 | Aucun réglage | 530 854 |
+| 3 | Profil `~/.codex/claude-delegation.config.toml` (8 plugins Codex désactivés : superpowers/ecc/impeccable/ui-ux-pro-max/feature-dev/code-review/claude-md-management/skill-creator) | 861 392 (pire) |
+| 4 | Profil + note explicite dans le prompt de mission ("ne consulte pas docs/skills-registre.md ni aucun SKILL.md, le routage est déjà fait") | **432 719** (−18 % vs run 2) |
+
+**Root cause du surcoût, confirmée par grep du log JSONL** : ce n'est **pas**
+le système de plugins propre à Codex (qui existe, pointe vers les mêmes
+marketplaces que Claude — `claude-plugins-official`/`ecc`/`impeccable`/
+`ui-ux-pro-max-skill`, dans `~/.codex/config.toml`) — désactiver ces plugins
+seul (run 3) n'a rien amélioré. La vraie cause : **`AGENTS.md`** (l'équivalent
+Codex de `CLAUDE.md`, lu nativement par le CLI comme instructions de repo)
+contient la même règle "RÈGLE IMPÉRATIVE — routage skills" que `CLAUDE.md` —
+Codex l'a suivie fidèlement et est allé lire `docs/skills-registre.md` **et**
+un `SKILL.md` externe (`~/.agents/skills/refactoring-patterns/SKILL.md`),
+alors que la mission était déjà entièrement scopée par Claude en amont. Le
+levier qui marche est donc une **ligne d'override explicite dans le prompt de
+mission**, pas une config d'infra.
+
+**Le patch livré était correct dans les 3 runs** (vérifié indépendamment via
+`node generate-design-md.cjs` + `node verify-v3.cjs`, pas juste via le
+rapport de Codex). Point notable : le run 2 a lui-même détecté un vrai bug
+introduit par Claude dans cette même session (un token CSS
+`--color-waveform-elapsed` ajouté sans variante sombre, cassant l'invariant
+`styles-css.cjs`) et s'est arrêté sans le corriger, hors scope — bon signal
+de discipline sur une mission bien cadrée.
+
+**Décision** : profil `~/.codex/claude-delegation.config.toml` gardé (ne nuit
+pas, désactive du bruit de plugins), mais le vrai geste à reproduire pour
+toute future délégation Codex est la **ligne d'override anti-routage dans le
+prompt de mission**, pas la config. Scope de délégation recommandé : tâches
+où l'implémentation elle-même (pas sa description) coûterait cher en contexte
+Claude si faite directement — refactor multi-fichiers, chasse de build error
+itérative — pas les fix triviaux (1-2 lignes) ni tout ce qui a besoin de
+vérification UI live (`inTauri`/CDP reste le terrain de Claude). Pas encore
+testé dans un `Workflow` multi-agents : les scripts Workflow n'ont aucun accès
+filesystem/process, donc le pattern CLI+log (seule source de vraie
+visibilité) n'y est pas utilisable — seul `mcp__codex__codex` opaque le
+serait, ce qui pèse moins dans ce contexte déjà async, mais le coût par
+branche parallèle reste réel et non testé à l'échelle.
+
+**Incident concurrent noté pendant ce test** : une session Claude Code
+distincte, ouverte sur le **même dossier de travail** (pas un autre
+worktree), a commité `77877ce` (spec "Agent Token Budget Operating Model",
+`docs/superpowers/specs/2026-07-06-agent-token-budget-operating-model-design.md`)
+pendant que cette session validait une approche plus minimale en parallèle,
+sans coordination. Gardés séparés sur demande d'Antoine — pas de fusion. Voir
+[[concurrent-session-same-directory]].
