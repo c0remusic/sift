@@ -55,6 +55,14 @@ Lib = `sift_lib`. MSRV Rust 1.77.2.
 - **rust-engineer** (agent) → Rust pointu (async/perf/unsafe) ET fallback review/build
   Rust en général tant qu'`ecc` est off (pas de `ecc:rust-reviewer`/`ecc:rust-build-resolver` ici).
 - **rust-analyzer-lsp** (plugin) → connecteur LSP `.rs` (rustup component, pas une skill).
+- **Codex MCP** (`mcp__codex__codex`) → délégation de patchs Rust/TS fermés et bien
+  scopés (erreur de build précise, refactor local d'un fichier) — règle générique et
+  format de mission dans `~/.claude/CLAUDE.md` (Outillage universel). Sur Sift,
+  toujours fournir la commande de validation adaptée (`cargo test --manifest-path
+  src-tauri/Cargo.toml`, `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets
+  -- -D warnings`, ou `npx tsc --noEmit`) et rappeler l'interdiction `cargo test`/`clippy`
+  pendant un `tauri dev` actif (corrompt le cache incrémental, voir mémoire
+  `avoid-concurrent-cargo-tauri-dev`).
 - Revue de code générale (hors Rust) : `code-review` natif (`/code-review`) au lieu de
   `ecc:code-reviewer`, indisponible sur Sift.
 - a11y/WCAG : `ui-ux-pro-max` (Quick Reference) au lieu de `ecc:a11y-architect`,
@@ -124,6 +132,27 @@ qu'un Stop reprenne la main. Construire la confirmation dans l'UI de l'app
 elle-même (ex. cycle armé/confirmé à deux clics, horodaté pour rejeter un
 double-clic/évènement dupliqué — voir `sift-live.ts` : `BATCH_CONFIRM_THRESHOLD`
 / `batchConfirmArmed`).
+
+**Jamais une écriture sur un système live (ex. `master.db` Rekordbox réel) sur
+la seule foi d'un rapport d'agent d'arrière-plan** : relire l'état
+indépendamment avant d'autoriser, et vérifier qu'un backup pris juste avant
+est réellement propre (comparé à une référence connue) — pas juste "un `cp` a
+été fait". Un agent d'arrière-plan issu d'une chaîne de délégation en cascade
+a rapporté un fichier de test "stable" alors qu'il avait dérivé, et le backup
+pris juste avant un swap sur le vrai `master.db` s'est révélé déjà contaminé
+par une session antérieure jamais restaurée (voir Évaluation 14,
+`docs/ressources-externes.md`).
+
+**Après 2 tentatives de correctif visuel/comportemental restées en échec**
+("toujours pas", "pareil") — mesurer en direct avant un 3e essai, pas deviner
+plus fort la même chose. Pour Sift : CDP contre la vraie fenêtre `tauri dev`
+(computed styles/rects via `Runtime.evaluate`, ou histogramme exact de pixels
+via `getImageData` pour un bug de canvas/couleur) — voir mémoire
+`sift-cdp-webview2-verification`. Constaté deux fois dans la même session
+2026-07-06 (taille de deux toggles Revue, puis colormap du spectrogramme) :
+deviner un correctif CSS/couleur sans mesurer d'abord a fait perdre plusieurs
+rounds d'aller-retour, alors qu'une seule mesure directe a réglé chaque fois
+le vrai problème du premier coup.
 
 **Routage skills** : procédure complète (5 étapes) déjà posée dans
 `~/.claude/CLAUDE.md` (RÈGLE IMPÉRATIVE, s'applique tous projets) — ne pas la
@@ -275,6 +304,23 @@ IDs connus (à confirmer à la résolution, ne pas inventer) :
   puis retour à un état neutre (`--overlay-selected`, `--color-surface-raised`)
   est le bon pattern — pas une couleur sémantique qui reste allumée
   indéfiniment pour signaler "c'est fait".
+- **Boutons de rail/CTA (Ranger, Jeter, Confirmer, Enregistrer, Supprimer…) :
+  texte seul, jamais d'icône décorative à côté d'un label déjà descriptif**
+  (retour utilisateur 2026-07-06). L'icône n'ajoute rien quand le texte dit
+  déjà l'action — réservé aux cas où le glyphe porte une info sans équivalent
+  textuel (ex. spinner de chargement). Ne pas confondre avec la règle
+  icon-only de `ressources-externes.md` (celle-là interdit l'inverse : une
+  icône SANS aucun texte).
+- **Un composant bouton qui redéfinit `background` doit le réaffirmer dans
+  son propre `:hover`** — sinon le `button:hover{background:...}` générique
+  (spécificité élément+pseudo-classe) bat la règle de base de la classe custom
+  (spécificité classe seule) dès que la souris survole, même si la classe
+  custom a sa propre règle `:hover` pour une AUTRE propriété (ex. `filter`).
+  Bug réel trouvé le 2026-07-06 : `.sift-play-btn:hover{filter:...}` ne
+  touchait pas `background`, donc le bouton lecture redevenait silencieusement
+  la couleur de sa propre carte au survol (disparition visuelle). Toujours
+  réaffirmer explicitement toute propriété de base qu'un `:hover` custom ne
+  doit PAS perdre face au `button:hover` générique.
 
 ## Vérification UI — app réelle, pas la maquette navigateur
 
