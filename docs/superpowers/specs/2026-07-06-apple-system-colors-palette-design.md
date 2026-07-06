@@ -14,9 +14,9 @@
 
 Décisions documentées jusqu'ici (CLAUDE.md, `docs/design-system-states.md`,
 mémoire `sift-ui-refonte-2026-07`) et explicitement révisées par ce design :
-- "2 couleurs sémantiques seulement (vert/ambre), pas de 3e teinte" — sauf
-  l'exception dorée du bouton Identifier, qui elle **reste inchangée** (CTA,
-  pas un statut — voir section Exception dorée).
+- "2 couleurs sémantiques seulement (vert/ambre), pas de 3e teinte" — y
+  compris l'exception dorée du bouton Identifier, retirée elle aussi (voir
+  section 4).
 - "Le danger fusionne dans l'ambre" — se sépare en rouge (danger) / orange
   (warning).
 - `--color-text-info` réutilisé comme "le seul neutre foncé interactif" —
