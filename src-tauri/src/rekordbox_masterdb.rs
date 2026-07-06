@@ -76,6 +76,19 @@ const HMAC_SALT_XOR: u8 = 0x3a;
 /// Salt occupies the first 16 bytes of the file (and of page 1 on disk).
 const SALT_LEN: usize = 16;
 
+/// `NoPadding` requires every AES-CBC input to be exactly block-aligned (16
+/// bytes). The page-body lengths derived from these constants
+/// (`PAGE_SIZE - RESERVE` for most pages, `PAGE_SIZE - RESERVE - SALT_LEN`
+/// for page 1) are currently aligned only because `RESERVE`/`SALT_LEN`/
+/// `PAGE_SIZE` all happen to be multiples of 16 — nothing else enforces
+/// that. If a future edit to these constants broke it, `encrypt_masterdb`/
+/// `decrypt_page_body` would fail unpredictably instead of failing here,
+/// at compile time, with a clear reason.
+const _: () = assert!(
+    PAGE_SIZE % 16 == 0 && RESERVE % 16 == 0 && SALT_LEN % 16 == 0,
+    "PAGE_SIZE/RESERVE/SALT_LEN must all be AES-block-aligned (16 bytes) for NoPadding CBC"
+);
+
 type Aes256CbcDec = cbc::Decryptor<Aes256>;
 type Aes256CbcEnc = cbc::Encryptor<Aes256>;
 type HmacSha512 = Hmac<Sha512>;
@@ -325,7 +338,15 @@ fn decrypt_masterdb(raw: &[u8]) -> Result<Vec<u8>, MasterDbError> {
             // into the last RESERVE bytes, which the re-encryption path
             // (`encrypt_masterdb`) discards as padding — silently dropping
             // data.
-            plain[4] = RESERVE as u8; // offset 4 within `plain`, i.e. file offset 20 (16-byte magic prefix + 4)
+            // offset 4 within `plain`, i.e. file offset 20 (16-byte magic prefix + 4).
+            // Guarded rather than a bare index: `plain` is HMAC-verified but
+            // its length still depends on AES decrypting to the expected
+            // size — a checked write turns any future geometry mismatch
+            // into a clear error instead of a panic on malformed input.
+            match plain.get_mut(4) {
+                Some(b) => *b = RESERVE as u8,
+                None => return Err(MasterDbError::Decrypt { page: page_no }),
+            }
             out.extend_from_slice(b"SQLite format 3\0");
         }
         out.extend_from_slice(&plain);
@@ -597,7 +618,13 @@ pub fn repair_track_path(
 
     let tmp_path = pioneer_dir.join("master.db.sift-write-tmp");
     std::fs::write(&tmp_path, &raw2).map_err(|e| MasterDbError::Io(e.to_string()))?;
-    std::fs::rename(&tmp_path, &db_path).map_err(|e| MasterDbError::Io(e.to_string()))?;
+    if let Err(e) = std::fs::rename(&tmp_path, &db_path) {
+        // The live master.db is untouched (rename never started), but don't
+        // leave the temp file behind for a future glob/user to mistake for
+        // something real.
+        std::fs::remove_file(&tmp_path).ok();
+        return Err(MasterDbError::Io(e.to_string()));
+    }
 
     match read_rekordbox_masterdb(&db_path) {
         Ok(index) => {
@@ -914,5 +941,77 @@ mod tests {
         };
         let err = repair_track_path(&pioneer_dir, &backup_dir, &repair).unwrap_err();
         assert_eq!(err, MasterDbError::TrackNotFound { track_id: "99999999".to_string() });
+    }
+
+    #[test]
+    fn repair_track_path_handles_long_path_forcing_page_growth() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let pioneer_dir = tmp.path().join("pioneer");
+        let backup_dir = tmp.path().join("backup");
+        std::fs::create_dir_all(&pioneer_dir).expect("mkdir pioneer");
+        std::fs::copy(FIXTURE, pioneer_dir.join("master.db")).expect("copy fixture as master.db");
+        std::fs::write(pioneer_dir.join("masterPlaylists6.xml"), b"<DJ_PLAYLISTS/>")
+            .expect("write fake xml");
+
+        let original_size = std::fs::metadata(pioneer_dir.join("master.db")).expect("stat before").len();
+
+        // Well past SQLite's per-cell local-payload threshold (~page_size - 35
+        // bytes) — this forces the updated row onto an overflow page, growing
+        // the file past its original page count. Exercises encrypt_masterdb
+        // on a plaintext buffer LARGER than what decrypt_masterdb produced
+        // for this file, not just the fixture's original fixed geometry.
+        let long_component = "a".repeat(8000);
+        let long_path = format!("D:/FIXTURE/{long_component}/track1.mp3");
+        let repair = PathRepair {
+            track_id: "40000001".to_string(),
+            new_folder_path: long_path.clone(),
+            new_file_name_l: "track1.mp3".to_string(),
+            new_file_name_s: "track1.mp3".to_string(),
+        };
+        repair_track_path(&pioneer_dir, &backup_dir, &repair).expect("repair path with long path");
+
+        let new_size = std::fs::metadata(pioneer_dir.join("master.db")).expect("stat after").len();
+        assert!(
+            new_size > original_size,
+            "expected the database to grow past its original {original_size} bytes to hold the long path (overflow page), got {new_size}"
+        );
+
+        let index = read_rekordbox_masterdb(&pioneer_dir.join("master.db")).expect("reread");
+        let repaired = index
+            .tracks
+            .iter()
+            .find(|t| t.track_id == "40000001")
+            .expect("track 40000001 present");
+        assert_eq!(repaired.folder_path, long_path);
+        assert_eq!(index.tracks.len(), 3);
+    }
+
+    #[test]
+    fn repair_track_path_handles_non_ascii_path() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let pioneer_dir = tmp.path().join("pioneer");
+        let backup_dir = tmp.path().join("backup");
+        std::fs::create_dir_all(&pioneer_dir).expect("mkdir pioneer");
+        std::fs::copy(FIXTURE, pioneer_dir.join("master.db")).expect("copy fixture as master.db");
+        std::fs::write(pioneer_dir.join("masterPlaylists6.xml"), b"<DJ_PLAYLISTS/>")
+            .expect("write fake xml");
+
+        let accented_path = "D:/Musique/Various Artistes/Beyoncé - Déjà vu (édit).mp3".to_string();
+        let repair = PathRepair {
+            track_id: "40000002".to_string(),
+            new_folder_path: accented_path.clone(),
+            new_file_name_l: "Beyoncé - Déjà vu (édit).mp3".to_string(),
+            new_file_name_s: "Beyonce.mp3".to_string(),
+        };
+        repair_track_path(&pioneer_dir, &backup_dir, &repair)
+            .expect("repair path with accented characters");
+
+        let index = read_rekordbox_masterdb(&pioneer_dir.join("master.db")).expect("reread");
+        let repaired = index
+            .tracks
+            .iter()
+            .find(|t| t.track_id == "40000002")
+            .expect("track 40000002 present");
+        assert_eq!(repaired.folder_path, accented_path);
     }
 }
