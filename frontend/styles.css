@@ -3,11 +3,11 @@
    Applied at :root unconditionally so the app renders in this palette regardless of the OS theme.
    Surfaces (elevation by clarity + 1px low-opacity dark-tinted borders, no drop shadows): canvas
    #E7E2DB < nav #EDE9E2 < cards/controls #F1EDE7.
-   Color = meaning only: green (ok/lossless), amber (doute/pending/erreur) — PAS de 3e teinte, PAS
-   d'accent décoratif. --color-text-info est réutilisé comme le seul neutre foncé "interactif"
-   (focus/sélection/liens) — ce n'est plus un bleu, c'est le même neutre que le CTA primaire.
-   --color-text-danger/--color-text-warning pointent tous deux vers l'ambre (la maquette n'a que
-   2 couleurs sémantiques — l'ancien "danger" rouge fusionne avec "doute"). */
+   Color = meaning: green (ok/lossless), amber (doute/pending/erreur), red (danger), blue (info) —
+   4 hues sémantiques distinctes depuis 2026-07 (Apple-style palette). --color-text-info est un
+   vrai bleu (focus/sélection/liens/interactif), plus le neutre du CTA primaire.
+   --color-text-danger a sa propre teinte rouge, séparée de --color-text-warning (ambre) — les
+   deux ne pointent plus vers la même valeur. */
 :root{
 color-scheme:light;
 --color-background-primary:#E7E2DB;--color-background-secondary:#F1EDE7;--color-background-tertiary:#EDE9E2;
@@ -15,11 +15,11 @@ color-scheme:light;
    surface (raised buttons/popovers), the recessed segmented "track"/well, and the SOLID
    hover/selection fills for nav items and rows (the mockup uses solids, not translucent overlays). */
 --color-background-queue:#EAE5DE;--color-surface-raised:#FBF9F4;--color-track:#E0DAD1;--color-row-active:#F3EFE9;--color-nav-active:#E1DBD2;
---color-background-info:rgba(58,53,47,.08);--color-background-danger:rgba(176,122,40,.14);--color-background-success:rgba(76,123,87,.14);--color-background-warning:rgba(176,122,40,.14);
+--color-background-info:rgba(62,124,177,.10);--color-background-danger:rgba(196,74,58,.14);--color-background-success:rgba(76,123,87,.14);--color-background-warning:rgba(176,122,40,.14);
 --color-text-primary:#34302B;--color-text-secondary:#5C554E;--color-text-tertiary:#8A857D;--color-text-quaternary:#B3AEA5;
---color-text-info:#3A352F;--color-cta-text:#F7F4EF;--color-text-danger:#8f6318;--color-text-success:#3f6d4c;--color-text-warning:#8f6318;
+--color-text-info:#2B5A82;--color-cta-text:#F7F4EF;--color-text-danger:#a0392a;--color-text-success:#3f6d4c;--color-text-warning:#8f6318;
 --color-border-tertiary:rgba(40,34,28,0.09);--color-border-secondary:rgba(40,34,28,0.16);
---color-border-info:rgba(58,53,47,.35);--color-border-danger:rgba(176,122,40,.45);
+--color-border-info:rgba(62,124,177,.35);--color-border-danger:rgba(196,74,58,.42);
 /* Neutral overlay tints (hover/selection/left-bar/badge on neutral surfaces) — dark-tinted here
    since the surface is light; flipped to light-tinted in the dark variant below. Anything that
    used to hardcode rgba(255,255,255,...) for "selected row" must use these instead, or it goes
@@ -65,11 +65,11 @@ color-scheme:light;
   :root:not([data-theme="light"]){
     color-scheme:dark;
     --color-background-primary:#282825;--color-background-secondary:#3B3A35;--color-background-tertiary:#323230;--color-background-queue:#2E2E2B;--color-surface-raised:#46453F;--color-track:#46453F;--color-row-active:#413F38;--color-nav-active:#3D3B35;
-    --color-background-info:rgba(240,237,230,.08);--color-background-danger:rgba(176,122,40,.14);--color-background-success:rgba(76,123,87,.14);--color-background-warning:rgba(176,122,40,.14);
+    --color-background-info:rgba(62,124,177,.14);--color-background-danger:rgba(196,74,58,.16);--color-background-success:rgba(76,123,87,.14);--color-background-warning:rgba(176,122,40,.14);
     --color-text-primary:#F5F1E9;--color-text-secondary:#C9C2B7;--color-text-tertiary:#9C968D;--color-text-quaternary:#847E75;
-    --color-text-info:#F5F1E9;--color-cta-text:#26251F;--color-text-danger:#f2c274;--color-text-success:#9fe0af;--color-text-warning:#f2c274;
+    --color-text-info:#8EC2EA;--color-cta-text:#26251F;--color-text-danger:#f0a08f;--color-text-success:#9fe0af;--color-text-warning:#f2c274;
     --color-border-tertiary:rgba(255,255,255,0.12);--color-border-secondary:rgba(255,255,255,0.22);
-    --color-border-info:rgba(240,237,230,.30);--color-border-danger:rgba(221,166,63,.45);
+    --color-border-info:rgba(142,194,234,.30);--color-border-danger:rgba(240,160,143,.40);
     --overlay-hover:rgba(255,255,255,.03);--overlay-selected:rgba(255,255,255,.06);
     --overlay-bar:rgba(255,255,255,.32);--overlay-badge:rgba(255,255,255,.06);--overlay-drop:rgba(60,60,57,.93);
     --color-accent-identify:#FFdc82;--color-accent-identify-hover:#f0cc6a;
@@ -80,11 +80,11 @@ color-scheme:light;
 :root[data-theme="dark"]{
   color-scheme:dark;
   --color-background-primary:#282825;--color-background-secondary:#3B3A35;--color-background-tertiary:#323230;--color-background-queue:#2E2E2B;--color-surface-raised:#46453F;--color-track:#46453F;--color-row-active:#413F38;--color-nav-active:#3D3B35;
-  --color-background-info:rgba(240,237,230,.08);--color-background-danger:rgba(176,122,40,.14);--color-background-success:rgba(76,123,87,.14);--color-background-warning:rgba(176,122,40,.14);
+  --color-background-info:rgba(62,124,177,.14);--color-background-danger:rgba(196,74,58,.16);--color-background-success:rgba(76,123,87,.14);--color-background-warning:rgba(176,122,40,.14);
   --color-text-primary:#F5F1E9;--color-text-secondary:#C9C2B7;--color-text-tertiary:#9C968D;--color-text-quaternary:#847E75;
-  --color-text-info:#F5F1E9;--color-cta-text:#26251F;--color-text-danger:#f2c274;--color-text-success:#9fe0af;--color-text-warning:#f2c274;
+  --color-text-info:#8EC2EA;--color-cta-text:#26251F;--color-text-danger:#f0a08f;--color-text-success:#9fe0af;--color-text-warning:#f2c274;
   --color-border-tertiary:rgba(255,255,255,0.12);--color-border-secondary:rgba(255,255,255,0.22);
-  --color-border-info:rgba(240,237,230,.30);--color-border-danger:rgba(221,166,63,.45);
+  --color-border-info:rgba(142,194,234,.30);--color-border-danger:rgba(240,160,143,.40);
   --overlay-hover:rgba(255,255,255,.03);--overlay-selected:rgba(255,255,255,.06);
   --overlay-bar:rgba(255,255,255,.32);--overlay-badge:rgba(255,255,255,.06);--overlay-drop:rgba(60,60,57,.93);
   --color-accent-identify:#FFdc82;--color-accent-identify-hover:#f0cc6a;
