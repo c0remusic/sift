@@ -62,7 +62,11 @@ Lib = `sift_lib`. MSRV Rust 1.77.2.
   src-tauri/Cargo.toml`, `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets
   -- -D warnings`, ou `npx tsc --noEmit`) et rappeler l'interdiction `cargo test`/`clippy`
   pendant un `tauri dev` actif (corrompt le cache incrémental, voir mémoire
-  `avoid-concurrent-cargo-tauri-dev`).
+  `avoid-concurrent-cargo-tauri-dev`). Toujours ajouter une ligne explicite dans
+  le prompt de mission indiquant de sauter `docs/skills-registre.md`/tout
+  `SKILL.md` — `AGENTS.md` porte la même règle de routage skills que ce fichier,
+  et Codex la suit sinon, gonflant le coût en tokens pour rien sur une mission
+  déjà scopée (voir `docs/ressources-externes.md`, Évaluation 16).
 - Revue de code générale (hors Rust) : `code-review` natif (`/code-review`) au lieu de
   `ecc:code-reviewer`, indisponible sur Sift.
 - a11y/WCAG : `ui-ux-pro-max` (Quick Reference) au lieu de `ecc:a11y-architect`,
