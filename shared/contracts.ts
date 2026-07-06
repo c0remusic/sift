@@ -303,10 +303,16 @@ export interface RekordboxLinkStatus {
 
 // ---- M8 Tier 1 master.db path-repair candidates (mirror of src-tauri/src/ipc_library.rs) ----
 
+export interface CandidateTrack {
+  track_id: string;
+  folder_path: string | null;
+}
+
 export interface PendingMasterdbRepair {
   id: number;
   track_id: string | null;
   candidate_track_ids: string | null;
+  candidate_tracks: CandidateTrack[] | null;
   from_path: string;
   to_path: string;
   status: "pending" | "ambiguous";

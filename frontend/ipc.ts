@@ -290,6 +290,10 @@ export const rekordboxMasterdbApplyRepairs = (ids: number[]): Promise<ApplyRepai
 export const rekordboxMasterdbDismissRepair = (id: number): Promise<void> =>
   invoke("rekordbox_masterdb_dismiss_repair", { id });
 
+/** Resolve an ambiguous repair by selecting the correct candidate track. */
+export const rekordboxMasterdbResolveAmbiguous = (id: number, chosenTrackId: string): Promise<void> =>
+  invoke("rekordbox_masterdb_resolve_ambiguous", { id, chosenTrackId });
+
 // ---- M7 USB format utility (mirror of ipc_usb.rs) ----
 
 export interface RemovableDrive {
