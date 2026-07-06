@@ -409,6 +409,14 @@ pub(crate) fn is_rekordbox_running() -> bool {
 /// actually decrypts (full HMAC check on every page) before returning `Ok`
 /// — a backup that can't be read back is worse than no backup, so this
 /// fails fast rather than trusting a raw file copy blindly.
+///
+/// On any failure *after* `backup_dir` starts getting populated (XML copy
+/// failing after `master.db` copied, or the readability check failing),
+/// this removes whatever this call already copied into `backup_dir` before
+/// returning the error — a partial or known-unreadable `master.db` left
+/// behind under the fixed filename would otherwise look like a valid
+/// backup to a later `restore_rekordbox_backup` call. Cleanup uses `.ok()`
+/// so a failure to remove never masks the real error being returned.
 pub(crate) fn backup_rekordbox_files(pioneer_dir: &Path, backup_dir: &Path) -> Result<(), MasterDbError> {
     std::fs::create_dir_all(backup_dir).map_err(|e| MasterDbError::Io(e.to_string()))?;
 
@@ -418,10 +426,17 @@ pub(crate) fn backup_rekordbox_files(pioneer_dir: &Path, backup_dir: &Path) -> R
 
     let src_xml = pioneer_dir.join("masterPlaylists6.xml");
     let dst_xml = backup_dir.join("masterPlaylists6.xml");
-    std::fs::copy(&src_xml, &dst_xml).map_err(|e| MasterDbError::Io(e.to_string()))?;
+    if let Err(e) = std::fs::copy(&src_xml, &dst_xml) {
+        std::fs::remove_file(&dst_db).ok();
+        return Err(MasterDbError::Io(e.to_string()));
+    }
 
     // Verify the backup is actually readable before trusting it.
-    read_rekordbox_masterdb(&dst_db)?;
+    if let Err(e) = read_rekordbox_masterdb(&dst_db) {
+        std::fs::remove_file(&dst_db).ok();
+        std::fs::remove_file(&dst_xml).ok();
+        return Err(e);
+    }
     Ok(())
 }
 
@@ -609,6 +624,50 @@ mod tests {
 
         let err = backup_rekordbox_files(&pioneer_dir, &backup_dir).unwrap_err();
         assert!(matches!(err, MasterDbError::FileTooShort));
+    }
+
+    #[test]
+    fn backup_cleans_up_after_verification_failure() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let pioneer_dir = tmp.path().join("pioneer");
+        let backup_dir = tmp.path().join("backup");
+        std::fs::create_dir_all(&pioneer_dir).expect("mkdir pioneer");
+        // Both source files exist, so both copies into backup_dir succeed —
+        // the failure happens only at the read_rekordbox_masterdb
+        // verification step, after backup_dir is already populated.
+        std::fs::write(pioneer_dir.join("master.db"), b"not a real database")
+            .expect("write garbage master.db");
+        std::fs::write(pioneer_dir.join("masterPlaylists6.xml"), b"<DJ_PLAYLISTS/>")
+            .expect("write fake xml");
+
+        let err = backup_rekordbox_files(&pioneer_dir, &backup_dir).unwrap_err();
+        assert!(matches!(err, MasterDbError::FileTooShort));
+
+        // The broken master.db copy must not be left behind under the fixed
+        // filename — a later restore_rekordbox_backup call against this
+        // backup_dir must not find anything to (wrongly) trust.
+        assert!(!backup_dir.join("master.db").exists());
+        assert!(!backup_dir.join("masterPlaylists6.xml").exists());
+    }
+
+    #[test]
+    fn backup_cleans_up_after_xml_copy_failure() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let pioneer_dir = tmp.path().join("pioneer");
+        let backup_dir = tmp.path().join("backup");
+        std::fs::create_dir_all(&pioneer_dir).expect("mkdir pioneer");
+
+        // master.db exists and is valid, but masterPlaylists6.xml is
+        // deliberately missing — the master.db copy succeeds first, then
+        // the XML copy fails.
+        std::fs::copy(FIXTURE, pioneer_dir.join("master.db")).expect("copy fixture as master.db");
+
+        let err = backup_rekordbox_files(&pioneer_dir, &backup_dir).unwrap_err();
+        assert!(matches!(err, MasterDbError::Io(_)));
+
+        // The master.db copy that succeeded before the XML failure must not
+        // be left behind under the fixed filename.
+        assert!(!backup_dir.join("master.db").exists());
     }
 
     #[test]
