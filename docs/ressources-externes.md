@@ -874,6 +874,63 @@ localement).
 
 ---
 
+## Évaluation 14 — spike M8 sur le fichier live Rekordbox : incident et repli (2026-07-05)
+
+**Contexte** : suite des spikes M8 sur copie (Évaluations 5/7/11, `master.db`
+jamais touché en live). Cette session a, pour la première fois, testé un
+scénario "metadata reload" directement sur le **vrai** `master.db` de
+l'utilisateur (backup → swap → vérification dans Rekordbox → restore), à sa
+demande explicite. Ça a mal tourné, puis révélé un problème plus profond que
+le test lui-même.
+
+**Ce qui s'est passé** :
+1. Un agent en arrière-plan issu d'une chaîne de délégation en cascade (le
+   même phénomène que l'Évaluation 11) a rapporté le fichier de test "stable,
+   `TrackInfoUpdated=7`, prêt pour le swap" — une relecture indépendante a
+   montré qu'il avait en réalité dérivé à 9, avec des rapports contradictoires
+   entre eux (7 puis 8). Un rerun propre et isolé (copié depuis
+   `master.db.copy`/`masterPlaylists6.xml.pristine`, jamais depuis le dossier
+   pollué) a confirmé l'hypothèse du spike : une édition metadata-only
+   (`FolderPath`/tag) laisse bien `Analysed`/`AnalysisUpdated`/`CueUpdated`
+   inchangés.
+2. Malgré ce rerun propre, le swap réel dans le dossier Rekordbox live a fini
+   par utiliser l'**ancien fichier pollué**, pas la version propre — écart
+   d'exécution non totalement élucidé (probable désynchronisation de timing
+   entre les instructions et le geste de copie). Le fichier pollué avait un
+   `ArtistID` cassé (pointant vers une entrée `djmdArtist` inexistante),
+   provoquant un champ Artist vide dans Rekordbox une fois ouvert — et
+   Rekordbox a lui-même continué à écrire dans `master.db` à l'ouverture
+   (`TrackInfoUpdated` 9→10).
+3. **Le vrai problème** : le backup pris juste avant ce swap (censé être
+   l'état "propre" à restaurer en cas de souci) s'est avéré **déjà
+   contaminé** — le `FolderPath` de la piste canari (ID 165700329) pointait
+   déjà vers un fichier de test probe, pas vers le vrai fichier `D:/MUSIQUE
+   2025/MP3/Weekender - Route 1 (Version).mp3`. Preuve qu'une **session M8
+   antérieure avait déjà écrit dans le `master.db` live** et n'avait jamais
+   été correctement restaurée — la vraie bibliothèque de l'utilisateur avait
+   une piste mal reliée, silencieusement, jusqu'à ce que cette session le
+   détecte et corrige.
+
+**Correctif appliqué** : réparation chirurgicale d'une seule piste
+(`FolderPath`/`FileNameL`/`FileNameS` remis sur le vrai chemin D:), avec
+double backup de sécurité conservé sur le Bureau
+(`rb-backup-2026-07-06-metadata-retest/`,
+`rb-backup-2026-07-06-before-path-repair/`). Vérifié : `ArtistID` de nouveau
+lié à "Weekender", piste confirmée normale par Antoine dans Rekordbox.
+
+**Décision** : la règle déjà actée aux Évaluations 5/7/11 ("jamais le fichier
+live, toujours une copie") est **réaffirmée** — le test de ce soir était une
+exception explicite demandée par Antoine, pas un nouveau mode opératoire.
+Deux garde-fous à appliquer à toute future validation en direct sur le vrai
+`master.db` : (1) ne jamais prendre pour argent comptant le rapport "stable/
+prêt" d'un agent d'arrière-plan sur un état de fichier partagé — relire
+indépendamment avant d'autoriser une écriture live ; (2) ne jamais supposer
+qu'un `cp` de backup pris juste avant une action garantit un point de
+restauration propre — le vérifier contre une référence connue avant de
+compter dessus.
+
+---
+
 ## Veille concurrente — MediaMonkey (2026-06-24)
 
 Gestionnaire de biblio musicale ([mediamonkey.com](https://www.mediamonkey.com/)),
@@ -1132,3 +1189,59 @@ sur du travail M7 en cours non lié à ce nettoyage).
   d'entretien (`.graphifyignore`, hooks git, rebuild à chaque changement de
   structure) pas justifié pour un repo de la taille de Sift tant que
   l'attribution sémantique n'est pas fiable.
+
+---
+
+## Évaluation 15 — spectrogramme trop clair : deux bugs empilés, pas un réglage de couleurs (2026-07-06)
+
+**Contexte** : suite d'une série d'annotations Alt+Clic sur l'écran Revue.
+Retour répété d'Antoine sur « Preuve (spectre) » : « trop bright », « pas
+assez contrasté », en insistant que ce n'était probablement pas les couleurs
+choisies. Investigation poussée via CDP (mesure directe de pixels de canvas,
+pas juste jugement visuel sur capture) plutôt que d'itérer à l'aveugle sur la
+palette.
+
+**Fausses pistes essayées et invalidées par la mesure** (pas par supposition) :
+- Courbe gamma sur la valeur brute (`Math.pow(norm, 1.6)`) — aucun effet
+  mesurable, la donnée d'entrée était déjà saturée.
+- Étirement auto-contraste par percentile (5e/99,5e du fichier courant) —
+  même résultat : le 99,5e percentile valait déjà 255.
+- Recalage sur le modèle Gain/Range réel d'Audacity (20 dB / 80 dB, cf.
+  manual.audacityteam.org/man/spectrogram_view.html) — a en fait *aggravé*
+  le taux de blanc (65,6 % → 89,2 %), preuve que le mapping de couleur
+  n'était pas le problème : un modèle plus permissif sur le seuil « fort »
+  ne fait qu'empirer un problème qui vient d'ailleurs.
+
+**Root cause réelle, confirmée par histogramme exact de pixels (pas un
+échantillon)** : `spectrum.rs`'s `process_frame()` convertissait la magnitude
+FFT brute (`Complex::norm_sqr()`, non normalisée, qui grandit avec `fft_size`)
+directement en dB — un signal plein niveau donnait +50 à +100 dB avant le
+`.clamp(-100.0, 0.0)`, donc quasi tout contenu réel se retrouvait collé au
+plafond d'affichage (octet 255). Mesuré : 65,6 % des cellules temps-fréquence
+du fichier étaient *identiques à l'octet près*. Aucune courbe de colormap ne
+peut créer du contraste entre des valeurs déjà numériquement égales.
+
+**Second bug qui a caché le premier** : le rapport d'analyse (spectrogramme
+inclus) est caché en SQLite (`tracks.report_json`), gardé par
+`analysis::REPORT_CACHE_VERSION`. Son propre commentaire dit exister
+précisément pour les changements « contenu modifié, forme JSON identique » —
+exactement le cas du fix ci-dessus. Non bumpée par le premier commit de fix
+(`072b070`) → rebuild + restart du process n'ont rien changé, le cache
+resservait les anciens octets. Root-causé en lisant `ipc.rs`'s logique de
+cache (pas en devinant depuis les timestamps process/binaire, qui semblaient
+tous les deux plausibles). Bump 2→3 (`a5f2e73`) → rendu correct immédiat
+(0,4 % blanc au lieu de 89,2 %), texture/dynamique comparable à une vraie
+capture iZotope RX de référence.
+
+**Décision** : colormap Sift reconstruite sur le modèle Audacity (Gain 20 dB
+/ Range 80 dB, stops noir→bleu→magenta→orange→blanc) — conservée telle
+quelle, c'était déjà le bon calibrage, il manquait juste des données
+correctes à afficher. Repère de coupure (ligne pointillée + étiquette sur
+fond semi-opaque) recoloré selon le verdict (succès/danger/warning) au lieu
+d'un rouge alarme fixe.
+
+**Méthode retenue pour la suite** : avant de retoucher un colormap/réglage
+visuel qui « ne marche pas », mesurer la distribution réelle des valeurs
+brutes (histogramme exact, pas un échantillon strié — un stride naïf peut
+aliaser) avant de changer la courbe une 3e fois. Voir
+[[sift-cdp-webview2-verification]] et [[sift-spectrum-dbfs-normalization-fix]].
