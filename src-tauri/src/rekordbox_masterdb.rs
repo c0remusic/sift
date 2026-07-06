@@ -414,6 +414,16 @@ pub(crate) fn encrypt_masterdb(plaintext: &[u8]) -> Result<Vec<u8>, MasterDbErro
     Ok(out)
 }
 
+#[cfg(test)]
+pub(crate) fn decrypt_masterdb_for_test(raw: &[u8]) -> Vec<u8> {
+    decrypt_masterdb(raw).expect("decrypt fixture for test setup")
+}
+
+#[cfg(test)]
+pub(crate) fn encrypt_masterdb_for_test(plaintext: &[u8]) -> Vec<u8> {
+    encrypt_masterdb(plaintext).expect("encrypt fixture for test setup")
+}
+
 /// Reads a Rekordbox `master.db` file and returns its path→TrackID index.
 ///
 /// Read-only: no write path exists here (and none is planned — see M8,

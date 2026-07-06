@@ -61,6 +61,7 @@ pub fn record_with_meta(
 ) -> rusqlite::Result<i64> {
     let id = record_row_only(conn, batch_id, track_id, kind, from_path, to_path, meta)?;
     maybe_repair_rekordbox_xml(conn, kind, from_path, to_path);
+    maybe_detect_masterdb_repair(conn, kind, from_path, to_path, id);
     Ok(id)
 }
 
@@ -115,6 +116,77 @@ pub fn maybe_repair_rekordbox_xml(
                 repair_rekordbox_xml_if_linked(conn, from, to);
             }
         }
+    }
+}
+
+/// M8 Tier 1: mirrors `maybe_repair_rekordbox_xml`'s guard exactly (same kinds, same
+/// `from != to` check — see that function's docs for why `trash`/`reject` are excluded) but
+/// for the `master.db` path-repair candidate table instead of the linked XML.
+pub fn maybe_detect_masterdb_repair(
+    conn: &Connection,
+    kind: &str,
+    from_path: Option<&str>,
+    to_path: Option<&str>,
+    action_id: i64,
+) {
+    if matches!(kind, "move" | "convert") {
+        if let (Some(from), Some(to)) = (from_path, to_path) {
+            if from != to {
+                detect_masterdb_repair_if_linked(conn, from, to, action_id);
+            }
+        }
+    }
+}
+
+/// Read-only detection: if a Rekordbox XML is linked, look up the sibling `master.db` (same
+/// directory — `master.db` and `masterPlaylists6.xml` are always siblings, confirmed by the
+/// M8 spikes) for `djmdContent` rows whose `FolderPath` equals `from_path`, and record a
+/// candidate repair row — `pending` (exactly one match) or `ambiguous` (2+ matches, the real
+/// duplicate-path scenario the M8 spikes found in a real library). Never writes `master.db`
+/// itself. Any failure (no XML linked, `master.db` unreadable) is a silent no-op — detecting a
+/// candidate repair must never fail the filing action that triggered it, same contract as
+/// `repair_rekordbox_xml_if_linked`.
+pub fn detect_masterdb_repair_if_linked(conn: &Connection, from_path: &str, to_path: &str, action_id: i64) {
+    let Ok(Some(xml_path)) = crate::settings::get(conn, crate::settings::REKORDBOX_XML_PATH) else {
+        return;
+    };
+    let Some(pioneer_dir) = std::path::Path::new(&xml_path).parent() else {
+        return;
+    };
+    let master_db_path = pioneer_dir.join("master.db");
+    let index = match crate::rekordbox_masterdb::read_rekordbox_masterdb(&master_db_path) {
+        Ok(idx) => idx,
+        Err(e) => {
+            log::error!("masterdb repair detection: {} unreadable: {e}", master_db_path.display());
+            return;
+        }
+    };
+    let matches: Vec<&str> = index
+        .tracks
+        .iter()
+        .filter(|t| t.folder_path == from_path)
+        .map(|t| t.track_id.as_str())
+        .collect();
+
+    let result = match matches.len() {
+        0 => return,
+        1 => conn.execute(
+            "INSERT OR IGNORE INTO rekordbox_masterdb_repairs (action_id, track_id, from_path, to_path)
+             VALUES (?1, ?2, ?3, ?4)",
+            params![action_id, matches[0], from_path, to_path],
+        ),
+        _ => {
+            let candidates = matches.join(",");
+            conn.execute(
+                "INSERT OR IGNORE INTO rekordbox_masterdb_repairs
+                 (action_id, candidate_track_ids, from_path, to_path, status)
+                 VALUES (?1, ?2, ?3, ?4, 'ambiguous')",
+                params![action_id, candidates, from_path, to_path],
+            )
+        }
+    };
+    if let Err(e) = result {
+        log::error!("masterdb repair detection: insert failed: {e}");
     }
 }
 
@@ -1000,5 +1072,122 @@ mod tests {
         drop(handle);
         revert_batch(&conn, "bl").unwrap();
         assert!(original.exists() && !converted.exists(), "single file once the lock is gone");
+    }
+
+    fn seed_pioneer_dir_with_fixture(dir: &std::path::Path) -> std::path::PathBuf {
+        std::fs::create_dir_all(dir).unwrap();
+        std::fs::copy(
+            concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/rekordbox_master.db"),
+            dir.join("master.db"),
+        )
+        .unwrap();
+        let xml_path = dir.join("masterPlaylists6.xml");
+        std::fs::write(&xml_path, b"<DJ_PLAYLISTS/>").unwrap();
+        xml_path
+    }
+
+    #[test]
+    fn detect_masterdb_repair_records_pending_on_single_match() {
+        let conn = db();
+        let tmp = tempfile::tempdir().unwrap();
+        let xml_path = seed_pioneer_dir_with_fixture(&tmp.path().join("pioneer"));
+        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+        // rekordbox_masterdb_repairs.action_id is a real FK to actions(id) — seed a row via
+        // record_row_only (no side effects) and use its id, rather than an arbitrary literal.
+        let action_id = record_row_only(&conn, "b1", None, "move", Some("D:/FIXTURE/track1.mp3"), Some("D:/FIXTURE/renamed/track1.flac"), None).unwrap();
+
+        detect_masterdb_repair_if_linked(&conn, "D:/FIXTURE/track1.mp3", "D:/FIXTURE/renamed/track1.flac", action_id);
+
+        let (got_action_id, track_id, candidates, status): (i64, String, Option<String>, String) = conn
+            .query_row(
+                "SELECT action_id, track_id, candidate_track_ids, status FROM rekordbox_masterdb_repairs WHERE from_path='D:/FIXTURE/track1.mp3'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )
+            .expect("one repair row inserted");
+        assert_eq!(got_action_id, action_id);
+        assert_eq!(track_id, "40000001");
+        assert_eq!(candidates, None);
+        assert_eq!(status, "pending");
+    }
+
+    #[test]
+    fn detect_masterdb_repair_no_match_inserts_nothing() {
+        let conn = db();
+        let tmp = tempfile::tempdir().unwrap();
+        let xml_path = seed_pioneer_dir_with_fixture(&tmp.path().join("pioneer"));
+        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+        let action_id = record_row_only(&conn, "b1", None, "move", Some("D:/nowhere/nope.mp3"), Some("D:/somewhere/else.mp3"), None).unwrap();
+
+        detect_masterdb_repair_if_linked(&conn, "D:/nowhere/nope.mp3", "D:/somewhere/else.mp3", action_id);
+
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM rekordbox_masterdb_repairs", [], |r| r.get(0)).unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn detect_masterdb_repair_ambiguous_on_two_matches() {
+        let conn = db();
+        let tmp = tempfile::tempdir().unwrap();
+        let pioneer_dir = tmp.path().join("pioneer");
+        let xml_path = seed_pioneer_dir_with_fixture(&pioneer_dir);
+        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+
+        // Make track 2's FolderPath collide with track 1's, using the manual decrypt/re-encrypt
+        // primitives directly — cheaper than a full repair_track_path call for a test-only setup.
+        let raw = std::fs::read(pioneer_dir.join("master.db")).unwrap();
+        let plaintext = crate::rekordbox_masterdb::decrypt_masterdb_for_test(&raw);
+        let len = plaintext.len();
+        let mut conn2 = rusqlite::Connection::open_in_memory().unwrap();
+        conn2.deserialize_read_exact(rusqlite::MAIN_DB, std::io::Cursor::new(plaintext), len, false).unwrap();
+        conn2
+            .execute(
+                "UPDATE djmdContent SET FolderPath='D:/FIXTURE/track1.mp3' WHERE ID='40000002'",
+                [],
+            )
+            .unwrap();
+        let plaintext2 = conn2.serialize(rusqlite::MAIN_DB).unwrap().to_vec();
+        let raw2 = crate::rekordbox_masterdb::encrypt_masterdb_for_test(&plaintext2);
+        std::fs::write(pioneer_dir.join("master.db"), raw2).unwrap();
+
+        let action_id = record_row_only(&conn, "b1", None, "move", Some("D:/FIXTURE/track1.mp3"), Some("D:/FIXTURE/renamed/track1.flac"), None).unwrap();
+        detect_masterdb_repair_if_linked(&conn, "D:/FIXTURE/track1.mp3", "D:/FIXTURE/renamed/track1.flac", action_id);
+
+        let (track_id, candidates, status): (Option<String>, String, String) = conn
+            .query_row(
+                "SELECT track_id, candidate_track_ids, status FROM rekordbox_masterdb_repairs WHERE from_path='D:/FIXTURE/track1.mp3'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .expect("one ambiguous row inserted");
+        assert_eq!(track_id, None);
+        let mut ids: Vec<&str> = candidates.split(',').collect();
+        ids.sort_unstable();
+        assert_eq!(ids, vec!["40000001", "40000002"]);
+        assert_eq!(status, "ambiguous");
+    }
+
+    #[test]
+    fn detect_masterdb_repair_no_op_when_no_xml_linked() {
+        let conn = db();
+        let action_id = record_row_only(&conn, "b1", None, "move", Some("D:/FIXTURE/track1.mp3"), Some("D:/FIXTURE/renamed/track1.flac"), None).unwrap();
+        detect_masterdb_repair_if_linked(&conn, "D:/FIXTURE/track1.mp3", "D:/FIXTURE/renamed/track1.flac", action_id);
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM rekordbox_masterdb_repairs", [], |r| r.get(0)).unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn detect_masterdb_repair_second_call_same_action_id_does_not_duplicate() {
+        let conn = db();
+        let tmp = tempfile::tempdir().unwrap();
+        let xml_path = seed_pioneer_dir_with_fixture(&tmp.path().join("pioneer"));
+        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+        let action_id = record_row_only(&conn, "b1", None, "move", Some("D:/FIXTURE/track1.mp3"), Some("D:/FIXTURE/renamed/track1.flac"), None).unwrap();
+
+        detect_masterdb_repair_if_linked(&conn, "D:/FIXTURE/track1.mp3", "D:/FIXTURE/renamed/track1.flac", action_id);
+        detect_masterdb_repair_if_linked(&conn, "D:/FIXTURE/track1.mp3", "D:/FIXTURE/renamed/track1.flac", action_id);
+
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM rekordbox_masterdb_repairs", [], |r| r.get(0)).unwrap();
+        assert_eq!(count, 1);
     }
 }
