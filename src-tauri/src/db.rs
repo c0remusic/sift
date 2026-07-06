@@ -125,6 +125,26 @@ const MIGRATIONS: &[&str] = &[
     CREATE INDEX IF NOT EXISTS idx_tracks_status_folder ON tracks(status, folder);
     CREATE INDEX IF NOT EXISTS idx_tracks_status_verdict ON tracks(status, verdict);
     "#,
+    // v11 — M8 Tier 1 IPC wiring: candidate master.db path repairs detected read-only on
+    // filing (docs/superpowers/specs/2026-07-06-m8-tier1-ipc-wiring-design.md). track_id is
+    // NULL when 2+ djmdContent rows matched the same from_path (ambiguous, never auto-repaired
+    // — see candidate_track_ids). UNIQUE(action_id): a second detection pass for the same
+    // journaled move never duplicates the row.
+    r#"
+    CREATE TABLE rekordbox_masterdb_repairs (
+        id INTEGER PRIMARY KEY,
+        action_id INTEGER NOT NULL REFERENCES actions(id) ON DELETE CASCADE,
+        track_id TEXT,
+        candidate_track_ids TEXT,
+        from_path TEXT NOT NULL,
+        to_path TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        detected_at TEXT NOT NULL DEFAULT (datetime('now')),
+        applied_at TEXT,
+        UNIQUE(action_id)
+    );
+    CREATE INDEX idx_rkbmdb_repairs_status ON rekordbox_masterdb_repairs(status);
+    "#,
 ];
 
 /// Applies any migrations the DB hasn't seen yet, tracked via PRAGMA user_version.
@@ -183,7 +203,8 @@ mod tests {
     fn migrations_create_all_tables() {
         let conn = Connection::open_in_memory().unwrap();
         run_migrations(&conn).unwrap();
-        assert_eq!(table_count(&conn).unwrap(), 7); // v4 adds `settings`, v6 adds `track_genres`
+        // v4 adds `settings`, v6 adds `track_genres`, v11 adds `rekordbox_masterdb_repairs`
+        assert_eq!(table_count(&conn).unwrap(), 8);
     }
 
     #[test]
@@ -191,7 +212,7 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         run_migrations(&conn).unwrap();
         run_migrations(&conn).unwrap(); // second run must not error or duplicate
-        assert_eq!(table_count(&conn).unwrap(), 7);
+        assert_eq!(table_count(&conn).unwrap(), 8);
     }
 
     #[test]
@@ -231,6 +252,25 @@ mod tests {
             .collect();
         for c in ["cutoff_hz", "dual_mono", "container_ok", "codec_error", "id3_version", "analyzed_at"] {
             assert!(cols.contains(&c.to_string()), "tracks missing column {c}");
+        }
+    }
+
+    #[test]
+    fn rekordbox_masterdb_repairs_table_has_expected_columns() {
+        let conn = Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+        let cols: Vec<String> = conn
+            .prepare("SELECT name FROM pragma_table_info('rekordbox_masterdb_repairs')")
+            .unwrap()
+            .query_map([], |r| r.get::<_, String>(0))
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect();
+        for c in [
+            "id", "action_id", "track_id", "candidate_track_ids", "from_path",
+            "to_path", "status", "detected_at", "applied_at",
+        ] {
+            assert!(cols.contains(&c.to_string()), "rekordbox_masterdb_repairs missing column {c}");
         }
     }
 
