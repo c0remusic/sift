@@ -130,6 +130,7 @@ pub fn run() {
             ipc_library::rekordbox_masterdb_pending_repairs,
             ipc_library::rekordbox_masterdb_apply_repairs,
             ipc_library::rekordbox_masterdb_dismiss_repair,
+            ipc_library::rekordbox_masterdb_resolve_ambiguous,
             ipc_usb::list_removable_drives,
             ipc_usb::format_drive,
             dev_locate::locate_source,

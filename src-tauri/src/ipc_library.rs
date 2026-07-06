@@ -376,6 +376,44 @@ pub fn rekordbox_masterdb_dismiss_repair(conn: State<'_, Mutex<Connection>>, id:
     rekordbox_masterdb_dismiss_repair_inner(&conn, id)
 }
 
+/// Plain (testable) implementation of `rekordbox_masterdb_resolve_ambiguous`.
+fn rekordbox_masterdb_resolve_ambiguous_inner(conn: &Connection, id: i64, chosen_track_id: &str) -> Result<(), String> {
+    let (candidate_track_ids, status): (Option<String>, String) = conn
+        .query_row(
+            "SELECT candidate_track_ids, status FROM rekordbox_masterdb_repairs WHERE id=?1",
+            rusqlite::params![id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .map_err(|e| e.to_string())?;
+
+    if status != "ambiguous" {
+        return Err("cette ligne n'est plus ambiguë — rechargement nécessaire".to_string());
+    }
+    let candidates = candidate_track_ids.unwrap_or_default();
+    if !candidates.split(',').any(|c| c == chosen_track_id) {
+        return Err("piste choisie invalide pour cette ambiguïté".to_string());
+    }
+
+    conn.execute(
+        "UPDATE rekordbox_masterdb_repairs SET track_id=?1, candidate_track_ids=NULL, status='pending' WHERE id=?2",
+        rusqlite::params![chosen_track_id, id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Resolves an ambiguous repair by manually picking the correct `master.db` candidate. The row
+/// becomes an ordinary `pending` row afterwards — no other change to the `apply_repairs` flow.
+#[tauri::command]
+pub fn rekordbox_masterdb_resolve_ambiguous(
+    conn: State<'_, Mutex<Connection>>,
+    id: i64,
+    chosen_track_id: String,
+) -> Result<(), String> {
+    let conn = conn.lock().map_err(|e| e.to_string())?;
+    rekordbox_masterdb_resolve_ambiguous_inner(&conn, id, &chosen_track_id)
+}
+
 /// Attempts one repair row. Never calls `repair_track_path` for a row that isn't `pending`
 /// with a known `track_id`, or whose `to_path` no longer exists on disk.
 fn apply_one_repair(
@@ -872,5 +910,57 @@ mod rekordbox_tests {
         assert!(pending.candidate_tracks.is_none());
         let ambig = rows.iter().find(|r| r.id == id_ambig).unwrap();
         assert!(ambig.candidate_tracks.is_none(), "no XML linked -> None, not an error");
+    }
+
+    #[test]
+    fn resolve_ambiguous_moves_row_to_pending_with_chosen_track() {
+        let conn = db();
+        let id = seed_repair_row(&conn, "a", "a2", None, "ambiguous");
+        conn.execute(
+            "UPDATE rekordbox_masterdb_repairs SET candidate_track_ids='40000001,40000002' WHERE id=?1",
+            rusqlite::params![id],
+        )
+        .unwrap();
+
+        rekordbox_masterdb_resolve_ambiguous_inner(&conn, id, "40000002").unwrap();
+
+        let (track_id, candidates, status): (Option<String>, Option<String>, String) = conn
+            .query_row(
+                "SELECT track_id, candidate_track_ids, status FROM rekordbox_masterdb_repairs WHERE id=?1",
+                rusqlite::params![id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(track_id.as_deref(), Some("40000002"));
+        assert_eq!(candidates, None);
+        assert_eq!(status, "pending");
+    }
+
+    #[test]
+    fn resolve_ambiguous_rejects_track_id_outside_candidate_list() {
+        let conn = db();
+        let id = seed_repair_row(&conn, "a", "a2", None, "ambiguous");
+        conn.execute(
+            "UPDATE rekordbox_masterdb_repairs SET candidate_track_ids='40000001,40000002' WHERE id=?1",
+            rusqlite::params![id],
+        )
+        .unwrap();
+
+        let err = rekordbox_masterdb_resolve_ambiguous_inner(&conn, id, "99999999").unwrap_err();
+        assert_eq!(err, "piste choisie invalide pour cette ambiguïté");
+
+        let status: String = conn
+            .query_row("SELECT status FROM rekordbox_masterdb_repairs WHERE id=?1", rusqlite::params![id], |r| r.get(0))
+            .unwrap();
+        assert_eq!(status, "ambiguous", "unchanged on rejection");
+    }
+
+    #[test]
+    fn resolve_ambiguous_rejects_row_that_is_not_ambiguous() {
+        let conn = db();
+        let id = seed_repair_row(&conn, "a", "a2", Some("40000001"), "pending");
+
+        let err = rekordbox_masterdb_resolve_ambiguous_inner(&conn, id, "40000001").unwrap_err();
+        assert_eq!(err, "cette ligne n'est plus ambiguë — rechargement nécessaire");
     }
 }
