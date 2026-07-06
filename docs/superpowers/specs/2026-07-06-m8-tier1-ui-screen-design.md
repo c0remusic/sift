@@ -10,11 +10,14 @@
 ## Intention
 
 `rekordbox_masterdb_pending_repairs`/`apply_repairs`/`dismiss_repair`
-existent côté Rust et sont déjà mirorées en TypeScript (`frontend/ipc.ts:281-291`)
-mais aucun écran ne les appelle — le seul signal visible aujourd'hui est un
-`console.log` de détection et une bannière statique sans rapport
-(`drift_detected`, voir clarification ci-dessous). Ce chantier construit
-l'écran qui rend Tier 1 réellement utilisable.
+existent côté Rust et ont déjà leur mirror TypeScript (`frontend/ipc.ts:281-291`)
+mais aucun écran ne les appelle — la détection (`detect_masterdb_repair_if_linked`,
+`actions.rs:149`) tourne déjà à chaque filing et remplit la table
+silencieusement (seuls les échecs de détection sont visibles, via
+`log::error!` côté serveur), et le seul signal visible dans l'UI aujourd'hui
+est une bannière statique sans rapport (`drift_detected`, voir clarification
+ci-dessous). Ce chantier construit l'écran qui rend Tier 1 réellement
+utilisable.
 
 ## Clarification actée en amont : deux signaux distincts, jamais fusionnés
 
@@ -137,15 +140,21 @@ Actions `data-sift` ajoutées au dispatcher délégué existant
 Réutilise le pattern déjà en place (`sift-batch-ck`/`.bx-row`,
 `sift-live.ts:708-722`) plutôt qu'un nouveau système de sélection :
 
-- Une ligne par réparation : checkbox + chemin avant→après (réutilise le
-  pattern `pathBeforeAfter` déjà utilisé pour le renommage de fichiers,
-  `sift-live.ts:~685-707` — "was <chemin>" en petit sous le nouveau) + bouton
-  "Ignorer" (`data-sift="mdbdismiss"`, appelle `dismiss_repair` puis
-  recharge la section).
+- Une ligne par réparation : checkbox + chemin avant→après, même style visuel
+  que `nameCell` (`sift-live.ts:687`, closure locale à `renderBatch()` — pas
+  réutilisable telle quelle, à réécrire inline pour cette section : chemin
+  nouveau en premier plan, "was &lt;ancien chemin&gt;" en petit dessous,
+  `font-family:var(--font-mono)` pour les chemins comme ailleurs dans le
+  fichier) + bouton "Ignorer" (`data-sift="mdbdismiss"`, appelle
+  `dismiss_repair` puis recharge la section).
 - Barre "Appliquer la sélection (N)" sous la liste, visible seulement si
-  ≥ 1 case cochée. État local `mdbRepairSel: Set<number>`, réinitialisé à
-  chaque rendu de la section (pas persisté entre navigations, comme
-  `batchSel`).
+  ≥ 1 case cochée. État local `mdbRepairSel: Set<number>`, **module-level**
+  comme `batchSel` (`sift-live.ts:271`) — pas réinitialisé à chaque rendu,
+  seulement refiltré contre les ids encore `pending` après chaque rechargement
+  (même pattern que `sift-live.ts:679` : un id qui a disparu — appliqué,
+  ignoré, ou repassé ambiguous — est retiré du Set sans toucher aux autres
+  sélections en cours). Repart vide au changement d'écran (variable locale au
+  module, pas persistée en dehors de la session).
 
 ### Groupe "ambiguous" (résolution manuelle requise)
 
@@ -176,9 +185,12 @@ l'appel :
   disparaissent (passées `applied` en DB, donc hors du filtre
   `pending`/`ambiguous`) ; les lignes échouées réapparaissent en `pending`,
   décochées, avec leur message d'erreur humanisé affiché en petit sous le
-  chemin (état transitoire uniquement en mémoire — pas de colonne d'erreur
-  en DB, cohérent avec le schéma existant qui ne stocke pas de message
-  d'échec par ligne).
+  chemin. État transitoire tenu dans un `mdbErrorById: Map<number, string>`
+  module-level, peuplé depuis les `ApplyRepairOutcome` où `ok=false`, vidé
+  pour un id dès qu'il redevient sélectionné (`mdbpick`) ou dès qu'un nouvel
+  `apply_repairs` le concerne à nouveau — pas de colonne d'erreur en DB,
+  cohérent avec le schéma existant qui ne stocke pas de message d'échec par
+  ligne.
 
 ## Erreurs / échecs de commande (pas de la ligne, de l'appel IPC lui-même)
 
