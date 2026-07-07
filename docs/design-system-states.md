@@ -414,6 +414,31 @@ via subagent-driven-development (4 tâches, chacune approuvée + revue finale
 de branche "Ready to merge"). `tsc --noEmit` clean après chaque tâche ;
 vérification `tauri dev` par Antoine restante (code gated `inTauri`).
 
+### Section réparations master.db (M8 Tier 1) — `masterdbRepairsSectionHtml()`
+
+Ajoutée sous la carte de statut, **indépendante** de la bannière `drift_detected`
+ci-dessus (signal XML existant — les deux ne sont jamais fusionnés en un seul
+message, cf. spec). Visible seulement si `status.linked` et au moins une ligne
+`pending`/`ambiguous` existe (sinon section absente, même règle que la bannière).
+
+| Groupe | Condition | Rendu |
+|---|---|---|
+| Ambiguës (affichées en premier) | `status="ambiguous"` | Chemin avant→après + liste de boutons « Choisir cette piste — {chemin ou ID brut} » (`data-sift="mdbresolve"`) + « Ignorer » |
+| Prêtes (pending) | `status="pending"` | Checkbox (`.sift-batch-ck`) + chemin avant→après + « Ignorer » ; barre « Appliquer la sélection (N) » sous la liste si ≥1 coché |
+| Erreur d'application | ligne restée `pending` après un `apply_repairs` en échec | Message d'erreur humanisé en petit sous le chemin (état transitoire en mémoire, `mdbErrorById`, pas de colonne DB) |
+
+Sélection (`mdbRepairSel`) **module-level, persistante entre rendus** (comme
+`batchSel`, `sift-live.ts:271`) — refiltrée contre les lignes encore
+présentes à chaque rendu, jamais réinitialisée en bloc. `confirmAction()`
+obligatoire avant tout `apply_repairs` (jamais `window.confirm()`).
+
+Design/plan : `docs/superpowers/specs/2026-07-06-m8-tier1-ui-screen-design.md`,
+`docs/superpowers/plans/2026-07-06-m8-tier1-ui-screen.md`. Construit via
+subagent-driven-development dans un worktree isolé (`dj-assistant-m8-tier1-ui`,
+branche `m8-tier1-ui-screen`) — 4 tâches, revue finale (Opus) "Ready to merge",
+mergé dans `m6a-discogs`. 276 tests Rust + `tsc --noEmit` clean ; vérification
+`tauri dev` par Antoine restante.
+
 ## Écran Revue — zones repliables Diagnostic/Métadonnées (2026-07-05)
 
 Refonte de `#mid` : la zone Diagnostic (`report-view.ts`, spectre + mesures)
@@ -449,6 +474,22 @@ fonction obsolète en commentaire, CSS `.sift-highlight-flash` jamais câblée
 — morte par décision, pas un oubli). `app.js` et `Sift.dc.html` réactualisés
 dans la foulée (voir Historique ci-dessous) ; `tauri dev` restant à vérifier
 par Antoine (code gated `inTauri`).
+
+## `.lk` / `.lk-icon` — bouton minimal, deux usages jamais mélanger (2026-07-07)
+
+`.lk` (`styles.css`) est une boîte fixe 22×22px, centrée, sans padding —
+conçue pour un **bouton icône seule** (lien Discogs, Identifier, Restaurer/
+Corbeille dans Écartés). Elle était réutilisée par erreur pour des boutons à
+**texte** ("Réexporter maintenant", "Changer de XML lié", "Lier un fichier
+XML Rekordbox", "Résoudre") — le label se retrouvait compressé dans la boîte
+22px et débordait en se chevauchant avec le contenu voisin (bug réel trouvé
+via capture d'écran par Antoine, page Rekordbox non liée). Corrigé : `.lk`
+renommée `.lk-icon` (mêmes propriétés), utilisée seulement sur les 4 vrais
+boutons icône-seule ; tous les boutons texte retombent sur le reset `button{}`
+de base (bordure, padding, hover — déjà correct partout ailleurs dans l'app).
+**Règle à retenir** : `.lk-icon` = icône seule, taille fixe, jamais de texte
+dedans ; un bouton avec label texte n'a besoin d'aucune classe particulière,
+`button{}` suffit.
 
 ---
 
@@ -532,3 +573,11 @@ a son propre item de nav avec icône colorée (tâche 7) ; un commentaire près 
 `--color-waveform-elapsed` prétend encore que "le canvas reste sombre quel que
 soit le thème, donc pas de variante sombre", plus exact depuis que ce token
 est thème-aware (`var(--color-text-info)`, tâche 9 — voir juste au-dessus).
+
+**2026-07-07 (M8 Tier 1 écran UI + bug `.lk`)** : section réparations
+`master.db` livrée sur la page Rekordbox (voir plus haut). Bug réel trouvé
+par capture d'écran (Antoine) sur la page Rekordbox non liée : `.lk` (bouton
+icône 22×22 fixe) réutilisée pour des boutons texte, labels compressés et
+qui se chevauchent avec le texte voisin. Corrigé : `.lk` → `.lk-icon` (4
+vrais boutons icône-seule), boutons texte retombent sur `button{}` (voir
+entrée dédiée ci-dessus).

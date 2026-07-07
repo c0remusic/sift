@@ -325,6 +325,15 @@ IDs connus (à confirmer à la résolution, ne pas inventer) :
   la couleur de sa propre carte au survol (disparition visuelle). Toujours
   réaffirmer explicitement toute propriété de base qu'un `:hover` custom ne
   doit PAS perdre face au `button:hover` générique.
+- **`.lk-icon` = bouton icône-seule (22×22 fixe, centré), jamais de texte
+  dedans.** Bug réel trouvé le 2026-07-07 (capture d'écran, page Rekordbox
+  non liée) : `.lk` (nom d'origine) était réutilisée pour des boutons texte
+  ("Réexporter maintenant", "Lier un fichier XML Rekordbox"…), compressant le
+  label dans la boîte fixe et le faisant déborder/chevaucher le contenu
+  voisin. Renommée `.lk-icon`, réservée aux 4 vrais boutons icône (lien
+  Discogs, Identifier, Restaurer/Corbeille Écartés). Un bouton avec label
+  texte n'a besoin d'aucune classe — le reset `button{}` de base (bordure,
+  padding, hover) suffit déjà.
 
 ## Vérification UI — app réelle, pas la maquette navigateur
 
