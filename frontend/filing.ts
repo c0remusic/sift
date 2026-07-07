@@ -38,6 +38,7 @@ import {
   zoneToggleHtml,
 } from "./report-view";
 import { renderCandidates } from "./identify-shared";
+import { resolveGenreFamily } from "./genre-families";
 import type { Bin, Canonical, Target, QueueItem, AnalysisReport } from "../shared/contracts";
 import { FILE_IN_PLACE, EXTERNAL_DEST_PREFIX } from "../shared/contracts";
 import { requireEl } from "./dom";
@@ -608,7 +609,10 @@ function renderGenres(): void {
   const el = document.querySelector<HTMLElement>(".sift-genres");
   if (!el) return; // editor not mounted
   el.innerHTML = state.genres
-    .map((s) => `<span class="sift-genre-chip" title="Sous-genres Discogs">${esc(s)}</span>`)
+    .map((s) => {
+      const fam = resolveGenreFamily(s);
+      return `<span class="sift-genre-chip sift-genre-chip-${fam}" title="Sous-genres Discogs">${esc(s)}</span>`;
+    })
     .join("");
 }
 
