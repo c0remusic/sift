@@ -219,7 +219,12 @@ html,body{margin:0;padding:0;height:100%}
 .tog{width:30px;height:17px;border-radius:9px;background:var(--color-text-info);position:relative;flex:none;cursor:pointer;transition:background .12s}.tog::after{content:"";position:absolute;left:2px;top:2px;width:13px;height:13px;border-radius:50%;background:#fff;transform:translateX(13px);transition:transform .12s}.tog.off{background:var(--color-border-secondary)}.tog.off::after{transform:translateX(0)}
 .lr{display:flex;align-items:center;gap:7px;padding:5px 4px;border-bottom:0.5px solid var(--color-border-tertiary);font-size:12px}
 .lr .pb{width:23px;height:23px;border-radius:50%;flex:none;padding:0;display:inline-flex;align-items:center;justify-content:center}
-.lk{width:22px;height:22px;border-radius:var(--border-radius-md);flex:none;padding:0;display:inline-flex;align-items:center;justify-content:center}
+/* Icon-only 22x22 buttons (Discogs link, Identifier, Écartés requeue/trash) — NOT for text
+   buttons. `.lk` used to double as a generic "minimal button" class for text content too, which
+   forced long labels ("Réexporter maintenant", "Lier un fichier XML Rekordbox"...) to wrap inside
+   a fixed 22px box and visually overflow/overlap neighboring text. Text buttons now fall through
+   to the plain `button{}` reset (bordered, auto-sized, already correct everywhere else). */
+.lk-icon{width:22px;height:22px;border-radius:var(--border-radius-md);flex:none;padding:0;display:inline-flex;align-items:center;justify-content:center}
 .br{display:flex;align-items:center;gap:9px;padding:7px 5px;border-bottom:0.5px solid var(--color-border-tertiary);font-size:12px;cursor:pointer}
 .mf{margin-bottom:6px}.mf .lab{font-size:10px;color:var(--color-text-tertiary);margin-bottom:2px}.mf .inp{border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:5px 8px;font-size:12px}
 .cov{width:40px;height:40px;flex:none;border-radius:6px;background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);display:flex;align-items:center;justify-content:center;color:var(--color-text-tertiary)}.cov i{font-size:20px}
