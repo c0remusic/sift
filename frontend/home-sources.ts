@@ -26,6 +26,18 @@ function baseName(path: string): string {
   return idx >= 0 ? norm.slice(idx + 1) : norm;
 }
 
+const SOURCE_HUE_CYCLE = ["indigo", "purple", "pink", "teal", "yellow"] as const;
+
+/** A source's identity color: its manual override if set, otherwise the hue
+ *  at its position in add-order (id ascending, matching how `sources::list`
+ *  already orders rows), cycling through the 5 categorical hues. */
+export function resolveSourceColorKey(sources: Source[], source: Source): string {
+  if (source.color_key) return source.color_key;
+  const sorted = [...sources].sort((a, b) => a.id - b.id);
+  const idx = sorted.findIndex((s) => s.id === source.id);
+  return SOURCE_HUE_CYCLE[idx % SOURCE_HUE_CYCLE.length];
+}
+
 interface StatusMeta {
   label: string;
   color: string;
@@ -38,11 +50,13 @@ function statusMeta(s: Source): StatusMeta {
   return { label: "À jour", color: "var(--color-text-success)" };
 }
 
-function rowHtml(s: Source, active: boolean): string {
+function rowHtml(s: Source, active: boolean, allSources: Source[]): string {
   const sm = statusMeta(s);
+  const hue = resolveSourceColorKey(allSources, s);
   return (
     `<div class="qi${active ? " cur" : ""}" data-sift="homerow" data-id="${s.id}" style="flex-direction:column;align-items:stretch;gap:3px;height:auto;padding:8px 9px">` +
-    `<span style="font-size:var(--text-lg);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(baseName(s.path))}</span>` +
+    `<span style="display:flex;align-items:center;gap:6px;font-size:var(--text-lg);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">` +
+    `<span class="sift-src-dot sift-src-dot-${hue}" aria-hidden="true"></span>${esc(baseName(s.path))}</span>` +
     `<span style="display:flex;align-items:center;gap:6px;font-size:var(--text-sm);color:${sm.color}"><span style="width:5px;height:5px;border-radius:999px;background:${sm.color};flex:none"></span>${esc(sm.label)}</span>` +
     `</div>`
   );
@@ -61,7 +75,7 @@ function listColumnHtml(sources: Source[]): string {
     revueCta +
     `</div>`;
   const rows = sources.length
-    ? sources.map((s) => rowHtml(s, s.id === selectedSourceId)).join("")
+    ? sources.map((s) => rowHtml(s, s.id === selectedSourceId, sources)).join("")
     : `<div style="font-size:var(--text-md);color:var(--color-text-tertiary);padding:4px 2px">Aucun dossier surveillé.</div>`;
   const bottomBar =
     `<div style="flex:none;border-top:0.5px solid var(--color-border-tertiary);margin-top:8px;padding-top:8px">` +
@@ -70,7 +84,7 @@ function listColumnHtml(sources: Source[]): string {
   return header + `<div style="flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:2px">${rows}</div>` + bottomBar;
 }
 
-function inspectorHtml(selected: Source | null, root: string | null): string {
+function inspectorHtml(selected: Source | null, root: string | null, allSources: Source[]): string {
   const rootGateHtml = root
     ? ""
     : '<div style="display:flex;gap:8px;align-items:flex-start;background:var(--color-background-warning);border-radius:var(--border-radius-md);padding:8px 11px;margin-bottom:16px;font-size:var(--text-sm);color:var(--color-text-warning)">' +
@@ -105,6 +119,13 @@ function inspectorHtml(selected: Source | null, root: string | null): string {
     (selected.accessible
       ? ""
       : `<div style="margin-top:8px;font-size:var(--text-sm);color:var(--color-text-danger)"><i class="ti ti-alert-triangle" style="vertical-align:-1px"></i> Dossier inaccessible.</div>`) +
+    `</div>` +
+    `<div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">` +
+    `<span style="font-size:var(--text-sm);color:var(--color-text-tertiary)">Couleur</span>` +
+    SOURCE_HUE_CYCLE.map(
+      (hue) =>
+        `<button data-sift="setsrccolor" data-id="${selected.id}" data-hue="${hue}" title="${hue}" aria-label="Couleur ${hue}" class="sift-src-swatch sift-src-swatch-${hue}${resolveSourceColorKey(allSources, selected) === hue ? " on" : ""}"></button>`,
+    ).join("") +
     `</div>` +
     `<div style="display:flex;align-items:center;gap:10px">` +
     `<div data-sift="togglewatch" data-id="${selected.id}" data-watched="${watchOn ? "1" : "0"}" style="display:flex;align-items:center;gap:8px;font-size:var(--text-md);padding:8px 13px;border-radius:var(--border-radius-md);background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);cursor:pointer;color:var(--color-text-secondary)">` +
@@ -146,7 +167,7 @@ export async function renderHomeSources() {
   const selected = sources.find((s) => s.id === selectedSourceId) ?? null;
 
   queueCol.innerHTML = listColumnHtml(sources);
-  inspectorCol.innerHTML = inspectorHtml(selected, root);
+  inspectorCol.innerHTML = inspectorHtml(selected, root, sources);
 
   queueCol.querySelectorAll<HTMLElement>('[data-sift="homerow"]').forEach((row) => {
     row.addEventListener("click", () => {

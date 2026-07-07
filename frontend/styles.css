@@ -298,6 +298,19 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-text-info)}
 .sift-genre-chip-discofunksoul{background:var(--color-hue-pink-bg);color:var(--color-hue-pink-text)}
 .sift-genre-chip-hiphop{background:var(--color-hue-purple-bg);color:var(--color-hue-purple-text)}
 .sift-genre-chip-autre{background:var(--color-background-secondary);color:var(--color-text-tertiary)}
+.sift-src-dot{width:7px;height:7px;border-radius:999px;flex:none}
+.sift-src-dot-indigo{background:var(--color-hue-indigo-text)}
+.sift-src-dot-purple{background:var(--color-hue-purple-text)}
+.sift-src-dot-pink{background:var(--color-hue-pink-text)}
+.sift-src-dot-teal{background:var(--color-hue-teal-text)}
+.sift-src-dot-yellow{background:var(--color-hue-yellow-text)}
+.sift-src-swatch{width:20px;height:20px;border-radius:999px;border:2px solid transparent;padding:0;cursor:pointer}
+.sift-src-swatch.on{border-color:var(--color-text-primary)}
+.sift-src-swatch-indigo{background:var(--color-hue-indigo-text)}
+.sift-src-swatch-purple{background:var(--color-hue-purple-text)}
+.sift-src-swatch-pink{background:var(--color-hue-pink-text)}
+.sift-src-swatch-teal{background:var(--color-hue-teal-text)}
+.sift-src-swatch-yellow{background:var(--color-hue-yellow-text)}
 /* "Tags not written to the file" banner, shown just below Apply. Look only — visibility is driven
    solely by inline display (none ↔ flex) in refreshDiscrepancy, never the `hidden` attribute. Amber
    (warning) tokens — the SAME "attention / to handle" language as the duplicate marker. */

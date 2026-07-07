@@ -12,6 +12,7 @@ import {
   onAnalysisChanged,
   analysisProgress,
   setSourceWatched,
+  setSourceColor,
   trashTrack,
   restoreTrack,
   requeueTrack,
@@ -2043,6 +2044,10 @@ export function installLiveWiring() {
         Number(el.dataset.id),
         el.dataset.watched !== "1",
       ).then(refresh);
+    } else if (act === "setsrccolor") {
+      e.stopPropagation();
+      const hue = el.dataset.hue ?? null;
+      void setSourceColor(Number(el.dataset.id), hue).then(refresh);
     } else if (act === "reviewmode") {
       e.stopPropagation();
       setReviewMode(el.dataset.m === "batch" ? "batch" : "detail");
