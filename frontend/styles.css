@@ -36,11 +36,6 @@ color-scheme:light;
    Black at fixed alpha reads fine on both themes, same as the rest of the app's overlay tints. */
 --shadow-toast:0 8px 28px rgba(0,0,0,.4);--shadow-overlay:0 12px 48px rgba(0,0,0,.5);
 /* Deliberate 3rd hue (gold), documented exception to the "green/amber only" rule above: the
-   Identifier button is the primary call-to-action of the identification flow, meant to stand
-   out from status colors. Was hardcoded with no dark variant (audit 2026-07-03,
-   docs/design-system-states.md bug #1) — tokenized here so both themes are covered. */
---color-accent-identify:#FFdc82;--color-accent-identify-hover:#f0cc6a;
---color-accent-identify-text:#1d1c1a;--color-accent-identify-border:rgba(0,0,0,.12);
 /* Waveform elapsed-time label — canvas stays dark regardless of theme, so no dark variant. */
 --color-waveform-elapsed:#ff5500;
 /* Typo (self-hosted via @fontsource, see main.ts) — Outfit UI, JetBrains Mono for numbers. */
@@ -74,8 +69,6 @@ color-scheme:light;
     --color-hue-indigo-text:#A6A0F0;--color-hue-indigo-bg:rgba(88,86,214,.18);--color-hue-indigo-border:rgba(166,160,240,.35);--color-hue-purple-text:#C9A6E0;--color-hue-purple-bg:rgba(175,82,222,.18);--color-hue-purple-border:rgba(201,166,224,.35);--color-hue-pink-text:#F0A8C2;--color-hue-pink-bg:rgba(212,83,126,.18);--color-hue-pink-border:rgba(240,168,194,.35);--color-hue-teal-text:#7CE0D4;--color-hue-teal-bg:rgba(20,150,140,.18);--color-hue-teal-border:rgba(124,224,212,.35);--color-hue-yellow-text:#F5D76E;--color-hue-yellow-bg:rgba(230,180,0,.18);--color-hue-yellow-border:rgba(245,215,110,.35);
     --overlay-hover:rgba(255,255,255,.03);--overlay-selected:rgba(255,255,255,.06);
     --overlay-bar:rgba(255,255,255,.32);--overlay-badge:rgba(255,255,255,.06);--overlay-drop:rgba(60,60,57,.93);
-    --color-accent-identify:#FFdc82;--color-accent-identify-hover:#f0cc6a;
-    --color-accent-identify-text:#1d1c1a;--color-accent-identify-border:rgba(255,255,255,.12);
     --color-waveform-elapsed:#ff5500;
   }
 }
@@ -90,8 +83,6 @@ color-scheme:light;
   --color-hue-indigo-text:#A6A0F0;--color-hue-indigo-bg:rgba(88,86,214,.18);--color-hue-indigo-border:rgba(166,160,240,.35);--color-hue-purple-text:#C9A6E0;--color-hue-purple-bg:rgba(175,82,222,.18);--color-hue-purple-border:rgba(201,166,224,.35);--color-hue-pink-text:#F0A8C2;--color-hue-pink-bg:rgba(212,83,126,.18);--color-hue-pink-border:rgba(240,168,194,.35);--color-hue-teal-text:#7CE0D4;--color-hue-teal-bg:rgba(20,150,140,.18);--color-hue-teal-border:rgba(124,224,212,.35);--color-hue-yellow-text:#F5D76E;--color-hue-yellow-bg:rgba(230,180,0,.18);--color-hue-yellow-border:rgba(245,215,110,.35);
   --overlay-hover:rgba(255,255,255,.03);--overlay-selected:rgba(255,255,255,.06);
   --overlay-bar:rgba(255,255,255,.32);--overlay-badge:rgba(255,255,255,.06);--overlay-drop:rgba(60,60,57,.93);
-  --color-accent-identify:#FFdc82;--color-accent-identify-hover:#f0cc6a;
-  --color-accent-identify-text:#1d1c1a;--color-accent-identify-border:rgba(255,255,255,.12);
   --color-waveform-elapsed:#ff5500;
 }
 *{box-sizing:border-box}
@@ -258,9 +249,9 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-text-info)}
 .sift-cand-more-summary{font-size:12px;color:var(--color-text-info);cursor:pointer;padding:2px;list-style:none;display:inline-flex;align-items:center;gap:3px}
 .sift-cand-more-summary::-webkit-details-marker{display:none}
 .sift-cand-more[open] .sift-cand-more-summary{color:var(--color-text-secondary)}
-/* [C1] Identifier primary button: gold fill, stands out as the first action */
-.sift-id-btn{background:var(--color-accent-identify);border-color:var(--color-accent-identify-border);color:var(--color-accent-identify-text);font-weight:500;font-size:12px;padding:5px 12px}
-.sift-id-btn:hover{background:var(--color-accent-identify-hover)}
+/* [C1] Identifier primary button: info/blue fill, same role as .sift-ranger-btn/.chip.on */
+.sift-id-btn{background:var(--color-background-info);border-color:var(--color-border-info);color:var(--color-text-info);font-weight:500;font-size:12px;padding:5px 12px}
+.sift-id-btn:hover{background:var(--color-background-info);filter:brightness(0.95)}
 /* [C3] "changer" / "Ouvrir Réglages" inline jump link */
 .sift-cand-jump{font-size:11px;padding:2px 8px;color:var(--color-text-info);border-color:var(--color-border-info)}
 @keyframes sift-spin{to{transform:rotate(360deg)}}
@@ -505,8 +496,8 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
   30%{background:var(--color-text-success)}
   100%{background:var(--color-background-secondary)}
 }
-/* CTA Discogs contextuel : gold plein (.sift-id-btn, existant) réservé à "rien identifié pour
-   l'instant" ; neutre ici une fois une identité déjà appliquée — re-rechercher est une action
+/* CTA Discogs contextuel : bleu info plein (.sift-id-btn, existant) réservé à "rien identifié
+   pour l'instant" ; neutre ici une fois une identité déjà appliquée — re-rechercher est une action
    secondaire de correction, pas le focus de l'écran (retour utilisateur 2026-07-05). */
 .sift-id-btn-neutral{background:var(--color-surface-raised);border-color:var(--color-border-tertiary);
   color:var(--color-text-secondary);font-weight:500}
