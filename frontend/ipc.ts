@@ -44,6 +44,8 @@ export const rescanSource = (id: number): Promise<void> =>
   invoke("rescan_source", { id });
 export const setSourceWatched = (id: number, watched: boolean): Promise<void> =>
   invoke("set_source_watched", { id, watched });
+export const setSourceColor = (id: number, colorKey: string | null): Promise<void> =>
+  invoke("set_source_color", { id, colorKey });
 
 /** Debug: run the M2a analysis engine on a file path and return the full report.
  * `withSpectrogram` builds the heavy display grid (verdict/scalars are identical either way). */

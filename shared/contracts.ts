@@ -29,6 +29,7 @@ export interface Source {
   pending_count: number;
   accessible: boolean;
   watched: boolean;
+  color_key: string | null;
 }
 
 export interface QueueItem {

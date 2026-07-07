@@ -88,6 +88,7 @@ pub fn run() {
             ipc::list_queue,
             ipc::rescan_source,
             ipc::set_source_watched,
+            ipc::set_source_color,
             ipc::analyze_path,
             ipc::analysis_progress,
             ipc::import_paths,

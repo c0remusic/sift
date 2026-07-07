@@ -142,6 +142,18 @@ pub fn set_source_watched(
     Ok(())
 }
 
+/// Sets or clears a source's manual color override (one of the 5 categorical
+/// hue keys, or None to fall back to auto-assignment by add-order).
+#[tauri::command]
+pub fn set_source_color(
+    conn: State<'_, Mutex<Connection>>,
+    id: i64,
+    color_key: Option<String>,
+) -> Result<(), String> {
+    let conn = conn.lock().map_err(|e| e.to_string())?;
+    sources::set_color(&conn, id, color_key).map_err(|e| e.to_string())
+}
+
 #[tauri::command]
 pub fn rescan_source(app: AppHandle, id: i64) -> Result<(), String> {
     spawn_scan(app, id);

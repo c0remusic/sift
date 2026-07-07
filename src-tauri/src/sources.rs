@@ -92,9 +92,6 @@ pub fn set_watched(conn: &Connection, id: i64, watched: bool) -> rusqlite::Resul
 /// Sets (or clears, with `None`) a source's manual color override. Persists
 /// one of the 5 categorical hue names (`"indigo"|"purple"|"pink"|"teal"|"yellow"`)
 /// — validation of the value itself happens at the IPC layer, this just stores it.
-/// Not yet wired to an IPC command (a later task in the color-palette plan does that) —
-/// hence `allow(dead_code)` until that call site lands.
-#[allow(dead_code)]
 pub fn set_color(conn: &Connection, id: i64, color_key: Option<String>) -> rusqlite::Result<()> {
     conn.execute(
         "UPDATE sources SET color_key=?2 WHERE id=?1",
