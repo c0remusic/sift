@@ -502,3 +502,33 @@ purs (non gated `inTauri`) vérifiés par inspection de style calculé via
 
 **Reste ouvert, priorité basse** : `.sift-time-elapsed` non tokenisé (mineur,
 voir section ci-dessus).
+
+**2026-07-06 (rollout palette Apple system colors, 11 tâches)** : danger et
+info séparés en vraies teintes rouge/bleu (au lieu de partager l'ambre) ; 5
+teintes catégorielles ajoutées (chips de genre, points de source) ; nav
+(items + badges) recolorée ; bouton Identifier replié dans info (la 3ᵉ teinte
+dorée documentée ci-dessus, section "Bouton Identifier", n'est donc plus
+d'actualité — l'exception est levée, plus de 3ᵉ teinte du tout) ; couleur
+« elapsed » de la waveform déplacée vers info (`--color-waveform-elapsed`,
+`var(--color-text-info)`) ; 2 popovers (Destination, candidats Discogs) ont
+gagné un fond flouté. Rationale complet, palette et mapping teinte-par-teinte :
+`docs/superpowers/specs/2026-07-06-apple-system-colors-palette-design.md` —
+non répété ici.
+
+Vérification de cette passe (tâche finale du plan, sweep seulement) :
+`npx tsc --noEmit` clean ; `cargo clippy --all-targets -- -D warnings` clean ;
+`cargo test` 261/269 verts, les 8 échecs sont tous
+`RekordboxRunning`/message équivalent — Rekordbox tournait réellement sur la
+machine au moment du run (garde-fou process de M8 qui fonctionne comme prévu),
+sans rapport avec le rollout couleurs ; grep sweep confirme `color-accent-identify`
+et les anciens hex danger/ambre partagés (`#8f6318`/`#f2c274`) absents de
+`frontend/`/`src-tauri/`.
+
+**Trouvailles mineures non corrigées dans cette tâche (sweep documentaire
+seulement, triage laissé à la revue finale de branche)** : un commentaire près
+de `.nv-export-dot` (`styles.css`, section "Export (Rekordbox/Clé USB)") décrit
+encore Rekordbox comme "pas construit"/point seul, périmé depuis que Rekordbox
+a son propre item de nav avec icône colorée (tâche 7) ; un commentaire près de
+`--color-waveform-elapsed` prétend encore que "le canvas reste sombre quel que
+soit le thème, donc pas de variante sombre", plus exact depuis que ce token
+est thème-aware (`var(--color-text-info)`, tâche 9 — voir juste au-dessus).
