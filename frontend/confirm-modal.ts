@@ -16,7 +16,7 @@ export function confirmAction(message: string, confirmLabel = "Confirmer"): Prom
     overlay.className = "sift-report-overlay";
 
     const card = document.createElement("div");
-    card.className = "sift-report-overlay-card sift-confirm-card";
+    card.className = "sift-report-overlay-card sift-confirm-card sift-report-overlay-card-blur";
 
     const msg = document.createElement("div");
     msg.className = "sift-confirm-msg";

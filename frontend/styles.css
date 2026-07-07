@@ -189,7 +189,7 @@ html,body{margin:0;padding:0;height:100%}
 /* Destination popover: replaces the persistent tree column, anchored above its trigger button.
    Hidden by default ([hidden] attribute, toggled in filing.ts); #fldz keeps its id so renderBins'
    existing document.getElementById("fldz") callers need no change. */
-.sift-dest-popover{position:fixed;width:288px;max-height:340px;display:flex;flex-direction:column;padding:10px;background:var(--color-background-secondary);border:1px solid var(--color-border-secondary);border-radius:var(--border-radius-lg);overflow-y:auto;z-index:20}
+.sift-dest-popover{position:fixed;width:288px;max-height:340px;display:flex;flex-direction:column;padding:10px;background:color-mix(in srgb,var(--color-background-secondary) 70%,transparent);backdrop-filter:blur(16px) saturate(160%);-webkit-backdrop-filter:blur(16px) saturate(160%);border:1px solid var(--color-border-secondary);border-radius:var(--border-radius-lg);overflow-y:auto;z-index:20}
 /* An author `display:flex` rule beats the browser's own `[hidden]{display:none}` in the cascade
    (author origin always wins over user-agent origin, regardless of specificity) — so setting
    `.hidden = true` on this element via JS never actually hid it, it just kept getting
@@ -518,6 +518,7 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-player-error{margin:6px 0 0;font-size:var(--text-sm);color:var(--color-text-warning)}
 .sift-report-overlay{position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px}
 .sift-report-overlay-card{background:var(--color-background-primary);color:var(--color-text-primary);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-lg,12px);box-shadow:var(--shadow-overlay)}
+.sift-report-overlay-card-blur{background:color-mix(in srgb,var(--color-background-primary) 75%,transparent)!important;backdrop-filter:blur(18px) saturate(160%);-webkit-backdrop-filter:blur(18px) saturate(160%)}
 .sift-report-overlay-loading{padding:22px 26px;font-size:var(--text-base);display:flex;align-items:center;gap:8px}
 .sift-report-overlay-error{padding:22px 26px;font-size:var(--text-base);color:var(--color-text-danger)}
 .sift-usbfmt-card{padding:20px;width:380px;display:flex;flex-direction:column;gap:10px}
