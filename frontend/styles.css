@@ -20,6 +20,7 @@ color-scheme:light;
 --color-text-info:#2B5A82;--color-cta-text:#F7F4EF;--color-text-danger:#a0392a;--color-text-success:#3f6d4c;--color-text-warning:#8f6318;
 --color-border-tertiary:rgba(40,34,28,0.09);--color-border-secondary:rgba(40,34,28,0.16);
 --color-border-info:rgba(62,124,177,.35);--color-border-danger:rgba(196,74,58,.42);
+--color-hue-indigo-text:#4A3F9E;--color-hue-indigo-bg:rgba(88,86,214,.14);--color-hue-indigo-border:rgba(88,86,214,.40);--color-hue-purple-text:#6B3F8F;--color-hue-purple-bg:rgba(175,82,222,.14);--color-hue-purple-border:rgba(175,82,222,.40);--color-hue-pink-text:#8F2F52;--color-hue-pink-bg:rgba(212,83,126,.14);--color-hue-pink-border:rgba(212,83,126,.40);--color-hue-teal-text:#0E6B62;--color-hue-teal-bg:rgba(20,150,140,.14);--color-hue-teal-border:rgba(20,150,140,.40);--color-hue-yellow-text:#8A6D00;--color-hue-yellow-bg:rgba(230,180,0,.14);--color-hue-yellow-border:rgba(230,180,0,.40);
 /* Neutral overlay tints (hover/selection/left-bar/badge on neutral surfaces) — dark-tinted here
    since the surface is light; flipped to light-tinted in the dark variant below. Anything that
    used to hardcode rgba(255,255,255,...) for "selected row" must use these instead, or it goes
@@ -70,6 +71,7 @@ color-scheme:light;
     --color-text-info:#8EC2EA;--color-cta-text:#26251F;--color-text-danger:#f0a08f;--color-text-success:#9fe0af;--color-text-warning:#f2c274;
     --color-border-tertiary:rgba(255,255,255,0.12);--color-border-secondary:rgba(255,255,255,0.22);
     --color-border-info:rgba(142,194,234,.30);--color-border-danger:rgba(240,160,143,.40);
+    --color-hue-indigo-text:#A6A0F0;--color-hue-indigo-bg:rgba(88,86,214,.18);--color-hue-indigo-border:rgba(166,160,240,.35);--color-hue-purple-text:#C9A6E0;--color-hue-purple-bg:rgba(175,82,222,.18);--color-hue-purple-border:rgba(201,166,224,.35);--color-hue-pink-text:#F0A8C2;--color-hue-pink-bg:rgba(212,83,126,.18);--color-hue-pink-border:rgba(240,168,194,.35);--color-hue-teal-text:#7CE0D4;--color-hue-teal-bg:rgba(20,150,140,.18);--color-hue-teal-border:rgba(124,224,212,.35);--color-hue-yellow-text:#F5D76E;--color-hue-yellow-bg:rgba(230,180,0,.18);--color-hue-yellow-border:rgba(245,215,110,.35);
     --overlay-hover:rgba(255,255,255,.03);--overlay-selected:rgba(255,255,255,.06);
     --overlay-bar:rgba(255,255,255,.32);--overlay-badge:rgba(255,255,255,.06);--overlay-drop:rgba(60,60,57,.93);
     --color-accent-identify:#FFdc82;--color-accent-identify-hover:#f0cc6a;
@@ -85,6 +87,7 @@ color-scheme:light;
   --color-text-info:#8EC2EA;--color-cta-text:#26251F;--color-text-danger:#f0a08f;--color-text-success:#9fe0af;--color-text-warning:#f2c274;
   --color-border-tertiary:rgba(255,255,255,0.12);--color-border-secondary:rgba(255,255,255,0.22);
   --color-border-info:rgba(142,194,234,.30);--color-border-danger:rgba(240,160,143,.40);
+  --color-hue-indigo-text:#A6A0F0;--color-hue-indigo-bg:rgba(88,86,214,.18);--color-hue-indigo-border:rgba(166,160,240,.35);--color-hue-purple-text:#C9A6E0;--color-hue-purple-bg:rgba(175,82,222,.18);--color-hue-purple-border:rgba(201,166,224,.35);--color-hue-pink-text:#F0A8C2;--color-hue-pink-bg:rgba(212,83,126,.18);--color-hue-pink-border:rgba(240,168,194,.35);--color-hue-teal-text:#7CE0D4;--color-hue-teal-bg:rgba(20,150,140,.18);--color-hue-teal-border:rgba(124,224,212,.35);--color-hue-yellow-text:#F5D76E;--color-hue-yellow-bg:rgba(230,180,0,.18);--color-hue-yellow-border:rgba(245,215,110,.35);
   --overlay-hover:rgba(255,255,255,.03);--overlay-selected:rgba(255,255,255,.06);
   --overlay-bar:rgba(255,255,255,.32);--overlay-badge:rgba(255,255,255,.06);--overlay-drop:rgba(60,60,57,.93);
   --color-accent-identify:#FFdc82;--color-accent-identify-hover:#f0cc6a;
