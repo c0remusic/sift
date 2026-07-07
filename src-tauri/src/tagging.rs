@@ -38,8 +38,11 @@ pub fn write_tags_full(
 
     tag.set_artist(artist.to_string());
     tag.set_title(title.to_string());
+    // ItemKey::Publisher, not ItemKey::Label: lofty writes ItemKey::Label to the same ID3v2 TPUB
+    // frame, but reads that frame back as ItemKey::Publisher — Label never round-tripped under
+    // its own key on any format (confirmed empirically: MP3 and WAV both lost it on reload).
     if let Some(l) = label.filter(|s| !s.trim().is_empty()) {
-        tag.insert_text(ItemKey::Label, l.to_string());
+        tag.insert_text(ItemKey::Publisher, l.to_string());
     }
     if let Some(y) = year {
         if y > 0 {
@@ -139,7 +142,7 @@ pub fn read_tags_full(path: &str) -> Result<TagsSnapshot, String> {
     Ok(TagsSnapshot {
         artist: tag.artist().map(|s| s.to_string()),
         title: tag.title().map(|s| s.to_string()),
-        label: tag.get_string(ItemKey::Label).map(|s| s.to_string()),
+        label: tag.get_string(ItemKey::Publisher).map(|s| s.to_string()),
         year: tag.date().map(|d| d.year as i64),
         genre_joined: tag.genre().map(|s| s.to_string()),
         cover,
@@ -173,9 +176,9 @@ pub fn restore_tags(path: &str, snap: &TagsSnapshot) -> Result<(), String> {
     }
     match &snap.label {
         Some(l) => {
-            tag.insert_text(ItemKey::Label, l.clone());
+            tag.insert_text(ItemKey::Publisher, l.clone());
         }
-        None => tag.remove_key(ItemKey::Label),
+        None => tag.remove_key(ItemKey::Publisher),
     }
     match snap.year {
         Some(y) if y > 0 => tag.set_date(Timestamp { year: y as u16, ..Default::default() }),
@@ -326,5 +329,47 @@ mod tests {
         let genre = tag.get_string(ItemKey::Genre).unwrap_or("");
         assert!(genre.contains("Deep House") && genre.contains("House"), "genre = {genre:?}");
         assert!(!tag.pictures().is_empty(), "cover embedded");
+    }
+}
+
+#[cfg(test)]
+mod label_year_regression {
+    use super::{read_tags_full, write_tags_full};
+
+    fn fixture(name: &str) -> Option<String> {
+        let p = format!("fixtures/{name}");
+        if std::path::Path::new(&p).exists() { Some(p) } else { None }
+    }
+
+    // Regression test for a real bug found via annotation ("Pourquoi ça reste jaune même quand
+    // j'applique ?" / "C'est TOUT LE TEMPS affiché"): ItemKey::Label writes to ID3v2's TPUB frame,
+    // but lofty reads that same frame back as ItemKey::Publisher, never ItemKey::Label — so the
+    // label NEVER round-tripped, on any format, permanently keeping the discrepancy marker + CDJ
+    // warning banner stuck on even right after a successful Apply. Fixed by using
+    // ItemKey::Publisher consistently (write_tags_full/read_tags_full/restore_tags).
+    #[test]
+    fn label_roundtrips_mp3() {
+        let Some(src) = fixture("real_320.mp3") else { eprintln!("skip: no fixture"); return; };
+        let dir = tempfile::tempdir().unwrap();
+        let dst = dir.path().join("label_rt.mp3");
+        std::fs::copy(&src, &dst).unwrap();
+        let dst = dst.to_str().unwrap();
+        write_tags_full(dst, "Larry Heard", "Mystery of Love", Some("Permanent Vacation"), Some(2008), &["House".to_string()], None).expect("write");
+        let snap = read_tags_full(dst).expect("read");
+        assert_eq!(snap.label.as_deref(), Some("Permanent Vacation"));
+        assert_eq!(snap.year, Some(2008));
+    }
+
+    #[test]
+    fn label_roundtrips_wav() {
+        let Some(src) = fixture("dual_mono.wav") else { eprintln!("skip: no fixture"); return; };
+        let dir = tempfile::tempdir().unwrap();
+        let dst = dir.path().join("label_rt.wav");
+        std::fs::copy(&src, &dst).unwrap();
+        let dst = dst.to_str().unwrap();
+        write_tags_full(dst, "Larry Heard", "Mystery of Love", Some("Permanent Vacation"), Some(2008), &["House".to_string()], None).expect("write");
+        let snap = read_tags_full(dst).expect("read");
+        assert_eq!(snap.label.as_deref(), Some("Permanent Vacation"));
+        assert_eq!(snap.year, Some(2008));
     }
 }
