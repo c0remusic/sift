@@ -127,7 +127,8 @@ html,body{margin:0;padding:0;height:100%}
    important" rather than a full nav tab (maquette's exportItems: dimmed, dot instead of icon). */
 .nv-export{opacity:.55}
 .nv-export:hover{opacity:.85}
-.nv-export-dot{width:5px;height:5px;border-radius:var(--border-radius-pill);background:var(--color-text-warning);flex:none}
+.nv-export-dot{width:5px;height:5px;border-radius:var(--border-radius-pill);background:var(--color-hue-teal-text);flex:none}
+.nv[data-view="rkb"] i{color:var(--color-hue-yellow-text)}
 .nav-badge{font-size:10px;font-weight:600;color:var(--color-text-tertiary);background:var(--overlay-badge);border-radius:var(--border-radius-pill);padding:1px 7px;flex:none}
 .nav-badge:empty{display:none}
 /* Bottom group of the rail: holds the margin-top:auto (so Settings stays pinned to the very bottom)
