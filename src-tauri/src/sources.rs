@@ -24,6 +24,7 @@ pub struct Source {
     pub pending_count: i64,
     pub accessible: bool,
     pub watched: bool,
+    pub color_key: Option<String>,
 }
 
 /// Canonicalises `path` (so disk-scan and live-watch keys stay consistent), inserts it,
@@ -49,7 +50,7 @@ pub fn list(conn: &Connection) -> rusqlite::Result<Vec<Source>> {
     let mut stmt = conn.prepare(
         "SELECT s.id, s.path,
                 (SELECT count(*) FROM tracks t WHERE t.source_id=s.id AND t.status='pending'),
-                s.watched
+                s.watched, s.color_key
          FROM sources s ORDER BY s.id",
     )?;
     let rows = stmt.query_map([], |r| {
@@ -61,6 +62,7 @@ pub fn list(conn: &Connection) -> rusqlite::Result<Vec<Source>> {
             pending_count: r.get(2)?,
             accessible,
             watched: r.get::<_, i64>(3)? != 0,
+            color_key: r.get(4)?,
         })
     })?;
     rows.collect()
@@ -85,6 +87,20 @@ pub fn set_watched(conn: &Connection, id: i64, watched: bool) -> rusqlite::Resul
         rusqlite::params![id],
         |r| r.get(0),
     )
+}
+
+/// Sets (or clears, with `None`) a source's manual color override. Persists
+/// one of the 5 categorical hue names (`"indigo"|"purple"|"pink"|"teal"|"yellow"`)
+/// — validation of the value itself happens at the IPC layer, this just stores it.
+/// Not yet wired to an IPC command (a later task in the color-palette plan does that) —
+/// hence `allow(dead_code)` until that call site lands.
+#[allow(dead_code)]
+pub fn set_color(conn: &Connection, id: i64, color_key: Option<String>) -> rusqlite::Result<()> {
+    conn.execute(
+        "UPDATE sources SET color_key=?2 WHERE id=?1",
+        rusqlite::params![id, color_key],
+    )?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -141,5 +157,24 @@ mod tests {
             .query_row("SELECT count(*) FROM tracks", [], |r| r.get(0))
             .unwrap();
         assert_eq!(n, 0, "tracks cascade-deleted with the source");
+    }
+
+    #[test]
+    fn set_color_persists_and_reads_back() {
+        let conn = db();
+        let id = add(&conn, ".").unwrap();
+        set_color(&conn, id, Some("teal".to_string())).unwrap();
+        let sources = list(&conn).unwrap();
+        let s = sources.iter().find(|s| s.id == id).unwrap();
+        assert_eq!(s.color_key.as_deref(), Some("teal"));
+    }
+
+    #[test]
+    fn color_defaults_to_none() {
+        let conn = db();
+        let id = add(&conn, ".").unwrap();
+        let sources = list(&conn).unwrap();
+        let s = sources.iter().find(|s| s.id == id).unwrap();
+        assert_eq!(s.color_key, None);
     }
 }

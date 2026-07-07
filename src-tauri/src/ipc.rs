@@ -68,7 +68,7 @@ pub fn add_source(
     conn.query_row(
         "SELECT s.id, s.path,
                 (SELECT count(*) FROM tracks t WHERE t.source_id=s.id AND t.status='pending'),
-                s.watched
+                s.watched, s.color_key
          FROM sources s WHERE s.id=?1",
         rusqlite::params![id],
         |r| {
@@ -80,6 +80,7 @@ pub fn add_source(
                 pending_count: r.get(2)?,
                 accessible,
                 watched: r.get::<_, i64>(3)? != 0,
+                color_key: r.get(4)?,
             })
         },
     )

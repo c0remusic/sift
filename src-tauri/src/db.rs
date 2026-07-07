@@ -145,6 +145,13 @@ const MIGRATIONS: &[&str] = &[
     );
     CREATE INDEX idx_rkbmdb_repairs_status ON rekordbox_masterdb_repairs(status);
     "#,
+    // v12 — Apple system-colors palette: per-source manual color override.
+    // NULL = auto-assign by add-order (frontend computes this from list order,
+    // no need to store the derived value); a hue name persists an explicit
+    // override chosen in Réglages.
+    r#"
+    ALTER TABLE sources ADD COLUMN color_key TEXT;
+    "#,
 ];
 
 /// Applies any migrations the DB hasn't seen yet, tracked via PRAGMA user_version.
