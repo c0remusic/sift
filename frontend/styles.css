@@ -37,7 +37,7 @@ color-scheme:light;
 --shadow-toast:0 8px 28px rgba(0,0,0,.4);--shadow-overlay:0 12px 48px rgba(0,0,0,.5);
 /* Deliberate 3rd hue (gold), documented exception to the "green/amber only" rule above: the
 /* Waveform elapsed-time label — canvas stays dark regardless of theme, so no dark variant. */
---color-waveform-elapsed:#ff5500;
+--color-waveform-elapsed:var(--color-text-info);
 /* Typo (self-hosted via @fontsource, see main.ts) — Outfit UI, JetBrains Mono for numbers. */
 --font-ui:"Outfit",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
 --font-mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
@@ -69,7 +69,7 @@ color-scheme:light;
     --color-hue-indigo-text:#A6A0F0;--color-hue-indigo-bg:rgba(88,86,214,.18);--color-hue-indigo-border:rgba(166,160,240,.35);--color-hue-purple-text:#C9A6E0;--color-hue-purple-bg:rgba(175,82,222,.18);--color-hue-purple-border:rgba(201,166,224,.35);--color-hue-pink-text:#F0A8C2;--color-hue-pink-bg:rgba(212,83,126,.18);--color-hue-pink-border:rgba(240,168,194,.35);--color-hue-teal-text:#7CE0D4;--color-hue-teal-bg:rgba(20,150,140,.18);--color-hue-teal-border:rgba(124,224,212,.35);--color-hue-yellow-text:#F5D76E;--color-hue-yellow-bg:rgba(230,180,0,.18);--color-hue-yellow-border:rgba(245,215,110,.35);
     --overlay-hover:rgba(255,255,255,.03);--overlay-selected:rgba(255,255,255,.06);
     --overlay-bar:rgba(255,255,255,.32);--overlay-badge:rgba(255,255,255,.06);--overlay-drop:rgba(60,60,57,.93);
-    --color-waveform-elapsed:#ff5500;
+    --color-waveform-elapsed:var(--color-text-info);
   }
 }
 :root[data-theme="dark"]{
@@ -83,7 +83,7 @@ color-scheme:light;
   --color-hue-indigo-text:#A6A0F0;--color-hue-indigo-bg:rgba(88,86,214,.18);--color-hue-indigo-border:rgba(166,160,240,.35);--color-hue-purple-text:#C9A6E0;--color-hue-purple-bg:rgba(175,82,222,.18);--color-hue-purple-border:rgba(201,166,224,.35);--color-hue-pink-text:#F0A8C2;--color-hue-pink-bg:rgba(212,83,126,.18);--color-hue-pink-border:rgba(240,168,194,.35);--color-hue-teal-text:#7CE0D4;--color-hue-teal-bg:rgba(20,150,140,.18);--color-hue-teal-border:rgba(124,224,212,.35);--color-hue-yellow-text:#F5D76E;--color-hue-yellow-bg:rgba(230,180,0,.18);--color-hue-yellow-border:rgba(245,215,110,.35);
   --overlay-hover:rgba(255,255,255,.03);--overlay-selected:rgba(255,255,255,.06);
   --overlay-bar:rgba(255,255,255,.32);--overlay-badge:rgba(255,255,255,.06);--overlay-drop:rgba(60,60,57,.93);
-  --color-waveform-elapsed:#ff5500;
+  --color-waveform-elapsed:var(--color-text-info);
 }
 *{box-sizing:border-box}
 html,body{margin:0;height:100%;overflow:hidden;background:var(--color-background-tertiary);color:var(--color-text-primary);font-family:var(--font-ui)}
