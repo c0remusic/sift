@@ -293,6 +293,59 @@ IDs connus (à confirmer à la résolution, ne pas inventer) :
   (`sift-live.ts:995`/`1007`, déclenché par "Changer…"/"Oublier"). Corrigé en
   enveloppant les cartes dans un `wrap` unique (`id="sift-reglages-live"`).
 
+## Front — référence de design avant d'inventer (2026-07-08)
+
+**Jamais de style/comportement UI "de mémoire d'entraînement" sans traçabilité**
+quand aucune référence n'est donnée. Root-causé le 2026-07-08 (voir
+`docs/ressources-externes.md`, Évaluation 19) : la scrollbar de Sift
+(`styles.css:97-107`, commit `a3d4ed9`) n'a aucune source citée — produite
+comme une moyenne statistique de patterns vus à l'entraînement, jamais
+vérifiée contre une vraie référence. Même mécanisme derrière les
+divergences audit-après-coup (segmented control réimplémenté 4 fois avant
+unification, `.lk` mal réutilisée pour du texte).
+
+**Règle** : avant tout nouvel élément UI sans exemple donné par Antoine,
+consulter activement un des pools de référence ci-dessous (outil dédié si
+installé, sinon WebFetch) plutôt que générer sans vérifier. Si Antoine
+fournit lui-même un lien/repo précis, le lire directement (WebFetch) plutôt
+que deviner depuis sa description verbale — c'est la même règle appliquée à
+une référence qu'il fournit.
+
+- **Micro-composant** (comment un toggle/popover/scrollbar se comporte à
+  l'état hover/focus/disabled) :
+  - [ui.shadcn.com](https://ui.shadcn.com/) (référence principale, la mieux
+    documentée par composant) — **MCP `shadcn` installé** (`.mcp.json`,
+    2026-07-08), l'utiliser en priorité (search/get_item/install_command)
+    plutôt que WebFetch quand disponible.
+  - [uithing.com/components](https://uithing.com/components) (Vue, 96
+    composants — Scroll Area/Sidebar utiles) — **MCP `ui-thing` installé**
+    (`.mcp.json`), idem, priorité sur WebFetch.
+  - [coss.com/ui](https://coss.com/ui) (React/Base UI, 492 composants) —
+    **skills `coss`/`coss-particles` installées** (`.agents/skills/`,
+    gitignoré, à réinstaller par worktree via `npx skills add
+    cosscom/coss`) — invoquer la skill plutôt que WebFetch.
+  - [21st.dev](https://21st.dev/) (catalogue communautaire, plusieurs
+    variantes par composant) — pas d'outil dédié, WebFetch direct.
+- **Macro-décision desktop** (matériaux/vibrancy, élévation, couleur
+  système) : [Apple HIG](https://developer.apple.com/design/human-interface-guidelines)
+  — déjà la source des décisions actées (grammaire de carte Boxes,
+  couleurs système, titlebar), pas d'outil dédié, WebFetch direct.
+
+**Jamais installées comme dépendance** — ces sources sont lues et portées à
+la main en vanilla TS/CSS avec les tokens déjà en place dans `styles.css`,
+jamais ajoutées à `package.json`. Ne PAS copier la palette/l'échelle par
+défaut de shadcn en bloc (elle-même se présente comme un point de départ à
+recolorer, pas une direction assumée) — Sift a déjà sa propre palette
+validée (Apple system colors, 2026-07-06) ; seule la **structure**
+(props/variants/états documentés) a de la valeur à porter, pas les valeurs
+littérales, sauf pour un composant que Sift n'a encore jamais construit (là,
+partir du chiffre shadcn comme brouillon est acceptable).
+
+Sites tiers non officiels/payants écartés (vérifiés, voir Évaluation 19) :
+`shadcn.io` (Pro 19$/mois, CLI-only), `shadcndesign.com` (kit Figma payant,
+pipeline Claude Design déjà abandonné), ports Flutter de shadcn (hors
+scope, Flutter écarté en Évaluation 19).
+
 ## Front — CSS (conventions trouvées via audit Impeccable, 2026-07-03)
 - **Jamais de `border-left`/`border-right` coloré comme accent** (side-stripe) sur
   carte/ligne/bannière — ban explicite Impeccable, tell reconnaissable d'UI générée
