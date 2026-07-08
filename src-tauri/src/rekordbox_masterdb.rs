@@ -327,22 +327,60 @@ fn decrypt_masterdb(raw: &[u8]) -> Result<Vec<u8>, MasterDbError> {
         let mut plain = decrypt_page_body(page_no, ciphertext, &iv, stored_hmac, &key, &hmac_key)?;
 
         if page_no == 1 {
-            // Byte 20 of a standard SQLite header ("reserved space per
-            // page") must read the *true* reserve (RESERVE = 80), matching
-            // what real SQLCipher pages always declare — verified against a
-            // genuine page 1 (manual PBKDF2+AES-CBC decrypt showed byte 20
-            // = 80, not 0). Declaring it truthfully costs nothing for reads
-            // (those trailing bytes were never real SQLite content) and is
+            // Bytes 18/19 of a standard SQLite header ("file format
+            // write/read version") on a *real* Rekordbox master.db read 2/2
+            // (WAL), and stay that way even once the companion `-wal`/`-shm`
+            // files are gone after a clean Rekordbox shutdown (confirmed
+            // empirically: closing Rekordbox removes `master.db-wal`/`-shm`
+            // entirely, but master.db's own header byte is never rewritten
+            // back to 1). `rusqlite`'s `deserialize_read_exact`/`sqlite3_deserialize`
+            // path uses SQLite's in-memory "memdb" VFS, which has no real
+            // file to open a `-wal` sidecar against — so a header that
+            // claims WAL mode makes the *first* query against the
+            // deserialized connection fail with `SQLITE_CANTOPEN` ("unable
+            // to open database file"), even though `sqlite3_deserialize`
+            // itself reports success. The small synthetic fixture used by
+            // this module's other tests was generated fresh in rollback
+            // mode (1/1), which is why this never showed up before testing
+            // against a real copy (see `docs/plan-implementation.md`, M8
+            // Tier 1 status). Forcing 1/1 here is safe for both reads and
+            // writes: by the time Sift ever sees this buffer, any real WAL
+            // content has already been checkpointed into the page data
+            // itself (that's what "Rekordbox is closed" / "no `-wal` file
+            // present" guarantees, enforced by `is_rekordbox_running` before
+            // any write) — declaring rollback mode doesn't drop data, it
+            // just stops SQLite expecting a WAL sidecar that doesn't apply
+            // to an in-memory deserialize. On the write side
+            // (`encrypt_masterdb`), this buffer is re-serialized from a
+            // connection that was never put into WAL mode, so the
+            // re-encrypted file legitimately is rollback-mode — Rekordbox
+            // itself is free to switch it back to WAL on its next write.
+            //
+            // Byte 20 ("reserved space per page") must likewise read the
+            // *true* reserve (RESERVE = 80), matching what real SQLCipher
+            // pages always declare — verified against a genuine page 1
+            // (manual PBKDF2+AES-CBC decrypt showed byte 20 = 80, not 0).
+            // Declaring it truthfully costs nothing for reads (those
+            // trailing bytes were never real SQLite content) and is
             // required for writes: if we declared 0, SQLite would believe
             // the full page is usable and could write real cell content
             // into the last RESERVE bytes, which the re-encryption path
             // (`encrypt_masterdb`) discards as padding — silently dropping
             // data.
-            // offset 4 within `plain`, i.e. file offset 20 (16-byte magic prefix + 4).
-            // Guarded rather than a bare index: `plain` is HMAC-verified but
-            // its length still depends on AES decrypting to the expected
-            // size — a checked write turns any future geometry mismatch
-            // into a clear error instead of a panic on malformed input.
+            //
+            // Offsets below are relative to `plain`, which excludes the
+            // 16-byte magic prefix (added separately just below) — so file
+            // offset 18 is `plain[2]`, file offset 20 is `plain[4]`.
+            // Guarded rather than bare indexing: `plain` is HMAC-verified
+            // but its length still depends on AES decrypting to the
+            // expected size — a checked write turns any future geometry
+            // mismatch into a clear error instead of a panic on malformed
+            // input.
+            if plain.len() < 5 {
+                return Err(MasterDbError::Decrypt { page: page_no });
+            }
+            plain[2] = 1; // file offset 18: write_version
+            plain[3] = 1; // file offset 19: read_version
             match plain.get_mut(4) {
                 Some(b) => *b = RESERVE as u8,
                 None => return Err(MasterDbError::Decrypt { page: page_no }),
@@ -1023,5 +1061,115 @@ mod tests {
             .find(|t| t.track_id == "40000002")
             .expect("track 40000002 present");
         assert_eq!(repaired.folder_path, accented_path);
+    }
+
+    /// M8 Tier 1 real-data gate (`docs/plan-implementation.md:254-256`): the
+    /// synthetic fixture above proves the write engine is correct against a
+    /// *known-shape* database, but never against a real Rekordbox B-tree
+    /// (real page fragmentation, real row count, real column content).
+    /// This is the "test against a copy of a real master.db" step the M8
+    /// status notes as still outstanding before any real usage.
+    ///
+    /// `#[ignore]`d because it needs an out-of-repo copy that doesn't exist
+    /// in CI or a fresh checkout. Run manually:
+    /// `SIFT_M8_REAL_COPY_DIR=<path to a folder containing a COPY of
+    /// master.db + masterPlaylists6.xml, never the live Pioneer folder>
+    /// cargo test --manifest-path src-tauri/Cargo.toml -- --ignored
+    /// real_masterdb_copy --nocapture`
+    ///
+    /// Requires Rekordbox closed (the function's own safety gate refuses
+    /// otherwise, which is itself part of what this test proves).
+    #[test]
+    #[ignore]
+    fn repair_track_path_round_trips_on_real_masterdb_copy() {
+        let pioneer_dir = std::path::PathBuf::from(
+            std::env::var("SIFT_M8_REAL_COPY_DIR")
+                .expect("set SIFT_M8_REAL_COPY_DIR to a folder holding a COPY of master.db + masterPlaylists6.xml"),
+        );
+        assert!(
+            pioneer_dir.join("master.db").exists(),
+            "no master.db under SIFT_M8_REAL_COPY_DIR"
+        );
+
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let backup_dir = tmp.path().join("backup");
+
+        let xml_before = std::fs::read(pioneer_dir.join("masterPlaylists6.xml")).expect("read xml before");
+
+        let baseline = read_rekordbox_masterdb(&pioneer_dir.join("master.db")).expect("read real copy");
+        let track_count_before = baseline.tracks.len();
+        assert!(track_count_before > 0, "real copy has no tracks — wrong file?");
+        let target = baseline.tracks.first().expect("at least one track").clone();
+
+        // RekordboxTrack only carries FolderPath — fetch the real
+        // FileNameL/FileNameS for this row directly so the restore step at
+        // the end writes back the exact original values, not a guess.
+        let raw = std::fs::read(pioneer_dir.join("master.db")).expect("read real copy bytes");
+        let plaintext = decrypt_masterdb(&raw).expect("decrypt real copy");
+        let mut conn = Connection::open_in_memory().expect("open in-memory");
+        let len = plaintext.len();
+        conn.deserialize_read_exact(rusqlite::MAIN_DB, Cursor::new(plaintext), len, true)
+            .expect("deserialize real copy");
+        let (orig_file_name_l, orig_file_name_s): (String, String) = conn
+            .query_row(
+                "SELECT FileNameL, FileNameS FROM djmdContent WHERE ID = ?1",
+                rusqlite::params![target.track_id],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("original FileNameL/FileNameS for target track");
+        drop(conn);
+
+        println!(
+            "baseline: {track_count_before} tracks; repairing track_id={} original_path={}",
+            target.track_id, target.folder_path
+        );
+
+        let test_path = format!("D:/SIFT_M8_TIER1_REALDATA_TEST/{}.flac", target.track_id);
+        let repair = PathRepair {
+            track_id: target.track_id.clone(),
+            new_folder_path: test_path.clone(),
+            new_file_name_l: format!("{}.flac", target.track_id),
+            new_file_name_s: format!("{}.flac", target.track_id),
+        };
+        repair_track_path(&pioneer_dir, &backup_dir, &repair).expect("repair on real copy");
+
+        let after_repair = read_rekordbox_masterdb(&pioneer_dir.join("master.db")).expect("reread after repair");
+        assert_eq!(
+            after_repair.tracks.len(),
+            track_count_before,
+            "track count changed — repair must not add/remove rows"
+        );
+        let repaired = after_repair
+            .tracks
+            .iter()
+            .find(|t| t.track_id == target.track_id)
+            .expect("repaired track still present");
+        assert_eq!(repaired.folder_path, test_path);
+
+        // Tier 1 deliberately never touches the XML (see repair_track_path's
+        // doc comment) — assert that holds on real data too.
+        let xml_after = std::fs::read(pioneer_dir.join("masterPlaylists6.xml")).expect("read xml after");
+        assert_eq!(xml_before, xml_after, "masterPlaylists6.xml must be untouched by Tier 1");
+
+        // Restore the original path so the copy stays reusable for a rerun,
+        // and to prove a second real-data write round-trips too.
+        let restore = PathRepair {
+            track_id: target.track_id.clone(),
+            new_folder_path: target.folder_path.clone(),
+            new_file_name_l: orig_file_name_l,
+            new_file_name_s: orig_file_name_s,
+        };
+        repair_track_path(&pioneer_dir, &backup_dir, &restore).expect("restore original path on real copy");
+
+        let after_restore = read_rekordbox_masterdb(&pioneer_dir.join("master.db")).expect("reread after restore");
+        let restored = after_restore
+            .tracks
+            .iter()
+            .find(|t| t.track_id == target.track_id)
+            .expect("restored track still present");
+        assert_eq!(restored.folder_path, target.folder_path);
+        assert_eq!(after_restore.tracks.len(), track_count_before);
+
+        println!("PASS: repair + restore round-tripped cleanly on real master.db copy ({track_count_before} tracks)");
     }
 }

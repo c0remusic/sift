@@ -264,3 +264,9 @@ Symétrique du lecteur, même philosophie « ne pas réimplémenter SQLite » :
   fonctionnel par vérification directe sur ID. Seul point réellement ouvert
   restant : retester Tier 3 (flag `TrackInfoUpdated`) avec vérification par
   ID, jamais fait correctement jusqu'ici.
+- **v2 mise à jour n°3** (2026-07-08) : Tier 1 testé pour la première fois
+  contre une copie d'un vrai `master.db` (Rust, pas le spike Python) — a
+  trouvé et corrigé un vrai bug d'en-tête SQLite (mode WAL jamais géré par
+  la VFS mémoire de `sqlite3_deserialize`), invisible sur le fixture
+  synthétique. Round-trip complet validé sur la vraie bibliothèque
+  (2828 pistes). Détail : `docs/ressources-externes.md`, Évaluation 18.

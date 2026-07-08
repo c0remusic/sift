@@ -1380,3 +1380,85 @@ maintenue. Si l'incident se reproduit sur d'autres fichiers, envisager un
 grep `â€` ciblé dans la checklist de fin de session plutôt qu'un outillage
 dédié — la réparation elle-même (script jetable, ~40 lignes) est assez simple
 pour ne pas justifier d'investissement en amont.
+
+---
+
+## Évaluation 18 — test M8 Tier 1 contre une copie réelle : bug WAL trouvé et corrigé (2026-07-08)
+
+**Contexte** : M8 Tier 1 (réparation de chemin `master.db`) était complet
+côté code depuis le 2026-07-07 mais son seul test était le fixture
+synthétique (`tests/fixtures/rekordbox_master.db`, généré par
+`scripts/make-rekordbox-fixture.py`) — le statut notait explicitement "test
+contre une copie d'un vrai `master.db` avant tout usage réel" comme
+condition bloquante restante. Cette session a fait exactement ce test.
+
+**Méthode** : copie de `~/Desktop/sift-masterdb-write-probe/master.db.copy`
+(20 Mo, déjà validée lisible par les spikes Python précédents — Évaluations
+5/7/11) vers un nouveau dossier jetable
+`~/Desktop/sift-m8-tier1-rust-verify/pioneer/`, jamais le fichier live. Test
+d'intégration Rust `#[ignore]`d ajouté dans `rekordbox_masterdb.rs`
+(`repair_track_path_round_trips_on_real_masterdb_copy`, activé via
+`SIFT_M8_REAL_COPY_DIR`) : lit la baseline réelle, répare une piste vers un
+chemin de test, vérifie round-trip (compte de pistes inchangé, XML
+inchangé), puis restaure le chemin d'origine et revérifie. Exécuté avec
+`CARGO_TARGET_DIR` pointé vers un dossier scratch isolé — une autre session
+avait `tauri dev` actif sur le même repo, et lancer `cargo test` sur le
+`target/` partagé aurait risqué de corrompre son cache incrémental (règle
+déjà connue, voir mémoire `avoid-concurrent-cargo-tauri-dev`).
+
+**Premier run : échec** — `read_rekordbox_masterdb` sur la copie réelle
+levait `Sqlite("unable to open database file")`, alors que les 19 tests sur
+fixture passaient tous. Root-causé par un test diagnostic jetable (3 chemins
+comparés : désérialisation seule, écriture sur fichier réel, désérialisation
+avec en-tête patché) plutôt que deviner : `sqlite3_deserialize` (via
+`rusqlite::deserialize_read_exact`) **rapportait un succès**, mais la
+**première requête** sur la connexion échouait — écart clé pointant vers un
+problème d'ouverture du schéma, pas de déchiffrement (le HMAC par page avait
+déjà validé chaque page, donc les octets étaient corrects).
+
+**Root cause confirmée** : les octets 18/19 de l'en-tête SQLite standard
+("file format write/read version") valent **2/2 (WAL)** sur un vrai
+`master.db` Rekordbox — et restent à 2/2 **même après fermeture propre de
+Rekordbox** (vérifié : `master.db-wal`/`-shm` disparaissent complètement du
+dossier `Pioneer/rekordbox/` une fois l'app fermée, mais l'en-tête du
+fichier principal n'est jamais réécrit en mode rollback). La VFS mémoire
+utilisée par `sqlite3_deserialize` ("memdb") n'a aucun fichier réel associé
+où chercher un `-wal` correspondant — un en-tête qui annonce le mode WAL la
+fait échouer avec `SQLITE_CANTOPEN` dès la première requête, même si le
+buffer désérialisé est par ailleurs valide. Le fixture synthétique n'avait
+jamais révélé ce bug car généré fraîchement en mode rollback (1/1) par
+défaut — c'est précisément le genre d'écart entre "shape connu" et "vraie
+géométrie" que ce test était censé attraper.
+
+**Fix** : `decrypt_masterdb` force désormais les octets 18/19 à 1/1 lors de
+la reconstruction de la page 1, avec le même schéma que le fix existant de
+l'octet 20 (reserve) — commentaire inline explique pourquoi c'est sûr en
+lecture (le WAL réel, s'il existait, a déjà été checkpointé dans les pages
+avant que Sift ne voie le fichier, garanti par `is_rekordbox_running` avant
+toute écriture) et en écriture (`encrypt_masterdb` réencode depuis une
+connexion jamais mise en mode WAL, donc le fichier réécrit est légitimement
+en mode rollback — Rekordbox est libre de repasser en WAL à sa prochaine
+écriture).
+
+**Vérification post-fix** : les 19 tests fixture repassent au vert (aucune
+régression — le fixture était déjà en 1/1, donc no-op pour lui). Le test
+real-copy passe en entier : backup → repair → vérif round-trip → XML
+inchangé → restore → revérif, sur la vraie bibliothèque (2828 pistes,
+`track_id=123420449` réparé puis restauré). Suite complète : 271 tests + `cargo
+clippy --all-targets -- -D warnings` clean.
+
+**Décision** : Tier 1 est maintenant **vérifié contre des données réelles**,
+plus seulement contre un fixture — le statut M8 (`docs/plan-implementation.md`)
+mis à jour en conséquence. Le test real-copy reste `#[ignore]`d (nécessite
+`SIFT_M8_REAL_COPY_DIR` + Rekordbox fermé, non exécutable en CI) mais reste
+dans le repo comme porte de non-régression manuelle pour ce type de bug —
+une régression future sur ce chemin ne serait détectée qu'en le relançant
+explicitement, pas automatiquement.
+
+**Leçon méthode** : un fixture synthétique "shape correcte" (mêmes colonnes,
+mêmes types) peut quand même diverger de la vraie donnée sur des détails
+d'en-tête/format qui n'ont rien à voir avec le schéma applicatif (ici, le
+mode journal SQLite) — le geste "tester contre une copie réelle avant tout
+usage réel", déjà une règle établie sur ce projet (Évaluations 5/7/11/14),
+vient encore une fois de payer immédiatement, cette fois côté moteur Rust
+plutôt que côté Python.
