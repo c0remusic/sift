@@ -297,10 +297,23 @@ empreintes Chromaprint).
 > bloquant. 291 tests + clippy + tsc clean. Plan :
 > `docs/superpowers/plans/2026-07-08-m8-tier2-ipc-wiring.md`.
 >
-> **Pas d'UI** (différée, même précédent que Tier 1) ;
-> **synchro de playlist complète** (au-delà du simple dédoublonnage — ajouts/retraits/
-> réordonnancement `TrackNo`) hors scope, nécessite une correspondance Sift↔Rekordbox
-> non encore spécifiée. Plan :
+> **Écran UI livré le 2026-07-08 (même jour)** — nouvelle section sur la page
+> Rekordbox (mêmes conventions que la section Tier 1 : liste en cartes,
+> `confirmAction()` avant écriture, bouton texte seul par groupe, pas de
+> multi-sélection puisque chaque dédoublonnage est une action complète et
+> indépendante). Enrichissement backend display-only ajouté en amont
+> (`read_playlist_names` + réutilisation de `read_masterdb_path_map`) pour
+> que l'UI montre un nom de playlist + chemin de piste plutôt que des IDs
+> Rekordbox opaques — jamais requis par le moteur d'écriture. Revue finale
+> (Opus) : "ready to merge", aucun fix nécessaire, parité de types
+> Rust↔TypeScript vérifiée champ par champ. Plan :
+> `docs/superpowers/plans/2026-07-08-m8-tier2-ui-screen.md`. Vérification
+> visuelle `tauri dev` (clair+sombre, 0/1/2+ groupes) restante — étape
+> manuelle d'Antoine, code gated `inTauri`.
+>
+> **Synchro de playlist complète** (au-delà du simple dédoublonnage —
+> ajouts/retraits/réordonnancement `TrackNo`) hors scope, nécessite une
+> correspondance Sift↔Rekordbox non encore spécifiée. Plan (moteur) :
 > `docs/superpowers/plans/2026-07-08-m8-tier2-playlist-dedup-rust.md`.
 >
 > **Tier 3** (flag `TrackInfoUpdated` pour la synchro metadata) reste non commencé —
