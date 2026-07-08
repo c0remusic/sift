@@ -1,6 +1,9 @@
 # M8 — Write path Rust pour `master.db` Rekordbox (design v2)
 
-> Statut : **design, Tier 1 confirmé sûr, Tier 3 reste à tester.** Remplace
+> Statut : **Tier 1 confirmé sûr et livré (moteur+IPC+UI). Tier 2 confirmé
+> sûr et livré (moteur+IPC+UI). Tier 3 : stratégie primaire (flag de reload
+> seul) INFIRMÉE par test réel (2026-07-08) — voir mise à jour ci-dessous et
+> section Tier 3 pour les deux chemins restants.** Remplace
 > `2026-07-04-m8-masterdb-write-path-rust-design.md` (v1, gardé pour
 > historique — ne plus l'utiliser comme référence active). Suite du
 > brainstorm du 2026-07-06 (`superpowers:brainstorming`) : élargit le
@@ -23,6 +26,17 @@
 > avec vérification explicite par ID (voir
 > `~/Desktop/sift-masterdb-write-probe/FINDINGS-m8-spike-3.md`, section 5, et
 > `FINDINGS-m8-spike-4.md`).
+>
+> **Mise à jour 2026-07-08 (Test 1 enfin retesté proprement, spike n°5)** :
+> canary à titre unique cette fois (élimine structurellement la confusion des
+> 2 tentatives précédentes) — `TrackInfoUpdated` incrémenté seul, Rekordbox
+> ouvert : **le tag Artiste n'a PAS été rechargé automatiquement**
+> (toujours l'ancienne valeur). L'action manuelle « Relire le tag » (clic
+> droit), elle, fonctionne correctement. **Verdict : la stratégie primaire
+> Tier 3 (flag seul → reload automatique) est infirmée.** Le mécanisme de
+> reload lui-même n'est pas cassé — il n'est simplement jamais déclenché
+> automatiquement par ce flag seul. Détail complet :
+> `~/Desktop/sift-masterdb-write-probe/FINDINGS-m8-spike-5-tier3-test1.md`.
 
 ## Intention (pourquoi ce chantier existe, et pourquoi v2)
 
@@ -131,18 +145,34 @@ Détail complet des deux investigations :
 - USN à bumper sur chaque ligne `djmdSongPlaylist` touchée, même logique que
   Tier 1.
 
-### Tier 3 — Synchro metadata via flag de reload (contingent au spike)
+### Tier 3 — Synchro metadata via flag de reload (STRATÉGIE PRIMAIRE INFIRMÉE, 2026-07-08)
 
-- **Stratégie primaire (si spike n°3 Test 1 passe)** : Sift écrit déjà les
-  tags propres dans le fichier (`lofty`, pipeline de filing existant). Ajout :
-  poser `TrackInfoUpdated` (valeur exacte = sortie du spike) sur la ligne
-  `djmdContent` correspondante, **sans toucher** `Analysed`/`AnalysisUpdated`.
-  Rekordbox rejoue sa propre normalisation (`djmdArtist`/`Album`/`Genre` + FK)
-  au prochain lancement — Sift n'écrit aucune table normalisée.
-- **Fallback (si le spike échoue)** : ce tier est retiré du scope de ce
-  design et redevient un design séparé à haut risque (écriture directe des
-  tables normalisées, find-or-create FK, nettoyage d'orphelins) — pas
-  implémenté tant que ce design séparé n'existe pas.
+- **Stratégie primaire testée et infirmée** : poser `TrackInfoUpdated` seul
+  (sans toucher `Analysed`/`AnalysisUpdated`) sur la ligne `djmdContent`
+  correspondante, dans l'espoir que Rekordbox rejoue sa propre normalisation
+  (`djmdArtist`/`Album`/`Genre` + FK) au prochain lancement, sans action
+  utilisateur. **Testé réellement le 2026-07-08 (spike n°5, canary à titre
+  unique, sans ambiguïté possible) : le tag n'a PAS été rechargé
+  automatiquement.** Voir
+  `~/Desktop/sift-masterdb-write-probe/FINDINGS-m8-spike-5-tier3-test1.md`.
+  Cette route est morte telle quelle — ne plus la considérer comme viable
+  sans un nouveau signal empirique (un AUTRE flag/mécanisme non testé ici).
+- **Ce qui fonctionne, confirmé par le même test** : l'action manuelle
+  « Relire le tag » (clic droit dans Rekordbox) recharge correctement le tag
+  ID3 depuis le fichier — le mécanisme lui-même n'est pas cassé, seulement
+  pas déclenché automatiquement par ce flag.
+- **Deux chemins restants, aucun tranché** :
+  1. Fallback déjà anticipé ci-dessous (écriture directe des tables
+     normalisées) — redevient la seule route *automatique* restante si
+     Tier 3 automatique est encore désiré.
+  2. Renoncer à l'automatique : documenter pour l'utilisateur que les
+     métadonnées Discogs écrites par Sift n'apparaissent dans Rekordbox
+     qu'après un « Relire le tag » manuel — zéro code d'écriture
+     supplémentaire, juste un geste utilisateur explicite (pas un fallback
+     silencieux).
+- **Fallback (écriture directe des tables normalisées)** : design séparé à
+  haut risque (find-or-create FK, nettoyage d'orphelins) — pas implémenté,
+  et pas designé en détail par ce document.
 - **Communication utilisateur** : "les changements apparaissent après
   réouverture de Rekordbox" — pas de synchro live, Rekordbox doit relancer
   pour rejouer le reload.
@@ -233,18 +263,21 @@ Symétrique du lecteur, même philosophie « ne pas réimplémenter SQLite » :
    une fausse alerte (confusion entre 2 pistes distinctes, pas un
    comportement Rekordbox) — Tier 1 confirmé fonctionnel. Test B (isolation
    H1/H2) devenu sans objet, non exécuté.
-3. **Retest Tier 3** — Test 1 (flag `TrackInfoUpdated`) n'a jamais été
-   validé correctement (les deux tentatives précédentes ont consulté la
-   mauvaise piste). À refaire avec vérification explicite par `ID`
-   (`165700329`), pas par titre affiché. **Reste le seul point bloquant
-   avant de considérer M8 entièrement dé-risqué.**
+3. ~~**Retest Tier 3**~~ — exécuté 2026-07-08 (spike n°5, canary à titre
+   unique cette fois, aucune ambiguïté possible). **Verdict : stratégie
+   primaire (flag seul) infirmée** — voir mise à jour en tête de document et
+   section Tier 3. M8 n'est donc pas "entièrement dé-risqué" comme espéré,
+   mais la question est tranchée : plus un point bloquant en attente, un
+   verdict négatif définitif sur cette route précise.
 4. `superpowers:writing-plans` — plan d'implémentation Rust : extension de
    `rekordbox_masterdb.rs` (encrypt/write/verify), TDD sur fixture
-   synthétique existante, puis test sur copie réelle, tier par tier
-   (Tier 1 d'abord — confirmé sûr, peut démarrer sans attendre le retest
-   Tier 3).
-5. Design UI d'intégration (séparé, après le moteur prouvé au moins pour
-   Tier 1).
+   synthétique existante, puis test sur copie réelle, tier par tier. **Fait
+   pour Tier 1 et Tier 2** (moteur+IPC+UI livrés, voir
+   `docs/plan-implementation.md`) — Tier 3 reste non commencé, sa stratégie
+   primaire étant morte, une décision produit (fallback écriture directe vs
+   renoncer à l'automatique) est requise avant de planifier son moteur.
+5. Design UI d'intégration — **fait pour Tier 1 et Tier 2** (voir
+   `docs/plan-implementation.md`).
 
 ## Historique
 
@@ -279,3 +312,13 @@ Symétrique du lecteur, même philosophie « ne pas réimplémenter SQLite » :
   `docs/superpowers/plans/2026-07-08-m8-tier2-playlist-dedup-rust.md`.
   Synchro de playlist complète (au-delà du dédoublonnage) reste hors scope,
   correspondance Sift↔Rekordbox toujours "à spécifier."
+- **v2 mise à jour n°5** (2026-07-08, même jour) : Tier 3 Test 1 (flag
+  `TrackInfoUpdated`) enfin retesté proprement (spike n°5, canary à titre
+  unique — élimine la confusion qui avait invalidé les 2 tentatives
+  précédentes). **Verdict négatif et définitif sur la stratégie primaire** :
+  le flag seul ne déclenche aucun reload automatique du tag ID3 par
+  Rekordbox. L'action manuelle « Relire le tag » fonctionne, elle. M8 n'est
+  donc pas entièrement dé-risqué comme espéré au démarrage de ce document,
+  mais la question Tier 3 est tranchée — reste une décision produit (design
+  séparé à haut risque vs renoncer à l'automatique) avant tout code Tier 3.
+  Détail : `~/Desktop/sift-masterdb-write-probe/FINDINGS-m8-spike-5-tier3-test1.md`.

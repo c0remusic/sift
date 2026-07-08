@@ -1477,3 +1477,202 @@ que la fonctionnalité de dédup Tier 2 répond à un scénario réel et pas
 seulement hypothétique. Ce doublon a depuis été dédupliqué par le test de
 vérification Tier 2 sur copie réelle lui-même (voir le plan Tier 2, Task 4)
 — il n'est donc plus présent dans cette copie précise.
+
+---
+
+## Évaluation 19 — spike stack UI (React/Vue/Avalonia/Flutter) écarté, racine du problème identifiée : pas de référence canonique (2026-07-08)
+
+**Contexte** : après 2 semaines à construire l'outillage de design system
+vanilla (token-sync v1→v3), Antoine a exprimé une frustration de fond en
+regardant des catalogues de composants externes (uithing.com/goodies,
+v-wave) : la boucle "je me souviens d'un effet vu ailleurs → je te le
+décris en mots → tu l'implémentes avec des allers-retours → une incohérence
+apparaît sur un autre écran, découverte par audit après coup" (exemple réel
+cité : segmented control réimplémenté 4 fois avant unification, 2026-07-08)
+lui a fait envisager sérieusement une migration de stack complète — jusqu'à
+remettre en cause le choix Tauri lui-même (Wails, Avalonia, Flutter).
+
+**Méthode** : deux spikes de recherche web (agents en arrière-plan,
+sources citées, candidat 1 scindé en 1a/1b sur demande explicite) comparant
+4 candidats de remplacement du frontend/stack : (1a) Tauri+React+shadcn/
+Radix, (1b) Tauri+Vue+Nuxt UI/shadcn-vue, (2) Avalonia (.NET/XAML), (3)
+Flutter+fluent_ui. Critère n°1 : préserver le moteur Rust existant (mois de
+travail M0-M8, centaines de tests) — écrit comme contrainte dure, pas
+négociable.
+
+**Résultat du spike, verdict net** : **aucun des 4 candidats ne résout le
+problème réellement posé**. Dans les 4 cas, Antoine ne touche jamais le code
+lui-même — la boucle "décrire en mots → un agent traduit → incohérence
+découverte après coup" persiste indépendamment du framework, elle change
+juste de langue (JSX+hooks, SFC Vue, XAML/C#, ou Dart). Détail par
+candidat :
+- **Avalonia** : écarté — pont vers le moteur Rust existant seulement en FFI
+  manuel (`csbindgen`/`uniffi-bindgen-cs` tiers non officiel), aucun outil
+  ne transpose les `enum`/`struct` serde riches ou les `Result<T,E>`
+  idiomatiques de Sift, aucune preuve d'un projet réel de cette taille
+  (~45 commandes IPC) ayant fait ce pont. Risque jugé trop élevé sur un
+  backend déjà validé.
+- **Flutter+fluent_ui** : pont Rust le plus mûr des 4 (`flutter_rust_bridge`,
+  "Flutter Favorite", 200+ PR) mais `fluent_ui` n'implémente que le design
+  Windows/WinUI3 — macOS nécessiterait `macos_ui` séparé (mainteneur
+  unique, risque de continuité), introduisant une nouvelle divergence
+  cross-plateforme que Sift n'a pas aujourd'hui. Abandon du bundling Tauri
+  déjà fonctionnel (installeur ~25 Mo vs ~8 Mo, RAM idle ~275 Mo vs ~90 Mo,
+  chiffres marketing à prendre avec prudence).
+- **1a (React+shadcn)** vs **1b (Vue+Nuxt UI)** : les deux gagnent sur le
+  critère backend (IPC Tauri inchangé, zéro risque, zéro changement côté
+  Rust). Entre les deux, 1b a une courbe d'apprentissage mesurée plus douce
+  pour un non-dev (2-4 semaines vs 4-8, sources comparatives citées dans le
+  rapport complet) et un paradigme (SFC Vue) plus proche du modèle mental
+  déjà en place dans le vanilla TS actuel (template + manipulation DOM).
+  Mais Nuxt UI n'a **pas** de composant segmented-control natif (issue
+  GitHub `nuxt/ui#6281` toujours ouverte au moment du spike) — ironique vu
+  que c'est exactement le composant que Sift vient d'unifier à la main.
+
+**La vraie racine du problème, identifiée en creusant plus loin (pas dans
+le spike stack)** : ce n'est pas un problème de framework, c'est l'absence
+d'une **référence canonique** que je (Claude) suis censé consulter avant
+d'inventer un style UI. Vérifié concrètement sur un cas réel : la scrollbar
+de Sift (`frontend/styles.css:97-107`, introduite commit `a3d4ed9`,
+13/06) n'a aucune source citée dans son commit ni ailleurs — elle a été
+produite "de mémoire d'entraînement" (un pattern statistique issu du
+pré-entraînement sur d'innombrables CSS/design systems vus, sans
+traçabilité vers une source précise), jamais vérifiée contre une vraie
+référence. C'est le même mécanisme qui a produit les divergences audit-
+après-coup (segmented control, `.lk`/`.lk-icon`) : rien dans le processus
+actuel ne force une recherche active avant de générer du CSS, sauf quand
+Antoine fournit lui-même un lien/référence précise (comme pour v-wave,
+2026-07-08, où la traduction a été fidèle car lue directement, pas
+reconstruite de mémoire).
+
+**Décision** : pas de migration de stack. Adoption d'un **pool de
+références canoniques gratuites**, consultées via WebFetch avant tout
+nouvel élément UI sans exemple donné par Antoine — jamais installées comme
+dépendance (aucune n'entre dans `package.json`/`Cargo.toml`), juste lues et
+portées à la main en vanilla TS/CSS avec les tokens déjà en place :
+
+| Source | Cible native | Statut | Force pour Sift |
+|---|---|---|---|
+| [ui.shadcn.com](https://ui.shadcn.com/) | React | Gratuit, officiel, open source | Doc la plus complète et la mieux structurée par composant (props/variants/états), 64 composants + Blocks + Charts |
+| [coss.com/ui](https://coss.com/ui) | React (Base UI) | Gratuit, open source | 492 composants ("particles") |
+| [uithing.com/components](https://uithing.com/components) | Vue | Gratuit, open source | 96 composants, dont Scroll Area et Sidebar/Command absents ou faibles côté shadcn/Nuxt UI |
+| [21st.dev](https://21st.dev/) | React | Gratuit à consulter | Catalogue communautaire très large, plusieurs variantes par composant |
+| [Apple HIG](https://developer.apple.com/design/human-interface-guidelines) | — (guidelines desktop) | Gratuit, officiel | Macro-décisions déjà en place dans Sift (grammaire de carte Boxes, couleurs système, matériaux) — shadcn/COSS/uithing ne couvrent pas ce niveau, ce sont des kits de composants web génériques, pas une doc desktop-native |
+
+**Sites explicitement écartés du pool** (tiers non officiels, payants, ou
+hors sujet, vérifiés un par un) : `shadcn.io` (non affilié au vrai shadcn,
+Pro à partir de 19$/mois — sert surtout à automatiser l'installation CLI
+dans un projet React, inutile ici) ; `shadcndesign.com` (kit Figma non
+officiel, payant, pour un pipeline Claude Design qu'on a déjà abandonné,
+Évaluation 3/4) ; les libs `shadcn_ui`/`shadcn_flutter` (ports Flutter
+tiers de shadcn, hors sujet puisque Flutter est écarté) ; la skill Claude
+`shadcn-ui` de crossaitools.com (câblée pour CLI React/npm, contre-
+productive sur du vanilla — pousserait vers des réflexes qu'on n'a pas).
+
+**Répartition des deux registres** (pourquoi shadcn/COSS/uithing ET Apple
+HIG, pas un choix unique) : shadcn et ses équivalents répondent aux
+questions de **micro-composant** (comment un toggle/popover/scrollbar se
+comporte exactement à l'état hover/focus/disabled) — un niveau que HIG ne
+traite pas. HIG répond aux questions de **macro-décision desktop**
+(vibrancy/matériaux, élévation, couleur système) — un niveau que les kits
+web génériques ne traitent pas du tout. Les deux registres ne se
+recouvrent pas, donc pas de contradiction possible entre eux.
+
+**Sur l'usage des valeurs shadcn elles-mêmes (pas juste la structure)** :
+décision de ne PAS copier la palette/l'échelle par défaut de shadcn en
+bloc — shadcn le dit lui-même sur sa page d'accueil ("Start here then make
+it your own"), ses valeurs par défaut sont un point de départ générique
+que même les projets React recolorent presque toujours. Sift a déjà sa
+propre palette validée (11 tâches, Apple system colors, 2026-07-06) qui
+répond mieux à l'identité produit qu'un défaut générique — la remplacer en
+bloc referait un travail déjà audité, pour un gain nul. Ce qui a de la
+valeur chez shadcn, c'est la **structure** (quelles props/variants un
+composant a, quels états il gère), pas les hex codes. Exception : pour un
+composant que Sift n'a encore jamais construit (aucune valeur tranchée
+existante), partir du chiffre shadcn comme brouillon plutôt que d'improviser
+de mémoire reste raisonnable.
+
+**Règle de travail actée** (voir aussi `CLAUDE.md`, section Front) : avant
+tout nouvel élément UI sans référence donnée par Antoine, consulter le pool
+ci-dessus (WebFetch la doc/le code source réel) plutôt que générer du
+CSS/comportement "de mémoire d'entraînement" sans traçabilité. Si Antoine
+fournit lui-même un lien précis (comme v-wave), le lire directement plutôt
+que deviner depuis sa description verbale — c'est la même règle appliquée
+au cas où la référence vient de lui plutôt que d'une recherche.
+
+---
+
+## Évaluation 20 — M8 Tier 3 Test 1 (flag `TrackInfoUpdated`) retesté et infirmé (2026-07-08)
+
+**Contexte** : Tier 3 (synchro metadata via un flag de reload, sans écrire
+les tables normalisées `djmdArtist`/`Album`/`Genre` soi-même) était le
+dernier point M8 réellement ouvert, bloqué depuis le 2026-07-06 par deux
+tentatives de test confondues par le même problème — un titre partagé entre
+deux pistes distinctes de la bibliothèque d'Antoine, menant à consulter la
+mauvaise piste dans Rekordbox à chaque fois (voir `FINDINGS-m8-spike-3.md`
+section 5). Cette session a retesté proprement, avec une leçon méthode
+appliquée dès le départ : sélectionner un canary à **titre unique** dans
+toute la bibliothèque (requête, pas recherche manuelle) pour éliminer
+structurellement cette classe d'erreur avant même de commencer.
+
+**Méthode** : copie fraîche de `master.db`+`masterPlaylists6.xml` (jamais
+les fichiers live) dans `~/Desktop/sift-m8-tier3-spike/`. Requête sur la
+copie : 1434 pistes à titre unique trouvées sur 2828 ; canary retenu —
+`ID=99795585`, `"Street Battle"`. Simulation du scénario réel Sift
+(déplace + ré-encode + re-tag) : copie du fichier audio réel (original
+jamais touché, hash SHA256 identique avant/après vérifié), tag `Artist`
+modifié sur la copie uniquement (`M8 TIER3 SPIKE TEST`), puis dans la copie
+de `master.db` : `FolderPath`/`FileNameL`/`FileNameS` repointés + incrément
+`TrackInfoUpdated` `'6'`→`'7'` via `pyrekordbox`+`commit()`. Round-trip
+SQLite vérifié avant tout swap réel : `Analysed`/`AnalysisUpdated`/
+`CueUpdated` confirmés inchangés.
+
+**Incident de permission pendant la préparation** : le classifieur de
+permissions Claude Code a bloqué la première tentative d'exécution du
+script de mutation (sur la COPIE, jamais le fichier live), lisant la
+réponse d'Antoine à une question de clarification précédente ("Je prépare
+le spike, tu fais la vérif quand prêt") comme "l'utilisateur va tout faire
+lui-même" plutôt que "l'agent prépare, l'utilisateur vérifie" — une
+ambiguïté de lecture du "Je" dans le libellé français de l'option.
+Redemandé explicitement à Antoine avant de continuer, confirmé, poursuivi
+sans contournement du blocage.
+
+**Vérification manuelle dans le vrai Rekordbox (Antoine)** : fermeture
+confirmée → backup horodaté (`~/Desktop/rb-backup-2026-07-08-tier3-test/`)
+→ swap → ouverture → observation de "Street Battle" (sans ambiguïté,
+titre unique) → fermeture → restauration. Deux tentatives de restauration
+ont échoué à cause d'un problème de collage dans le terminal PowerShell
+d'Antoine (deux commandes concaténées sans saut de ligne produisant des
+noms de paramètre malformés type `-ForceCopy-Item`) — corrigé en fournissant
+un script `.ps1` à exécuter en une seule ligne plutôt que des commandes à
+coller. **Chaque affirmation de restauration a été vérifiée indépendamment
+par comparaison SHA256 live-vs-backup avant d'être acceptée** (jamais pris
+la parole d'Antoine ou une sortie de commande non vue pour argent
+comptant) — cohérent avec la règle déjà actée sur ce projet
+(`verify-before-live-production-write`, voir mémoire).
+
+**Résultat, sans ambiguïté possible** :
+- **Emplacement** : affiche le nouveau chemin correctement — confirme une
+  nouvelle fois Tier 1 (déjà acquis, revalidé en passant).
+- **Grille** : intacte.
+- **Artiste** : reste l'ancienne valeur (`Hecher & Ward`), **pas**
+  `M8 TIER3 SPIKE TEST` — malgré le flag incrémenté et Rekordbox ouvert.
+  **La stratégie primaire du design v2 (flag seul → reload automatique) est
+  infirmée.**
+- **Action manuelle « Relire le tag »** : fonctionne correctement, le tag
+  se met à jour. Le mécanisme de reload existe et marche — il n'est
+  simplement jamais déclenché automatiquement par ce flag seul.
+
+**Décision/implication** : Tier 3 reste ouvert au sens produit (pas de
+route automatique viable identifiée), mais la question technique est
+tranchée — plus un blocage en attente d'un retest, un verdict négatif
+définitif sur cette route précise. Deux chemins restants, aucun tranché
+dans cette session : (1) fallback à haut risque déjà anticipé par le
+design v2 (écriture directe des tables normalisées, find-or-create FK) —
+redevient la seule route automatique restante ; (2) renoncer à
+l'automatique, documenter le geste manuel « Relire le tag » pour
+l'utilisateur — le plus simple et sûr des deux, pas un fallback silencieux
+puisque proposé explicitement plutôt que caché.
+
+Détail complet : `~/Desktop/sift-masterdb-write-probe/FINDINGS-m8-spike-5-tier3-test1.md`.
+Design mis à jour : `docs/superpowers/specs/2026-07-06-m8-masterdb-write-path-rust-design-v2.md`.

@@ -316,10 +316,17 @@ empreintes Chromaprint).
 > correspondance Sift↔Rekordbox non encore spécifiée. Plan (moteur) :
 > `docs/superpowers/plans/2026-07-08-m8-tier2-playlist-dedup-rust.md`.
 >
-> **Tier 3** (flag `TrackInfoUpdated` pour la synchro metadata) reste non commencé —
-> bloqué sur un spike jamais correctement terminé (retest par ID exact, voir
-> `docs/superpowers/specs/2026-07-06-m8-tier1-write-path-rust-design-v2.md`).
-- **Rekordbox `master.db`** : remplacement in-situ (Tier 1 livré), **dédup des playlists existantes** (Tier 2 moteur livré ci-dessus, IPC/UI restant), **réparation/prévention des liens cassés** (chemin change au changement de format — Tier 1). ⚠️ backup obligatoire (déjà implémenté), Rekordbox fermé (garde déjà implémentée).
+> **Tier 3** (flag `TrackInfoUpdated` pour la synchro metadata) — **spike
+> retesté proprement le 2026-07-08** (canary à titre unique, plus d'ambiguïté
+> possible) : verdict négatif sur la stratégie primaire — le flag seul ne
+> déclenche **aucun** reload automatique du tag dans Rekordbox (l'action
+> manuelle « Relire le tag », elle, fonctionne). Non commencé côté code —
+> une décision produit reste à prendre (fallback écriture directe des tables
+> normalisées, à haut risque, vs renoncer à l'automatique et documenter le
+> geste manuel pour l'utilisateur) avant tout travail d'implémentation.
+> Détail : `docs/superpowers/specs/2026-07-06-m8-masterdb-write-path-rust-design-v2.md`,
+> `~/Desktop/sift-masterdb-write-probe/FINDINGS-m8-spike-5-tier3-test1.md`.
+- **Rekordbox `master.db`** : remplacement in-situ (Tier 1 livré, moteur+IPC+UI), **dédup des playlists existantes** (Tier 2 livré, moteur+IPC+UI), **réparation/prévention des liens cassés** (chemin change au changement de format — Tier 1). ⚠️ backup obligatoire (déjà implémenté), Rekordbox fermé (garde déjà implémentée).
 - **Normalisation loudness** (option, OFF par défaut).
 
 ---
