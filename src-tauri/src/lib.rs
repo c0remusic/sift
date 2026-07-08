@@ -32,6 +32,27 @@ mod worker;
 use std::sync::Mutex;
 use tauri::Manager;
 
+/// Extends the DWM frame into the whole client area (all margins -1) so Windows treats the
+/// entire window as "glass" instead of drawing its own opaque backdrop in the native resize-margin
+/// strip around an undecorated, transparent, resizable window — that strip was showing as a solid
+/// blue-grey rectangle instead of true transparency (visible only in windowed, not maximized,
+/// mode — maximized windows have no resize margin). See docs/ressources-externes.md.
+#[cfg(windows)]
+fn extend_frame_into_client_area(window: &tauri::WebviewWindow) {
+    use windows::Win32::Graphics::Dwm::DwmExtendFrameIntoClientArea;
+    use windows::Win32::UI::Controls::MARGINS;
+    let Ok(hwnd) = window.hwnd() else { return };
+    let margins = MARGINS {
+        cxLeftWidth: -1,
+        cxRightWidth: -1,
+        cyTopHeight: -1,
+        cyBottomHeight: -1,
+    };
+    unsafe {
+        let _ = DwmExtendFrameIntoClientArea(hwnd, &margins);
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -75,6 +96,10 @@ pub fn run() {
             watcher::start_all(app.handle());
             worker::init(app.handle());
             worker::refill(app.handle());
+            #[cfg(windows)]
+            if let Some(w) = app.get_webview_window("main") {
+                extend_frame_into_client_area(&w);
+            }
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![

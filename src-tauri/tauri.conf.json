@@ -10,6 +10,7 @@
     "beforeBuildCommand": "npm run build"
   },
   "app": {
+    "macOSPrivateApi": true,
     "windows": [
       {
         "title": "Sift",
@@ -19,6 +20,7 @@
         "minHeight": 640,
         "resizable": true,
         "decorations": false,
+        "transparent": true,
         "fullscreen": false
       }
     ],

@@ -4001,6 +4001,7 @@ dependencies = [
  "tempfile",
  "ureq",
  "walkdir",
+ "windows 0.61.3",
  "wmi",
 ]
 
