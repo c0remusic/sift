@@ -228,6 +228,99 @@ pub struct PathRepair {
     pub new_file_name_s: String,
 }
 
+/// One `djmdSongPlaylist` row involved in a duplicate group — either the
+/// occurrence being kept or one being removed.
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PlaylistDuplicateEntry {
+    /// Rekordbox `djmdSongPlaylist.ID` of this row.
+    pub song_playlist_id: String,
+    /// Rekordbox `djmdSongPlaylist.TrackNo` of this row.
+    pub track_no: i64,
+}
+
+/// A set of `djmdSongPlaylist` rows in the same playlist that reference the
+/// same track more than once. `keep` is the occurrence with the lowest
+/// `TrackNo` (kept untouched by `dedup_playlist_group`); `remove` is every
+/// other occurrence.
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PlaylistDuplicateGroup {
+    /// Rekordbox `djmdPlaylist.ID` the duplicated entries belong to.
+    pub playlist_id: String,
+    /// Rekordbox `djmdContent.ID` that appears more than once in this playlist.
+    pub content_id: String,
+    /// The occurrence that survives (lowest `TrackNo`).
+    pub keep: PlaylistDuplicateEntry,
+    /// Every other occurrence — these are what `dedup_playlist_group` deletes.
+    pub remove: Vec<PlaylistDuplicateEntry>,
+}
+
+/// Scans `djmdSongPlaylist` for `(PlaylistID, ContentID)` pairs that appear
+/// more than once — the same track added twice (or more) to the same
+/// playlist. Read-only, mirroring `read_rekordbox_masterdb`'s shape (decrypt
+/// → deserialize → query, no write).
+#[allow(dead_code)]
+pub fn detect_playlist_duplicates(path: &Path) -> Result<Vec<PlaylistDuplicateGroup>, MasterDbError> {
+    let raw = std::fs::read(path).map_err(|e| MasterDbError::Io(e.to_string()))?;
+    let plaintext = decrypt_masterdb(&raw)?;
+
+    let mut conn = Connection::open_in_memory().map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+    let len = plaintext.len();
+    conn.deserialize_read_exact(rusqlite::MAIN_DB, Cursor::new(plaintext), len, true)
+        .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+
+    let mut stmt = conn
+        .prepare("SELECT ID, PlaylistID, ContentID, TrackNo FROM djmdSongPlaylist ORDER BY PlaylistID, ContentID, TrackNo")
+        .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+                row.get::<_, i64>(3)?,
+            ))
+        })
+        .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+
+    let mut all = Vec::new();
+    for row in rows {
+        all.push(row.map_err(|e| MasterDbError::Sqlite(e.to_string()))?);
+    }
+
+    // Rows are sorted by (PlaylistID, ContentID, TrackNo), so duplicates of
+    // the same (PlaylistID, ContentID) pair are always contiguous — a single
+    // linear scan finds every group without a HashMap.
+    let mut groups: Vec<PlaylistDuplicateGroup> = Vec::new();
+    let mut i = 0;
+    while i < all.len() {
+        let (keep_id, playlist_id, content_id, keep_track_no) = &all[i];
+        let mut j = i + 1;
+        let mut remove = Vec::new();
+        while j < all.len() && &all[j].1 == playlist_id && &all[j].2 == content_id {
+            remove.push(PlaylistDuplicateEntry {
+                song_playlist_id: all[j].0.clone(),
+                track_no: all[j].3,
+            });
+            j += 1;
+        }
+        if !remove.is_empty() {
+            groups.push(PlaylistDuplicateGroup {
+                playlist_id: playlist_id.clone(),
+                content_id: content_id.clone(),
+                keep: PlaylistDuplicateEntry {
+                    song_playlist_id: keep_id.clone(),
+                    track_no: *keep_track_no,
+                },
+                remove,
+            });
+        }
+        i = j;
+    }
+    Ok(groups)
+}
+
 /// Reverses Rekordbox's own obfuscation of the static `master.db` passphrase:
 /// base85 (RFC1924 alphabet, same as CPython's `base64.b85decode`) decode →
 /// XOR with the repeating key → zlib decompress → UTF-8. Order is the exact
@@ -933,6 +1026,30 @@ mod tests {
         // The master.db copy that succeeded before the XML failure must not
         // be left behind under the fixed filename.
         assert!(!backup_dir.join("master.db").exists());
+    }
+
+    #[test]
+    fn detect_playlist_duplicates_finds_the_fixture_duplicate() {
+        let groups = detect_playlist_duplicates(Path::new(FIXTURE)).expect("detect");
+        assert_eq!(groups.len(), 1, "fixture has exactly one duplicate group");
+        let g = &groups[0];
+        assert_eq!(g.playlist_id, "50000001");
+        assert_eq!(g.content_id, "40000001");
+        assert_eq!(g.keep.song_playlist_id, "60000001");
+        assert_eq!(g.keep.track_no, 1);
+        assert_eq!(g.remove.len(), 1);
+        assert_eq!(g.remove[0].song_playlist_id, "60000003");
+        assert_eq!(g.remove[0].track_no, 3);
+    }
+
+    #[test]
+    fn detect_playlist_duplicates_ignores_non_duplicated_entries() {
+        let groups = detect_playlist_duplicates(Path::new(FIXTURE)).expect("detect");
+        // Track 40000002 appears exactly once (TrackNo 2, playlist 50000001)
+        // — must not show up as a group.
+        assert!(!groups
+            .iter()
+            .any(|g| g.content_id == "40000002"));
     }
 
     #[test]
