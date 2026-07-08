@@ -56,6 +56,9 @@ conn.executemany(
     [
         ("60000001", "50000001", "40000001", 1),
         ("60000002", "50000001", "40000002", 2),
+        # Duplicate: track 40000001 also appears at TrackNo 3 — M8 Tier 2
+        # dedup fixture scenario (keep 60000001, remove 60000003).
+        ("60000003", "50000001", "40000001", 3),
     ],
 )
 conn.execute(

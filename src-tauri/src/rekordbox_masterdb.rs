@@ -797,6 +797,25 @@ mod tests {
     }
 
     #[test]
+    fn fixture_has_a_playlist_duplicate() {
+        let raw = std::fs::read(FIXTURE).expect("read fixture bytes");
+        let plaintext = decrypt_masterdb(&raw).expect("decrypt fixture");
+        let mut conn = Connection::open_in_memory().expect("open in-memory");
+        let len = plaintext.len();
+        conn.deserialize_read_exact(rusqlite::MAIN_DB, Cursor::new(plaintext), len, true)
+            .expect("deserialize fixture");
+
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM djmdSongPlaylist WHERE PlaylistID = '50000001' AND ContentID = '40000001'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("query djmdSongPlaylist");
+        assert_eq!(count, 2, "fixture must have track 40000001 twice in playlist 50000001");
+    }
+
+    #[test]
     fn reconstructed_buffer_declares_true_reserve() {
         let raw = std::fs::read(FIXTURE).expect("read fixture bytes");
         let plaintext = decrypt_masterdb(&raw).expect("decrypt fixture");
