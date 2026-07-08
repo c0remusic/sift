@@ -1,9 +1,31 @@
 # Sift — Design Spec HIG adaptée desktop
 
-> Date : 2026-07-07
+> Date : 2026-07-07 (amendée 2026-07-08)
 > Statut : spec active
 > Sources : Apple HIG (lecture du 2026-07-06), `2026-07-06-apple-hig-review-notes.md`,
-> `docs/design-system-states.md`, `frontend/styles.css`
+> `docs/design-system-states.md`, `frontend/styles.css`, "8 First Principles of Software
+> Design" (uxdesign.cc, lu 2026-07-08)
+
+## Fondements théoriques (2026-07-08)
+
+3 principes de l'article "8 First Principles of Software Design" formalisent des règles déjà
+écrites dans cette spec ou déjà pratiquées dans le code — cités ici comme justification, pas
+comme nouveauté :
+
+- **Éléments rendus ensemble ou séparément** — les popovers (Destination) et les disclosures
+  (Diagnostic/Métadonnées repliables) sont exactement ce pattern binaire : soit affiché inline,
+  soit un clic pour lier deux états. Fondement des règles Feedback/Layout ci-dessous.
+- **3 méthodes de layout : horizontal, vertical, superposé** — fondement théorique direct de la
+  distinction "Groupée" (horizontal/vertical, dans le flux) vs "Flottante" (superposé, z-axis)
+  de la section Surfaces plus bas.
+- **Modularité vs facilité d'usage, tension à équilibrer** — justifie les arbitrages du
+  composant `.sift-seg`/`.sift-seg-opt` (2026-07-08, `design-system-states.md`) : partagé sur
+  6 sites, mais pas poussé à l'uniformité totale (le thumb glissant n'existe que là où l'état
+  persiste réellement, pas forcé partout au prix de la logique de contenu).
+
+"Chaque clic coûte de l'effort" et "le code qui tourne est la seule vérité" recoupent des
+principes déjà actés ailleurs (recherche en filtre direct ; "l'app réelle est la surface de
+design", CLAUDE.md) — pas répétés ici.
 
 ## But
 
@@ -144,19 +166,46 @@ sens seul" en appliquant cette section.
 
 La surface raconte l'organisation du travail.
 
+### Règle HIG vérifiée (2026-07-08) : "Boxes"
+
+Trouvée sur developer.apple.com/design/human-interface-guidelines/boxes : "A box
+creates a visually distinct group of logically related information and
+components. By default, a box uses a visible border or background color... "
+— **jamais une ombre**. L'ombre signale une vraie élévation en z (une chose qui
+flotte AU-DESSUS d'une autre — modale, popover, toast), pas un groupe de
+contenu inline. Autre règle de la même page : une boîte reste petite par
+rapport à son conteneur ; en approcher la taille la rend moins efficace pour
+signaler la séparation. Et une boîte groupe des informations **liées**
+(pluriel) — en grouper une seule n'ajoute que du chrome.
+
 ### Règles
 
 - carte pleine si une section doit se lire comme bloc autonome
 - fond continu si les sous-sections appartiennent à la même tâche
-- bordure légère pour délimitation calme, jamais comme accent
-- ombre subtile seulement pour les surfaces qui doivent se détacher
+- bordure légère (0.5px, `--color-border-tertiary`) pour délimitation calme,
+  jamais comme accent
+- **2 rôles seulement, jamais 3** : Groupée (bordure OU fond teinté, jamais
+  d'ombre) / Flottante (ombre, réservée aux vraies superpositions — modale,
+  popover, toast). Pas de rôle "élevée" intermédiaire avec ombre sur du
+  contenu inline — ombre et groupage ne se mélangent pas.
+- une boîte n'entoure jamais un seul élément isolé — si une section n'a
+  qu'un seul réglage/champ, elle rejoint la boîte voisine (ligne divisée par
+  un filet) plutôt que sa propre carte
 
 ### Decision Sift
 
 - Revue définit le meilleur équilibre actuel entre cartes et fond continu
 - Bibliothèque et Réglages doivent converger vers cette logique
 - Écartés peut garder des cartes de section, car ses groupes sont distincts
+  (plusieurs morceaux par section, pas un seul champ)
 - Accueil doit rester plus calme qu'un écran de travail détaillé
+- **Appliqué 2026-07-08** : ombre retirée de `.sift-ui-card`, `.sift-spectro-box`,
+  `.sift-action-rail`, `.sift-player-row`, `.sift-fil-editor-margin`, `#qcol`
+  (rejoignent le rôle Groupée) ; `.jrnl-insp-card` corrigée (bordure 1px→0.5px,
+  `border-secondary`→`border-tertiary`, accident) ; Réglages passé de 4 cartes
+  (1 réglage chacune) à 1 seule `.sift-ui-card-soft` avec lignes divisées
+  (`.sift-settings-list-row`) — voir `design-system-states.md`. Seul
+  `.sift-report-overlay-card` garde une ombre (rôle Flottante, vraie modale).
 
 ## Contrôles
 
@@ -239,6 +288,40 @@ scène.
 - Revue sert de référence d'alignement latéral
 - les surfaces sœurs ne doivent pas dériver de quelques pixels selon l'écran
 - les espaces bas de panneau doivent être intentionnels, pas résiduels
+
+## Listes
+
+### Intent
+
+Une app comme Sift est fondamentalement une pile de listes imbriquées (file,
+facettes, sessions, tracklist batch) — "une liste d'un élément reste une
+liste, une liste vide reste une liste vide" (principe "Apps are lists of
+lists", uxdesign.cc, 2026-07-08).
+
+### Règle validée par grill-me (2026-07-08)
+
+Vérifié dans tout `frontend/` : aucun `.length === 1` ni équivalent nulle
+part — Sift ne fait déjà aucune distinction visuelle entre 1 et N éléments,
+seul le 0 (vide) est une branche à part. Actée comme règle explicite :
+
+- **une liste garde son chrome complet (bordures, en-tête, compteur) qu'elle
+  ait 1 ou N éléments** — ne jamais inventer un cas spécial "un seul élément"
+  qui simplifierait/masquerait le chrome habituel
+- **seul l'état vide (0) est une branche différente**, et doit passer par le
+  composant partagé `emptyStateHtml()` (`empty-state.ts`) — jamais un message
+  ad hoc par écran
+- exception assumée : un message compact *inline* dans une liste dont le
+  reste de l'écran (en-tête, actions) reste fonctionnel autour n'est pas un
+  "état vide" au sens de `emptyStateHtml()` (conçu pour un écran mort en
+  entier) — voir `.sift-list-empty-hint` (Accueil, colonne Sources)
+
+### Trouvé et corrigé le même jour
+
+`emptyStateHtml()` n'était utilisé que par 4 écrans sur 7 candidats — Journal
+(2 variantes ad hoc, `.jrnl-empty`) et Accueil (style inline) divergeaient.
+Journal migré vers le composant partagé ; Accueil gardé en message compact
+(`.sift-list-empty-hint`) car hors échelle du composant — voir
+`design-system-states.md` pour le détail des sites.
 
 ## Recherche
 

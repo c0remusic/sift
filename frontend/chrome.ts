@@ -93,8 +93,11 @@ export function injectLeanStyle() {
     // landing/demo copy in index.html: marketing pitch, demo disclaimer, feature cards row
     ".pitch,.sub,.frow{display:none!important}" +
     // Rekordbox/Clé USB nav items: wired to a real (simulated) export task in sift-live.ts
-    // (runNavExport) as of 2026-07-02 — no longer hidden. Revue-only toggles below still are.
-    // Revue: batch mode + "traités" toggle aren't wired to the real backend yet
+    // (runNavExport) as of 2026-07-02 — no longer hidden.
+    // Revue's batch mode + "traités" toggle ARE wired for real now (2026-07-08:
+    // ensureReviewSeg()/ensureQueueDoneToggle() in sift-live.ts) — just under different DOM
+    // (data-sift="reviewmode", #sift-qdone-toggle) than app.js's own mock attributes below, which
+    // this rule hides since the mock's copy is otherwise never overwritten by the live render.
     '[data-act="revmode"],[data-act="togglequeue"]{display:none!important}' +
     // custom frameless titlebar (decorations are off in tauri.conf — Tauri only). Two REAL DOM
     // zones (not a linear-gradient background trick, which can show a soft sub-pixel seam): the

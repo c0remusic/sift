@@ -314,27 +314,35 @@ l'échelle existante (`xs`→`2xl`) plutôt que de prétendre encore à un rôle
 taille visuelle pour cette icône, aucun changement rendu). Le vrai titre de
 morceau (`.sift-player-name`) reste sur `--text-lg` (14px), non affecté.
 
-## Cartes Réglages — `.sift-settings-card` (`styles.css:536-549`, structure `sift-live.ts` `renderReglagesLive()`)
+## Cartes Réglages — `.sift-settings-list` (`styles.css`, structure `sift-live.ts` `renderReglagesLive()`)
+
+**Refonte 2026-07-08** : avant, chaque section (Discogs/Bibliothèque/Apparence/
+Clé USB) était sa propre `.sift-ui-card-soft` — 4 cartes empilées. Retour
+utilisateur : "trop de boîtes" ; vérifié que chaque carte ne contenait
+**qu'un seul réglage** — une boîte groupe des informations liées (règle HIG
+"Boxes", voir spec `2026-07-07-hig-adaptation-design-spec.md`), en grouper
+une seule n'ajoute que du chrome. Les 4 sections partagent maintenant **une
+seule** `.sift-ui-card-soft` (id `sift-reglages-list`), séparées par un filet
+horizontal (`.sift-settings-list-row`, bordure `--color-border-tertiary`
+0.5px sur toutes les lignes sauf la première).
 
 | État | Sélecteur | Valeur |
 |---|---|---|
-| Carte | `.sift-settings-card` | fond `var(--color-background-secondary)`, bordure `var(--color-border-tertiary)` |
+| Boîte unique | `.sift-settings-list` sur `.sift-ui-card-soft` | fond `var(--color-background-secondary)`, bordure `var(--color-border-tertiary)` — une seule fois pour les 4 sections |
+| Ligne (section) | `.sift-settings-list-row` | pas de fond/bordure propre — délimitée par un filet `border-top` sauf la première |
 | Bouton (ex. "Changer…") | `.sift-settings-btn` | fond `var(--color-surface-raised)` |
 | Bouton hover | `.sift-settings-btn:hover` | `filter:brightness(0.95)` |
 | Lien "Oublier" | `.sift-settings-forget` | `color: var(--color-text-quaternary)` |
 | Lien "Oublier" hover | `.sift-settings-forget:hover` | `color: var(--color-text-secondary)` |
 
-**Structure DOM (corrigée 2026-07-04)** : `renderReglagesLive()` construit
-plusieurs cartes (`Discogs` id `sift-reglages-discogs`, `Bibliothèque` id
-`sift-reglages-bibliotheque`, `Apparence` id `sift-reglages-apparence`, et
-tout futur ajout — ex. clé USB, M7) à l'intérieur d'un **wrapper unique**
-`<div id="sift-reglages-live">`, retiré/recréé en un point avant chaque
-re-render. Avant ce fix, chaque carte était un sibling direct de `#content`
-et seule la 1ʳᵉ (Discogs) était nettoyée — un second appel (ex. via
-"Changer…"/"Oublier" sur le dossier racine) dupliquait Bibliothèque/Apparence
-et leurs listeners. **Toute nouvelle carte doit s'ajouter à l'intérieur de ce
-wrapper**, pas comme sibling direct de `#content` — sinon le bug se
-reproduit.
+**Structure DOM** : `renderReglagesLive()` construit un **wrapper unique**
+`<div id="sift-reglages-live">` (règle 2026-07-04, inchangée) contenant
+maintenant un second wrapper `<div id="sift-reglages-list" class="sift-settings-list sift-ui-card-soft sift-ui-card-soft-pad">`,
+qui porte les 4 sections (`sift-reglages-discogs`/`-bibliotheque`/`-apparence`/
+`-usb`, chacune `.sift-settings-list-row`). **Toute nouvelle section doit
+s'ajouter à l'intérieur de `list`**, pas comme sibling direct de `wrap` ou de
+`#content` — sinon elle redevient une carte isolée et le bug de duplication
+2026-07-04 se reproduit sur un autre wrapper.
 
 ## Zone de dépôt drag OS — `.sift-dz-on` (`chrome.ts` `ensureDropStyle`/`setDropActive`)
 
@@ -490,6 +498,142 @@ de base (bordure, padding, hover — déjà correct partout ailleurs dans l'app)
 **Règle à retenir** : `.lk-icon` = icône seule, taille fixe, jamais de texte
 dedans ; un bouton avec label texte n'a besoin d'aucune classe particulière,
 `button{}` suffit.
+
+## Pastille segmentée — `.sift-seg`/`.sift-seg-opt`, composant unique (2026-07-08)
+
+4 implémentations différentes coexistaient pour le même job ("choisir une
+option parmi peu, exclusif") : Apparence (Réglages, déjà la bonne
+référence) ; Format USB (FAT32/exFAT, réutilisait `.sift-seg-opt` pour la
+pastille mais sans la piste encaissée — pastilles "à nu") ; Détail/Lot
+(file d'attente Revue, **réimplémenté en styles inline** dans `sift-live.ts`,
+dupliquant tout le composant en CSS-in-JS) ; Dossiers/Genres (Bibliothèque,
+utilisait `.chip`/`.chip.on` — la grammaire filtre/tag, pas la grammaire de
+choix exclusif). Unifiés en un seul composant :
+
+| Élément | Classe | Rôle |
+|---|---|---|
+| Piste | `.sift-seg` | fond `--color-track`, radius 7px, padding 2px — encaisse les options |
+| Option | `.sift-seg-opt` | `<span>` (texte seul) ou `<button>` (icône+label) ; `.on` = fond `--color-surface-raised` |
+
+Sites : Apparence (Réglages), Format USB (`usb-format-modal.ts`), Détail/Lot
+(`#sift-revseg`, `sift-live.ts` `ensureReviewSeg()`), Dossiers/Genres
+(Bibliothèque, `sift-live.ts`), Session/Historique (Journal, `journal.ts`
+`headerHtml()` — 6ᵉ site trouvé dans une 2ᵉ passe, `.jrnl-mode`/
+`.jrnl-mode-btn`). `#sift-revseg` garde une règle CSS propre
+(`align-self:center;margin-bottom:10px`, positionnement dans `#qcol`) en plus
+de `.sift-seg` — seul le positionnement reste spécifique au site, jamais le
+style de piste/pastille. `white-space:nowrap` ajouté à `.sift-seg-opt` pour
+les libellés longs du Journal ("Session courante"/"Tout l'historique").
+`.jrnl-qmode`/`.jrnl-qmode-btn` (CSS mort, 0 consommateur trouvé, à ne pas
+confondre avec `.jrnl-mode`/`.jrnl-mode-btn` — vraiment utilisées, elles)
+supprimé dans le même geste.
+
+**Thumb glissant — Détail/Lot seulement (2026-07-08)** : le crossfade
+couleur/fond par bouton (`.sift-seg-opt.on`, transition 150ms) ne montrait
+pas clairement un déplacement d'un état à l'autre. Ajouté `.sift-seg-thumb`,
+un élément unique positionné en absolu (`transform:translateX()` +
+`width`, transition 180ms) qui glisse physiquement vers le bouton
+sélectionné — mesuré via `offsetLeft`/`offsetWidth` dans `ensureReviewSeg()`
+à chaque toggle. Porte le fond/bordure/ombre (`--shadow-panel-subtle`,
+seule pastille du composant à avoir une ombre — voir grammaire de carte
+"Flottante" plus haut, exception assumée ici pour l'effet de profondeur du
+thumb) ; `.sift-seg-thumbed .sift-seg-opt.on{background:none;border:none}`
+annule le style "boîte" par-bouton pour ne pas dupliquer visuellement le
+thumb. **Réservé à Détail/Lot** : c'est le seul des 6 sites où les boutons
+persistent entre les changements d'état (mutation `classList` en place,
+pas de reconstruction `innerHTML`) — un thumb sur les 5 autres sites
+n'aurait rien à glisser, ils reconstruisent leur contenu (et donc perdent
+toute mesure de position) à chaque changement.
+
+**Format (MP3/AIFF/WAV) migré vers `.sift-seg`, thumb ajouté au rail Détail
+uniquement (2026-07-08)** : 2 sites trouvés, tous deux en `.chip`/`.chip.on`
+(pas `.sift-seg-opt`) — rail Détail (`filing.ts` `renderFoot()`, id
+`#sift-fmt-seg`) et rail batch (`sift-live.ts`, `formatBlock`). Rail Détail :
+même chirurgie que Détail/Lot — `renderFoot()` appelait un rebuild complet
+sur chaque clic de format (`state.target` puis `renderFoot(...)` à nouveau),
+détruisant les chips à chaque fois ; converti en mutation `classList` en
+place (`positionFmtThumb()`, même mesure `offsetLeft`/`offsetWidth`).
+`.sift-chip-disabled` (opacity/cursor) reste un modifier générique, réutilisé
+tel quel sur `.sift-seg-opt` pour AIFF/WAV désactivés en mode lossy (aucun
+`data-fil`, jamais `.on`, thumb ignore l'option — `onEl` reste `null`).
+**Rail batch non thumbé, volontairement** : son clic (`renderBatchRail(...)`)
+reconstruit tout le rail batch pour d'autres raisons (compteurs de
+sélection), pas seulement le format — isoler ça en mutation en place
+demanderait une restructuration plus large, hors scope de cette demande ;
+converti en `.sift-seg`/`.sift-seg-opt` pour la cohérence visuelle
+uniquement, garde son crossfade par bouton. `.sift-fmt-chips` (CSS,
+0 consommateur après migration) supprimé.
+
+**Bug de contraste sombre trouvé et corrigé** : `--color-track` et
+`--color-surface-raised` valaient la **même couleur exacte** en sombre
+(`#46453F`) — la pastille sélectionnée (fond `surface-raised`) était
+invisible sur sa piste (fond `track`), seule la couleur du texte la
+distinguait. En clair les deux tokens sont bien distincts. Vérifié que
+`--color-track` n'a que 2 consommateurs (`.sift-slider-rail`, `.sift-seg`)
+avant de changer sa valeur globale — nouvelle valeur sombre `#34332E`,
+distincte de `surface-raised`. `.sift-seg-opt.on:hover` ajouté explicitement
+(au lieu de compter sur l'ordre des règles, `:hover`/`.on` ayant la même
+spécificité) pour que la pastille sélectionnée garde son fond au survol.
+
+**Sweep élargi à tous les éléments sélectionnables/survolables (même
+session)** : `.fld` (lignes dossier/genre Bibliothèque + lignes de bin
+filing) n'avait **aucun hover** — même bug que `.chip` corrigé le
+2026-07-03 ("cliquable sans retour visuel"), corrigé avec `.fld.on:hover`
+explicite en prime. `.lr.cur:hover` ajouté explicitement (même fragilité
+de spécificité que `.sift-seg-opt`). `.sift-bgrp-box`/`.sift-src-swatch`
+vérifiés sans bug — logique d'anneau de sélection différente, pas de fond
+à harmoniser.
+
+**Hover texte-seul + transition animée (2026-07-08, retour utilisateur)** :
+`.sift-seg-opt:hover` ne pose plus de fond (`--color-row-active`) — juste
+un changement de couleur de texte (`--color-text-primary`), plus proche du
+hover de Claude ("le texte qui highlight, pas une case qui se superpose").
+`transition:background .15s ease,color .15s ease` ajoutée. Piège trouvé en
+l'implémentant : une transition CSS n'anime que si l'élément **persiste**
+entre les deux états — `ensureReviewSeg()` (Détail/Lot) reconstruisait les
+2 boutons via `innerHTML` à chaque changement, donc rien à animer malgré la
+transition posée. Corrigé : les boutons ne sont créés qu'une fois, les
+appels suivants font juste `classList.toggle("on", ...)` dessus. Apparence
+faisait déjà ça (mutation en place) donc anime aussi. Format USB/Dossiers-
+Genres/Session-Historique **ne changent pas** — ils reconstruisent tout un
+bloc de contenu dépendant (avertissement exFAT, liste de facette, lignes de
+session), pas juste la pastille ; la reconstruction y est légitime, pas un
+bug, et animer la pastille seule demanderait une restructuration plus
+profonde pour un gain faible (contrôles peu re-cliqués en boucle).
+
+## Grammaire de carte — 2 rôles, jamais 3 (2026-07-08)
+
+Suite à la vérification de la règle Apple HIG "Boxes"
+(developer.apple.com/design/human-interface-guidelines/boxes) : un groupe de
+contenu utilise une **bordure ou un fond teinté**, jamais une ombre — l'ombre
+signale une vraie élévation en z (quelque chose qui flotte AU-DESSUS d'autre
+chose), pas du contenu inline. Avant cette passe, 3 traitements coexistaient
+sans règle (ombre seule, bordure seule, les deux) ; ramené à 2 rôles :
+
+| Rôle | Classes | Sites |
+|---|---|---|
+| **Groupée** (bordure ou fond teinté, jamais d'ombre) | `.sift-ui-card`, `.sift-ui-card-soft` | Spectrogramme (`.sift-spectro-box`), rail d'action (`.sift-action-rail`), carte lecteur (`.sift-player-row`), éditeur filing (`.sift-fil-editor-margin`), colonne queue (`#qcol`), colonne queue Accueil (`#homequeue`), Réglages, Bibliothèque, Journal (`.jrnl-insp-card`, bordure corrigée 1px→0.5px) |
+| **Flottante** (bordure + ombre, réservée aux vraies superpositions) | `.sift-report-overlay-card` | Modales (confirmation, formatage USB) — seul site qui garde une ombre |
+
+**Harmonisation famille "queue" (2026-07-08)** : `#qcol` avait perdu sa
+bordure lors d'une passe antérieure ("ajoute un cadre style pastille sans
+bordure", fond teinté seul) tandis que `#homequeue` gardait la sienne, hors
+scope de cette passe à l'époque — deux traitements divergents pour le même
+rôle. Réunifiés : les 6 sites de la famille "queue"
+(`.sift-spectro-box`/`.sift-action-rail`/`.sift-player-row`/
+`.sift-fil-editor-margin`/`#qcol`/`#homequeue`) portent maintenant tous
+`background:var(--color-background-queue)` + `border:0.5px solid
+var(--color-border-tertiary)`, sans exception. `#qcol`/`#homequeue` partagent
+désormais une seule règle CSS au lieu de deux déclarations séparées.
+
+Une boîte n'entoure jamais un seul élément isolé (voir Cartes Réglages
+ci-dessus) — un groupe implique plusieurs éléments liés, sinon c'est du
+chrome sans fonction.
+
+Contraste sombre atténué en même temps : `--color-border-tertiary` en sombre
+`rgba(255,255,255,.12)` → `.09`, aligné sur la proportion du clair (`.09`
+côté noir) — les bordures/filets fins étaient proportionnellement plus
+marqués en sombre qu'en clair.
 
 ---
 

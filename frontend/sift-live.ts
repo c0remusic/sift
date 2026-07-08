@@ -120,10 +120,23 @@ let queueRowHeightCache: number | null = null;
 // this filtered view too, so arrow-key nav only steps through what's actually visible.
 let queueSearchTerm = "";
 
+// "+N traités" / "Masquer les traités" toggle (2026-07-08: existed in the frozen app.js mockup —
+// var doneCount=T.length-pendingCount — but was never ported to the real live queue; ensured by
+// this grep at the time: no togglequeue/queueShowAll consumer anywhere in sift-live.ts). A track
+// is "traité" once its analysis verdict resolves (QueueItem.verdict !== null) — not once it's
+// filed (filed tracks leave listQueue() results entirely, they're not what this hides). Default
+// hidden, matching the mockup's default state.
+let queueShowAll = false;
+
 function visibleQueueItems(): QueueItem[] {
-  if (!queueSearchTerm) return currentItems;
+  // Search deliberately searches ALL items regardless of the traités toggle — limiting search
+  // results to whatever's currently shown would silently return 0 hits for a treated track while
+  // traités are hidden, which reads as a bug ("I searched but it's not there") rather than the
+  // filter doing its job.
+  const base = queueSearchTerm ? currentItems : queueShowAll ? currentItems : currentItems.filter((it) => it.verdict === null);
+  if (!queueSearchTerm) return base;
   const q = queueSearchTerm.toLowerCase();
-  return currentItems.filter(
+  return base.filter(
     (it) =>
       (it.filename ?? it.path).toLowerCase().includes(q) ||
       (it.artist ?? "").toLowerCase().includes(q) ||
@@ -517,7 +530,10 @@ async function renderQueue(touchDetail = true) {
   currentItems = items;
   ensureReviewSeg();
   const qcol = document.getElementById("qcol");
-  if (qcol) ensureQueueSearch(qcol);
+  if (qcol) {
+    ensureQueueDoneToggle(qcol);
+    ensureQueueSearch(qcol);
+  }
   // Background-analysis progress moved to the global progress zone (bottom of #nav, persistent
   // across views) — see pushAnalyzeProgress, fed by the analysis:changed event below.
 
@@ -682,29 +698,68 @@ function ensureReviewSeg() {
   if (!seg) {
     seg = document.createElement("div");
     seg.id = "sift-revseg";
-    // align-self:center: #qcol is a flex column (align-items:stretch by default), so without a
-    // fixed align-self the segmented control stretched to the column's full width and its flex:1
-    // tabs grew with it whenever the column was resized wider (annotation 2026-07-06: fixed
-    // size/position expected, not a stretchy control). Centered (not flex-start) per the
-    // 2026-07-06 continuous-surface redesign — reads as the queue panel's own toggle, not a
-    // left-anchored label.
-    seg.style.cssText =
-      "display:flex;gap:2px;padding:2px;margin-bottom:10px;background:var(--color-background-secondary);border-radius:var(--border-radius-md);align-self:center";
+    // .sift-seg is the shared segmented-pill track (2026-07-08: was its own inline-styled
+    // reimplementation — same component as Apparence/Format USB/Dossiers-Genres now). #sift-revseg
+    // adds only its own layout concerns on top: align-self:center (#qcol is a flex column with
+    // align-items:stretch by default, so without a fixed align-self the control stretched to the
+    // column's full width and its tabs grew with it whenever the column was resized — annotation
+    // 2026-07-06: fixed size/position expected, not a stretchy control) and margin-bottom.
+    seg.className = "sift-seg sift-seg-thumbed";
+    const tab = (m: "detail" | "batch", label: string, icon: string) =>
+      `<button class="sift-seg-opt" data-sift="reviewmode" data-m="${m}"><i class="ti ${icon}" style="font-size:var(--text-base)"></i>${label}</button>`;
+    // .sift-seg-thumb is a single element that physically slides via transform between options
+    // (retour utilisateur 2026-07-08 : le crossfade par bouton ne montrait pas clairement le
+    // déplacement d'un état à l'autre) — must be the first child so it paints under the buttons
+    // (z-index aside, DOM order matters for default paint order of siblings at the same z-index
+    // in some engines; kept first to match .sift-seg-opt's own explicit z-index:1 above it).
+    seg.innerHTML =
+      '<div class="sift-seg-thumb"></div>' +
+      tab("detail", "Détail", "ti-layout-list") +
+      tab("batch", "Lot", "ti-table");
     qcol.insertBefore(seg, qcol.firstChild);
   }
-  const tab = (m: "detail" | "batch", label: string, icon: string) => {
-    const on = reviewMode === m;
-    return `<button data-sift="reviewmode" data-m="${m}" style="flex:none;display:inline-flex;align-items:center;justify-content:center;gap:5px;padding:5px 10px;border:none;border-radius:6px;font-size:var(--text-sm);font-weight:${
-      on ? 600 : 400
-    };cursor:pointer;background:${
-      // --color-surface-raised, not --color-background-primary (annotation: "la couleur...
-      // ne fit pas le theme") — every other segmented control (.sift-seg-opt.on, e.g. the
-      // Apparence toggle) uses the raised-surface token for its active pill; this one had
-      // drifted to the page's flat base background instead.
-      on ? "var(--color-surface-raised)" : "transparent"
-    };color:var(--color-text-${on ? "primary" : "tertiary"})"><i class="ti ${icon}" style="font-size:var(--text-base)"></i>${label}</button>`;
-  };
-  seg.innerHTML = tab("detail", "Détail", "ti-layout-list") + tab("batch", "Lot", "ti-table");
+  // Toggle .on on the existing buttons instead of rebuilding them (retour utilisateur 2026-07-08 :
+  // le changement d'état "swappait" instantanément) — .sift-seg-opt's CSS transition only has
+  // something to animate between if the button persists across calls rather than being torn
+  // down/recreated from a fresh innerHTML string every time.
+  const onBtn = Array.from(
+    seg.querySelectorAll<HTMLButtonElement>('[data-sift="reviewmode"]'),
+  ).find((btn) => {
+    const on = btn.dataset.m === reviewMode;
+    btn.classList.toggle("on", on);
+    return on;
+  });
+  const thumb = seg.querySelector<HTMLElement>(".sift-seg-thumb");
+  if (thumb && onBtn) {
+    thumb.style.width = `${onBtn.offsetWidth}px`;
+    thumb.style.transform = `translateX(${onBtn.offsetLeft}px)`;
+  }
+}
+
+/** "+N traités" / "Masquer les traités" toggle — a real port of the app.js mockup's toggle
+ * (2026-07-08), which was never wired to the live queue. Injected once, right after #ql (before
+ * the search bar — call order in renderQueue matters here, both are appended to `qcol`). Hidden
+ * entirely when there's nothing treated to reveal. */
+function ensureQueueDoneToggle(qcol: HTMLElement): void {
+  let el = document.getElementById("sift-qdone-toggle");
+  if (!el) {
+    el = document.createElement("span");
+    el.id = "sift-qdone-toggle";
+    el.className = "sift-qdone-toggle";
+    el.addEventListener("click", () => {
+      queueShowAll = !queueShowAll;
+      const ql = document.getElementById("ql");
+      if (ql) {
+        ql.scrollTop = 0;
+        renderQueueWindow(ql);
+      }
+      ensureQueueDoneToggle(qcol); // relabel + re-evaluate hidden state
+    });
+    qcol.appendChild(el);
+  }
+  const doneCount = currentItems.filter((it) => it.verdict !== null).length;
+  el.hidden = doneCount === 0;
+  el.textContent = queueShowAll ? "Masquer les traités" : `+ ${doneCount} traité${doneCount > 1 ? "s" : ""}`;
 }
 
 /** Live filter bar for the queue rail (annotation: "on veut une barre de recherche en bas"),
@@ -1008,13 +1063,13 @@ function renderBatchRail(reviewN: number) {
   // "on" state) instead of a bespoke pill track, per audit 2026-07-05 (annotation: "pas clair
   // que les boutons sont clickables").
   const formatBlock =
-    `<div class="sift-rail-fmt-group"><span class="col-h">Format</span><div class="sift-fmt-chips">` +
+    `<div class="sift-rail-fmt-group"><span class="col-h">Format</span><div class="sift-seg">` +
     (["mp3_320", "aiff_16_44", "wav_16_44"] as Target[])
       .map(
         (t) =>
-          `<span class="chip${batchFormat === t ? " on" : ""}" data-sift="batchformat" data-t="${t}">${TARGET_LABEL[t]}</span>`,
+          `<span class="sift-seg-opt${batchFormat === t ? " on" : ""}" data-sift="batchformat" data-t="${t}">${TARGET_LABEL[t]}</span>`,
       )
-      .join(" ") +
+      .join("") +
     `</div></div>`;
   // Rail order (one row, matching the Detail rail): Destination → Format → spacer → Selection
   // count → action, all on the first line — then progress/tracks (each flex-basis:100%, empty/
@@ -1305,8 +1360,7 @@ async function renderReglagesLive() {
   const block = document.createElement("div");
   block.id = "sift-reglages-discogs";
   block.dataset.section = "discogs";
-  block.className = "sift-settings-card sift-ui-card-soft sift-ui-card-soft-pad";
-  block.style.cssText = "margin-top:10px";
+  block.className = "sift-settings-card sift-settings-list-row";
   block.innerHTML =
     '<div class="sift-settings-title">Discogs</div>' +
     '<div class="sift-settings-desc">Le jeton permet à Sift d\'interroger l\'API Discogs pour identifier tes morceaux (label, année, genre). Sans jeton, les recherches sont limitées et plus lentes.</div>' +
@@ -1328,8 +1382,7 @@ async function renderReglagesLive() {
   const libBlock = document.createElement("div");
   libBlock.id = "sift-reglages-bibliotheque";
   libBlock.dataset.section = "bibliotheque";
-  libBlock.className = "sift-settings-card sift-ui-card-soft sift-ui-card-soft-pad";
-  libBlock.style.cssText = "margin-top:10px";
+  libBlock.className = "sift-settings-card sift-settings-list-row";
   libBlock.innerHTML =
     '<div class="sift-settings-title">Bibliothèque</div>' +
     '<div class="sift-settings-desc">Le dossier racine est l\'endroit réel sur ton disque où Sift range les morceaux filés. L\'arborescence de destination (House/Deep, Techno…) vit à l\'intérieur.</div>' +
@@ -1371,8 +1424,7 @@ async function renderReglagesLive() {
   const themeBlock = document.createElement("div");
   themeBlock.id = "sift-reglages-apparence";
   themeBlock.dataset.section = "apparence";
-  themeBlock.className = "sift-settings-card sift-ui-card-soft sift-ui-card-soft-pad";
-  themeBlock.style.cssText = "margin-top:10px";
+  themeBlock.className = "sift-settings-card sift-settings-list-row";
   const themeBtn = (v: ThemeChoice, label: string) =>
     `<span class="sift-seg-opt${theme === v ? " on" : ""}" data-theme-choice="${v}">${label}</span>`;
   themeBlock.innerHTML =
@@ -1380,7 +1432,7 @@ async function renderReglagesLive() {
     '<div class="sift-settings-desc">Auto suit le réglage clair/sombre de ton système. Clair et Sombre forcent un mode fixe, quel que soit le système.</div>' +
     '<div class="sift-settings-row">' +
     '<span class="sift-settings-label">Thème</span>' +
-    '<div class="sift-settings-seg">' +
+    '<div class="sift-seg">' +
     themeBtn("auto", "Auto") +
     themeBtn("light", "Clair") +
     themeBtn("dark", "Sombre") +
@@ -1400,8 +1452,7 @@ async function renderReglagesLive() {
   const usbBlock = document.createElement("div");
   usbBlock.id = "sift-reglages-usb";
   usbBlock.dataset.section = "usb";
-  usbBlock.className = "sift-settings-card sift-ui-card-soft sift-ui-card-soft-pad";
-  usbBlock.style.cssText = "margin-top:10px";
+  usbBlock.className = "sift-settings-card sift-settings-list-row";
   usbBlock.innerHTML =
     '<div class="sift-settings-title">Formater une clé USB</div>' +
     '<div class="sift-settings-desc">Formate un disque amovible en FAT32 (contourne la limite ' +
@@ -1457,10 +1508,21 @@ async function renderReglagesLive() {
   // Single wrapper: only #sift-reglages-live is removed/recreated per render (see the
   // 2026-07-04 fix), so every settings card — present or future — must build inside `wrap`
   // rather than as a direct sibling of `content`, or it duplicates on re-render.
-  wrap.appendChild(block);
-  wrap.appendChild(libBlock);
-  wrap.appendChild(themeBlock);
-  wrap.appendChild(usbBlock);
+  //
+  // 2026-07-08: the 4 sections used to each be their own .sift-ui-card-soft box, but each one
+  // only ever holds a single setting — a box groups "related information" (HIG "Boxes"),
+  // grouping one item alone just adds chrome (retour utilisateur : "trop de boîtes"). They now
+  // share one .sift-ui-card-soft list, divided by a hairline (.sift-settings-list-row) instead
+  // of 4 separate cards. Any future settings section must append inside `list`, same rule as
+  // `wrap` above — not as a direct sibling of `content`.
+  const list = document.createElement("div");
+  list.id = "sift-reglages-list";
+  list.className = "sift-settings-list sift-ui-card-soft sift-ui-card-soft-pad";
+  list.appendChild(block);
+  list.appendChild(libBlock);
+  list.appendChild(themeBlock);
+  list.appendChild(usbBlock);
+  wrap.appendChild(list);
   content.appendChild(wrap);
 
   const inp = block.querySelector<HTMLInputElement>("#sift-discogs-token");
@@ -1763,9 +1825,12 @@ async function renderBiblioLive() {
   const sideKey = bibState.facet === "folder" ? "folder" : "genre";
   const activeFacetVal = bibState.facet === "folder" ? bibState.filter.folder : bibState.filter.genre;
   const side =
-    `<div style="display:flex;gap:4px;margin-bottom:8px">` +
-    `<span class="chip${bibState.facet === "folder" ? " on" : ""}" data-bib="facet" data-f="folder">Dossiers</span>` +
-    `<span class="chip${bibState.facet === "genre" ? " on" : ""}" data-bib="facet" data-f="genre">Genres</span></div>` +
+    // Segmented pill (2026-07-08, was .chip/.chip.on) — a strictly exclusive 2-way choice is the
+    // same job as Apparence/Format USB/Détail-Lot, not a filter chip (chips stay the "tag/filter"
+    // grammar elsewhere, e.g. genre chips).
+    `<div class="sift-seg" style="margin-bottom:8px">` +
+    `<span class="sift-seg-opt${bibState.facet === "folder" ? " on" : ""}" data-bib="facet" data-f="folder">Dossiers</span>` +
+    `<span class="sift-seg-opt${bibState.facet === "genre" ? " on" : ""}" data-bib="facet" data-f="genre">Genres</span></div>` +
     facetList
       .map(
         (b) =>

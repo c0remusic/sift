@@ -47,7 +47,7 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
       "</div>" +
       '<div class="sift-usbfmt-warning">Cette action efface tout le contenu du disque, ' +
       "de façon irréversible. Vérifie que c'est bien la bonne clé avant de continuer.</div>" +
-      '<div class="sift-usbfmt-fsrow">' +
+      '<div class="sift-seg">' +
       '<span class="sift-seg-opt' +
       (fs === "fat32" ? " on" : "") +
       '" data-usbfmt-fs="fat32">FAT32 (recommandé)</span>' +

@@ -11,6 +11,7 @@ import type { JournalEntry } from "../shared/contracts";
 import { listJournal, getSessionId, revertBatch } from "./ipc";
 import { requireEl } from "./dom";
 import { confirmAction } from "./confirm-modal";
+import { emptyStateHtml, wireEmptyState } from "./empty-state";
 
 // ---------------------------------------------------------------------------
 // Pure helpers
@@ -120,9 +121,9 @@ function headerHtml(activeMode: "session" | "all"): string {
   const allCls = activeMode === "all" ? " on" : "";
   return `<div class="jrnl-hd">\
 <span>Journal</span>\
-<div class="jrnl-mode">\
-<button class="jrnl-mode-btn${sessionCls}" data-jact="mode-session">Session courante</button>\
-<button class="jrnl-mode-btn${allCls}" data-jact="mode-all">Tout l'historique</button>\
+<div class="sift-seg">\
+<button class="sift-seg-opt${sessionCls}" data-jact="mode-session">Session courante</button>\
+<button class="sift-seg-opt${allCls}" data-jact="mode-all">Tout l'historique</button>\
 </div>\
 </div>`;
 }
@@ -273,7 +274,13 @@ export async function renderJournal(toast?: string, warn?: string): Promise<void
   const hasAny = cats.some(c => c.entries.length > 0);
 
   const sectionsHtml = cats.map(sectionHtml).join("");
-  const emptyHtml = hasAny ? "" : `<div class="jrnl-empty">Aucune action dans cette session.</div>`;
+  const emptyHtml = hasAny
+    ? ""
+    : emptyStateHtml({
+        title: "Rien dans cette session",
+        note: "Les actions de rangement de la session courante apparaissent ici au fur et à mesure.",
+        backToRevue: true,
+      });
   const voirToutHtml = hasAny
     ? `<button class="jrnl-voir-tout" data-jact="mode-all">Voir tout l'historique →</button>`
     : "";
@@ -289,6 +296,7 @@ ${voirToutHtml}\
 </div>`;
 
   installDelegate(content, entries, () => renderJournal());
+  wireEmptyState(content);
 }
 
 // ---------------------------------------------------------------------------
@@ -329,7 +337,11 @@ export async function renderJournalExtended(): Promise<void> {
 
   const bodyHtml =
     all.length === 0
-      ? `<div class="jrnl-empty">Aucune action enregistrée.</div>`
+      ? emptyStateHtml({
+          title: "Aucune action enregistrée",
+          note: "L'historique complet des actions de rangement apparaîtra ici.",
+          backToRevue: true,
+        })
       : groupsHtml;
 
   content.innerHTML = `<div class="jrnl-wrap">\
@@ -338,4 +350,5 @@ ${bodyHtml}\
 </div>`;
 
   installDelegate(content, all, () => renderJournalExtended());
+  wireEmptyState(content);
 }

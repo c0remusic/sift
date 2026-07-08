@@ -62,11 +62,11 @@ color-scheme:light;
 @media (prefers-color-scheme:dark){
   :root:not([data-theme="light"]){
     color-scheme:dark;
-    --color-background-primary:#282825;--color-background-secondary:#3B3A35;--color-background-tertiary:#323230;--color-background-queue:#2E2E2B;--color-surface-raised:#46453F;--color-track:#46453F;--color-row-active:#413F38;--color-nav-active:#3D3B35;
+    --color-background-primary:#282825;--color-background-secondary:#3B3A35;--color-background-tertiary:#323230;--color-background-queue:#2E2E2B;--color-surface-raised:#46453F;--color-track:#34332E;--color-row-active:#413F38;--color-nav-active:#3D3B35;
     --color-background-info:rgba(62,124,177,.14);--color-background-danger:rgba(196,74,58,.16);--color-background-success:rgba(76,123,87,.14);--color-background-warning:rgba(176,122,40,.14);
     --color-text-primary:#F5F1E9;--color-text-secondary:#C9C2B7;--color-text-tertiary:#9C968D;--color-text-quaternary:#847E75;
     --color-text-info:#8EC2EA;--color-cta-text:#26251F;--color-text-danger:#f0a08f;--color-text-success:#9fe0af;--color-text-warning:#f2c274;
-    --color-border-tertiary:rgba(255,255,255,0.12);--color-border-secondary:rgba(255,255,255,0.22);
+    --color-border-tertiary:rgba(255,255,255,0.09);--color-border-secondary:rgba(255,255,255,0.22);
     --color-border-info:rgba(142,194,234,.30);--color-border-danger:rgba(240,160,143,.40);
     --color-hue-indigo-text:#A6A0F0;--color-hue-indigo-bg:rgba(88,86,214,.18);--color-hue-indigo-border:rgba(166,160,240,.35);--color-hue-purple-text:#C9A6E0;--color-hue-purple-bg:rgba(175,82,222,.18);--color-hue-purple-border:rgba(201,166,224,.35);--color-hue-pink-text:#F0A8C2;--color-hue-pink-bg:rgba(212,83,126,.18);--color-hue-pink-border:rgba(240,168,194,.35);--color-hue-teal-text:#7CE0D4;--color-hue-teal-bg:rgba(20,150,140,.18);--color-hue-teal-border:rgba(124,224,212,.35);--color-hue-yellow-text:#F5D76E;--color-hue-yellow-bg:rgba(230,180,0,.18);--color-hue-yellow-border:rgba(245,215,110,.35);
     --overlay-hover:rgba(255,255,255,.03);--overlay-selected:rgba(255,255,255,.06);
@@ -75,11 +75,11 @@ color-scheme:light;
 }
 :root[data-theme="dark"]{
   color-scheme:dark;
-  --color-background-primary:#282825;--color-background-secondary:#3B3A35;--color-background-tertiary:#323230;--color-background-queue:#2E2E2B;--color-surface-raised:#46453F;--color-track:#46453F;--color-row-active:#413F38;--color-nav-active:#3D3B35;
+  --color-background-primary:#282825;--color-background-secondary:#3B3A35;--color-background-tertiary:#323230;--color-background-queue:#2E2E2B;--color-surface-raised:#46453F;--color-track:#34332E;--color-row-active:#413F38;--color-nav-active:#3D3B35;
   --color-background-info:rgba(62,124,177,.14);--color-background-danger:rgba(196,74,58,.16);--color-background-success:rgba(76,123,87,.14);--color-background-warning:rgba(176,122,40,.14);
   --color-text-primary:#F5F1E9;--color-text-secondary:#C9C2B7;--color-text-tertiary:#9C968D;--color-text-quaternary:#847E75;
   --color-text-info:#8EC2EA;--color-cta-text:#26251F;--color-text-danger:#f0a08f;--color-text-success:#9fe0af;--color-text-warning:#f2c274;
-  --color-border-tertiary:rgba(255,255,255,0.12);--color-border-secondary:rgba(255,255,255,0.22);
+  --color-border-tertiary:rgba(255,255,255,0.09);--color-border-secondary:rgba(255,255,255,0.22);
   --color-border-info:rgba(142,194,234,.30);--color-border-danger:rgba(240,160,143,.40);
   --color-hue-indigo-text:#A6A0F0;--color-hue-indigo-bg:rgba(88,86,214,.18);--color-hue-indigo-border:rgba(166,160,240,.35);--color-hue-purple-text:#C9A6E0;--color-hue-purple-bg:rgba(175,82,222,.18);--color-hue-purple-border:rgba(201,166,224,.35);--color-hue-pink-text:#F0A8C2;--color-hue-pink-bg:rgba(212,83,126,.18);--color-hue-pink-border:rgba(240,168,194,.35);--color-hue-teal-text:#7CE0D4;--color-hue-teal-bg:rgba(20,150,140,.18);--color-hue-teal-border:rgba(124,224,212,.35);--color-hue-yellow-text:#F5D76E;--color-hue-yellow-bg:rgba(230,180,0,.18);--color-hue-yellow-border:rgba(245,215,110,.35);
   --overlay-hover:rgba(255,255,255,.03);--overlay-selected:rgba(255,255,255,.06);
@@ -155,6 +155,9 @@ html,body{margin:0;padding:0;height:100%}
    scrollbar-gutter:stable reserves exactly the scrollbar's own 6px width, no breathing room beyond
    it, so a selected row's highlighted background butted directly against the track/thumb. */
 #ql{flex:1;min-height:0;overflow-y:scroll;scrollbar-gutter:stable;padding-right:6px}
+/* "+N traités" toggle (2026-07-08, real port of the app.js mockup — see ensureQueueDoneToggle) */
+.sift-qdone-toggle{display:block;flex:none;font-size:var(--text-xs);color:var(--color-text-tertiary);cursor:pointer;text-decoration:underline;padding:5px 4px 0}
+.sift-qdone-toggle:hover{color:var(--color-text-secondary)}
 /* Drag handle between #qcol and .sift-inspector (Revue) — resizes the queue column so long
    track names stay readable (audit 2026-07-05, annotation #8). Thin hit zone, sitting in the gap
    between the two floating cards. The hairline used to be always-visible, needed when the panels
@@ -232,15 +235,11 @@ html,body{margin:0;padding:0;height:100%}
    its content now sits directly on #pa's own background, same as the rest of the app shell.
    #homeinspector kept its card until a later annotation ("supprime le cadre, les elements
    devraient reposer sur le fond") asked for the same reversal here too — see below. */
-/* #qcol drops its border (annotation: "ajoute aussi un cadre style pastille sans bordure") — same
-   direction as the hero panel: a soft radius'd background (already --color-background-queue via
-   .queue, distinct from the page/inspector tone) instead of a hard border line. #homequeue keeps
-   its border (out of scope for this reversal — not requested). The border used to be the only
-   thing marking the boundary with the resize handle/inspector next to it; the background color
-   contrast alone still reads as a clear edge, so the existing 10px margin (unchanged) is enough —
-   not widened, to avoid second-guessing spacing that was already CDP-measured earlier. */
-#homequeue{border:0.5px solid var(--color-border-tertiary)}
-#qcol,#homequeue{border-radius:var(--border-radius-lg)}
+/* Harmonized 2026-07-08: #qcol and #homequeue now share the same border (was split — #qcol had
+   dropped its border in an earlier pass, #homequeue kept its own separate declaration — see HIG
+   "Boxes" card-family pass in design-system-states.md). Both belong to the "queue" card family
+   (spectro-box/player-row/action-rail/fil-editor-margin) which is now bordered consistently. */
+#qcol,#homequeue{border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg)}
 /* Right/left margins bumped 0→7px each (annotation: "le meme que entre le panneau hero et le
    rail" — reusing .sift-player-row's own 14px inter-panel gap) — measured via CDP: qcol/rvinspector
    sat only 1px apart (the qresize handle's own -2px/-2px overlap ate the rest), which read as
@@ -252,7 +251,7 @@ html,body{margin:0;padding:0;height:100%}
    flush with the hint strip's bottom instead). +25px (35 = 10 + 25) stops #qcol's bottom exactly
    at filfoot's own bottom edge. The legend later gained an extra 10px top gap, so this became
    45px total to keep the queue bottom aligned with the rail instead of the lower legend strip. */
-#qcol{margin:10px 7px 45px 10px;box-shadow:var(--shadow-panel-subtle)}
+#qcol{margin:10px 7px 45px 10px;border:0.5px solid var(--color-border-tertiary)}
 #homeinspector{overflow:hidden}
 #rvinspector{margin:10px 10px 10px 7px}
 .mid{flex:1;min-width:0;display:flex;flex-direction:column;padding:0 15px 10px;overflow:hidden}
@@ -277,7 +276,7 @@ html,body{margin:0;padding:0;height:100%}
    je crois, mais de la meme couleur") — the continuous/transparent take from earlier the same day
    was tried and reversed: filled cards were preferred after all, just consistently colored across
    all 4 (see .sift-spectro-box/.sift-fil-editor.sift-fil-editor-margin below, which now match). */
-.sift-action-rail{flex:none;display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-12);padding:11px 18px;overflow:visible;background:var(--color-background-queue);border-radius:var(--border-radius-lg);box-shadow:var(--shadow-panel-subtle)}
+.sift-action-rail{flex:none;display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-12);padding:11px 18px;overflow:visible;background:var(--color-background-queue);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg)}
 .sift-dest-btn{display:flex;align-items:center;gap:8px;flex:none;width:auto;max-width:220px;padding:8px 10px;background:var(--color-background-secondary);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);color:var(--color-text-primary);font-size:var(--text-sm);cursor:pointer}
 .sift-dest-btn-label{color:var(--color-text-tertiary);flex:none}
 .sift-dest-btn .sift-fil-bin{flex:1;min-width:0;text-align:left;overflow:hidden;text-overflow:ellipsis;font-weight:500;max-width:120px}
@@ -337,7 +336,11 @@ html,body{margin:0;padding:0;height:100%}
 .sift-ec-stores{visibility:hidden}
 .sift-ec-row:hover .sift-ec-stores,.sift-ec-row:focus-within .sift-ec-stores{visibility:visible}
 .fld{display:flex;align-items:center;gap:6px;padding:6px 7px;border-radius:var(--border-radius-md);color:var(--color-text-secondary);cursor:pointer;font-size:12px}
+/* Hover added 2026-07-08: was clickable (cursor:pointer) with zero visual feedback — same bug
+   already fixed on .chip 2026-07-03 ("cliquable sans retour visuel"). */
+.fld:hover{background:var(--color-background-secondary)}
 .fld.on{background:var(--color-background-info);color:var(--color-text-info);font-weight:500}
+.fld.on:hover{background:var(--color-background-info)}
 .kbd{font-family:var(--font-mono);font-size:10px;border:0.5px solid var(--color-border-secondary);border-radius:3px;padding:0 5px;color:var(--color-text-tertiary)}
 .bars{display:flex;align-items:center;gap:1px;height:42px;cursor:pointer}.bars span{flex:1;border-radius:1px}
 .spec{display:flex;align-items:flex-end;gap:1px;height:22px}.spec span{flex:1;border-radius:1px 1px 0 0}
@@ -348,6 +351,9 @@ html,body{margin:0;padding:0;height:100%}
 .tog{width:30px;height:17px;border-radius:9px;background:var(--color-text-info);position:relative;flex:none;cursor:pointer;transition:background .12s}.tog::after{content:"";position:absolute;left:2px;top:2px;width:13px;height:13px;border-radius:50%;background:#fff;transform:translateX(13px);transition:transform .12s}.tog.off{background:var(--color-border-secondary)}.tog.off::after{transform:translateX(0)}
 .lr{display:flex;align-items:center;gap:7px;padding:5px 6px;border-bottom:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);font-size:12px;cursor:pointer;transition:background .16s ease,color .16s ease,transform .12s ease}
 .lr:hover{background:var(--color-row-active)}
+/* Explicit rather than relying on source order (both selectors have equal specificity) — same
+   hardening as .sift-seg-opt.on:hover. */
+.lr.cur:hover{background:var(--color-background-info)}
 .lr:active{transform:translateY(1px)}
 .lr:focus-within{background:var(--color-row-active)}
 .lr.cur{background:var(--color-background-info);color:var(--color-text-primary)}
@@ -382,7 +388,11 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-text-info)}
 .home-left{flex:1;min-width:0;overflow-y:auto;padding-right:4px}
 .home-right{width:200px;flex:none;overflow-y:auto}
 .sift-screen-stack{display:flex;flex-direction:column;gap:12px}
-.sift-ui-card{background:var(--color-background-queue);border-radius:var(--border-radius-lg);box-shadow:var(--shadow-panel-subtle)}
+/* Grouped-content role (HIG "Boxes": a box uses a border or a tinted background, never a
+   shadow — shadow signals real z-axis elevation, e.g. the floating overlay role below, not
+   inline content). .sift-ui-card and .sift-ui-card-soft only differ by background/border,
+   neither carries a shadow. */
+.sift-ui-card{background:var(--color-background-queue);border-radius:var(--border-radius-lg)}
 .sift-ui-card-pad{padding:16px 18px}
 .sift-ui-card-soft{background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg)}
 .sift-ui-card-soft-pad{padding:16px 18px}
@@ -509,9 +519,6 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-text-info)}
 /* Header */
 .jrnl-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--space-4)}
 .jrnl-hd>span{font-size:var(--text-lg);font-weight:600;color:var(--color-text-primary)}
-.jrnl-mode{display:flex;gap:2px;background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:2px}
-.jrnl-mode-btn{background:transparent;border:none;padding:3px 10px;border-radius:var(--border-radius-md);font-size:var(--text-xs);color:var(--color-text-secondary);cursor:pointer;white-space:nowrap}
-.jrnl-mode-btn.on{background:var(--color-background-primary);color:var(--color-text-primary);font-weight:500}
 /* Collapsible category — deliberately card-less, matching .sift-bt-head's flat/uppercase
    language (audit 2026-07-05, direction A: keep the fold/badge/mass-action, drop the bordered
    card + filled header background). Rows keep a thin separator (unlike batch's gap-only list)
@@ -544,8 +551,6 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .jrnl-row--reverted .jrnl-name{text-decoration:line-through}
 .jrnl-row--reverted .jrnl-revert{color:var(--color-text-success)}
 @keyframes jrnl-toast-fade{0%,60%{opacity:1}100%{opacity:0;height:0;padding:0;margin:0;border-width:0;overflow:hidden}}
-/* Empty state */
-.jrnl-empty{font-size:var(--text-sm);color:var(--color-text-tertiary);padding:var(--space-16) 0}
 /* "Voir tout" footer */
 .jrnl-voir-tout{background:transparent;border:none;color:var(--color-text-tertiary);font-size:var(--text-sm);cursor:pointer;padding:var(--space-4) 0;text-align:left;margin-top:var(--space-4)}
 .jrnl-voir-tout:hover{color:var(--color-text-secondary)}
@@ -588,7 +593,7 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
    the Diagnostic/Métadonnées toggles, then back to filled once more: the toggles' own wrappers
    (.sift-spectro-box/.sift-fil-editor.sift-fil-editor-margin, below) now carry this exact same
    background+shadow instead, so all 4 stay consistent as filled cards, not flat ones. */
-.sift-player-row{display:flex;flex-direction:column;gap:18px;margin-bottom:14px;padding:16px 18px;background:var(--color-background-queue);border-radius:var(--border-radius-lg);box-shadow:var(--shadow-panel-subtle)}
+.sift-player-row{display:flex;flex-direction:column;gap:18px;margin-bottom:14px;padding:16px 18px;background:var(--color-background-queue);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg)}
 /* gap sized so the waveform's left edge lines up with the title block's left edge above it
    (annotation: "aligne les deux") — header-body starts at 68px cover + 14px gap = 82px; here the
    play button starts at its own 11px margin-left and is 46px wide, so the wave needs
@@ -728,13 +733,17 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 /* Verdict conclusion pill removed entirely (annotation: "supprime ça en fait") — duplicated the
    tone-coded quality badge already in the Diagnostic audio disclosure header. */
 .sift-vchips-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
-/* background+shadow added (annotation 2026-07-07: "je préferais en plein je crois, mais de la meme
-   couleur") — matches .sift-player-row/.sift-action-rail's own card treatment (same token, same
-   shadow), so the Diagnostic disclosure reads as the same family of card as the hero/rail instead
-   of sitting flat on the inspector's continuous background. Zero own padding kept — the toggle/
-   declared/rows children already carry their own 18px horizontal inset (see comments below), so
-   the background just wraps snugly around content already positioned correctly. */
-.sift-spectro-box{margin-bottom:11px;background:var(--color-background-queue);border-radius:var(--border-radius-lg);box-shadow:var(--shadow-panel-subtle)}
+/* Background added (annotation 2026-07-07: "je préferais en plein je crois, mais de la meme
+   couleur") — matches .sift-player-row/.sift-action-rail's own tinted-background treatment, so
+   the Diagnostic disclosure reads as the same family of card as the hero/rail instead of sitting
+   flat on the inspector's continuous background. Shadow removed 2026-07-08 (HIG "Boxes": grouped
+   inline content uses a border or a tinted background, never a shadow — shadow is reserved for
+   real z-axis elevation, e.g. floating modals/popovers). The tinted background alone still
+   carries the "same family as hero/rail" grouping this annotation asked for. Zero own padding
+   kept — the toggle/declared/rows children already carry their own 18px horizontal inset (see
+   comments below), so the background just wraps snugly around content already positioned
+   correctly. */
+.sift-spectro-box{margin-bottom:11px;background:var(--color-background-queue);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg)}
 /* Section header label: a PERMANENT pill (annotation, 2nd round) — not just the generic
    button:hover rect that used to make it look "bulle" only transiently on hover. The toggle
    row itself stays full-width/clickable (aria-expanded, caret) and transparent; only the label
@@ -839,7 +848,7 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-analysis-fail{margin-bottom:12px;font-size:var(--text-sm);color:var(--color-text-warning)}
 .sift-player-error{margin:6px 0 0;font-size:var(--text-sm);color:var(--color-text-warning)}
 .sift-report-overlay{position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px}
-.sift-report-overlay-card{background:var(--color-background-primary);color:var(--color-text-primary);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-lg,12px);box-shadow:var(--shadow-overlay)}
+.sift-report-overlay-card{background:var(--color-background-primary);color:var(--color-text-primary);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-lg);box-shadow:var(--shadow-overlay)}
 .sift-report-overlay-card-blur{background:color-mix(in srgb,var(--color-background-primary) 75%,transparent)!important;backdrop-filter:blur(18px) saturate(160%);-webkit-backdrop-filter:blur(18px) saturate(160%)}
 .sift-report-overlay-loading{padding:22px 26px;font-size:var(--text-base);display:flex;align-items:center;gap:8px}
 .sift-report-overlay-error{padding:22px 26px;font-size:var(--text-base);color:var(--color-text-danger)}
@@ -847,7 +856,6 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-usbfmt-title{font-size:var(--text-lg);font-weight:600;color:var(--color-text-primary)}
 .sift-usbfmt-desc{font-size:var(--text-sm);color:var(--color-text-secondary)}
 .sift-usbfmt-warning{font-size:var(--text-sm);color:var(--color-text-warning);background:var(--color-background-warning);border-radius:var(--border-radius-md);padding:8px 10px}
-.sift-usbfmt-fsrow{display:flex;gap:8px}
 .sift-usbfmt-exfat-warning{font-size:var(--text-sm);color:var(--color-text-warning);background:var(--color-background-warning);border-radius:var(--border-radius-md);padding:8px 10px}
 .sift-usbfmt-typerow{display:flex;flex-direction:column;gap:4px;font-size:var(--text-sm);color:var(--color-text-secondary)}
 .sift-usbfmt-typerow input{font-size:var(--text-md);padding:4px 7px;background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);color:var(--color-text-primary);font-family:var(--font-mono)}
@@ -884,7 +892,6 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-newin{width:100%;font-size:var(--text-md);padding:5px 7px;margin-top:2px;box-sizing:border-box}
 .sift-chip-disabled{opacity:.4;cursor:not-allowed}
 .sift-col-h-tight{margin-bottom:4px}
-.sift-fmt-chips{display:flex;flex-wrap:wrap;gap:5px}
 .sift-ident-display{font-size:var(--text-lg);font-weight:500;margin-bottom:10px}
 /* No longer full-width (annotation: "les boutons n'ont pas besoin d'etre aussi larges") — sizes
    to its own content now, like every other button in this section. */
@@ -967,7 +974,7 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
    inside — which owns its own 18px inset, see .sift-zone-toggle.sift-spectro-toggle,#sift-meta-toggle
    above — stays the same width as Diagnostic's card). The rest of the body content still gets its
    18px from #sift-meta-body (below), not from this card. */
-.sift-fil-editor.sift-fil-editor-margin{padding:0;background:var(--color-background-queue);border-radius:var(--border-radius-lg);box-shadow:var(--shadow-panel-subtle)}
+.sift-fil-editor.sift-fil-editor-margin{padding:0;background:var(--color-background-queue);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg)}
 /* Carries the inset for everything BELOW the toggle (ident-head, inputs, genres, etc.) now that the
    card itself (above) no longer provides it. Vertical padding keeps the first action from crowding
    the open Métadonnées toggle while preserving the same horizontal alignment. */
@@ -989,9 +996,15 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-newbin-row{color:var(--color-text-tertiary)}
 .sift-cand-change-btn{font-size:var(--text-sm);padding:2px 8px;flex:none}
 .sift-icon-flex-none{flex:none}
-/* Réglages — cartes bordées (Sift.dc.html:642-691) : même traitement carte que la carte
-   Identification (.sift-fil-editor) ; titre 16px/600, texte explicatif, rangées sous border-top. */
+/* Réglages — 1 boîte, lignes divisées (2026-07-08 : chaque section n'a qu'un seul réglage,
+   4 cartes empilées n'avaient rien à grouper — HIG "Boxes" groupe des informations liées, pas
+   un item seul). Une carte .sift-ui-card-soft unique porte les 4 sections ; chaque section est
+   une ligne divisée par un filet, pas sa propre carte. Titre 16px/600, texte explicatif inchangés. */
 .sift-settings-stack{max-width:560px}
+.sift-settings-list{display:flex;flex-direction:column}
+.sift-settings-list-row{padding-bottom:20px}
+.sift-settings-list-row:not(:first-child){padding-top:20px;border-top:0.5px solid var(--color-border-tertiary)}
+.sift-settings-list-row:last-child{padding-bottom:0}
 .sift-settings-card{max-width:560px}
 .sift-settings-title{font-size:var(--text-xl);font-weight:600;margin-bottom:4px;color:var(--color-text-primary)}
 .sift-settings-desc{font-size:var(--text-md);color:var(--color-text-tertiary);line-height:1.45;margin-bottom:12px}
@@ -1005,15 +1018,62 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-settings-link{font-size:var(--text-sm);color:var(--color-text-secondary);cursor:pointer;text-decoration:none}
 .sift-settings-link:hover{color:var(--color-text-primary)}
 .sift-settings-subactions{display:flex;align-items:center;gap:8px;margin-top:10px}
-/* Segment� Th�me - m�me patron que .jrnl-qmode (fond track encaiss�, pilule active en surface). */
-.sift-settings-seg{display:flex;gap:2px;background:var(--color-track);border-radius:7px;padding:2px}
-.sift-seg-opt{font-size:var(--text-md);padding:5px 12px;border-radius:5px;cursor:pointer;font-weight:500;color:var(--color-text-secondary)}
-.sift-seg-opt:hover{background:var(--color-row-active)}
-.sift-seg-opt.on{background:var(--color-surface-raised);color:var(--color-text-primary)}
+/* Pastille segmentée — composant partagé (2026-07-08 : Apparence/Format USB/Détail-Lot/
+   Dossiers-Genres réimplémentaient chacun leur propre variante — une seule piste encaissée +
+   pastille active désormais). .sift-seg = piste (fond --color-track) ; .sift-seg-opt = option,
+   utilisable en <span> (texte seul) ou <button> (icône+label, ex. Détail/Lot). */
+.sift-seg{display:flex;gap:2px;background:var(--color-track);border-radius:var(--border-radius-pill)}
+/* #qcol is a flex column (align-items:stretch by default) — without a fixed align-self the
+   control stretched to the column's full width and its tabs grew with it whenever the column
+   was resized (annotation 2026-07-06: fixed size/position expected, not a stretchy control). */
+#sift-revseg{align-self:center;margin-bottom:10px}
+/* Sliding thumb (2026-07-08, retour utilisateur : le crossfade par bouton ne montre pas
+   clairement le déplacement d'un état à l'autre) — a single element physically moves via
+   transform instead of each button fading its own background independently. Only viable where
+   the option buttons persist across state changes (see ensureReviewSeg()) — the other 5
+   .sift-seg sites rebuild their content on every change and keep the plain per-button .on style,
+   they never get a thumb. */
+.sift-seg-thumbed{position:relative}
+.sift-seg-thumbed .sift-seg-opt{position:relative;z-index:1}
+/* Also cancels :hover explicitly (not just the base .on) — the generic .sift-seg-opt.on:hover
+   rule further down (for the 5 non-thumbed sites, which still need their own background on
+   hover) has the SAME specificity as a plain ".sift-seg-thumbed .sift-seg-opt.on", so whichever
+   was declared last in the file would win; that repainted a borderless background straight over
+   the thumb when hovering the selected pill, hiding its border (retour utilisateur 2026-07-08).
+   Adding the descendant :hover variant here gives thumbed mode strictly higher specificity
+   (4 vs 3), so it always wins regardless of source order. */
+.sift-seg-thumbed .sift-seg-opt.on,
+.sift-seg-thumbed .sift-seg-opt.on:hover{background:none;border:none}
+.sift-seg-thumb{position:absolute;top:0;bottom:0;left:0;background:var(--color-surface-raised);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-pill);box-shadow:var(--shadow-panel-subtle);transition:transform .18s ease,width .18s ease;pointer-events:none;z-index:0}
+/* Hover is text-only (color shift), no background box — retour utilisateur 2026-07-08 ("dans
+   Claude il y a simplement le texte qui highlight, pas une case qui se superpose"). Transition on
+   background+color so both the hover shift and the selected pill moving from one option to
+   another animate instead of swapping instantly — only actually visible where the option markup
+   persists across state changes (in-place classList toggle) rather than being rebuilt from a
+   fresh innerHTML string on every change; see ensureReviewSeg(). */
+.sift-seg-opt{display:inline-flex;align-items:center;gap:5px;border:none;background:none;font-family:inherit;font-size:var(--text-md);padding:5px 12px;border-radius:var(--border-radius-pill);cursor:pointer;font-weight:500;color:var(--color-text-secondary);white-space:nowrap;transition:background .15s ease,color .15s ease}
+/* background:none réaffirmé explicitement — sinon le générique button:hover{background:
+   var(--color-background-secondary)} (styles.css, reset des boutons) l'emporte quand même sur
+   l'état non sélectionné, faisant apparaître une "bulle" de fond en plus du texte qui highlight
+   (retour utilisateur 2026-07-08). Voir CLAUDE.md : un composant qui redéfinit background doit
+   le réaffirmer dans son propre :hover. */
+.sift-seg-opt:hover{background:none;color:var(--color-text-primary)}
+/* Icon color pinned explicitly (2026-07-08, retour utilisateur : "on ne veut que le texte en
+   highlight") — without this, the icon inherits the button's own `color` just like the label
+   text node does, so it would highlight on hover too. An explicit rule on the icon itself always
+   wins over inheritance, decoupling it from :hover while the un-wrapped label text keeps
+   inheriting and animating normally. Only the real selected state (.on) brightens the icon. */
+.sift-seg-opt i{color:var(--color-text-secondary)}
+.sift-seg-opt.on{background:var(--color-surface-raised);border:0.5px solid var(--color-border-tertiary);color:var(--color-text-primary)}
+.sift-seg-opt.on i{color:var(--color-text-primary)}
+.sift-seg-opt.on:hover{background:var(--color-surface-raised)}
 .sift-usb-empty{font-size:var(--text-sm);color:var(--color-text-tertiary);padding:6px 0}
 .sift-library-toolbar{display:flex;align-items:center;gap:8px;margin-bottom:10px}
 .sift-library-layout{display:flex;align-items:flex-start;gap:14px}
-.sift-library-side{width:150px;flex:none;align-self:flex-start;height:calc(100dvh - 210px);overflow:auto;padding-bottom:10px}
+/* 150px → 190px (2026-07-08, retour utilisateur : la pastille Dossiers/Genres était tronquée) —
+   la piste segmentée + son padding de carte (16px×2) dépassaient les ~118px utiles restants à
+   150px. .sift-library-main est flex:1 dans .sift-library-layout, s'adapte sans casser. */
+.sift-library-side{width:190px;flex:none;align-self:flex-start;height:calc(100dvh - 210px);overflow:auto;padding-bottom:10px}
 .sift-library-main{flex:1;min-width:0}
 /* ── Journal — grammaire 3 colonnes (Sift.dc.html) : liste en col Queue + détail en Inspecteur ── */
 /* Queue column (reuses .queue for bg/width/padding). */
@@ -1021,10 +1081,6 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .jrnl-qhead{display:flex;align-items:center;justify-content:space-between;padding:16px 16px 11px}
 .jrnl-qtitle{font-size:var(--text-base);font-weight:600;letter-spacing:.01em;color:var(--color-text-primary)}
 .jrnl-qcount{font-family:var(--font-mono);font-weight:400;font-size:var(--text-sm);color:var(--color-text-tertiary);margin-left:2px}
-.jrnl-qmode{display:flex;gap:2px;background:var(--color-track);border:0.5px solid var(--color-border-secondary);border-radius:7px;padding:2px}
-.jrnl-qmode-btn{font-size:var(--text-sm);padding:3px 9px;border-radius:5px;cursor:pointer;color:var(--color-text-tertiary);font-weight:500}
-.jrnl-qmode-btn:hover{background:var(--color-row-active)}
-.jrnl-qmode-btn.on{background:var(--color-background-secondary);color:var(--color-text-primary)}
 .jrnl-qlist{flex:1;min-height:0;overflow-y:auto;padding:0 8px 14px}
 .jrnl-qgrp{display:flex;align-items:center;gap:6px;font-size:var(--text-2xs);font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--color-text-quaternary);padding:12px 8px 5px}
 .jrnl-qgrp-n{font-family:var(--font-mono);font-weight:400;color:var(--color-text-tertiary)}
@@ -1049,7 +1105,9 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .jrnl-insp-dot{width:11px;height:11px;border-radius:var(--border-radius-pill);flex:none}
 .jrnl-insp-action{font-size:22px;font-weight:600;color:var(--color-text-primary)}
 .jrnl-insp-time{font-family:var(--font-mono);font-size:var(--text-md);color:var(--color-text-quaternary)}
-.jrnl-insp-card{background:var(--color-background-secondary);border:1px solid var(--color-border-secondary);border-radius:var(--border-radius-lg);padding:18px 20px;max-width:560px;display:flex;flex-wrap:wrap;gap:6px 30px}
+/* Border thickness/color fixed 2026-07-08: was 1px solid border-secondary, an accidental
+   one-off — every other .sift-ui-card-soft-family box uses 0.5px solid border-tertiary. */
+.jrnl-insp-card{background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);padding:18px 20px;max-width:560px;display:flex;flex-wrap:wrap;gap:6px 30px}
 .jrnl-insp-field{margin-bottom:6px}
 .jrnl-insp-flabel{font-size:var(--text-xs);letter-spacing:.06em;text-transform:uppercase;color:var(--color-text-quaternary);margin-bottom:4px}
 .jrnl-insp-fvalue{font-size:var(--text-lg);color:var(--color-text-primary)}
@@ -1062,7 +1120,7 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .jrnl-insp-revert:hover{filter:brightness(0.96)}
 .jrnl-insp-revert:disabled{opacity:.5;cursor:default}
 /* Shared empty state (DESIGN.md "État vide") — top-aligned, never centred. Used by Revue (queue),
-   Écartés, and Bibliothèque when the screen is a real dead-end. */
+   Écartés, Bibliothèque, Rekordbox et Journal (2026-07-08) when the screen is a real dead-end. */
 .sift-empty-state{padding:28px 30px;display:flex;flex-direction:column;align-items:flex-start;gap:var(--space-8);max-width:360px}
 .sift-empty-title{font-size:var(--text-xl);font-weight:600;color:var(--color-text-primary)}
 .sift-empty-note{font-size:var(--text-md);color:var(--color-text-tertiary);line-height:1.5}
@@ -1070,3 +1128,7 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-empty-link{margin-top:var(--space-4);display:inline-flex;align-items:center;gap:8px;font-size:var(--text-sm);font-weight:500;color:var(--color-text-secondary);background:var(--color-surface-raised);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:7px 11px;cursor:pointer;font-family:inherit}
 .sift-empty-link:hover{color:var(--color-text-primary);background:var(--color-row-active)}
 .sift-empty-link i{font-size:var(--text-md);color:var(--color-text-tertiary)}
+/* Compact inline hint (2026-07-08) — deliberately NOT .sift-empty-state: that component is scaled
+   for a whole dead-end screen, this is a single line inside a list whose header/actions stay
+   functional around it (e.g. Accueil's source list with 0 sources). */
+.sift-list-empty-hint{font-size:var(--text-md);color:var(--color-text-tertiary);padding:4px 2px}

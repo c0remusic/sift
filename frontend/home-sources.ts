@@ -74,9 +74,12 @@ function listColumnHtml(sources: Source[]): string {
     `<span style="font-size:var(--text-lg);font-weight:600">Sources <span style="font-family:var(--font-mono);font-weight:400;font-size:var(--text-sm);color:var(--color-text-tertiary)">${sources.length}</span></span>` +
     revueCta +
     `</div>`;
+  // Compact inline hint, not the shared emptyStateHtml() component — that one is scaled for a
+  // whole dead-end screen (title+note, full height); here the header ("Sources") and the "+
+  // Ajouter un dossier" bar stay visible and functional around it, a different scale of "empty".
   const rows = sources.length
     ? sources.map((s) => rowHtml(s, s.id === selectedSourceId, sources)).join("")
-    : `<div style="font-size:var(--text-md);color:var(--color-text-tertiary);padding:4px 2px">Aucun dossier surveillé.</div>`;
+    : `<div class="sift-list-empty-hint">Aucun dossier surveillé.</div>`;
   const bottomBar =
     `<div style="flex:none;border-top:0.5px solid var(--color-border-tertiary);margin-top:8px;padding-top:8px">` +
     `<button data-sift="addsrc" style="width:100%;background:var(--color-background-info);color:var(--color-text-info);font-weight:600"><i class="ti ti-plus" style="font-size:var(--text-base);vertical-align:-2px"></i> Ajouter un dossier</button>` +

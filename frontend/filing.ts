@@ -1004,6 +1004,19 @@ function ensureKbdLegend(foot: HTMLElement): void {
   foot.parentElement?.insertBefore(el, foot.nextSibling);
 }
 
+/** Slides #sift-fmt-seg's .sift-seg-thumb to the currently selected format chip (or removes it if
+ *  every chip is disabled, e.g. a lossy source with only MP3 clickable — .on never gets set on a
+ *  disabled span, so onEl is null and the thumb just stays wherever it last was, invisible behind
+ *  the disabled chips since none of them carry z-index:1). Same pattern as ensureReviewSeg(). */
+function positionFmtThumb(foot: HTMLElement): void {
+  const seg = foot.querySelector<HTMLElement>("#sift-fmt-seg");
+  const thumb = seg?.querySelector<HTMLElement>(".sift-seg-thumb");
+  const onEl = seg?.querySelector<HTMLElement>('[data-fil="fmt"].on');
+  if (!thumb || !onEl) return;
+  thumb.style.width = `${onEl.offsetWidth}px`;
+  thumb.style.transform = `translateX(${onEl.offsetLeft}px)`;
+}
+
 /** Render the filing rail (format + actions) into `foot`. The metadata editor (Identify + editable
  *  fields + final-name preview + genres) lives in the center now — see `renderEditor`. */
 function renderFoot(foot: HTMLElement, mid: HTMLElement, rail: string): void {
@@ -1022,11 +1035,11 @@ function renderFoot(foot: HTMLElement, mid: HTMLElement, rail: string): void {
       // a lossy source can't be upscaled to lossless — disable AIFF/WAV (the backend refuses
       // it anyway; greying it out prevents the dead-end click).
       if (lossy && t !== "mp3_320")
-        return `<span class="chip sift-chip-disabled" title="Pas de surqualité depuis un fichier lossy">${TARGET_LABEL[t]}</span>`;
+        return `<span class="sift-seg-opt sift-chip-disabled" title="Pas de surqualité depuis un fichier lossy">${TARGET_LABEL[t]}</span>`;
       const on = (state.target ?? defaultTarget(rail)) === t ? " on" : "";
-      return `<span class="chip${on}" data-fil="fmt" data-t="${t}">${TARGET_LABEL[t]}</span>`;
+      return `<span class="sift-seg-opt${on}" data-fil="fmt" data-t="${t}">${TARGET_LABEL[t]}</span>`;
     })
-    .join(" ");
+    .join("");
 
   const fake = state.track?.verdict === "fake";
   // Text only (annotation: "supprime les icones") — the shortcut is still named in the tooltip
@@ -1051,7 +1064,7 @@ function renderFoot(foot: HTMLElement, mid: HTMLElement, rail: string): void {
     `<span class="sift-dest-btn-label">Destination</span>` +
     `<span class="sift-fil-bin">${esc(destValueLabel())}</span>` +
     `<i class="ti ti-chevron-down sift-dest-btn-caret"></i></button>` +
-    `<div class="sift-rail-fmt-group"><span class="col-h">Format</span><div class="sift-fmt-chips">${chips}</div></div>` +
+    `<div class="sift-rail-fmt-group"><span class="col-h">Format</span><div class="sift-seg sift-seg-thumbed" id="sift-fmt-seg"><div class="sift-seg-thumb"></div>${chips}</div></div>` +
     `<div class="sift-rail-final-group"><span class="sift-final-name-label">Nom final</span><span class="sift-fil-prev"></span></div>` +
     `<div class="sift-rail-spacer"></div>` +
     secondary +
@@ -1059,6 +1072,7 @@ function renderFoot(foot: HTMLElement, mid: HTMLElement, rail: string): void {
   if (filedBanner) foot.prepend(filedBanner); // restore the banner above the freshly-rendered controls
   refreshRangerButton(); // single source of truth for the button's label/disabled state
   refreshPreview(); // repaint .sift-fil-prev just added above — it was empty until now
+  positionFmtThumb(foot);
 
   foot.querySelector('[data-fil="destbtn"]')?.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -1066,10 +1080,20 @@ function renderFoot(foot: HTMLElement, mid: HTMLElement, rail: string): void {
   });
   ensureDestPopoverAutoClose();
 
+  // In-place update instead of a full renderFoot() (2026-07-08, retour utilisateur : thumb glissant
+  // pour Format comme Détail/Lot) — a full rebuild would tear down and recreate the chip elements
+  // on every click, leaving .sift-seg-thumb nothing to animate between (see ensureReviewSeg in
+  // sift-live.ts for the same fix applied there first). Nothing else in the rail depends on
+  // state.target besides the preview extension and the Ranger button's enabled state, both
+  // already refreshed below without needing the surrounding markup rebuilt.
   foot.querySelectorAll<HTMLElement>('[data-fil="fmt"]').forEach((el) =>
     el.addEventListener("click", () => {
       state.target = (el.dataset.t as Target) || null;
-      renderFoot(foot, mid, rail);
+      foot
+        .querySelectorAll<HTMLElement>('[data-fil="fmt"]')
+        .forEach((c) => c.classList.toggle("on", c.dataset.t === state.target));
+      positionFmtThumb(foot);
+      refreshRangerButton();
       refreshPreview(); // the chosen format sets the filename extension shown in the rail preview
     }),
   );
