@@ -1445,6 +1445,49 @@ mod tests {
         println!("PASS: repair + restore round-tripped cleanly on real master.db copy ({track_count_before} tracks)");
     }
 
+    /// M8 Tier 2 real-data gate, same rationale as Tier 1's
+    /// `repair_track_path_round_trips_on_real_masterdb_copy` — a synthetic
+    /// fixture proves the engine's SQL is correct, not that it survives a
+    /// real Rekordbox B-tree. Unlike Tier 1's test, this one does not
+    /// restore the original state afterward: the real copy conveniently
+    /// already has a genuine pre-existing duplicate (found while writing
+    /// this plan — `docs/ressources-externes.md`, Évaluation 18's
+    /// follow-up investigation), and cleaning it up is a harmless,
+    /// disposable side effect on a throwaway copy, never the live file.
+    ///
+    /// `#[ignore]`d for the same reason as Tier 1's — needs
+    /// `SIFT_M8_REAL_COPY_DIR` and Rekordbox closed, not runnable in CI.
+    #[test]
+    #[ignore]
+    fn dedup_playlist_group_round_trips_on_real_masterdb_copy() {
+        let pioneer_dir = std::path::PathBuf::from(
+            std::env::var("SIFT_M8_REAL_COPY_DIR")
+                .expect("set SIFT_M8_REAL_COPY_DIR to a folder holding a COPY of master.db + masterPlaylists6.xml"),
+        );
+        let backup_dir = tempfile::tempdir().expect("tempdir").path().join("backup");
+
+        let groups = detect_playlist_duplicates(&pioneer_dir.join("master.db")).expect("detect on real copy");
+        assert!(!groups.is_empty(), "expected at least one real duplicate group to dedup");
+        let group = groups[0].clone();
+        println!(
+            "deduping playlist={} content={} keep={} remove={:?}",
+            group.playlist_id,
+            group.content_id,
+            group.keep.song_playlist_id,
+            group.remove.iter().map(|e| &e.song_playlist_id).collect::<Vec<_>>()
+        );
+
+        dedup_playlist_group(&pioneer_dir, &backup_dir, &group).expect("dedup on real copy");
+
+        let after = detect_playlist_duplicates(&pioneer_dir.join("master.db")).expect("detect after");
+        assert!(
+            !after.iter().any(|g| g.playlist_id == group.playlist_id && g.content_id == group.content_id),
+            "duplicate group must be gone after dedup"
+        );
+
+        println!("PASS: deduped 1 real playlist duplicate group on a real master.db copy");
+    }
+
     #[test]
     fn dedup_playlist_group_removes_extra_entries_and_bumps_usn() {
         let tmp = tempfile::tempdir().expect("tempdir");
