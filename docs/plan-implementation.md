@@ -269,11 +269,29 @@ empreintes Chromaprint).
 > (2828 pistes), 271 tests + clippy clean après le fix. Détail complet :
 > `docs/ressources-externes.md`, Évaluation 18.
 >
-> **Tier 2** (sync playlists existantes, sans création) et **Tier 3** (flag
-> `TrackInfoUpdated` pour la synchro metadata) restent non commencés — Tier 3 bloqué sur
-> un spike jamais correctement terminé (retest par ID exact, voir
+> **Tier 2 (dédup des entrées de playlist dupliquées) livré côté moteur le 2026-07-08**
+> — `detect_playlist_duplicates` (lecture, groupe `djmdSongPlaylist` par
+> `PlaylistID`+`ContentID`) + `dedup_playlist_group` (écriture, réutilise
+> intégralement la chaîne de sûreté Tier 1 : garde process → backup → transaction →
+> réencodage → écriture atomique → vérification round-trip → rollback auto), zéro
+> nouvelle dépendance. **Sift ne crée ni ne modifie jamais `djmdPlaylist`, ne touche
+> jamais `TrackNo` des entrées conservées** — seule la ligne dupliquée en trop est
+> supprimée, USN global bumpé une fois par ligne supprimée. Construit via
+> subagent-driven-development (4 tâches, revue finale Opus "ready to merge with
+> fixes" — 2 assertions de test ajoutées avant merge, USN et survie de la ligne
+> conservée). Vérifié contre une copie de la vraie bibliothèque (2828 pistes, un vrai
+> doublon pré-existant trouvé et dédupliqué avec succès — voir
+> `docs/ressources-externes.md`, Évaluation 18, paragraphe "Suivi même jour").
+> 25 tests + clippy clean. **Pas d'IPC ni d'UI** (différé, même précédent que Tier 1) ;
+> **synchro de playlist complète** (au-delà du simple dédoublonnage — ajouts/retraits/
+> réordonnancement `TrackNo`) hors scope, nécessite une correspondance Sift↔Rekordbox
+> non encore spécifiée. Plan :
+> `docs/superpowers/plans/2026-07-08-m8-tier2-playlist-dedup-rust.md`.
+>
+> **Tier 3** (flag `TrackInfoUpdated` pour la synchro metadata) reste non commencé —
+> bloqué sur un spike jamais correctement terminé (retest par ID exact, voir
 > `docs/superpowers/specs/2026-07-06-m8-tier1-write-path-rust-design-v2.md`).
-- **Rekordbox `master.db`** : remplacement in-situ (Tier 1 livré ci-dessus), **dédup des playlists existantes** (Tier 2, non commencé), **réparation/prévention des liens cassés** (chemin change au changement de format — Tier 1). ⚠️ backup obligatoire (déjà implémenté), Rekordbox fermé (garde déjà implémentée).
+- **Rekordbox `master.db`** : remplacement in-situ (Tier 1 livré), **dédup des playlists existantes** (Tier 2 moteur livré ci-dessus, IPC/UI restant), **réparation/prévention des liens cassés** (chemin change au changement de format — Tier 1). ⚠️ backup obligatoire (déjà implémenté), Rekordbox fermé (garde déjà implémentée).
 - **Normalisation loudness** (option, OFF par défaut).
 
 ---

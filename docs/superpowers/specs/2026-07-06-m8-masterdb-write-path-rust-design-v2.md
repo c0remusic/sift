@@ -270,3 +270,12 @@ Symétrique du lecteur, même philosophie « ne pas réimplémenter SQLite » :
   la VFS mémoire de `sqlite3_deserialize`), invisible sur le fixture
   synthétique. Round-trip complet validé sur la vraie bibliothèque
   (2828 pistes). Détail : `docs/ressources-externes.md`, Évaluation 18.
+- **v2 mise à jour n°4** (2026-07-08, même jour) : Tier 2 (dédup des entrées
+  de playlist dupliquées, scope "seulement dédupliquer" de cette section)
+  livré côté moteur — `detect_playlist_duplicates`/`dedup_playlist_group`,
+  chaîne de sûreté Tier 1 réutilisée telle quelle, zéro nouvelle dépendance.
+  Vérifié contre la même copie réelle (un vrai doublon pré-existant trouvé
+  et dédupliqué). Plan :
+  `docs/superpowers/plans/2026-07-08-m8-tier2-playlist-dedup-rust.md`.
+  Synchro de playlist complète (au-delà du dédoublonnage) reste hors scope,
+  correspondance Sift↔Rekordbox toujours "à spécifier."
