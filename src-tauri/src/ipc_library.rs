@@ -528,6 +528,94 @@ pub fn rekordbox_masterdb_apply_repairs(
     rekordbox_masterdb_apply_repairs_inner(&conn, &backup_root, &ids)
 }
 
+// ── M8 Tier 2: playlist duplicate-entry dedup ─────────────────────────────────
+
+/// One `djmdSongPlaylist` row involved in a duplicate group — mirrors
+/// `rekordbox_masterdb::PlaylistDuplicateEntry` field-for-field, kept as a
+/// separate IPC-local type per this module's `Serialize`-boundary convention
+/// (see `humanize_masterdb_error`'s doc comment for the same rationale
+/// applied to `MasterDbError`).
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PlaylistDuplicateEntryDto {
+    pub song_playlist_id: String,
+    pub track_no: i64,
+}
+
+impl From<crate::rekordbox_masterdb::PlaylistDuplicateEntry> for PlaylistDuplicateEntryDto {
+    fn from(e: crate::rekordbox_masterdb::PlaylistDuplicateEntry) -> Self {
+        Self { song_playlist_id: e.song_playlist_id, track_no: e.track_no }
+    }
+}
+
+impl From<PlaylistDuplicateEntryDto> for crate::rekordbox_masterdb::PlaylistDuplicateEntry {
+    fn from(e: PlaylistDuplicateEntryDto) -> Self {
+        Self { song_playlist_id: e.song_playlist_id, track_no: e.track_no }
+    }
+}
+
+/// A set of `djmdSongPlaylist` rows in the same playlist that reference the
+/// same track more than once — mirrors
+/// `rekordbox_masterdb::PlaylistDuplicateGroup` field-for-field. Round-trips
+/// through the frontend unmodified: a scan returns these, and the exact same
+/// shape is passed back to `rekordbox_masterdb_dedup_playlist_group` — no
+/// server-side id or cache needed, the group's own fields are the identity.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct PlaylistDuplicateGroupDto {
+    pub playlist_id: String,
+    pub content_id: String,
+    pub keep: PlaylistDuplicateEntryDto,
+    pub remove: Vec<PlaylistDuplicateEntryDto>,
+}
+
+impl From<crate::rekordbox_masterdb::PlaylistDuplicateGroup> for PlaylistDuplicateGroupDto {
+    fn from(g: crate::rekordbox_masterdb::PlaylistDuplicateGroup) -> Self {
+        Self {
+            playlist_id: g.playlist_id,
+            content_id: g.content_id,
+            keep: g.keep.into(),
+            remove: g.remove.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+impl From<PlaylistDuplicateGroupDto> for crate::rekordbox_masterdb::PlaylistDuplicateGroup {
+    fn from(g: PlaylistDuplicateGroupDto) -> Self {
+        Self {
+            playlist_id: g.playlist_id,
+            content_id: g.content_id,
+            keep: g.keep.into(),
+            remove: g.remove.into_iter().map(Into::into).collect(),
+        }
+    }
+}
+
+/// Plain (testable) implementation of `rekordbox_masterdb_scan_playlist_duplicates`.
+fn rekordbox_masterdb_scan_playlist_duplicates_inner(conn: &Connection) -> Result<Vec<PlaylistDuplicateGroupDto>, String> {
+    let xml_path = crate::settings::get(conn, crate::settings::REKORDBOX_XML_PATH)
+        .map_err(|e| e.to_string())?
+        .ok_or("aucun XML Rekordbox lié — relie un fichier avant de synchroniser")?;
+    let pioneer_dir = std::path::Path::new(&xml_path)
+        .parent()
+        .ok_or("aucun XML Rekordbox lié — relie un fichier avant de synchroniser")?;
+    let groups = crate::rekordbox_masterdb::detect_playlist_duplicates(&pioneer_dir.join("master.db"))
+        .map_err(|e| humanize_masterdb_error(&e))?;
+    Ok(groups.into_iter().map(Into::into).collect())
+}
+
+/// Scans the linked Rekordbox's `master.db` for playlists containing the
+/// same track more than once. Read-only — never touches `master.db`. Called
+/// fresh on demand (no persistence): unlike Tier 1's candidate repairs,
+/// duplicate playlist entries are a pre-existing library condition, not
+/// something Sift's own actions cause, so there's nothing to detect
+/// mid-filing or store until later review.
+#[tauri::command]
+pub fn rekordbox_masterdb_scan_playlist_duplicates(
+    conn: State<'_, Mutex<Connection>>,
+) -> Result<Vec<PlaylistDuplicateGroupDto>, String> {
+    let conn = conn.lock().map_err(|e| e.to_string())?;
+    rekordbox_masterdb_scan_playlist_duplicates_inner(&conn)
+}
+
 #[cfg(test)]
 mod rekordbox_tests {
     use super::*;
@@ -962,5 +1050,31 @@ mod rekordbox_tests {
 
         let err = rekordbox_masterdb_resolve_ambiguous_inner(&conn, id, "40000001").unwrap_err();
         assert_eq!(err, "cette ligne n'est plus ambiguë — rechargement nécessaire");
+    }
+
+    #[test]
+    fn scan_playlist_duplicates_finds_the_fixture_duplicate() {
+        let conn = db();
+        let tmp = tempfile::tempdir().unwrap();
+        let pioneer_dir = tmp.path().join("pioneer");
+        let xml_path = seed_pioneer_dir(&pioneer_dir);
+        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+
+        let groups = rekordbox_masterdb_scan_playlist_duplicates_inner(&conn).unwrap();
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].playlist_id, "50000001");
+        assert_eq!(groups[0].content_id, "40000001");
+        assert_eq!(groups[0].keep.song_playlist_id, "60000001");
+        assert_eq!(groups[0].keep.track_no, 1);
+        assert_eq!(groups[0].remove.len(), 1);
+        assert_eq!(groups[0].remove[0].song_playlist_id, "60000003");
+        assert_eq!(groups[0].remove[0].track_no, 3);
+    }
+
+    #[test]
+    fn scan_playlist_duplicates_fails_fast_when_no_xml_linked() {
+        let conn = db();
+        let err = rekordbox_masterdb_scan_playlist_duplicates_inner(&conn).unwrap_err();
+        assert_eq!(err, "aucun XML Rekordbox lié — relie un fichier avant de synchroniser");
     }
 }

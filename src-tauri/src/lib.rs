@@ -155,6 +155,7 @@ pub fn run() {
             ipc_library::export_rekordbox_xml,
             ipc_library::rekordbox_masterdb_pending_repairs,
             ipc_library::rekordbox_masterdb_apply_repairs,
+            ipc_library::rekordbox_masterdb_scan_playlist_duplicates,
             ipc_library::rekordbox_masterdb_dismiss_repair,
             ipc_library::rekordbox_masterdb_resolve_ambiguous,
             ipc_usb::list_removable_drives,
