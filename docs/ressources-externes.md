@@ -1335,3 +1335,48 @@ worktree), a commité `77877ce` (spec "Agent Token Budget Operating Model",
 pendant que cette session validait une approche plus minimale en parallèle,
 sans coordination. Gardés séparés sur demande d'Antoine — pas de fusion. Voir
 [[concurrent-session-same-directory]].
+
+---
+
+## Évaluation 17 — corruption d'encodage silencieuse (mojibake) sur 2 fichiers frontend (2026-07-07)
+
+**Contexte** : pendant une session de polish UI Revue (nav, queue, boutons),
+un audit de routine (`git diff` avant commit) a fait remonter des séquences
+`â€"`/`â€™` dans les commentaires de `frontend/styles.css` — signature classique
+d'un double encodage UTF-8→Windows-1252→UTF-8. Investigation menée avant de
+continuer tout autre changement, pas après.
+
+**Constat, confirmé par comparaison d'octets bruts** (`git show HEAD:fichier
+| xxd` vs le fichier réel) : le tiret cadratin correctement encodé en UTF-8
+(`E2 80 94`) avait été mal décodé en Windows-1252 (donnant les 3 caractères
+`â`/`€`/`"`), puis ce résultat erroné réencodé en UTF-8 pour la sauvegarde —
+une double-passe d'encodage classique. `frontend/styles.css` (140 occurrences,
+corruption dès la ligne 1 du fichier) et `frontend/sift-live.ts` (149
+occurrences) étaient touchés ; les deux avaient aussi gagné un BOM UTF-8
+(`EF BB BF`) absent de la version `HEAD`. Aucun autre fichier modifié cette
+session n'était affecté (vérifié par grep ciblé sur tous les fichiers
+`git status` de la session). Origine exacte non identifiée avec certitude —
+plausible qu'un outil/process ait rouvert et resauvé le fichier entier avec
+une mauvaise détection d'encodage (Windows a plusieurs outils qui sauvent par
+défaut dans l'encodage système au lieu d'UTF-8) — mais la cause n'était pas
+le point important : le fichier est réparable indépendamment de la cause.
+
+**Fix, mécanique et vérifié sans perte** : script Node jetable — décoder le
+fichier actuel en UTF-8 (donne la chaîne mojibake), ré-encoder chaque
+caractère en Windows-1252 (table manuelle pour le bloc `0x80`-`0x9F`, qui
+diffère de Latin-1/ISO-8859-1 dans cette plage — c'est justement ce qui
+distingue une vraie corruption Windows-1252 d'une simple Latin-1), puis
+redécoder ces octets en UTF-8 pour récupérer le texte d'origine. Zéro
+caractère non représentable sur les deux fichiers (confirmé par échantillon
+avant/après : "Source de vérité" se relit correctement, accents et tirets
+cadratins restaurés). `npx tsc --noEmit` reste clean après le fix — la
+correction est purement au niveau des octets de commentaires/chaînes, aucune
+logique touchée.
+
+**Décision** : pas d'outil de détection automatique ajouté (pas de hook, pas
+de CI check) — l'incident a été détecté par une relecture `git diff` de
+routine avant commit, qui suffit à l'attraper tant que cette habitude est
+maintenue. Si l'incident se reproduit sur d'autres fichiers, envisager un
+grep `â€` ciblé dans la checklist de fin de session plutôt qu'un outillage
+dédié — la réparation elle-même (script jetable, ~40 lignes) est assez simple
+pour ne pas justifier d'investissement en amont.
