@@ -28,7 +28,6 @@ import type {
   RekordboxLinkStatus,
   PendingMasterdbRepair,
   ApplyRepairOutcome,
-  PlaylistDuplicateEntryDto,
   PlaylistDuplicateGroupDto,
 } from "../shared/contracts";
 
