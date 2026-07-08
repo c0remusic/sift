@@ -1,7 +1,10 @@
 # Design — Agent Token Budget Operating Model
 
 Date : 2026-07-06
-Statut : approuve (brainstorming), pret pour writing-plans
+Statut : activé le 2026-07-08 — paliers + templates de prompts migrés vers
+`~/.claude/agent-operating-model.md` (global), packs de contexte migrés
+vers `docs/skills-registre.md` (Sift). Ce fichier reste la trace de
+décision d'origine, plus la source vive.
 
 ## Probleme
 

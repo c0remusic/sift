@@ -163,6 +163,20 @@ le vrai problème du premier coup.
 redupliquer ici. Spécifique à Sift : consulter `docs/skills-registre.md` (pas
 un registre générique) pour le verdict par domaine.
 
+**Sizing / YAGNI+evidence / lisibilité** : mécaniques génériques posées dans
+`~/.claude/agent-operating-model.md` (s'applique tous projets, voir
+`docs/superpowers/specs/2026-07-08-agent-operating-model-design.md` pour le
+détail de la décision) — classifier mini/normal/large avant tout fan-out
+d'agents, gate de preuve avant d'inclure un item dans un artefact, checklist
+lisibilité avant de livrer un `design.md`/`plan.md`. Sur Sift : veille/
+décision = `docs/ressources-externes.md` (section "Écarté" = tranché ;
+nouvelle section "Différé" = pas assez de preuve pour l'instant, avec
+trigger de réouverture nommé — ne pas confondre les deux) ; packs de
+contexte = `docs/skills-registre.md`, section "Packs de contexte (sizing)".
+Nouveaux chantiers → `docs/superpowers/changes/<date>-<slug>/`
+(`design.md`/`plan.md`/`review.md` dans un seul dossier) au lieu de
+`specs/`+`plans/`+`reviews/` à plat — fichiers existants non migrés.
+
 Exemples de routage (non exhaustif, voir le registre complet) :
 - Rust/backend → `rust-best-practices`, `error-handling-patterns`, `rust-engineer`.
 - UI/design retouche/polish ou nouveau chantier → voir priorités et

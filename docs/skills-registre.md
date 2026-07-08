@@ -66,6 +66,58 @@ attendre une notification qui ne viendra pas.
 
 ---
 
+## Packs de contexte (sizing, ajouté 2026-07-08)
+
+Instanciation Sift du "sizing" décrit dans `~/.claude/agent-operating-model.md`.
+Ces packs sont des menus, pas des blocs à coller intégralement — l'orchestrateur
+choisit les 3-8 fichiers utiles et cite les sections à lire. Migré depuis
+`docs/superpowers/specs/2026-07-06-agent-token-budget-operating-model-design.md`
+(le spec sizing d'origine, resté orphelin — désormais activé via ce fichier).
+
+### Pack UI live
+
+- `CLAUDE.md` : sections Vision, Front — événements répétés, Front — CSS,
+  Vérification UI.
+- `docs/design-system-states.md` : composants concernés seulement.
+- `frontend/styles.css`.
+- Fichiers frontend touchés (`report-view.ts`, `filing.ts`,
+  `batch-tracklist.ts`, etc.).
+- Commande de vérification par défaut : `npx tsc --noEmit`.
+
+### Pack Rust backend
+
+- `CLAUDE.md` : sections Stack, Commandes, Documentation lookups, Méthode.
+- `docs/skills-registre.md` : lignes Rust/backend (section ci-dessus).
+- Fichiers `src-tauri/src/*.rs` concernés seulement.
+- `src-tauri/Cargo.toml` si dépendances/features.
+- Commandes : `cargo test --manifest-path src-tauri/Cargo.toml` et/ou
+  `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings`.
+
+### Pack Rekordbox / master.db
+
+- `CLAUDE.md` : garde-fou "Jamais une écriture sur un système live".
+- `docs/ressources-externes.md` : évaluations Rekordbox pertinentes.
+- Specs/plans M8 actifs uniquement.
+- Fichiers Rust/TS concernés.
+- Toute vérification dans le vrai Rekordbox reste manuelle par Antoine.
+
+### Pack docs / planning
+
+- `docs/INDEX.json`.
+- Spec/plan cible.
+- `docs/skills-registre.md` si routage skills.
+- Pas de lecture large de `frontend/` ou `src-tauri/` sauf question précise.
+
+### Pack review adverse
+
+- La spec approuvée.
+- Le diff (`git diff -- <fichiers>`).
+- Les fichiers modifiés uniquement.
+- Les règles `CLAUDE.md` strictement pertinentes.
+- Sortie : findings file:line, sévérité, test manquant, pas de résumé long.
+
+---
+
 ## Méthode / développement (à utiliser sur Sift)
 
 | Nom | Portée | Invocation | Usage |
