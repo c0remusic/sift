@@ -335,7 +335,9 @@ export interface PlaylistDuplicateEntryDto {
 
 export interface PlaylistDuplicateGroupDto {
   playlist_id: string;
+  playlist_name: string | null;
   content_id: string;
+  track_path: string | null;
   keep: PlaylistDuplicateEntryDto;
   remove: PlaylistDuplicateEntryDto[];
 }

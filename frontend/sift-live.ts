@@ -32,6 +32,8 @@ import {
   rekordboxMasterdbApplyRepairs,
   rekordboxMasterdbDismissRepair,
   rekordboxMasterdbResolveAmbiguous,
+  rekordboxMasterdbScanPlaylistDuplicates,
+  rekordboxMasterdbDedupPlaylistGroup,
 } from "./ipc";
 import type {
   LibraryTrack,
@@ -42,6 +44,7 @@ import type {
   RekordboxLinkStatus,
   PendingMasterdbRepair,
   CandidateTrack,
+  PlaylistDuplicateGroupDto,
 } from "../shared/contracts";
 import type { RemovableDrive } from "./ipc";
 import { openLibraryDetailInto } from "./library-detail";
@@ -112,6 +115,14 @@ const mdbRepairSel = new Set<number>();
 // Per-row apply failure message, transient (never persisted) — cleared when the row is
 // reselected or the next apply_repairs batch touches it again.
 const mdbErrorById = new Map<number, string>();
+// M8 Tier 2 playlist-dedup section state — stateless on the backend (no server-side id,
+// see the IPC wiring plan's Architecture note), so the frontend keeps the last scan result
+// itself and references entries by array index from the DOM. Re-populated on every
+// renderRekordboxLive() call, same lifecycle as masterdbSection's own data.
+let lastScannedDuplicateGroups: PlaylistDuplicateGroupDto[] = [];
+// Per-group dedup failure message, keyed by "playlistId::contentId" (no numeric id exists
+// for a duplicate group) — same transient, never-persisted contract as mdbErrorById.
+const mdbDedupErrorByKey = new Map<string, string>();
 let queueRowHeightCache: number | null = null;
 
 // Live filter on the queue rail (annotation: "on veut une barre de recherche en bas — filtre
@@ -1735,6 +1746,41 @@ function masterdbRepairsSectionHtml(rows: PendingMasterdbRepair[]): string {
   );
 }
 
+function duplicateGroupKey(g: PlaylistDuplicateGroupDto): string {
+  return `${g.playlist_id}::${g.content_id}`;
+}
+
+/** M8 Tier 2 section: lists playlists where the same track appears more than once
+ * (rekordbox_masterdb_scan_playlist_duplicates, read-only, scanned fresh on every render — no
+ * persistence, see docs/superpowers/plans/2026-07-08-m8-tier2-ipc-wiring.md). One button per
+ * group, no multi-select (unlike Tier 1's masterdbRepairsSectionHtml): each dedup is a complete,
+ * independent action, and there are typically 0-2 groups at a time. Renders "" when there is
+ * nothing to dedup, same show-nothing-when-empty rule as masterdbRepairsSectionHtml. */
+function playlistDuplicatesSectionHtml(groups: PlaylistDuplicateGroupDto[]): string {
+  if (groups.length === 0) return "";
+  const rows = groups
+    .map((g, i) => {
+      const key = duplicateGroupKey(g);
+      const playlistLabel = g.playlist_name || `Playlist ${g.playlist_id}`;
+      const trackLabel = g.track_path ? g.track_path.split(/[\\/]/).pop() || g.track_path : `Piste ${g.content_id}`;
+      const count = g.remove.length;
+      return (
+        `<div style="border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:9px 11px;margin-bottom:6px;display:flex;gap:10px;align-items:center">` +
+        `<div style="min-width:0;flex:1">` +
+        `<div style="font-size:var(--text-sm)">${esc(playlistLabel)}</div>` +
+        `<div style="font-family:var(--font-mono);font-size:var(--text-xs);color:var(--color-text-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(trackLabel)} — ${count} doublon${count > 1 ? "s" : ""}</div>` +
+        (mdbDedupErrorByKey.has(key)
+          ? `<div style="font-size:var(--text-xs);color:var(--color-text-danger);margin-top:2px">${esc(mdbDedupErrorByKey.get(key)!)}</div>`
+          : "") +
+        `</div>` +
+        `<button data-sift="mdbdedup" data-idx="${i}" style="flex:none">Dédupliquer</button>` +
+        `</div>`
+      );
+    })
+    .join("");
+  return `<div style="margin-bottom:12px"><div class="col-h">Doublons dans les playlists</div>${rows}</div>`;
+}
+
 async function renderRekordboxLive(): Promise<void> {
   const content = requireEl("#content", "renderRekordboxLive");
   let status: RekordboxLinkStatus;
@@ -1786,7 +1832,16 @@ async function renderRekordboxLive(): Promise<void> {
     console.error("rekordbox_masterdb_pending_repairs failed", e);
   }
 
-  content.innerHTML = intro + driftBanner + rekordboxCardHtml(status) + masterdbSection;
+  let dedupSection = "";
+  try {
+    lastScannedDuplicateGroups = await rekordboxMasterdbScanPlaylistDuplicates();
+    dedupSection = playlistDuplicatesSectionHtml(lastScannedDuplicateGroups);
+  } catch (e) {
+    console.error("rekordbox_masterdb_scan_playlist_duplicates failed", e);
+    lastScannedDuplicateGroups = [];
+  }
+
+  content.innerHTML = intro + driftBanner + rekordboxCardHtml(status) + masterdbSection + dedupSection;
 }
 
 /** Live Bibliothèque view: lists filed tracks with search + quality chips + folder/genre
@@ -2360,6 +2415,28 @@ export function installLiveWiring() {
         } catch (e) {
           console.error("rekordbox_masterdb_apply_repairs failed", e);
           toast("Action impossible — réessaie");
+        }
+        void renderRekordboxLive();
+      })();
+    } else if (act === "mdbdedup") {
+      e.stopPropagation();
+      const idx = Number(el.dataset.idx);
+      const group = lastScannedDuplicateGroups[idx];
+      if (!group) return;
+      void (async () => {
+        const proceed = await confirmAction(
+          `Supprimer ${group.remove.length} entrée${group.remove.length > 1 ? "s" : ""} en double de cette playlist ? Ferme Rekordbox avant de continuer.`,
+          "Dédupliquer",
+        );
+        if (!proceed) return;
+        const key = duplicateGroupKey(group);
+        try {
+          await rekordboxMasterdbDedupPlaylistGroup(group);
+          mdbDedupErrorByKey.delete(key);
+          toast("Doublon supprimé");
+        } catch (e) {
+          console.error("rekordbox_masterdb_dedup_playlist_group failed", e);
+          mdbDedupErrorByKey.set(key, e instanceof Error ? e.message : "échec inconnu");
         }
         void renderRekordboxLive();
       })();
