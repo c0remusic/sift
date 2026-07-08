@@ -28,6 +28,8 @@ import type {
   RekordboxLinkStatus,
   PendingMasterdbRepair,
   ApplyRepairOutcome,
+  PlaylistDuplicateEntryDto,
+  PlaylistDuplicateGroupDto,
 } from "../shared/contracts";
 
 export const appInfo = (): Promise<AppInfo> => invoke("app_info");
@@ -295,6 +297,21 @@ export const rekordboxMasterdbDismissRepair = (id: number): Promise<void> =>
 /** Resolve an ambiguous repair by selecting the correct candidate track. */
 export const rekordboxMasterdbResolveAmbiguous = (id: number, chosenTrackId: string): Promise<void> =>
   invoke("rekordbox_masterdb_resolve_ambiguous", { id, chosenTrackId });
+
+// ---- M8 Tier 2 playlist duplicate-entry dedup ----
+
+/** Scans the linked Rekordbox's master.db for playlists with the same track
+ * added more than once. Read-only, called fresh on demand — nothing persists
+ * between calls, unlike Tier 1's candidate repairs. */
+export const rekordboxMasterdbScanPlaylistDuplicates = (): Promise<PlaylistDuplicateGroupDto[]> =>
+  invoke("rekordbox_masterdb_scan_playlist_duplicates");
+
+/** Removes every extra occurrence in group.remove, keeping group.keep untouched.
+ * Pass back exactly the group object received from rekordboxMasterdbScanPlaylistDuplicates —
+ * there is no separate id to reference. Never automatic — only call after explicit
+ * user confirmation. */
+export const rekordboxMasterdbDedupPlaylistGroup = (group: PlaylistDuplicateGroupDto): Promise<void> =>
+  invoke("rekordbox_masterdb_dedup_playlist_group", { group });
 
 // ---- M7 USB format utility (mirror of ipc_usb.rs) ----
 

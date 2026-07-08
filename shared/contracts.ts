@@ -325,3 +325,17 @@ export interface ApplyRepairOutcome {
   ok: boolean;
   error: string | null;
 }
+
+// ---- M8 Tier 2 playlist duplicate-entry dedup (mirror of src-tauri/src/ipc_library.rs) ----
+
+export interface PlaylistDuplicateEntryDto {
+  song_playlist_id: string;
+  track_no: number;
+}
+
+export interface PlaylistDuplicateGroupDto {
+  playlist_id: string;
+  content_id: string;
+  keep: PlaylistDuplicateEntryDto;
+  remove: PlaylistDuplicateEntryDto[];
+}

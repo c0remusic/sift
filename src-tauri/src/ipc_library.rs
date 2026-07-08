@@ -287,6 +287,12 @@ fn humanize_masterdb_error(e: &crate::rekordbox_masterdb::MasterDbError) -> Stri
         MasterDbError::WriteVerificationFailedRollbackFailed(m) => format!(
             "l'écriture ET la restauration de la sauvegarde ont échoué — intervention manuelle nécessaire : {m}"
         ),
+        MasterDbError::NoDuplicatesToRemove => {
+            "aucun doublon à supprimer dans ce groupe — la bibliothèque a peut-être changé depuis le scan".to_string()
+        }
+        MasterDbError::SongPlaylistEntryNotFound { song_playlist_id } => format!(
+            "entrée de playlist {song_playlist_id} introuvable — la bibliothèque Rekordbox a peut-être changé depuis le scan"
+        ),
         other => other.to_string(),
     }
 }
@@ -614,6 +620,53 @@ pub fn rekordbox_masterdb_scan_playlist_duplicates(
 ) -> Result<Vec<PlaylistDuplicateGroupDto>, String> {
     let conn = conn.lock().map_err(|e| e.to_string())?;
     rekordbox_masterdb_scan_playlist_duplicates_inner(&conn)
+}
+
+/// Plain (testable) implementation of `rekordbox_masterdb_dedup_playlist_group`.
+/// `backup_root` is the caller-resolved base directory for backups
+/// (production: `app_data_dir()/rekordbox-backups`), same convention as
+/// `rekordbox_masterdb_apply_repairs_inner`.
+fn rekordbox_masterdb_dedup_playlist_group_inner(
+    conn: &Connection,
+    backup_root: &Path,
+    group: PlaylistDuplicateGroupDto,
+) -> Result<(), String> {
+    let xml_path = crate::settings::get(conn, crate::settings::REKORDBOX_XML_PATH)
+        .map_err(|e| e.to_string())?
+        .ok_or("aucun XML Rekordbox lié — relie un fichier avant de synchroniser")?;
+    let pioneer_dir = std::path::Path::new(&xml_path)
+        .parent()
+        .ok_or("aucun XML Rekordbox lié — relie un fichier avant de synchroniser")?;
+
+    let batch_stamp = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
+    let backup_dir = backup_root.join(&batch_stamp).join(format!("{}-{}", group.playlist_id, group.content_id));
+
+    crate::rekordbox_masterdb::dedup_playlist_group(pioneer_dir, &backup_dir, &group.into())
+        .map_err(|e| humanize_masterdb_error(&e))
+}
+
+/// Removes every extra occurrence in `group.remove` from the linked
+/// Rekordbox's `master.db`, keeping `group.keep` untouched — the explicit,
+/// user-confirmed write step for one duplicate group returned by
+/// `rekordbox_masterdb_scan_playlist_duplicates`. Never invoked
+/// automatically. `group` should be exactly what the frontend received from
+/// a scan; if the library changed since then (e.g. the row was already
+/// removed), the write engine's own verification catches it and this
+/// returns a humanized error rather than silently doing nothing or the
+/// wrong thing.
+#[tauri::command]
+pub fn rekordbox_masterdb_dedup_playlist_group(
+    app: AppHandle,
+    conn: State<'_, Mutex<Connection>>,
+    group: PlaylistDuplicateGroupDto,
+) -> Result<(), String> {
+    let backup_root = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| e.to_string())?
+        .join("rekordbox-backups");
+    let conn = conn.lock().map_err(|e| e.to_string())?;
+    rekordbox_masterdb_dedup_playlist_group_inner(&conn, &backup_root, group)
 }
 
 #[cfg(test)]
@@ -1076,5 +1129,66 @@ mod rekordbox_tests {
         let conn = db();
         let err = rekordbox_masterdb_scan_playlist_duplicates_inner(&conn).unwrap_err();
         assert_eq!(err, "aucun XML Rekordbox lié — relie un fichier avant de synchroniser");
+    }
+
+    #[test]
+    fn dedup_playlist_group_command_removes_the_duplicate() {
+        let conn = db();
+        let tmp = tempfile::tempdir().unwrap();
+        let pioneer_dir = tmp.path().join("pioneer");
+        let xml_path = seed_pioneer_dir(&pioneer_dir);
+        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+
+        let groups = rekordbox_masterdb_scan_playlist_duplicates_inner(&conn).unwrap();
+        assert_eq!(groups.len(), 1);
+        let group = groups[0].clone();
+
+        let backup_root = tmp.path().join("backups");
+        rekordbox_masterdb_dedup_playlist_group_inner(&conn, &backup_root, group).unwrap();
+
+        let after = rekordbox_masterdb_scan_playlist_duplicates_inner(&conn).unwrap();
+        assert!(after.is_empty(), "duplicate must be gone after dedup");
+        assert!(
+            backup_root.exists(),
+            "a backup must have been created before the write"
+        );
+    }
+
+    #[test]
+    fn dedup_playlist_group_command_fails_fast_when_no_xml_linked() {
+        let conn = db();
+        let group = PlaylistDuplicateGroupDto {
+            playlist_id: "50000001".to_string(),
+            content_id: "40000001".to_string(),
+            keep: PlaylistDuplicateEntryDto { song_playlist_id: "60000001".to_string(), track_no: 1 },
+            remove: vec![PlaylistDuplicateEntryDto { song_playlist_id: "60000003".to_string(), track_no: 3 }],
+        };
+        let backup_root = tempfile::tempdir().unwrap().path().join("backups");
+        let err = rekordbox_masterdb_dedup_playlist_group_inner(&conn, &backup_root, group).unwrap_err();
+        assert_eq!(err, "aucun XML Rekordbox lié — relie un fichier avant de synchroniser");
+    }
+
+    #[test]
+    fn dedup_playlist_group_command_humanizes_stale_group_error() {
+        let conn = db();
+        let tmp = tempfile::tempdir().unwrap();
+        let pioneer_dir = tmp.path().join("pioneer");
+        let xml_path = seed_pioneer_dir(&pioneer_dir);
+        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+
+        // A group referencing a song_playlist_id that doesn't exist — simulates the
+        // library having changed since the scan that produced this group.
+        let stale_group = PlaylistDuplicateGroupDto {
+            playlist_id: "50000001".to_string(),
+            content_id: "40000001".to_string(),
+            keep: PlaylistDuplicateEntryDto { song_playlist_id: "60000001".to_string(), track_no: 1 },
+            remove: vec![PlaylistDuplicateEntryDto { song_playlist_id: "99999999".to_string(), track_no: 9 }],
+        };
+        let backup_root = tmp.path().join("backups");
+        let err = rekordbox_masterdb_dedup_playlist_group_inner(&conn, &backup_root, stale_group).unwrap_err();
+        assert!(
+            err.contains("99999999"),
+            "error should name the missing row so the user understands what changed: {err}"
+        );
     }
 }
