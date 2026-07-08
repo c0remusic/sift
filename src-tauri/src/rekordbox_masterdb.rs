@@ -1516,6 +1516,40 @@ mod tests {
         let index = read_rekordbox_masterdb(&pioneer_dir.join("master.db")).expect("reread");
         assert_eq!(index.tracks.len(), 3, "djmdContent must be untouched by a playlist dedup");
 
+        // Open a fresh in-memory connection on the written master.db to check
+        // the USN bump and the surviving `keep` row directly.
+        let raw_after = std::fs::read(pioneer_dir.join("master.db")).expect("read written master.db");
+        let plaintext_after = decrypt_masterdb(&raw_after).expect("decrypt written master.db");
+        let mut conn_after = Connection::open_in_memory().expect("open in-memory");
+        let len_after = plaintext_after.len();
+        conn_after
+            .deserialize_read_exact(rusqlite::MAIN_DB, Cursor::new(plaintext_after), len_after, false)
+            .expect("deserialize written master.db");
+
+        // USN bumped by exactly 1 (the group's `remove` list has exactly 1
+        // entry, fixture's agentRegistry starts at int_1 = 1000).
+        let usn_after: i64 = conn_after
+            .query_row(
+                "SELECT int_1 FROM agentRegistry WHERE registry_id = 'localUpdateCount'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("read agentRegistry.int_1 after dedup");
+        assert_eq!(usn_after, 1001, "agentRegistry.int_1 must bump by 1 per removed entry");
+
+        // The `keep` row itself must still be present, with its TrackNo unchanged.
+        let keep_track_no: i64 = conn_after
+            .query_row(
+                "SELECT TrackNo FROM djmdSongPlaylist WHERE ID = ?1",
+                rusqlite::params![group.keep.song_playlist_id],
+                |row| row.get(0),
+            )
+            .expect("keep row must survive dedup");
+        assert_eq!(
+            keep_track_no, group.keep.track_no,
+            "kept djmdSongPlaylist row's TrackNo must be unchanged"
+        );
+
         // Backup exists and matches the original fixture.
         let backed_up = std::fs::read(backup_dir.join("master.db")).expect("read backup");
         let original = std::fs::read(FIXTURE).expect("read fixture");
