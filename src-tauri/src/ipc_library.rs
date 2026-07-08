@@ -561,14 +561,27 @@ impl From<PlaylistDuplicateEntryDto> for crate::rekordbox_masterdb::PlaylistDupl
 
 /// A set of `djmdSongPlaylist` rows in the same playlist that reference the
 /// same track more than once — mirrors
-/// `rekordbox_masterdb::PlaylistDuplicateGroup` field-for-field. Round-trips
-/// through the frontend unmodified: a scan returns these, and the exact same
-/// shape is passed back to `rekordbox_masterdb_dedup_playlist_group` — no
-/// server-side id or cache needed, the group's own fields are the identity.
+/// `rekordbox_masterdb::PlaylistDuplicateGroup` field-for-field, plus 2
+/// display-only fields (`playlist_name`, `track_path`) resolved by the scan
+/// command for the UI's benefit. Round-trips through the frontend
+/// unmodified: a scan returns these, and the exact same shape is passed
+/// back to `rekordbox_masterdb_dedup_playlist_group` — no server-side id or
+/// cache needed, the group's own fields are the identity. The write engine
+/// only ever reads `playlist_id`/`content_id`/`keep`/`remove` (see the
+/// reverse `From` impl below) — `playlist_name`/`track_path` are ignored on
+/// that path, never required to be present or correct for a write to
+/// succeed.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct PlaylistDuplicateGroupDto {
     pub playlist_id: String,
+    /// `djmdPlaylist.Name`, resolved fresh at scan time. `None` if the
+    /// playlist couldn't be found when resolving names (library changed
+    /// since detection) — the UI falls back to the raw id.
+    pub playlist_name: Option<String>,
     pub content_id: String,
+    /// The duplicated track's current `master.db` path, resolved fresh at
+    /// scan time. `None` for the same reason as `playlist_name`.
+    pub track_path: Option<String>,
     pub keep: PlaylistDuplicateEntryDto,
     pub remove: Vec<PlaylistDuplicateEntryDto>,
 }
@@ -577,7 +590,9 @@ impl From<crate::rekordbox_masterdb::PlaylistDuplicateGroup> for PlaylistDuplica
     fn from(g: crate::rekordbox_masterdb::PlaylistDuplicateGroup) -> Self {
         Self {
             playlist_id: g.playlist_id,
+            playlist_name: None,
             content_id: g.content_id,
+            track_path: None,
             keep: g.keep.into(),
             remove: g.remove.into_iter().map(Into::into).collect(),
         }
@@ -596,6 +611,10 @@ impl From<PlaylistDuplicateGroupDto> for crate::rekordbox_masterdb::PlaylistDupl
 }
 
 /// Plain (testable) implementation of `rekordbox_masterdb_scan_playlist_duplicates`.
+/// Enriches with `playlist_name`/`track_path` in one extra pass, only when
+/// the scan actually found something — same "resolve once for the whole
+/// batch, only when needed" discipline as `rekordbox_masterdb_pending_repairs_inner`'s
+/// `candidate_tracks` enrichment.
 fn rekordbox_masterdb_scan_playlist_duplicates_inner(conn: &Connection) -> Result<Vec<PlaylistDuplicateGroupDto>, String> {
     let xml_path = crate::settings::get(conn, crate::settings::REKORDBOX_XML_PATH)
         .map_err(|e| e.to_string())?
@@ -605,7 +624,21 @@ fn rekordbox_masterdb_scan_playlist_duplicates_inner(conn: &Connection) -> Resul
         .ok_or("aucun XML Rekordbox lié — relie un fichier avant de synchroniser")?;
     let groups = crate::rekordbox_masterdb::detect_playlist_duplicates(&pioneer_dir.join("master.db"))
         .map_err(|e| humanize_masterdb_error(&e))?;
-    Ok(groups.into_iter().map(Into::into).collect())
+    let mut dtos: Vec<PlaylistDuplicateGroupDto> = groups.into_iter().map(Into::into).collect();
+
+    if !dtos.is_empty() {
+        let playlist_names = crate::rekordbox_masterdb::read_playlist_names(&pioneer_dir.join("master.db")).ok();
+        let track_paths = read_masterdb_path_map(conn);
+        for dto in &mut dtos {
+            if let Some(names) = &playlist_names {
+                dto.playlist_name = names.get(&dto.playlist_id).cloned();
+            }
+            if let Some(paths) = &track_paths {
+                dto.track_path = paths.get(&dto.content_id).cloned();
+            }
+        }
+    }
+    Ok(dtos)
 }
 
 /// Scans the linked Rekordbox's `master.db` for playlists containing the
@@ -1132,6 +1165,20 @@ mod rekordbox_tests {
     }
 
     #[test]
+    fn scan_playlist_duplicates_enriches_with_playlist_name_and_track_path() {
+        let conn = db();
+        let tmp = tempfile::tempdir().unwrap();
+        let pioneer_dir = tmp.path().join("pioneer");
+        let xml_path = seed_pioneer_dir(&pioneer_dir);
+        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+
+        let groups = rekordbox_masterdb_scan_playlist_duplicates_inner(&conn).unwrap();
+        assert_eq!(groups.len(), 1);
+        assert_eq!(groups[0].playlist_name.as_deref(), Some("Fixture Playlist"));
+        assert_eq!(groups[0].track_path.as_deref(), Some("D:/FIXTURE/track1.mp3"));
+    }
+
+    #[test]
     fn dedup_playlist_group_command_removes_the_duplicate() {
         let conn = db();
         let tmp = tempfile::tempdir().unwrap();
@@ -1159,7 +1206,9 @@ mod rekordbox_tests {
         let conn = db();
         let group = PlaylistDuplicateGroupDto {
             playlist_id: "50000001".to_string(),
+            playlist_name: None,
             content_id: "40000001".to_string(),
+            track_path: None,
             keep: PlaylistDuplicateEntryDto { song_playlist_id: "60000001".to_string(), track_no: 1 },
             remove: vec![PlaylistDuplicateEntryDto { song_playlist_id: "60000003".to_string(), track_no: 3 }],
         };
@@ -1180,7 +1229,9 @@ mod rekordbox_tests {
         // library having changed since the scan that produced this group.
         let stale_group = PlaylistDuplicateGroupDto {
             playlist_id: "50000001".to_string(),
+            playlist_name: None,
             content_id: "40000001".to_string(),
+            track_path: None,
             keep: PlaylistDuplicateEntryDto { song_playlist_id: "60000001".to_string(), track_no: 1 },
             remove: vec![PlaylistDuplicateEntryDto { song_playlist_id: "99999999".to_string(), track_no: 9 }],
         };

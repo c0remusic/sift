@@ -614,6 +614,36 @@ pub fn read_rekordbox_masterdb(path: &Path) -> Result<RekordboxIndex, MasterDbEr
     Ok(RekordboxIndex { tracks })
 }
 
+/// Reads `djmdPlaylist.Name` for every playlist in `master.db`, keyed by
+/// `ID`. Display-only — never consumed by the detect/write engine itself,
+/// which only ever needs playlist `ID`s. Added for the M8 Tier 2 UI screen
+/// (`docs/superpowers/plans/2026-07-08-m8-tier2-ui-screen.md`): a duplicate
+/// group's `playlist_id`/`content_id` alone aren't actionable information
+/// for a user, so the UI needs the human-readable name alongside them.
+pub fn read_playlist_names(path: &Path) -> Result<std::collections::HashMap<String, String>, MasterDbError> {
+    let raw = std::fs::read(path).map_err(|e| MasterDbError::Io(e.to_string()))?;
+    let plaintext = decrypt_masterdb(&raw)?;
+
+    let mut conn = Connection::open_in_memory().map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+    let len = plaintext.len();
+    conn.deserialize_read_exact(rusqlite::MAIN_DB, Cursor::new(plaintext), len, true)
+        .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+
+    let mut stmt = conn
+        .prepare("SELECT ID, Name FROM djmdPlaylist")
+        .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+    let rows = stmt
+        .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))
+        .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+
+    let mut names = std::collections::HashMap::new();
+    for row in rows {
+        let (id, name) = row.map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+        names.insert(id, name);
+    }
+    Ok(names)
+}
+
 /// Whether a Rekordbox process is currently running, checked by partial,
 /// case-insensitive process-name match ("rekordbox" matches both
 /// `rekordbox.exe` on Windows and `rekordbox` on macOS). Equivalent to
@@ -1186,6 +1216,13 @@ mod tests {
         assert!(!groups
             .iter()
             .any(|g| g.content_id == "40000002"));
+    }
+
+    #[test]
+    fn read_playlist_names_returns_the_fixture_playlist() {
+        let names = read_playlist_names(Path::new(FIXTURE)).expect("read playlist names");
+        assert_eq!(names.get("50000001"), Some(&"Fixture Playlist".to_string()));
+        assert_eq!(names.len(), 1, "fixture has exactly one playlist");
     }
 
     #[test]
