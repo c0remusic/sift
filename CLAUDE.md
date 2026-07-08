@@ -334,6 +334,16 @@ IDs connus (à confirmer à la résolution, ne pas inventer) :
   Discogs, Identifier, Restaurer/Corbeille Écartés). Un bouton avec label
   texte n'a besoin d'aucune classe — le reset `button{}` de base (bordure,
   padding, hover) suffit déjà.
+- **Avant d'utiliser 2 tokens de couleur ensemble pour distinguer un état
+  (ex. fond de piste vs fond d'élément sélectionné), vérifier qu'ils ne
+  résolvent pas à la même valeur en sombre.** Les deux peuvent être bien
+  distincts en clair et identiques en sombre sans que ça saute aux yeux à la
+  lecture du CSS — comparer les VALEURS résolues des deux blocs `:root`, pas
+  juste supposer que des noms de tokens différents impliquent des couleurs
+  différentes. Bug réel trouvé le 2026-07-08 : `--color-track` et
+  `--color-surface-raised` valaient exactement `#46453F` en sombre (bien
+  distincts en clair), rendant une pastille sélectionnée invisible sur sa
+  propre piste.
 
 ## Vérification UI — app réelle, pas la maquette navigateur
 
