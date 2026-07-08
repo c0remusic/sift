@@ -102,17 +102,24 @@ pill/badge), zone de dépôt `.sift-dz-on` (référence : patterns drag-drop
 HIG déjà actés — vérifier seulement les états), composant `empty-state.ts`
 (référence : `Empty` shadcn).
 
-- [ ] **Étape A** — inventaire (méthode commune).
-- [ ] **Étape B** — consultation références (méthode commune).
-- [ ] **Étape C** — tableau de divergences (méthode commune).
-- [ ] **Étape D** — gate Antoine (méthode commune).
-- [ ] **Étape E** — application + `npx tsc --noEmit` + validation `tauri dev` (méthode commune).
-- [ ] **Étape F** — doc + commit (méthode commune) :
+- [x] **Étape A** — inventaire (méthode commune).
+- [x] **Étape B** — consultation références (méthode commune).
+- [x] **Étape C** — tableau de divergences (méthode commune).
+- [x] **Étape D** — gate Antoine (méthode commune).
+- [x] **Étape E** — application + `npx tsc --noEmit` + validation `tauri dev` (méthode commune).
+- [x] **Étape F** — doc + commit (méthode commune) :
 
 ```bash
 git add frontend/styles.css frontend/home-sources.ts docs/design-system-states.md
 git commit -m "style(audit-ref): écran Accueil + primitives globales alignés sur références canoniques"
 ```
+
+**Fait, commit `1373080`** (2026-07-08) — inclut aussi une adaptation du thème
+tweakcn "ZFlow" demandée en cours de tâche (ombres 2 couches, échelle
+tracking, radius `calc()`-dérivé base 14px, couleurs reconverties en OKLCH),
+documentée séparément dans `docs/design-system-states.md` ("Tokens globaux —
+adaptation tweakcn ZFlow"). Badge "With Spinner" différé à Task 2/4 (pas de
+signal backend "en cours" sur Accueil).
 
 ### Task 2: Écran Revue
 
