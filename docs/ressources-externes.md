@@ -1462,3 +1462,18 @@ mode journal SQLite) — le geste "tester contre une copie réelle avant tout
 usage réel", déjà une règle établie sur ce projet (Évaluations 5/7/11/14),
 vient encore une fois de payer immédiatement, cette fois côté moteur Rust
 plutôt que côté Python.
+
+**Suivi même jour — schéma réel de `djmdSongPlaylist` et doublon
+pré-existant trouvé** : en cadrant le plan M8 Tier 2 (dédup playlist) plus
+tard dans la même session, un test diagnostic Rust jetable (jamais commité,
+depuis retiré) exécuté contre cette même copie réelle a extrait le vrai
+schéma de `djmdSongPlaylist`/`djmdPlaylist` — plus riche que les colonnes
+simplifiées du fixture, avec en plus `usn`, `rb_local_usn`,
+`rb_data_status`, `rb_local_deleted`, `rb_local_synced`, `created_at`,
+`updated_at`. Sa sortie incluait la ligne `duplicate (PlaylistID,ContentID)
+groups in real data = 1` : la copie réelle contient un vrai doublon
+pré-existant (même piste ajoutée deux fois à la même playlist), confirmant
+que la fonctionnalité de dédup Tier 2 répond à un scénario réel et pas
+seulement hypothétique. Ce doublon a depuis été dédupliqué par le test de
+vérification Tier 2 sur copie réelle lui-même (voir le plan Tier 2, Task 4)
+— il n'est donc plus présent dans cette copie précise.

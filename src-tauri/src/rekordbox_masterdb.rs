@@ -1450,10 +1450,11 @@ mod tests {
     /// fixture proves the engine's SQL is correct, not that it survives a
     /// real Rekordbox B-tree. Unlike Tier 1's test, this one does not
     /// restore the original state afterward: the real copy conveniently
-    /// already has a genuine pre-existing duplicate (found while writing
-    /// this plan — `docs/ressources-externes.md`, Évaluation 18's
-    /// follow-up investigation), and cleaning it up is a harmless,
-    /// disposable side effect on a throwaway copy, never the live file.
+    /// already has a genuine pre-existing duplicate (see
+    /// `docs/ressources-externes.md`, Évaluation 18, the "Suivi même jour"
+    /// paragraph appended to that section), and cleaning it up is a
+    /// harmless, disposable side effect on a throwaway copy, never the
+    /// live file.
     ///
     /// `#[ignore]`d for the same reason as Tier 1's — needs
     /// `SIFT_M8_REAL_COPY_DIR` and Rekordbox closed, not runnable in CI.
@@ -1464,7 +1465,8 @@ mod tests {
             std::env::var("SIFT_M8_REAL_COPY_DIR")
                 .expect("set SIFT_M8_REAL_COPY_DIR to a folder holding a COPY of master.db + masterPlaylists6.xml"),
         );
-        let backup_dir = tempfile::tempdir().expect("tempdir").path().join("backup");
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let backup_dir = tmp.path().join("backup");
 
         let groups = detect_playlist_duplicates(&pioneer_dir.join("master.db")).expect("detect on real copy");
         assert!(!groups.is_empty(), "expected at least one real duplicate group to dedup");
