@@ -9,7 +9,6 @@ import {
   fileTrack,
   listQueue,
   rejectTrack,
-  trashTrack,
   listBins,
   createBin,
   getSetting,
@@ -80,6 +79,18 @@ interface RevueState {
   // from `releaseCache` on open, or set from `applied` on identify; null = unknown (no display).
   label: string | null;
   year: number | null;
+  // Country/format of the applied release (e.g. "UK", "Vinyl, 12\", EP") — same session-cache-only
+  // scope as label/year above, except there is no persisted backend column for these two (Rust
+  // TrackRelease has none): they survive a close+reopen within this session (releaseCache) but not
+  // an app restart, until/unless the metadata table grows matching columns (2026-07-06 annotation:
+  // previously these were shown in the candidate list, then dropped the instant a candidate got
+  // selected — kept here so the read-only release line below Genres keeps showing them afterwards).
+  releaseCountry: string | null;
+  releaseFormat: string | null;
+  // Cover of the applied/persisted release — needed to re-run restoreIdentifiedLine() outside the
+  // openFilingInto cold-open path (2026-07-06 annotation: reopening the Métadonnées zone re-renders
+  // the editor and must be able to redraw the "Identifié :" confirmation line the same way).
+  coverPath: string | null;
   // The would-write sub-genres for the open track (DB track_genres order), shown in .sift-genres and
   // compared (joined) against the file. Set on open from track_release, or from `applied.styles`.
   genres: string[];
@@ -109,6 +120,9 @@ const state: RevueState = {
   rail: "unknown",
   label: null,
   year: null,
+  releaseCountry: null,
+  releaseFormat: null,
+  coverPath: null,
   genres: [],
   fileTags: null,
   filedConfirm: null,
@@ -515,6 +529,29 @@ function displayName(): string {
   return c.artist ? `${c.artist} — ${c.title}${ver}` : `${c.title}${ver}`;
 }
 
+/** Cross-fades a text swap instead of an abrupt content jump (annotation: ".sift-player-name
+ * semble afficher une valeur differente... pendant une micro seconde, ça n'est pas fluide") —
+ * the header paints the raw filename synchronously (report-view.ts playerRowHtml, so something
+ * shows instantly), then this fn overwrites it with the reconciled title once reconcile()/
+ * trackRelease() resolve a moment later. No-ops if the value hasn't actually changed, so the
+ * common already-correct re-render (e.g. plain edits) never fades for no reason. */
+function fadeSetText(el: HTMLElement, next: string): void {
+  if (el.textContent === next) return;
+  if (el.classList.contains("sift-report-text-pending")) {
+    el.textContent = next;
+    el.classList.remove("sift-report-text-pending");
+    el.style.opacity = "";
+    el.style.transition = "";
+    return;
+  }
+  el.style.transition = "opacity .1s ease";
+  el.style.opacity = "0";
+  window.setTimeout(() => {
+    el.textContent = next;
+    el.style.opacity = "1";
+  }, 100);
+}
+
 /** Replace the report header's filename with the clean proposed name (raw path stays as the
  * grey subtitle), so a messy source file shows its tidy target name. */
 function updateHeaderName(mid: HTMLElement): void {
@@ -528,19 +565,54 @@ function updateHeaderName(mid: HTMLElement): void {
   const ver = c.version && c.version.trim() ? c.version.trim() : "";
   mid.querySelectorAll<HTMLElement>(".sift-report-name").forEach((el) => {
     // Board hero: big TITLE on top, "artist · version" subtitle below (not the full filename).
-    el.textContent = c.title || displayName();
+    fadeSetText(el, c.title || displayName());
   });
   mid.querySelectorAll<HTMLElement>(".sift-report-sub").forEach((el) => {
-    el.textContent = [c.artist, ver].filter(Boolean).join(" · ");
+    fadeSetText(el, [c.artist, ver].filter(Boolean).join(" · "));
   });
 }
 
-/** Re-render the bin label wherever it's shown in the rail — the File button AND the Destination
- *  popover trigger both carry it (bin can change while a track is open). */
+/** True once a real destination is selected — either "sur place" (the file's own folder) or a
+ *  chosen bin/external folder. Drives both the Ranger button's disabled state and the verdict
+ *  conclusion's "À finaliser" vs "Prêt à ranger" wording (same question, two places to show it). */
+function hasDestination(): boolean {
+  return detailInPlace || state.binRel !== null;
+}
+
+/** Destination button's value text: the real bin label once one is chosen, else an explicit call
+ *  to action — never the bare "—" the button used to show for "nothing chosen yet". */
+function destValueLabel(): string {
+  return hasDestination() ? binLabel() : "Choisir…";
+}
+
+/** Single source of truth for the Ranger button's label + real disabled state. A disabled native
+ *  button never fires click, so this is the actual guard (doRanger's own dest===null check stays
+ *  as defense in depth) — previously the only feedback for "no destination" was "Ranger → —" plus
+ *  a toast AFTER the click. */
+function refreshRangerButton(): void {
+  const btn = document.querySelector<HTMLButtonElement>('[data-fil="ranger"]');
+  if (!btn) return;
+  const ok = hasDestination();
+  btn.disabled = !ok;
+  btn.title = ok ? "" : "Choisis une destination avant de ranger";
+  // Text only, no decorative kbd glyph next to an already-descriptive label (annotation: "supprime
+  // les icones" — same rule already applied to Ranger/Jeter elsewhere, see CLAUDE.md). The shortcut
+  // itself is still shown in the standalone kbd-hints legend (keyboardHintsHtml), not repeated here.
+  btn.innerHTML = ok
+    ? `Ranger → <span class="sift-fil-bin">${esc(binLabel())}</span>`
+    : "Choisis une destination pour ranger";
+}
+
+/** Re-render everything a destination change touches: the Destination button's own label/ambre
+ *  state and the Ranger button's label/disabled state — both derive from the same
+ *  hasDestination()/binLabel() pair. */
 function refreshFootButton(): void {
-  document
-    .querySelectorAll<HTMLElement>('[data-fil="ranger"] .sift-fil-bin, [data-fil="destbtn"] .sift-fil-bin')
-    .forEach((el) => (el.textContent = binLabel()));
+  document.querySelectorAll<HTMLElement>('[data-fil="destbtn"]').forEach((el) => {
+    el.classList.toggle("sift-dest-btn-empty", !hasDestination());
+    const val = el.querySelector<HTMLElement>(".sift-fil-bin");
+    if (val) val.textContent = destValueLabel();
+  });
+  refreshRangerButton();
 }
 
 // FIX-12: refreshPreview is wired to the artist/title/version inputs' `input` event — fires on
@@ -551,16 +623,17 @@ let previewSeq = 0;
 let previewTimer: ReturnType<typeof setTimeout> | undefined;
 
 /** Re-sync the filename preview from the current canonical + target. The preview lives in the rail
- *  (#filfoot) right below the format chips, so a format change or a field edit must refresh this
- *  node (the extension follows state.target). Probe non-throw: the rail may be gone. Renders via
- *  naming::render_filename (real template + sanitize()) in Rust — not a TS reimplementation. */
+ *  (#filfoot), in its own compact group right after the format chips (renderFoot's
+ *  `.sift-rail-final-group`) — moved out of the verdict conclusion (2026-07-06 redesign; that card
+ *  is the CONCLUSION now, not the place to also show the final name). A format change or a field
+ *  edit must refresh this node (the extension follows state.target). Probe non-throw: the rail may
+ *  be gone. Renders via naming::render_filename (real template + sanitize()) in Rust — not a TS
+ *  reimplementation. */
 function refreshPreview(): void {
   const c = state.canonical;
   const prev = document.querySelector<HTMLElement>(".sift-fil-prev");
-  const verdictName = document.querySelector<HTMLElement>(".sift-verdict-finalname");
   if (!c) {
     if (prev) prev.textContent = "";
-    if (verdictName) verdictName.textContent = "";
     return;
   }
   // Same default as the lit format chip (renderFoot): state.target when set, else defaultTarget(rail).
@@ -572,36 +645,22 @@ function refreshPreview(): void {
       .then((name) => {
         if (mySeq !== previewSeq) return; // superseded by a newer edit — drop this stale result
         if (prev) prev.textContent = `→ ${name}`;
-        if (verdictName) verdictName.textContent = `→ ${name}`;
       })
       .catch((e) => console.error("previewFilename failed", e));
   }, 150);
 }
 
-// Per-track Discogs release facts (label/year), captured when an identity is applied so they
-// survive a close+reopen of the SAME track within the session. `reconcile` (the only open-time
-// read) doesn't return label/year, and re-reading would need a new IPC — so we hold them in memory.
-// Keyed by track id. Cross-session reopen won't repopulate this (a fresh process starts empty).
-const releaseCache = new Map<number, { label: string | null; year: number | null }>();
-
-/** Fill (or clear) the read-only "Label · Année" line from state.label/year. Shows only what
- *  exists — nothing at all when both are absent (no empty "—"). Mutates a stable `.sift-release`
- *  container (create-once), so an identify can refresh it without re-rendering the whole editor. */
-function refreshReleaseLine(): void {
-  const el = document.querySelector<HTMLElement>(".sift-release");
-  if (!el) return; // editor not mounted (navigated away)
-  const label = state.label && state.label.trim() ? state.label.trim() : null;
-  const year = state.year != null ? String(state.year) : null;
-  if (!label && !year) {
-    el.innerHTML = "";
-    return;
-  }
-  const value = [label, year].filter(Boolean).map((s) => esc(s as string)).join(" · ");
-  el.innerHTML =
-    `<div class="sift-release-line">` +
-    `<i class="ti ti-tag" title="Release (Discogs)"></i>` +
-    `<span>${value}</span></div>`;
-}
+// Per-track Discogs release facts (label/year/country/format), captured when an identity is
+// applied so they survive a close+reopen of the SAME track within the session. `reconcile` (the
+// only open-time read) doesn't return them, and re-reading would need a new IPC — so we hold them
+// in memory. Keyed by track id. Cross-session reopen won't repopulate this (a fresh process starts
+// empty) — country/format additionally have no persisted backend column at all (unlike label/year,
+// which trackRelease re-populates from the `metadata` table on a real reopen), so those two are
+// session-only regardless of process lifetime.
+const releaseCache = new Map<
+  number,
+  { label: string | null; year: number | null; country: string | null; format: string | null }
+>();
 
 /** Render the genre chips into `.sift-genres` from `state.genres` (single source — set on open from
  *  track_release, or from `applied.styles` on identify). Empty list → empty box (no chips). */
@@ -630,8 +689,14 @@ function tagFieldDiffs(): { artist: boolean; title: boolean; label: boolean; yea
   const none = { artist: false, title: false, label: false, year: false, genres: false, any: false };
   if (!f || !c) return none; // snapshot not loaded yet → show nothing rather than a false alarm
   const norm = (s: string | null | undefined): string => (s ?? "").trim();
-  const artist = norm(c.artist) !== norm(f.artist);
-  const title = norm(c.title) !== norm(f.title);
+  // Non-empty guard added (annotation: "quand les champs sont vides, je ne veux pas de texte en
+  // italique") — an untyped/not-yet-identified field showing "stale" (italic+warning) read as a
+  // real conflict when it was really just nothing entered yet. Same non-empty guard label/year/
+  // genres already had below; artist/title never had it.
+  const artistW = norm(c.artist);
+  const artist = artistW !== "" && artistW !== norm(f.artist);
+  const titleW = norm(c.title);
+  const title = titleW !== "" && titleW !== norm(f.title);
   const labelW = norm(state.label);
   const label = labelW !== "" && labelW !== norm(f.label);
   const yearW = state.year ?? 0;
@@ -656,7 +721,6 @@ function refreshDiscrepancy(): void {
     editor.querySelector<HTMLElement>(sel)?.classList.toggle("sift-tag-stale", on);
   mark('[data-fil="artist"]', d.artist);
   mark('[data-fil="title"]', d.title);
-  mark(".sift-release", d.label || d.year);
   mark(".sift-genres", d.genres);
 }
 
@@ -665,6 +729,7 @@ function refreshDiscrepancy(): void {
  * instead of dead-ending (no new API call needed — re-renders from in-memory list). */
 function onIdentityApplied(
   applied: AppliedIdentity,
+  chosen: Candidate,
   editor: HTMLElement,
   mid: HTMLElement,
   host: HTMLElement,
@@ -702,16 +767,21 @@ function onIdentityApplied(
   // different candidate re-enters here with the new release → the line updates in place.
   state.label = applied.label;
   state.year = applied.year;
-  if (state.track) releaseCache.set(state.track.id, { label: applied.label, year: applied.year });
-  refreshReleaseLine();
-
-  // MATCH badge — qualitative (the backend has no % score), shown INSIDE the Identification card's
-  // bottom row (Sift.dc.html:349-354), NOT in the Preuves chips (the maquette keeps those rows
-  // distinct). Only shown when there's real doubt (CHECK MATCH, amber): a confident green match
-  // shows nothing, per the maquette rule that the badge exists only to flag something worth
-  // checking, not to confirm the obvious.
-  const matchRow = editor.querySelector<HTMLElement>(".sift-match-row");
-  if (matchRow) matchRow.hidden = applied.canonical.confidence === "green";
+  // Country/format only ever exist on the search-result candidate (chosen), never on AppliedIdentity
+  // (Rust apply_identity_cmd doesn't return them, and metadata has no column for either) — take them
+  // from the same candidate object the click already had, so they don't vanish once the candidate
+  // list is replaced by the "Identifié :" confirmation line (2026-07-06 annotation).
+  state.releaseCountry = chosen.country;
+  state.releaseFormat = chosen.format;
+  state.coverPath = applied.cover_path;
+  if (state.track) {
+    releaseCache.set(state.track.id, {
+      label: applied.label,
+      year: applied.year,
+      country: chosen.country,
+      format: chosen.format,
+    });
+  }
 
   // Show the cover if we have a local path. Every match, not just the first — the Hero and the
   // player's mini header both carry this class now. Probe non-throw — the report pane may be
@@ -849,7 +919,7 @@ function wireCandidateClicks(
       void applyIdentity(state.track.id, c)
         .then((applied) => {
           if (myseq !== openSeq) return; // a newer open started while we awaited — drop this result
-          onIdentityApplied(applied, editor, mid, host, candidates, idBtn);
+          onIdentityApplied(applied, c, editor, mid, host, candidates, idBtn);
         })
         .catch((e) => {
           if (myseq !== openSeq) return;
@@ -917,15 +987,32 @@ async function doIdentify(
   }
 }
 
+/** Create-once (idempotent) keyboard-shortcut legend, inserted as its OWN row directly AFTER
+ *  #filfoot (annotation, 2nd round: "devrait etre en fin de page en fait, sous le bloc de
+ *  destination etc") — not one of the rail's flex-wrap items (it used to live inside the rail
+ *  where it could get squeezed/wrapped away under width pressure; it should instead "rester
+ *  toujours visible", in its own space) and not above the rail either, per this later correction —
+ *  the very last thing on the page, below Destination/Format/Ranger. Static content (never
+ *  changes across renders), so a single append is enough — renderFoot calls this every time
+ *  purely to guarantee it exists, not to refresh it. */
+function ensureKbdLegend(foot: HTMLElement): void {
+  if (document.getElementById("sift-kbd-legend")) return;
+  const el = document.createElement("div");
+  el.id = "sift-kbd-legend";
+  el.className = "sift-kbd-legend";
+  el.innerHTML = keyboardHintsHtml();
+  foot.parentElement?.insertBefore(el, foot.nextSibling);
+}
+
 /** Render the filing rail (format + actions) into `foot`. The metadata editor (Identify + editable
  *  fields + final-name preview + genres) lives in the center now — see `renderEditor`. */
 function renderFoot(foot: HTMLElement, mid: HTMLElement, rail: string): void {
-  // Preserve the "Filed" banner across re-renders: it is appended at the BOTTOM of #filfoot (étape 2)
+  // Preserve the "Filed" banner across re-renders: it is prepended at the TOP of #filfoot (étape 2)
   // and must survive renderFoot's innerHTML rewrite (e.g. a format-chip click) until the next filing or ✕.
   const filedBanner = foot.querySelector(".sift-filed-banner");
   if (!state.canonical) {
     foot.innerHTML = "";
-    if (filedBanner) foot.append(filedBanner);
+    if (filedBanner) foot.prepend(filedBanner);
     return;
   }
 
@@ -942,24 +1029,36 @@ function renderFoot(foot: HTMLElement, mid: HTMLElement, rail: string): void {
     .join(" ");
 
   const fake = state.track?.verdict === "fake";
+  // Text only (annotation: "supprime les icones") — the shortcut is still named in the tooltip
+  // and the standalone kbd-hints legend, not repeated as a glyph inside the button itself.
+  // "Jeter" relabelled "Écarter" (annotation: "jeter devrait etre écarté, et finir dans écarter")
+  // — it now routes to Écartés (reject_track) like the fake branch, not a permanent delete;
+  // real deletion is still available from the Écartés screen itself (ecartes-view.ts's own
+  // trash action), so this button is no longer the only path to "gone for good".
   const secondary = fake
-    ? '<button data-fil="resource" class="sift-secondary-resource" title="Fichier faux — va dans Écartés (⌫)"><span class="kbd">⌫</span> Re-source</button>'
-    : '<button data-fil="trash" class="sift-secondary-trash" title="Envoyer à la corbeille (⌫)"><span class="kbd">⌫</span> Jeter</button>';
+    ? '<button data-fil="resource" class="sift-secondary-resource" title="Fichier faux — va dans Écartés (⌫)">Re-source</button>'
+    : '<button data-fil="trash" class="sift-secondary-trash" title="Écarter — va dans Écartés (⌫)">Écarter</button>';
+
+  ensureKbdLegend(foot); // its own always-visible strip directly above the rail, not a rail item
 
   // Destination button opens the tree as a popover (#fldz, a sibling of #filfoot — see styles.css)
-  // instead of the old persistent .dest column. The rail keeps the system.md stack tail: FORMAT →
-  // Final name → CTA (File) → secondary. Rebuilt inside this innerHTML so a format-chip re-render
-  // keeps it; the popover's own hidden state lives on #fldz itself, untouched by this rewrite.
+  // instead of the old persistent .dest column. Rail order (2026-07-06 redesign): Destination →
+  // Format → Nom final (moved here from the verdict conclusion) → spacer → secondary → Ranger.
+  // Rebuilt inside this innerHTML so a format-chip re-render keeps it; the popover's own hidden
+  // state lives on #fldz itself, untouched by this rewrite.
   foot.innerHTML =
-    `<button data-fil="destbtn" class="sift-dest-btn"><span class="sift-dest-btn-label">Destination</span><span class="sift-fil-bin">${esc(binLabel())}</span><i class="ti ti-chevron-down sift-dest-btn-caret"></i></button>` +
+    `<button data-fil="destbtn" class="sift-dest-btn${hasDestination() ? "" : " sift-dest-btn-empty"}">` +
+    `<span class="sift-dest-btn-label">Destination</span>` +
+    `<span class="sift-fil-bin">${esc(destValueLabel())}</span>` +
+    `<i class="ti ti-chevron-down sift-dest-btn-caret"></i></button>` +
     `<div class="sift-rail-fmt-group"><span class="col-h">Format</span><div class="sift-fmt-chips">${chips}</div></div>` +
+    `<div class="sift-rail-final-group"><span class="sift-final-name-label">Nom final</span><span class="sift-fil-prev"></span></div>` +
     `<div class="sift-rail-spacer"></div>` +
-    // Keyboard hints anchored to the bottom rail (maquette's keyHints), not the scrollable
-    // detail content — moved here from report-view.ts, which used to inject them under the hero.
-    keyboardHintsHtml() +
     secondary +
-    `<button data-fil="ranger" class="sift-ranger-btn">Ranger → <span class="sift-fil-bin">${esc(binLabel())}</span> <span class="kbd">⏎</span></button>`;
-  if (filedBanner) foot.append(filedBanner); // restore the banner below the freshly-rendered controls
+    `<button data-fil="ranger" class="sift-ranger-btn"></button>`;
+  if (filedBanner) foot.prepend(filedBanner); // restore the banner above the freshly-rendered controls
+  refreshRangerButton(); // single source of truth for the button's label/disabled state
+  refreshPreview(); // repaint .sift-fil-prev just added above — it was empty until now
 
   foot.querySelector('[data-fil="destbtn"]')?.addEventListener("click", (e) => {
     e.stopPropagation();
@@ -1063,12 +1162,6 @@ function renderEditor(host: HTMLElement, mid: HTMLElement, rail: string, report:
     host.innerHTML = "";
     return;
   }
-  // [I6] Add tooltip to confidence badge so the colour is self-explanatory.
-  const badge =
-    c.confidence === "green"
-      ? '<span title="Titre et artiste extraits avec confiance" class="sift-badge-ok"><i class="ti ti-circle-check"></i> métadonnées fiables</span>'
-      : '<span title="Titre ou artiste incertain — vérifie les champs" class="sift-badge-warn"><i class="ti ti-alert-circle"></i> à vérifier</span>';
-
   const inputCss = "sift-editor-input";
 
   // [C1] "Fetch metadata from Discogs" is the primary entry point (gold filled), above the inputs.
@@ -1082,20 +1175,26 @@ function renderEditor(host: HTMLElement, mid: HTMLElement, rail: string, report:
   host.innerHTML =
     zoneToggleHtml({ label: "Métadonnées", toggleId: "sift-meta-toggle", badgeId: "sift-cdj-badge" }) +
     `<div class="sift-zone-toggle-body" id="sift-meta-body">` +
-    `<div class="sift-ident-head">` +
-    `<span class="col-h sift-editor-title">Identification · Discogs</span>` +
-    `<button data-fil="ident-edit" class="sift-ident-edit-btn" title="Modifier manuellement" aria-label="Modifier manuellement"><i class="ti ti-pencil"></i></button>` +
-    `</div>` +
+    // .sift-ident-head/.sift-editor-title ("Identification · Discogs") removed (annotation:
+    // "supprime") — redundant with the toggle header above it ("Métadonnées"), which already
+    // names this section before it's even expanded.
+    // Confidence badge ("métadonnées fiables"/"à confirmer") removed (annotation: "ça ne veut rien
+    // dire, c'est à l'user de définir la fiabilité") — the extraction confidence is Sift's own
+    // internal signal, not a claim the user should be told to trust or distrust up front.
     (identEditing
-      ? `<div class="sift-editor-badge-row">${badge}</div>` +
-        `<button data-fil="identifier" class="sift-id-btn sift-id-btn-full${c.artist && c.title ? " sift-id-btn-neutral" : ""}" title="Rechercher les métadonnées sur Discogs (pochette, label, année, genres)"><i class="ti ti-search sift-icon-inline-sm"></i> ${c.artist && c.title ? "Rechercher à nouveau" : "Récupérer les métadonnées Discogs"} <span class="kbd sift-kbd-hint-id">I</span></button>` +
+      ? `<button data-fil="identifier" class="sift-id-btn sift-id-btn-full${c.artist && c.title ? " sift-id-btn-neutral" : ""}" title="Rechercher les métadonnées sur Discogs (pochette, label, année, genres)"><i class="ti ti-search sift-icon-inline-sm"></i> ${c.artist && c.title ? "Rechercher à nouveau" : "Récupérer les métadonnées Discogs"} <span class="kbd sift-kbd-hint-id">I</span></button>` +
         `<div class="sift-cands sift-cands-host" hidden></div>` +
+        // Persistent labels above each field (annotation: "on ne sait pas à quoi correspondent les
+        // champs") — a placeholder alone disappears the moment there's real text in the input, so
+        // a reopened, already-filled track showed three bare boxes with no indication of which
+        // field was which. The group header ("Données de la piste") this originally shipped with
+        // was removed one round later (annotation: "redondant avec le titre des données qu'on
+        // affiche maintenant") — the field labels alone already say what each one is.
         `<div class="sift-editor-fields">` +
-        `<input data-fil="artist" placeholder="Artist" value="${esc(c.artist)}" class="${inputCss}">` +
-        `<input data-fil="title" placeholder="Title" value="${esc(c.title)}" class="${inputCss}">` +
-        `<input data-fil="version" placeholder="Version" value="${esc(c.version ?? "")}" class="${inputCss}">` +
-        `</div>` +
-        `<button data-fil="ident-done" class="sift-ident-done-btn">Terminé</button>`
+        `<div class="sift-editor-field"><span class="sift-editor-field-label">Artiste</span><input data-fil="artist" placeholder="Artiste" value="${esc(c.artist)}" class="${inputCss}"></div>` +
+        `<div class="sift-editor-field"><span class="sift-editor-field-label">Titre</span><input data-fil="title" placeholder="Titre" value="${esc(c.title)}" class="${inputCss}"></div>` +
+        `<div class="sift-editor-field"><span class="sift-editor-field-label">Version</span><input data-fil="version" placeholder="Version (ex. Remix, Dub)" value="${esc(c.version ?? "")}" class="${inputCss}"></div>` +
+        `</div>`
       : c.artist && c.title
         ? `<div class="sift-ident-display">${esc(displayName)}</div>`
         : // Unidentified + read-only: the maquette's simplified card (Sift.dc.html:357-362) — a
@@ -1105,22 +1204,23 @@ function renderEditor(host: HTMLElement, mid: HTMLElement, rail: string, report:
           `<div class="sift-ident-idle"><span class="sift-ident-idle-note">Aucune correspondance Discogs pour l'instant.</span>` +
           `<button data-fil="identifier" class="sift-ident-search-btn">Rechercher sur Discogs</button></div>` +
           `<div class="sift-cands sift-cands-host" hidden></div>`) +
-    // Read-only release facts (Label · Année) between the editable identity and Genres. Filled by
-    // refreshReleaseLine() below from state; stays empty (no gap) when neither value is known.
-    `<div class="sift-release"></div>` +
     `<div class="col-h sift-col-h-tight">Genres</div>` +
     `<div class="sift-genres sift-genres-box"></div>` +
     // Rebuy link slot — filled by refreshRebuyLink() only for a fake track that also has a Discogs
     // match (empty, no gap, otherwise). Placed after genres so the identity block reads whole first.
     `<div class="sift-rebuy"></div>` +
-    // Version ID3: moved here from the spectral-proof box (report-view.ts) — the maquette groups
-    // it with Label/Année/Genre in Identification, not with the spectrum evidence. Compatibilité
-    // CDJ moved OUT of this card (FIX-4): it now surfaces as an explicit "CDJ" chip right under
-    // the main verdict (report-view.ts::evidenceChipsHtml) instead of a generic yes/no row buried
-    // here. `report` is null only if analysis failed to load; nothing renders in that case.
-    (report
+    // Tags ID3: moved here from the spectral-proof box (report-view.ts) — the maquette groups it
+    // with Label/Année/Genre in Identification, not with the spectrum evidence. Compatibilité CDJ
+    // moved OUT of this card (FIX-4): it now surfaces as an explicit "CDJ" chip right under the
+    // main verdict (report-view.ts::evidenceChipsHtml) instead of a generic yes/no row buried here.
+    // Renamed from "Version ID3" (2026-07-06 annotation): id3_version is a container-tag-presence
+    // flag (backend only ever sets it for .mp3, tags.rs), unrelated to the Discogs release Version
+    // field edited just above — the shared word "version" read as if applying the Discogs identity
+    // should populate this row, which it never does. Row is omitted entirely (not "—") when the
+    // container has no ID3 tag reading (AIFF/WAV, or analysis failure) — nothing to report there.
+    (report?.id3_version
       ? `<div class="sift-spectro-rows">` +
-        row("Version ID3", report.id3_version || "—") +
+        row("Tags ID3", report.id3_version) +
         `</div>`
       : "") +
     // Apply ID3 tags: write these fields onto the file in place (no move, no encode, no 'filed'
@@ -1130,10 +1230,6 @@ function renderEditor(host: HTMLElement, mid: HTMLElement, rail: string, report:
     // visibility mechanism is refreshDiscrepancy toggling style.display (no `hidden`+display conflict).
     // Look lives in .sift-tag-warn (styles.css). Shown only when the display diverges from the file.
     `<div class="sift-tag-warn" style="display:none"><i class="ti ti-alert-triangle sift-icon-inline-md sift-icon-flex-none"></i><span>Artiste et Titre pas encore gravés dans le fichier (seulement identifiés ci-dessus) — un CDJ ne peut pas les lire tant que ce n'est pas fait. <strong>Ranger</strong> ou <strong>Appliquer les tags</strong> pour corriger.</span></div>` +
-    // MATCH row slot — bottom of the Identification card, per the maquette (Sift.dc.html:349-354:
-    // question + amber pill under a border-top). Hidden until an applyIdentity with real doubt
-    // unhides it (onIdentityApplied); a confident green match keeps it hidden (never a green badge).
-    `<div class="sift-match-row" hidden><span class="sift-match-q">Cette identification Discogs correspond-elle bien à ce fichier ?</span>${vchipHtml("CHECK MATCH", "warning")}</div>` +
     `</div>`; // ferme #sift-meta-body ouvert au début de host.innerHTML
 
   const metaToggle = host.querySelector<HTMLButtonElement>("#sift-meta-toggle");
@@ -1145,14 +1241,55 @@ function renderEditor(host: HTMLElement, mid: HTMLElement, rail: string, report:
     cdjBadge.style.background = ok ? "var(--color-background-success)" : "var(--color-background-warning)";
     cdjBadge.style.color = ok ? "var(--color-text-success)" : "var(--color-text-warning)";
     cdjBadge.title = "Un CDJ a besoin d'Artiste + Titre gravés dans les tags du fichier";
-    // Visible uniquement repliée (le corps affiche déjà la même info en détail une fois ouvert)
-    cdjBadge.hidden = metaBody?.classList.contains("sift-zone-toggle-body-open") ?? false;
+    // Toujours visible, replié ou ouvert (annotation 2026-07-06: disparaissait à l'ouverture —
+    // le corps n'affiche en fait pas d'équivalent explicite "CDJ compatible/incompatible" une
+    // fois déplié, donc le cacher perdait l'info plutôt que de la déduire de l'ouverture).
+    cdjBadge.hidden = false;
   }
+  // Forces the just-rebuilt zone (renderEditor was called fresh) back into its open, expanded state
+  // — zoneToggleHtml always starts a fresh render collapsed, but both call sites below (opening +
+  // entering edit mode in one click, and "Terminé") want to land on the open body, not a closed one.
+  const forceMetaOpen = () => {
+    const freshBody = host.querySelector<HTMLElement>("#sift-meta-body");
+    const freshToggle = host.querySelector<HTMLButtonElement>("#sift-meta-toggle");
+    freshBody?.classList.add("sift-zone-toggle-body-open");
+    freshToggle?.classList.add("sift-zone-toggle-open");
+    freshToggle?.setAttribute("aria-expanded", "true");
+  };
+
   metaToggle?.addEventListener("click", () => {
-    const open = metaBody?.classList.toggle("sift-zone-toggle-body-open") ?? false;
-    metaToggle.classList.toggle("sift-zone-toggle-open", open);
-    metaToggle.setAttribute("aria-expanded", String(open));
-    if (cdjBadge) cdjBadge.hidden = open;
+    const wasOpen = metaBody?.classList.contains("sift-zone-toggle-body-open") ?? false;
+    if (!wasOpen) {
+      // 2026-07-06 annotation: the separate pencil "Modifier manuellement" button was redundant
+      // with this same click (opening the zone only revealed a *read-only* display; a second click
+      // on the pencil was needed to actually edit, and — since it re-rendered the whole zone from
+      // scratch with no open state to restore — visually closed the panel it was meant to open).
+      // A single click on the header now opens AND edits directly; the pencil button is removed.
+      identEditing = true;
+      renderEditor(host, mid, rail, report);
+      forceMetaOpen();
+      // renderEditor() alone only rebuilds the static markup — replay the same post-render steps
+      // openFilingInto runs after its own first renderEditor() call, or this reopen regresses to a
+      // blank "search Discogs" view even though the track is already identified (2026-07-06
+      // annotation: the "Identifié :" line + genres were vanishing on every collapse/reopen).
+      if (state.identified && state.canonical) {
+        restoreIdentifiedLine(host, mid, state.canonical.artist, state.canonical.title, state.coverPath);
+      }
+      renderGenres();
+      refreshDiscrepancy();
+      updateHeaderName(mid);
+      refreshPreview();
+      return;
+    }
+    // Closing: exit edit mode too, so the next open always starts from this same single click.
+    identEditing = false;
+    metaBody?.classList.remove("sift-zone-toggle-body-open");
+    metaToggle.classList.remove("sift-zone-toggle-open");
+    metaToggle.setAttribute("aria-expanded", "false");
+    // Closing the zone resets the Apply button to idle (2026-07-06 annotation): "Appliqué ✓" is a
+    // transient confirmation for the write that just happened, not a state that should survive a
+    // collapse/reopen with no track change — reopening always starts from the write action again.
+    resetApplyButton(host);
   });
 
   const upd = () => {
@@ -1180,16 +1317,7 @@ function renderEditor(host: HTMLElement, mid: HTMLElement, rail: string, report:
   const applyBtn = host.querySelector<HTMLButtonElement>('[data-fil="applytags"]');
   if (applyBtn) setApplyIdle(applyBtn); // idle on every fresh render; doApplyTags flips it to "applied"
 
-  host.querySelector<HTMLButtonElement>('[data-fil="ident-edit"]')?.addEventListener("click", () => {
-    identEditing = true;
-    renderEditor(host, mid, rail, report);
-  });
-  host.querySelector<HTMLButtonElement>('[data-fil="ident-done"]')?.addEventListener("click", () => {
-    identEditing = false;
-    renderEditor(host, mid, rail, report);
-  });
 
-  refreshReleaseLine(); // read-only Label · Année from state (restored from cache on open); empty when none
   refreshRebuyLink(); // rebuy-on-Beatport link when the open track is fake AND already identified
 }
 
@@ -1237,13 +1365,19 @@ function setApplyIdle(btn: HTMLButtonElement): void {
   btn.onclick = () => void doApplyTags(btn);
 }
 
-/** Put the Apply button in its "applied — click to undo" state (the whole button reverts `batchId`). */
+/** Put the Apply button in its "applied — click to undo" state (the whole button reverts `batchId`).
+ *  Green is a brief flash (.sift-applytags-flash), not a permanent color — same convention already
+ *  applied to the CDJ badge / candidate selection / Discogs CTA: a confirmed state stays neutral,
+ *  only the transition into it is colored. Plain text, no icon (annotation: "vire les icones" —
+ *  matches .sift-toast-undo's plain "Annuler", not a decorative checkmark next to a label that
+ *  already says what happened). */
 function setApplyApplied(btn: HTMLButtonElement, batchId: string): void {
   btn.disabled = false;
-  btn.style.color = "var(--color-text-success)";
-  btn.innerHTML =
-    '<i class="ti ti-circle-check sift-icon-inline-md"></i> Appliqué ✓ — <span class="sift-underline">Annuler</span>';
+  btn.style.color = "var(--color-text-primary)";
+  btn.textContent = "Annuler";
   btn.onclick = () => void doUndoApply(btn, batchId);
+  btn.classList.add("sift-applytags-flash");
+  btn.addEventListener("animationend", () => btn.classList.remove("sift-applytags-flash"), { once: true });
 }
 
 /** Reset a possibly-"applied" Apply button back to idle (e.g. when the identity changes under it). */
@@ -1400,8 +1534,10 @@ async function doRanger(mid: HTMLElement): Promise<void> {
         }
         if (items.length) await openFilingInto(mid, items[0]);
         else clearPane(mid, true); // no pending left → the formal empty state; the banner still shows in the rail
-        // Filed confirmation as a banner at the BOTTOM of the right rail, under the new track's controls
-        // (renderFoot, run by openFilingInto above, already wrote them; the banner is appended below them).
+        // Filed confirmation as a banner at the TOP of the right rail, ABOVE the new track's controls
+        // (renderFoot, run by openFilingInto above, already wrote them; the banner is prepended before
+        // them — 2026-07-06 annotation: it was previously appended last/bottom, past Destination →
+        // Format → hints → Discard → File, reading as inert/easy to miss).
         showFiledConfirm(batchId, bin, filedPath);
         return;
       } catch (e) {
@@ -1454,7 +1590,7 @@ function showFiledConfirm(batchId: string, bin: string, filedPath: string): void
   banner.className = "sift-filed-banner";
   // CDS single-side accent: success border-left, square corners. Success tint sets it apart from the
   // secondary-coloured rail. renderFoot preserves this node across its re-renders (format clicks).
-  // margin-top (not -bottom): the banner sits at the BOTTOM of the rail, under Discard — space it above.
+  // margin-bottom (not -top): the banner sits at the TOP of the rail, above Destination — space it below.
   banner.innerHTML =
     `<div class="sift-filed-banner-head">` +
     `<i class="ti ti-check"></i>` +
@@ -1465,7 +1601,11 @@ function showFiledConfirm(batchId: string, bin: string, filedPath: string): void
     `<div class="sift-filed-banner-name">${esc(filename)}</div>` +
     `<div class="sift-filed-banner-path">${esc(filedPath)}</div>` +
     `<button data-fil="revert" class="sift-filed-banner-revert"><i class="ti ti-arrow-back-up"></i> Annuler</button>`;
-  foot.append(banner); // at the BOTTOM of the rail — last child, under Format → File → Discard
+  // 2026-07-06 annotation: was foot.append (last child, past Destination → Format → hints → Discard
+  // → File — read as inert/easy to miss). prepend matches this function's own documented intent
+  // (TOP of the rail, first thing seen) and .sift-filed-banner's full-width rule below now forces
+  // it onto its own line regardless of where in the row it sits.
+  foot.prepend(banner);
   banner.querySelector('[data-fil="revert"]')?.addEventListener("click", () => void doRevert(batchId));
   banner.querySelector('[data-fil="filed-close"]')?.addEventListener("click", () => {
     banner.remove();
@@ -1497,19 +1637,16 @@ async function doRevert(batchId: string): Promise<void> {
   }
 }
 
-/** Re-sourcer (fake) or Écarter (trash) the current track. */
+/** Re-sourcer (fake) or Écarter (non-fake) the current track — both are the same reversible
+ *  reject_track path now (annotation: "jeter devrait etre écarté, et finir dans écarter"); `kind`
+ *  stays two-valued only to pick the right toast wording, not a different backend action anymore. */
 async function doSecondary(mid: HTMLElement, kind: "resource" | "trash"): Promise<void> {
   if (!state.track || acting) return;
   acting = true;
   setActionsDisabled(true);
   try {
-    if (kind === "resource") {
-      await rejectTrack(state.track.id);
-      toast("Marqué à re-sourcer", true);
-    } else {
-      await trashTrack(state.track.id);
-      toast("Envoyé à la corbeille", true);
-    }
+    await rejectTrack(state.track.id);
+    toast(kind === "resource" ? "Marqué à re-sourcer" : "Écarté", true);
     clearPane(mid);
   } catch (e) {
     toast(`Échec : ${String(e)}`, false);
@@ -1530,6 +1667,9 @@ function clearPane(mid: HTMLElement, emptyQueue = false): void {
   state.target = null;
   state.label = null;
   state.year = null;
+  state.releaseCountry = null;
+  state.releaseFormat = null;
+  state.coverPath = null;
   state.genres = [];
   state.fileTags = null;
   state.filedConfirm = null;
@@ -1582,17 +1722,19 @@ export async function openFilingInto(mid: HTMLElement, item: QueueItem): Promise
   const cachedRelease = releaseCache.get(item.id);
   state.label = cachedRelease?.label ?? null;
   state.year = cachedRelease?.year ?? null;
+  state.releaseCountry = cachedRelease?.country ?? null;
+  state.releaseFormat = cachedRelease?.format ?? null;
   state.filedConfirm = null; // opening a track dismisses any "Filed ↩" confirmation
   identEditing = false; // Identification card always opens in read-only display mode
 
   mid.innerHTML =
     '<div class="sift-fil sift-fil-root">' +
-    '<div class="sift-fil-dup"></div>' +
     '<div class="sift-fil-scroll">' +
     '<div class="sift-fil-report"></div>' +
     '<div class="sift-fil-editor sift-fil-editor-margin"></div>' +
     '<div class="sift-fil-verdict sift-fil-editor-margin"></div>' +
     '</div>' +
+    '<div class="sift-fil-dup"></div>' +
     "</div>";
   const reportEl = requireEl<HTMLElement>(".sift-fil-report", "openFilingInto", mid);
   // Verdict is the CONCLUSION — rendered last, after Identification, matching the maquette
@@ -1618,7 +1760,7 @@ export async function openFilingInto(mid: HTMLElement, item: QueueItem): Promise
   // independent reads — run them in parallel so the footer renders as soon as they complete. The
   // file-tags read is the ONE disk read for the discrepancy marker (cached after; never per-keystroke).
   const [report, canonical, release, fileTags] = await Promise.all([
-    openReportInto(reportEl, item.path, verdictEl),
+    openReportInto(reportEl, item.path, verdictEl, { deferText: true }),
     reconcile(item.id).catch((e): Canonical => {
       console.error("reconcile failed", e);
       return { artist: "", title: "", version: null, confidence: "yellow" };
@@ -1658,12 +1800,21 @@ export async function openFilingInto(mid: HTMLElement, item: QueueItem): Promise
   // its identity + label/year back. Keep the cache in sync so later re-opens stay synchronous.
   state.label = release.label;
   state.year = release.year;
+  // Country/format have no backend column (TrackRelease carries neither) — `release` says nothing
+  // about them either way, so keep whatever the session cache already had instead of nulling them
+  // out on every reopen (state.releaseCountry/Format were already seeded from that same cache above).
   // Would-write genres (shown in .sift-genres, compared joined) + the file's real-tags snapshot,
   // both cached here for the in-memory discrepancy check. fileTags may be null (read failed → no marker).
   state.genres = release.genres;
   state.fileTags = fileTags;
   state.identified = release.identified; // gates the rebuy link (fake + identified only)
-  releaseCache.set(item.id, { label: release.label, year: release.year });
+  state.coverPath = release.cover_path;
+  releaseCache.set(item.id, {
+    label: release.label,
+    year: release.year,
+    country: cachedRelease?.country ?? null,
+    format: cachedRelease?.format ?? null,
+  });
   // Tidy the casing of a version parsed from a (often lowercase) filename: "original mix"
   // → "Original Mix". Title/artist are left as reconciled.
   if (state.canonical.version) state.canonical.version = titleCase(state.canonical.version);
@@ -1694,9 +1845,8 @@ export async function openFilingInto(mid: HTMLElement, item: QueueItem): Promise
 
   // Verdict-panel chip (board: LOSSLESS · DUPLICATE): only appended when dedup found a real match —
   // no "UNIQUE" chip for the common case, per the maquette rule that a chip exists to flag
-  // something worth checking, not to confirm the absence of a problem. The MATCH/CHECK MATCH badge
-  // lives in the Identification card's .sift-match-row (Sift.dc.html:349-354), toggled by
-  // onIdentityApplied — it is NOT one of these chips.
+  // something worth checking, not to confirm the absence of a problem. (CHECK MATCH removed
+  // entirely — annotation confirmed intentional.)
   void dupP.then((m) => {
     if (myseq !== openSeq) return;
     const chips = mid.querySelector<HTMLElement>(".sift-vchips");
@@ -1713,6 +1863,10 @@ export async function openFilingInto(mid: HTMLElement, item: QueueItem): Promise
  * Matches interaction-model.md §7. Ignored while typing in a field, and only when a track
  * is open. */
 export function installFilingKeys(): void {
+  const blurShortcutFocus = () => {
+    const active = document.activeElement;
+    if (active instanceof HTMLElement && active !== document.body) active.blur();
+  };
   document.addEventListener("keydown", (e) => {
     const t = e.target as HTMLElement | null;
     if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
@@ -1723,16 +1877,20 @@ export function installFilingKeys(): void {
     // sift-live.ts already owns currentItems and can step by index instead.
     if (e.key === " ") {
       e.preventDefault(); // also stops Space from activating a focused button
+      blurShortcutFocus();
       togglePlay();
     } else if (e.key === "Enter") {
       e.preventDefault();
+      blurShortcutFocus();
       document.querySelector<HTMLElement>('[data-fil="ranger"]')?.click();
     } else if (e.key === "Backspace" || e.key === "x" || e.key === "X") {
       // ⌫ is the model's Discard key; X kept as an alias (matches the visible button hint).
       e.preventDefault();
+      blurShortcutFocus();
       document.querySelector<HTMLElement>('[data-fil="resource"],[data-fil="trash"]')?.click();
     } else if (e.key === "i" || e.key === "I") {
       // [m9] I = trigger Identifier (same as clicking the button)
+      blurShortcutFocus();
       document.querySelector<HTMLButtonElement>('[data-fil="identifier"]')?.click();
     }
   });
@@ -1745,6 +1903,9 @@ export function installUndoShortcut(): void {
     const t = e.target as HTMLElement;
     if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
     e.preventDefault();
+    if (document.activeElement instanceof HTMLElement && document.activeElement !== document.body) {
+      document.activeElement.blur();
+    }
     void undoLast()
       .then((b) => {
         if (b) toast("Action annulée", false);

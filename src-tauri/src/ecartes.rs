@@ -1,6 +1,6 @@
 //! The "Écartés" read model + bin actions: tracks the user rejected (`status='resourcing'`,
 //! to re-source) or trashed (`status='trash'`). Lists them with the inputs the UI turns into
-//! a reason badge (verdict, truncated) plus a clean artist/title for the Soulseek re-download,
+//! a reason badge (verdict, truncated) plus a clean artist/title for a neutral re-source query,
 //! and manages the bin: restore a trashed file, or purge the bin for good. Sending a
 //! resourcing track to the bin reuses `filing::trash_track`.
 
@@ -19,7 +19,7 @@ pub struct EcarteItem {
     /// 'ok' | 'fake' | 'grey' | null (from analysis)
     pub verdict: Option<String>,
     pub truncated: bool,
-    /// Clean artist/title for the Soulseek copy (reconciled from tags + filename).
+    /// Clean artist/title for the copy-query action (reconciled from tags + filename).
     pub artist: String,
     pub title: String,
 }

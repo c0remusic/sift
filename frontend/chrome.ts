@@ -96,9 +96,17 @@ export function injectLeanStyle() {
     // (runNavExport) as of 2026-07-02 — no longer hidden. Revue-only toggles below still are.
     // Revue: batch mode + "traités" toggle aren't wired to the real backend yet
     '[data-act="revmode"],[data-act="togglequeue"]{display:none!important}' +
-    // custom frameless titlebar (decorations are off in tauri.conf — Tauri only)
-    "#sift-titlebar{height:30px;flex:none;display:flex;align-items:center;justify-content:space-between;" +
-    "background:var(--color-background-tertiary);-webkit-user-select:none;user-select:none}" +
+    // custom frameless titlebar (decorations are off in tauri.conf — Tauri only). Two REAL DOM
+    // zones (not a linear-gradient background trick, which can show a soft sub-pixel seam): the
+    // left zone is the nav rail's own width/tone (152px, matching .sb below it) so the titlebar
+    // reads as a continuation of the nav column, the right zone is the content tone. The vertical
+    // border between them is the same border-right the nav rail uses, so the line runs unbroken
+    // from the titlebar straight into .sb (no horizontal line is added anywhere in this bar).
+    "#sift-titlebar{height:30px;flex:none;display:flex;align-items:stretch;" +
+    "background:var(--color-background-primary);-webkit-user-select:none;user-select:none}" +
+    "#sift-tb-left{width:152px;flex:none;display:flex;align-items:center;" +
+    "background:var(--color-background-tertiary);border-right:0.5px solid var(--color-border-tertiary)}" +
+    "#sift-tb-right{flex:1;min-width:0;display:flex;align-items:center;justify-content:space-between}" +
     "#sift-tb-title{padding-left:13px;font-size:var(--text-sm);letter-spacing:.04em;color:var(--color-text-tertiary);" +
     "overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}" +
     "#sift-tb-controls{display:flex;height:100%}" +
@@ -108,7 +116,9 @@ export function injectLeanStyle() {
     ".sift-win-close:hover{background:#e81123;color:#fff}.sift-win i{font-size:15px}" +
     // macOS: 3 small round traffic lights on the left instead of square right-aligned buttons.
     // Reuses the same buttons/click-wiring; only placement (markup order) and this styling differ.
-    ".sift-tb-mac#sift-titlebar{justify-content:flex-start;gap:8px;padding-left:12px}" +
+    // The controls move into the left (nav-tone) zone, the title stays alone in the right zone.
+    ".sift-tb-mac #sift-tb-left{justify-content:flex-start;gap:8px;padding-left:12px}" +
+    ".sift-tb-mac #sift-tb-right{justify-content:flex-start}" +
     ".sift-tb-mac #sift-tb-title{padding-left:12px}" +
     ".sift-tb-mac .sift-win{width:12px;height:12px;border-radius:50%;color:transparent;font-size:0}" +
     ".sift-tb-mac .sift-win:hover{color:inherit;font-size:8px}" +
@@ -154,10 +164,21 @@ export async function injectTitlebar(): Promise<void> {
     '<button class="sift-win" data-win="max" title="Agrandir" aria-label="Agrandir"><i class="ti ti-square"></i></button>' +
     '<button class="sift-win sift-win-close" data-win="close" title="Fermer" aria-label="Fermer"><i class="ti ti-x"></i></button>' +
     "</div>";
-  bar.innerHTML = isMac ? controls + title : title + controls;
+  // Two real zones (left = nav width/tone, right = content tone — see injectLeanStyle's CSS
+  // comment for why this is DOM, not a gradient). Windows: title + controls both live in the
+  // right zone (space-between keeps today's layout, just shifted right by 152px). macOS: the
+  // traffic-light controls move into the left zone, the title stays alone in the right zone.
+  const left = `<div id="sift-tb-left" data-tauri-drag-region>${isMac ? controls : ""}</div>`;
+  const right = `<div id="sift-tb-right" data-tauri-drag-region>${title}${isMac ? "" : controls}</div>`;
+  bar.innerHTML = left + right;
   document.body.insertBefore(bar, document.body.firstChild);
 
   const w = getCurrentWindow();
+  // On Windows 11, an undecorated window gets its shadow enabled by default, which draws as a
+  // 1px light border with rounded corners around the whole window (annotation: "il semble y
+  // avoir un cadre ou une bordure le long de la fenetre") — this app already draws its own
+  // rounded/transparent frame via body:has(#sift-titlebar), so the native shadow is redundant.
+  void w.setShadow(false);
   const maxBtn = bar.querySelector<HTMLElement>('[data-win="max"]');
 
   bar.querySelectorAll<HTMLElement>(".sift-win").forEach((b) =>

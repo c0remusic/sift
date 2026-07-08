@@ -87,14 +87,14 @@ function listColumnHtml(sources: Source[]): string {
 function inspectorHtml(selected: Source | null, root: string | null, allSources: Source[]): string {
   const rootGateHtml = root
     ? ""
-    : '<div style="display:flex;gap:8px;align-items:flex-start;background:var(--color-background-warning);border-radius:var(--border-radius-md);padding:8px 11px;margin-bottom:16px;font-size:var(--text-sm);color:var(--color-text-warning)">' +
+    : '<div class="sift-ui-card-soft sift-ui-card-soft-pad sift-home-warning">' +
       '<i class="ti ti-alert-triangle" style="font-size:var(--text-lg);flex:none"></i>' +
       "<span><strong>Racine de bibliothèque non définie</strong> — les dossiers surveillés restent scannés, mais le rangement sera bloqué tant qu'aucune racine n'est choisie. " +
       '<button data-sift="gotoreglages" style="color:var(--color-text-warning);text-decoration:underline;padding:0;font:inherit">Ouvrir Réglages →</button></span></div>';
 
   if (!selected) {
     return (
-      `<div style="flex:1;overflow-y:auto;padding:20px 30px">` +
+      `<div class="sift-screen-stack" style="flex:1;overflow-y:auto;padding:20px 30px">` +
       rootGateHtml +
       `<div style="font-size:var(--text-md);color:var(--color-text-tertiary)">Sélectionne un dossier surveillé pour voir son détail.</div>` +
       `</div>`
@@ -106,30 +106,30 @@ function inspectorHtml(selected: Source | null, root: string | null, allSources:
   const watchOn = selected.watched;
 
   return (
-    `<div style="flex:1;overflow-y:auto;padding:20px 30px">` +
+    `<div class="sift-screen-stack" style="flex:1;overflow-y:auto;padding:20px 30px">` +
     `<div style="font-size:var(--text-sm);color:var(--color-text-tertiary);margin-bottom:20px">Accueil <span style="color:var(--color-text-tertiary);margin:0 3px">›</span> <span style="color:var(--color-text-primary)">${name}</span></div>` +
     rootGateHtml +
     `<div style="display:flex;align-items:center;gap:16px;margin-bottom:20px">` +
     `<div style="font-size:var(--text-xl);font-weight:600">${name}</div>` +
     `<span style="font-family:var(--font-mono);font-size:var(--text-sm);padding:4px 10px;border-radius:999px;background:var(--color-background-secondary);color:${sm.color}">${esc(sm.label)}</span>` +
     `</div>` +
-    `<div style="background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);padding:16px 18px;max-width:560px;margin-bottom:16px">` +
+    `<div class="sift-ui-card-soft sift-ui-card-soft-pad sift-home-source-path">` +
     `<div style="font-size:var(--text-xs);letter-spacing:.09em;text-transform:uppercase;color:var(--color-text-tertiary);margin-bottom:6px">Dossier surveillé</div>` +
-    `<div style="font-family:var(--font-mono);font-size:var(--text-md);color:var(--color-text-secondary);word-break:break-all">${esc(selected.path)}</div>` +
+    `<div class="sift-home-source-path-value">${esc(selected.path)}</div>` +
     (selected.accessible
       ? ""
       : `<div style="margin-top:8px;font-size:var(--text-sm);color:var(--color-text-danger)"><i class="ti ti-alert-triangle" style="vertical-align:-1px"></i> Dossier inaccessible.</div>`) +
     `</div>` +
-    `<div style="display:flex;align-items:center;gap:8px;margin-bottom:16px">` +
+    `<div class="sift-ui-card-toolbar">` +
     `<span style="font-size:var(--text-sm);color:var(--color-text-tertiary)">Couleur</span>` +
     SOURCE_HUE_CYCLE.map(
       (hue) =>
         `<button data-sift="setsrccolor" data-id="${selected.id}" data-hue="${hue}" title="${hue}" aria-label="Couleur ${hue}" class="sift-src-swatch sift-src-swatch-${hue}${resolveSourceColorKey(allSources, selected) === hue ? " on" : ""}"></button>`,
     ).join("") +
     `</div>` +
-    `<div style="display:flex;align-items:center;gap:10px">` +
-    `<div data-sift="togglewatch" data-id="${selected.id}" data-watched="${watchOn ? "1" : "0"}" style="display:flex;align-items:center;gap:8px;font-size:var(--text-md);padding:8px 13px;border-radius:var(--border-radius-md);background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);cursor:pointer;color:var(--color-text-secondary)">` +
-    `<span style="width:15px;height:15px;border-radius:4px;border:1px solid var(--color-border-secondary);background:${watchOn ? "var(--color-text-success)" : "transparent"};flex:none"></span>` +
+    `<div class="sift-ui-card-actions">` +
+    `<div data-sift="togglewatch" data-id="${selected.id}" data-watched="${watchOn ? "1" : "0"}" class="sift-home-watch-toggle sift-ui-card-actions-main">` +
+    `<span class="sift-home-watch-toggle-box"></span>` +
     `Surveiller ce dossier</div>` +
     `<button data-sift="rmsrc" data-id="${selected.id}" style="color:var(--color-text-danger)"><i class="ti ti-trash" style="font-size:var(--text-md);vertical-align:-2px"></i> Retirer</button>` +
     `</div>` +

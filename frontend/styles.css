@@ -34,9 +34,11 @@ color-scheme:light;
 --border-radius-sm:4px;--border-radius-md:6px;--border-radius-lg:10px;--border-radius-pill:999px;
 /* Elevation shadows — only the two floating surfaces that need them (toast, modal overlay).
    Black at fixed alpha reads fine on both themes, same as the rest of the app's overlay tints. */
---shadow-toast:0 8px 28px rgba(0,0,0,.4);--shadow-overlay:0 12px 48px rgba(0,0,0,.5);
-/* Deliberate 3rd hue (gold), documented exception to the "green/amber only" rule above: the
-/* Waveform elapsed-time label — canvas stays dark regardless of theme, so no dark variant. */
+--shadow-toast:0 8px 28px rgba(0,0,0,.4);--shadow-overlay:0 12px 48px rgba(0,0,0,.5);--shadow-panel-subtle:0 1px 4px rgba(0,0,0,.12);
+/* Waveform elapsed-time label + progress fill — resolves through info/blue (2026-07-06 Apple
+   system-colors palette), not success/green: green on the played portion read as a false verdict
+   signal ("this track is good") rather than a playback indicator. Blue matches the "active/
+   interactive" convention already used for Identifier/focus/chips. */
 --color-waveform-elapsed:var(--color-text-info);
 /* Typo (self-hosted via @fontsource, see main.ts) — Outfit UI, JetBrains Mono for numbers. */
 --font-ui:"Outfit",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
@@ -69,7 +71,6 @@ color-scheme:light;
     --color-hue-indigo-text:#A6A0F0;--color-hue-indigo-bg:rgba(88,86,214,.18);--color-hue-indigo-border:rgba(166,160,240,.35);--color-hue-purple-text:#C9A6E0;--color-hue-purple-bg:rgba(175,82,222,.18);--color-hue-purple-border:rgba(201,166,224,.35);--color-hue-pink-text:#F0A8C2;--color-hue-pink-bg:rgba(212,83,126,.18);--color-hue-pink-border:rgba(240,168,194,.35);--color-hue-teal-text:#7CE0D4;--color-hue-teal-bg:rgba(20,150,140,.18);--color-hue-teal-border:rgba(124,224,212,.35);--color-hue-yellow-text:#F5D76E;--color-hue-yellow-bg:rgba(230,180,0,.18);--color-hue-yellow-border:rgba(245,215,110,.35);
     --overlay-hover:rgba(255,255,255,.03);--overlay-selected:rgba(255,255,255,.06);
     --overlay-bar:rgba(255,255,255,.32);--overlay-badge:rgba(255,255,255,.06);--overlay-drop:rgba(60,60,57,.93);
-    --color-waveform-elapsed:var(--color-text-info);
   }
 }
 :root[data-theme="dark"]{
@@ -83,10 +84,16 @@ color-scheme:light;
   --color-hue-indigo-text:#A6A0F0;--color-hue-indigo-bg:rgba(88,86,214,.18);--color-hue-indigo-border:rgba(166,160,240,.35);--color-hue-purple-text:#C9A6E0;--color-hue-purple-bg:rgba(175,82,222,.18);--color-hue-purple-border:rgba(201,166,224,.35);--color-hue-pink-text:#F0A8C2;--color-hue-pink-bg:rgba(212,83,126,.18);--color-hue-pink-border:rgba(240,168,194,.35);--color-hue-teal-text:#7CE0D4;--color-hue-teal-bg:rgba(20,150,140,.18);--color-hue-teal-border:rgba(124,224,212,.35);--color-hue-yellow-text:#F5D76E;--color-hue-yellow-bg:rgba(230,180,0,.18);--color-hue-yellow-border:rgba(245,215,110,.35);
   --overlay-hover:rgba(255,255,255,.03);--overlay-selected:rgba(255,255,255,.06);
   --overlay-bar:rgba(255,255,255,.32);--overlay-badge:rgba(255,255,255,.06);--overlay-drop:rgba(60,60,57,.93);
-  --color-waveform-elapsed:var(--color-text-info);
 }
 *{box-sizing:border-box}
 html,body{margin:0;height:100%;overflow:hidden;background:var(--color-background-tertiary);color:var(--color-text-primary);font-family:var(--font-ui)}
+/* Rounded window shell removed (annotation: "supprime simplement la bordure arrondie") — Windows'
+   native resize-margin around an undecorated+transparent+resizable window doesn't composite true
+   transparency there, showing a solid backdrop rectangle around the rounded content in windowed
+   mode. DwmExtendFrameIntoClientArea (lib.rs) didn't fix it either (that API extends glass for a
+   DECORATED window, not this undecorated one) — the real fix needs WndProc-level WM_NCCALCSIZE
+   handling, judged too invasive for this. Plain rectangular window instead. */
+html{background:transparent}
 /* Seamless themed scrollbars: thin, transparent track, subtle inset thumb (transparent
    border + padding-box clip makes it float off the edge), brighter on hover. */
 *{scrollbar-width:thin;scrollbar-color:transparent transparent}
@@ -114,12 +121,10 @@ html,body{margin:0;padding:0;height:100%}
 .nv i{font-size:17px;flex:none}
 .nv:hover{background:var(--color-nav-active)}
 .nv.on{background:var(--color-nav-active);color:var(--color-text-primary);font-weight:500}
-/* Export (Rekordbox / Clé USB): visually secondary — not built yet, so it must read as "less
-   important" rather than a full nav tab (maquette's exportItems: dimmed, dot instead of icon). */
-.nv-export{opacity:.55}
-.nv-export:hover{opacity:.85}
+/* Clé USB: dot instead of icon (no dedicated screen yet, unlike Rekordbox), but full opacity —
+   dimming it read as inconsistent next to Rekordbox/Réglages (annotation: "homogénise avec le
+   reste des titres du menu"). */
 .nv-export-dot{width:5px;height:5px;border-radius:var(--border-radius-pill);background:var(--color-hue-teal-text);flex:none}
-.nv[data-view="rkb"] i{color:var(--color-hue-yellow-text)}
 .nav-badge{font-size:10px;font-weight:600;color:var(--color-text-tertiary);background:var(--overlay-badge);border-radius:var(--border-radius-pill);padding:1px 7px;flex:none}
 .nav-badge:empty{display:none}
 /* Bottom group of the rail: holds the margin-top:auto (so Settings stays pinned to the very bottom)
@@ -129,6 +134,10 @@ html,body{margin:0;padding:0;height:100%}
 /* Global background-task progress (bottom of #nav, persistent across views). One row per active
    task: icon + name + tabular done/total + a thin accent bar. Hidden when idle (via JS display). */
 .sift-progress-zone{display:flex;flex-direction:column;gap:var(--space-8);margin-top:var(--space-8);padding-top:var(--space-8);border-top:0.5px solid var(--color-border-tertiary)}
+/* Hide entirely when idle (annotation: "supprime" on an empty instance sitting in #filfoot with
+   no rows) — an empty zone still rendered its margin-top+padding-top+border-top as a bare 9px
+   sliver with a hairline and nothing above it. */
+.sift-progress-zone:empty{display:none}
 .sift-pz-row{display:flex;flex-direction:column;gap:var(--space-4)}
 .sift-pz-head{display:flex;align-items:center;justify-content:space-between;gap:var(--space-8)}
 .sift-pz-name{display:inline-flex;align-items:center;gap:var(--space-4);min-width:0;font-size:var(--text-xs);color:var(--color-text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -142,16 +151,60 @@ html,body{margin:0;padding:0;height:100%}
 .sift-pz-fill{height:100%;width:100%;border-radius:3px;background:var(--color-text-info);transform-origin:left;transition:transform .3s}
 .sift-pz-row.error .sift-pz-fill{background:var(--color-text-danger)}
 .queue{flex:none;display:flex;flex-direction:column;padding:11px 8px;overflow:hidden;background:var(--color-background-queue)}
-#ql{flex:1;min-height:0;overflow-y:scroll;scrollbar-gutter:stable}
+/* padding-right added (annotation: "la barre de scrolling... est trop pres de .qi.cur") —
+   scrollbar-gutter:stable reserves exactly the scrollbar's own 6px width, no breathing room beyond
+   it, so a selected row's highlighted background butted directly against the track/thumb. */
+#ql{flex:1;min-height:0;overflow-y:scroll;scrollbar-gutter:stable;padding-right:6px}
 /* Drag handle between #qcol and .sift-inspector (Revue) — resizes the queue column so long
-   track names stay readable (audit 2026-07-05, annotation #8). Thin hit zone, hairline visual
-   centered in it; tints on hover/drag for feedback. */
-.sift-qresize{flex:none;width:5px;margin:0 -2px;cursor:col-resize;position:relative;z-index:1}
-.sift-qresize::after{content:"";position:absolute;top:0;bottom:0;left:2px;width:1px;background:var(--color-border-secondary)}
-.sift-qresize:hover::after,.sift-qresize--active::after{background:var(--color-text-info)}
-/* Always-visible queue scrollbar (WebView2/Chromium) — gives a sense of position in a long list. */
-#ql::-webkit-scrollbar{width:10px}
-#ql::-webkit-scrollbar-thumb{background:var(--color-border-secondary);border-radius:var(--border-radius-pill);border:2px solid transparent;background-clip:padding-box}
+   track names stay readable (audit 2026-07-05, annotation #8). Thin hit zone, sitting in the gap
+   between the two floating cards. The hairline used to be always-visible, needed when the panels
+   were flush; now that the cards' own margin+border already separate them, a permanent line
+   there is redundant (annotation 2026-07-06) — transparent at rest, only reveals on hover/drag. */
+/* margin-top/bottom added (annotation: "la barre ne fit pas le cadre flotant") — #qcol/#rvinspector
+   both carry a 10px top/bottom margin as floating cards, but this handle previously had none,
+   making it 20px taller than the cards it sits between and visibly poking past their rounded top/
+   bottom corners. Hover color switched from the blue --color-text-info accent (annotation: "la
+   couleur jure un peu avec aussi") to a neutral tertiary tone — this is a plain resize grip, not an
+   info/accent affordance, and blue read as an odd, unexplained color next to two neutral cards. */
+/* Left/right margins made asymmetric (annotation 2026-07-07: "n'est plus collée a la barre de
+   file") — the qcol/rvinspector gap widened from ~1px to 14px (7px margin each side, see #qcol/
+   #rvinspector below) but this handle's margins stayed at the old symmetric -2px, so it floated
+   centered in the new gap instead of sitting flush against the queue list it actually resizes.
+   margin-left cancels #qcol's own 7px margin-right exactly (flush, 0 gap); margin-right keeps the
+   original -2px so all the extra breathing room now falls between the handle and rvinspector. */
+/* Bottom margin bumped again 35px→45px in lockstep with #qcol after the keyboard legend gained an
+   extra 10px gap below #filfoot — same rule: the handle must end where the queue card ends, or it
+   visibly dangles below it. */
+.sift-qresize{flex:none;width:5px;margin:10px -2px 45px -7px;cursor:col-resize;position:relative;z-index:1}
+/* top/bottom inset by the cards' own corner radius (annotation: "le cadre est une courbe donc elle
+   dépasse toujours") — matching the container's full height (previous fix) wasn't enough: a
+   straight line ending exactly at the card's top/bottom edge still visually overshoots past where
+   the ROUNDED corner has already curved inward at that same height. Insetting the visible line
+   (not the whole 5px hit-zone, which stays a full-height drag target) keeps it within the card's
+   straight-edge middle section only. */
+.sift-qresize::after{content:"";position:absolute;top:var(--border-radius-lg);bottom:var(--border-radius-lg);left:2px;width:1px;background:transparent}
+/* Gradient fade instead of a solid line (annotation: "le feedback est encore trop voyant... un
+   degradé qui partirait du centre pour se fondre dans la case, pour éviter la cassure") — even
+   inset past the corner radius, a flat-color line still had two hard-cut ends; fading both ends to
+   transparent removes that visible break entirely. */
+/* Opacity cut 30% (annotation: "reduis l'opacité de 30%") — the gradient reveal read as too strong
+   against the qcol/rvinspector panels once they gained their own subtle shadows. */
+/* Opacity cut another 30% (annotation repeated: "réduis l'opacité de 30%" — .7 still read as too
+   strong against the qcol/rvinspector panels' own shadows once those were added). */
+.sift-qresize:hover::after,.sift-qresize--active::after{background:linear-gradient(to bottom,transparent,var(--color-text-tertiary) 35%,var(--color-text-tertiary) 65%,transparent);opacity:.5}
+/* Queue scrollbar (WebView2/Chromium), hidden until hover (annotation: "devrait disparaitre quand
+   on est pas en hover sur la file") — same auto-hide pattern as the rest of the app's global
+   `*{scrollbar-color:transparent transparent}`, just re-declared here (not left to the global rule)
+   because the thumb still needs its own :hover-revealed color, distinct from a plain scrollbar.
+   scrollbar-color override on #ql itself is required — it otherwise wins over the
+   ::-webkit-scrollbar-thumb color below in current Chromium/WebView2, which prioritizes the
+   standard scrollbar-color property over the legacy ::-webkit-scrollbar-* pseudo-elements when
+   both are set on the same element. */
+#ql{scrollbar-color:transparent transparent}
+#ql:hover{scrollbar-color:var(--color-border-secondary) transparent}
+#ql::-webkit-scrollbar{width:6px}
+#ql::-webkit-scrollbar-thumb{background:transparent;border-radius:var(--border-radius-pill);border:1px solid transparent;background-clip:padding-box}
+#ql:hover::-webkit-scrollbar-thumb{background:var(--color-border-secondary);background-clip:padding-box}
 #ql::-webkit-scrollbar-thumb:hover{background:var(--color-text-tertiary);background-clip:padding-box}
 .qdrag{width:7px;flex:none;cursor:col-resize;background:transparent;border-left:0.5px solid var(--color-border-tertiary);display:flex;align-items:center;justify-content:center}
 .qdrag::after{content:"";width:2px;height:26px;border-radius:2px;background:var(--color-border-secondary)}
@@ -161,31 +214,104 @@ html,body{margin:0;padding:0;height:100%}
 /* Selection is neutral (white @.045 + a non-blue left bar), per interaction-model.md: blue is
    reserved for focus/accent, never for "this row is selected". */
 .qi:hover{background:var(--color-row-active)}
-.qi.cur{background:var(--color-row-active);color:var(--color-text-primary);font-weight:500;box-shadow:inset 2px 0 0 var(--overlay-bar)}.qi i{font-size:13px;flex:none}
+/* Left-edge inset shadow removed (annotation: "la case est highlighted ça suffit") — a colored
+   side-stripe accent, the same anti-pattern already banned for real borders elsewhere; the
+   background+weight change alone is enough to read as selected. */
+.qi.cur{background:var(--color-row-active);color:var(--color-text-primary);font-weight:500}.qi i{font-size:13px;flex:none}
 .pbar{height:4px;background:var(--color-border-tertiary);border-radius:3px;margin:3px 0 7px;overflow:hidden}.pfill{height:100%;background:var(--color-text-info);border-radius:3px}
 /* Inspector column (col 3): .mid (scrollable son-first detail) stacked above the anchored-bottom
    action rail (#filfoot). Siblings, not parent/child — openFilingInto rewrites .mid's innerHTML on
    every track open, so #filfoot/#fldz living OUTSIDE .mid is what lets them survive that rewrite. */
 .sift-inspector{flex:1;min-width:0;display:flex;flex-direction:column;position:relative}
-.mid{flex:1;min-width:0;display:flex;flex-direction:column;padding:13px 15px 10px;overflow:hidden}
+/* Revue + Home: float the QUEUE as its own card on the page canvas (annotation 2026-07-06:
+   "aligner le style de ces deux panneaux... style claude"; extended to Home the same day: "ils
+   doivent avoir la même apparence"). Border + radius only, no box-shadow — this file's own
+   convention is elevation-by-surface-clarity, not drop shadows (see header comment).
+   #rvinspector (Revue's own detail panel) had the same card treatment until the 2026-07-06
+   continuous-surface redesign explicitly reversed it there (annotation: "supprime ce cadre") —
+   its content now sits directly on #pa's own background, same as the rest of the app shell.
+   #homeinspector kept its card until a later annotation ("supprime le cadre, les elements
+   devraient reposer sur le fond") asked for the same reversal here too — see below. */
+/* #qcol drops its border (annotation: "ajoute aussi un cadre style pastille sans bordure") — same
+   direction as the hero panel: a soft radius'd background (already --color-background-queue via
+   .queue, distinct from the page/inspector tone) instead of a hard border line. #homequeue keeps
+   its border (out of scope for this reversal — not requested). The border used to be the only
+   thing marking the boundary with the resize handle/inspector next to it; the background color
+   contrast alone still reads as a clear edge, so the existing 10px margin (unchanged) is enough —
+   not widened, to avoid second-guessing spacing that was already CDP-measured earlier. */
+#homequeue{border:0.5px solid var(--color-border-tertiary)}
+#qcol,#homequeue{border-radius:var(--border-radius-lg)}
+/* Right/left margins bumped 0→7px each (annotation: "le meme que entre le panneau hero et le
+   rail" — reusing .sift-player-row's own 14px inter-panel gap) — measured via CDP: qcol/rvinspector
+   sat only 1px apart (the qresize handle's own -2px/-2px overlap ate the rest), which read as
+   merged now that both panels carry their own background+shadow. */
+/* Bottom margin bumped 10px→35px (annotation: "aligne le bas de #qcol.queue sur le bas de
+   #filfoot.sift-action-rail") — #rvinspector's flex column has a 3rd child AFTER #filfoot,
+   #sift-kbd-legend (the "SPACE écouter…" hint strip, measured 25px tall), which #qcol has no
+   equivalent of — #qcol used to stretch all the way to rvinspector's true bottom (past filfoot,
+   flush with the hint strip's bottom instead). +25px (35 = 10 + 25) stops #qcol's bottom exactly
+   at filfoot's own bottom edge. The legend later gained an extra 10px top gap, so this became
+   45px total to keep the queue bottom aligned with the rail instead of the lower legend strip. */
+#qcol{margin:10px 7px 45px 10px;box-shadow:var(--shadow-panel-subtle)}
+#homeinspector{overflow:hidden}
+#rvinspector{margin:10px 10px 10px 7px}
+.mid{flex:1;min-width:0;display:flex;flex-direction:column;padding:0 15px 10px;overflow:hidden}
 .mid-scroll{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column}
 /* Action rail (was the persistent .dest column — now a slim horizontal bar anchored to
    the bottom of the inspector, matching the maquette's single-row ACTION RAIL: Destination
    popover trigger, format chips, a flex spacer, key hints, secondary, primary — all in one
    line, wrapping only if the window gets too narrow. */
-.sift-action-rail{flex:none;display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-12);padding:11px 15px;background:var(--color-background-tertiary);border-top:0.5px solid var(--color-border-tertiary);overflow:visible}
+/* Went flat after "ce cadre ne respecte ni l'ui" (hard border-top box removed), then annotation
+   "je ne vois pas le cadre" asked for a frame back, then went flat again 2026-07-07 (see the card
+   background+shadow removal comment below) once .sift-player-row lost its own card too — both
+   directions were tried; "same continuous surface as the toggles" is the one that stuck. */
+/* Left/right padding was bumped 15px→33px to match content EDGES only (33 = mid's 15px inset +
+   player-row's own 18px padding) — measured via CDP 2026-07-07 (annotation: "toujours pas
+   allignée") and that fix was wrong: it aligned the invisible text-start point but left the
+   card's own visible background+shadow rectangle sitting flush with #rvinspector while
+   .sift-player-row's card sits 15px further in (.mid's own padding insets it). The card silhouette
+   is what the eye actually tracks. Fixed properly: margin:0 15px on #filfoot (below) reproduces
+   .mid's own inset on the card itself, so padding drops back to 18px (just player-row's own) to
+   keep the same content-edge match without double-counting the 15px. */
+/* Card background+shadow restored again (annotation 2026-07-07, follow-up: "je préferais en plein
+   je crois, mais de la meme couleur") — the continuous/transparent take from earlier the same day
+   was tried and reversed: filled cards were preferred after all, just consistently colored across
+   all 4 (see .sift-spectro-box/.sift-fil-editor.sift-fil-editor-margin below, which now match). */
+.sift-action-rail{flex:none;display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-12);padding:11px 18px;overflow:visible;background:var(--color-background-queue);border-radius:var(--border-radius-lg);box-shadow:var(--shadow-panel-subtle)}
 .sift-dest-btn{display:flex;align-items:center;gap:8px;flex:none;width:auto;max-width:220px;padding:8px 10px;background:var(--color-background-secondary);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);color:var(--color-text-primary);font-size:var(--text-sm);cursor:pointer}
 .sift-dest-btn-label{color:var(--color-text-tertiary);flex:none}
 .sift-dest-btn .sift-fil-bin{flex:1;min-width:0;text-align:left;overflow:hidden;text-overflow:ellipsis;font-weight:500;max-width:120px}
 .sift-dest-btn-caret{flex:none;font-size:var(--text-sm);color:var(--color-text-tertiary)}
+/* No destination chosen yet: the button becomes the next-step CTA — discreet amber, not the
+   full-strength danger/warning tokens used for verdict states (this isn't a problem, just a
+   pending action) — border tint only, background stays neutral so it doesn't compete visually
+   with the actual verdict pill above it. */
+.sift-dest-btn-empty{border-color:var(--color-text-warning);color:var(--color-text-warning)}
+.sift-dest-btn-empty .sift-dest-btn-label{color:var(--color-text-warning)}
 /* Format group: label + chips inline together, no longer a stacked "col-h" block. */
 .sift-rail-fmt-group{display:flex;align-items:center;gap:6px;flex:none}
 .sift-rail-fmt-group .col-h{margin:0}
+/* Nom final, moved into the rail from the verdict conclusion (2026-07-06 redesign) — compact
+   label+value pair right after the format chips, same visual family as the format group. */
+/* max-width bumped 220px → 340px (annotation: "le nom final est tronqué") — 220px was an initial
+   estimate that clipped ordinary-length filenames; the rail's spacer (flex:1) still absorbs
+   whatever room is left, so this only matters as a true last-resort ellipsis on very long names. */
+.sift-rail-final-group{display:flex;align-items:center;gap:6px;flex:none;min-width:0;max-width:340px}
+.sift-final-name-label{font-size:10px;letter-spacing:.05em;color:var(--color-text-tertiary);text-transform:uppercase;flex:none}
+.sift-fil-prev{font-family:var(--font-mono);font-size:var(--text-xs);color:var(--color-text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 /* Pushes secondary/primary to the right edge of the rail. */
 .sift-rail-spacer{flex:1;min-width:8px}
-.sift-ranger-btn{flex:none;white-space:nowrap;background:var(--color-background-info);color:var(--color-text-info);border:none;font-weight:500}
+/* Filled pill restored (annotation 2026-07-07: ".sift-key-btn / .chip.on / .sift-ranger-btn
+   devraient avoir le même style", same message asking .sift-secondary-trash to gain "une case
+   colorée avec contour") — the "bulle" removed in the PRIOR round is back, but this time as one
+   consistent recipe shared by every selected/primary/destructive control in the app: filled
+   background + matching border + matching text, same shape .chip.on and .sift-key-btn's own ON
+   state already use (just with their own hue). Écarter (.sift-secondary-trash) gets the identical
+   treatment in danger's hue, so the rail's two actions read as equally-weighted colored pills,
+   not one bold pill next to plain text. */
+.sift-ranger-btn{flex:none;white-space:nowrap;background:var(--color-background-info);color:var(--color-text-info);border:0.5px solid var(--color-border-info);font-weight:500}
 .sift-secondary-resource{flex:none;white-space:nowrap;color:var(--color-text-warning)}
-.sift-secondary-trash{flex:none;white-space:nowrap;color:var(--color-text-danger)}
+.sift-secondary-trash{flex:none;white-space:nowrap;background:var(--color-background-danger);color:var(--color-text-danger);border:0.5px solid var(--color-border-danger)}
 /* Destination popover: replaces the persistent tree column, anchored above its trigger button.
    Hidden by default ([hidden] attribute, toggled in filing.ts); #fldz keeps its id so renderBins'
    existing document.getElementById("fldz") callers need no change. */
@@ -196,7 +322,10 @@ html,body{margin:0;padding:0;height:100%}
    repositioned to wherever the Destination button currently was. This is the actual fix; a
    higher-specificity selector for the hidden state, not another positioning tweak. */
 .sift-dest-popover[hidden]{display:none}
-#filfoot{flex:none}
+/* margin:0 15px reproduces .mid's own left/right inset (styles.css `.mid{padding:0 15px 10px}`)
+   directly on the card, so #filfoot's card sits at the same x as .sift-player-row's card instead
+   of flush with #rvinspector — see .sift-action-rail's padding comment above for the full story. */
+#filfoot{flex:none;margin:0 15px}
 /* Batch per-track list: cap it so a long run can't push the récap + action button out of the rail.
    36vh ≈ a third of the viewport: enough rows to be useful while the récap above and the action
    button below stay on-screen; the list scrolls past that. */
@@ -217,26 +346,70 @@ html,body{margin:0;padding:0;height:100%}
 .h1{font-size:16px;font-weight:500;margin-bottom:12px}
 .chip{font-size:11px;padding:3px 9px;border-radius:var(--border-radius-md);border:0.5px solid var(--color-border-tertiary);color:var(--color-text-secondary);cursor:pointer}.chip:hover{background:var(--color-background-secondary)}.chip.on{background:var(--color-background-info);color:var(--color-text-info);border-color:var(--color-border-info)}.chip.on:hover{background:var(--color-background-info)}
 .tog{width:30px;height:17px;border-radius:9px;background:var(--color-text-info);position:relative;flex:none;cursor:pointer;transition:background .12s}.tog::after{content:"";position:absolute;left:2px;top:2px;width:13px;height:13px;border-radius:50%;background:#fff;transform:translateX(13px);transition:transform .12s}.tog.off{background:var(--color-border-secondary)}.tog.off::after{transform:translateX(0)}
-.lr{display:flex;align-items:center;gap:7px;padding:5px 4px;border-bottom:0.5px solid var(--color-border-tertiary);font-size:12px}
-.lr .pb{width:23px;height:23px;border-radius:50%;flex:none;padding:0;display:inline-flex;align-items:center;justify-content:center}
+.lr{display:flex;align-items:center;gap:7px;padding:5px 6px;border-bottom:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);font-size:12px;cursor:pointer;transition:background .16s ease,color .16s ease,transform .12s ease}
+.lr:hover{background:var(--color-row-active)}
+.lr:active{transform:translateY(1px)}
+.lr:focus-within{background:var(--color-row-active)}
+.lr.cur{background:var(--color-background-info);color:var(--color-text-primary)}
+.lr.cur .bib-name{font-weight:500}
+.lr.cur .lk-icon,.lr.cur .pb{background:var(--color-surface-raised)}
+.lr .pb{width:23px;height:23px;border-radius:50%;flex:none;padding:0;display:inline-flex;align-items:center;justify-content:center;opacity:.72;transition:background .16s ease,color .16s ease,opacity .16s ease}
+.lr:hover .pb,.lr:focus-within .pb{background:var(--color-surface-raised)}
+.lr:hover .pb,.lr:hover .lk-icon,.lr:focus-within .pb,.lr:focus-within .lk-icon,.lr.cur .pb,.lr.cur .lk-icon{opacity:1}
 /* Icon-only 22x22 buttons (Discogs link, Identifier, Écartés requeue/trash) — NOT for text
    buttons. `.lk` used to double as a generic "minimal button" class for text content too, which
    forced long labels ("Réexporter maintenant", "Lier un fichier XML Rekordbox"...) to wrap inside
    a fixed 22px box and visually overflow/overlap neighboring text. Text buttons now fall through
    to the plain `button{}` reset (bordered, auto-sized, already correct everywhere else). */
-.lk-icon{width:22px;height:22px;border-radius:var(--border-radius-md);flex:none;padding:0;display:inline-flex;align-items:center;justify-content:center}
+.lk-icon{width:22px;height:22px;border-radius:var(--border-radius-md);flex:none;padding:0;display:inline-flex;align-items:center;justify-content:center;opacity:.6;transition:background .16s ease,opacity .16s ease}
 .br{display:flex;align-items:center;gap:9px;padding:7px 5px;border-bottom:0.5px solid var(--color-border-tertiary);font-size:12px;cursor:pointer}
 .mf{margin-bottom:6px}.mf .lab{font-size:10px;color:var(--color-text-tertiary);margin-bottom:2px}.mf .inp{border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:5px 8px;font-size:12px}
 .cov{width:40px;height:40px;flex:none;border-radius:6px;background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);display:flex;align-items:center;justify-content:center;color:var(--color-text-tertiary)}.cov i{font-size:20px}
 button{font-family:inherit;background:transparent;border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:5px 10px;color:var(--color-text-primary);cursor:pointer;font-size:13px}
 /* Keyboard-first: a visible focus ring on interactive elements, accent-coloured. :focus-visible
-   keeps it keyboard-only (no ring on mouse click). See interaction-model.md §7. */
-button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--color-text-info);outline-offset:1px}
+   keeps it keyboard-only (no ring on mouse click). See interaction-model.md §7.
+   --color-border-info (translucent), not --color-text-info (solid) — bug report: "quand
+   j'utilise les raccourcis clavier une barre blanche s'affiche sous la titlebar". Any element
+   left focused after a prior click (a nav tab, Destination, a titlebar button…) gets this ring
+   revealed the next time a key is pressed, per the :focus-visible spec; --color-text-info equals
+   the same bright off-white as --color-text-primary in dark mode, so that ring read as a solid
+   white bar wherever it landed. The translucent border token is still clearly visible but no
+   longer stark white. */
+button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--color-border-info);outline-offset:1px}
 button:hover{background:var(--color-background-secondary)}button:disabled{opacity:.4;cursor:default}
 input{font-family:inherit}input[type=range]{accent-color:var(--color-text-info)}
 .home-body{display:flex;gap:14px;flex:1;min-height:0;overflow:hidden}
 .home-left{flex:1;min-width:0;overflow-y:auto;padding-right:4px}
 .home-right{width:200px;flex:none;overflow-y:auto}
+.sift-screen-stack{display:flex;flex-direction:column;gap:12px}
+.sift-ui-card{background:var(--color-background-queue);border-radius:var(--border-radius-lg);box-shadow:var(--shadow-panel-subtle)}
+.sift-ui-card-pad{padding:16px 18px}
+.sift-ui-card-soft{background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg)}
+.sift-ui-card-soft-pad{padding:16px 18px}
+.sift-ui-kicker{font-size:var(--text-xs);letter-spacing:.09em;text-transform:uppercase;color:var(--color-text-tertiary);margin-bottom:6px}
+.sift-ui-card-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.sift-ui-card-actions{display:flex;gap:8px;margin-top:10px}
+.sift-ui-card-actions-main{flex:1}
+.sift-home-warning{display:flex;gap:8px;align-items:flex-start;font-size:var(--text-sm);color:var(--color-text-warning)}
+.sift-home-source-path{max-width:560px}
+.sift-home-source-path-value{font-family:var(--font-mono);font-size:var(--text-md);color:var(--color-text-secondary);word-break:break-all}
+.sift-home-watch-toggle{display:flex;align-items:center;gap:8px;font-size:var(--text-md);padding:8px 13px;border-radius:var(--border-radius-md);background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);cursor:pointer;color:var(--color-text-secondary)}
+.sift-home-watch-toggle-box{width:15px;height:15px;border-radius:4px;border:1px solid var(--color-border-secondary);background:transparent;flex:none}
+.sift-home-watch-toggle[data-watched="1"] .sift-home-watch-toggle-box{background:var(--color-text-success)}
+.sift-ec-sections{display:flex;flex-direction:column;gap:12px}
+.sift-ec-section{display:flex;flex-direction:column;gap:10px}
+.lib-detail-stack{display:flex;flex-direction:column;gap:10px;margin-top:12px;padding-top:12px;border-top:0.5px solid var(--color-border-tertiary)}
+.lib-detail-head{display:flex;align-items:center;justify-content:space-between;gap:10px}
+.lib-detail-head-main{min-width:0;display:flex;flex-direction:column;gap:2px}
+.lib-detail-head-title{font-size:var(--text-base);font-weight:500;color:var(--color-text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.lib-detail-close{width:28px;height:28px;padding:0;display:inline-flex;align-items:center;justify-content:center;flex:none;opacity:.72;transition:background .16s ease,opacity .16s ease}
+.lib-detail-close:hover,.lib-detail-close:focus-visible{opacity:1;background:var(--color-surface-raised)}
+.lib-detail-close i{font-size:var(--text-base);color:var(--color-text-tertiary)}
+.lib-edit{display:flex;flex-direction:column;gap:10px}
+.lib-edit .sift-editor-input{background:var(--color-surface-raised)}
+.lib-edit-meta{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
+.lib-edit-actions{display:flex;gap:8px}
+.lib-edit-actions [data-lib="save"]{flex:1}
 /* M6a — Discogs candidate picker */
 .sift-cands{margin-top:8px;display:flex;flex-direction:column;gap:4px}
 .sift-cands[hidden]{display:none}
@@ -276,8 +449,17 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-text-info)}
 @keyframes sift-bt-rot{to{transform:rotate(360deg)}}
 /* Batch group-header tri-state checkbox (Ready-to-file format groups + Fakes). */
 .sift-bgrp-head{display:flex;align-items:center;gap:8px;padding:3px 9px}
+/* Vertical gap between adjacent selected rows (annotation: "augmente l'espacement pour que les
+   cases selectionnées ne se fondent pas les unes dans les autres") — .bx-row is styled inline
+   (sift-live.ts) with no margin of its own, so back-to-back selected rows (translucent bg, no
+   border) had nothing separating them. */
+.bx-row+.bx-row{margin-top:3px}
 .sift-bgrp-box{flex:none;width:15px;height:15px;border-radius:var(--border-radius-sm);display:inline-flex;align-items:center;justify-content:center;border:1.5px solid var(--color-border-secondary);background:transparent;color:var(--color-text-tertiary);font-size:var(--text-xs)}
-.sift-bgrp-box.on{border-color:var(--color-text-success);background:var(--color-text-success);color:var(--color-background-primary)}
+/* Both "full" and "partial" now share the info tone (annotation: "parfois bleu parfois vert ? Devrait
+   etre bleu quand selectionné, point") — .on used to borrow the green success color, which read as an
+   unrelated status (verdict-like) rather than a plain selection state; info is the tone already used
+   app-wide for "selected"/"active" (.fld.on, .chip.on). */
+.sift-bgrp-box.on{border-color:var(--color-text-info);background:var(--color-text-info);color:var(--color-background-primary)}
 .sift-bgrp-box.partial{border-color:var(--color-text-info);color:var(--color-text-info)}
 /* The single rail action button (adaptive Filer/Discarder / Stop) — same sizing/weight as the
    Détail rail's .sift-ranger-btn (inherits the generic button rule), just with its own variant
@@ -288,7 +470,10 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-text-info)}
    button inside becomes a direct flex child of #filfoot, staying on the same line as
    Destination/Format/Selection (audit 2026-07-05, "tout sur une ligne"). */
 .sift-baction-slot{display:contents}
-.sift-genres{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;margin-bottom:4px}
+/* min-height reserved (annotation: "laisser suffisament d'espace... pour ne rien déplacer") — empty
+   (no genres yet) collapsed to 1px, so everything below jumped down once chips appeared after
+   identify; one chip-row's worth of height now, empty or not. */
+.sift-genres{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px;margin-bottom:4px;min-height:21px}
 .sift-genre-chip{font-size:11px;padding:2px 8px;border-radius:var(--border-radius-pill);cursor:default}
 .sift-genre-chip-house{background:var(--color-hue-teal-bg);color:var(--color-hue-teal-text)}
 .sift-genre-chip-techno{background:var(--color-hue-indigo-bg);color:var(--color-hue-indigo-text)}
@@ -315,7 +500,10 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-text-info)}
 /* Field whose displayed value is NOT yet written to the file (see refreshDiscrepancy): desaturated +
    italic + a SOLID amber border (no dashes), using warning tokens. !important overrides the inputs'
    inline border. */
-.sift-tag-stale{font-style:italic;filter:saturate(.55);border:1px solid var(--color-text-warning)!important;background:var(--color-background-warning)!important;border-radius:var(--border-radius-md)!important;padding:3px 5px}
+/* padding matched to .sift-editor-input's own (4px 7px, not 3px 5px) — annotation: "la case ne
+   semble pas de la même taille que les autres dans la section" — this box sits among the other
+   field-like boxes in Métadonnées and had its own smaller padding, reading as an odd size out. */
+.sift-tag-stale{font-style:italic;filter:saturate(.55);border:1px solid var(--color-text-warning)!important;background:var(--color-background-warning)!important;border-radius:var(--border-radius-md)!important;padding:4px 7px}
 /* ── Journal d'actions ──────────────────────────────────────────────── */
 .jrnl-wrap{display:flex;flex-direction:column;gap:var(--space-8);padding-bottom:var(--space-16)}
 /* Header */
@@ -387,35 +575,78 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
    its text below the vertical center of the neighboring button labels. */
 .sift-kbd-hints{font-size:var(--text-xs);letter-spacing:.03em;color:var(--color-text-tertiary);display:flex;gap:16px;flex-wrap:wrap}
 .sift-kbd-hints b{font-weight:600;color:var(--color-text-secondary)}
-/* !important on background/border/radius: something in the cascade was silently preventing
-   these from rendering (couldn't find the source rule) — forcing them so the card is visible
-   and matches the Identification/Verdict cards below it, same border+padding+radius values. */
-.sift-player-row{display:flex;flex-direction:column;gap:14px;margin-bottom:11px;padding:14px 16px;background:var(--color-background-secondary)!important;border:0.5px solid var(--color-border-tertiary)!important;border-radius:var(--border-radius-lg)!important}
-.sift-player-audition{display:flex;align-items:center;gap:12px}
-.sift-play-btn{flex:none;width:var(--h-36);height:var(--h-36);border-radius:50%;display:inline-flex;align-items:center;justify-content:center;padding:0;border:none;background:var(--color-text-primary)}
-.sift-play-btn i{font-size:var(--text-base);color:var(--color-background-primary)}
+/* Its own strip directly above the rail (annotation: "en bas de page... juste au dessus et rester
+   toujours visible") — no longer one of the rail's flex-wrap items, so it can't get squeezed/
+   hidden under width pressure. No background of its own (2nd annotation: "garde le texte, supprime
+   le cadre") — just text, centered in the page (justify-content:center, not left-padded like the
+   rail below it). margin-top matches #rvinspector's own bottom margin, so the strip sits centered
+   in the breathing room between #filfoot and the bottom of the Sift window instead of hugging the
+   rail. */
+.sift-kbd-legend{flex:none;display:flex;justify-content:center;margin-top:10px;padding:6px 15px}
+/* Card background+shadow restored again 2026-07-07 (follow-up annotation: "je préferais en plein
+   je crois, mais de la meme couleur") — went transparent/continuous earlier the same day to match
+   the Diagnostic/Métadonnées toggles, then back to filled once more: the toggles' own wrappers
+   (.sift-spectro-box/.sift-fil-editor.sift-fil-editor-margin, below) now carry this exact same
+   background+shadow instead, so all 4 stay consistent as filled cards, not flat ones. */
+.sift-player-row{display:flex;flex-direction:column;gap:18px;margin-bottom:14px;padding:16px 18px;background:var(--color-background-queue);border-radius:var(--border-radius-lg);box-shadow:var(--shadow-panel-subtle)}
+/* gap sized so the waveform's left edge lines up with the title block's left edge above it
+   (annotation: "aligne les deux") — header-body starts at 68px cover + 14px gap = 82px; here the
+   play button starts at its own 11px margin-left and is 46px wide, so the wave needs
+   82 - 11 - 46 = 25px of gap to start at that same 82px. */
+.sift-player-audition{display:flex;align-items:center;gap:25px}
+/* margin-left: (68px cover - 46px button) / 2 = 11px, so this button's center lines up with the
+   cover frame's center directly above it (annotation: "aligne les deux par leur centre") — both
+   were flush-left before, off-center by that same 11px. */
+/* fill/icon swapped from --color-text-primary/--color-background-primary to
+   --color-surface-raised/--color-text-primary (annotation: "trop blanc" — the bright fill was
+   sized for the card background this button used to sit on, which no longer surrounds it; a
+   moderate neutral fill with a light icon reads calmer against the flat inspector). */
+.sift-play-btn{flex:none;width:46px;height:46px;margin-left:11px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;padding:0;border:none;background:var(--color-surface-raised)}
+.sift-play-btn i{font-size:var(--text-xl);color:var(--color-text-primary)}
 /* background re-asserted here: the generic button:hover{background:var(--color-background-secondary)}
    (specificity 0,1,1) otherwise beats this button's own non-hover background rule (0,1,0), so on
-   hover the circle silently repainted to the card's own background color — same token as
-   .sift-player-row's card behind it — and visually vanished into its case. */
-.sift-play-btn:hover{background:var(--color-text-primary);filter:brightness(0.9)}
-.sift-player-header{display:flex;align-items:center;gap:12px;margin-bottom:11px}
+   hover the circle silently repainted to a card background token that no longer surrounds it and
+   visually vanished. */
+.sift-play-btn:hover{background:var(--color-surface-raised);filter:brightness(1.1)}
+.sift-player-header{display:flex;align-items:center;gap:14px;margin-bottom:0}
 /* Cover frame: real art fills it once identified (.sift-player-cover unhides, sits above the
-   ::before at z-index 1 and covers it completely). Until then the ::before pseudo-element draws
-   a minimalist vinyl disc (grooves + label + spindle hole) inset from the square sleeve edge —
-   no external asset, so a track always shows *something* here instead of empty/broken. */
-.sift-cover-frame{width:48px;height:48px;border-radius:6px;flex:none;position:relative;overflow:hidden;background:var(--color-background-tertiary)}
-.sift-cover-frame::before{content:"";position:absolute;inset:3px;border-radius:50%;background:radial-gradient(circle at 50% 50%,#111 0 9%,transparent 9.5%),repeating-radial-gradient(circle at 50% 50%,rgba(255,255,255,.12) 0 1px,transparent 1px 5px),#2c2822}
+   fallback icon and covers it completely). Until then a plain abstract note glyph shows instead
+   of a drawn vinyl disc (annotation: "l'icone fait trop redondant avec le bouton play... plus
+   minimaliste vectoriel") — two circular shapes (play button + vinyl) sitting this close read as
+   duplicated; a flat icon glyph sidesteps that. Enlarged to 68px (continuous-surface redesign) —
+   the hero is the primary listening point on the page. Frame bg raised to --color-surface-raised
+   (a step lighter than tertiary) for contrast against the icon. */
+.sift-cover-frame{width:68px;height:68px;border-radius:8px;flex:none;position:relative;overflow:hidden;background:var(--color-surface-raised);display:flex;align-items:center;justify-content:center}
+.sift-cover-fallback{font-size:28px;color:var(--color-text-tertiary)}
+/* Real art present → hide the fallback glyph entirely (its own equivalent of the old ::before/
+   z-index approach, now that there's no ::before to layer under the <img>). */
+.sift-cover-frame:has(.sift-player-cover:not([hidden])) .sift-cover-fallback{display:none}
 /* :not([hidden]) matters: any author rule beats the UA [hidden]{display:none} regardless of
    specificity (origin wins before specificity), so a plain .sift-player-cover{display:block}
    would force the element visible even with the hidden attribute/property set — exactly what
    silently defeated the onIdentityApplied/restoreIdentifiedLine onerror fallback (hidden=true
    had zero visual effect, so a failed cover load stayed on-screen as a broken-image glyph). */
 .sift-player-cover:not([hidden]){position:relative;z-index:1;width:100%;height:100%;object-fit:cover;display:block}
-.sift-player-header-body{min-width:0;flex:1}
-.sift-player-name{font-size:var(--text-lg);font-weight:600;color:var(--color-text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.sift-player-sub{font-size:var(--text-sm);color:var(--color-text-secondary);margin-top:1px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.sift-player-path{font-size:var(--text-xs);color:var(--color-text-tertiary);font-family:var(--font-mono);margin-top:2px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* justify-content:center + wider line gaps (annotation: "ajuste le texte pour qu'il prenne la meme
+   place que l'icone/pochette") — the 3-line text stack was a compact ~50px block centered inside
+   the 68px-tall header row (cover's own height), floating with visible empty space above/below;
+   spreading the lines out closer to that same 68px makes the text column read as filling the same
+   vertical footprint as the cover next to it, instead of a smaller block adrift in a taller row. */
+.sift-player-header-body{min-width:0;flex:1;display:flex;flex-direction:column;justify-content:center;gap:4px}
+/* --text-xl → --text-2xl (annotation: "la taille du texte hero pour qu'elle fit la vignette") —
+   16px read as small next to the 68px cover; 26px is the only step big enough to feel like an
+   actual hero title at this row height. (--text-2xl had no title consumer before this — its
+   dedicated hero-title role, not reused casually.) */
+.sift-player-name{font-size:var(--text-2xl);font-weight:600;color:var(--color-text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* Bumped one step each (annotation: "augmente encore le texte pour que ça fit aussi en haut" —
+   the block reached the cover's bottom edge once centered but still fell short of the top; more
+   overall block height, not just the title, closes that remaining gap). Artist bumped again +
+   weight 500 (annotation: "l'artiste est trop mis en retrait") — at 26px/600 vs 12px/400 the gap
+   to the title read as artist being an afterthought rather than the track's other, equally
+   identifying half. */
+.sift-player-sub{font-size:var(--text-lg);font-weight:500;color:var(--color-text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sift-report-text-pending{visibility:hidden}
+.sift-player-path{font-size:var(--text-sm);color:var(--color-text-tertiary);font-family:var(--font-mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sift-wave-wrap{position:relative;flex:1;min-width:0}
 .sift-player-wave{cursor:pointer;transition:opacity .15s ease}
 .sift-wave-wrap.is-paused .sift-player-wave{opacity:.55}
@@ -426,31 +657,89 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-time-elapsed,.sift-time-total{position:absolute;bottom:3px;font-family:var(--font-mono);font-size:var(--text-xs);font-weight:500;line-height:1.2;padding:2px 6px;border-radius:var(--border-radius-sm);background:rgba(0,0,0,.55);pointer-events:none}
 .sift-time-elapsed{left:6px;color:var(--color-waveform-elapsed)}
 .sift-time-total{right:6px;color:rgba(255,255,255,.7)}
-.sift-player-controls{display:flex;align-items:center;gap:14px}
+/* margin-left:82px matches where the waveform starts directly above (68px cover + 14px header gap
+   = 82px, same math already used to align the wave itself — see .sift-player-audition's own
+   comment) — the volume icon is this row's first item, so it now lines up with the wave's left
+   edge instead of sitting flush at the row's own left edge. */
+.sift-player-controls{display:flex;align-items:center;gap:14px;margin-left:82px}
 .sift-slider-block{flex:none;width:130px;display:flex;flex-direction:column;gap:6px}
+/* Collapsed to just an icon at rest (annotation: "le bouton de volume qui collapse et qui s'ouvre
+   seulement en hover") — width transition + overflow:hidden clips the label/track, which stay in
+   normal flow (not removed), so re-expanding needs no re-render. The icon is a separate absolutely
+   positioned layer, faded out once expanded. */
+.sift-volume-block{position:relative;width:20px;overflow:hidden;transition:width .18s ease}
+/* :has(.dragging) added (bug report: "il est tout buggé ton volume") — pure :hover meant the
+   block collapsed the instant the cursor left its 20px hit-box, which happens constantly mid-drag
+   (dragging the thumb across the full 130px track moves the cursor well outside that 20px zone) —
+   the slider visually vanished while still being actively dragged. Forcing it open whenever the
+   track itself is mid-drag (report-view.ts's dragSlider already toggles this class on
+   mousedown/mouseup) keeps it open for the whole gesture regardless of cursor position. */
+.sift-volume-block:hover,.sift-volume-block:focus-within,.sift-volume-block:has(.sift-slider-track.dragging){width:130px}
+/* Bigger now that it's the control's only identity, no label alongside it (annotation: "enlever
+   le texte Volume et grossir l'icone"). */
+.sift-volume-icon{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:18px;color:var(--color-text-tertiary);opacity:1;transition:opacity .12s ease;pointer-events:none}
+/* Track explicitly hidden at rest (bug report: "la barre devrait totalement disparaitre à part en
+   survol, type youtube") — the icon has no opaque background, so it only visually OVERLAPPED the
+   rail without hiding it; the narrow 20px sliver of rail/fill still showed through around the
+   glyph. Opacity:0 (on top of the width clip) fully removes it, YouTube-style. */
+/* margin (not padding — dragSlider's math reads the track's OWN rect, so this shrinks that rect
+   instead of just visually offsetting it) leaves room for the thumb at each end. Needed now that
+   .sift-volume-block clips with overflow:hidden — at 100% volume the thumb (13px, centered via
+   translateX(-50%)) used to have its right half clipped off (bug report: "la boule de sélection
+   est tronquée quand le volume est à fond"). */
+.sift-volume-block .sift-volume-track{opacity:0;transition:opacity .12s ease;margin:0 7px}
+.sift-volume-block:hover .sift-volume-icon,.sift-volume-block:focus-within .sift-volume-icon,.sift-volume-block:has(.sift-slider-track.dragging) .sift-volume-icon{opacity:0}
+.sift-volume-block:hover .sift-volume-track,
+.sift-volume-block:focus-within .sift-volume-track,
+.sift-volume-block:has(.sift-slider-track.dragging) .sift-volume-track{opacity:1}
 .sift-slider-label{font-size:var(--text-3xs);letter-spacing:.1em;text-transform:uppercase;color:var(--color-text-tertiary);display:flex;align-items:center;justify-content:space-between}
 .sift-tempo-out{font-family:var(--font-mono);color:var(--color-text-secondary);text-transform:none;letter-spacing:0}
-.sift-slider-track{position:relative;height:16px;display:flex;align-items:center;cursor:pointer}
-.sift-slider-rail{position:absolute;left:0;right:0;height:3px;border-radius:2px;background:var(--color-border-secondary)}
-.sift-slider-fill{position:absolute;height:3px;border-radius:2px;background:var(--color-text-info);pointer-events:none}
-.sift-slider-thumb{position:absolute;top:50%;transform:translate(-50%,-50%) scale(1);width:13px;height:13px;border-radius:50%;background:var(--color-background-primary);border:1.5px solid var(--color-text-info);pointer-events:none;transition:transform .08s,box-shadow .08s}
+.sift-slider-track{position:relative;height:16px;display:flex;align-items:center;cursor:pointer;touch-action:none;user-select:none}
+/* --color-border-secondary → --color-track (annotation: "devraient avoir la meme couleur" —
+   measured via CDP pixel sampling: the volume and tempo rails render at visibly different RGB
+   values despite sharing this exact CSS rule, because --color-border-secondary is a TRANSLUCENT
+   white/black overlay tint, designed to blend with whatever sits behind it — the two sliders don't
+   sit over an identical backdrop, so the same translucent value alpha-blends to two different
+   final colors. --color-track is an opaque, dedicated "slider track" token (already exists,
+   unused until now) — same value in both places regardless of backdrop. */
+.sift-slider-rail{position:absolute;left:0;right:0;height:3px;border-radius:2px;background:var(--color-track)}
+/* --color-text-info → --color-surface-raised (annotation: "trop blanc" — same fix as the play
+   button, same reasoning: text-info resolves to the same bright off-white as text-primary in dark
+   mode, sized for a card surface that no longer exists here). */
+.sift-slider-fill{position:absolute;height:3px;border-radius:2px;background:var(--color-surface-raised);pointer-events:none}
+.sift-slider-thumb{position:absolute;top:50%;transform:translate(-50%,-50%) scale(1);width:13px;height:13px;border-radius:50%;background:var(--color-background-primary);border:1.5px solid var(--color-surface-raised);pointer-events:none;transition:transform .08s,box-shadow .08s}
 .sift-slider-track:hover .sift-slider-thumb{transform:translate(-50%,-50%) scale(1.15)}
 .sift-slider-track.dragging .sift-slider-thumb{transform:translate(-50%,-50%) scale(1.3);box-shadow:0 0 0 4px var(--overlay-selected)}
+/* Volume opts out of the scale+glow click feedback (bug report: "bizarre le feedback sur la boule
+   quand on clique dessus") — on this track the reveal itself (width expanding, opacity fading in)
+   is already two animations firing at click time; adding a 3rd (thumb scale+glow) on top read as
+   noisy rather than a single clear response to the click. */
+.sift-volume-track:hover .sift-slider-thumb,
+.sift-volume-track.dragging .sift-slider-thumb{transform:translate(-50%,-50%) scale(1);box-shadow:none}
 .sift-player-spacer{flex:1}
 .sift-key-block{flex:none;display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer}
-.sift-key-btn{font-family:var(--font-mono);font-size:var(--text-xs);padding:4px 10px;border-radius:var(--border-radius-md);border:1px solid var(--color-border-tertiary);background:transparent;font-weight:600}
+/* min-width+centered text added (annotation: "devrait avoir la meme taille on ou off") — the JS
+   toggle (report-view.ts refreshKey) only changes background/color/border-color between states,
+   never size, but the label text itself does ("ON" vs "OFF" — one character longer), so the fixed
+   padding alone let the button's overall width shrink/grow with the label. min-width pinned to fit
+   "OFF" (the wider state) at this font, so both states render at the same size. */
+.sift-key-btn{font-family:var(--font-mono);font-size:var(--text-xs);padding:4px 10px;min-width:38px;text-align:center;border-radius:var(--border-radius-md);border:1px solid var(--color-border-tertiary);background:transparent;font-weight:600}
 .sift-vchip{display:inline-flex;align-items:center;padding:3px 9px;border-radius:var(--border-radius-pill);font-size:var(--text-xs);font-weight:600;letter-spacing:.03em}
-.sift-verdict-card{display:flex;align-items:center;flex-wrap:wrap;border-radius:var(--border-radius-lg);padding:14px 16px;margin-bottom:11px}
-.sift-verdict-main{flex:1;min-width:0}
-.sift-verdict-head{display:flex;align-items:center;gap:7px;margin-bottom:9px}
-.sift-verdict-head i{font-size:var(--text-xl)}
-.sift-verdict-label{font-size:var(--text-xl);font-weight:600}
+/* Verdict conclusion pill removed entirely (annotation: "supprime ça en fait") — duplicated the
+   tone-coded quality badge already in the Diagnostic audio disclosure header. */
 .sift-vchips-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
-.sift-verdict-finalname-col{flex:none;max-width:46%;text-align:right;margin-left:auto}
-.sift-verdict-finalname-label{font-size:9.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--color-text-tertiary);margin-bottom:3px}
-.sift-verdict-finalname{font-family:var(--font-mono);font-size:11.5px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.sift-spectro-box{margin-bottom:11px;background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);overflow:hidden}
-.sift-spectro-toggle{width:100%;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 11px;background:var(--color-background-secondary);border:none;color:var(--color-text-primary);cursor:pointer;font-size:var(--text-sm);text-align:left}
+/* background+shadow added (annotation 2026-07-07: "je préferais en plein je crois, mais de la meme
+   couleur") — matches .sift-player-row/.sift-action-rail's own card treatment (same token, same
+   shadow), so the Diagnostic disclosure reads as the same family of card as the hero/rail instead
+   of sitting flat on the inspector's continuous background. Zero own padding kept — the toggle/
+   declared/rows children already carry their own 18px horizontal inset (see comments below), so
+   the background just wraps snugly around content already positioned correctly. */
+.sift-spectro-box{margin-bottom:11px;background:var(--color-background-queue);border-radius:var(--border-radius-lg);box-shadow:var(--shadow-panel-subtle)}
+/* Section header label: a PERMANENT pill (annotation, 2nd round) — not just the generic
+   button:hover rect that used to make it look "bulle" only transiently on hover. The toggle
+   row itself stays full-width/clickable (aria-expanded, caret) and transparent; only the label
+   text is pilled, same family as the conclusion's status pill but a distinct, neutral tone. */
+.sift-zone-toggle-pill{display:inline-flex;align-items:center;padding:3px 10px;border-radius:var(--border-radius-pill);background:var(--overlay-selected)}
 .sift-spectro-caret{display:inline-block;transition:transform .25s;color:var(--color-text-tertiary)}
 .sift-spectro-hint{font-size:var(--text-sm);color:var(--color-text-info);flex:none}
 /* Grid 0fr→1fr trick instead of animating max-height: max-height forces a full layout
@@ -459,13 +748,16 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-spectro-body{display:grid;grid-template-rows:0fr;transition:grid-template-rows .3s ease}
 .sift-spectro-body.is-open{grid-template-rows:1fr}
 .sift-spectro-body-inner{overflow:hidden;min-height:0}
-.sift-spectro-declared{padding:8px 11px;font-size:var(--text-xs);color:var(--color-text-tertiary);border-bottom:0.5px solid var(--color-border-tertiary);line-height:1.5}
+.sift-spectro-declared{padding:8px 18px;font-size:var(--text-xs);color:var(--color-text-tertiary);line-height:1.5}
 /* Toggle de zone partagé (Diagnostic ET Métadonnées) — un seul style pour les deux disclosures,
    pour qu'elles lisent comme le même composant (retour utilisateur 2026-07-05 : elles avaient
    deux styles différents et une seule des deux zones avait un fond teinté). */
 .sift-zone-toggle{width:100%;display:flex;align-items:center;justify-content:space-between;
   background:none;border:none;cursor:pointer;text-align:left;padding:6px 0;
-  font-size:var(--text-sm);color:var(--color-text-secondary);font-family:inherit}
+  font-size:var(--text-sm);color:var(--color-text-secondary);font-family:inherit;
+  border-radius:var(--border-radius-md);transition:box-shadow .15s ease}
+/* Very light hover shadow as a collapse/expand affordance hint (annotation on both toggles). */
+.sift-zone-toggle:hover{box-shadow:var(--shadow-panel-subtle)}
 /* Measured via CDP against the real running app: the row's tallest child (the badge, 19px) sat
    ~4px above true center because the old padding was 2px top / 10px bottom (asymmetric) —
    consistent between both toggles, so they matched each other, but neither was actually centered.
@@ -475,20 +767,39 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
    are different container shapes by design, and inflating this toggle's own padding to compensate
    for that (tried: 16/16/24 — looked oversized/goofy) was solving the wrong problem. Match
    Métadonnées's toggle at the row level instead: same vertical padding as .sift-zone-toggle
-   already gives it, just enough horizontal (11px) to line up with the sibling rows below
-   (.sift-spectro-declared/.sift-spectro-rows, both 11px) instead of sitting flush against the
-   box edge. */
-.sift-zone-toggle.sift-spectro-toggle{padding:6px 11px}
+   already gives it, horizontal padding to line up with the sibling rows below
+   (.sift-spectro-declared/.sift-spectro-rows) instead of sitting flush against the
+   box edge. Bumped 11px→18px (annotation: "aligne le panneau du bas sur celui du hero, surtout
+   sur la gauche") to match .sift-player-row's own 18px inset exactly. */
+/* #sift-meta-toggle restored to this rule (annotation, 3rd round: "n'a pas la meme largeur que
+   celle de diagnostic audio") — giving the PARENT card horizontal padding (previous fix) aligned
+   the badges but left the TOGGLE ELEMENT itself narrower than Diagnostic's (whose box has zero
+   padding, so its toggle's own width:100% spans the full box). Mirroring Diagnostic exactly — box
+   at 0 padding, toggle owns its own inset — makes both toggles the same width; the rest of the
+   editor's body content gets its inset from #sift-meta-body instead (below), not from the editor
+   card, so nothing else regresses. */
+.sift-zone-toggle.sift-spectro-toggle,#sift-meta-toggle{padding:6px 18px}
 .sift-zone-toggle-car{display:inline-block;margin-right:6px;color:var(--color-text-tertiary);
   transition:transform .15s ease}
 .sift-zone-toggle-open .sift-zone-toggle-car{transform:rotate(90deg)}
 .sift-zone-toggle-right{display:flex;align-items:center;gap:8px}
+/* Root cause of the badge misalignment, found by CDP measurement against the real running app
+   (not guessed): .sift-zone-toggle-right is a flex row of [badge, hint] with gap:8px — an EMPTY
+   hint span (the steady state for Métadonnées always, and Diagnostic outside its transient
+   "calcul…"/"échec" text) still consumed its 8px gap at zero width, pushing the badge 8px left of
+   the container's true right edge. Collapsing it out of flow when empty reclaims that gap, so
+   LOSSLESS/CDJ badges land exactly where the verdict pill's own math already put it. */
+.sift-zone-toggle-hint:empty{display:none}
 .sift-zone-toggle-hint{font-size:var(--text-xs);color:var(--color-text-tertiary)}
 .sift-zone-toggle-body{display:none}
 .sift-zone-toggle-body.sift-zone-toggle-body-open{display:block}
 /* Badge d'en-tête (ex. "MP3 ≈ X kbps", "CDJ incompatible") — visible replié, cohérent avec
    .sift-vchip existant mais sans dépendre de sa mise en page en ligne de "Preuves". */
-.sift-chip-badge{font-size:var(--text-2xs);font-weight:600;padding:4px 9px;
+/* Uppercase + tracking (annotation: "fais en sorte que le texte soit plus homogene dans ces deux
+   cases") — LOSSLESS was already all-caps jargon (see the English-jargon allowlist), while CDJ
+   compatible/incompatible was sentence case; same badge shape, same case treatment now, matching
+   the small-label convention already used elsewhere (.col-h, .sift-final-name-label, etc.). */
+.sift-chip-badge{font-size:var(--text-2xs);font-weight:600;padding:4px 9px;text-transform:uppercase;letter-spacing:.03em;
   border-radius:var(--border-radius-pill);border:none;font-family:inherit}
 /* Flash de confirmation sur .sift-identified-line au moment où un choix Discogs vient d'être
    appliqué (onIdentityApplied, Task 4 Step 5) — jamais sur une réouverture
@@ -507,8 +818,14 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-id-btn-neutral{background:var(--color-surface-raised);border-color:var(--color-border-tertiary);
   color:var(--color-text-secondary);font-weight:500}
 .sift-id-btn-neutral:hover{background:var(--color-row-active)}
-.sift-spectro-canvas{width:100%;display:block;background:#000}
-.sift-spectro-rows{padding:9px 11px;display:grid;grid-template-columns:1fr 1fr;gap:0 28px;font-size:var(--text-md)}
+/* width:100% → calc(...)+margin (annotation: "reduis .sift-sg.sift-spectro-canvas pour qu'il fit
+   la largeur des .sift-row") — .sift-spectro-declared/.sift-spectro-rows both have their own 18px
+   horizontal padding, but this canvas bled edge-to-edge of their shared container
+   (.sift-spectro-body-inner has none), so it visually overflowed past the rows above/below it.
+   drawSpectrogram (report-view.ts) already reads the canvas's real rendered width via
+   getBoundingClientRect() to size its backing store, so it adapts automatically — no JS change. */
+.sift-spectro-canvas{width:calc(100% - 36px);margin:0 18px;display:block;background:#000}
+.sift-spectro-rows{padding:9px 18px;display:grid;grid-template-columns:1fr 1fr;gap:0 28px;font-size:var(--text-md)}
 .sift-row{display:flex;justify-content:space-between;gap:16px;padding:3px 0;border-bottom:0.5px solid var(--color-border-tertiary)}
 /* Last visual row (2-col grid, row() called an even number of times below) sits flush against
    .sift-spectro-box's own border — its border-bottom just doubled that edge as a second line. */
@@ -568,29 +885,38 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-chip-disabled{opacity:.4;cursor:not-allowed}
 .sift-col-h-tight{margin-bottom:4px}
 .sift-fmt-chips{display:flex;flex-wrap:wrap;gap:5px}
-.sift-editor-title{margin-bottom:6px}
-.sift-editor-badge-row{margin-bottom:8px}
-.sift-ident-head{display:flex;align-items:center;justify-content:space-between;gap:10px;margin-bottom:8px}
-.sift-ident-edit-btn{flex:none;display:inline-flex;align-items:center;justify-content:center;width:26px;height:26px;padding:0;border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);background:var(--color-background-secondary);color:var(--color-text-secondary);cursor:pointer}
-.sift-ident-edit-btn:hover{color:var(--color-text-primary)}
 .sift-ident-display{font-size:var(--text-lg);font-weight:500;margin-bottom:10px}
-.sift-ident-done-btn{align-self:flex-start;margin-bottom:10px;padding:5px 12px;border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);background:var(--color-background-secondary);color:var(--color-text-primary);font-size:var(--text-sm);cursor:pointer}
-.sift-badge-ok{display:inline-flex;align-items:center;gap:4px;font-size:var(--text-xs);color:var(--color-text-success)}
-.sift-badge-ok i{font-size:var(--text-sm)}
-.sift-badge-warn{display:inline-flex;align-items:center;gap:4px;font-size:var(--text-xs);color:var(--color-text-warning)}
-.sift-badge-warn i{font-size:var(--text-sm)}
-.sift-id-btn-full{width:100%;margin-bottom:8px}
+/* No longer full-width (annotation: "les boutons n'ont pas besoin d'etre aussi larges") — sizes
+   to its own content now, like every other button in this section. */
+.sift-id-btn-full{margin-bottom:8px}
 .sift-cands-host{margin-bottom:8px}
-.sift-editor-fields{display:grid;grid-template-columns:1fr;gap:5px;margin-bottom:8px}
+/* 3 columns, one row when there's room (annotation: "les cases Artiste Titre Version sont
+   toujours bien trop longues") — these are short strings, not paragraphs; stretching each across
+   the full editor width read as excessive. auto-fit/minmax (not a fixed 1fr 1fr 1fr) added after a
+   follow-up annotation ("pas assez grand pour afficher tout proprement") — #qcol's own resize
+   handle lets the user shrink the inspector's width a lot, and a rigid 3-equal-column grid kept
+   squeezing all three fields even when there wasn't room for a real artist/title to be readable;
+   this drops to 2 then 1 column automatically once each column would go under 140px. */
+.sift-editor-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:8px}
+.sift-editor-field{display:flex;flex-direction:column;gap:2px}
+.sift-editor-field-label{font-size:10px;letter-spacing:.05em;color:var(--color-text-tertiary);text-transform:uppercase}
 .sift-editor-input{font-size:var(--text-md);padding:4px 7px;background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);color:var(--color-text-primary);min-width:0}
 .sift-genres-box{margin-bottom:10px;min-height:1px}
-.sift-applytags-btn{width:100%;font-size:var(--text-sm);color:var(--color-text-secondary)}
+/* Bg+border toujours visibles (pas 2 tons au repos, l'un plein l'autre transparent jusqu'au
+   hover) — boutons de confirmation "neutres" de la carte Identification. */
+.sift-applytags-btn{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;margin-top:var(--space-8);font-size:var(--text-sm);color:var(--color-text-primary);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);background:var(--color-background-secondary)}
+/* Flash bref à la confirmation puis retour neutre (jamais un vert permanent) — même convention que
+   .sift-identified-flash (voir plus haut) et .sift-id-btn-neutral, appliquée ici pour la 4e fois. */
+.sift-applytags-flash{animation:sift-applytags-flash .7s ease}
+@keyframes sift-applytags-flash{
+  0%{color:var(--color-text-secondary)}
+  30%{color:var(--color-text-success)}
+  100%{color:var(--color-text-primary)}
+}
 .sift-rebuy{margin-bottom:10px}
 .sift-rebuy:empty{margin-bottom:0}
 .sift-rebuy-btn{width:100%;font-size:var(--text-sm);font-weight:500;color:var(--color-text-warning);background:var(--color-background-warning);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md)}
 .sift-kbd-hint-id{font-size:var(--text-2xs);border-color:rgba(0,0,0,.18);color:rgba(0,0,0,.5)}
-.sift-release-line{display:flex;align-items:center;gap:6px;font-size:var(--text-sm);color:var(--color-text-secondary);margin-bottom:10px}
-.sift-release-line i{font-size:var(--text-md);color:var(--color-text-tertiary)}
 .sift-identified-line{display:flex;align-items:center;gap:7px;padding:4px 2px}
 .sift-identified-cover{width:28px;height:28px;border-radius:3px;object-fit:cover;flex:none}
 .sift-identified-noart{width:28px;height:28px;border-radius:3px;background:var(--color-background-secondary);display:inline-flex;align-items:center;justify-content:center;flex:none}
@@ -602,7 +928,10 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-goto-reglages{margin-top:5px;font-size:var(--text-sm);padding:3px 9px}
 .sift-toast{position:fixed;right:18px;bottom:18px;z-index:9998;display:flex;align-items:center;gap:12px;background:var(--color-background-secondary);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:9px 13px;font-size:var(--text-md);color:var(--color-text-primary);box-shadow:var(--shadow-toast)}
 .sift-toast-undo{font-size:var(--text-sm);padding:2px 9px}
-.sift-filed-banner{margin-top:12px;padding:7px 10px;background:var(--color-background-success);border-radius:var(--border-radius-md);font-size:var(--text-sm)}
+/* flex:1 0 100% forces its own line in the #filfoot flex-wrap row regardless of prepend/append order
+   — without it the banner just squeezed in next to the compact action buttons (2026-07-06 annotation:
+   read as inert/easy to miss, on top of sitting last in DOM order — see showFiledConfirm). */
+.sift-filed-banner{flex:1 0 100%;margin-bottom:12px;padding:7px 10px;background:var(--color-background-success);border-radius:var(--border-radius-md);font-size:var(--text-sm)}
 .sift-filed-banner-head{display:flex;align-items:center;gap:6px;margin-bottom:5px}
 .sift-filed-banner-head i{font-size:var(--text-md);color:var(--color-text-success)}
 .sift-filed-banner-label{color:var(--color-text-success);font-weight:500}
@@ -628,21 +957,24 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
    own flex:1/overflow:auto never activates there — this outer one is what grows a scrollbar when
    the spectrogram accordion opens. scrollbar-gutter:stable was applied to the wrong element before. */
 .sift-fil-scroll{flex:1;min-height:0;overflow:auto;overflow-y:scroll;scrollbar-gutter:stable}
-.sift-fil-editor-margin{margin-top:8px;padding-top:8px;border-top:0.5px solid var(--color-border-tertiary)}
-/* Identification card border (Sift.dc.html:309: background:var(--card);border:1px solid
-   var(--border);border-radius:11px) — was plain (no card), confirmed gap in
-   audit-fidelite-2026-07-02.md décision #2. Compound selector wins over the plain
-   .sift-fil-editor-margin border-top above (equal specificity would tie by source order —
-   this makes the override explicit rather than accidental). */
-.sift-fil-editor.sift-fil-editor-margin{background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);padding:14px 16px;border-top:0.5px solid var(--color-border-tertiary)}
-/* Collapsed (body hidden): the card's own 14px top/bottom padding was framing a single 31px row
-   the same as it frames the full Identification section when open — measured via CDP against the
-   real running app: 61px tall vs. Preuve's naturally snug 33px (.sift-spectro-box has no padding
-   of its own), which is what actually read as "too big" / goofy. Zero out only the vertical
-   padding while collapsed — horizontal stays at 16px so the toggle's text doesn't jump sideways
-   when it opens back up to the full padding. */
-.sift-fil-editor.sift-fil-editor-margin:has(> .sift-zone-toggle:not(.sift-zone-toggle-open)){padding-top:0;padding-bottom:0}
+/* Continuous-surface redesign (2026-07-06): no layout-separator border here anymore — spacing
+   alone (margin) separates the blocks stacked on the inspector's own surface. Was a border-top
+   hairline before this pass; removed along with the compound .sift-fil-editor card look below. */
+.sift-fil-editor-margin{margin-top:8px}
+/* Card background+shadow restored 2026-07-07 (annotation: "je préferais en plein je crois, mais de
+   la meme couleur") — the "plain, sits on the continuous surface" 2026-07-06 treatment is reversed;
+   matches .sift-spectro-box exactly (same token/shadow/radius, same zero own padding so the toggle
+   inside — which owns its own 18px inset, see .sift-zone-toggle.sift-spectro-toggle,#sift-meta-toggle
+   above — stays the same width as Diagnostic's card). The rest of the body content still gets its
+   18px from #sift-meta-body (below), not from this card. */
+.sift-fil-editor.sift-fil-editor-margin{padding:0;background:var(--color-background-queue);border-radius:var(--border-radius-lg);box-shadow:var(--shadow-panel-subtle)}
+/* Carries the inset for everything BELOW the toggle (ident-head, inputs, genres, etc.) now that the
+   card itself (above) no longer provides it. Vertical padding keeps the first action from crowding
+   the open Métadonnées toggle while preserving the same horizontal alignment. */
+#sift-meta-body{padding:8px 18px 0}
 .sift-fil-root{display:flex;flex-direction:column;height:100%;min-height:0}
+/* Duplicate warning slot sits after the scrollable report/editor stack, so the banner appears just
+   above #filfoot instead of at the top of the detail pane. */
 .sift-fil-dup{flex:none}
 /* Identification — flux non identifié en lecture seule (Sift.dc.html:357-362) : note + bouton
    bordé "Rechercher sur Discogs", sans passer par le mode édition. */
@@ -650,35 +982,39 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-ident-idle-note{font-size:var(--text-md);color:var(--color-text-tertiary)}
 .sift-ident-search-btn{flex:none;font-size:var(--text-md);font-weight:500;color:var(--color-text-primary);cursor:pointer;padding:6px 13px;border-radius:var(--border-radius-md);border:0.5px solid var(--color-border-secondary);background:var(--color-surface-raised);font-family:inherit}
 .sift-ident-search-btn:hover{filter:brightness(0.95)}
-/* Identification — rangée MATCH en bas de carte (Sift.dc.html:349-354) : question + pilule ambre
-   sous un border-top ; cachée sauf doute réel (jamais de badge vert). */
-.sift-match-row{display:flex;align-items:center;justify-content:space-between;gap:10px;border-top:0.5px solid var(--color-border-tertiary);padding-top:var(--space-12);margin-top:var(--space-12)}
-.sift-match-q{font-size:var(--text-sm);color:var(--color-text-tertiary)}
 .sift-icon-inline-base{font-size:var(--text-base);vertical-align:-2px}
 .sift-icon-inline-lg{font-size:var(--text-lg)}
 .sift-icon-inline-sm{font-size:var(--text-sm);vertical-align:-1px}
 .sift-icon-inline-md{font-size:var(--text-md);vertical-align:-2px}
 .sift-newbin-row{color:var(--color-text-tertiary)}
 .sift-cand-change-btn{font-size:var(--text-sm);padding:2px 8px;flex:none}
-.sift-underline{text-decoration:underline}
 .sift-icon-flex-none{flex:none}
 /* Réglages — cartes bordées (Sift.dc.html:642-691) : même traitement carte que la carte
    Identification (.sift-fil-editor) ; titre 16px/600, texte explicatif, rangées sous border-top. */
-.sift-settings-card{max-width:560px;background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);padding:16px 18px}
+.sift-settings-stack{max-width:560px}
+.sift-settings-card{max-width:560px}
 .sift-settings-title{font-size:var(--text-xl);font-weight:600;margin-bottom:4px;color:var(--color-text-primary)}
-.sift-settings-desc{font-size:var(--text-md);color:var(--color-text-tertiary);line-height:1.5;margin-bottom:var(--space-16)}
-.sift-settings-row{display:flex;align-items:center;justify-content:space-between;gap:var(--space-12);padding-top:14px;border-top:0.5px solid var(--color-border-tertiary)}
+.sift-settings-desc{font-size:var(--text-md);color:var(--color-text-tertiary);line-height:1.45;margin-bottom:12px}
+.sift-settings-row{display:flex;align-items:center;justify-content:space-between;gap:var(--space-12);padding-top:12px;border-top:0.5px solid var(--color-border-tertiary)}
+.sift-settings-row-stack{flex-direction:column;align-items:flex-start;gap:8px}
+.sift-settings-row-head{display:flex;align-items:center;justify-content:space-between;gap:var(--space-12);width:100%}
 .sift-settings-label{font-size:var(--text-base);color:var(--color-text-primary)}
-.sift-settings-btn{flex:none;font-size:var(--text-md);color:var(--color-text-secondary);cursor:pointer;padding:4px 10px;border-radius:var(--border-radius-md);border:0.5px solid var(--color-border-secondary);background:var(--color-surface-raised);font-family:inherit}
+.sift-settings-btn{flex:none;font-size:var(--text-md);color:var(--color-text-secondary);cursor:pointer;padding:5px 10px;border-radius:var(--border-radius-md);border:0.5px solid var(--color-border-secondary);background:var(--color-surface-raised);font-family:inherit}
 .sift-settings-btn:hover{filter:brightness(0.95)}
-/* Segmenté Thème — même patron que .jrnl-qmode (fond track encaissé, pilule active en surface). */
+.sift-settings-btn-quiet{font-size:var(--text-sm);color:var(--color-text-tertiary);background:transparent}
+.sift-settings-link{font-size:var(--text-sm);color:var(--color-text-secondary);cursor:pointer;text-decoration:none}
+.sift-settings-link:hover{color:var(--color-text-primary)}
+.sift-settings-subactions{display:flex;align-items:center;gap:8px;margin-top:10px}
+/* Segment� Th�me - m�me patron que .jrnl-qmode (fond track encaiss�, pilule active en surface). */
 .sift-settings-seg{display:flex;gap:2px;background:var(--color-track);border-radius:7px;padding:2px}
 .sift-seg-opt{font-size:var(--text-md);padding:5px 12px;border-radius:5px;cursor:pointer;font-weight:500;color:var(--color-text-secondary)}
 .sift-seg-opt:hover{background:var(--color-row-active)}
 .sift-seg-opt.on{background:var(--color-surface-raised);color:var(--color-text-primary)}
-.sift-settings-forget{display:inline-block;margin-top:10px;font-size:var(--text-sm);color:var(--color-text-quaternary);cursor:pointer}
-.sift-settings-forget:hover{color:var(--color-text-secondary)}
-
+.sift-usb-empty{font-size:var(--text-sm);color:var(--color-text-tertiary);padding:6px 0}
+.sift-library-toolbar{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+.sift-library-layout{display:flex;align-items:flex-start;gap:14px}
+.sift-library-side{width:150px;flex:none;align-self:flex-start;height:calc(100dvh - 210px);overflow:auto;padding-bottom:10px}
+.sift-library-main{flex:1;min-width:0}
 /* ── Journal — grammaire 3 colonnes (Sift.dc.html) : liste en col Queue + détail en Inspecteur ── */
 /* Queue column (reuses .queue for bg/width/padding). */
 .jrnl-queue{padding:0}
@@ -730,7 +1066,7 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-empty-state{padding:28px 30px;display:flex;flex-direction:column;align-items:flex-start;gap:var(--space-8);max-width:360px}
 .sift-empty-title{font-size:var(--text-xl);font-weight:600;color:var(--color-text-primary)}
 .sift-empty-note{font-size:var(--text-md);color:var(--color-text-tertiary);line-height:1.5}
-/* Lien "Aller à Revue →" : texte souligné par border-bottom (Sift.dc.html:402 — color:var(--text2);
-   border-bottom:1px solid var(--borderStrong); hover → text1), pas un bouton ni un lien accentué. */
-.sift-empty-link{margin-top:var(--space-4);font-size:var(--text-md);font-weight:500;color:var(--color-text-secondary);background:none;border:none;border-bottom:1px solid var(--color-border-secondary);padding:0;cursor:pointer;font-family:inherit}
-.sift-empty-link:hover{color:var(--color-text-primary)}
+/* Action secondaire d'état vide : même grammaire desktop calme que les autres CTA de support. */
+.sift-empty-link{margin-top:var(--space-4);display:inline-flex;align-items:center;gap:8px;font-size:var(--text-sm);font-weight:500;color:var(--color-text-secondary);background:var(--color-surface-raised);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:7px 11px;cursor:pointer;font-family:inherit}
+.sift-empty-link:hover{color:var(--color-text-primary);background:var(--color-row-active)}
+.sift-empty-link i{font-size:var(--text-md);color:var(--color-text-tertiary)}

@@ -85,7 +85,7 @@ function openLink(u){window.open(u,'_blank','noopener');}
     };
     var pendBanner=pend?'<div style="display:flex;align-items:center;justify-content:space-between;background:var(--color-background-info);border-radius:var(--border-radius-md);padding:10px 14px;margin-bottom:12px"><div><div style="font-size:13px;font-weight:500;color:var(--color-text-info)">'+pend+' fichiers à trier</div><div style="font-size:11px;color:var(--color-text-info);opacity:.8">dont '+fakes+' faux détecté'+(fakes>1?'s':'')+'</div></div><button data-view="revue">Trier <i class="ti ti-arrow-right" style="font-size:12px;vertical-align:-2px"></i></button></div>':'';
     var dossiers='<div class="col-h" style="margin-top:12px">Dossiers surveillés</div>'
-      +'<div class="srow"><span class="v"><i class="ti ti-folder"></i> ~/Downloads/soulseek</span><span style="display:flex;align-items:center;gap:9px"><span style="font-size:11px;color:var(--color-text-info)">8 nouveaux</span><span class="tog"></span></span></div>'
+      +'<div class="srow"><span class="v"><i class="ti ti-folder"></i> ~/Downloads/incoming</span><span style="display:flex;align-items:center;gap:9px"><span style="font-size:11px;color:var(--color-text-info)">8 nouveaux</span><span class="tog"></span></span></div>'
       +'<div class="srow"><span class="v"><i class="ti ti-folder"></i> ~/Downloads/promos</span><span style="display:flex;align-items:center;gap:9px"><span style="font-size:11px;color:var(--color-text-info)">1 nouveau</span><span class="tog"></span></span></div>'
       +'<div style="margin:8px 0 0"><button><i class="ti ti-plus" style="font-size:13px;vertical-align:-2px"></i> ajouter un dossier</button></div>';
     var leftHtml='<div class="h1">Accueil</div>'
@@ -116,7 +116,7 @@ function openLink(u){window.open(u,'_blank','noopener');}
     // frozen empty track — dead decoration, not a real feature. Demo-only now.
     var inT='__TAURI_INTERNALS__' in window;
     var pbarHtml=inT?'':'<div class="pbar"><div class="pfill" id="pf" style="width:0%"></div></div>';
-    content.innerHTML='<div class="queue" id="qcol" style="width:'+qcolWidth()+'px"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px"><span class="col-h" style="margin:0">File</span><span style="display:flex;gap:3px"><span data-act="revmode" data-m="detail" title="Vue détail" style="cursor:pointer;color:var(--color-text-info)"><i class="ti ti-layout-list" style="font-size:14px"></i></span><span data-act="revmode" data-m="batch" title="Mode batch" style="cursor:pointer;color:var(--color-text-tertiary)"><i class="ti ti-table" style="font-size:14px"></i></span></span></div>'+pbarHtml+'<div id="ql"></div>'+(doneCount?'<div style="padding:5px 4px 0"><span data-act="togglequeue" style="font-size:10px;color:var(--color-text-tertiary);cursor:pointer;text-decoration:underline">'+(queueShowAll?'Masquer les traités':'+ '+doneCount+' traités')+'</span></div>':'')+'</div><div class="sift-qresize" title="Redimensionner la file"></div><div class="sift-inspector"><div class="mid" id="mid"></div><div class="sift-action-rail" id="filfoot"></div><div class="sift-dest-popover" id="fldz" hidden></div></div>';
+    content.innerHTML='<div class="queue" id="qcol" style="width:'+qcolWidth()+'px"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px"><span class="col-h" style="margin:0">File</span><span style="display:flex;gap:3px"><span data-act="revmode" data-m="detail" title="Vue détail" style="cursor:pointer;color:var(--color-text-info)"><i class="ti ti-layout-list" style="font-size:14px"></i></span><span data-act="revmode" data-m="batch" title="Mode batch" style="cursor:pointer;color:var(--color-text-tertiary)"><i class="ti ti-table" style="font-size:14px"></i></span></span></div>'+pbarHtml+'<div id="ql"></div>'+(doneCount?'<div style="padding:5px 4px 0"><span data-act="togglequeue" style="font-size:10px;color:var(--color-text-tertiary);cursor:pointer;text-decoration:underline">'+(queueShowAll?'Masquer les traités':'+ '+doneCount+' traités')+'</span></div>':'')+'</div><div class="sift-qresize" title="Redimensionner la file"></div><div class="sift-inspector" id="rvinspector"><div class="mid" id="mid"></div><div class="sift-action-rail" id="filfoot"></div><div class="sift-dest-popover" id="fldz" hidden></div></div>';
     installQueueResize(document.getElementById('qcol'),content.querySelector('.sift-qresize'));
     // Live (Tauri): window.__siftQueue() below overwrites #ql/#fldz/#mid with the real data —
     // this whole block would just be a wasted mock render (fake queue rows, fake destination
@@ -132,9 +132,9 @@ function openLink(u){window.open(u,'_blank','noopener');}
         else if(x.status==="resource")cls+=" done",ic="ti-x",col="color:var(--color-text-danger)";
         else if(x.status==="trash")cls+=" done",ic="ti-trash",col="color:var(--color-text-tertiary)";
         else if(x.fake)ic="ti-alert-triangle",col="color:var(--color-text-danger)";
-        var slskBtn=(x.status==="resource"||x.fake)?'<button data-act="qslsk" data-i="'+i+'" data-txt="'+encodeURIComponent(x.a+' '+x.t)+'" title="Copier nom Soulseek" style="flex:none;width:18px;height:18px;padding:0;border:none;display:inline-flex;align-items:center;justify-content:center;color:var(--color-text-tertiary);background:transparent" onclick="event.stopPropagation()"><i class="ti ti-copy" style="font-size:11px"></i></button>':'';
+        var queryBtn=(x.status==="resource"||x.fake)?'<button data-act="qcopyquery" data-i="'+i+'" data-txt="'+encodeURIComponent(x.a+' '+x.t)+'" title="Copier" style="flex:none;width:18px;height:18px;padding:0;border:none;display:inline-flex;align-items:center;justify-content:center;color:var(--color-text-tertiary);background:transparent" onclick="event.stopPropagation()"><i class="ti ti-copy" style="font-size:11px"></i></button>':'';
         var dupBadge=x.duplicate?'<i class="ti ti-copy" style="font-size:11px;flex:none;color:var(--color-text-secondary)" title="Doublon — déjà en biblio"></i>':'';
-        h+='<div class="'+cls+'" data-act="sel" data-i="'+i+'"><i class="ti '+ic+'" style="'+col+'"></i><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis">'+x.a+' — '+x.t+'</span>'+dupBadge+slskBtn+'</div>';});
+        h+='<div class="'+cls+'" data-act="sel" data-i="'+i+'"><i class="ti '+ic+'" style="'+col+'"></i><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis">'+x.a+' — '+x.t+'</span>'+dupBadge+queryBtn+'</div>';});
       document.getElementById('ql').innerHTML=h;
       var fh="";FOLDERS.forEach(function(f,i){fh+='<div class="fld'+(i===selFolder?' on':'')+'" data-act="file" data-i="'+i+'"><span class="kbd">'+(i+1)+'</span> '+f+'</div>';});
       fh+= creating ? '<input id="newin" placeholder="nom du dossier…" style="width:100%;font-size:12px;padding:5px 7px;margin-top:2px">' : '<div class="fld" data-act="newfld" style="color:var(--color-text-tertiary)"><i class="ti ti-plus" style="font-size:14px"></i> nouveau</div>';
@@ -316,7 +316,7 @@ function openLink(u){window.open(u,'_blank','noopener');}
     var ecarts=T.filter(function(x){return x.status==="resource"||x.status==="trash";});
     var filterR=ecarts.filter(function(x){return x.status==="resource";});
     var filterT=ecarts.filter(function(x){return x.status==="trash";});
-    function slsk(x){return x.a+' '+x.t;}
+    function requery(x){return x.a+' '+x.t;}
     function reasonLabel(x){
       if(x.ecartReason==="truncated")return '<span class="pill" style="background:var(--color-background-warning);color:var(--color-text-warning);flex:none"><i class="ti ti-cut" style="font-size:9px"></i> tronqué</span>';
       if(x.ecartReason==="duplicate")return '<span class="pill" style="background:var(--color-background-secondary);color:var(--color-text-secondary);flex:none"><i class="ti ti-copy" style="font-size:9px"></i> doublon</span>';
@@ -325,10 +325,10 @@ function openLink(u){window.open(u,'_blank','noopener');}
     var rows=ecarts.map(function(x){
       var qi=T.indexOf(x);
       var isRes=x.status==="resource";
-      var q=encodeURIComponent(slsk(x));
+      var q=encodeURIComponent(requery(x));
       var avail=x.storeAvail||[];
       var storeLinks=isRes?STORES.filter(function(s){return avail.length===0||avail.indexOf(s.id)>=0;}).map(function(s){return '<a data-act="estore" data-i="'+qi+'" data-url="'+encodeURIComponent(s.url(q))+'" style="font-size:10px;color:var(--color-text-info);cursor:pointer;text-decoration:none;white-space:nowrap">'+s.label+'</a>';}).join('<span style="color:var(--color-border-secondary);margin:0 3px">·</span>'):'';
-      var slskTxt=encodeURIComponent(x.a+' '+x.t);
+      var queryTxt=encodeURIComponent(x.a+' '+x.t);
       return '<div style="padding:7px 4px;border-bottom:0.5px solid var(--color-border-tertiary)">'
         +'<div style="display:flex;align-items:center;gap:7px">'
         +'<div style="flex:1;min-width:0"><div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px;font-weight:500">'+x.a+' — '+x.t+'</div>'
@@ -336,7 +336,7 @@ function openLink(u){window.open(u,'_blank','noopener');}
         +reasonLabel(x)
         +'<button class="lk" data-act="etrash" data-i="'+qi+'" title="Corbeille"><i class="ti ti-trash" style="font-size:12px;color:var(--color-text-tertiary)"></i></button>'
         +'</div>'
-        +(isRes?'<div style="margin-top:5px;display:flex;flex-wrap:wrap;align-items:center;gap:4px"><button data-act="eslsk" data-txt="'+slskTxt+'" style="font-size:10px;padding:2px 7px;color:var(--color-text-secondary)"><i class="ti ti-copy" style="font-size:10px;vertical-align:-1px"></i> Slsk</button>'+(storeLinks?'<span style="color:var(--color-border-secondary)">·</span>'+storeLinks:'')+'</div>':'')
+        +(isRes?'<div style="margin-top:5px;display:flex;flex-wrap:wrap;align-items:center;gap:4px"><button data-act="ecopyquery" data-txt="'+queryTxt+'" style="font-size:10px;padding:2px 7px;color:var(--color-text-secondary)"><i class="ti ti-copy" style="font-size:10px;vertical-align:-1px"></i> Copié</button>'+(storeLinks?'<span style="color:var(--color-border-secondary)">·</span>'+storeLinks:'')+'</div>':'')
         +'</div>';
     }).join('');
     content.innerHTML='<div class="h1">Écartés</div>'
@@ -397,8 +397,8 @@ function openLink(u){window.open(u,'_blank','noopener');}
     else if(act==='dupkeep'||act==='dupjeter'){dupDismissed[+el.dataset.gid]=true;renderBiblio();}
     else if(act==='etrash'){T[+el.dataset.i].status="trash";renderEcarts();}
     else if(act==='estore'){openLink(decodeURIComponent(el.dataset.url));}
-    else if(act==='qslsk'){var txt=decodeURIComponent(el.dataset.txt);navigator.clipboard.writeText(txt).catch(function(){});var prev=el.innerHTML;el.innerHTML='<i class="ti ti-check" style="font-size:11px"></i>';setTimeout(function(){el.innerHTML=prev;},1200);}
-    else if(act==='eslsk'){navigator.clipboard.writeText(decodeURIComponent(el.dataset.txt)).catch(function(){});el.innerHTML='<i class="ti ti-check" style="font-size:12px;vertical-align:-2px"></i> Copié';setTimeout(function(){renderEcarts();},1400);}
+    else if(act==='qcopyquery'){var txt=decodeURIComponent(el.dataset.txt);navigator.clipboard.writeText(txt).catch(function(){});var prev=el.innerHTML;el.innerHTML='<i class="ti ti-check" style="font-size:11px"></i>';setTimeout(function(){el.innerHTML=prev;},1200);}
+    else if(act==='ecopyquery'){navigator.clipboard.writeText(decodeURIComponent(el.dataset.txt)).catch(function(){});el.innerHTML='<i class="ti ti-check" style="font-size:12px;vertical-align:-2px"></i> Copié';setTimeout(function(){renderEcarts();},1400);}
     else if(act==='bplay'){var i=+el.dataset.i;if(bibPlaying===i){bibPlaying=-1;}else{bibPlaying=i;bibPos=0.3;}renderBiblio();}
     else if(act==='bseek'){var r2=el.getBoundingClientRect();bibPos=Math.min(1,Math.max(0,(e.clientX-r2.left)/r2.width));renderBiblio();}
     else if(act==='link'){var parts=LIB[+el.dataset.i][0].split(/\s*[—–-]\s*/);var q=parts.length>1?parts[0]+' '+parts[1]:parts[0];openLink('https://www.discogs.com/search/?type=release&q='+encodeURIComponent(q));}

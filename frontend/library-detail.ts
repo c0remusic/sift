@@ -36,12 +36,12 @@ function toast(message: string): void {
   document.getElementById("sift-toast")?.remove();
   const el = document.createElement("div");
   el.id = "sift-toast";
-  el.style.cssText =
-    "position:fixed;right:18px;bottom:18px;z-index:9998;display:flex;align-items:center;gap:12px;background:var(--color-background-secondary);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:9px 13px;font-size:var(--text-md);color:var(--color-text-primary);box-shadow:0 8px 28px rgba(0,0,0,.4)";
+  el.className = "sift-toast";
   el.textContent = message;
   document.body.appendChild(el);
   setTimeout(() => el.remove(), 4000);
 }
+
 
 /** Current cover source for the thumbnail (pending pick > stored path > none). */
 function coverSrc(st: EditState): string | null {
@@ -91,9 +91,9 @@ function renderEdit(edit: HTMLElement, st: EditState): void {
     `<input data-lib="label" placeholder="Label" value="${esc(t.label ?? "")}" class="sift-editor-input" style="width:100%">` +
     `</div>` +
     `</div></div>` +
-    `<div style="display:flex;align-items:center;gap:6px;margin-top:9px;flex-wrap:wrap">${releaseRowHtml(st)}</div>` +
+    `<div class="lib-edit-meta">${releaseRowHtml(st)}</div>` +
     `<div class="sift-cands" style="margin-top:7px" hidden></div>` +
-    `<div style="display:flex;gap:8px;margin-top:10px">` +
+    `<div class="lib-edit-actions">` +
     `<button data-lib="save" style="flex:1;background:var(--color-background-info);color:var(--color-text-info);border:none;font-weight:500">Enregistrer</button>` +
     `<button data-lib="trash" class="sift-secondary-trash" title="Envoyer à la corbeille" aria-label="Envoyer à la corbeille">Supprimer</button>` +
     `</div>`;
@@ -312,15 +312,23 @@ export function openLibraryDetailInto(
   track: LibraryTrack,
   onSaved: (t: LibraryTrack) => void,
   onDeleted: () => void,
+  onClose: () => void,
 ): void {
   savedCb = onSaved;
   deletedCb = onDeleted;
   const st: EditState = { track: { ...track, genres: [...track.genres] }, pendingCover: null, saving: false };
 
   host.innerHTML =
-    '<div style="display:flex;flex-direction:column;gap:10px;margin-top:10px;border-top:0.5px solid var(--color-border-tertiary);padding-top:10px">' +
+    '<div class="lib-detail-stack">' +
+    `<div class="lib-detail-head sift-ui-card-soft sift-ui-card-soft-pad">` +
+    `<div class="lib-detail-head-main">` +
+    `<div class="col-h">Piste ouverte</div>` +
+    `<div class="lib-detail-head-title">${esc(track.artist && track.title ? `${track.artist} - ${track.title}` : track.path.split(/[\\/]/).pop() || track.path)}</div>` +
+    `</div>` +
+    `<button type="button" data-lib="collapse" class="lib-detail-close" aria-label="Masquer les infos" title="Masquer les infos"><i class="ti ti-chevron-up"></i></button>` +
+    `</div>` +
     '<div class="lib-report"></div>' +
-    '<div class="lib-edit"></div>' +
+    '<div class="lib-edit sift-ui-card sift-ui-card-pad"></div>' +
     '<div class="lib-verdict"></div>' +
     "</div>";
   const reportEl = requireEl<HTMLElement>(".lib-report", "openLibraryDetailInto", host);
@@ -328,7 +336,7 @@ export function openLibraryDetailInto(
   // Verdict is the CONCLUSION — rendered last, after Identification, matching the maquette
   // (see docs/superpowers/plans/2026-07-02-refonte-ui-plan.md, décision du 2026-07-02).
   const verdictEl = requireEl<HTMLElement>(".lib-verdict", "openLibraryDetailInto", host);
-
-  void openReportInto(reportEl, track.path, verdictEl);
+  host.querySelector<HTMLElement>('[data-lib="collapse"]')?.addEventListener("click", onClose);
+  void openReportInto(reportEl, track.path, verdictEl, { showAnalysisFailure: false });
   renderEdit(editEl, st);
 }

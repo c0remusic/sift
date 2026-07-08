@@ -1,5 +1,5 @@
 // Écartés (Discarded) view (Tauri only): the real rejected/trashed tracks with re-source links.
-// Extracted from sift-live.ts (audit P-3). Row actions (Soulseek copy / send-to-bin / restore /
+// Extracted from sift-live.ts (audit P-3). Row actions (copy query / send-to-bin / restore /
 // empty-bin / store link) are handled by the delegated #pa click handler in sift-live, which
 // re-renders via this module's renderEcartes.
 import { listEcartes } from "./ipc";
@@ -20,21 +20,18 @@ const esc = (s: string) =>
     c === "&" ? "&amp;" : c === "<" ? "&lt;" : c === ">" ? "&gt;" : c === '"' ? "&quot;" : "&#39;",
   );
 
-/** Reason chip for an écarté track (truncated → tronqué, fake → faux, else à re-sourcer). Uses the
- *  shared `.sift-vchip` component (Revue-Détail's evidence chips) so tone/shape stay consistent
- *  across screens instead of ad-hoc inline styles. */
+// Reason chip for an écarté track (truncated → tronqué, fake → faux, else à re-sourcer). Uses
+// the shared .sift-vchip component so tone/shape stay consistent across screens.
 function ecReason(it: EcarteItem): string {
   if (it.truncated)
     return '<span class="sift-vchip" style="background:var(--color-background-warning);color:var(--color-text-warning);flex:none"><i class="ti ti-cut" style="font-size:var(--text-2xs)"></i> tronqué</span>';
   if (it.verdict === "fake")
     return '<span class="sift-vchip" style="background:var(--color-background-danger);color:var(--color-text-danger);flex:none"><i class="ti ti-alert-triangle" style="font-size:var(--text-2xs)"></i> faux</span>';
-  // FIX-8: neutral tone, not danger — "à re-sourcer" is a routine outcome (source missing/
-  // low-quality), not an anomaly detection like "faux" above.
   return '<span class="sift-vchip" style="background:var(--overlay-selected);color:var(--color-text-secondary);flex:none"><i class="ti ti-alert-circle" style="font-size:var(--text-2xs)"></i> à re-sourcer</span>';
 }
 
-/** The "Artiste Titre" string to paste into Soulseek (single space; no dash). */
-function ecSlsk(it: EcarteItem): string {
+// Neutral re-source query string (single space; no dash).
+function ecQuery(it: EcarteItem): string {
   if (it.artist && it.title) return `${it.artist} ${it.title}`;
   return (it.filename || it.path).replace(/\.[^.]+$/, "");
 }
@@ -49,9 +46,9 @@ const EC_STORES: [string, (q: string) => string][] = [
   ["Apple Music", (q) => `https://music.apple.com/fr/search?term=${q}`],
 ];
 
-/** Buy-link row for a track: store names that open a search in the default browser. */
+// Buy-link row for a track: store names that open a search in the default browser.
 function ecStoreLinks(it: EcarteItem): string {
-  const q = encodeURIComponent(ecSlsk(it));
+  const q = encodeURIComponent(ecQuery(it));
   return EC_STORES.map(
     ([label, fn]) =>
       `<a data-ec="store" data-url="${encodeURIComponent(fn(q))}" style="font-size:var(--text-xs);color:var(--color-text-info);cursor:pointer;text-decoration:none;white-space:nowrap">${label}</a>`,
@@ -66,18 +63,17 @@ const ecFileLine = (it: EcarteItem) =>
   )}</div>`;
 
 // The 6 store links only show on hover/focus of the row (.sift-ec-stores, styled in styles.css) —
-// rendering them open on every row was a wall of links; "Copier le nom" (the one action most
-// re-sourcing starts with) stays always visible (audit UI/UX 2026-07-03, fix 6). Fixed height per
-// row (the store span is visibility:hidden, so it still occupies its line) — required by the
-// virtualized windowing, which relies on one measured row height.
+// rendering them open on every row was a wall of links; "Copié" stays always visible.
+// Fixed height per row (the store span is visibility:hidden, so it still occupies its line) —
+// required by the virtualized windowing, which relies on one measured row height.
 function resRowHtml(it: EcarteItem): string {
   return `<div class="sift-ec-row" style="padding:8px 4px;border-bottom:0.5px solid var(--color-border-tertiary)"><div style="display:flex;align-items:center;gap:8px"><div style="flex:1;min-width:0"><div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:var(--text-md);font-weight:500">${ecName(
     it,
   )}</div>${ecFileLine(it)}</div>${ecReason(
     it,
-  )}<button class="lk-icon" data-ec="requeue" data-id="${it.id}" title="Restaurer — remettre en file" aria-label="Restaurer — remettre en file"><i class="ti ti-arrow-back-up" style="font-size:var(--text-base);color:var(--color-text-tertiary)"></i></button><button class="lk-icon" data-ec="trash" data-id="${it.id}" title="Envoyer à la corbeille" aria-label="Envoyer à la corbeille"><i class="ti ti-trash" style="font-size:var(--text-md);color:var(--color-text-tertiary)"></i></button></div><div style="margin-top:5px;display:flex;flex-wrap:wrap;align-items:center;gap:4px"><button data-ec="slsk" data-q="${esc(
-    ecSlsk(it),
-  )}" title="Copier « Artiste Titre » pour chercher sur Soulseek" style="font-size:var(--text-xs);padding:2px 8px;color:var(--color-text-secondary)"><i class="ti ti-copy" style="font-size:var(--text-xs);vertical-align:-1px"></i> Copier le nom</button><span class="sift-ec-stores" style="display:flex;flex-wrap:wrap;align-items:center;gap:4px"><span style="color:var(--color-border-secondary)">·</span>${ecStoreLinks(
+  )}<button class="lk-icon" data-ec="requeue" data-id="${it.id}" title="Restaurer — remettre en file" aria-label="Restaurer — remettre en file"><i class="ti ti-arrow-back-up" style="font-size:var(--text-base);color:var(--color-text-tertiary)"></i></button><button class="lk-icon" data-ec="trash" data-id="${it.id}" title="Envoyer à la corbeille" aria-label="Envoyer à la corbeille"><i class="ti ti-trash" style="font-size:var(--text-md);color:var(--color-text-tertiary)"></i></button></div><div style="margin-top:5px;display:flex;flex-wrap:wrap;align-items:center;gap:4px"><button data-ec="copy-query" data-q="${esc(
+    ecQuery(it),
+  )}" title="Copier" style="font-size:var(--text-xs);padding:2px 8px;color:var(--color-text-secondary)"><i class="ti ti-copy" style="font-size:var(--text-xs);vertical-align:-1px"></i> Copié</button><span class="sift-ec-stores" style="display:flex;flex-wrap:wrap;align-items:center;gap:4px"><span style="color:var(--color-border-secondary)">·</span>${ecStoreLinks(
     it,
   )}</span></div></div>`;
 }
@@ -88,16 +84,19 @@ function trashRowHtml(it: EcarteItem): string {
   )}</div>${ecFileLine(it)}</div><button data-ec="restore" data-id="${it.id}" title="Restaurer — remettre en file" style="font-size:var(--text-xs);padding:2px 8px;color:var(--color-text-info)">Restaurer</button></div>`;
 }
 
-/** Live Écartés view: replaces #content with the real rejected (à re-sourcer) + trashed
- * tracks. Soulseek copy + send-to-bin / restore / empty-bin wired via the #pa handler. */
+function sectionCardHtml(title: string, hostId: string): string {
+  return `<section class="sift-ui-card sift-ui-card-pad sift-ec-section"><div class="col-h">${title}</div><div id="${hostId}"></div></section>`;
+}
+
+// Live Écartés view: replaces #content with the real rejected (à re-sourcer) + trashed tracks.
+// Copy-query + send-to-bin / restore / empty-bin wired via the #pa handler.
 export async function renderEcartes() {
   const content = requireEl("#content", "renderEcartes");
-  // Tear down previous virtual lists first: their scroll listeners sit on the permanent #content,
-  // which this render overwrites — leaving them attached would leak + double-render.
   resVirtual?.destroy();
   trashVirtual?.destroy();
   resVirtual = null;
   trashVirtual = null;
+
   let items: EcarteItem[] = [];
   try {
     items = await listEcartes();
@@ -116,18 +115,18 @@ export async function renderEcartes() {
           note: "Les pistes que tu écartes depuis Revue apparaissent ici, avec possibilité de les restaurer.",
           backToRevue: true,
         })
-      : '<div style="display:flex;gap:8px;margin-bottom:12px;flex-wrap:wrap;align-items:center">' +
+      : '<div class="sift-screen-stack">' +
+        '<div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">' +
         `<span class="pill" style="background:var(--overlay-selected);color:var(--color-text-secondary)"><i class="ti ti-alert-circle" style="font-size:var(--text-xs)"></i> ${res.length} à re-sourcer</span>` +
         `<span class="pill"><i class="ti ti-trash" style="font-size:var(--text-xs)"></i> ${trash.length} en corbeille</span>` +
         (trash.length
           ? `<button data-ec="purge" title="Purger — suppression définitive" style="font-size:var(--text-xs);padding:2px 8px;color:var(--color-text-danger)">Purger la corbeille (${trash.length})</button>`
           : "") +
         "</div>" +
-        // Both lists are virtualized (createVirtualList below) — these are just the mount hosts,
-        // filled with only the visible window after innerHTML. Rendering all ~thousands of rows
-        // here would reintroduce the freeze (audit 2026-07-05 P2). #content is the scroll container.
-        (res.length ? `<div class="col-h">À re-sourcer</div><div id="ec-res-list"></div>` : "") +
-        (trash.length ? `<div class="col-h" style="margin-top:14px">Corbeille</div><div id="ec-trash-list"></div>` : ""));
+        '<div class="sift-ec-sections">' +
+        (res.length ? sectionCardHtml("À re-sourcer", "ec-res-list") : "") +
+        (trash.length ? sectionCardHtml("Corbeille", "ec-trash-list") : "") +
+        "</div></div>");
   wireEmptyState(content);
 
   if (items.length === 0) return;
@@ -139,10 +138,6 @@ export async function renderEcartes() {
       scrollContainer: content,
       items: res,
       rowHtml: resRowHtml,
-      // Probe = a real resRowHtml row (res[0], guaranteed present since res.length gated this
-      // block) so the measured height matches mounted rows EXACTLY — including the second action
-      // line with its .sift-ec-stores span (visibility:hidden, still occupies its height, and may
-      // wrap: all res rows share the identical store list, so they wrap identically → uniform).
       probeHtml: resRowHtml(res[0]),
       fallbackRowH: 58,
     });
@@ -154,7 +149,7 @@ export async function renderEcartes() {
       scrollContainer: content,
       items: trash,
       rowHtml: trashRowHtml,
-      probeHtml: trashRowHtml(trash[0]), // real row (trash[0] present — trash.length gated this)
+      probeHtml: trashRowHtml(trash[0]),
       fallbackRowH: 42,
     });
   }

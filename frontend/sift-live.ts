@@ -114,6 +114,23 @@ const mdbRepairSel = new Set<number>();
 const mdbErrorById = new Map<number, string>();
 let queueRowHeightCache: number | null = null;
 
+// Live filter on the queue rail (annotation: "on veut une barre de recherche en bas — filtre
+// client sur la file affichée uniquement, titre/artiste, pas de recherche backend"). Filters
+// currentItems only — never touches listQueue()/the DB. currentOpenId/stepQueueSelection walk
+// this filtered view too, so arrow-key nav only steps through what's actually visible.
+let queueSearchTerm = "";
+
+function visibleQueueItems(): QueueItem[] {
+  if (!queueSearchTerm) return currentItems;
+  const q = queueSearchTerm.toLowerCase();
+  return currentItems.filter(
+    (it) =>
+      (it.filename ?? it.path).toLowerCase().includes(q) ||
+      (it.artist ?? "").toLowerCase().includes(q) ||
+      (it.title ?? "").toLowerCase().includes(q),
+  );
+}
+
 /** Real rendered height of a queue row, measured once via an offscreen probe (never assumed —
  * same discipline as the spectrogram canvas width / destination-popover positioning elsewhere in
  * this codebase). Cached: the row markup/CSS don't change at runtime. */
@@ -141,10 +158,12 @@ function measureQueueRowHeight(ql: HTMLElement): number {
  * on every 300ms analysis-progress redraw (see the onAnalysisChanged listener further down) was
  * the actual cost, not just paint. */
 function renderQueueWindow(ql: HTMLElement): void {
-  const items = currentItems;
+  const items = visibleQueueItems();
   if (!items.length) {
     ql.innerHTML =
-      '<div style="font-size:var(--text-md);color:var(--color-text-tertiary);padding:6px 4px">File vide.</div>';
+      `<div style="font-size:var(--text-md);color:var(--color-text-tertiary);padding:6px 4px">${
+        currentItems.length && queueSearchTerm ? "Aucun morceau ne correspond." : "File vide."
+      }</div>`;
     return;
   }
   const rowH = measureQueueRowHeight(ql);
@@ -203,11 +222,12 @@ function prefetchNextAfter(id: number): void {
  * would need a circular import to reach them; sift-live.ts already imports from filing.ts, not
  * the reverse). */
 export function stepQueueSelection(delta: 1 | -1): void {
-  if (!currentItems.length) return;
-  const curIndex = currentOpenId != null ? currentItems.findIndex((it) => it.id === currentOpenId) : -1;
+  const items = visibleQueueItems();
+  if (!items.length) return;
+  const curIndex = currentOpenId != null ? items.findIndex((it) => it.id === currentOpenId) : -1;
   const nextIndex = curIndex + delta;
-  if (nextIndex < 0 || nextIndex >= currentItems.length) return;
-  const next = currentItems[nextIndex];
+  if (nextIndex < 0 || nextIndex >= items.length) return;
+  const next = items[nextIndex];
   currentOpenId = next.id;
   const ql = document.getElementById("ql");
   if (ql) {
@@ -250,6 +270,10 @@ let queueNavKeysWired = false;
 function installQueueNavKeys(): void {
   if (queueNavKeysWired) return;
   queueNavKeysWired = true;
+  const blurShortcutFocus = () => {
+    const active = document.activeElement;
+    if (active instanceof HTMLElement && active !== document.body) active.blur();
+  };
   document.addEventListener("keydown", (e) => {
     const t = e.target as HTMLElement | null;
     if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
@@ -266,6 +290,7 @@ function installQueueNavKeys(): void {
     const mid = document.getElementById("mid");
     if (currentOpenId == null || !mid || !mid.querySelector(".sift-fil")) return;
     e.preventDefault();
+    blurShortcutFocus();
     stepQueueSelection(e.key === "ArrowDown" ? 1 : -1);
   });
 }
@@ -491,6 +516,8 @@ async function renderQueue(touchDetail = true) {
   }
   currentItems = items;
   ensureReviewSeg();
+  const qcol = document.getElementById("qcol");
+  if (qcol) ensureQueueSearch(qcol);
   // Background-analysis progress moved to the global progress zone (bottom of #nav, persistent
   // across views) — see pushAnalyzeProgress, fed by the analysis:changed event below.
 
@@ -602,8 +629,7 @@ function toast(message: string): void {
   document.getElementById("sift-toast")?.remove();
   const el = document.createElement("div");
   el.id = "sift-toast";
-  el.style.cssText =
-    "position:fixed;right:18px;bottom:18px;z-index:9998;display:flex;align-items:center;gap:12px;background:var(--color-background-secondary);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:9px 13px;font-size:var(--text-md);color:var(--color-text-primary);box-shadow:0 8px 28px rgba(0,0,0,.4)";
+  el.className = "sift-toast";
   el.textContent = message;
   document.body.appendChild(el);
   setTimeout(() => el.remove(), 4000);
@@ -656,12 +682,14 @@ function ensureReviewSeg() {
   if (!seg) {
     seg = document.createElement("div");
     seg.id = "sift-revseg";
-    // align-self:flex-start: #qcol is a flex column (align-items:stretch by default), so without
-    // this the segmented control stretched to the column's full width and its flex:1 tabs grew
-    // with it whenever the column was resized wider (annotation 2026-07-06: fixed size/position
-    // expected, not a stretchy control).
+    // align-self:center: #qcol is a flex column (align-items:stretch by default), so without a
+    // fixed align-self the segmented control stretched to the column's full width and its flex:1
+    // tabs grew with it whenever the column was resized wider (annotation 2026-07-06: fixed
+    // size/position expected, not a stretchy control). Centered (not flex-start) per the
+    // 2026-07-06 continuous-surface redesign — reads as the queue panel's own toggle, not a
+    // left-anchored label.
     seg.style.cssText =
-      "display:flex;gap:2px;padding:2px;margin-bottom:10px;background:var(--color-background-secondary);border-radius:var(--border-radius-md);align-self:flex-start";
+      "display:flex;gap:2px;padding:2px;margin-bottom:10px;background:var(--color-background-secondary);border-radius:var(--border-radius-md);align-self:center";
     qcol.insertBefore(seg, qcol.firstChild);
   }
   const tab = (m: "detail" | "batch", label: string, icon: string) => {
@@ -669,10 +697,43 @@ function ensureReviewSeg() {
     return `<button data-sift="reviewmode" data-m="${m}" style="flex:none;display:inline-flex;align-items:center;justify-content:center;gap:5px;padding:5px 10px;border:none;border-radius:6px;font-size:var(--text-sm);font-weight:${
       on ? 600 : 400
     };cursor:pointer;background:${
-      on ? "var(--color-background-primary)" : "transparent"
+      // --color-surface-raised, not --color-background-primary (annotation: "la couleur...
+      // ne fit pas le theme") — every other segmented control (.sift-seg-opt.on, e.g. the
+      // Apparence toggle) uses the raised-surface token for its active pill; this one had
+      // drifted to the page's flat base background instead.
+      on ? "var(--color-surface-raised)" : "transparent"
     };color:var(--color-text-${on ? "primary" : "tertiary"})"><i class="ti ${icon}" style="font-size:var(--text-base)"></i>${label}</button>`;
   };
   seg.innerHTML = tab("detail", "Détail", "ti-layout-list") + tab("batch", "Lot", "ti-table");
+}
+
+/** Live filter bar for the queue rail (annotation: "on veut une barre de recherche en bas"),
+ * injected once at the BOTTOM of #qcol (sibling after #ql, so #ql's flex:1 keeps it pinned below
+ * the list). Filters currentItems client-side only (title/artist) — see visibleQueueItems(). */
+function ensureQueueSearch(qcol: HTMLElement): void {
+  if (document.getElementById("sift-qsearch")) return;
+  const wrap = document.createElement("div");
+  wrap.id = "sift-qsearch";
+  wrap.style.cssText =
+    "flex:none;position:relative;margin-top:8px;background:var(--color-background-secondary);border-radius:var(--border-radius-md)";
+  // No placeholder text — just a search icon overlaid on the right, hidden once there's a query
+  // (annotation: "met juste une icone de loupe sur la droite qui disparait quand on tape").
+  wrap.innerHTML =
+    '<input id="sift-qsearch-input" type="text" aria-label="Filtrer la file" ' +
+    'style="width:100%;border:none;background:transparent;font:inherit;color:var(--color-text-primary);outline:none;padding:6px 30px 6px 9px">' +
+    '<i id="sift-qsearch-icon" class="ti ti-search" aria-hidden="true" style="position:absolute;right:9px;top:50%;transform:translateY(-50%);font-size:var(--text-base);color:var(--color-text-tertiary);pointer-events:none"></i>';
+  qcol.appendChild(wrap);
+  const input = wrap.querySelector<HTMLInputElement>("#sift-qsearch-input")!;
+  const icon = wrap.querySelector<HTMLElement>("#sift-qsearch-icon")!;
+  input.addEventListener("input", () => {
+    queueSearchTerm = input.value.trim();
+    icon.style.display = input.value ? "none" : "";
+    const ql = document.getElementById("ql");
+    if (ql) {
+      ql.scrollTop = 0; // a shorter filtered list can leave scrollTop referring to nothing
+      renderQueueWindow(ql);
+    }
+  });
 }
 
 /** Batch triage view (maquette "Mode Lot"): 3 flat groups by verdict — Prêts · lossless
@@ -1201,6 +1262,7 @@ async function renderReglagesLive() {
   document.getElementById("sift-reglages-live")?.remove();
   const wrap = document.createElement("div");
   wrap.id = "sift-reglages-live";
+  wrap.className = "sift-screen-stack sift-settings-stack";
 
   // Hide the mockup's static rows (no real data behind them); keep only the page title.
   let title: Element | null = null;
@@ -1243,15 +1305,15 @@ async function renderReglagesLive() {
   const block = document.createElement("div");
   block.id = "sift-reglages-discogs";
   block.dataset.section = "discogs";
-  block.className = "sift-settings-card";
-  block.style.cssText = "margin-top:14px";
+  block.className = "sift-settings-card sift-ui-card-soft sift-ui-card-soft-pad";
+  block.style.cssText = "margin-top:10px";
   block.innerHTML =
     '<div class="sift-settings-title">Discogs</div>' +
     '<div class="sift-settings-desc">Le jeton permet à Sift d\'interroger l\'API Discogs pour identifier tes morceaux (label, année, genre). Sans jeton, les recherches sont limitées et plus lentes.</div>' +
-    '<div class="sift-settings-row" style="flex-direction:column;align-items:flex-start;gap:6px">' +
-    '<div style="display:flex;align-items:center;justify-content:space-between;width:100%">' +
+    '<div class="sift-settings-row sift-settings-row-stack">' +
+    '<div class="sift-settings-row-head">' +
     '<span class="sift-settings-label">Jeton d\'accès</span>' +
-    '<a id="sift-discogs-link" style="font-size:var(--text-sm);color:var(--color-text-secondary);cursor:pointer;text-decoration:none">' +
+    '<a id="sift-discogs-link" class="sift-settings-link">' +
     '<i class="ti ti-external-link" style="font-size:var(--text-sm);vertical-align:-1px"></i> obtenir un jeton</a>' +
     "</div>" +
     // Masked like any credential (audit UI/UX 2026-07-03, fix 8) — a screenshot/share of Réglages
@@ -1266,8 +1328,8 @@ async function renderReglagesLive() {
   const libBlock = document.createElement("div");
   libBlock.id = "sift-reglages-bibliotheque";
   libBlock.dataset.section = "bibliotheque";
-  libBlock.className = "sift-settings-card";
-  libBlock.style.cssText = "margin-top:14px";
+  libBlock.className = "sift-settings-card sift-ui-card-soft sift-ui-card-soft-pad";
+  libBlock.style.cssText = "margin-top:10px";
   libBlock.innerHTML =
     '<div class="sift-settings-title">Bibliothèque</div>' +
     '<div class="sift-settings-desc">Le dossier racine est l\'endroit réel sur ton disque où Sift range les morceaux filés. L\'arborescence de destination (House/Deep, Techno…) vit à l\'intérieur.</div>' +
@@ -1281,7 +1343,7 @@ async function renderReglagesLive() {
     '<button id="sift-lib-root-change" class="sift-settings-btn">Changer…</button>' +
     "</div>" +
     (root
-      ? '<div id="sift-lib-root-forget" class="sift-settings-forget">Oublier le dossier racine</div>'
+      ? '<div class="sift-settings-subactions"><button id="sift-lib-root-forget" type="button" class="sift-settings-btn sift-settings-btn-quiet">Oublier le dossier racine</button></div>'
       : "");
   libBlock.querySelector("#sift-lib-root-change")?.addEventListener("click", () => {
     void (async () => {
@@ -1309,8 +1371,8 @@ async function renderReglagesLive() {
   const themeBlock = document.createElement("div");
   themeBlock.id = "sift-reglages-apparence";
   themeBlock.dataset.section = "apparence";
-  themeBlock.className = "sift-settings-card";
-  themeBlock.style.cssText = "margin-top:14px";
+  themeBlock.className = "sift-settings-card sift-ui-card-soft sift-ui-card-soft-pad";
+  themeBlock.style.cssText = "margin-top:10px";
   const themeBtn = (v: ThemeChoice, label: string) =>
     `<span class="sift-seg-opt${theme === v ? " on" : ""}" data-theme-choice="${v}">${label}</span>`;
   themeBlock.innerHTML =
@@ -1338,30 +1400,30 @@ async function renderReglagesLive() {
   const usbBlock = document.createElement("div");
   usbBlock.id = "sift-reglages-usb";
   usbBlock.dataset.section = "usb";
-  usbBlock.className = "sift-settings-card";
-  usbBlock.style.cssText = "margin-top:14px";
+  usbBlock.className = "sift-settings-card sift-ui-card-soft sift-ui-card-soft-pad";
+  usbBlock.style.cssText = "margin-top:10px";
   usbBlock.innerHTML =
     '<div class="sift-settings-title">Formater une clé USB</div>' +
     '<div class="sift-settings-desc">Formate un disque amovible en FAT32 (contourne la limite ' +
     "32 Go de l'assistant Windows) ou exFAT. Seuls les disques amovibles sont proposés — " +
     "aucun disque interne n'apparaît ici.</div>" +
     '<div id="sift-usb-list" class="sift-usb-list"></div>' +
-    '<button id="sift-usb-refresh" class="sift-settings-btn">Actualiser la liste</button>';
+    '<div class="sift-settings-subactions"><button id="sift-usb-refresh" class="sift-settings-btn sift-settings-btn-quiet">Actualiser la liste</button></div>';
 
   async function renderUsbList() {
     const listEl = usbBlock.querySelector<HTMLElement>("#sift-usb-list");
     if (!listEl) return;
-    listEl.textContent = "Recherche des disques amovibles…";
+    listEl.innerHTML = '<div class="sift-usb-empty">Recherche des disques amovibles�</div>';
     let drives: RemovableDrive[] = [];
     try {
       drives = await listRemovableDrives();
     } catch (e) {
       console.error("listRemovableDrives failed", e);
-      listEl.textContent = "Impossible de lister les disques amovibles.";
+      listEl.innerHTML = '<div class="sift-usb-empty">Impossible de lister les disques amovibles.</div>';
       return;
     }
     if (!drives.length) {
-      listEl.textContent = "Aucun disque amovible détecté.";
+      listEl.innerHTML = '<div class="sift-usb-empty">Aucun disque amovible d�tect�.</div>';
       return;
     }
     listEl.innerHTML = "";
@@ -1480,7 +1542,7 @@ function dupGroupHtml(g: DupGroup, idx: number): string {
   return (
     `<div class="sift-dup-group" style="border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:10px 12px;margin-bottom:8px">` +
     g.members.map((m) => dupMemberHtml(m)).join("") +
-    `<div style="margin-top:6px"><button class="lk" data-bib="dupresolve" data-idx="${idx}">Résoudre</button></div>` +
+    `<div style="margin-top:6px"><button data-bib="dupresolve" data-idx="${idx}">Résoudre</button></div>` +
     `</div>`
   );
 }
@@ -1516,11 +1578,11 @@ function rekordboxCardHtml(s: RekordboxLinkStatus): string {
   // in that case (export_rekordbox_xml_inner reads the same path before merging).
   const reexport = s.error
     ? ""
-    : `<button class="lk" data-sift="rkbreexport" style="flex:none">Réexporter maintenant</button>`;
+    : `<button data-sift="rkbreexport" style="flex:none">Réexporter maintenant</button>`;
   return (
     `<div style="border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:10px 12px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:12px">` +
     `<div style="min-width:0">${body}</div>` +
-    `<div style="display:flex;gap:8px;flex:none">${reexport}<button class="lk" data-bib="rkblink" style="flex:none">Changer de XML lié</button></div>` +
+    `<div style="display:flex;gap:8px;flex:none">${reexport}<button data-bib="rkblink" style="flex:none">Changer de XML lié</button></div>` +
     `</div>`
   );
 }
@@ -1567,14 +1629,14 @@ function masterdbRepairsSectionHtml(rows: PendingMasterdbRepair[]): string {
       const candidateBtns = candidateList(r)
         .map(
           (c) =>
-            `<button class="lk" data-sift="mdbresolve" data-id="${r.id}" data-track="${esc(c.track_id)}" style="display:block;text-align:left;font-family:var(--font-mono);font-size:var(--text-xs)">` +
+            `<button data-sift="mdbresolve" data-id="${r.id}" data-track="${esc(c.track_id)}" style="display:block;text-align:left;font-family:var(--font-mono);font-size:var(--text-xs)">` +
             `Choisir cette piste — ${esc(c.folder_path || c.track_id)}</button>`,
         )
         .join("");
       return (
         `<div style="border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:9px 11px;margin-bottom:6px">` +
         `<div style="display:flex;gap:10px;align-items:flex-start">${pathBlock(r)}` +
-        `<button class="lk" data-sift="mdbdismiss" data-id="${r.id}" style="flex:none">Ignorer</button></div>` +
+        `<button data-sift="mdbdismiss" data-id="${r.id}" style="flex:none">Ignorer</button></div>` +
         `<div style="margin-top:6px;display:flex;flex-direction:column;gap:3px">${candidateBtns}</div>` +
         `</div>`
       );
@@ -1590,7 +1652,7 @@ function masterdbRepairsSectionHtml(rows: PendingMasterdbRepair[]): string {
         }">` +
         `<input type="checkbox" class="sift-batch-ck" ${checked ? "checked" : ""} tabindex="-1">` +
         pathBlock(r) +
-        `<button class="lk" data-sift="mdbdismiss" data-id="${r.id}" style="flex:none">Ignorer</button>` +
+        `<button data-sift="mdbdismiss" data-id="${r.id}" style="flex:none">Ignorer</button>` +
         `</div>`
       );
     })
@@ -1598,7 +1660,7 @@ function masterdbRepairsSectionHtml(rows: PendingMasterdbRepair[]): string {
 
   const applyBar =
     mdbRepairSel.size > 0
-      ? `<div style="margin-top:8px"><button class="lk" data-sift="mdbapply" style="font-weight:500">Appliquer la sélection (${mdbRepairSel.size})</button></div>`
+      ? `<div style="margin-top:8px"><button data-sift="mdbapply" style="font-weight:500">Appliquer la sélection (${mdbRepairSel.size})</button></div>`
       : "";
 
   return (
@@ -1636,7 +1698,7 @@ async function renderRekordboxLive(): Promise<void> {
       emptyStateHtml({
         title: "Aucun XML Rekordbox lié",
         note: "Relie le fichier XML exporté depuis Rekordbox pour commencer à synchroniser tes rangements.",
-        actionHtml: `<button class="lk" data-bib="rkblink">Lier un fichier XML Rekordbox</button>`,
+        actionHtml: `<button data-bib="rkblink">Lier un fichier XML Rekordbox</button>`,
       });
     wireEmptyState(content);
     return;
@@ -1736,7 +1798,7 @@ async function renderBiblioLive() {
   // Export (Rekordbox/Clé USB) lives in the nav rail now, not here — matches the maquette's
   // persistent Export section (index.html nav-export items, wired in installLiveWiring below).
   const header =
-    `<div style="display:flex;align-items:center;gap:8px;margin-bottom:10px">` +
+    `<div class="sift-library-toolbar sift-ui-card-soft sift-ui-card-soft-pad">` +
     `<div style="flex:1;display:flex;align-items:center;gap:7px;border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:6px 10px"><i class="ti ti-search" style="font-size:var(--text-lg);color:var(--color-text-tertiary)"></i><input id="bibq" placeholder="Rechercher…" value="${esc(bibState.filter.q || "")}" style="flex:1;border:0;background:transparent;color:inherit;font-size:var(--text-md);outline:none"></div>` +
     chips +
     `</div>`;
@@ -1749,8 +1811,8 @@ async function renderBiblioLive() {
       })
     : (stats ? statsCardsHtml(stats) : "") +
       header +
-      `<div style="display:flex;gap:14px"><div style="width:150px;flex:none"><div class="col-h">Bibliothèque</div>${side}</div>` +
-      `<div style="flex:1;min-width:0"><div style="display:flex;justify-content:space-between;margin-bottom:5px"><span style="font-size:var(--text-base);font-weight:500">${esc(activeFacetVal || "Tous")}</span><span style="font-size:var(--text-sm);color:var(--color-text-tertiary)">${bibState.tracks.length} piste${bibState.tracks.length > 1 ? "s" : ""}</span></div>` +
+      `<div class="sift-library-layout"><div class="sift-library-side sift-ui-card-soft sift-ui-card-soft-pad"><div class="col-h">Bibliothèque</div>${side}</div>` +
+      `<div class="sift-library-main sift-ui-card sift-ui-card-pad"><div style="display:flex;justify-content:space-between;margin-bottom:5px"><span style="font-size:var(--text-base);font-weight:500">${esc(activeFacetVal || "Tous")}</span><span style="font-size:var(--text-sm);color:var(--color-text-tertiary)">${bibState.tracks.length} piste${bibState.tracks.length > 1 ? "s" : ""}</span></div>` +
       (rows ||
         `<div style="font-size:var(--text-md);color:var(--color-text-tertiary)">Aucun résultat pour ce filtre.</div>`) +
       dupSection +
@@ -1807,6 +1869,12 @@ function openBiblioDetail(id: number): void {
   const t = bibState.tracks.find((x) => x.id === id);
   const host = requireEl("#bibplayer", "openBiblioDetail");
   if (!t) return;
+  if (bibOpenId === id) {
+    bibOpenId = null;
+    document.querySelectorAll(".lr.cur").forEach((n) => n.classList.remove("cur"));
+    host.innerHTML = "";
+    return;
+  }
   // Track the open id so the `.cur` highlight is re-stamped by biblioRowHtml when a scrolled-away
   // row re-enters the virtualized window. Clear the class on currently-mounted rows immediately for
   // instant feedback (rows outside the window aren't in the DOM — bibOpenId covers them on mount).
@@ -1824,6 +1892,11 @@ function openBiblioDetail(id: number): void {
       if (span) span.textContent = bibName(updated);
     },
     () => void renderBiblioLive(),
+    () => {
+      bibOpenId = null;
+      document.querySelectorAll(".lr.cur").forEach((n) => n.classList.remove("cur"));
+      host.innerHTML = "";
+    },
   );
 }
 
@@ -1890,16 +1963,16 @@ export function installLiveWiring() {
       }, 150);
       return;
     }
-    // Écartés actions (Soulseek copy / send-to-bin / restore / empty bin)
+    // Écartés actions (copy query / send-to-bin / restore / empty bin)
     const ec = (e.target as HTMLElement).closest<HTMLElement>("[data-ec]");
     if (ec) {
       e.stopPropagation();
       const act = ec.dataset.ec;
       const id = Number(ec.dataset.id);
-      if (act === "slsk") {
+      if (act === "copy-query") {
         void navigator.clipboard.writeText(ec.dataset.q || "").catch(() => {});
         const prev = ec.innerHTML;
-        ec.innerHTML = '<i class="ti ti-check" style="font-size:var(--text-xs);vertical-align:-1px"></i> Copied';
+        ec.innerHTML = '<i class="ti ti-check" style="font-size:var(--text-xs);vertical-align:-1px"></i> Copié';
         setTimeout(() => {
           ec.innerHTML = prev;
         }, 1200);

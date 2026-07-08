@@ -234,15 +234,27 @@ function shortPath(path: string): string {
   return parts.length > 2 ? `…${parts.slice(-2).join("/")}` : path;
 }
 
-function playerHeaderHtml(name: string, path: string, closeBtn: boolean): string {
+interface PlayerHeaderOptions {
+  deferText?: boolean;
+  title?: string;
+  subtitle?: string;
+  showAnalysisFailure?: boolean;
+}
+
+function playerHeaderHtml(name: string, path: string, closeBtn: boolean, opts: PlayerHeaderOptions = {}): string {
+  const pendingCls = opts.deferText ? " sift-report-text-pending" : "";
   return (
     `<div class="sift-player-header">` +
     `<div class="sift-cover-frame">` +
+    // Abstract note glyph, not a literal vinyl (annotation: "l'icone fait trop redondant avec le
+    // bouton play... un délire plus minimaliste vectoriel"). Two adjacent circular shapes (the
+    // play button + a drawn vinyl disc) read as duplicated; a plain icon sidesteps that entirely.
+    `<i class="ti ti-music-note sift-cover-fallback" aria-hidden="true"></i>` +
     `<img class="sift-report-cover sift-player-cover" hidden alt="Pochette — ${esc(name)}">` +
     `</div>` +
     `<div class="sift-player-header-body">` +
-    `<div class="sift-report-name sift-player-name">${esc(name)}</div>` +
-    `<div class="sift-report-sub sift-player-sub"></div>` +
+    `<div class="sift-report-name sift-player-name${pendingCls}">${esc(name)}</div>` +
+    `<div class="sift-report-sub sift-player-sub${pendingCls}">${esc(opts.subtitle ?? "")}</div>` +
     `<div class="sift-player-path" title="${esc(path)}">${esc(shortPath(path))}</div>` +
     `</div>` +
     (closeBtn ? `<button class="sift-close sift-report-close">fermer</button>` : "") +
@@ -250,10 +262,10 @@ function playerHeaderHtml(name: string, path: string, closeBtn: boolean): string
   );
 }
 
-function playerRowHtml(name: string, path: string, closeBtn = false): string {
+function playerRowHtml(name: string, path: string, closeBtn = false, headerOpts: PlayerHeaderOptions = {}): string {
   return (
     `<div class="sift-player-row">` +
-    playerHeaderHtml(name, path, closeBtn) +
+    playerHeaderHtml(name, path, closeBtn, headerOpts) +
     `<div class="sift-player-audition">` +
     `<button class="sift-play sift-play-btn" title="Lecture / pause (espace)" aria-label="Lecture / pause (espace)"><i class="ti ti-player-play"></i></button>` +
     `<div class="sift-wave-wrap is-paused">` +
@@ -265,8 +277,16 @@ function playerRowHtml(name: string, path: string, closeBtn = false): string {
     `</div>` +
     `<div class="sift-player-error" hidden></div>` +
     `<div class="sift-player-controls">` +
-    `<div class="sift-slider-block">` +
-    `<span class="sift-slider-label">Volume</span>` +
+    // Collapsed to an icon at rest, expands on hover (annotation: "le bouton de volume qui
+    // collapse et qui s'ouvre seulement en hover") — width-transition + overflow:hidden in CSS,
+    // the icon is a separate absolutely-positioned element that fades out once expanded.
+    // "Volume" label dropped (annotation: "tu peux enlever le texte Volume et grossir l'icone") —
+    // the icon alone is the trigger/identity now.
+    `<div class="sift-slider-block sift-volume-block">` +
+    // ti-volume-2 swapped for the plainer ti-volume (annotation: "pas fan de l'icone de volume") —
+    // a simpler speaker glyph, no sound-wave arcs, consistent with the flat/abstract direction
+    // already taken for the cover fallback.
+    `<i class="ti ti-volume sift-volume-icon" title="Volume" aria-label="Volume"></i>` +
     `<div class="sift-slider-track sift-volume-track">` +
     `<div class="sift-slider-rail"></div>` +
     `<div class="sift-slider-fill sift-volume-fill"></div>` +
@@ -341,7 +361,12 @@ export function zoneToggleHtml(opts: {
   // has no other UI feedback path. Métadonnées never sets it, so it just stays empty there.
   return (
     `<button class="${toggleCls}"${opts.toggleId ? ` id="${opts.toggleId}"` : ""} aria-expanded="false">` +
-    `<span><span class="${carCls}">▸</span>${opts.label}</span>` +
+    // Confirmed by annotation (2nd round — see docs/superpowers/specs, continuous-surface
+    // redesign): a permanent pill around the label, not just the generic button:hover rect that
+    // only appeared transiently on hover. This is the label's own pill, distinct from the
+    // conclusion's status pill (.sift-verdict-pill) — both are legitimate "bulles", just for
+    // different things (section identity vs. status).
+    `<span><span class="${carCls}">▸</span><span class="sift-zone-toggle-pill">${opts.label}</span></span>` +
     `<span class="sift-zone-toggle-right">` +
     `<span class="sift-chip-badge" id="${opts.badgeId}"${badgeStyle}${badgeHidden ? " hidden" : ""}>${esc(opts.badgeLabel ?? "")}</span>` +
     `<span class="${hintCls}"></span>` +
@@ -350,33 +375,23 @@ export function zoneToggleHtml(opts: {
   );
 }
 
-/** ACTUAL verdict panel, faithful to the Penpot board: a verdict-tinted panel (`vb`) with an
- *  action headline ("Ready to file" etc.) over a chip row. The first chip (LOSSLESS / real
- *  quality) comes from the analysis; the `.sift-vchips` row is left open so filing.ts can append
- *  the MATCH% (identify) and UNIQUE/DUPLICATE (dedup) chips it owns the data for. */
-export function verdictCardHtml(r: AnalysisReport): string {
-  const map = {
-    ok: ["ti-circle-check", "Prêt à ranger", "var(--color-text-success)", "var(--color-background-success)"],
-    fake: ["ti-alert-triangle", "Sur-encodé — à re-sourcer", "var(--color-text-danger)", "var(--color-background-danger)"],
-    grey: ["ti-help-circle", "À vérifier d'abord", "var(--color-text-warning)", "var(--color-background-warning)"],
-  } as const;
-  const [icon, label, fg, panelBg] = map[r.verdict];
-  // Chips (LOSSLESS/MATCH/DUPLICATE) live outside this bandeau: the quality chip moved into the
-  // "Preuve (spectre)" disclosure header (qualityChipTone/spectroAndTagsHtml below), CDJ moved to
-  // the Métadonnées disclosure (filing.ts) — the conclusion bandeau is dot + status + note + Nom
-  // final only, matching the maquette's CONCLUSION block exactly (Sift.dc.html:381-392).
-  // Confirmé écart de structure, docs/superpowers/reviews/2026-07-02-audit-fidelite-ecran-par-ecran.md décision #1.
-  return (
-    `<div class="sift-verdict-card" style="background:${panelBg}">` +
-    `<div class="sift-verdict-main">` +
-    `<div class="sift-verdict-head"><i class="ti ${icon}" style="color:${fg}"></i><span class="sift-verdict-label" style="color:${fg}">${label}</span></div>` +
-    `</div>` +
-    `<div class="sift-verdict-finalname-col">` +
-    `<div class="sift-verdict-finalname-label">Nom final</div>` +
-    `<div class="sift-verdict-finalname" style="color:${fg}"></div>` +
-    `</div>` +
-    `</div>`
-  );
+/** ACTUAL verdict panel: the CONCLUSION, a single status "bulle" (pill) — sitting on the
+ *  inspector's own continuous surface, no full-bleed tinted panel anymore (2026-07-06 redesign;
+ *  superseded the tinted-panel treatment). Nom final moved OUT of here entirely, into the rail
+ *  (filing.ts renderFoot, .sift-rail-final-group). This ONLY reflects the audio verdict now — an
+ *  earlier "À finaliser" state (verdict ok but no destination chosen yet) was tried and reverted
+ *  (annotation: "on ne comprend pas ce qui reste à finaliser ? Redondant ?") — the pill alone
+ *  couldn't explain WHAT needed finalizing, and it duplicated the Destination button's own
+ *  "Choisir…" CTA, which is the actual, self-explanatory place that signal belongs. */
+// Removed entirely (annotation: "supprime ça en fait") — the verdict pill (Prêt à ranger/À
+// vérifier d'abord/Sur-encodé) duplicated the tone-coded quality badge already shown in the
+// Diagnostic audio disclosure header (qualityChipTone/spectroAndTagsHtml below), same pattern as
+// the earlier removals of the confidence badge and CHECK MATCH this session. `verdictContainer`
+// (`.sift-fil-verdict`) still exists and is still used for the "Analyse en cours…"/error states
+// elsewhere in this file — only the success-path HTML this function used to build is gone; kept
+// as a no-op (not deleted outright) so those call sites don't need touching.
+export function verdictCardHtml(_r: AnalysisReport): string {
+  return "";
 }
 
 /** Quality label + tone for the spectral-disclosure header badge (verdict-derived: LOSSLESS,
@@ -393,7 +408,7 @@ function spectroAndTagsHtml(r: AnalysisReport): string {
   return (
     `<div class="sift-spectro-box">` +
     zoneToggleHtml({
-      label: "Preuve (spectre)",
+      label: "Diagnostic audio",
       badgeId: "sift-quality-badge",
       toggleExtraClass: "sift-sg-toggle sift-spectro-toggle",
       caretExtraClass: "sift-sg-caret sift-spectro-caret",
@@ -435,10 +450,10 @@ function spectroAndTagsHtml(r: AnalysisReport): string {
  *  `openReportInto`/`renderReportInto`) — it's the CONCLUSION and must come last, right above
  *  the action rail, matching the maquette. `openReportModal` (no Identification card) appends
  *  `verdictCardHtml` itself, right after this. */
-function reportHtml(r: AnalysisReport, closeBtn: boolean): string {
-  const name = r.path.split(/[\\/]/).pop() || r.path;
+function reportHtml(r: AnalysisReport, closeBtn: boolean, headerOpts: PlayerHeaderOptions = {}): string {
+  const name = headerOpts.title ?? (r.path.split(/[\\/]/).pop() || r.path);
   return (
-    playerRowHtml(name, r.path, closeBtn) +
+    playerRowHtml(name, r.path, closeBtn, headerOpts) +
     spectroAndTagsHtml(r)
   );
 }
@@ -547,15 +562,25 @@ async function mountPlayer(root: HTMLElement, path: string, peaks?: number[], du
 
   ensureStyles();
   destroyPlayer();
+  // WaveSurfer draws to canvas, so it needs resolved color strings, not var(--x) references —
+  // same read-at-mount pattern already used for the spectrogram cutoff line (drawSpectrogram
+  // below). --overlay-bar is the theme-aware "translucent bar" token (used for .qi.cur's accent
+  // bar) — a semantic fit for the unplayed wave bars, and theme-aware unlike the old hardcoded
+  // rgba(255,255,255,.35) (annotation: "aligne la couleur de la waveform sur notre color system"
+  // — that literal only worked by accident in dark mode, invisible in light). Progress keeps
+  // --color-waveform-elapsed, the dedicated (theme-fixed by design) waveform accent token.
+  const cs = getComputedStyle(root);
+  const waveColor = cs.getPropertyValue("--overlay-bar").trim() || "rgba(255,255,255,.35)";
+  const progressColor = cs.getPropertyValue("--color-waveform-elapsed").trim() || "#ff5500";
   const ws = WaveSurfer.create({
     container,
-    height: 46,
+    height: 58, // bumped from 46 (continuous-surface redesign, 2026-07-06) — larger hero waveform
     barWidth: 2,
     barGap: 1,
     barRadius: 1,
     cursorWidth: 0,
-    waveColor: "rgba(255,255,255,.35)",
-    progressColor: "#ff5500",
+    waveColor,
+    progressColor,
     normalize: true,
     peaks: peaks?.length ? [peaks] : undefined,
     duration: duration || undefined,
@@ -593,17 +618,23 @@ async function mountPlayer(root: HTMLElement, path: string, peaks?: number[], du
       const rect = track.getBoundingClientRect();
       onMove(Math.max(0, Math.min(1, (clientX - rect.left) / Math.max(1, rect.width))));
     };
-    track.addEventListener("mousedown", (e) => {
+    track.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
       track.classList.add("dragging");
+      track.setPointerCapture(e.pointerId);
       update(e.clientX);
-      const onMouseMove = (ev: MouseEvent) => update(ev.clientX);
-      const onMouseUp = () => {
+      const onPointerMove = (ev: PointerEvent) => update(ev.clientX);
+      const stopDragging = (ev: PointerEvent) => {
         track.classList.remove("dragging");
-        window.removeEventListener("mousemove", onMouseMove);
-        window.removeEventListener("mouseup", onMouseUp);
+        if (track.hasPointerCapture(ev.pointerId)) track.releasePointerCapture(ev.pointerId);
+        track.removeEventListener("pointermove", onPointerMove);
+        track.removeEventListener("pointerup", stopDragging);
+        track.removeEventListener("pointercancel", stopDragging);
       };
-      window.addEventListener("mousemove", onMouseMove);
-      window.addEventListener("mouseup", onMouseUp);
+      track.addEventListener("pointermove", onPointerMove);
+      track.addEventListener("pointerup", stopDragging);
+      track.addEventListener("pointercancel", stopDragging);
     });
   };
 
@@ -619,7 +650,16 @@ async function mountPlayer(root: HTMLElement, path: string, peaks?: number[], du
     });
   }
 
-  const renderTempo = () => {
+  let tempoRateFrame: number | null = null;
+  const scheduleTempoRate = () => {
+    if (tempoRateFrame != null) return;
+    tempoRateFrame = window.requestAnimationFrame(() => {
+      tempoRateFrame = null;
+      applyRate();
+    });
+  };
+
+  const renderTempo = (syncAudio = true) => {
     const pct = ((tempoValue + 8) / 16) * 100;
     if (tempoFill) {
       const left = Math.min(pct, 50);
@@ -627,18 +667,24 @@ async function mountPlayer(root: HTMLElement, path: string, peaks?: number[], du
       tempoFill.style.width = `${Math.abs(pct - 50)}%`;
     }
     if (tempoThumb) tempoThumb.style.left = `${pct}%`;
-    if (tempoOut) tempoOut.textContent = `${tempoValue > 0 ? "+" : ""}${tempoValue}%`;
-    applyRate();
+    if (tempoOut) tempoOut.textContent = `${tempoValue > 0 ? "+" : ""}${Math.round(tempoValue)}%`;
+    if (syncAudio) scheduleTempoRate();
   };
   renderTempo();
   if (tempoTrack) {
     dragSlider(tempoTrack, (pct) => {
-      tempoValue = Math.max(-8, Math.min(8, Math.round(-8 + pct * 16)));
+      // Rounding tempoValue to the nearest whole percent on every mousemove (annotation: "encore
+      // sticky") snapped the thumb across one of only 17 fixed positions instead of following the
+      // cursor, unlike the volume slider's continuous ws.setVolume(pct) — that discreteness is what
+      // read as "sticky"/notchy. Keep the underlying value continuous (smooth drag, smooth pitch
+      // change); only the displayed "%" text rounds, in renderTempo above.
+      tempoValue = Math.max(-8, Math.min(8, -8 + pct * 16));
       renderTempo();
     });
     tempoTrack.addEventListener("dblclick", () => {
       tempoValue = 0;
-      renderTempo();
+      renderTempo(false);
+      applyRate();
     });
   }
   // SoundCloud-style: elapsed (left) + remaining (right) shown at once, overlaid on the waveform
@@ -765,7 +811,6 @@ function wireSpectrogram(root: HTMLElement, r: AnalysisReport) {
       open = false;
       body.classList.remove("is-open");
       caret.style.transform = "";
-      if (qualityBadge) qualityBadge.hidden = false;
       return;
     }
     if (!loaded) {
@@ -786,7 +831,6 @@ function wireSpectrogram(root: HTMLElement, r: AnalysisReport) {
     }
     open = true;
     caret.style.transform = "rotate(90deg)";
-    if (qualityBadge) qualityBadge.hidden = true;
     body.classList.add("is-open");
   });
 }
@@ -803,8 +847,9 @@ export function renderReportInto(
   container: HTMLElement,
   r: AnalysisReport,
   verdictContainer?: HTMLElement,
+  headerOpts: PlayerHeaderOptions = {},
 ) {
-  container.innerHTML = `<div class="sift-report-scroll">${reportHtml(r, false)}</div>`;
+  container.innerHTML = `<div class="sift-report-scroll">${reportHtml(r, false, headerOpts)}</div>`;
   if (verdictContainer) verdictContainer.innerHTML = verdictCardHtml(r);
   wireReport(container, r);
 }
@@ -838,6 +883,7 @@ export async function openReportInto(
   container: HTMLElement,
   path: string,
   verdictContainer?: HTMLElement,
+  headerOpts: PlayerHeaderOptions = {},
 ): Promise<AnalysisReport | null> {
   destroyPlayer();
   ensureStyles();
@@ -845,11 +891,11 @@ export async function openReportInto(
 
   const cached = reportCache.get(path);
   if (cached) {
-    renderReportInto(container, cached, verdictContainer);
+    renderReportInto(container, cached, verdictContainer, headerOpts);
     return cached;
   }
 
-  const name = path.split(/[\\/]/).pop() || path;
+  const name = headerOpts.title ?? (path.split(/[\\/]/).pop() || path);
 
   // Fire analysis IPC immediately. For already-analyzed tracks the DB round-trip takes ~20ms.
   const analysisPromise = analyzePath(path, false);
@@ -862,7 +908,7 @@ export async function openReportInto(
   const verdictHost = () => verdictContainer ?? container.querySelector<HTMLElement>(".sift-verdict-stub");
   container.innerHTML =
     `<div class="sift-report-scroll">` +
-    playerRowHtml(name, path) +
+    playerRowHtml(name, path, false, headerOpts) +
     `<div class="sift-analysis-body" hidden></div>` +
     (verdictContainer ? "" : `<div class="sift-verdict-stub"></div>`) +
     `</div>`;
@@ -922,7 +968,7 @@ export async function openReportInto(
     console.error("analyze_path failed", e);
     if (seq !== openSeq) return null;
     const verdictEl = verdictHost();
-    if (verdictEl) {
+    if (verdictEl && headerOpts.showAnalysisFailure !== false) {
       verdictEl.innerHTML =
         `<div class="sift-analysis-fail">Échec de l'analyse : ${esc(String(e))}</div>`;
     }

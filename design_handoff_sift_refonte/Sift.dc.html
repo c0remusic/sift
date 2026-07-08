@@ -359,7 +359,9 @@ html,body{margin:0;padding:0;height:100%;}
             </div>
             <div style="display:flex;gap:34px;flex-wrap:wrap;margin-bottom:14px;">
               <div><div style="font-size:10px;letter-spacing:0.06em;text-transform:uppercase;color:var(--text4);margin-bottom:4px;">Compatibilité CDJ</div><div style="font-size:13px;color:{{cdjColor}};">{{tagsCdjOk}}</div></div>
-              <div><div style="font-size:10px;letter-spacing:0.06em;text-transform:uppercase;color:var(--text4);margin-bottom:4px;">Version ID3</div><div style="font-family:'JetBrains Mono',monospace;font-size:13px;">{{id3Version}}</div></div>
+              <sc-if value="{{id3Version}}" hint-placeholder-val="{{true}}">
+              <div><div style="font-size:10px;letter-spacing:0.06em;text-transform:uppercase;color:var(--text4);margin-bottom:4px;">Tags ID3</div><div style="font-family:'JetBrains Mono',monospace;font-size:13px;">{{id3Version}}</div></div>
+              </sc-if>
             </div>
             <sc-if value="{{matchNeedsCheck}}" hint-placeholder-val="{{false}}">
               <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;border-top:1px solid var(--border);padding-top:12px;">
@@ -1214,7 +1216,10 @@ class Component extends DCLogic {
         {l:'Conteneur OK',v:'oui'},
         {l:'Pics (couverture)',v:peaksPts+' pts ≈ '+t.dur.toFixed(1)+'s / '+t.dur.toFixed(1)+'s (100%)'},
       ];
-      var tagsCdjOk=pr(10)>0.85?'non':'oui', id3Version=pr(11)>0.5?'ID3v2.3':'ID3v2.4', hasCover='oui';
+      // id3Version: renamed to "Tags ID3" (2026-07-06 annotation) — the real backend only ever sets
+      // this for .mp3 (tags.rs), as a literal presence flag ("ID3"), never an actual spec version
+      // number; the old label read as if it tracked the Discogs "Version" field edited just above.
+      var tagsCdjOk=pr(10)>0.85?'non':'oui', id3Version=pr(11)>0.5?'ID3':'', hasCover='oui';
       // Métadonnées (ex-Identification · Discogs) repliable, repliée par défaut, avec un badge
       // de statut CDJ dans l'en-tête visible replié — même refonte que le vrai report-view.ts/
       // filing.ts (2026-07-05) : rien à cacher tant qu'il n'y a pas d'identité, donc le toggle
