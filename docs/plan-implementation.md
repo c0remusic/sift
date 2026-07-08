@@ -282,7 +282,22 @@ empreintes Chromaprint).
 > conservée). Vérifié contre une copie de la vraie bibliothèque (2828 pistes, un vrai
 > doublon pré-existant trouvé et dédupliqué avec succès — voir
 > `docs/ressources-externes.md`, Évaluation 18, paragraphe "Suivi même jour").
-> 25 tests + clippy clean. **Pas d'IPC ni d'UI** (différé, même précédent que Tier 1) ;
+> 25 tests + clippy clean.
+>
+> **Câblage IPC livré le 2026-07-08 (même jour)** — 2 commandes :
+> `rekordbox_masterdb_scan_playlist_duplicates` (lecture à la demande, **pas de
+> table DB ni de hook filing.rs** contrairement à Tier 1 : les doublons de
+> playlist sont une condition préexistante de la bibliothèque, pas causée par
+> une action Sift, donc rien à détecter au moment du rangement ni à persister)
+> et `rekordbox_masterdb_dedup_playlist_group` (écriture, le groupe complet
+> fait l'aller-retour front↔back sans état serveur). DTOs locaux
+> (`PlaylistDuplicateEntryDto`/`GroupDto`) séparés des types du moteur, même
+> convention que Tier 1. Revue finale (Opus) : symétrie du round-trip DTO
+> vérifiée champ par champ contre le moteur, "ready to merge" sans fix
+> bloquant. 291 tests + clippy + tsc clean. Plan :
+> `docs/superpowers/plans/2026-07-08-m8-tier2-ipc-wiring.md`.
+>
+> **Pas d'UI** (différée, même précédent que Tier 1) ;
 > **synchro de playlist complète** (au-delà du simple dédoublonnage — ajouts/retraits/
 > réordonnancement `TrackNo`) hors scope, nécessite une correspondance Sift↔Rekordbox
 > non encore spécifiée. Plan :
