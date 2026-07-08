@@ -156,6 +156,19 @@ pub enum MasterDbError {
     /// restoring the backup also failed — the live file may now be in a
     /// bad state and needs manual attention.
     WriteVerificationFailedRollbackFailed(String),
+    /// `dedup_playlist_group` was called with a group that has nothing to
+    /// remove — the caller should have filtered this out via
+    /// `detect_playlist_duplicates` first.
+    #[allow(dead_code)]
+    NoDuplicatesToRemove,
+    /// A `djmdSongPlaylist.ID` from `PlaylistDuplicateGroup::remove` no
+    /// longer matched any row at delete time (already removed by something
+    /// else since detection ran).
+    #[allow(dead_code)]
+    SongPlaylistEntryNotFound {
+        /// The `djmdSongPlaylist.ID` that was not found.
+        song_playlist_id: String,
+    },
 }
 
 impl std::fmt::Display for MasterDbError {
@@ -187,6 +200,12 @@ impl std::fmt::Display for MasterDbError {
             }
             MasterDbError::WriteVerificationFailedRollbackFailed(m) => {
                 write!(f, "write verification failed AND rollback failed — manual attention needed: {m}")
+            }
+            MasterDbError::NoDuplicatesToRemove => {
+                write!(f, "dedup_playlist_group called with an empty remove list")
+            }
+            MasterDbError::SongPlaylistEntryNotFound { song_playlist_id } => {
+                write!(f, "no djmdSongPlaylist row with ID {song_playlist_id}")
             }
         }
     }
@@ -794,6 +813,123 @@ pub fn repair_track_path(
     }
 }
 
+/// Removes every extra occurrence in `group.remove` from `djmdSongPlaylist`,
+/// keeping `group.keep` untouched, per the M8 Tier 2 design
+/// (`docs/superpowers/specs/2026-07-06-m8-masterdb-write-path-rust-design-v2.md`,
+/// Tier 2 section). Bumps the global `agentRegistry` USN counter once per
+/// deleted row — a deleted row has no `rb_local_usn` of its own to stamp,
+/// unlike `repair_track_path`'s in-place `UPDATE`.
+///
+/// Deliberately does **not** touch `djmdPlaylist`, `masterPlaylists6.xml`,
+/// or `TrackNo` on any surviving row (see this function's module-level scope
+/// note).
+///
+/// Safety sequence: identical to `repair_track_path` — refuse if Rekordbox
+/// is running → backup → decrypt → delete inside a transaction → re-encrypt
+/// → atomic rename → round-trip verify via `detect_playlist_duplicates` →
+/// on verification failure, automatically restore the backup.
+#[allow(dead_code)]
+pub fn dedup_playlist_group(
+    pioneer_dir: &Path,
+    backup_dir: &Path,
+    group: &PlaylistDuplicateGroup,
+) -> Result<(), MasterDbError> {
+    if group.remove.is_empty() {
+        return Err(MasterDbError::NoDuplicatesToRemove);
+    }
+    if is_rekordbox_running() {
+        return Err(MasterDbError::RekordboxRunning);
+    }
+
+    let db_path = pioneer_dir.join("master.db");
+    backup_rekordbox_files(pioneer_dir, backup_dir)?;
+
+    let raw = std::fs::read(&db_path).map_err(|e| MasterDbError::Io(e.to_string()))?;
+    let plaintext = decrypt_masterdb(&raw)?;
+
+    let mut conn = Connection::open_in_memory().map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+    let len = plaintext.len();
+    conn.deserialize_read_exact(rusqlite::MAIN_DB, Cursor::new(plaintext), len, false)
+        .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+
+    let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.6f").to_string();
+    let tx = conn.transaction().map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+
+    for entry in &group.remove {
+        let old_usn: i64 = tx
+            .query_row(
+                "SELECT int_1 FROM agentRegistry WHERE registry_id = 'localUpdateCount'",
+                [],
+                |row| row.get(0),
+            )
+            .map_err(|e| match e {
+                rusqlite::Error::QueryReturnedNoRows => MasterDbError::RegistryRowMissing,
+                other => MasterDbError::Sqlite(other.to_string()),
+            })?;
+        let new_usn = old_usn + 1;
+        tx.execute(
+            "UPDATE agentRegistry SET int_1 = ?1, updated_at = ?2 WHERE registry_id = 'localUpdateCount'",
+            rusqlite::params![new_usn, now],
+        )
+        .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+
+        let rows_changed = tx
+            .execute(
+                "DELETE FROM djmdSongPlaylist WHERE ID = ?1",
+                rusqlite::params![entry.song_playlist_id],
+            )
+            .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+        if rows_changed != 1 {
+            return Err(MasterDbError::SongPlaylistEntryNotFound {
+                song_playlist_id: entry.song_playlist_id.clone(),
+            });
+        }
+    }
+
+    tx.commit().map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+
+    let plaintext2 = conn
+        .serialize(rusqlite::MAIN_DB)
+        .map_err(|e| MasterDbError::Sqlite(e.to_string()))?
+        .to_vec();
+    let raw2 = encrypt_masterdb(&plaintext2)?;
+
+    let tmp_path = pioneer_dir.join("master.db.sift-write-tmp");
+    std::fs::write(&tmp_path, &raw2).map_err(|e| MasterDbError::Io(e.to_string()))?;
+    if let Err(e) = std::fs::rename(&tmp_path, &db_path) {
+        std::fs::remove_file(&tmp_path).ok();
+        return Err(MasterDbError::Io(e.to_string()));
+    }
+
+    match detect_playlist_duplicates(&db_path) {
+        Ok(remaining) => {
+            let still_duplicated = remaining
+                .iter()
+                .any(|g| g.playlist_id == group.playlist_id && g.content_id == group.content_id);
+            if still_duplicated {
+                let msg = format!(
+                    "playlist {} / content {} still has duplicates after dedup",
+                    group.playlist_id, group.content_id
+                );
+                match restore_rekordbox_backup(pioneer_dir, backup_dir) {
+                    Ok(()) => Err(MasterDbError::WriteVerificationFailedRolledBack(msg)),
+                    Err(restore_err) => Err(MasterDbError::WriteVerificationFailedRollbackFailed(
+                        format!("{msg}; rollback also failed: {restore_err}"),
+                    )),
+                }
+            } else {
+                Ok(())
+            }
+        }
+        Err(read_err) => match restore_rekordbox_backup(pioneer_dir, backup_dir) {
+            Ok(()) => Err(MasterDbError::WriteVerificationFailedRolledBack(read_err.to_string())),
+            Err(restore_err) => Err(MasterDbError::WriteVerificationFailedRollbackFailed(format!(
+                "{read_err}; rollback also failed: {restore_err}"
+            ))),
+        },
+    }
+}
+
 // Fixture provenance: `tests/fixtures/rekordbox_master.db` is a synthetic
 // SQLCipher v4 database (3 fake tracks, 1 fake playlist, 1 fake
 // agentRegistry row, no personal data), generated by
@@ -1307,5 +1443,83 @@ mod tests {
         assert_eq!(after_restore.tracks.len(), track_count_before);
 
         println!("PASS: repair + restore round-tripped cleanly on real master.db copy ({track_count_before} tracks)");
+    }
+
+    #[test]
+    fn dedup_playlist_group_removes_extra_entries_and_bumps_usn() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let pioneer_dir = tmp.path().join("pioneer");
+        let backup_dir = tmp.path().join("backup");
+        std::fs::create_dir_all(&pioneer_dir).expect("mkdir pioneer");
+        std::fs::copy(FIXTURE, pioneer_dir.join("master.db")).expect("copy fixture as master.db");
+        std::fs::write(pioneer_dir.join("masterPlaylists6.xml"), b"<DJ_PLAYLISTS/>")
+            .expect("write fake xml");
+
+        let groups = detect_playlist_duplicates(&pioneer_dir.join("master.db")).expect("detect");
+        assert_eq!(groups.len(), 1);
+        let group = groups[0].clone();
+
+        dedup_playlist_group(&pioneer_dir, &backup_dir, &group).expect("dedup");
+
+        // No more duplicates for this (playlist, content) pair.
+        let after = detect_playlist_duplicates(&pioneer_dir.join("master.db")).expect("detect after");
+        assert!(!after
+            .iter()
+            .any(|g| g.playlist_id == group.playlist_id && g.content_id == group.content_id));
+
+        // The kept row is still there, untouched.
+        let index = read_rekordbox_masterdb(&pioneer_dir.join("master.db")).expect("reread");
+        assert_eq!(index.tracks.len(), 3, "djmdContent must be untouched by a playlist dedup");
+
+        // Backup exists and matches the original fixture.
+        let backed_up = std::fs::read(backup_dir.join("master.db")).expect("read backup");
+        let original = std::fs::read(FIXTURE).expect("read fixture");
+        assert_eq!(backed_up, original);
+    }
+
+    #[test]
+    fn dedup_playlist_group_rejects_empty_remove_list() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let pioneer_dir = tmp.path().join("pioneer");
+        let backup_dir = tmp.path().join("backup");
+        std::fs::create_dir_all(&pioneer_dir).expect("mkdir pioneer");
+        std::fs::copy(FIXTURE, pioneer_dir.join("master.db")).expect("copy fixture as master.db");
+        std::fs::write(pioneer_dir.join("masterPlaylists6.xml"), b"<DJ_PLAYLISTS/>")
+            .expect("write fake xml");
+
+        let empty_group = PlaylistDuplicateGroup {
+            playlist_id: "50000001".to_string(),
+            content_id: "40000002".to_string(),
+            keep: PlaylistDuplicateEntry { song_playlist_id: "60000002".to_string(), track_no: 2 },
+            remove: vec![],
+        };
+        let err = dedup_playlist_group(&pioneer_dir, &backup_dir, &empty_group).unwrap_err();
+        assert_eq!(err, MasterDbError::NoDuplicatesToRemove);
+    }
+
+    #[test]
+    fn dedup_playlist_group_rejects_unknown_song_playlist_id() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let pioneer_dir = tmp.path().join("pioneer");
+        let backup_dir = tmp.path().join("backup");
+        std::fs::create_dir_all(&pioneer_dir).expect("mkdir pioneer");
+        std::fs::copy(FIXTURE, pioneer_dir.join("master.db")).expect("copy fixture as master.db");
+        std::fs::write(pioneer_dir.join("masterPlaylists6.xml"), b"<DJ_PLAYLISTS/>")
+            .expect("write fake xml");
+
+        let bogus_group = PlaylistDuplicateGroup {
+            playlist_id: "50000001".to_string(),
+            content_id: "40000001".to_string(),
+            keep: PlaylistDuplicateEntry { song_playlist_id: "60000001".to_string(), track_no: 1 },
+            remove: vec![PlaylistDuplicateEntry {
+                song_playlist_id: "99999999".to_string(),
+                track_no: 9,
+            }],
+        };
+        let err = dedup_playlist_group(&pioneer_dir, &backup_dir, &bogus_group).unwrap_err();
+        assert_eq!(
+            err,
+            MasterDbError::SongPlaylistEntryNotFound { song_playlist_id: "99999999".to_string() }
+        );
     }
 }
