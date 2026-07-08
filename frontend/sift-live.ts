@@ -70,7 +70,7 @@ import { confirmAction } from "./confirm-modal";
 // Views/chrome extracted from this god-module (audit P-3) — kept stateless, wired here.
 import { renderEcartes } from "./ecartes-view";
 import { renderHomeSources, pickAndAddFolder } from "./home-sources";
-import { installDragDrop, injectLeanStyle, injectTitlebar, installScrollAutohide } from "./chrome";
+import { installDragDrop, injectLeanStyle, injectTitlebar, installScrollAutohide, installNavKeyboard } from "./chrome";
 import { initTheme, setTheme } from "./theme";
 import type { ThemeChoice } from "./theme";
 import type { QueueItem, BatchResult, FileProgress, Target } from "../shared/contracts";
@@ -2035,6 +2035,7 @@ export function installLiveWiring() {
   installFilingKeys();
   installQueueNavKeys();
   installScrollAutohide();
+  installNavKeyboard();
   void installDragDrop();
 
   // Nav "Clé USB" is still a one-click action, not a real screen (Clé USB's own brainstorm is

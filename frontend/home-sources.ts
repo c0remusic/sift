@@ -38,23 +38,29 @@ export function resolveSourceColorKey(sources: Source[], source: Source): string
   return SOURCE_HUE_CYCLE[idx % SOURCE_HUE_CYCLE.length];
 }
 
+type StatusTone = "success" | "danger" | "info" | "neutral";
+
 interface StatusMeta {
   label: string;
   color: string;
+  tone: StatusTone;
 }
 
+/** `tone` drives the badge background in inspectorHtml (audit-ref, réf. shadcn Badge "Custom
+ * Colors" : fond teinté par état plutôt que fond neutre + texte teinté seul). `color` reste
+ * utilisé tel quel pour le point de statut de rowHtml (pas un badge, juste une puce). */
 function statusMeta(s: Source): StatusMeta {
-  if (!s.accessible) return { label: "Inaccessible", color: "var(--color-text-danger)" };
-  if (s.pending_count > 0) return { label: `${s.pending_count} nouveau${s.pending_count > 1 ? "x" : ""}`, color: "var(--color-text-info)" };
-  if (!s.watched) return { label: "En pause", color: "var(--color-text-tertiary)" };
-  return { label: "À jour", color: "var(--color-text-success)" };
+  if (!s.accessible) return { label: "Inaccessible", color: "var(--color-text-danger)", tone: "danger" };
+  if (s.pending_count > 0) return { label: `${s.pending_count} nouveau${s.pending_count > 1 ? "x" : ""}`, color: "var(--color-text-info)", tone: "info" };
+  if (!s.watched) return { label: "En pause", color: "var(--color-text-tertiary)", tone: "neutral" };
+  return { label: "À jour", color: "var(--color-text-success)", tone: "success" };
 }
 
 function rowHtml(s: Source, active: boolean, allSources: Source[]): string {
   const sm = statusMeta(s);
   const hue = resolveSourceColorKey(allSources, s);
   return (
-    `<div class="qi${active ? " cur" : ""}" data-sift="homerow" data-id="${s.id}" style="flex-direction:column;align-items:stretch;gap:3px;height:auto;padding:8px 9px">` +
+    `<div class="qi${active ? " cur" : ""}" data-sift="homerow" data-id="${s.id}" tabindex="0" role="button" aria-pressed="${active}" style="flex-direction:column;align-items:stretch;gap:3px;height:auto;padding:8px 9px">` +
     `<span style="display:flex;align-items:center;gap:6px;font-size:var(--text-lg);font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">` +
     `<span class="sift-src-dot sift-src-dot-${hue}" aria-hidden="true"></span>${esc(baseName(s.path))}</span>` +
     `<span style="display:flex;align-items:center;gap:6px;font-size:var(--text-sm);color:${sm.color}"><span style="width:5px;height:5px;border-radius:999px;background:${sm.color};flex:none"></span>${esc(sm.label)}</span>` +
@@ -67,7 +73,7 @@ function listColumnHtml(sources: Source[]): string {
   // y en a, un CTA compteur mène droit à la Revue (sinon rien, l'Accueil reste un écran de config).
   const pending = sources.reduce((n, s) => n + s.pending_count, 0);
   const revueCta = pending
-    ? `<button data-sift="gotorevue" style="display:inline-flex;align-items:center;gap:6px;background:var(--color-background-success);color:var(--color-text-success);font-weight:600;font-size:var(--text-sm);padding:5px 12px;border-radius:var(--border-radius-pill)">Revoir ${pending} morceau${pending > 1 ? "x" : ""} <i class="ti ti-arrow-right" style="font-size:var(--text-base);vertical-align:-2px"></i></button>`
+    ? `<button data-sift="gotorevue" class="sift-home-cta-revue" style="display:inline-flex;align-items:center;gap:6px;background:var(--color-background-success);color:var(--color-text-success);font-weight:600;font-size:var(--text-sm);padding:5px 12px;border-radius:var(--border-radius-pill)">Revoir ${pending} morceau${pending > 1 ? "x" : ""} <i class="ti ti-arrow-right" style="font-size:var(--text-base);vertical-align:-2px"></i></button>`
     : "";
   const header =
     `<div style="display:flex;align-items:center;justify-content:space-between;gap:10px;padding:0 2px 11px">` +
@@ -82,7 +88,7 @@ function listColumnHtml(sources: Source[]): string {
     : `<div class="sift-list-empty-hint">Aucun dossier surveillé.</div>`;
   const bottomBar =
     `<div style="flex:none;border-top:0.5px solid var(--color-border-tertiary);margin-top:8px;padding-top:8px">` +
-    `<button data-sift="addsrc" style="width:100%;background:var(--color-background-info);color:var(--color-text-info);font-weight:600"><i class="ti ti-plus" style="font-size:var(--text-base);vertical-align:-2px"></i> Ajouter un dossier</button>` +
+    `<button data-sift="addsrc" class="sift-home-cta-add" style="width:100%;background:var(--color-background-info);color:var(--color-text-info);font-weight:600"><i class="ti ti-plus" style="font-size:var(--text-base);vertical-align:-2px"></i> Ajouter un dossier</button>` +
     `</div>`;
   return header + `<div style="flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:2px">${rows}</div>` + bottomBar;
 }
@@ -110,11 +116,11 @@ function inspectorHtml(selected: Source | null, root: string | null, allSources:
 
   return (
     `<div class="sift-screen-stack" style="flex:1;overflow-y:auto;padding:20px 30px">` +
-    `<div style="font-size:var(--text-sm);color:var(--color-text-tertiary);margin-bottom:20px">Accueil <span style="color:var(--color-text-tertiary);margin:0 3px">›</span> <span style="color:var(--color-text-primary)">${name}</span></div>` +
+    `<nav aria-label="breadcrumb" style="font-size:var(--text-sm);color:var(--color-text-tertiary);margin-bottom:20px">Accueil <span aria-hidden="true" style="color:var(--color-text-tertiary);margin:0 3px">›</span> <span aria-current="page" style="color:var(--color-text-primary)">${name}</span></nav>` +
     rootGateHtml +
     `<div style="display:flex;align-items:center;gap:16px;margin-bottom:20px">` +
     `<div style="font-size:var(--text-xl);font-weight:600">${name}</div>` +
-    `<span style="font-family:var(--font-mono);font-size:var(--text-sm);padding:4px 10px;border-radius:999px;background:var(--color-background-secondary);color:${sm.color}">${esc(sm.label)}</span>` +
+    `<span class="sift-home-status-badge sift-home-status-badge-${sm.tone}">${esc(sm.label)}</span>` +
     `</div>` +
     `<div class="sift-ui-card-soft sift-ui-card-soft-pad sift-home-source-path">` +
     `<div style="font-size:var(--text-xs);letter-spacing:.09em;text-transform:uppercase;color:var(--color-text-tertiary);margin-bottom:6px">Dossier surveillé</div>` +
@@ -131,8 +137,8 @@ function inspectorHtml(selected: Source | null, root: string | null, allSources:
     ).join("") +
     `</div>` +
     `<div class="sift-ui-card-actions">` +
-    `<div data-sift="togglewatch" data-id="${selected.id}" data-watched="${watchOn ? "1" : "0"}" class="sift-home-watch-toggle sift-ui-card-actions-main">` +
-    `<span class="sift-home-watch-toggle-box"></span>` +
+    `<div data-sift="togglewatch" data-id="${selected.id}" data-watched="${watchOn ? "1" : "0"}" tabindex="0" role="checkbox" aria-checked="${watchOn}" class="sift-home-watch-toggle sift-ui-card-actions-main">` +
+    `<span class="sift-home-watch-toggle-box"><i class="ti ti-check" aria-hidden="true"></i></span>` +
     `Surveiller ce dossier</div>` +
     `<button data-sift="rmsrc" data-id="${selected.id}" style="color:var(--color-text-danger)"><i class="ti ti-trash" style="font-size:var(--text-md);vertical-align:-2px"></i> Retirer</button>` +
     `</div>` +
@@ -192,7 +198,15 @@ export async function renderHomeSources() {
       .querySelector('[data-view="reglages"]')
       ?.dispatchEvent(new MouseEvent("click", { bubbles: true }));
   });
-  inspectorCol.querySelector('[data-sift="togglewatch"]')?.addEventListener("click", async (e) => {
+  const watchToggle = inspectorCol.querySelector<HTMLElement>('[data-sift="togglewatch"]');
+  // Audit-ref C2 (Accueil, 2026-07-08) : role="checkbox" attend Enter/Espace, pas juste le clic —
+  // installNavKeyboard (chrome.ts) ne couvre que [data-view]/homerow, pas cet élément.
+  watchToggle?.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    e.preventDefault();
+    watchToggle.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  });
+  watchToggle?.addEventListener("click", async (e) => {
     const el = e.currentTarget as HTMLElement;
     const id = Number(el.dataset.id);
     const next = el.dataset.watched !== "1";

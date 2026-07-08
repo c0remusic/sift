@@ -205,6 +205,23 @@ export async function injectTitlebar(): Promise<void> {
   }
 }
 
+/** Audit-ref C3 (Accueil, 2026-07-08, réf. shadcn Sidebar) : `.nv`/`[data-view]` sont des `<div>`
+ * cliquables sans équivalent clavier — `app.js` (importé sans garde `inTauri`, main.ts:6) gère déjà
+ * le clic réel (`e.target.closest('[data-view]')`) mais n'écoute que "click". Complète en Enter/
+ * Espace sans toucher app.js (figé) : redispatche un clic synthétique sur l'élément focus. Couvre
+ * aussi les lignes `.qi[data-sift="homerow"]` une fois que home-sources.ts leur pose tabindex+role. */
+export function installNavKeyboard() {
+  document.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    const el = (e.target as HTMLElement)?.closest<HTMLElement>(
+      '[data-view][tabindex],[data-sift="homerow"][tabindex]',
+    );
+    if (!el) return;
+    e.preventDefault();
+    el.dispatchEvent(new MouseEvent("click", { bubbles: true }));
+  });
+}
+
 /** Reveal a scroll area's thumb while it scrolls, then hide it ~700ms after it stops (the
  * CSS keeps it hidden at rest). Capture-phase so it catches scrolling on any inner element. */
 export function installScrollAutohide() {

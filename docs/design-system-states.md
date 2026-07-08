@@ -637,6 +637,54 @@ marqués en sombre qu'en clair.
 
 ---
 
+## Tokens globaux — adaptation tweakcn "ZFlow" (2026-07-08)
+
+Suite au chantier audit-référence (Évaluation 19, `ressources-externes.md`) :
+Antoine a demandé une adaptation intelligente du thème tweakcn "ZFlow" — technique
+empruntée, valeurs propres à Sift, jamais un remplacement en bloc.
+
+| Token | Avant | Après | Emprunt |
+|---|---|---|---|
+| `--shadow-panel-subtle`/`-toast`/`-overlay` | 1 couche `rgba(0,0,0,X)` | 2 couches (contact serré + diffusion large) | Technique ZFlow, couleurs/valeurs de base gardées |
+| `--tracking-{normal,wide,wider,widest}` | littéraux `.01/.03/.05/.06em` dispersés sur 15 sites | tokens câblés sur les 14 occurrences qui recoupaient exactement (`.04/.08/.09/.1em`, un seul site chacun, laissés en littéral — même règle que l'audit radius 2026-07-03) | Concept d'échelle de tracking (ZFlow `tracking-*`), valeurs 100% Sift |
+| `--border-radius-{sm,md,lg,pill}` | 4 valeurs indépendantes (4/6/10/999px) | dérivées par `calc()` d'une base unique `--border-radius-base` | Technique (base unique + `calc()`), deltas internes (base−6/base−4) gardés de Sift |
+| `--border-radius-base` | — (n'existait pas) | `14px` (était `10px`/lg) | Valeur relevée sur demande explicite d'Antoine — plus arrondi |
+| Couleurs `--color-*`/`--overlay-*`/`--color-hue-*` | hex/rgba | **mêmes couleurs**, reconverties en `oklch()` (script sRGB→OKLab→OKLCH, précis, pas à l'œil) | Notation seulement — zéro changement de teinte perçue |
+| Police, palette de couleurs (teintes), échelle radius originale | — | **non touchés** | Contrediraient la palette Apple system colors (06/07), Outfit (marque) — décisions déjà validées, pas de gap trouvé |
+
+Un bug de conversion trouvé et corrigé en cours de route : le script de
+conversion OKLCH a d'abord altéré un commentaire de prose (`rgba(255,255,255,...)`
+dans un texte explicatif, pas du CSS réel) — le regex alpha `[\d.]+` matchait
+aussi une suite de points seuls. Repéré via `git diff` avant de continuer,
+corrigé (`styles.css`, commentaire section "Neutral overlay tints").
+
+Vérifié : `npx tsc --noEmit` clean, valeurs OKLCH parseées et résolues
+correctement via un check navigateur (`getComputedStyle`, bascule clair/sombre,
+`calc()` du radius résolu à 10px pour `md` comme attendu). Vérification
+visuelle finale dans `tauri dev` par Antoine.
+
+---
+
+## Écran Accueil — audit référence canonique (2026-07-08)
+
+Task 1 du chantier `docs/superpowers/changes/2026-07-08-ui-reference-audit/`.
+Référence consultée : registre officiel shadcn (`new-york-v4`, MCP `shadcn`).
+
+| Élément | Verdict | Détail |
+|---|---|---|
+| Scrollbar auto-hide | Conforme | Comparé à shadcn Scroll Area — écart (auto-hide vs toujours visible) volontaire, annoté par Antoine |
+| Badge statut (`sm.color`→`sm.tone`) | **Corrigé** | Passé de fond neutre + texte teinté à fond réellement teinté par état (`sift-home-status-badge-{success,danger,info,neutral}`), réf. shadcn Badge "Custom Colors" |
+| CTA "Revoir N →" / "+ Ajouter un dossier" | **Corrigé** | Fuite de hover : `button:hover{background:gris}` générique gagnait sur le fond inline teinté — classes dédiées (`sift-home-cta-revue`/`-add`) réaffirment le fond au survol |
+| Checkbox "Surveiller ce dossier" | **Corrigé** | Aucune coche visible à l'état coché (ambigu), pas de clavier, `<div>` non focusable — coche `ti-check` ajoutée + `role="checkbox"`/`aria-checked` + Enter/Espace, réf. shadcn Checkbox |
+| Nav rail (`.nv`) + lignes sources (`homerow`) | **Corrigé** | `<div>` sans `tabindex` ni `role` — accessibles au clavier maintenant (`installNavKeyboard()`, `chrome.ts`), réf. shadcn Sidebar. `app.js` (routage clic réel, non gated `inTauri` — voir `main.ts:6`) non modifié, le support clavier vient en supplément |
+| Breadcrumb (`Accueil › {source}`) | **Corrigé** | `<div>` texte → `<nav aria-label="breadcrumb">` + `aria-current="page"`, réf. shadcn Breadcrumb — zéro changement visuel |
+| Badge "With Spinner" | Différé | Pas de signal backend "scan en cours" sur `Source` (`shared/contracts.ts`) — primitive notée pour Task 2 (Revue, analyse/filing) et Task 4 (Journal, revert), où un vrai état async existe |
+
+Vérifié : `npx tsc --noEmit` clean après chaque édit. Vérification visuelle
+(clavier, hover, badge) dans `tauri dev` par Antoine.
+
+---
+
 ## Historique des corrections
 
 **2026-07-05 (pochette réellement cassée + sélection multi Alt+Clic)** :

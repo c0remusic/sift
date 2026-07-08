@@ -10,31 +10,43 @@
    deux ne pointent plus vers la même valeur. */
 :root{
 color-scheme:light;
---color-background-primary:#E7E2DB;--color-background-secondary:#F1EDE7;--color-background-tertiary:#EDE9E2;
+--color-background-primary:oklch(91.48% 0.0109 76.59);--color-background-secondary:oklch(94.75% 0.0091 78.28);--color-background-tertiary:oklch(93.52% 0.0103 81.79);
 /* Extra warm-grey surfaces from DESIGN.md (Sift.dc.html theme map): the queue column, elevated
    surface (raised buttons/popovers), the recessed segmented "track"/well, and the SOLID
    hover/selection fills for nav items and rows (the mockup uses solids, not translucent overlays). */
---color-background-queue:#EAE5DE;--color-surface-raised:#FBF9F4;--color-track:#E0DAD1;--color-row-active:#F3EFE9;--color-nav-active:#E1DBD2;
---color-background-info:rgba(62,124,177,.10);--color-background-danger:rgba(196,74,58,.14);--color-background-success:rgba(76,123,87,.14);--color-background-warning:rgba(176,122,40,.14);
---color-text-primary:#34302B;--color-text-secondary:#5C554E;--color-text-tertiary:#8A857D;--color-text-quaternary:#B3AEA5;
---color-text-info:#2B5A82;--color-cta-text:#F7F4EF;--color-text-danger:#a0392a;--color-text-success:#3f6d4c;--color-text-warning:#8f6318;
---color-border-tertiary:rgba(40,34,28,0.09);--color-border-secondary:rgba(40,34,28,0.16);
---color-border-info:rgba(62,124,177,.35);--color-border-danger:rgba(196,74,58,.42);
---color-hue-indigo-text:#4A3F9E;--color-hue-indigo-bg:rgba(88,86,214,.14);--color-hue-indigo-border:rgba(88,86,214,.40);--color-hue-purple-text:#6B3F8F;--color-hue-purple-bg:rgba(175,82,222,.14);--color-hue-purple-border:rgba(175,82,222,.40);--color-hue-pink-text:#8F2F52;--color-hue-pink-bg:rgba(212,83,126,.14);--color-hue-pink-border:rgba(212,83,126,.40);--color-hue-teal-text:#0E6B62;--color-hue-teal-bg:rgba(20,150,140,.14);--color-hue-teal-border:rgba(20,150,140,.40);--color-hue-yellow-text:#8A6D00;--color-hue-yellow-bg:rgba(230,180,0,.14);--color-hue-yellow-border:rgba(230,180,0,.40);
+--color-background-queue:oklch(92.39% 0.0109 76.6);--color-surface-raised:oklch(98.23% 0.0069 88.64);--color-track:oklch(89.06% 0.0138 78.26);--color-row-active:oklch(95.36% 0.0091 78.28);--color-nav-active:oklch(89.37% 0.0138 78.26);
+--color-background-info:oklch(56.9% 0.1044 246.74 / .10);--color-background-danger:oklch(57.16% 0.1594 30.17 / .14);--color-background-success:oklch(53.87% 0.0763 150.63 / .14);--color-background-warning:oklch(62.04% 0.116 73.21 / .14);
+--color-text-primary:oklch(31.16% 0.0105 73.53);--color-text-secondary:oklch(45.4% 0.0145 67.45);--color-text-tertiary:oklch(61.87% 0.0133 79.76);--color-text-quaternary:oklch(75.24% 0.0139 82.4);
+--color-text-info:oklch(45.37% 0.0835 246.66);--color-cta-text:oklch(96.81% 0.0074 80.72);--color-text-danger:oklch(48.88% 0.1399 30.93);--color-text-success:oklch(49.19% 0.0735 151.97);--color-text-warning:oklch(53.34% 0.103 75.31);
+--color-border-tertiary:oklch(25.67% 0.0142 67.12 / 0.09);--color-border-secondary:oklch(25.67% 0.0142 67.12 / 0.16);
+--color-border-info:oklch(56.9% 0.1044 246.74 / .35);--color-border-danger:oklch(57.16% 0.1594 30.17 / .42);
+--color-hue-indigo-text:oklch(43.43% 0.1484 283.58);--color-hue-indigo-bg:oklch(52.95% 0.191 278.34 / .14);--color-hue-indigo-border:oklch(52.95% 0.191 278.34 / .40);--color-hue-purple-text:oklch(45.72% 0.1313 307.39);--color-hue-purple-bg:oklch(61.49% 0.2129 312.41 / .14);--color-hue-purple-border:oklch(61.49% 0.2129 312.41 / .40);--color-hue-pink-text:oklch(45.67% 0.1331 1.47);--color-hue-pink-bg:oklch(62.25% 0.1666 2.52 / .14);--color-hue-pink-border:oklch(62.25% 0.1666 2.52 / .40);--color-hue-teal-text:oklch(47.62% 0.0805 184.5);--color-hue-teal-bg:oklch(60.75% 0.1029 186.37 / .14);--color-hue-teal-border:oklch(60.75% 0.1029 186.37 / .40);--color-hue-yellow-text:oklch(54.77% 0.1119 90.23);--color-hue-yellow-bg:oklch(79.29% 0.162 88.43 / .14);--color-hue-yellow-border:oklch(79.29% 0.162 88.43 / .40);
 /* Neutral overlay tints (hover/selection/left-bar/badge on neutral surfaces) — dark-tinted here
    since the surface is light; flipped to light-tinted in the dark variant below. Anything that
    used to hardcode rgba(255,255,255,...) for "selected row" must use these instead, or it goes
    invisible the moment dark mode is active (see fix 2026-07-01: .nv/.qi selection). */
---overlay-hover:rgba(40,34,28,.035);--overlay-selected:rgba(40,34,28,.06);
---overlay-bar:rgba(40,34,28,.55);--overlay-badge:rgba(40,34,28,.06);
+--overlay-hover:oklch(25.67% 0.0142 67.12 / .035);--overlay-selected:oklch(25.67% 0.0142 67.12 / .06);
+--overlay-bar:oklch(25.67% 0.0142 67.12 / .55);--overlay-badge:oklch(25.67% 0.0142 67.12 / .06);
 /* Voile de zone de dépôt (drag OS) : surface quasi-opaque teintée info, même langage que le
    bouton Destination du rail (base + tint info), thème-aware. Remplace l'ancien rgba sombre
    codé en dur qui ignorait le thème clair. Voir chrome.ts ensureDropStyle. */
---overlay-drop:rgba(214,209,202,.93);
---border-radius-sm:4px;--border-radius-md:6px;--border-radius-lg:10px;--border-radius-pill:999px;
-/* Elevation shadows — only the two floating surfaces that need them (toast, modal overlay).
-   Black at fixed alpha reads fine on both themes, same as the rest of the app's overlay tints. */
---shadow-toast:0 8px 28px rgba(0,0,0,.4);--shadow-overlay:0 12px 48px rgba(0,0,0,.5);--shadow-panel-subtle:0 1px 4px rgba(0,0,0,.12);
+--overlay-drop:oklch(86.27% 0.011 76.59 / .93);
+/* Radius scale (2026-07-08, structure adapted from tweakcn "ZFlow" — a single base derived via
+   calc() instead of 4 independent literals, so the whole scale moves together from one number.
+   Base raised 10px→14px (rounder, per user request) but the internal deltas (sm=base-6,
+   md=base-4) are Sift's own from the 2026-07-03 audit, not ZFlow's numbers — pill unaffected,
+   already semantically "infinite". */
+--border-radius-base:14px;
+--border-radius-sm:calc(var(--border-radius-base) - 6px);--border-radius-md:calc(var(--border-radius-base) - 4px);--border-radius-lg:var(--border-radius-base);--border-radius-pill:999px;
+/* Elevation shadows — only the two floating surfaces that need them (toast, modal overlay) plus
+   one subtle panel accent. Black at fixed alpha reads fine on both themes, same as the rest of
+   the app's overlay tints — kept from the original recipe, just layered (2026-07-08, adapted
+   from tweakcn "ZFlow" theme's 2-layer shadow scale: tight contact shadow + soft ambient one,
+   same technique behind their shadow-sm/md/lg — only the layering approach ported, not their
+   colors/radius/fonts, which contradict Sift's own validated palette/scale). */
+--shadow-panel-subtle:0 1px 3px rgba(0,0,0,.10),0 1px 2px -1px rgba(0,0,0,.10);
+--shadow-toast:0 1px 3px rgba(0,0,0,.10),0 8px 28px -4px rgba(0,0,0,.4);
+--shadow-overlay:0 1px 3px rgba(0,0,0,.10),0 12px 48px -6px rgba(0,0,0,.5);
 /* Waveform elapsed-time label + progress fill — resolves through info/blue (2026-07-06 Apple
    system-colors palette), not success/green: green on the played portion read as a false verdict
    signal ("this track is good") rather than a playback indicator. Blue matches the "active/
@@ -49,6 +61,13 @@ color-scheme:light;
 --text-lg:14px;--text-xl:16px;--text-2xl:26px;
 /* Spacing scale (system.md): the ONLY allowed values. */
 --space-4:4px;--space-8:8px;--space-12:12px;--space-16:16px;--space-24:24px;--space-32:32px;
+/* Tracking scale (2026-07-08, structure adapted from tweakcn "ZFlow" theme's tracking-* scale —
+   values are Sift's own, only the 4 exact literals that already recurred ≥2x across the app
+   before this token existed (audit rule from the 2026-07-03 radius/height pass: wire what
+   matches exactly, don't extend the scale for a single site). .04em/.08em/.09em/.1em each occur
+   once and are left as literals — extending the scale for those would be a design decision, not
+   a token wiring. */
+--tracking-normal:.01em;--tracking-wide:.03em;--tracking-wider:.05em;--tracking-widest:.06em;
 /* Height scale for control elements (buttons), not avatar/thumbnail/icon frames — those are an
    image size, not a control height. Only the two sizes real controls actually use (audit
    2026-07-03: --h-32/--h-44 had zero consumers, dropped rather than declared speculatively). */
@@ -62,28 +81,28 @@ color-scheme:light;
 @media (prefers-color-scheme:dark){
   :root:not([data-theme="light"]){
     color-scheme:dark;
-    --color-background-primary:#282825;--color-background-secondary:#3B3A35;--color-background-tertiary:#323230;--color-background-queue:#2E2E2B;--color-surface-raised:#46453F;--color-track:#34332E;--color-row-active:#413F38;--color-nav-active:#3D3B35;
-    --color-background-info:rgba(62,124,177,.14);--color-background-danger:rgba(196,74,58,.16);--color-background-success:rgba(76,123,87,.14);--color-background-warning:rgba(176,122,40,.14);
-    --color-text-primary:#F5F1E9;--color-text-secondary:#C9C2B7;--color-text-tertiary:#9C968D;--color-text-quaternary:#847E75;
-    --color-text-info:#8EC2EA;--color-cta-text:#26251F;--color-text-danger:#f0a08f;--color-text-success:#9fe0af;--color-text-warning:#f2c274;
-    --color-border-tertiary:rgba(255,255,255,0.09);--color-border-secondary:rgba(255,255,255,0.22);
-    --color-border-info:rgba(142,194,234,.30);--color-border-danger:rgba(240,160,143,.40);
-    --color-hue-indigo-text:#A6A0F0;--color-hue-indigo-bg:rgba(88,86,214,.18);--color-hue-indigo-border:rgba(166,160,240,.35);--color-hue-purple-text:#C9A6E0;--color-hue-purple-bg:rgba(175,82,222,.18);--color-hue-purple-border:rgba(201,166,224,.35);--color-hue-pink-text:#F0A8C2;--color-hue-pink-bg:rgba(212,83,126,.18);--color-hue-pink-border:rgba(240,168,194,.35);--color-hue-teal-text:#7CE0D4;--color-hue-teal-bg:rgba(20,150,140,.18);--color-hue-teal-border:rgba(124,224,212,.35);--color-hue-yellow-text:#F5D76E;--color-hue-yellow-bg:rgba(230,180,0,.18);--color-hue-yellow-border:rgba(245,215,110,.35);
-    --overlay-hover:rgba(255,255,255,.03);--overlay-selected:rgba(255,255,255,.06);
-    --overlay-bar:rgba(255,255,255,.32);--overlay-badge:rgba(255,255,255,.06);--overlay-drop:rgba(60,60,57,.93);
+    --color-background-primary:oklch(27.57% 0.0054 106.75);--color-background-secondary:oklch(34.77% 0.0086 97.58);--color-background-tertiary:oklch(31.64% 0.0035 106.6);--color-background-queue:oklch(30.01% 0.0053 106.71);--color-surface-raised:oklch(38.94% 0.01 99.12);--color-track:oklch(32.04% 0.0088 97.61);--color-row-active:oklch(36.73% 0.012 93.78);--color-nav-active:oklch(35.23% 0.0105 91.64);
+    --color-background-info:oklch(56.9% 0.1044 246.74 / .14);--color-background-danger:oklch(57.16% 0.1594 30.17 / .16);--color-background-success:oklch(53.87% 0.0763 150.63 / .14);--color-background-warning:oklch(62.04% 0.116 73.21 / .14);
+    --color-text-primary:oklch(95.9% 0.0115 84.58);--color-text-secondary:oklch(81.67% 0.0171 79.34);--color-text-tertiary:oklch(67.56% 0.0148 78.23);--color-text-quaternary:oklch(59.57% 0.0153 78.21);
+    --color-text-info:oklch(79.21% 0.0789 242.05);--color-cta-text:oklch(26.34% 0.0109 99.32);--color-text-danger:oklch(78.05% 0.0992 32.54);--color-text-success:oklch(84.99% 0.0947 151.66);--color-text-warning:oklch(84.04% 0.1108 78.51);
+    --color-border-tertiary:oklch(100.0% 0.0 89.88 / 0.09);--color-border-secondary:oklch(100.0% 0.0 89.88 / 0.22);
+    --color-border-info:oklch(79.21% 0.0789 242.05 / .30);--color-border-danger:oklch(78.05% 0.0992 32.54 / .40);
+    --color-hue-indigo-text:oklch(74.16% 0.1143 286.69);--color-hue-indigo-bg:oklch(52.95% 0.191 278.34 / .18);--color-hue-indigo-border:oklch(74.16% 0.1143 286.69 / .35);--color-hue-purple-text:oklch(77.58% 0.0892 311.64);--color-hue-purple-bg:oklch(61.49% 0.2129 312.41 / .18);--color-hue-purple-border:oklch(77.58% 0.0892 311.64 / .35);--color-hue-pink-text:oklch(80.76% 0.0905 355.95);--color-hue-pink-bg:oklch(62.25% 0.1666 2.52 / .18);--color-hue-pink-border:oklch(80.76% 0.0905 355.95 / .35);--color-hue-teal-text:oklch(84.24% 0.0961 185.53);--color-hue-teal-bg:oklch(60.75% 0.1029 186.37 / .18);--color-hue-teal-border:oklch(84.24% 0.0961 185.53 / .35);--color-hue-yellow-text:oklch(88.36% 0.129 93.67);--color-hue-yellow-bg:oklch(79.29% 0.162 88.43 / .18);--color-hue-yellow-border:oklch(88.36% 0.129 93.67 / .35);
+    --overlay-hover:oklch(100.0% 0.0 89.88 / .03);--overlay-selected:oklch(100.0% 0.0 89.88 / .06);
+    --overlay-bar:oklch(100.0% 0.0 89.88 / .32);--overlay-badge:oklch(100.0% 0.0 89.88 / .06);--overlay-drop:oklch(35.51% 0.0051 106.66 / .93);
   }
 }
 :root[data-theme="dark"]{
   color-scheme:dark;
-  --color-background-primary:#282825;--color-background-secondary:#3B3A35;--color-background-tertiary:#323230;--color-background-queue:#2E2E2B;--color-surface-raised:#46453F;--color-track:#34332E;--color-row-active:#413F38;--color-nav-active:#3D3B35;
-  --color-background-info:rgba(62,124,177,.14);--color-background-danger:rgba(196,74,58,.16);--color-background-success:rgba(76,123,87,.14);--color-background-warning:rgba(176,122,40,.14);
-  --color-text-primary:#F5F1E9;--color-text-secondary:#C9C2B7;--color-text-tertiary:#9C968D;--color-text-quaternary:#847E75;
-  --color-text-info:#8EC2EA;--color-cta-text:#26251F;--color-text-danger:#f0a08f;--color-text-success:#9fe0af;--color-text-warning:#f2c274;
-  --color-border-tertiary:rgba(255,255,255,0.09);--color-border-secondary:rgba(255,255,255,0.22);
-  --color-border-info:rgba(142,194,234,.30);--color-border-danger:rgba(240,160,143,.40);
-  --color-hue-indigo-text:#A6A0F0;--color-hue-indigo-bg:rgba(88,86,214,.18);--color-hue-indigo-border:rgba(166,160,240,.35);--color-hue-purple-text:#C9A6E0;--color-hue-purple-bg:rgba(175,82,222,.18);--color-hue-purple-border:rgba(201,166,224,.35);--color-hue-pink-text:#F0A8C2;--color-hue-pink-bg:rgba(212,83,126,.18);--color-hue-pink-border:rgba(240,168,194,.35);--color-hue-teal-text:#7CE0D4;--color-hue-teal-bg:rgba(20,150,140,.18);--color-hue-teal-border:rgba(124,224,212,.35);--color-hue-yellow-text:#F5D76E;--color-hue-yellow-bg:rgba(230,180,0,.18);--color-hue-yellow-border:rgba(245,215,110,.35);
-  --overlay-hover:rgba(255,255,255,.03);--overlay-selected:rgba(255,255,255,.06);
-  --overlay-bar:rgba(255,255,255,.32);--overlay-badge:rgba(255,255,255,.06);--overlay-drop:rgba(60,60,57,.93);
+  --color-background-primary:oklch(27.57% 0.0054 106.75);--color-background-secondary:oklch(34.77% 0.0086 97.58);--color-background-tertiary:oklch(31.64% 0.0035 106.6);--color-background-queue:oklch(30.01% 0.0053 106.71);--color-surface-raised:oklch(38.94% 0.01 99.12);--color-track:oklch(32.04% 0.0088 97.61);--color-row-active:oklch(36.73% 0.012 93.78);--color-nav-active:oklch(35.23% 0.0105 91.64);
+  --color-background-info:oklch(56.9% 0.1044 246.74 / .14);--color-background-danger:oklch(57.16% 0.1594 30.17 / .16);--color-background-success:oklch(53.87% 0.0763 150.63 / .14);--color-background-warning:oklch(62.04% 0.116 73.21 / .14);
+  --color-text-primary:oklch(95.9% 0.0115 84.58);--color-text-secondary:oklch(81.67% 0.0171 79.34);--color-text-tertiary:oklch(67.56% 0.0148 78.23);--color-text-quaternary:oklch(59.57% 0.0153 78.21);
+  --color-text-info:oklch(79.21% 0.0789 242.05);--color-cta-text:oklch(26.34% 0.0109 99.32);--color-text-danger:oklch(78.05% 0.0992 32.54);--color-text-success:oklch(84.99% 0.0947 151.66);--color-text-warning:oklch(84.04% 0.1108 78.51);
+  --color-border-tertiary:oklch(100.0% 0.0 89.88 / 0.09);--color-border-secondary:oklch(100.0% 0.0 89.88 / 0.22);
+  --color-border-info:oklch(79.21% 0.0789 242.05 / .30);--color-border-danger:oklch(78.05% 0.0992 32.54 / .40);
+  --color-hue-indigo-text:oklch(74.16% 0.1143 286.69);--color-hue-indigo-bg:oklch(52.95% 0.191 278.34 / .18);--color-hue-indigo-border:oklch(74.16% 0.1143 286.69 / .35);--color-hue-purple-text:oklch(77.58% 0.0892 311.64);--color-hue-purple-bg:oklch(61.49% 0.2129 312.41 / .18);--color-hue-purple-border:oklch(77.58% 0.0892 311.64 / .35);--color-hue-pink-text:oklch(80.76% 0.0905 355.95);--color-hue-pink-bg:oklch(62.25% 0.1666 2.52 / .18);--color-hue-pink-border:oklch(80.76% 0.0905 355.95 / .35);--color-hue-teal-text:oklch(84.24% 0.0961 185.53);--color-hue-teal-bg:oklch(60.75% 0.1029 186.37 / .18);--color-hue-teal-border:oklch(84.24% 0.0961 185.53 / .35);--color-hue-yellow-text:oklch(88.36% 0.129 93.67);--color-hue-yellow-bg:oklch(79.29% 0.162 88.43 / .18);--color-hue-yellow-border:oklch(88.36% 0.129 93.67 / .35);
+  --overlay-hover:oklch(100.0% 0.0 89.88 / .03);--overlay-selected:oklch(100.0% 0.0 89.88 / .06);
+  --overlay-bar:oklch(100.0% 0.0 89.88 / .32);--overlay-badge:oklch(100.0% 0.0 89.88 / .06);--overlay-drop:oklch(35.51% 0.0051 106.66 / .93);
 }
 *{box-sizing:border-box}
 html,body{margin:0;height:100%;overflow:hidden;background:var(--color-background-tertiary);color:var(--color-text-primary);font-family:var(--font-ui)}
@@ -113,11 +132,11 @@ html,body{margin:0;padding:0;height:100%}
 /* Wide, labelled, grouped nav rail — faithful to the Penpot shell (brand + PROCESS/ORGANIZE/
    EXPORT groups + neutral selection). See .interface-design/penpot-detail-spec.md. */
 .sb{width:152px;flex:none;display:flex;flex-direction:column;gap:1px;padding:14px 10px;background:var(--color-background-tertiary);border-right:0.5px solid var(--color-border-tertiary);align-items:stretch}
-.nav-brand{display:flex;align-items:center;gap:8px;padding:2px 8px 12px;font-size:18px;font-weight:600;color:var(--color-text-primary);letter-spacing:.01em}
+.nav-brand{display:flex;align-items:center;gap:8px;padding:2px 8px 12px;font-size:18px;font-weight:600;color:var(--color-text-primary);letter-spacing:var(--tracking-normal)}
 .nav-brand i{font-size:16px;color:var(--color-text-info)}
 .nv-grp{font-size:9px;font-weight:400;letter-spacing:.08em;text-transform:uppercase;color:var(--color-text-tertiary);padding:13px 8px 5px}
 .nv{min-height:34px;border-radius:var(--border-radius-md);display:flex;flex-direction:row;align-items:center;gap:10px;padding:6px 8px;color:var(--color-text-tertiary);cursor:pointer}
-.nv span{font-size:12.5px;letter-spacing:.01em;text-align:left;line-height:1.1;flex:1;min-width:0}
+.nv span{font-size:12.5px;letter-spacing:var(--tracking-normal);text-align:left;line-height:1.1;flex:1;min-width:0}
 .nv i{font-size:17px;flex:none}
 .nv:hover{background:var(--color-nav-active)}
 .nv.on{background:var(--color-nav-active);color:var(--color-text-primary);font-weight:500}
@@ -296,7 +315,7 @@ html,body{margin:0;padding:0;height:100%}
    estimate that clipped ordinary-length filenames; the rail's spacer (flex:1) still absorbs
    whatever room is left, so this only matters as a true last-resort ellipsis on very long names. */
 .sift-rail-final-group{display:flex;align-items:center;gap:6px;flex:none;min-width:0;max-width:340px}
-.sift-final-name-label{font-size:10px;letter-spacing:.05em;color:var(--color-text-tertiary);text-transform:uppercase;flex:none}
+.sift-final-name-label{font-size:10px;letter-spacing:var(--tracking-wider);color:var(--color-text-tertiary);text-transform:uppercase;flex:none}
 .sift-fil-prev{font-family:var(--font-mono);font-size:var(--text-xs);color:var(--color-text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 /* Pushes secondary/primary to the right edge of the rail. */
 .sift-rail-spacer{flex:1;min-width:8px}
@@ -329,7 +348,7 @@ html,body{margin:0;padding:0;height:100%}
    36vh ≈ a third of the viewport: enough rows to be useful while the récap above and the action
    button below stay on-screen; the list scrolls past that. */
 #sift-batch-tracks{max-height:36vh;overflow-y:auto}
-.col-h{font-size:10px;letter-spacing:.05em;color:var(--color-text-tertiary);text-transform:uppercase;margin-bottom:6px}
+.col-h{font-size:10px;letter-spacing:var(--tracking-wider);color:var(--color-text-tertiary);text-transform:uppercase;margin-bottom:6px}
 .pill{display:inline-flex;align-items:center;gap:4px;background:var(--color-background-secondary);color:var(--color-text-secondary);padding:2px 7px;border-radius:var(--border-radius-md);font-size:11px}
 /* Écartés: the 6 store links only reveal on hover/keyboard-focus of their row — with dozens of
    rows, always-open links were a wall of ~6 links each (audit UI/UX 2026-07-03, fix 6). */
@@ -404,8 +423,29 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-text-info)}
 .sift-home-source-path{max-width:560px}
 .sift-home-source-path-value{font-family:var(--font-mono);font-size:var(--text-md);color:var(--color-text-secondary);word-break:break-all}
 .sift-home-watch-toggle{display:flex;align-items:center;gap:8px;font-size:var(--text-md);padding:8px 13px;border-radius:var(--border-radius-md);background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);cursor:pointer;color:var(--color-text-secondary)}
-.sift-home-watch-toggle-box{width:15px;height:15px;border-radius:4px;border:1px solid var(--color-border-secondary);background:transparent;flex:none}
-.sift-home-watch-toggle[data-watched="1"] .sift-home-watch-toggle-box{background:var(--color-text-success)}
+.sift-home-watch-toggle:hover{background:var(--color-surface-raised)}
+/* Audit-ref C2 (Accueil, 2026-07-08, réf. shadcn Checkbox) : case sans coche ni états —
+   ambiguë (fond vert plein ne dit pas "coché" vs décoratif), pas de hover/focus, <div> non
+   focusable. Coche ti-check ajoutée à l'état coché ; tabindex+role posés côté TS
+   (home-sources.ts) pour que le ring :focus-visible générique (styles.css:384) s'applique. */
+.sift-home-watch-toggle-box{width:15px;height:15px;border-radius:4px;border:1px solid var(--color-border-secondary);background:transparent;flex:none;display:flex;align-items:center;justify-content:center;transition:background-color .12s ease,border-color .12s ease}
+.sift-home-watch-toggle-box i{font-size:11px;color:var(--color-text-on-accent,#fff);opacity:0;transform:scale(.6);transition:opacity .12s ease,transform .12s ease}
+.sift-home-watch-toggle[data-watched="1"] .sift-home-watch-toggle-box{background:var(--color-text-success);border-color:var(--color-text-success)}
+.sift-home-watch-toggle[data-watched="1"] .sift-home-watch-toggle-box i{opacity:1;transform:scale(1)}
+/* Audit-ref C1 (Accueil, 2026-07-08, réf. shadcn Badge/Button) : ces 2 boutons posent leur
+   fond en style inline, mais le button:hover{background:gris} générique (styles.css:385) gagne
+   au survol et efface la teinte — le bouton devient gris au lieu de s'assombrir. Réaffirmé ici,
+   même schéma que .sift-play-btn (2026-07-06). */
+.sift-home-cta-revue:hover{background:var(--color-background-success)}
+.sift-home-cta-add:hover{background:var(--color-background-info)}
+/* Audit-ref (Accueil, 2026-07-08, réf. shadcn Badge "Custom Colors") : badge statut passait
+   d'un fond neutre + texte teinté à un vrai fond teinté par état — cohérent avec la carte
+   verdict (report-view.ts) qui fait déjà ce pattern ailleurs dans l'app. */
+.sift-home-status-badge{font-family:var(--font-mono);font-size:var(--text-sm);padding:4px 10px;border-radius:var(--border-radius-pill);display:inline-flex;align-items:center;gap:5px}
+.sift-home-status-badge-success{background:var(--color-background-success);color:var(--color-text-success)}
+.sift-home-status-badge-danger{background:var(--color-background-danger);color:var(--color-text-danger)}
+.sift-home-status-badge-info{background:var(--color-background-info);color:var(--color-text-info)}
+.sift-home-status-badge-neutral{background:var(--color-background-secondary);color:var(--color-text-tertiary)}
 .sift-ec-sections{display:flex;flex-direction:column;gap:12px}
 .sift-ec-section{display:flex;flex-direction:column;gap:10px}
 .lib-detail-stack{display:flex;flex-direction:column;gap:10px;margin-top:12px;padding-top:12px;border-top:0.5px solid var(--color-border-tertiary)}
@@ -528,7 +568,7 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-text-info)}
 .jrnl-cat-hd::-webkit-details-marker{display:none}
 .jrnl-cat-chev{flex:none;font-size:12px;color:var(--color-text-tertiary);transition:transform .15s;display:inline-block}
 details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
-.jrnl-cat-label{flex:none;font-size:var(--text-2xs);font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--color-text-tertiary)}
+.jrnl-cat-label{flex:none;font-size:var(--text-2xs);font-weight:600;letter-spacing:var(--tracking-widest);text-transform:uppercase;color:var(--color-text-tertiary)}
 .jrnl-cat-badge{flex:none;font-size:var(--text-xs);color:var(--color-text-tertiary);background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-pill);padding:0 6px;line-height:1.6}
 .jrnl-mass{margin-left:auto;flex:none;background:transparent;border:none;font-size:var(--text-xs);cursor:pointer;padding:2px 6px}
 .jrnl-mass:hover{opacity:.8}
@@ -556,7 +596,7 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .jrnl-voir-tout:hover{color:var(--color-text-secondary)}
 /* Session groups (extended view) */
 .jrnl-session-group{margin-bottom:var(--space-12)}
-.jrnl-session-hd{font-size:var(--text-2xs);text-transform:uppercase;letter-spacing:.05em;color:var(--color-text-tertiary);padding:var(--space-4) 0 var(--space-8);border-top:0.5px solid var(--color-border-tertiary);margin-bottom:var(--space-4)}
+.jrnl-session-hd{font-size:var(--text-2xs);text-transform:uppercase;letter-spacing:var(--tracking-wider);color:var(--color-text-tertiary);padding:var(--space-4) 0 var(--space-8);border-top:0.5px solid var(--color-border-tertiary);margin-bottom:var(--space-4)}
 
 /* ── Revue detail (report-view.ts) — extracted inline styles, byte-identical values ───── */
 /* No scrollbar-gutter/overflow-y:scroll here (was added, then removed): in the Revue screen
@@ -578,7 +618,7 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
    with align-items:center) — the 18px top margin was a leftover from when it sat under the hero
    in a vertical stack (moved into the rail 2026-07-0x, see filing.ts renderFoot) and was pushing
    its text below the vertical center of the neighboring button labels. */
-.sift-kbd-hints{font-size:var(--text-xs);letter-spacing:.03em;color:var(--color-text-tertiary);display:flex;gap:16px;flex-wrap:wrap}
+.sift-kbd-hints{font-size:var(--text-xs);letter-spacing:var(--tracking-wide);color:var(--color-text-tertiary);display:flex;gap:16px;flex-wrap:wrap}
 .sift-kbd-hints b{font-weight:600;color:var(--color-text-secondary)}
 /* Its own strip directly above the rail (annotation: "en bas de page... juste au dessus et rester
    toujours visible") — no longer one of the rail's flex-wrap items, so it can't get squeezed/
@@ -729,7 +769,7 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
    padding alone let the button's overall width shrink/grow with the label. min-width pinned to fit
    "OFF" (the wider state) at this font, so both states render at the same size. */
 .sift-key-btn{font-family:var(--font-mono);font-size:var(--text-xs);padding:4px 10px;min-width:38px;text-align:center;border-radius:var(--border-radius-md);border:1px solid var(--color-border-tertiary);background:transparent;font-weight:600}
-.sift-vchip{display:inline-flex;align-items:center;padding:3px 9px;border-radius:var(--border-radius-pill);font-size:var(--text-xs);font-weight:600;letter-spacing:.03em}
+.sift-vchip{display:inline-flex;align-items:center;padding:3px 9px;border-radius:var(--border-radius-pill);font-size:var(--text-xs);font-weight:600;letter-spacing:var(--tracking-wide)}
 /* Verdict conclusion pill removed entirely (annotation: "supprime ça en fait") — duplicated the
    tone-coded quality badge already in the Diagnostic audio disclosure header. */
 .sift-vchips-row{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
@@ -808,7 +848,7 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
    cases") — LOSSLESS was already all-caps jargon (see the English-jargon allowlist), while CDJ
    compatible/incompatible was sentence case; same badge shape, same case treatment now, matching
    the small-label convention already used elsewhere (.col-h, .sift-final-name-label, etc.). */
-.sift-chip-badge{font-size:var(--text-2xs);font-weight:600;padding:4px 9px;text-transform:uppercase;letter-spacing:.03em;
+.sift-chip-badge{font-size:var(--text-2xs);font-weight:600;padding:4px 9px;text-transform:uppercase;letter-spacing:var(--tracking-wide);
   border-radius:var(--border-radius-pill);border:none;font-family:inherit}
 /* Flash de confirmation sur .sift-identified-line au moment où un choix Discogs vient d'être
    appliqué (onIdentityApplied, Task 4 Step 5) — jamais sur une réouverture
@@ -842,7 +882,7 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-row-label{color:var(--color-text-tertiary)}
 .sift-row-value{font-family:var(--font-mono);text-align:right;color:var(--color-text-secondary)}
 .sift-tags-box{margin-bottom:4px}
-.sift-tags-title{font-size:var(--text-2xs);letter-spacing:.05em;text-transform:uppercase;color:var(--color-text-tertiary);margin-bottom:5px}
+.sift-tags-title{font-size:var(--text-2xs);letter-spacing:var(--tracking-wider);text-transform:uppercase;color:var(--color-text-tertiary);margin-bottom:5px}
 .sift-codec-error{margin-top:12px;font-size:var(--text-sm);color:var(--color-text-warning)}
 .sift-verdict-stub{display:flex;align-items:center;gap:6px;margin:2px 0 12px;font-size:var(--text-sm);color:var(--color-text-tertiary)}
 .sift-analysis-fail{margin-bottom:12px;font-size:var(--text-sm);color:var(--color-text-warning)}
@@ -906,7 +946,7 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
    this drops to 2 then 1 column automatically once each column would go under 140px. */
 .sift-editor-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:8px}
 .sift-editor-field{display:flex;flex-direction:column;gap:2px}
-.sift-editor-field-label{font-size:10px;letter-spacing:.05em;color:var(--color-text-tertiary);text-transform:uppercase}
+.sift-editor-field-label{font-size:10px;letter-spacing:var(--tracking-wider);color:var(--color-text-tertiary);text-transform:uppercase}
 .sift-editor-input{font-size:var(--text-md);padding:4px 7px;background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);color:var(--color-text-primary);min-width:0}
 .sift-genres-box{margin-bottom:10px;min-height:1px}
 /* Bg+border toujours visibles (pas 2 tons au repos, l'un plein l'autre transparent jusqu'au
@@ -1079,10 +1119,10 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 /* Queue column (reuses .queue for bg/width/padding). */
 .jrnl-queue{padding:0}
 .jrnl-qhead{display:flex;align-items:center;justify-content:space-between;padding:16px 16px 11px}
-.jrnl-qtitle{font-size:var(--text-base);font-weight:600;letter-spacing:.01em;color:var(--color-text-primary)}
+.jrnl-qtitle{font-size:var(--text-base);font-weight:600;letter-spacing:var(--tracking-normal);color:var(--color-text-primary)}
 .jrnl-qcount{font-family:var(--font-mono);font-weight:400;font-size:var(--text-sm);color:var(--color-text-tertiary);margin-left:2px}
 .jrnl-qlist{flex:1;min-height:0;overflow-y:auto;padding:0 8px 14px}
-.jrnl-qgrp{display:flex;align-items:center;gap:6px;font-size:var(--text-2xs);font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--color-text-quaternary);padding:12px 8px 5px}
+.jrnl-qgrp{display:flex;align-items:center;gap:6px;font-size:var(--text-2xs);font-weight:600;letter-spacing:var(--tracking-widest);text-transform:uppercase;color:var(--color-text-quaternary);padding:12px 8px 5px}
 .jrnl-qgrp-n{font-family:var(--font-mono);font-weight:400;color:var(--color-text-tertiary)}
 .jrnl-qrow{position:relative;display:flex;gap:8px;padding:8px 10px 8px 12px;margin-bottom:1px;border-radius:7px;cursor:pointer}
 .jrnl-qrow:hover{background:var(--color-row-active)}
@@ -1109,7 +1149,7 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
    one-off — every other .sift-ui-card-soft-family box uses 0.5px solid border-tertiary. */
 .jrnl-insp-card{background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);padding:18px 20px;max-width:560px;display:flex;flex-wrap:wrap;gap:6px 30px}
 .jrnl-insp-field{margin-bottom:6px}
-.jrnl-insp-flabel{font-size:var(--text-xs);letter-spacing:.06em;text-transform:uppercase;color:var(--color-text-quaternary);margin-bottom:4px}
+.jrnl-insp-flabel{font-size:var(--text-xs);letter-spacing:var(--tracking-widest);text-transform:uppercase;color:var(--color-text-quaternary);margin-bottom:4px}
 .jrnl-insp-fvalue{font-size:var(--text-lg);color:var(--color-text-primary)}
 .jrnl-insp-fvalue.mono{font-family:var(--font-mono);font-size:var(--text-base);color:var(--color-text-secondary);word-break:break-all}
 .jrnl-insp-rail{flex:none;display:flex;align-items:center;gap:14px;border-top:1px solid var(--color-border-secondary);background:var(--color-background-tertiary);padding:13px 30px}
