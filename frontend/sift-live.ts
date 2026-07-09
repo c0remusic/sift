@@ -1439,22 +1439,38 @@ async function renderReglagesLive() {
   // Audit-ref G1 (Réglages, 2026-07-09) : <span> → <button>, incohérent avec le reste de l'app.
   const themeBtn = (v: ThemeChoice, label: string) =>
     `<button class="sift-seg-opt${theme === v ? " on" : ""}" data-theme-choice="${v}">${label}</button>`;
+  // Audit-ref (Réglages, 2026-07-09, retour Antoine "on n'a pas l'animation pour toutes les
+  // pastilles") : thumb glissant ajouté ici — son DOM persiste déjà entre les clics (classList
+  // toggle en place, pas de re-render), donc éligible sans restructuration (contrairement à
+  // Dossiers/Genres et Session/Historique, qui reconstruisent tout via innerHTML à chaque clic —
+  // voir css-transition-requires-persisting-dom en mémoire). Même pattern que positionFmtThumb().
   themeBlock.innerHTML =
     '<div class="sift-settings-title">Apparence</div>' +
     '<div class="sift-settings-desc">Auto suit le réglage clair/sombre de ton système. Clair et Sombre forcent un mode fixe, quel que soit le système.</div>' +
     '<div class="sift-settings-row">' +
     '<span class="sift-settings-label">Thème</span>' +
-    '<div class="sift-seg">' +
+    '<div class="sift-seg sift-seg-thumbed">' +
+    '<div class="sift-seg-thumb"></div>' +
     themeBtn("auto", "Auto") +
     themeBtn("light", "Clair") +
     themeBtn("dark", "Sombre") +
     "</div></div>";
+  function positionThemeThumb(): void {
+    const thumb = themeBlock.querySelector<HTMLElement>(".sift-seg-thumb");
+    const onEl = themeBlock.querySelector<HTMLElement>("[data-theme-choice].on");
+    if (!thumb || !onEl) return;
+    thumb.style.width = `${onEl.offsetWidth}px`;
+    thumb.style.transform = `translateX(${onEl.offsetLeft}px)`;
+  }
+  // Not called here yet — themeBlock isn't attached to the live DOM until content.appendChild(wrap)
+  // below, and offsetWidth/offsetLeft read 0 on a detached element. Called after that instead.
   themeBlock.querySelectorAll<HTMLElement>("[data-theme-choice]").forEach((el) =>
     el.addEventListener("click", () => {
       const choice = el.dataset.themeChoice as ThemeChoice;
       void setTheme(choice);
       themeBlock.querySelectorAll("[data-theme-choice]").forEach((c) => c.classList.remove("on"));
       el.classList.add("on");
+      positionThemeThumb();
     }),
   );
 
@@ -1536,6 +1552,7 @@ async function renderReglagesLive() {
   list.appendChild(usbBlock);
   wrap.appendChild(list);
   content.appendChild(wrap);
+  positionThemeThumb(); // now attached to the live DOM — offsetWidth/offsetLeft resolve correctly
 
   const inp = block.querySelector<HTMLInputElement>("#sift-discogs-token");
   const status = block.querySelector<HTMLElement>("#sift-discogs-status");
