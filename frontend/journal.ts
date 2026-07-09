@@ -55,12 +55,15 @@ function buildCategories(entries: JournalEntry[]): Cat[] {
   const filed = filterByCat(entries, "filed");
   const trash = filterByCat(entries, "trash");
   const reject = filterByCat(entries, "reject");
-  const n = filed.length;
+  // Compte de morceaux (track_count), pas de batches — même unité que la confirmation
+  // (installDelegate, "${label} les ${totalTracks} morceaux affichés ?"), sinon le bouton et la
+  // boîte qui s'ouvre juste après affichent deux nombres différents (audit 2026-07-09).
+  const filedTrackCount = filed.reduce((s, e) => s + e.track_count, 0);
   return [
     {
       id: "filed",
       label: "FILÉS",
-      massLabel: `↩ Défiler les ${n} affichés`,
+      massLabel: `↩ Défiler les ${filedTrackCount} morceaux affichés`,
       massColor: "var(--color-text-danger)",
       entries: filed,
     },
