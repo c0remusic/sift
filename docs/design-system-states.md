@@ -757,6 +757,26 @@ par Antoine restante.
 
 ---
 
+## Écrans Réglages + Rekordbox + Clé USB — audit référence canonique (2026-07-09)
+
+Task 6 du chantier `docs/superpowers/changes/2026-07-08-ui-reference-audit/`.
+
+| Élément | Verdict | Détail |
+|---|---|---|
+| Segmented Apparence (`data-theme-choice`) | **Corrigé (G1)** | `<span>` → `<button>` — incohérence habituelle |
+| Mojibake USB ("amovibles�", "d�tect�") | **Corrigé** | Trouvé en passant (pas un audit-ref à proprement parler) — encodage cassé sur 2 messages d'état de `renderUsbList()`, restaurés (« … » et « détecté ») |
+| Jeton Discogs, boutons dossier racine/USB | Conforme | Vrais `<button>`, toggle œil avec `aria-label` synchronisé |
+| Carte statut Rekordbox + bannière drift | Conforme | Boutons réels, structure `Card`/`Alert` déjà correcte |
+| Ligne sélection réparations master.db (`.bx-row`, `data-sift="mdbpick"`) | **Corrigé (G3)** | Ligne-checkbox (case interne `tabindex="-1"` volontaire) sans clavier — `tabindex`/`role="checkbox"`/`aria-checked` ajoutés, clavier via `installNavKeyboard()` étendu. Bouton "Ignorer" imbriqué déjà protégé par la garde anti-double-déclenchement (B1) |
+| Boutons candidats/dédup/apply (`mdbresolve`, `mdbdismiss`, `mdbdedup`, `mdbapply`) | Conforme | Vrais `<button>` |
+| Modale formatage USB (`usb-format-modal.ts`) | **Corrigé (G2)** | La seule action vraiment irréversible de toute l'app — n'avait **aucune** sémantique modale (pire que R5/confirm-modal.ts). Ajout `role="alertdialog"`/`aria-modal` + Escape (désactivé pendant `busy`, pour ne pas interrompre un formatage en cours) + segmented FAT32/exFAT `<span>`→`<button>`. Fuite corrigée au passage : le listener `keydown` global n'était retiré que sur Escape — consolidé en une seule fonction `close()` appelée aussi par Annuler et le succès du formatage |
+
+Vérifié : `npx tsc --noEmit` clean. Vérification visuelle (clavier ligne
+master.db, Escape modale USB pendant/hors formatage, segmented) dans
+`tauri dev` par Antoine restante.
+
+---
+
 ## Historique des corrections
 
 **2026-07-05 (pochette réellement cassée + sélection multi Alt+Clic)** :

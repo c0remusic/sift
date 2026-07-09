@@ -1436,8 +1436,9 @@ async function renderReglagesLive() {
   themeBlock.id = "sift-reglages-apparence";
   themeBlock.dataset.section = "apparence";
   themeBlock.className = "sift-settings-card sift-settings-list-row";
+  // Audit-ref G1 (Réglages, 2026-07-09) : <span> → <button>, incohérent avec le reste de l'app.
   const themeBtn = (v: ThemeChoice, label: string) =>
-    `<span class="sift-seg-opt${theme === v ? " on" : ""}" data-theme-choice="${v}">${label}</span>`;
+    `<button class="sift-seg-opt${theme === v ? " on" : ""}" data-theme-choice="${v}">${label}</button>`;
   themeBlock.innerHTML =
     '<div class="sift-settings-title">Apparence</div>' +
     '<div class="sift-settings-desc">Auto suit le réglage clair/sombre de ton système. Clair et Sombre forcent un mode fixe, quel que soit le système.</div>' +
@@ -1475,7 +1476,7 @@ async function renderReglagesLive() {
   async function renderUsbList() {
     const listEl = usbBlock.querySelector<HTMLElement>("#sift-usb-list");
     if (!listEl) return;
-    listEl.innerHTML = '<div class="sift-usb-empty">Recherche des disques amovibles�</div>';
+    listEl.innerHTML = '<div class="sift-usb-empty">Recherche des disques amovibles…</div>';
     let drives: RemovableDrive[] = [];
     try {
       drives = await listRemovableDrives();
@@ -1485,7 +1486,7 @@ async function renderReglagesLive() {
       return;
     }
     if (!drives.length) {
-      listEl.innerHTML = '<div class="sift-usb-empty">Aucun disque amovible d�tect�.</div>';
+      listEl.innerHTML = '<div class="sift-usb-empty">Aucun disque amovible détecté.</div>';
       return;
     }
     listEl.innerHTML = "";
@@ -1720,7 +1721,10 @@ function masterdbRepairsSectionHtml(rows: PendingMasterdbRepair[]): string {
     .map((r) => {
       const checked = mdbRepairSel.has(r.id);
       return (
-        `<div class="bx-row" data-sift="mdbpick" data-id="${r.id}" style="display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:var(--border-radius-md);cursor:pointer;${
+        // Audit-ref G3 (Rekordbox, 2026-07-09) : ligne-checkbox sans clavier — tabindex/role/
+        // aria-checked ajoutés, clavier via installNavKeyboard() étendu. Le bouton "Ignorer" imbriqué
+        // est déjà protégé par la garde anti-double-déclenchement (Bibliothèque, audit-ref B1).
+        `<div class="bx-row" data-sift="mdbpick" data-id="${r.id}" tabindex="0" role="checkbox" aria-checked="${checked}" style="display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:var(--border-radius-md);cursor:pointer;${
           checked ? "background:var(--overlay-hover)" : ""
         }">` +
         `<input type="checkbox" class="sift-batch-ck" ${checked ? "checked" : ""} tabindex="-1">` +

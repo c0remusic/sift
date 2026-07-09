@@ -27,8 +27,26 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
 
   const card = document.createElement("div");
   card.className = "sift-report-overlay-card sift-usbfmt-card";
+  // Audit-ref G2 (Clé USB, 2026-07-09, réf. shadcn Alert Dialog) : aucune sémantique modale avant
+  // ce fix — plus critique que confirm-modal.ts (R5) puisque c'est la seule action vraiment
+  // irréversible de toute l'app (formatage disque). Escape ferme sauf pendant le formatage (busy).
+  card.setAttribute("role", "alertdialog");
+  card.setAttribute("aria-modal", "true");
+  card.setAttribute("aria-label", `Formater ${drive.id}`);
   overlay.appendChild(card);
   document.body.appendChild(overlay);
+
+  // Single cleanup path (Escape / Cancel / format success) so the keydown listener never
+  // outlives the overlay — each openUsbFormatModal() call would otherwise leak one.
+  const onKeydown = (e: KeyboardEvent) => {
+    if (e.key !== "Escape" || busy) return; // ne pas laisser Escape interrompre un formatage lancé
+    close();
+  };
+  document.addEventListener("keydown", onKeydown);
+  function close(): void {
+    document.removeEventListener("keydown", onKeydown);
+    overlay.remove();
+  }
 
   const sizeGb = (drive.size_bytes / 1_000_000_000).toFixed(1);
   const confirmWord = drive.label || drive.id;
@@ -47,13 +65,14 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
       "</div>" +
       '<div class="sift-usbfmt-warning">Cette action efface tout le contenu du disque, ' +
       "de façon irréversible. Vérifie que c'est bien la bonne clé avant de continuer.</div>" +
+      // Audit-ref G2 : <span> → <button>, incohérent avec le reste de l'app.
       '<div class="sift-seg">' +
-      '<span class="sift-seg-opt' +
+      '<button class="sift-seg-opt' +
       (fs === "fat32" ? " on" : "") +
-      '" data-usbfmt-fs="fat32">FAT32 (recommandé)</span>' +
-      '<span class="sift-seg-opt' +
+      '" data-usbfmt-fs="fat32">FAT32 (recommandé)</button>' +
+      '<button class="sift-seg-opt' +
       (fs === "ex_fat" ? " on" : "") +
-      '" data-usbfmt-fs="ex_fat">exFAT</span>' +
+      '" data-usbfmt-fs="ex_fat">exFAT</button>' +
       "</div>" +
       (fs === "ex_fat"
         ? '<div class="sift-usbfmt-exfat-warning">exFAT n\'est pas garanti compatible avec tous ' +
@@ -87,7 +106,7 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
       if (confirmBtn) confirmBtn.disabled = !typedOk || busy;
     });
 
-    card.querySelector("#sift-usbfmt-cancel")?.addEventListener("click", () => overlay.remove());
+    card.querySelector("#sift-usbfmt-cancel")?.addEventListener("click", () => close());
 
     confirmBtn?.addEventListener("click", () => {
       if (!typedOk || busy) return;
@@ -101,7 +120,7 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
       render();
       void formatDrive(drive.id, drive.volume_serial, fs)
         .then(() => {
-          overlay.remove();
+          close();
           window.dispatchEvent(new CustomEvent("sift:usb-format-done", { detail: { ok: true } }));
         })
         .catch((e: unknown) => {

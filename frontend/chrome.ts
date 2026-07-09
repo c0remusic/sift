@@ -211,8 +211,9 @@ export async function injectTitlebar(): Promise<void> {
  * Espace sans toucher app.js (figé) : redispatche un clic synthétique sur l'élément focus. Couvre
  * aussi les lignes `.qi[data-sift="homerow"]` (home-sources.ts), l'arbre de destination
  * `[data-fil="bin"]` (audit-ref R4, Revue, filing.ts) et les facettes/lignes Bibliothèque
- * `[data-bib="pick"]`/`[data-bib="row"]` (audit-ref B1) — mêmes `tabindex`+`role="button"` posés
- * côté markup, un seul point de câblage clavier générique pour toute nouvelle ligne de ce type. */
+ * `[data-bib="pick"]`/`[data-bib="row"]` (audit-ref B1) et la ligne de sélection réparations
+ * master.db `[data-sift="mdbpick"]` (audit-ref G3, Rekordbox) — mêmes `tabindex`+`role` posés côté
+ * markup, un seul point de câblage clavier générique pour toute nouvelle ligne de ce type. */
 export function installNavKeyboard() {
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Enter" && e.key !== " ") return;
@@ -222,7 +223,7 @@ export function installNavKeyboard() {
     // double-fire (play the track AND toggle the detail panel from one keypress).
     if (/^(BUTTON|A|INPUT|SELECT|TEXTAREA)$/.test(target?.tagName ?? "")) return;
     const el = target?.closest<HTMLElement>(
-      '[data-view][tabindex],[data-sift="homerow"][tabindex],[data-fil="bin"][tabindex],[data-bib="pick"][tabindex],[data-bib="row"][tabindex]',
+      '[data-view][tabindex],[data-sift="homerow"][tabindex],[data-fil="bin"][tabindex],[data-bib="pick"][tabindex],[data-bib="row"][tabindex],[data-sift="mdbpick"][tabindex]',
     );
     if (!el) return;
     e.preventDefault();
