@@ -173,6 +173,19 @@ pub fn track_file_tags(
     })
 }
 
+/// Builds the M8 Tier 3 `MetadataSyncValues` from an apply_tags edit — factored out as a pure
+/// function (no I/O, no lock) so the value-mapping is unit-testable without a Tauri AppHandle/State.
+fn metadata_sync_values_for_apply_tags(edited: &Canonical, extras: &filing::TagExtras) -> actions::MetadataSyncValues {
+    let genre = if extras.genres.is_empty() { None } else { Some(extras.genres.join("; ")) };
+    actions::MetadataSyncValues {
+        artist: Some(edited.artist.clone()),
+        title: Some(crate::naming::tag_title(edited)),
+        label: extras.label.clone(),
+        year: extras.year,
+        genre,
+    }
+}
+
 /// Apply the edited identity (artist/title) + the track's stored enrichment (label/year/genres/
 /// cover) onto the file's ID3 tags IN PLACE — no encode, no move, no status change. Captures the
 /// OLD tags first and journals them as a revertable `tag_edit` action; returns its batch_id so the
@@ -219,8 +232,12 @@ pub fn apply_tags(
     let batch_id = filing::new_batch_id(track_id);
     {
         let conn = conn.lock().map_err(|e| e.to_string())?;
-        actions::record_with_meta(&conn, &batch_id, Some(track_id), "tag_edit", Some(&path), None, Some(&meta))
+        let action_id = actions::record_with_meta(&conn, &batch_id, Some(track_id), "tag_edit", Some(&path), None, Some(&meta))
             .map_err(|e| e.to_string())?;
+
+        // M8 Tier 3: detect (read-only) a metadata sync candidate when linked to Rekordbox.
+        let values = metadata_sync_values_for_apply_tags(&edited, &extras);
+        actions::detect_masterdb_metadata_sync_if_linked(&conn, &path, track_id, &values, action_id);
     }
     app.emit("queue:changed", ()).ok();
     Ok(batch_id)
@@ -719,4 +736,44 @@ pub fn set_setting(
 ) -> Result<(), String> {
     let conn = conn.lock().map_err(|e| e.to_string())?;
     settings::set(&conn, &key, &value).map_err(|e| e.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn metadata_sync_values_for_apply_tags_maps_fields_and_joins_genres() {
+        let edited = crate::naming::Canonical {
+            artist: "Larry Heard".to_string(),
+            title: "Mystery of Love".to_string(),
+            version: None,
+            confidence: crate::naming::Confidence::Green,
+        };
+        let extras = filing::TagExtras {
+            label: Some("Alleviated".to_string()),
+            year: Some(1985),
+            genres: vec!["House".to_string(), "Deep House".to_string()],
+            cover_path: None,
+        };
+
+        let values = metadata_sync_values_for_apply_tags(&edited, &extras);
+
+        assert_eq!(values.artist.as_deref(), Some("Larry Heard"));
+        assert_eq!(values.title.as_deref(), Some("Mystery of Love"));
+        assert_eq!(values.label.as_deref(), Some("Alleviated"));
+        assert_eq!(values.year, Some(1985));
+        assert_eq!(values.genre.as_deref(), Some("House; Deep House"));
+    }
+
+    #[test]
+    fn metadata_sync_values_for_apply_tags_empty_genres_is_none() {
+        let edited = crate::naming::Canonical {
+            artist: "A".to_string(), title: "B".to_string(), version: None,
+            confidence: crate::naming::Confidence::Green,
+        };
+        let extras = filing::TagExtras::default();
+        let values = metadata_sync_values_for_apply_tags(&edited, &extras);
+        assert_eq!(values.genre, None);
+    }
 }
