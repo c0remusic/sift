@@ -49,7 +49,7 @@ pub struct LibraryFilter {
 }
 
 /// A facet bucket (folder or genre) with its filed-track count.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct LibraryFolder {
     pub name: String,
     pub count: i64,
@@ -60,6 +60,7 @@ pub struct LibraryFolder {
 pub struct LibraryFacets {
     pub folders: Vec<LibraryFolder>,
     pub genres: Vec<LibraryFolder>,
+    pub artists: Vec<LibraryFolder>,
 }
 
 /// One genre with its `filed`-track count, ordered by count desc then name.
@@ -298,7 +299,14 @@ pub fn folder_facets(conn: &rusqlite::Connection) -> rusqlite::Result<LibraryFac
          JOIN tracks t ON t.id = g.track_id AND t.status='filed' \
          GROUP BY g.genre ORDER BY g.genre",
     )?;
-    Ok(LibraryFacets { folders, genres })
+    let artists = query_facets(
+        conn,
+        "SELECT m.artist, COUNT(*) FROM metadata m \
+         JOIN tracks t ON t.id = m.track_id AND t.status='filed' \
+         WHERE m.artist IS NOT NULL AND m.artist <> '' \
+         GROUP BY m.artist ORDER BY m.artist",
+    )?;
+    Ok(LibraryFacets { folders, genres, artists })
 }
 
 fn query_facets(
@@ -637,6 +645,35 @@ mod tests {
         );
         let g_house = f.genres.iter().find(|x| x.name == "House").unwrap();
         assert_eq!(g_house.count, 2);
+    }
+
+    #[test]
+    fn folder_facets_counts_filed_by_artist() {
+        let conn = db();
+        for (id, artist) in [(1, "Aya"), (2, "Aya"), (3, "Rob & Si")] {
+            conn.execute(
+                "INSERT INTO tracks(id, path, status) VALUES(?1, ?2, 'filed')",
+                rusqlite::params![id, format!("/lib/{id}.aiff")],
+            )
+            .unwrap();
+            conn.execute(
+                "INSERT INTO metadata(track_id, artist) VALUES(?1, ?2)",
+                rusqlite::params![id, artist],
+            )
+            .unwrap();
+        }
+        // A pending (non-filed) track with an artist must NOT be counted.
+        conn.execute("INSERT INTO tracks(id, path, status) VALUES(4, '/lib/4.aiff', 'pending')", []).unwrap();
+        conn.execute("INSERT INTO metadata(track_id, artist) VALUES(4, 'Aya')", []).unwrap();
+
+        let facets = folder_facets(&conn).unwrap();
+        assert_eq!(
+            facets.artists,
+            vec![
+                LibraryFolder { name: "Aya".into(), count: 2 },
+                LibraryFolder { name: "Rob & Si".into(), count: 1 },
+            ]
+        );
     }
 
     #[test]
