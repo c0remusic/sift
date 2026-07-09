@@ -30,7 +30,7 @@ conn.execute(
     "FileNameL TEXT, FileNameS TEXT, "
     "ArtistID TEXT, GenreID TEXT, LabelID TEXT, ReleaseYear INTEGER, "
     "TrackInfoUpdated TEXT, Analysed TEXT, AnalysisUpdated TEXT, CueUpdated TEXT, "
-    "rb_local_usn INTEGER, updated_at TEXT)"
+    "rb_local_usn INTEGER, updated_at TEXT, ImagePath TEXT)"
 )
 conn.execute("CREATE TABLE djmdPlaylist (ID TEXT PRIMARY KEY, Name TEXT, ParentID TEXT)")
 conn.execute(
@@ -75,20 +75,20 @@ conn.executemany(
 )
 
 conn.executemany(
-    "INSERT INTO djmdContent VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO djmdContent VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     [
         ("40000001", "Synthetic Test Track One", "D:/FIXTURE/track1.mp3",
          "track1.mp3", "track1.mp3", "70000001", "71000001", "72000001", 2020,
          "5", "true", "2026-01-01 00:00:00.000000", "2026-01-01 00:00:00.000000",
-         1000, "2026-01-01 00:00:00.000000"),
+         1000, "2026-01-01 00:00:00.000000", "/PIONEER/Artwork/aaaa/artwork.jpg"),
         ("40000002", "Synthetic Test Track Two", "D:/FIXTURE/track2.flac",
          "track2.flac", "track2.flac", None, None, None, None,
          "5", "true", "2026-01-01 00:00:00.000000", "2026-01-01 00:00:00.000000",
-         1000, "2026-01-01 00:00:00.000000"),
+         1000, "2026-01-01 00:00:00.000000", None),
         ("40000003", "Synthetic Test Track Three", "D:/FIXTURE/track3.wav",
          "track3.wav", "track3.wav", None, None, None, None,
          "5", "true", "2026-01-01 00:00:00.000000", "2026-01-01 00:00:00.000000",
-         1000, "2026-01-01 00:00:00.000000"),
+         1000, "2026-01-01 00:00:00.000000", "/PIONEER/Artwork/bbbb/artwork.jpg"),
     ],
 )
 conn.execute("INSERT INTO djmdPlaylist VALUES ('50000001', 'Fixture Playlist', NULL)")
