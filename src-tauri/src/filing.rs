@@ -568,20 +568,25 @@ pub fn commit_file(conn: &Connection, plan: &FilePlan, log: Vec<FsLog>) -> Resul
 
     // Committed — now (and only now) patch a linked Rekordbox XML for the move/convert rows, and
     // detect (read-only) any master.db repair candidates for the same rows (M8 Tier 1 IPC wiring),
-    // plus (M8 Tier 3) any metadata sync candidate for the tags this commit just wrote.
+    // plus (M8 Tier 3) any metadata sync candidate for the tags this commit just wrote. Both
+    // detectors need the same decrypted `master.db` index — read it ONCE per commit (not once per
+    // detector per row) rather than have each detector independently decrypt the file.
+    let masterdb_index = actions::resolve_masterdb_index_if_linked(conn);
     for (fs, action_id) in log.iter().zip(action_ids.iter()) {
         actions::maybe_repair_rekordbox_xml(conn, fs.kind, Some(&fs.from), Some(&fs.to));
-        actions::maybe_detect_masterdb_repair(conn, fs.kind, Some(&fs.from), Some(&fs.to), *action_id);
-        if matches!(fs.kind, "move" | "convert") {
-            let (genre, label) = actions::sanitize_genre_label(&plan.extras.genres, plan.extras.label.as_deref());
-            let values = actions::MetadataSyncValues {
-                artist: Some(plan.canonical.artist.clone()),
-                title: Some(naming::tag_title(&plan.canonical)),
-                label,
-                year: plan.extras.year,
-                genre,
-            };
-            actions::detect_masterdb_metadata_sync_if_linked(conn, &fs.from, plan.track_id, &values, *action_id);
+        if let Some(index) = &masterdb_index {
+            actions::maybe_detect_masterdb_repair_with_index(conn, index, fs.kind, Some(&fs.from), Some(&fs.to), *action_id);
+            if matches!(fs.kind, "move" | "convert") {
+                let (genre, label) = actions::sanitize_genre_label(&plan.extras.genres, plan.extras.label.as_deref());
+                let values = actions::MetadataSyncValues {
+                    artist: Some(plan.canonical.artist.clone()),
+                    title: Some(naming::tag_title(&plan.canonical)),
+                    label,
+                    year: plan.extras.year,
+                    genre,
+                };
+                actions::detect_masterdb_metadata_sync_with_index(conn, index, &fs.from, plan.track_id, &values, *action_id);
+            }
         }
     }
     Ok(FileResult { path: plan.dest.clone(), batch_id: plan.batch_id.clone() })

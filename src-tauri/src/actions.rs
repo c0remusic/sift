@@ -138,29 +138,75 @@ pub fn maybe_detect_masterdb_repair(
     }
 }
 
-/// Read-only detection: if a Rekordbox XML is linked, look up the sibling `master.db` (same
-/// directory — `master.db` and `masterPlaylists6.xml` are always siblings, confirmed by the
-/// M8 spikes) for `djmdContent` rows whose `FolderPath` equals `from_path`, and record a
-/// candidate repair row — `pending` (exactly one match) or `ambiguous` (2+ matches, the real
-/// duplicate-path scenario the M8 spikes found in a real library). Never writes `master.db`
-/// itself. Any failure (no XML linked, `master.db` unreadable) is a silent no-op — detecting a
-/// candidate repair must never fail the filing action that triggered it, same contract as
-/// `repair_rekordbox_xml_if_linked`.
-pub fn detect_masterdb_repair_if_linked(conn: &Connection, from_path: &str, to_path: &str, action_id: i64) {
-    let Ok(Some(xml_path)) = crate::settings::get(conn, crate::settings::REKORDBOX_XML_PATH) else {
-        return;
-    };
-    let Some(pioneer_dir) = std::path::Path::new(&xml_path).parent() else {
-        return;
-    };
-    let master_db_path = pioneer_dir.join("master.db");
-    let index = match crate::rekordbox_masterdb::read_rekordbox_masterdb(&master_db_path) {
-        Ok(idx) => idx,
-        Err(e) => {
-            log::error!("masterdb repair detection: {} unreadable: {e}", master_db_path.display());
-            return;
+/// Same guard as `maybe_detect_masterdb_repair`, against an already-loaded `master.db` index —
+/// see `resolve_masterdb_index_if_linked`'s docs.
+pub fn maybe_detect_masterdb_repair_with_index(
+    conn: &Connection,
+    index: &crate::rekordbox_masterdb::RekordboxIndex,
+    kind: &str,
+    from_path: Option<&str>,
+    to_path: Option<&str>,
+    action_id: i64,
+) {
+    if matches!(kind, "move" | "convert") {
+        if let (Some(from), Some(to)) = (from_path, to_path) {
+            if from != to {
+                detect_masterdb_repair_with_index(conn, index, from, to, action_id);
+            }
         }
+    }
+}
+
+/// Shared by every M8 Tier 1/3 detector: if a Rekordbox XML is linked, decrypt+read the sibling
+/// `master.db` (same directory — `master.db` and `masterPlaylists6.xml` are always siblings,
+/// confirmed by the M8 spikes) once. `master.db` is a multi-MB SQLCipher file — decrypting it is
+/// the expensive part of detection, so callers that need more than one detector for the same
+/// commit (see `filing::commit_file`'s post-commit loop) must call this ONCE and pass the result
+/// to both `*_with_index` variants, instead of each detector re-reading the file independently.
+/// Returns `None` (logging on a real read failure) if nothing is linked or the file is unreadable
+/// — same silent-no-op contract as the detectors themselves.
+pub fn resolve_masterdb_index_if_linked(conn: &Connection) -> Option<crate::rekordbox_masterdb::RekordboxIndex> {
+    let Ok(Some(xml_path)) = crate::settings::get(conn, crate::settings::REKORDBOX_XML_PATH) else {
+        return None;
     };
+    let pioneer_dir = std::path::Path::new(&xml_path).parent()?;
+    let master_db_path = pioneer_dir.join("master.db");
+    match crate::rekordbox_masterdb::read_rekordbox_masterdb(&master_db_path) {
+        Ok(idx) => Some(idx),
+        Err(e) => {
+            log::error!("masterdb detection: {} unreadable: {e}", master_db_path.display());
+            None
+        }
+    }
+}
+
+/// Read-only detection: if a Rekordbox XML is linked, look up the sibling `master.db` for
+/// `djmdContent` rows whose `FolderPath` equals `from_path`, and record a candidate repair row —
+/// `pending` (exactly one match) or `ambiguous` (2+ matches, the real duplicate-path scenario the
+/// M8 spikes found in a real library). Never writes `master.db` itself. Any failure (no XML
+/// linked, `master.db` unreadable) is a silent no-op — detecting a candidate repair must never
+/// fail the filing action that triggered it, same contract as `repair_rekordbox_xml_if_linked`.
+///
+/// Thin wrapper over `detect_masterdb_repair_with_index` for callers that only need this one
+/// detector (a single `master.db` read is cheap enough there). A caller running this AND
+/// `detect_masterdb_metadata_sync_if_linked` for the same commit should instead call
+/// `resolve_masterdb_index_if_linked` once and use the `_with_index` variants directly.
+pub fn detect_masterdb_repair_if_linked(conn: &Connection, from_path: &str, to_path: &str, action_id: i64) {
+    let Some(index) = resolve_masterdb_index_if_linked(conn) else {
+        return;
+    };
+    detect_masterdb_repair_with_index(conn, &index, from_path, to_path, action_id);
+}
+
+/// Same as `detect_masterdb_repair_if_linked`, but against an already-loaded `master.db` index
+/// instead of reading the file itself — see `resolve_masterdb_index_if_linked`'s docs.
+pub fn detect_masterdb_repair_with_index(
+    conn: &Connection,
+    index: &crate::rekordbox_masterdb::RekordboxIndex,
+    from_path: &str,
+    to_path: &str,
+    action_id: i64,
+) {
     let matches: Vec<&str> = index
         .tracks
         .iter()
@@ -227,6 +273,11 @@ pub fn sanitize_genre_label(genres: &[String], label: Option<&str>) -> (Option<S
 /// Called directly by the 3 sites that write ID3 tags — `filing.rs`'s post-commit loop,
 /// `apply_tags`, and `update_metadata` — right after each obtains its own `action_id`. Never
 /// threaded through `record_with_meta`'s generic signature.
+///
+/// Thin wrapper over `detect_masterdb_metadata_sync_with_index` for callers that only need this
+/// one detector. `filing::commit_file` also runs `detect_masterdb_repair_if_linked` for the same
+/// commit — it calls `resolve_masterdb_index_if_linked` once and uses the `_with_index` variants
+/// of both instead, to avoid decrypting `master.db` twice per row.
 pub fn detect_masterdb_metadata_sync_if_linked(
     conn: &Connection,
     lookup_path: &str,
@@ -234,20 +285,22 @@ pub fn detect_masterdb_metadata_sync_if_linked(
     values: &MetadataSyncValues,
     action_id: i64,
 ) {
-    let Ok(Some(xml_path)) = crate::settings::get(conn, crate::settings::REKORDBOX_XML_PATH) else {
+    let Some(index) = resolve_masterdb_index_if_linked(conn) else {
         return;
     };
-    let Some(pioneer_dir) = std::path::Path::new(&xml_path).parent() else {
-        return;
-    };
-    let master_db_path = pioneer_dir.join("master.db");
-    let index = match crate::rekordbox_masterdb::read_rekordbox_masterdb(&master_db_path) {
-        Ok(idx) => idx,
-        Err(e) => {
-            log::error!("masterdb metadata sync detection: {} unreadable: {e}", master_db_path.display());
-            return;
-        }
-    };
+    detect_masterdb_metadata_sync_with_index(conn, &index, lookup_path, track_id, values, action_id);
+}
+
+/// Same as `detect_masterdb_metadata_sync_if_linked`, but against an already-loaded `master.db`
+/// index instead of reading the file itself — see `resolve_masterdb_index_if_linked`'s docs.
+pub fn detect_masterdb_metadata_sync_with_index(
+    conn: &Connection,
+    index: &crate::rekordbox_masterdb::RekordboxIndex,
+    lookup_path: &str,
+    track_id: i64,
+    values: &MetadataSyncValues,
+    action_id: i64,
+) {
     let matches: Vec<&str> = index
         .tracks
         .iter()

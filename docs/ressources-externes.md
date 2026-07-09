@@ -1191,6 +1191,35 @@ cette passe — aucun fichier `.rs` n'a été touché (uniquement CSS/JSON), et
 `tauri dev` tournait activement en session concurrente au moment du
 nettoyage (voir [[concurrent-session-same-directory]]).
 
+## Dette technique — double décryptage master.db par piste rangée, M8 Tier 1+3 (2026-07-09)
+
+Repéré en revue (pas un audit dédié) : la boucle post-commit de `commit_file`
+(`filing.rs`) appelait deux détecteurs indépendants quand un XML Rekordbox
+est lié — `actions::maybe_detect_masterdb_repair` (Tier 1) et
+`actions::detect_masterdb_metadata_sync_if_linked` (Tier 3) — chacun
+rappelant lui-même `rekordbox_masterdb::read_rekordbox_masterdb`, qui
+déchiffre l'intégralité de `master.db` (SQLCipher, ~20 Mo sur une vraie
+bibliothèque). Sur le chemin verrouillé DB, ça faisait 2 déchiffrements
+complets par piste rangée (donc jusqu'à 2N sur un batch de N pistes) —
+exactement la classe "reparse per action" déjà signalée dans l'audit perf du
+2026-07-05 (`docs/superpowers/reviews/2026-07-05-audit-performance.md`), ici
+sur un chemin d'écriture ajouté après cet audit (Tier 3, 2026-07-09).
+
+**Fix** : `actions::resolve_masterdb_index_if_linked` lit/déchiffre
+`master.db` une seule fois ; `detect_masterdb_repair_if_linked` et
+`detect_masterdb_metadata_sync_if_linked` restent des wrappers à lecture
+unique (inchangés pour leurs autres appelants — `apply_tags`,
+`update_metadata`, `record_with_meta` — qui n'appellent jamais les deux
+détecteurs pour la même action), plus des variantes `_with_index` prenant
+l'index déjà chargé. `filing.rs::commit_file` charge l'index une fois avant
+sa boucle post-commit et le passe aux deux détecteurs au lieu de les laisser
+relire le fichier chacun de leur côté.
+
+Vérifié : `cargo test` 318/318 (0 régression), `cargo clippy --all-targets
+-- -D warnings` clean — les deux lancés contre un `CARGO_TARGET_DIR` isolé
+(scratch), une session concurrente ayant `tauri dev` actif au moment du fix
+(voir [[avoid-concurrent-cargo-tauri-dev]]).
+
 ## Dette technique — nettoyage clippy `m7-rekordbox-xml` (2026-07-04)
 
 `cargo clippy --all-targets -- -D warnings` échouait sur 2 erreurs pré-existantes,
