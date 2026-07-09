@@ -20,6 +20,12 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
   let typedOk = false;
   let armedAt: number | null = null;
   let busy = false;
+  // Set by the formatDrive().catch() handler, read by render(). Must survive render() itself
+  // (which does card.innerHTML = ... — a full replacement) since render() is called right after
+  // the error is recorded, with no paint/await in between. Reset alongside armedAt wherever a
+  // fresh attempt starts (filesystem switch, confirm-word retype) so a stale error message
+  // doesn't linger into the next try.
+  let lastError: string | null = null;
 
   const overlay = document.createElement("div");
   overlay.id = "sift-usbfmt-overlay";
@@ -66,6 +72,9 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
       " Go · actuellement " +
       escapeHtml(drive.current_fs) +
       "</div>" +
+      (lastError
+        ? '<div class="sift-usbfmt-error">' + escapeHtml(lastError) + "</div>"
+        : "") +
       '<div class="sift-usbfmt-warning">Cette action efface tout le contenu du disque, ' +
       "de façon irréversible. Vérifie que c'est bien la bonne clé avant de continuer.</div>" +
       // Audit-ref G2 : <span> → <button>, incohérent avec le reste de l'app.
@@ -105,6 +114,7 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
       el.addEventListener("click", () => {
         fs = el.dataset.usbfmtFs as TargetFs;
         armedAt = null; // switching filesystem resets the confirm cycle
+        lastError = null; // ... and clears any stale error from a previous failed attempt
         render();
       }),
     );
@@ -114,6 +124,9 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
     typed?.addEventListener("input", () => {
       typedOk = typed.value.trim() === confirmWord;
       if (confirmBtn) confirmBtn.disabled = !typedOk || busy;
+      // Not re-rendered here (no render() call — only the disabled attribute is touched), but
+      // clears the stale error for whenever the next render() does happen (e.g. re-arming).
+      lastError = null;
     });
 
     const cancelBtn = card.querySelector<HTMLButtonElement>("#sift-usbfmt-cancel");
@@ -148,13 +161,10 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
             : /not found|no such|introuvable/i.test(raw)
               ? "Disque introuvable — a-t-il été débranché pendant le formatage ?"
               : "Échec du formatage. Vérifie que le disque est bien branché et réessaie.";
-          const desc = card.querySelector(".sift-usbfmt-desc");
-          if (desc) {
-            desc.insertAdjacentHTML(
-              "afterend",
-              '<div class="sift-usbfmt-error">' + escapeHtml(humanized) + "</div>",
-            );
-          }
+          // render() below does card.innerHTML = ... (full replacement) — insertAdjacentHTML'ing
+          // the error directly into the current DOM would just get wiped out immediately, with no
+          // paint in between to make it visible. Store it and let render() include it.
+          lastError = humanized;
           render();
         });
     });
