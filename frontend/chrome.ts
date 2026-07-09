@@ -223,7 +223,7 @@ export function installNavKeyboard() {
     // double-fire (play the track AND toggle the detail panel from one keypress).
     if (/^(BUTTON|A|INPUT|SELECT|TEXTAREA)$/.test(target?.tagName ?? "")) return;
     const el = target?.closest<HTMLElement>(
-      '[data-view][tabindex],[data-sift="homerow"][tabindex],[data-fil="bin"][tabindex],[data-bib="pick"][tabindex],[data-bib="row"][tabindex],[data-sift="mdbpick"][tabindex]',
+      '[data-view][tabindex],[data-sift="homerow"][tabindex],[data-fil="bin"][tabindex],[data-bib="pick"][tabindex],[data-bib="row"][tabindex],[data-sift="mdbpick"][tabindex],[data-bib="tile"][tabindex]',
     );
     if (!el) return;
     e.preventDefault();
