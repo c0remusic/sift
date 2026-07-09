@@ -1,5 +1,7 @@
 //! IPC surface for the M6b library browser: read-only listing + facets of filed tracks,
 //! plus the `update_metadata` command for inline editing in the Bibliothèque.
+use crate::actions;
+use crate::filing;
 use crate::library::{self, LibraryFacets, LibraryFilter, LibraryTrack};
 use crate::metadata::{self, MetadataEdit};
 use rusqlite::Connection;
@@ -24,27 +26,19 @@ pub fn library_folders(conn: State<'_, Mutex<Connection>>) -> Result<LibraryFace
     library::folder_facets(&conn).map_err(|e| e.to_string())
 }
 
-/// Edit a filed track's metadata: writes the file tags first, then updates the DB.
-/// If the file write fails the DB is left untouched (no partial state).
-#[tauri::command]
-pub fn update_metadata(
-    conn: State<'_, Mutex<Connection>>,
-    track_id: i64,
-    edit: MetadataEdit,
-) -> Result<(), String> {
+/// Plain (testable) implementation of `update_metadata`. Returns the `tag_edit` batch_id so the
+/// caller can offer a targeted undo — same contract as `apply_tags` (`ipc_filing.rs`). Also runs
+/// M8 Tier 3 metadata-sync detection (read-only) when the file is linked to Rekordbox.
+fn update_metadata_inner(conn: &Connection, track_id: i64, edit: MetadataEdit) -> Result<String, String> {
     // (1) Look up the track path — error immediately if unknown.
-    let path: String = {
-        let conn = conn.lock().map_err(|e| e.to_string())?;
-        conn.query_row(
-            "SELECT path FROM tracks WHERE id=?1",
-            rusqlite::params![track_id],
-            |r| r.get(0),
-        )
-        .map_err(|_| format!("track {track_id} not found"))?
-    };
+    let path: String = conn
+        .query_row("SELECT path FROM tracks WHERE id=?1", rusqlite::params![track_id], |r| r.get(0))
+        .map_err(|_| format!("track {track_id} not found"))?;
 
-    // (2) Write the file tags. Lock is released before this call; if it fails we stop here and
-    // the DB is untouched.
+    // (2) Snapshot the OLD tags BEFORE writing — same pattern as apply_tags (ipc_filing.rs).
+    let snapshot = crate::tagging::read_tags_full(&path)?;
+
+    // (3) Write the file tags. If it fails we stop here — nothing journaled, DB untouched.
     crate::tagging::write_tags_full(
         &path,
         &edit.artist,
@@ -55,9 +49,42 @@ pub fn update_metadata(
         edit.cover_path.as_deref(),
     )?;
 
-    // (3) Persist to the DB only after the file write succeeded.
+    // (4) Persist to the DB only after the file write succeeded.
+    metadata::update_metadata_db(conn, track_id, &edit).map_err(|e| e.to_string())?;
+
+    // (5) Journal a revertable tag_edit — this is the fix for a pre-existing gap: before this,
+    // Bibliothèque edits had no undo path at all (see M8 Tier 3 design, "Fix du gap").
+    let meta = serde_json::to_string(&snapshot).map_err(|e| e.to_string())?;
+    let batch_id = filing::new_batch_id(track_id);
+    let action_id = actions::record_with_meta(conn, &batch_id, Some(track_id), "tag_edit", Some(&path), None, Some(&meta))
+        .map_err(|e| e.to_string())?;
+
+    // (6) M8 Tier 3: detect (read-only) whether this track is linked to Rekordbox and needs a
+    // metadata sync candidate. Never fails the edit itself.
+    let genre = if edit.genres.is_empty() { None } else { Some(edit.genres.join("; ")) };
+    let values = actions::MetadataSyncValues {
+        artist: Some(edit.artist.clone()),
+        title: Some(edit.title.clone()),
+        label: edit.label.clone(),
+        year: edit.year,
+        genre,
+    };
+    actions::detect_masterdb_metadata_sync_if_linked(conn, &path, track_id, &values, action_id);
+
+    Ok(batch_id)
+}
+
+/// Edit a filed track's metadata: writes the file tags first, then updates the DB, then
+/// journals the edit as a revertable `tag_edit` (returns its `batch_id` for a targeted undo —
+/// see `frontend/library-detail.ts`'s "Annuler" toast).
+#[tauri::command]
+pub fn update_metadata(
+    conn: State<'_, Mutex<Connection>>,
+    track_id: i64,
+    edit: MetadataEdit,
+) -> Result<String, String> {
     let conn = conn.lock().map_err(|e| e.to_string())?;
-    metadata::update_metadata_db(&conn, track_id, &edit).map_err(|e| e.to_string())
+    update_metadata_inner(&conn, track_id, edit)
 }
 
 /// Group `filed` tracks by acoustic fingerprint into duplicate clusters, each with a
@@ -710,6 +737,94 @@ mod rekordbox_tests {
         let c = Connection::open_in_memory().unwrap();
         crate::db::run_migrations(&c).unwrap();
         c
+    }
+
+    fn fixture(name: &str) -> Option<String> {
+        let p = format!("fixtures/{name}");
+        if std::path::Path::new(&p).exists() { Some(p) } else { None }
+    }
+
+    #[test]
+    fn update_metadata_journals_a_revertable_tag_edit() {
+        let Some(src) = fixture("real_320.mp3") else {
+            eprintln!("skip: no fixture");
+            return;
+        };
+        let conn = db();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("track.mp3");
+        std::fs::copy(&src, &path).unwrap();
+        crate::tagging::write_tags_full(path.to_str().unwrap(), "OLD Artist", "OLD Title", None, None, &[], None).unwrap();
+        conn.execute(
+            "INSERT INTO tracks(path, status) VALUES(?1, 'filed')",
+            rusqlite::params![path.to_str().unwrap()],
+        ).unwrap();
+        let track_id = conn.last_insert_rowid();
+
+        let edit = crate::metadata::MetadataEdit {
+            artist: "NEW Artist".to_string(),
+            title: "NEW Title".to_string(),
+            label: None,
+            year: None,
+            genres: vec![],
+            cover_path: None,
+        };
+        let batch_id = update_metadata_inner(&conn, track_id, edit).unwrap();
+        assert!(!batch_id.is_empty());
+
+        let after = crate::tagging::read_tags_full(path.to_str().unwrap()).unwrap();
+        assert_eq!(after.artist.as_deref(), Some("NEW Artist"));
+
+        crate::actions::revert_batch(&conn, &batch_id).unwrap();
+        let reverted = crate::tagging::read_tags_full(path.to_str().unwrap()).unwrap();
+        assert_eq!(reverted.artist.as_deref(), Some("OLD Artist"), "revert_batch must restore the pre-edit tags");
+    }
+
+    #[test]
+    fn update_metadata_calls_masterdb_metadata_sync_detection_when_linked() {
+        let Some(src) = fixture("real_320.mp3") else {
+            eprintln!("skip: no fixture");
+            return;
+        };
+        let conn = db();
+        let tmp = tempfile::tempdir().unwrap();
+        let pioneer_dir = tmp.path().join("pioneer");
+        std::fs::create_dir_all(&pioneer_dir).unwrap();
+        std::fs::copy(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/rekordbox_master.db"), pioneer_dir.join("master.db")).unwrap();
+        let xml_path = pioneer_dir.join("masterPlaylists6.xml");
+        std::fs::write(&xml_path, b"<DJ_PLAYLISTS/>").unwrap();
+        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("track1.mp3");
+        std::fs::copy(&src, &path).unwrap();
+        crate::tagging::write_tags_full(path.to_str().unwrap(), "Old", "Old Title", None, None, &[], None).unwrap();
+
+        // Patch the fixture's track_id "40000001" FolderPath to this real temp path — same
+        // decrypt/re-encrypt-for-test technique as actions.rs's ambiguous-match test (Task 2) —
+        // so tracks.path (below) and master.db's FolderPath refer to the exact same string.
+        let raw = std::fs::read(pioneer_dir.join("master.db")).unwrap();
+        let plaintext = crate::rekordbox_masterdb::decrypt_masterdb_for_test(&raw);
+        let len = plaintext.len();
+        let mut conn2 = rusqlite::Connection::open_in_memory().unwrap();
+        conn2.deserialize_read_exact(rusqlite::MAIN_DB, std::io::Cursor::new(plaintext), len, false).unwrap();
+        conn2.execute("UPDATE djmdContent SET FolderPath=?1 WHERE ID='40000001'", rusqlite::params![path.to_str().unwrap()]).unwrap();
+        let plaintext2 = conn2.serialize(rusqlite::MAIN_DB).unwrap().to_vec();
+        let raw2 = crate::rekordbox_masterdb::encrypt_masterdb_for_test(&plaintext2);
+        std::fs::write(pioneer_dir.join("master.db"), raw2).unwrap();
+
+        conn.execute("INSERT INTO tracks(path, status) VALUES(?1, 'filed')", rusqlite::params![path.to_str().unwrap()]).unwrap();
+        let track_id = conn.last_insert_rowid();
+
+        let edit = crate::metadata::MetadataEdit {
+            artist: "New Artist".to_string(),
+            title: "New Title".to_string(),
+            label: None, year: None, genres: vec![], cover_path: None,
+        };
+        update_metadata_inner(&conn, track_id, edit).unwrap();
+
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM rekordbox_masterdb_metadata_syncs WHERE track_id=?1", rusqlite::params![track_id], |r| r.get(0)).unwrap();
+        assert_eq!(count, 1);
     }
 
     #[test]
