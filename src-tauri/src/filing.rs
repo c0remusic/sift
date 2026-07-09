@@ -586,6 +586,9 @@ pub fn commit_file(conn: &Connection, plan: &FilePlan, log: Vec<FsLog>) -> Resul
                     genre,
                 };
                 actions::detect_masterdb_metadata_sync_with_index(conn, index, &fs.from, plan.track_id, &values, *action_id);
+                if let Some(cover_path) = &plan.extras.cover_path {
+                    actions::detect_masterdb_artwork_sync_with_index(conn, index, &fs.from, plan.track_id, cover_path, *action_id);
+                }
             }
         }
     }
@@ -1304,6 +1307,72 @@ mod tests {
             "the repair row must reference the SAME action_id commit_file just created for this row"
         );
         assert_eq!(repair_track_id, "40000001");
+        assert_eq!(status, "pending");
+    }
+
+    #[test]
+    fn commit_file_conformant_detects_masterdb_artwork_sync_only_when_cover_changes() {
+        let conn = db();
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("lib");
+        std::fs::create_dir_all(root.join("House")).unwrap();
+        let Some((id, src)) = seed_track(&conn, dir.path(), "real_320.mp3", "src.mp3") else {
+            eprintln!("skip: no fixture");
+            return;
+        };
+
+        let pioneer_dir = dir.path().join("pioneer");
+        let xml_path = seed_pioneer_dir_with_fixture(&pioneer_dir);
+        patch_fixture_folder_path(&pioneer_dir, src.to_str().unwrap());
+        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+
+        // No cover_path set on this track's metadata row — commit must NOT create an artwork
+        // sync candidate, only a metadata one (already covered by the sibling test).
+        let res = file_track(&conn, &root, "{artist} - {title}", id, "House", None, Some(Canonical {
+            artist: "Larry Heard".into(), title: "Can You Feel It".into(), version: None,
+            confidence: crate::naming::Confidence::Green,
+        }), false).unwrap();
+        let _ = res;
+
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM rekordbox_masterdb_artwork_syncs WHERE track_id=?1", params![id], |r| r.get(0)).unwrap();
+        assert_eq!(count, 0, "no cover_path on this track — must not create an artwork sync candidate");
+    }
+
+    #[test]
+    fn commit_file_conformant_detects_masterdb_artwork_sync_when_cover_present() {
+        let conn = db();
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("lib");
+        std::fs::create_dir_all(root.join("House")).unwrap();
+        let Some((id, src)) = seed_track(&conn, dir.path(), "real_320.mp3", "src.mp3") else {
+            eprintln!("skip: no fixture");
+            return;
+        };
+        conn.execute(
+            "INSERT INTO metadata(track_id, cover_path) VALUES (?1, '/cache/covers/999.jpg')
+             ON CONFLICT(track_id) DO UPDATE SET cover_path=excluded.cover_path",
+            params![id],
+        ).unwrap();
+
+        let pioneer_dir = dir.path().join("pioneer");
+        let xml_path = seed_pioneer_dir_with_fixture(&pioneer_dir);
+        patch_fixture_folder_path(&pioneer_dir, src.to_str().unwrap());
+        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+
+        let res = file_track(&conn, &root, "{artist} - {title}", id, "House", None, Some(Canonical {
+            artist: "Larry Heard".into(), title: "Can You Feel It".into(), version: None,
+            confidence: crate::naming::Confidence::Green,
+        }), false).unwrap();
+        let _ = res;
+
+        let (cover_path, status): (String, String) = conn
+            .query_row(
+                "SELECT cover_path, status FROM rekordbox_masterdb_artwork_syncs WHERE track_id=?1",
+                params![id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .expect("commit_file must have detected an artwork sync candidate");
+        assert_eq!(cover_path, "/cache/covers/999.jpg");
         assert_eq!(status, "pending");
     }
 }
