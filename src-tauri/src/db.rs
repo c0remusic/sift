@@ -152,6 +152,31 @@ const MIGRATIONS: &[&str] = &[
     r#"
     ALTER TABLE sources ADD COLUMN color_key TEXT;
     "#,
+    // v13 — M8 Tier 3 IPC wiring: candidate master.db metadata syncs detected read-only
+    // whenever Sift writes ID3 tags on a file linked to Rekordbox (filing, apply_tags,
+    // update_metadata). Keyed by Sift track_id (not action_id like v11's repairs table) —
+    // a retag before the user syncs replaces the pending candidate, it never accumulates.
+    // rekordbox_track_id is NULL when 2+ djmdContent rows matched the same path (ambiguous,
+    // never auto-resolved — see candidate_track_ids).
+    r#"
+    CREATE TABLE rekordbox_masterdb_metadata_syncs (
+        id INTEGER PRIMARY KEY,
+        action_id INTEGER NOT NULL REFERENCES actions(id) ON DELETE CASCADE,
+        track_id INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+        rekordbox_track_id TEXT,
+        candidate_track_ids TEXT,
+        new_artist TEXT,
+        new_title TEXT,
+        new_label TEXT,
+        new_year INTEGER,
+        new_genre TEXT,
+        status TEXT NOT NULL DEFAULT 'pending',
+        detected_at TEXT NOT NULL DEFAULT (datetime('now')),
+        applied_at TEXT,
+        UNIQUE(track_id)
+    );
+    CREATE INDEX idx_rkbmdb_metasync_status ON rekordbox_masterdb_metadata_syncs(status);
+    "#,
 ];
 
 /// Applies any migrations the DB hasn't seen yet, tracked via PRAGMA user_version.
@@ -210,8 +235,9 @@ mod tests {
     fn migrations_create_all_tables() {
         let conn = Connection::open_in_memory().unwrap();
         run_migrations(&conn).unwrap();
-        // v4 adds `settings`, v6 adds `track_genres`, v11 adds `rekordbox_masterdb_repairs`
-        assert_eq!(table_count(&conn).unwrap(), 8);
+        // v4 adds `settings`, v6 adds `track_genres`, v11 adds `rekordbox_masterdb_repairs`,
+        // v13 adds `rekordbox_masterdb_metadata_syncs`
+        assert_eq!(table_count(&conn).unwrap(), 9);
     }
 
     #[test]
@@ -219,7 +245,7 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         run_migrations(&conn).unwrap();
         run_migrations(&conn).unwrap(); // second run must not error or duplicate
-        assert_eq!(table_count(&conn).unwrap(), 8);
+        assert_eq!(table_count(&conn).unwrap(), 9);
     }
 
     #[test]
