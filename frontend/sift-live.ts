@@ -29,6 +29,9 @@ import {
   rekordboxMasterdbApplyMetadataSyncs,
   rekordboxMasterdbDismissMetadataSync,
   rekordboxMasterdbResolveAmbiguousMetadataSync,
+  rekordboxMasterdbApplyArtworkSyncs,
+  rekordboxMasterdbDismissArtworkSync,
+  rekordboxMasterdbResolveAmbiguousArtworkSync,
 } from "./ipc";
 import type { ApplyMetadataSyncOutcome } from "../shared/contracts";
 import { emptyStateHtml, wireEmptyState } from "./empty-state";
@@ -73,6 +76,8 @@ import {
   mdbDedupErrorByKey,
   mdsSyncSel,
   mdsErrorById,
+  masSyncSel,
+  masErrorById,
   lastScannedDuplicateGroups,
   duplicateGroupKey,
   renderRekordboxLive,
@@ -1862,6 +1867,71 @@ export function installLiveWiring() {
           toast(failed > 0 ? `${ok} synchro(s) appliquée(s), ${failed} échouée(s)` : `${ok} synchro(s) appliquée(s)`);
         } catch (e) {
           console.error("rekordbox_masterdb_apply_metadata_syncs failed", e);
+          toast("Action impossible — réessaie");
+        }
+        void renderRekordboxLive();
+      })();
+    } else if (act === "maspick") {
+      e.stopPropagation();
+      const id = Number(el.dataset.id);
+      if (masSyncSel.has(id)) {
+        masSyncSel.delete(id);
+      } else {
+        masSyncSel.add(id);
+        masErrorById.delete(id);
+      }
+      void renderRekordboxLive();
+    } else if (act === "masdismiss") {
+      e.stopPropagation();
+      const id = Number(el.dataset.id);
+      void (async () => {
+        try {
+          await rekordboxMasterdbDismissArtworkSync(id);
+        } catch (e) {
+          console.error("rekordbox_masterdb_dismiss_artwork_sync failed", e);
+          toast("Action impossible — réessaie");
+        }
+        void renderRekordboxLive();
+      })();
+    } else if (act === "masresolve") {
+      e.stopPropagation();
+      const id = Number(el.dataset.id);
+      const trackId = el.dataset.track || "";
+      void (async () => {
+        try {
+          await rekordboxMasterdbResolveAmbiguousArtworkSync(id, trackId);
+        } catch (e) {
+          console.error("rekordbox_masterdb_resolve_ambiguous_artwork_sync failed", e);
+          toast("Choix impossible — réessaie");
+        }
+        void renderRekordboxLive();
+      })();
+    } else if (act === "masapply") {
+      e.stopPropagation();
+      const ids = [...masSyncSel];
+      if (!ids.length) return;
+      void (async () => {
+        const proceed = await confirmAction(
+          `Appliquer ${ids.length} synchro${ids.length > 1 ? "s" : ""} de pochette dans master.db ? Ferme Rekordbox avant de continuer.`,
+          "Appliquer",
+        );
+        if (!proceed) return;
+        try {
+          const outcomes = await rekordboxMasterdbApplyArtworkSyncs(ids);
+          let ok = 0;
+          for (const o of outcomes) {
+            masSyncSel.delete(o.id);
+            if (o.ok) {
+              masErrorById.delete(o.id);
+              ok++;
+            } else {
+              masErrorById.set(o.id, o.error || "échec inconnu");
+            }
+          }
+          const failed = outcomes.length - ok;
+          toast(failed > 0 ? `${ok} synchro(s) appliquée(s), ${failed} échouée(s)` : `${ok} synchro(s) appliquée(s)`);
+        } catch (e) {
+          console.error("rekordbox_masterdb_apply_artwork_syncs failed", e);
           toast("Action impossible — réessaie");
         }
         void renderRekordboxLive();

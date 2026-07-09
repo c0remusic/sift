@@ -9,6 +9,7 @@ import {
   rekordboxMasterdbPendingRepairs,
   rekordboxMasterdbScanPlaylistDuplicates,
   rekordboxMasterdbPendingMetadataSyncs,
+  rekordboxMasterdbPendingArtworkSyncs,
 } from "./ipc";
 import type {
   RekordboxLinkStatus,
@@ -16,6 +17,7 @@ import type {
   CandidateTrack,
   PlaylistDuplicateGroupDto,
   PendingMetadataSync,
+  PendingArtworkSync,
 } from "../shared/contracts";
 import { requireEl } from "./dom";
 import { emptyStateHtml, wireEmptyState } from "./empty-state";
@@ -45,6 +47,10 @@ export const mdbDedupErrorByKey = new Map<string, string>();
 // mdbRepairSel.
 export const mdsSyncSel = new Set<number>();
 export const mdsErrorById = new Map<number, string>();
+// M8 Tier 3 (pochette) artwork-syncs section state — same module-level, filtered-not-reset
+// discipline as mdsSyncSel.
+export const masSyncSel = new Set<number>();
+export const masErrorById = new Map<number, string>();
 
 export function duplicateGroupKey(g: PlaylistDuplicateGroupDto): string {
   return `${g.playlist_id}::${g.content_id}`;
@@ -243,6 +249,86 @@ function metadataSyncsSectionHtml(rows: PendingMetadataSync[]): string {
   );
 }
 
+/** M8 Tier 3 (pochette) section: lists master.db artwork sync candidates detected passively
+ * whenever Sift writes a NEW cover onto a file linked to Rekordbox. Independent of
+ * metadataSyncsSectionHtml (separate table, separate detector — a text-only retag never lands
+ * here). Renders "" when nothing pending/ambiguous. */
+function artworkSyncsSectionHtml(rows: PendingArtworkSync[]): string {
+  if (rows.length === 0) return "";
+  const liveIds = new Set(rows.map((r) => r.id));
+  for (const id of [...masSyncSel]) if (!liveIds.has(id)) masSyncSel.delete(id);
+
+  const ambiguous = rows.filter((r) => r.status === "ambiguous");
+  const pending = rows.filter((r) => r.status === "pending");
+
+  const coverFileName = (p: string) => p.split(/[\\/]/).pop() || p;
+
+  const infoBlock = (r: PendingArtworkSync) =>
+    `<div style="min-width:0;flex:1">` +
+    `<div style="font-family:var(--font-mono);font-size:var(--text-sm);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.sift_path)}</div>` +
+    `<div style="font-size:var(--text-xs);color:var(--color-text-tertiary)">Nouvelle pochette : ${esc(coverFileName(r.cover_path))}</div>` +
+    (masErrorById.has(r.id)
+      ? `<div style="font-size:var(--text-xs);color:var(--color-text-danger);margin-top:2px">${esc(masErrorById.get(r.id)!)}</div>`
+      : "") +
+    `</div>`;
+
+  const candidateList = (r: PendingArtworkSync): CandidateTrack[] =>
+    r.candidate_tracks && r.candidate_tracks.length
+      ? r.candidate_tracks
+      : (r.candidate_track_ids || "")
+          .split(",")
+          .filter(Boolean)
+          .map((track_id) => ({ track_id, folder_path: null }));
+
+  const ambiguousRows = ambiguous
+    .map((r) => {
+      const candidateBtns = candidateList(r)
+        .map(
+          (c) =>
+            `<button data-sift="masresolve" data-id="${r.id}" data-track="${esc(c.track_id)}" style="display:block;text-align:left;font-family:var(--font-mono);font-size:var(--text-xs)">` +
+            `Choisir cette piste — ${esc(c.folder_path || c.track_id)}</button>`,
+        )
+        .join("");
+      return (
+        `<div style="border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:9px 11px;margin-bottom:6px">` +
+        `<div style="display:flex;gap:10px;align-items:flex-start">${infoBlock(r)}` +
+        `<button data-sift="masdismiss" data-id="${r.id}" style="flex:none">Ignorer</button></div>` +
+        `<div style="margin-top:6px;display:flex;flex-direction:column;gap:3px">${candidateBtns}</div>` +
+        `</div>`
+      );
+    })
+    .join("");
+
+  const pendingRows = pending
+    .map((r) => {
+      const checked = masSyncSel.has(r.id);
+      return (
+        `<div class="bx-row" data-sift="maspick" data-id="${r.id}" tabindex="0" role="checkbox" aria-checked="${checked}" style="display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:var(--border-radius-md);cursor:pointer;${
+          checked ? "background:var(--overlay-hover)" : ""
+        }">` +
+        `<input type="checkbox" class="sift-batch-ck" ${checked ? "checked" : ""} tabindex="-1">` +
+        infoBlock(r) +
+        `<button data-sift="masdismiss" data-id="${r.id}" style="flex:none">Ignorer</button>` +
+        `</div>`
+      );
+    })
+    .join("");
+
+  const applyBar =
+    masSyncSel.size > 0
+      ? `<div style="margin-top:8px"><button data-sift="masapply" style="font-weight:500">Appliquer la sélection (${masSyncSel.size})</button></div>`
+      : "";
+
+  return (
+    `<div style="margin-bottom:12px">` +
+    `<div class="col-h">Synchros pochette master.db en attente</div>` +
+    (ambiguousRows ? `<div style="margin-bottom:8px">${ambiguousRows}</div>` : "") +
+    pendingRows +
+    applyBar +
+    `</div>`
+  );
+}
+
 /** M8 Tier 2 section: lists playlists where the same track appears more than once
  * (rekordbox_masterdb_scan_playlist_duplicates, read-only, scanned fresh on every render — no
  * persistence, see docs/superpowers/plans/2026-07-08-m8-tier2-ipc-wiring.md). One button per
@@ -347,5 +433,13 @@ export async function renderRekordboxLive(): Promise<void> {
     console.error("rekordbox_masterdb_pending_metadata_syncs failed", e);
   }
 
-  content.innerHTML = intro + driftBanner + rekordboxCardHtml(status) + masterdbSection + dedupSection + metadataSyncSection;
+  let artworkSyncSection = "";
+  try {
+    const artworkSyncs = await rekordboxMasterdbPendingArtworkSyncs();
+    artworkSyncSection = artworkSyncsSectionHtml(artworkSyncs);
+  } catch (e) {
+    console.error("rekordbox_masterdb_pending_artwork_syncs failed", e);
+  }
+
+  content.innerHTML = intro + driftBanner + rekordboxCardHtml(status) + masterdbSection + dedupSection + metadataSyncSection + artworkSyncSection;
 }
