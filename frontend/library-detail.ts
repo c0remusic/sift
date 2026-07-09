@@ -9,6 +9,7 @@ import {
   applyIdentity,
   openUrl,
   trashTrack,
+  revertBatch,
 } from "./ipc";
 import type { Candidate, AppliedIdentity } from "./ipc";
 import type { LibraryTrack, MetadataEdit } from "../shared/contracts";
@@ -31,15 +32,23 @@ interface EditState {
   saving: boolean;
 }
 
-/** A transient bottom-right toast (mirrors filing.ts, no undo affordance here). */
-function toast(message: string): void {
+/** A transient bottom-right toast, with an optional "Undo" action (mirrors filing.ts). */
+function toast(message: string, undo?: boolean, onUndo?: () => void): void {
   document.getElementById("sift-toast")?.remove();
   const el = document.createElement("div");
   el.id = "sift-toast";
   el.className = "sift-toast";
-  el.textContent = message;
+  el.innerHTML =
+    `<span>${esc(message)}</span>` +
+    (undo ? '<button data-fil="undo" class="sift-toast-undo">Annuler</button>' : "");
   document.body.appendChild(el);
-  setTimeout(() => el.remove(), 4000);
+  if (undo && onUndo) {
+    el.querySelector('[data-fil="undo"]')?.addEventListener("click", () => {
+      el.remove();
+      onUndo();
+    });
+  }
+  setTimeout(() => el.remove(), 6000);
 }
 
 
@@ -261,7 +270,7 @@ async function doSave(edit: HTMLElement, st: EditState): Promise<void> {
     btn.innerHTML = '<i class="ti ti-loader-2 sift-spin" style="font-size:var(--text-md);vertical-align:-2px"></i> Enregistrement…';
   }
   try {
-    await updateMetadata(st.track.id, e);
+    const batchId = await updateMetadata(st.track.id, e);
     // Reflect saved values back into the open track + notify the list.
     st.track.artist = e.artist;
     st.track.title = e.title;
@@ -274,7 +283,9 @@ async function doSave(edit: HTMLElement, st: EditState): Promise<void> {
       st.pendingCover = null;
     }
     notifyChanged(st.track);
-    toast("Enregistré");
+    toast("Enregistré", true, () => {
+      void revertBatch(batchId).catch((err: unknown) => console.error("revert_batch failed", err));
+    });
   } catch (err) {
     toast(`Échec de l'enregistrement : ${String(err)}`);
     console.error("update_metadata failed", err);

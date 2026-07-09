@@ -28,6 +28,8 @@ import type {
   RekordboxLinkStatus,
   PendingMasterdbRepair,
   ApplyRepairOutcome,
+  PendingMetadataSync,
+  ApplyMetadataSyncOutcome,
   PlaylistDuplicateGroupDto,
 } from "../shared/contracts";
 
@@ -253,8 +255,8 @@ export const libraryFolders = (): Promise<LibraryFacets> =>
   invoke("library_folders");
 
 /** Edit a filed track's metadata: writes the file tags first, then the DB. Preserves the
- * Discogs release link. Rejects (DB untouched) if the file write fails. */
-export const updateMetadata = (trackId: number, edit: MetadataEdit): Promise<void> =>
+ * Discogs release link. Rejects (DB untouched) if the file write fails. Returns the batch_id for undo. */
+export const updateMetadata = (trackId: number, edit: MetadataEdit): Promise<string> =>
   invoke("update_metadata", { trackId, edit });
 
 /** Scan `filed` tracks for acoustic duplicates, grouped with a recommended keeper. */
@@ -296,6 +298,18 @@ export const rekordboxMasterdbDismissRepair = (id: number): Promise<void> =>
 /** Resolve an ambiguous repair by selecting the correct candidate track. */
 export const rekordboxMasterdbResolveAmbiguous = (id: number, chosenTrackId: string): Promise<void> =>
   invoke("rekordbox_masterdb_resolve_ambiguous", { id, chosenTrackId });
+
+export const rekordboxMasterdbPendingMetadataSyncs = (): Promise<PendingMetadataSync[]> =>
+  invoke("rekordbox_masterdb_pending_metadata_syncs");
+
+export const rekordboxMasterdbApplyMetadataSyncs = (ids: number[]): Promise<ApplyMetadataSyncOutcome[]> =>
+  invoke("rekordbox_masterdb_apply_metadata_syncs", { ids });
+
+export const rekordboxMasterdbDismissMetadataSync = (id: number): Promise<void> =>
+  invoke("rekordbox_masterdb_dismiss_metadata_sync", { id });
+
+export const rekordboxMasterdbResolveAmbiguousMetadataSync = (id: number, chosenTrackId: string): Promise<void> =>
+  invoke("rekordbox_masterdb_resolve_ambiguous_metadata_sync", { id, chosenTrackId });
 
 // ---- M8 Tier 2 playlist duplicate-entry dedup ----
 

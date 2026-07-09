@@ -326,6 +326,30 @@ export interface ApplyRepairOutcome {
   error: string | null;
 }
 
+// ---- M8 Tier 3 master.db metadata sync candidates (mirror of src-tauri/src/ipc_library.rs) ----
+
+export interface PendingMetadataSync {
+  id: number;
+  track_id: number;
+  sift_path: string;
+  rekordbox_track_id: string | null;
+  candidate_track_ids: string | null;
+  candidate_tracks: CandidateTrack[] | null;
+  new_artist: string | null;
+  new_title: string | null;
+  new_label: string | null;
+  new_year: number | null;
+  new_genre: string | null;
+  status: "pending" | "ambiguous";
+  detected_at: string;
+}
+
+export interface ApplyMetadataSyncOutcome {
+  id: number;
+  ok: boolean;
+  error: string | null;
+}
+
 // ---- M8 Tier 2 playlist duplicate-entry dedup (mirror of src-tauri/src/ipc_library.rs) ----
 
 export interface PlaylistDuplicateEntryDto {
