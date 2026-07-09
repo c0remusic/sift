@@ -61,7 +61,7 @@
 //! rekordbox_masterdb::tests::<test_name> --ignored --test-threads=1`.
 
 use std::io::Cursor;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use aes::Aes256;
 use sysinfo::System;
@@ -69,6 +69,7 @@ use cbc::cipher::block_padding::NoPadding;
 use cbc::cipher::{BlockDecryptMut, BlockEncryptMut, KeyIvInit};
 use flate2::read::ZlibDecoder;
 use hmac::{Hmac, Mac};
+use image::ImageEncoder;
 use pbkdf2::pbkdf2_hmac;
 use rand::rngs::OsRng;
 use rand::{Rng, RngCore};
@@ -200,6 +201,26 @@ pub enum MasterDbError {
         /// The FK table for which ID generation failed.
         table: String,
     },
+    /// `djmdContent.ImagePath` est NULL/vide pour cette piste — aucun
+    /// mécanisme de création connu (non testé au spike 8), refuser plutôt
+    /// que deviner un comportement Rekordbox non observé.
+    NoArtworkPath {
+        /// La piste sans pochette.
+        track_id: String,
+    },
+    /// `ImagePath` pointe vers un chemin dont une des 3 variantes
+    /// (pleine/moyenne/miniature) n'existe pas sur disque — refuse plutôt
+    /// que de deviner les dimensions d'un fichier absent.
+    ArtworkVariantMissing {
+        /// Le chemin résolu manquant.
+        path: String,
+    },
+    /// L'écriture des fichiers artwork a réussi mais la relecture ne montre
+    /// pas les dimensions attendues — backup restauré automatiquement.
+    ArtworkWriteVerificationFailedRolledBack(String),
+    /// Idem, mais la restauration du backup a aussi échoué — les fichiers
+    /// artwork live peuvent être dans un état incohérent.
+    ArtworkWriteVerificationFailedRollbackFailed(String),
 }
 
 impl std::fmt::Display for MasterDbError {
@@ -243,6 +264,21 @@ impl std::fmt::Display for MasterDbError {
             }
             MasterDbError::IdGenerationExhausted { table } => {
                 write!(f, "could not generate a free ID for table {table}")
+            }
+            MasterDbError::NoArtworkPath { track_id } => {
+                write!(f, "djmdContent row {track_id} has no ImagePath")
+            }
+            MasterDbError::ArtworkVariantMissing { path } => {
+                write!(f, "expected artwork variant file missing: {path}")
+            }
+            MasterDbError::ArtworkWriteVerificationFailedRolledBack(m) => {
+                write!(f, "artwork write verification failed, backup restored: {m}")
+            }
+            MasterDbError::ArtworkWriteVerificationFailedRollbackFailed(m) => {
+                write!(
+                    f,
+                    "artwork write verification failed AND rollback failed — manual attention needed: {m}"
+                )
             }
         }
     }
@@ -1136,6 +1172,29 @@ fn find_or_create_named_row(
     )
     .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
     Ok(new_id)
+}
+
+/// Splits an `ImagePath` filename into its (stem, extension) and derives
+/// the sibling "_m"/"_s" variant filenames Rekordbox maintains alongside
+/// the full-size file — same directory, same extension, `_m`/`_s` suffix
+/// inserted before the extension (observed on real Rekordbox data, spike 8:
+/// `artwork.jpg` / `artwork_m.jpg` / `artwork_s.jpg`).
+fn resolve_artwork_variants(pioneer_dir: &Path, image_path: &str) -> (PathBuf, PathBuf, PathBuf) {
+    let share_root = pioneer_dir.join("share");
+    let relative = image_path.trim_start_matches(['/', '\\']);
+    let full = share_root.join(relative);
+    let stem = full
+        .file_stem()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_default();
+    let ext = full
+        .extension()
+        .map(|s| s.to_string_lossy().to_string())
+        .unwrap_or_else(|| "jpg".to_string());
+    let parent = full.parent().map(Path::to_path_buf).unwrap_or_default();
+    let medium = parent.join(format!("{stem}_m.{ext}"));
+    let small = parent.join(format!("{stem}_s.{ext}"));
+    (full, medium, small)
 }
 
 /// M8 Tier 3 — writes Sift's own tagging output directly into `master.db`,
