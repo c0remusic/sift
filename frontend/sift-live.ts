@@ -21,6 +21,7 @@ import {
   scanLibraryDuplicates,
   exportRekordboxXml,
   linkRekordboxXml,
+  rekordboxStatus,
   rekordboxMasterdbApplyRepairs,
   rekordboxMasterdbDismissRepair,
   rekordboxMasterdbResolveAmbiguous,
@@ -78,6 +79,7 @@ import {
 } from "./rekordbox-view";
 import { renderJournal } from "./journal";
 import { open as openFolderDialog } from "@tauri-apps/plugin-dialog";
+import { dirname } from "@tauri-apps/api/path";
 
 /** Human label for the batch destination (resolves the in-place sentinel to its prose). */
 const IN_PLACE_LABEL = "Dossier source de chaque morceau";
@@ -1450,9 +1452,17 @@ export function installLiveWiring() {
       } else if (act === "rkblink") {
         void (async () => {
           try {
+            let defaultPath: string | undefined;
+            try {
+              const current = await rekordboxStatus();
+              if (current.path) defaultPath = await dirname(current.path);
+            } catch (e) {
+              console.error("rekordbox_status failed (defaultPath lookup)", e);
+            }
             const chosen = await openFolderDialog({
               multiple: false,
               directory: false,
+              defaultPath,
               filters: [{ name: "Rekordbox XML", extensions: ["xml"] }],
             });
             if (!chosen || Array.isArray(chosen)) return;
