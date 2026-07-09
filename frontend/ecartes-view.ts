@@ -76,7 +76,7 @@ function resRowHtml(it: EcarteItem): string {
     it,
   )}<button class="lk-icon" data-ec="requeue" data-id="${it.id}" title="Restaurer — remettre en file" aria-label="Restaurer — remettre en file"><i class="ti ti-arrow-back-up" style="font-size:var(--text-base);color:var(--color-text-tertiary)"></i></button><button class="lk-icon" data-ec="trash" data-id="${it.id}" title="Envoyer à la corbeille" aria-label="Envoyer à la corbeille"><i class="ti ti-trash" style="font-size:var(--text-md);color:var(--color-text-tertiary)"></i></button></div><div style="margin-top:5px;display:flex;flex-wrap:wrap;align-items:center;gap:4px"><button data-ec="copy-query" data-q="${esc(
     ecQuery(it),
-  )}" title="Copier" style="font-size:var(--text-xs);padding:2px 8px;color:var(--color-text-secondary)"><i class="ti ti-copy" style="font-size:var(--text-xs);vertical-align:-1px"></i> Copier</button><span class="sift-ec-stores" style="display:flex;flex-wrap:wrap;align-items:center;gap:4px"><span style="color:var(--color-border-secondary)">·</span>${ecStoreLinks(
+  )}" title="Copier" style="font-size:var(--text-xs);padding:2px 8px;color:var(--color-text-secondary)"><i class="ti ti-copy" style="font-size:var(--text-xs);vertical-align:-1px"></i> Copier</button><span class="sift-ec-stores-hint" title="Liens boutique (survol ou tab)" aria-hidden="true">···</span><span class="sift-ec-stores" style="display:flex;flex-wrap:wrap;align-items:center;gap:4px"><span style="color:var(--color-border-secondary)">·</span>${ecStoreLinks(
     it,
   )}</span></div></div>`;
 }
@@ -105,6 +105,11 @@ export async function renderEcartes() {
     items = await listEcartes();
   } catch (e) {
     console.error("listEcartes failed", e);
+    content.innerHTML =
+      '<div class="h1">Écartés</div>' +
+      '<div class="sift-ui-card-soft sift-ui-card-soft-pad" style="color:var(--color-text-danger)">' +
+      "Impossible de charger Écartés. Vérifie la connexion à la base et réessaie." +
+      "</div>";
     return;
   }
   const res = items.filter((i) => i.status === "resourcing");

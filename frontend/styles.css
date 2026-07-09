@@ -355,6 +355,8 @@ html,body{margin:0;padding:0;height:100%}
    rows, always-open links were a wall of ~6 links each (audit UI/UX 2026-07-03, fix 6). */
 .sift-ec-stores{visibility:hidden}
 .sift-ec-row:hover .sift-ec-stores,.sift-ec-row:focus-within .sift-ec-stores{visibility:visible}
+.sift-ec-stores-hint{font-size:var(--text-xs);color:var(--color-text-tertiary);letter-spacing:.05em}
+.sift-ec-row:hover .sift-ec-stores-hint,.sift-ec-row:focus-within .sift-ec-stores-hint{display:none}
 .fld{display:flex;align-items:center;gap:6px;padding:6px 7px;border-radius:var(--border-radius-md);color:var(--color-text-secondary);cursor:pointer;font-size:12px}
 /* Hover added 2026-07-08: was clickable (cursor:pointer) with zero visual feedback — same bug
    already fixed on .chip 2026-07-03 ("cliquable sans retour visuel"). */
