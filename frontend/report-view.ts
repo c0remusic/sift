@@ -423,7 +423,13 @@ function spectroAndTagsHtml(r: AnalysisReport): string {
     `<div class="sift-sg-body sift-spectro-body">` +
     `<div class="sift-spectro-body-inner">` +
     `<div class="sift-spectro-declared">Déclaré <span class="pill">${esc(r.declared_format)}</span> ${r.declared_rail}${r.declared_bitrate ? " · " + r.declared_bitrate + " kbps" : ""} · coupure ${fmt(r.cutoff_hz, 0)} Hz — ${spectroCaption(r.verdict)}</div>` +
+    `<div class="sift-spectro-canvas-wrap">` +
     `<canvas class="sift-sg sift-spectro-canvas" width="720" height="180" role="img" aria-label="Spectrogramme audio"></canvas>` +
+    // Canvas transparent superposé — ne dessine QUE le réticule au survol (wireSpectroHover),
+    // jamais l'image du spectrogramme elle-même. Séparé du canvas de base pour la perf :
+    // un mousemove ne doit jamais redéclencher la boucle pixel-par-pixel de drawSpectrogram.
+    `<canvas class="sift-spectro-overlay" width="720" height="180"></canvas>` +
+    `</div>` +
     `<div class="sift-spectro-rows">` +
     row("Verdict", r.verdict) +
     row("Coupure", fmt(r.cutoff_hz, 0) + " Hz") +

@@ -877,7 +877,9 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
    (.sift-spectro-body-inner has none), so it visually overflowed past the rows above/below it.
    drawSpectrogram (report-view.ts) already reads the canvas's real rendered width via
    getBoundingClientRect() to size its backing store, so it adapts automatically — no JS change. */
-.sift-spectro-canvas{width:calc(100% - 36px);margin:0 18px;display:block;background:#000}
+.sift-spectro-canvas-wrap{position:relative;margin:0 18px}
+.sift-spectro-canvas{width:100%;display:block;background:#000;border-radius:var(--border-radius-md);border:0.5px solid var(--color-border-tertiary)}
+.sift-spectro-overlay{position:absolute;inset:0;width:100%;height:100%;border-radius:var(--border-radius-md);pointer-events:none}
 .sift-spectro-rows{padding:9px 18px;display:grid;grid-template-columns:1fr 1fr;gap:0 28px;font-size:var(--text-md)}
 .sift-row{display:flex;justify-content:space-between;gap:16px;padding:3px 0;border-bottom:0.5px solid var(--color-border-tertiary)}
 /* Last visual row (2-col grid, row() called an even number of times below) sits flush against
