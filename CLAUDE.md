@@ -15,7 +15,12 @@ de design**. Toute évolution visuelle/UX se fait directement dans le code de
 production (`frontend/*.ts` + `styles.css`), visible immédiatement via HMR dans
 la fenêtre `tauri dev` — jamais dans une maquette parallèle à resynchroniser
 (`app.js` et `Sift.dc.html` sont des artefacts d'exploration figés, pas des
-livrables). Corollaires :
+livrables — **mais `app.js` s'exécute réellement dans Tauri** aussi, importé
+sans garde `inTauri` par `main.ts:6` ; il gère notamment le routage de clic
+nav réel via `e.target.closest('[data-view]')`, découvert le 2026-07-09 en
+ajoutant le support clavier — voir `installNavKeyboard()`, chrome.ts. Aucune
+modification prévue dessus pour autant, juste ne pas supposer qu'il est
+inerte en prod). Corollaires :
 - **Ordre de réflexion** : besoin utilisateur → parcours → UX → UI → perf →
   code. Jamais l'inverse.
 - **Sources de vérité design** : `frontend/styles.css` (`:root`, canonique
