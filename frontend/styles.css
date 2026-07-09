@@ -390,6 +390,24 @@ html,body{margin:0;padding:0;height:100%}
    a fixed 22px box and visually overflow/overlap neighboring text. Text buttons now fall through
    to the plain `button{}` reset (bordered, auto-sized, already correct everywhere else). */
 .lk-icon{width:22px;height:22px;border-radius:var(--border-radius-md);flex:none;padding:0;display:inline-flex;align-items:center;justify-content:center;opacity:.6;transition:background .16s ease,opacity .16s ease}
+/* Bibliothèque — vue tableau (2026-07-09) : en-tête triable + colonnes, réutilise .lr pour les
+   lignes elles-mêmes (cov/play/pill/link inchangés, juste plus de colonnes qu'avant). */
+.sift-lib-thead{display:flex;align-items:center;gap:7px;padding:4px 6px;font-size:var(--text-2xs);text-transform:uppercase;letter-spacing:.06em;color:var(--color-text-tertiary);border-bottom:0.5px solid var(--color-border-tertiary)}
+.sift-lib-thead-cov{width:44px;flex:none}
+.sift-lib-thead button{padding:0;border:0;background:none;font:inherit;color:inherit;cursor:pointer;text-align:left}
+.sift-lib-thead button:hover{color:var(--color-text-primary)}
+.sift-lib-cov{width:32px;height:32px;border-radius:var(--border-radius-sm);object-fit:cover;flex:none}
+.sift-lib-cov-fallback{width:32px;height:32px;border-radius:var(--border-radius-sm);background:var(--color-background-secondary);display:inline-flex;align-items:center;justify-content:center;color:var(--color-text-tertiary);flex:none}
+.sift-lib-col{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Vue grille pochettes — tuiles façon casier de disques, une ligne virtualisée = LIBRARY_GRID_TILES_PER_ROW tuiles. */
+.sift-lib-grid-row{display:grid;grid-template-columns:repeat(4,1fr);gap:var(--space-12);padding:6px 2px}
+.sift-lib-tile{cursor:pointer;border-radius:var(--border-radius-md);padding:6px;transition:background .16s ease}
+.sift-lib-tile:hover,.sift-lib-tile:focus-within{background:var(--color-row-active)}
+.sift-lib-tile.cur{background:var(--color-background-info)}
+.sift-lib-tile-cov{width:100%;aspect-ratio:1;border-radius:var(--border-radius-md);object-fit:cover;display:block;margin-bottom:6px}
+.sift-lib-tile-cov-fallback{width:100%;aspect-ratio:1;border-radius:var(--border-radius-md);background:var(--color-background-secondary);display:flex;align-items:center;justify-content:center;color:var(--color-text-tertiary);font-size:var(--text-2xl);margin-bottom:6px}
+.sift-lib-tile-title{font-size:var(--text-sm);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sift-lib-tile-sub{font-size:var(--text-xs);color:var(--color-text-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .br{display:flex;align-items:center;gap:9px;padding:7px 5px;border-bottom:0.5px solid var(--color-border-tertiary);font-size:12px;cursor:pointer}
 .mf{margin-bottom:6px}.mf .lab{font-size:10px;color:var(--color-text-tertiary);margin-bottom:2px}.mf .inp{border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:5px 8px;font-size:12px}
 .cov{width:40px;height:40px;flex:none;border-radius:6px;background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);display:flex;align-items:center;justify-content:center;color:var(--color-text-tertiary)}.cov i{font-size:20px}
