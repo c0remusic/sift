@@ -1664,20 +1664,31 @@ function dupMemberHtml(m: DupGroup["members"][number]): string {
 }
 
 function dupGroupHtml(g: DupGroup, idx: number): string {
+  const loserCount = g.members.filter((m) => !m.recommend_keep).length;
   return (
     `<div class="sift-dup-group" style="border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:10px 12px;margin-bottom:8px">` +
     g.members.map((m) => dupMemberHtml(m)).join("") +
-    `<div style="margin-top:6px"><button data-bib="dupresolve" data-idx="${idx}">Résoudre</button></div>` +
+    `<div style="margin-top:6px"><button data-bib="dupresolve" data-idx="${idx}">Envoyer ${loserCount} doublon${loserCount > 1 ? "s" : ""} à la corbeille</button></div>` +
     `</div>`
   );
 }
 
 function statsCardsHtml(s: DashboardStats): string {
-  const card = (label: string, value: number, action: string, extra = "") =>
-    `<button data-bib="stat" data-stat="${action}" style="flex:1;min-width:90px;text-align:left;border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:8px 10px;background:transparent;cursor:pointer">` +
-    `<div style="font-size:var(--text-xl);font-weight:600">${value}</div>` +
-    `<div style="font-size:var(--text-sm);color:var(--color-text-tertiary)">${esc(label)}${extra}</div>` +
-    `</button>`;
+  const activeStat =
+    bibState.filter.verdict === "fake"
+      ? "fake"
+      : dupShown
+        ? "duplicates"
+        : (bibState.filter.quality ?? "all");
+  const card = (label: string, value: number, action: string, extra = "") => {
+    const on = action === activeStat;
+    return (
+      `<button data-bib="stat" data-stat="${action}" style="flex:1;min-width:90px;text-align:left;border:0.5px solid ${on ? "var(--color-border-secondary)" : "var(--color-border-tertiary)"};border-radius:var(--border-radius-md);padding:8px 10px;background:${on ? "var(--color-row-active)" : "transparent"};cursor:pointer">` +
+      `<div style="font-size:var(--text-xl);font-weight:600">${value}</div>` +
+      `<div style="font-size:var(--text-sm);color:var(--color-text-tertiary)">${esc(label)}${extra}</div>` +
+      `</button>`
+    );
+  };
   return (
     `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">` +
     card("Total", s.total, "all") +
@@ -2097,12 +2108,12 @@ async function renderBiblioLive() {
   const dupSection = !dupShown
     ? ""
     : dupLoading
-      ? `<div style="margin-top:10px;font-size:var(--text-md);color:var(--color-text-tertiary)">Scan en cours…</div>`
+      ? `<div style="margin-top:10px;font-size:var(--text-md);color:var(--color-text-tertiary)">Scan en cours (toute la bibliothèque)…</div>`
       : dupGroups === null
         ? ""
         : dupGroups.length === 0
-          ? `<div style="margin-top:10px;font-size:var(--text-md);color:var(--color-text-tertiary)">Aucun doublon.</div>`
-          : `<div style="margin-top:10px">${dupGroups.map((g, i) => dupGroupHtml(g, i)).join("")}</div>`;
+          ? `<div style="margin-top:10px;font-size:var(--text-md);color:var(--color-text-tertiary)">Aucun doublon dans toute la bibliothèque.</div>`
+          : `<div style="margin-top:10px"><div style="font-size:var(--text-xs);color:var(--color-text-tertiary);margin-bottom:4px">Doublons détectés dans toute la bibliothèque (pas seulement la vue filtrée actuelle)</div>${dupGroups.map((g, i) => dupGroupHtml(g, i)).join("")}</div>`;
 
   // Export (Rekordbox/Clé USB) lives in the nav rail now, not here — matches the maquette's
   // persistent Export section (index.html nav-export items, wired in installLiveWiring below).
@@ -2130,7 +2141,7 @@ async function renderBiblioLive() {
       `<div class="sift-library-layout"><div class="sift-library-side sift-ui-card-soft sift-ui-card-soft-pad"><div class="col-h">Bibliothèque</div>${side}</div>` +
       `<div class="sift-library-main sift-ui-card sift-ui-card-pad">${header}<div style="display:flex;justify-content:space-between;margin-bottom:5px"><span style="font-size:var(--text-base);font-weight:500">${esc(activeFacetVal || "Tous")}</span><span style="font-size:var(--text-sm);color:var(--color-text-tertiary)">${bibState.tracks.length} piste${bibState.tracks.length > 1 ? "s" : ""}</span></div>${tableHead}` +
       (rows ||
-        `<div style="font-size:var(--text-md);color:var(--color-text-tertiary)">Aucun résultat pour ce filtre.</div>`) +
+        `<div style="font-size:var(--text-md);color:var(--color-text-tertiary)">Aucun résultat pour ce filtre. <button data-bib="stat" data-stat="all" style="font-size:inherit;color:var(--color-text-info);background:none;border:none;padding:0;cursor:pointer;text-decoration:underline">Réinitialiser les filtres</button></div>`) +
       dupSection +
       `<div id="bibplayer"></div></div></div>`;
   wireEmptyState(content);
@@ -2143,6 +2154,13 @@ async function renderBiblioLive() {
   q?.addEventListener("input", () => {
     bibState.filter.q = q.value || undefined;
     clearTimeout((q as unknown as { _t?: number })._t);
+    const toolbar = q.closest<HTMLElement>(".sift-library-toolbar");
+    toolbar?.querySelector(".sift-bib-search-pending")?.remove();
+    const pending = document.createElement("span");
+    pending.className = "sift-bib-search-pending";
+    pending.style.cssText = "font-size:var(--text-xs);color:var(--color-text-tertiary)";
+    pending.textContent = "Recherche…";
+    toolbar?.appendChild(pending);
     (q as unknown as { _t?: number })._t = window.setTimeout(() => void renderBiblioLive(), 250);
   });
 
@@ -2345,13 +2363,17 @@ export function installLiveWiring() {
           bibState.filter.quality = stat;
           bibState.filter.verdict = undefined;
         } else if (stat === "duplicates") {
-          dupShown = true;
-          if (dupGroups === null) {
+          dupShown = !dupShown;
+          if (dupShown && dupGroups === null) {
             dupLoading = true;
             void renderBiblioLive();
             void scanLibraryDuplicates()
               .then((groups) => {
                 dupGroups = groups;
+              })
+              .catch((e) => {
+                console.error("scan_library_duplicates failed", e);
+                dupGroups = [];
               })
               .finally(() => {
                 dupLoading = false;
@@ -2390,6 +2412,9 @@ export function installLiveWiring() {
       } else if (act === "qual") {
         const q = bibEl.dataset.q;
         bibState.filter.quality = q === "all" ? undefined : (q as "lossless" | "mp3");
+        // "Tous" doit réellement tout montrer — sans ce reset, un filtre verdict=fake posé via le
+        // stat-card "À re-sourcer" restait actif indéfiniment (cul-de-sac trouvé à l'audit 2026-07-09).
+        if (q === "all") bibState.filter.verdict = undefined;
         void renderBiblioLive();
       } else if (act === "facet") {
         bibState.facet = bibEl.dataset.f === "genre" ? "genre" : "folder";
@@ -2456,12 +2481,21 @@ export function installLiveWiring() {
         const group = dupGroups?.[idx];
         if (!group) return;
         const losers = group.members.filter((m) => !m.recommend_keep).map((m) => m.id);
-        void Promise.all(losers.map((id) => trashTrack(id)))
-          .then(() => {
-            dupGroups = (dupGroups || []).filter((_, i) => i !== idx);
-            return renderBiblioLive();
-          })
-          .catch((e) => console.error("dupresolve failed", e));
+        void confirmAction(
+          `Envoyer ${losers.length} doublon${losers.length > 1 ? "s" : ""} à la corbeille ? Le morceau recommandé est conservé.`,
+          "Envoyer à la corbeille",
+        ).then((ok) => {
+          if (!ok) return;
+          void Promise.all(losers.map((id) => trashTrack(id)))
+            .then(() => {
+              dupGroups = (dupGroups || []).filter((_, i) => i !== idx);
+              return renderBiblioLive();
+            })
+            .catch((e) => {
+              console.error("dupresolve failed", e);
+              toast("Échec : impossible d'envoyer les doublons à la corbeille");
+            });
+        });
       }
       return;
     }
