@@ -2270,18 +2270,38 @@ export function installLiveWiring() {
           ec.innerHTML = prev;
         }, 1200);
       } else if (act === "trash") {
-        void trashTrack(id).then(renderEcartes).catch((err) => console.error("trash failed", err));
+        void trashTrack(id)
+          .then(renderEcartes)
+          .catch((err) => {
+            console.error("trash failed", err);
+            toast("Échec : impossible d'envoyer à la corbeille");
+          });
       } else if (act === "restore") {
-        void restoreTrack(id).then(renderEcartes).catch((err) => console.error("restore failed", err));
+        void restoreTrack(id)
+          .then(renderEcartes)
+          .catch((err) => {
+            console.error("restore failed", err);
+            toast("Échec : restauration impossible");
+          });
       } else if (act === "requeue") {
-        void requeueTrack(id).then(renderEcartes).catch((err) => console.error("requeue failed", err));
+        void requeueTrack(id)
+          .then(renderEcartes)
+          .catch((err) => {
+            console.error("requeue failed", err);
+            toast("Échec : remise en file impossible");
+          });
       } else if (act === "purge") {
         void confirmAction(
           "Purger définitivement la corbeille ? Cette action est irréversible.",
           "Purger",
         ).then((ok) => {
           if (!ok) return;
-          void purgeTrash().then(renderEcartes).catch((err) => console.error("purge failed", err));
+          void purgeTrash()
+            .then(renderEcartes)
+            .catch((err) => {
+              console.error("purge failed", err);
+              toast("Échec : purge de la corbeille impossible");
+            });
         });
       } else if (act === "store") {
         void openUrl(decodeURIComponent(ec.dataset.url || "")).catch((err) =>
