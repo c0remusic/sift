@@ -204,6 +204,7 @@ pub enum MasterDbError {
     /// `djmdContent.ImagePath` est NULL/vide pour cette piste — aucun
     /// mécanisme de création connu (non testé au spike 8), refuser plutôt
     /// que deviner un comportement Rekordbox non observé.
+    #[allow(dead_code)]
     NoArtworkPath {
         /// La piste sans pochette.
         track_id: String,
@@ -211,15 +212,18 @@ pub enum MasterDbError {
     /// `ImagePath` pointe vers un chemin dont une des 3 variantes
     /// (pleine/moyenne/miniature) n'existe pas sur disque — refuse plutôt
     /// que de deviner les dimensions d'un fichier absent.
+    #[allow(dead_code)]
     ArtworkVariantMissing {
         /// Le chemin résolu manquant.
         path: String,
     },
     /// L'écriture des fichiers artwork a réussi mais la relecture ne montre
     /// pas les dimensions attendues — backup restauré automatiquement.
+    #[allow(dead_code)]
     ArtworkWriteVerificationFailedRolledBack(String),
     /// Idem, mais la restauration du backup a aussi échoué — les fichiers
     /// artwork live peuvent être dans un état incohérent.
+    #[allow(dead_code)]
     ArtworkWriteVerificationFailedRollbackFailed(String),
 }
 
@@ -1179,6 +1183,7 @@ fn find_or_create_named_row(
 /// the full-size file — same directory, same extension, `_m`/`_s` suffix
 /// inserted before the extension (observed on real Rekordbox data, spike 8:
 /// `artwork.jpg` / `artwork_m.jpg` / `artwork_s.jpg`).
+#[allow(dead_code)]
 fn resolve_artwork_variants(pioneer_dir: &Path, image_path: &str) -> (PathBuf, PathBuf, PathBuf) {
     let share_root = pioneer_dir.join("share");
     let relative = image_path.trim_start_matches(['/', '\\']);
@@ -1209,6 +1214,7 @@ fn resolve_artwork_variants(pioneer_dir: &Path, image_path: &str) -> (PathBuf, P
 /// missing on disk (`ArtworkVariantMissing`) — the "no existing artwork at
 /// all" case was never observed at spike 8, so this never guesses a
 /// find-or-create-style behavior for it.
+#[allow(dead_code)]
 pub fn sync_track_artwork(
     pioneer_dir: &Path,
     backup_dir: &Path,
@@ -2676,5 +2682,49 @@ mod tests {
 
         let after = std::fs::read(pioneer_dir.join("master.db")).unwrap();
         assert_eq!(before, after, "master.db must be byte-for-byte unchanged");
+    }
+
+    /// Manual-only: exercises sync_track_artwork against a fresh copy of a
+    /// real master.db + its real artwork cache folder (Rekordbox closed).
+    /// Same canary as the sync_track_metadata real-copy test
+    /// (`ID=99795585`, "Street Battle") — `ImagePath` confirmed present at
+    /// spike 8. Run manually:
+    /// `SIFT_M8_REAL_COPY_DIR=<dir with master.db + share/ + masterPlaylists6.xml>
+    /// cargo test --manifest-path src-tauri/Cargo.toml sync_track_artwork_round_trips_on_real_masterdb_copy -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn sync_track_artwork_round_trips_on_real_masterdb_copy() {
+        let Ok(dir) = std::env::var("SIFT_M8_REAL_COPY_DIR") else {
+            eprintln!("skip: set SIFT_M8_REAL_COPY_DIR to run this test");
+            return;
+        };
+        let pioneer_dir = Path::new(&dir);
+        let backup_dir = pioneer_dir.join("sift-artwork-test-backup");
+        let canary_id = "99795585";
+
+        let (full, medium, small) = resolve_artwork_variants(
+            pioneer_dir,
+            "/PIONEER/Artwork/873/2140a-d8c1-472c-991b-6b281cf6005f/artwork.jpg",
+        );
+        let before_full = std::fs::read(&full).expect("read baseline full artwork");
+        let before_medium = std::fs::read(&medium).expect("read baseline medium artwork");
+        let before_small = std::fs::read(&small).expect("read baseline small artwork");
+
+        let test_cover = synthetic_jpeg(600, 600, [12, 200, 90]);
+        sync_track_artwork(pioneer_dir, &backup_dir, canary_id, &test_cover)
+            .expect("sync should succeed on real copy");
+
+        let after_full = std::fs::read(&full).unwrap();
+        assert_ne!(before_full, after_full, "full artwork should have changed");
+
+        // Restore the original artwork files independently of the
+        // function's own backup mechanism, so this test leaves the real
+        // copy exactly as it found it.
+        std::fs::write(&full, &before_full).unwrap();
+        std::fs::write(&medium, &before_medium).unwrap();
+        std::fs::write(&small, &before_small).unwrap();
+        let restored_full = std::fs::read(&full).unwrap();
+        assert_eq!(restored_full, before_full, "restore must be verified independently");
+        println!("PASS: sync_track_artwork round-trips cleanly on real master.db copy, artwork restored");
     }
 }
