@@ -1075,7 +1075,11 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
    plus large que Dossiers+Genres combinés — la piste nue restait visible à droite du mot le plus
    court (Genres) une fois sélectionné, pas de celui le plus long (Dossiers). inline-flex ajuste la
    piste à son propre contenu, comme un vrai segmented control. */
-.sift-seg{display:inline-flex;gap:2px;padding:2px;background:var(--color-track);border-radius:var(--border-radius-pill)}
+/* padding:0 (retour Antoine 2026-07-09, 4e tentative) — le 2px d'inset précédent, bien que
+   symétrique, laissait un liseré de piste visible au-dessus/en dessous de la pastille sélectionnée,
+   perçu comme un espace libre. La pastille .on occupe maintenant exactement la hauteur/largeur de
+   sa cellule, sans marge — seul .gap:2px sépare les options entre elles. */
+.sift-seg{display:inline-flex;gap:2px;background:var(--color-track);border-radius:var(--border-radius-pill)}
 /* #qcol is a flex column (align-items:stretch by default) — without a fixed align-self the
    control stretched to the column's full width and its tabs grew with it whenever the column
    was resized (annotation 2026-07-06: fixed size/position expected, not a stretchy control). */
