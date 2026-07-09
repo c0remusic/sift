@@ -664,6 +664,17 @@ implémentation laissée à une session dédiée) ; Groupe B (10 tokens restants
 fonds de verdict + survol + bouton Identifier — nécessite de la vraie
 nouvelle UI dans la maquette, décision de scope séparée non actée).
 
+**Groupe B — abandonné (2026-07-09)**, pas construit. Depuis, `Sift.dc.html`
+est devenu explicitement un artefact d'exploration figé, jamais resynchronisé
+(CLAUDE.md, token-sync v3 — `alias-map.json` ne pivote plus que vers
+`generate-theme-html.cjs`, plus de JSON canonique) ; la vérification standard
+du projet pour tout ce qui est gated `inTauri`/non couvert par les tokens
+statiques est devenue CDP contre la vraie fenêtre `tauri dev` (Évaluation 11).
+Construire une UI de preview dédiée dans la maquette pour ces 10 tokens irait
+à contre-sens de cette évolution. Décision : ces tokens restent non mappés
+dans `alias-map.json`, état permanent et voulu — se vérifient directement
+dans l'app réelle, pas dans l'éditeur.
+
 **Incident méthodologique à retenir** : pendant le debug en direct de
 l'éditeur (test du rafraîchissement debounced), une série d'appels
 `/validate` de test a laissé `frontend/styles.css` +
