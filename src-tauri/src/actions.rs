@@ -341,7 +341,6 @@ pub fn detect_masterdb_metadata_sync_with_index(
 ///
 /// Unlike the metadata detector, callers only invoke this when `cover_path` is actually `Some` on
 /// their current write — an edit that doesn't touch the cover must never produce a candidate.
-#[allow(dead_code)]
 pub fn detect_masterdb_artwork_sync_if_linked(
     conn: &Connection,
     lookup_path: &str,
@@ -358,7 +357,6 @@ pub fn detect_masterdb_artwork_sync_if_linked(
 /// Same as `detect_masterdb_artwork_sync_if_linked`, but against an already-loaded `master.db`
 /// index — see `resolve_masterdb_index_if_linked`'s docs (filing.rs's post-commit loop shares one
 /// decrypted index across all 3 of its detectors per commit).
-#[allow(dead_code)]
 pub fn detect_masterdb_artwork_sync_with_index(
     conn: &Connection,
     index: &crate::rekordbox_masterdb::RekordboxIndex,
