@@ -70,6 +70,12 @@ fn update_metadata_inner(conn: &Connection, track_id: i64, edit: MetadataEdit) -
     };
     actions::detect_masterdb_metadata_sync_if_linked(conn, &path, track_id, &values, action_id);
 
+    // (7) M8 Tier 3 (pochette): only when THIS edit actually changed the cover — unlike the
+    // metadata detector above, which always fires.
+    if let Some(cover_path) = &edit.cover_path {
+        actions::detect_masterdb_artwork_sync_if_linked(conn, &path, track_id, cover_path, action_id);
+    }
+
     Ok(batch_id)
 }
 
@@ -491,6 +497,58 @@ mod rekordbox_tests {
 
         let count: i64 = conn.query_row("SELECT COUNT(*) FROM rekordbox_masterdb_metadata_syncs WHERE track_id=?1", rusqlite::params![track_id], |r| r.get(0)).unwrap();
         assert_eq!(count, 1);
+    }
+
+    #[test]
+    fn update_metadata_calls_masterdb_artwork_sync_detection_only_when_cover_edited() {
+        let Some(src) = fixture("real_320.mp3") else {
+            eprintln!("skip: no fixture");
+            return;
+        };
+        let conn = db();
+        let tmp = tempfile::tempdir().unwrap();
+        let pioneer_dir = tmp.path().join("pioneer");
+        std::fs::create_dir_all(&pioneer_dir).unwrap();
+        std::fs::copy(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/rekordbox_master.db"), pioneer_dir.join("master.db")).unwrap();
+        let xml_path = pioneer_dir.join("masterPlaylists6.xml");
+        std::fs::write(&xml_path, b"<DJ_PLAYLISTS/>").unwrap();
+        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("track1.mp3");
+        std::fs::copy(&src, &path).unwrap();
+        crate::tagging::write_tags_full(path.to_str().unwrap(), "Old", "Old Title", None, None, &[], None).unwrap();
+
+        let raw = std::fs::read(pioneer_dir.join("master.db")).unwrap();
+        let plaintext = crate::rekordbox_masterdb::decrypt_masterdb_for_test(&raw);
+        let len = plaintext.len();
+        let mut conn2 = rusqlite::Connection::open_in_memory().unwrap();
+        conn2.deserialize_read_exact(rusqlite::MAIN_DB, std::io::Cursor::new(plaintext), len, false).unwrap();
+        conn2.execute("UPDATE djmdContent SET FolderPath=?1 WHERE ID='40000001'", rusqlite::params![path.to_str().unwrap()]).unwrap();
+        let plaintext2 = conn2.serialize(rusqlite::MAIN_DB).unwrap().to_vec();
+        let raw2 = crate::rekordbox_masterdb::encrypt_masterdb_for_test(&plaintext2);
+        std::fs::write(pioneer_dir.join("master.db"), raw2).unwrap();
+
+        conn.execute("INSERT INTO tracks(path, status) VALUES(?1, 'filed')", rusqlite::params![path.to_str().unwrap()]).unwrap();
+        let track_id = conn.last_insert_rowid();
+
+        // (1) Edit WITHOUT touching the cover — no artwork candidate expected.
+        let edit_no_cover = crate::metadata::MetadataEdit {
+            artist: "New Artist".to_string(), title: "New Title".to_string(),
+            label: None, year: None, genres: vec![], cover_path: None,
+        };
+        update_metadata_inner(&conn, track_id, edit_no_cover).unwrap();
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM rekordbox_masterdb_artwork_syncs WHERE track_id=?1", rusqlite::params![track_id], |r| r.get(0)).unwrap();
+        assert_eq!(count, 0, "no cover_path in this edit — must not create an artwork sync candidate");
+
+        // (2) Edit WITH a new cover — artwork candidate expected.
+        let edit_with_cover = crate::metadata::MetadataEdit {
+            artist: "New Artist".to_string(), title: "New Title".to_string(),
+            label: None, year: None, genres: vec![], cover_path: Some("/cache/covers/999.jpg".to_string()),
+        };
+        update_metadata_inner(&conn, track_id, edit_with_cover).unwrap();
+        let cover_path: String = conn.query_row("SELECT cover_path FROM rekordbox_masterdb_artwork_syncs WHERE track_id=?1", rusqlite::params![track_id], |r| r.get(0)).unwrap();
+        assert_eq!(cover_path, "/cache/covers/999.jpg");
     }
 
     #[test]
