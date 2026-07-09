@@ -234,7 +234,7 @@ export interface FileTags {
 }
 
 export interface LibraryFolder { name: string; count: number; }
-export interface LibraryFacets { folders: LibraryFolder[]; genres: LibraryFolder[]; }
+export interface LibraryFacets { folders: LibraryFolder[]; genres: LibraryFolder[]; artists: LibraryFolder[]; }
 
 export interface LibraryFilter {
   folder?: string | null;
@@ -242,6 +242,7 @@ export interface LibraryFilter {
   genre?: string | null;
   q?: string | null;
   verdict?: "fake" | null;
+  artist?: string | null;
 }
 
 /** User-edited metadata for a filed track (Bibliothèque inline edit). Mirror of
