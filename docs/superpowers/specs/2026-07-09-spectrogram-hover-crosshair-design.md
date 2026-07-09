@@ -26,6 +26,22 @@ sur le canvas.
 4. **Souris uniquement**, pas d'équivalent clavier — exploration secondaire, la donnée
    clé (Coupure) reste lisible en texte indépendamment. Le canvas garde son
    `role="img"`/`aria-label` statique actuel.
+5. **Légende permanente incrustée** (pas de chrome externe autour de la vignette) —
+   itérée en mockup visuel (`mcp__visualize`) avant de se fixer :
+   - Paliers de fréquence en petit texte semi-transparent, coin supérieur-gauche
+     (`20k`/`10k`/`0`), avec `Hz` en petit sous la colonne.
+   - Paliers de dB, coin supérieur-droit (`0`/`-20`/`-40`/`-60`/`-80`/`-100`), avec `dB`
+     en petit sous la colonne — 6 paliers alignés sur les bornes RÉELLES du mapping
+     couleur (`SPECTRO_GAIN_DB`/`SPECTRO_RANGE_DB`, `report-view.ts:114-115` : 0 dBFS à
+     -100 dBFS, saturation blanche déjà à partir de -20 dBFS), pas des valeurs
+     inventées.
+   - **Pas de barre dégradée** — testée en mockup, jugée peu claire une fois les
+     paliers numériques ajoutés ; les paliers texte suffisent, la couleur réelle reste
+     sur le spectrogramme lui-même.
+   - **Pas d'axe temps permanent** — testé en mockup, chevauchait visuellement et jugé
+     redondant : le temps reste lisible via l'étiquette du réticule au survol
+     uniquement (`"{freq} kHz · {db} dB"`, voir Rendu du réticule), jamais affiché en
+     repos.
 
 ## Architecture
 
@@ -72,6 +88,25 @@ réussi) :
   `"{freq_khz.toFixed(1)} kHz · {db.toFixed(1)} dB"`. Positionnement à côté du curseur
   avec le même garde-fou de débordement que l'actuel (`boxY` bascule au-dessus/en-dessous
   selon la place disponible, `report-view.ts:199`).
+
+### Rendu de la légende (permanente)
+
+Contrairement au réticule, la légende ne dépend pas de la souris — dessinée UNE FOIS,
+sur le canvas DE BASE juste après le `putImageData` de `drawSpectrogram()` (pas sur
+l'overlay, pas redessinée à chaque `mousemove`).
+
+- **Fréquence** (coin haut-gauche) : 3 paliers `20k`/`10k`/`0` répartis verticalement
+  sur la hauteur du canvas (proportionnels à `nyquist`, pas des kHz fixes si le fichier
+  a un sample rate différent — calculer les 3 valeurs depuis `nyquist` plutôt que les
+  coder en dur), `Hz` en dessous. Texte semi-transparent (`rgba(255,255,255,0.55)` pour
+  les paliers, `0.4` pour le label d'unité), 9-10px monospace, même famille que
+  l'étiquette du réticule.
+- **dB** (coin haut-droit) : 6 paliers `0`/`-20`/`-40`/`-60`/`-80`/`-100`, calculés
+  depuis `SPECTRO_GAIN_DB`/`SPECTRO_RANGE_DB` (pas des littéraux — si ces constantes
+  changent un jour, la légende doit suivre automatiquement), `dB` en dessous, même
+  traitement visuel que la colonne fréquence.
+- **Pas de barre de couleur dégradée** (décision actée ci-dessus) — texte seul.
+- **Pas d'axe temps** (décision actée ci-dessus).
 
 ## Suppression
 
