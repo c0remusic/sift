@@ -11,6 +11,55 @@
 
 ---
 
+## Sommaire
+
+> Index de navigation (ligne + gist), pas une table des matières auto-générée —
+> les numéros de ligne dérivent si le fichier bouge, revérifier au grep si un
+> doute. Charger ce fichier entier n'est plus automatique (retiré de `CLAUDE.md`
+> le 2026-07-09) : ouvrir la section visée via son numéro de ligne plutôt que
+> tout lire.
+
+- L14 — M2 — Analyseur / détection de faux lossless : Audio Fake Detector PRO (algo à lire), auCDtect, rustfft déjà en deps.
+- L33 — M3 — Décodage / waveform / analyse : Symphonia adopté, bpm-finder à évaluer, key hors scope.
+- L42 — M5 — Empreinte / dédoublonnage / identification : rusty-chromaprint (déjà en dep) vs chromaprint-next vs Chromaprint/AcoustID.
+- L51 — Export Rekordbox : rbox candidat n°1, rekordcrate (heavy dev), pyrekordbox (doc vivante), rekordbox-repair (3 idées récupérables).
+- L78 — Renommage Discogs : API Discogs (rate limits, flux de matching).
+- L92 — Évaluation 1 — Symphonia vs FFmpeg (2026-06-24) : archi hybride adoptée (FFmpeg encode, Symphonia decode pour l'analyse).
+- L144 — Évaluation 2 — chromaprint-next vs rusty-chromaprint (2026-06-24) : pas de migration maintenant, dépend du scope online/local.
+- L179 — Évaluation 3 — workflow d'itération UI en direct (2026-07-03) : root cause 3 implémentations UI parallèles ; tauri dev+HMR retenu.
+- L265 — Évaluation 4 — `/design-sync` et Open Design (2026-07-03) : les deux écartés, `design-system-states.md` reste la source de vérité.
+- L316 — Évaluation 5 — spike lecture native `master.db` Rekordbox (2026-07-03) : lecture seule validée et sûre.
+- L373 — Évaluation 6 — re-vérification `/design-sync` vs Open Design (2026-07-04) : statu quo confirmé, drift réel minime.
+- L423 — Évaluation 7 — spike d'écriture `master.db` (2026-07-04) : écriture possible et sûre en principe, portage Rust restant.
+- L493 — Évaluation 8 — outil de sync de tokens design↔code, construit (2026-07-04) : token-sync/ livré (générateurs, editor.html, dev-inspector).
+- L556 — Évaluation 9 — token-sync tool v2 (2026-07-04) : format DTCG retenu sans module Resolver, Figma écarté.
+- L610 — Évaluation 10 — token-sync tool v2 exécuté (2026-07-04) : migration DTCG livrée, gap rgba trouvé et corrigé.
+- L692 — Évaluation 11 — chantier triple : token-sync v3 + spike CDP + spike M8 n°2 (2026-07-05) : `styles.css` canonique unique, CDP WebView2 validé.
+- L777 — Évaluation 12 — pointeur visuel d'annotation, construit (2026-07-05) : `dev-inspector.ts`/`dev_locate.rs`/`dev_annotate.rs` livrés.
+- L830 — Évaluation 13 — prompt externe « Figma local » (2026-07-05) : rejeté (faits faux sur le repo, esquive le mapping inverse).
+- L888 — Évaluation 14 — spike M8 sur le fichier live Rekordbox (2026-07-05) : incident (backup déjà contaminé), 2 garde-fous actés.
+- L945 — Veille concurrente — MediaMonkey (2026-06-24) : 3 enseignements (dédup Chromaprint, DSL masks, MusicBrainz vs Discogs).
+- L979 — Veille UX — design d'interface (2026-06-24) : checklist UX (icon-only, microcopy, a11y, cohérence).
+- L998 — Titlebar custom (2026-07-03) : 3/3 briques faites, macOS non vérifié visuellement.
+- L1047 — Design system Sift — audit tokens hauteur/radius/typo (2026-07-03) : `--h-32`/`-44` supprimés, `--border-radius-sm`/`pill` ajoutés, `--text-hero` renommé.
+- L1079 — Infra / Release — décisions en attente : tauri-plugin-updater et tauri-specta reportés post-RC.
+- L1086 — Outillage Claude Code — purge plugins/skills cross-projet (2026-07-03) : désinstalls/désactivations, propagé au registre skills.
+- L1139 — Dette technique — audit Project Cleaner (2026-07-09) : 10 tokens CSS orphelins, version désync, refs mortes.
+- L1194 — Dette technique — double décryptage master.db (M8 Tier 1+3, 2026-07-09) : fix, index chargé une fois par `commit_file`.
+- L1223 — Dette technique — nettoyage clippy `m7-rekordbox-xml` (2026-07-04) : `TRASH_PURGE_DAYS` mort supprimé, `needless_range_loop` fixé.
+- L1247 — Écarté : vykee.co, SoundTouch.js, Qdrant, Graphify.
+- L1290 — Évaluation 15 — spectrogramme trop clair (2026-07-06) : 2 bugs empilés (dB non normalisé + cache `report_json` obsolète).
+- L1346 — Évaluation 16 — délégation Claude→Codex CLI (2026-07-06) : coût en tokens, override anti-routage dans le prompt de mission.
+- L1436 — Évaluation 17 — corruption d'encodage mojibake (2026-07-07) : 2 fichiers réparés, pas d'outillage ajouté.
+- L1481 — Évaluation 18 — test M8 Tier 1 contre copie réelle (2026-07-08) : bug WAL trouvé et corrigé.
+- L1578 — Évaluation 19 — spike stack UI écarté (2026-07-08) : racine = absence de référence canonique, pool shadcn/uithing/coss/HIG adopté.
+- L1700 — Évaluation 20 — M8 Tier 3 Test 1 infirmé (2026-07-08) : flag `TrackInfoUpdated` seul ne déclenche pas de reload auto.
+- L1777 — Évaluation 21 — M8 Tier 3 diff exact « Relire le tag » (2026-07-09) : find-or-create documenté (chemin création).
+- L1849 — Évaluation 22 — M8 Tier 3 reuse vs duplicate (2026-07-09) : REUSE confirmé pour un artiste déjà connu.
+- L1880 — Évaluation 23 — M8 Tier 3 moteur Rust livré (2026-07-09) : `sync_track_metadata` + spike 8 pochette.
+
+---
+
 ## M2 — Analyseur / détection de faux lossless ⭐
 
 Feature signature. Le gros du gisement est dans l'algorithme de détection.

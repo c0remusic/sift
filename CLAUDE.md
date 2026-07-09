@@ -113,10 +113,15 @@ Lib = `sift_lib`. MSRV Rust 1.77.2.
   sift-live.ts, ~942 lignes) : couvrir le god file de tests avant de le découper.
 
 ## Décisions techniques
-@docs/ressources-externes.md
+`docs/ressources-externes.md` — **pas chargé automatiquement** (retiré du
+`@import` le 2026-07-09, le fichier a grossi à 119 Ko : le charger en entier à
+chaque session gaspillait du contexte pour rien la plupart du temps). Utiliser
+son sommaire en tête de fichier (ligne + gist par section/Évaluation) pour
+cibler la bonne section via `Read offset=<L>`, plutôt que tout lire.
 
 ## États réels des composants (portage design→code)
-@docs/design-system-states.md
+`docs/design-system-states.md` — même règle, retiré du `@import` le 2026-07-09
+(64 Ko). Sommaire en tête de fichier, cibler la section avant de lire.
 
 ## Index des documents docs/
 @docs/INDEX.json

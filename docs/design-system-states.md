@@ -27,6 +27,57 @@
 > Numéros de ligne vérifiés à jour le 2026-07-03 (après les fixes de cette
 > session) — `styles.css` bouge vite, revérifier au grep si un doute.
 
+## Sommaire
+
+> Index de navigation (ligne + gist), pas une table des matières auto-générée.
+> Charger ce fichier entier n'est plus automatique (retiré de `CLAUDE.md` le
+> 2026-07-09) : ouvrir la section visée via son numéro de ligne plutôt que tout
+> lire.
+
+- L30 — Ligne de queue `.qi` — RAS, 4 états déclarés.
+- L41 — Item de navigation `.nv` — RAS.
+- L52 — Bouton d'action principal `.sift-ranger-btn` — hérite hover/disabled/focus génériques.
+- L66 — Chip/tag `.chip` — hover corrigé 07-03.
+- L78 — Case à cocher `.cbx` — supprimée (code mort).
+- L85 — Segmented control `.sift-seg-opt` (ancien, voir aussi pastille unifiée L603) — RAS.
+- L95 — Ligne de journal `.jrnl-qrow` — RAS.
+- L105 — Toggle switch `.tog` — perf `transform` corrigée 07-03.
+- L118 — Carte verdict `.sift-verdict-card` — tokens corrigés 07-03 (plus de rouge en dur).
+- L137 — Ligne candidat `.sift-cand` — hover discret volontaire (bordure seule).
+- L150 — Bouton Destination `.sift-dest-btn` — hérite générique.
+- L155 — Sliders volume/tempo `.sift-slider-*` — hover/drag ajoutés 07-03.
+- L168 — Pochette/cover `.sift-cover-frame` — `alt` fixé 07-03, bug `[hidden]` réellement cassé fixé 07-05.
+- L193 — Boutons icon-only — vérifiés, titlebar corrigée 07-03.
+- L202 — Barre de progression `.pbar`/`.sift-pz-fill` — perf `transform` 07-03.
+- L211 — Popover Destination `.sift-dest-popover` — RAS, scope limité.
+- L217 — Bouton Identifier `.sift-id-btn` — tokenisé+dark 07-03, exception 3ᵉ teinte levée 07-06.
+- L234 — Bordure latérale `.sift-filed-banner` — anti-pattern side-stripe retiré 07-03.
+- L243 — Ombres portées `.sift-toast`/`.sift-report-overlay-card` — tokenisées 07-03.
+- L250 — Échelles hauteur/radius — audit 07-03, `--h-36` retiré 07-09 (0 lecteur).
+- L287 — Token `disabled` de `Sift.dc.html` — vérifié non manquant.
+- L306 — Autres couleurs non tokenisées — restant, pas classées bug.
+- L318 — `--text-hero` → `--text-2xl`.
+- L330 — Cartes Réglages `.sift-settings-list` — refonte 4→1 carte 07-08.
+- L360 — Zone de dépôt drag OS `.sift-dz-on` — token `--overlay-drop` 07-05.
+- L384 — Lien rebuy Beatport `.sift-rebuy-btn` — créé 07-05.
+- L400 — CTA « Revoir N morceaux → » Accueil — créé 07-05.
+- L409 — Page Rekordbox `renderRekordboxLive()` — écran dédié + sections Tier 1/Tier 2 master.db.
+- L492 — Écran Revue — zones repliables Diagnostic/Métadonnées, refonte 07-05.
+- L528 — `.sift-applytags-btn` — déplacé header Genres 07-09.
+- L549 — `.sift-zone-toggle` — accordéon exclusif + animation 07-09.
+- L564 — Spectrogramme — légende incrustée + réticule interactif 07-09.
+- L587 — `.lk` / `.lk-icon` — bug de réutilisation corrigé 07-07.
+- L603 — Pastille segmentée `.sift-seg`/`.sift-seg-opt` unifiée — 6 sites, thumb glissant 07-08.
+- L705 — Grammaire de carte — 2 rôles (Groupée/Flottante), jamais 3 — 07-08.
+- L741 — Tokens globaux — adaptation tweakcn "ZFlow" (ombres/tracking/radius/OKLCH) 07-08.
+- L769 — Écran Accueil — audit référence canonique 07-08.
+- L789 — Écran Revue — audit référence canonique 07-08/09.
+- L813 — Écran Écartés — audit référence canonique 07-09.
+- L831 — Écran Journal — audit référence canonique 07-09, conforme (rien corrigé).
+- L842 — Écran Bibliothèque — audit référence canonique 07-09.
+- L861 — Écrans Réglages+Rekordbox+Clé USB — audit référence canonique 07-09.
+- L881 — Historique des corrections (chronologique, par date de session).
+
 ## Ligne de queue — `.qi` (`styles.css:143-148`)
 
 | État | Sélecteur | Valeur (clair) | Valeur (sombre) |
