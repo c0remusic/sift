@@ -403,6 +403,37 @@ empreintes Chromaprint).
 > `~/Desktop/sift-masterdb-write-probe/FINDINGS-m8-spike-5-tier3-test1.md`,
 > `~/Desktop/sift-masterdb-write-probe/FINDINGS-m8-spike-6-tier3-reload-diff.md`,
 > `~/Desktop/sift-masterdb-write-probe/FINDINGS-m8-spike-7-reuse-vs-duplicate.md`.
+>
+> **Câblage IPC + hook + UI (pochette) livré le 2026-07-10** — 4 commandes
+> IPC (`rekordbox_masterdb_pending_artwork_syncs`,
+> `rekordbox_masterdb_apply_artwork_syncs`,
+> `rekordbox_masterdb_dismiss_artwork_sync`,
+> `rekordbox_masterdb_resolve_ambiguous_artwork_sync`) adossées à une
+> nouvelle table `rekordbox_masterdb_artwork_syncs` (migration v14, clée par
+> `track_id`, **remplacée et non accumulée**, même discipline que v13).
+> Détection appelée aux mêmes 3 sites que la synchro metadata (`filing.rs`
+> conformant + non-conformant via l'index `master.db` déjà chargé une seule
+> fois par commit, `apply_tags`, `update_metadata_inner`), mais seulement
+> quand `cover_path.is_some()` sur cet appel précis — contrairement aux
+> champs texte, toujours présents dans la structure — pour qu'une édition
+> qui ne touche pas la pochette ne produise aucun candidat. `cover_path` est
+> stocké comme chemin (pas les octets JPEG) et relu sur disque au moment de
+> l'application, jamais à la détection — fichier disparu entre-temps →
+> erreur explicite, ligne reste `pending`, retryable. 4 nouvelles variantes
+> `MasterDbError` humanisées (`NoArtworkPath`, `ArtworkVariantMissing`,
+> échec de vérification avec/sans rollback réussi). Écran : 4ᵉ section sur
+> la page Rekordbox (`renderRekordboxLive`), sous Tier 1/Tier 2/Tier 3
+> texte, mêmes conventions (ambiguës en premier, sélection multi + barre
+> "Appliquer la sélection", `confirmAction()` avant écriture, dismiss par
+> ligne, préfixe `data-sift="mas*"` distinct de `mdb*`/`mds*`). Plan :
+> `docs/superpowers/changes/2026-07-09-m8-tier3-artwork-sync-ipc-ui/plan.md`,
+> design :
+> `docs/superpowers/changes/2026-07-09-m8-tier3-artwork-sync-ipc-ui/design.md`.
+> 346 tests + clippy + tsc clean. **Vérification manuelle `tauri dev`
+> restante** (lier un XML Rekordbox de test, donner une nouvelle pochette à
+> une piste liée, confirmer l'apparition de la section et le succès d'une
+> application, Rekordbox fermé, la nouvelle pochette visible après
+> réimport).
 - **Rekordbox `master.db`** : remplacement in-situ (Tier 1 livré, moteur+IPC+UI), **dédup des playlists existantes** (Tier 2 livré, moteur+IPC+UI), **réparation/prévention des liens cassés** (chemin change au changement de format — Tier 1). ⚠️ backup obligatoire (déjà implémenté), Rekordbox fermé (garde déjà implémentée).
 - **Normalisation loudness** (option, OFF par défaut).
 
