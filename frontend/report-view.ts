@@ -150,11 +150,13 @@ function spectroPointAt(
   y: number,
   durationSec: number,
 ): { freqHz: number; dbfs: number; timeSec: number } {
-  const nyquist = sg.bins * sg.hz_per_bin;
   const f = Math.min(sg.frames - 1, Math.max(0, Math.floor((x / w) * sg.frames)));
   const b = Math.min(sg.bins - 1, Math.max(0, Math.floor(((h - 1 - y) / h) * sg.bins)));
   const val = sg.mag_db[f * sg.bins + b] || 0;
-  const freqHz = nyquist > 0 ? ((h - y) / h) * nyquist : 0;
+  // Fréquence dérivée du bin b lui-même (son centre), pas d'un ratio y/h calculé séparément
+  // — garantit que la fréquence affichée correspond exactement au bin dont la dB est lue
+  // juste au-dessus, plutôt que deux formules légèrement décalées d'1px (revue finale).
+  const freqHz = (b + 0.5) * sg.hz_per_bin;
   const timeSec = (x / w) * durationSec;
   return { freqHz, dbfs: rawToDbfs(val), timeSec };
 }
@@ -166,6 +168,18 @@ function spectroPointAt(
  *  l'étiquette du réticule au survol — voir Task 3). Dessinée UNE FOIS sur le canvas DE
  *  BASE juste après putImageData, jamais redessinée au mousemove (contrairement au
  *  réticule, qui vit sur l'overlay). */
+// Texte avec contour sombre + remplissage clair — lisible quelle que soit la couleur du
+// spectrogramme sous le texte (blanc/orange en zone forte, noir en zone faible), contrairement
+// à un simple fillStyle semi-transparent qui se noyait sur les zones claires (annotation : "le
+// texte sur les côtés n'est pas assez lisible").
+function drawOutlinedText(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, alpha: number) {
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = `rgba(0,0,0,${alpha})`;
+  ctx.strokeText(text, x, y);
+  ctx.fillStyle = `rgba(255,255,255,${alpha})`;
+  ctx.fillText(text, x, y);
+}
+
 function drawSpectroLegend(ctx: CanvasRenderingContext2D, w: number, h: number, nyquist: number) {
   ctx.save();
   ctx.font = "9px monospace";
@@ -177,15 +191,13 @@ function drawSpectroLegend(ctx: CanvasRenderingContext2D, w: number, h: number, 
   // Fréquence (haut-gauche) : 3 paliers proportionnels à nyquist (jamais des kHz fixes —
   // un fichier à sample rate différent change nyquist, la légende doit suivre).
   const freqTicks = [nyquist, nyquist / 2, 0];
-  ctx.fillStyle = "rgba(255,255,255,0.55)";
   ctx.textAlign = "left";
   freqTicks.forEach((hz, i) => {
     const label = hz >= 1000 ? `${Math.round(hz / 1000)}k` : `${Math.round(hz)}`;
     const y = padTop + (i / (freqTicks.length - 1)) * colH;
-    ctx.fillText(label, padSide, y);
+    drawOutlinedText(ctx, label, padSide, y, 0.9);
   });
-  ctx.fillStyle = "rgba(255,255,255,0.4)";
-  ctx.fillText("Hz", padSide, h - 14);
+  drawOutlinedText(ctx, "Hz", padSide, h - 14, 0.7);
 
   // dB (haut-droit) : 6 paliers dérivés de SPECTRO_GAIN_DB/SPECTRO_RANGE_DB — 0 dBFS (plein
   // niveau) à -100 dBFS (silence), par pas de 20. Légende texte pure, PAS une position
@@ -195,15 +207,13 @@ function drawSpectroLegend(ctx: CanvasRenderingContext2D, w: number, h: number, 
   const dbFloor = -(SPECTRO_GAIN_DB + SPECTRO_RANGE_DB); // -100
   const dbStep = (dbCeiling - dbFloor) / 5; // 20
   const dbTicks = Array.from({ length: 6 }, (_, i) => Math.round(dbCeiling - i * dbStep));
-  ctx.fillStyle = "rgba(255,255,255,0.55)";
   ctx.textAlign = "right";
   const dbRightX = w - padSide;
   dbTicks.forEach((db, i) => {
     const y = padTop + (i / (dbTicks.length - 1)) * colH;
-    ctx.fillText(String(db), dbRightX, y);
+    drawOutlinedText(ctx, String(db), dbRightX, y, 0.9);
   });
-  ctx.fillStyle = "rgba(255,255,255,0.4)";
-  ctx.fillText("dB", dbRightX, h - 14);
+  drawOutlinedText(ctx, "dB", dbRightX, h - 14, 0.7);
   ctx.restore();
 }
 
@@ -231,7 +241,6 @@ function drawSpectroCrosshair(
   ctx.globalAlpha = 0.8;
   ctx.strokeStyle = color;
   ctx.lineWidth = 1;
-  ctx.setLineDash([5, 4]);
   ctx.beginPath();
   ctx.moveTo(0, y);
   ctx.lineTo(w, y);
@@ -271,7 +280,11 @@ function wireSpectroHover(base: HTMLCanvasElement, overlay: HTMLCanvasElement, r
   const w = base.width;
   const h = base.height;
   const sg = r.spectrogram;
-  const color = getComputedStyle(base).getPropertyValue("--color-text-secondary").trim() || "#ccc";
+  // Couleur claire fixe, pas un token thème-aware : le canvas reste toujours noir quel que
+  // soit le thème de l'app (.sift-spectro-canvas, styles.css), donc --color-text-secondary
+  // (qui s'assombrit en thème clair, le défaut de Sift) rendait le réticule et son étiquette
+  // quasi illisibles — même raisonnement déjà appliqué à drawSpectroLegend (revue finale).
+  const color = "rgba(255,255,255,0.85)";
 
   base.addEventListener("mousemove", (e) => {
     const rect = base.getBoundingClientRect();
