@@ -49,7 +49,10 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
   }
 
   const sizeGb = (drive.size_bytes / 1_000_000_000).toFixed(1);
-  const confirmWord = drive.label || drive.id;
+  // drive.label is a model name (e.g. "Kingston DataTraveler USB Device") — two identical drives
+  // plugged in together would share the same confirm word otherwise (audit 2026-07-09). drive.id
+  // (the drive letter/path) is what actually distinguishes them.
+  const confirmWord = drive.label ? `${drive.label} (${drive.id})` : drive.id;
 
   function render() {
     card.innerHTML =
@@ -87,8 +90,15 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
       '<div class="sift-usbfmt-actions">' +
       '<button type="button" id="sift-usbfmt-cancel" class="sift-settings-btn">Annuler</button>' +
       '<button type="button" id="sift-usbfmt-confirm" class="sift-usbfmt-confirm-btn" disabled>' +
-      (armedAt ? "Confirmer — tout sera effacé" : "Formater") +
+      (busy
+        ? '<span class="sift-bt-spin" style="margin-right:6px;vertical-align:-2px"></span>Formatage en cours…'
+        : armedAt
+          ? "Confirmer — tout sera effacé"
+          : "Formater") +
       "</button>" +
+      (busy
+        ? '<div class="sift-usbfmt-progress-note" style="margin-top:8px;font-size:var(--text-sm);color:var(--color-text-tertiary)">Ne débranche pas le disque — cela peut prendre plusieurs minutes.</div>'
+        : "") +
       "</div>";
 
     card.querySelectorAll<HTMLElement>("[data-usbfmt-fs]").forEach((el) =>
@@ -106,7 +116,12 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
       if (confirmBtn) confirmBtn.disabled = !typedOk || busy;
     });
 
-    card.querySelector("#sift-usbfmt-cancel")?.addEventListener("click", () => close());
+    const cancelBtn = card.querySelector<HTMLButtonElement>("#sift-usbfmt-cancel");
+    if (cancelBtn) cancelBtn.disabled = busy;
+    cancelBtn?.addEventListener("click", () => {
+      if (busy) return; // formatDrive() has no cancel path — a disabled button says so honestly
+      close();
+    });
 
     confirmBtn?.addEventListener("click", () => {
       if (!typedOk || busy) return;
@@ -127,15 +142,20 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
           busy = false;
           armedAt = null;
           console.error("formatDrive failed", e);
+          const raw = String(e);
+          const humanized = /access|denied|permission/i.test(raw)
+            ? "Accès refusé — ferme tout programme utilisant ce disque et réessaie."
+            : /not found|no such|introuvable/i.test(raw)
+              ? "Disque introuvable — a-t-il été débranché pendant le formatage ?"
+              : "Échec du formatage. Vérifie que le disque est bien branché et réessaie.";
           const desc = card.querySelector(".sift-usbfmt-desc");
           if (desc) {
             desc.insertAdjacentHTML(
               "afterend",
-              '<div class="sift-usbfmt-error">Échec du formatage : ' +
-                escapeHtml(String(e)) +
-                "</div>",
+              '<div class="sift-usbfmt-error">' + escapeHtml(humanized) + "</div>",
             );
           }
+          render();
         });
     });
   }
