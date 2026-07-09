@@ -18,6 +18,12 @@
 > pour espacement/radius/typo. Ce fichier-ci est la source à jour état-par-état,
 > couleurs et comportements réels.
 >
+> **Audit référence canonique terminé (2026-07-08/09)** : les 8 écrans ont été
+> comparés à shadcn/ui-thing/coss/Apple HIG (voir sections « Écran X — audit
+> référence canonique » et `docs/superpowers/changes/2026-07-08-ui-reference-audit/`).
+> Tout nouveau composant doit suivre la règle CLAUDE.md « Front — référence de
+> design avant d'inventer » — consulter le pool avant d'improviser, pas après.
+>
 > Numéros de ligne vérifiés à jour le 2026-07-03 (après les fixes de cette
 > session) — `styles.css` bouge vite, revérifier au grep si un doute.
 

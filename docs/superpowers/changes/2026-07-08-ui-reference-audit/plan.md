@@ -221,17 +221,20 @@ Task 2), badges catégorie `.jrnl-cat-badge` (`Badge`), inspecteur
 `.jrnl-insp-card` + bouton revert (`Card` + `Button`), toasts + revert
 (`Toast`/`Sonner` — états, durée, position).
 
-- [ ] **Étape A** — inventaire.
-- [ ] **Étape B** — consultation références.
-- [ ] **Étape C** — tableau de divergences.
-- [ ] **Étape D** — gate Antoine.
-- [ ] **Étape E** — application + `npx tsc --noEmit` + validation `tauri dev`.
-- [ ] **Étape F** — doc + commit :
+- [x] **Étape A** — inventaire.
+- [x] **Étape B** — consultation références.
+- [x] **Étape C** — tableau de divergences.
+- [x] **Étape D** — gate Antoine.
+- [x] **Étape E** — application + `npx tsc --noEmit` + validation `tauri dev`.
+- [x] **Étape F** — doc + commit :
 
 ```bash
 git add frontend/styles.css frontend/journal.ts docs/design-system-states.md
 git commit -m "style(audit-ref): écran Journal aligné sur références canoniques"
 ```
+
+**Fait, commit `13de053`** (2026-07-09) — aucune divergence trouvée, écran
+déjà conforme.
 
 ### Task 5: Écran Bibliothèque
 
@@ -252,17 +255,23 @@ bouton « Voir la release », lien Discogs `.lk-icon`), section doublons,
 dashboard Lot 4 (comparaison structurelle avec `Chart`/stat tiles shadcn —
 verdict « noter pour futur », pas de refonte ici).
 
-- [ ] **Étape A** — inventaire.
-- [ ] **Étape B** — consultation références.
-- [ ] **Étape C** — tableau de divergences.
-- [ ] **Étape D** — gate Antoine.
-- [ ] **Étape E** — application + `npx tsc --noEmit` + validation `tauri dev`.
-- [ ] **Étape F** — doc + commit :
+- [x] **Étape A** — inventaire.
+- [x] **Étape B** — consultation références.
+- [x] **Étape C** — tableau de divergences.
+- [x] **Étape D** — gate Antoine.
+- [x] **Étape E** — application + `npx tsc --noEmit` + validation `tauri dev`.
+- [x] **Étape F** — doc + commit :
 
 ```bash
 git add frontend/styles.css frontend/library-detail.ts frontend/sift-live.ts docs/design-system-states.md
 git commit -m "style(audit-ref): écran Bibliothèque aligné sur références canoniques"
 ```
+
+**Fait, commit `13de053`** (2026-07-09) — facettes/ligne (clavier),
+segmented+chips (span→button), 6 champs (aria-label). Piège trouvé :
+`.lr` imbrique un vrai bouton lecture — garde anti-double-déclenchement
+ajoutée dans `installNavKeyboard()`. Dashboard/Charts noté hors scope
+(chantier futur).
 
 ### Task 6: Écrans Réglages + Rekordbox + Clé USB (reste)
 
@@ -288,17 +297,22 @@ réparations (checkbox `.sift-batch-ck` → `Checkbox`, boutons Résoudre/
 Ignorer → `Button`). Clé USB — modal formatage (`Dialog`/`Alert Dialog`),
 seg FAT32/exFAT (verdict Task 2).
 
-- [ ] **Étape A** — inventaire.
-- [ ] **Étape B** — consultation références.
-- [ ] **Étape C** — tableau de divergences.
-- [ ] **Étape D** — gate Antoine.
-- [ ] **Étape E** — application + `npx tsc --noEmit` + validation `tauri dev`.
-- [ ] **Étape F** — doc + commit :
+- [x] **Étape A** — inventaire.
+- [x] **Étape B** — consultation références.
+- [x] **Étape C** — tableau de divergences.
+- [x] **Étape D** — gate Antoine.
+- [x] **Étape E** — application + `npx tsc --noEmit` + validation `tauri dev`.
+- [x] **Étape F** — doc + commit :
 
 ```bash
 git add frontend/styles.css frontend/sift-live.ts frontend/usb-format-modal.ts docs/design-system-states.md
 git commit -m "style(audit-ref): Réglages/Rekordbox/Clé USB alignés sur références canoniques"
 ```
+
+**Fait, commit `b047966`** (2026-07-09) — segmented Apparence (span→button),
+mojibake USB corrigé en passant, ligne master.db (clavier), modale
+formatage USB (alertdialog/Escape/fuite listener corrigée — action la plus
+critique de toute l'app, traitée en priorité).
 
 ### Task 7: Clôture du chantier
 
@@ -312,21 +326,19 @@ git commit -m "style(audit-ref): Réglages/Rekordbox/Clé USB alignés sur réf�
 - Produces: chantier archivable (`docs/superpowers/changes/archive/`) à la
   prochaine session wrap-up.
 
-- [ ] **Étape 1** — vérifier qu'aucune entrée de `design-system-states.md`
-  ne reste sans ligne Référence :
+- [x] **Étape 1** — vérifié différemment que prévu : le format réellement
+  produit est une section « ## Écran X — audit référence canonique » par
+  écran (table de verdicts), pas une ligne « Référence : » par entrée de
+  composant comme envisagé au moment d'écrire ce plan — confirmé par
+  `grep -n "^## Écran\|^## Tokens"` : les 8 écrans + le chantier tokens
+  ZFlow y figurent tous.
+- [x] **Étape 2** — entrées INDEX.json ajoutées (specs + plans).
+- [x] **Étape 3** — commit final : voir commit qui suit celui-ci.
 
-```bash
-grep -L "Référence :" docs/design-system-states.md || true
-# vérif manuelle section par section — le fichier est un seul document,
-# compter les sections "## " vs les lignes "Référence :"
-```
-
-- [ ] **Étape 2** — ajouter les entrées INDEX.json (catégorie specs/plans →
-  chemins `docs/superpowers/changes/2026-07-08-ui-reference-audit/design.md`
-  et `plan.md`, topic « audit UI contre références canoniques »).
-- [ ] **Étape 3** — commit final :
-
-```bash
-git add docs/INDEX.json docs/design-system-states.md
-git commit -m "docs(audit-ref): clôture chantier audit références UI"
-```
+**Chantier terminé** (2026-07-08/09) — 8 écrans audités, ~25 divergences
+trouvées et corrigées (dont 2 vraies actions destructrices priorisées :
+overlay de confirmation R5 et modale de formatage USB G2), 2 fuites
+mémoire corrigées en passant (listener USB, mojibake), une garde
+anti-double-déclenchement clavier ajoutée à `installNavKeyboard()`
+(protège rétroactivement toutes les lignes à bouton imbriqué). Vérification
+visuelle finale par Antoine dans `tauri dev` restante sur l'ensemble.
