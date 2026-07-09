@@ -238,6 +238,13 @@ pub fn apply_tags(
         // M8 Tier 3: detect (read-only) a metadata sync candidate when linked to Rekordbox.
         let values = metadata_sync_values_for_apply_tags(&edited, &extras);
         actions::detect_masterdb_metadata_sync_if_linked(&conn, &path, track_id, &values, action_id);
+
+        // M8 Tier 3 (pochette): only when this track actually has a stored cover — apply_tags
+        // never changes the cover itself (it just re-applies whatever's already in `extras`), so
+        // this only matters the first time a cover exists and hasn't been synced yet.
+        if let Some(cover_path) = &extras.cover_path {
+            actions::detect_masterdb_artwork_sync_if_linked(&conn, &path, track_id, cover_path, action_id);
+        }
     }
     app.emit("queue:changed", ()).ok();
     Ok(batch_id)
