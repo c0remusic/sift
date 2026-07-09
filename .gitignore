@@ -33,3 +33,5 @@ skills-lock.json
 
 # tooling caches (per-machine, not project code)
 .impeccable/
+
+.superpowers/
