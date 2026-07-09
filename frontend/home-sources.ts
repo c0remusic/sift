@@ -20,6 +20,16 @@ const esc = (s: string) =>
  * the list can reorder/shrink under us. */
 let selectedSourceId: number | null = null;
 
+// Dismissed for this session only (not persisted) — re-shown next app launch and immediately if
+// the user clicks away then back with root still unset would be a nag; a session-scoped dismiss
+// (not per-source) fixes the "same banner every source click" repetition found at the 2026-07-09
+// audit without hiding a real blocker (rangement bloqué) permanently.
+let rootGateDismissed = false;
+
+export function dismissRootGate(): void {
+  rootGateDismissed = true;
+}
+
 function baseName(path: string): string {
   const norm = path.replace(/[/\\]+$/, "");
   const idx = Math.max(norm.lastIndexOf("/"), norm.lastIndexOf("\\"));
@@ -94,12 +104,13 @@ function listColumnHtml(sources: Source[]): string {
 }
 
 function inspectorHtml(selected: Source | null, root: string | null, allSources: Source[]): string {
-  const rootGateHtml = root
+  const rootGateHtml = root || rootGateDismissed
     ? ""
     : '<div class="sift-ui-card-soft sift-ui-card-soft-pad sift-home-warning">' +
       '<i class="ti ti-alert-triangle" style="font-size:var(--text-lg);flex:none"></i>' +
       "<span><strong>Racine de bibliothèque non définie</strong> — les dossiers surveillés restent scannés, mais le rangement sera bloqué tant qu'aucune racine n'est choisie. " +
-      '<button data-sift="gotoreglages" style="color:var(--color-text-warning);text-decoration:underline;padding:0;font:inherit">Ouvrir Réglages →</button></span></div>';
+      '<button data-sift="gotoreglages" style="color:var(--color-text-warning);text-decoration:underline;padding:0;font:inherit">Ouvrir Réglages →</button></span>' +
+      '<button data-sift="dismiss-rootgate" title="Masquer pour cette session" aria-label="Masquer ce message pour cette session" style="flex:none;background:none;border:none;color:var(--color-text-warning);cursor:pointer;padding:0 0 0 8px"><i class="ti ti-x"></i></button></div>';
 
   if (!selected) {
     return (

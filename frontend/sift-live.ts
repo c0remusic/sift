@@ -75,7 +75,7 @@ import {
 import { confirmAction } from "./confirm-modal";
 // Views/chrome extracted from this god-module (audit P-3) — kept stateless, wired here.
 import { renderEcartes } from "./ecartes-view";
-import { renderHomeSources, pickAndAddFolder } from "./home-sources";
+import { renderHomeSources, pickAndAddFolder, dismissRootGate } from "./home-sources";
 import { installDragDrop, injectLeanStyle, injectTitlebar, installScrollAutohide, installNavKeyboard } from "./chrome";
 import { initTheme, setTheme } from "./theme";
 import type { ThemeChoice } from "./theme";
@@ -2520,6 +2520,10 @@ export function installLiveWiring() {
       e.stopPropagation();
       const hue = el.dataset.hue ?? null;
       void setSourceColor(Number(el.dataset.id), hue).then(refresh);
+    } else if (act === "dismiss-rootgate") {
+      e.stopPropagation();
+      dismissRootGate();
+      void refresh();
     } else if (act === "reviewmode") {
       e.stopPropagation();
       setReviewMode(el.dataset.m === "batch" ? "batch" : "detail");
