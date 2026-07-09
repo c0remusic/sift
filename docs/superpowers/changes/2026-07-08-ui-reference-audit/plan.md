@@ -151,17 +151,24 @@ comparer les états hover/drag), zones repliables Diagnostic/Métadonnées
 résultats), overlay de confirmation `confirm-modal.ts` (`Alert Dialog`),
 zone de progression (`Progress`).
 
-- [ ] **Étape A** — inventaire.
-- [ ] **Étape B** — consultation références.
-- [ ] **Étape C** — tableau de divergences.
-- [ ] **Étape D** — gate Antoine.
-- [ ] **Étape E** — application + `npx tsc --noEmit` + validation `tauri dev`.
-- [ ] **Étape F** — doc + commit :
+- [x] **Étape A** — inventaire.
+- [x] **Étape B** — consultation références.
+- [x] **Étape C** — tableau de divergences.
+- [x] **Étape D** — gate Antoine.
+- [x] **Étape E** — application + `npx tsc --noEmit` + validation `tauri dev`.
+- [x] **Étape F** — doc + commit :
 
 ```bash
 git add frontend/styles.css frontend/report-view.ts frontend/filing.ts docs/design-system-states.md
 git commit -m "style(audit-ref): écran Revue aligné sur références canoniques"
 ```
+
+**Fait, commit `a52832f`** (2026-07-08/09) — sliders (role/aria/clavier),
+key-lock (aria-pressed), canvas spectrogramme (aria-label), arbre de
+destination (clavier via installNavKeyboard étendu), overlay de confirmation
+(alertdialog/focus/Escape — priorisé, gate anti-destructif), barre de
+progression (progressbar/aria-valuenow). Vérification visuelle finale
+(`tauri dev`) par Antoine restante.
 
 ### Task 3: Écran Écartés
 
