@@ -120,6 +120,54 @@ function spectroColor(val: number): [number, number, number] {
   return [r0 + (r1 - r0) * t, g0 + (g1 - g0) * t, b0 + (b1 - b0) * t];
 }
 
+/** Légende permanente incrustée : paliers fréquence (haut-gauche) + dB (haut-droit), texte
+ *  semi-transparent superposé sur l'image, coin par coin — jamais de barre dégradée de
+ *  couleur (testée en mockup visuel avec Antoine, jugée peu claire une fois les paliers
+ *  numériques ajoutés) ni d'axe temps permanent (chevauchait visuellement, redondant avec
+ *  l'étiquette du réticule au survol — voir Task 3). Dessinée UNE FOIS sur le canvas DE
+ *  BASE juste après putImageData, jamais redessinée au mousemove (contrairement au
+ *  réticule, qui vit sur l'overlay). */
+function drawSpectroLegend(ctx: CanvasRenderingContext2D, w: number, h: number, nyquist: number) {
+  ctx.save();
+  ctx.font = "9px monospace";
+  ctx.textBaseline = "top";
+  const padTop = 6;
+  const padSide = 6;
+  const colH = h - padTop * 2 - 20; // laisse la place au label d'unité en bas
+
+  // Fréquence (haut-gauche) : 3 paliers proportionnels à nyquist (jamais des kHz fixes —
+  // un fichier à sample rate différent change nyquist, la légende doit suivre).
+  const freqTicks = [nyquist, nyquist / 2, 0];
+  ctx.fillStyle = "rgba(255,255,255,0.55)";
+  ctx.textAlign = "left";
+  freqTicks.forEach((hz, i) => {
+    const label = hz >= 1000 ? `${Math.round(hz / 1000)}k` : `${Math.round(hz)}`;
+    const y = padTop + (i / (freqTicks.length - 1)) * colH;
+    ctx.fillText(label, padSide, y);
+  });
+  ctx.fillStyle = "rgba(255,255,255,0.4)";
+  ctx.fillText("Hz", padSide, h - 14);
+
+  // dB (haut-droit) : 6 paliers dérivés de SPECTRO_GAIN_DB/SPECTRO_RANGE_DB — 0 dBFS (plein
+  // niveau) à -100 dBFS (silence), par pas de 20. Légende texte pure, PAS une position
+  // spatiale sur le canvas (contrairement à l'axe fréquence : la dB colore un pixel, elle
+  // n'a pas de rangée qui lui correspond) — répartie uniformément juste pour la lisibilité.
+  const dbCeiling = 0;
+  const dbFloor = -(SPECTRO_GAIN_DB + SPECTRO_RANGE_DB); // -100
+  const dbStep = (dbCeiling - dbFloor) / 5; // 20
+  const dbTicks = Array.from({ length: 6 }, (_, i) => Math.round(dbCeiling - i * dbStep));
+  ctx.fillStyle = "rgba(255,255,255,0.55)";
+  ctx.textAlign = "right";
+  const dbRightX = w - padSide;
+  dbTicks.forEach((db, i) => {
+    const y = padTop + (i / (dbTicks.length - 1)) * colH;
+    ctx.fillText(String(db), dbRightX, y);
+  });
+  ctx.fillStyle = "rgba(255,255,255,0.4)";
+  ctx.fillText("dB", dbRightX, h - 14);
+  ctx.restore();
+}
+
 function drawSpectrogram(canvas: HTMLCanvasElement, r: AnalysisReport) {
   const ctx = canvas.getContext("2d");
   const sg = r.spectrogram;
@@ -148,51 +196,7 @@ function drawSpectrogram(canvas: HTMLCanvasElement, r: AnalysisReport) {
   }
   ctx.putImageData(img, 0, 0);
   const nyquist = sg.bins * sg.hz_per_bin;
-  if (r.cutoff_hz > 0 && nyquist > 0) {
-    const y = h - (r.cutoff_hz / nyquist) * h;
-    // Verdict-toned instead of a hardcoded alarm red: a cutoff sitting near Nyquist on a genuine
-    // full-band file reads as the same "success" green used everywhere else in the app, while a
-    // real lossy cliff (fake) still reads as danger — the line now carries meaning instead of
-    // always looking like an alarm regardless of what it's actually reporting.
-    const toneVar =
-      r.verdict === "fake"
-        ? "--color-text-danger"
-        : r.verdict === "grey"
-          ? "--color-text-warning"
-          : "--color-text-success";
-    const color = getComputedStyle(canvas).getPropertyValue(toneVar).trim() || "#ff5050";
-
-    // Dashed, slightly transparent: reads as a reference/threshold annotation layered over the
-    // data rather than a solid line competing with the actual spectrogram detail.
-    ctx.save();
-    ctx.globalAlpha = 0.8;
-    ctx.strokeStyle = color;
-    ctx.lineWidth = 1.5;
-    ctx.setLineDash([5, 4]);
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(w, y);
-    ctx.stroke();
-    ctx.restore();
-
-    // Label on a dark pill background, not bare text: cutoff sits right where the loud high end
-    // drops off, so bare colored text directly on the spectrogram was a real contrast risk.
-    const label = `cutoff ${(r.cutoff_hz / 1000).toFixed(1)} kHz`;
-    ctx.font = "11px monospace";
-    const textW = ctx.measureText(label).width;
-    const padX = 6;
-    const padY = 4;
-    const boxW = textW + padX * 2;
-    const boxH = 11 + padY * 2;
-    const boxX = 6;
-    const boxY = y - 4 - boxH >= 2 ? y - 4 - boxH : y + 4;
-    ctx.fillStyle = "rgba(0,0,0,0.55)";
-    ctx.beginPath();
-    ctx.roundRect(boxX, boxY, boxW, boxH, 4);
-    ctx.fill();
-    ctx.fillStyle = color;
-    ctx.fillText(label, boxX + padX, boxY + boxH - padY - 2);
-  }
+  drawSpectroLegend(ctx, w, h, nyquist);
 }
 
 function peaksCoverage(r: AnalysisReport): string {
