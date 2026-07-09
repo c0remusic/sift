@@ -2276,7 +2276,13 @@ export function installLiveWiring() {
       } else if (act === "requeue") {
         void requeueTrack(id).then(renderEcartes).catch((err) => console.error("requeue failed", err));
       } else if (act === "purge") {
-        void purgeTrash().then(renderEcartes).catch((err) => console.error("purge failed", err));
+        void confirmAction(
+          "Purger définitivement la corbeille ? Cette action est irréversible.",
+          "Purger",
+        ).then((ok) => {
+          if (!ok) return;
+          void purgeTrash().then(renderEcartes).catch((err) => console.error("purge failed", err));
+        });
       } else if (act === "store") {
         void openUrl(decodeURIComponent(ec.dataset.url || "")).catch((err) =>
           console.error("open_url failed", err),
