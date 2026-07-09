@@ -2591,4 +2591,90 @@ mod tests {
 
         println!("PASS: sync_track_metadata round-trips cleanly on real master.db copy (REUSE + CREATE both verified)");
     }
+
+    /// Encodes a solid-color JPEG of the given size, for use as fixture
+    /// artwork files and as the "new cover" input to `sync_track_artwork`.
+    fn synthetic_jpeg(width: u32, height: u32, rgb: [u8; 3]) -> Vec<u8> {
+        let img = image::RgbImage::from_pixel(width, height, image::Rgb(rgb));
+        let mut buf = Vec::new();
+        let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut buf, 90);
+        encoder
+            .write_image(img.as_raw(), width, height, image::ExtendedColorType::Rgb8)
+            .expect("encode synthetic jpeg");
+        buf
+    }
+
+    /// Seeds `pioneer_dir/share/<image_path>` and its `_m`/`_s` siblings with
+    /// synthetic JPEGs of the given per-variant sizes, mirroring what a real
+    /// Rekordbox artwork cache folder looks like.
+    fn seed_artwork_variants(pioneer_dir: &Path, image_path: &str, sizes: [(u32, u32); 3]) {
+        let (full, medium, small) = resolve_artwork_variants(pioneer_dir, image_path);
+        for (path, (w, h)) in [(&full, sizes[0]), (&medium, sizes[1]), (&small, sizes[2])] {
+            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+            std::fs::write(path, synthetic_jpeg(w, h, [10, 20, 30])).unwrap();
+        }
+    }
+
+    #[test]
+    fn sync_track_artwork_resizes_new_cover_to_each_existing_variant_size() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let (pioneer_dir, backup_dir) = setup_fixture_copy(&tmp);
+
+        seed_artwork_variants(
+            &pioneer_dir,
+            "/PIONEER/Artwork/aaaa/artwork.jpg",
+            [(500, 500), (100, 100), (40, 40)],
+        );
+        let new_cover = synthetic_jpeg(800, 800, [255, 0, 220]);
+
+        sync_track_artwork(&pioneer_dir, &backup_dir, "40000001", &new_cover)
+            .expect("sync should succeed");
+
+        let (full, medium, small) =
+            resolve_artwork_variants(&pioneer_dir, "/PIONEER/Artwork/aaaa/artwork.jpg");
+        assert_eq!(image::image_dimensions(&full).unwrap(), (500, 500));
+        assert_eq!(image::image_dimensions(&medium).unwrap(), (100, 100));
+        assert_eq!(image::image_dimensions(&small).unwrap(), (40, 40));
+    }
+
+    #[test]
+    fn sync_track_artwork_rejects_track_with_no_image_path() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let (pioneer_dir, backup_dir) = setup_fixture_copy(&tmp);
+
+        let err = sync_track_artwork(&pioneer_dir, &backup_dir, "40000002", &synthetic_jpeg(10, 10, [0, 0, 0]))
+            .unwrap_err();
+        assert_eq!(err, MasterDbError::NoArtworkPath { track_id: "40000002".to_string() });
+    }
+
+    #[test]
+    fn sync_track_artwork_rejects_when_a_variant_file_is_missing() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let (pioneer_dir, backup_dir) = setup_fixture_copy(&tmp);
+
+        // Track 40000003 has an ImagePath in the fixture but no files were
+        // ever seeded on disk for it.
+        let err = sync_track_artwork(&pioneer_dir, &backup_dir, "40000003", &synthetic_jpeg(10, 10, [0, 0, 0]))
+            .unwrap_err();
+        assert!(matches!(err, MasterDbError::ArtworkVariantMissing { .. }));
+    }
+
+    #[test]
+    fn sync_track_artwork_never_touches_masterdb_bytes() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let (pioneer_dir, backup_dir) = setup_fixture_copy(&tmp);
+
+        seed_artwork_variants(
+            &pioneer_dir,
+            "/PIONEER/Artwork/aaaa/artwork.jpg",
+            [(200, 200), (80, 80), (30, 30)],
+        );
+        let before = std::fs::read(pioneer_dir.join("master.db")).unwrap();
+
+        sync_track_artwork(&pioneer_dir, &backup_dir, "40000001", &synthetic_jpeg(50, 50, [1, 2, 3]))
+            .expect("sync should succeed");
+
+        let after = std::fs::read(pioneer_dir.join("master.db")).unwrap();
+        assert_eq!(before, after, "master.db must be byte-for-byte unchanged");
+    }
 }
