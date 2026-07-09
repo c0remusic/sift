@@ -53,6 +53,7 @@ quick-xml = { version = "0.37", features = ["serialize"] }
 percent-encoding = "2.3"
 wmi = "0.18"
 tempfile = "3.27.0"
+image = { version = "0.25", default-features = false, features = ["jpeg"] }
 
 # DwmExtendFrameIntoClientArea fix for the undecorated+transparent+resizable window's native
 # resize-margin showing as a solid backdrop instead of true transparency (annotation: "on a des
