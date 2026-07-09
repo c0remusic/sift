@@ -689,6 +689,8 @@ function toast(message: string): void {
   const el = document.createElement("div");
   el.id = "sift-toast";
   el.className = "sift-toast";
+  el.setAttribute("role", "status");
+  el.setAttribute("aria-live", "polite");
   el.textContent = message;
   document.body.appendChild(el);
   setTimeout(() => el.remove(), 4000);
