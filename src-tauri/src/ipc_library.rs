@@ -359,6 +359,36 @@ pub fn rekordbox_masterdb_apply_metadata_syncs(app: AppHandle, conn: State<'_, M
     crate::rekordbox_repairs::apply_metadata_syncs_inner(&conn, &backup_root, &ids)
 }
 
+// ── M8 Tier 3 (pochette): master.db artwork sync candidates ───────────────────
+
+pub use crate::rekordbox_repairs::PendingArtworkSync;
+
+/// Candidate `master.db` artwork syncs detected so far, excluding ones already `applied` or
+/// `dismissed`.
+#[tauri::command]
+pub fn rekordbox_masterdb_pending_artwork_syncs(conn: State<'_, Mutex<Connection>>) -> Result<Vec<PendingArtworkSync>, String> {
+    let conn = conn.lock().map_err(|e| e.to_string())?;
+    crate::rekordbox_repairs::rekordbox_masterdb_pending_artwork_syncs_inner(&conn)
+}
+
+/// Mark a pending/ambiguous artwork sync as dismissed.
+#[tauri::command]
+pub fn rekordbox_masterdb_dismiss_artwork_sync(conn: State<'_, Mutex<Connection>>, id: i64) -> Result<(), String> {
+    let conn = conn.lock().map_err(|e| e.to_string())?;
+    crate::rekordbox_repairs::rekordbox_masterdb_dismiss_artwork_sync_inner(&conn, id)
+}
+
+/// Resolves an ambiguous artwork sync by manually picking the correct `master.db` candidate.
+#[tauri::command]
+pub fn rekordbox_masterdb_resolve_ambiguous_artwork_sync(
+    conn: State<'_, Mutex<Connection>>,
+    id: i64,
+    chosen_track_id: String,
+) -> Result<(), String> {
+    let conn = conn.lock().map_err(|e| e.to_string())?;
+    crate::rekordbox_repairs::rekordbox_masterdb_resolve_ambiguous_artwork_sync_inner(&conn, id, &chosen_track_id)
+}
+
 // ── M8 Tier 2: playlist duplicate-entry dedup ─────────────────────────────────
 
 pub use crate::rekordbox_repairs::PlaylistDuplicateGroupDto;

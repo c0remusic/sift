@@ -473,6 +473,102 @@ pub(crate) fn apply_metadata_syncs_inner(conn: &Connection, backup_root: &Path, 
     Ok(outcomes)
 }
 
+// ── M8 Tier 3 (pochette): master.db artwork sync candidates ───────────────────
+
+/// One candidate artwork sync, keyed by Sift `track_id` — a fresh cover before the user applies
+/// replaces this row rather than adding another. `cover_path` is the source JPEG path, re-read
+/// fresh at apply time (see `rekordbox_masterdb_apply_artwork_syncs`), never resolved bytes.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct PendingArtworkSync {
+    pub id: i64,
+    pub track_id: i64,
+    pub sift_path: String,
+    pub rekordbox_track_id: Option<String>,
+    pub candidate_track_ids: Option<String>,
+    pub candidate_tracks: Option<Vec<CandidateTrack>>,
+    pub cover_path: String,
+    pub status: String,
+    pub detected_at: String,
+}
+
+/// Plain (testable) implementation of `rekordbox_masterdb_pending_artwork_syncs`.
+pub(crate) fn rekordbox_masterdb_pending_artwork_syncs_inner(conn: &Connection) -> Result<Vec<PendingArtworkSync>, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT s.id, s.track_id, t.path, s.rekordbox_track_id, s.candidate_track_ids, s.cover_path, s.status, s.detected_at
+             FROM rekordbox_masterdb_artwork_syncs s
+             JOIN tracks t ON t.id = s.track_id
+             WHERE s.status IN ('pending', 'ambiguous')
+             ORDER BY s.detected_at",
+        )
+        .map_err(|e| e.to_string())?;
+    let mut rows: Vec<PendingArtworkSync> = stmt
+        .query_map([], |r| {
+            Ok(PendingArtworkSync {
+                id: r.get(0)?,
+                track_id: r.get(1)?,
+                sift_path: r.get(2)?,
+                rekordbox_track_id: r.get(3)?,
+                candidate_track_ids: r.get(4)?,
+                candidate_tracks: None,
+                cover_path: r.get(5)?,
+                status: r.get(6)?,
+                detected_at: r.get(7)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+
+    if rows.iter().any(|r| r.status == "ambiguous") {
+        if let Some(path_map) = read_masterdb_path_map(conn) {
+            for row in rows.iter_mut().filter(|r| r.status == "ambiguous") {
+                if let Some(ids) = &row.candidate_track_ids {
+                    row.candidate_tracks = Some(
+                        ids.split(',')
+                            .map(|id| CandidateTrack { track_id: id.to_string(), folder_path: path_map.get(id).cloned() })
+                            .collect(),
+                    );
+                }
+            }
+        }
+    }
+    Ok(rows)
+}
+
+/// Plain (testable) implementation of `rekordbox_masterdb_dismiss_artwork_sync`.
+pub(crate) fn rekordbox_masterdb_dismiss_artwork_sync_inner(conn: &Connection, id: i64) -> Result<(), String> {
+    conn.execute("UPDATE rekordbox_masterdb_artwork_syncs SET status='dismissed' WHERE id=?1", rusqlite::params![id])
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Plain (testable) implementation of `rekordbox_masterdb_resolve_ambiguous_artwork_sync`.
+pub(crate) fn rekordbox_masterdb_resolve_ambiguous_artwork_sync_inner(conn: &Connection, id: i64, chosen_track_id: &str) -> Result<(), String> {
+    let (candidate_track_ids, status): (Option<String>, String) = conn
+        .query_row(
+            "SELECT candidate_track_ids, status FROM rekordbox_masterdb_artwork_syncs WHERE id=?1",
+            rusqlite::params![id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .map_err(|e| e.to_string())?;
+
+    if status != "ambiguous" {
+        return Err("cette ligne n'est plus ambiguë — rechargement nécessaire".to_string());
+    }
+    let candidates = candidate_track_ids.unwrap_or_default();
+    if !candidates.split(',').any(|c| c == chosen_track_id) {
+        return Err("piste choisie invalide pour cette ambiguïté".to_string());
+    }
+
+    conn.execute(
+        "UPDATE rekordbox_masterdb_artwork_syncs SET rekordbox_track_id=?1, candidate_track_ids=NULL, status='pending' WHERE id=?2",
+        rusqlite::params![chosen_track_id, id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
 // ── M8 Tier 2: playlist duplicate-entry dedup ─────────────────────────────────
 
 /// One `djmdSongPlaylist` row involved in a duplicate group — mirrors
@@ -1215,5 +1311,85 @@ mod tests {
         assert!(humanize_masterdb_error(&MasterDbError::ArtworkVariantMissing { path: "C:/x/artwork_m.jpg".to_string() }).contains("artwork_m.jpg"));
         assert!(humanize_masterdb_error(&MasterDbError::ArtworkWriteVerificationFailedRolledBack("dim mismatch".to_string())).contains("dim mismatch"));
         assert!(humanize_masterdb_error(&MasterDbError::ArtworkWriteVerificationFailedRollbackFailed("dim mismatch".to_string())).contains("intervention manuelle"));
+    }
+
+    fn seed_artwork_sync_row(conn: &Connection, track_id: i64, status: &str, rb_track_id: Option<&str>, candidates: Option<&str>, cover_path: &str) -> i64 {
+        let action_id = crate::actions::record_row_only(conn, "b1", Some(track_id), "tag_edit", Some("D:/x.mp3"), None, None).unwrap();
+        conn.execute(
+            "INSERT INTO rekordbox_masterdb_artwork_syncs
+                 (action_id, track_id, rekordbox_track_id, candidate_track_ids, cover_path, status)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            rusqlite::params![action_id, track_id, rb_track_id, candidates, cover_path, status],
+        ).unwrap();
+        conn.last_insert_rowid()
+    }
+
+    #[test]
+    fn pending_artwork_syncs_excludes_applied_and_dismissed() {
+        let conn = db();
+        conn.execute("INSERT INTO tracks(path, status) VALUES('D:/a.mp3', 'filed')", []).unwrap();
+        let track_id = conn.last_insert_rowid();
+        seed_artwork_sync_row(&conn, track_id, "pending", Some("40000001"), None, "/cache/a.jpg");
+
+        conn.execute("INSERT INTO tracks(path, status) VALUES('D:/b.mp3', 'filed')", []).unwrap();
+        let track_id_2 = conn.last_insert_rowid();
+        let id2 = seed_artwork_sync_row(&conn, track_id_2, "applied", Some("40000002"), None, "/cache/b.jpg");
+        conn.execute("UPDATE rekordbox_masterdb_artwork_syncs SET status='dismissed' WHERE id=?1", rusqlite::params![id2]).ok();
+
+        let rows = rekordbox_masterdb_pending_artwork_syncs_inner(&conn).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].status, "pending");
+        assert_eq!(rows[0].cover_path, "/cache/a.jpg");
+    }
+
+    #[test]
+    fn dismiss_artwork_sync_marks_dismissed() {
+        let conn = db();
+        conn.execute("INSERT INTO tracks(path, status) VALUES('D:/a.mp3', 'filed')", []).unwrap();
+        let track_id = conn.last_insert_rowid();
+        let id = seed_artwork_sync_row(&conn, track_id, "pending", Some("40000001"), None, "/cache/a.jpg");
+
+        rekordbox_masterdb_dismiss_artwork_sync_inner(&conn, id).unwrap();
+
+        let rows = rekordbox_masterdb_pending_artwork_syncs_inner(&conn).unwrap();
+        assert!(rows.is_empty());
+    }
+
+    #[test]
+    fn resolve_ambiguous_artwork_sync_moves_to_pending() {
+        let conn = db();
+        conn.execute("INSERT INTO tracks(path, status) VALUES('D:/a.mp3', 'filed')", []).unwrap();
+        let track_id = conn.last_insert_rowid();
+        let id = seed_artwork_sync_row(&conn, track_id, "ambiguous", None, Some("40000001,40000002"), "/cache/a.jpg");
+
+        rekordbox_masterdb_resolve_ambiguous_artwork_sync_inner(&conn, id, "40000002").unwrap();
+
+        let rows = rekordbox_masterdb_pending_artwork_syncs_inner(&conn).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].status, "pending");
+        assert_eq!(rows[0].rekordbox_track_id.as_deref(), Some("40000002"));
+        assert_eq!(rows[0].candidate_track_ids, None);
+    }
+
+    #[test]
+    fn resolve_ambiguous_artwork_sync_rejects_track_id_outside_candidate_list() {
+        let conn = db();
+        conn.execute("INSERT INTO tracks(path, status) VALUES('D:/a.mp3', 'filed')", []).unwrap();
+        let track_id = conn.last_insert_rowid();
+        let id = seed_artwork_sync_row(&conn, track_id, "ambiguous", None, Some("40000001,40000002"), "/cache/a.jpg");
+
+        let err = rekordbox_masterdb_resolve_ambiguous_artwork_sync_inner(&conn, id, "99999999").unwrap_err();
+        assert!(err.contains("invalide"));
+    }
+
+    #[test]
+    fn resolve_ambiguous_artwork_sync_rejects_row_that_is_not_ambiguous() {
+        let conn = db();
+        conn.execute("INSERT INTO tracks(path, status) VALUES('D:/a.mp3', 'filed')", []).unwrap();
+        let track_id = conn.last_insert_rowid();
+        let id = seed_artwork_sync_row(&conn, track_id, "pending", Some("40000001"), None, "/cache/a.jpg");
+
+        let err = rekordbox_masterdb_resolve_ambiguous_artwork_sync_inner(&conn, id, "40000001").unwrap_err();
+        assert!(err.contains("ambigu"));
     }
 }
