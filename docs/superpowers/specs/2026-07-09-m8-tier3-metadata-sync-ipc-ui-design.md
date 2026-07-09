@@ -30,28 +30,79 @@ Sift écrit les tags ID3 à 3 endroits, jamais via un chemin partagé unique :
 3. `ipc_library.rs::update_metadata` (édition inline, Bibliothèque) — écrit
    les tags. **Aujourd'hui ce site ne journalise aucune action** (pas
    d'appel à `actions::record_with_meta`) — contrairement aux deux autres,
-   ses éditions ne sont pas revertables via le Journal. Ce chantier corrige
-   ce gap au passage (voir plus bas) car la nouvelle table dépend d'un
-   `action_id`.
+   ses éditions n'ont aucun bouton d'annulation (ni Journal, qui exclut de
+   toute façon les `tag_edit` — voir plus bas, ni bouton dédié). Ce chantier
+   corrige ce gap au passage (nécessaire de toute façon : la nouvelle table
+   dépend d'un `action_id`).
 
 **Décision (tranchée en brainstorm)** : plutôt que d'étendre la signature
 générique `actions::record_with_meta`/`maybe_repair_rekordbox_xml` (qui
 servirait alors artist/title/label/year/genre à des dizaines d'appelants qui
 n'en ont rien à faire), une nouvelle fonction dédiée est appelée
-**directement** par chacun des 3 sites, juste après l'écriture des tags et
-juste après avoir obtenu l'`action_id` de leur `record_with_meta` :
+**directement** par chacun des 3 sites, juste après l'écriture des tags —
+mais **pas au même point d'accroche exact** pour les 3, car `filing.rs` ne
+passe jamais par `record_with_meta` :
+
+- `apply_tags`/`update_metadata` : appellent bien `record_with_meta`
+  (`update_metadata` après le fix ci-dessous) et récupèrent son `action_id`
+  de retour — la nouvelle fonction est appelée juste après.
+- `filing.rs::commit_file` **n'appelle jamais `record_with_meta`** — il
+  journalise chaque `FsLog` via `record_row_only` **dans la transaction**
+  (`filing.rs:540-543`, un `action_id` distinct par ligne : `tag_edit`+`move`
+  pour le cas conforme, `convert`+`trash` pour le cas non-conforme), puis
+  déclenche les hooks Tier 1 (`maybe_repair_rekordbox_xml`/
+  `maybe_detect_masterdb_repair`) **après le commit**, dans une boucle
+  séparée sur `log.iter().zip(action_ids.iter())` restreinte à
+  `kind ∈ {move, convert}` (`filing.rs:571-574`). **Le cas non-conforme n'a
+  aucune ligne `tag_edit`** — les tags sont écrits sur `plan.dest`
+  (`execute_file`, `filing.rs:467`) sans action dédiée ; c'est la ligne
+  `convert` qui représente cet événement.
+
+  La détection Tier 3 s'accroche donc dans **cette même boucle
+  post-commit existante** (`filing.rs:571-574`), au même point exact que Tier
+  1, via un wrapper `maybe_` qui porte le même garde `kind ∈ {move, convert}`
+  que `maybe_detect_masterdb_repair` (une seule itération qualifie par
+  commit, donc déclenché une seule fois) :
+  ```rust
+  for (fs, action_id) in log.iter().zip(action_ids.iter()) {
+      actions::maybe_repair_rekordbox_xml(conn, fs.kind, Some(&fs.from), Some(&fs.to));
+      actions::maybe_detect_masterdb_repair(conn, fs.kind, Some(&fs.from), Some(&fs.to), *action_id);
+      actions::maybe_detect_masterdb_metadata_sync(conn, fs.kind, &fs.from, plan, *action_id); // NEW
+  }
+  ```
+  `lookup_path = fs.from` (= `plan.source`, identique aux deux kinds — c'est
+  un déplacement/encodage FROM `plan.source`) — cohérent avec Tier 1 qui
+  matche aussi sur `from_path`. Les valeurs à synchroniser viennent
+  directement de `plan.canonical`/`plan.extras` (déjà en mémoire dans
+  `commit_file`), jamais d'un `FsLog` précis — la ligne `tag_edit`
+  éventuelle n'a pas besoin d'être lue.
 
 ```rust
-/// M8 Tier 3: called directly by the 3 sites that write ID3 tags (filing,
-/// apply_tags, update_metadata) — never threaded through record_with_meta's
-/// generic signature, since only these 3 callers have tag values in hand.
-/// `lookup_path` is the path master.db is expected to still reference RIGHT
-/// NOW: for a move/convert this is the PRE-move path (Tier 1's own repair
-/// is a separate, unconfirmed step — master.db's FolderPath hasn't moved
-/// yet), for a same-path tag edit it's simply the track's current path.
+/// Guard wrapper used only by filing.rs's post-commit loop — mirrors
+/// maybe_detect_masterdb_repair's kind ∈ {move, convert} guard exactly,
+/// then builds MetadataSyncValues from `plan` (already in memory, no file
+/// re-read) and delegates to the shared detector below.
+pub fn maybe_detect_masterdb_metadata_sync(
+    conn: &Connection,
+    kind: &str,
+    lookup_path: &str,
+    plan: &crate::filing::FilePlan,
+    action_id: i64,
+);
+
+/// M8 Tier 3: the shared detector. Called by `maybe_detect_masterdb_metadata_sync`
+/// (filing.rs's post-commit loop) AND directly by apply_tags/update_metadata
+/// right after their own `record_with_meta` call — never threaded through
+/// record_with_meta's generic signature, since only these 3 call sites have
+/// tag values in hand. `lookup_path` is the path master.db is expected to
+/// still reference RIGHT NOW: for a move/convert this is the PRE-move path
+/// (Tier 1's own repair is a separate, unconfirmed step — master.db's
+/// FolderPath hasn't moved yet), for a same-path tag edit it's simply the
+/// track's current path.
 pub fn detect_masterdb_metadata_sync_if_linked(
     conn: &Connection,
     lookup_path: &str,
+    track_id: i64,
     values: &MetadataSyncValues,
     action_id: i64,
 )
@@ -84,15 +135,42 @@ Guard interne (mêmes conventions que `detect_masterdb_repair_if_linked`) :
 pas de XML Rekordbox lié → no-op ; `master.db` illisible → `log::error!` +
 no-op, jamais de panic.
 
-## Fix du gap : `update_metadata` journalise désormais un `tag_edit`
+## Fix du gap : `update_metadata` journalise désormais un `tag_edit`, avec un vrai bouton Annuler
 
-`ipc_library.rs::update_metadata` capture l'ancien snapshot (`read_tags_full`
-avant écriture, comme `apply_tags` le fait déjà) et appelle
+**Correction post-revue adverse** : la première version de ce design disait
+"revertable via le Journal" — faux. `list_journal` exclut explicitement
+toutes les lignes `tag_edit` (`actions.rs:481`, `AND type NOT IN
+('tag_edit')`) : journaliser seul ne fait rien apparaître dans l'écran
+Journal, pour aucun des 3 sites. Le vrai mécanisme d'undo d'un `tag_edit`
+est un bouton dédié piloté par le `batch_id` que la commande retourne —
+c'est ce qu'`apply_tags` fait déjà (`ipc_filing.rs:182/226`, front
+`.sift-applytags-btn` qui bascule en "Annuler", `filing.ts:1521/1556`).
+`update_metadata` doit faire pareil pour que le fix serve vraiment à
+quelque chose, pas juste satisfaire le FK `action_id` de la nouvelle table :
+
+**Backend** — `ipc_library.rs::update_metadata` capture l'ancien snapshot
+(`read_tags_full` avant écriture, comme `apply_tags`), appelle
 `actions::record_with_meta(conn, &batch_id, Some(track_id), "tag_edit",
-Some(&path), None, Some(&meta))` après l'écriture DB — même forme que
-`apply_tags`, `batch_id` généré via `filing::new_batch_id(track_id)`. Effet
-de bord bienvenu, hors scope Rekordbox : les éditions Bibliothèque
-deviennent revertables via le Journal, comme les deux autres sites.
+Some(&path), None, Some(&meta))` après l'écriture DB (`batch_id` via
+`filing::new_batch_id(track_id)`, même forme qu'`apply_tags`), et **change
+de signature** : `Result<(), String>` → `Result<String, String>` (retourne
+le `batch_id`).
+
+**Frontend** — `frontend/ipc.ts:258` (`updateMetadata`) : retour
+`Promise<void>` → `Promise<string>`. `frontend/library-detail.ts::doSave`
+(ligne ~264) : `const batchId = await updateMetadata(...)`, puis au lieu du
+`toast("Enregistré")` actuel (son propre `toast()` local, ligne 35, qui ne
+supporte pas d'action) — étendre ce `toast()` local avec les mêmes
+paramètres optionnels `undo`/`onUndo` que celui de `filing.ts:1575` (3
+implémentations locales de `toast()` coexistent déjà dans le repo — Accueil/
+Revue/Bibliothèque — dupliquer le pattern est cohérent avec l'existant, pas
+une nouvelle divergence) : `toast("Enregistré", true, () =>
+revertBatch(batchId))`. `revertBatch` est déjà importé/exposé
+(`frontend/ipc.ts:164`, utilisé par `filing.ts`).
+
+Effet : les éditions Bibliothèque deviennent réellement annulables (bouton
+"Annuler" sur le toast, 6s comme les autres toasts), et la table Tier 3 a
+son `action_id` NOT NULL satisfait sur les 3 sites.
 
 ## Table `rekordbox_masterdb_metadata_syncs` (migration v13)
 
@@ -282,7 +360,14 @@ Convention `_inner` existante :
   si la ligne précédente était `applied`).
 - `update_metadata` : vérifie qu'un `tag_edit` est désormais journalisé
   (nouveau test, régression du fix de gap) — snapshot avant écriture
-  correct, revert via `revert_batch` restaure les anciens tags.
+  correct, `batch_id` retourné non-vide, `revert_batch(batch_id)` restaure
+  les anciens tags.
+- `maybe_detect_masterdb_metadata_sync` (le wrapper `filing.rs`) : garde
+  `kind ∈ {move, convert}` identique à `maybe_detect_masterdb_repair` —
+  n'appelle jamais le détecteur pour `tag_edit`/`trash` ; déclenché
+  exactement une fois par commit conforme ET non-conforme (le cas
+  non-conforme, sans ligne `tag_edit`, doit quand même produire une ligne
+  `rekordbox_masterdb_metadata_syncs` via sa ligne `convert`).
 - `rekordbox_masterdb_pending_metadata_syncs_inner` : exclut
   `applied`/`dismissed`, ordre par `detected_at`, `candidate_tracks` peuplé
   seulement pour `ambiguous`.
