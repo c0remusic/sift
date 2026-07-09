@@ -307,9 +307,8 @@ empreintes Chromaprint).
 > Rekordbox opaques — jamais requis par le moteur d'écriture. Revue finale
 > (Opus) : "ready to merge", aucun fix nécessaire, parité de types
 > Rust↔TypeScript vérifiée champ par champ. Plan :
-> `docs/superpowers/plans/2026-07-08-m8-tier2-ui-screen.md`. Vérification
-> visuelle `tauri dev` (clair+sombre, 0/1/2+ groupes) restante — étape
-> manuelle d'Antoine, code gated `inTauri`.
+> `docs/superpowers/plans/2026-07-08-m8-tier2-ui-screen.md`. **Vérification
+> visuelle `tauri dev` faite par Antoine le 2026-07-09** — écran confirmé bon.
 >
 > **Synchro de playlist complète** (au-delà du simple dédoublonnage —
 > ajouts/retraits/réordonnancement `TrackNo`) hors scope, nécessite une
@@ -321,18 +320,50 @@ empreintes Chromaprint).
 > possible) : verdict négatif sur la stratégie primaire — le flag seul ne
 > déclenche **aucun** reload automatique du tag dans Rekordbox (l'action
 > manuelle « Relire le tag », elle, fonctionne). **Diff exact capturé le
-> 2026-07-09** (spike n°6) : Rekordbox crée une nouvelle ligne `djmdArtist`
-> (find-or-create, FK repointée) plutôt que modifier l'existante — patron
-> de référence désormais connu pour un futur fallback, mais question
-> critique non résolue (réutilisation vs duplication d'un artiste déjà
-> connu de la bibliothèque). Non commencé côté code — une décision produit
-> reste à prendre (fallback écriture directe des tables normalisées, à
-> haut risque même avec ce patron en main, vs renoncer à l'automatique et
-> documenter le geste manuel pour l'utilisateur) avant tout travail
-> d'implémentation.
+> 2026-07-09** (spike n°6, nom d'artiste inédit) : Rekordbox crée une
+> nouvelle ligne `djmdArtist` (find-or-create, FK repointée) plutôt que
+> modifier l'existante. **Question réutilisation-vs-duplication tranchée le
+> 2026-07-09** (spike n°7, nom d'artiste déjà connu de la bibliothèque —
+> "Eat Static", 31 pistes) : **REUSE confirmé** — Rekordbox repointe la FK
+> vers la ligne `djmdArtist` existante, zéro doublon créé (compte de lignes
+> inchangé, 1108 avant/après). Le mécanisme find-or-create de Rekordbox est
+> donc documenté sur ses deux branches (création + réutilisation par nom).
+>
+> **Décision produit prise le 2026-07-09 : automatiser** (plutôt que
+> documenter le geste manuel). **Moteur Rust livré et vérifié le même
+> jour** — `sync_track_metadata` dans `rekordbox_masterdb.rs` : find-or-create
+> sur `djmdArtist`/`djmdGenre`/`djmdLabel` (schéma identique vérifié entre
+> les 3 tables), écriture directe de `Title`/`ReleaseYear` (colonnes sans
+> FK), même chaîne de sûreté que Tier 1/2 (garde process → backup →
+> transaction → ré-encrypt → écriture atomique → vérification round-trip →
+> rollback auto). 7 tests sur fixture étendue (`djmdArtist`/`djmdGenre`/
+> `djmdLabel` ajoutées à `scripts/make-rekordbox-fixture.py`) + 1 test
+> contre une copie de la vraie bibliothèque (`#[ignore]`d,
+> `SIFT_M8_REAL_COPY_DIR`) exerçant REUSE et CREATE sur le même canary
+> "Street Battle" que les spikes 5/6/7, restauration finale vérifiée
+> indépendamment (`ArtistID` revenu à sa valeur d'origine). 290 tests +
+> clippy clean. Plan :
+> `docs/superpowers/plans/2026-07-09-m8-tier3-metadata-sync-rust.md`.
+> **Reste hors scope de ce plan (à faire dans un plan séparé)** : câblage
+> IPC, hook de détection au filing, écran UI — même séquencement que
+> Tier 1/2 (moteur d'abord, IPC+UI ensuite).
+> **Risque casse/normalisation fermé le 2026-07-09** : matching devenu
+> trim+insensible à la casse (`COLLATE NOCASE`), testé.
+> Risques résiduels restants (non bloquants) : nettoyage des lignes
+> orphelines (aucun mécanisme observé chez Rekordbox non plus), Genre/Label
+> non testés indépendamment via un vrai Reload Tag (extrapolés de
+> l'identité de schéma avec Artist).
+> **Pochette (spike n°8, 2026-07-09)** : mécanisme découvert et vérifié —
+> « Relire le tag » réécrit les 3 fichiers `artwork.jpg`/`_m.jpg`/`_s.jpg`
+> en place (cache local `%APPDATA%\Pioneer\rekordbox\share\`, pas sur le
+> disque bibliothèque), sans FK ni ligne DB — plus simple que Artist/Genre/
+> Label. Non implémenté (dimensions exactes des variantes et cas
+> `ImagePath` NULL non testés). Détail :
+> `~/Desktop/sift-masterdb-write-probe/FINDINGS-m8-spike-8-artwork.md`.
 > Détail : `docs/superpowers/specs/2026-07-06-m8-masterdb-write-path-rust-design-v2.md`,
 > `~/Desktop/sift-masterdb-write-probe/FINDINGS-m8-spike-5-tier3-test1.md`,
-> `~/Desktop/sift-masterdb-write-probe/FINDINGS-m8-spike-6-tier3-reload-diff.md`.
+> `~/Desktop/sift-masterdb-write-probe/FINDINGS-m8-spike-6-tier3-reload-diff.md`,
+> `~/Desktop/sift-masterdb-write-probe/FINDINGS-m8-spike-7-reuse-vs-duplicate.md`.
 - **Rekordbox `master.db`** : remplacement in-situ (Tier 1 livré, moteur+IPC+UI), **dédup des playlists existantes** (Tier 2 livré, moteur+IPC+UI), **réparation/prévention des liens cassés** (chemin change au changement de format — Tier 1). ⚠️ backup obligatoire (déjà implémenté), Rekordbox fermé (garde déjà implémentée).
 - **Normalisation loudness** (option, OFF par défaut).
 

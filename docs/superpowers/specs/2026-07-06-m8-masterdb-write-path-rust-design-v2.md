@@ -2,8 +2,9 @@
 
 > Statut : **Tier 1 confirmé sûr et livré (moteur+IPC+UI). Tier 2 confirmé
 > sûr et livré (moteur+IPC+UI). Tier 3 : stratégie primaire (flag de reload
-> seul) INFIRMÉE par test réel (2026-07-08) — voir mise à jour ci-dessous et
-> section Tier 3 pour les deux chemins restants.** Remplace
+> seul) INFIRMÉE par test réel (2026-07-08) ; décision produit prise le
+> 2026-07-09 — écriture directe des tables normalisées, design détaillé
+> dans la section Tier 3 ci-dessous, implémentation en cours.** Remplace
 > `2026-07-04-m8-masterdb-write-path-rust-design.md` (v1, gardé pour
 > historique — ne plus l'utiliser comme référence active). Suite du
 > brainstorm du 2026-07-06 (`superpowers:brainstorming`) : élargit le
@@ -193,6 +194,119 @@ Détail complet des deux investigations :
   réouverture de Rekordbox" — pas de synchro live, Rekordbox doit relancer
   pour rejouer le reload.
 
+### Tier 3 — Écriture directe des tables normalisées (DÉCIDÉ, 2026-07-09)
+
+> Décision produit tranchée par Antoine : rendre la synchro automatique,
+> plutôt que documenter le geste manuel. Ce qui suit remplace l'option 2
+> ("renoncer à l'automatique") de la section précédente.
+
+**Périmètre exact** — dérivé de ce que `write_tags_full` (`tagging.rs`)
+écrit réellement dans le fichier audio à l'identification/rangement, pas
+de tout le schéma `djmdContent` :
+
+| Champ Sift | Colonne `djmdContent` | Mécanisme |
+|---|---|---|
+| `artist` | `ArtistID` (FK) | find-or-create sur `djmdArtist` |
+| `title` | `Title` | colonne directe, aucun FK |
+| `year` | `ReleaseYear` | colonne directe, aucun FK |
+| genres joints (`"A; B"`) | `GenreID` (FK) | find-or-create sur `djmdGenre` (**la chaîne jointe entière est traitée comme UN nom d'artiste-genre**, pas splittée — cohérent avec le fait que Sift n'écrit qu'un seul champ `Genre` ID3, jamais plusieurs) |
+| `label` (Publisher/TPUB) | `LabelID` (FK) | find-or-create sur `djmdLabel` |
+| cover | `ImagePath` (chemin fichier, pas FK) | **hors scope de l'implémentation actuelle, mais mécanisme désormais vérifié (spike 8, 2026-07-09)** : `ImagePath` pointe vers 3 fichiers JPG séparés (`artwork.jpg`/`_m.jpg`/`_s.jpg`) sous `%APPDATA%\Pioneer\rekordbox\share\` — un cache LOCAL par machine, pas sur le disque de la bibliothèque. « Relire le tag » réécrit ces 3 fichiers EN PLACE (même chemin, contenu remplacé) sans jamais toucher `ImagePath` ni créer de ligne DB — **plus simple** que le find-or-create FK d'Artist/Genre/Label. Non implémenté : dimensions exactes des variantes `_m`/`_s` non mesurées, cas `ImagePath` NULL non testé. Détail : `~/Desktop/sift-masterdb-write-probe/FINDINGS-m8-spike-8-artwork.md`. |
+| `AlbumID` | — | **hors scope** : Sift n'écrit jamais de tag album |
+
+**Schéma vérifié identique entre les 3 tables FK** (lu directement sur une
+copie de la vraie bibliothèque, `pyrekordbox.db6.tables`) :
+
+```
+djmdArtist / djmdGenre / djmdLabel :
+  ID, Name, UUID, rb_data_status, rb_local_data_status, rb_local_deleted,
+  rb_local_synced, usn, rb_local_usn, created_at, updated_at
+  (djmdArtist a en plus SearchStr, jamais peuplé dans nos observations —
+  laissé NULL comme Rekordbox le fait lui-même)
+```
+
+Cette identité de schéma est ce qui permet de généraliser le patron
+find-or-create vérifié sur `djmdArtist` (spikes 6/7) aux deux autres
+tables — **avec une réserve explicite notée ci-dessous** (matching
+case-sensitive non testé sur Genre/Label spécifiquement).
+
+**Patron find-or-create, empiriquement capturé (spikes 6 et 7)** :
+
+1. Chercher une ligne existante par `Name` (match exact, la casse exacte du
+   tag entrant — **non vérifié si Rekordbox normalise la casse/les espaces
+   lui-même**, résidu de risque assumé, voir Risques ouverts).
+2. Si trouvée → réutiliser son `ID` tel quel (spike 7 : "Eat Static" repointé
+   sans toucher à la ligne existante, ni son `updated_at`).
+3. Si absente → créer une nouvelle ligne : nouvel `ID` (entier, voir
+   génération ci-dessous), nouvel `UUID` (v4 aléatoire), `rb_local_usn`
+   bumpé (compteur global, même mécanisme que les autres tiers),
+   `created_at`/`updated_at` = maintenant, `rb_data_status`/
+   `rb_local_data_status`/`rb_local_deleted`/`rb_local_synced` = `0`,
+   `usn` = `NULL` (valeurs observées sur la ligne créée par Rekordbox au
+   spike 6).
+4. Repointer la FK correspondante (`ArtistID`/`GenreID`/`LabelID`) sur
+   `djmdContent`.
+
+**Génération d'`ID`** : les IDs observés (`274555000`, `1521864440`,
+`3689289451`) sont des entiers 32-bit non signés (`0`–`4294967295`), sans
+format documenté trouvé. Stratégie retenue : génération aléatoire dans cet
+intervalle + vérification d'unicité contre la table cible avant insertion
+(retry si collision) — pas de séquence, pas de dérivation du contenu
+(cohérent avec l'absence de pattern visible dans les 3 échantillons
+observés).
+
+**Colonnes `djmdContent` à bumper à chaque écriture** (identique au
+patron du spike 6, indépendamment de quels champs FK ont changé) :
+`rb_local_usn`, `updated_at`, `TrackInfoUpdated` (incrémenté, cohérent
+avec Tier 1 qui laisse ce compteur inchangé — ici on l'incrémente
+volontairement puisqu'on simule ce que "Relire le tag" fait). **Jamais**
+`Analysed`/`AnalysisUpdated`/`CueUpdated` (invariant non négociable,
+inchangé depuis v1).
+
+**USN global** : un bump par ligne FK nouvellement créée (comme
+`repair_track_path`/`dedup_playlist_group`) **plus** un bump pour la
+mise à jour de la ligne `djmdContent` elle-même — c'est-à-dire jusqu'à 4
+bumps en une seule synchro (3 nouvelles lignes FK possibles + 1 pour le
+contenu), jamais un seul bump partagé.
+
+**Déclenchement** : après un `write_tags_full` réussi au moment du
+rangement (`filing.rs`), si la piste est déjà liée dans `master.db`
+(réutilise la même correspondance `ContentID` que Tier 1/2 — via
+`read_masterdb_path_map`, pas un nouveau mécanisme de matching). Candidat
+ajouté à la même famille de détection que Tier 1 (table
+`rekordbox_masterdb_repairs` déjà existante, ou une table sœur dédiée à
+trancher au plan) — jamais appliqué automatiquement sans confirmation
+utilisateur, même règle que Tier 1/2 (`confirmAction()`, pas de silent
+write).
+
+**Sûreté** : chaîne identique aux Tiers 1/2 (garde process Rekordbox →
+backup horodaté dossier complet → décrypt → transaction → ré-encrypt →
+écriture atomique → vérification round-trip par relecture fraîche →
+rollback auto si échec).
+
+**Risques ouverts, assumés explicitement (pas des inconnues cachées)** :
+1. ~~**Casse/normalisation du nom lors du matching**~~ — **fermé le
+   2026-07-09** : `find_or_create_named_row` matche désormais sur
+   `TRIM(Name) = TRIM(?1) COLLATE NOCASE` plutôt qu'une égalité stricte —
+   "Eat Static"/" eat static "/"EAT STATIC" résolvent tous à la même
+   ligne, testé (`sync_track_metadata_reuses_existing_artist_ignoring_case_and_whitespace`).
+   Limite assumée et documentée : `COLLATE NOCASE` de SQLite ne fait que du
+   pliage ASCII — un nom accentué ("Étienne" vs "étienne") ne matche pas
+   par ce mécanisme. Pas un nouveau spike Rekordbox nécessaire pour ce
+   fix : la question n'était pas "que fait Rekordbox" mais "notre propre
+   matching est-il trop strict", réglable par construction.
+2. **Genre/Label non testés indépendamment via Reload Tag réel** — le
+   patron find-or-create n'a été observé empiriquement que sur
+   `djmdArtist` (spikes 6/7). L'extrapolation à `djmdGenre`/`djmdLabel`
+   repose sur l'identité de schéma vérifiée, pas sur un nouveau test
+   Rekordbox live — assumé sciemment plutôt que de multiplier les
+   spikes coûteux (swap réel + manipulation manuelle) pour un mécanisme
+   structurellement identique.
+3. **Lignes orphelines** — ni Sift ni, apparemment, Rekordbox
+   (observé aux spikes 6/7) ne nettoient une ancienne ligne FK devenue
+   non référencée. Accepté : pas de nettoyage automatique dans ce
+   design, cohérent avec le comportement de Rekordbox lui-même.
+
 ## Ce qui existe déjà (à réutiliser, pas à réinventer)
 
 - **Lecteur SQLCipher pur Rust** : `src-tauri/src/rekordbox_masterdb.rs`
@@ -349,3 +463,32 @@ Symétrique du lecteur, même philosophie « ne pas réimplémenter SQLite » :
   réutilisation (nom déjà connu dans la bibliothèque, cas fréquent pour
   Sift) reste à tester avant de considérer le fallback implémentable.
   Détail : `~/Desktop/sift-masterdb-write-probe/FINDINGS-m8-spike-6-tier3-reload-diff.md`.
+- **v2 mise à jour n°7** (2026-07-09) : spike n°7 exécuté — question
+  réutilisation-vs-duplication tranchée. Nom d'artiste déjà connu
+  ("Eat Static", 31 pistes) → Rekordbox **réutilise** la ligne `djmdArtist`
+  existante (FK repointée, zéro nouvelle ligne, compte inchangé
+  1108→1108). Le mécanisme find-or-create de Rekordbox est documenté sur
+  ses deux branches. Détail :
+  `~/Desktop/sift-masterdb-write-probe/FINDINGS-m8-spike-7-reuse-vs-duplicate.md`.
+- **v2 mise à jour n°8** (2026-07-09, même jour) : décision produit prise —
+  automatiser Tier 3 plutôt que documenter le geste manuel. Design complet
+  de l'écriture directe ajouté (section Tier 3) : périmètre exact dérivé de
+  `write_tags_full` (Artist/Genre/Label via FK find-or-create, Title/Year en
+  colonnes directes, cover et Album hors scope), schéma `djmdGenre`/
+  `djmdLabel` vérifié identique à `djmdArtist` (lecture directe, sans
+  nouveau spike Rekordbox live), génération d'ID par tirage aléatoire
+  32-bit + vérification d'unicité, 3 risques résiduels assumés
+  explicitement (casse/normalisation du matching, Genre/Label non testés
+  indépendamment via Reload Tag réel, lignes orphelines non nettoyées).
+  Implémentation Rust livrée (voir statut Tier 3 dans
+  `docs/plan-implementation.md`), plan :
+  `docs/superpowers/plans/2026-07-09-m8-tier3-metadata-sync-rust.md`.
+- **v2 mise à jour n°9** (2026-07-09, même jour) : risque résiduel #1
+  (casse/normalisation du matching) fermé — `find_or_create_named_row`
+  matche désormais `TRIM(Name) = TRIM(?1) COLLATE NOCASE`, testé
+  (nouveau test `sync_track_metadata_reuses_existing_artist_ignoring_case_and_whitespace`).
+  Spike n°8 exécuté (pochette) : « Relire le tag » réécrit les 3 fichiers
+  artwork (`artwork.jpg`/`_m.jpg`/`_s.jpg`) EN PLACE au même `ImagePath`,
+  sans FK ni ligne DB — mécanisme plus simple que celui d'Artist/Genre/
+  Label, vérifié par hash+dimensions+couleur moyenne sur une copie réelle.
+  Détail : `~/Desktop/sift-masterdb-write-probe/FINDINGS-m8-spike-8-artwork.md`.

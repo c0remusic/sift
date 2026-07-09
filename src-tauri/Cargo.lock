@@ -4000,6 +4000,7 @@ dependencies = [
  "tauri-plugin-window-state",
  "tempfile",
  "ureq",
+ "uuid",
  "walkdir",
  "windows 0.61.3",
  "wmi",

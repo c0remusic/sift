@@ -43,9 +43,12 @@
 //! # Status
 //!
 //! Wired to IPC: `read_rekordbox_masterdb` (via `actions::detect_masterdb_repair_if_linked`,
-//! read-only) and `repair_track_path` (via `ipc_library::rekordbox_masterdb_apply_repairs`,
-//! the only write path). No UI screen consumes these commands yet (a separate,
-//! later plan) — that's the only remaining "not yet" here.
+//! read-only), `repair_track_path` (Tier 1, via `ipc_library::rekordbox_masterdb_apply_repairs`),
+//! `dedup_playlist_group` (Tier 2). `sync_track_metadata` (Tier 3, metadata
+//! find-or-create) is proven on fixture + a real `master.db` copy
+//! (`docs/superpowers/plans/2026-07-09-m8-tier3-metadata-sync-rust.md`) but
+//! **not yet wired to IPC or a filing-time hook** — same "engine first"
+//! precedent as Tier 1/2, follow-up plan pending.
 
 use std::io::Cursor;
 use std::path::Path;
@@ -58,10 +61,11 @@ use flate2::read::ZlibDecoder;
 use hmac::{Hmac, Mac};
 use pbkdf2::pbkdf2_hmac;
 use rand::rngs::OsRng;
-use rand::RngCore;
-use rusqlite::Connection;
+use rand::{Rng, RngCore};
+use rusqlite::{Connection, OptionalExtension, Transaction};
 use sha2::Sha512;
 use std::io::Read;
+use uuid::Uuid;
 
 /// SQLCipher v4 default page size, confirmed via `PRAGMA cipher_page_size`.
 const PAGE_SIZE: usize = 4096;
@@ -169,6 +173,23 @@ pub enum MasterDbError {
         /// The `djmdSongPlaylist.ID` that was not found.
         song_playlist_id: String,
     },
+    /// `find_or_create_named_row` was called with a table name outside the
+    /// 3 whitelisted FK tables — programmer error, never user input (the
+    /// table name is always a Sift-internal constant), fail-fast rather
+    /// than build SQL from an unchecked string.
+    #[allow(dead_code)]
+    UnknownFkTable {
+        /// The rejected table name.
+        table: String,
+    },
+    /// Could not find a free 32-bit ID after repeated random attempts —
+    /// astronomically unlikely for the real table sizes involved, kept as a
+    /// fail-fast rather than an infinite loop.
+    #[allow(dead_code)]
+    IdGenerationExhausted {
+        /// The FK table for which ID generation failed.
+        table: String,
+    },
 }
 
 impl std::fmt::Display for MasterDbError {
@@ -206,6 +227,12 @@ impl std::fmt::Display for MasterDbError {
             }
             MasterDbError::SongPlaylistEntryNotFound { song_playlist_id } => {
                 write!(f, "no djmdSongPlaylist row with ID {song_playlist_id}")
+            }
+            MasterDbError::UnknownFkTable { table } => {
+                write!(f, "unknown FK table for find-or-create: {table}")
+            }
+            MasterDbError::IdGenerationExhausted { table } => {
+                write!(f, "could not generate a free ID for table {table}")
             }
         }
     }
@@ -245,6 +272,31 @@ pub struct PathRepair {
     pub new_file_name_l: String,
     /// New `FileNameS`.
     pub new_file_name_s: String,
+}
+
+/// One M8 Tier 3 metadata sync operation: mirrors exactly the fields
+/// `tagging::write_tags_full` writes to the audio file (artist/title/
+/// label/year/genre) — cover and album are deliberately absent, neither is
+/// ever written by Sift's own tagging path. Fields left `None` are not
+/// touched, same "None = leave alone" convention as `write_tags_full`
+/// itself.
+#[allow(dead_code)]
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct MetadataSync {
+    /// Rekordbox `djmdContent.ID` of the row to sync.
+    pub track_id: String,
+    /// New artist name — find-or-create on `djmdArtist`, repoints `ArtistID`.
+    pub artist: Option<String>,
+    /// New title — direct write to `djmdContent.Title`, no FK involved.
+    pub title: Option<String>,
+    /// New release year — direct write to `djmdContent.ReleaseYear`, no FK.
+    pub year: Option<i64>,
+    /// New genre (already joined "A; B" the way Sift writes a single ID3
+    /// Genre field) — find-or-create on `djmdGenre`, repoints `GenreID`.
+    pub genre: Option<String>,
+    /// New label (Sift's ID3 Publisher/TPUB field) — find-or-create on
+    /// `djmdLabel`, repoints `LabelID`.
+    pub label: Option<String>,
 }
 
 /// One `djmdSongPlaylist` row involved in a duplicate group — either the
@@ -960,6 +1012,307 @@ pub fn dedup_playlist_group(
     }
 }
 
+/// The only 3 tables `find_or_create_named_row` is allowed to touch — same
+/// schema (`ID, Name, UUID, rb_data_status, rb_local_data_status,
+/// rb_local_deleted, rb_local_synced, usn, rb_local_usn, created_at,
+/// updated_at`), verified identical against a real `master.db` copy
+/// (2026-07-09, see design doc Tier 3 section). Whitelisted rather than
+/// trusted from the caller: the table name is always a Sift-internal
+/// constant, never user input, but this still fails fast instead of
+/// building SQL from an unchecked string.
+const FK_TABLES: [&str; 3] = ["djmdArtist", "djmdGenre", "djmdLabel"];
+
+/// Bumps the global `agentRegistry.localUpdateCount` USN by one and returns
+/// the new value — identical query used by `repair_track_path` and
+/// `dedup_playlist_group`, factored out here since Tier 3 may need to call
+/// it up to 4 times in a single sync (one per newly-created FK row, plus
+/// one for the `djmdContent` row itself).
+fn bump_global_usn(tx: &Transaction, now: &str) -> Result<i64, MasterDbError> {
+    let old_usn: i64 = tx
+        .query_row(
+            "SELECT int_1 FROM agentRegistry WHERE registry_id = 'localUpdateCount'",
+            [],
+            |row| row.get(0),
+        )
+        .map_err(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => MasterDbError::RegistryRowMissing,
+            other => MasterDbError::Sqlite(other.to_string()),
+        })?;
+    let new_usn = old_usn + 1;
+    tx.execute(
+        "UPDATE agentRegistry SET int_1 = ?1, updated_at = ?2 WHERE registry_id = 'localUpdateCount'",
+        rusqlite::params![new_usn, now],
+    )
+    .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+    Ok(new_usn)
+}
+
+/// Rekordbox `djmdArtist`/`djmdGenre`/`djmdLabel` IDs observed in the wild
+/// (`274555000`, `1521864440`, `3689289451`) are unsigned 32-bit integers
+/// with no documented generation scheme — random draw + uniqueness check
+/// mirrors that absence of visible pattern, rather than inventing a
+/// sequence Rekordbox itself doesn't use.
+fn generate_free_id(tx: &Transaction, table: &str) -> Result<String, MasterDbError> {
+    const MAX_ATTEMPTS: u32 = 1000;
+    for _ in 0..MAX_ATTEMPTS {
+        let candidate: u32 = OsRng.gen();
+        let exists: bool = tx
+            .query_row(
+                &format!("SELECT 1 FROM {table} WHERE ID = ?1"),
+                rusqlite::params![candidate.to_string()],
+                |_| Ok(true),
+            )
+            .optional()
+            .map_err(|e| MasterDbError::Sqlite(e.to_string()))?
+            .unwrap_or(false);
+        if !exists {
+            return Ok(candidate.to_string());
+        }
+    }
+    Err(MasterDbError::IdGenerationExhausted { table: table.to_string() })
+}
+
+/// Finds a `djmdArtist`/`djmdGenre`/`djmdLabel` row by exact `Name` match
+/// and returns its `ID`; if none exists, creates one and returns the new
+/// `ID`. Empirically mirrors what Rekordbox's own "Reload Tag" does
+/// (M8 spikes 6/7): reuse the existing row untouched when the name already
+/// exists (spike 7), or create a new row with a fresh `ID`+`UUID` and a
+/// bumped `rb_local_usn` when it doesn't (spike 6) — never update an
+/// existing row's `Name` in place, never delete anything.
+///
+/// Matching is trim+case-insensitive (`COLLATE NOCASE`, ASCII-only — SQLite's
+/// built-in collation does not fold accented characters, e.g. "é"≠"É"; a
+/// known, accepted limit, not a silent gap) so that "Eat Static" and
+/// " eat static " resolve to the same row instead of spawning a cosmetic
+/// duplicate (residual risk #1 from the design doc, closed 2026-07-09 —
+/// untested whether Rekordbox's own matching goes any further than this,
+/// e.g. accent folding, but this closes the common case cheaply). A newly
+/// created row stores the trimmed-but-original-case name, never
+/// force-lowercased — only the *comparison* is normalized, not the stored
+/// value.
+fn find_or_create_named_row(
+    tx: &Transaction,
+    table: &str,
+    name: &str,
+    now: &str,
+) -> Result<String, MasterDbError> {
+    if !FK_TABLES.contains(&table) {
+        return Err(MasterDbError::UnknownFkTable { table: table.to_string() });
+    }
+    let trimmed = name.trim();
+
+    let existing: Option<String> = tx
+        .query_row(
+            &format!("SELECT ID FROM {table} WHERE TRIM(Name) = TRIM(?1) COLLATE NOCASE"),
+            rusqlite::params![trimmed],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+    if let Some(id) = existing {
+        return Ok(id);
+    }
+
+    let new_id = generate_free_id(tx, table)?;
+    let new_uuid = Uuid::new_v4().to_string();
+    bump_global_usn(tx, now)?;
+    tx.execute(
+        &format!(
+            "INSERT INTO {table} (ID, Name, UUID, rb_data_status, rb_local_data_status, \
+             rb_local_deleted, rb_local_synced, usn, rb_local_usn, created_at, updated_at) \
+             VALUES (?1, ?2, ?3, 0, 0, 0, 0, NULL, ?4, ?5, ?5)"
+        ),
+        rusqlite::params![new_id, trimmed, new_uuid, 1_i64, now],
+    )
+    .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+    Ok(new_id)
+}
+
+/// M8 Tier 3 — writes Sift's own tagging output directly into `master.db`,
+/// so Rekordbox reflects it without the user having to manually
+/// right-click → "Reload Tag" per track. Scope is exactly the fields
+/// `tagging::write_tags_full` writes (see `MetadataSync` doc) — cover and
+/// album are out of scope, Sift never writes those tags.
+///
+/// Safety sequence identical to `repair_track_path`/`dedup_playlist_group`:
+/// refuse if Rekordbox is running → backup → decrypt → mutate inside a
+/// transaction → re-encrypt → atomic write → round-trip verify (fresh
+/// connection) → automatic rollback on verification failure.
+///
+/// Never touches `Analysed`/`AnalysisUpdated`/`CueUpdated` — the M8
+/// non-negotiable invariant, unchanged since Tier 1.
+#[allow(dead_code)]
+pub fn sync_track_metadata(
+    pioneer_dir: &Path,
+    backup_dir: &Path,
+    sync: &MetadataSync,
+) -> Result<(), MasterDbError> {
+    if is_rekordbox_running() {
+        return Err(MasterDbError::RekordboxRunning);
+    }
+
+    let db_path = pioneer_dir.join("master.db");
+    backup_rekordbox_files(pioneer_dir, backup_dir)?;
+
+    let raw = std::fs::read(&db_path).map_err(|e| MasterDbError::Io(e.to_string()))?;
+    let plaintext = decrypt_masterdb(&raw)?;
+
+    let mut conn = Connection::open_in_memory().map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+    let len = plaintext.len();
+    conn.deserialize_read_exact(rusqlite::MAIN_DB, Cursor::new(plaintext), len, false)
+        .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+
+    let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.6f").to_string();
+    let tx = conn.transaction().map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+
+    // Confirm the track exists before touching any FK table — a
+    // find_or_create for a non-existent track would still create orphaned
+    // rows even though the final djmdContent UPDATE fails.
+    let track_exists: bool = tx
+        .query_row(
+            "SELECT 1 FROM djmdContent WHERE ID = ?1",
+            rusqlite::params![sync.track_id],
+            |_| Ok(true),
+        )
+        .optional()
+        .map_err(|e| MasterDbError::Sqlite(e.to_string()))?
+        .unwrap_or(false);
+    if !track_exists {
+        return Err(MasterDbError::TrackNotFound { track_id: sync.track_id.clone() });
+    }
+
+    let mut any_field_set = false;
+
+    if let Some(artist) = &sync.artist {
+        let artist_id = find_or_create_named_row(&tx, "djmdArtist", artist, &now)?;
+        tx.execute(
+            "UPDATE djmdContent SET ArtistID = ?1 WHERE ID = ?2",
+            rusqlite::params![artist_id, sync.track_id],
+        )
+        .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+        any_field_set = true;
+    }
+    if let Some(genre) = &sync.genre {
+        let genre_id = find_or_create_named_row(&tx, "djmdGenre", genre, &now)?;
+        tx.execute(
+            "UPDATE djmdContent SET GenreID = ?1 WHERE ID = ?2",
+            rusqlite::params![genre_id, sync.track_id],
+        )
+        .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+        any_field_set = true;
+    }
+    if let Some(label) = &sync.label {
+        let label_id = find_or_create_named_row(&tx, "djmdLabel", label, &now)?;
+        tx.execute(
+            "UPDATE djmdContent SET LabelID = ?1 WHERE ID = ?2",
+            rusqlite::params![label_id, sync.track_id],
+        )
+        .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+        any_field_set = true;
+    }
+    if let Some(title) = &sync.title {
+        tx.execute(
+            "UPDATE djmdContent SET Title = ?1 WHERE ID = ?2",
+            rusqlite::params![title, sync.track_id],
+        )
+        .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+        any_field_set = true;
+    }
+    if let Some(year) = sync.year {
+        tx.execute(
+            "UPDATE djmdContent SET ReleaseYear = ?1 WHERE ID = ?2",
+            rusqlite::params![year, sync.track_id],
+        )
+        .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+        any_field_set = true;
+    }
+
+    if any_field_set {
+        let content_usn = bump_global_usn(&tx, &now)?;
+        tx.execute(
+            "UPDATE djmdContent SET rb_local_usn = ?1, updated_at = ?2, \
+             TrackInfoUpdated = CAST(CAST(TrackInfoUpdated AS INTEGER) + 1 AS TEXT) \
+             WHERE ID = ?3",
+            rusqlite::params![content_usn, now, sync.track_id],
+        )
+        .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+    }
+
+    tx.commit().map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+
+    let plaintext2 = conn
+        .serialize(rusqlite::MAIN_DB)
+        .map_err(|e| MasterDbError::Sqlite(e.to_string()))?
+        .to_vec();
+    let raw2 = encrypt_masterdb(&plaintext2)?;
+
+    let tmp_path = pioneer_dir.join("master.db.sift-write-tmp");
+    std::fs::write(&tmp_path, &raw2).map_err(|e| MasterDbError::Io(e.to_string()))?;
+    if let Err(e) = std::fs::rename(&tmp_path, &db_path) {
+        std::fs::remove_file(&tmp_path).ok();
+        return Err(MasterDbError::Io(e.to_string()));
+    }
+
+    // Round-trip verify on a fresh connection: reopen, decrypt, and confirm
+    // the fields we set are actually visible — not just that the write
+    // syscall succeeded.
+    let verify = || -> Result<(), MasterDbError> {
+        let raw3 = std::fs::read(&db_path).map_err(|e| MasterDbError::Io(e.to_string()))?;
+        let plaintext3 = decrypt_masterdb(&raw3)?;
+        let mut conn3 =
+            Connection::open_in_memory().map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+        let len3 = plaintext3.len();
+        conn3
+            .deserialize_read_exact(rusqlite::MAIN_DB, Cursor::new(plaintext3), len3, false)
+            .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+
+        if let Some(title) = &sync.title {
+            let got: String = conn3
+                .query_row(
+                    "SELECT Title FROM djmdContent WHERE ID = ?1",
+                    rusqlite::params![sync.track_id],
+                    |row| row.get(0),
+                )
+                .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+            if &got != title {
+                return Err(MasterDbError::Sqlite(format!(
+                    "Title mismatch after write: expected {title:?}, got {got:?}"
+                )));
+            }
+        }
+        if let Some(artist) = &sync.artist {
+            let got: String = conn3
+                .query_row(
+                    "SELECT a.Name FROM djmdContent c JOIN djmdArtist a ON a.ID = c.ArtistID \
+                     WHERE c.ID = ?1",
+                    rusqlite::params![sync.track_id],
+                    |row| row.get(0),
+                )
+                .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+            // Compare with the same trim+case-insensitive rule
+            // `find_or_create_named_row` matched on — a reused existing row
+            // legitimately keeps its own stored casing/whitespace, which can
+            // differ from the raw incoming tag value.
+            if !got.trim().eq_ignore_ascii_case(artist.trim()) {
+                return Err(MasterDbError::Sqlite(format!(
+                    "Artist mismatch after write: expected {artist:?}, got {got:?}"
+                )));
+            }
+        }
+        Ok(())
+    };
+
+    match verify() {
+        Ok(()) => Ok(()),
+        Err(verify_err) => match restore_rekordbox_backup(pioneer_dir, backup_dir) {
+            Ok(()) => Err(MasterDbError::WriteVerificationFailedRolledBack(verify_err.to_string())),
+            Err(restore_err) => Err(MasterDbError::WriteVerificationFailedRollbackFailed(format!(
+                "{verify_err}; rollback also failed: {restore_err}"
+            ))),
+        },
+    }
+}
+
 // Fixture provenance: `tests/fixtures/rekordbox_master.db` is a synthetic
 // SQLCipher v4 database (3 fake tracks, 1 fake playlist, 1 fake
 // agentRegistry row, no personal data), generated by
@@ -1637,5 +1990,396 @@ mod tests {
             err,
             MasterDbError::SongPlaylistEntryNotFound { song_playlist_id: "99999999".to_string() }
         );
+    }
+
+    fn setup_fixture_copy(tmp: &tempfile::TempDir) -> (std::path::PathBuf, std::path::PathBuf) {
+        let pioneer_dir = tmp.path().join("pioneer");
+        let backup_dir = tmp.path().join("backup");
+        std::fs::create_dir_all(&pioneer_dir).expect("mkdir pioneer");
+        std::fs::copy(FIXTURE, pioneer_dir.join("master.db")).expect("copy fixture as master.db");
+        std::fs::write(pioneer_dir.join("masterPlaylists6.xml"), b"<DJ_PLAYLISTS/>")
+            .expect("write fake xml");
+        (pioneer_dir, backup_dir)
+    }
+
+    fn count_rows(conn: &Connection, table: &str) -> i64 {
+        conn.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| row.get(0))
+            .expect("count rows")
+    }
+
+    fn open_plain(path: &Path) -> Connection {
+        let raw = std::fs::read(path).expect("read master.db");
+        let plaintext = decrypt_masterdb(&raw).expect("decrypt");
+        let mut conn = Connection::open_in_memory().expect("open in-memory");
+        let len = plaintext.len();
+        conn.deserialize_read_exact(rusqlite::MAIN_DB, Cursor::new(plaintext), len, false)
+            .expect("deserialize");
+        conn
+    }
+
+    // Cas 1 (plan Task 4) : nom d'artiste déjà existant dans la fixture
+    // ("Existing Artist", ID 70000001) — mirroir direct du verdict spike 7
+    // (REUSE) : ArtistID repointe vers la ligne existante, aucune nouvelle
+    // ligne djmdArtist créée.
+    #[test]
+    fn sync_track_metadata_reuses_existing_artist() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let (pioneer_dir, backup_dir) = setup_fixture_copy(&tmp);
+        let db_path = pioneer_dir.join("master.db");
+
+        let before = open_plain(&db_path);
+        let count_before = count_rows(&before, "djmdArtist");
+        drop(before);
+
+        let sync = MetadataSync {
+            track_id: "40000002".to_string(), // track with no ArtistID set yet
+            artist: Some("Existing Artist".to_string()),
+            ..Default::default()
+        };
+        sync_track_metadata(&pioneer_dir, &backup_dir, &sync).expect("sync metadata");
+
+        let after = open_plain(&db_path);
+        let count_after = count_rows(&after, "djmdArtist");
+        assert_eq!(count_after, count_before, "no new djmdArtist row should be created (reuse)");
+
+        let artist_id: String = after
+            .query_row(
+                "SELECT ArtistID FROM djmdContent WHERE ID = '40000002'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("read ArtistID");
+        assert_eq!(artist_id, "70000001", "ArtistID should point at the existing row");
+    }
+
+    // Cas 2 : nom d'artiste inédit — mirroir direct du verdict spike 6
+    // (CREATE) : nouvelle ligne djmdArtist créée, ArtistID repointe dessus.
+    #[test]
+    fn sync_track_metadata_creates_new_artist() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let (pioneer_dir, backup_dir) = setup_fixture_copy(&tmp);
+        let db_path = pioneer_dir.join("master.db");
+
+        let before = open_plain(&db_path);
+        let count_before = count_rows(&before, "djmdArtist");
+        drop(before);
+
+        let sync = MetadataSync {
+            track_id: "40000002".to_string(),
+            artist: Some("Brand New Artist".to_string()),
+            ..Default::default()
+        };
+        sync_track_metadata(&pioneer_dir, &backup_dir, &sync).expect("sync metadata");
+
+        let after = open_plain(&db_path);
+        let count_after = count_rows(&after, "djmdArtist");
+        assert_eq!(count_after, count_before + 1, "exactly one new djmdArtist row should be created");
+
+        let (artist_id, artist_name): (String, String) = after
+            .query_row(
+                "SELECT c.ArtistID, a.Name FROM djmdContent c JOIN djmdArtist a ON a.ID = c.ArtistID \
+                 WHERE c.ID = '40000002'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("read joined artist");
+        assert_eq!(artist_name, "Brand New Artist");
+        assert_ne!(artist_id, "70000001");
+    }
+
+    // Cas 2b : variante casse/espaces d'un nom déjà existant — doit
+    // réutiliser la ligne existante (pas de doublon cosmétique), résidu de
+    // risque #1 du design fermé le 2026-07-09.
+    #[test]
+    fn sync_track_metadata_reuses_existing_artist_ignoring_case_and_whitespace() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let (pioneer_dir, backup_dir) = setup_fixture_copy(&tmp);
+        let db_path = pioneer_dir.join("master.db");
+
+        let before = open_plain(&db_path);
+        let count_before = count_rows(&before, "djmdArtist");
+        drop(before);
+
+        let sync = MetadataSync {
+            track_id: "40000002".to_string(),
+            artist: Some("  existing ARTIST  ".to_string()),
+            ..Default::default()
+        };
+        sync_track_metadata(&pioneer_dir, &backup_dir, &sync).expect("sync metadata");
+
+        let after = open_plain(&db_path);
+        assert_eq!(count_rows(&after, "djmdArtist"), count_before, "case/whitespace variant must reuse, not duplicate");
+        let (artist_id, stored_name): (String, String) = after
+            .query_row(
+                "SELECT c.ArtistID, a.Name FROM djmdContent c JOIN djmdArtist a ON a.ID = c.ArtistID \
+                 WHERE c.ID = '40000002'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("read joined artist");
+        assert_eq!(artist_id, "70000001", "must resolve to the existing row");
+        assert_eq!(stored_name, "Existing Artist", "existing row's stored Name must be untouched");
+    }
+
+    // Cas 3 : title+year seuls, aucun champ FK — écriture directe, aucune
+    // table FK touchée.
+    #[test]
+    fn sync_track_metadata_writes_title_and_year_directly_without_touching_fk_tables() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let (pioneer_dir, backup_dir) = setup_fixture_copy(&tmp);
+        let db_path = pioneer_dir.join("master.db");
+
+        let before = open_plain(&db_path);
+        let (artist_before, genre_before, label_before) = (
+            count_rows(&before, "djmdArtist"),
+            count_rows(&before, "djmdGenre"),
+            count_rows(&before, "djmdLabel"),
+        );
+        drop(before);
+
+        let sync = MetadataSync {
+            track_id: "40000002".to_string(),
+            title: Some("Renamed Title".to_string()),
+            year: Some(1999),
+            ..Default::default()
+        };
+        sync_track_metadata(&pioneer_dir, &backup_dir, &sync).expect("sync metadata");
+
+        let after = open_plain(&db_path);
+        assert_eq!(count_rows(&after, "djmdArtist"), artist_before);
+        assert_eq!(count_rows(&after, "djmdGenre"), genre_before);
+        assert_eq!(count_rows(&after, "djmdLabel"), label_before);
+
+        let (title, year): (String, i64) = after
+            .query_row(
+                "SELECT Title, ReleaseYear FROM djmdContent WHERE ID = '40000002'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("read title/year");
+        assert_eq!(title, "Renamed Title");
+        assert_eq!(year, 1999);
+    }
+
+    // Cas 4 : les 5 champs en même temps sur une piste sans aucun FK
+    // préexistant — vérifie le nombre exact de bumps USN globaux (3
+    // créations FK + 1 pour djmdContent = 4).
+    #[test]
+    fn sync_track_metadata_bumps_usn_once_per_new_fk_row_plus_once_for_content() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let (pioneer_dir, backup_dir) = setup_fixture_copy(&tmp);
+        let db_path = pioneer_dir.join("master.db");
+
+        let before = open_plain(&db_path);
+        let usn_before: i64 = before
+            .query_row(
+                "SELECT int_1 FROM agentRegistry WHERE registry_id = 'localUpdateCount'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("read usn before");
+        drop(before);
+
+        let sync = MetadataSync {
+            track_id: "40000003".to_string(), // no ArtistID/GenreID/LabelID set in fixture
+            artist: Some("Fresh Artist".to_string()),
+            genre: Some("Fresh Genre".to_string()),
+            label: Some("Fresh Label".to_string()),
+            title: Some("Fresh Title".to_string()),
+            year: Some(2020),
+        };
+        sync_track_metadata(&pioneer_dir, &backup_dir, &sync).expect("sync metadata");
+
+        let after = open_plain(&db_path);
+        let usn_after: i64 = after
+            .query_row(
+                "SELECT int_1 FROM agentRegistry WHERE registry_id = 'localUpdateCount'",
+                [],
+                |row| row.get(0),
+            )
+            .expect("read usn after");
+        assert_eq!(usn_after, usn_before + 4, "3 new FK rows + 1 djmdContent update = 4 bumps");
+    }
+
+    // Cas 5 : Analysed/AnalysisUpdated/CueUpdated inchangés — invariant M8
+    // non négociable, réaffirmé pour Tier 3 comme pour les tiers précédents.
+    #[test]
+    fn sync_track_metadata_never_touches_analysis_columns() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let (pioneer_dir, backup_dir) = setup_fixture_copy(&tmp);
+        let db_path = pioneer_dir.join("master.db");
+
+        let before = open_plain(&db_path);
+        let (analysed_before, analysis_updated_before, cue_updated_before): (String, String, String) = before
+            .query_row(
+                "SELECT Analysed, AnalysisUpdated, CueUpdated FROM djmdContent WHERE ID = '40000001'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("read analysis columns before");
+        drop(before);
+
+        let sync = MetadataSync {
+            track_id: "40000001".to_string(),
+            artist: Some("Existing Artist".to_string()),
+            title: Some("New Title".to_string()),
+            ..Default::default()
+        };
+        sync_track_metadata(&pioneer_dir, &backup_dir, &sync).expect("sync metadata");
+
+        let after = open_plain(&db_path);
+        let (analysed_after, analysis_updated_after, cue_updated_after): (String, String, String) = after
+            .query_row(
+                "SELECT Analysed, AnalysisUpdated, CueUpdated FROM djmdContent WHERE ID = '40000001'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("read analysis columns after");
+        assert_eq!(analysed_after, analysed_before);
+        assert_eq!(analysis_updated_after, analysis_updated_before);
+        assert_eq!(cue_updated_after, cue_updated_before);
+    }
+
+    #[test]
+    fn sync_track_metadata_rejects_unknown_track_id() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let (pioneer_dir, backup_dir) = setup_fixture_copy(&tmp);
+
+        let sync = MetadataSync {
+            track_id: "99999999".to_string(),
+            artist: Some("Whoever".to_string()),
+            ..Default::default()
+        };
+        let err = sync_track_metadata(&pioneer_dir, &backup_dir, &sync).unwrap_err();
+        assert_eq!(err, MasterDbError::TrackNotFound { track_id: "99999999".to_string() });
+    }
+
+    /// M8 Tier 3 real-data gate, same rationale as Tier 1's
+    /// `repair_track_path_round_trips_on_real_masterdb_copy` (the WAL-header
+    /// bug it caught, `docs/ressources-externes.md` Évaluation 18, never
+    /// showed on the synthetic fixture) — proves the find-or-create engine
+    /// against the real B-tree, not just the fixture's simplified schema.
+    ///
+    /// Exercises both branches empirically observed in M8 spikes 6/7 on the
+    /// same canary (`ID=99795585`, "Street Battle" — unique title, no
+    /// ambiguity possible): REUSE (repoint to a known-existing artist,
+    /// "Eat Static") then CREATE (a fabricated name unique to this test
+    /// run), each followed by a restore to the track's original artist —
+    /// which itself exercises REUSE again, since the original artist row
+    /// still exists.
+    ///
+    /// `#[ignore]`d — needs `SIFT_M8_REAL_COPY_DIR` (a COPY, never the live
+    /// Pioneer folder) and Rekordbox closed. Run manually:
+    /// `SIFT_M8_REAL_COPY_DIR=<path> cargo test --manifest-path
+    /// src-tauri/Cargo.toml -- --ignored sync_track_metadata_round_trips_on_real_masterdb_copy --nocapture`
+    #[test]
+    #[ignore]
+    fn sync_track_metadata_round_trips_on_real_masterdb_copy() {
+        let pioneer_dir = std::path::PathBuf::from(
+            std::env::var("SIFT_M8_REAL_COPY_DIR")
+                .expect("set SIFT_M8_REAL_COPY_DIR to a folder holding a COPY of master.db + masterPlaylists6.xml"),
+        );
+        let db_path = pioneer_dir.join("master.db");
+        assert!(db_path.exists(), "no master.db under SIFT_M8_REAL_COPY_DIR");
+
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let backup_dir = tmp.path().join("backup");
+
+        const CANARY_ID: &str = "99795585"; // "Street Battle", unique title (spikes 5/6/7)
+        const KNOWN_EXISTING_ARTIST: &str = "Eat Static"; // 31 tracks in the real library (spike 7)
+
+        let before = open_plain(&db_path);
+        let title: String = before
+            .query_row("SELECT Title FROM djmdContent WHERE ID = ?1", rusqlite::params![CANARY_ID], |row| row.get(0))
+            .expect("canary present");
+        assert_eq!(title, "Street Battle", "canary title mismatch — wrong copy?");
+        let (orig_artist_id, orig_artist_name): (String, String) = before
+            .query_row(
+                "SELECT c.ArtistID, a.Name FROM djmdContent c JOIN djmdArtist a ON a.ID = c.ArtistID \
+                 WHERE c.ID = ?1",
+                rusqlite::params![CANARY_ID],
+                |row| Ok((row.get(0)?, row.get(1)?)),
+            )
+            .expect("canary original artist");
+        let artist_count_before = count_rows(&before, "djmdArtist");
+        drop(before);
+
+        println!("baseline: canary artist={orig_artist_name:?} (ID={orig_artist_id}), {artist_count_before} djmdArtist rows");
+
+        // Phase 1: REUSE — repoint to a known-existing artist.
+        let sync_reuse = MetadataSync {
+            track_id: CANARY_ID.to_string(),
+            artist: Some(KNOWN_EXISTING_ARTIST.to_string()),
+            ..Default::default()
+        };
+        sync_track_metadata(&pioneer_dir, &backup_dir, &sync_reuse).expect("sync to existing artist");
+
+        let after_reuse = open_plain(&db_path);
+        assert_eq!(
+            count_rows(&after_reuse, "djmdArtist"),
+            artist_count_before,
+            "REUSE phase must not create a new djmdArtist row"
+        );
+        let artist_name_after_reuse: String = after_reuse
+            .query_row(
+                "SELECT a.Name FROM djmdContent c JOIN djmdArtist a ON a.ID = c.ArtistID WHERE c.ID = ?1",
+                rusqlite::params![CANARY_ID],
+                |row| row.get(0),
+            )
+            .expect("artist after reuse");
+        assert_eq!(artist_name_after_reuse, KNOWN_EXISTING_ARTIST);
+        drop(after_reuse);
+        println!("PASS: REUSE phase — repointed to existing '{KNOWN_EXISTING_ARTIST}', no new row");
+
+        // Phase 2: restore original (exercises REUSE again — original row still exists).
+        let sync_restore1 = MetadataSync {
+            track_id: CANARY_ID.to_string(),
+            artist: Some(orig_artist_name.clone()),
+            ..Default::default()
+        };
+        sync_track_metadata(&pioneer_dir, &backup_dir, &sync_restore1).expect("restore original artist");
+        let after_restore1 = open_plain(&db_path);
+        let artist_id_after_restore1: String = after_restore1
+            .query_row("SELECT ArtistID FROM djmdContent WHERE ID = ?1", rusqlite::params![CANARY_ID], |row| row.get(0))
+            .expect("artist id after restore");
+        assert_eq!(artist_id_after_restore1, orig_artist_id, "must repoint back to the exact original row (reuse, not a duplicate)");
+        assert_eq!(count_rows(&after_restore1, "djmdArtist"), artist_count_before);
+        drop(after_restore1);
+        println!("PASS: restored to original artist row via REUSE, no drift in row count");
+
+        // Phase 3: CREATE — a name guaranteed absent from the real library.
+        let fabricated_name = format!("SIFT_M8_TIER3_RUST_VERIFY_{}", std::process::id());
+        let sync_create = MetadataSync {
+            track_id: CANARY_ID.to_string(),
+            artist: Some(fabricated_name.clone()),
+            ..Default::default()
+        };
+        sync_track_metadata(&pioneer_dir, &backup_dir, &sync_create).expect("sync to fabricated artist");
+        let after_create = open_plain(&db_path);
+        assert_eq!(
+            count_rows(&after_create, "djmdArtist"),
+            artist_count_before + 1,
+            "CREATE phase must add exactly one new djmdArtist row"
+        );
+        drop(after_create);
+        println!("PASS: CREATE phase — new row for '{fabricated_name}'");
+
+        // Phase 4: restore original again, leaving the real copy clean for reruns
+        // (the orphaned fabricated-name row is left behind, matching Rekordbox's
+        // own observed behavior — spikes 6/7 — not cleaned up here either).
+        let sync_restore2 = MetadataSync {
+            track_id: CANARY_ID.to_string(),
+            artist: Some(orig_artist_name.clone()),
+            ..Default::default()
+        };
+        sync_track_metadata(&pioneer_dir, &backup_dir, &sync_restore2).expect("final restore");
+        let after_restore2 = open_plain(&db_path);
+        let artist_id_final: String = after_restore2
+            .query_row("SELECT ArtistID FROM djmdContent WHERE ID = ?1", rusqlite::params![CANARY_ID], |row| row.get(0))
+            .expect("final artist id");
+        assert_eq!(artist_id_final, orig_artist_id);
+        drop(after_restore2);
+
+        println!("PASS: sync_track_metadata round-trips cleanly on real master.db copy (REUSE + CREATE both verified)");
     }
 }

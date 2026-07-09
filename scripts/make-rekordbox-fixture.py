@@ -28,6 +28,8 @@ conn.execute(
     "CREATE TABLE djmdContent ("
     "ID TEXT PRIMARY KEY, Title TEXT, FolderPath TEXT, "
     "FileNameL TEXT, FileNameS TEXT, "
+    "ArtistID TEXT, GenreID TEXT, LabelID TEXT, ReleaseYear INTEGER, "
+    "TrackInfoUpdated TEXT, Analysed TEXT, AnalysisUpdated TEXT, CueUpdated TEXT, "
     "rb_local_usn INTEGER, updated_at TEXT)"
 )
 conn.execute("CREATE TABLE djmdPlaylist (ID TEXT PRIMARY KEY, Name TEXT, ParentID TEXT)")
@@ -38,16 +40,55 @@ conn.execute(
 conn.execute(
     "CREATE TABLE agentRegistry (registry_id TEXT PRIMARY KEY, int_1 INTEGER, updated_at TEXT)"
 )
+# Schema verified identical across the 3 FK tables against a real master.db
+# copy (2026-07-09, pyrekordbox.db6.tables) — djmdArtist additionally has
+# SearchStr, never populated in our observations, omitted here too.
+for fk_table in ("djmdArtist", "djmdGenre", "djmdLabel"):
+    conn.execute(
+        f"CREATE TABLE {fk_table} ("
+        "ID TEXT PRIMARY KEY, Name TEXT, UUID TEXT, "
+        "rb_data_status INTEGER, rb_local_data_status INTEGER, "
+        "rb_local_deleted INTEGER, rb_local_synced INTEGER, "
+        "usn TEXT, rb_local_usn INTEGER, created_at TEXT, updated_at TEXT)"
+    )
 
 conn.executemany(
-    "INSERT INTO djmdContent VALUES (?, ?, ?, ?, ?, ?, ?)",
+    "INSERT INTO djmdArtist VALUES (?, ?, ?, 0, 0, 0, 0, NULL, ?, ?, ?)",
+    [
+        ("70000001", "Existing Artist", "aaaaaaaa-0000-0000-0000-000000000001", 500,
+         "2026-01-01 00:00:00.000000", "2026-01-01 00:00:00.000000"),
+    ],
+)
+conn.executemany(
+    "INSERT INTO djmdGenre VALUES (?, ?, ?, 0, 0, 0, 0, NULL, ?, ?, ?)",
+    [
+        ("71000001", "Existing Genre", "aaaaaaaa-0000-0000-0000-000000000002", 500,
+         "2026-01-01 00:00:00.000000", "2026-01-01 00:00:00.000000"),
+    ],
+)
+conn.executemany(
+    "INSERT INTO djmdLabel VALUES (?, ?, ?, 0, 0, 0, 0, NULL, ?, ?, ?)",
+    [
+        ("72000001", "Existing Label", "aaaaaaaa-0000-0000-0000-000000000003", 500,
+         "2026-01-01 00:00:00.000000", "2026-01-01 00:00:00.000000"),
+    ],
+)
+
+conn.executemany(
+    "INSERT INTO djmdContent VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
     [
         ("40000001", "Synthetic Test Track One", "D:/FIXTURE/track1.mp3",
-         "track1.mp3", "track1.mp3", 1000, "2026-01-01 00:00:00.000000"),
+         "track1.mp3", "track1.mp3", "70000001", "71000001", "72000001", 2020,
+         "5", "true", "2026-01-01 00:00:00.000000", "2026-01-01 00:00:00.000000",
+         1000, "2026-01-01 00:00:00.000000"),
         ("40000002", "Synthetic Test Track Two", "D:/FIXTURE/track2.flac",
-         "track2.flac", "track2.flac", 1000, "2026-01-01 00:00:00.000000"),
+         "track2.flac", "track2.flac", None, None, None, None,
+         "5", "true", "2026-01-01 00:00:00.000000", "2026-01-01 00:00:00.000000",
+         1000, "2026-01-01 00:00:00.000000"),
         ("40000003", "Synthetic Test Track Three", "D:/FIXTURE/track3.wav",
-         "track3.wav", "track3.wav", 1000, "2026-01-01 00:00:00.000000"),
+         "track3.wav", "track3.wav", None, None, None, None,
+         "5", "true", "2026-01-01 00:00:00.000000", "2026-01-01 00:00:00.000000",
+         1000, "2026-01-01 00:00:00.000000"),
     ],
 )
 conn.execute("INSERT INTO djmdPlaylist VALUES ('50000001', 'Fixture Playlist', NULL)")
