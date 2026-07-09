@@ -1043,6 +1043,18 @@ function actionButtonHtml(running: boolean): string {
   return `<button data-sift="batchaction" class="sift-baction" style="background:var(--color-background-info);color:var(--color-text-info)">Ranger (${fileN}) · Écarter (${fakeN})</button>`;
 }
 
+/** Positions the batch Format thumb from whichever button currently carries `.on`. Called both
+ * right after a full rebuild (fresh node — just places it) and, deferred by a frame, right after a
+ * format click (see the "batchformat" handler) so the move is what actually animates. */
+function positionBatchFmtThumb(): void {
+  const seg = document.getElementById("sift-batch-fmt-seg");
+  const thumb = seg?.querySelector<HTMLElement>(".sift-seg-thumb");
+  const onEl = seg?.querySelector<HTMLElement>("[data-sift='batchformat'].on");
+  if (!thumb || !onEl) return;
+  thumb.style.width = `${onEl.offsetWidth}px`;
+  thumb.style.transform = `translateX(${onEl.offsetLeft}px)`;
+}
+
 /** Right-rail summary for batch mode (board's SELECTION / DESTINATION / WILL ENCODE / EXCLUDED).
  * Replaces the filing footer + hides the folder tree while batching. */
 function renderBatchRail(reviewN: number) {
@@ -1073,12 +1085,19 @@ function renderBatchRail(reviewN: number) {
   // Same chip markup as the Détail rail (filing.ts renderFoot) — clickable affordance (hover +
   // "on" state) instead of a bespoke pill track, per audit 2026-07-05 (annotation: "pas clair
   // que les boutons sont clickables").
+  // Audit-ref (Bibliothèque/rail batch, 2026-07-09) : <span> → <button> (cohérence), thumb glissant
+  // ajouté. Contrairement à Journal/Bibliothèque, renderBatchRail() n'est PAS async — le clic
+  // rebuild tout de suite dans le même tick, donc "toggle en place puis laisser l'async peindre"
+  // ne marche pas ici. La rebuild est différée d'une frame (requestAnimationFrame, voir le handler
+  // "batchformat" plus bas) pour laisser le navigateur peindre le toggle avant que le DOM soit
+  // remplacé — seul site qui a besoin de ce délai explicite.
   const formatBlock =
-    `<div class="sift-rail-fmt-group"><span class="col-h">Format</span><div class="sift-seg">` +
+    `<div class="sift-rail-fmt-group"><span class="col-h">Format</span><div class="sift-seg sift-seg-thumbed" id="sift-batch-fmt-seg">` +
+    `<div class="sift-seg-thumb"></div>` +
     (["mp3_320", "aiff_16_44", "wav_16_44"] as Target[])
       .map(
         (t) =>
-          `<span class="sift-seg-opt${batchFormat === t ? " on" : ""}" data-sift="batchformat" data-t="${t}">${TARGET_LABEL[t]}</span>`,
+          `<button class="sift-seg-opt${batchFormat === t ? " on" : ""}" data-sift="batchformat" data-t="${t}">${TARGET_LABEL[t]}</button>`,
       )
       .join("") +
     `</div></div>`;
@@ -1110,6 +1129,7 @@ function renderBatchRail(reviewN: number) {
   // so Filing X/N + Analysing render here with no duplicated logic. Detail restores it via setReviewMode.
   mountProgressZone(requireEl("#sift-batch-progress", "renderBatchRail progress slot"));
   repositionDestPopoverIfOpen(); // the destbtn above was just rebuilt — keep an open popover glued to it
+  positionBatchFmtThumb(); // fresh node post-rebuild — no prior transform, just place it
 }
 
 /** Switch between detail and batch review. On entering batch the #fldz tree becomes the destination
@@ -1865,6 +1885,19 @@ async function renderRekordboxLive(): Promise<void> {
   content.innerHTML = intro + driftBanner + rekordboxCardHtml(status) + masterdbSection + dedupSection;
 }
 
+/** Positions the Dossiers/Genres thumb from whichever button currently carries `.on`. Called both
+ * right after a full rebuild (fresh node — just places it) and immediately on facet click before
+ * renderBiblioLive()'s async IPC round-trip rebuilds everything (see the "facet" branch below) —
+ * that's the call that actually animates, same pattern as Journal's positionJournalThumb(). */
+function positionFacetThumb(): void {
+  const seg = document.getElementById("sift-bib-facet-seg");
+  const thumb = seg?.querySelector<HTMLElement>(".sift-seg-thumb");
+  const onEl = seg?.querySelector<HTMLElement>("[data-bib='facet'].on");
+  if (!thumb || !onEl) return;
+  thumb.style.width = `${onEl.offsetWidth}px`;
+  thumb.style.transform = `translateX(${onEl.offsetLeft}px)`;
+}
+
 /** Live Bibliothèque view: lists filed tracks with search + quality chips + folder/genre
  * facets, wired to real data. Actions go through the #pa delegated handler (data-bib). */
 async function renderBiblioLive() {
@@ -1908,7 +1941,10 @@ async function renderBiblioLive() {
     // grammar elsewhere, e.g. genre chips).
     // Audit-ref B3 (Bibliothèque, 2026-07-09) : <span> converti en <button>, incohérent avec le
     // reste de l'app où .sift-seg-opt est toujours un vrai bouton (déjà clavier-natif du coup).
-    `<div class="sift-seg" style="margin-bottom:8px">` +
+    // Thumb glissant ajouté (retour Antoine, même jour) — voir positionFacetThumb() : classes
+    // togglées en place au clic avant le rebuild (async, IPC), même pattern que Journal.
+    `<div class="sift-seg sift-seg-thumbed" id="sift-bib-facet-seg" style="margin-bottom:8px">` +
+    `<div class="sift-seg-thumb"></div>` +
     `<button class="sift-seg-opt${bibState.facet === "folder" ? " on" : ""}" data-bib="facet" data-f="folder">Dossiers</button>` +
     `<button class="sift-seg-opt${bibState.facet === "genre" ? " on" : ""}" data-bib="facet" data-f="genre">Genres</button></div>` +
     // Audit-ref B1 : tabindex/role="button", clavier via installNavKeyboard() étendu (chrome.ts).
@@ -1967,6 +2003,7 @@ async function renderBiblioLive() {
       dupSection +
       `<div id="bibplayer"></div></div></div>`;
   wireEmptyState(content);
+  positionFacetThumb(); // fresh node post-rebuild — no prior transform, just place it
 
   if (trulyEmpty) return; // no header/search — nothing left to wire
 
@@ -2204,6 +2241,12 @@ export function installLiveWiring() {
         void renderBiblioLive();
       } else if (act === "facet") {
         bibState.facet = bibEl.dataset.f === "genre" ? "genre" : "folder";
+        // Toggle in place first (existing node, animates) — renderBiblioLive() is async (IPC),
+        // so the browser paints this before the rebuild overwrites the DOM.
+        document
+          .querySelectorAll<HTMLElement>("#sift-bib-facet-seg [data-bib='facet']")
+          .forEach((b) => b.classList.toggle("on", b.dataset.f === bibState.facet));
+        positionFacetThumb();
         void renderBiblioLive();
       } else if (act === "pick") {
         const key = bibEl.dataset.key as "folder" | "genre";
@@ -2325,7 +2368,17 @@ export function installLiveWiring() {
     } else if (act === "batchformat") {
       e.stopPropagation();
       batchFormat = el.dataset.t as Target;
-      renderBatchRail(currentItems.filter((it) => it.verdict !== "ok").length);
+      // Toggle + reposition in place first, then let a frame paint before renderBatchRail()
+      // rebuilds the whole rail synchronously (not async like Journal/Bibliothèque — nothing to
+      // await here — so without this rAF the toggle and the rebuild land in the same tick and
+      // there is nothing to animate FROM).
+      document
+        .querySelectorAll<HTMLElement>("#sift-batch-fmt-seg [data-sift='batchformat']")
+        .forEach((b) => b.classList.toggle("on", b.dataset.t === batchFormat));
+      positionBatchFmtThumb();
+      requestAnimationFrame(() => {
+        renderBatchRail(currentItems.filter((it) => it.verdict !== "ok").length);
+      });
     } else if (act === "batchopen") {
       e.stopPropagation();
       const id = Number(el.dataset.id);

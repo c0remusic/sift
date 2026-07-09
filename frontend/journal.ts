@@ -116,16 +116,35 @@ function sectionHtml(cat: Cat): string {
 </details>`;
 }
 
+// Audit-ref (Journal, 2026-07-09, retour Antoine "animation pour toutes les pastilles") : thumb
+// glissant ajouté. renderJournal()/renderJournalExtended() reconstruisent tout #content à chaque
+// appel (listJournal() est un aller-retour IPC, pas instantané) — le clic toggle les classes EN
+// PLACE sur le header existant d'abord (installDelegate, plus bas), le navigateur a le temps de
+// peindre cet état intermédiaire pendant l'await avant que le rebuild complet n'écrase le DOM,
+// donc l'animation se voit malgré l'architecture "reconstruit tout".
 function headerHtml(activeMode: "session" | "all"): string {
   const sessionCls = activeMode === "session" ? " on" : "";
   const allCls = activeMode === "all" ? " on" : "";
   return `<div class="jrnl-hd">\
 <span>Journal</span>\
-<div class="sift-seg">\
+<div class="sift-seg sift-seg-thumbed">\
+<div class="sift-seg-thumb"></div>\
 <button class="sift-seg-opt${sessionCls}" data-jact="mode-session">Session courante</button>\
 <button class="sift-seg-opt${allCls}" data-jact="mode-all">Tout l'historique</button>\
 </div>\
 </div>`;
+}
+
+/** Positions the mode-toggle thumb from whichever button currently carries `.on`. Called both
+ * right after a full rebuild (fresh node, no prior transform — just places it) and immediately
+ * on click before the rebuild (see installDelegate) so the move is what actually animates. */
+function positionJournalThumb(root: HTMLElement): void {
+  const seg = root.querySelector<HTMLElement>(".jrnl-hd .sift-seg");
+  const thumb = seg?.querySelector<HTMLElement>(".sift-seg-thumb");
+  const onEl = seg?.querySelector<HTMLElement>("[data-jact].on");
+  if (!thumb || !onEl) return;
+  thumb.style.width = `${onEl.offsetWidth}px`;
+  thumb.style.transform = `translateX(${onEl.offsetLeft}px)`;
 }
 
 // ---------------------------------------------------------------------------
@@ -253,9 +272,24 @@ function installDelegate(
   root.addEventListener("click", (ev: MouseEvent) => {
     const t = ev.target as Element;
 
-    // Mode switches
-    if (t.closest("[data-jact='mode-session']")) { void renderJournal(); return; }
-    if (t.closest("[data-jact='mode-all']")) { void renderJournalExtended(); return; }
+    // Mode switches — toggle the thumb IN PLACE first (existing header node, animates), the full
+    // rebuild that follows is async (listJournal() IPC) so the browser paints this first.
+    if (t.closest("[data-jact='mode-session']")) {
+      root.querySelectorAll<HTMLElement>(".jrnl-hd [data-jact]").forEach((b) =>
+        b.classList.toggle("on", b.dataset.jact === "mode-session"),
+      );
+      positionJournalThumb(root);
+      void renderJournal();
+      return;
+    }
+    if (t.closest("[data-jact='mode-all']")) {
+      root.querySelectorAll<HTMLElement>(".jrnl-hd [data-jact]").forEach((b) =>
+        b.classList.toggle("on", b.dataset.jact === "mode-all"),
+      );
+      positionJournalThumb(root);
+      void renderJournalExtended();
+      return;
+    }
   }, { signal: _delegateAbort.signal });
 }
 
@@ -296,6 +330,7 @@ ${voirToutHtml}\
 </div>`;
 
   installDelegate(content, entries, () => renderJournal());
+  positionJournalThumb(content); // fresh node post-rebuild — no prior transform, just place it
   wireEmptyState(content);
 }
 
@@ -350,5 +385,6 @@ ${bodyHtml}\
 </div>`;
 
   installDelegate(content, all, () => renderJournalExtended());
+  positionJournalThumb(content); // fresh node post-rebuild — no prior transform, just place it
   wireEmptyState(content);
 }
