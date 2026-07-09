@@ -300,7 +300,9 @@ function binNodeHtml(node: { rel: string; name: string; depth: number }): string
     : "";
   const iconColor = on ? "var(--color-text-info)" : "var(--color-text-tertiary)";
   const weight = on ? "font-weight:500;" : "";
-  let html = `<div class="fld${on} sift-fld-row" data-fil="bin" data-rel="${esc(node.rel)}" title="${esc(
+  // Audit-ref R4 (Revue, 2026-07-08, réf. shadcn Sidebar) : tabindex+role, clavier via
+  // installNavKeyboard() (chrome.ts, sélecteur étendu pour [data-fil="bin"]).
+  let html = `<div class="fld${on} sift-fld-row" data-fil="bin" data-rel="${esc(node.rel)}" tabindex="0" role="button" title="${esc(
     absPath(node.rel),
   )}" style="${sel};${weight}padding-left:${6 + indent}px">${caret}<i class="ti ${icon} sift-fld-icon" style="font-size:var(--text-base);color:${iconColor}"></i><span class="sift-fld-label">${esc(
     node.name,
@@ -315,7 +317,7 @@ function flatBinHtml(b: Bin): string {
   const on = b.rel === selRel() ? " on" : "";
   const sel = on ? "background:var(--color-background-info);border-radius:var(--border-radius-sm,4px);" : "";
   const color = on ? "var(--color-text-info)" : "var(--color-text-tertiary)";
-  return `<div class="fld${on} sift-fld-flat-row" data-fil="bin" data-rel="${esc(b.rel)}" title="${esc(
+  return `<div class="fld${on} sift-fld-flat-row" data-fil="bin" data-rel="${esc(b.rel)}" tabindex="0" role="button" title="${esc(
     absPath(b.rel),
   )}" style="${sel}"><i class="ti ti-folder sift-fld-icon" style="font-size:var(--text-base);color:${color}"></i><span class="sift-fld-label">${esc(
     b.rel,

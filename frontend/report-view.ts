@@ -287,7 +287,10 @@ function playerRowHtml(name: string, path: string, closeBtn = false, headerOpts:
     // a simpler speaker glyph, no sound-wave arcs, consistent with the flat/abstract direction
     // already taken for the cover fallback.
     `<i class="ti ti-volume sift-volume-icon" title="Volume" aria-label="Volume"></i>` +
-    `<div class="sift-slider-track sift-volume-track">` +
+    // Audit-ref R1 (Revue, 2026-07-08, réf. shadcn Slider/Radix) : aucun role="slider"/
+    // aria-valuenow dans tout le projet avant ce fix — drag-only (pointerdown), pas de clavier.
+    // aria-valuenow tenu à jour dans renderVolume/renderTempo (mountPlayer, plus bas).
+    `<div class="sift-slider-track sift-volume-track" tabindex="0" role="slider" aria-label="Volume" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100">` +
     `<div class="sift-slider-rail"></div>` +
     `<div class="sift-slider-fill sift-volume-fill"></div>` +
     `<div class="sift-slider-thumb sift-volume-thumb"></div>` +
@@ -295,11 +298,11 @@ function playerRowHtml(name: string, path: string, closeBtn = false, headerOpts:
     `<div class="sift-player-spacer"></div>` +
     `<div class="sift-key-block" title="Key-lock : le tempo ne change pas la tonalité (off = varispeed)">` +
     `<span class="sift-slider-label">Key-lock</span>` +
-    `<button class="sift-key sift-key-btn">ON</button>` +
+    `<button class="sift-key sift-key-btn" aria-pressed="true">ON</button>` +
     `</div>` +
     `<div class="sift-slider-block">` +
     `<span class="sift-slider-label">Tempo<span class="sift-tempo-out">0%</span></span>` +
-    `<div class="sift-slider-track sift-tempo-track" title="Tempo — double-clic = réinitialiser">` +
+    `<div class="sift-slider-track sift-tempo-track" title="Tempo — double-clic = réinitialiser" tabindex="0" role="slider" aria-label="Tempo" aria-valuemin="-8" aria-valuemax="8" aria-valuenow="0">` +
     `<div class="sift-slider-rail"></div>` +
     `<div class="sift-slider-fill sift-tempo-fill"></div>` +
     `<div class="sift-slider-thumb sift-tempo-thumb"></div>` +
@@ -420,7 +423,7 @@ function spectroAndTagsHtml(r: AnalysisReport): string {
     `<div class="sift-sg-body sift-spectro-body">` +
     `<div class="sift-spectro-body-inner">` +
     `<div class="sift-spectro-declared">Déclaré <span class="pill">${esc(r.declared_format)}</span> ${r.declared_rail}${r.declared_bitrate ? " · " + r.declared_bitrate + " kbps" : ""} · coupure ${fmt(r.cutoff_hz, 0)} Hz — ${spectroCaption(r.verdict)}</div>` +
-    `<canvas class="sift-sg sift-spectro-canvas" width="720" height="180"></canvas>` +
+    `<canvas class="sift-sg sift-spectro-canvas" width="720" height="180" role="img" aria-label="Spectrogramme audio"></canvas>` +
     `<div class="sift-spectro-rows">` +
     row("Verdict", r.verdict) +
     row("Coupure", fmt(r.cutoff_hz, 0) + " Hz") +
@@ -599,6 +602,7 @@ async function mountPlayer(root: HTMLElement, path: string, peaks?: number[], du
   const refreshKey = () => {
     if (!keyEl) return;
     keyEl.textContent = keyLock ? "ON" : "OFF";
+    keyEl.setAttribute("aria-pressed", String(keyLock)); // audit-ref R2 (Revue, 2026-07-08)
     keyEl.style.background = keyLock ? "var(--color-background-info)" : "transparent";
     keyEl.style.color = keyLock ? "var(--color-text-info)" : "var(--color-text-tertiary)";
     keyEl.style.borderColor = keyLock ? "var(--color-border-info)" : "var(--color-border-tertiary)";
@@ -641,12 +645,37 @@ async function mountPlayer(root: HTMLElement, path: string, peaks?: number[], du
   const renderVolume = (pct: number) => {
     if (volumeFill) volumeFill.style.width = `${pct * 100}%`;
     if (volumeThumb) volumeThumb.style.left = `${pct * 100}%`;
+    volumeTrack?.setAttribute("aria-valuenow", String(Math.round(pct * 100))); // audit-ref R1
   };
   renderVolume(1); // WaveSurfer's own default (full volume)
   if (volumeTrack) {
     dragSlider(volumeTrack, (pct) => {
       ws.setVolume(pct);
       renderVolume(pct);
+    });
+    // Audit-ref R1 (Revue, 2026-07-08, réf. shadcn Slider) : flèches gauche/droite ±5%, Home/End
+    // aux bornes — même granularité que le drag existant (continu), pas de pas caché supplémentaire.
+    volumeTrack.addEventListener("keydown", (e) => {
+      const cur = ws.getVolume();
+      if (e.key === "ArrowLeft" || e.key === "ArrowDown") {
+        e.preventDefault();
+        const next = Math.max(0, cur - 0.05);
+        ws.setVolume(next);
+        renderVolume(next);
+      } else if (e.key === "ArrowRight" || e.key === "ArrowUp") {
+        e.preventDefault();
+        const next = Math.min(1, cur + 0.05);
+        ws.setVolume(next);
+        renderVolume(next);
+      } else if (e.key === "Home") {
+        e.preventDefault();
+        ws.setVolume(0);
+        renderVolume(0);
+      } else if (e.key === "End") {
+        e.preventDefault();
+        ws.setVolume(1);
+        renderVolume(1);
+      }
     });
   }
 
@@ -668,6 +697,7 @@ async function mountPlayer(root: HTMLElement, path: string, peaks?: number[], du
     }
     if (tempoThumb) tempoThumb.style.left = `${pct}%`;
     if (tempoOut) tempoOut.textContent = `${tempoValue > 0 ? "+" : ""}${Math.round(tempoValue)}%`;
+    tempoTrack?.setAttribute("aria-valuenow", String(Math.round(tempoValue))); // audit-ref R1
     if (syncAudio) scheduleTempoRate();
   };
   renderTempo();
@@ -685,6 +715,26 @@ async function mountPlayer(root: HTMLElement, path: string, peaks?: number[], du
       tempoValue = 0;
       renderTempo(false);
       applyRate();
+    });
+    // Audit-ref R1 (Revue, 2026-07-08) : flèches ±1% (le pas affiché), Home/End aux bornes.
+    tempoTrack.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowLeft" || e.key === "ArrowDown") {
+        e.preventDefault();
+        tempoValue = Math.max(-8, tempoValue - 1);
+        renderTempo();
+      } else if (e.key === "ArrowRight" || e.key === "ArrowUp") {
+        e.preventDefault();
+        tempoValue = Math.min(8, tempoValue + 1);
+        renderTempo();
+      } else if (e.key === "Home") {
+        e.preventDefault();
+        tempoValue = -8;
+        renderTempo();
+      } else if (e.key === "End") {
+        e.preventDefault();
+        tempoValue = 8;
+        renderTempo();
+      }
     });
   }
   // SoundCloud-style: elapsed (left) + remaining (right) shown at once, overlaid on the waveform

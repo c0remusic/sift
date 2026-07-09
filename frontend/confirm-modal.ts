@@ -17,6 +17,12 @@ export function confirmAction(message: string, confirmLabel = "Confirmer"): Prom
 
     const card = document.createElement("div");
     card.className = "sift-report-overlay-card sift-confirm-card sift-report-overlay-card-blur";
+    // Audit-ref R5 (Revue, 2026-07-08, réf. shadcn Alert Dialog) : ni sémantique modale ni Escape
+    // avant ce fix — seul le clic sur le fond annulait. Cette modale gère des actions destructives
+    // (règle CLAUDE.md anti-window.confirm()), donc le clavier doit marcher comme partout ailleurs.
+    card.setAttribute("role", "alertdialog");
+    card.setAttribute("aria-modal", "true");
+    card.setAttribute("aria-label", message);
 
     const msg = document.createElement("div");
     msg.className = "sift-confirm-msg";
@@ -37,11 +43,17 @@ export function confirmAction(message: string, confirmLabel = "Confirmer"): Prom
     card.append(msg, actions);
     overlay.appendChild(card);
     document.body.appendChild(overlay);
+    confirmBtn.focus(); // R5 : focus déplacé dans la modale à l'ouverture, pas laissé sur l'appelant
 
     const finish = (result: boolean) => {
+      document.removeEventListener("keydown", onKeydown);
       overlay.remove();
       resolve(result);
     };
+    const onKeydown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") finish(false); // R5 : Escape annule, comme shadcn Alert Dialog
+    };
+    document.addEventListener("keydown", onKeydown);
     cancelBtn.addEventListener("click", () => finish(false));
     confirmBtn.addEventListener("click", () => finish(true));
     overlay.addEventListener("click", (e) => {

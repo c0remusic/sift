@@ -123,7 +123,10 @@ function rowInner(kind: TaskKind, p: TaskProgress): string {
     `<span class="sift-pz-name"><i class="ti ${ICONS[kind]}" aria-hidden="true"></i>${label}</span>` +
     `<span class="sift-pz-end"><span class="sift-pz-count">${p.done}/${p.total}</span>${stop}</span>` +
     `</div>` +
-    `<div class="sift-pz-track"><div class="sift-pz-fill" style="transform:scaleX(${pct / 100})"></div></div>`
+    // Audit-ref R6 (Revue, 2026-07-08, réf. shadcn Progress) : aucun role/aria avant ce fix.
+    // aria-valuenow mis à jour dans render()'s fast path (le pct courant, pas seulement à la
+    // création) — rowInner ne tourne qu'à la création ou au changement de structure, pas à chaque tick.
+    `<div class="sift-pz-track" role="progressbar" aria-label="${label}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="${pct}"><div class="sift-pz-fill" style="transform:scaleX(${pct / 100})"></div></div>`
   );
 }
 
@@ -133,6 +136,7 @@ interface RowCache {
   rowEl: HTMLElement;
   countEl: HTMLElement;
   fillEl: HTMLElement;
+  trackEl: HTMLElement; // audit-ref R6: aria-valuenow lives here, ticked alongside fillEl
   sig: string;
 }
 const rowCache = new Map<TaskKind, RowCache>();
@@ -173,6 +177,7 @@ function render(): void {
         rowEl,
         countEl: requireEl<HTMLElement>(".sift-pz-count", "progress-zone row", rowEl),
         fillEl: requireEl<HTMLElement>(".sift-pz-fill", "progress-zone row", rowEl),
+        trackEl: requireEl<HTMLElement>(".sift-pz-track", "progress-zone row", rowEl),
         sig,
       });
     } else if (cached.sig !== sig) {
@@ -182,12 +187,14 @@ function render(): void {
       cached.rowEl.innerHTML = rowInner(kind, p);
       cached.countEl = requireEl<HTMLElement>(".sift-pz-count", "progress-zone row", cached.rowEl);
       cached.fillEl = requireEl<HTMLElement>(".sift-pz-fill", "progress-zone row", cached.rowEl);
+      cached.trackEl = requireEl<HTMLElement>(".sift-pz-track", "progress-zone row", cached.rowEl);
       cached.sig = sig;
     } else {
       // Same structure → write only the two moving values. No innerHTML, no node churn.
       const pct = p.total > 0 ? Math.min(100, Math.round((p.done / p.total) * 100)) : 0;
       cached.countEl.textContent = `${p.done}/${p.total}`;
       cached.fillEl.style.transform = `scaleX(${pct / 100})`;
+      cached.trackEl.setAttribute("aria-valuenow", String(pct)); // audit-ref R6
     }
   }
 }

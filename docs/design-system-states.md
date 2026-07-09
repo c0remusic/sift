@@ -685,6 +685,30 @@ Vérifié : `npx tsc --noEmit` clean après chaque édit. Vérification visuelle
 
 ---
 
+## Écran Revue — audit référence canonique (2026-07-08/09)
+
+Task 2 du chantier `docs/superpowers/changes/2026-07-08-ui-reference-audit/`.
+Référence consultée : registre officiel shadcn (MCP `shadcn`).
+
+| Élément | Verdict | Détail |
+|---|---|---|
+| `zoneToggleHtml` (Diagnostic/Métadonnées) | Conforme | `aria-expanded` déjà correct, réf. shadcn Collapsible |
+| Badges verdict (`.sift-vchip`/`.sift-chip-badge`) | Conforme | Déjà le pattern Custom Colors (fond teinté), réf. shadcn Badge |
+| Candidats Discogs (`sift-cand`) | Conforme | Vrais `<button>` + `<details>/<summary>` natif, accessible par défaut |
+| Chips genre (`sift-genre-chip`) | Conforme | Display-only (pas cliquable), `<span>` correct |
+| Sliders Volume/Tempo (`report-view.ts`) | **Corrigé** | Zéro `role="slider"`/`aria-valuenow` avant fix — drag-only, aucun clavier. Ajout `role="slider"` + `aria-valuemin/max/now` (tenus à jour en live) + flèches clavier (Volume ±5%, Tempo ±1%, Home/End), réf. shadcn Slider (Radix) |
+| Toggle Key-lock | **Corrigé** | `<button>` déjà focusable mais sans `aria-pressed` — ajouté, synchronisé dans `refreshKey()` |
+| Canvas spectrogramme | **Corrigé** | `role="img"` + `aria-label="Spectrogramme audio"` ajoutés (mineur) |
+| Arbre de destination (`.fld`, `filing.ts`) | **Corrigé** | Même motif qu'Accueil : `<div data-fil="bin">` sans clavier — `tabindex`/`role="button"` ajoutés, `installNavKeyboard()` (chrome.ts) étendu pour couvrir `[data-fil="bin"]` |
+| Overlay de confirmation (`confirm-modal.ts`) | **Corrigé** | Ni `role="alertdialog"`/`aria-modal`, ni focus déplacé à l'ouverture, ni Escape — seul le clic sur le fond annulait. Utilisée avant toute action destructive (règle CLAUDE.md anti-`window.confirm()`), donc corrigée en priorité : les 3 ajoutés, réf. shadcn Alert Dialog |
+| Barre de progression (`.sift-pz-fill`, `progress-zone.ts`) | **Corrigé** | Aucun `role="progressbar"`/`aria-valuenow` — ajoutés, `aria-valuenow` mis à jour dans le fast-path de tick (pas seulement à la création de la ligne), réf. shadcn Progress |
+
+Vérifié : `npx tsc --noEmit` clean après chaque édit. Vérification visuelle
+(clavier sliders/arbre/modale, lecteur, spectrogramme) dans `tauri dev` par
+Antoine restante.
+
+---
+
 ## Historique des corrections
 
 **2026-07-05 (pochette réellement cassée + sélection multi Alt+Clic)** :
