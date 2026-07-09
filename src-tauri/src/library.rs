@@ -46,6 +46,8 @@ pub struct LibraryFilter {
     pub q: Option<String>,
     /// Restrict to a verdict (currently only "fake" is used, by the dashboard's "À re-sourcer" card).
     pub verdict: Option<String>,
+    /// Restrict by artist (exact match on `metadata.artist`).
+    pub artist: Option<String>,
 }
 
 /// A facet bucket (folder or genre) with its filed-track count.
@@ -215,6 +217,9 @@ pub fn list_filed(
     if f.genre.is_some() {
         sql.push_str(" AND t.id IN (SELECT track_id FROM track_genres WHERE genre = :genre)");
     }
+    if f.artist.is_some() {
+        sql.push_str(" AND m.artist = :artist");
+    }
     sql.push_str(" ORDER BY m.artist, m.title, t.path");
 
     let like = f.q.as_ref().map(|q| format!("%{q}%"));
@@ -232,6 +237,9 @@ pub fn list_filed(
         }
         if let Some(g) = &f.genre {
             p.push((":genre", g));
+        }
+        if let Some(artist) = &f.artist {
+            p.push((":artist", artist as &dyn rusqlite::ToSql));
         }
         p
     };
@@ -611,6 +619,20 @@ mod tests {
         let rows = list_filed(&conn, &f).unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].id, 1);
+    }
+
+    #[test]
+    fn list_filed_filters_by_artist() {
+        let conn = db();
+        conn.execute("INSERT INTO tracks(id, path, status) VALUES(1, '/lib/a.mp3', 'filed')", []).unwrap();
+        conn.execute("INSERT INTO metadata(track_id, artist) VALUES(1, 'Aya')", []).unwrap();
+        conn.execute("INSERT INTO tracks(id, path, status) VALUES(2, '/lib/b.mp3', 'filed')", []).unwrap();
+        conn.execute("INSERT INTO metadata(track_id, artist) VALUES(2, 'Rob & Si')", []).unwrap();
+
+        let f = LibraryFilter { artist: Some("Aya".into()), ..Default::default() };
+        let tracks = list_filed(&conn, &f).unwrap();
+        assert_eq!(tracks.len(), 1);
+        assert_eq!(tracks[0].artist.as_deref(), Some("Aya"));
     }
 
     #[test]
