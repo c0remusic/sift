@@ -727,6 +727,36 @@ liens boutique) dans `tauri dev` par Antoine restante.
 
 ---
 
+## Écran Journal — audit référence canonique (2026-07-09)
+
+Task 4 du chantier `docs/superpowers/changes/2026-07-08-ui-reference-audit/`.
+**Aucune divergence trouvée** — écran déjà conforme sur toute la ligne :
+`<details>/<summary>` natif pour les catégories (FILÉS/JETÉS/REJETÉS,
+accessible par défaut), vrais `<button>` partout (revert par ligne,
+mass-revert, mode Session/Historique — déjà `.sift-seg` unifié le
+2026-07-08), toasts déjà `aria-live="polite"`/`"assertive"`.
+
+---
+
+## Écran Bibliothèque — audit référence canonique (2026-07-09)
+
+Task 5 du chantier `docs/superpowers/changes/2026-07-08-ui-reference-audit/`.
+
+| Élément | Verdict | Détail |
+|---|---|---|
+| Facettes Dossiers/Genres (`.fld`, `data-bib="pick"`) | **Corrigé** | Même motif que partout ailleurs — `tabindex`/`role="button"` ajoutés, clavier via `installNavKeyboard()` étendu |
+| Segmented Dossiers/Genres (`data-bib="facet"`) | **Corrigé** | `<span>` → `<button>` — incohérent avec le reste de l'app où `.sift-seg-opt` est toujours un vrai bouton |
+| Chips filtre qualité (`.chip`, `qual`/`dupscan`) | **Corrigé** | `<span>` → `<button>` — `.chip` avait déjà ses propres `border`/`padding`/hover réaffirmé, zéro changement visuel attendu |
+| Ligne de piste (`.lr`, `data-bib="row"`) | **Corrigé** | Ligne cliquable (ouvre le détail) sans `tabindex`/`role` — ajoutés. **Piège trouvé et corrigé avant application** : la ligne contient un vrai `<button>` (lecture) imbriqué — sans garde, Entrée sur ce bouton aurait aussi déclenché le clic de la ligne parente (double action : lire + ouvrir/fermer le détail). `installNavKeyboard()` ignore désormais tout `keydown` dont la cible est déjà un élément natif interactif (`button`/`a`/`input`/`select`/`textarea`) — protège rétroactivement Accueil/Revue aussi |
+| Recherche (`#bibq`) + 5 champs éditeur (`library-detail.ts`) | **Corrigé** | Placeholder seul (pas une vraie étiquette accessible) — `aria-label` ajouté sur les 6, réf. shadcn Field |
+| Boutons icône lien/identifier (`.lk-icon`) | Conforme | Déjà de vrais `<button>` avec `aria-label` |
+
+Vérifié : `npx tsc --noEmit` clean. Vérification visuelle (clavier facettes/
+lignes/chips, double-déclenchement sur le bouton lecture) dans `tauri dev`
+par Antoine restante.
+
+---
+
 ## Historique des corrections
 
 **2026-07-05 (pochette réellement cassée + sélection multi Alt+Clic)** :

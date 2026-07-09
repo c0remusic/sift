@@ -82,13 +82,15 @@ function renderEdit(edit: HTMLElement, st: EditState): void {
     coverHtml(st) +
     `<div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:6px">` +
     `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">` +
-    `<input data-lib="artist" placeholder="Artiste" value="${esc(t.artist ?? "")}" class="sift-editor-input" style="width:100%">` +
-    `<input data-lib="title" placeholder="Titre" value="${esc(t.title ?? "")}" class="sift-editor-input" style="width:100%">` +
+    // Audit-ref B4 (Bibliothèque, 2026-07-09, réf. shadcn Field) : placeholder seul n'est pas une
+    // vraie étiquette accessible (disparaît une fois rempli) — aria-label ajouté, valeur = placeholder.
+    `<input data-lib="artist" placeholder="Artiste" aria-label="Artiste" value="${esc(t.artist ?? "")}" class="sift-editor-input" style="width:100%">` +
+    `<input data-lib="title" placeholder="Titre" aria-label="Titre" value="${esc(t.title ?? "")}" class="sift-editor-input" style="width:100%">` +
     `</div>` +
-    `<input data-lib="genres" placeholder="Genres (séparés par une virgule)" value="${esc(t.genres.join(", "))}" class="sift-editor-input" style="width:100%">` +
+    `<input data-lib="genres" placeholder="Genres (séparés par une virgule)" aria-label="Genres" value="${esc(t.genres.join(", "))}" class="sift-editor-input" style="width:100%">` +
     `<div style="display:grid;grid-template-columns:90px 1fr;gap:6px">` +
-    `<input data-lib="year" type="number" placeholder="Année" value="${t.year ?? ""}" class="sift-editor-input" style="width:100%">` +
-    `<input data-lib="label" placeholder="Label" value="${esc(t.label ?? "")}" class="sift-editor-input" style="width:100%">` +
+    `<input data-lib="year" type="number" placeholder="Année" aria-label="Année" value="${t.year ?? ""}" class="sift-editor-input" style="width:100%">` +
+    `<input data-lib="label" placeholder="Label" aria-label="Label" value="${esc(t.label ?? "")}" class="sift-editor-input" style="width:100%">` +
     `</div>` +
     `</div></div>` +
     `<div class="lib-edit-meta">${releaseRowHtml(st)}</div>` +

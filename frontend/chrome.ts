@@ -209,14 +209,20 @@ export async function injectTitlebar(): Promise<void> {
  * cliquables sans équivalent clavier — `app.js` (importé sans garde `inTauri`, main.ts:6) gère déjà
  * le clic réel (`e.target.closest('[data-view]')`) mais n'écoute que "click". Complète en Enter/
  * Espace sans toucher app.js (figé) : redispatche un clic synthétique sur l'élément focus. Couvre
- * aussi les lignes `.qi[data-sift="homerow"]` (home-sources.ts) et l'arbre de destination
- * `[data-fil="bin"]` (audit-ref R4, Revue, filing.ts) — mêmes `tabindex`+`role="button"` posés côté
- * markup, un seul point de câblage clavier générique pour toute nouvelle ligne de ce type. */
+ * aussi les lignes `.qi[data-sift="homerow"]` (home-sources.ts), l'arbre de destination
+ * `[data-fil="bin"]` (audit-ref R4, Revue, filing.ts) et les facettes/lignes Bibliothèque
+ * `[data-bib="pick"]`/`[data-bib="row"]` (audit-ref B1) — mêmes `tabindex`+`role="button"` posés
+ * côté markup, un seul point de câblage clavier générique pour toute nouvelle ligne de ce type. */
 export function installNavKeyboard() {
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Enter" && e.key !== " ") return;
-    const el = (e.target as HTMLElement)?.closest<HTMLElement>(
-      '[data-view][tabindex],[data-sift="homerow"][tabindex],[data-fil="bin"][tabindex]',
+    const target = e.target as HTMLElement;
+    // .lr (audit-ref B1) nests a real <button> (lecture) — if THAT has focus, its own native Enter/
+    // Space handling must fire alone; closest() would otherwise also match the ancestor row and
+    // double-fire (play the track AND toggle the detail panel from one keypress).
+    if (/^(BUTTON|A|INPUT|SELECT|TEXTAREA)$/.test(target?.tagName ?? "")) return;
+    const el = target?.closest<HTMLElement>(
+      '[data-view][tabindex],[data-sift="homerow"][tabindex],[data-fil="bin"][tabindex],[data-bib="pick"][tabindex],[data-bib="row"][tabindex]',
     );
     if (!el) return;
     e.preventDefault();

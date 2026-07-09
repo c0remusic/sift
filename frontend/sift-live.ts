@@ -1866,15 +1866,17 @@ async function renderBiblioLive() {
     return;
   }
 
+  // Audit-ref B2 (Bibliothèque, 2026-07-09) : <span> converti en <button> pour un clavier natif
+  // (pas besoin d'étendre installNavKeyboard — un vrai bouton gère déjà Enter/Espace lui-même).
   const chips =
     (["all", "lossless", "mp3"] as const)
       .map((q) => {
         const on = (bibState.filter.quality ?? "all") === q;
         const label = q === "all" ? "Tous" : q === "lossless" ? "Lossless" : "MP3";
-        return `<span class="chip${on ? " on" : ""}" data-bib="qual" data-q="${q}">${label}</span>`;
+        return `<button class="chip${on ? " on" : ""}" data-bib="qual" data-q="${q}">${label}</button>`;
       })
       .join("") +
-    `<span class="chip${dupShown ? " on" : ""}" data-bib="dupscan">Doublons</span>`;
+    `<button class="chip${dupShown ? " on" : ""}" data-bib="dupscan">Doublons</button>`;
 
   const facetList = bibState.facet === "folder" ? facets.folders : facets.genres;
   const sideKey = bibState.facet === "folder" ? "folder" : "genre";
@@ -1883,13 +1885,16 @@ async function renderBiblioLive() {
     // Segmented pill (2026-07-08, was .chip/.chip.on) — a strictly exclusive 2-way choice is the
     // same job as Apparence/Format USB/Détail-Lot, not a filter chip (chips stay the "tag/filter"
     // grammar elsewhere, e.g. genre chips).
+    // Audit-ref B3 (Bibliothèque, 2026-07-09) : <span> converti en <button>, incohérent avec le
+    // reste de l'app où .sift-seg-opt est toujours un vrai bouton (déjà clavier-natif du coup).
     `<div class="sift-seg" style="margin-bottom:8px">` +
-    `<span class="sift-seg-opt${bibState.facet === "folder" ? " on" : ""}" data-bib="facet" data-f="folder">Dossiers</span>` +
-    `<span class="sift-seg-opt${bibState.facet === "genre" ? " on" : ""}" data-bib="facet" data-f="genre">Genres</span></div>` +
+    `<button class="sift-seg-opt${bibState.facet === "folder" ? " on" : ""}" data-bib="facet" data-f="folder">Dossiers</button>` +
+    `<button class="sift-seg-opt${bibState.facet === "genre" ? " on" : ""}" data-bib="facet" data-f="genre">Genres</button></div>` +
+    // Audit-ref B1 : tabindex/role="button", clavier via installNavKeyboard() étendu (chrome.ts).
     facetList
       .map(
         (b) =>
-          `<div class="fld${activeFacetVal === b.name ? " on" : ""}" data-bib="pick" data-key="${sideKey}" data-val="${esc(b.name)}" style="justify-content:space-between"><span>${esc(b.name)}</span><span style="font-size:var(--text-sm);opacity:.7">${b.count}</span></div>`,
+          `<div class="fld${activeFacetVal === b.name ? " on" : ""}" data-bib="pick" data-key="${sideKey}" data-val="${esc(b.name)}" tabindex="0" role="button" style="justify-content:space-between"><span>${esc(b.name)}</span><span style="font-size:var(--text-sm);opacity:.7">${b.count}</span></div>`,
       )
       .join("");
 
@@ -1919,7 +1924,7 @@ async function renderBiblioLive() {
   // persistent Export section (index.html nav-export items, wired in installLiveWiring below).
   const header =
     `<div class="sift-library-toolbar sift-ui-card-soft sift-ui-card-soft-pad">` +
-    `<div style="flex:1;display:flex;align-items:center;gap:7px;border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:6px 10px"><i class="ti ti-search" style="font-size:var(--text-lg);color:var(--color-text-tertiary)"></i><input id="bibq" placeholder="Rechercher…" value="${esc(bibState.filter.q || "")}" style="flex:1;border:0;background:transparent;color:inherit;font-size:var(--text-md);outline:none"></div>` +
+    `<div style="flex:1;display:flex;align-items:center;gap:7px;border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:6px 10px"><i class="ti ti-search" style="font-size:var(--text-lg);color:var(--color-text-tertiary)"></i><input id="bibq" placeholder="Rechercher…" aria-label="Rechercher dans la bibliothèque" value="${esc(bibState.filter.q || "")}" style="flex:1;border:0;background:transparent;color:inherit;font-size:var(--text-md);outline:none"></div>` +
     chips +
     `</div>`;
 
@@ -1980,7 +1985,9 @@ function biblioRowHtml(t: LibraryTrack): string {
   const link = t.discogs_release_id
     ? `<button class="lk-icon" data-bib="link" data-rid="${esc(t.discogs_release_id)}" aria-label="Page Discogs"><i class="ti ti-external-link" style="font-size:var(--text-base);color:var(--color-text-tertiary)"></i></button>`
     : `<button class="lk-icon" data-bib="identify" data-id="${t.id}" aria-label="Identifier"><i class="ti ti-search" style="font-size:var(--text-md);color:var(--color-text-tertiary)"></i></button>`;
-  return `<div class="lr${cur}" data-bib="row" data-id="${t.id}"><button class="pb" data-bib="play" data-id="${t.id}" aria-label="Écouter"><i class="ti ti-player-play" style="font-size:var(--text-md)"></i></button><span class="bib-name" style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${name}</span>${verdictBadge(t.verdict)}${qualPill(t)}<span style="flex:none;width:40px;text-align:right;font-family:var(--font-mono);color:var(--color-text-tertiary)">${fmtDur(t.duration)}</span>${link}</div>`;
+  // Audit-ref B1 (Bibliothèque, 2026-07-09) : la ligne elle-même ouvre le détail (data-bib="row",
+  // handler délégué) mais n'avait ni tabindex ni role — clavier via installNavKeyboard() étendu.
+  return `<div class="lr${cur}" data-bib="row" data-id="${t.id}" tabindex="0" role="button"><button class="pb" data-bib="play" data-id="${t.id}" aria-label="Écouter"><i class="ti ti-player-play" style="font-size:var(--text-md)"></i></button><span class="bib-name" style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${name}</span>${verdictBadge(t.verdict)}${qualPill(t)}<span style="flex:none;width:40px;text-align:right;font-family:var(--font-mono);color:var(--color-text-tertiary)">${fmtDur(t.duration)}</span>${link}</div>`;
 }
 
 /** Open the unified detail/edit panel for a filed track into #bibplayer, highlighting its row.
