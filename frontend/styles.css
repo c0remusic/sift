@@ -151,9 +151,13 @@ html,body{margin:0;padding:0;height:100%}
    and stacks the progress zone ABOVE Settings. The zone grows UPWARD into the free space, so neither
    Settings nor the nav items above it shift when a background task starts. */
 .nav-foot{margin-top:auto;display:flex;flex-direction:column;gap:1px}
+/* Séparateur de Réglages (annotation Antoine, 2026-07-09) : la ligne vit au-dessus du bouton
+   Réglages, pas au-dessus de la zone de progression — les lignes de tâche (.sift-pz-row) doivent
+   apparaître AU-DESSUS du séparateur, Réglages toujours en dessous, zone active ou non. */
+.nav-foot>.nv{margin-top:var(--space-8);padding-top:var(--space-8);border-top:0.5px solid var(--color-border-tertiary)}
 /* Global background-task progress (bottom of #nav, persistent across views). One row per active
    task: icon + name + tabular done/total + a thin accent bar. Hidden when idle (via JS display). */
-.sift-progress-zone{display:flex;flex-direction:column;gap:var(--space-8);margin-top:var(--space-8);padding-top:var(--space-8);border-top:0.5px solid var(--color-border-tertiary)}
+.sift-progress-zone{display:flex;flex-direction:column;gap:var(--space-8);margin-top:var(--space-8)}
 /* Hide entirely when idle (annotation: "supprime" on an empty instance sitting in #filfoot with
    no rows) — an empty zone still rendered its margin-top+padding-top+border-top as a bare 9px
    sliver with a hairline and nothing above it. */

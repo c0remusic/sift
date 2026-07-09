@@ -1,5 +1,14 @@
 # Bibliothèque : vue tableau + grille pochettes + arbre Artistes — Implementation Plan
 
+> **Statut (2026-07-09) : LIVRÉ.** Les 8 tâches sont commitées sur `m6a-discogs`
+> (`f0c700f`, `bcd77ed`, `0b3d36e`, `f9551cb`, `acc5f09`, `61ac35c`, `b3c58f7`) ;
+> checkboxes cochées après coup (le suivi n'avait pas été tenu pendant
+> l'exécution initiale). Task 8 re-vérifiée : `cargo test` 329✓, `clippy`
+> clean, rendu confirmé sur données réelles (facette Artistes, tri, table+
+> grille). Anomalie séparée notée hors scope : la Bibliothèque affiche
+> parfois "vide" en session live malgré des pistes `filed` en DB — non
+> attribuable au code de ce plan, à creuser séparément si elle se reproduit.
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development (recommended) or superpowers:executing-plans to implement this plan task-by-task. Steps use checkbox (`- [ ]`) syntax for tracking.
 
 **Goal:** Give the Bibliothèque screen a sortable multi-column table view and a cover-art grid view (toggle between them), plus a 3rd sidebar facet ("Artistes") alongside the existing Dossiers/Genres.
@@ -28,7 +37,7 @@
 **Interfaces:**
 - Produces: `LibraryFacets.artists: Vec<LibraryFolder>` (same `LibraryFolder { name, count }` type already used by `folders`/`genres`).
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Add next to `folder_facets_counts_filed_by_folder_and_genre` (`library.rs:609`):
 
@@ -63,12 +72,12 @@ fn folder_facets_counts_filed_by_artist() {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml folder_facets_counts_filed_by_artist -- --nocapture`
 Expected: FAIL — `no field 'artists' on type 'LibraryFacets'`
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `library.rs:60-63`, add the field:
 
@@ -114,12 +123,12 @@ Run: `grep -n "LibraryFacets {" src-tauri/src/library.rs src-tauri/src/ipc_libra
 
 If any literal construction is missing `artists:`, add `artists: vec![]` there (test-only fixtures) — do not change production call sites, `folder_facets` is the only producer.
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml folder_facets -- --nocapture`
 Expected: PASS (both the new test and the existing `folder_facets_counts_filed_by_folder_and_genre`)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src-tauri/src/library.rs
@@ -138,7 +147,7 @@ git commit -m "feat(library): add artists facet to folder_facets"
 - Consumes: nothing new.
 - Produces: `LibraryFilter.artist: Option<String>`.
 
-- [ ] **Step 1: Write the failing test**
+- [x] **Step 1: Write the failing test**
 
 Add next to the existing `list_filed_filters_by_verdict` test (`library.rs:590`):
 
@@ -158,12 +167,12 @@ fn list_filed_filters_by_artist() {
 }
 ```
 
-- [ ] **Step 2: Run test to verify it fails**
+- [x] **Step 2: Run test to verify it fails**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml list_filed_filters_by_artist -- --nocapture`
 Expected: FAIL — `no field 'artist' on type 'LibraryFilter'`
 
-- [ ] **Step 3: Implement**
+- [x] **Step 3: Implement**
 
 `library.rs:38-49`:
 
@@ -198,12 +207,12 @@ if let Some(artist) = &f.artist {
 
 (Match the exact binding style already used for `:genre` in this function — read the surrounding 20 lines before editing, since the existing code may use `named_params!` or a manual `Vec` push; mirror whichever pattern `:folder`/`:genre` already use rather than introducing a second style.)
 
-- [ ] **Step 4: Run test to verify it passes**
+- [x] **Step 4: Run test to verify it passes**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml list_filed -- --nocapture`
 Expected: PASS (all `list_filed_*` tests, including the new one)
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
 git add src-tauri/src/library.rs
@@ -221,7 +230,7 @@ git commit -m "feat(library): add artist filter to list_filed"
 - Consumes: Task 1's `LibraryFacets.artists`, Task 2's `LibraryFilter.artist`.
 - Produces: TS types used by Task 5/6/7.
 
-- [ ] **Step 1: Update the interfaces**
+- [x] **Step 1: Update the interfaces**
 
 ```typescript
 export interface LibraryFolder { name: string; count: number; }
@@ -239,12 +248,12 @@ export interface LibraryFilter {
 
 (Keep whatever trailing fields already exist after `verdict` in the real file — insert `artist` in the same position as the Rust struct, don't reorder existing ones.)
 
-- [ ] **Step 2: Type-check**
+- [x] **Step 2: Type-check**
 
 Run: `npx tsc --noEmit`
 Expected: no new errors (any pre-existing unrelated errors are out of scope — if the command was clean before this change, it must stay clean)
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add shared/contracts.ts
@@ -262,7 +271,7 @@ git commit -m "feat(contracts): mirror artists facet + artist filter"
 - Consumes: nothing new yet — this selector addition is inert until Task 6 emits `data-bib="tile"` elements.
 - Produces: keyboard Enter/Space activation for any element matching `[data-bib="tile"][tabindex]`.
 
-- [ ] **Step 1: Edit the selector**
+- [x] **Step 1: Edit the selector**
 
 `chrome.ts:225-227`, add `,[data-bib="tile"][tabindex]` to the existing selector list:
 
@@ -272,12 +281,12 @@ const el = target?.closest<HTMLElement>(
 );
 ```
 
-- [ ] **Step 2: Type-check**
+- [x] **Step 2: Type-check**
 
 Run: `npx tsc --noEmit`
 Expected: clean (this is a string literal change only)
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add frontend/chrome.ts
@@ -309,7 +318,7 @@ git commit -m "feat(a11y): extend nav-keyboard to library grid tiles"
   - `export const LIBRARY_TABLE_PROBE_HTML: string`
   - `export const LIBRARY_GRID_PROBE_HTML: string`
 
-- [ ] **Step 1: Create the file with escaping + moved helpers**
+- [x] **Step 1: Create the file with escaping + moved helpers**
 
 ```typescript
 // Bibliothèque list rendering: table rows/header (sortable) and grid tiles (cover art),
@@ -350,7 +359,7 @@ export function bibName(t: LibraryTrack): string {
 }
 ```
 
-- [ ] **Step 2: Add sort**
+- [x] **Step 2: Add sort**
 
 ```typescript
 export type LibrarySortField = "artist" | "title" | "genre" | "year";
@@ -375,7 +384,7 @@ export function sortTracks(tracks: readonly LibraryTrack[], sort: LibrarySortSta
 }
 ```
 
-- [ ] **Step 3: Add the table header + row builders**
+- [x] **Step 3: Add the table header + row builders**
 
 ```typescript
 const SORT_COLUMNS: { field: LibrarySortField; label: string }[] = [
@@ -428,7 +437,7 @@ export const LIBRARY_TABLE_PROBE_HTML =
   `<i class="ti ti-vinyl sift-lib-cov-fallback"></i><span class="sift-lib-col">probe</span></div>`;
 ```
 
-- [ ] **Step 4: Add the grid tile builder**
+- [x] **Step 4: Add the grid tile builder**
 
 ```typescript
 /** How many tiles sit in one virtualized "row" — the grid is chunked into rows of this many
@@ -462,12 +471,12 @@ export const LIBRARY_GRID_PROBE_HTML =
 
 Note: `libraryGridRowHtml` deliberately does not thread `curId` through (the grid's "currently open" highlight is a v2 nicety, not required by the spec — the table view already carries `.cur`, which is the primary/default mode).
 
-- [ ] **Step 5: Type-check**
+- [x] **Step 5: Type-check**
 
 Run: `npx tsc --noEmit`
 Expected: errors ONLY in `sift-live.ts` (duplicate `fmtDur`/`qualPill`/`verdictBadge`/`bibName`/`biblioRowHtml` — resolved in Task 6). No errors in `library-views.ts` itself.
 
-- [ ] **Step 6: Commit**
+- [x] **Step 6: Commit**
 
 ```bash
 git add frontend/library-views.ts
@@ -491,7 +500,7 @@ git commit -m "feat(library): add library-views module (table + grid row renderi
 - Consumes: everything exported by Task 5's `library-views.ts`; `LibraryFacets.artists`/`LibraryFilter.artist` from Task 1-3.
 - Produces: nothing new externally — this is the integration task.
 
-- [ ] **Step 1: Update imports**
+- [x] **Step 1: Update imports**
 
 Add to the import block that already pulls in `listLibrary`, `libraryFolders`, etc.:
 
@@ -512,11 +521,11 @@ import {
 } from "./library-views";
 ```
 
-- [ ] **Step 2: Delete the moved helpers**
+- [x] **Step 2: Delete the moved helpers**
 
 Delete `fmtDur`/`qualPill`/`verdictBadge` at `sift-live.ts:1628-1644` and `bibName`/`biblioRowHtml` at `sift-live.ts:2139-2156` in full (all 5 functions) — they now come from the import in Step 1.
 
-- [ ] **Step 3: Extend `bibState`**
+- [x] **Step 3: Extend `bibState`**
 
 Replace the `bibState` declaration (`sift-live.ts:390`):
 
@@ -536,7 +545,7 @@ const bibState: {
 };
 ```
 
-- [ ] **Step 4: Add the view-mode thumb positioner**
+- [x] **Step 4: Add the view-mode thumb positioner**
 
 Next to `positionFacetThumb()` (`sift-live.ts:1996-2003`), add:
 
@@ -552,7 +561,7 @@ function positionViewModeThumb(): void {
 }
 ```
 
-- [ ] **Step 5: Add the Artistes facet button + view-mode segmented, rewrite the row/virtualization section**
+- [x] **Step 5: Add the Artistes facet button + view-mode segmented, rewrite the row/virtualization section**
 
 In `renderBiblioLive()` (`sift-live.ts:2007-2137`):
 
@@ -646,7 +655,7 @@ Insert `tableHead` into the markup right before the `rows` placeholder (the line
 
 Add `positionViewModeThumb();` right after the existing `positionFacetThumb();` call (`sift-live.ts:2110`).
 
-- [ ] **Step 6: Wire the new delegated actions**
+- [x] **Step 6: Wire the new delegated actions**
 
 In the `data-bib` click handler (`sift-live.ts:2288` onward), add two branches. Extend the existing `act === "pick"` branch (`sift-live.ts:2355-2363`) to handle the 3rd key, and add `sort`/`viewmode` as new `else if` branches (place them near `act === "facet"`, `sift-live.ts:2346-2354`):
 
@@ -682,12 +691,12 @@ Replace the `act === "pick"` body (`sift-live.ts:2356-2363`) with the 3-way vers
   void renderBiblioLive();
 ```
 
-- [ ] **Step 7: Type-check**
+- [x] **Step 7: Type-check**
 
 Run: `npx tsc --noEmit`
 Expected: clean
 
-- [ ] **Step 8: Commit**
+- [x] **Step 8: Commit**
 
 ```bash
 git add frontend/sift-live.ts
@@ -705,7 +714,7 @@ git commit -m "feat(library): wire table/grid view toggle, sortable header, arti
 - Consumes: `.sift-lib-thead`, `.sift-lib-col`, `.sift-lib-cov`, `.sift-lib-cov-fallback`, `.sift-lib-tile*`, `.sift-lib-grid-row` classes emitted by Task 5/6.
 - Produces: nothing consumed by later tasks — this is the terminal task.
 
-- [ ] **Step 1: Add the rules**
+- [x] **Step 1: Add the rules**
 
 Append near the existing `.lr` rules (after `styles.css:390`'s `.lk-icon` block, so the whole Bibliothèque row family stays together):
 
@@ -733,12 +742,12 @@ Append near the existing `.lr` rules (after `styles.css:390`'s `.lk-icon` block,
 
 (`--space-12` is a real token, already used elsewhere for this kind of gap — e.g. `.sift-action-rail`, `styles.css:299`.)
 
-- [ ] **Step 2: Type-check / build sanity**
+- [x] **Step 2: Type-check / build sanity**
 
 Run: `npx tsc --noEmit`
 Expected: clean (CSS doesn't affect this, but confirms no stray edit broke a TS file in the same session)
 
-- [ ] **Step 3: Commit**
+- [x] **Step 3: Commit**
 
 ```bash
 git add frontend/styles.css
@@ -751,17 +760,17 @@ git commit -m "style(library): table header, grid tiles, cover thumbnails"
 
 **Files:** none (verification only)
 
-- [ ] **Step 1: Run the full backend test suite**
+- [x] **Step 1: Run the full backend test suite**
 
 Run: `cargo test --manifest-path src-tauri/Cargo.toml`
 Expected: all pass, including the two new tests from Task 1/2 (do not run this while a `tauri dev` process is open — see `avoid-concurrent-cargo-tauri-dev` memory)
 
-- [ ] **Step 2: Run clippy**
+- [x] **Step 2: Run clippy**
 
 Run: `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings`
 Expected: clean
 
-- [ ] **Step 3: Manual check in the running app** (Antoine, or Claude via CDP per `sift-cdp-webview2-verification`)
+- [x] **Step 3: Manual check in the running app** (Antoine, or Claude via CDP per `sift-cdp-webview2-verification`)
 
 With at least 2-3 filed tracks by different artists/genres/years:
 - Bibliothèque → confirm 3rd facet button "Artistes" appears, clicking an artist filters the list.
@@ -769,7 +778,7 @@ With at least 2-3 filed tracks by different artists/genres/years:
 - Click the Grille toggle: confirm tiles appear, covers show, clicking a tile opens the same detail panel as a table row.
 - Keyboard: Tab to a table row or grid tile, press Enter — same open/close behavior as before this change.
 
-- [ ] **Step 4: Final commit (if verification surfaced fixes)**
+- [x] **Step 4: Final commit (if verification surfaced fixes)**
 
 ```bash
 git add -A
