@@ -567,10 +567,22 @@ pub fn commit_file(conn: &Connection, plan: &FilePlan, log: Vec<FsLog>) -> Resul
     crate::library::invalidate_duplicate_count_cache();
 
     // Committed — now (and only now) patch a linked Rekordbox XML for the move/convert rows, and
-    // detect (read-only) any master.db repair candidates for the same rows (M8 Tier 1 IPC wiring).
+    // detect (read-only) any master.db repair candidates for the same rows (M8 Tier 1 IPC wiring),
+    // plus (M8 Tier 3) any metadata sync candidate for the tags this commit just wrote.
     for (fs, action_id) in log.iter().zip(action_ids.iter()) {
         actions::maybe_repair_rekordbox_xml(conn, fs.kind, Some(&fs.from), Some(&fs.to));
         actions::maybe_detect_masterdb_repair(conn, fs.kind, Some(&fs.from), Some(&fs.to), *action_id);
+        if matches!(fs.kind, "move" | "convert") {
+            let genre = if plan.extras.genres.is_empty() { None } else { Some(plan.extras.genres.join("; ")) };
+            let values = actions::MetadataSyncValues {
+                artist: Some(plan.canonical.artist.clone()),
+                title: Some(naming::tag_title(&plan.canonical)),
+                label: plan.extras.label.clone(),
+                year: plan.extras.year,
+                genre,
+            };
+            actions::detect_masterdb_metadata_sync_if_linked(conn, &fs.from, plan.track_id, &values, *action_id);
+        }
     }
     Ok(FileResult { path: plan.dest.clone(), batch_id: plan.batch_id.clone() })
 }
@@ -741,6 +753,99 @@ mod tests {
         let c = reconcile_track(&conn, id).unwrap();
         assert_eq!(c.artist, "Robert Owens");
         assert_eq!(c.title, "Bring Down the Walls");
+    }
+
+    fn seed_pioneer_dir_with_fixture(dir: &std::path::Path) -> std::path::PathBuf {
+        std::fs::create_dir_all(dir).unwrap();
+        std::fs::copy(
+            concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/rekordbox_master.db"),
+            dir.join("master.db"),
+        )
+        .unwrap();
+        let xml_path = dir.join("masterPlaylists6.xml");
+        std::fs::write(&xml_path, b"<DJ_PLAYLISTS/>").unwrap();
+        xml_path
+    }
+
+    /// Patches the fixture's track_id "40000001" FolderPath to `path` — same technique as
+    /// actions.rs's detect_masterdb_repair_ambiguous_on_two_matches test.
+    fn patch_fixture_folder_path(pioneer_dir: &std::path::Path, path: &str) {
+        let raw = std::fs::read(pioneer_dir.join("master.db")).unwrap();
+        let plaintext = crate::rekordbox_masterdb::decrypt_masterdb_for_test(&raw);
+        let len = plaintext.len();
+        let mut conn2 = rusqlite::Connection::open_in_memory().unwrap();
+        conn2.deserialize_read_exact(rusqlite::MAIN_DB, std::io::Cursor::new(plaintext), len, false).unwrap();
+        conn2.execute("UPDATE djmdContent SET FolderPath=?1 WHERE ID='40000001'", params![path]).unwrap();
+        let plaintext2 = conn2.serialize(rusqlite::MAIN_DB).unwrap().to_vec();
+        let raw2 = crate::rekordbox_masterdb::encrypt_masterdb_for_test(&plaintext2);
+        std::fs::write(pioneer_dir.join("master.db"), raw2).unwrap();
+    }
+
+    #[test]
+    fn commit_file_conformant_detects_masterdb_metadata_sync() {
+        let conn = db();
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("lib");
+        std::fs::create_dir_all(root.join("House")).unwrap();
+        let Some((id, src)) = seed_track(&conn, dir.path(), "real_320.mp3", "src.mp3") else {
+            eprintln!("skip: no fixture");
+            return;
+        };
+
+        let pioneer_dir = dir.path().join("pioneer");
+        let xml_path = seed_pioneer_dir_with_fixture(&pioneer_dir);
+        patch_fixture_folder_path(&pioneer_dir, src.to_str().unwrap());
+        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+
+        let res = file_track(&conn, &root, "{artist} - {title}", id, "House", None, Some(Canonical {
+            artist: "Larry Heard".into(), title: "Can You Feel It".into(), version: None,
+            confidence: crate::naming::Confidence::Green,
+        }), false).unwrap();
+        let _ = res;
+
+        let (new_artist, status): (Option<String>, String) = conn
+            .query_row(
+                "SELECT new_artist, status FROM rekordbox_masterdb_metadata_syncs WHERE track_id=?1",
+                params![id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .expect("commit_file must have detected a metadata sync candidate");
+        assert_eq!(status, "pending");
+        assert_eq!(new_artist.as_deref(), Some("Larry Heard"));
+    }
+
+    #[test]
+    fn commit_file_non_conformant_detects_masterdb_metadata_sync() {
+        let conn = db();
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("lib");
+        std::fs::create_dir_all(root.join("House")).unwrap();
+        let Some((id, src)) = seed_track(&conn, dir.path(), "real_lossless.flac", "src.flac") else {
+            eprintln!("skip: no fixture");
+            return;
+        };
+        crate::ffmpeg::init_ffmpeg_path();
+
+        let pioneer_dir = dir.path().join("pioneer");
+        let xml_path = seed_pioneer_dir_with_fixture(&pioneer_dir);
+        patch_fixture_folder_path(&pioneer_dir, src.to_str().unwrap());
+        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+
+        let res = file_track(&conn, &root, "{artist} - {title}", id, "House", None, Some(Canonical {
+            artist: "Theo Parrish".into(), title: "Falling Up".into(), version: None,
+            confidence: crate::naming::Confidence::Green,
+        }), false).unwrap();
+        let _ = res;
+
+        let (new_artist, status): (Option<String>, String) = conn
+            .query_row(
+                "SELECT new_artist, status FROM rekordbox_masterdb_metadata_syncs WHERE track_id=?1",
+                params![id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .expect("commit_file must have detected a metadata sync candidate on the non-conformant (convert) path");
+        assert_eq!(status, "pending");
+        assert_eq!(new_artist.as_deref(), Some("Theo Parrish"));
     }
 
     #[test]
