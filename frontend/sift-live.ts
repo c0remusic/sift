@@ -2011,7 +2011,7 @@ async function renderBiblioLive() {
   // renders against a detached host.
   bibVirtual?.destroy();
   bibVirtual = null;
-  let facets: LibraryFacets = { folders: [], genres: [] };
+  let facets: LibraryFacets = { folders: [], genres: [], artists: [] };
   let stats: DashboardStats | null = null;
   try {
     [bibState.tracks, facets, stats] = await Promise.all([
