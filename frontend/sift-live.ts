@@ -1926,8 +1926,12 @@ async function renderBiblioLive() {
 
   // Export (Rekordbox/Clé USB) lives in the nav rail now, not here — matches the maquette's
   // persistent Export section (index.html nav-export items, wired in installLiveWiring below).
+  // Retour Antoine 2026-07-09 : le toolbar (recherche+chips) était sa PROPRE boîte flottante
+  // au-dessus du panneau — une seule information (le filtre courant), grouper ça seul ajoute du
+  // chrome pour rien (même règle HIG Boxes que la consolidation Réglages, 2026-07-08). Intégré
+  // maintenant comme bandeau supérieur du panneau .sift-library-main, séparé par un filet.
   const header =
-    `<div class="sift-library-toolbar sift-ui-card-soft sift-ui-card-soft-pad">` +
+    `<div class="sift-library-toolbar">` +
     `<div style="flex:1;display:flex;align-items:center;gap:7px;border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:6px 10px"><i class="ti ti-search" style="font-size:var(--text-lg);color:var(--color-text-tertiary)"></i><input id="bibq" placeholder="Rechercher…" aria-label="Rechercher dans la bibliothèque" value="${esc(bibState.filter.q || "")}" style="flex:1;border:0;background:transparent;color:inherit;font-size:var(--text-md);outline:none"></div>` +
     chips +
     `</div>`;
@@ -1939,9 +1943,8 @@ async function renderBiblioLive() {
         backToRevue: true,
       })
     : (stats ? statsCardsHtml(stats) : "") +
-      header +
       `<div class="sift-library-layout"><div class="sift-library-side sift-ui-card-soft sift-ui-card-soft-pad"><div class="col-h">Bibliothèque</div>${side}</div>` +
-      `<div class="sift-library-main sift-ui-card sift-ui-card-pad"><div style="display:flex;justify-content:space-between;margin-bottom:5px"><span style="font-size:var(--text-base);font-weight:500">${esc(activeFacetVal || "Tous")}</span><span style="font-size:var(--text-sm);color:var(--color-text-tertiary)">${bibState.tracks.length} piste${bibState.tracks.length > 1 ? "s" : ""}</span></div>` +
+      `<div class="sift-library-main sift-ui-card sift-ui-card-pad">${header}<div style="display:flex;justify-content:space-between;margin-bottom:5px"><span style="font-size:var(--text-base);font-weight:500">${esc(activeFacetVal || "Tous")}</span><span style="font-size:var(--text-sm);color:var(--color-text-tertiary)">${bibState.tracks.length} piste${bibState.tracks.length > 1 ? "s" : ""}</span></div>` +
       (rows ||
         `<div style="font-size:var(--text-md);color:var(--color-text-tertiary)">Aucun résultat pour ce filtre.</div>`) +
       dupSection +

@@ -1112,7 +1112,9 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-seg-opt.on i{color:var(--color-text-primary)}
 .sift-seg-opt.on:hover{background:var(--color-surface-raised)}
 .sift-usb-empty{font-size:var(--text-sm);color:var(--color-text-tertiary);padding:6px 0}
-.sift-library-toolbar{display:flex;align-items:center;gap:8px;margin-bottom:10px}
+/* Intégré au panneau .sift-library-main (2026-07-09, retour Antoine) — plus sa propre boîte
+   flottante, filet de séparation à la place (même langage que .sift-settings-list-row). */
+.sift-library-toolbar{display:flex;align-items:center;gap:8px;padding-bottom:10px;margin-bottom:10px;border-bottom:0.5px solid var(--color-border-tertiary)}
 .sift-library-layout{display:flex;align-items:flex-start;gap:14px}
 /* 150px → 190px (2026-07-08, retour utilisateur : la pastille Dossiers/Genres était tronquée) —
    la piste segmentée + son padding de carte (16px×2) dépassaient les ~118px utiles restants à
