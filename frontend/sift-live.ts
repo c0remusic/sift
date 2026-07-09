@@ -83,6 +83,20 @@ import type { QueueItem, BatchResult, FileProgress, Target } from "../shared/con
 import { FILE_IN_PLACE, EXTERNAL_DEST_PREFIX } from "../shared/contracts";
 import { requireEl } from "./dom";
 import { createVirtualList, type VirtualList } from "./list-virtual";
+import {
+  fmtDur,
+  qualPill,
+  verdictBadge,
+  bibName,
+  sortTracks,
+  libraryTableHeaderHtml,
+  libraryTableRowHtml,
+  libraryGridRowHtml,
+  LIBRARY_GRID_TILES_PER_ROW,
+  LIBRARY_TABLE_PROBE_HTML,
+  LIBRARY_GRID_PROBE_HTML,
+  type LibrarySortState,
+} from "./library-views";
 import { renderJournal } from "./journal";
 import { open as openFolderDialog } from "@tauri-apps/plugin-dialog";
 
@@ -387,16 +401,24 @@ let batchBin = "";
 
 // Bibliothèque browser state: active filter, which facet column (folder/genre) is shown,
 // and the last fetched track list (so a row-click can recover the track's path).
-const bibState: { filter: LibraryFilter; facet: "folder" | "genre"; tracks: LibraryTrack[] } = {
+const bibState: {
+  filter: LibraryFilter;
+  facet: "folder" | "genre" | "artist";
+  tracks: LibraryTrack[];
+  viewMode: "table" | "grid";
+  sort: LibrarySortState;
+} = {
   filter: {},
   facet: "folder",
   tracks: [],
+  viewMode: "table",
+  sort: { field: "artist", dir: "asc" },
 };
 
 // Virtualized library list controller. Torn down and recreated on each full renderBiblioLive
 // (which replaces #content.innerHTML, orphaning the old #biblist host — its scroll listener sits
 // on the PERMANENT #content, so it must be explicitly destroyed or it leaks + double-renders).
-let bibVirtual: VirtualList<LibraryTrack> | null = null;
+let bibVirtual: VirtualList<LibraryTrack> | VirtualList<LibraryTrack[]> | null = null;
 // Which library row is open in the detail panel — stamped as `.cur` at row-creation time so the
 // highlight survives virtualization (a row scrolled out of the window and back is rebuilt from
 // data; setting the class after the fact wouldn't stick, same reasoning as the queue's `active`).
@@ -1625,24 +1647,6 @@ async function renderReglagesLive() {
   });
 }
 
-function fmtDur(sec: number | null): string {
-  if (!sec || sec <= 0) return "—";
-  const m = Math.floor(sec / 60),
-    s = Math.round(sec % 60);
-  return `${m}:${String(s).padStart(2, "0")}`;
-}
-function qualPill(t: LibraryTrack): string {
-  const f = (t.format || "?").toUpperCase();
-  return `<span class="pill" style="flex:none">${esc(f)}</span>`;
-}
-function verdictBadge(v: string | null): string {
-  if (v === "fake")
-    return `<span class="pill" style="background:var(--color-background-danger);color:var(--color-text-danger);flex:none">fake</span>`;
-  if (v === "grey")
-    return `<span class="pill" style="background:var(--color-background-warning);color:var(--color-text-warning);flex:none">?</span>`;
-  return "";
-}
-
 function dupMemberHtml(m: DupGroup["members"][number]): string {
   const name = esc(m.filename || m.path.split(/[\\/]/).pop() || m.path);
   const fmt = (m.format || "?").toUpperCase();
@@ -2002,6 +2006,16 @@ function positionFacetThumb(): void {
   thumb.style.transform = `translateX(${onEl.offsetLeft}px)`;
 }
 
+/** Same thumb-glide pattern as positionFacetThumb(), for the Tableau/Grille segmented. */
+function positionViewModeThumb(): void {
+  const seg = document.getElementById("sift-bib-viewmode-seg");
+  const thumb = seg?.querySelector<HTMLElement>(".sift-seg-thumb");
+  const onEl = seg?.querySelector<HTMLElement>("[data-bib='viewmode'].on");
+  if (!thumb || !onEl) return;
+  thumb.style.width = `${onEl.offsetWidth}px`;
+  thumb.style.transform = `translateX(${onEl.offsetLeft}px)`;
+}
+
 /** Live Bibliothèque view: lists filed tracks with search + quality chips + folder/genre
  * facets, wired to real data. Actions go through the #pa delegated handler (data-bib). */
 async function renderBiblioLive() {
@@ -2036,11 +2050,17 @@ async function renderBiblioLive() {
       .join("") +
     `<button class="chip${dupShown ? " on" : ""}" data-bib="dupscan">Doublons</button>`;
 
-  const facetList = bibState.facet === "folder" ? facets.folders : facets.genres;
-  const sideKey = bibState.facet === "folder" ? "folder" : "genre";
-  const activeFacetVal = bibState.facet === "folder" ? bibState.filter.folder : bibState.filter.genre;
+  const facetList =
+    bibState.facet === "folder" ? facets.folders : bibState.facet === "genre" ? facets.genres : facets.artists;
+  const sideKey = bibState.facet;
+  const activeFacetVal =
+    bibState.facet === "folder"
+      ? bibState.filter.folder
+      : bibState.facet === "genre"
+        ? bibState.filter.genre
+        : bibState.filter.artist;
   const side =
-    // Segmented pill (2026-07-08, was .chip/.chip.on) — a strictly exclusive 2-way choice is the
+    // Segmented pill (2026-07-08, was .chip/.chip.on) — a strictly exclusive 3-way choice is the
     // same job as Apparence/Format USB/Détail-Lot, not a filter chip (chips stay the "tag/filter"
     // grammar elsewhere, e.g. genre chips).
     // Audit-ref B3 (Bibliothèque, 2026-07-09) : <span> converti en <button>, incohérent avec le
@@ -2050,7 +2070,8 @@ async function renderBiblioLive() {
     `<div class="sift-seg sift-seg-thumbed" id="sift-bib-facet-seg" style="margin-bottom:8px">` +
     `<div class="sift-seg-thumb"></div>` +
     `<button class="sift-seg-opt${bibState.facet === "folder" ? " on" : ""}" data-bib="facet" data-f="folder">Dossiers</button>` +
-    `<button class="sift-seg-opt${bibState.facet === "genre" ? " on" : ""}" data-bib="facet" data-f="genre">Genres</button></div>` +
+    `<button class="sift-seg-opt${bibState.facet === "genre" ? " on" : ""}" data-bib="facet" data-f="genre">Genres</button>` +
+    `<button class="sift-seg-opt${bibState.facet === "artist" ? " on" : ""}" data-bib="facet" data-f="artist">Artistes</button></div>` +
     // Audit-ref B1 : tabindex/role="button", clavier via installNavKeyboard() étendu (chrome.ts).
     facetList
       .map(
@@ -2064,6 +2085,8 @@ async function renderBiblioLive() {
   // here would reintroduce the 15k-track freeze (audit 2026-07-05 P2). `rows` non-empty iff there's
   // at least one track, used only to pick the "no result" fallback below.
   const rows = bibState.tracks.length ? '<div id="biblist"></div>' : "";
+  const sortedTracks = bibState.viewMode === "table" ? sortTracks(bibState.tracks, bibState.sort) : bibState.tracks;
+  const tableHead = bibState.viewMode === "table" ? libraryTableHeaderHtml(bibState.sort) : "";
   // Truly empty (no filed track at all, no filter narrowing it) vs. a filter that just matches
   // nothing right now — only the former is DESIGN.md's "État vide" dead-end with a back-to-Revue
   // link; the latter keeps the search/chips/facets on screen so the filter can be cleared.
@@ -2091,6 +2114,10 @@ async function renderBiblioLive() {
     `<div class="sift-library-toolbar">` +
     `<div style="flex:1;display:flex;align-items:center;gap:7px;border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:6px 10px"><i class="ti ti-search" style="font-size:var(--text-lg);color:var(--color-text-tertiary)"></i><input id="bibq" placeholder="Rechercher…" aria-label="Rechercher dans la bibliothèque" value="${esc(bibState.filter.q || "")}" style="flex:1;border:0;background:transparent;color:inherit;font-size:var(--text-md);outline:none"></div>` +
     chips +
+    `<div class="sift-seg sift-seg-thumbed" id="sift-bib-viewmode-seg">` +
+    `<div class="sift-seg-thumb"></div>` +
+    `<button class="sift-seg-opt${bibState.viewMode === "table" ? " on" : ""}" data-bib="viewmode" data-mode="table" aria-label="Vue tableau"><i class="ti ti-list"></i></button>` +
+    `<button class="sift-seg-opt${bibState.viewMode === "grid" ? " on" : ""}" data-bib="viewmode" data-mode="grid" aria-label="Vue grille"><i class="ti ti-layout-grid"></i></button></div>` +
     `</div>`;
 
   content.innerHTML = trulyEmpty
@@ -2101,13 +2128,14 @@ async function renderBiblioLive() {
       })
     : (stats ? statsCardsHtml(stats) : "") +
       `<div class="sift-library-layout"><div class="sift-library-side sift-ui-card-soft sift-ui-card-soft-pad"><div class="col-h">Bibliothèque</div>${side}</div>` +
-      `<div class="sift-library-main sift-ui-card sift-ui-card-pad">${header}<div style="display:flex;justify-content:space-between;margin-bottom:5px"><span style="font-size:var(--text-base);font-weight:500">${esc(activeFacetVal || "Tous")}</span><span style="font-size:var(--text-sm);color:var(--color-text-tertiary)">${bibState.tracks.length} piste${bibState.tracks.length > 1 ? "s" : ""}</span></div>` +
+      `<div class="sift-library-main sift-ui-card sift-ui-card-pad">${header}<div style="display:flex;justify-content:space-between;margin-bottom:5px"><span style="font-size:var(--text-base);font-weight:500">${esc(activeFacetVal || "Tous")}</span><span style="font-size:var(--text-sm);color:var(--color-text-tertiary)">${bibState.tracks.length} piste${bibState.tracks.length > 1 ? "s" : ""}</span></div>${tableHead}` +
       (rows ||
         `<div style="font-size:var(--text-md);color:var(--color-text-tertiary)">Aucun résultat pour ce filtre.</div>`) +
       dupSection +
       `<div id="bibplayer"></div></div></div>`;
   wireEmptyState(content);
   positionFacetThumb(); // fresh node post-rebuild — no prior transform, just place it
+  positionViewModeThumb();
 
   if (trulyEmpty) return; // no header/search — nothing left to wire
 
@@ -2123,36 +2151,30 @@ async function renderBiblioLive() {
   // above) — createVirtualList handles that offset. #biblist exists iff bibState.tracks non-empty.
   const biblist = document.getElementById("biblist");
   if (biblist) {
-    bibVirtual = createVirtualList<LibraryTrack>({
-      host: biblist,
-      scrollContainer: content,
-      items: bibState.tracks,
-      rowHtml: (t) => biblioRowHtml(t),
-      // Probe: a real .lr row so the measured height matches mounted rows exactly.
-      probeHtml:
-        `<div class="lr"><button class="pb"><i class="ti ti-player-play" style="font-size:var(--text-md)"></i></button><span class="bib-name">probe</span></div>`,
-      fallbackRowH: 34, // .lr: 5px×2 padding + ~23px .pb button + 0.5px border
-    });
+    if (bibState.viewMode === "table") {
+      bibVirtual = createVirtualList<LibraryTrack>({
+        host: biblist,
+        scrollContainer: content,
+        items: sortedTracks,
+        rowHtml: (t) => libraryTableRowHtml(t, bibOpenId),
+        probeHtml: LIBRARY_TABLE_PROBE_HTML,
+        fallbackRowH: 34,
+      });
+    } else {
+      const gridRows: LibraryTrack[][] = [];
+      for (let i = 0; i < sortedTracks.length; i += LIBRARY_GRID_TILES_PER_ROW) {
+        gridRows.push(sortedTracks.slice(i, i + LIBRARY_GRID_TILES_PER_ROW));
+      }
+      bibVirtual = createVirtualList<LibraryTrack[]>({
+        host: biblist,
+        scrollContainer: content,
+        items: gridRows,
+        rowHtml: (row) => libraryGridRowHtml(row),
+        probeHtml: LIBRARY_GRID_PROBE_HTML,
+        fallbackRowH: 150,
+      });
+    }
   }
-}
-
-/** Display name for a library row (artist — title, else filename). Mirrors the row template. */
-function bibName(t: LibraryTrack): string {
-  return t.artist && t.title ? `${t.artist} — ${t.title}` : t.path.split(/[\\/]/).pop() || t.path;
-}
-
-/** One library-list row. Extracted from renderBiblioLive so the virtual list (createVirtualList)
- * can mount just the visible window. Fixed single-line height (`.lr` never wraps) — required by the
- * windowing scheme, which relies on one measured row height for every row. */
-function biblioRowHtml(t: LibraryTrack): string {
-  const name = esc(bibName(t));
-  const cur = t.id === bibOpenId ? " cur" : "";
-  const link = t.discogs_release_id
-    ? `<button class="lk-icon" data-bib="link" data-rid="${esc(t.discogs_release_id)}" aria-label="Page Discogs"><i class="ti ti-external-link" style="font-size:var(--text-base);color:var(--color-text-tertiary)"></i></button>`
-    : `<button class="lk-icon" data-bib="identify" data-id="${t.id}" aria-label="Identifier"><i class="ti ti-search" style="font-size:var(--text-md);color:var(--color-text-tertiary)"></i></button>`;
-  // Audit-ref B1 (Bibliothèque, 2026-07-09) : la ligne elle-même ouvre le détail (data-bib="row",
-  // handler délégué) mais n'avait ni tabindex ni role — clavier via installNavKeyboard() étendu.
-  return `<div class="lr${cur}" data-bib="row" data-id="${t.id}" tabindex="0" role="button"><button class="pb" data-bib="play" data-id="${t.id}" aria-label="Écouter"><i class="ti ti-player-play" style="font-size:var(--text-md)"></i></button><span class="bib-name" style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${name}</span>${verdictBadge(t.verdict)}${qualPill(t)}<span style="flex:none;width:40px;text-align:right;font-family:var(--font-mono);color:var(--color-text-tertiary)">${fmtDur(t.duration)}</span>${link}</div>`;
 }
 
 /** Open the unified detail/edit panel for a filed track into #bibplayer, highlighting its row.
@@ -2378,14 +2400,30 @@ export function installLiveWiring() {
           .forEach((b) => b.classList.toggle("on", b.dataset.f === bibState.facet));
         positionFacetThumb();
         void renderBiblioLive();
+      } else if (act === "viewmode") {
+        bibState.viewMode = bibEl.dataset.mode === "grid" ? "grid" : "table";
+        document
+          .querySelectorAll<HTMLElement>("#sift-bib-viewmode-seg [data-bib='viewmode']")
+          .forEach((b) => b.classList.toggle("on", b.dataset.mode === bibState.viewMode));
+        positionViewModeThumb();
+        void renderBiblioLive();
+      } else if (act === "sort") {
+        const field = bibEl.dataset.field as LibrarySortState["field"];
+        bibState.sort =
+          bibState.sort.field === field
+            ? { field, dir: bibState.sort.dir === "asc" ? "desc" : "asc" }
+            : { field, dir: "asc" };
+        void renderBiblioLive();
       } else if (act === "pick") {
-        const key = bibEl.dataset.key as "folder" | "genre";
+        const key = bibEl.dataset.key as "folder" | "genre" | "artist";
         const val = bibEl.dataset.val;
         // toggle off if re-clicking the active facet value
-        const cur = key === "folder" ? bibState.filter.folder : bibState.filter.genre;
+        const cur =
+          key === "folder" ? bibState.filter.folder : key === "genre" ? bibState.filter.genre : bibState.filter.artist;
         const next = cur === val ? undefined : val;
         bibState.filter.folder = key === "folder" ? next : undefined;
         bibState.filter.genre = key === "genre" ? next : undefined;
+        bibState.filter.artist = key === "artist" ? next : undefined;
         void renderBiblioLive();
       } else if (act === "link") {
         const rid = bibEl.dataset.rid;
