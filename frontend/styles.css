@@ -650,13 +650,17 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
    --color-surface-raised/--color-text-primary (annotation: "trop blanc" — the bright fill was
    sized for the card background this button used to sit on, which no longer surrounds it; a
    moderate neutral fill with a light icon reads calmer against the flat inspector). */
-.sift-play-btn{flex:none;width:46px;height:46px;margin-left:11px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;padding:0;border:none;background:var(--color-surface-raised)}
-.sift-play-btn i{font-size:var(--text-xl);color:var(--color-text-primary)}
+.sift-play-btn{flex:none;width:46px;height:46px;margin-left:11px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;padding:0;border:none;background:var(--color-surface-raised);transition:filter .1s ease}
+.sift-play-btn i{font-size:20px;color:var(--color-text-primary);transition:opacity .15s ease}
 /* background re-asserted here: the generic button:hover{background:var(--color-background-secondary)}
    (specificity 0,1,1) otherwise beats this button's own non-hover background rule (0,1,0), so on
    hover the circle silently repainted to a card background token that no longer surrounds it and
    visually vanished. */
 .sift-play-btn:hover{background:var(--color-surface-raised);filter:brightness(1.1)}
+.sift-play-btn:hover i{opacity:.65}
+/* Held down (mousedown, not yet released) — whole button dims, distinct from the icon-only hover
+   dim above. */
+.sift-play-btn:active{filter:brightness(.8)}
 .sift-player-header{display:flex;align-items:center;gap:14px;margin-bottom:0}
 /* Cover frame: real art fills it once identified (.sift-player-cover unhides, sits above the
    fallback icon and covers it completely). Until then a plain abstract note glyph shows instead
@@ -787,12 +791,13 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
    kept — the toggle/declared/rows children already carry their own 18px horizontal inset (see
    comments below), so the background just wraps snugly around content already positioned
    correctly. */
-.sift-spectro-box{margin-bottom:11px;background:var(--color-background-queue);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg)}
-/* Section header label: a PERMANENT pill (annotation, 2nd round) — not just the generic
-   button:hover rect that used to make it look "bulle" only transiently on hover. The toggle
-   row itself stays full-width/clickable (aria-expanded, caret) and transparent; only the label
-   text is pilled, same family as the conclusion's status pill but a distinct, neutral tone. */
-.sift-zone-toggle-pill{display:inline-flex;align-items:center;padding:3px 10px;border-radius:var(--border-radius-pill);background:var(--overlay-selected)}
+/* overflow:hidden — defensive containment, no known bug depends on it (the actual "content
+   bleeding below the card" root cause turned out to be padding on the grid item Métadonnées'
+   0fr/1fr row measures, see .sift-zone-toggle-body-pad below — fixed there, not here). Kept anyway
+   so nothing can ever visually escape this card's rounded bounds; no effect on normal layout since
+   content already fits inside by design. */
+.sift-spectro-box{margin-bottom:11px;background:var(--color-background-queue);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);overflow:hidden}
+.sift-zone-toggle-label{display:inline-flex;align-items:center}
 .sift-spectro-caret{display:inline-block;transition:transform .25s;color:var(--color-text-tertiary)}
 .sift-spectro-hint{font-size:var(--text-sm);color:var(--color-text-info);flex:none}
 /* Grid 0fr→1fr trick instead of animating max-height: max-height forces a full layout
@@ -808,9 +813,22 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-zone-toggle{width:100%;display:flex;align-items:center;justify-content:space-between;
   background:none;border:none;cursor:pointer;text-align:left;padding:6px 0;
   font-size:var(--text-sm);color:var(--color-text-secondary);font-family:inherit;
-  border-radius:var(--border-radius-md);transition:box-shadow .15s ease}
-/* Very light hover shadow as a collapse/expand affordance hint (annotation on both toggles). */
-.sift-zone-toggle:hover{box-shadow:var(--shadow-panel-subtle)}
+  border-radius:var(--border-radius-md)}
+/* Texte-seul au survol (même convention que .sift-seg-opt, 2026-07-08) — pas de case qui se
+   superpose, juste le label qui highlight. background:none réaffirmé ici : le générique
+   button:hover{background:var(--color-background-secondary)} (élément+pseudo-classe, 0,1,1) bat
+   sinon silencieusement la règle de base .sift-zone-toggle{background:none} (classe seule, 0,1,0)
+   au survol — même piège documenté dans CLAUDE.md pour .sift-play-btn. */
+.sift-zone-toggle-label{transition:color .15s ease}
+.sift-zone-toggle:hover{background:none}
+.sift-zone-toggle:hover .sift-zone-toggle-label{color:var(--color-text-primary)}
+/* Survoler le toggle highlight aussi la bordure du cadre qui le contient (.sift-spectro-box pour
+   Diagnostic, .sift-fil-editor.sift-fil-editor-margin pour Métadonnées) — :has() cible le cadre
+   ANCÊTRE depuis l'état du bouton descendant, sans dupliquer le hover sur toute la surface de la
+   carte (seul le toggle déclenche, pas un survol du contenu ouvert en dessous). */
+.sift-spectro-box:has(.sift-zone-toggle:hover),
+.sift-fil-editor.sift-fil-editor-margin:has(.sift-zone-toggle:hover){
+  transition:border-color .15s ease;border-color:var(--color-border-secondary)}
 /* Measured via CDP against the real running app: the row's tallest child (the badge, 19px) sat
    ~4px above true center because the old padding was 2px top / 10px bottom (asymmetric) —
    consistent between both toggles, so they matched each other, but neither was actually centered.
@@ -844,8 +862,12 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
    LOSSLESS/CDJ badges land exactly where the verdict pill's own math already put it. */
 .sift-zone-toggle-hint:empty{display:none}
 .sift-zone-toggle-hint{font-size:var(--text-xs);color:var(--color-text-tertiary)}
-.sift-zone-toggle-body{display:none}
-.sift-zone-toggle-body.sift-zone-toggle-body-open{display:block}
+/* Même trick grid 0fr→1fr que .sift-spectro-body (Diagnostic) — Métadonnées se fermait avant
+   en display:none/block, sans transition (annotation : "on a une belle animation pour analyse
+   audio mais pas pour métadonnées"). */
+.sift-zone-toggle-body{display:grid;grid-template-rows:0fr;transition:grid-template-rows .3s ease}
+.sift-zone-toggle-body.sift-zone-toggle-body-open{grid-template-rows:1fr}
+.sift-zone-toggle-body-inner{overflow:hidden;min-height:0}
 /* Badge d'en-tête (ex. "MP3 ≈ X kbps", "CDJ incompatible") — visible replié, cohérent avec
    .sift-vchip existant mais sans dépendre de sa mise en page en ligne de "Preuves". */
 /* Uppercase + tracking (annotation: "fais en sorte que le texte soit plus homogene dans ces deux
@@ -877,6 +899,10 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
    (.sift-spectro-body-inner has none), so it visually overflowed past the rows above/below it.
    drawSpectrogram (report-view.ts) already reads the canvas's real rendered width via
    getBoundingClientRect() to size its backing store, so it adapts automatically — no JS change. */
+/* Rounded frame + hairline border (annotation: "il a l'air un peu posé au milieu de nulle part") —
+   a flush black rectangle with no edge treatment of its own read as floating/undefined inside the
+   box, unlike every other "case" in the app. border-radius on a <canvas> clips its own painted
+   pixels to the rounded box, same as an <img>. */
 .sift-spectro-canvas-wrap{position:relative;margin:0 18px}
 .sift-spectro-canvas{width:100%;display:block;background:#000;border-radius:var(--border-radius-md);border:0.5px solid var(--color-border-tertiary)}
 .sift-spectro-overlay{position:absolute;inset:0;width:100%;height:100%;border-radius:var(--border-radius-md);pointer-events:none}
@@ -887,6 +913,10 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-spectro-rows .sift-row:nth-last-child(-n+2){border-bottom:none}
 .sift-row-label{color:var(--color-text-tertiary)}
 .sift-row-value{font-family:var(--font-mono);text-align:right;color:var(--color-text-secondary)}
+/* Opt-out for a categorical word value (row(..., false)) — mono reads as a mismatch on plain text,
+   fitting only for the numeric/unit rows around it (annotation: "j'aime le texte de verdict mais
+   celui de ok pas fan"). */
+.sift-row-value-plain{font-family:inherit}
 .sift-tags-box{margin-bottom:4px}
 .sift-tags-title{font-size:var(--text-2xs);letter-spacing:var(--tracking-wider);text-transform:uppercase;color:var(--color-text-tertiary);margin-bottom:5px}
 .sift-codec-error{margin-top:12px;font-size:var(--text-sm);color:var(--color-text-warning)}
@@ -908,9 +938,13 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-usbfmt-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:4px}
 .sift-usbfmt-confirm-btn{padding:6px 14px;border-radius:var(--border-radius-md);border:none;background:var(--color-background-danger);color:var(--color-text-danger);cursor:pointer;font-family:inherit}
 .sift-usbfmt-confirm-btn:disabled{opacity:.4;cursor:not-allowed}
-.sift-confirm-card{padding:20px;width:360px;display:flex;flex-direction:column;gap:14px}
+/* shadcn Alert Dialog "sm" size (ui.shadcn.com/docs/components/base/alert-dialog) — narrower
+   than the default alert-dialog width, footer buttons equal-width side by side instead of
+   right-aligned at natural width. Reserved for plain yes/no confirms (confirmAction()); the USB
+   format modal is a distinct typed+armed multi-step flow, out of scope. */
+.sift-confirm-card{padding:20px;width:320px;display:flex;flex-direction:column;gap:14px;text-align:center}
 .sift-confirm-msg{font-size:var(--text-sm);color:var(--color-text-secondary);white-space:pre-line}
-.sift-confirm-actions{display:flex;justify-content:flex-end;gap:8px}
+.sift-confirm-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .sift-confirm-btn{padding:6px 14px;border-radius:var(--border-radius-md);border:none;background:var(--color-background-info);color:var(--color-text-info);cursor:pointer;font-family:inherit}
 .sift-usbfmt-error{font-size:var(--text-sm);color:var(--color-text-danger)}
 .sift-usb-list{display:flex;flex-direction:column;gap:6px;margin:10px 0}
@@ -955,9 +989,32 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-editor-field-label{font-size:10px;letter-spacing:var(--tracking-wider);color:var(--color-text-tertiary);text-transform:uppercase}
 .sift-editor-input{font-size:var(--text-md);padding:4px 7px;background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);color:var(--color-text-primary);min-width:0}
 .sift-genres-box{margin-bottom:10px;min-height:1px}
+/* Header row pairing the "Genres" caption with the Apply button (annotation: "à côté de genres" —
+   was a full-width bar at the bottom of the card). .col-h's own margin-bottom neutralized here so
+   it doesn't throw off vertical centering against the button in the flex row. */
+.sift-genres-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:6px}
+.sift-genres-header .col-h{margin-bottom:0}
 /* Bg+border toujours visibles (pas 2 tons au repos, l'un plein l'autre transparent jusqu'au
-   hover) — boutons de confirmation "neutres" de la carte Identification. */
-.sift-applytags-btn{display:flex;align-items:center;justify-content:center;gap:6px;width:100%;margin-top:var(--space-8);font-size:var(--text-sm);color:var(--color-text-primary);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);background:var(--color-background-secondary)}
+   hover) — boutons de confirmation "neutres" de la carte Identification. Border sur
+   --color-border-tertiary (pas -secondary, ~2x plus opaque) pour matcher exactement les autres
+   cases de la carte (.sift-editor-input) — annotation: "la couleur... ne semble pas fit la
+   couleur des autres cases" ; le fond était déjà identique, seule la bordure divergeait. Compact
+   (pas width:100%/flex-wrap) depuis le déplacement dans le header Genres — le label court
+   "Appliquer" n'a plus besoin de la largeur/du wrap prévus pour "Appliquer les tags ID3". */
+/* :not([hidden]) — an author display rule always beats the UA [hidden]{display:none} regardless of
+   specificity (same pitfall already documented for .sift-player-cover); this button starts hidden
+   on an unidentified track and gets unhidden in JS on a fresh identify. */
+.sift-applytags-btn:not([hidden]){display:inline-flex;align-items:center;justify-content:center;gap:6px;padding:5px 10px;font-size:var(--text-sm);color:var(--color-text-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);background:var(--color-background-secondary)}
+.sift-applytags-btn i{flex:none}
+/* Own :disabled overrides the generic button:disabled{opacity:.4} (annotation: "sa couleur quand
+   il est grisé semble off") — a blanket opacity fade pushes this button's background toward the
+   card's own background (already close in lightness), so the box nearly vanishes while the text
+   stays semi-visible — an inconsistent, broken-looking fade. Keep bg/border at full strength (the
+   box stays a clearly-defined, still-legible control); the label color itself is muted via an
+   INLINE style in refreshDiscrepancy() (filing.ts), not here — setApplyIdle()/setApplyApplied()
+   already drive this button's text color inline (idle/applied state), and an inline style always
+   wins over any CSS rule regardless of specificity, so a `color:` here would be dead weight. */
+.sift-applytags-btn:disabled{opacity:1;cursor:default}
 /* Flash bref à la confirmation puis retour neutre (jamais un vert permanent) — même convention que
    .sift-identified-flash (voir plus haut) et .sift-id-btn-neutral, appliquée ici pour la 4e fois. */
 .sift-applytags-flash{animation:sift-applytags-flash .7s ease}
@@ -1020,11 +1077,23 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
    inside — which owns its own 18px inset, see .sift-zone-toggle.sift-spectro-toggle,#sift-meta-toggle
    above — stays the same width as Diagnostic's card). The rest of the body content still gets its
    18px from #sift-meta-body (below), not from this card. */
-.sift-fil-editor.sift-fil-editor-margin{padding:0;background:var(--color-background-queue);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg)}
+/* overflow:hidden — defensive containment (see .sift-spectro-box above for why this alone didn't
+   fix the actual bug: real cause was padding on the grid item itself, fixed on
+   .sift-zone-toggle-body-pad below). */
+.sift-fil-editor.sift-fil-editor-margin{padding:0;background:var(--color-background-queue);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);overflow:hidden}
 /* Carries the inset for everything BELOW the toggle (ident-head, inputs, genres, etc.) now that the
-   card itself (above) no longer provides it. Vertical padding keeps the first action from crowding
-   the open Métadonnées toggle while preserving the same horizontal alignment. */
-#sift-meta-body{padding:8px 18px 0}
+   card itself (above) no longer provides it. On a THIRD nested div (-pad), not on .sift-zone-toggle-
+   body-inner (the grid item the 0fr/1fr row actually measures) and not on #sift-meta-body (the grid
+   container itself): overflow:hidden only zeroes a track's automatic minimum size contribution from
+   CONTENT, never from padding rendered directly on the measured item — padding put there (tried
+   twice: on #sift-meta-body, then on -inner) floors the "closed" row at its own padding sum instead
+   of true 0 (found live via CDP — gridTemplateRows stuck at 8px, then 16px, matching each attempt's
+   vertical padding exactly; annotations: "rajoute une longueur bizarre", then "c'est encore pire").
+   Diagnostic never hit this: its inset lives on a child row (.sift-spectro-declared), and
+   .sift-spectro-body-inner itself carries zero padding — the same shape restored here one level
+   deeper. Vertical 8px/8px keeps the first action clear of the toggle above and the Apply button
+   clear of the card's rounded bottom edge (was 0 bottom, annotation: "ils se mangent"). */
+#sift-meta-body .sift-zone-toggle-body-pad{padding:8px 18px}
 .sift-fil-root{display:flex;flex-direction:column;height:100%;min-height:0}
 /* Duplicate warning slot sits after the scrollable report/editor stack, so the banner appears just
    above #filfoot instead of at the top of the detail pane. */

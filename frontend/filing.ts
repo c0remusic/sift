@@ -134,6 +134,15 @@ const state: RevueState = {
 // track never inherits the previous track's edit-mode.
 let identEditing = false;
 
+// Exclusive accordion (shadcn Accordion reference, ui.shadcn.com/docs/components/base/accordion):
+// opening Métadonnées closes Diagnostic and vice versa. Coordinated with report-view.ts (no
+// shared ancestor passed down) via a document-level event — see the matching listener there for
+// why a single module-load-time registration doesn't leak across track re-opens.
+let closeMetaZone: (() => void) | null = null;
+document.addEventListener("sift:accordion-open", (e) => {
+  if ((e as CustomEvent).detail?.zone !== "metadonnees") closeMetaZone?.();
+});
+
 // Detail mode's "file in place" state — mirrors sift-live.ts's batchInPlace for batch mode. A
 // module variable (not read straight off the checkbox's DOM .checked) because the checkbox now
 // renders as part of renderBins's fldz.innerHTML, rebuilt wholesale on every filter keystroke/
@@ -697,7 +706,14 @@ function tagFieldDiffs(): { artist: boolean; title: boolean; label: boolean; yea
   // genres already had below; artist/title never had it.
   const artistW = norm(c.artist);
   const artist = artistW !== "" && artistW !== norm(f.artist);
-  const titleW = norm(c.title);
+  // Mirrors naming::tag_title (Rust) — the ID3 Title tag now includes the version suffix on
+  // write, so the comparison must too. Without this, editing ONLY the version field never
+  // changed titleW vs f.title (version was silently ignored here), leaving "Appliquer" greyed
+  // out no matter what was typed (annotation: "le bouton appliquer reste grisé si on edit la
+  // version"). c.version is never sent to the write itself — building the same combined string
+  // on both sides so they compare like-for-like, not two different sources deriving one value.
+  const versionW = norm(c.version);
+  const titleW = norm(versionW ? `${c.title} (${versionW})` : c.title);
   const title = titleW !== "" && titleW !== norm(f.title);
   const labelW = norm(state.label);
   const label = labelW !== "" && labelW !== norm(f.label);
@@ -724,6 +740,24 @@ function refreshDiscrepancy(): void {
   mark('[data-fil="artist"]', d.artist);
   mark('[data-fil="title"]', d.title);
   mark(".sift-genres", d.genres);
+
+  // Grey out "Appliquer" when there's nothing to write — a write with no discrepancy is a no-op
+  // click that gives the user nothing to do. Never touches the button in its "Annuler" (applied)
+  // state, which is a distinct action with its own always-clickable semantics.
+  const applyBtn = editor.querySelector<HTMLButtonElement>('[data-fil="applytags"]');
+  if (applyBtn && applyBtn.dataset.applied !== "1") {
+    applyBtn.disabled = !d.any;
+    applyBtn.title = d.any
+      ? "Applique les tags ID3 au fichier"
+      : "Rien à appliquer — les tags du fichier correspondent déjà à l'affichage";
+    // setApplyIdle() sets this color inline — an inline style always wins over any CSS class rule
+    // regardless of specificity, so a CSS-only .sift-applytags-btn:disabled{color:...} rule can
+    // never actually apply here (confirmed live via CDP: computed color stayed --color-text-
+    // secondary, the idle inline value, even after adding that CSS rule). Toggle the SAME inline
+    // property instead of fighting it. Kept opacity:1 on the disabled state (styles.css) so the
+    // box itself stays fully visible — only the label mutes.
+    applyBtn.style.color = d.any ? "var(--color-text-secondary)" : "var(--color-text-tertiary)";
+  }
 }
 
 /** Apply an identity result to the editing fields + filename preview.
@@ -837,10 +871,22 @@ function onIdentityApplied(
   // [C1] Relabel Identifier → Ré-identifier once an identity has been applied.
   idBtn.innerHTML = '<i class="ti ti-refresh sift-icon-inline-sm"></i> Ré-identifier';
 
+  // The button starts `hidden` in the markup when the track opens unidentified (nothing to apply
+  // yet) — a fresh identity just landed, so reveal it now rather than waiting for a full re-render.
+  const applyBtn = editor.querySelector<HTMLButtonElement>('[data-fil="applytags"]');
+  if (applyBtn) applyBtn.hidden = false;
+
   // The displayed identity just changed while the FILE keeps its old tags → surface the gap, and
   // reset the Apply button (a prior "Appliqué ✓" no longer reflects this new identity).
   resetApplyButton(editor);
   refreshDiscrepancy();
+
+  // Identifying a Discogs title now writes the ID3 tags automatically instead of requiring a
+  // second manual click every time (user request) — a fresh identity is useless to a CDJ until the
+  // file's own tags actually match it. Reuses the exact same doApplyTags() path a manual click on
+  // the button would run (loading spinner → "Appliqué ✓" → toast on failure), just triggered here
+  // instead of waiting for the user to press it.
+  if (applyBtn) void doApplyTags(applyBtn);
 }
 
 /** Markup for the "Identified: artist — title" confirmation line (cover thumb + "change" button).
@@ -1200,7 +1246,18 @@ function renderEditor(host: HTMLElement, mid: HTMLElement, rail: string, report:
     c.artist && c.title ? `${c.artist} — ${c.title}${c.version ? ` (${c.version})` : ""}` : "Non identifié";
   host.innerHTML =
     zoneToggleHtml({ label: "Métadonnées", toggleId: "sift-meta-toggle", badgeId: "sift-cdj-badge" }) +
+    // Grid 0fr→1fr open/close animation (same trick as Diagnostic's .sift-spectro-body) — the
+    // -inner wrapper carries overflow:hidden so the grid track can animate from/to zero height.
+    // Padding lives on a THIRD nested div (-pad), never on -inner itself: overflow:hidden only
+    // zeroes a track's automatic minimum size from CONTENT, not from padding on the item the grid
+    // actually measures — padding directly on -inner would floor the closed row at its own padding
+    // sum instead of true 0 (found live via CDP: gridTemplateRows stuck at 16px, matching 8px+8px
+    // vertical padding — annotation: "ça rajoute une longueur bizarre", then "c'est encore pire"
+    // after padding-bottom was added). Diagnostic never hit this because its inset lives on a child
+    // row (.sift-spectro-declared), not on .sift-spectro-body-inner itself, which has zero padding.
     `<div class="sift-zone-toggle-body" id="sift-meta-body">` +
+    `<div class="sift-zone-toggle-body-inner">` +
+    `<div class="sift-zone-toggle-body-pad">` +
     // .sift-ident-head/.sift-editor-title ("Identification · Discogs") removed (annotation:
     // "supprime") — redundant with the toggle header above it ("Métadonnées"), which already
     // names this section before it's even expanded.
@@ -1230,7 +1287,22 @@ function renderEditor(host: HTMLElement, mid: HTMLElement, rail: string, report:
           `<div class="sift-ident-idle"><span class="sift-ident-idle-note">Aucune correspondance Discogs pour l'instant.</span>` +
           `<button data-fil="identifier" class="sift-ident-search-btn">Rechercher sur Discogs</button></div>` +
           `<div class="sift-cands sift-cands-host" hidden></div>`) +
+    // Apply ID3 tags: write these fields onto the file in place (no move, no encode, no 'filed'
+    // change), revertable. Distinct from File (rail) — a neutral secondary button in the editor.
+    // Moved into the Genres header row (annotation: "à côté de genres") — short label + explanatory
+    // tooltip (réf. shadcn Button) now that it's compact, not a full-width bar at the bottom.
+    // `hidden` (not omitted) when there's no identity yet (c.artist/title empty) — an unidentified
+    // track can never produce a real discrepancy (tagFieldDiffs() already requires non-empty
+    // artist/title before d.any can be true), so showing it there was a dead artifact with nothing
+    // to do (annotation: "sur des tracks non identifiées on a encore cet artifact qui ne devrait pas
+    // être là"). Kept in the DOM rather than omitted from the markup string: onIdentityApplied()
+    // patches this exact element in place (unhides it + triggers the auto-apply) without a full
+    // renderEditor() re-render — omitting it entirely would leave onIdentityApplied's querySelector
+    // finding nothing on a track that was unidentified when this markup was first built.
+    `<div class="sift-genres-header">` +
     `<div class="col-h sift-col-h-tight">Genres</div>` +
+    `<button data-fil="applytags" class="sift-applytags-btn" title="Applique les tags ID3 au fichier"${c.artist && c.title ? "" : " hidden"}><i class="ti ti-tag sift-icon-inline-md"></i> Appliquer</button>` +
+    `</div>` +
     `<div class="sift-genres sift-genres-box"></div>` +
     // Rebuy link slot — filled by refreshRebuyLink() only for a fake track that also has a Discogs
     // match (empty, no gap, otherwise). Placed after genres so the identity block reads whole first.
@@ -1249,13 +1321,12 @@ function renderEditor(host: HTMLElement, mid: HTMLElement, rail: string, report:
         row("Tags ID3", report.id3_version) +
         `</div>`
       : "") +
-    // Apply ID3 tags: write these fields onto the file in place (no move, no encode, no 'filed'
-    // change), revertable. Distinct from File (rail) — a neutral secondary button in the editor.
-    `<button data-fil="applytags" class="sift-applytags-btn" title="Écrire ces tags dans le fichier en place — pas de déplacement, pas d'encodage, réversible"><i class="ti ti-tag sift-icon-inline-md"></i> Appliquer les tags ID3</button>` +
     // Discrepancy banner — sits JUST BELOW Apply. Hidden by default via inline display:none; the LONE
     // visibility mechanism is refreshDiscrepancy toggling style.display (no `hidden`+display conflict).
     // Look lives in .sift-tag-warn (styles.css). Shown only when the display diverges from the file.
     `<div class="sift-tag-warn" style="display:none"><i class="ti ti-alert-triangle sift-icon-inline-md sift-icon-flex-none"></i><span>Artiste et Titre pas encore gravés dans le fichier (seulement identifiés ci-dessus) — un CDJ ne peut pas les lire tant que ce n'est pas fait. <strong>Ranger</strong> ou <strong>Appliquer les tags</strong> pour corriger.</span></div>` +
+    `</div>` + // ferme .sift-zone-toggle-body-pad
+    `</div>` + // ferme .sift-zone-toggle-body-inner
     `</div>`; // ferme #sift-meta-body ouvert au début de host.innerHTML
 
   const metaToggle = host.querySelector<HTMLButtonElement>("#sift-meta-toggle");
@@ -1278,14 +1349,39 @@ function renderEditor(host: HTMLElement, mid: HTMLElement, rail: string, report:
   const forceMetaOpen = () => {
     const freshBody = host.querySelector<HTMLElement>("#sift-meta-body");
     const freshToggle = host.querySelector<HTMLButtonElement>("#sift-meta-toggle");
+    // Force a reflow before adding the open class: freshBody was JUST created by the innerHTML
+    // rebuild above, still closed (grid-template-rows:0fr) and never painted. Without this read,
+    // the browser coalesces "created closed" + "add -open" into one paint and the grid-template-rows
+    // transition never has a prior state to animate from — it just jumps straight to open (annotation:
+    // "la taille a changé mais on a pas l'animation d'ouverture"). Reading offsetHeight commits the
+    // closed layout first, so the class add right after is a genuine, animatable state change.
+    if (freshBody) void freshBody.offsetHeight;
     freshBody?.classList.add("sift-zone-toggle-body-open");
     freshToggle?.classList.add("sift-zone-toggle-open");
     freshToggle?.setAttribute("aria-expanded", "true");
   };
 
+  const closeMeta = () => {
+    const freshBody = host.querySelector<HTMLElement>("#sift-meta-body");
+    const freshToggle = host.querySelector<HTMLButtonElement>("#sift-meta-toggle");
+    if (!freshBody?.classList.contains("sift-zone-toggle-body-open")) return;
+    // Closing: exit edit mode too, so the next open always starts from this same single click.
+    identEditing = false;
+    freshBody.classList.remove("sift-zone-toggle-body-open");
+    freshToggle?.classList.remove("sift-zone-toggle-open");
+    freshToggle?.setAttribute("aria-expanded", "false");
+    // Closing the zone resets the Apply button to idle (2026-07-06 annotation): "Appliqué ✓" is a
+    // transient confirmation for the write that just happened, not a state that should survive a
+    // collapse/reopen with no track change — reopening always starts from the write action again.
+    resetApplyButton(host);
+  };
+  closeMetaZone = closeMeta; // this instance is now the one "sift:accordion-open" can close
+
   metaToggle?.addEventListener("click", () => {
     const wasOpen = metaBody?.classList.contains("sift-zone-toggle-body-open") ?? false;
     if (!wasOpen) {
+      // Exclusive accordion (shadcn Accordion reference): opening this closes Diagnostic.
+      document.dispatchEvent(new CustomEvent("sift:accordion-open", { detail: { zone: "metadonnees" } }));
       // 2026-07-06 annotation: the separate pencil "Modifier manuellement" button was redundant
       // with this same click (opening the zone only revealed a *read-only* display; a second click
       // on the pencil was needed to actually edit, and — since it re-rendered the whole zone from
@@ -1307,15 +1403,7 @@ function renderEditor(host: HTMLElement, mid: HTMLElement, rail: string, report:
       refreshPreview();
       return;
     }
-    // Closing: exit edit mode too, so the next open always starts from this same single click.
-    identEditing = false;
-    metaBody?.classList.remove("sift-zone-toggle-body-open");
-    metaToggle.classList.remove("sift-zone-toggle-open");
-    metaToggle.setAttribute("aria-expanded", "false");
-    // Closing the zone resets the Apply button to idle (2026-07-06 annotation): "Appliqué ✓" is a
-    // transient confirmation for the write that just happened, not a state that should survive a
-    // collapse/reopen with no track change — reopening always starts from the write action again.
-    resetApplyButton(host);
+    closeMeta();
   });
 
   const upd = () => {
@@ -1381,11 +1469,15 @@ function refreshRebuyLink(): void {
 // "Appliqué ✓ — Annuler" (reverts the batch just written). `onclick` is reassigned (not
 // addEventListener) so a toggle never stacks handlers.
 const APPLY_IDLE_HTML =
-  '<i class="ti ti-tag sift-icon-inline-md"></i> Appliquer les tags ID3';
+  '<i class="ti ti-tag sift-icon-inline-md"></i> Appliquer';
 
-/** Put the Apply button in its idle "write" state. */
+/** Put the Apply button in its idle "write" state. Left ENABLED here — refreshDiscrepancy() is
+ *  what actually gates .disabled against tagFieldDiffs().any right after (called on every path
+ *  that can call this: open, edit, apply, undo), so this only needs to clear the "applied" marker
+ *  the disable check keys off. */
 function setApplyIdle(btn: HTMLButtonElement): void {
   btn.disabled = false;
+  delete btn.dataset.applied;
   btn.style.color = "var(--color-text-secondary)";
   btn.innerHTML = APPLY_IDLE_HTML;
   btn.onclick = () => void doApplyTags(btn);
@@ -1399,6 +1491,7 @@ function setApplyIdle(btn: HTMLButtonElement): void {
  *  already says what happened). */
 function setApplyApplied(btn: HTMLButtonElement, batchId: string): void {
   btn.disabled = false;
+  btn.dataset.applied = "1"; // refreshDiscrepancy() never disables an "Annuler" button on d.any===false
   btn.style.color = "var(--color-text-primary)";
   btn.textContent = "Annuler";
   btn.onclick = () => void doUndoApply(btn, batchId);
@@ -1430,11 +1523,18 @@ async function doApplyTags(btn: HTMLButtonElement): Promise<void> {
     if (myseq !== openSeq) return; // another track opened meanwhile — leave its state/UI alone
     state.fileTags = snap;
     refreshDiscrepancy(); // file == display now → marker clears
+    // Derived from `snap` (a REAL re-read of the file's tags, track_file_tags — not assumed from
+    // apply_tags returning Ok) — same Artist+Title-present criterion as tags_cdj_ok (tags.rs) at
+    // initial analysis. Trusting the write result alone would show "compatible" even on a silent
+    // partial write; this re-verifies against the actual file.
+    const cdjOk = !!(snap.artist?.trim() && snap.title?.trim());
     const cdjBadgeAfterApply = document.querySelector<HTMLElement>("#sift-cdj-badge");
     if (cdjBadgeAfterApply) {
-      cdjBadgeAfterApply.textContent = "CDJ compatible";
-      cdjBadgeAfterApply.style.background = "var(--color-background-success)";
-      cdjBadgeAfterApply.style.color = "var(--color-text-success)";
+      cdjBadgeAfterApply.textContent = cdjOk ? "CDJ compatible" : "CDJ incompatible";
+      cdjBadgeAfterApply.style.background = cdjOk
+        ? "var(--color-background-success)"
+        : "var(--color-background-warning)";
+      cdjBadgeAfterApply.style.color = cdjOk ? "var(--color-text-success)" : "var(--color-text-warning)";
     }
     setApplyApplied(btn, batchId);
   } catch (e) {
