@@ -10,6 +10,17 @@ import { requireEl } from "./dom";
 
 const PEAKS_WINDOW = 512; // must match analysis::PEAKS_WINDOW
 
+// Accordion behavior (shadcn Accordion reference, ui.shadcn.com/docs/components/base/accordion):
+// Diagnostic and Métadonnées are exclusive — opening one closes the other. They're wired in two
+// separate modules (this file + filing.ts) with no shared ancestor passed down, so coordination
+// goes through a document-level event. The listener below is registered once at module load
+// (ES modules are singletons) — it always calls the CURRENT instance's close fn, so re-opening a
+// track (which rebuilds the DOM) never leaks a stale listener.
+let closeSpectroZone: (() => void) | null = null;
+document.addEventListener("sift:accordion-open", (e) => {
+  if ((e as CustomEvent).detail?.zone !== "diagnostic") closeSpectroZone?.();
+});
+
 // Single live player at a time — destroyed before any re-render so audio never lingers.
 let currentWs: WaveSurfer | null = null;
 function destroyPlayer() {
@@ -120,6 +131,30 @@ function spectroColor(val: number): [number, number, number] {
   return [r0 + (r1 - r0) * t, g0 + (g1 - g0) * t, b0 + (b1 - b0) * t];
 }
 
+/** Le raw val (0..255) de sg.mag_db converti en dBFS réel (-100..0) — même domaine que
+ *  spectroColor(), l'inverse de la quantification faite côté backend (spectrum.rs). */
+function rawToDbfs(val: number): number {
+  return (val / 255) * 100 - 100;
+}
+
+/** Fréquence + dB EXACTS au pixel (x,y) du canvas — dérivés de la MÊME donnée
+ *  (sg.mag_db) et de la MÊME formule que celle qui colore ce pixel dans drawSpectrogram,
+ *  jamais une valeur recalculée différemment qui pourrait diverger de ce qui est affiché. */
+function spectroPointAt(
+  sg: AnalysisReport["spectrogram"],
+  w: number,
+  h: number,
+  x: number,
+  y: number,
+): { freqHz: number; dbfs: number } {
+  const nyquist = sg.bins * sg.hz_per_bin;
+  const f = Math.min(sg.frames - 1, Math.max(0, Math.floor((x / w) * sg.frames)));
+  const b = Math.min(sg.bins - 1, Math.max(0, Math.floor(((h - 1 - y) / h) * sg.bins)));
+  const val = sg.mag_db[f * sg.bins + b] || 0;
+  const freqHz = nyquist > 0 ? ((h - y) / h) * nyquist : 0;
+  return { freqHz, dbfs: rawToDbfs(val) };
+}
+
 /** Légende permanente incrustée : paliers fréquence (haut-gauche) + dB (haut-droit), texte
  *  semi-transparent superposé sur l'image, coin par coin — jamais de barre dégradée de
  *  couleur (testée en mockup visuel avec Antoine, jugée peu claire une fois les paliers
@@ -168,6 +203,81 @@ function drawSpectroLegend(ctx: CanvasRenderingContext2D, w: number, h: number, 
   ctx.restore();
 }
 
+/** Réticule au survol : ligne horizontale (fréquence) + verticale (temps) qui se croisent
+ *  sous le curseur, étiquette "{kHz} · {dB}" — dessiné sur l'OVERLAY, jamais sur le canvas
+ *  de base. Ton neutre (pas verdict-toné : ce n'est plus le verdict qui s'affiche, contrai-
+ *  rement à l'ancienne ligne de coupure). Même style de pill que l'ancienne étiquette
+ *  cutoff (fond rgba(0,0,0,0.55), coins arrondis, 11px monospace), avec le même garde-fou
+ *  anti-débordement en Y ; ajoute le même garde-fou en X (la pill peut aussi déborder à
+ *  droite près du bord droit du canvas). */
+function drawSpectroCrosshair(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+  x: number,
+  y: number,
+  freqHz: number,
+  dbfs: number,
+  color: string,
+) {
+  ctx.clearRect(0, 0, w, h);
+  ctx.save();
+  ctx.globalAlpha = 0.8;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1;
+  ctx.setLineDash([5, 4]);
+  ctx.beginPath();
+  ctx.moveTo(0, y);
+  ctx.lineTo(w, y);
+  ctx.moveTo(x, 0);
+  ctx.lineTo(x, h);
+  ctx.stroke();
+  ctx.restore();
+
+  const label = `${(freqHz / 1000).toFixed(1)} kHz · ${dbfs.toFixed(1)} dB`;
+  ctx.font = "11px monospace";
+  const textW = ctx.measureText(label).width;
+  const padX = 6;
+  const padY = 4;
+  const boxW = textW + padX * 2;
+  const boxH = 11 + padY * 2;
+  let boxX = x + 8;
+  if (boxX + boxW > w - 2) boxX = x - 8 - boxW;
+  const boxY = y - 4 - boxH >= 2 ? y - 4 - boxH : y + 4;
+  ctx.fillStyle = "rgba(0,0,0,0.55)";
+  ctx.beginPath();
+  ctx.roundRect(boxX, boxY, boxW, boxH, 4);
+  ctx.fill();
+  ctx.fillStyle = color;
+  ctx.fillText(label, boxX + padX, boxY + boxH - padY - 2);
+}
+
+/** Câble le survol souris du spectrogramme : mousemove dessine le réticule sur l'overlay
+ *  (jamais sur le canvas de base, jamais la boucle pixel-par-pixel), mouseleave l'efface
+ *  entièrement (rien ne reste affiché au repos — tout se découvre au survol). Appelée une
+ *  fois par drawSpectrogram() réussi (wireSpectrogram), après que `base` a sa taille finale
+ *  (mesurée/appliquée par drawSpectrogram — voir son `measuredW`). */
+function wireSpectroHover(base: HTMLCanvasElement, overlay: HTMLCanvasElement, r: AnalysisReport) {
+  const octx = overlay.getContext("2d");
+  if (!octx) return;
+  overlay.width = base.width;
+  overlay.height = base.height;
+  const w = base.width;
+  const h = base.height;
+  const sg = r.spectrogram;
+  const color = getComputedStyle(base).getPropertyValue("--color-text-secondary").trim() || "#ccc";
+
+  base.addEventListener("mousemove", (e) => {
+    const rect = base.getBoundingClientRect();
+    const x = Math.round(((e.clientX - rect.left) / rect.width) * w);
+    const y = Math.round(((e.clientY - rect.top) / rect.height) * h);
+    if (x < 0 || x >= w || y < 0 || y >= h) return;
+    const { freqHz, dbfs } = spectroPointAt(sg, w, h, x, y);
+    drawSpectroCrosshair(octx, w, h, x, y, freqHz, dbfs, color);
+  });
+  base.addEventListener("mouseleave", () => octx.clearRect(0, 0, w, h));
+}
+
 function drawSpectrogram(canvas: HTMLCanvasElement, r: AnalysisReport) {
   const ctx = canvas.getContext("2d");
   const sg = r.spectrogram;
@@ -206,8 +316,13 @@ function peaksCoverage(r: AnalysisReport): string {
   return `${r.peaks.length} pts ≈ ${covered.toFixed(1)}s / ${r.duration_sec.toFixed(1)}s (${pct.toFixed(0)}%)`;
 }
 
-export function row(label: string, value: string): string {
-  return `<div class="sift-row"><span class="sift-row-label">${label}</span><span class="sift-row-value">${value}</span></div>`;
+// mono=false for a categorical word (e.g. the verdict "ok"/"fake"/"grey") rather than a numeric
+// reading (Hz, dBTP, %, runs) — .sift-row-value's monospace treatment fits digits/units, but reads
+// as an odd mismatch on plain text (annotation: "j'aime bien le texte de verdict mais celui de ok
+// pas fan"). Default stays mono so every other numeric row call site is unaffected.
+export function row(label: string, value: string, mono = true): string {
+  const valueCls = mono ? "sift-row-value" : "sift-row-value sift-row-value-plain";
+  return `<div class="sift-row"><span class="sift-row-label">${label}</span><span class="${valueCls}">${value}</span></div>`;
 }
 
 // ── HTML helpers ────────────────────────────────────────────────────────────
@@ -368,12 +483,7 @@ export function zoneToggleHtml(opts: {
   // has no other UI feedback path. Métadonnées never sets it, so it just stays empty there.
   return (
     `<button class="${toggleCls}"${opts.toggleId ? ` id="${opts.toggleId}"` : ""} aria-expanded="false">` +
-    // Confirmed by annotation (2nd round — see docs/superpowers/specs, continuous-surface
-    // redesign): a permanent pill around the label, not just the generic button:hover rect that
-    // only appeared transiently on hover. This is the label's own pill, distinct from the
-    // conclusion's status pill (.sift-verdict-pill) — both are legitimate "bulles", just for
-    // different things (section identity vs. status).
-    `<span><span class="${carCls}">▸</span><span class="sift-zone-toggle-pill">${opts.label}</span></span>` +
+    `<span><span class="${carCls}">▸</span><span class="sift-zone-toggle-label">${opts.label}</span></span>` +
     `<span class="sift-zone-toggle-right">` +
     `<span class="sift-chip-badge" id="${opts.badgeId}"${badgeStyle}${badgeHidden ? " hidden" : ""}>${esc(opts.badgeLabel ?? "")}</span>` +
     `<span class="${hintCls}"></span>` +
@@ -435,7 +545,7 @@ function spectroAndTagsHtml(r: AnalysisReport): string {
     `<canvas class="sift-spectro-overlay" width="720" height="180"></canvas>` +
     `</div>` +
     `<div class="sift-spectro-rows">` +
-    row("Verdict", r.verdict) +
+    row("Verdict", r.verdict, false) +
     row("Coupure", fmt(r.cutoff_hz, 0) + " Hz") +
     row("Durée", fmt(r.duration_sec, 1) + " s") +
     row("Canaux", String(r.channels) + (r.dual_mono ? " (dual-mono)" : "")) +
@@ -857,20 +967,28 @@ async function mountPlayer(root: HTMLElement, path: string, peaks?: number[], du
  * independently of player mounting — used after async analysis fill-in). */
 function wireSpectrogram(root: HTMLElement, r: AnalysisReport) {
   const sg = root.querySelector<HTMLCanvasElement>(".sift-sg");
+  const overlay = root.querySelector<HTMLCanvasElement>(".sift-spectro-overlay");
   const toggle = root.querySelector<HTMLButtonElement>(".sift-sg-toggle");
   const body = root.querySelector<HTMLElement>(".sift-sg-body");
   const caret = root.querySelector<HTMLElement>(".sift-sg-caret");
   const hint = root.querySelector<HTMLElement>(".sift-sg-hint");
   const qualityBadge = root.querySelector<HTMLElement>("#sift-quality-badge");
-  if (!sg || !toggle || !body || !caret || !hint) return;
+  if (!sg || !overlay || !toggle || !body || !caret || !hint) return;
 
   let open = false, loaded = false, busy = false;
+  const close = () => {
+    if (!open) return;
+    open = false;
+    body.classList.remove("is-open");
+    caret.style.transform = "";
+    toggle.setAttribute("aria-expanded", "false");
+  };
+  closeSpectroZone = close; // this instance is now the one "sift:accordion-open" can close
+
   toggle.addEventListener("click", async () => {
     if (busy) return;
     if (open) {
-      open = false;
-      body.classList.remove("is-open");
-      caret.style.transform = "";
+      close();
       return;
     }
     if (!loaded) {
@@ -879,6 +997,7 @@ function wireSpectrogram(root: HTMLElement, r: AnalysisReport) {
       try {
         const full = r.spectrogram.frames > 0 ? r : await analyzePath(r.path, true);
         drawSpectrogram(sg, full);
+        wireSpectroHover(sg, overlay, full);
         loaded = true;
       } catch (e) {
         console.error("spectrogram analyze failed", e);
@@ -889,8 +1008,11 @@ function wireSpectrogram(root: HTMLElement, r: AnalysisReport) {
       busy = false;
       hint.textContent = ""; // clear the transient "calcul…" now that it's loaded
     }
+    // Exclusive accordion (shadcn Accordion reference): opening this closes Métadonnées.
+    document.dispatchEvent(new CustomEvent("sift:accordion-open", { detail: { zone: "diagnostic" } }));
     open = true;
     caret.style.transform = "rotate(90deg)";
+    toggle.setAttribute("aria-expanded", "true");
     body.classList.add("is-open");
   });
 }
