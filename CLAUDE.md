@@ -209,6 +209,8 @@ Exemples de routage (non exhaustif, voir le registre complet) :
 - `sift-live.ts` — point d'entrée wiring live (Tauri only) ; délègue aux modules ci-dessous
 - `chrome.ts` — shell global (nav rail, routing écrans)
 - `home-sources.ts` — écran Accueil (sources, watcher)
+- `reglages-view.ts` — écran Réglages (Discogs, Bibliothèque, Apparence, Clé
+  USB), extrait de `sift-live.ts` le 2026-07-09 (split god file)
 - `ecartes-view.ts` — écran Écartés
 - `report-view.ts` — écran Revue (son-d'abord, waveform, verdict)
 - `filing.ts` — rail de classement (destination, format, actions filer/écarter)
@@ -241,6 +243,9 @@ Fichiers plats (pas de sous-dossiers sauf `analysis/` et `metadata/`) :
 - `dedup.rs` · `fingerprint.rs` · `ecartes.rs` · `library.rs` · `genres.rs`
 - `ffmpeg.rs`
 - `ipc.rs` · `ipc_filing.rs` · `ipc_identify.rs` · `ipc_library.rs`
+- `rekordbox_repairs.rs` — commandes IPC M8 Tier 1/2/3 (réparations chemin,
+  dédup playlist, synchro metadata master.db), extrait de `ipc_library.rs`
+  le 2026-07-09 (split god file)
 - `dev_locate.rs` · `dev_annotate.rs` — commandes dev-only (gated
   `cfg!(debug_assertions)`) pour l'outil d'annotation Alt+Clic : `locate_source`
   (grep source) et `save_annotation` (append `docs/annotations.jsonl`).
