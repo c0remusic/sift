@@ -188,17 +188,21 @@ variant ghost/icon — vérifier taille 22×22 vs référence), sections
 re-sourcer/corbeille (`Card` grammaire Boxes actée — macro), empty-state
 (verdict Task 1).
 
-- [ ] **Étape A** — inventaire.
-- [ ] **Étape B** — consultation références.
-- [ ] **Étape C** — tableau de divergences.
-- [ ] **Étape D** — gate Antoine.
-- [ ] **Étape E** — application + `npx tsc --noEmit` + validation `tauri dev`.
-- [ ] **Étape F** — doc + commit :
+- [x] **Étape A** — inventaire.
+- [x] **Étape B** — consultation références.
+- [x] **Étape C** — tableau de divergences.
+- [x] **Étape D** — gate Antoine.
+- [x] **Étape E** — application + `npx tsc --noEmit` + validation `tauri dev`.
+- [x] **Étape F** — doc + commit :
 
 ```bash
 git add frontend/styles.css frontend/ecartes-view.ts docs/design-system-states.md
 git commit -m "style(audit-ref): écran Écartés aligné sur références canoniques"
 ```
+
+**Fait, commit `63f348e`** (2026-07-09) — liens boutique `<a>` sans `href`
+convertis en `<button>` (E1). Reste de l'écran déjà conforme. Vérification
+visuelle finale (`tauri dev`) par Antoine restante.
 
 ### Task 4: Écran Journal
 
