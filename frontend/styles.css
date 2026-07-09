@@ -1070,7 +1070,12 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
    documentait déjà comme intentionnel ("encaisse les options") mais la règle réelle ne l'avait
    jamais eu : sans lui, la pastille .on touche les bords de la piste au lieu d'être visuellement
    contenue dedans (paraît "trop grande" pour la piste). */
-.sift-seg{display:flex;gap:2px;padding:2px;background:var(--color-track);border-radius:var(--border-radius-pill)}
+/* display:inline-flex (pas flex) — mesuré par CDP le 2026-07-09 (retour Antoine, 3e tentative) :
+   en display:flex un <div> bloc s'étire à la largeur de son parent (152px dans Bibliothèque),
+   plus large que Dossiers+Genres combinés — la piste nue restait visible à droite du mot le plus
+   court (Genres) une fois sélectionné, pas de celui le plus long (Dossiers). inline-flex ajuste la
+   piste à son propre contenu, comme un vrai segmented control. */
+.sift-seg{display:inline-flex;gap:2px;padding:2px;background:var(--color-track);border-radius:var(--border-radius-pill)}
 /* #qcol is a flex column (align-items:stretch by default) — without a fixed align-self the
    control stretched to the column's full width and its tabs grew with it whenever the column
    was resized (annotation 2026-07-06: fixed size/position expected, not a stretchy control). */
