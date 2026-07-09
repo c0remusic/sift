@@ -16,10 +16,10 @@ let rows: BtRow[] = [];
 let host: HTMLElement | null = null;
 
 const PILL: Record<BtState, { cls: string; html: string }> = {
-  wait: { cls: "sift-bt-wait", html: '<i class="ti ti-clock"></i>' },
-  run: { cls: "sift-bt-run", html: '<span class="sift-bt-spin"></span>' },
-  done: { cls: "sift-bt-done", html: '<i class="ti ti-check"></i>' },
-  fail: { cls: "sift-bt-fail", html: '<i class="ti ti-alert-triangle"></i>' },
+  wait: { cls: "sift-bt-wait", html: '<i class="ti ti-clock"></i> <span class="sift-bt-pill-label">attend</span>' },
+  run: { cls: "sift-bt-run", html: '<span class="sift-bt-spin"></span> <span class="sift-bt-pill-label">en cours</span>' },
+  done: { cls: "sift-bt-done", html: '<i class="ti ti-check"></i> <span class="sift-bt-pill-label">fait</span>' },
+  fail: { cls: "sift-bt-fail", html: '<i class="ti ti-alert-triangle"></i> <span class="sift-bt-pill-label">échec</span>' },
 };
 
 const esc = (s: string) =>
