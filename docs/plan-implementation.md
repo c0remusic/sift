@@ -357,9 +357,22 @@ empreintes Chromaprint).
 > « Relire le tag » réécrit les 3 fichiers `artwork.jpg`/`_m.jpg`/`_s.jpg`
 > en place (cache local `%APPDATA%\Pioneer\rekordbox\share\`, pas sur le
 > disque bibliothèque), sans FK ni ligne DB — plus simple que Artist/Genre/
-> Label. Non implémenté (dimensions exactes des variantes et cas
-> `ImagePath` NULL non testés). Détail :
-> `~/Desktop/sift-masterdb-write-probe/FINDINGS-m8-spike-8-artwork.md`.
+> Label. Détail : `~/Desktop/sift-masterdb-write-probe/FINDINGS-m8-spike-8-artwork.md`.
+> **Moteur Rust livré le 2026-07-09** : `sync_track_artwork`
+> (`rekordbox_masterdb.rs`) — lit `ImagePath` en lecture seule (jamais
+> d'écriture dans `master.db`), refuse explicitement si `ImagePath` est
+> NULL (`NoArtworkPath`) ou si une des 3 variantes est absente sur disque
+> (`ArtworkVariantMissing`, aucun mécanisme de création deviné), sinon
+> redimensionne la nouvelle pochette à la taille exacte de chaque variante
+> existante (lue sur le fichier lui-même, pas supposée) et l'écrit en place
+> (backup dédié des 3 fichiers → écriture atomique → vérification des
+> dimensions → rollback auto sur échec). Nouvelle dépendance `image`
+> (jpeg-only). 4 tests + 1 test `#[ignore]`d contre une copie réelle
+> (canary "Street Battle"). 304 tests + clippy clean. Plan :
+> `docs/superpowers/plans/2026-07-09-m8-tier3-artwork-sync-rust.md`.
+> **Reste hors scope** : câblage IPC/hook filing/UI, cas `ImagePath` NULL
+> avec création (jamais observé), régénération d'une variante `_m`/`_s`
+> totalement absente (aujourd'hui : refus explicite, pas de repli).
 > Détail : `docs/superpowers/specs/2026-07-06-m8-masterdb-write-path-rust-design-v2.md`,
 > `~/Desktop/sift-masterdb-write-probe/FINDINGS-m8-spike-5-tier3-test1.md`,
 > `~/Desktop/sift-masterdb-write-probe/FINDINGS-m8-spike-6-tier3-reload-diff.md`,
