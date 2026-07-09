@@ -284,7 +284,10 @@ async function doSave(edit: HTMLElement, st: EditState): Promise<void> {
     }
     notifyChanged(st.track);
     toast("Enregistré", true, () => {
-      void revertBatch(batchId).catch((err: unknown) => console.error("revert_batch failed", err));
+      void revertBatch(batchId).catch((err: unknown) => {
+        console.error("revert_batch failed", err);
+        toast("Annulation impossible — réessaie");
+      });
     });
   } catch (err) {
     toast(`Échec de l'enregistrement : ${String(err)}`);

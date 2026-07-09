@@ -176,11 +176,11 @@ pub fn track_file_tags(
 /// Builds the M8 Tier 3 `MetadataSyncValues` from an apply_tags edit — factored out as a pure
 /// function (no I/O, no lock) so the value-mapping is unit-testable without a Tauri AppHandle/State.
 fn metadata_sync_values_for_apply_tags(edited: &Canonical, extras: &filing::TagExtras) -> actions::MetadataSyncValues {
-    let genre = if extras.genres.is_empty() { None } else { Some(extras.genres.join("; ")) };
+    let (genre, label) = actions::sanitize_genre_label(&extras.genres, extras.label.as_deref());
     actions::MetadataSyncValues {
         artist: Some(edited.artist.clone()),
         title: Some(crate::naming::tag_title(edited)),
-        label: extras.label.clone(),
+        label,
         year: extras.year,
         genre,
     }

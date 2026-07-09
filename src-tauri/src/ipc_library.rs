@@ -61,11 +61,11 @@ fn update_metadata_inner(conn: &Connection, track_id: i64, edit: MetadataEdit) -
 
     // (6) M8 Tier 3: detect (read-only) whether this track is linked to Rekordbox and needs a
     // metadata sync candidate. Never fails the edit itself.
-    let genre = if edit.genres.is_empty() { None } else { Some(edit.genres.join("; ")) };
+    let (genre, label) = actions::sanitize_genre_label(&edit.genres, edit.label.as_deref());
     let values = actions::MetadataSyncValues {
         artist: Some(edit.artist.clone()),
         title: Some(edit.title.clone()),
-        label: edit.label.clone(),
+        label,
         year: edit.year,
         genre,
     };

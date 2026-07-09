@@ -202,6 +202,22 @@ pub struct MetadataSyncValues {
     pub genre: Option<String>,
 }
 
+/// Applies the exact same trim+blank-filter discipline as `tagging::write_tags_full` before a
+/// value becomes an M8 Tier 3 sync candidate — a value the detector records must never diverge
+/// from what the real tag write actually decided to write (see the final whole-branch review of
+/// docs/superpowers/plans/2026-07-09-m8-tier3-metadata-sync-ipc-ui.md, finding #2).
+pub fn sanitize_genre_label(genres: &[String], label: Option<&str>) -> (Option<String>, Option<String>) {
+    let joined: String = genres
+        .iter()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join("; ");
+    let genre = if joined.is_empty() { None } else { Some(joined) };
+    let label = label.filter(|s| !s.trim().is_empty()).map(|s| s.to_string());
+    (genre, label)
+}
+
 /// M8 Tier 3: read-only detection, mirroring `detect_masterdb_repair_if_linked`'s guard and
 /// 0/1/2+ match branches exactly, but writing to `rekordbox_masterdb_metadata_syncs` (keyed by
 /// Sift `track_id`, `UNIQUE(track_id)` — a second call for the same track REPLACES the row via
@@ -606,6 +622,32 @@ mod tests {
             .unwrap();
         assert_eq!(kind, "move");
         assert_eq!(undone, 0);
+    }
+
+    #[test]
+    fn sanitize_genre_label_drops_blank_genre_entries() {
+        let genres = vec!["Deep House".to_string(), "  ".to_string(), "House".to_string()];
+        let (genre, _) = sanitize_genre_label(&genres, None);
+        assert_eq!(genre, Some("Deep House; House".to_string()));
+    }
+
+    #[test]
+    fn sanitize_genre_label_all_blank_genres_is_none() {
+        let genres = vec!["  ".to_string(), "".to_string()];
+        let (genre, _) = sanitize_genre_label(&genres, None);
+        assert_eq!(genre, None);
+    }
+
+    #[test]
+    fn sanitize_genre_label_blank_label_is_none() {
+        let (_, label) = sanitize_genre_label(&[], Some("  "));
+        assert_eq!(label, None);
+    }
+
+    #[test]
+    fn sanitize_genre_label_real_label_passes_through() {
+        let (_, label) = sanitize_genre_label(&[], Some("Real Label"));
+        assert_eq!(label, Some("Real Label".to_string()));
     }
 
     #[test]

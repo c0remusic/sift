@@ -573,11 +573,11 @@ pub fn commit_file(conn: &Connection, plan: &FilePlan, log: Vec<FsLog>) -> Resul
         actions::maybe_repair_rekordbox_xml(conn, fs.kind, Some(&fs.from), Some(&fs.to));
         actions::maybe_detect_masterdb_repair(conn, fs.kind, Some(&fs.from), Some(&fs.to), *action_id);
         if matches!(fs.kind, "move" | "convert") {
-            let genre = if plan.extras.genres.is_empty() { None } else { Some(plan.extras.genres.join("; ")) };
+            let (genre, label) = actions::sanitize_genre_label(&plan.extras.genres, plan.extras.label.as_deref());
             let values = actions::MetadataSyncValues {
                 artist: Some(plan.canonical.artist.clone()),
                 title: Some(naming::tag_title(&plan.canonical)),
-                label: plan.extras.label.clone(),
+                label,
                 year: plan.extras.year,
                 genre,
             };
