@@ -260,6 +260,13 @@ autres 36px/40px existants (`.cov` avatar, `.sift-cand img/noart` vignette,
 de cadre image/avatar, pas des hauteurs de contrôle — l'échelle ne couvre que
 les boutons/contrôles interactifs.
 
+**Mise à jour 2026-07-09 (audit Project Cleaner)** : `--h-36` a depuis perdu
+son seul consommateur — la refonte Revue "surface continue" du 2026-07-06
+(voir plus bas) a agrandi `.sift-play-btn` à une valeur littérale `46px`, sans
+que ce paragraphe soit mis à jour en conséquence. Confirmé par grep (`var(--h-36)`
+: zéro match) puis supprimé de `styles.css`. `--h-40` reste câblé sur
+`.jrnl-insp-revert`, seul survivant de l'échelle hauteur.
+
 **Radius** (`--border-radius-*`, `styles.css:29`) — `system.md` déclare 4
 valeurs (sharp 4 / default 6 / soft 10 / pill 999) mais seuls `md`(6)/`lg`(10)
 existaient. Ajouté `--border-radius-sm:4px` et `--border-radius-pill:999px`,

@@ -1136,6 +1136,61 @@ règle d'entretien "dans le même geste" + une date de dernière mise à jour.
 
 ---
 
+## Dette technique — audit Project Cleaner (2026-07-09)
+
+Audit de nettoyage généraliste (fichiers morts, deps inutilisées, code mort,
+config incohérente) mené par 3 agents lecture-seule en parallèle (frontend/CSS,
+backend Rust/deps, config/docs), suivi de la correction des findings vérifiés
+soi-même plutôt que renvoyés à Antoine — commits `26dd519`, `ff12268`, `aa939e1`.
+
+**Findings corrigés :**
+- **10 tokens CSS orphelins** (`--h-36`, `--overlay-bar`, `--color-cta-text`,
+  6 variantes `--color-hue-*-border`/`-bg`) retirés de `styles.css` (3 blocs :
+  clair + 2 sombres). `--h-36` en particulier était documenté comme câblé dans
+  `docs/design-system-states.md` mais avait perdu son consommateur
+  (`.sift-play-btn`) lors de la refonte Revue du 2026-07-06 sans que la doc
+  soit mise à jour — corrigé dans le même geste.
+- **Désynchronisation de version** : `tauri.conf.json` était resté à `0.1.0`
+  (valeur par défaut du template Tauri) depuis le scaffolding M0, jamais aligné
+  sur `package.json`/`Cargo.toml` (`0.0.1`, changés ensemble au même commit
+  `60979fd`). Confirmé par `git log` avant correction — pas une régression
+  récente, un oubli initial jamais rattrapé.
+- **2 références mortes** à `.interface-design/penpot-detail-spec.md`
+  (`report-view.ts`, `styles.css`) — fichier supprimé depuis le 2026-07-01
+  (ère Penpot abandonnée), jamais retiré des commentaires qui le citaient.
+- **`docs/INDEX.json`** en retard de 4 entrées (2 specs/plans du 2026-07-04
+  token-sync-fixes, `2026-07-06-apple-system-colors-palette.md`,
+  `2026-07-09-m8-tier3-metadata-sync-ipc-ui.md`) — catalogué.
+
+**Findings vérifiés puis explicitement gardés (pas des faux positifs, mais
+pas des vrais problèmes non plus)** :
+- `frontend/ipc.ts::rescanSource` — signalé mort par l'agent (0 appelant
+  frontend), mais la commande Rust `rescan_source` existe réellement
+  (`ipc.rs:158`, enregistrée `lib.rs:114`) : fonctionnalité backend du design
+  M1 pas encore câblée à un bouton UI, pas du code mort à supprimer.
+- `components.json` (racine) — config légitime du MCP `shadcn` (pointe vers
+  `frontend/styles.css`), pas un artefact de scaffolding oublié.
+- `docs/annotations.jsonl` tracké en git — voulu : le fichier est conçu pour
+  être vidé au fur et à mesure (entrées retirées après traitement par Claude),
+  pas un log qui grossit indéfiniment.
+
+**Reste hors scope (nécessite une décision produit, pas juste du nettoyage)** :
+cluster de 16 `#[allow(dead_code)]` dans `rekordbox_masterdb.rs`
+(sans justification inline par item, contrairement à `usb_format/macos.rs`) ;
+candidats à visibilité réduite (`naming.rs::has_junk/is_clean`,
+`analysis/verdict.rs::min_cutoff_hz_for_bitrate`,
+`metadata/discogs.rs::parse_search` — appelés seulement depuis leur propre
+fichier) ; échantillon de classes CSS potentiellement mortes (`.mf`,
+`.mid-scroll`, `.jrnl-qrow-time`, `.jrnl-qempty`, `.jrnl-qcount`,
+`.sift-src-dot-pink` — seulement 30/439 sélecteurs testés, taux de mortalité
+extrapolé ~15-20%, une passe CSS-usage complète serait nécessaire avant
+suppression).
+
+**Note méthode** : `cargo test`/`clippy` volontairement pas relancés dans
+cette passe — aucun fichier `.rs` n'a été touché (uniquement CSS/JSON), et
+`tauri dev` tournait activement en session concurrente au moment du
+nettoyage (voir [[concurrent-session-same-directory]]).
+
 ## Dette technique — nettoyage clippy `m7-rekordbox-xml` (2026-07-04)
 
 `cargo clippy --all-targets -- -D warnings` échouait sur 2 erreurs pré-existantes,
