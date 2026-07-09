@@ -17,16 +17,16 @@ color-scheme:light;
 --color-background-queue:oklch(92.39% 0.0109 76.6);--color-surface-raised:oklch(98.23% 0.0069 88.64);--color-track:oklch(89.06% 0.0138 78.26);--color-row-active:oklch(95.36% 0.0091 78.28);--color-nav-active:oklch(89.37% 0.0138 78.26);
 --color-background-info:oklch(56.9% 0.1044 246.74 / .10);--color-background-danger:oklch(57.16% 0.1594 30.17 / .14);--color-background-success:oklch(53.87% 0.0763 150.63 / .14);--color-background-warning:oklch(62.04% 0.116 73.21 / .14);
 --color-text-primary:oklch(31.16% 0.0105 73.53);--color-text-secondary:oklch(45.4% 0.0145 67.45);--color-text-tertiary:oklch(61.87% 0.0133 79.76);--color-text-quaternary:oklch(75.24% 0.0139 82.4);
---color-text-info:oklch(45.37% 0.0835 246.66);--color-cta-text:oklch(96.81% 0.0074 80.72);--color-text-danger:oklch(48.88% 0.1399 30.93);--color-text-success:oklch(49.19% 0.0735 151.97);--color-text-warning:oklch(53.34% 0.103 75.31);
+--color-text-info:oklch(45.37% 0.0835 246.66);--color-text-danger:oklch(48.88% 0.1399 30.93);--color-text-success:oklch(49.19% 0.0735 151.97);--color-text-warning:oklch(53.34% 0.103 75.31);
 --color-border-tertiary:oklch(25.67% 0.0142 67.12 / 0.09);--color-border-secondary:oklch(25.67% 0.0142 67.12 / 0.16);
 --color-border-info:oklch(56.9% 0.1044 246.74 / .35);--color-border-danger:oklch(57.16% 0.1594 30.17 / .42);
---color-hue-indigo-text:oklch(43.43% 0.1484 283.58);--color-hue-indigo-bg:oklch(52.95% 0.191 278.34 / .14);--color-hue-indigo-border:oklch(52.95% 0.191 278.34 / .40);--color-hue-purple-text:oklch(45.72% 0.1313 307.39);--color-hue-purple-bg:oklch(61.49% 0.2129 312.41 / .14);--color-hue-purple-border:oklch(61.49% 0.2129 312.41 / .40);--color-hue-pink-text:oklch(45.67% 0.1331 1.47);--color-hue-pink-bg:oklch(62.25% 0.1666 2.52 / .14);--color-hue-pink-border:oklch(62.25% 0.1666 2.52 / .40);--color-hue-teal-text:oklch(47.62% 0.0805 184.5);--color-hue-teal-bg:oklch(60.75% 0.1029 186.37 / .14);--color-hue-teal-border:oklch(60.75% 0.1029 186.37 / .40);--color-hue-yellow-text:oklch(54.77% 0.1119 90.23);--color-hue-yellow-bg:oklch(79.29% 0.162 88.43 / .14);--color-hue-yellow-border:oklch(79.29% 0.162 88.43 / .40);
+--color-hue-indigo-text:oklch(43.43% 0.1484 283.58);--color-hue-indigo-bg:oklch(52.95% 0.191 278.34 / .14);--color-hue-purple-text:oklch(45.72% 0.1313 307.39);--color-hue-purple-bg:oklch(61.49% 0.2129 312.41 / .14);--color-hue-pink-text:oklch(45.67% 0.1331 1.47);--color-hue-pink-bg:oklch(62.25% 0.1666 2.52 / .14);--color-hue-teal-text:oklch(47.62% 0.0805 184.5);--color-hue-teal-bg:oklch(60.75% 0.1029 186.37 / .14);--color-hue-yellow-text:oklch(54.77% 0.1119 90.23);
 /* Neutral overlay tints (hover/selection/left-bar/badge on neutral surfaces) — dark-tinted here
    since the surface is light; flipped to light-tinted in the dark variant below. Anything that
    used to hardcode rgba(255,255,255,...) for "selected row" must use these instead, or it goes
    invisible the moment dark mode is active (see fix 2026-07-01: .nv/.qi selection). */
 --overlay-hover:oklch(25.67% 0.0142 67.12 / .035);--overlay-selected:oklch(25.67% 0.0142 67.12 / .06);
---overlay-bar:oklch(25.67% 0.0142 67.12 / .55);--overlay-badge:oklch(25.67% 0.0142 67.12 / .06);
+--overlay-badge:oklch(25.67% 0.0142 67.12 / .06);
 /* Voile de zone de dépôt (drag OS) : surface quasi-opaque teintée info, même langage que le
    bouton Destination du rail (base + tint info), thème-aware. Remplace l'ancien rgba sombre
    codé en dur qui ignorait le thème clair. Voir chrome.ts ensureDropStyle. */
@@ -60,7 +60,7 @@ color-scheme:light;
 --text-3xs:8px;--text-2xs:9px;--text-xs:10px;--text-sm:11px;--text-md:12px;--text-base:13px;
 --text-lg:14px;--text-xl:16px;--text-2xl:26px;
 /* Spacing scale (system.md): the ONLY allowed values. */
---space-4:4px;--space-8:8px;--space-12:12px;--space-16:16px;--space-24:24px;--space-32:32px;
+--space-4:4px;--space-8:8px;--space-12:12px;--space-16:16px;
 /* Tracking scale (2026-07-08, structure adapted from tweakcn "ZFlow" theme's tracking-* scale —
    values are Sift's own, only the 4 exact literals that already recurred ≥2x across the app
    before this token existed (audit rule from the 2026-07-03 radius/height pass: wire what
@@ -69,9 +69,11 @@ color-scheme:light;
    a token wiring. */
 --tracking-normal:.01em;--tracking-wide:.03em;--tracking-wider:.05em;--tracking-widest:.06em;
 /* Height scale for control elements (buttons), not avatar/thumbnail/icon frames — those are an
-   image size, not a control height. Only the two sizes real controls actually use (audit
-   2026-07-03: --h-32/--h-44 had zero consumers, dropped rather than declared speculatively). */
---h-36:36px;--h-40:40px;
+   image size, not a control height. Only the one size a real control still uses (audit
+   2026-07-03: --h-32/--h-44 had zero consumers, dropped rather than declared speculatively;
+   --h-36 lost its only consumer, .sift-play-btn, when the Revue continuous-surface redesign
+   enlarged that button to a 46px literal — dropped 2026-07-09 for the same reason). */
+--h-40:40px;
 }
 /* Dark variant — same warm-neutral family + vert/ambre uniquement (aucun bleu ni rouge, même
    simplification sémantique que le clair : danger fusionne dans warning). Auto = suit
@@ -84,12 +86,12 @@ color-scheme:light;
     --color-background-primary:oklch(27.57% 0.0054 106.75);--color-background-secondary:oklch(34.77% 0.0086 97.58);--color-background-tertiary:oklch(31.64% 0.0035 106.6);--color-background-queue:oklch(30.01% 0.0053 106.71);--color-surface-raised:oklch(38.94% 0.01 99.12);--color-track:oklch(32.04% 0.0088 97.61);--color-row-active:oklch(36.73% 0.012 93.78);--color-nav-active:oklch(35.23% 0.0105 91.64);
     --color-background-info:oklch(56.9% 0.1044 246.74 / .14);--color-background-danger:oklch(57.16% 0.1594 30.17 / .16);--color-background-success:oklch(53.87% 0.0763 150.63 / .14);--color-background-warning:oklch(62.04% 0.116 73.21 / .14);
     --color-text-primary:oklch(95.9% 0.0115 84.58);--color-text-secondary:oklch(81.67% 0.0171 79.34);--color-text-tertiary:oklch(67.56% 0.0148 78.23);--color-text-quaternary:oklch(59.57% 0.0153 78.21);
-    --color-text-info:oklch(79.21% 0.0789 242.05);--color-cta-text:oklch(26.34% 0.0109 99.32);--color-text-danger:oklch(78.05% 0.0992 32.54);--color-text-success:oklch(84.99% 0.0947 151.66);--color-text-warning:oklch(84.04% 0.1108 78.51);
+    --color-text-info:oklch(79.21% 0.0789 242.05);--color-text-danger:oklch(78.05% 0.0992 32.54);--color-text-success:oklch(84.99% 0.0947 151.66);--color-text-warning:oklch(84.04% 0.1108 78.51);
     --color-border-tertiary:oklch(100.0% 0.0 89.88 / 0.09);--color-border-secondary:oklch(100.0% 0.0 89.88 / 0.22);
     --color-border-info:oklch(79.21% 0.0789 242.05 / .30);--color-border-danger:oklch(78.05% 0.0992 32.54 / .40);
-    --color-hue-indigo-text:oklch(74.16% 0.1143 286.69);--color-hue-indigo-bg:oklch(52.95% 0.191 278.34 / .18);--color-hue-indigo-border:oklch(74.16% 0.1143 286.69 / .35);--color-hue-purple-text:oklch(77.58% 0.0892 311.64);--color-hue-purple-bg:oklch(61.49% 0.2129 312.41 / .18);--color-hue-purple-border:oklch(77.58% 0.0892 311.64 / .35);--color-hue-pink-text:oklch(80.76% 0.0905 355.95);--color-hue-pink-bg:oklch(62.25% 0.1666 2.52 / .18);--color-hue-pink-border:oklch(80.76% 0.0905 355.95 / .35);--color-hue-teal-text:oklch(84.24% 0.0961 185.53);--color-hue-teal-bg:oklch(60.75% 0.1029 186.37 / .18);--color-hue-teal-border:oklch(84.24% 0.0961 185.53 / .35);--color-hue-yellow-text:oklch(88.36% 0.129 93.67);--color-hue-yellow-bg:oklch(79.29% 0.162 88.43 / .18);--color-hue-yellow-border:oklch(88.36% 0.129 93.67 / .35);
+    --color-hue-indigo-text:oklch(74.16% 0.1143 286.69);--color-hue-indigo-bg:oklch(52.95% 0.191 278.34 / .18);--color-hue-purple-text:oklch(77.58% 0.0892 311.64);--color-hue-purple-bg:oklch(61.49% 0.2129 312.41 / .18);--color-hue-pink-text:oklch(80.76% 0.0905 355.95);--color-hue-pink-bg:oklch(62.25% 0.1666 2.52 / .18);--color-hue-teal-text:oklch(84.24% 0.0961 185.53);--color-hue-teal-bg:oklch(60.75% 0.1029 186.37 / .18);--color-hue-yellow-text:oklch(88.36% 0.129 93.67);
     --overlay-hover:oklch(100.0% 0.0 89.88 / .03);--overlay-selected:oklch(100.0% 0.0 89.88 / .06);
-    --overlay-bar:oklch(100.0% 0.0 89.88 / .32);--overlay-badge:oklch(100.0% 0.0 89.88 / .06);--overlay-drop:oklch(35.51% 0.0051 106.66 / .93);
+    --overlay-badge:oklch(100.0% 0.0 89.88 / .06);--overlay-drop:oklch(35.51% 0.0051 106.66 / .93);
   }
 }
 :root[data-theme="dark"]{
@@ -97,12 +99,12 @@ color-scheme:light;
   --color-background-primary:oklch(27.57% 0.0054 106.75);--color-background-secondary:oklch(34.77% 0.0086 97.58);--color-background-tertiary:oklch(31.64% 0.0035 106.6);--color-background-queue:oklch(30.01% 0.0053 106.71);--color-surface-raised:oklch(38.94% 0.01 99.12);--color-track:oklch(32.04% 0.0088 97.61);--color-row-active:oklch(36.73% 0.012 93.78);--color-nav-active:oklch(35.23% 0.0105 91.64);
   --color-background-info:oklch(56.9% 0.1044 246.74 / .14);--color-background-danger:oklch(57.16% 0.1594 30.17 / .16);--color-background-success:oklch(53.87% 0.0763 150.63 / .14);--color-background-warning:oklch(62.04% 0.116 73.21 / .14);
   --color-text-primary:oklch(95.9% 0.0115 84.58);--color-text-secondary:oklch(81.67% 0.0171 79.34);--color-text-tertiary:oklch(67.56% 0.0148 78.23);--color-text-quaternary:oklch(59.57% 0.0153 78.21);
-  --color-text-info:oklch(79.21% 0.0789 242.05);--color-cta-text:oklch(26.34% 0.0109 99.32);--color-text-danger:oklch(78.05% 0.0992 32.54);--color-text-success:oklch(84.99% 0.0947 151.66);--color-text-warning:oklch(84.04% 0.1108 78.51);
+  --color-text-info:oklch(79.21% 0.0789 242.05);--color-text-danger:oklch(78.05% 0.0992 32.54);--color-text-success:oklch(84.99% 0.0947 151.66);--color-text-warning:oklch(84.04% 0.1108 78.51);
   --color-border-tertiary:oklch(100.0% 0.0 89.88 / 0.09);--color-border-secondary:oklch(100.0% 0.0 89.88 / 0.22);
   --color-border-info:oklch(79.21% 0.0789 242.05 / .30);--color-border-danger:oklch(78.05% 0.0992 32.54 / .40);
-  --color-hue-indigo-text:oklch(74.16% 0.1143 286.69);--color-hue-indigo-bg:oklch(52.95% 0.191 278.34 / .18);--color-hue-indigo-border:oklch(74.16% 0.1143 286.69 / .35);--color-hue-purple-text:oklch(77.58% 0.0892 311.64);--color-hue-purple-bg:oklch(61.49% 0.2129 312.41 / .18);--color-hue-purple-border:oklch(77.58% 0.0892 311.64 / .35);--color-hue-pink-text:oklch(80.76% 0.0905 355.95);--color-hue-pink-bg:oklch(62.25% 0.1666 2.52 / .18);--color-hue-pink-border:oklch(80.76% 0.0905 355.95 / .35);--color-hue-teal-text:oklch(84.24% 0.0961 185.53);--color-hue-teal-bg:oklch(60.75% 0.1029 186.37 / .18);--color-hue-teal-border:oklch(84.24% 0.0961 185.53 / .35);--color-hue-yellow-text:oklch(88.36% 0.129 93.67);--color-hue-yellow-bg:oklch(79.29% 0.162 88.43 / .18);--color-hue-yellow-border:oklch(88.36% 0.129 93.67 / .35);
+  --color-hue-indigo-text:oklch(74.16% 0.1143 286.69);--color-hue-indigo-bg:oklch(52.95% 0.191 278.34 / .18);--color-hue-purple-text:oklch(77.58% 0.0892 311.64);--color-hue-purple-bg:oklch(61.49% 0.2129 312.41 / .18);--color-hue-pink-text:oklch(80.76% 0.0905 355.95);--color-hue-pink-bg:oklch(62.25% 0.1666 2.52 / .18);--color-hue-teal-text:oklch(84.24% 0.0961 185.53);--color-hue-teal-bg:oklch(60.75% 0.1029 186.37 / .18);--color-hue-yellow-text:oklch(88.36% 0.129 93.67);
   --overlay-hover:oklch(100.0% 0.0 89.88 / .03);--overlay-selected:oklch(100.0% 0.0 89.88 / .06);
-  --overlay-bar:oklch(100.0% 0.0 89.88 / .32);--overlay-badge:oklch(100.0% 0.0 89.88 / .06);--overlay-drop:oklch(35.51% 0.0051 106.66 / .93);
+  --overlay-badge:oklch(100.0% 0.0 89.88 / .06);--overlay-drop:oklch(35.51% 0.0051 106.66 / .93);
 }
 *{box-sizing:border-box}
 html,body{margin:0;height:100%;overflow:hidden;background:var(--color-background-tertiary);color:var(--color-text-primary);font-family:var(--font-ui)}
@@ -129,8 +131,7 @@ html{background:transparent}
    (height:100%;width:100%;display:flex, no centered wrapper). */
 html,body{margin:0;padding:0;height:100%}
 .pa{height:100%;width:100%;display:flex;background:var(--color-background-primary);overflow:hidden;font-size:12px}
-/* Wide, labelled, grouped nav rail — faithful to the Penpot shell (brand + PROCESS/ORGANIZE/
-   EXPORT groups + neutral selection). See .interface-design/penpot-detail-spec.md. */
+/* Wide, labelled, grouped nav rail (brand + PROCESS/ORGANIZE/EXPORT groups + neutral selection). */
 .sb{width:152px;flex:none;display:flex;flex-direction:column;gap:1px;padding:14px 10px;background:var(--color-background-tertiary);border-right:0.5px solid var(--color-border-tertiary);align-items:stretch}
 .nav-brand{display:flex;align-items:center;gap:8px;padding:2px 8px 12px;font-size:18px;font-weight:600;color:var(--color-text-primary);letter-spacing:var(--tracking-normal)}
 .nav-brand i{font-size:16px;color:var(--color-text-info)}

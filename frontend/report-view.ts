@@ -461,8 +461,7 @@ function toneCss(tone: ChipTone): string {
         : "background:var(--overlay-selected);color:var(--color-text-secondary)";
 }
 
-/** A verdict-panel chip: `success` = green-tinted (LOSSLESS), `neutral` = white@.06 (MATCH/UNIQUE),
- *  matching the Penpot `badge-*` shapes (see .interface-design/penpot-detail-spec.md). */
+/** A verdict-panel chip: `success` = green-tinted (LOSSLESS), `neutral` = white@.06 (MATCH/UNIQUE). */
 export function vchipHtml(label: string, tone: ChipTone): string {
   return `<span class="sift-vchip" style="${toneCss(tone)}">${esc(label)}</span>`;
 }
