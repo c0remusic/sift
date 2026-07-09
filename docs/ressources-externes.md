@@ -1748,3 +1748,97 @@ pour ça). Décision produit toujours en attente.
 
 Détail complet : `~/Desktop/sift-masterdb-write-probe/FINDINGS-m8-spike-6-tier3-reload-diff.md`.
 Design mis à jour : `docs/superpowers/specs/2026-07-06-m8-masterdb-write-path-rust-design-v2.md`.
+
+---
+
+## Évaluation 22 — M8 Tier 3 spike 7 : reuse vs duplicate d'un artiste déjà connu (2026-07-09)
+
+**Contexte** : suite directe du spike 6 (Évaluation 21). Question laissée
+ouverte : quand le nom d'artiste retagué correspond à un artiste **déjà
+connu** de la bibliothèque, Rekordbox réutilise-t-il la ligne `djmdArtist`
+existante ou en crée-t-il une nouvelle (doublon) ?
+
+**Méthode** : même canary que les spikes 5/6 (`ID=99795585`, "Street
+Battle"), artiste cible "Eat Static" (`ID=1521864440`, 31 pistes déjà liées
+dans la vraie bibliothèque — clairement établi, pas un accident). Copie
+fraîche, tag `Artist` modifié sur une copie du fichier réel, swap réel
+(backup horodaté, restore vérifié par hash SHA256), Antoine fait « Relire le
+tag » dans Rekordbox, diff avant/après capturé par script Python
+(`pyrekordbox`) sur une copie en lecture seule du `master.db` live avant tout
+restore.
+
+**Résultat, sans ambiguïté** : **REUSE confirmé** — `ArtistID` repointé vers
+la ligne existante (1521864440), **aucune nouvelle ligne** `djmdArtist`
+créée (compte de lignes inchangé, 1108→1108), la ligne "Eat Static"
+elle-même strictement intacte (`updated_at`/`UUID` inchangés). Combiné au
+spike 6 (chemin création, nom inédit), le mécanisme find-or-create de
+Rekordbox est documenté sur ses deux branches.
+
+**Décision** : le risque de duplication d'artiste pour un futur fallback
+d'écriture directe est maîtrisable — un moteur qui fait une recherche par
+nom AVANT de créer reproduit fidèlement ce que Rekordbox fait lui-même.
+
+Détail : `~/Desktop/sift-masterdb-write-probe/FINDINGS-m8-spike-7-reuse-vs-duplicate.md`.
+
+---
+
+## Évaluation 23 — M8 Tier 3 : moteur Rust livré (find-or-create Artist/Genre/Label) + spike 8 pochette (2026-07-09)
+
+**Contexte** : suite du spike 7 ci-dessus. Décision produit prise par
+Antoine : automatiser Tier 3 plutôt que documenter le geste manuel
+« Relire le tag ». Moteur Rust implémenté et vérifié le même jour.
+
+**Livré** : `sync_track_metadata` (`src-tauri/src/rekordbox_masterdb.rs`) —
+find-or-create sur `djmdArtist`/`djmdGenre`/`djmdLabel` (schéma vérifié
+identique entre les 3 tables via `pyrekordbox.db6.tables`), écriture directe
+de `Title`/`ReleaseYear` (colonnes sans FK, aucun risque de doublon). Même
+chaîne de sûreté que Tier 1/2 (garde process Rekordbox, backup horodaté,
+transaction, ré-encrypt, écriture atomique, vérification round-trip,
+rollback automatique). Périmètre dérivé exactement de ce que
+`tagging::write_tags_full` écrit — cover et Album explicitement exclus au
+départ (aucun mécanisme connu pour la pochette à ce moment-là).
+
+**Fixture étendue** (`scripts/make-rekordbox-fixture.py`) avec les 3
+tables FK + colonnes `ArtistID`/`GenreID`/`LabelID`/`ReleaseYear` sur
+`djmdContent`. 8 tests unitaires + 1 test `#[ignore]`d contre une copie
+fraîche de la vraie bibliothèque (REUSE + CREATE sur le canary "Street
+Battle", restauration finale vérifiée indépendamment par lecture directe,
+`ArtistID` revenu à sa valeur d'origine). 290+ tests + clippy clean, aucune
+régression sur Tier 1/2.
+
+**Matching normalisé, fermé le jour même** : `find_or_create_named_row`
+comparait d'abord en égalité stricte (risque documenté : "Eat Static" vs
+"eat static" créerait un doublon cosmétique). Corrigé en `TRIM(Name) =
+TRIM(?1) COLLATE NOCASE` — testé (variante casse/espaces réutilise la ligne
+existante). Limite assumée : `COLLATE NOCASE` de SQLite ne fait que du
+pliage ASCII, un nom accentué ("Étienne"/"étienne") ne matche pas par ce
+mécanisme.
+
+**Spike 8 — pochette, question posée par Antoine après la livraison** :
+« vu qu'on importe des pochettes, est-ce que ça pose un problème pour la
+synchro ? ». Investigation : `ImagePath` (`djmdContent`) pointe vers 3
+fichiers JPG séparés (`artwork.jpg`/`_m.jpg`/`_s.jpg`) sous
+`%APPDATA%\Pioneer\rekordbox\share\PIONEER\Artwork\<uuid>\` — **un cache
+local par machine**, pas sur le disque de la bibliothèque. Test : nouvelle
+pochette embarquée (JPEG magenta 500×500 généré via Pillow) sur une copie
+du fichier réel du canary, `ImagePath` volontairement laissé intact dans la
+copie de `master.db`, swap réel, Antoine fait « Relire le tag », diff par
+hash SHA256 des 3 fichiers live avant/après (backup+restore vérifiés
+indépendamment).
+
+**Résultat** : **`ImagePath` inchangé, les 3 fichiers réécrits EN PLACE**
+avec le contenu de la nouvelle pochette (confirmé par dimensions 500×500 +
+couleur moyenne (254,0,220) quasi identique à l'injectée, écart = perte
+JPEG). **Plus simple** que Artist/Genre/Label : pas de FK, pas de ligne DB,
+juste un fichier à écraser au même chemin. Reste non testé : dimensions
+exactes des variantes `_m`/`_s`, cas `ImagePath` NULL (piste sans pochette
+préexistante).
+
+**Décision** : synchro pochette non implémentée dans ce chantier (scope
+initial), mais le blocage « aucun patron de référence » est levé — c'est
+désormais un ajout au moteur Tier 3 plus simple que ce qui existe déjà, pas
+un nouveau risque à défricher.
+
+Détail : `~/Desktop/sift-masterdb-write-probe/FINDINGS-m8-spike-8-artwork.md`.
+Design mis à jour : `docs/superpowers/specs/2026-07-06-m8-masterdb-write-path-rust-design-v2.md`.
+Plan : `docs/superpowers/plans/2026-07-09-m8-tier3-metadata-sync-rust.md`.
