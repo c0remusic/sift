@@ -347,6 +347,32 @@ empreintes Chromaprint).
 > **Reste hors scope de ce plan (à faire dans un plan séparé)** : câblage
 > IPC, hook de détection au filing, écran UI — même séquencement que
 > Tier 1/2 (moteur d'abord, IPC+UI ensuite).
+>
+> **Câblage IPC + hook + UI livré le 2026-07-09 (même jour)** — 4 commandes
+> IPC (`rekordbox_masterdb_pending_metadata_syncs`,
+> `rekordbox_masterdb_apply_metadata_syncs`,
+> `rekordbox_masterdb_dismiss_metadata_sync`,
+> `rekordbox_masterdb_resolve_ambiguous_metadata_sync`) adossées à une
+> nouvelle table `rekordbox_masterdb_metadata_syncs` (migration v13, clée par
+> `track_id`, **remplacée et non accumulée** à chaque nouveau retag — pas un
+> historique). Détection appelée directement aux 3 sites qui écrivent des
+> tags (`filing.rs` conformant + non-conformant, `apply_tags`,
+> `update_metadata`), même approche lecture-seule que Tier 1/2. Correctif
+> incident trouvé en cours de câblage : `update_metadata` (édition manuelle
+> Bibliothèque) n'a jamais journalisé de `tag_edit` ni retourné de
+> `batch_id` — un vrai trou d'undo préexistant, pas seulement un
+> pré-requis du détecteur — corrigé dans le même geste, avec un vrai bouton
+> Annuler côté Bibliothèque. Écran : 3ᵉ section sur la page Rekordbox
+> (`renderRekordboxLive`), sous Tier 1/Tier 2, mêmes conventions (liste en
+> cartes, `confirmAction()` avant écriture, dismiss par ligne, résolution
+> manuelle des ambiguïtés). Plan :
+> `docs/superpowers/plans/2026-07-09-m8-tier3-metadata-sync-ipc-ui.md`,
+> design :
+> `docs/superpowers/specs/2026-07-09-m8-tier3-metadata-sync-ipc-ui-design.md`.
+> 323 tests + clippy + tsc clean. **Vérification manuelle `tauri dev`
+> restante** (lier un XML Rekordbox de test, retaguer une piste liée, confirmer
+> l'apparition de la section et le succès d'une application, Rekordbox fermé).
+>
 > **Risque casse/normalisation fermé le 2026-07-09** : matching devenu
 > trim+insensible à la casse (`COLLATE NOCASE`), testé.
 > Risques résiduels restants (non bloquants) : nettoyage des lignes
