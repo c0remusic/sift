@@ -701,6 +701,98 @@ pub fn rekordbox_masterdb_resolve_ambiguous_metadata_sync(
     rekordbox_masterdb_resolve_ambiguous_metadata_sync_inner(&conn, id, &chosen_track_id)
 }
 
+/// Result of attempting to apply one pending metadata sync.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ApplyMetadataSyncOutcome {
+    pub id: i64,
+    pub ok: bool,
+    pub error: Option<String>,
+}
+
+/// Attempts one metadata sync row. Never calls `sync_track_metadata` for a row that isn't
+/// `pending` with a known `rekordbox_track_id`.
+fn apply_one_metadata_sync(conn: &Connection, pioneer_dir: &Path, backup_root: &Path, batch_stamp: &str, id: i64) -> ApplyMetadataSyncOutcome {
+    let row = conn.query_row(
+        "SELECT rekordbox_track_id, new_artist, new_title, new_label, new_year, new_genre, status
+         FROM rekordbox_masterdb_metadata_syncs WHERE id=?1",
+        rusqlite::params![id],
+        |r| {
+            Ok((
+                r.get::<_, Option<String>>(0)?,
+                r.get::<_, Option<String>>(1)?,
+                r.get::<_, Option<String>>(2)?,
+                r.get::<_, Option<String>>(3)?,
+                r.get::<_, Option<i64>>(4)?,
+                r.get::<_, Option<String>>(5)?,
+                r.get::<_, String>(6)?,
+            ))
+        },
+    );
+    let (rekordbox_track_id, new_artist, new_title, new_label, new_year, new_genre, status) = match row {
+        Ok(v) => v,
+        Err(e) => return ApplyMetadataSyncOutcome { id, ok: false, error: Some(e.to_string()) },
+    };
+
+    let Some(rekordbox_track_id) = rekordbox_track_id.filter(|_| status == "pending") else {
+        return ApplyMetadataSyncOutcome {
+            id,
+            ok: false,
+            error: Some("piste ambiguë ou déjà traitée — résolution manuelle requise".to_string()),
+        };
+    };
+
+    let sync = crate::rekordbox_masterdb::MetadataSync {
+        track_id: rekordbox_track_id,
+        artist: new_artist,
+        title: new_title,
+        year: new_year,
+        genre: new_genre,
+        label: new_label,
+    };
+    let backup_dir = backup_root.join(batch_stamp).join(id.to_string());
+
+    match crate::rekordbox_masterdb::sync_track_metadata(pioneer_dir, &backup_dir, &sync) {
+        Ok(()) => {
+            if let Err(e) = conn.execute(
+                "UPDATE rekordbox_masterdb_metadata_syncs SET status='applied', applied_at=datetime('now') WHERE id=?1",
+                rusqlite::params![id],
+            ) {
+                return ApplyMetadataSyncOutcome { id, ok: false, error: Some(e.to_string()) };
+            }
+            ApplyMetadataSyncOutcome { id, ok: true, error: None }
+        }
+        Err(e) => ApplyMetadataSyncOutcome { id, ok: false, error: Some(humanize_masterdb_error(&e)) },
+    }
+}
+
+/// Plain (testable) implementation of `rekordbox_masterdb_apply_metadata_syncs`.
+fn rekordbox_masterdb_apply_metadata_syncs_inner(conn: &Connection, backup_root: &Path, ids: &[i64]) -> Result<Vec<ApplyMetadataSyncOutcome>, String> {
+    let xml_path = crate::settings::get(conn, crate::settings::REKORDBOX_XML_PATH)
+        .map_err(|e| e.to_string())?
+        .ok_or("aucun XML Rekordbox lié — relie un fichier avant de synchroniser")?;
+    let pioneer_dir = std::path::Path::new(&xml_path)
+        .parent()
+        .ok_or("aucun XML Rekordbox lié — relie un fichier avant de synchroniser")?;
+
+    let batch_stamp = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
+    let mut outcomes = Vec::with_capacity(ids.len());
+    for &id in ids {
+        outcomes.push(apply_one_metadata_sync(conn, pioneer_dir, backup_root, &batch_stamp, id));
+    }
+    Ok(outcomes)
+}
+
+/// Applies the given pending/ambiguous metadata sync `id`s against the linked Rekordbox's
+/// `master.db`, one at a time. Never invoked automatically — explicit user-confirmed write step.
+/// A failure on one `id` does not stop the rest of the batch. Backups land under
+/// `app_data_dir()/rekordbox-backups/<batch timestamp>/<id>/`, same convention as Tier 1/2.
+#[tauri::command]
+pub fn rekordbox_masterdb_apply_metadata_syncs(app: AppHandle, conn: State<'_, Mutex<Connection>>, ids: Vec<i64>) -> Result<Vec<ApplyMetadataSyncOutcome>, String> {
+    let backup_root = app.path().app_data_dir().map_err(|e| e.to_string())?.join("rekordbox-backups");
+    let conn = conn.lock().map_err(|e| e.to_string())?;
+    rekordbox_masterdb_apply_metadata_syncs_inner(&conn, &backup_root, &ids)
+}
+
 // ── M8 Tier 2: playlist duplicate-entry dedup ─────────────────────────────────
 
 /// One `djmdSongPlaylist` row involved in a duplicate group — mirrors
@@ -1576,5 +1668,86 @@ mod rekordbox_tests {
 
         let err = rekordbox_masterdb_resolve_ambiguous_metadata_sync_inner(&conn, id, "40000001").unwrap_err();
         assert!(err.contains("ambigu"));
+    }
+
+    #[test]
+    fn apply_metadata_syncs_applies_pending_row() {
+        let conn = db();
+        let tmp = tempfile::tempdir().unwrap();
+        let pioneer_dir = tmp.path().join("pioneer");
+        std::fs::create_dir_all(&pioneer_dir).unwrap();
+        std::fs::copy(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/rekordbox_master.db"), pioneer_dir.join("master.db")).unwrap();
+        let xml_path = pioneer_dir.join("masterPlaylists6.xml");
+        std::fs::write(&xml_path, b"<DJ_PLAYLISTS/>").unwrap();
+        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+
+        conn.execute("INSERT INTO tracks(path, status) VALUES('D:/FIXTURE/track1.mp3', 'filed')", []).unwrap();
+        let track_id = conn.last_insert_rowid();
+        let id = seed_metadata_sync_row(&conn, track_id, "pending", Some("40000001"), None);
+
+        let backup_root = tmp.path().join("backups");
+        let outcomes = rekordbox_masterdb_apply_metadata_syncs_inner(&conn, &backup_root, &[id]).unwrap();
+        assert_eq!(outcomes.len(), 1);
+        assert!(outcomes[0].ok, "expected ok, got error: {:?}", outcomes[0].error);
+
+        let status: String = conn.query_row("SELECT status FROM rekordbox_masterdb_metadata_syncs WHERE id=?1", rusqlite::params![id], |r| r.get(0)).unwrap();
+        assert_eq!(status, "applied");
+    }
+
+    #[test]
+    fn apply_metadata_syncs_continues_after_one_failure() {
+        let conn = db();
+        let tmp = tempfile::tempdir().unwrap();
+        let pioneer_dir = tmp.path().join("pioneer");
+        std::fs::create_dir_all(&pioneer_dir).unwrap();
+        std::fs::copy(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/rekordbox_master.db"), pioneer_dir.join("master.db")).unwrap();
+        let xml_path = pioneer_dir.join("masterPlaylists6.xml");
+        std::fs::write(&xml_path, b"<DJ_PLAYLISTS/>").unwrap();
+        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+
+        conn.execute("INSERT INTO tracks(path, status) VALUES('D:/FIXTURE/track1.mp3', 'filed')", []).unwrap();
+        let track_id_1 = conn.last_insert_rowid();
+        let id_ok = seed_metadata_sync_row(&conn, track_id_1, "pending", Some("40000001"), None);
+
+        conn.execute("INSERT INTO tracks(path, status) VALUES('D:/FIXTURE/gone.mp3', 'filed')", []).unwrap();
+        let track_id_2 = conn.last_insert_rowid();
+        let id_fail = seed_metadata_sync_row(&conn, track_id_2, "pending", Some("99999999"), None); // no such djmdContent row
+
+        let backup_root = tmp.path().join("backups");
+        let outcomes = rekordbox_masterdb_apply_metadata_syncs_inner(&conn, &backup_root, &[id_ok, id_fail]).unwrap();
+        assert_eq!(outcomes.len(), 2);
+        assert!(outcomes[0].ok);
+        assert!(!outcomes[1].ok);
+        assert!(outcomes[1].error.as_deref().unwrap().contains("introuvable"));
+
+        let status_ok: String = conn.query_row("SELECT status FROM rekordbox_masterdb_metadata_syncs WHERE id=?1", rusqlite::params![id_ok], |r| r.get(0)).unwrap();
+        assert_eq!(status_ok, "applied");
+        let status_fail: String = conn.query_row("SELECT status FROM rekordbox_masterdb_metadata_syncs WHERE id=?1", rusqlite::params![id_fail], |r| r.get(0)).unwrap();
+        assert_eq!(status_fail, "pending", "a failed row must stay pending, retryable");
+    }
+
+    #[test]
+    fn apply_metadata_syncs_rejects_ambiguous_row_without_calling_engine() {
+        let conn = db();
+        let tmp = tempfile::tempdir().unwrap();
+        let pioneer_dir = tmp.path().join("pioneer");
+        std::fs::create_dir_all(&pioneer_dir).unwrap();
+        std::fs::copy(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/rekordbox_master.db"), pioneer_dir.join("master.db")).unwrap();
+        let xml_path = pioneer_dir.join("masterPlaylists6.xml");
+        std::fs::write(&xml_path, b"<DJ_PLAYLISTS/>").unwrap();
+        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+
+        conn.execute("INSERT INTO tracks(path, status) VALUES('D:/a.mp3', 'filed')", []).unwrap();
+        let track_id = conn.last_insert_rowid();
+        let id = seed_metadata_sync_row(&conn, track_id, "ambiguous", None, Some("40000001,40000002"));
+
+        let backup_root = tmp.path().join("backups");
+        let outcomes = rekordbox_masterdb_apply_metadata_syncs_inner(&conn, &backup_root, &[id]).unwrap();
+        assert_eq!(outcomes.len(), 1);
+        assert!(!outcomes[0].ok);
+        assert!(outcomes[0].error.as_deref().unwrap().contains("ambigu"));
+
+        let status: String = conn.query_row("SELECT status FROM rekordbox_masterdb_metadata_syncs WHERE id=?1", rusqlite::params![id], |r| r.get(0)).unwrap();
+        assert_eq!(status, "ambiguous", "must not have been touched");
     }
 }
