@@ -561,6 +561,146 @@ pub fn rekordbox_masterdb_apply_repairs(
     rekordbox_masterdb_apply_repairs_inner(&conn, &backup_root, &ids)
 }
 
+// ── M8 Tier 3: master.db metadata sync candidates ─────────────────────────────
+
+/// One candidate metadata sync (Sift retagged a file linked to Rekordbox), keyed by Sift
+/// `track_id` (unlike Tier 1's `PendingMasterdbRepair`, which is keyed by `action_id`) — a fresh
+/// retag before the user applies replaces this row rather than adding another.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct PendingMetadataSync {
+    pub id: i64,
+    pub track_id: i64,
+    /// `tracks.path`, for display.
+    pub sift_path: String,
+    /// `djmdContent.ID` — `None` when `status == "ambiguous"`.
+    pub rekordbox_track_id: Option<String>,
+    pub candidate_track_ids: Option<String>,
+    /// Same enrichment discipline as `PendingMasterdbRepair::candidate_tracks` — resolved fresh,
+    /// only for `ambiguous` rows, `None` if `master.db` couldn't be read (degrades gracefully).
+    pub candidate_tracks: Option<Vec<CandidateTrack>>,
+    pub new_artist: Option<String>,
+    pub new_title: Option<String>,
+    pub new_label: Option<String>,
+    pub new_year: Option<i64>,
+    pub new_genre: Option<String>,
+    /// "pending" | "ambiguous".
+    pub status: String,
+    pub detected_at: String,
+}
+
+/// Plain (testable) implementation of `rekordbox_masterdb_pending_metadata_syncs`.
+fn rekordbox_masterdb_pending_metadata_syncs_inner(conn: &Connection) -> Result<Vec<PendingMetadataSync>, String> {
+    let mut stmt = conn
+        .prepare(
+            "SELECT s.id, s.track_id, t.path, s.rekordbox_track_id, s.candidate_track_ids,
+                    s.new_artist, s.new_title, s.new_label, s.new_year, s.new_genre, s.status, s.detected_at
+             FROM rekordbox_masterdb_metadata_syncs s
+             JOIN tracks t ON t.id = s.track_id
+             WHERE s.status IN ('pending', 'ambiguous')
+             ORDER BY s.detected_at",
+        )
+        .map_err(|e| e.to_string())?;
+    let mut rows: Vec<PendingMetadataSync> = stmt
+        .query_map([], |r| {
+            Ok(PendingMetadataSync {
+                id: r.get(0)?,
+                track_id: r.get(1)?,
+                sift_path: r.get(2)?,
+                rekordbox_track_id: r.get(3)?,
+                candidate_track_ids: r.get(4)?,
+                candidate_tracks: None,
+                new_artist: r.get(5)?,
+                new_title: r.get(6)?,
+                new_label: r.get(7)?,
+                new_year: r.get(8)?,
+                new_genre: r.get(9)?,
+                status: r.get(10)?,
+                detected_at: r.get(11)?,
+            })
+        })
+        .map_err(|e| e.to_string())?
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|e| e.to_string())?;
+
+    if rows.iter().any(|r| r.status == "ambiguous") {
+        if let Some(path_map) = read_masterdb_path_map(conn) {
+            for row in rows.iter_mut().filter(|r| r.status == "ambiguous") {
+                if let Some(ids) = &row.candidate_track_ids {
+                    row.candidate_tracks = Some(
+                        ids.split(',')
+                            .map(|id| CandidateTrack { track_id: id.to_string(), folder_path: path_map.get(id).cloned() })
+                            .collect(),
+                    );
+                }
+            }
+        }
+    }
+    Ok(rows)
+}
+
+/// Candidate `master.db` metadata syncs detected so far, excluding ones already `applied` or
+/// `dismissed`.
+#[tauri::command]
+pub fn rekordbox_masterdb_pending_metadata_syncs(conn: State<'_, Mutex<Connection>>) -> Result<Vec<PendingMetadataSync>, String> {
+    let conn = conn.lock().map_err(|e| e.to_string())?;
+    rekordbox_masterdb_pending_metadata_syncs_inner(&conn)
+}
+
+/// Plain (testable) implementation of `rekordbox_masterdb_dismiss_metadata_sync`.
+fn rekordbox_masterdb_dismiss_metadata_sync_inner(conn: &Connection, id: i64) -> Result<(), String> {
+    conn.execute("UPDATE rekordbox_masterdb_metadata_syncs SET status='dismissed' WHERE id=?1", rusqlite::params![id])
+        .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Mark a pending/ambiguous metadata sync as dismissed — it stops appearing in
+/// `pending_metadata_syncs`. Never applies anything. A subsequent retag of the same track still
+/// resurrects a fresh candidate (see `detect_masterdb_metadata_sync_if_linked`'s `ON CONFLICT`).
+#[tauri::command]
+pub fn rekordbox_masterdb_dismiss_metadata_sync(conn: State<'_, Mutex<Connection>>, id: i64) -> Result<(), String> {
+    let conn = conn.lock().map_err(|e| e.to_string())?;
+    rekordbox_masterdb_dismiss_metadata_sync_inner(&conn, id)
+}
+
+/// Plain (testable) implementation of `rekordbox_masterdb_resolve_ambiguous_metadata_sync`.
+fn rekordbox_masterdb_resolve_ambiguous_metadata_sync_inner(conn: &Connection, id: i64, chosen_track_id: &str) -> Result<(), String> {
+    let (candidate_track_ids, status): (Option<String>, String) = conn
+        .query_row(
+            "SELECT candidate_track_ids, status FROM rekordbox_masterdb_metadata_syncs WHERE id=?1",
+            rusqlite::params![id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .map_err(|e| e.to_string())?;
+
+    if status != "ambiguous" {
+        return Err("cette ligne n'est plus ambiguë — rechargement nécessaire".to_string());
+    }
+    let candidates = candidate_track_ids.unwrap_or_default();
+    if !candidates.split(',').any(|c| c == chosen_track_id) {
+        return Err("piste choisie invalide pour cette ambiguïté".to_string());
+    }
+
+    conn.execute(
+        "UPDATE rekordbox_masterdb_metadata_syncs SET rekordbox_track_id=?1, candidate_track_ids=NULL, status='pending' WHERE id=?2",
+        rusqlite::params![chosen_track_id, id],
+    )
+    .map_err(|e| e.to_string())?;
+    Ok(())
+}
+
+/// Resolves an ambiguous metadata sync by manually picking the correct `master.db` candidate. The
+/// row becomes an ordinary `pending` row afterwards — no other change to the
+/// `apply_metadata_syncs` flow.
+#[tauri::command]
+pub fn rekordbox_masterdb_resolve_ambiguous_metadata_sync(
+    conn: State<'_, Mutex<Connection>>,
+    id: i64,
+    chosen_track_id: String,
+) -> Result<(), String> {
+    let conn = conn.lock().map_err(|e| e.to_string())?;
+    rekordbox_masterdb_resolve_ambiguous_metadata_sync_inner(&conn, id, &chosen_track_id)
+}
+
 // ── M8 Tier 2: playlist duplicate-entry dedup ─────────────────────────────────
 
 /// One `djmdSongPlaylist` row involved in a duplicate group — mirrors
@@ -1356,5 +1496,85 @@ mod rekordbox_tests {
             err.contains("99999999"),
             "error should name the missing row so the user understands what changed: {err}"
         );
+    }
+
+    fn seed_metadata_sync_row(conn: &Connection, track_id: i64, status: &str, rb_track_id: Option<&str>, candidates: Option<&str>) -> i64 {
+        conn.execute("INSERT INTO tracks(path, status) VALUES(?1, 'filed')", rusqlite::params![format!("D:/t{track_id}.mp3")]).ok();
+        let action_id = crate::actions::record_row_only(conn, "b1", Some(track_id), "tag_edit", Some("D:/x.mp3"), None, None).unwrap();
+        conn.execute(
+            "INSERT INTO rekordbox_masterdb_metadata_syncs
+                 (action_id, track_id, rekordbox_track_id, candidate_track_ids, new_artist, status)
+             VALUES (?1, ?2, ?3, ?4, 'New Artist', ?5)",
+            rusqlite::params![action_id, track_id, rb_track_id, candidates, status],
+        ).unwrap();
+        conn.last_insert_rowid()
+    }
+
+    #[test]
+    fn pending_metadata_syncs_excludes_applied_and_dismissed() {
+        let conn = db();
+        conn.execute("INSERT INTO tracks(path, status) VALUES('D:/a.mp3', 'filed')", []).unwrap();
+        let track_id = conn.last_insert_rowid();
+        seed_metadata_sync_row(&conn, track_id, "pending", Some("40000001"), None);
+
+        conn.execute("INSERT INTO tracks(path, status) VALUES('D:/b.mp3', 'filed')", []).unwrap();
+        let track_id_2 = conn.last_insert_rowid();
+        let id2 = seed_metadata_sync_row(&conn, track_id_2, "applied", Some("40000002"), None);
+        conn.execute("UPDATE rekordbox_masterdb_metadata_syncs SET status='dismissed' WHERE id=?1", rusqlite::params![id2]).ok();
+
+        let rows = rekordbox_masterdb_pending_metadata_syncs_inner(&conn).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].status, "pending");
+    }
+
+    #[test]
+    fn dismiss_metadata_sync_marks_dismissed() {
+        let conn = db();
+        conn.execute("INSERT INTO tracks(path, status) VALUES('D:/a.mp3', 'filed')", []).unwrap();
+        let track_id = conn.last_insert_rowid();
+        let id = seed_metadata_sync_row(&conn, track_id, "pending", Some("40000001"), None);
+
+        rekordbox_masterdb_dismiss_metadata_sync_inner(&conn, id).unwrap();
+
+        let rows = rekordbox_masterdb_pending_metadata_syncs_inner(&conn).unwrap();
+        assert!(rows.is_empty());
+    }
+
+    #[test]
+    fn resolve_ambiguous_metadata_sync_moves_to_pending() {
+        let conn = db();
+        conn.execute("INSERT INTO tracks(path, status) VALUES('D:/a.mp3', 'filed')", []).unwrap();
+        let track_id = conn.last_insert_rowid();
+        let id = seed_metadata_sync_row(&conn, track_id, "ambiguous", None, Some("40000001,40000002"));
+
+        rekordbox_masterdb_resolve_ambiguous_metadata_sync_inner(&conn, id, "40000002").unwrap();
+
+        let rows = rekordbox_masterdb_pending_metadata_syncs_inner(&conn).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].status, "pending");
+        assert_eq!(rows[0].rekordbox_track_id.as_deref(), Some("40000002"));
+        assert_eq!(rows[0].candidate_track_ids, None);
+    }
+
+    #[test]
+    fn resolve_ambiguous_metadata_sync_rejects_track_id_outside_candidate_list() {
+        let conn = db();
+        conn.execute("INSERT INTO tracks(path, status) VALUES('D:/a.mp3', 'filed')", []).unwrap();
+        let track_id = conn.last_insert_rowid();
+        let id = seed_metadata_sync_row(&conn, track_id, "ambiguous", None, Some("40000001,40000002"));
+
+        let err = rekordbox_masterdb_resolve_ambiguous_metadata_sync_inner(&conn, id, "99999999").unwrap_err();
+        assert!(err.contains("invalide"));
+    }
+
+    #[test]
+    fn resolve_ambiguous_metadata_sync_rejects_row_that_is_not_ambiguous() {
+        let conn = db();
+        conn.execute("INSERT INTO tracks(path, status) VALUES('D:/a.mp3', 'filed')", []).unwrap();
+        let track_id = conn.last_insert_rowid();
+        let id = seed_metadata_sync_row(&conn, track_id, "pending", Some("40000001"), None);
+
+        let err = rekordbox_masterdb_resolve_ambiguous_metadata_sync_inner(&conn, id, "40000001").unwrap_err();
+        assert!(err.contains("ambigu"));
     }
 }
