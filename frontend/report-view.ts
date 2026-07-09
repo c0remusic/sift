@@ -872,6 +872,13 @@ async function mountPlayer(root: HTMLElement, path: string, peaks?: number[], du
         e.preventDefault();
         tempoValue = 8;
         renderTempo();
+      } else if (e.key === "0") {
+        // Parité clavier avec le double-clic souris (dblclick → 0%, ligne juste au-dessus) —
+        // sans ça, un utilisateur clavier doit presser une flèche jusqu'à 8 fois (audit 2026-07-09).
+        e.preventDefault();
+        tempoValue = 0;
+        renderTempo(false);
+        applyRate();
       }
     });
   }
