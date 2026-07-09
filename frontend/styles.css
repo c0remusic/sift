@@ -402,6 +402,10 @@ button{font-family:inherit;background:transparent;border:0.5px solid var(--color
    longer stark white. */
 button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--color-border-info);outline-offset:1px}
 button:hover{background:var(--color-background-secondary)}button:disabled{opacity:.4;cursor:default}
+/* Audit-ref E1 (Écartés, 2026-07-09) : liens boutique (ecStoreLinks), <button> transparent
+   converti depuis <a> sans href (non focusable) — réaffirme transparent au survol par prudence,
+   même si le style inline devrait déjà l'emporter sur button:hover par spec (non mesuré ici). */
+.sift-ec-store-link:hover{background:transparent}
 input{font-family:inherit}input[type=range]{accent-color:var(--color-text-info)}
 .home-body{display:flex;gap:14px;flex:1;min-height:0;overflow:hidden}
 .home-left{flex:1;min-width:0;overflow-y:auto;padding-right:4px}

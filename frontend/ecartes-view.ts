@@ -47,11 +47,14 @@ const EC_STORES: [string, (q: string) => string][] = [
 ];
 
 // Buy-link row for a track: store names that open a search in the default browser.
+// Audit-ref E1 (Écartés, 2026-07-09) : c'étaient des <a> SANS href — sans href, un <a> n'a ni rôle
+// implicite ni arrêt Tab ni activation clavier. Le handler délégué (sift-live.ts) est déjà
+// agnostique du tag ([data-ec]), donc <button> ici sans rien casser, cohérent avec "Copié" à côté.
 function ecStoreLinks(it: EcarteItem): string {
   const q = encodeURIComponent(ecQuery(it));
   return EC_STORES.map(
     ([label, fn]) =>
-      `<a data-ec="store" data-url="${encodeURIComponent(fn(q))}" style="font-size:var(--text-xs);color:var(--color-text-info);cursor:pointer;text-decoration:none;white-space:nowrap">${label}</a>`,
+      `<button class="sift-ec-store-link" data-ec="store" data-url="${encodeURIComponent(fn(q))}" style="font-size:var(--text-xs);color:var(--color-text-info);background:transparent;border:none;padding:0;font:inherit;cursor:pointer;text-decoration:none;white-space:nowrap">${label}</button>`,
   ).join('<span style="color:var(--color-border-secondary);margin:0 3px">·</span>');
 }
 

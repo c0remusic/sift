@@ -709,6 +709,24 @@ Antoine restante.
 
 ---
 
+## Écran Écartés — audit référence canonique (2026-07-09)
+
+Task 3 du chantier `docs/superpowers/changes/2026-07-08-ui-reference-audit/`.
+Écran compact, peu de composants — la plupart déjà conformes.
+
+| Élément | Verdict | Détail |
+|---|---|---|
+| Boutons icône Restaurer/Corbeille (`.lk-icon`) | Conforme | Vrais `<button>`, `title`/`aria-label` déjà présents |
+| Bouton Restaurer (corbeille) | Conforme | Texte visible + `title`, déjà focusable |
+| Bouton Copier / Purger | Conforme | Vrais `<button>` |
+| Chips raison (`sift-vchip`) / pills compteurs | Conforme | Display-only, `<span>` correct |
+| Liens boutique (`ecStoreLinks`) | **Corrigé** | C'étaient des `<a data-ec="store">` **sans `href`** — non focusables, aucune activation clavier possible. Convertis en `<button>` (le handler délégué `sift-live.ts:2088` est agnostique du tag, `[data-ec]` générique) — cohérent avec le bouton "Copié" juste à côté |
+
+Vérifié : `npx tsc --noEmit` clean. Vérification visuelle (clavier sur les
+liens boutique) dans `tauri dev` par Antoine restante.
+
+---
+
 ## Historique des corrections
 
 **2026-07-05 (pochette réellement cassée + sélection multi Alt+Clic)** :
