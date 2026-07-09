@@ -173,6 +173,22 @@ Détail complet des deux investigations :
 - **Fallback (écriture directe des tables normalisées)** : design séparé à
   haut risque (find-or-create FK, nettoyage d'orphelins) — pas implémenté,
   et pas designé en détail par ce document.
+  **Patron de référence empirique capturé le 2026-07-09 (spike n°6)** :
+  diff exact avant/après « Relire le tag » sur le même canary — Rekordbox
+  crée une **nouvelle** ligne `djmdArtist` (nouvel `ID` + nouvel `UUID`
+  généré, `rb_local_usn` propre bumpé) plutôt que de modifier la ligne
+  existante en place, puis repointe `djmdContent.ArtistID` dessus ;
+  `TrackInfoUpdated`/`rb_local_usn`/`updated_at` de la ligne `djmdContent`
+  bumpés en plus ; `Analysed`/`AnalysisUpdated`/`CueUpdated` confirmés
+  inchangés. L'ancienne ligne `djmdArtist` n'est pas supprimée (orpheline
+  potentielle, non vérifiée). **Question critique non résolue par ce
+  spike** : ce test n'a exercé que le chemin "création" (nom d'artiste
+  test inédit) — reste à vérifier si Rekordbox réutilise une ligne
+  `djmdArtist` existante quand le nom correspond déjà à un artiste connu
+  de la bibliothèque (cas réel très fréquent pour Sift), ou s'il duplique
+  systématiquement. Sans cette réponse, un fallback d'écriture directe
+  reste risqué même avec ce patron de référence en main. Détail :
+  `~/Desktop/sift-masterdb-write-probe/FINDINGS-m8-spike-6-tier3-reload-diff.md`.
 - **Communication utilisateur** : "les changements apparaissent après
   réouverture de Rekordbox" — pas de synchro live, Rekordbox doit relancer
   pour rejouer le reload.
@@ -322,3 +338,14 @@ Symétrique du lecteur, même philosophie « ne pas réimplémenter SQLite » :
   mais la question Tier 3 est tranchée — reste une décision produit (design
   séparé à haut risque vs renoncer à l'automatique) avant tout code Tier 3.
   Détail : `~/Desktop/sift-masterdb-write-probe/FINDINGS-m8-spike-5-tier3-test1.md`.
+- **v2 mise à jour n°6** (2026-07-09) : spike n°6 exécuté — capture du diff
+  exact avant/après « Relire le tag » sur le même canary (jamais fait au
+  spike n°5, restore trop rapide). Révèle le patron réel du fallback
+  "écriture directe" : Rekordbox **crée** une nouvelle ligne `djmdArtist`
+  (nouvel `ID`+`UUID`) plutôt que de modifier l'existante en place, avec FK
+  repointée + USN bumpé ; `Analysed`/`AnalysisUpdated`/`CueUpdated` toujours
+  confirmés inchangés. Question critique laissée ouverte : ce test n'a
+  exercé que le chemin création (nom d'artiste inédit) — le chemin
+  réutilisation (nom déjà connu dans la bibliothèque, cas fréquent pour
+  Sift) reste à tester avant de considérer le fallback implémentable.
+  Détail : `~/Desktop/sift-masterdb-write-probe/FINDINGS-m8-spike-6-tier3-reload-diff.md`.

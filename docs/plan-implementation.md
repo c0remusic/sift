@@ -320,12 +320,19 @@ empreintes Chromaprint).
 > retesté proprement le 2026-07-08** (canary à titre unique, plus d'ambiguïté
 > possible) : verdict négatif sur la stratégie primaire — le flag seul ne
 > déclenche **aucun** reload automatique du tag dans Rekordbox (l'action
-> manuelle « Relire le tag », elle, fonctionne). Non commencé côté code —
-> une décision produit reste à prendre (fallback écriture directe des tables
-> normalisées, à haut risque, vs renoncer à l'automatique et documenter le
-> geste manuel pour l'utilisateur) avant tout travail d'implémentation.
+> manuelle « Relire le tag », elle, fonctionne). **Diff exact capturé le
+> 2026-07-09** (spike n°6) : Rekordbox crée une nouvelle ligne `djmdArtist`
+> (find-or-create, FK repointée) plutôt que modifier l'existante — patron
+> de référence désormais connu pour un futur fallback, mais question
+> critique non résolue (réutilisation vs duplication d'un artiste déjà
+> connu de la bibliothèque). Non commencé côté code — une décision produit
+> reste à prendre (fallback écriture directe des tables normalisées, à
+> haut risque même avec ce patron en main, vs renoncer à l'automatique et
+> documenter le geste manuel pour l'utilisateur) avant tout travail
+> d'implémentation.
 > Détail : `docs/superpowers/specs/2026-07-06-m8-masterdb-write-path-rust-design-v2.md`,
-> `~/Desktop/sift-masterdb-write-probe/FINDINGS-m8-spike-5-tier3-test1.md`.
+> `~/Desktop/sift-masterdb-write-probe/FINDINGS-m8-spike-5-tier3-test1.md`,
+> `~/Desktop/sift-masterdb-write-probe/FINDINGS-m8-spike-6-tier3-reload-diff.md`.
 - **Rekordbox `master.db`** : remplacement in-situ (Tier 1 livré, moteur+IPC+UI), **dédup des playlists existantes** (Tier 2 livré, moteur+IPC+UI), **réparation/prévention des liens cassés** (chemin change au changement de format — Tier 1). ⚠️ backup obligatoire (déjà implémenté), Rekordbox fermé (garde déjà implémentée).
 - **Normalisation loudness** (option, OFF par défaut).
 

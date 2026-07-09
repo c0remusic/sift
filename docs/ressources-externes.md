@@ -1676,3 +1676,75 @@ puisque proposé explicitement plutôt que caché.
 
 Détail complet : `~/Desktop/sift-masterdb-write-probe/FINDINGS-m8-spike-5-tier3-test1.md`.
 Design mis à jour : `docs/superpowers/specs/2026-07-06-m8-masterdb-write-path-rust-design-v2.md`.
+
+---
+
+## Évaluation 21 — M8 Tier 3 : diff exact du write pattern « Relire le tag » (2026-07-09)
+
+**Contexte** : suite directe de l'Évaluation 20. Le spike n°5 avait confirmé
+que « Relire le tag » fonctionne, mais le restore avait été fait avant de
+capturer précisément ce que Rekordbox écrit dans `master.db` lors de cette
+action — un trou explicitement noté comme limite du spike précédent, pas un
+oubli. Antoine a posé la question directement : "c'est toujours buildable,
+tu peux pas simplement trigger l'update toi-même ?" — réponse : Sift ne
+peut pas invoquer l'action UI de Rekordbox depuis l'extérieur (pas d'API),
+mais peut en principe répliquer directement ce qu'elle écrit en base — à
+condition de savoir précisément quoi. Ce spike comble ce trou.
+
+**Méthode** : même canary que l'Évaluation 20 (`ID=99795585`, "Street
+Battle", titre unique). Round-trip complet avec **snapshot avant ET après**
+l'action « Relire le tag » (contrairement au spike n°5) : copie fraîche du
+vrai `master.db` → modification combinée chemin+tag+flag (identique au
+spike n°5) → snapshot complet des lignes `djmdContent`/`djmdArtist` →
+swap réel → Antoine ouvre Rekordbox, clic droit « Relire le tag » (Artiste
+confirmé mis à jour par capture d'écran) → ferme Rekordbox → **copie en
+lecture seule du `master.db` live avant tout restore** → nouveau snapshot →
+diff colonne par colonne → restore, vérifié indépendamment par hash SHA256.
+
+**Incident méthodologique pendant la préparation** : deux erreurs
+PowerShell distinctes ont retardé le swap/restore, toutes deux dues à des
+problèmes de terminal côté Antoine, pas à des commandes fausses — (1) deux
+lignes collées ensemble sans saut de ligne produisant des noms de paramètre
+malformés (`-ForceCopy-Item`), corrigé en fournissant des scripts `.ps1` à
+exécuter en une seule ligne plutôt que des commandes à coller ; (2) `cd`
+et `Resolve-Path` échouaient avec des erreurs — diagnostiqué comme le
+terminal d'Antoine étant en réalité **cmd.exe** (thémé Starship pour
+ressembler à un prompt PowerShell moderne), pas PowerShell — corrigé en
+lui faisant taper `powershell` explicitement avant les commandes.
+
+**Diff exact capturé** (voir `~/Desktop/sift-masterdb-write-probe/FINDINGS-m8-spike-6-tier3-reload-diff.md`
+pour le détail colonne par colonne complet) :
+
+- **`djmdArtist` : nouvelle ligne créée, pas de mise à jour en place.**
+  Nouvel `ID` numérique + nouvel `UUID` généré + `rb_local_usn` propre
+  bumpé, `Name` = la nouvelle valeur du tag. L'ancienne ligne
+  `djmdArtist` reste en base, non supprimée (orpheline potentielle, non
+  vérifiée si Rekordbox la nettoie plus tard).
+- **`djmdContent`** : `ArtistID` repointé vers la nouvelle ligne, `Commnt`
+  aussi mis à jour (Reload Tag relit plus que le seul Artiste — tous les
+  champs ID3 pertinents), `TrackInfoUpdated`/`rb_local_usn`/`updated_at`
+  bumpés.
+- **Règle non négociable M8 vérifiée tenue** : `Analysed`/
+  `AnalysisUpdated`/`CueUpdated` tous confirmés inchangés.
+
+**Implication** : le mécanisme "find-or-create" que le design v2 craignait
+sans le connaître précisément est maintenant documenté empiriquement — un
+futur moteur Rust voulant répliquer ce comportement (fallback écriture
+directe) a un vrai patron de référence, pas une supposition. **Mais une
+question critique reste non résolue** : ce test n'a exercé que le chemin
+"création" (nom d'artiste test inédit, `M8 TIER3 SPIKE TEST 2`) — reste à
+vérifier si Rekordbox réutilise une ligne `djmdArtist` existante quand le
+nom correspond déjà à un artiste connu de la bibliothèque (cas réel très
+fréquent pour l'usage de Sift : retaguer avec le bon nom d'un artiste déjà
+présent chez l'utilisateur), ou s'il duplique systématiquement. Sans cette
+réponse, le fallback reste risqué même avec ce patron en main — un doublon
+d'artiste créé à chaque retag serait un vrai défaut UX pour l'utilisateur.
+
+**Décision** : ni le fallback écriture-directe ni l'option "renoncer à
+l'automatique" ne sont tranchés par ce spike — il documente seulement plus
+précisément le coût/risque du premier chemin, sans le rendre "prêt à
+implémenter" (la question réutilisation-vs-duplication reste bloquante
+pour ça). Décision produit toujours en attente.
+
+Détail complet : `~/Desktop/sift-masterdb-write-probe/FINDINGS-m8-spike-6-tier3-reload-diff.md`.
+Design mis à jour : `docs/superpowers/specs/2026-07-06-m8-masterdb-write-path-rust-design-v2.md`.
