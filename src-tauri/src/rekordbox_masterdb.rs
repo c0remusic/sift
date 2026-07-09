@@ -49,6 +49,16 @@
 //! (`docs/superpowers/plans/2026-07-09-m8-tier3-metadata-sync-rust.md`) but
 //! **not yet wired to IPC or a filing-time hook** — same "engine first"
 //! precedent as Tier 1/2, follow-up plan pending.
+//!
+//! # Real-copy tests run one at a time
+//!
+//! The 3 `#[ignore]`d `*_round_trips_on_real_masterdb_copy` tests (Tier 1/2/3)
+//! all read `SIFT_M8_REAL_COPY_DIR` and mutate the *same* `master.db` file —
+//! `cargo test -- --ignored` runs tests in parallel by default, so running
+//! more than one of them in the same invocation races on that file and
+//! produces spurious failures (discovered 2026-07-09 running all 3 together).
+//! Always filter to exactly one: `cargo test --lib -- --exact
+//! rekordbox_masterdb::tests::<test_name> --ignored --test-threads=1`.
 
 use std::io::Cursor;
 use std::path::Path;
