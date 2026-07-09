@@ -30,6 +30,8 @@ import type {
   ApplyRepairOutcome,
   PendingMetadataSync,
   ApplyMetadataSyncOutcome,
+  PendingArtworkSync,
+  ApplyArtworkSyncOutcome,
   PlaylistDuplicateGroupDto,
 } from "../shared/contracts";
 
@@ -310,6 +312,18 @@ export const rekordboxMasterdbDismissMetadataSync = (id: number): Promise<void> 
 
 export const rekordboxMasterdbResolveAmbiguousMetadataSync = (id: number, chosenTrackId: string): Promise<void> =>
   invoke("rekordbox_masterdb_resolve_ambiguous_metadata_sync", { id, chosenTrackId });
+
+export const rekordboxMasterdbPendingArtworkSyncs = (): Promise<PendingArtworkSync[]> =>
+  invoke("rekordbox_masterdb_pending_artwork_syncs");
+
+export const rekordboxMasterdbApplyArtworkSyncs = (ids: number[]): Promise<ApplyArtworkSyncOutcome[]> =>
+  invoke("rekordbox_masterdb_apply_artwork_syncs", { ids });
+
+export const rekordboxMasterdbDismissArtworkSync = (id: number): Promise<void> =>
+  invoke("rekordbox_masterdb_dismiss_artwork_sync", { id });
+
+export const rekordboxMasterdbResolveAmbiguousArtworkSync = (id: number, chosenTrackId: string): Promise<void> =>
+  invoke("rekordbox_masterdb_resolve_ambiguous_artwork_sync", { id, chosenTrackId });
 
 // ---- M8 Tier 2 playlist duplicate-entry dedup ----
 
