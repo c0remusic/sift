@@ -817,6 +817,79 @@ pub(crate) fn restore_rekordbox_backup(pioneer_dir: &Path, backup_dir: &Path) ->
     Ok(())
 }
 
+/// Shared write safety envelope for every master.db write path (Tier 1/2/3):
+/// refuse if Rekordbox is running → backup → decrypt into an in-memory
+/// connection → run `mutate` inside a transaction → commit → re-encrypt →
+/// atomic rename → run `verify` against the freshly written file → on
+/// verification failure, automatically restore the backup and report which
+/// of the two rollback outcomes happened.
+///
+/// `mutate` owns all row changes (including any USN bumps) via the open
+/// transaction — this function only owns the crypto/IO/rollback plumbing
+/// around it, never the SQL. `verify` re-reads the live file (a fresh
+/// connection, not the in-memory one just written) and returns a plain
+/// message describing what didn't match if verification fails; that message
+/// becomes the `WriteVerificationFailedRolledBack`/`RollbackFailed` payload.
+///
+/// Extracted 2026-07-09 from `repair_track_path`/`dedup_playlist_group`/
+/// `sync_track_metadata`, which each reimplemented this ~40-line sequence
+/// verbatim — a safety fix on this path previously had to be applied three
+/// times by hand.
+fn with_masterdb_write(
+    pioneer_dir: &Path,
+    backup_dir: &Path,
+    mutate: impl FnOnce(&Transaction, &str) -> Result<(), MasterDbError>,
+    verify: impl FnOnce(&Path) -> Result<(), String>,
+) -> Result<(), MasterDbError> {
+    if is_rekordbox_running() {
+        return Err(MasterDbError::RekordboxRunning);
+    }
+
+    let db_path = pioneer_dir.join("master.db");
+    backup_rekordbox_files(pioneer_dir, backup_dir)?;
+
+    let raw = std::fs::read(&db_path).map_err(|e| MasterDbError::Io(e.to_string()))?;
+    let plaintext = decrypt_masterdb(&raw)?;
+
+    let mut conn = Connection::open_in_memory().map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+    let len = plaintext.len();
+    conn.deserialize_read_exact(rusqlite::MAIN_DB, Cursor::new(plaintext), len, false)
+        .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+
+    let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.6f").to_string();
+    let tx = conn.transaction().map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+
+    mutate(&tx, &now)?;
+
+    tx.commit().map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+
+    let plaintext2 = conn
+        .serialize(rusqlite::MAIN_DB)
+        .map_err(|e| MasterDbError::Sqlite(e.to_string()))?
+        .to_vec();
+    let raw2 = encrypt_masterdb(&plaintext2)?;
+
+    let tmp_path = pioneer_dir.join("master.db.sift-write-tmp");
+    std::fs::write(&tmp_path, &raw2).map_err(|e| MasterDbError::Io(e.to_string()))?;
+    if let Err(e) = std::fs::rename(&tmp_path, &db_path) {
+        // The live master.db is untouched (rename never started), but don't
+        // leave the temp file behind for a future glob/user to mistake for
+        // something real.
+        std::fs::remove_file(&tmp_path).ok();
+        return Err(MasterDbError::Io(e.to_string()));
+    }
+
+    match verify(&db_path) {
+        Ok(()) => Ok(()),
+        Err(msg) => match restore_rekordbox_backup(pioneer_dir, backup_dir) {
+            Ok(()) => Err(MasterDbError::WriteVerificationFailedRolledBack(msg)),
+            Err(restore_err) => Err(MasterDbError::WriteVerificationFailedRollbackFailed(format!(
+                "{msg}; rollback also failed: {restore_err}"
+            ))),
+        },
+    }
+}
+
 /// Repairs one track's `FolderPath`/`FileNameL`/`FileNameS` in a Rekordbox
 /// `master.db`, bumping the global USN counter (`agentRegistry`) and the
 /// row's own `rb_local_usn`/`updated_at`, per the M8 Tier 1 design
@@ -837,89 +910,39 @@ pub(crate) fn restore_rekordbox_backup(pioneer_dir: &Path, backup_dir: &Path) ->
 /// `CueUpdated` (the M8 non-negotiable rule — metadata/path writes must
 /// never look like an analysis change).
 ///
-/// Safety sequence: refuse if Rekordbox is running → backup → decrypt →
-/// update inside a transaction → re-encrypt → atomic rename → round-trip
-/// verify via the existing read-only reader → on verification failure,
-/// automatically restore the backup and report which case happened.
+/// Safety sequence owned by `with_masterdb_write`; this function supplies
+/// only the `djmdContent` mutation and the round-trip check via the
+/// existing read-only reader.
 pub fn repair_track_path(
     pioneer_dir: &Path,
     backup_dir: &Path,
     repair: &PathRepair,
 ) -> Result<(), MasterDbError> {
-    if is_rekordbox_running() {
-        return Err(MasterDbError::RekordboxRunning);
-    }
-
-    let db_path = pioneer_dir.join("master.db");
-    backup_rekordbox_files(pioneer_dir, backup_dir)?;
-
-    let raw = std::fs::read(&db_path).map_err(|e| MasterDbError::Io(e.to_string()))?;
-    let plaintext = decrypt_masterdb(&raw)?;
-
-    let mut conn = Connection::open_in_memory().map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
-    let len = plaintext.len();
-    conn.deserialize_read_exact(rusqlite::MAIN_DB, Cursor::new(plaintext), len, false)
-        .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
-
-    let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.6f").to_string();
-
-    let tx = conn.transaction().map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
-
-    let old_usn: i64 = tx
-        .query_row(
-            "SELECT int_1 FROM agentRegistry WHERE registry_id = 'localUpdateCount'",
-            [],
-            |row| row.get(0),
-        )
-        .map_err(|e| match e {
-            rusqlite::Error::QueryReturnedNoRows => MasterDbError::RegistryRowMissing,
-            other => MasterDbError::Sqlite(other.to_string()),
-        })?;
-    let new_usn = old_usn + 1;
-
-    tx.execute(
-        "UPDATE agentRegistry SET int_1 = ?1, updated_at = ?2 WHERE registry_id = 'localUpdateCount'",
-        rusqlite::params![new_usn, now],
-    )
-    .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
-
-    let rows_changed = tx
-        .execute(
-            "UPDATE djmdContent SET FolderPath = ?1, FileNameL = ?2, FileNameS = ?3, rb_local_usn = ?4, updated_at = ?5 WHERE ID = ?6",
-            rusqlite::params![
-                repair.new_folder_path,
-                repair.new_file_name_l,
-                repair.new_file_name_s,
-                new_usn,
-                now,
-                repair.track_id,
-            ],
-        )
-        .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
-    if rows_changed != 1 {
-        return Err(MasterDbError::TrackNotFound { track_id: repair.track_id.clone() });
-    }
-
-    tx.commit().map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
-
-    let plaintext2 = conn
-        .serialize(rusqlite::MAIN_DB)
-        .map_err(|e| MasterDbError::Sqlite(e.to_string()))?
-        .to_vec();
-    let raw2 = encrypt_masterdb(&plaintext2)?;
-
-    let tmp_path = pioneer_dir.join("master.db.sift-write-tmp");
-    std::fs::write(&tmp_path, &raw2).map_err(|e| MasterDbError::Io(e.to_string()))?;
-    if let Err(e) = std::fs::rename(&tmp_path, &db_path) {
-        // The live master.db is untouched (rename never started), but don't
-        // leave the temp file behind for a future glob/user to mistake for
-        // something real.
-        std::fs::remove_file(&tmp_path).ok();
-        return Err(MasterDbError::Io(e.to_string()));
-    }
-
-    match read_rekordbox_masterdb(&db_path) {
-        Ok(index) => {
+    with_masterdb_write(
+        pioneer_dir,
+        backup_dir,
+        |tx, now| {
+            let new_usn = bump_global_usn(tx, now)?;
+            let rows_changed = tx
+                .execute(
+                    "UPDATE djmdContent SET FolderPath = ?1, FileNameL = ?2, FileNameS = ?3, rb_local_usn = ?4, updated_at = ?5 WHERE ID = ?6",
+                    rusqlite::params![
+                        repair.new_folder_path,
+                        repair.new_file_name_l,
+                        repair.new_file_name_s,
+                        new_usn,
+                        now,
+                        repair.track_id,
+                    ],
+                )
+                .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+            if rows_changed != 1 {
+                return Err(MasterDbError::TrackNotFound { track_id: repair.track_id.clone() });
+            }
+            Ok(())
+        },
+        |db_path| {
+            let index = read_rekordbox_masterdb(db_path).map_err(|e| e.to_string())?;
             let ok = index
                 .tracks
                 .iter()
@@ -927,22 +950,13 @@ pub fn repair_track_path(
             if ok {
                 Ok(())
             } else {
-                let msg = format!("track {} not found with expected path after write", repair.track_id);
-                match restore_rekordbox_backup(pioneer_dir, backup_dir) {
-                    Ok(()) => Err(MasterDbError::WriteVerificationFailedRolledBack(msg)),
-                    Err(restore_err) => Err(MasterDbError::WriteVerificationFailedRollbackFailed(
-                        format!("{msg}; rollback also failed: {restore_err}"),
-                    )),
-                }
+                Err(format!(
+                    "track {} not found with expected path after write",
+                    repair.track_id
+                ))
             }
-        }
-        Err(read_err) => match restore_rekordbox_backup(pioneer_dir, backup_dir) {
-            Ok(()) => Err(MasterDbError::WriteVerificationFailedRolledBack(read_err.to_string())),
-            Err(restore_err) => Err(MasterDbError::WriteVerificationFailedRollbackFailed(format!(
-                "{read_err}; rollback also failed: {restore_err}"
-            ))),
         },
-    }
+    )
 }
 
 /// Removes every extra occurrence in `group.remove` from `djmdSongPlaylist`,
@@ -956,10 +970,9 @@ pub fn repair_track_path(
 /// or `TrackNo` on any surviving row (see this function's module-level scope
 /// note).
 ///
-/// Safety sequence: identical to `repair_track_path` — refuse if Rekordbox
-/// is running → backup → decrypt → delete inside a transaction → re-encrypt
-/// → atomic rename → round-trip verify via `detect_playlist_duplicates` →
-/// on verification failure, automatically restore the backup.
+/// Safety sequence owned by `with_masterdb_write`; this function supplies
+/// only the per-entry `djmdSongPlaylist` deletion and the round-trip check
+/// via `detect_playlist_duplicates`.
 #[allow(dead_code)]
 pub fn dedup_playlist_group(
     pioneer_dir: &Path,
@@ -969,97 +982,42 @@ pub fn dedup_playlist_group(
     if group.remove.is_empty() {
         return Err(MasterDbError::NoDuplicatesToRemove);
     }
-    if is_rekordbox_running() {
-        return Err(MasterDbError::RekordboxRunning);
-    }
 
-    let db_path = pioneer_dir.join("master.db");
-    backup_rekordbox_files(pioneer_dir, backup_dir)?;
-
-    let raw = std::fs::read(&db_path).map_err(|e| MasterDbError::Io(e.to_string()))?;
-    let plaintext = decrypt_masterdb(&raw)?;
-
-    let mut conn = Connection::open_in_memory().map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
-    let len = plaintext.len();
-    conn.deserialize_read_exact(rusqlite::MAIN_DB, Cursor::new(plaintext), len, false)
-        .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
-
-    let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.6f").to_string();
-    let tx = conn.transaction().map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
-
-    for entry in &group.remove {
-        let old_usn: i64 = tx
-            .query_row(
-                "SELECT int_1 FROM agentRegistry WHERE registry_id = 'localUpdateCount'",
-                [],
-                |row| row.get(0),
-            )
-            .map_err(|e| match e {
-                rusqlite::Error::QueryReturnedNoRows => MasterDbError::RegistryRowMissing,
-                other => MasterDbError::Sqlite(other.to_string()),
-            })?;
-        let new_usn = old_usn + 1;
-        tx.execute(
-            "UPDATE agentRegistry SET int_1 = ?1, updated_at = ?2 WHERE registry_id = 'localUpdateCount'",
-            rusqlite::params![new_usn, now],
-        )
-        .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
-
-        let rows_changed = tx
-            .execute(
-                "DELETE FROM djmdSongPlaylist WHERE ID = ?1",
-                rusqlite::params![entry.song_playlist_id],
-            )
-            .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
-        if rows_changed != 1 {
-            return Err(MasterDbError::SongPlaylistEntryNotFound {
-                song_playlist_id: entry.song_playlist_id.clone(),
-            });
-        }
-    }
-
-    tx.commit().map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
-
-    let plaintext2 = conn
-        .serialize(rusqlite::MAIN_DB)
-        .map_err(|e| MasterDbError::Sqlite(e.to_string()))?
-        .to_vec();
-    let raw2 = encrypt_masterdb(&plaintext2)?;
-
-    let tmp_path = pioneer_dir.join("master.db.sift-write-tmp");
-    std::fs::write(&tmp_path, &raw2).map_err(|e| MasterDbError::Io(e.to_string()))?;
-    if let Err(e) = std::fs::rename(&tmp_path, &db_path) {
-        std::fs::remove_file(&tmp_path).ok();
-        return Err(MasterDbError::Io(e.to_string()));
-    }
-
-    match detect_playlist_duplicates(&db_path) {
-        Ok(remaining) => {
+    with_masterdb_write(
+        pioneer_dir,
+        backup_dir,
+        |tx, now| {
+            for entry in &group.remove {
+                bump_global_usn(tx, now)?;
+                let rows_changed = tx
+                    .execute(
+                        "DELETE FROM djmdSongPlaylist WHERE ID = ?1",
+                        rusqlite::params![entry.song_playlist_id],
+                    )
+                    .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+                if rows_changed != 1 {
+                    return Err(MasterDbError::SongPlaylistEntryNotFound {
+                        song_playlist_id: entry.song_playlist_id.clone(),
+                    });
+                }
+            }
+            Ok(())
+        },
+        |db_path| {
+            let remaining = detect_playlist_duplicates(db_path).map_err(|e| e.to_string())?;
             let still_duplicated = remaining
                 .iter()
                 .any(|g| g.playlist_id == group.playlist_id && g.content_id == group.content_id);
             if still_duplicated {
-                let msg = format!(
+                Err(format!(
                     "playlist {} / content {} still has duplicates after dedup",
                     group.playlist_id, group.content_id
-                );
-                match restore_rekordbox_backup(pioneer_dir, backup_dir) {
-                    Ok(()) => Err(MasterDbError::WriteVerificationFailedRolledBack(msg)),
-                    Err(restore_err) => Err(MasterDbError::WriteVerificationFailedRollbackFailed(
-                        format!("{msg}; rollback also failed: {restore_err}"),
-                    )),
-                }
+                ))
             } else {
                 Ok(())
             }
-        }
-        Err(read_err) => match restore_rekordbox_backup(pioneer_dir, backup_dir) {
-            Ok(()) => Err(MasterDbError::WriteVerificationFailedRolledBack(read_err.to_string())),
-            Err(restore_err) => Err(MasterDbError::WriteVerificationFailedRollbackFailed(format!(
-                "{read_err}; rollback also failed: {restore_err}"
-            ))),
         },
-    }
+    )
 }
 
 /// The only 3 tables `find_or_create_named_row` is allowed to touch — same
@@ -1362,170 +1320,133 @@ pub fn sync_track_metadata(
     backup_dir: &Path,
     sync: &MetadataSync,
 ) -> Result<(), MasterDbError> {
-    if is_rekordbox_running() {
-        return Err(MasterDbError::RekordboxRunning);
-    }
-
-    let db_path = pioneer_dir.join("master.db");
-    backup_rekordbox_files(pioneer_dir, backup_dir)?;
-
-    let raw = std::fs::read(&db_path).map_err(|e| MasterDbError::Io(e.to_string()))?;
-    let plaintext = decrypt_masterdb(&raw)?;
-
-    let mut conn = Connection::open_in_memory().map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
-    let len = plaintext.len();
-    conn.deserialize_read_exact(rusqlite::MAIN_DB, Cursor::new(plaintext), len, false)
-        .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
-
-    let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.6f").to_string();
-    let tx = conn.transaction().map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
-
-    // Confirm the track exists before touching any FK table — a
-    // find_or_create for a non-existent track would still create orphaned
-    // rows even though the final djmdContent UPDATE fails.
-    let track_exists: bool = tx
-        .query_row(
-            "SELECT 1 FROM djmdContent WHERE ID = ?1",
-            rusqlite::params![sync.track_id],
-            |_| Ok(true),
-        )
-        .optional()
-        .map_err(|e| MasterDbError::Sqlite(e.to_string()))?
-        .unwrap_or(false);
-    if !track_exists {
-        return Err(MasterDbError::TrackNotFound { track_id: sync.track_id.clone() });
-    }
-
-    let mut any_field_set = false;
-
-    if let Some(artist) = &sync.artist {
-        let artist_id = find_or_create_named_row(&tx, "djmdArtist", artist, &now)?;
-        tx.execute(
-            "UPDATE djmdContent SET ArtistID = ?1 WHERE ID = ?2",
-            rusqlite::params![artist_id, sync.track_id],
-        )
-        .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
-        any_field_set = true;
-    }
-    if let Some(genre) = &sync.genre {
-        let genre_id = find_or_create_named_row(&tx, "djmdGenre", genre, &now)?;
-        tx.execute(
-            "UPDATE djmdContent SET GenreID = ?1 WHERE ID = ?2",
-            rusqlite::params![genre_id, sync.track_id],
-        )
-        .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
-        any_field_set = true;
-    }
-    if let Some(label) = &sync.label {
-        let label_id = find_or_create_named_row(&tx, "djmdLabel", label, &now)?;
-        tx.execute(
-            "UPDATE djmdContent SET LabelID = ?1 WHERE ID = ?2",
-            rusqlite::params![label_id, sync.track_id],
-        )
-        .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
-        any_field_set = true;
-    }
-    if let Some(title) = &sync.title {
-        tx.execute(
-            "UPDATE djmdContent SET Title = ?1 WHERE ID = ?2",
-            rusqlite::params![title, sync.track_id],
-        )
-        .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
-        any_field_set = true;
-    }
-    if let Some(year) = sync.year {
-        tx.execute(
-            "UPDATE djmdContent SET ReleaseYear = ?1 WHERE ID = ?2",
-            rusqlite::params![year, sync.track_id],
-        )
-        .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
-        any_field_set = true;
-    }
-
-    if any_field_set {
-        let content_usn = bump_global_usn(&tx, &now)?;
-        tx.execute(
-            "UPDATE djmdContent SET rb_local_usn = ?1, updated_at = ?2, \
-             TrackInfoUpdated = CAST(CAST(TrackInfoUpdated AS INTEGER) + 1 AS TEXT) \
-             WHERE ID = ?3",
-            rusqlite::params![content_usn, now, sync.track_id],
-        )
-        .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
-    }
-
-    tx.commit().map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
-
-    let plaintext2 = conn
-        .serialize(rusqlite::MAIN_DB)
-        .map_err(|e| MasterDbError::Sqlite(e.to_string()))?
-        .to_vec();
-    let raw2 = encrypt_masterdb(&plaintext2)?;
-
-    let tmp_path = pioneer_dir.join("master.db.sift-write-tmp");
-    std::fs::write(&tmp_path, &raw2).map_err(|e| MasterDbError::Io(e.to_string()))?;
-    if let Err(e) = std::fs::rename(&tmp_path, &db_path) {
-        std::fs::remove_file(&tmp_path).ok();
-        return Err(MasterDbError::Io(e.to_string()));
-    }
-
-    // Round-trip verify on a fresh connection: reopen, decrypt, and confirm
-    // the fields we set are actually visible — not just that the write
-    // syscall succeeded.
-    let verify = || -> Result<(), MasterDbError> {
-        let raw3 = std::fs::read(&db_path).map_err(|e| MasterDbError::Io(e.to_string()))?;
-        let plaintext3 = decrypt_masterdb(&raw3)?;
-        let mut conn3 =
-            Connection::open_in_memory().map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
-        let len3 = plaintext3.len();
-        conn3
-            .deserialize_read_exact(rusqlite::MAIN_DB, Cursor::new(plaintext3), len3, false)
-            .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
-
-        if let Some(title) = &sync.title {
-            let got: String = conn3
+    with_masterdb_write(
+        pioneer_dir,
+        backup_dir,
+        |tx, now| {
+            // Confirm the track exists before touching any FK table — a
+            // find_or_create for a non-existent track would still create
+            // orphaned rows even though the final djmdContent UPDATE fails.
+            let track_exists: bool = tx
                 .query_row(
-                    "SELECT Title FROM djmdContent WHERE ID = ?1",
+                    "SELECT 1 FROM djmdContent WHERE ID = ?1",
                     rusqlite::params![sync.track_id],
-                    |row| row.get(0),
+                    |_| Ok(true),
+                )
+                .optional()
+                .map_err(|e| MasterDbError::Sqlite(e.to_string()))?
+                .unwrap_or(false);
+            if !track_exists {
+                return Err(MasterDbError::TrackNotFound { track_id: sync.track_id.clone() });
+            }
+
+            let mut any_field_set = false;
+
+            if let Some(artist) = &sync.artist {
+                let artist_id = find_or_create_named_row(tx, "djmdArtist", artist, now)?;
+                tx.execute(
+                    "UPDATE djmdContent SET ArtistID = ?1 WHERE ID = ?2",
+                    rusqlite::params![artist_id, sync.track_id],
                 )
                 .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
-            if &got != title {
-                return Err(MasterDbError::Sqlite(format!(
-                    "Title mismatch after write: expected {title:?}, got {got:?}"
-                )));
+                any_field_set = true;
             }
-        }
-        if let Some(artist) = &sync.artist {
-            let got: String = conn3
-                .query_row(
-                    "SELECT a.Name FROM djmdContent c JOIN djmdArtist a ON a.ID = c.ArtistID \
-                     WHERE c.ID = ?1",
-                    rusqlite::params![sync.track_id],
-                    |row| row.get(0),
+            if let Some(genre) = &sync.genre {
+                let genre_id = find_or_create_named_row(tx, "djmdGenre", genre, now)?;
+                tx.execute(
+                    "UPDATE djmdContent SET GenreID = ?1 WHERE ID = ?2",
+                    rusqlite::params![genre_id, sync.track_id],
                 )
                 .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
-            // Compare with the same trim+case-insensitive rule
-            // `find_or_create_named_row` matched on — a reused existing row
-            // legitimately keeps its own stored casing/whitespace, which can
-            // differ from the raw incoming tag value.
-            if !got.trim().eq_ignore_ascii_case(artist.trim()) {
-                return Err(MasterDbError::Sqlite(format!(
-                    "Artist mismatch after write: expected {artist:?}, got {got:?}"
-                )));
+                any_field_set = true;
             }
-        }
-        Ok(())
-    };
+            if let Some(label) = &sync.label {
+                let label_id = find_or_create_named_row(tx, "djmdLabel", label, now)?;
+                tx.execute(
+                    "UPDATE djmdContent SET LabelID = ?1 WHERE ID = ?2",
+                    rusqlite::params![label_id, sync.track_id],
+                )
+                .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+                any_field_set = true;
+            }
+            if let Some(title) = &sync.title {
+                tx.execute(
+                    "UPDATE djmdContent SET Title = ?1 WHERE ID = ?2",
+                    rusqlite::params![title, sync.track_id],
+                )
+                .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+                any_field_set = true;
+            }
+            if let Some(year) = sync.year {
+                tx.execute(
+                    "UPDATE djmdContent SET ReleaseYear = ?1 WHERE ID = ?2",
+                    rusqlite::params![year, sync.track_id],
+                )
+                .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+                any_field_set = true;
+            }
 
-    match verify() {
-        Ok(()) => Ok(()),
-        Err(verify_err) => match restore_rekordbox_backup(pioneer_dir, backup_dir) {
-            Ok(()) => Err(MasterDbError::WriteVerificationFailedRolledBack(verify_err.to_string())),
-            Err(restore_err) => Err(MasterDbError::WriteVerificationFailedRollbackFailed(format!(
-                "{verify_err}; rollback also failed: {restore_err}"
-            ))),
+            if any_field_set {
+                let content_usn = bump_global_usn(tx, now)?;
+                tx.execute(
+                    "UPDATE djmdContent SET rb_local_usn = ?1, updated_at = ?2, \
+                     TrackInfoUpdated = CAST(CAST(TrackInfoUpdated AS INTEGER) + 1 AS TEXT) \
+                     WHERE ID = ?3",
+                    rusqlite::params![content_usn, now, sync.track_id],
+                )
+                .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+            }
+
+            Ok(())
         },
-    }
+        |db_path| {
+            // Round-trip verify on a fresh connection: reopen, decrypt, and
+            // confirm the fields we set are actually visible — not just that
+            // the write syscall succeeded.
+            let raw3 = std::fs::read(db_path).map_err(|e| e.to_string())?;
+            let plaintext3 = decrypt_masterdb(&raw3).map_err(|e| e.to_string())?;
+            let mut conn3 = Connection::open_in_memory().map_err(|e| e.to_string())?;
+            let len3 = plaintext3.len();
+            conn3
+                .deserialize_read_exact(rusqlite::MAIN_DB, Cursor::new(plaintext3), len3, false)
+                .map_err(|e| e.to_string())?;
+
+            if let Some(title) = &sync.title {
+                let got: String = conn3
+                    .query_row(
+                        "SELECT Title FROM djmdContent WHERE ID = ?1",
+                        rusqlite::params![sync.track_id],
+                        |row| row.get(0),
+                    )
+                    .map_err(|e| e.to_string())?;
+                if &got != title {
+                    return Err(format!(
+                        "Title mismatch after write: expected {title:?}, got {got:?}"
+                    ));
+                }
+            }
+            if let Some(artist) = &sync.artist {
+                let got: String = conn3
+                    .query_row(
+                        "SELECT a.Name FROM djmdContent c JOIN djmdArtist a ON a.ID = c.ArtistID \
+                         WHERE c.ID = ?1",
+                        rusqlite::params![sync.track_id],
+                        |row| row.get(0),
+                    )
+                    .map_err(|e| e.to_string())?;
+                // Compare with the same trim+case-insensitive rule
+                // `find_or_create_named_row` matched on — a reused existing
+                // row legitimately keeps its own stored casing/whitespace,
+                // which can differ from the raw incoming tag value.
+                if !got.trim().eq_ignore_ascii_case(artist.trim()) {
+                    return Err(format!(
+                        "Artist mismatch after write: expected {artist:?}, got {got:?}"
+                    ));
+                }
+            }
+            Ok(())
+        },
+    )
 }
 
 // Fixture provenance: `tests/fixtures/rekordbox_master.db` is a synthetic
