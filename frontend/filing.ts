@@ -9,6 +9,7 @@ import {
   fileTrack,
   listQueue,
   rejectTrack,
+  requeueTrack,
   listBins,
   createBin,
   getSetting,
@@ -1691,6 +1692,8 @@ async function doRanger(mid: HTMLElement): Promise<void> {
     const msg = String(e);
     if (msg.includes("NoLibraryRoot")) toast("Aucune racine de bibliothèque configurée.", false);
     else if (msg.toLowerCase().includes("upscale")) toast("Refusé : pas de surqualité lossy → lossless.", false);
+    else if (/permission|access|denied/i.test(msg)) toast("Refusé : accès au fichier/dossier refusé.", false);
+    else if (/no such file|not found|introuvable/i.test(msg)) toast("Fichier introuvable — a-t-il été déplacé ?", false);
     else toast(`Échec du rangement : ${msg}`, false);
     console.error("file_track failed", e);
     setActionsDisabled(false);
@@ -1768,11 +1771,17 @@ async function doRevert(batchId: string): Promise<void> {
  *  stays two-valued only to pick the right toast wording, not a different backend action anymore. */
 async function doSecondary(mid: HTMLElement, kind: "resource" | "trash"): Promise<void> {
   if (!state.track || acting) return;
+  const trackId = state.track.id;
   acting = true;
   setActionsDisabled(true);
   try {
-    await rejectTrack(state.track.id);
-    toast(kind === "resource" ? "Marqué à re-sourcer" : "Écarté", true);
+    await rejectTrack(trackId);
+    toast(kind === "resource" ? "Marqué à re-sourcer" : "Écarté", true, () => {
+      void requeueTrack(trackId).catch((e) => {
+        console.error(`${kind} undo failed`, e);
+        toast(`Échec de l'annulation : ${String(e)}`, false);
+      });
+    });
     clearPane(mid);
   } catch (e) {
     toast(`Échec : ${String(e)}`, false);
