@@ -452,7 +452,7 @@ pub fn execute_file(plan: &FilePlan) -> Result<Vec<FsLog>, FilingError> {
             .map_err(|e| FilingError::Tag(format!("serialize tag snapshot: {e}")))?;
         log.push(FsLog { kind: "tag_edit", from: plan.source.clone(), to: plan.source.clone(), meta: Some(snapshot) });
         tagging::write_tags_full(
-            &plan.source, &plan.canonical.artist, &plan.canonical.title,
+            &plan.source, &plan.canonical.artist, &naming::tag_title(&plan.canonical),
             plan.extras.label.as_deref(), plan.extras.year, &plan.extras.genres,
             plan.extras.cover_path.as_deref(),
         ).map_err(FilingError::Tag)?;
@@ -465,7 +465,7 @@ pub fn execute_file(plan: &FilePlan) -> Result<Vec<FsLog>, FilingError> {
             EncodeError::Ffmpeg(m) => FilingError::Encode(m),
         })?;
         if let Err(e) = tagging::write_tags_full(
-            &plan.dest, &plan.canonical.artist, &plan.canonical.title,
+            &plan.dest, &plan.canonical.artist, &naming::tag_title(&plan.canonical),
             plan.extras.label.as_deref(), plan.extras.year, &plan.extras.genres,
             plan.extras.cover_path.as_deref(),
         ) {

@@ -170,19 +170,34 @@ pub fn sanitize(s: &str) -> String {
     cleaned.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+/// " (Version)" suffix shared by `render_filename` and `tag_title` — "" when absent, no empty
+/// parens.
+fn version_suffix(c: &Canonical) -> String {
+    match &c.version {
+        Some(v) if !v.trim().is_empty() => format!(" ({})", v.trim()),
+        _ => String::new(),
+    }
+}
+
 /// Render `template` against a canonical record and append `.ext`. Supported placeholders:
 /// `{artist}`, `{title}`, `{version}`. `{version}` expands to " (Version)" when present,
 /// to "" when absent (no empty parens). The whole stem is sanitized for the filesystem.
 pub fn render_filename(template: &str, c: &Canonical, ext: &str) -> String {
-    let version_str = match &c.version {
-        Some(v) if !v.trim().is_empty() => format!(" ({})", v.trim()),
-        _ => String::new(),
-    };
     let stem = template
         .replace("{artist}", &c.artist)
         .replace("{title}", &c.title)
-        .replace("{version}", &version_str);
+        .replace("{version}", &version_suffix(c));
     format!("{}.{}", sanitize(&stem), ext)
+}
+
+/// The title as it should be WRITTEN TO THE ID3/tag Title field — title + the same " (Version)"
+/// suffix `render_filename` puts in the filename. Both must derive from this one function: a
+/// track named "Title (Extended Mix).aiff" previously had the version silently absent from its
+/// own Title tag (write_tags_full call sites passed `c.title` alone), so a CDJ/Rekordbox reading
+/// the file's tags directly — not the filename — never saw it. No filesystem sanitization here,
+/// unlike render_filename: this never touches a path.
+pub fn tag_title(c: &Canonical) -> String {
+    format!("{}{}", c.title, version_suffix(c))
 }
 
 /// Fold the common accented Latin letters to ASCII (no extra crate) so "Béatrice" and

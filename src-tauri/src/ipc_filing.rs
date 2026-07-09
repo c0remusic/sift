@@ -200,11 +200,13 @@ pub fn apply_tags(
     let snapshot = crate::tagging::read_tags_full(&path)?;
 
     // (3) Write the NEW tags: artist/title from the edit, label/year/genres/cover from the DB — the
-    // SAME set filing writes. On failure we stop; nothing is journaled.
+    // SAME set filing writes. On failure we stop; nothing is journaled. Title includes the version
+    // suffix via naming::tag_title (same as filing.rs, same as the rendered filename) — previously
+    // this passed &edited.title alone, silently dropping version from the actual ID3 tag.
     crate::tagging::write_tags_full(
         &path,
         &edited.artist,
-        &edited.title,
+        &crate::naming::tag_title(&edited),
         extras.label.as_deref(),
         extras.year,
         &extras.genres,
