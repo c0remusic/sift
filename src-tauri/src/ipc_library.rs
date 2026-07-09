@@ -389,6 +389,16 @@ pub fn rekordbox_masterdb_resolve_ambiguous_artwork_sync(
     crate::rekordbox_repairs::rekordbox_masterdb_resolve_ambiguous_artwork_sync_inner(&conn, id, &chosen_track_id)
 }
 
+/// Applies the given pending/ambiguous artwork sync `id`s against the linked Rekordbox's cached
+/// artwork files, one at a time. Never invoked automatically. Backups land under
+/// `app_data_dir()/rekordbox-backups/<batch timestamp>/<id>/`, same convention as the other tiers.
+#[tauri::command]
+pub fn rekordbox_masterdb_apply_artwork_syncs(app: AppHandle, conn: State<'_, Mutex<Connection>>, ids: Vec<i64>) -> Result<Vec<crate::rekordbox_repairs::ApplyArtworkSyncOutcome>, String> {
+    let backup_root = app.path().app_data_dir().map_err(|e| e.to_string())?.join("rekordbox-backups");
+    let conn = conn.lock().map_err(|e| e.to_string())?;
+    crate::rekordbox_repairs::rekordbox_masterdb_apply_artwork_syncs_inner(&conn, &backup_root, &ids)
+}
+
 // ── M8 Tier 2: playlist duplicate-entry dedup ─────────────────────────────────
 
 pub use crate::rekordbox_repairs::PlaylistDuplicateGroupDto;

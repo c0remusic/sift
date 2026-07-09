@@ -165,6 +165,7 @@ pub fn run() {
             ipc_library::rekordbox_masterdb_dismiss_metadata_sync,
             ipc_library::rekordbox_masterdb_resolve_ambiguous_metadata_sync,
             ipc_library::rekordbox_masterdb_pending_artwork_syncs,
+            ipc_library::rekordbox_masterdb_apply_artwork_syncs,
             ipc_library::rekordbox_masterdb_dismiss_artwork_sync,
             ipc_library::rekordbox_masterdb_resolve_ambiguous_artwork_sync,
             ipc_usb::list_removable_drives,

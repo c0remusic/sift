@@ -569,6 +569,79 @@ pub(crate) fn rekordbox_masterdb_resolve_ambiguous_artwork_sync_inner(conn: &Con
     Ok(())
 }
 
+/// Result of attempting to apply one pending artwork sync.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct ApplyArtworkSyncOutcome {
+    pub id: i64,
+    pub ok: bool,
+    pub error: Option<String>,
+}
+
+/// Attempts one artwork sync row. Never calls `sync_track_artwork` for a row that isn't `pending`
+/// with a known `rekordbox_track_id`; never syncs stale bytes — `cover_path` is re-read from disk
+/// here, at apply time, not at detection time.
+fn apply_one_artwork_sync(conn: &Connection, pioneer_dir: &Path, backup_root: &Path, batch_stamp: &str, id: i64) -> ApplyArtworkSyncOutcome {
+    let row = conn.query_row(
+        "SELECT rekordbox_track_id, cover_path, status FROM rekordbox_masterdb_artwork_syncs WHERE id=?1",
+        rusqlite::params![id],
+        |r| Ok((r.get::<_, Option<String>>(0)?, r.get::<_, String>(1)?, r.get::<_, String>(2)?)),
+    );
+    let (rekordbox_track_id, cover_path, status) = match row {
+        Ok(v) => v,
+        Err(e) => return ApplyArtworkSyncOutcome { id, ok: false, error: Some(e.to_string()) },
+    };
+
+    let Some(rekordbox_track_id) = rekordbox_track_id.filter(|_| status == "pending") else {
+        return ApplyArtworkSyncOutcome {
+            id,
+            ok: false,
+            error: Some("piste ambiguë ou déjà traitée — résolution manuelle requise".to_string()),
+        };
+    };
+
+    let cover_bytes = match std::fs::read(&cover_path) {
+        Ok(b) => b,
+        Err(_) => {
+            return ApplyArtworkSyncOutcome {
+                id,
+                ok: false,
+                error: Some(format!("le fichier de pochette source n'existe plus — {cover_path}")),
+            };
+        }
+    };
+
+    let backup_dir = backup_root.join(batch_stamp).join(id.to_string());
+    match crate::rekordbox_masterdb::sync_track_artwork(pioneer_dir, &backup_dir, &rekordbox_track_id, &cover_bytes) {
+        Ok(()) => {
+            if let Err(e) = conn.execute(
+                "UPDATE rekordbox_masterdb_artwork_syncs SET status='applied', applied_at=datetime('now') WHERE id=?1",
+                rusqlite::params![id],
+            ) {
+                return ApplyArtworkSyncOutcome { id, ok: false, error: Some(e.to_string()) };
+            }
+            ApplyArtworkSyncOutcome { id, ok: true, error: None }
+        }
+        Err(e) => ApplyArtworkSyncOutcome { id, ok: false, error: Some(humanize_masterdb_error(&e)) },
+    }
+}
+
+/// Plain (testable) implementation of `rekordbox_masterdb_apply_artwork_syncs`.
+pub(crate) fn rekordbox_masterdb_apply_artwork_syncs_inner(conn: &Connection, backup_root: &Path, ids: &[i64]) -> Result<Vec<ApplyArtworkSyncOutcome>, String> {
+    let xml_path = crate::settings::get(conn, crate::settings::REKORDBOX_XML_PATH)
+        .map_err(|e| e.to_string())?
+        .ok_or("aucun XML Rekordbox lié — relie un fichier avant de synchroniser")?;
+    let pioneer_dir = std::path::Path::new(&xml_path)
+        .parent()
+        .ok_or("aucun XML Rekordbox lié — relie un fichier avant de synchroniser")?;
+
+    let batch_stamp = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
+    let mut outcomes = Vec::with_capacity(ids.len());
+    for &id in ids {
+        outcomes.push(apply_one_artwork_sync(conn, pioneer_dir, backup_root, &batch_stamp, id));
+    }
+    Ok(outcomes)
+}
+
 // ── M8 Tier 2: playlist duplicate-entry dedup ─────────────────────────────────
 
 /// One `djmdSongPlaylist` row involved in a duplicate group — mirrors
@@ -1322,6 +1395,105 @@ mod tests {
             rusqlite::params![action_id, track_id, rb_track_id, candidates, cover_path, status],
         ).unwrap();
         conn.last_insert_rowid()
+    }
+
+    fn tiny_jpeg(w: u32, h: u32) -> Vec<u8> {
+        use image::ImageEncoder;
+        let img = image::RgbImage::from_pixel(w, h, image::Rgb([5, 5, 5]));
+        let mut buf = Vec::new();
+        image::codecs::jpeg::JpegEncoder::new_with_quality(&mut buf, 90)
+            .write_image(img.as_raw(), w, h, image::ExtendedColorType::Rgb8)
+            .unwrap();
+        buf
+    }
+
+    #[test]
+    fn apply_artwork_syncs_applies_pending_row() {
+        let conn = db();
+        let tmp = tempfile::tempdir().unwrap();
+        let pioneer_dir = tmp.path().join("pioneer");
+        std::fs::create_dir_all(&pioneer_dir).unwrap();
+        std::fs::copy(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/rekordbox_master.db"), pioneer_dir.join("master.db")).unwrap();
+        let xml_path = pioneer_dir.join("masterPlaylists6.xml");
+        std::fs::write(&xml_path, b"<DJ_PLAYLISTS/>").unwrap();
+        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+
+        // track 40000001's fixture ImagePath: /PIONEER/Artwork/aaaa/artwork.jpg — seed the 3
+        // variant files the engine expects to already exist.
+        let share_dir = pioneer_dir.join("share/PIONEER/Artwork/aaaa");
+        std::fs::create_dir_all(&share_dir).unwrap();
+        std::fs::write(share_dir.join("artwork.jpg"), tiny_jpeg(100, 100)).unwrap();
+        std::fs::write(share_dir.join("artwork_m.jpg"), tiny_jpeg(50, 50)).unwrap();
+        std::fs::write(share_dir.join("artwork_s.jpg"), tiny_jpeg(20, 20)).unwrap();
+
+        let cover_dir = tmp.path().join("covers");
+        std::fs::create_dir_all(&cover_dir).unwrap();
+        let cover_path = cover_dir.join("new_cover.jpg");
+        std::fs::write(&cover_path, tiny_jpeg(300, 300)).unwrap();
+
+        conn.execute("INSERT INTO tracks(path, status) VALUES('D:/FIXTURE/track1.mp3', 'filed')", []).unwrap();
+        let track_id = conn.last_insert_rowid();
+        let id = seed_artwork_sync_row(&conn, track_id, "pending", Some("40000001"), None, cover_path.to_str().unwrap());
+
+        let backup_root = tmp.path().join("backups");
+        let outcomes = rekordbox_masterdb_apply_artwork_syncs_inner(&conn, &backup_root, &[id]).unwrap();
+        assert_eq!(outcomes.len(), 1);
+        assert!(outcomes[0].ok, "expected ok, got error: {:?}", outcomes[0].error);
+
+        let status: String = conn.query_row("SELECT status FROM rekordbox_masterdb_artwork_syncs WHERE id=?1", rusqlite::params![id], |r| r.get(0)).unwrap();
+        assert_eq!(status, "applied");
+        assert_eq!(image::image_dimensions(share_dir.join("artwork.jpg")).unwrap(), (100, 100));
+    }
+
+    #[test]
+    fn apply_artwork_syncs_fails_loudly_when_source_cover_file_is_gone() {
+        let conn = db();
+        let tmp = tempfile::tempdir().unwrap();
+        let pioneer_dir = tmp.path().join("pioneer");
+        std::fs::create_dir_all(&pioneer_dir).unwrap();
+        std::fs::copy(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/rekordbox_master.db"), pioneer_dir.join("master.db")).unwrap();
+        let xml_path = pioneer_dir.join("masterPlaylists6.xml");
+        std::fs::write(&xml_path, b"<DJ_PLAYLISTS/>").unwrap();
+        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+
+        conn.execute("INSERT INTO tracks(path, status) VALUES('D:/FIXTURE/track1.mp3', 'filed')", []).unwrap();
+        let track_id = conn.last_insert_rowid();
+        let missing_cover = tmp.path().join("does-not-exist.jpg");
+        let id = seed_artwork_sync_row(&conn, track_id, "pending", Some("40000001"), None, missing_cover.to_str().unwrap());
+
+        let backup_root = tmp.path().join("backups");
+        let outcomes = rekordbox_masterdb_apply_artwork_syncs_inner(&conn, &backup_root, &[id]).unwrap();
+        assert_eq!(outcomes.len(), 1);
+        assert!(!outcomes[0].ok);
+        assert!(outcomes[0].error.as_deref().unwrap().contains("n'existe plus"));
+
+        let status: String = conn.query_row("SELECT status FROM rekordbox_masterdb_artwork_syncs WHERE id=?1", rusqlite::params![id], |r| r.get(0)).unwrap();
+        assert_eq!(status, "pending", "a failed row must stay pending, retryable");
+    }
+
+    #[test]
+    fn apply_artwork_syncs_rejects_ambiguous_row_without_calling_engine() {
+        let conn = db();
+        let tmp = tempfile::tempdir().unwrap();
+        let pioneer_dir = tmp.path().join("pioneer");
+        std::fs::create_dir_all(&pioneer_dir).unwrap();
+        std::fs::copy(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/rekordbox_master.db"), pioneer_dir.join("master.db")).unwrap();
+        let xml_path = pioneer_dir.join("masterPlaylists6.xml");
+        std::fs::write(&xml_path, b"<DJ_PLAYLISTS/>").unwrap();
+        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+
+        conn.execute("INSERT INTO tracks(path, status) VALUES('D:/a.mp3', 'filed')", []).unwrap();
+        let track_id = conn.last_insert_rowid();
+        let id = seed_artwork_sync_row(&conn, track_id, "ambiguous", None, Some("40000001,40000002"), "/cache/a.jpg");
+
+        let backup_root = tmp.path().join("backups");
+        let outcomes = rekordbox_masterdb_apply_artwork_syncs_inner(&conn, &backup_root, &[id]).unwrap();
+        assert_eq!(outcomes.len(), 1);
+        assert!(!outcomes[0].ok);
+        assert!(outcomes[0].error.as_deref().unwrap().contains("ambigu"));
+
+        let status: String = conn.query_row("SELECT status FROM rekordbox_masterdb_artwork_syncs WHERE id=?1", rusqlite::params![id], |r| r.get(0)).unwrap();
+        assert_eq!(status, "ambiguous", "must not have been touched");
     }
 
     #[test]
