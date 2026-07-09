@@ -43,7 +43,11 @@ export function confirmAction(message: string, confirmLabel = "Confirmer"): Prom
     card.append(msg, actions);
     overlay.appendChild(card);
     document.body.appendChild(overlay);
-    confirmBtn.focus(); // R5 : focus déplacé dans la modale à l'ouverture, pas laissé sur l'appelant
+    // Audit 2026-07-09 : focaliser confirmBtn par défaut expose à valider une action destructrice
+    // (dedup, réparations master.db) sur un Entrée/Espace résiduel juste après ouverture — même
+    // logique que shadcn Alert Dialog (focus par défaut sur Cancel), déjà notre référence pour
+    // Escape/role ci-dessus.
+    cancelBtn.focus();
 
     const finish = (result: boolean) => {
       document.removeEventListener("keydown", onKeydown);
