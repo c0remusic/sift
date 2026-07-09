@@ -447,6 +447,35 @@ branche `m8-tier1-ui-screen`) — 4 tâches, revue finale (Opus) "Ready to merge
 mergé dans `m6a-discogs`. 276 tests Rust + `tsc --noEmit` clean ; vérification
 `tauri dev` par Antoine restante.
 
+### Section doublons de playlist (M8 Tier 2) — `playlistDuplicatesSectionHtml()`
+
+Ajoutée sous la section réparations Tier 1 ci-dessus (même page Rekordbox),
+**indépendante** — les deux sections coexistent, jamais fusionnées. Contrairement
+à Tier 1, aucune persistance DB : scanné à la demande à chaque rendu
+(`rekordboxMasterdbScanPlaylistDuplicates`, lecture seule), le résultat vit en
+mémoire (`lastScannedDuplicateGroups`) pour que le clic référence le bon groupe.
+Visible seulement si le scan retourne au moins un groupe (sinon section absente,
+même règle show-nothing-when-empty que les autres sections Rekordbox).
+
+| État | Condition | Rendu |
+|---|---|---|
+| Ligne de groupe | un groupe scanné | Nom de playlist (ou `Playlist {id}` si non résolu) + nom de fichier de piste (ou `Piste {id}`) + « N doublon(s) » + bouton « Dédupliquer » (`data-sift="mdbdedup"`), texte seul, pas de multi-sélection |
+| Erreur de dédup | dédup échouée pour ce groupe | Message d'erreur humanisé en petit sous la ligne (état transitoire en mémoire, `mdbDedupErrorByKey`, clé `playlistId::contentId`, pas de colonne DB) |
+
+Enrichissement backend display-only (`playlist_name`/`track_path`, ajoutés à
+`PlaylistDuplicateGroupDto` après le câblage IPC de base) — jamais requis par
+`dedup_playlist_group`, qui ignore ces champs (`From` inverse inchangé).
+`confirmAction()` obligatoire avant tout `dedup_playlist_group` (jamais
+`window.confirm()`), même pattern que Tier 1.
+
+Design/plan : `docs/superpowers/plans/2026-07-08-m8-tier2-ui-screen.md`
+(enrichissement backend), `docs/superpowers/plans/2026-07-08-m8-tier2-ipc-wiring.md`
+(commandes IPC de base), `docs/superpowers/plans/2026-07-08-m8-tier2-playlist-dedup-rust.md`
+(moteur). Construit via subagent-driven-development sur `m6a-discogs` directement
+(pas de worktree isolé cette fois) — revues finales (Opus pour le moteur/IPC
+d'écriture) "ready to merge" à chaque étape. `tsc --noEmit` clean ; vérification
+`tauri dev` par Antoine restante (code gated `inTauri`).
+
 ## Écran Revue — zones repliables Diagnostic/Métadonnées (2026-07-05)
 
 Refonte de `#mid` : la zone Diagnostic (`report-view.ts`, spectre + mesures)
