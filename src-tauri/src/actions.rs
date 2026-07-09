@@ -190,6 +190,80 @@ pub fn detect_masterdb_repair_if_linked(conn: &Connection, from_path: &str, to_p
     }
 }
 
+/// M8 Tier 3: the values a caller just wrote to a file's ID3 tags, not yet resolved against
+/// Rekordbox's own FK tables (that resolution happens at apply time, inside
+/// `rekordbox_masterdb::sync_track_metadata`). `None` fields mean "not changed by this write" —
+/// same convention as `tagging::write_tags_full`.
+pub struct MetadataSyncValues {
+    pub artist: Option<String>,
+    pub title: Option<String>,
+    pub label: Option<String>,
+    pub year: Option<i64>,
+    pub genre: Option<String>,
+}
+
+/// M8 Tier 3: read-only detection, mirroring `detect_masterdb_repair_if_linked`'s guard and
+/// 0/1/2+ match branches exactly, but writing to `rekordbox_masterdb_metadata_syncs` (keyed by
+/// Sift `track_id`, `UNIQUE(track_id)` — a second call for the same track REPLACES the row via
+/// `ON CONFLICT DO UPDATE`, preserving `id` so any reference already shown in the UI this render
+/// stays valid) instead of `rekordbox_masterdb_repairs`.
+///
+/// Called directly by the 3 sites that write ID3 tags — `filing.rs`'s post-commit loop,
+/// `apply_tags`, and `update_metadata` — right after each obtains its own `action_id`. Never
+/// threaded through `record_with_meta`'s generic signature.
+pub fn detect_masterdb_metadata_sync_if_linked(
+    conn: &Connection,
+    lookup_path: &str,
+    track_id: i64,
+    values: &MetadataSyncValues,
+    action_id: i64,
+) {
+    let Ok(Some(xml_path)) = crate::settings::get(conn, crate::settings::REKORDBOX_XML_PATH) else {
+        return;
+    };
+    let Some(pioneer_dir) = std::path::Path::new(&xml_path).parent() else {
+        return;
+    };
+    let master_db_path = pioneer_dir.join("master.db");
+    let index = match crate::rekordbox_masterdb::read_rekordbox_masterdb(&master_db_path) {
+        Ok(idx) => idx,
+        Err(e) => {
+            log::error!("masterdb metadata sync detection: {} unreadable: {e}", master_db_path.display());
+            return;
+        }
+    };
+    let matches: Vec<&str> = index
+        .tracks
+        .iter()
+        .filter(|t| t.folder_path == lookup_path)
+        .map(|t| t.track_id.as_str())
+        .collect();
+
+    let (rekordbox_track_id, candidate_track_ids, status): (Option<&str>, Option<String>, &str) = match matches.len() {
+        0 => return,
+        1 => (Some(matches[0]), None, "pending"),
+        _ => (None, Some(matches.join(",")), "ambiguous"),
+    };
+
+    let result = conn.execute(
+        "INSERT INTO rekordbox_masterdb_metadata_syncs
+             (action_id, track_id, rekordbox_track_id, candidate_track_ids, new_artist, new_title, new_label, new_year, new_genre, status)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+         ON CONFLICT(track_id) DO UPDATE SET
+             action_id=excluded.action_id, rekordbox_track_id=excluded.rekordbox_track_id,
+             candidate_track_ids=excluded.candidate_track_ids, new_artist=excluded.new_artist,
+             new_title=excluded.new_title, new_label=excluded.new_label, new_year=excluded.new_year,
+             new_genre=excluded.new_genre, status=excluded.status, detected_at=datetime('now')",
+        params![
+            action_id, track_id, rekordbox_track_id, candidate_track_ids,
+            values.artist, values.title, values.label, values.year, values.genre, status,
+        ],
+    );
+    if let Err(e) = result {
+        log::error!("masterdb metadata sync detection: insert failed: {e}");
+    }
+}
+
 /// If a Rekordbox XML is linked (`settings::REKORDBOX_XML_PATH`) and it references `from_path`,
 /// patch its `Location` to `to_path` and rewrite the file immediately. No-op (returns `None`) if
 /// nothing is linked. On a read/parse failure of the linked file, logs the error and returns
@@ -1189,5 +1263,148 @@ mod tests {
 
         let count: i64 = conn.query_row("SELECT COUNT(*) FROM rekordbox_masterdb_repairs", [], |r| r.get(0)).unwrap();
         assert_eq!(count, 1);
+    }
+
+    fn seed_sift_track(conn: &Connection, path: &str) -> i64 {
+        conn.execute("INSERT INTO tracks(path, status) VALUES(?1, 'pending')", params![path]).unwrap();
+        conn.last_insert_rowid()
+    }
+
+    fn some_values() -> MetadataSyncValues {
+        MetadataSyncValues {
+            artist: Some("Larry Heard".to_string()),
+            title: Some("Mystery of Love".to_string()),
+            label: Some("Alleviated".to_string()),
+            year: Some(1985),
+            genre: Some("House".to_string()),
+        }
+    }
+
+    #[test]
+    fn detect_masterdb_metadata_sync_records_pending_on_single_match() {
+        let conn = db();
+        let tmp = tempfile::tempdir().unwrap();
+        let xml_path = seed_pioneer_dir_with_fixture(&tmp.path().join("pioneer"));
+        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+        let track_id = seed_sift_track(&conn, "D:/FIXTURE/track1.mp3");
+        let action_id = record_row_only(&conn, "b1", Some(track_id), "tag_edit", Some("D:/FIXTURE/track1.mp3"), None, None).unwrap();
+
+        detect_masterdb_metadata_sync_if_linked(&conn, "D:/FIXTURE/track1.mp3", track_id, &some_values(), action_id);
+
+        let (got_action_id, rb_track_id, candidates, new_artist, new_title, new_label, new_year, new_genre, status): (
+            i64, Option<String>, Option<String>, Option<String>, Option<String>, Option<String>, Option<i64>, Option<String>, String,
+        ) = conn
+            .query_row(
+                "SELECT action_id, rekordbox_track_id, candidate_track_ids, new_artist, new_title, new_label, new_year, new_genre, status
+                 FROM rekordbox_masterdb_metadata_syncs WHERE track_id=?1",
+                params![track_id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?, r.get(6)?, r.get(7)?, r.get(8)?)),
+            )
+            .expect("one metadata sync row inserted");
+        assert_eq!(got_action_id, action_id);
+        assert_eq!(rb_track_id, Some("40000001".to_string()));
+        assert_eq!(candidates, None);
+        assert_eq!(new_artist, Some("Larry Heard".to_string()));
+        assert_eq!(new_title, Some("Mystery of Love".to_string()));
+        assert_eq!(new_label, Some("Alleviated".to_string()));
+        assert_eq!(new_year, Some(1985));
+        assert_eq!(new_genre, Some("House".to_string()));
+        assert_eq!(status, "pending");
+    }
+
+    #[test]
+    fn detect_masterdb_metadata_sync_no_match_inserts_nothing() {
+        let conn = db();
+        let tmp = tempfile::tempdir().unwrap();
+        let xml_path = seed_pioneer_dir_with_fixture(&tmp.path().join("pioneer"));
+        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+        let track_id = seed_sift_track(&conn, "D:/nowhere/nope.mp3");
+        let action_id = record_row_only(&conn, "b1", Some(track_id), "tag_edit", Some("D:/nowhere/nope.mp3"), None, None).unwrap();
+
+        detect_masterdb_metadata_sync_if_linked(&conn, "D:/nowhere/nope.mp3", track_id, &some_values(), action_id);
+
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM rekordbox_masterdb_metadata_syncs", [], |r| r.get(0)).unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn detect_masterdb_metadata_sync_ambiguous_on_two_matches() {
+        let conn = db();
+        let tmp = tempfile::tempdir().unwrap();
+        let pioneer_dir = tmp.path().join("pioneer");
+        let xml_path = seed_pioneer_dir_with_fixture(&pioneer_dir);
+        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+
+        // Same collision technique as detect_masterdb_repair_ambiguous_on_two_matches.
+        let raw = std::fs::read(pioneer_dir.join("master.db")).unwrap();
+        let plaintext = crate::rekordbox_masterdb::decrypt_masterdb_for_test(&raw);
+        let len = plaintext.len();
+        let mut conn2 = rusqlite::Connection::open_in_memory().unwrap();
+        conn2.deserialize_read_exact(rusqlite::MAIN_DB, std::io::Cursor::new(plaintext), len, false).unwrap();
+        conn2.execute("UPDATE djmdContent SET FolderPath='D:/FIXTURE/track1.mp3' WHERE ID='40000002'", []).unwrap();
+        let plaintext2 = conn2.serialize(rusqlite::MAIN_DB).unwrap().to_vec();
+        let raw2 = crate::rekordbox_masterdb::encrypt_masterdb_for_test(&plaintext2);
+        std::fs::write(pioneer_dir.join("master.db"), raw2).unwrap();
+
+        let track_id = seed_sift_track(&conn, "D:/FIXTURE/track1.mp3");
+        let action_id = record_row_only(&conn, "b1", Some(track_id), "tag_edit", Some("D:/FIXTURE/track1.mp3"), None, None).unwrap();
+        detect_masterdb_metadata_sync_if_linked(&conn, "D:/FIXTURE/track1.mp3", track_id, &some_values(), action_id);
+
+        let (rb_track_id, candidates, status): (Option<String>, String, String) = conn
+            .query_row(
+                "SELECT rekordbox_track_id, candidate_track_ids, status FROM rekordbox_masterdb_metadata_syncs WHERE track_id=?1",
+                params![track_id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .expect("one ambiguous row inserted");
+        assert_eq!(rb_track_id, None);
+        let mut ids: Vec<&str> = candidates.split(',').collect();
+        ids.sort_unstable();
+        assert_eq!(ids, vec!["40000001", "40000002"]);
+        assert_eq!(status, "ambiguous");
+    }
+
+    #[test]
+    fn detect_masterdb_metadata_sync_no_op_when_no_xml_linked() {
+        let conn = db();
+        let track_id = seed_sift_track(&conn, "D:/FIXTURE/track1.mp3");
+        let action_id = record_row_only(&conn, "b1", Some(track_id), "tag_edit", Some("D:/FIXTURE/track1.mp3"), None, None).unwrap();
+        detect_masterdb_metadata_sync_if_linked(&conn, "D:/FIXTURE/track1.mp3", track_id, &some_values(), action_id);
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM rekordbox_masterdb_metadata_syncs", [], |r| r.get(0)).unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn detect_masterdb_metadata_sync_second_call_replaces_row_not_duplicates() {
+        let conn = db();
+        let tmp = tempfile::tempdir().unwrap();
+        let xml_path = seed_pioneer_dir_with_fixture(&tmp.path().join("pioneer"));
+        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+        let track_id = seed_sift_track(&conn, "D:/FIXTURE/track1.mp3");
+        let action_id_1 = record_row_only(&conn, "b1", Some(track_id), "tag_edit", Some("D:/FIXTURE/track1.mp3"), None, None).unwrap();
+        detect_masterdb_metadata_sync_if_linked(&conn, "D:/FIXTURE/track1.mp3", track_id, &some_values(), action_id_1);
+
+        // Mark it applied, then retag again — a fresh retag must resurrect it as pending,
+        // not leave the stale 'applied' row untouched.
+        conn.execute("UPDATE rekordbox_masterdb_metadata_syncs SET status='applied' WHERE track_id=?1", params![track_id]).unwrap();
+        let row_id_before: i64 = conn.query_row("SELECT id FROM rekordbox_masterdb_metadata_syncs WHERE track_id=?1", params![track_id], |r| r.get(0)).unwrap();
+
+        let action_id_2 = record_row_only(&conn, "b2", Some(track_id), "tag_edit", Some("D:/FIXTURE/track1.mp3"), None, None).unwrap();
+        let new_values = MetadataSyncValues { artist: Some("New Artist".to_string()), title: None, label: None, year: None, genre: None };
+        detect_masterdb_metadata_sync_if_linked(&conn, "D:/FIXTURE/track1.mp3", track_id, &new_values, action_id_2);
+
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM rekordbox_masterdb_metadata_syncs", [], |r| r.get(0)).unwrap();
+        assert_eq!(count, 1, "must replace, never accumulate");
+        let (row_id_after, action_id, new_artist, status): (i64, i64, Option<String>, String) = conn
+            .query_row(
+                "SELECT id, action_id, new_artist, status FROM rekordbox_masterdb_metadata_syncs WHERE track_id=?1",
+                params![track_id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )
+            .unwrap();
+        assert_eq!(row_id_after, row_id_before, "id must stay stable across a replace");
+        assert_eq!(action_id, action_id_2);
+        assert_eq!(new_artist, Some("New Artist".to_string()));
+        assert_eq!(status, "pending", "must fall back to pending even though the previous row was applied");
     }
 }
