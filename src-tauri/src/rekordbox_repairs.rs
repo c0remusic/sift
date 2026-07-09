@@ -78,6 +78,18 @@ pub(crate) fn humanize_masterdb_error(e: &crate::rekordbox_masterdb::MasterDbErr
         MasterDbError::SongPlaylistEntryNotFound { song_playlist_id } => format!(
             "entrée de playlist {song_playlist_id} introuvable — la bibliothèque Rekordbox a peut-être changé depuis le scan"
         ),
+        MasterDbError::NoArtworkPath { track_id } => format!(
+            "la piste {track_id} n'a pas de pochette dans master.db — aucune synchro possible"
+        ),
+        MasterDbError::ArtworkVariantMissing { path } => format!(
+            "fichier pochette manquant côté Rekordbox ({path}) — bibliothèque peut-être corrompue ou jamais scannée"
+        ),
+        MasterDbError::ArtworkWriteVerificationFailedRolledBack(m) => format!(
+            "l'écriture de la pochette a échoué à la vérification, la sauvegarde a été restaurée automatiquement : {m}"
+        ),
+        MasterDbError::ArtworkWriteVerificationFailedRollbackFailed(m) => format!(
+            "l'écriture ET la restauration de la pochette ont échoué — intervention manuelle nécessaire : {m}"
+        ),
         other => other.to_string(),
     }
 }
@@ -1194,5 +1206,14 @@ mod tests {
 
         let status: String = conn.query_row("SELECT status FROM rekordbox_masterdb_metadata_syncs WHERE id=?1", rusqlite::params![id], |r| r.get(0)).unwrap();
         assert_eq!(status, "ambiguous", "must not have been touched");
+    }
+
+    #[test]
+    fn humanize_masterdb_error_covers_artwork_variants() {
+        use crate::rekordbox_masterdb::MasterDbError;
+        assert!(humanize_masterdb_error(&MasterDbError::NoArtworkPath { track_id: "40000001".to_string() }).contains("40000001"));
+        assert!(humanize_masterdb_error(&MasterDbError::ArtworkVariantMissing { path: "C:/x/artwork_m.jpg".to_string() }).contains("artwork_m.jpg"));
+        assert!(humanize_masterdb_error(&MasterDbError::ArtworkWriteVerificationFailedRolledBack("dim mismatch".to_string())).contains("dim mismatch"));
+        assert!(humanize_masterdb_error(&MasterDbError::ArtworkWriteVerificationFailedRollbackFailed("dim mismatch".to_string())).contains("intervention manuelle"));
     }
 }
