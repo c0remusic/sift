@@ -177,6 +177,27 @@ const MIGRATIONS: &[&str] = &[
     );
     CREATE INDEX idx_rkbmdb_metasync_status ON rekordbox_masterdb_metadata_syncs(status);
     "#,
+    // v14 — M8 Tier 3 IPC wiring (artwork): candidate master.db artwork syncs detected read-only
+    // whenever Sift writes a NEW cover onto a file linked to Rekordbox (filing, apply_tags,
+    // update_metadata) — only when cover_path is actually Some on that write, unlike v13's
+    // metadata syncs which always fire. Keyed by Sift track_id, replaced on every fresh cover.
+    // cover_path is a string (the source JPEG path), never resolved image bytes — re-read fresh
+    // at apply time so a stale/moved file fails loudly instead of syncing wrong bytes.
+    r#"
+    CREATE TABLE rekordbox_masterdb_artwork_syncs (
+        id INTEGER PRIMARY KEY,
+        action_id INTEGER NOT NULL REFERENCES actions(id) ON DELETE CASCADE,
+        track_id INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+        rekordbox_track_id TEXT,
+        candidate_track_ids TEXT,
+        cover_path TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        detected_at TEXT NOT NULL DEFAULT (datetime('now')),
+        applied_at TEXT,
+        UNIQUE(track_id)
+    );
+    CREATE INDEX idx_rkbmdb_artsync_status ON rekordbox_masterdb_artwork_syncs(status);
+    "#,
 ];
 
 /// Applies any migrations the DB hasn't seen yet, tracked via PRAGMA user_version.
@@ -236,8 +257,8 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         run_migrations(&conn).unwrap();
         // v4 adds `settings`, v6 adds `track_genres`, v11 adds `rekordbox_masterdb_repairs`,
-        // v13 adds `rekordbox_masterdb_metadata_syncs`
-        assert_eq!(table_count(&conn).unwrap(), 9);
+        // v13 adds `rekordbox_masterdb_metadata_syncs`, v14 adds `rekordbox_masterdb_artwork_syncs`
+        assert_eq!(table_count(&conn).unwrap(), 10);
     }
 
     #[test]
@@ -245,7 +266,7 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         run_migrations(&conn).unwrap();
         run_migrations(&conn).unwrap(); // second run must not error or duplicate
-        assert_eq!(table_count(&conn).unwrap(), 9);
+        assert_eq!(table_count(&conn).unwrap(), 10);
     }
 
     #[test]
