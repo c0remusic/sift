@@ -1,0 +1,350 @@
+// Bibliothèque screen — extracted from sift-live.ts (clean-architecture audit F1, 2026-07-09).
+// Click handling for data-bib actions stays in sift-live.ts's delegated #pa handler (same split
+// as ecartes-view.ts: render+state live here, dispatch stays centralized). The 3 "doublons
+// internes" fields (dupGroups/dupLoading/dupShown) are reassigned from BOTH that handler and
+// renderBiblioLive here — bare `let`s can't be reassigned across an import boundary in ES
+// modules, so they're consolidated into the single exported `bibDup` object below and mutated by
+// property assignment instead (same pattern bibState already used).
+import { listLibrary, libraryFolders, libraryStats } from "./ipc";
+import type { LibraryTrack, LibraryFacets, LibraryFilter, DupGroup, DashboardStats } from "../shared/contracts";
+import { requireEl } from "./dom";
+import { emptyStateHtml, wireEmptyState } from "./empty-state";
+import { createVirtualList, type VirtualList } from "./list-virtual";
+import {
+  bibName,
+  sortTracks,
+  libraryTableHeaderHtml,
+  libraryTableRowHtml,
+  libraryGridRowHtml,
+  LIBRARY_GRID_TILES_PER_ROW,
+  LIBRARY_TABLE_PROBE_HTML,
+  LIBRARY_GRID_PROBE_HTML,
+  type LibrarySortState,
+} from "./library-views";
+import { openLibraryDetailInto } from "./library-detail";
+
+const esc = (s: string) =>
+  s.replace(/[&<>"']/g, (c) =>
+    c === "&" ? "&amp;" : c === "<" ? "&lt;" : c === ">" ? "&gt;" : c === '"' ? "&quot;" : "&#39;",
+  );
+
+// Bibliothèque browser state: active filter, which facet column (folder/genre) is shown,
+// and the last fetched track list (so a row-click can recover the track's path).
+export const bibState: {
+  filter: LibraryFilter;
+  facet: "folder" | "genre" | "artist";
+  tracks: LibraryTrack[];
+  viewMode: "table" | "grid";
+  sort: LibrarySortState;
+} = {
+  filter: {},
+  facet: "folder",
+  tracks: [],
+  viewMode: "table",
+  sort: { field: "artist", dir: "asc" },
+};
+
+// Doublons internes panel state (Bibliothèque). `groups: null` = not run yet this session.
+// Reassigned both here and from sift-live.ts's click handler (the "Doublons" stat/chip and its
+// resolve action) — kept as one object rather than 3 loose lets precisely so that cross-module
+// reassignment is a property write, not a rebinding.
+export const bibDup: { groups: DupGroup[] | null; loading: boolean; shown: boolean } = {
+  groups: null,
+  loading: false,
+  shown: false,
+};
+
+// Virtualized library list controller. Torn down and recreated on each full renderBiblioLive
+// (which replaces #content.innerHTML, orphaning the old #biblist host — its scroll listener sits
+// on the PERMANENT #content, so it must be explicitly destroyed or it leaks + double-renders).
+// Private to this module — nothing outside renderBiblioLive touches it.
+let bibVirtual: VirtualList<LibraryTrack> | VirtualList<LibraryTrack[]> | null = null;
+// Which library row is open in the detail panel — stamped as `.cur` at row-creation time so the
+// highlight survives virtualization. Private — only openBiblioDetail/renderBiblioLive touch it.
+let bibOpenId: number | null = null;
+
+function dupMemberHtml(m: DupGroup["members"][number]): string {
+  const name = esc(m.filename || m.path.split(/[\\/]/).pop() || m.path);
+  const fmt = (m.format || "?").toUpperCase();
+  const br = m.bitrate ? `${m.bitrate} kbps` : "";
+  return (
+    `<div style="display:flex;align-items:center;gap:8px;padding:4px 0${m.recommend_keep ? "" : ";opacity:.6"}">` +
+    `<span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${name}</span>` +
+    `<span class="pill" style="flex:none">${esc(fmt)}</span>` +
+    `<span style="flex:none;width:80px;text-align:right;font-size:var(--text-sm);color:var(--color-text-tertiary)">${esc(br)}</span>` +
+    (m.recommend_keep
+      ? `<span class="pill" style="flex:none;background:var(--color-background-success);color:var(--color-text-success)" title="${esc(m.reason || "")}">Recommandé</span>`
+      : "") +
+    `</div>`
+  );
+}
+
+function dupGroupHtml(g: DupGroup, idx: number): string {
+  const loserCount = g.members.filter((m) => !m.recommend_keep).length;
+  return (
+    `<div class="sift-dup-group" style="border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:10px 12px;margin-bottom:8px">` +
+    g.members.map((m) => dupMemberHtml(m)).join("") +
+    `<div style="margin-top:6px"><button data-bib="dupresolve" data-idx="${idx}">Envoyer ${loserCount} doublon${loserCount > 1 ? "s" : ""} à la corbeille</button></div>` +
+    `</div>`
+  );
+}
+
+function statsCardsHtml(s: DashboardStats): string {
+  const activeStat =
+    bibState.filter.verdict === "fake"
+      ? "fake"
+      : bibDup.shown
+        ? "duplicates"
+        : (bibState.filter.quality ?? "all");
+  const card = (label: string, value: number, action: string, extra = "") => {
+    const on = action === activeStat;
+    return (
+      `<button data-bib="stat" data-stat="${action}" style="flex:1;min-width:90px;text-align:left;border:0.5px solid ${on ? "var(--color-border-secondary)" : "var(--color-border-tertiary)"};border-radius:var(--border-radius-md);padding:8px 10px;background:${on ? "var(--color-row-active)" : "transparent"};cursor:pointer">` +
+      `<div style="font-size:var(--text-xl);font-weight:600">${value}</div>` +
+      `<div style="font-size:var(--text-sm);color:var(--color-text-tertiary)">${esc(label)}${extra}</div>` +
+      `</button>`
+    );
+  };
+  return (
+    `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">` +
+    card("Total", s.total, "all") +
+    card("Lossless", s.lossless, "lossless") +
+    card("MP3", s.mp3, "mp3") +
+    card("Doublons", s.duplicates, "duplicates") +
+    card("À re-sourcer", s.fake, "fake") +
+    `</div>`
+  );
+}
+
+/** Positions the Dossiers/Genres thumb from whichever button currently carries `.on`. Called both
+ * right after a full rebuild (fresh node — just places it) and immediately on facet click before
+ * renderBiblioLive()'s async IPC round-trip rebuilds everything — that's the call that actually
+ * animates, same pattern as Journal's positionJournalThumb(). Exported: sift-live.ts's click
+ * handler calls this directly for the instant pre-rebuild toggle. */
+export function positionFacetThumb(): void {
+  const seg = document.getElementById("sift-bib-facet-seg");
+  const thumb = seg?.querySelector<HTMLElement>(".sift-seg-thumb");
+  const onEl = seg?.querySelector<HTMLElement>("[data-bib='facet'].on");
+  if (!thumb || !onEl) return;
+  thumb.style.width = `${onEl.offsetWidth}px`;
+  thumb.style.transform = `translateX(${onEl.offsetLeft}px)`;
+}
+
+/** Same thumb-glide pattern as positionFacetThumb(), for the Tableau/Grille segmented. */
+export function positionViewModeThumb(): void {
+  const seg = document.getElementById("sift-bib-viewmode-seg");
+  const thumb = seg?.querySelector<HTMLElement>(".sift-seg-thumb");
+  const onEl = seg?.querySelector<HTMLElement>("[data-bib='viewmode'].on");
+  if (!thumb || !onEl) return;
+  thumb.style.width = `${onEl.offsetWidth}px`;
+  thumb.style.transform = `translateX(${onEl.offsetLeft}px)`;
+}
+
+/** Live Bibliothèque view: lists filed tracks with search + quality chips + folder/genre
+ * facets, wired to real data. Actions go through the #pa delegated handler (data-bib). */
+export async function renderBiblioLive() {
+  const content = requireEl("#content", "renderBiblioLive");
+  // Tear down any previous virtual list first: its scroll listener sits on the permanent #content,
+  // which this render is about to overwrite — leaving it attached would leak the listener and fire
+  // renders against a detached host.
+  bibVirtual?.destroy();
+  bibVirtual = null;
+  let facets: LibraryFacets = { folders: [], genres: [], artists: [] };
+  let stats: DashboardStats | null = null;
+  try {
+    [bibState.tracks, facets, stats] = await Promise.all([
+      listLibrary(bibState.filter),
+      libraryFolders(),
+      libraryStats(),
+    ]);
+  } catch (e) {
+    console.error("library load failed", e);
+    return;
+  }
+
+  // Audit-ref B2 (Bibliothèque, 2026-07-09) : <span> converti en <button> pour un clavier natif
+  // (pas besoin d'étendre installNavKeyboard — un vrai bouton gère déjà Enter/Espace lui-même).
+  const chips =
+    (["all", "lossless", "mp3"] as const)
+      .map((q) => {
+        const on = (bibState.filter.quality ?? "all") === q;
+        const label = q === "all" ? "Tous" : q === "lossless" ? "Lossless" : "MP3";
+        return `<button class="chip${on ? " on" : ""}" data-bib="qual" data-q="${q}">${label}</button>`;
+      })
+      .join("") +
+    `<button class="chip${bibDup.shown ? " on" : ""}" data-bib="dupscan">Doublons</button>`;
+
+  const facetList =
+    bibState.facet === "folder" ? facets.folders : bibState.facet === "genre" ? facets.genres : facets.artists;
+  const sideKey = bibState.facet;
+  const activeFacetVal =
+    bibState.facet === "folder"
+      ? bibState.filter.folder
+      : bibState.facet === "genre"
+        ? bibState.filter.genre
+        : bibState.filter.artist;
+  const side =
+    // Segmented pill (2026-07-08, was .chip/.chip.on) — a strictly exclusive 3-way choice is the
+    // same job as Apparence/Format USB/Détail-Lot, not a filter chip (chips stay the "tag/filter"
+    // grammar elsewhere, e.g. genre chips).
+    // Audit-ref B3 (Bibliothèque, 2026-07-09) : <span> converti en <button>, incohérent avec le
+    // reste de l'app où .sift-seg-opt est toujours un vrai bouton (déjà clavier-natif du coup).
+    // Thumb glissant ajouté (retour Antoine, même jour) — voir positionFacetThumb() : classes
+    // togglées en place au clic avant le rebuild (async, IPC), même pattern que Journal.
+    `<div class="sift-seg sift-seg-thumbed" id="sift-bib-facet-seg" style="margin-bottom:8px">` +
+    `<div class="sift-seg-thumb"></div>` +
+    `<button class="sift-seg-opt${bibState.facet === "folder" ? " on" : ""}" data-bib="facet" data-f="folder">Dossiers</button>` +
+    `<button class="sift-seg-opt${bibState.facet === "genre" ? " on" : ""}" data-bib="facet" data-f="genre">Genres</button>` +
+    `<button class="sift-seg-opt${bibState.facet === "artist" ? " on" : ""}" data-bib="facet" data-f="artist">Artistes</button></div>` +
+    // Audit-ref B1 : tabindex/role="button", clavier via installNavKeyboard() étendu (chrome.ts).
+    facetList
+      .map(
+        (b) =>
+          `<div class="fld${activeFacetVal === b.name ? " on" : ""}" data-bib="pick" data-key="${sideKey}" data-val="${esc(b.name)}" tabindex="0" role="button" style="justify-content:space-between"><span>${esc(b.name)}</span><span style="font-size:var(--text-sm);opacity:.7">${b.count}</span></div>`,
+      )
+      .join("");
+
+  // The list is virtualized (createVirtualList below) — this placeholder is the mount host, filled
+  // with only the visible window of rows after content.innerHTML. Rendering all bibState.tracks
+  // here would reintroduce the 15k-track freeze (audit 2026-07-05 P2). `rows` non-empty iff there's
+  // at least one track, used only to pick the "no result" fallback below.
+  const rows = bibState.tracks.length ? '<div id="biblist"></div>' : "";
+  const sortedTracks = bibState.viewMode === "table" ? sortTracks(bibState.tracks, bibState.sort) : bibState.tracks;
+  const tableHead = bibState.viewMode === "table" ? libraryTableHeaderHtml(bibState.sort) : "";
+  // Truly empty (no filed track at all, no filter narrowing it) vs. a filter that just matches
+  // nothing right now — only the former is DESIGN.md's "État vide" dead-end with a back-to-Revue
+  // link; the latter keeps the search/chips/facets on screen so the filter can be cleared.
+  const noFilter =
+    !bibState.filter.q &&
+    !bibState.filter.quality &&
+    !bibState.filter.folder &&
+    !bibState.filter.genre &&
+    !bibState.filter.artist;
+  const trulyEmpty = bibState.tracks.length === 0 && noFilter;
+
+  const dupSection = !bibDup.shown
+    ? ""
+    : bibDup.loading
+      ? `<div style="margin-top:10px;font-size:var(--text-md);color:var(--color-text-tertiary)">Scan en cours (toute la bibliothèque)…</div>`
+      : bibDup.groups === null
+        ? ""
+        : bibDup.groups.length === 0
+          ? `<div style="margin-top:10px;font-size:var(--text-md);color:var(--color-text-tertiary)">Aucun doublon dans toute la bibliothèque.</div>`
+          : `<div style="margin-top:10px"><div style="font-size:var(--text-xs);color:var(--color-text-tertiary);margin-bottom:4px">Doublons détectés dans toute la bibliothèque (pas seulement la vue filtrée actuelle)</div>${bibDup.groups.map((g, i) => dupGroupHtml(g, i)).join("")}</div>`;
+
+  // Export (Rekordbox/Clé USB) lives in the nav rail now, not here — matches the maquette's
+  // persistent Export section (index.html nav-export items, wired in installLiveWiring below).
+  // Retour Antoine 2026-07-09 : le toolbar (recherche+chips) était sa PROPRE boîte flottante
+  // au-dessus du panneau — une seule information (le filtre courant), grouper ça seul ajoute du
+  // chrome pour rien (même règle HIG Boxes que la consolidation Réglages, 2026-07-08). Intégré
+  // maintenant comme bandeau supérieur du panneau .sift-library-main, séparé par un filet.
+  const header =
+    `<div class="sift-library-toolbar">` +
+    `<div style="flex:1;display:flex;align-items:center;gap:7px;border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:6px 10px"><i class="ti ti-search" style="font-size:var(--text-lg);color:var(--color-text-tertiary)"></i><input id="bibq" placeholder="Rechercher…" aria-label="Rechercher dans la bibliothèque" value="${esc(bibState.filter.q || "")}" style="flex:1;border:0;background:transparent;color:inherit;font-size:var(--text-md);outline:none"></div>` +
+    chips +
+    `<div class="sift-seg sift-seg-thumbed" id="sift-bib-viewmode-seg">` +
+    `<div class="sift-seg-thumb"></div>` +
+    `<button class="sift-seg-opt${bibState.viewMode === "table" ? " on" : ""}" data-bib="viewmode" data-mode="table" aria-label="Vue tableau"><i class="ti ti-list"></i></button>` +
+    `<button class="sift-seg-opt${bibState.viewMode === "grid" ? " on" : ""}" data-bib="viewmode" data-mode="grid" aria-label="Vue grille"><i class="ti ti-layout-grid"></i></button></div>` +
+    `</div>`;
+
+  content.innerHTML = trulyEmpty
+    ? emptyStateHtml({
+        title: "Bibliothèque vide",
+        note: "Les pistes que tu ranges depuis Revue apparaissent ici, prêtes à exporter vers Rekordbox ou une clé USB.",
+        backToRevue: true,
+      })
+    : (stats ? statsCardsHtml(stats) : "") +
+      `<div class="sift-library-layout"><div class="sift-library-side sift-ui-card-soft sift-ui-card-soft-pad"><div class="col-h">Bibliothèque</div>${side}</div>` +
+      `<div class="sift-library-main sift-ui-card sift-ui-card-pad">${header}<div style="display:flex;justify-content:space-between;margin-bottom:5px"><span style="font-size:var(--text-base);font-weight:500">${esc(activeFacetVal || "Tous")}</span><span style="font-size:var(--text-sm);color:var(--color-text-tertiary)">${bibState.tracks.length} piste${bibState.tracks.length > 1 ? "s" : ""}</span></div>${tableHead}` +
+      (rows ||
+        `<div style="font-size:var(--text-md);color:var(--color-text-tertiary)">Aucun résultat pour ce filtre. <button data-bib="stat" data-stat="all" style="font-size:inherit;color:var(--color-text-info);background:none;border:none;padding:0;cursor:pointer;text-decoration:underline">Réinitialiser les filtres</button></div>`) +
+      dupSection +
+      `<div id="bibplayer"></div></div></div>`;
+  wireEmptyState(content);
+  positionFacetThumb(); // fresh node post-rebuild — no prior transform, just place it
+  positionViewModeThumb();
+
+  if (trulyEmpty) return; // no header/search — nothing left to wire
+
+  const q = document.getElementById("bibq") as HTMLInputElement | null;
+  q?.addEventListener("input", () => {
+    bibState.filter.q = q.value || undefined;
+    clearTimeout((q as unknown as { _t?: number })._t);
+    const toolbar = q.closest<HTMLElement>(".sift-library-toolbar");
+    toolbar?.querySelector(".sift-bib-search-pending")?.remove();
+    const pending = document.createElement("span");
+    pending.className = "sift-bib-search-pending";
+    pending.style.cssText = "font-size:var(--text-xs);color:var(--color-text-tertiary)";
+    pending.textContent = "Recherche…";
+    toolbar?.appendChild(pending);
+    (q as unknown as { _t?: number })._t = window.setTimeout(() => void renderBiblioLive(), 250);
+  });
+
+  // Virtualize the filed-track list: #content is the scroll container (app.js's block() set it to
+  // overflow-y:auto), but the list is only ONE section of it (stats/rekordbox/header/facets sit
+  // above) — createVirtualList handles that offset. #biblist exists iff bibState.tracks non-empty.
+  const biblist = document.getElementById("biblist");
+  if (biblist) {
+    if (bibState.viewMode === "table") {
+      bibVirtual = createVirtualList<LibraryTrack>({
+        host: biblist,
+        scrollContainer: content,
+        items: sortedTracks,
+        rowHtml: (t) => libraryTableRowHtml(t, bibOpenId),
+        probeHtml: LIBRARY_TABLE_PROBE_HTML,
+        fallbackRowH: 34,
+      });
+    } else {
+      const gridRows: LibraryTrack[][] = [];
+      for (let i = 0; i < sortedTracks.length; i += LIBRARY_GRID_TILES_PER_ROW) {
+        gridRows.push(sortedTracks.slice(i, i + LIBRARY_GRID_TILES_PER_ROW));
+      }
+      bibVirtual = createVirtualList<LibraryTrack[]>({
+        host: biblist,
+        scrollContainer: content,
+        items: gridRows,
+        rowHtml: (row) => libraryGridRowHtml(row),
+        probeHtml: LIBRARY_GRID_PROBE_HTML,
+        fallbackRowH: 150,
+      });
+    }
+  }
+}
+
+/** Open the unified detail/edit panel for a filed track into #bibplayer, highlighting its row.
+ * On save, patch the row label in place (player stays alive); on delete, re-render the list. */
+export function openBiblioDetail(id: number): void {
+  const t = bibState.tracks.find((x) => x.id === id);
+  const host = requireEl("#bibplayer", "openBiblioDetail");
+  if (!t) return;
+  if (bibOpenId === id) {
+    bibOpenId = null;
+    document.querySelectorAll(".lr.cur").forEach((n) => n.classList.remove("cur"));
+    host.innerHTML = "";
+    return;
+  }
+  // Track the open id so the `.cur` highlight is re-stamped by biblioRowHtml when a scrolled-away
+  // row re-enters the virtualized window. Clear the class on currently-mounted rows immediately for
+  // instant feedback (rows outside the window aren't in the DOM — bibOpenId covers them on mount).
+  bibOpenId = id;
+  document.querySelectorAll(".lr.cur").forEach((n) => n.classList.remove("cur"));
+  document.querySelector(`.lr[data-id="${id}"]`)?.classList.add("cur");
+  openLibraryDetailInto(
+    host,
+    t,
+    (updated) => {
+      // Keep the in-memory list + the visible row label in sync without a full re-render.
+      const i = bibState.tracks.findIndex((x) => x.id === updated.id);
+      if (i >= 0) bibState.tracks[i] = updated;
+      const span = document.querySelector(`.lr[data-id="${updated.id}"] .bib-name`);
+      if (span) span.textContent = bibName(updated);
+    },
+    () => void renderBiblioLive(),
+    () => {
+      bibOpenId = null;
+      document.querySelectorAll(".lr.cur").forEach((n) => n.classList.remove("cur"));
+      host.innerHTML = "";
+    },
+  );
+}

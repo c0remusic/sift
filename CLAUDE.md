@@ -211,6 +211,15 @@ Exemples de routage (non exhaustif, voir le registre complet) :
 - `home-sources.ts` — écran Accueil (sources, watcher)
 - `reglages-view.ts` — écran Réglages (Discogs, Bibliothèque, Apparence, Clé
   USB), extrait de `sift-live.ts` le 2026-07-09 (split god file)
+- `bibliotheque-view.ts` — écran Bibliothèque (liste filée, facettes,
+  doublons internes), extrait de `sift-live.ts` le 2026-07-09 (audit clean
+  architecture) ; état `bibState`/`bibDup` exportés, mutés aussi depuis le
+  handler de clic délégué de `sift-live.ts` (dispatch reste centralisé,
+  comme `ecartes-view.ts`)
+- `rekordbox-view.ts` — écran Rekordbox (statut lien XML, Tier 1/2/3
+  master.db : réparations chemin, doublons playlist, synchro metadata),
+  extrait de `sift-live.ts` le 2026-07-09, même discipline que
+  `bibliotheque-view.ts`
 - `ecartes-view.ts` — écran Écartés
 - `report-view.ts` — écran Revue (son-d'abord, waveform, verdict)
 - `filing.ts` — rail de classement (destination, format, actions filer/écarter)

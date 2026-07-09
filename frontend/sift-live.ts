@@ -18,38 +18,18 @@ import {
   requeueTrack,
   purgeTrash,
   openUrl,
-  listLibrary,
-  libraryFolders,
   scanLibraryDuplicates,
-  libraryStats,
   exportRekordboxXml,
-  rekordboxStatus,
   linkRekordboxXml,
-  rekordboxMasterdbPendingRepairs,
   rekordboxMasterdbApplyRepairs,
   rekordboxMasterdbDismissRepair,
   rekordboxMasterdbResolveAmbiguous,
-  rekordboxMasterdbScanPlaylistDuplicates,
   rekordboxMasterdbDedupPlaylistGroup,
-  rekordboxMasterdbPendingMetadataSyncs,
   rekordboxMasterdbApplyMetadataSyncs,
   rekordboxMasterdbDismissMetadataSync,
   rekordboxMasterdbResolveAmbiguousMetadataSync,
 } from "./ipc";
-import type {
-  LibraryTrack,
-  LibraryFacets,
-  LibraryFilter,
-  DupGroup,
-  DashboardStats,
-  RekordboxLinkStatus,
-  PendingMasterdbRepair,
-  CandidateTrack,
-  PlaylistDuplicateGroupDto,
-  PendingMetadataSync,
-  ApplyMetadataSyncOutcome,
-} from "../shared/contracts";
-import { openLibraryDetailInto } from "./library-detail";
+import type { ApplyMetadataSyncOutcome } from "../shared/contracts";
 import { emptyStateHtml, wireEmptyState } from "./empty-state";
 import {
   openFilingInto,
@@ -77,18 +57,25 @@ import { renderReglagesLive } from "./reglages-view";
 import type { QueueItem, BatchResult, FileProgress, Target } from "../shared/contracts";
 import { FILE_IN_PLACE, EXTERNAL_DEST_PREFIX } from "../shared/contracts";
 import { requireEl } from "./dom";
-import { createVirtualList, type VirtualList } from "./list-virtual";
+import type { LibrarySortState } from "./library-views";
 import {
-  bibName,
-  sortTracks,
-  libraryTableHeaderHtml,
-  libraryTableRowHtml,
-  libraryGridRowHtml,
-  LIBRARY_GRID_TILES_PER_ROW,
-  LIBRARY_TABLE_PROBE_HTML,
-  LIBRARY_GRID_PROBE_HTML,
-  type LibrarySortState,
-} from "./library-views";
+  bibState,
+  bibDup,
+  renderBiblioLive,
+  openBiblioDetail,
+  positionFacetThumb,
+  positionViewModeThumb,
+} from "./bibliotheque-view";
+import {
+  mdbRepairSel,
+  mdbErrorById,
+  mdbDedupErrorByKey,
+  mdsSyncSel,
+  mdsErrorById,
+  lastScannedDuplicateGroups,
+  duplicateGroupKey,
+  renderRekordboxLive,
+} from "./rekordbox-view";
 import { renderJournal } from "./journal";
 import { open as openFolderDialog } from "@tauri-apps/plugin-dialog";
 
@@ -120,25 +107,6 @@ let currentOpenId: number | null = null;
 
 const QUEUE_ROW_BUFFER = 15; // rows rendered above/below the visible window
 
-// M8 Tier 1 repairs section state — module-level like batchSel (sift-live.ts:271), NOT reset on
-// every render. Filtered against the live pending/ambiguous rows each render so a stale id (one
-// that got applied/dismissed elsewhere) drops out without touching the rest of the selection.
-const mdbRepairSel = new Set<number>();
-// Per-row apply failure message, transient (never persisted) — cleared when the row is
-// reselected or the next apply_repairs batch touches it again.
-const mdbErrorById = new Map<number, string>();
-// M8 Tier 2 playlist-dedup section state — stateless on the backend (no server-side id,
-// see the IPC wiring plan's Architecture note), so the frontend keeps the last scan result
-// itself and references entries by array index from the DOM. Re-populated on every
-// renderRekordboxLive() call, same lifecycle as masterdbSection's own data.
-let lastScannedDuplicateGroups: PlaylistDuplicateGroupDto[] = [];
-// Per-group dedup failure message, keyed by "playlistId::contentId" (no numeric id exists
-// for a duplicate group) — same transient, never-persisted contract as mdbErrorById.
-const mdbDedupErrorByKey = new Map<string, string>();
-// M8 Tier 3 metadata-syncs section state — same module-level, filtered-not-reset discipline as
-// mdbRepairSel (sift-live.ts:114).
-const mdsSyncSel = new Set<number>();
-const mdsErrorById = new Map<number, string>();
 let queueRowHeightCache: number | null = null;
 
 // Live filter on the queue rail (annotation: "on veut une barre de recherche en bas — filtre
@@ -390,36 +358,6 @@ let batchTrackIds: number[] = [];
 // Destination bin chosen in the batch folder tree (forward-slash rel; "" = library root). Kept
 // across renders so the choice doesn't reset while triaging.
 let batchBin = "";
-
-// Bibliothèque browser state: active filter, which facet column (folder/genre) is shown,
-// and the last fetched track list (so a row-click can recover the track's path).
-const bibState: {
-  filter: LibraryFilter;
-  facet: "folder" | "genre" | "artist";
-  tracks: LibraryTrack[];
-  viewMode: "table" | "grid";
-  sort: LibrarySortState;
-} = {
-  filter: {},
-  facet: "folder",
-  tracks: [],
-  viewMode: "table",
-  sort: { field: "artist", dir: "asc" },
-};
-
-// Virtualized library list controller. Torn down and recreated on each full renderBiblioLive
-// (which replaces #content.innerHTML, orphaning the old #biblist host — its scroll listener sits
-// on the PERMANENT #content, so it must be explicitly destroyed or it leaks + double-renders).
-let bibVirtual: VirtualList<LibraryTrack> | VirtualList<LibraryTrack[]> | null = null;
-// Which library row is open in the detail panel — stamped as `.cur` at row-creation time so the
-// highlight survives virtualization (a row scrolled out of the window and back is rebuilt from
-// data; setting the class after the fact wouldn't stick, same reasoning as the queue's `active`).
-let bibOpenId: number | null = null;
-
-// Doublons internes panel state (Bibliothèque). `null` = not run yet this session.
-let dupGroups: DupGroup[] | null = null;
-let dupLoading = false;
-let dupShown = false; // toggled by the "Doublons" chip
 
 // Verdict = meaning only, vert/ambre uniquement (voir brief refonte 2026-07) — jamais un hex en
 // dur ici (l'ancien `#e2685e` rouge cassait cette règle) : lire les tokens CSS, pas une 3e teinte.
@@ -1354,595 +1292,6 @@ function updateRevueBadge(count: number) {
   badge.textContent = count ? String(count) : "";
 }
 
-function dupMemberHtml(m: DupGroup["members"][number]): string {
-  const name = esc(m.filename || m.path.split(/[\\/]/).pop() || m.path);
-  const fmt = (m.format || "?").toUpperCase();
-  const br = m.bitrate ? `${m.bitrate} kbps` : "";
-  return (
-    `<div style="display:flex;align-items:center;gap:8px;padding:4px 0${m.recommend_keep ? "" : ";opacity:.6"}">` +
-    `<span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${name}</span>` +
-    `<span class="pill" style="flex:none">${esc(fmt)}</span>` +
-    `<span style="flex:none;width:80px;text-align:right;font-size:var(--text-sm);color:var(--color-text-tertiary)">${esc(br)}</span>` +
-    (m.recommend_keep
-      ? `<span class="pill" style="flex:none;background:var(--color-background-success);color:var(--color-text-success)" title="${esc(m.reason || "")}">Recommandé</span>`
-      : "") +
-    `</div>`
-  );
-}
-
-function dupGroupHtml(g: DupGroup, idx: number): string {
-  const loserCount = g.members.filter((m) => !m.recommend_keep).length;
-  return (
-    `<div class="sift-dup-group" style="border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:10px 12px;margin-bottom:8px">` +
-    g.members.map((m) => dupMemberHtml(m)).join("") +
-    `<div style="margin-top:6px"><button data-bib="dupresolve" data-idx="${idx}">Envoyer ${loserCount} doublon${loserCount > 1 ? "s" : ""} à la corbeille</button></div>` +
-    `</div>`
-  );
-}
-
-function statsCardsHtml(s: DashboardStats): string {
-  const activeStat =
-    bibState.filter.verdict === "fake"
-      ? "fake"
-      : dupShown
-        ? "duplicates"
-        : (bibState.filter.quality ?? "all");
-  const card = (label: string, value: number, action: string, extra = "") => {
-    const on = action === activeStat;
-    return (
-      `<button data-bib="stat" data-stat="${action}" style="flex:1;min-width:90px;text-align:left;border:0.5px solid ${on ? "var(--color-border-secondary)" : "var(--color-border-tertiary)"};border-radius:var(--border-radius-md);padding:8px 10px;background:${on ? "var(--color-row-active)" : "transparent"};cursor:pointer">` +
-      `<div style="font-size:var(--text-xl);font-weight:600">${value}</div>` +
-      `<div style="font-size:var(--text-sm);color:var(--color-text-tertiary)">${esc(label)}${extra}</div>` +
-      `</button>`
-    );
-  };
-  return (
-    `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">` +
-    card("Total", s.total, "all") +
-    card("Lossless", s.lossless, "lossless") +
-    card("MP3", s.mp3, "mp3") +
-    card("Doublons", s.duplicates, "duplicates") +
-    card("À re-sourcer", s.fake, "fake") +
-    `</div>`
-  );
-}
-
-/** Rekordbox link-status card, now the Rekordbox page's centerpiece (moved out of Bibliothèque,
- * audit 2026-07-05 — see docs/superpowers/specs/2026-07-05-rekordbox-integration-page-design.md).
- * Same visual family as the M6b stat cards (border+radius token, no accent stripe per the CSS ban
- * on border-left/-right accents). Only called for `s.linked === true` — the not-linked case is a
- * full empty-state (see renderRekordboxLive). */
-function rekordboxCardHtml(s: RekordboxLinkStatus): string {
-  const body = s.error
-    ? `<div style="font-size:var(--text-md);color:var(--color-text-danger)">XML Rekordbox illisible — relie un fichier.</div>`
-    : `<div style="font-size:var(--text-md)">${esc(s.path || "")}</div>` +
-      `<div style="font-size:var(--text-sm);color:var(--color-text-tertiary)">${s.playlist_count} playlists · ${s.track_count} pistes</div>`;
-  // No "Réexporter" while the linked file is unreadable — the backend already refuses the export
-  // in that case (export_rekordbox_xml_inner reads the same path before merging).
-  const reexport = s.error
-    ? ""
-    : `<button data-sift="rkbreexport" style="flex:none">Réexporter maintenant</button>`;
-  return (
-    `<div style="border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:10px 12px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:12px">` +
-    `<div style="min-width:0">${body}</div>` +
-    `<div style="display:flex;gap:8px;flex:none">${reexport}<button data-bib="rkblink" style="flex:none">Changer de XML lié</button></div>` +
-    `</div>`
-  );
-}
-
-/** Rekordbox integration page (data-view="rkb") — real screen replacing the old one-click nav
- * export (audit 2026-07-05, docs/superpowers/specs/2026-07-05-rekordbox-integration-page-design.md).
- * Renders the whole page fresh each call, same pattern as renderBiblioLive/renderJournal — no mock
- * DOM survives. `drift_detected` is independent of linked/error, so the banner can appear on top
- * of either linked state (never modeled as a 4-way exclusive if/else). */
-/** M8 Tier 1 section: lists master.db path-repair candidates detected passively at filing time
- * (`rekordbox_masterdb_repairs`, actions.rs::detect_masterdb_repair_if_linked) and lets the user
- * resolve/apply/dismiss them. Independent of `driftBanner` above (XML repair signal, unrelated
- * mechanism) — see docs/superpowers/specs/2026-07-06-m8-tier1-ui-screen-design.md. Renders "" when
- * there is nothing pending/ambiguous, same show-nothing-when-empty rule as driftBanner. */
-function masterdbRepairsSectionHtml(rows: PendingMasterdbRepair[]): string {
-  if (rows.length === 0) return "";
-  // Drop stale selection ids without touching the rest — same discipline as batchSel's own
-  // re-filter (sift-live.ts:679).
-  const liveIds = new Set(rows.map((r) => r.id));
-  for (const id of [...mdbRepairSel]) if (!liveIds.has(id)) mdbRepairSel.delete(id);
-
-  const ambiguous = rows.filter((r) => r.status === "ambiguous");
-  const pending = rows.filter((r) => r.status === "pending");
-
-  const pathBlock = (r: PendingMasterdbRepair) =>
-    `<div style="min-width:0;flex:1">` +
-    `<div style="font-family:var(--font-mono);font-size:var(--text-sm);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.to_path)}</div>` +
-    `<div style="font-family:var(--font-mono);font-size:var(--text-xs);color:var(--color-text-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><span style="opacity:.55">was</span> ${esc(r.from_path)}</div>` +
-    (mdbErrorById.has(r.id)
-      ? `<div style="font-size:var(--text-xs);color:var(--color-text-danger);margin-top:2px">${esc(mdbErrorById.get(r.id)!)}</div>`
-      : "") +
-    `</div>`;
-
-  const candidateList = (r: PendingMasterdbRepair): CandidateTrack[] =>
-    r.candidate_tracks && r.candidate_tracks.length
-      ? r.candidate_tracks
-      : (r.candidate_track_ids || "")
-          .split(",")
-          .filter(Boolean)
-          .map((track_id) => ({ track_id, folder_path: null }));
-
-  const ambiguousRows = ambiguous
-    .map((r) => {
-      const candidateBtns = candidateList(r)
-        .map(
-          (c) =>
-            `<button data-sift="mdbresolve" data-id="${r.id}" data-track="${esc(c.track_id)}" style="display:block;text-align:left;font-family:var(--font-mono);font-size:var(--text-xs)">` +
-            `Choisir cette piste — ${esc(c.folder_path || c.track_id)}</button>`,
-        )
-        .join("");
-      return (
-        `<div style="border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:9px 11px;margin-bottom:6px">` +
-        `<div style="display:flex;gap:10px;align-items:flex-start">${pathBlock(r)}` +
-        `<button data-sift="mdbdismiss" data-id="${r.id}" style="flex:none">Ignorer</button></div>` +
-        `<div style="margin-top:6px;display:flex;flex-direction:column;gap:3px">${candidateBtns}</div>` +
-        `</div>`
-      );
-    })
-    .join("");
-
-  const pendingRows = pending
-    .map((r) => {
-      const checked = mdbRepairSel.has(r.id);
-      return (
-        // Audit-ref G3 (Rekordbox, 2026-07-09) : ligne-checkbox sans clavier — tabindex/role/
-        // aria-checked ajoutés, clavier via installNavKeyboard() étendu. Le bouton "Ignorer" imbriqué
-        // est déjà protégé par la garde anti-double-déclenchement (Bibliothèque, audit-ref B1).
-        `<div class="bx-row" data-sift="mdbpick" data-id="${r.id}" tabindex="0" role="checkbox" aria-checked="${checked}" style="display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:var(--border-radius-md);cursor:pointer;${
-          checked ? "background:var(--overlay-hover)" : ""
-        }">` +
-        `<input type="checkbox" class="sift-batch-ck" ${checked ? "checked" : ""} tabindex="-1">` +
-        pathBlock(r) +
-        `<button data-sift="mdbdismiss" data-id="${r.id}" style="flex:none">Ignorer</button>` +
-        `</div>`
-      );
-    })
-    .join("");
-
-  const applyBar =
-    mdbRepairSel.size > 0
-      ? `<div style="margin-top:8px"><button data-sift="mdbapply" style="font-weight:500">Appliquer la sélection (${mdbRepairSel.size})</button></div>`
-      : "";
-
-  return (
-    `<div style="margin-bottom:12px">` +
-    `<div class="col-h">Réparations master.db en attente</div>` +
-    (ambiguousRows ? `<div style="margin-bottom:8px">${ambiguousRows}</div>` : "") +
-    pendingRows +
-    applyBar +
-    `</div>`
-  );
-}
-
-/** M8 Tier 3 section: lists master.db metadata sync candidates detected passively whenever Sift
- * writes ID3 tags on a file linked to Rekordbox (filing, "Appliquer les tags", édition
- * Bibliothèque — see docs/superpowers/plans/2026-07-09-m8-tier3-metadata-sync-ipc-ui.md).
- * Independent of masterdbRepairsSectionHtml/playlistDuplicatesSectionHtml — 3 separate sections,
- * never merged. Renders "" when nothing pending/ambiguous. */
-function metadataSyncsSectionHtml(rows: PendingMetadataSync[]): string {
-  if (rows.length === 0) return "";
-  const liveIds = new Set(rows.map((r) => r.id));
-  for (const id of [...mdsSyncSel]) if (!liveIds.has(id)) mdsSyncSel.delete(id);
-
-  const ambiguous = rows.filter((r) => r.status === "ambiguous");
-  const pending = rows.filter((r) => r.status === "pending");
-
-  const diffLine = (label: string, value: string | number | null) =>
-    value == null ? "" : `<div style="font-size:var(--text-xs);color:var(--color-text-tertiary)">${label}: ${esc(String(value))}</div>`;
-
-  const infoBlock = (r: PendingMetadataSync) =>
-    `<div style="min-width:0;flex:1">` +
-    `<div style="font-family:var(--font-mono);font-size:var(--text-sm);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.sift_path)}</div>` +
-    diffLine("Artiste", r.new_artist) +
-    diffLine("Titre", r.new_title) +
-    diffLine("Label", r.new_label) +
-    diffLine("Année", r.new_year) +
-    diffLine("Genre", r.new_genre) +
-    (mdsErrorById.has(r.id)
-      ? `<div style="font-size:var(--text-xs);color:var(--color-text-danger);margin-top:2px">${esc(mdsErrorById.get(r.id)!)}</div>`
-      : "") +
-    `</div>`;
-
-  const candidateList = (r: PendingMetadataSync): CandidateTrack[] =>
-    r.candidate_tracks && r.candidate_tracks.length
-      ? r.candidate_tracks
-      : (r.candidate_track_ids || "")
-          .split(",")
-          .filter(Boolean)
-          .map((track_id) => ({ track_id, folder_path: null }));
-
-  const ambiguousRows = ambiguous
-    .map((r) => {
-      const candidateBtns = candidateList(r)
-        .map(
-          (c) =>
-            `<button data-sift="mdsresolve" data-id="${r.id}" data-track="${esc(c.track_id)}" style="display:block;text-align:left;font-family:var(--font-mono);font-size:var(--text-xs)">` +
-            `Choisir cette piste — ${esc(c.folder_path || c.track_id)}</button>`,
-        )
-        .join("");
-      return (
-        `<div style="border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:9px 11px;margin-bottom:6px">` +
-        `<div style="display:flex;gap:10px;align-items:flex-start">${infoBlock(r)}` +
-        `<button data-sift="mdsdismiss" data-id="${r.id}" style="flex:none">Ignorer</button></div>` +
-        `<div style="margin-top:6px;display:flex;flex-direction:column;gap:3px">${candidateBtns}</div>` +
-        `</div>`
-      );
-    })
-    .join("");
-
-  const pendingRows = pending
-    .map((r) => {
-      const checked = mdsSyncSel.has(r.id);
-      return (
-        `<div class="bx-row" data-sift="mdspick" data-id="${r.id}" tabindex="0" role="checkbox" aria-checked="${checked}" style="display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:var(--border-radius-md);cursor:pointer;${
-          checked ? "background:var(--overlay-hover)" : ""
-        }">` +
-        `<input type="checkbox" class="sift-batch-ck" ${checked ? "checked" : ""} tabindex="-1">` +
-        infoBlock(r) +
-        `<button data-sift="mdsdismiss" data-id="${r.id}" style="flex:none">Ignorer</button>` +
-        `</div>`
-      );
-    })
-    .join("");
-
-  const applyBar =
-    mdsSyncSel.size > 0
-      ? `<div style="margin-top:8px"><button data-sift="mdsapply" style="font-weight:500">Appliquer la sélection (${mdsSyncSel.size})</button></div>`
-      : "";
-
-  return (
-    `<div style="margin-bottom:12px">` +
-    `<div class="col-h">Synchros metadata master.db en attente</div>` +
-    (ambiguousRows ? `<div style="margin-bottom:8px">${ambiguousRows}</div>` : "") +
-    pendingRows +
-    applyBar +
-    `</div>`
-  );
-}
-
-function duplicateGroupKey(g: PlaylistDuplicateGroupDto): string {
-  return `${g.playlist_id}::${g.content_id}`;
-}
-
-/** M8 Tier 2 section: lists playlists where the same track appears more than once
- * (rekordbox_masterdb_scan_playlist_duplicates, read-only, scanned fresh on every render — no
- * persistence, see docs/superpowers/plans/2026-07-08-m8-tier2-ipc-wiring.md). One button per
- * group, no multi-select (unlike Tier 1's masterdbRepairsSectionHtml): each dedup is a complete,
- * independent action, and there are typically 0-2 groups at a time. Renders "" when there is
- * nothing to dedup, same show-nothing-when-empty rule as masterdbRepairsSectionHtml. */
-function playlistDuplicatesSectionHtml(groups: PlaylistDuplicateGroupDto[]): string {
-  if (groups.length === 0) return "";
-  const rows = groups
-    .map((g, i) => {
-      const key = duplicateGroupKey(g);
-      const playlistLabel = g.playlist_name || `Playlist ${g.playlist_id}`;
-      const trackLabel = g.track_path ? g.track_path.split(/[\\/]/).pop() || g.track_path : `Piste ${g.content_id}`;
-      const count = g.remove.length;
-      return (
-        `<div style="border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:9px 11px;margin-bottom:6px;display:flex;gap:10px;align-items:center">` +
-        `<div style="min-width:0;flex:1">` +
-        `<div style="font-size:var(--text-sm)">${esc(playlistLabel)}</div>` +
-        `<div style="font-family:var(--font-mono);font-size:var(--text-xs);color:var(--color-text-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(trackLabel)} — ${count} doublon${count > 1 ? "s" : ""}</div>` +
-        (mdbDedupErrorByKey.has(key)
-          ? `<div style="font-size:var(--text-xs);color:var(--color-text-danger);margin-top:2px">${esc(mdbDedupErrorByKey.get(key)!)}</div>`
-          : "") +
-        `</div>` +
-        `<button data-sift="mdbdedup" data-idx="${i}" style="flex:none">Dédupliquer</button>` +
-        `</div>`
-      );
-    })
-    .join("");
-  return `<div style="margin-bottom:12px"><div class="col-h">Doublons dans les playlists</div>${rows}</div>`;
-}
-
-async function renderRekordboxLive(): Promise<void> {
-  const content = requireEl("#content", "renderRekordboxLive");
-  let status: RekordboxLinkStatus;
-  try {
-    status = await rekordboxStatus();
-  } catch (e) {
-    console.error("rekordbox_status failed", e);
-    content.innerHTML =
-      `<div class="h1">Rekordbox</div>` +
-      `<div style="font-size:var(--text-md);color:var(--color-text-tertiary)">Statut Rekordbox indisponible.</div>`;
-    return;
-  }
-
-  const intro =
-    `<div class="h1">Rekordbox</div>` +
-    `<div style="font-size:var(--text-md);color:var(--color-text-tertiary);margin-bottom:12px">` +
-    `Sift range tes morceaux → l'export fusionne les nouveaux dans le XML lié → réimporte-le dans Rekordbox pour les voir apparaître.` +
-    `</div>`;
-
-  if (!status.linked) {
-    content.innerHTML =
-      intro +
-      emptyStateHtml({
-        title: "Aucun XML Rekordbox lié",
-        note: "Relie le fichier XML exporté depuis Rekordbox pour commencer à synchroniser tes rangements.",
-        actionHtml: `<button data-bib="rkblink">Lier un fichier XML Rekordbox</button>`,
-      });
-    wireEmptyState(content);
-    return;
-  }
-
-  const driftBanner = status.drift_detected
-    ? `<div class="sift-dup-banner" style="background:var(--color-background-warning)">` +
-      `<i class="ti ti-alert-triangle" style="color:var(--color-text-warning)"></i>` +
-      `<div class="sift-dup-banner-body">` +
-      `<div class="sift-dup-banner-head" style="color:var(--color-text-warning)">Une correction de chemin a échoué lors d'un rangement récent</div>` +
-      // .sift-dup-banner-where is built for a truncated file path (nowrap+ellipsis) — this is a
-      // full sentence, the entire payload of a warning that was previously invisible anywhere in
-      // the UI, so it must never silently clip on a narrow window.
-      `<div class="sift-dup-banner-where" style="white-space:normal;overflow:visible;text-overflow:clip">Vérifie les pistes déplacées dans Rekordbox.</div>` +
-      `</div></div>`
-    : "";
-
-  let masterdbSection = "";
-  try {
-    const repairs = await rekordboxMasterdbPendingRepairs();
-    masterdbSection = masterdbRepairsSectionHtml(repairs);
-  } catch (e) {
-    console.error("rekordbox_masterdb_pending_repairs failed", e);
-  }
-
-  let dedupSection = "";
-  try {
-    lastScannedDuplicateGroups = await rekordboxMasterdbScanPlaylistDuplicates();
-    dedupSection = playlistDuplicatesSectionHtml(lastScannedDuplicateGroups);
-  } catch (e) {
-    console.error("rekordbox_masterdb_scan_playlist_duplicates failed", e);
-    lastScannedDuplicateGroups = [];
-  }
-
-  let metadataSyncSection = "";
-  try {
-    const syncs = await rekordboxMasterdbPendingMetadataSyncs();
-    metadataSyncSection = metadataSyncsSectionHtml(syncs);
-  } catch (e) {
-    console.error("rekordbox_masterdb_pending_metadata_syncs failed", e);
-  }
-
-  content.innerHTML = intro + driftBanner + rekordboxCardHtml(status) + masterdbSection + dedupSection + metadataSyncSection;
-}
-
-/** Positions the Dossiers/Genres thumb from whichever button currently carries `.on`. Called both
- * right after a full rebuild (fresh node — just places it) and immediately on facet click before
- * renderBiblioLive()'s async IPC round-trip rebuilds everything (see the "facet" branch below) —
- * that's the call that actually animates, same pattern as Journal's positionJournalThumb(). */
-function positionFacetThumb(): void {
-  const seg = document.getElementById("sift-bib-facet-seg");
-  const thumb = seg?.querySelector<HTMLElement>(".sift-seg-thumb");
-  const onEl = seg?.querySelector<HTMLElement>("[data-bib='facet'].on");
-  if (!thumb || !onEl) return;
-  thumb.style.width = `${onEl.offsetWidth}px`;
-  thumb.style.transform = `translateX(${onEl.offsetLeft}px)`;
-}
-
-/** Same thumb-glide pattern as positionFacetThumb(), for the Tableau/Grille segmented. */
-function positionViewModeThumb(): void {
-  const seg = document.getElementById("sift-bib-viewmode-seg");
-  const thumb = seg?.querySelector<HTMLElement>(".sift-seg-thumb");
-  const onEl = seg?.querySelector<HTMLElement>("[data-bib='viewmode'].on");
-  if (!thumb || !onEl) return;
-  thumb.style.width = `${onEl.offsetWidth}px`;
-  thumb.style.transform = `translateX(${onEl.offsetLeft}px)`;
-}
-
-/** Live Bibliothèque view: lists filed tracks with search + quality chips + folder/genre
- * facets, wired to real data. Actions go through the #pa delegated handler (data-bib). */
-async function renderBiblioLive() {
-  const content = requireEl("#content", "renderBiblioLive");
-  // Tear down any previous virtual list first: its scroll listener sits on the permanent #content,
-  // which this render is about to overwrite — leaving it attached would leak the listener and fire
-  // renders against a detached host.
-  bibVirtual?.destroy();
-  bibVirtual = null;
-  let facets: LibraryFacets = { folders: [], genres: [], artists: [] };
-  let stats: DashboardStats | null = null;
-  try {
-    [bibState.tracks, facets, stats] = await Promise.all([
-      listLibrary(bibState.filter),
-      libraryFolders(),
-      libraryStats(),
-    ]);
-  } catch (e) {
-    console.error("library load failed", e);
-    return;
-  }
-
-  // Audit-ref B2 (Bibliothèque, 2026-07-09) : <span> converti en <button> pour un clavier natif
-  // (pas besoin d'étendre installNavKeyboard — un vrai bouton gère déjà Enter/Espace lui-même).
-  const chips =
-    (["all", "lossless", "mp3"] as const)
-      .map((q) => {
-        const on = (bibState.filter.quality ?? "all") === q;
-        const label = q === "all" ? "Tous" : q === "lossless" ? "Lossless" : "MP3";
-        return `<button class="chip${on ? " on" : ""}" data-bib="qual" data-q="${q}">${label}</button>`;
-      })
-      .join("") +
-    `<button class="chip${dupShown ? " on" : ""}" data-bib="dupscan">Doublons</button>`;
-
-  const facetList =
-    bibState.facet === "folder" ? facets.folders : bibState.facet === "genre" ? facets.genres : facets.artists;
-  const sideKey = bibState.facet;
-  const activeFacetVal =
-    bibState.facet === "folder"
-      ? bibState.filter.folder
-      : bibState.facet === "genre"
-        ? bibState.filter.genre
-        : bibState.filter.artist;
-  const side =
-    // Segmented pill (2026-07-08, was .chip/.chip.on) — a strictly exclusive 3-way choice is the
-    // same job as Apparence/Format USB/Détail-Lot, not a filter chip (chips stay the "tag/filter"
-    // grammar elsewhere, e.g. genre chips).
-    // Audit-ref B3 (Bibliothèque, 2026-07-09) : <span> converti en <button>, incohérent avec le
-    // reste de l'app où .sift-seg-opt est toujours un vrai bouton (déjà clavier-natif du coup).
-    // Thumb glissant ajouté (retour Antoine, même jour) — voir positionFacetThumb() : classes
-    // togglées en place au clic avant le rebuild (async, IPC), même pattern que Journal.
-    `<div class="sift-seg sift-seg-thumbed" id="sift-bib-facet-seg" style="margin-bottom:8px">` +
-    `<div class="sift-seg-thumb"></div>` +
-    `<button class="sift-seg-opt${bibState.facet === "folder" ? " on" : ""}" data-bib="facet" data-f="folder">Dossiers</button>` +
-    `<button class="sift-seg-opt${bibState.facet === "genre" ? " on" : ""}" data-bib="facet" data-f="genre">Genres</button>` +
-    `<button class="sift-seg-opt${bibState.facet === "artist" ? " on" : ""}" data-bib="facet" data-f="artist">Artistes</button></div>` +
-    // Audit-ref B1 : tabindex/role="button", clavier via installNavKeyboard() étendu (chrome.ts).
-    facetList
-      .map(
-        (b) =>
-          `<div class="fld${activeFacetVal === b.name ? " on" : ""}" data-bib="pick" data-key="${sideKey}" data-val="${esc(b.name)}" tabindex="0" role="button" style="justify-content:space-between"><span>${esc(b.name)}</span><span style="font-size:var(--text-sm);opacity:.7">${b.count}</span></div>`,
-      )
-      .join("");
-
-  // The list is virtualized (createVirtualList below) — this placeholder is the mount host, filled
-  // with only the visible window of rows after content.innerHTML. Rendering all bibState.tracks
-  // here would reintroduce the 15k-track freeze (audit 2026-07-05 P2). `rows` non-empty iff there's
-  // at least one track, used only to pick the "no result" fallback below.
-  const rows = bibState.tracks.length ? '<div id="biblist"></div>' : "";
-  const sortedTracks = bibState.viewMode === "table" ? sortTracks(bibState.tracks, bibState.sort) : bibState.tracks;
-  const tableHead = bibState.viewMode === "table" ? libraryTableHeaderHtml(bibState.sort) : "";
-  // Truly empty (no filed track at all, no filter narrowing it) vs. a filter that just matches
-  // nothing right now — only the former is DESIGN.md's "État vide" dead-end with a back-to-Revue
-  // link; the latter keeps the search/chips/facets on screen so the filter can be cleared.
-  const noFilter =
-    !bibState.filter.q &&
-    !bibState.filter.quality &&
-    !bibState.filter.folder &&
-    !bibState.filter.genre &&
-    !bibState.filter.artist;
-  const trulyEmpty = bibState.tracks.length === 0 && noFilter;
-
-  const dupSection = !dupShown
-    ? ""
-    : dupLoading
-      ? `<div style="margin-top:10px;font-size:var(--text-md);color:var(--color-text-tertiary)">Scan en cours (toute la bibliothèque)…</div>`
-      : dupGroups === null
-        ? ""
-        : dupGroups.length === 0
-          ? `<div style="margin-top:10px;font-size:var(--text-md);color:var(--color-text-tertiary)">Aucun doublon dans toute la bibliothèque.</div>`
-          : `<div style="margin-top:10px"><div style="font-size:var(--text-xs);color:var(--color-text-tertiary);margin-bottom:4px">Doublons détectés dans toute la bibliothèque (pas seulement la vue filtrée actuelle)</div>${dupGroups.map((g, i) => dupGroupHtml(g, i)).join("")}</div>`;
-
-  // Export (Rekordbox/Clé USB) lives in the nav rail now, not here — matches the maquette's
-  // persistent Export section (index.html nav-export items, wired in installLiveWiring below).
-  // Retour Antoine 2026-07-09 : le toolbar (recherche+chips) était sa PROPRE boîte flottante
-  // au-dessus du panneau — une seule information (le filtre courant), grouper ça seul ajoute du
-  // chrome pour rien (même règle HIG Boxes que la consolidation Réglages, 2026-07-08). Intégré
-  // maintenant comme bandeau supérieur du panneau .sift-library-main, séparé par un filet.
-  const header =
-    `<div class="sift-library-toolbar">` +
-    `<div style="flex:1;display:flex;align-items:center;gap:7px;border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:6px 10px"><i class="ti ti-search" style="font-size:var(--text-lg);color:var(--color-text-tertiary)"></i><input id="bibq" placeholder="Rechercher…" aria-label="Rechercher dans la bibliothèque" value="${esc(bibState.filter.q || "")}" style="flex:1;border:0;background:transparent;color:inherit;font-size:var(--text-md);outline:none"></div>` +
-    chips +
-    `<div class="sift-seg sift-seg-thumbed" id="sift-bib-viewmode-seg">` +
-    `<div class="sift-seg-thumb"></div>` +
-    `<button class="sift-seg-opt${bibState.viewMode === "table" ? " on" : ""}" data-bib="viewmode" data-mode="table" aria-label="Vue tableau"><i class="ti ti-list"></i></button>` +
-    `<button class="sift-seg-opt${bibState.viewMode === "grid" ? " on" : ""}" data-bib="viewmode" data-mode="grid" aria-label="Vue grille"><i class="ti ti-layout-grid"></i></button></div>` +
-    `</div>`;
-
-  content.innerHTML = trulyEmpty
-    ? emptyStateHtml({
-        title: "Bibliothèque vide",
-        note: "Les pistes que tu ranges depuis Revue apparaissent ici, prêtes à exporter vers Rekordbox ou une clé USB.",
-        backToRevue: true,
-      })
-    : (stats ? statsCardsHtml(stats) : "") +
-      `<div class="sift-library-layout"><div class="sift-library-side sift-ui-card-soft sift-ui-card-soft-pad"><div class="col-h">Bibliothèque</div>${side}</div>` +
-      `<div class="sift-library-main sift-ui-card sift-ui-card-pad">${header}<div style="display:flex;justify-content:space-between;margin-bottom:5px"><span style="font-size:var(--text-base);font-weight:500">${esc(activeFacetVal || "Tous")}</span><span style="font-size:var(--text-sm);color:var(--color-text-tertiary)">${bibState.tracks.length} piste${bibState.tracks.length > 1 ? "s" : ""}</span></div>${tableHead}` +
-      (rows ||
-        `<div style="font-size:var(--text-md);color:var(--color-text-tertiary)">Aucun résultat pour ce filtre. <button data-bib="stat" data-stat="all" style="font-size:inherit;color:var(--color-text-info);background:none;border:none;padding:0;cursor:pointer;text-decoration:underline">Réinitialiser les filtres</button></div>`) +
-      dupSection +
-      `<div id="bibplayer"></div></div></div>`;
-  wireEmptyState(content);
-  positionFacetThumb(); // fresh node post-rebuild — no prior transform, just place it
-  positionViewModeThumb();
-
-  if (trulyEmpty) return; // no header/search — nothing left to wire
-
-  const q = document.getElementById("bibq") as HTMLInputElement | null;
-  q?.addEventListener("input", () => {
-    bibState.filter.q = q.value || undefined;
-    clearTimeout((q as unknown as { _t?: number })._t);
-    const toolbar = q.closest<HTMLElement>(".sift-library-toolbar");
-    toolbar?.querySelector(".sift-bib-search-pending")?.remove();
-    const pending = document.createElement("span");
-    pending.className = "sift-bib-search-pending";
-    pending.style.cssText = "font-size:var(--text-xs);color:var(--color-text-tertiary)";
-    pending.textContent = "Recherche…";
-    toolbar?.appendChild(pending);
-    (q as unknown as { _t?: number })._t = window.setTimeout(() => void renderBiblioLive(), 250);
-  });
-
-  // Virtualize the filed-track list: #content is the scroll container (app.js's block() set it to
-  // overflow-y:auto), but the list is only ONE section of it (stats/rekordbox/header/facets sit
-  // above) — createVirtualList handles that offset. #biblist exists iff bibState.tracks non-empty.
-  const biblist = document.getElementById("biblist");
-  if (biblist) {
-    if (bibState.viewMode === "table") {
-      bibVirtual = createVirtualList<LibraryTrack>({
-        host: biblist,
-        scrollContainer: content,
-        items: sortedTracks,
-        rowHtml: (t) => libraryTableRowHtml(t, bibOpenId),
-        probeHtml: LIBRARY_TABLE_PROBE_HTML,
-        fallbackRowH: 34,
-      });
-    } else {
-      const gridRows: LibraryTrack[][] = [];
-      for (let i = 0; i < sortedTracks.length; i += LIBRARY_GRID_TILES_PER_ROW) {
-        gridRows.push(sortedTracks.slice(i, i + LIBRARY_GRID_TILES_PER_ROW));
-      }
-      bibVirtual = createVirtualList<LibraryTrack[]>({
-        host: biblist,
-        scrollContainer: content,
-        items: gridRows,
-        rowHtml: (row) => libraryGridRowHtml(row),
-        probeHtml: LIBRARY_GRID_PROBE_HTML,
-        fallbackRowH: 150,
-      });
-    }
-  }
-}
-
-/** Open the unified detail/edit panel for a filed track into #bibplayer, highlighting its row.
- * On save, patch the row label in place (player stays alive); on delete, re-render the list. */
-function openBiblioDetail(id: number): void {
-  const t = bibState.tracks.find((x) => x.id === id);
-  const host = requireEl("#bibplayer", "openBiblioDetail");
-  if (!t) return;
-  if (bibOpenId === id) {
-    bibOpenId = null;
-    document.querySelectorAll(".lr.cur").forEach((n) => n.classList.remove("cur"));
-    host.innerHTML = "";
-    return;
-  }
-  // Track the open id so the `.cur` highlight is re-stamped by biblioRowHtml when a scrolled-away
-  // row re-enters the virtualized window. Clear the class on currently-mounted rows immediately for
-  // instant feedback (rows outside the window aren't in the DOM — bibOpenId covers them on mount).
-  bibOpenId = id;
-  document.querySelectorAll(".lr.cur").forEach((n) => n.classList.remove("cur"));
-  document.querySelector(`.lr[data-id="${id}"]`)?.classList.add("cur");
-  openLibraryDetailInto(
-    host,
-    t,
-    (updated) => {
-      // Keep the in-memory list + the visible row label in sync without a full re-render.
-      const i = bibState.tracks.findIndex((x) => x.id === updated.id);
-      if (i >= 0) bibState.tracks[i] = updated;
-      const span = document.querySelector(`.lr[data-id="${updated.id}"] .bib-name`);
-      if (span) span.textContent = bibName(updated);
-    },
-    () => void renderBiblioLive(),
-    () => {
-      bibOpenId = null;
-      document.querySelectorAll(".lr.cur").forEach((n) => n.classList.remove("cur"));
-      host.innerHTML = "";
-    },
-  );
-}
-
 export function installLiveWiring() {
   window.__siftHome = renderHomeSources;
   window.__siftQueue = renderQueue;
@@ -2074,20 +1423,20 @@ export function installLiveWiring() {
           bibState.filter.quality = stat;
           bibState.filter.verdict = undefined;
         } else if (stat === "duplicates") {
-          dupShown = !dupShown;
-          if (dupShown && dupGroups === null) {
-            dupLoading = true;
+          bibDup.shown = !bibDup.shown;
+          if (bibDup.shown && bibDup.groups === null) {
+            bibDup.loading = true;
             void renderBiblioLive();
             void scanLibraryDuplicates()
               .then((groups) => {
-                dupGroups = groups;
+                bibDup.groups = groups;
               })
               .catch((e) => {
                 console.error("scan_library_duplicates failed", e);
-                dupGroups = [];
+                bibDup.groups = [];
               })
               .finally(() => {
-                dupLoading = false;
+                bibDup.loading = false;
                 void renderBiblioLive();
               });
             return;
@@ -2168,20 +1517,20 @@ export function installLiveWiring() {
         // Open the unified detail/edit panel (report + inline editor + identify + actions).
         openBiblioDetail(Number(bibEl.dataset.id));
       } else if (act === "dupscan") {
-        dupShown = !dupShown;
-        if (dupShown && dupGroups === null) {
-          dupLoading = true;
+        bibDup.shown = !bibDup.shown;
+        if (bibDup.shown && bibDup.groups === null) {
+          bibDup.loading = true;
           void renderBiblioLive();
           void scanLibraryDuplicates()
             .then((groups) => {
-              dupGroups = groups;
+              bibDup.groups = groups;
             })
             .catch((e) => {
               console.error("scan_library_duplicates failed", e);
-              dupGroups = [];
+              bibDup.groups = [];
             })
             .finally(() => {
-              dupLoading = false;
+              bibDup.loading = false;
               void renderBiblioLive();
             });
         } else {
@@ -2189,7 +1538,7 @@ export function installLiveWiring() {
         }
       } else if (act === "dupresolve") {
         const idx = Number(bibEl.dataset.idx);
-        const group = dupGroups?.[idx];
+        const group = bibDup.groups?.[idx];
         if (!group) return;
         const losers = group.members.filter((m) => !m.recommend_keep).map((m) => m.id);
         void confirmAction(
@@ -2199,7 +1548,7 @@ export function installLiveWiring() {
           if (!ok) return;
           void Promise.all(losers.map((id) => trashTrack(id)))
             .then(() => {
-              dupGroups = (dupGroups || []).filter((_, i) => i !== idx);
+              bibDup.groups = (bibDup.groups || []).filter((_, i) => i !== idx);
               return renderBiblioLive();
             })
             .catch((e) => {
