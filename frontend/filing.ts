@@ -1578,6 +1578,8 @@ function toast(message: string, undo: boolean, onUndo?: () => void): void {
   const el = document.createElement("div");
   el.id = "sift-toast";
   el.className = "sift-toast";
+  el.setAttribute("role", "status");
+  el.setAttribute("aria-live", "polite");
   el.innerHTML =
     `<span>${esc(message)}</span>` +
     (undo
