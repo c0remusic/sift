@@ -139,20 +139,24 @@ function rawToDbfs(val: number): number {
 
 /** Fréquence + dB EXACTS au pixel (x,y) du canvas — dérivés de la MÊME donnée
  *  (sg.mag_db) et de la MÊME formule que celle qui colore ce pixel dans drawSpectrogram,
- *  jamais une valeur recalculée différemment qui pourrait diverger de ce qui est affiché. */
+ *  jamais une valeur recalculée différemment qui pourrait diverger de ce qui est affiché.
+ *  timeSec dérivé de `durationSec` (r.duration_sec) — même x/w que le calcul de frame,
+ *  donc cohérent avec la position horizontale réelle du curseur sur le morceau. */
 function spectroPointAt(
   sg: AnalysisReport["spectrogram"],
   w: number,
   h: number,
   x: number,
   y: number,
-): { freqHz: number; dbfs: number } {
+  durationSec: number,
+): { freqHz: number; dbfs: number; timeSec: number } {
   const nyquist = sg.bins * sg.hz_per_bin;
   const f = Math.min(sg.frames - 1, Math.max(0, Math.floor((x / w) * sg.frames)));
   const b = Math.min(sg.bins - 1, Math.max(0, Math.floor(((h - 1 - y) / h) * sg.bins)));
   const val = sg.mag_db[f * sg.bins + b] || 0;
   const freqHz = nyquist > 0 ? ((h - y) / h) * nyquist : 0;
-  return { freqHz, dbfs: rawToDbfs(val) };
+  const timeSec = (x / w) * durationSec;
+  return { freqHz, dbfs: rawToDbfs(val), timeSec };
 }
 
 /** Légende permanente incrustée : paliers fréquence (haut-gauche) + dB (haut-droit), texte
@@ -204,7 +208,8 @@ function drawSpectroLegend(ctx: CanvasRenderingContext2D, w: number, h: number, 
 }
 
 /** Réticule au survol : ligne horizontale (fréquence) + verticale (temps) qui se croisent
- *  sous le curseur, étiquette "{kHz} · {dB}" — dessiné sur l'OVERLAY, jamais sur le canvas
+ *  sous le curseur, étiquette "{mm:ss} · {kHz} · {dB}" (annotation : "afficher aussi le
+ *  temps") — dessiné sur l'OVERLAY, jamais sur le canvas
  *  de base. Ton neutre (pas verdict-toné : ce n'est plus le verdict qui s'affiche, contrai-
  *  rement à l'ancienne ligne de coupure). Même style de pill que l'ancienne étiquette
  *  cutoff (fond rgba(0,0,0,0.55), coins arrondis, 11px monospace), avec le même garde-fou
@@ -218,6 +223,7 @@ function drawSpectroCrosshair(
   y: number,
   freqHz: number,
   dbfs: number,
+  timeSec: number,
   color: string,
 ) {
   ctx.clearRect(0, 0, w, h);
@@ -234,7 +240,7 @@ function drawSpectroCrosshair(
   ctx.stroke();
   ctx.restore();
 
-  const label = `${(freqHz / 1000).toFixed(1)} kHz · ${dbfs.toFixed(1)} dB`;
+  const label = `${mmss(timeSec)} · ${(freqHz / 1000).toFixed(1)} kHz · ${dbfs.toFixed(1)} dB`;
   ctx.font = "11px monospace";
   const textW = ctx.measureText(label).width;
   const padX = 6;
@@ -272,8 +278,8 @@ function wireSpectroHover(base: HTMLCanvasElement, overlay: HTMLCanvasElement, r
     const x = Math.round(((e.clientX - rect.left) / rect.width) * w);
     const y = Math.round(((e.clientY - rect.top) / rect.height) * h);
     if (x < 0 || x >= w || y < 0 || y >= h) return;
-    const { freqHz, dbfs } = spectroPointAt(sg, w, h, x, y);
-    drawSpectroCrosshair(octx, w, h, x, y, freqHz, dbfs, color);
+    const { freqHz, dbfs, timeSec } = spectroPointAt(sg, w, h, x, y, r.duration_sec);
+    drawSpectroCrosshair(octx, w, h, x, y, freqHz, dbfs, timeSec, color);
   });
   base.addEventListener("mouseleave", () => octx.clearRect(0, 0, w, h));
 }
