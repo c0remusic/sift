@@ -333,6 +333,68 @@ pub fn detect_masterdb_metadata_sync_with_index(
     }
 }
 
+/// M8 Tier 3 (pochette): read-only detection, mirroring `detect_masterdb_metadata_sync_if_linked`'s
+/// guard and 0/1/2+ match branches exactly, but writing to `rekordbox_masterdb_artwork_syncs`
+/// and storing `cover_path` as-is (never resolved image bytes — those are read fresh at apply
+/// time by `rekordbox_masterdb_apply_artwork_syncs`, so a moved/deleted source file fails loudly
+/// instead of silently syncing stale bytes).
+///
+/// Unlike the metadata detector, callers only invoke this when `cover_path` is actually `Some` on
+/// their current write — an edit that doesn't touch the cover must never produce a candidate.
+#[allow(dead_code)]
+pub fn detect_masterdb_artwork_sync_if_linked(
+    conn: &Connection,
+    lookup_path: &str,
+    track_id: i64,
+    cover_path: &str,
+    action_id: i64,
+) {
+    let Some(index) = resolve_masterdb_index_if_linked(conn) else {
+        return;
+    };
+    detect_masterdb_artwork_sync_with_index(conn, &index, lookup_path, track_id, cover_path, action_id);
+}
+
+/// Same as `detect_masterdb_artwork_sync_if_linked`, but against an already-loaded `master.db`
+/// index — see `resolve_masterdb_index_if_linked`'s docs (filing.rs's post-commit loop shares one
+/// decrypted index across all 3 of its detectors per commit).
+#[allow(dead_code)]
+pub fn detect_masterdb_artwork_sync_with_index(
+    conn: &Connection,
+    index: &crate::rekordbox_masterdb::RekordboxIndex,
+    lookup_path: &str,
+    track_id: i64,
+    cover_path: &str,
+    action_id: i64,
+) {
+    let matches: Vec<&str> = index
+        .tracks
+        .iter()
+        .filter(|t| t.folder_path == lookup_path)
+        .map(|t| t.track_id.as_str())
+        .collect();
+
+    let (rekordbox_track_id, candidate_track_ids, status): (Option<&str>, Option<String>, &str) = match matches.len() {
+        0 => return,
+        1 => (Some(matches[0]), None, "pending"),
+        _ => (None, Some(matches.join(",")), "ambiguous"),
+    };
+
+    let result = conn.execute(
+        "INSERT INTO rekordbox_masterdb_artwork_syncs
+             (action_id, track_id, rekordbox_track_id, candidate_track_ids, cover_path, status)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+         ON CONFLICT(track_id) DO UPDATE SET
+             action_id=excluded.action_id, rekordbox_track_id=excluded.rekordbox_track_id,
+             candidate_track_ids=excluded.candidate_track_ids, cover_path=excluded.cover_path,
+             status=excluded.status, detected_at=datetime('now')",
+        params![action_id, track_id, rekordbox_track_id, candidate_track_ids, cover_path, status],
+    );
+    if let Err(e) = result {
+        log::error!("masterdb artwork sync detection: insert failed: {e}");
+    }
+}
+
 /// If a Rekordbox XML is linked (`settings::REKORDBOX_XML_PATH`) and it references `from_path`,
 /// patch its `Location` to `to_path` and rewrite the file immediately. No-op (returns `None`) if
 /// nothing is linked. On a read/parse failure of the linked file, logs the error and returns
@@ -1501,6 +1563,127 @@ mod tests {
         assert_eq!(row_id_after, row_id_before, "id must stay stable across a replace");
         assert_eq!(action_id, action_id_2);
         assert_eq!(new_artist, Some("New Artist".to_string()));
+        assert_eq!(status, "pending", "must fall back to pending even though the previous row was applied");
+    }
+
+    #[test]
+    fn detect_masterdb_artwork_sync_records_pending_on_single_match() {
+        let conn = db();
+        let tmp = tempfile::tempdir().unwrap();
+        let xml_path = seed_pioneer_dir_with_fixture(&tmp.path().join("pioneer"));
+        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+        let track_id = seed_sift_track(&conn, "D:/FIXTURE/track1.mp3");
+        let action_id = record_row_only(&conn, "b1", Some(track_id), "tag_edit", Some("D:/FIXTURE/track1.mp3"), None, None).unwrap();
+
+        detect_masterdb_artwork_sync_if_linked(&conn, "D:/FIXTURE/track1.mp3", track_id, "/cache/covers/999.jpg", action_id);
+
+        let (got_action_id, rb_track_id, candidates, cover_path, status): (
+            i64, Option<String>, Option<String>, String, String,
+        ) = conn
+            .query_row(
+                "SELECT action_id, rekordbox_track_id, candidate_track_ids, cover_path, status
+                 FROM rekordbox_masterdb_artwork_syncs WHERE track_id=?1",
+                params![track_id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+            )
+            .expect("one artwork sync row inserted");
+        assert_eq!(got_action_id, action_id);
+        assert_eq!(rb_track_id, Some("40000001".to_string()));
+        assert_eq!(candidates, None);
+        assert_eq!(cover_path, "/cache/covers/999.jpg");
+        assert_eq!(status, "pending");
+    }
+
+    #[test]
+    fn detect_masterdb_artwork_sync_no_match_inserts_nothing() {
+        let conn = db();
+        let tmp = tempfile::tempdir().unwrap();
+        let xml_path = seed_pioneer_dir_with_fixture(&tmp.path().join("pioneer"));
+        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+        let track_id = seed_sift_track(&conn, "D:/nowhere/nope.mp3");
+        let action_id = record_row_only(&conn, "b1", Some(track_id), "tag_edit", Some("D:/nowhere/nope.mp3"), None, None).unwrap();
+
+        detect_masterdb_artwork_sync_if_linked(&conn, "D:/nowhere/nope.mp3", track_id, "/cache/covers/999.jpg", action_id);
+
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM rekordbox_masterdb_artwork_syncs", [], |r| r.get(0)).unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn detect_masterdb_artwork_sync_ambiguous_on_two_matches() {
+        let conn = db();
+        let tmp = tempfile::tempdir().unwrap();
+        let pioneer_dir = tmp.path().join("pioneer");
+        let xml_path = seed_pioneer_dir_with_fixture(&pioneer_dir);
+        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+
+        // Same collision technique as detect_masterdb_metadata_sync_ambiguous_on_two_matches.
+        let raw = std::fs::read(pioneer_dir.join("master.db")).unwrap();
+        let plaintext = crate::rekordbox_masterdb::decrypt_masterdb_for_test(&raw);
+        let len = plaintext.len();
+        let mut conn2 = rusqlite::Connection::open_in_memory().unwrap();
+        conn2.deserialize_read_exact(rusqlite::MAIN_DB, std::io::Cursor::new(plaintext), len, false).unwrap();
+        conn2.execute("UPDATE djmdContent SET FolderPath='D:/FIXTURE/track1.mp3' WHERE ID='40000002'", []).unwrap();
+        let plaintext2 = conn2.serialize(rusqlite::MAIN_DB).unwrap().to_vec();
+        let raw2 = crate::rekordbox_masterdb::encrypt_masterdb_for_test(&plaintext2);
+        std::fs::write(pioneer_dir.join("master.db"), raw2).unwrap();
+
+        let track_id = seed_sift_track(&conn, "D:/FIXTURE/track1.mp3");
+        let action_id = record_row_only(&conn, "b1", Some(track_id), "tag_edit", Some("D:/FIXTURE/track1.mp3"), None, None).unwrap();
+        detect_masterdb_artwork_sync_if_linked(&conn, "D:/FIXTURE/track1.mp3", track_id, "/cache/covers/999.jpg", action_id);
+
+        let (rb_track_id, candidates, status): (Option<String>, String, String) = conn
+            .query_row(
+                "SELECT rekordbox_track_id, candidate_track_ids, status FROM rekordbox_masterdb_artwork_syncs WHERE track_id=?1",
+                params![track_id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .expect("one ambiguous row inserted");
+        assert_eq!(rb_track_id, None);
+        let mut ids: Vec<&str> = candidates.split(',').collect();
+        ids.sort_unstable();
+        assert_eq!(ids, vec!["40000001", "40000002"]);
+        assert_eq!(status, "ambiguous");
+    }
+
+    #[test]
+    fn detect_masterdb_artwork_sync_no_op_when_no_xml_linked() {
+        let conn = db();
+        let track_id = seed_sift_track(&conn, "D:/FIXTURE/track1.mp3");
+        let action_id = record_row_only(&conn, "b1", Some(track_id), "tag_edit", Some("D:/FIXTURE/track1.mp3"), None, None).unwrap();
+        detect_masterdb_artwork_sync_if_linked(&conn, "D:/FIXTURE/track1.mp3", track_id, "/cache/covers/999.jpg", action_id);
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM rekordbox_masterdb_artwork_syncs", [], |r| r.get(0)).unwrap();
+        assert_eq!(count, 0);
+    }
+
+    #[test]
+    fn detect_masterdb_artwork_sync_second_call_replaces_row_not_duplicates() {
+        let conn = db();
+        let tmp = tempfile::tempdir().unwrap();
+        let xml_path = seed_pioneer_dir_with_fixture(&tmp.path().join("pioneer"));
+        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+        let track_id = seed_sift_track(&conn, "D:/FIXTURE/track1.mp3");
+        let action_id_1 = record_row_only(&conn, "b1", Some(track_id), "tag_edit", Some("D:/FIXTURE/track1.mp3"), None, None).unwrap();
+        detect_masterdb_artwork_sync_if_linked(&conn, "D:/FIXTURE/track1.mp3", track_id, "/cache/covers/old.jpg", action_id_1);
+
+        conn.execute("UPDATE rekordbox_masterdb_artwork_syncs SET status='applied' WHERE track_id=?1", params![track_id]).unwrap();
+        let row_id_before: i64 = conn.query_row("SELECT id FROM rekordbox_masterdb_artwork_syncs WHERE track_id=?1", params![track_id], |r| r.get(0)).unwrap();
+
+        let action_id_2 = record_row_only(&conn, "b2", Some(track_id), "tag_edit", Some("D:/FIXTURE/track1.mp3"), None, None).unwrap();
+        detect_masterdb_artwork_sync_if_linked(&conn, "D:/FIXTURE/track1.mp3", track_id, "/cache/covers/new.jpg", action_id_2);
+
+        let count: i64 = conn.query_row("SELECT COUNT(*) FROM rekordbox_masterdb_artwork_syncs", [], |r| r.get(0)).unwrap();
+        assert_eq!(count, 1, "must replace, never accumulate");
+        let (row_id_after, action_id, cover_path, status): (i64, i64, String, String) = conn
+            .query_row(
+                "SELECT id, action_id, cover_path, status FROM rekordbox_masterdb_artwork_syncs WHERE track_id=?1",
+                params![track_id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )
+            .unwrap();
+        assert_eq!(row_id_after, row_id_before, "id must stay stable across a replace");
+        assert_eq!(action_id, action_id_2);
+        assert_eq!(cover_path, "/cache/covers/new.jpg");
         assert_eq!(status, "pending", "must fall back to pending even though the previous row was applied");
     }
 }
