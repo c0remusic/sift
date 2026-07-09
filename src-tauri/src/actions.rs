@@ -1280,6 +1280,7 @@ mod tests {
         }
     }
 
+    #[allow(clippy::type_complexity)]
     #[test]
     fn detect_masterdb_metadata_sync_records_pending_on_single_match() {
         let conn = db();
