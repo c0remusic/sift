@@ -1197,6 +1197,146 @@ fn resolve_artwork_variants(pioneer_dir: &Path, image_path: &str) -> (PathBuf, P
     (full, medium, small)
 }
 
+/// M8 Tier 3 — pochette. Overwrites the 3 cached artwork files Rekordbox
+/// keeps for a track (`pioneer_dir/share/<ImagePath>` and its `_m`/`_s`
+/// siblings) in place, resizing `cover_bytes` to match each existing
+/// variant's exact dimensions. Never touches `master.db` — `ImagePath`
+/// itself never changes (confirmed by spike 8), this only replaces file
+/// bytes on disk.
+///
+/// Refuses (no silent fallback) when: Rekordbox is running, the track has
+/// no `ImagePath` (`NoArtworkPath`), or any of the 3 variant files is
+/// missing on disk (`ArtworkVariantMissing`) — the "no existing artwork at
+/// all" case was never observed at spike 8, so this never guesses a
+/// find-or-create-style behavior for it.
+pub fn sync_track_artwork(
+    pioneer_dir: &Path,
+    backup_dir: &Path,
+    track_id: &str,
+    cover_bytes: &[u8],
+) -> Result<(), MasterDbError> {
+    if is_rekordbox_running() {
+        return Err(MasterDbError::RekordboxRunning);
+    }
+
+    let db_path = pioneer_dir.join("master.db");
+    let raw = std::fs::read(&db_path).map_err(|e| MasterDbError::Io(e.to_string()))?;
+    let plaintext = decrypt_masterdb(&raw)?;
+    let mut conn =
+        Connection::open_in_memory().map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+    let len = plaintext.len();
+    conn.deserialize_read_exact(rusqlite::MAIN_DB, Cursor::new(plaintext), len, false)
+        .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+
+    let image_path: Option<String> = conn
+        .query_row(
+            "SELECT ImagePath FROM djmdContent WHERE ID = ?1",
+            rusqlite::params![track_id],
+            |row| row.get(0),
+        )
+        .optional()
+        .map_err(|e| MasterDbError::Sqlite(e.to_string()))?
+        .ok_or_else(|| MasterDbError::TrackNotFound { track_id: track_id.to_string() })?;
+    let image_path = image_path
+        .filter(|p| !p.trim().is_empty())
+        .ok_or_else(|| MasterDbError::NoArtworkPath { track_id: track_id.to_string() })?;
+
+    let (full, medium, small) = resolve_artwork_variants(pioneer_dir, &image_path);
+    for target in [&full, &medium, &small] {
+        if !target.exists() {
+            return Err(MasterDbError::ArtworkVariantMissing {
+                path: target.to_string_lossy().to_string(),
+            });
+        }
+    }
+
+    // Backup the 3 live files before touching any of them (own backup,
+    // distinct from backup_rekordbox_files — these aren't master.db/xml).
+    std::fs::create_dir_all(backup_dir).map_err(|e| MasterDbError::Io(e.to_string()))?;
+    let mut backups: Vec<(PathBuf, PathBuf)> = Vec::new();
+    for target in [&full, &medium, &small] {
+        let file_name = target
+            .file_name()
+            .map(|n| n.to_string_lossy().to_string())
+            .unwrap_or_default();
+        let backup_path = backup_dir.join(format!("artwork-{file_name}"));
+        std::fs::copy(target, &backup_path).map_err(|e| MasterDbError::Io(e.to_string()))?;
+        backups.push(((*target).clone(), backup_path));
+    }
+
+    let restore_all = |backups: &[(PathBuf, PathBuf)]| -> Result<(), MasterDbError> {
+        for (target, backup_path) in backups {
+            std::fs::copy(backup_path, target).map_err(|e| MasterDbError::Io(e.to_string()))?;
+        }
+        Ok(())
+    };
+
+    let cover = match image::load_from_memory(cover_bytes) {
+        Ok(img) => img,
+        Err(e) => return Err(MasterDbError::Io(format!("cover decode failed: {e}"))),
+    };
+
+    let write_result = (|| -> Result<(), MasterDbError> {
+        for target in [&full, &medium, &small] {
+            let (w, h) = image::image_dimensions(target)
+                .map_err(|e| MasterDbError::Io(format!("reading dimensions of {target:?}: {e}")))?;
+            let resized = cover.resize_exact(w, h, image::imageops::FilterType::Lanczos3);
+            let mut buf: Vec<u8> = Vec::new();
+            {
+                let encoder = image::codecs::jpeg::JpegEncoder::new_with_quality(&mut buf, 90);
+                encoder
+                    .write_image(
+                        resized.to_rgb8().as_raw(),
+                        w,
+                        h,
+                        image::ExtendedColorType::Rgb8,
+                    )
+                    .map_err(|e| MasterDbError::Io(format!("jpeg encode failed: {e}")))?;
+            }
+            let tmp = target.with_extension("sift-write-tmp");
+            std::fs::write(&tmp, &buf).map_err(|e| MasterDbError::Io(e.to_string()))?;
+            if let Err(e) = std::fs::rename(&tmp, target) {
+                std::fs::remove_file(&tmp).ok();
+                return Err(MasterDbError::Io(e.to_string()));
+            }
+        }
+        Ok(())
+    })();
+
+    if let Err(write_err) = write_result {
+        restore_all(&backups).ok();
+        return Err(write_err);
+    }
+
+    // Round-trip verify: reread each written file and confirm it decodes
+    // and still matches the dimensions it had before (the ones we resized
+    // to) — not just that the write syscall succeeded.
+    let verify = || -> Result<(), MasterDbError> {
+        for (target, backup_path) in &backups {
+            let expected = image::image_dimensions(backup_path)
+                .map_err(|e| MasterDbError::Io(format!("reading backup dimensions: {e}")))?;
+            let got = image::image_dimensions(target)
+                .map_err(|e| MasterDbError::Io(format!("reading written dimensions: {e}")))?;
+            if got != expected {
+                return Err(MasterDbError::Io(format!(
+                    "dimension mismatch after write for {target:?}: expected {expected:?}, got {got:?}"
+                )));
+            }
+        }
+        Ok(())
+    };
+
+    match verify() {
+        Ok(()) => Ok(()),
+        Err(verify_err) => match restore_all(&backups) {
+            Ok(()) => Err(MasterDbError::ArtworkWriteVerificationFailedRolledBack(verify_err.to_string())),
+            Err(restore_err) => Err(MasterDbError::ArtworkWriteVerificationFailedRollbackFailed(format!(
+                "{verify_err}; rollback also failed: {restore_err}"
+            ))),
+        },
+    }
+}
+
 /// M8 Tier 3 — writes Sift's own tagging output directly into `master.db`,
 /// so Rekordbox reflects it without the user having to manually
 /// right-click → "Reload Tag" per track. Scope is exactly the fields
