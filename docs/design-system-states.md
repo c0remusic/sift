@@ -518,6 +518,65 @@ fonction obsolète en commentaire, CSS `.sift-highlight-flash` jamais câblée
 dans la foulée (voir Historique ci-dessous) ; `tauri dev` restant à vérifier
 par Antoine (code gated `inTauri`).
 
+## `.sift-applytags-btn` — bouton Appliquer, header Genres (2026-07-09)
+
+Déplacé du bas de carte (barre pleine largeur) vers le header "Genres"
+(`.sift-genres-header`, `filing.ts::renderEditor`) — bouton compact,
+`justify-content:space-between` avec le libellé "Genres". Reste dans le DOM
+même quand rien à appliquer (`hidden`, pas omis du markup) : `onIdentityApplied`
+doit pouvoir l'unhide + déclencher l'auto-apply sans un `renderEditor()` complet.
+
+| État | Condition | Rendu |
+|---|---|---|
+| Caché | `!c.artist \|\| !c.title` (track pas identifiée) | `hidden` — `.sift-applytags-btn:not([hidden])` porte tout le style visuel, sinon un `display` d'auteur battrait silencieusement `[hidden]{display:none}` (même piège que `.sift-player-cover`, voir plus bas) |
+| Idle, activable | `tagFieldDiffs().any === true` | fond/bordure pleins, texte `--color-text-secondary` (inline, `setApplyIdle`) |
+| Idle, grisé | `tagFieldDiffs().any === false` | **PAS** `opacity` globale (le fond se noyait vers celui de la carte, illisible) — bg/border restent pleins, seul le texte passe `--color-text-tertiary` (inline, `refreshDiscrepancy`). `tagFieldDiffs` compare aussi `version` (fusionné dans le titre, cohérent avec l'écriture ID3 réelle) — éditer seulement la version dégrise correctement désormais |
+| Appliqué | après succès `doApplyTags` | texte "Annuler", `btn.dataset.applied="1"` — `refreshDiscrepancy` ne touche jamais ce bouton dans cet état |
+
+Auto-apply : identifier un titre Discogs déclenche `doApplyTags` automatiquement
+(`onIdentityApplied`), plus besoin d'un second clic manuel. Badge CDJ
+post-apply dérivé d'une vraie relecture du fichier (`trackFileTags`), pas
+assumé depuis le succès de l'écriture — un échec d'écriture silencieux
+n'affiche plus "CDJ compatible" à tort.
+
+## `.sift-zone-toggle` (Diagnostic/Métadonnées) — accordéon exclusif + animation (2026-07-09)
+
+Diagnostic audio et Métadonnées sont maintenant un accordéon exclusif (réf.
+shadcn Accordion) : ouvrir l'un ferme l'autre. Coordination entre
+`report-view.ts` et `filing.ts` (deux modules distincts, pas d'ancêtre commun
+disponible) via un événement `document`-level `sift:accordion-open`, écouté
+une seule fois au chargement du module (singleton ES) pour ne jamais
+accumuler de listener sur les réouvertures de piste.
+
+| État | Sélecteur | Rendu |
+|---|---|---|
+| Hover | `.sift-zone-toggle:hover .sift-zone-toggle-label` | texte-seul highlight (`--color-text-primary`), **pas** de case qui se superpose — `.sift-zone-toggle:hover{background:none}` réaffirmé explicitement (sinon le `button:hover` générique bat silencieusement la règle de base, même piège que `.sift-play-btn`, déjà documenté CLAUDE.md) |
+| Bordure du cadre au survol | `.sift-spectro-box:has(.sift-zone-toggle:hover)`, idem `.sift-fil-editor.sift-fil-editor-margin` | `border-color` passe à `--color-border-secondary` — `:has()` cible l'ancêtre depuis l'état du bouton descendant |
+| Ouverture/fermeture | grid `0fr`→`1fr` (même trick que Diagnostic avait déjà) | Métadonnées utilisait avant `display:none/block` sans transition — uniformisé. Padding sur un 3e wrapper imbriqué (`.sift-zone-toggle-body-pad`), jamais sur l'item que le track grid mesure directement : `overflow:hidden` ne zéro que la contribution de CONTENU au minimum automatique d'un track, jamais le padding porté par l'item lui-même — mis dessus deux fois par erreur (`#sift-meta-body` puis `.sift-zone-toggle-body-inner`), plancher resté coincé à 8px puis 16px au lieu de 0 |
+
+## Spectrogramme — légende incrustée + réticule interactif (2026-07-09)
+
+Remplace la ligne pointillée statique de cutoff (`report-view.ts::drawSpectrogram`)
+par une légende permanente + un réticule au survol. Design :
+`docs/superpowers/specs/2026-07-09-spectrogram-hover-crosshair-design.md`.
+Plan : `docs/superpowers/plans/2026-07-09-spectrogram-hover-crosshair.md`.
+
+| Élément | État | Rendu |
+|---|---|---|
+| Légende fréquence (haut-gauche) | permanent, dessinée une fois sur `.sift-spectro-canvas` | 3 paliers proportionnels à `nyquist` (jamais des kHz fixes), texte contour sombre+remplissage clair (`drawOutlinedText`) — lisible quelle que soit la couleur du spectrogramme sous le texte |
+| Légende dB (haut-droit) | permanent | 6 paliers dérivés de `SPECTRO_GAIN_DB`/`SPECTRO_RANGE_DB` (0 à -100 dBFS), texte seul — pas de barre dégradée (testée en mockup, jugée peu claire) |
+| Réticule | survol souris, `.sift-spectro-overlay` (2e canvas transparent superposé) | ligne horizontale+verticale pleine (pas pointillée), couleur claire fixe `rgba(255,255,255,0.85)` — **pas** un token thème-aware (`--color-text-secondary` s'assombrit en thème clair alors que le canvas reste toujours noir, trouvé en revue finale : réticule illisible en thème clair, le défaut de Sift) |
+| Étiquette réticule | survol | pill sombre, `"{mm:ss} · {kHz} · {dB}"`, lus depuis `sg.mag_db` (même donnée que le pixel colorié) |
+| Repos | `mouseleave` | overlay entièrement effacé, rien ne reste affiché — tout se découvre au survol |
+
+Souris uniquement, pas d'équivalent clavier (canvas garde son `role="img"`/
+`aria-label` statique). Construit via subagent-driven-development (3 tâches +
+1 commit correctif post-revue-finale). Un finding hors-scope accepté sans
+réécriture d'historique : le commit de la Tâche 3 (`ff1dc19`) embarque aussi
+un mécanisme d'accordéon exclusif Diagnostic/Métadonnées développé plus tôt
+dans la même session — voir `.superpowers/sdd/task-3-report.md` (gitignoré,
+scratch de session) pour le détail.
+
 ## `.lk` / `.lk-icon` — bouton minimal, deux usages jamais mélanger (2026-07-07)
 
 `.lk` (`styles.css`) est une boîte fixe 22×22px, centrée, sans padding —
