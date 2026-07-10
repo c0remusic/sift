@@ -17,6 +17,11 @@ import { emptyStateHtml, wireEmptyState } from "./empty-state";
 // Pure helpers
 // ---------------------------------------------------------------------------
 
+const esc = (s: string) =>
+  s.replace(/[&<>"']/g, (c) =>
+    c === "&" ? "&amp;" : c === "<" ? "&lt;" : c === ">" ? "&gt;" : c === '"' ? "&quot;" : "&#39;",
+  );
+
 function basenameNoExt(p: string | null): string {
   if (!p) return "";
   const i = Math.max(p.lastIndexOf("/"), p.lastIndexOf("\\"));
@@ -89,9 +94,9 @@ function buildCategories(entries: JournalEntry[]): Cat[] {
 // ---------------------------------------------------------------------------
 
 function rowHtml(e: JournalEntry): string {
-  const name = basenameNoExt(e.from_path ?? e.to_path);
-  const dest = rel2(e.to_path);
-  const bid = e.batch_id;
+  const name = esc(basenameNoExt(e.from_path ?? e.to_path));
+  const dest = esc(rel2(e.to_path));
+  const bid = esc(e.batch_id);
   return `<div class="jrnl-row" data-batch-id="${bid}">\
 <div class="jrnl-row-main">\
 <span class="jrnl-name">${name}</span>\
@@ -321,8 +326,8 @@ export async function renderJournal(toast?: string, warn?: string): Promise<void
   const voirToutHtml = hasAny
     ? `<button class="jrnl-voir-tout" data-jact="mode-all">Voir tout l'historique →</button>`
     : "";
-  const toastHtml = toast ? `<div class="jrnl-toast" aria-live="polite">${toast}</div>` : "";
-  const warnHtml = warn ? `<div class="jrnl-toast jrnl-toast--warn" aria-live="assertive">${warn}</div>` : "";
+  const toastHtml = toast ? `<div class="jrnl-toast" aria-live="polite">${esc(toast)}</div>` : "";
+  const warnHtml = warn ? `<div class="jrnl-toast jrnl-toast--warn" aria-live="assertive">${esc(warn)}</div>` : "";
 
   content.innerHTML = `<div class="jrnl-wrap">\
 ${toastHtml}${warnHtml}\
@@ -342,7 +347,7 @@ ${voirToutHtml}\
 // ---------------------------------------------------------------------------
 
 function sessionGroupHtml(sessionId: string | null, entries: JournalEntry[]): string {
-  const label = sessionId ?? "Antérieur";
+  const label = esc(sessionId ?? "Antérieur");
   const cats = buildCategories(entries);
   const sectionsHtml = cats.map(sectionHtml).join("");
   return `<div class="jrnl-session-group">\
