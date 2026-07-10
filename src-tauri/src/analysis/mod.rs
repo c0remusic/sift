@@ -79,7 +79,7 @@ pub struct AnalysisReport {
 /// treated as stale and recomputed, instead of silently serving outdated data forever. Struct
 /// field additions/removals are already caught by `serde_json::from_str` failing outright; this
 /// constant is for the content changes that a schema check can't see.
-pub const REPORT_CACHE_VERSION: i64 = 3;
+pub const REPORT_CACHE_VERSION: i64 = 4;
 
 use dynamics::{ClipAccumulator, DcAccumulator, TruePeakAccumulator};
 use peaks::PeaksAccumulator;
@@ -141,10 +141,15 @@ pub fn analyze(path: &str, with_spectrogram: bool) -> Result<AnalysisReport, Str
         .extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
 
     let cutoff_hz = spec_res.cutoff_hz;
-    // TODO(Task 2): wire real content-rail sniffing (container/codec, independent of the
-    // declared extension). Rail::Unknown never triggers the mismatch short-circuit in
-    // verdict(), so this placeholder preserves current behavior exactly until then.
-    let verdict = verdict::verdict(cutoff_hz, tag.declared_rail, tag.declared_bitrate, Rail::Unknown);
+    // Content-rail sniffing (magic bytes, independent of the declared extension) only matters
+    // when the declared rail is Lossless — that's the only case verdict() short-circuits on a
+    // mismatch. Skip the extra I/O pass for lossy-declared files.
+    let content_rail = if tag.declared_rail == Rail::Lossless {
+        tags::rail_from_content(path)
+    } else {
+        Rail::Unknown
+    };
+    let verdict = verdict::verdict(cutoff_hz, tag.declared_rail, tag.declared_bitrate, content_rail);
     let est_kbps = verdict::estimate_kbps(cutoff_hz);
 
     log::info!(
@@ -223,5 +228,24 @@ mod tests {
         let j = serde_json::to_string(&r).unwrap();
         assert!(j.contains("\"verdict\":\"ok\""));
         assert!(j.contains("\"declared_rail\":\"lossless\""));
+    }
+
+    /// BUG-1 end-to-end: an MP3 renamed with a `.flac` extension must be caught by
+    /// `analyze()` as Fake, via `tags::rail_from_content` sniffing the real magic bytes
+    /// (not just the declared/extension rail, which is fooled).
+    #[test]
+    fn analyze_catches_a_renamed_mp3_as_fake() {
+        let p = "fixtures/real_320.mp3";
+        if !std::path::Path::new(p).exists() {
+            eprintln!("skip: no fixture");
+            return;
+        }
+        let dir = tempfile::tempdir().unwrap();
+        let disguised = dir.path().join("disguised.flac");
+        std::fs::copy(p, &disguised).unwrap();
+        let path = disguised.to_str().unwrap();
+
+        let report = analyze(path, false).unwrap();
+        assert_eq!(report.verdict, Verdict::Fake);
     }
 }
