@@ -146,14 +146,13 @@ pub fn analyze(path: &str, with_spectrogram: bool) -> Result<AnalysisReport, Str
         .extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
 
     let cutoff_hz = spec_res.cutoff_hz;
-    // Content-rail sniffing (magic bytes, independent of the declared extension) only matters
+    // Content-rail sniffing (magic bytes, independent of the declared extension) comes from the
+    // same lofty probe `tags::read` already did — no second file open/read pass. Only matters
     // when the declared rail is Lossless — that's the only case verdict() short-circuits on a
-    // mismatch. Skip the extra I/O pass for lossy-declared files.
-    let content_rail = if tag.declared_rail == Rail::Lossless {
-        tags::rail_from_content(path)
-    } else {
-        Rail::Unknown
-    };
+    // mismatch.
+    let content_rail = tag.content_rail;
+    // content_rail is now sniffed unconditionally in tags::read() (no longer gated on
+    // declared_rail here) — both sides of this comparison are load-bearing.
     let container_mismatch = tag.declared_rail == Rail::Lossless && content_rail == Rail::Lossy;
     let verdict = verdict::verdict(cutoff_hz, tag.declared_rail, tag.declared_bitrate, content_rail);
     let est_kbps = verdict::estimate_kbps(cutoff_hz);
@@ -256,5 +255,21 @@ mod tests {
 
         let report = analyze(path, false).unwrap();
         assert_eq!(report.verdict, Verdict::Fake);
+    }
+
+    /// A genuine, honestly-extensioned MP3 must never report `container_mismatch`. Content
+    /// sniffing runs unconditionally in `tags::read()` regardless of declared rail, so
+    /// `content_rail == Rail::Lossy` alone is true for every ordinary MP3 too — the
+    /// `declared_rail == Rail::Lossless` half of the check is load-bearing, not redundant.
+    #[test]
+    fn analyze_does_not_flag_a_genuine_mp3_as_container_mismatch() {
+        let p = "fixtures/real_320.mp3";
+        if !std::path::Path::new(p).exists() {
+            eprintln!("skip: no fixture");
+            return;
+        }
+        let report = analyze(p, false).unwrap();
+        assert_eq!(report.declared_rail, Rail::Lossy);
+        assert!(!report.container_mismatch);
     }
 }

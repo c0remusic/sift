@@ -1,15 +1,17 @@
 //! Declared audio properties + tag metadata via `lofty` (read-only).
 
 use crate::analysis::Rail;
-use lofty::file::{AudioFile, TaggedFileExt};
+use lofty::file::{AudioFile, FileType, TaggedFileExt};
 use lofty::probe::Probe;
 use lofty::tag::ItemKey;
 
 /// What we read from the container without decoding: declared rail, bitrate, duration,
-/// channels, ID3 version, CDJ-tag sanity, embedded cover presence.
+/// channels, ID3 version, CDJ-tag sanity, embedded cover presence, and the content-sniffed
+/// rail (magic bytes — see `rail_from_content` doc comment below).
 #[derive(Debug, Clone, PartialEq)]
 pub struct TagInfo {
     pub declared_rail: Rail,
+    pub content_rail: Rail,
     pub declared_bitrate: Option<u32>,
     pub duration_sec: f32,
     pub channels: u16,
@@ -27,27 +29,32 @@ pub fn rail_from_ext(ext: &str) -> Rail {
     }
 }
 
+/// Maps a lofty-detected `FileType` to our lossless/lossy rail. `Rail::Unknown` on anything not
+/// confidently identified — callers must never manufacture a mismatch they can't back with a
+/// confident read.
+fn rail_from_file_type(file_type: FileType) -> Rail {
+    match file_type {
+        FileType::Flac | FileType::Wav | FileType::Aiff | FileType::Ape | FileType::WavPack => {
+            Rail::Lossless
+        }
+        FileType::Mpeg | FileType::Vorbis | FileType::Opus | FileType::Speex => Rail::Lossy,
+        _ => Rail::Unknown,
+    }
+}
+
 /// Lossless vs lossy from the file's ACTUAL content (lofty's content-sniffing probe, magic
-/// bytes — NOT the extension). Used only where extension trust actually matters: the filing
+/// bytes — NOT the extension). Used where extension trust actually matters: the filing
 /// no-upscale guard (`filing.rs::plan_file`), to catch a lossy file mislabeled with a lossless
 /// extension (e.g. an MP3 renamed `.flac`) before it gets "converted" into a fabricated lossless
-/// file. The analysis pipeline itself doesn't need this — Symphonia already decodes real content
-/// regardless of extension. `Rail::Unknown` on anything not confidently identified (unreadable
-/// file, exotic/ambiguous container) — this function must never manufacture a mismatch it can't
-/// back with a confident read.
+/// file. The analysis pipeline gets the same signal for free from `read()`'s `content_rail` (one
+/// probe instead of two) — this standalone entry point stays for callers with no `TagInfo` in
+/// hand.
 pub fn rail_from_content(path: &str) -> Rail {
-    use lofty::file::FileType;
     fn try_read(path: &str) -> lofty::error::Result<lofty::file::TaggedFile> {
         Probe::open(path)?.guess_file_type()?.read()
     }
     match try_read(path) {
-        Ok(tagged) => match tagged.file_type() {
-            FileType::Flac | FileType::Wav | FileType::Aiff | FileType::Ape | FileType::WavPack => {
-                Rail::Lossless
-            }
-            FileType::Mpeg | FileType::Vorbis | FileType::Opus | FileType::Speex => Rail::Lossy,
-            _ => Rail::Unknown,
-        },
+        Ok(tagged) => rail_from_file_type(tagged.file_type()),
         Err(_) => Rail::Unknown,
     }
 }
@@ -61,8 +68,13 @@ pub fn read(path: &str) -> TagInfo {
         .unwrap_or("");
     let rail = rail_from_ext(ext);
 
-    match Probe::open(path).and_then(|p| p.read()) {
+    fn try_read(path: &str) -> lofty::error::Result<lofty::file::TaggedFile> {
+        Probe::open(path)?.guess_file_type()?.read()
+    }
+
+    match try_read(path) {
         Ok(tagged) => {
+            let content_rail = rail_from_file_type(tagged.file_type());
             let props = tagged.properties();
             let has_cover = tagged.tags().iter().any(|t| !t.pictures().is_empty());
             let id3_version = if ext.eq_ignore_ascii_case("mp3") {
@@ -76,6 +88,7 @@ pub fn read(path: &str) -> TagInfo {
             });
             TagInfo {
                 declared_rail: rail,
+                content_rail,
                 declared_bitrate: props.audio_bitrate(),
                 duration_sec: props.duration().as_secs_f32(),
                 channels: props.channels().unwrap_or(0) as u16,
@@ -86,6 +99,7 @@ pub fn read(path: &str) -> TagInfo {
         }
         Err(_) => TagInfo {
             declared_rail: rail,
+            content_rail: Rail::Unknown,
             declared_bitrate: None,
             duration_sec: 0.0,
             channels: 0,
