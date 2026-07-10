@@ -1291,6 +1291,29 @@ Vérifié : clippy clean, `cargo test` 193/196 verts (3 échecs pré-existants s
 rapport : 2 tests `analysis::decode` sur fixture manquante, 1 test `rekordbox_xml`
 sur du travail M7 en cours non lié à ce nettoyage).
 
+## Dette technique — chip verdict `.sift-vchips` jamais rendu (2026-07-10)
+
+Repéré en revue de code post-audit (angle cross-file tracer) : `filing.ts`
+insère les chips "DUPLICATE" et "LECTURE INCOMPLÈTE" dans
+`mid.querySelector(".sift-vchips")`, mais cette classe n'existe nulle part
+dans le markup réellement rendu — `verdictCardHtml()` (`report-view.ts:543`)
+retourne `""` en l'état actuel du code (committé, pas un WIP de session
+concurrente). Les deux chips étaient donc du code mort silencieux, pas
+seulement le nouveau ajouté cette session.
+
+**Fix appliqué** (commit `d8a056e`) : les deux `querySelector` retargetés
+vers `.sift-fil-verdict`, le conteneur que `filing.ts` crée et contrôle
+lui-même (`openFilingInto`), qui existe dans le DOM indépendamment de ce que
+`verdictCardHtml()` produit — donc résilient à l'état actuel (stub vide) et
+à un futur remplissage de cette fonction.
+
+**Reste hors scope** : `verdictCardHtml()` elle-même est vide depuis un
+moment (pas daté précisément, pas de commit isolé trouvé pour l'instant) —
+si un futur chantier remplit cette fonction avec un vrai contenu de carte
+verdict, vérifier qu'elle ne recrée pas SA PROPRE zone de chips concurrente
+à `.sift-fil-verdict` (ce qui dupliquerait ou masquerait les chips déjà
+insérés par `filing.ts`).
+
 ---
 
 ## Écarté
