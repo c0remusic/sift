@@ -71,7 +71,11 @@ function realQuality(r: AnalysisReport): { label: string; bg: string; fg: string
   // numbers drifting apart (they used to, with a shifted table).
   if (r.verdict === "fake") {
     return {
-      label: `MP3 ≈ ${r.est_kbps} kbps`,
+      // container_mismatch = extension lies about the rail (e.g. an MP3 renamed .flac) — a
+      // distinct fraud from a genuine over-encoded transcode, so it gets a distinct label
+      // instead of the shared "MP3 ≈ X kbps" (which reads like a borderline bitrate call,
+      // not "this .flac isn't a real FLAC at all"). Mirrors spectroCaption()'s distinction.
+      label: r.container_mismatch ? "Extension falsifiée" : `MP3 ≈ ${r.est_kbps} kbps`,
       bg: "var(--color-background-danger)",
       fg: "var(--color-text-danger)",
     };
