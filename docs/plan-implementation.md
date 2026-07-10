@@ -468,6 +468,16 @@ empreintes Chromaprint).
 > le succès d'une application, Rekordbox fermé, la nouvelle pochette visible
 > après réimport) — même limite que la synchro metadata : le clic réel reste
 > à faire par Antoine, pas par un agent en session autonome.
+>
+> **Groupement par session ajouté le 2026-07-10** (les 3 listes de candidats
+> Tier 1/3 pouvaient devenir longues après un gros import/retag) :
+> `session_id` (`actions.session_id`) ajouté aux 3 DTOs de candidats (`LEFT
+> JOIN actions`), UI groupée par session — **repliée par défaut**, en-tête
+> cliquable (label session ou "Antérieur" + compteur), bouton "Tout
+> sélectionner/désélectionner" par groupe. Mirroring le pattern de
+> regroupement par session déjà en place côté Journal (`journal.ts`,
+> `.jrnl-session-*`). tsc clean, 37 tests `rekordbox_repairs::` verts (build
+> isolé). **Vérification visuelle restante** — même limite que ci-dessus.
 - **Rekordbox `master.db`** : remplacement in-situ (Tier 1 livré, moteur+IPC+UI), **dédup des playlists existantes** (Tier 2 livré, moteur+IPC+UI), **réparation/prévention des liens cassés** (chemin change au changement de format — Tier 1). ⚠️ backup obligatoire (déjà implémenté), Rekordbox fermé (garde déjà implémentée).
 - **Normalisation loudness** (option, OFF par défaut).
 
