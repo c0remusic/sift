@@ -72,7 +72,10 @@ export function libraryTableHeaderHtml(sort: LibrarySortState): string {
     const arrow = active ? (sort.dir === "asc" ? " ▴" : " ▾") : "";
     return `<th aria-sort="${ariaSort}"><button data-bib="sort" data-field="${field}">${esc(label)}${arrow}</button></th>`;
   }).join("");
-  return `<div class="sift-lib-thead" role="row"><span class="sift-lib-thead-cov"></span>${cells}</div>`;
+  // No wrapping role="table"/"grid" exists (this is a flex layout, not a real <table>) — role="row"
+  // here without that ancestor was a half-applied ARIA table pattern a screen reader can't make
+  // sense of. Dropped; each data row instead carries a composite aria-label (see libraryTableRowHtml).
+  return `<div class="sift-lib-thead"><span class="sift-lib-thead-cov"></span>${cells}</div>`;
 }
 
 /** One table row — cover thumbnail + the 4 sortable columns + the existing play/quality/verdict/
@@ -86,8 +89,12 @@ export function libraryTableRowHtml(t: LibraryTrack, curId: number | null): stri
   const link = t.discogs_release_id
     ? `<button class="lk-icon" data-bib="link" data-rid="${esc(t.discogs_release_id)}" aria-label="Page Discogs"><i class="ti ti-external-link" style="font-size:var(--text-base);color:var(--color-text-tertiary)"></i></button>`
     : `<button class="lk-icon" data-bib="identify" data-id="${t.id}" aria-label="Identifier"><i class="ti ti-search" style="font-size:var(--text-md);color:var(--color-text-tertiary)"></i></button>`;
+  // Composite name so a screen reader announces the 4 sortable columns for this row instead of
+  // just "button" — role="button" alone loses the artist/title/genre/year association a table
+  // reading mode would otherwise give.
+  const rowLabel = `${t.artist || "Artiste inconnu"} — ${t.title || "Titre inconnu"}, ${t.genres[0] || "genre inconnu"}, ${t.year != null ? t.year : "année inconnue"}`;
   return (
-    `<div class="lr${cur}" data-bib="row" data-id="${t.id}" tabindex="0" role="button">` +
+    `<div class="lr${cur}" data-bib="row" data-id="${t.id}" tabindex="0" role="button" aria-label="${esc(rowLabel)}">` +
     `<button class="pb" data-bib="play" data-id="${t.id}" aria-label="Écouter"><i class="ti ti-player-play" style="font-size:var(--text-md)"></i></button>` +
     cov +
     `<span class="sift-lib-col" style="flex:1.4">${esc(t.artist || "—")}</span>` +

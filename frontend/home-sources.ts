@@ -93,9 +93,11 @@ function listColumnHtml(sources: Source[]): string {
   // Compact inline hint, not the shared emptyStateHtml() component — that one is scaled for a
   // whole dead-end screen (title+note, full height); here the header ("Sources") and the "+
   // Ajouter un dossier" bar stay visible and functional around it, a different scale of "empty".
+  // The hint text points at that bar explicitly (audit UX 2026-07-10: a bare sentence with no
+  // guidance, even though the action is right below) rather than switching to the bigger component.
   const rows = sources.length
     ? sources.map((s) => rowHtml(s, s.id === selectedSourceId, sources)).join("")
-    : `<div class="sift-list-empty-hint">Aucun dossier surveillé.</div>`;
+    : `<div class="sift-list-empty-hint">Aucun dossier surveillé — ajoute-en un ci-dessous.</div>`;
   const bottomBar =
     `<div style="flex:none;border-top:0.5px solid var(--color-border-tertiary);margin-top:8px;padding-top:8px">` +
     `<button data-sift="addsrc" class="sift-home-cta-add" style="width:100%;background:var(--color-background-info);color:var(--color-text-info);font-weight:600"><i class="ti ti-plus" style="font-size:var(--text-base);vertical-align:-2px"></i> Ajouter un dossier</button>` +

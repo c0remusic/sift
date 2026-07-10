@@ -54,6 +54,37 @@ pub struct ApplyRepairOutcome {
     pub error: Option<String>,
 }
 
+/// Resolves the linked Rekordbox XML's parent directory (where `master.db` lives) —
+/// shared by every M8 apply/scan path that needs a `pioneer_dir`, so the "no XML linked"
+/// error stays identical everywhere instead of being retyped in five places.
+fn resolve_pioneer_dir(conn: &Connection) -> Result<std::path::PathBuf, String> {
+    let xml_path = crate::settings::get(conn, crate::settings::REKORDBOX_XML_PATH)
+        .map_err(|e| e.to_string())?
+        .ok_or("aucun XML Rekordbox lié — relie un fichier avant de synchroniser")?;
+    std::path::Path::new(&xml_path)
+        .parent()
+        .map(|p| p.to_path_buf())
+        .ok_or_else(|| "aucun XML Rekordbox lié — relie un fichier avant de synchroniser".to_string())
+}
+
+/// One timestamp per batch call (not per row) — shared across every row so rows applied
+/// together land under the same backup batch directory.
+fn new_batch_stamp() -> String {
+    chrono::Local::now().format("%Y%m%d-%H%M%S").to_string()
+}
+
+/// Logs + builds the "master.db already written, local bookkeeping failed" message shared by
+/// all 3 apply_one_* desync branches (repair/metadata sync/artwork sync) — master.db was already
+/// written successfully at the point this is called; the row staying 'pending' means a later
+/// retry would re-run the write for no reason, so this is loud and explicit rather than reading
+/// as a plain sync failure. `kind` is the log-line noun ("repair"/"metadata sync"/"artwork
+/// sync"); `action_phrase` is the full French clause already agreeing in gender/verb for that row
+/// kind (e.g. "la réparation a bien été appliquée").
+fn desync_error_message(kind: &str, action_phrase: &str, id: i64, e: impl std::fmt::Display) -> String {
+    log::error!("rekordbox {kind} {id}: master.db écrit avec succès mais l'état local n'a pas pu être mis à jour (désync) : {e}");
+    format!("{action_phrase} dans master.db, mais Sift n'a pas pu l'enregistrer localement — ne pas réappliquer sans vérifier Rekordbox d'abord ({e})")
+}
+
 fn basename(path: &str) -> String {
     std::path::Path::new(path)
         .file_name()
@@ -252,7 +283,11 @@ fn apply_one_repair(
                 "UPDATE rekordbox_masterdb_repairs SET status='applied', applied_at=datetime('now') WHERE id=?1",
                 rusqlite::params![id],
             ) {
-                return ApplyRepairOutcome { id, ok: false, error: Some(e.to_string()) };
+                return ApplyRepairOutcome {
+                    id,
+                    ok: false,
+                    error: Some(desync_error_message("repair", "la réparation a bien été appliquée", id, e)),
+                };
             }
             ApplyRepairOutcome { id, ok: true, error: None }
         }
@@ -269,20 +304,12 @@ pub(crate) fn apply_repairs_inner(
     backup_root: &Path,
     ids: &[i64],
 ) -> Result<Vec<ApplyRepairOutcome>, String> {
-    let xml_path = crate::settings::get(conn, crate::settings::REKORDBOX_XML_PATH)
-        .map_err(|e| e.to_string())?
-        .ok_or("aucun XML Rekordbox lié — relie un fichier avant de synchroniser")?;
-    let pioneer_dir = std::path::Path::new(&xml_path)
-        .parent()
-        .ok_or("aucun XML Rekordbox lié — relie un fichier avant de synchroniser")?;
-
-    // One timestamp per BATCH (not per row) — two rows in the same call must land under the
-    // same batch directory, each still isolated by its own <id> subdirectory below it.
-    let batch_stamp = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
+    let pioneer_dir = resolve_pioneer_dir(conn)?;
+    let batch_stamp = new_batch_stamp();
 
     let mut outcomes = Vec::with_capacity(ids.len());
     for &id in ids {
-        outcomes.push(apply_one_repair(conn, pioneer_dir, backup_root, &batch_stamp, id));
+        outcomes.push(apply_one_repair(conn, &pioneer_dir, backup_root, &batch_stamp, id));
     }
     Ok(outcomes)
 }
@@ -458,7 +485,11 @@ fn apply_one_metadata_sync(conn: &Connection, pioneer_dir: &Path, backup_root: &
                 "UPDATE rekordbox_masterdb_metadata_syncs SET status='applied', applied_at=datetime('now') WHERE id=?1",
                 rusqlite::params![id],
             ) {
-                return ApplyMetadataSyncOutcome { id, ok: false, error: Some(e.to_string()) };
+                return ApplyMetadataSyncOutcome {
+                    id,
+                    ok: false,
+                    error: Some(desync_error_message("metadata sync", "la synchro a bien été appliquée", id, e)),
+                };
             }
             ApplyMetadataSyncOutcome { id, ok: true, error: None }
         }
@@ -468,17 +499,11 @@ fn apply_one_metadata_sync(conn: &Connection, pioneer_dir: &Path, backup_root: &
 
 /// Plain (testable) implementation of `ipc_library::rekordbox_masterdb_apply_metadata_syncs`.
 pub(crate) fn apply_metadata_syncs_inner(conn: &Connection, backup_root: &Path, ids: &[i64]) -> Result<Vec<ApplyMetadataSyncOutcome>, String> {
-    let xml_path = crate::settings::get(conn, crate::settings::REKORDBOX_XML_PATH)
-        .map_err(|e| e.to_string())?
-        .ok_or("aucun XML Rekordbox lié — relie un fichier avant de synchroniser")?;
-    let pioneer_dir = std::path::Path::new(&xml_path)
-        .parent()
-        .ok_or("aucun XML Rekordbox lié — relie un fichier avant de synchroniser")?;
-
-    let batch_stamp = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
+    let pioneer_dir = resolve_pioneer_dir(conn)?;
+    let batch_stamp = new_batch_stamp();
     let mut outcomes = Vec::with_capacity(ids.len());
     for &id in ids {
-        outcomes.push(apply_one_metadata_sync(conn, pioneer_dir, backup_root, &batch_stamp, id));
+        outcomes.push(apply_one_metadata_sync(conn, &pioneer_dir, backup_root, &batch_stamp, id));
     }
     Ok(outcomes)
 }
@@ -631,7 +656,11 @@ fn apply_one_artwork_sync(conn: &Connection, pioneer_dir: &Path, backup_root: &P
                 "UPDATE rekordbox_masterdb_artwork_syncs SET status='applied', applied_at=datetime('now') WHERE id=?1",
                 rusqlite::params![id],
             ) {
-                return ApplyArtworkSyncOutcome { id, ok: false, error: Some(e.to_string()) };
+                return ApplyArtworkSyncOutcome {
+                    id,
+                    ok: false,
+                    error: Some(desync_error_message("artwork sync", "la pochette a bien été synchronisée", id, e)),
+                };
             }
             ApplyArtworkSyncOutcome { id, ok: true, error: None }
         }
@@ -641,17 +670,11 @@ fn apply_one_artwork_sync(conn: &Connection, pioneer_dir: &Path, backup_root: &P
 
 /// Plain (testable) implementation of `rekordbox_masterdb_apply_artwork_syncs`.
 pub(crate) fn rekordbox_masterdb_apply_artwork_syncs_inner(conn: &Connection, backup_root: &Path, ids: &[i64]) -> Result<Vec<ApplyArtworkSyncOutcome>, String> {
-    let xml_path = crate::settings::get(conn, crate::settings::REKORDBOX_XML_PATH)
-        .map_err(|e| e.to_string())?
-        .ok_or("aucun XML Rekordbox lié — relie un fichier avant de synchroniser")?;
-    let pioneer_dir = std::path::Path::new(&xml_path)
-        .parent()
-        .ok_or("aucun XML Rekordbox lié — relie un fichier avant de synchroniser")?;
-
-    let batch_stamp = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
+    let pioneer_dir = resolve_pioneer_dir(conn)?;
+    let batch_stamp = new_batch_stamp();
     let mut outcomes = Vec::with_capacity(ids.len());
     for &id in ids {
-        outcomes.push(apply_one_artwork_sync(conn, pioneer_dir, backup_root, &batch_stamp, id));
+        outcomes.push(apply_one_artwork_sync(conn, &pioneer_dir, backup_root, &batch_stamp, id));
     }
     Ok(outcomes)
 }
@@ -738,12 +761,7 @@ impl From<PlaylistDuplicateGroupDto> for crate::rekordbox_masterdb::PlaylistDupl
 /// batch, only when needed" discipline as `pending_repairs_inner`'s
 /// `candidate_tracks` enrichment.
 pub(crate) fn scan_playlist_duplicates_inner(conn: &Connection) -> Result<Vec<PlaylistDuplicateGroupDto>, String> {
-    let xml_path = crate::settings::get(conn, crate::settings::REKORDBOX_XML_PATH)
-        .map_err(|e| e.to_string())?
-        .ok_or("aucun XML Rekordbox lié — relie un fichier avant de synchroniser")?;
-    let pioneer_dir = std::path::Path::new(&xml_path)
-        .parent()
-        .ok_or("aucun XML Rekordbox lié — relie un fichier avant de synchroniser")?;
+    let pioneer_dir = resolve_pioneer_dir(conn)?;
     let groups = crate::rekordbox_masterdb::detect_playlist_duplicates(&pioneer_dir.join("master.db"))
         .map_err(|e| humanize_masterdb_error(&e))?;
     let mut dtos: Vec<PlaylistDuplicateGroupDto> = groups.into_iter().map(Into::into).collect();
@@ -772,17 +790,11 @@ pub(crate) fn dedup_playlist_group_inner(
     backup_root: &Path,
     group: PlaylistDuplicateGroupDto,
 ) -> Result<(), String> {
-    let xml_path = crate::settings::get(conn, crate::settings::REKORDBOX_XML_PATH)
-        .map_err(|e| e.to_string())?
-        .ok_or("aucun XML Rekordbox lié — relie un fichier avant de synchroniser")?;
-    let pioneer_dir = std::path::Path::new(&xml_path)
-        .parent()
-        .ok_or("aucun XML Rekordbox lié — relie un fichier avant de synchroniser")?;
-
-    let batch_stamp = chrono::Local::now().format("%Y%m%d-%H%M%S").to_string();
+    let pioneer_dir = resolve_pioneer_dir(conn)?;
+    let batch_stamp = new_batch_stamp();
     let backup_dir = backup_root.join(&batch_stamp).join(format!("{}-{}", group.playlist_id, group.content_id));
 
-    crate::rekordbox_masterdb::dedup_playlist_group(pioneer_dir, &backup_dir, &group.into())
+    crate::rekordbox_masterdb::dedup_playlist_group(&pioneer_dir, &backup_dir, &group.into())
         .map_err(|e| humanize_masterdb_error(&e))
 }
 

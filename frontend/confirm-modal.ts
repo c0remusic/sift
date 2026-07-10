@@ -8,8 +8,18 @@
 // friction level, just delivered reliably.
 const OVERLAY_ID = "sift-confirm-overlay";
 
+// The previous call's `finish`, if its overlay is still open (promise unresolved) — set/cleared
+// by confirmAction below. Audit 2026-07-10: without settling it first, a second confirmAction()
+// call only removed the first overlay's DOM node (see below) but left its `keydown` listener
+// attached forever, so its Tab-focus-trap kept hijacking every Tab keypress app-wide afterwards.
+let activeFinish: ((result: boolean) => void) | null = null;
+
 export function confirmAction(message: string, confirmLabel = "Confirmer"): Promise<boolean> {
+  // Settle any still-open prior call first — removes its keydown listener and resolves its
+  // promise, instead of leaking both when this new call replaces its overlay below.
+  activeFinish?.(false);
   document.getElementById(OVERLAY_ID)?.remove();
+  const previouslyFocused = document.activeElement as HTMLElement | null;
   return new Promise((resolve) => {
     const overlay = document.createElement("div");
     overlay.id = OVERLAY_ID;
@@ -52,10 +62,25 @@ export function confirmAction(message: string, confirmLabel = "Confirmer"): Prom
     const finish = (result: boolean) => {
       document.removeEventListener("keydown", onKeydown);
       overlay.remove();
+      // Restore focus to whatever opened the modal — without this, focus falls back to <body>,
+      // disorienting for keyboard/screen-reader users after a destructive-action prompt closes.
+      previouslyFocused?.focus();
+      activeFinish = null;
       resolve(result);
     };
+    activeFinish = finish;
     const onKeydown = (e: KeyboardEvent) => {
-      if (e.key === "Escape") finish(false); // R5 : Escape annule, comme shadcn Alert Dialog
+      if (e.key === "Escape") {
+        finish(false); // R5 : Escape annule, comme shadcn Alert Dialog
+        return;
+      }
+      // Focus trap: this modal has exactly 2 focusable elements — cycle Tab between them so
+      // keyboard focus can never land on the app behind the overlay while it's open.
+      if (e.key === "Tab") {
+        e.preventDefault();
+        if (document.activeElement === cancelBtn) confirmBtn.focus();
+        else cancelBtn.focus();
+      }
     };
     document.addEventListener("keydown", onKeydown);
     cancelBtn.addEventListener("click", () => finish(false));

@@ -80,7 +80,7 @@ export async function renderReglagesLive() {
     '<div class="sift-settings-desc">Le jeton permet à Sift d\'interroger l\'API Discogs pour identifier tes morceaux (label, année, genre). Sans jeton, les recherches sont limitées et plus lentes.</div>' +
     '<div class="sift-settings-row sift-settings-row-stack">' +
     '<div class="sift-settings-row-head">' +
-    '<span class="sift-settings-label">Jeton d\'accès</span>' +
+    '<label for="sift-discogs-token" class="sift-settings-label">Jeton d\'accès</label>' +
     '<a id="sift-discogs-link" class="sift-settings-link">' +
     '<i class="ti ti-external-link" style="font-size:var(--text-sm);vertical-align:-1px"></i> obtenir un jeton</a>' +
     "</div>" +

@@ -522,4 +522,28 @@ mod tests {
         let (_score, title) = best_track_match(&titles, "Sean", Some("Dub"));
         assert_eq!(title, None);
     }
+
+    #[test]
+    fn map_ureq_err_429_is_rate_limited() {
+        match map_ureq_err(ureq::Error::StatusCode(429)) {
+            ProviderError::RateLimited { retry_after_s } => assert_eq!(retry_after_s, 60),
+            other => panic!("expected RateLimited, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn map_ureq_err_other_status_is_network_with_code() {
+        match map_ureq_err(ureq::Error::StatusCode(503)) {
+            ProviderError::Network(msg) => assert!(msg.contains("503"), "message should mention the status code: {msg}"),
+            other => panic!("expected Network, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn map_ureq_err_transport_failure_is_network() {
+        match map_ureq_err(ureq::Error::HostNotFound) {
+            ProviderError::Network(_) => {}
+            other => panic!("expected Network, got {other:?}"),
+        }
+    }
 }

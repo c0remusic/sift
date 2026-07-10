@@ -1901,20 +1901,26 @@ export async function openFilingInto(mid: HTMLElement, item: QueueItem): Promise
   // Analysis report, metadata reconcile, the persisted release facts, and the file's REAL tags are
   // independent reads — run them in parallel so the footer renders as soon as they complete. The
   // file-tags read is the ONE disk read for the discrepancy marker (cached after; never per-keystroke).
+  // Tracks whether any of the 3 reads below failed, so a real IPC error can be surfaced to the
+  // user distinctly from "nothing to show yet" instead of silently rendering as an empty field.
+  let readError = false;
   const [report, canonical, release, fileTags] = await Promise.all([
     openReportInto(reportEl, item.path, verdictEl, { deferText: true }),
     reconcile(item.id).catch((e): Canonical => {
       console.error("reconcile failed", e);
+      readError = true;
       return { artist: "", title: "", version: null, confidence: "yellow" };
     }),
     trackRelease(item.id).catch((e): TrackRelease => {
       console.error("track_release failed", e);
+      readError = true;
       return { artist: null, title: null, version: null, label: null, year: null, cover_path: null, genres: [], identified: false };
     }),
     // On failure: leave fileTags null (no marker) and log it — never assert a discrepancy we could
     // not measure (no silent false alarm).
     trackFileTags(item.id).catch((e): FileTags | null => {
       console.error("track_file_tags failed", e);
+      readError = true;
       return null;
     }),
   ]);
@@ -1980,6 +1986,21 @@ export async function openFilingInto(mid: HTMLElement, item: QueueItem): Promise
   renderGenres(); // fill .sift-genres from state.genres (also shows genres on reopen, not just fresh fetch)
   refreshDiscrepancy(); // flag the marker if the file's tags differ from the displayed identity
   updateHeaderName(mid); // show the clean proposed name in the report header
+  if (readError) {
+    // One of reconcile/trackRelease/trackFileTags failed above — without this, the panel would
+    // just show blank/default fields indistinguishable from "not identified yet".
+    // .sift-vchips never existed in the rendered markup (verdictCardHtml() — report-view.ts —
+    // currently returns "" and never produced that wrapper); querying it was silent dead code for
+    // this chip and the pre-existing DUPLICATE one below. .sift-fil-verdict is the actual verdict
+    // slot filing.ts itself creates (openFilingInto, above) and always exists in the DOM.
+    const chips = mid.querySelector<HTMLElement>(".sift-fil-verdict");
+    if (chips && !chips.querySelector('[data-chip="read-error"]')) {
+      chips.insertAdjacentHTML(
+        "beforeend",
+        vchipHtml("LECTURE INCOMPLÈTE", "danger").replace("<span ", '<span data-chip="read-error" '),
+      );
+    }
+  }
   // Paint "Nom final" on first open — previously only set on a later edit/identify/format
   // click, so the verdict panel's name field stayed empty until the user touched something
   // (docs/superpowers/reviews/2026-07-02-audit-fidelite-ecran-par-ecran.md §2, bug confirmé sur capture fraîche).
@@ -1991,7 +2012,11 @@ export async function openFilingInto(mid: HTMLElement, item: QueueItem): Promise
   // entirely — annotation confirmed intentional.)
   void dupP.then((m) => {
     if (myseq !== openSeq) return;
-    const chips = mid.querySelector<HTMLElement>(".sift-vchips");
+    // .sift-vchips never existed in the rendered markup (verdictCardHtml() — report-view.ts —
+    // currently returns "" and never produced that wrapper); querying it was silent dead code for
+    // this chip and the pre-existing DUPLICATE one below. .sift-fil-verdict is the actual verdict
+    // slot filing.ts itself creates (openFilingInto, above) and always exists in the DOM.
+    const chips = mid.querySelector<HTMLElement>(".sift-fil-verdict");
     if (!chips || chips.querySelector('[data-chip="dup"]') || !m) return;
     chips.insertAdjacentHTML(
       "beforeend",

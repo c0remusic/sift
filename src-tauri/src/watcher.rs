@@ -161,3 +161,23 @@ fn handle_events(app: &AppHandle, source_id: i64, res: DebounceEventResult) {
         crate::worker::refill(app);
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn strip_verbatim_unc_prefix_becomes_double_backslash_share() {
+        assert_eq!(strip_verbatim(r"\\?\UNC\server\share\folder"), r"\\server\share\folder");
+    }
+
+    #[test]
+    fn strip_verbatim_local_prefix_is_dropped() {
+        assert_eq!(strip_verbatim(r"\\?\D:\Music\Sift"), r"D:\Music\Sift");
+    }
+
+    #[test]
+    fn strip_verbatim_plain_path_is_unchanged() {
+        assert_eq!(strip_verbatim(r"D:\Music\Sift"), r"D:\Music\Sift");
+    }
+}
