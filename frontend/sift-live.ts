@@ -81,6 +81,13 @@ import {
   lastScannedDuplicateGroups,
   duplicateGroupKey,
   renderRekordboxLive,
+  mdbExpandedGroups,
+  mdsExpandedGroups,
+  masExpandedGroups,
+  lastPendingRepairs,
+  lastPendingMetadataSyncs,
+  lastPendingArtworkSyncs,
+  idsInSessionGroup,
 } from "./rekordbox-view";
 import { renderJournal } from "./journal";
 import { open as openFolderDialog } from "@tauri-apps/plugin-dialog";
@@ -1727,6 +1734,25 @@ export function installLiveWiring() {
         mdbErrorById.delete(id);
       }
       void renderRekordboxLive();
+    } else if (act === "mdbgrouptoggle") {
+      e.stopPropagation();
+      const key = el.dataset.session || "";
+      if (mdbExpandedGroups.has(key)) mdbExpandedGroups.delete(key);
+      else mdbExpandedGroups.add(key);
+      void renderRekordboxLive();
+    } else if (act === "mdbgroupselect") {
+      e.stopPropagation();
+      const key = el.dataset.session || "";
+      const ids = idsInSessionGroup(lastPendingRepairs, key);
+      const allSelected = ids.length > 0 && ids.every((id) => mdbRepairSel.has(id));
+      for (const id of ids) {
+        if (allSelected) mdbRepairSel.delete(id);
+        else {
+          mdbRepairSel.add(id);
+          mdbErrorById.delete(id);
+        }
+      }
+      void renderRekordboxLive();
     } else if (act === "mdbdismiss") {
       e.stopPropagation();
       const id = Number(el.dataset.id);
@@ -1818,6 +1844,25 @@ export function installLiveWiring() {
         mdsErrorById.delete(id);
       }
       void renderRekordboxLive();
+    } else if (act === "mdsgrouptoggle") {
+      e.stopPropagation();
+      const key = el.dataset.session || "";
+      if (mdsExpandedGroups.has(key)) mdsExpandedGroups.delete(key);
+      else mdsExpandedGroups.add(key);
+      void renderRekordboxLive();
+    } else if (act === "mdsgroupselect") {
+      e.stopPropagation();
+      const key = el.dataset.session || "";
+      const ids = idsInSessionGroup(lastPendingMetadataSyncs, key);
+      const allSelected = ids.length > 0 && ids.every((id) => mdsSyncSel.has(id));
+      for (const id of ids) {
+        if (allSelected) mdsSyncSel.delete(id);
+        else {
+          mdsSyncSel.add(id);
+          mdsErrorById.delete(id);
+        }
+      }
+      void renderRekordboxLive();
     } else if (act === "mdsdismiss") {
       e.stopPropagation();
       const id = Number(el.dataset.id);
@@ -1881,6 +1926,25 @@ export function installLiveWiring() {
       } else {
         masSyncSel.add(id);
         masErrorById.delete(id);
+      }
+      void renderRekordboxLive();
+    } else if (act === "masgrouptoggle") {
+      e.stopPropagation();
+      const key = el.dataset.session || "";
+      if (masExpandedGroups.has(key)) masExpandedGroups.delete(key);
+      else masExpandedGroups.add(key);
+      void renderRekordboxLive();
+    } else if (act === "masgroupselect") {
+      e.stopPropagation();
+      const key = el.dataset.session || "";
+      const ids = idsInSessionGroup(lastPendingArtworkSyncs, key);
+      const allSelected = ids.length > 0 && ids.every((id) => masSyncSel.has(id));
+      for (const id of ids) {
+        if (allSelected) masSyncSel.delete(id);
+        else {
+          masSyncSel.add(id);
+          masErrorById.delete(id);
+        }
       }
       void renderRekordboxLive();
     } else if (act === "masdismiss") {

@@ -31,6 +31,10 @@ pub struct PendingMasterdbRepair {
     /// "pending" | "ambiguous".
     pub status: String,
     pub detected_at: String,
+    /// The Sift app session (`actions.session_id`) that produced this candidate — `None` for
+    /// actions recorded before that column existed (migration v8). Used to group candidates in
+    /// the UI ("select all for this session") rather than listing every row flat.
+    pub session_id: Option<String>,
 }
 
 /// One ambiguous-repair candidate, enriched with its current `master.db` path for display.
@@ -108,10 +112,11 @@ fn read_masterdb_path_map(conn: &Connection) -> Option<std::collections::HashMap
 pub(crate) fn pending_repairs_inner(conn: &Connection) -> Result<Vec<PendingMasterdbRepair>, String> {
     let mut stmt = conn
         .prepare(
-            "SELECT id, track_id, candidate_track_ids, from_path, to_path, status, detected_at
-             FROM rekordbox_masterdb_repairs
-             WHERE status IN ('pending', 'ambiguous')
-             ORDER BY detected_at",
+            "SELECT r.id, r.track_id, r.candidate_track_ids, r.from_path, r.to_path, r.status, r.detected_at, a.session_id
+             FROM rekordbox_masterdb_repairs r
+             LEFT JOIN actions a ON a.id = r.action_id
+             WHERE r.status IN ('pending', 'ambiguous')
+             ORDER BY r.detected_at",
         )
         .map_err(|e| e.to_string())?;
     let mut rows: Vec<PendingMasterdbRepair> = stmt
@@ -125,6 +130,7 @@ pub(crate) fn pending_repairs_inner(conn: &Connection) -> Result<Vec<PendingMast
                 to_path: r.get(4)?,
                 status: r.get(5)?,
                 detected_at: r.get(6)?,
+                session_id: r.get(7)?,
             })
         })
         .map_err(|e| e.to_string())?
@@ -306,6 +312,8 @@ pub struct PendingMetadataSync {
     /// "pending" | "ambiguous".
     pub status: String,
     pub detected_at: String,
+    /// Same session-grouping contract as `PendingMasterdbRepair::session_id`.
+    pub session_id: Option<String>,
 }
 
 /// Plain (testable) implementation of `ipc_library::rekordbox_masterdb_pending_metadata_syncs`.
@@ -313,9 +321,10 @@ pub(crate) fn pending_metadata_syncs_inner(conn: &Connection) -> Result<Vec<Pend
     let mut stmt = conn
         .prepare(
             "SELECT s.id, s.track_id, t.path, s.rekordbox_track_id, s.candidate_track_ids,
-                    s.new_artist, s.new_title, s.new_label, s.new_year, s.new_genre, s.status, s.detected_at
+                    s.new_artist, s.new_title, s.new_label, s.new_year, s.new_genre, s.status, s.detected_at, a.session_id
              FROM rekordbox_masterdb_metadata_syncs s
              JOIN tracks t ON t.id = s.track_id
+             LEFT JOIN actions a ON a.id = s.action_id
              WHERE s.status IN ('pending', 'ambiguous')
              ORDER BY s.detected_at",
         )
@@ -336,6 +345,7 @@ pub(crate) fn pending_metadata_syncs_inner(conn: &Connection) -> Result<Vec<Pend
                 new_genre: r.get(9)?,
                 status: r.get(10)?,
                 detected_at: r.get(11)?,
+                session_id: r.get(12)?,
             })
         })
         .map_err(|e| e.to_string())?
@@ -489,15 +499,18 @@ pub struct PendingArtworkSync {
     pub cover_path: String,
     pub status: String,
     pub detected_at: String,
+    /// Same session-grouping contract as `PendingMasterdbRepair::session_id`.
+    pub session_id: Option<String>,
 }
 
 /// Plain (testable) implementation of `rekordbox_masterdb_pending_artwork_syncs`.
 pub(crate) fn rekordbox_masterdb_pending_artwork_syncs_inner(conn: &Connection) -> Result<Vec<PendingArtworkSync>, String> {
     let mut stmt = conn
         .prepare(
-            "SELECT s.id, s.track_id, t.path, s.rekordbox_track_id, s.candidate_track_ids, s.cover_path, s.status, s.detected_at
+            "SELECT s.id, s.track_id, t.path, s.rekordbox_track_id, s.candidate_track_ids, s.cover_path, s.status, s.detected_at, a.session_id
              FROM rekordbox_masterdb_artwork_syncs s
              JOIN tracks t ON t.id = s.track_id
+             LEFT JOIN actions a ON a.id = s.action_id
              WHERE s.status IN ('pending', 'ambiguous')
              ORDER BY s.detected_at",
         )
@@ -514,6 +527,7 @@ pub(crate) fn rekordbox_masterdb_pending_artwork_syncs_inner(conn: &Connection) 
                 cover_path: r.get(5)?,
                 status: r.get(6)?,
                 detected_at: r.get(7)?,
+                session_id: r.get(8)?,
             })
         })
         .map_err(|e| e.to_string())?

@@ -685,6 +685,16 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .jrnl-session-group{margin-bottom:var(--space-12)}
 .jrnl-session-hd{font-size:var(--text-2xs);text-transform:uppercase;letter-spacing:var(--tracking-wider);color:var(--color-text-tertiary);padding:var(--space-4) 0 var(--space-8);border-top:0.5px solid var(--color-border-tertiary);margin-bottom:var(--space-4)}
 
+/* M8 Tier 1/3 candidate lists (rekordbox-view.ts) — collapsible groups by app session,
+   "Tout sélectionner"/"Tout désélectionner" per group. Mirrors .jrnl-session-* above (same
+   grouping concept, Journal) but needs a header row (toggle + select-all button) instead of a
+   plain label. */
+.rb-session-group{margin-bottom:var(--space-8)}
+.rb-session-hd{display:flex;align-items:center;gap:var(--space-8);padding:var(--space-4) 0}
+.rb-session-toggle{background:none;border:none;padding:0;font-size:var(--text-2xs);text-transform:uppercase;letter-spacing:var(--tracking-wider);color:var(--color-text-tertiary);cursor:pointer}
+.rb-session-toggle:hover{color:var(--color-text-secondary)}
+.rb-session-selectall{margin-left:auto;font-size:var(--text-2xs)}
+
 /* ── Revue detail (report-view.ts) — extracted inline styles, byte-identical values ───── */
 /* No scrollbar-gutter/overflow-y:scroll here (was added, then removed): in the Revue screen
    this element sits inside a plain, non-flex .sift-fil-report div, so it never actually grows

@@ -323,6 +323,8 @@ export interface PendingMasterdbRepair {
   to_path: string;
   status: "pending" | "ambiguous";
   detected_at: string;
+  /** The Sift app session that produced this candidate — null for pre-migration rows. */
+  session_id: string | null;
 }
 
 export interface ApplyRepairOutcome {
@@ -347,6 +349,8 @@ export interface PendingMetadataSync {
   new_genre: string | null;
   status: "pending" | "ambiguous";
   detected_at: string;
+  /** The Sift app session that produced this candidate — null for pre-migration rows. */
+  session_id: string | null;
 }
 
 export interface ApplyMetadataSyncOutcome {
@@ -367,6 +371,8 @@ export interface PendingArtworkSync {
   cover_path: string;
   status: "pending" | "ambiguous";
   detected_at: string;
+  /** The Sift app session that produced this candidate — null for pre-migration rows. */
+  session_id: string | null;
 }
 
 export interface ApplyArtworkSyncOutcome {
