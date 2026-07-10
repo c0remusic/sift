@@ -121,17 +121,24 @@ impl SpectrumAccumulator {
         self.frames_total += 1;
     }
 
-    /// Detect the cutoff as the **highest sharp cliff into the noise floor** in the LTAS.
+    /// Detect the cutoff as the **highest sharp relative cliff** in the LTAS.
     ///
     /// A lossy lowpass (MP3/AAC, or an encoder brickwall) leaves a steep drop from real
-    /// content down to the digital noise floor, with silence above it. We scan from just
-    /// below Nyquist downward and return the highest frequency where the level drops by
-    /// `DROP_DB` across a ~500 Hz band AND the side above that drop sits at the noise floor.
-    /// If no such cliff exists, the energy tapers all the way up → genuine full-band → Nyquist.
+    /// content down to a much quieter residual. We scan from just below Nyquist downward
+    /// and return the highest frequency where the level drops by `DROP_DB` across a ~500 Hz
+    /// band. If no such cliff exists, the energy tapers all the way up → genuine full-band
+    /// → Nyquist.
     ///
-    /// This is robust to bass-heavy music: it keys off the *shape* (a cliff into silence),
-    /// not an absolute level relative to the (bass) spectral peak — which used to make quiet
-    /// but real treble look "absent" and under-report the cutoff.
+    /// This is robust to bass-heavy music: it keys off the *shape* (a relative cliff), not
+    /// an absolute level relative to the (bass) spectral peak — which used to make quiet but
+    /// real treble look "absent" and under-report the cutoff.
+    ///
+    /// Deliberately does NOT require the level above the cliff to collapse near the file's
+    /// absolute quietest bin (a prior version did — see BUG-2). A real encoder's residual
+    /// noise above its lowpass decays gradually over several kHz rather than dropping
+    /// straight to true digital silence, so that extra check silently missed real cliffs on
+    /// genuine files (measured: -37dB right after a real ~16kHz cliff, only reaching -95dB
+    /// ~4kHz later) — only a synthetic true-silence test signal ever satisfied it.
     fn detect_cutoff(&self) -> f32 {
         if self.frames_total == 0 || self.bins < 8 {
             return 0.0;
@@ -156,18 +163,8 @@ impl SpectrumAccumulator {
             avg_db[lo..hi].iter().sum::<f32>() / (hi - lo) as f32
         };
 
-        // global noise floor = quietest smoothed level (the digital/quantisation floor)
-        let mut floor = f32::INFINITY;
-        for k in 1..self.bins {
-            let v = smooth(k);
-            if v < floor {
-                floor = v;
-            }
-        }
-
         let band = ((500.0 / hz_per_bin).ceil() as usize).max(2);
         const DROP_DB: f32 = 18.0; // a real cliff drops at least this much across the band
-        const FLOOR_TOL: f32 = 10.0; // the side above the cliff must collapse to ~the floor
 
         let guard = band + win + 1;
         if self.bins <= 2 * guard {
@@ -176,11 +173,11 @@ impl SpectrumAccumulator {
         for k in (guard..self.bins - guard).rev() {
             let above = (k + 1..=k + band).map(smooth).sum::<f32>() / band as f32;
             let below = (k - band..k).map(smooth).sum::<f32>() / band as f32;
-            if below - above >= DROP_DB && above <= floor + FLOOR_TOL {
+            if below - above >= DROP_DB {
                 return k as f32 * hz_per_bin;
             }
         }
-        // no cliff into silence anywhere → content reaches the top → genuine full-band
+        // no cliff anywhere → content reaches the top → genuine full-band
         nyq_hz
     }
 
@@ -285,5 +282,54 @@ mod tests {
         a.push(&sig);
         let report = a.finish();
         assert!(report.cutoff_hz > 18000.0, "cutoff {} should be near Nyquist", report.cutoff_hz);
+    }
+
+    /// Reproduces the exact LTAS shape measured on a real, honestly-labelled 320kbps MP3
+    /// with a genuine ~16kHz encoder cliff (BUG-2 field case: "Sven Dohse - All In.mp3").
+    /// A real lossy encoder's residual noise above its lowpass does NOT collapse to true
+    /// digital silence — it decays gradually over several kHz (measured: -2.7dB just before
+    /// the cliff, -37.3dB right after it, only reaching -95dB roughly 4kHz later). The
+    /// previous detector required the level right after the cliff to already sit within
+    /// 10dB of the file's absolute quietest bin, which this real, gradually-decaying shape
+    /// never satisfies — so it fell through and reported Nyquist (no cliff found) instead of
+    /// the obvious ~16kHz drop. The detector must catch the cliff by its RELATIVE drop alone.
+    #[test]
+    fn cutoff_detected_on_real_world_gradual_decay_shape() {
+        // (freq_hz, dB) control points measured directly from the real file's LTAS.
+        const POINTS: &[(f32, f32)] = &[
+            (10121.0, 2.7), (10627.0, 3.6), (11133.0, 1.2), (11639.0, 1.0),
+            (12145.0, 0.8), (12651.0, 0.4), (13157.0, 0.2), (13663.0, -0.6),
+            (14169.0, -1.4), (14675.0, -1.6), (15181.0, -2.1), (15687.0, -2.7),
+            (16193.0, -37.3), (16699.0, -57.7), (17205.0, -66.4), (17711.0, -71.4),
+            (18217.0, -74.3), (18723.0, -78.7), (19229.0, -72.1), (19735.0, -83.0),
+            (20241.0, -94.4), (20747.0, -76.3), (21253.0, -93.3), (21759.0, -92.4),
+        ];
+        fn interp_db(freq: f32) -> f32 {
+            if freq <= POINTS[0].0 {
+                return POINTS[0].1;
+            }
+            for w in POINTS.windows(2) {
+                let (f0, d0) = w[0];
+                let (f1, d1) = w[1];
+                if freq <= f1 {
+                    let t = (freq - f0) / (f1 - f0);
+                    return d0 + t * (d1 - d0);
+                }
+            }
+            POINTS.last().unwrap().1
+        }
+
+        let mut a = SpectrumAccumulator::new(SR, 4096, false);
+        let hz_per_bin = a.sr as f32 / a.fft_size as f32;
+        a.frames_total = 1;
+        for k in 0..a.bins {
+            let db = interp_db(k as f32 * hz_per_bin);
+            a.ltas[k] = 10f64.powf(db as f64 / 10.0);
+        }
+        let report = a.finish();
+        assert!(report.cutoff_hz > 15500.0 && report.cutoff_hz < 17000.0,
+            "cutoff {} should sit at the ~16.2kHz cliff despite gradual residual decay above it \
+             (a real encoder never collapses to true digital silence within one averaging band)",
+            report.cutoff_hz);
     }
 }
