@@ -266,6 +266,7 @@ mod tests {
             declared_rail: Rail::Lossless,
             cutoff_hz: 16000.0,
             verdict: Verdict::Fake,
+            container_mismatch: false,
             est_kbps: 128,
             peaks: vec![],
             spectrogram: Spectrogram { frames: 0, bins: 0, hz_per_bin: 0.0, sec_per_frame: 0.0, mag_db: vec![] },

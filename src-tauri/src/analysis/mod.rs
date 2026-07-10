@@ -52,6 +52,11 @@ pub struct AnalysisReport {
     pub declared_rail: Rail,
     pub cutoff_hz: f32,
     pub verdict: Verdict,
+    /// True when the declared rail claims Lossless but the real container (magic-byte
+    /// sniffed) is Lossy — the specific Fake cause where the spectral cutoff can sit near
+    /// Nyquist (unlike a genuine spectral-cliff transcode), so the UI must caption it
+    /// differently. Mirrors the same condition `verdict::verdict` short-circuits on.
+    pub container_mismatch: bool,
     /// Equivalent lossy bitrate estimated from `cutoff_hz` (FIX-11: single source of truth,
     /// see `verdict::estimate_kbps` — the front no longer computes this itself).
     pub est_kbps: u32,
@@ -149,6 +154,7 @@ pub fn analyze(path: &str, with_spectrogram: bool) -> Result<AnalysisReport, Str
     } else {
         Rail::Unknown
     };
+    let container_mismatch = tag.declared_rail == Rail::Lossless && content_rail == Rail::Lossy;
     let verdict = verdict::verdict(cutoff_hz, tag.declared_rail, tag.declared_bitrate, content_rail);
     let est_kbps = verdict::estimate_kbps(cutoff_hz);
 
@@ -171,6 +177,7 @@ pub fn analyze(path: &str, with_spectrogram: bool) -> Result<AnalysisReport, Str
         declared_rail: tag.declared_rail,
         cutoff_hz,
         verdict,
+        container_mismatch,
         est_kbps,
         peaks: pk.finish(),
         spectrogram: spec_res.spectrogram,
@@ -207,6 +214,7 @@ mod tests {
             declared_rail: Rail::Lossless,
             cutoff_hz: 21000.0,
             verdict: Verdict::Ok,
+            container_mismatch: false,
             est_kbps: 320,
             peaks: vec![0.0, 1.0],
             spectrogram: Spectrogram { frames: 0, bins: 0, hz_per_bin: 0.0, sec_per_frame: 0.0, mag_db: vec![] },
@@ -228,6 +236,7 @@ mod tests {
         let j = serde_json::to_string(&r).unwrap();
         assert!(j.contains("\"verdict\":\"ok\""));
         assert!(j.contains("\"declared_rail\":\"lossless\""));
+        assert!(j.contains("\"container_mismatch\":false"));
     }
 
     /// BUG-1 end-to-end: an MP3 renamed with a `.flac` extension must be caught by

@@ -88,7 +88,8 @@ function realQuality(r: AnalysisReport): { label: string; bg: string; fg: string
   return { label: real, bg: "var(--color-background-success)", fg: "var(--color-text-success)" };
 }
 
-function spectroCaption(v: AnalysisReport["verdict"]): string {
+function spectroCaption(v: AnalysisReport["verdict"], containerMismatch: boolean): string {
+  if (v === "fake" && containerMismatch) return "conteneur .flac mais contenu MP3 détecté — extension falsifiée";
   if (v === "fake") return "coupure nette = transcodage probable";
   if (v === "grey") return "à vérifier visuellement";
   return "énergie pleine bande = encodage conforme";
@@ -554,7 +555,7 @@ function spectroAndTagsHtml(r: AnalysisReport): string {
     }) +
     `<div class="sift-sg-body sift-spectro-body">` +
     `<div class="sift-spectro-body-inner">` +
-    `<div class="sift-spectro-declared">Déclaré <span class="pill">${esc(r.declared_format)}</span> ${r.declared_rail}${r.declared_bitrate ? " · " + r.declared_bitrate + " kbps" : ""} · coupure ${fmt(r.cutoff_hz, 0)} Hz — ${spectroCaption(r.verdict)}</div>` +
+    `<div class="sift-spectro-declared">Déclaré <span class="pill">${esc(r.declared_format)}</span> ${r.declared_rail}${r.declared_bitrate ? " · " + r.declared_bitrate + " kbps" : ""} · coupure ${fmt(r.cutoff_hz, 0)} Hz — ${spectroCaption(r.verdict, r.container_mismatch)}</div>` +
     `<div class="sift-spectro-canvas-wrap">` +
     `<canvas class="sift-sg sift-spectro-canvas" width="720" height="180" role="img" aria-label="Spectrogramme audio"></canvas>` +
     // Canvas transparent superposé — ne dessine QUE le réticule au survol (wireSpectroHover),
