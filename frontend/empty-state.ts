@@ -3,12 +3,7 @@
 // "Aller à Revue →" link (Revue itself is the entry point, so it never gets the link). Single
 // source of markup so the three callers (filing.ts, ecartes-view.ts, sift-live.ts) render the
 // exact same structure instead of three ad hoc variants.
-import { requireEl } from "./dom";
-
-const esc = (s: string) =>
-  s.replace(/[&<>"']/g, (c) =>
-    c === "&" ? "&amp;" : c === "<" ? "&lt;" : c === ">" ? "&gt;" : c === '"' ? "&quot;" : "&#39;",
-  );
+import { requireEl, esc } from "./dom";
 
 export interface EmptyStateOpts {
   /** Short heading, e.g. "Rien dans Écartés". */

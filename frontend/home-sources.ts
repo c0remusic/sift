@@ -8,13 +8,9 @@
 import { listSources, addSource, removeSource, setSourceWatched, getSetting } from "./ipc";
 import { open } from "@tauri-apps/plugin-dialog";
 import type { Source } from "../shared/contracts";
+import { esc } from "./dom";
 
 const LIBRARY_ROOT = "library_root"; // same setting key filing.ts gates the destination tree on
-
-const esc = (s: string) =>
-  s.replace(/[&<>"']/g, (c) =>
-    c === "&" ? "&amp;" : c === "<" ? "&lt;" : c === ">" ? "&gt;" : c === '"' ? "&quot;" : "&#39;",
-  );
 
 /** Selected source persists across re-renders (watcher/refresh events) by id, not index —
  * the list can reorder/shrink under us. */

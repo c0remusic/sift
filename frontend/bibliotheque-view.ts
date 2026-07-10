@@ -7,7 +7,7 @@
 // property assignment instead (same pattern bibState already used).
 import { listLibrary, libraryFolders, libraryStats } from "./ipc";
 import type { LibraryTrack, LibraryFacets, LibraryFilter, DupGroup, DashboardStats } from "../shared/contracts";
-import { requireEl } from "./dom";
+import { requireEl, esc } from "./dom";
 import { emptyStateHtml, wireEmptyState } from "./empty-state";
 import { createVirtualList, type VirtualList } from "./list-virtual";
 import {
@@ -22,11 +22,6 @@ import {
   type LibrarySortState,
 } from "./library-views";
 import { openLibraryDetailInto } from "./library-detail";
-
-const esc = (s: string) =>
-  s.replace(/[&<>"']/g, (c) =>
-    c === "&" ? "&amp;" : c === "<" ? "&lt;" : c === ">" ? "&gt;" : c === '"' ? "&quot;" : "&#39;",
-  );
 
 // Bibliothèque browser state: active filter, which facet column (folder/genre) is shown,
 // and the last fetched track list (so a row-click can recover the track's path).

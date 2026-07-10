@@ -4,11 +4,7 @@
 // this file owns only "how one row/tile of the filed-track list looks".
 import type { LibraryTrack } from "../shared/contracts";
 import { convertFileSrc } from "@tauri-apps/api/core";
-
-const esc = (s: string) =>
-  s.replace(/[&<>"']/g, (c) =>
-    c === "&" ? "&amp;" : c === "<" ? "&lt;" : c === ">" ? "&gt;" : c === '"' ? "&quot;" : "&#39;",
-  );
+import { esc } from "./dom";
 
 export function fmtDur(sec: number | null): string {
   if (!sec || sec <= 0) return "—";

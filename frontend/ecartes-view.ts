@@ -4,7 +4,7 @@
 // re-renders via this module's renderEcartes.
 import { listEcartes } from "./ipc";
 import type { EcarteItem } from "../shared/contracts";
-import { requireEl } from "./dom";
+import { requireEl, esc } from "./dom";
 import { createVirtualList, type VirtualList } from "./list-virtual";
 import { emptyStateHtml, wireEmptyState } from "./empty-state";
 
@@ -14,11 +14,6 @@ import { emptyStateHtml, wireEmptyState } from "./empty-state";
 // (a resourcing row has a second action line; a trash row is single-line).
 let resVirtual: VirtualList<EcarteItem> | null = null;
 let trashVirtual: VirtualList<EcarteItem> | null = null;
-
-const esc = (s: string) =>
-  s.replace(/[&<>"']/g, (c) =>
-    c === "&" ? "&amp;" : c === "<" ? "&lt;" : c === ">" ? "&gt;" : c === '"' ? "&quot;" : "&#39;",
-  );
 
 // Reason chip for an écarté track (truncated → tronqué, fake → faux, else à re-sourcer). Uses
 // the shared .sift-vchip component so tone/shape stay consistent across screens.

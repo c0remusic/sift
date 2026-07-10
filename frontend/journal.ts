@@ -9,18 +9,13 @@
 
 import type { JournalEntry } from "../shared/contracts";
 import { listJournal, getSessionId, revertBatch } from "./ipc";
-import { requireEl } from "./dom";
+import { requireEl, esc } from "./dom";
 import { confirmAction } from "./confirm-modal";
 import { emptyStateHtml, wireEmptyState } from "./empty-state";
 
 // ---------------------------------------------------------------------------
 // Pure helpers
 // ---------------------------------------------------------------------------
-
-const esc = (s: string) =>
-  s.replace(/[&<>"']/g, (c) =>
-    c === "&" ? "&amp;" : c === "<" ? "&lt;" : c === ">" ? "&gt;" : c === '"' ? "&quot;" : "&#39;",
-  );
 
 function basenameNoExt(p: string | null): string {
   if (!p) return "";

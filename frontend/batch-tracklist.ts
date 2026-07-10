@@ -3,6 +3,8 @@
 // progress, the rest wait), reconciled at file:done (filed vs needs_validation). file:progress is a
 // BURST event, so rows are created ONCE in startBatchTracklist and only MUTATED afterwards — never
 // re-innerHTML'd in the update path (the front-events rule in CLAUDE.md).
+import { esc } from "./dom";
+
 type BtState = "wait" | "run" | "done" | "fail";
 
 interface BtRow {
@@ -21,9 +23,6 @@ const PILL: Record<BtState, { cls: string; html: string }> = {
   done: { cls: "sift-bt-done", html: '<i class="ti ti-check"></i> <span class="sift-bt-pill-label">fait</span>' },
   fail: { cls: "sift-bt-fail", html: '<i class="ti ti-alert-triangle"></i> <span class="sift-bt-pill-label">échec</span>' },
 };
-
-const esc = (s: string) =>
-  s.replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c]!);
 
 /** One row's inner markup: pill + (ellipsised) name + an optional non-truncating right suffix
  *  (used in "file in place" mode to show each track's real source folder). */

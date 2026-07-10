@@ -4,11 +4,7 @@
 // lives in each caller (it differs: filing edits canonical fields, the library edits a
 // filed track's metadata). Keeps the candidate markup in one place (spec: zero duplication).
 import type { Candidate } from "./ipc";
-
-const esc = (s: string) =>
-  s.replace(/[&<>"']/g, (c) =>
-    c === "&" ? "&amp;" : c === "<" ? "&lt;" : c === ">" ? "&gt;" : c === '"' ? "&quot;" : "&#39;",
-  );
+import { esc } from "./dom";
 
 /** Cover thumbnail (or vinyl placeholder) for a candidate row. */
 function candCoverHtml(c: Candidate): string {

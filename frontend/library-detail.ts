@@ -17,12 +17,7 @@ import { renderCandidates } from "./identify-shared";
 import { openReportInto } from "./report-view";
 import { open } from "@tauri-apps/plugin-dialog";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { requireEl } from "./dom";
-
-const esc = (s: string) =>
-  s.replace(/[&<>"']/g, (c) =>
-    c === "&" ? "&amp;" : c === "<" ? "&lt;" : c === ">" ? "&gt;" : c === '"' ? "&quot;" : "&#39;",
-  );
+import { requireEl, esc } from "./dom";
 
 /** Per-open editor state (one detail panel open at a time). `pendingCover` is set only when
  * the user picks a new image — left null otherwise so a save never re-embeds the same art. */
