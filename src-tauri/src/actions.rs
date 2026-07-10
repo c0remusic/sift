@@ -180,6 +180,19 @@ pub fn resolve_masterdb_index_if_linked(conn: &Connection) -> Option<crate::reko
     }
 }
 
+/// Normalizes a path for cross-format comparison against `master.db`'s `djmdContent.FolderPath`:
+/// Rekordbox always stores forward slashes (confirmed against a real `master.db` copy — every
+/// `FolderPath` row uses `/`, never `\`), while Sift's own `tracks.path` is a native Windows path
+/// (backslashes). A strict `==` between the two never matches on Windows, silently zeroing out
+/// every M8 Tier 1/3 candidate regardless of the file actually being linked correctly — found via
+/// manual verification against a real `master.db` copy (2026-07-10): a track with an
+/// unambiguously identical physical path on both sides produced no candidate until this fix.
+/// Also case-folds (Windows paths are case-insensitive) and trims, matching the leniency already
+/// used elsewhere in M8 for name matching (`sync_track_metadata`'s `COLLATE NOCASE` FK lookups).
+fn normalize_masterdb_path(path: &str) -> String {
+    path.trim().replace('\\', "/").to_lowercase()
+}
+
 /// Read-only detection: if a Rekordbox XML is linked, look up the sibling `master.db` for
 /// `djmdContent` rows whose `FolderPath` equals `from_path`, and record a candidate repair row —
 /// `pending` (exactly one match) or `ambiguous` (2+ matches, the real duplicate-path scenario the
@@ -207,10 +220,11 @@ pub fn detect_masterdb_repair_with_index(
     to_path: &str,
     action_id: i64,
 ) {
+    let lookup = normalize_masterdb_path(from_path);
     let matches: Vec<&str> = index
         .tracks
         .iter()
-        .filter(|t| t.folder_path == from_path)
+        .filter(|t| normalize_masterdb_path(&t.folder_path) == lookup)
         .map(|t| t.track_id.as_str())
         .collect();
 
@@ -301,10 +315,11 @@ pub fn detect_masterdb_metadata_sync_with_index(
     values: &MetadataSyncValues,
     action_id: i64,
 ) {
+    let lookup = normalize_masterdb_path(lookup_path);
     let matches: Vec<&str> = index
         .tracks
         .iter()
-        .filter(|t| t.folder_path == lookup_path)
+        .filter(|t| normalize_masterdb_path(&t.folder_path) == lookup)
         .map(|t| t.track_id.as_str())
         .collect();
 
@@ -365,10 +380,11 @@ pub fn detect_masterdb_artwork_sync_with_index(
     cover_path: &str,
     action_id: i64,
 ) {
+    let lookup = normalize_masterdb_path(lookup_path);
     let matches: Vec<&str> = index
         .tracks
         .iter()
-        .filter(|t| t.folder_path == lookup_path)
+        .filter(|t| normalize_masterdb_path(&t.folder_path) == lookup)
         .map(|t| t.track_id.as_str())
         .collect();
 
@@ -1397,6 +1413,29 @@ mod tests {
     }
 
     #[test]
+    fn detect_masterdb_repair_matches_native_windows_from_path_against_forward_slash_index() {
+        // Same regression as the Tier 3 metadata test above, but for the Tier 1 repair
+        // detector — the two share the exact same `normalize_masterdb_path` comparison.
+        let conn = db();
+        let tmp = tempfile::tempdir().unwrap();
+        let xml_path = seed_pioneer_dir_with_fixture(&tmp.path().join("pioneer"));
+        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+        let native_from = r"D:\FIXTURE\track1.mp3";
+        let action_id = record_row_only(&conn, "b1", None, "move", Some(native_from), Some("D:/FIXTURE/renamed/track1.flac"), None).unwrap();
+
+        detect_masterdb_repair_if_linked(&conn, native_from, "D:/FIXTURE/renamed/track1.flac", action_id);
+
+        let track_id: Option<String> = conn
+            .query_row(
+                "SELECT track_id FROM rekordbox_masterdb_repairs WHERE from_path=?1",
+                params![native_from],
+                |r| r.get(0),
+            )
+            .expect("repair row inserted despite backslash/forward-slash mismatch");
+        assert_eq!(track_id, Some("40000001".to_string()));
+    }
+
+    #[test]
     fn detect_masterdb_repair_no_op_when_no_xml_linked() {
         let conn = db();
         let action_id = record_row_only(&conn, "b1", None, "move", Some("D:/FIXTURE/track1.mp3"), Some("D:/FIXTURE/renamed/track1.flac"), None).unwrap();
@@ -1466,6 +1505,45 @@ mod tests {
         assert_eq!(new_year, Some(1985));
         assert_eq!(new_genre, Some("House".to_string()));
         assert_eq!(status, "pending");
+    }
+
+    #[test]
+    fn normalize_masterdb_path_folds_separators_and_case() {
+        assert_eq!(
+            normalize_masterdb_path(r"C:\Users\LEETJ\Music\Track.mp3"),
+            normalize_masterdb_path("C:/Users/LEETJ/Music/Track.mp3"),
+        );
+        assert_eq!(
+            normalize_masterdb_path(r"D:\Fixture\track1.MP3"),
+            normalize_masterdb_path("d:/fixture/TRACK1.mp3"),
+        );
+    }
+
+    #[test]
+    fn detect_masterdb_metadata_sync_matches_native_windows_path_against_forward_slash_index() {
+        // Regression for the M8 Tier 3 bug found 2026-07-10: `master.db` always stores
+        // `FolderPath` with forward slashes, but Sift's own `tracks.path` is a native Windows
+        // path (backslashes). A strict `==` never matched on Windows — this proves the
+        // normalized comparison does, using the exact same fixture path as the sibling
+        // "single_match" test above but expressed as Sift would actually store it.
+        let conn = db();
+        let tmp = tempfile::tempdir().unwrap();
+        let xml_path = seed_pioneer_dir_with_fixture(&tmp.path().join("pioneer"));
+        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+        let native_path = r"D:\FIXTURE\track1.mp3";
+        let track_id = seed_sift_track(&conn, native_path);
+        let action_id = record_row_only(&conn, "b1", Some(track_id), "tag_edit", Some(native_path), None, None).unwrap();
+
+        detect_masterdb_metadata_sync_if_linked(&conn, native_path, track_id, &some_values(), action_id);
+
+        let rb_track_id: Option<String> = conn
+            .query_row(
+                "SELECT rekordbox_track_id FROM rekordbox_masterdb_metadata_syncs WHERE track_id=?1",
+                params![track_id],
+                |r| r.get(0),
+            )
+            .expect("metadata sync row inserted despite backslash/forward-slash mismatch");
+        assert_eq!(rb_track_id, Some("40000001".to_string()));
     }
 
     #[test]
@@ -1590,6 +1668,29 @@ mod tests {
         assert_eq!(candidates, None);
         assert_eq!(cover_path, "/cache/covers/999.jpg");
         assert_eq!(status, "pending");
+    }
+
+    #[test]
+    fn detect_masterdb_artwork_sync_matches_native_windows_path_against_forward_slash_index() {
+        // Same regression as the Tier 3 metadata test above, but for the artwork detector.
+        let conn = db();
+        let tmp = tempfile::tempdir().unwrap();
+        let xml_path = seed_pioneer_dir_with_fixture(&tmp.path().join("pioneer"));
+        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+        let native_path = r"D:\FIXTURE\track1.mp3";
+        let track_id = seed_sift_track(&conn, native_path);
+        let action_id = record_row_only(&conn, "b1", Some(track_id), "tag_edit", Some(native_path), None, None).unwrap();
+
+        detect_masterdb_artwork_sync_if_linked(&conn, native_path, track_id, "/cache/covers/999.jpg", action_id);
+
+        let rb_track_id: Option<String> = conn
+            .query_row(
+                "SELECT rekordbox_track_id FROM rekordbox_masterdb_artwork_syncs WHERE track_id=?1",
+                params![track_id],
+                |r| r.get(0),
+            )
+            .expect("artwork sync row inserted despite backslash/forward-slash mismatch");
+        assert_eq!(rb_track_id, Some("40000001".to_string()));
     }
 
     #[test]

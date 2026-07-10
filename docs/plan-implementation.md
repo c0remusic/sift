@@ -369,9 +369,40 @@ empreintes Chromaprint).
 > `docs/superpowers/plans/2026-07-09-m8-tier3-metadata-sync-ipc-ui.md`,
 > design :
 > `docs/superpowers/specs/2026-07-09-m8-tier3-metadata-sync-ipc-ui-design.md`.
-> 323 tests + clippy + tsc clean. **Vérification manuelle `tauri dev`
-> restante** (lier un XML Rekordbox de test, retaguer une piste liée, confirmer
-> l'apparition de la section et le succès d'une application, Rekordbox fermé).
+> 323 tests + clippy + tsc clean.
+>
+> **BUG-3 trouvé et corrigé le 2026-07-10, pendant la vérification manuelle
+> `tauri dev`** : les 3 détecteurs (Tier 1 réparation, Tier 3 metadata, Tier 3
+> pochette) comparaient `t.folder_path == lookup_path` en égalité stricte.
+> Rekordbox stocke toujours `FolderPath` avec des slashes avant
+> (`D:/MUSIQUE/...`, vérifié sur une vraie copie), alors que `tracks.path` côté
+> Sift est un chemin Windows natif (antislashs). Sur Windows, cette comparaison
+> ne matchait donc **jamais**, quel que soit le fichier — angle mort
+> systématique des 349 tests existants (fixtures et tests contre copie réelle
+> utilisaient tous des chemins déjà en format slash-avant des deux côtés,
+> jamais un vrai chemin Windows natif contre l'index). Confirmé en reproduisant
+> le bug en direct : une piste au chemin physique identique des deux côtés ne
+> produisait aucun candidat avant le fix. Corrigé par une fonction partagée
+> `normalize_masterdb_path` (`actions.rs` : trim + slashs uniformisés + casse
+> repliée) appliquée aux 3 sites de comparaison, + 4 tests de régression
+> (chemin Windows natif contre index en slash-avant, pour chacun des 3
+> détecteurs, plus un test unitaire de la fonction elle-même). 349 tests +
+> clippy + tsc clean après fix (rebuild propre après un `cargo clean` requis —
+> cache incrémental corrompu par des rebuilds concurrents du watcher `tauri
+> dev` pendant l'investigation).
+>
+> **Vérification manuelle `tauri dev` restante** (côté clic réel dans l'UI —
+> le fix lui-même est prouvé par les 4 tests de régression, mais pas encore
+> confirmé par un clic utilisateur réel) : `tauri dev` est laissé tournant
+> avec le fix, XML de test déjà lié
+> (`rekordbox_xml_path` → copie isolée de `master.db`, voir
+> `scratchpad/m8-tier3-test/`). Reste à retaguer
+> `01 - The Brain Is....aif` (`C:\Users\LEETJ\Documents\Soulseek
+> Downloads\complete\`, confirmé présent dans la copie de test) et confirmer
+> l'apparition de la section Tier 3 metadata + le succès d'une application.
+> Non fait par l'agent lui-même : écrire un vrai tag ID3 sur un vrai fichier
+> utilisateur reste une action live nécessitant présence humaine (règle
+> CLAUDE.md), même pendant une session autonome.
 >
 > **Risque casse/normalisation fermé le 2026-07-09** : matching devenu
 > trim+insensible à la casse (`COLLATE NOCASE`), testé.
@@ -429,11 +460,14 @@ empreintes Chromaprint).
 > `docs/superpowers/changes/2026-07-09-m8-tier3-artwork-sync-ipc-ui/plan.md`,
 > design :
 > `docs/superpowers/changes/2026-07-09-m8-tier3-artwork-sync-ipc-ui/design.md`.
-> 346 tests + clippy + tsc clean. **Vérification manuelle `tauri dev`
-> restante** (lier un XML Rekordbox de test, donner une nouvelle pochette à
-> une piste liée, confirmer l'apparition de la section et le succès d'une
-> application, Rekordbox fermé, la nouvelle pochette visible après
-> réimport).
+> 346 tests + clippy + tsc clean, 349 après BUG-3 (voir le paragraphe BUG-3
+> sous la synchro metadata ci-dessus — même comparaison stricte de chemin,
+> même fix `normalize_masterdb_path`, corrigé dans le même geste). **Vérification
+> manuelle `tauri dev` restante** (lier un XML Rekordbox de test, donner une
+> nouvelle pochette à une piste liée, confirmer l'apparition de la section et
+> le succès d'une application, Rekordbox fermé, la nouvelle pochette visible
+> après réimport) — même limite que la synchro metadata : le clic réel reste
+> à faire par Antoine, pas par un agent en session autonome.
 - **Rekordbox `master.db`** : remplacement in-situ (Tier 1 livré, moteur+IPC+UI), **dédup des playlists existantes** (Tier 2 livré, moteur+IPC+UI), **réparation/prévention des liens cassés** (chemin change au changement de format — Tier 1). ⚠️ backup obligatoire (déjà implémenté), Rekordbox fermé (garde déjà implémentée).
 - **Normalisation loudness** (option, OFF par défaut).
 
