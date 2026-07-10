@@ -51,7 +51,8 @@
        {"line": 831, "topic": "Audit référence canonique — Journal"},
        {"line": 842, "topic": "Audit référence canonique — Bibliothèque"},
        {"line": 861, "topic": "Audit référence canonique — Réglages/Rekordbox/Clé USB"},
-       {"line": 881, "topic": "Historique des corrections (chronologique)"}
+       {"line": 881, "topic": "Historique des corrections (chronologique)"},
+       {"line": 1021, "topic": "2026-07-10 — audit cohérence palette (badges/track/gris/hardcodés/inputs/focus/selection/checkbox) + renommage Ranger→Convertir"}
      ]},
     {"path": "docs/skills-registre.md", "topic": "registre skills/agents/plugins", "summary": "Verdict par domaine (Rust, UI/design, revue de code...) sur quelle skill invoquer sur Sift, tenu à jour à la main."},
     {"path": "docs/plan-implementation.md", "topic": "plan d'implémentation actif", "summary": "Plan d'implémentation Sift par jalons M0-M8, mis à jour en continu (fichier actif, pas figé)."},

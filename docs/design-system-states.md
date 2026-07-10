@@ -1017,3 +1017,55 @@ icône 22×22 fixe) réutilisée pour des boutons texte, labels compressés et
 qui se chevauchent avec le texte voisin. Corrigé : `.lk` → `.lk-icon` (4
 vrais boutons icône-seule), boutons texte retombent sur `button{}` (voir
 entrée dédiée ci-dessus).
+
+**2026-07-10 (audit cohérence palette + interactions, `styles.css` + 8
+fichiers frontend)** : demande initiale de vérif deltas de contraste, élargie
+en 3 passes successives (retour utilisateur à chaque étape) :
+
+1. **Contraste badges/chips** — les 8 tokens `--color-background-{info,
+   danger,success,warning}` + `--color-hue-{indigo,purple,pink,teal}-bg`
+   étaient en alpha sur fond variable ; mesuré jusqu'à 3.37:1 (échoue AA
+   4.5:1) sur les cartes les plus sombres. Passés en couleurs pleines, même
+   teinte, résolus à ~5:1 partout (clair + sombre).
+2. **Pastille segmentée `--color-track` en sombre** — plus claire que son
+   environnement (32.04% entre bg-primary 27.57% et bg-tertiary 31.64%) au
+   lieu du neutre le plus sombre comme en clair. 3 itérations avec retour
+   utilisateur (32.04%→22.5%→25%, puis unifié sur `var(--color-background-
+   primary)` pour ne plus avoir de valeur séparée à retuner).
+3. **Cohérence teinte/chroma des gris sombres** — 3 clusters de hue
+   distincts (92°/99°/107°) au lieu d'une seule direction comme en clair ;
+   unifiés sur H=77.5° (la teinte dominante du clair), chroma resserrée.
+4. **3 couleurs codées en dur retrouvées** (violaient la règle "tokens
+   obligatoires") : `.sift-wave-hover` (blanc fixe), `.sift-kbd-hint-id`
+   (noir fixe, illisible en sombre — 1.38:1 mesuré), `--color-text-on-accent`
+   (jamais défini, fallback `#fff` caché).
+5. **Champs éditables incohérents** — `.sift-editor-input` (Revue/
+   Bibliothèque) utilisait un fond plus CLAIR que sa carte (flotte) au lieu
+   du renfoncement du champ Jeton Discogs (fond plus sombre) ; unifiés sur
+   `--color-background-primary` partout. Bug de spécificité trouvé au passage
+   : le champ Jeton avait son style inline dupliqué, empêchant le focus de
+   s'appliquer — migré vers la classe partagée.
+6. **Focus des inputs texte** — l'outline générique offset (2px + 1px offset)
+   jugée trop dure au clic ; remplacée par un simple changement de couleur de
+   bordure (pas de box-shadow ajouté — un premier essai avec halo a été jugé
+   "2 bordures").
+7. **Audit suite ("check tout")** : `::selection` totalement absent (bleu
+   navigateur non thémé) → ajouté. Checkboxes natives ne matchaient AUCUNE
+   règle focus (ni générique ni celle des inputs) — au moins une vraie case
+   (`filing.ts`, toggle "Sur place") tombait sur l'outline navigateur brut ;
+   règle dédiée ajoutée (1.5px, plus fine que le générique). 10 widgets de
+   type checkbox recensés au total (6 natifs + 4 `role="checkbox"` custom) ;
+   les boutons désactivés (4 patterns différents dans le fichier) vérifiés un
+   par un, tous lisibles.
+8. **Renommage terminologie "Ranger"→"Convertir"** (retour utilisateur,
+   "englobe tout ce que fait le bouton") — 20 chaînes utilisateur dans 8
+   fichiers frontend ; identifiants internes (`doRanger`, `data-fil="ranger"`,
+   `.sift-ranger-btn`) volontairement inchangés.
+
+2 régressions introduites puis trouvées par le même audit de cohérence avant
+tout commit : `--overlay-wave-hover` posé seulement dans les 2 blocs sombres
+(oublié en clair au moment de sa création) ; diff systématique des noms de
+tokens entre les 3 blocs de thème confirmant qu'aucune autre asymétrie ne
+subsiste. Tout vérifié en direct sur le vrai process Tauri (CDP, port 9222,
+`Emulation.setFocusEmulationEnabled` pour que `:focus-visible` matche sous
+automatisation) dans les deux thèmes, pas seulement lu dans le code.
