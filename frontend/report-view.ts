@@ -6,7 +6,7 @@ import { analyzePath } from "./ipc";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import WaveSurfer from "wavesurfer.js";
 import type { AnalysisReport } from "../shared/contracts";
-import { requireEl } from "./dom";
+import { requireEl, esc } from "./dom";
 
 const PEAKS_WINDOW = 512; // must match analysis::PEAKS_WINDOW
 
@@ -56,11 +56,6 @@ const mmss = (s: number) => {
   const m = Math.floor(s / 60);
   return `${m}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 };
-
-const esc = (s: string) =>
-  s.replace(/[&<>"']/g, (c) =>
-    c === "&" ? "&amp;" : c === "<" ? "&lt;" : c === ">" ? "&gt;" : c === '"' ? "&quot;" : "&#39;",
-  );
 const fmt = (n: number, d = 1) => (Number.isFinite(n) ? n.toFixed(d) : String(n));
 
 /** The file's REAL quality (what the audio actually is), derived from the analysis — shown
@@ -439,6 +434,15 @@ function playerRowHtml(name: string, path: string, closeBtn = false, headerOpts:
     `<div class="sift-slider-thumb sift-volume-thumb"></div>` +
     `</div></div>` +
     `<div class="sift-player-spacer"></div>` +
+    // Tempo/key-lock are DJ mixing controls, not needed for the actual task on this screen
+    // (verify the file, decide where it goes) — moved behind a disclosure so a non-technical
+    // user isn't shown 2 extra controls to ignore on every single track (audit finding #6,
+    // 2026-07-10). Volume stays visible (basic playback, expected by anyone). Native
+    // <details>/<summary> — elements stay in the DOM when collapsed, so mountPlayer's
+    // querySelector-based wiring below is unaffected by visibility.
+    `<details class="sift-listen-advanced">` +
+    `<summary class="sift-listen-advanced-summary">Écoute avancée</summary>` +
+    `<div class="sift-listen-advanced-body">` +
     `<div class="sift-key-block" title="Key-lock : le tempo ne change pas la tonalité (off = varispeed)">` +
     `<span class="sift-slider-label">Key-lock</span>` +
     `<button class="sift-key sift-key-btn" aria-pressed="true">ON</button>` +
@@ -450,6 +454,7 @@ function playerRowHtml(name: string, path: string, closeBtn = false, headerOpts:
     `<div class="sift-slider-fill sift-tempo-fill"></div>` +
     `<div class="sift-slider-thumb sift-tempo-thumb"></div>` +
     `</div></div>` +
+    `</div></details>` +
     `</div></div>`
   );
 }
@@ -571,6 +576,16 @@ function spectroAndTagsHtml(r: AnalysisReport): string {
     row("Verdict", r.verdict, false) +
     row("Coupure", fmt(r.cutoff_hz, 0) + " Hz") +
     row("Durée", fmt(r.duration_sec, 1) + " s") +
+    `</div>` +
+    // Non-technical users open "Diagnostic audio" to understand a verdict, not to read raw
+    // engineering measurements — verdict/coupure/durée above answer that; everything else
+    // (true-peak, DC offset, écrêtage, corrélation de phase…) is jargon with no vulgarization,
+    // so it moves behind a second, nested disclosure (audit finding #5, 2026-07-10). Native
+    // <details> — no new JS wiring needed, doesn't touch wireSpectrogram's querySelector-based
+    // toggle for the OUTER "Diagnostic audio" panel.
+    `<details class="sift-spectro-tech">` +
+    `<summary class="sift-spectro-tech-summary">Détails techniques</summary>` +
+    `<div class="sift-spectro-rows">` +
     row("Canaux", String(r.channels) + (r.dual_mono ? " (dual-mono)" : "")) +
     row("True-peak", fmt(r.true_peak_dbtp, 2) + " dBTP") +
     row("DC offset", fmt(r.dc_offset, 5)) +
@@ -582,7 +597,7 @@ function spectroAndTagsHtml(r: AnalysisReport): string {
     row("Conteneur OK", yn(r.container_ok)) +
     row("Fréquence d'échantillonnage", r.sample_rate + " Hz") +
     row("Pics (couverture)", peaksCoverage(r)) +
-    `</div></div></div></div>` +
+    `</div></details></div></div>` +
     // Tags CDJ OK / Version ID3 moved to the Identification card (filing.ts, alongside Label/
     // Année/Genre) — Pochette dropped entirely (redondant avec la pochette déjà visible dans le
     // hero). Nothing meaningful was left in the old "Tags" box, so it's gone too; codec_error is

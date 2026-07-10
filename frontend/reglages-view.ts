@@ -5,16 +5,11 @@
 // installLiveWiring's delegated click handler, so no cross-module state wiring is needed.
 import { getSetting, setSetting, openUrl, listRemovableDrives } from "./ipc";
 import type { RemovableDrive } from "./ipc";
-import { requireEl } from "./dom";
+import { requireEl, esc } from "./dom";
 import { openUsbFormatModal } from "./usb-format-modal";
 import { setTheme } from "./theme";
 import type { ThemeChoice } from "./theme";
 import { open as openFolderDialog } from "@tauri-apps/plugin-dialog";
-
-const esc = (s: string) =>
-  s.replace(/[&<>"']/g, (c) =>
-    c === "&" ? "&amp;" : c === "<" ? "&lt;" : c === ">" ? "&gt;" : c === '"' ? "&quot;" : "&#39;",
-  );
 
 /** Holds the currently-attached `sift:usb-format-done` window listener, if any, so
  * `renderReglagesLive()` can remove it before attaching a new one. Without this, every re-render

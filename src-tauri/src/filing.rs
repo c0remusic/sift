@@ -525,7 +525,20 @@ fn rollback_fs(log: &[FsLog]) {
 /// the slow file I/O never runs inside the write transaction. Its behaviour is unchanged
 /// (`move`/`convert` rows only, `from != to`) — only its timing moves from mid-insert to
 /// post-commit. It cannot fail the filing (errors are logged and swallowed, as before).
-pub fn commit_file(conn: &Connection, plan: &FilePlan, log: Vec<FsLog>) -> Result<FileResult, FilingError> {
+///
+/// `xml_repair_sink`: when `Some`, move/convert `(from, to)` pairs needing an XML repair are
+/// pushed here INSTEAD OF being repaired immediately — the caller (`ipc_filing::run_file_batch`)
+/// collects them across every track in a batch and repairs the linked XML ONCE via
+/// `actions::repair_rekordbox_xml_batch`, instead of once per track (audited 2026-07-05, finding
+/// P4: up to 200 independent read+parse+write cycles of the same file on a 200-track batch). `None`
+/// preserves the original immediate-repair behaviour, used by the single-file commit path
+/// (`ipc_filing::file_track`) where there is only ever one pair, so batching buys nothing.
+pub fn commit_file(
+    conn: &Connection,
+    plan: &FilePlan,
+    log: Vec<FsLog>,
+    xml_repair_sink: Option<&mut Vec<(String, String)>>,
+) -> Result<FileResult, FilingError> {
     let conf = match plan.canonical.confidence {
         naming::Confidence::Green => "green",
         naming::Confidence::Yellow => "yellow",
@@ -572,8 +585,16 @@ pub fn commit_file(conn: &Connection, plan: &FilePlan, log: Vec<FsLog>) -> Resul
     // detectors need the same decrypted `master.db` index — read it ONCE per commit (not once per
     // detector per row) rather than have each detector independently decrypt the file.
     let masterdb_index = actions::resolve_masterdb_index_if_linked(conn);
+    let mut xml_repair_sink = xml_repair_sink;
     for (fs, action_id) in log.iter().zip(action_ids.iter()) {
-        actions::maybe_repair_rekordbox_xml(conn, fs.kind, Some(&fs.from), Some(&fs.to));
+        match xml_repair_sink.as_mut() {
+            Some(sink) => {
+                if matches!(fs.kind, "move" | "convert") && fs.from != fs.to {
+                    sink.push((fs.from.clone(), fs.to.clone()));
+                }
+            }
+            None => actions::maybe_repair_rekordbox_xml(conn, fs.kind, Some(&fs.from), Some(&fs.to)),
+        }
         if let Some(index) = &masterdb_index {
             actions::maybe_detect_masterdb_repair_with_index(conn, index, fs.kind, Some(&fs.from), Some(&fs.to), *action_id);
             if matches!(fs.kind, "move" | "convert") {
@@ -614,7 +635,7 @@ pub fn file_track(
 ) -> Result<FileResult, FilingError> {
     let plan = plan_file(conn, root, template, track_id, bin_rel, override_target, edited, allow_rail_mismatch, &HashSet::new())?;
     let log = execute_file(&plan)?;
-    commit_file(conn, &plan, log)
+    commit_file(conn, &plan, log, None)
 }
 
 /// Canonical metadata persisted by an earlier Discogs identification (the `metadata` table),
@@ -944,7 +965,7 @@ mod tests {
         assert!(std::path::Path::new(&plan.dest).exists());
 
         conn.execute("DELETE FROM tracks WHERE id=?1", params![id]).unwrap();
-        assert!(commit_file(&conn, &plan, log).is_err(), "commit must fail once its track row is gone");
+        assert!(commit_file(&conn, &plan, log, None).is_err(), "commit must fail once its track row is gone");
 
         // Nothing left half-filed: the file is back at its original path, gone from the bin.
         assert!(src.exists(), "rollback must restore the file at its original path");
@@ -1285,7 +1306,7 @@ mod tests {
             meta: None,
         }];
 
-        commit_file(&conn, &plan, log).expect("commit_file");
+        commit_file(&conn, &plan, log, None).expect("commit_file");
 
         let action_id: i64 = conn
             .query_row(

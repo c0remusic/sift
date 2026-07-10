@@ -225,6 +225,15 @@ pub enum MasterDbError {
     /// artwork live peuvent être dans un état incohérent.
     #[allow(dead_code)]
     ArtworkWriteVerificationFailedRollbackFailed(String),
+    /// `djmdContent.ImagePath` contient un composant `..` ou un préfixe de
+    /// lecteur — refuse plutôt que de résoudre un chemin hors de
+    /// `pioneer_dir/share` (containment, même logique que
+    /// `library::safe_join`).
+    #[allow(dead_code)]
+    ArtworkPathEscapesRoot {
+        /// L'`ImagePath` brut refusé.
+        path: String,
+    },
 }
 
 impl std::fmt::Display for MasterDbError {
@@ -283,6 +292,9 @@ impl std::fmt::Display for MasterDbError {
                     f,
                     "artwork write verification failed AND rollback failed — manual attention needed: {m}"
                 )
+            }
+            MasterDbError::ArtworkPathEscapesRoot { path } => {
+                write!(f, "ImagePath escapes the share root, refusing to resolve: {path}")
             }
         }
     }
@@ -383,8 +395,7 @@ pub struct PlaylistDuplicateGroup {
 /// → deserialize → query, no write).
 #[allow(dead_code)]
 pub fn detect_playlist_duplicates(path: &Path) -> Result<Vec<PlaylistDuplicateGroup>, MasterDbError> {
-    let raw = std::fs::read(path).map_err(|e| MasterDbError::Io(e.to_string()))?;
-    let plaintext = decrypt_masterdb(&raw)?;
+    let plaintext = read_and_decrypt_cached(path)?;
 
     let mut conn = Connection::open_in_memory().map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
     let len = plaintext.len();
@@ -505,6 +516,48 @@ fn decrypt_page_body(
         .decrypt_padded_vec_mut::<NoPadding>(ciphertext)
         .map_err(|_| MasterDbError::Decrypt { page: page_no })?;
     Ok(plain)
+}
+
+/// Cached result of the last `read_and_decrypt_cached` call — keyed by path +
+/// mtime + len so a write to `master.db` (which always changes at least one
+/// of those) self-invalidates it, no explicit invalidation call needed.
+struct DecryptCache {
+    path: PathBuf,
+    mtime: std::time::SystemTime,
+    len: u64,
+    plaintext: Vec<u8>,
+}
+
+static DECRYPT_CACHE: std::sync::OnceLock<std::sync::Mutex<Option<DecryptCache>>> = std::sync::OnceLock::new();
+
+/// Reads and decrypts `master.db`, reusing the last decrypted plaintext when the file's
+/// mtime+len haven't changed since. The Rekordbox integration page (`rekordbox-view.ts`)
+/// calls `read_rekordbox_masterdb`/`read_playlist_names`/`detect_playlist_duplicates`
+/// independently after every micro-action (checkbox toggle, dismiss, apply) — before this
+/// cache, each of those re-ran the full AES-CBC decrypt + per-page HMAC verify of the whole
+/// file on every call, several times per render. Poisoned-mutex/any-error paths fall back to
+/// an uncached read rather than failing the caller for a cache-layer problem alone.
+fn read_and_decrypt_cached(path: &Path) -> Result<Vec<u8>, MasterDbError> {
+    let meta = std::fs::metadata(path).map_err(|e| MasterDbError::Io(e.to_string()))?;
+    let mtime = meta.modified().map_err(|e| MasterDbError::Io(e.to_string()))?;
+    let len = meta.len();
+
+    let cache = DECRYPT_CACHE.get_or_init(|| std::sync::Mutex::new(None));
+    if let Ok(guard) = cache.lock() {
+        if let Some(c) = guard.as_ref() {
+            if c.path == path && c.mtime == mtime && c.len == len {
+                return Ok(c.plaintext.clone());
+            }
+        }
+    }
+
+    let raw = std::fs::read(path).map_err(|e| MasterDbError::Io(e.to_string()))?;
+    let plaintext = decrypt_masterdb(&raw)?;
+
+    if let Ok(mut guard) = cache.lock() {
+        *guard = Some(DecryptCache { path: path.to_path_buf(), mtime, len, plaintext: plaintext.clone() });
+    }
+    Ok(plaintext)
 }
 
 /// Decrypts the whole file into a plaintext SQLite buffer.
@@ -688,8 +741,7 @@ pub(crate) fn encrypt_masterdb_for_test(plaintext: &[u8]) -> Vec<u8> {
 /// Fails fast on any HMAC mismatch (never returns unverified data), on I/O
 /// errors, or if the reassembled buffer is rejected by SQLite.
 pub fn read_rekordbox_masterdb(path: &Path) -> Result<RekordboxIndex, MasterDbError> {
-    let raw = std::fs::read(path).map_err(|e| MasterDbError::Io(e.to_string()))?;
-    let plaintext = decrypt_masterdb(&raw)?;
+    let plaintext = read_and_decrypt_cached(path)?;
 
     let mut conn = Connection::open_in_memory().map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
     let len = plaintext.len();
@@ -723,8 +775,7 @@ pub fn read_rekordbox_masterdb(path: &Path) -> Result<RekordboxIndex, MasterDbEr
 /// group's `playlist_id`/`content_id` alone aren't actionable information
 /// for a user, so the UI needs the human-readable name alongside them.
 pub fn read_playlist_names(path: &Path) -> Result<std::collections::HashMap<String, String>, MasterDbError> {
-    let raw = std::fs::read(path).map_err(|e| MasterDbError::Io(e.to_string()))?;
-    let plaintext = decrypt_masterdb(&raw)?;
+    let plaintext = read_and_decrypt_cached(path)?;
 
     let mut conn = Connection::open_in_memory().map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
     let len = plaintext.len();
@@ -1141,11 +1192,31 @@ fn find_or_create_named_row(
 /// the full-size file — same directory, same extension, `_m`/`_s` suffix
 /// inserted before the extension (observed on real Rekordbox data, spike 8:
 /// `artwork.jpg` / `artwork_m.jpg` / `artwork_s.jpg`).
+/// Joins `image_path` onto `pioneer_dir/share` component-by-component,
+/// refusing `..` segments and drive-prefixed segments (e.g. `C:`) instead of
+/// handing the raw string to a single `PathBuf::join` — the same containment
+/// discipline as `library::safe_join`, needed because `ImagePath` comes from
+/// `djmdContent` in a linked master.db, which a user can point at an
+/// attacker-supplied file via Sift's own "link Rekordbox XML" picker.
 #[allow(dead_code)]
-fn resolve_artwork_variants(pioneer_dir: &Path, image_path: &str) -> (PathBuf, PathBuf, PathBuf) {
+fn resolve_artwork_variants(
+    pioneer_dir: &Path,
+    image_path: &str,
+) -> Result<(PathBuf, PathBuf, PathBuf), MasterDbError> {
     let share_root = pioneer_dir.join("share");
-    let relative = image_path.trim_start_matches(['/', '\\']);
-    let full = share_root.join(relative);
+    let mut full = share_root.clone();
+    for raw in image_path.split(['/', '\\']) {
+        if raw.is_empty() || raw == "." {
+            continue;
+        }
+        if raw == ".." || raw.contains(':') {
+            return Err(MasterDbError::ArtworkPathEscapesRoot { path: image_path.to_string() });
+        }
+        full.push(raw);
+    }
+    if full == share_root {
+        return Err(MasterDbError::ArtworkPathEscapesRoot { path: image_path.to_string() });
+    }
     let stem = full
         .file_stem()
         .map(|s| s.to_string_lossy().to_string())
@@ -1157,7 +1228,7 @@ fn resolve_artwork_variants(pioneer_dir: &Path, image_path: &str) -> (PathBuf, P
     let parent = full.parent().map(Path::to_path_buf).unwrap_or_default();
     let medium = parent.join(format!("{stem}_m.{ext}"));
     let small = parent.join(format!("{stem}_s.{ext}"));
-    (full, medium, small)
+    Ok((full, medium, small))
 }
 
 /// M8 Tier 3 — pochette. Overwrites the 3 cached artwork files Rekordbox
@@ -1205,7 +1276,7 @@ pub fn sync_track_artwork(
         .filter(|p| !p.trim().is_empty())
         .ok_or_else(|| MasterDbError::NoArtworkPath { track_id: track_id.to_string() })?;
 
-    let (full, medium, small) = resolve_artwork_variants(pioneer_dir, &image_path);
+    let (full, medium, small) = resolve_artwork_variants(pioneer_dir, &image_path)?;
     for target in [&full, &medium, &small] {
         if !target.exists() {
             return Err(MasterDbError::ArtworkVariantMissing {
@@ -2535,7 +2606,8 @@ mod tests {
     /// synthetic JPEGs of the given per-variant sizes, mirroring what a real
     /// Rekordbox artwork cache folder looks like.
     fn seed_artwork_variants(pioneer_dir: &Path, image_path: &str, sizes: [(u32, u32); 3]) {
-        let (full, medium, small) = resolve_artwork_variants(pioneer_dir, image_path);
+        let (full, medium, small) =
+            resolve_artwork_variants(pioneer_dir, image_path).expect("valid image_path");
         for (path, (w, h)) in [(&full, sizes[0]), (&medium, sizes[1]), (&small, sizes[2])] {
             std::fs::create_dir_all(path.parent().unwrap()).unwrap();
             std::fs::write(path, synthetic_jpeg(w, h, [10, 20, 30])).unwrap();
@@ -2558,7 +2630,8 @@ mod tests {
             .expect("sync should succeed");
 
         let (full, medium, small) =
-            resolve_artwork_variants(&pioneer_dir, "/PIONEER/Artwork/aaaa/artwork.jpg");
+            resolve_artwork_variants(&pioneer_dir, "/PIONEER/Artwork/aaaa/artwork.jpg")
+                .expect("valid image_path");
         assert_eq!(image::image_dimensions(&full).unwrap(), (500, 500));
         assert_eq!(image::image_dimensions(&medium).unwrap(), (100, 100));
         assert_eq!(image::image_dimensions(&small).unwrap(), (40, 40));
@@ -2584,6 +2657,21 @@ mod tests {
         let err = sync_track_artwork(&pioneer_dir, &backup_dir, "40000003", &synthetic_jpeg(10, 10, [0, 0, 0]))
             .unwrap_err();
         assert!(matches!(err, MasterDbError::ArtworkVariantMissing { .. }));
+    }
+
+    #[test]
+    fn resolve_artwork_variants_rejects_path_traversal() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let pioneer_dir = tmp.path();
+
+        let err = resolve_artwork_variants(pioneer_dir, "../../../../outside.jpg").unwrap_err();
+        assert!(matches!(err, MasterDbError::ArtworkPathEscapesRoot { .. }));
+
+        let err = resolve_artwork_variants(pioneer_dir, "/PIONEER/../../outside.jpg").unwrap_err();
+        assert!(matches!(err, MasterDbError::ArtworkPathEscapesRoot { .. }));
+
+        let err = resolve_artwork_variants(pioneer_dir, r"C:\Windows\outside.jpg").unwrap_err();
+        assert!(matches!(err, MasterDbError::ArtworkPathEscapesRoot { .. }));
     }
 
     #[test]
@@ -2626,7 +2714,8 @@ mod tests {
         let (full, medium, small) = resolve_artwork_variants(
             pioneer_dir,
             "/PIONEER/Artwork/873/2140a-d8c1-472c-991b-6b281cf6005f/artwork.jpg",
-        );
+        )
+        .expect("valid image_path");
         let before_full = std::fs::read(&full).expect("read baseline full artwork");
         let before_medium = std::fs::read(&medium).expect("read baseline medium artwork");
         let before_small = std::fs::read(&small).expect("read baseline small artwork");

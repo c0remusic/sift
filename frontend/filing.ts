@@ -41,7 +41,7 @@ import { renderCandidates } from "./identify-shared";
 import { resolveGenreFamily } from "./genre-families";
 import type { Bin, Canonical, Target, QueueItem, AnalysisReport } from "../shared/contracts";
 import { FILE_IN_PLACE, EXTERNAL_DEST_PREFIX } from "../shared/contracts";
-import { requireEl } from "./dom";
+import { requireEl, esc } from "./dom";
 import { emptyStateHtml } from "./empty-state";
 import { confirmAction } from "./confirm-modal";
 
@@ -49,11 +49,6 @@ import { confirmAction } from "./confirm-modal";
 const IN_PLACE_BIN_LABEL = "source folder";
 
 const LIBRARY_ROOT = "library_root";
-
-const esc = (s: string) =>
-  s.replace(/[&<>"']/g, (c) =>
-    c === "&" ? "&amp;" : c === "<" ? "&lt;" : c === ">" ? "&gt;" : c === '"' ? "&quot;" : "&#39;",
-  );
 
 /** Capitalise the first letter of each word ("original mix" → "Original Mix"), leaving the rest
  *  as-is so existing caps/acronyms ("2WFU Dub", "Knee Deep Remix") survive. */

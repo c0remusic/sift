@@ -455,6 +455,57 @@ pub fn repair_rekordbox_xml_if_linked(conn: &Connection, from_path: &str, to_pat
     }
 }
 
+/// Batched form of `repair_rekordbox_xml_if_linked`: reads+parses the linked XML ONCE, applies
+/// `patch_location` for every `(from, to)` pair, then writes the file ONCE if at least one pair
+/// actually patched something — instead of one full read+parse+write cycle per pair (audited
+/// 2026-07-05, finding P4). Same silent-no-op contract on failure (no linked XML, unreadable,
+/// unparseable) as the single-pair version. DRIFT flag evaluated once across the whole batch:
+/// set if anything drifted, cleared if nothing drifted but at least one pair patched successfully.
+pub fn repair_rekordbox_xml_batch(conn: &Connection, pairs: &[(String, String)]) -> Option<usize> {
+    if pairs.is_empty() {
+        return Some(0);
+    }
+    let path = crate::settings::get(conn, crate::settings::REKORDBOX_XML_PATH).ok().flatten()?;
+    let bytes = match std::fs::read(&path) {
+        Ok(b) => b,
+        Err(e) => {
+            log::error!("rekordbox repair (batch): linked XML {path} unreadable: {e}");
+            return None;
+        }
+    };
+    let mut parsed = match crate::rekordbox_xml::parse(&bytes) {
+        Ok(p) => p,
+        Err(e) => {
+            log::error!("rekordbox repair (batch): linked XML {path} unparseable: {e}");
+            return None;
+        }
+    };
+
+    use crate::rekordbox_xml::PatchLocationResult;
+    let mut patched_count = 0usize;
+    let mut any_drifted = false;
+    for (from, to) in pairs {
+        match crate::rekordbox_xml::patch_location(&mut parsed, from, to) {
+            PatchLocationResult::NotTracked => {}
+            PatchLocationResult::Drifted => any_drifted = true,
+            PatchLocationResult::Patched => patched_count += 1,
+        }
+    }
+
+    if patched_count > 0 {
+        if let Err(e) = std::fs::write(&path, &parsed.raw_xml) {
+            log::error!("rekordbox repair (batch): failed writing patched XML {path}: {e}");
+            return None;
+        }
+    }
+    if any_drifted {
+        let _ = crate::settings::set(conn, crate::settings::REKORDBOX_XML_DRIFT, "1");
+    } else if patched_count > 0 {
+        let _ = crate::settings::set(conn, crate::settings::REKORDBOX_XML_DRIFT, "0");
+    }
+    Some(patched_count)
+}
+
 /// Reverse one action's filesystem effect. Guards refuse to overwrite or act on stale
 /// state; on a guard failure nothing is changed and `Blocked` is returned.
 /// `pub(crate)`: also called directly by `ecartes::restore_track` (FIX-5), which reverses a

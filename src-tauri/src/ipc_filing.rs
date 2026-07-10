@@ -281,7 +281,7 @@ pub fn file_track(
     // Phase 3 under the lock: journal + mark filed (rolls back the FS on a DB error).
     let res = {
         let conn = conn.lock().map_err(|e| e.to_string())?;
-        filing::commit_file(&conn, &plan, log).map_err(|e| e.to_string())?
+        filing::commit_file(&conn, &plan, log, None).map_err(|e| e.to_string())?
     };
     app.emit("queue:changed", ()).ok();
     Ok(res)
@@ -507,6 +507,11 @@ fn run_file_batch(
 
     // ---- Phase 3 (serial, DB lock per file): commit each encoded job, emit progress per file. ----
     let mut filed = 0usize;
+    // Accumulates every (from, to) pair needing a linked-Rekordbox-XML repair across the WHOLE
+    // batch, instead of each commit_file call doing its own read+parse+write of the same file
+    // (audited 2026-07-05, finding P4 — up to 200 independent cycles on a 200-track batch).
+    // Flushed once, after the loop, via actions::repair_rekordbox_xml_batch.
+    let mut xml_repair_pairs: Vec<(String, String)> = Vec::new();
     // `done` = every track whose fate is settled: planning-time needs_validation + each processed
     // outcome. Emitted before the loop (settles the planning-time bounces) and after each commit.
     app.emit("file:progress", &FileProgress { done: needs_validation.len(), total }).ok();
@@ -523,7 +528,7 @@ fn run_file_batch(
                         continue;
                     }
                 };
-                match filing::commit_file(&conn, &o.plan, log) {
+                match filing::commit_file(&conn, &o.plan, log, Some(&mut xml_repair_pairs)) {
                     Ok(_) => filed += 1,
                     Err(_) => needs_validation.push(o.id),
                 }
@@ -531,6 +536,12 @@ fn run_file_batch(
             None => needs_validation.push(o.id), // execute_file failed (FS left clean by it)
         }
         app.emit("file:progress", &FileProgress { done: filed + needs_validation.len(), total }).ok();
+    }
+
+    if !xml_repair_pairs.is_empty() {
+        if let Ok(conn) = state.lock() {
+            actions::repair_rekordbox_xml_batch(&conn, &xml_repair_pairs);
+        }
     }
 
     // Planned-but-never-started jobs (cancelled before any worker popped them) remain in `queue`:

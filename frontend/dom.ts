@@ -22,3 +22,13 @@ export function requireEl<T extends Element = HTMLElement>(
   }
   return el;
 }
+
+/** HTML-escapes untrusted string data (filenames, tags, Discogs/master.db fields) before
+ *  interpolating it into a template string assigned via innerHTML. Every render helper that
+ *  builds markup from data not fully owned by Sift's own code must run it through this first —
+ *  a file that skips it is a stored-XSS gap (found in journal.ts, 2026-07-10 security audit). */
+export function esc(s: string): string {
+  return s.replace(/[&<>"']/g, (c) =>
+    c === "&" ? "&amp;" : c === "<" ? "&lt;" : c === ">" ? "&gt;" : c === '"' ? "&quot;" : "&#39;",
+  );
+}

@@ -863,6 +863,16 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-volume-track:hover .sift-slider-thumb,
 .sift-volume-track.dragging .sift-slider-thumb{transform:translate(-50%,-50%) scale(1);box-shadow:none}
 .sift-player-spacer{flex:1}
+/* Tempo/key-lock disclosure (audit 2026-07-10, finding #6) — same suppressed-marker/caret
+   convention as .sift-spectro-tech. flex:none so it doesn't stretch to fill .sift-player-spacer's
+   leftover row width; the body switches to flex only once opened, matching the horizontal
+   key+tempo layout the two controls had before this change. */
+.sift-listen-advanced{flex:none}
+.sift-listen-advanced-summary{list-style:none;cursor:pointer;white-space:nowrap;font-size:var(--text-sm);color:var(--color-text-tertiary);user-select:none}
+.sift-listen-advanced-summary::-webkit-details-marker{display:none}
+.sift-listen-advanced-summary::before{content:"▸ "}
+.sift-listen-advanced[open] .sift-listen-advanced-summary::before{content:"▾ "}
+.sift-listen-advanced-body{display:flex;align-items:center;gap:14px;margin-top:8px}
 .sift-key-block{flex:none;display:flex;flex-direction:column;align-items:center;gap:6px;cursor:pointer}
 /* min-width+centered text added (annotation: "devrait avoir la meme taille on ou off") — the JS
    toggle (report-view.ts refreshKey) only changes background/color/border-color between states,
@@ -1010,6 +1020,16 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
    fitting only for the numeric/unit rows around it (annotation: "j'aime le texte de verdict mais
    celui de ok pas fan"). */
 .sift-row-value-plain{font-family:inherit}
+/* Nested disclosure inside "Diagnostic audio" (audit 2026-07-10, finding #5): verdict/coupure/
+   durée stay always visible above, everything else (true-peak, DC offset, écrêtage…) is jargon
+   with no vulgarization for a non-technical user — moved behind this second toggle. Native
+   <details>/<summary>, default marker suppressed in favor of the same caret glyph zoneToggleHtml
+   uses elsewhere, for a consistent look without needing new JS wiring. */
+.sift-spectro-tech{border-top:0.5px solid var(--color-border-tertiary);margin-top:2px}
+.sift-spectro-tech-summary{list-style:none;cursor:pointer;padding:8px 18px;font-size:var(--text-sm);color:var(--color-text-tertiary);user-select:none}
+.sift-spectro-tech-summary::-webkit-details-marker{display:none}
+.sift-spectro-tech-summary::before{content:"▸ ";display:inline-block}
+.sift-spectro-tech[open] .sift-spectro-tech-summary::before{content:"▾ "}
 .sift-tags-box{margin-bottom:4px}
 .sift-tags-title{font-size:var(--text-2xs);letter-spacing:var(--tracking-wider);text-transform:uppercase;color:var(--color-text-tertiary);margin-bottom:5px}
 .sift-codec-error{margin-top:12px;font-size:var(--text-sm);color:var(--color-text-warning)}

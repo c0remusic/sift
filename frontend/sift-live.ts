@@ -60,7 +60,7 @@ import { initTheme } from "./theme";
 import { renderReglagesLive } from "./reglages-view";
 import type { QueueItem, BatchResult, FileProgress, Target } from "../shared/contracts";
 import { FILE_IN_PLACE, EXTERNAL_DEST_PREFIX } from "../shared/contracts";
-import { requireEl } from "./dom";
+import { requireEl, esc } from "./dom";
 import type { LibrarySortState } from "./library-views";
 import {
   bibState,
@@ -81,6 +81,9 @@ import {
   lastScannedDuplicateGroups,
   duplicateGroupKey,
   renderRekordboxLive,
+  rerenderMasterdbRepairsSection,
+  rerenderMetadataSyncsSection,
+  rerenderArtworkSyncsSection,
   mdbExpandedGroups,
   mdsExpandedGroups,
   masExpandedGroups,
@@ -488,11 +491,6 @@ function queueRowHtml(it: QueueItem, active: boolean): string {
     `</div>`
   );
 }
-
-const esc = (s: string) =>
-  s.replace(/[&<>"']/g, (c) =>
-    c === "&" ? "&amp;" : c === "<" ? "&lt;" : c === ">" ? "&gt;" : c === '"' ? "&quot;" : "&#39;",
-  );
 
 /** Replaces the mockup queue list with real pending items (Revue screen). */
 async function renderQueue(touchDetail = true) {
@@ -1733,13 +1731,13 @@ export function installLiveWiring() {
         mdbRepairSel.add(id);
         mdbErrorById.delete(id);
       }
-      void renderRekordboxLive();
+      rerenderMasterdbRepairsSection();
     } else if (act === "mdbgrouptoggle") {
       e.stopPropagation();
       const key = el.dataset.session || "";
       if (mdbExpandedGroups.has(key)) mdbExpandedGroups.delete(key);
       else mdbExpandedGroups.add(key);
-      void renderRekordboxLive();
+      rerenderMasterdbRepairsSection();
     } else if (act === "mdbgroupselect") {
       e.stopPropagation();
       const key = el.dataset.session || "";
@@ -1752,7 +1750,7 @@ export function installLiveWiring() {
           mdbErrorById.delete(id);
         }
       }
-      void renderRekordboxLive();
+      rerenderMasterdbRepairsSection();
     } else if (act === "mdbdismiss") {
       e.stopPropagation();
       const id = Number(el.dataset.id);
@@ -1843,13 +1841,13 @@ export function installLiveWiring() {
         mdsSyncSel.add(id);
         mdsErrorById.delete(id);
       }
-      void renderRekordboxLive();
+      rerenderMetadataSyncsSection();
     } else if (act === "mdsgrouptoggle") {
       e.stopPropagation();
       const key = el.dataset.session || "";
       if (mdsExpandedGroups.has(key)) mdsExpandedGroups.delete(key);
       else mdsExpandedGroups.add(key);
-      void renderRekordboxLive();
+      rerenderMetadataSyncsSection();
     } else if (act === "mdsgroupselect") {
       e.stopPropagation();
       const key = el.dataset.session || "";
@@ -1862,7 +1860,7 @@ export function installLiveWiring() {
           mdsErrorById.delete(id);
         }
       }
-      void renderRekordboxLive();
+      rerenderMetadataSyncsSection();
     } else if (act === "mdsdismiss") {
       e.stopPropagation();
       const id = Number(el.dataset.id);
@@ -1927,13 +1925,13 @@ export function installLiveWiring() {
         masSyncSel.add(id);
         masErrorById.delete(id);
       }
-      void renderRekordboxLive();
+      rerenderArtworkSyncsSection();
     } else if (act === "masgrouptoggle") {
       e.stopPropagation();
       const key = el.dataset.session || "";
       if (masExpandedGroups.has(key)) masExpandedGroups.delete(key);
       else masExpandedGroups.add(key);
-      void renderRekordboxLive();
+      rerenderArtworkSyncsSection();
     } else if (act === "masgroupselect") {
       e.stopPropagation();
       const key = el.dataset.session || "";
@@ -1946,7 +1944,7 @@ export function installLiveWiring() {
           masErrorById.delete(id);
         }
       }
-      void renderRekordboxLive();
+      rerenderArtworkSyncsSection();
     } else if (act === "masdismiss") {
       e.stopPropagation();
       const id = Number(el.dataset.id);

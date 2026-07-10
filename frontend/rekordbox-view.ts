@@ -19,13 +19,8 @@ import type {
   PendingMetadataSync,
   PendingArtworkSync,
 } from "../shared/contracts";
-import { requireEl } from "./dom";
+import { requireEl, esc } from "./dom";
 import { emptyStateHtml, wireEmptyState } from "./empty-state";
-
-const esc = (s: string) =>
-  s.replace(/[&<>"']/g, (c) =>
-    c === "&" ? "&amp;" : c === "<" ? "&lt;" : c === ">" ? "&gt;" : c === '"' ? "&quot;" : "&#39;",
-  );
 
 // M8 Tier 1 repairs section state — module-level, NOT reset on every render. Filtered against
 // the live pending/ambiguous rows each render so a stale id (one that got applied/dismissed
@@ -111,7 +106,7 @@ function sessionGroupHtml<T extends { id: number; session_id: string | null }>(
   return (
     `<div class="rb-session-group">` +
     `<div class="rb-session-hd">` +
-    `<button data-sift="${toggleAction}" data-session="${esc(sessionKey)}" class="rb-session-toggle">` +
+    `<button data-sift="${toggleAction}" data-session="${esc(sessionKey)}" class="rb-session-toggle" aria-expanded="${isOpen}">` +
     `${isOpen ? "▾" : "▸"} ${esc(label)} (${rows.length})</button>` +
     `<button data-sift="${groupAction}" data-session="${esc(sessionKey)}" class="rb-session-selectall">` +
     `${allSelected ? "Tout désélectionner" : "Tout sélectionner"}</button>` +
@@ -226,13 +221,28 @@ function masterdbRepairsSectionHtml(rows: PendingMasterdbRepair[]): string {
       : "";
 
   return (
-    `<div style="margin-bottom:12px">` +
+    `<div id="sift-rkb-masterdb-section" style="margin-bottom:12px">` +
     `<div class="col-h">Réparations master.db en attente</div>` +
     (ambiguousRows ? `<div style="margin-bottom:8px">${ambiguousRows}</div>` : "") +
     pendingRows +
     applyBar +
     `</div>`
   );
+}
+
+/** Re-renders only the Tier 1 repairs section from already-cached data (`lastPendingRepairs`),
+ * for actions that mutate purely local UI state (row/group selection, group expand/collapse) and
+ * touch nothing on the backend — no IPC re-fetch, no master.db re-read, no rebuild of the other 3
+ * page sections. Falls back to a full `renderRekordboxLive()` if the section isn't in the DOM
+ * (e.g. the page was just opened and hasn't rendered it yet). Click handling stays correct because
+ * `[data-sift]` clicks are delegated once on `#pa` (installLiveWiring), not bound per-element. */
+export function rerenderMasterdbRepairsSection(): void {
+  const el = document.getElementById("sift-rkb-masterdb-section");
+  if (!el) {
+    void renderRekordboxLive();
+    return;
+  }
+  el.outerHTML = masterdbRepairsSectionHtml(lastPendingRepairs);
 }
 
 /** M8 Tier 3 section: lists master.db metadata sync candidates detected passively whenever Sift
@@ -315,13 +325,23 @@ function metadataSyncsSectionHtml(rows: PendingMetadataSync[]): string {
       : "";
 
   return (
-    `<div style="margin-bottom:12px">` +
+    `<div id="sift-rkb-mds-section" style="margin-bottom:12px">` +
     `<div class="col-h">Synchros metadata master.db en attente</div>` +
     (ambiguousRows ? `<div style="margin-bottom:8px">${ambiguousRows}</div>` : "") +
     pendingRows +
     applyBar +
     `</div>`
   );
+}
+
+/** Same discipline as `rerenderMasterdbRepairsSection` for the Tier 3 metadata section. */
+export function rerenderMetadataSyncsSection(): void {
+  const el = document.getElementById("sift-rkb-mds-section");
+  if (!el) {
+    void renderRekordboxLive();
+    return;
+  }
+  el.outerHTML = metadataSyncsSectionHtml(lastPendingMetadataSyncs);
 }
 
 /** M8 Tier 3 (pochette) section: lists master.db artwork sync candidates detected passively
@@ -398,13 +418,23 @@ function artworkSyncsSectionHtml(rows: PendingArtworkSync[]): string {
       : "";
 
   return (
-    `<div style="margin-bottom:12px">` +
+    `<div id="sift-rkb-mas-section" style="margin-bottom:12px">` +
     `<div class="col-h">Synchros pochette master.db en attente</div>` +
     (ambiguousRows ? `<div style="margin-bottom:8px">${ambiguousRows}</div>` : "") +
     pendingRows +
     applyBar +
     `</div>`
   );
+}
+
+/** Same discipline as `rerenderMasterdbRepairsSection` for the Tier 3 artwork section. */
+export function rerenderArtworkSyncsSection(): void {
+  const el = document.getElementById("sift-rkb-mas-section");
+  if (!el) {
+    void renderRekordboxLive();
+    return;
+  }
+  el.outerHTML = artworkSyncsSectionHtml(lastPendingArtworkSyncs);
 }
 
 /** M8 Tier 2 section: lists playlists where the same track appears more than once

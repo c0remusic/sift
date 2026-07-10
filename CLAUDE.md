@@ -444,6 +444,14 @@ scope, Flutter écarté en Évaluation 19).
   `--color-text-on-accent` presque dans le même cas), en plus du bug
   `--color-track`/`--color-surface-raised` du 2026-07-08 ci-dessus — même
   classe de bug, 2 fois en 2 jours.
+- **Avant de faire dépendre du JS d'une classe CSS comme conteneur
+  (`querySelector`), vérifier qu'elle existe réellement dans le markup
+  rendu** (grep le nom de classe dans le fichier qui construit ce markup, pas
+  juste supposer depuis son nom). Bug réel trouvé le 2026-07-10 : `filing.ts`
+  ciblait `.sift-vchips` pour insérer des chips (DUPLICATE, puis LECTURE
+  INCOMPLÈTE) alors que cette classe n'existe nulle part dans le markup
+  produit (`verdictCardHtml()` retourne `""`) — aucune erreur, juste un
+  `querySelector` qui renvoie toujours `null`.
 
 ## Vérification UI — app réelle, pas la maquette navigateur
 
