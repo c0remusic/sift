@@ -381,7 +381,7 @@ export async function renderRekordboxLive(): Promise<void> {
   const intro =
     `<div class="h1">Rekordbox</div>` +
     `<div style="font-size:var(--text-md);color:var(--color-text-tertiary);margin-bottom:12px">` +
-    `Sift range tes morceaux → l'export fusionne les nouveaux dans le XML lié → réimporte-le dans Rekordbox pour les voir apparaître.` +
+    `Sift convertit tes morceaux → l'export fusionne les nouveaux dans le XML lié → réimporte-le dans Rekordbox pour les voir apparaître.` +
     `</div>`;
 
   if (!status.linked) {
@@ -389,7 +389,7 @@ export async function renderRekordboxLive(): Promise<void> {
       intro +
       emptyStateHtml({
         title: "Aucun XML Rekordbox lié",
-        note: "Relie le fichier XML exporté depuis Rekordbox pour commencer à synchroniser tes rangements.",
+        note: "Relie le fichier XML exporté depuis Rekordbox pour commencer à synchroniser tes conversions.",
         actionHtml: `<button data-bib="rkblink">Lier un fichier XML Rekordbox</button>`,
       });
     wireEmptyState(content);
@@ -400,7 +400,7 @@ export async function renderRekordboxLive(): Promise<void> {
     ? `<div class="sift-dup-banner" style="background:var(--color-background-warning)">` +
       `<i class="ti ti-alert-triangle" style="color:var(--color-text-warning)"></i>` +
       `<div class="sift-dup-banner-body">` +
-      `<div class="sift-dup-banner-head" style="color:var(--color-text-warning)">Une correction de chemin a échoué lors d'un rangement récent</div>` +
+      `<div class="sift-dup-banner-head" style="color:var(--color-text-warning)">Une correction de chemin a échoué lors d'une conversion récente</div>` +
       // .sift-dup-banner-where is built for a truncated file path (nowrap+ellipsis) — this is a
       // full sentence, the entire payload of a warning that was previously invisible anywhere in
       // the UI, so it must never silently clip on a narrow window.

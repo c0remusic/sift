@@ -68,11 +68,6 @@ export async function renderReglagesLive() {
     console.error("getSetting(library_root) failed", e);
   }
 
-  const inputCss =
-    "font-size:var(--text-md);padding:4px 7px;background:var(--color-background-primary);" +
-    "border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);" +
-    "color:var(--color-text-primary);width:100%;font-family:var(--font-mono)";
-
   // Cartes bordées + titre 16px/600 + texte explicatif, per la maquette (Sift.dc.html:642-691).
   // Divergence assumée : le jeton reste un input à sauvegarde auto (fonctionnel) au lieu du
   // "•••• 4471 + Modifier" de la maquette, dont le bouton est un onNotImpl de démo.
@@ -92,7 +87,11 @@ export async function renderReglagesLive() {
     // Masked like any credential (audit UI/UX 2026-07-03, fix 8) — a screenshot/share of Réglages
     // must not leak the token in clear text. Eye toggle to check it without retyping.
     '<div style="position:relative;width:100%">' +
-    `<input id="sift-discogs-token" type="password" placeholder="Jeton Discogs…" value="${esc(token ?? "")}" style="${inputCss};padding-right:30px">` +
+    // class="sift-editor-input" instead of an inline-duplicated border/background (2026-07-10,
+    // fix for a specificity bug this duplication caused: an inline `style="border:..."` always
+    // beats a stylesheet rule, even :focus-visible, so this field's border silently didn't
+    // shift color on focus while every other input using the shared class did).
+    `<input id="sift-discogs-token" type="password" placeholder="Jeton Discogs…" value="${esc(token ?? "")}" class="sift-editor-input" style="width:100%;font-family:var(--font-mono);padding-right:30px">` +
     '<button type="button" id="sift-discogs-token-toggle" title="Afficher le jeton" aria-label="Afficher le jeton" style="position:absolute;right:2px;top:50%;transform:translateY(-50%);width:26px;height:26px;padding:0;border:none;background:transparent;color:var(--color-text-tertiary);cursor:pointer;display:flex;align-items:center;justify-content:center"><i class="ti ti-eye" style="font-size:var(--text-md)"></i></button>' +
     "</div>" +
     '<div id="sift-discogs-status" style="font-size:var(--text-sm);color:var(--color-text-tertiary);min-height:14px"></div>' +
@@ -104,7 +103,7 @@ export async function renderReglagesLive() {
   libBlock.className = "sift-settings-card sift-settings-list-row";
   libBlock.innerHTML =
     '<div class="sift-settings-title">Bibliothèque</div>' +
-    '<div class="sift-settings-desc">Le dossier racine est l\'endroit réel sur ton disque où Sift range les morceaux filés. L\'arborescence de destination (House/Deep, Techno…) vit à l\'intérieur.</div>' +
+    '<div class="sift-settings-desc">Le dossier racine est l\'endroit réel sur ton disque où Sift convertit les morceaux filés. L\'arborescence de destination (House/Deep, Techno…) vit à l\'intérieur.</div>' +
     '<div class="sift-settings-row">' +
     '<div style="min-width:0">' +
     '<div class="sift-settings-label" style="margin-bottom:3px">Dossier racine</div>' +

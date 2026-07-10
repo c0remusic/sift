@@ -315,7 +315,7 @@ export async function renderJournal(toast?: string, warn?: string): Promise<void
     ? ""
     : emptyStateHtml({
         title: "Rien dans cette session",
-        note: "Les actions de rangement de la session courante apparaissent ici au fur et à mesure.",
+        note: "Les actions de conversion de la session courante apparaissent ici au fur et à mesure.",
         backToRevue: true,
       });
   const voirToutHtml = hasAny
@@ -377,7 +377,7 @@ export async function renderJournalExtended(): Promise<void> {
     all.length === 0
       ? emptyStateHtml({
           title: "Aucune action enregistrée",
-          note: "L'historique complet des actions de rangement apparaîtra ici.",
+          note: "L'historique complet des actions de conversion apparaîtra ici.",
           backToRevue: true,
         })
       : groupsHtml;

@@ -447,7 +447,7 @@ function updateBatchRailSelection(): void {
     const exclus = reviewN
       ? ` · <span style="color:var(--color-text-tertiary)">${reviewN} exclus (en review)</span>`
       : "";
-    count.innerHTML = `${batchSel.size} à ranger${jeter}${exclus}`;
+    count.innerHTML = `${batchSel.size} à convertir${jeter}${exclus}`;
   }
   const slot = document.querySelector(".sift-baction-slot");
   if (slot) slot.innerHTML = actionButtonHtml(batchRunning);
@@ -461,7 +461,7 @@ function queueRowHtml(it: QueueItem, active: boolean): string {
   const title = esc(it.filename || it.path);
   const artist = it.artist ? esc(it.artist) : "";
   return (
-    `<div class="qi${active ? " cur" : ""}" data-id="${it.id}" data-path="${esc(it.path)}" title="Écouter et ranger" style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:5px 7px">` +
+    `<div class="qi${active ? " cur" : ""}" data-id="${it.id}" data-path="${esc(it.path)}" title="Écouter et convertir" style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:5px 7px">` +
     `<div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">` +
     `<div style="display:flex;align-items:center;gap:6px;min-width:0">` +
     verdictDot(it.verdict) +
@@ -924,7 +924,7 @@ function renderBatch() {
         groupHead("file", "var(--color-text-success)", "Prêts · lossless", ready.map((it) => it.id)) +
         cappedBody("file", ready, readyRow) +
         `</div>`
-      : '<div class="col-h" style="margin:0 0 6px">Prêts · lossless · 0</div><div style="font-size:var(--text-md);color:var(--color-text-tertiary);padding:4px 9px 14px">Rien à ranger pour l’instant.</div>') +
+      : '<div class="col-h" style="margin:0 0 6px">Prêts · lossless · 0</div><div style="font-size:var(--text-md);color:var(--color-text-tertiary);padding:4px 9px 14px">Rien à convertir pour l’instant.</div>') +
     (fakes.length
       ? `<div style="margin:2px 0 16px">` +
         groupHead("fake", "var(--color-text-warning)", "À vérifier · fake", fakes.map((it) => it.id)) +
@@ -984,10 +984,12 @@ function ensureBatchDestUI(): void {
   }
 }
 
-/** The single rail action button. Adaptive before a run (Ranger / Discarder / both / disabled),
+/** The single rail action button. Adaptive before a run (Convertir / Discarder / both / disabled),
  *  "Stop" during one. `running` swaps to the Stop affordance (wired to onFileStop).
- *  "Ranger" (not "Filer") to match the Détail rail's verb — one action, one name (audit UI/UX
- *  2026-07-03, fix 2). */
+ *  Verb was "Ranger" (not "Filer") to match the Détail rail's verb — one action, one name (audit
+ *  UI/UX 2026-07-03, fix 2). Changed to "Convertir" (2026-07-10, retour utilisateur: more explicit
+ *  about what the button does) — the Détail-rail/batch-rail pair still shares one verb, see
+ *  filing.ts's refreshRangerButton (internal name kept, only the displayed word changed). */
 function actionButtonHtml(running: boolean): string {
   if (running) {
     return '<button data-sift="batchstop" class="sift-baction" style="background:var(--color-background-danger);color:var(--color-text-danger)">Stop</button>';
@@ -995,23 +997,23 @@ function actionButtonHtml(running: boolean): string {
   const fileN = batchSel.size;
   const fakeN = batchFakeSel.size;
   if (fileN === 0 && fakeN === 0)
-    return '<button class="sift-baction" disabled style="background:var(--color-background-info);color:var(--color-text-info);opacity:.5;pointer-events:none">Ranger (0)</button>';
+    return '<button class="sift-baction" disabled style="background:var(--color-background-info);color:var(--color-text-info);opacity:.5;pointer-events:none">Convertir (0)</button>';
   // Second-click confirm for large batches (see BATCH_CONFIRM_THRESHOLD) — armed only for the
   // exact selection it was requested for, so ticking/unticking a track after arming falls back
   // to asking again instead of silently confirming a changed selection. The button looks like a
-  // plain Ranger button until the first click arms it (the click handler re-renders this as the
+  // plain Convertir button until the first click arms it (the click handler re-renders this as the
   // danger "Confirmer" state below) — a distinct button for the actual destructive click, not a
   // permanent scary button sitting there before the user has done anything.
   const armed =
     !!batchConfirmArmed && batchConfirmArmed.fileN === fileN && batchConfirmArmed.fakeN === fakeN;
   if (armed) {
-    return `<button data-sift="batchaction" class="sift-baction" style="background:var(--color-background-danger);color:var(--color-text-danger)">Confirmer — ranger ${fileN} ?</button>`;
+    return `<button data-sift="batchaction" class="sift-baction" style="background:var(--color-background-danger);color:var(--color-text-danger)">Confirmer — convertir ${fileN} ?</button>`;
   }
   if (fakeN === 0)
-    return `<button data-sift="batchaction" class="sift-baction" style="background:var(--color-background-info);color:var(--color-text-info)">Ranger (${fileN})</button>`;
+    return `<button data-sift="batchaction" class="sift-baction" style="background:var(--color-background-info);color:var(--color-text-info)">Convertir (${fileN})</button>`;
   if (fileN === 0)
     return `<button data-sift="batchaction" class="sift-baction" style="background:var(--color-background-danger);color:var(--color-text-danger)">Écarter (${fakeN})</button>`;
-  return `<button data-sift="batchaction" class="sift-baction" style="background:var(--color-background-info);color:var(--color-text-info)">Ranger (${fileN}) · Écarter (${fakeN})</button>`;
+  return `<button data-sift="batchaction" class="sift-baction" style="background:var(--color-background-info);color:var(--color-text-info)">Convertir (${fileN}) · Écarter (${fakeN})</button>`;
 }
 
 /** Positions the batch Format thumb from whichever button currently carries `.on`. Called both
@@ -1084,7 +1086,7 @@ function renderBatchRail(reviewN: number) {
     `<div class="sift-rail-spacer"></div>` +
     `<span id="sift-batch-selcount" style="font-size:var(--text-sm);color:var(--color-text-secondary);white-space:nowrap">${
       batchSel.size
-    } à ranger${jeter}${exclus}</span>` +
+    } à convertir${jeter}${exclus}</span>` +
     `<div class="sift-baction-slot">${actionButtonHtml(batchRunning)}</div>` +
     `<div id="sift-batch-progress" style="flex-basis:100%"></div>` +
     `<div id="sift-batch-tracks" style="flex-basis:100%"></div>`;
@@ -1149,7 +1151,7 @@ async function runBatchFile() {
   batchTrackIds = ids;
   startBatchTracklist(ensureBatchTracklistHost(), ids.map(batchTrackItem));
   fileNote(
-    '<i class="ti ti-loader sift-spin" style="font-size:var(--text-md);vertical-align:-1px"></i> Rangement en arrière-plan…',
+    '<i class="ti ti-loader sift-spin" style="font-size:var(--text-md);vertical-align:-1px"></i> Conversion en arrière-plan…',
   );
   // FIX-7: show 0/N in the global progress zone immediately at the click, same instant signal the
   // per-track tracklist above already gets — don't wait for the first file:progress event.
@@ -1166,7 +1168,7 @@ async function runBatchFile() {
     fileNote(
       code.includes("NoLibraryRoot")
         ? "Aucune racine de bibliothèque configurée — à définir dans Réglages."
-        : `Échec du lancement du rangement : ${esc(code)}`,
+        : `Échec du lancement de la conversion : ${esc(code)}`,
       "var(--color-text-danger)",
     );
     console.error("file_batch launch failed", err);

@@ -108,7 +108,7 @@ function inspectorHtml(selected: Source | null, root: string | null, allSources:
     ? ""
     : '<div class="sift-ui-card-soft sift-ui-card-soft-pad sift-home-warning">' +
       '<i class="ti ti-alert-triangle" style="font-size:var(--text-lg);flex:none"></i>' +
-      "<span><strong>Racine de bibliothèque non définie</strong> — les dossiers surveillés restent scannés, mais le rangement sera bloqué tant qu'aucune racine n'est choisie. " +
+      "<span><strong>Racine de bibliothèque non définie</strong> — les dossiers surveillés restent scannés, mais la conversion sera bloquée tant qu'aucune racine n'est choisie. " +
       '<button data-sift="gotoreglages" style="color:var(--color-text-warning);text-decoration:underline;padding:0;font:inherit">Ouvrir Réglages →</button></span>' +
       '<button data-sift="dismiss-rootgate" title="Masquer pour cette session" aria-label="Masquer ce message pour cette session" style="flex:none;background:none;border:none;color:var(--color-text-warning);cursor:pointer;padding:0 0 0 8px"><i class="ti ti-x"></i></button></div>';
 

@@ -251,7 +251,7 @@ export async function renderBiblioLive() {
   content.innerHTML = trulyEmpty
     ? emptyStateHtml({
         title: "Bibliothèque vide",
-        note: "Les pistes que tu ranges depuis Revue apparaissent ici, prêtes à exporter vers Rekordbox ou une clé USB.",
+        note: "Les pistes que tu convertis depuis Revue apparaissent ici, prêtes à exporter vers Rekordbox ou une clé USB.",
         backToRevue: true,
       })
     : (stats ? statsCardsHtml(stats) : "") +

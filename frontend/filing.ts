@@ -339,7 +339,7 @@ function flatBinHtml(b: Bin): string {
 export function renderBins(fldz: HTMLElement): void {
   if (!state.rootSet) {
     fldz.innerHTML =
-      '<div class="sift-fldz-hint">Choisis ta racine de bibliothèque pour commencer à ranger.</div>' +
+      '<div class="sift-fldz-hint">Choisis ta racine de bibliothèque pour commencer à convertir.</div>' +
       '<button data-fil="pickroot"><i class="ti ti-folder sift-icon-inline-base"></i> Choisir…</button>';
     fldz
       .querySelector('[data-fil="pickroot"]')
@@ -600,19 +600,24 @@ function destValueLabel(): string {
 /** Single source of truth for the Ranger button's label + real disabled state. A disabled native
  *  button never fires click, so this is the actual guard (doRanger's own dest===null check stays
  *  as defense in depth) — previously the only feedback for "no destination" was "Ranger → —" plus
- *  a toast AFTER the click. */
+ *  a toast AFTER the click.
+ *  Displayed verb changed "Ranger"→"Convertir" (2026-07-10, retour utilisateur) — a 2026-07-03
+ *  audit had deliberately picked "Ranger" to match the Détail rail's verb and to hide the
+ *  encode step behind one product-level action ("déplacer = encoder + ranger", CLAUDE.md).
+ *  Overridden: "Convertir" reads as more explicit about what the button actually does, and the
+ *  Détail-rail/batch-rail button pair still shares one verb — see sift-live.ts's own button. */
 function refreshRangerButton(): void {
   const btn = document.querySelector<HTMLButtonElement>('[data-fil="ranger"]');
   if (!btn) return;
   const ok = hasDestination();
   btn.disabled = !ok;
-  btn.title = ok ? "" : "Choisis une destination avant de ranger";
+  btn.title = ok ? "" : "Choisis une destination avant de convertir";
   // Text only, no decorative kbd glyph next to an already-descriptive label (annotation: "supprime
   // les icones" — same rule already applied to Ranger/Jeter elsewhere, see CLAUDE.md). The shortcut
   // itself is still shown in the standalone kbd-hints legend (keyboardHintsHtml), not repeated here.
   btn.innerHTML = ok
-    ? `Ranger → <span class="sift-fil-bin">${esc(binLabel())}</span>`
-    : "Choisis une destination pour ranger";
+    ? `Convertir → <span class="sift-fil-bin">${esc(binLabel())}</span>`
+    : "Choisis une destination pour convertir";
 }
 
 /** Re-render everything a destination change touches: the Destination button's own label/ambre
@@ -1325,7 +1330,7 @@ function renderEditor(host: HTMLElement, mid: HTMLElement, rail: string, report:
     // Discrepancy banner — sits JUST BELOW Apply. Hidden by default via inline display:none; the LONE
     // visibility mechanism is refreshDiscrepancy toggling style.display (no `hidden`+display conflict).
     // Look lives in .sift-tag-warn (styles.css). Shown only when the display diverges from the file.
-    `<div class="sift-tag-warn" style="display:none"><i class="ti ti-alert-triangle sift-icon-inline-md sift-icon-flex-none"></i><span>Artiste et Titre pas encore gravés dans le fichier (seulement identifiés ci-dessus) — un CDJ ne peut pas les lire tant que ce n'est pas fait. <strong>Ranger</strong> ou <strong>Appliquer les tags</strong> pour corriger.</span></div>` +
+    `<div class="sift-tag-warn" style="display:none"><i class="ti ti-alert-triangle sift-icon-inline-md sift-icon-flex-none"></i><span>Artiste et Titre pas encore gravés dans le fichier (seulement identifiés ci-dessus) — un CDJ ne peut pas les lire tant que ce n'est pas fait. <strong>Convertir</strong> ou <strong>Appliquer les tags</strong> pour corriger.</span></div>` +
     `</div>` + // ferme .sift-zone-toggle-body-pad
     `</div>` + // ferme .sift-zone-toggle-body-inner
     `</div>`; // ferme #sift-meta-body ouvert au début de host.innerHTML
@@ -1637,7 +1642,7 @@ async function doRanger(mid: HTMLElement): Promise<void> {
   setActionsDisabled(true);
   if (ranger)
     ranger.innerHTML =
-      '<i class="ti ti-loader-2 sift-spin sift-icon-inline-md"></i> Rangement en cours…';
+      '<i class="ti ti-loader-2 sift-spin sift-icon-inline-md"></i> Conversion en cours…';
   // FIX-1: a RAIL_MISMATCH rejection means the source's extension claims lossless but its real
   // content is lossy (e.g. an MP3 renamed .flac) — retry once with explicit confirmation instead
   // of a plain toast. A retry loop (not recursion) so this function's own `finally` stays the
@@ -1675,7 +1680,7 @@ async function doRanger(mid: HTMLElement): Promise<void> {
           const ext = (track.path.split(".").pop() || "").toUpperCase();
           const proceed = await confirmAction(
             `Ce fichier est déclaré ${ext} mais son contenu réel est compressé (lossy) — ` +
-              `le convertir créerait un faux fichier lossless.\n\nRanger quand même ?`,
+              `le convertir créerait un faux fichier lossless.\n\nConvertir quand même ?`,
           );
           if (proceed) {
             allowRailMismatch = true;
@@ -1696,7 +1701,7 @@ async function doRanger(mid: HTMLElement): Promise<void> {
     else if (msg.toLowerCase().includes("upscale")) toast("Refusé : pas de surqualité lossy → lossless.", false);
     else if (/permission|access|denied/i.test(msg)) toast("Refusé : accès au fichier/dossier refusé.", false);
     else if (/no such file|not found|introuvable/i.test(msg)) toast("Fichier introuvable — a-t-il été déplacé ?", false);
-    else toast(`Échec du rangement : ${msg}`, false);
+    else toast(`Échec de la conversion : ${msg}`, false);
     console.error("file_track failed", e);
     setActionsDisabled(false);
     if (ranger && orig != null) ranger.innerHTML = orig;
@@ -1725,7 +1730,7 @@ function showFiledConfirm(batchId: string, bin: string, filedPath: string): void
   banner.innerHTML =
     `<div class="sift-filed-banner-head">` +
     `<i class="ti ti-check"></i>` +
-    `<span class="sift-filed-banner-label">Rangé</span>` +
+    `<span class="sift-filed-banner-label">Converti</span>` +
     `<span class="sift-filed-banner-bin">→ ${esc(bin)}</span>` +
     `<button data-fil="filed-close" title="Fermer" aria-label="Fermer" class="sift-filed-banner-close"><i class="ti ti-x"></i></button>` +
     `</div>` +
@@ -1816,7 +1821,7 @@ function clearPane(mid: HTMLElement, emptyQueue = false): void {
         title: "Rien à revoir",
         note: "Les morceaux à traiter apparaissent ici une fois ajoutés depuis Accueil ou déposés dans la file.",
       })
-    : '<div class="sift-clear-pane">Sélectionne un morceau dans la file pour l\'écouter et le ranger.</div>';
+    : '<div class="sift-clear-pane">Sélectionne un morceau dans la file pour l\'écouter et le convertir.</div>';
   // The validation footer lives in the rail (#filfoot); clear it too so no stale controls linger
   // (non-throw: clearPane runs from async revert/undo/secondary callbacks that may fire off Review).
   const ff = document.getElementById("filfoot");
@@ -1828,7 +1833,7 @@ function clearPane(mid: HTMLElement, emptyQueue = false): void {
 function dupBanner(m: DupMatch): string {
   const where =
     m.status === "filed"
-      ? `Déjà rangé : ${esc((m.folder ? m.folder + "/" : "") + (m.filename || ""))}`
+      ? `Déjà converti : ${esc((m.folder ? m.folder + "/" : "") + (m.filename || ""))}`
       : `Doublon d'un fichier en file : ${esc(m.filename || "")}`;
   const sure = m.kind === "both";
   const fg = sure ? "var(--color-text-warning)" : "var(--color-text-tertiary)";

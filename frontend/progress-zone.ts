@@ -34,7 +34,7 @@ const ICONS: Record<TaskKind, string> = {
 const LABELS: Record<TaskKind, string> = {
   analyze: "Analyse",
   identify: "Identification",
-  file: "Rangement",
+  file: "Conversion",
   export: "Export",
 };
 
