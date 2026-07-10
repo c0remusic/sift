@@ -139,6 +139,13 @@ impl SpectrumAccumulator {
     /// straight to true digital silence, so that extra check silently missed real cliffs on
     /// genuine files (measured: -37dB right after a real ~16kHz cliff, only reaching -95dB
     /// ~4kHz later) — only a synthetic true-silence test signal ever satisfied it.
+    ///
+    /// A relative drop alone isn't enough either, though: a candidate is only accepted if
+    /// content never climbs back near the pre-drop level anywhere further up (persistence,
+    /// checked relative to `below`, not to an absolute floor). A genuine encoder lowpass
+    /// never recovers — its residual keeps decaying or holds low all the way to Nyquist. A
+    /// mid-spectrum notch (an EQ dip, a comb-filter null) does recover, which is exactly
+    /// what distinguishes "the real cutoff" from "a dip with real content on both sides".
     fn detect_cutoff(&self) -> f32 {
         if self.frames_total == 0 || self.bins < 8 {
             return 0.0;
@@ -165,6 +172,11 @@ impl SpectrumAccumulator {
 
         let band = ((500.0 / hz_per_bin).ceil() as usize).max(2);
         const DROP_DB: f32 = 18.0; // a real cliff drops at least this much across the band
+        // How close to `below` counts as "recovered" — real encoder residual sits tens of dB
+        // below the passband (measured: -37dB or lower vs. a ~0dB passband), so recovering to
+        // within half the required drop is a generous, unambiguous signal of real content
+        // resuming, not encoder noise jitter.
+        const RECOVERY_TOL: f32 = DROP_DB / 2.0;
 
         let guard = band + win + 1;
         if self.bins <= 2 * guard {
@@ -173,7 +185,13 @@ impl SpectrumAccumulator {
         for k in (guard..self.bins - guard).rev() {
             let above = (k + 1..=k + band).map(smooth).sum::<f32>() / band as f32;
             let below = (k - band..k).map(smooth).sum::<f32>() / band as f32;
-            if below - above >= DROP_DB {
+            if below - above < DROP_DB {
+                continue;
+            }
+            let recovers = (k + band + 1..self.bins)
+                .step_by(band.max(1))
+                .any(|j| smooth(j) >= below - RECOVERY_TOL);
+            if !recovers {
                 return k as f32 * hz_per_bin;
             }
         }
@@ -330,6 +348,47 @@ mod tests {
         assert!(report.cutoff_hz > 15500.0 && report.cutoff_hz < 17000.0,
             "cutoff {} should sit at the ~16.2kHz cliff despite gradual residual decay above it \
              (a real encoder never collapses to true digital silence within one averaging band)",
+            report.cutoff_hz);
+    }
+
+    /// A genuine full-band lossless master with a mid-spectrum notch (a mastering EQ dip, a
+    /// comb-filter null, a de-esser working across a wide band) must NOT be reported as
+    /// having a cutoff at the notch — real content resumes above it, unlike a genuine
+    /// encoder lowpass where nothing meaningful ever returns. A relative-drop-only check
+    /// (no persistence requirement) latches onto the notch's lower edge instead: flat 0dB,
+    /// dip to -25dB across ~18.0-18.5kHz, recovered to 0dB from 19kHz to Nyquist.
+    #[test]
+    fn full_band_content_with_a_mid_spectrum_notch_is_not_a_cutoff() {
+        const POINTS: &[(f32, f32)] = &[
+            (0.0, 0.0), (17500.0, 0.0), (18000.0, -25.0), (18500.0, -25.0),
+            (19000.0, 0.0), (22050.0, 0.0),
+        ];
+        fn interp_db(freq: f32) -> f32 {
+            if freq <= POINTS[0].0 {
+                return POINTS[0].1;
+            }
+            for w in POINTS.windows(2) {
+                let (f0, d0) = w[0];
+                let (f1, d1) = w[1];
+                if freq <= f1 {
+                    let t = (freq - f0) / (f1 - f0);
+                    return d0 + t * (d1 - d0);
+                }
+            }
+            POINTS.last().unwrap().1
+        }
+
+        let mut a = SpectrumAccumulator::new(SR, 4096, false);
+        let hz_per_bin = a.sr as f32 / a.fft_size as f32;
+        a.frames_total = 1;
+        for k in 0..a.bins {
+            let db = interp_db(k as f32 * hz_per_bin);
+            a.ltas[k] = 10f64.powf(db as f64 / 10.0);
+        }
+        let report = a.finish();
+        assert!(report.cutoff_hz > 20000.0,
+            "cutoff {} should report near Nyquist (genuine full-band content resumes above \
+             the notch) instead of latching onto the notch's lower edge as a false cutoff",
             report.cutoff_hz);
     }
 }
