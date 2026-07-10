@@ -15,17 +15,31 @@ color-scheme:light;
    surface (raised buttons/popovers), the recessed segmented "track"/well, and the SOLID
    hover/selection fills for nav items and rows (the mockup uses solids, not translucent overlays). */
 --color-background-queue:oklch(92.39% 0.0109 76.6);--color-surface-raised:oklch(98.23% 0.0069 88.64);--color-track:oklch(89.06% 0.0138 78.26);--color-row-active:oklch(95.36% 0.0091 78.28);--color-nav-active:oklch(89.37% 0.0138 78.26);
---color-background-info:oklch(56.9% 0.1044 246.74 / .10);--color-background-danger:oklch(57.16% 0.1594 30.17 / .14);--color-background-success:oklch(53.87% 0.0763 150.63 / .14);--color-background-warning:oklch(62.04% 0.116 73.21 / .14);
+/* bg-{info,danger,success,warning} + hue-*-bg: solid (opaque), not alpha-over-surface — an alpha
+   fill composites differently depending which grey card sits beneath it, and measured contrast
+   against the paired text token dropped as low as 3.37:1 on the darkest cards (fails AA 4.5:1),
+   see the palette-coherence audit (2026-07-10). Same hue as before, chroma resized for a solid
+   "pastel card" look, resolved to ~5:1 against their own text token everywhere. */
+--color-background-info:oklch(87.46% 0.035 246.74);--color-background-danger:oklch(90.45% 0.045 30.17);--color-background-success:oklch(93.42% 0.035 150.63);--color-background-warning:oklch(99.00% 0.045 73.21);
 --color-text-primary:oklch(31.16% 0.0105 73.53);--color-text-secondary:oklch(45.4% 0.0145 67.45);--color-text-tertiary:oklch(61.87% 0.0133 79.76);--color-text-quaternary:oklch(75.24% 0.0139 82.4);
 --color-text-info:oklch(45.37% 0.0835 246.66);--color-text-danger:oklch(48.88% 0.1399 30.93);--color-text-success:oklch(49.19% 0.0735 151.97);--color-text-warning:oklch(53.34% 0.103 75.31);
 --color-border-tertiary:oklch(25.67% 0.0142 67.12 / 0.09);--color-border-secondary:oklch(25.67% 0.0142 67.12 / 0.16);
 --color-border-info:oklch(56.9% 0.1044 246.74 / .35);--color-border-danger:oklch(57.16% 0.1594 30.17 / .42);
---color-hue-indigo-text:oklch(43.43% 0.1484 283.58);--color-hue-indigo-bg:oklch(52.95% 0.191 278.34 / .14);--color-hue-purple-text:oklch(45.72% 0.1313 307.39);--color-hue-purple-bg:oklch(61.49% 0.2129 312.41 / .14);--color-hue-pink-text:oklch(45.67% 0.1331 1.47);--color-hue-pink-bg:oklch(62.25% 0.1666 2.52 / .14);--color-hue-teal-text:oklch(47.62% 0.0805 184.5);--color-hue-teal-bg:oklch(60.75% 0.1029 186.37 / .14);--color-hue-yellow-text:oklch(54.77% 0.1119 90.23);
+--color-hue-indigo-text:oklch(43.43% 0.1484 283.58);--color-hue-indigo-bg:oklch(83.28% 0.045 278.34);--color-hue-purple-text:oklch(45.72% 0.1313 307.39);--color-hue-purple-bg:oklch(86.36% 0.05 312.41);--color-hue-pink-text:oklch(45.67% 0.1331 1.47);--color-hue-pink-bg:oklch(86.03% 0.045 2.52);--color-hue-teal-text:oklch(47.62% 0.0805 184.5);--color-hue-teal-bg:oklch(91.40% 0.035 186.37);--color-hue-yellow-text:oklch(54.77% 0.1119 90.23);
+/* Icon/glyph color drawn on top of a solid accent fill (ex: watch-toggle checkmark on
+   --color-text-success). Was a hardcoded #fff fallback on an undefined token — worked by
+   accident in light (accent fills are mid-dark here) but would go invisible in dark, where the
+   same accent tokens are light (see palette-coherence audit, 2026-07-10). */
+--color-text-on-accent:oklch(100% 0 0);
 /* Neutral overlay tints (hover/selection/left-bar/badge on neutral surfaces) — dark-tinted here
    since the surface is light; flipped to light-tinted in the dark variant below. Anything that
    used to hardcode rgba(255,255,255,...) for "selected row" must use these instead, or it goes
    invisible the moment dark mode is active (see fix 2026-07-01: .nv/.qi selection). */
 --overlay-hover:oklch(25.67% 0.0142 67.12 / .035);--overlay-selected:oklch(25.67% 0.0142 67.12 / .06);
+/* Hover-scrub fill on the waveform (see .sift-wave-hover) — was only added to the 2 dark blocks
+   when created (2026-07-10), never here: .sift-wave-hover's background silently resolved to
+   nothing in light theme (regression found via the follow-up coherence audit, same session). */
+--overlay-wave-hover:oklch(25.67% 0.0142 67.12 / .16);
 --overlay-badge:oklch(25.67% 0.0142 67.12 / .06);
 /* Voile de zone de dépôt (drag OS) : surface quasi-opaque teintée info, même langage que le
    bouton Destination du rail (base + tint info), thème-aware. Remplace l'ancien rgba sombre
@@ -83,28 +97,50 @@ color-scheme:light;
 @media (prefers-color-scheme:dark){
   :root:not([data-theme="light"]){
     color-scheme:dark;
-    --color-background-primary:oklch(27.57% 0.0054 106.75);--color-background-secondary:oklch(34.77% 0.0086 97.58);--color-background-tertiary:oklch(31.64% 0.0035 106.6);--color-background-queue:oklch(30.01% 0.0053 106.71);--color-surface-raised:oklch(38.94% 0.01 99.12);--color-track:oklch(32.04% 0.0088 97.61);--color-row-active:oklch(36.73% 0.012 93.78);--color-nav-active:oklch(35.23% 0.0105 91.64);
-    --color-background-info:oklch(56.9% 0.1044 246.74 / .14);--color-background-danger:oklch(57.16% 0.1594 30.17 / .16);--color-background-success:oklch(53.87% 0.0763 150.63 / .14);--color-background-warning:oklch(62.04% 0.116 73.21 / .14);
-    --color-text-primary:oklch(95.9% 0.0115 84.58);--color-text-secondary:oklch(81.67% 0.0171 79.34);--color-text-tertiary:oklch(67.56% 0.0148 78.23);--color-text-quaternary:oklch(59.57% 0.0153 78.21);
+    /* Neutral surface family recomputed onto one coherent hue (2026-07-10 palette-coherence
+       audit): was split across 3 unrelated hue clusters (~92°/~99°/~107°) instead of a single
+       warm-grey direction like the light theme uses — bg-primary and surface-raised, cards that
+       sit right next to each other, didn't even share a hue. All 8 now share H=77.5 (the light
+       theme's own dominant hue), L unchanged except --color-track (see below). */
+    --color-background-primary:oklch(27.57% 0.009 77.5);--color-background-secondary:oklch(34.77% 0.011 77.5);--color-background-tertiary:oklch(31.64% 0.009 77.5);--color-background-queue:oklch(30.01% 0.009 77.5);--color-surface-raised:oklch(38.94% 0.011 77.5);
+    /* --color-track was a standalone literal (32.04%, then 22.5%, then 25% across 3 rounds of
+       retour utilisateur 2026-07-10 — too light/recessed-wrong, then too dark/heavy each time).
+       Settled on reusing --color-background-primary directly: same grey already validated on
+       .sift-editor-input, still darker than every card it sits inside (secondary/queue/tertiary),
+       still the darkest neutral — but no separately-tuned value to drift out of sync again. */
+    --color-track:var(--color-background-primary);--color-row-active:oklch(36.73% 0.012 77.5);--color-nav-active:oklch(35.23% 0.011 77.5);
+    /* bg-{info,danger,success,warning}: solid, not alpha-over-surface — see light block for the
+       contrast rationale (measured as low as 3.37:1 against paired text on the darkest cards). */
+    --color-background-info:oklch(39.16% 0.035 246.74);--color-background-danger:oklch(37.65% 0.045 30.17);--color-background-success:oklch(44.00% 0.035 150.63);--color-background-warning:oklch(42.79% 0.045 73.21);
+    --color-text-primary:oklch(95.9% 0.0115 77.5);--color-text-secondary:oklch(81.67% 0.0171 77.5);--color-text-tertiary:oklch(67.56% 0.0148 77.5);--color-text-quaternary:oklch(59.57% 0.0153 77.5);
     --color-text-info:oklch(79.21% 0.0789 242.05);--color-text-danger:oklch(78.05% 0.0992 32.54);--color-text-success:oklch(84.99% 0.0947 151.66);--color-text-warning:oklch(84.04% 0.1108 78.51);
     --color-border-tertiary:oklch(100.0% 0.0 89.88 / 0.09);--color-border-secondary:oklch(100.0% 0.0 89.88 / 0.22);
     --color-border-info:oklch(79.21% 0.0789 242.05 / .30);--color-border-danger:oklch(78.05% 0.0992 32.54 / .40);
-    --color-hue-indigo-text:oklch(74.16% 0.1143 286.69);--color-hue-indigo-bg:oklch(52.95% 0.191 278.34 / .18);--color-hue-purple-text:oklch(77.58% 0.0892 311.64);--color-hue-purple-bg:oklch(61.49% 0.2129 312.41 / .18);--color-hue-pink-text:oklch(80.76% 0.0905 355.95);--color-hue-pink-bg:oklch(62.25% 0.1666 2.52 / .18);--color-hue-teal-text:oklch(84.24% 0.0961 185.53);--color-hue-teal-bg:oklch(60.75% 0.1029 186.37 / .18);--color-hue-yellow-text:oklch(88.36% 0.129 93.67);
+    --color-hue-indigo-text:oklch(74.16% 0.1143 286.69);--color-hue-indigo-bg:oklch(34.15% 0.045 278.34);--color-hue-purple-text:oklch(77.58% 0.0892 311.64);--color-hue-purple-bg:oklch(37.40% 0.05 312.41);--color-hue-pink-text:oklch(80.76% 0.0905 355.95);--color-hue-pink-bg:oklch(39.91% 0.045 2.52);--color-hue-teal-text:oklch(84.24% 0.0961 185.53);--color-hue-teal-bg:oklch(43.48% 0.035 186.37);--color-hue-yellow-text:oklch(88.36% 0.129 93.67);
     --overlay-hover:oklch(100.0% 0.0 89.88 / .03);--overlay-selected:oklch(100.0% 0.0 89.88 / .06);
     --overlay-badge:oklch(100.0% 0.0 89.88 / .06);--overlay-drop:oklch(35.51% 0.0051 106.66 / .93);
+    /* Hover-scrub fill on the waveform (see .sift-wave-hover) — replaces a hardcoded
+       rgba(255,255,255,.6) that ignored the theme, same overlay-tint convention as --overlay-hover. */
+    --overlay-wave-hover:oklch(100% 0 0 / .14);
+    /* Icon drawn on a solid accent fill (see light block) — dark ink, since accent tokens
+       (text-success/danger/info/warning) are all LIGHT in dark mode. */
+    --color-text-on-accent:var(--color-background-primary);
   }
 }
 :root[data-theme="dark"]{
   color-scheme:dark;
-  --color-background-primary:oklch(27.57% 0.0054 106.75);--color-background-secondary:oklch(34.77% 0.0086 97.58);--color-background-tertiary:oklch(31.64% 0.0035 106.6);--color-background-queue:oklch(30.01% 0.0053 106.71);--color-surface-raised:oklch(38.94% 0.01 99.12);--color-track:oklch(32.04% 0.0088 97.61);--color-row-active:oklch(36.73% 0.012 93.78);--color-nav-active:oklch(35.23% 0.0105 91.64);
-  --color-background-info:oklch(56.9% 0.1044 246.74 / .14);--color-background-danger:oklch(57.16% 0.1594 30.17 / .16);--color-background-success:oklch(53.87% 0.0763 150.63 / .14);--color-background-warning:oklch(62.04% 0.116 73.21 / .14);
-  --color-text-primary:oklch(95.9% 0.0115 84.58);--color-text-secondary:oklch(81.67% 0.0171 79.34);--color-text-tertiary:oklch(67.56% 0.0148 78.23);--color-text-quaternary:oklch(59.57% 0.0153 78.21);
+  --color-background-primary:oklch(27.57% 0.009 77.5);--color-background-secondary:oklch(34.77% 0.011 77.5);--color-background-tertiary:oklch(31.64% 0.009 77.5);--color-background-queue:oklch(30.01% 0.009 77.5);--color-surface-raised:oklch(38.94% 0.011 77.5);
+  --color-track:var(--color-background-primary);--color-row-active:oklch(36.73% 0.012 77.5);--color-nav-active:oklch(35.23% 0.011 77.5);
+  --color-background-info:oklch(39.16% 0.035 246.74);--color-background-danger:oklch(37.65% 0.045 30.17);--color-background-success:oklch(44.00% 0.035 150.63);--color-background-warning:oklch(42.79% 0.045 73.21);
+  --color-text-primary:oklch(95.9% 0.0115 77.5);--color-text-secondary:oklch(81.67% 0.0171 77.5);--color-text-tertiary:oklch(67.56% 0.0148 77.5);--color-text-quaternary:oklch(59.57% 0.0153 77.5);
   --color-text-info:oklch(79.21% 0.0789 242.05);--color-text-danger:oklch(78.05% 0.0992 32.54);--color-text-success:oklch(84.99% 0.0947 151.66);--color-text-warning:oklch(84.04% 0.1108 78.51);
   --color-border-tertiary:oklch(100.0% 0.0 89.88 / 0.09);--color-border-secondary:oklch(100.0% 0.0 89.88 / 0.22);
   --color-border-info:oklch(79.21% 0.0789 242.05 / .30);--color-border-danger:oklch(78.05% 0.0992 32.54 / .40);
-  --color-hue-indigo-text:oklch(74.16% 0.1143 286.69);--color-hue-indigo-bg:oklch(52.95% 0.191 278.34 / .18);--color-hue-purple-text:oklch(77.58% 0.0892 311.64);--color-hue-purple-bg:oklch(61.49% 0.2129 312.41 / .18);--color-hue-pink-text:oklch(80.76% 0.0905 355.95);--color-hue-pink-bg:oklch(62.25% 0.1666 2.52 / .18);--color-hue-teal-text:oklch(84.24% 0.0961 185.53);--color-hue-teal-bg:oklch(60.75% 0.1029 186.37 / .18);--color-hue-yellow-text:oklch(88.36% 0.129 93.67);
+  --color-hue-indigo-text:oklch(74.16% 0.1143 286.69);--color-hue-indigo-bg:oklch(34.15% 0.045 278.34);--color-hue-purple-text:oklch(77.58% 0.0892 311.64);--color-hue-purple-bg:oklch(37.40% 0.05 312.41);--color-hue-pink-text:oklch(80.76% 0.0905 355.95);--color-hue-pink-bg:oklch(39.91% 0.045 2.52);--color-hue-teal-text:oklch(84.24% 0.0961 185.53);--color-hue-teal-bg:oklch(43.48% 0.035 186.37);--color-hue-yellow-text:oklch(88.36% 0.129 93.67);
   --overlay-hover:oklch(100.0% 0.0 89.88 / .03);--overlay-selected:oklch(100.0% 0.0 89.88 / .06);
   --overlay-badge:oklch(100.0% 0.0 89.88 / .06);--overlay-drop:oklch(35.51% 0.0051 106.66 / .93);
+  --overlay-wave-hover:oklch(100% 0 0 / .14);
+  --color-text-on-accent:var(--color-background-primary);
 }
 *{box-sizing:border-box}
 html,body{margin:0;height:100%;overflow:hidden;background:var(--color-background-tertiary);color:var(--color-text-primary);font-family:var(--font-ui)}
@@ -425,7 +461,26 @@ button{font-family:inherit;background:transparent;border:0.5px solid var(--color
    the same bright off-white as --color-text-primary in dark mode, so that ring read as a solid
    white bar wherever it landed. The translucent border token is still clearly visible but no
    longer stark white. */
-button:focus-visible,input:focus-visible,select:focus-visible,a:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--color-border-info);outline-offset:1px}
+button:focus-visible,select:focus-visible,a:focus-visible,[tabindex]:focus-visible{outline:2px solid var(--color-border-info);outline-offset:1px}
+/* Text inputs get their own focus treatment instead of the generic offset outline (2026-07-10,
+   retour utilisateur : "pas fan du feedback quand on clique dans la case pour éditer") — a ring
+   floating 1px outside the box read as a harsh, disconnected browser default. Inputs already have
+   a border to work with, so focus just shifts its color to the accent — no added glow/box-shadow,
+   a first pass with both read as "2 borders" and was judged less discreet (retour utilisateur,
+   même session). Follows the box's own border-radius instead of a squared-off outline. */
+input:not([type="checkbox"]):focus-visible{outline:none;border-color:var(--color-text-info)}
+/* Checkboxes need an explicit rule of their own (2026-07-10, follow-up coherence audit) — none of
+   the app's checkboxes actually matched the generic button/select/a/[tabindex] rule above unless
+   they happened to carry a tabindex attribute (the batch ones do, tabindex="-1", but the "Sur
+   place" toggle in the filing rail — filing.ts's data-fil="inplace" — has none), so at least one
+   real checkbox was silently falling back to the unthemed browser-default focus ring. Narrower
+   outline+offset than the generic one (1.5px/1px vs 2px/1px): a native checkbox is ~13px, the
+   generic ring reads disproportionately heavy at that size. */
+input[type="checkbox"]:focus-visible{outline:1.5px solid var(--color-border-info);outline-offset:1px}
+/* Text selection highlight — was entirely unstyled (browser default blue, same unthemed-system-
+   color class of bug as the pre-fix .sift-wave-hover/.sift-kbd-hint-id). --color-border-info is
+   already the app's translucent-accent token for exactly this kind of overlay tint. */
+::selection{background:var(--color-border-info);color:var(--color-text-primary)}
 button:hover{background:var(--color-background-secondary)}button:disabled{opacity:.4;cursor:default}
 /* Audit-ref E1 (Écartés, 2026-07-09) : liens boutique (ecStoreLinks), <button> transparent
    converti depuis <a> sans href (non focusable) — réaffirme transparent au survol par prudence,
@@ -458,7 +513,7 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-text-info)}
    focusable. Coche ti-check ajoutée à l'état coché ; tabindex+role posés côté TS
    (home-sources.ts) pour que le ring :focus-visible générique (styles.css:384) s'applique. */
 .sift-home-watch-toggle-box{width:15px;height:15px;border-radius:4px;border:1px solid var(--color-border-secondary);background:transparent;flex:none;display:flex;align-items:center;justify-content:center;transition:background-color .12s ease,border-color .12s ease}
-.sift-home-watch-toggle-box i{font-size:11px;color:var(--color-text-on-accent,#fff);opacity:0;transform:scale(.6);transition:opacity .12s ease,transform .12s ease}
+.sift-home-watch-toggle-box i{font-size:11px;color:var(--color-text-on-accent);opacity:0;transform:scale(.6);transition:opacity .12s ease,transform .12s ease}
 .sift-home-watch-toggle[data-watched="1"] .sift-home-watch-toggle-box{background:var(--color-text-success);border-color:var(--color-text-success)}
 .sift-home-watch-toggle[data-watched="1"] .sift-home-watch-toggle-box i{opacity:1;transform:scale(1)}
 /* Audit-ref C1 (Accueil, 2026-07-08, réf. shadcn Badge/Button) : ces 2 boutons posent leur
@@ -485,7 +540,9 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-text-info)}
 .lib-detail-close:hover,.lib-detail-close:focus-visible{opacity:1;background:var(--color-surface-raised)}
 .lib-detail-close i{font-size:var(--text-base);color:var(--color-text-tertiary)}
 .lib-edit{display:flex;flex-direction:column;gap:10px}
-.lib-edit .sift-editor-input{background:var(--color-surface-raised)}
+/* Override to --color-surface-raised removed (2026-07-10) — .lib-edit is a .sift-ui-card, same
+   --color-background-queue family as the Revue metadata editor; it needs the same recessed
+   .sift-editor-input default now, not the lightest token in the system floating on top of it. */
 .lib-edit-meta{display:flex;align-items:center;gap:6px;flex-wrap:wrap}
 .lib-edit-actions{display:flex;gap:8px}
 .lib-edit-actions [data-lib="save"]{flex:1}
@@ -732,7 +789,7 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-wave-wrap.is-paused:hover .sift-player-wave{opacity:1}
 /* Alpha-masked to a snapshot of the wave canvas (see mountPlayer's updateWaveMask) so only the
    bar pixels tint, not the transparent gaps between them — no rectangle/line ever shows. */
-.sift-wave-hover{position:absolute;top:0;left:0;bottom:0;width:0;background:rgba(255,255,255,.6);pointer-events:none}
+.sift-wave-hover{position:absolute;top:0;left:0;bottom:0;width:0;background:var(--overlay-wave-hover);pointer-events:none}
 .sift-time-elapsed,.sift-time-total{position:absolute;bottom:3px;font-family:var(--font-mono);font-size:var(--text-xs);font-weight:500;line-height:1.2;padding:2px 6px;border-radius:var(--border-radius-sm);background:rgba(0,0,0,.55);pointer-events:none}
 .sift-time-elapsed{left:6px;color:var(--color-waveform-elapsed)}
 .sift-time-total{right:6px;color:rgba(255,255,255,.7)}
@@ -1013,7 +1070,11 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-editor-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:8px}
 .sift-editor-field{display:flex;flex-direction:column;gap:2px}
 .sift-editor-field-label{font-size:10px;letter-spacing:var(--tracking-wider);color:var(--color-text-tertiary);text-transform:uppercase}
-.sift-editor-input{font-size:var(--text-md);padding:4px 7px;background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);color:var(--color-text-primary);min-width:0}
+/* background:--color-background-primary (2026-07-10, retour utilisateur) — était -secondary, plus
+   CLAIR que la carte .sift-fil-editor-margin/.sift-ui-card qui l'entoure (--color-background-queue),
+   donc l'input "flottait" au lieu d'être renfoncé. --color-background-primary est plus sombre que
+   -queue (comme dans .mc/Réglages, seul input jugé "nickel") — même convention partout désormais. */
+.sift-editor-input{font-size:var(--text-md);padding:4px 7px;background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);color:var(--color-text-primary);min-width:0}
 .sift-genres-box{margin-bottom:10px;min-height:1px}
 /* Header row pairing the "Genres" caption with the Apply button (annotation: "à côté de genres" —
    was a full-width bar at the bottom of the card). .col-h's own margin-bottom neutralized here so
@@ -1052,7 +1113,7 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-rebuy{margin-bottom:10px}
 .sift-rebuy:empty{margin-bottom:0}
 .sift-rebuy-btn{width:100%;font-size:var(--text-sm);font-weight:500;color:var(--color-text-warning);background:var(--color-background-warning);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md)}
-.sift-kbd-hint-id{font-size:var(--text-2xs);border-color:rgba(0,0,0,.18);color:rgba(0,0,0,.5)}
+.sift-kbd-hint-id{font-size:var(--text-2xs);border-color:var(--color-border-tertiary);color:var(--color-text-tertiary)}
 .sift-identified-line{display:flex;align-items:center;gap:7px;padding:4px 2px}
 .sift-identified-cover{width:28px;height:28px;border-radius:3px;object-fit:cover;flex:none}
 .sift-identified-noart{width:28px;height:28px;border-radius:3px;background:var(--color-background-secondary);display:inline-flex;align-items:center;justify-content:center;flex:none}
