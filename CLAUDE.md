@@ -399,7 +399,7 @@ scope, Flutter écarté en Évaluation 19).
   puis retour à un état neutre (`--overlay-selected`, `--color-surface-raised`)
   est le bon pattern — pas une couleur sémantique qui reste allumée
   indéfiniment pour signaler "c'est fait".
-- **Boutons de rail/CTA (Ranger, Jeter, Confirmer, Enregistrer, Supprimer…) :
+- **Boutons de rail/CTA (Convertir, Jeter, Confirmer, Enregistrer, Supprimer…) :
   texte seul, jamais d'icône décorative à côté d'un label déjà descriptif**
   (retour utilisateur 2026-07-06). L'icône n'ajoute rien quand le texte dit
   déjà l'action — réservé aux cas où le glyphe porte une info sans équivalent
@@ -435,6 +435,15 @@ scope, Flutter écarté en Évaluation 19).
   `--color-surface-raised` valaient exactement `#46453F` en sombre (bien
   distincts en clair), rendant une pastille sélectionnée invisible sur sa
   propre piste.
+- **Après toute édition d'un token CSS existant dans un seul bloc de thème,
+  vérifier qu'il existe et a été édité dans les 2 autres blocs** (`:root`,
+  `@media (prefers-color-scheme:dark)`, `:root[data-theme="dark"]`) — diff les
+  NOMS de `--token` entre les 3 blocs plutôt que de se fier à la mémoire de
+  l'avoir fait partout. 2 bugs réels trouvés le 2026-07-10 (`--overlay-wave-
+  hover` posé seulement dans les 2 blocs sombres, oublié en clair ;
+  `--color-text-on-accent` presque dans le même cas), en plus du bug
+  `--color-track`/`--color-surface-raised` du 2026-07-08 ci-dessus — même
+  classe de bug, 2 fois en 2 jours.
 
 ## Vérification UI — app réelle, pas la maquette navigateur
 
