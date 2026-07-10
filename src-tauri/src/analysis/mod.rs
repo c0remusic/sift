@@ -141,7 +141,10 @@ pub fn analyze(path: &str, with_spectrogram: bool) -> Result<AnalysisReport, Str
         .extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
 
     let cutoff_hz = spec_res.cutoff_hz;
-    let verdict = verdict::verdict(cutoff_hz, tag.declared_rail, tag.declared_bitrate);
+    // TODO(Task 2): wire real content-rail sniffing (container/codec, independent of the
+    // declared extension). Rail::Unknown never triggers the mismatch short-circuit in
+    // verdict(), so this placeholder preserves current behavior exactly until then.
+    let verdict = verdict::verdict(cutoff_hz, tag.declared_rail, tag.declared_bitrate, Rail::Unknown);
     let est_kbps = verdict::estimate_kbps(cutoff_hz);
 
     log::info!(

@@ -45,10 +45,25 @@ pub fn estimate_kbps(cutoff_hz: f32) -> u32 {
 }
 
 /// Maps cutoff + declared rail + declared bitrate to a verdict.
-pub fn verdict(cutoff_hz: f32, declared: Rail, declared_bitrate: Option<u32>) -> Verdict {
+///
+/// `content_rail` is the rail sniffed from the actual container/codec (independent of the
+/// declared extension/tag) — when it disagrees with `declared` on the lossless side (declared
+/// FLAC/WAV/AIFF but the container is actually a lossy codec, e.g. an MP3 renamed to `.flac`),
+/// that mismatch alone is fraud, before even looking at the spectral cutoff: a renamed lossy
+/// source can coincidentally have a cutoff high enough to pass the cutoff-only check below.
+/// `Rail::Unknown` (sniffing failed/inconclusive) never triggers this short-circuit — it falls
+/// through to the existing cutoff-based logic unchanged.
+pub fn verdict(
+    cutoff_hz: f32,
+    declared: Rail,
+    declared_bitrate: Option<u32>,
+    content_rail: Rail,
+) -> Verdict {
     match declared {
         Rail::Lossless => {
-            if cutoff_hz >= LOSSLESS_OK_HZ {
+            if content_rail == Rail::Lossy {
+                Verdict::Fake
+            } else if cutoff_hz >= LOSSLESS_OK_HZ {
                 Verdict::Ok
             } else if cutoff_hz <= LOSSY_CLIFF_HZ {
                 Verdict::Fake
@@ -71,59 +86,136 @@ mod tests {
 
     #[test]
     fn lossless_with_full_band_is_ok() {
-        assert_eq!(verdict(21000.0, Rail::Lossless, None), Verdict::Ok);
+        assert_eq!(
+            verdict(21000.0, Rail::Lossless, None, Rail::Lossless),
+            Verdict::Ok
+        );
     }
 
     #[test]
     fn lossless_with_lossy_cliff_is_fake() {
-        assert_eq!(verdict(16000.0, Rail::Lossless, None), Verdict::Fake);
-        assert_eq!(verdict(19000.0, Rail::Lossless, None), Verdict::Fake);
+        assert_eq!(
+            verdict(16000.0, Rail::Lossless, None, Rail::Lossless),
+            Verdict::Fake
+        );
+        assert_eq!(
+            verdict(19000.0, Rail::Lossless, None, Rail::Lossless),
+            Verdict::Fake
+        );
     }
 
     #[test]
     fn lossless_in_grey_band_is_grey() {
-        assert_eq!(verdict(19800.0, Rail::Lossless, None), Verdict::Grey);
+        assert_eq!(
+            verdict(19800.0, Rail::Lossless, None, Rail::Lossless),
+            Verdict::Grey
+        );
     }
 
     #[test]
     fn honest_mp3_matching_its_bitrate_is_ok() {
         // genuine 320 (~20.5k), genuine 128 (~16k)
-        assert_eq!(verdict(20500.0, Rail::Lossy, Some(320)), Verdict::Ok);
-        assert_eq!(verdict(16000.0, Rail::Lossy, Some(128)), Verdict::Ok);
+        assert_eq!(
+            verdict(20500.0, Rail::Lossy, Some(320), Rail::Lossy),
+            Verdict::Ok
+        );
+        assert_eq!(
+            verdict(16000.0, Rail::Lossy, Some(128), Rail::Lossy),
+            Verdict::Ok
+        );
     }
 
     #[test]
     fn over_encoded_mp3_is_fake() {
         // declared 320 but cuts at 16k (transcoded up from ~128) → fraud
-        assert_eq!(verdict(16000.0, Rail::Lossy, Some(320)), Verdict::Fake);
+        assert_eq!(
+            verdict(16000.0, Rail::Lossy, Some(320), Rail::Lossy),
+            Verdict::Fake
+        );
         // declared 256 but cuts at 15k
-        assert_eq!(verdict(15000.0, Rail::Lossy, Some(256)), Verdict::Fake);
+        assert_eq!(
+            verdict(15000.0, Rail::Lossy, Some(256), Rail::Lossy),
+            Verdict::Fake
+        );
     }
 
     // FIX-18: 192/160 kbps were the only two of the six min_cutoff_hz_for_bitrate tiers never
     // exercised by a direct test (only 320/256/128 were covered above).
     #[test]
     fn honest_192_and_160_mp3_is_ok() {
-        assert_eq!(verdict(17000.0, Rail::Lossy, Some(192)), Verdict::Ok);
-        assert_eq!(verdict(16000.0, Rail::Lossy, Some(160)), Verdict::Ok);
+        assert_eq!(
+            verdict(17000.0, Rail::Lossy, Some(192), Rail::Lossy),
+            Verdict::Ok
+        );
+        assert_eq!(
+            verdict(16000.0, Rail::Lossy, Some(160), Rail::Lossy),
+            Verdict::Ok
+        );
     }
 
     #[test]
     fn over_encoded_192_and_160_mp3_is_fake() {
         // declared 192 but cuts at 15k (below the 16500Hz floor for 192) → fraud
-        assert_eq!(verdict(15000.0, Rail::Lossy, Some(192)), Verdict::Fake);
+        assert_eq!(
+            verdict(15000.0, Rail::Lossy, Some(192), Rail::Lossy),
+            Verdict::Fake
+        );
         // declared 160 but cuts at 14k (below the 15500Hz floor for 160) → fraud
-        assert_eq!(verdict(14000.0, Rail::Lossy, Some(160)), Verdict::Fake);
+        assert_eq!(
+            verdict(14000.0, Rail::Lossy, Some(160), Rail::Lossy),
+            Verdict::Fake
+        );
     }
 
     #[test]
     fn lossy_without_known_bitrate_is_ok() {
         // can't judge over-encoding without a declared bitrate → don't false-flag
-        assert_eq!(verdict(13000.0, Rail::Lossy, None), Verdict::Ok);
+        assert_eq!(
+            verdict(13000.0, Rail::Lossy, None, Rail::Lossy),
+            Verdict::Ok
+        );
     }
 
     #[test]
     fn unknown_rail_is_grey() {
-        assert_eq!(verdict(16000.0, Rail::Unknown, None), Verdict::Grey);
+        assert_eq!(
+            verdict(16000.0, Rail::Unknown, None, Rail::Unknown),
+            Verdict::Grey
+        );
+    }
+
+    // Bug case: an MP3 renamed to `.flac` declares Lossless but its container is actually
+    // lossy — the mismatch alone is fraud, regardless of how high the cutoff happens to be
+    // (a 256-320kbps source can cut near/above the lossless-OK threshold).
+    #[test]
+    fn declared_lossless_but_content_lossy_is_fake() {
+        assert_eq!(
+            verdict(20500.0, Rail::Lossless, None, Rail::Lossy),
+            Verdict::Fake
+        );
+    }
+
+    // Content-rail sniffing failed/inconclusive → must not false-positive off the mismatch
+    // short-circuit; falls back to the existing cutoff-only logic (Ok here).
+    #[test]
+    fn declared_lossless_content_unknown_falls_back_to_cutoff() {
+        assert_eq!(
+            verdict(21000.0, Rail::Lossless, None, Rail::Unknown),
+            Verdict::Ok
+        );
+    }
+
+    // Declared lossy stays on the existing cutoff/bitrate logic when content_rail agrees —
+    // the mismatch short-circuit is Lossless-branch-only.
+    #[test]
+    fn declared_lossy_content_lossy_unchanged_behavior() {
+        assert_eq!(
+            verdict(20500.0, Rail::Lossy, Some(320), Rail::Lossy),
+            Verdict::Ok
+        );
+        assert_eq!(
+            verdict(16000.0, Rail::Lossy, Some(320), Rail::Lossy),
+            Verdict::Fake
+        );
     }
 }
