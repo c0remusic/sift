@@ -157,6 +157,20 @@ pris juste avant un swap sur le vrai `master.db` s'est révélé déjà contamin
 par une session antérieure jamais restaurée (voir Évaluation 14,
 `docs/ressources-externes.md`).
 
+**Un test qui seed un setting/fichier de config doit respecter la même
+validation que le vrai chemin de production** — contourner cette validation
+pour aller plus vite dans le test masque exactement le genre de bug qu'on
+cherche à couvrir. Trouvé le 2026-07-12 : les 349+ tests M8 seedaient
+`rekordbox_xml_path` avec un `masterPlaylists6.xml` co-localisé à
+`master.db`, un scénario qui n'aurait jamais passé la validation réelle de
+`link_rekordbox_xml` (`<DJ_PLAYLISTS>` root exigé) — le vrai fichier lié en
+production est un export `<DJ_PLAYLISTS>` que l'utilisateur choisit
+d'enregistrer n'importe où, sans rapport avec le dossier de `master.db`. Le
+bug (résolution de `master.db` cassée en usage réel) a survécu des mois
+derrière une suite verte, découvert seulement par un clic réel en `tauri
+dev` (voir `sift-m8-pioneer-dir-vs-linked-xml`, mémoire, et
+`docs/plan-implementation.md` section M8).
+
 **Après 2 tentatives de correctif visuel/comportemental restées en échec**
 ("toujours pas", "pareil") — mesurer en direct avant un 3e essai, pas deviner
 plus fort la même chose. Pour Sift : CDP contre la vraie fenêtre `tauri dev`
