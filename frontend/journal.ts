@@ -319,7 +319,7 @@ export async function renderJournal(toast?: string, warn?: string): Promise<void
         backToRevue: true,
       });
   const voirToutHtml = hasAny
-    ? `<button class="jrnl-voir-tout" data-jact="mode-all">Voir tout l'historique →</button>`
+    ? `<button class="jrnl-voir-tout" data-jact="mode-all"><i class="ti ti-arrow-right"></i> Voir tout l'historique</button>`
     : "";
   const toastHtml = toast ? `<div class="jrnl-toast" aria-live="polite">${esc(toast)}</div>` : "";
   const warnHtml = warn ? `<div class="jrnl-toast jrnl-toast--warn" aria-live="assertive">${esc(warn)}</div>` : "";

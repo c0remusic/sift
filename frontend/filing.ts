@@ -1013,7 +1013,7 @@ async function doIdentify(
       // [C2/m5] explain WHY + give a direct action to open Réglages
       host.innerHTML =
         `<div class="sift-cands-msg">Discogs limite les recherches anonymes — ajoute ton jeton (gratuit) dans Réglages.</div>` +
-        `<button class="sift-cand-jump sift-goto-reglages" data-fil="goto-reglages">Ouvrir Réglages →</button>`;
+        `<button class="sift-cand-jump sift-goto-reglages" data-fil="goto-reglages"><i class="ti ti-arrow-right"></i> Ouvrir Réglages</button>`;
       const gotoBtn = host.querySelector<HTMLElement>('[data-fil="goto-reglages"]');
       gotoBtn?.addEventListener("click", () => {
         // Navigate to the Réglages view via the existing nav click handler in app.js

@@ -181,7 +181,7 @@ async function doIdentify(
     if (msg.includes("NO_TOKEN")) {
       host.innerHTML =
         `<div class="sift-cands-msg">Discogs limite les recherches anonymes — ajoute ton jeton (gratuit) dans Réglages.</div>` +
-        `<button class="sift-cand-jump" data-lib="goto-reglages" style="margin-top:5px;font-size:var(--text-sm);padding:3px 9px">Ouvrir Réglages →</button>`;
+        `<button class="sift-cand-jump" data-lib="goto-reglages" style="margin-top:5px;font-size:var(--text-sm);padding:3px 9px"><i class="ti ti-arrow-right"></i> Ouvrir Réglages</button>`;
       host.querySelector('[data-lib="goto-reglages"]')?.addEventListener("click", () => {
         requireEl('[data-view="reglages"]', "library-detail goto-reglages").dispatchEvent(
           new MouseEvent("click", { bubbles: true }),

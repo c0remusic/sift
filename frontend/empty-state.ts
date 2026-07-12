@@ -25,7 +25,7 @@ export interface EmptyStateOpts {
  *  handler. */
 export function emptyStateHtml(opts: EmptyStateOpts): string {
   const link = opts.backToRevue
-    ? `<button type="button" data-empty="revue" class="sift-empty-link"><i class="ti ti-arrow-right"></i> Ouvrir Revue</button>`
+    ? `<button type="button" data-empty="revue" class="sift-empty-link"><i class="ti-fill ti-fill-circle-arrow-right"></i> Ouvrir Revue</button>`
     : "";
   return (
     `<div class="sift-empty-state">` +

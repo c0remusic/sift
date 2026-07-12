@@ -1379,3 +1379,13 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
    for a whole dead-end screen, this is a single line inside a list whose header/actions stay
    functional around it (e.g. Accueil's source list with 0 sources). */
 .sift-list-empty-hint{font-size:var(--text-md);color:var(--color-text-tertiary);padding:4px 2px}
+/* Tabler's own "filled" webfont CSS redefines the shared `.ti` selector (with !important), so
+   loading it as a second stylesheet would silently flip every outline icon in the app to filled —
+   never do that. This is a scoped equivalent: same font file, own family name, own class, so only
+   elements explicitly opting into `.ti-fill` get a filled glyph. Trial per 2026-07-12 feedback
+   (poubelle confirmed filled; flèche circle in trial) — codepoints verified against the vendor's
+   own filled/*.svg comments, not guessed. */
+@font-face{font-family:"tabler-icons-filled";font-style:normal;font-weight:400;src:url("https://cdn.jsdelivr.net/npm/@tabler/icons-webfont/dist/fonts/tabler-icons-filled.woff2") format("woff2")}
+.ti-fill{font-family:"tabler-icons-filled";font-style:normal;speak:none;font-weight:normal;font-variant:normal;text-transform:none;line-height:1;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
+.ti-fill-trash:before{content:"\f783"}
+.ti-fill-circle-arrow-right:before{content:"\f6fc"}
