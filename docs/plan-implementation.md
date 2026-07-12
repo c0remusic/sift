@@ -391,18 +391,13 @@ empreintes Chromaprint).
 > cache incrémental corrompu par des rebuilds concurrents du watcher `tauri
 > dev` pendant l'investigation).
 >
-> **Vérification manuelle `tauri dev` restante** (côté clic réel dans l'UI —
-> le fix lui-même est prouvé par les 4 tests de régression, mais pas encore
-> confirmé par un clic utilisateur réel) : `tauri dev` est laissé tournant
-> avec le fix, XML de test déjà lié
-> (`rekordbox_xml_path` → copie isolée de `master.db`, voir
-> `scratchpad/m8-tier3-test/`). Reste à retaguer
-> `01 - The Brain Is....aif` (`C:\Users\LEETJ\Documents\Soulseek
-> Downloads\complete\`, confirmé présent dans la copie de test) et confirmer
-> l'apparition de la section Tier 3 metadata + le succès d'une application.
-> Non fait par l'agent lui-même : écrire un vrai tag ID3 sur un vrai fichier
-> utilisateur reste une action live nécessitant présence humaine (règle
-> CLAUDE.md), même pendant une session autonome.
+> **Vérification manuelle faite le 2026-07-12** (clic réel Antoine,
+> `01 - The Brain Is....aif`) — a trouvé et corrigé un vrai bug bloquant en
+> route, voir paragraphe "Bug résolution `master.db` par dossier Pioneer"
+> ci-dessous. Une fois corrigé : application réelle confirmée, `master.db`
+> vérifié après coup (copie + décrypt hors ligne) — Title/Artist synchronisés
+> correspondent exactement aux tags réels du fichier (match Discogs légitime,
+> pas les tags de test).
 >
 > **Risque casse/normalisation fermé le 2026-07-09** : matching devenu
 > trim+insensible à la casse (`COLLATE NOCASE`), testé.
@@ -462,12 +457,11 @@ empreintes Chromaprint).
 > `docs/superpowers/changes/2026-07-09-m8-tier3-artwork-sync-ipc-ui/design.md`.
 > 346 tests + clippy + tsc clean, 349 après BUG-3 (voir le paragraphe BUG-3
 > sous la synchro metadata ci-dessus — même comparaison stricte de chemin,
-> même fix `normalize_masterdb_path`, corrigé dans le même geste). **Vérification
-> manuelle `tauri dev` restante** (lier un XML Rekordbox de test, donner une
-> nouvelle pochette à une piste liée, confirmer l'apparition de la section et
-> le succès d'une application, Rekordbox fermé, la nouvelle pochette visible
-> après réimport) — même limite que la synchro metadata : le clic réel reste
-> à faire par Antoine, pas par un agent en session autonome.
+> même fix `normalize_masterdb_path`, corrigé dans le même geste).
+> **Vérification manuelle faite le 2026-07-12** (nouvelle pochette sur la
+> même piste, même bug résolution `master.db` que ci-dessous) — 3 variantes
+> `artwork.jpg`/`_m`/`_s` vérifiées après coup (copie + décrypt hors ligne) :
+> contenu changé, dimensions exactes préservées par variante.
 >
 > **Groupement par session ajouté le 2026-07-10** (les 3 listes de candidats
 > Tier 1/3 pouvaient devenir longues après un gros import/retag) :
@@ -477,7 +471,36 @@ empreintes Chromaprint).
 > sélectionner/désélectionner" par groupe. Mirroring le pattern de
 > regroupement par session déjà en place côté Journal (`journal.ts`,
 > `.jrnl-session-*`). tsc clean, 37 tests `rekordbox_repairs::` verts (build
-> isolé). **Vérification visuelle restante** — même limite que ci-dessus.
+> isolé). Vérifié visuellement le 2026-07-12 en même temps que le reste.
+>
+> **Bug résolution `master.db` par dossier Pioneer, trouvé et corrigé le
+> 2026-07-12** pendant la vérification manuelle ci-dessus : les 3 tiers
+> dérivaient le chemin de `master.db` du dossier **parent du XML lié**
+> (`rekordbox_xml_path`), en supposant `master.db`/`masterPlaylists6.xml`
+> toujours siblings (vrai pour le fichier interne Pioneer). Mais le fichier
+> réellement lié via Réglages est un export `<DJ_PLAYLISTS>` que l'utilisateur
+> choisit d'enregistrer où il veut (chez Antoine :
+> `Documents\rekordbox\library.xml`, sans `master.db` à côté) — donc cette
+> dérivation ne trouvait jamais rien en usage réel, silencieusement, depuis
+> le début. Corrigé par `actions::rekordbox_pioneer_dir()` : résout
+> `%APPDATA%\Pioneer\rekordbox` (Windows) / `~/Library/Application
+> Support/Pioneer/rekordbox` (Mac) indépendamment du XML lié (toujours gaté
+> sur "un XML est lié" comme signal d'opt-in). Override thread-local
+> (`set_pioneer_dir_override_for_test`, pas une variable d'environnement —
+> le harness de test tourne en parallèle) pour les tests. 369 tests + clippy
+> + tsc clean. Commit `de9716e`. **Conséquence comportementale** : lier un
+> XML de test n'isole plus les écritures `master.db` — dès qu'un candidat
+> est appliqué, c'est toujours le vrai dossier Pioneer qui est modifié,
+> peu importe le XML lié.
+>
+> **Vérification post-application contre le vrai `master.db` (2026-07-12)** :
+> les 3 applies (metadata sync, artwork sync, dédup playlist "Gore TECH")
+> confirmés propres par inspection hors ligne (copie + décrypt, jamais
+> d'écriture directe) — Title/Artist synchronisés = tags réels du fichier
+> (match Discogs légitime) ; 3 variantes pochette changées avec dimensions
+> exactes préservées ; playlist 173→172 entrées, doublon supprimé, TrackNo
+> des lignes conservées inchangé (trou dans la numérotation, jamais de
+> renumérotation — comportement documenté).
 - **Rekordbox `master.db`** : remplacement in-situ (Tier 1 livré, moteur+IPC+UI), **dédup des playlists existantes** (Tier 2 livré, moteur+IPC+UI), **réparation/prévention des liens cassés** (chemin change au changement de format — Tier 1). ⚠️ backup obligatoire (déjà implémenté), Rekordbox fermé (garde déjà implémentée).
 - **Normalisation loudness** (option, OFF par défaut).
 
