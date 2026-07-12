@@ -503,6 +503,7 @@ mod rekordbox_tests {
         let pioneer_dir = tmp.path().join("pioneer");
         std::fs::create_dir_all(&pioneer_dir).unwrap();
         std::fs::copy(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/rekordbox_master.db"), pioneer_dir.join("master.db")).unwrap();
+        crate::actions::set_pioneer_dir_override_for_test(pioneer_dir.clone());
         let xml_path = pioneer_dir.join("masterPlaylists6.xml");
         std::fs::write(&xml_path, b"<DJ_PLAYLISTS/>").unwrap();
         crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
@@ -550,6 +551,7 @@ mod rekordbox_tests {
         let pioneer_dir = tmp.path().join("pioneer");
         std::fs::create_dir_all(&pioneer_dir).unwrap();
         std::fs::copy(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/rekordbox_master.db"), pioneer_dir.join("master.db")).unwrap();
+        crate::actions::set_pioneer_dir_override_for_test(pioneer_dir.clone());
         let xml_path = pioneer_dir.join("masterPlaylists6.xml");
         std::fs::write(&xml_path, b"<DJ_PLAYLISTS/>").unwrap();
         crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();

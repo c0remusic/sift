@@ -791,6 +791,7 @@ mod tests {
             dir.join("master.db"),
         )
         .unwrap();
+        crate::actions::set_pioneer_dir_override_for_test(dir.to_path_buf());
         let xml_path = dir.join("masterPlaylists6.xml");
         std::fs::write(&xml_path, b"<DJ_PLAYLISTS/>").unwrap();
         xml_path
@@ -1275,6 +1276,7 @@ mod tests {
             pioneer_dir.join("master.db"),
         )
         .unwrap();
+        crate::actions::set_pioneer_dir_override_for_test(pioneer_dir.clone());
         let xml_path = pioneer_dir.join("masterPlaylists6.xml");
         std::fs::write(&xml_path, b"<DJ_PLAYLISTS/>").unwrap();
         crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();

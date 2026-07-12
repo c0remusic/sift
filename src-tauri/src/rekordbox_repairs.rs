@@ -54,17 +54,16 @@ pub struct ApplyRepairOutcome {
     pub error: Option<String>,
 }
 
-/// Resolves the linked Rekordbox XML's parent directory (where `master.db` lives) —
-/// shared by every M8 apply/scan path that needs a `pioneer_dir`, so the "no XML linked"
-/// error stays identical everywhere instead of being retyped in five places.
+/// Resolves `master.db`'s real OS-standard folder (`actions::rekordbox_pioneer_dir`), gated on
+/// an XML actually being linked (the user's opt-in signal for Rekordbox integration) — shared by
+/// every M8 apply/scan path that needs a `pioneer_dir`, so the "no XML linked" error stays
+/// identical everywhere instead of being retyped in five places.
 fn resolve_pioneer_dir(conn: &Connection) -> Result<std::path::PathBuf, String> {
-    let xml_path = crate::settings::get(conn, crate::settings::REKORDBOX_XML_PATH)
+    crate::settings::get(conn, crate::settings::REKORDBOX_XML_PATH)
         .map_err(|e| e.to_string())?
         .ok_or("aucun XML Rekordbox lié — relie un fichier avant de synchroniser")?;
-    std::path::Path::new(&xml_path)
-        .parent()
-        .map(|p| p.to_path_buf())
-        .ok_or_else(|| "aucun XML Rekordbox lié — relie un fichier avant de synchroniser".to_string())
+    crate::actions::rekordbox_pioneer_dir()
+        .ok_or_else(|| "impossible de déterminer le dossier Pioneer sur ce système".to_string())
 }
 
 /// One timestamp per batch call (not per row) — shared across every row so rows applied
@@ -129,12 +128,12 @@ pub(crate) fn humanize_masterdb_error(e: &crate::rekordbox_masterdb::MasterDbErr
     }
 }
 
-/// Resolves `pioneer_dir` from the linked XML and reads `master.db` once, returning a
-/// `track_id -> folder_path` map. `None` if no XML is linked or `master.db` can't be read —
-/// callers must degrade gracefully, never treat this as a hard error.
+/// Resolves `master.db`'s real folder (gated on an XML being linked) and reads it once,
+/// returning a `track_id -> folder_path` map. `None` if no XML is linked or `master.db` can't
+/// be read — callers must degrade gracefully, never treat this as a hard error.
 fn read_masterdb_path_map(conn: &Connection) -> Option<std::collections::HashMap<String, String>> {
-    let xml_path = crate::settings::get(conn, crate::settings::REKORDBOX_XML_PATH).ok().flatten()?;
-    let pioneer_dir = std::path::Path::new(&xml_path).parent()?;
+    crate::settings::get(conn, crate::settings::REKORDBOX_XML_PATH).ok().flatten()?;
+    let pioneer_dir = crate::actions::rekordbox_pioneer_dir()?;
     let index = crate::rekordbox_masterdb::read_rekordbox_masterdb(&pioneer_dir.join("master.db")).ok()?;
     Some(index.tracks.into_iter().map(|t| (t.track_id, t.folder_path)).collect())
 }
@@ -815,6 +814,7 @@ mod tests {
             dir.join("master.db"),
         )
         .unwrap();
+        crate::actions::set_pioneer_dir_override_for_test(dir.to_path_buf());
         let xml_path = dir.join("masterPlaylists6.xml");
         std::fs::write(&xml_path, b"<DJ_PLAYLISTS/>").unwrap();
         xml_path
@@ -1329,6 +1329,7 @@ mod tests {
         let pioneer_dir = tmp.path().join("pioneer");
         std::fs::create_dir_all(&pioneer_dir).unwrap();
         std::fs::copy(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/rekordbox_master.db"), pioneer_dir.join("master.db")).unwrap();
+        crate::actions::set_pioneer_dir_override_for_test(pioneer_dir.clone());
         let xml_path = pioneer_dir.join("masterPlaylists6.xml");
         std::fs::write(&xml_path, b"<DJ_PLAYLISTS/>").unwrap();
         crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
@@ -1353,6 +1354,7 @@ mod tests {
         let pioneer_dir = tmp.path().join("pioneer");
         std::fs::create_dir_all(&pioneer_dir).unwrap();
         std::fs::copy(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/rekordbox_master.db"), pioneer_dir.join("master.db")).unwrap();
+        crate::actions::set_pioneer_dir_override_for_test(pioneer_dir.clone());
         let xml_path = pioneer_dir.join("masterPlaylists6.xml");
         std::fs::write(&xml_path, b"<DJ_PLAYLISTS/>").unwrap();
         crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
@@ -1385,6 +1387,7 @@ mod tests {
         let pioneer_dir = tmp.path().join("pioneer");
         std::fs::create_dir_all(&pioneer_dir).unwrap();
         std::fs::copy(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/rekordbox_master.db"), pioneer_dir.join("master.db")).unwrap();
+        crate::actions::set_pioneer_dir_override_for_test(pioneer_dir.clone());
         let xml_path = pioneer_dir.join("masterPlaylists6.xml");
         std::fs::write(&xml_path, b"<DJ_PLAYLISTS/>").unwrap();
         crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
@@ -1440,6 +1443,7 @@ mod tests {
         let pioneer_dir = tmp.path().join("pioneer");
         std::fs::create_dir_all(&pioneer_dir).unwrap();
         std::fs::copy(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/rekordbox_master.db"), pioneer_dir.join("master.db")).unwrap();
+        crate::actions::set_pioneer_dir_override_for_test(pioneer_dir.clone());
         let xml_path = pioneer_dir.join("masterPlaylists6.xml");
         std::fs::write(&xml_path, b"<DJ_PLAYLISTS/>").unwrap();
         crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
@@ -1478,6 +1482,7 @@ mod tests {
         let pioneer_dir = tmp.path().join("pioneer");
         std::fs::create_dir_all(&pioneer_dir).unwrap();
         std::fs::copy(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/rekordbox_master.db"), pioneer_dir.join("master.db")).unwrap();
+        crate::actions::set_pioneer_dir_override_for_test(pioneer_dir.clone());
         let xml_path = pioneer_dir.join("masterPlaylists6.xml");
         std::fs::write(&xml_path, b"<DJ_PLAYLISTS/>").unwrap();
         crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
@@ -1504,6 +1509,7 @@ mod tests {
         let pioneer_dir = tmp.path().join("pioneer");
         std::fs::create_dir_all(&pioneer_dir).unwrap();
         std::fs::copy(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/rekordbox_master.db"), pioneer_dir.join("master.db")).unwrap();
+        crate::actions::set_pioneer_dir_override_for_test(pioneer_dir.clone());
         let xml_path = pioneer_dir.join("masterPlaylists6.xml");
         std::fs::write(&xml_path, b"<DJ_PLAYLISTS/>").unwrap();
         crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();

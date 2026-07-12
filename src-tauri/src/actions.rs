@@ -157,19 +157,54 @@ pub fn maybe_detect_masterdb_repair_with_index(
     }
 }
 
-/// Shared by every M8 Tier 1/3 detector: if a Rekordbox XML is linked, decrypt+read the sibling
-/// `master.db` (same directory — `master.db` and `masterPlaylists6.xml` are always siblings,
-/// confirmed by the M8 spikes) once. `master.db` is a multi-MB SQLCipher file — decrypting it is
+/// Resolves the folder Rekordbox actually stores `master.db` in — `%APPDATA%\Pioneer\rekordbox`
+/// on Windows, `~/Library/Application Support/Pioneer/rekordbox` on Mac. This is a fixed location
+/// owned by Rekordbox itself, never user-configurable, and distinct from `REKORDBOX_XML_PATH`
+/// (the collection export the user separately links via Réglages — can live anywhere).
+/// A prior version derived `master.db`'s path from the linked XML's own parent directory
+/// (reasoning: "master.db and masterPlaylists6.xml are always siblings, confirmed by the M8
+/// spikes") — true for Pioneer's own internal `masterPlaylists6.xml`, but the file the user
+/// actually links is a manually re-exported `<DJ_PLAYLISTS>` collection that can live anywhere
+/// (e.g. `Documents\rekordbox\library.xml`), so that derivation silently found nothing in real
+/// usage. Found 2026-07-11 during M8 manual verification: `master.db` was never in the same
+/// folder as the real linked XML, so every M8 Tier 1/2/3 detector had been a silent no-op.
+/// Test override via `set_pioneer_dir_override_for_test` so unit tests never touch the real
+/// folder — thread-local (not a process env var) because the default test harness runs tests
+/// concurrently on a thread pool; a process-global override would race across tests.
+pub fn rekordbox_pioneer_dir() -> Option<std::path::PathBuf> {
+    #[cfg(test)]
+    {
+        if let Some(dir) = PIONEER_DIR_OVERRIDE.with(|o| o.borrow().clone()) {
+            return Some(dir);
+        }
+    }
+    Some(dirs::config_dir()?.join("Pioneer").join("rekordbox"))
+}
+
+#[cfg(test)]
+thread_local! {
+    static PIONEER_DIR_OVERRIDE: std::cell::RefCell<Option<std::path::PathBuf>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Test-only: point `rekordbox_pioneer_dir` at a temp dir for the current test thread.
+#[cfg(test)]
+pub fn set_pioneer_dir_override_for_test(dir: std::path::PathBuf) {
+    PIONEER_DIR_OVERRIDE.with(|o| *o.borrow_mut() = Some(dir));
+}
+
+/// Shared by every M8 Tier 1/3 detector: if a Rekordbox XML is linked (the user's opt-in signal
+/// for Rekordbox integration), decrypt+read `master.db` from its real OS-standard location
+/// (`rekordbox_pioneer_dir`) once. `master.db` is a multi-MB SQLCipher file — decrypting it is
 /// the expensive part of detection, so callers that need more than one detector for the same
 /// commit (see `filing::commit_file`'s post-commit loop) must call this ONCE and pass the result
 /// to both `*_with_index` variants, instead of each detector re-reading the file independently.
 /// Returns `None` (logging on a real read failure) if nothing is linked or the file is unreadable
 /// — same silent-no-op contract as the detectors themselves.
 pub fn resolve_masterdb_index_if_linked(conn: &Connection) -> Option<crate::rekordbox_masterdb::RekordboxIndex> {
-    let Ok(Some(xml_path)) = crate::settings::get(conn, crate::settings::REKORDBOX_XML_PATH) else {
+    let Ok(Some(_xml_path)) = crate::settings::get(conn, crate::settings::REKORDBOX_XML_PATH) else {
         return None;
     };
-    let pioneer_dir = std::path::Path::new(&xml_path).parent()?;
+    let pioneer_dir = rekordbox_pioneer_dir()?;
     let master_db_path = pioneer_dir.join("master.db");
     match crate::rekordbox_masterdb::read_rekordbox_masterdb(&master_db_path) {
         Ok(idx) => Some(idx),
@@ -1377,6 +1412,7 @@ mod tests {
             dir.join("master.db"),
         )
         .unwrap();
+        set_pioneer_dir_override_for_test(dir.to_path_buf());
         let xml_path = dir.join("masterPlaylists6.xml");
         std::fs::write(&xml_path, b"<DJ_PLAYLISTS/>").unwrap();
         xml_path
