@@ -1782,8 +1782,8 @@ export function installLiveWiring() {
       if (!ids.length) return;
       void (async () => {
         const proceed = await confirmAction(
-          `Appliquer ${ids.length} réparation${ids.length > 1 ? "s" : ""} de chemin dans master.db ? Ferme Rekordbox avant de continuer.`,
-          "Appliquer",
+          `Synchroniser ${ids.length} fichier${ids.length > 1 ? "s" : ""} avec Rekordbox ? Ferme Rekordbox avant de continuer.`,
+          "Synchroniser",
         );
         if (!proceed) return;
         try {
@@ -1801,8 +1801,8 @@ export function installLiveWiring() {
           const failed = outcomes.length - ok;
           toast(
             failed > 0
-              ? `${ok} réparation(s) appliquée(s), ${failed} échouée(s)`
-              : `${ok} réparation(s) appliquée(s)`,
+              ? `${ok} fichier${ok > 1 ? "s" : ""} synchronisé${ok > 1 ? "s" : ""}, ${failed} échoué${failed > 1 ? "s" : ""}`
+              : `${ok} fichier${ok > 1 ? "s" : ""} synchronisé${ok > 1 ? "s" : ""}`,
           );
         } catch (e) {
           console.error("rekordbox_masterdb_apply_repairs failed", e);
@@ -1817,15 +1817,15 @@ export function installLiveWiring() {
       if (!group) return;
       void (async () => {
         const proceed = await confirmAction(
-          `Supprimer ${group.remove.length} entrée${group.remove.length > 1 ? "s" : ""} en double de cette playlist ? Ferme Rekordbox avant de continuer.`,
-          "Dédupliquer",
+          `Synchroniser cette playlist avec Rekordbox — retirer ${group.remove.length} doublon${group.remove.length > 1 ? "s" : ""} ? Ferme Rekordbox avant de continuer.`,
+          "Synchroniser",
         );
         if (!proceed) return;
         const key = duplicateGroupKey(group);
         try {
           await rekordboxMasterdbDedupPlaylistGroup(group);
           mdbDedupErrorByKey.delete(key);
-          toast("Doublon supprimé");
+          toast(`${group.remove.length} doublon${group.remove.length > 1 ? "s" : ""} retiré${group.remove.length > 1 ? "s" : ""}`);
         } catch (e) {
           console.error("rekordbox_masterdb_dedup_playlist_group failed", e);
           mdbDedupErrorByKey.set(key, e instanceof Error ? e.message : "échec inconnu");
@@ -1892,8 +1892,8 @@ export function installLiveWiring() {
       if (!ids.length) return;
       void (async () => {
         const proceed = await confirmAction(
-          `Appliquer ${ids.length} synchro${ids.length > 1 ? "s" : ""} de metadata dans master.db ? Ferme Rekordbox avant de continuer.`,
-          "Appliquer",
+          `Synchroniser les métadonnées de ${ids.length} morceau${ids.length > 1 ? "x" : ""} avec Rekordbox ? Ferme Rekordbox avant de continuer.`,
+          "Synchroniser",
         );
         if (!proceed) return;
         try {
@@ -1909,7 +1909,11 @@ export function installLiveWiring() {
             }
           }
           const failed = outcomes.length - ok;
-          toast(failed > 0 ? `${ok} synchro(s) appliquée(s), ${failed} échouée(s)` : `${ok} synchro(s) appliquée(s)`);
+          toast(
+            failed > 0
+              ? `${ok} morceau${ok > 1 ? "x" : ""} synchronisé${ok > 1 ? "s" : ""}, ${failed} échoué${failed > 1 ? "s" : ""}`
+              : `${ok} morceau${ok > 1 ? "x" : ""} synchronisé${ok > 1 ? "s" : ""}`,
+          );
         } catch (e) {
           console.error("rekordbox_masterdb_apply_metadata_syncs failed", e);
           toast("Action impossible — réessaie");
@@ -1976,8 +1980,8 @@ export function installLiveWiring() {
       if (!ids.length) return;
       void (async () => {
         const proceed = await confirmAction(
-          `Appliquer ${ids.length} synchro${ids.length > 1 ? "s" : ""} de pochette dans master.db ? Ferme Rekordbox avant de continuer.`,
-          "Appliquer",
+          `Synchroniser la pochette de ${ids.length} morceau${ids.length > 1 ? "x" : ""} avec Rekordbox ? Ferme Rekordbox avant de continuer.`,
+          "Synchroniser",
         );
         if (!proceed) return;
         try {
@@ -1993,7 +1997,11 @@ export function installLiveWiring() {
             }
           }
           const failed = outcomes.length - ok;
-          toast(failed > 0 ? `${ok} synchro(s) appliquée(s), ${failed} échouée(s)` : `${ok} synchro(s) appliquée(s)`);
+          toast(
+            failed > 0
+              ? `${ok} pochette${ok > 1 ? "s" : ""} synchronisée${ok > 1 ? "s" : ""}, ${failed} échouée${failed > 1 ? "s" : ""}`
+              : `${ok} pochette${ok > 1 ? "s" : ""} synchronisée${ok > 1 ? "s" : ""}`,
+          );
         } catch (e) {
           console.error("rekordbox_masterdb_apply_artwork_syncs failed", e);
           toast("Action impossible — réessaie");

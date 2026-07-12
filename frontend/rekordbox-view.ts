@@ -120,6 +120,28 @@ export function duplicateGroupKey(g: PlaylistDuplicateGroupDto): string {
   return `${g.playlist_id}::${g.content_id}`;
 }
 
+/** Shared card grammar for the 4 "Synchroniser avec Rekordbox" sections (M8 Tier 1/2/3) — same
+ * shape (title, count badge, body) for all 4 instead of each rolling its own `col-h` + raw rows,
+ * so the screen reads as one queue. `body` is "" when there's nothing pending/ambiguous: the card
+ * still renders (faded, "à jour") instead of disappearing, so the 4 sections never pop in/out of
+ * the layout as their counts change — decision from the 2026-07-11 grill-me session. */
+function syncCardHtml(title: string, count: number, body: string): string {
+  const idle = body === "";
+  const header =
+    `<div style="display:flex;justify-content:space-between;align-items:center;${idle ? "" : "margin-bottom:6px"}">` +
+    `<span style="font-size:var(--text-base);font-weight:500">${esc(title)}</span>` +
+    (idle
+      ? `<span style="font-size:var(--text-xs);color:var(--color-text-tertiary)">à jour</span>`
+      : `<span style="font-size:var(--text-xs);background:var(--color-background-secondary);color:var(--color-text-secondary);padding:2px 7px;border-radius:var(--border-radius-pill)">${count}</span>`) +
+    `</div>`;
+  return (
+    `<div style="border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:10px 12px;margin-bottom:6px;${idle ? "opacity:.55" : ""}">` +
+    header +
+    body +
+    `</div>`
+  );
+}
+
 /** Rekordbox link-status card, the Rekordbox page's centerpiece (moved out of Bibliothèque, audit
  * 2026-07-05 — see docs/superpowers/specs/2026-07-05-rekordbox-integration-page-design.md). Same
  * visual family as the M6b stat cards (border+radius token, no accent stripe per the CSS ban on
@@ -146,10 +168,9 @@ function rekordboxCardHtml(s: RekordboxLinkStatus): string {
 /** M8 Tier 1 section: lists master.db path-repair candidates detected passively at filing time
  * (`rekordbox_masterdb_repairs`, actions.rs::detect_masterdb_repair_if_linked) and lets the user
  * resolve/apply/dismiss them. Independent of `driftBanner` (XML repair signal, unrelated
- * mechanism) — see docs/superpowers/specs/2026-07-06-m8-tier1-ui-screen-design.md. Renders "" when
- * there is nothing pending/ambiguous, same show-nothing-when-empty rule as driftBanner. */
+ * mechanism) — see docs/superpowers/specs/2026-07-06-m8-tier1-ui-screen-design.md. Renders the
+ * idle "à jour" card (via syncCardHtml) when there is nothing pending/ambiguous. */
 function masterdbRepairsSectionHtml(rows: PendingMasterdbRepair[]): string {
-  if (rows.length === 0) return "";
   // Drop stale selection ids without touching the rest — same discipline as batchSel's own
   // re-filter in sift-live.ts.
   const liveIds = new Set(rows.map((r) => r.id));
@@ -220,14 +241,17 @@ function masterdbRepairsSectionHtml(rows: PendingMasterdbRepair[]): string {
       ? `<div style="margin-top:8px"><button data-sift="mdbapply" style="font-weight:500">Appliquer la sélection (${mdbRepairSel.size})</button></div>`
       : "";
 
-  return (
-    `<div id="sift-rkb-masterdb-section" style="margin-bottom:12px">` +
-    `<div class="col-h">Réparations master.db en attente</div>` +
-    (ambiguousRows ? `<div style="margin-bottom:8px">${ambiguousRows}</div>` : "") +
-    pendingRows +
-    applyBar +
-    `</div>`
-  );
+  const subtext =
+    pending.length > 0
+      ? `<div style="font-size:var(--text-xs);color:var(--color-text-tertiary);margin-bottom:6px">${pending.length} morceau${pending.length > 1 ? "x" : ""} à synchroniser</div>`
+      : "";
+
+  const body =
+    ambiguous.length === 0 && pending.length === 0
+      ? ""
+      : subtext + (ambiguousRows ? `<div style="margin-bottom:8px">${ambiguousRows}</div>` : "") + pendingRows + applyBar;
+
+  return `<div id="sift-rkb-masterdb-section">${syncCardHtml("Fichiers", pending.length, body)}</div>`;
 }
 
 /** Re-renders only the Tier 1 repairs section from already-cached data (`lastPendingRepairs`),
@@ -249,9 +273,8 @@ export function rerenderMasterdbRepairsSection(): void {
  * writes ID3 tags on a file linked to Rekordbox (filing, "Appliquer les tags", édition
  * Bibliothèque — see docs/superpowers/plans/2026-07-09-m8-tier3-metadata-sync-ipc-ui.md).
  * Independent of masterdbRepairsSectionHtml/playlistDuplicatesSectionHtml — 3 separate sections,
- * never merged. Renders "" when nothing pending/ambiguous. */
+ * never merged. Renders the idle "à jour" card (via syncCardHtml) when nothing pending/ambiguous. */
 function metadataSyncsSectionHtml(rows: PendingMetadataSync[]): string {
-  if (rows.length === 0) return "";
   const liveIds = new Set(rows.map((r) => r.id));
   for (const id of [...mdsSyncSel]) if (!liveIds.has(id)) mdsSyncSel.delete(id);
 
@@ -324,14 +347,17 @@ function metadataSyncsSectionHtml(rows: PendingMetadataSync[]): string {
       ? `<div style="margin-top:8px"><button data-sift="mdsapply" style="font-weight:500">Appliquer la sélection (${mdsSyncSel.size})</button></div>`
       : "";
 
-  return (
-    `<div id="sift-rkb-mds-section" style="margin-bottom:12px">` +
-    `<div class="col-h">Synchros metadata master.db en attente</div>` +
-    (ambiguousRows ? `<div style="margin-bottom:8px">${ambiguousRows}</div>` : "") +
-    pendingRows +
-    applyBar +
-    `</div>`
-  );
+  const subtext =
+    pending.length > 0
+      ? `<div style="font-size:var(--text-xs);color:var(--color-text-tertiary);margin-bottom:6px">${pending.length} morceau${pending.length > 1 ? "x" : ""} à synchroniser</div>`
+      : "";
+
+  const body =
+    ambiguous.length === 0 && pending.length === 0
+      ? ""
+      : subtext + (ambiguousRows ? `<div style="margin-bottom:8px">${ambiguousRows}</div>` : "") + pendingRows + applyBar;
+
+  return `<div id="sift-rkb-mds-section">${syncCardHtml("Métadonnées", pending.length, body)}</div>`;
 }
 
 /** Same discipline as `rerenderMasterdbRepairsSection` for the Tier 3 metadata section. */
@@ -347,9 +373,8 @@ export function rerenderMetadataSyncsSection(): void {
 /** M8 Tier 3 (pochette) section: lists master.db artwork sync candidates detected passively
  * whenever Sift writes a NEW cover onto a file linked to Rekordbox. Independent of
  * metadataSyncsSectionHtml (separate table, separate detector — a text-only retag never lands
- * here). Renders "" when nothing pending/ambiguous. */
+ * here). Renders the idle "à jour" card (via syncCardHtml) when nothing pending/ambiguous. */
 function artworkSyncsSectionHtml(rows: PendingArtworkSync[]): string {
-  if (rows.length === 0) return "";
   const liveIds = new Set(rows.map((r) => r.id));
   for (const id of [...masSyncSel]) if (!liveIds.has(id)) masSyncSel.delete(id);
 
@@ -417,14 +442,17 @@ function artworkSyncsSectionHtml(rows: PendingArtworkSync[]): string {
       ? `<div style="margin-top:8px"><button data-sift="masapply" style="font-weight:500">Appliquer la sélection (${masSyncSel.size})</button></div>`
       : "";
 
-  return (
-    `<div id="sift-rkb-mas-section" style="margin-bottom:12px">` +
-    `<div class="col-h">Synchros pochette master.db en attente</div>` +
-    (ambiguousRows ? `<div style="margin-bottom:8px">${ambiguousRows}</div>` : "") +
-    pendingRows +
-    applyBar +
-    `</div>`
-  );
+  const subtext =
+    pending.length > 0
+      ? `<div style="font-size:var(--text-xs);color:var(--color-text-tertiary);margin-bottom:6px">${pending.length} morceau${pending.length > 1 ? "x" : ""} à synchroniser</div>`
+      : "";
+
+  const body =
+    ambiguous.length === 0 && pending.length === 0
+      ? ""
+      : subtext + (ambiguousRows ? `<div style="margin-bottom:8px">${ambiguousRows}</div>` : "") + pendingRows + applyBar;
+
+  return `<div id="sift-rkb-mas-section">${syncCardHtml("Pochettes", pending.length, body)}</div>`;
 }
 
 /** Same discipline as `rerenderMasterdbRepairsSection` for the Tier 3 artwork section. */
@@ -441,10 +469,9 @@ export function rerenderArtworkSyncsSection(): void {
  * (rekordbox_masterdb_scan_playlist_duplicates, read-only, scanned fresh on every render — no
  * persistence, see docs/superpowers/plans/2026-07-08-m8-tier2-ipc-wiring.md). One button per
  * group, no multi-select (unlike Tier 1's masterdbRepairsSectionHtml): each dedup is a complete,
- * independent action, and there are typically 0-2 groups at a time. Renders "" when there is
- * nothing to dedup, same show-nothing-when-empty rule as masterdbRepairsSectionHtml. */
+ * independent action, and there are typically 0-2 groups at a time. Renders the idle "à jour" card
+ * (via syncCardHtml) when there is nothing to dedup. */
 function playlistDuplicatesSectionHtml(groups: PlaylistDuplicateGroupDto[]): string {
-  if (groups.length === 0) return "";
   const rows = groups
     .map((g, i) => {
       const key = duplicateGroupKey(g);
@@ -465,7 +492,7 @@ function playlistDuplicatesSectionHtml(groups: PlaylistDuplicateGroupDto[]): str
       );
     })
     .join("");
-  return `<div style="margin-bottom:12px"><div class="col-h">Doublons dans les playlists</div>${rows}</div>`;
+  return syncCardHtml("Playlists", groups.length, rows);
 }
 
 /** Rekordbox integration page (data-view="rkb") — real screen replacing the old one-click nav
@@ -504,15 +531,18 @@ export async function renderRekordboxLive(): Promise<void> {
     return;
   }
 
+  // Copy from the 2026-07-11 grill-me session: name the workflow explicitly (close Rekordbox
+  // before touching the link — the same rule Tier 1/2/3 already enforce server-side via
+  // MasterDbError::RekordboxRunning, see rekordbox_repairs.rs) instead of a vague "vérifie".
   const driftBanner = status.drift_detected
     ? `<div class="sift-dup-banner" style="background:var(--color-background-warning)">` +
       `<i class="ti ti-alert-triangle" style="color:var(--color-text-warning)"></i>` +
       `<div class="sift-dup-banner-body">` +
-      `<div class="sift-dup-banner-head" style="color:var(--color-text-warning)">Une correction de chemin a échoué lors d'une conversion récente</div>` +
+      `<div class="sift-dup-banner-head" style="color:var(--color-text-warning)">Une correction de chemin a échoué</div>` +
       // .sift-dup-banner-where is built for a truncated file path (nowrap+ellipsis) — this is a
       // full sentence, the entire payload of a warning that was previously invisible anywhere in
       // the UI, so it must never silently clip on a narrow window.
-      `<div class="sift-dup-banner-where" style="white-space:normal;overflow:visible;text-overflow:clip">Vérifie les pistes déplacées dans Rekordbox.</div>` +
+      `<div class="sift-dup-banner-where" style="white-space:normal;overflow:visible;text-overflow:clip">Ferme Rekordbox, vérifie la piste, puis relie à nouveau le fichier XML pour confirmer.</div>` +
       `</div></div>`
     : "";
 
@@ -549,5 +579,18 @@ export async function renderRekordboxLive(): Promise<void> {
     console.error("rekordbox_masterdb_pending_artwork_syncs failed", e);
   }
 
-  content.innerHTML = intro + driftBanner + rekordboxCardHtml(status) + masterdbSection + dedupSection + metadataSyncSection + artworkSyncSection;
+  // Umbrella line above the 4 M8 cards — total pending count across Tiers 1/2/3, so the whole
+  // "synchroniser avec Rekordbox" queue reads as one thing even though each tier is a separate
+  // card underneath (grill-me session, 2026-07-11).
+  const totalPending = lastPendingRepairs.length + lastScannedDuplicateGroups.length + lastPendingMetadataSyncs.length + lastPendingArtworkSyncs.length;
+  const syncOverline =
+    `<div style="display:flex;justify-content:space-between;align-items:center;margin:2px 0 8px 2px">` +
+    `<span style="font-size:var(--text-sm);color:var(--color-text-secondary)">Synchroniser avec Rekordbox</span>` +
+    `<span style="font-size:var(--text-sm);color:var(--color-text-secondary)">${
+      totalPending > 0 ? `${totalPending} piste${totalPending > 1 ? "s" : ""} en attente de synchronisation` : "à jour"
+    }</span>` +
+    `</div>`;
+
+  content.innerHTML =
+    intro + driftBanner + rekordboxCardHtml(status) + syncOverline + masterdbSection + metadataSyncSection + artworkSyncSection + dedupSection;
 }

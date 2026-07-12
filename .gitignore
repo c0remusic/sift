@@ -35,3 +35,7 @@ skills-lock.json
 .impeccable/
 
 .superpowers/
+
+# scratch/test copies (may contain real Rekordbox master.db, never committed)
+scratchpad/
+scratchpad-verif/
