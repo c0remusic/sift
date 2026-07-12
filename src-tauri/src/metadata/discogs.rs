@@ -64,6 +64,24 @@ fn clean_artist(s: &str) -> String {
     result.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+/// Neutralize characters/keywords the Discogs `q=` search may parse as query syntax instead of
+/// literal text. Undocumented, but Discogs indexes via Solr/Lucene and community reports (see
+/// F5 audit, docs/superpowers 2026-07-12) confirm field prefixes (`title:`) and boolean keywords
+/// work in practice on the general search endpoint — an artist/title that happens to contain a
+/// colon, quote, or the word "and"/"or"/"not" could silently be reinterpreted rather than
+/// searched for literally. Replaces with a space (not a strip) so word boundaries stay correct.
+/// Deliberately conservative: parens are core to how we express a mix name ("(Extended Mix)")
+/// and stay untouched, as do hyphens/apostrophes — too common in real titles to risk stripping
+/// on an unconfirmed API behavior.
+fn sanitize_discogs_query(s: &str) -> String {
+    let no_syntax_chars: String = s.chars().map(|c| if matches!(c, ':' | '"') { ' ' } else { c }).collect();
+    no_syntax_chars
+        .split_whitespace()
+        .filter(|w| !matches!(w.to_uppercase().as_str(), "AND" | "OR" | "NOT"))
+        .collect::<Vec<_>>()
+        .join(" ")
+}
+
 fn first_string(v: &Value, key: &str) -> Option<String> {
     v.get(key)
         .and_then(|x| x.as_array())
@@ -252,11 +270,43 @@ impl Discogs {
             .header("Authorization", &format!("Discogs token={}", self.token))
             .query("type", "release")
             .query("q", q_str)
-            .query("per_page", "8")
+            .query("per_page", "6")
             .call()
             .map_err(map_ureq_err)?;
         let v: Value = resp.body_mut().read_json().map_err(|e| ProviderError::Parse(e.to_string()))?;
         Ok(parse_search(&v))
+    }
+
+    /// Fetch tracklists for the top `TRACKLIST_PROBE` candidates and score how well each
+    /// contains the exact mix (title + version) we want, mutating each candidate's `.title` to
+    /// the actual matching track title when found. Detail calls are best-effort — a failed or
+    /// rate-limited one just leaves that candidate unscored (falls back to format relevance).
+    /// Factored out of `search` so both the primary and the title-only fallback query can be
+    /// scored the same way and compared.
+    fn probe_and_score(&self, cands: &mut [Candidate], q: &Query) -> Vec<i32> {
+        let mut scores = vec![0i32; cands.len()];
+        let probe = cands.len().min(TRACKLIST_PROBE);
+        for i in 0..probe {
+            if cands[i].release_id.is_empty() {
+                continue;
+            }
+            match self.fetch_tracklist(&cands[i].release_id) {
+                Ok(titles) => {
+                    let (score, matched) = best_track_match(&titles, &q.title, q.version.as_deref());
+                    scores[i] = score;
+                    // Discogs search returns the RELEASE title ("Artist - Space EP"); replace it
+                    // with the actual matching track title so we identify the track, not the EP.
+                    if let Some(track_title) = matched {
+                        cands[i].title = track_title;
+                    }
+                }
+                Err(ProviderError::RateLimited { .. }) => {
+                    log::warn!("Discogs tracklist rate-limited; ranking falls back to format relevance");
+                }
+                Err(_) => {}
+            }
+        }
+        scores
     }
 
     fn fetch_tracklist(&self, release_id: &str) -> Result<Vec<String>, ProviderError> {
@@ -294,46 +344,36 @@ impl MetadataProvider for Discogs {
         // unreliable (combined with `artist` it often returns nothing even on an exact title).
         // `q` makes the title actually count and is far more forgiving.
         let primary = format!("{} {}", q.artist, q.title);
-        let primary = primary.trim();
+        let primary = sanitize_discogs_query(primary.trim());
+        let primary = primary.as_str();
         log::info!("Discogs search q={primary:?}");
         let mut cands = self.search_query(primary)?;
+        let mut scores = self.probe_and_score(&mut cands, q);
+        let best_primary = scores.iter().copied().max().unwrap_or(0);
 
-        // Fallback: a combined "artist title" query returns nothing when the reconciled artist is
-        // polluted (messy download filenames) or differs from Discogs' credit. Retry with the
-        // title alone — far more forgiving — so an existing release isn't missed. Only when we
-        // actually had a distinct artist (else the title-only query equals the primary).
-        if cands.is_empty() && !q.artist.trim().is_empty() && !q.title.trim().is_empty() {
-            let title = q.title.trim();
-            log::info!("Discogs: 0 results for {primary:?}, retrying title-only {title:?}");
-            cands = self.search_query(title)?;
-        }
-
-        // Refine: for the top candidates, fetch their tracklist and score how well it contains
-        // the exact mix (title + version). The release that actually holds this mix wins. Detail
-        // calls are best-effort — a failed/rate-limited one just leaves that candidate unscored.
-        let mut scores = vec![0i32; cands.len()];
-        let probe = cands.len().min(TRACKLIST_PROBE);
-        for i in 0..probe {
-            if cands[i].release_id.is_empty() {
-                continue;
-            }
-            match self.fetch_tracklist(&cands[i].release_id) {
-                Ok(titles) => {
-                    let (score, matched) = best_track_match(&titles, &q.title, q.version.as_deref());
-                    scores[i] = score;
-                    // Discogs search returns the RELEASE title ("Artist - Space EP"); replace it
-                    // with the actual matching track title so we identify the track, not the EP.
-                    if let Some(track_title) = matched {
-                        cands[i].title = track_title;
-                    }
-                }
-                // Best-effort: a rate-limited/failed detail call just leaves this candidate
-                // unscored (ranking falls back to format relevance). Log the rate-limit so a
-                // sluggish search is diagnosable rather than looking like a normal result.
-                Err(ProviderError::RateLimited { .. }) => {
-                    log::warn!("Discogs tracklist rate-limited; ranking falls back to format relevance");
-                }
-                Err(_) => {}
+        // Fallback: a combined "artist title" query fails when the reconciled artist is polluted
+        // (messy download filenames) or differs from Discogs' credit — either literally zero
+        // results, or a page of results none of which actually contain the track in their own
+        // tracklist (best_primary <= 0). Retry with the title alone — what a human would type —
+        // so an existing release isn't missed. Only when we actually had a distinct artist (else
+        // the title-only query equals the primary).
+        if (cands.is_empty() || best_primary <= 0)
+            && !q.artist.trim().is_empty()
+            && !q.title.trim().is_empty()
+        {
+            let title = sanitize_discogs_query(q.title.trim());
+            let title = title.as_str();
+            log::info!(
+                "Discogs: no confident match for {primary:?} (best score {best_primary}), retrying title-only {title:?}"
+            );
+            let mut fallback = self.search_query(title)?;
+            let fallback_scores = self.probe_and_score(&mut fallback, q);
+            let best_fallback = fallback_scores.iter().copied().max().unwrap_or(0);
+            // Swap in the fallback only when it's an improvement, or the primary had nothing to
+            // begin with — never discard an actual tracklist match for an equally blank retry.
+            if !fallback.is_empty() && (cands.is_empty() || best_fallback > best_primary) {
+                cands = fallback;
+                scores = fallback_scores;
             }
         }
         Ok(rank_by_match(cands, &scores))
@@ -343,6 +383,24 @@ impl MetadataProvider for Discogs {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sanitize_discogs_query_neutralizes_field_syntax() {
+        assert_eq!(sanitize_discogs_query("Artist: Presents Something"), "Artist Presents Something");
+        assert_eq!(sanitize_discogs_query(r#"track:"she said""#), "track she said");
+        assert_eq!(sanitize_discogs_query("Space AND Time"), "Space Time");
+        assert_eq!(sanitize_discogs_query("Command OR Control"), "Command Control");
+    }
+
+    #[test]
+    fn sanitize_discogs_query_keeps_legitimate_punctuation_and_lookalike_words() {
+        // Parens carry real mix-name meaning (just wired up in F1-F3) — must survive.
+        assert_eq!(sanitize_discogs_query("Falling Up (Club Mix)"), "Falling Up (Club Mix)");
+        // Hyphens and apostrophes are too common in real titles to risk stripping blind.
+        assert_eq!(sanitize_discogs_query("Can't Stop - Reprise"), "Can't Stop - Reprise");
+        // "AND"/"OR"/"NOT" are only stripped as whole words, not substrings.
+        assert_eq!(sanitize_discogs_query("Andromeda Organism"), "Andromeda Organism");
+    }
 
     const FIXTURE: &str = r#"{
       "results": [
@@ -482,6 +540,23 @@ mod tests {
         let titles = vec!["Love Foolosophy".to_string(), "Love Foolosophy (Knee Deep Remix)".to_string()];
         let (_score, title) = best_track_match(&titles, "Love Foolosophy", Some("Knee Deep Remix"));
         assert_eq!(title.as_deref(), Some("Love Foolosophy (Knee Deep Remix)"));
+    }
+
+    #[test]
+    fn best_track_match_disambiguates_via_title_tokens_when_version_is_embedded_not_split() {
+        // A tag Title that embeds its own mix name ("Falling Up (Club Mix)") with no separate
+        // target_version (F4 audit finding, verified empirically): plain per-token overlap
+        // (+1 each) still correctly picks the exact matching tracklist entry over a sibling
+        // mix, because every word of the mix name is itself a target-title token — the missing
+        // x3 version bonus doesn't end up mattering here. No fix needed; kept as a regression
+        // guard for this reasoning.
+        let titles = vec![
+            "Falling Up".to_string(),
+            "Falling Up (Extended Mix)".to_string(),
+            "Falling Up (Club Mix)".to_string(),
+        ];
+        let (_score, title) = best_track_match(&titles, "Falling Up (Club Mix)", None);
+        assert_eq!(title.as_deref(), Some("Falling Up (Club Mix)"));
     }
 
     #[test]

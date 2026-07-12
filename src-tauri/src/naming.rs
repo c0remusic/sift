@@ -44,26 +44,43 @@ pub fn is_clean(artist: &str, title: &str) -> bool {
         && !has_junk(title)
 }
 
+/// Pulls a trailing "(...)" off `s` as a version — e.g. "Mystery of Love (Original Mix)" ->
+/// ("Mystery of Love", Some("Original Mix")). Pure syntax, no cleanliness requirement: the
+/// version only needs its own parens to be well-formed, unlike `parse_filename`'s artist/title.
+fn extract_trailing_version(s: &str) -> (String, Option<String>) {
+    match (s.rfind('('), s.rfind(')')) {
+        (Some(open), Some(close)) if close > open && close == s.len() - 1 => {
+            let v = s[open + 1..close].trim().to_string();
+            (s[..open].trim().to_string(), Some(v))
+        }
+        _ => (s.to_string(), None),
+    }
+}
+
 /// Parse a filename stem (no extension) into (artist, title, version?). Returns None when
 /// there is no " - " separator or the parsed fields aren't clean. Pure string work.
 pub fn parse_filename(stem: &str) -> Option<(String, String, Option<String>)> {
     let (artist_raw, rest) = stem.split_once(" - ")?;
     let artist = artist_raw.trim().to_string();
-
-    // Pull a trailing "(...)" off the title as the version.
-    let rest = rest.trim();
-    let (title_raw, version) = match (rest.rfind('('), rest.rfind(')')) {
-        (Some(open), Some(close)) if close > open && close == rest.len() - 1 => {
-            let v = rest[open + 1..close].trim().to_string();
-            (rest[..open].trim().to_string(), Some(v))
-        }
-        _ => (rest.to_string(), None),
-    };
+    let (title_raw, version) = extract_trailing_version(rest.trim());
 
     if !is_clean(&artist, &title_raw) {
         return None;
     }
     Some((artist, title_raw, version))
+}
+
+/// Best-effort version/mix extraction from a filename stem, independent of overall
+/// cleanliness. Unlike `parse_filename`, junk elsewhere in the stem (bitrate, uploader
+/// brackets) must not cost us the "(Extended Mix)" trailing the title — Discogs' tracklist
+/// matching needs this version hint to pick the right mix even when the tags are clean but
+/// the filename carries noise the version parens aren't part of.
+fn extract_version_hint(stem: &str) -> Option<String> {
+    let rest = match stem.split_once(" - ") {
+        Some((_, r)) => r,
+        None => stem,
+    };
+    extract_trailing_version(rest.trim()).1
 }
 
 /// Normalize for the "do tags and filename agree?" comparison: lowercase, collapse
@@ -91,11 +108,13 @@ pub fn reconcile(tag_artist: &str, tag_title: &str, stem: &str) -> Canonical {
                 confidence: if agree { Confidence::Green } else { Confidence::Yellow },
             }
         }
-        // tags clean only -> green from tags
+        // tags clean only -> green from tags. Filename didn't parse as a whole (junk
+        // elsewhere), but a trailing "(...)" version is still worth pulling independently —
+        // see extract_version_hint.
         (true, None) => Canonical {
             artist: tag_artist.trim().to_string(),
             title: tag_title.trim().to_string(),
-            version: None,
+            version: extract_version_hint(stem),
             confidence: Confidence::Green,
         },
         // name clean only -> green from name
@@ -129,6 +148,20 @@ pub fn clean_stem(stem: &str) -> String {
             break;
         }
     }
+    // drop ( ... ) segments only when their content is known source/quality noise (never a
+    // blind strip: "(Original Mix)"/"(feat. X)" are meaningful and must survive).
+    const NOISE_PAREN: &[&str] = &["rip", "bootleg", "promo", "unofficial"];
+    while let (Some(a), Some(b)) = (s.find('('), s.find(')')) {
+        if b <= a {
+            break;
+        }
+        let inner = s[a + 1..b].to_lowercase();
+        if NOISE_PAREN.iter().any(|k| inner.contains(k)) {
+            s.replace_range(a..=b, " ");
+        } else {
+            break;
+        }
+    }
     // strip a leading track number ("01 ", "1.", "12 - ") — only 1–3 digits + a separator
     {
         let t = s.trim_start();
@@ -142,7 +175,7 @@ pub fn clean_stem(stem: &str) -> String {
     }
     // drop quality/junk tokens word-by-word (case-insensitive)
     const DROP: &[&str] = &[
-        "kbps", "320", "256", "192", "128", "flac", "wav", "aiff", "khz", "hz", "hq", "cbr", "vbr",
+        "kbps", "320", "256", "192", "128", "flac", "wav", "aiff", "khz", "hz", "hq", "cbr", "vbr", "rip",
     ];
     let kept: Vec<&str> = s
         .split_whitespace()
@@ -341,6 +374,32 @@ mod tests {
         assert_eq!(clean_stem("01_larry_heard_mystery_320"), "larry heard mystery");
         assert_eq!(clean_stem("Some Title [DJ Uploader] FLAC"), "Some Title");
         assert_eq!(clean_stem("1979 - something"), "1979 - something"); // 4 digits: not a track no
+    }
+
+    #[test]
+    fn clean_stem_drops_source_noise_parens_but_keeps_meaningful_ones() {
+        assert_eq!(clean_stem("Title (Vinyl Rip)"), "Title");
+        assert_eq!(clean_stem("Title (Bootleg)"), "Title");
+        // Not source noise — must survive, it's the actual mix name.
+        assert_eq!(clean_stem("Title (Original Mix)"), "Title (Original Mix)");
+        assert_eq!(clean_stem("Title (feat. Someone)"), "Title (feat. Someone)");
+    }
+
+    #[test]
+    fn tags_clean_but_stem_junky_still_recovers_version() {
+        // Tags are clean (green from tags), but the filename carries an unrelated junk
+        // token ("01_" prefix) that used to blow away version extraction entirely because
+        // parse_filename requires the WHOLE stem to be clean. The trailing "(Extended Mix)"
+        // must survive that — it's what best_track_match needs to pick the right mix.
+        let c = reconcile(
+            "Theo Parrish",
+            "Falling Up",
+            "01_Theo Parrish - Falling Up (Extended Mix)",
+        );
+        assert_eq!(c.artist, "Theo Parrish");
+        assert_eq!(c.title, "Falling Up");
+        assert_eq!(c.version.as_deref(), Some("Extended Mix"));
+        assert_eq!(c.confidence, Confidence::Green);
     }
 
     #[test]
