@@ -22,18 +22,7 @@ import {
   exportRekordboxXml,
   linkRekordboxXml,
   rekordboxStatus,
-  rekordboxMasterdbApplyRepairs,
-  rekordboxMasterdbDismissRepair,
-  rekordboxMasterdbResolveAmbiguous,
-  rekordboxMasterdbDedupPlaylistGroup,
-  rekordboxMasterdbApplyMetadataSyncs,
-  rekordboxMasterdbDismissMetadataSync,
-  rekordboxMasterdbResolveAmbiguousMetadataSync,
-  rekordboxMasterdbApplyArtworkSyncs,
-  rekordboxMasterdbDismissArtworkSync,
-  rekordboxMasterdbResolveAmbiguousArtworkSync,
 } from "./ipc";
-import type { ApplyMetadataSyncOutcome } from "../shared/contracts";
 import { emptyStateHtml, wireEmptyState } from "./empty-state";
 import {
   openFilingInto,
@@ -60,7 +49,7 @@ import { initTheme } from "./theme";
 import { renderReglagesLive } from "./reglages-view";
 import type { QueueItem, BatchResult, FileProgress, Target } from "../shared/contracts";
 import { FILE_IN_PLACE, EXTERNAL_DEST_PREFIX } from "../shared/contracts";
-import { requireEl, esc } from "./dom";
+import { requireEl, esc, toast } from "./dom";
 import type { LibrarySortState } from "./library-views";
 import {
   bibState,
@@ -70,28 +59,7 @@ import {
   positionFacetThumb,
   positionViewModeThumb,
 } from "./bibliotheque-view";
-import {
-  mdbRepairSel,
-  mdbErrorById,
-  mdbDedupErrorByKey,
-  mdsSyncSel,
-  mdsErrorById,
-  masSyncSel,
-  masErrorById,
-  lastScannedDuplicateGroups,
-  duplicateGroupKey,
-  renderRekordboxLive,
-  rerenderMasterdbRepairsSection,
-  rerenderMetadataSyncsSection,
-  rerenderArtworkSyncsSection,
-  mdbExpandedGroups,
-  mdsExpandedGroups,
-  masExpandedGroups,
-  lastPendingRepairs,
-  lastPendingMetadataSyncs,
-  lastPendingArtworkSyncs,
-  idsInSessionGroup,
-} from "./rekordbox-view";
+import { renderRekordboxLive, handleRekordboxAction } from "./rekordbox-view";
 import { renderJournal } from "./journal";
 import { open as openFolderDialog } from "@tauri-apps/plugin-dialog";
 import { dirname } from "@tauri-apps/api/path";
@@ -623,19 +591,6 @@ function onFileStop() {
     '<i class="ti ti-loader sift-spin" style="font-size:var(--text-md);vertical-align:-1px"></i> Stop requested — finishing the current file…',
   );
   void fileCancel();
-}
-
-/** A transient bottom-right toast (mirrors filing.ts/library-detail.ts, no undo affordance). */
-function toast(message: string): void {
-  document.getElementById("sift-toast")?.remove();
-  const el = document.createElement("div");
-  el.id = "sift-toast";
-  el.className = "sift-toast";
-  el.setAttribute("role", "status");
-  el.setAttribute("aria-live", "polite");
-  el.textContent = message;
-  document.body.appendChild(el);
-  setTimeout(() => el.remove(), 4000);
 }
 
 /** Guards a single in-flight export (Rekordbox only — USB has no backend, out of M7 scope). */
@@ -1719,295 +1674,8 @@ export function installLiveWiring() {
     } else if (act === "batchstop") {
       e.stopPropagation();
       onFileStop();
-    } else if (act === "rkbreexport") {
-      e.stopPropagation();
-      void runNavExport("rekordbox");
-    } else if (act === "mdbpick") {
-      e.stopPropagation();
-      const id = Number(el.dataset.id);
-      if (mdbRepairSel.has(id)) {
-        mdbRepairSel.delete(id);
-      } else {
-        mdbRepairSel.add(id);
-        mdbErrorById.delete(id);
-      }
-      rerenderMasterdbRepairsSection();
-    } else if (act === "mdbgrouptoggle") {
-      e.stopPropagation();
-      const key = el.dataset.session || "";
-      if (mdbExpandedGroups.has(key)) mdbExpandedGroups.delete(key);
-      else mdbExpandedGroups.add(key);
-      rerenderMasterdbRepairsSection();
-    } else if (act === "mdbgroupselect") {
-      e.stopPropagation();
-      const key = el.dataset.session || "";
-      const ids = idsInSessionGroup(lastPendingRepairs, key);
-      const allSelected = ids.length > 0 && ids.every((id) => mdbRepairSel.has(id));
-      for (const id of ids) {
-        if (allSelected) mdbRepairSel.delete(id);
-        else {
-          mdbRepairSel.add(id);
-          mdbErrorById.delete(id);
-        }
-      }
-      rerenderMasterdbRepairsSection();
-    } else if (act === "mdbdismiss") {
-      e.stopPropagation();
-      const id = Number(el.dataset.id);
-      void (async () => {
-        try {
-          await rekordboxMasterdbDismissRepair(id);
-        } catch (e) {
-          console.error("rekordbox_masterdb_dismiss_repair failed", e);
-          toast("Action impossible — réessaie");
-        }
-        void renderRekordboxLive();
-      })();
-    } else if (act === "mdbresolve") {
-      e.stopPropagation();
-      const id = Number(el.dataset.id);
-      const trackId = el.dataset.track || "";
-      void (async () => {
-        try {
-          await rekordboxMasterdbResolveAmbiguous(id, trackId);
-        } catch (e) {
-          console.error("rekordbox_masterdb_resolve_ambiguous failed", e);
-          toast("Choix impossible — réessaie");
-        }
-        void renderRekordboxLive();
-      })();
-    } else if (act === "mdbapply") {
-      e.stopPropagation();
-      const ids = [...mdbRepairSel];
-      if (!ids.length) return;
-      void (async () => {
-        const proceed = await confirmAction(
-          `Synchroniser ${ids.length} fichier${ids.length > 1 ? "s" : ""} avec Rekordbox ? Ferme Rekordbox avant de continuer.`,
-          "Synchroniser",
-        );
-        if (!proceed) return;
-        try {
-          const outcomes = await rekordboxMasterdbApplyRepairs(ids);
-          let ok = 0;
-          for (const o of outcomes) {
-            mdbRepairSel.delete(o.id);
-            if (o.ok) {
-              mdbErrorById.delete(o.id);
-              ok++;
-            } else {
-              mdbErrorById.set(o.id, o.error || "échec inconnu");
-            }
-          }
-          const failed = outcomes.length - ok;
-          toast(
-            failed > 0
-              ? `${ok} fichier${ok > 1 ? "s" : ""} synchronisé${ok > 1 ? "s" : ""}, ${failed} échoué${failed > 1 ? "s" : ""}`
-              : `${ok} fichier${ok > 1 ? "s" : ""} synchronisé${ok > 1 ? "s" : ""}`,
-          );
-        } catch (e) {
-          console.error("rekordbox_masterdb_apply_repairs failed", e);
-          toast("Action impossible — réessaie");
-        }
-        void renderRekordboxLive();
-      })();
-    } else if (act === "mdbdedup") {
-      e.stopPropagation();
-      const idx = Number(el.dataset.idx);
-      const group = lastScannedDuplicateGroups[idx];
-      if (!group) return;
-      void (async () => {
-        const proceed = await confirmAction(
-          `Synchroniser cette playlist avec Rekordbox — retirer ${group.remove.length} doublon${group.remove.length > 1 ? "s" : ""} ? Ferme Rekordbox avant de continuer.`,
-          "Synchroniser",
-        );
-        if (!proceed) return;
-        const key = duplicateGroupKey(group);
-        try {
-          await rekordboxMasterdbDedupPlaylistGroup(group);
-          mdbDedupErrorByKey.delete(key);
-          toast(`${group.remove.length} doublon${group.remove.length > 1 ? "s" : ""} retiré${group.remove.length > 1 ? "s" : ""}`);
-        } catch (e) {
-          console.error("rekordbox_masterdb_dedup_playlist_group failed", e);
-          mdbDedupErrorByKey.set(key, e instanceof Error ? e.message : "échec inconnu");
-        }
-        void renderRekordboxLive();
-      })();
-    } else if (act === "mdspick") {
-      e.stopPropagation();
-      const id = Number(el.dataset.id);
-      if (mdsSyncSel.has(id)) {
-        mdsSyncSel.delete(id);
-      } else {
-        mdsSyncSel.add(id);
-        mdsErrorById.delete(id);
-      }
-      rerenderMetadataSyncsSection();
-    } else if (act === "mdsgrouptoggle") {
-      e.stopPropagation();
-      const key = el.dataset.session || "";
-      if (mdsExpandedGroups.has(key)) mdsExpandedGroups.delete(key);
-      else mdsExpandedGroups.add(key);
-      rerenderMetadataSyncsSection();
-    } else if (act === "mdsgroupselect") {
-      e.stopPropagation();
-      const key = el.dataset.session || "";
-      const ids = idsInSessionGroup(lastPendingMetadataSyncs, key);
-      const allSelected = ids.length > 0 && ids.every((id) => mdsSyncSel.has(id));
-      for (const id of ids) {
-        if (allSelected) mdsSyncSel.delete(id);
-        else {
-          mdsSyncSel.add(id);
-          mdsErrorById.delete(id);
-        }
-      }
-      rerenderMetadataSyncsSection();
-    } else if (act === "mdsdismiss") {
-      e.stopPropagation();
-      const id = Number(el.dataset.id);
-      void (async () => {
-        try {
-          await rekordboxMasterdbDismissMetadataSync(id);
-        } catch (e) {
-          console.error("rekordbox_masterdb_dismiss_metadata_sync failed", e);
-          toast("Action impossible — réessaie");
-        }
-        void renderRekordboxLive();
-      })();
-    } else if (act === "mdsresolve") {
-      e.stopPropagation();
-      const id = Number(el.dataset.id);
-      const trackId = el.dataset.track || "";
-      void (async () => {
-        try {
-          await rekordboxMasterdbResolveAmbiguousMetadataSync(id, trackId);
-        } catch (e) {
-          console.error("rekordbox_masterdb_resolve_ambiguous_metadata_sync failed", e);
-          toast("Choix impossible — réessaie");
-        }
-        void renderRekordboxLive();
-      })();
-    } else if (act === "mdsapply") {
-      e.stopPropagation();
-      const ids = [...mdsSyncSel];
-      if (!ids.length) return;
-      void (async () => {
-        const proceed = await confirmAction(
-          `Synchroniser les métadonnées de ${ids.length} morceau${ids.length > 1 ? "x" : ""} avec Rekordbox ? Ferme Rekordbox avant de continuer.`,
-          "Synchroniser",
-        );
-        if (!proceed) return;
-        try {
-          const outcomes: ApplyMetadataSyncOutcome[] = await rekordboxMasterdbApplyMetadataSyncs(ids);
-          let ok = 0;
-          for (const o of outcomes) {
-            mdsSyncSel.delete(o.id);
-            if (o.ok) {
-              mdsErrorById.delete(o.id);
-              ok++;
-            } else {
-              mdsErrorById.set(o.id, o.error || "échec inconnu");
-            }
-          }
-          const failed = outcomes.length - ok;
-          toast(
-            failed > 0
-              ? `${ok} morceau${ok > 1 ? "x" : ""} synchronisé${ok > 1 ? "s" : ""}, ${failed} échoué${failed > 1 ? "s" : ""}`
-              : `${ok} morceau${ok > 1 ? "x" : ""} synchronisé${ok > 1 ? "s" : ""}`,
-          );
-        } catch (e) {
-          console.error("rekordbox_masterdb_apply_metadata_syncs failed", e);
-          toast("Action impossible — réessaie");
-        }
-        void renderRekordboxLive();
-      })();
-    } else if (act === "maspick") {
-      e.stopPropagation();
-      const id = Number(el.dataset.id);
-      if (masSyncSel.has(id)) {
-        masSyncSel.delete(id);
-      } else {
-        masSyncSel.add(id);
-        masErrorById.delete(id);
-      }
-      rerenderArtworkSyncsSection();
-    } else if (act === "masgrouptoggle") {
-      e.stopPropagation();
-      const key = el.dataset.session || "";
-      if (masExpandedGroups.has(key)) masExpandedGroups.delete(key);
-      else masExpandedGroups.add(key);
-      rerenderArtworkSyncsSection();
-    } else if (act === "masgroupselect") {
-      e.stopPropagation();
-      const key = el.dataset.session || "";
-      const ids = idsInSessionGroup(lastPendingArtworkSyncs, key);
-      const allSelected = ids.length > 0 && ids.every((id) => masSyncSel.has(id));
-      for (const id of ids) {
-        if (allSelected) masSyncSel.delete(id);
-        else {
-          masSyncSel.add(id);
-          masErrorById.delete(id);
-        }
-      }
-      rerenderArtworkSyncsSection();
-    } else if (act === "masdismiss") {
-      e.stopPropagation();
-      const id = Number(el.dataset.id);
-      void (async () => {
-        try {
-          await rekordboxMasterdbDismissArtworkSync(id);
-        } catch (e) {
-          console.error("rekordbox_masterdb_dismiss_artwork_sync failed", e);
-          toast("Action impossible — réessaie");
-        }
-        void renderRekordboxLive();
-      })();
-    } else if (act === "masresolve") {
-      e.stopPropagation();
-      const id = Number(el.dataset.id);
-      const trackId = el.dataset.track || "";
-      void (async () => {
-        try {
-          await rekordboxMasterdbResolveAmbiguousArtworkSync(id, trackId);
-        } catch (e) {
-          console.error("rekordbox_masterdb_resolve_ambiguous_artwork_sync failed", e);
-          toast("Choix impossible — réessaie");
-        }
-        void renderRekordboxLive();
-      })();
-    } else if (act === "masapply") {
-      e.stopPropagation();
-      const ids = [...masSyncSel];
-      if (!ids.length) return;
-      void (async () => {
-        const proceed = await confirmAction(
-          `Synchroniser la pochette de ${ids.length} morceau${ids.length > 1 ? "x" : ""} avec Rekordbox ? Ferme Rekordbox avant de continuer.`,
-          "Synchroniser",
-        );
-        if (!proceed) return;
-        try {
-          const outcomes = await rekordboxMasterdbApplyArtworkSyncs(ids);
-          let ok = 0;
-          for (const o of outcomes) {
-            masSyncSel.delete(o.id);
-            if (o.ok) {
-              masErrorById.delete(o.id);
-              ok++;
-            } else {
-              masErrorById.set(o.id, o.error || "échec inconnu");
-            }
-          }
-          const failed = outcomes.length - ok;
-          toast(
-            failed > 0
-              ? `${ok} pochette${ok > 1 ? "s" : ""} synchronisée${ok > 1 ? "s" : ""}, ${failed} échouée${failed > 1 ? "s" : ""}`
-              : `${ok} pochette${ok > 1 ? "s" : ""} synchronisée${ok > 1 ? "s" : ""}`,
-          );
-        } catch (e) {
-          console.error("rekordbox_masterdb_apply_artwork_syncs failed", e);
-          toast("Action impossible — réessaie");
-        }
-        void renderRekordboxLive();
-      })();
+    } else if (handleRekordboxAction(el, act ?? "", e, () => void runNavExport("rekordbox"))) {
+      // handled — see rekordbox-view.ts
     }
   });
 
