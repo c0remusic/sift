@@ -92,6 +92,14 @@ const MIGRATIONS: &[&str] = &[
     "#,
 ];
 
+/// Applies one schema migration and its version marker atomically.
+fn apply_migration(conn: &Connection, sql: &str, version: i64) -> rusqlite::Result<()> {
+    let tx = conn.unchecked_transaction()?;
+    tx.execute_batch(sql)?;
+    tx.pragma_update(None, "user_version", version)?;
+    tx.commit()
+}
+
 /// Applies any migrations the DB hasn't seen yet, tracked via PRAGMA user_version.
 /// Idempotent: running twice is a no-op the second time.
 pub fn run_migrations(conn: &Connection) -> rusqlite::Result<()> {
@@ -99,8 +107,7 @@ pub fn run_migrations(conn: &Connection) -> rusqlite::Result<()> {
     for (i, sql) in MIGRATIONS.iter().enumerate() {
         let version = (i + 1) as i64;
         if version > current {
-            conn.execute_batch(sql)?;
-            conn.execute_batch(&format!("PRAGMA user_version = {version}"))?;
+            apply_migration(conn, sql, version)?;
         }
     }
     Ok(())
@@ -157,6 +164,27 @@ mod tests {
         run_migrations(&conn).unwrap();
         run_migrations(&conn).unwrap(); // second run must not error or duplicate
         assert_eq!(table_count(&conn).unwrap(), 6);
+    }
+
+    #[test]
+    fn failed_migration_rolls_back_schema_and_version() {
+        let conn = Connection::open_in_memory().unwrap();
+        let result = apply_migration(
+            &conn,
+            "CREATE TABLE partial_migration(id INTEGER); THIS IS NOT SQL;",
+            1,
+        );
+
+        assert!(result.is_err());
+        let partial_tables: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='partial_migration'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(partial_tables, 0);
+        assert_eq!(schema_version(&conn).unwrap(), 0);
     }
 
     #[test]

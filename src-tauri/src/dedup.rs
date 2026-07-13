@@ -210,20 +210,17 @@ mod tests {
         assert_eq!(m.kind, "name");
     }
 
-    fn fixture(name: &str) -> Option<String> {
+    fn fixture(name: &str) -> String {
         let p = format!("fixtures/{name}");
-        std::path::Path::new(&p).exists().then_some(p)
+        assert!(std::path::Path::new(&p).is_file(), "missing generated fixture {p}");
+        p
     }
 
     #[test]
     fn find_duplicate_confirms_by_sound() {
         // Two encodings of the same recording, named to share a name key → name match AND
         // sound match → kind "both".
-        let (Some(mp3), Some(flac)) = (fixture("real_320.mp3"), fixture("real_lossless.flac"))
-        else {
-            eprintln!("skip: no fixtures");
-            return;
-        };
+        let (mp3, flac) = (fixture("real_320.mp3"), fixture("real_lossless.flac"));
         crate::ffmpeg::init_ffmpeg_path();
         let conn = db();
         let dir = tempfile::tempdir().unwrap();

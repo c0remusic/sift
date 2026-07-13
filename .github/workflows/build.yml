@@ -36,8 +36,17 @@ jobs:
       - name: Install npm deps
         run: npm ci
 
+      - name: Check Tauri security policy
+        run: npm run check:tauri-security
+
       - name: Fetch ffmpeg sidecar
         run: npm run fetch-ffmpeg
+
+      - name: Generate audio fixtures
+        run: node scripts/make-fixtures.mjs
+
+      - name: Test Rust
+        run: cargo test --manifest-path src-tauri/Cargo.toml
 
       - name: Build Tauri app (unsigned)
         run: npm run tauri build

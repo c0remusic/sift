@@ -53,21 +53,15 @@ mod tests {
     use lofty::probe::Probe;
     use lofty::tag::ItemKey;
 
-    fn fixture(name: &str) -> Option<String> {
+    fn fixture(name: &str) -> String {
         let p = format!("fixtures/{name}");
-        if std::path::Path::new(&p).exists() {
-            Some(p)
-        } else {
-            None
-        }
+        assert!(std::path::Path::new(&p).is_file(), "missing generated fixture {p}");
+        p
     }
 
     #[test]
     fn writes_and_reads_back_artist_title() {
-        let Some(src) = fixture("real_320.mp3") else {
-            eprintln!("skip: no fixture");
-            return;
-        };
+        let src = fixture("real_320.mp3");
         let dir = tempfile::tempdir().unwrap();
         let dst = dir.path().join("tagged.mp3");
         std::fs::copy(&src, &dst).unwrap();
@@ -83,10 +77,7 @@ mod tests {
 
     #[test]
     fn read_artist_title_after_write() {
-        let Some(src) = fixture("real_320.mp3") else {
-            eprintln!("skip: no fixture");
-            return;
-        };
+        let src = fixture("real_320.mp3");
         let dir = tempfile::tempdir().unwrap();
         let dst = dir.path().join("rt.mp3");
         std::fs::copy(&src, &dst).unwrap();

@@ -116,21 +116,6 @@ fn trash_file_fs(root: &Path, track_id: i64, source: &str) -> Result<String, Fil
     Ok(dest.to_string_lossy().to_string())
 }
 
-/// Trash a file AND journal it (used by `trash_track`, which is fast — no encode, so holding
-/// the DB lock across it is fine).
-fn move_to_trash(
-    conn: &Connection,
-    root: &Path,
-    track_id: i64,
-    batch_id: &str,
-    source: &str,
-) -> Result<String, FilingError> {
-    let dest = trash_file_fs(root, track_id, source)?;
-    actions::record(conn, batch_id, Some(track_id), "trash", Some(source), Some(&dest))
-        .map_err(|e| FilingError::Db(e.to_string()))?;
-    Ok(dest)
-}
-
 /// Persist canonical metadata for a track (upsert into `metadata`).
 fn save_metadata(conn: &Connection, track_id: i64, c: &Canonical) -> Result<(), FilingError> {
     conn.execute(
@@ -247,47 +232,70 @@ pub fn execute_file(plan: &FilePlan) -> Result<Vec<FsLog>, FilingError> {
 }
 
 /// Reverse phase-2 filesystem effects (newest first) — used when phase 3 cannot commit.
-fn rollback_fs(log: &[FsLog]) {
+fn rollback_fs(log: &[FsLog]) -> Result<(), FilingError> {
+    let mut errors = Vec::new();
     for fs in log.iter().rev() {
-        match fs.kind {
+        let result = match fs.kind {
             "move" | "trash" => {
-                let _ = std::fs::rename(&fs.to, &fs.from);
+                if Path::new(&fs.from).exists() {
+                    Err(format!("rollback destination occupied: {}", fs.from))
+                } else {
+                    std::fs::rename(&fs.to, &fs.from).map_err(|error| error.to_string())
+                }
             }
-            "convert" => {
-                let _ = std::fs::remove_file(&fs.to);
-            }
-            _ => {}
+            "convert" => match std::fs::remove_file(&fs.to) {
+                Ok(()) => Ok(()),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(()),
+                Err(error) => Err(error.to_string()),
+            },
+            other => Err(format!("unknown filesystem action: {other}")),
+        };
+        if let Err(error) = result {
+            errors.push(format!("{} {} -> {}: {error}", fs.kind, fs.to, fs.from));
         }
+    }
+    if errors.is_empty() {
+        Ok(())
+    } else {
+        Err(FilingError::Io(errors.join("; ")))
     }
 }
 
 /// Phase 3 (under the DB lock): journal the effects + mark the track filed. On any DB error,
 /// reverse the filesystem effects and the partial journal so nothing is left half-filed.
 pub fn commit_file(conn: &Connection, plan: &FilePlan, log: Vec<FsLog>) -> Result<FileResult, FilingError> {
-    let undo = |conn: &Connection| {
-        rollback_fs(&log);
-        let _ = conn.execute("DELETE FROM actions WHERE batch_id=?1", params![plan.batch_id]);
-    };
-    for fs in &log {
-        if let Err(e) =
-            actions::record(conn, &plan.batch_id, Some(plan.track_id), fs.kind, Some(&fs.from), Some(&fs.to))
-        {
-            undo(conn);
-            return Err(FilingError::Db(e.to_string()));
-        }
-    }
     let conf = match plan.canonical.confidence {
         naming::Confidence::Green => "green",
         naming::Confidence::Yellow => "yellow",
     };
-    if let Err(e) = conn.execute(
-        "UPDATE tracks SET status='filed', folder=?2, target_format=?3, confidence=?4 WHERE id=?1",
-        params![plan.track_id, plan.bin_rel, target_str(plan.target), conf],
-    ) {
-        undo(conn);
-        return Err(FilingError::Db(e.to_string()));
+    let db_result: Result<(), FilingError> = (|| {
+        let tx = conn.unchecked_transaction()?;
+        for fs in &log {
+            actions::record(
+                &tx,
+                &plan.batch_id,
+                Some(plan.track_id),
+                fs.kind,
+                Some(&fs.from),
+                Some(&fs.to),
+            )?;
+        }
+        tx.execute(
+            "UPDATE tracks SET status='filed', folder=?2, target_format=?3, confidence=?4 WHERE id=?1",
+            params![plan.track_id, plan.bin_rel, target_str(plan.target), conf],
+        )?;
+        save_metadata(&tx, plan.track_id, &plan.canonical)?;
+        tx.commit()?;
+        Ok(())
+    })();
+    if let Err(error) = db_result {
+        if let Err(rollback) = rollback_fs(&log) {
+            return Err(FilingError::Io(format!(
+                "{error}; filesystem rollback failed: {rollback}"
+            )));
+        }
+        return Err(error);
     }
-    save_metadata(conn, plan.track_id, &plan.canonical)?;
     Ok(FileResult { path: plan.dest.clone(), batch_id: plan.batch_id.clone() })
 }
 
@@ -340,9 +348,10 @@ pub fn file_batch(
 pub fn reject_track(conn: &Connection, track_id: i64) -> Result<(), FilingError> {
     let source = track_path(conn, track_id)?;
     let batch_id = new_batch_id(track_id);
-    actions::record(conn, &batch_id, Some(track_id), "reject", Some(&source), None)
-        .map_err(|e| FilingError::Db(e.to_string()))?;
-    conn.execute("UPDATE tracks SET status='resourcing' WHERE id=?1", params![track_id])?;
+    let tx = conn.unchecked_transaction()?;
+    actions::record(&tx, &batch_id, Some(track_id), "reject", Some(&source), None)?;
+    tx.execute("UPDATE tracks SET status='resourcing' WHERE id=?1", params![track_id])?;
+    tx.commit()?;
     Ok(())
 }
 
@@ -350,8 +359,20 @@ pub fn reject_track(conn: &Connection, track_id: i64) -> Result<(), FilingError>
 pub fn trash_track(conn: &Connection, root: &Path, track_id: i64) -> Result<(), FilingError> {
     let source = track_path(conn, track_id)?;
     let batch_id = new_batch_id(track_id);
-    move_to_trash(conn, root, track_id, &batch_id, &source)?;
-    conn.execute("UPDATE tracks SET status='trash' WHERE id=?1", params![track_id])?;
+    let dest = trash_file_fs(root, track_id, &source)?;
+    let db_result: Result<(), FilingError> = (|| {
+        let tx = conn.unchecked_transaction()?;
+        actions::record(&tx, &batch_id, Some(track_id), "trash", Some(&source), Some(&dest))?;
+        tx.execute("UPDATE tracks SET status='trash' WHERE id=?1", params![track_id])?;
+        tx.commit()?;
+        Ok(())
+    })();
+    if let Err(error) = db_result {
+        std::fs::rename(&dest, &source).map_err(|rollback| {
+            FilingError::Io(format!("{error}; failed to restore trashed file: {rollback}"))
+        })?;
+        return Err(error);
+    }
     Ok(())
 }
 
@@ -365,18 +386,15 @@ mod tests {
         conn
     }
 
-    fn fixture(name: &str) -> Option<String> {
+    fn fixture(name: &str) -> String {
         let p = format!("fixtures/{name}");
-        if std::path::Path::new(&p).exists() {
-            Some(p)
-        } else {
-            None
-        }
+        assert!(std::path::Path::new(&p).is_file(), "missing generated fixture {p}");
+        p
     }
 
     /// Copy a fixture into `dir` and insert a pending track row pointing at the copy.
-    fn seed_track(conn: &Connection, dir: &Path, fixture_name: &str, as_name: &str) -> Option<(i64, std::path::PathBuf)> {
-        let src = fixture(fixture_name)?;
+    fn seed_track(conn: &Connection, dir: &Path, fixture_name: &str, as_name: &str) -> (i64, std::path::PathBuf) {
+        let src = fixture(fixture_name);
         let copy = dir.join(as_name);
         std::fs::copy(&src, &copy).unwrap();
         conn.execute(
@@ -384,17 +402,14 @@ mod tests {
             params![copy.to_str().unwrap()],
         )
         .unwrap();
-        Some((conn.last_insert_rowid(), copy))
+        (conn.last_insert_rowid(), copy)
     }
 
     #[test]
     fn reconcile_track_reads_filename_when_tags_absent() {
         let conn = db();
         let dir = tempfile::tempdir().unwrap();
-        let Some((id, _)) = seed_track(&conn, dir.path(), "real_lossless.flac", "Robert Owens - Bring Down the Walls.flac") else {
-            eprintln!("skip: no fixture");
-            return;
-        };
+        let (id, _) = seed_track(&conn, dir.path(), "real_lossless.flac", "Robert Owens - Bring Down the Walls.flac");
         let c = reconcile_track(&conn, id).unwrap();
         assert_eq!(c.artist, "Robert Owens");
         assert_eq!(c.title, "Bring Down the Walls");
@@ -406,10 +421,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().join("lib");
         std::fs::create_dir_all(root.join("House")).unwrap();
-        let Some((id, src)) = seed_track(&conn, dir.path(), "real_320.mp3", "src.mp3") else {
-            eprintln!("skip: no fixture");
-            return;
-        };
+        let (id, src) = seed_track(&conn, dir.path(), "real_320.mp3", "src.mp3");
 
         let res = file_track(&conn, &root, "{artist} - {title}", id, "House", None, Some(Canonical {
             artist: "Larry Heard".into(), title: "Can You Feel It".into(), version: None,
@@ -435,10 +447,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().join("lib");
         std::fs::create_dir_all(root.join("House")).unwrap();
-        let Some((id, src)) = seed_track(&conn, dir.path(), "real_lossless.flac", "src.flac") else {
-            eprintln!("skip: no fixture");
-            return;
-        };
+        let (id, src) = seed_track(&conn, dir.path(), "real_lossless.flac", "src.flac");
         crate::ffmpeg::init_ffmpeg_path();
 
         let res = file_track(&conn, &root, "{artist} - {title}", id, "House", None, Some(Canonical {
@@ -463,10 +472,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().join("lib");
         std::fs::create_dir_all(&root).unwrap();
-        let Some((id, _)) = seed_track(&conn, dir.path(), "real_320.mp3", "src.mp3") else {
-            eprintln!("skip: no fixture");
-            return;
-        };
+        let (id, _) = seed_track(&conn, dir.path(), "real_320.mp3", "src.mp3");
         let err = file_track(&conn, &root, "{artist} - {title}", id, "", Some(Target::Aiff1644), Some(Canonical {
             artist: "X".into(), title: "Y".into(), version: None, confidence: crate::naming::Confidence::Green,
         }));
@@ -477,10 +483,7 @@ mod tests {
     fn reject_track_sets_resourcing_and_records() {
         let conn = db();
         let dir = tempfile::tempdir().unwrap();
-        let Some((id, _)) = seed_track(&conn, dir.path(), "real_320.mp3", "src.mp3") else {
-            eprintln!("skip: no fixture");
-            return;
-        };
+        let (id, _) = seed_track(&conn, dir.path(), "real_320.mp3", "src.mp3");
         reject_track(&conn, id).unwrap();
         let status: String = conn.query_row("SELECT status FROM tracks WHERE id=?1", params![id], |r| r.get(0)).unwrap();
         assert_eq!(status, "resourcing");
@@ -494,14 +497,146 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().join("lib");
         std::fs::create_dir_all(&root).unwrap();
-        let Some((id, src)) = seed_track(&conn, dir.path(), "real_320.mp3", "src.mp3") else {
-            eprintln!("skip: no fixture");
-            return;
-        };
+        let (id, src) = seed_track(&conn, dir.path(), "real_320.mp3", "src.mp3");
         trash_track(&conn, &root, id).unwrap();
         assert!(!src.exists());
         let status: String = conn.query_row("SELECT status FROM tracks WHERE id=?1", params![id], |r| r.get(0)).unwrap();
         assert_eq!(status, "trash");
         assert!(root.join(".sift-trash").read_dir().unwrap().count() >= 1);
+    }
+
+    #[test]
+    fn commit_file_rolls_back_db_and_files_when_metadata_write_fails() {
+        let conn = db();
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("source.mp3");
+        let dest = dir.path().join("House/dest.mp3");
+        std::fs::create_dir_all(dest.parent().unwrap()).unwrap();
+        std::fs::write(&dest, b"filed").unwrap();
+        conn.execute(
+            "INSERT INTO tracks(path, status) VALUES(?1, 'pending')",
+            params![source.to_str().unwrap()],
+        )
+        .unwrap();
+        let track_id = conn.last_insert_rowid();
+        conn.execute_batch(
+            "CREATE TRIGGER fail_metadata BEFORE INSERT ON metadata
+             BEGIN SELECT RAISE(FAIL, 'metadata blocked'); END;",
+        )
+        .unwrap();
+        let plan = FilePlan {
+            track_id,
+            batch_id: "failing-commit".into(),
+            source: source.to_string_lossy().into_owned(),
+            dest: dest.to_string_lossy().into_owned(),
+            conformant: true,
+            target: Target::Mp3320,
+            canonical: Canonical {
+                artist: "Artist".into(),
+                title: "Title".into(),
+                version: None,
+                confidence: crate::naming::Confidence::Green,
+            },
+            bin_rel: "House".into(),
+            root: dir.path().to_path_buf(),
+        };
+        let log = vec![FsLog {
+            kind: "move",
+            from: plan.source.clone(),
+            to: plan.dest.clone(),
+        }];
+
+        assert!(commit_file(&conn, &plan, log).is_err());
+
+        assert!(source.exists(), "filesystem move must be compensated");
+        assert!(!dest.exists(), "failed destination must be removed");
+        let status: String = conn
+            .query_row("SELECT status FROM tracks WHERE id=?1", [track_id], |r| r.get(0))
+            .unwrap();
+        assert_eq!(status, "pending");
+        let actions: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM actions WHERE batch_id='failing-commit'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(actions, 0);
+    }
+
+    #[test]
+    fn commit_file_reports_failed_filesystem_rollback() {
+        let conn = db();
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("source.flac");
+        let undeletable_dest = dir.path().join("converted-output");
+        std::fs::create_dir_all(&undeletable_dest).unwrap();
+        conn.execute(
+            "INSERT INTO tracks(path, status) VALUES(?1, 'pending')",
+            params![source.to_str().unwrap()],
+        )
+        .unwrap();
+        let track_id = conn.last_insert_rowid();
+        conn.execute_batch(
+            "CREATE TRIGGER fail_metadata_rollback BEFORE INSERT ON metadata
+             BEGIN SELECT RAISE(FAIL, 'metadata blocked'); END;",
+        )
+        .unwrap();
+        let plan = FilePlan {
+            track_id,
+            batch_id: "failed-rollback".into(),
+            source: source.to_string_lossy().into_owned(),
+            dest: undeletable_dest.to_string_lossy().into_owned(),
+            conformant: false,
+            target: Target::Aiff1644,
+            canonical: Canonical {
+                artist: "Artist".into(),
+                title: "Title".into(),
+                version: None,
+                confidence: crate::naming::Confidence::Green,
+            },
+            bin_rel: "House".into(),
+            root: dir.path().to_path_buf(),
+        };
+        let log = vec![FsLog {
+            kind: "convert",
+            from: plan.source.clone(),
+            to: plan.dest.clone(),
+        }];
+
+        let error = commit_file(&conn, &plan, log).unwrap_err().to_string();
+
+        assert!(error.contains("filesystem rollback failed"), "{error}");
+        assert!(undeletable_dest.is_dir());
+    }
+
+    #[test]
+    fn trash_track_restores_file_when_status_update_fails() {
+        let conn = db();
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("library");
+        let source = dir.path().join("source.mp3");
+        std::fs::create_dir_all(&root).unwrap();
+        std::fs::write(&source, b"audio").unwrap();
+        conn.execute(
+            "INSERT INTO tracks(path, status) VALUES(?1, 'pending')",
+            params![source.to_str().unwrap()],
+        )
+        .unwrap();
+        let track_id = conn.last_insert_rowid();
+        conn.execute_batch(
+            "CREATE TRIGGER fail_trash_status BEFORE UPDATE OF status ON tracks
+             WHEN NEW.status='trash'
+             BEGIN SELECT RAISE(FAIL, 'trash status blocked'); END;",
+        )
+        .unwrap();
+
+        assert!(trash_track(&conn, &root, track_id).is_err());
+
+        assert!(source.exists(), "failed trash must restore the source file");
+        let actions: i64 = conn
+            .query_row("SELECT count(*) FROM actions WHERE track_id=?1", [track_id], |r| r.get(0))
+            .unwrap();
+        assert_eq!(actions, 0);
     }
 }

@@ -162,13 +162,10 @@ pub fn encode(src: &str, dst: &str, target: Target) -> Result<(), EncodeError> {
 mod tests {
     use super::*;
 
-    fn fixture(name: &str) -> Option<String> {
+    fn fixture(name: &str) -> String {
         let p = format!("fixtures/{name}");
-        if std::path::Path::new(&p).exists() {
-            Some(p)
-        } else {
-            None
-        }
+        assert!(std::path::Path::new(&p).is_file(), "missing generated fixture {p}");
+        p
     }
 
     #[test]
@@ -188,10 +185,7 @@ mod tests {
 
     #[test]
     fn encodes_flac_to_conformant_wav() {
-        let Some(src) = fixture("real_lossless.flac") else {
-            eprintln!("skip: no fixture");
-            return;
-        };
+        let src = fixture("real_lossless.flac");
         crate::ffmpeg::init_ffmpeg_path();
         let dir = tempfile::tempdir().unwrap();
         let dst = dir.path().join("out.wav");
@@ -210,29 +204,20 @@ mod tests {
 
     #[test]
     fn mp3_is_conformant_to_mp3_target() {
-        let Some(p) = fixture("real_320.mp3") else {
-            eprintln!("skip: no fixture");
-            return;
-        };
+        let p = fixture("real_320.mp3");
         assert!(is_conformant(&p, Target::Mp3320));
     }
 
     #[test]
     fn flac_is_not_conformant_to_either_target() {
-        let Some(p) = fixture("real_lossless.flac") else {
-            eprintln!("skip: no fixture");
-            return;
-        };
+        let p = fixture("real_lossless.flac");
         assert!(!is_conformant(&p, Target::Mp3320)); // wrong codec
         assert!(!is_conformant(&p, Target::Aiff1644)); // wrong container
     }
 
     #[test]
     fn encodes_flac_to_conformant_aiff() {
-        let Some(src) = fixture("real_lossless.flac") else {
-            eprintln!("skip: no fixture");
-            return;
-        };
+        let src = fixture("real_lossless.flac");
         crate::ffmpeg::init_ffmpeg_path(); // point ffmpeg-sidecar at the bundled dev binary
         let dir = tempfile::tempdir().unwrap();
         let dst = dir.path().join("out.aiff");
@@ -244,10 +229,7 @@ mod tests {
 
     #[test]
     fn encodes_flac_to_mp3_320() {
-        let Some(src) = fixture("real_lossless.flac") else {
-            eprintln!("skip: no fixture");
-            return;
-        };
+        let src = fixture("real_lossless.flac");
         crate::ffmpeg::init_ffmpeg_path(); // point ffmpeg-sidecar at the bundled dev binary
         let dir = tempfile::tempdir().unwrap();
         let dst = dir.path().join("out.mp3");

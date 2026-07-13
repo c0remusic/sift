@@ -4,6 +4,14 @@ use serde::Serialize;
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, State};
 
+fn allow_asset_file(app: &AppHandle, path: &str) -> Result<(), String> {
+    let path = std::path::Path::new(path);
+    if !path.is_file() {
+        return Err(format!("asset file not found: {}", path.display()));
+    }
+    app.asset_protocol_scope().allow_file(path).map_err(|e| e.to_string())
+}
+
 #[derive(Serialize)]
 pub struct AppInfo {
     pub name: String,
@@ -93,13 +101,19 @@ pub fn remove_source(
 }
 
 #[tauri::command]
-pub fn list_queue(conn: State<'_, Mutex<Connection>>) -> Result<Vec<queue::QueueItem>, String> {
+pub fn list_queue(
+    app: AppHandle,
+    conn: State<'_, Mutex<Connection>>,
+) -> Result<Vec<queue::QueueItem>, String> {
     let conn = conn.lock().map_err(|e| e.to_string())?;
     let mut items = queue::list_pending(&conn).map_err(|e| e.to_string())?;
     // Annotate name-duplicate items so the queue can badge them before they're opened.
     let dups = crate::dedup::name_dups(&conn).map_err(|e| e.to_string())?;
     for it in &mut items {
         it.dup = dups.contains(&it.id);
+        if let Err(error) = allow_asset_file(&app, &it.path) {
+            log::warn!("queue asset scope: {error}");
+        }
     }
     Ok(items)
 }
@@ -224,6 +238,7 @@ pub fn analysis_progress(
 /// file-read / decode oracle on any path on disk.
 #[tauri::command]
 pub fn analyze_path(
+    app: AppHandle,
     conn: State<'_, Mutex<Connection>>,
     path: String,
     with_spectrogram: bool,
@@ -239,6 +254,7 @@ pub fn analyze_path(
         if !known {
             return Err("unknown track path".into());
         }
+        allow_asset_file(&app, &path)?;
         // Serve the cached report instantly (no re-decode), except when a spectrogram is
         // requested (computed on demand, not cached).
         if !with_spectrogram {
@@ -277,7 +293,25 @@ pub fn analyze_path(
 /// mp3/wav/flac/m4a/ogg directly, but NOT AIFF — so for .aif/.aiff we transcode once to a
 /// cached temp WAV and return that. The caller wraps the result with convertFileSrc.
 #[tauri::command]
-pub fn playback_url(path: String) -> Result<String, String> {
+pub fn playback_url(
+    app: AppHandle,
+    conn: State<'_, Mutex<Connection>>,
+    path: String,
+) -> Result<String, String> {
+    {
+        let conn = conn.lock().map_err(|e| e.to_string())?;
+        let known = conn
+            .query_row(
+                "SELECT 1 FROM tracks WHERE path=?1 LIMIT 1",
+                rusqlite::params![path],
+                |_| Ok(()),
+            )
+            .is_ok();
+        if !known {
+            return Err("unknown track path".into());
+        }
+    }
+    allow_asset_file(&app, &path)?;
     let ext = std::path::Path::new(&path)
         .extension()
         .and_then(|e| e.to_str())
@@ -305,7 +339,9 @@ pub fn playback_url(path: String) -> Result<String, String> {
         crate::encode::encode(&path, &out.to_string_lossy(), crate::encode::Target::Wav1644)
             .map_err(|e| e.to_string())?;
     }
-    Ok(out.to_string_lossy().to_string())
+    let out = out.to_string_lossy().to_string();
+    allow_asset_file(&app, &out)?;
+    Ok(out)
 }
 
 /// Open an external URL in the user's default browser (used by the Écartés buy links).

@@ -72,21 +72,15 @@ pub fn similarity(a: &[u32], b: &[u32]) -> f32 {
 mod tests {
     use super::*;
 
-    fn fixture(name: &str) -> Option<String> {
+    fn fixture(name: &str) -> String {
         let p = format!("fixtures/{name}");
-        if std::path::Path::new(&p).exists() {
-            Some(p)
-        } else {
-            None
-        }
+        assert!(std::path::Path::new(&p).is_file(), "missing generated fixture {p}");
+        p
     }
 
     #[test]
     fn fingerprint_is_deterministic_and_self_identical() {
-        let Some(p) = fixture("real_320.mp3") else {
-            eprintln!("skip: no fixture");
-            return;
-        };
+        let p = fixture("real_320.mp3");
         crate::ffmpeg::init_ffmpeg_path();
         let a = compute_for_path(&p).expect("fingerprint");
         let b = compute_for_path(&p).expect("fingerprint");
@@ -98,10 +92,7 @@ mod tests {
     fn same_source_different_encode_matches() {
         // real_320.mp3 is the 320k MP3 of real_lossless.flac — same recording, two encodings.
         // This is the core M5 promise: detect the dupe across format/name.
-        let (Some(p1), Some(p2)) = (fixture("real_320.mp3"), fixture("real_lossless.flac")) else {
-            eprintln!("skip: no fixtures");
-            return;
-        };
+        let (p1, p2) = (fixture("real_320.mp3"), fixture("real_lossless.flac"));
         crate::ffmpeg::init_ffmpeg_path();
         let a = compute_for_path(&p1).expect("fp1");
         let b = compute_for_path(&p2).expect("fp2");
@@ -112,10 +103,7 @@ mod tests {
     #[test]
     fn different_audio_below_threshold() {
         // sweep (real) vs a steady dual-mono tone — clearly different audio.
-        let (Some(p1), Some(p2)) = (fixture("real_320.mp3"), fixture("dual_mono.wav")) else {
-            eprintln!("skip: no fixtures");
-            return;
-        };
+        let (p1, p2) = (fixture("real_320.mp3"), fixture("dual_mono.wav"));
         crate::ffmpeg::init_ffmpeg_path();
         let a = compute_for_path(&p1).expect("fp1");
         let b = compute_for_path(&p2).expect("fp2");

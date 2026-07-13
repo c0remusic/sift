@@ -84,10 +84,20 @@ pub fn restore_track(conn: &Connection, track_id: i64) -> Result<(), String> {
         std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
     }
     std::fs::rename(&to, &from).map_err(|e| e.to_string())?;
-    conn.execute("UPDATE actions SET undone=1 WHERE id=?1", params![action_id])
-        .map_err(|e| e.to_string())?;
-    conn.execute("UPDATE tracks SET status='pending' WHERE id=?1", params![track_id])
-        .map_err(|e| e.to_string())?;
+    let db_result: Result<(), String> = (|| {
+        let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+        tx.execute("UPDATE actions SET undone=1 WHERE id=?1", params![action_id])
+            .map_err(|e| e.to_string())?;
+        tx.execute("UPDATE tracks SET status='pending' WHERE id=?1", params![track_id])
+            .map_err(|e| e.to_string())?;
+        tx.commit().map_err(|e| e.to_string())?;
+        Ok(())
+    })();
+    if let Err(error) = db_result {
+        std::fs::rename(&from, &to)
+            .map_err(|rollback| format!("{error}; failed to return file to trash: {rollback}"))?;
+        return Err(error);
+    }
     Ok(())
 }
 
@@ -109,12 +119,18 @@ pub fn purge_trash(conn: &Connection) -> Result<usize, String> {
     let mut n = 0;
     for (tid, aid, to) in rows {
         if let Some(p) = &to {
-            let _ = std::fs::remove_file(p);
+            if let Err(error) = std::fs::remove_file(p) {
+                if error.kind() != std::io::ErrorKind::NotFound {
+                    return Err(format!("delete trashed file {p}: {error}"));
+                }
+            }
         }
-        conn.execute("UPDATE actions SET undone=1 WHERE id=?1", params![aid])
+        let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
+        tx.execute("UPDATE actions SET undone=1 WHERE id=?1", params![aid])
             .map_err(|e| e.to_string())?;
-        conn.execute("UPDATE tracks SET status='purged' WHERE id=?1", params![tid])
+        tx.execute("UPDATE tracks SET status='purged' WHERE id=?1", params![tid])
             .map_err(|e| e.to_string())?;
+        tx.commit().map_err(|e| e.to_string())?;
         n += 1;
     }
     // Sweep any trashed track without a live trash action (orphaned journal) so it doesn't
@@ -174,6 +190,45 @@ mod tests {
     }
 
     #[test]
+    fn restore_retrashes_file_when_status_update_fails() {
+        let conn = db();
+        let dir = tempfile::tempdir().unwrap();
+        let original = dir.path().join("original.mp3");
+        let trash = dir.path().join("trash.mp3");
+        std::fs::write(&trash, b"audio").unwrap();
+        conn.execute(
+            "INSERT INTO tracks(path, status) VALUES(?1, 'trash')",
+            params![original.to_str().unwrap()],
+        )
+        .unwrap();
+        let track_id = conn.last_insert_rowid();
+        let action_id = crate::actions::record(
+            &conn,
+            "b1",
+            Some(track_id),
+            "trash",
+            Some(original.to_str().unwrap()),
+            Some(trash.to_str().unwrap()),
+        )
+        .unwrap();
+        conn.execute_batch(
+            "CREATE TRIGGER fail_restore_status BEFORE UPDATE OF status ON tracks
+             WHEN NEW.status='pending'
+             BEGIN SELECT RAISE(FAIL, 'restore status blocked'); END;",
+        )
+        .unwrap();
+
+        assert!(restore_track(&conn, track_id).is_err());
+
+        assert!(!original.exists(), "failed restore must not leave the file at its original path");
+        assert!(trash.exists(), "failed restore must put the file back in trash");
+        let undone: i64 = conn
+            .query_row("SELECT undone FROM actions WHERE id=?1", [action_id], |r| r.get(0))
+            .unwrap();
+        assert_eq!(undone, 0);
+    }
+
+    #[test]
     fn restore_blocked_when_origin_occupied() {
         let conn = db();
         let dir = tempfile::tempdir().unwrap();
@@ -205,5 +260,36 @@ mod tests {
         assert!(!trash.exists());
         let status: String = conn.query_row("SELECT status FROM tracks WHERE id=?1", params![tid], |r| r.get(0)).unwrap();
         assert_eq!(status, "purged");
+    }
+
+    #[test]
+    fn purge_keeps_track_live_when_file_deletion_fails() {
+        let conn = db();
+        let dir = tempfile::tempdir().unwrap();
+        let undeletable = dir.path().join("not-a-file");
+        std::fs::create_dir_all(&undeletable).unwrap();
+        conn.execute("INSERT INTO tracks(path, status) VALUES('orig.mp3','trash')", [])
+            .unwrap();
+        let track_id = conn.last_insert_rowid();
+        let action_id = crate::actions::record(
+            &conn,
+            "b1",
+            Some(track_id),
+            "trash",
+            Some("orig.mp3"),
+            Some(undeletable.to_str().unwrap()),
+        )
+        .unwrap();
+
+        assert!(purge_trash(&conn).is_err());
+
+        let status: String = conn
+            .query_row("SELECT status FROM tracks WHERE id=?1", [track_id], |r| r.get(0))
+            .unwrap();
+        assert_eq!(status, "trash");
+        let undone: i64 = conn
+            .query_row("SELECT undone FROM actions WHERE id=?1", [action_id], |r| r.get(0))
+            .unwrap();
+        assert_eq!(undone, 0);
     }
 }
