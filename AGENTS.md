@@ -63,6 +63,12 @@ Lib = `sift_lib`. MSRV Rust 1.77.2.
 ### Outillage global additionnel (installé niveau utilisateur, dispo partout)
 
 #### UI / Design — ordre de priorité strict
+- **sift-ui-design-governance** (skill projet) → garde-fou Sift à charger pour
+  toute tâche UI/UX/design/theme/parcours utilisateur. Elle force la lecture des
+  sources de vérité (`frontend/styles.css`, `docs/design-system-states.md`,
+  `docs/design-system/*`, `docs/skills-registre.md`) et la checklist de fin
+  avant réponse. Source suivie Git : `docs/skills/sift-ui-design-governance.md`
+  (`.agents/skills/...` est la copie locale opérationnelle, ignorée par Git).
 - **impeccable** (plugin) → priorité n°1 pour retouche/polish d'un écran existant.
   Register `product` (PRODUCT.md créé 30/06). `/impeccable critique|audit|polish …`.
 - **interface-design** (skill) → priorité n°2 retouche. `.interface-design/system.md`

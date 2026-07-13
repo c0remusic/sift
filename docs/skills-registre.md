@@ -205,6 +205,7 @@ courte (pas besoin de la chaîne complète).
 
 | Nom | Invocation | Usage / ordre dans le workflow |
 |---|---|---|
+| `sift-ui-design-governance` | auto (UI/UX, design system, theme, layout, parcours utilisateur, Revue, Diagnostic audio, Métadonnées, A finaliser) | **Garde-fou projet Sift à charger AVANT les skills design génériques.** Force la lecture des sources de vérité (`frontend/styles.css`, `docs/design-system-states.md`, `docs/design-system/*`) et la checklist de fin : parcours utilisateur, tokens réels, contrats Tauri/Revue, vérification, docs. |
 | `grill-me` | auto ("stress-test", "grill me", "challenge this plan") | **Étape 0** — interrogatoire des requirements avant de toucher au code. Décision trees jusqu'à résolution de toutes les ambiguïtés. |
 | `design-brief` | auto ("design brief", "plan this feature", "UI direction") | **Étape 1** — génère un document de brief après audit du codebase. Pose des questions sur le ton émotionnel et les références visuelles. Sauvegarde en markdown. |
 | `information-architecture` | auto ("IA", "site structure", "navigation", "user flows") | **Étape 2** — structure pages/nav/hiérarchie de contenu avant tout design visuel. |
@@ -215,6 +216,8 @@ courte (pas besoin de la chaîne complète).
 | `design-flow` | auto ("full design flow", "design process", "start from scratch") | **Orchestrateur** — lance les 7 steps en séquence guidée. |
 
 **Priorité de routage UI/design sur Sift** :
+0. Toute tâche UI/UX/design/theme/parcours utilisateur → charger d'abord
+   `sift-ui-design-governance` comme garde-fou Sift spécifique.
 1. Retouche ponctuelle / polish → `impeccable` ou `interface-design`.
 2. Chantier nouveau screen / refonte significative → `design-flow` (ou steps manuels).
 3. Exploration rapide d'une direction (avant de coder) → `enhance-prompt` →
