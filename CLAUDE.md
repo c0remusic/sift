@@ -145,8 +145,11 @@ continuer sans inventer de skill.
   comme `ecartes-view.ts`)
 - `rekordbox-view.ts` — écran Rekordbox (statut lien XML, Tier 1/2/3
   master.db : réparations chemin, doublons playlist, synchro metadata),
-  extrait de `sift-live.ts` le 2026-07-09, même discipline que
-  `bibliotheque-view.ts`
+  extrait de `sift-live.ts` le 2026-07-09. Depuis le 2026-07-13 (Phase 1
+  tranche 1a), seul module dont le dispatch de clic (`handleRekordboxAction`,
+  actions `rkbreexport`/`mdb*`/`mds*`/`mas*`) vit ici plutôt que dans le
+  handler délégué de `sift-live.ts` — écart volontaire scopé à ce seul
+  écran, `bibliotheque-view.ts`/`ecartes-view.ts` restent dispatch centralisé.
 - `ecartes-view.ts` — écran Écartés
 - `report-view.ts` — écran Revue (son-d'abord, waveform, verdict)
 - `filing.ts` — rail de classement (destination, format, actions filer/écarter)
