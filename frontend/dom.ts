@@ -32,3 +32,16 @@ export function esc(s: string): string {
     c === "&" ? "&amp;" : c === "<" ? "&lt;" : c === ">" ? "&gt;" : c === '"' ? "&quot;" : "&#39;",
   );
 }
+
+/** A transient bottom-right toast (mirrors filing.ts/library-detail.ts, no undo affordance). */
+export function toast(message: string): void {
+  document.getElementById("sift-toast")?.remove();
+  const el = document.createElement("div");
+  el.id = "sift-toast";
+  el.className = "sift-toast";
+  el.setAttribute("role", "status");
+  el.setAttribute("aria-live", "polite");
+  el.textContent = message;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 4000);
+}
