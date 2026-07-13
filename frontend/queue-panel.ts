@@ -1,0 +1,507 @@
+// Revue queue panel — virtualization, keyboard nav, search, row rendering, and Détail/Lot mode
+// state. Extracted from sift-live.ts (Phase 1, tranche 1b). currentItems/currentOpenId/reviewMode
+// are owned here — all their reassignments already lived in this code before the move. The batch
+// controller (tranche 1c) imports these as read values and calls setReviewMode() to mutate mode,
+// never reassigns directly (ES module import bindings are read-only from outside this file).
+import { listQueue } from "./ipc";
+import { openFilingInto, refreshBins, syncDetail, clearBinPick } from "./filing";
+import { homeProgressZone } from "./progress-zone";
+import type { QueueItem } from "../shared/contracts";
+import { requireEl, esc } from "./dom";
+
+// Latest live queue items, kept so a queue-row click can recover the full item (id +
+// verdict) the filing pane needs.
+export let currentItems: QueueItem[] = [];
+
+// Single source of truth for which queue row shows `.cur` — NOT read from filing.ts's internal
+// state (would risk a race: filing.ts may set its own state before this module's DOM catches up).
+// Updated in 3 places: the row click handler, renderQueue's touchDetail branch (via syncDetail's
+// return value), and stepQueueSelection (Task 4).
+export let currentOpenId: number | null = null;
+
+const QUEUE_ROW_BUFFER = 15; // rows rendered above/below the visible window
+
+let queueRowHeightCache: number | null = null;
+
+// Live filter on the queue rail (annotation: "on veut une barre de recherche en bas — filtre
+// client sur la file affichée uniquement, titre/artiste, pas de recherche backend"). Filters
+// currentItems only — never touches listQueue()/the DB. currentOpenId/stepQueueSelection walk
+// this filtered view too, so arrow-key nav only steps through what's actually visible.
+let queueSearchTerm = "";
+
+// "+N traités" / "Masquer les traités" toggle (2026-07-08: existed in the frozen app.js mockup —
+// var doneCount=T.length-pendingCount — but was never ported to the real live queue; ensured by
+// this grep at the time: no togglequeue/queueShowAll consumer anywhere in sift-live.ts). A track
+// is "traité" once its analysis verdict resolves (QueueItem.verdict !== null) — not once it's
+// filed (filed tracks leave listQueue() results entirely, they're not what this hides). Default
+// hidden, matching the mockup's default state.
+let queueShowAll = false;
+
+function visibleQueueItems(): QueueItem[] {
+  // Search deliberately searches ALL items regardless of the traités toggle — limiting search
+  // results to whatever's currently shown would silently return 0 hits for a treated track while
+  // traités are hidden, which reads as a bug ("I searched but it's not there") rather than the
+  // filter doing its job.
+  const base = queueSearchTerm ? currentItems : queueShowAll ? currentItems : currentItems.filter((it) => it.verdict === null);
+  if (!queueSearchTerm) return base;
+  const q = queueSearchTerm.toLowerCase();
+  return base.filter(
+    (it) =>
+      (it.filename ?? it.path).toLowerCase().includes(q) ||
+      (it.artist ?? "").toLowerCase().includes(q) ||
+      (it.title ?? "").toLowerCase().includes(q),
+  );
+}
+
+/** Real rendered height of a queue row, measured once via an offscreen probe (never assumed —
+ * same discipline as the spectrogram canvas width / destination-popover positioning elsewhere in
+ * this codebase). Cached: the row markup/CSS don't change at runtime. */
+function measureQueueRowHeight(ql: HTMLElement): number {
+  if (queueRowHeightCache != null) return queueRowHeightCache;
+  const probe = document.createElement("div");
+  probe.style.position = "absolute";
+  probe.style.visibility = "hidden";
+  probe.style.pointerEvents = "none";
+  probe.style.cssText += ";display:flex;align-items:center;gap:8px;padding:5px 7px;width:100%";
+  probe.innerHTML =
+    `<div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">` +
+    `<div style="display:flex;align-items:center;gap:6px;min-width:0"><span style="flex:1">probe</span></div>` +
+    `<div style="padding-left:15px;font-size:var(--text-xs)">&nbsp;</div></div>`;
+  ql.appendChild(probe);
+  const h = probe.getBoundingClientRect().height;
+  probe.remove();
+  queueRowHeightCache = h > 0 ? h : 34; // 34px fallback: never divide by zero if measured off-DOM
+  return queueRowHeightCache;
+}
+
+/** Renders only the rows within the visible scroll window (+ QUEUE_ROW_BUFFER above/below) into
+ * `ql`, framed by two spacer divs so the scrollbar stays proportional to the full list. Fixes the
+ * 7000+-track freeze (memory: sift-large-queue-black-screen) — rebuilding thousands of DOM nodes
+ * on every 300ms analysis-progress redraw (see the onAnalysisChanged listener further down) was
+ * the actual cost, not just paint. */
+export function renderQueueWindow(ql: HTMLElement): void {
+  const items = visibleQueueItems();
+  if (!items.length) {
+    ql.innerHTML =
+      `<div style="font-size:var(--text-md);color:var(--color-text-tertiary);padding:6px 4px">${
+        currentItems.length && queueSearchTerm ? "Aucun morceau ne correspond." : "File vide."
+      }</div>`;
+    return;
+  }
+  const rowH = measureQueueRowHeight(ql);
+  const viewportH = ql.clientHeight || 400;
+  const start = Math.max(0, Math.floor(ql.scrollTop / rowH) - QUEUE_ROW_BUFFER);
+  const visibleCount = Math.ceil(viewportH / rowH) + QUEUE_ROW_BUFFER * 2;
+  const end = Math.min(items.length, start + visibleCount);
+  // Batch mode never shows a "current" row in the queue rail — matches pre-virtualization
+  // behavior exactly (a row click always drops back to detail mode first, so a highlighted row
+  // while actually IN batch mode never happened before either).
+  const highlightId = reviewMode === "batch" ? null : currentOpenId;
+  const topSpacer = start * rowH;
+  const bottomSpacer = (items.length - end) * rowH;
+  let html = topSpacer > 0 ? `<div style="height:${topSpacer}px"></div>` : "";
+  for (let i = start; i < end; i++) html += queueRowHtml(items[i], items[i].id === highlightId);
+  if (bottomSpacer > 0) html += `<div style="height:${bottomSpacer}px"></div>`;
+  ql.innerHTML = html;
+}
+
+let queueScrollWired = false;
+/** One-time (guarded) scroll listener on #ql, rAF-throttled: re-renders the visible window on
+ * scroll without doing so on every fired scroll event (which can be dozens per second). */
+function ensureQueueScroll(ql: HTMLElement): void {
+  if (queueScrollWired) return;
+  queueScrollWired = true;
+  let ticking = false;
+  ql.addEventListener("scroll", () => {
+    if (ticking) return;
+    ticking = true;
+    requestAnimationFrame(() => {
+      ticking = false;
+      renderQueueWindow(ql);
+    });
+  });
+}
+
+let queueStepTimer: ReturnType<typeof setTimeout> | undefined;
+let prefetchTimer: ReturnType<typeof setTimeout> | undefined;
+
+/** Warm the track FOLLOWING the one just opened (analysis report + AIFF pre-transcode via
+ *  report-view's prefetchTrack) so the next switch paints instantly. Fires once per
+ *  user-initiated open (click / arrow step / batchopen), never from a burst event; the 400ms
+ *  delay + debounce keeps it out of the open's own critical path when flicking through rows. */
+export function prefetchNextAfter(id: number): void {
+  clearTimeout(prefetchTimer);
+  prefetchTimer = setTimeout(() => {
+    const idx = currentItems.findIndex((t) => t.id === id);
+    const next = idx >= 0 ? currentItems[idx + 1] : undefined;
+    if (next) void import("./report-view").then((m) => m.prefetchTrack(next.path));
+  }, 400);
+}
+
+/** ArrowUp/ArrowDown queue navigation. Kept separate from filing.ts's installFilingKeys (Space/
+ * Enter/Backspace/I) because stepping through a virtualized queue needs currentItems + the
+ * ability to scroll a not-yet-rendered row into view — both owned here, not in filing.ts (which
+ * would need a circular import to reach them; sift-live.ts already imports from filing.ts, not
+ * the reverse). */
+export function stepQueueSelection(delta: 1 | -1): void {
+  const items = visibleQueueItems();
+  if (!items.length) return;
+  const curIndex = currentOpenId != null ? items.findIndex((it) => it.id === currentOpenId) : -1;
+  const nextIndex = curIndex + delta;
+  if (nextIndex < 0 || nextIndex >= items.length) return;
+  const next = items[nextIndex];
+  currentOpenId = next.id;
+  const ql = document.getElementById("ql");
+  if (ql) {
+    const rowH = measureQueueRowHeight(ql);
+    // Keep the target row inside the rendered window: scroll just enough that nextIndex sits
+    // within view, never a full jump-to-top/bottom for a one-row step.
+    const rowTop = nextIndex * rowH;
+    const rowBottom = rowTop + rowH;
+    if (rowTop < ql.scrollTop) ql.scrollTop = rowTop;
+    else if (rowBottom > ql.scrollTop + ql.clientHeight) ql.scrollTop = rowBottom - ql.clientHeight;
+    renderQueueWindow(ql);
+  }
+  // Debounced like the row-click handler in installLiveWiring — arrow-key repeat shouldn't fire a
+  // full decode load per row flicked through.
+  //
+  // setReviewMode("detail") and openFilingInto(mid, next) MUST fire together, in that order, from
+  // this single deferred callback rather than one synchronously here and the other 150ms later.
+  // setReviewMode("detail") synchronously calls renderQueue(true), which awaits listQueue() before
+  // calling syncDetail on a later tick; syncDetail's guard is `state.track && paneIsOurs` (both set
+  // synchronously at the top of openFilingInto, before its own first await). If setReviewMode ran
+  // immediately while openFilingInto(mid, next) was still 150ms away, that later syncDetail tick
+  // would see state.track/paneIsOurs stale (still pointing at whatever was open before, or null),
+  // fall through to "load the first pending track", and clobber currentOpenId back to items[0] —
+  // disagreeing with the `next` this function just highlighted. Firing both from the same callback
+  // means by the time renderQueue's later tick runs, openFilingInto has already set state.track to
+  // `next` synchronously, so syncDetail's guard sees the correct track and returns its id.
+  clearTimeout(queueStepTimer);
+  queueStepTimer = setTimeout(() => {
+    if (reviewMode === "batch") enterDetailMode();
+    const mid = document.getElementById("mid");
+    if (mid) {
+      void openFilingInto(mid, next);
+      prefetchNextAfter(next.id);
+    }
+  }, 150);
+}
+
+/** Guarded so installLiveWiring can call this once even if it ever re-runs. */
+let queueNavKeysWired = false;
+export function installQueueNavKeys(): void {
+  if (queueNavKeysWired) return;
+  queueNavKeysWired = true;
+  const blurShortcutFocus = () => {
+    const active = document.activeElement;
+    if (active instanceof HTMLElement && active !== document.body) active.blur();
+  };
+  document.addEventListener("keydown", (e) => {
+    const t = e.target as HTMLElement | null;
+    if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
+    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+    // Same gate as filing.ts's installFilingKeys (`if (!state.track) return`), but reached without
+    // importing filing.ts's internal `state` (would violate the one-directional import rule —
+    // filing.ts must never import from sift-live.ts, and sift-live.ts already imports FROM
+    // filing.ts, so a reverse re-export isn't an option either). currentOpenId alone is NOT
+    // equivalent: it's set once a track opens in Revue and is never cleared on nav-away (no
+    // `currentOpenId = null` reset exists outside syncDetail returning null for an empty queue) —
+    // so checking it alone let ↑/↓ still fire from Bibliothèque/Réglages after visiting Revue once.
+    // Mirror filing.ts's syncDetail `paneIsOurs` check instead: only act if #mid currently shows
+    // the real filing pane (not app.js's mock redrawn over it on nav-away).
+    const mid = document.getElementById("mid");
+    if (currentOpenId == null || !mid || !mid.querySelector(".sift-fil")) return;
+    e.preventDefault();
+    blurShortcutFocus();
+    stepQueueSelection(e.key === "ArrowDown" ? 1 : -1);
+  });
+}
+
+// Review mode: "detail" = one track at a time (filing pane), "batch" = triage many at once
+// (board's Detail|Batch segmented control). `batchSel` holds the ticked track ids; it is
+// pruned to the currently-ready set on every batch render so a filed/removed id can't linger.
+export let reviewMode: "detail" | "batch" = "detail";
+
+// Verdict = meaning only, vert/ambre uniquement (voir brief refonte 2026-07) — jamais un hex en
+// dur ici (l'ancien `#e2685e` rouge cassait cette règle) : lire les tokens CSS, pas une 3e teinte.
+const VERDICT_DOT: Record<string, [string, string]> = {
+  ok: ["var(--color-text-success)", "authentique"],
+  fake: ["var(--color-text-warning)", "faux / sur-encodé"],
+  grey: ["var(--color-text-warning)", "zone grise"],
+};
+export function verdictDot(v: string | null): string {
+  if (v && VERDICT_DOT[v]) {
+    const [c, title] = VERDICT_DOT[v];
+    return `<span title="${title}" style="flex:none;width:9px;height:9px;border-radius:50%;background:${c}"></span>`;
+  }
+  // not analysed yet
+  return `<span title="en attente d'analyse" style="flex:none;width:9px;height:9px;border-radius:50%;border:1.5px solid var(--color-text-tertiary);box-sizing:border-box"></span>`;
+}
+
+function verdictWord(v: string | null): [string, string] {
+  return v === "fake"
+    ? ["faux", "var(--color-text-warning)"]
+    : v === "grey"
+      ? ["à vérifier", "var(--color-text-warning)"]
+      : v === "ok"
+        ? ["", "var(--color-text-success)"]
+        : ["analyse…", "var(--color-text-tertiary)"];
+}
+
+/** One queue row's markup. `active` stamps the `.cur` highlight at creation time — required so
+ * the highlight survives virtualization (Task 2): once #ql only mounts the visible window, a
+ * row for the open track may not exist in the DOM to be found and classed after the fact. */
+function queueRowHtml(it: QueueItem, active: boolean): string {
+  const [word, wordColor] = verdictWord(it.verdict);
+  const title = esc(it.filename || it.path);
+  const artist = it.artist ? esc(it.artist) : "";
+  return (
+    `<div class="qi${active ? " cur" : ""}" data-id="${it.id}" data-path="${esc(it.path)}" title="Écouter et convertir" style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:5px 7px">` +
+    `<div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">` +
+    `<div style="display:flex;align-items:center;gap:6px;min-width:0">` +
+    verdictDot(it.verdict) +
+    `<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;font-weight:500">${title}</span>` +
+    (it.dup
+      ? '<span title="Doublon possible (même nom)" style="flex:none;display:inline-flex;align-items:center;justify-content:center;overflow:visible;font-size:var(--text-base);line-height:normal;color:var(--color-text-warning)">⧉</span>'
+      : "") +
+    `</div>` +
+    // Always render the second line (never conditionally omit it) — otherwise a
+    // not-yet-identified track (no artist) renders one line shorter than an identified
+    // one, making queue rows visibly uneven heights next to each other.
+    `<div style="padding-left:15px;font-size:var(--text-xs);color:var(--color-text-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${artist || "&nbsp;"}</div>` +
+    `</div>` +
+    (word
+      ? `<span style="flex:none;font-size:var(--text-xs);color:${wordColor}">${word}</span>`
+      : "") +
+    `</div>`
+  );
+}
+
+/** Replaces the mockup queue list with real pending items (Revue screen). */
+export async function renderQueue(touchDetail = true) {
+  const ql = document.getElementById("ql");
+  if (!ql) return;
+  // First paint has nothing to show yet (the mockup skeleton leaves #ql empty) — on a large
+  // library listQueue() can take a couple of seconds, otherwise that's a blank screen the whole
+  // time (audit UI/UX 2026-07-03, fix 4). Gated on "no rows yet" so later polls (queue:changed,
+  // the 300ms debounce) never flash this over the still-valid existing rows.
+  if (!ql.childElementCount) {
+    ql.innerHTML =
+      '<div style="display:flex;align-items:center;gap:8px;padding:8px 7px;color:var(--color-text-tertiary);font-size:var(--text-md)">' +
+      '<i class="ti ti-loader sift-spin" style="font-size:var(--text-md)"></i> Chargement…</div>';
+  }
+  let items: QueueItem[] = [];
+  try {
+    items = await listQueue();
+  } catch (e) {
+    console.error("listQueue failed", e);
+    return;
+  }
+  currentItems = items;
+  ensureReviewSeg();
+  const qcol = document.getElementById("qcol");
+  if (qcol) {
+    ensureQueueDoneToggle(qcol);
+    ensureQueueSearch(qcol);
+  }
+  // Background-analysis progress moved to the global progress zone (bottom of #nav, persistent
+  // across views) — see pushAnalyzeProgress, fed by the analysis:changed event below.
+
+  // Live destination bins + neutral detail prompt (replace the mockup's hardcoded ones).
+  const fldz = requireEl("#fldz", "renderQueue");
+  void refreshBins(fldz);
+  // Only sync the detail pane on structural changes (nav, queue add/remove/file). A background
+  // ANALYSIS finishing must NOT re-open / switch the open track — that thrashes and aborts the
+  // player's audio load (waveform shows from peaks, but no sound). See touchDetail=false caller.
+  if (touchDetail) {
+    if (reviewMode === "batch") {
+      batchRenderer?.();
+    } else {
+      const mid = requireEl("#mid", "renderQueue");
+      if (mid) {
+        currentOpenId = syncDetail(mid, items);
+      }
+    }
+  }
+  renderQueueWindow(ql);
+  ensureQueueScroll(ql);
+}
+
+/** Detail|Batch segmented control (board `topseg`), injected once at the top of the queue
+ * column. Owned here (not app.js) so it works inside Tauri where the live wiring renders the
+ * Revue. Reflects `reviewMode`; clicks are handled in the #pa delegate. */
+export function ensureReviewSeg() {
+  const qcol = requireEl("#qcol", "ensureReviewSeg");
+  let seg = document.getElementById("sift-revseg");
+  if (!seg) {
+    seg = document.createElement("div");
+    seg.id = "sift-revseg";
+    // .sift-seg is the shared segmented-pill track (2026-07-08: was its own inline-styled
+    // reimplementation — same component as Apparence/Format USB/Dossiers-Genres now). #sift-revseg
+    // adds only its own layout concerns on top: align-self:center (#qcol is a flex column with
+    // align-items:stretch by default, so without a fixed align-self the control stretched to the
+    // column's full width and its tabs grew with it whenever the column was resized — annotation
+    // 2026-07-06: fixed size/position expected, not a stretchy control) and margin-bottom.
+    seg.className = "sift-seg sift-seg-thumbed";
+    const tab = (m: "detail" | "batch", label: string, icon: string) =>
+      `<button class="sift-seg-opt" data-sift="reviewmode" data-m="${m}"><i class="ti ${icon}" style="font-size:var(--text-base)"></i>${label}</button>`;
+    // .sift-seg-thumb is a single element that physically slides via transform between options
+    // (retour utilisateur 2026-07-08 : le crossfade par bouton ne montrait pas clairement le
+    // déplacement d'un état à l'autre) — must be the first child so it paints under the buttons
+    // (z-index aside, DOM order matters for default paint order of siblings at the same z-index
+    // in some engines; kept first to match .sift-seg-opt's own explicit z-index:1 above it).
+    seg.innerHTML =
+      '<div class="sift-seg-thumb"></div>' +
+      tab("detail", "Détail", "ti-layout-list") +
+      tab("batch", "Lot", "ti-table");
+    qcol.insertBefore(seg, qcol.firstChild);
+  }
+  // Toggle .on on the existing buttons instead of rebuilding them (retour utilisateur 2026-07-08 :
+  // le changement d'état "swappait" instantanément) — .sift-seg-opt's CSS transition only has
+  // something to animate between if the button persists across calls rather than being torn
+  // down/recreated from a fresh innerHTML string every time.
+  const onBtn = Array.from(
+    seg.querySelectorAll<HTMLButtonElement>('[data-sift="reviewmode"]'),
+  ).find((btn) => {
+    const on = btn.dataset.m === reviewMode;
+    btn.classList.toggle("on", on);
+    return on;
+  });
+  const thumb = seg.querySelector<HTMLElement>(".sift-seg-thumb");
+  if (thumb && onBtn) {
+    thumb.style.width = `${onBtn.offsetWidth}px`;
+    thumb.style.transform = `translateX(${onBtn.offsetLeft}px)`;
+  }
+}
+
+/** "+N traités" / "Masquer les traités" toggle — a real port of the app.js mockup's toggle
+ * (2026-07-08), which was never wired to the live queue. Injected once, right after #ql (before
+ * the search bar — call order in renderQueue matters here, both are appended to `qcol`). Hidden
+ * entirely when there's nothing treated to reveal. */
+function ensureQueueDoneToggle(qcol: HTMLElement): void {
+  let el = document.getElementById("sift-qdone-toggle");
+  if (!el) {
+    el = document.createElement("span");
+    el.id = "sift-qdone-toggle";
+    el.className = "sift-qdone-toggle";
+    el.addEventListener("click", () => {
+      queueShowAll = !queueShowAll;
+      const ql = document.getElementById("ql");
+      if (ql) {
+        ql.scrollTop = 0;
+        renderQueueWindow(ql);
+      }
+      ensureQueueDoneToggle(qcol); // relabel + re-evaluate hidden state
+    });
+    qcol.appendChild(el);
+  }
+  const doneCount = currentItems.filter((it) => it.verdict !== null).length;
+  el.hidden = doneCount === 0;
+  el.textContent = queueShowAll ? "Masquer les traités" : `+ ${doneCount} traité${doneCount > 1 ? "s" : ""}`;
+}
+
+/** Live filter bar for the queue rail (annotation: "on veut une barre de recherche en bas"),
+ * injected once at the BOTTOM of #qcol (sibling after #ql, so #ql's flex:1 keeps it pinned below
+ * the list). Filters currentItems client-side only (title/artist) — see visibleQueueItems(). */
+function ensureQueueSearch(qcol: HTMLElement): void {
+  if (document.getElementById("sift-qsearch")) return;
+  const wrap = document.createElement("div");
+  wrap.id = "sift-qsearch";
+  wrap.style.cssText =
+    "flex:none;position:relative;margin-top:8px;background:var(--color-background-secondary);border-radius:var(--border-radius-md)";
+  // No placeholder text — just a search icon overlaid on the right, hidden once there's a query
+  // (annotation: "met juste une icone de loupe sur la droite qui disparait quand on tape").
+  wrap.innerHTML =
+    '<input id="sift-qsearch-input" type="text" aria-label="Filtrer la file" ' +
+    'style="width:100%;border:none;background:transparent;font:inherit;color:var(--color-text-primary);outline:none;padding:6px 30px 6px 9px">' +
+    '<i id="sift-qsearch-icon" class="ti ti-search" aria-hidden="true" style="position:absolute;right:9px;top:50%;transform:translateY(-50%);font-size:var(--text-base);color:var(--color-text-tertiary);pointer-events:none"></i>';
+  qcol.appendChild(wrap);
+  const input = wrap.querySelector<HTMLInputElement>("#sift-qsearch-input")!;
+  const icon = wrap.querySelector<HTMLElement>("#sift-qsearch-icon")!;
+  input.addEventListener("input", () => {
+    queueSearchTerm = input.value.trim();
+    icon.style.display = input.value ? "none" : "";
+    const ql = document.getElementById("ql");
+    if (ql) {
+      ql.scrollTop = 0; // a shorter filtered list can leave scrollTop referring to nothing
+      renderQueueWindow(ql);
+    }
+  });
+}
+
+/** Fill the Review nav badge with the pending count (board's "Revue [18]"). Runs from refresh()
+ * — i.e. on every queue change, on any screen — so it's correct even off the Revue view. Empty
+ * text collapses the pill via the `.nav-badge:empty` CSS rule. `count` is the queue length
+ * `renderQueue` just fetched — no redundant `listQueue()` re-fetch here. */
+export function updateRevueBadge(count: number) {
+  const badge = requireEl<HTMLElement>('.nav-badge[data-badge="revue"]', "updateRevueBadge");
+  badge.textContent = count ? String(count) : "";
+}
+
+// Debounces the heavy report/audio-decode load triggered by a queue-row selection (click or
+// ↑/↓, which dispatches a real .click() — see installFilingKeys). Flicking through several
+// rows fast would otherwise fire a full fetch+decodeAudioData per row, most immediately
+// discarded. Row highlighting itself stays instant — only this load is deferred.
+let queueSelectTimer: ReturnType<typeof setTimeout> | undefined;
+
+/** Queue row click (Revue): opens the filing pane after a 150ms debounce (flicking through rows
+ *  fast must not fire a decode+fetch per row). Extracted from installLiveWiring's #pa click
+ *  listener (Phase 1, tranche 1b) — same split as handleRekordboxAction (tranche 1a): the state
+ *  this reads/writes (currentItems, currentOpenId, reviewMode) already lives in this module. */
+export function handleQueueItemClick(qi: HTMLElement, e: MouseEvent): void {
+  e.stopPropagation();
+  // In batch mode a row-click means "inspect this one" → drop back to the detail pane.
+  if (reviewMode === "batch") enterDetailMode();
+  const id = Number(qi.dataset.id);
+  const item = currentItems.find((it) => it.id === id);
+  const mid = requireEl("#mid", "qi-click");
+  currentOpenId = id;
+  const ql = document.getElementById("ql");
+  if (ql) renderQueueWindow(ql);
+  clearTimeout(queueSelectTimer);
+  queueSelectTimer = setTimeout(() => {
+    if (item && mid) {
+      void openFilingInto(mid, item);
+      prefetchNextAfter(item.id);
+    } else if (qi.dataset.path)
+      void import("./report-view").then((m) => m.openReportModal(qi.dataset.path!));
+  }, 150);
+}
+
+/** Raw reviewMode mutator, no side effects — used by sift-live.ts's setReviewMode for the
+ *  "batch" branch, which needs batch-owned code (renderBatch, batchGroupCap) this module must
+ *  never import (Phase 1, tranche 1b: see the coupling analysis in the plan's Architecture
+ *  section). Only enterDetailMode() below calls this internally for the "detail" case. */
+export function setReviewModeRaw(m: "detail" | "batch"): void {
+  reviewMode = m;
+}
+
+/** The "detail" branch of the old setReviewMode, extracted verbatim — it never touched batch
+ *  state, so unlike the "batch" branch it can live here. Called directly by queue code
+ *  (handleQueueItemClick, stepQueueSelection) and by sift-live.ts's setReviewMode when switching
+ *  away from batch mode. */
+export function enterDetailMode(): void {
+  // Fail-fast assertion restored from the original setReviewMode, which ran this
+  // unconditionally before branching on mode (result unused here — batch branch
+  // was the only one that needed #fldz's value).
+  requireEl("#fldz", "enterDetailMode");
+  setReviewModeRaw("detail");
+  ensureReviewSeg();
+  // Leave batch pick mode: tree reverts to detail's state.binRel. No manual opacity/checkbox
+  // cleanup needed — renderBins (filing.ts) always re-derives .sift-fldz-tree's opacity from
+  // the current binPick (null in detail) and renders the one shared in-place checkbox itself.
+  clearBinPick();
+  // Return the progress zone to its left-sidebar home (it was relocated into the batch rail).
+  homeProgressZone();
+  void renderQueue(true);
+}
+
+let batchRenderer: (() => void) | null = null;
+
+/** Registers the batch panel's render function so renderQueue's "reviewMode === batch" branch can
+ *  trigger it without a static import — queue-panel.ts must never import from sift-live.ts (see
+ *  the plan's Architecture section, 2nd occurrence of the same coupling). Call once from
+ *  installLiveWiring, before any queue interaction is possible. */
+export function registerBatchRenderer(fn: () => void): void {
+  batchRenderer = fn;
+}
