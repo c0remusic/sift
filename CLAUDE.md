@@ -199,6 +199,12 @@ Fichiers plats (sauf `analysis/`, `metadata/` et `usb_format/`) :
 - `dev_locate.rs` · `dev_annotate.rs` — commandes dev-only (gated
   `cfg!(debug_assertions)`) pour l'outil d'annotation Alt+Clic : `locate_source`
   (grep source) et `save_annotation` (append `docs/annotations.jsonl`).
+- `bench_volume.rs` — benchmark de volume (`#[cfg(test)] mod bench_volume`
+  dans `lib.rs`, test-only, jamais dans le binaire de production) : mesure
+  `list_filed`/`list_pending` à 15k/100k lignes synthétiques, `EXPLAIN QUERY
+  PLAN`, proxy sérialisation JSON. Exécuté à la demande
+  (`cargo test --release -- --ignored --nocapture`), jamais dans la suite
+  normale. Voir `docs/superpowers/plans/2026-07-14-phase3-measurement-report.md`.
 
 ## Audit des dépendances (versions à jour)
 
