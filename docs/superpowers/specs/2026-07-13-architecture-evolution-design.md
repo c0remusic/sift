@@ -40,17 +40,25 @@ Phase 2 durcit les contrats IPC par des tests, pas par une génération de code
 phases 3 à 5 sont **conditionnelles aux mesures** — aucun changement de perf
 sans benchmark préalable. Le regroupement logique Rust en modules de façade
 (`ingest`/`analysis`/`catalog`/`filing`/`rekordbox`/`platform`/`app`) n'est
-entrepris qu'en fin de chantier, et seulement si l'expérience de la Phase 1
-côté frontend en démontre la valeur.
+entrepris qu'en fin de chantier (après les phases 1 à 5, pas seulement après
+la Phase 1), et seulement si le travail réalisé dans ces phases a concrètement
+démontré qu'un regroupement réduirait un couplage réel — pas par anticipation.
+
+| Stratégie | Coût | Risque | Gain |
+|---|---|---|---|
+| **A — correctifs ponctuels indépendants** | Le plus bas (pas de refonte de structure) | `sift-live.ts` continue de grossir à la prochaine feature ; aucune frontière durable | Rapide, zéro risque de régression structurelle |
+| **B — 5 phases dans l'ordre (retenue)** | Moyen : Phase 1 seule engage un travail non trivial (extractions comportement-préservantes testées une à une) | Risque contenu par les tests de caractérisation et la validation par petites tranches ; les phases coûteuses (3-5) sont gatées par des mesures, donc jamais engagées sans preuve | Le point le plus visible et le moins risqué (fichier de 2083 lignes) est traité en premier ; les phases perf ne s'engagent que si elles sont justifiées, évitant tout travail spéculatif |
+| **C — mesurer d'abord, tout le reste après** | Élevé avant tout résultat visible (instrumentation complète avant la première extraction) | Retarde la Phase 1 qui n'a pourtant besoin d'aucune mesure pour être justifiée | Rigueur maximale sur les phases perf, mais au prix du problème le plus concret et le moins risqué |
 
 **Alternatives écartées** :
-- **A — correctifs ponctuels indépendants**, sans toucher à la structure :
-  coût le plus bas, mais ne construit aucune frontière durable ;
-  `sift-live.ts` continuerait de grossir à la prochaine feature.
-- **C — mesurer d'abord, tout le reste après** : bloquerait la Phase 1 (la
-  plus visible, la moins risquée) derrière un travail d'instrumentation qui
-  ne la concerne pas ; le fichier de 2083 lignes est déjà une preuve
-  suffisante pour agir sans benchmark.
+- **A** : coût le plus bas, mais ne construit aucune frontière durable.
+- **C** : bloquerait la Phase 1 derrière un travail d'instrumentation qui ne
+  la concerne pas ; le fichier de 2083 lignes est déjà une preuve suffisante
+  pour agir sans benchmark.
+
+Aucune des trois stratégies n'introduit de microservice, de service distant,
+de framework frontend ou de workspace multi-crates — exclus par contrainte
+du chantier, pas par choix de stratégie.
 
 ## 3. Architecture cible (direction, pas obligation immédiate)
 
@@ -133,6 +141,11 @@ transféré.
 - `EXPLAIN QUERY PLAN` sur `list_filed`/`list_pending` et leurs filtres.
 - Effet réel de la virtualisation frontend existante (`list-virtual.ts`) à
   ces volumes.
+
+**Approche à étudier** : pagination stable, de préférence par curseur lorsque
+le tri courant le permet (évite le décalage de résultats propre à la
+pagination par offset quand la liste change pendant la navigation) — choix
+définitif tranché après les mesures, pas ici.
 
 **À préserver** : filtres, recherche, tri, facettes, sélection de lots,
 navigation clavier, virtualisation existante.
