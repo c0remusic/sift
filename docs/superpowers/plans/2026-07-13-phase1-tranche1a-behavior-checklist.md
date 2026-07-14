@@ -22,7 +22,12 @@ sur des données de test, jamais un vrai `master.db`.
 - [ ] `mdbapply` : nécessite une confirmation `confirmAction` avant
   d'écrire ; annuler la confirmation → aucun appel IPC ; confirmer → applique,
   toast de résultat (N synchronisés / N échoués), rafraîchit la page.
-- [ ] `mdbdedup` : idem confirmation avant `rekordboxMasterdbDedupPlaylistGroup`.
+
+## Tier 2 — dédoublonnage playlist (`mdbdedup`)
+- [ ] `mdbdedup` : nécessite une confirmation `confirmAction` avant
+  d'écrire ; annuler → aucun appel IPC ; confirmer → applique
+  `rekordboxMasterdbDedupPlaylistGroup`, toast de résultat, rafraîchit la
+  page.
 
 ## Tier 3 métadonnées (`mds*`)
 - [ ] `mdspick`/`mdsgrouptoggle`/`mdsgroupselect`/`mdsdismiss`/`mdsresolve`/
