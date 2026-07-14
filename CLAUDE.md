@@ -150,6 +150,12 @@ continuer sans inventer de skill.
   actions `rkbreexport`/`mdb*`/`mds*`/`mas*`) vit ici plutôt que dans le
   handler délégué de `sift-live.ts` — écart volontaire scopé à ce seul
   écran, `bibliotheque-view.ts`/`ecartes-view.ts` restent dispatch centralisé.
+- `queue-panel.ts` — état + rendu file/sélection Revue (virtualisation,
+  navigation clavier, recherche, bascule Détail/Lot), extrait de
+  `sift-live.ts` le 2026-07-13 (Phase 1 tranche 1b)
+- `batch-panel.ts` — état + rendu mode Lot (sélection, confirmation à deux
+  clics, rail, filing par lot), extrait de `sift-live.ts` le 2026-07-13
+  (Phase 1 tranche 1c)
 - `ecartes-view.ts` — écran Écartés
 - `report-view.ts` — écran Revue (son-d'abord, waveform, verdict)
 - `filing.ts` — rail de classement (destination, format, actions filer/écarter)

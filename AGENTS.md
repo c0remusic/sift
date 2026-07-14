@@ -168,6 +168,26 @@ Exemples de routage (non exhaustif, voir le registre complet) :
 - `sift-live.ts` — point d'entrée wiring live (Tauri only) ; délègue aux modules ci-dessous
 - `chrome.ts` — shell global (nav rail, routing écrans)
 - `home-sources.ts` — écran Accueil (sources, watcher)
+- `reglages-view.ts` — écran Réglages (Discogs, Bibliothèque, Apparence, Clé
+  USB), extrait de `sift-live.ts` le 2026-07-09 (split god file)
+- `bibliotheque-view.ts` — écran Bibliothèque (liste filée, facettes,
+  doublons internes), extrait de `sift-live.ts` le 2026-07-09 (audit clean
+  architecture) ; état `bibState`/`bibDup` exportés, mutés aussi depuis le
+  handler de clic délégué de `sift-live.ts` (dispatch reste centralisé,
+  comme `ecartes-view.ts`)
+- `rekordbox-view.ts` — écran Rekordbox (statut lien XML, Tier 1/2/3
+  master.db : réparations chemin, doublons playlist, synchro metadata),
+  extrait de `sift-live.ts` le 2026-07-09. Depuis le 2026-07-13 (Phase 1
+  tranche 1a), seul module dont le dispatch de clic (`handleRekordboxAction`,
+  actions `rkbreexport`/`mdb*`/`mds*`/`mas*`) vit ici plutôt que dans le
+  handler délégué de `sift-live.ts` — écart volontaire scopé à ce seul
+  écran, `bibliotheque-view.ts`/`ecartes-view.ts` restent dispatch centralisé.
+- `queue-panel.ts` — état + rendu file/sélection Revue (virtualisation,
+  navigation clavier, recherche, bascule Détail/Lot), extrait de
+  `sift-live.ts` le 2026-07-13 (Phase 1 tranche 1b)
+- `batch-panel.ts` — état + rendu mode Lot (sélection, confirmation à deux
+  clics, rail, filing par lot), extrait de `sift-live.ts` le 2026-07-13
+  (Phase 1 tranche 1c)
 - `ecartes-view.ts` — écran Écartés
 - `report-view.ts` — écran Revue (son-d'abord, waveform, verdict)
 - `filing.ts` — rail de classement (destination, format, actions filer/écarter)
@@ -176,8 +196,11 @@ Exemples de routage (non exhaustif, voir le registre complet) :
 - `journal.ts` — journal d'actions post-batch (toasts, revert)
 - `progress-zone.ts` — zone de progression encodage
 - `library-detail.ts` — écran Bibliothèque (M6b)
+- `library-views.ts` · `list-virtual.ts` — vues et virtualisation des listes Bibliothèque
 - `identify-shared.ts` — UI partagée identification Discogs
+- `genre-families.ts` — regroupement des genres
 - `theme.ts` — mode sombre (prefers-color-scheme + override + persistance)
+- `usb-format-modal.ts` — confirmation et progression du formatage USB
 - `empty-state.ts` — composant partagé état vide (titre, note, lien retour)
 - `dom.ts` — helpers DOM partagés
 - `ipc.ts` — wrappers IPC Tauri typés
@@ -191,7 +214,7 @@ Exemples de routage (non exhaustif, voir le registre complet) :
 - `styles.css` — tokens CSS + composants
 
 ## Structure src-tauri/src/ (état réel)
-Fichiers plats (pas de sous-dossiers sauf `analysis/` et `metadata/`) :
+Fichiers plats (sauf `analysis/`, `metadata/` et `usb_format/`) :
 - **`analysis/`** — `decode.rs` (Symphonia) · `mod.rs` · `dynamics.rs` · `peaks.rs` · `phase.rs` · `spectrum.rs` · `structure.rs` · `tags.rs` · `verdict.rs`
 - **`metadata/`** — `mod.rs` · `discogs.rs` · `cover.rs`
 - `lib.rs` · `main.rs` · `db.rs` · `settings.rs`
@@ -199,7 +222,12 @@ Fichiers plats (pas de sous-dossiers sauf `analysis/` et `metadata/`) :
 - `filing.rs` · `actions.rs` · `encode.rs` · `naming.rs` · `tagging.rs`
 - `dedup.rs` · `fingerprint.rs` · `ecartes.rs` · `library.rs` · `genres.rs`
 - `ffmpeg.rs`
-- `ipc.rs` · `ipc_filing.rs` · `ipc_identify.rs` · `ipc_library.rs`
+- `ipc.rs` · `ipc_filing.rs` · `ipc_identify.rs` · `ipc_library.rs` · `ipc_usb.rs`
+- `rekordbox_xml.rs` · `rekordbox_masterdb.rs` — lecture/écriture Rekordbox
+- `rekordbox_repairs.rs` — commandes IPC M8 Tier 1/2/3 (réparations chemin,
+  dédup playlist, synchro metadata master.db), extrait de `ipc_library.rs`
+  le 2026-07-09 (split god file)
+- **`usb_format/`** — découverte, validation d'identité et formatage des supports USB
 - `dev_locate.rs` · `dev_annotate.rs` — commandes dev-only (gated
   `cfg!(debug_assertions)`) pour l'outil d'annotation Alt+Clic : `locate_source`
   (grep source) et `save_annotation` (append `docs/annotations.jsonl`).
@@ -219,7 +247,7 @@ Méthode :
 4. `cargo update` crate par crate, chirurgicalement — jamais un update global.
 
 Versions en usage (migration majeure faite le 2026-07-01, build + 173 tests verts) :
-tauri 2.11.3 · rusqlite 0.40.1 · symphonia 0.6.0 · rustfft 6.4.1 ·
+tauri 2.11.5 · rusqlite 0.40.1 · symphonia 0.6.0 · rustfft 6.4.1 ·
 lofty 0.24.0 · rusty-chromaprint 0.3.0 · notify-debouncer-full 0.7.0 · ureq 3.3.0
 (cibles atteintes, référence pour le prochain audit `cargo outdated`).
 
