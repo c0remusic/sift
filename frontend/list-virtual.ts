@@ -17,7 +17,7 @@
 
 const ROW_BUFFER = 12; // rows mounted above/below the visible window (matches #ql's discipline)
 
-export interface VirtualList<T> {
+export interface VirtualList {
   /** Re-mount the visible window from the current data. Call after the data changes. */
   render(): void;
   /** Detach the scroll listener (call before discarding the host, e.g. a full view re-render). */
@@ -45,7 +45,7 @@ export function createVirtualList<T>(opts: {
   rowHtml: (item: T, index: number) => string;
   probeHtml: string;
   fallbackRowH: number;
-}): VirtualList<T> {
+}): VirtualList {
   const { host, scrollContainer, items, rowHtml, probeHtml, fallbackRowH } = opts;
   // Spacers reserve the off-window height; position:relative so offsetTop math is stable and the
   // host occupies exactly the full-list height in the surrounding flow.

@@ -1017,7 +1017,6 @@ function wireSpectrogram(root: HTMLElement, r: AnalysisReport) {
   const body = root.querySelector<HTMLElement>(".sift-sg-body");
   const caret = root.querySelector<HTMLElement>(".sift-sg-caret");
   const hint = root.querySelector<HTMLElement>(".sift-sg-hint");
-  const qualityBadge = root.querySelector<HTMLElement>("#sift-quality-badge");
   if (!sg || !overlay || !toggle || !body || !caret || !hint) return;
 
   let open = false, loaded = false, busy = false;

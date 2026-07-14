@@ -12,8 +12,8 @@ import { emptyStateHtml, wireEmptyState } from "./empty-state";
 // container is the permanent #content, so a stale listener would leak across re-renders — destroyed
 // at the top of every renderEcartes. Kept apart because the two lists have different row heights
 // (a resourcing row has a second action line; a trash row is single-line).
-let resVirtual: VirtualList<EcarteItem> | null = null;
-let trashVirtual: VirtualList<EcarteItem> | null = null;
+let resVirtual: VirtualList | null = null;
+let trashVirtual: VirtualList | null = null;
 
 // Reason chip for an écarté track (truncated → tronqué, fake → faux, else à re-sourcer). Uses
 // the shared .sift-vchip component so tone/shape stay consistent across screens.

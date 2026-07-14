@@ -53,7 +53,7 @@ export const bibDup: { groups: DupGroup[] | null; loading: boolean; shown: boole
 // (which replaces #content.innerHTML, orphaning the old #biblist host — its scroll listener sits
 // on the PERMANENT #content, so it must be explicitly destroyed or it leaks + double-renders).
 // Private to this module — nothing outside renderBiblioLive touches it.
-let bibVirtual: VirtualList<LibraryTrack> | VirtualList<LibraryTrack[]> | null = null;
+let bibVirtual: VirtualList | null = null;
 // Which library row is open in the detail panel — stamped as `.cur` at row-creation time so the
 // highlight survives virtualization. Private — only openBiblioDetail/renderBiblioLive touch it.
 let bibOpenId: number | null = null;

@@ -19,7 +19,6 @@ import {
   linkRekordboxXml,
   rekordboxStatus,
 } from "./ipc";
-import { emptyStateHtml, wireEmptyState } from "./empty-state";
 import { refreshBinsForBatch, installUndoShortcut, installFilingKeys } from "./filing";
 import { confirmAction } from "./confirm-modal";
 // Views/chrome extracted from this god-module (audit P-3) — kept stateless, wired here.
