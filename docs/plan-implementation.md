@@ -583,10 +583,13 @@ Les règles auto s'appliquent sans popup ; un journal d'actions (DB `actions`) p
 - **Packaging/signing** : code-sign Windows + notarization macOS, auto-update Tauri — **dans le périmètre V1** (app diffusée gratuitement dès la sortie). Site vitrine inclus.
 
 ## Points encore ouverts (à trancher en cours de route)
-- **Réparation Rekordbox intégrée (écriture `master.db`/XML)** : feature **gelée tant que
-  des tests réels sur Rekordbox** n'ont pas validé le comportement (dédup playlists,
-  réparation des liens cassés au changement de chemin, intégrité après backup/restore).
-  On ne fixe pas l'API/le flux avant d'avoir mesuré sur de vraies bibliothèques.
+- **Réparation Rekordbox intégrée (écriture `master.db`)** : ✅ **livrée et vérifiée**
+  (2026-07-12) — Tier 1/2/3 testés contre une vraie bibliothèque (2828 pistes),
+  garde-fous backup/vérif round-trip/rollback confirmés. Plus un point ouvert,
+  voir la section M8 ci-dessus pour le détail complet.
+- **Diffusion (code-signing/notarization/auto-update/site)** : scope V1 décidé au
+  brainstorm, **pas encore fait** — `build.yml` produit toujours des installeurs
+  non signés.
 
 **Tranchés au brainstorm (voir Décisions de cadrage) :** nom (Sift) · MP3 < 320 (seuil
 configurable, badge, re-sourcer par défaut) · biblio existante (nettoyage actif V1) ·
@@ -595,4 +598,4 @@ Rekordbox (garde-fou V1, réparation plus tard, **gelée jusqu'aux tests**) · d
 revue détail** · **vrai MP3 jamais upscalé**.
 
 ## Séquencement / rationale
-`M0→M1→M2` posent le socle + le cœur lecture. **M4 clôt la première boucle utile** (on peut s'en servir). **M5 finit le MVP.** Phase B (M6-M7) ajoute confort et Rekordbox sûr. M8 (risqué) reste isolé et optionnel, derrière backups.
+`M0→M1→M2` posent le socle + le cœur lecture. **M4 clôt la première boucle utile** (on peut s'en servir). **M5 finit le MVP.** Phase B (M6-M7) ajoute confort et Rekordbox sûr. M8 (risqué, `master.db`) a été livré et vérifié derrière backups (2026-07-12) — **M0→M8 sont maintenant tous fait**. Reste du scope V1 : diffusion (signing/notarization/auto-update/site, jamais commencé). Aucun jalon post-V1 n'est encore défini.
