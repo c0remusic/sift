@@ -1,5 +1,7 @@
 mod actions;
 pub mod analysis;
+#[cfg(test)]
+mod bench_volume;
 mod db;
 mod dedup;
 mod dev_annotate;
