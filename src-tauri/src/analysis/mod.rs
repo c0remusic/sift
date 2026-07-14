@@ -201,6 +201,88 @@ pub fn analyze(path: &str, with_spectrogram: bool) -> Result<AnalysisReport, Str
 mod tests {
     use super::*;
 
+    /// Mirrors shared/contracts.ts's `Spectrogram`. Exhaustive destructure (no `..`): fails to
+    /// compile if a field is added/removed/renamed on the Rust struct — the forcing function to
+    /// also update contracts.ts. Phase 2 — docs/superpowers/plans/2026-07-13-phase2-ipc-contract-tests.md.
+    #[test]
+    fn spectrogram_shape_matches_contracts_ts() {
+        let v = Spectrogram { frames: 0, bins: 0, hz_per_bin: 0.0, sec_per_frame: 0.0, mag_db: Vec::new() };
+        let Spectrogram { frames, bins, hz_per_bin, sec_per_frame, mag_db } = v;
+        let _ = (frames, bins, hz_per_bin, sec_per_frame, mag_db);
+    }
+
+    /// Mirrors shared/contracts.ts's `AnalysisReport`. Exhaustive destructure (no `..`): fails to
+    /// compile if a field is added/removed/renamed on the Rust struct — the forcing function to
+    /// also update contracts.ts. Phase 2 — docs/superpowers/plans/2026-07-13-phase2-ipc-contract-tests.md.
+    #[test]
+    fn analysis_report_shape_matches_contracts_ts() {
+        let v = AnalysisReport {
+            path: String::new(),
+            sample_rate: 0,
+            channels: 0,
+            duration_sec: 0.0,
+            declared_format: String::new(),
+            declared_bitrate: None,
+            declared_rail: Rail::Unknown,
+            cutoff_hz: 0.0,
+            verdict: Verdict::Ok,
+            container_mismatch: false,
+            est_kbps: 0,
+            peaks: Vec::new(),
+            spectrogram: Spectrogram { frames: 0, bins: 0, hz_per_bin: 0.0, sec_per_frame: 0.0, mag_db: Vec::new() },
+            clip_runs: 0,
+            clip_pct: 0.0,
+            true_peak_dbtp: 0.0,
+            dc_offset: 0.0,
+            phase_correlation: 0.0,
+            dual_mono: false,
+            container_ok: false,
+            codec_error: None,
+            truncated: false,
+            silence_head_ms: 0,
+            silence_tail_ms: 0,
+            id3_version: None,
+            tags_cdj_ok: false,
+            has_cover: false,
+        };
+        let AnalysisReport {
+            path,
+            sample_rate,
+            channels,
+            duration_sec,
+            declared_format,
+            declared_bitrate,
+            declared_rail,
+            cutoff_hz,
+            verdict,
+            container_mismatch,
+            est_kbps,
+            peaks,
+            spectrogram,
+            clip_runs,
+            clip_pct,
+            true_peak_dbtp,
+            dc_offset,
+            phase_correlation,
+            dual_mono,
+            container_ok,
+            codec_error,
+            truncated,
+            silence_head_ms,
+            silence_tail_ms,
+            id3_version,
+            tags_cdj_ok,
+            has_cover,
+        } = v;
+        let _ = (
+            path, sample_rate, channels, duration_sec, declared_format, declared_bitrate,
+            declared_rail, cutoff_hz, verdict, container_mismatch, est_kbps, peaks, spectrogram,
+            clip_runs, clip_pct, true_peak_dbtp, dc_offset, phase_correlation, dual_mono,
+            container_ok, codec_error, truncated, silence_head_ms, silence_tail_ms, id3_version,
+            tags_cdj_ok, has_cover,
+        );
+    }
+
     #[test]
     fn report_serializes_to_json() {
         let r = AnalysisReport {

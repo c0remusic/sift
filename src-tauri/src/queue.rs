@@ -74,4 +74,24 @@ mod tests {
         assert_eq!(q.len(), 1);
         assert_eq!(q[0].filename, Some("a.mp3".to_string()));
     }
+
+    /// Mirrors shared/contracts.ts's `QueueItem`. Exhaustive destructure (no `..`): fails to
+    /// compile if a field is added/removed/renamed on the Rust struct — the forcing function to
+    /// also update contracts.ts. Phase 2 — docs/superpowers/plans/2026-07-13-phase2-ipc-contract-tests.md.
+    #[test]
+    fn queue_item_shape_matches_contracts_ts() {
+        let v = QueueItem {
+            id: 0,
+            path: String::new(),
+            filename: None,
+            source_id: None,
+            verdict: None,
+            rail: None,
+            artist: None,
+            title: None,
+            dup: false,
+        };
+        let QueueItem { id, path, filename, source_id, verdict, rail, artist, title, dup } = v;
+        let _ = (id, path, filename, source_id, verdict, rail, artist, title, dup);
+    }
 }

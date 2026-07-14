@@ -794,4 +794,33 @@ mod tests {
         let values = metadata_sync_values_for_apply_tags(&edited, &extras);
         assert_eq!(values.genre, None);
     }
+
+    /// Mirrors shared/contracts.ts's `FileProgress`. Exhaustive destructure (no `..`): fails to
+    /// compile if a field is added/removed/renamed on the Rust struct — the forcing function to
+    /// also update contracts.ts. Phase 2 — docs/superpowers/plans/2026-07-13-phase2-ipc-contract-tests.md.
+    #[test]
+    fn file_progress_shape_matches_contracts_ts() {
+        let v = FileProgress { done: 0, total: 0 };
+        let FileProgress { done, total } = v;
+        let _ = (done, total);
+    }
+
+    /// Mirrors shared/contracts.ts's `TrackRelease`. Exhaustive destructure (no `..`): fails to
+    /// compile if a field is added/removed/renamed on the Rust struct — the forcing function to
+    /// also update contracts.ts. Phase 2 — docs/superpowers/plans/2026-07-13-phase2-ipc-contract-tests.md.
+    #[test]
+    fn track_release_shape_matches_contracts_ts() {
+        let v = TrackRelease {
+            artist: None,
+            title: None,
+            version: None,
+            label: None,
+            year: None,
+            cover_path: None,
+            genres: Vec::new(),
+            identified: false,
+        };
+        let TrackRelease { artist, title, version, label, year, cover_path, genres, identified } = v;
+        let _ = (artist, title, version, label, year, cover_path, genres, identified);
+    }
 }

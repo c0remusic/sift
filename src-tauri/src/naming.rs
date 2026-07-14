@@ -273,6 +273,21 @@ pub fn name_key(artist: &str, title: &str) -> String {
 mod tests {
     use super::*;
 
+    /// Mirrors shared/contracts.ts's `Canonical`. Exhaustive destructure (no `..`): fails to
+    /// compile if a field is added/removed/renamed on the Rust struct — the forcing function to
+    /// also update contracts.ts. Phase 2 — docs/superpowers/plans/2026-07-13-phase2-ipc-contract-tests.md.
+    #[test]
+    fn canonical_shape_matches_contracts_ts() {
+        let v = Canonical {
+            artist: String::new(),
+            title: String::new(),
+            version: None,
+            confidence: Confidence::Green,
+        };
+        let Canonical { artist, title, version, confidence } = v;
+        let _ = (artist, title, version, confidence);
+    }
+
     #[test]
     fn junk_flags_quality_and_uploader_tokens() {
         assert!(has_junk("Mystery of Love 320kbps"));

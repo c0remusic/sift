@@ -1398,4 +1398,39 @@ mod tests {
         assert_eq!(cover_path, "/cache/covers/999.jpg");
         assert_eq!(status, "pending");
     }
+
+    // Contract tests (Phase 2) — see
+    // docs/superpowers/plans/2026-07-13-phase2-ipc-contract-tests.md. No codegen: these parse
+    // shared/contracts.ts's source text directly and assert the Rust constant's literal value
+    // appears in it. Inline here (not a separate integration test file) because `filing` is a
+    // private module — src-tauri/tests/*.rs compiles as an external crate and can't see it.
+    const CONTRACTS_TS: &str = include_str!("../../shared/contracts.ts");
+
+    #[test]
+    fn file_in_place_constant_matches_contracts_ts() {
+        let expected = format!("\"{}\"", FILE_IN_PLACE);
+        assert!(
+            CONTRACTS_TS.contains(&expected),
+            "shared/contracts.ts must contain FILE_IN_PLACE = {expected}"
+        );
+    }
+
+    #[test]
+    fn external_dest_prefix_constant_matches_contracts_ts() {
+        let expected = format!("\"{}\"", EXTERNAL_DEST_PREFIX);
+        assert!(
+            CONTRACTS_TS.contains(&expected),
+            "shared/contracts.ts must contain EXTERNAL_DEST_PREFIX = {expected}"
+        );
+    }
+
+    /// Mirrors shared/contracts.ts's `BatchResult`. Exhaustive destructure (no `..`): fails to
+    /// compile if a field is added/removed/renamed on the Rust struct — the forcing function to
+    /// also update contracts.ts. Phase 2 — docs/superpowers/plans/2026-07-13-phase2-ipc-contract-tests.md.
+    #[test]
+    fn batch_result_shape_matches_contracts_ts() {
+        let v = BatchResult { filed: 0, needs_validation: Vec::new(), cancelled: false };
+        let BatchResult { filed, needs_validation, cancelled } = v;
+        let _ = (filed, needs_validation, cancelled);
+    }
 }

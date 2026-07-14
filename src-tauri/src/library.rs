@@ -466,6 +466,53 @@ pub fn ensure_unique(path: &Path, ignore: Option<&Path>) -> PathBuf {
 mod tests {
     use super::*;
 
+    /// Mirrors shared/contracts.ts's `LibraryTrack`. Exhaustive destructure (no `..`): fails to
+    /// compile if a field is added/removed/renamed on the Rust struct — the forcing function to
+    /// also update contracts.ts. Phase 2 — docs/superpowers/plans/2026-07-13-phase2-ipc-contract-tests.md.
+    #[test]
+    fn library_track_shape_matches_contracts_ts() {
+        let v = LibraryTrack {
+            id: 0,
+            path: String::new(),
+            artist: None,
+            title: None,
+            format: None,
+            bitrate: None,
+            duration: None,
+            bpm: None,
+            year: None,
+            label: None,
+            genres: Vec::new(),
+            discogs_release_id: None,
+            cover_path: None,
+            has_cover: false,
+            verdict: None,
+            folder: None,
+        };
+        let LibraryTrack {
+            id,
+            path,
+            artist,
+            title,
+            format,
+            bitrate,
+            duration,
+            bpm,
+            year,
+            label,
+            genres,
+            discogs_release_id,
+            cover_path,
+            has_cover,
+            verdict,
+            folder,
+        } = v;
+        let _ = (
+            id, path, artist, title, format, bitrate, duration, bpm, year, label, genres,
+            discogs_release_id, cover_path, has_cover, verdict, folder,
+        );
+    }
+
     #[test]
     fn lists_recursive_bins_sorted_skipping_hidden() {
         let dir = tempfile::tempdir().unwrap();

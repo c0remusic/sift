@@ -345,6 +345,47 @@ fn get_or_compute_fp(conn: &Connection, track_id: i64, path: &str) -> Option<Vec
 mod tests {
     use super::*;
 
+    /// Mirrors shared/contracts.ts's `DupGroupMember`. Exhaustive destructure (no `..`): fails
+    /// to compile if a field is added/removed/renamed on the Rust struct — the forcing function
+    /// to also update contracts.ts. Phase 2 — docs/superpowers/plans/2026-07-13-phase2-ipc-contract-tests.md.
+    #[test]
+    fn dup_group_member_shape_matches_contracts_ts() {
+        let v = DupGroupMember {
+            id: 0,
+            path: String::new(),
+            filename: None,
+            folder: None,
+            format: None,
+            bitrate: None,
+            duration: None,
+            truncated: false,
+            recommend_keep: false,
+            reason: None,
+        };
+        let DupGroupMember {
+            id,
+            path,
+            filename,
+            folder,
+            format,
+            bitrate,
+            duration,
+            truncated,
+            recommend_keep,
+            reason,
+        } = v;
+        let _ = (id, path, filename, folder, format, bitrate, duration, truncated, recommend_keep, reason);
+    }
+
+    /// Mirrors shared/contracts.ts's `DupGroup`. Phase 2 —
+    /// docs/superpowers/plans/2026-07-13-phase2-ipc-contract-tests.md.
+    #[test]
+    fn dup_group_shape_matches_contracts_ts() {
+        let v = DupGroup { members: Vec::new(), similarity: 0.0 };
+        let DupGroup { members, similarity } = v;
+        let _ = (members, similarity);
+    }
+
     fn db() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
         crate::db::run_migrations(&conn).unwrap();
