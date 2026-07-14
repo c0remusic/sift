@@ -10,6 +10,10 @@ Mesure uniquement — aucun code de production modifié. Méthodologie et code :
 
 ## Finding critique — bug fonctionnel découvert pendant la conception du benchmark
 
+> **Corrigé** (commit `50239e3`, le jour même) — voir Décision, section
+> finale. La description ci-dessous documente l'état AU MOMENT de la
+> mesure (avant fix), gardée telle quelle pour l'historique du diagnostic.
+
 `library::list_filed` (`src-tauri/src/library.rs:191`) appelle
 `genres::get_genres_batch` (`src-tauri/src/genres.rs:32`), qui construit une
 seule requête `SELECT track_id, genre FROM track_genres WHERE track_id IN (?,?,...)`

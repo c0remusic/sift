@@ -310,24 +310,28 @@ fn bench_volume_list_filed_and_list_pending() {
     reproduce_sqlite_variable_limit_crash();
 }
 
-/// Reproduces, with a real error message, the crash discovered while designing this benchmark:
-/// at a realistic 50/50 filed/pending split and 100k total rows, `list_filed`'s unfiltered path
-/// asks `genres::get_genres_batch` to bind ~50,000 placeholders in one `IN (...)` — above this
-/// SQLite build's 32766 bound-parameter limit (see `debug_print_sqlite_variable_limit`). This is
-/// a functional bug (the call errors out, callers must decide whether to crash/no-op/degrade),
-/// not a latency finding — reported separately in the measurement report, not folded into the
-/// latency table above (which deliberately uses a lower filed fraction to avoid it).
+/// Regression guard for a crash this benchmark originally discovered (and that is now fixed,
+/// see `genres::get_genres_batch`'s `GENRE_BATCH_CHUNK_SIZE` chunking, commit 50239e3): at a
+/// realistic 50/50 filed/pending split and 100k total rows, `list_filed`'s unfiltered path used
+/// to ask `genres::get_genres_batch` to bind ~50,000 placeholders in one `IN (...)` — above this
+/// SQLite build's 32766 bound-parameter limit (see `debug_print_sqlite_variable_limit`). Fixed by
+/// chunking; this now exists to catch a REGRESSION if the chunking is ever removed/broken, not to
+/// reproduce an active bug.
 fn reproduce_sqlite_variable_limit_crash() {
-    println!("\n=== Reproducing the SQLite bound-parameter crash (100k rows, 50% filed) ===");
+    println!(
+        "\n=== Regression check: 50k-filed IN(...) clause that used to crash (fixed by genres.rs chunking) ==="
+    );
     let (_tmp, conn) = build_dataset(100_000, 0.5);
     let base = LibraryFilter::default();
     match library::list_filed(&conn, &base) {
         Ok(rows) => println!(
-            "  UNEXPECTED: list_filed succeeded with {} rows — crash did not reproduce, \
-             re-check the parameter limit and filed count.",
+            "  OK: list_filed succeeded with {} rows — chunking fix confirmed still effective.",
             rows.len()
         ),
-        Err(e) => println!("  CONFIRMED crash: list_filed(no filter) returned Err: {e}"),
+        Err(e) => println!(
+            "  REGRESSION: list_filed(no filter) returned Err: {e} — the chunking fix in \
+             genres::get_genres_batch may have been reverted or broken, check GENRE_BATCH_CHUNK_SIZE."
+        ),
     }
 }
 
