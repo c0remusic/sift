@@ -26,7 +26,7 @@ pub fn app_info() -> AppInfo {
 
 #[tauri::command]
 pub fn db_health(conn: State<'_, Mutex<Connection>>) -> Result<DbHealth, String> {
-    let conn = conn.lock().map_err(|e| e.to_string())?;
+    let conn = db::lock_conn(&conn)?;
     Ok(DbHealth {
         schema_version: db::schema_version(&conn).map_err(|e| e.to_string())?,
         tables: db::table_count(&conn).map_err(|e| e.to_string())?,
@@ -58,13 +58,13 @@ pub fn add_source(
     path: String,
 ) -> Result<sources::Source, String> {
     let id = {
-        let conn = conn.lock().map_err(|e| e.to_string())?;
+        let conn = db::lock_conn(&conn)?;
         sources::add(&conn, &path).map_err(|e| e.to_string())?
     };
     spawn_scan(app, id);
     // Fetch just the inserted row instead of re-listing every source and filtering in memory.
     // Mirrors the shape of `sources::list` (pending_count + on-disk accessibility) for one id.
-    let conn = conn.lock().map_err(|e| e.to_string())?;
+    let conn = db::lock_conn(&conn)?;
     conn.query_row(
         "SELECT s.id, s.path,
                 (SELECT count(*) FROM tracks t WHERE t.source_id=s.id AND t.status='pending'),
@@ -89,7 +89,7 @@ pub fn add_source(
 
 #[tauri::command]
 pub fn list_sources(conn: State<'_, Mutex<Connection>>) -> Result<Vec<sources::Source>, String> {
-    let conn = conn.lock().map_err(|e| e.to_string())?;
+    let conn = db::lock_conn(&conn)?;
     sources::list(&conn).map_err(|e| e.to_string())
 }
 
@@ -100,7 +100,7 @@ pub fn remove_source(
     id: i64,
 ) -> Result<(), String> {
     {
-        let conn = conn.lock().map_err(|e| e.to_string())?;
+        let conn = db::lock_conn(&conn)?;
         sources::remove(&conn, id).map_err(|e| e.to_string())?;
     }
     crate::watcher::stop(&app, id);
@@ -111,7 +111,7 @@ pub fn remove_source(
 
 #[tauri::command]
 pub fn list_queue(conn: State<'_, Mutex<Connection>>) -> Result<Vec<queue::QueueItem>, String> {
-    let conn = conn.lock().map_err(|e| e.to_string())?;
+    let conn = db::lock_conn(&conn)?;
     let mut items = queue::list_pending(&conn).map_err(|e| e.to_string())?;
     // Annotate name-duplicate items so the queue can badge them before they're opened.
     let dups = crate::dedup::name_dups(&conn).map_err(|e| e.to_string())?;
@@ -131,7 +131,7 @@ pub fn set_source_watched(
     watched: bool,
 ) -> Result<(), String> {
     let path = {
-        let conn = conn.lock().map_err(|e| e.to_string())?;
+        let conn = db::lock_conn(&conn)?;
         sources::set_watched(&conn, id, watched).map_err(|e| e.to_string())?
     };
     if watched {
@@ -150,7 +150,7 @@ pub fn set_source_color(
     id: i64,
     color_key: Option<String>,
 ) -> Result<(), String> {
-    let conn = conn.lock().map_err(|e| e.to_string())?;
+    let conn = db::lock_conn(&conn)?;
     sources::set_color(&conn, id, color_key).map_err(|e| e.to_string())
 }
 
@@ -182,7 +182,7 @@ pub fn import_paths(
     let mut folders_added = 0usize;
     let mut scan_ids: Vec<i64> = Vec::new();
     {
-        let conn = conn.lock().map_err(|e| e.to_string())?;
+        let conn = db::lock_conn(&conn)?;
         let dest_root = if as_dest {
             crate::settings::get(&conn, crate::settings::LIBRARY_ROOT)
                 .ok()
@@ -237,7 +237,7 @@ pub struct AnalysisProgress {
 pub fn analysis_progress(
     conn: State<'_, Mutex<Connection>>,
 ) -> Result<AnalysisProgress, String> {
-    let conn = conn.lock().map_err(|e| e.to_string())?;
+    let conn = db::lock_conn(&conn)?;
     let (done, total) = crate::worker::progress(&conn).map_err(|e| e.to_string())?;
     Ok(AnalysisProgress { done, total })
 }
@@ -252,7 +252,7 @@ pub fn analyze_path(
     with_spectrogram: bool,
 ) -> Result<crate::analysis::AnalysisReport, String> {
     {
-        let conn = conn.lock().map_err(|e| e.to_string())?;
+        let conn = db::lock_conn(&conn)?;
         // ALWAYS require a known track first (security: not an arbitrary-file decode oracle),
         // for every path that can reach analyse() — incl. spectrogram requests and tracks
         // whose cache is the empty failure sentinel.

@@ -11,6 +11,7 @@
 //! takes the lock PER FILE — so a long filing never freezes the UI nor blocks the analysis worker.
 
 use crate::actions::{self, JournalEntry};
+use crate::db;
 use crate::dedup::{self, DupMatch};
 use crate::ecartes::{self, EcarteItem};
 use crate::encode::Target;
@@ -51,7 +52,7 @@ fn template(conn: &Connection) -> String {
 /// editable fields and the green/yellow badge in the review pane).
 #[tauri::command]
 pub fn reconcile(conn: State<'_, Mutex<Connection>>, track_id: i64) -> Result<Canonical, String> {
-    let conn = conn.lock().map_err(|e| e.to_string())?;
+    let conn = db::lock_conn(&conn)?;
     filing::reconcile_track(&conn, track_id).map_err(|e| e.to_string())
 }
 
@@ -65,7 +66,7 @@ pub fn preview_filename(
     edited: Canonical,
     ext: String,
 ) -> Result<String, String> {
-    let conn = conn.lock().map_err(|e| e.to_string())?;
+    let conn = db::lock_conn(&conn)?;
     Ok(crate::naming::render_filename(&template(&conn), &edited, &ext))
 }
 
@@ -97,7 +98,7 @@ pub fn track_release(
     conn: State<'_, Mutex<Connection>>,
     track_id: i64,
 ) -> Result<TrackRelease, String> {
-    let conn = conn.lock().map_err(|e| e.to_string())?;
+    let conn = db::lock_conn(&conn)?;
     let genres = crate::genres::get_genres(&conn, track_id).unwrap_or_default();
     let base = conn
         .query_row(
@@ -159,7 +160,7 @@ pub fn track_file_tags(
     // Path under the lock; the actual file read happens AFTER releasing it (a disk read must not
     // freeze every other DB user — same split as apply_tags).
     let path: String = {
-        let conn = conn.lock().map_err(|e| e.to_string())?;
+        let conn = db::lock_conn(&conn)?;
         conn.query_row("SELECT path FROM tracks WHERE id=?1", rusqlite::params![track_id], |r| r.get(0))
             .map_err(|_| format!("track {track_id} not found"))?
     };
@@ -200,7 +201,7 @@ pub fn apply_tags(
 ) -> Result<String, String> {
     // (1) Path + the same enrichment fields filing would write — under the lock.
     let (path, extras) = {
-        let conn = conn.lock().map_err(|e| e.to_string())?;
+        let conn = db::lock_conn(&conn)?;
         let path: String = conn
             .query_row("SELECT path FROM tracks WHERE id=?1", rusqlite::params![track_id], |r| r.get(0))
             .map_err(|_| format!("track {track_id} not found"))?;
@@ -231,7 +232,7 @@ pub fn apply_tags(
     let meta = serde_json::to_string(&snapshot).map_err(|e| e.to_string())?;
     let batch_id = filing::new_batch_id(track_id);
     {
-        let conn = conn.lock().map_err(|e| e.to_string())?;
+        let conn = db::lock_conn(&conn)?;
         let action_id = actions::record_with_meta(&conn, &batch_id, Some(track_id), "tag_edit", Some(&path), None, Some(&meta))
             .map_err(|e| e.to_string())?;
 
@@ -268,7 +269,7 @@ pub fn file_track(
 ) -> Result<FileResult, String> {
     // Phase 1 under the lock: decide the plan (fast DB reads + guard + dest).
     let plan = {
-        let conn = conn.lock().map_err(|e| e.to_string())?;
+        let conn = db::lock_conn(&conn)?;
         let root = library_root(&conn)?;
         let tmpl = template(&conn);
         // Interactive single-file path: phase 2 runs before any next plan, so no in-flight dest
@@ -280,7 +281,7 @@ pub fn file_track(
     let log = filing::execute_file(&plan).map_err(|e| e.to_string())?;
     // Phase 3 under the lock: journal + mark filed (rolls back the FS on a DB error).
     let res = {
-        let conn = conn.lock().map_err(|e| e.to_string())?;
+        let conn = db::lock_conn(&conn)?;
         filing::commit_file(&conn, &plan, log, None).map_err(|e| e.to_string())?
     };
     app.emit("queue:changed", ()).ok();
@@ -306,7 +307,7 @@ pub fn file_batch(
     targets: Option<HashMap<i64, Target>>,
 ) -> Result<(), String> {
     let (root, tmpl) = {
-        let conn = conn.lock().map_err(|e| e.to_string())?;
+        let conn = db::lock_conn(&conn)?;
         (library_root(&conn)?, template(&conn))
     };
     // Reset the cancel flag for THIS batch so a past cancel can't abort it instantly.
@@ -564,7 +565,7 @@ pub fn reject_track(
     track_id: i64,
 ) -> Result<(), String> {
     {
-        let conn = conn.lock().map_err(|e| e.to_string())?;
+        let conn = db::lock_conn(&conn)?;
         filing::reject_track(&conn, track_id).map_err(|e| e.to_string())?;
     }
     app.emit("queue:changed", ()).ok();
@@ -580,7 +581,7 @@ pub fn reject_batch(
     track_ids: Vec<i64>,
 ) -> Result<RejectBatchResult, String> {
     let res = {
-        let conn = conn.lock().map_err(|e| e.to_string())?;
+        let conn = db::lock_conn(&conn)?;
         filing::reject_batch(&conn, &track_ids)
     };
     app.emit("queue:changed", ()).ok();
@@ -596,7 +597,7 @@ pub fn trash_track(
     track_id: i64,
 ) -> Result<(), String> {
     {
-        let conn = conn.lock().map_err(|e| e.to_string())?;
+        let conn = db::lock_conn(&conn)?;
         filing::trash_track(&conn, track_id).map_err(|e| e.to_string())?;
     }
     app.emit("queue:changed", ()).ok();
@@ -606,7 +607,7 @@ pub fn trash_track(
 /// List all destination bins (recursive subdirs of the library root).
 #[tauri::command]
 pub fn list_bins(conn: State<'_, Mutex<Connection>>) -> Result<Vec<Bin>, String> {
-    let conn = conn.lock().map_err(|e| e.to_string())?;
+    let conn = db::lock_conn(&conn)?;
     let root = library_root(&conn)?;
     Ok(library::list_bins(&root))
 }
@@ -618,7 +619,7 @@ pub fn create_bin(
     parent_rel: String,
     name: String,
 ) -> Result<Bin, String> {
-    let conn = conn.lock().map_err(|e| e.to_string())?;
+    let conn = db::lock_conn(&conn)?;
     let root = library_root(&conn)?;
     library::create_bin(&root, &parent_rel, &name)
 }
@@ -631,7 +632,7 @@ pub fn undo_last(
     conn: State<'_, Mutex<Connection>>,
 ) -> Result<Option<String>, String> {
     let res = {
-        let conn = conn.lock().map_err(|e| e.to_string())?;
+        let conn = db::lock_conn(&conn)?;
         actions::undo_last(&conn).map_err(|e| e.to_string())?
     };
     app.emit("queue:changed", ()).ok();
@@ -647,7 +648,7 @@ pub fn revert_batch(
     batch_id: String,
 ) -> Result<(), String> {
     {
-        let conn = conn.lock().map_err(|e| e.to_string())?;
+        let conn = db::lock_conn(&conn)?;
         actions::revert_batch(&conn, &batch_id).map_err(|e| e.to_string())?;
     }
     app.emit("queue:changed", ()).ok();
@@ -663,7 +664,7 @@ pub fn list_journal(
     limit: i64,
     session_id: Option<String>,
 ) -> Result<Vec<JournalEntry>, String> {
-    let conn = conn.lock().map_err(|e| e.to_string())?;
+    let conn = db::lock_conn(&conn)?;
     Ok(actions::list_journal(&conn, limit, session_id.as_deref()))
 }
 
@@ -671,7 +672,7 @@ pub fn list_journal(
 /// Journal tab front to filter list_journal to the current session only.
 #[tauri::command]
 pub fn get_session_id(conn: State<'_, Mutex<Connection>>) -> Result<String, String> {
-    let conn = conn.lock().map_err(|e| e.to_string())?;
+    let conn = db::lock_conn(&conn)?;
     settings::get(&conn, settings::CURRENT_SESSION_ID)
         .map_err(|e| e.to_string())?
         .ok_or_else(|| "no session_id in settings".to_string())
@@ -683,14 +684,14 @@ pub fn find_duplicate(
     conn: State<'_, Mutex<Connection>>,
     track_id: i64,
 ) -> Result<Option<DupMatch>, String> {
-    let conn = conn.lock().map_err(|e| e.to_string())?;
+    let conn = db::lock_conn(&conn)?;
     dedup::find_duplicate(&conn, track_id).map_err(|e| e.to_string())
 }
 
 /// List the rejected/trashed tracks for the Écartés view.
 #[tauri::command]
 pub fn list_ecartes(conn: State<'_, Mutex<Connection>>) -> Result<Vec<EcarteItem>, String> {
-    let conn = conn.lock().map_err(|e| e.to_string())?;
+    let conn = db::lock_conn(&conn)?;
     ecartes::list_ecartes(&conn).map_err(|e| e.to_string())
 }
 
@@ -702,7 +703,7 @@ pub fn restore_track(
     track_id: i64,
 ) -> Result<(), String> {
     {
-        let conn = conn.lock().map_err(|e| e.to_string())?;
+        let conn = db::lock_conn(&conn)?;
         ecartes::restore_track(&conn, track_id)?;
     }
     app.emit("queue:changed", ()).ok();
@@ -717,7 +718,7 @@ pub fn requeue_track(
     track_id: i64,
 ) -> Result<(), String> {
     {
-        let conn = conn.lock().map_err(|e| e.to_string())?;
+        let conn = db::lock_conn(&conn)?;
         ecartes::requeue_track(&conn, track_id)?;
     }
     app.emit("queue:changed", ()).ok();
@@ -728,7 +729,7 @@ pub fn requeue_track(
 #[tauri::command]
 pub fn purge_trash(app: AppHandle, conn: State<'_, Mutex<Connection>>) -> Result<usize, String> {
     let n = {
-        let conn = conn.lock().map_err(|e| e.to_string())?;
+        let conn = db::lock_conn(&conn)?;
         ecartes::purge_trash(&conn)?
     };
     app.emit("queue:changed", ()).ok();
@@ -741,7 +742,7 @@ pub fn get_setting(
     conn: State<'_, Mutex<Connection>>,
     key: String,
 ) -> Result<Option<String>, String> {
-    let conn = conn.lock().map_err(|e| e.to_string())?;
+    let conn = db::lock_conn(&conn)?;
     settings::get(&conn, &key).map_err(|e| e.to_string())
 }
 
@@ -752,7 +753,7 @@ pub fn set_setting(
     key: String,
     value: String,
 ) -> Result<(), String> {
-    let conn = conn.lock().map_err(|e| e.to_string())?;
+    let conn = db::lock_conn(&conn)?;
     settings::set(&conn, &key, &value).map_err(|e| e.to_string())
 }
 

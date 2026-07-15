@@ -1,4 +1,13 @@
 use rusqlite::Connection;
+use std::sync::{Mutex, MutexGuard};
+use tauri::State;
+
+/// Locks the app's shared `Connection`, mapping a poisoned-mutex error to the
+/// `String` every IPC command already returns. Extracted from ~40 duplicated
+/// `conn.lock().map_err(|e| e.to_string())?` call sites across `ipc*.rs`.
+pub fn lock_conn<'a>(conn: &'a State<'_, Mutex<Connection>>) -> Result<MutexGuard<'a, Connection>, String> {
+    conn.lock().map_err(|e| e.to_string())
+}
 
 /// Ordered list of migrations. Index + 1 == the schema version it brings the DB to.
 /// NEVER reorder or edit an existing entry once shipped — only append.
