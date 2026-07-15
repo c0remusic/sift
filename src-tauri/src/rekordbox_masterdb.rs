@@ -225,6 +225,13 @@ pub enum MasterDbError {
     /// artwork live peuvent être dans un état incohérent.
     #[allow(dead_code)]
     ArtworkWriteVerificationFailedRollbackFailed(String),
+    /// L'écriture d'un des 3 fichiers artwork (full/medium/small) a échoué en
+    /// cours de boucle (écriture non-atomique multi-fichiers, contrairement au
+    /// tmp+rename mono-fichier de master.db) ET la restauration du backup a
+    /// aussi échoué — les fichiers artwork live peuvent être dans un état
+    /// incohérent (certaines variantes déjà réécrites, d'autres non).
+    #[allow(dead_code)]
+    ArtworkWriteFailedRollbackFailed(String),
     /// `djmdContent.ImagePath` contient un composant `..` ou un préfixe de
     /// lecteur — refuse plutôt que de résoudre un chemin hors de
     /// `pioneer_dir/share` (containment, même logique que
@@ -291,6 +298,12 @@ impl std::fmt::Display for MasterDbError {
                 write!(
                     f,
                     "artwork write verification failed AND rollback failed — manual attention needed: {m}"
+                )
+            }
+            MasterDbError::ArtworkWriteFailedRollbackFailed(m) => {
+                write!(
+                    f,
+                    "artwork write failed AND rollback failed — manual attention needed: {m}"
                 )
             }
             MasterDbError::ArtworkPathEscapesRoot { path } => {
@@ -932,12 +945,21 @@ fn with_masterdb_write(
 
     match verify(&db_path) {
         Ok(()) => Ok(()),
-        Err(msg) => match restore_rekordbox_backup(pioneer_dir, backup_dir) {
-            Ok(()) => Err(MasterDbError::WriteVerificationFailedRolledBack(msg)),
-            Err(restore_err) => Err(MasterDbError::WriteVerificationFailedRollbackFailed(format!(
-                "{msg}; rollback also failed: {restore_err}"
-            ))),
-        },
+        Err(msg) => {
+            log::error!("rekordbox master.db write verification failed, restoring backup: {msg}");
+            match restore_rekordbox_backup(pioneer_dir, backup_dir) {
+                Ok(()) => Err(MasterDbError::WriteVerificationFailedRolledBack(msg)),
+                Err(restore_err) => {
+                    log::error!(
+                        "rekordbox master.db backup restore ALSO failed after a failed write — \
+                         master.db may be in an inconsistent state: {restore_err}"
+                    );
+                    Err(MasterDbError::WriteVerificationFailedRollbackFailed(format!(
+                        "{msg}; rollback also failed: {restore_err}"
+                    )))
+                }
+            }
+        }
     }
 }
 
@@ -1339,8 +1361,19 @@ pub fn sync_track_artwork(
     })();
 
     if let Err(write_err) = write_result {
-        restore_all(&backups).ok();
-        return Err(write_err);
+        log::error!("rekordbox artwork write failed mid-loop, restoring backup: {write_err}");
+        return Err(match restore_all(&backups) {
+            Ok(()) => write_err,
+            Err(restore_err) => {
+                log::error!(
+                    "rekordbox artwork backup restore ALSO failed after a failed write — \
+                     artwork files may be in an inconsistent state: {restore_err}"
+                );
+                MasterDbError::ArtworkWriteFailedRollbackFailed(format!(
+                    "{write_err}; rollback also failed: {restore_err}"
+                ))
+            }
+        });
     }
 
     // Round-trip verify: reread each written file and confirm it decodes
@@ -1363,12 +1396,21 @@ pub fn sync_track_artwork(
 
     match verify() {
         Ok(()) => Ok(()),
-        Err(verify_err) => match restore_all(&backups) {
-            Ok(()) => Err(MasterDbError::ArtworkWriteVerificationFailedRolledBack(verify_err.to_string())),
-            Err(restore_err) => Err(MasterDbError::ArtworkWriteVerificationFailedRollbackFailed(format!(
-                "{verify_err}; rollback also failed: {restore_err}"
-            ))),
-        },
+        Err(verify_err) => {
+            log::error!("rekordbox artwork write verification failed, restoring backup: {verify_err}");
+            match restore_all(&backups) {
+                Ok(()) => Err(MasterDbError::ArtworkWriteVerificationFailedRolledBack(verify_err.to_string())),
+                Err(restore_err) => {
+                    log::error!(
+                        "rekordbox artwork backup restore ALSO failed after a failed verification — \
+                         artwork files may be in an inconsistent state: {restore_err}"
+                    );
+                    Err(MasterDbError::ArtworkWriteVerificationFailedRollbackFailed(format!(
+                        "{verify_err}; rollback also failed: {restore_err}"
+                    )))
+                }
+            }
+        }
     }
 }
 
