@@ -3,7 +3,7 @@
 // docs/superpowers/specs/2026-07-05-visual-pointer-annotation-design.md.
 import { invoke } from "@tauri-apps/api/core";
 
-export interface ElementCapture {
+interface ElementCapture {
   tag: string;
   id: string | null;
   classes: string[];
@@ -12,7 +12,7 @@ export interface ElementCapture {
   rect: { w: number; h: number };
 }
 
-export interface ElementContext {
+interface ElementContext {
   element: ElementCapture;
   ancestors: { tag: string; id: string | null; classes: string[] }[];
   siblings: ElementCapture[];
@@ -38,7 +38,7 @@ const STYLE_PROPS = [
   "opacity", "box-shadow",
 ] as const;
 
-export function captureElement(el: HTMLElement): ElementCapture {
+function captureElement(el: HTMLElement): ElementCapture {
   const cs = getComputedStyle(el);
   const styles: Record<string, string> = {};
   for (const p of STYLE_PROPS) styles[p] = cs.getPropertyValue(p);

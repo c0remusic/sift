@@ -351,7 +351,7 @@ ${sectionsHtml}\
 </div>`;
 }
 
-export async function renderJournalExtended(): Promise<void> {
+async function renderJournalExtended(): Promise<void> {
   // No session filter — all sessions, newest first (backend returns DESC).
   const all = await listJournal(500);
 

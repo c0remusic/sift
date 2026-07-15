@@ -37,7 +37,7 @@ const SOURCE_HUE_CYCLE = ["indigo", "purple", "pink", "teal", "yellow"] as const
 /** A source's identity color: its manual override if set, otherwise the hue
  *  at its position in add-order (id ascending, matching how `sources::list`
  *  already orders rows), cycling through the 5 categorical hues. */
-export function resolveSourceColorKey(sources: Source[], source: Source): string {
+function resolveSourceColorKey(sources: Source[], source: Source): string {
   if (source.color_key) return source.color_key;
   const sorted = [...sources].sort((a, b) => a.id - b.id);
   const idx = sorted.findIndex((s) => s.id === source.id);

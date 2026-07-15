@@ -11,7 +11,7 @@ import { requireEl } from "./dom";
 export type TaskKind = "analyze" | "identify" | "file" | "export";
 
 /** Lifecycle of a task run. `done`/`error` are terminal; the caller decides when to clear. */
-export type TaskState = "running" | "done" | "error";
+type TaskState = "running" | "done" | "error";
 
 export interface TaskProgress {
   done: number;

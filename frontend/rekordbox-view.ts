@@ -39,48 +39,48 @@ import { confirmAction } from "./confirm-modal";
 // M8 Tier 1 repairs section state — module-level, NOT reset on every render. Filtered against
 // the live pending/ambiguous rows each render so a stale id (one that got applied/dismissed
 // elsewhere) drops out without touching the rest of the selection.
-export const mdbRepairSel = new Set<number>();
+const mdbRepairSel = new Set<number>();
 // Per-row apply failure message, transient (never persisted) — cleared when the row is
 // reselected or the next apply_repairs batch touches it again.
-export const mdbErrorById = new Map<number, string>();
+const mdbErrorById = new Map<number, string>();
 // M8 Tier 2 playlist-dedup section state — stateless on the backend (no server-side id, see the
 // IPC wiring plan's Architecture note), so the frontend keeps the last scan result itself and
 // references entries by array index from the DOM. Re-populated on every renderRekordboxLive()
 // call. Only ever reassigned here (renderRekordboxLive) — the click handler in sift-live.ts only
 // reads it by index, which is a live-binding read and works fine through the import.
-export let lastScannedDuplicateGroups: PlaylistDuplicateGroupDto[] = [];
+let lastScannedDuplicateGroups: PlaylistDuplicateGroupDto[] = [];
 // Per-group dedup failure message, keyed by "playlistId::contentId" (no numeric id exists for a
 // duplicate group) — same transient, never-persisted contract as mdbErrorById.
-export const mdbDedupErrorByKey = new Map<string, string>();
+const mdbDedupErrorByKey = new Map<string, string>();
 // M8 Tier 3 metadata-syncs section state — same module-level, filtered-not-reset discipline as
 // mdbRepairSel.
-export const mdsSyncSel = new Set<number>();
-export const mdsErrorById = new Map<number, string>();
+const mdsSyncSel = new Set<number>();
+const mdsErrorById = new Map<number, string>();
 // M8 Tier 3 (pochette) artwork-syncs section state — same module-level, filtered-not-reset
 // discipline as mdsSyncSel.
-export const masSyncSel = new Set<number>();
-export const masErrorById = new Map<number, string>();
+const masSyncSel = new Set<number>();
+const masErrorById = new Map<number, string>();
 
 // Session-group expand/collapse state for the 3 M8 candidate sections — groups are collapsed by
 // default (nothing in the set), same module-level/filtered-not-reset discipline as the Sel sets
 // above. Keyed by `session_id ?? SESSION_GROUP_NONE` (a real session_id can't collide with this
 // sentinel since Sift's session ids are timestamp-based numeric strings).
 const SESSION_GROUP_NONE = "__none__";
-export const mdbExpandedGroups = new Set<string>();
-export const mdsExpandedGroups = new Set<string>();
-export const masExpandedGroups = new Set<string>();
+const mdbExpandedGroups = new Set<string>();
+const mdsExpandedGroups = new Set<string>();
+const masExpandedGroups = new Set<string>();
 
 // Last-rendered *pending* rows per section, refreshed at the top of each section's render call —
 // same "cache so the delegated click handler can read it synchronously" pattern as
 // lastScannedDuplicateGroups above. A group-select click needs the full id list for its
 // session_id at click time, before the next renderRekordboxLive() refetch resolves.
-export let lastPendingRepairs: PendingMasterdbRepair[] = [];
-export let lastPendingMetadataSyncs: PendingMetadataSync[] = [];
-export let lastPendingArtworkSyncs: PendingArtworkSync[] = [];
+let lastPendingRepairs: PendingMasterdbRepair[] = [];
+let lastPendingMetadataSyncs: PendingMetadataSync[] = [];
+let lastPendingArtworkSyncs: PendingArtworkSync[] = [];
 
 /** Ids of every pending row in `rows` whose `session_id` matches `sessionKey`
  * (`SESSION_GROUP_NONE` for null) — shared by the 3 group-select click handlers in sift-live.ts. */
-export function idsInSessionGroup<T extends { id: number; session_id: string | null }>(
+function idsInSessionGroup<T extends { id: number; session_id: string | null }>(
   rows: T[],
   sessionKey: string,
 ): number[] {
@@ -130,7 +130,7 @@ function sessionGroupHtml<T extends { id: number; session_id: string | null }>(
   );
 }
 
-export function duplicateGroupKey(g: PlaylistDuplicateGroupDto): string {
+function duplicateGroupKey(g: PlaylistDuplicateGroupDto): string {
   return `${g.playlist_id}::${g.content_id}`;
 }
 
@@ -274,7 +274,7 @@ function masterdbRepairsSectionHtml(rows: PendingMasterdbRepair[]): string {
  * page sections. Falls back to a full `renderRekordboxLive()` if the section isn't in the DOM
  * (e.g. the page was just opened and hasn't rendered it yet). Click handling stays correct because
  * `[data-sift]` clicks are delegated once on `#pa` (installLiveWiring), not bound per-element. */
-export function rerenderMasterdbRepairsSection(): void {
+function rerenderMasterdbRepairsSection(): void {
   const el = document.getElementById("sift-rkb-masterdb-section");
   if (!el) {
     void renderRekordboxLive();
@@ -375,7 +375,7 @@ function metadataSyncsSectionHtml(rows: PendingMetadataSync[]): string {
 }
 
 /** Same discipline as `rerenderMasterdbRepairsSection` for the Tier 3 metadata section. */
-export function rerenderMetadataSyncsSection(): void {
+function rerenderMetadataSyncsSection(): void {
   const el = document.getElementById("sift-rkb-mds-section");
   if (!el) {
     void renderRekordboxLive();
@@ -470,7 +470,7 @@ function artworkSyncsSectionHtml(rows: PendingArtworkSync[]): string {
 }
 
 /** Same discipline as `rerenderMasterdbRepairsSection` for the Tier 3 artwork section. */
-export function rerenderArtworkSyncsSection(): void {
+function rerenderArtworkSyncsSection(): void {
   const el = document.getElementById("sift-rkb-mas-section");
   if (!el) {
     void renderRekordboxLive();

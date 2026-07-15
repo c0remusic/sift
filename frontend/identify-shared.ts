@@ -15,7 +15,7 @@ function candCoverHtml(c: Candidate): string {
 }
 
 /** One candidate button row (sub-line: label · year · country · format). */
-export function candRowHtml(c: Candidate, idx: number): string {
+function candRowHtml(c: Candidate, idx: number): string {
   const sub = [c.label, c.year != null ? String(c.year) : null, c.country, c.format]
     .filter(Boolean)
     .join(" · ");

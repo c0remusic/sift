@@ -6,19 +6,12 @@ import type { LibraryTrack } from "../shared/contracts";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { esc } from "./dom";
 
-export function fmtDur(sec: number | null): string {
-  if (!sec || sec <= 0) return "—";
-  const m = Math.floor(sec / 60),
-    s = Math.round(sec % 60);
-  return `${m}:${String(s).padStart(2, "0")}`;
-}
-
-export function qualPill(t: LibraryTrack): string {
+function qualPill(t: LibraryTrack): string {
   const f = (t.format || "?").toUpperCase();
   return `<span class="pill" style="flex:none">${esc(f)}</span>`;
 }
 
-export function verdictBadge(v: string | null): string {
+function verdictBadge(v: string | null): string {
   if (v === "fake")
     return `<span class="pill" style="background:var(--color-background-danger);color:var(--color-text-danger);flex:none">fake</span>`;
   if (v === "grey")
@@ -31,7 +24,7 @@ export function bibName(t: LibraryTrack): string {
   return t.artist && t.title ? `${t.artist} — ${t.title}` : t.path.split(/[\\/]/).pop() || t.path;
 }
 
-export type LibrarySortField = "artist" | "title" | "genre" | "year";
+type LibrarySortField = "artist" | "title" | "genre" | "year";
 export type LibrarySortState = { field: LibrarySortField; dir: "asc" | "desc" };
 
 /** Client-side sort — the filed-track list is small enough (a personal DJ crate, not a
