@@ -4,7 +4,8 @@
 // controller (tranche 1c) imports these as read values and calls setReviewMode() to mutate mode,
 // never reassigns directly (ES module import bindings are read-only from outside this file).
 import { listQueue } from "./ipc";
-import { openFilingInto, refreshBins, syncDetail, clearBinPick } from "./filing";
+import { openFilingInto, syncDetail } from "./filing";
+import { refreshBins, clearBinPick } from "./filing-bins";
 import { homeProgressZone } from "./progress-zone";
 import type { QueueItem } from "../shared/contracts";
 import { requireEl, esc } from "./dom";
@@ -17,7 +18,7 @@ export let currentItems: QueueItem[] = [];
 // state (would risk a race: filing.ts may set its own state before this module's DOM catches up).
 // Updated in 3 places: the row click handler, renderQueue's touchDetail branch (via syncDetail's
 // return value), and stepQueueSelection (Task 4).
-export let currentOpenId: number | null = null;
+let currentOpenId: number | null = null;
 
 const QUEUE_ROW_BUFFER = 15; // rows rendered above/below the visible window
 
@@ -79,7 +80,7 @@ function measureQueueRowHeight(ql: HTMLElement): number {
  * 7000+-track freeze (memory: sift-large-queue-black-screen) — rebuilding thousands of DOM nodes
  * on every 300ms analysis-progress redraw (see the onAnalysisChanged listener further down) was
  * the actual cost, not just paint. */
-export function renderQueueWindow(ql: HTMLElement): void {
+function renderQueueWindow(ql: HTMLElement): void {
   const items = visibleQueueItems();
   if (!items.length) {
     ql.innerHTML =
@@ -143,7 +144,7 @@ export function prefetchNextAfter(id: number): void {
  * ability to scroll a not-yet-rendered row into view — both owned here, not in filing.ts (which
  * would need a circular import to reach them; sift-live.ts already imports from filing.ts, not
  * the reverse). */
-export function stepQueueSelection(delta: 1 | -1): void {
+function stepQueueSelection(delta: 1 | -1): void {
   const items = visibleQueueItems();
   if (!items.length) return;
   const curIndex = currentOpenId != null ? items.findIndex((it) => it.id === currentOpenId) : -1;

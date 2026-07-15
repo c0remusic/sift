@@ -19,7 +19,8 @@ import {
   linkRekordboxXml,
   rekordboxStatus,
 } from "./ipc";
-import { refreshBinsForBatch, installUndoShortcut, installFilingKeys } from "./filing";
+import { installUndoShortcut, installFilingKeys } from "./filing";
+import { refreshBinsForBatch } from "./filing-bins";
 import { confirmAction } from "./confirm-modal";
 // Views/chrome extracted from this god-module (audit P-3) — kept stateless, wired here.
 import { renderEcartes } from "./ecartes-view";

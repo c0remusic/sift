@@ -3,15 +3,14 @@
 // from queue-panel.ts (leaf-to-leaf import, one direction only — queue-panel.ts never imports
 // from here). sift-live.ts's setReviewMode (cross-panel orchestrator, kept there since tranche
 // 1b) imports renderBatch + the batch destination state from here for its "batch" branch.
+import { openFilingInto, TARGET_LABEL } from "./filing";
 import {
-  openFilingInto,
   renderBinsForBatch,
   ensureDestPopoverAutoClose,
   setBinPickInert,
-  TARGET_LABEL,
   toggleDestPopover,
   repositionDestPopoverIfOpen,
-} from "./filing";
+} from "./filing-bins";
 import { fileBatch, fileCancel, rejectBatch } from "./ipc";
 import { requireEl, esc } from "./dom";
 import type { QueueItem, BatchResult, FileProgress, Target } from "../shared/contracts";
@@ -539,7 +538,7 @@ function renderBatchRail(reviewN: number) {
  * spinner note is shown; the per-run summary AND the view refresh arrive later via the `file:done`
  * event (see `onFileBatchDone`). Filed tracks leave the queue, so the refresh prunes them from the
  * ticked set automatically. */
-export async function runBatchFile() {
+async function runBatchFile() {
   const ids = [...batchSel];
   if (ids.length === 0) return;
   fileStopping = false;

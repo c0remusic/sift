@@ -158,7 +158,18 @@ continuer sans inventer de skill.
   (Phase 1 tranche 1c)
 - `ecartes-view.ts` — écran Écartés
 - `report-view.ts` — écran Revue (son-d'abord, waveform, verdict)
-- `filing.ts` — rail de classement (destination, format, actions filer/écarter)
+- `filing.ts` — rail de classement (format, identification Discogs, apply-tags,
+  actions filer/écarter), extrait partiellement le 2026-07-15 (tech-debt audit
+  F03, tranche 1) : le sous-arbre de destination est parti dans
+  `filing-bins.ts` ; le reste (identify/editor, apply-tags, orchestration
+  `openFilingInto`) reste dans ce fichier, jugé trop couplé à un état partagé
+  unique (`RevueState`) pour un découpage mécanique sûr sans suite de tests
+  frontend — voir `TECH_DEBT_AUDIT.md` F03 pour le détail du choix.
+- `filing-bins.ts` — arbre de destination (bacs, sélection, popover, mode
+  batch), extrait de `filing.ts` le 2026-07-15 (Phase 1-style, injection de
+  dépendance `registerOpenTrackPathGetter`/`registerDestChangeHook` pour
+  éviter un cycle d'import statique avec `filing.ts`, même pattern que le
+  split `sift-live.ts`)
 - `confirm-modal.ts` — overlay de confirmation in-app partagé (remplace window.confirm())
 - `batch-tracklist.ts` — tracklist batch (multi-sélection, barre de progression)
 - `journal.ts` — journal d'actions post-batch (toasts, revert)
