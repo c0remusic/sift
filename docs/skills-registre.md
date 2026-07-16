@@ -68,7 +68,8 @@ attendre une notification qui ne viendra pas.
 
 ## Packs de contexte (sizing, ajouté 2026-07-08)
 
-Instanciation Sift du "sizing" décrit dans `~/.claude/agent-operating-model.md`.
+Instanciation Sift du "sizing" décrit dans `~/.claude/CLAUDE.md` § Sizing
+(+ templates `~/.claude/rules/sizing-templates.md`).
 Ces packs sont des menus, pas des blocs à coller intégralement — l'orchestrateur
 choisit les 3-8 fichiers utiles et cite les sections à lire. Migré depuis
 `docs/superpowers/specs/2026-07-06-agent-token-budget-operating-model-design.md`
