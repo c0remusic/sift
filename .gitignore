@@ -23,7 +23,11 @@ npm-debug.log*
 Thumbs.db
 .idea/
 .vscode/
+
+# .claude/ = bruit-machine ignoré, SAUF rules/ = méthode portable versionnée
 .claude/
+!.claude/rules/
+!.claude/rules/**
 .codex/
 .agents/
 
