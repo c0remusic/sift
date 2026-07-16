@@ -9,13 +9,14 @@ Sources obligatoires :
 
 1. `frontend/styles.css` pour les tokens ;
 2. `docs/design-system-states.md` pour les composants et etats ;
-3. `docs/skills-registre.md` pour le routage skills/agents ;
+3. `~/.claude/skills-view.md` + `docs/skills/sift-ui-design-governance.md` pour le routage skills/agents ;
 4. `AGENTS.md` pour les contraintes projet ;
 5. `PRODUCT.md` pour la direction produit.
 
 ## Routage Skills Et Agents
 
-Avant toute tache substantielle, consulter `docs/skills-registre.md`. Le choix
+Avant toute tache substantielle, consulter `~/.claude/skills-view.md` et
+`docs/skills/sift-ui-design-governance.md`. Le choix
 du skill/agent fait partie du design system parce qu'il determine la qualite de
 la decision.
 

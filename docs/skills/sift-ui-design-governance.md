@@ -22,7 +22,7 @@ must be true before a UI task is considered done.
 
 Before acting, read only the relevant parts:
 
-1. `docs/skills-registre.md` for skill/agent routing.
+1. `~/.claude/skills-view.md` for skill/agent inventory, `.claude/rules/context-packs.md` for task-scoped packs.
 2. `docs/design-system/governance.md` for Sift UI process and verification.
 3. `docs/design-system/foundations.md` for product/user intent.
 4. `docs/design-system/components.md` and `docs/design-system/patterns.md` for
@@ -38,13 +38,18 @@ Do not use `docs/mockups/` as source of truth. Mockups are exploration only.
 
 Preserve the Sift routing model:
 
-- Retouch/polish existing UI: use `impeccable` when available.
+- Retouch/polish existing UI: use `impeccable`, then `interface-design`.
 - Post-implementation design audit: use `design-review` when available.
 - New significant UI chantier: use `design-flow` when available.
+- Quick pre-code exploration of a direction: `enhance-prompt` ->
+  `stitch-generate-design` -> look at the result -> if satisfying,
+  `stitch-extract-static-html` and hand-port to vanilla TS/existing tokens.
 - Accessibility/perf quick reference: use `ui-ux-pro-max` only for the relevant
   quick-reference parts.
 - Refactor/legacy UI code: use `working-with-legacy-code`,
   `refactoring-patterns`, and `clean-code` when available.
+- Never invoke `design-taste-frontend` on Sift (marketing/landing scope, out
+  of scope for this dense desktop product).
 
 If a listed skill is unavailable, say so briefly and continue from the project
 docs. Never invent a parallel process.
@@ -92,6 +97,6 @@ Before final response on a UI/design task:
 7. Keyboard/action rail contracts still make sense.
 8. `npx tsc --noEmit` was run if TypeScript changed, or the skipped verification
    is stated.
-9. `docs/design-system-*`, `docs/design-system/`, `docs/skills-registre.md`, or
-   `docs/INDEX.json` were updated if the design system changed.
+9. `docs/design-system-*`, `docs/design-system/`, or `docs/INDEX.json` were
+   updated if the design system changed.
 

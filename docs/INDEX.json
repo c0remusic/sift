@@ -62,7 +62,6 @@
     {"path": "docs/design-system/content.md", "topic": "design system — contenu", "summary": "Voix, vocabulaire canonique, libellés d'états/actions, microcopy et règles de contenu pour l'interface française de Sift."},
     {"path": "docs/design-system/governance.md", "topic": "design system — gouvernance", "summary": "Règles de maintenance du design system : sources obligatoires, routage skills/agents, fichiers à modifier selon le changement, interdits, vérification et définition de fini."},
     {"path": "docs/skills/sift-ui-design-governance.md", "topic": "skill Sift — gouvernance UI/design", "summary": "Source suivie Git de la skill projet sift-ui-design-governance : lectures obligatoires, routage skills/agents, workflow, règles UI Sift et checklist de fin pour tout chantier UI/UX/design/theme/parcours."},
-    {"path": "docs/skills-registre.md", "topic": "registre skills/agents/plugins", "summary": "Verdict par domaine (Rust, UI/design, revue de code...) sur quelle skill invoquer sur Sift, tenu à jour à la main."},
     {"path": "docs/plan-implementation.md", "topic": "plan d'implémentation actif", "summary": "Plan d'implémentation Sift par jalons M0-M8, mis à jour en continu (fichier actif, pas figé)."},
     {"path": "docs/brand-logo-direction.md", "topic": "direction logo & marque", "summary": "Direction logo validée (carrés ambre/vert en point du i, Outfit Bold) — production reportée."}
   ],

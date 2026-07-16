@@ -52,8 +52,9 @@ Lib = `sift_lib`. MSRV Rust 1.77.2.
 - Type-check front : `npx tsc --noEmit`
 
 ## Outillage
-Consulter `docs/skills-registre.md` avant toute tâche substantielle; il porte le
-routage complet, les packs de contexte et les outils désactivés. Overrides Sift :
+Consulter `~/.claude/skills-view.md` (inventaire skills/agents) et
+`.claude/rules/context-packs.md` (packs de contexte) avant toute tâche
+substantielle. Overrides Sift :
 - `ecc` est désactivé dans `.claude/settings.local.json`. Utiliser les fallbacks
   du registre, jamais une référence `ecc:*`.
 - Rust : `rust-best-practices` + `error-handling-patterns`; async/perf/unsafe ou
@@ -112,8 +113,8 @@ Garde-fous issus d'incidents réels, détails dans `docs/ressources-externes.md`
 
 **Routage skills** : procédure complète (5 étapes) déjà posée dans
 `~/.claude/CLAUDE.md` (RÈGLE IMPÉRATIVE, s'applique tous projets) — ne pas la
-redupliquer ici. Spécifique à Sift : consulter `docs/skills-registre.md` (pas
-un registre générique) pour le verdict par domaine.
+redupliquer ici. Spécifique à Sift : `docs/skills/sift-ui-design-governance.md`
+pour le routage UI, `.claude/rules/rust.md` pour le routage Rust.
 
 **Sizing / YAGNI+evidence / lisibilité** : mécaniques génériques dans
 `~/.claude/CLAUDE.md` § Sizing (+ templates `~/.claude/rules/sizing-templates.md`) —
@@ -125,7 +126,7 @@ lisibilité avant de livrer un `design.md`/`plan.md`. Sur Sift : veille/
 décision = `docs/ressources-externes.md` (section "Écarté" = tranché ;
 nouvelle section "Différé" = pas assez de preuve pour l'instant, avec
 trigger de réouverture nommé — ne pas confondre les deux) ; packs de
-contexte = `docs/skills-registre.md`, section "Packs de contexte (sizing)".
+contexte = `.claude/rules/context-packs.md`.
 Nouveaux chantiers → `docs/superpowers/changes/<date>-<slug>/`
 (`design.md`/`plan.md`/`review.md` dans un seul dossier) au lieu de
 `specs/`+`plans/`+`reviews/` à plat — fichiers existants non migrés.

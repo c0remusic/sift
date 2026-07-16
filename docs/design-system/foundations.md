@@ -68,7 +68,7 @@ Anti-references :
 | Tokens, couleurs, typo, espacements | `frontend/styles.css` |
 | Etats reels des composants | `docs/design-system-states.md` |
 | Vision produit | `PRODUCT.md` |
-| Routage skills/agents | `docs/skills-registre.md` |
+| Routage skills/agents | `~/.claude/skills-view.md` + `docs/skills/sift-ui-design-governance.md` |
 | Regles projet | `AGENTS.md` |
 | Maquettes exploratoires | `docs/mockups/` uniquement pour explorer |
 

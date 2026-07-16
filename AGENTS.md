@@ -67,7 +67,7 @@ Lib = `sift_lib`. MSRV Rust 1.77.2.
 - **sift-ui-design-governance** (skill projet) → garde-fou Sift à charger pour
   toute tâche UI/UX/design/theme/parcours utilisateur. Elle force la lecture des
   sources de vérité (`frontend/styles.css`, `docs/design-system-states.md`,
-  `docs/design-system/*`, `docs/skills-registre.md`) et la checklist de fin
+  `docs/design-system/*`) et la checklist de fin
   avant réponse. Source suivie Git : `docs/skills/sift-ui-design-governance.md`
   (`.agents/skills/...` est la copie locale opérationnelle, ignorée par Git).
 - **impeccable** (plugin) → priorité n°1 pour retouche/polish d'un écran existant.
@@ -144,8 +144,8 @@ par une session antérieure jamais restaurée (voir Évaluation 14,
 
 **Routage skills** : procédure complète (5 étapes) déjà posée dans
 `~/.Codex/AGENTS.md` (RÈGLE IMPÉRATIVE, s'applique tous projets) — ne pas la
-redupliquer ici. Spécifique à Sift : consulter `docs/skills-registre.md` (pas
-un registre générique) pour le verdict par domaine.
+redupliquer ici. Spécifique à Sift : `docs/skills/sift-ui-design-governance.md`
+pour le routage UI, `.claude/rules/rust.md` pour le routage Rust.
 
 Exemples de routage (non exhaustif, voir le registre complet) :
 - Rust/backend → `rust-best-practices`, `error-handling-patterns` ; pointu/review → session + `.claude/rules/rust.md` + agent `auditor`.
