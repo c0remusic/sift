@@ -52,8 +52,9 @@ Lib = `sift_lib`. MSRV Rust 1.77.2.
 - **error-handling-patterns** (skill) → erreurs Rust/Tauri (`Result` + serde IPC, fail-fast ; retry réservé à Discogs/AcoustID).
 - **release-skills** (skill) → release : bumper les **3** fichiers de version en synchro
   (`package.json`, `src-tauri/Cargo.toml`, `src-tauri/tauri.conf.json`), depuis `main`.
-- **rust-engineer** (agent) → Rust pointu (async/perf/unsafe) ET fallback review/build
-  Rust en général tant qu'`ecc` est off (pas de `ecc:rust-reviewer`/`ecc:rust-build-resolver` ici).
+- **Rust pointu** (async/perf/unsafe) → session principale + `.claude/rules/rust.md`
+  (module projet). Review/audit Rust → agent `auditor` (`rules/audit/rust.md` global
+  + le module projet). Plus d'agent `rust-engineer` (rôle absorbé) ; `ecc` off.
 - **rust-analyzer-lsp** (plugin) → connecteur LSP `.rs` (rustup component, pas une skill).
 - Revue de code générale (hors Rust) : `code-review` natif (`/code-review`) au lieu de
   `ecc:code-reviewer`, indisponible sur Sift.
@@ -147,7 +148,7 @@ redupliquer ici. Spécifique à Sift : consulter `docs/skills-registre.md` (pas
 un registre générique) pour le verdict par domaine.
 
 Exemples de routage (non exhaustif, voir le registre complet) :
-- Rust/backend → `rust-best-practices`, `error-handling-patterns`, `rust-engineer`.
+- Rust/backend → `rust-best-practices`, `error-handling-patterns` ; pointu/review → session + `.claude/rules/rust.md` + agent `auditor`.
 - UI/design retouche/polish ou nouveau chantier → voir priorités et
   orchestration détaillées dans `Outillage → UI / Design` ci-dessus. JAMAIS
   `design-taste-frontend` / `redesign-existing-projects` / `gpt-taste` /

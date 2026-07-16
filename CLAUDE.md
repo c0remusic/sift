@@ -56,8 +56,10 @@ Consulter `docs/skills-registre.md` avant toute tâche substantielle; il porte l
 routage complet, les packs de contexte et les outils désactivés. Overrides Sift :
 - `ecc` est désactivé dans `.claude/settings.local.json`. Utiliser les fallbacks
   du registre, jamais une référence `ecc:*`.
-- Rust : `rust-best-practices` + `error-handling-patterns`; `rust-engineer` pour
-  async/perf/unsafe ou review Rust spécialisée.
+- Rust : `rust-best-practices` + `error-handling-patterns`; async/perf/unsafe ou
+  review Rust spécialisée → **session principale + `.claude/rules/rust.md`** (module
+  projet) ; audit/review → agent **`auditor`** (charge `rules/audit/rust.md` global
+  + le module projet). Plus d'agent `rust-engineer` (rôle absorbé).
 - Release : `release-skills`; synchroniser les versions de `package.json`,
   `src-tauri/Cargo.toml` et `src-tauri/tauri.conf.json`, depuis `main`.
 - UI existante : `impeccable`, puis `interface-design`. La palette/typo de
@@ -113,8 +115,9 @@ Garde-fous issus d'incidents réels, détails dans `docs/ressources-externes.md`
 redupliquer ici. Spécifique à Sift : consulter `docs/skills-registre.md` (pas
 un registre générique) pour le verdict par domaine.
 
-**Sizing / YAGNI+evidence / lisibilité** : mécaniques génériques posées dans
-`~/.claude/agent-operating-model.md` (s'applique tous projets, voir
+**Sizing / YAGNI+evidence / lisibilité** : mécaniques génériques dans
+`~/.claude/CLAUDE.md` § Sizing (+ templates `~/.claude/rules/sizing-templates.md`) —
+s'applique tous projets, voir
 `docs/superpowers/specs/2026-07-08-agent-operating-model-design.md` pour le
 détail de la décision) — classifier mini/normal/large avant tout fan-out
 d'agents, gate de preuve avant d'inclure un item dans un artefact, checklist

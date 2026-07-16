@@ -29,8 +29,8 @@ Routage courant :
 - a11y/WCAG ponctuel : `ui-ux-pro-max` ;
 - refactor/legacy : `working-with-legacy-code`, `refactoring-patterns`,
   `clean-code` ;
-- Rust/backend : `rust-best-practices`, `error-handling-patterns`,
-  `rust-engineer` ;
+- Rust/backend : `rust-best-practices`, `error-handling-patterns` ;
+  pointu/review → session + `.claude/rules/rust.md` + agent `auditor` ;
 - audit dette : `tech-debt-audit`.
 
 Ne pas invoquer sur Sift :
