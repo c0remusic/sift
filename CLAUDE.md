@@ -50,6 +50,9 @@ Lib = `sift_lib`. MSRV Rust 1.77.2.
   décrites dans `src-tauri/fixtures/README.md` restent à fournir manuellement.
 - Lint : `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings`
 - Type-check front : `npx tsc --noEmit`
+- `scripts/cargo-isolated.sh` — lance `cargo` avec `CARGO_TARGET_DIR` isolé,
+  évite de corrompre le cache incrémental d'un `tauri dev` concurrent (fan-out
+  d'agents sur ce repo, cf. `.claude/rules/rust.md`).
 
 ## Outillage
 Consulter `~/.claude/skills-view.md` (inventaire skills/agents) et
@@ -220,6 +223,14 @@ Fichiers plats (sauf `analysis/`, `metadata/` et `usb_format/`) :
   PLAN`, proxy sérialisation JSON. Exécuté à la demande
   (`cargo test --release -- --ignored --nocapture`), jamais dans la suite
   normale. Voir `docs/superpowers/plans/2026-07-14-phase3-measurement-report.md`.
+
+## Outils de dev annexes (`scripts/`, hors binaire de prod)
+- `scripts/cdp-inspect.mjs` — inspecte la vraie fenêtre `tauri dev` via CDP
+  (vérifie le code `inTauri` réel). Doublon présumé avec `.claude/scripts/cdp.cjs`
+  (même rôle) — à trancher, pas fusionné ce tour-ci.
+- `scripts/decrypt-masterdb-debug.py` — décrypte une copie `master.db` Rekordbox
+  en SQLite clair pour inspection ad-hoc (spike M8, port Python de
+  `rekordbox_masterdb.rs`) ; dépend de PyCryptodome externe.
 
 ## Audit des dépendances (versions à jour)
 
