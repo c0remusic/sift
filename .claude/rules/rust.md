@@ -26,8 +26,10 @@ Pas un projet de systems-programming, pas une lib publiée, pas un service async
   ressemble est le sidecar FFmpeg (`ffmpeg-sidecar` spawne un binaire bundlé en
   sous-process) — c'est de l'I/O de process, pas un passage d'ABI. Le codebase a
   exactement **un** bloc `unsafe` (`lib.rs`, `DwmExtendFrameIntoClientArea`, API
-  Win32 de titlebar) ; s'il est touché, ajouter le `// SAFETY:` manquant. Pas de
-  surface `no_std`/embarqué/WASM — ne pas appliquer ces patterns.
+  Win32 de titlebar), avec son commentaire `// SAFETY:` depuis 2026-07-17
+  (commit `c94685c`) — s'il est touché, préserver/mettre à jour ce commentaire,
+  pas le supprimer. Pas de surface `no_std`/embarqué/WASM — ne pas appliquer
+  ces patterns.
 - **Erreurs : enums à la main** (`Debug, Clone, PartialEq` + `Display` manuel +
   `impl std::error::Error`), ex. `MasterDbError` (`rekordbox_masterdb.rs`). À la
   frontière IPC Tauri, les commandes renvoient `Result<T, String>` via
@@ -58,6 +60,33 @@ Pas un projet de systems-programming, pas une lib publiée, pas un service async
 - `Arc<Mutex<T>>` est le pattern établi pour l'état partagé cross-thread (pool ↔
   connexion DB ↔ commandes Tauri) — le suivre, pas introduire une autre primitive.
 
+## Robustesse du worker pool (`worker.rs`, audit 2026-07-17, commit `c94685c`)
+
+Le pool de threads d'analyse tourne en continu et sans supervision (pas de
+`join()`, pas de channel de contrôle) — deux modes de dégradation silencieuse
+identifiés et corrigés, à respecter dans tout nouveau code sur ce chemin :
+
+- **`Mutex<Connection>` empoisonné : logger avant de bailer, jamais un retour
+  muet.** `refill`/`read_path`/`persist_result` faisaient `let Ok(x) = ...
+  else { return }` sur un lock potentiellement empoisonné — violation directe
+  du principe fail-fast/pas-de-fallback-silencieux (un panic ailleurs pendant
+  un lock rendrait tout le pool aveugle sans aucune trace). Pattern à suivre :
+  `match state.lock() { Ok(x) => x, Err(_) => { log::error!("..."); return
+  None; } }`, jamais juste `.ok()?`/`else { return }` nu sur un `Mutex` partagé
+  avec un pool de threads.
+- **Travail lourd sur fichier utilisateur arbitraire dans un thread de pool :
+  envelopper dans `std::panic::catch_unwind`.** `analysis::analyze()` décode
+  des fichiers audio venant du disque utilisateur (surface d'entrée non
+  maîtrisée — Symphonia/FFT sur fichier corrompu peut paniquer). Sans
+  `catch_unwind`, un panic tue le thread `spawn`é pour toujours (jamais
+  relancé, jamais loggé) : le pool rétrécit thread par thread jusqu'à 0 en
+  silence. Pattern établi dans `worker_loop` :
+  `std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| work()))
+  .unwrap_or_else(|payload| { log::error!(...); Err(...) })` — traite le panic
+  comme un `Err` normal (repris au refill suivant), pas comme une fin de
+  thread. À reproduire pour toute future tâche lourde ajoutée dans un
+  `worker_loop`-like tournant sur de l'I/O utilisateur non maîtrisé.
+
 ## Fan-out d'agents sur du Rust (incident 2026-07-04/05, migré depuis l'ex-registre)
 
 **Jamais deux agents `cargo`/`tauri dev` concurrents sur ce repo** — le cache
@@ -80,3 +109,11 @@ cargo fmt --manifest-path src-tauri/Cargo.toml --check
 - Aucune dépendance `thiserror`/`anyhow`/`tokio`/`criterion`/`proptest`
   introduite en douce — ce sont des décisions projet, à remonter, pas à ajouter
   dans une tâche.
+- Si `cargo test` échoue en `LNK2001`/`LNK2019` (« symbole externe non résolu
+  anon.<hash>.llvm.<hash> ») sur des symboles sans rapport avec le diff en
+  cours (`tauri_runtime_wry`, `PathResolver`, `menu plugin`...), et que
+  `cargo clippy` reste vert : c'est un cache incrémental Windows corrompu
+  (typiquement après un `tauri dev` interrompu/tué en cours de build), pas un
+  bug de code. Fix : `cargo clean --manifest-path src-tauri/Cargo.toml -p sift`
+  (le nom du package — pas `sift_lib`), pas un `cargo clean` complet. Ne pas
+  chercher le bug dans le diff avant d'avoir écarté cette cause.
