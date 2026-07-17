@@ -410,7 +410,7 @@ html,body{margin:0;padding:0;height:100%}
 .srow{display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:0.5px solid var(--color-border-tertiary);font-size:12px}.srow .v{color:var(--color-text-secondary);display:flex;align-items:center;gap:6px}
 .h1{font-size:16px;font-weight:500;margin-bottom:12px}
 .chip{font-size:11px;padding:3px 9px;border-radius:var(--border-radius-md);border:0.5px solid var(--color-border-tertiary);color:var(--color-text-secondary);cursor:pointer}.chip:hover{background:var(--color-background-secondary)}.chip.on{background:var(--color-background-info);color:var(--color-text-info);border-color:var(--color-border-info)}.chip.on:hover{background:var(--color-background-info)}
-.tog{width:30px;height:17px;border-radius:9px;background:var(--color-text-info);position:relative;flex:none;cursor:pointer;transition:background .12s}.tog::after{content:"";position:absolute;left:2px;top:2px;width:13px;height:13px;border-radius:50%;background:#fff;transform:translateX(13px);transition:transform .12s}.tog.off{background:var(--color-border-secondary)}.tog.off::after{transform:translateX(0)}
+.tog{width:30px;height:17px;border-radius:9px;background:var(--color-text-info);position:relative;flex:none;cursor:pointer;transition:background .12s}.tog::after{content:"";position:absolute;left:2px;top:2px;width:13px;height:13px;border-radius:50%;background:var(--color-text-on-accent);transform:translateX(13px);transition:transform .12s}.tog.off{background:var(--color-border-secondary)}.tog.off::after{transform:translateX(0)}
 .lr{display:flex;align-items:center;gap:7px;padding:5px 6px;border-bottom:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);font-size:12px;cursor:pointer;transition:background .16s ease,color .16s ease,transform .12s ease}
 .lr:hover{background:var(--color-row-active)}
 /* Explicit rather than relying on source order (both selectors have equal specificity) — same
@@ -1289,7 +1289,7 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
    (4 vs 3), so it always wins regardless of source order. */
 .sift-seg-thumbed .sift-seg-opt.on,
 .sift-seg-thumbed .sift-seg-opt.on:hover{background:none;border:none}
-.sift-seg-thumb{position:absolute;top:0;bottom:0;left:0;background:var(--color-surface-raised);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-pill);box-shadow:var(--shadow-panel-subtle);transition:transform .18s ease,width .18s ease;pointer-events:none;z-index:0}
+.sift-seg-thumb{position:absolute;top:0;bottom:0;left:0;background:var(--color-surface-raised);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-pill);box-shadow:var(--shadow-panel-subtle);transition:transform .18s ease;pointer-events:none;z-index:0}
 /* Hover is text-only (color shift), no background box — retour utilisateur 2026-07-08 ("dans
    Claude il y a simplement le texte qui highlight, pas une case qui se superpose"). Transition on
    background+color so both the hover shift and the selected pill moving from one option to

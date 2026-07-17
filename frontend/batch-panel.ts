@@ -690,6 +690,7 @@ async function runBatchDiscard() {
     batchFakeSel.clear();
   } catch (err) {
     console.error("reject_batch failed", err);
+    fileNote("Échec de l'écartement — réessaie", "var(--color-text-danger)");
   } finally {
     batchRunning = false;
     await refreshHook?.();
@@ -803,9 +804,11 @@ export function handleBatchAction(el: HTMLElement, act: string, e: MouseEvent): 
       const discardIds = [...batchFakeSel];
       batchFakeSel.clear();
       void runBatchFile();
-      void rejectBatch(discardIds).catch((err: unknown) =>
-        console.error("reject_batch (combined) failed", err),
-      );
+      void rejectBatch(discardIds).catch((err: unknown) => {
+        console.error("reject_batch (combined) failed", err);
+        for (const id of discardIds) batchFakeSel.add(id);
+        fileNote("Échec de l'écartement — réessaie", "var(--color-text-danger)");
+      });
     } else if (batchSel.size) {
       void runBatchFile();
     } else if (batchFakeSel.size) {

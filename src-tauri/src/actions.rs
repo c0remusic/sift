@@ -9,7 +9,14 @@ use serde::Serialize;
 /// A raw action row as loaded for reverting: (id, track_id, type, from_path, to_path, meta).
 /// `meta` is the free-form JSON column (v7): the `tag_edit` action stores its old-tags snapshot
 /// there; every other type leaves it NULL.
-type ActionRow = (i64, Option<i64>, String, Option<String>, Option<String>, Option<String>);
+type ActionRow = (
+    i64,
+    Option<i64>,
+    String,
+    Option<String>,
+    Option<String>,
+    Option<String>,
+);
 
 /// Why a revert could not proceed (nothing is changed when this is returned).
 #[derive(Debug, Clone, PartialEq)]
@@ -200,8 +207,11 @@ pub fn set_pioneer_dir_override_for_test(dir: std::path::PathBuf) {
 /// to both `*_with_index` variants, instead of each detector re-reading the file independently.
 /// Returns `None` (logging on a real read failure) if nothing is linked or the file is unreadable
 /// — same silent-no-op contract as the detectors themselves.
-pub fn resolve_masterdb_index_if_linked(conn: &Connection) -> Option<crate::rekordbox_masterdb::RekordboxIndex> {
-    let Ok(Some(_xml_path)) = crate::settings::get(conn, crate::settings::REKORDBOX_XML_PATH) else {
+pub fn resolve_masterdb_index_if_linked(
+    conn: &Connection,
+) -> Option<crate::rekordbox_masterdb::RekordboxIndex> {
+    let Ok(Some(_xml_path)) = crate::settings::get(conn, crate::settings::REKORDBOX_XML_PATH)
+    else {
         return None;
     };
     let pioneer_dir = rekordbox_pioneer_dir()?;
@@ -209,7 +219,10 @@ pub fn resolve_masterdb_index_if_linked(conn: &Connection) -> Option<crate::reko
     match crate::rekordbox_masterdb::read_rekordbox_masterdb(&master_db_path) {
         Ok(idx) => Some(idx),
         Err(e) => {
-            log::error!("masterdb detection: {} unreadable: {e}", master_db_path.display());
+            log::error!(
+                "masterdb detection: {} unreadable: {e}",
+                master_db_path.display()
+            );
             None
         }
     }
@@ -239,7 +252,12 @@ fn normalize_masterdb_path(path: &str) -> String {
 /// detector (a single `master.db` read is cheap enough there). A caller running this AND
 /// `detect_masterdb_metadata_sync_if_linked` for the same commit should instead call
 /// `resolve_masterdb_index_if_linked` once and use the `_with_index` variants directly.
-pub fn detect_masterdb_repair_if_linked(conn: &Connection, from_path: &str, to_path: &str, action_id: i64) {
+pub fn detect_masterdb_repair_if_linked(
+    conn: &Connection,
+    from_path: &str,
+    to_path: &str,
+    action_id: i64,
+) {
     let Some(index) = resolve_masterdb_index_if_linked(conn) else {
         return;
     };
@@ -301,15 +319,24 @@ pub struct MetadataSyncValues {
 /// value becomes an M8 Tier 3 sync candidate — a value the detector records must never diverge
 /// from what the real tag write actually decided to write (see the final whole-branch review of
 /// docs/superpowers/plans/2026-07-09-m8-tier3-metadata-sync-ipc-ui.md, finding #2).
-pub fn sanitize_genre_label(genres: &[String], label: Option<&str>) -> (Option<String>, Option<String>) {
+pub fn sanitize_genre_label(
+    genres: &[String],
+    label: Option<&str>,
+) -> (Option<String>, Option<String>) {
     let joined: String = genres
         .iter()
         .map(|s| s.trim())
         .filter(|s| !s.is_empty())
         .collect::<Vec<_>>()
         .join("; ");
-    let genre = if joined.is_empty() { None } else { Some(joined) };
-    let label = label.filter(|s| !s.trim().is_empty()).map(|s| s.to_string());
+    let genre = if joined.is_empty() {
+        None
+    } else {
+        Some(joined)
+    };
+    let label = label
+        .filter(|s| !s.trim().is_empty())
+        .map(|s| s.to_string());
     (genre, label)
 }
 
@@ -337,7 +364,14 @@ pub fn detect_masterdb_metadata_sync_if_linked(
     let Some(index) = resolve_masterdb_index_if_linked(conn) else {
         return;
     };
-    detect_masterdb_metadata_sync_with_index(conn, &index, lookup_path, track_id, values, action_id);
+    detect_masterdb_metadata_sync_with_index(
+        conn,
+        &index,
+        lookup_path,
+        track_id,
+        values,
+        action_id,
+    );
 }
 
 /// Same as `detect_masterdb_metadata_sync_if_linked`, but against an already-loaded `master.db`
@@ -358,11 +392,12 @@ pub fn detect_masterdb_metadata_sync_with_index(
         .map(|t| t.track_id.as_str())
         .collect();
 
-    let (rekordbox_track_id, candidate_track_ids, status): (Option<&str>, Option<String>, &str) = match matches.len() {
-        0 => return,
-        1 => (Some(matches[0]), None, "pending"),
-        _ => (None, Some(matches.join(",")), "ambiguous"),
-    };
+    let (rekordbox_track_id, candidate_track_ids, status): (Option<&str>, Option<String>, &str) =
+        match matches.len() {
+            0 => return,
+            1 => (Some(matches[0]), None, "pending"),
+            _ => (None, Some(matches.join(",")), "ambiguous"),
+        };
 
     let result = conn.execute(
         "INSERT INTO rekordbox_masterdb_metadata_syncs
@@ -401,7 +436,14 @@ pub fn detect_masterdb_artwork_sync_if_linked(
     let Some(index) = resolve_masterdb_index_if_linked(conn) else {
         return;
     };
-    detect_masterdb_artwork_sync_with_index(conn, &index, lookup_path, track_id, cover_path, action_id);
+    detect_masterdb_artwork_sync_with_index(
+        conn,
+        &index,
+        lookup_path,
+        track_id,
+        cover_path,
+        action_id,
+    );
 }
 
 /// Same as `detect_masterdb_artwork_sync_if_linked`, but against an already-loaded `master.db`
@@ -423,11 +465,12 @@ pub fn detect_masterdb_artwork_sync_with_index(
         .map(|t| t.track_id.as_str())
         .collect();
 
-    let (rekordbox_track_id, candidate_track_ids, status): (Option<&str>, Option<String>, &str) = match matches.len() {
-        0 => return,
-        1 => (Some(matches[0]), None, "pending"),
-        _ => (None, Some(matches.join(",")), "ambiguous"),
-    };
+    let (rekordbox_track_id, candidate_track_ids, status): (Option<&str>, Option<String>, &str) =
+        match matches.len() {
+            0 => return,
+            1 => (Some(matches[0]), None, "pending"),
+            _ => (None, Some(matches.join(",")), "ambiguous"),
+        };
 
     let result = conn.execute(
         "INSERT INTO rekordbox_masterdb_artwork_syncs
@@ -437,7 +480,14 @@ pub fn detect_masterdb_artwork_sync_with_index(
              action_id=excluded.action_id, rekordbox_track_id=excluded.rekordbox_track_id,
              candidate_track_ids=excluded.candidate_track_ids, cover_path=excluded.cover_path,
              status=excluded.status, detected_at=datetime('now')",
-        params![action_id, track_id, rekordbox_track_id, candidate_track_ids, cover_path, status],
+        params![
+            action_id,
+            track_id,
+            rekordbox_track_id,
+            candidate_track_ids,
+            cover_path,
+            status
+        ],
     );
     if let Err(e) = result {
         log::error!("masterdb artwork sync detection: insert failed: {e}");
@@ -456,8 +506,14 @@ pub fn detect_masterdb_artwork_sync_with_index(
 /// `RekordboxLinkStatus.drift_detected` surface to the dashboard card. A subsequent SUCCESSFUL
 /// patch clears the flag (the drift that mattered got resolved); re-linking also clears it (the
 /// user's explicit "I've dealt with it" signal) — see `ipc_library::link_rekordbox_xml_inner`.
-pub fn repair_rekordbox_xml_if_linked(conn: &Connection, from_path: &str, to_path: &str) -> Option<usize> {
-    let path = crate::settings::get(conn, crate::settings::REKORDBOX_XML_PATH).ok().flatten()?;
+pub fn repair_rekordbox_xml_if_linked(
+    conn: &Connection,
+    from_path: &str,
+    to_path: &str,
+) -> Option<usize> {
+    let path = crate::settings::get(conn, crate::settings::REKORDBOX_XML_PATH)
+        .ok()
+        .flatten()?;
     let bytes = match std::fs::read(&path) {
         Ok(b) => b,
         Err(e) => {
@@ -500,7 +556,9 @@ pub fn repair_rekordbox_xml_batch(conn: &Connection, pairs: &[(String, String)])
     if pairs.is_empty() {
         return Some(0);
     }
-    let path = crate::settings::get(conn, crate::settings::REKORDBOX_XML_PATH).ok().flatten()?;
+    let path = crate::settings::get(conn, crate::settings::REKORDBOX_XML_PATH)
+        .ok()
+        .flatten()?;
     let bytes = match std::fs::read(&path) {
         Ok(b) => b,
         Err(e) => {
@@ -570,11 +628,14 @@ pub(crate) fn revert_one_fs(
             }
             if from_exists {
                 // Both from and to exist — genuine conflict, refuse to overwrite.
-                return Err(RevertError::Blocked(format!("destination occupied: {from}")));
+                return Err(RevertError::Blocked(format!(
+                    "destination occupied: {from}"
+                )));
             }
             if let Some(parent) = Path::new(from).parent() {
-                std::fs::create_dir_all(parent)
-                    .map_err(|e| RevertError::Blocked(format!("mkdir {}: {e}", parent.display())))?;
+                std::fs::create_dir_all(parent).map_err(|e| {
+                    RevertError::Blocked(format!("mkdir {}: {e}", parent.display()))
+                })?;
             }
             std::fs::rename(to, from).map_err(|e| RevertError::Blocked(format!("move back: {e}")))
         }
@@ -592,11 +653,14 @@ pub(crate) fn revert_one_fs(
                 return Err(RevertError::Blocked(format!("trash file gone: {to}")));
             }
             if from_exists {
-                return Err(RevertError::Blocked(format!("destination occupied: {from}")));
+                return Err(RevertError::Blocked(format!(
+                    "destination occupied: {from}"
+                )));
             }
             if let Some(parent) = Path::new(from).parent() {
-                std::fs::create_dir_all(parent)
-                    .map_err(|e| RevertError::Blocked(format!("mkdir {}: {e}", parent.display())))?;
+                std::fs::create_dir_all(parent).map_err(|e| {
+                    RevertError::Blocked(format!("mkdir {}: {e}", parent.display()))
+                })?;
             }
             let src_len = std::fs::metadata(to)
                 .map_err(|e| RevertError::Blocked(format!("stat trash file: {e}")))?
@@ -636,16 +700,20 @@ pub(crate) fn revert_one_fs(
         // Guards: refuse cleanly if the file is gone or the snapshot is missing/corrupt; restore_tags
         // saves last, so a mid-restore failure leaves the file unchanged.
         "tag_edit" => {
-            let path = from_path.ok_or_else(|| RevertError::Blocked("tag_edit missing from_path".into()))?;
+            let path = from_path
+                .ok_or_else(|| RevertError::Blocked("tag_edit missing from_path".into()))?;
             if !Path::new(path).exists() {
                 return Err(RevertError::Blocked(format!("file gone: {path}")));
             }
-            let meta = meta.ok_or_else(|| RevertError::Blocked("tag_edit missing tag snapshot".into()))?;
+            let meta =
+                meta.ok_or_else(|| RevertError::Blocked("tag_edit missing tag snapshot".into()))?;
             let snap: crate::tagging::TagsSnapshot = serde_json::from_str(meta)
                 .map_err(|e| RevertError::Blocked(format!("bad tag snapshot: {e}")))?;
             crate::tagging::restore_tags(path, &snap).map_err(RevertError::Blocked)
         }
-        other => Err(RevertError::Blocked(format!("unknown action type: {other}"))),
+        other => Err(RevertError::Blocked(format!(
+            "unknown action type: {other}"
+        ))),
     }
 }
 
@@ -660,14 +728,27 @@ pub fn revert_batch(conn: &Connection, batch_id: &str) -> Result<(), RevertError
     )?;
     let rows: Vec<ActionRow> = stmt
         .query_map(params![batch_id], |r| {
-            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?))
+            Ok((
+                r.get(0)?,
+                r.get(1)?,
+                r.get(2)?,
+                r.get(3)?,
+                r.get(4)?,
+                r.get(5)?,
+            ))
         })?
         .collect::<rusqlite::Result<_>>()?;
     if rows.is_empty() {
-        return Err(RevertError::Blocked(format!("no live actions for batch {batch_id}")));
+        return Err(RevertError::Blocked(format!(
+            "no live actions for batch {batch_id}"
+        )));
     }
 
-    let max_id = rows.iter().map(|r| r.0).max().unwrap();
+    let Some(max_id) = rows.iter().map(|r| r.0).max() else {
+        return Err(RevertError::Blocked(format!(
+            "no live actions for batch {batch_id}"
+        )));
+    };
     let track_id = rows.iter().find_map(|r| r.1);
 
     // LIFO safety: refuse if a newer live action touches the same track outside this batch.
@@ -690,7 +771,12 @@ pub fn revert_batch(conn: &Connection, batch_id: &str) -> Result<(), RevertError
     // RE-TRYABLE: the rows already reverted stay marked undone, so a re-run resumes with only the
     // still-live rows instead of blocking on an already-restored file. Fail-fast on the FS error.
     for (id, _tid, kind, from_path, to_path, meta) in &rows {
-        if let Err(e) = revert_one_fs(kind, from_path.as_deref(), to_path.as_deref(), meta.as_deref()) {
+        if let Err(e) = revert_one_fs(
+            kind,
+            from_path.as_deref(),
+            to_path.as_deref(),
+            meta.as_deref(),
+        ) {
             // Surface the underlying FS failure (it carries the OS error string, e.g. Windows
             // "Access is denied. (os error 5)") instead of letting it vanish behind the `?`. The
             // convert step's `remove_file` is the one that strands a `.aiff` next to a restored
@@ -714,7 +800,9 @@ pub fn revert_batch(conn: &Connection, batch_id: &str) -> Result<(), RevertError
     // A tag_edit-only batch is NOT a filing: it never moved the file nor set 'filed', so reverting it
     // must touch ONLY the file's tags (done above) — never flip the track to pending. Skip the whole
     // block for such a batch. (Filing batches still NEVER journal a tag action.)
-    let tag_only = rows.iter().all(|(_, _, kind, _, _, _)| kind.as_str() == "tag_edit");
+    let tag_only = rows
+        .iter()
+        .all(|(_, _, kind, _, _, _)| kind.as_str() == "tag_edit");
     if let Some(tid) = track_id {
         if !tag_only {
             conn.execute(
@@ -775,7 +863,11 @@ pub struct JournalEntry {
 /// the batch's FIRST action row — MIN id — so a convert+trash filing shows kind="convert").
 /// `session_id_filter` = Some(sid) to restrict to one session; None = all sessions.
 /// `tag_edit` batches are excluded (they have no category in the Journal view).
-pub fn list_journal(conn: &Connection, limit: i64, session_id_filter: Option<&str>) -> Vec<JournalEntry> {
+pub fn list_journal(
+    conn: &Connection,
+    limit: i64,
+    session_id_filter: Option<&str>,
+) -> Vec<JournalEntry> {
     let mut stmt = match conn.prepare(
         "SELECT a.batch_id, a.track_id, a.type, a.from_path, a.to_path, a.ts,
                 a.session_id, g.cnt
@@ -841,7 +933,11 @@ mod tests {
 
     #[test]
     fn sanitize_genre_label_drops_blank_genre_entries() {
-        let genres = vec!["Deep House".to_string(), "  ".to_string(), "House".to_string()];
+        let genres = vec![
+            "Deep House".to_string(),
+            "  ".to_string(),
+            "House".to_string(),
+        ];
         let (genre, _) = sanitize_genre_label(&genres, None);
         assert_eq!(genre, Some("Deep House; House".to_string()));
     }
@@ -871,7 +967,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let xml_path = dir.path().join("export.xml");
         std::fs::write(&xml_path, crate::rekordbox_xml::SAMPLE_XML).unwrap();
-        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+        crate::settings::set(
+            &conn,
+            crate::settings::REKORDBOX_XML_PATH,
+            xml_path.to_str().unwrap(),
+        )
+        .unwrap();
 
         // TrackID 2 in the fixture is at "C:/Music/House/deep/strings.aiff" — journal a move
         // away from that exact path (matches Location after normalization).
@@ -887,7 +988,8 @@ mod tests {
 
         let rewritten = std::fs::read_to_string(&xml_path).unwrap();
         assert!(
-            rewritten.contains("House/Deep/strings.aiff") || rewritten.contains("House%2FDeep%2Fstrings.aiff"),
+            rewritten.contains("House/Deep/strings.aiff")
+                || rewritten.contains("House%2FDeep%2Fstrings.aiff"),
             "Location patched in the linked XML file on disk"
         );
     }
@@ -910,7 +1012,12 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let xml_path = dir.path().join("export.xml");
         std::fs::write(&xml_path, crate::rekordbox_xml::SAMPLE_XML).unwrap();
-        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+        crate::settings::set(
+            &conn,
+            crate::settings::REKORDBOX_XML_PATH,
+            xml_path.to_str().unwrap(),
+        )
+        .unwrap();
         let before = std::fs::read_to_string(&xml_path).unwrap();
 
         // Same TrackID-2 path as the "on_move" test above, but journaled as `trash` this time.
@@ -925,7 +1032,10 @@ mod tests {
         .unwrap();
 
         let after = std::fs::read_to_string(&xml_path).unwrap();
-        assert_eq!(before, after, "trash must never touch the linked Rekordbox XML");
+        assert_eq!(
+            before, after,
+            "trash must never touch the linked Rekordbox XML"
+        );
     }
 
     /// FIX-7 regression: an AMBIGUOUS `patch_location` match (two collection tracks sharing a
@@ -951,10 +1061,26 @@ mod tests {
 </DJ_PLAYLISTS>
 "#;
         std::fs::write(&xml_path, dup_location_xml).unwrap();
-        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
-        assert_eq!(crate::settings::get(&conn, crate::settings::REKORDBOX_XML_DRIFT).unwrap(), None);
+        crate::settings::set(
+            &conn,
+            crate::settings::REKORDBOX_XML_PATH,
+            xml_path.to_str().unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            crate::settings::get(&conn, crate::settings::REKORDBOX_XML_DRIFT).unwrap(),
+            None
+        );
 
-        record(&conn, "b1", None, "move", Some("C:/Music/dup.mp3"), Some("C:/Music/moved.mp3")).unwrap();
+        record(
+            &conn,
+            "b1",
+            None,
+            "move",
+            Some("C:/Music/dup.mp3"),
+            Some("C:/Music/moved.mp3"),
+        )
+        .unwrap();
 
         assert_eq!(
             crate::settings::get(&conn, crate::settings::REKORDBOX_XML_DRIFT).unwrap(),
@@ -973,7 +1099,13 @@ mod tests {
         let to = dir.path().join("bin/orig.mp3");
         std::fs::create_dir_all(to.parent().unwrap()).unwrap();
         std::fs::write(&to, b"x").unwrap(); // currently at destination
-        revert_one_fs("move", Some(from.to_str().unwrap()), Some(to.to_str().unwrap()), None).unwrap();
+        revert_one_fs(
+            "move",
+            Some(from.to_str().unwrap()),
+            Some(to.to_str().unwrap()),
+            None,
+        )
+        .unwrap();
         assert!(from.exists() && !to.exists());
     }
 
@@ -985,7 +1117,12 @@ mod tests {
         std::fs::create_dir_all(to.parent().unwrap()).unwrap();
         std::fs::write(&from, b"old").unwrap(); // origin already taken → must not overwrite
         std::fs::write(&to, b"new").unwrap();
-        let err = revert_one_fs("move", Some(from.to_str().unwrap()), Some(to.to_str().unwrap()), None);
+        let err = revert_one_fs(
+            "move",
+            Some(from.to_str().unwrap()),
+            Some(to.to_str().unwrap()),
+            None,
+        );
         assert!(matches!(err, Err(RevertError::Blocked(_))));
         assert!(to.exists()); // nothing moved
     }
@@ -995,7 +1132,13 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let converted = dir.path().join("out.aiff");
         std::fs::write(&converted, b"x").unwrap();
-        revert_one_fs("convert", Some("/orig.flac"), Some(converted.to_str().unwrap()), None).unwrap();
+        revert_one_fs(
+            "convert",
+            Some("/orig.flac"),
+            Some(converted.to_str().unwrap()),
+            None,
+        )
+        .unwrap();
         assert!(!converted.exists());
     }
 
@@ -1029,7 +1172,11 @@ mod tests {
         let path = file.to_str().unwrap();
 
         // A PENDING track with a metadata row — both must survive a tag_edit revert.
-        conn.execute("INSERT INTO tracks(path, status) VALUES(?1, 'pending')", params![path]).unwrap();
+        conn.execute(
+            "INSERT INTO tracks(path, status) VALUES(?1, 'pending')",
+            params![path],
+        )
+        .unwrap();
         let tid = conn.last_insert_rowid();
         conn.execute(
             "INSERT INTO metadata(track_id, artist, title) VALUES(?1, 'orig-a', 'orig-t')",
@@ -1039,21 +1186,58 @@ mod tests {
 
         // Capture old tags, apply new ones, journal the snapshot as a tag_edit (as apply_tags does).
         let before = crate::tagging::read_tags_full(path).unwrap();
-        crate::tagging::write_tags_full(path, "NEW A", "NEW T", Some("NEW L"), Some(2030), &["Acid".to_string()], None).unwrap();
+        crate::tagging::write_tags_full(
+            path,
+            "NEW A",
+            "NEW T",
+            Some("NEW L"),
+            Some(2030),
+            &["Acid".to_string()],
+            None,
+        )
+        .unwrap();
         let meta = serde_json::to_string(&before).unwrap();
-        record_with_meta(&conn, "tg", Some(tid), "tag_edit", Some(path), None, Some(&meta)).unwrap();
+        record_with_meta(
+            &conn,
+            "tg",
+            Some(tid),
+            "tag_edit",
+            Some(path),
+            None,
+            Some(&meta),
+        )
+        .unwrap();
 
         revert_batch(&conn, "tg").unwrap();
 
         // Tags restored to the original snapshot, exactly.
         assert_eq!(crate::tagging::read_tags_full(path).unwrap(), before);
         // Status and metadata row untouched.
-        let status: String = conn.query_row("SELECT status FROM tracks WHERE id=?1", params![tid], |r| r.get(0)).unwrap();
-        assert_eq!(status, "pending", "a tag_edit revert must not change status");
-        let meta_rows: i64 = conn.query_row("SELECT count(*) FROM metadata WHERE track_id=?1", params![tid], |r| r.get(0)).unwrap();
+        let status: String = conn
+            .query_row("SELECT status FROM tracks WHERE id=?1", params![tid], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(
+            status, "pending",
+            "a tag_edit revert must not change status"
+        );
+        let meta_rows: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM metadata WHERE track_id=?1",
+                params![tid],
+                |r| r.get(0),
+            )
+            .unwrap();
         assert_eq!(meta_rows, 1, "a tag_edit revert must not drop metadata");
         // Row marked undone.
-        let live: i64 = conn.query_row("SELECT count(*) FROM actions WHERE batch_id='tg' AND undone=0", [], |r| r.get(0)).unwrap();
+        let live: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM actions WHERE batch_id='tg' AND undone=0",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
         assert_eq!(live, 0);
     }
 
@@ -1065,7 +1249,11 @@ mod tests {
     }
 
     /// Insert a filed track + its convert/move batch, with the file physically at `to`.
-    fn seed_filed(conn: &Connection, dir: &Path, batch: &str) -> (i64, std::path::PathBuf, std::path::PathBuf) {
+    fn seed_filed(
+        conn: &Connection,
+        dir: &Path,
+        batch: &str,
+    ) -> (i64, std::path::PathBuf, std::path::PathBuf) {
         conn.execute(
             "INSERT INTO tracks(path, status, folder, target_format, confidence)
              VALUES(?1, 'filed', 'House', 'aiff_16_44', 'green')",
@@ -1077,8 +1265,24 @@ mod tests {
         let to = dir.join("House/orig.mp3");
         std::fs::create_dir_all(to.parent().unwrap()).unwrap();
         std::fs::write(&to, b"x").unwrap(); // file lives at destination after filing
-        record(conn, batch, Some(track_id), "convert", Some(from.to_str().unwrap()), Some(to.to_str().unwrap())).unwrap();
-        record(conn, batch, Some(track_id), "move", Some(from.to_str().unwrap()), Some(to.to_str().unwrap())).unwrap();
+        record(
+            conn,
+            batch,
+            Some(track_id),
+            "convert",
+            Some(from.to_str().unwrap()),
+            Some(to.to_str().unwrap()),
+        )
+        .unwrap();
+        record(
+            conn,
+            batch,
+            Some(track_id),
+            "move",
+            Some(from.to_str().unwrap()),
+            Some(to.to_str().unwrap()),
+        )
+        .unwrap();
         (track_id, from, to)
     }
 
@@ -1093,19 +1297,31 @@ mod tests {
         // file moved back; status reset; folder cleared
         assert!(from.exists() && !to.exists());
         let (status, folder): (String, Option<String>) = conn
-            .query_row("SELECT status, folder FROM tracks WHERE id=?1", params![track_id], |r| Ok((r.get(0)?, r.get(1)?)))
+            .query_row(
+                "SELECT status, folder FROM tracks WHERE id=?1",
+                params![track_id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
             .unwrap();
         assert_eq!(status, "pending");
         assert_eq!(folder, None);
         // filing-time columns cleared on undo
         let (tf, cf): (Option<String>, Option<String>) = conn
-            .query_row("SELECT target_format, confidence FROM tracks WHERE id=?1", params![track_id], |r| Ok((r.get(0)?, r.get(1)?)))
+            .query_row(
+                "SELECT target_format, confidence FROM tracks WHERE id=?1",
+                params![track_id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
             .unwrap();
         assert_eq!(tf, None);
         assert_eq!(cf, None);
         // rows marked undone
         let live: i64 = conn
-            .query_row("SELECT count(*) FROM actions WHERE batch_id='b1' AND undone=0", [], |r| r.get(0))
+            .query_row(
+                "SELECT count(*) FROM actions WHERE batch_id='b1' AND undone=0",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(live, 0);
     }
@@ -1129,7 +1345,10 @@ mod tests {
         std::fs::create_dir_all(trashed.parent().unwrap()).unwrap();
         std::fs::write(&converted, b"converted-cdj").unwrap();
         std::fs::write(&trashed, b"original-flac").unwrap();
-        assert!(!source.exists(), "source location is empty after the original was trashed");
+        assert!(
+            !source.exists(),
+            "source location is empty after the original was trashed"
+        );
 
         // DB: the filed track (+ a metadata row) and the two journalled actions, real order.
         conn.execute(
@@ -1144,20 +1363,43 @@ mod tests {
             params![track_id],
         )
         .unwrap();
-        record(&conn, "bc", Some(track_id), "convert", Some(source.to_str().unwrap()), Some(converted.to_str().unwrap())).unwrap();
-        record(&conn, "bc", Some(track_id), "trash", Some(source.to_str().unwrap()), Some(trashed.to_str().unwrap())).unwrap();
+        record(
+            &conn,
+            "bc",
+            Some(track_id),
+            "convert",
+            Some(source.to_str().unwrap()),
+            Some(converted.to_str().unwrap()),
+        )
+        .unwrap();
+        record(
+            &conn,
+            "bc",
+            Some(track_id),
+            "trash",
+            Some(source.to_str().unwrap()),
+            Some(trashed.to_str().unwrap()),
+        )
+        .unwrap();
 
         revert_batch(&conn, "bc").unwrap();
 
         // Original restored to its source (content intact); converted transcode deleted; trash emptied.
         assert!(source.exists(), "original must be restored to its source");
-        assert_eq!(std::fs::read(&source).unwrap(), b"original-flac", "restored bytes are the original");
+        assert_eq!(
+            std::fs::read(&source).unwrap(),
+            b"original-flac",
+            "restored bytes are the original"
+        );
         assert!(!converted.exists(), "converted file must be deleted");
-        assert!(!trashed.exists(), "trashed original must have been moved back");
+        assert!(
+            !trashed.exists(),
+            "trashed original must have been moved back"
+        );
 
         // Track back to pending, filing columns cleared, metadata PRESERVED, all rows undone.
-        let (status, folder, tf, cf): (String, Option<String>, Option<String>, Option<String>) = conn
-            .query_row(
+        let (status, folder, tf, cf): (String, Option<String>, Option<String>, Option<String>) =
+            conn.query_row(
                 "SELECT status, folder, target_format, confidence FROM tracks WHERE id=?1",
                 params![track_id],
                 |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
@@ -1177,9 +1419,17 @@ mod tests {
             )
             .unwrap();
         assert_eq!(meta, 1, "metadata identity preserved on a filing revert");
-        assert_eq!(artist.as_deref(), Some("A"), "the identified artist survives the revert");
+        assert_eq!(
+            artist.as_deref(),
+            Some("A"),
+            "the identified artist survives the revert"
+        );
         let live: i64 = conn
-            .query_row("SELECT count(*) FROM actions WHERE batch_id='bc' AND undone=0", [], |r| r.get(0))
+            .query_row(
+                "SELECT count(*) FROM actions WHERE batch_id='bc' AND undone=0",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(live, 0, "all rows marked undone");
     }
@@ -1211,26 +1461,69 @@ mod tests {
         )
         .unwrap();
         let track_id = conn.last_insert_rowid();
-        record(&conn, "bp", Some(track_id), "convert", Some(source.to_str().unwrap()), Some(converted.to_str().unwrap())).unwrap();
-        record(&conn, "bp", Some(track_id), "trash", Some(source.to_str().unwrap()), Some(trashed.to_str().unwrap())).unwrap();
+        record(
+            &conn,
+            "bp",
+            Some(track_id),
+            "convert",
+            Some(source.to_str().unwrap()),
+            Some(converted.to_str().unwrap()),
+        )
+        .unwrap();
+        record(
+            &conn,
+            "bp",
+            Some(track_id),
+            "trash",
+            Some(source.to_str().unwrap()),
+            Some(trashed.to_str().unwrap()),
+        )
+        .unwrap();
 
         // First pass: trash reverts (original restored), convert FAILS. The partial work must be
         // PERSISTED row-by-row — trash marked undone — not discarded.
         let err = revert_batch(&conn, "bp");
-        assert!(matches!(err, Err(RevertError::Blocked(_))), "convert remove_file fails on a dir");
-        assert!(source.exists(), "the trash step already restored the original");
+        assert!(
+            matches!(err, Err(RevertError::Blocked(_))),
+            "convert remove_file fails on a dir"
+        );
+        assert!(
+            source.exists(),
+            "the trash step already restored the original"
+        );
         let trash_undone: i64 = conn
-            .query_row("SELECT undone FROM actions WHERE batch_id='bp' AND type='trash'", [], |r| r.get(0))
+            .query_row(
+                "SELECT undone FROM actions WHERE batch_id='bp' AND type='trash'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         let convert_undone: i64 = conn
-            .query_row("SELECT undone FROM actions WHERE batch_id='bp' AND type='convert'", [], |r| r.get(0))
+            .query_row(
+                "SELECT undone FROM actions WHERE batch_id='bp' AND type='convert'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
-        assert_eq!(trash_undone, 1, "the succeeded action is marked undone immediately");
-        assert_eq!(convert_undone, 0, "the failed action stays live for a retry");
+        assert_eq!(
+            trash_undone, 1,
+            "the succeeded action is marked undone immediately"
+        );
+        assert_eq!(
+            convert_undone, 0,
+            "the failed action stays live for a retry"
+        );
         let status: String = conn
-            .query_row("SELECT status FROM tracks WHERE id=?1", params![track_id], |r| r.get(0))
+            .query_row(
+                "SELECT status FROM tracks WHERE id=?1",
+                params![track_id],
+                |r| r.get(0),
+            )
             .unwrap();
-        assert_eq!(status, "filed", "status is NOT reset until the batch is fully reverted");
+        assert_eq!(
+            status, "filed",
+            "status is NOT reset until the batch is fully reverted"
+        );
 
         // Clear the FS error (the path becomes a normal file), then re-run: it RESUMES with only the
         // still-live convert row and FINISHES — no block on the already-restored trash.
@@ -1240,13 +1533,24 @@ mod tests {
         revert_batch(&conn, "bp").unwrap();
         assert!(!converted.exists(), "converted file deleted on the retry");
         let live: i64 = conn
-            .query_row("SELECT count(*) FROM actions WHERE batch_id='bp' AND undone=0", [], |r| r.get(0))
+            .query_row(
+                "SELECT count(*) FROM actions WHERE batch_id='bp' AND undone=0",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(live, 0, "all rows undone after the retry");
         let status: String = conn
-            .query_row("SELECT status FROM tracks WHERE id=?1", params![track_id], |r| r.get(0))
+            .query_row(
+                "SELECT status FROM tracks WHERE id=?1",
+                params![track_id],
+                |r| r.get(0),
+            )
             .unwrap();
-        assert_eq!(status, "pending", "track reset once the batch is fully reverted");
+        assert_eq!(
+            status, "pending",
+            "track reset once the batch is fully reverted"
+        );
     }
 
     #[test]
@@ -1264,7 +1568,10 @@ mod tests {
     #[test]
     fn revert_batch_unknown_is_blocked() {
         let conn = db();
-        assert!(matches!(revert_batch(&conn, "nope"), Err(RevertError::Blocked(_))));
+        assert!(matches!(
+            revert_batch(&conn, "nope"),
+            Err(RevertError::Blocked(_))
+        ));
     }
 
     #[test]
@@ -1280,8 +1587,20 @@ mod tests {
         assert_eq!(undone.as_deref(), Some("b2")); // newest first
 
         // b1 still live, b2 marked undone
-        let b1_live: i64 = conn.query_row("SELECT count(*) FROM actions WHERE batch_id='b1' AND undone=0", [], |r| r.get(0)).unwrap();
-        let b2_live: i64 = conn.query_row("SELECT count(*) FROM actions WHERE batch_id='b2' AND undone=0", [], |r| r.get(0)).unwrap();
+        let b1_live: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM actions WHERE batch_id='b1' AND undone=0",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let b2_live: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM actions WHERE batch_id='b2' AND undone=0",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
         assert!(b1_live > 0 && b2_live == 0);
     }
 
@@ -1307,7 +1626,11 @@ mod tests {
     /// Seed a non-conformant `.aif` filing in `dir`, SAME folder: `Track.aif` was converted into
     /// `Track.aiff` (forced extension) and the original trashed — the real `execute_file` order is
     /// `convert` then `trash`. Returns (original .aif, converted .aiff, batch_id).
-    fn seed_aif_filing(conn: &Connection, dir: &Path, batch: &str) -> (std::path::PathBuf, std::path::PathBuf) {
+    fn seed_aif_filing(
+        conn: &Connection,
+        dir: &Path,
+        batch: &str,
+    ) -> (std::path::PathBuf, std::path::PathBuf) {
         let original = dir.join("Track.aif");
         let converted = dir.join("Track.aiff");
         let trashed = dir.join(".sift-trash/1__Track.aif");
@@ -1321,8 +1644,24 @@ mod tests {
         )
         .unwrap();
         let track_id = conn.last_insert_rowid();
-        record(conn, batch, Some(track_id), "convert", Some(original.to_str().unwrap()), Some(converted.to_str().unwrap())).unwrap();
-        record(conn, batch, Some(track_id), "trash", Some(original.to_str().unwrap()), Some(trashed.to_str().unwrap())).unwrap();
+        record(
+            conn,
+            batch,
+            Some(track_id),
+            "convert",
+            Some(original.to_str().unwrap()),
+            Some(converted.to_str().unwrap()),
+        )
+        .unwrap();
+        record(
+            conn,
+            batch,
+            Some(track_id),
+            "trash",
+            Some(original.to_str().unwrap()),
+            Some(trashed.to_str().unwrap()),
+        )
+        .unwrap();
         (original, converted)
     }
 
@@ -1334,13 +1673,19 @@ mod tests {
         let conn = db();
         let dir = tempfile::tempdir().unwrap();
         let (original, converted) = seed_aif_filing(&conn, dir.path(), "ba");
-        assert!(!original.exists(), "before revert the original .aif lives in trash");
+        assert!(
+            !original.exists(),
+            "before revert the original .aif lives in trash"
+        );
 
         revert_batch(&conn, "ba").unwrap();
 
         assert!(original.exists(), "original .aif restored");
         assert_eq!(std::fs::read(&original).unwrap(), b"original-aif");
-        assert!(!converted.exists(), "converted .aiff deleted — no .aif/.aiff duplicate");
+        assert!(
+            !converted.exists(),
+            "converted .aiff deleted — no .aif/.aiff duplicate"
+        );
     }
 
     /// 2b-i — DISCRIMINATES suspicion n°1 (the analysis worker holds the freshly-filed `.aiff` open
@@ -1362,9 +1707,15 @@ mod tests {
         let res = revert_batch(&conn, "bw");
         drop(handle);
 
-        assert!(res.is_ok(), "a std-opened reader does not block the revert: {res:?}");
+        assert!(
+            res.is_ok(),
+            "a std-opened reader does not block the revert: {res:?}"
+        );
         assert!(original.exists(), "original .aif restored");
-        assert!(!converted.exists(), "converted .aiff deleted despite the open std handle");
+        assert!(
+            !converted.exists(),
+            "converted .aiff deleted despite the open std handle"
+        );
     }
 
     /// 2b-ii — PROVES the trigger. A handle opened WITHOUT share-delete (the way an external locker
@@ -1397,18 +1748,27 @@ mod tests {
 
         // The reported bug: both `.aif` (restored) and `.aiff` (undeletable) coexist in one folder.
         assert!(original.exists(), "original .aif restored from trash");
-        assert!(converted.exists(), "converted .aiff still present → the .aif/.aiff duplicate");
+        assert!(
+            converted.exists(),
+            "converted .aiff still present → the .aif/.aiff duplicate"
+        );
 
         // Release the handle and re-run: the revert RESUMES and finishes — single file remains.
         drop(handle);
         revert_batch(&conn, "bl").unwrap();
-        assert!(original.exists() && !converted.exists(), "single file once the lock is gone");
+        assert!(
+            original.exists() && !converted.exists(),
+            "single file once the lock is gone"
+        );
     }
 
     fn seed_pioneer_dir_with_fixture(dir: &std::path::Path) -> std::path::PathBuf {
         std::fs::create_dir_all(dir).unwrap();
         std::fs::copy(
-            concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/rekordbox_master.db"),
+            concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/tests/fixtures/rekordbox_master.db"
+            ),
             dir.join("master.db"),
         )
         .unwrap();
@@ -1423,12 +1783,31 @@ mod tests {
         let conn = db();
         let tmp = tempfile::tempdir().unwrap();
         let xml_path = seed_pioneer_dir_with_fixture(&tmp.path().join("pioneer"));
-        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+        crate::settings::set(
+            &conn,
+            crate::settings::REKORDBOX_XML_PATH,
+            xml_path.to_str().unwrap(),
+        )
+        .unwrap();
         // rekordbox_masterdb_repairs.action_id is a real FK to actions(id) — seed a row via
         // record_row_only (no side effects) and use its id, rather than an arbitrary literal.
-        let action_id = record_row_only(&conn, "b1", None, "move", Some("D:/FIXTURE/track1.mp3"), Some("D:/FIXTURE/renamed/track1.flac"), None).unwrap();
+        let action_id = record_row_only(
+            &conn,
+            "b1",
+            None,
+            "move",
+            Some("D:/FIXTURE/track1.mp3"),
+            Some("D:/FIXTURE/renamed/track1.flac"),
+            None,
+        )
+        .unwrap();
 
-        detect_masterdb_repair_if_linked(&conn, "D:/FIXTURE/track1.mp3", "D:/FIXTURE/renamed/track1.flac", action_id);
+        detect_masterdb_repair_if_linked(
+            &conn,
+            "D:/FIXTURE/track1.mp3",
+            "D:/FIXTURE/renamed/track1.flac",
+            action_id,
+        );
 
         let (got_action_id, track_id, candidates, status): (i64, String, Option<String>, String) = conn
             .query_row(
@@ -1448,12 +1827,35 @@ mod tests {
         let conn = db();
         let tmp = tempfile::tempdir().unwrap();
         let xml_path = seed_pioneer_dir_with_fixture(&tmp.path().join("pioneer"));
-        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
-        let action_id = record_row_only(&conn, "b1", None, "move", Some("D:/nowhere/nope.mp3"), Some("D:/somewhere/else.mp3"), None).unwrap();
+        crate::settings::set(
+            &conn,
+            crate::settings::REKORDBOX_XML_PATH,
+            xml_path.to_str().unwrap(),
+        )
+        .unwrap();
+        let action_id = record_row_only(
+            &conn,
+            "b1",
+            None,
+            "move",
+            Some("D:/nowhere/nope.mp3"),
+            Some("D:/somewhere/else.mp3"),
+            None,
+        )
+        .unwrap();
 
-        detect_masterdb_repair_if_linked(&conn, "D:/nowhere/nope.mp3", "D:/somewhere/else.mp3", action_id);
+        detect_masterdb_repair_if_linked(
+            &conn,
+            "D:/nowhere/nope.mp3",
+            "D:/somewhere/else.mp3",
+            action_id,
+        );
 
-        let count: i64 = conn.query_row("SELECT COUNT(*) FROM rekordbox_masterdb_repairs", [], |r| r.get(0)).unwrap();
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM rekordbox_masterdb_repairs", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
         assert_eq!(count, 0);
     }
 
@@ -1463,7 +1865,12 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let pioneer_dir = tmp.path().join("pioneer");
         let xml_path = seed_pioneer_dir_with_fixture(&pioneer_dir);
-        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+        crate::settings::set(
+            &conn,
+            crate::settings::REKORDBOX_XML_PATH,
+            xml_path.to_str().unwrap(),
+        )
+        .unwrap();
 
         // Make track 2's FolderPath collide with track 1's, using the manual decrypt/re-encrypt
         // primitives directly — cheaper than a full repair_track_path call for a test-only setup.
@@ -1471,7 +1878,14 @@ mod tests {
         let plaintext = crate::rekordbox_masterdb::decrypt_masterdb_for_test(&raw);
         let len = plaintext.len();
         let mut conn2 = rusqlite::Connection::open_in_memory().unwrap();
-        conn2.deserialize_read_exact(rusqlite::MAIN_DB, std::io::Cursor::new(plaintext), len, false).unwrap();
+        conn2
+            .deserialize_read_exact(
+                rusqlite::MAIN_DB,
+                std::io::Cursor::new(plaintext),
+                len,
+                false,
+            )
+            .unwrap();
         conn2
             .execute(
                 "UPDATE djmdContent SET FolderPath='D:/FIXTURE/track1.mp3' WHERE ID='40000002'",
@@ -1482,8 +1896,22 @@ mod tests {
         let raw2 = crate::rekordbox_masterdb::encrypt_masterdb_for_test(&plaintext2);
         std::fs::write(pioneer_dir.join("master.db"), raw2).unwrap();
 
-        let action_id = record_row_only(&conn, "b1", None, "move", Some("D:/FIXTURE/track1.mp3"), Some("D:/FIXTURE/renamed/track1.flac"), None).unwrap();
-        detect_masterdb_repair_if_linked(&conn, "D:/FIXTURE/track1.mp3", "D:/FIXTURE/renamed/track1.flac", action_id);
+        let action_id = record_row_only(
+            &conn,
+            "b1",
+            None,
+            "move",
+            Some("D:/FIXTURE/track1.mp3"),
+            Some("D:/FIXTURE/renamed/track1.flac"),
+            None,
+        )
+        .unwrap();
+        detect_masterdb_repair_if_linked(
+            &conn,
+            "D:/FIXTURE/track1.mp3",
+            "D:/FIXTURE/renamed/track1.flac",
+            action_id,
+        );
 
         let (track_id, candidates, status): (Option<String>, String, String) = conn
             .query_row(
@@ -1506,11 +1934,30 @@ mod tests {
         let conn = db();
         let tmp = tempfile::tempdir().unwrap();
         let xml_path = seed_pioneer_dir_with_fixture(&tmp.path().join("pioneer"));
-        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+        crate::settings::set(
+            &conn,
+            crate::settings::REKORDBOX_XML_PATH,
+            xml_path.to_str().unwrap(),
+        )
+        .unwrap();
         let native_from = r"D:\FIXTURE\track1.mp3";
-        let action_id = record_row_only(&conn, "b1", None, "move", Some(native_from), Some("D:/FIXTURE/renamed/track1.flac"), None).unwrap();
+        let action_id = record_row_only(
+            &conn,
+            "b1",
+            None,
+            "move",
+            Some(native_from),
+            Some("D:/FIXTURE/renamed/track1.flac"),
+            None,
+        )
+        .unwrap();
 
-        detect_masterdb_repair_if_linked(&conn, native_from, "D:/FIXTURE/renamed/track1.flac", action_id);
+        detect_masterdb_repair_if_linked(
+            &conn,
+            native_from,
+            "D:/FIXTURE/renamed/track1.flac",
+            action_id,
+        );
 
         let track_id: Option<String> = conn
             .query_row(
@@ -1525,9 +1972,27 @@ mod tests {
     #[test]
     fn detect_masterdb_repair_no_op_when_no_xml_linked() {
         let conn = db();
-        let action_id = record_row_only(&conn, "b1", None, "move", Some("D:/FIXTURE/track1.mp3"), Some("D:/FIXTURE/renamed/track1.flac"), None).unwrap();
-        detect_masterdb_repair_if_linked(&conn, "D:/FIXTURE/track1.mp3", "D:/FIXTURE/renamed/track1.flac", action_id);
-        let count: i64 = conn.query_row("SELECT COUNT(*) FROM rekordbox_masterdb_repairs", [], |r| r.get(0)).unwrap();
+        let action_id = record_row_only(
+            &conn,
+            "b1",
+            None,
+            "move",
+            Some("D:/FIXTURE/track1.mp3"),
+            Some("D:/FIXTURE/renamed/track1.flac"),
+            None,
+        )
+        .unwrap();
+        detect_masterdb_repair_if_linked(
+            &conn,
+            "D:/FIXTURE/track1.mp3",
+            "D:/FIXTURE/renamed/track1.flac",
+            action_id,
+        );
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM rekordbox_masterdb_repairs", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
         assert_eq!(count, 0);
     }
 
@@ -1536,18 +2001,50 @@ mod tests {
         let conn = db();
         let tmp = tempfile::tempdir().unwrap();
         let xml_path = seed_pioneer_dir_with_fixture(&tmp.path().join("pioneer"));
-        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
-        let action_id = record_row_only(&conn, "b1", None, "move", Some("D:/FIXTURE/track1.mp3"), Some("D:/FIXTURE/renamed/track1.flac"), None).unwrap();
+        crate::settings::set(
+            &conn,
+            crate::settings::REKORDBOX_XML_PATH,
+            xml_path.to_str().unwrap(),
+        )
+        .unwrap();
+        let action_id = record_row_only(
+            &conn,
+            "b1",
+            None,
+            "move",
+            Some("D:/FIXTURE/track1.mp3"),
+            Some("D:/FIXTURE/renamed/track1.flac"),
+            None,
+        )
+        .unwrap();
 
-        detect_masterdb_repair_if_linked(&conn, "D:/FIXTURE/track1.mp3", "D:/FIXTURE/renamed/track1.flac", action_id);
-        detect_masterdb_repair_if_linked(&conn, "D:/FIXTURE/track1.mp3", "D:/FIXTURE/renamed/track1.flac", action_id);
+        detect_masterdb_repair_if_linked(
+            &conn,
+            "D:/FIXTURE/track1.mp3",
+            "D:/FIXTURE/renamed/track1.flac",
+            action_id,
+        );
+        detect_masterdb_repair_if_linked(
+            &conn,
+            "D:/FIXTURE/track1.mp3",
+            "D:/FIXTURE/renamed/track1.flac",
+            action_id,
+        );
 
-        let count: i64 = conn.query_row("SELECT COUNT(*) FROM rekordbox_masterdb_repairs", [], |r| r.get(0)).unwrap();
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM rekordbox_masterdb_repairs", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
         assert_eq!(count, 1);
     }
 
     fn seed_sift_track(conn: &Connection, path: &str) -> i64 {
-        conn.execute("INSERT INTO tracks(path, status) VALUES(?1, 'pending')", params![path]).unwrap();
+        conn.execute(
+            "INSERT INTO tracks(path, status) VALUES(?1, 'pending')",
+            params![path],
+        )
+        .unwrap();
         conn.last_insert_rowid()
     }
 
@@ -1567,11 +2064,31 @@ mod tests {
         let conn = db();
         let tmp = tempfile::tempdir().unwrap();
         let xml_path = seed_pioneer_dir_with_fixture(&tmp.path().join("pioneer"));
-        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+        crate::settings::set(
+            &conn,
+            crate::settings::REKORDBOX_XML_PATH,
+            xml_path.to_str().unwrap(),
+        )
+        .unwrap();
         let track_id = seed_sift_track(&conn, "D:/FIXTURE/track1.mp3");
-        let action_id = record_row_only(&conn, "b1", Some(track_id), "tag_edit", Some("D:/FIXTURE/track1.mp3"), None, None).unwrap();
+        let action_id = record_row_only(
+            &conn,
+            "b1",
+            Some(track_id),
+            "tag_edit",
+            Some("D:/FIXTURE/track1.mp3"),
+            None,
+            None,
+        )
+        .unwrap();
 
-        detect_masterdb_metadata_sync_if_linked(&conn, "D:/FIXTURE/track1.mp3", track_id, &some_values(), action_id);
+        detect_masterdb_metadata_sync_if_linked(
+            &conn,
+            "D:/FIXTURE/track1.mp3",
+            track_id,
+            &some_values(),
+            action_id,
+        );
 
         let (got_action_id, rb_track_id, candidates, new_artist, new_title, new_label, new_year, new_genre, status): (
             i64, Option<String>, Option<String>, Option<String>, Option<String>, Option<String>, Option<i64>, Option<String>, String,
@@ -1616,12 +2133,32 @@ mod tests {
         let conn = db();
         let tmp = tempfile::tempdir().unwrap();
         let xml_path = seed_pioneer_dir_with_fixture(&tmp.path().join("pioneer"));
-        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+        crate::settings::set(
+            &conn,
+            crate::settings::REKORDBOX_XML_PATH,
+            xml_path.to_str().unwrap(),
+        )
+        .unwrap();
         let native_path = r"D:\FIXTURE\track1.mp3";
         let track_id = seed_sift_track(&conn, native_path);
-        let action_id = record_row_only(&conn, "b1", Some(track_id), "tag_edit", Some(native_path), None, None).unwrap();
+        let action_id = record_row_only(
+            &conn,
+            "b1",
+            Some(track_id),
+            "tag_edit",
+            Some(native_path),
+            None,
+            None,
+        )
+        .unwrap();
 
-        detect_masterdb_metadata_sync_if_linked(&conn, native_path, track_id, &some_values(), action_id);
+        detect_masterdb_metadata_sync_if_linked(
+            &conn,
+            native_path,
+            track_id,
+            &some_values(),
+            action_id,
+        );
 
         let rb_track_id: Option<String> = conn
             .query_row(
@@ -1638,13 +2175,39 @@ mod tests {
         let conn = db();
         let tmp = tempfile::tempdir().unwrap();
         let xml_path = seed_pioneer_dir_with_fixture(&tmp.path().join("pioneer"));
-        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+        crate::settings::set(
+            &conn,
+            crate::settings::REKORDBOX_XML_PATH,
+            xml_path.to_str().unwrap(),
+        )
+        .unwrap();
         let track_id = seed_sift_track(&conn, "D:/nowhere/nope.mp3");
-        let action_id = record_row_only(&conn, "b1", Some(track_id), "tag_edit", Some("D:/nowhere/nope.mp3"), None, None).unwrap();
+        let action_id = record_row_only(
+            &conn,
+            "b1",
+            Some(track_id),
+            "tag_edit",
+            Some("D:/nowhere/nope.mp3"),
+            None,
+            None,
+        )
+        .unwrap();
 
-        detect_masterdb_metadata_sync_if_linked(&conn, "D:/nowhere/nope.mp3", track_id, &some_values(), action_id);
+        detect_masterdb_metadata_sync_if_linked(
+            &conn,
+            "D:/nowhere/nope.mp3",
+            track_id,
+            &some_values(),
+            action_id,
+        );
 
-        let count: i64 = conn.query_row("SELECT COUNT(*) FROM rekordbox_masterdb_metadata_syncs", [], |r| r.get(0)).unwrap();
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM rekordbox_masterdb_metadata_syncs",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
         assert_eq!(count, 0);
     }
 
@@ -1654,22 +2217,54 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let pioneer_dir = tmp.path().join("pioneer");
         let xml_path = seed_pioneer_dir_with_fixture(&pioneer_dir);
-        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+        crate::settings::set(
+            &conn,
+            crate::settings::REKORDBOX_XML_PATH,
+            xml_path.to_str().unwrap(),
+        )
+        .unwrap();
 
         // Same collision technique as detect_masterdb_repair_ambiguous_on_two_matches.
         let raw = std::fs::read(pioneer_dir.join("master.db")).unwrap();
         let plaintext = crate::rekordbox_masterdb::decrypt_masterdb_for_test(&raw);
         let len = plaintext.len();
         let mut conn2 = rusqlite::Connection::open_in_memory().unwrap();
-        conn2.deserialize_read_exact(rusqlite::MAIN_DB, std::io::Cursor::new(plaintext), len, false).unwrap();
-        conn2.execute("UPDATE djmdContent SET FolderPath='D:/FIXTURE/track1.mp3' WHERE ID='40000002'", []).unwrap();
+        conn2
+            .deserialize_read_exact(
+                rusqlite::MAIN_DB,
+                std::io::Cursor::new(plaintext),
+                len,
+                false,
+            )
+            .unwrap();
+        conn2
+            .execute(
+                "UPDATE djmdContent SET FolderPath='D:/FIXTURE/track1.mp3' WHERE ID='40000002'",
+                [],
+            )
+            .unwrap();
         let plaintext2 = conn2.serialize(rusqlite::MAIN_DB).unwrap().to_vec();
         let raw2 = crate::rekordbox_masterdb::encrypt_masterdb_for_test(&plaintext2);
         std::fs::write(pioneer_dir.join("master.db"), raw2).unwrap();
 
         let track_id = seed_sift_track(&conn, "D:/FIXTURE/track1.mp3");
-        let action_id = record_row_only(&conn, "b1", Some(track_id), "tag_edit", Some("D:/FIXTURE/track1.mp3"), None, None).unwrap();
-        detect_masterdb_metadata_sync_if_linked(&conn, "D:/FIXTURE/track1.mp3", track_id, &some_values(), action_id);
+        let action_id = record_row_only(
+            &conn,
+            "b1",
+            Some(track_id),
+            "tag_edit",
+            Some("D:/FIXTURE/track1.mp3"),
+            None,
+            None,
+        )
+        .unwrap();
+        detect_masterdb_metadata_sync_if_linked(
+            &conn,
+            "D:/FIXTURE/track1.mp3",
+            track_id,
+            &some_values(),
+            action_id,
+        );
 
         let (rb_track_id, candidates, status): (Option<String>, String, String) = conn
             .query_row(
@@ -1689,9 +2284,30 @@ mod tests {
     fn detect_masterdb_metadata_sync_no_op_when_no_xml_linked() {
         let conn = db();
         let track_id = seed_sift_track(&conn, "D:/FIXTURE/track1.mp3");
-        let action_id = record_row_only(&conn, "b1", Some(track_id), "tag_edit", Some("D:/FIXTURE/track1.mp3"), None, None).unwrap();
-        detect_masterdb_metadata_sync_if_linked(&conn, "D:/FIXTURE/track1.mp3", track_id, &some_values(), action_id);
-        let count: i64 = conn.query_row("SELECT COUNT(*) FROM rekordbox_masterdb_metadata_syncs", [], |r| r.get(0)).unwrap();
+        let action_id = record_row_only(
+            &conn,
+            "b1",
+            Some(track_id),
+            "tag_edit",
+            Some("D:/FIXTURE/track1.mp3"),
+            None,
+            None,
+        )
+        .unwrap();
+        detect_masterdb_metadata_sync_if_linked(
+            &conn,
+            "D:/FIXTURE/track1.mp3",
+            track_id,
+            &some_values(),
+            action_id,
+        );
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM rekordbox_masterdb_metadata_syncs",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
         assert_eq!(count, 0);
     }
 
@@ -1700,21 +2316,78 @@ mod tests {
         let conn = db();
         let tmp = tempfile::tempdir().unwrap();
         let xml_path = seed_pioneer_dir_with_fixture(&tmp.path().join("pioneer"));
-        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+        crate::settings::set(
+            &conn,
+            crate::settings::REKORDBOX_XML_PATH,
+            xml_path.to_str().unwrap(),
+        )
+        .unwrap();
         let track_id = seed_sift_track(&conn, "D:/FIXTURE/track1.mp3");
-        let action_id_1 = record_row_only(&conn, "b1", Some(track_id), "tag_edit", Some("D:/FIXTURE/track1.mp3"), None, None).unwrap();
-        detect_masterdb_metadata_sync_if_linked(&conn, "D:/FIXTURE/track1.mp3", track_id, &some_values(), action_id_1);
+        let action_id_1 = record_row_only(
+            &conn,
+            "b1",
+            Some(track_id),
+            "tag_edit",
+            Some("D:/FIXTURE/track1.mp3"),
+            None,
+            None,
+        )
+        .unwrap();
+        detect_masterdb_metadata_sync_if_linked(
+            &conn,
+            "D:/FIXTURE/track1.mp3",
+            track_id,
+            &some_values(),
+            action_id_1,
+        );
 
         // Mark it applied, then retag again — a fresh retag must resurrect it as pending,
         // not leave the stale 'applied' row untouched.
-        conn.execute("UPDATE rekordbox_masterdb_metadata_syncs SET status='applied' WHERE track_id=?1", params![track_id]).unwrap();
-        let row_id_before: i64 = conn.query_row("SELECT id FROM rekordbox_masterdb_metadata_syncs WHERE track_id=?1", params![track_id], |r| r.get(0)).unwrap();
+        conn.execute(
+            "UPDATE rekordbox_masterdb_metadata_syncs SET status='applied' WHERE track_id=?1",
+            params![track_id],
+        )
+        .unwrap();
+        let row_id_before: i64 = conn
+            .query_row(
+                "SELECT id FROM rekordbox_masterdb_metadata_syncs WHERE track_id=?1",
+                params![track_id],
+                |r| r.get(0),
+            )
+            .unwrap();
 
-        let action_id_2 = record_row_only(&conn, "b2", Some(track_id), "tag_edit", Some("D:/FIXTURE/track1.mp3"), None, None).unwrap();
-        let new_values = MetadataSyncValues { artist: Some("New Artist".to_string()), title: None, label: None, year: None, genre: None };
-        detect_masterdb_metadata_sync_if_linked(&conn, "D:/FIXTURE/track1.mp3", track_id, &new_values, action_id_2);
+        let action_id_2 = record_row_only(
+            &conn,
+            "b2",
+            Some(track_id),
+            "tag_edit",
+            Some("D:/FIXTURE/track1.mp3"),
+            None,
+            None,
+        )
+        .unwrap();
+        let new_values = MetadataSyncValues {
+            artist: Some("New Artist".to_string()),
+            title: None,
+            label: None,
+            year: None,
+            genre: None,
+        };
+        detect_masterdb_metadata_sync_if_linked(
+            &conn,
+            "D:/FIXTURE/track1.mp3",
+            track_id,
+            &new_values,
+            action_id_2,
+        );
 
-        let count: i64 = conn.query_row("SELECT COUNT(*) FROM rekordbox_masterdb_metadata_syncs", [], |r| r.get(0)).unwrap();
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM rekordbox_masterdb_metadata_syncs",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
         assert_eq!(count, 1, "must replace, never accumulate");
         let (row_id_after, action_id, new_artist, status): (i64, i64, Option<String>, String) = conn
             .query_row(
@@ -1723,10 +2396,16 @@ mod tests {
                 |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
             )
             .unwrap();
-        assert_eq!(row_id_after, row_id_before, "id must stay stable across a replace");
+        assert_eq!(
+            row_id_after, row_id_before,
+            "id must stay stable across a replace"
+        );
         assert_eq!(action_id, action_id_2);
         assert_eq!(new_artist, Some("New Artist".to_string()));
-        assert_eq!(status, "pending", "must fall back to pending even though the previous row was applied");
+        assert_eq!(
+            status, "pending",
+            "must fall back to pending even though the previous row was applied"
+        );
     }
 
     #[test]
@@ -1734,14 +2413,38 @@ mod tests {
         let conn = db();
         let tmp = tempfile::tempdir().unwrap();
         let xml_path = seed_pioneer_dir_with_fixture(&tmp.path().join("pioneer"));
-        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+        crate::settings::set(
+            &conn,
+            crate::settings::REKORDBOX_XML_PATH,
+            xml_path.to_str().unwrap(),
+        )
+        .unwrap();
         let track_id = seed_sift_track(&conn, "D:/FIXTURE/track1.mp3");
-        let action_id = record_row_only(&conn, "b1", Some(track_id), "tag_edit", Some("D:/FIXTURE/track1.mp3"), None, None).unwrap();
+        let action_id = record_row_only(
+            &conn,
+            "b1",
+            Some(track_id),
+            "tag_edit",
+            Some("D:/FIXTURE/track1.mp3"),
+            None,
+            None,
+        )
+        .unwrap();
 
-        detect_masterdb_artwork_sync_if_linked(&conn, "D:/FIXTURE/track1.mp3", track_id, "/cache/covers/999.jpg", action_id);
+        detect_masterdb_artwork_sync_if_linked(
+            &conn,
+            "D:/FIXTURE/track1.mp3",
+            track_id,
+            "/cache/covers/999.jpg",
+            action_id,
+        );
 
         let (got_action_id, rb_track_id, candidates, cover_path, status): (
-            i64, Option<String>, Option<String>, String, String,
+            i64,
+            Option<String>,
+            Option<String>,
+            String,
+            String,
         ) = conn
             .query_row(
                 "SELECT action_id, rekordbox_track_id, candidate_track_ids, cover_path, status
@@ -1763,12 +2466,32 @@ mod tests {
         let conn = db();
         let tmp = tempfile::tempdir().unwrap();
         let xml_path = seed_pioneer_dir_with_fixture(&tmp.path().join("pioneer"));
-        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+        crate::settings::set(
+            &conn,
+            crate::settings::REKORDBOX_XML_PATH,
+            xml_path.to_str().unwrap(),
+        )
+        .unwrap();
         let native_path = r"D:\FIXTURE\track1.mp3";
         let track_id = seed_sift_track(&conn, native_path);
-        let action_id = record_row_only(&conn, "b1", Some(track_id), "tag_edit", Some(native_path), None, None).unwrap();
+        let action_id = record_row_only(
+            &conn,
+            "b1",
+            Some(track_id),
+            "tag_edit",
+            Some(native_path),
+            None,
+            None,
+        )
+        .unwrap();
 
-        detect_masterdb_artwork_sync_if_linked(&conn, native_path, track_id, "/cache/covers/999.jpg", action_id);
+        detect_masterdb_artwork_sync_if_linked(
+            &conn,
+            native_path,
+            track_id,
+            "/cache/covers/999.jpg",
+            action_id,
+        );
 
         let rb_track_id: Option<String> = conn
             .query_row(
@@ -1785,13 +2508,39 @@ mod tests {
         let conn = db();
         let tmp = tempfile::tempdir().unwrap();
         let xml_path = seed_pioneer_dir_with_fixture(&tmp.path().join("pioneer"));
-        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+        crate::settings::set(
+            &conn,
+            crate::settings::REKORDBOX_XML_PATH,
+            xml_path.to_str().unwrap(),
+        )
+        .unwrap();
         let track_id = seed_sift_track(&conn, "D:/nowhere/nope.mp3");
-        let action_id = record_row_only(&conn, "b1", Some(track_id), "tag_edit", Some("D:/nowhere/nope.mp3"), None, None).unwrap();
+        let action_id = record_row_only(
+            &conn,
+            "b1",
+            Some(track_id),
+            "tag_edit",
+            Some("D:/nowhere/nope.mp3"),
+            None,
+            None,
+        )
+        .unwrap();
 
-        detect_masterdb_artwork_sync_if_linked(&conn, "D:/nowhere/nope.mp3", track_id, "/cache/covers/999.jpg", action_id);
+        detect_masterdb_artwork_sync_if_linked(
+            &conn,
+            "D:/nowhere/nope.mp3",
+            track_id,
+            "/cache/covers/999.jpg",
+            action_id,
+        );
 
-        let count: i64 = conn.query_row("SELECT COUNT(*) FROM rekordbox_masterdb_artwork_syncs", [], |r| r.get(0)).unwrap();
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM rekordbox_masterdb_artwork_syncs",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
         assert_eq!(count, 0);
     }
 
@@ -1801,22 +2550,54 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let pioneer_dir = tmp.path().join("pioneer");
         let xml_path = seed_pioneer_dir_with_fixture(&pioneer_dir);
-        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+        crate::settings::set(
+            &conn,
+            crate::settings::REKORDBOX_XML_PATH,
+            xml_path.to_str().unwrap(),
+        )
+        .unwrap();
 
         // Same collision technique as detect_masterdb_metadata_sync_ambiguous_on_two_matches.
         let raw = std::fs::read(pioneer_dir.join("master.db")).unwrap();
         let plaintext = crate::rekordbox_masterdb::decrypt_masterdb_for_test(&raw);
         let len = plaintext.len();
         let mut conn2 = rusqlite::Connection::open_in_memory().unwrap();
-        conn2.deserialize_read_exact(rusqlite::MAIN_DB, std::io::Cursor::new(plaintext), len, false).unwrap();
-        conn2.execute("UPDATE djmdContent SET FolderPath='D:/FIXTURE/track1.mp3' WHERE ID='40000002'", []).unwrap();
+        conn2
+            .deserialize_read_exact(
+                rusqlite::MAIN_DB,
+                std::io::Cursor::new(plaintext),
+                len,
+                false,
+            )
+            .unwrap();
+        conn2
+            .execute(
+                "UPDATE djmdContent SET FolderPath='D:/FIXTURE/track1.mp3' WHERE ID='40000002'",
+                [],
+            )
+            .unwrap();
         let plaintext2 = conn2.serialize(rusqlite::MAIN_DB).unwrap().to_vec();
         let raw2 = crate::rekordbox_masterdb::encrypt_masterdb_for_test(&plaintext2);
         std::fs::write(pioneer_dir.join("master.db"), raw2).unwrap();
 
         let track_id = seed_sift_track(&conn, "D:/FIXTURE/track1.mp3");
-        let action_id = record_row_only(&conn, "b1", Some(track_id), "tag_edit", Some("D:/FIXTURE/track1.mp3"), None, None).unwrap();
-        detect_masterdb_artwork_sync_if_linked(&conn, "D:/FIXTURE/track1.mp3", track_id, "/cache/covers/999.jpg", action_id);
+        let action_id = record_row_only(
+            &conn,
+            "b1",
+            Some(track_id),
+            "tag_edit",
+            Some("D:/FIXTURE/track1.mp3"),
+            None,
+            None,
+        )
+        .unwrap();
+        detect_masterdb_artwork_sync_if_linked(
+            &conn,
+            "D:/FIXTURE/track1.mp3",
+            track_id,
+            "/cache/covers/999.jpg",
+            action_id,
+        );
 
         let (rb_track_id, candidates, status): (Option<String>, String, String) = conn
             .query_row(
@@ -1836,9 +2617,30 @@ mod tests {
     fn detect_masterdb_artwork_sync_no_op_when_no_xml_linked() {
         let conn = db();
         let track_id = seed_sift_track(&conn, "D:/FIXTURE/track1.mp3");
-        let action_id = record_row_only(&conn, "b1", Some(track_id), "tag_edit", Some("D:/FIXTURE/track1.mp3"), None, None).unwrap();
-        detect_masterdb_artwork_sync_if_linked(&conn, "D:/FIXTURE/track1.mp3", track_id, "/cache/covers/999.jpg", action_id);
-        let count: i64 = conn.query_row("SELECT COUNT(*) FROM rekordbox_masterdb_artwork_syncs", [], |r| r.get(0)).unwrap();
+        let action_id = record_row_only(
+            &conn,
+            "b1",
+            Some(track_id),
+            "tag_edit",
+            Some("D:/FIXTURE/track1.mp3"),
+            None,
+            None,
+        )
+        .unwrap();
+        detect_masterdb_artwork_sync_if_linked(
+            &conn,
+            "D:/FIXTURE/track1.mp3",
+            track_id,
+            "/cache/covers/999.jpg",
+            action_id,
+        );
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM rekordbox_masterdb_artwork_syncs",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
         assert_eq!(count, 0);
     }
 
@@ -1847,18 +2649,69 @@ mod tests {
         let conn = db();
         let tmp = tempfile::tempdir().unwrap();
         let xml_path = seed_pioneer_dir_with_fixture(&tmp.path().join("pioneer"));
-        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+        crate::settings::set(
+            &conn,
+            crate::settings::REKORDBOX_XML_PATH,
+            xml_path.to_str().unwrap(),
+        )
+        .unwrap();
         let track_id = seed_sift_track(&conn, "D:/FIXTURE/track1.mp3");
-        let action_id_1 = record_row_only(&conn, "b1", Some(track_id), "tag_edit", Some("D:/FIXTURE/track1.mp3"), None, None).unwrap();
-        detect_masterdb_artwork_sync_if_linked(&conn, "D:/FIXTURE/track1.mp3", track_id, "/cache/covers/old.jpg", action_id_1);
+        let action_id_1 = record_row_only(
+            &conn,
+            "b1",
+            Some(track_id),
+            "tag_edit",
+            Some("D:/FIXTURE/track1.mp3"),
+            None,
+            None,
+        )
+        .unwrap();
+        detect_masterdb_artwork_sync_if_linked(
+            &conn,
+            "D:/FIXTURE/track1.mp3",
+            track_id,
+            "/cache/covers/old.jpg",
+            action_id_1,
+        );
 
-        conn.execute("UPDATE rekordbox_masterdb_artwork_syncs SET status='applied' WHERE track_id=?1", params![track_id]).unwrap();
-        let row_id_before: i64 = conn.query_row("SELECT id FROM rekordbox_masterdb_artwork_syncs WHERE track_id=?1", params![track_id], |r| r.get(0)).unwrap();
+        conn.execute(
+            "UPDATE rekordbox_masterdb_artwork_syncs SET status='applied' WHERE track_id=?1",
+            params![track_id],
+        )
+        .unwrap();
+        let row_id_before: i64 = conn
+            .query_row(
+                "SELECT id FROM rekordbox_masterdb_artwork_syncs WHERE track_id=?1",
+                params![track_id],
+                |r| r.get(0),
+            )
+            .unwrap();
 
-        let action_id_2 = record_row_only(&conn, "b2", Some(track_id), "tag_edit", Some("D:/FIXTURE/track1.mp3"), None, None).unwrap();
-        detect_masterdb_artwork_sync_if_linked(&conn, "D:/FIXTURE/track1.mp3", track_id, "/cache/covers/new.jpg", action_id_2);
+        let action_id_2 = record_row_only(
+            &conn,
+            "b2",
+            Some(track_id),
+            "tag_edit",
+            Some("D:/FIXTURE/track1.mp3"),
+            None,
+            None,
+        )
+        .unwrap();
+        detect_masterdb_artwork_sync_if_linked(
+            &conn,
+            "D:/FIXTURE/track1.mp3",
+            track_id,
+            "/cache/covers/new.jpg",
+            action_id_2,
+        );
 
-        let count: i64 = conn.query_row("SELECT COUNT(*) FROM rekordbox_masterdb_artwork_syncs", [], |r| r.get(0)).unwrap();
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM rekordbox_masterdb_artwork_syncs",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
         assert_eq!(count, 1, "must replace, never accumulate");
         let (row_id_after, action_id, cover_path, status): (i64, i64, String, String) = conn
             .query_row(
@@ -1867,9 +2720,15 @@ mod tests {
                 |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
             )
             .unwrap();
-        assert_eq!(row_id_after, row_id_before, "id must stay stable across a replace");
+        assert_eq!(
+            row_id_after, row_id_before,
+            "id must stay stable across a replace"
+        );
         assert_eq!(action_id, action_id_2);
         assert_eq!(cover_path, "/cache/covers/new.jpg");
-        assert_eq!(status, "pending", "must fall back to pending even though the previous row was applied");
+        assert_eq!(
+            status, "pending",
+            "must fall back to pending even though the previous row was applied"
+        );
     }
 }

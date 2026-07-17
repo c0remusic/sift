@@ -56,8 +56,14 @@ pub struct CollectionTrack {
 /// (an ordered list of `TrackID`s, mirroring `<TRACK Key="...">` children).
 #[derive(Debug, Clone, PartialEq)]
 pub enum PlaylistNode {
-    Folder { name: String, children: Vec<PlaylistNode> },
-    Playlist { name: String, track_ids: Vec<i64> },
+    Folder {
+        name: String,
+        children: Vec<PlaylistNode>,
+    },
+    Playlist {
+        name: String,
+        track_ids: Vec<i64>,
+    },
 }
 
 /// A parsed Rekordbox XML: structured view for merge/lookup decisions, plus `raw_xml` — the
@@ -187,7 +193,10 @@ pub fn parse(xml_bytes: &[u8]) -> Result<RekordboxXml, String> {
                         push_child(
                             &mut stack,
                             &mut playlists,
-                            PlaylistNode::Playlist { name, track_ids: Vec::new() },
+                            PlaylistNode::Playlist {
+                                name,
+                                track_ids: Vec::new(),
+                            },
                         );
                     }
                     _ => {}
@@ -229,7 +238,12 @@ pub fn parse(xml_bytes: &[u8]) -> Result<RekordboxXml, String> {
         path_index.insert(path_index_key(&normalize_path(&t.location)), t.track_id);
     }
 
-    Ok(RekordboxXml { collection, playlists, raw_xml, path_index })
+    Ok(RekordboxXml {
+        collection,
+        playlists,
+        raw_xml,
+        path_index,
+    })
 }
 
 /// Handle a `<TRACK Key="...">` inside `<PLAYLISTS>`: fold it onto the current leaf playlist's
@@ -249,7 +263,10 @@ fn push_playlist_key(
         if let Some(PlaylistNode::Playlist { track_ids, .. }) = children.last_mut() {
             track_ids.push(key);
         } else {
-            children.push(PlaylistNode::Playlist { name: name.clone(), track_ids: vec![key] });
+            children.push(PlaylistNode::Playlist {
+                name: name.clone(),
+                track_ids: vec![key],
+            });
         }
     }
     Ok(())
@@ -269,7 +286,9 @@ fn push_child(
     }
 }
 
-fn collection_track_from_attrs(e: &quick_xml::events::BytesStart) -> Result<CollectionTrack, String> {
+fn collection_track_from_attrs(
+    e: &quick_xml::events::BytesStart,
+) -> Result<CollectionTrack, String> {
     let attrs = read_attrs(e)?;
     let track_id: i64 = attrs
         .get("TrackID")
@@ -332,7 +351,13 @@ pub fn merge_filed_tracks(xml: &mut RekordboxXml, filed: &[crate::library::Libra
         let name = track.title.clone();
         let artist = track.artist.clone();
 
-        insert_collection_track_raw(&mut xml.raw_xml, track_id, name.as_deref(), artist.as_deref(), &location);
+        insert_collection_track_raw(
+            &mut xml.raw_xml,
+            track_id,
+            name.as_deref(),
+            artist.as_deref(),
+            &location,
+        );
 
         xml.collection.push(CollectionTrack {
             track_id,
@@ -355,7 +380,13 @@ pub fn merge_filed_tracks(xml: &mut RekordboxXml, filed: &[crate::library::Libra
 /// closing tag, and bump the `Entries="N"` count on the `<COLLECTION>` opening tag. Every other
 /// byte of the file (including every unmodeled attribute on every OTHER `<TRACK>`) is untouched —
 /// this never re-serializes an existing row, only appends a brand-new one.
-fn insert_collection_track_raw(raw_xml: &mut String, track_id: i64, name: Option<&str>, artist: Option<&str>, location: &str) {
+fn insert_collection_track_raw(
+    raw_xml: &mut String,
+    track_id: i64,
+    name: Option<&str>,
+    artist: Option<&str>,
+    location: &str,
+) {
     let new_row = format!(
         "    <TRACK TrackID=\"{}\" Name=\"{}\" Artist=\"{}\" Location=\"{}\"/>\n",
         track_id,
@@ -394,9 +425,8 @@ fn insert_playlist_key_raw(raw_xml: &mut String, folder: &str, track_id: i64) {
             // open/close pair with the one new TRACK child, preserving every other attribute.
             let opening = line.trim_end().trim_end_matches("/>").to_string() + ">";
             let indent = leading_whitespace(&line);
-            let new_block = format!(
-                "{opening}\n{indent}  <TRACK Key=\"{track_id}\"/>\n{indent}</NODE>",
-            );
+            let new_block =
+                format!("{opening}\n{indent}  <TRACK Key=\"{track_id}\"/>\n{indent}</NODE>",);
             *raw_xml = raw_xml.replacen(line.trim_end(), &new_block, 1);
             bump_count_attr_on_line(raw_xml, &node_open_needle, "Entries");
         } else {
@@ -448,9 +478,13 @@ fn insert_before_last(raw_xml: &mut String, needle: &str, insertion: &str) {
 /// `opening_line` (the leaf playlist's own `<NODE ...>` opening line) — i.e. the FIRST `</NODE>`
 /// found after `opening_line` in the text, since a leaf playlist NODE never nests further NODEs.
 fn insert_before_matching_node_close(raw_xml: &mut String, opening_line: &str, track_id: i64) {
-    let Some(open_pos) = raw_xml.find(opening_line) else { return };
+    let Some(open_pos) = raw_xml.find(opening_line) else {
+        return;
+    };
     let search_from = open_pos + opening_line.len();
-    let Some(rel_close) = raw_xml[search_from..].find("</NODE>") else { return };
+    let Some(rel_close) = raw_xml[search_from..].find("</NODE>") else {
+        return;
+    };
     let close_pos = search_from + rel_close;
     let indent = leading_whitespace(opening_line);
     let new_line = format!("{indent}  <TRACK Key=\"{track_id}\"/>\n");
@@ -461,8 +495,12 @@ fn insert_before_matching_node_close(raw_xml: &mut String, opening_line: &str, t
 /// opening substring is `tag_prefix` (e.g. `"<COLLECTION"`) — used for `<COLLECTION Entries=...>`,
 /// which is unique in the document.
 fn bump_count_attr(raw_xml: &mut String, tag_prefix: &str, attr: &str) {
-    let Some(tag_start) = raw_xml.find(tag_prefix) else { return };
-    let Some(tag_end_rel) = raw_xml[tag_start..].find('>') else { return };
+    let Some(tag_start) = raw_xml.find(tag_prefix) else {
+        return;
+    };
+    let Some(tag_end_rel) = raw_xml[tag_start..].find('>') else {
+        return;
+    };
     let tag_end = tag_start + tag_end_rel;
     bump_count_attr_in_range(raw_xml, tag_start, tag_end, attr);
 }
@@ -471,19 +509,27 @@ fn bump_count_attr(raw_xml: &mut String, tag_prefix: &str, attr: &str) {
 /// `Name="..."` attribute) rather than by its leading prefix — used for a specific playlist
 /// `<NODE>` picked out earlier by `insert_playlist_key_raw`.
 fn bump_count_attr_on_line(raw_xml: &mut String, contains_needle: &str, attr: &str) {
-    let Some(needle_pos) = raw_xml.find(contains_needle) else { return };
+    let Some(needle_pos) = raw_xml.find(contains_needle) else {
+        return;
+    };
     // Walk back to this tag's `<` and forward to its next `>` (self-closing `/>` or plain `>`).
     let tag_start = raw_xml[..needle_pos].rfind('<').unwrap_or(needle_pos);
-    let Some(tag_end_rel) = raw_xml[tag_start..].find('>') else { return };
+    let Some(tag_end_rel) = raw_xml[tag_start..].find('>') else {
+        return;
+    };
     let tag_end = tag_start + tag_end_rel;
     bump_count_attr_in_range(raw_xml, tag_start, tag_end, attr);
 }
 
 fn bump_count_attr_in_range(raw_xml: &mut String, tag_start: usize, tag_end: usize, attr: &str) {
     let needle = format!(r#"{attr}=""#);
-    let Some(rel) = raw_xml[tag_start..tag_end].find(&needle) else { return };
+    let Some(rel) = raw_xml[tag_start..tag_end].find(&needle) else {
+        return;
+    };
     let val_start = tag_start + rel + needle.len();
-    let Some(rel_end) = raw_xml[val_start..tag_end].find('"') else { return };
+    let Some(rel_end) = raw_xml[val_start..tag_end].find('"') else {
+        return;
+    };
     let val_end = val_start + rel_end;
     if let Ok(n) = raw_xml[val_start..val_end].parse::<i64>() {
         raw_xml.replace_range(val_start..val_end, &(n + 1).to_string());
@@ -499,11 +545,16 @@ fn root_folder_children(playlists: &mut Vec<PlaylistNode>) -> &mut Vec<PlaylistN
         .iter()
         .position(|n| matches!(n, PlaylistNode::Folder { name, .. } if name == "ROOT"));
     let idx = idx.unwrap_or_else(|| {
-        playlists.push(PlaylistNode::Folder { name: "ROOT".to_string(), children: Vec::new() });
+        playlists.push(PlaylistNode::Folder {
+            name: "ROOT".to_string(),
+            children: Vec::new(),
+        });
         playlists.len() - 1
     });
     match &mut playlists[idx] {
         PlaylistNode::Folder { children, .. } => children,
+        // INVARIANT: `idx` was just found via `position()` filtered on `PlaylistNode::Folder`,
+        // or freshly pushed as a `Folder` two lines above — never a `Playlist` at this index.
         PlaylistNode::Playlist { .. } => unreachable!("ROOT is always matched as a Folder above"),
     }
 }
@@ -590,7 +641,11 @@ pub enum PatchLocationResult {
 /// that attribute's value, so every other byte of the file — including fields this module never
 /// modeled — survives untouched), and mirrored in the structured `collection`/`path_index` so
 /// subsequent `merge_filed_tracks`/`track_id_for_path` calls see the new path immediately.
-pub fn patch_location(xml: &mut RekordboxXml, from_path: &str, to_path: &str) -> PatchLocationResult {
+pub fn patch_location(
+    xml: &mut RekordboxXml,
+    from_path: &str,
+    to_path: &str,
+) -> PatchLocationResult {
     let from_norm = normalize_path(from_path);
     let Some(track_id) = xml.track_id_for_path(&from_norm) else {
         return PatchLocationResult::NotTracked;
@@ -614,10 +669,13 @@ pub fn patch_location(xml: &mut RekordboxXml, from_path: &str, to_path: &str) ->
         );
         return PatchLocationResult::Drifted;
     }
-    xml.raw_xml = xml.raw_xml.replacen(&old_location_attr, &new_location_attr, 1);
+    xml.raw_xml = xml
+        .raw_xml
+        .replacen(&old_location_attr, &new_location_attr, 1);
 
     xml.path_index.remove(&path_index_key(&from_norm));
-    xml.path_index.insert(path_index_key(&normalize_path(to_path)), track_id);
+    xml.path_index
+        .insert(path_index_key(&normalize_path(to_path)), track_id);
     track.location = new_location_value;
     PatchLocationResult::Patched
 }
@@ -713,13 +771,17 @@ mod tests {
             .iter()
             .find(|n| matches!(n, PlaylistNode::Playlist { name, .. } if name == "House"))
             .unwrap();
-        let PlaylistNode::Playlist { track_ids, .. } = house else { unreachable!() };
+        let PlaylistNode::Playlist { track_ids, .. } = house else {
+            unreachable!()
+        };
         assert_eq!(track_ids, &vec![1, 2]);
         let favorites = children
             .iter()
             .find(|n| matches!(n, PlaylistNode::Playlist { name, .. } if name == "Favorites"))
             .unwrap();
-        let PlaylistNode::Playlist { track_ids, .. } = favorites else { unreachable!() };
+        let PlaylistNode::Playlist { track_ids, .. } = favorites else {
+            unreachable!()
+        };
         assert_eq!(track_ids, &vec![2], "TrackID 2 is shared with House");
     }
 
@@ -729,7 +791,12 @@ mod tests {
         assert!(!err.is_empty());
     }
 
-    fn lib_track(path: &str, folder: &str, artist: &str, title: &str) -> crate::library::LibraryTrack {
+    fn lib_track(
+        path: &str,
+        folder: &str,
+        artist: &str,
+        title: &str,
+    ) -> crate::library::LibraryTrack {
         crate::library::LibraryTrack {
             id: 0,
             path: path.to_string(),
@@ -757,8 +824,18 @@ mod tests {
         // "C:/Music/House/deep/strings.aiff" (TrackID 2) already exists — must NOT duplicate.
         // "C:/Music/Disco/new-track.mp3" is new — must be added + filed under a "Disco" playlist.
         let filed = vec![
-            lib_track("C:/Music/House/deep/strings.aiff", "House/Deep", "Rhythim Is Rhythim", "Strings of Life"),
-            lib_track("C:/Music/Disco/new-track.mp3", "Disco", "Unknown Artist", "New Track"),
+            lib_track(
+                "C:/Music/House/deep/strings.aiff",
+                "House/Deep",
+                "Rhythim Is Rhythim",
+                "Strings of Life",
+            ),
+            lib_track(
+                "C:/Music/Disco/new-track.mp3",
+                "Disco",
+                "Unknown Artist",
+                "New Track",
+            ),
         ];
         let added = merge_filed_tracks(&mut parsed, &filed);
         assert_eq!(added, 1, "only the genuinely new track is added");
@@ -771,12 +848,16 @@ mod tests {
         assert_eq!(new_track.artist.as_deref(), Some("Unknown Artist"));
 
         // A "Disco" playlist now exists under ROOT containing the new track's TrackID.
-        let PlaylistNode::Folder { children, .. } = &parsed.playlists[0] else { panic!() };
+        let PlaylistNode::Folder { children, .. } = &parsed.playlists[0] else {
+            panic!()
+        };
         let disco = children
             .iter()
             .find(|n| matches!(n, PlaylistNode::Playlist { name, .. } if name == "Disco"))
             .expect("Disco playlist created");
-        let PlaylistNode::Playlist { track_ids, .. } = disco else { unreachable!() };
+        let PlaylistNode::Playlist { track_ids, .. } = disco else {
+            unreachable!()
+        };
         assert_eq!(track_ids, &vec![new_track.track_id]);
     }
 
@@ -784,7 +865,9 @@ mod tests {
     fn merge_never_touches_existing_untouched_playlists() {
         let mut parsed = parse(&fixture()).unwrap();
         let favorites_before = {
-            let PlaylistNode::Folder { children, .. } = &parsed.playlists[0] else { panic!() };
+            let PlaylistNode::Folder { children, .. } = &parsed.playlists[0] else {
+                panic!()
+            };
             children
                 .iter()
                 .find(|n| matches!(n, PlaylistNode::Playlist { name, .. } if name == "Favorites"))
@@ -792,14 +875,24 @@ mod tests {
         };
         // Merge in a track that's already filed under "House" (matches an EXISTING Sift-managed
         // playlist) — "Favorites" (not a Sift folder playlist) must be byte-for-byte untouched.
-        let filed = vec![lib_track("C:/Music/House/mr-fingers.mp3", "House", "Mr Fingers", "Can You Feel It")];
+        let filed = vec![lib_track(
+            "C:/Music/House/mr-fingers.mp3",
+            "House",
+            "Mr Fingers",
+            "Can You Feel It",
+        )];
         merge_filed_tracks(&mut parsed, &filed);
-        let PlaylistNode::Folder { children, .. } = &parsed.playlists[0] else { panic!() };
+        let PlaylistNode::Folder { children, .. } = &parsed.playlists[0] else {
+            panic!()
+        };
         let favorites_after = children
             .iter()
             .find(|n| matches!(n, PlaylistNode::Playlist { name, .. } if name == "Favorites"))
             .cloned();
-        assert_eq!(favorites_before, favorites_after, "non-Sift playlist untouched");
+        assert_eq!(
+            favorites_before, favorites_after,
+            "non-Sift playlist untouched"
+        );
     }
 
     #[test]
@@ -809,7 +902,10 @@ mod tests {
         let first = merge_filed_tracks(&mut parsed, &filed);
         let second = merge_filed_tracks(&mut parsed, &filed);
         assert_eq!(first, 1);
-        assert_eq!(second, 0, "re-running merge on an already-merged track adds nothing");
+        assert_eq!(
+            second, 0,
+            "re-running merge on an already-merged track adds nothing"
+        );
     }
 
     /// FIX-3 regression: a path containing a space (virtually every real track filename) must be
@@ -833,11 +929,18 @@ mod tests {
             .find(|t| t.artist.as_deref() == Some("Diana Ross"))
             .expect("new track added");
         assert!(
-            new_track.location.contains("Diana%20Ross%20-%20Love%20Hangover.mp3"),
+            new_track
+                .location
+                .contains("Diana%20Ross%20-%20Love%20Hangover.mp3"),
             "spaces percent-encoded in Location, got: {}",
             new_track.location
         );
-        assert!(new_track.location.starts_with("file://localhost/C:/Music/Disco/"), "drive letter and separators untouched");
+        assert!(
+            new_track
+                .location
+                .starts_with("file://localhost/C:/Music/Disco/"),
+            "drive letter and separators untouched"
+        );
 
         // And the lookup by the plain (unencoded) filesystem path still resolves — the encoding
         // is a write-time concern only, `normalize_path` decodes it back on read.
@@ -865,7 +968,10 @@ mod tests {
             "space percent-encoded, got: {}",
             t2.location
         );
-        assert!(parsed.raw_xml.contains("Deep%20Cuts/strings.aiff"), "raw_xml carries the encoded form");
+        assert!(
+            parsed.raw_xml.contains("Deep%20Cuts/strings.aiff"),
+            "raw_xml carries the encoded form"
+        );
     }
 
     #[test]
@@ -882,33 +988,58 @@ mod tests {
 
         // Structured view updated.
         let t2 = parsed.collection.iter().find(|t| t.track_id == 2).unwrap();
-        assert_eq!(normalize_path(&t2.location), PathBuf::from("C:/Music/House/Deep/strings.aiff"));
-        assert_eq!(parsed.track_id_for_path(Path::new("C:/Music/House/Deep/strings.aiff")), Some(2));
+        assert_eq!(
+            normalize_path(&t2.location),
+            PathBuf::from("C:/Music/House/Deep/strings.aiff")
+        );
+        assert_eq!(
+            parsed.track_id_for_path(Path::new("C:/Music/House/Deep/strings.aiff")),
+            Some(2)
+        );
         // FIX-6: the path_index lookup key is case-folded, and "deep" vs "Deep" is the ONLY
         // difference between the old and new path here — so the pre-patch (lowercase) path still
         // resolves to the same track post-patch, same as it would pre-fix for a genuinely
         // unrelated recase-only rename with no other change. This is the fix, not a leftover stale
         // pointer: see `patch_location_old_path_stops_resolving_after_a_real_move` below for the
         // case that must still return None (moving to an actually different path).
-        assert_eq!(parsed.track_id_for_path(Path::new("C:/Music/House/deep/strings.aiff")), Some(2));
+        assert_eq!(
+            parsed.track_id_for_path(Path::new("C:/Music/House/deep/strings.aiff")),
+            Some(2)
+        );
 
         // raw_xml: EXACTLY one substring differs (the Location value) — verify by diffing line
         // by line, every other line must be byte-identical, and the TrackID="2" line must still
         // contain every other original attribute untouched (Name, Artist).
         let before_lines: Vec<&str> = original_raw.lines().collect();
         let after_lines: Vec<&str> = parsed.raw_xml.lines().collect();
-        assert_eq!(before_lines.len(), after_lines.len(), "no lines added or removed");
+        assert_eq!(
+            before_lines.len(),
+            after_lines.len(),
+            "no lines added or removed"
+        );
         let mut changed_lines = 0;
         for (b, a) in before_lines.iter().zip(after_lines.iter()) {
             if b != a {
                 changed_lines += 1;
-                assert!(a.contains(r#"TrackID="2""#), "the only changed line is TrackID 2's row");
-                assert!(a.contains(r#"Name="Strings of Life""#), "Name attribute untouched");
-                assert!(a.contains(r#"Artist="Rhythim Is Rhythim""#), "Artist attribute untouched");
+                assert!(
+                    a.contains(r#"TrackID="2""#),
+                    "the only changed line is TrackID 2's row"
+                );
+                assert!(
+                    a.contains(r#"Name="Strings of Life""#),
+                    "Name attribute untouched"
+                );
+                assert!(
+                    a.contains(r#"Artist="Rhythim Is Rhythim""#),
+                    "Artist attribute untouched"
+                );
                 assert!(a.contains("Deep/strings.aiff"), "new Location present");
             }
         }
-        assert_eq!(changed_lines, 1, "exactly one line changed — the patched TRACK row");
+        assert_eq!(
+            changed_lines, 1,
+            "exactly one line changed — the patched TRACK row"
+        );
     }
 
     #[test]
@@ -942,7 +1073,10 @@ mod tests {
 
         let result = patch_location(&mut parsed, "C:/Music/dup.mp3", "C:/Music/moved.mp3");
         assert_eq!(result, PatchLocationResult::Drifted);
-        assert_eq!(parsed.raw_xml, original_raw, "nothing changed on a Drifted result");
+        assert_eq!(
+            parsed.raw_xml, original_raw,
+            "nothing changed on a Drifted result"
+        );
     }
 
     /// FIX-6 regression: `track_id_for_path` must not miss a lookup that differs from the XML's
@@ -954,8 +1088,14 @@ mod tests {
     fn track_id_for_path_matches_across_drive_letter_and_segment_casing() {
         let parsed = parse(&fixture()).unwrap();
         // Fixture Location is "file://localhost/C:/Music/House/mr-fingers.mp3" (TrackID 1).
-        assert_eq!(parsed.track_id_for_path(Path::new("c:/music/house/mr-fingers.mp3")), Some(1));
-        assert_eq!(parsed.track_id_for_path(Path::new("C:/MUSIC/HOUSE/MR-FINGERS.MP3")), Some(1));
+        assert_eq!(
+            parsed.track_id_for_path(Path::new("c:/music/house/mr-fingers.mp3")),
+            Some(1)
+        );
+        assert_eq!(
+            parsed.track_id_for_path(Path::new("C:/MUSIC/HOUSE/MR-FINGERS.MP3")),
+            Some(1)
+        );
     }
 
     /// Counterpart to the case-insensitivity fix above: moving to a genuinely DIFFERENT path (not
@@ -970,7 +1110,10 @@ mod tests {
             "C:/Music/Techno/deep/strings.aiff", // genuinely different folder, not just recased
         );
         assert_eq!(patched, PatchLocationResult::Patched);
-        assert_eq!(parsed.track_id_for_path(Path::new("C:/Music/Techno/deep/strings.aiff")), Some(2));
+        assert_eq!(
+            parsed.track_id_for_path(Path::new("C:/Music/Techno/deep/strings.aiff")),
+            Some(2)
+        );
         assert_eq!(
             parsed.track_id_for_path(Path::new("C:/Music/House/deep/strings.aiff")),
             None,
@@ -988,13 +1131,19 @@ mod tests {
         let reparsed = parse(xml_text.as_bytes()).unwrap();
 
         assert_eq!(reparsed.collection.len(), parsed.collection.len());
-        assert!(reparsed.track_id_for_path(Path::new("C:/Music/Disco/new-track.mp3")).is_some());
+        assert!(reparsed
+            .track_id_for_path(Path::new("C:/Music/Disco/new-track.mp3"))
+            .is_some());
         // Playlist tree shape preserved (ROOT → House/Favorites/Disco).
-        let PlaylistNode::Folder { children, .. } = &reparsed.playlists[0] else { panic!() };
+        let PlaylistNode::Folder { children, .. } = &reparsed.playlists[0] else {
+            panic!()
+        };
         let names: Vec<&str> = children
             .iter()
             .map(|n| match n {
-                PlaylistNode::Folder { name, .. } | PlaylistNode::Playlist { name, .. } => name.as_str(),
+                PlaylistNode::Folder { name, .. } | PlaylistNode::Playlist { name, .. } => {
+                    name.as_str()
+                }
             })
             .collect();
         assert!(names.contains(&"House"));
@@ -1042,21 +1191,33 @@ mod tests {
 
         let out = write(&parsed);
 
-        assert!(out.contains(r#"Rating="255""#), "Rating on the untouched existing track survives");
-        assert!(out.contains(r#"BPM="123.00""#), "BPM on the untouched existing track survives");
+        assert!(
+            out.contains(r#"Rating="255""#),
+            "Rating on the untouched existing track survives"
+        );
+        assert!(
+            out.contains(r#"BPM="123.00""#),
+            "BPM on the untouched existing track survives"
+        );
         assert!(
             out.contains(r#"<NODE Type="4" Name="Smart 120+ BPM" Uri="something-rekordbox-only-understands"/>"#),
             "the Type=\"4\" smart playlist node survives byte-for-byte, unparsed"
         );
 
         // And the new track/playlist ARE genuinely present (the fix isn't a no-op).
-        assert!(out.contains("new-track.mp3") || out.contains("new%2Dtrack.mp3") || out.contains("new-track"));
+        assert!(
+            out.contains("new-track.mp3")
+                || out.contains("new%2Dtrack.mp3")
+                || out.contains("new-track")
+        );
         assert!(out.contains(r#"Name="Disco""#));
 
         // The result still re-parses cleanly with everything the module DOES model intact.
         let reparsed = parse(out.as_bytes()).unwrap();
         assert_eq!(reparsed.collection.len(), 3);
-        assert!(reparsed.track_id_for_path(Path::new("C:/Music/Disco/new-track.mp3")).is_some());
+        assert!(reparsed
+            .track_id_for_path(Path::new("C:/Music/Disco/new-track.mp3"))
+            .is_some());
     }
 
     /// FIX-2 regression, narrower: writing with NO merge at all (nothing new to add) must return
@@ -1067,7 +1228,10 @@ mod tests {
         let parsed = parse(&fixture_with_unmodeled_fields()).unwrap();
         let original = parsed.raw_xml.clone();
         let out = write(&parsed);
-        assert_eq!(out, original, "write() must be a byte-identical passthrough when nothing changed");
+        assert_eq!(
+            out, original,
+            "write() must be a byte-identical passthrough when nothing changed"
+        );
     }
 
     /// FIX-2 regression: filing a new track into a folder whose playlist ALREADY EXISTS (not a
@@ -1078,11 +1242,19 @@ mod tests {
         let mut parsed = parse(&fixture_with_unmodeled_fields()).unwrap();
         // "House" playlist already exists with TrackID 1 only; file a genuinely NEW track
         // (different path than any existing collection entry) into that same folder.
-        let filed = vec![lib_track("C:/Music/House/another.mp3", "House", "Someone", "Another Track")];
+        let filed = vec![lib_track(
+            "C:/Music/House/another.mp3",
+            "House",
+            "Someone",
+            "Another Track",
+        )];
         merge_filed_tracks(&mut parsed, &filed);
 
         let out = write(&parsed);
-        assert!(out.contains(r#"Name="House" KeyType="0" Entries="2""#), "Entries bumped 1 -> 2");
+        assert!(
+            out.contains(r#"Name="House" KeyType="0" Entries="2""#),
+            "Entries bumped 1 -> 2"
+        );
         // TrackID 1 (pre-existing) and TrackID 3 (newly-added — max(1,2)+1) both present as keys.
         assert!(out.contains(r#"<TRACK Key="1"/>"#) && out.contains(r#"<TRACK Key="3"/>"#));
         assert!(

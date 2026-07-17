@@ -11,7 +11,7 @@ import { getSetting, setSetting, listBins, createBin } from "./ipc";
 import type { Bin } from "../shared/contracts";
 import { EXTERNAL_DEST_PREFIX } from "../shared/contracts";
 import { open } from "@tauri-apps/plugin-dialog";
-import { esc } from "./dom";
+import { esc, toast } from "./dom";
 
 const LIBRARY_ROOT = "library_root";
 
@@ -114,6 +114,7 @@ async function pickRoot(fldz: HTMLElement): Promise<void> {
     renderBins(fldz);
   } catch (e) {
     console.error("setSetting(library_root) failed", e);
+    toast("Échec d'enregistrement de la racine — réessaie");
   }
 }
 
@@ -153,6 +154,7 @@ async function makeBin(fldz: HTMLElement, name: string): Promise<void> {
     console.error("createBin failed", e);
     destState.creating = false;
     renderBins(fldz);
+    toast("Création du bac impossible — réessaie");
   }
 }
 

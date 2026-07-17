@@ -1,6 +1,7 @@
 //! IPC surface for the M6b library browser: read-only listing + facets of filed tracks,
 //! plus the `update_metadata` command for inline editing in the Bibliothèque.
 use crate::actions;
+use crate::db;
 use crate::filing;
 use crate::library::{self, LibraryFacets, LibraryFilter, LibraryTrack};
 use crate::metadata::{self, MetadataEdit};
@@ -14,24 +15,32 @@ pub fn list_library(
     conn: State<'_, Mutex<Connection>>,
     filter: Option<LibraryFilter>,
 ) -> Result<Vec<LibraryTrack>, String> {
-    let conn = conn.lock().map_err(|e| e.to_string())?;
+    let conn = db::lock_conn(&conn)?;
     library::list_filed(&conn, &filter.unwrap_or_default()).map_err(|e| e.to_string())
 }
 
 /// Folder + genre facet counts for the sidebar.
 #[tauri::command]
 pub fn library_folders(conn: State<'_, Mutex<Connection>>) -> Result<LibraryFacets, String> {
-    let conn = conn.lock().map_err(|e| e.to_string())?;
+    let conn = db::lock_conn(&conn)?;
     library::folder_facets(&conn).map_err(|e| e.to_string())
 }
 
 /// Plain (testable) implementation of `update_metadata`. Returns the `tag_edit` batch_id so the
 /// caller can offer a targeted undo — same contract as `apply_tags` (`ipc_filing.rs`). Also runs
 /// M8 Tier 3 metadata-sync detection (read-only) when the file is linked to Rekordbox.
-fn update_metadata_inner(conn: &Connection, track_id: i64, edit: MetadataEdit) -> Result<String, String> {
+fn update_metadata_inner(
+    conn: &Connection,
+    track_id: i64,
+    edit: MetadataEdit,
+) -> Result<String, String> {
     // (1) Look up the track path — error immediately if unknown.
     let path: String = conn
-        .query_row("SELECT path FROM tracks WHERE id=?1", rusqlite::params![track_id], |r| r.get(0))
+        .query_row(
+            "SELECT path FROM tracks WHERE id=?1",
+            rusqlite::params![track_id],
+            |r| r.get(0),
+        )
         .map_err(|_| format!("track {track_id} not found"))?;
 
     // (2) Snapshot the OLD tags BEFORE writing — same pattern as apply_tags (ipc_filing.rs).
@@ -55,8 +64,16 @@ fn update_metadata_inner(conn: &Connection, track_id: i64, edit: MetadataEdit) -
     // Bibliothèque edits had no undo path at all (see M8 Tier 3 design, "Fix du gap").
     let meta = serde_json::to_string(&snapshot).map_err(|e| e.to_string())?;
     let batch_id = filing::new_batch_id(track_id);
-    let action_id = actions::record_with_meta(conn, &batch_id, Some(track_id), "tag_edit", Some(&path), None, Some(&meta))
-        .map_err(|e| e.to_string())?;
+    let action_id = actions::record_with_meta(
+        conn,
+        &batch_id,
+        Some(track_id),
+        "tag_edit",
+        Some(&path),
+        None,
+        Some(&meta),
+    )
+    .map_err(|e| e.to_string())?;
 
     // (6) M8 Tier 3: detect (read-only) whether this track is linked to Rekordbox and needs a
     // metadata sync candidate. Never fails the edit itself.
@@ -73,7 +90,9 @@ fn update_metadata_inner(conn: &Connection, track_id: i64, edit: MetadataEdit) -
     // (7) M8 Tier 3 (pochette): only when THIS edit actually changed the cover — unlike the
     // metadata detector above, which always fires.
     if let Some(cover_path) = &edit.cover_path {
-        actions::detect_masterdb_artwork_sync_if_linked(conn, &path, track_id, cover_path, action_id);
+        actions::detect_masterdb_artwork_sync_if_linked(
+            conn, &path, track_id, cover_path, action_id,
+        );
     }
 
     Ok(batch_id)
@@ -88,7 +107,7 @@ pub fn update_metadata(
     track_id: i64,
     edit: MetadataEdit,
 ) -> Result<String, String> {
-    let conn = conn.lock().map_err(|e| e.to_string())?;
+    let conn = db::lock_conn(&conn)?;
     update_metadata_inner(&conn, track_id, edit)
 }
 
@@ -98,15 +117,17 @@ pub fn update_metadata(
 pub fn scan_library_duplicates(
     conn: State<'_, Mutex<Connection>>,
 ) -> Result<Vec<crate::dedup::DupGroup>, String> {
-    let conn = conn.lock().map_err(|e| e.to_string())?;
+    let conn = db::lock_conn(&conn)?;
     crate::dedup::scan_library_duplicates(&conn).map_err(|e| e.to_string())
 }
 
 /// Dashboard aggregate stats for the Bibliothèque (totals, lossless/mp3 split, duplicates,
 /// tracks to re-source, genre breakdown).
 #[tauri::command]
-pub fn library_stats(conn: State<'_, Mutex<Connection>>) -> Result<library::DashboardStats, String> {
-    let conn = conn.lock().map_err(|e| e.to_string())?;
+pub fn library_stats(
+    conn: State<'_, Mutex<Connection>>,
+) -> Result<library::DashboardStats, String> {
+    let conn = db::lock_conn(&conn)?;
     library::library_stats(&conn).map_err(|e| e.to_string())
 }
 
@@ -145,7 +166,9 @@ fn count_playlists(nodes: &[crate::rekordbox_xml::PlaylistNode]) -> usize {
         .iter()
         .map(|n| match n {
             crate::rekordbox_xml::PlaylistNode::Playlist { .. } => 1,
-            crate::rekordbox_xml::PlaylistNode::Folder { children, .. } => count_playlists(children),
+            crate::rekordbox_xml::PlaylistNode::Folder { children, .. } => {
+                count_playlists(children)
+            }
         })
         .sum()
 }
@@ -156,10 +179,12 @@ fn count_playlists(nodes: &[crate::rekordbox_xml::PlaylistNode]) -> usize {
 fn link_rekordbox_xml_inner(conn: &Connection, path: &str) -> Result<RekordboxLinkStatus, String> {
     let bytes = std::fs::read(path).map_err(|e| format!("lecture impossible: {e}"))?;
     let parsed = crate::rekordbox_xml::parse(&bytes)?;
-    crate::settings::set(conn, crate::settings::REKORDBOX_XML_PATH, path).map_err(|e| e.to_string())?;
+    crate::settings::set(conn, crate::settings::REKORDBOX_XML_PATH, path)
+        .map_err(|e| e.to_string())?;
     // FIX-7: (re-)linking is the user's explicit "I've dealt with it" signal — clear any drift
     // flagged against the PREVIOUSLY linked file so a stale warning doesn't linger forever.
-    crate::settings::set(conn, crate::settings::REKORDBOX_XML_DRIFT, "0").map_err(|e| e.to_string())?;
+    crate::settings::set(conn, crate::settings::REKORDBOX_XML_DRIFT, "0")
+        .map_err(|e| e.to_string())?;
     Ok(RekordboxLinkStatus {
         path: Some(path.to_string()),
         linked: true,
@@ -177,13 +202,14 @@ pub fn link_rekordbox_xml(
     conn: State<'_, Mutex<Connection>>,
     path: String,
 ) -> Result<RekordboxLinkStatus, String> {
-    let conn = conn.lock().map_err(|e| e.to_string())?;
+    let conn = db::lock_conn(&conn)?;
     link_rekordbox_xml_inner(&conn, &path)
 }
 
 /// Plain (testable) implementation of `rekordbox_status`.
 fn rekordbox_status_inner(conn: &Connection) -> Result<RekordboxLinkStatus, String> {
-    let path = crate::settings::get(conn, crate::settings::REKORDBOX_XML_PATH).map_err(|e| e.to_string())?;
+    let path = crate::settings::get(conn, crate::settings::REKORDBOX_XML_PATH)
+        .map_err(|e| e.to_string())?;
     let Some(path) = path else {
         return Ok(RekordboxLinkStatus {
             path: None,
@@ -195,7 +221,10 @@ fn rekordbox_status_inner(conn: &Connection) -> Result<RekordboxLinkStatus, Stri
         });
     };
     let drift = drift_detected(conn);
-    match std::fs::read(&path).map_err(|e| e.to_string()).and_then(|b| crate::rekordbox_xml::parse(&b)) {
+    match std::fs::read(&path)
+        .map_err(|e| e.to_string())
+        .and_then(|b| crate::rekordbox_xml::parse(&b))
+    {
         Ok(parsed) => Ok(RekordboxLinkStatus {
             path: Some(path),
             linked: true,
@@ -221,7 +250,7 @@ fn rekordbox_status_inner(conn: &Connection) -> Result<RekordboxLinkStatus, Stri
 /// reference silently; the user must explicitly re-link).
 #[tauri::command]
 pub fn rekordbox_status(conn: State<'_, Mutex<Connection>>) -> Result<RekordboxLinkStatus, String> {
-    let conn = conn.lock().map_err(|e| e.to_string())?;
+    let conn = db::lock_conn(&conn)?;
     rekordbox_status_inner(&conn)
 }
 
@@ -251,8 +280,10 @@ fn export_rekordbox_xml_inner(conn: &Connection) -> Result<RekordboxLinkStatus, 
 /// (no write attempted) if no XML is linked, or if the linked file is unreadable/corrupt — no
 /// silent recreation of an empty tree, matching the spec's fail-fast requirement.
 #[tauri::command]
-pub fn export_rekordbox_xml(conn: State<'_, Mutex<Connection>>) -> Result<RekordboxLinkStatus, String> {
-    let conn = conn.lock().map_err(|e| e.to_string())?;
+pub fn export_rekordbox_xml(
+    conn: State<'_, Mutex<Connection>>,
+) -> Result<RekordboxLinkStatus, String> {
+    let conn = db::lock_conn(&conn)?;
     export_rekordbox_xml_inner(&conn)
 }
 
@@ -269,15 +300,18 @@ pub use crate::rekordbox_repairs::{ApplyRepairOutcome, PendingMasterdbRepair};
 pub fn rekordbox_masterdb_pending_repairs(
     conn: State<'_, Mutex<Connection>>,
 ) -> Result<Vec<PendingMasterdbRepair>, String> {
-    let conn = conn.lock().map_err(|e| e.to_string())?;
+    let conn = db::lock_conn(&conn)?;
     crate::rekordbox_repairs::pending_repairs_inner(&conn)
 }
 
 /// Mark a pending/ambiguous repair as dismissed — it stops appearing in `pending_repairs`.
 /// Never applies anything.
 #[tauri::command]
-pub fn rekordbox_masterdb_dismiss_repair(conn: State<'_, Mutex<Connection>>, id: i64) -> Result<(), String> {
-    let conn = conn.lock().map_err(|e| e.to_string())?;
+pub fn rekordbox_masterdb_dismiss_repair(
+    conn: State<'_, Mutex<Connection>>,
+    id: i64,
+) -> Result<(), String> {
+    let conn = db::lock_conn(&conn)?;
     crate::rekordbox_repairs::dismiss_repair_inner(&conn, id)
 }
 
@@ -289,7 +323,7 @@ pub fn rekordbox_masterdb_resolve_ambiguous(
     id: i64,
     chosen_track_id: String,
 ) -> Result<(), String> {
-    let conn = conn.lock().map_err(|e| e.to_string())?;
+    let conn = db::lock_conn(&conn)?;
     crate::rekordbox_repairs::resolve_ambiguous_inner(&conn, id, &chosen_track_id)
 }
 
@@ -310,7 +344,7 @@ pub fn rekordbox_masterdb_apply_repairs(
         .app_data_dir()
         .map_err(|e| e.to_string())?
         .join("rekordbox-backups");
-    let conn = conn.lock().map_err(|e| e.to_string())?;
+    let conn = db::lock_conn(&conn)?;
     crate::rekordbox_repairs::apply_repairs_inner(&conn, &backup_root, &ids)
 }
 
@@ -321,8 +355,10 @@ pub use crate::rekordbox_repairs::{ApplyMetadataSyncOutcome, PendingMetadataSync
 /// Candidate `master.db` metadata syncs detected so far, excluding ones already `applied` or
 /// `dismissed`.
 #[tauri::command]
-pub fn rekordbox_masterdb_pending_metadata_syncs(conn: State<'_, Mutex<Connection>>) -> Result<Vec<PendingMetadataSync>, String> {
-    let conn = conn.lock().map_err(|e| e.to_string())?;
+pub fn rekordbox_masterdb_pending_metadata_syncs(
+    conn: State<'_, Mutex<Connection>>,
+) -> Result<Vec<PendingMetadataSync>, String> {
+    let conn = db::lock_conn(&conn)?;
     crate::rekordbox_repairs::pending_metadata_syncs_inner(&conn)
 }
 
@@ -330,8 +366,11 @@ pub fn rekordbox_masterdb_pending_metadata_syncs(conn: State<'_, Mutex<Connectio
 /// `pending_metadata_syncs`. Never applies anything. A subsequent retag of the same track still
 /// resurrects a fresh candidate (see `detect_masterdb_metadata_sync_if_linked`'s `ON CONFLICT`).
 #[tauri::command]
-pub fn rekordbox_masterdb_dismiss_metadata_sync(conn: State<'_, Mutex<Connection>>, id: i64) -> Result<(), String> {
-    let conn = conn.lock().map_err(|e| e.to_string())?;
+pub fn rekordbox_masterdb_dismiss_metadata_sync(
+    conn: State<'_, Mutex<Connection>>,
+    id: i64,
+) -> Result<(), String> {
+    let conn = db::lock_conn(&conn)?;
     crate::rekordbox_repairs::dismiss_metadata_sync_inner(&conn, id)
 }
 
@@ -344,7 +383,7 @@ pub fn rekordbox_masterdb_resolve_ambiguous_metadata_sync(
     id: i64,
     chosen_track_id: String,
 ) -> Result<(), String> {
-    let conn = conn.lock().map_err(|e| e.to_string())?;
+    let conn = db::lock_conn(&conn)?;
     crate::rekordbox_repairs::resolve_ambiguous_metadata_sync_inner(&conn, id, &chosen_track_id)
 }
 
@@ -353,9 +392,17 @@ pub fn rekordbox_masterdb_resolve_ambiguous_metadata_sync(
 /// A failure on one `id` does not stop the rest of the batch. Backups land under
 /// `app_data_dir()/rekordbox-backups/<batch timestamp>/<id>/`, same convention as Tier 1/2.
 #[tauri::command]
-pub fn rekordbox_masterdb_apply_metadata_syncs(app: AppHandle, conn: State<'_, Mutex<Connection>>, ids: Vec<i64>) -> Result<Vec<ApplyMetadataSyncOutcome>, String> {
-    let backup_root = app.path().app_data_dir().map_err(|e| e.to_string())?.join("rekordbox-backups");
-    let conn = conn.lock().map_err(|e| e.to_string())?;
+pub fn rekordbox_masterdb_apply_metadata_syncs(
+    app: AppHandle,
+    conn: State<'_, Mutex<Connection>>,
+    ids: Vec<i64>,
+) -> Result<Vec<ApplyMetadataSyncOutcome>, String> {
+    let backup_root = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| e.to_string())?
+        .join("rekordbox-backups");
+    let conn = db::lock_conn(&conn)?;
     crate::rekordbox_repairs::apply_metadata_syncs_inner(&conn, &backup_root, &ids)
 }
 
@@ -366,15 +413,20 @@ pub use crate::rekordbox_repairs::PendingArtworkSync;
 /// Candidate `master.db` artwork syncs detected so far, excluding ones already `applied` or
 /// `dismissed`.
 #[tauri::command]
-pub fn rekordbox_masterdb_pending_artwork_syncs(conn: State<'_, Mutex<Connection>>) -> Result<Vec<PendingArtworkSync>, String> {
-    let conn = conn.lock().map_err(|e| e.to_string())?;
+pub fn rekordbox_masterdb_pending_artwork_syncs(
+    conn: State<'_, Mutex<Connection>>,
+) -> Result<Vec<PendingArtworkSync>, String> {
+    let conn = db::lock_conn(&conn)?;
     crate::rekordbox_repairs::rekordbox_masterdb_pending_artwork_syncs_inner(&conn)
 }
 
 /// Mark a pending/ambiguous artwork sync as dismissed.
 #[tauri::command]
-pub fn rekordbox_masterdb_dismiss_artwork_sync(conn: State<'_, Mutex<Connection>>, id: i64) -> Result<(), String> {
-    let conn = conn.lock().map_err(|e| e.to_string())?;
+pub fn rekordbox_masterdb_dismiss_artwork_sync(
+    conn: State<'_, Mutex<Connection>>,
+    id: i64,
+) -> Result<(), String> {
+    let conn = db::lock_conn(&conn)?;
     crate::rekordbox_repairs::rekordbox_masterdb_dismiss_artwork_sync_inner(&conn, id)
 }
 
@@ -385,18 +437,34 @@ pub fn rekordbox_masterdb_resolve_ambiguous_artwork_sync(
     id: i64,
     chosen_track_id: String,
 ) -> Result<(), String> {
-    let conn = conn.lock().map_err(|e| e.to_string())?;
-    crate::rekordbox_repairs::rekordbox_masterdb_resolve_ambiguous_artwork_sync_inner(&conn, id, &chosen_track_id)
+    let conn = db::lock_conn(&conn)?;
+    crate::rekordbox_repairs::rekordbox_masterdb_resolve_ambiguous_artwork_sync_inner(
+        &conn,
+        id,
+        &chosen_track_id,
+    )
 }
 
 /// Applies the given pending/ambiguous artwork sync `id`s against the linked Rekordbox's cached
 /// artwork files, one at a time. Never invoked automatically. Backups land under
 /// `app_data_dir()/rekordbox-backups/<batch timestamp>/<id>/`, same convention as the other tiers.
 #[tauri::command]
-pub fn rekordbox_masterdb_apply_artwork_syncs(app: AppHandle, conn: State<'_, Mutex<Connection>>, ids: Vec<i64>) -> Result<Vec<crate::rekordbox_repairs::ApplyArtworkSyncOutcome>, String> {
-    let backup_root = app.path().app_data_dir().map_err(|e| e.to_string())?.join("rekordbox-backups");
-    let conn = conn.lock().map_err(|e| e.to_string())?;
-    crate::rekordbox_repairs::rekordbox_masterdb_apply_artwork_syncs_inner(&conn, &backup_root, &ids)
+pub fn rekordbox_masterdb_apply_artwork_syncs(
+    app: AppHandle,
+    conn: State<'_, Mutex<Connection>>,
+    ids: Vec<i64>,
+) -> Result<Vec<crate::rekordbox_repairs::ApplyArtworkSyncOutcome>, String> {
+    let backup_root = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| e.to_string())?
+        .join("rekordbox-backups");
+    let conn = db::lock_conn(&conn)?;
+    crate::rekordbox_repairs::rekordbox_masterdb_apply_artwork_syncs_inner(
+        &conn,
+        &backup_root,
+        &ids,
+    )
 }
 
 // ── M8 Tier 2: playlist duplicate-entry dedup ─────────────────────────────────
@@ -413,7 +481,7 @@ pub use crate::rekordbox_repairs::PlaylistDuplicateGroupDto;
 pub fn rekordbox_masterdb_scan_playlist_duplicates(
     conn: State<'_, Mutex<Connection>>,
 ) -> Result<Vec<PlaylistDuplicateGroupDto>, String> {
-    let conn = conn.lock().map_err(|e| e.to_string())?;
+    let conn = db::lock_conn(&conn)?;
     crate::rekordbox_repairs::scan_playlist_duplicates_inner(&conn)
 }
 
@@ -437,7 +505,7 @@ pub fn rekordbox_masterdb_dedup_playlist_group(
         .app_data_dir()
         .map_err(|e| e.to_string())?
         .join("rekordbox-backups");
-    let conn = conn.lock().map_err(|e| e.to_string())?;
+    let conn = db::lock_conn(&conn)?;
     crate::rekordbox_repairs::dedup_playlist_group_inner(&conn, &backup_root, group)
 }
 
@@ -453,7 +521,11 @@ mod rekordbox_tests {
 
     fn fixture(name: &str) -> Option<String> {
         let p = format!("fixtures/{name}");
-        if std::path::Path::new(&p).exists() { Some(p) } else { None }
+        if std::path::Path::new(&p).exists() {
+            Some(p)
+        } else {
+            None
+        }
     }
 
     #[test]
@@ -466,11 +538,21 @@ mod rekordbox_tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("track.mp3");
         std::fs::copy(&src, &path).unwrap();
-        crate::tagging::write_tags_full(path.to_str().unwrap(), "OLD Artist", "OLD Title", None, None, &[], None).unwrap();
+        crate::tagging::write_tags_full(
+            path.to_str().unwrap(),
+            "OLD Artist",
+            "OLD Title",
+            None,
+            None,
+            &[],
+            None,
+        )
+        .unwrap();
         conn.execute(
             "INSERT INTO tracks(path, status) VALUES(?1, 'filed')",
             rusqlite::params![path.to_str().unwrap()],
-        ).unwrap();
+        )
+        .unwrap();
         let track_id = conn.last_insert_rowid();
 
         let edit = crate::metadata::MetadataEdit {
@@ -489,7 +571,11 @@ mod rekordbox_tests {
 
         crate::actions::revert_batch(&conn, &batch_id).unwrap();
         let reverted = crate::tagging::read_tags_full(path.to_str().unwrap()).unwrap();
-        assert_eq!(reverted.artist.as_deref(), Some("OLD Artist"), "revert_batch must restore the pre-edit tags");
+        assert_eq!(
+            reverted.artist.as_deref(),
+            Some("OLD Artist"),
+            "revert_batch must restore the pre-edit tags"
+        );
     }
 
     #[test]
@@ -502,16 +588,37 @@ mod rekordbox_tests {
         let tmp = tempfile::tempdir().unwrap();
         let pioneer_dir = tmp.path().join("pioneer");
         std::fs::create_dir_all(&pioneer_dir).unwrap();
-        std::fs::copy(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/rekordbox_master.db"), pioneer_dir.join("master.db")).unwrap();
+        std::fs::copy(
+            concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/tests/fixtures/rekordbox_master.db"
+            ),
+            pioneer_dir.join("master.db"),
+        )
+        .unwrap();
         crate::actions::set_pioneer_dir_override_for_test(pioneer_dir.clone());
         let xml_path = pioneer_dir.join("masterPlaylists6.xml");
         std::fs::write(&xml_path, b"<DJ_PLAYLISTS/>").unwrap();
-        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+        crate::settings::set(
+            &conn,
+            crate::settings::REKORDBOX_XML_PATH,
+            xml_path.to_str().unwrap(),
+        )
+        .unwrap();
 
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("track1.mp3");
         std::fs::copy(&src, &path).unwrap();
-        crate::tagging::write_tags_full(path.to_str().unwrap(), "Old", "Old Title", None, None, &[], None).unwrap();
+        crate::tagging::write_tags_full(
+            path.to_str().unwrap(),
+            "Old",
+            "Old Title",
+            None,
+            None,
+            &[],
+            None,
+        )
+        .unwrap();
 
         // Patch the fixture's track_id "40000001" FolderPath to this real temp path — same
         // decrypt/re-encrypt-for-test technique as actions.rs's ambiguous-match test (Task 2) —
@@ -520,23 +627,48 @@ mod rekordbox_tests {
         let plaintext = crate::rekordbox_masterdb::decrypt_masterdb_for_test(&raw);
         let len = plaintext.len();
         let mut conn2 = rusqlite::Connection::open_in_memory().unwrap();
-        conn2.deserialize_read_exact(rusqlite::MAIN_DB, std::io::Cursor::new(plaintext), len, false).unwrap();
-        conn2.execute("UPDATE djmdContent SET FolderPath=?1 WHERE ID='40000001'", rusqlite::params![path.to_str().unwrap()]).unwrap();
+        conn2
+            .deserialize_read_exact(
+                rusqlite::MAIN_DB,
+                std::io::Cursor::new(plaintext),
+                len,
+                false,
+            )
+            .unwrap();
+        conn2
+            .execute(
+                "UPDATE djmdContent SET FolderPath=?1 WHERE ID='40000001'",
+                rusqlite::params![path.to_str().unwrap()],
+            )
+            .unwrap();
         let plaintext2 = conn2.serialize(rusqlite::MAIN_DB).unwrap().to_vec();
         let raw2 = crate::rekordbox_masterdb::encrypt_masterdb_for_test(&plaintext2);
         std::fs::write(pioneer_dir.join("master.db"), raw2).unwrap();
 
-        conn.execute("INSERT INTO tracks(path, status) VALUES(?1, 'filed')", rusqlite::params![path.to_str().unwrap()]).unwrap();
+        conn.execute(
+            "INSERT INTO tracks(path, status) VALUES(?1, 'filed')",
+            rusqlite::params![path.to_str().unwrap()],
+        )
+        .unwrap();
         let track_id = conn.last_insert_rowid();
 
         let edit = crate::metadata::MetadataEdit {
             artist: "New Artist".to_string(),
             title: "New Title".to_string(),
-            label: None, year: None, genres: vec![], cover_path: None,
+            label: None,
+            year: None,
+            genres: vec![],
+            cover_path: None,
         };
         update_metadata_inner(&conn, track_id, edit).unwrap();
 
-        let count: i64 = conn.query_row("SELECT COUNT(*) FROM rekordbox_masterdb_metadata_syncs WHERE track_id=?1", rusqlite::params![track_id], |r| r.get(0)).unwrap();
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM rekordbox_masterdb_metadata_syncs WHERE track_id=?1",
+                rusqlite::params![track_id],
+                |r| r.get(0),
+            )
+            .unwrap();
         assert_eq!(count, 1);
     }
 
@@ -550,46 +682,106 @@ mod rekordbox_tests {
         let tmp = tempfile::tempdir().unwrap();
         let pioneer_dir = tmp.path().join("pioneer");
         std::fs::create_dir_all(&pioneer_dir).unwrap();
-        std::fs::copy(concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/rekordbox_master.db"), pioneer_dir.join("master.db")).unwrap();
+        std::fs::copy(
+            concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/tests/fixtures/rekordbox_master.db"
+            ),
+            pioneer_dir.join("master.db"),
+        )
+        .unwrap();
         crate::actions::set_pioneer_dir_override_for_test(pioneer_dir.clone());
         let xml_path = pioneer_dir.join("masterPlaylists6.xml");
         std::fs::write(&xml_path, b"<DJ_PLAYLISTS/>").unwrap();
-        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+        crate::settings::set(
+            &conn,
+            crate::settings::REKORDBOX_XML_PATH,
+            xml_path.to_str().unwrap(),
+        )
+        .unwrap();
 
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("track1.mp3");
         std::fs::copy(&src, &path).unwrap();
-        crate::tagging::write_tags_full(path.to_str().unwrap(), "Old", "Old Title", None, None, &[], None).unwrap();
+        crate::tagging::write_tags_full(
+            path.to_str().unwrap(),
+            "Old",
+            "Old Title",
+            None,
+            None,
+            &[],
+            None,
+        )
+        .unwrap();
 
         let raw = std::fs::read(pioneer_dir.join("master.db")).unwrap();
         let plaintext = crate::rekordbox_masterdb::decrypt_masterdb_for_test(&raw);
         let len = plaintext.len();
         let mut conn2 = rusqlite::Connection::open_in_memory().unwrap();
-        conn2.deserialize_read_exact(rusqlite::MAIN_DB, std::io::Cursor::new(plaintext), len, false).unwrap();
-        conn2.execute("UPDATE djmdContent SET FolderPath=?1 WHERE ID='40000001'", rusqlite::params![path.to_str().unwrap()]).unwrap();
+        conn2
+            .deserialize_read_exact(
+                rusqlite::MAIN_DB,
+                std::io::Cursor::new(plaintext),
+                len,
+                false,
+            )
+            .unwrap();
+        conn2
+            .execute(
+                "UPDATE djmdContent SET FolderPath=?1 WHERE ID='40000001'",
+                rusqlite::params![path.to_str().unwrap()],
+            )
+            .unwrap();
         let plaintext2 = conn2.serialize(rusqlite::MAIN_DB).unwrap().to_vec();
         let raw2 = crate::rekordbox_masterdb::encrypt_masterdb_for_test(&plaintext2);
         std::fs::write(pioneer_dir.join("master.db"), raw2).unwrap();
 
-        conn.execute("INSERT INTO tracks(path, status) VALUES(?1, 'filed')", rusqlite::params![path.to_str().unwrap()]).unwrap();
+        conn.execute(
+            "INSERT INTO tracks(path, status) VALUES(?1, 'filed')",
+            rusqlite::params![path.to_str().unwrap()],
+        )
+        .unwrap();
         let track_id = conn.last_insert_rowid();
 
         // (1) Edit WITHOUT touching the cover — no artwork candidate expected.
         let edit_no_cover = crate::metadata::MetadataEdit {
-            artist: "New Artist".to_string(), title: "New Title".to_string(),
-            label: None, year: None, genres: vec![], cover_path: None,
+            artist: "New Artist".to_string(),
+            title: "New Title".to_string(),
+            label: None,
+            year: None,
+            genres: vec![],
+            cover_path: None,
         };
         update_metadata_inner(&conn, track_id, edit_no_cover).unwrap();
-        let count: i64 = conn.query_row("SELECT COUNT(*) FROM rekordbox_masterdb_artwork_syncs WHERE track_id=?1", rusqlite::params![track_id], |r| r.get(0)).unwrap();
-        assert_eq!(count, 0, "no cover_path in this edit — must not create an artwork sync candidate");
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM rekordbox_masterdb_artwork_syncs WHERE track_id=?1",
+                rusqlite::params![track_id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            count, 0,
+            "no cover_path in this edit — must not create an artwork sync candidate"
+        );
 
         // (2) Edit WITH a new cover — artwork candidate expected.
         let edit_with_cover = crate::metadata::MetadataEdit {
-            artist: "New Artist".to_string(), title: "New Title".to_string(),
-            label: None, year: None, genres: vec![], cover_path: Some("/cache/covers/999.jpg".to_string()),
+            artist: "New Artist".to_string(),
+            title: "New Title".to_string(),
+            label: None,
+            year: None,
+            genres: vec![],
+            cover_path: Some("/cache/covers/999.jpg".to_string()),
         };
         update_metadata_inner(&conn, track_id, edit_with_cover).unwrap();
-        let cover_path: String = conn.query_row("SELECT cover_path FROM rekordbox_masterdb_artwork_syncs WHERE track_id=?1", rusqlite::params![track_id], |r| r.get(0)).unwrap();
+        let cover_path: String = conn
+            .query_row(
+                "SELECT cover_path FROM rekordbox_masterdb_artwork_syncs WHERE track_id=?1",
+                rusqlite::params![track_id],
+                |r| r.get(0),
+            )
+            .unwrap();
         assert_eq!(cover_path, "/cache/covers/999.jpg");
     }
 
@@ -616,7 +808,10 @@ mod rekordbox_tests {
         std::fs::write(&xml_path, b"<not-even-xml").unwrap();
         let conn = db();
         let result = link_rekordbox_xml_inner(&conn, xml_path.to_str().unwrap());
-        assert!(result.is_err(), "corrupt XML must be rejected, not silently linked");
+        assert!(
+            result.is_err(),
+            "corrupt XML must be rejected, not silently linked"
+        );
         let saved = crate::settings::get(&conn, crate::settings::REKORDBOX_XML_PATH).unwrap();
         assert_eq!(saved, None, "no path persisted on a failed link");
     }
@@ -633,7 +828,10 @@ mod rekordbox_tests {
     fn export_rekordbox_xml_fails_fast_when_nothing_linked() {
         let conn = db();
         let result = export_rekordbox_xml_inner(&conn);
-        assert!(result.is_err(), "export with no linked XML must fail, not create one silently");
+        assert!(
+            result.is_err(),
+            "export with no linked XML must fail, not create one silently"
+        );
     }
 
     #[test]
@@ -642,7 +840,12 @@ mod rekordbox_tests {
         let xml_path = dir.path().join("export.xml");
         std::fs::write(&xml_path, crate::rekordbox_xml::SAMPLE_XML).unwrap();
         let conn = db();
-        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+        crate::settings::set(
+            &conn,
+            crate::settings::REKORDBOX_XML_PATH,
+            xml_path.to_str().unwrap(),
+        )
+        .unwrap();
         conn.execute(
             "INSERT INTO tracks(path, status, folder) VALUES('C:/Music/Disco/new.mp3', 'filed', 'Disco')",
             [],
@@ -665,7 +868,12 @@ mod rekordbox_tests {
         let xml_path = dir.path().join("export.xml");
         std::fs::write(&xml_path, crate::rekordbox_xml::SAMPLE_XML).unwrap();
         let conn = db();
-        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+        crate::settings::set(
+            &conn,
+            crate::settings::REKORDBOX_XML_PATH,
+            xml_path.to_str().unwrap(),
+        )
+        .unwrap();
 
         let status = rekordbox_status_inner(&conn).unwrap();
         assert!(!status.drift_detected, "no drift by default");
@@ -689,5 +897,4 @@ mod rekordbox_tests {
         assert!(!status.drift_detected, "re-linking clears prior drift");
         assert!(!rekordbox_status_inner(&conn).unwrap().drift_detected);
     }
-
 }

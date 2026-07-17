@@ -154,6 +154,11 @@ export async function renderBiblioLive() {
     ]);
   } catch (e) {
     console.error("library load failed", e);
+    content.innerHTML =
+      '<div class="h1">Bibliothèque</div>' +
+      '<div class="sift-ui-card-soft sift-ui-card-soft-pad" style="color:var(--color-text-danger)">' +
+      "Impossible de charger la Bibliothèque. Vérifie la connexion à la base et réessaie." +
+      "</div>";
     return;
   }
 

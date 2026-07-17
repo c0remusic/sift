@@ -213,8 +213,8 @@ pub fn import_paths(
                     .and_then(|n| n.to_str())
                     .unwrap_or("")
                     .to_string();
-                files_added += scanner::add_loose_file(&conn, p, &filename)
-                    .map_err(|e| e.to_string())?;
+                files_added +=
+                    scanner::add_loose_file(&conn, p, &filename).map_err(|e| e.to_string())?;
             }
         }
     }
@@ -223,7 +223,10 @@ pub fn import_paths(
     }
     app.emit("queue:changed", ()).ok();
     crate::worker::refill(&app);
-    Ok(ImportResult { files_added, folders_added })
+    Ok(ImportResult {
+        files_added,
+        folders_added,
+    })
 }
 
 #[derive(Serialize)]
@@ -234,9 +237,7 @@ pub struct AnalysisProgress {
 
 /// Background-analysis progress: how many pending tracks are already analysed, out of total.
 #[tauri::command]
-pub fn analysis_progress(
-    conn: State<'_, Mutex<Connection>>,
-) -> Result<AnalysisProgress, String> {
+pub fn analysis_progress(conn: State<'_, Mutex<Connection>>) -> Result<AnalysisProgress, String> {
     let conn = db::lock_conn(&conn)?;
     let (done, total) = crate::worker::progress(&conn).map_err(|e| e.to_string())?;
     Ok(AnalysisProgress { done, total })
@@ -257,7 +258,11 @@ pub fn analyze_path(
         // for every path that can reach analyse() — incl. spectrogram requests and tracks
         // whose cache is the empty failure sentinel.
         let known = conn
-            .query_row("SELECT 1 FROM tracks WHERE path=?1 LIMIT 1", rusqlite::params![path], |_| Ok(()))
+            .query_row(
+                "SELECT 1 FROM tracks WHERE path=?1 LIMIT 1",
+                rusqlite::params![path],
+                |_| Ok(()),
+            )
             .is_ok();
         if !known {
             return Err("unknown track path".into());
@@ -270,7 +275,12 @@ pub fn analyze_path(
             .query_row(
                 "SELECT report_json, report_cache_ver FROM tracks WHERE path=?1",
                 rusqlite::params![path],
-                |r| Ok((r.get::<_, Option<String>>(0)?.unwrap_or_default(), r.get(1)?)),
+                |r| {
+                    Ok((
+                        r.get::<_, Option<String>>(0)?.unwrap_or_default(),
+                        r.get(1)?,
+                    ))
+                },
             )
             .ok();
         if let Some((json, cache_ver)) = cached {
@@ -281,9 +291,7 @@ pub fn analyze_path(
                 // est_kbps) and fail to deserialize even at the right cache version. Treat that
                 // the same as a cache miss — fall through to a fresh decode, which self-heals the
                 // row below — instead of hard-failing analyze_path for every pre-existing track.
-                if let Ok(report) =
-                    serde_json::from_str::<crate::analysis::AnalysisReport>(&json)
-                {
+                if let Ok(report) = serde_json::from_str::<crate::analysis::AnalysisReport>(&json) {
                     if !with_spectrogram || !report.spectrogram.mag_db.is_empty() {
                         return Ok(report);
                     }
@@ -294,13 +302,16 @@ pub fn analyze_path(
     let report = crate::analysis::analyze(&path, with_spectrogram)?;
     // self-heal the cache: store the freshly-computed report (spectrogram included when
     // requested) so the next open of this track is instant either way.
-    if let Ok(conn) = conn.lock() {
-        if let Ok(json) = serde_json::to_string(&report) {
-            let _ = conn.execute(
-                "UPDATE tracks SET report_json=?2, report_cache_ver=?3 WHERE path=?1",
-                rusqlite::params![path, json, crate::analysis::REPORT_CACHE_VERSION],
-            );
+    match conn.lock() {
+        Ok(conn) => {
+            if let Ok(json) = serde_json::to_string(&report) {
+                let _ = conn.execute(
+                    "UPDATE tracks SET report_json=?2, report_cache_ver=?3 WHERE path=?1",
+                    rusqlite::params![path, json, crate::analysis::REPORT_CACHE_VERSION],
+                );
+            }
         }
+        Err(_) => log::error!("analyze_path: DB mutex poisoned, skipping report cache write"),
     }
     Ok(report)
 }
@@ -334,8 +345,12 @@ pub fn playback_url(path: String) -> Result<String, String> {
         _ => false,
     };
     if !fresh {
-        crate::encode::encode(&path, &out.to_string_lossy(), crate::encode::Target::Wav1644)
-            .map_err(|e| e.to_string())?;
+        crate::encode::encode(
+            &path,
+            &out.to_string_lossy(),
+            crate::encode::Target::Wav1644,
+        )
+        .map_err(|e| e.to_string())?;
     }
     Ok(out.to_string_lossy().to_string())
 }
