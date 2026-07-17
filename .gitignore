@@ -27,3 +27,4 @@ Thumbs.db
 
 # installed agent skills (per-machine tooling, not project code)
 .github/skills/
+Sift-Rekordbox-Backups/
