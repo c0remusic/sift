@@ -144,7 +144,10 @@ pub fn refill(app: &AppHandle) {
     let Some(worker) = app.try_state::<AnalysisWorker>() else { return };
     let ids = {
         let state = app.state::<Mutex<Connection>>();
-        let Ok(conn) = state.lock() else { return };
+        let Ok(conn) = state.lock() else {
+            log::error!("worker refill: DB connection mutex poisoned, skipping refill");
+            return;
+        };
         match select_pending(&conn) {
             Ok(v) => v,
             Err(e) => {
@@ -195,7 +198,13 @@ fn finish(inner: &Arc<(Mutex<Queue>, Condvar)>, id: i64) {
 
 fn read_path(app: &AppHandle, id: i64) -> Option<String> {
     let state = app.state::<Mutex<Connection>>();
-    let conn = state.lock().ok()?;
+    let conn = match state.lock() {
+        Ok(conn) => conn,
+        Err(_) => {
+            log::error!("worker read_path({id}): DB connection mutex poisoned");
+            return None;
+        }
+    };
     conn.query_row("SELECT path FROM tracks WHERE id=?1", rusqlite::params![id], |r| r.get(0))
         .ok()
 }
@@ -203,7 +212,12 @@ fn read_path(app: &AppHandle, id: i64) -> Option<String> {
 /// Locks the DB briefly and writes the analysis outcome for `id`.
 fn persist_result(app: &AppHandle, id: i64, path: &str, result: Result<AnalysisReport, String>) {
     let state = app.state::<Mutex<Connection>>();
-    let Ok(conn) = state.lock() else { return };
+    let Ok(conn) = state.lock() else {
+        log::error!(
+            "worker persist_result({id}, {path}): DB connection mutex poisoned, result lost"
+        );
+        return;
+    };
     let written = match &result {
         Ok(rep) => persist_report(&conn, id, rep),
         Err(e) => {
@@ -226,7 +240,20 @@ fn worker_loop(app: AppHandle, inner: Arc<(Mutex<Queue>, Condvar)>) {
             // FIX-3: collect the display spectrogram here too (bounded ~200KB, the FFT itself
             // already runs regardless of this flag — see SpectrumAccumulator::new) so it's
             // cached in report_json and the Revue spectrogram click never has to re-decode.
-            let result = analysis::analyze(&path, true);
+            // analyze() decodes arbitrary user-supplied audio files (Symphonia/FFT); catch a
+            // panic here so one corrupt file doesn't silently kill this pool thread forever.
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                analysis::analyze(&path, true)
+            }))
+            .unwrap_or_else(|payload| {
+                let msg = payload
+                    .downcast_ref::<&str>()
+                    .map(|s| s.to_string())
+                    .or_else(|| payload.downcast_ref::<String>().cloned())
+                    .unwrap_or_else(|| "unknown panic".to_string());
+                log::error!("analyze panicked for {path} (id {id}): {msg}");
+                Err(format!("analysis panicked: {msg}"))
+            });
             persist_result(&app, id, &path, result);
         }
         finish(&inner, id);

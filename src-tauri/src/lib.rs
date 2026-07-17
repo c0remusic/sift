@@ -51,6 +51,12 @@ fn extend_frame_into_client_area(window: &tauri::WebviewWindow) {
         cyTopHeight: -1,
         cyBottomHeight: -1,
     };
+    // SAFETY: `hwnd` comes from `window.hwnd()` on a live WebviewWindow owned by this
+    // process (the `let Ok(hwnd) = ... else { return }` above discards the failure case),
+    // so it is a valid, currently-open top-level window handle. `margins` is a local,
+    // fully-initialized `MARGINS` struct passed by reference for the duration of this
+    // call only. `DwmExtendFrameIntoClientArea` has no other safety preconditions beyond
+    // a valid HWND and a valid MARGINS pointer.
     unsafe {
         let _ = DwmExtendFrameIntoClientArea(hwnd, &margins);
     }
