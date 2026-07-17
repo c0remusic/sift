@@ -49,8 +49,11 @@ pub fn select_pending(conn: &Connection) -> rusqlite::Result<Vec<i64>> {
 
 /// (done, total): total = current pending; done = pending already analysed.
 pub fn progress(conn: &Connection) -> rusqlite::Result<(i64, i64)> {
-    let total: i64 =
-        conn.query_row("SELECT count(*) FROM tracks WHERE status='pending'", [], |r| r.get(0))?;
+    let total: i64 = conn.query_row(
+        "SELECT count(*) FROM tracks WHERE status='pending'",
+        [],
+        |r| r.get(0),
+    )?;
     let done: i64 = conn.query_row(
         "SELECT count(*) FROM tracks WHERE status='pending' AND analyzed_at IS NOT NULL",
         [],
@@ -141,7 +144,9 @@ pub fn init(app: &AppHandle) {
 /// Enqueues every pending, not-yet-analysed track not already queued/in-flight, then wakes
 /// the pool. Call at startup and after every `queue:changed`.
 pub fn refill(app: &AppHandle) {
-    let Some(worker) = app.try_state::<AnalysisWorker>() else { return };
+    let Some(worker) = app.try_state::<AnalysisWorker>() else {
+        return;
+    };
     let ids = {
         let state = app.state::<Mutex<Connection>>();
         let Ok(conn) = state.lock() else {
@@ -205,8 +210,12 @@ fn read_path(app: &AppHandle, id: i64) -> Option<String> {
             return None;
         }
     };
-    conn.query_row("SELECT path FROM tracks WHERE id=?1", rusqlite::params![id], |r| r.get(0))
-        .ok()
+    conn.query_row(
+        "SELECT path FROM tracks WHERE id=?1",
+        rusqlite::params![id],
+        |r| r.get(0),
+    )
+    .ok()
 }
 
 /// Locks the DB briefly and writes the analysis outcome for `id`.
@@ -269,7 +278,8 @@ mod tests {
     fn db() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
         crate::db::run_migrations(&conn).unwrap();
-        conn.execute("INSERT INTO sources (path) VALUES ('root')", []).unwrap();
+        conn.execute("INSERT INTO sources (path) VALUES ('root')", [])
+            .unwrap();
         conn
     }
 
@@ -296,7 +306,13 @@ mod tests {
             container_mismatch: false,
             est_kbps: 128,
             peaks: vec![],
-            spectrogram: Spectrogram { frames: 0, bins: 0, hz_per_bin: 0.0, sec_per_frame: 0.0, mag_db: vec![] },
+            spectrogram: Spectrogram {
+                frames: 0,
+                bins: 0,
+                hz_per_bin: 0.0,
+                sec_per_frame: 0.0,
+                mag_db: vec![],
+            },
             clip_runs: 2,
             clip_pct: 1.5,
             true_peak_dbtp: -0.3,
@@ -321,9 +337,18 @@ mod tests {
         let b = add_pending(&conn, "b.flac"); // analysed + report cached → NOT selected
         let c = add_pending(&conn, "c.flac"); // filed → NOT selected
         let d = add_pending(&conn, "d.flac"); // analysed but no report cache → selected (backfill)
-        conn.execute("UPDATE tracks SET analyzed_at=datetime('now'), report_json='{}' WHERE id=?1", [b]).unwrap();
-        conn.execute("UPDATE tracks SET status='filed' WHERE id=?1", [c]).unwrap();
-        conn.execute("UPDATE tracks SET analyzed_at=datetime('now') WHERE id=?1", [d]).unwrap();
+        conn.execute(
+            "UPDATE tracks SET analyzed_at=datetime('now'), report_json='{}' WHERE id=?1",
+            [b],
+        )
+        .unwrap();
+        conn.execute("UPDATE tracks SET status='filed' WHERE id=?1", [c])
+            .unwrap();
+        conn.execute(
+            "UPDATE tracks SET analyzed_at=datetime('now') WHERE id=?1",
+            [d],
+        )
+        .unwrap();
         assert_eq!(select_pending(&conn).unwrap(), vec![a, d]);
     }
 

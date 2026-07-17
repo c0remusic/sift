@@ -46,7 +46,10 @@ pub fn write_tags_full(
     }
     if let Some(y) = year {
         if y > 0 {
-            tag.set_date(Timestamp { year: y as u16, ..Default::default() });
+            tag.set_date(Timestamp {
+                year: y as u16,
+                ..Default::default()
+            });
         }
     }
     // Genres are joined into one field ("Deep House; House"): multiple same-key items don't
@@ -68,7 +71,10 @@ pub fn write_tags_full(
             } else {
                 MimeType::Jpeg
             };
-            let pic = Picture::unchecked(bytes).pic_type(PictureType::CoverFront).mime_type(mime).build();
+            let pic = Picture::unchecked(bytes)
+                .pic_type(PictureType::CoverFront)
+                .mime_type(mime)
+                .build();
             // Replace, don't accumulate: re-identifying a track must not leave the old cover
             // embedded alongside the new one.
             tag.remove_picture_type(PictureType::CoverFront);
@@ -181,7 +187,10 @@ pub fn restore_tags(path: &str, snap: &TagsSnapshot) -> Result<(), String> {
         None => tag.remove_key(ItemKey::Publisher),
     }
     match snap.year {
-        Some(y) if y > 0 => tag.set_date(Timestamp { year: y as u16, ..Default::default() }),
+        Some(y) if y > 0 => tag.set_date(Timestamp {
+            year: y as u16,
+            ..Default::default()
+        }),
         _ => tag.remove_date(),
     }
     match &snap.genre_joined {
@@ -197,7 +206,9 @@ pub fn restore_tags(path: &str, snap: &TagsSnapshot) -> Result<(), String> {
             other => MimeType::Unknown(other.to_string()),
         });
         let mut builder = Picture::unchecked(cov.bytes.clone()).pic_type(PictureType::CoverFront);
-        if let Some(m) = mime { builder = builder.mime_type(m); }
+        if let Some(m) = mime {
+            builder = builder.mime_type(m);
+        }
         let pic = builder.build();
         tag.push_picture(pic);
     }
@@ -287,12 +298,18 @@ mod tests {
         )
         .expect("apply new tags");
         let after_apply = read_tags_full(dst).expect("snapshot after apply");
-        assert_ne!(after_apply, before, "the apply must actually change the tags");
+        assert_ne!(
+            after_apply, before,
+            "the apply must actually change the tags"
+        );
 
         // Revert: restore the captured snapshot, then it must equal the original byte-for-byte.
         restore_tags(dst, &before).expect("restore old tags");
         let after_restore = read_tags_full(dst).expect("snapshot after restore");
-        assert_eq!(after_restore, before, "restore must reproduce the original tags exactly");
+        assert_eq!(
+            after_restore, before,
+            "restore must reproduce the original tags exactly"
+        );
     }
 
     #[test]
@@ -327,7 +344,10 @@ mod tests {
         let tag = tagged.primary_tag().expect("has tag");
         assert_eq!(tag.get_string(ItemKey::TrackArtist), Some("Larry Heard"));
         let genre = tag.get_string(ItemKey::Genre).unwrap_or("");
-        assert!(genre.contains("Deep House") && genre.contains("House"), "genre = {genre:?}");
+        assert!(
+            genre.contains("Deep House") && genre.contains("House"),
+            "genre = {genre:?}"
+        );
         assert!(!tag.pictures().is_empty(), "cover embedded");
     }
 }
@@ -338,7 +358,11 @@ mod label_year_regression {
 
     fn fixture(name: &str) -> Option<String> {
         let p = format!("fixtures/{name}");
-        if std::path::Path::new(&p).exists() { Some(p) } else { None }
+        if std::path::Path::new(&p).exists() {
+            Some(p)
+        } else {
+            None
+        }
     }
 
     // Regression test for a real bug found via annotation ("Pourquoi ça reste jaune même quand
@@ -349,12 +373,24 @@ mod label_year_regression {
     // ItemKey::Publisher consistently (write_tags_full/read_tags_full/restore_tags).
     #[test]
     fn label_roundtrips_mp3() {
-        let Some(src) = fixture("real_320.mp3") else { eprintln!("skip: no fixture"); return; };
+        let Some(src) = fixture("real_320.mp3") else {
+            eprintln!("skip: no fixture");
+            return;
+        };
         let dir = tempfile::tempdir().unwrap();
         let dst = dir.path().join("label_rt.mp3");
         std::fs::copy(&src, &dst).unwrap();
         let dst = dst.to_str().unwrap();
-        write_tags_full(dst, "Larry Heard", "Mystery of Love", Some("Permanent Vacation"), Some(2008), &["House".to_string()], None).expect("write");
+        write_tags_full(
+            dst,
+            "Larry Heard",
+            "Mystery of Love",
+            Some("Permanent Vacation"),
+            Some(2008),
+            &["House".to_string()],
+            None,
+        )
+        .expect("write");
         let snap = read_tags_full(dst).expect("read");
         assert_eq!(snap.label.as_deref(), Some("Permanent Vacation"));
         assert_eq!(snap.year, Some(2008));
@@ -362,12 +398,24 @@ mod label_year_regression {
 
     #[test]
     fn label_roundtrips_wav() {
-        let Some(src) = fixture("dual_mono.wav") else { eprintln!("skip: no fixture"); return; };
+        let Some(src) = fixture("dual_mono.wav") else {
+            eprintln!("skip: no fixture");
+            return;
+        };
         let dir = tempfile::tempdir().unwrap();
         let dst = dir.path().join("label_rt.wav");
         std::fs::copy(&src, &dst).unwrap();
         let dst = dst.to_str().unwrap();
-        write_tags_full(dst, "Larry Heard", "Mystery of Love", Some("Permanent Vacation"), Some(2008), &["House".to_string()], None).expect("write");
+        write_tags_full(
+            dst,
+            "Larry Heard",
+            "Mystery of Love",
+            Some("Permanent Vacation"),
+            Some(2008),
+            &["House".to_string()],
+            None,
+        )
+        .expect("write");
         let snap = read_tags_full(dst).expect("read");
         assert_eq!(snap.label.as_deref(), Some("Permanent Vacation"));
         assert_eq!(snap.year, Some(2008));

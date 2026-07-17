@@ -18,16 +18,23 @@ pub struct SourceMatch {
 }
 
 fn frontend_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("..").join("frontend")
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("..")
+        .join("frontend")
 }
 
 fn walk(dir: &Path, out: &mut Vec<PathBuf>) {
-    let Ok(entries) = std::fs::read_dir(dir) else { return };
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return;
+    };
     for entry in entries.flatten() {
         let path = entry.path();
         if path.is_dir() {
             walk(&path, out);
-        } else if matches!(path.extension().and_then(|e| e.to_str()), Some("ts") | Some("css")) {
+        } else if matches!(
+            path.extension().and_then(|e| e.to_str()),
+            Some("ts") | Some("css")
+        ) {
             out.push(path);
         }
     }
@@ -44,7 +51,9 @@ pub fn locate_source(identifier: String) -> Result<Vec<SourceMatch>, String> {
 
     let mut matches = Vec::new();
     for file in files {
-        let Ok(content) = std::fs::read_to_string(&file) else { continue };
+        let Ok(content) = std::fs::read_to_string(&file) else {
+            continue;
+        };
         let lines: Vec<&str> = content.lines().collect();
         for (i, line) in lines.iter().enumerate() {
             if !line.contains(&identifier) {
@@ -58,7 +67,11 @@ pub fn locate_source(identifier: String) -> Result<Vec<SourceMatch>, String> {
                 .unwrap_or(&file)
                 .to_string_lossy()
                 .replace('\\', "/");
-            matches.push(SourceMatch { file: rel, line: i + 1, excerpt });
+            matches.push(SourceMatch {
+                file: rel,
+                line: i + 1,
+                excerpt,
+            });
         }
     }
     Ok(matches)

@@ -42,7 +42,10 @@ pub fn download_cover(dir: &Path, release_id: &str, url: &str) -> Result<PathBuf
     // Real Discogs cover art is always several KB+; anything under this floor is the placeholder,
     // not a photo — treat it as "no cover" (best-effort contract: caller proceeds without one).
     if bytes.len() < 1024 {
-        return Err(format!("cover for release {release_id} looks like a placeholder ({} bytes)", bytes.len()));
+        return Err(format!(
+            "cover for release {release_id} looks like a placeholder ({} bytes)",
+            bytes.len()
+        ));
     }
     std::fs::write(&out, &bytes).map_err(|e| e.to_string())?;
     Ok(out)

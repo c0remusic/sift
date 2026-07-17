@@ -74,7 +74,10 @@ fn clean_artist(s: &str) -> String {
 /// and stay untouched, as do hyphens/apostrophes — too common in real titles to risk stripping
 /// on an unconfirmed API behavior.
 fn sanitize_discogs_query(s: &str) -> String {
-    let no_syntax_chars: String = s.chars().map(|c| if matches!(c, ':' | '"') { ' ' } else { c }).collect();
+    let no_syntax_chars: String = s
+        .chars()
+        .map(|c| if matches!(c, ':' | '"') { ' ' } else { c })
+        .collect();
     no_syntax_chars
         .split_whitespace()
         .filter(|w| !matches!(w.to_uppercase().as_str(), "AND" | "OR" | "NOT"))
@@ -94,7 +97,12 @@ fn first_string(v: &Value, key: &str) -> Option<String> {
 fn string_array(v: &Value, key: &str) -> Vec<String> {
     v.get(key)
         .and_then(|x| x.as_array())
-        .map(|a| a.iter().filter_map(|x| x.as_str()).map(|s| s.to_string()).collect())
+        .map(|a| {
+            a.iter()
+                .filter_map(|x| x.as_str())
+                .map(|s| s.to_string())
+                .collect()
+        })
         .unwrap_or_default()
 }
 
@@ -113,7 +121,11 @@ pub fn parse_search(v: &Value) -> Vec<Candidate> {
         let (artist, title) = split_title(raw_title);
         let format = {
             let parts = string_array(r, "format");
-            if parts.is_empty() { None } else { Some(parts.join(", ")) }
+            if parts.is_empty() {
+                None
+            } else {
+                Some(parts.join(", "))
+            }
         };
         let year = r
             .get("year")
@@ -125,9 +137,17 @@ pub fn parse_search(v: &Value) -> Vec<Candidate> {
             label: first_string(r, "label"),
             year,
             styles: string_array(r, "style"),
-            country: r.get("country").and_then(|x| x.as_str()).filter(|s| !s.is_empty()).map(|s| s.to_string()),
+            country: r
+                .get("country")
+                .and_then(|x| x.as_str())
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string()),
             format,
-            cover_url: r.get("cover_image").and_then(|x| x.as_str()).filter(|s| !s.is_empty()).map(|s| s.to_string()),
+            cover_url: r
+                .get("cover_image")
+                .and_then(|x| x.as_str())
+                .filter(|s| !s.is_empty())
+                .map(|s| s.to_string()),
             release_id: r.get("id").map(|x| x.to_string()).unwrap_or_default(),
             source: "discogs".into(),
         });
@@ -212,9 +232,24 @@ fn track_match_score(track_title: &str, target_title: &str, target_version: Opti
 fn is_version_keyword(t: &str) -> bool {
     matches!(
         t,
-        "remix" | "rmx" | "dub" | "redub" | "edit" | "reedit" | "rework" | "vip"
-            | "bootleg" | "instrumental" | "acapella" | "acappella" | "version"
-            | "reprise" | "remaster" | "remastered" | "beats" | "tool"
+        "remix"
+            | "rmx"
+            | "dub"
+            | "redub"
+            | "edit"
+            | "reedit"
+            | "rework"
+            | "vip"
+            | "bootleg"
+            | "instrumental"
+            | "acapella"
+            | "acappella"
+            | "version"
+            | "reprise"
+            | "remaster"
+            | "remastered"
+            | "beats"
+            | "tool"
     )
 }
 
@@ -273,7 +308,10 @@ impl Discogs {
             .query("per_page", "6")
             .call()
             .map_err(map_ureq_err)?;
-        let v: Value = resp.body_mut().read_json().map_err(|e| ProviderError::Parse(e.to_string()))?;
+        let v: Value = resp
+            .body_mut()
+            .read_json()
+            .map_err(|e| ProviderError::Parse(e.to_string()))?;
         Ok(parse_search(&v))
     }
 
@@ -292,7 +330,8 @@ impl Discogs {
             }
             match self.fetch_tracklist(&cands[i].release_id) {
                 Ok(titles) => {
-                    let (score, matched) = best_track_match(&titles, &q.title, q.version.as_deref());
+                    let (score, matched) =
+                        best_track_match(&titles, &q.title, q.version.as_deref());
                     scores[i] = score;
                     // Discogs search returns the RELEASE title ("Artist - Space EP"); replace it
                     // with the actual matching track title so we identify the track, not the EP.
@@ -301,7 +340,9 @@ impl Discogs {
                     }
                 }
                 Err(ProviderError::RateLimited { .. }) => {
-                    log::warn!("Discogs tracklist rate-limited; ranking falls back to format relevance");
+                    log::warn!(
+                        "Discogs tracklist rate-limited; ranking falls back to format relevance"
+                    );
                 }
                 Err(_) => {}
             }
@@ -319,7 +360,10 @@ impl Discogs {
             .header("Authorization", &format!("Discogs token={}", self.token))
             .call()
             .map_err(map_ureq_err)?;
-        let v: Value = resp.body_mut().read_json().map_err(|e| ProviderError::Parse(e.to_string()))?;
+        let v: Value = resp
+            .body_mut()
+            .read_json()
+            .map_err(|e| ProviderError::Parse(e.to_string()))?;
         let titles = v
             .get("tracklist")
             .and_then(|x| x.as_array())
@@ -386,20 +430,38 @@ mod tests {
 
     #[test]
     fn sanitize_discogs_query_neutralizes_field_syntax() {
-        assert_eq!(sanitize_discogs_query("Artist: Presents Something"), "Artist Presents Something");
-        assert_eq!(sanitize_discogs_query(r#"track:"she said""#), "track she said");
+        assert_eq!(
+            sanitize_discogs_query("Artist: Presents Something"),
+            "Artist Presents Something"
+        );
+        assert_eq!(
+            sanitize_discogs_query(r#"track:"she said""#),
+            "track she said"
+        );
         assert_eq!(sanitize_discogs_query("Space AND Time"), "Space Time");
-        assert_eq!(sanitize_discogs_query("Command OR Control"), "Command Control");
+        assert_eq!(
+            sanitize_discogs_query("Command OR Control"),
+            "Command Control"
+        );
     }
 
     #[test]
     fn sanitize_discogs_query_keeps_legitimate_punctuation_and_lookalike_words() {
         // Parens carry real mix-name meaning (just wired up in F1-F3) — must survive.
-        assert_eq!(sanitize_discogs_query("Falling Up (Club Mix)"), "Falling Up (Club Mix)");
+        assert_eq!(
+            sanitize_discogs_query("Falling Up (Club Mix)"),
+            "Falling Up (Club Mix)"
+        );
         // Hyphens and apostrophes are too common in real titles to risk stripping blind.
-        assert_eq!(sanitize_discogs_query("Can't Stop - Reprise"), "Can't Stop - Reprise");
+        assert_eq!(
+            sanitize_discogs_query("Can't Stop - Reprise"),
+            "Can't Stop - Reprise"
+        );
         // "AND"/"OR"/"NOT" are only stripped as whole words, not substrings.
-        assert_eq!(sanitize_discogs_query("Andromeda Organism"), "Andromeda Organism");
+        assert_eq!(
+            sanitize_discogs_query("Andromeda Organism"),
+            "Andromeda Organism"
+        );
     }
 
     const FIXTURE: &str = r#"{
@@ -434,7 +496,10 @@ mod tests {
         let first = &cands[0];
         assert_eq!(first.artist, "Larry Heard");
         assert_eq!(first.title, "Mystery Of Love");
-        assert_eq!(first.styles, vec!["Deep House".to_string(), "House".to_string()]);
+        assert_eq!(
+            first.styles,
+            vec!["Deep House".to_string(), "House".to_string()]
+        );
         assert_eq!(first.year, Some(1986));
         assert_eq!(first.label.as_deref(), Some("Alleviated Records"));
         assert_eq!(first.country.as_deref(), Some("US"));
@@ -464,7 +529,10 @@ mod tests {
         }"#;
         let v: Value = serde_json::from_str(F).unwrap();
         let cands = parse_search(&v);
-        assert_eq!(cands[0].release_id, "3", "the vinyl single outranks comp/mix");
+        assert_eq!(
+            cands[0].release_id, "3",
+            "the vinyl single outranks comp/mix"
+        );
         // the compilation and DJ-mix are still present, just lower
         assert!(cands.iter().any(|c| c.release_id == "1"));
         assert!(cands.iter().any(|c| c.release_id == "2"));
@@ -477,8 +545,14 @@ mod tests {
         let dub = track_match_score("Sean (Eric's 2WFU Dub)", target_t, ver);
         let plain = track_match_score("Sean", target_t, ver);
         let other = track_match_score("Sean (Radio Edit)", target_t, ver);
-        assert!(dub > plain, "the exact dub ({dub}) beats the plain title ({plain})");
-        assert!(dub > other, "the exact dub ({dub}) beats a different mix ({other})");
+        assert!(
+            dub > plain,
+            "the exact dub ({dub}) beats the plain title ({plain})"
+        );
+        assert!(
+            dub > other,
+            "the exact dub ({dub}) beats a different mix ({other})"
+        );
     }
 
     fn cand(id: &str, format: Option<&str>) -> Candidate {
@@ -500,7 +574,10 @@ mod tests {
     fn rank_promotes_release_whose_tracklist_holds_the_mix() {
         // candidate 1 has the better format, but candidate 2's tracklist actually contains the
         // mix (higher match score) → the match must win over format relevance.
-        let cands = vec![cand("1", Some("Vinyl, 12\", Single")), cand("2", Some("CD, Album"))];
+        let cands = vec![
+            cand("1", Some("Vinyl, 12\", Single")),
+            cand("2", Some("CD, Album")),
+        ];
         let scores = [1, 9];
         let ranked = rank_by_match(cands, &scores);
         assert_eq!(ranked[0].release_id, "2");
@@ -510,7 +587,10 @@ mod tests {
     #[test]
     fn rank_falls_back_to_format_when_scores_tie() {
         // no tracklist matched (all zero) → format relevance breaks the tie (single > album).
-        let cands = vec![cand("album", Some("CD, Album")), cand("single", Some("Vinyl, 12\", Single"))];
+        let cands = vec![
+            cand("album", Some("CD, Album")),
+            cand("single", Some("Vinyl, 12\", Single")),
+        ];
         let scores = [0, 0];
         let ranked = rank_by_match(cands, &scores);
         assert_eq!(ranked[0].release_id, "single");
@@ -522,9 +602,15 @@ mod tests {
         assert_eq!(clean_artist("Aya (2)"), "Aya");
         assert_eq!(clean_artist("A* B (3)"), "A B");
         // a non-numeric parenthetical (e.g. a real suffix) is left intact
-        assert_eq!(clean_artist("Cabaret Voltaire (Live)"), "Cabaret Voltaire (Live)");
+        assert_eq!(
+            clean_artist("Cabaret Voltaire (Live)"),
+            "Cabaret Voltaire (Live)"
+        );
         // multi-artist credit kept as-is, only the artifacts removed
-        assert_eq!(clean_artist("Larry Heard* / Mr Fingers"), "Larry Heard / Mr Fingers");
+        assert_eq!(
+            clean_artist("Larry Heard* / Mr Fingers"),
+            "Larry Heard / Mr Fingers"
+        );
     }
 
     #[test]
@@ -537,7 +623,10 @@ mod tests {
 
     #[test]
     fn best_track_match_keeps_version_track_over_plain() {
-        let titles = vec!["Love Foolosophy".to_string(), "Love Foolosophy (Knee Deep Remix)".to_string()];
+        let titles = vec![
+            "Love Foolosophy".to_string(),
+            "Love Foolosophy (Knee Deep Remix)".to_string(),
+        ];
         let (_score, title) = best_track_match(&titles, "Love Foolosophy", Some("Knee Deep Remix"));
         assert_eq!(title.as_deref(), Some("Love Foolosophy (Knee Deep Remix)"));
     }
@@ -586,7 +675,10 @@ mod tests {
     #[test]
     fn best_track_match_keeps_first_when_scores_tie() {
         // Two equal-scoring mixes → the first listed wins (original is usually first), not the last.
-        let titles = vec!["Track (Club Mix)".to_string(), "Track (Extended Mix)".to_string()];
+        let titles = vec![
+            "Track (Club Mix)".to_string(),
+            "Track (Extended Mix)".to_string(),
+        ];
         let (_score, title) = best_track_match(&titles, "Track", None);
         assert_eq!(title.as_deref(), Some("Track (Club Mix)"));
     }
@@ -609,7 +701,10 @@ mod tests {
     #[test]
     fn map_ureq_err_other_status_is_network_with_code() {
         match map_ureq_err(ureq::Error::StatusCode(503)) {
-            ProviderError::Network(msg) => assert!(msg.contains("503"), "message should mention the status code: {msg}"),
+            ProviderError::Network(msg) => assert!(
+                msg.contains("503"),
+                "message should mention the status code: {msg}"
+            ),
             other => panic!("expected Network, got {other:?}"),
         }
     }

@@ -5,9 +5,9 @@
 pub mod cover;
 pub mod discogs;
 
-use serde::{Deserialize, Serialize};
 use crate::naming::{Canonical, Confidence};
 use rusqlite::{params, Connection};
+use serde::{Deserialize, Serialize};
 
 /// User-edited metadata fields for a filed track (Bibliothèque inline edit).
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -31,7 +31,10 @@ enum CoverWrite {
 /// Whether an upsert overwrites `discogs_release_id`/`source` (a fresh Discogs match) or leaves
 /// them untouched (a manual edit must not wipe an existing release link).
 enum ReleaseLink<'a> {
-    Set { release_id: &'a str, source: &'a str },
+    Set {
+        release_id: &'a str,
+        source: &'a str,
+    },
     Preserve,
 }
 
@@ -91,18 +94,31 @@ fn upsert_metadata_row(
 /// DB-only part (unit-tested): upsert the editable metadata fields + replace genres.
 /// Preserves `discogs_release_id` and `source` — a manual edit must not wipe the release link.
 /// On INSERT (no prior metadata row) those columns stay NULL.
-pub fn update_metadata_db(conn: &Connection, track_id: i64, e: &MetadataEdit) -> rusqlite::Result<()> {
+pub fn update_metadata_db(
+    conn: &Connection,
+    track_id: i64,
+    e: &MetadataEdit,
+) -> rusqlite::Result<()> {
     upsert_metadata_row(
-        conn, track_id,
+        conn,
+        track_id,
         &MetadataFields {
-            artist: &e.artist, title: &e.title, version: None,
-            label: e.label.as_deref(), year: e.year, cover_path: e.cover_path.as_deref(),
+            artist: &e.artist,
+            title: &e.title,
+            version: None,
+            label: e.label.as_deref(),
+            year: e.year,
+            cover_path: e.cover_path.as_deref(),
         },
-        CoverWrite::OnlyIfSome, ReleaseLink::Preserve,
+        CoverWrite::OnlyIfSome,
+        ReleaseLink::Preserve,
     )?;
     crate::genres::set_genres(conn, track_id, &e.genres)?;
     if e.cover_path.is_some() {
-        conn.execute("UPDATE tracks SET has_cover=1 WHERE id=?1", params![track_id])?;
+        conn.execute(
+            "UPDATE tracks SET has_cover=1 WHERE id=?1",
+            params![track_id],
+        )?;
     }
     Ok(())
 }
@@ -154,7 +170,8 @@ fn split_title_version(title: &str) -> (String, Option<String>) {
         if let Some(open) = t.rfind('(') {
             let inner = &t[open + 1..t.len() - 1];
             let base = t[..open].trim();
-            if !inner.is_empty() && !inner.contains('(') && !inner.contains(')') && !base.is_empty() {
+            if !inner.is_empty() && !inner.contains('(') && !inner.contains(')') && !base.is_empty()
+            {
                 return (base.to_string(), Some(inner.trim().to_string()));
             }
         }
@@ -177,16 +194,28 @@ pub fn apply_identity(
     // returned canonical keeps the FULL title — the front splits it for its live display.
     let (base_title, version) = split_title_version(&c.title);
     upsert_metadata_row(
-        conn, track_id,
+        conn,
+        track_id,
         &MetadataFields {
-            artist: &c.artist, title: &base_title, version: version.as_deref(),
-            label: c.label.as_deref(), year: c.year, cover_path: cover_path.as_deref(),
+            artist: &c.artist,
+            title: &base_title,
+            version: version.as_deref(),
+            label: c.label.as_deref(),
+            year: c.year,
+            cover_path: cover_path.as_deref(),
         },
-        CoverWrite::Always, ReleaseLink::Set { release_id: &c.release_id, source: &c.source },
+        CoverWrite::Always,
+        ReleaseLink::Set {
+            release_id: &c.release_id,
+            source: &c.source,
+        },
     )?;
     crate::genres::set_genres(conn, track_id, &c.styles)?;
     if cover_path.is_some() {
-        conn.execute("UPDATE tracks SET has_cover=1 WHERE id=?1", params![track_id])?;
+        conn.execute(
+            "UPDATE tracks SET has_cover=1 WHERE id=?1",
+            params![track_id],
+        )?;
     }
     Ok(AppliedIdentity {
         canonical: Canonical {
@@ -235,7 +264,11 @@ mod tests {
     fn db() -> rusqlite::Connection {
         let conn = rusqlite::Connection::open_in_memory().unwrap();
         crate::db::run_migrations(&conn).unwrap();
-        conn.execute("INSERT INTO tracks(id, path, status) VALUES(1,'/x.flac','pending')", []).unwrap();
+        conn.execute(
+            "INSERT INTO tracks(id, path, status) VALUES(1,'/x.flac','pending')",
+            [],
+        )
+        .unwrap();
         conn
     }
 
@@ -259,7 +292,14 @@ mod tests {
         let conn = db();
         let applied = apply_identity(&conn, 1, &sample(), Some("/cache/12345.jpg".into())).unwrap();
 
-        type MetaRow = (String, Option<String>, Option<i64>, Option<String>, Option<String>, Option<String>);
+        type MetaRow = (
+            String,
+            Option<String>,
+            Option<i64>,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+        );
         let (artist, label, year, cover, rel, src): MetaRow =
             conn.query_row(
                 "SELECT artist, label, year, cover_path, discogs_release_id, source FROM metadata WHERE track_id=1",
@@ -272,10 +312,16 @@ mod tests {
         assert_eq!(rel.as_deref(), Some("12345"));
         assert_eq!(src.as_deref(), Some("discogs"));
 
-        assert_eq!(crate::genres::get_genres(&conn, 1).unwrap(), vec!["Deep House".to_string(), "House".to_string()]);
+        assert_eq!(
+            crate::genres::get_genres(&conn, 1).unwrap(),
+            vec!["Deep House".to_string(), "House".to_string()]
+        );
 
         assert_eq!(applied.canonical.artist, "Larry Heard");
-        assert_eq!(applied.styles, vec!["Deep House".to_string(), "House".to_string()]);
+        assert_eq!(
+            applied.styles,
+            vec!["Deep House".to_string(), "House".to_string()]
+        );
         assert_eq!(applied.cover_path.as_deref(), Some("/cache/12345.jpg"));
     }
 
@@ -286,18 +332,30 @@ mod tests {
         let mut other = sample();
         other.styles = vec!["Techno".into()];
         apply_identity(&conn, 1, &other, None).unwrap();
-        assert_eq!(crate::genres::get_genres(&conn, 1).unwrap(), vec!["Techno".to_string()]);
+        assert_eq!(
+            crate::genres::get_genres(&conn, 1).unwrap(),
+            vec!["Techno".to_string()]
+        );
     }
 
     #[test]
     fn split_title_version_extracts_trailing_paren() {
         assert_eq!(
             split_title_version("Love Foolosophy (Knee Deep Remix)"),
-            ("Love Foolosophy".to_string(), Some("Knee Deep Remix".to_string())),
+            (
+                "Love Foolosophy".to_string(),
+                Some("Knee Deep Remix".to_string())
+            ),
         );
-        assert_eq!(split_title_version("Mystery of Love"), ("Mystery of Love".to_string(), None));
+        assert_eq!(
+            split_title_version("Mystery of Love"),
+            ("Mystery of Love".to_string(), None)
+        );
         // Empty base (the whole title is the parenthetical) → no split.
-        assert_eq!(split_title_version("(Instrumental)"), ("(Instrumental)".to_string(), None));
+        assert_eq!(
+            split_title_version("(Instrumental)"),
+            ("(Instrumental)".to_string(), None)
+        );
     }
 
     #[test]
@@ -307,9 +365,11 @@ mod tests {
         c.title = "Can You Feel It (Larry Heard Remix)".into();
         apply_identity(&conn, 1, &c, None).unwrap();
         let (title, version): (String, Option<String>) = conn
-            .query_row("SELECT title, version FROM metadata WHERE track_id=1", [], |r| {
-                Ok((r.get(0)?, r.get(1)?))
-            })
+            .query_row(
+                "SELECT title, version FROM metadata WHERE track_id=1",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
             .unwrap();
         assert_eq!(title, "Can You Feel It");
         assert_eq!(version.as_deref(), Some("Larry Heard Remix"));
@@ -356,7 +416,14 @@ mod tests {
         };
         update_metadata_db(&conn, 1, &edit).unwrap();
 
-        type Row = (String, String, Option<String>, Option<i64>, Option<String>, Option<String>);
+        type Row = (
+            String,
+            String,
+            Option<String>,
+            Option<i64>,
+            Option<String>,
+            Option<String>,
+        );
         let (artist, title, label, year, rel_id, source): Row = conn
             .query_row(
                 "SELECT artist, title, label, year, discogs_release_id, source FROM metadata WHERE track_id=1",
@@ -370,8 +437,16 @@ mod tests {
         assert_eq!(label.as_deref(), Some("Trax"));
         assert_eq!(year, Some(1990));
         // Release link must survive the manual edit.
-        assert_eq!(rel_id.as_deref(), Some("999"), "discogs_release_id must be preserved");
-        assert_eq!(source.as_deref(), Some("discogs"), "source must be preserved");
+        assert_eq!(
+            rel_id.as_deref(),
+            Some("999"),
+            "discogs_release_id must be preserved"
+        );
+        assert_eq!(
+            source.as_deref(),
+            Some("discogs"),
+            "source must be preserved"
+        );
 
         let genres = crate::genres::get_genres(&conn, 1).unwrap();
         assert_eq!(genres, vec!["House".to_string(), "Deep House".to_string()]);
@@ -391,7 +466,14 @@ mod tests {
         };
         update_metadata_db(&conn, 1, &edit).unwrap();
 
-        type Row = (String, String, Option<String>, Option<i64>, Option<String>, Option<String>);
+        type Row = (
+            String,
+            String,
+            Option<String>,
+            Option<i64>,
+            Option<String>,
+            Option<String>,
+        );
         let (artist, title, label, year, rel_id, source): Row = conn
             .query_row(
                 "SELECT artist, title, label, year, discogs_release_id, source FROM metadata WHERE track_id=1",
@@ -405,7 +487,10 @@ mod tests {
         assert_eq!(label.as_deref(), Some("KMS"));
         assert_eq!(year, Some(1992));
         // No prior Discogs data → these stay NULL on INSERT.
-        assert!(rel_id.is_none(), "discogs_release_id should be NULL on first insert");
+        assert!(
+            rel_id.is_none(),
+            "discogs_release_id should be NULL on first insert"
+        );
         assert!(source.is_none(), "source should be NULL on first insert");
 
         let genres = crate::genres::get_genres(&conn, 1).unwrap();

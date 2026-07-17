@@ -5,11 +5,13 @@
 //! FFmpeg stays only for the conversion (encode) path elsewhere.
 
 use std::fs::File;
-use symphonia::core::codecs::audio::{AudioCodecParameters, AudioDecoder, AudioDecoderOptions, CODEC_ID_NULL_AUDIO};
+use symphonia::core::codecs::audio::{
+    AudioCodecParameters, AudioDecoder, AudioDecoderOptions, CODEC_ID_NULL_AUDIO,
+};
 use symphonia::core::codecs::CodecParameters;
 use symphonia::core::errors::Error as SymError;
-use symphonia::core::formats::{FormatOptions, FormatReader, Track};
 use symphonia::core::formats::probe::Hint;
+use symphonia::core::formats::{FormatOptions, FormatReader, Track};
 use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 
@@ -31,11 +33,19 @@ fn open_format(path: &str) -> Result<Box<dyn FormatReader>, String> {
     let file = File::open(path).map_err(|e| format!("open failed: {e}"))?;
     let mss = MediaSourceStream::new(Box::new(file), Default::default());
     let mut hint = Hint::new();
-    if let Some(ext) = std::path::Path::new(path).extension().and_then(|e| e.to_str()) {
+    if let Some(ext) = std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+    {
         hint.with_extension(ext);
     }
     symphonia::default::get_probe()
-        .probe(&hint, mss, FormatOptions::default(), MetadataOptions::default())
+        .probe(
+            &hint,
+            mss,
+            FormatOptions::default(),
+            MetadataOptions::default(),
+        )
         .map_err(|e| format!("unsupported/unprobeable format: {e}"))
 }
 
@@ -63,7 +73,10 @@ pub fn probe(path: &str) -> Result<Format, String> {
     let params = audio_params(track)?;
     let sample_rate = params.sample_rate.ok_or("unknown sample rate")?;
     let channels = params.channels.as_ref().map(|c| c.count()).unwrap_or(0) as u16;
-    Ok(Format { sample_rate, channels })
+    Ok(Format {
+        sample_rate,
+        channels,
+    })
 }
 
 /// Decodes `path` at its native sample rate, forcing `target_channels` (1 or 2). Calls
@@ -159,7 +172,10 @@ mod tests {
     use super::*;
 
     const F44: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/fixtures/real_lossless.flac");
-    const F48: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/fixtures/fake_lossless_48k.flac");
+    const F48: &str = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/fixtures/fake_lossless_48k.flac"
+    );
 
     #[test]
     fn probe_reports_native_sample_rate() {
@@ -173,11 +189,18 @@ mod tests {
         let info = decode_pcm(F44, 2, |b| total += b.len()).unwrap();
         assert_eq!(info.sample_rate, 44100);
         assert_eq!(info.channels, 2);
-        assert!(info.codec_error.is_none(), "unexpected codec error: {:?}", info.codec_error);
+        assert!(
+            info.codec_error.is_none(),
+            "unexpected codec error: {:?}",
+            info.codec_error
+        );
         // ~10 s * 44100 * 2ch interleaved, 5% tolerance for decoder edge frames
         let expected = 10 * 44100 * 2;
         let lo = (expected as f64 * 0.95) as usize;
         let hi = (expected as f64 * 1.05) as usize;
-        assert!(total >= lo && total <= hi, "got {total} interleaved samples, expected ~{expected}");
+        assert!(
+            total >= lo && total <= hi,
+            "got {total} interleaved samples, expected ~{expected}"
+        );
     }
 }

@@ -26,8 +26,8 @@ pub struct Canonical {
 
 /// Tokens that mark a string as sloppy download metadata rather than a clean field.
 const JUNK_TOKENS: &[&str] = &[
-    "kbps", "khz", "flac", "http", "www", "320", "256", "192", "128", "rip", "track ",
-    "[", "]", "{", "}", "_",
+    "kbps", "khz", "flac", "http", "www", "320", "256", "192", "128", "rip", "track ", "[", "]",
+    "{", "}", "_",
 ];
 
 /// True if `s` contains any junk token (case-insensitive). Used by the cleanliness gate.
@@ -38,10 +38,7 @@ pub fn has_junk(s: &str) -> bool {
 
 /// A {artist, title} source is clean when both are non-blank and free of junk tokens.
 pub fn is_clean(artist: &str, title: &str) -> bool {
-    !artist.trim().is_empty()
-        && !title.trim().is_empty()
-        && !has_junk(artist)
-        && !has_junk(title)
+    !artist.trim().is_empty() && !title.trim().is_empty() && !has_junk(artist) && !has_junk(title)
 }
 
 /// Pulls a trailing "(...)" off `s` as a version — e.g. "Mystery of Love (Original Mix)" ->
@@ -86,7 +83,10 @@ fn extract_version_hint(stem: &str) -> Option<String> {
 /// Normalize for the "do tags and filename agree?" comparison: lowercase, collapse
 /// whitespace. Internal to reconcile.
 fn norm(s: &str) -> String {
-    s.to_lowercase().split_whitespace().collect::<Vec<_>>().join(" ")
+    s.to_lowercase()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// Reconcile embedded tags and the filename stem into one canonical record + confidence.
@@ -105,7 +105,11 @@ pub fn reconcile(tag_artist: &str, tag_title: &str, stem: &str) -> Canonical {
                 artist: tag_artist.trim().to_string(),
                 title: tag_title.trim().to_string(),
                 version: name_version,
-                confidence: if agree { Confidence::Green } else { Confidence::Yellow },
+                confidence: if agree {
+                    Confidence::Green
+                } else {
+                    Confidence::Yellow
+                },
             }
         }
         // tags clean only -> green from tags. Filename didn't parse as a whole (junk
@@ -175,7 +179,8 @@ pub fn clean_stem(stem: &str) -> String {
     }
     // drop quality/junk tokens word-by-word (case-insensitive)
     const DROP: &[&str] = &[
-        "kbps", "320", "256", "192", "128", "flac", "wav", "aiff", "khz", "hz", "hq", "cbr", "vbr", "rip",
+        "kbps", "320", "256", "192", "128", "flac", "wav", "aiff", "khz", "hz", "hq", "cbr", "vbr",
+        "rip",
     ];
     let kept: Vec<&str> = s
         .split_whitespace()
@@ -266,7 +271,9 @@ pub fn name_key(artist: &str, title: &str) -> String {
     // Space-join (no separator) ON PURPOSE: it lets "Larry Heard - Mystery of Love" match a
     // file named "larry_heard mystery of love" with no " - " split — a common cross-naming
     // duplicate. The theoretical ("","x") vs ("x","") collision is accepted as harmless here.
-    format!("{} {}", norm(artist), norm(title)).trim().to_string()
+    format!("{} {}", norm(artist), norm(title))
+        .trim()
+        .to_string()
 }
 
 #[cfg(test)]
@@ -284,7 +291,12 @@ mod tests {
             version: None,
             confidence: Confidence::Green,
         };
-        let Canonical { artist, title, version, confidence } = v;
+        let Canonical {
+            artist,
+            title,
+            version,
+            confidence,
+        } = v;
         let _ = (artist, title, version, confidence);
     }
 
@@ -386,7 +398,10 @@ mod tests {
 
     #[test]
     fn clean_stem_tidies_messy_filenames() {
-        assert_eq!(clean_stem("01_larry_heard_mystery_320"), "larry heard mystery");
+        assert_eq!(
+            clean_stem("01_larry_heard_mystery_320"),
+            "larry heard mystery"
+        );
         assert_eq!(clean_stem("Some Title [DJ Uploader] FLAC"), "Some Title");
         assert_eq!(clean_stem("1979 - something"), "1979 - something"); // 4 digits: not a track no
     }

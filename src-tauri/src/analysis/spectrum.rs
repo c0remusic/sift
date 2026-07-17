@@ -98,7 +98,10 @@ impl SpectrumAccumulator {
 
     fn process_frame(&mut self) {
         for i in 0..self.fft_size {
-            self.scratch[i] = Complex { re: self.buf[i] * self.window[i], im: 0.0 };
+            self.scratch[i] = Complex {
+                re: self.buf[i] * self.window[i],
+                im: 0.0,
+            };
         }
         self.fft.process(&mut self.scratch);
         for k in 0..self.bins {
@@ -107,15 +110,19 @@ impl SpectrumAccumulator {
             self.mags[k] = m2;
         }
         if self.collect_display && self.frames_total % self.spec_stride == 0 {
-            let col: Vec<u8> = self.mags.iter().map(|&m2| {
-                let db = if m2 <= 1e-12 {
-                    -100.0
-                } else {
-                    10.0 * (m2 / self.ref_mag_sqr).log10()
-                };
-                let clamped = db.clamp(-100.0, 0.0);
-                ((clamped + 100.0) / 100.0 * 255.0) as u8
-            }).collect();
+            let col: Vec<u8> = self
+                .mags
+                .iter()
+                .map(|&m2| {
+                    let db = if m2 <= 1e-12 {
+                        -100.0
+                    } else {
+                        10.0 * (m2 / self.ref_mag_sqr).log10()
+                    };
+                    let clamped = db.clamp(-100.0, 0.0);
+                    ((clamped + 100.0) / 100.0 * 255.0) as u8
+                })
+                .collect();
             self.spec_cols.push(col);
         }
         self.frames_total += 1;
@@ -158,7 +165,11 @@ impl SpectrumAccumulator {
             .iter()
             .map(|&s| {
                 let avg = s / self.frames_total as f64;
-                if avg <= 1e-12 { -120.0 } else { 10.0 * (avg as f32).log10() }
+                if avg <= 1e-12 {
+                    -120.0
+                } else {
+                    10.0 * (avg as f32).log10()
+                }
             })
             .collect();
 
@@ -172,10 +183,10 @@ impl SpectrumAccumulator {
 
         let band = ((500.0 / hz_per_bin).ceil() as usize).max(2);
         const DROP_DB: f32 = 18.0; // a real cliff drops at least this much across the band
-        // How close to `below` counts as "recovered" — real encoder residual sits tens of dB
-        // below the passband (measured: -37dB or lower vs. a ~0dB passband), so recovering to
-        // within half the required drop is a generous, unambiguous signal of real content
-        // resuming, not encoder noise jitter.
+                                   // How close to `below` counts as "recovered" — real encoder residual sits tens of dB
+                                   // below the passband (measured: -37dB or lower vs. a ~0dB passband), so recovering to
+                                   // within half the required drop is a generous, unambiguous signal of real content
+                                   // resuming, not encoder noise jitter.
         const RECOVERY_TOL: f32 = DROP_DB / 2.0;
 
         let guard = band + win + 1;
@@ -217,7 +228,13 @@ impl SpectrumAccumulator {
 
         let src_cols = self.spec_cols.len();
         if src_cols == 0 || self.bins == 0 {
-            return Spectrogram { frames: 0, bins: 0, hz_per_bin: 0.0, sec_per_frame: 0.0, mag_db: vec![] };
+            return Spectrogram {
+                frames: 0,
+                bins: 0,
+                hz_per_bin: 0.0,
+                sec_per_frame: 0.0,
+                mag_db: vec![],
+            };
         }
 
         let col_stride = src_cols.div_ceil(MAX_COLS).max(1);
@@ -236,7 +253,9 @@ impl SpectrumAccumulator {
             let mut pooled = vec![0u8; out_bins];
             for (b, &v) in col.iter().enumerate().take(self.bins) {
                 let ob = b / bin_pool;
-                if v > pooled[ob] { pooled[ob] = v; }
+                if v > pooled[ob] {
+                    pooled[ob] = v;
+                }
             }
             out_cols.push(pooled);
             ci += col_stride;
@@ -244,8 +263,16 @@ impl SpectrumAccumulator {
 
         let frames = out_cols.len();
         let mut mag_db = Vec::with_capacity(frames * out_bins);
-        for col in &out_cols { mag_db.extend_from_slice(col); }
-        Spectrogram { frames, bins: out_bins, hz_per_bin, sec_per_frame, mag_db }
+        for col in &out_cols {
+            mag_db.extend_from_slice(col);
+        }
+        Spectrogram {
+            frames,
+            bins: out_bins,
+            hz_per_bin,
+            sec_per_frame,
+            mag_db,
+        }
     }
 }
 
@@ -281,8 +308,11 @@ mod tests {
         let mut a = SpectrumAccumulator::new(SR, 4096, true);
         a.push(&sig);
         let report = a.finish();
-        assert!(report.cutoff_hz > 5000.0 && report.cutoff_hz < 7500.0,
-            "cutoff {} should sit at the ~6 kHz hard edge", report.cutoff_hz);
+        assert!(
+            report.cutoff_hz > 5000.0 && report.cutoff_hz < 7500.0,
+            "cutoff {} should sit at the ~6 kHz hard edge",
+            report.cutoff_hz
+        );
         assert!(report.spectrogram.frames > 0);
         assert!(report.spectrogram.bins > 0);
     }
@@ -299,7 +329,11 @@ mod tests {
         let mut a = SpectrumAccumulator::new(SR, 4096, true);
         a.push(&sig);
         let report = a.finish();
-        assert!(report.cutoff_hz > 18000.0, "cutoff {} should be near Nyquist", report.cutoff_hz);
+        assert!(
+            report.cutoff_hz > 18000.0,
+            "cutoff {} should be near Nyquist",
+            report.cutoff_hz
+        );
     }
 
     /// Reproduces the exact LTAS shape measured on a real, honestly-labelled 320kbps MP3
@@ -315,12 +349,30 @@ mod tests {
     fn cutoff_detected_on_real_world_gradual_decay_shape() {
         // (freq_hz, dB) control points measured directly from the real file's LTAS.
         const POINTS: &[(f32, f32)] = &[
-            (10121.0, 2.7), (10627.0, 3.6), (11133.0, 1.2), (11639.0, 1.0),
-            (12145.0, 0.8), (12651.0, 0.4), (13157.0, 0.2), (13663.0, -0.6),
-            (14169.0, -1.4), (14675.0, -1.6), (15181.0, -2.1), (15687.0, -2.7),
-            (16193.0, -37.3), (16699.0, -57.7), (17205.0, -66.4), (17711.0, -71.4),
-            (18217.0, -74.3), (18723.0, -78.7), (19229.0, -72.1), (19735.0, -83.0),
-            (20241.0, -94.4), (20747.0, -76.3), (21253.0, -93.3), (21759.0, -92.4),
+            (10121.0, 2.7),
+            (10627.0, 3.6),
+            (11133.0, 1.2),
+            (11639.0, 1.0),
+            (12145.0, 0.8),
+            (12651.0, 0.4),
+            (13157.0, 0.2),
+            (13663.0, -0.6),
+            (14169.0, -1.4),
+            (14675.0, -1.6),
+            (15181.0, -2.1),
+            (15687.0, -2.7),
+            (16193.0, -37.3),
+            (16699.0, -57.7),
+            (17205.0, -66.4),
+            (17711.0, -71.4),
+            (18217.0, -74.3),
+            (18723.0, -78.7),
+            (19229.0, -72.1),
+            (19735.0, -83.0),
+            (20241.0, -94.4),
+            (20747.0, -76.3),
+            (21253.0, -93.3),
+            (21759.0, -92.4),
         ];
         fn interp_db(freq: f32) -> f32 {
             if freq <= POINTS[0].0 {
@@ -345,10 +397,12 @@ mod tests {
             a.ltas[k] = 10f64.powf(db as f64 / 10.0);
         }
         let report = a.finish();
-        assert!(report.cutoff_hz > 15500.0 && report.cutoff_hz < 17000.0,
+        assert!(
+            report.cutoff_hz > 15500.0 && report.cutoff_hz < 17000.0,
             "cutoff {} should sit at the ~16.2kHz cliff despite gradual residual decay above it \
              (a real encoder never collapses to true digital silence within one averaging band)",
-            report.cutoff_hz);
+            report.cutoff_hz
+        );
     }
 
     /// A genuine full-band lossless master with a mid-spectrum notch (a mastering EQ dip, a
@@ -360,8 +414,12 @@ mod tests {
     #[test]
     fn full_band_content_with_a_mid_spectrum_notch_is_not_a_cutoff() {
         const POINTS: &[(f32, f32)] = &[
-            (0.0, 0.0), (17500.0, 0.0), (18000.0, -25.0), (18500.0, -25.0),
-            (19000.0, 0.0), (22050.0, 0.0),
+            (0.0, 0.0),
+            (17500.0, 0.0),
+            (18000.0, -25.0),
+            (18500.0, -25.0),
+            (19000.0, 0.0),
+            (22050.0, 0.0),
         ];
         fn interp_db(freq: f32) -> f32 {
             if freq <= POINTS[0].0 {
@@ -386,9 +444,11 @@ mod tests {
             a.ltas[k] = 10f64.powf(db as f64 / 10.0);
         }
         let report = a.finish();
-        assert!(report.cutoff_hz > 20000.0,
+        assert!(
+            report.cutoff_hz > 20000.0,
             "cutoff {} should report near Nyquist (genuine full-band content resumes above \
              the notch) instead of latching onto the notch's lower edge as a false cutoff",
-            report.cutoff_hz);
+            report.cutoff_hz
+        );
     }
 }

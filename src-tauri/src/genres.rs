@@ -5,7 +5,10 @@ use rusqlite::{params, Connection};
 
 /// Replace a track's genre list with `genres` (ordered). Empty `genres` clears them.
 pub fn set_genres(conn: &Connection, track_id: i64, genres: &[String]) -> rusqlite::Result<()> {
-    conn.execute("DELETE FROM track_genres WHERE track_id=?1", params![track_id])?;
+    conn.execute(
+        "DELETE FROM track_genres WHERE track_id=?1",
+        params![track_id],
+    )?;
     for (ord, g) in genres.iter().enumerate() {
         let g = g.trim();
         if g.is_empty() {
@@ -53,8 +56,11 @@ pub fn get_genres_batch(
             "SELECT track_id, genre FROM track_genres WHERE track_id IN ({placeholders}) ORDER BY track_id, ord"
         );
         let mut stmt = conn.prepare(&sql)?;
-        let bound: Vec<&dyn rusqlite::ToSql> = chunk.iter().map(|id| id as &dyn rusqlite::ToSql).collect();
-        let rows = stmt.query_map(bound.as_slice(), |r| Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?)))?;
+        let bound: Vec<&dyn rusqlite::ToSql> =
+            chunk.iter().map(|id| id as &dyn rusqlite::ToSql).collect();
+        let rows = stmt.query_map(bound.as_slice(), |r| {
+            Ok((r.get::<_, i64>(0)?, r.get::<_, String>(1)?))
+        })?;
         for row in rows {
             let (track_id, genre) = row?;
             out.entry(track_id).or_default().push(genre);
@@ -71,7 +77,11 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         crate::db::run_migrations(&conn).unwrap();
         // a track row to satisfy the FK
-        conn.execute("INSERT INTO tracks(id, path, status) VALUES(1,'/x.flac','pending')", []).unwrap();
+        conn.execute(
+            "INSERT INTO tracks(id, path, status) VALUES(1,'/x.flac','pending')",
+            [],
+        )
+        .unwrap();
         conn
     }
 
@@ -79,7 +89,10 @@ mod tests {
     fn set_then_get_round_trips_in_order() {
         let conn = db();
         set_genres(&conn, 1, &["Deep House".into(), "House".into()]).unwrap();
-        assert_eq!(get_genres(&conn, 1).unwrap(), vec!["Deep House".to_string(), "House".to_string()]);
+        assert_eq!(
+            get_genres(&conn, 1).unwrap(),
+            vec!["Deep House".to_string(), "House".to_string()]
+        );
     }
 
     #[test]
@@ -106,11 +119,18 @@ mod tests {
     #[test]
     fn get_genres_batch_small_volume_ordered_per_track() {
         let conn = db();
-        conn.execute("INSERT INTO tracks(id, path, status) VALUES(2,'/y.flac','pending')", []).unwrap();
+        conn.execute(
+            "INSERT INTO tracks(id, path, status) VALUES(2,'/y.flac','pending')",
+            [],
+        )
+        .unwrap();
         set_genres(&conn, 1, &["Deep House".into(), "House".into()]).unwrap();
         set_genres(&conn, 2, &["Techno".into()]).unwrap();
         let out = get_genres_batch(&conn, &[1, 2]).unwrap();
-        assert_eq!(out.get(&1).unwrap(), &vec!["Deep House".to_string(), "House".to_string()]);
+        assert_eq!(
+            out.get(&1).unwrap(),
+            &vec!["Deep House".to_string(), "House".to_string()]
+        );
         assert_eq!(out.get(&2).unwrap(), &vec!["Techno".to_string()]);
     }
 
@@ -156,7 +176,11 @@ mod tests {
         crate::db::run_migrations(&conn).unwrap();
         conn.execute_batch("PRAGMA foreign_keys = OFF;").unwrap();
 
-        for n in [1i64, GENRE_BATCH_CHUNK_SIZE as i64, GENRE_BATCH_CHUNK_SIZE as i64 + 1] {
+        for n in [
+            1i64,
+            GENRE_BATCH_CHUNK_SIZE as i64,
+            GENRE_BATCH_CHUNK_SIZE as i64 + 1,
+        ] {
             let track_ids: Vec<i64> = (1..=n).collect();
             let tx = conn.unchecked_transaction().unwrap();
             tx.execute("DELETE FROM track_genres", []).unwrap();
@@ -172,7 +196,11 @@ mod tests {
             let out = get_genres_batch(&conn, &track_ids).unwrap();
             assert_eq!(out.len() as i64, n, "n={n}");
             for id in &track_ids {
-                assert_eq!(out.get(id).unwrap(), &vec!["Ambient".to_string()], "n={n} id={id}");
+                assert_eq!(
+                    out.get(id).unwrap(),
+                    &vec!["Ambient".to_string()],
+                    "n={n} id={id}"
+                );
             }
         }
     }

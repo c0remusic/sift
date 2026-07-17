@@ -9,7 +9,12 @@ pub struct PeaksAccumulator {
 }
 impl PeaksAccumulator {
     pub fn new(window: usize) -> Self {
-        Self { window: window.max(1), cur_max: 0.0, count: 0, out: Vec::new() }
+        Self {
+            window: window.max(1),
+            cur_max: 0.0,
+            count: 0,
+            out: Vec::new(),
+        }
     }
     pub fn push(&mut self, mono: &[f32]) {
         for &s in mono {
@@ -23,7 +28,9 @@ impl PeaksAccumulator {
         }
     }
     pub fn finish(mut self) -> Vec<f32> {
-        if self.count > 0 { self.out.push(self.cur_max); }
+        if self.count > 0 {
+            self.out.push(self.cur_max);
+        }
         self.out
     }
 }

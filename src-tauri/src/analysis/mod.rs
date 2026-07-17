@@ -127,11 +127,21 @@ pub fn analyze(path: &str, with_spectrogram: bool) -> Result<AnalysisReport, Str
                 .chunks_exact(2)
                 .map(|lr| 0.5 * (lr[0] + lr[1]))
                 .collect();
-            dc.push(&mono); clip.push(&mono); tp.push(&mono);
-            sil.push(&mono); trunc.push(&mono); pk.push(&mono); spec.push(&mono);
+            dc.push(&mono);
+            clip.push(&mono);
+            tp.push(&mono);
+            sil.push(&mono);
+            trunc.push(&mono);
+            pk.push(&mono);
+            spec.push(&mono);
         } else {
-            dc.push(block); clip.push(block); tp.push(block);
-            sil.push(block); trunc.push(block); pk.push(block); spec.push(block);
+            dc.push(block);
+            clip.push(block);
+            tp.push(block);
+            sil.push(block);
+            trunc.push(block);
+            pk.push(block);
+            spec.push(block);
         }
     })?;
 
@@ -139,11 +149,18 @@ pub fn analyze(path: &str, with_spectrogram: bool) -> Result<AnalysisReport, Str
     let (silence_head_ms, silence_tail_ms) = sil.finish();
     let truncated = trunc.finish(info.codec_error.is_some());
     let spec_res = spec.finish();
-    let phase_correlation = if target_ch == 2 { ph.correlation() } else { 0.0 };
+    let phase_correlation = if target_ch == 2 {
+        ph.correlation()
+    } else {
+        0.0
+    };
     let dual_mono = target_ch == 2 && ph.dual_mono();
 
     let declared_format = std::path::Path::new(path)
-        .extension().and_then(|e| e.to_str()).unwrap_or("").to_lowercase();
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_lowercase();
 
     let cutoff_hz = spec_res.cutoff_hz;
     // Content-rail sniffing (magic bytes, independent of the declared extension) comes from the
@@ -154,7 +171,12 @@ pub fn analyze(path: &str, with_spectrogram: bool) -> Result<AnalysisReport, Str
     // content_rail is now sniffed unconditionally in tags::read() (no longer gated on
     // declared_rail here) — both sides of this comparison are load-bearing.
     let container_mismatch = tag.declared_rail == Rail::Lossless && content_rail == Rail::Lossy;
-    let verdict = verdict::verdict(cutoff_hz, tag.declared_rail, tag.declared_bitrate, content_rail);
+    let verdict = verdict::verdict(
+        cutoff_hz,
+        tag.declared_rail,
+        tag.declared_bitrate,
+        content_rail,
+    );
     let est_kbps = verdict::estimate_kbps(cutoff_hz);
 
     log::info!(
@@ -206,8 +228,20 @@ mod tests {
     /// also update contracts.ts. Phase 2 — docs/superpowers/plans/2026-07-13-phase2-ipc-contract-tests.md.
     #[test]
     fn spectrogram_shape_matches_contracts_ts() {
-        let v = Spectrogram { frames: 0, bins: 0, hz_per_bin: 0.0, sec_per_frame: 0.0, mag_db: Vec::new() };
-        let Spectrogram { frames, bins, hz_per_bin, sec_per_frame, mag_db } = v;
+        let v = Spectrogram {
+            frames: 0,
+            bins: 0,
+            hz_per_bin: 0.0,
+            sec_per_frame: 0.0,
+            mag_db: Vec::new(),
+        };
+        let Spectrogram {
+            frames,
+            bins,
+            hz_per_bin,
+            sec_per_frame,
+            mag_db,
+        } = v;
         let _ = (frames, bins, hz_per_bin, sec_per_frame, mag_db);
     }
 
@@ -229,7 +263,13 @@ mod tests {
             container_mismatch: false,
             est_kbps: 0,
             peaks: Vec::new(),
-            spectrogram: Spectrogram { frames: 0, bins: 0, hz_per_bin: 0.0, sec_per_frame: 0.0, mag_db: Vec::new() },
+            spectrogram: Spectrogram {
+                frames: 0,
+                bins: 0,
+                hz_per_bin: 0.0,
+                sec_per_frame: 0.0,
+                mag_db: Vec::new(),
+            },
             clip_runs: 0,
             clip_pct: 0.0,
             true_peak_dbtp: 0.0,
@@ -275,11 +315,33 @@ mod tests {
             has_cover,
         } = v;
         let _ = (
-            path, sample_rate, channels, duration_sec, declared_format, declared_bitrate,
-            declared_rail, cutoff_hz, verdict, container_mismatch, est_kbps, peaks, spectrogram,
-            clip_runs, clip_pct, true_peak_dbtp, dc_offset, phase_correlation, dual_mono,
-            container_ok, codec_error, truncated, silence_head_ms, silence_tail_ms, id3_version,
-            tags_cdj_ok, has_cover,
+            path,
+            sample_rate,
+            channels,
+            duration_sec,
+            declared_format,
+            declared_bitrate,
+            declared_rail,
+            cutoff_hz,
+            verdict,
+            container_mismatch,
+            est_kbps,
+            peaks,
+            spectrogram,
+            clip_runs,
+            clip_pct,
+            true_peak_dbtp,
+            dc_offset,
+            phase_correlation,
+            dual_mono,
+            container_ok,
+            codec_error,
+            truncated,
+            silence_head_ms,
+            silence_tail_ms,
+            id3_version,
+            tags_cdj_ok,
+            has_cover,
         );
     }
 
@@ -298,7 +360,13 @@ mod tests {
             container_mismatch: false,
             est_kbps: 320,
             peaks: vec![0.0, 1.0],
-            spectrogram: Spectrogram { frames: 0, bins: 0, hz_per_bin: 0.0, sec_per_frame: 0.0, mag_db: vec![] },
+            spectrogram: Spectrogram {
+                frames: 0,
+                bins: 0,
+                hz_per_bin: 0.0,
+                sec_per_frame: 0.0,
+                mag_db: vec![],
+            },
             clip_runs: 0,
             clip_pct: 0.0,
             true_peak_dbtp: -1.0,

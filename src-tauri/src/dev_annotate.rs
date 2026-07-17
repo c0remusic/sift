@@ -51,14 +51,22 @@ mod tests {
     fn appends_one_json_line_per_call() {
         let path = tmp_file("append");
         append_line(&path, serde_json::json!({"note": "trop tassé"})).unwrap();
-        append_line(&path, serde_json::json!({"note": "couleur \"bizarre\"\nsur 2 lignes"})).unwrap();
+        append_line(
+            &path,
+            serde_json::json!({"note": "couleur \"bizarre\"\nsur 2 lignes"}),
+        )
+        .unwrap();
         let content = std::fs::read_to_string(&path).unwrap();
         let lines: Vec<&str> = content.lines().collect();
         assert_eq!(lines.len(), 2, "2 appels -> 2 lignes");
         for line in &lines {
-            let v: serde_json::Value = serde_json::from_str(line).expect("chaque ligne est du JSON valide");
+            let v: serde_json::Value =
+                serde_json::from_str(line).expect("chaque ligne est du JSON valide");
             assert!(v.get("note").is_some());
-            assert!(v.get("ts").and_then(|t| t.as_u64()).is_some(), "ts epoch ajouté côté Rust");
+            assert!(
+                v.get("ts").and_then(|t| t.as_u64()).is_some(),
+                "ts epoch ajouté côté Rust"
+            );
         }
         let _ = std::fs::remove_file(&path);
     }

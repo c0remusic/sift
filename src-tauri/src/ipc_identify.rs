@@ -21,8 +21,16 @@ pub fn identify(
         let token = settings::get(&conn, settings::DISCOGS_TOKEN)
             .map_err(|e| e.to_string())?
             .unwrap_or_default();
-        let canonical = crate::filing::reconcile_track(&conn, track_id).map_err(|e| e.to_string())?;
-        (token, Query { artist: canonical.artist, title: canonical.title, version: canonical.version })
+        let canonical =
+            crate::filing::reconcile_track(&conn, track_id).map_err(|e| e.to_string())?;
+        (
+            token,
+            Query {
+                artist: canonical.artist,
+                title: canonical.title,
+                version: canonical.version,
+            },
+        )
     };
     if token.trim().is_empty() {
         return Err("NO_TOKEN".into());
@@ -45,7 +53,11 @@ pub fn apply_identity_cmd(
     {
         let conn = db::lock_conn(&conn)?;
         let known = conn
-            .query_row("SELECT 1 FROM tracks WHERE id=?1", rusqlite::params![track_id], |_| Ok(()))
+            .query_row(
+                "SELECT 1 FROM tracks WHERE id=?1",
+                rusqlite::params![track_id],
+                |_| Ok(()),
+            )
             .is_ok();
         if !known {
             return Err("unknown track id".into());
@@ -59,7 +71,8 @@ pub fn apply_identity_cmd(
     });
     let applied = {
         let conn = db::lock_conn(&conn)?;
-        metadata::apply_identity(&conn, track_id, &candidate, cover_path).map_err(|e| e.to_string())?
+        metadata::apply_identity(&conn, track_id, &candidate, cover_path)
+            .map_err(|e| e.to_string())?
     };
     app.emit("queue:changed", ()).ok();
     Ok(applied)

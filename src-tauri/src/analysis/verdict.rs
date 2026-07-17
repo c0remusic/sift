@@ -14,7 +14,7 @@ use crate::analysis::{Rail, Verdict};
 /// these thresholds stay reconfigurable without re-analysis (Réglages, M2b+).
 pub const LOSSLESS_OK_HZ: f32 = 20000.0; // ≥ → authentic lossless
 pub const LOSSY_CLIFF_HZ: f32 = 19500.0; // ≤ → lossy lowpass cliff → fake
-// (LOSSY_CLIFF_HZ, LOSSLESS_OK_HZ) → grey zone
+                                         // (LOSSY_CLIFF_HZ, LOSSLESS_OK_HZ) → grey zone
 
 /// Minimum cutoff a *genuine* MP3 of the given bitrate should reach (≈ encoder lowpass minus
 /// a margin for genre/encoder spread). A declared bitrate whose real cutoff is below this is

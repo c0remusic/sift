@@ -64,7 +64,6 @@ use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
 use aes::Aes256;
-use sysinfo::System;
 use cbc::cipher::block_padding::NoPadding;
 use cbc::cipher::{BlockDecryptMut, BlockEncryptMut, KeyIvInit};
 use flate2::read::ZlibDecoder;
@@ -76,6 +75,7 @@ use rand::{Rng, RngCore};
 use rusqlite::{Connection, OptionalExtension, Transaction};
 use sha2::Sha512;
 use std::io::Read;
+use sysinfo::System;
 use uuid::Uuid;
 
 /// SQLCipher v4 default page size, confirmed via `PRAGMA cipher_page_size`.
@@ -407,10 +407,13 @@ pub struct PlaylistDuplicateGroup {
 /// playlist. Read-only, mirroring `read_rekordbox_masterdb`'s shape (decrypt
 /// → deserialize → query, no write).
 #[allow(dead_code)]
-pub fn detect_playlist_duplicates(path: &Path) -> Result<Vec<PlaylistDuplicateGroup>, MasterDbError> {
+pub fn detect_playlist_duplicates(
+    path: &Path,
+) -> Result<Vec<PlaylistDuplicateGroup>, MasterDbError> {
     let plaintext = read_and_decrypt_cached(path)?;
 
-    let mut conn = Connection::open_in_memory().map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+    let mut conn =
+        Connection::open_in_memory().map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
     let len = plaintext.len();
     conn.deserialize_read_exact(rusqlite::MAIN_DB, Cursor::new(plaintext), len, true)
         .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
@@ -471,7 +474,8 @@ pub fn detect_playlist_duplicates(path: &Path) -> Result<Vec<PlaylistDuplicateGr
 /// XOR with the repeating key → zlib decompress → UTF-8. Order is the exact
 /// inverse of `pyrekordbox.utils.obfuscate`.
 fn deobfuscate_key() -> Result<String, MasterDbError> {
-    let decoded = base85::decode(BLOB).map_err(|e| MasterDbError::KeyDeobfuscation(e.to_string()))?;
+    let decoded =
+        base85::decode(BLOB).map_err(|e| MasterDbError::KeyDeobfuscation(e.to_string()))?;
     let xored: Vec<u8> = decoded
         .iter()
         .enumerate()
@@ -513,8 +517,8 @@ fn decrypt_page_body(
     key: &[u8; 32],
     hmac_key: &[u8; 32],
 ) -> Result<Vec<u8>, MasterDbError> {
-    let mut mac = <HmacSha512 as Mac>::new_from_slice(hmac_key)
-        .expect("HMAC-SHA512 accepts any key length");
+    let mut mac =
+        <HmacSha512 as Mac>::new_from_slice(hmac_key).expect("HMAC-SHA512 accepts any key length");
     mac.update(ciphertext);
     mac.update(iv);
     mac.update(&page_no.to_le_bytes());
@@ -541,7 +545,8 @@ struct DecryptCache {
     plaintext: Vec<u8>,
 }
 
-static DECRYPT_CACHE: std::sync::OnceLock<std::sync::Mutex<Option<DecryptCache>>> = std::sync::OnceLock::new();
+static DECRYPT_CACHE: std::sync::OnceLock<std::sync::Mutex<Option<DecryptCache>>> =
+    std::sync::OnceLock::new();
 
 /// Reads and decrypts `master.db`, reusing the last decrypted plaintext when the file's
 /// mtime+len haven't changed since. The Rekordbox integration page (`rekordbox-view.ts`)
@@ -552,7 +557,9 @@ static DECRYPT_CACHE: std::sync::OnceLock<std::sync::Mutex<Option<DecryptCache>>
 /// an uncached read rather than failing the caller for a cache-layer problem alone.
 fn read_and_decrypt_cached(path: &Path) -> Result<Vec<u8>, MasterDbError> {
     let meta = std::fs::metadata(path).map_err(|e| MasterDbError::Io(e.to_string()))?;
-    let mtime = meta.modified().map_err(|e| MasterDbError::Io(e.to_string()))?;
+    let mtime = meta
+        .modified()
+        .map_err(|e| MasterDbError::Io(e.to_string()))?;
     let len = meta.len();
 
     let cache = DECRYPT_CACHE.get_or_init(|| std::sync::Mutex::new(None));
@@ -568,7 +575,12 @@ fn read_and_decrypt_cached(path: &Path) -> Result<Vec<u8>, MasterDbError> {
     let plaintext = decrypt_masterdb(&raw)?;
 
     if let Ok(mut guard) = cache.lock() {
-        *guard = Some(DecryptCache { path: path.to_path_buf(), mtime, len, plaintext: plaintext.clone() });
+        *guard = Some(DecryptCache {
+            path: path.to_path_buf(),
+            mtime,
+            len,
+            plaintext: plaintext.clone(),
+        });
     }
     Ok(plaintext)
 }
@@ -685,7 +697,9 @@ fn decrypt_masterdb(raw: &[u8]) -> Result<Vec<u8>, MasterDbError> {
 /// just as valid as trying to reuse the original file's salt.
 pub(crate) fn encrypt_masterdb(plaintext: &[u8]) -> Result<Vec<u8>, MasterDbError> {
     if plaintext.len() < PAGE_SIZE || plaintext.len() % PAGE_SIZE != 0 {
-        return Err(MasterDbError::TruncatedFile { len: plaintext.len() });
+        return Err(MasterDbError::TruncatedFile {
+            len: plaintext.len(),
+        });
     }
     let passphrase = deobfuscate_key()?;
     let mut salt = [0u8; SALT_LEN];
@@ -756,7 +770,8 @@ pub(crate) fn encrypt_masterdb_for_test(plaintext: &[u8]) -> Vec<u8> {
 pub fn read_rekordbox_masterdb(path: &Path) -> Result<RekordboxIndex, MasterDbError> {
     let plaintext = read_and_decrypt_cached(path)?;
 
-    let mut conn = Connection::open_in_memory().map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+    let mut conn =
+        Connection::open_in_memory().map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
     let len = plaintext.len();
     conn.deserialize_read_exact(rusqlite::MAIN_DB, Cursor::new(plaintext), len, true)
         .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
@@ -787,10 +802,13 @@ pub fn read_rekordbox_masterdb(path: &Path) -> Result<RekordboxIndex, MasterDbEr
 /// (`docs/superpowers/plans/2026-07-08-m8-tier2-ui-screen.md`): a duplicate
 /// group's `playlist_id`/`content_id` alone aren't actionable information
 /// for a user, so the UI needs the human-readable name alongside them.
-pub fn read_playlist_names(path: &Path) -> Result<std::collections::HashMap<String, String>, MasterDbError> {
+pub fn read_playlist_names(
+    path: &Path,
+) -> Result<std::collections::HashMap<String, String>, MasterDbError> {
     let plaintext = read_and_decrypt_cached(path)?;
 
-    let mut conn = Connection::open_in_memory().map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+    let mut conn =
+        Connection::open_in_memory().map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
     let len = plaintext.len();
     conn.deserialize_read_exact(rusqlite::MAIN_DB, Cursor::new(plaintext), len, true)
         .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
@@ -799,7 +817,9 @@ pub fn read_playlist_names(path: &Path) -> Result<std::collections::HashMap<Stri
         .prepare("SELECT ID, Name FROM djmdPlaylist")
         .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
     let rows = stmt
-        .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?)))
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })
         .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
 
     let mut names = std::collections::HashMap::new();
@@ -843,7 +863,10 @@ pub(crate) fn is_rekordbox_running() -> bool {
 /// behind under the fixed filename would otherwise look like a valid
 /// backup to a later `restore_rekordbox_backup` call. Cleanup uses `.ok()`
 /// so a failure to remove never masks the real error being returned.
-pub(crate) fn backup_rekordbox_files(pioneer_dir: &Path, backup_dir: &Path) -> Result<(), MasterDbError> {
+pub(crate) fn backup_rekordbox_files(
+    pioneer_dir: &Path,
+    backup_dir: &Path,
+) -> Result<(), MasterDbError> {
     std::fs::create_dir_all(backup_dir).map_err(|e| MasterDbError::Io(e.to_string()))?;
 
     let src_db = pioneer_dir.join("master.db");
@@ -870,7 +893,10 @@ pub(crate) fn backup_rekordbox_files(pioneer_dir: &Path, backup_dir: &Path) -> R
 /// `pioneer_dir`, overwriting the live files. Used both as a user-triggered
 /// rollback and internally by the write path when post-write verification
 /// fails (see Task 6).
-pub(crate) fn restore_rekordbox_backup(pioneer_dir: &Path, backup_dir: &Path) -> Result<(), MasterDbError> {
+pub(crate) fn restore_rekordbox_backup(
+    pioneer_dir: &Path,
+    backup_dir: &Path,
+) -> Result<(), MasterDbError> {
     std::fs::copy(backup_dir.join("master.db"), pioneer_dir.join("master.db"))
         .map_err(|e| MasterDbError::Io(e.to_string()))?;
     std::fs::copy(
@@ -915,17 +941,23 @@ fn with_masterdb_write(
     let raw = std::fs::read(&db_path).map_err(|e| MasterDbError::Io(e.to_string()))?;
     let plaintext = decrypt_masterdb(&raw)?;
 
-    let mut conn = Connection::open_in_memory().map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+    let mut conn =
+        Connection::open_in_memory().map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
     let len = plaintext.len();
     conn.deserialize_read_exact(rusqlite::MAIN_DB, Cursor::new(plaintext), len, false)
         .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
 
-    let now = chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.6f").to_string();
-    let tx = conn.transaction().map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+    let now = chrono::Local::now()
+        .format("%Y-%m-%d %H:%M:%S%.6f")
+        .to_string();
+    let tx = conn
+        .transaction()
+        .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
 
     mutate(&tx, &now)?;
 
-    tx.commit().map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+    tx.commit()
+        .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
 
     let plaintext2 = conn
         .serialize(rusqlite::MAIN_DB)
@@ -954,9 +986,9 @@ fn with_masterdb_write(
                         "rekordbox master.db backup restore ALSO failed after a failed write — \
                          master.db may be in an inconsistent state: {restore_err}"
                     );
-                    Err(MasterDbError::WriteVerificationFailedRollbackFailed(format!(
-                        "{msg}; rollback also failed: {restore_err}"
-                    )))
+                    Err(MasterDbError::WriteVerificationFailedRollbackFailed(
+                        format!("{msg}; rollback also failed: {restore_err}"),
+                    ))
                 }
             }
         }
@@ -1010,7 +1042,9 @@ pub fn repair_track_path(
                 )
                 .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
             if rows_changed != 1 {
-                return Err(MasterDbError::TrackNotFound { track_id: repair.track_id.clone() });
+                return Err(MasterDbError::TrackNotFound {
+                    track_id: repair.track_id.clone(),
+                });
             }
             Ok(())
         },
@@ -1150,7 +1184,9 @@ fn generate_free_id(tx: &Transaction, table: &str) -> Result<String, MasterDbErr
             return Ok(candidate.to_string());
         }
     }
-    Err(MasterDbError::IdGenerationExhausted { table: table.to_string() })
+    Err(MasterDbError::IdGenerationExhausted {
+        table: table.to_string(),
+    })
 }
 
 /// Finds a `djmdArtist`/`djmdGenre`/`djmdLabel` row by exact `Name` match
@@ -1178,7 +1214,9 @@ fn find_or_create_named_row(
     now: &str,
 ) -> Result<String, MasterDbError> {
     if !FK_TABLES.contains(&table) {
-        return Err(MasterDbError::UnknownFkTable { table: table.to_string() });
+        return Err(MasterDbError::UnknownFkTable {
+            table: table.to_string(),
+        });
     }
     let trimmed = name.trim();
 
@@ -1232,12 +1270,16 @@ fn resolve_artwork_variants(
             continue;
         }
         if raw == ".." || raw.contains(':') {
-            return Err(MasterDbError::ArtworkPathEscapesRoot { path: image_path.to_string() });
+            return Err(MasterDbError::ArtworkPathEscapesRoot {
+                path: image_path.to_string(),
+            });
         }
         full.push(raw);
     }
     if full == share_root {
-        return Err(MasterDbError::ArtworkPathEscapesRoot { path: image_path.to_string() });
+        return Err(MasterDbError::ArtworkPathEscapesRoot {
+            path: image_path.to_string(),
+        });
     }
     let stem = full
         .file_stem()
@@ -1293,10 +1335,14 @@ pub fn sync_track_artwork(
         )
         .optional()
         .map_err(|e| MasterDbError::Sqlite(e.to_string()))?
-        .ok_or_else(|| MasterDbError::TrackNotFound { track_id: track_id.to_string() })?;
-    let image_path = image_path
-        .filter(|p| !p.trim().is_empty())
-        .ok_or_else(|| MasterDbError::NoArtworkPath { track_id: track_id.to_string() })?;
+        .ok_or_else(|| MasterDbError::TrackNotFound {
+            track_id: track_id.to_string(),
+        })?;
+    let image_path = image_path.filter(|p| !p.trim().is_empty()).ok_or_else(|| {
+        MasterDbError::NoArtworkPath {
+            track_id: track_id.to_string(),
+        }
+    })?;
 
     let (full, medium, small) = resolve_artwork_variants(pioneer_dir, &image_path)?;
     for target in [&full, &medium, &small] {
@@ -1397,17 +1443,21 @@ pub fn sync_track_artwork(
     match verify() {
         Ok(()) => Ok(()),
         Err(verify_err) => {
-            log::error!("rekordbox artwork write verification failed, restoring backup: {verify_err}");
+            log::error!(
+                "rekordbox artwork write verification failed, restoring backup: {verify_err}"
+            );
             match restore_all(&backups) {
-                Ok(()) => Err(MasterDbError::ArtworkWriteVerificationFailedRolledBack(verify_err.to_string())),
+                Ok(()) => Err(MasterDbError::ArtworkWriteVerificationFailedRolledBack(
+                    verify_err.to_string(),
+                )),
                 Err(restore_err) => {
                     log::error!(
                         "rekordbox artwork backup restore ALSO failed after a failed verification — \
                          artwork files may be in an inconsistent state: {restore_err}"
                     );
-                    Err(MasterDbError::ArtworkWriteVerificationFailedRollbackFailed(format!(
-                        "{verify_err}; rollback also failed: {restore_err}"
-                    )))
+                    Err(MasterDbError::ArtworkWriteVerificationFailedRollbackFailed(
+                        format!("{verify_err}; rollback also failed: {restore_err}"),
+                    ))
                 }
             }
         }
@@ -1450,7 +1500,9 @@ pub fn sync_track_metadata(
                 .map_err(|e| MasterDbError::Sqlite(e.to_string()))?
                 .unwrap_or(false);
             if !track_exists {
-                return Err(MasterDbError::TrackNotFound { track_id: sync.track_id.clone() });
+                return Err(MasterDbError::TrackNotFound {
+                    track_id: sync.track_id.clone(),
+                });
             }
 
             let mut any_field_set = false;
@@ -1573,7 +1625,10 @@ pub fn sync_track_metadata(
 mod tests {
     use super::*;
 
-    const FIXTURE: &str = concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/rekordbox_master.db");
+    const FIXTURE: &str = concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/tests/fixtures/rekordbox_master.db"
+    );
 
     #[test]
     fn deobfuscate_key_matches_pyrekordbox_reference() {
@@ -1673,7 +1728,10 @@ mod tests {
                 |row| row.get(0),
             )
             .expect("query djmdSongPlaylist");
-        assert_eq!(count, 2, "fixture must have track 40000001 twice in playlist 50000001");
+        assert_eq!(
+            count, 2,
+            "fixture must have track 40000001 twice in playlist 50000001"
+        );
     }
 
     #[test]
@@ -1815,9 +1873,7 @@ mod tests {
         let groups = detect_playlist_duplicates(Path::new(FIXTURE)).expect("detect");
         // Track 40000002 appears exactly once (TrackNo 2, playlist 50000001)
         // — must not show up as a group.
-        assert!(!groups
-            .iter()
-            .any(|g| g.content_id == "40000002"));
+        assert!(!groups.iter().any(|g| g.content_id == "40000002"));
     }
 
     #[test]
@@ -1837,7 +1893,10 @@ mod tests {
         // genuinely has Rekordbox open, that is the function working
         // correctly, not a bug.
         let running = is_rekordbox_running();
-        assert!(!running, "Rekordbox should not be running in the test environment");
+        assert!(
+            !running,
+            "Rekordbox should not be running in the test environment"
+        );
     }
 
     #[test]
@@ -1899,7 +1958,12 @@ mod tests {
             new_file_name_s: "nope.mp3".to_string(),
         };
         let err = repair_track_path(&pioneer_dir, &backup_dir, &repair).unwrap_err();
-        assert_eq!(err, MasterDbError::TrackNotFound { track_id: "99999999".to_string() });
+        assert_eq!(
+            err,
+            MasterDbError::TrackNotFound {
+                track_id: "99999999".to_string()
+            }
+        );
     }
 
     #[test]
@@ -1912,7 +1976,9 @@ mod tests {
         std::fs::write(pioneer_dir.join("masterPlaylists6.xml"), b"<DJ_PLAYLISTS/>")
             .expect("write fake xml");
 
-        let original_size = std::fs::metadata(pioneer_dir.join("master.db")).expect("stat before").len();
+        let original_size = std::fs::metadata(pioneer_dir.join("master.db"))
+            .expect("stat before")
+            .len();
 
         // Well past SQLite's per-cell local-payload threshold (~page_size - 35
         // bytes) — this forces the updated row onto an overflow page, growing
@@ -1929,7 +1995,9 @@ mod tests {
         };
         repair_track_path(&pioneer_dir, &backup_dir, &repair).expect("repair path with long path");
 
-        let new_size = std::fs::metadata(pioneer_dir.join("master.db")).expect("stat after").len();
+        let new_size = std::fs::metadata(pioneer_dir.join("master.db"))
+            .expect("stat after")
+            .len();
         assert!(
             new_size > original_size,
             "expected the database to grow past its original {original_size} bytes to hold the long path (overflow page), got {new_size}"
@@ -2005,11 +2073,16 @@ mod tests {
         let tmp = tempfile::tempdir().expect("tempdir");
         let backup_dir = tmp.path().join("backup");
 
-        let xml_before = std::fs::read(pioneer_dir.join("masterPlaylists6.xml")).expect("read xml before");
+        let xml_before =
+            std::fs::read(pioneer_dir.join("masterPlaylists6.xml")).expect("read xml before");
 
-        let baseline = read_rekordbox_masterdb(&pioneer_dir.join("master.db")).expect("read real copy");
+        let baseline =
+            read_rekordbox_masterdb(&pioneer_dir.join("master.db")).expect("read real copy");
         let track_count_before = baseline.tracks.len();
-        assert!(track_count_before > 0, "real copy has no tracks — wrong file?");
+        assert!(
+            track_count_before > 0,
+            "real copy has no tracks — wrong file?"
+        );
         let target = baseline.tracks.first().expect("at least one track").clone();
 
         // RekordboxTrack only carries FolderPath — fetch the real
@@ -2044,7 +2117,8 @@ mod tests {
         };
         repair_track_path(&pioneer_dir, &backup_dir, &repair).expect("repair on real copy");
 
-        let after_repair = read_rekordbox_masterdb(&pioneer_dir.join("master.db")).expect("reread after repair");
+        let after_repair =
+            read_rekordbox_masterdb(&pioneer_dir.join("master.db")).expect("reread after repair");
         assert_eq!(
             after_repair.tracks.len(),
             track_count_before,
@@ -2059,8 +2133,12 @@ mod tests {
 
         // Tier 1 deliberately never touches the XML (see repair_track_path's
         // doc comment) — assert that holds on real data too.
-        let xml_after = std::fs::read(pioneer_dir.join("masterPlaylists6.xml")).expect("read xml after");
-        assert_eq!(xml_before, xml_after, "masterPlaylists6.xml must be untouched by Tier 1");
+        let xml_after =
+            std::fs::read(pioneer_dir.join("masterPlaylists6.xml")).expect("read xml after");
+        assert_eq!(
+            xml_before, xml_after,
+            "masterPlaylists6.xml must be untouched by Tier 1"
+        );
 
         // Restore the original path so the copy stays reusable for a rerun,
         // and to prove a second real-data write round-trips too.
@@ -2070,9 +2148,11 @@ mod tests {
             new_file_name_l: orig_file_name_l,
             new_file_name_s: orig_file_name_s,
         };
-        repair_track_path(&pioneer_dir, &backup_dir, &restore).expect("restore original path on real copy");
+        repair_track_path(&pioneer_dir, &backup_dir, &restore)
+            .expect("restore original path on real copy");
 
-        let after_restore = read_rekordbox_masterdb(&pioneer_dir.join("master.db")).expect("reread after restore");
+        let after_restore =
+            read_rekordbox_masterdb(&pioneer_dir.join("master.db")).expect("reread after restore");
         let restored = after_restore
             .tracks
             .iter()
@@ -2107,22 +2187,33 @@ mod tests {
         let tmp = tempfile::tempdir().expect("tempdir");
         let backup_dir = tmp.path().join("backup");
 
-        let groups = detect_playlist_duplicates(&pioneer_dir.join("master.db")).expect("detect on real copy");
-        assert!(!groups.is_empty(), "expected at least one real duplicate group to dedup");
+        let groups = detect_playlist_duplicates(&pioneer_dir.join("master.db"))
+            .expect("detect on real copy");
+        assert!(
+            !groups.is_empty(),
+            "expected at least one real duplicate group to dedup"
+        );
         let group = groups[0].clone();
         println!(
             "deduping playlist={} content={} keep={} remove={:?}",
             group.playlist_id,
             group.content_id,
             group.keep.song_playlist_id,
-            group.remove.iter().map(|e| &e.song_playlist_id).collect::<Vec<_>>()
+            group
+                .remove
+                .iter()
+                .map(|e| &e.song_playlist_id)
+                .collect::<Vec<_>>()
         );
 
         dedup_playlist_group(&pioneer_dir, &backup_dir, &group).expect("dedup on real copy");
 
-        let after = detect_playlist_duplicates(&pioneer_dir.join("master.db")).expect("detect after");
+        let after =
+            detect_playlist_duplicates(&pioneer_dir.join("master.db")).expect("detect after");
         assert!(
-            !after.iter().any(|g| g.playlist_id == group.playlist_id && g.content_id == group.content_id),
+            !after
+                .iter()
+                .any(|g| g.playlist_id == group.playlist_id && g.content_id == group.content_id),
             "duplicate group must be gone after dedup"
         );
 
@@ -2146,23 +2237,34 @@ mod tests {
         dedup_playlist_group(&pioneer_dir, &backup_dir, &group).expect("dedup");
 
         // No more duplicates for this (playlist, content) pair.
-        let after = detect_playlist_duplicates(&pioneer_dir.join("master.db")).expect("detect after");
+        let after =
+            detect_playlist_duplicates(&pioneer_dir.join("master.db")).expect("detect after");
         assert!(!after
             .iter()
             .any(|g| g.playlist_id == group.playlist_id && g.content_id == group.content_id));
 
         // The kept row is still there, untouched.
         let index = read_rekordbox_masterdb(&pioneer_dir.join("master.db")).expect("reread");
-        assert_eq!(index.tracks.len(), 3, "djmdContent must be untouched by a playlist dedup");
+        assert_eq!(
+            index.tracks.len(),
+            3,
+            "djmdContent must be untouched by a playlist dedup"
+        );
 
         // Open a fresh in-memory connection on the written master.db to check
         // the USN bump and the surviving `keep` row directly.
-        let raw_after = std::fs::read(pioneer_dir.join("master.db")).expect("read written master.db");
+        let raw_after =
+            std::fs::read(pioneer_dir.join("master.db")).expect("read written master.db");
         let plaintext_after = decrypt_masterdb(&raw_after).expect("decrypt written master.db");
         let mut conn_after = Connection::open_in_memory().expect("open in-memory");
         let len_after = plaintext_after.len();
         conn_after
-            .deserialize_read_exact(rusqlite::MAIN_DB, Cursor::new(plaintext_after), len_after, false)
+            .deserialize_read_exact(
+                rusqlite::MAIN_DB,
+                Cursor::new(plaintext_after),
+                len_after,
+                false,
+            )
             .expect("deserialize written master.db");
 
         // USN bumped by exactly 1 (the group's `remove` list has exactly 1
@@ -2174,7 +2276,10 @@ mod tests {
                 |row| row.get(0),
             )
             .expect("read agentRegistry.int_1 after dedup");
-        assert_eq!(usn_after, 1001, "agentRegistry.int_1 must bump by 1 per removed entry");
+        assert_eq!(
+            usn_after, 1001,
+            "agentRegistry.int_1 must bump by 1 per removed entry"
+        );
 
         // The `keep` row itself must still be present, with its TrackNo unchanged.
         let keep_track_no: i64 = conn_after
@@ -2208,7 +2313,10 @@ mod tests {
         let empty_group = PlaylistDuplicateGroup {
             playlist_id: "50000001".to_string(),
             content_id: "40000002".to_string(),
-            keep: PlaylistDuplicateEntry { song_playlist_id: "60000002".to_string(), track_no: 2 },
+            keep: PlaylistDuplicateEntry {
+                song_playlist_id: "60000002".to_string(),
+                track_no: 2,
+            },
             remove: vec![],
         };
         let err = dedup_playlist_group(&pioneer_dir, &backup_dir, &empty_group).unwrap_err();
@@ -2228,7 +2336,10 @@ mod tests {
         let bogus_group = PlaylistDuplicateGroup {
             playlist_id: "50000001".to_string(),
             content_id: "40000001".to_string(),
-            keep: PlaylistDuplicateEntry { song_playlist_id: "60000001".to_string(), track_no: 1 },
+            keep: PlaylistDuplicateEntry {
+                song_playlist_id: "60000001".to_string(),
+                track_no: 1,
+            },
             remove: vec![PlaylistDuplicateEntry {
                 song_playlist_id: "99999999".to_string(),
                 track_no: 9,
@@ -2237,7 +2348,9 @@ mod tests {
         let err = dedup_playlist_group(&pioneer_dir, &backup_dir, &bogus_group).unwrap_err();
         assert_eq!(
             err,
-            MasterDbError::SongPlaylistEntryNotFound { song_playlist_id: "99999999".to_string() }
+            MasterDbError::SongPlaylistEntryNotFound {
+                song_playlist_id: "99999999".to_string()
+            }
         );
     }
 
@@ -2252,8 +2365,10 @@ mod tests {
     }
 
     fn count_rows(conn: &Connection, table: &str) -> i64 {
-        conn.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| row.get(0))
-            .expect("count rows")
+        conn.query_row(&format!("SELECT COUNT(*) FROM {table}"), [], |row| {
+            row.get(0)
+        })
+        .expect("count rows")
     }
 
     fn open_plain(path: &Path) -> Connection {
@@ -2289,7 +2404,10 @@ mod tests {
 
         let after = open_plain(&db_path);
         let count_after = count_rows(&after, "djmdArtist");
-        assert_eq!(count_after, count_before, "no new djmdArtist row should be created (reuse)");
+        assert_eq!(
+            count_after, count_before,
+            "no new djmdArtist row should be created (reuse)"
+        );
 
         let artist_id: String = after
             .query_row(
@@ -2298,7 +2416,10 @@ mod tests {
                 |row| row.get(0),
             )
             .expect("read ArtistID");
-        assert_eq!(artist_id, "70000001", "ArtistID should point at the existing row");
+        assert_eq!(
+            artist_id, "70000001",
+            "ArtistID should point at the existing row"
+        );
     }
 
     // Cas 2 : nom d'artiste inédit — mirroir direct du verdict spike 6
@@ -2322,7 +2443,11 @@ mod tests {
 
         let after = open_plain(&db_path);
         let count_after = count_rows(&after, "djmdArtist");
-        assert_eq!(count_after, count_before + 1, "exactly one new djmdArtist row should be created");
+        assert_eq!(
+            count_after,
+            count_before + 1,
+            "exactly one new djmdArtist row should be created"
+        );
 
         let (artist_id, artist_name): (String, String) = after
             .query_row(
@@ -2357,7 +2482,11 @@ mod tests {
         sync_track_metadata(&pioneer_dir, &backup_dir, &sync).expect("sync metadata");
 
         let after = open_plain(&db_path);
-        assert_eq!(count_rows(&after, "djmdArtist"), count_before, "case/whitespace variant must reuse, not duplicate");
+        assert_eq!(
+            count_rows(&after, "djmdArtist"),
+            count_before,
+            "case/whitespace variant must reuse, not duplicate"
+        );
         let (artist_id, stored_name): (String, String) = after
             .query_row(
                 "SELECT c.ArtistID, a.Name FROM djmdContent c JOIN djmdArtist a ON a.ID = c.ArtistID \
@@ -2367,7 +2496,10 @@ mod tests {
             )
             .expect("read joined artist");
         assert_eq!(artist_id, "70000001", "must resolve to the existing row");
-        assert_eq!(stored_name, "Existing Artist", "existing row's stored Name must be untouched");
+        assert_eq!(
+            stored_name, "Existing Artist",
+            "existing row's stored Name must be untouched"
+        );
     }
 
     // Cas 3 : title+year seuls, aucun champ FK — écriture directe, aucune
@@ -2447,7 +2579,11 @@ mod tests {
                 |row| row.get(0),
             )
             .expect("read usn after");
-        assert_eq!(usn_after, usn_before + 4, "3 new FK rows + 1 djmdContent update = 4 bumps");
+        assert_eq!(
+            usn_after,
+            usn_before + 4,
+            "3 new FK rows + 1 djmdContent update = 4 bumps"
+        );
     }
 
     // Cas 5 : Analysed/AnalysisUpdated/CueUpdated inchangés — invariant M8
@@ -2500,7 +2636,12 @@ mod tests {
             ..Default::default()
         };
         let err = sync_track_metadata(&pioneer_dir, &backup_dir, &sync).unwrap_err();
-        assert_eq!(err, MasterDbError::TrackNotFound { track_id: "99999999".to_string() });
+        assert_eq!(
+            err,
+            MasterDbError::TrackNotFound {
+                track_id: "99999999".to_string()
+            }
+        );
     }
 
     /// M8 Tier 3 real-data gate, same rationale as Tier 1's
@@ -2539,9 +2680,16 @@ mod tests {
 
         let before = open_plain(&db_path);
         let title: String = before
-            .query_row("SELECT Title FROM djmdContent WHERE ID = ?1", rusqlite::params![CANARY_ID], |row| row.get(0))
+            .query_row(
+                "SELECT Title FROM djmdContent WHERE ID = ?1",
+                rusqlite::params![CANARY_ID],
+                |row| row.get(0),
+            )
             .expect("canary present");
-        assert_eq!(title, "Street Battle", "canary title mismatch — wrong copy?");
+        assert_eq!(
+            title, "Street Battle",
+            "canary title mismatch — wrong copy?"
+        );
         let (orig_artist_id, orig_artist_name): (String, String) = before
             .query_row(
                 "SELECT c.ArtistID, a.Name FROM djmdContent c JOIN djmdArtist a ON a.ID = c.ArtistID \
@@ -2561,7 +2709,8 @@ mod tests {
             artist: Some(KNOWN_EXISTING_ARTIST.to_string()),
             ..Default::default()
         };
-        sync_track_metadata(&pioneer_dir, &backup_dir, &sync_reuse).expect("sync to existing artist");
+        sync_track_metadata(&pioneer_dir, &backup_dir, &sync_reuse)
+            .expect("sync to existing artist");
 
         let after_reuse = open_plain(&db_path);
         assert_eq!(
@@ -2586,13 +2735,24 @@ mod tests {
             artist: Some(orig_artist_name.clone()),
             ..Default::default()
         };
-        sync_track_metadata(&pioneer_dir, &backup_dir, &sync_restore1).expect("restore original artist");
+        sync_track_metadata(&pioneer_dir, &backup_dir, &sync_restore1)
+            .expect("restore original artist");
         let after_restore1 = open_plain(&db_path);
         let artist_id_after_restore1: String = after_restore1
-            .query_row("SELECT ArtistID FROM djmdContent WHERE ID = ?1", rusqlite::params![CANARY_ID], |row| row.get(0))
+            .query_row(
+                "SELECT ArtistID FROM djmdContent WHERE ID = ?1",
+                rusqlite::params![CANARY_ID],
+                |row| row.get(0),
+            )
             .expect("artist id after restore");
-        assert_eq!(artist_id_after_restore1, orig_artist_id, "must repoint back to the exact original row (reuse, not a duplicate)");
-        assert_eq!(count_rows(&after_restore1, "djmdArtist"), artist_count_before);
+        assert_eq!(
+            artist_id_after_restore1, orig_artist_id,
+            "must repoint back to the exact original row (reuse, not a duplicate)"
+        );
+        assert_eq!(
+            count_rows(&after_restore1, "djmdArtist"),
+            artist_count_before
+        );
         drop(after_restore1);
         println!("PASS: restored to original artist row via REUSE, no drift in row count");
 
@@ -2603,7 +2763,8 @@ mod tests {
             artist: Some(fabricated_name.clone()),
             ..Default::default()
         };
-        sync_track_metadata(&pioneer_dir, &backup_dir, &sync_create).expect("sync to fabricated artist");
+        sync_track_metadata(&pioneer_dir, &backup_dir, &sync_create)
+            .expect("sync to fabricated artist");
         let after_create = open_plain(&db_path);
         assert_eq!(
             count_rows(&after_create, "djmdArtist"),
@@ -2624,7 +2785,11 @@ mod tests {
         sync_track_metadata(&pioneer_dir, &backup_dir, &sync_restore2).expect("final restore");
         let after_restore2 = open_plain(&db_path);
         let artist_id_final: String = after_restore2
-            .query_row("SELECT ArtistID FROM djmdContent WHERE ID = ?1", rusqlite::params![CANARY_ID], |row| row.get(0))
+            .query_row(
+                "SELECT ArtistID FROM djmdContent WHERE ID = ?1",
+                rusqlite::params![CANARY_ID],
+                |row| row.get(0),
+            )
             .expect("final artist id");
         assert_eq!(artist_id_final, orig_artist_id);
         drop(after_restore2);
@@ -2684,9 +2849,19 @@ mod tests {
         let tmp = tempfile::tempdir().expect("tempdir");
         let (pioneer_dir, backup_dir) = setup_fixture_copy(&tmp);
 
-        let err = sync_track_artwork(&pioneer_dir, &backup_dir, "40000002", &synthetic_jpeg(10, 10, [0, 0, 0]))
-            .unwrap_err();
-        assert_eq!(err, MasterDbError::NoArtworkPath { track_id: "40000002".to_string() });
+        let err = sync_track_artwork(
+            &pioneer_dir,
+            &backup_dir,
+            "40000002",
+            &synthetic_jpeg(10, 10, [0, 0, 0]),
+        )
+        .unwrap_err();
+        assert_eq!(
+            err,
+            MasterDbError::NoArtworkPath {
+                track_id: "40000002".to_string()
+            }
+        );
     }
 
     #[test]
@@ -2696,8 +2871,13 @@ mod tests {
 
         // Track 40000003 has an ImagePath in the fixture but no files were
         // ever seeded on disk for it.
-        let err = sync_track_artwork(&pioneer_dir, &backup_dir, "40000003", &synthetic_jpeg(10, 10, [0, 0, 0]))
-            .unwrap_err();
+        let err = sync_track_artwork(
+            &pioneer_dir,
+            &backup_dir,
+            "40000003",
+            &synthetic_jpeg(10, 10, [0, 0, 0]),
+        )
+        .unwrap_err();
         assert!(matches!(err, MasterDbError::ArtworkVariantMissing { .. }));
     }
 
@@ -2728,8 +2908,13 @@ mod tests {
         );
         let before = std::fs::read(pioneer_dir.join("master.db")).unwrap();
 
-        sync_track_artwork(&pioneer_dir, &backup_dir, "40000001", &synthetic_jpeg(50, 50, [1, 2, 3]))
-            .expect("sync should succeed");
+        sync_track_artwork(
+            &pioneer_dir,
+            &backup_dir,
+            "40000001",
+            &synthetic_jpeg(50, 50, [1, 2, 3]),
+        )
+        .expect("sync should succeed");
 
         let after = std::fs::read(pioneer_dir.join("master.db")).unwrap();
         assert_eq!(before, after, "master.db must be byte-for-byte unchanged");
@@ -2776,7 +2961,12 @@ mod tests {
         std::fs::write(&medium, &before_medium).unwrap();
         std::fs::write(&small, &before_small).unwrap();
         let restored_full = std::fs::read(&full).unwrap();
-        assert_eq!(restored_full, before_full, "restore must be verified independently");
-        println!("PASS: sync_track_artwork round-trips cleanly on real master.db copy, artwork restored");
+        assert_eq!(
+            restored_full, before_full,
+            "restore must be verified independently"
+        );
+        println!(
+            "PASS: sync_track_artwork round-trips cleanly on real master.db copy, artwork restored"
+        );
     }
 }

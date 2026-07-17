@@ -5,7 +5,9 @@ use tauri::State;
 /// Locks the app's shared `Connection`, mapping a poisoned-mutex error to the
 /// `String` every IPC command already returns. Extracted from ~40 duplicated
 /// `conn.lock().map_err(|e| e.to_string())?` call sites across `ipc*.rs`.
-pub fn lock_conn<'a>(conn: &'a State<'_, Mutex<Connection>>) -> Result<MutexGuard<'a, Connection>, String> {
+pub fn lock_conn<'a>(
+    conn: &'a State<'_, Mutex<Connection>>,
+) -> Result<MutexGuard<'a, Connection>, String> {
     conn.lock().map_err(|e| e.to_string())
 }
 
@@ -313,7 +315,14 @@ mod tests {
             .unwrap()
             .map(|r| r.unwrap())
             .collect();
-        for c in ["cutoff_hz", "dual_mono", "container_ok", "codec_error", "id3_version", "analyzed_at"] {
+        for c in [
+            "cutoff_hz",
+            "dual_mono",
+            "container_ok",
+            "codec_error",
+            "id3_version",
+            "analyzed_at",
+        ] {
             assert!(cols.contains(&c.to_string()), "tracks missing column {c}");
         }
     }
@@ -330,10 +339,20 @@ mod tests {
             .map(|r| r.unwrap())
             .collect();
         for c in [
-            "id", "action_id", "track_id", "candidate_track_ids", "from_path",
-            "to_path", "status", "detected_at", "applied_at",
+            "id",
+            "action_id",
+            "track_id",
+            "candidate_track_ids",
+            "from_path",
+            "to_path",
+            "status",
+            "detected_at",
+            "applied_at",
         ] {
-            assert!(cols.contains(&c.to_string()), "rekordbox_masterdb_repairs missing column {c}");
+            assert!(
+                cols.contains(&c.to_string()),
+                "rekordbox_masterdb_repairs missing column {c}"
+            );
         }
     }
 
@@ -383,7 +402,10 @@ mod tests {
             .unwrap()
             .map(|r| r.unwrap())
             .collect();
-        assert!(acols.contains(&"meta".to_string()), "actions missing column meta");
+        assert!(
+            acols.contains(&"meta".to_string()),
+            "actions missing column meta"
+        );
     }
 
     #[test]
@@ -397,6 +419,9 @@ mod tests {
             .unwrap()
             .map(|r| r.unwrap())
             .collect();
-        assert!(acols.contains(&"session_id".to_string()), "actions missing column session_id");
+        assert!(
+            acols.contains(&"session_id".to_string()),
+            "actions missing column session_id"
+        );
     }
 }

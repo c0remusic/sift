@@ -149,8 +149,16 @@ mod tests {
         std::fs::copy(&mp3, &disguised).unwrap();
         let path = disguised.to_str().unwrap();
 
-        assert_eq!(rail_from_ext("flac"), Rail::Lossless, "extension alone is fooled");
-        assert_eq!(rail_from_content(path), Rail::Lossy, "content sniffing is not fooled");
+        assert_eq!(
+            rail_from_ext("flac"),
+            Rail::Lossless,
+            "extension alone is fooled"
+        );
+        assert_eq!(
+            rail_from_content(path),
+            Rail::Lossy,
+            "content sniffing is not fooled"
+        );
     }
 
     /// A genuine FLAC must not be misclassified by content sniffing (no false positive).

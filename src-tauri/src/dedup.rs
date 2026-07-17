@@ -258,9 +258,11 @@ pub fn name_dups(conn: &Connection) -> rusqlite::Result<HashSet<i64>> {
 /// name key). `None` if no name collides. Slice A returns `kind = "name"`; the acoustic layer
 /// (slice B) upgrades to `both` when the sound confirms.
 pub fn find_duplicate(conn: &Connection, track_id: i64) -> rusqlite::Result<Option<DupMatch>> {
-    let path: String = match conn
-        .query_row("SELECT path FROM tracks WHERE id=?1", params![track_id], |r| r.get(0))
-    {
+    let path: String = match conn.query_row(
+        "SELECT path FROM tracks WHERE id=?1",
+        params![track_id],
+        |r| r.get(0),
+    ) {
         Ok(p) => p,
         Err(_) => return Ok(None),
     };
@@ -301,27 +303,40 @@ pub fn find_duplicate(conn: &Connection, track_id: i64) -> rusqlite::Result<Opti
 
     // Confirm by sound: compare cached/lazy fingerprints. `both` if the sound agrees, else
     // `name` (names match but the recording differs, or audio unreadable — "à vérifier").
-    let (kind, score) =
-        match (get_or_compute_fp(conn, track_id, &path), get_or_compute_fp(conn, id, &cand_path)) {
-            (Some(fa), Some(fb)) => {
-                let s = fingerprint::similarity(&fa, &fb);
-                if s >= fingerprint::MATCH_THRESHOLD {
-                    ("both", s)
-                } else {
-                    ("name", s)
-                }
+    let (kind, score) = match (
+        get_or_compute_fp(conn, track_id, &path),
+        get_or_compute_fp(conn, id, &cand_path),
+    ) {
+        (Some(fa), Some(fb)) => {
+            let s = fingerprint::similarity(&fa, &fb);
+            if s >= fingerprint::MATCH_THRESHOLD {
+                ("both", s)
+            } else {
+                ("name", s)
             }
-            _ => ("name", 1.0),
-        };
+        }
+        _ => ("name", 1.0),
+    };
 
-    Ok(Some(DupMatch { id, status, folder, filename, kind: kind.to_string(), score }))
+    Ok(Some(DupMatch {
+        id,
+        status,
+        folder,
+        filename,
+        kind: kind.to_string(),
+        score,
+    }))
 }
 
 /// Fetch a track's fingerprint from the `tracks.fingerprint` cache, or compute it from the
 /// file and cache it. `None` if the audio can't be fingerprinted (short/corrupt/missing).
 fn get_or_compute_fp(conn: &Connection, track_id: i64, path: &str) -> Option<Vec<u32>> {
     let cached: Option<String> = conn
-        .query_row("SELECT fingerprint FROM tracks WHERE id=?1", params![track_id], |r| r.get(0))
+        .query_row(
+            "SELECT fingerprint FROM tracks WHERE id=?1",
+            params![track_id],
+            |r| r.get(0),
+        )
         .ok()
         .flatten();
     if let Some(s) = cached {
@@ -374,15 +389,32 @@ mod tests {
             recommend_keep,
             reason,
         } = v;
-        let _ = (id, path, filename, folder, format, bitrate, duration, truncated, recommend_keep, reason);
+        let _ = (
+            id,
+            path,
+            filename,
+            folder,
+            format,
+            bitrate,
+            duration,
+            truncated,
+            recommend_keep,
+            reason,
+        );
     }
 
     /// Mirrors shared/contracts.ts's `DupGroup`. Phase 2 —
     /// docs/superpowers/plans/2026-07-13-phase2-ipc-contract-tests.md.
     #[test]
     fn dup_group_shape_matches_contracts_ts() {
-        let v = DupGroup { members: Vec::new(), similarity: 0.0 };
-        let DupGroup { members, similarity } = v;
+        let v = DupGroup {
+            members: Vec::new(),
+            similarity: 0.0,
+        };
+        let DupGroup {
+            members,
+            similarity,
+        } = v;
         let _ = (members, similarity);
     }
 
@@ -395,7 +427,11 @@ mod tests {
     fn add(conn: &Connection, path: &str, status: &str) -> i64 {
         conn.execute(
             "INSERT INTO tracks(path, filename, status) VALUES(?1, ?2, ?3)",
-            params![path, Path::new(path).file_name().and_then(|n| n.to_str()), status],
+            params![
+                path,
+                Path::new(path).file_name().and_then(|n| n.to_str()),
+                status
+            ],
         )
         .unwrap();
         conn.last_insert_rowid()
@@ -427,9 +463,17 @@ mod tests {
         let conn = db();
         let cur = add(&conn, "/dl/Theo Parrish - Falling Up.mp3", "pending");
         let _other_pending = add(&conn, "/dl2/theo parrish falling up.wav", "pending");
-        conn.execute("UPDATE tracks SET folder='House' WHERE path='/lib/x.aiff'", []).ok();
+        conn.execute(
+            "UPDATE tracks SET folder='House' WHERE path='/lib/x.aiff'",
+            [],
+        )
+        .ok();
         let filed = add(&conn, "/lib/Theo Parrish - Falling Up.aiff", "filed");
-        conn.execute("UPDATE tracks SET folder='House' WHERE id=?1", params![filed]).unwrap();
+        conn.execute(
+            "UPDATE tracks SET folder='House' WHERE id=?1",
+            params![filed],
+        )
+        .unwrap();
 
         let m = find_duplicate(&conn, cur).unwrap().unwrap();
         assert_eq!(m.id, filed);
@@ -463,10 +507,17 @@ mod tests {
         let _id_b = add(&conn, b.to_str().unwrap(), "pending");
 
         let m = find_duplicate(&conn, id_a).unwrap().unwrap();
-        assert_eq!(m.kind, "both", "same recording, same name → sound-confirmed");
+        assert_eq!(
+            m.kind, "both",
+            "same recording, same name → sound-confirmed"
+        );
         // fingerprint cached on both after the comparison
         let cached: Option<String> = conn
-            .query_row("SELECT fingerprint FROM tracks WHERE id=?1", params![id_a], |r| r.get(0))
+            .query_row(
+                "SELECT fingerprint FROM tracks WHERE id=?1",
+                params![id_a],
+                |r| r.get(0),
+            )
             .unwrap();
         assert!(cached.is_some_and(|s| !s.is_empty()));
     }
@@ -520,7 +571,11 @@ mod tests {
         assert_eq!(g.members.len(), 2);
         assert!(g.similarity >= fingerprint::MATCH_THRESHOLD);
         let keep = g.members.iter().find(|m| m.recommend_keep).unwrap();
-        assert_eq!(keep.format.as_deref(), Some("flac"), "lossless wins over lossy");
+        assert_eq!(
+            keep.format.as_deref(),
+            Some("flac"),
+            "lossless wins over lossy"
+        );
         assert!(keep.reason.is_some());
         assert_eq!(g.members.iter().filter(|m| m.recommend_keep).count(), 1);
     }
@@ -542,8 +597,11 @@ mod tests {
         .unwrap();
         // Fake-match the pair directly via a shared cached fingerprint (bypasses real decode).
         let fp = fingerprint::encode(&[1, 2, 3, 4, 5, 6, 7, 8]);
-        conn.execute("UPDATE tracks SET fingerprint=?1 WHERE id IN (1,2)", params![fp])
-            .unwrap();
+        conn.execute(
+            "UPDATE tracks SET fingerprint=?1 WHERE id IN (1,2)",
+            params![fp],
+        )
+        .unwrap();
 
         let groups = scan_library_duplicates(&conn).unwrap();
 
@@ -571,11 +629,17 @@ mod tests {
         )
         .unwrap();
         let fp = fingerprint::encode(&[1, 2, 3, 4, 5, 6, 7, 8]);
-        conn.execute("UPDATE tracks SET fingerprint=?1 WHERE id IN (1,2)", params![fp])
-            .unwrap();
+        conn.execute(
+            "UPDATE tracks SET fingerprint=?1 WHERE id IN (1,2)",
+            params![fp],
+        )
+        .unwrap();
 
         let groups = scan_library_duplicates(&conn).unwrap();
-        assert!(groups.is_empty(), "durations 170s apart must not be grouped");
+        assert!(
+            groups.is_empty(),
+            "durations 170s apart must not be grouped"
+        );
     }
 
     #[test]
@@ -595,11 +659,18 @@ mod tests {
         )
         .unwrap();
         let fp = fingerprint::encode(&[1, 2, 3, 4, 5, 6, 7, 8]);
-        conn.execute("UPDATE tracks SET fingerprint=?1 WHERE id IN (1,2)", params![fp])
-            .unwrap();
+        conn.execute(
+            "UPDATE tracks SET fingerprint=?1 WHERE id IN (1,2)",
+            params![fp],
+        )
+        .unwrap();
 
         let groups = scan_library_duplicates(&conn).unwrap();
-        assert_eq!(groups.len(), 1, "durations within 2s tolerance stay grouped");
+        assert_eq!(
+            groups.len(),
+            1,
+            "durations within 2s tolerance stay grouped"
+        );
         assert_eq!(groups[0].members.len(), 2);
     }
 

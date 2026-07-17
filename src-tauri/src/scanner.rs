@@ -5,7 +5,9 @@ use std::collections::{HashMap, HashSet};
 use std::path::Path;
 
 /// Audio extensions Sift queues. Everything else on disk is ignored.
-const AUDIO_EXTS: &[&str] = &["mp3", "flac", "wav", "aif", "aiff", "m4a", "aac", "ogg", "opus"];
+const AUDIO_EXTS: &[&str] = &[
+    "mp3", "flac", "wav", "aif", "aiff", "m4a", "aac", "ogg", "opus",
+];
 
 /// True if `path` has a recognised audio extension (case-insensitive).
 pub fn is_audio(path: &Path) -> bool {
@@ -117,7 +119,11 @@ pub fn forget_path(conn: &Connection, path: &str) -> rusqlite::Result<usize> {
 /// Full diff of a source folder against the DB: add new files, re-pending changed ones,
 /// drop pending rows whose file vanished. Non-pending rows (e.g. already filed) are left
 /// untouched even if missing from disk.
-pub fn reconcile(conn: &Connection, source_id: i64, root: &Path) -> rusqlite::Result<ReconcileStats> {
+pub fn reconcile(
+    conn: &Connection,
+    source_id: i64,
+    root: &Path,
+) -> rusqlite::Result<ReconcileStats> {
     let disk = scan_dir(root);
 
     let mut existing: HashMap<String, (i64, i64)> = HashMap::new();
@@ -127,7 +133,10 @@ pub fn reconcile(conn: &Connection, source_id: i64, root: &Path) -> rusqlite::Re
         let rows = stmt.query_map(rusqlite::params![source_id], |r| {
             Ok((
                 r.get::<_, String>(0)?,
-                (r.get::<_, i64>(1).unwrap_or(0), r.get::<_, i64>(2).unwrap_or(0)),
+                (
+                    r.get::<_, i64>(1).unwrap_or(0),
+                    r.get::<_, i64>(2).unwrap_or(0),
+                ),
             ))
         })?;
         for row in rows {
@@ -182,7 +191,8 @@ mod tests {
     fn db_with_source() -> (Connection, i64) {
         let conn = Connection::open_in_memory().unwrap();
         crate::db::run_migrations(&conn).unwrap();
-        conn.execute("INSERT INTO sources (path) VALUES ('root')", []).unwrap();
+        conn.execute("INSERT INTO sources (path) VALUES ('root')", [])
+            .unwrap();
         let sid = conn.last_insert_rowid();
         (conn, sid)
     }
@@ -224,7 +234,8 @@ mod tests {
         assert_eq!(pending_count(&conn, sid), 2);
 
         // Mark them filed so we can prove "unchanged" does NOT reset status.
-        conn.execute("UPDATE tracks SET status='filed'", []).unwrap();
+        conn.execute("UPDATE tracks SET status='filed'", [])
+            .unwrap();
 
         // Change one file's size, delete the other, add a third.
         fs::write(root.join("change.wav"), b"123456789").unwrap();
@@ -239,7 +250,11 @@ mod tests {
 
         // change.wav is back to pending; new.aiff pending; keep.mp3 still filed.
         let status: String = conn
-            .query_row("SELECT status FROM tracks WHERE filename='change.wav'", [], |r| r.get(0))
+            .query_row(
+                "SELECT status FROM tracks WHERE filename='change.wav'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(status, "pending");
     }
@@ -253,15 +268,26 @@ mod tests {
         fs::write(&p, b"123").unwrap();
         reconcile(&conn, sid, root).unwrap();
         // pretend it was analysed
-        conn.execute("UPDATE tracks SET analyzed_at=datetime('now'), verdict='ok'", []).unwrap();
+        conn.execute(
+            "UPDATE tracks SET analyzed_at=datetime('now'), verdict='ok'",
+            [],
+        )
+        .unwrap();
 
         // content changes → re-pending AND analyzed_at cleared (forces re-analysis)
         fs::write(&p, b"123456789").unwrap();
         reconcile(&conn, sid, root).unwrap();
         let analyzed: Option<String> = conn
-            .query_row("SELECT analyzed_at FROM tracks WHERE filename='t.wav'", [], |r| r.get(0))
+            .query_row(
+                "SELECT analyzed_at FROM tracks WHERE filename='t.wav'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
-        assert!(analyzed.is_none(), "analyzed_at must reset when the file changes");
+        assert!(
+            analyzed.is_none(),
+            "analyzed_at must reset when the file changes"
+        );
     }
 
     #[test]

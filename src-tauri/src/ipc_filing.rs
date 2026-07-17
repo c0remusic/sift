@@ -44,8 +44,12 @@ fn library_root(conn: &Connection) -> Result<PathBuf, String> {
 
 /// The active filename template, falling back to the default when unset.
 fn template(conn: &Connection) -> String {
-    settings::get_or(conn, settings::FILENAME_TEMPLATE, settings::DEFAULT_TEMPLATE)
-        .unwrap_or_else(|_| settings::DEFAULT_TEMPLATE.to_string())
+    settings::get_or(
+        conn,
+        settings::FILENAME_TEMPLATE,
+        settings::DEFAULT_TEMPLATE,
+    )
+    .unwrap_or_else(|_| settings::DEFAULT_TEMPLATE.to_string())
 }
 
 /// Reconcile a track's tags + filename into the canonical record + confidence (drives the
@@ -67,7 +71,11 @@ pub fn preview_filename(
     ext: String,
 ) -> Result<String, String> {
     let conn = db::lock_conn(&conn)?;
-    Ok(crate::naming::render_filename(&template(&conn), &edited, &ext))
+    Ok(crate::naming::render_filename(
+        &template(&conn),
+        &edited,
+        &ext,
+    ))
 }
 
 /// Read-only identity + release facts persisted by `apply_identity` in the `metadata` table.
@@ -161,8 +169,12 @@ pub fn track_file_tags(
     // freeze every other DB user — same split as apply_tags).
     let path: String = {
         let conn = db::lock_conn(&conn)?;
-        conn.query_row("SELECT path FROM tracks WHERE id=?1", rusqlite::params![track_id], |r| r.get(0))
-            .map_err(|_| format!("track {track_id} not found"))?
+        conn.query_row(
+            "SELECT path FROM tracks WHERE id=?1",
+            rusqlite::params![track_id],
+            |r| r.get(0),
+        )
+        .map_err(|_| format!("track {track_id} not found"))?
     };
     let snap = crate::tagging::read_tags_full(&path)?;
     Ok(FileTags {
@@ -176,7 +188,10 @@ pub fn track_file_tags(
 
 /// Builds the M8 Tier 3 `MetadataSyncValues` from an apply_tags edit — factored out as a pure
 /// function (no I/O, no lock) so the value-mapping is unit-testable without a Tauri AppHandle/State.
-fn metadata_sync_values_for_apply_tags(edited: &Canonical, extras: &filing::TagExtras) -> actions::MetadataSyncValues {
+fn metadata_sync_values_for_apply_tags(
+    edited: &Canonical,
+    extras: &filing::TagExtras,
+) -> actions::MetadataSyncValues {
     let (genre, label) = actions::sanitize_genre_label(&extras.genres, extras.label.as_deref());
     actions::MetadataSyncValues {
         artist: Some(edited.artist.clone()),
@@ -203,7 +218,11 @@ pub fn apply_tags(
     let (path, extras) = {
         let conn = db::lock_conn(&conn)?;
         let path: String = conn
-            .query_row("SELECT path FROM tracks WHERE id=?1", rusqlite::params![track_id], |r| r.get(0))
+            .query_row(
+                "SELECT path FROM tracks WHERE id=?1",
+                rusqlite::params![track_id],
+                |r| r.get(0),
+            )
             .map_err(|_| format!("track {track_id} not found"))?;
         let extras = filing::load_tag_extras(&conn, track_id);
         (path, extras)
@@ -233,18 +252,30 @@ pub fn apply_tags(
     let batch_id = filing::new_batch_id(track_id);
     {
         let conn = db::lock_conn(&conn)?;
-        let action_id = actions::record_with_meta(&conn, &batch_id, Some(track_id), "tag_edit", Some(&path), None, Some(&meta))
-            .map_err(|e| e.to_string())?;
+        let action_id = actions::record_with_meta(
+            &conn,
+            &batch_id,
+            Some(track_id),
+            "tag_edit",
+            Some(&path),
+            None,
+            Some(&meta),
+        )
+        .map_err(|e| e.to_string())?;
 
         // M8 Tier 3: detect (read-only) a metadata sync candidate when linked to Rekordbox.
         let values = metadata_sync_values_for_apply_tags(&edited, &extras);
-        actions::detect_masterdb_metadata_sync_if_linked(&conn, &path, track_id, &values, action_id);
+        actions::detect_masterdb_metadata_sync_if_linked(
+            &conn, &path, track_id, &values, action_id,
+        );
 
         // M8 Tier 3 (pochette): only when this track actually has a stored cover — apply_tags
         // never changes the cover itself (it just re-applies whatever's already in `extras`), so
         // this only matters the first time a cover exists and hasn't been synced yet.
         if let Some(cover_path) = &extras.cover_path {
-            actions::detect_masterdb_artwork_sync_if_linked(&conn, &path, track_id, cover_path, action_id);
+            actions::detect_masterdb_artwork_sync_if_linked(
+                &conn, &path, track_id, cover_path, action_id,
+            );
         }
     }
     app.emit("queue:changed", ()).ok();
@@ -274,8 +305,18 @@ pub fn file_track(
         let tmpl = template(&conn);
         // Interactive single-file path: phase 2 runs before any next plan, so no in-flight dest
         // reservation is needed (empty set).
-        filing::plan_file(&conn, &root, &tmpl, track_id, &bin_rel, target, edited, allow_rail_mismatch.unwrap_or(false), &std::collections::HashSet::new())
-            .map_err(|e| e.to_string())?
+        filing::plan_file(
+            &conn,
+            &root,
+            &tmpl,
+            track_id,
+            &bin_rel,
+            target,
+            edited,
+            allow_rail_mismatch.unwrap_or(false),
+            &std::collections::HashSet::new(),
+        )
+        .map_err(|e| e.to_string())?
     };
     // Phase 2 WITHOUT the lock: the multi-second ffmpeg encode + file moves.
     let log = filing::execute_file(&plan).map_err(|e| e.to_string())?;
@@ -472,10 +513,17 @@ fn run_file_batch(
                 let job = { queue.lock().ok().and_then(|mut q| q.pop()) };
                 let Some(job) = job else { break };
                 let log = filing::execute_file(&job.plan)
-                    .map_err(|e| log::error!("file_batch: execute failed for track {}: {e:?}", job.id))
+                    .map_err(|e| {
+                        log::error!("file_batch: execute failed for track {}: {e:?}", job.id)
+                    })
                     .ok();
                 if tx
-                    .send(Phase2Outcome { idx: job.idx, id: job.id, plan: job.plan, log })
+                    .send(Phase2Outcome {
+                        idx: job.idx,
+                        id: job.id,
+                        plan: job.plan,
+                        log,
+                    })
                     .is_err()
                 {
                     break; // dispatcher gone — stop
@@ -515,7 +563,14 @@ fn run_file_batch(
     let mut xml_repair_pairs: Vec<(String, String)> = Vec::new();
     // `done` = every track whose fate is settled: planning-time needs_validation + each processed
     // outcome. Emitted before the loop (settles the planning-time bounces) and after each commit.
-    app.emit("file:progress", &FileProgress { done: needs_validation.len(), total }).ok();
+    app.emit(
+        "file:progress",
+        &FileProgress {
+            done: needs_validation.len(),
+            total,
+        },
+    )
+    .ok();
     for o in outcomes {
         match o.log {
             Some(log) => {
@@ -525,7 +580,14 @@ fn run_file_batch(
                         log::error!("file_batch: DB lock poisoned committing file {}: {e}", o.id);
                         // Can't commit — treat as unfiled; execute_file already left the FS clean.
                         needs_validation.push(o.id);
-                        app.emit("file:progress", &FileProgress { done: filed + needs_validation.len(), total }).ok();
+                        app.emit(
+                            "file:progress",
+                            &FileProgress {
+                                done: filed + needs_validation.len(),
+                                total,
+                            },
+                        )
+                        .ok();
                         continue;
                     }
                 };
@@ -536,7 +598,14 @@ fn run_file_batch(
             }
             None => needs_validation.push(o.id), // execute_file failed (FS left clean by it)
         }
-        app.emit("file:progress", &FileProgress { done: filed + needs_validation.len(), total }).ok();
+        app.emit(
+            "file:progress",
+            &FileProgress {
+                done: filed + needs_validation.len(),
+                total,
+            },
+        )
+        .ok();
     }
 
     if !xml_repair_pairs.is_empty() {
@@ -553,8 +622,23 @@ fn run_file_batch(
         }
     }
 
-    app.emit("file:progress", &FileProgress { done: filed + needs_validation.len(), total }).ok();
-    app.emit("file:done", &BatchResult { filed, needs_validation, cancelled }).ok();
+    app.emit(
+        "file:progress",
+        &FileProgress {
+            done: filed + needs_validation.len(),
+            total,
+        },
+    )
+    .ok();
+    app.emit(
+        "file:done",
+        &BatchResult {
+            filed,
+            needs_validation,
+            cancelled,
+        },
+    )
+    .ok();
 }
 
 /// Mark a track for re-sourcing (Écartés). Status-only at this milestone.
@@ -788,7 +872,9 @@ mod tests {
     #[test]
     fn metadata_sync_values_for_apply_tags_empty_genres_is_none() {
         let edited = crate::naming::Canonical {
-            artist: "A".to_string(), title: "B".to_string(), version: None,
+            artist: "A".to_string(),
+            title: "B".to_string(),
+            version: None,
             confidence: crate::naming::Confidence::Green,
         };
         let extras = filing::TagExtras::default();
@@ -821,7 +907,18 @@ mod tests {
             genres: Vec::new(),
             identified: false,
         };
-        let TrackRelease { artist, title, version, label, year, cover_path, genres, identified } = v;
-        let _ = (artist, title, version, label, year, cover_path, genres, identified);
+        let TrackRelease {
+            artist,
+            title,
+            version,
+            label,
+            year,
+            cover_path,
+            genres,
+            identified,
+        } = v;
+        let _ = (
+            artist, title, version, label, year, cover_path, genres, identified,
+        );
     }
 }

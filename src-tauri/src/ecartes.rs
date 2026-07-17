@@ -44,7 +44,11 @@ fn stored_identity(conn: &Connection, track_id: i64) -> Option<(String, String)>
 /// nothing) if the track isn't currently re-sourcing.
 pub fn requeue_track(conn: &Connection, track_id: i64) -> Result<(), String> {
     let status: String = conn
-        .query_row("SELECT status FROM tracks WHERE id=?1", params![track_id], |r| r.get(0))
+        .query_row(
+            "SELECT status FROM tracks WHERE id=?1",
+            params![track_id],
+            |r| r.get(0),
+        )
         .map_err(|e| match e {
             rusqlite::Error::QueryReturnedNoRows => "unknown track".to_string(),
             o => o.to_string(),
@@ -57,8 +61,11 @@ pub fn requeue_track(conn: &Connection, track_id: i64) -> Result<(), String> {
         params![track_id],
     )
     .map_err(|e| e.to_string())?;
-    conn.execute("UPDATE tracks SET status='pending' WHERE id=?1", params![track_id])
-        .map_err(|e| e.to_string())?;
+    conn.execute(
+        "UPDATE tracks SET status='pending' WHERE id=?1",
+        params![track_id],
+    )
+    .map_err(|e| e.to_string())?;
     crate::library::invalidate_duplicate_count_cache();
     Ok(())
 }
@@ -69,10 +76,24 @@ pub fn list_ecartes(conn: &Connection) -> rusqlite::Result<Vec<EcarteItem>> {
         "SELECT id, path, filename, status, verdict, truncated
          FROM tracks WHERE status IN ('resourcing','trash') ORDER BY id",
     )?;
-    type EcarteRow = (i64, String, Option<String>, String, Option<String>, Option<i64>);
+    type EcarteRow = (
+        i64,
+        String,
+        Option<String>,
+        String,
+        Option<String>,
+        Option<i64>,
+    );
     let rows: Vec<EcarteRow> = stmt
         .query_map([], |r| {
-            Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?, r.get(5)?))
+            Ok((
+                r.get(0)?,
+                r.get(1)?,
+                r.get(2)?,
+                r.get(3)?,
+                r.get(4)?,
+                r.get(5)?,
+            ))
         })?
         .collect::<rusqlite::Result<_>>()?;
     let mut out = Vec::with_capacity(rows.len());
@@ -80,7 +101,11 @@ pub fn list_ecartes(conn: &Connection) -> rusqlite::Result<Vec<EcarteItem>> {
         // Prefer the stored identity (Discogs/manual edit); fall back to reconcile (tags + name)
         // only when no metadata row exists — so identifying a track then écarting it keeps its name.
         let (artist, title) = stored_identity(conn, id)
-            .or_else(|| filing::reconcile_track(conn, id).ok().map(|c| (c.artist, c.title)))
+            .or_else(|| {
+                filing::reconcile_track(conn, id)
+                    .ok()
+                    .map(|c| (c.artist, c.title))
+            })
             .unwrap_or_default();
         out.push(EcarteItem {
             id,
@@ -128,10 +153,16 @@ pub fn restore_track(conn: &Connection, track_id: i64) -> Result<(), String> {
     // different disk than the original source, where a plain rename fails outright.
     crate::actions::revert_one_fs("trash", Some(&from), Some(&to), None)
         .map_err(|e| e.to_string())?;
-    conn.execute("UPDATE actions SET undone=1 WHERE id=?1", params![action_id])
-        .map_err(|e| e.to_string())?;
-    conn.execute("UPDATE tracks SET status='pending' WHERE id=?1", params![track_id])
-        .map_err(|e| e.to_string())?;
+    conn.execute(
+        "UPDATE actions SET undone=1 WHERE id=?1",
+        params![action_id],
+    )
+    .map_err(|e| e.to_string())?;
+    conn.execute(
+        "UPDATE tracks SET status='pending' WHERE id=?1",
+        params![track_id],
+    )
+    .map_err(|e| e.to_string())?;
     crate::library::invalidate_duplicate_count_cache();
     Ok(())
 }
@@ -165,8 +196,11 @@ pub fn purge_trash(conn: &Connection) -> Result<usize, String> {
         }
         tx.execute("UPDATE actions SET undone=1 WHERE id=?1", params![aid])
             .map_err(|e| e.to_string())?;
-        tx.execute("UPDATE tracks SET status='purged' WHERE id=?1", params![tid])
-            .map_err(|e| e.to_string())?;
+        tx.execute(
+            "UPDATE tracks SET status='purged' WHERE id=?1",
+            params![tid],
+        )
+        .map_err(|e| e.to_string())?;
         n += 1;
     }
     // Sweep any trashed track without a live trash action (orphaned journal) so it doesn't
@@ -193,10 +227,26 @@ mod tests {
     #[test]
     fn list_only_resourcing_and_trash() {
         let conn = db();
-        conn.execute("INSERT INTO tracks(path, status) VALUES('a.mp3','pending')", []).unwrap();
-        conn.execute("INSERT INTO tracks(path, status, verdict) VALUES('b.mp3','resourcing','fake')", []).unwrap();
-        conn.execute("INSERT INTO tracks(path, status, truncated) VALUES('c.wav','trash',1)", []).unwrap();
-        conn.execute("INSERT INTO tracks(path, status) VALUES('d.aiff','filed')", []).unwrap();
+        conn.execute(
+            "INSERT INTO tracks(path, status) VALUES('a.mp3','pending')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO tracks(path, status, verdict) VALUES('b.mp3','resourcing','fake')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO tracks(path, status, truncated) VALUES('c.wav','trash',1)",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO tracks(path, status) VALUES('d.aiff','filed')",
+            [],
+        )
+        .unwrap();
 
         let items = list_ecartes(&conn).unwrap();
         assert_eq!(items.len(), 2);
@@ -231,15 +281,25 @@ mod tests {
     #[test]
     fn requeue_resets_resourcing_to_pending_and_undoes_reject() {
         let conn = db();
-        conn.execute("INSERT INTO tracks(id, path, status) VALUES(1,'C:/x/a.mp3','resourcing')", []).unwrap();
+        conn.execute(
+            "INSERT INTO tracks(id, path, status) VALUES(1,'C:/x/a.mp3','resourcing')",
+            [],
+        )
+        .unwrap();
         crate::actions::record(&conn, "b1", Some(1), "reject", Some("C:/x/a.mp3"), None).unwrap();
 
         requeue_track(&conn, 1).unwrap();
 
-        let status: String = conn.query_row("SELECT status FROM tracks WHERE id=1", [], |r| r.get(0)).unwrap();
+        let status: String = conn
+            .query_row("SELECT status FROM tracks WHERE id=1", [], |r| r.get(0))
+            .unwrap();
         assert_eq!(status, "pending");
         let live: i64 = conn
-            .query_row("SELECT count(*) FROM actions WHERE track_id=1 AND type='reject' AND undone=0", [], |r| r.get(0))
+            .query_row(
+                "SELECT count(*) FROM actions WHERE track_id=1 AND type='reject' AND undone=0",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(live, 0, "the reject action is marked undone");
     }
@@ -247,8 +307,15 @@ mod tests {
     #[test]
     fn requeue_refuses_non_resourcing_track() {
         let conn = db();
-        conn.execute("INSERT INTO tracks(id, path, status) VALUES(1,'C:/x/a.mp3','trash')", []).unwrap();
-        assert!(requeue_track(&conn, 1).is_err(), "only re-sourcing tracks can be re-queued");
+        conn.execute(
+            "INSERT INTO tracks(id, path, status) VALUES(1,'C:/x/a.mp3','trash')",
+            [],
+        )
+        .unwrap();
+        assert!(
+            requeue_track(&conn, 1).is_err(),
+            "only re-sourcing tracks can be re-queued"
+        );
     }
 
     #[test]
@@ -265,12 +332,24 @@ mod tests {
         )
         .unwrap();
         let tid = conn.last_insert_rowid();
-        crate::actions::record(&conn, "b1", Some(tid), "trash", Some(from.to_str().unwrap()), Some(trash.to_str().unwrap())).unwrap();
+        crate::actions::record(
+            &conn,
+            "b1",
+            Some(tid),
+            "trash",
+            Some(from.to_str().unwrap()),
+            Some(trash.to_str().unwrap()),
+        )
+        .unwrap();
 
         restore_track(&conn, tid).unwrap();
 
         assert!(from.exists() && !trash.exists());
-        let status: String = conn.query_row("SELECT status FROM tracks WHERE id=?1", params![tid], |r| r.get(0)).unwrap();
+        let status: String = conn
+            .query_row("SELECT status FROM tracks WHERE id=?1", params![tid], |r| {
+                r.get(0)
+            })
+            .unwrap();
         assert_eq!(status, "pending");
     }
 
@@ -283,9 +362,21 @@ mod tests {
         std::fs::create_dir_all(trash.parent().unwrap()).unwrap();
         std::fs::write(&from, b"old").unwrap(); // origin already taken
         std::fs::write(&trash, b"new").unwrap();
-        conn.execute("INSERT INTO tracks(path, status) VALUES(?1, 'trash')", params![from.to_str().unwrap()]).unwrap();
+        conn.execute(
+            "INSERT INTO tracks(path, status) VALUES(?1, 'trash')",
+            params![from.to_str().unwrap()],
+        )
+        .unwrap();
         let tid = conn.last_insert_rowid();
-        crate::actions::record(&conn, "b1", Some(tid), "trash", Some(from.to_str().unwrap()), Some(trash.to_str().unwrap())).unwrap();
+        crate::actions::record(
+            &conn,
+            "b1",
+            Some(tid),
+            "trash",
+            Some(from.to_str().unwrap()),
+            Some(trash.to_str().unwrap()),
+        )
+        .unwrap();
 
         assert!(restore_track(&conn, tid).is_err());
         assert!(trash.exists()); // nothing moved
@@ -298,13 +389,29 @@ mod tests {
         let trash = dir.path().join(".sift-trash/1__x.mp3");
         std::fs::create_dir_all(trash.parent().unwrap()).unwrap();
         std::fs::write(&trash, b"x").unwrap();
-        conn.execute("INSERT INTO tracks(path, status) VALUES('orig.mp3','trash')", []).unwrap();
+        conn.execute(
+            "INSERT INTO tracks(path, status) VALUES('orig.mp3','trash')",
+            [],
+        )
+        .unwrap();
         let tid = conn.last_insert_rowid();
-        crate::actions::record(&conn, "b1", Some(tid), "trash", Some("orig.mp3"), Some(trash.to_str().unwrap())).unwrap();
+        crate::actions::record(
+            &conn,
+            "b1",
+            Some(tid),
+            "trash",
+            Some("orig.mp3"),
+            Some(trash.to_str().unwrap()),
+        )
+        .unwrap();
 
         assert_eq!(purge_trash(&conn).unwrap(), 1);
         assert!(!trash.exists());
-        let status: String = conn.query_row("SELECT status FROM tracks WHERE id=?1", params![tid], |r| r.get(0)).unwrap();
+        let status: String = conn
+            .query_row("SELECT status FROM tracks WHERE id=?1", params![tid], |r| {
+                r.get(0)
+            })
+            .unwrap();
         assert_eq!(status, "purged");
     }
 }

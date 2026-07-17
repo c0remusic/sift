@@ -96,8 +96,12 @@ pub struct RejectBatchResult {
 
 /// Source path of a track by id.
 fn track_path(conn: &Connection, track_id: i64) -> Result<String, FilingError> {
-    conn.query_row("SELECT path FROM tracks WHERE id=?1", params![track_id], |r| r.get(0))
-        .map_err(|_| FilingError::NotFound)
+    conn.query_row(
+        "SELECT path FROM tracks WHERE id=?1",
+        params![track_id],
+        |r| r.get(0),
+    )
+    .map_err(|_| FilingError::NotFound)
 }
 
 /// Lowercased extension (no dot) of a path.
@@ -179,7 +183,8 @@ fn copy_verify_delete(source: &str, dest: &Path) -> Result<(), FilingError> {
         )));
     }
 
-    std::fs::remove_file(source).map_err(|e| FilingError::Io(format!("remove source after copy: {e}")))
+    std::fs::remove_file(source)
+        .map_err(|e| FilingError::Io(format!("remove source after copy: {e}")))
 }
 
 /// FIX-10: move `source` to `dest`, trying `rename` first (fast, same-device) and falling back
@@ -189,7 +194,9 @@ fn copy_verify_delete(source: &str, dest: &Path) -> Result<(), FilingError> {
 fn move_cross_disk_safe(source: &str, dest: &Path) -> Result<(), FilingError> {
     match std::fs::rename(source, dest) {
         Ok(()) => Ok(()),
-        Err(e) if matches!(e.raw_os_error(), Some(17) | Some(18)) => copy_verify_delete(source, dest),
+        Err(e) if matches!(e.raw_os_error(), Some(17) | Some(18)) => {
+            copy_verify_delete(source, dest)
+        }
         Err(e) => Err(FilingError::Io(e.to_string())),
     }
 }
@@ -204,7 +211,10 @@ fn move_cross_disk_safe(source: &str, dest: &Path) -> Result<(), FilingError> {
 fn trash_file_fs(track_id: i64, source: &str) -> Result<String, FilingError> {
     let trash_dir = sift_trash_dir()?;
     std::fs::create_dir_all(&trash_dir).map_err(|e| FilingError::Io(e.to_string()))?;
-    let dest = library::ensure_unique(&trash_dir.join(format!("{track_id}__{}", file_name_of(source))), None);
+    let dest = library::ensure_unique(
+        &trash_dir.join(format!("{track_id}__{}", file_name_of(source))),
+        None,
+    );
     copy_verify_delete(source, &dest)?;
     Ok(dest.to_string_lossy().to_string())
 }
@@ -218,8 +228,15 @@ fn move_to_trash(
     source: &str,
 ) -> Result<String, FilingError> {
     let dest = trash_file_fs(track_id, source)?;
-    actions::record(conn, batch_id, Some(track_id), "trash", Some(source), Some(&dest))
-        .map_err(|e| FilingError::Db(e.to_string()))?;
+    actions::record(
+        conn,
+        batch_id,
+        Some(track_id),
+        "trash",
+        Some(source),
+        Some(&dest),
+    )
+    .map_err(|e| FilingError::Db(e.to_string()))?;
     Ok(dest)
 }
 
@@ -248,15 +265,30 @@ pub struct TagExtras {
 pub fn load_tag_extras(conn: &Connection, track_id: i64) -> TagExtras {
     TagExtras {
         label: conn
-            .query_row("SELECT label FROM metadata WHERE track_id=?1", params![track_id], |r| r.get::<_, Option<String>>(0))
-            .ok().flatten(),
+            .query_row(
+                "SELECT label FROM metadata WHERE track_id=?1",
+                params![track_id],
+                |r| r.get::<_, Option<String>>(0),
+            )
+            .ok()
+            .flatten(),
         year: conn
-            .query_row("SELECT year FROM metadata WHERE track_id=?1", params![track_id], |r| r.get::<_, Option<i64>>(0))
-            .ok().flatten(),
+            .query_row(
+                "SELECT year FROM metadata WHERE track_id=?1",
+                params![track_id],
+                |r| r.get::<_, Option<i64>>(0),
+            )
+            .ok()
+            .flatten(),
         genres: crate::genres::get_genres(conn, track_id).unwrap_or_default(),
         cover_path: conn
-            .query_row("SELECT cover_path FROM metadata WHERE track_id=?1", params![track_id], |r| r.get::<_, Option<String>>(0))
-            .ok().flatten(),
+            .query_row(
+                "SELECT cover_path FROM metadata WHERE track_id=?1",
+                params![track_id],
+                |r| r.get::<_, Option<String>>(0),
+            )
+            .ok()
+            .flatten(),
     }
 }
 
@@ -318,7 +350,11 @@ fn target_str(target: Target) -> &'static str {
 /// second plan resolves. Reserving each planned dest closes that window: the second plan skips
 /// past the first's not-yet-written path. `ignore` keeps the conformant "file in place" self-name
 /// exemption. Bounded bump identical to `ensure_unique`'s (" (N)" before the extension).
-fn ensure_unique_reserved(path: &Path, ignore: Option<&Path>, reserved: &HashSet<String>) -> PathBuf {
+fn ensure_unique_reserved(
+    path: &Path,
+    ignore: Option<&Path>,
+    reserved: &HashSet<String>,
+) -> PathBuf {
     let taken = |p: &Path| reserved.contains(&p.to_string_lossy().to_string());
     // First let ensure_unique settle FS collisions; then bump further past any reserved sibling.
     let mut candidate = library::ensure_unique(path, ignore);
@@ -342,8 +378,8 @@ fn ensure_unique_reserved(path: &Path, ignore: Option<&Path>, reserved: &HashSet
 }
 
 #[allow(clippy::too_many_arguments)] // each param is an independent, orthogonal input to the
-// plan (DB handle, library context, track identity, user overrides) — bundling them into a
-// struct here would just move the same 8 fields one level up without reducing real complexity.
+                                     // plan (DB handle, library context, track identity, user overrides) — bundling them into a
+                                     // struct here would just move the same 8 fields one level up without reducing real complexity.
 pub fn plan_file(
     conn: &Connection,
     root: &Path,
@@ -389,7 +425,11 @@ pub fn plan_file(
     // proved in the revert-duplicate relevé) can no longer strand a `.aif` beside a `.aiff`. The
     // conversion path produces a genuinely new file, which keeps the canonical target extension.
     let conformant = encode::is_conformant(&source, target);
-    let out_ext = if conformant { ext_of(&source) } else { target.ext().to_string() };
+    let out_ext = if conformant {
+        ext_of(&source)
+    } else {
+        target.ext().to_string()
+    };
 
     // The single point where the destination directory is decided. The `FILE_IN_PLACE` sentinel
     // means "file into the track's own source folder" — resolve it to `source.parent()` and NEVER
@@ -419,7 +459,11 @@ pub fn plan_file(
     // conformant track in place onto its own (already-correct) name must keep that name, not bump
     // it to " (2)". The non-conformant path ENCODES source → dest, so dest must never equal source
     // (FFmpeg reading and writing the same file would corrupt it) — keep the normal collision bump.
-    let ignore_self = if conformant { Some(Path::new(&source)) } else { None };
+    let ignore_self = if conformant {
+        Some(Path::new(&source))
+    } else {
+        None
+    };
     let dest = ensure_unique_reserved(&dest_dir.join(&filename), ignore_self, reserved);
 
     let extras = load_tag_extras(conn, track_id);
@@ -450,14 +494,29 @@ pub fn execute_file(plan: &FilePlan) -> Result<Vec<FsLog>, FilingError> {
         let old_tags = tagging::read_tags_full(&plan.source).map_err(FilingError::Tag)?;
         let snapshot = serde_json::to_string(&old_tags)
             .map_err(|e| FilingError::Tag(format!("serialize tag snapshot: {e}")))?;
-        log.push(FsLog { kind: "tag_edit", from: plan.source.clone(), to: plan.source.clone(), meta: Some(snapshot) });
+        log.push(FsLog {
+            kind: "tag_edit",
+            from: plan.source.clone(),
+            to: plan.source.clone(),
+            meta: Some(snapshot),
+        });
         tagging::write_tags_full(
-            &plan.source, &plan.canonical.artist, &naming::tag_title(&plan.canonical),
-            plan.extras.label.as_deref(), plan.extras.year, &plan.extras.genres,
+            &plan.source,
+            &plan.canonical.artist,
+            &naming::tag_title(&plan.canonical),
+            plan.extras.label.as_deref(),
+            plan.extras.year,
+            &plan.extras.genres,
             plan.extras.cover_path.as_deref(),
-        ).map_err(FilingError::Tag)?;
+        )
+        .map_err(FilingError::Tag)?;
         move_cross_disk_safe(&plan.source, Path::new(&plan.dest))?;
-        log.push(FsLog { kind: "move", from: plan.source.clone(), to: plan.dest.clone(), meta: None });
+        log.push(FsLog {
+            kind: "move",
+            from: plan.source.clone(),
+            to: plan.dest.clone(),
+            meta: None,
+        });
     } else {
         // transcode into the bin, tag the result, then trash the original (mono-location)
         encode::encode(&plan.source, &plan.dest, plan.target).map_err(|e| match e {
@@ -465,16 +524,30 @@ pub fn execute_file(plan: &FilePlan) -> Result<Vec<FsLog>, FilingError> {
             EncodeError::Ffmpeg(m) => FilingError::Encode(m),
         })?;
         if let Err(e) = tagging::write_tags_full(
-            &plan.dest, &plan.canonical.artist, &naming::tag_title(&plan.canonical),
-            plan.extras.label.as_deref(), plan.extras.year, &plan.extras.genres,
+            &plan.dest,
+            &plan.canonical.artist,
+            &naming::tag_title(&plan.canonical),
+            plan.extras.label.as_deref(),
+            plan.extras.year,
+            &plan.extras.genres,
             plan.extras.cover_path.as_deref(),
         ) {
             let _ = std::fs::remove_file(&plan.dest); // drop the orphan transcode
             return Err(FilingError::Tag(e));
         }
-        log.push(FsLog { kind: "convert", from: plan.source.clone(), to: plan.dest.clone(), meta: None });
+        log.push(FsLog {
+            kind: "convert",
+            from: plan.source.clone(),
+            to: plan.dest.clone(),
+            meta: None,
+        });
         match trash_file_fs(plan.track_id, &plan.source) {
-            Ok(trash) => log.push(FsLog { kind: "trash", from: plan.source.clone(), to: trash, meta: None }),
+            Ok(trash) => log.push(FsLog {
+                kind: "trash",
+                from: plan.source.clone(),
+                to: trash,
+                meta: None,
+            }),
             Err(e) => {
                 let _ = std::fs::remove_file(&plan.dest);
                 return Err(e);
@@ -551,7 +624,13 @@ pub fn commit_file(
         let mut action_ids = Vec::with_capacity(log.len());
         for fs in &log {
             let id = actions::record_row_only(
-                &tx, &plan.batch_id, Some(plan.track_id), fs.kind, Some(&fs.from), Some(&fs.to), fs.meta.as_deref(),
+                &tx,
+                &plan.batch_id,
+                Some(plan.track_id),
+                fs.kind,
+                Some(&fs.from),
+                Some(&fs.to),
+                fs.meta.as_deref(),
             )?;
             action_ids.push(id);
         }
@@ -593,12 +672,24 @@ pub fn commit_file(
                     sink.push((fs.from.clone(), fs.to.clone()));
                 }
             }
-            None => actions::maybe_repair_rekordbox_xml(conn, fs.kind, Some(&fs.from), Some(&fs.to)),
+            None => {
+                actions::maybe_repair_rekordbox_xml(conn, fs.kind, Some(&fs.from), Some(&fs.to))
+            }
         }
         if let Some(index) = &masterdb_index {
-            actions::maybe_detect_masterdb_repair_with_index(conn, index, fs.kind, Some(&fs.from), Some(&fs.to), *action_id);
+            actions::maybe_detect_masterdb_repair_with_index(
+                conn,
+                index,
+                fs.kind,
+                Some(&fs.from),
+                Some(&fs.to),
+                *action_id,
+            );
             if matches!(fs.kind, "move" | "convert") {
-                let (genre, label) = actions::sanitize_genre_label(&plan.extras.genres, plan.extras.label.as_deref());
+                let (genre, label) = actions::sanitize_genre_label(
+                    &plan.extras.genres,
+                    plan.extras.label.as_deref(),
+                );
                 let values = actions::MetadataSyncValues {
                     artist: Some(plan.canonical.artist.clone()),
                     title: Some(naming::tag_title(&plan.canonical)),
@@ -606,14 +697,31 @@ pub fn commit_file(
                     year: plan.extras.year,
                     genre,
                 };
-                actions::detect_masterdb_metadata_sync_with_index(conn, index, &fs.from, plan.track_id, &values, *action_id);
+                actions::detect_masterdb_metadata_sync_with_index(
+                    conn,
+                    index,
+                    &fs.from,
+                    plan.track_id,
+                    &values,
+                    *action_id,
+                );
                 if let Some(cover_path) = &plan.extras.cover_path {
-                    actions::detect_masterdb_artwork_sync_with_index(conn, index, &fs.from, plan.track_id, cover_path, *action_id);
+                    actions::detect_masterdb_artwork_sync_with_index(
+                        conn,
+                        index,
+                        &fs.from,
+                        plan.track_id,
+                        cover_path,
+                        *action_id,
+                    );
                 }
             }
         }
     }
-    Ok(FileResult { path: plan.dest.clone(), batch_id: plan.batch_id.clone() })
+    Ok(FileResult {
+        path: plan.dest.clone(),
+        batch_id: plan.batch_id.clone(),
+    })
 }
 
 /// File one track into `bin_rel` under `root`, holding `conn` throughout — a synchronous test
@@ -633,7 +741,17 @@ pub fn file_track(
     edited: Option<Canonical>,
     allow_rail_mismatch: bool,
 ) -> Result<FileResult, FilingError> {
-    let plan = plan_file(conn, root, template, track_id, bin_rel, override_target, edited, allow_rail_mismatch, &HashSet::new())?;
+    let plan = plan_file(
+        conn,
+        root,
+        template,
+        track_id,
+        bin_rel,
+        override_target,
+        edited,
+        allow_rail_mismatch,
+        &HashSet::new(),
+    )?;
     let log = execute_file(&plan)?;
     commit_file(conn, &plan, log, None)
 }
@@ -643,19 +761,29 @@ pub fn file_track(
 /// Green — this is what lets a per-track identity applied in Review feed `file_batch` (whose
 /// tag-based reconcile would otherwise ignore the applied identity). `None` = no usable row,
 /// fall back to reconcile.
-fn canonical_from_metadata(conn: &Connection, track_id: i64) -> rusqlite::Result<Option<Canonical>> {
+fn canonical_from_metadata(
+    conn: &Connection,
+    track_id: i64,
+) -> rusqlite::Result<Option<Canonical>> {
     let row = conn.query_row(
         "SELECT artist, title FROM metadata WHERE track_id=?1",
         params![track_id],
-        |r| Ok((r.get::<_, Option<String>>(0)?, r.get::<_, Option<String>>(1)?)),
+        |r| {
+            Ok((
+                r.get::<_, Option<String>>(0)?,
+                r.get::<_, Option<String>>(1)?,
+            ))
+        },
     );
     match row {
-        Ok((Some(a), Some(t))) if !a.trim().is_empty() && !t.trim().is_empty() => Ok(Some(Canonical {
-            artist: a,
-            title: t,
-            version: None,
-            confidence: naming::Confidence::Green,
-        })),
+        Ok((Some(a), Some(t))) if !a.trim().is_empty() && !t.trim().is_empty() => {
+            Ok(Some(Canonical {
+                artist: a,
+                title: t,
+                version: None,
+                confidence: naming::Confidence::Green,
+            }))
+        }
         Ok(_) => Ok(None),
         Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
         Err(e) => Err(e),
@@ -683,9 +811,19 @@ pub fn batch_canonical(conn: &Connection, track_id: i64) -> Option<Canonical> {
 pub fn reject_track(conn: &Connection, track_id: i64) -> Result<(), FilingError> {
     let source = track_path(conn, track_id)?;
     let batch_id = new_batch_id(track_id);
-    actions::record(conn, &batch_id, Some(track_id), "reject", Some(&source), None)
-        .map_err(|e| FilingError::Db(e.to_string()))?;
-    conn.execute("UPDATE tracks SET status='resourcing' WHERE id=?1", params![track_id])?;
+    actions::record(
+        conn,
+        &batch_id,
+        Some(track_id),
+        "reject",
+        Some(&source),
+        None,
+    )
+    .map_err(|e| FilingError::Db(e.to_string()))?;
+    conn.execute(
+        "UPDATE tracks SET status='resourcing' WHERE id=?1",
+        params![track_id],
+    )?;
     Ok(())
 }
 
@@ -710,7 +848,10 @@ pub fn trash_track(conn: &Connection, track_id: i64) -> Result<(), FilingError> 
     let source = track_path(conn, track_id)?;
     let batch_id = new_batch_id(track_id);
     move_to_trash(conn, track_id, &batch_id, &source)?;
-    conn.execute("UPDATE tracks SET status='trash' WHERE id=?1", params![track_id])?;
+    conn.execute(
+        "UPDATE tracks SET status='trash' WHERE id=?1",
+        params![track_id],
+    )?;
     Ok(())
 }
 
@@ -734,7 +875,12 @@ mod tests {
     }
 
     /// Copy a fixture into `dir` and insert a pending track row pointing at the copy.
-    fn seed_track(conn: &Connection, dir: &Path, fixture_name: &str, as_name: &str) -> Option<(i64, std::path::PathBuf)> {
+    fn seed_track(
+        conn: &Connection,
+        dir: &Path,
+        fixture_name: &str,
+        as_name: &str,
+    ) -> Option<(i64, std::path::PathBuf)> {
         let src = fixture(fixture_name)?;
         let copy = dir.join(as_name);
         std::fs::copy(&src, &copy).unwrap();
@@ -749,8 +895,11 @@ mod tests {
     #[test]
     fn canonical_from_metadata_prefers_persisted_identity() {
         let conn = db();
-        conn.execute("INSERT INTO tracks(id, path, status) VALUES(1,'/x.flac','pending')", [])
-            .unwrap();
+        conn.execute(
+            "INSERT INTO tracks(id, path, status) VALUES(1,'/x.flac','pending')",
+            [],
+        )
+        .unwrap();
         // No metadata row → None (file_batch then falls back to the tag/filename reconcile).
         assert!(canonical_from_metadata(&conn, 1).unwrap().is_none());
 
@@ -760,14 +909,19 @@ mod tests {
             [],
         )
         .unwrap();
-        let c = canonical_from_metadata(&conn, 1).unwrap().expect("metadata present");
+        let c = canonical_from_metadata(&conn, 1)
+            .unwrap()
+            .expect("metadata present");
         assert_eq!(c.artist, "Larry Heard");
         assert_eq!(c.title, "Can You Feel It");
         assert_eq!(c.confidence, crate::naming::Confidence::Green);
 
         // A blank-name row must be treated as absent (never file on an empty name).
-        conn.execute("UPDATE metadata SET artist='', title='' WHERE track_id=1", [])
-            .unwrap();
+        conn.execute(
+            "UPDATE metadata SET artist='', title='' WHERE track_id=1",
+            [],
+        )
+        .unwrap();
         assert!(canonical_from_metadata(&conn, 1).unwrap().is_none());
     }
 
@@ -775,7 +929,12 @@ mod tests {
     fn reconcile_track_reads_filename_when_tags_absent() {
         let conn = db();
         let dir = tempfile::tempdir().unwrap();
-        let Some((id, _)) = seed_track(&conn, dir.path(), "real_lossless.flac", "Robert Owens - Bring Down the Walls.flac") else {
+        let Some((id, _)) = seed_track(
+            &conn,
+            dir.path(),
+            "real_lossless.flac",
+            "Robert Owens - Bring Down the Walls.flac",
+        ) else {
             eprintln!("skip: no fixture");
             return;
         };
@@ -787,7 +946,10 @@ mod tests {
     fn seed_pioneer_dir_with_fixture(dir: &std::path::Path) -> std::path::PathBuf {
         std::fs::create_dir_all(dir).unwrap();
         std::fs::copy(
-            concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/rekordbox_master.db"),
+            concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/tests/fixtures/rekordbox_master.db"
+            ),
             dir.join("master.db"),
         )
         .unwrap();
@@ -804,8 +966,20 @@ mod tests {
         let plaintext = crate::rekordbox_masterdb::decrypt_masterdb_for_test(&raw);
         let len = plaintext.len();
         let mut conn2 = rusqlite::Connection::open_in_memory().unwrap();
-        conn2.deserialize_read_exact(rusqlite::MAIN_DB, std::io::Cursor::new(plaintext), len, false).unwrap();
-        conn2.execute("UPDATE djmdContent SET FolderPath=?1 WHERE ID='40000001'", params![path]).unwrap();
+        conn2
+            .deserialize_read_exact(
+                rusqlite::MAIN_DB,
+                std::io::Cursor::new(plaintext),
+                len,
+                false,
+            )
+            .unwrap();
+        conn2
+            .execute(
+                "UPDATE djmdContent SET FolderPath=?1 WHERE ID='40000001'",
+                params![path],
+            )
+            .unwrap();
         let plaintext2 = conn2.serialize(rusqlite::MAIN_DB).unwrap().to_vec();
         let raw2 = crate::rekordbox_masterdb::encrypt_masterdb_for_test(&plaintext2);
         std::fs::write(pioneer_dir.join("master.db"), raw2).unwrap();
@@ -825,12 +999,29 @@ mod tests {
         let pioneer_dir = dir.path().join("pioneer");
         let xml_path = seed_pioneer_dir_with_fixture(&pioneer_dir);
         patch_fixture_folder_path(&pioneer_dir, src.to_str().unwrap());
-        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+        crate::settings::set(
+            &conn,
+            crate::settings::REKORDBOX_XML_PATH,
+            xml_path.to_str().unwrap(),
+        )
+        .unwrap();
 
-        let res = file_track(&conn, &root, "{artist} - {title}", id, "House", None, Some(Canonical {
-            artist: "Larry Heard".into(), title: "Can You Feel It".into(), version: None,
-            confidence: crate::naming::Confidence::Green,
-        }), false).unwrap();
+        let res = file_track(
+            &conn,
+            &root,
+            "{artist} - {title}",
+            id,
+            "House",
+            None,
+            Some(Canonical {
+                artist: "Larry Heard".into(),
+                title: "Can You Feel It".into(),
+                version: None,
+                confidence: crate::naming::Confidence::Green,
+            }),
+            false,
+        )
+        .unwrap();
         let _ = res;
 
         let (new_artist, status): (Option<String>, String) = conn
@@ -850,7 +1041,8 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().join("lib");
         std::fs::create_dir_all(root.join("House")).unwrap();
-        let Some((id, src)) = seed_track(&conn, dir.path(), "real_lossless.flac", "src.flac") else {
+        let Some((id, src)) = seed_track(&conn, dir.path(), "real_lossless.flac", "src.flac")
+        else {
             eprintln!("skip: no fixture");
             return;
         };
@@ -859,12 +1051,29 @@ mod tests {
         let pioneer_dir = dir.path().join("pioneer");
         let xml_path = seed_pioneer_dir_with_fixture(&pioneer_dir);
         patch_fixture_folder_path(&pioneer_dir, src.to_str().unwrap());
-        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+        crate::settings::set(
+            &conn,
+            crate::settings::REKORDBOX_XML_PATH,
+            xml_path.to_str().unwrap(),
+        )
+        .unwrap();
 
-        let res = file_track(&conn, &root, "{artist} - {title}", id, "House", None, Some(Canonical {
-            artist: "Theo Parrish".into(), title: "Falling Up".into(), version: None,
-            confidence: crate::naming::Confidence::Green,
-        }), false).unwrap();
+        let res = file_track(
+            &conn,
+            &root,
+            "{artist} - {title}",
+            id,
+            "House",
+            None,
+            Some(Canonical {
+                artist: "Theo Parrish".into(),
+                title: "Falling Up".into(),
+                version: None,
+                confidence: crate::naming::Confidence::Green,
+            }),
+            false,
+        )
+        .unwrap();
         let _ = res;
 
         let (new_artist, status): (Option<String>, String) = conn
@@ -889,21 +1098,43 @@ mod tests {
             return;
         };
 
-        let res = file_track(&conn, &root, "{artist} - {title}", id, "House", None, Some(Canonical {
-            artist: "Larry Heard".into(), title: "Can You Feel It".into(), version: None,
-            confidence: crate::naming::Confidence::Green,
-        }), false).unwrap();
+        let res = file_track(
+            &conn,
+            &root,
+            "{artist} - {title}",
+            id,
+            "House",
+            None,
+            Some(Canonical {
+                artist: "Larry Heard".into(),
+                title: "Can You Feel It".into(),
+                version: None,
+                confidence: crate::naming::Confidence::Green,
+            }),
+            false,
+        )
+        .unwrap();
 
         // moved into bin, original gone (mono-location), one move action
         assert!(std::path::Path::new(&res.path).exists());
         assert!(!src.exists());
         assert!(res.path.ends_with("Larry Heard - Can You Feel It.mp3"));
         let (status, folder): (String, Option<String>) = conn
-            .query_row("SELECT status, folder FROM tracks WHERE id=?1", params![id], |r| Ok((r.get(0)?, r.get(1)?)))
+            .query_row(
+                "SELECT status, folder FROM tracks WHERE id=?1",
+                params![id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
             .unwrap();
         assert_eq!(status, "filed");
         assert_eq!(folder.as_deref(), Some("House"));
-        let moves: i64 = conn.query_row("SELECT count(*) FROM actions WHERE type='move' AND undone=0", [], |r| r.get(0)).unwrap();
+        let moves: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM actions WHERE type='move' AND undone=0",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
         assert_eq!(moves, 1);
     }
 
@@ -922,23 +1153,55 @@ mod tests {
             return;
         };
         // Give the source file KNOWN old tags before filing.
-        crate::tagging::write_tags_full(src.to_str().unwrap(), "OLD Artist", "OLD Title", None, None, &[], None).unwrap();
+        crate::tagging::write_tags_full(
+            src.to_str().unwrap(),
+            "OLD Artist",
+            "OLD Title",
+            None,
+            None,
+            &[],
+            None,
+        )
+        .unwrap();
 
-        let res = file_track(&conn, &root, "{artist} - {title}", id, "House", None, Some(Canonical {
-            artist: "NEW Artist".into(), title: "NEW Title".into(), version: None,
-            confidence: crate::naming::Confidence::Green,
-        }), false).unwrap();
+        let res = file_track(
+            &conn,
+            &root,
+            "{artist} - {title}",
+            id,
+            "House",
+            None,
+            Some(Canonical {
+                artist: "NEW Artist".into(),
+                title: "NEW Title".into(),
+                version: None,
+                confidence: crate::naming::Confidence::Green,
+            }),
+            false,
+        )
+        .unwrap();
         // Filed: file moved into the bin, carrying the NEW tags.
         let after = crate::tagging::read_tags_full(&res.path).unwrap();
-        assert_eq!(after.artist.as_deref(), Some("NEW Artist"), "filing wrote the new tags");
+        assert_eq!(
+            after.artist.as_deref(),
+            Some("NEW Artist"),
+            "filing wrote the new tags"
+        );
 
         // Revert the whole filing batch (move undone, then old tags restored).
         crate::actions::revert_batch(&conn, &res.batch_id).unwrap();
 
         assert!(src.exists(), "the file is moved back to its source");
-        assert!(!std::path::Path::new(&res.path).exists(), "nothing left at the bin destination");
+        assert!(
+            !std::path::Path::new(&res.path).exists(),
+            "nothing left at the bin destination"
+        );
         let restored = crate::tagging::read_tags_full(src.to_str().unwrap()).unwrap();
-        assert_eq!(restored.artist.as_deref(), Some("OLD Artist"), "old file tags restored on revert");
+        assert_eq!(
+            restored.artist.as_deref(),
+            Some("OLD Artist"),
+            "old file tags restored on revert"
+        );
         assert_eq!(restored.title.as_deref(), Some("OLD Title"));
     }
 
@@ -956,21 +1219,44 @@ mod tests {
             eprintln!("skip: no fixture");
             return;
         };
-        let plan = plan_file(&conn, &root, "{artist} - {title}", id, "House", None, Some(Canonical {
-            artist: "Larry Heard".into(), title: "Can You Feel It".into(), version: None,
-            confidence: crate::naming::Confidence::Green,
-        }), false, &HashSet::new()).unwrap();
+        let plan = plan_file(
+            &conn,
+            &root,
+            "{artist} - {title}",
+            id,
+            "House",
+            None,
+            Some(Canonical {
+                artist: "Larry Heard".into(),
+                title: "Can You Feel It".into(),
+                version: None,
+                confidence: crate::naming::Confidence::Green,
+            }),
+            false,
+            &HashSet::new(),
+        )
+        .unwrap();
         let log = execute_file(&plan).unwrap();
         // Phase 2 already ran: the file really moved.
         assert!(!src.exists());
         assert!(std::path::Path::new(&plan.dest).exists());
 
-        conn.execute("DELETE FROM tracks WHERE id=?1", params![id]).unwrap();
-        assert!(commit_file(&conn, &plan, log, None).is_err(), "commit must fail once its track row is gone");
+        conn.execute("DELETE FROM tracks WHERE id=?1", params![id])
+            .unwrap();
+        assert!(
+            commit_file(&conn, &plan, log, None).is_err(),
+            "commit must fail once its track row is gone"
+        );
 
         // Nothing left half-filed: the file is back at its original path, gone from the bin.
-        assert!(src.exists(), "rollback must restore the file at its original path");
-        assert!(!std::path::Path::new(&plan.dest).exists(), "rollback must remove it from the bin");
+        assert!(
+            src.exists(),
+            "rollback must restore the file at its original path"
+        );
+        assert!(
+            !std::path::Path::new(&plan.dest).exists(),
+            "rollback must remove it from the bin"
+        );
     }
 
     #[test]
@@ -979,24 +1265,52 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().join("lib");
         std::fs::create_dir_all(root.join("House")).unwrap();
-        let Some((id, src)) = seed_track(&conn, dir.path(), "real_lossless.flac", "src.flac") else {
+        let Some((id, src)) = seed_track(&conn, dir.path(), "real_lossless.flac", "src.flac")
+        else {
             eprintln!("skip: no fixture");
             return;
         };
         crate::ffmpeg::init_ffmpeg_path();
 
-        let res = file_track(&conn, &root, "{artist} - {title}", id, "House", None, Some(Canonical {
-            artist: "Theo Parrish".into(), title: "Falling Up".into(), version: None,
-            confidence: crate::naming::Confidence::Green,
-        }), false).unwrap();
+        let res = file_track(
+            &conn,
+            &root,
+            "{artist} - {title}",
+            id,
+            "House",
+            None,
+            Some(Canonical {
+                artist: "Theo Parrish".into(),
+                title: "Falling Up".into(),
+                version: None,
+                confidence: crate::naming::Confidence::Green,
+            }),
+            false,
+        )
+        .unwrap();
 
         // converted AIFF lands in the bin; conformant to target
         assert!(res.path.ends_with("Theo Parrish - Falling Up.aiff"));
-        assert!(crate::encode::is_conformant(&res.path, crate::encode::Target::Aiff1644));
+        assert!(crate::encode::is_conformant(
+            &res.path,
+            crate::encode::Target::Aiff1644
+        ));
         // original is in .sift-trash, not at its source location (mono-location)
         assert!(!src.exists());
-        let convert_rows: i64 = conn.query_row("SELECT count(*) FROM actions WHERE type='convert' AND undone=0", [], |r| r.get(0)).unwrap();
-        let trash_rows: i64 = conn.query_row("SELECT count(*) FROM actions WHERE type='trash' AND undone=0", [], |r| r.get(0)).unwrap();
+        let convert_rows: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM actions WHERE type='convert' AND undone=0",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let trash_rows: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM actions WHERE type='trash' AND undone=0",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
         assert_eq!(convert_rows, 1);
         assert_eq!(trash_rows, 1);
     }
@@ -1020,24 +1334,70 @@ mod tests {
 
         // A conformant source whose extension is the 3-letter `.aif` (the case formerly forced to `.aiff`).
         let aif_src = dir.path().join("src.aif");
-        crate::encode::encode(&flac, aif_src.to_str().unwrap(), crate::encode::Target::Aiff1644).unwrap();
-        assert!(crate::encode::is_conformant(aif_src.to_str().unwrap(), crate::encode::Target::Aiff1644), "the built .aif is conformant");
-        conn.execute("INSERT INTO tracks(path, status) VALUES(?1, 'pending')", params![aif_src.to_str().unwrap()]).unwrap();
+        crate::encode::encode(
+            &flac,
+            aif_src.to_str().unwrap(),
+            crate::encode::Target::Aiff1644,
+        )
+        .unwrap();
+        assert!(
+            crate::encode::is_conformant(
+                aif_src.to_str().unwrap(),
+                crate::encode::Target::Aiff1644
+            ),
+            "the built .aif is conformant"
+        );
+        conn.execute(
+            "INSERT INTO tracks(path, status) VALUES(?1, 'pending')",
+            params![aif_src.to_str().unwrap()],
+        )
+        .unwrap();
         let id = conn.last_insert_rowid();
 
-        let res = file_track(&conn, &root, "{artist} - {title}", id, "House", None, Some(Canonical {
-            artist: "Larry Heard".into(), title: "Can You Feel It".into(), version: None,
-            confidence: crate::naming::Confidence::Green,
-        }), false).unwrap();
+        let res = file_track(
+            &conn,
+            &root,
+            "{artist} - {title}",
+            id,
+            "House",
+            None,
+            Some(Canonical {
+                artist: "Larry Heard".into(),
+                title: "Can You Feel It".into(),
+                version: None,
+                confidence: crate::naming::Confidence::Green,
+            }),
+            false,
+        )
+        .unwrap();
 
         // Moved keeping `.aif` — NOT forced to the 4-letter `.aiff`.
-        assert!(res.path.ends_with("Larry Heard - Can You Feel It.aif"), "dest keeps .aif: {}", res.path);
-        assert!(!res.path.ends_with(".aiff"), "must not force .aiff on a moved conformant file");
+        assert!(
+            res.path.ends_with("Larry Heard - Can You Feel It.aif"),
+            "dest keeps .aif: {}",
+            res.path
+        );
+        assert!(
+            !res.path.ends_with(".aiff"),
+            "must not force .aiff on a moved conformant file"
+        );
         assert!(std::path::Path::new(&res.path).exists());
         assert!(!aif_src.exists(), "moved out of source (mono-location)");
         // It was a pure MOVE: no conversion, no trash.
-        let moves: i64 = conn.query_row("SELECT count(*) FROM actions WHERE type='move' AND undone=0", [], |r| r.get(0)).unwrap();
-        let converts: i64 = conn.query_row("SELECT count(*) FROM actions WHERE type='convert' AND undone=0", [], |r| r.get(0)).unwrap();
+        let moves: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM actions WHERE type='move' AND undone=0",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        let converts: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM actions WHERE type='convert' AND undone=0",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
         assert_eq!(moves, 1, "conformant .aif is moved");
         assert_eq!(converts, 0, "no conversion for an already-conformant file");
     }
@@ -1052,9 +1412,21 @@ mod tests {
             eprintln!("skip: no fixture");
             return;
         };
-        let err = file_track(&conn, &root, "{artist} - {title}", id, "", Some(Target::Aiff1644), Some(Canonical {
-            artist: "X".into(), title: "Y".into(), version: None, confidence: crate::naming::Confidence::Green,
-        }), false);
+        let err = file_track(
+            &conn,
+            &root,
+            "{artist} - {title}",
+            id,
+            "",
+            Some(Target::Aiff1644),
+            Some(Canonical {
+                artist: "X".into(),
+                title: "Y".into(),
+                version: None,
+                confidence: crate::naming::Confidence::Green,
+            }),
+            false,
+        );
         assert_eq!(err, Err(FilingError::Upscale));
     }
 
@@ -1071,12 +1443,32 @@ mod tests {
             return;
         };
         let bin_rel = format!("{EXTERNAL_DEST_PREFIX}{}", external.to_str().unwrap());
-        let plan = plan_file(&conn, &root, "{artist} - {title}", id, &bin_rel, None, Some(Canonical {
-            artist: "X".into(), title: "Y".into(), version: None, confidence: crate::naming::Confidence::Green,
-        }), false, &HashSet::new()).unwrap();
+        let plan = plan_file(
+            &conn,
+            &root,
+            "{artist} - {title}",
+            id,
+            &bin_rel,
+            None,
+            Some(Canonical {
+                artist: "X".into(),
+                title: "Y".into(),
+                version: None,
+                confidence: crate::naming::Confidence::Green,
+            }),
+            false,
+            &HashSet::new(),
+        )
+        .unwrap();
         let dest = Path::new(&plan.dest);
-        assert!(dest.starts_with(&external), "dest {dest:?} should land under the external dir, not the library root");
-        assert!(!dest.starts_with(&root), "dest {dest:?} must NOT be under the library root");
+        assert!(
+            dest.starts_with(&external),
+            "dest {dest:?} should land under the external dir, not the library root"
+        );
+        assert!(
+            !dest.starts_with(&root),
+            "dest {dest:?} must NOT be under the library root"
+        );
     }
 
     #[test]
@@ -1091,9 +1483,22 @@ mod tests {
         };
         let missing = dir.path().join("never-created");
         let bin_rel = format!("{EXTERNAL_DEST_PREFIX}{}", missing.to_str().unwrap());
-        let err = plan_file(&conn, &root, "{artist} - {title}", id, &bin_rel, None, Some(Canonical {
-            artist: "X".into(), title: "Y".into(), version: None, confidence: crate::naming::Confidence::Green,
-        }), false, &HashSet::new());
+        let err = plan_file(
+            &conn,
+            &root,
+            "{artist} - {title}",
+            id,
+            &bin_rel,
+            None,
+            Some(Canonical {
+                artist: "X".into(),
+                title: "Y".into(),
+                version: None,
+                confidence: crate::naming::Confidence::Green,
+            }),
+            false,
+            &HashSet::new(),
+        );
         assert_eq!(
             err.err(),
             Some(FilingError::Io(format!(
@@ -1112,9 +1517,19 @@ mod tests {
             return;
         };
         reject_track(&conn, id).unwrap();
-        let status: String = conn.query_row("SELECT status FROM tracks WHERE id=?1", params![id], |r| r.get(0)).unwrap();
+        let status: String = conn
+            .query_row("SELECT status FROM tracks WHERE id=?1", params![id], |r| {
+                r.get(0)
+            })
+            .unwrap();
         assert_eq!(status, "resourcing");
-        let rejects: i64 = conn.query_row("SELECT count(*) FROM actions WHERE type='reject'", [], |r| r.get(0)).unwrap();
+        let rejects: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM actions WHERE type='reject'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
         assert_eq!(rejects, 1);
     }
 
@@ -1131,9 +1546,19 @@ mod tests {
         };
         // 999 is not a real track id → reject_track errors → reported in `failed`, batch not aborted.
         let res = reject_batch(&conn, &[a, b, 999]);
-        assert_eq!(res, RejectBatchResult { rejected: 2, failed: vec![999] });
+        assert_eq!(
+            res,
+            RejectBatchResult {
+                rejected: 2,
+                failed: vec![999]
+            }
+        );
         let resourced: i64 = conn
-            .query_row("SELECT count(*) FROM tracks WHERE status='resourcing'", [], |r| r.get(0))
+            .query_row(
+                "SELECT count(*) FROM tracks WHERE status='resourcing'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(resourced, 2);
     }
@@ -1148,7 +1573,11 @@ mod tests {
         };
         trash_track(&conn, id).unwrap();
         assert!(!src.exists());
-        let status: String = conn.query_row("SELECT status FROM tracks WHERE id=?1", params![id], |r| r.get(0)).unwrap();
+        let status: String = conn
+            .query_row("SELECT status FROM tracks WHERE id=?1", params![id], |r| {
+                r.get(0)
+            })
+            .unwrap();
         assert_eq!(status, "trash");
         // Trash is centralized to <Documents>/Sift/Trash/ (cross-disk safe), not under `root`.
         // The moved file is named `<track_id>__<original_name>` there (ensure_unique may suffix it
@@ -1159,9 +1588,16 @@ mod tests {
             .read_dir()
             .unwrap()
             .filter_map(|e| e.ok().map(|e| e.path()))
-            .filter(|p| p.file_name().and_then(|n| n.to_str()).is_some_and(|n| n.starts_with(&prefix)))
+            .filter(|p| {
+                p.file_name()
+                    .and_then(|n| n.to_str())
+                    .is_some_and(|n| n.starts_with(&prefix))
+            })
             .collect();
-        assert!(!entries.is_empty(), "trashed file should land in the central Sift trash dir");
+        assert!(
+            !entries.is_empty(),
+            "trashed file should land in the central Sift trash dir"
+        );
         for p in entries {
             std::fs::remove_file(&p).ok();
         }
@@ -1193,12 +1629,22 @@ mod tests {
         };
         crate::metadata::apply_identity(&conn, id, &cand, None).unwrap();
 
-        let res = file_track(&conn, &root, "{artist} - {title}", id, "House", None, Some(Canonical {
-            artist: "Larry Heard".into(),
-            title: "Mystery of Love".into(),
-            version: None,
-            confidence: crate::naming::Confidence::Green,
-        }), false).unwrap();
+        let res = file_track(
+            &conn,
+            &root,
+            "{artist} - {title}",
+            id,
+            "House",
+            None,
+            Some(Canonical {
+                artist: "Larry Heard".into(),
+                title: "Mystery of Love".into(),
+                version: None,
+                confidence: crate::naming::Confidence::Green,
+            }),
+            false,
+        )
+        .unwrap();
 
         use lofty::file::TaggedFileExt;
         use lofty::probe::Probe;
@@ -1206,7 +1652,10 @@ mod tests {
         let tagged = Probe::open(&res.path).unwrap().read().unwrap();
         let tag = tagged.primary_tag().unwrap();
         let genre = tag.get_string(ItemKey::Genre).unwrap_or("");
-        assert!(genre.contains("Deep House"), "filed file has applied genre; got {genre:?}");
+        assert!(
+            genre.contains("Deep House"),
+            "filed file has applied genre; got {genre:?}"
+        );
     }
 
     /// FIX-1 (BUG-1): an MP3 disguised with a `.flac` extension must be REFUSED by default
@@ -1232,18 +1681,48 @@ mod tests {
         .unwrap();
         let id = conn.last_insert_rowid();
         let canonical = Some(Canonical {
-            artist: "X".into(), title: "Y".into(), version: None, confidence: crate::naming::Confidence::Green,
+            artist: "X".into(),
+            title: "Y".into(),
+            version: None,
+            confidence: crate::naming::Confidence::Green,
         });
 
         // Default (allow_rail_mismatch=false): refused, nothing touched.
-        let blocked = plan_file(&conn, &root, "{artist} - {title}", id, "House", None, canonical.clone(), false, &HashSet::new());
+        let blocked = plan_file(
+            &conn,
+            &root,
+            "{artist} - {title}",
+            id,
+            "House",
+            None,
+            canonical.clone(),
+            false,
+            &HashSet::new(),
+        );
         assert_eq!(blocked.err(), Some(FilingError::RailMismatch));
-        assert!(disguised.exists(), "refused plan must not touch the source file");
+        assert!(
+            disguised.exists(),
+            "refused plan must not touch the source file"
+        );
 
         // Explicit confirmation (allow_rail_mismatch=true): proceeds normally.
         crate::ffmpeg::init_ffmpeg_path();
-        let allowed = plan_file(&conn, &root, "{artist} - {title}", id, "House", None, canonical, true, &HashSet::new());
-        assert!(allowed.is_ok(), "an explicitly confirmed mismatch must proceed: {:?}", allowed.err());
+        let allowed = plan_file(
+            &conn,
+            &root,
+            "{artist} - {title}",
+            id,
+            "House",
+            None,
+            canonical,
+            true,
+            &HashSet::new(),
+        );
+        assert!(
+            allowed.is_ok(),
+            "an explicitly confirmed mismatch must proceed: {:?}",
+            allowed.err()
+        );
     }
 
     /// No false positive: a genuine FLAC must never trip the mismatch guard.
@@ -1253,15 +1732,33 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().join("lib");
         std::fs::create_dir_all(&root).unwrap();
-        let Some((id, _src)) = seed_track(&conn, dir.path(), "real_lossless.flac", "src.flac") else {
+        let Some((id, _src)) = seed_track(&conn, dir.path(), "real_lossless.flac", "src.flac")
+        else {
             eprintln!("skip: no fixture");
             return;
         };
         crate::ffmpeg::init_ffmpeg_path();
-        let res = plan_file(&conn, &root, "{artist} - {title}", id, "House", None, Some(Canonical {
-            artist: "X".into(), title: "Y".into(), version: None, confidence: crate::naming::Confidence::Green,
-        }), false, &HashSet::new());
-        assert!(res.is_ok(), "a genuine FLAC must not be blocked: {:?}", res.err());
+        let res = plan_file(
+            &conn,
+            &root,
+            "{artist} - {title}",
+            id,
+            "House",
+            None,
+            Some(Canonical {
+                artist: "X".into(),
+                title: "Y".into(),
+                version: None,
+                confidence: crate::naming::Confidence::Green,
+            }),
+            false,
+            &HashSet::new(),
+        );
+        assert!(
+            res.is_ok(),
+            "a genuine FLAC must not be blocked: {:?}",
+            res.err()
+        );
     }
 
     #[test]
@@ -1272,17 +1769,28 @@ mod tests {
         let pioneer_dir = tmp.path().join("pioneer");
         std::fs::create_dir_all(&pioneer_dir).unwrap();
         std::fs::copy(
-            concat!(env!("CARGO_MANIFEST_DIR"), "/tests/fixtures/rekordbox_master.db"),
+            concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/tests/fixtures/rekordbox_master.db"
+            ),
             pioneer_dir.join("master.db"),
         )
         .unwrap();
         crate::actions::set_pioneer_dir_override_for_test(pioneer_dir.clone());
         let xml_path = pioneer_dir.join("masterPlaylists6.xml");
         std::fs::write(&xml_path, b"<DJ_PLAYLISTS/>").unwrap();
-        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+        crate::settings::set(
+            &conn,
+            crate::settings::REKORDBOX_XML_PATH,
+            xml_path.to_str().unwrap(),
+        )
+        .unwrap();
 
-        conn.execute("INSERT INTO tracks(path, status) VALUES('irrelevant', 'pending')", [])
-            .unwrap();
+        conn.execute(
+            "INSERT INTO tracks(path, status) VALUES('irrelevant', 'pending')",
+            [],
+        )
+        .unwrap();
         let track_id = conn.last_insert_rowid();
 
         let plan = FilePlan {
@@ -1299,7 +1807,12 @@ mod tests {
                 confidence: naming::Confidence::Green,
             },
             bin_rel: "House".to_string(),
-            extras: TagExtras { label: None, year: None, genres: vec![], cover_path: None },
+            extras: TagExtras {
+                label: None,
+                year: None,
+                genres: vec![],
+                cover_path: None,
+            },
         };
         let log = vec![FsLog {
             kind: "move",
@@ -1347,18 +1860,44 @@ mod tests {
         let pioneer_dir = dir.path().join("pioneer");
         let xml_path = seed_pioneer_dir_with_fixture(&pioneer_dir);
         patch_fixture_folder_path(&pioneer_dir, src.to_str().unwrap());
-        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+        crate::settings::set(
+            &conn,
+            crate::settings::REKORDBOX_XML_PATH,
+            xml_path.to_str().unwrap(),
+        )
+        .unwrap();
 
         // No cover_path set on this track's metadata row — commit must NOT create an artwork
         // sync candidate, only a metadata one (already covered by the sibling test).
-        let res = file_track(&conn, &root, "{artist} - {title}", id, "House", None, Some(Canonical {
-            artist: "Larry Heard".into(), title: "Can You Feel It".into(), version: None,
-            confidence: crate::naming::Confidence::Green,
-        }), false).unwrap();
+        let res = file_track(
+            &conn,
+            &root,
+            "{artist} - {title}",
+            id,
+            "House",
+            None,
+            Some(Canonical {
+                artist: "Larry Heard".into(),
+                title: "Can You Feel It".into(),
+                version: None,
+                confidence: crate::naming::Confidence::Green,
+            }),
+            false,
+        )
+        .unwrap();
         let _ = res;
 
-        let count: i64 = conn.query_row("SELECT COUNT(*) FROM rekordbox_masterdb_artwork_syncs WHERE track_id=?1", params![id], |r| r.get(0)).unwrap();
-        assert_eq!(count, 0, "no cover_path on this track — must not create an artwork sync candidate");
+        let count: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM rekordbox_masterdb_artwork_syncs WHERE track_id=?1",
+                params![id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            count, 0,
+            "no cover_path on this track — must not create an artwork sync candidate"
+        );
     }
 
     #[test]
@@ -1375,17 +1914,35 @@ mod tests {
             "INSERT INTO metadata(track_id, cover_path) VALUES (?1, '/cache/covers/999.jpg')
              ON CONFLICT(track_id) DO UPDATE SET cover_path=excluded.cover_path",
             params![id],
-        ).unwrap();
+        )
+        .unwrap();
 
         let pioneer_dir = dir.path().join("pioneer");
         let xml_path = seed_pioneer_dir_with_fixture(&pioneer_dir);
         patch_fixture_folder_path(&pioneer_dir, src.to_str().unwrap());
-        crate::settings::set(&conn, crate::settings::REKORDBOX_XML_PATH, xml_path.to_str().unwrap()).unwrap();
+        crate::settings::set(
+            &conn,
+            crate::settings::REKORDBOX_XML_PATH,
+            xml_path.to_str().unwrap(),
+        )
+        .unwrap();
 
-        let res = file_track(&conn, &root, "{artist} - {title}", id, "House", None, Some(Canonical {
-            artist: "Larry Heard".into(), title: "Can You Feel It".into(), version: None,
-            confidence: crate::naming::Confidence::Green,
-        }), false).unwrap();
+        let res = file_track(
+            &conn,
+            &root,
+            "{artist} - {title}",
+            id,
+            "House",
+            None,
+            Some(Canonical {
+                artist: "Larry Heard".into(),
+                title: "Can You Feel It".into(),
+                version: None,
+                confidence: crate::naming::Confidence::Green,
+            }),
+            false,
+        )
+        .unwrap();
         let _ = res;
 
         let (cover_path, status): (String, String) = conn
@@ -1429,8 +1986,16 @@ mod tests {
     /// also update contracts.ts. Phase 2 — docs/superpowers/plans/2026-07-13-phase2-ipc-contract-tests.md.
     #[test]
     fn batch_result_shape_matches_contracts_ts() {
-        let v = BatchResult { filed: 0, needs_validation: Vec::new(), cancelled: false };
-        let BatchResult { filed, needs_validation, cancelled } = v;
+        let v = BatchResult {
+            filed: 0,
+            needs_validation: Vec::new(),
+            cancelled: false,
+        };
+        let BatchResult {
+            filed,
+            needs_validation,
+            cancelled,
+        } = v;
         let _ = (filed, needs_validation, cancelled);
     }
 }

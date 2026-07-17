@@ -75,7 +75,10 @@ mod tests {
     fn set_then_get_round_trips() {
         let conn = db();
         set(&conn, LIBRARY_ROOT, "/music/dj").unwrap();
-        assert_eq!(get(&conn, LIBRARY_ROOT).unwrap(), Some("/music/dj".to_string()));
+        assert_eq!(
+            get(&conn, LIBRARY_ROOT).unwrap(),
+            Some("/music/dj".to_string())
+        );
     }
 
     #[test]
@@ -89,6 +92,9 @@ mod tests {
     #[test]
     fn get_or_falls_back() {
         let conn = db();
-        assert_eq!(get_or(&conn, FILENAME_TEMPLATE, DEFAULT_TEMPLATE).unwrap(), DEFAULT_TEMPLATE);
+        assert_eq!(
+            get_or(&conn, FILENAME_TEMPLATE, DEFAULT_TEMPLATE).unwrap(),
+            DEFAULT_TEMPLATE
+        );
     }
 }

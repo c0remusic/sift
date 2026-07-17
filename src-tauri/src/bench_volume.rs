@@ -21,18 +21,61 @@ const FIRST_NAMES: [&str; 25] = [
     "Ingrid", "Malik", "Rosa", "Viggo", "Chidi",
 ];
 const LAST_NAMES: [&str; 20] = [
-    "Reyes", "Okafor", "Lindqvist", "Dubois", "Kowalski", "Haddad", "Moreau", "Nakamura",
-    "Ferreira", "Novak", "Adeyemi", "Bianchi", "Larsen", "Petrov", "Costa", "Herrera", "Weiss",
-    "Diallo", "Kimura", "Santos",
+    "Reyes",
+    "Okafor",
+    "Lindqvist",
+    "Dubois",
+    "Kowalski",
+    "Haddad",
+    "Moreau",
+    "Nakamura",
+    "Ferreira",
+    "Novak",
+    "Adeyemi",
+    "Bianchi",
+    "Larsen",
+    "Petrov",
+    "Costa",
+    "Herrera",
+    "Weiss",
+    "Diallo",
+    "Kimura",
+    "Santos",
 ];
 
 /// Genre pool. "House" is index 0 so the genre-filter benchmark can target a value guaranteed
 /// to exist in the dataset without depending on the assignment formula below.
 const GENRES: [&str; 30] = [
-    "House", "Deep House", "Tech House", "Techno", "Minimal", "Melodic Techno", "Disco",
-    "Nu Disco", "Funk", "Soul", "Drum and Bass", "Jungle", "Breakbeat", "Garage", "UK Garage",
-    "Dubstep", "Ambient", "Downtempo", "Trance", "Progressive House", "Electro", "Acid House",
-    "Italo Disco", "Boogie", "Afrobeat", "Amapiano", "Jazz Fusion", "Trip Hop", "IDM", "Hard Techno",
+    "House",
+    "Deep House",
+    "Tech House",
+    "Techno",
+    "Minimal",
+    "Melodic Techno",
+    "Disco",
+    "Nu Disco",
+    "Funk",
+    "Soul",
+    "Drum and Bass",
+    "Jungle",
+    "Breakbeat",
+    "Garage",
+    "UK Garage",
+    "Dubstep",
+    "Ambient",
+    "Downtempo",
+    "Trance",
+    "Progressive House",
+    "Electro",
+    "Acid House",
+    "Italo Disco",
+    "Boogie",
+    "Afrobeat",
+    "Amapiano",
+    "Jazz Fusion",
+    "Trip Hop",
+    "IDM",
+    "Hard Techno",
 ];
 
 fn artist_for(i: usize) -> String {
@@ -73,7 +116,9 @@ fn verdict_for(i: usize) -> &'static str {
 fn genres_for(i: usize) -> Vec<&'static str> {
     let base = (i * 7) % GENRES.len();
     let count = 1 + (i % 3);
-    (0..count).map(|g| GENRES[(base + g * 10) % GENRES.len()]).collect()
+    (0..count)
+        .map(|g| GENRES[(base + g * 10) % GENRES.len()])
+        .collect()
 }
 
 /// Inserts `n` synthetic tracks, `filed_fraction` of them 'filed' and the rest 'pending'
@@ -103,9 +148,8 @@ fn seed_dataset(conn: &mut Connection, n: usize, filed_fraction: f64) -> rusqlit
             "INSERT INTO metadata (track_id, artist, title, label, year, bpm)
              VALUES (?1,?2,?3,?4,?5,?6)",
         )?;
-        let mut ins_genre = tx.prepare(
-            "INSERT INTO track_genres (track_id, genre, ord) VALUES (?1,?2,?3)",
-        )?;
+        let mut ins_genre =
+            tx.prepare("INSERT INTO track_genres (track_id, genre, ord) VALUES (?1,?2,?3)")?;
 
         for i in 0..n {
             let id = (i + 1) as i64;
@@ -113,7 +157,11 @@ fn seed_dataset(conn: &mut Connection, n: usize, filed_fraction: f64) -> rusqlit
             let bitrate = bitrate_for(format, i);
             let duration = 120.0 + (i % 300) as f64 * 1.3;
             let verdict = verdict_for(i);
-            let status = if (i % 1000) < filed_permille { "filed" } else { "pending" };
+            let status = if (i % 1000) < filed_permille {
+                "filed"
+            } else {
+                "pending"
+            };
             let folder = if status == "filed" {
                 Some(format!("Folder{}", i % 15))
             } else {
@@ -184,24 +232,50 @@ fn measure_queries(conn: &Connection, volume: usize) {
     let base = LibraryFilter::default();
     summarize(
         "list_filed (no filter)",
-        measure(|| { library::list_filed(conn, &base).unwrap(); }, ITERS),
+        measure(
+            || {
+                library::list_filed(conn, &base).unwrap();
+            },
+            ITERS,
+        ),
     );
 
-    let with_q = LibraryFilter { q: Some("a".to_string()), ..Default::default() };
+    let with_q = LibraryFilter {
+        q: Some("a".to_string()),
+        ..Default::default()
+    };
     summarize(
         "list_filed (q LIKE, worst case)",
-        measure(|| { library::list_filed(conn, &with_q).unwrap(); }, ITERS),
+        measure(
+            || {
+                library::list_filed(conn, &with_q).unwrap();
+            },
+            ITERS,
+        ),
     );
 
-    let with_genre = LibraryFilter { genre: Some("House".to_string()), ..Default::default() };
+    let with_genre = LibraryFilter {
+        genre: Some("House".to_string()),
+        ..Default::default()
+    };
     summarize(
         "list_filed (genre IN subquery)",
-        measure(|| { library::list_filed(conn, &with_genre).unwrap(); }, ITERS),
+        measure(
+            || {
+                library::list_filed(conn, &with_genre).unwrap();
+            },
+            ITERS,
+        ),
     );
 
     summarize(
         "list_pending",
-        measure(|| { queue::list_pending(conn).unwrap(); }, ITERS),
+        measure(
+            || {
+                queue::list_pending(conn).unwrap();
+            },
+            ITERS,
+        ),
     );
 }
 
@@ -275,8 +349,15 @@ fn measure_serialization(conn: &Connection) {
     let json = serde_json::to_string(&rows).unwrap();
     let elapsed = start.elapsed();
 
-    println!("  serialized size: {} bytes ({:.2} MB)", json.len(), json.len() as f64 / 1_048_576.0);
-    println!("  serialization time: {:.2}ms", elapsed.as_secs_f64() * 1000.0);
+    println!(
+        "  serialized size: {} bytes ({:.2} MB)",
+        json.len(),
+        json.len() as f64 / 1_048_576.0
+    );
+    println!(
+        "  serialization time: {:.2}ms",
+        elapsed.as_secs_f64() * 1000.0
+    );
     println!(
         "  NOTE: this is serde_json::to_string cost only (Tauri's actual IPC command \
          serialization), not a full IPC round-trip — that requires a running `tauri dev` \

@@ -176,7 +176,9 @@ mod tests {
     fn skip_if_no_fixture(name: &str) {
         eprintln!("skip: no fixture ({name})");
         if std::env::var("CI").is_ok() {
-            panic!("fixture missing in CI: fixtures/{name} — checkout is broken, not a supported skip");
+            panic!(
+                "fixture missing in CI: fixtures/{name} — checkout is broken, not a supported skip"
+            );
         }
     }
 
@@ -206,12 +208,18 @@ mod tests {
         let dst = dir.path().join("out.wav");
         let dst = dst.to_str().unwrap();
         encode(&src, dst, Target::Wav1644).expect("encode wav");
-        assert!(is_conformant(dst, Target::Wav1644), "encoded WAV must be 16-bit/44.1");
+        assert!(
+            is_conformant(dst, Target::Wav1644),
+            "encoded WAV must be 16-bit/44.1"
+        );
     }
 
     #[test]
     fn guard_blocks_lossy_to_lossless_only() {
-        assert_eq!(guard_no_upscale(Rail::Lossy, Target::Aiff1644), Err(EncodeError::Upscale));
+        assert_eq!(
+            guard_no_upscale(Rail::Lossy, Target::Aiff1644),
+            Err(EncodeError::Upscale)
+        );
         assert!(guard_no_upscale(Rail::Lossy, Target::Mp3320).is_ok());
         assert!(guard_no_upscale(Rail::Lossless, Target::Aiff1644).is_ok());
         assert!(guard_no_upscale(Rail::Lossless, Target::Mp3320).is_ok()); // downscale allowed
@@ -248,7 +256,10 @@ mod tests {
         let dst = dst.to_str().unwrap();
         encode(&src, dst, Target::Aiff1644).expect("encode aiff");
         // equivalence: the output is exactly the target shape
-        assert!(is_conformant(dst, Target::Aiff1644), "encoded AIFF must be 16-bit/44.1");
+        assert!(
+            is_conformant(dst, Target::Aiff1644),
+            "encoded AIFF must be 16-bit/44.1"
+        );
     }
 
     #[test]

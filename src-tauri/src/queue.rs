@@ -91,7 +91,19 @@ mod tests {
             title: None,
             dup: false,
         };
-        let QueueItem { id, path, filename, source_id, verdict, rail, artist, title, dup } = v;
-        let _ = (id, path, filename, source_id, verdict, rail, artist, title, dup);
+        let QueueItem {
+            id,
+            path,
+            filename,
+            source_id,
+            verdict,
+            rail,
+            artist,
+            title,
+            dup,
+        } = v;
+        let _ = (
+            id, path, filename, source_id, verdict, rail, artist, title, dup,
+        );
     }
 }

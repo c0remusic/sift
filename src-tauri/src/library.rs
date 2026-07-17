@@ -270,7 +270,24 @@ pub fn list_filed(
     let mut genres_by_track = crate::genres::get_genres_batch(conn, &ids)?;
 
     let mut out = Vec::with_capacity(rows.len());
-    for (id, path, format, bitrate, duration, verdict, folder, has_cover, artist, title, label, year, bpm, cover_path, rel) in rows {
+    for (
+        id,
+        path,
+        format,
+        bitrate,
+        duration,
+        verdict,
+        folder,
+        has_cover,
+        artist,
+        title,
+        label,
+        year,
+        bpm,
+        cover_path,
+        rel,
+    ) in rows
+    {
         out.push(LibraryTrack {
             id,
             path,
@@ -314,13 +331,14 @@ pub fn folder_facets(conn: &rusqlite::Connection) -> rusqlite::Result<LibraryFac
          WHERE m.artist IS NOT NULL AND m.artist <> '' \
          GROUP BY m.artist ORDER BY m.artist",
     )?;
-    Ok(LibraryFacets { folders, genres, artists })
+    Ok(LibraryFacets {
+        folders,
+        genres,
+        artists,
+    })
 }
 
-fn query_facets(
-    conn: &rusqlite::Connection,
-    sql: &str,
-) -> rusqlite::Result<Vec<LibraryFolder>> {
+fn query_facets(conn: &rusqlite::Connection, sql: &str) -> rusqlite::Result<Vec<LibraryFolder>> {
     let mut stmt = conn.prepare(sql)?;
     let mapped = stmt.query_map([], |r| {
         Ok(LibraryFolder {
@@ -424,7 +442,11 @@ pub fn create_bin(root: &Path, parent_rel: &str, name: &str) -> Result<Bin, Stri
         .collect::<Vec<_>>()
         .join("/");
     let depth = rel.split('/').count();
-    Ok(Bin { rel, name: safe, depth })
+    Ok(Bin {
+        rel,
+        name: safe,
+        depth,
+    })
 }
 
 /// True when `a` and `b` denote the same on-disk file. Prefers `canonicalize` (resolves
@@ -508,8 +530,22 @@ mod tests {
             folder,
         } = v;
         let _ = (
-            id, path, artist, title, format, bitrate, duration, bpm, year, label, genres,
-            discogs_release_id, cover_path, has_cover, verdict, folder,
+            id,
+            path,
+            artist,
+            title,
+            format,
+            bitrate,
+            duration,
+            bpm,
+            year,
+            label,
+            genres,
+            discogs_release_id,
+            cover_path,
+            has_cover,
+            verdict,
+            folder,
         );
     }
 
@@ -646,7 +682,10 @@ mod tests {
         assert_eq!(t.verdict.as_deref(), Some("ok"));
         assert_eq!(t.folder.as_deref(), Some("House"));
         assert_eq!(t.discogs_release_id.as_deref(), Some("12345"));
-        assert_eq!(t.genres, vec!["House".to_string(), "Deep House".to_string()]);
+        assert_eq!(
+            t.genres,
+            vec!["House".to_string(), "Deep House".to_string()]
+        );
     }
 
     #[test]
@@ -662,7 +701,10 @@ mod tests {
             [],
         )
         .unwrap();
-        let f = LibraryFilter { verdict: Some("fake".into()), ..Default::default() };
+        let f = LibraryFilter {
+            verdict: Some("fake".into()),
+            ..Default::default()
+        };
         let rows = list_filed(&conn, &f).unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].id, 1);
@@ -671,12 +713,31 @@ mod tests {
     #[test]
     fn list_filed_filters_by_artist() {
         let conn = db();
-        conn.execute("INSERT INTO tracks(id, path, status) VALUES(1, '/lib/a.mp3', 'filed')", []).unwrap();
-        conn.execute("INSERT INTO metadata(track_id, artist) VALUES(1, 'Aya')", []).unwrap();
-        conn.execute("INSERT INTO tracks(id, path, status) VALUES(2, '/lib/b.mp3', 'filed')", []).unwrap();
-        conn.execute("INSERT INTO metadata(track_id, artist) VALUES(2, 'Rob & Si')", []).unwrap();
+        conn.execute(
+            "INSERT INTO tracks(id, path, status) VALUES(1, '/lib/a.mp3', 'filed')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO metadata(track_id, artist) VALUES(1, 'Aya')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO tracks(id, path, status) VALUES(2, '/lib/b.mp3', 'filed')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO metadata(track_id, artist) VALUES(2, 'Rob & Si')",
+            [],
+        )
+        .unwrap();
 
-        let f = LibraryFilter { artist: Some("Aya".into()), ..Default::default() };
+        let f = LibraryFilter {
+            artist: Some("Aya".into()),
+            ..Default::default()
+        };
         let tracks = list_filed(&conn, &f).unwrap();
         assert_eq!(tracks.len(), 1);
         assert_eq!(tracks[0].artist.as_deref(), Some("Aya"));
@@ -732,15 +793,29 @@ mod tests {
             .unwrap();
         }
         // A pending (non-filed) track with an artist must NOT be counted.
-        conn.execute("INSERT INTO tracks(id, path, status) VALUES(4, '/lib/4.aiff', 'pending')", []).unwrap();
-        conn.execute("INSERT INTO metadata(track_id, artist) VALUES(4, 'Aya')", []).unwrap();
+        conn.execute(
+            "INSERT INTO tracks(id, path, status) VALUES(4, '/lib/4.aiff', 'pending')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO metadata(track_id, artist) VALUES(4, 'Aya')",
+            [],
+        )
+        .unwrap();
 
         let facets = folder_facets(&conn).unwrap();
         assert_eq!(
             facets.artists,
             vec![
-                LibraryFolder { name: "Aya".into(), count: 2 },
-                LibraryFolder { name: "Rob & Si".into(), count: 1 },
+                LibraryFolder {
+                    name: "Aya".into(),
+                    count: 2
+                },
+                LibraryFolder {
+                    name: "Rob & Si".into(),
+                    count: 1
+                },
             ]
         );
     }
