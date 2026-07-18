@@ -24,8 +24,8 @@ Ton :
 | Choix de dossier | Destination |
 | Format de sortie | Format |
 | Nom calcule | Nom final |
-| Action principale | Ranger |
-| Rejet | Jeter |
+| Action principale | Convertir |
+| Rejet | Écarter |
 | Etat pret | Pret a ranger |
 | Etat incomplet | A finaliser |
 | Reverification | Rechercher a nouveau |
@@ -54,13 +54,18 @@ seulement nommer un resultat technique.
 
 Verbes preferes :
 
-- Ranger
-- Jeter
+- Convertir
+- Écarter
 - Rechercher
 - Appliquer
 - Choisir
 - Ouvrir
 - Annuler
+
+Note : "Convertir" est le libelle du bouton d'action principale (remplace
+"Ranger" le 2026-07-10, retour utilisateur — voir filing.ts:220). Le concept
+produit reste "deplacer = encoder + ranger" (CLAUDE.md) ; ce n'est plus le
+libelle affiche. "Écarter" remplace "Jeter" (meme date, filing.ts:717).
 
 Eviter :
 
@@ -75,7 +80,7 @@ La microcopy doit enlever une ambiguite, pas expliquer l'interface.
 
 Bon usage :
 
-- "Choisir ou Sift doit ranger ce morceau"
+- "Choisis une destination pour convertir"
 - "Nom final"
 - "Destination manquante"
 
