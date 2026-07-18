@@ -73,7 +73,7 @@ Pattern :
 5. actions.
 
 Ne pas cacher la destination dans une barre secondaire ou un controle trop
-petit : sans destination, "Ranger" n'a pas de sens.
+petit : sans destination, "Convertir" n'a pas de sens.
 
 ## Nom Final Apres Format
 

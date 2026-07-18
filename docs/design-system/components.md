@@ -153,7 +153,7 @@ Regles :
 - Destination est obligatoire, car elle dit ou ranger ;
 - le nom final vient apres le format, car le format change son extension ;
 - le nom final ne doit pas dominer visuellement la decision ;
-- les actions Ranger/Jeter restent proches du resultat final ;
+- les actions Convertir/Écarter restent proches du resultat final ;
 - `#filfoot` et `#fldz` restent des siblings de `.mid`, pas des enfants de
   l'inspecteur.
 
