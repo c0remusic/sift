@@ -41,11 +41,13 @@ fn mtime_secs(meta: &std::fs::Metadata) -> i64 {
         .unwrap_or(0)
 }
 
-/// Walks `root` recursively (no symlink-following) and returns every audio file.
-/// Unreadable entries are skipped, never fatal. `root` is expected to be absolute
-/// (callers canonicalise it once when the source is added) so paths stay consistent
-/// with the ones `notify` reports for the live watcher.
-pub fn scan_dir(root: &Path) -> Vec<DiskFile> {
+/// Lazily walks `root` for audio files (no symlink-following), one at a time. Shared by
+/// `scan_dir` (eager Vec, for callers that need the whole list at once) and `reconcile`
+/// (streamed, so a large scan can report progress as it walks instead of only after
+/// collecting the entire tree in memory first). Unreadable entries are skipped, never fatal.
+/// `root` is expected to be absolute (callers canonicalise it once when the source is added)
+/// so paths stay consistent with the ones `notify` reports for the live watcher.
+fn walk_audio_files(root: &Path) -> impl Iterator<Item = DiskFile> {
     walkdir::WalkDir::new(root)
         .follow_links(false)
         .into_iter()
@@ -60,7 +62,12 @@ pub fn scan_dir(root: &Path) -> Vec<DiskFile> {
                 mtime: mtime_secs(&meta),
             })
         })
-        .collect()
+}
+
+/// Walks `root` recursively and returns every audio file found. See `walk_audio_files` for
+/// callers that want to process files as they're found instead of waiting for the full list.
+pub fn scan_dir(root: &Path) -> Vec<DiskFile> {
+    walk_audio_files(root).collect()
 }
 
 /// Inserts a file as `pending`, or updates it. Status is reset to `pending` ONLY if
