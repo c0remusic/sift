@@ -1069,3 +1069,12 @@ tokens entre les 3 blocs de thème confirmant qu'aucune autre asymétrie ne
 subsiste. Tout vérifié en direct sur le vrai process Tauri (CDP, port 9222,
 `Emulation.setFocusEmulationEnabled` pour que `:focus-visible` matche sous
 automatisation) dans les deux thèmes, pas seulement lu dans le code.
+
+**2026-07-18 (contraste text-tertiary/quaternary WCAG AA)** : les deux tokens
+échouaient AA (2.84/1.71 en clair contre bg-primary ; 2.40 en sombre contre
+surface) alors qu'ils portent du texte signifiant (sous-labels, noms de
+fichier mono, horodatages du Journal) — trouvé via l'audit CDP sur l'app
+réelle (`docs/superpowers/changes/2026-07-18-ux-user-flow/audit-heuristique-visuel.md`,
+finding F1). Assombris en clair / éclaircis en sombre (même teinte/chroma,
+`L` seul) pour atteindre ≥4.5:1 partout où ils sont réellement peints, dans
+les 3 blocs de thème.
