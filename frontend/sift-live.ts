@@ -96,20 +96,14 @@ async function pushAnalyzeProgress() {
   }
 }
 
-/** Guards a single in-flight export (Rekordbox only — USB has no backend, out of M7 scope). */
+/** Guards a single in-flight Rekordbox export run. */
 let exportRunning = false;
 
 /** Rekordbox export (real merge+rewrite via `export_rekordbox_xml`, called from the Rekordbox
- * page's "Réexporter maintenant" button — see renderRekordboxLive) and the "Clé USB" nav click
- * (still a one-click toast, index.html's `.nv-export`/`data-view="cle"` — its own brainstorm is
- * pending). USB formatting DOES have a backend (`ipc_usb.rs`/`usb_format/`) and even a UI (the
- * "Formater une clé USB" card in Réglages, below) — this toast is unrelated to that, just an
- * explainer for why the nav item itself doesn't do anything yet. */
-async function runNavExport(target: "rekordbox" | "usb"): Promise<void> {
-  if (target === "usb") {
-    toast("Export clé USB : Rekordbox recopie lui-même une fois le XML réimporté");
-    return;
-  }
+ * page's "Réexporter maintenant" button — see renderRekordboxLive). The "Clé USB" nav item no
+ * longer routes here (finding F5, audit-heuristique-visuel.md) — it now navigates straight to
+ * the real "Formater une clé USB" card in Réglages instead of showing a dead-end explainer. */
+async function runNavExport(): Promise<void> {
   if (exportRunning) return; // one export run at a time
   exportRunning = true;
   setTask("export", { done: 0, total: 1, state: "running" });
@@ -185,19 +179,26 @@ export function installLiveWiring() {
   installNavKeyboard();
   void installDragDrop();
 
-  // Nav "Clé USB" is still a one-click action, not a real screen (Clé USB's own brainstorm is
-  // pending — see docs/ressources-externes.md) — capture phase so this runs BEFORE app.js's own
-  // bubble-phase `#pa` listener (registered first, at import time) can switch `view` to the mock
-  // screen. stopPropagation() during capture halts the whole path, including that bubble-phase
-  // listener. "Rekordbox" is a real page now (renderRekordboxLive, window.__siftRkb above) — its
-  // click is left alone so it reaches app.js's router and navigates normally.
+  // Nav "Clé USB" has no screen of its own — the real "Formater une clé USB" card lives inside
+  // Réglages (reglages-view.ts, #sift-reglages-usb). Capture phase so this runs BEFORE app.js's
+  // own bubble-phase `#pa` listener (registered first, at import time) can switch `view` to its
+  // mock screen; stopPropagation() during capture halts that path. Instead of the previous
+  // dead-end explainer toast (finding F5, audit-heuristique-visuel.md), redirect the click to the
+  // real Réglages nav item so app.js's normal router takes over, then scroll the USB card into
+  // view once it's rendered.
   requireEl("#pa", "installLiveWiring").addEventListener(
     "click",
     (e) => {
       const exp = (e.target as HTMLElement).closest<HTMLElement>('[data-view="cle"]');
       if (!exp) return;
       e.stopPropagation();
-      void runNavExport("usb");
+      const reglagesNav = document.querySelector<HTMLElement>('[data-view="reglages"]');
+      reglagesNav?.click();
+      requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
+          document.getElementById("sift-reglages-usb")?.scrollIntoView({ block: "start" });
+        });
+      });
     },
     { capture: true },
   );
@@ -448,7 +449,7 @@ export function installLiveWiring() {
       setReviewMode(el.dataset.m === "batch" ? "batch" : "detail");
     } else if (handleBatchAction(el, act ?? "", e)) {
       // handled — see batch-panel.ts
-    } else if (handleRekordboxAction(el, act ?? "", e, () => void runNavExport("rekordbox"))) {
+    } else if (handleRekordboxAction(el, act ?? "", e, () => void runNavExport())) {
       // handled — see rekordbox-view.ts
     }
   });
