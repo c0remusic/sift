@@ -1,7 +1,8 @@
 # Sift — AGENTS.md
 
-> Worktree **`dj-assistant-m6a`** (branche `m6a-discogs`, **dev actif**). L'autre
-> worktree `../dj-assistant` = branche `main` (base stable). Même repo Git.
+> Repo à worktree unique : **`C:\dev\sift`**, branche **`main`** (dev actif).
+> Le worktree `m6a-discogs` (M6a→M8) a été mergé dans `main` puis supprimé le
+> 2026-07-18 — le dev repart désormais directement sur `main`. Même dépôt Git.
 > Contexte projet complet : la skill **`sift`** le charge.
 
 ## Quoi
@@ -37,9 +38,9 @@ Lib = `sift_lib`. MSRV Rust 1.77.2.
 - Build installeurs : `npm run tauri build` → `src-tauri/target/release/bundle/`
 - Tests Rust : `cargo test --manifest-path src-tauri/Cargo.toml`
   ⚠️ `src-tauri/fixtures/*` (audio .flac/.wav utilisés par `analysis::decode::tests`)
-  est **gitignoré** — un nouveau worktree (ex. `dj-assistant-m7-usb`) ne les a pas
-  et les tests decode échouent en `file not found`, pas un vrai bug. Copier les
-  fichiers depuis un worktree qui les a déjà (`dj-assistant-m6a/src-tauri/fixtures/`).
+  est **gitignoré** — un checkout frais (nouveau clone ou worktree) ne les a pas
+  et les tests decode échouent en `file not found`, pas un vrai bug. Les régénérer
+  avec `node scripts/make-fixtures.mjs`.
 - Lint : `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings`
 - Type-check front : `npx tsc --noEmit`
 
