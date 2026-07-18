@@ -89,6 +89,22 @@ fn desync_error_message(
     format!("{action_phrase} dans master.db, mais Sift n'a pas pu l'enregistrer localement — ne pas réappliquer sans vérifier Rekordbox d'abord ({e})")
 }
 
+/// Logs + humanizes a master.db WRITE failure shared by all 3 apply_one_* write branches
+/// (repair/metadata sync/artwork sync). The write did NOT succeed (verification failed and rolled
+/// back, rollback itself failed, Rekordbox open, track missing…); the raw `MasterDbError` carries
+/// the full diagnostic that the humanized user message intentionally drops, so it is logged here
+/// before humanizing — the sensitive master.db write path must never fail without a server-side
+/// trace (fail-fast, no silent failure). Behaviour is unchanged: the returned string is exactly
+/// `humanize_masterdb_error(e)` as before.
+fn write_error_message(
+    kind: &str,
+    id: i64,
+    e: &crate::rekordbox_masterdb::MasterDbError,
+) -> String {
+    log::error!("rekordbox {kind} {id}: échec d'écriture master.db : {e:?}");
+    humanize_masterdb_error(e)
+}
+
 fn basename(path: &str) -> String {
     std::path::Path::new(path)
         .file_name()
@@ -323,7 +339,7 @@ fn apply_one_repair(
         Err(e) => ApplyRepairOutcome {
             id,
             ok: false,
-            error: Some(humanize_masterdb_error(&e)),
+            error: Some(write_error_message("repair", id, &e)),
         },
     }
 }
@@ -564,7 +580,7 @@ fn apply_one_metadata_sync(
         Err(e) => ApplyMetadataSyncOutcome {
             id,
             ok: false,
-            error: Some(humanize_masterdb_error(&e)),
+            error: Some(write_error_message("metadata sync", id, &e)),
         },
     }
 }
@@ -787,7 +803,7 @@ fn apply_one_artwork_sync(
         Err(e) => ApplyArtworkSyncOutcome {
             id,
             ok: false,
-            error: Some(humanize_masterdb_error(&e)),
+            error: Some(write_error_message("artwork sync", id, &e)),
         },
     }
 }
