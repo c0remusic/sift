@@ -83,10 +83,17 @@ function measureQueueRowHeight(ql: HTMLElement): number {
 function renderQueueWindow(ql: HTMLElement): void {
   const items = visibleQueueItems();
   if (!items.length) {
+    // "File vide." reads as "nothing was ever here" — misleading when a track is still
+    // shown in Detail (currentOpenId set) because it's the last one just treated and the
+    // pane hasn't advanced away from it yet. Finding F4, audit-heuristique-visuel.md.
+    const emptyLabel =
+      currentItems.length && queueSearchTerm
+        ? "Aucun morceau ne correspond."
+        : currentOpenId != null
+          ? "Tous les morceaux ont été traités."
+          : "File vide.";
     ql.innerHTML =
-      `<div style="font-size:var(--text-md);color:var(--color-text-tertiary);padding:6px 4px">${
-        currentItems.length && queueSearchTerm ? "Aucun morceau ne correspond." : "File vide."
-      }</div>`;
+      `<div style="font-size:var(--text-md);color:var(--color-text-tertiary);padding:6px 4px">${emptyLabel}</div>`;
     return;
   }
   const rowH = measureQueueRowHeight(ql);
