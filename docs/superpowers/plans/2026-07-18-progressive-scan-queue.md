@@ -67,7 +67,7 @@ Le frontend écoute déjà `queue:changed` et debounce sa redraw à 150ms (`sift
 - Consumes: `scanner::reconcile_with_progress(conn, source_id, root, on_batch)` (Task 2).
 - Ne change aucun contrat IPC/TS existant : même événement `queue:changed`, même payload (aucun), déjà mirroré dans `frontend/ipc.ts:67-69`.
 
-- [ ] **Step 1: Remplacer l'appel à `reconcile` par `reconcile_with_progress`**
+- [x] **Step 1: Remplacer l'appel à `reconcile` par `reconcile_with_progress`**
 
 Dans `src-tauri/src/ipc.rs`, fonction `spawn_scan` (lignes 368-406), remplacer :
 
@@ -103,12 +103,12 @@ par :
         crate::worker::refill(&app);
 ```
 
-- [ ] **Step 2: cargo check pour valider la compilation (emprunt de `app` dans la closure)**
+- [x] **Step 2: cargo check pour valider la compilation (emprunt de `app` dans la closure)**
 
 Run: `cargo check --manifest-path src-tauri/Cargo.toml`
 Expected: compile sans erreur — `app: AppHandle` est capturé par référence dans la closure `|_done| { app.emit(...) }` (méthode `.emit` prend `&self`), puis réutilisé après (`watcher::start(&app, ...)`, `app.emit(...)`, `worker::refill(&app)`) : aucun déplacement, donc aucun conflit d'emprunt.
 
-- [ ] **Step 3: cargo fmt + clippy + suite complète**
+- [x] **Step 3: cargo fmt + clippy + suite complète**
 
 Run:
 ```bash
@@ -118,7 +118,13 @@ cargo test --manifest-path src-tauri/Cargo.toml
 ```
 Expected: aucun warning, tous les tests passent
 
-- [ ] **Step 4: Vérification manuelle app réelle (Tauri n'est pas unit-testable pour l'émission d'événements)**
+- [x] **Step 3bis (écart de scope autorisé en cours de tâche, même motif que la suppression de `scan_dir` en Task 2) : suppression de `pub fn reconcile()` dans `scanner.rs`**
+
+Une fois `spawn_scan` réécrit pour appeler `reconcile_with_progress` directement, le thin wrapper `reconcile()` n'avait plus d'appelant en dehors des tests → dead code sous `clippy -D warnings` (`#[allow]` interdit sans accord). Supprimé ; les 6 tests de `scanner.rs` redirigés vers `reconcile_with_progress(&conn, sid, root, |_| {})`. Accepté par Antoine (même raisonnement que `scan_dir`).
+
+- [x] **Step 3ter : correction du commentaire périmé `frontend/sift-live.ts:462-463`** (finding remonté par la revue Codex du repo) — décrivait `queue:changed` comme émis "once per burst source", devenu inexact une fois l'émission périodique ajoutée. Reformulé pour refléter les deux déclencheurs (burst source ET tous les 25 fichiers net-changés pendant un scan).
+
+- [ ] **Step 4: Vérification manuelle app réelle (Tauri n'est pas unit-testable pour l'émission d'événements) — RESTE À FAIRE PAR ANTOINE**
 
 Pas de test automatisé possible ici : `AppHandle::emit` nécessite un contexte Tauri vivant, absent des tests `#[cfg(test)]` de `ipc.rs` (fichier sans tests aujourd'hui, cohérent avec le reste du repo — la vérification IPC réelle passe par l'app, cf. `CLAUDE.md` § Vérification UI).
 
@@ -131,19 +137,21 @@ Dans la fenêtre qui s'ouvre :
 
 Expected: mise à jour visible par paliers pendant le scan, pas un saut unique en fin de scan.
 
-- [ ] **Step 5: Commit**
+- [x] **Step 5: Commit**
 
 ```bash
-git add src-tauri/src/ipc.rs
+git add src-tauri/src/ipc.rs src-tauri/src/scanner.rs frontend/sift-live.ts
 git commit -m "feat(ipc): emit queue:changed progressively during a folder scan"
 ```
+
+**STATUT : livré, commit `8afff73`, revue de tâche approuvée + revue finale de branche approuvée (« Ready to merge: With fixes », le seul point restant étant la vérification manuelle Step 4 ci-dessus, jamais un défaut de code).**
 
 ---
 
 ## Self-Review
 
-**Couverture** : le gap identifié (scan_dir collecte tout en Vec avant le 1er insert ; spawn_scan n'émet qu'un seul queue:changed final) est couvert par les 3 tâches — Task 1 rend la marche paresseuse, Task 2 fait consommer cette marche au fil de l'eau avec callback de progression, Task 3 câble ce callback à l'émission Tauri déjà existante. Aucun changement frontend requis (déjà debounce-ready, vérifié `sift-live.ts:462-468`).
+**Couverture** : le gap identifié (scan_dir collecte tout en Vec avant le 1er insert ; spawn_scan n'émet qu'un seul queue:changed final) est couvert par les 3 tâches — Task 1 rend la marche paresseuse, Task 2 fait consommer cette marche au fil de l'eau avec callback de progression, Task 3 câble ce callback à l'émission Tauri déjà existante. Aucun changement frontend de comportement requis (déjà debounce-ready, vérifié `sift-live.ts:462-468`) — seul le commentaire décrivant l'événement a dû être corrigé (Step 3ter).
 
-**Placeholders** : aucun — chaque step contient le code exact à écrire/remplacer, les commandes exactes, et les résultats attendus. Task 3 Step 4 est une vérification manuelle explicitement justifiée (Tauri `AppHandle::emit` non testable en `#[cfg(test)]`), pas un "TODO tester" vague.
+**Placeholders** : aucun — chaque step contient le code exact à écrire/remplacer, les commandes exactes, et les résultats attendus. Task 3 Step 4 est une vérification manuelle explicitement justifiée (Tauri `AppHandle::emit` non testable en `#[cfg(test)]`), pas un "TODO tester" vague — reste à faire par Antoine, pas par un agent.
 
-**Cohérence des types** : `reconcile_with_progress(conn: &Connection, source_id: i64, root: &Path, on_batch: impl FnMut(usize)) -> rusqlite::Result<ReconcileStats>` — signature identique entre sa définition (Task 2) et son usage (Task 3, closure `|_done| {...}` compatible avec `FnMut(usize)`). `reconcile()` garde sa signature publique existante (Task 2), donc aucun appelant existant (tests `scanner.rs`) n'a besoin d'être modifié.
+**Cohérence des types** : `reconcile_with_progress(conn: &Connection, source_id: i64, root: &Path, on_batch: impl FnMut(usize)) -> rusqlite::Result<ReconcileStats>` — signature identique entre sa définition (Task 2) et son usage (Task 3, closure `|_done| {...}` compatible avec `FnMut(usize)`). **Correction post-exécution** : `reconcile()` n'a PAS gardé sa signature publique — elle a été supprimée en Task 3 (Step 3bis), les 6 tests de `scanner.rs` redirigés vers `reconcile_with_progress`. Écart au texte original de ce paragraphe, accepté par cohérence avec la suppression de `scan_dir` en Task 2 (même cause : dead code sous `clippy -D warnings`, `#[allow]` interdit sans accord).
