@@ -49,8 +49,11 @@ pub fn select_pending(conn: &Connection) -> rusqlite::Result<Vec<i64>> {
 
 /// (done, total): total = current pending; done = pending already analysed.
 pub fn progress(conn: &Connection) -> rusqlite::Result<(i64, i64)> {
-    let total: i64 =
-        conn.query_row("SELECT count(*) FROM tracks WHERE status='pending'", [], |r| r.get(0))?;
+    let total: i64 = conn.query_row(
+        "SELECT count(*) FROM tracks WHERE status='pending'",
+        [],
+        |r| r.get(0),
+    )?;
     let done: i64 = conn.query_row(
         "SELECT count(*) FROM tracks WHERE status='pending' AND analyzed_at IS NOT NULL",
         [],
@@ -67,7 +70,7 @@ pub fn persist_report(conn: &Connection, id: i64, r: &AnalysisReport) -> rusqlit
             clip_runs=?8, clip_pct=?9, true_peak_dbtp=?10, dc_offset=?11, phase_correlation=?12,
             dual_mono=?13, truncated=?14, silence_head_ms=?15, silence_tail_ms=?16,
             container_ok=?17, codec_error=?18, id3_version=?19, has_cover=?20, tags_cdj_ok=?21,
-            report_json=?22, analyzed_at=datetime('now')
+            report_json=?22, report_cache_ver=?23, analyzed_at=datetime('now')
          WHERE id=?1",
         rusqlite::params![
             id,
@@ -91,8 +94,10 @@ pub fn persist_report(conn: &Connection, id: i64, r: &AnalysisReport) -> rusqlit
             r.id3_version,
             r.has_cover as i64,
             r.tags_cdj_ok as i64,
-            // cache the report (spectrogram is empty here — computed on demand) for instant re-open
+            // cache the full report, spectrogram included (FIX-3) — instant re-open AND instant
+            // spectrogram, no re-decode either way
             serde_json::to_string(r).unwrap_or_default(),
+            analysis::REPORT_CACHE_VERSION,
         ],
     )?;
     Ok(())
@@ -114,8 +119,7 @@ pub fn init(app: &AppHandle) {
     let n = std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(2)
-        .min(4)
-        .max(1);
+        .clamp(1, 8);
     let worker = AnalysisWorker {
         inner: Arc::new((
             Mutex::new(Queue {
@@ -140,10 +144,15 @@ pub fn init(app: &AppHandle) {
 /// Enqueues every pending, not-yet-analysed track not already queued/in-flight, then wakes
 /// the pool. Call at startup and after every `queue:changed`.
 pub fn refill(app: &AppHandle) {
-    let Some(worker) = app.try_state::<AnalysisWorker>() else { return };
+    let Some(worker) = app.try_state::<AnalysisWorker>() else {
+        return;
+    };
     let ids = {
         let state = app.state::<Mutex<Connection>>();
-        let Ok(conn) = state.lock() else { return };
+        let Ok(conn) = state.lock() else {
+            log::error!("worker refill: DB connection mutex poisoned, skipping refill");
+            return;
+        };
         match select_pending(&conn) {
             Ok(v) => v,
             Err(e) => {
@@ -194,15 +203,30 @@ fn finish(inner: &Arc<(Mutex<Queue>, Condvar)>, id: i64) {
 
 fn read_path(app: &AppHandle, id: i64) -> Option<String> {
     let state = app.state::<Mutex<Connection>>();
-    let conn = state.lock().ok()?;
-    conn.query_row("SELECT path FROM tracks WHERE id=?1", rusqlite::params![id], |r| r.get(0))
-        .ok()
+    let conn = match state.lock() {
+        Ok(conn) => conn,
+        Err(_) => {
+            log::error!("worker read_path({id}): DB connection mutex poisoned");
+            return None;
+        }
+    };
+    conn.query_row(
+        "SELECT path FROM tracks WHERE id=?1",
+        rusqlite::params![id],
+        |r| r.get(0),
+    )
+    .ok()
 }
 
 /// Locks the DB briefly and writes the analysis outcome for `id`.
 fn persist_result(app: &AppHandle, id: i64, path: &str, result: Result<AnalysisReport, String>) {
     let state = app.state::<Mutex<Connection>>();
-    let Ok(conn) = state.lock() else { return };
+    let Ok(conn) = state.lock() else {
+        log::error!(
+            "worker persist_result({id}, {path}): DB connection mutex poisoned, result lost"
+        );
+        return;
+    };
     let written = match &result {
         Ok(rep) => persist_report(&conn, id, rep),
         Err(e) => {
@@ -219,11 +243,26 @@ fn persist_result(app: &AppHandle, id: i64, path: &str, result: Result<AnalysisR
 }
 
 fn worker_loop(app: AppHandle, inner: Arc<(Mutex<Queue>, Condvar)>) {
-    loop {
-        let Some(id) = pop(&inner) else { break };
+    while let Some(id) = pop(&inner) {
         if let Some(path) = read_path(&app, id) {
             // Heavy work runs WITHOUT holding the DB lock — UI stays responsive.
-            let result = analysis::analyze(&path, false);
+            // FIX-3: collect the display spectrogram here too (bounded ~200KB, the FFT itself
+            // already runs regardless of this flag — see SpectrumAccumulator::new) so it's
+            // cached in report_json and the Revue spectrogram click never has to re-decode.
+            // analyze() decodes arbitrary user-supplied audio files (Symphonia/FFT); catch a
+            // panic here so one corrupt file doesn't silently kill this pool thread forever.
+            let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                analysis::analyze(&path, true)
+            }))
+            .unwrap_or_else(|payload| {
+                let msg = payload
+                    .downcast_ref::<&str>()
+                    .map(|s| s.to_string())
+                    .or_else(|| payload.downcast_ref::<String>().cloned())
+                    .unwrap_or_else(|| "unknown panic".to_string());
+                log::error!("analyze panicked for {path} (id {id}): {msg}");
+                Err(format!("analysis panicked: {msg}"))
+            });
             persist_result(&app, id, &path, result);
         }
         finish(&inner, id);
@@ -239,7 +278,8 @@ mod tests {
     fn db() -> Connection {
         let conn = Connection::open_in_memory().unwrap();
         crate::db::run_migrations(&conn).unwrap();
-        conn.execute("INSERT INTO sources (path) VALUES ('root')", []).unwrap();
+        conn.execute("INSERT INTO sources (path) VALUES ('root')", [])
+            .unwrap();
         conn
     }
 
@@ -263,8 +303,16 @@ mod tests {
             declared_rail: Rail::Lossless,
             cutoff_hz: 16000.0,
             verdict: Verdict::Fake,
+            container_mismatch: false,
+            est_kbps: 128,
             peaks: vec![],
-            spectrogram: Spectrogram { frames: 0, bins: 0, hz_per_bin: 0.0, sec_per_frame: 0.0, mag_db: vec![] },
+            spectrogram: Spectrogram {
+                frames: 0,
+                bins: 0,
+                hz_per_bin: 0.0,
+                sec_per_frame: 0.0,
+                mag_db: vec![],
+            },
             clip_runs: 2,
             clip_pct: 1.5,
             true_peak_dbtp: -0.3,
@@ -289,9 +337,18 @@ mod tests {
         let b = add_pending(&conn, "b.flac"); // analysed + report cached → NOT selected
         let c = add_pending(&conn, "c.flac"); // filed → NOT selected
         let d = add_pending(&conn, "d.flac"); // analysed but no report cache → selected (backfill)
-        conn.execute("UPDATE tracks SET analyzed_at=datetime('now'), report_json='{}' WHERE id=?1", [b]).unwrap();
-        conn.execute("UPDATE tracks SET status='filed' WHERE id=?1", [c]).unwrap();
-        conn.execute("UPDATE tracks SET analyzed_at=datetime('now') WHERE id=?1", [d]).unwrap();
+        conn.execute(
+            "UPDATE tracks SET analyzed_at=datetime('now'), report_json='{}' WHERE id=?1",
+            [b],
+        )
+        .unwrap();
+        conn.execute("UPDATE tracks SET status='filed' WHERE id=?1", [c])
+            .unwrap();
+        conn.execute(
+            "UPDATE tracks SET analyzed_at=datetime('now') WHERE id=?1",
+            [d],
+        )
+        .unwrap();
         assert_eq!(select_pending(&conn).unwrap(), vec![a, d]);
     }
 

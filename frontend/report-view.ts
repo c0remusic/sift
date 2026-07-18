@@ -6,8 +6,20 @@ import { analyzePath } from "./ipc";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import WaveSurfer from "wavesurfer.js";
 import type { AnalysisReport } from "../shared/contracts";
+import { requireEl, esc } from "./dom";
 
 const PEAKS_WINDOW = 512; // must match analysis::PEAKS_WINDOW
+
+// Accordion behavior (shadcn Accordion reference, ui.shadcn.com/docs/components/base/accordion):
+// Diagnostic and Métadonnées are exclusive — opening one closes the other. They're wired in two
+// separate modules (this file + filing.ts) with no shared ancestor passed down, so coordination
+// goes through a document-level event. The listener below is registered once at module load
+// (ES modules are singletons) — it always calls the CURRENT instance's close fn, so re-opening a
+// track (which rebuilds the DOM) never leaks a stale listener.
+let closeSpectroZone: (() => void) | null = null;
+document.addEventListener("sift:accordion-open", (e) => {
+  if ((e as CustomEvent).detail?.zone !== "diagnostic") closeSpectroZone?.();
+});
 
 // Single live player at a time — destroyed before any re-render so audio never lingers.
 let currentWs: WaveSurfer | null = null;
@@ -35,15 +47,7 @@ function ensureStyles() {
   st.textContent =
     ".sift-time:hover{color:var(--color-text-primary)!important}" +
     "@keyframes sift-spin{to{transform:rotate(360deg)}}" +
-    ".sift-spin{display:inline-block;animation:sift-spin 1s linear infinite}" +
-    // Custom tempo thumb: grey at neutral, blue once nudged either way (accent-color only
-    // tints the fill on one side of 0, so we colour the thumb explicitly via a class).
-    ".sift-tempo{-webkit-appearance:none;appearance:none;background:transparent;cursor:pointer}" +
-    ".sift-tempo::-webkit-slider-runnable-track{width:4px;border-radius:3px;background:var(--color-border-secondary)}" +
-    // Turntable-style pitch-fader cap: wide flat handle with a centre marker line, recentred
-    // on the thin track (margin-left = (track − thumb) / 2).
-    ".sift-tempo::-webkit-slider-thumb{-webkit-appearance:none;appearance:none;width:20px;height:9px;margin-left:-8px;border-radius:2px;border:0.5px solid var(--color-border-secondary);background:linear-gradient(var(--color-text-tertiary) 0 44%,rgba(0,0,0,.5) 44% 56%,var(--color-text-tertiary) 56% 100%)}" +
-    ".sift-tempo.sift-active::-webkit-slider-thumb{background:linear-gradient(var(--color-text-info) 0 44%,rgba(0,0,0,.5) 44% 56%,var(--color-text-info) 56% 100%)}";
+    ".sift-spin{display:inline-block;animation:sift-spin 1s linear infinite}";
   document.head.appendChild(st);
 }
 
@@ -52,88 +56,276 @@ const mmss = (s: number) => {
   const m = Math.floor(s / 60);
   return `${m}:${String(Math.floor(s % 60)).padStart(2, "0")}`;
 };
-
-const esc = (s: string) =>
-  s.replace(/[&<>"']/g, (c) =>
-    c === "&" ? "&amp;" : c === "<" ? "&lt;" : c === ">" ? "&gt;" : c === '"' ? "&quot;" : "&#39;",
-  );
 const fmt = (n: number, d = 1) => (Number.isFinite(n) ? n.toFixed(d) : String(n));
 
 /** The file's REAL quality (what the audio actually is), derived from the analysis — shown
  * next to what it was declared as. */
 function realQuality(r: AnalysisReport): { label: string; bg: string; fg: string } {
-  // Real quality of a transcode, expressed as the equivalent MP3 bitrate inferred from the
-  // measured low-pass cutoff (LAME-style: 16k≈128, 17k≈160, 19k≈192, 20k≈256, 20.5k≈320).
-  // The exact cutoff stays in the foldable "infos" — here we show what the audio is worth.
-  const estKbps = (hz: number) =>
-    hz >= 20000 ? 320 : hz >= 19000 ? 256 : hz >= 18000 ? 192 : hz >= 16500 ? 160 : 128;
+  // Real quality of a transcode, expressed as the equivalent MP3 bitrate. FIX-11: r.est_kbps is
+  // computed in Rust from the SAME table verdict() uses — no local recompute, no risk of the two
+  // numbers drifting apart (they used to, with a shifted table).
   if (r.verdict === "fake") {
     return {
-      label: `MP3 ≈ ${estKbps(r.cutoff_hz)} kbps`,
+      // container_mismatch = extension lies about the rail (e.g. an MP3 renamed .flac) — a
+      // distinct fraud from a genuine over-encoded transcode, so it gets a distinct label
+      // instead of the shared "MP3 ≈ X kbps" (which reads like a borderline bitrate call,
+      // not "this .flac isn't a real FLAC at all"). Mirrors spectroCaption()'s distinction.
+      label: r.container_mismatch ? "Extension falsifiée" : `MP3 ≈ ${r.est_kbps} kbps`,
       bg: "var(--color-background-danger)",
       fg: "var(--color-text-danger)",
     };
   }
   if (r.verdict === "grey")
-    return { label: `MP3 ≈ ${estKbps(r.cutoff_hz)} kbps — à vérifier`, bg: "var(--color-background-warning)", fg: "var(--color-text-warning)" };
+    return { label: `MP3 ≈ ${r.est_kbps} kbps — à vérifier`, bg: "var(--color-background-warning)", fg: "var(--color-text-warning)" };
   // genuine: describe the actual quality, not a yes/no
   const real =
     r.declared_rail === "lossless"
-      ? "lossless · plein-bande"
+      ? "lossless · pleine bande"
       : r.declared_bitrate
         ? `${r.declared_bitrate} kbps réels`
         : "qualité authentique";
   return { label: real, bg: "var(--color-background-success)", fg: "var(--color-text-success)" };
 }
 
-function spectroCaption(v: AnalysisReport["verdict"]): string {
-  if (v === "fake") return "coupure nette = probable transcodage";
-  if (v === "grey") return "à inspecter visuellement";
+function spectroCaption(v: AnalysisReport["verdict"], containerMismatch: boolean): string {
+  if (v === "fake" && containerMismatch) return "conteneur .flac mais contenu MP3 détecté — extension falsifiée";
+  if (v === "fake") return "coupure nette = transcodage probable";
+  if (v === "grey") return "à vérifier visuellement";
   return "énergie pleine bande = encodage conforme";
 }
 
-function verdictBadge(v: AnalysisReport["verdict"]): string {
-  const map = {
-    ok: ["ti-shield-check", "Authentique", "var(--color-background-success)", "var(--color-text-success)"],
-    fake: ["ti-alert-triangle", "Fake / sur-encodé", "var(--color-background-danger)", "var(--color-text-danger)"],
-    grey: ["ti-help-circle", "Zone grise", "var(--color-background-warning)", "var(--color-text-warning)"],
-  } as const;
-  const [icon, label, bg, fg] = map[v];
-  return `<span style="display:inline-flex;align-items:center;gap:5px;padding:3px 10px;border-radius:var(--border-radius-md);font-weight:600;font-size:12px;color:${fg};background:${bg}"><i class="ti ${icon}" style="font-size:13px"></i>${label}</span>`;
+/** Audacity's own spectrogram convention (manual.audacityteam.org/man/spectrogram_view.html,
+ *  default Color scheme): black (silence) → blue → magenta → orange → white (loudest). Not a
+ *  percentile/gamma guess (tried both, 2026-07-06) — Audacity's real model is a fixed Gain/Range:
+ *  content within GAIN_DB of full scale reads as pure white; the color gradient covers the
+ *  RANGE_DB span below that ceiling; everything quieter is black. `val` is the quantized dB
+ *  magnitude from the backend (0 = -100 dBFS, 255 = 0 dBFS, ~0.39dB/step). Known caveat: a
+ *  separate backend bug (spectrum.rs's dB conversion isn't normalized against a true full-scale
+ *  reference, see docs/superpowers — tracked as its own task) currently pins an unrealistic
+ *  fraction of bins at the literal ceiling regardless of this mapping; this colormap is the
+ *  correct target shape for once that's fixed, not a workaround for it. */
+const SPECTRO_STOPS: readonly [number, number, number][] = [
+  [0, 0, 0],
+  [20, 20, 110],
+  [130, 20, 140],
+  [230, 110, 40],
+  [255, 255, 255],
+];
+const SPECTRO_GAIN_DB = 20; // content within this many dB of full scale reads as pure white
+const SPECTRO_RANGE_DB = 80; // span of the color gradient below that ceiling
+const SPECTRO_CEILING_RAW = 255 - (SPECTRO_GAIN_DB / 100) * 255;
+const SPECTRO_FLOOR_RAW = SPECTRO_CEILING_RAW - (SPECTRO_RANGE_DB / 100) * 255;
+
+function spectroColor(val: number): [number, number, number] {
+  const n = SPECTRO_STOPS.length - 1;
+  const clamped = Math.min(255, Math.max(0, val));
+  const norm = Math.max(
+    0,
+    Math.min(1, (clamped - SPECTRO_FLOOR_RAW) / (SPECTRO_CEILING_RAW - SPECTRO_FLOOR_RAW)),
+  );
+  const pos = norm * n;
+  const i = Math.min(n - 1, Math.floor(pos));
+  const t = pos - i;
+  const [r0, g0, b0] = SPECTRO_STOPS[i];
+  const [r1, g1, b1] = SPECTRO_STOPS[i + 1];
+  return [r0 + (r1 - r0) * t, g0 + (g1 - g0) * t, b0 + (b1 - b0) * t];
+}
+
+/** Le raw val (0..255) de sg.mag_db converti en dBFS réel (-100..0) — même domaine que
+ *  spectroColor(), l'inverse de la quantification faite côté backend (spectrum.rs). */
+function rawToDbfs(val: number): number {
+  return (val / 255) * 100 - 100;
+}
+
+/** Fréquence + dB EXACTS au pixel (x,y) du canvas — dérivés de la MÊME donnée
+ *  (sg.mag_db) et de la MÊME formule que celle qui colore ce pixel dans drawSpectrogram,
+ *  jamais une valeur recalculée différemment qui pourrait diverger de ce qui est affiché.
+ *  timeSec dérivé de `durationSec` (r.duration_sec) — même x/w que le calcul de frame,
+ *  donc cohérent avec la position horizontale réelle du curseur sur le morceau. */
+function spectroPointAt(
+  sg: AnalysisReport["spectrogram"],
+  w: number,
+  h: number,
+  x: number,
+  y: number,
+  durationSec: number,
+): { freqHz: number; dbfs: number; timeSec: number } {
+  const f = Math.min(sg.frames - 1, Math.max(0, Math.floor((x / w) * sg.frames)));
+  const b = Math.min(sg.bins - 1, Math.max(0, Math.floor(((h - 1 - y) / h) * sg.bins)));
+  const val = sg.mag_db[f * sg.bins + b] || 0;
+  // Fréquence dérivée du bin b lui-même (son centre), pas d'un ratio y/h calculé séparément
+  // — garantit que la fréquence affichée correspond exactement au bin dont la dB est lue
+  // juste au-dessus, plutôt que deux formules légèrement décalées d'1px (revue finale).
+  const freqHz = (b + 0.5) * sg.hz_per_bin;
+  const timeSec = (x / w) * durationSec;
+  return { freqHz, dbfs: rawToDbfs(val), timeSec };
+}
+
+/** Légende permanente incrustée : paliers fréquence (haut-gauche) + dB (haut-droit), texte
+ *  semi-transparent superposé sur l'image, coin par coin — jamais de barre dégradée de
+ *  couleur (testée en mockup visuel avec Antoine, jugée peu claire une fois les paliers
+ *  numériques ajoutés) ni d'axe temps permanent (chevauchait visuellement, redondant avec
+ *  l'étiquette du réticule au survol — voir Task 3). Dessinée UNE FOIS sur le canvas DE
+ *  BASE juste après putImageData, jamais redessinée au mousemove (contrairement au
+ *  réticule, qui vit sur l'overlay). */
+// Texte avec contour sombre + remplissage clair — lisible quelle que soit la couleur du
+// spectrogramme sous le texte (blanc/orange en zone forte, noir en zone faible), contrairement
+// à un simple fillStyle semi-transparent qui se noyait sur les zones claires (annotation : "le
+// texte sur les côtés n'est pas assez lisible").
+function drawOutlinedText(ctx: CanvasRenderingContext2D, text: string, x: number, y: number, alpha: number) {
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = `rgba(0,0,0,${alpha})`;
+  ctx.strokeText(text, x, y);
+  ctx.fillStyle = `rgba(255,255,255,${alpha})`;
+  ctx.fillText(text, x, y);
+}
+
+function drawSpectroLegend(ctx: CanvasRenderingContext2D, w: number, h: number, nyquist: number) {
+  ctx.save();
+  ctx.font = "9px monospace";
+  ctx.textBaseline = "top";
+  const padTop = 6;
+  const padSide = 6;
+  const colH = h - padTop * 2 - 20; // laisse la place au label d'unité en bas
+
+  // Fréquence (haut-gauche) : 3 paliers proportionnels à nyquist (jamais des kHz fixes —
+  // un fichier à sample rate différent change nyquist, la légende doit suivre).
+  const freqTicks = [nyquist, nyquist / 2, 0];
+  ctx.textAlign = "left";
+  freqTicks.forEach((hz, i) => {
+    const label = hz >= 1000 ? `${Math.round(hz / 1000)}k` : `${Math.round(hz)}`;
+    const y = padTop + (i / (freqTicks.length - 1)) * colH;
+    drawOutlinedText(ctx, label, padSide, y, 0.9);
+  });
+  drawOutlinedText(ctx, "Hz", padSide, h - 14, 0.7);
+
+  // dB (haut-droit) : 6 paliers dérivés de SPECTRO_GAIN_DB/SPECTRO_RANGE_DB — 0 dBFS (plein
+  // niveau) à -100 dBFS (silence), par pas de 20. Légende texte pure, PAS une position
+  // spatiale sur le canvas (contrairement à l'axe fréquence : la dB colore un pixel, elle
+  // n'a pas de rangée qui lui correspond) — répartie uniformément juste pour la lisibilité.
+  const dbCeiling = 0;
+  const dbFloor = -(SPECTRO_GAIN_DB + SPECTRO_RANGE_DB); // -100
+  const dbStep = (dbCeiling - dbFloor) / 5; // 20
+  const dbTicks = Array.from({ length: 6 }, (_, i) => Math.round(dbCeiling - i * dbStep));
+  ctx.textAlign = "right";
+  const dbRightX = w - padSide;
+  dbTicks.forEach((db, i) => {
+    const y = padTop + (i / (dbTicks.length - 1)) * colH;
+    drawOutlinedText(ctx, String(db), dbRightX, y, 0.9);
+  });
+  drawOutlinedText(ctx, "dB", dbRightX, h - 14, 0.7);
+  ctx.restore();
+}
+
+/** Réticule au survol : ligne horizontale (fréquence) + verticale (temps) qui se croisent
+ *  sous le curseur, étiquette "{mm:ss} · {kHz} · {dB}" (annotation : "afficher aussi le
+ *  temps") — dessiné sur l'OVERLAY, jamais sur le canvas
+ *  de base. Ton neutre (pas verdict-toné : ce n'est plus le verdict qui s'affiche, contrai-
+ *  rement à l'ancienne ligne de coupure). Même style de pill que l'ancienne étiquette
+ *  cutoff (fond rgba(0,0,0,0.55), coins arrondis, 11px monospace), avec le même garde-fou
+ *  anti-débordement en Y ; ajoute le même garde-fou en X (la pill peut aussi déborder à
+ *  droite près du bord droit du canvas). */
+function drawSpectroCrosshair(
+  ctx: CanvasRenderingContext2D,
+  w: number,
+  h: number,
+  x: number,
+  y: number,
+  freqHz: number,
+  dbfs: number,
+  timeSec: number,
+  color: string,
+) {
+  ctx.clearRect(0, 0, w, h);
+  ctx.save();
+  ctx.globalAlpha = 0.8;
+  ctx.strokeStyle = color;
+  ctx.lineWidth = 1;
+  ctx.beginPath();
+  ctx.moveTo(0, y);
+  ctx.lineTo(w, y);
+  ctx.moveTo(x, 0);
+  ctx.lineTo(x, h);
+  ctx.stroke();
+  ctx.restore();
+
+  const label = `${mmss(timeSec)} · ${(freqHz / 1000).toFixed(1)} kHz · ${dbfs.toFixed(1)} dB`;
+  ctx.font = "11px monospace";
+  const textW = ctx.measureText(label).width;
+  const padX = 6;
+  const padY = 4;
+  const boxW = textW + padX * 2;
+  const boxH = 11 + padY * 2;
+  let boxX = x + 8;
+  if (boxX + boxW > w - 2) boxX = x - 8 - boxW;
+  const boxY = y - 4 - boxH >= 2 ? y - 4 - boxH : y + 4;
+  ctx.fillStyle = "rgba(0,0,0,0.55)";
+  ctx.beginPath();
+  ctx.roundRect(boxX, boxY, boxW, boxH, 4);
+  ctx.fill();
+  ctx.fillStyle = color;
+  ctx.fillText(label, boxX + padX, boxY + boxH - padY - 2);
+}
+
+/** Câble le survol souris du spectrogramme : mousemove dessine le réticule sur l'overlay
+ *  (jamais sur le canvas de base, jamais la boucle pixel-par-pixel), mouseleave l'efface
+ *  entièrement (rien ne reste affiché au repos — tout se découvre au survol). Appelée une
+ *  fois par drawSpectrogram() réussi (wireSpectrogram), après que `base` a sa taille finale
+ *  (mesurée/appliquée par drawSpectrogram — voir son `measuredW`). */
+function wireSpectroHover(base: HTMLCanvasElement, overlay: HTMLCanvasElement, r: AnalysisReport) {
+  const octx = overlay.getContext("2d");
+  if (!octx) return;
+  overlay.width = base.width;
+  overlay.height = base.height;
+  const w = base.width;
+  const h = base.height;
+  const sg = r.spectrogram;
+  // Couleur claire fixe, pas un token thème-aware : le canvas reste toujours noir quel que
+  // soit le thème de l'app (.sift-spectro-canvas, styles.css), donc --color-text-secondary
+  // (qui s'assombrit en thème clair, le défaut de Sift) rendait le réticule et son étiquette
+  // quasi illisibles — même raisonnement déjà appliqué à drawSpectroLegend (revue finale).
+  const color = "rgba(255,255,255,0.85)";
+
+  base.addEventListener("mousemove", (e) => {
+    const rect = base.getBoundingClientRect();
+    const x = Math.round(((e.clientX - rect.left) / rect.width) * w);
+    const y = Math.round(((e.clientY - rect.top) / rect.height) * h);
+    if (x < 0 || x >= w || y < 0 || y >= h) return;
+    const { freqHz, dbfs, timeSec } = spectroPointAt(sg, w, h, x, y, r.duration_sec);
+    drawSpectroCrosshair(octx, w, h, x, y, freqHz, dbfs, timeSec, color);
+  });
+  base.addEventListener("mouseleave", () => octx.clearRect(0, 0, w, h));
 }
 
 function drawSpectrogram(canvas: HTMLCanvasElement, r: AnalysisReport) {
   const ctx = canvas.getContext("2d");
   const sg = r.spectrogram;
   if (!ctx || sg.frames === 0 || sg.bins === 0) return;
-  const w = canvas.width, h = canvas.height;
+  // The canvas backing store was hardcoded to width="720" in the HTML while CSS stretches it to
+  // 100% of its container (.sift-spectro-canvas) — most Revue panels render wider than 720px, so
+  // the browser upscaled the low-res bitmap to fill the box, showing a blurry/pixelated "zoomed
+  // in" spectrogram. Match the backing store to the real rendered width so 1 image px = 1 CSS px.
+  const measuredW = Math.round(canvas.getBoundingClientRect().width);
+  const w = measuredW > 0 ? measuredW : canvas.width;
+  if (canvas.width !== w) canvas.width = w;
+  const h = canvas.height;
   const img = ctx.createImageData(w, h);
   for (let x = 0; x < w; x++) {
     const f = Math.min(sg.frames - 1, Math.floor((x / w) * sg.frames));
     for (let y = 0; y < h; y++) {
       const b = Math.min(sg.bins - 1, Math.floor(((h - 1 - y) / h) * sg.bins));
       const val = sg.mag_db[f * sg.bins + b] || 0;
+      const [cr, cg, cb] = spectroColor(val);
       const i = (y * w + x) * 4;
-      img.data[i] = val;
-      img.data[i + 1] = val;
-      img.data[i + 2] = Math.min(255, 60 + val);
+      img.data[i] = cr;
+      img.data[i + 1] = cg;
+      img.data[i + 2] = cb;
       img.data[i + 3] = 255;
     }
   }
   ctx.putImageData(img, 0, 0);
   const nyquist = sg.bins * sg.hz_per_bin;
-  if (r.cutoff_hz > 0 && nyquist > 0) {
-    const y = h - (r.cutoff_hz / nyquist) * h;
-    ctx.strokeStyle = "#ff5050";
-    ctx.lineWidth = 1.5;
-    ctx.beginPath();
-    ctx.moveTo(0, y);
-    ctx.lineTo(w, y);
-    ctx.stroke();
-    ctx.fillStyle = "#ff5050";
-    ctx.font = "11px monospace";
-    ctx.fillText(`cutoff ${(r.cutoff_hz / 1000).toFixed(1)} kHz`, 6, Math.max(12, y - 4));
-  }
+  drawSpectroLegend(ctx, w, h, nyquist);
 }
 
 function peaksCoverage(r: AnalysisReport): string {
@@ -143,95 +335,294 @@ function peaksCoverage(r: AnalysisReport): string {
   return `${r.peaks.length} pts ≈ ${covered.toFixed(1)}s / ${r.duration_sec.toFixed(1)}s (${pct.toFixed(0)}%)`;
 }
 
-function row(label: string, value: string): string {
-  return `<div style="display:flex;justify-content:space-between;gap:16px;padding:3px 0;border-bottom:0.5px solid var(--color-border-tertiary)"><span style="color:var(--color-text-tertiary)">${label}</span><span style="font-family:var(--font-mono);text-align:right;color:var(--color-text-secondary)">${value}</span></div>`;
+// mono=false for a categorical word (e.g. the verdict "ok"/"fake"/"grey") rather than a numeric
+// reading (Hz, dBTP, %, runs) — .sift-row-value's monospace treatment fits digits/units, but reads
+// as an odd mismatch on plain text (annotation: "j'aime bien le texte de verdict mais celui de ok
+// pas fan"). Default stays mono so every other numeric row call site is unaffected.
+export function row(label: string, value: string, mono = true): string {
+  const valueCls = mono ? "sift-row-value" : "sift-row-value sift-row-value-plain";
+  return `<div class="sift-row"><span class="sift-row-label">${label}</span><span class="${valueCls}">${value}</span></div>`;
 }
 
-/** The report's inner HTML (no positioning chrome). `closeBtn` adds a "fermer" button. */
-function reportHtml(r: AnalysisReport, closeBtn: boolean): string {
-  const yn = (b: boolean) => (b ? "oui" : "non");
-  const name = r.path.split(/[\\/]/).pop() || r.path;
-  // State chain. For a genuine file the declared format IS the reality, so showing both a
-  // "real quality" and the "authentic" badge is a redundant double-confirm — collapse to
-  // just [format · Authentique]. The annoncé → réel → verdict chain only appears when the
-  // reality differs from the claim (fake / grey).
+// ── HTML helpers ────────────────────────────────────────────────────────────
+
+/** Keyboard-hint row for the bottom action rail (filing.ts), matching the board's `kbd` line —
+ *  the maquette anchors these to the rail, not the scrollable detail content. */
+export function keyboardHintsHtml(): string {
+  const k = (key: string, what: string) => `<span><b>${key}</b> ${what}</span>`;
+  return (
+    `<div class="sift-kbd-hints">` +
+    k("SPACE", "écouter") + k("ENTER", "convertir") + k("BKSP", "jeter") + k("HAUT/BAS", "naviguer") +
+    `</div>`
+  );
+}
+
+/** Single header, folded into the player card itself (2026-07-02: the standalone Hero above the
+ *  player was pure duplication — same title/artist/path, twice). Cover (real art once identified,
+ *  a minimalist vinyl placeholder via `.sift-cover-frame`'s CSS until then) + title + artist ·
+ *  version + raw path, optionally a close button (`openReportModal`'s popup only). Keeps the
+ *  shared `.sift-report-cover`/`.sift-report-name`/`.sift-report-sub` hooks that filing.ts writes
+ *  into (cover src on identify, clean displayName on reconcile). */
+/** Last 2 segments of a path ("…\parent\file.aiff"), so the ellipsis truncation (CSS
+ *  text-overflow, which cuts from the right) never hides the filename — the one part of the
+ *  raw path actually worth reading. Full path stays available via the title tooltip
+ *  (audit UI/UX 2026-07-03, fix 7). */
+function shortPath(path: string): string {
+  const parts = path.split(/[\\/]/).filter(Boolean);
+  return parts.length > 2 ? `…${parts.slice(-2).join("/")}` : path;
+}
+
+interface PlayerHeaderOptions {
+  deferText?: boolean;
+  title?: string;
+  subtitle?: string;
+  showAnalysisFailure?: boolean;
+}
+
+function playerHeaderHtml(name: string, path: string, closeBtn: boolean, opts: PlayerHeaderOptions = {}): string {
+  const pendingCls = opts.deferText ? " sift-report-text-pending" : "";
+  return (
+    `<div class="sift-player-header">` +
+    `<div class="sift-cover-frame">` +
+    // Abstract note glyph, not a literal vinyl (annotation: "l'icone fait trop redondant avec le
+    // bouton play... un délire plus minimaliste vectoriel"). Two adjacent circular shapes (the
+    // play button + a drawn vinyl disc) read as duplicated; a plain icon sidesteps that entirely.
+    `<i class="ti ti-music-note sift-cover-fallback" aria-hidden="true"></i>` +
+    `<img class="sift-report-cover sift-player-cover" hidden alt="Pochette — ${esc(name)}">` +
+    `</div>` +
+    `<div class="sift-player-header-body">` +
+    `<div class="sift-report-name sift-player-name${pendingCls}">${esc(name)}</div>` +
+    `<div class="sift-report-sub sift-player-sub${pendingCls}">${esc(opts.subtitle ?? "")}</div>` +
+    `<div class="sift-player-path" title="${esc(path)}">${esc(shortPath(path))}</div>` +
+    `</div>` +
+    (closeBtn ? `<button class="sift-close sift-report-close">fermer</button>` : "") +
+    `</div>`
+  );
+}
+
+function playerRowHtml(name: string, path: string, closeBtn = false, headerOpts: PlayerHeaderOptions = {}): string {
+  return (
+    `<div class="sift-player-row">` +
+    playerHeaderHtml(name, path, closeBtn, headerOpts) +
+    `<div class="sift-player-audition">` +
+    `<button class="sift-play sift-play-btn" title="Lecture / pause (espace)" aria-label="Lecture / pause (espace)"><i class="ti ti-player-play"></i></button>` +
+    `<div class="sift-wave-wrap is-paused">` +
+    `<div class="sift-wave sift-player-wave"></div>` +
+    `<div class="sift-wave-hover"></div>` +
+    `<span class="sift-time-elapsed">0:00</span>` +
+    `<span class="sift-time-total">0:00</span>` +
+    `</div>` +
+    `</div>` +
+    `<div class="sift-player-error" hidden></div>` +
+    `<div class="sift-player-controls">` +
+    // Collapsed to an icon at rest, expands on hover (annotation: "le bouton de volume qui
+    // collapse et qui s'ouvre seulement en hover") — width-transition + overflow:hidden in CSS,
+    // the icon is a separate absolutely-positioned element that fades out once expanded.
+    // "Volume" label dropped (annotation: "tu peux enlever le texte Volume et grossir l'icone") —
+    // the icon alone is the trigger/identity now.
+    `<div class="sift-slider-block sift-volume-block">` +
+    // ti-volume-2 swapped for the plainer ti-volume (annotation: "pas fan de l'icone de volume") —
+    // a simpler speaker glyph, no sound-wave arcs, consistent with the flat/abstract direction
+    // already taken for the cover fallback.
+    `<i class="ti ti-volume sift-volume-icon" title="Volume" aria-label="Volume"></i>` +
+    // Audit-ref R1 (Revue, 2026-07-08, réf. shadcn Slider/Radix) : aucun role="slider"/
+    // aria-valuenow dans tout le projet avant ce fix — drag-only (pointerdown), pas de clavier.
+    // aria-valuenow tenu à jour dans renderVolume/renderTempo (mountPlayer, plus bas).
+    `<div class="sift-slider-track sift-volume-track" tabindex="0" role="slider" aria-label="Volume" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100">` +
+    `<div class="sift-slider-rail"></div>` +
+    `<div class="sift-slider-fill sift-volume-fill"></div>` +
+    `<div class="sift-slider-thumb sift-volume-thumb"></div>` +
+    `</div></div>` +
+    `<div class="sift-player-spacer"></div>` +
+    // Tempo/key-lock are DJ mixing controls, not needed for the actual task on this screen
+    // (verify the file, decide where it goes) — moved behind a disclosure so a non-technical
+    // user isn't shown 2 extra controls to ignore on every single track (audit finding #6,
+    // 2026-07-10). Volume stays visible (basic playback, expected by anyone). Native
+    // <details>/<summary> — elements stay in the DOM when collapsed, so mountPlayer's
+    // querySelector-based wiring below is unaffected by visibility.
+    `<details class="sift-listen-advanced">` +
+    `<summary class="sift-listen-advanced-summary">Écoute avancée</summary>` +
+    `<div class="sift-listen-advanced-body">` +
+    `<div class="sift-key-block" title="Key-lock : le tempo ne change pas la tonalité (off = varispeed)">` +
+    `<span class="sift-slider-label">Key-lock</span>` +
+    `<button class="sift-key sift-key-btn" aria-pressed="true">ON</button>` +
+    `</div>` +
+    `<div class="sift-slider-block">` +
+    `<span class="sift-slider-label">Tempo<span class="sift-tempo-out">0%</span></span>` +
+    `<div class="sift-slider-track sift-tempo-track" title="Tempo — double-clic = réinitialiser" tabindex="0" role="slider" aria-label="Tempo" aria-valuemin="-8" aria-valuemax="8" aria-valuenow="0">` +
+    `<div class="sift-slider-rail"></div>` +
+    `<div class="sift-slider-fill sift-tempo-fill"></div>` +
+    `<div class="sift-slider-thumb sift-tempo-thumb"></div>` +
+    `</div></div>` +
+    `</div></details>` +
+    `</div></div>`
+  );
+}
+
+type ChipTone = "success" | "neutral" | "danger" | "warning";
+
+function toneCss(tone: ChipTone): string {
+  return tone === "success"
+    ? "background:var(--color-background-success);color:var(--color-text-success)"
+    : tone === "danger"
+      ? "background:var(--color-background-danger);color:var(--color-text-danger)"
+      : tone === "warning"
+        ? "background:var(--color-background-warning);color:var(--color-text-warning)"
+        : "background:var(--overlay-selected);color:var(--color-text-secondary)";
+}
+
+/** A verdict-panel chip: `success` = green-tinted (LOSSLESS), `neutral` = white@.06 (MATCH/UNIQUE). */
+export function vchipHtml(label: string, tone: ChipTone): string {
+  return `<span class="sift-vchip" style="${toneCss(tone)}">${esc(label)}</span>`;
+}
+
+/** Shared zone-toggle header (Métadonnées in filing.ts, Preuve/spectre below) — one markup shape
+ *  so the two disclosures can't quietly drift again. Audit 2026-07-05 found the Preuve toggle's
+ *  own label wrapper (flex gap + a literal leading space) added spacing on top of
+ *  `.sift-zone-toggle-car`'s margin that the Métadonnées toggle didn't have, and its badge reused
+ *  `.sift-vchip` (inline-flex + letter-spacing) instead of the plain `.sift-chip-badge` box the
+ *  CDJ badge uses — same class name, different box model. */
+export function zoneToggleHtml(opts: {
+  label: string;
+  badgeId: string;
+  toggleId?: string;
+  toggleExtraClass?: string;
+  caretExtraClass?: string;
+  hintExtraClass?: string;
+  badgeLabel?: string;
+  badgeTone?: ChipTone;
+  badgeHidden?: boolean;
+}): string {
+  const toggleCls = opts.toggleExtraClass
+    ? `sift-zone-toggle ${opts.toggleExtraClass}`
+    : "sift-zone-toggle";
+  const carCls = opts.caretExtraClass
+    ? `sift-zone-toggle-car ${opts.caretExtraClass}`
+    : "sift-zone-toggle-car";
+  const hintCls = opts.hintExtraClass
+    ? `sift-zone-toggle-hint ${opts.hintExtraClass}`
+    : "sift-zone-toggle-hint";
+  const badgeHidden = opts.badgeHidden ?? true;
+  const badgeStyle = opts.badgeTone ? ` style="${toneCss(opts.badgeTone)}"` : "";
+  // No "afficher"/"masquer" text: the caret already rotates on toggle and the button carries
+  // aria-expanded, so that was pure redundancy (user feedback 2026-07-06). The hint span itself
+  // stays, empty by default — Preuve's version still needs it for transient "calcul…"/"échec —
+  // réessayer" text while the spectrogram is being computed (wireSpectrogram in this file), which
+  // has no other UI feedback path. Métadonnées never sets it, so it just stays empty there.
+  return (
+    `<button class="${toggleCls}"${opts.toggleId ? ` id="${opts.toggleId}"` : ""} aria-expanded="false">` +
+    `<span><span class="${carCls}">▸</span><span class="sift-zone-toggle-label">${opts.label}</span></span>` +
+    `<span class="sift-zone-toggle-right">` +
+    `<span class="sift-chip-badge" id="${opts.badgeId}"${badgeStyle}${badgeHidden ? " hidden" : ""}>${esc(opts.badgeLabel ?? "")}</span>` +
+    `<span class="${hintCls}"></span>` +
+    `</span>` +
+    `</button>`
+  );
+}
+
+/** ACTUAL verdict panel: the CONCLUSION, a single status "bulle" (pill) — sitting on the
+ *  inspector's own continuous surface, no full-bleed tinted panel anymore (2026-07-06 redesign;
+ *  superseded the tinted-panel treatment). Nom final moved OUT of here entirely, into the rail
+ *  (filing.ts renderFoot, .sift-rail-final-group). This ONLY reflects the audio verdict now — an
+ *  earlier "À finaliser" state (verdict ok but no destination chosen yet) was tried and reverted
+ *  (annotation: "on ne comprend pas ce qui reste à finaliser ? Redondant ?") — the pill alone
+ *  couldn't explain WHAT needed finalizing, and it duplicated the Destination button's own
+ *  "Choisir…" CTA, which is the actual, self-explanatory place that signal belongs. */
+// Removed entirely (annotation: "supprime ça en fait") — the verdict pill (Prêt à ranger/À
+// vérifier d'abord/Sur-encodé) duplicated the tone-coded quality badge already shown in the
+// Diagnostic audio disclosure header (qualityChipTone/spectroAndTagsHtml below), same pattern as
+// the earlier removals of the confidence badge and CHECK MATCH this session. `verdictContainer`
+// (`.sift-fil-verdict`) still exists and is still used for the "Analyse en cours…"/error states
+// elsewhere in this file — only the success-path HTML this function used to build is gone; kept
+// as a no-op (not deleted outright) so those call sites don't need touching.
+export function verdictCardHtml(_r: AnalysisReport): string {
+  return "";
+}
+
+/** Quality label + tone for the spectral-disclosure header badge (verdict-derived: LOSSLESS,
+ *  "MP3 ≈ X kbps", etc.) — single source consumed by spectroAndTagsHtml() below. */
+function qualityChipTone(r: AnalysisReport): { label: string; tone: "success" | "danger" | "warning" | "neutral" } {
   const rq = realQuality(r);
-  const declaredPill = `<span class="pill">${esc(r.declared_format)}${r.declared_bitrate ? " · " + r.declared_bitrate + " kbps" : ""}</span>`;
-  const lab = (t: string) =>
-    `<span style="font-size:9px;letter-spacing:.04em;text-transform:uppercase;color:var(--color-text-tertiary)">${t}</span>`;
-  const arrow = '<i class="ti ti-arrow-right" style="font-size:13px;color:var(--color-text-tertiary)"></i>';
-  const chainInner =
-    r.verdict === "ok"
-      ? `${declaredPill}${verdictBadge(r.verdict)}`
-      : `${lab("annoncé")}${declaredPill}${arrow}${lab("qualité réelle")}<span class="pill" style="background:${rq.bg};color:${rq.fg}">${rq.label}</span>${arrow}${verdictBadge(r.verdict)}`;
-  return `
-    <div style="display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px">
-      <div style="min-width:0"><div class="sift-report-name" style="font-size:13px;font-weight:600;word-break:break-all;color:var(--color-text-primary)">${esc(name)}</div>
-        <div style="font-size:10px;color:var(--color-text-tertiary);font-family:var(--font-mono);word-break:break-all;margin-top:2px">${esc(r.path)}</div></div>
-      ${closeBtn ? '<button class="sift-close" style="flex:none;font-size:13px;padding:4px 10px">fermer</button>' : ""}
-    </div>
-    <div style="display:flex;align-items:center;gap:7px;margin-bottom:12px;flex-wrap:wrap;font-size:11px">${chainInner}</div>
-
-    <div style="display:flex;align-items:center;gap:12px;margin-bottom:11px;padding:8px 11px;min-height:80px;background:var(--color-background-secondary);border-radius:var(--border-radius-md)">
-      <div style="flex:none;align-self:stretch;width:62px;position:relative;display:flex;flex-direction:column;align-items:center;justify-content:center">
-        <button class="sift-play" title="Lecture / pause (espace)" style="flex:none;width:30px;height:30px;border-radius:50%;display:inline-flex;align-items:center;justify-content:center;padding:0"><i class="ti ti-player-play" style="font-size:13px"></i></button>
-        <span class="sift-time" title="Cliquer : écoulé ⇄ restant" style="position:absolute;bottom:0;left:50%;transform:translateX(-50%);white-space:nowrap;font-family:var(--font-mono);font-size:9px;color:var(--color-text-secondary);cursor:pointer;transition:color .15s;display:inline-flex;align-items:center;justify-content:center;gap:3px"><span class="sift-time-val">0:00 / 0:00</span></span>
-      </div>
-      <div class="sift-wave" style="flex:1;min-width:0;align-self:center;cursor:pointer"></div>
-      <div style="flex:none;align-self:stretch;width:64px;display:flex;flex-direction:column;align-items:center;justify-content:space-between;gap:6px;padding:3px 0">
-        <span style="font-size:8px;letter-spacing:.05em;text-transform:uppercase;color:var(--color-text-tertiary)">tempo</span>
-        <div style="flex:1;min-height:0;display:flex;align-items:center;gap:4px">
-          <input class="sift-tempo" type="range" min="-8" max="8" step="1" value="0" title="Tempo — double-clic = reset" aria-label="Tempo" style="writing-mode:vertical-lr;direction:rtl;width:22px;height:100%;max-height:42px">
-          <span class="sift-tempo-out" style="font-family:var(--font-mono);font-size:8px;color:var(--color-text-secondary);width:22px">0%</span>
-        </div>
-        <button class="sift-key" title="Key-lock : le tempo ne change pas le pitch (off = varispeed)" style="border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:2px 8px;font-size:8px;letter-spacing:.05em;text-transform:uppercase">key</button>
-      </div>
-    </div>
-    <div style="margin-bottom:11px;border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);overflow:hidden">
-      <button class="sift-sg-toggle" style="width:100%;display:flex;align-items:center;justify-content:space-between;gap:8px;padding:9px 11px;background:var(--color-background-secondary);border:none;color:var(--color-text-primary);cursor:pointer;font-size:11px;text-align:left">
-        <span style="display:flex;align-items:center;gap:8px"><span class="sift-sg-caret" style="display:inline-block;transition:transform .25s;color:var(--color-text-tertiary)">▸</span> Spectrogramme &amp; infos</span>
-        <span class="sift-sg-hint" style="font-size:11px;color:var(--color-text-info);flex:none">afficher</span>
-      </button>
-      <div class="sift-sg-body" style="max-height:0;overflow:hidden;transition:max-height .3s ease">
-        <div style="padding:8px 11px;font-size:10px;color:var(--color-text-tertiary);border-bottom:0.5px solid var(--color-border-tertiary);line-height:1.5">Déclaré <span class="pill">${esc(r.declared_format)}</span> ${r.declared_rail}${r.declared_bitrate ? " · " + r.declared_bitrate + " kbps" : ""} · coupure ${fmt(r.cutoff_hz, 0)} Hz — ${spectroCaption(r.verdict)}</div>
-        <canvas class="sift-sg" width="720" height="180" style="width:100%;display:block;background:#000"></canvas>
-        <div style="padding:9px 11px;display:grid;grid-template-columns:1fr 1fr;gap:0 28px;font-size:12px">
-          ${row("Verdict", r.verdict)}
-          ${row("Coupure", fmt(r.cutoff_hz, 0) + " Hz")}
-          ${row("Durée", fmt(r.duration_sec, 1) + " s")}
-          ${row("Canaux", String(r.channels) + (r.dual_mono ? " (dual-mono)" : ""))}
-          ${row("True-peak", fmt(r.true_peak_dbtp, 2) + " dBTP")}
-          ${row("DC offset", fmt(r.dc_offset, 5))}
-          ${row("Écrêtage", r.clip_runs + " runs / " + fmt(r.clip_pct, 2) + "%")}
-          ${row("Corrélation phase", fmt(r.phase_correlation, 3))}
-          ${row("Silence tête", r.silence_head_ms + " ms")}
-          ${row("Silence queue", r.silence_tail_ms + " ms")}
-          ${row("Tronqué", yn(r.truncated))}
-          ${row("Conteneur OK", yn(r.container_ok))}
-          ${row("Sample rate", r.sample_rate + " Hz")}
-          ${row("Peaks (couverture)", peaksCoverage(r))}
-        </div>
-      </div>
-    </div>
-
-    <div style="margin-bottom:4px">
-      <div style="font-size:9px;letter-spacing:.05em;text-transform:uppercase;color:var(--color-text-tertiary);margin-bottom:5px">Tags</div>
-      <div style="display:grid;grid-template-columns:1fr 1fr;gap:0 28px;font-size:12px">
-        ${row("Tags CDJ OK", yn(r.tags_cdj_ok))}
-        ${row("Pochette", yn(r.has_cover))}
-        ${row("Version ID3", r.id3_version || "—")}
-      </div>
-    </div>
-    ${r.codec_error ? `<div style="margin-top:12px;font-size:11px;color:#ff6b6b">codec error: ${esc(r.codec_error)}</div>` : ""}`;
+  if (r.verdict === "ok" && r.declared_rail === "lossless") return { label: "LOSSLESS", tone: "success" };
+  return { label: rq.label, tone: r.verdict === "fake" ? "danger" : r.verdict === "grey" ? "warning" : "neutral" };
 }
 
-// One shared AudioContext for decoding formats the <audio> element can't play (AIFF).
-let decodeCtx: AudioContext | null = null;
+function spectroAndTagsHtml(r: AnalysisReport): string {
+  const yn = (b: boolean) => (b ? "oui" : "non");
+  const { label: qualityLabel, tone: qualityTone } = qualityChipTone(r);
+  return (
+    `<div class="sift-spectro-box">` +
+    zoneToggleHtml({
+      label: "Diagnostic audio",
+      badgeId: "sift-quality-badge",
+      toggleExtraClass: "sift-sg-toggle sift-spectro-toggle",
+      caretExtraClass: "sift-sg-caret sift-spectro-caret",
+      hintExtraClass: "sift-sg-hint sift-spectro-hint",
+      badgeLabel: qualityLabel,
+      badgeTone: qualityTone,
+      badgeHidden: false,
+    }) +
+    `<div class="sift-sg-body sift-spectro-body">` +
+    `<div class="sift-spectro-body-inner">` +
+    `<div class="sift-spectro-declared">Déclaré <span class="pill">${esc(r.declared_format)}</span> ${r.declared_rail}${r.declared_bitrate ? " · " + r.declared_bitrate + " kbps" : ""} · coupure ${fmt(r.cutoff_hz, 0)} Hz — ${spectroCaption(r.verdict, r.container_mismatch)}</div>` +
+    `<div class="sift-spectro-canvas-wrap">` +
+    `<canvas class="sift-sg sift-spectro-canvas" width="720" height="180" role="img" aria-label="Spectrogramme audio"></canvas>` +
+    // Canvas transparent superposé — ne dessine QUE le réticule au survol (wireSpectroHover),
+    // jamais l'image du spectrogramme elle-même. Séparé du canvas de base pour la perf :
+    // un mousemove ne doit jamais redéclencher la boucle pixel-par-pixel de drawSpectrogram.
+    `<canvas class="sift-spectro-overlay" width="720" height="180"></canvas>` +
+    `</div>` +
+    `<div class="sift-spectro-rows">` +
+    row("Verdict", r.verdict, false) +
+    row("Coupure", fmt(r.cutoff_hz, 0) + " Hz") +
+    row("Durée", fmt(r.duration_sec, 1) + " s") +
+    `</div>` +
+    // Non-technical users open "Diagnostic audio" to understand a verdict, not to read raw
+    // engineering measurements — verdict/coupure/durée above answer that; everything else
+    // (true-peak, DC offset, écrêtage, corrélation de phase…) is jargon with no vulgarization,
+    // so it moves behind a second, nested disclosure (audit finding #5, 2026-07-10). Native
+    // <details> — no new JS wiring needed, doesn't touch wireSpectrogram's querySelector-based
+    // toggle for the OUTER "Diagnostic audio" panel.
+    `<details class="sift-spectro-tech">` +
+    `<summary class="sift-spectro-tech-summary">Détails techniques</summary>` +
+    `<div class="sift-spectro-rows">` +
+    row("Canaux", String(r.channels) + (r.dual_mono ? " (dual-mono)" : "")) +
+    row("True-peak", fmt(r.true_peak_dbtp, 2) + " dBTP") +
+    row("DC offset", fmt(r.dc_offset, 5)) +
+    row("Écrêtage", r.clip_runs + " runs / " + fmt(r.clip_pct, 2) + "%") +
+    row("Corrélation de phase", fmt(r.phase_correlation, 3)) +
+    row("Silence début", r.silence_head_ms + " ms") +
+    row("Silence fin", r.silence_tail_ms + " ms") +
+    row("Tronqué", yn(r.truncated)) +
+    row("Conteneur OK", yn(r.container_ok)) +
+    row("Fréquence d'échantillonnage", r.sample_rate + " Hz") +
+    row("Pics (couverture)", peaksCoverage(r)) +
+    `</div></details></div></div>` +
+    // Tags CDJ OK / Version ID3 moved to the Identification card (filing.ts, alongside Label/
+    // Année/Genre) — Pochette dropped entirely (redondant avec la pochette déjà visible dans le
+    // hero). Nothing meaningful was left in the old "Tags" box, so it's gone too; codec_error is
+    // its own standalone diagnostic, not tied to those three fields.
+    (r.codec_error ? `<div class="sift-codec-error">erreur codec : ${esc(r.codec_error)}</div>` : "")
+  );
+}
+
+/** Report HTML minus the verdict conclusion (name + player row + spectrogram/tags). The verdict
+ *  is rendered separately, after Identification, by the caller (see `verdictContainer` on
+ *  `openReportInto`/`renderReportInto`) — it's the CONCLUSION and must come last, right above
+ *  the action rail, matching the maquette. `openReportModal` (no Identification card) appends
+ *  `verdictCardHtml` itself, right after this. */
+function reportHtml(r: AnalysisReport, closeBtn: boolean, headerOpts: PlayerHeaderOptions = {}): string {
+  const name = headerOpts.title ?? (r.path.split(/[\\/]/).pop() || r.path);
+  return (
+    playerRowHtml(name, r.path, closeBtn, headerOpts) +
+    spectroAndTagsHtml(r)
+  );
+}
 
 /** Wrap a decoded AudioBuffer as an in-memory 16-bit PCM WAV blob (lossless container swap;
- * AIFF and WAV are both PCM). Lets wavesurfer's media element play AIFF content the browser
- * decoded natively via Web Audio. */
-function audioBufferToWav(buf: AudioBuffer): Blob {
+ * AIFF and WAV are both PCM). The player no longer uses this (it streams via the media
+ * element); kept for selftest.ts, which exercises the decode → WAV → wavesurfer chain. */
+export function audioBufferToWav(buf: AudioBuffer): Blob {
   const numCh = buf.numberOfChannels;
   const sr = buf.sampleRate;
   const len = buf.length;
@@ -268,61 +659,95 @@ function audioBufferToWav(buf: AudioBuffer): Blob {
   return new Blob([ab], { type: "audio/wav" });
 }
 
-/** Load a file the browser can't play natively (AIFF) by decoding it with Web Audio and
- * feeding the player a WAV blob. Falls back to the backend transcode if Web Audio refuses. */
-async function loadDecoded(ws: WaveSurfer, path: string): Promise<void> {
-  // Each await yields the event loop; the user may switch tracks meanwhile, which
-  // destroys this ws and creates a new currentWs. Bail if we're no longer current,
-  // so we never call loadBlob/load on a destroyed instance.
+/** Resolve a URL the webview's media element can play directly: the file itself for the
+ * formats Chromium decodes natively (mp3/wav/flac/m4a/ogg), or the backend's cached WAV
+ * transcode for AIFF (`playback_url`, mtime-guarded temp file, re-encoded only when stale).
+ * The old path here fetched the WHOLE file into an ArrayBuffer, decoded it fully with Web
+ * Audio, then re-encoded a 40-80MB WAV blob sample-by-sample in JS — for every format, on
+ * every cache-miss open. The media element streams instead; with pre-computed peaks passed
+ * to `ws.load` there is nothing left to decode up-front. */
+async function playableUrl(path: string): Promise<string> {
+  const ext = path.split(".").pop()?.toLowerCase() ?? "";
+  if (ext === "aif" || ext === "aiff") return invoke<string>("playback_url", { path });
+  return path;
+}
+
+/** Point the player's media element at the track (streaming, no up-front decode). `peaks`/
+ * `duration` (from the Rust analysis report) let wavesurfer render without decoding audio;
+ * without them (fresh, never-analyzed track) wavesurfer decodes for display itself.
+ * Each await yields the event loop; the user may switch tracks meanwhile, which destroys
+ * this ws and creates a new currentWs — bail so we never load into a destroyed instance. */
+async function loadAudio(ws: WaveSurfer, path: string, peaks?: number[], duration?: number): Promise<void> {
   try {
-    const resp = await fetch(convertFileSrc(path));
-    const arr = await resp.arrayBuffer();
+    const src = await playableUrl(path);
     if (ws !== currentWs) return;
-    if (!decodeCtx) decodeCtx = new AudioContext();
-    const audioBuf = await decodeCtx.decodeAudioData(arr);
-    if (ws !== currentWs) return;
-    await ws.loadBlob(audioBufferToWav(audioBuf));
+    await ws.load(convertFileSrc(src), peaks?.length ? [peaks] : undefined, duration || undefined);
   } catch (e) {
-    if (ws !== currentWs) return;
-    console.error("web-audio decode failed, falling back to transcode", e);
-    try {
-      const src = await invoke<string>("playback_url", { path });
-      if (ws !== currentWs) return;
-      await ws.load(convertFileSrc(src));
-    } catch (e2) {
-      console.error("playback fallback failed", e2);
-    }
+    if (ws !== currentWs) return; // AbortError from a track switch mid-load: expected, silent
+    console.error("audio load failed", e);
   }
 }
 
-/** Mounts a wavesurfer player on the report's player row (varispeed tempo for now). */
-async function mountPlayer(root: HTMLElement, r: AnalysisReport) {
-  const container = root.querySelector<HTMLElement>(".sift-wave");
+/** Warm everything the NEXT track's open needs, so queue navigation feels instant: the
+ * analysis report (verdict + peaks — a DB hit when the worker already analyzed it) and,
+ * for AIFF, the backend's transcoded WAV. Failures are silent by design: a prefetch must
+ * never surface UI errors — the real open retries and reports. Called from the queue-open
+ * sites at most once per user track-switch (not a burst event). */
+export function prefetchTrack(path: string): void {
+  if (!reportCache.has(path)) {
+    void analyzePath(path, false)
+      .then((r) => reportCache.set(path, r))
+      .catch(() => {});
+  }
+  const ext = path.split(".").pop()?.toLowerCase() ?? "";
+  if (ext === "aif" || ext === "aiff") void invoke<string>("playback_url", { path }).catch(() => {});
+}
+
+/** Mounts a wavesurfer player on the report's player row. Tempo uses the browser's native
+ * time-stretch (`preservesPitch`) for key-lock — adequate for the ±8% DJ nudge; SoundTouch.js
+ * was evaluated and skipped (would require re-architecting playback to Web Audio for marginal
+ * gain at this range). See docs/ressources-externes.md.
+ * `peaks` and `duration` (from the Rust analysis report) render the waveform instantly AND
+ * spare wavesurfer its own display decode; audio streams via the media element (loadAudio). */
+async function mountPlayer(root: HTMLElement, path: string, peaks?: number[], duration?: number) {
+  const container = requireEl<HTMLElement>(".sift-wave", "mountPlayer", root);
   const playBtn = root.querySelector<HTMLButtonElement>(".sift-play");
-  const timeEl = root.querySelector<HTMLElement>(".sift-time");
-  const tempo = root.querySelector<HTMLInputElement>(".sift-tempo");
   const tempoOut = root.querySelector<HTMLElement>(".sift-tempo-out");
-  if (!container) return;
+  const volumeTrack = root.querySelector<HTMLElement>(".sift-volume-track");
+  const volumeFill = root.querySelector<HTMLElement>(".sift-volume-fill");
+  const volumeThumb = root.querySelector<HTMLElement>(".sift-volume-thumb");
+  const tempoTrack = root.querySelector<HTMLElement>(".sift-tempo-track");
+  const tempoFill = root.querySelector<HTMLElement>(".sift-tempo-fill");
+  const tempoThumb = root.querySelector<HTMLElement>(".sift-tempo-thumb");
+  const errorEl = root.querySelector<HTMLElement>(".sift-player-error");
 
   ensureStyles();
   destroyPlayer();
-  // AIFF isn't playable by Chromium's <audio>, but its Web Audio engine decodes it natively —
-  // so decode AIFF in-browser and feed a WAV blob; other formats load directly.
-  const ext = (r.path.split(".").pop() || "").toLowerCase();
-  const needsDecode = ext === "aif" || ext === "aiff";
+  // WaveSurfer draws to canvas, so it needs resolved color strings, not var(--x) references —
+  // same read-at-mount pattern already used for the spectrogram cutoff line (drawSpectrogram
+  // below). --overlay-bar is the theme-aware "translucent bar" token (used for .qi.cur's accent
+  // bar) — a semantic fit for the unplayed wave bars, and theme-aware unlike the old hardcoded
+  // rgba(255,255,255,.35) (annotation: "aligne la couleur de la waveform sur notre color system"
+  // — that literal only worked by accident in dark mode, invisible in light). Progress keeps
+  // --color-waveform-elapsed, the dedicated (theme-fixed by design) waveform accent token.
+  const cs = getComputedStyle(root);
+  const waveColor = cs.getPropertyValue("--overlay-bar").trim() || "rgba(255,255,255,.35)";
+  const progressColor = cs.getPropertyValue("--color-waveform-elapsed").trim() || "#ff5500";
   const ws = WaveSurfer.create({
     container,
-    height: 46,
-    waveColor: "rgba(142,204,232,.45)",
-    progressColor: "#8ecce8",
-    cursorColor: "#FFdc82",
+    height: 58, // bumped from 46 (continuous-surface redesign, 2026-07-06) — larger hero waveform
+    barWidth: 2,
+    barGap: 1,
+    barRadius: 1,
+    cursorWidth: 0,
+    waveColor,
+    progressColor,
     normalize: true,
-    peaks: r.peaks.length ? [r.peaks] : undefined,
-    duration: r.duration_sec || undefined,
+    peaks: peaks?.length ? [peaks] : undefined,
+    duration: duration || undefined,
   });
   currentWs = ws;
-  if (needsDecode) void loadDecoded(ws, r.path);
-  else void ws.load(convertFileSrc(r.path));
+  void loadAudio(ws, path, peaks, duration);
 
   const setIcon = (name: string) => {
     const i = playBtn?.querySelector("i");
@@ -330,9 +755,12 @@ async function mountPlayer(root: HTMLElement, r: AnalysisReport) {
   };
   const keyEl = root.querySelector<HTMLButtonElement>(".sift-key");
   let keyLock = true; // DJ default: tempo doesn't move the pitch (browser time-stretch)
-  const applyRate = () => ws.setPlaybackRate(1 + Number(tempo?.value || 0) / 100, keyLock);
+  let tempoValue = 0; // -8..8, drives both playback rate and the custom slider visuals
+  const applyRate = () => ws.setPlaybackRate(1 + tempoValue / 100, keyLock);
   const refreshKey = () => {
     if (!keyEl) return;
+    keyEl.textContent = keyLock ? "ON" : "OFF";
+    keyEl.setAttribute("aria-pressed", String(keyLock)); // audit-ref R2 (Revue, 2026-07-08)
     keyEl.style.background = keyLock ? "var(--color-background-info)" : "transparent";
     keyEl.style.color = keyLock ? "var(--color-text-info)" : "var(--color-text-tertiary)";
     keyEl.style.borderColor = keyLock ? "var(--color-border-info)" : "var(--color-border-tertiary)";
@@ -343,67 +771,268 @@ async function mountPlayer(root: HTMLElement, r: AnalysisReport) {
     applyRate();
   });
   refreshKey();
-  const timeVal = root.querySelector<HTMLElement>(".sift-time-val");
-  let showRemaining = false;
-  const updateTime = () => {
-    if (!timeVal) return;
-    const cur = ws.getCurrentTime(), dur = ws.getDuration();
-    const left = showRemaining ? `-${mmss(dur - cur)}` : mmss(cur);
-    timeVal.textContent = `${left} / ${mmss(dur)}`;
+
+  // Custom sliders (never native <input type=range> — see DESIGN.md): drag anywhere on the
+  // track, thumb/fill follow the mouse until release. Volume fills from the left; tempo fills
+  // from the centre (0 = neutral), matching the pitch-fader convention.
+  const dragSlider = (track: HTMLElement, onMove: (pct: number) => void) => {
+    const update = (clientX: number) => {
+      const rect = track.getBoundingClientRect();
+      onMove(Math.max(0, Math.min(1, (clientX - rect.left) / Math.max(1, rect.width))));
+    };
+    track.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      track.classList.add("dragging");
+      track.setPointerCapture(e.pointerId);
+      update(e.clientX);
+      const onPointerMove = (ev: PointerEvent) => update(ev.clientX);
+      const stopDragging = (ev: PointerEvent) => {
+        track.classList.remove("dragging");
+        if (track.hasPointerCapture(ev.pointerId)) track.releasePointerCapture(ev.pointerId);
+        track.removeEventListener("pointermove", onPointerMove);
+        track.removeEventListener("pointerup", stopDragging);
+        track.removeEventListener("pointercancel", stopDragging);
+      };
+      track.addEventListener("pointermove", onPointerMove);
+      track.addEventListener("pointerup", stopDragging);
+      track.addEventListener("pointercancel", stopDragging);
+    });
   };
-  timeEl?.addEventListener("click", () => {
-    showRemaining = !showRemaining;
-    updateTime();
-  });
+
+  const renderVolume = (pct: number) => {
+    if (volumeFill) volumeFill.style.width = `${pct * 100}%`;
+    if (volumeThumb) volumeThumb.style.left = `${pct * 100}%`;
+    volumeTrack?.setAttribute("aria-valuenow", String(Math.round(pct * 100))); // audit-ref R1
+  };
+  renderVolume(1); // WaveSurfer's own default (full volume)
+  if (volumeTrack) {
+    dragSlider(volumeTrack, (pct) => {
+      ws.setVolume(pct);
+      renderVolume(pct);
+    });
+    // Audit-ref R1 (Revue, 2026-07-08, réf. shadcn Slider) : flèches gauche/droite ±5%, Home/End
+    // aux bornes — même granularité que le drag existant (continu), pas de pas caché supplémentaire.
+    volumeTrack.addEventListener("keydown", (e) => {
+      const cur = ws.getVolume();
+      if (e.key === "ArrowLeft" || e.key === "ArrowDown") {
+        e.preventDefault();
+        const next = Math.max(0, cur - 0.05);
+        ws.setVolume(next);
+        renderVolume(next);
+      } else if (e.key === "ArrowRight" || e.key === "ArrowUp") {
+        e.preventDefault();
+        const next = Math.min(1, cur + 0.05);
+        ws.setVolume(next);
+        renderVolume(next);
+      } else if (e.key === "Home") {
+        e.preventDefault();
+        ws.setVolume(0);
+        renderVolume(0);
+      } else if (e.key === "End") {
+        e.preventDefault();
+        ws.setVolume(1);
+        renderVolume(1);
+      }
+    });
+  }
+
+  let tempoRateFrame: number | null = null;
+  const scheduleTempoRate = () => {
+    if (tempoRateFrame != null) return;
+    tempoRateFrame = window.requestAnimationFrame(() => {
+      tempoRateFrame = null;
+      applyRate();
+    });
+  };
+
+  const renderTempo = (syncAudio = true) => {
+    const pct = ((tempoValue + 8) / 16) * 100;
+    if (tempoFill) {
+      const left = Math.min(pct, 50);
+      tempoFill.style.left = `${left}%`;
+      tempoFill.style.width = `${Math.abs(pct - 50)}%`;
+    }
+    if (tempoThumb) tempoThumb.style.left = `${pct}%`;
+    if (tempoOut) tempoOut.textContent = `${tempoValue > 0 ? "+" : ""}${Math.round(tempoValue)}%`;
+    tempoTrack?.setAttribute("aria-valuenow", String(Math.round(tempoValue))); // audit-ref R1
+    if (syncAudio) scheduleTempoRate();
+  };
+  renderTempo();
+  if (tempoTrack) {
+    dragSlider(tempoTrack, (pct) => {
+      // Rounding tempoValue to the nearest whole percent on every mousemove (annotation: "encore
+      // sticky") snapped the thumb across one of only 17 fixed positions instead of following the
+      // cursor, unlike the volume slider's continuous ws.setVolume(pct) — that discreteness is what
+      // read as "sticky"/notchy. Keep the underlying value continuous (smooth drag, smooth pitch
+      // change); only the displayed "%" text rounds, in renderTempo above.
+      tempoValue = Math.max(-8, Math.min(8, -8 + pct * 16));
+      renderTempo();
+    });
+    tempoTrack.addEventListener("dblclick", () => {
+      tempoValue = 0;
+      renderTempo(false);
+      applyRate();
+    });
+    // Audit-ref R1 (Revue, 2026-07-08) : flèches ±1% (le pas affiché), Home/End aux bornes.
+    tempoTrack.addEventListener("keydown", (e) => {
+      if (e.key === "ArrowLeft" || e.key === "ArrowDown") {
+        e.preventDefault();
+        tempoValue = Math.max(-8, tempoValue - 1);
+        renderTempo();
+      } else if (e.key === "ArrowRight" || e.key === "ArrowUp") {
+        e.preventDefault();
+        tempoValue = Math.min(8, tempoValue + 1);
+        renderTempo();
+      } else if (e.key === "Home") {
+        e.preventDefault();
+        tempoValue = -8;
+        renderTempo();
+      } else if (e.key === "End") {
+        e.preventDefault();
+        tempoValue = 8;
+        renderTempo();
+      } else if (e.key === "0") {
+        // Parité clavier avec le double-clic souris (dblclick → 0%, ligne juste au-dessus) —
+        // sans ça, un utilisateur clavier doit presser une flèche jusqu'à 8 fois (audit 2026-07-09).
+        e.preventDefault();
+        tempoValue = 0;
+        renderTempo(false);
+        applyRate();
+      }
+    });
+  }
+  // SoundCloud-style: elapsed (left) + remaining (right) shown at once, overlaid on the waveform
+  // itself — no elapsed/remaining toggle needed since both are always visible together. The
+  // right side counts DOWN (duration - elapsed), not a static total, so it actually ticks.
+  const timeElapsedEl = root.querySelector<HTMLElement>(".sift-time-elapsed");
+  const timeTotalEl = root.querySelector<HTMLElement>(".sift-time-total");
+  const updateTime = () => {
+    if (timeElapsedEl) timeElapsedEl.textContent = mmss(ws.getCurrentTime());
+    if (timeTotalEl) timeTotalEl.textContent = `-${mmss(Math.max(0, ws.getDuration() - ws.getCurrentTime()))}`;
+  };
   ws.on("ready", () => {
     applyRate();
     updateTime();
+    if (errorEl) errorEl.hidden = true;
   });
   ws.on("timeupdate", updateTime);
-  ws.on("play", () => setIcon("player-pause"));
-  ws.on("pause", () => setIcon("player-play"));
-  ws.on("finish", () => setIcon("player-play"));
+
+  // Waveform dims a touch while paused (and re-lights on hover, so scrubbing/seeking a paused
+  // track still reads clearly) — `.is-paused` starts set in the HTML (nothing is playing yet).
+  const waveWrapEl = root.querySelector<HTMLElement>(".sift-wave-wrap");
+  ws.on("play", () => {
+    setIcon("player-pause");
+    waveWrapEl?.classList.remove("is-paused");
+  });
+  ws.on("pause", () => {
+    setIcon("player-play");
+    waveWrapEl?.classList.add("is-paused");
+  });
+  ws.on("finish", () => {
+    setIcon("player-play");
+    waveWrapEl?.classList.add("is-paused");
+  });
+
+  // Hover-scrub preview: recolor the waveform's own bars from the start up to the cursor (no
+  // extra rectangle/line drawn on top) — dimmer than the actual orange playhead fill. WaveSurfer
+  // renders into a shadow-DOM canvas (bars opaque, gaps transparent); `waveHoverEl` is a plain
+  // absolutely-positioned div, alpha-masked to a live snapshot of that same canvas so only the
+  // bar pixels — not the gaps between them — pick up the tint as its width tracks the cursor.
+  const waveHoverEl = root.querySelector<HTMLElement>(".sift-wave-hover");
+  const findWaveCanvas = (): HTMLCanvasElement | null =>
+    container.querySelector<HTMLElement>(":scope > div")?.shadowRoot?.querySelector("canvas") ?? null;
+  const updateWaveMask = () => {
+    if (!waveHoverEl) return;
+    const canvas = findWaveCanvas();
+    if (!canvas) return;
+    try {
+      // The live bars are drawn translucent (waveColor ~.35 alpha) — used as-is that would mask
+      // the overlay down to a near-invisible tint. Binarize instead: any pixel the bars touch at
+      // all becomes fully opaque in the mask, so the overlay reads at its own full strength on
+      // every bar pixel and stays at zero everywhere in the gaps between them.
+      const maskCanvas = document.createElement("canvas");
+      maskCanvas.width = canvas.width;
+      maskCanvas.height = canvas.height;
+      const mctx = maskCanvas.getContext("2d");
+      if (!mctx) return;
+      mctx.drawImage(canvas, 0, 0);
+      const img = mctx.getImageData(0, 0, maskCanvas.width, maskCanvas.height);
+      const d = img.data;
+      for (let i = 3; i < d.length; i += 4) if (d[i] > 0) d[i] = 255;
+      mctx.putImageData(img, 0, 0);
+      const url = `url(${maskCanvas.toDataURL()})`;
+      const rect = canvas.getBoundingClientRect();
+      const size = `${rect.width}px ${rect.height}px`;
+      for (const prop of ["mask", "-webkit-mask"]) {
+        waveHoverEl.style.setProperty(`${prop}-image`, url);
+        waveHoverEl.style.setProperty(`${prop}-repeat`, "no-repeat");
+        waveHoverEl.style.setProperty(`${prop}-size`, size);
+        waveHoverEl.style.setProperty(`${prop}-position`, "0 0");
+      }
+      // WaveSurfer rounds its rendered canvas down to a whole number of bar+gap units, so it's
+      // often a few pixels narrower than `.sift-wave-wrap` itself — a static `left:6px`/`right:6px`
+      // on the pills would then float past the wave's real edges. Anchor them to the canvas's
+      // own measured edges instead, so they track it exactly regardless of that rounding.
+      if (waveWrapEl) {
+        const wrapRect = waveWrapEl.getBoundingClientRect();
+        if (timeElapsedEl) timeElapsedEl.style.left = `${Math.round(rect.left - wrapRect.left) + 6}px`;
+        if (timeTotalEl) timeTotalEl.style.right = `${Math.round(wrapRect.right - rect.right) + 6}px`;
+      }
+    } catch {
+      // getImageData/toDataURL can throw on a tainted canvas — hover preview just stays unmasked.
+    }
+  };
+  ws.on("redrawcomplete", updateWaveMask);
+  if (waveHoverEl) {
+    container.addEventListener("mousemove", (e) => {
+      const rect = container.getBoundingClientRect();
+      const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / Math.max(1, rect.width)));
+      waveHoverEl.style.width = `${pct * 100}%`;
+    });
+    container.addEventListener("mouseleave", () => {
+      waveHoverEl.style.width = "0";
+    });
+  }
   ws.on("error", (e) => {
     console.error("wavesurfer error", e);
     // route to the Rust log so it shows in the dev console (webview console isn't readable here)
-    void invoke("report_smoke", { ok: false, detail: `wavesurfer ${r.path}: ${String(e)}` });
+    void invoke("report_smoke", { ok: false, detail: `wavesurfer ${path}: ${String(e)}` });
+    // Audio loads via loadAudio (native media element, AIFF pre-transcoded backend-side),
+    // so there's nothing further to retry here — just surface the error.
+    if (errorEl) {
+      errorEl.textContent = "Lecture impossible — fichier illisible.";
+      errorEl.hidden = false;
+    }
   });
   playBtn?.addEventListener("click", () => void ws.playPause());
-  const refreshTempo = () => {
-    const v = Number(tempo!.value);
-    if (tempoOut) tempoOut.textContent = `${v > 0 ? "+" : ""}${v}%`;
-    // grey at neutral (0), coloured once nudged
-    tempo!.classList.toggle("sift-active", v !== 0);
-    applyRate();
-  };
-  tempo?.addEventListener("input", refreshTempo);
-  refreshTempo();
-  // double-click the fader → reset tempo/pitch to 0
-  tempo?.addEventListener("dblclick", () => {
-    tempo.value = "0";
-    refreshTempo();
-  });
 }
 
-/** Wires the player + spectrogram toggle inside `root` (scoped — no global ids). */
-function wireReport(root: HTMLElement, r: AnalysisReport) {
-  mountPlayer(root, r);
-
+/** Wires the spectrogram toggle inside `root` (extracted so it can be called
+ * independently of player mounting — used after async analysis fill-in). */
+function wireSpectrogram(root: HTMLElement, r: AnalysisReport) {
   const sg = root.querySelector<HTMLCanvasElement>(".sift-sg");
+  const overlay = root.querySelector<HTMLCanvasElement>(".sift-spectro-overlay");
   const toggle = root.querySelector<HTMLButtonElement>(".sift-sg-toggle");
   const body = root.querySelector<HTMLElement>(".sift-sg-body");
   const caret = root.querySelector<HTMLElement>(".sift-sg-caret");
   const hint = root.querySelector<HTMLElement>(".sift-sg-hint");
-  if (!sg || !toggle || !body || !caret || !hint) return;
+  if (!sg || !overlay || !toggle || !body || !caret || !hint) return;
 
   let open = false, loaded = false, busy = false;
+  const close = () => {
+    if (!open) return;
+    open = false;
+    body.classList.remove("is-open");
+    caret.style.transform = "";
+    toggle.setAttribute("aria-expanded", "false");
+  };
+  closeSpectroZone = close; // this instance is now the one "sift:accordion-open" can close
+
   toggle.addEventListener("click", async () => {
     if (busy) return;
     if (open) {
-      open = false;
-      body.style.maxHeight = "0";
-      caret.style.transform = "";
-      hint.textContent = "afficher";
+      close();
       return;
     }
     if (!loaded) {
@@ -412,6 +1041,7 @@ function wireReport(root: HTMLElement, r: AnalysisReport) {
       try {
         const full = r.spectrogram.frames > 0 ? r : await analyzePath(r.path, true);
         drawSpectrogram(sg, full);
+        wireSpectroHover(sg, overlay, full);
         loaded = true;
       } catch (e) {
         console.error("spectrogram analyze failed", e);
@@ -420,17 +1050,33 @@ function wireReport(root: HTMLElement, r: AnalysisReport) {
         return;
       }
       busy = false;
+      hint.textContent = ""; // clear the transient "calcul…" now that it's loaded
     }
+    // Exclusive accordion (shadcn Accordion reference): opening this closes Métadonnées.
+    document.dispatchEvent(new CustomEvent("sift:accordion-open", { detail: { zone: "diagnostic" } }));
     open = true;
     caret.style.transform = "rotate(90deg)";
-    hint.textContent = "masquer";
-    body.style.maxHeight = body.scrollHeight + "px";
+    toggle.setAttribute("aria-expanded", "true");
+    body.classList.add("is-open");
   });
 }
 
-/** Renders the report INLINE into `container` (e.g. the Revue #mid pane). */
-export function renderReportInto(container: HTMLElement, r: AnalysisReport) {
-  container.innerHTML = `<div style="flex:1;overflow:auto;padding:2px 2px 8px">${reportHtml(r, false)}</div>`;
+/** Wires the player + spectrogram toggle inside `root` (scoped — no global ids). */
+function wireReport(root: HTMLElement, r: AnalysisReport) {
+  mountPlayer(root, r.path, r.peaks, r.duration_sec);
+  wireSpectrogram(root, r);
+}
+
+/** Renders the report INLINE into `container` (e.g. the Revue #mid pane). `verdictContainer`,
+ *  when given, gets the verdict conclusion card instead of `container` — see `openReportInto`. */
+export function renderReportInto(
+  container: HTMLElement,
+  r: AnalysisReport,
+  verdictContainer?: HTMLElement,
+  headerOpts: PlayerHeaderOptions = {},
+) {
+  container.innerHTML = `<div class="sift-report-scroll">${reportHtml(r, false, headerOpts)}</div>`;
+  if (verdictContainer) verdictContainer.innerHTML = verdictCardHtml(r);
   wireReport(container, r);
 }
 
@@ -444,33 +1090,115 @@ const reportCache = new Map<string, AnalysisReport>();
 export function clearReportCache(path?: string) {
   if (path) reportCache.delete(path);
   else reportCache.clear();
+  // No decoded-audio cache to drop anymore: the player streams the file (or the backend's
+  // mtime-guarded AIFF transcode), so a replaced file is never replayed stale from JS memory.
 }
 
 // Monotonic token: the latest openReportInto call wins. A slow analyse that resolves after the
 // user already switched tracks must not overwrite the newer content in the shared container.
 let openSeq = 0;
 
-/** Loads (no spectrogram) and renders inline into `container`. Instant when cached. */
-export async function openReportInto(container: HTMLElement, path: string) {
+/** Loads (no spectrogram) and renders inline into `container`. Instant when cached.
+ *
+ * The player is mounted IMMEDIATELY from the path alone, before analysis completes.
+ * This eliminates the "player never mounts" race: the old design awaited analyzePath
+ * before mounting, and a background event bumping openSeq during that await caused the
+ * seq-guard to abort the whole render (player included). Now the seq-guard only aborts
+ * the analysis fill-in — the player is already running and stays untouched. */
+export async function openReportInto(
+  container: HTMLElement,
+  path: string,
+  verdictContainer?: HTMLElement,
+  headerOpts: PlayerHeaderOptions = {},
+): Promise<AnalysisReport | null> {
   destroyPlayer();
   ensureStyles();
   const seq = ++openSeq;
+
   const cached = reportCache.get(path);
   if (cached) {
-    renderReportInto(container, cached);
-    return;
+    renderReportInto(container, cached, verdictContainer, headerOpts);
+    return cached;
   }
-  const name = path.split(/[\\/]/).pop() || path;
-  container.innerHTML = `<div style="flex:1;display:flex;align-items:center;justify-content:center;gap:8px;color:var(--color-text-tertiary);font-size:13px"><i class="ti ti-loader-2 sift-spin"></i>Analyse de ${esc(name)}…</div>`;
+
+  const name = headerOpts.title ?? (path.split(/[\\/]/).pop() || path);
+
+  // Fire analysis IPC immediately. For already-analyzed tracks the DB round-trip takes ~20ms.
+  const analysisPromise = analyzePath(path, false);
+
+  // Render the player shell. Son-first order: player (header+audition) → proof (Preuves). The
+  // verdict conclusion goes LAST, above the action rail — in `verdictContainer` when the caller
+  // supplies one (filing.ts/library-detail.ts, both of which insert Identification between here
+  // and their own verdict slot), else in a `.sift-verdict-stub` kept inside this same scroll
+  // (openReportModal, which has no Identification card of its own). Filled in later (seq-guarded).
+  const verdictHost = () => verdictContainer ?? container.querySelector<HTMLElement>(".sift-verdict-stub");
+  container.innerHTML =
+    `<div class="sift-report-scroll">` +
+    playerRowHtml(name, path, false, headerOpts) +
+    `<div class="sift-analysis-body" hidden></div>` +
+    (verdictContainer ? "" : `<div class="sift-verdict-stub"></div>`) +
+    `</div>`;
+
+  // Race the analysis against a short timeout. For already-analyzed tracks (DB cache hit)
+  // we win the race and can pass peaks to WaveSurfer.create() — which renders the waveform
+  // instantly from the pre-computed data. For fresh tracks the timeout fires first and we
+  // mount without peaks so audio starts loading while analysis runs in the background.
+  // 300ms (not 20-80ms): the DB hit itself is fast, but the full invoke round-trip (IPC
+  // dispatch + JSON (de)serialization of the report incl. the peaks array) regularly exceeds
+  // 80ms in a `tauri dev` debug build, which was tripping the timeout — and showing the
+  // "Analyse en cours…" stub — for tracks that were in fact already analyzed.
+  const earlyResult = await Promise.race([
+    analysisPromise.catch((): null => null),
+    new Promise<null>((res) => setTimeout(() => res(null), 300)),
+  ]) as AnalysisReport | null;
+
+  if (seq !== openSeq) return null;
+
+  if (earlyResult) {
+    reportCache.set(path, earlyResult);
+    // Pass peaks to the constructor — the only path that renders the waveform immediately.
+    void mountPlayer(container, path, earlyResult.peaks, earlyResult.duration_sec || undefined);
+    const verdictEl = verdictHost();
+    const bodyEl = container.querySelector<HTMLElement>(".sift-analysis-body");
+    if (verdictEl) verdictEl.innerHTML = verdictCardHtml(earlyResult);
+    if (bodyEl) {
+      bodyEl.innerHTML = spectroAndTagsHtml(earlyResult);
+      bodyEl.hidden = false;
+      wireSpectrogram(container, earlyResult);
+    }
+    return earlyResult;
+  }
+
+  // Timeout fired — this is a genuinely fresh track (no DB cache to hit), so the wait is
+  // real. Only now does the loader text get shown.
+  const pendingEl = verdictHost();
+  if (pendingEl) {
+    pendingEl.innerHTML = `<i class="ti ti-loader-2 sift-spin"></i>Analyse en cours…`;
+  }
+  void mountPlayer(container, path);
+
   try {
-    const r = await analyzePath(path, false);
+    const r = await analysisPromise;
     reportCache.set(path, r);
-    if (seq !== openSeq) return; // user switched tracks while analysing — newer call owns the pane
-    renderReportInto(container, r);
+    if (seq !== openSeq) return null;
+    const verdictEl = verdictHost();
+    const bodyEl = container.querySelector<HTMLElement>(".sift-analysis-body");
+    if (verdictEl) verdictEl.innerHTML = verdictCardHtml(r);
+    if (bodyEl) {
+      bodyEl.innerHTML = spectroAndTagsHtml(r);
+      bodyEl.hidden = false;
+      wireSpectrogram(container, r);
+    }
+    return r;
   } catch (e) {
     console.error("analyze_path failed", e);
-    if (seq !== openSeq) return;
-    container.innerHTML = `<div style="flex:1;display:flex;align-items:center;justify-content:center;color:#ff6b6b;font-size:13px">Analyse échouée : ${esc(String(e))}</div>`;
+    if (seq !== openSeq) return null;
+    const verdictEl = verdictHost();
+    if (verdictEl && headerOpts.showAnalysisFailure !== false) {
+      verdictEl.innerHTML =
+        `<div class="sift-analysis-fail">Échec de l'analyse : ${esc(String(e))}</div>`;
+    }
+    return null;
   }
 }
 
@@ -483,8 +1211,7 @@ export async function openReportModal(path: string) {
   document.getElementById(OVERLAY_ID)?.remove();
   const ov = document.createElement("div");
   ov.id = OVERLAY_ID;
-  ov.style.cssText =
-    "position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px";
+  ov.className = "sift-report-overlay";
   ov.addEventListener("click", (e) => {
     if (e.target === ov) {
       destroyPlayer();
@@ -493,14 +1220,12 @@ export async function openReportModal(path: string) {
   });
   document.body.appendChild(ov);
   const name = path.split(/[\\/]/).pop() || path;
-  const cardCss =
-    "background:var(--color-background-primary);color:var(--color-text-primary);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-lg,12px);box-shadow:0 12px 48px rgba(0,0,0,.5)";
-  ov.innerHTML = `<div style="${cardCss};padding:22px 26px;font-size:13px;display:flex;align-items:center;gap:8px"><i class="ti ti-loader-2 sift-spin"></i>Analyse de <strong>${esc(name)}</strong>…</div>`;
+  ov.innerHTML = `<div class="sift-report-overlay-card sift-report-overlay-loading"><i class="ti ti-loader-2 sift-spin"></i>Analyse de <strong>${esc(name)}</strong>…</div>`;
   try {
     const r = await analyzePath(path, false);
     const card = document.createElement("div");
-    card.style.cssText = `${cardCss};max-width:760px;width:100%;max-height:90vh;overflow:auto;padding:20px`;
-    card.innerHTML = reportHtml(r, true);
+    card.className = "sift-report-overlay-card sift-report-overlay-modal";
+    card.innerHTML = reportHtml(r, true) + verdictCardHtml(r);
     ov.innerHTML = "";
     ov.appendChild(card);
     card.querySelector(".sift-close")?.addEventListener("click", () => {
@@ -510,6 +1235,6 @@ export async function openReportModal(path: string) {
     wireReport(card, r);
   } catch (e) {
     console.error("analyze_path failed", e);
-    ov.innerHTML = `<div style="${cardCss};padding:22px 26px;font-size:13px;color:var(--color-text-danger)">Analyse échouée : ${esc(String(e))}</div>`;
+    ov.innerHTML = `<div class="sift-report-overlay-card sift-report-overlay-error">Échec de l'analyse : ${esc(String(e))}</div>`;
   }
 }

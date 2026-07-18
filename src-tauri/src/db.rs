@@ -1,4 +1,15 @@
 use rusqlite::Connection;
+use std::sync::{Mutex, MutexGuard};
+use tauri::State;
+
+/// Locks the app's shared `Connection`, mapping a poisoned-mutex error to the
+/// `String` every IPC command already returns. Extracted from ~40 duplicated
+/// `conn.lock().map_err(|e| e.to_string())?` call sites across `ipc*.rs`.
+pub fn lock_conn<'a>(
+    conn: &'a State<'_, Mutex<Connection>>,
+) -> Result<MutexGuard<'a, Connection>, String> {
+    conn.lock().map_err(|e| e.to_string())
+}
 
 /// Ordered list of migrations. Index + 1 == the schema version it brings the DB to.
 /// NEVER reorder or edit an existing entry once shipped — only append.
@@ -90,6 +101,114 @@ const MIGRATIONS: &[&str] = &[
     r#"
     ALTER TABLE tracks ADD COLUMN report_json TEXT;
     "#,
+    // v6 — M6a Discogs identification: per-track sub-genres (Discogs "style"), multiple per
+    // track, ordered. metadata.genre stays for back-compat but track_genres is the source.
+    r#"
+    CREATE TABLE track_genres (
+        track_id INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+        genre    TEXT NOT NULL,
+        ord      INTEGER NOT NULL,
+        PRIMARY KEY (track_id, genre)
+    );
+    CREATE INDEX idx_track_genres_track ON track_genres(track_id);
+    "#,
+    // v7 — revertable "Apply ID3 tags": a free-form JSON column on the journal where the
+    // tag_edit action stores the OLD tags captured before the write, so a revert can restore
+    // them. Other action types leave it NULL.
+    r#"
+    ALTER TABLE actions ADD COLUMN meta TEXT;
+    "#,
+    // v8 — Journal session grouping: tag each new action with the app session that produced it.
+    // Actions from before this migration keep session_id = NULL → front shows them under "Antérieur".
+    r#"
+    ALTER TABLE actions ADD COLUMN session_id TEXT;
+    "#,
+    // v9 — report_json is otherwise unversioned: a content-only change to the analysis engine
+    // (e.g. spectrogram resolution) leaves old cached rows structurally valid but stale, so
+    // nothing would ever invalidate them. Rows from before this migration get NULL, which never
+    // matches analysis::REPORT_CACHE_VERSION — ipc.rs treats that as a cache miss and self-heals.
+    r#"
+    ALTER TABLE tracks ADD COLUMN report_cache_ver INTEGER;
+    "#,
+    // v10 — composite indexes for the dashboard/facet queries: folder facets filter on
+    // (status='filed', folder) and the "à re-sourcer" card on (status='filed', verdict).
+    r#"
+    CREATE INDEX IF NOT EXISTS idx_tracks_status_folder ON tracks(status, folder);
+    CREATE INDEX IF NOT EXISTS idx_tracks_status_verdict ON tracks(status, verdict);
+    "#,
+    // v11 — M8 Tier 1 IPC wiring: candidate master.db path repairs detected read-only on
+    // filing (docs/superpowers/specs/2026-07-06-m8-tier1-ipc-wiring-design.md). track_id is
+    // NULL when 2+ djmdContent rows matched the same from_path (ambiguous, never auto-repaired
+    // — see candidate_track_ids). UNIQUE(action_id): a second detection pass for the same
+    // journaled move never duplicates the row.
+    r#"
+    CREATE TABLE rekordbox_masterdb_repairs (
+        id INTEGER PRIMARY KEY,
+        action_id INTEGER NOT NULL REFERENCES actions(id) ON DELETE CASCADE,
+        track_id TEXT,
+        candidate_track_ids TEXT,
+        from_path TEXT NOT NULL,
+        to_path TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        detected_at TEXT NOT NULL DEFAULT (datetime('now')),
+        applied_at TEXT,
+        UNIQUE(action_id)
+    );
+    CREATE INDEX idx_rkbmdb_repairs_status ON rekordbox_masterdb_repairs(status);
+    "#,
+    // v12 — Apple system-colors palette: per-source manual color override.
+    // NULL = auto-assign by add-order (frontend computes this from list order,
+    // no need to store the derived value); a hue name persists an explicit
+    // override chosen in Réglages.
+    r#"
+    ALTER TABLE sources ADD COLUMN color_key TEXT;
+    "#,
+    // v13 — M8 Tier 3 IPC wiring: candidate master.db metadata syncs detected read-only
+    // whenever Sift writes ID3 tags on a file linked to Rekordbox (filing, apply_tags,
+    // update_metadata). Keyed by Sift track_id (not action_id like v11's repairs table) —
+    // a retag before the user syncs replaces the pending candidate, it never accumulates.
+    // rekordbox_track_id is NULL when 2+ djmdContent rows matched the same path (ambiguous,
+    // never auto-resolved — see candidate_track_ids).
+    r#"
+    CREATE TABLE rekordbox_masterdb_metadata_syncs (
+        id INTEGER PRIMARY KEY,
+        action_id INTEGER NOT NULL REFERENCES actions(id) ON DELETE CASCADE,
+        track_id INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+        rekordbox_track_id TEXT,
+        candidate_track_ids TEXT,
+        new_artist TEXT,
+        new_title TEXT,
+        new_label TEXT,
+        new_year INTEGER,
+        new_genre TEXT,
+        status TEXT NOT NULL DEFAULT 'pending',
+        detected_at TEXT NOT NULL DEFAULT (datetime('now')),
+        applied_at TEXT,
+        UNIQUE(track_id)
+    );
+    CREATE INDEX idx_rkbmdb_metasync_status ON rekordbox_masterdb_metadata_syncs(status);
+    "#,
+    // v14 — M8 Tier 3 IPC wiring (artwork): candidate master.db artwork syncs detected read-only
+    // whenever Sift writes a NEW cover onto a file linked to Rekordbox (filing, apply_tags,
+    // update_metadata) — only when cover_path is actually Some on that write, unlike v13's
+    // metadata syncs which always fire. Keyed by Sift track_id, replaced on every fresh cover.
+    // cover_path is a string (the source JPEG path), never resolved image bytes — re-read fresh
+    // at apply time so a stale/moved file fails loudly instead of syncing wrong bytes.
+    r#"
+    CREATE TABLE rekordbox_masterdb_artwork_syncs (
+        id INTEGER PRIMARY KEY,
+        action_id INTEGER NOT NULL REFERENCES actions(id) ON DELETE CASCADE,
+        track_id INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+        rekordbox_track_id TEXT,
+        candidate_track_ids TEXT,
+        cover_path TEXT NOT NULL,
+        status TEXT NOT NULL DEFAULT 'pending',
+        detected_at TEXT NOT NULL DEFAULT (datetime('now')),
+        applied_at TEXT,
+        UNIQUE(track_id)
+    );
+    CREATE INDEX idx_rkbmdb_artsync_status ON rekordbox_masterdb_artwork_syncs(status);
+    "#,
 ];
 
 /// Applies any migrations the DB hasn't seen yet, tracked via PRAGMA user_version.
@@ -148,7 +267,9 @@ mod tests {
     fn migrations_create_all_tables() {
         let conn = Connection::open_in_memory().unwrap();
         run_migrations(&conn).unwrap();
-        assert_eq!(table_count(&conn).unwrap(), 6); // v4 adds `settings`
+        // v4 adds `settings`, v6 adds `track_genres`, v11 adds `rekordbox_masterdb_repairs`,
+        // v13 adds `rekordbox_masterdb_metadata_syncs`, v14 adds `rekordbox_masterdb_artwork_syncs`
+        assert_eq!(table_count(&conn).unwrap(), 10);
     }
 
     #[test]
@@ -156,7 +277,7 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         run_migrations(&conn).unwrap();
         run_migrations(&conn).unwrap(); // second run must not error or duplicate
-        assert_eq!(table_count(&conn).unwrap(), 6);
+        assert_eq!(table_count(&conn).unwrap(), 10);
     }
 
     #[test]
@@ -194,8 +315,44 @@ mod tests {
             .unwrap()
             .map(|r| r.unwrap())
             .collect();
-        for c in ["cutoff_hz", "dual_mono", "container_ok", "codec_error", "id3_version", "analyzed_at"] {
+        for c in [
+            "cutoff_hz",
+            "dual_mono",
+            "container_ok",
+            "codec_error",
+            "id3_version",
+            "analyzed_at",
+        ] {
             assert!(cols.contains(&c.to_string()), "tracks missing column {c}");
+        }
+    }
+
+    #[test]
+    fn rekordbox_masterdb_repairs_table_has_expected_columns() {
+        let conn = Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+        let cols: Vec<String> = conn
+            .prepare("SELECT name FROM pragma_table_info('rekordbox_masterdb_repairs')")
+            .unwrap()
+            .query_map([], |r| r.get::<_, String>(0))
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect();
+        for c in [
+            "id",
+            "action_id",
+            "track_id",
+            "candidate_track_ids",
+            "from_path",
+            "to_path",
+            "status",
+            "detected_at",
+            "applied_at",
+        ] {
+            assert!(
+                cols.contains(&c.to_string()),
+                "rekordbox_masterdb_repairs missing column {c}"
+            );
         }
     }
 
@@ -232,5 +389,39 @@ mod tests {
         // settings table exists and is writable
         conn.execute("INSERT INTO settings(key,value) VALUES('k','v')", [])
             .expect("settings table usable");
+    }
+
+    #[test]
+    fn actions_has_v7_meta_column() {
+        let conn = Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+        let acols: Vec<String> = conn
+            .prepare("SELECT name FROM pragma_table_info('actions')")
+            .unwrap()
+            .query_map([], |r| r.get::<_, String>(0))
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect();
+        assert!(
+            acols.contains(&"meta".to_string()),
+            "actions missing column meta"
+        );
+    }
+
+    #[test]
+    fn actions_has_v8_session_id_column() {
+        let conn = Connection::open_in_memory().unwrap();
+        run_migrations(&conn).unwrap();
+        let acols: Vec<String> = conn
+            .prepare("SELECT name FROM pragma_table_info('actions')")
+            .unwrap()
+            .query_map([], |r| r.get::<_, String>(0))
+            .unwrap()
+            .map(|r| r.unwrap())
+            .collect();
+        assert!(
+            acols.contains(&"session_id".to_string()),
+            "actions missing column session_id"
+        );
     }
 }

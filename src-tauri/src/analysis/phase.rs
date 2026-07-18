@@ -12,7 +12,9 @@ pub struct PhaseAccumulator {
     n: u64,
 }
 impl PhaseAccumulator {
-    pub fn new() -> Self { Self::default() }
+    pub fn new() -> Self {
+        Self::default()
+    }
     /// `interleaved` = [L0,R0,L1,R1,…]. Odd trailing sample (shouldn't happen) is ignored.
     pub fn push(&mut self, interleaved: &[f32]) {
         let mut i = 0;
@@ -30,12 +32,16 @@ impl PhaseAccumulator {
     }
     pub fn correlation(&self) -> f32 {
         let denom = (self.sum_ll * self.sum_rr).sqrt();
-        if denom < 1e-12 { return 0.0; }
+        if denom < 1e-12 {
+            return 0.0;
+        }
         (self.sum_lr / denom) as f32
     }
     /// True when L and R are (near-)identical: Σ(L-R)² negligible vs signal energy.
     pub fn dual_mono(&self) -> bool {
-        if self.sum_sq < 1e-12 { return false; }
+        if self.sum_sq < 1e-12 {
+            return false;
+        }
         (self.sum_diff_sq / self.sum_sq) < 1e-6
     }
 }

@@ -2,15 +2,26 @@
 
 /// Running mean of the signal → DC offset.
 #[derive(Default)]
-pub struct DcAccumulator { sum: f64, n: u64 }
+pub struct DcAccumulator {
+    sum: f64,
+    n: u64,
+}
 impl DcAccumulator {
-    pub fn new() -> Self { Self::default() }
+    pub fn new() -> Self {
+        Self::default()
+    }
     pub fn push(&mut self, mono: &[f32]) {
-        for &s in mono { self.sum += s as f64; }
+        for &s in mono {
+            self.sum += s as f64;
+        }
         self.n += mono.len() as u64;
     }
     pub fn finish(&self) -> f32 {
-        if self.n == 0 { 0.0 } else { (self.sum / self.n as f64) as f32 }
+        if self.n == 0 {
+            0.0
+        } else {
+            (self.sum / self.n as f64) as f32
+        }
     }
 }
 
@@ -25,7 +36,14 @@ pub struct ClipAccumulator {
 }
 impl ClipAccumulator {
     pub fn new(threshold: f32, min_run: usize) -> Self {
-        Self { threshold, min_run, cur_run: 0, runs: 0, clipped: 0, total: 0 }
+        Self {
+            threshold,
+            min_run,
+            cur_run: 0,
+            runs: 0,
+            clipped: 0,
+            total: 0,
+        }
     }
     pub fn push(&mut self, mono: &[f32]) {
         for &s in mono {
@@ -33,14 +51,20 @@ impl ClipAccumulator {
             if s.abs() >= self.threshold {
                 self.clipped += 1;
                 self.cur_run += 1;
-                if self.cur_run == self.min_run { self.runs += 1; }
+                if self.cur_run == self.min_run {
+                    self.runs += 1;
+                }
             } else {
                 self.cur_run = 0;
             }
         }
     }
     pub fn finish(&self) -> (u32, f32) {
-        let pct = if self.total == 0 { 0.0 } else { self.clipped as f32 / self.total as f32 * 100.0 };
+        let pct = if self.total == 0 {
+            0.0
+        } else {
+            self.clipped as f32 / self.total as f32 * 100.0
+        };
         (self.runs, pct)
     }
 }
@@ -49,9 +73,15 @@ impl ClipAccumulator {
 /// (Linear interp is an approximation of a proper polyphase upsampler — adequate for a
 /// "too hot" flag; documented as such in the spec.)
 #[derive(Default)]
-pub struct TruePeakAccumulator { peak: f32, last: f32, seen: bool }
+pub struct TruePeakAccumulator {
+    peak: f32,
+    last: f32,
+    seen: bool,
+}
 impl TruePeakAccumulator {
-    pub fn new() -> Self { Self::default() }
+    pub fn new() -> Self {
+        Self::default()
+    }
     pub fn push(&mut self, mono: &[f32]) {
         for &s in mono {
             if self.seen {
@@ -68,7 +98,11 @@ impl TruePeakAccumulator {
         }
     }
     pub fn finish(&self) -> f32 {
-        if self.peak <= 0.0 { -120.0 } else { 20.0 * self.peak.log10() }
+        if self.peak <= 0.0 {
+            -120.0
+        } else {
+            20.0 * self.peak.log10()
+        }
     }
 }
 

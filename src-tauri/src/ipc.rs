@@ -26,7 +26,7 @@ pub fn app_info() -> AppInfo {
 
 #[tauri::command]
 pub fn db_health(conn: State<'_, Mutex<Connection>>) -> Result<DbHealth, String> {
-    let conn = conn.lock().map_err(|e| e.to_string())?;
+    let conn = db::lock_conn(&conn)?;
     Ok(DbHealth {
         schema_version: db::schema_version(&conn).map_err(|e| e.to_string())?,
         tables: db::table_count(&conn).map_err(|e| e.to_string())?,
@@ -58,21 +58,38 @@ pub fn add_source(
     path: String,
 ) -> Result<sources::Source, String> {
     let id = {
-        let conn = conn.lock().map_err(|e| e.to_string())?;
+        let conn = db::lock_conn(&conn)?;
         sources::add(&conn, &path).map_err(|e| e.to_string())?
     };
     spawn_scan(app, id);
-    let conn = conn.lock().map_err(|e| e.to_string())?;
-    sources::list(&conn)
-        .map_err(|e| e.to_string())?
-        .into_iter()
-        .find(|s| s.id == id)
-        .ok_or_else(|| "source not found after insert".to_string())
+    // Fetch just the inserted row instead of re-listing every source and filtering in memory.
+    // Mirrors the shape of `sources::list` (pending_count + on-disk accessibility) for one id.
+    let conn = db::lock_conn(&conn)?;
+    conn.query_row(
+        "SELECT s.id, s.path,
+                (SELECT count(*) FROM tracks t WHERE t.source_id=s.id AND t.status='pending'),
+                s.watched, s.color_key
+         FROM sources s WHERE s.id=?1",
+        rusqlite::params![id],
+        |r| {
+            let path: String = r.get(1)?;
+            let accessible = std::path::Path::new(&path).is_dir();
+            Ok(sources::Source {
+                id: r.get(0)?,
+                path,
+                pending_count: r.get(2)?,
+                accessible,
+                watched: r.get::<_, i64>(3)? != 0,
+                color_key: r.get(4)?,
+            })
+        },
+    )
+    .map_err(|e| e.to_string())
 }
 
 #[tauri::command]
 pub fn list_sources(conn: State<'_, Mutex<Connection>>) -> Result<Vec<sources::Source>, String> {
-    let conn = conn.lock().map_err(|e| e.to_string())?;
+    let conn = db::lock_conn(&conn)?;
     sources::list(&conn).map_err(|e| e.to_string())
 }
 
@@ -83,7 +100,7 @@ pub fn remove_source(
     id: i64,
 ) -> Result<(), String> {
     {
-        let conn = conn.lock().map_err(|e| e.to_string())?;
+        let conn = db::lock_conn(&conn)?;
         sources::remove(&conn, id).map_err(|e| e.to_string())?;
     }
     crate::watcher::stop(&app, id);
@@ -94,7 +111,7 @@ pub fn remove_source(
 
 #[tauri::command]
 pub fn list_queue(conn: State<'_, Mutex<Connection>>) -> Result<Vec<queue::QueueItem>, String> {
-    let conn = conn.lock().map_err(|e| e.to_string())?;
+    let conn = db::lock_conn(&conn)?;
     let mut items = queue::list_pending(&conn).map_err(|e| e.to_string())?;
     // Annotate name-duplicate items so the queue can badge them before they're opened.
     let dups = crate::dedup::name_dups(&conn).map_err(|e| e.to_string())?;
@@ -114,7 +131,7 @@ pub fn set_source_watched(
     watched: bool,
 ) -> Result<(), String> {
     let path = {
-        let conn = conn.lock().map_err(|e| e.to_string())?;
+        let conn = db::lock_conn(&conn)?;
         sources::set_watched(&conn, id, watched).map_err(|e| e.to_string())?
     };
     if watched {
@@ -123,6 +140,18 @@ pub fn set_source_watched(
         crate::watcher::stop(&app, id);
     }
     Ok(())
+}
+
+/// Sets or clears a source's manual color override (one of the 5 categorical
+/// hue keys, or None to fall back to auto-assignment by add-order).
+#[tauri::command]
+pub fn set_source_color(
+    conn: State<'_, Mutex<Connection>>,
+    id: i64,
+    color_key: Option<String>,
+) -> Result<(), String> {
+    let conn = db::lock_conn(&conn)?;
+    sources::set_color(&conn, id, color_key).map_err(|e| e.to_string())
 }
 
 #[tauri::command]
@@ -153,7 +182,7 @@ pub fn import_paths(
     let mut folders_added = 0usize;
     let mut scan_ids: Vec<i64> = Vec::new();
     {
-        let conn = conn.lock().map_err(|e| e.to_string())?;
+        let conn = db::lock_conn(&conn)?;
         let dest_root = if as_dest {
             crate::settings::get(&conn, crate::settings::LIBRARY_ROOT)
                 .ok()
@@ -184,14 +213,8 @@ pub fn import_paths(
                     .and_then(|n| n.to_str())
                     .unwrap_or("")
                     .to_string();
-                files_added += conn
-                    .execute(
-                        "INSERT INTO tracks (path, filename, status, created_at)
-                         VALUES (?1, ?2, 'pending', datetime('now'))
-                         ON CONFLICT(path) DO NOTHING",
-                        rusqlite::params![p, filename],
-                    )
-                    .map_err(|e| e.to_string())?;
+                files_added +=
+                    scanner::add_loose_file(&conn, p, &filename).map_err(|e| e.to_string())?;
             }
         }
     }
@@ -200,7 +223,10 @@ pub fn import_paths(
     }
     app.emit("queue:changed", ()).ok();
     crate::worker::refill(&app);
-    Ok(ImportResult { files_added, folders_added })
+    Ok(ImportResult {
+        files_added,
+        folders_added,
+    })
 }
 
 #[derive(Serialize)]
@@ -211,10 +237,8 @@ pub struct AnalysisProgress {
 
 /// Background-analysis progress: how many pending tracks are already analysed, out of total.
 #[tauri::command]
-pub fn analysis_progress(
-    conn: State<'_, Mutex<Connection>>,
-) -> Result<AnalysisProgress, String> {
-    let conn = conn.lock().map_err(|e| e.to_string())?;
+pub fn analysis_progress(conn: State<'_, Mutex<Connection>>) -> Result<AnalysisProgress, String> {
+    let conn = db::lock_conn(&conn)?;
     let (done, total) = crate::worker::progress(&conn).map_err(|e| e.to_string())?;
     Ok(AnalysisProgress { done, total })
 }
@@ -229,46 +253,65 @@ pub fn analyze_path(
     with_spectrogram: bool,
 ) -> Result<crate::analysis::AnalysisReport, String> {
     {
-        let conn = conn.lock().map_err(|e| e.to_string())?;
+        let conn = db::lock_conn(&conn)?;
         // ALWAYS require a known track first (security: not an arbitrary-file decode oracle),
         // for every path that can reach analyse() — incl. spectrogram requests and tracks
         // whose cache is the empty failure sentinel.
         let known = conn
-            .query_row("SELECT 1 FROM tracks WHERE path=?1 LIMIT 1", rusqlite::params![path], |_| Ok(()))
+            .query_row(
+                "SELECT 1 FROM tracks WHERE path=?1 LIMIT 1",
+                rusqlite::params![path],
+                |_| Ok(()),
+            )
             .is_ok();
         if !known {
             return Err("unknown track path".into());
         }
-        // Serve the cached report instantly (no re-decode), except when a spectrogram is
-        // requested (computed on demand, not cached).
-        if !with_spectrogram {
-            let cached: Option<String> = conn
-                .query_row(
-                    "SELECT report_json FROM tracks WHERE path=?1",
-                    rusqlite::params![path],
-                    |r| r.get::<_, Option<String>>(0),
-                )
-                .ok()
-                .flatten();
-            if let Some(json) = cached {
-                if !json.is_empty() {
-                    return serde_json::from_str(&json).map_err(|e| e.to_string());
+        // Serve the cached report instantly (no re-decode). FIX-3: the cache now carries the
+        // spectrogram too (worker.rs analyzes with_spectrogram=true), so a spectrogram request
+        // can also be served from cache — unless this row predates that fix (empty grid), in
+        // which case fall through to a fresh decode below.
+        let cached: Option<(String, Option<i64>)> = conn
+            .query_row(
+                "SELECT report_json, report_cache_ver FROM tracks WHERE path=?1",
+                rusqlite::params![path],
+                |r| {
+                    Ok((
+                        r.get::<_, Option<String>>(0)?.unwrap_or_default(),
+                        r.get(1)?,
+                    ))
+                },
+            )
+            .ok();
+        if let Some((json, cache_ver)) = cached {
+            // report_cache_ver guards against content-only changes to analyze() (e.g. spectrogram
+            // resolution) that don't touch AnalysisReport's JSON shape — see its doc comment.
+            if !json.is_empty() && cache_ver == Some(crate::analysis::REPORT_CACHE_VERSION) {
+                // report_json can also predate an AnalysisReport field being added (e.g. FIX-11's
+                // est_kbps) and fail to deserialize even at the right cache version. Treat that
+                // the same as a cache miss — fall through to a fresh decode, which self-heals the
+                // row below — instead of hard-failing analyze_path for every pre-existing track.
+                if let Ok(report) = serde_json::from_str::<crate::analysis::AnalysisReport>(&json) {
+                    if !with_spectrogram || !report.spectrogram.mag_db.is_empty() {
+                        return Ok(report);
+                    }
                 }
             }
         }
     }
     let report = crate::analysis::analyze(&path, with_spectrogram)?;
-    // self-heal the cache: store the freshly-computed report (without the heavy spectrogram)
-    // so the next open of this track is instant, even for tracks analysed before this cache.
-    if !with_spectrogram {
-        if let Ok(conn) = conn.lock() {
+    // self-heal the cache: store the freshly-computed report (spectrogram included when
+    // requested) so the next open of this track is instant either way.
+    match conn.lock() {
+        Ok(conn) => {
             if let Ok(json) = serde_json::to_string(&report) {
                 let _ = conn.execute(
-                    "UPDATE tracks SET report_json=?2 WHERE path=?1",
-                    rusqlite::params![path, json],
+                    "UPDATE tracks SET report_json=?2, report_cache_ver=?3 WHERE path=?1",
+                    rusqlite::params![path, json, crate::analysis::REPORT_CACHE_VERSION],
                 );
             }
         }
+        Err(_) => log::error!("analyze_path: DB mutex poisoned, skipping report cache write"),
     }
     Ok(report)
 }
@@ -302,8 +345,12 @@ pub fn playback_url(path: String) -> Result<String, String> {
         _ => false,
     };
     if !fresh {
-        crate::encode::encode(&path, &out.to_string_lossy(), crate::encode::Target::Wav1644)
-            .map_err(|e| e.to_string())?;
+        crate::encode::encode(
+            &path,
+            &out.to_string_lossy(),
+            crate::encode::Target::Wav1644,
+        )
+        .map_err(|e| e.to_string())?;
     }
     Ok(out.to_string_lossy().to_string())
 }

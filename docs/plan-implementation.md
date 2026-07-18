@@ -209,6 +209,24 @@ dans ce jalon (voir M8) — en V1 l'utilisateur est prévenu et décide.
 - **Tableau de bord** : % lossless vs MP3, doublons restants, fakes à re-sourcer, par genre.
 - Panneau métadonnées éditable (pochette + champs Discogs).
 
+### M6a — Identification Discogs ✅ **fait** (2026-06-14)
+Spec : `docs/superpowers/specs/2026-06-14-m6a-discogs-identification-design.md` · Plan :
+`docs/superpowers/plans/2026-06-14-m6a-discogs-identification.md`.
+- Bouton **« Identifier »** dans la revue (à la demande), derrière un trait `MetadataProvider`
+  (Discogs d'abord, `ureq`). Meilleur match + « autres » ; rien écrit avant le rangement.
+- **Sous-genres Discogs uniquement** (`style`), multi-valeur en DB (table `track_genres`,
+  migration v6) ; écrits dans le tag fichier **joints** `A; B` (le multi-item ne round-trip pas
+  sur ID3 ; Rekordbox lit un champ genre unique).
+- `apply_identity` upsert `metadata` (label/année/pochette/release_id) ; `write_tags_full`
+  écrit label/année/genres/**pochette embarquée** au rangement. Token dans **Réglages**.
+- 127 tests lib verts, tsc + build verts. **Reste : smoke test live** (token Discogs réel) +
+  petits suivis (retirer les `#![allow(dead_code)]` des modules câblés ; `release_id` robuste si
+  l'API renvoie une string ; rendre la pochette dans l'onglet Biblio = M6b).
+
+**Reste de M6 → M6b** (spec séparée) : onglet Bibliothèque, mini-lecteur, dashboard,
+édition fine des métadonnées, tags custom. + **AcoustID** comme 2ᵉ provider (réutilise nos
+empreintes Chromaprint).
+
 ## M7 — Rekordbox XML + batch + clé USB (Phase B)
 - **Génération playlists Rekordbox via XML** (dossiers + tags → playlists). Rappels (Rekordbox fermé).
 - **Vue batch / tableau** : tri (verdict/format/BPM), sélection multiple, action groupée, aperçu.
@@ -218,10 +236,272 @@ dans ce jalon (voir M8) — en V1 l'utilisateur est prévenu et décide.
 ## M8 — Profond & rétroactif (Phase ultérieure, isolé, risqué)
 > Note cadrage : le **scan + traitement** de la biblio existante est remonté en V1 (M5)
 > avec garde-fou lecture seule. Ce qui reste ici = la **réparation automatique** qui
-> *écrit* dans Rekordbox, plus risquée. **Feature gelée** : on ne fixe pas le design
-> tant que des **tests réels sur Rekordbox** (vraies bibliothèques, backup/restore,
-> liens cassés) ne l'ont pas validée.
-- **Rekordbox `master.db`** (pyrekordbox) : remplacement in-situ, **dédup des playlists existantes**, **réparation/prévention des liens cassés** (chemin change au changement de format) — c'est la bascule garde-fou → **réparation intégrée (option A)**. ⚠️ non-officiel, **backup obligatoire**, Rekordbox fermé.
+> *écrit* dans Rekordbox, plus risquée.
+>
+> **État réel (2026-07-08)** : Tier 1 (réparation de chemin `FolderPath`/`FileNameL`/
+> `FileNameS`) est **complet côté code et vérifié contre une copie réelle** — moteur
+> Rust pur (`src-tauri/src/rekordbox_masterdb.rs`, `repair_track_path` : garde process
+> Rekordbox → backup horodaté → écriture transactionnelle → vérification round-trip →
+> rollback auto), audité indépendamment, relié à l'app
+> (`docs/superpowers/plans/2026-07-06-m8-tier1-ipc-wiring.md` : détection lecture-seule
+> des candidats à chaque filing, table `rekordbox_masterdb_repairs`, 3 commandes IPC
+> lister/appliquer par lot/ignorer), **et doté d'un écran**
+> (`docs/superpowers/plans/2026-07-06-m8-tier1-ui-screen.md`) : section dédiée sur la
+> page Rekordbox (`renderRekordboxLive`), groupe ambigu (résolution manuelle du bon
+> candidat, nouvelle commande `resolve_ambiguous`) puis groupe prêt-à-appliquer
+> (sélection multi + `confirmAction()` avant écriture), dismiss par ligne, erreurs
+> inline par piste après un lot appliqué. **Aucune écriture automatique** —
+> confirmation manuelle utilisateur requise (décidée en brainstorm, plus stricte que
+> le repair XML existant vu le risque).
+>
+> **Test contre une copie d'un vrai `master.db` fait le 2026-07-08** — a trouvé et
+> corrigé un vrai bug : le moteur n'avait jamais été exercé que contre un fixture
+> synthétique (généré en mode rollback SQLite). Le vrai `master.db` de Rekordbox est en
+> **mode WAL** (header `write_version`/`read_version` = 2), et ce header reste à 2 même
+> après fermeture propre de Rekordbox (les `-wal`/`-shm` disparaissent, mais l'octet
+> d'en-tête du fichier principal n'est jamais réécrit) — la VFS mémoire de
+> `sqlite3_deserialize` (utilisée pour tout lire/écrire ici) n'a aucun fichier réel où
+> chercher un `-wal`, donc la première requête sur la connexion désérialisée échouait
+> avec `SQLITE_CANTOPEN` ("unable to open database file"), alors que la désérialisation
+> elle-même rapportait un succès. Corrigé dans `decrypt_masterdb` (force l'en-tête en
+> mode rollback, même pattern que le fix existant de l'octet reserve). Round-trip complet
+> (backup → repair → vérif → restore) validé sur une copie de la vraie bibliothèque
+> (2828 pistes), 271 tests + clippy clean après le fix. Détail complet :
+> `docs/ressources-externes.md`, Évaluation 18.
+>
+> **Tier 2 (dédup des entrées de playlist dupliquées) livré côté moteur le 2026-07-08**
+> — `detect_playlist_duplicates` (lecture, groupe `djmdSongPlaylist` par
+> `PlaylistID`+`ContentID`) + `dedup_playlist_group` (écriture, réutilise
+> intégralement la chaîne de sûreté Tier 1 : garde process → backup → transaction →
+> réencodage → écriture atomique → vérification round-trip → rollback auto), zéro
+> nouvelle dépendance. **Sift ne crée ni ne modifie jamais `djmdPlaylist`, ne touche
+> jamais `TrackNo` des entrées conservées** — seule la ligne dupliquée en trop est
+> supprimée, USN global bumpé une fois par ligne supprimée. Construit via
+> subagent-driven-development (4 tâches, revue finale Opus "ready to merge with
+> fixes" — 2 assertions de test ajoutées avant merge, USN et survie de la ligne
+> conservée). Vérifié contre une copie de la vraie bibliothèque (2828 pistes, un vrai
+> doublon pré-existant trouvé et dédupliqué avec succès — voir
+> `docs/ressources-externes.md`, Évaluation 18, paragraphe "Suivi même jour").
+> 25 tests + clippy clean.
+>
+> **Câblage IPC livré le 2026-07-08 (même jour)** — 2 commandes :
+> `rekordbox_masterdb_scan_playlist_duplicates` (lecture à la demande, **pas de
+> table DB ni de hook filing.rs** contrairement à Tier 1 : les doublons de
+> playlist sont une condition préexistante de la bibliothèque, pas causée par
+> une action Sift, donc rien à détecter au moment du rangement ni à persister)
+> et `rekordbox_masterdb_dedup_playlist_group` (écriture, le groupe complet
+> fait l'aller-retour front↔back sans état serveur). DTOs locaux
+> (`PlaylistDuplicateEntryDto`/`GroupDto`) séparés des types du moteur, même
+> convention que Tier 1. Revue finale (Opus) : symétrie du round-trip DTO
+> vérifiée champ par champ contre le moteur, "ready to merge" sans fix
+> bloquant. 291 tests + clippy + tsc clean. Plan :
+> `docs/superpowers/plans/2026-07-08-m8-tier2-ipc-wiring.md`.
+>
+> **Écran UI livré le 2026-07-08 (même jour)** — nouvelle section sur la page
+> Rekordbox (mêmes conventions que la section Tier 1 : liste en cartes,
+> `confirmAction()` avant écriture, bouton texte seul par groupe, pas de
+> multi-sélection puisque chaque dédoublonnage est une action complète et
+> indépendante). Enrichissement backend display-only ajouté en amont
+> (`read_playlist_names` + réutilisation de `read_masterdb_path_map`) pour
+> que l'UI montre un nom de playlist + chemin de piste plutôt que des IDs
+> Rekordbox opaques — jamais requis par le moteur d'écriture. Revue finale
+> (Opus) : "ready to merge", aucun fix nécessaire, parité de types
+> Rust↔TypeScript vérifiée champ par champ. Plan :
+> `docs/superpowers/plans/2026-07-08-m8-tier2-ui-screen.md`. **Vérification
+> visuelle `tauri dev` faite par Antoine le 2026-07-09** — écran confirmé bon.
+>
+> **Synchro de playlist complète** (au-delà du simple dédoublonnage —
+> ajouts/retraits/réordonnancement `TrackNo`) hors scope, nécessite une
+> correspondance Sift↔Rekordbox non encore spécifiée. Plan (moteur) :
+> `docs/superpowers/plans/2026-07-08-m8-tier2-playlist-dedup-rust.md`.
+>
+> **Tier 3** (flag `TrackInfoUpdated` pour la synchro metadata) — **spike
+> retesté proprement le 2026-07-08** (canary à titre unique, plus d'ambiguïté
+> possible) : verdict négatif sur la stratégie primaire — le flag seul ne
+> déclenche **aucun** reload automatique du tag dans Rekordbox (l'action
+> manuelle « Relire le tag », elle, fonctionne). **Diff exact capturé le
+> 2026-07-09** (spike n°6, nom d'artiste inédit) : Rekordbox crée une
+> nouvelle ligne `djmdArtist` (find-or-create, FK repointée) plutôt que
+> modifier l'existante. **Question réutilisation-vs-duplication tranchée le
+> 2026-07-09** (spike n°7, nom d'artiste déjà connu de la bibliothèque —
+> "Eat Static", 31 pistes) : **REUSE confirmé** — Rekordbox repointe la FK
+> vers la ligne `djmdArtist` existante, zéro doublon créé (compte de lignes
+> inchangé, 1108 avant/après). Le mécanisme find-or-create de Rekordbox est
+> donc documenté sur ses deux branches (création + réutilisation par nom).
+>
+> **Décision produit prise le 2026-07-09 : automatiser** (plutôt que
+> documenter le geste manuel). **Moteur Rust livré et vérifié le même
+> jour** — `sync_track_metadata` dans `rekordbox_masterdb.rs` : find-or-create
+> sur `djmdArtist`/`djmdGenre`/`djmdLabel` (schéma identique vérifié entre
+> les 3 tables), écriture directe de `Title`/`ReleaseYear` (colonnes sans
+> FK), même chaîne de sûreté que Tier 1/2 (garde process → backup →
+> transaction → ré-encrypt → écriture atomique → vérification round-trip →
+> rollback auto). 7 tests sur fixture étendue (`djmdArtist`/`djmdGenre`/
+> `djmdLabel` ajoutées à `scripts/make-rekordbox-fixture.py`) + 1 test
+> contre une copie de la vraie bibliothèque (`#[ignore]`d,
+> `SIFT_M8_REAL_COPY_DIR`) exerçant REUSE et CREATE sur le même canary
+> "Street Battle" que les spikes 5/6/7, restauration finale vérifiée
+> indépendamment (`ArtistID` revenu à sa valeur d'origine). 290 tests +
+> clippy clean. Plan :
+> `docs/superpowers/plans/2026-07-09-m8-tier3-metadata-sync-rust.md`.
+> **Reste hors scope de ce plan (à faire dans un plan séparé)** : câblage
+> IPC, hook de détection au filing, écran UI — même séquencement que
+> Tier 1/2 (moteur d'abord, IPC+UI ensuite).
+>
+> **Câblage IPC + hook + UI livré le 2026-07-09 (même jour)** — 4 commandes
+> IPC (`rekordbox_masterdb_pending_metadata_syncs`,
+> `rekordbox_masterdb_apply_metadata_syncs`,
+> `rekordbox_masterdb_dismiss_metadata_sync`,
+> `rekordbox_masterdb_resolve_ambiguous_metadata_sync`) adossées à une
+> nouvelle table `rekordbox_masterdb_metadata_syncs` (migration v13, clée par
+> `track_id`, **remplacée et non accumulée** à chaque nouveau retag — pas un
+> historique). Détection appelée directement aux 3 sites qui écrivent des
+> tags (`filing.rs` conformant + non-conformant, `apply_tags`,
+> `update_metadata`), même approche lecture-seule que Tier 1/2. Correctif
+> incident trouvé en cours de câblage : `update_metadata` (édition manuelle
+> Bibliothèque) n'a jamais journalisé de `tag_edit` ni retourné de
+> `batch_id` — un vrai trou d'undo préexistant, pas seulement un
+> pré-requis du détecteur — corrigé dans le même geste, avec un vrai bouton
+> Annuler côté Bibliothèque. Écran : 3ᵉ section sur la page Rekordbox
+> (`renderRekordboxLive`), sous Tier 1/Tier 2, mêmes conventions (liste en
+> cartes, `confirmAction()` avant écriture, dismiss par ligne, résolution
+> manuelle des ambiguïtés). Plan :
+> `docs/superpowers/plans/2026-07-09-m8-tier3-metadata-sync-ipc-ui.md`,
+> design :
+> `docs/superpowers/specs/2026-07-09-m8-tier3-metadata-sync-ipc-ui-design.md`.
+> 323 tests + clippy + tsc clean.
+>
+> **BUG-3 trouvé et corrigé le 2026-07-10, pendant la vérification manuelle
+> `tauri dev`** : les 3 détecteurs (Tier 1 réparation, Tier 3 metadata, Tier 3
+> pochette) comparaient `t.folder_path == lookup_path` en égalité stricte.
+> Rekordbox stocke toujours `FolderPath` avec des slashes avant
+> (`D:/MUSIQUE/...`, vérifié sur une vraie copie), alors que `tracks.path` côté
+> Sift est un chemin Windows natif (antislashs). Sur Windows, cette comparaison
+> ne matchait donc **jamais**, quel que soit le fichier — angle mort
+> systématique des 349 tests existants (fixtures et tests contre copie réelle
+> utilisaient tous des chemins déjà en format slash-avant des deux côtés,
+> jamais un vrai chemin Windows natif contre l'index). Confirmé en reproduisant
+> le bug en direct : une piste au chemin physique identique des deux côtés ne
+> produisait aucun candidat avant le fix. Corrigé par une fonction partagée
+> `normalize_masterdb_path` (`actions.rs` : trim + slashs uniformisés + casse
+> repliée) appliquée aux 3 sites de comparaison, + 4 tests de régression
+> (chemin Windows natif contre index en slash-avant, pour chacun des 3
+> détecteurs, plus un test unitaire de la fonction elle-même). 349 tests +
+> clippy + tsc clean après fix (rebuild propre après un `cargo clean` requis —
+> cache incrémental corrompu par des rebuilds concurrents du watcher `tauri
+> dev` pendant l'investigation).
+>
+> **Vérification manuelle faite le 2026-07-12** (clic réel Antoine,
+> `01 - The Brain Is....aif`) — a trouvé et corrigé un vrai bug bloquant en
+> route, voir paragraphe "Bug résolution `master.db` par dossier Pioneer"
+> ci-dessous. Une fois corrigé : application réelle confirmée, `master.db`
+> vérifié après coup (copie + décrypt hors ligne) — Title/Artist synchronisés
+> correspondent exactement aux tags réels du fichier (match Discogs légitime,
+> pas les tags de test).
+>
+> **Risque casse/normalisation fermé le 2026-07-09** : matching devenu
+> trim+insensible à la casse (`COLLATE NOCASE`), testé.
+> Risques résiduels restants (non bloquants) : nettoyage des lignes
+> orphelines (aucun mécanisme observé chez Rekordbox non plus), Genre/Label
+> non testés indépendamment via un vrai Reload Tag (extrapolés de
+> l'identité de schéma avec Artist).
+> **Pochette (spike n°8, 2026-07-09)** : mécanisme découvert et vérifié —
+> « Relire le tag » réécrit les 3 fichiers `artwork.jpg`/`_m.jpg`/`_s.jpg`
+> en place (cache local `%APPDATA%\Pioneer\rekordbox\share\`, pas sur le
+> disque bibliothèque), sans FK ni ligne DB — plus simple que Artist/Genre/
+> Label. Détail : `~/Desktop/sift-masterdb-write-probe/FINDINGS-m8-spike-8-artwork.md`.
+> **Moteur Rust livré le 2026-07-09** : `sync_track_artwork`
+> (`rekordbox_masterdb.rs`) — lit `ImagePath` en lecture seule (jamais
+> d'écriture dans `master.db`), refuse explicitement si `ImagePath` est
+> NULL (`NoArtworkPath`) ou si une des 3 variantes est absente sur disque
+> (`ArtworkVariantMissing`, aucun mécanisme de création deviné), sinon
+> redimensionne la nouvelle pochette à la taille exacte de chaque variante
+> existante (lue sur le fichier lui-même, pas supposée) et l'écrit en place
+> (backup dédié des 3 fichiers → écriture atomique → vérification des
+> dimensions → rollback auto sur échec). Nouvelle dépendance `image`
+> (jpeg-only). 4 tests + 1 test `#[ignore]`d contre une copie réelle
+> (canary "Street Battle"). 304 tests + clippy clean. Plan :
+> `docs/superpowers/plans/2026-07-09-m8-tier3-artwork-sync-rust.md`.
+> **Reste hors scope** : câblage IPC/hook filing/UI, cas `ImagePath` NULL
+> avec création (jamais observé), régénération d'une variante `_m`/`_s`
+> totalement absente (aujourd'hui : refus explicite, pas de repli).
+> Détail : `docs/superpowers/specs/2026-07-06-m8-masterdb-write-path-rust-design-v2.md`,
+> `~/Desktop/sift-masterdb-write-probe/FINDINGS-m8-spike-5-tier3-test1.md`,
+> `~/Desktop/sift-masterdb-write-probe/FINDINGS-m8-spike-6-tier3-reload-diff.md`,
+> `~/Desktop/sift-masterdb-write-probe/FINDINGS-m8-spike-7-reuse-vs-duplicate.md`.
+>
+> **Câblage IPC + hook + UI (pochette) livré le 2026-07-10** — 4 commandes
+> IPC (`rekordbox_masterdb_pending_artwork_syncs`,
+> `rekordbox_masterdb_apply_artwork_syncs`,
+> `rekordbox_masterdb_dismiss_artwork_sync`,
+> `rekordbox_masterdb_resolve_ambiguous_artwork_sync`) adossées à une
+> nouvelle table `rekordbox_masterdb_artwork_syncs` (migration v14, clée par
+> `track_id`, **remplacée et non accumulée**, même discipline que v13).
+> Détection appelée aux mêmes 3 sites que la synchro metadata (`filing.rs`
+> conformant + non-conformant via l'index `master.db` déjà chargé une seule
+> fois par commit, `apply_tags`, `update_metadata_inner`), mais seulement
+> quand `cover_path.is_some()` sur cet appel précis — contrairement aux
+> champs texte, toujours présents dans la structure — pour qu'une édition
+> qui ne touche pas la pochette ne produise aucun candidat. `cover_path` est
+> stocké comme chemin (pas les octets JPEG) et relu sur disque au moment de
+> l'application, jamais à la détection — fichier disparu entre-temps →
+> erreur explicite, ligne reste `pending`, retryable. 4 nouvelles variantes
+> `MasterDbError` humanisées (`NoArtworkPath`, `ArtworkVariantMissing`,
+> échec de vérification avec/sans rollback réussi). Écran : 4ᵉ section sur
+> la page Rekordbox (`renderRekordboxLive`), sous Tier 1/Tier 2/Tier 3
+> texte, mêmes conventions (ambiguës en premier, sélection multi + barre
+> "Appliquer la sélection", `confirmAction()` avant écriture, dismiss par
+> ligne, préfixe `data-sift="mas*"` distinct de `mdb*`/`mds*`). Plan :
+> `docs/superpowers/changes/2026-07-09-m8-tier3-artwork-sync-ipc-ui/plan.md`,
+> design :
+> `docs/superpowers/changes/2026-07-09-m8-tier3-artwork-sync-ipc-ui/design.md`.
+> 346 tests + clippy + tsc clean, 349 après BUG-3 (voir le paragraphe BUG-3
+> sous la synchro metadata ci-dessus — même comparaison stricte de chemin,
+> même fix `normalize_masterdb_path`, corrigé dans le même geste).
+> **Vérification manuelle faite le 2026-07-12** (nouvelle pochette sur la
+> même piste, même bug résolution `master.db` que ci-dessous) — 3 variantes
+> `artwork.jpg`/`_m`/`_s` vérifiées après coup (copie + décrypt hors ligne) :
+> contenu changé, dimensions exactes préservées par variante.
+>
+> **Groupement par session ajouté le 2026-07-10** (les 3 listes de candidats
+> Tier 1/3 pouvaient devenir longues après un gros import/retag) :
+> `session_id` (`actions.session_id`) ajouté aux 3 DTOs de candidats (`LEFT
+> JOIN actions`), UI groupée par session — **repliée par défaut**, en-tête
+> cliquable (label session ou "Antérieur" + compteur), bouton "Tout
+> sélectionner/désélectionner" par groupe. Mirroring le pattern de
+> regroupement par session déjà en place côté Journal (`journal.ts`,
+> `.jrnl-session-*`). tsc clean, 37 tests `rekordbox_repairs::` verts (build
+> isolé). Vérifié visuellement le 2026-07-12 en même temps que le reste.
+>
+> **Bug résolution `master.db` par dossier Pioneer, trouvé et corrigé le
+> 2026-07-12** pendant la vérification manuelle ci-dessus : les 3 tiers
+> dérivaient le chemin de `master.db` du dossier **parent du XML lié**
+> (`rekordbox_xml_path`), en supposant `master.db`/`masterPlaylists6.xml`
+> toujours siblings (vrai pour le fichier interne Pioneer). Mais le fichier
+> réellement lié via Réglages est un export `<DJ_PLAYLISTS>` que l'utilisateur
+> choisit d'enregistrer où il veut (chez Antoine :
+> `Documents\rekordbox\library.xml`, sans `master.db` à côté) — donc cette
+> dérivation ne trouvait jamais rien en usage réel, silencieusement, depuis
+> le début. Corrigé par `actions::rekordbox_pioneer_dir()` : résout
+> `%APPDATA%\Pioneer\rekordbox` (Windows) / `~/Library/Application
+> Support/Pioneer/rekordbox` (Mac) indépendamment du XML lié (toujours gaté
+> sur "un XML est lié" comme signal d'opt-in). Override thread-local
+> (`set_pioneer_dir_override_for_test`, pas une variable d'environnement —
+> le harness de test tourne en parallèle) pour les tests. 369 tests + clippy
+> + tsc clean. Commit `de9716e`. **Conséquence comportementale** : lier un
+> XML de test n'isole plus les écritures `master.db` — dès qu'un candidat
+> est appliqué, c'est toujours le vrai dossier Pioneer qui est modifié,
+> peu importe le XML lié.
+>
+> **Vérification post-application contre le vrai `master.db` (2026-07-12)** :
+> les 3 applies (metadata sync, artwork sync, dédup playlist "Gore TECH")
+> confirmés propres par inspection hors ligne (copie + décrypt, jamais
+> d'écriture directe) — Title/Artist synchronisés = tags réels du fichier
+> (match Discogs légitime) ; 3 variantes pochette changées avec dimensions
+> exactes préservées ; playlist 173→172 entrées, doublon supprimé, TrackNo
+> des lignes conservées inchangé (trou dans la numérotation, jamais de
+> renumérotation — comportement documenté).
+- **Rekordbox `master.db`** : remplacement in-situ (Tier 1 livré, moteur+IPC+UI), **dédup des playlists existantes** (Tier 2 livré, moteur+IPC+UI), **réparation/prévention des liens cassés** (chemin change au changement de format — Tier 1). ⚠️ backup obligatoire (déjà implémenté), Rekordbox fermé (garde déjà implémentée).
 - **Normalisation loudness** (option, OFF par défaut).
 
 ---
@@ -303,10 +583,13 @@ Les règles auto s'appliquent sans popup ; un journal d'actions (DB `actions`) p
 - **Packaging/signing** : code-sign Windows + notarization macOS, auto-update Tauri — **dans le périmètre V1** (app diffusée gratuitement dès la sortie). Site vitrine inclus.
 
 ## Points encore ouverts (à trancher en cours de route)
-- **Réparation Rekordbox intégrée (écriture `master.db`/XML)** : feature **gelée tant que
-  des tests réels sur Rekordbox** n'ont pas validé le comportement (dédup playlists,
-  réparation des liens cassés au changement de chemin, intégrité après backup/restore).
-  On ne fixe pas l'API/le flux avant d'avoir mesuré sur de vraies bibliothèques.
+- **Réparation Rekordbox intégrée (écriture `master.db`)** : ✅ **livrée et vérifiée**
+  (2026-07-12) — Tier 1/2/3 testés contre une vraie bibliothèque (2828 pistes),
+  garde-fous backup/vérif round-trip/rollback confirmés. Plus un point ouvert,
+  voir la section M8 ci-dessus pour le détail complet.
+- **Diffusion (code-signing/notarization/auto-update/site)** : scope V1 décidé au
+  brainstorm, **pas encore fait** — `build.yml` produit toujours des installeurs
+  non signés.
 
 **Tranchés au brainstorm (voir Décisions de cadrage) :** nom (Sift) · MP3 < 320 (seuil
 configurable, badge, re-sourcer par défaut) · biblio existante (nettoyage actif V1) ·
@@ -315,4 +598,4 @@ Rekordbox (garde-fou V1, réparation plus tard, **gelée jusqu'aux tests**) · d
 revue détail** · **vrai MP3 jamais upscalé**.
 
 ## Séquencement / rationale
-`M0→M1→M2` posent le socle + le cœur lecture. **M4 clôt la première boucle utile** (on peut s'en servir). **M5 finit le MVP.** Phase B (M6-M7) ajoute confort et Rekordbox sûr. M8 (risqué) reste isolé et optionnel, derrière backups.
+`M0→M1→M2` posent le socle + le cœur lecture. **M4 clôt la première boucle utile** (on peut s'en servir). **M5 finit le MVP.** Phase B (M6-M7) ajoute confort et Rekordbox sûr. M8 (risqué, `master.db`) a été livré et vérifié derrière backups (2026-07-12) — **M0→M8 sont maintenant tous fait**. Reste du scope V1 : diffusion (signing/notarization/auto-update/site, jamais commencé). Aucun jalon post-V1 n'est encore défini.

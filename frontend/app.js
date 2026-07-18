@@ -19,7 +19,7 @@ function openLink(u){window.open(u,'_blank','noopener');}
     x.wave=[];for(var k=0;k<32;k++){var h=18+Math.round(Math.abs(Math.sin((k+i*3)*0.7))*60+((k*7+i*13)%15));x.wave.push(h>96?96:h);}
     x.spec=[];for(var m=0;m<32;m++){var b=56+((m*5+i*11)%40);if(x.fake&&m>22)b=10+((m*3)%14);x.spec.push(b);}});
   var LIB=[["Mr. Fingers — Can You Feel It","AIFF","120","7:48","30521"],["Chez Damier — Can You Feel It","AIFF","122","7:02","41822"],["Marshall Jefferson — Move Your Body","MP3","118","6:30","18743"],["Lil Louis — French Kiss","WAV","120","9:55","9210"],["Robert Owens — Bring Down the Walls","AIFF","121","7:30","55190"],["Fingers Inc. — Distant Planet","AIFF","119","8:10","73004"]];
-  var view="home",cur=0,playing=false,tempo=0,selFolder=0,playPos=0,bibPlaying=-1,bibPos=0.3,creating=false,rkbSynced=false,outFmt=null,revMode="detail",midTab="ecoute",sel={},queueShowAll=false,dupScanDone=false,dupDismissed={},timeMode="elapsed",qw=180,bibHL=-1;
+  var view="home",cur=0,playing=false,tempo=0,selFolder=0,playPos=0,bibPlaying=-1,bibPos=0.3,creating=false,rkbSynced=false,outFmt=null,revMode="detail",midTab="ecoute",sel={},queueShowAll=false,dupScanDone=false,dupDismissed={},timeMode="elapsed",qw=180,bibHL=-1,diagOpen=false,metaOpen=false;
   var content=document.getElementById('content'),nav=document.getElementById('nav');
   function extOf(f){return f==="MP3 320"?"mp3":(f==="WAV"?"wav":"aiff");}
   function defFmt(i){if(i<0)return "AIFF";return /AIFF|WAV/.test(T[i].fmt)?"AIFF":"MP3 320";}
@@ -31,12 +31,45 @@ function openLink(u){window.open(u,'_blank','noopener');}
   function byFolder(){var b={};T.forEach(function(x){if(x.status==="filed")b[x.folder]=(b[x.folder]||0)+1;});return b;}
   function nSel(){var n=0;for(var k in sel)if(sel[k])n++;return n;}
   function block(){content.style.display="block";content.style.padding="14px 18px";content.style.overflowY="auto";}
+  // Queue column (#qcol, Revue) width: user-resized via the drag handle, persisted across
+  // renders/sessions (renderRevue rebuilds #qcol from scratch on every nav click, so the width
+  // must be re-read from storage rather than kept in a live JS var). Real feature — runs in
+  // both the mock and the Tauri app, unlike the fake queue data it's clobbered by (audit
+  // 2026-07-05, annotation #8: "la barre devrait pouvoir être redimensionnable").
+  var QCOL_MIN=220,QCOL_MAX=480,QCOL_DEFAULT=272;
+  function qcolWidth(){
+    try{var v=parseInt(localStorage.getItem('sift-qcol-w'),10);if(v>=QCOL_MIN&&v<=QCOL_MAX)return v;}catch(e){}
+    return QCOL_DEFAULT;
+  }
+  function installQueueResize(qcolEl,handleEl){
+    handleEl.addEventListener('mousedown',function(e){
+      e.preventDefault();
+      var startX=e.clientX,startW=qcolEl.getBoundingClientRect().width;
+      handleEl.classList.add('sift-qresize--active');
+      function onMove(ev){
+        var w=Math.max(QCOL_MIN,Math.min(QCOL_MAX,startW+(ev.clientX-startX)));
+        qcolEl.style.width=w+'px';
+      }
+      function onUp(){
+        document.removeEventListener('mousemove',onMove);
+        document.removeEventListener('mouseup',onUp);
+        handleEl.classList.remove('sift-qresize--active');
+        try{localStorage.setItem('sift-qcol-w',parseInt(qcolEl.style.width,10));}catch(e){}
+      }
+      document.addEventListener('mousemove',onMove);
+      document.addEventListener('mouseup',onUp);
+    });
+  }
   function render(){Array.prototype.forEach.call(nav.querySelectorAll('.nv'),function(n){n.classList.toggle('on',n.dataset.view===view);});
     if(view==="revue")return revMode==="batch"?renderBatch():renderRevue();
-    if(view==="home")return renderHome();if(view==="biblio")return renderBiblio();if(view==="rkb")return renderRkb();if(view==="cle")return renderCle();if(view==="ecarts")return renderEcarts();return renderReglages();}
+    if(view==="home")return renderHome();if(view==="biblio")return renderBiblio();if(view==="rkb")return renderRkb();if(view==="cle")return renderCle();if(view==="ecarts")return renderEcarts();if(view==="journal")return renderJournal();return renderReglages();}
 
   function renderHome(){
     content.style.display="flex";content.style.padding="14px 18px";content.style.overflowY="auto";content.style.flexDirection="column";
+    // Live (Tauri): window.__siftHome() below replaces everything except the ".h1" title with
+    // real watched-source data (home-sources.ts) — this whole block would be a wasted mock render
+    // (fake stat cards, fake folders) immediately clobbered. Same guard as renderRevue.
+    if(!('__TAURI_INTERNALS__' in window)){
     var filed=cnt("filed"),res=cnt("resource"),tr=cnt("trash"),pend=cnt("pending");
     var fakes=T.filter(function(x){return x.status==="resource"&&x.ecartReason==="fake";}).length;
     var noMeta=T.filter(function(x){return x.status==="filed"&&!x.lbl;}).length;
@@ -52,7 +85,7 @@ function openLink(u){window.open(u,'_blank','noopener');}
     };
     var pendBanner=pend?'<div style="display:flex;align-items:center;justify-content:space-between;background:var(--color-background-info);border-radius:var(--border-radius-md);padding:10px 14px;margin-bottom:12px"><div><div style="font-size:13px;font-weight:500;color:var(--color-text-info)">'+pend+' fichiers à trier</div><div style="font-size:11px;color:var(--color-text-info);opacity:.8">dont '+fakes+' faux détecté'+(fakes>1?'s':'')+'</div></div><button data-view="revue">Trier <i class="ti ti-arrow-right" style="font-size:12px;vertical-align:-2px"></i></button></div>':'';
     var dossiers='<div class="col-h" style="margin-top:12px">Dossiers surveillés</div>'
-      +'<div class="srow"><span class="v"><i class="ti ti-folder"></i> ~/Downloads/soulseek</span><span style="display:flex;align-items:center;gap:9px"><span style="font-size:11px;color:var(--color-text-info)">8 nouveaux</span><span class="tog"></span></span></div>'
+      +'<div class="srow"><span class="v"><i class="ti ti-folder"></i> ~/Downloads/incoming</span><span style="display:flex;align-items:center;gap:9px"><span style="font-size:11px;color:var(--color-text-info)">8 nouveaux</span><span class="tog"></span></span></div>'
       +'<div class="srow"><span class="v"><i class="ti ti-folder"></i> ~/Downloads/promos</span><span style="display:flex;align-items:center;gap:9px"><span style="font-size:11px;color:var(--color-text-info)">1 nouveau</span><span class="tog"></span></span></div>'
       +'<div style="margin:8px 0 0"><button><i class="ti ti-plus" style="font-size:13px;vertical-align:-2px"></i> ajouter un dossier</button></div>';
     var leftHtml='<div class="h1">Accueil</div>'
@@ -66,35 +99,48 @@ function openLink(u){window.open(u,'_blank','noopener');}
       +dossiers
       +(filed?'<div class="col-h" style="margin-top:12px">Répartition par dossier</div>'+bars:'');
     content.innerHTML='<div class="home-body"><div class="home-left">'+leftHtml+'</div></div>';
+    } else {
+      // Live (Tauri): shell only — list rail (col 2) + inspector (col 3), matching the
+      // Revue queue/sift-inspector grammar. renderHomeSources() (home-sources.ts) owns
+      // everything inside both columns; this bare shell is never itself visible.
+      content.innerHTML='<div class="home-body"><div class="queue" id="homequeue" style="width:272px"></div><div class="sift-inspector" id="homeinspector"></div></div>';
+    }
     if(window.__siftHome)window.__siftHome();
   }
 
   function renderRevue(){
     content.style.display="flex";content.style.padding="0";content.style.flexDirection="";content.style.overflowY="";
     var pendingCount=cnt("pending"),doneCount=T.length-pendingCount;
-    content.innerHTML='<div class="queue" id="qcol" style="width:'+qw+'px"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px"><span class="col-h" style="margin:0">À traiter</span><span style="display:flex;gap:3px"><span data-act="revmode" data-m="detail" title="Vue détail" style="cursor:pointer;color:var(--color-text-info)"><i class="ti ti-layout-list" style="font-size:14px"></i></span><span data-act="revmode" data-m="batch" title="Mode batch" style="cursor:pointer;color:var(--color-text-tertiary)"><i class="ti ti-table" style="font-size:14px"></i></span></span></div><div class="pbar"><div class="pfill" id="pf" style="width:0%"></div></div><div id="ql"></div>'+(doneCount?'<div style="padding:5px 4px 0"><span data-act="togglequeue" style="font-size:10px;color:var(--color-text-tertiary);cursor:pointer;text-decoration:underline">'+(queueShowAll?'Masquer les traités':'+ '+doneCount+' traités')+'</span></div>':'')+'</div><div class="qdrag" id="qdrag" title="Glisser pour élargir la liste"></div><div class="mid" id="mid"></div><div class="dest"><div class="col-h">Où on va</div><div id="fldz"></div></div>';
-    var done2=T.length-pendingCount;document.getElementById('pf').style.width=Math.round(done2/T.length*100)+"%";
-    var h="";T.forEach(function(x,i){
-      var isPending=x.status==="pending";
-      if(!isPending&&!queueShowAll&&i!==cur)return;
-      var ic="ti-circle",col="",cls="qi";
-      if(i===cur)cls+=" cur",ic="ti-player-play";else if(x.status==="filed")cls+=" done",ic="ti-check";
-      else if(x.status==="resource")cls+=" done",ic="ti-x",col="color:var(--color-text-danger)";
-      else if(x.status==="trash")cls+=" done",ic="ti-trash",col="color:var(--color-text-tertiary)";
-      else if(x.fake)ic="ti-alert-triangle",col="color:var(--color-text-danger)";
-      var slskBtn=(x.status==="resource"||x.fake)?'<button data-act="qslsk" data-i="'+i+'" data-txt="'+encodeURIComponent(x.a+' '+x.t)+'" title="Copier nom Soulseek" style="flex:none;width:18px;height:18px;padding:0;border:none;display:inline-flex;align-items:center;justify-content:center;color:var(--color-text-tertiary);background:transparent" onclick="event.stopPropagation()"><i class="ti ti-copy" style="font-size:11px"></i></button>':'';
-      var dupBadge=x.duplicate?'<i class="ti ti-copy" style="font-size:11px;flex:none;color:var(--color-text-secondary)" title="Doublon — déjà en biblio"></i>':'';
-      h+='<div class="'+cls+'" data-act="sel" data-i="'+i+'"><i class="ti '+ic+'" style="'+col+'"></i><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis">'+x.a+' — '+x.t+'</span>'+dupBadge+slskBtn+'</div>';});
-    document.getElementById('ql').innerHTML=h;
-    var fh="";FOLDERS.forEach(function(f,i){fh+='<div class="fld'+(i===selFolder?' on':'')+'" data-act="file" data-i="'+i+'"><span class="kbd">'+(i+1)+'</span> '+f+'</div>';});
-    fh+= creating ? '<input id="newin" placeholder="nom du dossier…" style="width:100%;font-size:12px;padding:5px 7px;margin-top:2px">' : '<div class="fld" data-act="newfld" style="color:var(--color-text-tertiary)"><i class="ti ti-plus" style="font-size:14px"></i> nouveau</div>';
-    document.getElementById('fldz').innerHTML=fh;renderMid();
-    if(creating){var ni=document.getElementById('newin');if(ni)ni.focus();}
-    var qd=document.getElementById('qdrag');
-    qd.addEventListener('mousedown',function(ev){ev.preventDefault();var x0=ev.clientX,w0=qw;
-      function mv(e2){qw=Math.min(380,Math.max(140,w0+(e2.clientX-x0)));document.getElementById('qcol').style.width=qw+'px';}
-      function up(){document.removeEventListener('mousemove',mv);document.removeEventListener('mouseup',up);}
-      document.addEventListener('mousemove',mv);document.addEventListener('mouseup',up);});
+    // pbar/pfill is a queue-completion bar the mock demo animates below (line ~121); the real
+    // Tauri app never writes #pf's width (no live consumer), so it rendered as a permanently
+    // frozen empty track — dead decoration, not a real feature. Demo-only now.
+    var inT='__TAURI_INTERNALS__' in window;
+    var pbarHtml=inT?'':'<div class="pbar"><div class="pfill" id="pf" style="width:0%"></div></div>';
+    content.innerHTML='<div class="queue" id="qcol" style="width:'+qcolWidth()+'px"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px"><span class="col-h" style="margin:0">File</span><span style="display:flex;gap:3px"><span data-act="revmode" data-m="detail" title="Vue détail" style="cursor:pointer;color:var(--color-text-info)"><i class="ti ti-layout-list" style="font-size:14px"></i></span><span data-act="revmode" data-m="batch" title="Mode batch" style="cursor:pointer;color:var(--color-text-tertiary)"><i class="ti ti-table" style="font-size:14px"></i></span></span></div>'+pbarHtml+'<div id="ql"></div>'+(doneCount?'<div style="padding:5px 4px 0"><span data-act="togglequeue" style="font-size:10px;color:var(--color-text-tertiary);cursor:pointer;text-decoration:underline">'+(queueShowAll?'Masquer les traités':'+ '+doneCount+' traités')+'</span></div>':'')+'</div><div class="sift-qresize" title="Redimensionner la file"></div><div class="sift-inspector" id="rvinspector"><div class="mid" id="mid"></div><div class="sift-action-rail" id="filfoot"></div><div class="sift-dest-popover" id="fldz" hidden></div></div>';
+    installQueueResize(document.getElementById('qcol'),content.querySelector('.sift-qresize'));
+    // Live (Tauri): window.__siftQueue() below overwrites #ql/#fldz/#mid with the real data —
+    // this whole block would just be a wasted mock render (fake queue rows, fake destination
+    // folders, and renderMid()'s canvas spectrogram draw, ~18k pixels) immediately clobbered.
+    // Same inTauri test as the keyboard handler below. Hors Tauri (démo web Vercel) reste actif.
+    if(!('__TAURI_INTERNALS__' in window)){
+      var done2=T.length-pendingCount;document.getElementById('pf').style.width=Math.round(done2/T.length*100)+"%";
+      var h="";T.forEach(function(x,i){
+        var isPending=x.status==="pending";
+        if(!isPending&&!queueShowAll&&i!==cur)return;
+        var ic="ti-circle",col="",cls="qi";
+        if(i===cur)cls+=" cur",ic="ti-player-play";else if(x.status==="filed")cls+=" done",ic="ti-check";
+        else if(x.status==="resource")cls+=" done",ic="ti-x",col="color:var(--color-text-danger)";
+        else if(x.status==="trash")cls+=" done",ic="ti-trash",col="color:var(--color-text-tertiary)";
+        else if(x.fake)ic="ti-alert-triangle",col="color:var(--color-text-danger)";
+        var queryBtn=(x.status==="resource"||x.fake)?'<button data-act="qcopyquery" data-i="'+i+'" data-txt="'+encodeURIComponent(x.a+' '+x.t)+'" title="Copier" style="flex:none;width:18px;height:18px;padding:0;border:none;display:inline-flex;align-items:center;justify-content:center;color:var(--color-text-tertiary);background:transparent" onclick="event.stopPropagation()"><i class="ti ti-copy" style="font-size:11px"></i></button>':'';
+        var dupBadge=x.duplicate?'<i class="ti ti-copy" style="font-size:11px;flex:none;color:var(--color-text-secondary)" title="Doublon — déjà en biblio"></i>':'';
+        h+='<div class="'+cls+'" data-act="sel" data-i="'+i+'"><i class="ti '+ic+'" style="'+col+'"></i><span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis">'+x.a+' — '+x.t+'</span>'+dupBadge+queryBtn+'</div>';});
+      document.getElementById('ql').innerHTML=h;
+      var fh="";FOLDERS.forEach(function(f,i){fh+='<div class="fld'+(i===selFolder?' on':'')+'" data-act="file" data-i="'+i+'"><span class="kbd">'+(i+1)+'</span> '+f+'</div>';});
+      fh+= creating ? '<input id="newin" placeholder="nom du dossier…" style="width:100%;font-size:12px;padding:5px 7px;margin-top:2px">' : '<div class="fld" data-act="newfld" style="color:var(--color-text-tertiary)"><i class="ti ti-plus" style="font-size:14px"></i> nouveau</div>';
+      document.getElementById('fldz').innerHTML=fh;renderMid();
+      if(creating){var ni=document.getElementById('newin');if(ni)ni.focus();}
+    }
     if(window.__siftQueue)window.__siftQueue();
   }
 
@@ -124,26 +170,48 @@ function openLink(u){window.open(u,'_blank','noopener');}
       +'</div>';
     var realPill=x.fake?'<span class="pill" style="background:var(--color-background-danger);color:var(--color-text-danger)"><i class="ti ti-alert-triangle" style="font-size:10px"></i> '+x.real+'</span>':'<span class="pill" style="background:var(--color-background-success);color:var(--color-text-success)"><i class="ti ti-check" style="font-size:10px"></i> conforme</span>';
     var specCap=x.fake?'<span style="color:var(--color-text-danger)"><i class="ti ti-alert-triangle" style="font-size:9px;vertical-align:-1px"></i> coupure nette ~16 kHz = transcodé</span>':"énergie jusqu'en haut = encodage conforme";
-    // 2. ENCODAGE + SPECTROGRAMME
-    var encoding='<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;font-size:11px;flex-wrap:wrap"><span style="color:var(--color-text-tertiary)">Encodage</span><span class="pill">'+x.fmt+'</span><i class="ti ti-arrow-right" style="font-size:12px;color:var(--color-text-tertiary)"></i>'+realPill+'<span class="pill">'+x.dur+'</span></div>'
+    // 2. DIAGNOSTIC (repliable, badge qualité dans l'en-tête — même pattern que le vrai
+    // report-view.ts/wireSpectrogram : visible replié, caché déplié, repliée par défaut)
+    var qualityBadge=x.fake?'<span class="sift-chip-badge" style="background:var(--color-background-danger);color:var(--color-text-danger)">'+x.real+'</span>':'<span class="sift-chip-badge" style="background:var(--color-background-success);color:var(--color-text-success)">LOSSLESS</span>';
+    var encodingBody='<div style="display:flex;align-items:center;gap:6px;margin-bottom:6px;font-size:11px;flex-wrap:wrap"><span style="color:var(--color-text-tertiary)">Encodage</span><span class="pill">'+x.fmt+'</span><i class="ti ti-arrow-right" style="font-size:12px;color:var(--color-text-tertiary)"></i>'+realPill+'<span class="pill">'+x.dur+'</span></div>'
       +'<canvas id="spc" width="400" height="46" style="width:100%;height:46px;border-radius:4px;display:block"></canvas>'
       +'<div style="font-size:9px;color:var(--color-text-tertiary);margin:2px 0 9px">'+specCap+'</div>';
-    // 3. FORMAT SORTIE
-    var chips=OUTF.map(function(f){return '<span class="chip'+(outFmt===f?' on':'')+'" data-act="fmtsel" data-f="'+f+'">'+f+'</span>';}).join(' ');
-    var nm=x.a+' - '+x.t+' (Original Mix) ['+x.lbl+'].'+extOf(outFmt);
-    var sortir='<div style="padding-top:8px;border-top:0.5px solid var(--color-border-tertiary)"><div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:5px"><span style="font-size:10px;color:var(--color-text-tertiary)">Sortir en</span>'+chips+'</div><div style="font-size:10px;color:var(--color-text-tertiary);word-break:break-all;line-height:1.5">→ <span style="font-family:var(--font-mono);color:var(--color-text-secondary)">'+nm+'</span></div></div>';
-    var meta='<div style="margin-top:10px;padding-top:9px;border-top:0.5px solid var(--color-border-tertiary)"><div style="display:flex;align-items:center;gap:5px;margin-bottom:6px"><span style="font-size:9px;letter-spacing:.04em;text-transform:uppercase;color:var(--color-text-tertiary)">Métadonnées</span><span class="pill" style="background:var(--color-background-info);color:var(--color-text-info);font-size:9px;padding:1px 6px"><i class="ti ti-download" style="font-size:9px"></i> pullé de Discogs</span></div>'
+    var diagZone='<button class="sift-zone-toggle'+(diagOpen?' sift-zone-toggle-open':'')+'" data-act="togglediag"><span><span class="sift-zone-toggle-car">▸</span> Analyse spectrale (spectre + mesures)</span><span class="sift-zone-toggle-right">'+(diagOpen?'':qualityBadge)+'<span class="sift-zone-toggle-hint">'+(diagOpen?'masquer':'afficher')+'</span></span></button>'
+      +'<div class="sift-zone-toggle-body'+(diagOpen?' sift-zone-toggle-body-open':'')+'">'+encodingBody+'</div>';
+    // 3. MÉTADONNÉES (repliable, badge CDJ dans l'en-tête — colocalisé avec le critère et le fix,
+    // comme dans le vrai filing.ts::renderEditor. Simplification démo : la compatibilité CDJ
+    // suit x.fake (le vrai signal — tags Artiste/Titre gravés — est indépendant de l'authenticité
+    // audio, mais T n'a pas de champ dédié ; réutiliser fake évite de changer le modèle de données
+    // juste pour la démo).
+    var cdjOk=!x.fake;
+    var cdjBadge=cdjOk?'<span class="sift-chip-badge" style="background:var(--color-background-success);color:var(--color-text-success)">CDJ compatible</span>':'<span class="sift-chip-badge" style="background:var(--color-background-warning);color:var(--color-text-warning)">CDJ incompatible</span>';
+    var tagWarn=cdjOk?'':'<div style="display:flex;gap:7px;margin-top:8px;padding:8px 10px;font-size:10px;border-radius:var(--border-radius-sm);background:var(--color-background-warning);color:var(--color-text-warning)"><i class="ti ti-alert-triangle" style="font-size:12px;flex:none;margin-top:1px"></i><span>Artiste et Titre pas encore gravés dans le fichier — un CDJ ne peut pas les lire tant que ce n\'est pas fait. <strong>Ranger</strong> pour corriger.</span></div>';
+    var metaBody='<div style="display:flex;align-items:center;gap:5px;margin-bottom:6px"><span class="pill" style="background:var(--color-background-info);color:var(--color-text-info);font-size:9px;padding:1px 6px"><i class="ti ti-download" style="font-size:9px"></i> pullé de Discogs</span></div>'
       +'<div style="display:grid;grid-template-columns:auto 1fr auto 1fr;gap:3px 8px;font-size:11px;align-items:center">'
       +'<span style="color:var(--color-text-tertiary)">Label</span><span>'+x.lbl+'</span><span style="color:var(--color-text-tertiary)">Année</span><span>'+x.yr+'</span>'
       +'<span style="color:var(--color-text-tertiary)">Genre</span><span>'+x.gen+'</span><span style="color:var(--color-text-tertiary)">BPM</span><span>'+(120+(cur*3)%9)+'</span></div>'
-      +'<div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-top:6px"><span style="color:var(--color-text-tertiary);font-size:11px">Tags</span><span class="pill" style="font-size:10px">peak-time</span><span class="pill" style="font-size:10px">classic</span><span class="pill" style="font-size:10px;color:var(--color-text-tertiary)"><i class="ti ti-plus" style="font-size:9px"></i></span></div></div>';
+      +'<div style="display:flex;align-items:center;gap:4px;flex-wrap:wrap;margin-top:6px"><span style="color:var(--color-text-tertiary);font-size:11px">Tags</span><span class="pill" style="font-size:10px">peak-time</span><span class="pill" style="font-size:10px">classic</span><span class="pill" style="font-size:10px;color:var(--color-text-tertiary)"><i class="ti ti-plus" style="font-size:9px"></i></span></div>'
+      +tagWarn;
+    var metaZone='<button class="sift-zone-toggle'+(metaOpen?' sift-zone-toggle-open':'')+'" data-act="togglemeta"><span><span class="sift-zone-toggle-car">▸</span> Métadonnées</span><span class="sift-zone-toggle-right">'+(metaOpen?'':cdjBadge)+'<span class="sift-zone-toggle-hint">'+(metaOpen?'masquer':'afficher')+'</span></span></button>'
+      +'<div class="sift-zone-toggle-body'+(metaOpen?' sift-zone-toggle-body-open':'')+'">'+metaBody+'</div>';
+    // 4. CONCLUSION (bandeau verdict, en dernier — après Métadonnées, jamais avant, matching la
+    // refonte 2026-07-05 : le jugement ne doit plus enterrer les métadonnées)
+    var chips=OUTF.map(function(f){return '<span class="chip'+(outFmt===f?' on':'')+'" data-act="fmtsel" data-f="'+f+'">'+f+'</span>';}).join(' ');
+    var nm=x.a+' - '+x.t+' (Original Mix) ['+x.lbl+'].'+extOf(outFmt);
+    var concIcon=x.fake?'ti-alert-triangle':x.duplicate?'ti-copy':'ti-circle-check';
+    var concLabel=x.fake?'Sur-encodé, à re-sourcer':x.duplicate?'Déjà en bibliothèque':'Prêt à ranger';
+    var conclusion='<div class="sift-verdict-card" style="background:'+vb+'"><div class="sift-verdict-head"><i class="ti '+concIcon+'" style="color:'+(x.fake?'var(--color-text-danger)':x.duplicate?'var(--color-text-secondary)':'var(--color-text-success)')+'"></i><span class="sift-verdict-label" style="color:'+(x.fake?'var(--color-text-danger)':x.duplicate?'var(--color-text-secondary)':'var(--color-text-success)')+'">'+concLabel+'</span></div><div class="sift-verdict-finalname-col"><div class="sift-verdict-finalname-label">Nom final</div><div class="sift-verdict-finalname" style="color:'+(x.fake?'var(--color-text-danger)':x.duplicate?'var(--color-text-secondary)':'var(--color-text-success)')+'">'+nm+'</div></div></div>';
+    // RAIL (Destination/Format/Ranger/Écarter) — hors périmètre de la refonte Diagnostic/
+    // Métadonnées, reste tel quel dans la barre fixe du bas.
+    var sortir='<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:8px"><span style="font-size:10px;color:var(--color-text-tertiary)">Sortir en</span>'+chips+'</div>';
     var jBtn=x.fake
       ?'<button data-act="jeter" style="color:var(--color-text-warning)" title="Fichier faux — ira dans Écartés pour re-sourcer"><span class="kbd">X</span> ⚠ Re-sourcer</button>'
       :x.duplicate
       ?'<button data-act="jeter" style="color:var(--color-text-danger)" title="Envoyer dans Écartés"><span class="kbd">X</span> Écarter (doublon)</button>'
       :'<button data-act="jeter" style="color:var(--color-text-danger)" title="Envoyer dans Écartés"><span class="kbd">X</span> Écarter</button>';
-    mid.innerHTML='<div class="mid-scroll">'+head+dupBanner+player+encoding+sortir+meta+'</div>'
-      +'<div style="flex:none;padding-top:10px;display:flex;gap:8px;border-top:0.5px solid var(--color-border-tertiary)"><button data-act="commit" style="flex:1;background:var(--color-background-info);color:var(--color-text-info);border:none;font-weight:500"><span class="kbd">&crarr;</span> Ranger &rarr; '+FOLDERS[selFolder]+'</button>'+jBtn+'</div>';
+    mid.innerHTML='<div class="mid-scroll">'+head+dupBanner+player+diagZone+metaZone+conclusion+'</div>'
+      +'<div style="flex:none;padding-top:10px;border-top:0.5px solid var(--color-border-tertiary)">'+sortir
+      +'<div style="display:flex;gap:8px"><button data-act="commit" style="flex:1;background:var(--color-background-info);color:var(--color-text-info);border:none;font-weight:500"><span class="kbd">&crarr;</span> Ranger &rarr; '+FOLDERS[selFolder]+'</button>'+jBtn+'</div></div>';
     if(midTab==="ecoute"&&cur>=0)drawSpec(x);
   }
 
@@ -170,12 +238,22 @@ function openLink(u){window.open(u,'_blank','noopener');}
   }
 
   function renderRkb(){block();var filed=cnt("filed"),byF=byFolder();
+    // Live (Tauri): window.__siftRkb() below (renderRekordboxLive) sets #content.innerHTML fully
+    // from real Rekordbox status — this whole block (fake sync state, fake XML/master.db chips)
+    // is a wasted mock render immediately clobbered. Same guard as renderRevue/renderBiblio.
+    if(!('__TAURI_INTERNALS__' in window)){
     var pls=FOLDERS.map(function(f,i){var n=byF[i]||0;return '<div class="srow"><span class="v"><i class="ti ti-playlist"></i> '+f+'</span><span style="font-size:11px;color:'+(n?'var(--color-text-info)':'var(--color-text-tertiary)')+'">'+(n?'+ '+n:'à jour')+'</span></div>';}).join('');
     var action= rkbSynced?'<div style="display:flex;align-items:center;gap:8px;background:var(--color-background-success);border-radius:var(--border-radius-md);padding:12px 15px;margin-bottom:15px;color:var(--color-text-success)"><i class="ti ti-circle-check" style="font-size:18px"></i><span style="font-size:13px;font-weight:500">Rekordbox à jour — '+filed+' synchronisés</span></div>':'<div style="display:flex;align-items:center;justify-content:space-between;background:var(--color-background-info);border-radius:var(--border-radius-md);padding:12px 15px;margin-bottom:15px"><div><div style="font-size:14px;font-weight:500;color:var(--color-text-info)">'+filed+' rangés à pousser</div><div style="font-size:11px;color:var(--color-text-info);opacity:.8">dernière sync : il y a 2 j</div></div><button data-act="rksync">Mettre à jour <i class="ti ti-refresh" style="font-size:12px;vertical-align:-2px"></i></button></div>';
     content.innerHTML='<div class="h1">Rekordbox</div>'+action+'<div class="col-h">Playlists générées</div>'+pls+'<div class="col-h" style="margin-top:14px">Mode</div><div style="display:flex;gap:8px;margin-bottom:12px"><span class="chip on">XML — sûr</span><span class="chip">master.db — natif ⚠️</span></div><div style="display:flex;gap:8px;align-items:flex-start;font-size:11px;color:var(--color-text-warning);background:var(--color-background-warning);border-radius:var(--border-radius-md);padding:9px 12px"><i class="ti ti-alert-triangle" style="font-size:14px;flex:none"></i><span>Ferme Rekordbox avant de synchroniser. En master.db : backup auto.</span></div>';
+    }
+    if(window.__siftRkb)window.__siftRkb();
   }
 
   function renderBiblio(){block();
+    // Live (Tauri): window.__siftBiblio() below (renderBiblioLive) sets #content.innerHTML fully
+    // from real library data — this whole block (fake rows, fake dup scanner) is a wasted mock
+    // render immediately clobbered. Same guard as renderRevue/renderHome.
+    if(!('__TAURI_INTERNALS__' in window)){
     var rows=LIB.map(function(r,i){var on=i===bibPlaying;var hl=i===bibHL;return '<div class="lr"'+(on?' style="background:var(--color-background-info);border-radius:var(--border-radius-md);border-bottom:none"':hl?' style="background:var(--color-background-warning);border-radius:var(--border-radius-md);outline:1px solid var(--color-text-warning)"':'')+'><button class="pb" data-act="bplay" data-i="'+i+'" aria-label="Écouter"'+(on?' style="color:var(--color-text-info)"':'')+'><i class="ti '+(on?'ti-player-pause':'ti-player-play')+'" style="font-size:12px"></i></button><span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'+(on?';color:var(--color-text-info);font-weight:500':'')+'">'+r[0]+'</span><span class="pill" style="flex:none">'+r[1]+'</span><span style="flex:none;width:28px;text-align:right;font-family:var(--font-mono);color:var(--color-text-tertiary)">'+r[2]+'</span><span style="flex:none;width:34px;text-align:right;font-family:var(--font-mono);color:var(--color-text-tertiary)">'+r[3]+'</span><button class="lk" data-act="link" data-i="'+i+'" aria-label="Fiche Discogs"><i class="ti ti-external-link" style="font-size:13px;color:var(--color-text-tertiary)"></i></button></div>';}).join('');
     var player="";if(bibPlaying>=0){var r=LIB[bibPlaying];var tot=pT(r[3]);var w="";for(var k=0;k<40;k++){var hh=18+Math.round(Math.abs(Math.sin((k+bibPlaying*3)*0.7))*60+((k*7)%15));if(hh>96)hh=96;w+='<span style="height:'+hh+'%;background:'+(k/40<=bibPos?'var(--color-text-info)':'var(--color-text-tertiary)')+'"></span>';}player='<div style="margin-top:10px;background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:9px 11px;display:flex;align-items:center;gap:10px"><button class="pb" data-act="bplay" data-i="'+bibPlaying+'" aria-label="Pause" style="color:var(--color-text-info)"><i class="ti ti-player-pause" style="font-size:13px"></i></button><span style="flex:none;width:116px;min-width:0;font-size:11px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+r[0]+'</span><div class="bars" data-act="bseek" style="flex:1;height:30px">'+w+'</div><span style="flex:none;font-family:var(--font-mono);font-size:10px;color:var(--color-text-tertiary)">'+fT(tot*bibPos)+' / '+r[3]+'</span></div>';}
 
@@ -215,6 +293,8 @@ function openLink(u){window.open(u,'_blank','noopener');}
       +scanSection
       +'<div style="display:flex;gap:14px"><div style="width:130px;flex:none"><div class="col-h">Dossiers</div>'+['House 412','Techno 318','Disco/Edits 196','Ambient 142','Breakbeat 98'].map(function(s,i){var p=s.split(' '),n=p.pop();return '<div class="fld'+(i===0?' on':'')+'" style="justify-content:space-between"><span>'+p.join(' ')+'</span><span style="font-size:11px;opacity:.7">'+n+'</span></div>';}).join('')+'</div>'
       +'<div style="flex:1;min-width:0"><div style="display:flex;justify-content:space-between;margin-bottom:5px"><span style="font-size:13px;font-weight:500">House</span><span style="font-size:11px;color:var(--color-text-tertiary)">412 morceaux</span></div>'+rows+player+'</div></div>';
+    }
+    if(window.__siftBiblio)window.__siftBiblio();
   }
 
   var STORES=[
@@ -226,11 +306,17 @@ function openLink(u){window.open(u,'_blank','noopener');}
     {id:'apple',label:'Apple Music',url:function(q){return 'https://music.apple.com/fr/search?term='+q;}}
   ];
 
+  function renderJournal(){block();content.innerHTML='';if(window.__siftJournal)window.__siftJournal();}
+
   function renderEcarts(){block();
+    // Live (Tauri): window.__siftEcarts() below (ecartes-view.ts's renderEcartes) sets
+    // #content.innerHTML fully from real rejected/trashed tracks — this whole block is a wasted
+    // mock render immediately clobbered. Same guard as renderRevue/renderHome/renderBiblio.
+    if(!('__TAURI_INTERNALS__' in window)){
     var ecarts=T.filter(function(x){return x.status==="resource"||x.status==="trash";});
     var filterR=ecarts.filter(function(x){return x.status==="resource";});
     var filterT=ecarts.filter(function(x){return x.status==="trash";});
-    function slsk(x){return x.a+' '+x.t;}
+    function requery(x){return x.a+' '+x.t;}
     function reasonLabel(x){
       if(x.ecartReason==="truncated")return '<span class="pill" style="background:var(--color-background-warning);color:var(--color-text-warning);flex:none"><i class="ti ti-cut" style="font-size:9px"></i> tronqué</span>';
       if(x.ecartReason==="duplicate")return '<span class="pill" style="background:var(--color-background-secondary);color:var(--color-text-secondary);flex:none"><i class="ti ti-copy" style="font-size:9px"></i> doublon</span>';
@@ -239,10 +325,10 @@ function openLink(u){window.open(u,'_blank','noopener');}
     var rows=ecarts.map(function(x){
       var qi=T.indexOf(x);
       var isRes=x.status==="resource";
-      var q=encodeURIComponent(slsk(x));
+      var q=encodeURIComponent(requery(x));
       var avail=x.storeAvail||[];
       var storeLinks=isRes?STORES.filter(function(s){return avail.length===0||avail.indexOf(s.id)>=0;}).map(function(s){return '<a data-act="estore" data-i="'+qi+'" data-url="'+encodeURIComponent(s.url(q))+'" style="font-size:10px;color:var(--color-text-info);cursor:pointer;text-decoration:none;white-space:nowrap">'+s.label+'</a>';}).join('<span style="color:var(--color-border-secondary);margin:0 3px">·</span>'):'';
-      var slskTxt=encodeURIComponent(x.a+' '+x.t);
+      var queryTxt=encodeURIComponent(x.a+' '+x.t);
       return '<div style="padding:7px 4px;border-bottom:0.5px solid var(--color-border-tertiary)">'
         +'<div style="display:flex;align-items:center;gap:7px">'
         +'<div style="flex:1;min-width:0"><div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px;font-weight:500">'+x.a+' — '+x.t+'</div>'
@@ -250,7 +336,7 @@ function openLink(u){window.open(u,'_blank','noopener');}
         +reasonLabel(x)
         +'<button class="lk" data-act="etrash" data-i="'+qi+'" title="Corbeille"><i class="ti ti-trash" style="font-size:12px;color:var(--color-text-tertiary)"></i></button>'
         +'</div>'
-        +(isRes?'<div style="margin-top:5px;display:flex;flex-wrap:wrap;align-items:center;gap:4px"><button data-act="eslsk" data-txt="'+slskTxt+'" style="font-size:10px;padding:2px 7px;color:var(--color-text-secondary)"><i class="ti ti-copy" style="font-size:10px;vertical-align:-1px"></i> Slsk</button>'+(storeLinks?'<span style="color:var(--color-border-secondary)">·</span>'+storeLinks:'')+'</div>':'')
+        +(isRes?'<div style="margin-top:5px;display:flex;flex-wrap:wrap;align-items:center;gap:4px"><button data-act="ecopyquery" data-txt="'+queryTxt+'" style="font-size:10px;padding:2px 7px;color:var(--color-text-secondary)"><i class="ti ti-copy" style="font-size:10px;vertical-align:-1px"></i> Copié</button>'+(storeLinks?'<span style="color:var(--color-border-secondary)">·</span>'+storeLinks:'')+'</div>':'')
         +'</div>';
     }).join('');
     content.innerHTML='<div class="h1">Écartés</div>'
@@ -261,6 +347,7 @@ function openLink(u){window.open(u,'_blank','noopener');}
       +'</div>'
       +(rows||'<div style="font-size:12px;color:var(--color-text-tertiary)">Aucun fichier écarté.</div>')
       ;
+    }
     if(window.__siftEcarts)window.__siftEcarts();
   }
 
@@ -268,15 +355,25 @@ function openLink(u){window.open(u,'_blank','noopener');}
     content.innerHTML='<div class="h1">Formater la clé</div><div style="display:flex;gap:8px;align-items:flex-start;background:var(--color-background-warning);border-radius:var(--border-radius-md);padding:9px 12px;margin-bottom:14px;font-size:11px;color:var(--color-text-warning)"><i class="ti ti-alert-triangle" style="font-size:15px;flex:none"></i><span>Volumes <strong>amovibles uniquement</strong> — le formatage <strong>efface tout</strong>.</span></div><div class="col-h">Volume</div><div class="srow"><span class="v"><i class="ti ti-usb"></i> USB DJ — 28 Go <span style="color:var(--color-text-tertiary)">(FAT32)</span></span><i class="ti ti-circle-check" style="color:var(--color-text-info);font-size:16px"></i></div><div class="srow"><span class="v"><i class="ti ti-usb"></i> SSD Samsung T7 — 500 Go <span style="color:var(--color-text-tertiary)">(exFAT)</span></span><i class="ti ti-circle" style="color:var(--color-text-tertiary);font-size:16px"></i></div><div class="col-h" style="margin-top:14px">Format</div><div style="display:flex;gap:8px;margin-bottom:14px"><span class="chip on">FAT32 — compat tous CDJ</span><span class="chip">exFAT — CDJ récents</span></div><div style="display:flex;align-items:center;gap:9px"><div style="flex:1;border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:6px 10px;font-size:12px;color:var(--color-text-tertiary)">tape « USB DJ » pour confirmer</div><button style="color:var(--color-text-danger);border-color:var(--color-border-danger)">Formater</button></div>';
   }
 
-  function renderReglages(){block();var rows=[['Dossiers source','2 dossiers'],['Dossiers destination','6 genres'],['Format lossless','AIFF · 16-bit / 44,1 kHz'],['Format lossy','MP3 320 (pas d\'upscale)'],['Modèle de nommage','Artiste - Titre (Mix) [Label]'],['Sensibilité anti-fake','standard'],['Identification','tags → Discogs → manuel'],['Discogs','connecté'],['Intégration Rekordbox','XML (master.db désactivé)'],['Normalisation','désactivée']];
+  function renderReglages(){block();
+    // Live (Tauri): window.__siftReglages() below (renderReglagesLive) hides every child except
+    // ".h1" and injects real cards (Discogs/Bibliothèque/Apparence) — the placeholder rows here
+    // (Dossiers source, Format lossless…) are a wasted mock render immediately hidden. Same guard
+    // as the other render* functions above.
+    if(!('__TAURI_INTERNALS__' in window)){
+    var rows=[['Dossiers source','2 dossiers'],['Dossiers destination','6 genres'],['Format lossless','AIFF · 16-bit / 44,1 kHz'],['Format lossy','MP3 320 (pas d\'upscale)'],['Modèle de nommage','Artiste - Titre (Mix) [Label]'],['Sensibilité anti-fake','standard'],['Identification','tags → Discogs → manuel'],['Discogs','connecté'],['Intégration Rekordbox','XML (master.db désactivé)'],['Normalisation','désactivée']];
     content.innerHTML='<div class="h1">Réglages</div>'+rows.map(function(r){return '<div class="srow"><span>'+r[0]+'</span><span class="v">'+r[1]+' <i class="ti ti-chevron-right" style="font-size:14px;color:var(--color-text-tertiary)"></i></span></div>';}).join('');
+    } else {
+      content.innerHTML='<div class="h1">Réglages</div>';
+    }
+    if(window.__siftReglages)window.__siftReglages();
   }
 
   var pa=document.getElementById('pa');
   pa.addEventListener('click',function(e){
     var v=e.target.closest('[data-view]');if(v){view=v.dataset.view;creating=false;if(view!=='biblio')bibHL=-1;render();return;}
     var el=e.target.closest('[data-act]');if(!el)return;var act=el.dataset.act;
-    if(act==='sel'){cur=+el.dataset.i;playPos=0;outFmt=null;midTab="ecoute";render();}
+    if(act==='sel'){cur=+el.dataset.i;playPos=0;outFmt=null;midTab="ecoute";diagOpen=false;metaOpen=false;render();}
     else if(act==='play'){playing=!playing;renderMid();}
     else if(act==='timemodetog'){timeMode=timeMode==="elapsed"?"remaining":"elapsed";renderMid();}
     else if(act==='file'){selFolder=+el.dataset.i;renderRevue();}
@@ -288,6 +385,8 @@ function openLink(u){window.open(u,'_blank','noopener');}
     else if(act==='mtab'){midTab=el.dataset.m;renderMid();}
     else if(act==='revmode'){revMode=el.dataset.m;sel={};render();}
     else if(act==='togglequeue'){queueShowAll=!queueShowAll;renderRevue();}
+    else if(act==='togglediag'){diagOpen=!diagOpen;renderMid();}
+    else if(act==='togglemeta'){metaOpen=!metaOpen;renderMid();}
     else if(act==='bcheck'){var bi=+el.dataset.i;sel[bi]=!sel[bi];renderBatch();}
     else if(act==='brange'){for(var k in sel){if(sel[k]&&T[k].status==="pending"){T[k].status="filed";T[k].folder=selFolder;}}sel={};rkbSynced=false;render();}
     else if(act==='bjeter'){for(var k2 in sel){if(sel[k2]&&T[k2].status==="pending")T[k2].status=T[k2].fake?"resource":"trash";}sel={};render();}
@@ -298,8 +397,8 @@ function openLink(u){window.open(u,'_blank','noopener');}
     else if(act==='dupkeep'||act==='dupjeter'){dupDismissed[+el.dataset.gid]=true;renderBiblio();}
     else if(act==='etrash'){T[+el.dataset.i].status="trash";renderEcarts();}
     else if(act==='estore'){openLink(decodeURIComponent(el.dataset.url));}
-    else if(act==='qslsk'){var txt=decodeURIComponent(el.dataset.txt);navigator.clipboard.writeText(txt).catch(function(){});var prev=el.innerHTML;el.innerHTML='<i class="ti ti-check" style="font-size:11px"></i>';setTimeout(function(){el.innerHTML=prev;},1200);}
-    else if(act==='eslsk'){navigator.clipboard.writeText(decodeURIComponent(el.dataset.txt)).catch(function(){});el.innerHTML='<i class="ti ti-check" style="font-size:12px;vertical-align:-2px"></i> Copié';setTimeout(function(){renderEcarts();},1400);}
+    else if(act==='qcopyquery'){var txt=decodeURIComponent(el.dataset.txt);navigator.clipboard.writeText(txt).catch(function(){});var prev=el.innerHTML;el.innerHTML='<i class="ti ti-check" style="font-size:11px"></i>';setTimeout(function(){el.innerHTML=prev;},1200);}
+    else if(act==='ecopyquery'){navigator.clipboard.writeText(decodeURIComponent(el.dataset.txt)).catch(function(){});el.innerHTML='<i class="ti ti-check" style="font-size:12px;vertical-align:-2px"></i> Copié';setTimeout(function(){renderEcarts();},1400);}
     else if(act==='bplay'){var i=+el.dataset.i;if(bibPlaying===i){bibPlaying=-1;}else{bibPlaying=i;bibPos=0.3;}renderBiblio();}
     else if(act==='bseek'){var r2=el.getBoundingClientRect();bibPos=Math.min(1,Math.max(0,(e.clientX-r2.left)/r2.width));renderBiblio();}
     else if(act==='link'){var parts=LIB[+el.dataset.i][0].split(/\s*[—–-]\s*/);var q=parts.length>1?parts[0]+' '+parts[1]:parts[0];openLink('https://www.discogs.com/search/?type=release&q='+encodeURIComponent(q));}
@@ -307,6 +406,11 @@ function openLink(u){window.open(u,'_blank','noopener');}
   });
   pa.addEventListener('input',function(e){if(e.target.dataset.act==='tempo'){tempo=parseInt(e.target.value,10);var o=document.getElementById('tout');if(o)o.textContent=(tempo>0?'+':'')+tempo+'%';}});
   pa.addEventListener('keydown',function(e){
+    // Live (Tauri): the real keyboard layer (installFilingKeys) owns SPACE/Enter/X/1-9. This
+    // mockup handler is a web-demo vestige — if it ran here, its renderMid() would repaint the
+    // demo data (Mr. Fingers) over the real track. Same inTauri test as main.ts. Hors Tauri
+    // (démo web Vercel) il reste actif.
+    if('__TAURI_INTERNALS__' in window)return;
     if(e.target.id==='newin'){if(e.key==='Enter'){var val=e.target.value.trim();if(val){FOLDERS.push(val);creating=false;fileTo(FOLDERS.length-1);}}else if(e.key==='Escape'){creating=false;render();}return;}
     if(e.target.tagName==='INPUT')return;if(view!=="revue"||revMode!=="detail")return;
     var nk=parseInt(e.key,10);

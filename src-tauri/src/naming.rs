@@ -2,10 +2,6 @@
 //! one canonical {artist, title, version} record, and render the output filename from a
 //! template. The single source of truth that drives BOTH the filename and the tags
 //! written at filing time (see M4 spec). Exhaustively unit-tested; never touches disk.
-//!
-//! The public API is consumed by the filing orchestration in a later M4 slice (M4-3);
-//! until then it is unused by the binary, hence the module-level dead_code allow.
-#![allow(dead_code)]
 
 use serde::{Deserialize, Serialize};
 
@@ -30,8 +26,8 @@ pub struct Canonical {
 
 /// Tokens that mark a string as sloppy download metadata rather than a clean field.
 const JUNK_TOKENS: &[&str] = &[
-    "kbps", "khz", "flac", "http", "www", "320", "256", "192", "128", "rip", "track ",
-    "[", "]", "{", "}", "_",
+    "kbps", "khz", "flac", "http", "www", "320", "256", "192", "128", "rip", "track ", "[", "]",
+    "{", "}", "_",
 ];
 
 /// True if `s` contains any junk token (case-insensitive). Used by the cleanliness gate.
@@ -42,10 +38,20 @@ pub fn has_junk(s: &str) -> bool {
 
 /// A {artist, title} source is clean when both are non-blank and free of junk tokens.
 pub fn is_clean(artist: &str, title: &str) -> bool {
-    !artist.trim().is_empty()
-        && !title.trim().is_empty()
-        && !has_junk(artist)
-        && !has_junk(title)
+    !artist.trim().is_empty() && !title.trim().is_empty() && !has_junk(artist) && !has_junk(title)
+}
+
+/// Pulls a trailing "(...)" off `s` as a version — e.g. "Mystery of Love (Original Mix)" ->
+/// ("Mystery of Love", Some("Original Mix")). Pure syntax, no cleanliness requirement: the
+/// version only needs its own parens to be well-formed, unlike `parse_filename`'s artist/title.
+fn extract_trailing_version(s: &str) -> (String, Option<String>) {
+    match (s.rfind('('), s.rfind(')')) {
+        (Some(open), Some(close)) if close > open && close == s.len() - 1 => {
+            let v = s[open + 1..close].trim().to_string();
+            (s[..open].trim().to_string(), Some(v))
+        }
+        _ => (s.to_string(), None),
+    }
 }
 
 /// Parse a filename stem (no extension) into (artist, title, version?). Returns None when
@@ -53,16 +59,7 @@ pub fn is_clean(artist: &str, title: &str) -> bool {
 pub fn parse_filename(stem: &str) -> Option<(String, String, Option<String>)> {
     let (artist_raw, rest) = stem.split_once(" - ")?;
     let artist = artist_raw.trim().to_string();
-
-    // Pull a trailing "(...)" off the title as the version.
-    let rest = rest.trim();
-    let (title_raw, version) = match (rest.rfind('('), rest.rfind(')')) {
-        (Some(open), Some(close)) if close > open && close == rest.len() - 1 => {
-            let v = rest[open + 1..close].trim().to_string();
-            (rest[..open].trim().to_string(), Some(v))
-        }
-        _ => (rest.to_string(), None),
-    };
+    let (title_raw, version) = extract_trailing_version(rest.trim());
 
     if !is_clean(&artist, &title_raw) {
         return None;
@@ -70,10 +67,26 @@ pub fn parse_filename(stem: &str) -> Option<(String, String, Option<String>)> {
     Some((artist, title_raw, version))
 }
 
+/// Best-effort version/mix extraction from a filename stem, independent of overall
+/// cleanliness. Unlike `parse_filename`, junk elsewhere in the stem (bitrate, uploader
+/// brackets) must not cost us the "(Extended Mix)" trailing the title — Discogs' tracklist
+/// matching needs this version hint to pick the right mix even when the tags are clean but
+/// the filename carries noise the version parens aren't part of.
+fn extract_version_hint(stem: &str) -> Option<String> {
+    let rest = match stem.split_once(" - ") {
+        Some((_, r)) => r,
+        None => stem,
+    };
+    extract_trailing_version(rest.trim()).1
+}
+
 /// Normalize for the "do tags and filename agree?" comparison: lowercase, collapse
 /// whitespace. Internal to reconcile.
 fn norm(s: &str) -> String {
-    s.to_lowercase().split_whitespace().collect::<Vec<_>>().join(" ")
+    s.to_lowercase()
+        .split_whitespace()
+        .collect::<Vec<_>>()
+        .join(" ")
 }
 
 /// Reconcile embedded tags and the filename stem into one canonical record + confidence.
@@ -92,14 +105,20 @@ pub fn reconcile(tag_artist: &str, tag_title: &str, stem: &str) -> Canonical {
                 artist: tag_artist.trim().to_string(),
                 title: tag_title.trim().to_string(),
                 version: name_version,
-                confidence: if agree { Confidence::Green } else { Confidence::Yellow },
+                confidence: if agree {
+                    Confidence::Green
+                } else {
+                    Confidence::Yellow
+                },
             }
         }
-        // tags clean only -> green from tags
+        // tags clean only -> green from tags. Filename didn't parse as a whole (junk
+        // elsewhere), but a trailing "(...)" version is still worth pulling independently —
+        // see extract_version_hint.
         (true, None) => Canonical {
             artist: tag_artist.trim().to_string(),
             title: tag_title.trim().to_string(),
-            version: None,
+            version: extract_version_hint(stem),
             confidence: Confidence::Green,
         },
         // name clean only -> green from name
@@ -133,6 +152,20 @@ pub fn clean_stem(stem: &str) -> String {
             break;
         }
     }
+    // drop ( ... ) segments only when their content is known source/quality noise (never a
+    // blind strip: "(Original Mix)"/"(feat. X)" are meaningful and must survive).
+    const NOISE_PAREN: &[&str] = &["rip", "bootleg", "promo", "unofficial"];
+    while let (Some(a), Some(b)) = (s.find('('), s.find(')')) {
+        if b <= a {
+            break;
+        }
+        let inner = s[a + 1..b].to_lowercase();
+        if NOISE_PAREN.iter().any(|k| inner.contains(k)) {
+            s.replace_range(a..=b, " ");
+        } else {
+            break;
+        }
+    }
     // strip a leading track number ("01 ", "1.", "12 - ") — only 1–3 digits + a separator
     {
         let t = s.trim_start();
@@ -147,6 +180,7 @@ pub fn clean_stem(stem: &str) -> String {
     // drop quality/junk tokens word-by-word (case-insensitive)
     const DROP: &[&str] = &[
         "kbps", "320", "256", "192", "128", "flac", "wav", "aiff", "khz", "hz", "hq", "cbr", "vbr",
+        "rip",
     ];
     let kept: Vec<&str> = s
         .split_whitespace()
@@ -174,19 +208,34 @@ pub fn sanitize(s: &str) -> String {
     cleaned.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
+/// " (Version)" suffix shared by `render_filename` and `tag_title` — "" when absent, no empty
+/// parens.
+fn version_suffix(c: &Canonical) -> String {
+    match &c.version {
+        Some(v) if !v.trim().is_empty() => format!(" ({})", v.trim()),
+        _ => String::new(),
+    }
+}
+
 /// Render `template` against a canonical record and append `.ext`. Supported placeholders:
 /// `{artist}`, `{title}`, `{version}`. `{version}` expands to " (Version)" when present,
 /// to "" when absent (no empty parens). The whole stem is sanitized for the filesystem.
 pub fn render_filename(template: &str, c: &Canonical, ext: &str) -> String {
-    let version_str = match &c.version {
-        Some(v) if !v.trim().is_empty() => format!(" ({})", v.trim()),
-        _ => String::new(),
-    };
     let stem = template
         .replace("{artist}", &c.artist)
         .replace("{title}", &c.title)
-        .replace("{version}", &version_str);
+        .replace("{version}", &version_suffix(c));
     format!("{}.{}", sanitize(&stem), ext)
+}
+
+/// The title as it should be WRITTEN TO THE ID3/tag Title field — title + the same " (Version)"
+/// suffix `render_filename` puts in the filename. Both must derive from this one function: a
+/// track named "Title (Extended Mix).aiff" previously had the version silently absent from its
+/// own Title tag (write_tags_full call sites passed `c.title` alone), so a CDJ/Rekordbox reading
+/// the file's tags directly — not the filename — never saw it. No filesystem sanitization here,
+/// unlike render_filename: this never touches a path.
+pub fn tag_title(c: &Canonical) -> String {
+    format!("{}{}", c.title, version_suffix(c))
 }
 
 /// Fold the common accented Latin letters to ASCII (no extra crate) so "Béatrice" and
@@ -222,12 +271,34 @@ pub fn name_key(artist: &str, title: &str) -> String {
     // Space-join (no separator) ON PURPOSE: it lets "Larry Heard - Mystery of Love" match a
     // file named "larry_heard mystery of love" with no " - " split — a common cross-naming
     // duplicate. The theoretical ("","x") vs ("x","") collision is accepted as harmless here.
-    format!("{} {}", norm(artist), norm(title)).trim().to_string()
+    format!("{} {}", norm(artist), norm(title))
+        .trim()
+        .to_string()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Mirrors shared/contracts.ts's `Canonical`. Exhaustive destructure (no `..`): fails to
+    /// compile if a field is added/removed/renamed on the Rust struct — the forcing function to
+    /// also update contracts.ts. Phase 2 — docs/superpowers/plans/2026-07-13-phase2-ipc-contract-tests.md.
+    #[test]
+    fn canonical_shape_matches_contracts_ts() {
+        let v = Canonical {
+            artist: String::new(),
+            title: String::new(),
+            version: None,
+            confidence: Confidence::Green,
+        };
+        let Canonical {
+            artist,
+            title,
+            version,
+            confidence,
+        } = v;
+        let _ = (artist, title, version, confidence);
+    }
 
     #[test]
     fn junk_flags_quality_and_uploader_tokens() {
@@ -327,9 +398,38 @@ mod tests {
 
     #[test]
     fn clean_stem_tidies_messy_filenames() {
-        assert_eq!(clean_stem("01_larry_heard_mystery_320"), "larry heard mystery");
+        assert_eq!(
+            clean_stem("01_larry_heard_mystery_320"),
+            "larry heard mystery"
+        );
         assert_eq!(clean_stem("Some Title [DJ Uploader] FLAC"), "Some Title");
         assert_eq!(clean_stem("1979 - something"), "1979 - something"); // 4 digits: not a track no
+    }
+
+    #[test]
+    fn clean_stem_drops_source_noise_parens_but_keeps_meaningful_ones() {
+        assert_eq!(clean_stem("Title (Vinyl Rip)"), "Title");
+        assert_eq!(clean_stem("Title (Bootleg)"), "Title");
+        // Not source noise — must survive, it's the actual mix name.
+        assert_eq!(clean_stem("Title (Original Mix)"), "Title (Original Mix)");
+        assert_eq!(clean_stem("Title (feat. Someone)"), "Title (feat. Someone)");
+    }
+
+    #[test]
+    fn tags_clean_but_stem_junky_still_recovers_version() {
+        // Tags are clean (green from tags), but the filename carries an unrelated junk
+        // token ("01_" prefix) that used to blow away version extraction entirely because
+        // parse_filename requires the WHOLE stem to be clean. The trailing "(Extended Mix)"
+        // must survive that — it's what best_track_match needs to pick the right mix.
+        let c = reconcile(
+            "Theo Parrish",
+            "Falling Up",
+            "01_Theo Parrish - Falling Up (Extended Mix)",
+        );
+        assert_eq!(c.artist, "Theo Parrish");
+        assert_eq!(c.title, "Falling Up");
+        assert_eq!(c.version.as_deref(), Some("Extended Mix"));
+        assert_eq!(c.confidence, Confidence::Green);
     }
 
     #[test]

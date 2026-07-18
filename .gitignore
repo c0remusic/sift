@@ -23,8 +23,26 @@ npm-debug.log*
 Thumbs.db
 .idea/
 .vscode/
+
+# .claude/ = bruit-machine ignoré, SAUF rules/ = méthode portable versionnée
 .claude/
+!.claude/rules/
+!.claude/rules/**
+.codex/
+.agents/
 
 # installed agent skills (per-machine tooling, not project code)
 .github/skills/
+skills-lock.json
+
+# tooling caches (per-machine, not project code)
+.impeccable/
+
+.superpowers/
+
+# scratch/test copies (may contain real Rekordbox master.db, never committed)
+scratchpad/
+scratchpad-verif/
+
+# real Rekordbox master.db backups (per-machine, never committed)
 Sift-Rekordbox-Backups/

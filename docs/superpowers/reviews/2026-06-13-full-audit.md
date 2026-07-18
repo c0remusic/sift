@@ -65,6 +65,8 @@ love » (doublon de convention de nom courant). La collision théorique champ-vi
    + marquer les ids/classes « porteurs » dans app.js.
 8. **[ARCHI] Retirer les `#![allow(dead_code)]`** de modules désormais câblés pour faire
    ressortir le code réellement mort (ex. `file_batch`/`TRASH_PURGE_DAYS`).
+   _Résolu 2026-07-04 pour `TRASH_PURGE_DAYS` : constante retirée de `settings.rs` (commit
+   `34cf912`) — jamais lue, aucun plan de purge programmée. `file_batch` reste ouvert._
 9. **[CORRECTNESS] L'undo ne restaure pas les tags ré-écrits** (move conforme) — journaliser
    un `retag` ou snapshotter les tags d'origine ; à défaut le documenter côté UI.
 10. **[ARCHI] Le front re-devine le rail** (lossless/lossy par extension) au lieu de le recevoir

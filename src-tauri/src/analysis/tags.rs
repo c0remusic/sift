@@ -1,15 +1,17 @@
 //! Declared audio properties + tag metadata via `lofty` (read-only).
 
 use crate::analysis::Rail;
-use lofty::file::{AudioFile, TaggedFileExt};
+use lofty::file::{AudioFile, FileType, TaggedFileExt};
 use lofty::probe::Probe;
 use lofty::tag::ItemKey;
 
 /// What we read from the container without decoding: declared rail, bitrate, duration,
-/// channels, ID3 version, CDJ-tag sanity, embedded cover presence.
+/// channels, ID3 version, CDJ-tag sanity, embedded cover presence, and the content-sniffed
+/// rail (magic bytes — see `rail_from_content` doc comment below).
 #[derive(Debug, Clone, PartialEq)]
 pub struct TagInfo {
     pub declared_rail: Rail,
+    pub content_rail: Rail,
     pub declared_bitrate: Option<u32>,
     pub duration_sec: f32,
     pub channels: u16,
@@ -27,6 +29,36 @@ pub fn rail_from_ext(ext: &str) -> Rail {
     }
 }
 
+/// Maps a lofty-detected `FileType` to our lossless/lossy rail. `Rail::Unknown` on anything not
+/// confidently identified — callers must never manufacture a mismatch they can't back with a
+/// confident read.
+fn rail_from_file_type(file_type: FileType) -> Rail {
+    match file_type {
+        FileType::Flac | FileType::Wav | FileType::Aiff | FileType::Ape | FileType::WavPack => {
+            Rail::Lossless
+        }
+        FileType::Mpeg | FileType::Vorbis | FileType::Opus | FileType::Speex => Rail::Lossy,
+        _ => Rail::Unknown,
+    }
+}
+
+/// Lossless vs lossy from the file's ACTUAL content (lofty's content-sniffing probe, magic
+/// bytes — NOT the extension). Used where extension trust actually matters: the filing
+/// no-upscale guard (`filing.rs::plan_file`), to catch a lossy file mislabeled with a lossless
+/// extension (e.g. an MP3 renamed `.flac`) before it gets "converted" into a fabricated lossless
+/// file. The analysis pipeline gets the same signal for free from `read()`'s `content_rail` (one
+/// probe instead of two) — this standalone entry point stays for callers with no `TagInfo` in
+/// hand.
+pub fn rail_from_content(path: &str) -> Rail {
+    fn try_read(path: &str) -> lofty::error::Result<lofty::file::TaggedFile> {
+        Probe::open(path)?.guess_file_type()?.read()
+    }
+    match try_read(path) {
+        Ok(tagged) => rail_from_file_type(tagged.file_type()),
+        Err(_) => Rail::Unknown,
+    }
+}
+
 /// Reads tag/property info. On unreadable container, returns a conservative Unknown info
 /// (the caller still has decode results + codec_error).
 pub fn read(path: &str) -> TagInfo {
@@ -36,8 +68,13 @@ pub fn read(path: &str) -> TagInfo {
         .unwrap_or("");
     let rail = rail_from_ext(ext);
 
-    match Probe::open(path).and_then(|p| p.read()) {
+    fn try_read(path: &str) -> lofty::error::Result<lofty::file::TaggedFile> {
+        Probe::open(path)?.guess_file_type()?.read()
+    }
+
+    match try_read(path) {
         Ok(tagged) => {
+            let content_rail = rail_from_file_type(tagged.file_type());
             let props = tagged.properties();
             let has_cover = tagged.tags().iter().any(|t| !t.pictures().is_empty());
             let id3_version = if ext.eq_ignore_ascii_case("mp3") {
@@ -46,11 +83,12 @@ pub fn read(path: &str) -> TagInfo {
                 None
             };
             let tags_cdj_ok = tagged.tags().iter().any(|t| {
-                t.get_string(&ItemKey::TrackArtist).is_some()
-                    && t.get_string(&ItemKey::TrackTitle).is_some()
+                t.get_string(ItemKey::TrackArtist).is_some()
+                    && t.get_string(ItemKey::TrackTitle).is_some()
             });
             TagInfo {
                 declared_rail: rail,
+                content_rail,
                 declared_bitrate: props.audio_bitrate(),
                 duration_sec: props.duration().as_secs_f32(),
                 channels: props.channels().unwrap_or(0) as u16,
@@ -61,6 +99,7 @@ pub fn read(path: &str) -> TagInfo {
         }
         Err(_) => TagInfo {
             declared_rail: rail,
+            content_rail: Rail::Unknown,
             declared_bitrate: None,
             duration_sec: 0.0,
             channels: 0,
@@ -89,5 +128,46 @@ mod tests {
         assert_eq!(info.declared_rail, Rail::Lossless);
         assert_eq!(info.channels, 0);
         assert!(!info.has_cover);
+    }
+
+    fn fixture(name: &str) -> Option<String> {
+        let p = format!("fixtures/{name}");
+        std::path::Path::new(&p).exists().then_some(p)
+    }
+
+    /// The exact BUG-1 scenario: an MP3 renamed with a `.flac` extension. `rail_from_ext`
+    /// (extension only) is fooled and says Lossless; `rail_from_content` (magic bytes) must see
+    /// through the renamed extension and correctly report Lossy.
+    #[test]
+    fn rail_from_content_sees_through_a_renamed_mp3() {
+        let Some(mp3) = fixture("real_320.mp3") else {
+            eprintln!("skip: no fixture");
+            return;
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let disguised = dir.path().join("disguised.flac");
+        std::fs::copy(&mp3, &disguised).unwrap();
+        let path = disguised.to_str().unwrap();
+
+        assert_eq!(
+            rail_from_ext("flac"),
+            Rail::Lossless,
+            "extension alone is fooled"
+        );
+        assert_eq!(
+            rail_from_content(path),
+            Rail::Lossy,
+            "content sniffing is not fooled"
+        );
+    }
+
+    /// A genuine FLAC must not be misclassified by content sniffing (no false positive).
+    #[test]
+    fn rail_from_content_confirms_a_real_flac() {
+        let Some(flac) = fixture("real_lossless.flac") else {
+            eprintln!("skip: no fixture");
+            return;
+        };
+        assert_eq!(rail_from_content(&flac), Rail::Lossless);
     }
 }

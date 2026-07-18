@@ -2,9 +2,26 @@
 //! and a downsampled spectrogram. Online over mono f32 blocks.
 
 use crate::analysis::Spectrogram;
-use rustfft::{num_complex::Complex, FftPlanner};
+use rustfft::{num_complex::Complex, Fft, FftPlanner};
 use std::f32::consts::PI;
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
+
+/// The FFT size is fixed for the whole app (4096). Planning is not free, so the forward
+/// plan is built once and shared across every file's accumulator. `rustfft`'s plans are
+/// `Send + Sync`, so an `Arc` behind a `OnceLock` is safe to hand out to the worker threads.
+const FFT_SIZE: usize = 4096;
+static FFT_PLAN: OnceLock<Arc<dyn Fft<f32>>> = OnceLock::new();
+
+fn shared_fft(fft_size: usize) -> Arc<dyn Fft<f32>> {
+    // The shared plan is only valid for the canonical size; any other size (tests) plans ad hoc.
+    if fft_size == FFT_SIZE {
+        FFT_PLAN
+            .get_or_init(|| FftPlanner::<f32>::new().plan_fft_forward(FFT_SIZE))
+            .clone()
+    } else {
+        FftPlanner::<f32>::new().plan_fft_forward(fft_size)
+    }
+}
 
 /// Result of the spectral pass.
 pub struct SpectrumResult {
@@ -21,12 +38,21 @@ pub struct SpectrumAccumulator {
     fft: Arc<dyn rustfft::Fft<f32>>,
     window: Vec<f32>,
     buf: Vec<f32>,
+    /// Reused per-frame FFT input/output buffer (len `fft_size`) — avoids one alloc per frame.
+    scratch: Vec<Complex<f32>>,
+    /// Reused per-frame magnitude buffer (len `bins`) — avoids one alloc per frame.
+    mags: Vec<f32>,
     ltas: Vec<f64>,
     frames_total: u64,
     spec_stride: u64,
     spec_cols: Vec<Vec<u8>>,
     collect_display: bool,
     bins: usize,
+    /// `norm_sqr()` of a full-scale sine at this window's coherent gain — the 0 dBFS
+    /// reference for the display-only `db` conversion in `process_frame`. Unnormalized FFT
+    /// output scales with `fft_size`, so without this a full-scale signal reads as +50 to
+    /// +100 dB and gets clipped straight to the `.clamp(-100.0, 0.0)` ceiling.
+    ref_mag_sqr: f32,
 }
 
 impl SpectrumAccumulator {
@@ -34,12 +60,15 @@ impl SpectrumAccumulator {
     /// still runs for the LTAS/cutoff, so the verdict is unchanged — only the heavy display
     /// grid is not built). The batch worker (M2b) passes false; the UI passes true.
     pub fn new(sr: u32, fft_size: usize, collect_display: bool) -> Self {
-        let mut planner = FftPlanner::<f32>::new();
-        let fft = planner.plan_fft_forward(fft_size);
+        let fft = shared_fft(fft_size);
         let window: Vec<f32> = (0..fft_size)
             .map(|i| 0.5 - 0.5 * (2.0 * PI * i as f32 / (fft_size as f32 - 1.0)).cos())
             .collect();
         let bins = fft_size / 2;
+        // Coherent gain = mean window value; a full-scale sine's FFT peak magnitude is
+        // `coherent_gain * fft_size / 2` (the /2 from splitting energy across +/- frequency).
+        let coherent_gain = window.iter().sum::<f32>() / fft_size as f32;
+        let ref_mag = coherent_gain * fft_size as f32 / 2.0;
         Self {
             sr,
             fft_size,
@@ -47,12 +76,15 @@ impl SpectrumAccumulator {
             fft,
             window,
             buf: Vec::with_capacity(fft_size * 2),
+            scratch: vec![Complex { re: 0.0, im: 0.0 }; fft_size],
+            mags: vec![0.0f32; bins],
             ltas: vec![0.0; bins],
             frames_total: 0,
-            spec_stride: 4,
+            spec_stride: 2,
             spec_cols: Vec::new(),
             collect_display,
             bins,
+            ref_mag_sqr: ref_mag * ref_mag,
         }
     }
 
@@ -65,38 +97,62 @@ impl SpectrumAccumulator {
     }
 
     fn process_frame(&mut self) {
-        let mut scratch: Vec<Complex<f32>> = (0..self.fft_size)
-            .map(|i| Complex { re: self.buf[i] * self.window[i], im: 0.0 })
-            .collect();
-        self.fft.process(&mut scratch);
-        let mut mags = vec![0.0f32; self.bins];
+        for i in 0..self.fft_size {
+            self.scratch[i] = Complex {
+                re: self.buf[i] * self.window[i],
+                im: 0.0,
+            };
+        }
+        self.fft.process(&mut self.scratch);
         for k in 0..self.bins {
-            let m2 = scratch[k].norm_sqr();
+            let m2 = self.scratch[k].norm_sqr();
             self.ltas[k] += m2 as f64;
-            mags[k] = m2;
+            self.mags[k] = m2;
         }
         if self.collect_display && self.frames_total % self.spec_stride == 0 {
-            let col: Vec<u8> = mags.iter().map(|&m2| {
-                let db = if m2 <= 1e-12 { -100.0 } else { 10.0 * m2.log10() };
-                let clamped = db.clamp(-100.0, 0.0);
-                ((clamped + 100.0) / 100.0 * 255.0) as u8
-            }).collect();
+            let col: Vec<u8> = self
+                .mags
+                .iter()
+                .map(|&m2| {
+                    let db = if m2 <= 1e-12 {
+                        -100.0
+                    } else {
+                        10.0 * (m2 / self.ref_mag_sqr).log10()
+                    };
+                    let clamped = db.clamp(-100.0, 0.0);
+                    ((clamped + 100.0) / 100.0 * 255.0) as u8
+                })
+                .collect();
             self.spec_cols.push(col);
         }
         self.frames_total += 1;
     }
 
-    /// Detect the cutoff as the **highest sharp cliff into the noise floor** in the LTAS.
+    /// Detect the cutoff as the **highest sharp relative cliff** in the LTAS.
     ///
     /// A lossy lowpass (MP3/AAC, or an encoder brickwall) leaves a steep drop from real
-    /// content down to the digital noise floor, with silence above it. We scan from just
-    /// below Nyquist downward and return the highest frequency where the level drops by
-    /// `DROP_DB` across a ~500 Hz band AND the side above that drop sits at the noise floor.
-    /// If no such cliff exists, the energy tapers all the way up → genuine full-band → Nyquist.
+    /// content down to a much quieter residual. We scan from just below Nyquist downward
+    /// and return the highest frequency where the level drops by `DROP_DB` across a ~500 Hz
+    /// band. If no such cliff exists, the energy tapers all the way up → genuine full-band
+    /// → Nyquist.
     ///
-    /// This is robust to bass-heavy music: it keys off the *shape* (a cliff into silence),
-    /// not an absolute level relative to the (bass) spectral peak — which used to make quiet
-    /// but real treble look "absent" and under-report the cutoff.
+    /// This is robust to bass-heavy music: it keys off the *shape* (a relative cliff), not
+    /// an absolute level relative to the (bass) spectral peak — which used to make quiet but
+    /// real treble look "absent" and under-report the cutoff.
+    ///
+    /// Deliberately does NOT require the level above the cliff to collapse near the file's
+    /// absolute quietest bin (a prior version did — see BUG-2). A real encoder's residual
+    /// noise above its lowpass decays gradually over several kHz rather than dropping
+    /// straight to true digital silence, so that extra check silently missed real cliffs on
+    /// genuine files (measured: -37dB right after a real ~16kHz cliff, only reaching -95dB
+    /// ~4kHz later) — only a synthetic true-silence test signal ever satisfied it.
+    ///
+    /// A relative drop alone isn't enough either, though: a candidate is only accepted if
+    /// content never climbs back near the pre-drop level anywhere further up (persistence,
+    /// checked relative to `below`, not to an absolute floor). A genuine encoder lowpass
+    /// never recovers — its residual keeps decaying or holds low all the way to Nyquist. A
+    /// mid-spectrum notch (an EQ dip, a comb-filter null) does recover, which is exactly
+    /// what distinguishes "the real cutoff" from "a dip with real content on both sides".
     fn detect_cutoff(&self) -> f32 {
         if self.frames_total == 0 || self.bins < 8 {
             return 0.0;
@@ -109,7 +165,11 @@ impl SpectrumAccumulator {
             .iter()
             .map(|&s| {
                 let avg = s / self.frames_total as f64;
-                if avg <= 1e-12 { -120.0 } else { 10.0 * (avg as f32).log10() }
+                if avg <= 1e-12 {
+                    -120.0
+                } else {
+                    10.0 * (avg as f32).log10()
+                }
             })
             .collect();
 
@@ -121,18 +181,13 @@ impl SpectrumAccumulator {
             avg_db[lo..hi].iter().sum::<f32>() / (hi - lo) as f32
         };
 
-        // global noise floor = quietest smoothed level (the digital/quantisation floor)
-        let mut floor = f32::INFINITY;
-        for k in 1..self.bins {
-            let v = smooth(k);
-            if v < floor {
-                floor = v;
-            }
-        }
-
         let band = ((500.0 / hz_per_bin).ceil() as usize).max(2);
         const DROP_DB: f32 = 18.0; // a real cliff drops at least this much across the band
-        const FLOOR_TOL: f32 = 10.0; // the side above the cliff must collapse to ~the floor
+                                   // How close to `below` counts as "recovered" — real encoder residual sits tens of dB
+                                   // below the passband (measured: -37dB or lower vs. a ~0dB passband), so recovering to
+                                   // within half the required drop is a generous, unambiguous signal of real content
+                                   // resuming, not encoder noise jitter.
+        const RECOVERY_TOL: f32 = DROP_DB / 2.0;
 
         let guard = band + win + 1;
         if self.bins <= 2 * guard {
@@ -141,11 +196,17 @@ impl SpectrumAccumulator {
         for k in (guard..self.bins - guard).rev() {
             let above = (k + 1..=k + band).map(smooth).sum::<f32>() / band as f32;
             let below = (k - band..k).map(smooth).sum::<f32>() / band as f32;
-            if below - above >= DROP_DB && above <= floor + FLOOR_TOL {
+            if below - above < DROP_DB {
+                continue;
+            }
+            let recovers = (k + band + 1..self.bins)
+                .step_by(band.max(1))
+                .any(|j| smooth(j) >= below - RECOVERY_TOL);
+            if !recovers {
                 return k as f32 * hz_per_bin;
             }
         }
-        // no cliff into silence anywhere → content reaches the top → genuine full-band
+        // no cliff anywhere → content reaches the top → genuine full-band
         nyq_hz
     }
 
@@ -162,12 +223,18 @@ impl SpectrumAccumulator {
     /// bounded regardless of track length. Cutoff detection is unaffected — it runs on the
     /// full-resolution LTAS, not on these display columns.
     fn build_spectrogram(&self) -> Spectrogram {
-        const MAX_COLS: usize = 800;
-        const DISPLAY_BINS: usize = 256;
+        const MAX_COLS: usize = 1200;
+        const DISPLAY_BINS: usize = 384;
 
         let src_cols = self.spec_cols.len();
         if src_cols == 0 || self.bins == 0 {
-            return Spectrogram { frames: 0, bins: 0, hz_per_bin: 0.0, sec_per_frame: 0.0, mag_db: vec![] };
+            return Spectrogram {
+                frames: 0,
+                bins: 0,
+                hz_per_bin: 0.0,
+                sec_per_frame: 0.0,
+                mag_db: vec![],
+            };
         }
 
         let col_stride = src_cols.div_ceil(MAX_COLS).max(1);
@@ -184,9 +251,11 @@ impl SpectrumAccumulator {
         while ci < src_cols {
             let col = &self.spec_cols[ci];
             let mut pooled = vec![0u8; out_bins];
-            for b in 0..self.bins {
+            for (b, &v) in col.iter().enumerate().take(self.bins) {
                 let ob = b / bin_pool;
-                if col[b] > pooled[ob] { pooled[ob] = col[b]; }
+                if v > pooled[ob] {
+                    pooled[ob] = v;
+                }
             }
             out_cols.push(pooled);
             ci += col_stride;
@@ -194,8 +263,16 @@ impl SpectrumAccumulator {
 
         let frames = out_cols.len();
         let mut mag_db = Vec::with_capacity(frames * out_bins);
-        for col in &out_cols { mag_db.extend_from_slice(col); }
-        Spectrogram { frames, bins: out_bins, hz_per_bin, sec_per_frame, mag_db }
+        for col in &out_cols {
+            mag_db.extend_from_slice(col);
+        }
+        Spectrogram {
+            frames,
+            bins: out_bins,
+            hz_per_bin,
+            sec_per_frame,
+            mag_db,
+        }
     }
 }
 
@@ -231,8 +308,11 @@ mod tests {
         let mut a = SpectrumAccumulator::new(SR, 4096, true);
         a.push(&sig);
         let report = a.finish();
-        assert!(report.cutoff_hz > 5000.0 && report.cutoff_hz < 7500.0,
-            "cutoff {} should sit at the ~6 kHz hard edge", report.cutoff_hz);
+        assert!(
+            report.cutoff_hz > 5000.0 && report.cutoff_hz < 7500.0,
+            "cutoff {} should sit at the ~6 kHz hard edge",
+            report.cutoff_hz
+        );
         assert!(report.spectrogram.frames > 0);
         assert!(report.spectrogram.bins > 0);
     }
@@ -249,6 +329,126 @@ mod tests {
         let mut a = SpectrumAccumulator::new(SR, 4096, true);
         a.push(&sig);
         let report = a.finish();
-        assert!(report.cutoff_hz > 18000.0, "cutoff {} should be near Nyquist", report.cutoff_hz);
+        assert!(
+            report.cutoff_hz > 18000.0,
+            "cutoff {} should be near Nyquist",
+            report.cutoff_hz
+        );
+    }
+
+    /// Reproduces the exact LTAS shape measured on a real, honestly-labelled 320kbps MP3
+    /// with a genuine ~16kHz encoder cliff (BUG-2 field case: "Sven Dohse - All In.mp3").
+    /// A real lossy encoder's residual noise above its lowpass does NOT collapse to true
+    /// digital silence — it decays gradually over several kHz (measured: -2.7dB just before
+    /// the cliff, -37.3dB right after it, only reaching -95dB roughly 4kHz later). The
+    /// previous detector required the level right after the cliff to already sit within
+    /// 10dB of the file's absolute quietest bin, which this real, gradually-decaying shape
+    /// never satisfies — so it fell through and reported Nyquist (no cliff found) instead of
+    /// the obvious ~16kHz drop. The detector must catch the cliff by its RELATIVE drop alone.
+    #[test]
+    fn cutoff_detected_on_real_world_gradual_decay_shape() {
+        // (freq_hz, dB) control points measured directly from the real file's LTAS.
+        const POINTS: &[(f32, f32)] = &[
+            (10121.0, 2.7),
+            (10627.0, 3.6),
+            (11133.0, 1.2),
+            (11639.0, 1.0),
+            (12145.0, 0.8),
+            (12651.0, 0.4),
+            (13157.0, 0.2),
+            (13663.0, -0.6),
+            (14169.0, -1.4),
+            (14675.0, -1.6),
+            (15181.0, -2.1),
+            (15687.0, -2.7),
+            (16193.0, -37.3),
+            (16699.0, -57.7),
+            (17205.0, -66.4),
+            (17711.0, -71.4),
+            (18217.0, -74.3),
+            (18723.0, -78.7),
+            (19229.0, -72.1),
+            (19735.0, -83.0),
+            (20241.0, -94.4),
+            (20747.0, -76.3),
+            (21253.0, -93.3),
+            (21759.0, -92.4),
+        ];
+        fn interp_db(freq: f32) -> f32 {
+            if freq <= POINTS[0].0 {
+                return POINTS[0].1;
+            }
+            for w in POINTS.windows(2) {
+                let (f0, d0) = w[0];
+                let (f1, d1) = w[1];
+                if freq <= f1 {
+                    let t = (freq - f0) / (f1 - f0);
+                    return d0 + t * (d1 - d0);
+                }
+            }
+            POINTS.last().unwrap().1
+        }
+
+        let mut a = SpectrumAccumulator::new(SR, 4096, false);
+        let hz_per_bin = a.sr as f32 / a.fft_size as f32;
+        a.frames_total = 1;
+        for k in 0..a.bins {
+            let db = interp_db(k as f32 * hz_per_bin);
+            a.ltas[k] = 10f64.powf(db as f64 / 10.0);
+        }
+        let report = a.finish();
+        assert!(
+            report.cutoff_hz > 15500.0 && report.cutoff_hz < 17000.0,
+            "cutoff {} should sit at the ~16.2kHz cliff despite gradual residual decay above it \
+             (a real encoder never collapses to true digital silence within one averaging band)",
+            report.cutoff_hz
+        );
+    }
+
+    /// A genuine full-band lossless master with a mid-spectrum notch (a mastering EQ dip, a
+    /// comb-filter null, a de-esser working across a wide band) must NOT be reported as
+    /// having a cutoff at the notch — real content resumes above it, unlike a genuine
+    /// encoder lowpass where nothing meaningful ever returns. A relative-drop-only check
+    /// (no persistence requirement) latches onto the notch's lower edge instead: flat 0dB,
+    /// dip to -25dB across ~18.0-18.5kHz, recovered to 0dB from 19kHz to Nyquist.
+    #[test]
+    fn full_band_content_with_a_mid_spectrum_notch_is_not_a_cutoff() {
+        const POINTS: &[(f32, f32)] = &[
+            (0.0, 0.0),
+            (17500.0, 0.0),
+            (18000.0, -25.0),
+            (18500.0, -25.0),
+            (19000.0, 0.0),
+            (22050.0, 0.0),
+        ];
+        fn interp_db(freq: f32) -> f32 {
+            if freq <= POINTS[0].0 {
+                return POINTS[0].1;
+            }
+            for w in POINTS.windows(2) {
+                let (f0, d0) = w[0];
+                let (f1, d1) = w[1];
+                if freq <= f1 {
+                    let t = (freq - f0) / (f1 - f0);
+                    return d0 + t * (d1 - d0);
+                }
+            }
+            POINTS.last().unwrap().1
+        }
+
+        let mut a = SpectrumAccumulator::new(SR, 4096, false);
+        let hz_per_bin = a.sr as f32 / a.fft_size as f32;
+        a.frames_total = 1;
+        for k in 0..a.bins {
+            let db = interp_db(k as f32 * hz_per_bin);
+            a.ltas[k] = 10f64.powf(db as f64 / 10.0);
+        }
+        let report = a.finish();
+        assert!(
+            report.cutoff_hz > 20000.0,
+            "cutoff {} should report near Nyquist (genuine full-band content resumes above \
+             the notch) instead of latching onto the notch's lower edge as a false cutoff",
+            report.cutoff_hz
+        );
     }
 }

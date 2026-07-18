@@ -1,490 +1,422 @@
 // Live data wiring — ACTIVE ONLY inside the Tauri app. In a plain browser the hooks
 // below are never installed, so app.js keeps its mockup (Vercel demo unaffected).
 import {
-  addSource,
-  listSources,
   removeSource,
-  listQueue,
+  onFileDone,
+  onFileProgress,
   onQueueChanged,
   onAnalysisChanged,
   analysisProgress,
   setSourceWatched,
-  importPaths,
-  listEcartes,
+  setSourceColor,
   trashTrack,
   restoreTrack,
+  requeueTrack,
   purgeTrash,
   openUrl,
+  scanLibraryDuplicates,
+  exportRekordboxXml,
+  linkRekordboxXml,
+  rekordboxStatus,
 } from "./ipc";
-import type { EcarteItem } from "../shared/contracts";
-import { open } from "@tauri-apps/plugin-dialog";
-import { getCurrentWebview } from "@tauri-apps/api/webview";
-import { getCurrentWindow } from "@tauri-apps/api/window";
+import { installUndoShortcut, installFilingKeys } from "./filing";
+import { refreshBinsForBatch } from "./filing-bins";
+import { confirmAction } from "./confirm-modal";
+// Views/chrome extracted from this god-module (audit P-3) — kept stateless, wired here.
+import { renderEcartes } from "./ecartes-view";
+import { renderHomeSources, pickAndAddFolder, dismissRootGate } from "./home-sources";
+import { installDragDrop, injectLeanStyle, injectTitlebar, installScrollAutohide, installNavKeyboard } from "./chrome";
+import { initTheme } from "./theme";
+import { renderReglagesLive } from "./reglages-view";
+import { requireEl, toast } from "./dom";
+import type { LibrarySortState } from "./library-views";
 import {
-  openFilingInto,
-  refreshBins,
-  syncDetail,
-  installUndoShortcut,
-  installFilingKeys,
-} from "./filing";
-import type { Source, QueueItem } from "../shared/contracts";
+  bibState,
+  bibDup,
+  renderBiblioLive,
+  openBiblioDetail,
+  positionFacetThumb,
+  positionViewModeThumb,
+} from "./bibliotheque-view";
+import { renderRekordboxLive, handleRekordboxAction } from "./rekordbox-view";
+import {
+  currentItems,
+  setReviewModeRaw,
+  enterDetailMode,
+  ensureReviewSeg,
+  registerBatchRenderer,
+  renderQueue,
+  updateRevueBadge,
+  handleQueueItemClick,
+  installQueueNavKeys,
+} from "./queue-panel";
+import {
+  renderBatch,
+  batchGroupCap,
+  BATCH_GROUP_PAGE,
+  batchBin,
+  batchInPlace,
+  onBatchBinPick,
+  handleBatchAction,
+  pushFileProgress,
+  onFileStop,
+  onFileBatchDone,
+  registerRefreshHook,
+  onBatchInPlaceChange,
+} from "./batch-panel";
+import { renderJournal } from "./journal";
+import { open as openFolderDialog } from "@tauri-apps/plugin-dialog";
+import { dirname } from "@tauri-apps/api/path";
+import { setTask, clearTask, setCancelHandler } from "./progress-zone";
 
-// Latest live queue items, kept so a queue-row click can recover the full item (id +
-// verdict) the filing pane needs.
-let currentItems: QueueItem[] = [];
-
-const VERDICT_DOT: Record<string, [string, string]> = {
-  ok: ["#5cc97a", "authentique"],
-  fake: ["#ff6b6b", "fake / sur-encodé"],
-  grey: ["#f0c060", "zone grise"],
-};
-function verdictDot(v: string | null): string {
-  if (v && VERDICT_DOT[v]) {
-    const [c, title] = VERDICT_DOT[v];
-    return `<span title="${title}" style="flex:none;width:9px;height:9px;border-radius:50%;background:${c}"></span>`;
-  }
-  // not analysed yet
-  return `<span title="en attente d'analyse" style="flex:none;width:9px;height:9px;border-radius:50%;border:1.5px solid var(--color-text-tertiary);box-sizing:border-box"></span>`;
-}
-
-const esc = (s: string) =>
-  s.replace(/[&<>"']/g, (c) =>
-    c === "&" ? "&amp;" : c === "<" ? "&lt;" : c === ">" ? "&gt;" : c === '"' ? "&quot;" : "&#39;",
-  );
-
-/** Replaces app.js's mockup "Dossiers surveillés" block with real sources + warning. */
-async function renderHomeSources() {
-  const content = document.getElementById("content");
-  if (!content) return;
-  let sources: Source[] = [];
-  try {
-    sources = await listSources();
-  } catch (e) {
-    console.error("listSources failed", e);
-    return;
-  }
-
-  document.getElementById("sift-sources")?.remove();
-
-  const rows = sources
-    .map((s) => {
-      const warn = s.accessible
-        ? ""
-        : ' <span style="color:var(--color-text-danger);font-size:11px">⚠ inaccessible</span>';
-      const watch = `<span class="tog${s.watched ? "" : " off"}" data-sift="togglewatch" data-id="${
-        s.id
-      }" data-watched="${s.watched ? "1" : "0"}" title="${
-        s.watched ? "Surveillance active — cliquer pour suspendre" : "Surveillance suspendue — cliquer pour activer"
-      }"></span>`;
-      const count = s.pending_count
-        ? `${s.pending_count} nouveau${s.pending_count > 1 ? "x" : ""}`
-        : "à jour";
-      const countColor = s.pending_count ? "var(--color-text-info)" : "var(--color-text-tertiary)";
-      return `<div class="srow"><span class="v"><i class="ti ti-folder"></i> ${esc(
-        s.path,
-      )}${warn}</span><span style="display:flex;align-items:center;gap:9px"><span style="font-size:11px;color:${countColor}">${count}</span>${watch}<button data-sift="rmsrc" data-id="${s.id}" style="font-size:11px;padding:2px 7px;color:var(--color-text-danger)">retirer</button></span></div>`;
-    })
-    .join("");
-
-  const panel = document.createElement("div");
-  panel.id = "sift-sources";
-  panel.innerHTML =
-    '<div class="col-h" style="margin-top:12px">Dossiers surveillés</div>' +
-    '<div style="display:flex;gap:8px;align-items:flex-start;background:var(--color-background-warning);border-radius:var(--border-radius-md);padding:8px 11px;margin:0 0 8px;font-size:11px;color:var(--color-text-warning)"><i class="ti ti-info-circle" style="font-size:14px;flex:none"></i><span>Pointe Sift sur ton dossier <strong>Completed</strong> (pas <em>Incomplete</em>) — les fichiers en cours de téléchargement ne doivent pas entrer dans la file.</span></div>' +
-    (rows || '<div style="font-size:12px;color:var(--color-text-tertiary)">Aucun dossier surveillé.</div>') +
-    '<div style="margin:8px 0 0"><button data-sift="addsrc"><i class="ti ti-plus" style="font-size:13px;vertical-align:-2px"></i> ajouter un dossier</button></div>';
-
-  // Hide the WHOLE mockup "Dossiers surveillés" block (its hardcoded counts never change):
-  // the .col-h header + every following sibling up to the next .col-h. Insert the real
-  // panel in its place.
-  const left = content.querySelector(".home-left");
-  if (!left) return;
-  // Lean Tauri UI: keep only the page title + the real sources panel; hide all the mock
-  // home content (fictional stat cards, pending banner, per-folder breakdown).
-  let title: Element | null = null;
-  for (const child of Array.from(left.children)) {
-    if (!title && child.classList.contains("h1")) {
-      title = child;
-      continue;
-    }
-    (child as HTMLElement).style.display = "none";
-  }
-  left.insertBefore(panel, title ? title.nextSibling : left.firstChild);
-}
-
-/** Replaces the mockup queue list with real pending items (Revue screen). */
-async function renderQueue() {
-  const ql = document.getElementById("ql");
-  if (!ql) return;
-  let items: QueueItem[] = [];
-  try {
-    items = await listQueue();
-  } catch (e) {
-    console.error("listQueue failed", e);
-    return;
-  }
-  currentItems = items;
-  let progressHtml = "";
+// Global progress zone — feed the "analyze" row from the EXISTING analysis poll/events (no engine
+// rewrite). `analysis_progress` returns (done, total) over PENDING tracks; a track stays pending
+// after it's analysed (until filed), so done==total is the RESTING state, not "busy". So we show
+// the row only while done<total (actively analysing), then flash a brief 100% "done" before hiding.
+let analyzeWasRunning = false;
+let analyzeClearTimer: ReturnType<typeof setTimeout> | undefined;
+async function pushAnalyzeProgress() {
   try {
     const p = await analysisProgress();
-    if (p.total > 0) {
-      const pct = Math.round((p.done / p.total) * 100);
-      const label =
-        p.done >= p.total
-          ? `${p.total} analysé${p.total > 1 ? "s" : ""}`
-          : `${p.done} / ${p.total} analysés`;
-      progressHtml = `<div style="margin:0 0 8px"><div style="display:flex;justify-content:space-between;font-size:11px;color:var(--color-text-tertiary);margin-bottom:3px"><span>Analyse en fond</span><span>${label}</span></div><div style="height:4px;border-radius:2px;background:rgba(237,233,224,.12);overflow:hidden"><div style="height:100%;width:${pct}%;background:var(--color-text-info,#8ecce8);transition:width .3s"></div></div></div>`;
+    if (p.total > 0 && p.done < p.total) {
+      clearTimeout(analyzeClearTimer);
+      analyzeWasRunning = true;
+      setTask("analyze", { done: p.done, total: p.total, state: "running" });
+    } else if (analyzeWasRunning) {
+      // Reached done==total (or the queue drained): flash 100% then auto-hide the row.
+      analyzeWasRunning = false;
+      setTask("analyze", { done: p.total, total: p.total, state: "done" });
+      clearTimeout(analyzeClearTimer);
+      analyzeClearTimer = setTimeout(() => clearTask("analyze"), 1200);
+    } else {
+      clearTask("analyze");
     }
   } catch (e) {
     console.error("analysisProgress failed", e);
   }
-
-  ql.innerHTML =
-    progressHtml +
-    (items
-      .map(
-        (it) =>
-          `<div class="qi" data-id="${it.id}" data-path="${esc(it.path)}" title="Écouter et ranger" style="display:flex;align-items:center;gap:8px;cursor:pointer">${verdictDot(
-            it.verdict,
-          )}<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis">${esc(
-            it.filename || it.path,
-          )}</span>${
-            it.dup
-              ? '<i class="ti ti-copy" title="Doublon possible (même nom)" style="flex:none;font-size:12px;color:var(--color-text-secondary)"></i>'
-              : ""
-          }<i class="ti ti-chevron-right" style="flex:none;color:var(--color-text-tertiary);font-size:14px"></i></div>`,
-      )
-      .join("") ||
-      '<div style="font-size:12px;color:var(--color-text-tertiary);padding:6px 4px">File vide.</div>');
-
-  // Live destination bins + neutral detail prompt (replace the mockup's hardcoded ones).
-  const fldz = document.getElementById("fldz");
-  if (fldz) void refreshBins(fldz);
-  const mid = document.getElementById("mid");
-  if (mid) {
-    // auto-load the current/first pending track into the main pane + highlight its row
-    const curId = syncDetail(mid, items);
-    document.querySelectorAll(".qi.cur").forEach((n) => n.classList.remove("cur"));
-    if (curId != null) {
-      document.querySelector(`.qi[data-id="${curId}"]`)?.classList.add("cur");
-    }
-  }
 }
 
-/** Reason pill for an écarté track (truncated → tronqué, fake → faux, else à re-sourcer). */
-function ecReason(it: EcarteItem): string {
-  if (it.truncated)
-    return '<span class="pill" style="background:var(--color-background-warning);color:var(--color-text-warning);flex:none"><i class="ti ti-cut" style="font-size:9px"></i> tronqué</span>';
-  if (it.verdict === "fake")
-    return '<span class="pill" style="background:var(--color-background-danger);color:var(--color-text-danger);flex:none"><i class="ti ti-alert-triangle" style="font-size:9px"></i> faux</span>';
-  return '<span class="pill" style="background:var(--color-background-danger);color:var(--color-text-danger);flex:none"><i class="ti ti-alert-circle" style="font-size:9px"></i> à re-sourcer</span>';
-}
+/** Guards a single in-flight export (Rekordbox only — USB has no backend, out of M7 scope). */
+let exportRunning = false;
 
-/** The "Artiste Titre" string to paste into Soulseek (single space; no dash). */
-function ecSlsk(it: EcarteItem): string {
-  if (it.artist && it.title) return `${it.artist} ${it.title}`;
-  return (it.filename || it.path).replace(/\.[^.]+$/, "");
-}
-
-// Buy-link stores: a search URL built from the track's query (q is already encoded).
-const EC_STORES: [string, (q: string) => string][] = [
-  ["Beatport", (q) => `https://www.beatport.com/search?q=${q}`],
-  ["Traxsource", (q) => `https://www.traxsource.com/search?term=${q}`],
-  ["Juno", (q) => `https://www.junodownload.com/search/?q%5Ball%5D%5B%5D=${q}`],
-  ["Bandcamp", (q) => `https://bandcamp.com/search?q=${q}`],
-  ["Amazon", (q) => `https://www.amazon.fr/s?k=${q}&i=digital-music`],
-  ["Apple Music", (q) => `https://music.apple.com/fr/search?term=${q}`],
-];
-
-/** Buy-link row for a track: store names that open a search in the default browser. */
-function ecStoreLinks(it: EcarteItem): string {
-  const q = encodeURIComponent(ecSlsk(it));
-  return EC_STORES.map(
-    ([label, fn]) =>
-      `<a data-ec="store" data-url="${encodeURIComponent(fn(q))}" style="font-size:10px;color:var(--color-text-info);cursor:pointer;text-decoration:none;white-space:nowrap">${label}</a>`,
-  ).join('<span style="color:var(--color-border-secondary);margin:0 3px">·</span>');
-}
-
-/** Live Écartés view: replaces #content with the real rejected (à re-sourcer) + trashed
- * tracks. Soulseek copy + send-to-bin / restore / empty-bin wired via the #pa handler. */
-async function renderEcartes() {
-  const content = document.getElementById("content");
-  if (!content) return;
-  let items: EcarteItem[] = [];
-  try {
-    items = await listEcartes();
-  } catch (e) {
-    console.error("listEcartes failed", e);
+/** Rekordbox export (real merge+rewrite via `export_rekordbox_xml`, called from the Rekordbox
+ * page's "Réexporter maintenant" button — see renderRekordboxLive) and the "Clé USB" nav click
+ * (still a one-click toast, index.html's `.nv-export`/`data-view="cle"` — its own brainstorm is
+ * pending). USB formatting DOES have a backend (`ipc_usb.rs`/`usb_format/`) and even a UI (the
+ * "Formater une clé USB" card in Réglages, below) — this toast is unrelated to that, just an
+ * explainer for why the nav item itself doesn't do anything yet. */
+async function runNavExport(target: "rekordbox" | "usb"): Promise<void> {
+  if (target === "usb") {
+    toast("Export clé USB : Rekordbox recopie lui-même une fois le XML réimporté");
     return;
   }
-  const res = items.filter((i) => i.status === "resourcing");
-  const trash = items.filter((i) => i.status === "trash");
-  const name = (it: EcarteItem) =>
-    esc(it.artist && it.title ? `${it.artist} — ${it.title}` : it.filename || it.path);
-  const fileLine = (it: EcarteItem) =>
-    `<div style="font-size:10px;color:var(--color-text-tertiary);font-family:var(--font-mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(
-      it.filename || it.path,
-    )}</div>`;
-
-  const resRows = res
-    .map(
-      (it) =>
-        `<div style="padding:7px 4px;border-bottom:0.5px solid var(--color-border-tertiary)"><div style="display:flex;align-items:center;gap:7px"><div style="flex:1;min-width:0"><div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px;font-weight:500">${name(
-          it,
-        )}</div>${fileLine(it)}</div>${ecReason(
-          it,
-        )}<button class="lk" data-ec="trash" data-id="${it.id}" title="Envoyer à la corbeille"><i class="ti ti-trash" style="font-size:12px;color:var(--color-text-tertiary)"></i></button></div><div style="margin-top:5px;display:flex;flex-wrap:wrap;align-items:center;gap:4px"><button data-ec="slsk" data-q="${esc(
-          ecSlsk(it),
-        )}" title="Copier « Artiste Titre » pour rechercher sur Soulseek" style="font-size:10px;padding:2px 7px;color:var(--color-text-secondary)"><i class="ti ti-copy" style="font-size:10px;vertical-align:-1px"></i> Copier le nom</button><span style="color:var(--color-border-secondary)">·</span>${ecStoreLinks(
-          it,
-        )}</div></div>`,
-    )
-    .join("");
-
-  const trashRows = trash
-    .map(
-      (it) =>
-        `<div style="display:flex;align-items:center;gap:7px;padding:7px 4px;border-bottom:0.5px solid var(--color-border-tertiary)"><div style="flex:1;min-width:0"><div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:12px">${name(
-          it,
-        )}</div>${fileLine(it)}</div><button data-ec="restore" data-id="${it.id}" style="font-size:10px;padding:2px 8px;color:var(--color-text-info)">restaurer</button></div>`,
-    )
-    .join("");
-
-  content.innerHTML =
-    '<div class="h1">Écartés</div>' +
-    '<div style="display:flex;gap:7px;margin-bottom:12px;flex-wrap:wrap;align-items:center">' +
-    `<span class="pill" style="background:var(--color-background-danger);color:var(--color-text-danger)"><i class="ti ti-alert-circle" style="font-size:10px"></i> ${res.length} à re-sourcer</span>` +
-    `<span class="pill"><i class="ti ti-trash" style="font-size:10px"></i> ${trash.length} en corbeille</span>` +
-    (trash.length
-      ? `<button data-ec="purge" style="font-size:10px;padding:2px 8px;color:var(--color-text-danger)">Vider la corbeille (${trash.length})</button>`
-      : "") +
-    "</div>" +
-    (res.length ? `<div class="col-h">À re-sourcer</div>${resRows}` : "") +
-    (trash.length ? `<div class="col-h" style="margin-top:14px">Corbeille</div>${trashRows}` : "") +
-    (items.length === 0
-      ? '<div style="font-size:12px;color:var(--color-text-tertiary)">Aucun fichier écarté.</div>'
-      : "");
+  if (exportRunning) return; // one export run at a time
+  exportRunning = true;
+  setTask("export", { done: 0, total: 1, state: "running" });
+  try {
+    const status = await exportRekordboxXml();
+    setTask("export", { done: 1, total: 1, state: "done" });
+    setTimeout(() => clearTask("export"), 1200);
+    toast(
+      `${status.track_count} pistes dans ${status.playlist_count} playlists Rekordbox — réimporte le XML dans Rekordbox pour resynchroniser.`,
+    );
+  } catch (e) {
+    console.error("export_rekordbox_xml failed", e);
+    setTask("export", { done: 0, total: 1, state: "error" });
+    const msg = e instanceof Error ? e.message : String(e);
+    toast(
+      msg.includes("aucun XML")
+        ? "Aucun XML Rekordbox lié — relie un fichier depuis la Bibliothèque"
+        : `Export Rekordbox échoué : ${msg}`,
+    );
+  } finally {
+    exportRunning = false;
+  }
 }
 
-async function pickAndAddFolder() {
-  const dir = await open({ directory: true, multiple: false });
-  if (typeof dir === "string") {
-    try {
-      await addSource(dir);
-      await refresh();
-    } catch (e) {
-      console.error("addSource failed", e);
-    }
+/** Switch between detail and batch review. On entering batch the #fldz tree becomes the destination
+ * explorer (batch pick mode); on leaving we restore the per-track filing pane. Its "detail" branch
+ * lives in queue-panel.ts as enterDetailMode() (queue-owned code only) — this function keeps the
+ * "batch" branch, which touches batch-owned state (batchGroupCap, renderBatch) that queue-panel.ts
+ * must never import (see the tranche 1b plan's Architecture section: a static import cycle would
+ * otherwise result). batchGroupCap/BATCH_GROUP_PAGE/renderBatch/batchBin/onBatchBinPick now come
+ * from batch-panel.ts (Phase 1, tranche 1c) instead of being local references. */
+function setReviewMode(m: "detail" | "batch") {
+  if (m === "batch") {
+    setReviewModeRaw("batch");
+    ensureReviewSeg();
+    const fldz = requireEl("#fldz", "setReviewMode");
+    // Fresh entry into batch mode starts each group at one page (Task 3b) — a prior session's
+    // expanded caps shouldn't silently carry over and re-mount thousands of rows on re-entry.
+    batchGroupCap.file = BATCH_GROUP_PAGE;
+    batchGroupCap.fake = BATCH_GROUP_PAGE;
+    batchGroupCap.readonly = BATCH_GROUP_PAGE;
+    renderBatch();
+    // Drive the #fldz tree in batch pick mode (loads bins, clicks set batchBin via onBatchBinPick).
+    void refreshBinsForBatch(fldz, batchBin, onBatchBinPick, batchInPlace);
+  } else {
+    enterDetailMode();
   }
 }
 
 async function refresh() {
   await renderHomeSources();
   await renderQueue();
-}
-
-// One-time style: while dragging, an existing zone gets an outline + an overlaid hint
-// (::after with the zone's data-dz text). No permanent dashed box — the hint shows only
-// during a drag, on the real folder/queue boxes, saving space.
-function ensureDropStyle() {
-  if (document.getElementById("sift-dz-style")) return;
-  const s = document.createElement("style");
-  s.id = "sift-dz-style";
-  s.textContent =
-    ".sift-dz-on{position:relative;outline:1.5px dashed var(--color-text-info);outline-offset:-4px;border-radius:var(--border-radius-md)}" +
-    ".sift-dz-on::after{content:attr(data-dz);position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:10px;font-size:11px;color:var(--color-text-info);background:rgba(20,20,24,.55);border-radius:var(--border-radius-md);pointer-events:none;z-index:50}";
-  document.head.appendChild(s);
-}
-
-// Existing boxes that double as drop targets, with the hint each shows while dragging.
-// ".dest" is the WHOLE "Où on va" column (header + #fldz) so a folder dropped anywhere in
-// that column registers as a destination — not just on the inner bin list.
-const DROP_ZONES: [string, string][] = [
-  [".dest", "Déposer un dossier ici — nouvelle destination"],
-  ["#ql", "Déposer des fichiers audio ici"],
-  ["#sift-sources", "Déposer un dossier à surveiller"],
-];
-
-/** Toggle the drag hint/outline on the relevant existing boxes. Falls back to #content
- * (e.g. Bibliothèque) when none of the named zones are on screen. */
-function setDropActive(on: boolean) {
-  ensureDropStyle();
-  document.querySelectorAll<HTMLElement>(".sift-dz-on").forEach((el) => {
-    el.classList.remove("sift-dz-on");
-    el.removeAttribute("data-dz");
-  });
-  if (!on) return;
-  const present = DROP_ZONES.filter(([sel]) => document.querySelector(sel));
-  const targets: [string, string][] = present.length
-    ? present
-    : [["#content", "Déposer des fichiers (→ file) ou dossiers (→ surveillés)"]];
-  for (const [sel, label] of targets) {
-    const el = document.querySelector<HTMLElement>(sel);
-    if (el) {
-      el.classList.add("sift-dz-on");
-      el.dataset.dz = label;
-    }
-  }
-}
-
-/** "dest" when the cursor is over the bins column (#fldz), else "source". Tauri 2 emits the
- * drop position already in logical (CSS) pixels — exactly what elementFromPoint expects, so
- * no devicePixelRatio correction (dividing here double-corrected on HiDPI/scaled displays). */
-function dropModeAt(pos: { x: number; y: number }): "source" | "dest" {
-  const el = document.elementFromPoint(pos.x, pos.y);
-  return el && el.closest(".dest") ? "dest" : "source";
-}
-
-/** OS drag-drop: audio files → queue; folders → watched source, or a destination bin when
- * dropped on the "Où on va" column. */
-async function installDragDrop() {
-  try {
-    await getCurrentWebview().onDragDropEvent((ev) => {
-      const p = ev.payload;
-      if (p.type === "drop") {
-        setDropActive(false);
-        if (p.paths.length)
-          void importPaths(p.paths, dropModeAt(p.position)).catch((e) =>
-            console.error("import_paths failed", e),
-          );
-      } else if (p.type === "enter" || p.type === "over") {
-        setDropActive(true);
-      } else {
-        setDropActive(false);
-      }
-    });
-  } catch (e) {
-    console.error("drag-drop init failed", e);
-  }
-}
-
-/** Lean Tauri UI: hide the mockup's not-yet-real surfaces (nav tabs + Revue toggles) so the
- * app shows only what actually works — Accueil (sources) and Revue (queue/report/filing).
- * Injected once; the demo (plain browser) never runs this, so its full mockup is untouched. */
-function injectLeanStyle() {
-  if (document.getElementById("sift-lean-style")) return;
-  const st = document.createElement("style");
-  st.id = "sift-lean-style";
-  st.textContent =
-    // landing/demo copy in index.html: marketing pitch, demo disclaimer, feature cards row
-    ".pitch,.sub,.frow{display:none!important}" +
-    // unbuilt nav tabs (Biblio, Rekordbox, Clé USB, Réglages) — Écartés is live now
-    '#nav .nv[data-view="biblio"],#nav .nv[data-view="rkb"],#nav .nv[data-view="cle"],' +
-    '#nav .nv[data-view="reglages"]{display:none!important}' +
-    // Revue: batch mode + "traités" toggle aren't wired to the real backend yet
-    '[data-act="revmode"],[data-act="togglequeue"]{display:none!important}' +
-    // custom frameless titlebar (decorations are off in tauri.conf — Tauri only)
-    "#sift-titlebar{height:30px;flex:none;display:flex;align-items:center;justify-content:space-between;" +
-    "background:var(--color-background-tertiary);-webkit-user-select:none;user-select:none}" +
-    "#sift-tb-title{padding-left:13px;font-size:11px;letter-spacing:.04em;color:var(--color-text-tertiary)}" +
-    "#sift-tb-controls{display:flex;height:100%}" +
-    ".sift-win{width:44px;height:100%;display:flex;align-items:center;justify-content:center;border:none;" +
-    "background:transparent;color:var(--color-text-tertiary);cursor:pointer;border-radius:0;padding:0}" +
-    ".sift-win:hover{background:var(--color-background-secondary);color:var(--color-text-primary)}" +
-    ".sift-win-close:hover{background:#e81123;color:#fff}.sift-win i{font-size:15px}" +
-    // make room for the 30px bar: shrink the app shell so nothing is clipped
-    ".wrap{height:calc(100vh - 30px)!important}";
-  document.head.appendChild(st);
-}
-
-/** Inject the custom window titlebar (the native one is off via decorations:false) and wire
- * its minimise / maximise / close buttons. The bar + its title are drag regions. */
-function injectTitlebar() {
-  if (document.getElementById("sift-titlebar")) return;
-  const bar = document.createElement("div");
-  bar.id = "sift-titlebar";
-  bar.setAttribute("data-tauri-drag-region", "");
-  bar.innerHTML =
-    '<span id="sift-tb-title" data-tauri-drag-region>Sift</span>' +
-    '<div id="sift-tb-controls">' +
-    '<button class="sift-win" data-win="min" title="Réduire"><i class="ti ti-minus"></i></button>' +
-    '<button class="sift-win" data-win="max" title="Agrandir"><i class="ti ti-square"></i></button>' +
-    '<button class="sift-win sift-win-close" data-win="close" title="Fermer"><i class="ti ti-x"></i></button>' +
-    "</div>";
-  document.body.insertBefore(bar, document.body.firstChild);
-
-  const w = getCurrentWindow();
-  bar.querySelectorAll<HTMLElement>(".sift-win").forEach((b) =>
-    b.addEventListener("click", () => {
-      const act = b.dataset.win;
-      if (act === "min") void w.minimize();
-      else if (act === "max") void w.toggleMaximize();
-      else if (act === "close") void w.close();
-    }),
-  );
-}
-
-/** Reveal a scroll area's thumb while it scrolls, then hide it ~700ms after it stops (the
- * CSS keeps it hidden at rest). Capture-phase so it catches scrolling on any inner element. */
-function installScrollAutohide() {
-  const timers = new WeakMap<Element, ReturnType<typeof setTimeout>>();
-  document.addEventListener(
-    "scroll",
-    (e) => {
-      const el = e.target;
-      if (!(el instanceof Element)) return;
-      el.classList.add("sift-scrolling");
-      const prev = timers.get(el);
-      if (prev) clearTimeout(prev);
-      timers.set(
-        el,
-        setTimeout(() => el.classList.remove("sift-scrolling"), 700),
-      );
-    },
-    true,
-  );
+  updateRevueBadge(currentItems.length);
 }
 
 export function installLiveWiring() {
+  registerBatchRenderer(renderBatch);
+  registerRefreshHook(refresh);
   window.__siftHome = renderHomeSources;
   window.__siftQueue = renderQueue;
   window.__siftEcarts = renderEcartes;
+  window.__siftReglages = () => void renderReglagesLive();
+  window.__siftBiblio = () => void renderBiblioLive();
+  window.__siftJournal = () => void renderJournal();
+  window.__siftRkb = () => void renderRekordboxLive();
   injectLeanStyle();
-  injectTitlebar();
+  void injectTitlebar();
+  void initTheme();
   installUndoShortcut();
   installFilingKeys();
+  installQueueNavKeys();
   installScrollAutohide();
+  installNavKeyboard();
   void installDragDrop();
 
-  document.getElementById("pa")?.addEventListener("click", (e) => {
+  // Nav "Clé USB" is still a one-click action, not a real screen (Clé USB's own brainstorm is
+  // pending — see docs/ressources-externes.md) — capture phase so this runs BEFORE app.js's own
+  // bubble-phase `#pa` listener (registered first, at import time) can switch `view` to the mock
+  // screen. stopPropagation() during capture halts the whole path, including that bubble-phase
+  // listener. "Rekordbox" is a real page now (renderRekordboxLive, window.__siftRkb above) — its
+  // click is left alone so it reaches app.js's router and navigates normally.
+  requireEl("#pa", "installLiveWiring").addEventListener(
+    "click",
+    (e) => {
+      const exp = (e.target as HTMLElement).closest<HTMLElement>('[data-view="cle"]');
+      if (!exp) return;
+      e.stopPropagation();
+      void runNavExport("usb");
+    },
+    { capture: true },
+  );
+
+  requireEl("#pa", "installLiveWiring").addEventListener("click", (e) => {
     // queue item → open the live filing pane (report + editor + actions) in #mid
     const qi = (e.target as HTMLElement).closest<HTMLElement>(".qi[data-id]");
     if (qi?.dataset.id) {
-      e.stopPropagation();
-      const id = Number(qi.dataset.id);
-      const item = currentItems.find((it) => it.id === id);
-      const mid = document.getElementById("mid");
-      // highlight the active row
-      document.querySelectorAll(".qi.cur").forEach((n) => n.classList.remove("cur"));
-      qi.classList.add("cur");
-      if (item && mid) void openFilingInto(mid, item);
-      else if (qi.dataset.path)
-        void import("./report-view").then((m) => m.openReportModal(qi.dataset.path!));
+      handleQueueItemClick(qi, e);
       return;
     }
-    // Écartés actions (Soulseek copy / send-to-bin / restore / empty bin)
+    // Écartés actions (copy query / send-to-bin / restore / empty bin)
     const ec = (e.target as HTMLElement).closest<HTMLElement>("[data-ec]");
     if (ec) {
       e.stopPropagation();
       const act = ec.dataset.ec;
       const id = Number(ec.dataset.id);
-      if (act === "slsk") {
+      if (act === "copy-query") {
         void navigator.clipboard.writeText(ec.dataset.q || "").catch(() => {});
         const prev = ec.innerHTML;
-        ec.innerHTML = '<i class="ti ti-check" style="font-size:10px;vertical-align:-1px"></i> Copié';
+        ec.innerHTML = '<i class="ti ti-check" style="font-size:var(--text-xs);vertical-align:-1px"></i> Copié';
         setTimeout(() => {
           ec.innerHTML = prev;
         }, 1200);
       } else if (act === "trash") {
-        void trashTrack(id).then(renderEcartes).catch((err) => console.error("trash failed", err));
+        void trashTrack(id)
+          .then(renderEcartes)
+          .catch((err) => {
+            console.error("trash failed", err);
+            toast("Échec : impossible d'envoyer à la corbeille");
+          });
       } else if (act === "restore") {
-        void restoreTrack(id).then(renderEcartes).catch((err) => console.error("restore failed", err));
+        void restoreTrack(id)
+          .then(renderEcartes)
+          .catch((err) => {
+            console.error("restore failed", err);
+            toast("Échec : restauration impossible");
+          });
+      } else if (act === "requeue") {
+        void requeueTrack(id)
+          .then(renderEcartes)
+          .catch((err) => {
+            console.error("requeue failed", err);
+            toast("Échec : remise en file impossible");
+          });
       } else if (act === "purge") {
-        void purgeTrash().then(renderEcartes).catch((err) => console.error("purge failed", err));
+        void confirmAction(
+          "Purger définitivement la corbeille ? Cette action est irréversible.",
+          "Purger",
+        ).then((ok) => {
+          if (!ok) return;
+          void purgeTrash()
+            .then(renderEcartes)
+            .catch((err) => {
+              console.error("purge failed", err);
+              toast("Échec : purge de la corbeille impossible");
+            });
+        });
       } else if (act === "store") {
         void openUrl(decodeURIComponent(ec.dataset.url || "")).catch((err) =>
           console.error("open_url failed", err),
         );
+      }
+      return;
+    }
+    // Bibliothèque actions (quality chips / facet toggle / folder|genre pick / Discogs link / play)
+    const bibEl = (e.target as HTMLElement).closest<HTMLElement>("[data-bib]");
+    if (bibEl) {
+      const act = bibEl.dataset.bib;
+      if (act === "stat") {
+        const stat = bibEl.dataset.stat;
+        if (stat === "all") {
+          bibState.filter.quality = undefined;
+          bibState.filter.verdict = undefined;
+        } else if (stat === "lossless" || stat === "mp3") {
+          bibState.filter.quality = stat;
+          bibState.filter.verdict = undefined;
+        } else if (stat === "duplicates") {
+          bibDup.shown = !bibDup.shown;
+          if (bibDup.shown && bibDup.groups === null) {
+            bibDup.loading = true;
+            void renderBiblioLive();
+            void scanLibraryDuplicates()
+              .then((groups) => {
+                bibDup.groups = groups;
+              })
+              .catch((e) => {
+                console.error("scan_library_duplicates failed", e);
+                bibDup.groups = [];
+              })
+              .finally(() => {
+                bibDup.loading = false;
+                void renderBiblioLive();
+              });
+            return;
+          }
+        } else if (stat === "fake") {
+          bibState.filter.quality = undefined;
+          bibState.filter.verdict = "fake";
+        }
+        void renderBiblioLive();
+        return;
+      } else if (act === "rkblink") {
+        void (async () => {
+          try {
+            let defaultPath: string | undefined;
+            try {
+              const current = await rekordboxStatus();
+              if (current.path) defaultPath = await dirname(current.path);
+            } catch (e) {
+              console.error("rekordbox_status failed (defaultPath lookup)", e);
+            }
+            const chosen = await openFolderDialog({
+              multiple: false,
+              directory: false,
+              defaultPath,
+              filters: [{ name: "Rekordbox XML", extensions: ["xml"] }],
+            });
+            if (!chosen || Array.isArray(chosen)) return;
+            const status = await linkRekordboxXml(chosen);
+            toast(
+              status.error
+                ? "XML Rekordbox illisible — relie un autre fichier"
+                : `XML Rekordbox lié : ${status.track_count} pistes, ${status.playlist_count} playlists`,
+            );
+            void renderRekordboxLive();
+          } catch (e) {
+            console.error("link_rekordbox_xml failed", e);
+            toast("Liaison du XML Rekordbox échouée");
+          }
+        })();
+        return;
+      } else if (act === "qual") {
+        const q = bibEl.dataset.q;
+        bibState.filter.quality = q === "all" ? undefined : (q as "lossless" | "mp3");
+        // "Tous" doit réellement tout montrer — sans ce reset, un filtre verdict=fake posé via le
+        // stat-card "À re-sourcer" restait actif indéfiniment (cul-de-sac trouvé à l'audit 2026-07-09).
+        if (q === "all") bibState.filter.verdict = undefined;
+        void renderBiblioLive();
+      } else if (act === "facet") {
+        bibState.facet = bibEl.dataset.f === "genre" ? "genre" : "folder";
+        // Toggle in place first (existing node, animates) — renderBiblioLive() is async (IPC),
+        // so the browser paints this before the rebuild overwrites the DOM.
+        document
+          .querySelectorAll<HTMLElement>("#sift-bib-facet-seg [data-bib='facet']")
+          .forEach((b) => b.classList.toggle("on", b.dataset.f === bibState.facet));
+        positionFacetThumb();
+        void renderBiblioLive();
+      } else if (act === "viewmode") {
+        bibState.viewMode = bibEl.dataset.mode === "grid" ? "grid" : "table";
+        document
+          .querySelectorAll<HTMLElement>("#sift-bib-viewmode-seg [data-bib='viewmode']")
+          .forEach((b) => b.classList.toggle("on", b.dataset.mode === bibState.viewMode));
+        positionViewModeThumb();
+        void renderBiblioLive();
+      } else if (act === "sort") {
+        const field = bibEl.dataset.field as LibrarySortState["field"];
+        bibState.sort =
+          bibState.sort.field === field
+            ? { field, dir: bibState.sort.dir === "asc" ? "desc" : "asc" }
+            : { field, dir: "asc" };
+        void renderBiblioLive();
+      } else if (act === "pick") {
+        const key = bibEl.dataset.key as "folder" | "genre" | "artist";
+        const val = bibEl.dataset.val;
+        // toggle off if re-clicking the active facet value
+        const cur =
+          key === "folder" ? bibState.filter.folder : key === "genre" ? bibState.filter.genre : bibState.filter.artist;
+        const next = cur === val ? undefined : val;
+        bibState.filter.folder = key === "folder" ? next : undefined;
+        bibState.filter.genre = key === "genre" ? next : undefined;
+        bibState.filter.artist = key === "artist" ? next : undefined;
+        void renderBiblioLive();
+      } else if (act === "link") {
+        const rid = bibEl.dataset.rid;
+        if (rid) void openUrl(`https://www.discogs.com/release/${rid}`);
+      } else if (act === "play" || act === "row" || act === "identify" || act === "tile") {
+        // Open the unified detail/edit panel (report + inline editor + identify + actions).
+        openBiblioDetail(Number(bibEl.dataset.id));
+      } else if (act === "dupscan") {
+        bibDup.shown = !bibDup.shown;
+        if (bibDup.shown && bibDup.groups === null) {
+          bibDup.loading = true;
+          void renderBiblioLive();
+          void scanLibraryDuplicates()
+            .then((groups) => {
+              bibDup.groups = groups;
+            })
+            .catch((e) => {
+              console.error("scan_library_duplicates failed", e);
+              bibDup.groups = [];
+            })
+            .finally(() => {
+              bibDup.loading = false;
+              void renderBiblioLive();
+            });
+        } else {
+          void renderBiblioLive();
+        }
+      } else if (act === "dupresolve") {
+        const idx = Number(bibEl.dataset.idx);
+        const group = bibDup.groups?.[idx];
+        if (!group) return;
+        const losers = group.members.filter((m) => !m.recommend_keep).map((m) => m.id);
+        void confirmAction(
+          `Envoyer ${losers.length} doublon${losers.length > 1 ? "s" : ""} à la corbeille ? Le morceau recommandé est conservé.`,
+          "Envoyer à la corbeille",
+        ).then((ok) => {
+          if (!ok) return;
+          void Promise.all(losers.map((id) => trashTrack(id)))
+            .then(() => {
+              bibDup.groups = (bibDup.groups || []).filter((_, i) => i !== idx);
+              return renderBiblioLive();
+            })
+            .catch((e) => {
+              console.error("dupresolve failed", e);
+              toast("Échec : impossible d'envoyer les doublons à la corbeille");
+            });
+        });
       }
       return;
     }
@@ -493,7 +425,7 @@ export function installLiveWiring() {
     const act = el.dataset.sift;
     if (act === "addsrc") {
       e.stopPropagation();
-      void pickAndAddFolder();
+      void pickAndAddFolder(refresh);
     } else if (act === "rmsrc") {
       e.stopPropagation();
       void removeSource(Number(el.dataset.id)).then(refresh);
@@ -503,21 +435,75 @@ export function installLiveWiring() {
         Number(el.dataset.id),
         el.dataset.watched !== "1",
       ).then(refresh);
+    } else if (act === "setsrccolor") {
+      e.stopPropagation();
+      const hue = el.dataset.hue ?? null;
+      void setSourceColor(Number(el.dataset.id), hue).then(refresh);
+    } else if (act === "dismiss-rootgate") {
+      e.stopPropagation();
+      dismissRootGate();
+      void refresh();
+    } else if (act === "reviewmode") {
+      e.stopPropagation();
+      setReviewMode(el.dataset.m === "batch" ? "batch" : "detail");
+    } else if (handleBatchAction(el, act ?? "", e)) {
+      // handled — see batch-panel.ts
+    } else if (handleRekordboxAction(el, act ?? "", e, () => void runNavExport("rekordbox"))) {
+      // handled — see rekordbox-view.ts
     }
   });
 
-  void onQueueChanged(refresh);
+  // "File in place" checkbox (under the #fldz tree, batch mode) — a checkbox, so it needs change.
+  requireEl("#pa", "installLiveWiring").addEventListener("change", (e) => {
+    const ip = (e.target as HTMLElement).closest<HTMLInputElement>('input[data-sift="inplace"]');
+    if (ip) onBatchInPlaceChange(ip.checked);
+  });
+
+  // queue:changed fires once per burst source (watcher debounce window, each scanned source's
+  // own background thread) — debounce the redraw the same way onAnalysisChanged does below.
+  let queueChangeTimer: ReturnType<typeof setTimeout> | undefined;
+  void onQueueChanged(() => {
+    clearTimeout(queueChangeTimer);
+    queueChangeTimer = setTimeout(() => void refresh(), 150);
+  });
+  void onFileDone(onFileBatchDone);
+  void onFileProgress(pushFileProgress);
+  // Stop button on the global zone's "file" row → stop-net cancel of the running filing batch.
+  setCancelHandler("file", onFileStop);
 
   // Analysis pings can arrive several times per second — debounce the queue redraw.
   let t: ReturnType<typeof setTimeout> | undefined;
+  // Throttle the progress-zone IPC+render: coalesce bursts to one RAF per frame (~16 ms).
+  // Events are never dropped — only renders are coalesced. A trailing 350 ms timeout
+  // guarantees a final render once pings stop (catches the done==total transition).
+  let pendingAnalyzeRender = false;
+  let analyzeTrailTimer: ReturnType<typeof setTimeout> | undefined;
+  function scheduleAnalyzeRender() {
+    // Reset the trailing timer on every event so it fires only after silence.
+    clearTimeout(analyzeTrailTimer);
+    analyzeTrailTimer = setTimeout(() => void pushAnalyzeProgress(), 350);
+    if (pendingAnalyzeRender) return;
+    pendingAnalyzeRender = true;
+    requestAnimationFrame(() => {
+      pendingAnalyzeRender = false;
+      void pushAnalyzeProgress();
+    });
+  }
   void onAnalysisChanged(() => {
     // A report may have changed (re-analysed / replaced file) → drop the in-session cache so
     // the next open re-fetches from the DB (the source of truth) instead of serving it stale.
     void import("./report-view").then((m) => m.clearReportCache());
+    // Throttle progress-zone update: IPC + DOM render at most once per RAF frame (~16 ms),
+    // not once per event (can be dozens per second during a 4000-track analysis burst).
+    scheduleAnalyzeRender();
     clearTimeout(t);
-    t = setTimeout(() => void renderQueue(), 300);
+    // touchDetail=false: redraw the queue list only; never re-open the open track (that aborts
+    // the player's audio load).
+    t = setTimeout(() => void renderQueue(false), 300);
   });
 
+  // Catch an analysis already in flight when the app opens (events only fire on each item after).
+  void pushAnalyzeProgress();
   void refresh();
 }
 
@@ -526,5 +512,9 @@ declare global {
     __siftHome?: () => void;
     __siftQueue?: () => void;
     __siftEcarts?: () => void;
+    __siftReglages?: () => void;
+    __siftBiblio?: () => void;
+    __siftJournal?: () => void;
+    __siftRkb?: () => void;
   }
 }

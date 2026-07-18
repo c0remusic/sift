@@ -3,12 +3,12 @@
 //! stability polling — see the M1 design doc). On audio create/modify → upsert pending;
 //! on delete → forget the pending row. Each batch emits `queue:changed`.
 use crate::scanner;
+use notify_debouncer_full::notify::RecommendedWatcher;
 use notify_debouncer_full::{
     new_debouncer,
     notify::{EventKind, RecursiveMode},
     DebounceEventResult, Debouncer, RecommendedCache,
 };
-use notify_debouncer_full::notify::RecommendedWatcher;
 use rusqlite::Connection;
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -111,7 +111,10 @@ fn handle_events(app: &AppHandle, source_id: i64, res: DebounceEventResult) {
             return;
         }
     };
-    log::info!("watch batch: {} event(s) for source {source_id}", events.len());
+    log::info!(
+        "watch batch: {} event(s) for source {source_id}",
+        events.len()
+    );
     let state = app.state::<Mutex<Connection>>();
     let Ok(conn) = state.lock() else { return };
     let mut touched = false;
@@ -159,5 +162,28 @@ fn handle_events(app: &AppHandle, source_id: i64, res: DebounceEventResult) {
     if touched {
         app.emit("queue:changed", ()).ok();
         crate::worker::refill(app);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn strip_verbatim_unc_prefix_becomes_double_backslash_share() {
+        assert_eq!(
+            strip_verbatim(r"\\?\UNC\server\share\folder"),
+            r"\\server\share\folder"
+        );
+    }
+
+    #[test]
+    fn strip_verbatim_local_prefix_is_dropped() {
+        assert_eq!(strip_verbatim(r"\\?\D:\Music\Sift"), r"D:\Music\Sift");
+    }
+
+    #[test]
+    fn strip_verbatim_plain_path_is_unchanged() {
+        assert_eq!(strip_verbatim(r"D:\Music\Sift"), r"D:\Music\Sift");
     }
 }

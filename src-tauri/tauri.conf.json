@@ -1,7 +1,7 @@
 {
   "$schema": "../node_modules/@tauri-apps/cli/config.schema.json",
   "productName": "Sift",
-  "version": "0.1.0",
+  "version": "0.0.1",
   "identifier": "com.sift.app",
   "build": {
     "frontendDist": "../dist",
@@ -10,6 +10,7 @@
     "beforeBuildCommand": "npm run build"
   },
   "app": {
+    "macOSPrivateApi": true,
     "windows": [
       {
         "title": "Sift",
@@ -19,6 +20,7 @@
         "minHeight": 640,
         "resizable": true,
         "decorations": false,
+        "transparent": true,
         "fullscreen": false
       }
     ],

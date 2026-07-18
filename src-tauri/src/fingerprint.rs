@@ -2,7 +2,6 @@
 //! `compute_for_path` decodes the file (reusing the analysis decoder) and produces a compact
 //! fingerprint; `similarity` compares two fingerprints by bit-agreement with a small offset
 //! search (no dependency on the crate's segment matcher). Reused later by the library scan.
-#![allow(dead_code)]
 
 use rusty_chromaprint::{match_fingerprints, Configuration, Fingerprinter};
 
@@ -21,11 +20,17 @@ fn config() -> Configuration {
 pub fn compute_for_path(path: &str) -> Result<Vec<u32>, String> {
     let cfg = config();
     let mut printer = Fingerprinter::new(&cfg);
-    printer.start(44100, 1).map_err(|e| format!("fingerprint start: {e}"))?;
+    printer
+        .start(44100, 1)
+        .map_err(|e| format!("fingerprint start: {e}"))?;
     let mut tmp: Vec<i16> = Vec::with_capacity(8192);
     let info = crate::analysis::decode::decode_pcm(path, 1, |block| {
         tmp.clear();
-        tmp.extend(block.iter().map(|&s| (s * 32767.0).clamp(-32768.0, 32767.0) as i16));
+        tmp.extend(
+            block
+                .iter()
+                .map(|&s| (s * 32767.0).clamp(-32768.0, 32767.0) as i16),
+        );
         printer.consume(&tmp);
     })?;
     if let Some(err) = info.codec_error {
@@ -41,7 +46,10 @@ pub fn compute_for_path(path: &str) -> Result<Vec<u32>, String> {
 
 /// Serialize/deserialize the fingerprint for the `tracks.fingerprint` cache column.
 pub fn encode(fp: &[u32]) -> String {
-    fp.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(",")
+    fp.iter()
+        .map(|x| x.to_string())
+        .collect::<Vec<_>>()
+        .join(",")
 }
 pub fn decode(s: &str) -> Vec<u32> {
     s.split(',').filter_map(|t| t.parse::<u32>().ok()).collect()
@@ -106,7 +114,10 @@ mod tests {
         let a = compute_for_path(&p1).expect("fp1");
         let b = compute_for_path(&p2).expect("fp2");
         let sim = similarity(&a, &b);
-        assert!(sim >= MATCH_THRESHOLD, "same recording, different encode must match (got {sim})");
+        assert!(
+            sim >= MATCH_THRESHOLD,
+            "same recording, different encode must match (got {sim})"
+        );
     }
 
     #[test]
@@ -120,7 +131,10 @@ mod tests {
         let a = compute_for_path(&p1).expect("fp1");
         let b = compute_for_path(&p2).expect("fp2");
         let sim = similarity(&a, &b);
-        assert!(sim < MATCH_THRESHOLD, "different audio must not match (got {sim})");
+        assert!(
+            sim < MATCH_THRESHOLD,
+            "different audio must not match (got {sim})"
+        );
     }
 
     #[test]

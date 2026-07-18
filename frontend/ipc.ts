@@ -11,10 +11,28 @@ import type {
   Bin,
   FileResult,
   BatchResult,
+  FileProgress,
+  RejectBatchResult,
   JournalEntry,
   Target,
   EcarteItem,
   DupMatch,
+  LibraryTrack,
+  LibraryFacets,
+  LibraryFilter,
+  MetadataEdit,
+  TrackRelease,
+  FileTags,
+  DupGroup,
+  DashboardStats,
+  RekordboxLinkStatus,
+  PendingMasterdbRepair,
+  ApplyRepairOutcome,
+  PendingMetadataSync,
+  ApplyMetadataSyncOutcome,
+  PendingArtworkSync,
+  ApplyArtworkSyncOutcome,
+  PlaylistDuplicateGroupDto,
 } from "../shared/contracts";
 
 export const appInfo = (): Promise<AppInfo> => invoke("app_info");
@@ -31,6 +49,8 @@ export const rescanSource = (id: number): Promise<void> =>
   invoke("rescan_source", { id });
 export const setSourceWatched = (id: number, watched: boolean): Promise<void> =>
   invoke("set_source_watched", { id, watched });
+export const setSourceColor = (id: number, colorKey: string | null): Promise<void> =>
+  invoke("set_source_color", { id, colorKey });
 
 /** Debug: run the M2a analysis engine on a file path and return the full report.
  * `withSpectrogram` builds the heavy display grid (verdict/scalars are identical either way). */
@@ -58,27 +78,73 @@ export const onAnalysisChanged = (cb: () => void): Promise<UnlistenFn> =>
 export const reconcile = (trackId: number): Promise<Canonical> =>
   invoke("reconcile", { trackId });
 
+/** Live filename preview via the SAME naming::render_filename the real filing path uses (FIX-12) —
+ * real active template + real sanitize(), not a front-side reimplementation. */
+export const previewFilename = (edited: Canonical, ext: string): Promise<string> =>
+  invoke("preview_filename", { edited, ext });
+
+/** Read-only release facts (label/year/genres) from the persisted `metadata` table. Fast DB read,
+ * no network — used to show label/year/genres on a cold open. */
+export const trackRelease = (trackId: number): Promise<TrackRelease> =>
+  invoke("track_release", { trackId });
+
+/** Read the file's REAL tags once (artist/title/label/year/genre joined). Used in memory to flag
+ * when the displayed identity hasn't been written to the file yet — no per-keystroke disk read. */
+export const trackFileTags = (trackId: number): Promise<FileTags> =>
+  invoke("track_file_tags", { trackId });
+
+/** Write the edited tags onto the file IN PLACE (no move, no encode, no status change). Journaled
+ * as a revertable `tag_edit`; resolves to the new batch_id so the front can offer a targeted undo. */
+export const applyTags = (trackId: number, edited: Canonical): Promise<string> =>
+  invoke("apply_tags", { trackId, edited });
+
 /** File one track into `binRel`. `target` overrides the rail default; `edited` overrides
- * the reconciled metadata with the user's corrections. Resolves to the filed path. */
+ * the reconciled metadata with the user's corrections. `allowRailMismatch` (FIX-1): pass `true`
+ * only after the user has explicitly confirmed a `"RAIL_MISMATCH"` warning (the source's
+ * extension claims lossless but its content is actually lossy — an MP3 renamed `.flac`).
+ * Resolves to the filed path; rejects with `"RAIL_MISMATCH"` when the mismatch isn't confirmed. */
 export const fileTrack = (
   trackId: number,
   binRel: string,
   target?: Target | null,
   edited?: Canonical | null,
+  allowRailMismatch?: boolean,
 ): Promise<FileResult> =>
   invoke("file_track", {
     trackId,
     binRel,
     target: target ?? null,
     edited: edited ?? null,
+    allowRailMismatch: allowRailMismatch ?? null,
   });
 
-/** File every green track of `trackIds` into `binRel`; yellow/errored ones come back in
- * `needs_validation`. */
+/** Launch background filing of `trackIds` into `binRel`. Resolves as soon as the background task
+ * is STARTED (not when it finishes) — subscribe to `onFileDone` for the end-of-batch summary.
+ * Rejects synchronously on NoLibraryRoot, or if the background task can't be started. */
 export const fileBatch = (
   trackIds: number[],
   binRel: string,
-): Promise<BatchResult> => invoke("file_batch", { trackIds, binRel });
+  targets?: Record<number, Target>,
+): Promise<void> => invoke("file_batch", { trackIds, binRel, targets: targets ?? null });
+
+/** Subscribe to "file:done" (the background filing batch finished). Payload = run summary.
+ * Returns an unlisten fn. */
+export const onFileDone = (cb: (r: BatchResult) => void): Promise<UnlistenFn> =>
+  listen<BatchResult>("file:done", (e) => cb(e.payload));
+
+/** Subscribe to "file:progress" (one ping per file as the background filing advances).
+ * Payload = { done, total }. Returns an unlisten fn. */
+export const onFileProgress = (cb: (p: FileProgress) => void): Promise<UnlistenFn> =>
+  listen<FileProgress>("file:progress", (e) => cb(e.payload));
+
+/** Request a stop-net cancel of the running filing batch: the in-flight file finishes, then no new
+ * one starts. Nothing is rolled back. No-op if nothing is running. */
+export const fileCancel = (): Promise<void> => invoke("file_cancel");
+
+/** Reject a batch of tracks for re-sourcing (each → Écartés). Returns how many were marked and
+ * which ids failed (a misfire is reported, never aborts the rest). */
+export const rejectBatch = (trackIds: number[]): Promise<RejectBatchResult> =>
+  invoke("reject_batch", { trackIds });
 
 /** Mark a track for re-sourcing (Écartés). */
 export const rejectTrack = (trackId: number): Promise<void> =>
@@ -102,9 +168,14 @@ export const undoLast = (): Promise<string | null> => invoke("undo_last");
 export const revertBatch = (batchId: string): Promise<void> =>
   invoke("revert_batch", { batchId });
 
-/** Recent live (not-yet-undone) batches, newest first. */
-export const listJournal = (limit = 20): Promise<JournalEntry[]> =>
-  invoke("list_journal", { limit });
+/** Recent live batches, newest first. `sessionId` = current session → Journal tab;
+ *  omit (undefined) → all sessions → extended journal page. */
+export const listJournal = (limit = 50, sessionId?: string): Promise<JournalEntry[]> =>
+  invoke("list_journal", { limit, sessionId: sessionId ?? null });
+
+/** The session ID generated at this app launch (from settings). Used to filter
+ *  list_journal to the current session in the Journal tab. */
+export const getSessionId = (): Promise<string> => invoke("get_session_id");
 
 /** Read one app setting (null when unset). */
 export const getSetting = (key: string): Promise<string | null> =>
@@ -120,6 +191,10 @@ export const listEcartes = (): Promise<EcarteItem[]> => invoke("list_ecartes");
 /** Restore a trashed track's file and re-queue it. */
 export const restoreTrack = (trackId: number): Promise<void> =>
   invoke("restore_track", { trackId });
+
+/** Put a re-sourcing track back into the queue (undo a "Re-sourcer" misclick). */
+export const requeueTrack = (trackId: number): Promise<void> =>
+  invoke("requeue_track", { trackId });
 
 /** Permanently empty the bin. Returns how many tracks were purged. */
 export const purgeTrash = (): Promise<number> => invoke("purge_trash");
@@ -138,3 +213,155 @@ export const importPaths = (
   mode: "source" | "dest" = "source",
 ): Promise<{ files_added: number; folders_added: number }> =>
   invoke("import_paths", { paths, mode });
+
+// ---- M6a Discogs identification ----
+
+export interface Candidate {
+  artist: string;
+  title: string;
+  label: string | null;
+  year: number | null;
+  styles: string[];
+  country: string | null;
+  format: string | null;
+  cover_url: string | null;
+  release_id: string;
+  source: string;
+}
+
+export interface AppliedIdentity {
+  canonical: { artist: string; title: string; version: string | null; confidence: string };
+  label: string | null;
+  year: number | null;
+  styles: string[];
+  cover_path: string | null;
+}
+
+/** Search Discogs for candidates matching the track. May reject with error codes:
+ * "NO_TOKEN", "RATE_LIMITED:<seconds>", "NETWORK:<msg>", "PARSE:<msg>". */
+export const identify = (trackId: number): Promise<Candidate[]> =>
+  invoke("identify", { trackId });
+
+/** Apply a chosen candidate: writes tags + downloads cover. Returns the applied identity. */
+export const applyIdentity = (trackId: number, candidate: Candidate): Promise<AppliedIdentity> =>
+  invoke("apply_identity_cmd", { trackId, candidate });
+
+// ---- M6b library browser (mirror of ipc_library.rs) ----
+
+/** Filed tracks for the Bibliothèque list, with optional filters. */
+export const listLibrary = (filter?: LibraryFilter): Promise<LibraryTrack[]> =>
+  invoke("list_library", { filter: filter ?? null });
+
+/** Folder + genre facet counts for the Bibliothèque sidebar. */
+export const libraryFolders = (): Promise<LibraryFacets> =>
+  invoke("library_folders");
+
+/** Edit a filed track's metadata: writes the file tags first, then the DB. Preserves the
+ * Discogs release link. Rejects (DB untouched) if the file write fails. Returns the batch_id for undo. */
+export const updateMetadata = (trackId: number, edit: MetadataEdit): Promise<string> =>
+  invoke("update_metadata", { trackId, edit });
+
+/** Scan `filed` tracks for acoustic duplicates, grouped with a recommended keeper. */
+export const scanLibraryDuplicates = (): Promise<DupGroup[]> =>
+  invoke("scan_library_duplicates");
+
+/** Dashboard aggregate stats for the Bibliothèque. */
+export const libraryStats = (): Promise<DashboardStats> => invoke("library_stats");
+
+// ---- M7 Rekordbox XML export + playlist path repair ----
+
+/** Parse+validate a chosen Rekordbox XML file and persist it as the linked file. Rejects
+ * (nothing persisted) if the file can't be read or parsed. */
+export const linkRekordboxXml = (path: string): Promise<RekordboxLinkStatus> =>
+  invoke("link_rekordbox_xml", { path });
+
+/** Current linked-XML status (re-read fresh from disk each call). */
+export const rekordboxStatus = (): Promise<RekordboxLinkStatus> => invoke("rekordbox_status");
+
+/** Merge every filed track missing from the linked XML and rewrite it. Rejects if no XML is
+ * linked yet, or if the linked file is unreadable/corrupt. */
+export const exportRekordboxXml = (): Promise<RekordboxLinkStatus> => invoke("export_rekordbox_xml");
+
+// ---- M8 Tier 1 master.db path-repair candidates ----
+
+/** Candidate master.db path repairs detected so far (excludes applied/dismissed). */
+export const rekordboxMasterdbPendingRepairs = (): Promise<PendingMasterdbRepair[]> =>
+  invoke("rekordbox_masterdb_pending_repairs");
+
+/** Apply the given repair ids against the linked Rekordbox's master.db. Never automatic —
+ * only call this after explicit user confirmation. A failure on one id doesn't stop the rest. */
+export const rekordboxMasterdbApplyRepairs = (ids: number[]): Promise<ApplyRepairOutcome[]> =>
+  invoke("rekordbox_masterdb_apply_repairs", { ids });
+
+/** Mark a pending/ambiguous repair as dismissed — it stops appearing in pending_repairs. */
+export const rekordboxMasterdbDismissRepair = (id: number): Promise<void> =>
+  invoke("rekordbox_masterdb_dismiss_repair", { id });
+
+/** Resolve an ambiguous repair by selecting the correct candidate track. */
+export const rekordboxMasterdbResolveAmbiguous = (id: number, chosenTrackId: string): Promise<void> =>
+  invoke("rekordbox_masterdb_resolve_ambiguous", { id, chosenTrackId });
+
+export const rekordboxMasterdbPendingMetadataSyncs = (): Promise<PendingMetadataSync[]> =>
+  invoke("rekordbox_masterdb_pending_metadata_syncs");
+
+export const rekordboxMasterdbApplyMetadataSyncs = (ids: number[]): Promise<ApplyMetadataSyncOutcome[]> =>
+  invoke("rekordbox_masterdb_apply_metadata_syncs", { ids });
+
+export const rekordboxMasterdbDismissMetadataSync = (id: number): Promise<void> =>
+  invoke("rekordbox_masterdb_dismiss_metadata_sync", { id });
+
+export const rekordboxMasterdbResolveAmbiguousMetadataSync = (id: number, chosenTrackId: string): Promise<void> =>
+  invoke("rekordbox_masterdb_resolve_ambiguous_metadata_sync", { id, chosenTrackId });
+
+export const rekordboxMasterdbPendingArtworkSyncs = (): Promise<PendingArtworkSync[]> =>
+  invoke("rekordbox_masterdb_pending_artwork_syncs");
+
+export const rekordboxMasterdbApplyArtworkSyncs = (ids: number[]): Promise<ApplyArtworkSyncOutcome[]> =>
+  invoke("rekordbox_masterdb_apply_artwork_syncs", { ids });
+
+export const rekordboxMasterdbDismissArtworkSync = (id: number): Promise<void> =>
+  invoke("rekordbox_masterdb_dismiss_artwork_sync", { id });
+
+export const rekordboxMasterdbResolveAmbiguousArtworkSync = (id: number, chosenTrackId: string): Promise<void> =>
+  invoke("rekordbox_masterdb_resolve_ambiguous_artwork_sync", { id, chosenTrackId });
+
+// ---- M8 Tier 2 playlist duplicate-entry dedup ----
+
+/** Scans the linked Rekordbox's master.db for playlists with the same track
+ * added more than once. Read-only, called fresh on demand — nothing persists
+ * between calls, unlike Tier 1's candidate repairs. */
+export const rekordboxMasterdbScanPlaylistDuplicates = (): Promise<PlaylistDuplicateGroupDto[]> =>
+  invoke("rekordbox_masterdb_scan_playlist_duplicates");
+
+/** Removes every extra occurrence in group.remove, keeping group.keep untouched.
+ * Pass back exactly the group object received from rekordboxMasterdbScanPlaylistDuplicates —
+ * there is no separate id to reference. Never automatic — only call after explicit
+ * user confirmation. */
+export const rekordboxMasterdbDedupPlaylistGroup = (group: PlaylistDuplicateGroupDto): Promise<void> =>
+  invoke("rekordbox_masterdb_dedup_playlist_group", { group });
+
+// ---- M7 USB format utility (mirror of ipc_usb.rs) ----
+
+export interface RemovableDrive {
+  id: string;
+  label: string;
+  size_bytes: number;
+  current_fs: string;
+  volume_serial: string;
+}
+
+/** Matches `usb_format::TargetFs`'s `#[serde(rename_all = "snake_case")]`: `ExFat` -> "ex_fat". */
+export type TargetFs = "fat32" | "ex_fat";
+
+/** Drives Sift is confident are removable (conservative filter, backend-side). */
+export const listRemovableDrives = (): Promise<RemovableDrive[]> =>
+  invoke("list_removable_drives");
+
+/** Format `driveId` to `fs`. `volumeSerial` must be the value last read for this drive — the
+ * backend re-checks it against a fresh listing immediately before formatting and rejects with
+ * "IDENTITY_MISMATCH"/"DRIVE_VANISHED" if the drive was swapped since the list was fetched. */
+export const formatDrive = (
+  driveId: string,
+  volumeSerial: string,
+  fs: TargetFs,
+): Promise<void> => invoke("format_drive", { driveId, volumeSerial, fs });
