@@ -1078,3 +1078,11 @@ réelle (`docs/superpowers/changes/2026-07-18-ux-user-flow/audit-heuristique-vis
 finding F1). Assombris en clair / éclaircis en sombre (même teinte/chroma,
 `L` seul) pour atteindre ≥4.5:1 partout où ils sont réellement peints, dans
 les 3 blocs de thème.
+
+**2026-07-18 (cartes de synchro Rekordbox : "indisponible" vs "à jour")** :
+les 4 cartes ("Fichiers"/"Métadonnées"/"Pochettes"/"Playlists") affichaient
+"à jour" dès qu'il n'y avait rien en attente, même quand le XML lié était
+illisible — contredisant le bandeau rouge "XML Rekordbox illisible"
+au-dessus. Trouvé via l'audit CDP sur l'app réelle (finding F3,
+audit-heuristique-visuel.md). Elles lisent désormais "indisponible" dans ce
+cas, via un cache `lastLinkStatus` partagé par les 4 sections.

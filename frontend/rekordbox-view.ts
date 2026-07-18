@@ -78,6 +78,13 @@ let lastPendingRepairs: PendingMasterdbRepair[] = [];
 let lastPendingMetadataSyncs: PendingMetadataSync[] = [];
 let lastPendingArtworkSyncs: PendingArtworkSync[] = [];
 
+/** Cached from the last renderRekordboxLive() full render — lets the 4 sync section
+ *  functions (masterdbRepairsSectionHtml, metadataSyncsSectionHtml, artworkSyncsSectionHtml,
+ *  playlistDuplicatesSectionHtml) know whether the XML link itself is broken, so their idle
+ *  state doesn't claim "à jour" when synchronization is actually unavailable (finding F3,
+ *  audit-heuristique-visuel.md). null until the first render. */
+let lastLinkStatus: RekordboxLinkStatus | null = null;
+
 /** Ids of every pending row in `rows` whose `session_id` matches `sessionKey`
  * (`SESSION_GROUP_NONE` for null) — shared by the 3 group-select click handlers in sift-live.ts. */
 function idsInSessionGroup<T extends { id: number; session_id: string | null }>(
@@ -139,13 +146,14 @@ function duplicateGroupKey(g: PlaylistDuplicateGroupDto): string {
  * so the screen reads as one queue. `body` is "" when there's nothing pending/ambiguous: the card
  * still renders (faded, "à jour") instead of disappearing, so the 4 sections never pop in/out of
  * the layout as their counts change — decision from the 2026-07-11 grill-me session. */
-function syncCardHtml(title: string, count: number, body: string): string {
+function syncCardHtml(title: string, count: number, body: string, unavailable: boolean): string {
   const idle = body === "";
+  const idleLabel = unavailable ? "indisponible" : "à jour";
   const header =
     `<div style="display:flex;justify-content:space-between;align-items:center;${idle ? "" : "margin-bottom:6px"}">` +
     `<span style="font-size:var(--text-base);font-weight:500">${esc(title)}</span>` +
     (idle
-      ? `<span style="font-size:var(--text-xs);color:var(--color-text-tertiary)">à jour</span>`
+      ? `<span style="font-size:var(--text-xs);color:var(--color-text-tertiary)">${idleLabel}</span>`
       : `<span style="font-size:var(--text-xs);background:var(--color-background-secondary);color:var(--color-text-secondary);padding:2px 7px;border-radius:var(--border-radius-pill)">${count}</span>`) +
     `</div>`;
   return (
@@ -265,7 +273,7 @@ function masterdbRepairsSectionHtml(rows: PendingMasterdbRepair[]): string {
       ? ""
       : subtext + (ambiguousRows ? `<div style="margin-bottom:8px">${ambiguousRows}</div>` : "") + pendingRows + applyBar;
 
-  return `<div id="sift-rkb-masterdb-section">${syncCardHtml("Fichiers", pending.length, body)}</div>`;
+  return `<div id="sift-rkb-masterdb-section">${syncCardHtml("Fichiers", pending.length, body, lastLinkStatus?.error != null)}</div>`;
 }
 
 /** Re-renders only the Tier 1 repairs section from already-cached data (`lastPendingRepairs`),
@@ -371,7 +379,7 @@ function metadataSyncsSectionHtml(rows: PendingMetadataSync[]): string {
       ? ""
       : subtext + (ambiguousRows ? `<div style="margin-bottom:8px">${ambiguousRows}</div>` : "") + pendingRows + applyBar;
 
-  return `<div id="sift-rkb-mds-section">${syncCardHtml("Métadonnées", pending.length, body)}</div>`;
+  return `<div id="sift-rkb-mds-section">${syncCardHtml("Métadonnées", pending.length, body, lastLinkStatus?.error != null)}</div>`;
 }
 
 /** Same discipline as `rerenderMasterdbRepairsSection` for the Tier 3 metadata section. */
@@ -466,7 +474,7 @@ function artworkSyncsSectionHtml(rows: PendingArtworkSync[]): string {
       ? ""
       : subtext + (ambiguousRows ? `<div style="margin-bottom:8px">${ambiguousRows}</div>` : "") + pendingRows + applyBar;
 
-  return `<div id="sift-rkb-mas-section">${syncCardHtml("Pochettes", pending.length, body)}</div>`;
+  return `<div id="sift-rkb-mas-section">${syncCardHtml("Pochettes", pending.length, body, lastLinkStatus?.error != null)}</div>`;
 }
 
 /** Same discipline as `rerenderMasterdbRepairsSection` for the Tier 3 artwork section. */
@@ -506,7 +514,7 @@ function playlistDuplicatesSectionHtml(groups: PlaylistDuplicateGroupDto[]): str
       );
     })
     .join("");
-  return syncCardHtml("Playlists", groups.length, rows);
+  return syncCardHtml("Playlists", groups.length, rows, lastLinkStatus?.error != null);
 }
 
 /** Rekordbox integration page (data-view="rkb") — real screen replacing the old one-click nav
@@ -519,6 +527,7 @@ export async function renderRekordboxLive(): Promise<void> {
   let status: RekordboxLinkStatus;
   try {
     status = await rekordboxStatus();
+    lastLinkStatus = status;
   } catch (e) {
     console.error("rekordbox_status failed", e);
     content.innerHTML =
