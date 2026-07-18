@@ -41,12 +41,12 @@ fn mtime_secs(meta: &std::fs::Metadata) -> i64 {
         .unwrap_or(0)
 }
 
-/// Lazily walks `root` for audio files (no symlink-following), one at a time. Shared by
-/// `scan_dir` (eager Vec, for callers that need the whole list at once) and `reconcile`
-/// (streamed, so a large scan can report progress as it walks instead of only after
-/// collecting the entire tree in memory first). Unreadable entries are skipped, never fatal.
-/// `root` is expected to be absolute (callers canonicalise it once when the source is added)
-/// so paths stay consistent with the ones `notify` reports for the live watcher.
+/// Lazily walks `root` for audio files (no symlink-following), one at a time — consumed
+/// directly by `reconcile_with_progress` so a large scan can report progress as it walks
+/// instead of only after collecting the entire tree in memory first. Unreadable entries are
+/// skipped, never fatal. `root` is expected to be absolute (callers canonicalise it once when
+/// the source is added) so paths stay consistent with the ones `notify` reports for the live
+/// watcher.
 fn walk_audio_files(root: &Path) -> impl Iterator<Item = DiskFile> {
     walkdir::WalkDir::new(root)
         .follow_links(false)
@@ -62,12 +62,6 @@ fn walk_audio_files(root: &Path) -> impl Iterator<Item = DiskFile> {
                 mtime: mtime_secs(&meta),
             })
         })
-}
-
-/// Walks `root` recursively and returns every audio file found. See `walk_audio_files` for
-/// callers that want to process files as they're found instead of waiting for the full list.
-pub fn scan_dir(root: &Path) -> Vec<DiskFile> {
-    walk_audio_files(root).collect()
 }
 
 /// Inserts a file as `pending`, or updates it. Status is reset to `pending` ONLY if
@@ -123,16 +117,25 @@ pub fn forget_path(conn: &Connection, path: &str) -> rusqlite::Result<usize> {
     )
 }
 
+/// How many net-changed files (added+updated) between each `on_batch` progress call in
+/// `reconcile_with_progress`. Chosen so a large import (thousands of files) reports progress
+/// several times per second on a typical disk, without emitting an event per single file.
+const PROGRESS_BATCH: usize = 25;
+
 /// Full diff of a source folder against the DB: add new files, re-pending changed ones,
 /// drop pending rows whose file vanished. Non-pending rows (e.g. already filed) are left
 /// untouched even if missing from disk.
-pub fn reconcile(
+///
+/// Streams the walk instead of collecting it first: `on_batch(done)` is called every
+/// `PROGRESS_BATCH` net-changed files (added+updated), so a caller with a long-running scan
+/// (e.g. a Tauri command) can surface progress to the UI while the scan is still walking,
+/// instead of only once at the very end.
+pub fn reconcile_with_progress(
     conn: &Connection,
     source_id: i64,
     root: &Path,
+    mut on_batch: impl FnMut(usize),
 ) -> rusqlite::Result<ReconcileStats> {
-    let disk = scan_dir(root);
-
     let mut existing: HashMap<String, (i64, i64)> = HashMap::new();
     {
         let mut stmt =
@@ -154,18 +157,22 @@ pub fn reconcile(
 
     let mut stats = ReconcileStats::default();
     let mut seen: HashSet<String> = HashSet::new();
-    for f in &disk {
+    for f in walk_audio_files(root) {
         seen.insert(f.path.clone());
         match existing.get(&f.path) {
             None => {
-                upsert_file(conn, source_id, f)?;
+                upsert_file(conn, source_id, &f)?;
                 stats.added += 1;
             }
             Some(&(s, m)) if s == f.size_bytes && m == f.mtime => {}
             Some(_) => {
-                upsert_file(conn, source_id, f)?;
+                upsert_file(conn, source_id, &f)?;
                 stats.updated += 1;
             }
+        }
+        let done = stats.added + stats.updated;
+        if done > 0 && done % PROGRESS_BATCH == 0 {
+            on_batch(done);
         }
     }
 
@@ -175,6 +182,16 @@ pub fn reconcile(
         }
     }
     Ok(stats)
+}
+
+/// Same as `reconcile_with_progress`, without progress reporting. Used by the initial-scan
+/// tests below and by any caller that doesn't need mid-scan UI updates.
+pub fn reconcile(
+    conn: &Connection,
+    source_id: i64,
+    root: &Path,
+) -> rusqlite::Result<ReconcileStats> {
+    reconcile_with_progress(conn, source_id, root, |_| {})
 }
 
 #[cfg(test)]
@@ -222,7 +239,7 @@ mod tests {
         fs::write(root.join("album/b.flac"), b"yy").unwrap();
         fs::write(root.join("album/cover.jpg"), b"img").unwrap();
 
-        let mut found: Vec<String> = scan_dir(root).into_iter().map(|f| f.filename).collect();
+        let mut found: Vec<String> = walk_audio_files(root).map(|f| f.filename).collect();
         found.sort();
         assert_eq!(found, vec!["a.mp3".to_string(), "b.flac".to_string()]);
     }
@@ -310,5 +327,29 @@ mod tests {
         let s = reconcile(&conn, sid, root).unwrap();
         assert_eq!(s.removed, 1);
         assert_eq!(pending_count(&conn, sid), 0);
+    }
+
+    #[test]
+    fn reconcile_with_progress_reports_batches_while_scanning() {
+        let (conn, sid) = db_with_source();
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        for i in 0..60 {
+            fs::write(root.join(format!("t{i}.mp3")), b"x").unwrap();
+        }
+
+        let mut batches: Vec<usize> = Vec::new();
+        let stats = reconcile_with_progress(&conn, sid, root, |done| batches.push(done)).unwrap();
+
+        assert_eq!(stats.added, 60);
+        assert!(
+            batches.len() >= 2,
+            "60 fichiers a PROGRESS_BATCH=25 doit reporter au moins 2 batches, eu {batches:?}"
+        );
+        assert_eq!(
+            batches,
+            vec![25, 50],
+            "callback appele exactement a 25 et 50 fichiers net-changes"
+        );
     }
 }
