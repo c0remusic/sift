@@ -16,6 +16,7 @@ use symphonia::core::io::MediaSourceStream;
 use symphonia::core::meta::MetadataOptions;
 
 /// Container/stream format, read from the header without full decode.
+#[derive(Debug)]
 pub struct Format {
     pub sample_rate: u32,
     pub channels: u16,
@@ -30,7 +31,14 @@ pub struct DecodeInfo {
 
 /// Opens the file and returns a probed format reader.
 fn open_format(path: &str) -> Result<Box<dyn FormatReader>, String> {
-    let file = File::open(path).map_err(|e| format!("open failed: {e}"))?;
+    let file = File::open(path).map_err(|e| {
+        if e.kind() == std::io::ErrorKind::NotFound {
+            "le fichier n'existe plus à cet emplacement — a-t-il été déplacé ou supprimé ?"
+                .to_string()
+        } else {
+            format!("impossible d'ouvrir le fichier : {e}")
+        }
+    })?;
     let mss = MediaSourceStream::new(Box::new(file), Default::default());
     let mut hint = Hint::new();
     if let Some(ext) = std::path::Path::new(path)
@@ -201,6 +209,19 @@ mod tests {
         assert!(
             total >= lo && total <= hi,
             "got {total} interleaved samples, expected ~{expected}"
+        );
+    }
+
+    #[test]
+    fn probe_missing_file_gives_human_readable_error() {
+        let err = probe("definitely/does/not/exist_ever.flac").unwrap_err();
+        assert!(
+            !err.contains("os error"),
+            "raw OS error leaked to the user-facing message: {err}"
+        );
+        assert!(
+            err.contains("n'existe plus") || err.contains("introuvable"),
+            "error should explain the file is missing in plain French: {err}"
         );
     }
 }
