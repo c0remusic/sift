@@ -184,16 +184,6 @@ pub fn reconcile_with_progress(
     Ok(stats)
 }
 
-/// Same as `reconcile_with_progress`, without progress reporting. Used by the initial-scan
-/// tests below and by any caller that doesn't need mid-scan UI updates.
-pub fn reconcile(
-    conn: &Connection,
-    source_id: i64,
-    root: &Path,
-) -> rusqlite::Result<ReconcileStats> {
-    reconcile_with_progress(conn, source_id, root, |_| {})
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -253,7 +243,7 @@ mod tests {
         fs::write(root.join("change.wav"), b"123").unwrap();
 
         // First pass: both files are new.
-        let s1 = reconcile(&conn, sid, root).unwrap();
+        let s1 = reconcile_with_progress(&conn, sid, root, |_| {}).unwrap();
         assert_eq!(s1.added, 2);
         assert_eq!(pending_count(&conn, sid), 2);
 
@@ -266,7 +256,7 @@ mod tests {
         fs::remove_file(root.join("keep.mp3")).unwrap();
         fs::write(root.join("new.aiff"), b"z").unwrap();
 
-        let s2 = reconcile(&conn, sid, root).unwrap();
+        let s2 = reconcile_with_progress(&conn, sid, root, |_| {}).unwrap();
         assert_eq!(s2.added, 1, "new.aiff");
         assert_eq!(s2.updated, 1, "change.wav size differs → re-pending");
         // keep.mp3 gone but it was 'filed' (not pending) → NOT removed by reconcile.
@@ -290,7 +280,7 @@ mod tests {
         let root = tmp.path();
         let p = root.join("t.wav");
         fs::write(&p, b"123").unwrap();
-        reconcile(&conn, sid, root).unwrap();
+        reconcile_with_progress(&conn, sid, root, |_| {}).unwrap();
         // pretend it was analysed
         conn.execute(
             "UPDATE tracks SET analyzed_at=datetime('now'), verdict='ok'",
@@ -300,7 +290,7 @@ mod tests {
 
         // content changes → re-pending AND analyzed_at cleared (forces re-analysis)
         fs::write(&p, b"123456789").unwrap();
-        reconcile(&conn, sid, root).unwrap();
+        reconcile_with_progress(&conn, sid, root, |_| {}).unwrap();
         let analyzed: Option<String> = conn
             .query_row(
                 "SELECT analyzed_at FROM tracks WHERE filename='t.wav'",
@@ -320,11 +310,11 @@ mod tests {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path();
         fs::write(root.join("gone.mp3"), b"1").unwrap();
-        reconcile(&conn, sid, root).unwrap();
+        reconcile_with_progress(&conn, sid, root, |_| {}).unwrap();
         assert_eq!(pending_count(&conn, sid), 1);
 
         fs::remove_file(root.join("gone.mp3")).unwrap();
-        let s = reconcile(&conn, sid, root).unwrap();
+        let s = reconcile_with_progress(&conn, sid, root, |_| {}).unwrap();
         assert_eq!(s.removed, 1);
         assert_eq!(pending_count(&conn, sid), 0);
     }

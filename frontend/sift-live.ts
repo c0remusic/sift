@@ -459,8 +459,9 @@ export function installLiveWiring() {
     if (ip) onBatchInPlaceChange(ip.checked);
   });
 
-  // queue:changed fires once per burst source (watcher debounce window, each scanned source's
-  // own background thread) — debounce the redraw the same way onAnalysisChanged does below.
+  // queue:changed fires per burst source (watcher debounce window) AND periodically during a
+  // large folder scan (scanner.rs emits it every 25 net-changed files) — debounce the redraw
+  // the same way onAnalysisChanged does below, so a fast burst of pings coalesces into one.
   let queueChangeTimer: ReturnType<typeof setTimeout> | undefined;
   void onQueueChanged(() => {
     clearTimeout(queueChangeTimer);

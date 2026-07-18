@@ -395,7 +395,17 @@ fn spawn_scan(app: AppHandle, source_id: i64) {
             .ok();
         let Some(path) = path else { return };
 
-        match scanner::reconcile(&conn, source_id, std::path::Path::new(&path)) {
+        // Ré-émet queue:changed tous les PROGRESS_BATCH fichiers net-changés (scanner.rs) pendant
+        // le scan, en plus de l'émission finale ci-dessous — le front debounce déjà sa redraw
+        // à 150ms (sift-live.ts) donc aucune saturation IPC/UI même sur une grosse bibliothèque.
+        match scanner::reconcile_with_progress(
+            &conn,
+            source_id,
+            std::path::Path::new(&path),
+            |_done| {
+                app.emit("queue:changed", ()).ok();
+            },
+        ) {
             Ok(stats) => log::info!("scan source {source_id}: {stats:?}"),
             Err(e) => log::error!("scan source {source_id} failed: {e}"),
         }
