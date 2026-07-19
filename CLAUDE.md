@@ -53,6 +53,7 @@ Lib = `sift_lib`. MSRV Rust 1.77.2.
 - Dev : `npm run tauri dev` (Vite 5173 + backend Rust)
 - Build frontend : `npm run build` → `dist/`
 - Build installeurs : `npm run tauri build` → `src-tauri/target/release/bundle/`
+- Lint tokens design : `npm run lint:tokens` (détecte couleurs/z-index/spacing en dur qui contournent un token existant, `scripts/lint-tokens.mjs`)
 - Tests Rust : `cargo test --manifest-path src-tauri/Cargo.toml`
   ⚠️ `src-tauri/fixtures/*` (audio .flac/.wav utilisés par `analysis::decode::tests`)
   est **gitignoré** — un checkout frais (nouveau clone ou worktree) ne les a pas
