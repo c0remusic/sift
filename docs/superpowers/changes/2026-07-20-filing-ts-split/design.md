@@ -33,7 +33,8 @@ exclusif.
 
 ## Portée
 
-**Dans ce chantier** : split de `filing.ts` en 3 fichiers, vérification tsc +
+**Dans ce chantier** : split de `filing.ts` en 4 fichiers (`filing.ts` +
+`filing-identify.ts` + `filing-actions.ts` + `filing-state.ts`), vérification tsc +
 checklist comportementale manuelle.
 
 **Hors scope** : tout changement de comportement UX (pas dans F03), toute
@@ -130,8 +131,8 @@ identique avant/après.
 
 ## Terminé = démontrable
 
-- `filing.ts` ≤ ~750 lignes, `filing-identify.ts` et `filing-actions.ts`
-  existent et compilent (`tsc --noEmit` clean).
+- `filing.ts` ≤ ~750 lignes, `filing-identify.ts`, `filing-actions.ts` et
+  `filing-state.ts` existent et compilent (`tsc --noEmit` clean).
 - Checklist comportementale passée sur la vraie fenêtre `tauri dev` après
   chaque tranche, sans régression.
 - Aucun fichier Rust touché, aucun changement de comportement produit.

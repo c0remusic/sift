@@ -61,14 +61,15 @@ function evaluate(ws, expression, awaitPromise = false) {
 }
 
 function reloadPage(ws) {
-  return new Promise((resolve) => {
-    const timeout = setTimeout(() => { cleanup(); resolve(); }, 8000); // fallback if the event never arrives
+  return new Promise((resolve, reject) => {
+    const timeout = setTimeout(() => { cleanup(); resolve(); }, 8000); // fallback if the load event never arrives
     function cleanup() {
       clearTimeout(timeout);
       ws.removeEventListener("message", onMessage);
     }
     function onMessage(ev) {
       const msg = JSON.parse(ev.data);
+      if (msg.id === 999998 && msg.error) { cleanup(); reject(new Error("Page.reload failed: " + JSON.stringify(msg.error))); return; }
       if (msg.method === "Page.loadEventFired") { cleanup(); resolve(); }
     }
     ws.addEventListener("message", onMessage);
