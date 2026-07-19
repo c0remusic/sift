@@ -310,7 +310,7 @@ fn read_attrs(e: &quick_xml::events::BytesStart) -> Result<HashMap<String, Strin
         let attr = attr.map_err(|err| format!("bad attribute: {err}"))?;
         let key = String::from_utf8_lossy(attr.key.as_ref()).into_owned();
         let value = attr
-            .unescape_value()
+            .normalized_value(quick_xml::XmlVersion::Implicit1_0)
             .map_err(|err| format!("bad attribute value: {err}"))?
             .into_owned();
         out.insert(key, value);
