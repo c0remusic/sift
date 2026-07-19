@@ -8,7 +8,8 @@
     "build": "vite build",
     "preview": "vite preview",
     "tauri": "tauri",
-    "fetch-ffmpeg": "node scripts/fetch-ffmpeg.mjs"
+    "fetch-ffmpeg": "node scripts/fetch-ffmpeg.mjs",
+    "lint:tokens": "node scripts/lint-tokens.mjs"
   },
   "devDependencies": {
     "@tauri-apps/cli": "^2.11.4",

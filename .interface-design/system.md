@@ -85,6 +85,14 @@ interne control icône↔label **8 (sm)**. Sift = **densité d'abord** (la liste
 `sharp` **4** · `default` **6** (boutons, inputs, controls) · `soft` **10** (cartes, panneaux) · `pill` **999** (badges, segmented, tags).
 (Ancien 8/12 reconverti : boutons/controls → 6, cartes → 10.)
 
+## Z-index (2026-07-19, audit design)
+Échelle nommée pour la stacking cross-composant : `--z-popover` **20** ·
+`--z-toast` **9998** · `--z-modal` **9999** (le modal doit toujours passer
+au-dessus d'un toast actif — ordre voulu, pas un hasard). Stacking LOCAL à un
+composant (ex. un handle de resize au-dessus de sa propre ligne, une image de
+cover au-dessus de son fallback) reste en littéral `z-index:1`/`0` — ce n'est
+pas une couche de l'échelle globale, ne pas la tokeniser.
+
 ## Hauteurs (inputs / boutons / dropdowns)
 `compact` **32** (lignes/tables) · `default` **36** · `comfortable` **40** (action principale, dropdowns) · `large` **44**.
 

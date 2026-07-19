@@ -77,6 +77,7 @@
 - L842 — Écran Bibliothèque — audit référence canonique 07-09.
 - L861 — Écrans Réglages+Rekordbox+Clé USB — audit référence canonique 07-09.
 - L881 — Historique des corrections (chronologique, par date de session).
+- L933 — Pattern d'erreur/échec (`.sift-*-error`/`-fail`/`-warn`, 9 sites) — déjà cohérent, documenté ici (gap = défaut de doc, pas de code, audit 2026-07-19).
 
 ## Ligne de queue — `.qi` (`styles.css:143-148`)
 
@@ -926,6 +927,54 @@ Task 6 du chantier `docs/superpowers/changes/2026-07-08-ui-reference-audit/`.
 Vérifié : `npx tsc --noEmit` clean. Vérification visuelle (clavier ligne
 master.db, Escape modale USB pendant/hors formatage, segmented) dans
 `tauri dev` par Antoine restante.
+
+---
+
+## Pattern d'erreur/échec — `.sift-*-error`/`-fail`/`-warn` (audit 2026-07-19)
+
+Investigation suite à un audit design qui signalait un gap : ni `empty-state.ts`
+ni `progress-zone.ts` ne couvrent l'erreur, et aucun `error-state.ts` n'existe.
+Vérifié sur pièce (`frontend/styles.css` + grep `frontend/*.ts`) : **le gap
+n'est qu'un défaut de documentation, pas de code** — un pattern d'erreur
+cohérent existe déjà, dispersé sur 9 sites mais réutilisant systématiquement
+les 2 mêmes couples de tokens sémantiques (`--color-text-warning`+
+`--color-background-warning` pour un échec récupérable/en attente,
+`--color-text-danger`+`--color-background-danger` pour une action destructive/
+irréversible) — la règle est déjà écrite en toutes lettres en tête de
+`styles.css:6-9` : *"Color = meaning: green (ok/lossless), amber (doute/
+pending/erreur), red (danger), blue (info)"*.
+
+| Site | Classe | Sélecteur/valeur | Sévérité |
+|---|---|---|---|
+| Ligne batch (`batch-tracklist.ts:24`) | `.sift-bt-fail` | `color:var(--color-text-warning)` | warning |
+| Candidats Discogs (`library-detail.ts:194/221`, `filing.ts:599/651`) | `.sift-cands-error` (+ `.sift-cand-error-icon`) | icône `ti-alert-triangle` + `color:var(--color-text-warning)` | warning |
+| Bandeau tags non gravés (`filing.ts:885`) | `.sift-tag-warn` | fond+bordure+texte `--color-*-warning` | warning |
+| Player (`report-view.ts:416/722`) | `.sift-player-error` | `color:var(--color-text-warning)` | warning |
+| Codec (`report-view.ts:605`) | `.sift-codec-error` | `color:var(--color-text-warning)` | warning |
+| Échec d'analyse (`report-view.ts:1199`) | `.sift-analysis-fail` | `color:var(--color-text-warning)` | warning |
+| Formatage USB (`usb-format-modal.ts:76`) | `.sift-usbfmt-error` / `.sift-usbfmt-warning`/`-exfat-warning` | `error` = `color:var(--color-text-danger)` (irréversible) ; `warning` = ambre | danger (error) / warning |
+| File d'attente (`.sift-pz-row.error`, `progress-zone.ts`) | `.sift-pz-fill` sur ligne `.error` | `background:var(--color-text-danger)` | danger |
+| Toasts/bannières Journal (`journal.ts`) | `.jrnl-toast--warn`/`.jrnl-banner--warn` | `color-mix` sur `--color-text-warning` | warning |
+| Overlay modal (`styles.css:1052`) | `.sift-report-overlay-error` | `color:var(--color-text-danger)` | danger |
+
+**Convention structurelle constante** (visible sur les 6 sites qui affichent
+un message, pas juste une couleur de pastille) : `<div class="sift-{site}-{error|fail|warn}">`
+contenant une icône `<i class="ti ti-alert-triangle">` + le message — pas de
+composant JS partagé (`error-state.ts` n'existe pas), mais le HTML est
+recopié à l'identique site par site, jamais réinventé visuellement.
+
+**Décision (audit 2026-07-19) : ne pas créer `error-state.ts`.** Contrairement
+à `empty-state.ts` (vrai doublon de logique JS avant extraction) ou
+`progress-zone.ts` (état complexe avec transitions), chaque site d'erreur ici
+est un `<div>` statique conditionnel dans un template déjà spécifique au
+composant (candidat Discogs, ligne batch, modale USB...) — extraire un
+`error-state.ts` commun n'apporterait aucune réduction de duplication réelle
+(le HTML fait 1 ligne par site) et ajouterait un niveau d'indirection pour un
+gain nul. Le vrai invariant à préserver n'est pas un composant partagé, c'est
+la règle de token déjà en vigueur : **warning = récupérable/en attente,
+danger = irréversible/destructif** — jamais l'inverse, jamais une 3ᵉ teinte.
+Un futur site d'erreur doit suivre cette règle, pas inventer une nouvelle
+couleur ni un nouveau composant.
 
 ---
 

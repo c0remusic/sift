@@ -64,7 +64,7 @@ function coverHtml(st: EditState): string {
   return (
     `<button data-lib="cover" title="Changer la pochette" aria-label="Changer la pochette" style="position:relative;width:72px;height:72px;flex:none;border-radius:var(--border-radius-md);overflow:hidden;background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);display:flex;align-items:center;justify-content:center;padding:0;cursor:pointer">` +
     inner +
-    `<span style="position:absolute;inset:auto 0 0 0;background:rgba(0,0,0,.55);color:#fff;font-size:var(--text-2xs);padding:2px 0;text-align:center">changer</span>` +
+    `<span style="position:absolute;inset:auto 0 0 0;background:var(--overlay-scrim);color:var(--color-text-on-accent);font-size:var(--text-2xs);padding:2px 0;text-align:center">changer</span>` +
     `</button>`
   );
 }

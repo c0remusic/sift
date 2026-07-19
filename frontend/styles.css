@@ -45,6 +45,10 @@ color-scheme:light;
    bouton Destination du rail (base + tint info), thème-aware. Remplace l'ancien rgba sombre
    codé en dur qui ignorait le thème clair. Voir chrome.ts ensureDropStyle. */
 --overlay-drop:oklch(86.27% 0.011 76.59 / .93);
+/* Caption scrim drawn over an image thumbnail (e.g. cover "changer" label) — theme-invariant
+   (always dark-on-image regardless of light/dark mode, unlike the surface-tinted overlays above),
+   so defined once here and not repeated in the dark blocks. */
+--overlay-scrim:oklch(0% 0 0 / .55);
 /* Radius scale (2026-07-08, structure adapted from tweakcn "ZFlow" — a single base derived via
    calc() instead of 4 independent literals, so the whole scale moves together from one number.
    Base raised 10px→14px (rounder, per user request) but the internal deltas (sm=base-6,
@@ -75,6 +79,11 @@ color-scheme:light;
 --text-lg:14px;--text-xl:16px;--text-2xl:26px;
 /* Spacing scale (system.md): the ONLY allowed values. */
 --space-4:4px;--space-8:8px;--space-12:12px;--space-16:16px;
+/* Z-index scale (2026-07-19 audit): named layers for cross-component stacking only —
+   local intra-component stacking (a resize handle above its own row, a cover image above
+   its own fallback) stays a plain z-index:1/0 literal, not part of this scale. Toast sits
+   BELOW modal on purpose (a modal opening over an active toast must win). */
+--z-popover:20;--z-toast:9998;--z-modal:9999;
 /* Tracking scale (2026-07-08, structure adapted from tweakcn "ZFlow" theme's tracking-* scale —
    values are Sift's own, only the 4 exact literals that already recurred ≥2x across the app
    before this token existed (audit rule from the 2026-07-03 radius/height pass: wire what
@@ -374,7 +383,7 @@ html,body{margin:0;padding:0;height:100%}
 /* Destination popover: replaces the persistent tree column, anchored above its trigger button.
    Hidden by default ([hidden] attribute, toggled in filing.ts); #fldz keeps its id so renderBins'
    existing document.getElementById("fldz") callers need no change. */
-.sift-dest-popover{position:fixed;width:288px;max-height:340px;display:flex;flex-direction:column;padding:10px;background:color-mix(in srgb,var(--color-background-secondary) 70%,transparent);backdrop-filter:blur(16px) saturate(160%);-webkit-backdrop-filter:blur(16px) saturate(160%);border:1px solid var(--color-border-secondary);border-radius:var(--border-radius-lg);overflow-y:auto;z-index:20}
+.sift-dest-popover{position:fixed;width:288px;max-height:340px;display:flex;flex-direction:column;padding:10px;background:color-mix(in srgb,var(--color-background-secondary) 70%,transparent);backdrop-filter:blur(16px) saturate(160%);-webkit-backdrop-filter:blur(16px) saturate(160%);border:1px solid var(--color-border-secondary);border-radius:var(--border-radius-lg);overflow-y:auto;z-index:var(--z-popover)}
 /* An author `display:flex` rule beats the browser's own `[hidden]{display:none}` in the cascade
    (author origin always wins over user-agent origin, regardless of specificity) — so setting
    `.hidden = true` on this element via JS never actually hid it, it just kept getting
@@ -1036,7 +1045,7 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-verdict-stub{display:flex;align-items:center;gap:6px;margin:2px 0 12px;font-size:var(--text-sm);color:var(--color-text-tertiary)}
 .sift-analysis-fail{margin-bottom:12px;font-size:var(--text-sm);color:var(--color-text-warning)}
 .sift-player-error{margin:6px 0 0;font-size:var(--text-sm);color:var(--color-text-warning)}
-.sift-report-overlay{position:fixed;inset:0;z-index:9999;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px}
+.sift-report-overlay{position:fixed;inset:0;z-index:var(--z-modal);background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;padding:24px}
 .sift-report-overlay-card{background:var(--color-background-primary);color:var(--color-text-primary);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-lg);box-shadow:var(--shadow-overlay)}
 .sift-report-overlay-card-blur{background:color-mix(in srgb,var(--color-background-primary) 75%,transparent)!important;backdrop-filter:blur(18px) saturate(160%);-webkit-backdrop-filter:blur(18px) saturate(160%)}
 .sift-report-overlay-loading{padding:22px 26px;font-size:var(--text-base);display:flex;align-items:center;gap:8px}
@@ -1153,7 +1162,7 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-cand-error-icon{font-size:var(--text-md);vertical-align:-2px;margin-right:4px}
 .sift-searching-icon{font-size:var(--text-sm);vertical-align:-1px}
 .sift-goto-reglages{margin-top:5px;font-size:var(--text-sm);padding:3px 9px}
-.sift-toast{position:fixed;right:18px;bottom:18px;z-index:9998;display:flex;align-items:center;gap:12px;background:var(--color-background-secondary);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:9px 13px;font-size:var(--text-md);color:var(--color-text-primary);box-shadow:var(--shadow-toast)}
+.sift-toast{position:fixed;right:18px;bottom:18px;z-index:var(--z-toast);display:flex;align-items:center;gap:12px;background:var(--color-background-secondary);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:9px 13px;font-size:var(--text-md);color:var(--color-text-primary);box-shadow:var(--shadow-toast)}
 .sift-toast-undo{font-size:var(--text-sm);padding:2px 9px}
 /* flex:1 0 100% forces its own line in the #filfoot flex-wrap row regardless of prepend/append order
    — without it the banner just squeezed in next to the compact action buttons (2026-07-06 annotation:

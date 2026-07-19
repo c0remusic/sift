@@ -248,14 +248,14 @@ export function renderBatch() {
   const readyRow = (it: QueueItem) => {
     const on = batchSel.has(it.id);
     return (
-      `<div class="bx-row" data-sift="batchpick" data-id="${it.id}" style="display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:var(--border-radius-md);cursor:pointer;${
+      `<div class="bx-row" data-sift="batchpick" data-id="${it.id}" style="display:flex;align-items:center;gap:var(--space-8);padding:var(--space-8);border-radius:var(--border-radius-md);cursor:pointer;${
         on ? "background:var(--overlay-hover)" : ""
       }">` +
       `<input type="checkbox" class="sift-batch-ck" ${on ? "checked" : ""} tabindex="-1">` +
       verdictDot(it.verdict) +
       nameCell(it) +
       (it.dup
-        ? '<span style="flex:none;font-size:var(--text-2xs);font-weight:600;letter-spacing:.03em;padding:2px 7px;border-radius:999px;background:var(--color-background-warning);color:var(--color-text-warning)">DUPLICATE</span>'
+        ? '<span style="flex:none;font-size:var(--text-2xs);font-weight:600;letter-spacing:.03em;padding:var(--space-4) var(--space-8);border-radius:999px;background:var(--color-background-warning);color:var(--color-text-warning)">DUPLICATE</span>'
         : "") +
       `</div>`
     );
@@ -264,14 +264,14 @@ export function renderBatch() {
   const pendingRow = (it: QueueItem) => {
     const label = it.verdict === "grey" ? "CHECK" : "analyse…";
     return (
-      `<div style="display:flex;align-items:center;gap:9px;padding:7px 9px;opacity:.6">` +
+      `<div style="display:flex;align-items:center;gap:var(--space-8);padding:var(--space-8);opacity:.6">` +
       verdictDot(it.verdict) +
       nameCell(it, true) +
       (it.dup
-        ? '<span style="flex:none;font-size:var(--text-2xs);font-weight:600;padding:2px 7px;border-radius:999px;background:var(--color-background-warning);color:var(--color-text-warning)">DUP</span>'
+        ? '<span style="flex:none;font-size:var(--text-2xs);font-weight:600;padding:var(--space-4) var(--space-8);border-radius:999px;background:var(--color-background-warning);color:var(--color-text-warning)">DUP</span>'
         : "") +
       `<span style="flex:none;font-size:var(--text-2xs);color:var(--color-text-tertiary)">${label}</span>` +
-      `<button data-sift="batchopen" data-id="${it.id}" style="flex:none;font-size:var(--text-xs);padding:2px 8px;color:var(--color-text-info)">Ouvrir en Détail</button>` +
+      `<button data-sift="batchopen" data-id="${it.id}" style="flex:none;font-size:var(--text-xs);padding:var(--space-4) var(--space-8);color:var(--color-text-info)">Ouvrir en Détail</button>` +
       `</div>`
     );
   };
@@ -280,14 +280,14 @@ export function renderBatch() {
   const fakeRow = (it: QueueItem) => {
     const on = batchFakeSel.has(it.id);
     return (
-      `<div class="bx-row" data-sift="batchpickfake" data-id="${it.id}" style="display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:var(--border-radius-md);cursor:pointer;${
+      `<div class="bx-row" data-sift="batchpickfake" data-id="${it.id}" style="display:flex;align-items:center;gap:var(--space-8);padding:var(--space-8);border-radius:var(--border-radius-md);cursor:pointer;${
         on ? "background:var(--overlay-hover)" : ""
       }">` +
       `<input type="checkbox" class="sift-batch-ck" ${on ? "checked" : ""} tabindex="-1">` +
       verdictDot(it.verdict) +
       nameCell(it, true) +
-      '<span style="flex:none;font-size:var(--text-2xs);font-weight:600;letter-spacing:.03em;padding:2px 7px;border-radius:999px;background:var(--color-background-danger);color:var(--color-text-danger)">FAKE</span>' +
-      `<button data-sift="batchopen" data-id="${it.id}" style="flex:none;font-size:var(--text-xs);padding:2px 8px;color:var(--color-text-info)">Ouvrir en Détail</button>` +
+      '<span style="flex:none;font-size:var(--text-2xs);font-weight:600;letter-spacing:.03em;padding:var(--space-4) var(--space-8);border-radius:999px;background:var(--color-background-danger);color:var(--color-text-danger)">FAKE</span>' +
+      `<button data-sift="batchopen" data-id="${it.id}" style="flex:none;font-size:var(--text-xs);padding:var(--space-4) var(--space-8);color:var(--color-text-info)">Ouvrir en Détail</button>` +
       `</div>`
     );
   };
@@ -315,7 +315,7 @@ export function renderBatch() {
       `<div class="sift-bgrp-head" data-grouphead="${kind}"${clickable}>` +
       caret +
       box +
-      `<span style="width:6px;height:6px;border-radius:999px;background:${dotColor};flex:none"></span>` +
+      `<span style="width:var(--space-4);height:var(--space-4);border-radius:999px;background:${dotColor};flex:none"></span>` +
       `<span class="col-h" style="margin:0">${esc(label)} · ${ids.length}</span>` +
       `</div>`
     );
@@ -337,7 +337,7 @@ export function renderBatch() {
     if (remaining > 0) {
       const next = Math.min(remaining, BATCH_GROUP_PAGE);
       html +=
-        `<button data-sift="batchmore" data-kind="${kind}" style="width:100%;margin-top:4px;padding:7px 9px;font-size:var(--text-sm);color:var(--color-text-info);cursor:pointer;background:transparent;border:none;text-align:center">Afficher les ${next} suivants (${remaining} restants)</button>`;
+        `<button data-sift="batchmore" data-kind="${kind}" style="width:100%;margin-top:var(--space-4);padding:var(--space-8);font-size:var(--text-sm);color:var(--color-text-info);cursor:pointer;background:transparent;border:none;text-align:center">Afficher les ${next} suivants (${remaining} restants)</button>`;
     }
     return html;
   };
