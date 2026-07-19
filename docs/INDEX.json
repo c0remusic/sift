@@ -1,5 +1,6 @@
 {
   "reference": [
+    {"path": "docs/session-recap-2026-07-18-deps.md", "topic": "récap session 2026-07-18 — audit deps + état repo", "summary": "Récap de session : bump npm patch/minor (tauri-apps/vite/wavesurfer, 0 vuln avant/après), cargo update ~50 crates transitives patch/minor, état des commits en attente."},
     {"path": "docs/ressources-externes.md", "topic": "veille technique & décisions libs", "summary": "Veille outils/libs par jalon (M2-M8), évaluations spikes (Symphonia, chromaprint, master.db read/write), décisions d'architecture datées. Pas chargé automatiquement (retiré du @import CLAUDE.md le 2026-07-09, 119 Ko) — voir sommaire en tête de fichier ou le champ sections ci-dessous pour cibler une ligne précise.",
      "sections": [
        {"line": 92, "topic": "Évaluation 1 — Symphonia vs FFmpeg"},
