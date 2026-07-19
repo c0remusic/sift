@@ -137,6 +137,16 @@ identique avant/après.
   chaque tranche, sans régression.
 - Aucun fichier Rust touché, aucun changement de comportement produit.
 
+> **Voir aussi** : le plan d'implémentation
+> (`docs/superpowers/plans/2026-07-20-filing-ts-split.md`, écrit après ce
+> design) a affiné cette architecture à 6 fichiers (ajout de
+> `filing-toast.ts` et `filing-preview.ts`) une fois le graphe d'appels
+> réel vérifié fonction par fonction — `refreshPreview`/`updateHeaderName`
+> et `toast` sont chacun consommés par les deux groupes identify/actions, ce
+> qui aurait recréé un cycle sans un module leaf dédié. Le plan est la
+> référence à jour pour la structure de fichiers ; ce design garde son
+> intention/portée globale.
+
 ## Historique
 
 - 2026-07-20 — Révision post codex-crosscheck (lecture seule, HEAD du commit
