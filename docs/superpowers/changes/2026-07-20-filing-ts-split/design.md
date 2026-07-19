@@ -57,16 +57,36 @@ modification du backend Rust, tout autre fichier frontend.
   `destValueLabel`, `defaultTarget`, `targetExt`, `displayName`,
   `fadeSetText`, `ensureKbdLegend`, `positionFmtThumb`).
 
-### Frontière entre modules (pattern déjà établi par `filing-bins.ts`)
+### Frontière entre modules (corrigé après revue Codex — voir Historique)
 
-`RevueState` reste privé à `filing.ts`. Les deux nouveaux modules ne
-l'importent jamais directement — ils reçoivent les éléments d'état dont ils
-ont besoin en paramètres de fonction (mêmes signatures que les fonctions
-actuelles, juste déplacées). Si un couplage caché apparaît en cours de split
-(cf. précédent des tranches `sift-live.ts` — 5 couplages trouvés et résolus par
-injection de dépendance `registerXxx()`), l'implémenteur l'escalade plutôt que
-de le deviner, même pattern que `registerOpenTrackPathGetter`/
-`registerDestChangeHook` de `filing-bins.ts`.
+**Constat vérifié sur le code réel** (pas supposé) : `state: RevueState`
+(`filing.ts:106`), `openSeq` (`filing.ts:1399`) et `acting` (`filing.ts:1164`)
+sont des variables module-globales fermées par closure — `onIdentityApplied`
+(`filing.ts:388`), `doApplyTags` (`:1070`), `doRanger` (`:1179`) et les autres
+fonctions candidates au split y accèdent directement, **sans** les recevoir en
+paramètre. La première rédaction de ce document ("mêmes signatures, juste
+déplacées") était donc incorrecte — `filing-bins.ts` n'est pas un précédent
+direct ici : il possède son propre état de destination, il n'a jamais eu besoin
+de lire `RevueState`.
+
+**Pattern retenu** : extraire `state`, `openSeq`, `acting` dans un nouveau
+module `frontend/filing-state.ts`, seul propriétaire, qui les exporte en
+`let`/`const` mutables (mêmes variables, juste relocalisées — pas de nouvelle
+indirection d'accesseurs). `filing.ts`, `filing-identify.ts` et
+`filing-actions.ts` importent depuis `filing-state.ts` ; aucun des trois
+n'importe les deux autres pour de l'état, donc pas de cycle sur cet axe.
+
+**Axe restant à risque (annoncé, pas résolu à l'avance)** : au moins un appel
+croisé existe déjà — `onIdentityApplied` (→ `filing-identify.ts`) appelle
+`refreshPreview()` (reste dans `filing.ts`). D'autres couplages de ce type
+sont probables et **ne seront pas devinés à l'avance** : comme pour les 5
+couplages cachés trouvés pendant le split `sift-live.ts` (Phase 1, tranches
+1a-1c), l'implémenteur les découvre à l'extraction et les résout par injection
+de dépendance (`registerXxx()` enregistré une fois au wiring, même pattern que
+`registerOpenTrackPathGetter`/`registerDestChangeHook` de `filing-bins.ts`) —
+jamais par un import circulaire. Le plan d'implémentation doit traiter
+l'inventaire exact des couplages croisés comme une tâche de découverte, pas
+comme un fait déjà établi par ce design.
 
 ### Data flow
 
@@ -98,3 +118,15 @@ identique avant/après.
 - Checklist comportementale passée sur la vraie fenêtre `tauri dev` après
   chaque tranche, sans régression.
 - Aucun fichier Rust touché, aucun changement de comportement produit.
+
+## Historique
+
+- 2026-07-20 — Révision post codex-crosscheck (lecture seule, HEAD du commit
+  design initial) : la section "Frontière entre modules" affirmait que l'état
+  serait passé en paramètres avec les signatures actuelles, contredit par le
+  code réel (`state`/`openSeq`/`acting` sont des globales de module fermées
+  par closure, jamais reçues en paramètre — `filing.ts:106,1164,1399`).
+  Corrigé : nouveau module `filing-state.ts` comme propriétaire unique de ces
+  3 variables, importé par les 3 fichiers ; les appels croisés restants
+  (ex. `onIdentityApplied` → `refreshPreview`) traités par injection de
+  dépendance au moment de l'implémentation, pas devinés ici.

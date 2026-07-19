@@ -24,10 +24,18 @@ Thumbs.db
 .idea/
 .vscode/
 
-# .claude/ = bruit-machine ignoré, SAUF rules/ = méthode portable versionnée
+# .claude/ = bruit-machine ignoré, SAUF rules/ (méthode portable versionnée)
+# et scripts/ (outils CDP réutilisables, committés — voir cdp.cjs).
+# Limitation Git connue (vérifiée 2026-07-20) : ces négations ne suffisent PAS
+# à faire apparaître un NOUVEAU fichier de ces sous-dossiers comme trackable —
+# Git refuse de redescendre dans un dossier parent exclu. Seuls les fichiers
+# déjà trackés (ajoutés une fois via `git add -f`) y échappent. Tout nouveau
+# fichier sous rules/ ou scripts/ nécessite donc un `git add -f` explicite.
 .claude/
 !.claude/rules/
 !.claude/rules/**
+!.claude/scripts/
+!.claude/scripts/**
 .codex/
 .agents/
 
