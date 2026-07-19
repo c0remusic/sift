@@ -10,6 +10,10 @@ App desktop **Tauri v2** (Win+Mac), gratuite, de prépa de musique pour DJ : ana
 (détection faux lossless), dédoublonnage, identification, rangement.
 Principe : « déplacer = encoder + ranger ».
 
+## Langage partagé
+Glossaire de domaine du projet : `CONTEXT.md` (racine). Le lire avant tout travail
+qui manipule le vocabulaire métier ; le maintenir via le skill `interview`.
+
 ## Vision de travail — studio design-to-code 1:1
 La maquette n'est pas une étape avant le produit : **l'app réelle est la surface
 de design**. Toute évolution visuelle/UX se fait directement dans le code de
@@ -32,6 +36,12 @@ inerte en prod). Corollaires :
   framework est explicitement écartée (Évaluation 3, ressources-externes).
 - Vérification, routage skills, conventions CSS : sections dédiées plus bas
   (Vérification UI, Outillage, Front — CSS) — règles non dupliquées ici.
+
+## Wireframe & tokens
+Source de tokens canonique (à viser pour tout wireframe `interface-design`) :
+`frontend/styles.css` (`:root` + override `:root[data-theme="dark"]` et media
+`prefers-color-scheme:dark`, token-sync v3). _Éviter_ : `.interface-design/system.md`
+(palette/typo périmées). Wireframes de feature → `docs/wireframes/<feature>.html`.
 
 ## Stack
 Tauri v2 (Rust) · frontend Vite vanilla · **Symphonia** (décode analyse) + FFmpeg sidecar
