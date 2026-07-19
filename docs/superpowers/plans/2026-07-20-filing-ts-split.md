@@ -101,7 +101,7 @@ export const state: RevueState = {
 export const openState = { openSeq: 0, acting: false };
 ```
 
-- [ ] **Step 2: Update `frontend/filing.ts` to import from `filing-state.ts`**
+- [ ] **Step 2: Update `frontend/filing.ts` to import from `filing-state.ts`, rename EVERY bare `openSeq`/`acting` reference in the whole file now**
 
 Remove lines 65-120 (the `RevueState` interface + `state` const), the `let openSeq = 0;` line, and the `let acting = false;` line from `filing.ts`. Add near the top of the import block:
 
@@ -109,18 +109,24 @@ Remove lines 65-120 (the `RevueState` interface + `state` const), the `let openS
 import { state, openState } from "./filing-state";
 ```
 
-Then, **within `filing.ts` only** (the other tasks below handle their own files), replace every remaining reference to the bare `openSeq` with `openState.openSeq` and every bare `acting` with `openState.acting`. At this point in `filing.ts` that's inside `openFilingInto` (`const myseq = ++openSeq;` → `const myseq = ++openState.openSeq;`, and the two `if (myseq !== openSeq) return;` guards → `if (myseq !== openState.openSeq) return;`). The functions that reference `acting`/`openSeq` elsewhere (`doApplyTags`, `doUndoApply`, `wireCandidateClicks`, `doIdentify`, `doRanger`, `doSecondary`) move out to other files in later tasks — do the same `openSeq`→`openState.openSeq`/`acting`→`openState.acting` rename at the point each one is cut, not here.
+Then rename **every** remaining bare reference to `openSeq` → `openState.openSeq` and every bare `acting` → `openState.acting`, across the WHOLE file — not just the parts staying in `filing.ts` after this task. `openSeq`/`acting` are still used, at this point, by functions that Tasks 4/5 will *later* cut out into other files (`wireCandidateClicks`, `doIdentify`, `doApplyTags`, `doUndoApply`, `doRanger`, `doSecondary`) — rename them here too, in place, before they move. This keeps `filing.ts` compiling standalone at the end of every single task in this plan (required by the Global Constraints above — no task may leave the tree in a state `tsc` rejects, even transiently between commits). Confirm you found every site with:
+
+```bash
+grep -n '\bopenSeq\b\|\bacting\b' frontend/filing.ts
+```
+
+Expected after this step: every match line reads `openState.openSeq`/`openState.acting`, not bare `openSeq`/`acting` (the grep pattern itself matches both forms — read each hit, don't just count them).
 
 - [ ] **Step 3: Verify**
 
 Run: `npx tsc --noEmit`
-Expected: same errors as before Step 1/2 (all the functions not yet updated for `openState` will fail — that's expected, they get fixed in their own tasks below). If `filing-state.ts` itself has a type error, fix it now; do not proceed with type errors originating from `filing-state.ts`.
+Expected: **clean, zero errors** — this task's rename covers the whole file, so nothing should be broken by it, unlike a partial rename would be. If there are errors, find every remaining bare `openSeq`/`acting` site with the grep above and fix them before proceeding; do not defer any to a later task.
 
 - [ ] **Step 4: Commit**
 
 ```bash
 git add frontend/filing-state.ts frontend/filing.ts
-git commit -m "refactor(filing): extract filing-state.ts (RevueState + openState)"
+git commit -m "refactor(filing): extract filing-state.ts (RevueState + openState), rename all openSeq/acting refs to openState.*"
 ```
 
 ---
@@ -328,7 +334,7 @@ Cut the following, verbatim, in this order (locate each by its doc-comment, anch
 
 Also move the two module-level UI-state `let`s these functions close over: `identEditing` (`let identEditing = false;`, originally `filing.ts:125`) and `closeMetaZone` (`let closeMetaZone: (() => void) | null = null;` plus the `document.addEventListener("sift:accordion-open", ...)` block right after it, originally `filing.ts:131-134`) — both are read/written exclusively inside `renderEditor` (the accordion-close listener calls `closeMetaZone?.()`, and `renderEditor` is the only place that assigns to it).
 
-Within every cut function, replace `openSeq` → `openState.openSeq` and `acting` → (not applicable here — `acting` is only read/written by `doRanger`/`doSecondary`, which move in Task 5).
+Every `openSeq` reference in the cut functions was already renamed to `openState.openSeq` in Task 1 Step 2 (whole-file rename, done before any code moved) — this is a pure verbatim cut, no further renaming needed here. `acting` doesn't appear in any of these functions (it's only read/written by `doRanger`/`doSecondary`, moving in Task 5).
 
 Header imports for the new file:
 
@@ -367,6 +373,7 @@ With `tauri dev` running (`WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugg
 3. Click "Annuler" on the just-applied tags → reverts, button returns to idle, discrepancy banner reappears if applicable.
 4. Edit the Artist/Title/Version fields by hand → filename preview (`Nom final`) updates, header name updates, discrepancy banner toggles correctly.
 5. Close and reopen the Métadonnées zone → "Identifié :" line and genres redraw correctly (tests `restoreIdentifiedLine`/`renderGenres` reachable from the reopen path).
+6. **Race check (this is the part `tsc`/a happy-path click-through cannot catch — `openState.openSeq` guards a real async hazard, not a formality):** click "Rechercher sur Discogs" on track A, then — WHILE the search is still in flight (visible "Recherche…" spinner) — click a different track in the queue to open track B. Confirm track A's candidate results, when they arrive, do NOT paint into track B's pane (no candidates list appearing under a now-different track, no console error). Repeat for Apply-tags: click "Appliquer" on a track, immediately switch to another track before it resolves, confirm the first track's tags write completes silently in the background without touching the second track's UI/state.
 
 If any of these regress, do not proceed to Task 5 — fix first (this task's cut is the most likely source of a real coupling this plan didn't anticipate; escalate rather than guessing, same discipline as the `sift-live.ts` Phase 1 split).
 
@@ -402,7 +409,7 @@ Cut the following, verbatim, in this order (anchors given):
 5. `doRevert` function
 6. `doSecondary` function
 
-Inside the cut `doRanger`/`doSecondary` bodies: replace `acting` → `openState.acting`, and the two internal calls to `openFilingInto`/`clearPane` become the new parameters (see signatures below — this is the one non-verbatim change in this task, required to avoid the cycle described above).
+`acting` was already renamed to `openState.acting` in Task 1 Step 2 (whole-file rename) — this cut is otherwise verbatim except the two internal calls to `openFilingInto`/`clearPane`, which become the new parameters (see signatures below — this is the one non-verbatim change in this task, required to avoid the cycle described above).
 
 ```ts
 import { fileTrack, listQueue, rejectTrack, requeueTrack, revertBatch } from "./ipc";
@@ -622,6 +629,8 @@ Expected: clean. This is the last extraction task — if any `openSeq`/`acting` 
 2. Trigger a RAIL_MISMATCH (a mislabeled lossless file, if a fixture exists) → confirmation dialog appears, confirming proceeds with the conversion, cancelling leaves the track untouched.
 3. Click "Écarter" on a non-fake track → track leaves the queue, toast shows with "Annuler", undo restores it to pending.
 4. Click "Re-source" on a fake-verdict track → same flow, correct wording ("Marqué à re-sourcer").
+5. **Double-action guard check:** double-click "Convertir" as fast as possible (or click it, then immediately click it again before the spinner clears) → only ONE conversion happens, ONE banner shows, no duplicate/corrupted file, no second `fileTrack` IPC call fired (watch the terminal running `tauri dev` for a duplicate log line, or use `.claude/scripts/cdp.cjs eval` against `window.__SIFT_DEBUG__` if such a hook exists, otherwise visually confirm only one banner and the file appears once in the destination folder). Repeat for rapid double-click on "Écarter"/"Re-source" → track leaves the queue exactly once, not twice.
+6. **Race check:** click "Convertir" on track A, and while its conversion is still in flight (auto-advance hasn't happened yet), try selecting a different track in the queue. Confirm the in-flight conversion completes and shows its banner correctly regardless of which track ends up open afterward — no crash, no banner attached to the wrong track.
 
 If any of these regress, fix before Task 6 (do not paper over — this task's parameter-passing change to `doRanger`/`doSecondary` is the one place this plan deviated from verbatim-copy, so it's the most likely spot for a real mistake).
 
