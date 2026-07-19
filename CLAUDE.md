@@ -54,6 +54,7 @@ Lib = `sift_lib`. MSRV Rust 1.77.2.
 - Build frontend : `npm run build` → `dist/`
 - Build installeurs : `npm run tauri build` → `src-tauri/target/release/bundle/`
 - Lint tokens design : `npm run lint:tokens` (détecte couleurs/z-index/spacing en dur qui contournent un token existant, `scripts/lint-tokens.mjs`)
+- Storybook (doc visuelle des états UI, framework-agnostic `@storybook/html-vite` — pas de framework composant côté front) : `npm run storybook` (dev, port 6006) · `npm run build-storybook` (statique). Config `.storybook/`, stories `frontend/*.stories.ts`. Miroir vivant de `docs/design-system-states.md` (empty state, pattern erreur/warning, pastille segmentée) — ajouter une story quand on documente un nouvel état plutôt que d'étendre seulement le markdown.
 - Tests Rust : `cargo test --manifest-path src-tauri/Cargo.toml`
   ⚠️ `src-tauri/fixtures/*` (audio .flac/.wav utilisés par `analysis::decode::tests`)
   est **gitignoré** — un checkout frais (nouveau clone ou worktree) ne les a pas

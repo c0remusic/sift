@@ -9,10 +9,15 @@
     "preview": "vite preview",
     "tauri": "tauri",
     "fetch-ffmpeg": "node scripts/fetch-ffmpeg.mjs",
-    "lint:tokens": "node scripts/lint-tokens.mjs"
+    "lint:tokens": "node scripts/lint-tokens.mjs",
+    "storybook": "storybook dev -p 6006",
+    "build-storybook": "storybook build"
   },
   "devDependencies": {
+    "@storybook/addon-a11y": "^10.5.2",
+    "@storybook/html-vite": "^10.5.2",
     "@tauri-apps/cli": "^2.11.4",
+    "storybook": "^10.5.2",
     "typescript": "^6.0.3",
     "vite": "^8.1.5"
   },
