@@ -62,9 +62,18 @@ function evaluate(ws, expression, awaitPromise = false) {
 
 function reloadPage(ws) {
   return new Promise((resolve) => {
+    const timeout = setTimeout(() => { cleanup(); resolve(); }, 8000); // fallback if the event never arrives
+    function cleanup() {
+      clearTimeout(timeout);
+      ws.removeEventListener("message", onMessage);
+    }
+    function onMessage(ev) {
+      const msg = JSON.parse(ev.data);
+      if (msg.method === "Page.loadEventFired") { cleanup(); resolve(); }
+    }
+    ws.addEventListener("message", onMessage);
     ws.send(JSON.stringify({ id: 999999, method: "Page.enable", params: {} }));
     ws.send(JSON.stringify({ id: 999998, method: "Page.reload", params: { ignoreCache: true } }));
-    setTimeout(resolve, 1500);
   });
 }
 

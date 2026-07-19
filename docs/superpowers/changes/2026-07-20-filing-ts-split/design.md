@@ -25,8 +25,11 @@ apparaître 3 groupes par responsabilité, pas par ordre d'exécution
 ## Objectif
 
 Extraire les groupes 1 et 2 dans des modules dédiés, en conservant tout le
-comportement observable (refactor pur, aucun changement fonctionnel). `filing.ts`
-reste le seul propriétaire de `RevueState`.
+comportement observable (refactor pur, aucun changement fonctionnel).
+`state`/`openSeq`/`acting` (voir Frontière entre modules) déménagent dans un
+module dédié `filing-state.ts`, seul propriétaire — `filing.ts` en devient
+consommateur au même titre que les deux nouveaux modules, plus propriétaire
+exclusif.
 
 ## Portée
 
@@ -49,13 +52,18 @@ modification du backend Rust, tout autre fichier frontend.
   bord + feedback : `doApplyTags`, `doUndoApply`, `doRanger`, `doRevert`,
   `doSecondary`, `toast`, `showFiledConfirm`, `setApplyIdle`, `setApplyApplied`,
   `resetApplyButton`, `setActionsDisabled`.
-- **`frontend/filing.ts`** (reste, ~700 lignes) — `RevueState` (état
-  module-privé, jamais exporté brut), `openFilingInto` (orchestrateur),
-  `installFilingKeys`, `installUndoShortcut`, `syncDetail`, `renderFoot`,
-  `clearPane`, `dupBanner`, helpers de rendu couplés à l'état (`refreshPreview`,
-  `updateHeaderName`, `refreshRangerButton`, `refreshFootButton`,
-  `destValueLabel`, `defaultTarget`, `targetExt`, `displayName`,
-  `fadeSetText`, `ensureKbdLegend`, `positionFmtThumb`).
+- **`frontend/filing-state.ts`** (nouveau, ~15 lignes) — seul propriétaire de
+  l'état partagé : `state: RevueState`, `openState` (objet mutable
+  `{ openSeq, acting }`, voir Frontière ci-dessous). Aucune logique, juste la
+  déclaration + son type.
+- **`frontend/filing.ts`** (reste, ~700 lignes) — `openFilingInto`
+  (orchestrateur), `installFilingKeys`, `installUndoShortcut`, `syncDetail`,
+  `renderFoot`, `clearPane`, `dupBanner`, helpers de rendu couplés à l'état
+  (`refreshPreview`, `updateHeaderName`, `refreshRangerButton`,
+  `refreshFootButton`, `destValueLabel`, `defaultTarget`, `targetExt`,
+  `displayName`, `fadeSetText`, `ensureKbdLegend`, `positionFmtThumb`) —
+  importe `state`/`openState` depuis `filing-state.ts` comme les deux autres
+  modules, ne les possède plus.
 
 ### Frontière entre modules (corrigé après revue Codex — voir Historique)
 
@@ -69,10 +77,19 @@ déplacées") était donc incorrecte — `filing-bins.ts` n'est pas un précéde
 direct ici : il possède son propre état de destination, il n'a jamais eu besoin
 de lire `RevueState`.
 
-**Pattern retenu** : extraire `state`, `openSeq`, `acting` dans un nouveau
-module `frontend/filing-state.ts`, seul propriétaire, qui les exporte en
-`let`/`const` mutables (mêmes variables, juste relocalisées — pas de nouvelle
-indirection d'accesseurs). `filing.ts`, `filing-identify.ts` et
+**Pattern retenu** : `state: RevueState` reste un objet — sa mutation par les
+consommateurs (`state.canonical = ...`, déjà le style actuel) fonctionne sans
+changement une fois relocalisé, une liaison ES importée interdisant la
+RÉASSIGNATION mais pas la mutation de propriété. `openSeq`/`acting` en
+revanche sont aujourd'hui des primitives réassignées directement
+(`openSeq++`, `acting = true`, `filing.ts:1399,1164`) — un export `let`
+réassigné depuis un autre module échouerait à la compilation TS (liaison en
+lecture seule côté importeur). Ils sont donc regroupés dans un objet mutable
+unique `openState = { openSeq: 0, acting: false }` exporté `const` ; tout
+site qui faisait `openSeq++`/`acting = true` devient
+`openState.openSeq++`/`openState.acting = true` (mutation de propriété, pas
+réassignation — valide en ESM). `frontend/filing-state.ts` exporte `state` et
+`openState`, sans logique additionnelle. `filing.ts`, `filing-identify.ts` et
 `filing-actions.ts` importent depuis `filing-state.ts` ; aucun des trois
 n'importe les deux autres pour de l'état, donc pas de cycle sur cet axe.
 
