@@ -51,6 +51,7 @@ import {
   ensureDestPopoverAutoClose,
 } from "./filing-bins";
 import { state, openState } from "./filing-state";
+import { toast, registerClearPaneHook } from "./filing-toast";
 
 /** Banner label when a track was filed in place (its own source folder, not a tree bin). */
 const IN_PLACE_BIN_LABEL = "source folder";
@@ -83,6 +84,7 @@ document.addEventListener("sift:accordion-open", (e) => {
 // path and trigger a rail refresh without importing this module back (would be a static cycle).
 registerOpenTrackPathGetter(() => state.track?.path ?? null);
 registerDestChangeHook(() => refreshFootButton());
+registerClearPaneHook(clearPane);
 
 /** Default target from the analysed rail (lossless → AIFF, else MP3 320). */
 function defaultTarget(rail: string): Target {
@@ -1070,39 +1072,6 @@ async function doUndoApply(btn: HTMLButtonElement, batchId: string): Promise<voi
     toast("Annulation impossible", false);
     if (myseq === openState.openSeq) setApplyApplied(btn, batchId); // stay applied so the user can retry
   }
-}
-
-/** A transient toast at the bottom-right with an optional "Undo" action. With `onUndo` the Undo
- *  button runs that callback (e.g. a targeted revert of a specific batch); without it, Undo falls
- *  back to `undoLast` (the LIFO most-recent action) and clears the detail pane. */
-function toast(message: string, undo: boolean, onUndo?: () => void): void {
-  document.getElementById("sift-toast")?.remove();
-  const el = document.createElement("div");
-  el.id = "sift-toast";
-  el.className = "sift-toast";
-  el.setAttribute("role", "status");
-  el.setAttribute("aria-live", "polite");
-  el.innerHTML =
-    `<span>${esc(message)}</span>` +
-    (undo
-      ? '<button data-fil="undo" class="sift-toast-undo">Annuler</button>'
-      : "");
-  document.body.appendChild(el);
-  el.querySelector('[data-fil="undo"]')?.addEventListener("click", () => {
-    el.remove();
-    if (onUndo) {
-      onUndo(); // targeted revert (e.g. revertBatch of THIS tag_edit) — pane stays as-is
-      return;
-    }
-    void undoLast()
-      .then(() => {
-        // the just-filed track is back in the queue — clear the stale detail pane
-        const mid = document.getElementById("mid");
-        if (mid) clearPane(mid);
-      })
-      .catch((e) => console.error("undo failed", e));
-  });
-  setTimeout(() => el.remove(), 6000);
 }
 
 // One filing action at a time — guards against a double-click firing two encodes.
