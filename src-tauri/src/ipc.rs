@@ -248,6 +248,7 @@ pub fn analysis_progress(conn: State<'_, Mutex<Connection>>) -> Result<AnalysisP
 /// file-read / decode oracle on any path on disk.
 #[tauri::command]
 pub fn analyze_path(
+    app: AppHandle,
     conn: State<'_, Mutex<Connection>>,
     path: String,
     with_spectrogram: bool,
@@ -299,7 +300,30 @@ pub fn analyze_path(
             }
         }
     }
-    let report = crate::analysis::analyze(&path, with_spectrogram)?;
+    let report = match crate::analysis::analyze(&path, with_spectrogram) {
+        Ok(r) => r,
+        Err(e) => {
+            // The file is confirmed gone (decode.rs's open_format hits NotFound) — unlike the
+            // live watcher's delete handler (watcher.rs) or a manual rescan (scanner::reconcile),
+            // nothing else guarantees this pending row ever gets dropped for an unwatched source
+            // or before the watcher processes the event, so a client repeatedly reopening the
+            // next `pending` row could reopen this exact same gone track forever (found live,
+            // 2026-07-20 — a frontend-only skip-list still cycled between multiple gone tracks).
+            // Fix at the source: drop the row here too, same as the watcher does.
+            if e.contains("n'existe plus") {
+                let conn = db::lock_conn(&conn)?;
+                match crate::scanner::forget_path(&conn, &path) {
+                    Ok(n) if n > 0 => {
+                        drop(conn);
+                        app.emit("queue:changed", ()).ok();
+                    }
+                    Ok(_) => {}
+                    Err(err) => log::error!("analyze_path: forget_path failed for {path}: {err}"),
+                }
+            }
+            return Err(e);
+        }
+    };
     // self-heal the cache: store the freshly-computed report (spectrogram included when
     // requested) so the next open of this track is instant either way.
     match conn.lock() {
