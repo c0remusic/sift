@@ -366,26 +366,34 @@ export async function openFilingInto(mid: HTMLElement, item: QueueItem): Promise
   ]);
   if (myseq !== openState.openSeq) return; // a newer open started while we awaited — don't paint this track
   if (fileGone) {
-    // The file is confirmed gone from disk — the backend's own scan/watcher already dropped this
-    // track from `pending` (scanner.rs forget_path), so nothing in this pane is actionable
-    // (can't play, can't file, can't retry). Leaving it open contradicted the queue possibly
-    // already showing "Tous les morceaux ont été traités." beside a permanently-stuck pane, with
-    // no way to dismiss it (syncDetail's "never switch away from an open track" guard otherwise
-    // keeps it forever).
-    // Re-fetch the queue ourselves (same pattern as doRanger's auto-advance,
-    // filing-actions.ts) rather than waiting for a queue:changed tick: `forget_path` already ran
-    // on the backend by the time this analysis failure surfaces, but no NEW event fires just
-    // because THIS open detected it — without this, the pane would sit on the neutral prompt even
-    // with other tracks still pending, until some unrelated change nudged syncDetail again.
+    // The file is confirmed gone from disk, so nothing in this pane is actionable (can't play,
+    // can't file, can't retry). CORRECTION (caught in review): `analyze_path` itself does NOT
+    // remove the row from `pending` — only the live watcher's delete handler (watcher.rs) or a
+    // manual rescan (scanner.rs forget_path) does, and neither is guaranteed to have run yet by
+    // the time this analysis failure surfaces (unwatched source, or the watcher event just hasn't
+    // been processed). So `item` itself can legitimately still be the first (or only) row
+    // `listQueue()` returns — reopening it blindly would re-run this exact same failure forever.
     let items: QueueItem[] = [];
+    let listQueueFailed = false;
     try {
       items = await listQueue();
     } catch (err) {
       console.error("listQueue failed after detecting a gone file", err);
+      listQueueFailed = true;
     }
     if (myseq !== openState.openSeq) return; // a newer open started while we awaited listQueue
-    if (items.length) void openFilingInto(mid, items[0]);
-    else clearPane(mid, true);
+    const next = items.find((i) => i.id !== item.id);
+    if (next) {
+      void openFilingInto(mid, next);
+    } else if (listQueueFailed) {
+      // Real queue state is unknown (IPC/DB error) — don't assert "nothing to review" (fail-fast:
+      // never guess a fact we couldn't verify). Neutral prompt, not the formal empty state.
+      clearPane(mid);
+    } else {
+      // listQueue succeeded and every remaining row (zero or more) is this same gone track —
+      // genuinely nothing else to show.
+      clearPane(mid, true);
+    }
     return;
   }
 
