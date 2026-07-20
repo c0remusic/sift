@@ -215,7 +215,7 @@ registerClearPaneHook(clearPane);
 - [ ] **Step 4: Verify**
 
 Run: `npx tsc --noEmit`
-Expected: no new errors introduced by this task (errors from not-yet-migrated `openSeq`/`acting` references from Task 1 may still be present — fine, they clear in later tasks).
+Expected: clean, zero errors (Task 1 already renamed every `openSeq`/`acting` reference in the whole file — there is nothing left for this task to leave broken).
 
 - [ ] **Step 5: Commit**
 
@@ -629,7 +629,7 @@ Expected: clean. This is the last extraction task — if any `openSeq`/`acting` 
 2. Trigger a RAIL_MISMATCH (a mislabeled lossless file, if a fixture exists) → confirmation dialog appears, confirming proceeds with the conversion, cancelling leaves the track untouched.
 3. Click "Écarter" on a non-fake track → track leaves the queue, toast shows with "Annuler", undo restores it to pending.
 4. Click "Re-source" on a fake-verdict track → same flow, correct wording ("Marqué à re-sourcer").
-5. **Double-action guard check:** double-click "Convertir" as fast as possible (or click it, then immediately click it again before the spinner clears) → only ONE conversion happens, ONE banner shows, no duplicate/corrupted file, no second `fileTrack` IPC call fired (watch the terminal running `tauri dev` for a duplicate log line, or use `.claude/scripts/cdp.cjs eval` against `window.__SIFT_DEBUG__` if such a hook exists, otherwise visually confirm only one banner and the file appears once in the destination folder). Repeat for rapid double-click on "Écarter"/"Re-source" → track leaves the queue exactly once, not twice.
+5. **Double-action guard check.** `src-tauri/src/ipc_filing.rs:292`'s `file_track` command has no logging (confirmed by inspection — not something a terminal watch can catch), so verify against the two independently-observable, already-existing effects instead of an assumption: double-click "Convertir" as fast as possible (or click it, then immediately click it again before the spinner clears), then (a) open the destination folder and confirm exactly ONE file was written (no ` (1)` duplicate-suffix copy, no partial/corrupt second file), and (b) open the Journal screen (`frontend/journal.ts`) and confirm exactly ONE new entry for this track/batch, not two. Both checks together prove the second click was a no-op (the `openState.acting` guard's actual job), not just "looked fine at a glance". Repeat for rapid double-click on "Écarter"/"Re-source" → the track's row in Écartés (or the Journal) shows exactly one reject entry, not two.
 6. **Race check:** click "Convertir" on track A, and while its conversion is still in flight (auto-advance hasn't happened yet), try selecting a different track in the queue. Confirm the in-flight conversion completes and shows its banner correctly regardless of which track ends up open afterward — no crash, no banner attached to the wrong track.
 
 If any of these regress, fix before Task 6 (do not paper over — this task's parameter-passing change to `doRanger`/`doSecondary` is the one place this plan deviated from verbatim-copy, so it's the most likely spot for a real mistake).
