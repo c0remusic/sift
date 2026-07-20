@@ -328,8 +328,17 @@ export async function openFilingInto(mid: HTMLElement, item: QueueItem): Promise
   // Tracks whether any of the 3 reads below failed, so a real IPC error can be surfaced to the
   // user distinctly from "nothing to show yet" instead of silently rendering as an empty field.
   let readError = false;
+  // Set only on the specific "file no longer exists on disk" message (decode.rs's open_format,
+  // the one path that already produces this exact French text) — a broader readError (permission
+  // glitch, corrupt file, DB hiccup) is left for the user to see and retry, not auto-dismissed.
+  let fileGone = false;
   const [report, canonical, release, fileTags] = await Promise.all([
-    openReportInto(reportEl, item.path, verdictEl, { deferText: true }),
+    openReportInto(reportEl, item.path, verdictEl, {
+      deferText: true,
+      onAnalysisError: (msg) => {
+        if (msg.includes("n'existe plus")) fileGone = true;
+      },
+    }),
     reconcile(item.id).catch((e): Canonical => {
       console.error("reconcile failed", e);
       readError = true;
@@ -349,6 +358,17 @@ export async function openFilingInto(mid: HTMLElement, item: QueueItem): Promise
     }),
   ]);
   if (myseq !== openState.openSeq) return; // a newer open started while we awaited — don't paint this track
+  if (fileGone) {
+    // The file is confirmed gone from disk — the backend's own scan/watcher already dropped this
+    // track from `pending` (scanner.rs forget_path), so nothing in this pane is actionable
+    // (can't play, can't file, can't retry). Leaving it open contradicted the queue possibly
+    // already showing "Tous les morceaux ont été traités." beside a permanently-stuck pane, with
+    // no way to dismiss it (syncDetail's "never switch away from an open track" guard otherwise
+    // keeps it forever). Clear rather than render; the next queue:changed tick picks the real
+    // next track or the true empty state — we don't know which from here.
+    clearPane(mid);
+    return;
+  }
 
   // When a Discogs identity was applied earlier but not yet filed, the file tags still hold the OLD
   // name, so reconcile (which reads those tags) would wipe the chosen identity on reopen. Trust the

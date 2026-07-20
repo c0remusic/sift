@@ -377,6 +377,11 @@ interface PlayerHeaderOptions {
   title?: string;
   subtitle?: string;
   showAnalysisFailure?: boolean;
+  /** Called with the raw error message when analyzePath fails, in addition to (not instead of)
+   *  the inline "Échec de l'analyse" rendering below — lets a caller react to a specific failure
+   *  (e.g. filing.ts detecting decode.rs's "file no longer exists" message to clear a stale pane)
+   *  without changing this function's own return value/behavior for callers that don't pass it. */
+  onAnalysisError?: (message: string) => void;
 }
 
 function playerHeaderHtml(name: string, path: string, closeBtn: boolean, opts: PlayerHeaderOptions = {}): string {
@@ -1193,6 +1198,7 @@ export async function openReportInto(
   } catch (e) {
     console.error("analyze_path failed", e);
     if (seq !== openSeq) return null;
+    headerOpts.onAnalysisError?.(String(e));
     const verdictEl = verdictHost();
     if (verdictEl && headerOpts.showAnalysisFailure !== false) {
       verdictEl.innerHTML =
