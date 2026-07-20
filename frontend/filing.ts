@@ -273,10 +273,10 @@ function dupBanner(m: DupMatch): string {
   return `<div class="sift-dup-banner" style="background:${bg}"><i class="ti ti-copy" style="color:${fg}"></i><div class="sift-dup-banner-body"><div class="sift-dup-banner-head" style="color:${fg}">${head}</div><div class="sift-dup-banner-where">${where}</div></div></div>`;
 }
 
-// Bumped on every open; an in-flight open bails at its await points if a newer one started
-// (prevents a slow analyze/reconcile from clobbering the pane of a track opened since).
-
-/** Render the analysis report + filing footer for `item` into the #mid pane. */
+/** Render the analysis report + filing footer for `item` into the #mid pane. `openState.openSeq`
+ *  is bumped on every open; an in-flight open bails at its await points if a newer one started
+ *  (prevents a slow analyze/reconcile from clobbering the pane of a track opened since) — see
+ *  filing-state.ts for the full rationale. */
 export async function openFilingInto(mid: HTMLElement, item: QueueItem): Promise<void> {
   const myseq = ++openState.openSeq;
   state.track = item;
