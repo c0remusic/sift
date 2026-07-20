@@ -310,7 +310,12 @@ pub fn analyze_path(
             // next `pending` row could reopen this exact same gone track forever (found live,
             // 2026-07-20 — a frontend-only skip-list still cycled between multiple gone tracks).
             // Fix at the source: drop the row here too, same as the watcher does.
-            if e.contains("n'existe plus") {
+            // Re-check existence right here (not just trusting `e`'s text) to shrink a real
+            // TOCTOU window flagged in review: `analyze()`'s NotFound and this forget_path call
+            // aren't atomic — if the file gets recreated in between (e.g. re-downloaded), a
+            // stale error text would otherwise delete a row the watcher may have just re-added
+            // as freshly pending.
+            if e.contains("n'existe plus") && !std::path::Path::new(&path).exists() {
                 let conn = db::lock_conn(&conn)?;
                 match crate::scanner::forget_path(&conn, &path) {
                     Ok(n) if n > 0 => {
@@ -338,6 +343,38 @@ pub fn analyze_path(
         Err(_) => log::error!("analyze_path: DB mutex poisoned, skipping report cache write"),
     }
     Ok(report)
+}
+
+/// Force a re-analysis of the given tracks (still-pending only): clears their cached verdict
+/// and analysis timestamp so `worker::select_pending` picks them back up, then wakes the pool.
+/// Used for tracks stuck unanalysed (e.g. a transient decode error on first pass) — the user
+/// asks Sift to try again rather than waiting indefinitely with no way to retry.
+#[tauri::command]
+pub fn reanalyze_tracks(
+    app: AppHandle,
+    conn: State<'_, Mutex<Connection>>,
+    track_ids: Vec<i64>,
+) -> Result<usize, String> {
+    let n = {
+        let conn = db::lock_conn(&conn)?;
+        let mut n = 0usize;
+        for id in track_ids {
+            n += conn
+                .execute(
+                    "UPDATE tracks SET verdict=NULL, report_json=NULL, analyzed_at=NULL,
+                        codec_error=NULL, container_ok=NULL
+                     WHERE id=?1 AND status='pending'",
+                    rusqlite::params![id],
+                )
+                .map_err(|e| e.to_string())?;
+        }
+        n
+    };
+    if n > 0 {
+        app.emit("queue:changed", ()).ok();
+        crate::worker::refill(&app);
+    }
+    Ok(n)
 }
 
 /// Return a filesystem path the webview's audio engine can actually play. Chromium plays

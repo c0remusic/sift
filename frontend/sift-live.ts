@@ -18,6 +18,7 @@ import {
   exportRekordboxXml,
   linkRekordboxXml,
   rekordboxStatus,
+  reanalyzeTracks,
 } from "./ipc";
 import { installUndoShortcut, installFilingKeys } from "./filing";
 import { refreshBinsForBatch } from "./filing-bins";
@@ -203,7 +204,32 @@ export function installLiveWiring() {
     { capture: true },
   );
 
+  /** Retry analysis for a single stuck-unanalysed track. Disables the button and swaps its icon
+   *  to a spinner while in flight; queue:changed (emitted by the backend on success) drives the
+   *  actual re-render via the existing listener further down this file. */
+  async function reanalyzeTrack(id: number, btn: HTMLElement): Promise<void> {
+    (btn as HTMLButtonElement).disabled = true;
+    btn.innerHTML = '<i class="ti ti-loader-2 sift-spin"></i>';
+    try {
+      await reanalyzeTracks([id]);
+    } catch (e) {
+      console.error("reanalyze_tracks failed", e);
+      toast(`Échec de la réanalyse : ${String(e)}`);
+      (btn as HTMLButtonElement).disabled = false;
+      btn.innerHTML = '<i class="ti ti-refresh"></i>';
+    }
+  }
+
   requireEl("#pa", "installLiveWiring").addEventListener("click", (e) => {
+    // Reanalyze-this-track button on an unanalysed queue row — checked BEFORE the .qi row-open
+    // branch below (the button lives inside a .qi row) so clicking it never also opens the track.
+    const reanalyzeBtn = (e.target as HTMLElement).closest<HTMLElement>("[data-reanalyze]");
+    if (reanalyzeBtn) {
+      e.stopPropagation();
+      const id = Number(reanalyzeBtn.dataset.reanalyze);
+      if (id) void reanalyzeTrack(id, reanalyzeBtn);
+      return;
+    }
     // queue item → open the live filing pane (report + editor + actions) in #mid
     const qi = (e.target as HTMLElement).closest<HTMLElement>(".qi[data-id]");
     if (qi?.dataset.id) {

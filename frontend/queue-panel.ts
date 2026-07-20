@@ -3,7 +3,7 @@
 // are owned here — all their reassignments already lived in this code before the move. The batch
 // controller (tranche 1c) imports these as read values and calls setReviewMode() to mutate mode,
 // never reassigns directly (ES module import bindings are read-only from outside this file).
-import { listQueue } from "./ipc";
+import { listQueue, reanalyzeTracks } from "./ipc";
 import { openFilingInto, syncDetail } from "./filing";
 import { refreshBins, clearBinPick } from "./filing-bins";
 import { homeProgressZone } from "./progress-zone";
@@ -30,20 +30,29 @@ let queueRowHeightCache: number | null = null;
 // this filtered view too, so arrow-key nav only steps through what's actually visible.
 let queueSearchTerm = "";
 
-// "+N traités" / "Masquer les traités" toggle (2026-07-08: existed in the frozen app.js mockup —
-// var doneCount=T.length-pendingCount — but was never ported to the real live queue; ensured by
-// this grep at the time: no togglequeue/queueShowAll consumer anywhere in sift-live.ts). A track
-// is "traité" once its analysis verdict resolves (QueueItem.verdict !== null) — not once it's
-// filed (filed tracks leave listQueue() results entirely, they're not what this hides). Default
-// hidden, matching the mockup's default state.
-let queueShowAll = false;
+// Optional "Non analysés uniquement" filter — surfaces tracks stuck in/awaiting background
+// analysis (QueueItem.verdict === null) so a problem file doesn't get lost in a large pending
+// list. OFF by default: the default view is the FULL pending queue (everything not yet filed/
+// écarté — "pending" is a single backend lifecycle status, `actions.rs` inserts a scanned file as
+// `status='pending'` before analysis even runs, and it stays `pending` regardless of whether
+// analysis has resolved). Corrected 2026-07-20 (live bug report): this used to be an ON-by-default
+// "+N traités" toggle keyed on the same `verdict !== null` check, which confused "the background
+// analyzer already produced a verdict for this file" with "the user already reviewed/filed it" —
+// on a library where analysis runs quickly, that hid essentially the ENTIRE pending queue by
+// default, showing "Tous les morceaux ont été traités." while thousands of genuinely
+// not-yet-reviewed tracks sat hidden behind the toggle.
+let queueUnanalyzedOnly = false;
 
 function visibleQueueItems(): QueueItem[] {
-  // Search deliberately searches ALL items regardless of the traités toggle — limiting search
-  // results to whatever's currently shown would silently return 0 hits for a treated track while
-  // traités are hidden, which reads as a bug ("I searched but it's not there") rather than the
-  // filter doing its job.
-  const base = queueSearchTerm ? currentItems : queueShowAll ? currentItems : currentItems.filter((it) => it.verdict === null);
+  // Search deliberately searches ALL items regardless of the analysis filter — limiting search
+  // results to whatever's currently shown would silently return 0 hits for an analyzed track
+  // while unanalyzed-only is on, which reads as a bug ("I searched but it's not there") rather
+  // than the filter doing its job.
+  const base = queueSearchTerm
+    ? currentItems
+    : queueUnanalyzedOnly
+      ? currentItems.filter((it) => it.verdict === null)
+      : currentItems;
   if (!queueSearchTerm) return base;
   const q = queueSearchTerm.toLowerCase();
   return base.filter(
@@ -89,9 +98,11 @@ function renderQueueWindow(ql: HTMLElement): void {
     const emptyLabel =
       currentItems.length && queueSearchTerm
         ? "Aucun morceau ne correspond."
-        : currentOpenId != null
-          ? "Tous les morceaux ont été traités."
-          : "File vide.";
+        : currentItems.length && queueUnanalyzedOnly
+          ? "Tous les morceaux en file sont déjà analysés."
+          : currentOpenId != null
+            ? "Tous les morceaux ont été traités."
+            : "File vide.";
     ql.innerHTML =
       `<div style="font-size:var(--text-md);color:var(--color-text-tertiary);padding:6px 4px">${emptyLabel}</div>`;
     return;
@@ -281,6 +292,13 @@ function queueRowHtml(it: QueueItem, active: boolean): string {
     (word
       ? `<span style="flex:none;font-size:var(--text-xs);color:${wordColor}">${word}</span>`
       : "") +
+    // Only for a not-yet-analysed row — retry a track stuck without a verdict (e.g. a
+    // transient decode error on first pass) instead of leaving it silently unreachable.
+    // data-reanalyze is checked BEFORE the .qi row-open branch in the delegated click handler
+    // (sift-live.ts) so clicking it never also opens the track.
+    (it.verdict === null
+      ? `<button data-reanalyze="${it.id}" class="lk-icon" title="Réanalyser ce morceau"><i class="ti ti-refresh"></i></button>`
+      : "") +
     `</div>`
   );
 }
@@ -382,10 +400,11 @@ export function ensureReviewSeg() {
   }
 }
 
-/** "+N traités" / "Masquer les traités" toggle — a real port of the app.js mockup's toggle
- * (2026-07-08), which was never wired to the live queue. Injected once, right after #ql (before
- * the search bar — call order in renderQueue matters here, both are appended to `qcol`). Hidden
- * entirely when there's nothing treated to reveal. */
+/** "Non analysés uniquement" filter toggle — surfaces tracks still waiting on/stuck in background
+ * analysis, without hiding the rest of the pending queue by default (see queueUnanalyzedOnly's
+ * doc comment for why the prior default-hide behavior was wrong). Injected once, right after #ql
+ * (before the search bar — call order in renderQueue matters here, both are appended to `qcol`).
+ * Hidden entirely when there's nothing unanalyzed to filter down to. */
 function ensureQueueDoneToggle(qcol: HTMLElement): void {
   let el = document.getElementById("sift-qdone-toggle");
   if (!el) {
@@ -393,7 +412,7 @@ function ensureQueueDoneToggle(qcol: HTMLElement): void {
     el.id = "sift-qdone-toggle";
     el.className = "sift-qdone-toggle";
     el.addEventListener("click", () => {
-      queueShowAll = !queueShowAll;
+      queueUnanalyzedOnly = !queueUnanalyzedOnly;
       const ql = document.getElementById("ql");
       if (ql) {
         ql.scrollTop = 0;
@@ -403,9 +422,39 @@ function ensureQueueDoneToggle(qcol: HTMLElement): void {
     });
     qcol.appendChild(el);
   }
-  const doneCount = currentItems.filter((it) => it.verdict !== null).length;
-  el.hidden = doneCount === 0;
-  el.textContent = queueShowAll ? "Masquer les traités" : `+ ${doneCount} traité${doneCount > 1 ? "s" : ""}`;
+  const unanalyzedCount = currentItems.filter((it) => it.verdict === null).length;
+  el.hidden = unanalyzedCount === 0;
+  el.textContent = queueUnanalyzedOnly
+    ? "Tout afficher"
+    : `Non analysés uniquement (${unanalyzedCount})`;
+  ensureQueueReanalyzeAllButton(qcol, unanalyzedCount);
+}
+
+/** "Réanalyser (N)" — retries every currently-unanalysed track in one click, regardless of
+ * whether the "Non analysés uniquement" filter is on. Sibling of the filter toggle, same
+ * hidden-when-nothing-to-act-on rule. */
+function ensureQueueReanalyzeAllButton(qcol: HTMLElement, unanalyzedCount: number): void {
+  let el = document.getElementById("sift-qreanalyze-all");
+  if (!el) {
+    el = document.createElement("span");
+    el.id = "sift-qreanalyze-all";
+    el.className = "sift-qdone-toggle";
+    el.addEventListener("click", async () => {
+      const ids = currentItems.filter((it) => it.verdict === null).map((it) => it.id);
+      if (!ids.length) return;
+      el!.textContent = "Relance…";
+      try {
+        await reanalyzeTracks(ids);
+      } catch (e) {
+        console.error("reanalyze_tracks failed", e);
+      }
+      // queue:changed (emitted by the backend on success) drives the actual re-render via the
+      // existing listener further down this file — this handler doesn't need to re-render itself.
+    });
+    qcol.appendChild(el);
+  }
+  el.hidden = unanalyzedCount === 0;
+  if (unanalyzedCount > 0) el.textContent = `Réanalyser (${unanalyzedCount})`;
 }
 
 /** Live filter bar for the queue rail (annotation: "on veut une barre de recherche en bas"),

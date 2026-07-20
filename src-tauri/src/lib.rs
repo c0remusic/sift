@@ -124,6 +124,7 @@ pub fn run() {
             ipc::set_source_watched,
             ipc::set_source_color,
             ipc::analyze_path,
+            ipc::reanalyze_tracks,
             ipc::analysis_progress,
             ipc::import_paths,
             ipc::open_url,

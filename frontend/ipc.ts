@@ -45,6 +45,8 @@ export const listSources = (): Promise<Source[]> => invoke("list_sources");
 export const removeSource = (id: number): Promise<void> =>
   invoke("remove_source", { id });
 export const listQueue = (): Promise<QueueItem[]> => invoke("list_queue");
+export const reanalyzeTracks = (trackIds: number[]): Promise<number> =>
+  invoke("reanalyze_tracks", { trackIds });
 export const rescanSource = (id: number): Promise<void> =>
   invoke("rescan_source", { id });
 export const setSourceWatched = (id: number, watched: boolean): Promise<void> =>
