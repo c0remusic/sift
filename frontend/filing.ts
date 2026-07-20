@@ -10,6 +10,7 @@ import {
   findDuplicate,
   trackRelease,
   trackFileTags,
+  listQueue,
 } from "./ipc";
 import type { DupMatch, TrackRelease, FileTags } from "../shared/contracts";
 import {
@@ -331,6 +332,12 @@ export async function openFilingInto(mid: HTMLElement, item: QueueItem): Promise
   // Set only on the specific "file no longer exists on disk" message (decode.rs's open_format,
   // the one path that already produces this exact French text) — a broader readError (permission
   // glitch, corrupt file, DB hiccup) is left for the user to see and retry, not auto-dismissed.
+  // Known gap (found in review, not fixed here — narrower than this bug's actual report):
+  // openReportInto short-circuits on a cache hit (report-view.ts's reportCache) and never calls
+  // analyzePath again, so onAnalysisError won't fire if a track analyzed successfully earlier in
+  // this session has its file removed AFTER that — the cache still holds the old-but-now-stale
+  // report. Out of scope here: this bug's report was a live analysis failure (not a cache hit);
+  // covering the cache-staleness case needs its own file-existence check, a separate fix.
   let fileGone = false;
   const [report, canonical, release, fileTags] = await Promise.all([
     openReportInto(reportEl, item.path, verdictEl, {
@@ -364,9 +371,21 @@ export async function openFilingInto(mid: HTMLElement, item: QueueItem): Promise
     // (can't play, can't file, can't retry). Leaving it open contradicted the queue possibly
     // already showing "Tous les morceaux ont été traités." beside a permanently-stuck pane, with
     // no way to dismiss it (syncDetail's "never switch away from an open track" guard otherwise
-    // keeps it forever). Clear rather than render; the next queue:changed tick picks the real
-    // next track or the true empty state — we don't know which from here.
-    clearPane(mid);
+    // keeps it forever).
+    // Re-fetch the queue ourselves (same pattern as doRanger's auto-advance,
+    // filing-actions.ts) rather than waiting for a queue:changed tick: `forget_path` already ran
+    // on the backend by the time this analysis failure surfaces, but no NEW event fires just
+    // because THIS open detected it — without this, the pane would sit on the neutral prompt even
+    // with other tracks still pending, until some unrelated change nudged syncDetail again.
+    let items: QueueItem[] = [];
+    try {
+      items = await listQueue();
+    } catch (err) {
+      console.error("listQueue failed after detecting a gone file", err);
+    }
+    if (myseq !== openState.openSeq) return; // a newer open started while we awaited listQueue
+    if (items.length) void openFilingInto(mid, items[0]);
+    else clearPane(mid, true);
     return;
   }
 
