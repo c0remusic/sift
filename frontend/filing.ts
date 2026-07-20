@@ -50,6 +50,7 @@ import {
   toggleDestPopover,
   ensureDestPopoverAutoClose,
 } from "./filing-bins";
+import { state, openState } from "./filing-state";
 
 /** Banner label when a track was filed in place (its own source folder, not a tree bin). */
 const IN_PLACE_BIN_LABEL = "source folder";
@@ -62,62 +63,6 @@ const titleCase = (s: string): string =>
 /** Shared, mutable Revue state for the current filing session. Destination-selection state
  *  (library root, bin list, selected bin, "sur place" flag) moved to filing-bins.ts's own
  *  DestState (tech-debt audit F03 — god-file split, first tranche). */
-interface RevueState {
-  track: QueueItem | null; // currently open track
-  canonical: Canonical | null; // reconciled (then user-edited) metadata
-  target: Target | null; // format override (null = backend rail default)
-  // Analysed rail of the open track ("lossless" | "lossy" | "unknown"), set in openFilingInto. The
-  // single source for the default format when target is null — used by BOTH the lit chip and the
-  // Final-name preview (defaultTarget) so they never disagree on open.
-  rail: string;
-  // Read-only Discogs release facts for the open track. NOT part of Canonical (which drives the
-  // filename/tags and is a Rust-mirrored contract) — kept here so the editor can show them. Loaded
-  // from `releaseCache` on open, or set from `applied` on identify; null = unknown (no display).
-  label: string | null;
-  year: number | null;
-  // Country/format of the applied release (e.g. "UK", "Vinyl, 12\", EP") — same session-cache-only
-  // scope as label/year above, except there is no persisted backend column for these two (Rust
-  // TrackRelease has none): they survive a close+reopen within this session (releaseCache) but not
-  // an app restart, until/unless the metadata table grows matching columns (2026-07-06 annotation:
-  // previously these were shown in the candidate list, then dropped the instant a candidate got
-  // selected — kept here so the read-only release line below Genres keeps showing them afterwards).
-  releaseCountry: string | null;
-  releaseFormat: string | null;
-  // Cover of the applied/persisted release — needed to re-run restoreIdentifiedLine() outside the
-  // openFilingInto cold-open path (2026-07-06 annotation: reopening the Métadonnées zone re-renders
-  // the editor and must be able to redraw the "Identifié :" confirmation line the same way).
-  coverPath: string | null;
-  // The would-write sub-genres for the open track (DB track_genres order), shown in .sift-genres and
-  // compared (joined) against the file. Set on open from track_release, or from `applied.styles`.
-  genres: string[];
-  // The file's REAL tags, snapshotted ONCE on open (and re-read after an Apply/File). The marker
-  // compares the displayed identity to THIS in-memory snapshot — never a per-keystroke disk read.
-  // null until the open-time read resolves.
-  fileTags: FileTags | null;
-  // After a Detail-mode filing, the just-filed track's batch_id + bin label → drives the
-  // persistent "Filed ↩" confirmation in #mid (targeted revert via the journal). Null = none up.
-  filedConfirm: { batchId: string; bin: string } | null;
-  // True once a Discogs identity is applied to the open track (fresh fetch OR persisted-identified
-  // reopen). Gates the "rebuy on Beatport" link: searching a raw filename is useless — only a
-  // confirmed artist+title is worth a store search.
-  identified: boolean;
-}
-
-const state: RevueState = {
-  track: null,
-  canonical: null,
-  target: null,
-  rail: "unknown",
-  label: null,
-  year: null,
-  releaseCountry: null,
-  releaseFormat: null,
-  coverPath: null,
-  genres: [],
-  fileTags: null,
-  filedConfirm: null,
-  identified: false,
-};
 
 // Identification card display mode: false = read-only grid (maquette default), true = the
 // existing editable artist/title/version inputs. Reset on every track open (Step 3) so a new
@@ -582,17 +527,17 @@ function wireCandidateClicks(
       if (!c || !state.track) return;
       el.style.opacity = "0.5";
       el.style.pointerEvents = "none";
-      // FIX-21: openSeq-guarded, same pattern as openFilingInto/setApplyIdle — without it, a
+      // FIX-21: openState.openSeq-guarded, same pattern as openFilingInto/setApplyIdle — without it, a
       // slow applyIdentity resolving after the user already navigated to a different track would
       // write the fetched metadata onto the WRONG track's pane (state.canonical, cover, DOM).
-      const myseq = openSeq;
+      const myseq = openState.openSeq;
       void applyIdentity(state.track.id, c)
         .then((applied) => {
-          if (myseq !== openSeq) return; // a newer open started while we awaited — drop this result
+          if (myseq !== openState.openSeq) return; // a newer open started while we awaited — drop this result
           onIdentityApplied(applied, c, editor, mid, host, candidates, idBtn);
         })
         .catch((e) => {
-          if (myseq !== openSeq) return;
+          if (myseq !== openState.openSeq) return;
           el.style.opacity = "";
           el.style.pointerEvents = "";
           // [m10] errors get a warning icon to distinguish from "no results"
@@ -611,10 +556,10 @@ async function doIdentify(
 ): Promise<void> {
   if (!state.track) return;
   const trackId = state.track.id;
-  // FIX-21: openSeq-guarded — identify's await can outlive the user navigating to another
-  // track (openFilingInto bumps openSeq on every open); without this a slow/late response
+  // FIX-21: openState.openSeq-guarded — identify's await can outlive the user navigating to another
+  // track (openFilingInto bumps openState.openSeq on every open); without this a slow/late response
   // painted candidates/errors from THIS track's search into a pane now showing a different one.
-  const myseq = openSeq;
+  const myseq = openState.openSeq;
   const origLabel = btn.innerHTML;
   btn.disabled = true;
   btn.innerHTML = '<i class="ti ti-loader-2 sift-spin sift-searching-icon"></i> Recherche…';
@@ -624,11 +569,11 @@ async function doIdentify(
   let candidates: Candidate[] = [];
   try {
     candidates = await identify(trackId);
-    if (myseq !== openSeq) return; // a newer open started while we awaited — drop this result
+    if (myseq !== openState.openSeq) return; // a newer open started while we awaited — drop this result
     renderCandidates(host, candidates);
     wireCandidateClicks(host, candidates, editor, mid, btn);
   } catch (err) {
-    if (myseq !== openSeq) return;
+    if (myseq !== openState.openSeq) return;
     const msg = String(err);
     if (msg.includes("NO_TOKEN")) {
       // [C2/m5] explain WHY + give a direct action to open Réglages
@@ -1065,20 +1010,20 @@ function resetApplyButton(scope: HTMLElement): void {
 
 /** Write the current edited tags onto the file in place (apply_tags). On success the file matches
  *  the display, so re-snapshot to clear the marker and flip the button to "Appliqué ✓ — Annuler".
- *  No move/encode/status change — works on any file. openSeq-guarded: a later open never repaints
+ *  No move/encode/status change — works on any file. openState.openSeq-guarded: a later open never repaints
  *  this track's state/UI. */
 async function doApplyTags(btn: HTMLButtonElement): Promise<void> {
   if (!state.track || !state.canonical) return;
   const trackId = state.track.id;
   const edited = state.canonical;
-  const myseq = openSeq;
+  const myseq = openState.openSeq;
   btn.disabled = true;
   btn.innerHTML =
     '<i class="ti ti-loader-2 sift-spin sift-icon-inline-md"></i> Applying…';
   try {
     const batchId = await applyTags(trackId, edited);
     const snap = await trackFileTags(trackId); // file changed → refresh the in-memory snapshot
-    if (myseq !== openSeq) return; // another track opened meanwhile — leave its state/UI alone
+    if (myseq !== openState.openSeq) return; // another track opened meanwhile — leave its state/UI alone
     state.fileTags = snap;
     refreshDiscrepancy(); // file == display now → marker clears
     // Derived from `snap` (a REAL re-read of the file's tags, track_file_tags — not assumed from
@@ -1098,15 +1043,15 @@ async function doApplyTags(btn: HTMLButtonElement): Promise<void> {
   } catch (e) {
     console.error("apply_tags failed", e);
     toast("Échec de l'écriture des tags", false);
-    if (myseq === openSeq) setApplyIdle(btn);
+    if (myseq === openState.openSeq) setApplyIdle(btn);
   }
 }
 
 /** Undo the just-applied tag write (targeted revert of its batch). The file returns to its old tags
- *  → re-snapshot → the marker reappears and the button returns to idle. openSeq-guarded. */
+ *  → re-snapshot → the marker reappears and the button returns to idle. openState.openSeq-guarded. */
 async function doUndoApply(btn: HTMLButtonElement, batchId: string): Promise<void> {
   const trackId = state.track?.id;
-  const myseq = openSeq;
+  const myseq = openState.openSeq;
   btn.disabled = true;
   btn.innerHTML =
     '<i class="ti ti-loader-2 sift-spin sift-icon-inline-md"></i> Annulation…';
@@ -1114,16 +1059,16 @@ async function doUndoApply(btn: HTMLButtonElement, batchId: string): Promise<voi
     await revertBatch(batchId);
     if (trackId != null) {
       const snap = await trackFileTags(trackId);
-      if (myseq !== openSeq) return;
+      if (myseq !== openState.openSeq) return;
       state.fileTags = snap;
     }
-    if (myseq !== openSeq) return;
+    if (myseq !== openState.openSeq) return;
     refreshDiscrepancy(); // file back to old tags → display diverges again → marker reappears
     setApplyIdle(btn);
   } catch (e) {
     console.error("revert tag_edit failed", e);
     toast("Annulation impossible", false);
-    if (myseq === openSeq) setApplyApplied(btn, batchId); // stay applied so the user can retry
+    if (myseq === openState.openSeq) setApplyApplied(btn, batchId); // stay applied so the user can retry
   }
 }
 
@@ -1161,7 +1106,6 @@ function toast(message: string, undo: boolean, onUndo?: () => void): void {
 }
 
 // One filing action at a time — guards against a double-click firing two encodes.
-let acting = false;
 
 /** Disable/enable the rail action buttons (visible feedback while an action runs). The buttons
  *  live in #filfoot now, so query the document rather than the #mid pane. */
@@ -1177,7 +1121,7 @@ function setActionsDisabled(disabled: boolean): void {
 
 /** Ranger the current track into the selected bin. */
 async function doRanger(mid: HTMLElement): Promise<void> {
-  if (!state.track || !state.canonical || acting) return;
+  if (!state.track || !state.canonical || openState.acting) return;
   const track = state.track;
   const canonical = state.canonical;
   // "Sur place" checked → destination is the track's own source folder (sentinel), bypassing the
@@ -1190,7 +1134,7 @@ async function doRanger(mid: HTMLElement): Promise<void> {
   }
   const ranger = document.querySelector<HTMLElement>('[data-fil="ranger"]');
   const orig = ranger?.innerHTML ?? null;
-  acting = true;
+  openState.acting = true;
   setActionsDisabled(true);
   if (ranger)
     ranger.innerHTML =
@@ -1198,7 +1142,7 @@ async function doRanger(mid: HTMLElement): Promise<void> {
   // FIX-1: a RAIL_MISMATCH rejection means the source's extension claims lossless but its real
   // content is lossy (e.g. an MP3 renamed .flac) — retry once with explicit confirmation instead
   // of a plain toast. A retry loop (not recursion) so this function's own `finally` stays the
-  // single owner of `acting` — see docs/superpowers/reviews/2026-07-02-handoff-fix1-anti-upscale.md for why recursion would race it.
+  // single owner of `openState.acting` — see docs/superpowers/reviews/2026-07-02-handoff-fix1-anti-upscale.md for why recursion would race it.
   let allowRailMismatch = false;
   try {
     for (;;) {
@@ -1258,7 +1202,7 @@ async function doRanger(mid: HTMLElement): Promise<void> {
     setActionsDisabled(false);
     if (ranger && orig != null) ranger.innerHTML = orig;
   } finally {
-    acting = false;
+    openState.acting = false;
   }
 }
 
@@ -1329,9 +1273,9 @@ async function doRevert(batchId: string): Promise<void> {
  *  reject_track path now (annotation: "jeter devrait etre écarté, et finir dans écarter"); `kind`
  *  stays two-valued only to pick the right toast wording, not a different backend action anymore. */
 async function doSecondary(mid: HTMLElement, kind: "resource" | "trash"): Promise<void> {
-  if (!state.track || acting) return;
+  if (!state.track || openState.acting) return;
   const trackId = state.track.id;
-  acting = true;
+  openState.acting = true;
   setActionsDisabled(true);
   try {
     await rejectTrack(trackId);
@@ -1347,7 +1291,7 @@ async function doSecondary(mid: HTMLElement, kind: "resource" | "trash"): Promis
     console.error(`${kind} failed`, e);
     setActionsDisabled(false);
   } finally {
-    acting = false;
+    openState.acting = false;
   }
 }
 
@@ -1396,11 +1340,10 @@ function dupBanner(m: DupMatch): string {
 
 // Bumped on every open; an in-flight open bails at its await points if a newer one started
 // (prevents a slow analyze/reconcile from clobbering the pane of a track opened since).
-let openSeq = 0;
 
 /** Render the analysis report + filing footer for `item` into the #mid pane. */
 export async function openFilingInto(mid: HTMLElement, item: QueueItem): Promise<void> {
-  const myseq = ++openSeq;
+  const myseq = ++openState.openSeq;
   state.track = item;
   state.target = null;
   state.canonical = null;
@@ -1470,7 +1413,7 @@ export async function openFilingInto(mid: HTMLElement, item: QueueItem): Promise
       return null;
     }),
   ]);
-  if (myseq !== openSeq) return; // a newer open started while we awaited — don't paint this track
+  if (myseq !== openState.openSeq) return; // a newer open started while we awaited — don't paint this track
 
   // When a Discogs identity was applied earlier but not yet filed, the file tags still hold the OLD
   // name, so reconcile (which reads those tags) would wipe the chosen identity on reopen. Trust the
@@ -1524,7 +1467,7 @@ export async function openFilingInto(mid: HTMLElement, item: QueueItem): Promise
   const editorEl = requireEl<HTMLElement>(".sift-fil-editor", "openFilingInto", mid);
   renderEditor(editorEl, mid, rail, report);
   // Already-identified track → show the "Identified" line (cover + release) in place of the bare
-  // Fetch button, rebuilt from metadata (no network). Runs inside the openSeq-guarded section above,
+  // Fetch button, rebuilt from metadata (no network). Runs inside the openState.openSeq-guarded section above,
   // so a superseded open never paints this onto the wrong track.
   if (release.identified && state.canonical) {
     restoreIdentifiedLine(editorEl, mid, state.canonical.artist, state.canonical.title, release.cover_path);
@@ -1557,7 +1500,7 @@ export async function openFilingInto(mid: HTMLElement, item: QueueItem): Promise
   // something worth checking, not to confirm the absence of a problem. (CHECK MATCH removed
   // entirely — annotation confirmed intentional.)
   void dupP.then((m) => {
-    if (myseq !== openSeq) return;
+    if (myseq !== openState.openSeq) return;
     // .sift-vchips never existed in the rendered markup (verdictCardHtml() — report-view.ts —
     // currently returns "" and never produced that wrapper); querying it was silent dead code for
     // this chip and the pre-existing DUPLICATE one below. .sift-fil-verdict is the actual verdict
