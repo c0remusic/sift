@@ -107,8 +107,15 @@ pub fn persist_report(conn: &Connection, id: i64, r: &AnalysisReport) -> rusqlit
 fn persist_failure(conn: &Connection, id: i64, err: &str) -> rusqlite::Result<()> {
     // Set report_json='' (non-null sentinel) so this broken file isn't re-selected forever
     // by select_pending's `report_json IS NULL` backfill clause.
+    // Also clear `verdict` (review-caught bug: this UPDATE used to leave it untouched — a track
+    // that had a real verdict from a PRIOR successful analysis, then had its content change
+    // (scanner.rs resets analyzed_at/report_json but keeps the old verdict), then failed on
+    // re-analysis here, kept displaying that stale verdict as if it were still current/valid,
+    // and `queue::QueueItem::needs_analysis` — verdict-aware specifically so a failure is never
+    // silently invisible — had no way to tell the two apart). Invariant this restores: `verdict`
+    // is non-NULL if and only if it reflects the CURRENT file's most recent successful analysis.
     conn.execute(
-        "UPDATE tracks SET container_ok=0, codec_error=?2, report_json='', analyzed_at=datetime('now') WHERE id=?1",
+        "UPDATE tracks SET verdict=NULL, container_ok=0, codec_error=?2, report_json='', analyzed_at=datetime('now') WHERE id=?1",
         rusqlite::params![id, err],
     )?;
     Ok(())
@@ -370,6 +377,33 @@ mod tests {
         assert!(analyzed.is_some(), "analyzed_at stamped");
         // and it leaves select_pending empty now
         assert!(select_pending(&conn).unwrap().is_empty());
+    }
+
+    #[test]
+    fn persist_failure_clears_a_stale_verdict_from_a_prior_success() {
+        // Review-caught bug: a track that succeeded once (real verdict), then had its content
+        // change (scanner.rs resets analyzed_at/report_json but leaves the old verdict), then
+        // failed on re-analysis, used to keep displaying that now-STALE verdict as if it were
+        // still current — persist_failure never touched the `verdict` column. Invariant this
+        // test locks in: verdict is non-NULL iff it reflects the file's most recent successful
+        // analysis, never a leftover from before a later failure.
+        let conn = db();
+        let id = add_pending(&conn, "x.flac");
+        persist_report(&conn, id, &fake_report()).unwrap(); // first pass: succeeds, verdict="fake"
+        conn.execute(
+            "UPDATE tracks SET analyzed_at=NULL, report_json=NULL WHERE id=?1", // content changed
+            [id],
+        )
+        .unwrap();
+        persist_failure(&conn, id, "decode error").unwrap(); // second pass: fails
+
+        let verdict: Option<String> = conn
+            .query_row("SELECT verdict FROM tracks WHERE id=?1", [id], |r| r.get(0))
+            .unwrap();
+        assert_eq!(
+            verdict, None,
+            "a failed re-analysis must clear the old verdict, not leave it stale"
+        );
     }
 
     #[test]
