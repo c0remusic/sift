@@ -225,7 +225,7 @@ html,body{margin:0;padding:0;height:100%}
    it, so a selected row's highlighted background butted directly against the track/thumb. */
 #ql{flex:1;min-height:0;overflow-y:scroll;scrollbar-gutter:stable;padding-right:6px}
 /* "+N traités" toggle (2026-07-08, real port of the app.js mockup — see ensureQueueDoneToggle) */
-.sift-qdone-toggle{display:block;flex:none;font-size:var(--text-xs);color:var(--color-text-tertiary);cursor:pointer;text-decoration:underline;padding:5px 4px 0}
+.sift-qdone-toggle{display:block;flex:none;font-size:var(--text-xs);color:var(--color-text-tertiary);cursor:pointer;text-decoration:underline;padding:5px 4px 0;background:transparent;border:none;border-radius:0;font-family:inherit}
 .sift-qdone-toggle:hover{color:var(--color-text-secondary)}
 /* Drag handle between #qcol and .sift-inspector (Revue) — resizes the queue column so long
    track names stay readable (audit 2026-07-05, annotation #8). Thin hit zone, sitting in the gap

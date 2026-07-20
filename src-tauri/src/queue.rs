@@ -21,13 +21,19 @@ pub struct QueueItem {
     /// pre-filter). Set by the IPC layer (see ipc::list_queue), default false.
     #[serde(default)]
     pub dup: bool,
-    /// Mirrors worker::select_pending's own "needs a(nother) pass" condition
-    /// (`analyzed_at IS NULL OR report_json IS NULL`) EXACTLY — not `verdict.is_none()`, which
-    /// looks equivalent but silently diverges the moment a track's content changes: scanner.rs's
-    /// content-change re-pending resets `analyzed_at`/`report_json` to NULL but leaves the OLD
-    /// verdict in place, so a track can be genuinely due for re-analysis while still carrying a
-    /// stale (or persist_failure's error-marked) verdict. Single source of truth for "not yet
-    /// analysed" across the whole app — never re-derive this from `verdict` in the frontend.
+    /// True when there's no CURRENT, usable verdict to show for this track — either the worker
+    /// hasn't gotten to it yet / needs to redo it (`analyzed_at IS NULL OR report_json IS NULL`,
+    /// worker::select_pending's own pick-up condition — covers a fresh scan AND a content-change
+    /// re-pending, which resets these two but leaves the OLD verdict in place), OR it's a
+    /// permanently-stuck decode failure: `persist_failure` (worker.rs) sets `analyzed_at` and
+    /// `report_json=''` (a non-NULL sentinel, precisely so select_pending's own condition never
+    /// re-selects it forever) while leaving `verdict` NULL — the worker will NEVER retry that one
+    /// on its own, so `verdict IS NULL` is included too, specifically to keep surfacing it for a
+    /// manual retry (reanalyze_tracks). Single source of truth for "offer a re-analyze affordance
+    /// here" across the whole app — never re-derive this from `verdict` alone in the frontend
+    /// (caught in review: an earlier version of this field mirrored ONLY select_pending's
+    /// condition and silently excluded every decode-failed track from the retry UI meant for
+    /// exactly that case).
     pub needs_analysis: bool,
 }
 
@@ -35,7 +41,7 @@ pub struct QueueItem {
 pub fn list_pending(conn: &Connection) -> rusqlite::Result<Vec<QueueItem>> {
     let mut stmt = conn.prepare(
         "SELECT t.id, t.path, t.filename, t.source_id, t.verdict, t.real_quality, m.artist, m.title,
-                (t.analyzed_at IS NULL OR t.report_json IS NULL)
+                (t.verdict IS NULL OR t.analyzed_at IS NULL OR t.report_json IS NULL)
          FROM tracks t LEFT JOIN metadata m ON m.track_id = t.id
          WHERE t.status='pending' ORDER BY t.id",
     )?;
@@ -142,6 +148,29 @@ mod tests {
             title,
             dup,
             needs_analysis,
+        );
+    }
+
+    #[test]
+    fn needs_analysis_true_for_a_permanent_decode_failure() {
+        // Mirrors worker::persist_failure exactly: analyzed_at + report_json='' (non-NULL
+        // sentinel, so select_pending never re-selects it on its own), verdict left NULL. Caught
+        // in review: an earlier version of `needs_analysis` mirrored ONLY select_pending's pick-up
+        // condition and was FALSE here, silently hiding every decode-failed track from the manual
+        // retry UI built specifically for this case.
+        let conn = db();
+        conn.execute(
+            "INSERT INTO tracks (path, filename, status, verdict, report_json, analyzed_at, codec_error)
+             VALUES ('bad.mp3','bad.mp3','pending',NULL,'','2026-01-01','decode failed')",
+            [],
+        )
+        .unwrap();
+        let q = list_pending(&conn).unwrap();
+        assert_eq!(q.len(), 1);
+        assert!(
+            q[0].needs_analysis,
+            "a persist_failure row (verdict NULL, analyzed_at/report_json SET) must still be \
+             surfaced for manual retry, since the worker will never auto-retry it"
         );
     }
 

@@ -45,10 +45,11 @@ export interface QueueItem {
   title: string | null;
   /** Shares a name with another pending/filed track (dedup name pre-filter). */
   dup: boolean;
-  /** Mirrors the backend's own `analyzed_at IS NULL OR report_json IS NULL` condition exactly —
-   *  NOT derivable from `verdict === null`, which silently diverges once a track's content
-   *  changes (re-pending resets analyzed_at/report_json but keeps the old verdict). Single
-   *  source of truth for "not yet analysed" — never re-derive it from `verdict`. */
+  /** True when there's no current, usable verdict for this track: not-yet-analysed, due for
+   *  re-analysis (content changed), OR a permanently-stuck decode failure the worker will never
+   *  retry on its own (verdict stays null but analyzed_at/report_json get set — see
+   *  queue.rs::QueueItem's own doc comment for the full backend rationale). Single source of
+   *  truth for "offer a re-analyze affordance" — never re-derive this from `verdict` alone. */
   needs_analysis: boolean;
 }
 
