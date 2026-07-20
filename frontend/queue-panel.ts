@@ -8,7 +8,7 @@ import { openFilingInto, syncDetail } from "./filing";
 import { refreshBins, clearBinPick } from "./filing-bins";
 import { homeProgressZone } from "./progress-zone";
 import type { QueueItem } from "../shared/contracts";
-import { requireEl, esc } from "./dom";
+import { requireEl, esc, toast } from "./dom";
 
 // Latest live queue items, kept so a queue-row click can recover the full item (id +
 // verdict) the filing pane needs.
@@ -31,16 +31,18 @@ let queueRowHeightCache: number | null = null;
 let queueSearchTerm = "";
 
 // Optional "Non analysés uniquement" filter — surfaces tracks stuck in/awaiting background
-// analysis (QueueItem.verdict === null) so a problem file doesn't get lost in a large pending
-// list. OFF by default: the default view is the FULL pending queue (everything not yet filed/
-// écarté — "pending" is a single backend lifecycle status, `actions.rs` inserts a scanned file as
-// `status='pending'` before analysis even runs, and it stays `pending` regardless of whether
-// analysis has resolved). Corrected 2026-07-20 (live bug report): this used to be an ON-by-default
-// "+N traités" toggle keyed on the same `verdict !== null` check, which confused "the background
-// analyzer already produced a verdict for this file" with "the user already reviewed/filed it" —
-// on a library where analysis runs quickly, that hid essentially the ENTIRE pending queue by
-// default, showing "Tous les morceaux ont été traités." while thousands of genuinely
-// not-yet-reviewed tracks sat hidden behind the toggle.
+// analysis (QueueItem.needs_analysis, mirroring worker::select_pending's own condition exactly —
+// see the field's doc comment in shared/contracts.ts for why this is NOT the same as
+// `verdict === null`, a review-flagged bug caught after this filter first shipped) so a problem
+// file doesn't get lost in a large pending list. OFF by default: the default view is the FULL
+// pending queue (everything not yet filed/écarté — "pending" is a single backend lifecycle
+// status, `actions.rs` inserts a scanned file as `status='pending'` before analysis even runs,
+// and it stays `pending` regardless of whether analysis has resolved). Corrected 2026-07-20 (live
+// bug report): this used to be an ON-by-default "+N traités" toggle keyed on `verdict !== null`,
+// which confused "the background analyzer already produced a verdict for this file" with "the
+// user already reviewed/filed it" — on a library where analysis runs quickly, that hid
+// essentially the ENTIRE pending queue by default, showing "Tous les morceaux ont été traités."
+// while thousands of genuinely not-yet-reviewed tracks sat hidden behind the toggle.
 let queueUnanalyzedOnly = false;
 
 function visibleQueueItems(): QueueItem[] {
@@ -51,7 +53,7 @@ function visibleQueueItems(): QueueItem[] {
   const base = queueSearchTerm
     ? currentItems
     : queueUnanalyzedOnly
-      ? currentItems.filter((it) => it.verdict === null)
+      ? currentItems.filter((it) => it.needs_analysis)
       : currentItems;
   if (!queueSearchTerm) return base;
   const q = queueSearchTerm.toLowerCase();
@@ -296,7 +298,7 @@ function queueRowHtml(it: QueueItem, active: boolean): string {
     // transient decode error on first pass) instead of leaving it silently unreachable.
     // data-reanalyze is checked BEFORE the .qi row-open branch in the delegated click handler
     // (sift-live.ts) so clicking it never also opens the track.
-    (it.verdict === null
+    (it.needs_analysis
       ? `<button data-reanalyze="${it.id}" class="lk-icon" title="Réanalyser ce morceau"><i class="ti ti-refresh"></i></button>`
       : "") +
     `</div>`
@@ -408,7 +410,7 @@ export function ensureReviewSeg() {
 function ensureQueueDoneToggle(qcol: HTMLElement): void {
   let el = document.getElementById("sift-qdone-toggle");
   if (!el) {
-    el = document.createElement("span");
+    el = document.createElement("button");
     el.id = "sift-qdone-toggle";
     el.className = "sift-qdone-toggle";
     el.addEventListener("click", () => {
@@ -422,7 +424,7 @@ function ensureQueueDoneToggle(qcol: HTMLElement): void {
     });
     qcol.appendChild(el);
   }
-  const unanalyzedCount = currentItems.filter((it) => it.verdict === null).length;
+  const unanalyzedCount = currentItems.filter((it) => it.needs_analysis).length;
   el.hidden = unanalyzedCount === 0;
   el.textContent = queueUnanalyzedOnly
     ? "Tout afficher"
@@ -434,27 +436,43 @@ function ensureQueueDoneToggle(qcol: HTMLElement): void {
  * whether the "Non analysés uniquement" filter is on. Sibling of the filter toggle, same
  * hidden-when-nothing-to-act-on rule. */
 function ensureQueueReanalyzeAllButton(qcol: HTMLElement, unanalyzedCount: number): void {
-  let el = document.getElementById("sift-qreanalyze-all");
+  let el = document.getElementById("sift-qreanalyze-all") as HTMLButtonElement | null;
   if (!el) {
-    el = document.createElement("span");
+    el = document.createElement("button");
     el.id = "sift-qreanalyze-all";
     el.className = "sift-qdone-toggle";
     el.addEventListener("click", async () => {
-      const ids = currentItems.filter((it) => it.verdict === null).map((it) => it.id);
+      const ids = currentItems.filter((it) => it.needs_analysis).map((it) => it.id);
       if (!ids.length) return;
-      el!.textContent = "Relance…";
+      const btn = el as HTMLButtonElement;
+      const prevText = btn.textContent;
+      btn.disabled = true;
+      btn.textContent = "Relance…";
       try {
         await reanalyzeTracks(ids);
+        // queue:changed (emitted by the backend on success) drives the actual re-render via the
+        // existing listener further down this file, which relabels/re-enables this button too —
+        // nothing else to do here on the success path.
       } catch (e) {
         console.error("reanalyze_tracks failed", e);
+        toast(`Échec de la réanalyse : ${String(e)}`);
+        btn.disabled = false;
+        btn.textContent = prevText;
       }
-      // queue:changed (emitted by the backend on success) drives the actual re-render via the
-      // existing listener further down this file — this handler doesn't need to re-render itself.
     });
     qcol.appendChild(el);
   }
   el.hidden = unanalyzedCount === 0;
-  if (unanalyzedCount > 0) el.textContent = `Réanalyser (${unanalyzedCount})`;
+  if (unanalyzedCount > 0) {
+    // A fresh render with a non-zero count means no click handler of THIS instance is still
+    // awaiting a response — a `queue:changed` re-render only reaches here after the backend's
+    // own emit, which fires inside reanalyze_tracks before the invoke() promise even resolves,
+    // so this can run before the click handler's own success path does. Re-enable eagerly here
+    // rather than relying on that handler alone, or the button could stay stuck disabled the
+    // next time it becomes relevant.
+    el.disabled = false;
+    el.textContent = `Réanalyser (${unanalyzedCount})`;
+  }
 }
 
 /** Live filter bar for the queue rail (annotation: "on veut une barre de recherche en bas"),

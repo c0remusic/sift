@@ -357,18 +357,7 @@ pub fn reanalyze_tracks(
 ) -> Result<usize, String> {
     let n = {
         let conn = db::lock_conn(&conn)?;
-        let mut n = 0usize;
-        for id in track_ids {
-            n += conn
-                .execute(
-                    "UPDATE tracks SET verdict=NULL, report_json=NULL, analyzed_at=NULL,
-                        codec_error=NULL, container_ok=NULL
-                     WHERE id=?1 AND status='pending'",
-                    rusqlite::params![id],
-                )
-                .map_err(|e| e.to_string())?;
-        }
-        n
+        queue::reset_analysis(&conn, &track_ids).map_err(|e| e.to_string())?
     };
     if n > 0 {
         app.emit("queue:changed", ()).ok();

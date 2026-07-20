@@ -45,6 +45,11 @@ export interface QueueItem {
   title: string | null;
   /** Shares a name with another pending/filed track (dedup name pre-filter). */
   dup: boolean;
+  /** Mirrors the backend's own `analyzed_at IS NULL OR report_json IS NULL` condition exactly —
+   *  NOT derivable from `verdict === null`, which silently diverges once a track's content
+   *  changes (re-pending resets analyzed_at/report_json but keeps the old verdict). Single
+   *  source of truth for "not yet analysed" — never re-derive it from `verdict`. */
+  needs_analysis: boolean;
 }
 
 /** Best duplicate match for a track. kind: "name" (names agree) or "both" (name + sound). */
