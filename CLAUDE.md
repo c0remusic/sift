@@ -178,13 +178,21 @@ continuer sans inventer de skill.
   (Phase 1 tranche 1c)
 - `ecartes-view.ts` — écran Écartés
 - `report-view.ts` — écran Revue (son-d'abord, waveform, verdict)
-- `filing.ts` — rail de classement (format, identification Discogs, apply-tags,
-  actions filer/écarter), extrait partiellement le 2026-07-15 (tech-debt audit
-  F03, tranche 1) : le sous-arbre de destination est parti dans
-  `filing-bins.ts` ; le reste (identify/editor, apply-tags, orchestration
-  `openFilingInto`) reste dans ce fichier, jugé trop couplé à un état partagé
-  unique (`RevueState`) pour un découpage mécanique sûr sans suite de tests
-  frontend — voir `TECH_DEBT_AUDIT.md` F03 pour le détail du choix.
+- `filing.ts` — rail de classement, réduit à l'orchestration résiduelle après
+  le split du 2026-07-20 (tech-debt audit F03, tranche 2 : 2150→538 lignes) :
+  le sous-arbre de destination est dans `filing-bins.ts` (2026-07-15), le
+  reste réparti dans les 5 fichiers `filing-*.ts` ci-dessous — voir
+  `docs/superpowers/changes/archive/2026-07-20-filing-ts-split/design.md`.
+- `filing-state.ts` — état partagé (`RevueState`), extrait de `filing.ts` le
+  2026-07-20.
+- `filing-toast.ts` — toast + `registerClearPaneHook`, extrait de `filing.ts`
+  le 2026-07-20.
+- `filing-preview.ts` — helpers nom/preview partagés, extrait de `filing.ts`
+  le 2026-07-20.
+- `filing-identify.ts` — identification Discogs + éditeur + apply-tags,
+  extrait de `filing.ts` le 2026-07-20.
+- `filing-actions.ts` — actions Ranger/Revert/Secondary, extrait de
+  `filing.ts` le 2026-07-20.
 - `filing-bins.ts` — arbre de destination (bacs, sélection, popover, mode
   batch), extrait de `filing.ts` le 2026-07-15 (Phase 1-style, injection de
   dépendance `registerOpenTrackPathGetter`/`registerDestChangeHook` pour
