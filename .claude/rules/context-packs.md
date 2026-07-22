@@ -1,3 +1,7 @@
+<!-- Pas de frontmatter paths: volontaire — ce fichier est un menu de contexte
+     consulté à la demande par l'orchestrateur, pas une règle liée à un type de
+     fichier. Voir A-fondations-memoire.md § Path-specific rules. -->
+
 # Packs de contexte (sizing) — Sift
 
 Menus de 3-8 fichiers par type de tâche (l'orchestrateur choisit, ne colle pas

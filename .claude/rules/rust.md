@@ -1,3 +1,7 @@
+---
+paths: ["src-tauri/**"]
+---
+
 # Audit Rust — override projet Sift
 
 Chargé par `auditor.md` EN PLUS du module global `~/.claude/rules/audit/rust.md`,
