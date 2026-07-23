@@ -59,8 +59,12 @@ export const setSourceColor = (id: number, colorKey: string | null): Promise<voi
 export const analyzePath = (
   path: string,
   withSpectrogram = false,
+  // Pass true ONLY from the genuine user-open path (openReportInto): on a confirmed gone file it
+  // lets the backend drop the stale pending row. Background reads (prefetch, spectrogram re-fetch,
+  // self-test) leave it false so an observation never silently deletes a queue row.
+  allowForget = false,
 ): Promise<AnalysisReport> =>
-  invoke("analyze_path", { path, withSpectrogram });
+  invoke("analyze_path", { path, withSpectrogram, allowForget });
 
 /** Background-analysis progress (pending analysed / total pending). */
 export const analysisProgress = (): Promise<AnalysisProgress> =>

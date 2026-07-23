@@ -2,6 +2,11 @@
 use rusqlite::Connection;
 use serde::Serialize;
 
+// The backend only maintains `analysis_attempts` (persist_failure increments it, reset_analysis
+// clears it). The terminal-state threshold that drops a stuck track from the "Non analysés (N)"
+// count is a frontend display rule — its single source of truth is MAX_ANALYSIS_ATTEMPTS in
+// shared/contracts.ts, not duplicated here.
+
 /// One row in the live queue. `verdict` is NULL until the worker (M2b) analyses it.
 #[derive(Debug, Serialize, PartialEq)]
 pub struct QueueItem {
@@ -35,13 +40,19 @@ pub struct QueueItem {
     /// condition and silently excluded every decode-failed track from the retry UI meant for
     /// exactly that case).
     pub needs_analysis: bool,
+    /// How many times analysis has failed for this track (worker::persist_failure increments it,
+    /// reset_analysis clears it). The frontend treats it as terminally broken past a threshold
+    /// (MAX_ANALYSIS_ATTEMPTS in shared/contracts.ts): still individually retryable, but excluded
+    /// from the count/bulk-retry so a genuinely unrepairable file stops inflating "Non analysés (N)".
+    pub analysis_attempts: i64,
 }
 
 /// All pending tracks, oldest first.
 pub fn list_pending(conn: &Connection) -> rusqlite::Result<Vec<QueueItem>> {
     let mut stmt = conn.prepare(
         "SELECT t.id, t.path, t.filename, t.source_id, t.verdict, t.real_quality, m.artist, m.title,
-                (t.verdict IS NULL OR t.analyzed_at IS NULL OR t.report_json IS NULL)
+                (t.verdict IS NULL OR t.analyzed_at IS NULL OR t.report_json IS NULL),
+                t.analysis_attempts
          FROM tracks t LEFT JOIN metadata m ON m.track_id = t.id
          WHERE t.status='pending' ORDER BY t.id",
     )?;
@@ -57,25 +68,36 @@ pub fn list_pending(conn: &Connection) -> rusqlite::Result<Vec<QueueItem>> {
             title: r.get(7)?,
             dup: false,
             needs_analysis: r.get(8)?,
+            analysis_attempts: r.get(9)?,
         })
     })?;
     rows.collect()
 }
 
 /// Forces re-analysis of the given tracks: clears `verdict`/`report_json`/`analyzed_at` (plus
-/// the two failure-marker columns `persist_failure` sets) so `worker::select_pending` picks them
+/// the two failure-marker columns `persist_failure` sets) and zeroes `analysis_attempts` so a
+/// manual retry gives the track a fresh set of attempts, then `worker::select_pending` picks them
 /// back up on the next refill. Only touches rows still `status='pending'` — a filed/écarté track
 /// is left alone even if its id is passed in by mistake (no accidental resurrection).
+///
+/// Runs in a single transaction with one prepared statement: the bulk "Réanalyser (N)" caller can
+/// pass thousands of ids, and doing N separately-committed UPDATEs while holding the global DB
+/// mutex (a) stalls the worker pool behind N fsyncs and (b) leaves the queue half-reset with no
+/// rollback if one statement fails midway (review-caught).
 pub fn reset_analysis(conn: &Connection, track_ids: &[i64]) -> rusqlite::Result<usize> {
+    let tx = conn.unchecked_transaction()?;
     let mut n = 0;
-    for id in track_ids {
-        n += conn.execute(
+    {
+        let mut stmt = tx.prepare(
             "UPDATE tracks SET verdict=NULL, report_json=NULL, analyzed_at=NULL,
-                codec_error=NULL, container_ok=NULL
+                codec_error=NULL, container_ok=NULL, analysis_attempts=0
              WHERE id=?1 AND status='pending'",
-            rusqlite::params![id],
         )?;
+        for id in track_ids {
+            n += stmt.execute(rusqlite::params![id])?;
+        }
     }
+    tx.commit()?;
     Ok(n)
 }
 
@@ -124,6 +146,7 @@ mod tests {
             title: None,
             dup: false,
             needs_analysis: true,
+            analysis_attempts: 0,
         };
         let QueueItem {
             id,
@@ -136,6 +159,7 @@ mod tests {
             title,
             dup,
             needs_analysis,
+            analysis_attempts,
         } = v;
         let _ = (
             id,
@@ -148,6 +172,7 @@ mod tests {
             title,
             dup,
             needs_analysis,
+            analysis_attempts,
         );
     }
 
@@ -192,8 +217,27 @@ mod tests {
         .unwrap();
         let filed_id = conn.last_insert_rowid();
 
+        // Give the pending row a non-zero attempt counter so we can prove reset clears it.
+        conn.execute(
+            "UPDATE tracks SET analysis_attempts=2 WHERE id=?1",
+            rusqlite::params![pending_id],
+        )
+        .unwrap();
+
         let n = reset_analysis(&conn, &[pending_id, filed_id]).unwrap();
         assert_eq!(n, 1, "only the pending row should be reset");
+
+        let attempts: i64 = conn
+            .query_row(
+                "SELECT analysis_attempts FROM tracks WHERE id=?1",
+                rusqlite::params![pending_id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            attempts, 0,
+            "a manual reset gives the track a fresh attempt count"
+        );
 
         let q = list_pending(&conn).unwrap();
         assert_eq!(q.len(), 1);

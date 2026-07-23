@@ -51,7 +51,15 @@ export interface QueueItem {
    *  queue.rs::QueueItem's own doc comment for the full backend rationale). Single source of
    *  truth for "offer a re-analyze affordance" — never re-derive this from `verdict` alone. */
   needs_analysis: boolean;
+  /** Number of failed analyses so far. `>= MAX_ANALYSIS_ATTEMPTS` means terminally broken: still
+   *  individually retryable (a per-row retry resets it to 0), but excluded from the count and the
+   *  bulk "Réanalyser (N)" so a genuinely unrepairable file stops inflating "Non analysés (N)". */
+  analysis_attempts: number;
 }
+
+/** Mirror of queue.rs::MAX_ANALYSIS_ATTEMPTS. After this many failures a stuck track drops out of
+ *  the unanalysed count / bulk retry (a manual per-row retry clears the counter for a fresh try). */
+export const MAX_ANALYSIS_ATTEMPTS = 3;
 
 /** Best duplicate match for a track. kind: "name" (names agree) or "both" (name + sound). */
 export interface DupMatch {

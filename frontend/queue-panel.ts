@@ -7,8 +7,33 @@ import { listQueue, reanalyzeTracks } from "./ipc";
 import { openFilingInto, syncDetail } from "./filing";
 import { refreshBins, clearBinPick } from "./filing-bins";
 import { homeProgressZone } from "./progress-zone";
-import type { QueueItem } from "../shared/contracts";
+import { MAX_ANALYSIS_ATTEMPTS, type QueueItem } from "../shared/contracts";
+import { confirmAction } from "./confirm-modal";
 import { requireEl, esc, toast } from "./dom";
+
+/** A pending track still worth (re)analysing: no current verdict AND not yet terminally broken.
+ *  Single source of truth for the "Non analysés" count, filter, and bulk-retry set — a track that
+ *  has failed MAX_ANALYSIS_ATTEMPTS times keeps its per-row manual retry (see queueRowHtml) but no
+ *  longer inflates the count, so it can actually reach zero on a library with an unrepairable file. */
+function isRetryableUnanalyzed(it: QueueItem): boolean {
+  return it.needs_analysis && it.analysis_attempts < MAX_ANALYSIS_ATTEMPTS;
+}
+function unanalyzedItems(): QueueItem[] {
+  return currentItems.filter(isRetryableUnanalyzed);
+}
+
+// Track ids whose reanalyze IPC is in flight, and whether the bulk retry is running. Rendered FROM
+// this state (queueRowHtml / the button labels) rather than by mutating DOM nodes directly: the
+// queue rail is rebuilt via innerHTML on every queue:changed, so a spinner written onto a button
+// node was landing on a detached element and the visible (fresh) row looked idle mid-retry.
+const reanalyzingIds = new Set<number>();
+let bulkReanalyzing = false;
+
+/** Re-render just the visible queue window (used to reflect in-flight retry state changes). */
+function rerenderQueueWindow(): void {
+  const ql = document.getElementById("ql");
+  if (ql) renderQueueWindow(ql);
+}
 
 // Latest live queue items, kept so a queue-row click can recover the full item (id +
 // verdict) the filing pane needs.
@@ -53,7 +78,7 @@ function visibleQueueItems(): QueueItem[] {
   const base = queueSearchTerm
     ? currentItems
     : queueUnanalyzedOnly
-      ? currentItems.filter((it) => it.needs_analysis)
+      ? unanalyzedItems()
       : currentItems;
   if (!queueSearchTerm) return base;
   const q = queueSearchTerm.toLowerCase();
@@ -297,9 +322,15 @@ function queueRowHtml(it: QueueItem, active: boolean): string {
     // Only for a not-yet-analysed row — retry a track stuck without a verdict (e.g. a
     // transient decode error on first pass) instead of leaving it silently unreachable.
     // data-reanalyze is checked BEFORE the .qi row-open branch in the delegated click handler
-    // (sift-live.ts) so clicking it never also opens the track.
+    // (sift-live.ts) so clicking it never also opens the track. Shown for every needs_analysis row
+    // (incl. terminally-broken ones dropped from the count) so a manual retry stays reachable.
+    // The in-flight spinner is rendered FROM reanalyzingIds, never by mutating the button node —
+    // the rail is rebuilt on every queue:changed, which would otherwise strand the spinner on a
+    // detached element.
     (it.needs_analysis
-      ? `<button data-reanalyze="${it.id}" class="lk-icon" title="Réanalyser ce morceau"><i class="ti ti-refresh"></i></button>`
+      ? reanalyzingIds.has(it.id)
+        ? `<button data-reanalyze="${it.id}" class="lk-icon" title="Réanalyse en cours" disabled aria-label="Réanalyse en cours"><i class="ti ti-loader-2 sift-spin"></i></button>`
+        : `<button data-reanalyze="${it.id}" class="lk-icon" title="Réanalyser ce morceau" aria-label="Réanalyser ce morceau"><i class="ti ti-refresh"></i></button>`
       : "") +
     `</div>`
   );
@@ -424,12 +455,35 @@ function ensureQueueDoneToggle(qcol: HTMLElement): void {
     });
     qcol.appendChild(el);
   }
-  const unanalyzedCount = currentItems.filter((it) => it.needs_analysis).length;
+  const unanalyzedCount = unanalyzedItems().length;
+  // Nothing left to filter down to: hide the toggle AND clear the filter. Leaving it ON while the
+  // control that turns it off is hidden would strand the user in an empty filtered view over a full
+  // pending queue with no way back (module state survives navigation) — review-caught regression.
+  if (unanalyzedCount === 0 && queueUnanalyzedOnly) {
+    queueUnanalyzedOnly = false;
+    rerenderQueueWindow();
+  }
   el.hidden = unanalyzedCount === 0;
   el.textContent = queueUnanalyzedOnly
     ? "Tout afficher"
     : `Non analysés uniquement (${unanalyzedCount})`;
   ensureQueueReanalyzeAllButton(qcol, unanalyzedCount);
+}
+
+/** Confirmation threshold for the bulk retry — a few stuck tracks retry on one click, but a mass
+ *  reset (e.g. a whole fresh import still showing as unanalysed) requires an in-app confirmation
+ *  (CLAUDE.md: destructive/costly actions never fire unguarded). */
+const BULK_REANALYZE_CONFIRM_THRESHOLD = 10;
+
+/** Add/remove ids from the in-flight retry set and re-render so the row spinner reflects it.
+ *  Exported for the per-row retry handler in sift-live.ts (the bulk button uses them internally). */
+export function beginReanalyze(ids: number[]): void {
+  for (const id of ids) reanalyzingIds.add(id);
+  rerenderQueueWindow();
+}
+export function endReanalyze(ids: number[]): void {
+  for (const id of ids) reanalyzingIds.delete(id);
+  rerenderQueueWindow();
 }
 
 /** "Réanalyser (N)" — retries every currently-unanalysed track in one click, regardless of
@@ -442,37 +496,41 @@ function ensureQueueReanalyzeAllButton(qcol: HTMLElement, unanalyzedCount: numbe
     el.id = "sift-qreanalyze-all";
     el.className = "sift-qdone-toggle";
     el.addEventListener("click", async () => {
-      const ids = currentItems.filter((it) => it.needs_analysis).map((it) => it.id);
+      if (bulkReanalyzing) return; // already running — ignore re-clicks
+      const ids = unanalyzedItems().map((it) => it.id);
       if (!ids.length) return;
-      const btn = el as HTMLButtonElement;
-      const prevText = btn.textContent;
-      btn.disabled = true;
-      btn.textContent = "Relance…";
+      if (
+        ids.length >= BULK_REANALYZE_CONFIRM_THRESHOLD &&
+        !(await confirmAction(
+          `Réanalyser ${ids.length} morceaux ? Leur analyse en cache est effacée et recalculée.`,
+          "Réanalyser",
+        ))
+      ) {
+        return;
+      }
+      bulkReanalyzing = true;
+      beginReanalyze(ids);
+      ensureQueueDoneToggle(qcol); // reflect "Relance…" + disabled
       try {
         await reanalyzeTracks(ids);
-        // queue:changed (emitted by the backend on success) drives the actual re-render via the
-        // existing listener further down this file, which relabels/re-enables this button too —
-        // nothing else to do here on the success path.
+        // queue:changed (emitted unconditionally by the backend) drives the queue re-render.
       } catch (e) {
         console.error("reanalyze_tracks failed", e);
         toast(`Échec de la réanalyse : ${String(e)}`);
-        btn.disabled = false;
-        btn.textContent = prevText;
+      } finally {
+        bulkReanalyzing = false;
+        endReanalyze(ids);
+        ensureQueueDoneToggle(qcol); // re-label + re-enable from the settled state
       }
     });
     qcol.appendChild(el);
   }
   el.hidden = unanalyzedCount === 0;
-  if (unanalyzedCount > 0) {
-    // A fresh render with a non-zero count means no click handler of THIS instance is still
-    // awaiting a response — a `queue:changed` re-render only reaches here after the backend's
-    // own emit, which fires inside reanalyze_tracks before the invoke() promise even resolves,
-    // so this can run before the click handler's own success path does. Re-enable eagerly here
-    // rather than relying on that handler alone, or the button could stay stuck disabled the
-    // next time it becomes relevant.
-    el.disabled = false;
-    el.textContent = `Réanalyser (${unanalyzedCount})`;
-  }
+  // State-driven, not a mid-flight eager re-enable: the button is disabled iff a bulk retry is
+  // actually running (bulkReanalyzing), so a queue:changed re-render during the retry can't flip it
+  // back to enabled under the in-flight handler (review-caught double-submit race).
+  el.disabled = bulkReanalyzing;
+  el.textContent = bulkReanalyzing ? "Relance…" : `Réanalyser (${unanalyzedCount})`;
 }
 
 /** Live filter bar for the queue rail (annotation: "on veut une barre de recherche en bas"),

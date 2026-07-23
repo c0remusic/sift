@@ -278,7 +278,15 @@ function dupBanner(m: DupMatch): string {
  *  is bumped on every open; an in-flight open bails at its await points if a newer one started
  *  (prevents a slow analyze/reconcile from clobbering the pane of a track opened since) — see
  *  filing-state.ts for the full rationale. */
-export async function openFilingInto(mid: HTMLElement, item: QueueItem): Promise<void> {
+export async function openFilingInto(
+  mid: HTMLElement,
+  item: QueueItem,
+  // Ids already auto-advanced through in the current gone-file chain. Bounds the recovery below:
+  // if the backend can't drop a gone row (forget_path a no-op — e.g. a Windows path-case mismatch),
+  // two gone tracks would otherwise ping-pong openFilingInto forever, each hop a full IPC round.
+  // A user-initiated open starts a fresh (empty) chain; only the recursive auto-advance grows it.
+  goneVisited: Set<number> = new Set(),
+): Promise<void> {
   const myseq = ++openState.openSeq;
   state.track = item;
   state.target = null;
@@ -382,17 +390,27 @@ export async function openFilingInto(mid: HTMLElement, item: QueueItem): Promise
       listQueueFailed = true;
     }
     if (myseq !== openState.openSeq) return; // a newer open started while we awaited listQueue
-    const next = items.find((i) => i.id !== item.id);
+    goneVisited.add(item.id);
+    // Only advance to a row we haven't already bounced through in this gone-chain (recursion bound,
+    // see the param doc). A recreated file whose row the backend deliberately KEPT stays listed, so
+    // "this same track is still here" is NOT proof the queue is empty.
+    const next = items.find((i) => i.id !== item.id && !goneVisited.has(i.id));
     if (next) {
-      void openFilingInto(mid, next);
+      void openFilingInto(mid, next, goneVisited);
     } else if (listQueueFailed) {
       // Real queue state is unknown (IPC/DB error) — don't assert "nothing to review" (fail-fast:
-      // never guess a fact we couldn't verify). Neutral prompt, not the formal empty state.
+      // never guess a fact we couldn't verify). Surface it AND leave a neutral prompt, not the
+      // formal empty state and not a silent swallow.
+      toast("La file n'a pas pu être relue — réessaie.", false);
       clearPane(mid);
-    } else {
-      // listQueue succeeded and every remaining row (zero or more) is this same gone track —
-      // genuinely nothing else to show.
+    } else if (items.length === 0) {
+      // The queue really is empty — the only case that warrants the formal "Rien à revoir".
       clearPane(mid, true);
+    } else {
+      // Rows remain but they're this same still-listed track (backend kept it — file recreated
+      // between analyze()'s NotFound and its exists() re-check) or ones already visited. Don't
+      // assert "nothing to review" over a visibly non-empty rail (review-caught contradiction).
+      clearPane(mid);
     }
     return;
   }

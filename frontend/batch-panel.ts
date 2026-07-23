@@ -14,7 +14,7 @@ import {
 import { fileBatch, fileCancel, rejectBatch } from "./ipc";
 import { requireEl, esc } from "./dom";
 import type { QueueItem, BatchResult, FileProgress, Target } from "../shared/contracts";
-import { FILE_IN_PLACE, EXTERNAL_DEST_PREFIX } from "../shared/contracts";
+import { FILE_IN_PLACE, EXTERNAL_DEST_PREFIX, MAX_ANALYSIS_ATTEMPTS } from "../shared/contracts";
 import {
   setTask,
   clearTask,
@@ -262,7 +262,15 @@ export function renderBatch() {
   };
   // Read-only "En analyse" rows — no checkbox, matches the maquette's inert third group.
   const pendingRow = (it: QueueItem) => {
-    const label = it.verdict === "grey" ? "CHECK" : "analyse…";
+    // "analyse…" for a track genuinely still in the pipeline; "échec" for one the worker has given
+    // up on (terminally failed decode) so it isn't mislabelled as forever-in-progress — recovery is
+    // the same "Ouvrir en Détail" button below (which re-runs analysis on the real open).
+    const label =
+      it.analysis_attempts >= MAX_ANALYSIS_ATTEMPTS
+        ? "échec"
+        : it.verdict === "grey"
+          ? "CHECK"
+          : "analyse…";
     return (
       `<div style="display:flex;align-items:center;gap:var(--space-8);padding:var(--space-8);opacity:.6">` +
       verdictDot(it.verdict) +

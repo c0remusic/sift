@@ -209,6 +209,16 @@ const MIGRATIONS: &[&str] = &[
     );
     CREATE INDEX idx_rkbmdb_artsync_status ON rekordbox_masterdb_artwork_syncs(status);
     "#,
+    // v15 — per-track analysis attempt counter. A file that fails to decode is marked by
+    // worker::persist_failure but stays status='pending' with verdict NULL, so it keeps showing
+    // as "needs analysis" forever and the "Non analysés (N)" count can never reach zero for a
+    // genuinely unrepairable file. This counter, incremented on every failed analysis, gives that
+    // state a terminal condition: once it reaches the frontend threshold (MAX_ANALYSIS_ATTEMPTS,
+    // shared/contracts.ts) the track drops out of the count / bulk-retry set (a manual per-row
+    // retry resets it to 0 for a fresh chance).
+    r#"
+    ALTER TABLE tracks ADD COLUMN analysis_attempts INTEGER NOT NULL DEFAULT 0;
+    "#,
 ];
 
 /// Applies any migrations the DB hasn't seen yet, tracked via PRAGMA user_version.

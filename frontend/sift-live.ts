@@ -50,6 +50,8 @@ import {
   updateRevueBadge,
   handleQueueItemClick,
   installQueueNavKeys,
+  beginReanalyze,
+  endReanalyze,
 } from "./queue-panel";
 import {
   renderBatch,
@@ -204,19 +206,20 @@ export function installLiveWiring() {
     { capture: true },
   );
 
-  /** Retry analysis for a single stuck-unanalysed track. Disables the button and swaps its icon
-   *  to a spinner while in flight; queue:changed (emitted by the backend on success) drives the
-   *  actual re-render via the existing listener further down this file. */
-  async function reanalyzeTrack(id: number, btn: HTMLElement): Promise<void> {
-    (btn as HTMLButtonElement).disabled = true;
-    btn.innerHTML = '<i class="ti ti-loader-2 sift-spin"></i>';
+  /** Retry analysis for a single stuck-unanalysed track. The in-flight spinner is driven through
+   *  queue-panel's shared reanalyzingIds state (begin/endReanalyze), NOT by mutating the clicked
+   *  button node — the queue rail is rebuilt via innerHTML on the backend's queue:changed, so a
+   *  spinner written onto the node would strand on a detached element while the fresh row looked
+   *  idle (review-caught). Rendering from state survives the rebuild. */
+  async function reanalyzeTrack(id: number): Promise<void> {
+    beginReanalyze([id]);
     try {
       await reanalyzeTracks([id]);
     } catch (e) {
       console.error("reanalyze_tracks failed", e);
       toast(`Échec de la réanalyse : ${String(e)}`);
-      (btn as HTMLButtonElement).disabled = false;
-      btn.innerHTML = '<i class="ti ti-refresh"></i>';
+    } finally {
+      endReanalyze([id]);
     }
   }
 
@@ -227,7 +230,7 @@ export function installLiveWiring() {
     if (reanalyzeBtn) {
       e.stopPropagation();
       const id = Number(reanalyzeBtn.dataset.reanalyze);
-      if (id) void reanalyzeTrack(id, reanalyzeBtn);
+      if (id) void reanalyzeTrack(id);
       return;
     }
     // queue item → open the live filing pane (report + editor + actions) in #mid

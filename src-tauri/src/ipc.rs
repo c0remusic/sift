@@ -252,6 +252,12 @@ pub fn analyze_path(
     conn: State<'_, Mutex<Connection>>,
     path: String,
     with_spectrogram: bool,
+    // Only the genuine user-driven open of a track (openReportInto) passes true: on a confirmed
+    // gone file it may drop the stale pending row. Background readers that call analyze_path as a
+    // pure read — prefetch of the next track, the spectrogram re-fetch, the startup self-test —
+    // pass false, so an observation never silently mutates the queue out from under the user
+    // (review: a 400ms prefetch or a self-test over moved files was a hidden bulk row-deleter).
+    allow_forget: bool,
 ) -> Result<crate::analysis::AnalysisReport, String> {
     {
         let conn = db::lock_conn(&conn)?;
@@ -315,7 +321,8 @@ pub fn analyze_path(
             // aren't atomic — if the file gets recreated in between (e.g. re-downloaded), a
             // stale error text would otherwise delete a row the watcher may have just re-added
             // as freshly pending.
-            if e.contains("n'existe plus") && !std::path::Path::new(&path).exists() {
+            if allow_forget && e.contains("n'existe plus") && !std::path::Path::new(&path).exists()
+            {
                 let conn = db::lock_conn(&conn)?;
                 match crate::scanner::forget_path(&conn, &path) {
                     Ok(n) if n > 0 => {
@@ -359,8 +366,12 @@ pub fn reanalyze_tracks(
         let conn = db::lock_conn(&conn)?;
         queue::reset_analysis(&conn, &track_ids).map_err(|e| e.to_string())?
     };
+    // Always re-render the queue, even when n==0 (every targeted row had already left `pending`).
+    // The frontend's reanalyze buttons disable themselves on click and rely on this queue:changed
+    // to re-enable via a re-render; without an unconditional emit an n==0 result leaves them stuck
+    // disabled with no error (review-caught). refill only matters when rows were actually reset.
+    app.emit("queue:changed", ()).ok();
     if n > 0 {
-        app.emit("queue:changed", ()).ok();
         crate::worker::refill(&app);
     }
     Ok(n)

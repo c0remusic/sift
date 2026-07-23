@@ -1129,7 +1129,9 @@ export async function openReportInto(
   const name = headerOpts.title ?? (path.split(/[\\/]/).pop() || path);
 
   // Fire analysis IPC immediately. For already-analyzed tracks the DB round-trip takes ~20ms.
-  const analysisPromise = analyzePath(path, false);
+  // allowForget=true: this is the real user-open path (its failure drives filing.ts's gone-file
+  // recovery via onAnalysisError below), the one place a confirmed-gone row may be dropped.
+  const analysisPromise = analyzePath(path, false, true);
 
   // Render the player shell. Son-first order: player (header+audition) → proof (Preuves). The
   // verdict conclusion goes LAST, above the action rail — in `verdictContainer` when the caller

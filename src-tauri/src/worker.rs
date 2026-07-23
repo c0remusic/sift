@@ -114,8 +114,23 @@ fn persist_failure(conn: &Connection, id: i64, err: &str) -> rusqlite::Result<()
     // and `queue::QueueItem::needs_analysis` — verdict-aware specifically so a failure is never
     // silently invisible — had no way to tell the two apart). Invariant this restores: `verdict`
     // is non-NULL if and only if it reflects the CURRENT file's most recent successful analysis.
+    //
+    // Also NULL every derived analysis column a PRIOR successful run may have written (real_quality
+    // drives the queue rail, plus cutoff/bitrate/loudness/tag facts): same staleness class as the
+    // verdict — a failed re-analysis must not leave the old file's measurements presented as if they
+    // were the current file's. Keep only the failure markers (container_ok=0, codec_error). Bump
+    // analysis_attempts so a permanently-broken file eventually reaches a terminal state (frontend
+    // threshold MAX_ANALYSIS_ATTEMPTS, shared/contracts.ts) instead of inflating "Non analysés (N)".
     conn.execute(
-        "UPDATE tracks SET verdict=NULL, container_ok=0, codec_error=?2, report_json='', analyzed_at=datetime('now') WHERE id=?1",
+        "UPDATE tracks SET
+            verdict=NULL, container_ok=0, codec_error=?2, report_json='',
+            analyzed_at=datetime('now'), analysis_attempts=analysis_attempts+1,
+            real_quality=NULL, cutoff_hz=NULL, bitrate=NULL, declared_fmt=NULL, duration=NULL,
+            clip_runs=NULL, clip_pct=NULL, true_peak_dbtp=NULL, dc_offset=NULL,
+            phase_correlation=NULL, dual_mono=NULL, truncated=NULL, silence_head_ms=NULL,
+            silence_tail_ms=NULL, id3_version=NULL, has_cover=NULL, tags_cdj_ok=NULL,
+            report_cache_ver=NULL
+         WHERE id=?1",
         rusqlite::params![id, err],
     )?;
     Ok(())
@@ -403,6 +418,46 @@ mod tests {
         assert_eq!(
             verdict, None,
             "a failed re-analysis must clear the old verdict, not leave it stale"
+        );
+    }
+
+    #[test]
+    fn persist_failure_bumps_attempts_and_clears_stale_derived_columns() {
+        // A track analysed OK once (real_quality set, drives the queue rail), then its content
+        // changes and re-analysis fails: the old rail/measurements must not survive as if current,
+        // and the attempt counter must climb toward the terminal MAX_ANALYSIS_ATTEMPTS.
+        let conn = db();
+        let id = add_pending(&conn, "x.flac");
+        persist_report(&conn, id, &fake_report()).unwrap(); // real_quality="lossless", etc.
+
+        persist_failure(&conn, id, "decode error").unwrap();
+        let (rq, attempts): (Option<String>, i64) = conn
+            .query_row(
+                "SELECT real_quality, analysis_attempts FROM tracks WHERE id=?1",
+                [id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            rq, None,
+            "stale rail (real_quality) must be cleared on failure"
+        );
+        assert_eq!(
+            attempts, 1,
+            "each failed analysis increments the attempt counter"
+        );
+
+        persist_failure(&conn, id, "decode error again").unwrap();
+        let attempts2: i64 = conn
+            .query_row(
+                "SELECT analysis_attempts FROM tracks WHERE id=?1",
+                [id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            attempts2, 2,
+            "attempts accumulate across successive failures"
         );
     }
 
