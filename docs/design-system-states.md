@@ -26,6 +26,9 @@
 >
 > Numéros de ligne vérifiés à jour le 2026-07-03 (après les fixes de cette
 > session) — `styles.css` bouge vite, revérifier au grep si un doute.
+> **Repasse ciblée du 2026-07-24** : `.qi`, `.nv`, `.sift-ranger-btn` (lignes)
+> et la section « Carte verdict » (composant renommé/scindé) revérifiés par
+> grep — le reste du fichier n'a pas été rebalayé, mêmes réserves qu'avant.
 
 ## Sommaire
 
@@ -42,7 +45,7 @@
 - L85 — Segmented control `.sift-seg-opt` (ancien, voir aussi pastille unifiée L603) — RAS.
 - L95 — Ligne de journal `.jrnl-qrow` — RAS.
 - L105 — Toggle switch `.tog` — perf `transform` corrigée 07-03.
-- L118 — Carte verdict `.sift-verdict-card` — tokens corrigés 07-03 (plus de rouge en dur).
+- L118 — Slots verdict `.sift-fil-verdict` / `.sift-verdict-stub` — renommés/scindés depuis `.sift-verdict-card` (le composant carte a été supprimé au redesign 07-06, `verdictCardHtml()` est un no-op), resynchronisé 07-24.
 - L137 — Ligne candidat `.sift-cand` — hover discret volontaire (bordure seule).
 - L150 — Bouton Destination `.sift-dest-btn` — hérite générique.
 - L155 — Sliders volume/tempo `.sift-slider-*` — hover/drag ajoutés 07-03.
@@ -79,7 +82,7 @@
 - L881 — Historique des corrections (chronologique, par date de session).
 - L933 — Pattern d'erreur/échec (`.sift-*-error`/`-fail`/`-warn`, 9 sites) — déjà cohérent, documenté ici (gap = défaut de doc, pas de code, audit 2026-07-19).
 
-## Ligne de queue — `.qi` (`styles.css:143-148`)
+## Ligne de queue — `.qi` (`styles.css:289-297`)
 
 | État | Sélecteur | Valeur (clair) | Valeur (sombre) |
 |---|---|---|---|
@@ -90,7 +93,7 @@
 
 RAS — 4 états déclarés explicitement, cohérents.
 
-## Item de navigation — `.nv` (`styles.css:106-116`)
+## Item de navigation — `.nv` (`styles.css:183-192`)
 
 | État | Sélecteur | Valeur |
 |---|---|---|
@@ -101,7 +104,7 @@ RAS — 4 états déclarés explicitement, cohérents.
 
 RAS.
 
-## Bouton d'action principal — `.sift-ranger-btn` (`styles.css:170`, `filing.ts:924`)
+## Bouton d'action principal — `.sift-ranger-btn` (`styles.css:385`, `filing.ts:192`)
 
 | État | Source | Valeur |
 |---|---|---|
@@ -167,24 +170,39 @@ RAS — même famille visuelle que `.qi`, cohérent.
 Toujours pas de hover/focus/disabled déclarés — composant discret, faible
 priorité, pas classé bug.
 
-## Carte verdict — `.sift-verdict-card` (`styles.css:387`, couleurs en JS `report-view.ts:259-263`)
+## Slots verdict — `.sift-fil-verdict` / `.sift-verdict-stub` (renommé/scindé depuis `.sift-verdict-card`, catalogue resynchronisé 2026-07-24)
 
-Le cœur du produit (détection faux-lossless). La couleur de fond n'est pas en
-CSS — elle est calculée en JS et injectée en style inline :
+⚠️ **`.sift-verdict-card` n'existe plus** (0 occurrence dans `frontend/styles.css`,
+vérifié par grep). Ce n'est pas juste un renommage de sélecteur : le composant
+"carte verdict" tinté (fond coloré succès/danger/warning) a été **supprimé** au
+redesign du 2026-07-06 — `verdictCardHtml()` (`report-view.ts:543-545`) est
+aujourd'hui un no-op qui renvoie `""` (commentaire en place, `report-view.ts:528-542` :
+la pastille de verdict pleine page faisait doublon avec le badge de qualité
+tonalisé du panneau Diagnostic audio, et a été retirée intentionnellement — pas un
+oubli). Ce qui reste sous ces deux sélecteurs, ce sont deux **slots** (conteneurs
+vides remplis conditionnellement), pas une carte à tokens couleur :
 
-```ts
-const map = {
-  ok:   [..., "var(--color-text-success)", "var(--color-background-success)"],
-  fake: [..., "var(--color-text-danger)",  "var(--color-background-danger)"],
-  grey: [..., "var(--color-text-warning)", "var(--color-background-warning)"],
-} as const;
-```
+- **`.sift-fil-verdict`** (`filing.ts:310`, requireEl `filing.ts:317`) — `<div>`
+  créé par `openFilingInto()` dans le rail de classement (`.sift-fil-scroll`).
+  Aucune règle CSS dédiée (mentionné seulement en commentaire, `styles.css:724`,
+  pour son alignement de marge). Deux usages réels : (1) hôte des chips
+  verdict-panel LOSSLESS/DUPLICATE/"LECTURE INCOMPLÈTE" injectées via
+  `vchipHtml()` (`filing.ts:485-513`) ; (2) hôte du message d'échec d'analyse
+  quand `verdictContainer` pointe dessus (`verdictHost()`, `report-view.ts:1141`,
+  écriture à `report-view.ts:1204-1207`).
+- **`.sift-verdict-stub`** (`styles.css:1050`) — vraie règle CSS (`display:flex;
+  align-items:center;gap:6px;margin:2px 0 12px;font-size:var(--text-sm);
+  color:var(--color-text-tertiary)`). Slot de repli créé par `report-view.ts`
+  (`report-view.ts:1141`, `report-view.ts:1146`) uniquement quand aucun
+  `verdictContainer` n'est fourni par l'appelant — cas `openReportModal`, qui n'a
+  pas sa propre carte Identification/Verdict à côté.
 
-✅ **Corrigé 2026-07-03** — avant, les trois `panelBg` étaient des `rgba(...)`
-en dur, dont un vrai rouge pour `fake` qui contredisait la décision de palette
-documentée en tête de `styles.css` ("plus de rouge, danger fusionne dans
-l'ambre"). Remplacés par les tokens `--color-background-success/danger/warning`
-déjà existants — élimine la duplication de valeurs ET la contradiction.
+Même rôle fonctionnel (slot loading/erreur pour l'analyse), deux sites d'usage
+distincts avec un traitement CSS différent — d'où les 2 entrées plutôt qu'une
+fusion. Pas de tokens couleur succès/danger/warning à documenter ici : la
+tonalité (LOSSLESS/danger/warning) vit désormais dans le badge de qualité du
+panneau Diagnostic (`qualityChipTone()`, `report-view.ts:549-553`, couleurs
+`realQuality()` `report-view.ts:63-87`), pas dans un composant "carte verdict".
 
 ## Ligne candidat (identification) — `.sift-cand` (`styles.css:226-235`)
 

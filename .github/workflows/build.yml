@@ -36,6 +36,10 @@ jobs:
       - name: Install npm deps
         run: npm ci
 
+      - name: Lint design tokens (non-bloquant)
+        run: npm run lint:tokens
+        continue-on-error: true
+
       - name: Fetch ffmpeg sidecar
         run: npm run fetch-ffmpeg
 
