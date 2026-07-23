@@ -113,12 +113,33 @@ pub fn update_metadata(
 
 /// Group `filed` tracks by acoustic fingerprint into duplicate clusters, each with a
 /// recommended keeper. Read-only — resolving a group is a plain `trash_track` per loser.
+///
+/// Does NOT hold the global `Mutex<Connection>` across the O(n²) compare or the disk-decoding
+/// fingerprint compute (both can be slow on a large/uncached library) — that would starve every
+/// other IPC command sharing the lock, including the background analysis pool's `persist_result`
+/// (see `worker.rs`). Lock scope: brief read (`load_dup_scan_rows`), drop, unlocked compute
+/// (`build_fingerprints` + `group_duplicates`), then a brief write only if new fingerprints were
+/// computed (`persist_fingerprints`). Same duplicates detected, same fingerprints cached — only
+/// the lock's scope changed.
 #[tauri::command]
 pub fn scan_library_duplicates(
     conn: State<'_, Mutex<Connection>>,
 ) -> Result<Vec<crate::dedup::DupGroup>, String> {
-    let conn = db::lock_conn(&conn)?;
-    crate::dedup::scan_library_duplicates(&conn).map_err(|e| e.to_string())
+    let rows = {
+        let guard = db::lock_conn(&conn)?;
+        crate::dedup::load_dup_scan_rows(&guard).map_err(|e| e.to_string())?
+        // `guard` dropped here — lock released before the heavy compute below.
+    };
+
+    let built = crate::dedup::build_fingerprints(&rows);
+
+    if !built.to_persist.is_empty() {
+        let guard = db::lock_conn(&conn)?;
+        crate::dedup::persist_fingerprints(&guard, &built.to_persist);
+        // `guard` dropped here — held only for the write, not the compare below.
+    }
+
+    Ok(crate::dedup::group_duplicates(&rows, &built.fps))
 }
 
 /// Dashboard aggregate stats for the Bibliothèque (totals, lossless/mp3 split, duplicates,

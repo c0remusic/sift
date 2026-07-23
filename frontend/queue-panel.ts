@@ -340,6 +340,42 @@ function queueRowHtml(it: QueueItem, active: boolean): string {
 export async function renderQueue(touchDetail = true) {
   const ql = document.getElementById("ql");
   if (!ql) return;
+
+  // Live destination bins + neutral detail prompt (replace the mockup's hardcoded ones).
+  const fldz = requireEl("#fldz", "renderQueue");
+  void refreshBins(fldz);
+
+  // Returning to Revue after visiting another screen: app.js's renderRevue rebuilds
+  // #qcol/#ql/#mid from scratch on every nav click (content.innerHTML, unconditional), even
+  // though currentItems already holds a freshly-loaded queue in memory — only the DOM was wiped,
+  // not the state. Detect that exact case (freshly (re)created empty #ql + state already loaded)
+  // and paint synchronously from the cached currentItems instead of flashing "Chargement…" and
+  // re-issuing a full listQueue() IPC round-trip on every tab switch. Real data changes keep
+  // arriving through the backend's "queue:changed" event (onQueueChanged → refresh(),
+  // sift-live.ts) independently of navigation — a genuine change while #ql already has rows still
+  // falls through to the full reload below, same as before.
+  if (!ql.childElementCount && currentItems.length) {
+    ensureReviewSeg();
+    const qcol = document.getElementById("qcol");
+    if (qcol) {
+      ensureQueueDoneToggle(qcol);
+      ensureQueueSearch(qcol);
+    }
+    if (touchDetail) {
+      if (reviewMode === "batch") {
+        batchRenderer?.();
+      } else {
+        const mid = requireEl("#mid", "renderQueue");
+        if (mid) {
+          currentOpenId = syncDetail(mid, currentItems);
+        }
+      }
+    }
+    renderQueueWindow(ql);
+    ensureQueueScroll(ql);
+    return;
+  }
+
   // First paint has nothing to show yet (the mockup skeleton leaves #ql empty) — on a large
   // library listQueue() can take a couple of seconds, otherwise that's a blank screen the whole
   // time (audit UI/UX 2026-07-03, fix 4). Gated on "no rows yet" so later polls (queue:changed,
@@ -366,9 +402,6 @@ export async function renderQueue(touchDetail = true) {
   // Background-analysis progress moved to the global progress zone (bottom of #nav, persistent
   // across views) — see pushAnalyzeProgress, fed by the analysis:changed event below.
 
-  // Live destination bins + neutral detail prompt (replace the mockup's hardcoded ones).
-  const fldz = requireEl("#fldz", "renderQueue");
-  void refreshBins(fldz);
   // Only sync the detail pane on structural changes (nav, queue add/remove/file). A background
   // ANALYSIS finishing must NOT re-open / switch the open track — that thrashes and aborts the
   // player's audio load (waveform shows from peaks, but no sound). See touchDetail=false caller.
