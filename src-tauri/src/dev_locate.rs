@@ -1,7 +1,7 @@
 //! Dev-only helper for the click-to-source inspector overlay: given a CSS selector/class
 //! clicked in the running app, find where it's actually defined/consumed in `frontend/`.
 //! Plain substring search + line context, same responsibility as
-//! `design_handoff_sift_refonte/token-sync/locate.cjs` (that one runs under Node for the
+//! `docs/archive/design_handoff_sift_refonte/token-sync/locate.cjs` (that one runs under Node for the
 //! token editor; this one runs inside the compiled app, so it's a separate implementation
 //! rather than shared code across the Rust/JS boundary).
 //!

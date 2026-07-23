@@ -110,4 +110,4 @@ function refreshPreview(): void {
   }, 150);
 }
 
-export { titleCase, defaultTarget, targetExt, displayName, fadeSetText, updateHeaderName, refreshPreview };
+export { titleCase, defaultTarget, displayName, fadeSetText, updateHeaderName, refreshPreview };

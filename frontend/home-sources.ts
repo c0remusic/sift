@@ -1,5 +1,5 @@
 // Home "sources" screen (Tauri only). Two-column grammar matching the maquette
-// (design_handoff_sift_refonte/Sift.dc.html:68-77 list rail, :594-633 inspector): a list
+// (docs/archive/design_handoff_sift_refonte/Sift.dc.html:68-77 list rail, :594-633 inspector): a list
 // of watched sources in the queue rail (#homequeue), and a detail inspector for the
 // selected one (#homeinspector) — breadcrumb, "Dossier surveillé" card, watch toggle,
 // bottom-bar "+ Ajouter un dossier". Extracted from sift-live.ts (audit P-3), rebuilt
