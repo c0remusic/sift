@@ -25,7 +25,7 @@ une paire de clés Ed25519 générée via `tauri signer generate` — gratuite,
 sans rapport avec la signature de code OS (SmartScreen/Gatekeeper restent
 non résolus par ce mécanisme, cf. section Limites). Le manifest `latest.json`
 + les binaires signés sont attachés à une GitHub Release ; l'endpoint pointe
-vers `https://github.com/<user>/sift/releases/latest/download/latest.json`
+vers `https://github.com/c0remusic/sift/releases/latest/download/latest.json`
 (un seul endpoint — pas de domaine custom disponible).
 
 Confirmé via Context7 (`/websites/v2_tauri_app`, doc `plugin/updater` +
