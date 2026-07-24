@@ -95,6 +95,19 @@ export async function renderEcartes() {
   resVirtual = null;
   trashVirtual = null;
 
+  // Same gate as renderBiblioLive() (bibliotheque-view.ts): only show the placeholder on the
+  // very first paint (nothing rendered yet). Row actions (corbeille/restaurer/remettre en
+  // file/purge) call renderEcartes() again to refresh — without this gate, every such re-render
+  // would blank the whole screen (counters + virtualized lists) even though valid data was
+  // already on screen.
+  const alreadyRendered = !!content.querySelector(".sift-ec-sections, .sift-empty-state");
+  if (!alreadyRendered) {
+    content.innerHTML =
+      '<div class="h1">Écartés</div>' +
+      '<div style="display:flex;align-items:center;gap:8px;padding:8px 8px;color:var(--color-text-tertiary);font-size:var(--text-md)">' +
+      '<i class="ti ti-loader sift-spin" style="font-size:var(--text-md)"></i> Chargement…</div>';
+  }
+
   let items: EcarteItem[] = [];
   try {
     items = await listEcartes();
@@ -104,7 +117,11 @@ export async function renderEcartes() {
       '<div class="h1">Écartés</div>' +
       '<div class="sift-ui-card-soft sift-ui-card-soft-pad" style="color:var(--color-text-danger)">' +
       "Impossible de charger Écartés. Vérifie la connexion à la base et réessaie." +
+      '<div style="margin-top:8px"><button data-ec="retry" style="font-size:var(--text-xs);padding:4px 10px;color:var(--color-text-info)">Réessayer</button></div>' +
       "</div>";
+    content
+      .querySelector<HTMLButtonElement>('[data-ec="retry"]')
+      ?.addEventListener("click", () => void renderEcartes());
     return;
   }
   const res = items.filter((i) => i.status === "resourcing");

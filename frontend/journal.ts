@@ -112,7 +112,7 @@ function sectionHtml(cat: Cat): string {
 <summary class="jrnl-cat-hd">\
 <i class="ti ti-chevron-right jrnl-cat-chev" aria-hidden="true"></i>\
 <span class="col-h jrnl-cat-label">${cat.label}</span>\
-<span class="jrnl-cat-badge">${cat.entries.length}</span>\
+<span class="jrnl-cat-badge">${cat.entries.length} action${cat.entries.length > 1 ? "s" : ""}</span>\
 <button class="jrnl-mass" data-jact="mass-revert" data-cat="${cat.id}" style="color:${cat.massColor}">${cat.massLabel}</button>\
 </summary>\
 <div class="jrnl-rows">${rows}</div>\
@@ -204,6 +204,12 @@ function installDelegate(
         catId === "filed" ? "Défiler" : catId === "trash" ? "Restaurer" : "Remettre en file";
       if (!(await confirmAction(`${label} les ${totalTracks} morceaux affichés ?`))) return;
       btn.disabled = true;
+      // Disable ALL row revert buttons too, not just the clicked .jrnl-mass — the loop below
+      // processes entries sequentially and a not-yet-reached row's revert button stays
+      // clickable otherwise, letting a concurrent revertBatch() race the mass-revert into the
+      // non-reentrant rusqlite Mutex deadlock this sequential loop exists to avoid.
+      const revertBtns = Array.from(root.querySelectorAll<HTMLButtonElement>("[data-jact='revert']"));
+      revertBtns.forEach(b => { b.disabled = true; });
       // Sequential — rusqlite Mutex is non-reentrant; concurrent IPC calls would deadlock.
       // Per-entry DOM update so the user sees progress as each track is processed.
       void (async () => {
@@ -237,8 +243,22 @@ function installDelegate(
           kind = "warn";
         }
         // Re-render so the section counts, header ("Défiler les N") and footer reflect the
-        // now-reverted entries — otherwise they stay stale until the next tab switch.
-        await rerender();
+        // now-reverted entries — otherwise they stay stale until the next tab switch. rerender()
+        // rebuilds #content's innerHTML wholesale (renderJournal/renderJournalExtended), which
+        // replaces these row/mass buttons with fresh (enabled-by-default) nodes — so no manual
+        // re-enable is needed on the success path. Re-enabling BEFORE this await would leave the
+        // still-attached old buttons clickable for the duration of rerender()'s own IPC
+        // round-trip (listJournal), reopening the non-reentrant rusqlite Mutex deadlock risk this
+        // sequential loop exists to avoid, plus a possible double-revert on an already-processed
+        // entry. Only re-enable manually if rerender() itself throws — otherwise the old (now
+        // orphaned, since rerender never got to replace them) buttons would stay stuck disabled
+        // with no path back to enabled.
+        try {
+          await rerender();
+        } catch (err) {
+          console.error("[journal] mass-revert rerender failed:", err);
+          revertBtns.forEach(b => { b.disabled = false; });
+        }
         injectBanner(root, msg, kind);
       })();
     });
@@ -341,8 +361,24 @@ ${voirToutHtml}\
 // Extended journal (all sessions)
 // ---------------------------------------------------------------------------
 
+// session_id backend format: "{millis}-{pid}" (src-tauri/src/lib.rs). On dérive un
+// libellé lisible depuis la partie millis ; si le format est inattendu, fallback
+// sur l'ID brut plutôt que de planter.
+function formatSessionLabel(sessionId: string): string {
+  const millis = Number(sessionId.split("-")[0]);
+  if (!Number.isFinite(millis) || millis <= 0) return sessionId;
+  const d = new Date(millis);
+  if (Number.isNaN(d.getTime())) return sessionId;
+  const dd = String(d.getDate()).padStart(2, "0");
+  const mm = String(d.getMonth() + 1).padStart(2, "0");
+  const yyyy = d.getFullYear();
+  const hh = String(d.getHours()).padStart(2, "0");
+  const min = String(d.getMinutes()).padStart(2, "0");
+  return `Session du ${dd}/${mm}/${yyyy} ${hh}h${min}`;
+}
+
 function sessionGroupHtml(sessionId: string | null, entries: JournalEntry[]): string {
-  const label = esc(sessionId ?? "Antérieur");
+  const label = esc(sessionId == null ? "Antérieur" : formatSessionLabel(sessionId));
   const cats = buildCategories(entries);
   const sectionsHtml = cats.map(sectionHtml).join("");
   return `<div class="jrnl-session-group">\
