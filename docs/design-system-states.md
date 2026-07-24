@@ -29,6 +29,10 @@
 > **Repasse ciblée du 2026-07-24** : `.qi`, `.nv`, `.sift-ranger-btn` (lignes)
 > et la section « Carte verdict » (composant renommé/scindé) revérifiés par
 > grep — le reste du fichier n'a pas été rebalayé, mêmes réserves qu'avant.
+> **Session de fixes UI du 2026-07-24 (2ᵉ passe)** : nouveaux états ajoutés sur
+> Revue/Écartés/Bibliothèque/Bibliothèque éditeur/Rekordbox/Accueil/Journal/
+> Revue-bannières/Lot + 2 tokens couleur clair + 2 hover manquants — voir
+> entrées dédiées ci-dessous et l'entrée d'Historique du 2026-07-24.
 
 ## Sommaire
 
@@ -37,50 +41,60 @@
 > 2026-07-09) : ouvrir la section visée via son numéro de ligne plutôt que tout
 > lire.
 
-- L30 — Ligne de queue `.qi` — RAS, 4 états déclarés.
-- L41 — Item de navigation `.nv` — RAS.
-- L52 — Bouton d'action principal `.sift-ranger-btn` — hérite hover/disabled/focus génériques.
-- L66 — Chip/tag `.chip` — hover corrigé 07-03.
-- L78 — Case à cocher `.cbx` — supprimée (code mort).
-- L85 — Segmented control `.sift-seg-opt` (ancien, voir aussi pastille unifiée L603) — RAS.
-- L95 — Ligne de journal `.jrnl-qrow` — RAS.
-- L105 — Toggle switch `.tog` — perf `transform` corrigée 07-03.
-- L118 — Slots verdict `.sift-fil-verdict` / `.sift-verdict-stub` — renommés/scindés depuis `.sift-verdict-card` (le composant carte a été supprimé au redesign 07-06, `verdictCardHtml()` est un no-op), resynchronisé 07-24.
-- L137 — Ligne candidat `.sift-cand` — hover discret volontaire (bordure seule).
-- L150 — Bouton Destination `.sift-dest-btn` — hérite générique.
-- L155 — Sliders volume/tempo `.sift-slider-*` — hover/drag ajoutés 07-03.
-- L168 — Pochette/cover `.sift-cover-frame` — `alt` fixé 07-03, bug `[hidden]` réellement cassé fixé 07-05.
-- L193 — Boutons icon-only — vérifiés, titlebar corrigée 07-03.
-- L202 — Barre de progression `.pbar`/`.sift-pz-fill` — perf `transform` 07-03.
-- L211 — Popover Destination `.sift-dest-popover` — RAS, scope limité.
-- L217 — Bouton Identifier `.sift-id-btn` — tokenisé+dark 07-03, exception 3ᵉ teinte levée 07-06.
-- L234 — Bordure latérale `.sift-filed-banner` — anti-pattern side-stripe retiré 07-03.
-- L243 — Ombres portées `.sift-toast`/`.sift-report-overlay-card` — tokenisées 07-03.
-- L250 — Échelles hauteur/radius — audit 07-03, `--h-36` retiré 07-09 (0 lecteur).
-- L287 — Token `disabled` de `Sift.dc.html` — vérifié non manquant.
-- L306 — Autres couleurs non tokenisées — restant, pas classées bug.
-- L318 — `--text-hero` → `--text-2xl`.
-- L330 — Cartes Réglages `.sift-settings-list` — refonte 4→1 carte 07-08.
-- L360 — Zone de dépôt drag OS `.sift-dz-on` — token `--overlay-drop` 07-05.
-- L384 — Lien rebuy Beatport `.sift-rebuy-btn` — créé 07-05.
-- L400 — CTA « Revoir N morceaux → » Accueil — créé 07-05.
-- L409 — Page Rekordbox `renderRekordboxLive()` — écran dédié + sections Tier 1/Tier 2 master.db.
-- L492 — Écran Revue — zones repliables Diagnostic/Métadonnées, refonte 07-05.
-- L528 — `.sift-applytags-btn` — déplacé header Genres 07-09.
-- L549 — `.sift-zone-toggle` — accordéon exclusif + animation 07-09.
-- L564 — Spectrogramme — légende incrustée + réticule interactif 07-09.
-- L587 — `.lk` / `.lk-icon` — bug de réutilisation corrigé 07-07.
-- L603 — Pastille segmentée `.sift-seg`/`.sift-seg-opt` unifiée — 6 sites, thumb glissant 07-08.
-- L705 — Grammaire de carte — 2 rôles (Groupée/Flottante), jamais 3 — 07-08.
-- L741 — Tokens globaux — adaptation tweakcn "ZFlow" (ombres/tracking/radius/OKLCH) 07-08.
-- L769 — Écran Accueil — audit référence canonique 07-08.
-- L789 — Écran Revue — audit référence canonique 07-08/09.
-- L813 — Écran Écartés — audit référence canonique 07-09.
-- L831 — Écran Journal — audit référence canonique 07-09, conforme (rien corrigé).
-- L842 — Écran Bibliothèque — audit référence canonique 07-09.
-- L861 — Écrans Réglages+Rekordbox+Clé USB — audit référence canonique 07-09.
-- L881 — Historique des corrections (chronologique, par date de session).
-- L933 — Pattern d'erreur/échec (`.sift-*-error`/`-fail`/`-warn`, 9 sites) — déjà cohérent, documenté ici (gap = défaut de doc, pas de code, audit 2026-07-19).
+- L99 — Ligne de queue `.qi` — RAS, 4 états déclarés.
+- L110 — Mot de verdict Détail `verdictWord()` — nouvel état "échec" (07-24).
+- L133 — Item de navigation `.nv` — RAS.
+- L144 — Bouton d'action principal `.sift-ranger-btn` — hover désormais déclaré explicitement (07-24), disabled/focus restent génériques.
+- L163 — Chip/tag `.chip` — hover corrigé 07-03.
+- L175 — Case à cocher `.cbx` — supprimée (code mort).
+- L182 — Segmented control `.sift-seg-opt` (ancien, voir aussi pastille unifiée L715) — RAS.
+- L192 — Ligne de journal `.jrnl-qrow` — RAS.
+- L202 — Toggle switch `.tog` — perf `transform` corrigée 07-03.
+- L215 — Slots verdict `.sift-fil-verdict` / `.sift-verdict-stub` — renommés/scindés depuis `.sift-verdict-card` (le composant carte a été supprimé au redesign 07-06, `verdictCardHtml()` est un no-op), resynchronisé 07-24.
+- L249 — Ligne candidat `.sift-cand` — hover discret volontaire (bordure seule).
+- L262 — Bouton Destination `.sift-dest-btn` — hérite générique.
+- L267 — Sliders volume/tempo `.sift-slider-*` — hover/drag ajoutés 07-03.
+- L280 — Pochette/cover `.sift-cover-frame` — `alt` fixé 07-03, bug `[hidden]` réellement cassé fixé 07-05.
+- L305 — Boutons icon-only — vérifiés, titlebar corrigée 07-03.
+- L314 — Barre de progression `.pbar`/`.sift-pz-fill` — perf `transform` 07-03.
+- L323 — Popover Destination `.sift-dest-popover` — RAS, scope limité.
+- L329 — Bouton Identifier `.sift-id-btn` — tokenisé+dark 07-03, exception 3ᵉ teinte levée 07-06.
+- L346 — Bordure latérale `.sift-filed-banner` — anti-pattern side-stripe retiré 07-03.
+- L355 — Ombres portées `.sift-toast`/`.sift-report-overlay-card` — tokenisées 07-03.
+- L362 — Échelles hauteur/radius — audit 07-03, `--h-36` retiré 07-09 (0 lecteur).
+- L399 — Token `disabled` de `Sift.dc.html` — vérifié non manquant.
+- L418 — Autres couleurs non tokenisées — restant, pas classées bug.
+- L430 — `--text-hero` → `--text-2xl`.
+- L442 — Cartes Réglages `.sift-settings-list` — refonte 4→1 carte 07-08.
+- L472 — Zone de dépôt drag OS `.sift-dz-on` — token `--overlay-drop` 07-05.
+- L496 — Lien rebuy Beatport `.sift-rebuy-btn` — créé 07-05.
+- L512 — CTA « Revoir N morceaux → » Accueil — créé 07-05.
+- L521 — Page Rekordbox `renderRekordboxLive()` — écran dédié + sections Tier 1/Tier 2 master.db.
+- L604 — Écran Revue — zones repliables Diagnostic/Métadonnées, refonte 07-05.
+- L640 — `.sift-applytags-btn` — déplacé header Genres 07-09.
+- L661 — `.sift-zone-toggle` — accordéon exclusif + animation 07-09.
+- L676 — Spectrogramme — légende incrustée + réticule interactif 07-09.
+- L699 — `.lk` / `.lk-icon` — bug de réutilisation corrigé 07-07.
+- L715 — Pastille segmentée `.sift-seg`/`.sift-seg-opt` unifiée — 6 sites, thumb glissant 07-08.
+- L817 — Grammaire de carte — 2 rôles (Groupée/Flottante), jamais 3 — 07-08.
+- L853 — Tokens globaux — adaptation tweakcn "ZFlow" (ombres/tracking/radius/OKLCH) 07-08.
+- L881 — Écran Accueil — audit référence canonique 07-08.
+- L901 — Écran Revue — audit référence canonique 07-08/09.
+- L925 — Écran Écartés — audit référence canonique 07-09.
+- L943 — Écran Journal — audit référence canonique 07-09, conforme (rien corrigé).
+- L954 — Écran Bibliothèque — audit référence canonique 07-09.
+- L973 — Écrans Réglages+Rekordbox+Clé USB — audit référence canonique 07-09.
+- L993 — Pattern d'erreur/échec (`.sift-*-error`/`-fail`/`-warn`, 9 sites) — déjà cohérent, documenté ici (gap = défaut de doc, pas de code, audit 2026-07-19).
+- L1041 — Écran Écartés — chargement + bouton "Réessayer" (07-24).
+- L1052 — Écran Bibliothèque — chargement, tri en vue Grille, "Réinitialiser les filtres" corrigé (07-24).
+- L1075 — Bibliothèque éditeur — suppression confirmée, borne Année, autocomplétion Genres (07-24).
+- L1083 — Page Rekordbox — état d'erreur visible sur les 4 sections M8, boutons "en cours", CTA en `.sift-ranger-btn` (07-24).
+- L1098 — Accueil — confirmation "Retirer", swatches `aria-pressed` (07-24).
+- L1105 — Journal — titres de section datés lisibles (07-24).
+- L1112 — Revue — bannières `role="status" aria-live="polite"`, légende "écarter" (07-24).
+- L1120 — Lot — lignes de sélection accessibles au clavier, bouton "Annuler" sur confirmation armée (07-24).
+- L1128 — `styles.css` — tokens `--color-text-warning`/`-success` clair recalibrés, hover réaffirmé (07-24).
+- L1141 — Historique des corrections (chronologique, par date de session).
 
 ## Ligne de queue — `.qi` (`styles.css:289-297`)
 
@@ -93,6 +107,29 @@
 
 RAS — 4 états déclarés explicitement, cohérents.
 
+## Mot de verdict (mode Détail) — `verdictWord()` (`queue-panel.ts:290-301`)
+
+| État | Condition | Rendu |
+|---|---|---|
+| Faux | `verdict === "fake"` | `"faux"`, `--color-text-warning` |
+| À vérifier | `verdict === "grey"` | `"à vérifier"`, `--color-text-warning` |
+| OK | `verdict === "ok"` | `""` (aucun mot), `--color-text-success` |
+| **Échec** (nouveau) | pas encore de verdict **et** `analysis_attempts >= MAX_ANALYSIS_ATTEMPTS` | `"échec"`, `--color-text-warning` |
+| En analyse | pas encore de verdict, tentatives restantes | `"analyse…"`, `--color-text-tertiary` |
+
+✅ **Ajouté 2026-07-24** — avant ce fix, une piste ayant épuisé
+`MAX_ANALYSIS_ATTEMPTS` (`shared/contracts.ts`) affichait encore "analyse…"
+en mode Détail, indiscernable d'une piste réellement en cours d'analyse.
+Distinction faite par comparaison à `analysis_attempts`, même logique que
+`batch-panel.ts`'s `pendingRow()` utilisait déjà pour la même distinction en
+mode Lot. Retry manuel par ligne conservé (`sift-live.ts:212-223`,
+`reanalyzeTrack()`) — toast `"Réanalyse relancée"` sur succès
+(`sift-live.ts:216`), `"Échec de la réanalyse : {détail}"` sur échec
+(`sift-live.ts:219`). Retry de masse (`queue-panel.ts` `ensureQueueReanalyzeAllButton`)
+gagne le même toast de confirmation sur succès :
+`"{N} morceau(x) réanalysé(s)"` (`queue-panel.ts:523`), `"Échec de la
+réanalyse — réessaie"` sur échec (`queue-panel.ts:528`).
+
 ## Item de navigation — `.nv` (`styles.css:183-192`)
 
 | État | Sélecteur | Valeur |
@@ -104,19 +141,24 @@ RAS — 4 états déclarés explicitement, cohérents.
 
 RAS.
 
-## Bouton d'action principal — `.sift-ranger-btn` (`styles.css:385`, `filing.ts:192`)
+## Bouton d'action principal — `.sift-ranger-btn` (`styles.css:388-389`, `filing.ts:192`)
 
 | État | Source | Valeur |
 |---|---|---|
 | Normal | `.sift-ranger-btn` | `background: var(--color-background-info)`, `color: var(--color-text-info)` |
-| Hover | **hérité de `button:hover`** générique, pas déclaré sur la classe | `background: var(--color-background-secondary)` |
+| Hover | `.sift-ranger-btn:hover` (déclaré explicitement, `styles.css:389`) | `background: var(--color-background-info)` + `filter:brightness(0.95)` |
 | Disabled | **hérité de `button:disabled`** générique | `opacity:.4` |
 | Focus | **hérité de `:focus-visible`** générique | outline 2px `var(--color-text-info)` |
 
-⚠️ **À savoir avant tout portage** : aucun état au-delà du repos n'est déclaré sur
-la classe elle-même — tout vient de la cascade sur l'élément `<button>` natif.
-Un futur design montrant un hover différent du gris générique serait un vrai
-changement à faire, pas un oubli à "ajouter".
+✅ **Corrigé 2026-07-24** — jusqu'ici sans hover propre (bascule sur le gris
+`button:hover` générique, cf. règle CLAUDE.md "un bouton qui redéfinit
+`background` doit le réaffirmer dans son `:hover`"). `.sift-secondary-trash`
+(`styles.css:391`) a reçu le même traitement (`background:
+var(--color-background-danger)` + `filter:brightness(0.95)`), même famille de
+boutons pleins. `.sift-confirm-btn` (`styles.css:1080`) a également gagné ce
+hover dans la même passe. `.jrnl-revert:hover` (`styles.css:688`) recalé sur
+`--color-border-secondary` (au lieu de `--color-border-primary`, token qui
+n'existe pas — bordure invisible au hover) dans le même commit.
 
 ## Chip/tag — `.chip` (`styles.css:202`)
 
@@ -184,13 +226,13 @@ vides remplis conditionnellement), pas une carte à tokens couleur :
 
 - **`.sift-fil-verdict`** (`filing.ts:310`, requireEl `filing.ts:317`) — `<div>`
   créé par `openFilingInto()` dans le rail de classement (`.sift-fil-scroll`).
-  Aucune règle CSS dédiée (mentionné seulement en commentaire, `styles.css:724`,
+  Aucune règle CSS dédiée (mentionné seulement en commentaire, `styles.css:729`,
   pour son alignement de marge). Deux usages réels : (1) hôte des chips
   verdict-panel LOSSLESS/DUPLICATE/"LECTURE INCOMPLÈTE" injectées via
   `vchipHtml()` (`filing.ts:485-513`) ; (2) hôte du message d'échec d'analyse
   quand `verdictContainer` pointe dessus (`verdictHost()`, `report-view.ts:1141`,
   écriture à `report-view.ts:1204-1207`).
-- **`.sift-verdict-stub`** (`styles.css:1050`) — vraie règle CSS (`display:flex;
+- **`.sift-verdict-stub`** (`styles.css:1055`) — vraie règle CSS (`display:flex;
   align-items:center;gap:6px;margin:2px 0 12px;font-size:var(--text-sm);
   color:var(--color-text-tertiary)`). Slot de repli créé par `report-view.ts`
   (`report-view.ts:1141`, `report-view.ts:1146`) uniquement quand aucun
@@ -996,6 +1038,106 @@ couleur ni un nouveau composant.
 
 ---
 
+## Écran Écartés — chargement + réessai (2026-07-24) — `ecartes-view.ts:91-118`
+
+| État | Condition | Rendu |
+|---|---|---|
+| **Chargement** (nouveau) | `renderEcartes()` invoqué, avant résolution de `listEcartes()` | icône `ti-loader` (`sift-spin`) + "Chargement…", `--color-text-tertiary` (`ecartes-view.ts:105-108`) — même pattern que `bibliotheque-view.ts` (voir plus bas) |
+| Échec | `listEcartes()` rejette | Message d'erreur + bouton **"Réessayer"** (nouveau, `data-ec="retry"`) qui relance `renderEcartes()` (`ecartes-view.ts:116-124`) |
+| Chargé | résolution réussie | Liste re-sourcer/corbeille normale |
+
+RAS sur le reste de l'écran (déjà catalogué dans la section audit référence
+canonique Écartés plus haut).
+
+## Écran Bibliothèque — chargement + tri Grille + réinitialisation (2026-07-24) — `bibliotheque-view.ts`
+
+| État | Condition | Rendu |
+|---|---|---|
+| **Chargement** (nouveau) | `renderBiblioLive()` invoqué, avant résolution du `Promise.all` (liste + facettes + stats) | icône `ti-loader` + "Chargement…" (`bibliotheque-view.ts:156-158`) |
+| Échec | une des 3 requêtes rejette | Message d'erreur, pas de retry dédié (`bibliotheque-view.ts:168-174`) |
+
+✅ **Tri désormais appliqué en vue Grille aussi** — `sortedTracks =
+sortTracks(bibState.tracks, bibState.sort)` (`bibliotheque-view.ts:231`) est
+maintenant la source commune des deux branches de rendu : vue Tableau
+(`bibliotheque-view.ts:309-316`, `items: sortedTracks`) **et** vue Grille
+(`bibliotheque-view.ts:318-324`, `gridRows` construit en tranchant
+`sortedTracks`). Avant ce fix, seule la vue Tableau consommait `sortedTracks` ;
+la Grille lisait l'ordre brut de `bibState.tracks`.
+
+✅ **"Réinitialiser les filtres" corrigé** — le bouton affiché sur "Aucun
+résultat pour ce filtre" (`data-bib="stat" data-stat="all"`,
+`bibliotheque-view.ts:280`) est câblé sur le handler délégué `sift-live.ts:299-307` :
+`stat === "all"` remet désormais à `undefined` les 6 champs de
+`bibState.filter` (`quality`, `verdict`, `q`, `folder`, `genre`, `artist`),
+recherche et facette comprises — avant ce fix il ne couvrait que
+`quality`/`verdict`.
+
+## Bibliothèque éditeur — confirmation suppression + bornes Année + autocomplétion Genres (2026-07-24) — `library-detail.ts`
+
+| Élément | État | Détail |
+|---|---|---|
+| Suppression de piste | confirmation | `doTrash()` (`library-detail.ts:369-389`) passe désormais par `confirmAction("Envoyer ce morceau à la corbeille ? Annulable via Ctrl+Z.", "Envoyer à la corbeille")` avant tout appel `trashTrack` — bouton désactivé pendant l'appel (`btn.disabled = true` avant l'appel, `= false` dans le `finally`) |
+| Champ Année | bornes | `<input type="number" min="1900" max="2100">` (`library-detail.ts:101`) |
+| Champ Genres | autocomplétion | `<input list="sift-genre-list">` + `<datalist id="sift-genre-list">` (`library-detail.ts:98-99`), rempli depuis les genres déjà connus de la Bibliothèque (`library-detail.ts:168-186`, fetch dégradé silencieusement en liste vide sur échec — le champ texte libre reste utilisable) |
+
+## Page Rekordbox — sections M8 : état d'erreur, boutons "en cours", CTA teintés (2026-07-24)
+
+| Élément | État | Rendu |
+|---|---|---|
+| **Erreur de chargement** (nouveau, 4 sections) | `rekordbox_masterdb_pending_repairs`/`..._scan_playlist_duplicates`/`..._pending_metadata_syncs`/`..._pending_artwork_syncs` rejette | `sectionErrorHtml()` (`rekordbox-view.ts:148-154`) : "Impossible de charger — réessaie plus tard.", `--color-text-danger` — remplace la section, plutôt que de la faire disparaître silencieusement. Câblé aux 4 sections (`rekordbox-view.ts:584-622`) |
+| Bouton "Appliquer la sélection" (Tier 1) | en cours | `disabled` + texte `"Application…"` (`rekordbox-view.ts:729-730`) |
+| Bouton "Dédupliquer" (Tier 2) | en cours | `disabled` + texte `"Fusion…"` (`rekordbox-view.ts:768-769`) |
+| Bouton "Appliquer" (Tier 3 metadata/pochettes) | en cours | `disabled` + texte `"Application…"` (`rekordbox-view.ts:854-855`, `953-954`) |
+
+✅ **CTA teintés** — "Réexporter maintenant" (`rekordbox-view.ts:193`),
+"Appliquer la sélection" (Tier 1/2/3, `rekordbox-view.ts:275/381/476`) et
+"Dédupliquer" (`rekordbox-view.ts:524`) utilisent désormais `.sift-ranger-btn`
+au lieu du `button{}` générique — se distinguent visuellement comme CTA
+principaux plutôt que texte seul.
+
+## Accueil — retrait de source + swatches couleur (2026-07-24) — `home-sources.ts`
+
+| Élément | État | Détail |
+|---|---|---|
+| "Retirer" un dossier surveillé | confirmation | `confirmAction("Retirer ce dossier surveillé ?", "Retirer")` (`home-sources.ts:244`) avant `removeSource()` |
+| Swatch de couleur de source | sélection | `aria-pressed="${on}"` + `title`/`aria-label="Couleur {label}"` en français (`home-sources.ts:157`) sur chaque `<button data-sift="setsrccolor">` |
+
+## Journal — titres de section datés (2026-07-24) — `journal.ts`
+
+| Élément | Avant | Après |
+|---|---|---|
+| Titre de section d'historique (vue étendue) | ID de session brut | `formatSessionLabel()` (`journal.ts:367-378`) dérive `"Session du {jj}/{mm} {hh}h{min}"` depuis le timestamp encodé dans l'ID (`{millis}-{pid}`) ; fallback sur l'ID brut si le format est inattendu ou la date invalide |
+| Badge de catégorie (Session) | — | `"{N} actions"` (`journal.ts:115`), déjà présent au format compteur, RAS |
+
+## Revue — bannières accessibles (2026-07-24)
+
+| Élément | État | Détail |
+|---|---|---|
+| Bannière "Converti" (`showFiledConfirm`, `filing-actions.ts:105-124`) | affichée après un rangement | `role="status"` + `aria-live="polite"` (`filing-actions.ts:113-114`) |
+| Bandeau avertissement tags non gravés (`.sift-tag-warn`, `filing-identify.ts:508`) | `!tags_cdj_ok` | `role="status"` + `aria-live="polite"` déjà sur l'élément |
+| Légende clavier (`report-view.ts:355`) | permanent | dit désormais **"écarter"** (`BKSP`), plus "jeter" — cohérent avec le renommage de terminologie du 2026-07-10 (voir Historique) |
+
+## Lot — lignes accessibles au clavier + Annuler (2026-07-24) — `batch-panel.ts`
+
+| Élément | État | Détail |
+|---|---|---|
+| Ligne de sélection prête (`readyRow`, `batch-panel.ts:249-266`) | sélectionnable | `tabindex="0"` + `role="checkbox"` + `aria-checked="${on}"` sur `.bx-row` (checkbox interne `tabindex="-1"`, cohérent avec le pattern déjà utilisé pour `.bx-row[data-sift="mdbpick"]` sur la page Rekordbox) |
+| Ligne de sélection "faux" (`fakeRow`, `batch-panel.ts:292-306`) | sélectionnable | même traitement clavier |
+| Confirmation armée (Convertir → Confirmer) | armée | bouton **"Annuler"** ajouté (`data-sift="batchcancelconfirm"`, `batch-panel.ts:456`) à côté de "Confirmer — convertir N ?" — sortie explicite en plus du désarmement silencieux à 5s (`batchConfirmTimer`) |
+
+## `styles.css` — tokens couleur clair + hover manquants (2026-07-24)
+
+- **`--color-text-success`/`--color-text-warning` (bloc clair `:root`,
+  `styles.css:25`)** — assombris (`L 49.19%→44%` / `L 53.34%→48%`, teinte/chroma
+  inchangées) : plusieurs paires texte/fond réelles du thème clair tombaient
+  sous le seuil AA. Le bloc sombre (`:root[data-theme="dark"]` et le média
+  `prefers-color-scheme:dark`) n'a pas bougé dans ce commit.
+- **`.sift-ranger-btn:hover`/`.sift-secondary-trash:hover`** réaffirmés — voir
+  section "Bouton d'action principal" plus haut pour le détail (`.jrnl-revert:hover`
+  et `.sift-confirm-btn:hover` corrigés dans le même commit).
+
+---
+
 ## Historique des corrections
 
 **2026-07-05 (pochette réellement cassée + sélection multi Alt+Clic)** :
@@ -1153,3 +1295,27 @@ illisible — contredisant le bandeau rouge "XML Rekordbox illisible"
 au-dessus. Trouvé via l'audit CDP sur l'app réelle (finding F3,
 audit-heuristique-visuel.md). Elles lisent désormais "indisponible" dans ce
 cas, via un cache `lastLinkStatus` partagé par les 4 sections.
+
+**2026-07-24 (session de fixes UI — 9 écrans/composants + 2 tokens couleur clair)** :
+nouvel état "échec" sur le mot de verdict Détail (`verdictWord()`) distinct de
+"analyse…", + toast de confirmation retry ligne/masse (Revue/Queue) ; état de
+chargement + bouton "Réessayer" sur Écartés ; état de chargement Bibliothèque +
+tri désormais appliqué en vue Grille (pas seulement Tableau) + "Réinitialiser
+les filtres" corrigé pour couvrir recherche+facette ; suppression de piste par
+`confirmAction` + bouton désactivé pendant l'appel, borne Année 1900-2100,
+autocomplétion Genres (datalist) sur l'éditeur Bibliothèque ; état d'erreur
+visible sur les 4 sections M8 Rekordbox (au lieu de disparaître), boutons
+Appliquer/Dédupliquer/Fusion avec état "en cours", CTA principaux passés en
+`.sift-ranger-btn` ; confirmation sur "Retirer" un dossier surveillé + swatches
+de couleur avec `aria-pressed`/libellés FR (Accueil) ; titres de section
+d'historique lisibles ("Session du…") sur le Journal ; bannières "Converti" et
+avertissement tags avec `role="status" aria-live="polite"`, légende clavier
+"écarter" (Revue) ; lignes de sélection Lot accessibles au clavier
+(`tabindex`/`role="checkbox"`/`aria-checked`) + bouton "Annuler" sur la
+confirmation armée ; `--color-text-warning`/`--color-text-success` recalibrés
+en thème clair (`styles.css:25`, sous le seuil AA sur plusieurs fonds réels) ;
+hover réaffirmé sur `.sift-ranger-btn`/`.sift-secondary-trash`/`.jrnl-revert`/
+`.sift-confirm-btn`. Détail par composant dans les sections dédiées ci-dessus
+(voir Sommaire). Vérification : `tsc --noEmit` non rejoué dans cette passe de
+documentation (pas de code touché) — chaque affirmation vérifiée par grep sur
+le code réel au moment de l'écriture de ce catalogue.
