@@ -241,7 +241,7 @@ function masterdbRepairsSectionHtml(rows: PendingMasterdbRepair[]): string {
         )
         .join("");
       return (
-        `<div style="border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:9px 11px;margin-bottom:6px">` +
+        `<div style="border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:10px 12px;margin-bottom:6px">` +
         `<div style="display:flex;gap:10px;align-items:flex-start">${pathBlock(r)}` +
         `<button data-sift="mdbdismiss" data-id="${r.id}" style="flex:none">Ignorer</button></div>` +
         `<div style="margin-top:6px;display:flex;flex-direction:column;gap:3px">${candidateBtns}</div>` +
@@ -256,7 +256,7 @@ function masterdbRepairsSectionHtml(rows: PendingMasterdbRepair[]): string {
       // Audit-ref G3 (Rekordbox, 2026-07-09) : ligne-checkbox sans clavier — tabindex/role/
       // aria-checked ajoutés, clavier via installNavKeyboard() étendu. Le bouton "Ignorer" imbriqué
       // est déjà protégé par la garde anti-double-déclenchement (Bibliothèque, audit-ref B1).
-      `<div class="bx-row" data-sift="mdbpick" data-id="${r.id}" tabindex="0" role="checkbox" aria-checked="${checked}" style="display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:var(--border-radius-md);cursor:pointer;${
+      `<div class="bx-row" data-sift="mdbpick" data-id="${r.id}" tabindex="0" role="checkbox" aria-checked="${checked}" style="display:flex;align-items:center;gap:var(--space-8);padding:var(--space-8);border-radius:var(--border-radius-md);cursor:pointer;${
         checked ? "background:var(--overlay-hover)" : ""
       }">` +
       `<input type="checkbox" class="sift-batch-ck" ${checked ? "checked" : ""} tabindex="-1">` +
@@ -350,7 +350,7 @@ function metadataSyncsSectionHtml(rows: PendingMetadataSync[]): string {
         )
         .join("");
       return (
-        `<div style="border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:9px 11px;margin-bottom:6px">` +
+        `<div style="border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:10px 12px;margin-bottom:6px">` +
         `<div style="display:flex;gap:10px;align-items:flex-start">${infoBlock(r)}` +
         `<button data-sift="mdsdismiss" data-id="${r.id}" style="flex:none">Ignorer</button></div>` +
         `<div style="margin-top:6px;display:flex;flex-direction:column;gap:3px">${candidateBtns}</div>` +
@@ -362,7 +362,7 @@ function metadataSyncsSectionHtml(rows: PendingMetadataSync[]): string {
   const pendingRowHtml = (r: PendingMetadataSync) => {
     const checked = mdsSyncSel.has(r.id);
     return (
-      `<div class="bx-row" data-sift="mdspick" data-id="${r.id}" tabindex="0" role="checkbox" aria-checked="${checked}" style="display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:var(--border-radius-md);cursor:pointer;${
+      `<div class="bx-row" data-sift="mdspick" data-id="${r.id}" tabindex="0" role="checkbox" aria-checked="${checked}" style="display:flex;align-items:center;gap:var(--space-8);padding:var(--space-8);border-radius:var(--border-radius-md);cursor:pointer;${
         checked ? "background:var(--overlay-hover)" : ""
       }">` +
       `<input type="checkbox" class="sift-batch-ck" ${checked ? "checked" : ""} tabindex="-1">` +
@@ -445,7 +445,7 @@ function artworkSyncsSectionHtml(rows: PendingArtworkSync[]): string {
         )
         .join("");
       return (
-        `<div style="border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:9px 11px;margin-bottom:6px">` +
+        `<div style="border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:10px 12px;margin-bottom:6px">` +
         `<div style="display:flex;gap:10px;align-items:flex-start">${infoBlock(r)}` +
         `<button data-sift="masdismiss" data-id="${r.id}" style="flex:none">Ignorer</button></div>` +
         `<div style="margin-top:6px;display:flex;flex-direction:column;gap:3px">${candidateBtns}</div>` +
@@ -457,7 +457,7 @@ function artworkSyncsSectionHtml(rows: PendingArtworkSync[]): string {
   const pendingRowHtml = (r: PendingArtworkSync) => {
     const checked = masSyncSel.has(r.id);
     return (
-      `<div class="bx-row" data-sift="maspick" data-id="${r.id}" tabindex="0" role="checkbox" aria-checked="${checked}" style="display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:var(--border-radius-md);cursor:pointer;${
+      `<div class="bx-row" data-sift="maspick" data-id="${r.id}" tabindex="0" role="checkbox" aria-checked="${checked}" style="display:flex;align-items:center;gap:var(--space-8);padding:var(--space-8);border-radius:var(--border-radius-md);cursor:pointer;${
         checked ? "background:var(--overlay-hover)" : ""
       }">` +
       `<input type="checkbox" class="sift-batch-ck" ${checked ? "checked" : ""} tabindex="-1">` +
@@ -513,7 +513,7 @@ function playlistDuplicatesSectionHtml(groups: PlaylistDuplicateGroupDto[]): str
       const trackLabel = g.track_path ? g.track_path.split(/[\\/]/).pop() || g.track_path : `Piste ${g.content_id}`;
       const count = g.remove.length;
       return (
-        `<div style="border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:9px 11px;margin-bottom:6px;display:flex;gap:10px;align-items:center">` +
+        `<div style="border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:10px 12px;margin-bottom:6px;display:flex;gap:10px;align-items:center">` +
         `<div style="min-width:0;flex:1">` +
         `<div style="font-size:var(--text-sm)">${esc(playlistLabel)}</div>` +
         `<div style="font-family:var(--font-mono);font-size:var(--text-xs);color:var(--color-text-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(trackLabel)} — ${count} doublon${count > 1 ? "s" : ""}</div>` +
