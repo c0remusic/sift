@@ -87,7 +87,7 @@ export async function doRanger(
     else if (msg.toLowerCase().includes("upscale")) toast("Refusé : pas de surqualité lossy → lossless.", false);
     else if (/permission|access|denied/i.test(msg)) toast("Refusé : accès au fichier/dossier refusé.", false);
     else if (/no such file|not found|introuvable/i.test(msg)) toast("Fichier introuvable — a-t-il été déplacé ?", false);
-    else toast(`Échec de la conversion : ${msg}`, false);
+    else toast("Une erreur est survenue pendant la conversion. Réessaie.", false);
     console.error("file_track failed", e);
     setActionsDisabled(false);
     if (ranger && orig != null) ranger.innerHTML = orig;
@@ -110,6 +110,14 @@ function showFiledConfirm(batchId: string, bin: string, filedPath: string): void
   foot.querySelector(".sift-filed-banner")?.remove();
   const banner = document.createElement("div");
   banner.className = "sift-filed-banner";
+  banner.setAttribute("role", "status");
+  banner.setAttribute("aria-live", "polite");
+  // Audit-ref (a11y, 2026-07-24): insert the (empty) live region into the document FIRST, then
+  // populate it — a screen reader's mutation watcher only starts tracking a live region once it's
+  // in the DOM; a node that arrives already fully populated in one mutation is inconsistently (or
+  // never) announced by some ATs. filing-toast.ts's toast() has the same fill-then-append order —
+  // left alone here since it's a separate, pre-existing site and not one of the confirmed findings.
+  foot.prepend(banner);
   banner.innerHTML =
     `<div class="sift-filed-banner-head">` +
     `<i class="ti ti-check"></i>` +
@@ -120,7 +128,6 @@ function showFiledConfirm(batchId: string, bin: string, filedPath: string): void
     `<div class="sift-filed-banner-name">${esc(filename)}</div>` +
     `<div class="sift-filed-banner-path">${esc(filedPath)}</div>` +
     `<button data-fil="revert" class="sift-filed-banner-revert"><i class="ti ti-arrow-back-up"></i> Annuler</button>`;
-  foot.prepend(banner);
   banner.querySelector('[data-fil="revert"]')?.addEventListener("click", () => void doRevert(batchId));
   banner.querySelector('[data-fil="filed-close"]')?.addEventListener("click", () => {
     banner.remove();

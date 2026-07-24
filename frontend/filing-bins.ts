@@ -232,18 +232,14 @@ function binNodeHtml(node: { rel: string; name: string; depth: number }): string
       }">▸</span>`
     : '<span class="sift-fld-caret-spacer"></span>';
   const icon = node.depth === 0 ? "ti-database" : "ti-folder";
-  // Explicit highlight for the selected destination (don't rely on inherited .on CSS): tinted
-  // background + an info-coloured folder icon + medium weight so the active bin is unmistakable.
-  const sel = on
-    ? "background:var(--color-background-info);border-radius:var(--border-radius-sm,4px)"
-    : "";
+  // Highlight for the selected destination comes from .fld.on (styles.css) — background, text
+  // color and weight. Only the icon colour is genuinely new (icon isn't covered by .fld.on).
   const iconColor = on ? "var(--color-text-info)" : "var(--color-text-tertiary)";
-  const weight = on ? "font-weight:500;" : "";
   // Audit-ref R4 (Revue, 2026-07-08, réf. shadcn Sidebar) : tabindex+role, clavier via
   // installNavKeyboard() (chrome.ts, sélecteur étendu pour [data-fil="bin"]).
   let html = `<div class="fld${on} sift-fld-row" data-fil="bin" data-rel="${esc(node.rel)}" tabindex="0" role="button" title="${esc(
     absPath(node.rel),
-  )}" style="${sel};${weight}padding-left:${6 + indent}px">${caret}<i class="ti ${icon} sift-fld-icon" style="font-size:var(--text-base);color:${iconColor}"></i><span class="sift-fld-label">${esc(
+  )}" style="padding-left:${6 + indent}px">${caret}<i class="ti ${icon} sift-fld-icon" style="font-size:var(--text-base);color:${iconColor}"></i><span class="sift-fld-label">${esc(
     node.name,
   )}</span></div>`;
   if (kids.length && isOpen) html += kids.map(binNodeHtml).join("");
@@ -254,11 +250,10 @@ function binNodeHtml(node: { rel: string; name: string; depth: number }): string
  * obvious without the tree context, with the same highlight + absolute-path tooltip as the tree. */
 function flatBinHtml(b: Bin): string {
   const on = b.rel === selRel() ? " on" : "";
-  const sel = on ? "background:var(--color-background-info);border-radius:var(--border-radius-sm,4px);" : "";
   const color = on ? "var(--color-text-info)" : "var(--color-text-tertiary)";
   return `<div class="fld${on} sift-fld-flat-row" data-fil="bin" data-rel="${esc(b.rel)}" tabindex="0" role="button" title="${esc(
     absPath(b.rel),
-  )}" style="${sel}"><i class="ti ti-folder sift-fld-icon" style="font-size:var(--text-base);color:${color}"></i><span class="sift-fld-label">${esc(
+  )}"><i class="ti ti-folder sift-fld-icon" style="font-size:var(--text-base);color:${color}"></i><span class="sift-fld-label">${esc(
     b.rel,
   )}</span></div>`;
 }

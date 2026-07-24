@@ -213,7 +213,9 @@ export async function injectTitlebar(): Promise<void> {
  * `[data-fil="bin"]` (audit-ref R4, Revue, filing.ts) et les facettes/lignes Bibliothèque
  * `[data-bib="pick"]`/`[data-bib="row"]` (audit-ref B1) et la ligne de sélection réparations
  * master.db `[data-sift="mdbpick"]` (audit-ref G3, Rekordbox) — mêmes `tabindex`+`role` posés côté
- * markup, un seul point de câblage clavier générique pour toute nouvelle ligne de ce type. */
+ * markup, un seul point de câblage clavier générique pour toute nouvelle ligne de ce type. Étendu le
+ * 2026-07-24 (audit UX/accessibilité) aux lignes de sélection Lot `[data-sift="batchpick"]`/
+ * `[data-sift="batchpickfake"]` (batch-panel.ts), même défaut que mdbpick avant son fix. */
 export function installNavKeyboard() {
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Enter" && e.key !== " ") return;
@@ -223,7 +225,7 @@ export function installNavKeyboard() {
     // double-fire (play the track AND toggle the detail panel from one keypress).
     if (/^(BUTTON|A|INPUT|SELECT|TEXTAREA)$/.test(target?.tagName ?? "")) return;
     const el = target?.closest<HTMLElement>(
-      '[data-view][tabindex],[data-sift="homerow"][tabindex],[data-fil="bin"][tabindex],[data-bib="pick"][tabindex],[data-bib="row"][tabindex],[data-sift="mdbpick"][tabindex],[data-bib="tile"][tabindex]',
+      '[data-view][tabindex],[data-sift="homerow"][tabindex],[data-fil="bin"][tabindex],[data-bib="pick"][tabindex],[data-bib="row"][tabindex],[data-sift="mdbpick"][tabindex],[data-bib="tile"][tabindex],[data-sift="batchpick"][tabindex],[data-sift="batchpickfake"][tabindex]',
     );
     if (!el) return;
     e.preventDefault();

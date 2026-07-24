@@ -284,21 +284,27 @@ export function verdictDot(v: string | null): string {
   return `<span title="en attente d'analyse" style="flex:none;width:9px;height:9px;border-radius:50%;border:1.5px solid var(--color-text-tertiary);box-sizing:border-box"></span>`;
 }
 
-function verdictWord(v: string | null): [string, string] {
+// `it` needs analysis_attempts to distinguish "still in the pipeline" from "terminally failed"
+// (>= MAX_ANALYSIS_ATTEMPTS) — same distinction batch-panel's pendingRow() already makes; before
+// this fix Detail mode showed "analyse…" for both, mislabelling a give-up as forever-in-progress.
+function verdictWord(it: Pick<QueueItem, "verdict" | "analysis_attempts">): [string, string] {
+  const v = it.verdict;
   return v === "fake"
     ? ["faux", "var(--color-text-warning)"]
     : v === "grey"
       ? ["à vérifier", "var(--color-text-warning)"]
       : v === "ok"
         ? ["", "var(--color-text-success)"]
-        : ["analyse…", "var(--color-text-tertiary)"];
+        : it.analysis_attempts >= MAX_ANALYSIS_ATTEMPTS
+          ? ["échec", "var(--color-text-warning)"]
+          : ["analyse…", "var(--color-text-tertiary)"];
 }
 
 /** One queue row's markup. `active` stamps the `.cur` highlight at creation time — required so
  * the highlight survives virtualization (Task 2): once #ql only mounts the visible window, a
  * row for the open track may not exist in the DOM to be found and classed after the fact. */
 function queueRowHtml(it: QueueItem, active: boolean): string {
-  const [word, wordColor] = verdictWord(it.verdict);
+  const [word, wordColor] = verdictWord(it);
   const title = esc(it.filename || it.path);
   const artist = it.artist ? esc(it.artist) : "";
   return (
@@ -514,9 +520,12 @@ function ensureQueueReanalyzeAllButton(qcol: HTMLElement, unanalyzedCount: numbe
       try {
         await reanalyzeTracks(ids);
         // queue:changed (emitted unconditionally by the backend) drives the queue re-render.
+        toast(`${ids.length} morceau${ids.length > 1 ? "x" : ""} réanalysé${ids.length > 1 ? "s" : ""}`);
       } catch (e) {
         console.error("reanalyze_tracks failed", e);
-        toast(`Échec de la réanalyse : ${String(e)}`);
+        // Humanized fallback (audit UX/accessibilité 2026-07-24) — raw error kept in console.error
+        // above only; same pattern as filing-identify.ts's doApplyTags/doUndoApply.
+        toast("Échec de la réanalyse — réessaie");
       } finally {
         bulkReanalyzing = false;
         endReanalyze(ids);

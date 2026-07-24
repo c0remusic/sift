@@ -526,6 +526,14 @@ export function installFilingKeys(): void {
   document.addEventListener("keydown", (e) => {
     const t = e.target as HTMLElement | null;
     if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
+    // Audit-ref (Lot, 2026-07-24): state.track can still hold the last-opened Detail track after
+    // switching to Lot mode (setReviewMode's "batch" branch never clears it, sift-live.ts) — this
+    // handler would otherwise fire ALONGSIDE installNavKeyboard's click-dispatch (chrome.ts) on a
+    // focused batchpick/batchpickfake row's Space press: double-trigger (toggles selection AND
+    // playback) plus a lost focus via blurShortcutFocus() below that breaks Tab navigation. Bail
+    // out here and let installNavKeyboard own Space/Enter for these rows exclusively — mirrors
+    // why mdbpick never had this bug: it lives on Rekordbox, a screen state.track is never set on.
+    if (t?.closest('[data-sift="batchpick"],[data-sift="batchpickfake"]')) return;
     if (!state.track) return; // only with a track open (i.e. on Revue)
     // ArrowUp/ArrowDown: handled by sift-live.ts's installQueueNavKeys, not here. The queue is
     // virtualized (renderQueue only mounts the visible window) — walking `#ql .qi` DOM nodes (the

@@ -352,7 +352,7 @@ export function keyboardHintsHtml(): string {
   const k = (key: string, what: string) => `<span><b>${key}</b> ${what}</span>`;
   return (
     `<div class="sift-kbd-hints">` +
-    k("SPACE", "écouter") + k("ENTER", "convertir") + k("BKSP", "jeter") + k("HAUT/BAS", "naviguer") +
+    k("SPACE", "écouter") + k("ENTER", "convertir") + k("BKSP", "écarter") + k("HAUT/BAS", "naviguer") +
     `</div>`
   );
 }
@@ -429,7 +429,7 @@ function playerRowHtml(name: string, path: string, closeBtn = false, headerOpts:
     // ti-volume-2 swapped for the plainer ti-volume (annotation: "pas fan de l'icone de volume") —
     // a simpler speaker glyph, no sound-wave arcs, consistent with the flat/abstract direction
     // already taken for the cover fallback.
-    `<i class="ti ti-volume sift-volume-icon" title="Volume" aria-label="Volume"></i>` +
+    `<i class="ti ti-volume sift-volume-icon" role="img" title="Volume" aria-label="Volume"></i>` +
     // Audit-ref R1 (Revue, 2026-07-08, réf. shadcn Slider/Radix) : aucun role="slider"/
     // aria-valuenow dans tout le projet avant ce fix — drag-only (pointerdown), pas de clavier.
     // aria-valuenow tenu à jour dans renderVolume/renderTempo (mountPlayer, plus bas).
@@ -1203,8 +1203,11 @@ export async function openReportInto(
     headerOpts.onAnalysisError?.(String(e));
     const verdictEl = verdictHost();
     if (verdictEl && headerOpts.showAnalysisFailure !== false) {
-      verdictEl.innerHTML =
-        `<div class="sift-analysis-fail">Échec de l'analyse : ${esc(String(e))}</div>`;
+      // decode.rs's open_format already humanizes the common failure (file moved/deleted) into
+      // French prose meant for display (see analysis/decode.rs) — the generic "Réessaie" this
+      // replaced (audit UX/accessibilité 2026-07-24) silently dropped that message. Show the
+      // backend text directly, same pattern as filing-identify.ts/library-detail.ts's error cards.
+      verdictEl.innerHTML = `<div class="sift-analysis-fail">${esc(String(e))}</div>`;
     }
     return null;
   }
@@ -1243,6 +1246,7 @@ export async function openReportModal(path: string) {
     wireReport(card, r);
   } catch (e) {
     console.error("analyze_path failed", e);
-    ov.innerHTML = `<div class="sift-report-overlay-card sift-report-overlay-error">Échec de l'analyse : ${esc(String(e))}</div>`;
+    // Same fix as openReportInto above: show the backend's (often already-humanized) message.
+    ov.innerHTML = `<div class="sift-report-overlay-card sift-report-overlay-error">${esc(String(e))}</div>`;
   }
 }

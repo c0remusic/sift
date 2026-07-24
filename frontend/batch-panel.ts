@@ -109,6 +109,7 @@ function mutateBatchTick(kind: "file" | "fake", id: number, row: HTMLElement): v
   // Row: checkbox checked state + selected background (mirrors readyRow/fakeRow at build time).
   const cb = row.querySelector<HTMLInputElement>("input.sift-batch-ck");
   if (cb) cb.checked = on;
+  row.setAttribute("aria-checked", String(on));
   row.style.background = on ? "var(--overlay-hover)" : "";
   // Group header tri-state box: rebuild just that one glyph from the live set.
   const ids =
@@ -248,7 +249,10 @@ export function renderBatch() {
   const readyRow = (it: QueueItem) => {
     const on = batchSel.has(it.id);
     return (
-      `<div class="bx-row" data-sift="batchpick" data-id="${it.id}" style="display:flex;align-items:center;gap:var(--space-8);padding:var(--space-8);border-radius:var(--border-radius-md);cursor:pointer;${
+      // Audit-ref (Lot, 2026-07-24) : même correctif clavier que master.db Rekordbox
+      // (rekordbox-view.ts, data-sift="mdbpick") — tabindex/role/aria-checked sur la ligne, clavier
+      // générique via installNavKeyboard() (chrome.ts).
+      `<div class="bx-row" data-sift="batchpick" data-id="${it.id}" tabindex="0" role="checkbox" aria-checked="${on}" style="display:flex;align-items:center;gap:var(--space-8);padding:var(--space-8);border-radius:var(--border-radius-md);cursor:pointer;${
         on ? "background:var(--overlay-hover)" : ""
       }">` +
       `<input type="checkbox" class="sift-batch-ck" ${on ? "checked" : ""} tabindex="-1">` +
@@ -288,7 +292,8 @@ export function renderBatch() {
   const fakeRow = (it: QueueItem) => {
     const on = batchFakeSel.has(it.id);
     return (
-      `<div class="bx-row" data-sift="batchpickfake" data-id="${it.id}" style="display:flex;align-items:center;gap:var(--space-8);padding:var(--space-8);border-radius:var(--border-radius-md);cursor:pointer;${
+      // Audit-ref (Lot, 2026-07-24) : voir readyRow ci-dessus, même correctif clavier.
+      `<div class="bx-row" data-sift="batchpickfake" data-id="${it.id}" tabindex="0" role="checkbox" aria-checked="${on}" style="display:flex;align-items:center;gap:var(--space-8);padding:var(--space-8);border-radius:var(--border-radius-md);cursor:pointer;${
         on ? "background:var(--overlay-hover)" : ""
       }">` +
       `<input type="checkbox" class="sift-batch-ck" ${on ? "checked" : ""} tabindex="-1">` +
@@ -443,7 +448,13 @@ function actionButtonHtml(running: boolean): string {
   const armed =
     !!batchConfirmArmed && batchConfirmArmed.fileN === fileN && batchConfirmArmed.fakeN === fakeN;
   if (armed) {
-    return `<button data-sift="batchaction" class="sift-baction" style="background:var(--color-background-danger);color:var(--color-text-danger)">Confirmer — convertir ${fileN} ?</button>`;
+    // Explicit exit alongside the silent 5s auto-disarm (batchConfirmTimer) — audit UX 2026-07-24 :
+    // no way to back out of the armed state before the second click except waiting it out. Reuses
+    // the exact same reset (see "batchcancelconfirm" in the click handler below).
+    return (
+      `<button data-sift="batchaction" class="sift-baction" style="background:var(--color-background-danger);color:var(--color-text-danger)">Confirmer — convertir ${fileN} ?</button>` +
+      `<button data-sift="batchcancelconfirm" class="sift-baction-cancel" style="background:none;border:none;color:var(--color-text-tertiary);font-size:var(--text-xs);padding:0 var(--space-8);cursor:pointer">Annuler</button>`
+    );
   }
   if (fakeN === 0)
     return `<button data-sift="batchaction" class="sift-baction" style="background:var(--color-background-info);color:var(--color-text-info)">Convertir (${fileN})</button>`;
@@ -573,10 +584,13 @@ async function runBatchFile() {
   } catch (err) {
     // Launch-time rejections only (NoLibraryRoot, or the task couldn't start).
     const code = String(err);
+    // Humanized fallback (audit UX/accessibilité 2026-07-24) — only NoLibraryRoot is a known,
+    // actionable case; any other code falls back to a generic message instead of the raw error
+    // (kept in console.error below), same pattern as filing-identify.ts's doApplyTags/doUndoApply.
     fileNote(
       code.includes("NoLibraryRoot")
         ? "Aucune racine de bibliothèque configurée — à définir dans Réglages."
-        : `Échec du lancement de la conversion : ${esc(code)}`,
+        : "Échec du lancement de la conversion — réessaie",
       "var(--color-text-danger)",
     );
     console.error("file_batch launch failed", err);
@@ -781,6 +795,13 @@ export function handleBatchAction(el: HTMLElement, act: string, e: MouseEvent): 
       void openFilingInto(mid, item);
       prefetchNextAfter(item.id);
     }
+  } else if (act === "batchcancelconfirm") {
+    // Explicit disarm (audit UX 2026-07-24) — same reset as the silent 5s auto-disarm timeout above
+    // (batchConfirmTimer), just triggered by a click instead of a wait.
+    e.stopPropagation();
+    clearTimeout(batchConfirmTimer);
+    batchConfirmArmed = null;
+    renderBatchRail(currentItems.filter((it) => it.verdict !== "ok").length);
   } else if (act === "batchaction") {
     e.stopPropagation();
     const fileN = batchSel.size;
