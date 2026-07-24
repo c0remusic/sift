@@ -1354,8 +1354,13 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-library-layout{display:flex;align-items:flex-start;gap:14px}
 /* 150px → 190px (2026-07-08, retour utilisateur : la pastille Dossiers/Genres était tronquée) —
    la piste segmentée + son padding de carte (16px×2) dépassaient les ~118px utiles restants à
-   150px. .sift-library-main est flex:1 dans .sift-library-layout, s'adapte sans casser. */
-.sift-library-side{width:190px;flex:none;align-self:flex-start;height:calc(100dvh - 210px);overflow:auto;padding-bottom:10px}
+   150px. .sift-library-main est flex:1 dans .sift-library-layout, s'adapte sans casser.
+   190px → 245px (2026-07-24, audit cohérence visuelle) — même bug, revenu : un 3e onglet
+   ("Artistes") a été ajouté à la piste segmentée sans recalculer cette largeur, qui redevenait
+   trop courte (piste mesurée à 201px de contenu + 36px de padding de carte = 237px mini) —
+   overflow:auto masquait le dépassement en scroll horizontal silencieux plutôt qu'un rendu
+   visiblement cassé, donc "Artistes" s'affichait tronqué en "Artis" sans ellipse ni indice. */
+.sift-library-side{width:245px;flex:none;align-self:flex-start;height:calc(100dvh - 210px);overflow:auto;padding-bottom:10px}
 .sift-library-main{flex:1;min-width:0}
 /* ── Journal — grammaire 3 colonnes (Sift.dc.html) : liste en col Queue + détail en Inspecteur ── */
 /* Queue column (reuses .queue for bg/width/padding). */
