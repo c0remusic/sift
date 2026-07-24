@@ -22,7 +22,7 @@ color-scheme:light;
    "pastel card" look, resolved to ~5:1 against their own text token everywhere. */
 --color-background-info:oklch(87.46% 0.035 246.74);--color-background-danger:oklch(90.45% 0.045 30.17);--color-background-success:oklch(93.42% 0.035 150.63);--color-background-warning:oklch(99.00% 0.045 73.21);
 --color-text-primary:oklch(31.16% 0.0105 73.53);--color-text-secondary:oklch(45.4% 0.0145 67.45);--color-text-tertiary:oklch(46.15% 0.0133 79.76);--color-text-quaternary:oklch(50.30% 0.0139 82.4);
---color-text-info:oklch(45.37% 0.0835 246.66);--color-text-danger:oklch(48.88% 0.1399 30.93);--color-text-success:oklch(49.19% 0.0735 151.97);--color-text-warning:oklch(53.34% 0.103 75.31);
+--color-text-info:oklch(45.37% 0.0835 246.66);--color-text-danger:oklch(48.88% 0.1399 30.93);--color-text-success:oklch(44% 0.0735 151.97);--color-text-warning:oklch(48% 0.103 75.31);
 --color-border-tertiary:oklch(25.67% 0.0142 67.12 / 0.09);--color-border-secondary:oklch(25.67% 0.0142 67.12 / 0.16);
 --color-border-info:oklch(56.9% 0.1044 246.74 / .35);--color-border-danger:oklch(57.16% 0.1594 30.17 / .42);
 --color-hue-indigo-text:oklch(43.43% 0.1484 283.58);--color-hue-indigo-bg:oklch(83.28% 0.045 278.34);--color-hue-purple-text:oklch(45.72% 0.1313 307.39);--color-hue-purple-bg:oklch(86.36% 0.05 312.41);--color-hue-pink-text:oklch(45.67% 0.1331 1.47);--color-hue-pink-bg:oklch(86.03% 0.045 2.52);--color-hue-teal-text:oklch(47.62% 0.0805 184.5);--color-hue-teal-bg:oklch(91.40% 0.035 186.37);--color-hue-yellow-text:oklch(54.77% 0.1119 90.23);
@@ -101,8 +101,8 @@ color-scheme:light;
    and update banner top position to ensure they never overlap or leave gaps. */
 --titlebar-h:30px;
 }
-/* Dark variant — same warm-neutral family + vert/ambre uniquement (aucun bleu ni rouge, même
-   simplification sémantique que le clair : danger fusionne dans warning). Auto = suit
+/* Dark variant — same warm-neutral family, garde les 4 teintes sémantiques distinctes
+   (success/danger/warning/info — palette Apple system colors, 2026-07-06). Auto = suit
    prefers-color-scheme sauf override explicite ([data-theme]) posé par le toggle Réglages
    (voir sift-live.ts renderReglagesLive + main.ts applyTheme). data-theme="light" bloque la
    règle média même si l'OS est sombre ; data-theme="dark" force le sombre même si l'OS est clair. */
@@ -386,8 +386,10 @@ html,body{margin:0;padding:0;height:100%}
    treatment in danger's hue, so the rail's two actions read as equally-weighted colored pills,
    not one bold pill next to plain text. */
 .sift-ranger-btn{flex:none;white-space:nowrap;background:var(--color-background-info);color:var(--color-text-info);border:0.5px solid var(--color-border-info);font-weight:500}
+.sift-ranger-btn:hover{background:var(--color-background-info);filter:brightness(0.95)}
 .sift-secondary-resource{flex:none;white-space:nowrap;color:var(--color-text-warning)}
 .sift-secondary-trash{flex:none;white-space:nowrap;background:var(--color-background-danger);color:var(--color-text-danger);border:0.5px solid var(--color-border-danger)}
+.sift-secondary-trash:hover{background:var(--color-background-danger);filter:brightness(0.95)}
 /* Destination popover: replaces the persistent tree column, anchored above its trigger button.
    Hidden by default ([hidden] attribute, toggled in filing.ts); #fldz keeps its id so renderBins'
    existing document.getElementById("fldz") callers need no change. */
@@ -683,7 +685,7 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .jrnl-name{font-size:var(--text-sm);color:var(--color-text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .jrnl-dest{font-size:var(--text-2xs);font-family:var(--font-mono);color:var(--color-text-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .jrnl-revert{flex:none;background:transparent;border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);color:var(--color-text-secondary);font-size:var(--text-xs);padding:2px 7px;cursor:pointer;line-height:1.4}
-.jrnl-revert:hover{color:var(--color-text-primary);border-color:var(--color-border-primary)}
+.jrnl-revert:hover{color:var(--color-text-primary);border-color:var(--color-border-secondary)}
 /* Confirmation toast — fades out automatically via CSS, no JS timer */
 .jrnl-toast{font-size:var(--text-sm);color:var(--color-text-success);background:color-mix(in srgb,var(--color-text-success) 12%,transparent);border:1px solid color-mix(in srgb,var(--color-text-success) 30%,transparent);border-radius:var(--border-radius-md);padding:var(--space-6) var(--space-12);margin-bottom:var(--space-8);animation:jrnl-toast-fade 2.8s ease forwards}
 .jrnl-toast--warn{color:var(--color-text-warning);background:color-mix(in srgb,var(--color-text-warning) 12%,transparent);border-color:color-mix(in srgb,var(--color-text-warning) 30%,transparent)}
@@ -1076,6 +1078,7 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-confirm-msg{font-size:var(--text-sm);color:var(--color-text-secondary);white-space:pre-line}
 .sift-confirm-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .sift-confirm-btn{padding:6px 14px;border-radius:var(--border-radius-md);border:none;background:var(--color-background-info);color:var(--color-text-info);cursor:pointer;font-family:inherit}
+.sift-confirm-btn:hover{background:var(--color-background-info);filter:brightness(0.95)}
 .sift-usbfmt-error{font-size:var(--text-sm);color:var(--color-text-danger)}
 .sift-usb-list{display:flex;flex-direction:column;gap:6px;margin:10px 0}
 .sift-usb-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 9px;background:var(--color-background-primary);border-radius:var(--border-radius-md)}
