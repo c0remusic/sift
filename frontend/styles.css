@@ -291,7 +291,7 @@ html,body{margin:0;padding:0;height:100%}
    from the row edge, a shared structural concern), gap reflects this row's own content density
    (verdict icon + filename + artist packed tighter here than Lot's checkbox+name+2 pills) and
    isn't a hierarchy the two rows are meant to share. */
-.qi{display:flex;align-items:center;gap:6px;padding:var(--space-8);border-radius:var(--border-radius-md);font-size:12px;color:var(--color-text-secondary);white-space:nowrap;overflow:hidden;cursor:pointer}
+.qi{display:flex;align-items:center;gap:var(--space-8);padding:var(--space-8);border-radius:var(--border-radius-md);font-size:12px;color:var(--color-text-secondary);white-space:nowrap;overflow:hidden;cursor:pointer}
 .qi span{overflow:hidden;text-overflow:ellipsis}.qi.done{color:var(--color-text-tertiary)}
 /* Selection is neutral (white @.045 + a non-blue left bar), per interaction-model.md: blue is
    reserved for focus/accent, never for "this row is selected". */

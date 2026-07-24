@@ -96,10 +96,11 @@ function visibleQueueItems(): QueueItem[] {
 function measureQueueRowHeight(ql: HTMLElement): number {
   if (queueRowHeightCache != null) return queueRowHeightCache;
   const probe = document.createElement("div");
+  probe.className = "qi";
   probe.style.position = "absolute";
   probe.style.visibility = "hidden";
   probe.style.pointerEvents = "none";
-  probe.style.cssText += ";display:flex;align-items:center;gap:8px;padding:5px 7px;width:100%";
+  probe.style.width = "100%";
   probe.innerHTML =
     `<div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">` +
     `<div style="display:flex;align-items:center;gap:6px;min-width:0"><span style="flex:1">probe</span></div>` +
@@ -308,7 +309,7 @@ function queueRowHtml(it: QueueItem, active: boolean): string {
   const title = esc(it.filename || it.path);
   const artist = it.artist ? esc(it.artist) : "";
   return (
-    `<div class="qi${active ? " cur" : ""}" data-id="${it.id}" data-path="${esc(it.path)}" title="Écouter et convertir" style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:5px 7px">` +
+    `<div class="qi${active ? " cur" : ""}" data-id="${it.id}" data-path="${esc(it.path)}" title="Écouter et convertir" style="cursor:pointer">` +
     `<div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">` +
     `<div style="display:flex;align-items:center;gap:6px;min-width:0">` +
     verdictDot(it.verdict) +
