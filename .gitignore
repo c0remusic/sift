@@ -40,6 +40,10 @@ Thumbs.db
 !.claude/rules/**
 !.claude/scripts/
 !.claude/scripts/**
+!.claude/learning-log.md
+# learning-log.md a existé ~10 jours (C1-D12) sans jamais être tracké — même
+# limitation que ci-dessus, cette négation seule ne suffit pas si le fichier
+# ressort un jour de l'index : `git add -f .claude/learning-log.md` d'abord.
 .codex/
 .agents/
 
