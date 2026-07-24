@@ -10,13 +10,25 @@
 // styles.css does not use a rem-based spacing scale — every relevant numeric token is
 // already a literal px value. If that changes, add a REM_BASE constant and convert.
 
-import { readFileSync, readdirSync, statSync } from 'node:fs';
+import { readFileSync, readdirSync, statSync, writeFileSync, existsSync } from 'node:fs';
 import { join, resolve, relative, extname } from 'node:path';
 
 const REPO_ROOT = resolve(new URL('.', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'), '..');
 const TOKEN_FILE = resolve(REPO_ROOT, 'frontend', 'styles.css');
+const BASELINE_FILE = resolve(REPO_ROOT, 'scripts', 'lint-tokens-baseline.json');
 
-const EXCLUDE_DIRS = new Set(['node_modules', 'dist', '.git', 'target']);
+// Ratchet mode: don't fail CI on the ~540 pre-existing findings (undoable in one pass, tracked
+// separately in docs/superpowers/changes/2026-07-19-spacing-scale-sweep/design.md) — fail only
+// when a run introduces MORE findings than the last recorded baseline, per category. Paying down
+// debt lowers the ratchet (via --write-baseline); it can never silently climb back up unnoticed.
+const WRITE_BASELINE = process.argv.includes('--write-baseline');
+
+// '.claude' excludes native worktrees too (created under .claude/worktrees/ per
+// ~/.claude/CLAUDE.md § Isolation native) — each one is a full checkout of frontend/, so
+// leaving it unexcluded silently doubles (or worse) every count depending on how many worktree
+// agents happen to be running on the machine at scan time. Caught by verify-gate crosscheck
+// (2026-07-24): a baseline recorded while a worktree was present was ~2x the real count.
+const EXCLUDE_DIRS = new Set(['node_modules', 'dist', '.git', 'target', '.claude']);
 // src-tauri\target — matched by checking the relative path contains src-tauri/target.
 const SCAN_EXTS = new Set(['.css', '.ts', '.tsx']);
 
@@ -196,6 +208,12 @@ for (const f of findings) {
 const counts = { color: 0, 'z-index': 0, 'px-spacing': 0 };
 for (const f of findings) counts[f.category]++;
 
+if (WRITE_BASELINE) {
+  writeFileSync(BASELINE_FILE, JSON.stringify(counts, null, 2) + '\n');
+  console.log(`lint-tokens: baseline written to ${relative(REPO_ROOT, BASELINE_FILE)}:`, counts);
+  process.exit(0);
+}
+
 if (findings.length === 0) {
   console.log('lint-tokens: no hardcoded values found bypassing tokens.');
   process.exit(0);
@@ -216,4 +234,40 @@ console.log(`  colors:      ${counts.color}`);
 console.log(`  z-index:     ${counts['z-index']}`);
 console.log(`  px-spacing:  ${counts['px-spacing']}`);
 
-process.exit(1);
+// ---- Step 4: ratchet against baseline ---------------------------------------------------
+
+if (!existsSync(BASELINE_FILE)) {
+  console.log(
+    `\nlint-tokens: no baseline at ${relative(REPO_ROOT, BASELINE_FILE)} — run with ` +
+    `--write-baseline once to record the current count as the starting ratchet, then commit it.`,
+  );
+  process.exit(1);
+}
+
+const baseline = JSON.parse(readFileSync(BASELINE_FILE, 'utf8'));
+const regressed = [];
+for (const cat of Object.keys(counts)) {
+  if (counts[cat] > (baseline[cat] ?? 0)) {
+    regressed.push(`${cat}: ${baseline[cat] ?? 0} -> ${counts[cat]} (+${counts[cat] - (baseline[cat] ?? 0)})`);
+  }
+}
+
+if (regressed.length > 0) {
+  console.log('\nlint-tokens: NEW findings beyond the recorded baseline — this run is a regression:');
+  for (const r of regressed) console.log(`  ${r}`);
+  console.log(
+    '\nFix the new drift, or if this reduction/addition is deliberate and reviewed, ' +
+    're-run with --write-baseline to update the ratchet.',
+  );
+  process.exit(1);
+}
+
+const improved = Object.keys(counts).filter((cat) => counts[cat] < (baseline[cat] ?? 0));
+if (improved.length > 0) {
+  console.log(
+    `\nlint-tokens: below baseline on [${improved.join(', ')}] — nothing blocking, but consider ` +
+    `re-running with --write-baseline to lock in the improvement.`,
+  );
+}
+console.log(`\nlint-tokens: within baseline (${relative(REPO_ROOT, BASELINE_FILE)}) — pass.`);
+process.exit(0);

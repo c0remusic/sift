@@ -54,7 +54,8 @@
        {"line": 954, "topic": "Audit référence canonique — Bibliothèque"},
        {"line": 973, "topic": "Audit référence canonique — Réglages/Rekordbox/Clé USB"},
        {"line": 1141, "topic": "Historique des corrections (chronologique)"},
-       {"line": 1230, "topic": "2026-07-10 — audit cohérence palette (badges/track/gris/hardcodés/inputs/focus/selection/checkbox) + renommage Ranger→Convertir"}
+       {"line": 1230, "topic": "2026-07-10 — audit cohérence palette (badges/track/gris/hardcodés/inputs/focus/selection/checkbox) + renommage Ranger→Convertir"},
+       {"line": 1324, "topic": "Conventions de cohérence — sémantique couleur, hiérarchie de poids, discipline classe partagée (07-24, à consulter avant tout nouveau composant)"}
      ]},
     {"path": "docs/design-system/foundations.md", "topic": "design system — fondations", "summary": "Fondations produit et visuelles de Sift : utilisateur DJ, poste de décision Revue, personnalité sobre/pro, sources de vérité et ordre besoin→parcours→UX→UI→code."},
     {"path": "docs/design-system/tokens.md", "topic": "design system — tokens", "summary": "Cartographie des familles de tokens Sift. Les valeurs exactes restent dans frontend/styles.css ; ce doc décrit les rôles, usages et règles de mise à jour."},

@@ -6,6 +6,24 @@ on:
   workflow_dispatch:
 
 jobs:
+  # Job separe et independant du build des installeurs (pas de `needs:`) : un ratchet de style
+  # qui casse ne doit jamais empecher la production/upload des binaires — trouve par verify-gate
+  # (2026-07-24), le job `build` etait sequentiel et un echec de lint aurait bloque tauri build +
+  # l'upload des artefacts sur main.
+  lint-tokens:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+      - name: Install npm deps
+        run: npm ci
+      - name: Lint design tokens (ratchet — bloque sur toute nouvelle derive, pas sur la dette existante)
+        run: npm run lint:tokens
+
   build:
     strategy:
       fail-fast: false
@@ -35,10 +53,6 @@ jobs:
 
       - name: Install npm deps
         run: npm ci
-
-      - name: Lint design tokens (non-bloquant)
-        run: npm run lint:tokens
-        continue-on-error: true
 
       - name: Fetch ffmpeg sidecar
         run: npm run fetch-ffmpeg

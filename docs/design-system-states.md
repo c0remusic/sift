@@ -95,6 +95,7 @@
 - L1120 — Lot — lignes de sélection accessibles au clavier, bouton "Annuler" sur confirmation armée (07-24).
 - L1128 — `styles.css` — tokens `--color-text-warning`/`-success` clair recalibrés, hover réaffirmé (07-24).
 - L1141 — Historique des corrections (chronologique, par date de session).
+- L1324 — Conventions de cohérence (sémantique couleur, hiérarchie de poids, discipline classe partagée) — à consulter AVANT tout nouveau composant (07-24).
 
 ## Ligne de queue — `.qi` (`styles.css:289-297`)
 
@@ -1319,3 +1320,71 @@ hover réaffirmé sur `.sift-ranger-btn`/`.sift-secondary-trash`/`.jrnl-revert`/
 (voir Sommaire). Vérification : `tsc --noEmit` non rejoué dans cette passe de
 documentation (pas de code touché) — chaque affirmation vérifiée par grep sur
 le code réel au moment de l'écriture de ce catalogue.
+
+## Conventions de cohérence — à consulter avant tout nouveau composant (07-24)
+
+Issu d'un audit de cohérence visuelle cross-écran (7 écrans, 2026-07-24) qui a
+trouvé plusieurs divergences que ni `tsc` ni le lint de tokens ne peuvent
+attraper mécaniquement — le token existant était juste mal choisi pour le
+rôle, pas absent. `scripts/lint-tokens.mjs` (ratchet CI, `--write-baseline`)
+attrape les valeurs littérales hors-token ; **rien n'attrape automatiquement
+un mauvais choix sémantique parmi des tokens valides** — ce qui suit comble
+ce trou par une convention documentée, à vérifier au moment de la revue.
+
+**Sémantique des couleurs de texte/icône interactives** (`--color-text-*`) :
+- `danger` — action qui retire quelque chose de la liste/vue courante
+  (soft-delete vers une corbeille, suppression définitive, retrait d'une
+  source). PAS réservé aux actions strictement irréversibles : `envoyer à la
+  corbeille` (récupérable) est danger au même titre que `purger` (définitif) —
+  le signal est "ça disparaît d'ici", pas "c'est permanent".
+- `warning` — état qui appelle une vigilance sans action de l'utilisateur
+  (échec d'analyse, tag manquant, coupure détectée).
+- `info` — élément interactif de navigation/correction (lien, bouton
+  "Restaurer"/"Annuler"/"Remettre en file") OU badge de notification passif
+  ("N nouveaux" à traiter) — les deux usages coexistent, distingués par le
+  contexte (bouton cliquable vs badge de statut), pas par une règle unique.
+- `success` — confirmation qu'un état est correct/à jour, jamais un badge
+  interactif.
+- Un même **rôle fonctionnel répété sur plusieurs catégories** (ex. "annuler
+  un lot" sur 3 catégories différentes) n'implique PAS forcément la même
+  couleur si le *contenu réel de l'action* diffère derrière une interface
+  commune — vérifier ce que fait vraiment le handler/la commande backend
+  avant d'harmoniser une couleur qui semble incohérente en surface (piège
+  vécu 2026-07-24 : `journal.ts` `massColor`, voir historique ci-dessous).
+
+**Hiérarchie de poids** : le libellé principal d'une ligne de liste dense
+(nom de piste, chemin de fichier réparé) porte `font-weight:500` — jamais
+seulement une différence de taille ou de couleur pour le distinguer de sa
+ligne méta (chemin, timestamp). Convention déjà posée par `.qi`,
+`.sift-lib-tile-title`, les lignes Écartés — à répliquer sur tout nouveau
+composant de liste plutôt que de laisser le texte par défaut (400) porter
+la hiérarchie seul.
+
+**Avant de dupliquer un style inline répété ≥3 fois** : chercher une classe
+existante avec le même rendu (`grep` sur la valeur exacte dans `styles.css`)
+avant d'en créer une nouvelle ou de continuer à dupliquer inline — un style
+inline répété sur plusieurs sites du même fichier est le signal qu'une classe
+partagée manque, pas que chaque site est un cas particulier. Ne pas réutiliser
+une classe existante dont une seule propriété diffère (fond, radius) sans
+vérifier qu'elle rend identique à l'usage visé — `.sift-ui-card-soft` avait un
+radius et un fond différents de ce qu'il aurait fallu à `rekordbox-view.ts`,
+d'où l'extraction d'une classe dédiée (`.sift-ui-card-outline`) plutôt qu'une
+réutilisation forcée.
+
+**Prévention mécanique disponible** : `npm run lint:tokens` tourne dans un job
+CI dédié (`lint-tokens`, `build.yml`), bloquant en mode ratchet — échoue
+seulement si le nombre de valeurs hors-token AUGMENTE par rapport à
+`scripts/lint-tokens-baseline.json` (pas sur la dette existante : 122
+couleurs + 3 z-index + 120 px-spacing au 2026-07-24, baseline régénérée après
+correction d'un double comptage — voir historique ci-dessous ; l'espacement
+`styles.css` seul recoupe partiellement le chantier documenté séparément dans
+`docs/superpowers/changes/2026-07-19-spacing-scale-sweep/design.md`, ≈262
+sites, jamais exécuté). **Limite connue** : `build.yml` ne se déclenche que
+sur `push` de `main` (+ `workflow_dispatch`), pas sur `pull_request` — ce
+n'est PAS un gate avant merge, seulement un filet qui détecte la dérive une
+fois atterrie sur main. Après un nettoyage volontaire de dette, rejouer
+`node scripts/lint-tokens.mjs --write-baseline` **depuis un arbre propre
+(`git status` vide, aucun dossier sous `.claude/worktrees/`)** et committer le
+fichier baseline mis à jour pour verrouiller le gain — un worktree agent
+présent au moment du calcul double silencieusement chaque compte (piège vécu
+2026-07-24, voir historique).
