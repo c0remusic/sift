@@ -23,9 +23,13 @@
 | **M7 — Export Rekordbox + clé USB** | ✅ **fait** — export/suivi XML Rekordbox (playlists protégées d'un renommage/déplacement/reformat via le `TrackID`, jamais le chemin), formatage clé USB FAT32/exFAT Windows+macOS (`rekordbox_xml.rs`, `usb_format/`, `ipc_library.rs`, `ipc_usb.rs`) |
 | **M8 — Écriture directe `master.db` Rekordbox** | ✅ **fait** — Tier 1 (réparation de chemins), Tier 2 (dédoublonnage playlists), Tier 3 (synchro métadonnées + pochette), chaîne de sûreté backup/vérif round-trip/rollback, vérifié contre une vraie bibliothèque (2828 pistes, 2026-07-12) (`rekordbox_masterdb.rs`, `rekordbox_repairs.rs`, `ipc_library.rs`) |
 
-Scope V1 restant (décidé au brainstorm, pas encore fait) : diffusion —
-code-signing Windows + notarization macOS + auto-update Tauri + site (`.github/workflows/build.yml`
-build encore des installeurs non signés).
+Scope V1 restant (décidé au brainstorm) : diffusion —
+**auto-update Tauri ✅ fait** (2026-07-24, gratuit, sans certificat OS — voir
+`docs/superpowers/changes/2026-07-24-auto-update/design.md`, vérifié en
+conditions réelles sur `v0.0.1`/`v0.0.2`) ; code-signing Windows +
+notarization macOS + site **différés** (budget) — `.github/workflows/build.yml`
+build encore des installeurs non signés, contournement documenté dans
+[`docs/install-non-signe.md`](docs/install-non-signe.md).
 
 La maquette UI/UX d'origine vit dans `index.html` + `frontend/` (migrée comme shell frontend
 de l'app). Le découpage complet et les décisions de cadrage : [`docs/plan-implementation.md`](docs/plan-implementation.md).
