@@ -1359,8 +1359,13 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
    ("Artistes") a été ajouté à la piste segmentée sans recalculer cette largeur, qui redevenait
    trop courte (piste mesurée à 201px de contenu + 36px de padding de carte = 237px mini) —
    overflow:auto masquait le dépassement en scroll horizontal silencieux plutôt qu'un rendu
-   visiblement cassé, donc "Artistes" s'affichait tronqué en "Artis" sans ellipse ni indice. */
-.sift-library-side{width:245px;flex:none;align-self:flex-start;height:calc(100dvh - 210px);overflow:auto;padding-bottom:10px}
+   visiblement cassé, donc "Artistes" s'affichait tronqué en "Artis" sans ellipse ni indice.
+   245px → 272px (2026-07-24, retour Antoine) — alignée sur la largeur canonique de #qcol/
+   #homequeue (Revue/Accueil, déjà fixée cette session) : le panneau de détail partagé
+   (.sift-player-row, report-view.ts) démarrait à une position horizontale différente entre
+   Bibliothèque et Revue parce que leurs panneaux de gauche respectifs n'avaient pas la même
+   largeur — même composant, deux départs différents au changement d'écran. */
+.sift-library-side{width:272px;flex:none;align-self:flex-start;height:calc(100dvh - 210px);overflow:auto;padding-bottom:10px}
 .sift-library-main{flex:1;min-width:0}
 /* ── Journal — grammaire 3 colonnes (Sift.dc.html) : liste en col Queue + détail en Inspecteur ── */
 /* Queue column (reuses .queue for bg/width/padding). */
