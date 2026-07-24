@@ -9,6 +9,7 @@ import { listSources, addSource, removeSource, setSourceWatched, getSetting } fr
 import { open } from "@tauri-apps/plugin-dialog";
 import type { Source } from "../shared/contracts";
 import { esc } from "./dom";
+import { confirmAction } from "./confirm-modal";
 
 const LIBRARY_ROOT = "library_root"; // same setting key filing.ts gates the destination tree on
 
@@ -33,6 +34,16 @@ function baseName(path: string): string {
 }
 
 const SOURCE_HUE_CYCLE = ["indigo", "purple", "pink", "teal", "yellow"] as const;
+
+/** Libellés FR des 5 teintes catégorielles — aucune table équivalente trouvée
+ *  ailleurs dans le fichier ni dans docs/design-system/content.md, table locale. */
+const SOURCE_HUE_LABEL_FR: Record<(typeof SOURCE_HUE_CYCLE)[number], string> = {
+  indigo: "indigo",
+  purple: "violet",
+  pink: "rose",
+  teal: "sarcelle",
+  yellow: "jaune",
+};
 
 /** A source's identity color: its manual override if set, otherwise the hue
  *  at its position in add-order (id ascending, matching how `sources::list`
@@ -108,7 +119,7 @@ function inspectorHtml(selected: Source | null, root: string | null, allSources:
       '<i class="ti ti-alert-triangle" style="font-size:var(--text-lg);flex:none"></i>' +
       "<span><strong>Racine de bibliothèque non définie</strong> — les dossiers surveillés restent scannés, mais la conversion sera bloquée tant qu'aucune racine n'est choisie. " +
       '<button data-sift="gotoreglages" style="color:var(--color-text-warning);text-decoration:underline;padding:0;font:inherit"><i class="ti ti-arrow-right"></i> Ouvrir Réglages</button></span>' +
-      '<button data-sift="dismiss-rootgate" title="Masquer pour cette session" aria-label="Masquer ce message pour cette session" style="flex:none;background:none;border:none;color:var(--color-text-warning);cursor:pointer;padding:0 0 0 8px"><i class="ti ti-x"></i></button></div>';
+      '<button data-sift="dismiss-rootgate" class="lk-icon" title="Masquer pour cette session" aria-label="Masquer ce message pour cette session" style="flex:none;background:none;border:none;color:var(--color-text-warning);cursor:pointer;padding:0 0 0 8px"><i class="ti ti-x"></i></button></div>';
 
   if (!selected) {
     return (
@@ -140,10 +151,11 @@ function inspectorHtml(selected: Source | null, root: string | null, allSources:
     `</div>` +
     `<div class="sift-ui-card-toolbar">` +
     `<span style="font-size:var(--text-sm);color:var(--color-text-tertiary)">Couleur</span>` +
-    SOURCE_HUE_CYCLE.map(
-      (hue) =>
-        `<button data-sift="setsrccolor" data-id="${selected.id}" data-hue="${hue}" title="${hue}" aria-label="Couleur ${hue}" class="sift-src-swatch sift-src-swatch-${hue}${resolveSourceColorKey(allSources, selected) === hue ? " on" : ""}"></button>`,
-    ).join("") +
+    SOURCE_HUE_CYCLE.map((hue) => {
+      const on = resolveSourceColorKey(allSources, selected) === hue;
+      const label = SOURCE_HUE_LABEL_FR[hue];
+      return `<button data-sift="setsrccolor" data-id="${selected.id}" data-hue="${hue}" title="Couleur ${label}" aria-label="Couleur ${label}" aria-pressed="${on}" class="sift-src-swatch sift-src-swatch-${hue}${on ? " on" : ""}"></button>`;
+    }).join("") +
     `</div>` +
     `<div class="sift-ui-card-actions">` +
     `<div data-sift="togglewatch" data-id="${selected.id}" data-watched="${watchOn ? "1" : "0"}" tabindex="0" role="checkbox" aria-checked="${watchOn}" class="sift-home-watch-toggle sift-ui-card-actions-main">` +
@@ -229,6 +241,8 @@ export async function renderHomeSources() {
   inspectorCol.querySelector('[data-sift="rmsrc"]')?.addEventListener("click", async (e) => {
     const el = e.currentTarget as HTMLElement;
     const id = Number(el.dataset.id);
+    const ok = await confirmAction("Retirer ce dossier surveillé ?", "Retirer");
+    if (!ok) return;
     try {
       await removeSource(id);
       if (selectedSourceId === id) selectedSourceId = null;
