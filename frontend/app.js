@@ -30,7 +30,7 @@ function openLink(u){window.open(u,'_blank','noopener');}
   function cnt(s){return T.filter(function(x){return x.status===s;}).length;}
   function byFolder(){var b={};T.forEach(function(x){if(x.status==="filed")b[x.folder]=(b[x.folder]||0)+1;});return b;}
   function nSel(){var n=0;for(var k in sel)if(sel[k])n++;return n;}
-  function block(){content.style.display="block";content.style.padding="14px 18px";content.style.overflowY="auto";}
+  function block(){content.style.display="block";content.style.overflowY="auto";}
   // Queue column (#qcol, Revue) width: user-resized via the drag handle, persisted across
   // renders/sessions (renderRevue rebuilds #qcol from scratch on every nav click, so the width
   // must be re-read from storage rather than kept in a live JS var). Real feature — runs in
@@ -65,7 +65,7 @@ function openLink(u){window.open(u,'_blank','noopener');}
     if(view==="home")return renderHome();if(view==="biblio")return renderBiblio();if(view==="rkb")return renderRkb();if(view==="cle")return renderCle();if(view==="ecarts")return renderEcarts();if(view==="journal")return renderJournal();return renderReglages();}
 
   function renderHome(){
-    content.style.display="flex";content.style.padding="14px 18px";content.style.overflowY="auto";content.style.flexDirection="column";
+    content.style.display="flex";content.style.overflowY="auto";content.style.flexDirection="column";
     // Live (Tauri): window.__siftHome() below replaces everything except the ".h1" title with
     // real watched-source data (home-sources.ts) — this whole block would be a wasted mock render
     // (fake stat cards, fake folders) immediately clobbered. Same guard as renderRevue.
@@ -109,14 +109,17 @@ function openLink(u){window.open(u,'_blank','noopener');}
   }
 
   function renderRevue(){
-    content.style.display="flex";content.style.padding="0";content.style.flexDirection="";content.style.overflowY="";
+    content.style.display="flex";content.style.flexDirection="";content.style.overflowY="";
     var pendingCount=cnt("pending"),doneCount=T.length-pendingCount;
     // pbar/pfill is a queue-completion bar the mock demo animates below (line ~121); the real
     // Tauri app never writes #pf's width (no live consumer), so it rendered as a permanently
     // frozen empty track — dead decoration, not a real feature. Demo-only now.
     var inT='__TAURI_INTERNALS__' in window;
     var pbarHtml=inT?'':'<div class="pbar"><div class="pfill" id="pf" style="width:0%"></div></div>';
-    content.innerHTML='<div class="queue" id="qcol" style="width:'+qcolWidth()+'px"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px"><span class="col-h" style="margin:0">File</span><span style="display:flex;gap:3px"><span data-act="revmode" data-m="detail" title="Vue détail" style="cursor:pointer;color:var(--color-text-info)"><i class="ti ti-layout-list" style="font-size:14px"></i></span><span data-act="revmode" data-m="batch" title="Mode batch" style="cursor:pointer;color:var(--color-text-tertiary)"><i class="ti ti-table" style="font-size:14px"></i></span></span></div>'+pbarHtml+'<div id="ql"></div>'+(doneCount?'<div style="padding:5px 4px 0"><span data-act="togglequeue" style="font-size:10px;color:var(--color-text-tertiary);cursor:pointer;text-decoration:underline">'+(queueShowAll?'Masquer les traités':'+ '+doneCount+' traités')+'</span></div>':'')+'</div><div class="sift-qresize" title="Redimensionner la file"></div><div class="sift-inspector" id="rvinspector"><div class="mid" id="mid"></div><div class="sift-action-rail" id="filfoot"></div><div class="sift-dest-popover" id="fldz" hidden></div></div>';
+    // .sift-revue-row: shared row wrapper (padding lives on #content itself now, same rule for
+    // every screen — see styles.css) so #qcol/.sift-qresize/#rvinspector no longer each carry
+    // their own hand-tuned margin to fake the window-edge inset and the inter-panel gap.
+    content.innerHTML='<div class="sift-revue-row"><div class="queue" id="qcol" style="width:'+qcolWidth()+'px"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px"><span class="col-h" style="margin:0">File</span><span style="display:flex;gap:3px"><span data-act="revmode" data-m="detail" title="Vue détail" style="cursor:pointer;color:var(--color-text-info)"><i class="ti ti-layout-list" style="font-size:14px"></i></span><span data-act="revmode" data-m="batch" title="Mode batch" style="cursor:pointer;color:var(--color-text-tertiary)"><i class="ti ti-table" style="font-size:14px"></i></span></span></div>'+pbarHtml+'<div id="ql"></div>'+(doneCount?'<div style="padding:5px 4px 0"><span data-act="togglequeue" style="font-size:10px;color:var(--color-text-tertiary);cursor:pointer;text-decoration:underline">'+(queueShowAll?'Masquer les traités':'+ '+doneCount+' traités')+'</span></div>':'')+'</div><div class="sift-qresize" title="Redimensionner la file"></div><div class="sift-inspector" id="rvinspector"><div class="mid" id="mid"></div><div class="sift-action-rail" id="filfoot"></div><div class="sift-dest-popover" id="fldz" hidden></div></div></div>';
     installQueueResize(document.getElementById('qcol'),content.querySelector('.sift-qresize'));
     // Live (Tauri): window.__siftQueue() below overwrites #ql/#fldz/#mid with the real data —
     // this whole block would just be a wasted mock render (fake queue rows, fake destination

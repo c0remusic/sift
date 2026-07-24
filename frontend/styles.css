@@ -179,6 +179,13 @@ html{background:transparent}
    (height:100%;width:100%;display:flex, no centered wrapper). */
 html,body{margin:0;padding:0;height:100%}
 .pa{height:100%;width:100%;display:flex;background:var(--color-background-primary);overflow:hidden;font-size:12px}
+/* Single source of truth for the content-area inset from the window chrome (was re-set
+   imperatively per-screen in app.js's block()/renderHome()/renderRevue(), with Revue alone
+   dropping it to 0 — the resulting jump when navigating Accueil<->Revue was never intentional,
+   just two screens independently reinventing the same "gap from window edge" concern with
+   different values, cf. audit 2026-07-24). Screens still toggle display/flexDirection/overflowY
+   per their own layout mode; only the padding is now fixed for every screen alike. */
+#content{padding:14px 18px}
 /* Wide, labelled, grouped nav rail (brand + PROCESS/ORGANIZE/EXPORT groups + neutral selection). */
 .sb{width:152px;flex:none;display:flex;flex-direction:column;gap:1px;padding:14px 10px;background:var(--color-background-tertiary);border-right:0.5px solid var(--color-border-tertiary);align-items:stretch}
 .nav-brand{display:flex;align-items:center;gap:8px;padding:2px 8px 12px;font-size:18px;font-weight:600;color:var(--color-text-primary);letter-spacing:var(--tracking-normal)}
@@ -236,33 +243,22 @@ html,body{margin:0;padding:0;height:100%}
 .sift-qdone-toggle:hover{background:transparent}
 .sift-qdone-toggle:hover{color:var(--color-text-secondary)}
 /* Drag handle between #qcol and .sift-inspector (Revue) — resizes the queue column so long
-   track names stay readable (audit 2026-07-05, annotation #8). Thin hit zone, sitting in the gap
-   between the two floating cards. The hairline used to be always-visible, needed when the panels
-   were flush; now that the cards' own margin+border already separate them, a permanent line
-   there is redundant (annotation 2026-07-06) — transparent at rest, only reveals on hover/drag. */
-/* margin-top/bottom added (annotation: "la barre ne fit pas le cadre flotant") — #qcol/#rvinspector
-   both carry a 10px top/bottom margin as floating cards, but this handle previously had none,
-   making it 20px taller than the cards it sits between and visibly poking past their rounded top/
-   bottom corners. Hover color switched from the blue --color-text-info accent (annotation: "la
-   couleur jure un peu avec aussi") to a neutral tertiary tone — this is a plain resize grip, not an
-   info/accent affordance, and blue read as an odd, unexplained color next to two neutral cards. */
-/* Left/right margins made asymmetric (annotation 2026-07-07: "n'est plus collée a la barre de
-   file") — the qcol/rvinspector gap widened from ~1px to 14px (7px margin each side, see #qcol/
-   #rvinspector below) but this handle's margins stayed at the old symmetric -2px, so it floated
-   centered in the new gap instead of sitting flush against the queue list it actually resizes.
-   margin-left cancels #qcol's own 7px margin-right exactly (flush, 0 gap); margin-right keeps the
-   original -2px so all the extra breathing room now falls between the handle and rvinspector. */
-/* Bottom margin bumped again 35px→45px in lockstep with #qcol after the keyboard legend gained an
-   extra 10px gap below #filfoot — same rule: the handle must end where the queue card ends, or it
-   visibly dangles below it. */
-.sift-qresize{flex:none;width:5px;margin:10px -2px 45px -7px;cursor:col-resize;position:relative;z-index:1}
+   track names stay readable (audit 2026-07-05, annotation #8). Sits INSIDE .sift-revue-row's own
+   gap as a real flex child spanning it, rather than a 5px hit-zone stitched to its neighbours via
+   compensating negative margins (previous approach: every unrelated tweak to #qcol/#rvinspector's
+   own margins silently shifted this handle out of alignment, requiring a fresh round of pixel
+   arithmetic each time — audit 2026-07-24). Height/vertical position now come for free from
+   .sift-revue-row's default align-items:stretch (the handle fills the row's height, matching
+   whichever sibling ends up taller), so no top/bottom margin bookkeeping is needed here either. */
+.sift-qresize{flex:none;width:var(--space-16);cursor:col-resize;position:relative;z-index:1}
 /* top/bottom inset by the cards' own corner radius (annotation: "le cadre est une courbe donc elle
    dépasse toujours") — matching the container's full height (previous fix) wasn't enough: a
    straight line ending exactly at the card's top/bottom edge still visually overshoots past where
    the ROUNDED corner has already curved inward at that same height. Insetting the visible line
-   (not the whole 5px hit-zone, which stays a full-height drag target) keeps it within the card's
-   straight-edge middle section only. */
-.sift-qresize::after{content:"";position:absolute;top:var(--border-radius-lg);bottom:var(--border-radius-lg);left:2px;width:1px;background:transparent}
+   (not the whole hit-zone, which stays a full-height drag target) keeps it within the card's
+   straight-edge middle section only. Centered via left:50%+transform rather than a hardcoded
+   left:Npx offset, so it stays centered no matter what width the handle itself ends up at. */
+.sift-qresize::after{content:"";position:absolute;top:var(--border-radius-lg);bottom:var(--border-radius-lg);left:50%;transform:translateX(-50%);width:1px;background:transparent}
 /* Gradient fade instead of a solid line (annotation: "le feedback est encore trop voyant... un
    degradé qui partirait du centre pour se fondre dans la case, pour éviter la cassure") — even
    inset past the corner radius, a flat-color line still had two hard-cut ends; fading both ends to
@@ -317,20 +313,21 @@ html,body{margin:0;padding:0;height:100%}
    "Boxes" card-family pass in design-system-states.md). Both belong to the "queue" card family
    (spectro-box/player-row/action-rail/fil-editor-margin) which is now bordered consistently. */
 #qcol,#homequeue{border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg)}
-/* Right/left margins bumped 0→7px each (annotation: "le meme que entre le panneau hero et le
-   rail" — reusing .sift-player-row's own 14px inter-panel gap) — measured via CDP: qcol/rvinspector
-   sat only 1px apart (the qresize handle's own -2px/-2px overlap ate the rest), which read as
-   merged now that both panels carry their own background+shadow. */
-/* Bottom margin bumped 10px→35px (annotation: "aligne le bas de #qcol.queue sur le bas de
-   #filfoot.sift-action-rail") — #rvinspector's flex column has a 3rd child AFTER #filfoot,
-   #sift-kbd-legend (the "SPACE écouter…" hint strip, measured 25px tall), which #qcol has no
-   equivalent of — #qcol used to stretch all the way to rvinspector's true bottom (past filfoot,
-   flush with the hint strip's bottom instead). +25px (35 = 10 + 25) stops #qcol's bottom exactly
-   at filfoot's own bottom edge. The legend later gained an extra 10px top gap, so this became
-   45px total to keep the queue bottom aligned with the rail instead of the lower legend strip. */
-#qcol{margin:10px 7px 45px 10px;border:0.5px solid var(--color-border-tertiary)}
+/* .sift-revue-row wraps #qcol + .sift-qresize + #rvinspector (Revue Detail's 3-column row) —
+   replaces individually hand-tuned margins on each of the three (own top/bottom margin to float
+   below the window chrome, asymmetric left/right margins to fake a shared gap, a bottom margin
+   re-measured via CDP every time a sibling's content grew a few px taller) with two structural
+   facts instead: #content's own padding (single rule above) is the ONE place that defines the
+   inset from the window edge, for every screen alike; flexbox's default align-items:stretch
+   makes #qcol and #rvinspector share the row's real height automatically, so #qcol's bottom
+   always lines up with #rvinspector's actual bottom (#filfoot, or whatever ends up last inside
+   it) without hardcoding what that bottom edge happens to be this week (audit 2026-07-24 found
+   them 35px off in the live app — the 45px bottom-margin tuning had already drifted out of sync
+   with #rvinspector's real content). #qcol keeps its own resizable `width` (inline style, user-
+   dragged) — only the OUTER spacing concerns move up to the row. */
+.sift-revue-row{display:flex;flex:1;min-height:0;overflow:hidden;gap:0}
+#qcol{border:0.5px solid var(--color-border-tertiary)}
 #homeinspector{overflow:hidden}
-#rvinspector{margin:10px 10px 10px 7px}
 .mid{flex:1;min-width:0;display:flex;flex-direction:column;padding:0 15px 10px;overflow:hidden}
 .mid-scroll{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column}
 /* Action rail (was the persistent .dest column — now a slim horizontal bar anchored to
