@@ -298,3 +298,73 @@ lancé au moins une fois, pas seulement `cargo test`/`clippy`/`tsc`/build de
 prod (aucun des quatre n'exerce le code path `tauri dev`-only). Cf. [[D10]]
 (même chantier, autre facette : la config release elle-même, pas
 l'enregistrement du plugin).
+
+**CORRIGÉ par [[D13]] (2026-07-24, même soirée)** : le "How to apply"
+ci-dessus est FAUX et a lui-même causé un cycle de blocage verify-gate —
+`cfg!(debug_assertions)` ne voit pas si `--config tauri.release.conf.json`
+a été passé (c'est un flag CLI runtime, `npm run tauri build` compile en
+release SANS lui). Gater sur debug_assertions déplace juste le crash de
+`tauri dev` vers tout build release qui n'a pas la config. Lire D13 pour
+le vrai mécanisme (classification de l'erreur par son message, pas par
+le profil de compilation).
+
+### D13 — `cfg!(debug_assertions)` ne peut jamais distinguer une condition tranchée par un flag CLI runtime (`--config`) ; corrige [[D12]] (2026-07-24, 3 cycles verify-gate la même soirée)
+En réappliquant le fix de D12 (updater plugin, `tauri dev` cassé au tout
+début de cette session), gater sur `cfg!(debug_assertions)` a semblé
+marcher (`tauri dev` redémarre, plus de crash) — mais `.github/workflows/
+build.yml` (`npm run tauri build`, CI, installeurs non signés uploadés)
+compile en profil RELEASE sans jamais passer `--config
+src-tauri/tauri.release.conf.json` (seul `release.yml:56` le passe). Le
+gate déplaçait donc le crash de `tauri dev` (visible immédiatement) vers
+CE build release non signé (visible seulement par l'utilisateur final) —
+verify-gate CRITIQUE a bloqué avant que ça n'atterrisse. Root cause :
+`cfg!()` est une info de COMPILATION ; « est-ce que `--config` a été
+passé » est une info RUNTIME de la CLI tauri, invisible à Rust. Aucun
+`cfg!()` ne peut jamais l'encoder correctement, quelle que soit la
+variante essayée.
+
+Vrai fix (2 itérations supplémentaires, 2 autres blocages verify-gate) :
+ne plus utiliser `?` pour propager l'échec d'enregistrement d'un plugin
+optionnel (`app.handle().plugin(...)` dans `.setup()`, PAS le `Builder`
+en chaîne — lui ne peut pas gérer un Result du tout). Classifier l'erreur
+par son MESSAGE (`is_missing_updater_config`, `lib.rs`) : ne tolérer QUE
+la phrase exacte et contiguë que produit tauri quand toute la clé config
+est absente ("'plugins.updater' within your Tauri configuration: invalid
+type: null, expected struct Config") — PAS deux `.contains()`
+indépendants (1ère tentative de classifieur : matchait aussi un
+sous-champ null dans une config par ailleurs présente sur un build
+release SIGNÉ, avalant une vraie mauvaise config en silence — attrapé
+par le même verify-gate). Tout ce qui ne matche pas cette phrase exacte
+reste fail-fast (`return Err`, crash `setup()`) — c'est la garantie que
+rien d'inattendu ne se fait avaler.
+
+**How to apply** : avant de gater un comportement sur `cfg!(debug_assertions)`
+(ou toute autre condition de compilation), lister explicitement TOUS les
+profils de build/exécution réels du projet (ici : `tauri dev`, `npm run
+tauri build` CI non signé, `--config tauri.release.conf.json` signé) et
+vérifier que la condition choisie les distingue TOUS correctement — un
+flag passé sur la ligne de commande (`--config`, `--features`, etc.)
+n'est PAS visible via `cfg!()` sauf s'il est explicitement propagé en
+variable d'env/feature au build. Si le vrai signal n'est disponible qu'à
+l'exécution (ex. le contenu effectif de la config chargée, ou l'échec/
+succès réel d'une opération), classifier l'ÉCHEC lui-même plutôt que
+deviner une condition de compilation — et tester le classifieur contre un
+cas adversarial qui a la même FORME que le cas attendu mais ne devrait
+PAS matcher (pas seulement le happy path), sinon le premier passage
+échoue au crosscheck comme ici (2 fois de suite sur ce point précis).
+
+### D14 — `scripts/lint-tokens.mjs` a un mode ratchet (2026-07-24) ; `.claude/worktrees/` doit toujours être exclu d'un scan repo-wide
+`npm run lint:tokens` tournait déjà en CI mais en `continue-on-error: true`
+depuis sa création (jamais bloquant) — ~540 findings pré-existants
+s'accumulaient sans alerte. Ajouté un mode `--write-baseline` +
+comparaison automatique (`scripts/lint-tokens-baseline.json`, committé) :
+le job CI dédié `lint-tokens` (`build.yml`, séparé du job `build` pour ne
+jamais bloquer la production d'installeurs) échoue seulement si le compte
+par catégorie AUGMENTE. Piège trouvé en écrivant la baseline la première
+fois : `.claude/worktrees/<nom>/` (copie complète de `frontend/`, créée
+par l'isolation native des sous-agents en écriture) n'était pas exclu du
+scan → compte ~2x le réel si un worktree traînait au moment du calcul.
+`.claude` ajouté à `EXCLUDE_DIRS` — tout futur outil qui scanne l'arbre du
+repo entier (`find`, un linter maison, un script d'audit) doit exclure
+`.claude` par défaut, pas seulement `node_modules`/`dist`/`.git`/`target`.
+Baseline actuelle au 2026-07-24 : 122 couleurs, 3 z-index, 120 px-spacing.
