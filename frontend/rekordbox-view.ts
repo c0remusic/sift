@@ -141,6 +141,18 @@ function duplicateGroupKey(g: PlaylistDuplicateGroupDto): string {
   return `${g.playlist_id}::${g.content_id}`;
 }
 
+/** Fallback card for a M8 section whose IPC call threw in renderRekordboxLive — replaces the
+ * previous silent "" (section vanishes with no message, audit UX finding). Callers must also
+ * reset that section's `lastPending*` array to [] so the umbrella pending count above the 4
+ * cards stays consistent with what's actually shown. */
+function sectionErrorHtml(): string {
+  return (
+    `<div style="border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:10px 12px;margin-bottom:6px">` +
+    `<div style="font-size:var(--text-sm);color:var(--color-text-danger)">Impossible de charger — réessaie plus tard.</div>` +
+    `</div>`
+  );
+}
+
 /** Shared card grammar for the 4 "Synchroniser avec Rekordbox" sections (M8 Tier 1/2/3) — same
  * shape (title, count badge, body) for all 4 instead of each rolling its own `col-h` + raw rows,
  * so the screen reads as one queue. `body` is "" when there's nothing pending/ambiguous: the card
@@ -178,7 +190,7 @@ function rekordboxCardHtml(s: RekordboxLinkStatus): string {
   // in that case (export_rekordbox_xml_inner reads the same path before merging).
   const reexport = s.error
     ? ""
-    : `<button data-sift="rkbreexport" style="flex:none">Réexporter maintenant</button>`;
+    : `<button data-sift="rkbreexport" class="sift-ranger-btn" style="flex:none">Réexporter maintenant</button>`;
   return (
     `<div style="border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:10px 12px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:12px">` +
     `<div style="min-width:0">${body}</div>` +
@@ -260,7 +272,7 @@ function masterdbRepairsSectionHtml(rows: PendingMasterdbRepair[]): string {
 
   const applyBar =
     mdbRepairSel.size > 0
-      ? `<div style="margin-top:8px"><button data-sift="mdbapply" style="font-weight:500">Appliquer la sélection (${mdbRepairSel.size})</button></div>`
+      ? `<div style="margin-top:8px"><button data-sift="mdbapply" class="sift-ranger-btn">Appliquer la sélection (${mdbRepairSel.size})</button></div>`
       : "";
 
   const subtext =
@@ -366,7 +378,7 @@ function metadataSyncsSectionHtml(rows: PendingMetadataSync[]): string {
 
   const applyBar =
     mdsSyncSel.size > 0
-      ? `<div style="margin-top:8px"><button data-sift="mdsapply" style="font-weight:500">Appliquer la sélection (${mdsSyncSel.size})</button></div>`
+      ? `<div style="margin-top:8px"><button data-sift="mdsapply" class="sift-ranger-btn">Appliquer la sélection (${mdsSyncSel.size})</button></div>`
       : "";
 
   const subtext =
@@ -461,7 +473,7 @@ function artworkSyncsSectionHtml(rows: PendingArtworkSync[]): string {
 
   const applyBar =
     masSyncSel.size > 0
-      ? `<div style="margin-top:8px"><button data-sift="masapply" style="font-weight:500">Appliquer la sélection (${masSyncSel.size})</button></div>`
+      ? `<div style="margin-top:8px"><button data-sift="masapply" class="sift-ranger-btn">Appliquer la sélection (${masSyncSel.size})</button></div>`
       : "";
 
   const subtext =
@@ -509,7 +521,7 @@ function playlistDuplicatesSectionHtml(groups: PlaylistDuplicateGroupDto[]): str
           ? `<div style="font-size:var(--text-xs);color:var(--color-text-danger);margin-top:2px">${esc(mdbDedupErrorByKey.get(key)!)}</div>`
           : "") +
         `</div>` +
-        `<button data-sift="mdbdedup" data-idx="${i}" style="flex:none">Dédupliquer</button>` +
+        `<button data-sift="mdbdedup" data-idx="${i}" class="sift-ranger-btn" style="flex:none">Dédupliquer</button>` +
         `</div>`
       );
     })
@@ -575,6 +587,8 @@ export async function renderRekordboxLive(): Promise<void> {
     masterdbSection = masterdbRepairsSectionHtml(repairs);
   } catch (e) {
     console.error("rekordbox_masterdb_pending_repairs failed", e);
+    lastPendingRepairs = [];
+    masterdbSection = `<div id="sift-rkb-masterdb-section">${sectionErrorHtml()}</div>`;
   }
 
   let dedupSection = "";
@@ -584,6 +598,7 @@ export async function renderRekordboxLive(): Promise<void> {
   } catch (e) {
     console.error("rekordbox_masterdb_scan_playlist_duplicates failed", e);
     lastScannedDuplicateGroups = [];
+    dedupSection = sectionErrorHtml();
   }
 
   let metadataSyncSection = "";
@@ -592,6 +607,8 @@ export async function renderRekordboxLive(): Promise<void> {
     metadataSyncSection = metadataSyncsSectionHtml(syncs);
   } catch (e) {
     console.error("rekordbox_masterdb_pending_metadata_syncs failed", e);
+    lastPendingMetadataSyncs = [];
+    metadataSyncSection = `<div id="sift-rkb-mds-section">${sectionErrorHtml()}</div>`;
   }
 
   let artworkSyncSection = "";
@@ -600,6 +617,8 @@ export async function renderRekordboxLive(): Promise<void> {
     artworkSyncSection = artworkSyncsSectionHtml(artworkSyncs);
   } catch (e) {
     console.error("rekordbox_masterdb_pending_artwork_syncs failed", e);
+    lastPendingArtworkSyncs = [];
+    artworkSyncSection = `<div id="sift-rkb-mas-section">${sectionErrorHtml()}</div>`;
   }
 
   // Umbrella line above the 4 M8 cards — total pending count across Tiers 1/2/3, so the whole
@@ -684,7 +703,14 @@ export function handleRekordboxAction(
         await rekordboxMasterdbResolveAmbiguous(id, trackId);
       } catch (e) {
         console.error("rekordbox_masterdb_resolve_ambiguous failed", e);
-        toast("Choix impossible — réessaie");
+        const raw = String(e);
+        // Ces deux messages viennent tels quels du backend (rekordbox_repairs.rs
+        // resolve_ambiguous_inner) — déjà humains, pas fabriqués ici.
+        toast(
+          raw.includes("plus ambiguë") || raw.includes("piste choisie invalide")
+            ? raw
+            : "Choix impossible — réessaie",
+        );
       }
       void renderRekordboxLive();
     })();
@@ -692,12 +718,16 @@ export function handleRekordboxAction(
     e.stopPropagation();
     const ids = [...mdbRepairSel];
     if (!ids.length) return true;
+    const btn = el as HTMLButtonElement;
+    if (btn.disabled) return true;
     void (async () => {
       const proceed = await confirmAction(
         `Synchroniser ${ids.length} fichier${ids.length > 1 ? "s" : ""} avec Rekordbox ? Ferme Rekordbox avant de continuer.`,
         "Synchroniser",
       );
       if (!proceed) return;
+      btn.disabled = true;
+      btn.textContent = "Application…";
       try {
         const outcomes = await rekordboxMasterdbApplyRepairs(ids);
         let ok = 0;
@@ -727,12 +757,16 @@ export function handleRekordboxAction(
     const idx = Number(el.dataset.idx);
     const group = lastScannedDuplicateGroups[idx];
     if (!group) return true;
+    const btn = el as HTMLButtonElement;
+    if (btn.disabled) return true;
     void (async () => {
       const proceed = await confirmAction(
         `Synchroniser cette playlist avec Rekordbox — retirer ${group.remove.length} doublon${group.remove.length > 1 ? "s" : ""} ? Ferme Rekordbox avant de continuer.`,
         "Synchroniser",
       );
       if (!proceed) return;
+      btn.disabled = true;
+      btn.textContent = "Fusion…";
       const key = duplicateGroupKey(group);
       try {
         await rekordboxMasterdbDedupPlaylistGroup(group);
@@ -794,7 +828,14 @@ export function handleRekordboxAction(
         await rekordboxMasterdbResolveAmbiguousMetadataSync(id, trackId);
       } catch (e) {
         console.error("rekordbox_masterdb_resolve_ambiguous_metadata_sync failed", e);
-        toast("Choix impossible — réessaie");
+        const raw = String(e);
+        // Ces deux messages viennent tels quels du backend (rekordbox_repairs.rs
+        // resolve_ambiguous_metadata_sync_inner) — déjà humains, pas fabriqués ici.
+        toast(
+          raw.includes("plus ambiguë") || raw.includes("piste choisie invalide")
+            ? raw
+            : "Choix impossible — réessaie",
+        );
       }
       void renderRekordboxLive();
     })();
@@ -802,12 +843,16 @@ export function handleRekordboxAction(
     e.stopPropagation();
     const ids = [...mdsSyncSel];
     if (!ids.length) return true;
+    const btn = el as HTMLButtonElement;
+    if (btn.disabled) return true;
     void (async () => {
       const proceed = await confirmAction(
         `Synchroniser les métadonnées de ${ids.length} morceau${ids.length > 1 ? "x" : ""} avec Rekordbox ? Ferme Rekordbox avant de continuer.`,
         "Synchroniser",
       );
       if (!proceed) return;
+      btn.disabled = true;
+      btn.textContent = "Application…";
       try {
         const outcomes: ApplyMetadataSyncOutcome[] = await rekordboxMasterdbApplyMetadataSyncs(ids);
         let ok = 0;
@@ -882,7 +927,14 @@ export function handleRekordboxAction(
         await rekordboxMasterdbResolveAmbiguousArtworkSync(id, trackId);
       } catch (e) {
         console.error("rekordbox_masterdb_resolve_ambiguous_artwork_sync failed", e);
-        toast("Choix impossible — réessaie");
+        const raw = String(e);
+        // Ces deux messages viennent tels quels du backend (rekordbox_repairs.rs
+        // rekordbox_masterdb_resolve_ambiguous_artwork_sync_inner) — déjà humains, pas fabriqués ici.
+        toast(
+          raw.includes("plus ambiguë") || raw.includes("piste choisie invalide")
+            ? raw
+            : "Choix impossible — réessaie",
+        );
       }
       void renderRekordboxLive();
     })();
@@ -890,12 +942,16 @@ export function handleRekordboxAction(
     e.stopPropagation();
     const ids = [...masSyncSel];
     if (!ids.length) return true;
+    const btn = el as HTMLButtonElement;
+    if (btn.disabled) return true;
     void (async () => {
       const proceed = await confirmAction(
         `Synchroniser la pochette de ${ids.length} morceau${ids.length > 1 ? "x" : ""} avec Rekordbox ? Ferme Rekordbox avant de continuer.`,
         "Synchroniser",
       );
       if (!proceed) return;
+      btn.disabled = true;
+      btn.textContent = "Application…";
       try {
         const outcomes = await rekordboxMasterdbApplyArtworkSyncs(ids);
         let ok = 0;

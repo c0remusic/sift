@@ -110,7 +110,9 @@ export async function renderReglagesLive() {
     "</div>" +
     (root
       ? '<div class="sift-settings-subactions"><button id="sift-lib-root-forget" type="button" class="sift-settings-btn sift-settings-btn-quiet">Oublier le dossier racine</button></div>'
-      : "");
+      : "") +
+    '<div id="sift-lib-root-status" style="font-size:var(--text-sm);color:var(--color-text-tertiary);min-height:14px"></div>';
+  const libStatus = libBlock.querySelector<HTMLElement>("#sift-lib-root-status");
   libBlock.querySelector("#sift-lib-root-change")?.addEventListener("click", () => {
     void (async () => {
       const dir = await openFolderDialog({ directory: true, multiple: false });
@@ -119,6 +121,7 @@ export async function renderReglagesLive() {
         await setSetting("library_root", dir);
         void renderReglagesLive();
       } catch (e) {
+        if (libStatus) libStatus.textContent = "Erreur d'enregistrement.";
         console.error("setSetting(library_root) failed", e);
       }
     })();
@@ -129,6 +132,7 @@ export async function renderReglagesLive() {
         await setSetting("library_root", "");
         void renderReglagesLive();
       } catch (e) {
+        if (libStatus) libStatus.textContent = "Erreur d'enregistrement.";
         console.error("setSetting(library_root) failed", e);
       }
     })();

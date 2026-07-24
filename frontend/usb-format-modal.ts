@@ -91,7 +91,7 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
           "les CDJ/contrôleurs DJ. FAT32 reste le choix le plus sûr pour un usage club.</div>"
         : "") +
       '<div class="sift-usbfmt-typerow">' +
-      "<label>Tape <code>" +
+      '<label for="sift-usbfmt-typed">Tape <code>' +
       escapeHtml(confirmWord) +
       "</code> pour confirmer</label>" +
       '<input type="text" id="sift-usbfmt-typed" autocomplete="off" spellcheck="false">' +
@@ -112,10 +112,21 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
 
     card.querySelectorAll<HTMLElement>("[data-usbfmt-fs]").forEach((el) =>
       el.addEventListener("click", () => {
+        // The typed confirm word depends only on the drive, not on fs — preserve it
+        // across the render() below (card.innerHTML = ... wipes #sift-usbfmt-typed
+        // otherwise, forcing a retype on a plain filesystem toggle).
+        const typedBefore = card.querySelector<HTMLInputElement>("#sift-usbfmt-typed")?.value ?? "";
         fs = el.dataset.usbfmtFs as TargetFs;
         armedAt = null; // switching filesystem resets the confirm cycle
         lastError = null; // ... and clears any stale error from a previous failed attempt
         render();
+        const typedAfter = card.querySelector<HTMLInputElement>("#sift-usbfmt-typed");
+        if (typedAfter && typedBefore) {
+          typedAfter.value = typedBefore;
+          typedOk = typedBefore.trim() === confirmWord;
+          const confirmBtnAfter = card.querySelector<HTMLButtonElement>("#sift-usbfmt-confirm");
+          if (confirmBtnAfter) confirmBtnAfter.disabled = !typedOk || busy;
+        }
       }),
     );
 
@@ -171,6 +182,10 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
   }
 
   render();
+  // Move focus into the modal on open (role="alertdialog"/aria-modal already set).
+  // Cancel is the safest target — never the destructive confirm button — so that a
+  // stray Enter/Space right after open can only close the modal, not arm/format.
+  card.querySelector<HTMLButtonElement>("#sift-usbfmt-cancel")?.focus();
 }
 
 function escapeHtml(s: string): string {
