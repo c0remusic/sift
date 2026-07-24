@@ -329,7 +329,7 @@ export function renderBatch() {
       caret +
       box +
       `<span style="width:var(--space-4);height:var(--space-4);border-radius:999px;background:${dotColor};flex:none"></span>` +
-      `<span class="col-h" style="margin:0">${esc(label)} · ${ids.length}</span>` +
+      `<span class="col-h">${esc(label)} · ${ids.length}</span>` +
       `</div>`
     );
   };
@@ -365,7 +365,7 @@ export function renderBatch() {
         groupHead("file", "var(--color-text-success)", "Prêts · lossless", ready.map((it) => it.id)) +
         cappedBody("file", ready, readyRow) +
         `</div>`
-      : '<div class="col-h" style="margin:0 0 6px">Prêts · lossless · 0</div><div style="font-size:var(--text-md);color:var(--color-text-tertiary);padding:4px 9px 14px">Rien à convertir pour l’instant.</div>') +
+      : '<div class="col-h">Prêts · lossless · 0</div><div style="font-size:var(--text-md);color:var(--color-text-tertiary);padding:4px 9px 14px">Rien à convertir pour l’instant.</div>') +
     (fakes.length
       ? `<div style="margin:2px 0 16px">` +
         groupHead("fake", "var(--color-text-warning)", "À vérifier · fake", fakes.map((it) => it.id)) +

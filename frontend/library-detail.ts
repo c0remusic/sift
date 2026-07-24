@@ -103,7 +103,7 @@ function renderEdit(edit: HTMLElement, st: EditState): void {
     `</div>` +
     `</div></div>` +
     `<div class="lib-edit-meta">${releaseRowHtml(st)}</div>` +
-    `<div class="sift-cands" style="margin-top:7px" hidden></div>` +
+    `<div class="sift-cands" hidden></div>` +
     `<div class="lib-edit-actions">` +
     `<button data-lib="save" style="flex:1;background:var(--color-background-info);color:var(--color-text-info);border:none;font-weight:500">Enregistrer</button>` +
     `<button data-lib="trash" class="sift-secondary-trash" title="Envoyer à la corbeille" aria-label="Envoyer à la corbeille">Supprimer</button>` +
@@ -236,7 +236,7 @@ async function doIdentify(
     if (msg.includes("NO_TOKEN")) {
       host.innerHTML =
         `<div class="sift-cands-msg">Discogs limite les recherches anonymes — ajoute ton jeton (gratuit) dans Réglages.</div>` +
-        `<button class="sift-cand-jump" data-lib="goto-reglages" style="margin-top:5px;font-size:var(--text-sm);padding:3px 9px"><i class="ti ti-arrow-right"></i> Ouvrir Réglages</button>`;
+        `<button class="sift-cand-jump sift-goto-reglages" data-lib="goto-reglages"><i class="ti ti-arrow-right"></i> Ouvrir Réglages</button>`;
       host.querySelector('[data-lib="goto-reglages"]')?.addEventListener("click", () => {
         requireEl('[data-view="reglages"]', "library-detail goto-reglages").dispatchEvent(
           new MouseEvent("click", { bubbles: true }),

@@ -615,6 +615,7 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-text-info)}
    inset from the window edge. Forcing raw numbers to match would actually make the two headers'
    TRUE visual inset diverge, not converge — the two live in different padded containers. */
 .sift-bgrp-head{display:flex;align-items:center;gap:8px;padding:var(--space-4) 9px}
+.sift-bgrp-head .col-h{margin:0}
 /* Vertical gap between adjacent selected rows (annotation: "augmente l'espacement pour que les
    cases selectionnées ne se fondent pas les unes dans les autres") — .bx-row is styled inline
    (sift-live.ts) with no margin of its own, so back-to-back selected rows (translucent bg, no
