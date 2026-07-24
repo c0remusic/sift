@@ -60,6 +60,13 @@ npm run tauri dev        # compile le backend Rust + ouvre la fenêtre native
 - Type-check frontend : `npx tsc --noEmit`
 - Build installeurs (non signés) : `npm run tauri build` → `src-tauri/target/release/bundle/`
 
+## Installer (utilisateur final)
+
+Un premier lancement affiche un avertissement Windows SmartScreen ou macOS
+Gatekeeper (build non signé) — voir
+[`docs/install-non-signe.md`](docs/install-non-signe.md) pour le contourner.
+Nécessaire une seule fois ; les mises à jour suivantes sont automatiques.
+
 ## Lancer juste le frontend web (sans Tauri)
 
 ```bash
