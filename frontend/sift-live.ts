@@ -1,13 +1,11 @@
 // Live data wiring — ACTIVE ONLY inside the Tauri app. In a plain browser the hooks
 // below are never installed, so app.js keeps its mockup (Vercel demo unaffected).
 import {
-  removeSource,
   onFileDone,
   onFileProgress,
   onQueueChanged,
   onAnalysisChanged,
   analysisProgress,
-  setSourceWatched,
   setSourceColor,
   trashTrack,
   restoreTrack,
@@ -25,7 +23,7 @@ import { refreshBinsForBatch } from "./filing-bins";
 import { confirmAction } from "./confirm-modal";
 // Views/chrome extracted from this god-module (audit P-3) — kept stateless, wired here.
 import { renderEcartes } from "./ecartes-view";
-import { renderHomeSources, pickAndAddFolder, dismissRootGate } from "./home-sources";
+import { renderHomeSources, dismissRootGate } from "./home-sources";
 import { installDragDrop, injectLeanStyle, injectTitlebar, installScrollAutohide, installNavKeyboard } from "./chrome";
 import { initTheme } from "./theme";
 import { renderReglagesLive } from "./reglages-view";
@@ -215,6 +213,7 @@ export function installLiveWiring() {
     beginReanalyze([id]);
     try {
       await reanalyzeTracks([id]);
+      toast("Réanalyse relancée");
     } catch (e) {
       console.error("reanalyze_tracks failed", e);
       toast(`Échec de la réanalyse : ${String(e)}`);
@@ -302,6 +301,10 @@ export function installLiveWiring() {
         if (stat === "all") {
           bibState.filter.quality = undefined;
           bibState.filter.verdict = undefined;
+          bibState.filter.q = undefined;
+          bibState.filter.folder = undefined;
+          bibState.filter.genre = undefined;
+          bibState.filter.artist = undefined;
         } else if (stat === "lossless" || stat === "mp3") {
           bibState.filter.quality = stat;
           bibState.filter.verdict = undefined;
@@ -453,19 +456,7 @@ export function installLiveWiring() {
     const el = (e.target as HTMLElement).closest<HTMLElement>("[data-sift]");
     if (!el) return;
     const act = el.dataset.sift;
-    if (act === "addsrc") {
-      e.stopPropagation();
-      void pickAndAddFolder(refresh);
-    } else if (act === "rmsrc") {
-      e.stopPropagation();
-      void removeSource(Number(el.dataset.id)).then(refresh);
-    } else if (act === "togglewatch") {
-      e.stopPropagation();
-      void setSourceWatched(
-        Number(el.dataset.id),
-        el.dataset.watched !== "1",
-      ).then(refresh);
-    } else if (act === "setsrccolor") {
+    if (act === "setsrccolor") {
       e.stopPropagation();
       const hue = el.dataset.hue ?? null;
       void setSourceColor(Number(el.dataset.id), hue).then(refresh);
