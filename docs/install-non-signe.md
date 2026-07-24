@@ -2,7 +2,7 @@
 
 Sift n'a pas encore de certificat de signature de code Windows ni de compte
 Apple Developer (notarization macOS) — voir
-`docs/superpowers/changes/2026-07-24-auto-update/design.md` pour le contexte.
+`docs/superpowers/changes/archive/2026-07-24-auto-update/design.md` pour le contexte.
 Le premier lancement d'un installeur téléchargé déclenche donc un
 avertissement de l'OS. Ces étapes ne sont nécessaires qu'à la **première**
 installation manuelle — les mises à jour suivantes passent par l'auto-update

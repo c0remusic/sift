@@ -79,7 +79,7 @@ substantielle. Overrides Sift :
   + le module projet). Plus d'agent `rust-engineer` (rôle absorbé).
 - Release : `release-skills`; synchroniser les versions de `package.json`,
   `src-tauri/Cargo.toml` et `src-tauri/tauri.conf.json`, depuis `main`.
-  Auto-update (2026-07-24, `docs/superpowers/changes/2026-07-24-auto-update/design.md`) :
+  Auto-update (2026-07-24, `docs/superpowers/changes/archive/2026-07-24-auto-update/design.md`) :
   après `git tag vX.Y.Z && git push --tags`, `release.yml` publie un
   **brouillon** de Release (`releaseDraft: true`) — Antoine doit le publier
   manuellement sur GitHub (Releases → Edit → Publish). Sans ce clic,
