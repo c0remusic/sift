@@ -62,6 +62,29 @@ fn extend_frame_into_client_area(window: &tauri::WebviewWindow) {
     }
 }
 
+/// True only for the one specific, expected updater-plugin init failure: the WHOLE
+/// `plugins.updater` key absent from the merged config, so serde tries to deserialize `null` as
+/// the entire `Config` struct — the normal case for `tauri dev` and the unsigned CI build
+/// (`npm run tauri build`, no `--config tauri.release.conf.json`). Deliberately narrow: matches
+/// the exact captured phrase (verbatim from a real `tauri dev` run, see the test fixture) rather
+/// than two independent `.contains()` checks — an earlier version of this classifier matched
+/// `msg.contains("updater") && msg.contains("invalid type: null")` separately, which ALSO
+/// classified a null SUB-FIELD inside an otherwise-present config (e.g. `"pubkey": null` on a
+/// signed release build) as expected, silently swallowing a genuine misconfiguration (caught by
+/// verify-gate before landing). Anything not matching this exact phrase — malformed pubkey, bad
+/// `endpoints`, a null sub-field, any other plugin init failure — returns false and stays
+/// fail-fast: a signed release build failing to register the updater for a REAL reason must crash
+/// loudly, not vanish into a log line nobody reads (tauri_plugin_log itself is only registered
+/// under cfg!(debug_assertions), so a release build's log::warn! is a no-op — see run()'s call
+/// site). String-matched on the plugin's own error text, not a public tauri error variant — no
+/// public API surfaces "config key was absent vs malformed" more precisely than this; a wording
+/// change upstream would revert this to fail-fast-on-dev (loud, immediately visible), not to a
+/// silent swallow, so the failure mode of drift here is the safe direction.
+fn is_missing_updater_config(err: &tauri::Error) -> bool {
+    err.to_string()
+        .contains("'plugins.updater' within your Tauri configuration: invalid type: null, expected struct Config")
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -77,7 +100,6 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_window_state::Builder::default().build())
         .plugin(tauri_plugin_os::init())
-        .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_process::init())
         .setup(|app| {
             if cfg!(debug_assertions) {
@@ -86,6 +108,27 @@ pub fn run() {
                         .level(log::LevelFilter::Info)
                         .build(),
                 )?;
+            }
+            // plugins.updater only exists in tauri.release.conf.json, merged in by `--config` on
+            // the signed release build (.github/workflows/release.yml) — NOT by `npm run tauri
+            // build` (.github/workflows/build.yml, unsigned CI smoke-build) nor `tauri dev`. This
+            // isn't a debug/release split: cfg!(debug_assertions) can't see whether `--config` was
+            // passed, so gating on it just moves the crash from `tauri dev` (caught immediately,
+            // 2026-07-24) to every unsigned release-mode build. Fail-fast stays the rule
+            // (.claude/rules/rust.md) for anything this process doesn't itself control the cause
+            // of: only the ONE specific, classified "config absent" failure is tolerated below
+            // (is_missing_updater_config) — a genuine init failure on the signed release build
+            // (malformed pubkey, bad endpoints...) still propagates and crashes setup() as before,
+            // exactly where it must be loud. log::warn! is a documented best-effort here, not the
+            // safety net: tauri_plugin_log itself is debug-only (this same match arm), so a
+            // release build's warning is a no-op by construction — the real guardrail is the
+            // classifier being narrow enough that anything unexpected still fails hard.
+            if let Err(e) = app.handle().plugin(tauri_plugin_updater::Builder::new().build()) {
+                if is_missing_updater_config(&e) {
+                    log::warn!("tauri_plugin_updater not registered (expected without plugins.updater config, e.g. unsigned/dev builds): {e}");
+                } else {
+                    return Err(e.into());
+                }
             }
             ffmpeg::init_ffmpeg_path();
             let dir = app.path().app_data_dir().expect("no app data dir");
@@ -186,4 +229,56 @@ pub fn run() {
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
+}
+
+#[cfg(test)]
+mod updater_config_classification_tests {
+    use super::is_missing_updater_config;
+
+    // Verbatim from a real `tauri dev` run (2026-07-24, captured in
+    // scratchpad/tauri-dev2.log): "[WARN] tauri_plugin_updater not registered (...): failed to
+    // initialize plugin `updater`: Error deserializing 'plugins.updater' within your Tauri
+    // configuration: invalid type: null, expected struct Config" — not hand-approximated.
+    const ABSENT_CONFIG_MESSAGE: &str = "Error deserializing 'plugins.updater' within your Tauri configuration: invalid type: null, expected struct Config";
+
+    #[test]
+    fn absent_config_is_recognized_as_expected() {
+        let err =
+            tauri::Error::PluginInitialization("updater".into(), ABSENT_CONFIG_MESSAGE.into());
+        assert!(is_missing_updater_config(&err));
+    }
+
+    #[test]
+    fn other_plugin_missing_config_is_not_misclassified() {
+        // Same shape of error, different plugin — must not match on a loose two-part contains().
+        let err = tauri::Error::PluginInitialization(
+            "some-other-plugin".into(),
+            "Error deserializing 'plugins.some-other-plugin' within your Tauri configuration: invalid type: null, expected struct Config".into(),
+        );
+        assert!(!is_missing_updater_config(&err));
+    }
+
+    #[test]
+    fn genuine_init_failure_without_null_stays_fail_fast() {
+        let err = tauri::Error::PluginInitialization(
+            "updater".into(),
+            "Error deserializing 'plugins.updater': invalid value for 'pubkey': malformed base64"
+                .into(),
+        );
+        assert!(!is_missing_updater_config(&err));
+    }
+
+    #[test]
+    fn null_subfield_on_an_otherwise_present_config_is_not_misclassified() {
+        // The exact gap verify-gate caught in an earlier version of this classifier: a plugin
+        // present in tauri.release.conf.json with ONE null field still contains both "updater"
+        // and "invalid type: null" somewhere in its message, but is NOT the same failure as the
+        // whole `plugins.updater` key being absent — a signed release build with this error is
+        // genuinely misconfigured and must still crash setup(), not be silently swallowed.
+        let err = tauri::Error::PluginInitialization(
+            "updater".into(),
+            "Error deserializing 'plugins.updater.pubkey' within your Tauri configuration: invalid type: null, expected a string".into(),
+        );
+        assert!(!is_missing_updater_config(&err));
+    }
 }
