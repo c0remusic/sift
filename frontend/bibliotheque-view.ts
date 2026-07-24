@@ -144,6 +144,19 @@ export async function renderBiblioLive() {
   // renders against a detached host.
   bibVirtual?.destroy();
   bibVirtual = null;
+  // The IPC round-trip below (Promise.all) can take a beat on a large library — without a signal
+  // the FIRST paint would sit frozen (blank #content, nothing rendered yet). Same "Chargement…"
+  // pattern as queue-panel.ts's renderQueue(), gated the same way: only when there's no prior
+  // Bibliothèque render already on screen. Without this gate, every subsequent renderBiblioLive()
+  // call — search keystroke, facet/quality-chip click, table/grid toggle, sort change, dup scan —
+  // would blank the whole panel (stats/facets/toolbar/list) before repainting, even though valid
+  // data is already showing.
+  const alreadyRendered = !!content.querySelector("#sift-bib-facet-seg");
+  if (!alreadyRendered) {
+    content.innerHTML =
+      '<div style="display:flex;align-items:center;gap:8px;padding:8px 7px;color:var(--color-text-tertiary);font-size:var(--text-md)">' +
+      '<i class="ti ti-loader sift-spin" style="font-size:var(--text-md)"></i> Chargement…</div>';
+  }
   let facets: LibraryFacets = { folders: [], genres: [], artists: [] };
   let stats: DashboardStats | null = null;
   try {
@@ -209,7 +222,13 @@ export async function renderBiblioLive() {
   // here would reintroduce the 15k-track freeze (audit 2026-07-05 P2). `rows` non-empty iff there's
   // at least one track, used only to pick the "no result" fallback below.
   const rows = bibState.tracks.length ? '<div id="biblist"></div>' : "";
-  const sortedTracks = bibState.viewMode === "table" ? sortTracks(bibState.tracks, bibState.sort) : bibState.tracks;
+  // bibState.sort is shared across both view modes on purpose: the sortable column headers only
+  // exist in Tableau, but Grille inheriting whatever order was last chosen there (instead of
+  // reverting to an unrelated default the moment you switch) matches how table/grid toggles behave
+  // elsewhere (e.g. Finder/Explorer icon view keeps the list view's sort). Accepted as-is — no
+  // Grille-side sort control added; revisit only if that inherited-but-unchangeable order is
+  // reported as confusing in practice.
+  const sortedTracks = sortTracks(bibState.tracks, bibState.sort);
   const tableHead = bibState.viewMode === "table" ? libraryTableHeaderHtml(bibState.sort) : "";
   // Truly empty (no filed track at all, no filter narrowing it) vs. a filter that just matches
   // nothing right now — only the former is DESIGN.md's "État vide" dead-end with a back-to-Revue

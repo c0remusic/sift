@@ -10,10 +10,12 @@ import {
   openUrl,
   trashTrack,
   revertBatch,
+  libraryFolders,
 } from "./ipc";
 import type { Candidate, AppliedIdentity } from "./ipc";
 import type { LibraryTrack, MetadataEdit } from "../shared/contracts";
 import { renderCandidates } from "./identify-shared";
+import { confirmAction } from "./confirm-modal";
 import { openReportInto } from "./report-view";
 import { open } from "@tauri-apps/plugin-dialog";
 import { convertFileSrc } from "@tauri-apps/api/core";
@@ -93,9 +95,10 @@ function renderEdit(edit: HTMLElement, st: EditState): void {
     `<input data-lib="artist" placeholder="Artiste" aria-label="Artiste" value="${esc(t.artist ?? "")}" class="sift-editor-input" style="width:100%">` +
     `<input data-lib="title" placeholder="Titre" aria-label="Titre" value="${esc(t.title ?? "")}" class="sift-editor-input" style="width:100%">` +
     `</div>` +
-    `<input data-lib="genres" placeholder="Genres (séparés par une virgule)" aria-label="Genres" value="${esc(t.genres.join(", "))}" class="sift-editor-input" style="width:100%">` +
+    `<input data-lib="genres" list="sift-genre-list" placeholder="Genres (séparés par une virgule)" aria-label="Genres" value="${esc(t.genres.join(", "))}" class="sift-editor-input" style="width:100%">` +
+    `<datalist id="sift-genre-list"></datalist>` +
     `<div style="display:grid;grid-template-columns:90px 1fr;gap:6px">` +
-    `<input data-lib="year" type="number" placeholder="Année" aria-label="Année" value="${t.year ?? ""}" class="sift-editor-input" style="width:100%">` +
+    `<input data-lib="year" type="number" min="1900" max="2100" placeholder="Année" aria-label="Année" value="${t.year ?? ""}" class="sift-editor-input" style="width:100%">` +
     `<input data-lib="label" placeholder="Label" aria-label="Label" value="${esc(t.label ?? "")}" class="sift-editor-input" style="width:100%">` +
     `</div>` +
     `</div></div>` +
@@ -124,6 +127,11 @@ function collectEdit(edit: HTMLElement, st: EditState): MetadataEdit {
     artist: val("artist").trim(),
     title: val("title").trim(),
     label: trimOrNull(val("label")),
+    // Not clamped here — the browser only enforces the input's min/max (1900-2100) via the
+    // stepper UI / native validation bubble, not on a value typed directly then blurred, so an
+    // out-of-range value can reach this point untouched. doSave() rejects it explicitly instead
+    // of silently clamping (the input would otherwise keep showing the raw typed value while a
+    // different, clamped value got written to the file — see doSave()'s year bounds check).
     year: year != null && Number.isFinite(year) ? year : null,
     genres,
     // Only send a cover when the user picked a new one — null preserves the embedded art.
@@ -131,15 +139,62 @@ function collectEdit(edit: HTMLElement, st: EditState): MetadataEdit {
   };
 }
 
+/** Genre names already known to the library (facet counts dropped), fetched once and reused
+ * across every editor open — reuses the same `library_folders` IPC call bibliotheque-view.ts
+ * already makes to populate its Genres facet, no new backend command added. */
+let genreListCache: string[] | null = null;
+
+/** Rebuild the `#sift-genre-list` datalist options from the Genres input's CURRENT value, so
+ * autocomplete keeps working past the first comma. A native `<datalist>` filters its options
+ * against the input's whole value, not the last comma-separated token — so for a multi-value
+ * field like this one it silently stops suggesting anything after the first comma is typed. Fix:
+ * on every keystroke, split off the last segment (after the last comma/semicolon), match it
+ * against `names`, and emit each option as "already-typed-prefix + candidate" — the option's
+ * full text still starts with what the user typed, so the browser's own whole-value prefix
+ * filter keeps working, while what's actually offered/inserted is genre-name completion for just
+ * the segment being typed. */
+function renderGenreDatalist(datalist: HTMLDataListElement, value: string, names: string[]): void {
+  const lastSep = Math.max(value.lastIndexOf(","), value.lastIndexOf(";"));
+  const prefix = lastSep >= 0 ? value.slice(0, lastSep + 1) + " " : "";
+  const segment = (lastSep >= 0 ? value.slice(lastSep + 1) : value).trim().toLowerCase();
+  const matches = segment ? names.filter((n) => n.toLowerCase().startsWith(segment)) : names;
+  datalist.innerHTML = matches.map((n) => `<option value="${esc(prefix + n)}"></option>`).join("");
+}
+
+/** Fill the `#sift-genre-list` datalist so typing in Genres offers autocomplete against genres
+ * already used elsewhere in the library (avoids "House" vs "house" duplicates), and keep it
+ * re-filtered per comma-separated segment as the user types (see renderGenreDatalist). Best-effort:
+ * a fetch failure just leaves the datalist empty, the free-text input keeps working either way. */
+function fillGenreDatalist(edit: HTMLElement): void {
+  const datalist = edit.querySelector<HTMLDataListElement>("#sift-genre-list");
+  const input = edit.querySelector<HTMLInputElement>('[data-lib="genres"]');
+  if (!datalist || !input) return;
+  const rerender = () => {
+    if (genreListCache) renderGenreDatalist(datalist, input.value, genreListCache);
+  };
+  input.addEventListener("input", rerender);
+  if (genreListCache) {
+    rerender();
+    return;
+  }
+  void libraryFolders()
+    .then((facets) => {
+      genreListCache = facets.genres.map((g) => g.name);
+      rerender();
+    })
+    .catch((e) => console.error("genre datalist load failed", e));
+}
+
 /** Wire the editor's buttons + identify flow. */
 function wireEdit(edit: HTMLElement, st: EditState): void {
+  fillGenreDatalist(edit);
   edit.querySelector('[data-lib="cover"]')?.addEventListener("click", () => void pickCover(edit, st));
   edit.querySelector('[data-lib="release"]')?.addEventListener("click", () => {
     if (st.track.discogs_release_id)
       void openUrl(`https://www.discogs.com/release/${st.track.discogs_release_id}`);
   });
   edit.querySelector('[data-lib="save"]')?.addEventListener("click", () => void doSave(edit, st));
-  edit.querySelector('[data-lib="trash"]')?.addEventListener("click", () => void doTrash(st));
+  edit.querySelector('[data-lib="trash"]')?.addEventListener("click", () => void doTrash(edit, st));
 
   const idBtn = edit.querySelector<HTMLButtonElement>('[data-lib="identifier"]');
   const candsHost = edit.querySelector<HTMLElement>(".sift-cands");
@@ -245,6 +300,9 @@ function onIdentityApplied(
     st.track.has_cover = true;
   }
   st.pendingCover = null; // the applied cover is already saved; don't re-send on next save
+  // Same reasoning as doSave(): applied.styles can introduce brand-new genres, so drop the
+  // cache here too or the datalist only picks them up after a full app restart.
+  genreListCache = null;
   notifyChanged(st.track);
   renderEdit(edit, st);
   host.hidden = true;
@@ -257,6 +315,10 @@ async function doSave(edit: HTMLElement, st: EditState): Promise<void> {
   const e = collectEdit(edit, st);
   if (!e.title) {
     toast("Le titre ne peut pas être vide.");
+    return;
+  }
+  if (e.year != null && (e.year < 1900 || e.year > 2100)) {
+    toast("Année hors limites (1900-2100).");
     return;
   }
   const btn = edit.querySelector<HTMLButtonElement>('[data-lib="save"]');
@@ -279,6 +341,11 @@ async function doSave(edit: HTMLElement, st: EditState): Promise<void> {
       st.track.has_cover = true;
       st.pendingCover = null;
     }
+    // A save can introduce a brand-new genre — drop the cache so the next datalist fill (any
+    // editor opened afterward) refetches and offers it, instead of only picking it up after a
+    // full app restart (defeats the point of the datalist: avoiding "House"/"house" duplicates
+    // within the same session).
+    genreListCache = null;
     notifyChanged(st.track);
     toast("Enregistré", true, () => {
       void revertBatch(batchId).catch((err: unknown) => {
@@ -299,7 +366,16 @@ async function doSave(edit: HTMLElement, st: EditState): Promise<void> {
 }
 
 /** Move the track's file to the bin (reversible via the global Ctrl+Z undo). */
-async function doTrash(st: EditState): Promise<void> {
+async function doTrash(edit: HTMLElement, st: EditState): Promise<void> {
+  if (
+    !(await confirmAction(
+      "Envoyer ce morceau à la corbeille ? Annulable via Ctrl+Z.",
+      "Envoyer à la corbeille",
+    ))
+  )
+    return;
+  const btn = edit.querySelector<HTMLButtonElement>('[data-lib="trash"]');
+  if (btn) btn.disabled = true;
   try {
     await trashTrack(st.track.id);
     toast("Envoyé à la corbeille");
@@ -307,6 +383,8 @@ async function doTrash(st: EditState): Promise<void> {
   } catch (err) {
     toast(`Échec : ${String(err)}`);
     console.error("trash_track failed", err);
+  } finally {
+    if (btn) btn.disabled = false;
   }
 }
 
