@@ -390,3 +390,13 @@ JAMAIS** poser ce port via l'option de config `additionalBrowserArgs` de
 (fuite du port de debug) et écrase les arguments par défaut de wry sans
 qu'on les refournisse — toujours passer par la variable d'environnement au
 lancement de la commande dev.
+
+**Port squattable par un projet voisin (`.claude/learning-log.md` D8, reconfirmé
+2026-07-24)** : sur cette machine, plusieurs projets Tauri/Vite peuvent tourner
+en parallèle et se disputer un même port `--remote-debugging-port` fixe (9222
+squatté 2 fois de suite un même soir, par un projet différent à chaque fois).
+Avant de faire confiance à une session CDP (eval/screenshot), vérifier
+`document.title` (ou `curl http://127.0.0.1:<port>/json` → `title`/`url`)
+correspond bien à Sift — pas seulement qu'un endpoint répond. Si le titre ne
+correspond pas, changer de port plutôt que router autour du conflit (ne jamais
+tuer le process d'un autre projet pour libérer son port).
