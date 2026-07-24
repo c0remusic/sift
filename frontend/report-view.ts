@@ -235,6 +235,7 @@ function drawSpectroCrosshair(
   dbfs: number,
   timeSec: number,
   color: string,
+  scrim: string,
 ) {
   ctx.clearRect(0, 0, w, h);
   ctx.save();
@@ -259,7 +260,7 @@ function drawSpectroCrosshair(
   let boxX = x + 8;
   if (boxX + boxW > w - 2) boxX = x - 8 - boxW;
   const boxY = y - 4 - boxH >= 2 ? y - 4 - boxH : y + 4;
-  ctx.fillStyle = "rgba(0,0,0,0.55)";
+  ctx.fillStyle = scrim;
   ctx.beginPath();
   ctx.roundRect(boxX, boxY, boxW, boxH, 4);
   ctx.fill();
@@ -285,6 +286,10 @@ function wireSpectroHover(base: HTMLCanvasElement, overlay: HTMLCanvasElement, r
   // (qui s'assombrit en thème clair, le défaut de Sift) rendait le réticule et son étiquette
   // quasi illisibles — même raisonnement déjà appliqué à drawSpectroLegend (revue finale).
   const color = "rgba(255,255,255,0.85)";
+  // Read once here (mount time), not per mousemove — --overlay-scrim is theme-invariant (declared
+  // only in :root, never overridden in dark mode) so there is nothing to re-read on theme switch
+  // either. Same discipline as `color` above: no recomputable work inside the hot handler below.
+  const scrim = getComputedStyle(document.documentElement).getPropertyValue("--overlay-scrim").trim() || "rgba(0,0,0,.55)";
 
   base.addEventListener("mousemove", (e) => {
     const rect = base.getBoundingClientRect();
@@ -292,7 +297,7 @@ function wireSpectroHover(base: HTMLCanvasElement, overlay: HTMLCanvasElement, r
     const y = Math.round(((e.clientY - rect.top) / rect.height) * h);
     if (x < 0 || x >= w || y < 0 || y >= h) return;
     const { freqHz, dbfs, timeSec } = spectroPointAt(sg, w, h, x, y, r.duration_sec);
-    drawSpectroCrosshair(octx, w, h, x, y, freqHz, dbfs, timeSec, color);
+    drawSpectroCrosshair(octx, w, h, x, y, freqHz, dbfs, timeSec, color, scrim);
   });
   base.addEventListener("mouseleave", () => octx.clearRect(0, 0, w, h));
 }

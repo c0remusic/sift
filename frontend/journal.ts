@@ -64,6 +64,13 @@ function buildCategories(entries: JournalEntry[]): Cat[] {
       id: "filed",
       label: "FILÉS",
       massLabel: `↩ Défiler les ${filedTrackCount} morceaux affichés`,
+      // Couleurs distinctes, pas d'oubli : les 3 categories passent par revert_batch (Rust,
+      // actions.rs) mais reversent des kinds d'action differents (convert/move/trash/tag_edit),
+      // pas la meme surface FS reelle. Un audit couleurs 2026-07-24 a d'abord aplati les 3 sur
+      // --color-text-info (meme role frontend "annuler un lot") avant qu'un crosscheck ne
+      // rappelle que ce triplet est deliberement documente (docs/superpowers/plans/
+      // 2026-07-09-ux-heuristics-audit-fixes.md, Task 9) et que FILÉS reverse une
+      // conversion+placement reelle, pas juste un flag DB — restaure a l'identique.
       massColor: "var(--color-text-danger)",
       entries: filed,
     },

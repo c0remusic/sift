@@ -69,7 +69,7 @@ function resRowHtml(it: EcarteItem): string {
     it,
   )}</div>${ecFileLine(it)}</div>${ecReason(
     it,
-  )}<button class="lk-icon" data-ec="requeue" data-id="${it.id}" title="Restaurer — remettre en file" aria-label="Restaurer — remettre en file"><i class="ti ti-arrow-back-up" style="font-size:var(--text-base);color:var(--color-text-tertiary)"></i></button><button class="lk-icon" data-ec="trash" data-id="${it.id}" title="Envoyer à la corbeille" aria-label="Envoyer à la corbeille"><i class="ti-fill ti-fill-trash" style="font-size:var(--text-md);color:var(--color-text-tertiary)"></i></button></div><div style="margin-top:5px;display:flex;flex-wrap:wrap;align-items:center;gap:4px"><button data-ec="copy-query" data-q="${esc(
+  )}<button class="lk-icon" data-ec="requeue" data-id="${it.id}" title="Restaurer — remettre en file" aria-label="Restaurer — remettre en file"><i class="ti ti-arrow-back-up" style="font-size:var(--text-base);color:var(--color-text-tertiary)"></i></button><button class="lk-icon" data-ec="trash" data-id="${it.id}" title="Envoyer à la corbeille" aria-label="Envoyer à la corbeille"><i class="ti-fill ti-fill-trash" style="font-size:var(--text-md);color:var(--color-text-danger)"></i></button></div><div style="margin-top:5px;display:flex;flex-wrap:wrap;align-items:center;gap:4px"><button data-ec="copy-query" data-q="${esc(
     ecQuery(it),
   )}" title="Copier" style="font-size:var(--text-xs);padding:2px 8px;color:var(--color-text-secondary)"><i class="ti ti-copy" style="font-size:var(--text-xs);vertical-align:-1px"></i> Copier</button><span class="sift-ec-stores-hint" title="Liens boutique (survol ou tab)" aria-hidden="true">···</span><span class="sift-ec-stores" style="display:flex;flex-wrap:wrap;align-items:center;gap:4px"><span style="color:var(--color-border-secondary)">·</span>${ecStoreLinks(
     it,
@@ -77,7 +77,7 @@ function resRowHtml(it: EcarteItem): string {
 }
 
 function trashRowHtml(it: EcarteItem): string {
-  return `<div style="display:flex;align-items:center;gap:8px;padding:var(--space-8) var(--space-4);border-bottom:0.5px solid var(--color-border-tertiary)"><div style="flex:1;min-width:0"><div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:var(--text-md)">${ecName(
+  return `<div style="display:flex;align-items:center;gap:8px;padding:var(--space-8) var(--space-4);border-bottom:0.5px solid var(--color-border-tertiary)"><div style="flex:1;min-width:0"><div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:var(--text-md);font-weight:500">${ecName(
     it,
   )}</div>${ecFileLine(it)}</div><button data-ec="restore" data-id="${it.id}" title="Restaurer — remettre en file" style="font-size:var(--text-xs);padding:2px 8px;color:var(--color-text-info)">Restaurer</button></div>`;
 }

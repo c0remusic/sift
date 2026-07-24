@@ -147,7 +147,7 @@ function duplicateGroupKey(g: PlaylistDuplicateGroupDto): string {
  * cards stays consistent with what's actually shown. */
 function sectionErrorHtml(): string {
   return (
-    `<div style="border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:10px 12px;margin-bottom:6px">` +
+    `<div class="sift-ui-card-outline" style="padding:10px 12px;margin-bottom:6px">` +
     `<div style="font-size:var(--text-sm);color:var(--color-text-danger)">Impossible de charger — réessaie plus tard.</div>` +
     `</div>`
   );
@@ -169,7 +169,7 @@ function syncCardHtml(title: string, count: number, body: string, unavailable: b
       : `<span style="font-size:var(--text-xs);background:var(--color-background-secondary);color:var(--color-text-secondary);padding:2px 7px;border-radius:var(--border-radius-pill)">${count}</span>`) +
     `</div>`;
   return (
-    `<div style="border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:10px 12px;margin-bottom:6px;${idle ? "opacity:.55" : ""}">` +
+    `<div class="sift-ui-card-outline" style="padding:10px 12px;margin-bottom:6px;${idle ? "opacity:.55" : ""}">` +
     header +
     body +
     `</div>`
@@ -192,7 +192,7 @@ function rekordboxCardHtml(s: RekordboxLinkStatus): string {
     ? ""
     : `<button data-sift="rkbreexport" class="sift-ranger-btn" style="flex:none">Réexporter maintenant</button>`;
   return (
-    `<div style="border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:10px 12px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:12px">` +
+    `<div class="sift-ui-card-outline" style="padding:10px 12px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:12px">` +
     `<div style="min-width:0">${body}</div>` +
     `<div style="display:flex;gap:8px;flex:none">${reexport}<button data-bib="rkblink" style="flex:none">Changer de XML lié</button></div>` +
     `</div>`
@@ -216,7 +216,7 @@ function masterdbRepairsSectionHtml(rows: PendingMasterdbRepair[]): string {
 
   const pathBlock = (r: PendingMasterdbRepair) =>
     `<div style="min-width:0;flex:1">` +
-    `<div style="font-family:var(--font-mono);font-size:var(--text-sm);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.to_path)}</div>` +
+    `<div style="font-family:var(--font-mono);font-size:var(--text-sm);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(r.to_path)}</div>` +
     `<div style="font-family:var(--font-mono);font-size:var(--text-xs);color:var(--color-text-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap"><span style="opacity:.55">was</span> ${esc(r.from_path)}</div>` +
     (mdbErrorById.has(r.id)
       ? `<div style="font-size:var(--text-xs);color:var(--color-text-danger);margin-top:2px">${esc(mdbErrorById.get(r.id)!)}</div>`
@@ -241,7 +241,7 @@ function masterdbRepairsSectionHtml(rows: PendingMasterdbRepair[]): string {
         )
         .join("");
       return (
-        `<div style="border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:10px 12px;margin-bottom:6px">` +
+        `<div class="sift-ui-card-outline" style="padding:10px 12px;margin-bottom:6px">` +
         `<div style="display:flex;gap:10px;align-items:flex-start">${pathBlock(r)}` +
         `<button data-sift="mdbdismiss" data-id="${r.id}" style="flex:none">Ignorer</button></div>` +
         `<div style="margin-top:6px;display:flex;flex-direction:column;gap:3px">${candidateBtns}</div>` +
@@ -350,7 +350,7 @@ function metadataSyncsSectionHtml(rows: PendingMetadataSync[]): string {
         )
         .join("");
       return (
-        `<div style="border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:10px 12px;margin-bottom:6px">` +
+        `<div class="sift-ui-card-outline" style="padding:10px 12px;margin-bottom:6px">` +
         `<div style="display:flex;gap:10px;align-items:flex-start">${infoBlock(r)}` +
         `<button data-sift="mdsdismiss" data-id="${r.id}" style="flex:none">Ignorer</button></div>` +
         `<div style="margin-top:6px;display:flex;flex-direction:column;gap:3px">${candidateBtns}</div>` +
@@ -445,7 +445,7 @@ function artworkSyncsSectionHtml(rows: PendingArtworkSync[]): string {
         )
         .join("");
       return (
-        `<div style="border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:10px 12px;margin-bottom:6px">` +
+        `<div class="sift-ui-card-outline" style="padding:10px 12px;margin-bottom:6px">` +
         `<div style="display:flex;gap:10px;align-items:flex-start">${infoBlock(r)}` +
         `<button data-sift="masdismiss" data-id="${r.id}" style="flex:none">Ignorer</button></div>` +
         `<div style="margin-top:6px;display:flex;flex-direction:column;gap:3px">${candidateBtns}</div>` +
@@ -513,7 +513,7 @@ function playlistDuplicatesSectionHtml(groups: PlaylistDuplicateGroupDto[]): str
       const trackLabel = g.track_path ? g.track_path.split(/[\\/]/).pop() || g.track_path : `Piste ${g.content_id}`;
       const count = g.remove.length;
       return (
-        `<div style="border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:10px 12px;margin-bottom:6px;display:flex;gap:10px;align-items:center">` +
+        `<div class="sift-ui-card-outline" style="padding:10px 12px;margin-bottom:6px;display:flex;gap:10px;align-items:center">` +
         `<div style="min-width:0;flex:1">` +
         `<div style="font-size:var(--text-sm)">${esc(playlistLabel)}</div>` +
         `<div style="font-family:var(--font-mono);font-size:var(--text-xs);color:var(--color-text-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(trackLabel)} — ${count} doublon${count > 1 ? "s" : ""}</div>` +
