@@ -79,6 +79,13 @@ substantielle. Overrides Sift :
   + le module projet). Plus d'agent `rust-engineer` (rôle absorbé).
 - Release : `release-skills`; synchroniser les versions de `package.json`,
   `src-tauri/Cargo.toml` et `src-tauri/tauri.conf.json`, depuis `main`.
+  Auto-update (2026-07-24, `docs/superpowers/changes/2026-07-24-auto-update/design.md`) :
+  après `git tag vX.Y.Z && git push --tags`, `release.yml` publie un
+  **brouillon** de Release (`releaseDraft: true`) — Antoine doit le publier
+  manuellement sur GitHub (Releases → Edit → Publish). Sans ce clic,
+  `/releases/latest/` (l'endpoint dans `tauri.release.conf.json`) ne résout
+  jamais un brouillon et l'auto-update ne trouve rien, silencieusement, pour
+  toujours. Vérifié en conditions réelles sur `v0.0.1`/`v0.0.2`.
 - UI existante : `impeccable`, puis `interface-design`. La palette/typo de
   `.interface-design/system.md` est périmée; l'app et `frontend/styles.css` priment.
 - Nouveau chantier UI : `design-flow`; ne pas régénérer les tokens existants.

@@ -106,10 +106,20 @@ Confirmé via Context7 (`/websites/v2_tauri_app`, doc `plugin/updater` +
 1. Antoine bump les 3 fichiers de version (convention déjà posée dans
    `CLAUDE.md` § Outillage) depuis `main`.
 2. `git tag vX.Y.Z && git push --tags`.
-3. `release.yml` construit, signe, publie la Release GitHub avec les
-   installeurs + `latest.json`.
+3. `release.yml` construit, signe, et publie un **brouillon** de Release
+   GitHub avec les installeurs + `latest.json` (`releaseDraft: true`).
+   **Étape manuelle obligatoire** : Antoine doit ensuite publier ce
+   brouillon sur GitHub (Releases → Edit → Publish) — `/releases/latest/`
+   (l'endpoint dans `tauri.release.conf.json`) ne résout **jamais** un
+   brouillon. Sans ce clic, l'auto-update ne trouve silencieusement rien,
+   pour toujours.
 4. Au lancement suivant de l'app déjà installée, check silencieux → bandeau
    si maj disponible.
+
+Vérifié en conditions réelles le 2026-07-24 : `v0.0.1` puis `v0.0.2` tagués
+et poussés, `release.yml` exécuté avec succès sur les deux (`gh run list`),
+`v0.0.2` publiée manuellement (`isDraft:false`), assets attendus présents
+(`latest.json` + 6 installeurs/signatures Win+Mac).
 
 ## Portée réelle du manifest — limitation explicite
 
