@@ -65,7 +65,7 @@ const ecFileLine = (it: EcarteItem) =>
 // Fixed height per row (the store span is visibility:hidden, so it still occupies its line) —
 // required by the virtualized windowing, which relies on one measured row height.
 function resRowHtml(it: EcarteItem): string {
-  return `<div class="sift-ec-row" style="padding:8px 4px;border-bottom:0.5px solid var(--color-border-tertiary)"><div style="display:flex;align-items:center;gap:8px"><div style="flex:1;min-width:0"><div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:var(--text-md);font-weight:500">${ecName(
+  return `<div class="sift-ec-row" style="padding:var(--space-8) var(--space-4);border-bottom:0.5px solid var(--color-border-tertiary)"><div style="display:flex;align-items:center;gap:8px"><div style="flex:1;min-width:0"><div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:var(--text-md);font-weight:500">${ecName(
     it,
   )}</div>${ecFileLine(it)}</div>${ecReason(
     it,
@@ -77,7 +77,7 @@ function resRowHtml(it: EcarteItem): string {
 }
 
 function trashRowHtml(it: EcarteItem): string {
-  return `<div style="display:flex;align-items:center;gap:8px;padding:8px 4px;border-bottom:0.5px solid var(--color-border-tertiary)"><div style="flex:1;min-width:0"><div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:var(--text-md)">${ecName(
+  return `<div style="display:flex;align-items:center;gap:8px;padding:var(--space-8) var(--space-4);border-bottom:0.5px solid var(--color-border-tertiary)"><div style="flex:1;min-width:0"><div style="white-space:nowrap;overflow:hidden;text-overflow:ellipsis;font-size:var(--text-md)">${ecName(
     it,
   )}</div>${ecFileLine(it)}</div><button data-ec="restore" data-id="${it.id}" title="Restaurer — remettre en file" style="font-size:var(--text-xs);padding:2px 8px;color:var(--color-text-info)">Restaurer</button></div>`;
 }
