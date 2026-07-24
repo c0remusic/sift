@@ -24,6 +24,10 @@ Thumbs.db
 .idea/
 .vscode/
 
+# signing keys (private keys never committed, even if accidentally generated in repo)
+*.key
+*.key.pub
+
 # .claude/ = bruit-machine ignoré, SAUF rules/ (méthode portable versionnée)
 # et scripts/ (outils CDP réutilisables, committés — voir cdp.cjs).
 # Limitation Git connue (vérifiée 2026-07-20) : ces négations ne suffisent PAS
