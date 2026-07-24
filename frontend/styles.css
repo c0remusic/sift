@@ -97,6 +97,9 @@ color-scheme:light;
    --h-36 lost its only consumer, .sift-play-btn, when the Revue continuous-surface redesign
    enlarged that button to a 46px literal — dropped 2026-07-09 for the same reason). */
 --h-40:40px;
+/* Custom titlebar height (desktop-only): shared between chrome.ts #sift-titlebar drag region
+   and update banner top position to ensure they never overlap or leave gaps. */
+--titlebar-h:30px;
 }
 /* Dark variant — same warm-neutral family + vert/ambre uniquement (aucun bleu ni rouge, même
    simplification sémantique que le clair : danger fusionne dans warning). Auto = suit
@@ -1169,6 +1172,10 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-goto-reglages{margin-top:5px;font-size:var(--text-sm);padding:3px 9px}
 .sift-toast{position:fixed;right:18px;bottom:18px;z-index:var(--z-toast);display:flex;align-items:center;gap:12px;background:var(--color-background-secondary);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:9px 13px;font-size:var(--text-md);color:var(--color-text-primary);box-shadow:var(--shadow-toast)}
 .sift-toast-undo{font-size:var(--text-sm);padding:2px 9px}
+.sift-update-banner{position:fixed;left:50%;top:var(--titlebar-h);transform:translateX(-50%);z-index:var(--z-toast);display:flex;align-items:center;gap:12px;background:var(--color-background-secondary);border:0.5px solid var(--color-border-secondary);border-radius:0 0 var(--border-radius-md) var(--border-radius-md);padding:9px 16px;font-size:var(--text-md);color:var(--color-text-primary);box-shadow:var(--shadow-toast)}
+.sift-update-banner-install{font-size:var(--text-sm);padding:2px 9px}
+.sift-update-banner-later{font-size:var(--text-sm);padding:2px 9px;background:transparent;color:var(--color-text-secondary)}
+.sift-update-banner-later:hover{background:transparent;color:var(--color-text-secondary)}
 /* flex:1 0 100% forces its own line in the #filfoot flex-wrap row regardless of prepend/append order
    — without it the banner just squeezed in next to the compact action buttons (2026-07-06 annotation:
    read as inert/easy to miss, on top of sitting last in DOM order — see showFiledConfirm). */
