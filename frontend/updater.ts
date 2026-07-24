@@ -59,8 +59,11 @@ export async function installUpdateBanner(): Promise<void> {
       renderBanner(update);
     }
   } catch (e) {
-    // Silent: no network / GitHub unreachable is a normal offline case, not an error
-    // worth interrupting the user for. Logged only.
+    // Silent: two expected causes, neither worth interrupting the user for. (1) No network /
+    // GitHub unreachable — the real-world case on a signed release build. (2) The updater plugin
+    // itself never registered — happens on every dev/unsigned-CI build, where plugins.updater has
+    // no config to merge (see lib.rs's setup()); the IPC command this calls simply doesn't exist
+    // there. Logged only, both cases.
     console.error("update check failed", e);
   }
 }
