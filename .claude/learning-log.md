@@ -368,3 +368,29 @@ scan → compte ~2x le réel si un worktree traînait au moment du calcul.
 repo entier (`find`, un linter maison, un script d'audit) doit exclure
 `.claude` par défaut, pas seulement `node_modules`/`dist`/`.git`/`target`.
 Baseline actuelle au 2026-07-24 : 122 couleurs, 3 z-index, 120 px-spacing.
+
+### D15 — Un sweep mécanique "snap vers l'échelle" sur `styles.css` peut casser une relation calculée documentée qui traverse DEUX règles CSS non adjacentes (2026-07-24, sweep spacing Étape 3)
+Le sweep de l'échelle d'espacement (`docs/superpowers/changes/2026-07-19-spacing-scale-sweep/`)
+a snappé `.sift-play-btn{margin-left:11px}` → `var(--space-12)` (agent en
+worktree isolé, mapping fourni). Ce `11px` n'était pas arbitraire : un
+commentaire juste en dessous (`styles.css:774`, "aligne les deux par leur
+centre") le calcule comme `(68px cover - 46px button) / 2 = 11px` — un
+centrage pixel-exact. Le sous-agent l'a snappé quand même (mapping
+mécanique, `.sift-play-btn` n'était pas dans la liste d'exclusion connue
+`.sift-seg*`). Pire : un DEUXIÈME commentaire, sur une règle CSS
+différente et non adjacente (`.sift-player-audition{gap:25px}`,
+`styles.css:769-772`, "aligne les deux"), dépendait de ce même `11px` dans
+un calcul séparé (`82 - 11 - 46 = 25`) pour aligner la vague avec
+l'en-tête. Le snap du premier site a rendu le second silencieusement faux
+sans qu'aucun outil (tsc, lint-tokens) ne le détecte — seule la relecture
+manuelle du commentaire l'a révélé après coup.
+
+**How to apply** : avant de snapper/modifier une valeur qui a un
+commentaire documentant un calcul (`X - Y = Z` ou similaire), grep le
+fichier entier pour d'autres commentaires référençant les MÊMES nombres
+bruts (`X`, `Y`, ou le résultat) — la dépendance peut vivre dans une règle
+CSS totalement différente, pas seulement dans les sélecteurs voisins ou
+la même famille de classes (`.sift-seg*` était déjà connu comme risqué,
+`.sift-play-btn`/`.sift-player-audition` ne l'était pas). Un sweep à
+grande échelle sur ce fichier doit inclure cette vérification comme étape
+systématique, pas seulement une liste d'exclusion pré-établie.
