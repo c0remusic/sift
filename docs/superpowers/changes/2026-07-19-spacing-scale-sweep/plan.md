@@ -1,7 +1,31 @@
-# Sweep échelle d'espacement — plan (à exécuter, PAS encore fait)
+# Sweep échelle d'espacement — plan
 
 Chantier isolé, jamais mélangé à un autre fix. Chaque étape produit une preuve
 avant de passer à la suivante.
+
+## Statut (2026-07-24)
+
+- **Étape 1 (énumération)** ✅ — 306 déclarations scannées, 232 hors échelle
+  (162 répété/13 valeurs + 70 hors périmètre width/height + quelques isolés).
+- **Étape 2 (micro-tier)** ✅ — Antoine tranche : snap strict partout
+  (4/8/12/16/24/32), `.sift-seg`/`.sift-seg-opt` exclus.
+- **Étape 3 (snap)** ✅ — 176 sites snappés (commit `b1c8374`), tokens
+  `--space-24`/`--space-32` créés. lint-tokens px-spacing 120→69.
+  **Point à vérifier** : `.sift-play-btn`/`.sift-player-audition`
+  (`styles.css:769-781`, écran Revue lecteur) — le centrage pixel-exact
+  documenté en commentaire (`(68-46)/2=11px`) a glissé de 1px par le snap
+  (11→12) ; le `gap` a été recalculé en cascade (25→24) pour rester
+  cohérent, mais le centrage lui-même reste décalé d'1px. Cosmétique
+  mineur, mais zone explicitement annotée "aligne les deux par leur
+  centre" — vaut un coup d'œil dans `tauri dev` avant de considérer le
+  chantier clos.
+- **Étape 4 (revérif cas à risque + repasse 8 écrans)** ⏳ différée —
+  reprendre ici : vérifier visuellement le point ci-dessus + repasser les
+  8 écrans catalogués (`design-system-states.md` § audits référence
+  canonique 07-08/09).
+- **Étape 5 (documenter + archiver)** ⏳ différée — après l'étape 4 :
+  mettre à jour `system.md` § Espacement + `design-system-states.md`
+  (nouvelle entrée sweep), puis archiver ce dossier vers `changes/archive/`.
 
 ## Étape 1 — Enumérer exhaustivement (lecture seule)
 - Grep `padding:|margin|gap:|width:[0-9]|height:[0-9]` sur `frontend/styles.css`.
