@@ -275,12 +275,12 @@ Méthode :
 4. `cargo update` crate par crate, chirurgicalement — jamais un update global.
 
 Versions en usage (migration majeure faite le 2026-07-01, build + 173 tests verts) :
-tauri 2.11.5 · rusqlite 0.40.1 · symphonia 0.6.0 · rustfft 6.4.1 ·
+tauri 2.11.3 (cli 2.11.4) · rusqlite 0.40 · symphonia 0.6.0 · rustfft 6.4.1 ·
 lofty 0.24.0 · rusty-chromaprint 0.3.0 · notify-debouncer-full 0.7.0 · ureq 3.3.0
 (cibles atteintes, référence pour le prochain audit `cargo outdated`).
 
 Versions JS en usage (migration TypeScript 6 + Vite 5→8 faite le 2026-07-01,
-4 commits, tsc + build + tauri dev verts) : typescript 6.0.3 · vite 8.1.2
+4 commits, tsc + build + tauri dev verts) : typescript 6.0.3 · vite 8.1.5
 Méthode : un palier majeur = `npm i -D <pkg>@<major>` + Context7 (breaking changes
 filtrés à notre config réelle) + validation build/dev + commit dédié.
 
