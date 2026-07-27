@@ -93,31 +93,31 @@ fn union(parent: &mut [usize], a: usize, b: usize) {
 /// known — a missing duration falls through to the full comparison (fail-open, no false skip).
 const DURATION_MATCH_TOL_SEC: f64 = 2.0;
 
-/// Group every `filed` track into duplicate clusters by acoustic fingerprint similarity
-/// (reuses the same cache + threshold as `find_duplicate`). Still O(n²) in the worst case,
-/// but the initial SELECT now also reads the cached `fingerprint` (no per-track N+1 SELECT)
-/// and a cheap duration pre-filter skips comparisons that can't possibly match — enough for
-/// a full 15k-track library dashboard scan.
-pub fn scan_library_duplicates(conn: &Connection) -> rusqlite::Result<Vec<DupGroup>> {
-    struct Row {
-        id: i64,
-        path: String,
-        filename: Option<String>,
-        folder: Option<String>,
-        format: Option<String>,
-        bitrate: Option<i64>,
-        duration: Option<f64>,
-        truncated: bool,
-        /// Cached fingerprint as stored (may be empty/NULL → recompute lazily below).
-        fingerprint: Option<String>,
-    }
+/// One row loaded from `tracks` for a duplicate scan — everything the O(n²) compare and the
+/// group-building step need, so they can run without touching the connection.
+pub(crate) struct DupScanRow {
+    pub id: i64,
+    pub path: String,
+    pub filename: Option<String>,
+    pub folder: Option<String>,
+    pub format: Option<String>,
+    pub bitrate: Option<i64>,
+    pub duration: Option<f64>,
+    pub truncated: bool,
+    /// Cached fingerprint as stored (may be empty/NULL → recompute lazily below).
+    pub fingerprint: Option<String>,
+}
+
+/// Brief read: every `filed` track plus its cached fingerprint. Intended to be called under a
+/// short-held lock — the caller drops the lock before doing anything with the result.
+pub(crate) fn load_dup_scan_rows(conn: &Connection) -> rusqlite::Result<Vec<DupScanRow>> {
     let mut stmt = conn.prepare(
         "SELECT id, path, filename, folder, format, bitrate, duration, truncated, fingerprint \
          FROM tracks WHERE status='filed'",
     )?;
-    let rows: Vec<Row> = stmt
+    let rows: Vec<DupScanRow> = stmt
         .query_map([], |r| {
-            Ok(Row {
+            Ok(DupScanRow {
                 id: r.get(0)?,
                 path: r.get(1)?,
                 filename: r.get(2)?,
@@ -130,17 +130,51 @@ pub fn scan_library_duplicates(conn: &Connection) -> rusqlite::Result<Vec<DupGro
             })
         })?
         .collect::<rusqlite::Result<_>>()?;
+    Ok(rows)
+}
 
-    // Use the fingerprint the scan already read; only fall back to compute+cache when the
-    // cached value is missing/empty (get_or_compute_fp then does the single UPDATE).
-    let fps: Vec<Option<Vec<u32>>> = rows
-        .iter()
-        .map(|r| match r.fingerprint.as_deref() {
-            Some(s) if !s.is_empty() => Some(fingerprint::decode(s)),
-            _ => get_or_compute_fp(conn, r.id, &r.path),
-        })
-        .collect();
+/// Result of resolving every row's fingerprint (cached-decode or freshly computed from disk).
+pub(crate) struct BuiltFingerprints {
+    /// Aligned 1:1 with the `rows` slice passed to `build_fingerprints`.
+    pub fps: Vec<Option<Vec<u32>>>,
+    /// Newly-computed fingerprints (cache miss) still needing a DB write.
+    pub to_persist: Vec<(i64, Vec<u32>)>,
+}
 
+/// Resolve every row's fingerprint: reuse the cached value already loaded on the row, or
+/// decode/compute from disk. Pure — no connection touched, safe to run without any lock held.
+pub(crate) fn build_fingerprints(rows: &[DupScanRow]) -> BuiltFingerprints {
+    let mut fps = Vec::with_capacity(rows.len());
+    let mut to_persist = Vec::new();
+    for r in rows {
+        match r.fingerprint.as_deref() {
+            Some(s) if !s.is_empty() => fps.push(Some(fingerprint::decode(s))),
+            _ => match fingerprint::compute_for_path(&r.path) {
+                Ok(fp) => {
+                    to_persist.push((r.id, fp.clone()));
+                    fps.push(Some(fp));
+                }
+                Err(_) => fps.push(None),
+            },
+        }
+    }
+    BuiltFingerprints { fps, to_persist }
+}
+
+/// Persist newly-computed fingerprints (cache warm-up). Intended to be called under a
+/// short-held lock, after the heavy compute is already done.
+pub(crate) fn persist_fingerprints(conn: &Connection, entries: &[(i64, Vec<u32>)]) {
+    for (id, fp) in entries {
+        let _ = conn.execute(
+            "UPDATE tracks SET fingerprint=?2 WHERE id=?1",
+            params![id, fingerprint::encode(fp)],
+        );
+    }
+}
+
+/// The O(n²) compare + union-find grouping itself. Pure — no connection touched, safe to run
+/// without any lock held. `fps` must be aligned 1:1 with `rows` (see `build_fingerprints`).
+pub(crate) fn group_duplicates(rows: &[DupScanRow], fps: &[Option<Vec<u32>>]) -> Vec<DupGroup> {
     let n = rows.len();
     let mut parent: Vec<usize> = (0..n).collect();
     let mut min_sim: HashMap<usize, f32> = HashMap::new();
@@ -209,7 +243,28 @@ pub fn scan_library_duplicates(conn: &Connection) -> rusqlite::Result<Vec<DupGro
         });
     }
     out.sort_by(|a, b| a.members[0].id.cmp(&b.members[0].id));
-    Ok(out)
+    out
+}
+
+/// Group every `filed` track into duplicate clusters by acoustic fingerprint similarity
+/// (reuses the same cache + threshold as `find_duplicate`). Still O(n²) in the worst case,
+/// but the initial SELECT now also reads the cached `fingerprint` (no per-track N+1 SELECT)
+/// and a cheap duration pre-filter skips comparisons that can't possibly match — enough for
+/// a full 15k-track library dashboard scan.
+///
+/// Convenience wrapper that does read + compute + persist under a single held `conn` — kept
+/// for callers (e.g. `library::library_stats`) that already hold the lock for their whole
+/// duration. The IPC command (`ipc_library::scan_library_duplicates`) does NOT use this: it
+/// calls `load_dup_scan_rows`/`build_fingerprints`/`group_duplicates`/`persist_fingerprints`
+/// directly so the lock is only held for the brief read and the brief write, not the O(n²)
+/// compare or the disk-decoding fingerprint compute.
+pub fn scan_library_duplicates(conn: &Connection) -> rusqlite::Result<Vec<DupGroup>> {
+    let rows = load_dup_scan_rows(conn)?;
+    let built = build_fingerprints(&rows);
+    if !built.to_persist.is_empty() {
+        persist_fingerprints(conn, &built.to_persist);
+    }
+    Ok(group_duplicates(&rows, &built.fps))
 }
 
 /// Name key for a track derived from its FILENAME only (no tag read — cheap). Uses the

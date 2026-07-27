@@ -263,19 +263,24 @@ pub fn apply_tags(
         )
         .map_err(|e| e.to_string())?;
 
-        // M8 Tier 3: detect (read-only) a metadata sync candidate when linked to Rekordbox.
-        let values = metadata_sync_values_for_apply_tags(&edited, &extras);
-        actions::detect_masterdb_metadata_sync_if_linked(
-            &conn, &path, track_id, &values, action_id,
-        );
-
-        // M8 Tier 3 (pochette): only when this track actually has a stored cover — apply_tags
-        // never changes the cover itself (it just re-applies whatever's already in `extras`), so
-        // this only matters the first time a cover exists and hasn't been synced yet.
-        if let Some(cover_path) = &extras.cover_path {
-            actions::detect_masterdb_artwork_sync_if_linked(
-                &conn, &path, track_id, cover_path, action_id,
+        // M8 Tier 3: detect (read-only) a metadata sync candidate when linked to Rekordbox, and
+        // (if this track has a stored cover) an artwork sync candidate too. Both detectors need
+        // the same decrypted `master.db` index — resolve it ONCE here (mirrors filing.rs's
+        // post-commit loop) rather than have each detector independently decrypt the file.
+        if let Some(index) = actions::resolve_masterdb_index_if_linked(&conn) {
+            let values = metadata_sync_values_for_apply_tags(&edited, &extras);
+            actions::detect_masterdb_metadata_sync_with_index(
+                &conn, &index, &path, track_id, &values, action_id,
             );
+
+            // Only when this track actually has a stored cover — apply_tags never changes the
+            // cover itself (it just re-applies whatever's already in `extras`), so this only
+            // matters the first time a cover exists and hasn't been synced yet.
+            if let Some(cover_path) = &extras.cover_path {
+                actions::detect_masterdb_artwork_sync_with_index(
+                    &conn, &index, &path, track_id, cover_path, action_id,
+                );
+            }
         }
     }
     app.emit("queue:changed", ()).ok();

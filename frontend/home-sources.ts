@@ -5,7 +5,7 @@
 // bottom-bar "+ Ajouter un dossier". Extracted from sift-live.ts (audit P-3), rebuilt
 // 2026-07-02 (docs/superpowers/reviews/2026-07-02-audit-fidelite-ecran-par-ecran.md §1: the old single-column list was a
 // confirmed structural gap vs the maquette).
-import { listSources, addSource, removeSource, setSourceWatched, getSetting } from "./ipc";
+import { listSources, addSource, removeSource, setSourceWatched, getSetting, rescanSource } from "./ipc";
 import { open } from "@tauri-apps/plugin-dialog";
 import type { Source } from "../shared/contracts";
 import { esc } from "./dom";
@@ -161,6 +161,7 @@ function inspectorHtml(selected: Source | null, root: string | null, allSources:
     `<div data-sift="togglewatch" data-id="${selected.id}" data-watched="${watchOn ? "1" : "0"}" tabindex="0" role="checkbox" aria-checked="${watchOn}" class="sift-home-watch-toggle sift-ui-card-actions-main">` +
     `<span class="sift-home-watch-toggle-box"><i class="ti ti-check" aria-hidden="true"></i></span>` +
     `Surveiller ce dossier</div>` +
+    `<button data-sift="rescansrc" data-id="${selected.id}"><i class="ti ti-refresh" style="font-size:var(--text-md);vertical-align:-2px"></i> Rescanner</button>` +
     `<button data-sift="rmsrc" data-id="${selected.id}" style="color:var(--color-text-danger)"><i class="ti ti-trash" style="font-size:var(--text-md);vertical-align:-2px"></i> Retirer</button>` +
     `</div>` +
     `</div>`
@@ -236,6 +237,15 @@ export async function renderHomeSources() {
       await renderHomeSources();
     } catch (err) {
       console.error("setSourceWatched failed", err);
+    }
+  });
+  inspectorCol.querySelector('[data-sift="rescansrc"]')?.addEventListener("click", async (e) => {
+    const el = e.currentTarget as HTMLElement;
+    const id = Number(el.dataset.id);
+    try {
+      await rescanSource(id);
+    } catch (err) {
+      console.error("rescanSource failed", err);
     }
   });
   inspectorCol.querySelector('[data-sift="rmsrc"]')?.addEventListener("click", async (e) => {
