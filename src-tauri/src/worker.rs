@@ -268,9 +268,15 @@ fn worker_loop(app: AppHandle, inner: Arc<(Mutex<Queue>, Condvar)>) {
     while let Some(id) = pop(&inner) {
         if let Some(path) = read_path(&app, id) {
             // Heavy work runs WITHOUT holding the DB lock — UI stays responsive.
-            // FIX-3: collect the display spectrogram here too (bounded ~200KB, the FFT itself
-            // already runs regardless of this flag — see SpectrumAccumulator::new) so it's
-            // cached in report_json and the Revue spectrogram click never has to re-decode.
+            // FIX-3: collect the display spectrogram here too (the FFT itself already runs
+            // regardless of this flag — see SpectrumAccumulator::new) so it's cached in
+            // report_json and the Revue spectrogram click never has to re-decode.
+            // The IN-MEMORY matrix is indeed bounded (MAX_COLS=1200 u8 columns, spectrum.rs:226),
+            // but the comment used to read as if that bound held ON DISK, and it does not: serde
+            // writes Vec<u8> as a decimal-integer JSON array (~4 chars per byte). Measured
+            // 2026-07-27 read-only on the production DB (%APPDATA%/com.sift.app/sift.db, 3907
+            // tracks): report_json averages 1657 KB, peaks at 3191 KB, totals 6323 MB = 97% of
+            // the 6521 MB file. The fix is the ENCODING, not dropping the cache.
             // analyze() decodes arbitrary user-supplied audio files (Symphonia/FFT); catch a
             // panic here so one corrupt file doesn't silently kill this pool thread forever.
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {

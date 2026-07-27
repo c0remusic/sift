@@ -9,7 +9,8 @@ import { refreshBins, clearBinPick } from "./filing-bins";
 import { homeProgressZone } from "./progress-zone";
 import { MAX_ANALYSIS_ATTEMPTS, type QueueItem } from "../shared/contracts";
 import { confirmAction } from "./confirm-modal";
-import { requireEl, esc, toast } from "./dom";
+import { requireEl, esc } from "./dom";
+import { toast } from "./filing-toast";
 
 /** A pending track still worth (re)analysing: no current verdict AND not yet terminally broken.
  *  Single source of truth for the "Non analysés" count, filter, and bulk-retry set — a track that
@@ -152,12 +153,18 @@ function renderQueueWindow(ql: HTMLElement): void {
   ql.innerHTML = html;
 }
 
-let queueScrollWired = false;
 /** One-time (guarded) scroll listener on #ql, rAF-throttled: re-renders the visible window on
- * scroll without doing so on every fired scroll event (which can be dozens per second). */
+ * scroll without doing so on every fired scroll event (which can be dozens per second).
+ *
+ * Guarded on the NODE itself, not on a module boolean: app.js's renderRevue() rebuilds the whole
+ * screen with `content.innerHTML = …` on every nav to Revue, so #ql is a BRAND NEW element each
+ * time. A module flag stayed true across that rebuild, leaving the listener attached to the
+ * detached old node — after one nav round-trip the visible list never re-rendered on scroll
+ * (virtualized rows past the first window stayed blank). A fresh node carries no marker, so it
+ * gets wired; the same node re-passed (every renderQueue call) is skipped as before. */
 function ensureQueueScroll(ql: HTMLElement): void {
-  if (queueScrollWired) return;
-  queueScrollWired = true;
+  if (ql.dataset.siftScrollWired) return;
+  ql.dataset.siftScrollWired = "1";
   let ticking = false;
   ql.addEventListener("scroll", () => {
     if (ticking) return;
@@ -373,13 +380,17 @@ export async function renderQueue(touchDetail = true) {
   // Background-analysis progress moved to the global progress zone (bottom of #nav, persistent
   // across views) — see pushAnalyzeProgress, fed by the analysis:changed event below.
 
-  // Live destination bins + neutral detail prompt (replace the mockup's hardcoded ones).
-  const fldz = requireEl("#fldz", "renderQueue");
-  void refreshBins(fldz);
   // Only sync the detail pane on structural changes (nav, queue add/remove/file). A background
   // ANALYSIS finishing must NOT re-open / switch the open track — that thrashes and aborts the
   // player's audio load (waveform shows from peaks, but no sound). See touchDetail=false caller.
   if (touchDetail) {
+    // Live destination bins + neutral detail prompt (replace the mockup's hardcoded ones). Gated
+    // on touchDetail like the pane sync: the bins are the library root + its folders on disk
+    // (loadBins → getSetting + list_bins), which a background analysis finishing cannot change.
+    // list_bins walks the WHOLE library root recursively backend-side, so leaving this ungated
+    // ran a full recursive directory scan on every 300ms analysis-progress redraw.
+    const fldz = requireEl("#fldz", "renderQueue");
+    void refreshBins(fldz);
     if (reviewMode === "batch") {
       batchRenderer?.();
     } else {

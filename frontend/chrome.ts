@@ -1,10 +1,12 @@
 // App chrome (Tauri only): custom titlebar, the "lean" stylesheet that hides the mockup's
 // not-yet-real surfaces, scroll-thumb autohide, and OS drag-drop. Extracted from sift-live.ts
-// (audit P-3) — self-contained UI shell, no shared app state; imports only Tauri + ipc.
+// (audit P-3) — self-contained UI shell, no shared app state; imports only Tauri + ipc + toast
+// (the drop handler acknowledges what the backend actually imported, see reportImport below).
 import { getCurrentWebview } from "@tauri-apps/api/webview";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { platform } from "@tauri-apps/plugin-os";
 import { importPaths } from "./ipc";
+import { toast } from "./filing-toast";
 
 // One-time style: while dragging, an existing zone gets an outline + an overlaid hint
 // (::after with the zone's data-dz text). No permanent dashed box — the hint shows only
@@ -30,24 +32,38 @@ const DROP_ZONES: [string, string][] = [
 ];
 
 /** Toggle the drag hint/outline on the relevant existing boxes. Falls back to #content
- * (e.g. Bibliothèque) when none of the named zones are on screen. */
+ * (e.g. Bibliothèque) when none of the named zones are on screen.
+ * Idempotent by construction: "over" fires continuously while the pointer moves (dozens of
+ * calls per second), so the wanted set is computed first and compared to what is already
+ * marked — identical state returns without touching a single class. Only a real change
+ * mutates the DOM, and it does so with plain class/attribute writes (the .sift-dz-on CSS has
+ * no transition), so the hint still appears and disappears instantly. */
 function setDropActive(on: boolean) {
   ensureDropStyle();
-  document.querySelectorAll<HTMLElement>(".sift-dz-on").forEach((el) => {
+  const wanted: [HTMLElement, string][] = [];
+  if (on) {
+    const present = DROP_ZONES.filter(([sel]) => document.querySelector(sel));
+    const targets: [string, string][] = present.length
+      ? present
+      : [["#content", "Dépose des fichiers (→ file d'attente) ou des dossiers (→ surveillés)"]];
+    for (const [sel, label] of targets) {
+      const el = document.querySelector<HTMLElement>(sel);
+      if (el) wanted.push([el, label]);
+    }
+  }
+  const current = document.querySelectorAll<HTMLElement>(".sift-dz-on");
+  if (
+    current.length === wanted.length &&
+    wanted.every(([el, label]) => el.classList.contains("sift-dz-on") && el.dataset.dz === label)
+  )
+    return;
+  current.forEach((el) => {
     el.classList.remove("sift-dz-on");
     el.removeAttribute("data-dz");
   });
-  if (!on) return;
-  const present = DROP_ZONES.filter(([sel]) => document.querySelector(sel));
-  const targets: [string, string][] = present.length
-    ? present
-    : [["#content", "Dépose des fichiers (→ file d'attente) ou des dossiers (→ surveillés)"]];
-  for (const [sel, label] of targets) {
-    const el = document.querySelector<HTMLElement>(sel);
-    if (el) {
-      el.classList.add("sift-dz-on");
-      el.dataset.dz = label;
-    }
+  for (const [el, label] of wanted) {
+    el.classList.add("sift-dz-on");
+    el.dataset.dz = label;
   }
 }
 
@@ -59,6 +75,25 @@ function dropModeAt(pos: { x: number; y: number }): "source" | "dest" {
   return el && el.closest("#filfoot") ? "dest" : "source";
 }
 
+/** Acknowledge a drop with what the backend ACTUALLY took in — never p.paths.length, which
+ * counts what was dropped, not what was imported: ipc.rs keeps a file only if scanner::is_audio
+ * accepts it and add_loose_file really added it, and in "dest" mode a folder counts only when
+ * LIBRARY_ROOT is set (otherwise folders_added stays 0 with no error). Five .txt files dropped
+ * must read "rien d'importable", not "5 reçus". Wording follows the backend's own split:
+ * morceaux (files) vs dossiers (folders), never a merged "éléments". */
+function reportImport(res: { files_added: number; folders_added: number }): void {
+  const { files_added, folders_added } = res;
+  if (!files_added && !folders_added) {
+    toast("Rien d'importable dans ce dépôt");
+    return;
+  }
+  const parts: string[] = [];
+  if (files_added) parts.push(`${files_added} morceau${files_added > 1 ? "x" : ""}`);
+  if (folders_added) parts.push(`${folders_added} dossier${folders_added > 1 ? "s" : ""}`);
+  const plural = files_added + folders_added > 1 ? "s" : "";
+  toast(`${parts.join(" et ")} ajouté${plural}`);
+}
+
 /** OS drag-drop: audio files → queue; folders → watched source, or a destination bin when
  * dropped on the "Où on va" column. */
 export async function installDragDrop() {
@@ -68,9 +103,12 @@ export async function installDragDrop() {
       if (p.type === "drop") {
         setDropActive(false);
         if (p.paths.length)
-          void importPaths(p.paths, dropModeAt(p.position)).catch((e) =>
-            console.error("import_paths failed", e),
-          );
+          void importPaths(p.paths, dropModeAt(p.position))
+            .then(reportImport)
+            .catch((e) => {
+              console.error("import_paths failed", e);
+              toast("Échec de l'import");
+            });
       } else if (p.type === "enter" || p.type === "over") {
         setDropActive(true);
       } else {

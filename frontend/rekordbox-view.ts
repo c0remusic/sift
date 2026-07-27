@@ -32,7 +32,8 @@ import type {
   PendingArtworkSync,
   ApplyMetadataSyncOutcome,
 } from "../shared/contracts";
-import { requireEl, esc, toast } from "./dom";
+import { requireEl, esc } from "./dom";
+import { toast } from "./filing-toast";
 import { emptyStateHtml, wireEmptyState } from "./empty-state";
 import { confirmAction } from "./confirm-modal";
 

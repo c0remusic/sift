@@ -11,7 +11,8 @@ import { getSetting, setSetting, listBins, createBin } from "./ipc";
 import type { Bin } from "../shared/contracts";
 import { EXTERNAL_DEST_PREFIX } from "../shared/contracts";
 import { open } from "@tauri-apps/plugin-dialog";
-import { esc, toast } from "./dom";
+import { esc } from "./dom";
+import { toast } from "./filing-toast";
 
 const LIBRARY_ROOT = "library_root";
 
@@ -428,8 +429,9 @@ function renderBins(fldz: HTMLElement): void {
 
 /** Re-anchor the destination popover to the Destination button's CURRENT position, but only if
  *  it's actually open. `positionDestPopover` was previously called once, at open time — but
- *  `#fldz`'s content (this file's `renderBins`) is rebuilt on background events (queue/analysis
- *  changes trigger `refreshBins`) independent of any user click, and the rail itself
+ *  `#fldz`'s content (this file's `renderBins`) is rebuilt independent of any user click — no
+ *  longer on every analysis tick (that call was moved behind the detail-pane guard in
+ *  `queue-panel.ts`), but still on the paths that genuinely change the bins — and the rail itself
  *  (`renderFoot`/`renderBatchRail`) can reflow too (e.g. a filename wrapping differently) — either
  *  can silently move the Destination button while the popover, once positioned, never re-anchored.
  *  That produced the "position aléatoire" bug: correct if you'd JUST clicked Destination, stale

@@ -44,10 +44,7 @@ function ensureStyles() {
   if (document.getElementById("sift-report-style")) return;
   const st = document.createElement("style");
   st.id = "sift-report-style";
-  st.textContent =
-    ".sift-time:hover{color:var(--color-text-primary)!important}" +
-    "@keyframes sift-spin{to{transform:rotate(360deg)}}" +
-    ".sift-spin{display:inline-block;animation:sift-spin 1s linear infinite}";
+  st.textContent = ".sift-time:hover{color:var(--color-text-primary)!important}";
   document.head.appendChild(st);
 }
 

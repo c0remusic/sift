@@ -27,7 +27,8 @@ import { renderHomeSources, dismissRootGate } from "./home-sources";
 import { installDragDrop, injectLeanStyle, injectTitlebar, installScrollAutohide, installNavKeyboard } from "./chrome";
 import { initTheme } from "./theme";
 import { renderReglagesLive } from "./reglages-view";
-import { requireEl, toast } from "./dom";
+import { requireEl } from "./dom";
+import { toast } from "./filing-toast";
 import type { LibrarySortState } from "./library-views";
 import {
   bibState,
