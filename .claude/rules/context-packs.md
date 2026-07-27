@@ -6,7 +6,7 @@
 
 Menus de 3-8 fichiers par type de tâche (l'orchestrateur choisit, ne colle pas
 tout). Concept de sizing dans `~/.claude/CLAUDE.md` § Sizing (+ templates
-`~/.claude/rules/sizing-templates.md`). Migré depuis l'ex-`docs/skills-registre.md`
+skill `sizing-templates`). Migré depuis l'ex-`docs/skills-registre.md`
 (supprimé 2026-07-16). Chemins vérifiés sur disque à la migration.
 
 ## Pack UI live

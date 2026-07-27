@@ -99,7 +99,7 @@ mémoire `avoid-concurrent-cargo-tauri-dev`). Toujours arrêter `tauri dev` avan
 un fan-out qui touche `src-tauri/`. Cargo sérialise via son lock (deux agents
 peuvent compiler l'un après l'autre sans casser), mais donner à chaque agent
 Rust parallèle un périmètre de fichiers strictement disjoint reste nécessaire
-(cf. gabarit `Exécuteur borné` de `~/.claude/rules/sizing-templates.md`).
+(cf. gabarit `Exécuteur borné` de la skill `sizing-templates`).
 
 ## Avant de dire « fini » (commandes exactes du projet)
 

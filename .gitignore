@@ -28,22 +28,21 @@ Thumbs.db
 *.key
 *.key.pub
 
-# .claude/ = bruit-machine ignoré, SAUF rules/ (méthode portable versionnée)
-# et scripts/ (outils CDP réutilisables, committés — voir cdp.cjs).
-# Limitation Git connue (vérifiée 2026-07-20) : ces négations ne suffisent PAS
-# à faire apparaître un NOUVEAU fichier de ces sous-dossiers comme trackable —
-# Git refuse de redescendre dans un dossier parent exclu. Seuls les fichiers
-# déjà trackés (ajoutés une fois via `git add -f`) y échappent. Tout nouveau
-# fichier sous rules/ ou scripts/ nécessite donc un `git add -f` explicite.
-.claude/
+# .claude/ = bruit-machine ignoré, SAUF rules/ (méthode portable versionnée),
+# scripts/ (outils CDP réutilisables — voir cdp.cjs), verify.sh (gate de fin de
+# tour) et learning-log.md.
+# La forme `.claude/` excluait le DOSSIER : Git refuse alors de redescendre
+# dedans et aucune négation ne peut ressortir un fichier neuf — d'où les
+# `git add -f` qu'il fallait faire à la main, et le learning-log.md resté
+# non tracké ~10 jours. Corrigé 2026-07-28 : `.claude/*` exclut le CONTENU,
+# pas le dossier, donc les négations ci-dessous fonctionnent vraiment.
+.claude/*
 !.claude/rules/
 !.claude/rules/**
 !.claude/scripts/
 !.claude/scripts/**
+!.claude/verify.sh
 !.claude/learning-log.md
-# learning-log.md a existé ~10 jours (C1-D12) sans jamais être tracké — même
-# limitation que ci-dessus, cette négation seule ne suffit pas si le fichier
-# ressort un jour de l'index : `git add -f .claude/learning-log.md` d'abord.
 .codex/
 .agents/
 
