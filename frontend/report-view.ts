@@ -8,7 +8,10 @@ import WaveSurfer from "wavesurfer.js";
 import type { AnalysisReport } from "../shared/contracts";
 import { requireEl, esc } from "./dom";
 
-const PEAKS_WINDOW = 512; // must match analysis::PEAKS_WINDOW
+/** Fallback step, only for a report predating `peaks_step` (mirrors analysis::PEAKS_WINDOW and
+ *  analysis::default_peaks_step). Never use it when the report carries its own step: the envelope
+ *  is max-pooled above analysis::MAX_PEAKS points, so the real step is a multiple of this. */
+const PEAKS_WINDOW_FALLBACK = 512;
 
 // Accordion behavior (shadcn Accordion reference, ui.shadcn.com/docs/components/base/accordion):
 // Diagnostic and Métadonnées are exclusive — opening one closes the other. They're wired in two
@@ -332,7 +335,11 @@ function drawSpectrogram(canvas: HTMLCanvasElement, r: AnalysisReport) {
 
 function peaksCoverage(r: AnalysisReport): string {
   const sr = r.sample_rate || 44100;
-  const covered = (r.peaks.length * PEAKS_WINDOW) / sr;
+  // The step comes from the report, never from the constant: above analysis::MAX_PEAKS the
+  // backend max-pools the envelope, so one point can stand for several thousand samples. Using
+  // 512 there would claim a fraction of the real coverage and read as a truncated analysis.
+  const step = r.peaks_step || PEAKS_WINDOW_FALLBACK;
+  const covered = (r.peaks.length * step) / sr;
   const pct = r.duration_sec > 0 ? (covered / r.duration_sec) * 100 : 0;
   return `${r.peaks.length} pts ≈ ${covered.toFixed(1)}s / ${r.duration_sec.toFixed(1)}s (${pct.toFixed(0)}%)`;
 }

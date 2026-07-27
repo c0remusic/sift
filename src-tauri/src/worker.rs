@@ -334,6 +334,7 @@ mod tests {
             container_mismatch: false,
             est_kbps: 128,
             peaks: vec![],
+            peaks_step: 512,
             spectrogram: Spectrogram {
                 frames: 0,
                 bins: 0,

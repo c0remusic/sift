@@ -67,6 +67,12 @@ pub struct AnalysisReport {
     /// see `verdict::estimate_kbps` — the front no longer computes this itself).
     pub est_kbps: u32,
     pub peaks: Vec<f32>,
+    /// Mono samples represented by ONE entry of `peaks`. Equals `PEAKS_WINDOW` unless the envelope
+    /// was capped (`peaks::cap`), in which case it is `PEAKS_WINDOW * pooling factor`. The front
+    /// needs it to convert a point count back into seconds — deriving that from PEAKS_WINDOW alone
+    /// silently under-reports coverage on every capped track.
+    #[serde(default = "default_peaks_step")]
+    pub peaks_step: usize,
     pub spectrogram: Spectrogram,
     pub clip_runs: u32,
     pub clip_pct: f32,
@@ -104,6 +110,16 @@ use structure::{SilenceAccumulator, TruncationAccumulator};
 
 const FFT_SIZE: usize = 4096;
 const PEAKS_WINDOW: usize = 512; // ~11.6 ms @ 44.1k
+/// Ceiling on the number of envelope points kept in the report. At PEAKS_WINDOW a 6.5-minute track
+/// produced ~33 500 of them — 21% of report_json — to draw a waveform a few hundred pixels wide.
+/// 4 000 still gives several points per pixel at any realistic canvas width.
+const MAX_PEAKS: usize = 4_000;
+
+/// Serde fallback for reports written before `peaks_step` existed: they were never capped, so their
+/// step is exactly PEAKS_WINDOW. Keeps such a report readable instead of failing the whole parse.
+fn default_peaks_step() -> usize {
+    PEAKS_WINDOW
+}
 const CLIP_THRESHOLD: f32 = 0.99;
 const CLIP_MIN_RUN: usize = 3;
 const SILENCE_THRESHOLD: f32 = 0.001; // ~ -60 dBFS
@@ -188,6 +204,7 @@ pub fn analyze(path: &str, with_spectrogram: bool) -> Result<AnalysisReport, Str
         content_rail,
     );
     let est_kbps = verdict::estimate_kbps(cutoff_hz);
+    let (capped_peaks, peaks_factor) = peaks::cap(pk.finish(), MAX_PEAKS);
 
     log::info!(
         "analyze {} : {} ms (decode+dsp, {} ch, {:.1}s, spectro={})",
@@ -210,7 +227,8 @@ pub fn analyze(path: &str, with_spectrogram: bool) -> Result<AnalysisReport, Str
         verdict,
         container_mismatch,
         est_kbps,
-        peaks: pk.finish(),
+        peaks: capped_peaks,
+        peaks_step: PEAKS_WINDOW * peaks_factor,
         spectrogram: spec_res.spectrogram,
         clip_runs,
         clip_pct,
@@ -276,6 +294,7 @@ mod tests {
             container_mismatch: false,
             est_kbps: 0,
             peaks: Vec::new(),
+            peaks_step: PEAKS_WINDOW,
             spectrogram: Spectrogram {
                 frames: 0,
                 bins: 0,
@@ -311,6 +330,7 @@ mod tests {
             container_mismatch,
             est_kbps,
             peaks,
+            peaks_step,
             spectrogram,
             clip_runs,
             clip_pct,
@@ -340,6 +360,7 @@ mod tests {
             container_mismatch,
             est_kbps,
             peaks,
+            peaks_step,
             spectrogram,
             clip_runs,
             clip_pct,
@@ -373,6 +394,7 @@ mod tests {
             container_mismatch: false,
             est_kbps: 320,
             peaks: vec![0.0, 1.0],
+            peaks_step: PEAKS_WINDOW,
             spectrogram: Spectrogram {
                 frames: 1,
                 bins: 3,

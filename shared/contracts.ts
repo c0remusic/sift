@@ -107,6 +107,10 @@ export interface AnalysisReport {
    *  source of truth shared with the verdict logic — don't recompute this in TS). */
   est_kbps: number;
   peaks: number[];
+  /** Mono samples represented by ONE entry of `peaks`. 512 for an uncapped envelope, a multiple
+   *  of it once the backend max-pooled it (analysis::MAX_PEAKS). Always read this instead of
+   *  assuming 512: on a capped track the constant under-reports the covered duration severalfold. */
+  peaks_step: number;
   spectrogram: Spectrogram;
   clip_runs: number;
   clip_pct: number;
