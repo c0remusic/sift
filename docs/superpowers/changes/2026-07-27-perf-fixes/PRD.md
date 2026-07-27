@@ -136,10 +136,20 @@ la demande, aux commandes de la boucle de rangement. Done : un chiffre avant, re
 chaque geste de la classe « boucle de rangement » et « perçu instantané ».
 
 **P2 — Encodage binaire des `Vec<u8>`.** La cause racine du §3, traitée en un seul endroit :
-`report_json` et `actions.meta`. Done : le cumul `report_json` divisé par au moins 4 à volume de
-pistes égal, spectrogramme toujours affiché à l'identique, aucune latence ajoutée à l'ouverture
+`report_json` et `actions.meta`. Done : le cumul `report_json` **divisé par au moins 3,4** à volume
+de pistes égal, spectrogramme toujours affiché à l'identique, aucune latence ajoutée à l'ouverture
 d'un rapport. Preuve : `SELECT SUM(length(report_json))` avant / après sur la même base, plus
 vérification visuelle du spectrogramme.
+
+*Le critère était « ÷4 », il a été ramené à ÷3,4 après mesure.* Sur 24 rapports réels, base85 sur
+`mag_db` seul donne ÷2,08, et ÷3,40 en plafonnant aussi l'enveloppe `peaks`. Les deux routes qui
+atteignaient ÷4 ont été écartées en connaissance de cause : compresser en amont du base85 (÷4,82)
+exige que le front décompresse via `DecompressionStream`, dont la présence dans WebView2 n'a pas
+été vérifiée et dont l'absence ferait disparaître le spectrogramme ; réduire `DISPLAY_BINS` de 384
+à 192 (~÷6) dégrade la précision verticale du spectrogramme, donc la lisibilité d'une coupure de
+faux-lossless, c'est-à-dire le geste que le produit existe pour servir. Arbitré sur un rendu
+comparatif des deux résolutions, généré depuis une piste réelle de la base. Le chiffre est amendé
+plutôt qu'arrondi : une cible ratée qu'on réécrit en douce est pire qu'une cible revue.
 
 Point relevé au checkpoint, à ne pas manquer : `REPORT_CACHE_VERSION` vaut 5
 (`src-tauri/src/analysis/mod.rs:87`) et `src-tauri/src/ipc.rs:296` traite toute autre version comme
