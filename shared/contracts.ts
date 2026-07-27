@@ -81,7 +81,11 @@ export interface Spectrogram {
   bins: number;
   hz_per_bin: number;
   sec_per_frame: number;
-  mag_db: number[]; // frames*bins, 0..255 (-100..0 dBFS)
+  /** frames*bins, row-major, 0..255 (-100..0 dBFS). Travels on the wire as an RFC1924 base85
+   *  string (Rust side: `#[serde(with = "crate::b85_bytes")]` on analysis/mod.rs Spectrogram),
+   *  decoded EXACTLY ONCE in frontend/ipc.ts analyzePath — nothing downstream ever sees the
+   *  string form. Indexing stays `mag_db[f * bins + b]`, unchanged. */
+  mag_db: Uint8Array;
 }
 
 // Mirror of src-tauri/src/analysis/mod.rs AnalysisReport (M2a).

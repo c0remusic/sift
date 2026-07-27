@@ -799,7 +799,9 @@ pub fn revert_batch(conn: &Connection, batch_id: &str) -> Result<(), RevertError
     //
     // A tag_edit-only batch is NOT a filing: it never moved the file nor set 'filed', so reverting it
     // must touch ONLY the file's tags (done above) — never flip the track to pending. Skip the whole
-    // block for such a batch. (Filing batches still NEVER journal a tag action.)
+    // block for such a batch. (A filing batch DOES journal a tag_edit — filing.rs:497 pushes one
+    // for every conformant filing — but it also journals a `move`, so `tag_only` is false for it
+    // and the guard below still behaves as intended.)
     let tag_only = rows
         .iter()
         .all(|(_, _, kind, _, _, _)| kind.as_str() == "tag_edit");

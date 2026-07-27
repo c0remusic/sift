@@ -105,6 +105,13 @@ pub fn read_artist_title(path: &str) -> (String, String) {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CoverSnap {
     pub mime: Option<String>,
+    /// Serialized as a base85 RFC1924 string (see `crate::b85_bytes`) instead of serde's default
+    /// array of decimal integers — a cover is the single biggest thing this repo writes to JSON
+    /// (measured 2026-07-27: 4 rows of `actions.meta` at ~43 MB each for ~11 MB of real image).
+    /// Deserialization stays tolerant of the historic array form ON PURPOSE: these bytes are NOT
+    /// recomputable, so refusing to read an old row would not be a cache miss, it would destroy
+    /// the undo of a tag edit already applied to the file.
+    #[serde(with = "crate::b85_bytes")]
     pub bytes: Vec<u8>,
 }
 
@@ -219,7 +226,9 @@ pub fn restore_tags(path: &str, snap: &TagsSnapshot) -> Result<(), String> {
 
 #[cfg(test)]
 mod tests {
-    use super::{read_artist_title, read_tags_full, restore_tags, write_tags_full};
+    use super::{
+        read_artist_title, read_tags_full, restore_tags, write_tags_full, CoverSnap, TagsSnapshot,
+    };
     use lofty::file::TaggedFileExt;
     use lofty::probe::Probe;
     use lofty::tag::ItemKey;
@@ -231,6 +240,48 @@ mod tests {
         } else {
             None
         }
+    }
+
+    /// THE retro-compatibility guard for `actions.meta`. The end-to-end test
+    /// (`actions::tests::revert_tag_edit_restores_tags_without_touching_status_or_metadata`)
+    /// produces AND consumes in the same run, so it can never catch a regression on rows written
+    /// by an older version. This one deserializes a literal in the HISTORIC format (cover bytes
+    /// as an array of decimal integers) — exactly what the 26 rows already in production hold.
+    /// No fixture, so it always actually runs.
+    #[test]
+    fn deserializes_the_historic_integer_array_cover_format() {
+        let historic = r#"{"artist":null,"title":null,"label":null,"year":null,"genre_joined":null,"cover":{"mime":"image/png","bytes":[137,80,78,71,13,10,26,10]}}"#;
+        let snap: TagsSnapshot = serde_json::from_str(historic).expect("historic meta must parse");
+        let cover = snap.cover.expect("cover present");
+        assert_eq!(cover.mime.as_deref(), Some("image/png"));
+        assert_eq!(cover.bytes, vec![137u8, 80, 78, 71, 13, 10, 26, 10]);
+    }
+
+    /// New rows must be written in the compact form, and read back byte-identical.
+    #[test]
+    fn new_cover_format_is_base85_and_round_trips() {
+        let snap = TagsSnapshot {
+            artist: Some("A".into()),
+            title: Some("T".into()),
+            label: None,
+            year: Some(1999),
+            genre_joined: None,
+            cover: Some(CoverSnap {
+                mime: Some("image/png".into()),
+                bytes: vec![137, 80, 78, 71, 13, 10, 26, 10],
+            }),
+        };
+        let j = serde_json::to_string(&snap).unwrap();
+        assert!(
+            j.contains(r#""bytes":"iBL{Q4GJ0x""#),
+            "cover bytes must be a base85 string: {j}"
+        );
+        assert!(
+            !j.contains(r#""bytes":["#),
+            "cover bytes regressed to an array"
+        );
+        let back: TagsSnapshot = serde_json::from_str(&j).unwrap();
+        assert_eq!(back, snap);
     }
 
     #[test]

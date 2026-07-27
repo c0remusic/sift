@@ -96,8 +96,10 @@ const MIGRATIONS: &[&str] = &[
     ALTER TABLE actions ADD COLUMN batch_id TEXT;         -- groups one filing's rows
     CREATE TABLE settings (key TEXT PRIMARY KEY, value TEXT NOT NULL);
     "#,
-    // v5 — cache the full analysis report (JSON, sans spectrogram) so re-opening an already-
-    // analysed track is instant (no re-decode). Cleared by the scanner when a file changes.
+    // v5 — cache the full analysis report as JSON so re-opening an already-analysed track is
+    // instant (no re-decode). Since FIX-3 the display spectrogram is part of that JSON (the
+    // "sans spectrogram" this comment used to claim stopped being true then). Cleared by the
+    // scanner when a file changes.
     r#"
     ALTER TABLE tracks ADD COLUMN report_json TEXT;
     "#,
@@ -219,6 +221,37 @@ const MIGRATIONS: &[&str] = &[
     r#"
     ALTER TABLE tracks ADD COLUMN analysis_attempts INTEGER NOT NULL DEFAULT 0;
     "#,
+    // v16 — FIRST content migration of this repo (v1..v15 are all DDL). `mag_db` moved to base85
+    // and analysis::REPORT_CACHE_VERSION was bumped to 6, which makes every cached report
+    // unservable (ipc.rs treats any other version as a miss) — but a bump ERASES NOTHING: the
+    // rows would sit there, inflated, until each track happens to be reopened one by one
+    // (worker::select_pending only re-selects on `report_json IS NULL`, never on a stale version).
+    // Measured 2026-07-27 on the production DB: 3907 rows, 6.63 GB of report_json, 99.3% of them
+    // already permanently unservable. This clears them in one pass.
+    //
+    // NULL, never '': the empty string is worker::persist_failure's permanent-decode-failure
+    // sentinel (read by worker::select_pending and queue::list_pending) — writing '' here would
+    // mark all 3907 tracks as broken files. With NULL they are simply re-analysed in the
+    // background at next start, which is also what repopulates the cache in the new format.
+    //
+    // The WHERE guard is not an optimisation: without it this UPDATE also rewrites the rows that
+    // already hold '' — persist_failure's permanent-failure sentinel — turning them back into NULL.
+    // select_pending would then re-queue those broken files, the decode would fail again, and
+    // analysis_attempts would climb toward MAX_ANALYSIS_ATTEMPTS. Measured on the production DB:
+    // 3 such rows, all at 1 attempt. Skipping them costs nothing and preserves the invariant this
+    // very migration argues for.
+    //
+    // NO VACUUM here, deliberately. The UPDATE frees pages into the freelist without shrinking the
+    // file, and the obvious fix (appending `VACUUM;`) does NOT work under WAL — VACUUM rewrites
+    // into the WAL and the main file is only truncated at checkpoint. Worse, running it here puts
+    // a multi-GB rewrite on the startup path of a migration whose failure aborts db::open
+    // (lib.rs `.expect("db open failed")`): a full disk or an antivirus holding the file would
+    // panic the app at every launch until the condition clears. Reclaiming the space is a one-off
+    // maintenance gesture, done with the app closed — not something the boot path should attempt.
+    r#"
+    UPDATE tracks SET report_json=NULL, report_cache_ver=NULL
+    WHERE report_json IS NOT NULL AND report_json <> '';
+    "#,
 ];
 
 /// Applies any migrations the DB hasn't seen yet, tracked via PRAGMA user_version.
@@ -288,6 +321,57 @@ mod tests {
         run_migrations(&conn).unwrap();
         run_migrations(&conn).unwrap(); // second run must not error or duplicate
         assert_eq!(table_count(&conn).unwrap(), 10);
+    }
+
+    /// v16 must actually WIPE the inflated report cache, not merely be declared. Applies v1..v15
+    /// by hand, seeds a row in the pre-v16 state, then lets `run_migrations` finish the job.
+    #[test]
+    fn migration_v16_clears_the_stale_report_cache() {
+        let conn = Connection::open_in_memory().unwrap();
+        for sql in MIGRATIONS.iter().take(15) {
+            conn.execute_batch(sql).unwrap();
+        }
+        conn.execute_batch("PRAGMA user_version = 15").unwrap();
+        conn.execute(
+            "INSERT INTO tracks (id, path, status, report_json, report_cache_ver)
+             VALUES (1, '/a.mp3', 'pending', 'X', 5)",
+            [],
+        )
+        .unwrap();
+        // Row 2 carries persist_failure's permanent-decode-failure sentinel. The wipe must LEAVE
+        // IT ALONE: turning '' back into NULL would re-queue a file already known to be broken and
+        // burn another analysis_attempt on it.
+        conn.execute(
+            "INSERT INTO tracks (id, path, status, report_json, report_cache_ver, analysis_attempts)
+             VALUES (2, '/broken.mp3', 'pending', '', NULL, 1)",
+            [],
+        )
+        .unwrap();
+
+        run_migrations(&conn).unwrap();
+
+        let sentinel: Option<String> = conn
+            .query_row("SELECT report_json FROM tracks WHERE id=2", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(
+            sentinel.as_deref(),
+            Some(""),
+            "the permanent-failure sentinel '' must survive the wipe, or the broken file gets re-queued"
+        );
+
+        let (json, ver): (Option<String>, Option<i64>) = conn
+            .query_row(
+                "SELECT report_json, report_cache_ver FROM tracks WHERE id=1",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            json, None,
+            "report_json must be NULL, not '' — '' is the permanent-decode-failure sentinel"
+        );
+        assert_eq!(ver, None, "report_cache_ver must be NULL");
+        assert_eq!(schema_version(&conn).unwrap(), MIGRATIONS.len() as i64);
     }
 
     #[test]

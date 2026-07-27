@@ -34,6 +34,7 @@ import type {
   ApplyArtworkSyncOutcome,
   PlaylistDuplicateGroupDto,
 } from "../shared/contracts";
+import { decodeB85 } from "./b85";
 
 export const appInfo = (): Promise<AppInfo> => invoke("app_info");
 export const dbHealth = (): Promise<DbHealth> => invoke("db_health");
@@ -54,17 +55,36 @@ export const setSourceWatched = (id: number, watched: boolean): Promise<void> =>
 export const setSourceColor = (id: number, colorKey: string | null): Promise<void> =>
   invoke("set_source_color", { id, colorKey });
 
+/** On-the-wire shape of `analyze_path`: identical to AnalysisReport except `mag_db`, which the
+ *  backend serialises as an RFC1924 base85 string instead of an array of decimal integers. This
+ *  type stays LOCAL to this file — the applicative contract (shared/contracts.ts) only knows the
+ *  decoded Uint8Array. */
+type WireAnalysisReport = Omit<AnalysisReport, "spectrogram"> & {
+  spectrogram: Omit<AnalysisReport["spectrogram"], "mag_db"> & { mag_db: string };
+};
+
 /** Debug: run the M2a analysis engine on a file path and return the full report.
- * `withSpectrogram` builds the heavy display grid (verdict/scalars are identical either way). */
-export const analyzePath = (
+ * `withSpectrogram` builds the heavy display grid (verdict/scalars are identical either way).
+ * SINGLE base85 decode point for the whole frontend: every consumer of `spectrogram.mag_db`
+ * (report-view spectroPointAt / drawSpectrogram) goes through here. */
+export const analyzePath = async (
   path: string,
   withSpectrogram = false,
   // Pass true ONLY from the genuine user-open path (openReportInto): on a confirmed gone file it
   // lets the backend drop the stale pending row. Background reads (prefetch, spectrogram re-fetch,
   // self-test) leave it false so an observation never silently deletes a queue row.
   allowForget = false,
-): Promise<AnalysisReport> =>
-  invoke("analyze_path", { path, withSpectrogram, allowForget });
+): Promise<AnalysisReport> => {
+  const wire = await invoke<WireAnalysisReport>("analyze_path", {
+    path,
+    withSpectrogram,
+    allowForget,
+  });
+  return {
+    ...wire,
+    spectrogram: { ...wire.spectrogram, mag_db: decodeB85(wire.spectrogram.mag_db) },
+  };
+};
 
 /** Background-analysis progress (pending analysed / total pending). */
 export const analysisProgress = (): Promise<AnalysisProgress> =>

@@ -37,6 +37,12 @@ pub struct Spectrogram {
     pub hz_per_bin: f32,
     pub sec_per_frame: f32,
     /// `frames * bins` values, row-major by frame. 0 = -100 dBFS, 255 = 0 dBFS.
+    ///
+    /// Travels (both at rest in `tracks.report_json` and over the Tauri IPC) as a base85
+    /// RFC1924 STRING, not as serde's default array of decimal integers — see `crate::b85_bytes`.
+    /// The layout and the quantization above are unchanged; only the encoding is. Consumers
+    /// outside Rust must decode it (`shared/contracts.ts` mirrors the decoded type).
+    #[serde(with = "crate::b85_bytes")]
     pub mag_db: Vec<u8>,
 }
 
@@ -84,7 +90,11 @@ pub struct AnalysisReport {
 /// treated as stale and recomputed, instead of silently serving outdated data forever. Struct
 /// field additions/removals are already caught by `serde_json::from_str` failing outright; this
 /// constant is for the content changes that a schema check can't see.
-pub const REPORT_CACHE_VERSION: i64 = 5;
+///
+/// A change to the ENCODING of an existing field counts too (v6: `mag_db` moved to base85), even
+/// when the tolerant deserializer would still read the old rows — bumping makes the invalidation
+/// explicit instead of leaving inflated rows served forever.
+pub const REPORT_CACHE_VERSION: i64 = 6;
 
 use dynamics::{ClipAccumulator, DcAccumulator, TruePeakAccumulator};
 use peaks::PeaksAccumulator;
@@ -233,6 +243,9 @@ mod tests {
             bins: 0,
             hz_per_bin: 0.0,
             sec_per_frame: 0.0,
+            // NOTE: this destructure only checks the field's PRESENCE. It compiles unchanged when
+            // the wire type diverges (Rust `Vec<u8>` ↔ base85 string ↔ `Uint8Array` in
+            // shared/contracts.ts:84) — it will NOT catch a type mismatch with the TS mirror.
             mag_db: Vec::new(),
         };
         let Spectrogram {
@@ -361,11 +374,11 @@ mod tests {
             est_kbps: 320,
             peaks: vec![0.0, 1.0],
             spectrogram: Spectrogram {
-                frames: 0,
-                bins: 0,
-                hz_per_bin: 0.0,
-                sec_per_frame: 0.0,
-                mag_db: vec![],
+                frames: 1,
+                bins: 3,
+                hz_per_bin: 10.0,
+                sec_per_frame: 0.1,
+                mag_db: vec![0, 127, 255],
             },
             clip_runs: 0,
             clip_pct: 0.0,
@@ -386,6 +399,16 @@ mod tests {
         assert!(j.contains("\"verdict\":\"ok\""));
         assert!(j.contains("\"declared_rail\":\"lossless\""));
         assert!(j.contains("\"container_mismatch\":false"));
+        // mag_db must be a base85 STRING, never the historic array of decimal integers — that
+        // encoding is the whole point of REPORT_CACHE_VERSION 6 (see crate::b85_bytes).
+        assert!(
+            j.contains("\"mag_db\":\""),
+            "mag_db must serialize as a string: {j}"
+        );
+        assert!(!j.contains("\"mag_db\":["), "mag_db regressed to an array");
+        let back: AnalysisReport = serde_json::from_str(&j).unwrap();
+        assert_eq!(back.spectrogram.mag_db, vec![0u8, 127, 255]);
+        assert_eq!(back, r);
     }
 
     /// BUG-1 end-to-end: an MP3 renamed with a `.flac` extension must be caught by
