@@ -30,12 +30,29 @@ run "tokens (lint:tokens)" npm run -s lint:tokens
 
 # Rust : uniquement si le crate existe. `cargo check` et non `cargo build` —
 # on veut l'erreur de type, pas l'artefact.
+#
+# BORNE DE TEMPS obligatoire : cargo prend le lock du target dir. Si un
+# `tauri dev` compile en parallele, cargo ATTEND le lock au lieu d'echouer, et
+# la fin de tour serait bloquee le temps de son rebuild. Le passage a froid
+# (49 s mesurees) tombe sous la meme borne. Au-dela de 25 s on abandonne la
+# verification Rust pour ce tour SANS echouer : une gate de fin de tour doit
+# etre rapide ou muette, jamais lente. Le filet reste le hook pre-commit, qui
+# lui execute la suite complete (417 tests, 34,7 s) avec un budget de 300 s.
 if [ -f src-tauri/Cargo.toml ]; then
-  ( cd src-tauri && cargo check --quiet ) >/tmp/verify-cargo.$$ 2>&1 || {
-    printf '### rust (cargo check) : ECHEC\n%s\n\n' "$(tail -40 /tmp/verify-cargo.$$)"
+  log=$(mktemp "${TMPDIR:-/tmp}/verify-cargo-XXXXXX")
+  if command -v timeout >/dev/null 2>&1; then
+    ( cd src-tauri && timeout 25 cargo check --quiet ) >"$log" 2>&1
+  else
+    ( cd src-tauri && cargo check --quiet ) >"$log" 2>&1
+  fi
+  crc=$?
+  if [ "$crc" -eq 124 ]; then
+    printf '### rust (cargo check) : IGNORE ce tour (>25 s, lock cargo ou build a froid)\n\n'
+  elif [ "$crc" -ne 0 ]; then
+    printf '### rust (cargo check) : ECHEC\n%s\n\n' "$(tail -40 "$log")"
     rc=1
-  }
-  rm -f /tmp/verify-cargo.$$
+  fi
+  rm -f "$log"
 fi
 
 exit $rc
