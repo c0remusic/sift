@@ -140,7 +140,7 @@ redupliquer ici. Spécifique à Sift : `docs/skills/sift-ui-design-governance.md
 pour le routage UI, `.claude/rules/rust.md` pour le routage Rust.
 
 **Sizing / YAGNI+evidence / lisibilité** : mécaniques génériques dans
-`~/.claude/CLAUDE.md` § Sizing (+ templates `~/.claude/rules/sizing-templates.md`) —
+`~/.claude/CLAUDE.md` § Sizing (+ templates : skill `sizing-templates`, à invoquer) —
 s'applique tous projets, voir
 `docs/superpowers/specs/2026-07-08-agent-operating-model-design.md` pour le
 détail de la décision) — classifier mini/normal/large avant tout fan-out
