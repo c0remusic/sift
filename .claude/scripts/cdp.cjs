@@ -112,10 +112,16 @@ async function cmdScreenshot(outPath) {
   });
 }
 
+// Le selecteur est echappe par JSON.stringify aux DEUX endroits ou il entre dans l'expression.
+// Le message d'echec l'interpolait autrefois brut : un selecteur a guillemets doubles (c'est-a-dire
+// tous ceux de Sift, du type data-view="revue") fermait la chaine JS et produisait un SyntaxError
+// cote page, donc l'eval entier echouait et le clic n'avait jamais lieu. Audit 2026-07-28, SIMP-4.
+// Attention en editant cette fonction : elle est ecrite dans un template literal, un backtick dans
+// un commentaire a l'interieur fermerait la chaine et casserait tout le script.
 async function cmdClick(selector) {
   const expr = `(() => {
     const el = document.querySelector(${JSON.stringify(selector)});
-    if (!el) return "NOT FOUND: ${selector}";
+    if (!el) return "NOT FOUND: " + ${JSON.stringify(selector)};
     const rect = el.getBoundingClientRect();
     el.dispatchEvent(new MouseEvent("click", { clientX: rect.left + rect.width/2, clientY: rect.top + rect.height/2, bubbles: true }));
     return "clicked";

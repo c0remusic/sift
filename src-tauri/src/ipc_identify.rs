@@ -84,6 +84,138 @@ fn build_query(path: &str) -> Query {
     }
 }
 
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// Une fixture audio réelle, ou `None`. `src-tauri/fixtures/*` est gitignoré (CLAUDE.md) : les
+    /// tests qui en dépendent se sautent au lieu d'échouer sur un checkout frais.
+    fn fixture(name: &str) -> Option<std::path::PathBuf> {
+        let p = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("fixtures")
+            .join(name);
+        p.exists().then_some(p)
+    }
+
+    /// Le cas majoritaire de la bibliothèque mesurée : nom sale, AUCUN tag (79,3 % des fichiers
+    /// dont le nom échoue à `parse_filename`, mesuré le 2026-07-28 sur 300 tirés au hasard).
+    /// C'est exactement la population que l'ancienne implémentation envoyait à Discogs avec un
+    /// artiste vide et sans repli possible.
+    #[test]
+    fn dirty_name_without_tags_falls_back_to_search_terms() {
+        let q =
+            build_query("/dl/complete/01_infunktuation_-_feel_real_good_(club_version)-idc.mp3");
+        assert_eq!(q.artist, "infunktuation");
+        assert_eq!(q.title, "feel real good");
+        assert_eq!(q.version.as_deref(), Some("club version"));
+        assert!(
+            !q.attempts.is_empty(),
+            "un titre non vide doit toujours produire au moins un essai"
+        );
+    }
+
+    /// Le dossier parent est la seule source d'artiste pour 243 pistes de la bibliothèque mesurée.
+    /// Sans ce chemin, `A1-Stepback` partait en requête titre-seul.
+    #[test]
+    fn parent_folder_supplies_the_artist_when_the_name_has_none() {
+        let q = build_query("/rips/(SOMA 21) Slam-Snapshots/A1-Stepback.aiff");
+        assert_eq!(q.artist, "Slam");
+        assert_eq!(q.title, "Stepback");
+    }
+
+    /// Garde-fou inverse, et le plus important des deux : un dossier fourre-tout ne doit JAMAIS
+    /// injecter son nom comme artiste. `2_040924` porte 524 pistes — s'y tromper, c'est envoyer
+    /// 524 requêtes fausses d'un coup.
+    #[test]
+    fn a_meaningless_folder_never_becomes_the_artist() {
+        let q = build_query("/dl/2_040924/[BU 002] DJ Gregory - Freeze.mp3");
+        assert_eq!(q.artist, "DJ Gregory");
+        assert_eq!(q.title, "Freeze");
+        let q2 = build_query("/dl/complete/01 Awaken Abyss.mp3");
+        assert_eq!(
+            q2.artist, "",
+            "aucun artiste derivable: le vide est correct"
+        );
+        assert_eq!(q2.title, "Awaken Abyss");
+    }
+
+    /// La cascade doit rester non vide même sans artiste — c'est tout l'objet du chantier : la
+    /// garde retirée de `discogs.rs` excluait précisément ce cas de tout repli.
+    #[test]
+    fn ladder_is_never_empty_when_a_title_exists() {
+        let q = build_query("/dl/complete/01 Give U Love (Deep Mix).mp3");
+        assert_eq!(q.artist, "");
+        assert!(
+            q.attempts.len() >= 2,
+            "sans artiste, il faut au moins titre+version puis titre: {:?}",
+            q.attempts
+        );
+    }
+
+    /// Entrées hostiles : `build_query` reçoit des chemins venant du disque de l'utilisateur, elle
+    /// ne doit jamais paniquer ni produire une requête vide mais présente.
+    #[test]
+    fn hostile_paths_never_panic_and_never_emit_a_blank_attempt() {
+        for p in [
+            "",
+            "/",
+            "/a",
+            "/dl//.mp3",
+            "/dl/02 [2015]/001_Untitled.mp3",
+            "/dl/The Tracking System/A8.wav",
+        ] {
+            let q = build_query(p);
+            assert!(
+                q.attempts.iter().all(|a| !a.trim().is_empty()),
+                "essai vide produit pour {p:?}: {:?}",
+                q.attempts
+            );
+        }
+    }
+
+    /// Des tags PROPRES priment sur le nom de fichier : ils ont pu être corrigés à la main, et
+    /// aucune analyse de nom ne bat une donnée saisie. La version, elle, continue de venir du nom
+    /// — les tags la portent rarement dans un champ séparé.
+    #[test]
+    fn clean_tags_win_over_the_filename_but_the_version_still_comes_from_it() {
+        let Some(src) = fixture("real_320.mp3") else {
+            eprintln!("skip: fixture real_320.mp3 absente (gitignoree, cf. CLAUDE.md)");
+            return;
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let sub = dir.path().join("complete");
+        std::fs::create_dir_all(&sub).unwrap();
+        // Nom de fichier volontairement DIVERGENT des tags, et porteur d'une version.
+        let dst = sub.join("01_wrong_artist_-_wrong_title_(Club Mix).mp3");
+        std::fs::copy(&src, &dst).unwrap();
+        let dst_s = dst.to_str().unwrap();
+        crate::tagging::write_tags_full(
+            dst_s,
+            "Larry Heard",
+            "Mystery of Love",
+            None,
+            None,
+            &[],
+            None,
+        )
+        .expect("write tags");
+
+        let q = build_query(dst_s);
+        assert_eq!(q.artist, "Larry Heard", "les tags propres priment");
+        assert_eq!(q.title, "Mystery of Love");
+        assert_eq!(
+            q.version.as_deref(),
+            Some("Club Mix"),
+            "la version vient du nom de fichier meme quand les tags gagnent"
+        );
+        assert_eq!(
+            q.attempts.first().map(|s| s.as_str()),
+            Some("Larry Heard Mystery of Love"),
+            "le premier essai est celui des tags"
+        );
+    }
+}
+
 /// Persist a chosen candidate for `track_id`: download its cover (best-effort) then write the
 /// metadata + genres. Emits `queue:changed` so the front refreshes.
 #[tauri::command]

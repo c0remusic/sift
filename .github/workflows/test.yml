@@ -1,0 +1,77 @@
+name: test
+
+# Workflow SEPARE de `build.yml` a cause d'une contrainte GitHub Actions : les declencheurs `on:`
+# sont au niveau du WORKFLOW, jamais du job. Un job `test` place dans `build.yml` (qui ne se
+# declenche que sur `push` vers `main`) ne tournerait donc jamais sur une branche de travail —
+# c'est-a-dire jamais AVANT un merge, ce qui lui retire toute valeur de garde-fou. A l'inverse,
+# ajouter `pull_request` a `build.yml` ferait tourner les deux `tauri build` (Windows + macOS) sur
+# chaque PR pour rien.
+#
+# POURQUOI CE FICHIER EXISTE. La definition de fini du projet (CLAUDE.md, § « Avant de dire fini »)
+# exige tsc + clippy + fmt + cargo test. Jusqu'au 2026-07-28, RIEN ne les executait en integration
+# continue : `build.yml` ne lancait que `lint:tokens` et `tauri build`, `release.yml` que `npm ci`
+# et `fetch-ffmpeg`. Le seul gardien etait le hook pre-commit `verify-gate`, qui vit dans
+# `.git/hooks/` — donc absent de tout clone frais, de toute PR, et de toute machine autre que celle
+# d'Antoine. Audit multi-passes du 2026-07-28, finding SYS-4 : c'est la cause racine dont decoulait
+# le reste du rapport (les bons patrons sont ecrits et testes, puis pas appliques au site suivant,
+# parce que rien ne le verifie).
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+  workflow_dispatch:
+
+jobs:
+  test:
+    # Windows uniquement, delibere : c'est la plateforme de developpement reelle, celle qui a
+    # produit les incidents de cache incremental et de chemins UNC documentes dans
+    # .claude/rules/rust.md. Une matrice macOS doublerait le temps pour un risque non observe.
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy, rustfmt
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: "src-tauri -> target"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+
+      - name: Install npm deps
+        run: npm ci
+
+      # Ces deux etapes ne sont pas optionnelles. `src-tauri/fixtures/*` est gitignore
+      # (.gitignore:14) : sans elles, les tests de `analysis::decode` echouent en "file not found"
+      # sur tout checkout frais. Ce serait un rouge qui ne signale AUCUN bug — le genre de faux
+      # negatif qui fait desactiver un job de CI la premiere semaine. Les anchors authentiques
+      # optionnelles (src-tauri/fixtures/README.md) restent absentes : le test de caracterisation
+      # les saute quand elles n'y sont pas.
+      - name: Fetch ffmpeg sidecar
+        run: npm run fetch-ffmpeg
+
+      - name: Generate audio fixtures
+        run: node scripts/make-fixtures.mjs
+
+      # Ordre delibere : du moins cher au plus cher, pour que l'echec le plus rapide sorte en
+      # premier. tsc ne compile pas Rust, fmt ne compile rien, clippy compile mais ne lie pas.
+      - name: Type-check frontend
+        run: npx tsc --noEmit
+
+      - name: Rustfmt
+        run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
+
+      - name: Clippy
+        run: cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
+
+      - name: Tests
+        run: cargo test --manifest-path src-tauri/Cargo.toml
