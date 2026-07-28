@@ -46,7 +46,10 @@ Source de tokens canonique (à viser pour tout wireframe `interface-design`) :
 ## Stack
 Tauri v2 (Rust) · frontend Vite vanilla · **Symphonia** (décode analyse) + FFmpeg sidecar
 bundlé (encode) · SQLite (`rusqlite`) · `rustfft` · `lofty` · `rusty-chromaprint` · `ureq`.
-Lib = `sift_lib`. MSRV Rust 1.77.2.
+Lib = `sift_lib`. MSRV Rust **à re-mesurer** : `rust-toolchain.toml` épingle
+1.96.0 depuis le 2026-07-28, donc plus personne ne compile à l'ancienne MSRV
+déclarée (1.77.2) et rien ne la vérifie. Le chiffre ne sera rétabli qu'après un
+build réel à la version visée.
 
 ## Commandes (Windows — npm via `cmd /c "npm …"`)
 - Bootstrap : `npm ci` puis `npm run fetch-ffmpeg`
