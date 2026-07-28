@@ -26,29 +26,29 @@ pub fn library_folders(conn: State<'_, Mutex<Connection>>) -> Result<LibraryFace
     library::folder_facets(&conn).map_err(|e| e.to_string())
 }
 
-/// Plain (testable) implementation of `update_metadata`. Returns the `tag_edit` batch_id so the
-/// caller can offer a targeted undo — same contract as `apply_tags` (`ipc_filing.rs`). Also runs
-/// M8 Tier 3 metadata-sync detection (read-only) when the file is linked to Rekordbox.
-fn update_metadata_inner(
-    conn: &Connection,
-    track_id: i64,
-    edit: MetadataEdit,
-) -> Result<String, String> {
-    // (1) Look up the track path — error immediately if unknown.
-    let path: String = conn
-        .query_row(
-            "SELECT path FROM tracks WHERE id=?1",
-            rusqlite::params![track_id],
-            |r| r.get(0),
-        )
-        .map_err(|_| format!("track {track_id} not found"))?;
+/// Phase 1 of `update_metadata` (under the DB lock): resolve the track's path. Fast row read.
+fn update_metadata_path(conn: &Connection, track_id: i64) -> Result<String, String> {
+    conn.query_row(
+        "SELECT path FROM tracks WHERE id=?1",
+        rusqlite::params![track_id],
+        |r| r.get(0),
+    )
+    .map_err(|_| format!("track {track_id} not found"))
+}
 
-    // (2) Snapshot the OLD tags BEFORE writing — same pattern as apply_tags (ipc_filing.rs).
-    let snapshot = crate::tagging::read_tags_full(&path)?;
-
-    // (3) Write the file tags. If it fails we stop here — nothing journaled, DB untouched.
+/// Phase 2 of `update_metadata` (NO DB lock, NO DB access): snapshot the OLD tags, then rewrite
+/// the audio file's tags in place. Rewriting a tag block on a lossless file rewrites the file —
+/// unbounded I/O that must never run under the global connection mutex. Returns the snapshot so
+/// phase 3 can journal a revertable `tag_edit`. Same shape as `apply_tags` (`ipc_filing.rs`).
+fn update_metadata_write_file(
+    path: &str,
+    edit: &MetadataEdit,
+) -> Result<crate::tagging::TagsSnapshot, String> {
+    // Snapshot the OLD tags BEFORE writing — same pattern as apply_tags.
+    let snapshot = crate::tagging::read_tags_full(path)?;
+    // Write the file tags. If it fails we stop here — nothing journaled, DB untouched.
     crate::tagging::write_tags_full(
-        &path,
+        path,
         &edit.artist,
         &edit.title,
         edit.label.as_deref(),
@@ -56,20 +56,33 @@ fn update_metadata_inner(
         &edit.genres,
         edit.cover_path.as_deref(),
     )?;
+    Ok(snapshot)
+}
 
-    // (4) Persist to the DB only after the file write succeeded.
-    metadata::update_metadata_db(conn, track_id, &edit).map_err(|e| e.to_string())?;
+/// Phase 3 of `update_metadata` (under the DB lock): persist the edit, journal the revertable
+/// `tag_edit`, run the read-only M8 Tier 3 detectors. Every value written here comes either from
+/// `edit` (the user's input, unaffected by anything another thread may have done) or from
+/// `snapshot` (the tags actually read off the file in phase 2) — nothing is a read-modify-write
+/// of DB state observed in phase 1, so re-taking the lock cannot commit a stale decision.
+fn update_metadata_commit(
+    conn: &Connection,
+    track_id: i64,
+    edit: &MetadataEdit,
+    path: &str,
+    snapshot: &crate::tagging::TagsSnapshot,
+) -> Result<String, String> {
+    metadata::update_metadata_db(conn, track_id, edit).map_err(|e| e.to_string())?;
 
     // (5) Journal a revertable tag_edit — this is the fix for a pre-existing gap: before this,
     // Bibliothèque edits had no undo path at all (see M8 Tier 3 design, "Fix du gap").
-    let meta = serde_json::to_string(&snapshot).map_err(|e| e.to_string())?;
+    let meta = serde_json::to_string(snapshot).map_err(|e| e.to_string())?;
     let batch_id = filing::new_batch_id(track_id);
     let action_id = actions::record_with_meta(
         conn,
         &batch_id,
         Some(track_id),
         "tag_edit",
-        Some(&path),
+        Some(path),
         None,
         Some(&meta),
     )
@@ -85,30 +98,55 @@ fn update_metadata_inner(
         year: edit.year,
         genre,
     };
-    actions::detect_masterdb_metadata_sync_if_linked(conn, &path, track_id, &values, action_id);
+    actions::detect_masterdb_metadata_sync_if_linked(conn, path, track_id, &values, action_id);
 
     // (7) M8 Tier 3 (pochette): only when THIS edit actually changed the cover — unlike the
     // metadata detector above, which always fires.
     if let Some(cover_path) = &edit.cover_path {
         actions::detect_masterdb_artwork_sync_if_linked(
-            conn, &path, track_id, cover_path, action_id,
+            conn, path, track_id, cover_path, action_id,
         );
     }
 
     Ok(batch_id)
 }
 
+/// Test harness for `update_metadata`: composes the three phases IN THE SAME ORDER the command
+/// runs them, against a single connection (the tests own a plain `Connection`, not a Tauri
+/// `State<Mutex<Connection>>`). Returns the `tag_edit` batch_id — same contract as `apply_tags`
+/// (`ipc_filing.rs`). `cfg(test)` because production must NOT have a path that holds one
+/// connection across phase 2: that is precisely the lock-over-I/O this tranche removes.
+#[cfg(test)]
+fn update_metadata_inner(
+    conn: &Connection,
+    track_id: i64,
+    edit: MetadataEdit,
+) -> Result<String, String> {
+    let path = update_metadata_path(conn, track_id)?;
+    let snapshot = update_metadata_write_file(&path, &edit)?;
+    update_metadata_commit(conn, track_id, &edit, &path, &snapshot)
+}
+
 /// Edit a filed track's metadata: writes the file tags first, then updates the DB, then
 /// journals the edit as a revertable `tag_edit` (returns its `batch_id` for a targeted undo —
 /// see `frontend/library-detail.ts`'s "Annuler" toast).
+///
+/// Phase 2 (the full tag rewrite of the audio file) runs with the DB lock RELEASED — same split
+/// as `apply_tags` (`ipc_filing.rs:218-280`), which is the pattern this mirrors. If the write
+/// fails, phase 3 is never reached and the DB is untouched.
 #[tauri::command]
 pub fn update_metadata(
     conn: State<'_, Mutex<Connection>>,
     track_id: i64,
     edit: MetadataEdit,
 ) -> Result<String, String> {
+    let path = {
+        let conn = db::lock_conn(&conn)?;
+        update_metadata_path(&conn, track_id)?
+    };
+    let snapshot = update_metadata_write_file(&path, &edit)?;
     let conn = db::lock_conn(&conn)?;
-    update_metadata_inner(&conn, track_id, edit)
+    update_metadata_commit(&conn, track_id, &edit, &path, &snapshot)
 }
 
 /// Group `filed` tracks by acoustic fingerprint into duplicate clusters, each with a
@@ -227,41 +265,53 @@ pub fn link_rekordbox_xml(
     link_rekordbox_xml_inner(&conn, &path)
 }
 
-/// Plain (testable) implementation of `rekordbox_status`.
+/// Test harness for `rekordbox_status`: composes the settings read and the disk read against a
+/// single connection, in the same order the command runs them. `cfg(test)` — production reads
+/// the settings, releases the lock, and only then touches the file.
+#[cfg(test)]
 fn rekordbox_status_inner(conn: &Connection) -> Result<RekordboxLinkStatus, String> {
     let path = crate::settings::get(conn, crate::settings::REKORDBOX_XML_PATH)
         .map_err(|e| e.to_string())?;
+    let drift = drift_detected(conn);
+    Ok(rekordbox_status_from_disk(path, drift))
+}
+
+/// The disk half of `rekordbox_status`: re-read and re-parse the linked XML. NO DB access — the
+/// two settings it needs (`path`, `drift`) are read first, under the lock, and passed in. Reading
+/// and parsing a full Rekordbox XML is unbounded I/O + CPU and this command is called on every
+/// visit to the Rekordbox screen, so it must not run under the global connection mutex. Nothing
+/// is written anywhere, so there is no state that can go stale between the two halves.
+fn rekordbox_status_from_disk(path: Option<String>, drift: bool) -> RekordboxLinkStatus {
     let Some(path) = path else {
-        return Ok(RekordboxLinkStatus {
+        return RekordboxLinkStatus {
             path: None,
             linked: false,
             playlist_count: 0,
             track_count: 0,
             error: None,
             drift_detected: false,
-        });
+        };
     };
-    let drift = drift_detected(conn);
     match std::fs::read(&path)
         .map_err(|e| e.to_string())
         .and_then(|b| crate::rekordbox_xml::parse(&b))
     {
-        Ok(parsed) => Ok(RekordboxLinkStatus {
+        Ok(parsed) => RekordboxLinkStatus {
             path: Some(path),
             linked: true,
             playlist_count: count_playlists(&parsed.playlists),
             track_count: parsed.collection.len(),
             error: None,
             drift_detected: drift,
-        }),
-        Err(e) => Ok(RekordboxLinkStatus {
+        },
+        Err(e) => RekordboxLinkStatus {
             path: Some(path),
             linked: true,
             playlist_count: 0,
             track_count: 0,
             error: Some(e),
             drift_detected: drift,
-        }),
+        },
     }
 }
 
@@ -269,10 +319,19 @@ fn rekordbox_status_inner(conn: &Connection) -> Result<RekordboxLinkStatus, Stri
 /// persisted but the file is now unreadable/corrupt, reports `linked:true, error:Some(..)` —
 /// the setting is NOT cleared automatically (the spec: block auto-rewrite, don't lose the
 /// reference silently; the user must explicitly re-link).
+///
+/// The two settings are read under the lock; the file read + XML parse run after releasing it.
 #[tauri::command]
 pub fn rekordbox_status(conn: State<'_, Mutex<Connection>>) -> Result<RekordboxLinkStatus, String> {
-    let conn = db::lock_conn(&conn)?;
-    rekordbox_status_inner(&conn)
+    let (path, drift) = {
+        let conn = db::lock_conn(&conn)?;
+        (
+            crate::settings::get(&conn, crate::settings::REKORDBOX_XML_PATH)
+                .map_err(|e| e.to_string())?,
+            drift_detected(&conn),
+        )
+    };
+    Ok(rekordbox_status_from_disk(path, drift))
 }
 
 /// Plain (testable) implementation of `export_rekordbox_xml`.

@@ -4,10 +4,29 @@
 //! size — no pagination code, no production behaviour change. Compiled only in test builds
 //! (`#[cfg(test)] mod bench_volume;` in lib.rs), never shipped in the release binary.
 //!
+//! Extended 2026-07-27 (tranche P1 of docs/superpowers/changes/2026-07-27-perf-fixes/PRD.md) with
+//! the FILING LOOP — the gestures D3 budgets at < 50 ms (PRD.md:78: destination bins listing,
+//! final-name preview, moving to the next track, and the acknowledgement of the Convertir click)
+//! — measured at the D1 target volume of 15 000 tracks, on a real on-disk library root. Nothing
+//! measured here belongs to the < 100 ms class (PRD.md:79 = hover, selection, filter typing,
+//! returning to an already-visited screen), so no number below may be judged against 100 ms.
+//! Same shape as the existing block: synthetic seed, timed repetitions, `EXPLAIN QUERY PLAN`; no
+//! criterion, no production behaviour change.
+//!
 //! Run with: `cargo test --release -- --ignored --nocapture bench_volume`
 //! (release build matters: these numbers are meaningless in an unoptimised debug build).
+//!
+//! Add `--test-threads=1` as soon as more than one bench is selected: since P1 there are TWO
+//! `#[ignore]`d benchmarks in this file, and the default harness runs them on parallel threads —
+//! their output interleaves AND they contend for CPU/disk, inflating both by a measurable margin
+//! (list_pending 16 ms → 19 ms, find_duplicate 56 ms → 59 ms, observed 2026-07-27). Every number
+//! quoted from this file must say which of the two modes produced it.
+//! Note also that `-- --ignored` selects the OTHER ignored tests of the crate too, including the
+//! `*_on_real_masterdb_copy` ones, which fail unless `SIFT_M8_REAL_COPY_DIR` points at a manual
+//! copy of a real Rekordbox master.db — unrelated to these benchmarks.
 
 use rusqlite::Connection;
+use std::path::{Path, PathBuf};
 use std::time::{Duration, Instant};
 
 use crate::library::{self, LibraryFilter};
@@ -211,15 +230,41 @@ fn measure<F: FnMut()>(mut f: F, iters: usize) -> Vec<Duration> {
     out
 }
 
+/// Same as `measure`, but runs `setup` OUTSIDE the timed window before every repetition. Needed
+/// for the cold-cache variants: putting `tracks.fingerprint` back to NULL is itself a write, and
+/// charging it to the measurement would inflate the very number P4 is judged on.
+fn measure_with_setup<S: FnMut(), F: FnMut()>(
+    mut setup: S,
+    mut f: F,
+    iters: usize,
+) -> Vec<Duration> {
+    let mut out = Vec::with_capacity(iters);
+    for _ in 0..iters {
+        setup();
+        let start = Instant::now();
+        f();
+        out.push(start.elapsed());
+    }
+    out
+}
+
+/// Prints min / median / p90 / max over the sample. p90 is a true nearest-rank pick on the sorted
+/// sample: rank `ceil(0.9 n)`, i.e. index `ceil(9n/10) - 1` (the 45th of 50, not the 46th — the
+/// earlier `9n/10` landed on index 45, which is the ~92nd centile). Added 2026-07-27 for P1, whose
+/// budget check (D3) is stated on a median AND a p90, never on a single number. Kept in the one
+/// shared helper so both blocks of this file report the same columns.
 fn summarize(label: &str, mut durs: Vec<Duration>) {
     durs.sort();
+    let n = durs.len();
     let min = durs[0];
-    let max = durs[durs.len() - 1];
-    let median = durs[durs.len() / 2];
+    let max = durs[n - 1];
+    let median = durs[n / 2];
+    let p90 = durs[(n * 9).div_ceil(10).saturating_sub(1)];
     println!(
-        "  {label:<40} min={:>8.2}ms  median={:>8.2}ms  max={:>8.2}ms",
+        "  {label:<44} n={n:<4} min={:>8.2}ms  median={:>8.2}ms  p90={:>8.2}ms  max={:>8.2}ms",
         min.as_secs_f64() * 1000.0,
         median.as_secs_f64() * 1000.0,
+        p90.as_secs_f64() * 1000.0,
         max.as_secs_f64() * 1000.0,
     );
 }
@@ -414,6 +459,644 @@ fn reproduce_sqlite_variable_limit_crash() {
              genres::get_genres_batch may have been reverted or broken, check GENRE_BATCH_CHUNK_SIZE."
         ),
     }
+}
+
+// ── Filing loop @ 15k (P1) ───────────────────────────────────────────────────
+//
+// Scope, decided by READING the code paths the rail actually calls, not by guessing:
+//  - clic sur un bac            → `library::list_bins` (walks the library root on the FILESYSTEM)
+//  - aperçu du nom final        → `ipc_filing::preview_filename` = settings read + `render_filename`
+//  - passage à la piste suivante → `filing::reconcile_track` + `track_release`'s two DB reads +
+//                                  `tagging::read_tags_full` + `dedup::find_duplicate` (front fires
+//                                  them in parallel, `frontend/filing.ts:350-373`)
+//  - clic sur Convertir         → `plan_file` / `execute_file` / `commit_file`
+//                                  (`ipc_filing::file_track`, the three phases it runs)
+//
+// "hors encodage" is obtained WITHOUT stubbing anything: the source files are real 16-bit/44.1 kHz
+// WAVs and the target is forced to `Wav1644` (the format chip the rail already exposes), so
+// `encode::is_conformant` is true and `execute_file` takes the tag+move path — the same code as
+// production, minus the ffmpeg spawn. Conformance is asserted before the loop rather than assumed:
+// a non-conformant source would silently turn this into an encode benchmark.
+
+/// Top-level destination bins of a DJ library root. 14 × (1 + 6) = 98 real directories: `list_bins`
+/// walks the filesystem, so the tree has to exist on disk for the number to mean anything.
+const TOP_BINS: [&str; 14] = [
+    "House",
+    "Deep House",
+    "Tech House",
+    "Techno",
+    "Disco",
+    "Nu Disco",
+    "Funk",
+    "Soul",
+    "Drum and Bass",
+    "Breakbeat",
+    "Garage",
+    "Ambient",
+    "Electro",
+    "Edits",
+];
+const SUB_BINS: [&str; 6] = [
+    "Classics",
+    "Nouveautes",
+    "Peak Time",
+    "Warmup",
+    "Promo",
+    "A trier",
+];
+
+/// Frames per synthetic source file: 1M × 2 bytes ≈ 2 MB (~23 s of 16-bit/44.1 kHz mono PCM).
+/// Deliberately SMALLER than a real 30–40 MB lossless track. The two phases D3/P4 care about
+/// (`plan_file`, `commit_file`) only touch the DB and file headers, so they are unaffected; but
+/// `execute_file`'s tag rewrite + move DO scale with file size, so its number below is a LOWER
+/// BOUND and is reported as its own line, never folded into the lock-held total.
+const SOURCE_FRAMES: usize = 1_000_000;
+
+/// Repetitions for the read-only gestures. Enough for a median and a p90 to mean something
+/// (nearest-rank p90 = the 45th of 50), while keeping the whole run under a minute.
+const ITERS_LOOP: usize = 50;
+
+/// Repetitions for the ONE variant that decodes audio (`find_duplicate` on a match with an empty
+/// fingerprint cache: two full decodes per call). Fewer, because each repetition costs orders of
+/// magnitude more than the read-only ones — still enough for a median and a nearest-rank p90.
+const ITERS_HEAVY: usize = 10;
+
+/// Duplicate pairs seeded by `bench_filing_loop_15k`: N pending tracks whose file name collides
+/// with a filed one, both sides holding a REAL WAV. Without them the expensive branch of
+/// `find_duplicate` is never entered and the baseline understates the geste by ~3 orders of
+/// magnitude. A DJ library without name collisions is not realistic — dedup exists because they
+/// happen.
+const NAME_COLLISIONS: usize = 12;
+
+/// Creates the bin tree under `root`; returns every bin's `rel` (the exact string the rail sends
+/// back as `bin_rel`), in creation order.
+fn create_bin_tree(root: &Path) -> Vec<String> {
+    let mut rels = Vec::with_capacity(TOP_BINS.len() * (1 + SUB_BINS.len()));
+    for top in TOP_BINS {
+        std::fs::create_dir_all(root.join(top)).expect("create top bin");
+        rels.push(top.to_string());
+        for sub in SUB_BINS {
+            std::fs::create_dir_all(root.join(top).join(sub)).expect("create sub bin");
+            rels.push(format!("{top}/{sub}"));
+        }
+    }
+    rels
+}
+
+/// Writes a minimal but genuinely valid 16-bit / 44.1 kHz mono PCM WAV — lofty parses it (so
+/// `is_conformant`, `read_tags_full` and `write_tags_full` all run their real code paths) without
+/// depending on `src-tauri/fixtures/*`, which is gitignored and absent from a fresh checkout.
+fn write_wav_16_44(path: &Path, frames: usize) {
+    let data_len = frames * 2;
+    let mut buf = Vec::with_capacity(44 + data_len);
+    buf.extend_from_slice(b"RIFF");
+    buf.extend_from_slice(&((36 + data_len) as u32).to_le_bytes());
+    buf.extend_from_slice(b"WAVE");
+    buf.extend_from_slice(b"fmt ");
+    buf.extend_from_slice(&16u32.to_le_bytes()); // PCM fmt chunk size
+    buf.extend_from_slice(&1u16.to_le_bytes()); // format = PCM
+    buf.extend_from_slice(&1u16.to_le_bytes()); // channels = mono
+    buf.extend_from_slice(&44_100u32.to_le_bytes());
+    buf.extend_from_slice(&88_200u32.to_le_bytes()); // byte rate = 44100 * 1 * 2
+    buf.extend_from_slice(&2u16.to_le_bytes()); // block align
+    buf.extend_from_slice(&16u16.to_le_bytes()); // bits per sample
+    buf.extend_from_slice(b"data");
+    buf.extend_from_slice(&(data_len as u32).to_le_bytes());
+    for i in 0..frames {
+        let s = (((i % 441) as i16) - 220).wrapping_mul(64);
+        buf.extend_from_slice(&s.to_le_bytes());
+    }
+    std::fs::write(path, &buf).expect("write wav");
+}
+
+/// A library root that exists on disk (bins + one file per filed track), a sources folder holding
+/// the real WAVs about to be filed, and the matching SQLite rows. Every `TempDir`/`NamedTempFile`
+/// is kept alive as a field: they delete their tree on drop, so nothing is left behind.
+struct FilingDataset {
+    conn: Connection,
+    /// Library root holding `filed_files` real (empty) files spread across the bin tree.
+    root: PathBuf,
+    /// Same bin tree, no files — isolates the walk's fixed cost from the per-file cost.
+    empty_root: PathBuf,
+    bins: Vec<String>,
+    /// `(track_id, path)` of the pending tracks whose real WAV is on disk, ready to be filed.
+    sources: Vec<(i64, String)>,
+    /// `(pending_id, filed_id)` pairs sharing a file-name key, each side holding a real WAV —
+    /// the only rows for which `dedup::find_duplicate` reaches its fingerprint branch.
+    collisions: Vec<(i64, i64)>,
+    filed_files: usize,
+    total: usize,
+    _db: tempfile::NamedTempFile,
+    _root_dir: tempfile::TempDir,
+    _empty_dir: tempfile::TempDir,
+    _src_dir: tempfile::TempDir,
+}
+
+/// Seeds `total` tracks: the first `filed` are `filed`, each with a real (empty) file inside the
+/// bin tree — that is what makes `list_bins` realistic, since its `WalkDir` visits every FILE too,
+/// not just directories. The rest are `pending`; only the first `real_sources` of them get an
+/// actual WAV written (the others are DB rows only — nothing in the measured paths ever opens
+/// them, and writing 3 000 more files would only slow the seed down).
+///
+/// `name_collisions` seeds the DUPLICATE case on top of that: the first `name_collisions` filed
+/// tracks become "anchors" holding a real WAV instead of an empty file, and just after the real
+/// sources come `name_collisions` pending tracks whose file name is the anchor's, byte for byte.
+/// `dedup::key_for_path` (dedup.rs:217) keys on the file stem, so those pairs — and only those —
+/// make `find_duplicate` go past its `Ok(None)` early return (dedup.rs:300-302) into the
+/// fingerprint branch.
+fn build_filing_dataset(
+    total: usize,
+    filed: usize,
+    real_sources: usize,
+    name_collisions: usize,
+) -> FilingDataset {
+    assert!(filed < total, "need some pending tracks to file");
+    assert!(
+        real_sources + name_collisions <= total - filed,
+        "not enough pending tracks for that many real sources + collisions"
+    );
+    assert!(
+        name_collisions <= filed,
+        "not enough filed tracks to anchor that many collisions"
+    );
+    let root_dir = tempfile::TempDir::new().expect("temp library root");
+    let empty_dir = tempfile::TempDir::new().expect("temp empty root");
+    let src_dir = tempfile::TempDir::new().expect("temp sources dir");
+    let bins = create_bin_tree(root_dir.path());
+    create_bin_tree(empty_dir.path());
+
+    let tmp_db = tempfile::NamedTempFile::new().expect("create temp db file");
+    let mut conn = crate::db::open(tmp_db.path()).expect("db open + migrate");
+    let mut sources = Vec::with_capacity(real_sources);
+    let mut collisions: Vec<(i64, i64)> = Vec::with_capacity(name_collisions);
+
+    {
+        let tx = conn.transaction().expect("begin seed tx");
+        {
+            let mut ins_track = tx
+                .prepare(
+                    "INSERT INTO tracks
+                        (id, path, format, bitrate, duration, verdict, status, folder, has_cover, filename)
+                     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
+                )
+                .expect("prepare track insert");
+            let mut ins_meta = tx
+                .prepare(
+                    "INSERT INTO metadata (track_id, artist, title, label, year, bpm)
+                     VALUES (?1,?2,?3,?4,?5,?6)",
+                )
+                .expect("prepare metadata insert");
+            let mut ins_genre = tx
+                .prepare("INSERT INTO track_genres (track_id, genre, ord) VALUES (?1,?2,?3)")
+                .expect("prepare genre insert");
+
+            for i in 0..total {
+                let id = (i + 1) as i64;
+                let artist = artist_for(i);
+                let title = format!("Track {id}");
+                let is_filed = i < filed;
+                let (path, format, folder) = if is_filed {
+                    let bin = &bins[i % bins.len()];
+                    // Collision anchors carry a real WAV: `get_or_compute_fp` decodes BOTH sides
+                    // of a match, so an empty file on the filed side would cut the branch short.
+                    let is_anchor = i < name_collisions;
+                    let format = if is_anchor { "wav" } else { format_for(i) };
+                    let name = format!("{artist} - {title}.{format}");
+                    // `rel` uses '/' (the rail's wire format) — push component by component rather
+                    // than joining the raw string, so the path is built the same way on any OS.
+                    let mut abs = root_dir.path().to_path_buf();
+                    for comp in bin.split('/') {
+                        abs.push(comp);
+                    }
+                    abs.push(&name);
+                    if is_anchor {
+                        write_wav_16_44(&abs, SOURCE_FRAMES);
+                    } else {
+                        std::fs::File::create(&abs).expect("create filed file");
+                    }
+                    (abs.to_string_lossy().to_string(), format, Some(bin.clone()))
+                } else {
+                    // Pending tracks in seeding order: real sources to be filed, then the
+                    // collision sources, then DB-only rows.
+                    let anchor = (i - filed)
+                        .checked_sub(real_sources)
+                        .filter(|j| *j < name_collisions);
+                    let abs = match anchor {
+                        Some(j) => {
+                            // Byte-for-byte the anchor's file name → same `key_for_path`.
+                            let abs = src_dir.path().join(format!(
+                                "{} - Track {}.wav",
+                                artist_for(j),
+                                j + 1
+                            ));
+                            write_wav_16_44(&abs, SOURCE_FRAMES);
+                            collisions.push((id, (j + 1) as i64));
+                            abs
+                        }
+                        None => {
+                            let abs = src_dir.path().join(format!("{artist} - {title}.wav"));
+                            if sources.len() < real_sources {
+                                write_wav_16_44(&abs, SOURCE_FRAMES);
+                                sources.push((id, abs.to_string_lossy().to_string()));
+                            }
+                            abs
+                        }
+                    };
+                    (abs.to_string_lossy().to_string(), "wav", None)
+                };
+                let filename = Path::new(&path)
+                    .file_name()
+                    .and_then(|n| n.to_str())
+                    .unwrap_or("file")
+                    .to_string();
+                ins_track
+                    .execute(rusqlite::params![
+                        id,
+                        path,
+                        format,
+                        bitrate_for(format, i),
+                        120.0 + (i % 300) as f64 * 1.3,
+                        verdict_for(i),
+                        if is_filed { "filed" } else { "pending" },
+                        folder,
+                        (i % 3 == 0) as i64,
+                        filename,
+                    ])
+                    .expect("insert track");
+                ins_meta
+                    .execute(rusqlite::params![
+                        id,
+                        artist,
+                        title,
+                        format!("Label{}", i % 40),
+                        1985 + (i % 40) as i64,
+                        100 + (i % 45) as i64,
+                    ])
+                    .expect("insert metadata");
+                for (ord, genre) in genres_for(i).into_iter().enumerate() {
+                    ins_genre
+                        .execute(rusqlite::params![id, genre, ord as i64])
+                        .expect("insert genre");
+                }
+            }
+        }
+        tx.commit().expect("commit seed tx");
+    }
+
+    // Phase 1 of `file_track` reads BOTH settings under the DB lock before planning
+    // (ipc_filing.rs:304-305) — seed them so the benchmark can read them for real instead of
+    // passing a constant, and so `library_root`'s non-empty guard is satisfied.
+    crate::settings::set(
+        &conn,
+        crate::settings::LIBRARY_ROOT,
+        &root_dir.path().to_string_lossy(),
+    )
+    .expect("seed library_root setting");
+    crate::settings::set(
+        &conn,
+        crate::settings::FILENAME_TEMPLATE,
+        crate::settings::DEFAULT_TEMPLATE,
+    )
+    .expect("seed filename_template setting");
+
+    FilingDataset {
+        conn,
+        root: root_dir.path().to_path_buf(),
+        empty_root: empty_dir.path().to_path_buf(),
+        bins,
+        sources,
+        collisions,
+        filed_files: filed,
+        total,
+        _db: tmp_db,
+        _root_dir: root_dir,
+        _empty_dir: empty_dir,
+        _src_dir: src_dir,
+    }
+}
+
+/// "Clic sur un bac" — the rail reloads its destination tree from `list_bins`. Measured on the
+/// populated root AND on the same tree with no files, because `list_bins`'s `WalkDir` enumerates
+/// every entry and only then filters out non-directories: the gap between the two lines IS the
+/// cost of the filed files, which grows with the library while the bin tree does not.
+fn measure_dest_bins(ds: &FilingDataset) {
+    println!(
+        "\n=== Boucle de rangement: listage des bacs ({} bacs) ===",
+        ds.bins.len()
+    );
+    summarize(
+        "list_bins (racine peuplee)",
+        measure(
+            || {
+                library::list_bins(&ds.root);
+            },
+            ITERS_LOOP,
+        ),
+    );
+    summarize(
+        "list_bins (meme arbre, 0 fichier)",
+        measure(
+            || {
+                library::list_bins(&ds.empty_root);
+            },
+            ITERS_LOOP,
+        ),
+    );
+    println!(
+        "  NOTE: les deux lignes ci-dessus sont un regime de CACHE CHAUD — le meme arbre est\n\
+         \x20       reparcouru 50 fois d'affilee, les metadonnees NTFS restent en cache. Le premier\n\
+         \x20       parcours apres demarrage (a plus forte raison sur 15 000 fichiers reels ou sur un\n\
+         \x20       disque externe) est materiellement plus cher et n'est PAS couvert ici: ces deux\n\
+         \x20       chiffres sont un PLANCHER, comme celui d'execute_file plus bas."
+    );
+}
+
+/// "Aperçu du nom final" — exactly what `ipc_filing::preview_filename` does under the DB lock
+/// (settings read + `naming::render_filename`), plus the settings read alone so the two costs are
+/// separable. The front debounces this at 150 ms per keystroke (`frontend/filing-preview.ts:79`).
+fn measure_final_name(ds: &FilingDataset) {
+    println!("\n=== Boucle de rangement: resolution du nom final ===");
+    let (id, _) = ds.sources[0];
+    let canonical = crate::filing::reconcile_track(&ds.conn, id).expect("reconcile");
+    summarize(
+        "preview_filename (settings + render)",
+        measure(
+            || {
+                let tmpl = crate::settings::get_or(
+                    &ds.conn,
+                    crate::settings::FILENAME_TEMPLATE,
+                    crate::settings::DEFAULT_TEMPLATE,
+                )
+                .unwrap_or_else(|_| crate::settings::DEFAULT_TEMPLATE.to_string());
+                let _ = crate::naming::render_filename(&tmpl, &canonical, "wav");
+            },
+            ITERS_LOOP,
+        ),
+    );
+    summarize(
+        "  dont lecture settings seule",
+        measure(
+            || {
+                let _ = crate::settings::get_or(
+                    &ds.conn,
+                    crate::settings::FILENAME_TEMPLATE,
+                    crate::settings::DEFAULT_TEMPLATE,
+                );
+            },
+            ITERS_LOOP,
+        ),
+    );
+}
+
+/// "Passage à la piste suivante" — the four backend reads `openFilingInto` fires in parallel on
+/// every track open (`frontend/filing.ts:324` and `:350-373`). The analysis report is NOT here: it
+/// is the "fil de pensée" class (< 1 s), already cached, and has its own measured cost in the PRD.
+///
+/// `track_release`'s body is reproduced rather than called: it is a `#[tauri::command]` taking a
+/// Tauri `State`, which cannot be built in a plain test — same reason the `EXPLAIN` block below
+/// reproduces SQL text. The SQL is copied verbatim from `ipc_filing::track_release`.
+fn measure_track_open(ds: &FilingDataset) {
+    println!(
+        "\n=== Boucle de rangement: passage a la piste suivante (fan-out du front, budget < 50 ms) ==="
+    );
+    let (id, path) = ds.sources[0].clone();
+    summarize(
+        "reconcile_track (DB + tags fichier)",
+        measure(
+            || {
+                crate::filing::reconcile_track(&ds.conn, id).expect("reconcile");
+            },
+            ITERS_LOOP,
+        ),
+    );
+    summarize(
+        "track_release (metadata + genres)",
+        measure(
+            || {
+                let _ = crate::genres::get_genres(&ds.conn, id).unwrap_or_default();
+                let _: Option<(Option<String>, Option<String>)> = ds
+                    .conn
+                    .query_row(
+                        "SELECT artist, title, version, label, year, cover_path, discogs_release_id FROM metadata WHERE track_id=?1",
+                        rusqlite::params![id],
+                        |r| Ok((r.get(0)?, r.get(1)?)),
+                    )
+                    .ok();
+            },
+            ITERS_LOOP,
+        ),
+    );
+    summarize(
+        "track_file_tags (read_tags_full)",
+        measure(
+            || {
+                crate::tagging::read_tags_full(&path).expect("read tags");
+            },
+            ITERS_LOOP,
+        ),
+    );
+    summarize(
+        "find_duplicate (aucun match)",
+        measure(
+            || {
+                crate::dedup::find_duplicate(&ds.conn, id).expect("find_duplicate");
+            },
+            ITERS_LOOP,
+        ),
+    );
+
+    // The expensive branch, seeded on purpose (see `build_filing_dataset`'s `name_collisions`).
+    // `kind == "both"` is asserted, not assumed: it is the only proof from outside that BOTH
+    // fingerprints were actually obtained (dedup.rs:310-317) — a failed decode would silently
+    // fall back to `("name", 1.0)` and turn this into a second copy of the no-match line.
+    let (dup_id, anchor_id) = ds.collisions[0];
+    summarize(
+        "find_duplicate (match, empreinte NON en cache)",
+        measure_with_setup(
+            || clear_fingerprints(&ds.conn, &[dup_id, anchor_id]),
+            || assert_sound_confirmed_match(&ds.conn, dup_id),
+            ITERS_HEAVY,
+        ),
+    );
+    // The previous loop leaves both fingerprints cached; take one more call to be explicit about
+    // it rather than relying on that side effect.
+    crate::dedup::find_duplicate(&ds.conn, dup_id).expect("warm fingerprint cache");
+    summarize(
+        "find_duplicate (match, empreinte en cache)",
+        measure(
+            || assert_sound_confirmed_match(&ds.conn, dup_id),
+            ITERS_LOOP,
+        ),
+    );
+    println!(
+        "  NOTE: un match n'ajoute PAS \"une comparaison d'empreintes\". dedup.rs:306-308 appelle\n\
+         \x20       get_or_compute_fp DEUX fois; si la colonne `fingerprint` est vide (dedup.rs:342-346),\n\
+         \x20       dedup.rs:347 lance fingerprint::compute_for_path, qui DECODE l'audio complet\n\
+         \x20       (fingerprint.rs:20-27 -> analysis::decode::decode_pcm) puis ecrit un UPDATE\n\
+         \x20       (dedup.rs:349-352) — deux fichiers, sous le verrou que ipc_filing.rs:771 tient sur\n\
+         \x20       toute la commande. Sources synthetiques de ~{:.1} Mo: sur un lossless reel de\n\
+         \x20       30-40 Mo la ligne \"NON en cache\" est encore un plancher. C'est le patron de P4.",
+        (SOURCE_FRAMES * 2 + 44) as f64 / 1_048_576.0
+    );
+}
+
+/// Runs `find_duplicate` and fails the bench unless the sound-confirmed branch really ran.
+fn assert_sound_confirmed_match(conn: &Connection, track_id: i64) {
+    let m = crate::dedup::find_duplicate(conn, track_id).expect("find_duplicate");
+    let kind = m.map(|d| d.kind).unwrap_or_default();
+    assert_eq!(
+        kind, "both",
+        "expected a fingerprint-confirmed duplicate, got {kind:?} — the seeded collision pair is \
+         not exercising dedup.rs:306-317, the number below would be meaningless"
+    );
+}
+
+/// Empties the `tracks.fingerprint` cache for those ids — puts the rows back in the state a
+/// freshly-scanned library is in, where `find_duplicate` has to decode the audio itself.
+fn clear_fingerprints(conn: &Connection, ids: &[i64]) {
+    for id in ids {
+        conn.execute(
+            "UPDATE tracks SET fingerprint=NULL WHERE id=?1",
+            rusqlite::params![id],
+        )
+        .expect("clear fingerprint cache");
+    }
+}
+
+/// "Clic sur Convertir", hors encodage: the three phases of `ipc_filing::file_track` on a
+/// conformant source (tag write + move, no ffmpeg spawn). One distinct track per repetition — a
+/// filing is destructive, the same track cannot be filed twice.
+///
+/// Phases 1 and 3 hold the DB lock in production; phase 2 does not (`ipc_filing.rs:301-327`). They
+/// are reported separately for that reason: P4 targets the two lock-held ones, P5 moves phase 2
+/// off the click's critical path.
+///
+/// Phase 1's timer starts BEFORE the two settings reads `file_track` does under the same lock
+/// (`ipc_filing.rs:304-305`: `library_root` then `template`) — they are small but systematic, and
+/// leaving them out would understate exactly the quantity P4 has to bring down.
+fn measure_filing(ds: &FilingDataset, bin_rel: &str) {
+    use crate::encode::Target;
+    println!("\n=== Boucle de rangement: rangement d'une piste (hors encodage) ===");
+    let reserved = std::collections::HashSet::new();
+    let mut plan_d = Vec::with_capacity(ds.sources.len());
+    let mut exec_d = Vec::with_capacity(ds.sources.len());
+    let mut commit_d = Vec::with_capacity(ds.sources.len());
+    let mut locked_d = Vec::with_capacity(ds.sources.len());
+    let mut total_d = Vec::with_capacity(ds.sources.len());
+
+    for (id, path) in &ds.sources {
+        // Fail loudly rather than silently benchmarking an ffmpeg encode: a non-conformant source
+        // would send execute_file down the transcode path and make this number meaningless.
+        assert!(
+            crate::encode::is_conformant(path, Target::Wav1644),
+            "source {path} is not conformant for Wav1644 — execute_file would spawn ffmpeg"
+        );
+        let canonical = crate::filing::reconcile_track(&ds.conn, *id).expect("reconcile");
+        let t0 = Instant::now();
+        // Reproduces `library_root(&conn)` + `template(&conn)` (ipc_filing.rs:38-53), called
+        // under the lock just before `plan_file`.
+        let root = match crate::settings::get(&ds.conn, crate::settings::LIBRARY_ROOT) {
+            Ok(Some(p)) if !p.trim().is_empty() => PathBuf::from(p),
+            other => panic!("library_root setting not seeded: {other:?}"),
+        };
+        let tmpl = crate::settings::get_or(
+            &ds.conn,
+            crate::settings::FILENAME_TEMPLATE,
+            crate::settings::DEFAULT_TEMPLATE,
+        )
+        .unwrap_or_else(|_| crate::settings::DEFAULT_TEMPLATE.to_string());
+        let plan = crate::filing::plan_file(
+            &ds.conn,
+            &root,
+            &tmpl,
+            *id,
+            bin_rel,
+            Some(Target::Wav1644),
+            Some(canonical),
+            false,
+            &reserved,
+        )
+        .expect("plan_file");
+        let t1 = Instant::now();
+        let log = crate::filing::execute_file(&plan).expect("execute_file");
+        let t2 = Instant::now();
+        crate::filing::commit_file(&ds.conn, &plan, log, None).expect("commit_file");
+        let t3 = Instant::now();
+        plan_d.push(t1.duration_since(t0));
+        exec_d.push(t2.duration_since(t1));
+        commit_d.push(t3.duration_since(t2));
+        locked_d.push(t1.duration_since(t0) + t3.duration_since(t2));
+        total_d.push(t3.duration_since(t0));
+    }
+
+    summarize("plan_file (phase 1 + 2 lectures settings)", plan_d);
+    summarize("execute_file (phase 2, HORS verrou)", exec_d);
+    summarize("commit_file (phase 3, SOUS le verrou)", commit_d);
+    summarize("phases sous verrou (1+3)", locked_d);
+    summarize("file_track complet (hors encodage)", total_d);
+    println!(
+        "  NOTE: execute_file mesure une source de ~{:.1} Mo (tag write + rename intra-volume). Un vrai\n\
+         \x20       lossless de 30-40 Mo, ou un move cross-disque (copy_verify_delete), coute davantage —\n\
+         \x20       ce chiffre est un PLANCHER. Aucun Rekordbox XML/master.db lie ici: les detections de\n\
+         \x20       commit_file sortent immediatement, un utilisateur lie paie plus (cible de P4).",
+        (SOURCE_FRAMES * 2 + 44) as f64 / 1_048_576.0
+    );
+}
+
+/// `EXPLAIN QUERY PLAN` for the filing-loop queries, same rationale as `explain_all_queries`: the
+/// production code builds/binds these statements, so their text is reproduced here (literal values
+/// substituted — EXPLAIN never binds or executes).
+fn explain_filing_queries(conn: &Connection) {
+    explain(
+        conn,
+        "track_path / reconcile_track / find_duplicate (etape 1)",
+        "SELECT path FROM tracks WHERE id=1",
+    );
+    explain(
+        conn,
+        "track_release (metadata)",
+        "SELECT artist, title, version, label, year, cover_path, discogs_release_id \
+         FROM metadata WHERE track_id=1",
+    );
+    explain(
+        conn,
+        "get_genres (load_tag_extras + track_release)",
+        "SELECT genre FROM track_genres WHERE track_id=1 ORDER BY ord",
+    );
+    explain(
+        conn,
+        "find_duplicate (candidats)",
+        "SELECT id, path, status, folder, filename FROM tracks \
+         WHERE status IN ('pending','filed') AND id<>1",
+    );
+    explain(
+        conn,
+        "commit_file (UPDATE tracks)",
+        "UPDATE tracks SET status='filed', folder='House/Classics', target_format='wav_16_44', \
+         confidence='yellow' WHERE id=1",
+    );
+}
+
+/// P1 — baseline of the filing loop at the D1 target volume (15 000 tracks). These numbers are the
+/// "before" P4 and P5 will be judged against (docs/superpowers/changes/2026-07-27-perf-fixes/PRD.md).
+#[test]
+#[ignore]
+fn bench_filing_loop_15k() {
+    let ds = build_filing_dataset(15_000, 12_000, 30, NAME_COLLISIONS);
+    println!(
+        "\n########## Boucle de rangement @ {} pistes ({} filed sur disque, {} bacs, {} sources reelles, {} paires de doublons) ##########",
+        ds.total,
+        ds.filed_files,
+        ds.bins.len(),
+        ds.sources.len(),
+        ds.collisions.len()
+    );
+    measure_dest_bins(&ds);
+    measure_final_name(&ds);
+    measure_track_open(&ds);
+    measure_filing(&ds, "House/Classics");
+    explain_filing_queries(&ds.conn);
+    // Every TempDir/NamedTempFile drops here, deleting the seeded library root + sources + db.
 }
 
 #[test]

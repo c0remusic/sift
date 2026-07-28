@@ -62,8 +62,18 @@ pub fn progress(conn: &Connection) -> rusqlite::Result<(i64, i64)> {
     Ok((done, total))
 }
 
-/// Writes a full report into the track row and stamps `analyzed_at`.
-pub fn persist_report(conn: &Connection, id: i64, r: &AnalysisReport) -> rusqlite::Result<()> {
+/// Writes a full report into the track row and stamps `analyzed_at`. `report_json` is the
+/// ALREADY-SERIALISED report: `serde_json::to_string` on a full `AnalysisReport` (display
+/// spectrogram included) is the heavy part of this write and needs no DB state, so the caller
+/// does it BEFORE taking the connection mutex — same plan/execute/commit split as
+/// `ipc_filing::apply_tags`. Passing it in rather than recomputing it here is what keeps that
+/// work provably outside the lock.
+pub fn persist_report(
+    conn: &Connection,
+    id: i64,
+    r: &AnalysisReport,
+    report_json: &str,
+) -> rusqlite::Result<()> {
     conn.execute(
         "UPDATE tracks SET
             verdict=?2, cutoff_hz=?3, bitrate=?4, declared_fmt=?5, real_quality=?6, duration=?7,
@@ -95,8 +105,8 @@ pub fn persist_report(conn: &Connection, id: i64, r: &AnalysisReport) -> rusqlit
             r.has_cover as i64,
             r.tags_cdj_ok as i64,
             // cache the full report, spectrogram included (FIX-3) — instant re-open AND instant
-            // spectrogram, no re-decode either way
-            serde_json::to_string(r).unwrap_or_default(),
+            // spectrogram, no re-decode either way. Serialised by the caller, off the lock.
+            report_json,
             analysis::REPORT_CACHE_VERSION,
         ],
     )?;
@@ -242,6 +252,16 @@ fn read_path(app: &AppHandle, id: i64) -> Option<String> {
 
 /// Locks the DB briefly and writes the analysis outcome for `id`.
 fn persist_result(app: &AppHandle, id: i64, path: &str, result: Result<AnalysisReport, String>) {
+    // Serialise the report BEFORE taking the lock. It is pure CPU over an owned value (no DB
+    // state is read, so nothing can change under us) and it is not small: measured 2026-07-27 on
+    // the production DB, a report averaged 1657 KB of JSON. Doing it under the global connection
+    // mutex stalled every other DB user — the whole analysis pool and every IPC command — for
+    // work that never needed the lock. `unwrap_or_default()` behaviour is unchanged.
+    let report_json = match &result {
+        Ok(rep) => serde_json::to_string(rep).unwrap_or_default(),
+        // persist_failure writes its own '' sentinel; nothing to pre-serialise here.
+        Err(_) => String::new(),
+    };
     let state = app.state::<Mutex<Connection>>();
     let Ok(conn) = state.lock() else {
         log::error!(
@@ -250,7 +270,7 @@ fn persist_result(app: &AppHandle, id: i64, path: &str, result: Result<AnalysisR
         return;
     };
     let written = match &result {
-        Ok(rep) => persist_report(&conn, id, rep),
+        Ok(rep) => persist_report(&conn, id, rep, &report_json),
         Err(e) => {
             log::warn!("analyze failed for {path}: {e}");
             persist_failure(&conn, id, e)
@@ -385,7 +405,8 @@ mod tests {
     fn persist_report_writes_columns_and_marks_analysed() {
         let conn = db();
         let id = add_pending(&conn, "x.flac");
-        persist_report(&conn, id, &fake_report()).unwrap();
+        let r = fake_report();
+        persist_report(&conn, id, &r, &serde_json::to_string(&r).unwrap()).unwrap();
         let (verdict, cutoff, dual, analyzed): (String, f64, i64, Option<String>) = conn
             .query_row(
                 "SELECT verdict, cutoff_hz, dual_mono, analyzed_at FROM tracks WHERE id=?1",
@@ -411,7 +432,8 @@ mod tests {
         // analysis, never a leftover from before a later failure.
         let conn = db();
         let id = add_pending(&conn, "x.flac");
-        persist_report(&conn, id, &fake_report()).unwrap(); // first pass: succeeds, verdict="fake"
+        let r = fake_report();
+        persist_report(&conn, id, &r, &serde_json::to_string(&r).unwrap()).unwrap(); // first pass: succeeds, verdict="fake"
         conn.execute(
             "UPDATE tracks SET analyzed_at=NULL, report_json=NULL WHERE id=?1", // content changed
             [id],
@@ -435,7 +457,8 @@ mod tests {
         // and the attempt counter must climb toward the terminal MAX_ANALYSIS_ATTEMPTS.
         let conn = db();
         let id = add_pending(&conn, "x.flac");
-        persist_report(&conn, id, &fake_report()).unwrap(); // real_quality="lossless", etc.
+        let r = fake_report();
+        persist_report(&conn, id, &r, &serde_json::to_string(&r).unwrap()).unwrap(); // real_quality="lossless", etc.
 
         persist_failure(&conn, id, "decode error").unwrap();
         let (rq, attempts): (Option<String>, i64) = conn
@@ -473,7 +496,8 @@ mod tests {
         let conn = db();
         let _a = add_pending(&conn, "a.flac");
         let b = add_pending(&conn, "b.flac");
-        persist_report(&conn, b, &fake_report()).unwrap();
+        let r = fake_report();
+        persist_report(&conn, b, &r, &serde_json::to_string(&r).unwrap()).unwrap();
         assert_eq!(progress(&conn).unwrap(), (1, 2));
     }
 }

@@ -844,6 +844,154 @@ pub fn undo_last(conn: &Connection) -> Result<Option<String>, RevertError> {
     }
 }
 
+/// Rolling retention window of the action journal, in days (PRD D4, 2026-07-27). Until this
+/// constant existed there was NO retention at all — not one `DELETE FROM actions` in the whole
+/// file — and `actions` is the one table that grows with every user gesture and never shrinks:
+/// measured 176.5 MB for 58 rows on the production DB, a single `tag_edit` cover snapshot
+/// weighing 55.7 MB on its own. The bound is in time, not in volume: a month of intensive tag
+/// editing can still weigh a lot (an accepted limit, written down in the PRD).
+pub const JOURNAL_RETENTION_DAYS: i64 = 30;
+
+/// Action ids the purge must never touch, whatever their age: they are still referenced by a LIVE
+/// master.db operation the user has neither applied nor dismissed. The three
+/// `rekordbox_masterdb_*` tables declare `action_id ... REFERENCES actions(id) ON DELETE CASCADE`
+/// (db.rs, migrations v11/v13/v14) and `PRAGMA foreign_keys = ON` is set at open (db::open), so
+/// deleting the journal row would silently delete the user's pending repair with it.
+///
+/// LIVE means `pending` OR `ambiguous`, not `pending` alone. `ambiguous` is the state of a
+/// detection whose `from_path` matched several `djmdContent` rows: it is listed on screen with the
+/// pending ones (`rekordbox_repairs.rs`, `WHERE r.status IN ('pending', 'ambiguous')` for the three
+/// families) and `resolve_ambiguous_inner` (`rekordbox_repairs.rs`, `if status != "ambiguous"`)
+/// accepts NOTHING else — manual resolution is its only exit. A user who does not open the
+/// Rekordbox screen for 30 days would otherwise have those rows cascaded away without a word.
+/// Rows in a terminal status (applied/dismissed) are deliberately NOT pinned — cascading those
+/// away is the cleanup, not a loss.
+const PINNED_ACTION_IDS: &str =
+    "SELECT action_id FROM rekordbox_masterdb_repairs WHERE status IN ('pending','ambiguous')
+       UNION SELECT action_id FROM rekordbox_masterdb_metadata_syncs WHERE status IN ('pending','ambiguous')
+       UNION SELECT action_id FROM rekordbox_masterdb_artwork_syncs WHERE status IN ('pending','ambiguous')";
+
+/// Batch ids lying entirely outside the retention window and safe to drop whole.
+/// `cutoff` is a SQLite datetime modifier, e.g. `-30 days`.
+fn expired_batches(conn: &Connection, cutoff: &str) -> rusqlite::Result<Vec<String>> {
+    let sql = format!(
+        "SELECT batch_id FROM actions
+          WHERE batch_id IS NOT NULL
+            AND batch_id NOT IN (
+                SELECT batch_id FROM actions WHERE batch_id IS NOT NULL AND id IN ({PINNED_ACTION_IDS})
+            )
+          GROUP BY batch_id
+         HAVING MAX(ts) < datetime('now', ?1) AND MIN(undone) = MAX(undone)"
+    );
+    let mut stmt = conn.prepare(&sql)?;
+    let rows = stmt.query_map(params![cutoff], |r| r.get::<_, String>(0))?;
+    rows.collect()
+}
+
+/// Delete one whole batch, re-checking every guard INSIDE the statement so the deletion is
+/// all-or-nothing even though the DB lock was released since `expired_batches` listed it.
+fn purge_batch(conn: &Connection, batch_id: &str, cutoff: &str) -> rusqlite::Result<usize> {
+    let sql = format!(
+        "DELETE FROM actions
+          WHERE batch_id = ?1
+            AND ?1 NOT IN (
+                SELECT batch_id FROM actions WHERE batch_id IS NOT NULL AND id IN ({PINNED_ACTION_IDS})
+            )
+            AND ?1 IN (
+                SELECT batch_id FROM actions WHERE batch_id = ?1
+                 GROUP BY batch_id
+                HAVING MAX(ts) < datetime('now', ?2) AND MIN(undone) = MAX(undone)
+            )"
+    );
+    conn.execute(&sql, params![batch_id, cutoff])
+}
+
+/// Delete expired rows that belong to NO batch (`batch_id IS NULL`). Only pre-v4 rows can be in
+/// that state — `record_row_only` has always bound a non-null `batch_id` — and BOTH entry points
+/// of the undo engine filter on `batch_id` (`revert_batch`'s WHERE, `undo_last`'s
+/// `batch_id IS NOT NULL`), so such a row is unreachable by any revert and is its own unit.
+/// Without this they would be the only journal rows that never expire.
+fn purge_batchless_rows(conn: &Connection, cutoff: &str) -> rusqlite::Result<usize> {
+    let sql = format!(
+        "DELETE FROM actions
+          WHERE batch_id IS NULL AND ts < datetime('now', ?1) AND id NOT IN ({PINNED_ACTION_IDS})"
+    );
+    conn.execute(&sql, params![cutoff])
+}
+
+/// Fairness yield between two batch deletions. `std::sync::Mutex` is not fair: a thread that
+/// re-locks in a tight loop can keep the lock to itself, so a purge of a long-neglected journal
+/// would sit in front of the IPC commands and the analysis pool instead of interleaving with them.
+const PURGE_YIELD: std::time::Duration = std::time::Duration::from_millis(2);
+
+/// Purge every journal batch entirely outside the `retention_days` window. Returns the number of
+/// deleted rows.
+///
+/// Takes the `Mutex` and not a `&Connection` on purpose: the unit of work is ONE batch and the
+/// lock is taken and released around each one, so this never holds the DB lock — shared with every
+/// IPC command and the analysis pool — across the WHOLE sweep. Under PRD D3 that granularity is a
+/// requirement, not an implementation detail.
+///
+/// What one unit of work actually costs, measured and not assumed: `actions` carries NO index
+/// (db.rs declares indexes on `tracks`, `track_genres` and the three `rekordbox_masterdb_*` tables
+/// only), so `EXPLAIN QUERY PLAN` on the `purge_batch` statement gives `SCAN actions` twice — once
+/// for the DELETE, once for the `HAVING` re-check — and `expired_batches` gives `SCAN actions` plus
+/// a `TEMP B-TREE FOR GROUP BY`. On a long-neglected journal that is two full table scans per
+/// batch, each one holding the lock. `PURGE_YIELD` releases the lock BETWEEN batches; it does not
+/// shorten the scan inside one. Adding `CREATE INDEX idx_actions_batch ON actions(batch_id)` would
+/// cut both (and `revert_batch`/`list_journal` with them) but that is a `db.rs` migration, out of
+/// this slice's scope — deliberately left as a named follow-up rather than smuggled in.
+///
+/// Three invariants, each re-checked inside the DELETE rather than only at listing time (the lock
+/// is released in between, so a revert can run against a batch that was just listed):
+/// - a batch goes whole or not at all. `revert_batch` loads every live row of a `batch_id` in one
+///   query and reverses them newest-first; deleting a subset would leave a mutilated batch that
+///   undoes half a filing (the `move` back without removing the converted file, say).
+/// - a batch whose rows disagree on `undone` is a revert that failed midway and is still
+///   re-tryable by design (`revert_batch` marks each row undone as soon as ITS step succeeds) —
+///   left alone whatever its age.
+/// - a batch pinned by a pending master.db operation is left alone (see `PINNED_ACTION_IDS`).
+///
+/// A batch straddling the cutoff is kept in full: the window is compared on `MAX(ts)`.
+///
+/// Two written exceptions to the 30-day rule, both deliberate: a half-reverted batch and a batch
+/// pinned by a live master.db operation NEVER expire, at any age. Correctness comes before disk
+/// space here — but it does mean "rows older than 30 days disappear" is not universally true, and
+/// half-reverted batches are precisely the ones that can carry a large `meta` snapshot. They leave
+/// only when the user finishes the revert (uniform `undone`) or applies/dismisses the master.db
+/// operation. Same caveat written in the PRD (D4).
+pub fn purge_expired_journal(
+    db: &std::sync::Mutex<Connection>,
+    retention_days: i64,
+) -> Result<usize, String> {
+    let cutoff = format!("-{retention_days} days");
+    let (mut deleted, batches) = {
+        let conn = match db.lock() {
+            Ok(c) => c,
+            Err(e) => {
+                // Shared with the analysis pool: never bail mutely on a poisoned lock.
+                log::error!("journal purge: DB connection mutex poisoned: {e}");
+                return Err(format!("DB connection mutex poisoned: {e}"));
+            }
+        };
+        let orphans = purge_batchless_rows(&conn, &cutoff).map_err(|e| e.to_string())?;
+        let batches = expired_batches(&conn, &cutoff).map_err(|e| e.to_string())?;
+        (orphans, batches)
+    };
+    for batch_id in batches {
+        std::thread::sleep(PURGE_YIELD);
+        let conn = match db.lock() {
+            Ok(c) => c,
+            Err(e) => {
+                log::error!("journal purge: DB connection mutex poisoned: {e}");
+                return Err(format!("DB connection mutex poisoned: {e}"));
+            }
+        };
+        deleted += purge_batch(&conn, &batch_id, &cutoff).map_err(|e| e.to_string())?;
+    }
+    Ok(deleted)
+}
+
 /// One entry of the consultable journal: a live batch, summarized by its FIRST action.
 /// `track_count` = number of distinct tracks in the batch (used by the front to gate
 /// "last batch" confirmation on > 10 tracks). `session_id` = NULL for pre-migration rows.
@@ -2732,5 +2880,338 @@ mod tests {
             status, "pending",
             "must fall back to pending even though the previous row was applied"
         );
+    }
+
+    // ---- journal retention (PRD D4) ----------------------------------------------------------
+
+    /// Seed one journal row with an explicit age and `undone` flag. `ts` is written directly
+    /// because the retention window is the thing under test — the DEFAULT `datetime('now')` of the
+    /// production INSERT path can only ever produce a row inside the window.
+    fn seed_action(
+        conn: &Connection,
+        batch_id: &str,
+        kind: &str,
+        days_ago: i64,
+        undone: i64,
+        paths: (Option<&str>, Option<&str>),
+        meta: Option<&str>,
+    ) -> i64 {
+        let (from_path, to_path) = paths;
+        conn.execute(
+            "INSERT INTO actions(track_id, type, from_path, to_path, batch_id, undone, meta, ts)
+             VALUES(NULL, ?1, ?2, ?3, ?4, ?5, ?6, datetime('now', ?7))",
+            params![
+                kind,
+                from_path,
+                to_path,
+                batch_id,
+                undone,
+                meta,
+                format!("-{days_ago} days")
+            ],
+        )
+        .unwrap();
+        conn.last_insert_rowid()
+    }
+
+    fn batch_rows(conn: &Connection, batch_id: &str) -> i64 {
+        conn.query_row(
+            "SELECT count(*) FROM actions WHERE batch_id=?1",
+            params![batch_id],
+            |r| r.get(0),
+        )
+        .unwrap()
+    }
+
+    /// The window itself: older than 30 days goes, inside the window stays — `meta` included,
+    /// since that column is exactly what an undo of a `tag_edit` needs (PRD D2, the cover snapshot
+    /// is embedded there and exists nowhere else once the audio file has been rewritten).
+    #[test]
+    fn purge_drops_expired_batches_and_spares_the_retention_window() {
+        let conn = db();
+        seed_action(&conn, "old", "convert", 40, 0, (None, Some("/x.mp3")), None);
+        seed_action(&conn, "old", "move", 40, 0, (Some("/a"), Some("/b")), None);
+        seed_action(
+            &conn,
+            "recent",
+            "move",
+            2,
+            0,
+            (Some("/c"), Some("/d")),
+            None,
+        );
+        seed_action(
+            &conn,
+            "recent",
+            "tag_edit",
+            2,
+            0,
+            (Some("/d"), None),
+            Some(r#"{"cover":"snapshot"}"#),
+        );
+
+        let db = std::sync::Mutex::new(conn);
+        let deleted = purge_expired_journal(&db, JOURNAL_RETENTION_DAYS).unwrap();
+
+        let conn = db.lock().unwrap();
+        assert_eq!(deleted, 2, "both rows of the expired batch");
+        assert_eq!(batch_rows(&conn, "old"), 0, "expired batch must be gone");
+        assert_eq!(
+            batch_rows(&conn, "recent"),
+            2,
+            "a batch inside the window must be untouched"
+        );
+        let meta: Option<String> = conn
+            .query_row(
+                "SELECT meta FROM actions WHERE batch_id='recent' AND type='tag_edit'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            meta.as_deref(),
+            Some(r#"{"cover":"snapshot"}"#),
+            "the undo snapshot inside the window must survive byte-for-byte"
+        );
+    }
+
+    /// The one that matters: an action still inside the window must revert FAITHFULLY after a
+    /// purge has run — every row of the batch still there, so both filesystem steps are reversed.
+    #[test]
+    fn a_batch_inside_the_window_still_reverts_faithfully_after_a_purge() {
+        let conn = db();
+        let dir = tempfile::tempdir().unwrap();
+        let origin = dir.path().join("origin.flac");
+        let dest = dir.path().join("library/dest.flac");
+        let converted = dir.path().join("library/dest.mp3");
+        std::fs::create_dir_all(dir.path().join("library")).unwrap();
+        std::fs::write(&dest, b"audio bytes").unwrap();
+        std::fs::write(&converted, b"converted bytes").unwrap();
+
+        seed_action(
+            &conn,
+            "old",
+            "move",
+            90,
+            0,
+            (Some("/gone"), Some("/gone2")),
+            None,
+        );
+        seed_action(
+            &conn,
+            "keep",
+            "convert",
+            3,
+            0,
+            (
+                Some(origin.to_str().unwrap()),
+                Some(converted.to_str().unwrap()),
+            ),
+            None,
+        );
+        seed_action(
+            &conn,
+            "keep",
+            "move",
+            3,
+            0,
+            (Some(origin.to_str().unwrap()), Some(dest.to_str().unwrap())),
+            None,
+        );
+
+        let db = std::sync::Mutex::new(conn);
+        assert_eq!(
+            purge_expired_journal(&db, JOURNAL_RETENTION_DAYS).unwrap(),
+            1
+        );
+
+        let conn = db.lock().unwrap();
+        revert_batch(&conn, "keep").expect("a batch inside the window must still be revertable");
+
+        assert!(
+            origin.exists(),
+            "the `move` step must have put the file back at its origin"
+        );
+        assert!(
+            !dest.exists(),
+            "the file must no longer be at the filing destination"
+        );
+        assert!(
+            !converted.exists(),
+            "the `convert` step must have removed the produced file — proof the WHOLE batch was \
+             still on disk to reverse, not just its last row"
+        );
+        let live: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM actions WHERE batch_id='keep' AND undone=0",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(live, 0, "every row of the batch is marked undone");
+    }
+
+    /// A batch is a unit: one row inside the window keeps the whole batch, or `revert_batch` would
+    /// later find half of it and undo half a filing.
+    #[test]
+    fn purge_never_splits_a_batch_straddling_the_cutoff() {
+        let conn = db();
+        seed_action(
+            &conn,
+            "straddle",
+            "convert",
+            45,
+            0,
+            (None, Some("/x")),
+            None,
+        );
+        seed_action(
+            &conn,
+            "straddle",
+            "move",
+            1,
+            0,
+            (Some("/a"), Some("/b")),
+            None,
+        );
+
+        let db = std::sync::Mutex::new(conn);
+        let deleted = purge_expired_journal(&db, JOURNAL_RETENTION_DAYS).unwrap();
+
+        assert_eq!(deleted, 0);
+        assert_eq!(batch_rows(&db.lock().unwrap(), "straddle"), 2);
+    }
+
+    /// A half-reverted batch (a revert that failed midway on the filesystem) is still re-tryable —
+    /// `revert_batch` resumes with the rows left live. Age must not steal that from the user.
+    #[test]
+    fn purge_spares_a_half_reverted_batch() {
+        let conn = db();
+        seed_action(&conn, "half", "convert", 60, 1, (None, Some("/x")), None);
+        seed_action(&conn, "half", "move", 60, 0, (Some("/a"), Some("/b")), None);
+        // Fully reverted, same age: uniform `undone`, nothing left to resume — this one goes.
+        seed_action(&conn, "done", "move", 60, 1, (Some("/c"), Some("/d")), None);
+
+        let db = std::sync::Mutex::new(conn);
+        let deleted = purge_expired_journal(&db, JOURNAL_RETENTION_DAYS).unwrap();
+
+        let conn = db.lock().unwrap();
+        assert_eq!(deleted, 1);
+        assert_eq!(batch_rows(&conn, "half"), 2, "half-reverted batch is kept");
+        assert_eq!(batch_rows(&conn, "done"), 0);
+    }
+
+    /// `rekordbox_masterdb_repairs.action_id` is `ON DELETE CASCADE` (db.rs v11) and foreign keys
+    /// are ON, so purging the journal row would take the user's still-pending master.db repair
+    /// with it, silently. Pinned until it is applied or dismissed.
+    #[test]
+    fn purge_spares_an_action_pinned_by_a_pending_masterdb_repair() {
+        let conn = db();
+        conn.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
+        let pinned = seed_action(
+            &conn,
+            "pinned",
+            "move",
+            70,
+            0,
+            (Some("/a"), Some("/b")),
+            None,
+        );
+        seed_action(&conn, "free", "move", 70, 0, (Some("/c"), Some("/d")), None);
+        conn.execute(
+            "INSERT INTO rekordbox_masterdb_repairs(action_id, track_id, from_path, to_path, status)
+             VALUES(?1, '42', '/a', '/b', 'pending')",
+            params![pinned],
+        )
+        .unwrap();
+
+        let db = std::sync::Mutex::new(conn);
+        let deleted = purge_expired_journal(&db, JOURNAL_RETENTION_DAYS).unwrap();
+
+        let conn = db.lock().unwrap();
+        assert_eq!(deleted, 1);
+        assert_eq!(batch_rows(&conn, "pinned"), 1, "pinned batch is kept");
+        assert_eq!(batch_rows(&conn, "free"), 0);
+        let repairs: i64 = conn
+            .query_row("SELECT count(*) FROM rekordbox_masterdb_repairs", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(repairs, 1, "the pending repair must not have been cascaded");
+    }
+
+    /// Same cascade, the other LIVE status. `ambiguous` is not terminal: the row is listed on the
+    /// Rekordbox screen next to the pending ones (`rekordbox_repairs.rs`, `status IN ('pending',
+    /// 'ambiguous')`) and `resolve_ambiguous_inner` accepts no other status, so manual resolution
+    /// is its only exit. Thirty days of not opening that screen must not delete it.
+    #[test]
+    fn purge_spares_an_action_pinned_by_an_ambiguous_masterdb_repair() {
+        let conn = db();
+        conn.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
+        let pinned = seed_action(
+            &conn,
+            "pinned",
+            "move",
+            70,
+            0,
+            (Some("/a"), Some("/b")),
+            None,
+        );
+        seed_action(&conn, "free", "move", 70, 0, (Some("/c"), Some("/d")), None);
+        conn.execute(
+            "INSERT INTO rekordbox_masterdb_repairs(action_id, track_id, from_path, to_path, status)
+             VALUES(?1, '42', '/a', '/b', 'ambiguous')",
+            params![pinned],
+        )
+        .unwrap();
+
+        let db = std::sync::Mutex::new(conn);
+        let deleted = purge_expired_journal(&db, JOURNAL_RETENTION_DAYS).unwrap();
+
+        let conn = db.lock().unwrap();
+        assert_eq!(deleted, 1);
+        assert_eq!(batch_rows(&conn, "pinned"), 1, "pinned batch is kept");
+        assert_eq!(batch_rows(&conn, "free"), 0);
+        let repairs: i64 = conn
+            .query_row("SELECT count(*) FROM rekordbox_masterdb_repairs", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(
+            repairs, 1,
+            "the ambiguous repair must not have been cascaded"
+        );
+    }
+
+    /// The batchless branch, which `seed_action` cannot reach (its `batch_id` is `&str`): rows
+    /// predating the migration that added `actions.batch_id` (db.rs) carry NULL there. They are
+    /// their own unit — no `revert_batch` can reach them — so they expire on `ts` alone.
+    #[test]
+    fn purge_drops_expired_batchless_rows_and_spares_recent_ones() {
+        let conn = db();
+        let seed_batchless = |days_ago: i64, to_path: &str| {
+            conn.execute(
+                "INSERT INTO actions(track_id, type, from_path, to_path, batch_id, undone, ts)
+                 VALUES(NULL, 'move', '/from', ?1, NULL, 0, datetime('now', ?2))",
+                params![to_path, format!("-{days_ago} days")],
+            )
+            .unwrap();
+        };
+        seed_batchless(40, "/expired");
+        seed_batchless(2, "/recent");
+
+        let db = std::sync::Mutex::new(conn);
+        let deleted = purge_expired_journal(&db, JOURNAL_RETENTION_DAYS).unwrap();
+
+        let conn = db.lock().unwrap();
+        assert_eq!(deleted, 1, "only the row outside the window");
+        let survivors: Vec<String> = conn
+            .prepare("SELECT to_path FROM actions WHERE batch_id IS NULL")
+            .unwrap()
+            .query_map([], |r| r.get::<_, String>(0))
+            .unwrap()
+            .collect::<rusqlite::Result<Vec<_>>>()
+            .unwrap();
+        assert_eq!(survivors, vec!["/recent".to_string()]);
     }
 }

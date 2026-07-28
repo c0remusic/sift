@@ -142,6 +142,18 @@ function duplicateGroupKey(g: PlaylistDuplicateGroupDto): string {
   return `${g.playlist_id}::${g.content_id}`;
 }
 
+/** Busy state for the 4 master.db write buttons, class for class on the repo's own precedent
+ *  (filing-actions.ts's doRanger: `ti ti-loader-2 sift-spin sift-icon-inline-md` + a label). These
+ *  writes take seconds and used to show one static word ("Application…"), which reads as a frozen
+ *  button rather than as work in progress.
+ *  `text` is a LABEL — what the button is doing, counted — never an instruction: "close Rekordbox
+ *  first" belongs to the confirm dialog that precedes the click, and a button that has already been
+ *  pressed is the one place where telling the user to do something is useless.
+ *  Only numbers and literals reach this, so the interpolation carries no user input. */
+function busyLabel(text: string): string {
+  return `<i class="ti ti-loader-2 sift-spin sift-icon-inline-md"></i> ${text}`;
+}
+
 /** Fallback card for a M8 section whose IPC call threw in renderRekordboxLive — replaces the
  * previous silent "" (section vanishes with no message, audit UX finding). Callers must also
  * reset that section's `lastPending*` array to [] so the umbrella pending count above the 4
@@ -728,7 +740,9 @@ export function handleRekordboxAction(
       );
       if (!proceed) return;
       btn.disabled = true;
-      btn.textContent = "Application…";
+      btn.innerHTML = busyLabel(
+        `Synchronisation de ${ids.length} fichier${ids.length > 1 ? "s" : ""}…`,
+      );
       try {
         const outcomes = await rekordboxMasterdbApplyRepairs(ids);
         let ok = 0;
@@ -767,7 +781,9 @@ export function handleRekordboxAction(
       );
       if (!proceed) return;
       btn.disabled = true;
-      btn.textContent = "Fusion…";
+      btn.innerHTML = busyLabel(
+        `Retrait de ${group.remove.length} doublon${group.remove.length > 1 ? "s" : ""}…`,
+      );
       const key = duplicateGroupKey(group);
       try {
         await rekordboxMasterdbDedupPlaylistGroup(group);
@@ -853,7 +869,9 @@ export function handleRekordboxAction(
       );
       if (!proceed) return;
       btn.disabled = true;
-      btn.textContent = "Application…";
+      btn.innerHTML = busyLabel(
+        `Synchronisation de ${ids.length} morceau${ids.length > 1 ? "x" : ""}…`,
+      );
       try {
         const outcomes: ApplyMetadataSyncOutcome[] = await rekordboxMasterdbApplyMetadataSyncs(ids);
         let ok = 0;
@@ -952,7 +970,9 @@ export function handleRekordboxAction(
       );
       if (!proceed) return;
       btn.disabled = true;
-      btn.textContent = "Application…";
+      btn.innerHTML = busyLabel(
+        `Synchronisation de ${ids.length} pochette${ids.length > 1 ? "s" : ""}…`,
+      );
       try {
         const outcomes = await rekordboxMasterdbApplyArtworkSyncs(ids);
         let ok = 0;

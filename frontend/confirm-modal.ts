@@ -8,6 +8,21 @@
 // friction level, just delivered reliably.
 const OVERLAY_ID = "sift-confirm-overlay";
 
+/** How long the destructive button stays genuinely `disabled` after the overlay opens.
+ *  Single source of truth: read by the `disabled` timer AND by the timestamped guard in the
+ *  confirm handler, so the two can never disagree about the window they enforce. */
+const CONFIRM_ARM_MS = 250;
+
+/** Remove `sift-fade-from` on the SECOND animation frame, not the first.
+ *  A rAF callback runs BEFORE style recalc in Chromium/WebView2, so a class removed there means
+ *  the node never held a computed `opacity:0` — there is nothing to transition from, and the fade
+ *  is silently skipped (it looks "shipped" while never having played, and nothing automated
+ *  catches it). The second frame is after the recalc, so the from-state is real. */
+function playFadeIn(el: HTMLElement): void {
+  el.classList.add("sift-fade-in", "sift-fade-from");
+  requestAnimationFrame(() => requestAnimationFrame(() => el.classList.remove("sift-fade-from")));
+}
+
 // The previous call's `finish`, if its overlay is still open (promise unresolved) — set/cleared
 // by confirmAction below. Audit 2026-07-10: without settling it first, a second confirmAction()
 // call only removed the first overlay's DOM node (see below) but left its `keydown` listener
@@ -48,11 +63,25 @@ export function confirmAction(message: string, confirmLabel = "Confirmer"): Prom
     confirmBtn.type = "button";
     confirmBtn.className = "sift-confirm-btn";
     confirmBtn.textContent = confirmLabel;
+    // Disarm the destructive button for CONFIRM_ARM_MS, via `disabled` — NOT via
+    // `pointer-events:none`, which stops real pointer input but does NOT stop
+    // HTMLElement.click(). A synthetic click is precisely the failure mode that made this module
+    // exist (see the header), so the only acceptable guard is the one the platform enforces on the
+    // dispatch itself. `openedAt` below backs it up in the handler.
+    confirmBtn.disabled = true;
+    const armTimer = window.setTimeout(() => {
+      confirmBtn.disabled = false;
+    }, CONFIRM_ARM_MS);
+    const openedAt = Date.now();
     actions.append(cancelBtn, confirmBtn);
 
     card.append(msg, actions);
     overlay.appendChild(card);
     document.body.appendChild(overlay);
+    // One 150ms fade on the way IN, on the overlay only. Nothing is animated on the way OUT: an
+    // exit fade would keep a dismissed destructive prompt on screen — and clickable — after the
+    // user has already answered it.
+    playFadeIn(overlay);
     // Audit 2026-07-09 : focaliser confirmBtn par défaut expose à valider une action destructrice
     // (dedup, réparations master.db) sur un Entrée/Espace résiduel juste après ouverture — même
     // logique que shadcn Alert Dialog (focus par défaut sur Cancel), déjà notre référence pour
@@ -61,6 +90,7 @@ export function confirmAction(message: string, confirmLabel = "Confirmer"): Prom
 
     const finish = (result: boolean) => {
       document.removeEventListener("keydown", onKeydown);
+      clearTimeout(armTimer);
       overlay.remove();
       // Restore focus to whatever opened the modal — without this, focus falls back to <body>,
       // disorienting for keyboard/screen-reader users after a destructive-action prompt closes.
@@ -84,7 +114,14 @@ export function confirmAction(message: string, confirmLabel = "Confirmer"): Prom
     };
     document.addEventListener("keydown", onKeydown);
     cancelBtn.addEventListener("click", () => finish(false));
-    confirmBtn.addEventListener("click", () => finish(true));
+    // Timestamped guard on the same window, modelled on batch-panel.ts's armed-confirm floor
+    // (`Date.now() - batchConfirmArmed.at >= 400`). `disabled` above is the primary guard; this is
+    // the belt to its braces, evaluated at click time, and it holds even if the button were
+    // re-enabled early by some future edit or if a click were dispatched at the exact boundary.
+    confirmBtn.addEventListener("click", () => {
+      if (Date.now() - openedAt < CONFIRM_ARM_MS) return;
+      finish(true);
+    });
     overlay.addEventListener("click", (e) => {
       if (e.target === overlay) finish(false);
     });

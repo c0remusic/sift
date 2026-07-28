@@ -31,7 +31,7 @@ import {
   toggleDestPopover,
   ensureDestPopoverAutoClose,
 } from "./filing-bins";
-import { state, openState } from "./filing-state";
+import { state, openState, isFilingInFlight } from "./filing-state";
 import { toast, registerClearPaneHook } from "./filing-toast";
 import {
   TARGET_LABEL,
@@ -384,7 +384,11 @@ export async function openFilingInto(
     let items: QueueItem[] = [];
     let listQueueFailed = false;
     try {
-      items = await listQueue();
+      // Same filter as the queue rail's own delivery point (queue-panel.ts) and as doRanger's
+      // auto-advance: a track whose conversion is still running in the background is still
+      // `pending`, so list_queue keeps returning it — opening it here would land the user on a
+      // track the backend refuses to file again (ALREADY_FILING).
+      items = (await listQueue()).filter((it) => !isFilingInFlight(it.id));
     } catch (err) {
       console.error("listQueue failed after detecting a gone file", err);
       listQueueFailed = true;

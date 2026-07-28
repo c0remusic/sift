@@ -9,6 +9,12 @@
 //! Note: the slow ffmpeg encode runs OUTSIDE the DB lock. `file_track` splits plan/execute/commit
 //! so the lock is released around the encode; `file_batch` runs detached on a background thread and
 //! takes the lock PER FILE — so a long filing never freezes the UI nor blocks the analysis worker.
+//! Since P5 (PRD 2026-07-27, D3/D5) `file_track` is detached too: the invoke returns as soon as the
+//! plan is settled and the encode runs on a background thread that reports through
+//! `file:track:done` — the click is acknowledged, the conversion finishes behind it.
+//! The same rule now holds for every other disk-touching command here: `reconcile` (tag read),
+//! `trash_track` (byte-for-byte copy) and `list_bins` (recursive walk of the library tree) resolve
+//! what they need under the lock, release it, do the I/O, and only re-take it to write.
 
 use crate::actions::{self, JournalEntry};
 use crate::db;
@@ -21,7 +27,7 @@ use crate::naming::Canonical;
 use crate::settings;
 use rusqlite::{Connection, OptionalExtension};
 use serde::Serialize;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Mutex;
@@ -56,8 +62,16 @@ fn template(conn: &Connection) -> String {
 /// editable fields and the green/yellow badge in the review pane).
 #[tauri::command]
 pub fn reconcile(conn: State<'_, Mutex<Connection>>, track_id: i64) -> Result<Canonical, String> {
-    let conn = db::lock_conn(&conn)?;
-    filing::reconcile_track(&conn, track_id).map_err(|e| e.to_string())
+    // Path under the lock; reading the file's embedded tags happens AFTER releasing it (a disk
+    // read must not freeze every other DB user — same split as track_file_tags / apply_tags).
+    // Nothing is written, and the only state read under the lock is the path itself: if another
+    // thread moves the file in between, the tag read simply falls back to the filename reconcile,
+    // exactly as it would for any file that vanished — no DB row can be left inconsistent.
+    let path = {
+        let conn = db::lock_conn(&conn)?;
+        filing::track_path(&conn, track_id).map_err(|e| e.to_string())?
+    };
+    Ok(filing::reconcile_path(&path))
 }
 
 /// Live preview of the filename Sift will actually produce, using the SAME
@@ -287,12 +301,207 @@ pub fn apply_tags(
     Ok(batch_id)
 }
 
+/// Refusal sentinel: this track's previous conversion is still running. Stable string (same
+/// convention as `"NoLibraryRoot"` / `"RAIL_MISMATCH"`) so the front can word it — mirrored in
+/// `filing-actions.ts`.
+const ALREADY_FILING: &str = "ALREADY_FILING";
+
+/// The interactive filings currently running in the background: the TRACKS they hold and the
+/// DESTINATIONS they have claimed. Both windows were zero-width until P5, because the encode ran
+/// inside the invoke; now that it does not, both have to be closed explicitly:
+///
+/// - `tracks` is the double-filing guard. A track keeps its `pending` status until its conversion
+///   commits, so any front path that walks the queue (the auto-advance, the gone-file recovery
+///   chain, a stale rail after a navigation) can still hand it back and file it a SECOND time from
+///   the same source. The invariant belongs here, not in the front, because the front is exactly
+///   what cannot be trusted to have refreshed.
+/// - `dests` replaces the empty `reserved` set `file_track` used to pass `plan_file` (justified by
+///   "phase 2 runs before any next plan" — no longer true). Two conversions launched back to back
+///   are planned while NEITHER file exists on disk, so two tracks reconciling to the same name
+///   would be handed the SAME destination and the second encode would land on the first. Same role
+///   as `run_file_batch`'s local `reserved` set, which is seeded from this one so a batch cannot
+///   plan onto an interactive in-flight destination either.
+#[derive(Default)]
+struct InFlightFilings {
+    tracks: HashSet<i64>,
+    dests: HashSet<String>,
+}
+
+fn inflight() -> &'static Mutex<InFlightFilings> {
+    static REG: std::sync::OnceLock<Mutex<InFlightFilings>> = std::sync::OnceLock::new();
+    REG.get_or_init(|| Mutex::new(InFlightFilings::default()))
+}
+
+/// Snapshot of the currently-claimed destinations. CLONED rather than held: this lock is always
+/// released before the DB lock is taken, so the two are never nested in either order. A poisoned
+/// registry fails the filing loudly instead of silently planning without reservations (which is
+/// exactly how two tracks would end up sharing one destination).
+fn reserved_dests() -> Result<HashSet<String>, String> {
+    match inflight().lock() {
+        Ok(g) => Ok(g.dests.clone()),
+        Err(e) => {
+            log::error!("file_track: in-flight filing registry poisoned: {e}");
+            Err("in-flight filing registry poisoned".to_string())
+        }
+    }
+}
+
+/// Whether `track_id` is currently held by an in-flight filing. Sibling of `reserved_dests()`, same
+/// lock discipline (taken and released here, never across the DB lock): it lets the BATCH path
+/// honour the same "not twice" invariant as the interactive one, instead of relying on the front
+/// having filtered the track out of its selection.
+fn is_filing_inflight(track_id: i64) -> Result<bool, String> {
+    match inflight().lock() {
+        Ok(g) => Ok(g.tracks.contains(&track_id)),
+        Err(e) => {
+            log::error!("file_batch: in-flight filing registry poisoned: {e}");
+            Err("in-flight filing registry poisoned".to_string())
+        }
+    }
+}
+
+/// Claim `track_id` and `dest` until this filing settles. Refuses with `ALREADY_FILING` when that
+/// track is already converting — the point where "a track that left the queue cannot be filed
+/// twice" is actually enforced.
+fn reserve_filing(track_id: i64, dest: &str) -> Result<(), String> {
+    match inflight().lock() {
+        Ok(mut g) => {
+            if !g.tracks.insert(track_id) {
+                return Err(ALREADY_FILING.to_string());
+            }
+            // The destination was already claimed by ANOTHER in-flight filing. Reachable because
+            // `reserved_dests()` is read before the DB lock while this claim is taken after the
+            // plan (the lock + `plan_file`'s own I/O sit in between), so two concurrent filings of
+            // two different tracks reconciling to the same name can both plan onto it. Refuse
+            // rather than let two encodes write the same path — and give the track back.
+            if !g.dests.insert(dest.to_string()) {
+                g.tracks.remove(&track_id);
+                log::error!(
+                    "file_track: destination already claimed by another in-flight filing: {dest}"
+                );
+                return Err("destination deja reservee par une conversion en cours".to_string());
+            }
+            Ok(())
+        }
+        Err(e) => {
+            log::error!("file_track: in-flight filing registry poisoned: {e}");
+            Err("in-flight filing registry poisoned".to_string())
+        }
+    }
+}
+
+/// Drop the claim. Best-effort by construction (it runs at the very end of the background thread,
+/// where there is no caller left to fail), but never silent: a poisoned registry is logged.
+fn release_filing(track_id: i64, dest: &str) {
+    match inflight().lock() {
+        Ok(mut g) => {
+            g.tracks.remove(&track_id);
+            g.dests.remove(dest);
+        }
+        Err(e) => log::error!("file_track: in-flight filing registry poisoned: {e}"),
+    }
+}
+
+/// The outcome of the background half of an interactive `file_track`, emitted as `file:track:done`.
+/// Mirrors `shared/contracts.ts`'s `TrackFileOutcome`. `error: Some(_)` means the filing did NOT
+/// happen and the track is still `pending` — the same "needs validation" bounce `run_file_batch`
+/// reports in bulk (`BatchResult::needs_validation`), reported here for one interactive track.
+#[derive(Serialize)]
+pub struct TrackFileOutcome {
+    pub track_id: i64,
+    pub batch_id: String,
+    /// The filed path — `Some` only when the filing actually committed.
+    pub path: Option<String>,
+    /// Failure cause, `None` on success.
+    pub error: Option<String>,
+}
+
+/// Background body of `file_track` (off the invoke thread): phase 2 (the multi-second ffmpeg
+/// encode and file moves, NO lock) then phase 3 (journal + mark filed, lock taken and released).
+/// Emits `file:track:done` in EVERY outcome — success, encode failure, poisoned lock, or a panic —
+/// so the front is never left waiting on an event that will not come (a track it believes is still
+/// converting is hidden from the queue). `queue:changed` is emitted only when something actually
+/// changed, i.e. a committed filing.
+fn run_file_track(app: &AppHandle, plan: filing::FilePlan) {
+    // Resolved once, at fn scope: a `State` handle taken inside the match arm below would be
+    // dropped while its `MutexGuard` is still borrowed (E0597) — same shape as `run_file_batch`.
+    let state = app.state::<Mutex<Connection>>();
+    let track_id = plan.track_id();
+    let batch_id = plan.batch_id().to_string();
+    let dest = plan.dest_path().to_string();
+
+    // Phase 2. `execute_file` decodes/encodes an arbitrary user file through the ffmpeg sidecar and
+    // writes tags with lofty: the same "heavy work on an unvetted user file, on a thread nobody
+    // joins" shape as worker.rs's analysis loop, so it gets the same catch_unwind treatment — a
+    // panic here must become a normal failure, not a silently vanished thread.
+    let executed = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        filing::execute_file(&plan)
+    })) {
+        Ok(r) => r.map_err(|e| {
+            log::error!("file_track: execute failed for track {track_id}: {e:?}");
+            e.to_string()
+        }),
+        Err(payload) => {
+            log::error!("file_track: execute panicked for track {track_id}: {payload:?}");
+            Err("conversion interrompue (panic)".to_string())
+        }
+    };
+
+    // Phase 3.
+    let result = match executed {
+        Ok(log) => match state.lock() {
+            Ok(conn) => filing::commit_file(&conn, &plan, log, None)
+                .map(|_| ())
+                .map_err(|e| e.to_string()),
+            Err(e) => {
+                log::error!("file_track: DB lock poisoned committing track {track_id}: {e}");
+                Err("db lock poisoned".to_string())
+            }
+        },
+        Err(e) => Err(e),
+    };
+
+    // Release the claim BEFORE announcing the outcome: the front may re-file this track the moment
+    // it sees a failure, and that new plan must be free to take both the track and this name back.
+    release_filing(track_id, &dest);
+
+    let filed = result.is_ok();
+    let outcome = match result {
+        Ok(()) => TrackFileOutcome {
+            track_id,
+            batch_id,
+            path: Some(dest),
+            error: None,
+        },
+        Err(e) => TrackFileOutcome {
+            track_id,
+            batch_id,
+            path: None,
+            error: Some(e),
+        },
+    };
+    app.emit("file:track:done", &outcome).ok();
+    if filed {
+        app.emit("queue:changed", ()).ok();
+    }
+}
+
 /// File one track into `bin_rel`. `target` overrides the rail default (e.g. force MP3);
 /// `edited` overrides the reconciled metadata with the user's corrections. `allow_rail_mismatch`
 /// (FIX-1): when the source's declared extension claims lossless but its content is actually
 /// lossy (BUG-1 — e.g. an MP3 renamed `.flac`), filing is refused with the `"RAIL_MISMATCH"`
 /// sentinel unless this is explicitly `true` — the front shows a confirmation dialog and, if the
 /// user proceeds, retries the same call with it set.
+///
+/// ASYNCHRONOUS since P5 (PRD 2026-07-27, D3/D5): only phase 1 — the plan — runs inside the invoke,
+/// so the click is acknowledged in milliseconds instead of waiting out the ffmpeg encode. The
+/// returned `FileResult` IS that acknowledgement: destination path and journal batch id are both
+/// settled at plan time. Every refusal the front knows how to handle (`"NoLibraryRoot"`,
+/// `"RAIL_MISMATCH"`, upscale, track not found) is still raised synchronously, before anything
+/// starts — the confirm-and-retry dance in `filing-actions.ts` is unchanged, and one more refusal
+/// joins them: `"ALREADY_FILING"` when this track's previous conversion is still running. The real
+/// outcome arrives later on `file:track:done` (see `run_file_track`); a failure there leaves the
+/// track `pending`, to be picked up again from the queue.
 #[tauri::command]
 pub fn file_track(
     app: AppHandle,
@@ -303,13 +512,13 @@ pub fn file_track(
     edited: Option<Canonical>,
     allow_rail_mismatch: Option<bool>,
 ) -> Result<FileResult, String> {
+    // Read (and release) the reservation registry BEFORE taking the DB lock — never nested.
+    let reserved = reserved_dests()?;
     // Phase 1 under the lock: decide the plan (fast DB reads + guard + dest).
     let plan = {
         let conn = db::lock_conn(&conn)?;
         let root = library_root(&conn)?;
         let tmpl = template(&conn);
-        // Interactive single-file path: phase 2 runs before any next plan, so no in-flight dest
-        // reservation is needed (empty set).
         filing::plan_file(
             &conn,
             &root,
@@ -319,19 +528,29 @@ pub fn file_track(
             target,
             edited,
             allow_rail_mismatch.unwrap_or(false),
-            &std::collections::HashSet::new(),
+            &reserved,
         )
         .map_err(|e| e.to_string())?
     };
-    // Phase 2 WITHOUT the lock: the multi-second ffmpeg encode + file moves.
-    let log = filing::execute_file(&plan).map_err(|e| e.to_string())?;
-    // Phase 3 under the lock: journal + mark filed (rolls back the FS on a DB error).
-    let res = {
-        let conn = db::lock_conn(&conn)?;
-        filing::commit_file(&conn, &plan, log, None).map_err(|e| e.to_string())?
+    let ack = FileResult {
+        path: plan.dest_path().to_string(),
+        batch_id: plan.batch_id().to_string(),
     };
-    app.emit("queue:changed", ()).ok();
-    Ok(res)
+    // Claim the track and its destination for as long as the conversion runs (see
+    // `InFlightFilings`). This is also where a second filing of the SAME track is refused.
+    reserve_filing(track_id, &ack.path)?;
+    // Phases 2 and 3 detached. Fail-fast: if the thread can't even start, drop the claim and
+    // surface it — the front then knows nothing was launched, instead of waiting on an event
+    // that would never be emitted.
+    let app_bg = app.clone();
+    if let Err(e) = std::thread::Builder::new()
+        .name("file-track".into())
+        .spawn(move || run_file_track(&app_bg, plan))
+    {
+        release_filing(track_id, &ack.path);
+        return Err(format!("file_track: failed to start background task: {e}"));
+    }
+    Ok(ack)
 }
 
 /// Launch filing of `track_ids` into `bin_rel` IN THE BACKGROUND and return immediately. The
@@ -437,7 +656,6 @@ fn run_file_batch(
     bin_rel: String,
     targets: Option<HashMap<i64, Target>>,
 ) {
-    use std::collections::HashSet;
     use std::sync::mpsc;
 
     let state = app.state::<Mutex<Connection>>();
@@ -448,12 +666,30 @@ fn run_file_batch(
 
     // ---- Phase 1 (serial, under the lock): plan every fileable track, reserving each dest. ----
     let mut jobs: Vec<PlannedJob> = Vec::new();
-    let mut reserved: HashSet<String> = HashSet::new();
+    // Seeded with the destinations an interactive `file_track` is currently converting (P5): those
+    // files are not on disk yet either, so a plain empty set would let this batch plan straight
+    // onto one of them. A poisoned registry is logged and the batch continues with what it can
+    // reserve on its own — bailing out of an already-launched batch would be worse.
+    let mut reserved: HashSet<String> = reserved_dests().unwrap_or_default();
+    // The claims THIS batch publishes into the shared registry, released in one place once phase 3
+    // is over (see the end of this function). Kept as a side list rather than a field on
+    // `PlannedJob` so a job cancelled before any worker popped it is released too, and so a claim
+    // that could not be taken is never released on someone else's behalf.
+    let mut claims: Vec<(i64, String)> = Vec::new();
     for (idx, id) in track_ids.iter().copied().enumerate() {
         // Cancel: stop planning new tracks. Ones not yet planned are simply never started.
         if cancel.0.load(Ordering::SeqCst) {
             cancelled = true;
             break;
+        }
+        // Same invariant as the interactive path: a track whose conversion is already running must
+        // not be filed a SECOND time from the same source. Checked before planning so the batch
+        // doesn't pay for a plan it would have to throw away. `Err` (poisoned registry) is treated
+        // as "not in flight": the batch keeps running, and the claim below still refuses the real
+        // collision — bailing out of an already-launched batch would be worse.
+        if is_filing_inflight(id).unwrap_or(false) {
+            needs_validation.push(id);
+            continue;
         }
         let conn = match state.lock() {
             Ok(c) => c,
@@ -489,6 +725,21 @@ fn run_file_batch(
             }
         };
         drop(conn);
+        // Publish the claim in the SHARED registry too, not just in the local `reserved` set: an
+        // interactive `file_track` launched while this batch runs reads that registry (and only
+        // that one) to avoid planning onto a destination whose file isn't written yet, and to
+        // refuse a track already being converted here.
+        match reserve_filing(id, plan.dest_path()) {
+            Ok(()) => claims.push((id, plan.dest_path().to_string())),
+            Err(e) => {
+                // Lost the race against a filing started between the check above and here (either
+                // on this track or on this exact destination) — bounce it like any other
+                // planning-time refusal rather than encode onto a contested path.
+                log::error!("file_batch: could not claim track {id}: {e}");
+                needs_validation.push(id);
+                continue;
+            }
+        }
         // Reserve this dest so a later plan for a same-named track bumps past it (the file isn't
         // written until the concurrent phase 2 below).
         reserved.insert(plan.dest_path().to_string());
@@ -627,6 +878,13 @@ fn run_file_batch(
         }
     }
 
+    // Every claim this batch published, dropped in one place — success, failure and cancellation
+    // alike. Done only now: until phase 3 has committed, the destination files are the ones this
+    // batch is still writing, and an interactive filing must not be allowed to plan onto them.
+    for (id, dest) in claims {
+        release_filing(id, &dest);
+    }
+
     app.emit(
         "file:progress",
         &FileProgress {
@@ -685,9 +943,23 @@ pub fn trash_track(
     conn: State<'_, Mutex<Connection>>,
     track_id: i64,
 ) -> Result<(), String> {
+    // Same plan/execute/commit split as `file_track`: the copy into the trash dir is a
+    // byte-for-byte copy across disks (the trash lives under Documents, the library rarely does),
+    // so it must not run under the global connection mutex.
+    // (1) Source path under the lock.
+    let source = {
+        let conn = db::lock_conn(&conn)?;
+        filing::track_path(&conn, track_id).map_err(|e| e.to_string())?
+    };
+    // (2) The copy + verify + delete, lock released. If another thread moved or filed this track
+    // in the meantime the source is simply gone and this fails HERE — before anything is
+    // journaled and before the status changes, so the DB is left exactly as it was.
+    let dest = filing::trash_file_fs(track_id, &source).map_err(|e| e.to_string())?;
+    // (3) Journal + status under the lock. The file is already in the trash at this point, which
+    // was also true of the pre-split code (it did the FS move before journaling, under one lock).
     {
         let conn = db::lock_conn(&conn)?;
-        filing::trash_track(&conn, track_id).map_err(|e| e.to_string())?;
+        filing::commit_trash(&conn, track_id, &source, &dest).map_err(|e| e.to_string())?;
     }
     app.emit("queue:changed", ()).ok();
     Ok(())
@@ -696,8 +968,14 @@ pub fn trash_track(
 /// List all destination bins (recursive subdirs of the library root).
 #[tauri::command]
 pub fn list_bins(conn: State<'_, Mutex<Connection>>) -> Result<Vec<Bin>, String> {
-    let conn = db::lock_conn(&conn)?;
-    let root = library_root(&conn)?;
+    // Root under the lock; the RECURSIVE walk of the whole library tree happens after releasing
+    // it. Nothing is written and nothing else is read from the DB, so there is no state to go
+    // stale: a root reconfigured mid-call just means this listing reflects the root that was
+    // configured when the command started — which is what any caller already gets.
+    let root = {
+        let conn = db::lock_conn(&conn)?;
+        library_root(&conn)?
+    };
     Ok(library::list_bins(&root))
 }
 
@@ -895,6 +1173,64 @@ mod tests {
         let v = FileProgress { done: 0, total: 0 };
         let FileProgress { done, total } = v;
         let _ = (done, total);
+    }
+
+    /// The P5 invariant, tested at its enforcement point rather than through the UI: while a
+    /// track's conversion runs in the background it stays `pending`, so nothing but this registry
+    /// stops a second `file_track` from encoding the same source again. Uses ids/paths of its own
+    /// so it cannot collide with anything else running in parallel.
+    #[test]
+    fn reserve_filing_refuses_the_same_track_twice_until_released() {
+        let (id, dest) = (-4242i64, "C:/nowhere/reserve-filing-test.aiff");
+        assert_eq!(reserve_filing(id, dest), Ok(()));
+        // Same track again while in flight → refused with the sentinel the front words.
+        assert_eq!(reserve_filing(id, dest), Err(ALREADY_FILING.to_string()));
+        // ...and its destination is visible to every other planner (interactive AND batch).
+        assert!(reserved_dests().is_ok_and(|d| d.contains(dest)));
+        release_filing(id, dest);
+        assert!(reserved_dests().is_ok_and(|d| !d.contains(dest)));
+        // Released → filable again (this is the retry path after a failed conversion).
+        assert_eq!(reserve_filing(id, dest), Ok(()));
+        release_filing(id, dest);
+    }
+
+    /// Two DIFFERENT tracks reconciling to the SAME destination: the second claim must be refused
+    /// (not silently accepted, which is how two encodes end up writing the same path) and must not
+    /// leave its track behind in the registry. Ids/dest are unique to this test — the registry is a
+    /// process-wide static and tests run in parallel.
+    #[test]
+    fn reserve_filing_refuses_a_destination_another_filing_already_claimed() {
+        let (a, b) = (-8801i64, -8802i64);
+        let dest = "C:/nowhere/reserve-filing-dest-collision.aiff";
+        assert_eq!(reserve_filing(a, dest), Ok(()));
+        assert!(is_filing_inflight(a).is_ok_and(|v| v));
+        let err = reserve_filing(b, dest).expect_err("same dest must be refused");
+        assert_ne!(err, ALREADY_FILING.to_string(), "b is a different track");
+        // The refused track was NOT left claimed — it can be filed elsewhere right away.
+        assert!(is_filing_inflight(b).is_ok_and(|v| !v));
+        release_filing(a, dest);
+        assert!(is_filing_inflight(a).is_ok_and(|v| !v));
+    }
+
+    /// Mirrors shared/contracts.ts's `TrackFileOutcome` (the `file:track:done` payload). Exhaustive
+    /// destructure (no `..`): fails to compile if a field is added/removed/renamed on the Rust
+    /// struct — the forcing function to also update contracts.ts, since the front reads this
+    /// payload to settle a filing it has already acknowledged (P5).
+    #[test]
+    fn track_file_outcome_shape_matches_contracts_ts() {
+        let v = TrackFileOutcome {
+            track_id: 1,
+            batch_id: String::new(),
+            path: None,
+            error: None,
+        };
+        let TrackFileOutcome {
+            track_id,
+            batch_id,
+            path,
+            error,
+        } = v;
+        let _ = (track_id, batch_id, path, error);
     }
 
     /// Mirrors shared/contracts.ts's `TrackRelease`. Exhaustive destructure (no `..`): fails to

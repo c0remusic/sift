@@ -94,8 +94,10 @@ pub struct RejectBatchResult {
     pub failed: Vec<i64>,
 }
 
-/// Source path of a track by id.
-fn track_path(conn: &Connection, track_id: i64) -> Result<String, FilingError> {
+/// Source path of a track by id. Exposed so an IPC command can resolve the path under the DB
+/// lock and then release it before touching the file (see `ipc_filing::reconcile` /
+/// `ipc_filing::trash_track`) — the same plan/execute/commit split as `file_track`.
+pub fn track_path(conn: &Connection, track_id: i64) -> Result<String, FilingError> {
     conn.query_row(
         "SELECT path FROM tracks WHERE id=?1",
         params![track_id],
@@ -140,13 +142,20 @@ pub(crate) fn new_batch_id(track_id: i64) -> String {
 /// the green/yellow confidence and to seed the editable fields.
 pub fn reconcile_track(conn: &Connection, track_id: i64) -> Result<Canonical, FilingError> {
     let path = track_path(conn, track_id)?;
-    let (artist, title) = tagging::read_artist_title(&path);
-    let stem = Path::new(&path)
+    Ok(reconcile_path(&path))
+}
+
+/// The reconcile of an ALREADY-RESOLVED path: reads the file's embedded tags (disk I/O) and its
+/// filename stem. No DB access at all, so a caller that resolved the path under the lock can
+/// release it before calling this — see `ipc_filing::reconcile`.
+pub fn reconcile_path(path: &str) -> Canonical {
+    let (artist, title) = tagging::read_artist_title(path);
+    let stem = Path::new(path)
         .file_stem()
         .and_then(|s| s.to_str())
         .unwrap_or("")
         .to_string();
-    Ok(naming::reconcile(&artist, &title, &stem))
+    naming::reconcile(&artist, &title, &stem)
 }
 
 /// Centralised trash directory: `{Documents}/Sift/Trash` on all platforms.
@@ -208,7 +217,12 @@ fn move_cross_disk_safe(source: &str, dest: &Path) -> Result<(), FilingError> {
 /// Returns the trash path. No DB — journaling is the caller's job.
 /// FIX-6: no `root` param — the trash dir is centralized under Documents, never under the
 /// library root, so a `root` argument was resolved and threaded through 3 callers for nothing.
-fn trash_file_fs(track_id: i64, source: &str) -> Result<String, FilingError> {
+///
+/// This is the EXECUTE phase of trashing a track (`ipc_filing::trash_track`): the copy is
+/// unbounded I/O — a lossless track is tens of megabytes and the trash dir is virtually always
+/// on another disk — so it runs with the DB lock released, exactly like `execute_file`'s encode.
+/// `commit_trash` then journals the result under the lock.
+pub fn trash_file_fs(track_id: i64, source: &str) -> Result<String, FilingError> {
     let trash_dir = sift_trash_dir()?;
     std::fs::create_dir_all(&trash_dir).map_err(|e| FilingError::Io(e.to_string()))?;
     let dest = library::ensure_unique(
@@ -219,25 +233,32 @@ fn trash_file_fs(track_id: i64, source: &str) -> Result<String, FilingError> {
     Ok(dest.to_string_lossy().to_string())
 }
 
-/// Trash a file AND journal it (used by `trash_track`, which is fast — no encode, so holding
-/// the DB lock across it is fine).
-fn move_to_trash(
+/// COMMIT phase of trashing a track (under the DB lock): journal the move as a revertable
+/// `trash` action and flip the status. `dest` is what `trash_file_fs` returned, so the file is
+/// already moved when this runs — which was ALREADY the ordering inside the pre-split
+/// `move_to_trash` (FS first, journal second), so the split adds no new "moved but unjournaled"
+/// window beyond the lock re-acquisition itself. Both writes here are fast row updates.
+pub fn commit_trash(
     conn: &Connection,
     track_id: i64,
-    batch_id: &str,
     source: &str,
-) -> Result<String, FilingError> {
-    let dest = trash_file_fs(track_id, source)?;
+    dest: &str,
+) -> Result<(), FilingError> {
+    let batch_id = new_batch_id(track_id);
     actions::record(
         conn,
-        batch_id,
+        &batch_id,
         Some(track_id),
         "trash",
         Some(source),
-        Some(&dest),
+        Some(dest),
     )
     .map_err(|e| FilingError::Db(e.to_string()))?;
-    Ok(dest)
+    conn.execute(
+        "UPDATE tracks SET status='trash' WHERE id=?1",
+        params![track_id],
+    )?;
+    Ok(())
 }
 
 /// Persist canonical metadata for a track (upsert into `metadata`).
@@ -315,6 +336,19 @@ impl FilePlan {
     pub fn dest_path(&self) -> &str {
         &self.dest
     }
+
+    /// The journal batch id this filing will be recorded under. Settled at PLAN time (not at
+    /// commit), which is what lets the interactive path hand it to the front as its acknowledgement
+    /// before phase 2/3 have run — see `ipc_filing::file_track`.
+    pub fn batch_id(&self) -> &str {
+        &self.batch_id
+    }
+
+    /// The track this plan files. Read by the asynchronous interactive path to name the track in
+    /// its completion event once the plan itself has been moved onto the background thread.
+    pub fn track_id(&self) -> i64 {
+        self.track_id
+    }
 }
 
 /// One filesystem effect performed in phase 2, to be journaled in phase 3. `meta` carries the
@@ -389,9 +423,10 @@ pub fn plan_file(
     override_target: Option<Target>,
     edited: Option<Canonical>,
     allow_rail_mismatch: bool,
-    // Destinations already claimed by earlier plans in this same batch whose files aren't written
-    // yet (phase 2 is deferred/concurrent). Empty for the interactive single-file path, where the
-    // file is written before the next plan runs. See `ensure_unique_reserved`.
+    // Destinations already claimed by earlier plans whose files aren't written yet (phase 2 is
+    // deferred/concurrent). Non-empty for the interactive path too since P5: `file_track` is
+    // detached, so its phase 2 has not run by the time the next plan is computed (see
+    // `ipc_filing::InFlightFilings`). See `ensure_unique_reserved`.
     reserved: &HashSet<String>,
 ) -> Result<FilePlan, FilingError> {
     let source = track_path(conn, track_id)?;
@@ -842,18 +877,11 @@ pub fn reject_batch(conn: &Connection, track_ids: &[i64]) -> RejectBatchResult {
     RejectBatchResult { rejected, failed }
 }
 
-/// Move a track's file to `.sift-trash` and mark it `trash` (reversible via undo). FIX-6: no
-/// `library_root` precondition — the trash dir doesn't live under it (see `trash_file_fs`).
-pub fn trash_track(conn: &Connection, track_id: i64) -> Result<(), FilingError> {
-    let source = track_path(conn, track_id)?;
-    let batch_id = new_batch_id(track_id);
-    move_to_trash(conn, track_id, &batch_id, &source)?;
-    conn.execute(
-        "UPDATE tracks SET status='trash' WHERE id=?1",
-        params![track_id],
-    )?;
-    Ok(())
-}
+// NOTE: the former one-shot `trash_track(conn, track_id)` is gone on purpose. It did the whole
+// sequence — path lookup, byte-for-byte copy to the trash dir, journal, status flip — against a
+// single `&Connection`, so `ipc_filing::trash_track` necessarily held the global connection mutex
+// across the copy. It is now the explicit three phases `track_path` → `trash_file_fs` →
+// `commit_trash`, which is the only way the copy can provably sit outside the lock.
 
 #[cfg(test)]
 mod tests {
@@ -1571,7 +1599,11 @@ mod tests {
             eprintln!("skip: no fixture");
             return;
         };
-        trash_track(&conn, id).unwrap();
+        // The three phases in the order `ipc_filing::trash_track` runs them (path under the lock,
+        // copy off it, journal + status back under it).
+        let source = track_path(&conn, id).unwrap();
+        let dest = trash_file_fs(id, &source).unwrap();
+        commit_trash(&conn, id, &source, &dest).unwrap();
         assert!(!src.exists());
         let status: String = conn
             .query_row("SELECT status FROM tracks WHERE id=?1", params![id], |r| {

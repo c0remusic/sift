@@ -40,6 +40,11 @@ const IN_PLACE_LABEL = "Dossier source de chaque morceau";
 // filing ~265 real tracks before Stop could catch up — a native dialog is not a trustworthy
 // guard here regardless of the cause, so the guard must be the app's own UI.
 const BATCH_CONFIRM_THRESHOLD = 10;
+/** How long the armed state survives without a second click. SINGLE source of truth: read by the
+ *  auto-disarm `setTimeout` below AND by the inline `animation-duration` of the drain bar in
+ *  actionButtonHtml. Two copies of this number would let the bar finish draining while the button
+ *  is still armed (or the reverse), which is worse than no bar at all. */
+const BATCH_CONFIRM_ARM_MS = 5000;
 let batchConfirmArmed: { fileN: number; fakeN: number; at: number } | null = null;
 let batchConfirmTimer: ReturnType<typeof setTimeout> | undefined;
 const batchSel = new Set<number>();
@@ -448,11 +453,23 @@ function actionButtonHtml(running: boolean): string {
   const armed =
     !!batchConfirmArmed && batchConfirmArmed.fileN === fileN && batchConfirmArmed.fakeN === fakeN;
   if (armed) {
-    // Explicit exit alongside the silent 5s auto-disarm (batchConfirmTimer) — audit UX 2026-07-24 :
+    // The auto-disarm was silent until now: the button just reverted mid-reach. A 2px rail drains
+    // under it for exactly the remaining window.
+    // Indexed on the DEADLINE, never on this node's birth — a negative animation-delay of however
+    // long the arming already lasted. This rail is rebuilt from several places while armed (every
+    // selection tick goes through updateBatchRailSelection), and a bar restarted at 0 on each
+    // rebuild would promise 5 more seconds that the timer will not honour.
+    // Both numbers come from BATCH_CONFIRM_ARM_MS, the same constant the setTimeout reads.
+    // NOT the 400ms double-click floor: that guard is logic, evaluated once at click time against
+    // batchConfirmArmed.at, and it has no business being mirrored into a DOM that gets rebuilt.
+    const elapsed = Date.now() - batchConfirmArmed!.at;
+    const drain =
+      `<span class="sift-baction-arm" style="animation-duration:${BATCH_CONFIRM_ARM_MS}ms;animation-delay:${-elapsed}ms"></span>`;
+    // Explicit exit alongside the auto-disarm (batchConfirmTimer) — audit UX 2026-07-24 :
     // no way to back out of the armed state before the second click except waiting it out. Reuses
     // the exact same reset (see "batchcancelconfirm" in the click handler below).
     return (
-      `<button data-sift="batchaction" class="sift-baction" style="background:var(--color-background-danger);color:var(--color-text-danger)">Confirmer — convertir ${fileN} ?</button>` +
+      `<button data-sift="batchaction" class="sift-baction sift-baction-armed" style="background:var(--color-background-danger);color:var(--color-text-danger)">Confirmer — convertir ${fileN} ?${drain}</button>` +
       `<button data-sift="batchcancelconfirm" class="sift-baction-cancel" style="background:none;border:none;color:var(--color-text-tertiary);font-size:var(--text-xs);padding:0 var(--space-8);cursor:pointer">Annuler</button>`
     );
   }
@@ -815,13 +832,14 @@ export function handleBatchAction(el: HTMLElement, act: string, e: MouseEvent): 
       // floor on the confirming click rejects an accidental doubleclick/duplicate-event landing
       // on the same spot right after arming — the exact failure mode that filed ~265 real
       // tracks during this fix's own verification (audit UI/UX 2026-07-03, fix 3 incident).
-      // Auto-disarms after 5s of no second click.
+      // Auto-disarms after BATCH_CONFIRM_ARM_MS of no second click — the same constant the drain
+      // bar in actionButtonHtml animates over, so what the user sees is what the timer enforces.
       clearTimeout(batchConfirmTimer);
       batchConfirmArmed = { fileN, fakeN, at: Date.now() };
       batchConfirmTimer = setTimeout(() => {
         batchConfirmArmed = null;
         renderBatchRail(currentItems.filter((it) => it.verdict !== "ok").length);
-      }, 5000);
+      }, BATCH_CONFIRM_ARM_MS);
       renderBatchRail(currentItems.filter((it) => it.verdict !== "ok").length);
       return true;
     }

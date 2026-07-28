@@ -166,6 +166,21 @@ export interface BatchResult {
   cancelled: boolean;
 }
 
+/** Outcome of the BACKGROUND half of an interactive filing, delivered on the `file:track:done`
+ *  event (mirror of ipc_filing.rs TrackFileOutcome). Since P5 `file_track` returns as soon as the
+ *  plan is settled — the click is acknowledged, the multi-second encode keeps running behind it —
+ *  so this payload is the only place the real result lands. `error !== null` means the filing did
+ *  NOT happen and the track is still `pending`: the same bounce the batch path reports in bulk as
+ *  `BatchResult.needs_validation`, for one interactive track. */
+export interface TrackFileOutcome {
+  track_id: number;
+  batch_id: string;
+  /** The filed path — non-null only when the filing actually committed. */
+  path: string | null;
+  /** Failure cause, null on success. */
+  error: string | null;
+}
+
 /** Per-file filing progress (mirror of ipc_filing.rs FileProgress). `done` = files processed so
  *  far (filed or bounced), `total` = batch size. Drives the global progress zone's "file" row. */
 export interface FileProgress {

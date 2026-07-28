@@ -86,6 +86,46 @@ fn is_missing_updater_config(err: &tauri::Error) -> bool {
         .contains("'plugins.updater' within your Tauri configuration: invalid type: null, expected struct Config")
 }
 
+/// How long the journal purge waits before touching the DB at all. The retention sweep (PRD D4)
+/// has no deadline of its own, whereas everything racing it at launch does: the first render is
+/// bounded to under a second (PRD D3) and the analysis pool is refilling from the same single
+/// `Mutex<Connection>`. Starting late costs nothing and keeps the sweep off the boot path
+/// entirely, rather than merely making it short.
+const JOURNAL_PURGE_START_DELAY: std::time::Duration = std::time::Duration::from_secs(10);
+
+/// Runs the journal retention sweep once per launch, on its own thread.
+///
+/// A migration would be the wrong home for it: `db.rs`'s migrations run ONCE, keyed on
+/// `PRAGMA user_version`, so a 30-day rolling window enforced there would be enforced exactly one
+/// time and then never again. Retention is recurring work, and this `setup` is the only recurring
+/// entry point the app has (the same place `worker::init`/`worker::refill` hook their background
+/// work). Once per launch is deliberate: a session left open for weeks lets the window drift, but
+/// the alternative — a timer thread — buys nothing for a desktop app that gets relaunched.
+/// `purge_expired_journal` releases the DB lock between batches; the delay here only keeps the
+/// very first query away from the launch burst.
+fn spawn_journal_purge(app: &tauri::AppHandle) {
+    let app = app.clone();
+    std::thread::spawn(move || {
+        std::thread::sleep(JOURNAL_PURGE_START_DELAY);
+        // `state()` panics when the state is absent; `setup` manages the connection before it
+        // spawns this thread, so it cannot happen today — but a panic in a detached thread of a
+        // maintenance task is the wrong failure mode either way (same rule that bans
+        // unwrap/expect outside tests, .claude/rules/rust.md). Log and give up instead.
+        let Some(state) = app.try_state::<Mutex<rusqlite::Connection>>() else {
+            log::error!("journal retention: DB connection state unavailable, purge skipped");
+            return;
+        };
+        match actions::purge_expired_journal(&state, actions::JOURNAL_RETENTION_DAYS) {
+            Ok(0) => {}
+            Ok(n) => log::info!(
+                "journal retention: purged {n} action rows older than {} days",
+                actions::JOURNAL_RETENTION_DAYS
+            ),
+            Err(e) => log::error!("journal retention purge failed: {e}"),
+        }
+    });
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -151,6 +191,7 @@ pub fn run() {
             watcher::start_all(app.handle());
             worker::init(app.handle());
             worker::refill(app.handle());
+            spawn_journal_purge(app.handle());
             #[cfg(windows)]
             if let Some(w) = app.get_webview_window("main") {
                 extend_frame_into_client_area(&w);

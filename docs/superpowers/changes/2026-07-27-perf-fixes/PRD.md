@@ -103,6 +103,15 @@ croît indéfiniment. La borne est en temps et non en volume, ce qui est un choi
 lisible pour l'utilisateur (« vous avez un mois pour annuler ») mais ne plafonne pas le disque —
 un mois intensif d'éditions de tags peut peser lourd. À rouvrir si le cas se présente.
 
+Deux exceptions assumées à cette règle, écrites ici pour qu'elles ne soient pas découvertes plus
+tard comme un bug : un lot **à demi annulé** (annulation interrompue en cours, encore reprenable) et
+un lot **épinglé par une opération master.db vivante** (`pending` ou `ambiguous`, que l'utilisateur
+n'a ni appliquée ni écartée — la ligne `rekordbox_masterdb_*` serait supprimée en cascade avec lui)
+**n'expirent jamais, à aucun âge**. La correction passe avant la place. Conséquence : « les lignes
+de plus de 30 jours disparaissent » n'est pas universellement vrai, et ce sont justement les lots à
+demi annulés qui peuvent porter les gros `meta`. Ils partent quand l'utilisateur termine
+l'annulation ou tranche l'opération Rekordbox.
+
 **D5 — Échec tardif d'une conversion : retour dans la file, avec marqueur persistant.** Conséquence
 de l'asynchrone acté en D3. La piste revient en `needs_validation` — la notion existe déjà et le
 mode Lot s'en sert (`frontend/batch-tracklist.ts:79`) — avec un marqueur qui survit à la

@@ -11,6 +11,7 @@ import { MAX_ANALYSIS_ATTEMPTS, type QueueItem } from "../shared/contracts";
 import { confirmAction } from "./confirm-modal";
 import { requireEl, esc } from "./dom";
 import { toast } from "./filing-toast";
+import { filingFailure, isFilingInFlight, onFilingOutcome } from "./filing-state";
 
 /** A pending track still worth (re)analysing: no current verdict AND not yet terminally broken.
  *  Single source of truth for the "Non analysés" count, filter, and bulk-retry set — a track that
@@ -39,6 +40,14 @@ function rerenderQueueWindow(): void {
 // Latest live queue items, kept so a queue-row click can recover the full item (id +
 // verdict) the filing pane needs.
 export let currentItems: QueueItem[] = [];
+
+// True when `currentItems` is known to no longer reflect the backend, so the "repaint from cache"
+// fast path below must NOT be taken. Set when a background conversion fails (P5): that track was
+// filtered out of `currentItems` while in flight and has to come back, but nothing else will ever
+// invalidate the cache for it — the conversion failed, so the backend emits no `queue:changed`.
+// Without this, navigating away and back repaints the stale (filtered) cache and the track stays
+// invisible for the rest of the session.
+let queueCacheStale = false;
 
 // Single source of truth for which queue row shows `.cur` — NOT read from filing.ts's internal
 // state (would risk a race: filing.ts may set its own state before this module's DOM catches up).
@@ -313,6 +322,10 @@ function verdictWord(it: Pick<QueueItem, "verdict" | "analysis_attempts">): [str
  * row for the open track may not exist in the DOM to be found and classed after the fact. */
 function queueRowHtml(it: QueueItem, active: boolean): string {
   const [word, wordColor] = verdictWord(it);
+  // A conversion that failed in the background (P5/D5) outranks the analysis verdict on the row:
+  // it is the one thing about this track the user must see, and it has to survive navigation — it
+  // is re-read from filing-state on every paint, so leaving Revue and coming back keeps it.
+  const failure = filingFailure(it.id);
   const title = esc(it.filename || it.path);
   const artist = it.artist ? esc(it.artist) : "";
   return (
@@ -330,9 +343,11 @@ function queueRowHtml(it: QueueItem, active: boolean): string {
     // one, making queue rows visibly uneven heights next to each other.
     `<div style="padding-left:15px;font-size:var(--text-xs);color:var(--color-text-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${artist || "&nbsp;"}</div>` +
     `</div>` +
-    (word
-      ? `<span style="flex:none;font-size:var(--text-xs);color:${wordColor}">${word}</span>`
-      : "") +
+    (failure
+      ? `<span title="${esc(failure)}" style="flex:none;display:inline-flex;align-items:center;gap:4px;font-size:var(--text-xs);color:var(--color-text-warning)"><i class="ti ti-alert-triangle"></i>conversion échouée</span>`
+      : word
+        ? `<span style="flex:none;font-size:var(--text-xs);color:${wordColor}">${word}</span>`
+        : "") +
     // Only for a not-yet-analysed row — retry a track stuck without a verdict (e.g. a
     // transient decode error on first pass) instead of leaving it silently unreachable.
     // data-reanalyze is checked BEFORE the .qi row-open branch in the delegated click handler
@@ -368,7 +383,7 @@ export async function renderQueue(touchDetail = true) {
   // arriving through the backend's "queue:changed" event (onQueueChanged → refresh(),
   // sift-live.ts) independently of navigation — a genuine change while #ql already has rows still
   // falls through to the full reload below, same as before.
-  if (!ql.childElementCount && currentItems.length) {
+  if (!ql.childElementCount && currentItems.length && !queueCacheStale) {
     ensureReviewSeg();
     const qcol = document.getElementById("qcol");
     if (qcol) {
@@ -387,6 +402,11 @@ export async function renderQueue(touchDetail = true) {
     }
     renderQueueWindow(ql);
     ensureQueueScroll(ql);
+    // The rail and the Revue nav badge must never disagree: this repaint is a delivery of the
+    // queue too (from cache), and refresh() — the only other caller of updateRevueBadge — does
+    // not run on a plain navigation. Without this the badge keeps the count from the last
+    // refresh() while the rail already shows one row less (a track converting in the background).
+    updateRevueBadge(currentItems.length);
     return;
   }
 
@@ -406,7 +426,18 @@ export async function renderQueue(touchDetail = true) {
     console.error("listQueue failed", e);
     return;
   }
+  // P5 (PRD 2026-07-27, D3): a track whose conversion is still running in the background has left
+  // the user's loop, but it is still `pending` backend-side (it only becomes `filed` once the encode
+  // commits), so list_queue keeps returning it. Dropping it HERE — the single point where the front
+  // takes delivery of the queue — is what stops the auto-advance from re-opening it and the user
+  // from converting it a second time, in the rail as well as in Lot mode (both read currentItems).
+  // It comes back on its own if the conversion fails: see the onFilingOutcome subscription below.
+  items = items.filter((it) => !isFilingInFlight(it.id));
   currentItems = items;
+  // This IS the fresh delivery the stale flag was waiting for, and the single point where the
+  // front takes the queue in — so it is also where the badge is brought back in step with the rail.
+  queueCacheStale = false;
+  updateRevueBadge(currentItems.length);
   ensureReviewSeg();
   const qcol = document.getElementById("qcol");
   if (qcol) {
@@ -685,6 +716,22 @@ export function enterDetailMode(): void {
   homeProgressZone();
   void renderQueue(true);
 }
+
+// A background conversion just settled (P5). On FAILURE the track is still `pending` and must
+// reappear in the file with its marker — it was filtered out of currentItems while in flight, so a
+// window re-render alone would not bring it back: re-fetch. `touchDetail: false` on purpose, the
+// user is somewhere else by now and the pane they are looking at must not be hijacked (same reason
+// the analysis-tick refresh passes false). On SUCCESS nothing is done here: the backend emits
+// `queue:changed`, whose existing handler already refreshes the whole view.
+onFilingOutcome((o) => {
+  if (!o.error) return;
+  // Mark the cache stale BEFORE re-rendering: off the Revue screen `#ql` does not exist and
+  // renderQueue returns at once, so the re-fetch below may not happen at all. The flag is what
+  // makes the NEXT paint (on returning to Revue) take the full reload path instead of repainting
+  // the cache this track was filtered out of.
+  queueCacheStale = true;
+  void renderQueue(false);
+});
 
 let batchRenderer: (() => void) | null = null;
 

@@ -100,6 +100,17 @@ color-scheme:light;
 /* Custom titlebar height (desktop-only): shared between chrome.ts #sift-titlebar drag region
    and update banner top position to ensure they never overlap or leave gaps. */
 --titlebar-h:30px;
+/* Motion (P6, 2026-07-27). Only the two durations that actually have a consumer are declared —
+   same audit rule as the height scale above (--h-32/--h-44 were dropped for having none). They
+   match values already recurring in the transitions further down (.1s / .15s), so this is token
+   wiring, not a new scale. The 250ms arming delay of the destructive confirm and the 5s auto-
+   disarm of the batch rail are NOT here: both are behaviour driven by a JS timer, and their
+   single source of truth has to be the constant the setTimeout reads.
+   EVERY consumer of these tokens sits inside `@media (prefers-reduced-motion: no-preference)` —
+   an opt-in, never a global `animation:none` kill switch: filing-identify.ts advances its own
+   state on `animationend` (:227, :680), and killing animations app-wide would strand it there
+   forever. */
+--duration-fast:100ms;--duration-base:150ms;--ease-out:cubic-bezier(.2,0,0,1);
 }
 /* Dark variant — same warm-neutral family, garde les 4 teintes sémantiques distinctes
    (success/danger/warning/info — palette Apple system colors, 2026-07-06). Auto = suit
@@ -642,6 +653,22 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-text-info)}
    button inside becomes a direct flex child of #filfoot, staying on the same line as
    Destination/Format/Selection (audit 2026-07-05, "tout sur une ligne"). */
 .sift-baction-slot{display:contents}
+/* The 5s auto-disarm of the armed "Confirmer — convertir N ?" state used to be invisible: the
+   button simply reverted mid-reach. A 2px rail drains under it for exactly that window.
+   It is driven by the DEADLINE, not by this node's birth: `animation-duration` and a NEGATIVE
+   `animation-delay` computed from batchConfirmArmed.at are set inline by actionButtonHtml(), so a
+   rail rebuilt mid-countdown (every selection tick rebuilds it) resumes where the clock really is
+   instead of restarting a full 5s. Both come from BATCH_CONFIRM_ARM_MS — the same constant the
+   setTimeout reads, so the bar cannot drift from the behaviour it announces.
+   Not a token duration: see the motion note in :root.
+   scaleX (compositing only, no layout) per the CSS convention; hidden outright under reduced
+   motion rather than left as a full-width bar that would never drain, i.e. would lie. */
+.sift-baction-armed{position:relative;overflow:hidden}
+.sift-baction-arm{display:none}
+@keyframes sift-arm-drain{from{transform:scaleX(1)}to{transform:scaleX(0)}}
+@media (prefers-reduced-motion:no-preference){
+  .sift-baction-arm{display:block;position:absolute;left:0;right:0;bottom:0;height:2px;background:var(--color-text-danger);transform-origin:left center;pointer-events:none;animation:sift-arm-drain linear forwards}
+}
 /* min-height reserved (annotation: "laisser suffisament d'espace... pour ne rien déplacer") — empty
    (no genres yet) collapsed to 1px, so everything below jumped down once chips appeared after
    identify; one chip-row's worth of height now, empty or not. */
@@ -1095,6 +1122,13 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-confirm-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
 .sift-confirm-btn{padding:var(--space-8) var(--space-16);border-radius:var(--border-radius-md);border:none;background:var(--color-background-info);color:var(--color-text-info);cursor:pointer;font-family:inherit}
 .sift-confirm-btn:hover{background:var(--color-background-info);filter:brightness(0.95)}
+/* The destructive button is genuinely `disabled` for its first 250ms (confirm-modal.ts), because
+   `pointer-events:none` does NOT stop HTMLElement.click() — the synthetic click is the exact
+   failure mode this whole module exists to answer. A guard that silently swallows clicks is worse
+   than none: it has to be visible, hence this state. `:hover` is re-asserted because the rule
+   above would otherwise brighten a button that is refusing input. */
+.sift-confirm-btn:disabled{opacity:.4;cursor:not-allowed}
+.sift-confirm-btn:disabled:hover{background:var(--color-background-info);filter:none}
 .sift-usbfmt-error{font-size:var(--text-sm);color:var(--color-text-danger)}
 .sift-usb-list{display:flex;flex-direction:column;gap:var(--space-8);margin:var(--space-12) 0}
 .sift-usb-row{display:flex;align-items:center;justify-content:space-between;gap:var(--space-12);padding:var(--space-8) var(--space-8);background:var(--color-background-primary);border-radius:var(--border-radius-md)}
@@ -1191,6 +1225,21 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-goto-reglages{margin-top:var(--space-4);font-size:var(--text-sm);padding:var(--space-4) var(--space-8)}
 .sift-toast{position:fixed;right:var(--space-16);bottom:var(--space-16);z-index:var(--z-toast);display:flex;align-items:center;gap:12px;background:var(--color-background-secondary);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:var(--space-8) var(--space-12);font-size:var(--text-md);color:var(--color-text-primary);box-shadow:var(--shadow-toast)}
 .sift-toast-undo{font-size:var(--text-sm);padding:var(--space-4) var(--space-8)}
+/* Shared entry/exit fade, used by the confirm overlay (entry only) and the toast (both).
+   BOTH the transition AND the from-state live inside the media query: that is what makes reduced
+   motion an opt-in rather than a kill switch — when the user prefers reduced motion, .sift-fade-from
+   sets nothing, so the node simply appears at full opacity instead of being stuck invisible waiting
+   for a transition that will never run.
+   The from-state is removed after a DOUBLE requestAnimationFrame (or the transition never plays in
+   WebView2: a single rAF callback runs BEFORE style recalc, so the node never holds a computed
+   opacity:0 to transition FROM).
+   .sift-fade-out comes after .sift-fade-in on purpose — equal specificity, source order decides,
+   and the exit's shorter duration must win on a node that carries both. */
+@media (prefers-reduced-motion:no-preference){
+  .sift-fade-in{transition:opacity var(--duration-base) var(--ease-out)}
+  .sift-fade-in.sift-fade-from{opacity:0}
+  .sift-fade-out{opacity:0;pointer-events:none;transition:opacity var(--duration-fast) var(--ease-out)}
+}
 .sift-update-banner{position:fixed;left:50%;top:var(--titlebar-h);transform:translateX(-50%);z-index:var(--z-toast);display:flex;flex-wrap:wrap;align-items:center;gap:12px;max-width:calc(100vw - var(--space-16) - var(--space-8));background:var(--color-background-secondary);border:0.5px solid var(--color-border-secondary);border-radius:0 0 var(--border-radius-md) var(--border-radius-md);padding:var(--space-8) var(--space-16);font-size:var(--text-md);color:var(--color-text-primary);box-shadow:var(--shadow-toast)}
 .sift-update-banner-install{font-size:var(--text-sm);padding:var(--space-4) var(--space-8)}
 .sift-update-banner-later{font-size:var(--text-sm);padding:var(--space-4) var(--space-8);background:transparent;color:var(--color-text-secondary)}

@@ -13,6 +13,10 @@ export function registerClearPaneHook(hook: (mid: HTMLElement) => void): void {
 
 let toastTimer: number | undefined;
 
+/** Exit fade length. Must stay in step with `--duration-fast` in styles.css: this timer is what
+ *  actually removes the node, the CSS only paints the fade. */
+const TOAST_EXIT_MS = 100;
+
 /** A transient toast at the bottom-right with an optional "Undo" action. With `onUndo` the Undo
  *  button runs that callback (e.g. a targeted revert of a specific batch); without it, Undo falls
  *  back to `undoLast` (the LIFO most-recent action), clears the detail pane, and reports the
@@ -42,7 +46,16 @@ export function toast(message: string, undo = false, onUndo?: () => void): void 
     (undo
       ? '<button data-fil="undo" class="sift-toast-undo">Annuler</button>'
       : "");
-  if (!existing) document.body.appendChild(el);
+  if (!existing) {
+    document.body.appendChild(el);
+    // Fade in on CREATION ONLY. Never on the mutation path: re-fading a toast that is already on
+    // screen would blink the message the user is in the middle of reading.
+    // The from-state is dropped on the SECOND animation frame — a rAF callback runs BEFORE style
+    // recalc in Chromium/WebView2, so removing it on the first frame means the node never held a
+    // computed opacity:0 and the transition silently never plays.
+    el.classList.add("sift-fade-in", "sift-fade-from");
+    requestAnimationFrame(() => requestAnimationFrame(() => el.classList.remove("sift-fade-from")));
+  }
   el.querySelector('[data-fil="undo"]')?.addEventListener("click", () => {
     el.remove();
     if (onUndo) {
@@ -77,5 +90,17 @@ export function toast(message: string, undo = false, onUndo?: () => void): void 
       });
   });
   clearTimeout(toastTimer);
-  toastTimer = window.setTimeout(() => el.remove(), 6000);
+  toastTimer = window.setTimeout(() => {
+    // Drop the id BEFORE painting the exit: for the whole exit window this node is still in the
+    // document, and a toast() call landing in it must NOT find it via getElementById and mutate a
+    // node that is on its way out (the message would appear, then fade away with it). Without an
+    // id, that call takes the create path and builds a fresh toast — the dying one just finishes
+    // dying. `dataset.owner` is left alone: it only ever gates the branch we can no longer reach.
+    el.removeAttribute("id");
+    el.classList.add("sift-fade-out");
+    // ONE removal path, a timer — never `transitionend`. That event does not fire when the
+    // transition is cancelled or never starts (reduced motion, or the node detached meanwhile),
+    // and the toast would then stay on screen forever.
+    window.setTimeout(() => el.remove(), TOAST_EXIT_MS);
+  }, 6000);
 }
