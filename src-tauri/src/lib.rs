@@ -26,6 +26,8 @@ mod rekordbox_masterdb;
 mod rekordbox_repairs;
 mod rekordbox_xml;
 mod scanner;
+#[cfg(test)]
+mod search_corpus;
 mod settings;
 mod sources;
 mod tagging;
