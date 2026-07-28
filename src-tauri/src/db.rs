@@ -351,7 +351,9 @@ mod tests {
         run_migrations(&conn).unwrap();
 
         let sentinel: Option<String> = conn
-            .query_row("SELECT report_json FROM tracks WHERE id=2", [], |r| r.get(0))
+            .query_row("SELECT report_json FROM tracks WHERE id=2", [], |r| {
+                r.get(0)
+            })
             .unwrap();
         assert_eq!(
             sentinel.as_deref(),

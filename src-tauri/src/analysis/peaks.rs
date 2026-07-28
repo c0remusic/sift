@@ -52,7 +52,10 @@ pub fn cap(v: Vec<f32>, max_points: usize) -> (Vec<f32>, usize) {
         return (v, 1);
     }
     let factor = v.len().div_ceil(max_points);
-    let out = v.chunks(factor).map(|c| c.iter().fold(0.0f32, |a, &b| a.max(b))).collect();
+    let out = v
+        .chunks(factor)
+        .map(|c| c.iter().fold(0.0f32, |a, &b| a.max(b)))
+        .collect();
     (out, factor)
 }
 
@@ -84,7 +87,10 @@ mod tests {
         let v = vec![0.1, 0.2, 0.3];
         let (out, factor) = cap(v.clone(), 4000);
         assert_eq!(out, v);
-        assert_eq!(factor, 1, "no pooling means the effective step is unchanged");
+        assert_eq!(
+            factor, 1,
+            "no pooling means the effective step is unchanged"
+        );
     }
 
     #[test]
@@ -105,6 +111,9 @@ mod tests {
         let (out, factor) = cap(v, 3);
         assert_eq!(factor, 3);
         assert_eq!(out.len(), 3);
-        assert!((out[1] - 1.0).abs() < 1e-6, "the spike must land in its pool, undimmed");
+        assert!(
+            (out[1] - 1.0).abs() < 1e-6,
+            "the spike must land in its pool, undimmed"
+        );
     }
 }
