@@ -766,13 +766,46 @@ fn run_file_batch(
                 if wcancel.load(Ordering::SeqCst) {
                     break;
                 }
-                let job = { queue.lock().ok().and_then(|mut q| q.pop()) };
+                let job = {
+                    match queue.lock() {
+                        Ok(mut q) => q.pop(),
+                        Err(e) => {
+                            // Sortir en silence ici rendait un worker aveugle sans une trace:
+                            // meme defaut que celui corrige dans worker.rs (.claude/rules/rust.md,
+                            // « Mutex empoisonne : logger avant de bailer, jamais un retour muet »).
+                            log::error!("file_batch: job queue poisoned, worker stops: {e}");
+                            break;
+                        }
+                    }
+                };
                 let Some(job) = job else { break };
-                let log = filing::execute_file(&job.plan)
-                    .map_err(|e| {
-                        log::error!("file_batch: execute failed for track {}: {e:?}", job.id)
-                    })
-                    .ok();
+                // catch_unwind, comme `run_file_track` (phase 2 du chemin UNITAIRE, plus haut dans
+                // ce fichier) qui l'a depuis un audit precedent. `execute_file` decode et reencode
+                // un fichier utilisateur arbitraire via le sidecar ffmpeg puis ecrit des tags avec
+                // lofty: surface d'entree non maitrisee, sur un thread que personne ne join.
+                //
+                // Sans cette garde, un panic tuait le worker AVANT son `tx.send`. La piste
+                // n'apparaissait alors NI dans `filed` NI dans `needs_validation` du BatchResult
+                // final: elle n'etait pas dans `outcomes` (aucun envoi) et pas non plus dans le
+                // rattrapage de fin de fonction, qui ne reprend que les jobs jamais depiles — or
+                // celui-ci l'avait ete. L'ecran la peignait « fait ». Audit 2026-07-28, CC-2.
+                let executed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    filing::execute_file(&job.plan)
+                }));
+                let log = match executed {
+                    Ok(r) => r
+                        .map_err(|e| {
+                            log::error!("file_batch: execute failed for track {}: {e:?}", job.id)
+                        })
+                        .ok(),
+                    Err(payload) => {
+                        log::error!(
+                            "file_batch: execute panicked for track {}: {payload:?}",
+                            job.id
+                        );
+                        None // traite comme un echec ordinaire -> needs_validation en phase 3
+                    }
+                };
                 if tx
                     .send(Phase2Outcome {
                         idx: job.idx,

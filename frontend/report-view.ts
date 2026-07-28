@@ -739,14 +739,29 @@ async function mountPlayer(root: HTMLElement, path: string, peaks?: number[], du
   destroyPlayer();
   // WaveSurfer draws to canvas, so it needs resolved color strings, not var(--x) references —
   // same read-at-mount pattern already used for the spectrogram cutoff line (drawSpectrogram
-  // below). --overlay-bar is the theme-aware "translucent bar" token (used for .qi.cur's accent
-  // bar) — a semantic fit for the unplayed wave bars, and theme-aware unlike the old hardcoded
-  // rgba(255,255,255,.35) (annotation: "aligne la couleur de la waveform sur notre color system"
-  // — that literal only worked by accident in dark mode, invisible in light). Progress keeps
+  // below). --overlay-bar is the token for the UNPLAYED wave bars; progress keeps
   // --color-waveform-elapsed, the dedicated (theme-fixed by design) waveform accent token.
+  //
+  // Jusqu'au 2026-07-28 (audit SJ-1), --overlay-bar n'était déclaré NULLE PART : getPropertyValue
+  // rendait "" et un repli littéral blanc à 35 % d'opacité prenait la main à chaque montage — sur
+  // un thème dont la base est claire, donc une waveform quasi invisible par défaut. Le commentaire
+  // d'origine affirmait par ailleurs que le token servait à la barre d'accent de .qi.cur, ce qui
+  // était faux (cette règle utilise --color-row-active).
+  //
+  // Le repli silencieux est remplacé par un repli BRUYANT : un token absent est un bug de
+  // feuille de style, il doit se voir en console au lieu de se déguiser en couleur plausible
+  // (CLAUDE.md : fail fast, pas de fallback silencieux).
   const cs = getComputedStyle(root);
-  const waveColor = cs.getPropertyValue("--overlay-bar").trim() || "rgba(255,255,255,.35)";
-  const progressColor = cs.getPropertyValue("--color-waveform-elapsed").trim() || "#ff5500";
+  const token = (name: string, fallback: string): string => {
+    const v = cs.getPropertyValue(name).trim();
+    if (!v) {
+      console.error(`[report-view] token CSS ${name} introuvable — repli ${fallback}`);
+      return fallback;
+    }
+    return v;
+  };
+  const waveColor = token("--overlay-bar", "rgba(0,0,0,.32)");
+  const progressColor = token("--color-waveform-elapsed", "#ff5500");
   const ws = WaveSurfer.create({
     container,
     height: 58, // bumped from 46 (continuous-surface redesign, 2026-07-06) — larger hero waveform

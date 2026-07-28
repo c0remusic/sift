@@ -40,6 +40,14 @@ color-scheme:light;
    when created (2026-07-10), never here: .sift-wave-hover's background silently resolved to
    nothing in light theme (regression found via the follow-up coherence audit, same session). */
 --overlay-wave-hover:oklch(25.67% 0.0142 67.12 / .16);
+/* Barres NON LUES de la waveform. Lu par report-view.ts au montage du lecteur (WaveSurfer peint
+   sur un canvas et exige une couleur resolue, pas un var()). Le token etait consomme sans avoir
+   jamais ete declare : getPropertyValue rendait "" et un repli code en dur prenait la main — du
+   blanc a 35 % d'opacite sur un theme dont la base est CLAIRE, donc une waveform quasi invisible
+   par defaut. Audit 2026-07-28, SJ-1.
+   Alpha volontairement plus fort que --overlay-wave-hover (.16) : le survol se peint PAR-DESSUS
+   les barres, il doit rester lisible sur elles. */
+--overlay-bar:oklch(25.67% 0.0142 67.12 / .32);
 --overlay-badge:oklch(25.67% 0.0142 67.12 / .06);
 /* Voile de zone de dépôt (drag OS) : surface quasi-opaque teintée info, même langage que le
    bouton Destination du rail (base + tint info), thème-aware. Remplace l'ancien rgba sombre
@@ -145,6 +153,7 @@ color-scheme:light;
     /* Hover-scrub fill on the waveform (see .sift-wave-hover) — replaces a hardcoded
        rgba(255,255,255,.6) that ignored the theme, same overlay-tint convention as --overlay-hover. */
     --overlay-wave-hover:oklch(100% 0 0 / .14);
+    --overlay-bar:oklch(100% 0 0 / .32);
     /* Icon drawn on a solid accent fill (see light block) — dark ink, since accent tokens
        (text-success/danger/info/warning) are all LIGHT in dark mode. */
     --color-text-on-accent:var(--color-background-primary);
@@ -163,6 +172,7 @@ color-scheme:light;
   --overlay-hover:oklch(100.0% 0.0 89.88 / .03);--overlay-selected:oklch(100.0% 0.0 89.88 / .06);
   --overlay-badge:oklch(100.0% 0.0 89.88 / .06);--overlay-drop:oklch(35.51% 0.0051 106.66 / .93);
   --overlay-wave-hover:oklch(100% 0 0 / .14);
+  --overlay-bar:oklch(100% 0 0 / .32);
   --color-text-on-accent:var(--color-background-primary);
 }
 *{box-sizing:border-box}
