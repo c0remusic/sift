@@ -73,11 +73,11 @@ Consulter `~/.claude/skills-view.md` (inventaire skills/agents) et
 substantielle. Overrides Sift :
 - `ecc` est désactivé dans `.claude/settings.local.json`. Utiliser les fallbacks
   du registre, jamais une référence `ecc:*`.
-- Rust : `rust-best-practices` + `error-handling-patterns`; async/perf/unsafe ou
+- Rust : async/perf/unsafe ou
   review Rust spécialisée → **session principale + `.claude/rules/rust.md`** (module
   projet) ; audit/review → agent **`auditor`** (charge `rules/audit/rust.md` global
   + le module projet). Plus d'agent `rust-engineer` (rôle absorbé).
-- Release : `release-skills`; synchroniser les versions de `package.json`,
+- Release : synchroniser les versions de `package.json`,
   `src-tauri/Cargo.toml` et `src-tauri/tauri.conf.json`, depuis `main`.
   Auto-update (2026-07-24, `docs/superpowers/changes/archive/2026-07-24-auto-update/design.md`) :
   après `git tag vX.Y.Z && git push --tags`, `release.yml` publie un
@@ -88,8 +88,9 @@ substantielle. Overrides Sift :
   toujours. Vérifié en conditions réelles sur `v0.0.1`/`v0.0.2`.
 - UI existante : `impeccable`, puis `interface-design`. La palette/typo de
   `.interface-design/system.md` est périmée; l'app et `frontend/styles.css` priment.
-- Nouveau chantier UI : `design-flow`; ne pas régénérer les tokens existants.
-- Review UI : `design-review`; a11y/perf ponctuelle : `ui-ux-pro-max`.
+- Nouveau chantier UI : `interface-design` ; ne pas régénérer les tokens existants.
+- Review UI : `ui-review-before-merge` ; a11y/perf ponctuelle : `ui-ux-pro-max`
+  (plugin actif, pas un dossier de `~/.claude/skills`).
 - Ne jamais utiliser `design-taste-frontend` sur Sift.
 - Gros refactor/nouvelle feature : `architect`. Refactor de `sift-live.ts` :
   `working-with-legacy-code` + `refactoring-patterns`, comportement couvert avant extraction.
@@ -333,7 +334,7 @@ IDs connus (à confirmer à la résolution, ne pas inventer) :
 **Jamais de style/comportement UI "de mémoire d'entraînement" sans
 traçabilité.** Avant tout nouvel élément sans exemple fourni, consulter une
 référence réelle et citer laquelle a guidé la structure ou le comportement :
-- micro-composants : `shadcn` MCP, `ui-thing` MCP, skills `coss`, puis 21st.dev ;
+- micro-composants : `shadcn` MCP, `ui-thing` MCP, puis 21st.dev ;
 - décisions desktop : Apple HIG ;
 - référence fournie par Antoine : la lire directement, sans extrapoler.
 
