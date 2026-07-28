@@ -852,8 +852,11 @@ pub fn undo_last(conn: &Connection) -> Result<Option<String>, RevertError> {
 /// editing can still weigh a lot (an accepted limit, written down in the PRD).
 pub const JOURNAL_RETENTION_DAYS: i64 = 30;
 
-/// Action ids the purge must never touch, whatever their age: they are still referenced by a LIVE
-/// master.db operation the user has neither applied nor dismissed. The three
+/// Action ids the purge must never touch, whatever their age, because something LIVE still depends
+/// on them. Two independent families — a journal row is not just history, it is load-bearing state
+/// for anything the user has started and not finished.
+///
+/// FAMILY 1 — a live master.db operation the user has neither applied nor dismissed. The three
 /// `rekordbox_masterdb_*` tables declare `action_id ... REFERENCES actions(id) ON DELETE CASCADE`
 /// (db.rs, migrations v11/v13/v14) and `PRAGMA foreign_keys = ON` is set at open (db::open), so
 /// deleting the journal row would silently delete the user's pending repair with it.
@@ -866,10 +869,28 @@ pub const JOURNAL_RETENTION_DAYS: i64 = 30;
 /// Rekordbox screen for 30 days would otherwise have those rows cascaded away without a word.
 /// Rows in a terminal status (applied/dismissed) are deliberately NOT pinned — cascading those
 /// away is the cleanup, not a loss.
+///
+/// FAMILY 2 — a track still sitting in the bin. Added 2026-07-28 (audit finding CR-1); the rule was
+/// written for family 1 only and the bin had simply been forgotten. There is NO time limit on
+/// `status='trash'`: a track stays there until the user restores it or empties the bin. Two things
+/// read this exact row, and both break without it:
+/// - `ecartes.rs` lists the bin via `JOIN actions a ON a.track_id=t.id AND a.type='trash' AND
+///   a.undone=0` — the track EXISTS on screen only through that join;
+/// - `ecartes::restore_track` does `SELECT id, from_path, to_path FROM actions ...` — that row is
+///   what says where to put the file back.
+///
+/// So purging it made a rejected track vanish from the Écartés screen AND become unrestorable,
+/// while the file itself sat untouched in the bin folder. No message, no trace.
+///
+/// The join on `tracks.status` is what keeps the pin narrow: once the track leaves the bin
+/// (restored, or definitively purged), nothing depends on the row any more and it expires normally.
+/// Pinning on `a.type='trash'` alone would make the journal's heaviest rows immortal.
 const PINNED_ACTION_IDS: &str =
     "SELECT action_id FROM rekordbox_masterdb_repairs WHERE status IN ('pending','ambiguous')
        UNION SELECT action_id FROM rekordbox_masterdb_metadata_syncs WHERE status IN ('pending','ambiguous')
-       UNION SELECT action_id FROM rekordbox_masterdb_artwork_syncs WHERE status IN ('pending','ambiguous')";
+       UNION SELECT action_id FROM rekordbox_masterdb_artwork_syncs WHERE status IN ('pending','ambiguous')
+       UNION SELECT a.id FROM actions a JOIN tracks t ON t.id = a.track_id
+              WHERE a.type='trash' AND a.undone=0 AND t.status='trash'";
 
 /// Batch ids lying entirely outside the retention window and safe to drop whole.
 /// `cutoff` is a SQLite datetime modifier, e.g. `-30 days`.
@@ -3181,6 +3202,97 @@ mod tests {
             repairs, 1,
             "the ambiguous repair must not have been cascaded"
         );
+    }
+
+    /// CR-1 (audit multi-passes du 2026-07-28) — la rétention de 30 jours efface les lignes
+    /// `trash` VIVANTES, et avec elles la seule façon de récupérer le fichier.
+    ///
+    /// Une piste écartée reste en `status='trash'` tant que l'utilisateur ne l'a ni restaurée ni
+    /// supprimée définitivement — il n'y a aucune limite de temps sur cet état. Or DEUX choses
+    /// dépendent de sa ligne `actions` :
+    /// - `ecartes.rs` liste la corbeille par `JOIN actions a ON a.track_id=t.id AND a.type='trash'
+    ///   AND a.undone=0` : la piste n'EXISTE à l'écran que par ce JOIN ;
+    /// - `ecartes::restore_track` fait `SELECT id, from_path, to_path FROM actions ...` : c'est
+    ///   cette ligne qui dit OÙ remettre le fichier.
+    ///
+    /// Purger la ligne fait donc disparaître la piste de l'écran Écartés ET rend sa restauration
+    /// impossible, alors que le fichier est toujours sur le disque. L'utilisateur ne voit rien : ni
+    /// message, ni trace. C'est la seule perte de données silencieuse du rapport d'audit.
+    ///
+    /// `PINNED_ACTION_IDS` connaît déjà ce raisonnement — il épingle les opérations master.db
+    /// vivantes pour exactement la même raison — mais ne couvre que les trois tables
+    /// `rekordbox_masterdb_*`. La corbeille a été oubliée.
+    #[test]
+    fn purge_spares_a_live_trash_row() {
+        let conn = db();
+        conn.execute(
+            "INSERT INTO tracks (id, path, filename, status)
+             VALUES (7, '/trash/a.mp3', 'a.mp3', 'trash')",
+            [],
+        )
+        .unwrap();
+        // Action `trash` vivante (undone=0) de 70 jours, sur une piste TOUJOURS écartée.
+        conn.execute(
+            "INSERT INTO actions(track_id, type, from_path, to_path, batch_id, undone, ts)
+             VALUES(7, 'trash', '/src/a.mp3', '/trash/a.mp3', 'live-trash', 0,
+                    datetime('now','-70 days'))",
+            [],
+        )
+        .unwrap();
+        // Témoin du MÊME âge qui, lui, doit bien partir : sans lui, un test qui passe ne
+        // distinguerait pas « la ligne trash est épargnée » de « la purge n'a rien fait ».
+        seed_action(&conn, "free", "move", 70, 0, (Some("/c"), Some("/d")), None);
+
+        let db = std::sync::Mutex::new(conn);
+        let deleted = purge_expired_journal(&db, JOURNAL_RETENTION_DAYS).unwrap();
+
+        let conn = db.lock().unwrap();
+        assert_eq!(
+            batch_rows(&conn, "free"),
+            0,
+            "temoin: une action ordinaire du meme age doit bien partir"
+        );
+        assert_eq!(
+            batch_rows(&conn, "live-trash"),
+            1,
+            "la ligne trash d'une piste TOUJOURS ecartee doit survivre: c'est elle qui porte \
+             from_path/to_path pour ecartes::restore_track, et le JOIN qui fait exister la piste \
+             dans l'ecran Ecartes. La purger perd le fichier en silence."
+        );
+        assert_eq!(deleted, 1, "seul le temoin doit avoir ete supprime");
+    }
+
+    /// Le pendant du précédent : une fois la piste sortie de `trash` (restaurée, ou purgée
+    /// définitivement), plus rien ne dépend de la ligne et elle doit expirer normalement. Sans ce
+    /// test, l'épinglage pourrait être écrit trop large — « toute action de type trash est
+    /// éternelle » — et le journal ne se viderait plus jamais de ses lignes les plus lourdes.
+    #[test]
+    fn purge_drops_a_trash_row_whose_track_left_the_bin() {
+        let conn = db();
+        conn.execute(
+            "INSERT INTO tracks (id, path, filename, status)
+             VALUES (7, '/lib/a.mp3', 'a.mp3', 'filed')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO actions(track_id, type, from_path, to_path, batch_id, undone, ts)
+             VALUES(7, 'trash', '/src/a.mp3', '/trash/a.mp3', 'old-trash', 0,
+                    datetime('now','-70 days'))",
+            [],
+        )
+        .unwrap();
+
+        let db = std::sync::Mutex::new(conn);
+        let deleted = purge_expired_journal(&db, JOURNAL_RETENTION_DAYS).unwrap();
+
+        let conn = db.lock().unwrap();
+        assert_eq!(
+            batch_rows(&conn, "old-trash"),
+            0,
+            "la piste n'est plus dans la corbeille: plus rien ne depend de cette ligne"
+        );
+        assert_eq!(deleted, 1);
     }
 
     /// The batchless branch, which `seed_action` cannot reach (its `batch_id` is `&str`): rows
