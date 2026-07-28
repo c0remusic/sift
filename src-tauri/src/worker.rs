@@ -39,9 +39,14 @@ fn verdict_str(v: Verdict) -> &'static str {
 /// before the report cache existed (report_json NULL) — so every track ends up with a cached
 /// report and opening it is always instant. (`persist_failure` sets report_json='' so broken
 /// files don't loop here.)
+///
+/// `typeof(report_json)='null'` rather than `report_json IS NULL`: identical result, but `IS NULL`
+/// forces SQLite to load an ~800 KB value per row just to find out it is absent (see queue.rs
+/// list_pending for the measurement). This runs on every `queue:changed`, so it is the same hot
+/// path, and the sentinel test still works — `''` is text, never `'null'`.
 pub fn select_pending(conn: &Connection) -> rusqlite::Result<Vec<i64>> {
     let mut stmt = conn.prepare(
-        "SELECT id FROM tracks WHERE status='pending' AND (analyzed_at IS NULL OR report_json IS NULL) ORDER BY id",
+        "SELECT id FROM tracks WHERE status='pending' AND (analyzed_at IS NULL OR typeof(report_json)='null') ORDER BY id",
     )?;
     let rows = stmt.query_map([], |r| r.get::<_, i64>(0))?;
     rows.collect()

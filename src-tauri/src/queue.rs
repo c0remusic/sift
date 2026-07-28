@@ -49,9 +49,15 @@ pub struct QueueItem {
 
 /// All pending tracks, oldest first.
 pub fn list_pending(conn: &Connection) -> rusqlite::Result<Vec<QueueItem>> {
+    // `typeof(t.report_json)='null'`, NOT `t.report_json IS NULL`. Same answer, ~90x cheaper:
+    // `IS NULL` makes SQLite LOAD the value, and report_json averages ~800 KB per row, so the
+    // engine walks the overflow pages of every pending track — measured 2026-07-28 on the real
+    // DB (2713 rows): 1872 ms for that one predicate against 20.7 ms for `typeof`, which reads
+    // the type from the row header and never touches the payload. This query is on the critical
+    // path of opening Revue; at 1.9 s it read as a freeze.
     let mut stmt = conn.prepare(
         "SELECT t.id, t.path, t.filename, t.source_id, t.verdict, t.real_quality, m.artist, m.title,
-                (t.verdict IS NULL OR t.analyzed_at IS NULL OR t.report_json IS NULL),
+                (t.verdict IS NULL OR t.analyzed_at IS NULL OR typeof(t.report_json)='null'),
                 t.analysis_attempts
          FROM tracks t LEFT JOIN metadata m ON m.track_id = t.id
          WHERE t.status='pending' ORDER BY t.id",
