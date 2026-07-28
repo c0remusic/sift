@@ -313,6 +313,48 @@ Verticales, chacune démontrable seule.
 
 Ordre : T1 → (T2, T3) → T4 ; T5 en parallèle de T2/T3.
 
+### État au 2026-07-28
+
+| Tranche | État | Preuve |
+|---|---|---|
+| T1 corpus | livré | `search_corpus.rs`, 77 cas, base 5/77 |
+| T2 nettoyeur | livré | 75/77 exacts (97,4 %) |
+| T3 dossier | livré, **fusionné dans T2** | idem — voir ci-dessous |
+| T4 cascade | livré | garde `discogs.rs:405` retirée, budget réseau testé |
+| T5 durée | à faire | — |
+
+**T2 et T3 ont été fusionnés.** Le minage du dossier réutilise intégralement le
+nettoyeur du nom (`normalise` → `strip_groups` → `strip_loose_noise` →
+`strip_scene_suffix` → `split_fields`) : les livrer séparément aurait signifié
+écrire ce pipeline deux fois, puis le dédupliquer. La démontrabilité est
+préservée — les cas du corpus qui dépendent du dossier (`A1-Stepback` →
+`Slam`) sont testés nommément.
+
+Résultat mesuré sur le corpus, `naming::reconcile` → `search_terms::build` :
+
+| | base | après | |
+|---|---|---|---|
+| exacts | 5 (6,5 %) | **75 (97,4 %)** | ×15 |
+| artiste | 15 (19,5 %) | 75 (97,4 %) | ×5 |
+| titre | 17 (22,1 %) | 75 (97,4 %) | ×4,4 |
+| version | 44 (57,1 %) | 77 (100 %) | — |
+
+Deux cas non résolus, délibérément : `2-Gunne-What-I-Like--Fi-LOPZUP` et
+`02-Retiro_An-2_Fluent_Remix_`. Détail et raison dans les constantes
+`TERMS_*` de `search_corpus.rs`.
+
+**Budget réseau tenu** (§8) : pire cas passé de 14 requêtes par clic
+(principal + repli, 2 × (1 + 6)) à 13 (1 + 6, puis 2 × (1 + 2)). Vérifié par
+un test qui compare les deux formules, pas par un commentaire.
+
+**Décision d'implémentation non prévue au design** : `ipc_identify::identify`
+n'appelle plus `filing::reconcile_track`. Il lit les tags et le chemin
+lui-même, puis fait primer les tags propres sur `search_terms`. Motif : passer
+par `Canonical` réintroduisait le portail de rejet dans le chemin de requête,
+c'est-à-dire exactement le défaut corrigé. Les deux chemins sont désormais
+distincts — `ipc_filing::reconcile` continue seul d'alimenter les champs
+éditables et le badge de confiance, inchangé.
+
 ## 10. Ce que ce design ne garantit pas
 
 - **9 pistes resteront non identifiables** (§1.0) : aucun nettoyage de chaîne ne

@@ -779,4 +779,81 @@ mod tests {
              LE MEME changement, en disant pourquoi. Sinon c'est une regression.\n"
         );
     }
+
+    /// Ce que `search_terms::build` résout sur le même corpus. Même rôle que les constantes de
+    /// base : un plancher qu'on ne redescend pas sans le dire. Un chiffre qui MONTE est aussi un
+    /// échec de test — délibérément : il faut alors constater le gain, vérifier qu'il n'est pas dû
+    /// à un attendu relâché, et le figer.
+    ///
+    /// 75/77 au 2026-07-28. Les deux manqués sont des formes scène réellement ambiguës, laissées
+    /// telles quelles DÉLIBÉRÉMENT — les résoudre demanderait des règles si spécifiques qu'elles
+    /// abîmeraient des cas voisins :
+    ///   - `2-Gunne-What-I-Like--Fi-LOPZUP` : tout en tirets, impossible de savoir où finit
+    ///     l'artiste sans connaître le disque.
+    ///   - `02-Retiro_An-2_Fluent_Remix_` : le souligné y sert de séparateur de CHAMP alors qu'il
+    ///     sert de séparateur de MOT partout ailleurs, et le titre `An-2` contient lui-même un
+    ///     tiret.
+    ///
+    /// Ils restent au corpus : un corpus qui ne garderait que ce qu'on sait résoudre mentirait sur
+    /// la difficulté réelle.
+    const TERMS_EXACT: usize = 75;
+    const TERMS_ARTIST: usize = 75;
+    const TERMS_TITLE: usize = 75;
+    const TERMS_VERSION: usize = 77;
+
+    #[test]
+    fn corpus_against_search_terms() {
+        let mut exact = 0usize;
+        let (mut artist_ok, mut title_ok, mut version_ok) = (0usize, 0usize, 0usize);
+        let mut failures: Vec<String> = Vec::new();
+
+        for c in CASES {
+            let got = crate::search_terms::build(c.stem, c.folder);
+            let a = got.artist == c.artist;
+            let t = got.title == c.title;
+            let v = got.version.as_deref() == c.version;
+            if a {
+                artist_ok += 1;
+            }
+            if t {
+                title_ok += 1;
+            }
+            if v {
+                version_ok += 1;
+            }
+            if a && t && v {
+                exact += 1;
+            } else {
+                failures.push(format!(
+                    "  [{}]\n    dossier  {:?}\n    stem     {:?}\n    attendu  artiste={:?} titre={:?} version={:?}\n    obtenu   artiste={:?} titre={:?} version={:?}",
+                    c.note, c.folder, c.stem, c.artist, c.title, c.version,
+                    got.artist, got.title, got.version
+                ));
+            }
+        }
+
+        let n = CASES.len();
+        println!(
+            "\n=== CORPUS noms sales — search_terms::build ===\n\
+             cas             : {n}\n\
+             exacts          : {exact} ({:.1}%)   [base naming: {BASELINE_EXACT}]\n\
+             artiste correct : {artist_ok} ({:.1}%)   [base: {BASELINE_ARTIST}]\n\
+             titre correct   : {title_ok} ({:.1}%)   [base: {BASELINE_TITLE}]\n\
+             version correcte: {version_ok} ({:.1}%)   [base: {BASELINE_VERSION}]\n",
+            100.0 * exact as f64 / n as f64,
+            100.0 * artist_ok as f64 / n as f64,
+            100.0 * title_ok as f64 / n as f64,
+            100.0 * version_ok as f64 / n as f64,
+        );
+        for f in &failures {
+            println!("{f}");
+        }
+
+        assert_eq!(
+            (exact, artist_ok, title_ok, version_ok),
+            (TERMS_EXACT, TERMS_ARTIST, TERMS_TITLE, TERMS_VERSION),
+            "\nLe resultat de search_terms sur le corpus a bouge.\n\
+             Mettre les quatre constantes a jour DANS LE MEME changement, en disant pourquoi.\n"
+        );
+    }
 }

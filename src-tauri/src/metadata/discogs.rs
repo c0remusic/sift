@@ -16,6 +16,16 @@ const HTTP_TIMEOUT: Duration = Duration::from_secs(15);
 /// mix. Bounded to stay well under Discogs' 60 req/min while covering the realistic best hits.
 const TRACKLIST_PROBE: usize = 6;
 
+/// Idem pour un essai DÉGRADÉ de la cascade. Volontairement bas : sans ce plafond, une cascade à
+/// trois marches multiplierait par trois le trafic de sondage, alors qu'un essai dégradé est par
+/// construction moins susceptible d'être le bon. Budget total au pire : 1+6 puis 2×(1+2) = 13
+/// requêtes par clic, contre 14 pour l'ancien schéma principal+repli — strictement mieux.
+const TRACKLIST_PROBE_DEGRADED: usize = 2;
+
+/// Nombre maximal d'essais réellement exécutés, quelle que soit la longueur de la cascade fournie.
+/// La borne est un plafond de DÉBIT, pas une opinion sur la qualité des essais suivants.
+const LADDER_MAX_ATTEMPTS: usize = 3;
+
 /// Map a ureq error to our typed ProviderError. Shared by every Discogs HTTP call so a 429
 /// (with Retry-After), a non-2xx status, and a transport failure are classified consistently.
 fn map_ureq_err(e: ureq::Error) -> ProviderError {
@@ -321,9 +331,34 @@ impl Discogs {
     /// rate-limited one just leaves that candidate unscored (falls back to format relevance).
     /// Factored out of `search` so both the primary and the title-only fallback query can be
     /// scored the same way and compared.
-    fn probe_and_score(&self, cands: &mut [Candidate], q: &Query) -> Vec<i32> {
+    /// Construit la liste des requêtes à tenter, plafonnée à `LADDER_MAX_ATTEMPTS`.
+    ///
+    /// Rétro-compatible : un `Query` sans cascade (tests, appelants historiques) retombe sur
+    /// l'unique `"{artist} {title}"` d'origine, de sorte que brancher la cascade ne change rien
+    /// pour qui ne la fournit pas.
+    fn attempts_for(&self, q: &Query) -> Vec<String> {
+        let source: Vec<String> = if q.attempts.is_empty() {
+            vec![format!("{} {}", q.artist, q.title)]
+        } else {
+            q.attempts.clone()
+        };
+        let mut out: Vec<String> = Vec::new();
+        for a in source {
+            let s = sanitize_discogs_query(a.trim());
+            if s.trim().is_empty() || out.iter().any(|p| p.eq_ignore_ascii_case(&s)) {
+                continue;
+            }
+            out.push(s);
+            if out.len() == LADDER_MAX_ATTEMPTS {
+                break;
+            }
+        }
+        out
+    }
+
+    fn probe_and_score(&self, cands: &mut [Candidate], q: &Query, max_probe: usize) -> Vec<i32> {
         let mut scores = vec![0i32; cands.len()];
-        let probe = cands.len().min(TRACKLIST_PROBE);
+        let probe = cands.len().min(max_probe);
         for i in 0..probe {
             if cands[i].release_id.is_empty() {
                 continue;
@@ -387,46 +422,133 @@ impl MetadataProvider for Discogs {
         // artist+track filters: Discogs' `track` filter matches a release's tracklist and is
         // unreliable (combined with `artist` it often returns nothing even on an exact title).
         // `q` makes the title actually count and is far more forgiving.
-        let primary = format!("{} {}", q.artist, q.title);
-        let primary = sanitize_discogs_query(primary.trim());
-        let primary = primary.as_str();
-        log::info!("Discogs search q={primary:?}");
-        let mut cands = self.search_query(primary)?;
-        let mut scores = self.probe_and_score(&mut cands, q);
-        let best_primary = scores.iter().copied().max().unwrap_or(0);
+        // La cascade remplace l'ancien couple « requête principale + un repli titre-seul gardé sur
+        // un artiste non vide ». Cette garde excluait EXACTEMENT la population qui en avait le plus
+        // besoin : les noms les plus sales sont ceux dont l'artiste ne peut pas être extrait, et ce
+        // sont eux qui n'avaient droit à aucune seconde chance. Mesuré le 2026-07-28 : ~1 100 pistes
+        // sur 2 714 dans ce cas. Voir docs/superpowers/changes/2026-07-28-discogs-dirty-names/.
+        let attempts = self.attempts_for(q);
+        if attempts.is_empty() {
+            return Ok(Vec::new());
+        }
 
-        // Fallback: a combined "artist title" query fails when the reconciled artist is polluted
-        // (messy download filenames) or differs from Discogs' credit — either literally zero
-        // results, or a page of results none of which actually contain the track in their own
-        // tracklist (best_primary <= 0). Retry with the title alone — what a human would type —
-        // so an existing release isn't missed. Only when we actually had a distinct artist (else
-        // the title-only query equals the primary).
-        if (cands.is_empty() || best_primary <= 0)
-            && !q.artist.trim().is_empty()
-            && !q.title.trim().is_empty()
-        {
-            let title = sanitize_discogs_query(q.title.trim());
-            let title = title.as_str();
-            log::info!(
-                "Discogs: no confident match for {primary:?} (best score {best_primary}), retrying title-only {title:?}"
-            );
-            let mut fallback = self.search_query(title)?;
-            let fallback_scores = self.probe_and_score(&mut fallback, q);
-            let best_fallback = fallback_scores.iter().copied().max().unwrap_or(0);
-            // Swap in the fallback only when it's an improvement, or the primary had nothing to
-            // begin with — never discard an actual tracklist match for an equally blank retry.
-            if !fallback.is_empty() && (cands.is_empty() || best_fallback > best_primary) {
-                cands = fallback;
-                scores = fallback_scores;
+        let mut best: Option<(Vec<Candidate>, Vec<i32>, i32)> = None;
+        for (rank, attempt) in attempts.iter().enumerate() {
+            // Budget réseau : seul le premier essai sonde `TRACKLIST_PROBE` tracklists. Les essais
+            // dégradés en sondent `TRACKLIST_PROBE_DEGRADED`, sinon une cascade à trois marches
+            // triplerait le trafic. Pire cas total : 1+6 puis 2×(1+2) = 13 requêtes, soit moins que
+            // les 14 de l'ancien schéma principal+repli.
+            let probe = if rank == 0 {
+                TRACKLIST_PROBE
+            } else {
+                TRACKLIST_PROBE_DEGRADED
+            };
+            log::info!("Discogs search [{rank}] q={attempt:?}");
+            let mut cands = self.search_query(attempt)?;
+            let scores = self.probe_and_score(&mut cands, q, probe);
+            let best_score = scores.iter().copied().max().unwrap_or(0);
+
+            // Un score de tracklist > 0 signifie qu'un candidat contient RÉELLEMENT le morceau
+            // cherché : inutile de dégrader plus loin.
+            if best_score > 0 {
+                return Ok(rank_by_match(cands, &scores));
+            }
+            // Sinon on garde le meilleur essai vu jusqu'ici — jamais un essai vide au lieu d'un
+            // essai qui avait au moins ramené des candidats.
+            let keep = match &best {
+                None => true,
+                Some((prev_cands, _, prev_best)) => {
+                    best_score > *prev_best || (prev_cands.is_empty() && !cands.is_empty())
+                }
+            };
+            if keep {
+                best = Some((cands, scores, best_score));
             }
         }
-        Ok(rank_by_match(cands, &scores))
+
+        match best {
+            Some((cands, scores, _)) => Ok(rank_by_match(cands, &scores)),
+            None => Ok(Vec::new()),
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn provider() -> Discogs {
+        // `attempts_for` est pur : il ne touche jamais le réseau, le jeton n'est pas lu.
+        Discogs {
+            token: "test".into(),
+        }
+    }
+
+    fn q(artist: &str, title: &str, attempts: &[&str]) -> Query {
+        Query {
+            artist: artist.into(),
+            title: title.into(),
+            version: None,
+            attempts: attempts.iter().map(|s| s.to_string()).collect(),
+        }
+    }
+
+    /// Un appelant qui ne fournit pas de cascade doit obtenir EXACTEMENT le comportement d'avant :
+    /// une requête `"{artist} {title}"`. Sans quoi brancher la cascade changerait le sens de tous
+    /// les appels existants au passage.
+    #[test]
+    fn attempts_falls_back_to_artist_title_when_no_ladder_given() {
+        let a = provider().attempts_for(&q("Larry Heard", "Mystery of Love", &[]));
+        assert_eq!(a, vec!["Larry Heard Mystery of Love".to_string()]);
+    }
+
+    /// Le plafond est une contrainte de DÉBIT face aux 60 requêtes/minute de Discogs, pas un avis
+    /// sur la qualité des essais suivants.
+    #[test]
+    fn attempts_are_capped() {
+        let a = provider().attempts_for(&q("A", "B", &["un", "deux", "trois", "quatre", "cinq"]));
+        assert_eq!(a.len(), LADDER_MAX_ATTEMPTS);
+        assert_eq!(a, vec!["un", "deux", "trois"]);
+    }
+
+    /// Un doublon consomme une marche de la cascade pour rien — et la cascade n'en a que trois.
+    #[test]
+    fn attempts_drop_duplicates_and_blanks() {
+        let a = provider().attempts_for(&q(
+            "A",
+            "B",
+            &[
+                "Slam Stepback",
+                "",
+                "   ",
+                "slam stepback",
+                "Slam Snapshots",
+            ],
+        ));
+        assert_eq!(a, vec!["Slam Stepback", "Slam Snapshots"]);
+    }
+
+    /// Les essais viennent d'un nom de fichier arbitraire : la syntaxe de champ Discogs doit être
+    /// neutralisée sur CHAQUE marche, pas seulement sur la première.
+    #[test]
+    fn attempts_are_sanitized_individually() {
+        let a = provider().attempts_for(&q("A", "B", &["Artist: X", "Y AND Z"]));
+        assert_eq!(a, vec!["Artist X", "Y Z"]);
+    }
+
+    /// Garde-fou de débit chiffré. L'ancien schéma (principal + repli) coûtait au pire
+    /// 2 × (1 recherche + `TRACKLIST_PROBE` tracklists) = 14 requêtes par clic. La cascade ne doit
+    /// pas dépasser ça, sinon on aurait échangé un taux de réussite contre des 429.
+    #[test]
+    fn ladder_network_budget_is_not_worse_than_the_old_scheme() {
+        let old_worst = 2 * (1 + TRACKLIST_PROBE);
+        let new_worst =
+            (1 + TRACKLIST_PROBE) + (LADDER_MAX_ATTEMPTS - 1) * (1 + TRACKLIST_PROBE_DEGRADED);
+        assert!(
+            new_worst <= old_worst,
+            "budget reseau degrade : {new_worst} requetes au pire contre {old_worst} avant"
+        );
+    }
 
     #[test]
     fn sanitize_discogs_query_neutralizes_field_syntax() {

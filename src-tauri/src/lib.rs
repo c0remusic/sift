@@ -28,6 +28,7 @@ mod rekordbox_xml;
 mod scanner;
 #[cfg(test)]
 mod search_corpus;
+mod search_terms;
 mod settings;
 mod sources;
 mod tagging;

@@ -125,10 +125,18 @@ pub fn update_metadata_db(
 
 /// What we search for: the track's current best-guess artist/title, plus the version
 /// (remix/dub) used to pick the matching release among a release's tracklist.
+///
+/// `artist`/`title`/`version` drive the SCORING (matching a release's tracklist); `attempts`
+/// drives the QUERYING. They are deliberately distinct: the scoring wants the cleanest fields we
+/// have, while the querying wants several progressively degraded shots at the same track.
 pub struct Query {
     pub artist: String,
     pub title: String,
     pub version: Option<String>,
+    /// Requêtes à tenter, de la plus spécifique à la plus dégradée (voir `search_terms`). Vide =
+    /// l'appelant n'en fournit pas et le fournisseur retombe sur `"{artist} {title}"` — c'est le
+    /// cas des tests et de tout appelant historique.
+    pub attempts: Vec<String>,
 }
 
 /// A normalized identification result, ranked best-first by the provider.

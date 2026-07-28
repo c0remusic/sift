@@ -16,27 +16,72 @@ pub fn identify(
     conn: State<'_, Mutex<Connection>>,
     track_id: i64,
 ) -> Result<Vec<Candidate>, String> {
-    let (token, query) = {
+    // Chemin sous le verrou, lecture des tags APRÈS l'avoir relâché : une lecture disque ne doit
+    // pas geler les autres utilisateurs de la base (même découpage que `ipc_filing::reconcile`).
+    let (token, path) = {
         let conn = db::lock_conn(&conn)?;
         let token = settings::get(&conn, settings::DISCOGS_TOKEN)
             .map_err(|e| e.to_string())?
             .unwrap_or_default();
-        let canonical =
-            crate::filing::reconcile_track(&conn, track_id).map_err(|e| e.to_string())?;
-        (
-            token,
-            Query {
-                artist: canonical.artist,
-                title: canonical.title,
-                version: canonical.version,
-            },
-        )
+        let path = crate::filing::track_path(&conn, track_id).map_err(|e| e.to_string())?;
+        (token, path)
     };
     if token.trim().is_empty() {
         return Err("NO_TOKEN".into());
     }
+    let query = build_query(&path);
     let provider = metadata::discogs::Discogs { token };
     provider.search(&query).map_err(|e| e.code())
+}
+
+/// Assemble la requête depuis les DEUX sources, chacune dans son domaine de compétence.
+///
+/// Les tags embarqués priment quand ils sont propres : ils peuvent avoir été corrigés par
+/// l'utilisateur, et aucune analyse du nom de fichier ne peut battre une donnée saisie. Sinon —
+/// et c'est le cas de 79 % des fichiers dont le nom est sale, mesuré le 2026-07-28 — on s'appuie
+/// sur `search_terms`, qui lit le nom ET le dossier parent.
+///
+/// La version vient TOUJOURS de `search_terms` en priorité : elle est extraite du nom de fichier,
+/// où elle figure presque toujours, alors que les tags la portent rarement séparément.
+///
+/// Note délibérée : cette fonction n'appelle PAS `filing::reconcile_track`. `Canonical` est
+/// l'identité qu'on écrit sur le disque et son portail de rejet la rend volontairement timide ;
+/// s'en servir comme requête est précisément le défaut que ce chantier corrige. Les deux chemins
+/// restent séparés — `ipc_filing::reconcile` continue d'alimenter les champs éditables.
+fn build_query(path: &str) -> Query {
+    let p = std::path::Path::new(path);
+    let stem = p
+        .file_stem()
+        .map(|s| s.to_string_lossy())
+        .unwrap_or_default();
+    let folder = p
+        .parent()
+        .and_then(|d| d.file_name())
+        .map(|s| s.to_string_lossy())
+        .unwrap_or_default();
+
+    let terms = crate::search_terms::build(&stem, &folder);
+    let (tag_artist, tag_title) = crate::tagging::read_artist_title(path);
+    let tags_clean = crate::naming::is_clean(&tag_artist, &tag_title);
+
+    let (artist, title) = if tags_clean {
+        (tag_artist.trim().to_string(), tag_title.trim().to_string())
+    } else {
+        (terms.artist.clone(), terms.title.clone())
+    };
+
+    let mut attempts: Vec<String> = Vec::new();
+    if tags_clean {
+        attempts.push(format!("{artist} {title}"));
+    }
+    attempts.extend(terms.ladder.iter().map(|a| a.q.clone()));
+
+    Query {
+        artist,
+        title,
+        version: terms.version,
+        attempts,
+    }
 }
 
 /// Persist a chosen candidate for `track_id`: download its cover (best-effort) then write the
