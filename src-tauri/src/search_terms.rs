@@ -135,13 +135,28 @@ pub fn build(stem: &str, folder: &str) -> Terms {
         artist.clear();
     }
 
-    let ladder = build_ladder(&artist, &title, version.as_deref(), folder);
+    let ladder = build_ladder(&artist, &title, version.as_deref(), folder, stem);
     Terms {
         artist,
         title,
         version,
         ladder,
     }
+}
+
+/// Tous les mots du nom dégraissé, séparateurs compris, réduits à des espaces.
+///
+/// C'est le dernier recours de la cascade, et il vaut par ce qu'il ne suppose PAS : on n'a pas
+/// besoin de savoir où finit l'artiste pour envoyer les bons mots. Sur
+/// `2-Gunne-What-I-Like--Fi-LOPZUP`, le découpage en champs échoue mais `gunne what i like` est
+/// exactement ce qu'un humain taperait — et c'est ce que Discogs indexe.
+fn all_words(stem: &str) -> String {
+    let (cleaned, _) = degrease(stem);
+    let spaced: String = cleaned
+        .chars()
+        .map(|c| if c == '-' { ' ' } else { c })
+        .collect();
+    collapse_ws(&spaced)
 }
 
 // ---------------------------------------------------------------------------------------------
@@ -630,7 +645,9 @@ fn is_generic_title(t: &str) -> bool {
 }
 
 /// Cœur de l'extraction : nom de fichier sale → (artiste, titre, version).
-fn extract_from(stem: &str) -> (String, String, Option<String>) {
+/// Retire tout le bruit sans encore décider qui est l'artiste : c'est l'étape commune à
+/// l'extraction des champs et à l'essai « tous les mots » de la cascade.
+fn degrease(stem: &str) -> (String, Option<String>) {
     // Décidé sur le nom BRUT : après `normalise` les soulignés sont devenus des espaces, et le
     // signal « c'est une release scène » aurait disparu.
     let scene_shaped = stem.contains('_');
@@ -639,7 +656,11 @@ fn extract_from(stem: &str) -> (String, String, Option<String>) {
     let s = strip_loose_noise(&s);
     let s = strip_scene_suffix(&s, scene_shaped);
     let s = strip_leading_position(&s);
-    let s = collapse_ws(&s);
+    (collapse_ws(&s), group_version)
+}
+
+fn extract_from(stem: &str) -> (String, String, Option<String>) {
+    let (s, group_version) = degrease(stem);
 
     if s.is_empty() {
         return (String::new(), String::new(), None);
@@ -802,11 +823,21 @@ fn folded(s: &str) -> String {
 /// La garde qui manquait le plus n'est pas ici mais dans `discogs.rs` : le repli historique exigeait
 /// un artiste non vide, ce qui excluait exactement la population la plus sale. La cascade ne
 /// suppose jamais qu'un champ est rempli.
-fn build_ladder(artist: &str, title: &str, version: Option<&str>, folder: &str) -> Vec<Attempt> {
+fn build_ladder(
+    artist: &str,
+    title: &str,
+    version: Option<&str>,
+    folder: &str,
+    stem: &str,
+) -> Vec<Attempt> {
     let mut out: Vec<Attempt> = Vec::new();
     let mut push = |q: String, label: &'static str| {
         let q = collapse_ws(&q);
-        if q.trim().is_empty() {
+        // Une requête de moins de trois caractères alphanumériques ne cherche rien : elle
+        // ramènerait la moitié de Discogs. Cas réel : un découpage raté sur
+        // `02-Retiro_An-2_Fluent_Remix_` produit le titre « 2 », et l'essai « 2 » consommerait une
+        // des trois marches disponibles pour du bruit.
+        if q.chars().filter(|c| c.is_alphanumeric()).count() < 3 {
             return;
         }
         if out.iter().any(|a| a.q.eq_ignore_ascii_case(&q)) {
@@ -815,7 +846,13 @@ fn build_ladder(artist: &str, title: &str, version: Option<&str>, folder: &str) 
         out.push(Attempt { q, label });
     };
 
+    // « Tous les mots » AVANT le repli sur les seuls champs extraits : quand le découpage s'est
+    // trompé, les champs sont faux mais les mots, eux, sont bons. Placé après les essais
+    // structurés seulement quand ceux-ci existent (voir plus bas) — ici il ouvre la marche pour un
+    // nom qu'on n'a pas su découper du tout.
+    let words = all_words(stem);
     if title.is_empty() {
+        push(words, "tous les mots");
         return out;
     }
 
@@ -836,6 +873,10 @@ fn build_ladder(artist: &str, title: &str, version: Option<&str>, folder: &str) 
         }
     }
     push(title.to_string(), "titre");
+    // Filet : si le titre extrait a perdu des mots présents dans le nom (mauvais découpage), cet
+    // essai les rattrape tous. `push` déduplique, donc il ne coûte rien quand le découpage
+    // était bon.
+    push(words, "tous les mots");
 
     let f = folded(title);
     if !f.is_empty() && !f.eq_ignore_ascii_case(title) {
@@ -951,6 +992,38 @@ mod tests {
             labels.contains(&"titre+version") && labels.contains(&"titre"),
             "sans artiste, la cascade doit quand meme proposer des essais : {labels:?}"
         );
+    }
+
+    /// Les deux cas que le découpage en champs ne résout pas. Antoine a dit ce qu'il taperait pour
+    /// les trouver — et c'est ça, le vrai critère : la cascade doit contenir cette requête, même
+    /// quand on ne sait pas dire lequel des mots est l'artiste.
+    #[test]
+    fn ladder_contains_what_a_human_would_type_even_when_field_split_fails() {
+        for (stem, folder, expected) in [
+            (
+                "2-Gunne-What-I-Like--Fi-LOPZUP",
+                "complete",
+                "gunne what i like",
+            ),
+            (
+                "02-Retiro_An-2_Fluent_Remix_",
+                "complete",
+                "retiro an 2 fluent",
+            ),
+        ] {
+            let t = build(stem, folder);
+            let found = t.ladder.iter().any(|a| {
+                let q = a.q.to_lowercase();
+                expected
+                    .split_whitespace()
+                    .all(|w| q.split_whitespace().any(|qw| qw == w))
+            });
+            assert!(
+                found,
+                "aucun essai ne porte les mots {expected:?} pour {stem:?}\n  cascade: {:?}",
+                t.ladder.iter().map(|a| &a.q).collect::<Vec<_>>()
+            );
+        }
     }
 
     #[test]
