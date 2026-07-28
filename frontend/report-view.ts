@@ -929,12 +929,25 @@ async function mountPlayer(root: HTMLElement, path: string, peaks?: number[], du
     applyRate();
     updateTime();
     if (errorEl) errorEl.hidden = true;
+    // Resync the icon on the REAL state. The button is clickable from the moment mountPlayer
+    // returns, but `loadAudio` finishes later: a click in that window calls playPause() on an
+    // empty media, WaveSurfer emits `play` (icon → pause), then `ws.load()` substitutes the
+    // media without ever emitting `pause` — leaving the icon inverted for the rest of the track.
+    // Nothing else corrects it: setIcon is driven only by play/pause/finish.
+    syncPlayIcon();
   });
   ws.on("timeupdate", updateTime);
 
   // Waveform dims a touch while paused (and re-lights on hover, so scrubbing/seeking a paused
   // track still reads clearly) — `.is-paused` starts set in the HTML (nothing is playing yet).
   const waveWrapEl = root.querySelector<HTMLElement>(".sift-wave-wrap");
+  /** Puts the button and the waveform back in step with what the player is ACTUALLY doing.
+   *  Used on `ready`, where the two can legitimately have drifted apart (see there). */
+  function syncPlayIcon(): void {
+    const playing = ws.isPlaying();
+    setIcon(playing ? "player-pause" : "player-play");
+    waveWrapEl?.classList.toggle("is-paused", !playing);
+  }
   ws.on("play", () => {
     setIcon("player-pause");
     waveWrapEl?.classList.remove("is-paused");
