@@ -96,9 +96,46 @@ while ((m = TOKEN_DECL_RE.exec(tokenSrc))) {
 // rest of the file still gets scanned. Fixes a codex-crosscheck HAUTE finding
 // (2026-07-19): the previous version excluded the whole file, missing the majority of
 // off-scale spacing/color/z-index sites — the file most in need of this lint.
-const TOKEN_BLOCK_RE = /(@media[^{]*\{\s*:root(\[[^\]]*\])?\s*\{[^{}]*\}\s*\})|(:root(\[[^\]]*\])?\s*\{[^{}]*\})/g;
+// `:root` suivi d'un nombre quelconque de qualificatifs : attribut (`[data-theme="dark"]`) ET
+// pseudo-classe fonctionnelle (`:not([data-theme="light"])`). L'ancien motif n'acceptait que
+// l'attribut, donc le bloc `@media (prefers-color-scheme:dark) { :root:not(...) }` n'etait pas
+// reconnu et toutes ses declarations de tokens etaient comptees comme des couleurs en dur.
+const ROOT_SEL = String.raw`:root(?:(?::not\([^)]*\))|(?:\[[^\]]*\]))*`;
+const TOKEN_BLOCK_RE = new RegExp(
+  `(@media[^{]*\\{\\s*${ROOT_SEL}\\s*\\{[^{}]*\\}\\s*\\})|(${ROOT_SEL}\\s*\\{[^{}]*\\})`,
+  'g',
+);
+const CSS_COMMENT_RE = /\/\*[\s\S]*?\*\//g;
+
+// Blanking keeps length AND newlines, so every later offset and line number stays exact.
+const blank = (s) => s.replace(/[^\n]/g, ' ');
+
+// Les commentaires sont neutralises AVANT la recherche des blocs de tokens, pour deux raisons
+// distinctes — la premiere est un bug, la seconde une nuisance :
+//
+// 1. TOKEN_BLOCK_RE exige `[^{}]*` entre les accolades du bloc. Un commentaire contenant une
+//    accolade — et styles.css en a un, `bg-{info,danger,success,warning}` dans le bloc `:root` de
+//    base — coupe le motif en deux : le bloc n'est PAS reconnu, donc pas neutralise, donc toutes
+//    ses declarations de tokens sont comptees comme des couleurs codees en dur. Mesure du
+//    2026-07-28 : 1 bloc reconnu sur 3, et l'essentiel des 122 derives couleur de la baseline
+//    etaient en realite des declarations de tokens. Un ratchet qui compte surtout du bruit ne
+//    protege de rien : il empeche seulement d'AJOUTER un token.
+// 2. Un litteral cite dans un commentaire pour expliquer ce qu'on vient d'en retirer n'est pas
+//    une derive. Sans ce traitement, documenter une correction la fait echouer.
+//
+// Audit multi-passes 2026-07-28, finding SYS-4(b).
 function blankOutTokenBlocks(text) {
-  return text.replace(TOKEN_BLOCK_RE, (block) => block.replace(/[^\n]/g, ' '));
+  const noComments = text.replace(CSS_COMMENT_RE, blank);
+  let out = noComments;
+  out = out.replace(TOKEN_BLOCK_RE, blank);
+  return out;
+}
+
+/// Nombre de blocs de declaration de tokens reconnus dans un texte CSS. Sert au garde-fou
+/// ci-dessous : une regression silencieuse de TOKEN_BLOCK_RE se traduirait par une explosion du
+/// nombre de findings, ce qui ressemble a de la vraie derive.
+function countTokenBlocks(text) {
+  return (text.replace(CSS_COMMENT_RE, blank).match(TOKEN_BLOCK_RE) || []).length;
 }
 
 const files = walk(REPO_ROOT, []);
@@ -139,7 +176,23 @@ for (const file of files) {
   } catch {
     continue;
   }
-  if (resolve(file) === resolve(TOKEN_FILE)) text = blankOutTokenBlocks(text);
+  if (resolve(file) === resolve(TOKEN_FILE)) {
+    // Garde-fou : styles.css declare TROIS blocs de theme (`:root`, le bloc
+    // `@media (prefers-color-scheme:dark)`, et `:root[data-theme="dark"]`). Si TOKEN_BLOCK_RE
+    // cesse d'en reconnaitre un — comme c'etait le cas jusqu'au 2026-07-28 ou il n'en voyait
+    // qu'un — le nombre de findings explose et se lit comme une vraie derive. Echouer ici,
+    // bruyamment, coute une minute ; laisser passer coute une baseline de bruit qu'on re-grave
+    // ensuite a chaque commit.
+    const blocks = countTokenBlocks(text);
+    if (blocks !== 3) {
+      console.error(
+        `lint-tokens: ${blocks} bloc(s) de tokens reconnu(s) dans ${TOKEN_FILE}, 3 attendus.\n` +
+          `  TOKEN_BLOCK_RE ne matche plus la structure du fichier — corriger le motif, PAS la baseline.`,
+      );
+      process.exit(2);
+    }
+    text = blankOutTokenBlocks(text);
+  }
   const rel = relative(REPO_ROOT, file).split('\\').join('/');
 
   // --- colors ---
