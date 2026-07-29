@@ -12,7 +12,6 @@ import {
   requeueTrack,
   purgeTrash,
   openUrl,
-  scanLibraryDuplicates,
   exportRekordboxXml,
   linkRekordboxXml,
   rekordboxStatus,
@@ -33,6 +32,7 @@ import type { LibrarySortState } from "./library-views";
 import {
   bibState,
   bibDup,
+  loadDuplicates,
   renderBiblioLive,
   openBiblioDetail,
   positionFacetThumb,
@@ -311,21 +311,10 @@ export function installLiveWiring() {
           bibState.filter.verdict = undefined;
         } else if (stat === "duplicates") {
           bibDup.shown = !bibDup.shown;
-          if (bibDup.shown && bibDup.groups === null) {
-            bibDup.loading = true;
-            void renderBiblioLive();
-            void scanLibraryDuplicates()
-              .then((groups) => {
-                bibDup.groups = groups;
-              })
-              .catch((e) => {
-                console.error("scan_library_duplicates failed", e);
-                bibDup.groups = [];
-              })
-              .finally(() => {
-                bibDup.loading = false;
-                void renderBiblioLive();
-              });
+          // Relance aussi apres une erreur : sans `|| bibDup.error`, un scan echoue laissait
+          // l'ecran bloque sur son message, le chip ne rejouant jamais rien.
+          if (bibDup.shown && (bibDup.groups === null || bibDup.error)) {
+            loadDuplicates();
             return;
           }
         } else if (stat === "fake") {
@@ -413,24 +402,14 @@ export function installLiveWiring() {
         openBiblioDetail(Number(bibEl.dataset.id));
       } else if (act === "dupscan") {
         bibDup.shown = !bibDup.shown;
-        if (bibDup.shown && bibDup.groups === null) {
-          bibDup.loading = true;
-          void renderBiblioLive();
-          void scanLibraryDuplicates()
-            .then((groups) => {
-              bibDup.groups = groups;
-            })
-            .catch((e) => {
-              console.error("scan_library_duplicates failed", e);
-              bibDup.groups = [];
-            })
-            .finally(() => {
-              bibDup.loading = false;
-              void renderBiblioLive();
-            });
+        if (bibDup.shown && (bibDup.groups === null || bibDup.error)) {
+          loadDuplicates();
         } else {
           void renderBiblioLive();
         }
+      } else if (act === "dupretry") {
+        // Bouton du bloc d'erreur : relance sans rebasculer l'affichage.
+        loadDuplicates();
       } else if (act === "dupresolve") {
         const idx = Number(bibEl.dataset.idx);
         const group = bibDup.groups?.[idx];

@@ -3,6 +3,12 @@
 import "@fontsource/outfit/400.css";
 import "@fontsource/outfit/600.css";
 import "@fontsource/jetbrains-mono/400.css";
+// Police d'icones, meme regle que les trois ci-dessus. Elle etait chargee depuis un CDN par un
+// <link> dans index.html, seule ressource reseau restante de l'app : hors ligne — en club, en
+// cabine, sur une machine sans wifi — TOUTE l'iconographie tombait en tofu, y compris les icones
+// de la barre de titre et du rail de navigation. Audit 2026-07-28, SIMP-1.
+import "@tabler/icons-webfont/dist/tabler-icons.min.css";
+import "@tabler/icons-webfont/dist/tabler-icons-filled.min.css";
 import "./app.js";
 import { invoke } from "@tauri-apps/api/core";
 import { appInfo, dbHealth, ffmpegVersion } from "./ipc";

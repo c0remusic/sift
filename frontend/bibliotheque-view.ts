@@ -5,7 +5,12 @@
 // renderBiblioLive here — bare `let`s can't be reassigned across an import boundary in ES
 // modules, so they're consolidated into the single exported `bibDup` object below and mutated by
 // property assignment instead (same pattern bibState already used).
-import { listLibrary, libraryFolders, libraryStats } from "./ipc";
+import {
+  listLibrary,
+  libraryFolders,
+  libraryStats,
+  scanLibraryDuplicates,
+} from "./ipc";
 import type { LibraryTrack, LibraryFacets, LibraryFilter, DupGroup, DashboardStats } from "../shared/contracts";
 import { requireEl, esc } from "./dom";
 import { emptyStateHtml, wireEmptyState } from "./empty-state";
@@ -43,11 +48,58 @@ export const bibState: {
 // Reassigned both here and from sift-live.ts's click handler (the "Doublons" stat/chip and its
 // resolve action) — kept as one object rather than 3 loose lets precisely so that cross-module
 // reassignment is a property write, not a rebinding.
-export const bibDup: { groups: DupGroup[] | null; loading: boolean; shown: boolean } = {
+// `error` distingue « le scan a echoue » de « le scan a rendu zero groupe ». Les deux
+// collapsaient en `groups = []` dans les catch de sift-live.ts, donc un scan en ECHEC affichait
+// « Aucun doublon dans toute la bibliotheque » — une affirmation sur l'etat du disque de
+// l'utilisateur, produite par une commande qui n'a jamais abouti. Audit 2026-07-28, CC-1.
+export const bibDup: {
+  groups: DupGroup[] | null;
+  loading: boolean;
+  shown: boolean;
+  error: string | null;
+} = {
   groups: null,
   loading: false,
   shown: false,
+  error: null,
 };
+
+/// Lance le scan de doublons et repeint, quel que soit l'issue.
+///
+/// Existe pour supprimer une duplication qui avait deja diverge en pratique : `sift-live.ts`
+/// portait DEUX copies de cette sequence (chip « doublons » et bouton dupscan), chacune avec son
+/// `.catch` posant `groups = []` — donc chacune capable d'annoncer « aucun doublon » sur un scan
+/// echoue. Un seul endroit, un seul comportement. Audit 2026-07-28, CC-1.
+export function loadDuplicates(): void {
+  bibDup.loading = true;
+  bibDup.error = null;
+  void renderBiblioLive();
+  void scanLibraryDuplicates()
+    .then((groups) => {
+      bibDup.groups = groups;
+      bibDup.error = null;
+    })
+    .catch((e: unknown) => {
+      console.error("scan_library_duplicates failed", e);
+      // `groups` reste a null : sans resultat, on ne pretend RIEN sur la bibliotheque.
+      bibDup.groups = null;
+      bibDup.error = humanizeScanError(e);
+    })
+    .finally(() => {
+      bibDup.loading = false;
+      void renderBiblioLive();
+    });
+}
+
+/// Message court et actionnable a partir d'une erreur IPC brute. La chaine brute reste en
+/// console.error ; l'ecran n'affiche jamais un `Error: ...` non traduit.
+function humanizeScanError(e: unknown): string {
+  const raw = String(e);
+  if (raw.includes("db lock") || raw.includes("poisoned")) {
+    return "La base est occupée. Réessaie dans un instant.";
+  }
+  return "Vérifie que la bibliothèque est accessible, puis réessaie.";
+}
 
 // Virtualized library list controller. Torn down and recreated on each full renderBiblioLive
 // (which replaces #content.innerHTML, orphaning the old #biblist host — its scroll listener sits
@@ -241,15 +293,26 @@ export async function renderBiblioLive() {
     !bibState.filter.artist;
   const trulyEmpty = bibState.tracks.length === 0 && noFilter;
 
+  // L'état d'ERREUR passe avant tout le reste : tant qu'il est posé, on ne dit rien sur le
+  // contenu de la bibliothèque. Dire « aucun doublon » après un scan qui a échoué serait
+  // affirmer un fait qu'on n'a pas mesuré.
   const dupSection = !bibDup.shown
     ? ""
     : bibDup.loading
       ? `<div style="margin-top:10px;font-size:var(--text-md);color:var(--color-text-tertiary)">Scan en cours (toute la bibliothèque)…</div>`
-      : bibDup.groups === null
-        ? ""
-        : bibDup.groups.length === 0
-          ? `<div style="margin-top:10px;font-size:var(--text-md);color:var(--color-text-tertiary)">Aucun doublon dans toute la bibliothèque.</div>`
-          : `<div style="margin-top:10px"><div style="font-size:var(--text-xs);color:var(--color-text-tertiary);margin-bottom:4px">Doublons détectés dans toute la bibliothèque (pas seulement la vue filtrée actuelle)</div>${bibDup.groups.map((g, i) => dupGroupHtml(g, i)).join("")}</div>`;
+      : bibDup.error
+        ? // Même forme que l'état d'erreur d'Écartés (ecartes-view.ts) : carte douce, texte
+          // danger, bouton Réessayer discret. Réutilisé plutôt que réinventé, pour que les deux
+          // écrans échouent de la même façon.
+          `<div class="sift-ui-card-soft sift-ui-card-soft-pad" style="margin-top:10px;color:var(--color-text-danger)">` +
+          `Le scan de doublons n'a pas abouti. ${esc(bibDup.error)}` +
+          `<div style="margin-top:8px"><button data-bib="dupretry" style="font-size:var(--text-xs);padding:4px 10px;color:var(--color-text-info)">Réessayer</button></div>` +
+          `</div>`
+        : bibDup.groups === null
+          ? ""
+          : bibDup.groups.length === 0
+            ? `<div style="margin-top:10px;font-size:var(--text-md);color:var(--color-text-tertiary)">Aucun doublon dans toute la bibliothèque.</div>`
+            : `<div style="margin-top:10px"><div style="font-size:var(--text-xs);color:var(--color-text-tertiary);margin-bottom:4px">Doublons détectés dans toute la bibliothèque (pas seulement la vue filtrée actuelle)</div>${bibDup.groups.map((g, i) => dupGroupHtml(g, i)).join("")}</div>`;
 
   // Export (Rekordbox/Clé USB) lives in the nav rail now, not here — matches the maquette's
   // persistent Export section (index.html nav-export items, wired in installLiveWiring below).
