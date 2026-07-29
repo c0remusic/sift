@@ -444,7 +444,31 @@ impl MetadataProvider for Discogs {
                 TRACKLIST_PROBE_DEGRADED
             };
             log::info!("Discogs search [{rank}] q={attempt:?}");
-            let mut cands = self.search_query(attempt)?;
+            // Le `?` d'origine jetait TOUT le meilleur essai déjà accumulé dès qu'une marche de la
+            // cascade échouait sur le réseau. Or les marches sont indépendantes : si le premier
+            // essai a ramené des candidats et que le deuxième tombe sur un timeout, rendre les
+            // premiers vaut infiniment mieux que rendre une erreur. On sort de la cascade et on
+            // laisse le `match best` final répondre — l'échec n'est pas avalé, il est loggé.
+            let mut cands = match self.search_query(attempt) {
+                Ok(c) => c,
+                Err(e) => {
+                    // On ne quitte la cascade que si un essai précédent a réellement ramené des
+                    // candidats. `best.is_some()` ne suffit PAS : un rang 0 qui réussit sans rien
+                    // trouver pose `Some((vec![], …))`, et c'est le cas DOMINANT — toute la raison
+                    // d'être des essais dégradés. Sortir là convertirait une panne réseau en
+                    // « aucune correspondance », deux états que le front distingue vraiment
+                    // (`filing-identify.ts` : « Discogs injoignable » / « limite le débit »,
+                    // à réessayer, contre « Aucune correspondance », terminal).
+                    let have_candidates = best.as_ref().is_some_and(|(c, _, _)| !c.is_empty());
+                    if !have_candidates {
+                        return Err(e);
+                    }
+                    log::warn!(
+                        "Discogs search [{rank}] q={attempt:?} a echoue, arret de la cascade sur les candidats deja trouves: {e:?}"
+                    );
+                    break;
+                }
+            };
             let scores = self.probe_and_score(&mut cands, q, probe);
             let best_score = scores.iter().copied().max().unwrap_or(0);
 

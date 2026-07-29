@@ -204,11 +204,30 @@ pub(crate) fn group_duplicates(rows: &[DupScanRow], fps: &[Option<Vec<u32>>]) ->
             }
             let s = fingerprint::similarity(fi, fj);
             if s >= fingerprint::MATCH_THRESHOLD {
-                union(&mut parent, i, j);
-                let root = find_root(&mut parent, i);
-                let e = min_sim.entry(root).or_insert(s);
-                if s < *e {
-                    *e = s;
+                // `min_sim` est indexé par RACINE, et une fusion change la racine : le minimum
+                // enregistré sous l'ancienne racine devenait orphelin, jamais relu par le
+                // `min_sim.get(&root)` final. Sur un groupe de 3 dont le lien le plus faible est la
+                // PREMIÈRE arête trouvée, `similarity` sur-rapportait — un champ publié qui mentait
+                // sur la seule chose qu'il prétend dire. Fusionner les minimums au moment du `union`
+                // est la correction ; ne pas dépendre du sens de `union` (on relit la racine après).
+                let ra = find_root(&mut parent, i);
+                let rb = find_root(&mut parent, j);
+                if ra == rb {
+                    let e = min_sim.entry(ra).or_insert(s);
+                    if s < *e {
+                        *e = s;
+                    }
+                } else {
+                    let prev_a = min_sim.remove(&ra);
+                    let prev_b = min_sim.remove(&rb);
+                    union(&mut parent, i, j);
+                    let root = find_root(&mut parent, i);
+                    let merged = prev_a
+                        .into_iter()
+                        .chain(prev_b)
+                        .chain(std::iter::once(s))
+                        .fold(f32::INFINITY, f32::min);
+                    min_sim.insert(root, merged);
                 }
             }
         }
@@ -756,6 +775,68 @@ mod tests {
         assert_eq!(groups.len(), 1);
         let keep = groups[0].members.iter().find(|m| m.recommend_keep).unwrap();
         assert_eq!(keep.id, 2, "same lossiness → higher bitrate wins");
+    }
+
+    /// `DupGroup.similarity` se documente comme « la similarité par paire la plus FAIBLE qui a lié
+    /// le groupe ». `min_sim` étant indexé par racine et une fusion changeant la racine, le minimum
+    /// enregistré sous l'ancienne racine devenait orphelin : sur ce groupe de trois, dont le lien le
+    /// plus faible est la PREMIÈRE arête trouvée, le champ sur-rapportait.
+    ///
+    /// Les trois empreintes sont construites, pas décodées, et leurs similarités par paire ont été
+    /// MESURÉES avant d'écrire le test : A↔B 0.675 (le minimum réel), A↔C 0.85, B↔C 0.817 —
+    /// toutes au-dessus du seuil de 0.6, donc les trois forment bien un seul groupe.
+    #[test]
+    fn group_duplicates_reports_the_weakest_link_across_a_merge() {
+        let base: Vec<u32> = (0..120u32).map(|i| i.wrapping_mul(2_654_435_761)).collect();
+        let with_flips = |flips: usize| {
+            let mut v = base.clone();
+            for k in 0..flips {
+                let n = v.len();
+                v[k * 2 % n] ^= 0xFFFF_FFFF;
+            }
+            v
+        };
+        let b = with_flips(20);
+        let c = with_flips(10);
+
+        // Le test ne vaut que si l'ordre des similarités est bien celui qu'on croit — sinon il
+        // passerait pour une raison sans rapport avec le bug.
+        let (ab, ac, bc) = (
+            fingerprint::similarity(&base, &b),
+            fingerprint::similarity(&base, &c),
+            fingerprint::similarity(&b, &c),
+        );
+        assert!(
+            ab < ac && ab < bc && ab >= fingerprint::MATCH_THRESHOLD,
+            "premisse du test cassee: ab={ab} ac={ac} bc={bc}"
+        );
+
+        let row = |id: i64, path: &str| DupScanRow {
+            id,
+            path: path.to_string(),
+            filename: None,
+            folder: None,
+            format: Some("aiff".to_string()),
+            bitrate: Some(1411),
+            duration: Some(30.0),
+            truncated: false,
+            fingerprint: None,
+        };
+        let rows = vec![
+            row(1, "/lib/a.aiff"),
+            row(2, "/lib/b.aiff"),
+            row(3, "/lib/c.aiff"),
+        ];
+        let fps = vec![Some(base.clone()), Some(b), Some(c)];
+
+        let groups = group_duplicates(&rows, &fps);
+        assert_eq!(groups.len(), 1, "les trois doivent former un seul groupe");
+        assert_eq!(groups[0].members.len(), 3);
+        assert!(
+            (groups[0].similarity - ab).abs() < 1e-6,
+            "similarity doit etre le lien le plus FAIBLE ({ab}), pas {}",
+            groups[0].similarity
+        );
     }
 
     #[test]
