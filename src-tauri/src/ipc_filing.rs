@@ -695,6 +695,7 @@ fn run_file_batch(
         // as "not in flight": the batch keeps running, and the claim below still refuses the real
         // collision — bailing out of an already-launched batch would be worse.
         if is_filing_inflight(id).unwrap_or(false) {
+            log::warn!("file_batch: piste {id} deja en cours de rangement, mise en validation");
             needs_validation.push(id);
             continue;
         }
@@ -721,12 +722,17 @@ fn run_file_batch(
                 &reserved,
             ) {
                 Ok(p) => p,
-                Err(_) => {
+                // Sans cette trace, un lot qui rebondit N pistes n'affiche qu'un compte : la
+                // variante de `FilingError` est la SEULE information qui dit pourquoi, et elle
+                // était jetée ici.
+                Err(e) => {
+                    log::error!("file_batch: plan_file a echoue pour la piste {id}: {e:?}");
                     needs_validation.push(id);
                     continue;
                 }
             },
             None => {
+                log::warn!("file_batch: piste {id} sans identite canonique, mise en validation");
                 needs_validation.push(id);
                 continue;
             }

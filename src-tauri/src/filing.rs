@@ -612,28 +612,66 @@ pub fn execute_file(plan: &FilePlan) -> Result<Vec<FsLog>, FilingError> {
 }
 
 /// Reverse phase-2 filesystem effects (newest first) — used when phase 3 cannot commit.
+///
+/// Chaque étape reste best-effort (on continue le déroulé même si l'une échoue : abandonner à
+/// mi-chemin laisserait un état plus abîmé que d'essayer les suivantes), mais AUCUNE n'est
+/// silencieuse. C'est le dernier filet du seul chemin où un fichier de l'utilisateur peut se
+/// retrouver ailleurs que là où il l'a laissé : sans trace, un rollback partiel est
+/// indiagnosticable après coup — le fichier a « disparu » et rien dans le journal ne dit où.
 fn rollback_fs(log: &[FsLog]) {
     for fs in log.iter().rev() {
         match fs.kind {
             // FIX-10: same cross-disk-safe fallback as the forward move — a rollback of the
             // conformant path's rename can cross disks too.
             "move" | "trash" => {
-                let _ = move_cross_disk_safe(&fs.to, Path::new(&fs.from));
+                if let Err(e) = move_cross_disk_safe(&fs.to, Path::new(&fs.from)) {
+                    log::error!(
+                        "rollback_fs: remise en place impossible ({}), le fichier reste en {} au lieu de {}: {e:?}",
+                        fs.kind,
+                        fs.to,
+                        fs.from
+                    );
+                }
             }
             "convert" => {
-                let _ = std::fs::remove_file(&fs.to);
+                if let Err(e) = std::fs::remove_file(&fs.to) {
+                    log::error!(
+                        "rollback_fs: suppression du fichier converti {} impossible, il reste sur le disque: {e}",
+                        fs.to
+                    );
+                }
             }
             // Conformant filing: undo the in-place tag write by restoring the captured old tags at
             // `from` (the file is back there — the move row, newer, was reversed just above). Reuses
-            // the B4 restore; best-effort like the rest of this rollback (errors are swallowed).
+            // the B4 restore.
             "tag_edit" => {
-                if let Some(meta) = &fs.meta {
-                    if let Ok(snap) = serde_json::from_str::<tagging::TagsSnapshot>(meta) {
-                        let _ = tagging::restore_tags(&fs.from, &snap);
-                    }
+                match &fs.meta {
+                    Some(meta) => match serde_json::from_str::<tagging::TagsSnapshot>(meta) {
+                        Ok(snap) => {
+                            if let Err(e) = tagging::restore_tags(&fs.from, &snap) {
+                                log::error!(
+                                    "rollback_fs: restauration des tags d'origine de {} impossible, le fichier garde les tags du rangement avorte: {e:?}",
+                                    fs.from
+                                );
+                            }
+                        }
+                        Err(e) => log::error!(
+                            "rollback_fs: snapshot de tags illisible pour {}, tags d'origine perdus: {e}",
+                            fs.from
+                        ),
+                    },
+                    // Une ligne `tag_edit` sans meta ne peut pas être défaite : le snapshot EST la
+                    // seule copie des anciens tags.
+                    None => log::error!(
+                        "rollback_fs: ligne tag_edit sans snapshot pour {}, tags d'origine perdus",
+                        fs.from
+                    ),
                 }
             }
-            _ => {}
+            other => log::error!(
+                "rollback_fs: type d'effet inconnu {other:?} pour {}, non defait",
+                fs.from
+            ),
         }
     }
 }
