@@ -252,12 +252,20 @@ pub(crate) fn group_duplicates(rows: &[DupScanRow], fps: &[Option<Vec<u32>>]) ->
 /// and a cheap duration pre-filter skips comparisons that can't possibly match — enough for
 /// a full 15k-track library dashboard scan.
 ///
-/// Convenience wrapper that does read + compute + persist under a single held `conn` — kept
-/// for callers (e.g. `library::library_stats`) that already hold the lock for their whole
-/// duration. The IPC command (`ipc_library::scan_library_duplicates`) does NOT use this: it
-/// calls `load_dup_scan_rows`/`build_fingerprints`/`group_duplicates`/`persist_fingerprints`
-/// directly so the lock is only held for the brief read and the brief write, not the O(n²)
-/// compare or the disk-decoding fingerprint compute.
+/// Enchaîne lecture + calcul + persistance sous un `conn` tenu du début à la fin.
+///
+/// **Réservé aux tests depuis le 2026-07-28 (audit SYS-1).** Son dernier appelant de production,
+/// `library::library_stats`, tenait le verrou global pendant tout l'appel — donc pendant le
+/// décodage disque de `build_fingerprints`. Les deux commandes IPC concernées
+/// (`ipc_library::scan_library_duplicates` et `ipc_library::library_stats`) enchaînent désormais
+/// `load_dup_scan_rows` / `build_fingerprints` / `group_duplicates` / `persist_fingerprints`
+/// elles-mêmes, de façon à ne tenir le verrou que sur la brève lecture et la brève écriture.
+///
+/// Garder ce raccourci hors production est délibéré : il rend les tests de `dedup` lisibles
+/// (un appel au lieu de quatre) sans laisser un chemin qui reprendrait la mauvaise habitude.
+/// `#[cfg(test)]` fait échouer la compilation de tout futur appelant de production, au lieu de le
+/// laisser passer.
+#[cfg(test)]
 pub fn scan_library_duplicates(conn: &Connection) -> rusqlite::Result<Vec<DupGroup>> {
     let rows = load_dup_scan_rows(conn)?;
     let built = build_fingerprints(&rows);

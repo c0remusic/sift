@@ -182,12 +182,51 @@ pub fn scan_library_duplicates(
 
 /// Dashboard aggregate stats for the Bibliothèque (totals, lossless/mp3 split, duplicates,
 /// tracks to re-source, genre breakdown).
+///
+/// Ne tient PAS le verrou global pendant le comptage des doublons. Sur un cache miss, ce comptage
+/// passe par `build_fingerprints`, qui décode de l'audio depuis le disque : le tenir sous le verrou
+/// affamait toute autre commande IPC et le `persist_result` du pool d'analyse en tâche de fond —
+/// exactement ce que `scan_library_duplicates`, 25 lignes plus haut, documente et évite déjà. Le
+/// bon patron était écrit dans le même fichier et n'avait pas été appliqué ici. Audit 2026-07-28,
+/// SYS-1.
+///
+/// Portée des verrous : bref agrégat SQL + lecture de signature, relâche, calcul non verrouillé,
+/// puis brève écriture uniquement si de nouvelles empreintes ont été calculées.
 #[tauri::command]
 pub fn library_stats(
     conn: State<'_, Mutex<Connection>>,
 ) -> Result<library::DashboardStats, String> {
-    let conn = db::lock_conn(&conn)?;
-    library::library_stats(&conn).map_err(|e| e.to_string())
+    // Premier verrou : agrégats SQL + signature. RIEN d'autre — surtout pas le chargement des
+    // lignes de dédoublonnage : elles portent les empreintes de toute la bibliothèque filée, et
+    // les charger inconditionnellement ferait payer au CAS NORMAL (cache hit, à chaque visite du
+    // tableau de bord) une lecture massive pour la jeter aussitôt.
+    let (mut stats, sig) = {
+        let guard = db::lock_conn(&conn)?;
+        let stats = library::library_stats(&guard).map_err(|e| e.to_string())?;
+        let sig = library::filed_signature(&guard).map_err(|e| e.to_string())?;
+        (stats, sig)
+        // `guard` relâché ici.
+    };
+
+    // Le verrou global est RELÂCHÉ à ce point — invariant d'appel de `duplicate_count_or_compute`,
+    // qui prend son propre jeton de single-flight et appelle `compute` par-dessus. Le cache, la
+    // génération et la sérialisation des calculs concurrents vivent tous dans cette fonction ;
+    // ici on ne fournit que le calcul coûteux.
+    stats.duplicates = library::duplicate_count_or_compute(sig, || {
+        let rows = {
+            let guard = db::lock_conn(&conn)?;
+            crate::dedup::load_dup_scan_rows(&guard).map_err(|e| e.to_string())?
+            // `guard` relâché ici — avant le décodage disque ci-dessous.
+        };
+        let built = crate::dedup::build_fingerprints(&rows);
+        if !built.to_persist.is_empty() {
+            let guard = db::lock_conn(&conn)?;
+            crate::dedup::persist_fingerprints(&guard, &built.to_persist);
+            // `guard` relâché ici — tenu pour la seule écriture.
+        }
+        Ok::<i64, String>(crate::dedup::group_duplicates(&rows, &built.fps).len() as i64)
+    })?;
+    Ok(stats)
 }
 
 // ── M7 Rekordbox XML export + playlist path repair ──────────────────────────
