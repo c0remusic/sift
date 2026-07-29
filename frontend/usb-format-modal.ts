@@ -9,6 +9,7 @@
 //   2. A timestamped armed/confirmed cycle on the final button itself, same family as
 //      BATCH_CONFIRM_THRESHOLD/batchConfirmArmed (sift-live.ts) — rejects a double-click/
 //      duplicate event landing right after the button enables.
+import { esc } from "./dom";
 import { formatDrive, type RemovableDrive, type TargetFs } from "./ipc";
 
 const CONFIRM_REARM_MS = 400; // mirrors sift-live.ts's batch-confirm floor (see BATCH_CONFIRM_THRESHOLD)
@@ -63,17 +64,17 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
   function render() {
     card.innerHTML =
       '<div class="sift-usbfmt-title">Formater ' +
-      escapeHtml(drive.id) +
+      esc(drive.id) +
       "</div>" +
       '<div class="sift-usbfmt-desc">' +
-      escapeHtml(drive.label || "Disque amovible") +
+      esc(drive.label || "Disque amovible") +
       " · " +
       sizeGb +
       " Go · actuellement " +
-      escapeHtml(drive.current_fs) +
+      esc(drive.current_fs) +
       "</div>" +
       (lastError
-        ? '<div class="sift-usbfmt-error">' + escapeHtml(lastError) + "</div>"
+        ? '<div class="sift-usbfmt-error">' + esc(lastError) + "</div>"
         : "") +
       '<div class="sift-usbfmt-warning">Cette action efface tout le contenu du disque, ' +
       "de façon irréversible. Vérifie que c'est bien la bonne clé avant de continuer.</div>" +
@@ -92,7 +93,7 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
         : "") +
       '<div class="sift-usbfmt-typerow">' +
       '<label for="sift-usbfmt-typed">Tape <code>' +
-      escapeHtml(confirmWord) +
+      esc(confirmWord) +
       "</code> pour confirmer</label>" +
       '<input type="text" id="sift-usbfmt-typed" autocomplete="off" spellcheck="false">' +
       "</div>" +
@@ -186,12 +187,4 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
   // Cancel is the safest target — never the destructive confirm button — so that a
   // stray Enter/Space right after open can only close the modal, not arm/format.
   card.querySelector<HTMLButtonElement>("#sift-usbfmt-cancel")?.focus();
-}
-
-function escapeHtml(s: string): string {
-  return s
-    .replace(/&/g, "&amp;")
-    .replace(/</g, "&lt;")
-    .replace(/>/g, "&gt;")
-    .replace(/"/g, "&quot;");
 }

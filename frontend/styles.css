@@ -740,9 +740,9 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .jrnl-revert{flex:none;background:transparent;border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);color:var(--color-text-secondary);font-size:var(--text-xs);padding:var(--space-4) var(--space-8);cursor:pointer;line-height:1.4}
 .jrnl-revert:hover{color:var(--color-text-primary);border-color:var(--color-border-secondary)}
 /* Confirmation toast — fades out automatically via CSS, no JS timer */
-.jrnl-toast{font-size:var(--text-sm);color:var(--color-text-success);background:color-mix(in srgb,var(--color-text-success) 12%,transparent);border:1px solid color-mix(in srgb,var(--color-text-success) 30%,transparent);border-radius:var(--border-radius-md);padding:var(--space-6) var(--space-12);margin-bottom:var(--space-8);animation:jrnl-toast-fade 2.8s ease forwards}
+.jrnl-toast{font-size:var(--text-sm);color:var(--color-text-success);background:color-mix(in srgb,var(--color-text-success) 12%,transparent);border:1px solid color-mix(in srgb,var(--color-text-success) 30%,transparent);border-radius:var(--border-radius-md);padding:var(--space-8) var(--space-12);margin-bottom:var(--space-8);animation:jrnl-toast-fade 2.8s ease forwards}
 .jrnl-toast--warn{color:var(--color-text-warning);background:color-mix(in srgb,var(--color-text-warning) 12%,transparent);border-color:color-mix(in srgb,var(--color-text-warning) 30%,transparent)}
-.jrnl-banner{font-size:var(--text-sm);border-radius:var(--border-radius-md);padding:var(--space-6) var(--space-12);margin-bottom:var(--space-8);border:1px solid}
+.jrnl-banner{font-size:var(--text-sm);border-radius:var(--border-radius-md);padding:var(--space-8) var(--space-12);margin-bottom:var(--space-8);border:1px solid}
 .jrnl-banner--ok{color:var(--color-text-success);background:color-mix(in srgb,var(--color-text-success) 12%,transparent);border-color:color-mix(in srgb,var(--color-text-success) 30%,transparent)}
 .jrnl-banner--warn{color:var(--color-text-warning);background:color-mix(in srgb,var(--color-text-warning) 12%,transparent);border-color:color-mix(in srgb,var(--color-text-warning) 30%,transparent)}
 .jrnl-row--loading{opacity:.6;transition:opacity .15s}
