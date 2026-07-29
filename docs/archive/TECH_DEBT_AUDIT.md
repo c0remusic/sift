@@ -104,3 +104,24 @@ This matches the README/CLAUDE.md's stated model closely — no contradiction fo
 2. **`design_handoff_sift_refonte/` (F15 remainder)** — still referenced from any runbook or the token-sync tooling history in `docs/ressources-externes.md`, or fully safe to delete/archive? (`scripts/cdp-inspect.mjs` part resolved 2026-07-20 — see the F15 row above, no longer an open question.)
 3. **`filing.ts` split (F03)** — worth scoping now as a Phase-4-style chantier, or deliberately deferred until it causes friction (consistent with the project's own YAGNI+evidence gate)?
 4. **`journal.ts`'s `installDelegate` pattern (F18)** — intentional one-off, or should it become the shared event-delegation convention for the other view files?
+
+---
+
+## Archivé le 2026-07-29
+
+Déplacé de la racine du dépôt vers `docs/archive/` : un audit clos laissé dans
+le chemin de scan se relit comme un backlog ouvert, alors que le code a bougé.
+Vérifié sur disque au moment de l'archivage, trois lignes recoupées sur vingt :
+
+- **F01** (`rekordbox_masterdb.rs`, échec de rollback jeté par `.ok()`) —
+  **corrigé** : `rekordbox_masterdb.rs:1411` fait bien un `match restore_all(…)`
+  et rend une variante d'erreur distincte, exactement le correctif propose ici.
+- **F04** (14 `export` morts dans `rekordbox-view.ts`) — **corrigé** : plus
+  aucun `export let`/`export const` dans ce fichier.
+- **F02** (aucun `log::` dans le fichier qui possède les écritures master.db) —
+  **partiellement corrigé**, et c'est le résidu à retenir : 6 appels `log::`
+  dans `rekordbox_masterdb.rs` (2740 lignes) et 2 dans `rekordbox_repairs.rs`.
+  Ce n'est plus zéro, mais ça reste mince pour la surface que `CLAUDE.md`
+  désigne comme la plus risquée de l'app.
+
+Les dix-sept autres lignes n'ont pas été recoupées.
