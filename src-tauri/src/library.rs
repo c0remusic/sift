@@ -33,6 +33,20 @@ pub struct LibraryTrack {
     pub folder: Option<String>,
 }
 
+/// Recompose the complete title the Bibliothèque shows and edits, from the split `metadata` stores.
+/// Routes through `naming::tag_title` so the list, the file's Title tag and the rendered filename
+/// are all produced by one function. `None` title (no metadata row yet) stays `None`: a version
+/// without a title has nothing to suffix.
+fn full_title(title: Option<String>, version: Option<String>) -> Option<String> {
+    let title = title?;
+    Some(crate::naming::tag_title(&crate::naming::Canonical {
+        artist: String::new(), // unused by `tag_title`
+        title,
+        version,
+        confidence: crate::naming::Confidence::Green,
+    }))
+}
+
 /// Server-side filters for the library list.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 pub struct LibraryFilter {
@@ -285,7 +299,8 @@ pub fn list_filed(
 ) -> rusqlite::Result<Vec<LibraryTrack>> {
     let mut sql = String::from(
         "SELECT t.id, t.path, t.format, t.bitrate, t.duration, t.verdict, t.folder, t.has_cover, \
-                m.artist, m.title, m.label, m.year, m.bpm, m.cover_path, m.discogs_release_id \
+                m.artist, m.title, m.label, m.year, m.bpm, m.cover_path, m.discogs_release_id, \
+                m.version \
          FROM tracks t LEFT JOIN metadata m ON m.track_id = t.id \
          WHERE t.status = 'filed'",
     );
@@ -303,7 +318,11 @@ pub fn list_filed(
         sql.push_str(" AND t.verdict = :verdict");
     }
     if f.q.is_some() {
-        sql.push_str(" AND (m.artist LIKE :like OR m.title LIKE :like OR t.path LIKE :like)");
+        // `m.version` fait partie du titre affiché (voir la composition plus bas) : sans elle,
+        // chercher « Fluent Remix » ne rendrait rien sur une ligne qui l'affiche.
+        sql.push_str(
+            " AND (m.artist LIKE :like OR m.title LIKE :like OR m.version LIKE :like OR t.path LIKE :like)",
+        );
     }
     if f.genre.is_some() {
         sql.push_str(" AND t.id IN (SELECT track_id FROM track_genres WHERE genre = :genre)");
@@ -352,12 +371,18 @@ pub fn list_filed(
                 r.get::<_, Option<i64>>(12)?,
                 r.get::<_, Option<String>>(13)?,
                 r.get::<_, Option<String>>(14)?,
+                r.get::<_, Option<String>>(15)?,
             ))
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
 
     // FIX-22: one batched genres query for every row instead of one query per row.
     let ids: Vec<i64> = rows.iter().map(|r| r.0).collect();
+    // `metadata` stores the identity SPLIT (base title + version), because that is what
+    // `render_filename` needs. La Bibliothèque n'a qu'un champ Titre : elle doit donc recevoir le
+    // titre COMPLET, sinon elle affiche une piste amputée de son remix et la réécrit amputée au
+    // premier enregistrement. Recomposé par `naming::tag_title` — la fonction qui rend déjà le nom
+    // de fichier et le tag Titre, donc les trois ne peuvent pas diverger.
     let mut genres_by_track = crate::genres::get_genres_batch(conn, &ids)?;
 
     let mut out = Vec::with_capacity(rows.len());
@@ -377,13 +402,14 @@ pub fn list_filed(
         bpm,
         cover_path,
         rel,
+        version,
     ) in rows
     {
         out.push(LibraryTrack {
             id,
             path,
             artist,
-            title,
+            title: full_title(title, version),
             format,
             bitrate,
             duration,
@@ -904,6 +930,66 @@ mod tests {
             t.genres,
             vec!["House".to_string(), "Deep House".to_string()]
         );
+    }
+
+    /// Régression : la Bibliothèque n'a qu'un champ Titre et `metadata` range l'identité en deux
+    /// colonnes. En ne renvoyant que `m.title`, la liste affichait une piste amputée de son remix,
+    /// et l'éditeur la réécrivait amputée au premier enregistrement — pendant que le nom du fichier
+    /// sur le disque gardait la version.
+    #[test]
+    fn list_filed_returns_the_complete_title_version_included() {
+        let conn = db();
+        conn.execute(
+            "INSERT INTO tracks(id, path, format, status) VALUES(1, '/lib/a.aiff', 'aiff', 'filed')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO metadata(track_id, artist, title, version) \
+             VALUES(1, 'Chez Damier', 'Can You Feel It', 'Fluent Remix')",
+            [],
+        )
+        .unwrap();
+
+        let rows = list_filed(&conn, &LibraryFilter::default()).unwrap();
+        assert_eq!(
+            rows[0].title.as_deref(),
+            Some("Can You Feel It (Fluent Remix)")
+        );
+
+        // Et ce que la liste AFFICHE doit être cherchable : sinon la recherche dément l'écran.
+        let f = LibraryFilter {
+            q: Some("Fluent".into()),
+            ..Default::default()
+        };
+        assert_eq!(list_filed(&conn, &f).unwrap().len(), 1);
+    }
+
+    /// Une piste sans version ne gagne pas de parenthèses vides, et une ligne sans metadata reste
+    /// sans titre — le `?` de `full_title` ne doit pas fabriquer un titre à partir d'une version.
+    #[test]
+    fn list_filed_leaves_a_versionless_title_alone() {
+        let conn = db();
+        conn.execute(
+            "INSERT INTO tracks(id, path, format, status) VALUES(1, '/lib/a.aiff', 'aiff', 'filed')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO tracks(id, path, format, status) VALUES(2, '/lib/b.aiff', 'aiff', 'filed')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO metadata(track_id, artist, title, version) VALUES(1, 'Mr Fingers', 'Mystery of Love', '')",
+            [],
+        )
+        .unwrap();
+
+        let rows = list_filed(&conn, &LibraryFilter::default()).unwrap();
+        let by_id = |id: i64| rows.iter().find(|r| r.id == id).unwrap();
+        assert_eq!(by_id(1).title.as_deref(), Some("Mystery of Love"));
+        assert_eq!(by_id(2).title, None, "aucune ligne metadata, aucun titre");
     }
 
     #[test]

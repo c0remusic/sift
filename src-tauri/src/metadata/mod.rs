@@ -94,18 +94,25 @@ fn upsert_metadata_row(
 /// DB-only part (unit-tested): upsert the editable metadata fields + replace genres.
 /// Preserves `discogs_release_id` and `source` — a manual edit must not wipe the release link.
 /// On INSERT (no prior metadata row) those columns stay NULL.
+///
+/// `MetadataEdit.title` is the COMPLETE title, version included — that is what the Bibliothèque
+/// form shows and what the user edits (`library::list_filed` composes it). It is split back into
+/// `title` + `version` here, by the SAME `split_title_version` a Discogs match goes through, so
+/// the stored shape is identical whichever way a track was identified. Writing it whole would
+/// make `render_filename` emit the version twice.
 pub fn update_metadata_db(
     conn: &Connection,
     track_id: i64,
     e: &MetadataEdit,
 ) -> rusqlite::Result<()> {
+    let (base_title, version) = split_title_version(&e.title);
     upsert_metadata_row(
         conn,
         track_id,
         &MetadataFields {
             artist: &e.artist,
-            title: &e.title,
-            version: None,
+            title: &base_title,
+            version: version.as_deref(),
             label: e.label.as_deref(),
             year: e.year,
             cover_path: e.cover_path.as_deref(),
@@ -381,6 +388,98 @@ mod tests {
             .unwrap();
         assert_eq!(title, "Can You Feel It");
         assert_eq!(version.as_deref(), Some("Larry Heard Remix"));
+    }
+
+    /// L'axe `VersionWrite::Always` d'`apply_identity` ne vaut que sur le chemin CONFLIT — le test
+    /// ci-dessus passe par l'INSERT. Une correspondance Discogs sans version doit bien EFFACER la
+    /// précédente : c'est une identité de remplacement, pas une édition partielle.
+    #[test]
+    fn apply_overwrites_an_existing_version_including_with_none() {
+        let conn = db();
+        let mut c = sample();
+        c.title = "Can You Feel It (Larry Heard Remix)".into();
+        apply_identity(&conn, 1, &c, None).unwrap();
+
+        c.title = "Can You Feel It".into();
+        apply_identity(&conn, 1, &c, None).unwrap();
+        let version: Option<String> = conn
+            .query_row("SELECT version FROM metadata WHERE track_id=1", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(version, None);
+    }
+
+    /// Régression : `update_metadata_db` écrivait `version: None` en dur. Une édition Bibliothèque
+    /// — même une simple correction d'année — effaçait donc le nom du remix de la base, pendant que
+    /// le nom du fichier sur le disque le gardait. Le titre reçu du formulaire est COMPLET (voir
+    /// `library::list_filed`) : il se redécoupe ici, exactement comme une identité Discogs.
+    #[test]
+    fn update_metadata_db_splits_the_complete_title_and_keeps_the_version() {
+        let conn = db();
+        conn.execute(
+            "INSERT INTO metadata(track_id, artist, title, version, year)
+             VALUES(1,'Chez Damier','Can You Feel It','Fluent Remix',1992)",
+            [],
+        )
+        .unwrap();
+
+        // Ce que le formulaire affiche, et ce que l'utilisateur renvoie sans y toucher : il n'a
+        // corrigé que l'année.
+        let edit = MetadataEdit {
+            artist: "Chez Damier".into(),
+            title: "Can You Feel It (Fluent Remix)".into(),
+            label: None,
+            year: Some(1993),
+            genres: vec![],
+            cover_path: None,
+        };
+        update_metadata_db(&conn, 1, &edit).unwrap();
+
+        type Row = (String, Option<String>, Option<i64>);
+        let (title, version, year): Row = conn
+            .query_row(
+                "SELECT title, version, year FROM metadata WHERE track_id=1",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            title, "Can You Feel It",
+            "pas de version dans le titre de base"
+        );
+        assert_eq!(version.as_deref(), Some("Fluent Remix"));
+        assert_eq!(year, Some(1993), "l'edit doit quand meme s'appliquer");
+    }
+
+    /// L'autre moitié : retirer la parenthèse du champ Titre EST la façon de supprimer la version
+    /// dans un formulaire qui n'a pas de champ dédié. Elle doit donc bien partir.
+    #[test]
+    fn update_metadata_db_drops_the_version_the_user_removed_from_the_title() {
+        let conn = db();
+        conn.execute(
+            "INSERT INTO metadata(track_id, artist, title, version)
+             VALUES(1,'Chez Damier','Can You Feel It','Fluent Remix')",
+            [],
+        )
+        .unwrap();
+
+        let edit = MetadataEdit {
+            artist: "Chez Damier".into(),
+            title: "Can You Feel It".into(),
+            label: None,
+            year: None,
+            genres: vec![],
+            cover_path: None,
+        };
+        update_metadata_db(&conn, 1, &edit).unwrap();
+
+        let version: Option<String> = conn
+            .query_row("SELECT version FROM metadata WHERE track_id=1", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(version, None);
     }
 
     #[test]
