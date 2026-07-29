@@ -628,13 +628,16 @@ function ensureQueueSearch(qcol: HTMLElement): void {
   if (document.getElementById("sift-qsearch")) return;
   const wrap = document.createElement("div");
   wrap.id = "sift-qsearch";
+  // `sift-search-wrap` porte le ring de focus : l'input lui-même est sans bordure, donc le
+  // traitement de focus des champs texte (`styles.css`, border-color) ne peut rien montrer ici.
+  wrap.className = "sift-search-wrap";
   wrap.style.cssText =
     "flex:none;position:relative;margin-top:8px;background:var(--color-background-secondary);border-radius:var(--border-radius-md)";
   // No placeholder text — just a search icon overlaid on the right, hidden once there's a query
   // (annotation: "met juste une icone de loupe sur la droite qui disparait quand on tape").
   wrap.innerHTML =
     '<input id="sift-qsearch-input" type="text" aria-label="Filtrer la file" ' +
-    'style="width:100%;border:none;background:transparent;font:inherit;color:var(--color-text-primary);outline:none;padding:6px 30px 6px 9px">' +
+    'style="width:100%;border:none;background:transparent;font:inherit;color:var(--color-text-primary);padding:6px 30px 6px 9px">' +
     '<i id="sift-qsearch-icon" class="ti ti-search" aria-hidden="true" style="position:absolute;right:9px;top:50%;transform:translateY(-50%);font-size:var(--text-base);color:var(--color-text-tertiary);pointer-events:none"></i>';
   qcol.appendChild(wrap);
   const input = wrap.querySelector<HTMLInputElement>("#sift-qsearch-input")!;

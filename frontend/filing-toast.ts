@@ -26,18 +26,16 @@ const TOAST_EXIT_MS = 100;
  *  content is MUTATED and the dismiss timer restarted, instead of removing then recreating the
  *  node. */
 export function toast(message: string, undo = false, onUndo?: () => void): void {
-  // Only reuse the node THIS module created: library-detail.ts:33 builds the same #sift-toast
-  // with its own 6s timer (library-detail.ts:50) whose id is never stored, so it cannot be
-  // cleared from here — it would remove a node we reused, at ITS deadline. A foreign node is
-  // destroyed instead, as before.
-  const prior = document.getElementById("sift-toast");
-  const existing = prior?.dataset.owner === "filing-toast" ? prior : null;
-  if (prior && !existing) prior.remove();
+  // Ce module est le SEUL à construire `#sift-toast`. Le garde `dataset.owner` qui vivait ici
+  // n'existait que pour se protéger du toast privé de `library-detail.ts`, une copie de cette
+  // fonction avec son propre timer de 6 s dont l'id n'était jamais mémorisé — donc impossible à
+  // annuler d'ici, et capable de retirer à SON échéance un nœud qu'on venait de réutiliser. Ce
+  // rival a été supprimé au profit d'un import : le garde n'a plus rien à garder.
+  const existing = document.getElementById("sift-toast");
   const el = existing ?? document.createElement("div");
   if (!existing) {
     el.id = "sift-toast";
     el.className = "sift-toast";
-    el.dataset.owner = "filing-toast";
     el.setAttribute("role", "status");
     el.setAttribute("aria-live", "polite");
   }

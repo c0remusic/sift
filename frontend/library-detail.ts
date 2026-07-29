@@ -20,6 +20,7 @@ import { openReportInto } from "./report-view";
 import { open } from "@tauri-apps/plugin-dialog";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { requireEl, esc } from "./dom";
+import { toast } from "./filing-toast";
 
 /** Per-open editor state (one detail panel open at a time). `pendingCover` is set only when
  * the user picks a new image — left null otherwise so a save never re-embeds the same art. */
@@ -27,27 +28,6 @@ interface EditState {
   track: LibraryTrack;
   pendingCover: string | null;
   saving: boolean;
-}
-
-/** A transient bottom-right toast, with an optional "Undo" action (mirrors filing.ts). */
-function toast(message: string, undo?: boolean, onUndo?: () => void): void {
-  document.getElementById("sift-toast")?.remove();
-  const el = document.createElement("div");
-  el.id = "sift-toast";
-  el.className = "sift-toast";
-  el.setAttribute("role", "status");
-  el.setAttribute("aria-live", "polite");
-  el.innerHTML =
-    `<span>${esc(message)}</span>` +
-    (undo ? '<button data-fil="undo" class="sift-toast-undo">Annuler</button>' : "");
-  document.body.appendChild(el);
-  if (undo && onUndo) {
-    el.querySelector('[data-fil="undo"]')?.addEventListener("click", () => {
-      el.remove();
-      onUndo();
-    });
-  }
-  setTimeout(() => el.remove(), 6000);
 }
 
 

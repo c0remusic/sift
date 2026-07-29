@@ -37,18 +37,26 @@ if (inTauri) {
     }
   })();
 
-  // Headless playback self-test: exercises the real audio-load path on every queued track
-  // and logs OK/FAIL per file (no manual clicks). Auto-runs with VITE_SIFT_SELFTEST=1; also
-  // exposed as window.__siftSelfTest() to trigger from devtools.
-  void import("./selftest").then((m) => {
-    (window as { __siftSelfTest?: () => void }).__siftSelfTest = () => void m.runSelfTest();
-    if ((import.meta as { env?: Record<string, string> }).env?.VITE_SIFT_SELFTEST === "1") {
-      setTimeout(() => void m.runSelfTest(), 2500);
-    }
-  });
-
-  // Click-to-source inspector (Alt+Click), dev builds only — never in a shipped app.
+  // Outils de développement uniquement — jamais dans une app expédiée. Le self-test était chargé
+  // INCONDITIONNELLEMENT, alors que seul un développeur le déclenche (`VITE_SIFT_SELFTEST=1` ou
+  // `window.__siftSelfTest()` depuis les devtools) : le `import.meta.env.DEV` permet à Vite de
+  // l'éliminer statiquement du build de production. Gain mesuré modeste (~2,5 ko : le chunk
+  // `selftest-*.js` disparaît, l'index passe de 294,35 à 293,41 ko) — il ne fait PAS sortir
+  // wavesurfer, contrairement à ce qu'on pourrait croire : `report-view.ts` l'importe
+  // statiquement et est lui-même importé statiquement par `filing.ts`, `filing-identify.ts` et
+  // `library-detail.ts`, donc il reste dans le chunk principal quoi qu'il arrive.
   if (import.meta.env.DEV) {
+    // Headless playback self-test: exercises the real audio-load path on every queued track
+    // and logs OK/FAIL per file (no manual clicks). Auto-runs with VITE_SIFT_SELFTEST=1; also
+    // exposed as window.__siftSelfTest() to trigger from devtools.
+    void import("./selftest").then((m) => {
+      (window as { __siftSelfTest?: () => void }).__siftSelfTest = () => void m.runSelfTest();
+      if ((import.meta as { env?: Record<string, string> }).env?.VITE_SIFT_SELFTEST === "1") {
+        setTimeout(() => void m.runSelfTest(), 2500);
+      }
+    });
+
+    // Click-to-source inspector (Alt+Click).
     void import("./dev-inspector").then((m) => m.installDevInspector());
   }
 }

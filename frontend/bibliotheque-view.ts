@@ -322,7 +322,7 @@ export async function renderBiblioLive() {
   // maintenant comme bandeau supérieur du panneau .sift-library-main, séparé par un filet.
   const header =
     `<div class="sift-library-toolbar">` +
-    `<div style="flex:1;display:flex;align-items:center;gap:7px;border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:6px 10px"><i class="ti ti-search" style="font-size:var(--text-lg);color:var(--color-text-tertiary)"></i><input id="bibq" placeholder="Rechercher…" aria-label="Rechercher dans la bibliothèque" value="${esc(bibState.filter.q || "")}" style="flex:1;border:0;background:transparent;color:inherit;font-size:var(--text-md);outline:none"></div>` +
+    `<div class="sift-search-wrap" style="flex:1;display:flex;align-items:center;gap:7px;border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:6px 10px"><i class="ti ti-search" style="font-size:var(--text-lg);color:var(--color-text-tertiary)"></i><input id="bibq" placeholder="Rechercher…" aria-label="Rechercher dans la bibliothèque" value="${esc(bibState.filter.q || "")}" style="flex:1;border:0;background:transparent;color:inherit;font-size:var(--text-md)"></div>` +
     chips +
     `<div class="sift-seg sift-seg-thumbed" id="sift-bib-viewmode-seg">` +
     `<div class="sift-seg-thumb"></div>` +
