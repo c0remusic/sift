@@ -628,8 +628,15 @@ struct Phase2Outcome {
     idx: usize,
     id: i64,
     plan: filing::FilePlan,
-    /// `Some(log)` = encode+moves succeeded, ready to commit. `None` = execute_file failed (the FS
-    /// is left clean by execute_file itself) → the track goes to needs_validation.
+    /// `Some(log)` = encode+moves succeeded, ready to commit. `None` = execute_file failed (ou a
+    /// paniqué) → la piste part en needs_validation.
+    ///
+    /// L'invariant « le système de fichiers est laissé propre » est réel depuis le 2026-07-28
+    /// seulement (audit CR-3). Il était affirmé ici alors qu'une branche l'enfreignait : sur le
+    /// chemin conformant, un échec du `move` sortait en laissant les NOUVEAUX tags déjà écrits en
+    /// place sur le fichier source, sans ligne de journal — donc sans revert possible. `rollback_fs`
+    /// est désormais appelé sur cette branche. Ne pas réaffirmer cet invariant ailleurs sans
+    /// vérifier qu'aucune sortie d'erreur de `execute_file` ne l'a enfreint.
     log: Option<Vec<filing::FsLog>>,
 }
 
@@ -885,7 +892,9 @@ fn run_file_batch(
                     Err(_) => needs_validation.push(o.id),
                 }
             }
-            None => needs_validation.push(o.id), // execute_file failed (FS left clean by it)
+            // execute_file a echoue ou panique; il a lui-meme remis le systeme de fichiers en
+            // etat, y compris les tags ecrits en place sur le chemin conformant (CR-3).
+            None => needs_validation.push(o.id),
         }
         app.emit(
             "file:progress",

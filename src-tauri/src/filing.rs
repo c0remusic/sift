@@ -545,7 +545,26 @@ pub fn execute_file(plan: &FilePlan) -> Result<Vec<FsLog>, FilingError> {
             plan.extras.cover_path.as_deref(),
         )
         .map_err(FilingError::Tag)?;
-        move_cross_disk_safe(&plan.source, Path::new(&plan.dest))?;
+        // Le `?` nu manquait ici, et c'etait la seule fenetre du chemin conformant ou les tags
+        // etaient DEJA ecrases sur le fichier de l'utilisateur sans que rien ne puisse les
+        // remettre. Le deplacement echoue (disque plein, destination verrouillee, permission) et
+        // la fonction sortait en laissant le fichier a sa place SOURCE, avec les nouveaux tags
+        // ecrits en place — et sans ligne de journal, puisque le journal n'est ecrit qu'en phase 3
+        // depuis le `log` RETOURNE. Donc: aucun revert possible depuis l'app, aucune trace, et des
+        // tags que l'utilisateur n'a pas demandes sur un fichier qu'il croit intact.
+        //
+        // `log` porte deja la ligne `tag_edit` avec l'instantane des anciens tags (poussee juste
+        // au-dessus, AVANT l'ecriture, precisement pour ce cas). `rollback_fs` sait la rejouer.
+        // C'est le meme filet que celui de la phase 3 (commit_file), applique a la seule etape qui
+        // en etait privee. Audit 2026-07-28, CR-3.
+        if let Err(e) = move_cross_disk_safe(&plan.source, Path::new(&plan.dest)) {
+            log::error!(
+                "execute_file: move a echoue pour {}, restauration des tags d'origine: {e:?}",
+                plan.source
+            );
+            rollback_fs(&log);
+            return Err(e);
+        }
         log.push(FsLog {
             kind: "move",
             from: plan.source.clone(),
@@ -1231,6 +1250,93 @@ mod tests {
             "old file tags restored on revert"
         );
         assert_eq!(restored.title.as_deref(), Some("OLD Title"));
+    }
+
+    /// CR-3 (audit multi-passes du 2026-07-28) — un échec du `move` sur le chemin CONFORMANT
+    /// laissait les nouveaux tags écrits en place sur le fichier source, sans rien pour les
+    /// défaire.
+    ///
+    /// Le chemin conformant tague le fichier À SA PLACE puis le déplace. Si le déplacement échoue
+    /// (disque plein, destination verrouillée, permission, dossier disparu), la fonction sortait
+    /// par un `?` nu : le fichier restait à sa source, porteur de tags que l'utilisateur n'avait
+    /// pas demandés, et SANS ligne de journal — le journal n'est écrit qu'en phase 3, depuis le
+    /// `log` retourné. Donc aucun revert possible depuis l'app, et aucune trace. La ligne
+    /// `tag_edit` avec l'instantané des anciens tags existait pourtant déjà dans `log`, poussée
+    /// avant l'écriture précisément pour ce cas ; personne ne la rejouait.
+    ///
+    /// L'échec est provoqué en supprimant le dossier de destination APRÈS le plan : `std::fs::rename`
+    /// échoue alors sur un chemin introuvable, ce qui n'est ni 17 ni 18 et ne déclenche donc pas le
+    /// repli copy_verify_delete — l'erreur remonte, comme un vrai échec disque.
+    #[test]
+    fn move_failure_restores_the_tags_it_had_already_overwritten() {
+        let conn = db();
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("lib");
+        std::fs::create_dir_all(root.join("House")).unwrap();
+        let Some((id, src)) = seed_track(&conn, dir.path(), "real_320.mp3", "src.mp3") else {
+            eprintln!("skip: no fixture");
+            return;
+        };
+        crate::tagging::write_tags_full(
+            src.to_str().unwrap(),
+            "OLD Artist",
+            "OLD Title",
+            None,
+            None,
+            &[],
+            None,
+        )
+        .unwrap();
+
+        let plan = plan_file(
+            &conn,
+            &root,
+            "{artist} - {title}",
+            id,
+            "House",
+            None,
+            Some(Canonical {
+                artist: "NEW Artist".into(),
+                title: "NEW Title".into(),
+                version: None,
+                confidence: crate::naming::Confidence::Green,
+            }),
+            false,
+            &HashSet::new(),
+        )
+        .unwrap();
+        assert!(
+            plan.conformant,
+            "ce test ne vaut que pour le chemin conformant (tag en place puis move)"
+        );
+
+        // Fait echouer le deplacement, apres que le plan a fige la destination.
+        std::fs::remove_dir_all(root.join("House")).unwrap();
+
+        // `FsLog` ne derive pas Debug (et ce n'est pas a ce test de le lui ajouter): on teste donc
+        // la variante d'erreur, pas la valeur complete.
+        let err = execute_file(&plan).err();
+        assert!(
+            err.is_some(),
+            "le deplacement doit echouer une fois le dossier de destination supprime"
+        );
+
+        assert!(
+            src.exists(),
+            "le fichier source doit etre encore la: rien ne l'a deplace"
+        );
+        assert!(
+            !std::path::Path::new(&plan.dest).exists(),
+            "rien ne doit avoir ete ecrit a la destination"
+        );
+        let after = crate::tagging::read_tags_full(src.to_str().unwrap()).unwrap();
+        assert_eq!(
+            after.artist.as_deref(),
+            Some("OLD Artist"),
+            "les tags ecrits avant le move rate doivent avoir ete defaits: le fichier de \
+             l'utilisateur ne doit pas garder des tags issus d'un rangement qui n'a pas eu lieu"
+        );
+        assert_eq!(after.title.as_deref(), Some("OLD Title"));
     }
 
     /// FIX-15: `rollback_fs` (the "nothing is left half-filed" guarantee) had no test forcing

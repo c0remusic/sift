@@ -31,9 +31,27 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # Le canal vient de rust-toolchain.toml, jamais d'une valeur recopiee ici. Sinon deux
+      # sources de verite divergent en silence.
+      #
+      # Pourquoi ce n'est pas `@stable` : rust-toolchain.toml SURCHARGE le toolchain actif des que
+      # cargo tourne dans le depot. Avec `@stable`, l'action installe la derniere stable AVEC
+      # clippy et rustfmt, puis cargo honore le fichier et rustup installe le canal epingle a la
+      # volee — SANS ces composants. Tant que stable coincide avec le pin, rien ne se voit; le jour
+      # ou stable avance, `cargo clippy` echoue sur « clippy is not installed for the toolchain ».
+      - name: Read pinned toolchain
+        id: rust
+        shell: bash
+        run: |
+          channel=$(sed -n 's/^ *channel *= *"\(.*\)"/\1/p' rust-toolchain.toml)
+          test -n "$channel" || { echo "channel introuvable dans rust-toolchain.toml"; exit 1; }
+          echo "channel=$channel" >> "$GITHUB_OUTPUT"
+          echo "toolchain epingle: $channel"
+
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@master
         with:
+          toolchain: ${{ steps.rust.outputs.channel }}
           components: clippy, rustfmt
 
       - name: Cache cargo
