@@ -175,9 +175,20 @@ pub fn run() {
                 }
             }
             ffmpeg::init_ffmpeg_path();
-            let dir = app.path().app_data_dir().expect("no app data dir");
-            std::fs::create_dir_all(&dir).ok();
-            let conn = db::open(&dir.join("sift.db")).expect("db open failed");
+            // Ces trois étapes conditionnent toute l'application : sans dossier de données, sans
+            // base ouverte ou sans identifiant de session, rien de ce qui suit n'a de sens. Elles
+            // doivent donc arrêter le démarrage — mais par le `?` de `setup`, qui remonte un
+            // message, et non par un `expect` qui rend une pile d'appels à l'utilisateur.
+            // `.claude/rules/rust.md` : `expect()` hors test est un interdit dur.
+            let dir = app
+                .path()
+                .app_data_dir()
+                .map_err(|e| format!("dossier de donnees de l'application introuvable: {e}"))?;
+            std::fs::create_dir_all(&dir)
+                .map_err(|e| format!("creation du dossier de donnees {} impossible: {e}", dir.display()))?;
+            let db_path = dir.join("sift.db");
+            let conn = db::open(&db_path)
+                .map_err(|e| format!("ouverture de la base {} impossible: {e}", db_path.display()))?;
             let session_id = format!(
                 "{}-{}",
                 std::time::SystemTime::now()
@@ -187,7 +198,7 @@ pub fn run() {
                 std::process::id()
             );
             settings::set(&conn, settings::CURRENT_SESSION_ID, &session_id)
-                .expect("session_id write failed");
+                .map_err(|e| format!("ecriture de l'identifiant de session impossible: {e}"))?;
             app.manage(Mutex::new(conn));
             app.manage(ipc_filing::FilingCancel::default());
             watcher::init_state(app.handle());

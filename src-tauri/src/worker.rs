@@ -199,7 +199,15 @@ pub fn refill(app: &AppHandle) {
         }
     };
     let (m, cv) = &*worker.inner;
-    let Ok(mut q) = m.lock() else { return };
+    // Le pool tourne sans supervision : un verrou empoisonné avalé ici l'arrête d'alimenter en
+    // silence, et l'analyse a l'air simplement « terminée » (`.claude/rules/rust.md`).
+    let mut q = match m.lock() {
+        Ok(q) => q,
+        Err(e) => {
+            log::error!("worker refill: verrou de file empoisonne, aucun id enfile: {e}");
+            return;
+        }
+    };
     let mut added = 0;
     for id in ids {
         if q.queued.insert(id) {
@@ -215,7 +223,16 @@ pub fn refill(app: &AppHandle) {
 /// Blocks until an id is available (or shutdown). Increments `running` for the popped id.
 fn pop(inner: &Arc<(Mutex<Queue>, Condvar)>) -> Option<i64> {
     let (m, cv) = &**inner;
-    let mut q = m.lock().ok()?;
+    // `None` fait sortir le thread de sa boucle DÉFINITIVEMENT — il n'est jamais relancé. C'est le
+    // rétrécissement silencieux du pool décrit dans `.claude/rules/rust.md` : sans trace, il ne
+    // reste qu'une analyse qui n'avance plus.
+    let mut q = match m.lock() {
+        Ok(q) => q,
+        Err(e) => {
+            log::error!("worker pop: verrou de file empoisonne, ce thread s'arrete: {e}");
+            return None;
+        }
+    };
     loop {
         if q.shutdown {
             return None;
@@ -224,7 +241,13 @@ fn pop(inner: &Arc<(Mutex<Queue>, Condvar)>) -> Option<i64> {
             q.running += 1;
             return Some(id);
         }
-        q = cv.wait(q).ok()?;
+        q = match cv.wait(q) {
+            Ok(q) => q,
+            Err(e) => {
+                log::error!("worker pop: attente sur condvar empoisonnee, ce thread s'arrete: {e}");
+                return None;
+            }
+        };
     }
 }
 
@@ -232,9 +255,16 @@ fn pop(inner: &Arc<(Mutex<Queue>, Condvar)>) -> Option<i64> {
 /// and decrements `running`.
 fn finish(inner: &Arc<(Mutex<Queue>, Condvar)>, id: i64) {
     let (m, _) = &**inner;
-    if let Ok(mut q) = m.lock() {
-        q.queued.remove(&id);
-        q.running = q.running.saturating_sub(1);
+    match m.lock() {
+        Ok(mut q) => {
+            q.queued.remove(&id);
+            q.running = q.running.saturating_sub(1);
+        }
+        // `running` reste alors compté à vie et l'id ne peut plus jamais être ré-enfilé : la piste
+        // devient invisible à toute nouvelle analyse.
+        Err(e) => log::error!(
+            "worker finish({id}): verrou de file empoisonne, l'id reste marque en cours: {e}"
+        ),
     }
 }
 

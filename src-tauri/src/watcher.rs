@@ -30,12 +30,30 @@ pub fn init_state(app: &AppHandle) {
 pub fn start_all(app: &AppHandle) {
     let rows: Vec<(i64, String)> = {
         let state = app.state::<Mutex<Connection>>();
-        let Ok(conn) = state.lock() else { return };
-        let Ok(mut stmt) = conn.prepare("SELECT id, path FROM sources WHERE watched=1") else {
-            return;
+        // Un retour muet ici, c'est l'application qui démarre sans AUCUNE surveillance de dossier :
+        // rien ne réapparaît dans la file, et rien ne dit pourquoi.
+        let conn = match state.lock() {
+            Ok(c) => c,
+            Err(e) => {
+                log::error!(
+                    "watcher start_all: verrou DB empoisonne, aucune source surveillee: {e}"
+                );
+                return;
+            }
         };
-        let Ok(rows) = stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?))) else {
-            return;
+        let mut stmt = match conn.prepare("SELECT id, path FROM sources WHERE watched=1") {
+            Ok(s) => s,
+            Err(e) => {
+                log::error!("watcher start_all: preparation de la requete sources echouee: {e}");
+                return;
+            }
+        };
+        let rows = match stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?))) {
+            Ok(r) => r,
+            Err(e) => {
+                log::error!("watcher start_all: lecture des sources echouee: {e}");
+                return;
+            }
         };
         rows.filter_map(|r| r.ok()).collect()
     };
@@ -116,7 +134,17 @@ fn handle_events(app: &AppHandle, source_id: i64, res: DebounceEventResult) {
         events.len()
     );
     let state = app.state::<Mutex<Connection>>();
-    let Ok(conn) = state.lock() else { return };
+    // Le lot d'événements vient d'être annoncé par le `log::info!` ci-dessus : sortir sans un mot
+    // ferait croire qu'il a été traité.
+    let conn = match state.lock() {
+        Ok(c) => c,
+        Err(e) => {
+            log::error!(
+                "watch batch: verrou DB empoisonne, lot de la source {source_id} perdu: {e}"
+            );
+            return;
+        }
+    };
     let mut touched = false;
 
     for ev in events {
