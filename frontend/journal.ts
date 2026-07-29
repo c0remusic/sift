@@ -175,7 +175,7 @@ function humanError(err: unknown): string {
     return "Fichier introuvable à destination — déplacé ou supprimé manuellement ?";
   if (raw.includes("newer action"))
     return "Action plus récente à annuler d'abord.";
-  return `Revert échoué : ${raw}`;
+  return "Annulation impossible — réessaie";
 }
 
 /** Inject a persistent status banner at the top of .jrnl-wrap (no animation — stays until next render). */

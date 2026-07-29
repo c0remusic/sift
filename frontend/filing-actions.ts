@@ -15,6 +15,7 @@ import {
   type InFlightFiling,
 } from "./filing-state";
 import { toast } from "./filing-toast";
+import { humanizeError } from "./errors";
 
 /** Banner label when a track was filed in place (its own source folder, not a tree bin). */
 const IN_PLACE_BIN_LABEL = "source folder";
@@ -285,13 +286,21 @@ async function doRevert(batchId: string): Promise<void> {
     state.filedConfirm = null;
     toast("Annulé — retour dans la file", false);
   } catch (e) {
+    // Le message de domaine passe en `display` : les DEUX branches traversent donc
+    // `humanizeError`, et aucune ne reste sans trace. Une version anterieure de ce correctif
+    // n'appelait le module que dans le `else` tout en retirant le `console.error` qui couvrait les
+    // deux — la branche « source gone », la plus documentee de ce chemin, n'ecrivait plus rien.
     const msg = String(e);
-    if (msg.includes("source gone")) {
-      toast("Annulation impossible : un fichier nécessaire a disparu — l'original a peut-être été purgé de la corbeille.", false);
-    } else {
-      toast(`Échec de l'annulation : ${msg}`, false);
-    }
-    console.error("revert failed", e);
+    toast(
+      humanizeError(
+        e,
+        msg.includes("source gone")
+          ? "Annulation impossible : un fichier nécessaire a disparu — l'original a peut-être été purgé de la corbeille."
+          : "Échec de l'annulation — réessaie",
+        "revert",
+      ),
+      false,
+    );
   }
 }
 
@@ -311,14 +320,21 @@ export async function doSecondary(
     await rejectTrack(trackId);
     toast(kind === "resource" ? "Marqué à re-sourcer" : "Écarté", true, () => {
       void requeueTrack(trackId).catch((e) => {
-        console.error(`${kind} undo failed`, e);
-        toast(`Échec de l'annulation : ${String(e)}`, false);
+        toast(humanizeError(e, "Échec de l'annulation — réessaie", `${kind} undo`), false);
       });
     });
     clearPane(mid);
   } catch (e) {
-    toast(`Échec : ${String(e)}`, false);
-    console.error(`${kind} failed`, e);
+    toast(
+      humanizeError(
+        e,
+        kind === "resource"
+          ? "Impossible de marquer à re-sourcer — réessaie"
+          : "Impossible d'écarter la piste — réessaie",
+        kind,
+      ),
+      false,
+    );
     setActionsDisabled(false);
   } finally {
     openState.acting = false;

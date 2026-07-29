@@ -28,6 +28,7 @@ import { initTheme } from "./theme";
 import { renderReglagesLive } from "./reglages-view";
 import { requireEl } from "./dom";
 import { toast } from "./filing-toast";
+import { humanizeError } from "./errors";
 import type { LibrarySortState } from "./library-views";
 import {
   bibState,
@@ -220,8 +221,7 @@ export function installLiveWiring() {
       await reanalyzeTracks([id]);
       toast("Réanalyse relancée");
     } catch (e) {
-      console.error("reanalyze_tracks failed", e);
-      toast(`Échec de la réanalyse : ${String(e)}`);
+      toast(humanizeError(e, "Échec de la réanalyse — réessaie", "reanalyze_tracks"));
     } finally {
       endReanalyze([id]);
     }

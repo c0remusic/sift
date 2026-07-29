@@ -1,5 +1,6 @@
 import { undoLast } from "./ipc";
 import { esc } from "./dom";
+import { humanizeError } from "./errors";
 
 let clearPaneHook: ((mid: HTMLElement) => void) | null = null;
 
@@ -75,16 +76,19 @@ export function toast(message: string, undo = false, onUndo?: () => void): void 
         toast(batchId ? "Annulé — retour dans la file" : "Rien à annuler.", false);
       })
       .catch((e) => {
+        // Même raison qu'à `filing-actions.ts::doRevert` : le message de domaine devient le
+        // `display`, donc les deux branches sont journalisées.
         const msg = String(e);
-        if (msg.includes("source gone")) {
-          toast(
-            "Annulation impossible : un fichier nécessaire a disparu — l'original a peut-être été purgé de la corbeille.",
-            false,
-          );
-        } else {
-          toast(`Échec de l'annulation : ${msg}`, false);
-        }
-        console.error("undo failed", e);
+        toast(
+          humanizeError(
+            e,
+            msg.includes("source gone")
+              ? "Annulation impossible : un fichier nécessaire a disparu — l'original a peut-être été purgé de la corbeille."
+              : "Échec de l'annulation — réessaie",
+            "undoLast",
+          ),
+          false,
+        );
       });
   });
   clearTimeout(toastTimer);
@@ -93,7 +97,7 @@ export function toast(message: string, undo = false, onUndo?: () => void): void 
     // document, and a toast() call landing in it must NOT find it via getElementById and mutate a
     // node that is on its way out (the message would appear, then fade away with it). Without an
     // id, that call takes the create path and builds a fresh toast — the dying one just finishes
-    // dying. `dataset.owner` is left alone: it only ever gates the branch we can no longer reach.
+    // dying.
     el.removeAttribute("id");
     el.classList.add("sift-fade-out");
     // ONE removal path, a timer — never `transitionend`. That event does not fire when the

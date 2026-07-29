@@ -21,6 +21,7 @@ import { open } from "@tauri-apps/plugin-dialog";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { requireEl, esc } from "./dom";
 import { toast } from "./filing-toast";
+import { humanizeError } from "./errors";
 
 /** Per-open editor state (one detail panel open at a time). `pendingCover` is set only when
  * the user picks a new image — left null otherwise so a save never re-embeds the same art. */
@@ -253,7 +254,7 @@ function wireCandidateClicks(
         .catch((e) => {
           el.style.opacity = "";
           el.style.pointerEvents = "";
-          host.innerHTML = `<div class="sift-cands-msg sift-cands-error"><i class="ti ti-alert-triangle" style="font-size:var(--text-md);vertical-align:-2px;margin-right:4px"></i>${esc(String(e))}</div>`;
+          host.innerHTML = `<div class="sift-cands-msg sift-cands-error"><i class="ti ti-alert-triangle" style="font-size:var(--text-md);vertical-align:-2px;margin-right:4px"></i>${esc(humanizeError(e, "Impossible d'appliquer cette release — réessaie", "apply_identity"))}</div>`;
         });
     });
   });
@@ -334,8 +335,7 @@ async function doSave(edit: HTMLElement, st: EditState): Promise<void> {
       });
     });
   } catch (err) {
-    toast(`Échec de l'enregistrement : ${String(err)}`);
-    console.error("update_metadata failed", err);
+    toast(humanizeError(err, "Échec de l'enregistrement — réessaie", "update_metadata"));
   } finally {
     st.saving = false;
     if (btn && orig != null) {
@@ -361,8 +361,7 @@ async function doTrash(edit: HTMLElement, st: EditState): Promise<void> {
     toast("Envoyé à la corbeille");
     deletedCb?.();
   } catch (err) {
-    toast(`Échec : ${String(err)}`);
-    console.error("trash_track failed", err);
+    toast(humanizeError(err, "Impossible d'envoyer à la corbeille — réessaie", "trash_track"));
   } finally {
     if (btn) btn.disabled = false;
   }

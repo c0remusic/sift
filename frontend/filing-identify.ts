@@ -9,6 +9,7 @@ import { requireEl, esc } from "./dom";
 import { state, openState } from "./filing-state";
 import { toast } from "./filing-toast";
 import { refreshPreview, updateHeaderName, titleCase } from "./filing-preview";
+import { humanizeError } from "./errors";
 
 // Identification card display mode: false = read-only grid (maquette default), true = the
 // existing editable artist/title/version inputs. Reset on every track open (Step 3) so a new
@@ -347,7 +348,7 @@ function wireCandidateClicks(
           el.style.opacity = "";
           el.style.pointerEvents = "";
           // [m10] errors get a warning icon to distinguish from "no results"
-          host.innerHTML = `<div class="sift-cands-msg sift-cands-error"><i class="ti ti-alert-triangle sift-cand-error-icon"></i>${esc(String(e))}</div>`;
+          host.innerHTML = `<div class="sift-cands-msg sift-cands-error"><i class="ti ti-alert-triangle sift-cand-error-icon"></i>${esc(humanizeError(e, "Impossible d'appliquer cette release — réessaie", "apply_identity"))}</div>`;
         });
     });
   });
