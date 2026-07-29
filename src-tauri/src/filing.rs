@@ -698,11 +698,18 @@ fn rollback_fs(log: &[FsLog]) {
 /// P4: up to 200 independent read+parse+write cycles of the same file on a 200-track batch). `None`
 /// preserves the original immediate-repair behaviour, used by the single-file commit path
 /// (`ipc_filing::file_track`) where there is only ever one pair, so batching buys nothing.
+/// `masterdb_index`: l'index `master.db` déchiffré, ou `None` quand rien n'est lié. Fourni par
+/// l'appelant pour la MÊME raison que `xml_repair_sink` : `commit_file` tourne sous le verrou
+/// global et une fois PAR PISTE, alors que le déchiffrement d'un `master.db` multi-Mo ne dépend
+/// pas de la piste. Le résoudre ici revenait à déchiffrer le même fichier 200 fois, verrou tenu,
+/// sur un lot de 200 pistes. L'appelant le résout une fois, verrou relâché
+/// (`actions::masterdb_path_if_linked` puis `actions::read_masterdb_index`).
 pub fn commit_file(
     conn: &Connection,
     plan: &FilePlan,
     log: Vec<FsLog>,
     xml_repair_sink: Option<&mut Vec<(String, String)>>,
+    masterdb_index: Option<&crate::rekordbox_masterdb::RekordboxIndex>,
 ) -> Result<FileResult, FilingError> {
     let conf = match plan.canonical.confidence {
         naming::Confidence::Green => "green",
@@ -753,9 +760,8 @@ pub fn commit_file(
     // Committed — now (and only now) patch a linked Rekordbox XML for the move/convert rows, and
     // detect (read-only) any master.db repair candidates for the same rows (M8 Tier 1 IPC wiring),
     // plus (M8 Tier 3) any metadata sync candidate for the tags this commit just wrote. Both
-    // detectors need the same decrypted `master.db` index — read it ONCE per commit (not once per
-    // detector per row) rather than have each detector independently decrypt the file.
-    let masterdb_index = actions::resolve_masterdb_index_if_linked(conn);
+    // detectors need the same decrypted `master.db` index — d'où le paramètre : une seule lecture
+    // pour les deux détecteurs ET pour toutes les pistes du lot, au lieu d'une par commit.
     let mut xml_repair_sink = xml_repair_sink;
     for (fs, action_id) in log.iter().zip(action_ids.iter()) {
         match xml_repair_sink.as_mut() {
@@ -845,7 +851,13 @@ pub fn file_track(
         &HashSet::new(),
     )?;
     let log = execute_file(&plan)?;
-    commit_file(conn, &plan, log, None)
+    commit_file(
+        conn,
+        &plan,
+        log,
+        None,
+        actions::resolve_masterdb_index_if_linked(conn).as_ref(),
+    )
 }
 
 /// Canonical metadata persisted by an earlier Discogs identification (the `metadata` table),
@@ -1416,7 +1428,7 @@ mod tests {
         conn.execute("DELETE FROM tracks WHERE id=?1", params![id])
             .unwrap();
         assert!(
-            commit_file(&conn, &plan, log, None).is_err(),
+            commit_file(&conn, &plan, log, None, None).is_err(),
             "commit must fail once its track row is gone"
         );
 
@@ -1997,7 +2009,14 @@ mod tests {
             meta: None,
         }];
 
-        commit_file(&conn, &plan, log, None).expect("commit_file");
+        commit_file(
+            &conn,
+            &plan,
+            log,
+            None,
+            actions::resolve_masterdb_index_if_linked(&conn).as_ref(),
+        )
+        .expect("commit_file");
 
         let action_id: i64 = conn
             .query_row(

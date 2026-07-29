@@ -1020,7 +1020,7 @@ fn measure_filing(ds: &FilingDataset, bin_rel: &str) {
         let t1 = Instant::now();
         let log = crate::filing::execute_file(&plan).expect("execute_file");
         let t2 = Instant::now();
-        crate::filing::commit_file(&ds.conn, &plan, log, None).expect("commit_file");
+        crate::filing::commit_file(&ds.conn, &plan, log, None, None).expect("commit_file");
         let t3 = Instant::now();
         plan_d.push(t1.duration_since(t0));
         exec_d.push(t2.duration_since(t1));

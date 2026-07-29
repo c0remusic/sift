@@ -111,10 +111,20 @@ pub fn remove_source(
 
 #[tauri::command]
 pub fn list_queue(conn: State<'_, Mutex<Connection>>) -> Result<Vec<queue::QueueItem>, String> {
-    let conn = db::lock_conn(&conn)?;
-    let mut items = queue::list_pending(&conn).map_err(|e| e.to_string())?;
+    // Deux lectures brèves sous le verrou, puis le verrou tombe. Le regroupement par nom
+    // (`group_name_dups`) normalise le nom de CHAQUE piste de la bibliothèque — il tournait sous le
+    // verrou global, donc à chaque ouverture de la file d'attente, pendant que le pool d'analyse
+    // attendait. Rien ici n'est un read-modify-write : les deux lectures ne servent qu'à annoter
+    // des lignes déjà chargées, une piste ajoutée entre-temps sera vue au rafraîchissement suivant.
+    let (mut items, dup_rows) = {
+        let conn = db::lock_conn(&conn)?;
+        let items = queue::list_pending(&conn).map_err(|e| e.to_string())?;
+        let rows = crate::dedup::load_name_dup_rows(&conn).map_err(|e| e.to_string())?;
+        (items, rows)
+    };
+
     // Annotate name-duplicate items so the queue can badge them before they're opened.
-    let dups = crate::dedup::name_dups(&conn).map_err(|e| e.to_string())?;
+    let dups = crate::dedup::group_name_dups(&dup_rows);
     for it in &mut items {
         it.dup = dups.contains(&it.id);
     }

@@ -303,19 +303,45 @@ fn key_for_path(path: &str) -> String {
 
 /// Pending track ids whose name key collides with another pending or filed track. Pure
 /// string work over the `tracks` table — no file I/O, no migration. Drives the queue badge.
+/// Convenance de test : enchaîne les deux moitiés sous une seule connexion. La production ne DOIT
+/// pas avoir ce chemin — c'est précisément le verrou-tenu-pendant-le-calcul que cette tranche
+/// retire. Même forme que `filing::file_track`.
+#[cfg(test)]
 pub fn name_dups(conn: &Connection) -> rusqlite::Result<HashSet<i64>> {
+    Ok(group_name_dups(&load_name_dup_rows(conn)?))
+}
+
+/// Une ligne du pré-filtre par nom : `(id, path, is_pending)`.
+pub(crate) type NameDupRow = (i64, String, bool);
+
+/// Lecture brève : chaque piste `pending`/`filed`. Destinée à être appelée sous un verrou COURT —
+/// l'appelant le relâche avant `group_name_dups`.
+pub(crate) fn load_name_dup_rows(conn: &Connection) -> rusqlite::Result<Vec<NameDupRow>> {
     let mut stmt =
         conn.prepare("SELECT id, path, status FROM tracks WHERE status IN ('pending','filed')")?;
-    let rows: Vec<(i64, String, String)> = stmt
-        .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))?
+    let rows: Vec<NameDupRow> = stmt
+        .query_map([], |r| {
+            Ok((r.get(0)?, r.get(1)?, r.get::<_, String>(2)? == "pending"))
+        })?
         .collect::<rusqlite::Result<_>>()?;
+    Ok(rows)
+}
+
+/// Le regroupement lui-même. Pur — aucune connexion touchée, donc exécutable verrou relâché.
+///
+/// C'est la moitié coûteuse : une normalisation de nom (`naming::name_key`, minuscules, pliage
+/// des accents, ponctuation retirée) PAR PISTE de la bibliothèque entière. Elle tournait sous le
+/// verrou global de `list_queue`, c'est-à-dire à chaque ouverture de la file d'attente, pendant
+/// que le pool d'analyse attendait. Même découpage que `load_dup_scan_rows` /
+/// `build_fingerprints` / `group_duplicates` juste au-dessus.
+pub(crate) fn group_name_dups(rows: &[NameDupRow]) -> HashSet<i64> {
     // key -> list of (id, is_pending)
     let mut groups: HashMap<String, Vec<(i64, bool)>> = HashMap::new();
-    for (id, path, status) in rows {
+    for (id, path, is_pending) in rows {
         groups
-            .entry(key_for_path(&path))
+            .entry(key_for_path(path))
             .or_default()
-            .push((id, status == "pending"));
+            .push((*id, *is_pending));
     }
     let mut dups = HashSet::new();
     for (_key, group) in groups {
@@ -327,7 +353,7 @@ pub fn name_dups(conn: &Connection) -> rusqlite::Result<HashSet<i64>> {
             }
         }
     }
-    Ok(dups)
+    dups
 }
 
 /// The best duplicate match for `track_id` by name (other pending or filed track sharing its

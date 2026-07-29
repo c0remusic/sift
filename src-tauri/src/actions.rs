@@ -210,13 +210,30 @@ pub fn set_pioneer_dir_override_for_test(dir: std::path::PathBuf) {
 pub fn resolve_masterdb_index_if_linked(
     conn: &Connection,
 ) -> Option<crate::rekordbox_masterdb::RekordboxIndex> {
+    read_masterdb_index(&masterdb_path_if_linked(conn)?)
+}
+
+/// La moitié DB de la résolution ci-dessus : où se trouve `master.db`, si l'intégration Rekordbox
+/// est liée. Lecture de réglage, rien d'autre — assez rapide pour tenir sous le verrou global.
+///
+/// Séparée de la lecture du fichier précisément pour que l'appelant puisse relâcher le verrou
+/// entre les deux : `resolve_masterdb_index_if_linked` fait les deux d'un bloc, donc l'appeler
+/// sous le verrou y tient aussi le déchiffrement multi-Mo.
+pub fn masterdb_path_if_linked(conn: &Connection) -> Option<std::path::PathBuf> {
     let Ok(Some(_xml_path)) = crate::settings::get(conn, crate::settings::REKORDBOX_XML_PATH)
     else {
         return None;
     };
-    let pioneer_dir = rekordbox_pioneer_dir()?;
-    let master_db_path = pioneer_dir.join("master.db");
-    match crate::rekordbox_masterdb::read_rekordbox_masterdb(&master_db_path) {
+    Some(rekordbox_pioneer_dir()?.join("master.db"))
+}
+
+/// La moitié disque : déchiffrer et indexer `master.db`. AUCUN accès à la base de Sift — c'est ce
+/// qui la rend appelable verrou relâché. Multi-Mo de SQLCipher : c'est le coût dominant de toute
+/// la détection M8.
+pub fn read_masterdb_index(
+    master_db_path: &std::path::Path,
+) -> Option<crate::rekordbox_masterdb::RekordboxIndex> {
+    match crate::rekordbox_masterdb::read_rekordbox_masterdb(master_db_path) {
         Ok(idx) => Some(idx),
         Err(e) => {
             log::error!(

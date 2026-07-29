@@ -447,10 +447,24 @@ fn run_file_track(app: &AppHandle, plan: filing::FilePlan) {
         }
     };
 
+    // Le `master.db` se lit AVANT de reprendre le verrou (déchiffrement SQLCipher multi-Mo) —
+    // `commit_file` le faisait verrou tenu. Une seule piste ici, donc un seul déchiffrement dans
+    // les deux cas ; ce qui change est qu'il ne bloque plus tout le reste de l'app.
+    let masterdb_index = {
+        let path = match state.lock() {
+            Ok(conn) => actions::masterdb_path_if_linked(&conn),
+            Err(e) => {
+                log::error!("file_track: DB lock poisoned resolving master.db path: {e}");
+                None
+            }
+        };
+        path.as_deref().and_then(actions::read_masterdb_index)
+    };
+
     // Phase 3.
     let result = match executed {
         Ok(log) => match state.lock() {
-            Ok(conn) => filing::commit_file(&conn, &plan, log, None)
+            Ok(conn) => filing::commit_file(&conn, &plan, log, None, masterdb_index.as_ref())
                 .map(|_| ())
                 .map_err(|e| e.to_string()),
             Err(e) => {
@@ -863,6 +877,21 @@ fn run_file_batch(
     // (audited 2026-07-05, finding P4 — up to 200 independent cycles on a 200-track batch).
     // Flushed once, after the loop, via actions::repair_rekordbox_xml_batch.
     let mut xml_repair_pairs: Vec<(String, String)> = Vec::new();
+    // Même raisonnement que `xml_repair_pairs`, pour le `master.db` : `commit_file` le résolvait
+    // lui-même, donc une fois par piste ET sous le verrou global. Sur un lot de 200 pistes c'était
+    // 200 déchiffrements SQLCipher multi-Mo du même fichier, verrou tenu, pendant que le reste de
+    // l'app attendait. Résolu ici : le chemin sous un verrou court (lecture de réglage), la lecture
+    // du fichier VERROU RELÂCHÉ, une seule fois pour tout le lot.
+    let masterdb_index = {
+        let path = match state.lock() {
+            Ok(conn) => actions::masterdb_path_if_linked(&conn),
+            Err(e) => {
+                log::error!("file_batch: DB lock poisoned resolving master.db path: {e}");
+                None
+            }
+        };
+        path.as_deref().and_then(actions::read_masterdb_index)
+    };
     // `done` = every track whose fate is settled: planning-time needs_validation + each processed
     // outcome. Emitted before the loop (settles the planning-time bounces) and after each commit.
     app.emit(
@@ -893,7 +922,13 @@ fn run_file_batch(
                         continue;
                     }
                 };
-                match filing::commit_file(&conn, &o.plan, log, Some(&mut xml_repair_pairs)) {
+                match filing::commit_file(
+                    &conn,
+                    &o.plan,
+                    log,
+                    Some(&mut xml_repair_pairs),
+                    masterdb_index.as_ref(),
+                ) {
                     Ok(_) => filed += 1,
                     Err(_) => needs_validation.push(o.id),
                 }
