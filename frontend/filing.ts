@@ -278,6 +278,21 @@ function dupBanner(m: DupMatch): string {
  *  is bumped on every open; an in-flight open bails at its await points if a newer one started
  *  (prevents a slow analyze/reconcile from clobbering the pane of a track opened since) — see
  *  filing-state.ts for the full rationale. */
+/** Rail déduit de la seule extension. DERNIER RECOURS : n'est consulté que si l'analyse a échoué
+ *  (`report` nul) ET que l'item de file n'a pas encore de rail. Sert uniquement à l'affichage — la
+ *  puce de format et l'extension du nom prévisionnel — jamais à décider ce qui est envoyé au
+ *  backend, qui dérive la cible lui-même (`encode::target_for`).
+ *
+ *  Recopie volontaire, et bornée, de `analysis::tags::rail_from_ext` (src-tauri/src/analysis/tags.rs
+ *  lignes 24-30). La version précédente de cette table était écrite de mémoire et avait divergé :
+ *  elle ignorait `opus`. Toute correction ici doit d'abord être vérifiée là-bas. */
+function railFromExtension(path: string): string {
+  const ext = (path.split(".").pop() || "").toLowerCase();
+  if (["flac", "wav", "aif", "aiff", "alac"].includes(ext)) return "lossless";
+  if (["mp3", "aac", "m4a", "ogg", "opus"].includes(ext)) return "lossy";
+  return "unknown";
+}
+
 export async function openFilingInto(
   mid: HTMLElement,
   item: QueueItem,
@@ -460,11 +475,25 @@ export async function openFilingInto(
   // → "Original Mix". Title/artist are left as reconciled.
   if (state.canonical.version) state.canonical.version = titleCase(state.canonical.version);
 
-  // Default rail by extension (analysis data attribute not available cross-module).
-  const ext = (item.path.split(".").pop() || "").toLowerCase();
-  let rail = "unknown";
-  if (["flac", "wav", "aif", "aiff", "alac"].includes(ext)) rail = "lossless";
-  else if (["mp3", "m4a", "aac", "ogg"].includes(ext)) rail = "lossy";
+  // Rail lu aux sources BACKEND d'abord, table d'extensions en dernier recours seulement.
+  //
+  // Il y avait ici une table extension→rail utilisée en PREMIER et maintenue à la main, déjà
+  // divergée : elle ignorait `.opus`, qu'elle classait donc `unknown` alors que le backend le
+  // connaît. Son commentaire se justifiait par « analysis data attribute not available
+  // cross-module » — faux au moment de le lire : `report.declared_rail` et `item.rail` sont tous
+  // deux en portée ici. Audit 2026-07-28, SDP-1.
+  //
+  // Le repli est CONSERVÉ, contrairement à un premier jet qui le supprimait : quand l'analyse a
+  // échoué, `report` est `null` ET `item.rail` l'est aussi (piste non analysée). Sans repli, on
+  // retombait sur `unknown`, la puce de format et l'extension du nom final affichaient MP3/.mp3
+  // pour un FLAC — alors que le rangement réel (`state.target` reste `null`, le backend dérive)
+  // aurait produit un AIFF. Le front et le backend divergeaient là où ils s'accordaient avant.
+  // Trouvé par le crosscheck de la gate.
+  //
+  // NOTE sur `declared_rail` : il vient de `tag.declared_rail` (analysis/mod.rs:225), c'est-à-dire
+  // du format DÉCLARÉ. Le rail reniflé aux octets s'appelle `content_rail` et n'est PAS exposé au
+  // front — seul `container_mismatch` l'est. Ne pas décrire `declared_rail` comme content-sniffé.
+  const rail = report?.declared_rail ?? item.rail ?? railFromExtension(item.path);
   state.rail = rail; // so refreshPreview defaults the extension like the lit chip does
 
   renderFoot(footEl, mid, rail);

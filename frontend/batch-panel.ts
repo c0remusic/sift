@@ -77,17 +77,75 @@ export const batchGroupCap: Record<"file" | "fake" | "readonly", number> = {
 // Batch "file in place" toggle (FILE_IN_PLACE). Kept apart from batchBin so the picked folder is
 // remembered while in-place is on. Effective destination = batchInPlace ? FILE_IN_PLACE : batchBin.
 export let batchInPlace = false;
-// Single encode target for the whole "Prêts · lossless" selection (maquette: one segmented format
-// control for the batch, not one per source rail — a lossy-sourced file can still be asked for
-// AIFF/WAV here, unlike the Détail rail which keeps the no-upscale guard). Fed to the filer as the
-// same target for every submitted id.
-let batchFormat: Target = "aiff_16_44";
+// Format de sortie du rail LOSSLESS uniquement. Le rail lossy n'a pas de choix: y demander AIFF ou
+// WAV serait de l'upscale, que le backend refuse (`filing.rs`, `guard_no_upscale`).
+//
+// Il y avait ici UN sélecteur global, dont le commentaire affirmait l'inverse du backend — « a
+// lossy-sourced file can still be asked for AIFF/WAV here ». Il ne le pouvait pas: le lot partait,
+// chaque MP3 rebondissait en `needs_validation`, et le récap affichait une coche verte avec
+// `0 filed`. Sur une sélection de 250 MP3, l'utilisateur voyait « c'est fait » et rien n'avait
+// bougé. Audit 2026-07-28, PP-1; forme tranchée par Antoine (deux sélecteurs, un par rail).
+let batchLosslessFormat: Target = "aiff_16_44";
 // The ordered ids submitted to the currently-running batch — drives the per-track tracklist (the
 // nth `file:progress.done` maps to batchTrackIds[n]). Set at submit, used at file:done.
 let batchTrackIds: number[] = [];
 // Destination bin chosen in the batch folder tree (forward-slash rel; "" = library root). Kept
 // across renders so the choice doesn't reset while triaging.
 export let batchBin = "";
+
+/** Répartit la sélection courante par rail SOURCE, pour n'afficher que les sélecteurs qui
+ *  s'appliquent réellement et pour n'imposer une cible qu'au rail qui en a une.
+ *
+ *  `unknown` et `null` (piste pas encore analysée) comptent avec le lossy à l'affichage — c'est le
+ *  groupe « pas de choix » — mais au moment de filer, aucune cible ne leur est envoyée : le backend
+ *  la dérive lui-même du rail réel (`encode::target_for`). Forcer `mp3_320` ici dégraderait un
+ *  lossless dont le rail n'a pas encore été déterminé. */
+function batchSelectionByRail(): { lossless: number; lossy: number } {
+  let lossless = 0;
+  let lossy = 0;
+  for (const it of currentItems) {
+    if (!batchSel.has(it.id)) continue;
+    if (it.rail === "lossless") lossless += 1;
+    else lossy += 1;
+  }
+  return { lossless, lossy };
+}
+
+/** Les DEUX blocs de format du rail Lot, un par rail source (décision Antoine du 2026-07-28,
+ *  PLAN.md § arbitrages point 1). Le rail lossless a un vrai choix — descendre un lossless en MP3
+ *  est légitime, ce n'est pas de l'upscale. Le rail lossy n'en a aucun et le dit en toutes lettres
+ *  plutôt qu'en options grisées (variante A, choisie sur maquette contre la variante B).
+ *
+ *  Chaque groupe n'apparaît que si la sélection en contient : sur un lot 100 % MP3, aucun sélecteur
+ *  AIFF/WAV ne s'affiche pour rien.
+ *
+ *  Extrait en fonction — et pas laissé en ligne dans `renderBatchRail` — parce que ces blocs
+ *  dépendent de la SÉLECTION : ils doivent être recalculés par le chemin de tick unitaire
+ *  (`updateBatchRailSelection`) autant que par la reconstruction complète du rail.
+ *
+ *  Markup de la pastille identique au rail Détail (`filing.ts` renderFoot) : `<button>` cliquable
+ *  avec état `on` et thumb glissant, pas une piste de pilules sur mesure (audit 2026-07-05 puis
+ *  2026-07-09). */
+function formatBlocksHtml(): string {
+  const { lossless: nLossless, lossy: nLossy } = batchSelectionByRail();
+  const losslessBlock = nLossless
+    ? `<div class="sift-rail-fmt-group"><span class="col-h">Lossless · ${nLossless}</span><div class="sift-seg sift-seg-thumbed" id="sift-batch-fmt-seg">` +
+      `<div class="sift-seg-thumb"></div>` +
+      (["mp3_320", "aiff_16_44", "wav_16_44"] as Target[])
+        .map(
+          (t) =>
+            `<button class="sift-seg-opt${batchLosslessFormat === t ? " on" : ""}" data-sift="batchformat" data-t="${t}">${TARGET_LABEL[t]}</button>`,
+        )
+        .join("") +
+      `</div></div>`
+    : "";
+  const lossyBlock = nLossy
+    ? `<div class="sift-rail-fmt-group"><span class="col-h">Lossy · ${nLossy}</span>` +
+      `<span style="font-size:var(--text-md);color:var(--color-text-secondary);white-space:nowrap;padding:var(--space-4) 0">${TARGET_LABEL["mp3_320"]} 320 <span style="color:var(--color-text-tertiary)">— seul format possible</span></span>` +
+      `</div>`
+    : "";
+  return losslessBlock + lossyBlock;
+}
 
 /** The group-header tri-state checkbox glyph for a batch group (Prêts/À vérifier). Selection state
  * is read from the live Sets — reused by renderBatch's initial paint AND by mutateBatchTick's
@@ -149,6 +207,16 @@ function updateBatchRailSelection(): void {
   }
   const slot = document.querySelector(".sift-baction-slot");
   if (slot) slot.innerHTML = actionButtonHtml(batchRunning);
+  // Les blocs de format dépendent EUX AUSSI de la sélection (compteur par rail, et présence même
+  // du sélecteur lossless). Sans ce rafraîchissement, ce chemin de tick — le plus chaud, un clic
+  // de case — laissait des compteurs faux, et surtout: cocher la première piste lossless d'un lot
+  // ne faisait jamais apparaître son sélecteur, tandis que décocher la dernière le laissait
+  // affiché sur une sélection qui n'en contenait plus. Trouvé par le crosscheck de la gate.
+  const fmtHost = document.getElementById("sift-batch-fmt");
+  if (fmtHost) {
+    fmtHost.innerHTML = formatBlocksHtml();
+    positionBatchFmtThumb();
+  }
 }
 
 // Global progress zone — feed the "file" row from the per-file filing events (sous-étape 2). Mirror
@@ -209,10 +277,15 @@ export function onFileStop() {
 
 /** Batch triage view (maquette "Mode Lot"): 3 flat groups by verdict — Prêts · lossless
  * (selectable → File), À vérifier · fake (selectable → Écarter, never filed — Sift ne range
- * jamais un fake lossless), En analyse (read-only, encore en cours d'analyse). One shared
- * format selector for the whole file-able selection (renderBatchRail) — no per-source-rail
- * split; a lossy-sourced file CAN be asked for AIFF/WAV here (see docs/superpowers/plans/2026-07-02-refonte-ui-plan.md,
- * décision "maquette prime" du 2026-07-01 — seule la règle fakes-jamais-filés est gardée).
+ * jamais un fake lossless), En analyse (read-only, encore en cours d'analyse).
+ *
+ * DEUX sélecteurs de format, un par rail source (`formatBlocksHtml`). La version précédente en
+ * avait un seul et affirmait ici qu'« a lossy-sourced file CAN be asked for AIFF/WAV here » : c'est
+ * faux, le backend applique `guard_no_upscale` sur tous les chemins, et les MP3 rebondissaient en
+ * `needs_validation`. La décision « maquette prime » du 2026-07-01 est donc REMPLACÉE sur ce point
+ * par l'arbitrage d'Antoine du 2026-07-28 (PLAN.md § arbitrages point 1) ; seule la règle
+ * fakes-jamais-filés survit de la décision d'origine.
+ *
  * Every control is bound to a real command (`fileBatch` / `rejectBatch`); nothing is mocked. */
 export function renderBatch() {
   const mid = requireEl("#mid", "renderBatch");
@@ -517,27 +590,9 @@ function renderBatchRail(reviewN: number) {
   const exclus = reviewN
     ? ` · <span style="color:var(--color-text-tertiary)">${reviewN} exclus (en review)</span>`
     : "";
-  // Single global format selector (maquette `formats`) — applies to the whole file-able selection,
-  // no per-source-rail split (décision "maquette prime" du 2026-07-01, docs/superpowers/plans/2026-07-02-refonte-ui-plan.md).
-  // Same chip markup as the Détail rail (filing.ts renderFoot) — clickable affordance (hover +
-  // "on" state) instead of a bespoke pill track, per audit 2026-07-05 (annotation: "pas clair
-  // que les boutons sont clickables").
-  // Audit-ref (Bibliothèque/rail batch, 2026-07-09) : <span> → <button> (cohérence), thumb glissant
-  // ajouté. Contrairement à Journal/Bibliothèque, renderBatchRail() n'est PAS async — le clic
-  // rebuild tout de suite dans le même tick, donc "toggle en place puis laisser l'async peindre"
-  // ne marche pas ici. La rebuild est différée d'une frame (requestAnimationFrame, voir le handler
-  // "batchformat" plus bas) pour laisser le navigateur peindre le toggle avant que le DOM soit
-  // remplacé — seul site qui a besoin de ce délai explicite.
-  const formatBlock =
-    `<div class="sift-rail-fmt-group"><span class="col-h">Format</span><div class="sift-seg sift-seg-thumbed" id="sift-batch-fmt-seg">` +
-    `<div class="sift-seg-thumb"></div>` +
-    (["mp3_320", "aiff_16_44", "wav_16_44"] as Target[])
-      .map(
-        (t) =>
-          `<button class="sift-seg-opt${batchFormat === t ? " on" : ""}" data-sift="batchformat" data-t="${t}">${TARGET_LABEL[t]}</button>`,
-      )
-      .join("") +
-    `</div></div>`;
+  // Enveloppe stable : son CONTENU est recalculé aussi par `updateBatchRailSelection` (chemin de
+  // tick), pas seulement par cette reconstruction complète du rail.
+  const formatBlock = `<div id="sift-batch-fmt" style="display:contents">${formatBlocksHtml()}</div>`;
   // Rail order (one row, matching the Detail rail): Destination → Format → spacer → Selection
   // count → action, all on the first line — then progress/tracks (each flex-basis:100%, empty/
   // invisible while idle) wrap below since they come AFTER the action button in DOM order
@@ -592,9 +647,17 @@ async function runBatchFile() {
   // FIX-7: show 0/N in the global progress zone immediately at the click, same instant signal the
   // per-track tracklist above already gets — don't wait for the first file:progress event.
   setTask("file", { done: 0, total: ids.length, state: "running" });
-  // Single format applied to every submitted id (maquette's one segmented control for the batch).
+  // Cible imposée UNIQUEMENT aux pistes de rail lossless. Tout le reste — lossy, `unknown`, et
+  // pistes pas encore analysées — est volontairement ABSENT de la table: `ipc_filing::file_batch`
+  // documente que « absent ids fall back to the auto target derived from the source rail
+  // (encode::target_for) ». C'est ce qui rend l'upscale impossible par construction plutôt que
+  // refusé après coup, et ce qui évite de dégrader en MP3 un lossless dont le rail est encore
+  // `unknown`. Audit 2026-07-28, PP-1.
+  const railById = new Map(currentItems.map((it) => [it.id, it.rail]));
   const targets: Record<number, Target> = {};
-  for (const id of ids) targets[id] = batchFormat;
+  for (const id of ids) {
+    if (railById.get(id) === "lossless") targets[id] = batchLosslessFormat;
+  }
   try {
     // Resolves as soon as the background task STARTS; the summary comes via file:done.
     await fileBatch(ids, batchDest(), targets);
@@ -702,19 +765,31 @@ export async function onFileBatchDone(res: BatchResult) {
       refreshBatchTracksPreview();
     }
   }
-  const base = res.needs_validation.length
-    ? `${res.filed} filed · ${res.needs_validation.length} need validation`
-    : `${res.filed} filed`;
+  // Récap en français, et surtout: le TON suit le résultat. Avant, tout finissait sur une coche
+  // verte en couleur succès — y compris « 0 filed · 250 need validation », c'est-à-dire un lot
+  // entièrement rebondi affiché comme une réussite. C'est ce qui rendait le bug PP-1 invisible.
+  // Audit 2026-07-28.
+  const nKo = res.needs_validation.length;
+  const plural = (n: number, s: string, p: string) => (n > 1 ? p : s);
+  const base = nKo
+    ? `${res.filed} ${plural(res.filed, "rangée", "rangées")} · ${nKo} ${plural(nKo, "à vérifier", "à vérifier")}`
+    : `${res.filed} ${plural(res.filed, "piste rangée", "pistes rangées")}`;
+  const tone =
+    res.filed === 0 && nKo
+      ? { icon: "ti-alert-triangle", color: "var(--color-text-danger)" }
+      : nKo
+        ? { icon: "ti-alert-triangle", color: "var(--color-text-warning)" }
+        : { icon: "ti-check", color: "var(--color-text-success)" };
   // Refresh the view, then post the run summary at #filfoot — after refresh so it survives
   // renderBatch's wholesale rail rebuild (renderBatchRail sets #filfoot.innerHTML). refresh() no
   // longer throws on an unmounted view (each renderer no-ops when its root is absent), so the
   // earlier try/finally guard around it is no longer needed.
   await refreshHook?.();
   fileNote(
-    `<i class="ti ti-check" style="font-size:var(--text-md);vertical-align:-1px"></i> ${
-      res.cancelled ? `Filing cancelled · ${base}` : base
+    `<i class="ti ${tone.icon}" style="font-size:var(--text-md);vertical-align:-1px"></i> ${
+      res.cancelled ? `Conversion interrompue · ${base}` : base
     }`,
-    "var(--color-text-success)",
+    tone.color,
   );
 }
 
@@ -790,14 +865,14 @@ export function handleBatchAction(el: HTMLElement, act: string, e: MouseEvent): 
     renderBatch();
   } else if (act === "batchformat") {
     e.stopPropagation();
-    batchFormat = el.dataset.t as Target;
+    batchLosslessFormat = el.dataset.t as Target;
     // Toggle + reposition in place first, then let a frame paint before renderBatchRail()
     // rebuilds the whole rail synchronously (not async like Journal/Bibliothèque — nothing to
     // await here — so without this rAF the toggle and the rebuild land in the same tick and
     // there is nothing to animate FROM).
     document
       .querySelectorAll<HTMLElement>("#sift-batch-fmt-seg [data-sift='batchformat']")
-      .forEach((b) => b.classList.toggle("on", b.dataset.t === batchFormat));
+      .forEach((b) => b.classList.toggle("on", b.dataset.t === batchLosslessFormat));
     positionBatchFmtThumb();
     requestAnimationFrame(() => {
       renderBatchRail(currentItems.filter((it) => it.verdict !== "ok").length);
