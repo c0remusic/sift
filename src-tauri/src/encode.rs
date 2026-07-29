@@ -39,7 +39,33 @@ impl Target {
             Target::Aiff1644 | Target::Wav1644 => Rail::Lossless,
         }
     }
+
+    /// Chaque variante avec la chaîne que `tracks.target_format` stocke (voir
+    /// `filing::target_str`). Sert aux appelants qui doivent relire cette colonne — et aux tests
+    /// qui interdisent aux listes SQL ci-dessous de diverger de l'enum.
+    pub const ALL_WITH_DB_VALUE: &'static [(Target, &'static str)] = &[
+        (Target::Mp3320, "mp3_320"),
+        (Target::Aiff1644, "aiff_16_44"),
+        (Target::Wav1644, "wav_16_44"),
+    ];
+
+    /// Le `Target` derrière une valeur de `tracks.target_format`. `None` sur une ligne rangée
+    /// avant l'ajout de la colonne, ou sur une valeur inconnue.
+    pub fn from_db_value(s: &str) -> Option<Target> {
+        Self::ALL_WITH_DB_VALUE
+            .iter()
+            .find(|(_, v)| *v == s)
+            .map(|(t, _)| *t)
+    }
 }
+
+/// Les valeurs de `tracks.target_format` du rail lossless, prêtes à coller derrière un `IN` SQL.
+/// SQLite ne peut pas appeler `Target::rail()` : `target_sql_lists_match_the_enum` est ce qui
+/// remplace l'appel. Littéraux de compilation uniquement.
+pub const TARGET_LOSSLESS_SQL_IN: &str = "('aiff_16_44','wav_16_44')";
+
+/// Idem pour le rail lossy — une seule valeur aujourd'hui, même garde.
+pub const TARGET_LOSSY_SQL_IN: &str = "('mp3_320')";
 
 /// Why an encode could not proceed.
 #[derive(Debug, Clone, PartialEq)]
@@ -160,6 +186,36 @@ pub fn encode(src: &str, dst: &str, target: Target) -> Result<(), EncodeError> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Les deux listes SQL sont la seule façon pour SQLite de connaître la règle
+    /// `Target::rail()`. Ce test est ce qui remplace l'appel : ajouter une variante à l'enum sans
+    /// la classer ici casse ici, pas plus tard sur un compteur faux. Il vérifie les DEUX sens —
+    /// toute variante doit apparaître dans exactement une des deux listes, et toute entrée d'une
+    /// liste doit être du bon rail.
+    #[test]
+    fn target_sql_lists_match_the_enum() {
+        for (t, db) in Target::ALL_WITH_DB_VALUE {
+            let quoted = format!("'{db}'");
+            let in_lossless = TARGET_LOSSLESS_SQL_IN.contains(&quoted);
+            let in_lossy = TARGET_LOSSY_SQL_IN.contains(&quoted);
+            assert!(
+                in_lossless ^ in_lossy,
+                "{db} doit etre dans exactement une des deux listes SQL"
+            );
+            assert_eq!(
+                in_lossless,
+                t.rail() == Rail::Lossless,
+                "{db} est classe a l'envers par rapport a Target::rail()"
+            );
+            assert_eq!(Target::from_db_value(db), Some(*t));
+        }
+        // Et aucune des listes ne contient de valeur qui ne soit pas une variante.
+        let known: usize = Target::ALL_WITH_DB_VALUE.len();
+        let listed = TARGET_LOSSLESS_SQL_IN.matches('\'').count() / 2
+            + TARGET_LOSSY_SQL_IN.matches('\'').count() / 2;
+        assert_eq!(listed, known, "une liste SQL contient une valeur inconnue");
+        assert_eq!(Target::from_db_value("aiff_24_96"), None);
+    }
 
     fn fixture(name: &str) -> Option<String> {
         let p = format!("fixtures/{name}");

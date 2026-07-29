@@ -250,13 +250,22 @@ pub fn library_stats(conn: &rusqlite::Connection) -> rusqlite::Result<DashboardS
         [],
         |r| r.get(0),
     )?;
+    // `target_format`, PAS `format` : `tracks.format` n'est écrit par aucun code de production
+    // (voir le commentaire de `list_filed`). Ces deux compteurs rendaient donc 0 quelle que soit la
+    // bibliothèque, sur un écran qui affiche « Lossless » et « MP3 » en gros.
     let lossless: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM tracks WHERE status='filed' AND lower(format) IN ('aiff','aif','wav','flac')",
+        &format!(
+            "SELECT COUNT(*) FROM tracks WHERE status='filed' AND target_format IN {}",
+            crate::encode::TARGET_LOSSLESS_SQL_IN
+        ),
         [],
         |r| r.get(0),
     )?;
     let mp3: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM tracks WHERE status='filed' AND lower(format)='mp3'",
+        &format!(
+            "SELECT COUNT(*) FROM tracks WHERE status='filed' AND target_format IN {}",
+            crate::encode::TARGET_LOSSY_SQL_IN
+        ),
         [],
         |r| r.get(0),
     )?;
@@ -298,7 +307,7 @@ pub fn list_filed(
     f: &LibraryFilter,
 ) -> rusqlite::Result<Vec<LibraryTrack>> {
     let mut sql = String::from(
-        "SELECT t.id, t.path, t.format, t.bitrate, t.duration, t.verdict, t.folder, t.has_cover, \
+        "SELECT t.id, t.path, t.target_format, t.bitrate, t.duration, t.verdict, t.folder, t.has_cover, \
                 m.artist, m.title, m.label, m.year, m.bpm, m.cover_path, m.discogs_release_id, \
                 m.version \
          FROM tracks t LEFT JOIN metadata m ON m.track_id = t.id \
@@ -309,8 +318,14 @@ pub fn list_filed(
     }
     if let Some(q) = &f.quality {
         match q.as_str() {
-            "lossless" => sql.push_str(" AND lower(t.format) IN ('aiff','aif','wav','flac')"),
-            "mp3" => sql.push_str(" AND lower(t.format) = 'mp3'"),
+            "lossless" => sql.push_str(&format!(
+                " AND t.target_format IN {}",
+                crate::encode::TARGET_LOSSLESS_SQL_IN
+            )),
+            "mp3" => sql.push_str(&format!(
+                " AND t.target_format IN {}",
+                crate::encode::TARGET_LOSSY_SQL_IN
+            )),
             _ => {}
         }
     }
@@ -376,6 +391,14 @@ pub fn list_filed(
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
 
+    // `format` sort de `tracks.target_format` — le format que Sift a RÉELLEMENT écrit en rangeant —
+    // et non de `tracks.format`, colonne déclarée en v1 du schéma (`db.rs:24`) qu'aucun code de
+    // production n'a jamais renseignée : ni `scanner::upsert_file`, ni `worker::persist_report` (qui
+    // écrit `declared_fmt`), ni `filing`. Elle était NULL sur toute vraie base, donc la colonne
+    // Format de la Bibliothèque affichait « ? » partout, les deux compteurs du tableau de bord
+    // rendaient 0, et le filtre Lossless/MP3 ne renvoyait jamais rien. Seuls les tests, qui la
+    // semaient à la main, la voyaient remplie. `declared_fmt` ne conviendrait pas non plus : il
+    // garde l'extension SOURCE, celle d'avant conversion.
     // FIX-22: one batched genres query for every row instead of one query per row.
     let ids: Vec<i64> = rows.iter().map(|r| r.0).collect();
     // `metadata` stores the identity SPLIT (base title + version), because that is what
@@ -410,7 +433,11 @@ pub fn list_filed(
             path,
             artist,
             title: full_title(title, version),
-            format,
+            // 'aiff_16_44' → "aiff" : l'écran montre un format, pas une clé de base.
+            format: format
+                .as_deref()
+                .and_then(crate::encode::Target::from_db_value)
+                .map(|t| t.ext().to_string()),
             bitrate,
             duration,
             bpm,
@@ -896,8 +923,8 @@ mod tests {
     fn list_filed_joins_metadata_and_genres() {
         let conn = db();
         conn.execute(
-            "INSERT INTO tracks(id, path, format, bitrate, duration, verdict, status, folder, has_cover) \
-             VALUES(1, '/lib/House/a.aiff', 'aiff', 1411, 360.0, 'ok', 'filed', 'House', 1)",
+            "INSERT INTO tracks(id, path, target_format, bitrate, duration, verdict, status, folder, has_cover) \
+             VALUES(1, '/lib/House/a.aiff', 'aiff_16_44', 1411, 360.0, 'ok', 'filed', 'House', 1)",
             [],
         )
         .unwrap();
@@ -1124,29 +1151,78 @@ mod tests {
         );
     }
 
+    /// Régression : les compteurs, le filtre et la colonne Format lisaient `tracks.format`,
+    /// colonne qu'aucun code de production n'écrit. Sur une vraie bibliothèque, le tableau de bord
+    /// affichait « Lossless 0 / MP3 0 » à côté d'un total juste, le filtre Lossless/MP3 ne rendait
+    /// jamais rien, et la colonne Format montrait « ? » sur chaque ligne.
+    ///
+    /// Semé par `target_format`, EXACTEMENT comme `filing.rs:730` le fait en production. Les tests
+    /// précédents semaient `format` à la main : ils passaient sans jamais toucher le chemin réel,
+    /// ce qui est précisément pourquoi le trou a survécu.
+    #[test]
+    fn stats_filter_and_format_column_read_what_filing_actually_writes() {
+        let conn = db();
+        conn.execute(
+            "INSERT INTO tracks(id, path, status, target_format, verdict) \
+             VALUES(1, '/lib/a.aiff', 'filed', 'aiff_16_44', 'ok')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO tracks(id, path, status, target_format, verdict) \
+             VALUES(2, '/lib/b.mp3', 'filed', 'mp3_320', 'ok')",
+            [],
+        )
+        .unwrap();
+
+        let s = library_stats(&conn).unwrap();
+        assert_eq!(s.lossless, 1);
+        assert_eq!(s.mp3, 1);
+
+        let lossless = LibraryFilter {
+            quality: Some("lossless".into()),
+            ..Default::default()
+        };
+        let rows = list_filed(&conn, &lossless).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(
+            rows[0].format.as_deref(),
+            Some("aiff"),
+            "l'ecran doit montrer une extension, pas 'aiff_16_44'"
+        );
+
+        let mp3 = LibraryFilter {
+            quality: Some("mp3".into()),
+            ..Default::default()
+        };
+        assert_eq!(list_filed(&conn, &mp3).unwrap().len(), 1);
+    }
+
     #[test]
     fn library_stats_aggregates_counts() {
         let conn = db();
         conn.execute(
-            "INSERT INTO tracks(id, path, status, format, verdict) \
-             VALUES(1, '/lib/a.flac', 'filed', 'flac', 'ok')",
+            "INSERT INTO tracks(id, path, status, target_format, verdict) \
+             VALUES(1, '/lib/a.wav', 'filed', 'wav_16_44', 'ok')",
             [],
         )
         .unwrap();
         conn.execute(
-            "INSERT INTO tracks(id, path, status, format, verdict) \
-             VALUES(2, '/lib/b.mp3', 'filed', 'mp3', 'ok')",
+            "INSERT INTO tracks(id, path, status, target_format, verdict) \
+             VALUES(2, '/lib/b.mp3', 'filed', 'mp3_320', 'ok')",
             [],
         )
         .unwrap();
         conn.execute(
-            "INSERT INTO tracks(id, path, status, format, verdict) \
-             VALUES(3, '/lib/c.mp3', 'filed', 'mp3', 'fake')",
+            "INSERT INTO tracks(id, path, status, target_format, verdict) \
+             VALUES(3, '/lib/c.mp3', 'filed', 'mp3_320', 'fake')",
             [],
         )
         .unwrap();
+        // Une piste en attente n'a pas encore de `target_format` — c'est l'état réel, et elle ne
+        // doit compter dans aucun des trois chiffres.
         conn.execute(
-            "INSERT INTO tracks(id, path, status, format) VALUES(9, '/in/p.mp3', 'pending', 'mp3')",
+            "INSERT INTO tracks(id, path, status) VALUES(9, '/in/p.mp3', 'pending')",
             [],
         )
         .unwrap();

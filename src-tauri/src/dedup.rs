@@ -48,9 +48,11 @@ pub struct DupGroup {
     pub similarity: f32,
 }
 
+/// Délègue à `tags::rail_from_ext`, l'autorité de la règle rail↔format, au lieu d'en recopier la
+/// liste une quatrième fois — la copie locale avait déjà divergé (`alac` manquant).
 fn is_lossless_fmt(fmt: &Option<String>) -> bool {
     fmt.as_deref()
-        .map(|f| matches!(f.to_lowercase().as_str(), "aiff" | "aif" | "wav" | "flac"))
+        .map(|f| crate::analysis::tags::rail_from_ext(f) == crate::analysis::Rail::Lossless)
         .unwrap_or(false)
 }
 
@@ -111,8 +113,13 @@ pub(crate) struct DupScanRow {
 /// Brief read: every `filed` track plus its cached fingerprint. Intended to be called under a
 /// short-held lock — the caller drops the lock before doing anything with the result.
 pub(crate) fn load_dup_scan_rows(conn: &Connection) -> rusqlite::Result<Vec<DupScanRow>> {
+    // `target_format`, PAS `format` : cette dernière n'est écrite par aucun code de production (voir
+    // `library::list_filed`). `is_lossless_fmt` recevait donc toujours NULL, `pick_keep` n'appliquait
+    // JAMAIS son premier critère, et le membre recommandé se décidait au bitrate seul — un MP3 320
+    // battait un AIFF sur tous les groupes mixtes. Le geste suivant que propose l'écran est une
+    // suppression.
     let mut stmt = conn.prepare(
-        "SELECT id, path, filename, folder, format, bitrate, duration, truncated, fingerprint \
+        "SELECT id, path, filename, folder, target_format, bitrate, duration, truncated, fingerprint \
          FROM tracks WHERE status='filed'",
     )?;
     let rows: Vec<DupScanRow> = stmt
@@ -122,7 +129,13 @@ pub(crate) fn load_dup_scan_rows(conn: &Connection) -> rusqlite::Result<Vec<DupS
                 path: r.get(1)?,
                 filename: r.get(2)?,
                 folder: r.get(3)?,
-                format: r.get(4)?,
+                // Ramené à une extension dès la lecture : tout l'aval (affichage ET
+                // `is_lossless_fmt`) raisonne en extension, pas en clé de base.
+                format: r
+                    .get::<_, Option<String>>(4)?
+                    .as_deref()
+                    .and_then(crate::encode::Target::from_db_value)
+                    .map(|t| t.ext().to_string()),
                 bitrate: r.get(5)?,
                 duration: r.get(6)?,
                 truncated: r.get::<_, Option<i64>>(7)?.unwrap_or(0) != 0,
@@ -607,15 +620,17 @@ mod tests {
         let b = dir.path().join("b.flac");
         std::fs::copy(&mp3, &a).unwrap();
         std::fs::copy(&flac, &b).unwrap();
+        // L'extension du fixture ne sert qu'au décodage : ce qui décrit une piste RANGÉE, c'est son
+        // `target_format`, seule colonne que `filing.rs:730` écrit.
         conn.execute(
-            "INSERT INTO tracks(path, filename, status, format, bitrate, duration) \
-             VALUES(?1, 'a.mp3', 'filed', 'mp3', 320, 30.0)",
+            "INSERT INTO tracks(path, filename, status, target_format, bitrate, duration) \
+             VALUES(?1, 'a.mp3', 'filed', 'mp3_320', 320, 30.0)",
             params![a.to_str().unwrap()],
         )
         .unwrap();
         conn.execute(
-            "INSERT INTO tracks(path, filename, status, format, bitrate, duration) \
-             VALUES(?1, 'b.flac', 'filed', 'flac', 1411, 30.0)",
+            "INSERT INTO tracks(path, filename, status, target_format, bitrate, duration) \
+             VALUES(?1, 'b.flac', 'filed', 'aiff_16_44', 1411, 30.0)",
             params![b.to_str().unwrap()],
         )
         .unwrap();
@@ -636,11 +651,55 @@ mod tests {
         let keep = g.members.iter().find(|m| m.recommend_keep).unwrap();
         assert_eq!(
             keep.format.as_deref(),
-            Some("flac"),
+            Some("aiff"),
             "lossless wins over lossy"
         );
         assert!(keep.reason.is_some());
         assert_eq!(g.members.iter().filter(|m| m.recommend_keep).count(), 1);
+    }
+
+    /// Régression : le scan lisait `tracks.format`, colonne qu'aucun code de production n'écrit.
+    /// `is_lossless_fmt` recevait donc toujours NULL et `pick_keep` n'appliquait jamais son premier
+    /// critère — le membre recommandé se décidait au bitrate seul, donc un MP3 320 battait un AIFF
+    /// sur tout groupe mixte. Et le geste suivant que propose l'écran est une suppression.
+    ///
+    /// Semé par `target_format`, EXACTEMENT comme `filing.rs:730` le fait en production : un test
+    /// qui sème `format` à la main passe sans jamais toucher le chemin réel.
+    #[test]
+    fn scan_library_duplicates_recommend_keep_prefers_the_lossless_target() {
+        let conn = db();
+        conn.execute(
+            "INSERT INTO tracks(id, path, filename, status, target_format, bitrate, duration, truncated) \
+             VALUES(1, '/lib/a.mp3', 'a.mp3', 'filed', 'mp3_320', 320, 30.0, 0)",
+            [],
+        )
+        .unwrap();
+        // `bitrate` NULL sur l'AIFF, 320 sur le MP3 : c'est DÉLIBÉRÉ. Le critère de rang est
+        // (lossless, bitrate, durée, non tronqué) dans cet ordre — avec un AIFF mieux doté en
+        // bitrate, le test passerait grâce au bitrate même avec le bug, et ne prouverait rien.
+        // Ici seul le premier critère peut faire gagner l'AIFF.
+        conn.execute(
+            "INSERT INTO tracks(id, path, filename, status, target_format, duration, truncated) \
+             VALUES(2, '/lib/a.aiff', 'a.aiff', 'filed', 'aiff_16_44', 30.0, 0)",
+            [],
+        )
+        .unwrap();
+        let fp = fingerprint::encode(&[1, 2, 3, 4, 5, 6, 7, 8]);
+        conn.execute(
+            "UPDATE tracks SET fingerprint=?1 WHERE id IN (1,2)",
+            params![fp],
+        )
+        .unwrap();
+
+        let groups = scan_library_duplicates(&conn).unwrap();
+        assert_eq!(groups.len(), 1);
+        let keep = groups[0].members.iter().find(|m| m.recommend_keep).unwrap();
+        assert_eq!(keep.id, 2, "l'AIFF est lossless, il doit gagner sur le MP3");
+        assert_eq!(
+            keep.format.as_deref(),
+            Some("aiff"),
+            "l'ecran doit montrer une extension, pas 'aiff_16_44'"
+        );
     }
 
     #[test]
