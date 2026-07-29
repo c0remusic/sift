@@ -2157,6 +2157,30 @@ mod tests {
         );
     }
 
+    /// La seule sentinelle dont la rupture SUPPRIME une ligne de la base : `ipc::analyze_path` la
+    /// reconnaît pour appeler `scanner::forget_path`, et `frontend/filing.ts` pour basculer la
+    /// fiche en « fichier introuvable ». Elle traversait l'IPC en littéral recopié des deux côtés.
+    #[test]
+    fn file_gone_constant_matches_contracts_ts() {
+        let expected = format!("\"{}\"", crate::analysis::decode::FILE_GONE);
+        assert!(
+            CONTRACTS_TS.contains(&expected),
+            "shared/contracts.ts must contain FILE_GONE = {expected}"
+        );
+    }
+
+    /// Le message produit par `decode` doit RÉELLEMENT contenir la sentinelle : sans ça, les deux
+    /// constantes peuvent rester d'accord entre elles pendant que plus personne ne l'émet.
+    #[test]
+    fn the_missing_file_message_actually_carries_the_sentinel() {
+        let err = crate::analysis::decode::probe("definitely/does/not/exist_ever.flac")
+            .expect_err("probing a missing file must fail");
+        assert!(
+            err.contains(crate::analysis::decode::FILE_GONE),
+            "le message de fichier disparu doit porter la sentinelle: {err}"
+        );
+    }
+
     /// Mirrors shared/contracts.ts's `BatchResult`. Exhaustive destructure (no `..`): fails to
     /// compile if a field is added/removed/renamed on the Rust struct — the forcing function to
     /// also update contracts.ts. Phase 2 — docs/superpowers/plans/2026-07-13-phase2-ipc-contract-tests.md.

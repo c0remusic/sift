@@ -321,7 +321,9 @@ pub fn analyze_path(
             // aren't atomic — if the file gets recreated in between (e.g. re-downloaded), a
             // stale error text would otherwise delete a row the watcher may have just re-added
             // as freshly pending.
-            if allow_forget && e.contains("n'existe plus") && !std::path::Path::new(&path).exists()
+            if allow_forget
+                && e.contains(crate::analysis::decode::FILE_GONE)
+                && !std::path::Path::new(&path).exists()
             {
                 let conn = db::lock_conn(&conn)?;
                 match crate::scanner::forget_path(&conn, &path) {

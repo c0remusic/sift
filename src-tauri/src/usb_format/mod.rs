@@ -56,11 +56,20 @@ pub enum UsbFormatError {
     Format(String),
 }
 
+/// Le disque attendu n'est plus branché. Sentinelle traversant l'IPC — miroir de
+/// `shared/contracts.ts`, tenu par `usb_format_sentinels_match_contracts_ts`.
+pub const DRIVE_VANISHED: &str = "DRIVE_VANISHED";
+
+/// Un AUTRE disque répond maintenant à cette lettre : le numéro de série ne correspond plus à
+/// celui que l'utilisateur a confirmé. Même contrat de miroir que ci-dessus. Un formatage est
+/// irréversible : c'est la sentinelle qui doit interdire le « réessaie », pas l'inviter.
+pub const IDENTITY_MISMATCH: &str = "IDENTITY_MISMATCH";
+
 impl std::fmt::Display for UsbFormatError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            UsbFormatError::DriveVanished => write!(f, "DRIVE_VANISHED"),
-            UsbFormatError::IdentityMismatch => write!(f, "IDENTITY_MISMATCH"),
+            UsbFormatError::DriveVanished => write!(f, "{DRIVE_VANISHED}"),
+            UsbFormatError::IdentityMismatch => write!(f, "{IDENTITY_MISMATCH}"),
             UsbFormatError::Enumeration(m) => write!(f, "enumeration: {m}"),
             UsbFormatError::Format(m) => write!(f, "format: {m}"),
         }
@@ -91,6 +100,35 @@ pub fn verify_identity_unchanged(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Contract test, même famille que `filing.rs` : on parse le texte source de
+    /// `shared/contracts.ts` et on assert que la valeur littérale des constantes Rust y apparaît.
+    /// Ces deux-là traversaient l'IPC en littéraux recopiés à la main de chaque côté, et le côté
+    /// TS ne les reconnaissait même pas — la modale invitait à réessayer un formatage sur un
+    /// disque que le backend venait de déclarer différent.
+    const CONTRACTS_TS: &str = include_str!("../../../shared/contracts.ts");
+
+    #[test]
+    fn usb_format_sentinels_match_contracts_ts() {
+        for sentinel in [DRIVE_VANISHED, IDENTITY_MISMATCH] {
+            let expected = format!("\"{sentinel}\"");
+            assert!(
+                CONTRACTS_TS.contains(&expected),
+                "shared/contracts.ts must contain {expected}"
+            );
+        }
+    }
+
+    /// ... et le `Display` doit RÉELLEMENT les émettre : sans ça les deux constantes peuvent
+    /// rester d'accord entre elles pendant que le message envoyé au front n'en porte plus aucune.
+    #[test]
+    fn display_emits_the_sentinels_verbatim() {
+        assert_eq!(UsbFormatError::DriveVanished.to_string(), DRIVE_VANISHED);
+        assert_eq!(
+            UsbFormatError::IdentityMismatch.to_string(),
+            IDENTITY_MISMATCH
+        );
+    }
 
     fn drive(id: &str, serial: &str) -> RemovableDrive {
         RemovableDrive {

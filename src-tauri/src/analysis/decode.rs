@@ -29,12 +29,22 @@ pub struct DecodeInfo {
     pub codec_error: Option<String>,
 }
 
+/// Le fragment de message qui signale « le fichier a disparu du disque », et la SEULE partie du
+/// texte ci-dessous sur laquelle du code a le droit de brancher.
+///
+/// C'est la seule sentinelle de l'app dont la rupture SUPPRIME une ligne de la base :
+/// `ipc::analyze_path` la reconnaît pour appeler `scanner::forget_path`, et `frontend/filing.ts`
+/// pour basculer la fiche en « fichier introuvable ». Reformuler la phrase autour d'elle est sans
+/// danger ; toucher à ce fragment casse les deux, en silence et sans erreur de compilation — d'où
+/// la constante, son miroir dans `shared/contracts.ts` et le test de contrat qui les lie
+/// (`filing.rs`, `file_gone_constant_matches_contracts_ts`).
+pub const FILE_GONE: &str = "n'existe plus";
+
 /// Opens the file and returns a probed format reader.
 fn open_format(path: &str) -> Result<Box<dyn FormatReader>, String> {
     let file = File::open(path).map_err(|e| {
         if e.kind() == std::io::ErrorKind::NotFound {
-            "le fichier n'existe plus à cet emplacement — a-t-il été déplacé ou supprimé ?"
-                .to_string()
+            format!("le fichier {FILE_GONE} à cet emplacement — a-t-il été déplacé ou supprimé ?")
         } else {
             format!("impossible d'ouvrir le fichier : {e}")
         }
@@ -220,7 +230,7 @@ mod tests {
             "raw OS error leaked to the user-facing message: {err}"
         );
         assert!(
-            err.contains("n'existe plus") || err.contains("introuvable"),
+            err.contains(FILE_GONE) || err.contains("introuvable"),
             "error should explain the file is missing in plain French: {err}"
         );
     }

@@ -9,6 +9,7 @@
 //   2. A timestamped armed/confirmed cycle on the final button itself, same family as
 //      BATCH_CONFIRM_THRESHOLD/batchConfirmArmed (sift-live.ts) — rejects a double-click/
 //      duplicate event landing right after the button enables.
+import { DRIVE_VANISHED, IDENTITY_MISMATCH } from "../shared/contracts";
 import { esc } from "./dom";
 import { formatDrive, type RemovableDrive, type TargetFs } from "./ipc";
 
@@ -27,6 +28,10 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
   // fresh attempt starts (filesystem switch, confirm-word retype) so a stale error message
   // doesn't linger into the next try.
   let lastError: string | null = null;
+  // Posé quand le backend a refusé pour une raison qu'un nouvel essai ne peut pas lever : le
+  // disque confirmé n'est plus celui-là. Désarme définitivement le bouton de confirmation — la
+  // seule sortie est Annuler puis une liste fraîche.
+  let fatal = false;
 
   const overlay = document.createElement("div");
   overlay.id = "sift-usbfmt-overlay";
@@ -119,14 +124,17 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
         const typedBefore = card.querySelector<HTMLInputElement>("#sift-usbfmt-typed")?.value ?? "";
         fs = el.dataset.usbfmtFs as TargetFs;
         armedAt = null; // switching filesystem resets the confirm cycle
-        lastError = null; // ... and clears any stale error from a previous failed attempt
+        // ... and clears any stale error from a previous failed attempt — SAUF une erreur fatale :
+        // changer de système de fichiers ne rend pas au disque l'identité qu'il a perdue, et le
+        // bouton reste désarmé. Effacer le message laisserait un bouton mort sans explication.
+        if (!fatal) lastError = null;
         render();
         const typedAfter = card.querySelector<HTMLInputElement>("#sift-usbfmt-typed");
         if (typedAfter && typedBefore) {
           typedAfter.value = typedBefore;
           typedOk = typedBefore.trim() === confirmWord;
           const confirmBtnAfter = card.querySelector<HTMLButtonElement>("#sift-usbfmt-confirm");
-          if (confirmBtnAfter) confirmBtnAfter.disabled = !typedOk || busy;
+          if (confirmBtnAfter) confirmBtnAfter.disabled = !typedOk || busy || fatal;
         }
       }),
     );
@@ -135,7 +143,7 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
     const confirmBtn = card.querySelector<HTMLButtonElement>("#sift-usbfmt-confirm");
     typed?.addEventListener("input", () => {
       typedOk = typed.value.trim() === confirmWord;
-      if (confirmBtn) confirmBtn.disabled = !typedOk || busy;
+      if (confirmBtn) confirmBtn.disabled = !typedOk || busy || fatal;
       // Not re-rendered here (no render() call — only the disabled attribute is touched), but
       // clears the stale error for whenever the next render() does happen (e.g. re-arming).
       lastError = null;
@@ -168,11 +176,25 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
           armedAt = null;
           console.error("formatDrive failed", e);
           const raw = String(e);
-          const humanized = /access|denied|permission/i.test(raw)
-            ? "Accès refusé — ferme tout programme utilisant ce disque et réessaie."
-            : /not found|no such|introuvable/i.test(raw)
-              ? "Disque introuvable — a-t-il été débranché pendant le formatage ?"
-              : "Échec du formatage. Vérifie que le disque est bien branché et réessaie.";
+          // Les deux sentinelles du garde anti-course passent EN PREMIER, et coupent le chemin de
+          // reprise (`fatal`). Elles tombaient jusqu'ici dans le message générique, qui finit par
+          // « réessaie » : inviter à relancer un formatage irréversible sur un disque que le
+          // backend vient de déclarer différent de celui qui a été confirmé est le pire message
+          // possible pour cette condition précise. La seule sortie sûre est de refermer et de
+          // repartir d'une liste fraîche.
+          fatal = raw.includes(IDENTITY_MISMATCH) || raw.includes(DRIVE_VANISHED);
+          const humanized = raw.includes(IDENTITY_MISMATCH)
+            ? "Ce n'est plus le même disque : un autre volume répond maintenant à " +
+              esc(drive.id) +
+              ". Rien n'a été formaté. Ferme cette fenêtre et resélectionne le disque dans la liste."
+            : raw.includes(DRIVE_VANISHED)
+              ? "Le disque a été débranché avant que le formatage ne commence. Rien n'a été " +
+                "formaté. Rebranche-le et resélectionne-le dans la liste."
+              : /access|denied|permission/i.test(raw)
+                ? "Accès refusé — ferme tout programme utilisant ce disque et réessaie."
+                : /not found|no such|introuvable/i.test(raw)
+                  ? "Disque introuvable — a-t-il été débranché pendant le formatage ?"
+                  : "Échec du formatage. Vérifie que le disque est bien branché et réessaie.";
           // render() below does card.innerHTML = ... (full replacement) — insertAdjacentHTML'ing
           // the error directly into the current DOM would just get wiped out immediately, with no
           // paint in between to make it visible. Store it and let render() include it.

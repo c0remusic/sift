@@ -13,6 +13,23 @@ export const FILE_IN_PLACE = "__SOURCE__";
  * free-typed text. The backend still re-validates the path exists before use. */
 export const EXTERNAL_DEST_PREFIX = "__EXTERNAL__::";
 
+/** Fragment marking an analysis error as "the file is gone from disk", and the only part of that
+ * message anything may branch on. Mirror of Rust `analysis::decode::FILE_GONE`; the two literals
+ * MUST stay identical — this is the one sentinel whose breakage DELETES a database row
+ * (`ipc::analyze_path` → `scanner::forget_path`) as well as flipping this UI branch. Rewording the
+ * sentence around it is safe; changing it is not. Held by
+ * `filing.rs::file_gone_constant_matches_contracts_ts`. */
+export const FILE_GONE = "n'existe plus";
+
+/** `format_drive` refused: the expected drive is no longer connected. Mirror of Rust
+ * `usb_format::DRIVE_VANISHED`. */
+export const DRIVE_VANISHED = "DRIVE_VANISHED";
+
+/** `format_drive` refused: a DIFFERENT drive now answers to that id — its volume serial no longer
+ * matches the one the user confirmed. Mirror of Rust `usb_format::IDENTITY_MISMATCH`. A format is
+ * irreversible, so this is the one error the UI must never answer with "try again". */
+export const IDENTITY_MISMATCH = "IDENTITY_MISMATCH";
+
 export interface AppInfo {
   name: string;
   version: string;

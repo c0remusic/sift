@@ -12,6 +12,7 @@ import {
   trackFileTags,
   listQueue,
 } from "./ipc";
+import { FILE_GONE } from "../shared/contracts";
 import type { DupMatch, TrackRelease, FileTags } from "../shared/contracts";
 import {
   openReportInto,
@@ -366,7 +367,7 @@ export async function openFilingInto(
     openReportInto(reportEl, item.path, verdictEl, {
       deferText: true,
       onAnalysisError: (msg) => {
-        if (msg.includes("n'existe plus")) fileGone = true;
+        if (msg.includes(FILE_GONE)) fileGone = true;
       },
     }),
     reconcile(item.id).catch((e): Canonical => {
