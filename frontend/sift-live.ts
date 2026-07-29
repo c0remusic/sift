@@ -122,7 +122,11 @@ async function runNavExport(): Promise<void> {
     const msg = e instanceof Error ? e.message : String(e);
     toast(
       msg.includes("aucun XML")
-        ? "Aucun XML Rekordbox lié — relie un fichier depuis la Bibliothèque"
+        ? // La commande de liaison (`rkblink`) vit sur l'écran Rekordbox, pas dans la
+          // Bibliothèque : le message renvoyait vers un écran où elle n'est pas. Le libellé est
+          // celui de l'item de navigation (`index.html`, `<span>Rekordbox</span>`) — pas
+          // « Mettre à jour Rekordbox », qui n'est qu'un bouton de la carte de stats d'Accueil.
+          "Aucun XML Rekordbox lié — relie un fichier depuis l'écran Rekordbox"
         : `Export Rekordbox échoué : ${msg}`,
     );
   } finally {
@@ -246,12 +250,28 @@ export function installLiveWiring() {
       const act = ec.dataset.ec;
       const id = Number(ec.dataset.id);
       if (act === "copy-query") {
-        void navigator.clipboard.writeText(ec.dataset.q || "").catch(() => {});
+        // « Copié » était peint AVANT que l'écriture ne réussisse, et le `catch` était vide : un
+        // refus du presse-papier (permission, focus perdu) affichait quand même la coche, et
+        // l'utilisateur collait l'ancien contenu sans savoir pourquoi. La coche attend maintenant
+        // le `.then()`, et l'échec le dit.
         const prev = ec.innerHTML;
-        ec.innerHTML = '<i class="ti ti-check" style="font-size:var(--text-xs);vertical-align:-1px"></i> Copié';
-        setTimeout(() => {
-          ec.innerHTML = prev;
-        }, 1200);
+        void navigator.clipboard
+          .writeText(ec.dataset.q || "")
+          .then(() => {
+            // Le nœud peut avoir été détaché entre le clic et la résolution : toute action
+            // Écartés (corbeille, restauration) et tout changement d'écran reconstruisent
+            // `#content` par `innerHTML`. Écrire dedans partirait dans le vide en silence.
+            if (!ec.isConnected) return;
+            ec.innerHTML =
+              '<i class="ti ti-check" style="font-size:var(--text-xs);vertical-align:-1px"></i> Copié';
+            setTimeout(() => {
+              if (ec.isConnected) ec.innerHTML = prev;
+            }, 1200);
+          })
+          .catch((err: unknown) => {
+            console.error("clipboard writeText failed", err);
+            toast("Copie impossible — le presse-papier a refusé");
+          });
       } else if (act === "trash") {
         void trashTrack(id)
           .then(renderEcartes)
@@ -420,14 +440,46 @@ export function installLiveWiring() {
           "Envoyer à la corbeille",
         ).then((ok) => {
           if (!ok) return;
-          void Promise.all(losers.map((id) => trashTrack(id)))
-            .then(() => {
-              bibDup.groups = (bibDup.groups || []).filter((_, i) => i !== idx);
+          // `Promise.all` rejette au PREMIER échec : sur 5 doublons dont un seul refuse, les 4
+          // autres partaient bien à la corbeille et l'écran annonçait « impossible d'envoyer les
+          // doublons », en gardant le groupe intact. L'utilisateur relançait donc une suppression
+          // sur des pistes déjà supprimées, qui échoue à `trash_file_fs` — impasse.
+          //
+          // `renderBiblioLive()` ne RESCANNE PAS les doublons : il repeint la section depuis
+          // `bibDup.groups` en mémoire. Rafraîchir ne suffit donc pas — il faut retirer du groupe
+          // les membres réellement supprimés, sinon ils restent listés avec leur bouton et la
+          // boucle recommence. Un groupe qui retombe sous deux membres n'est plus un groupe.
+          void Promise.allSettled(losers.map((id) => trashTrack(id)))
+            .then((results) => {
+              const groups = bibDup.groups || [];
+              const failedIds = new Set(
+                losers.filter((_, i) => results[i]?.status === "rejected"),
+              );
+              if (failedIds.size === 0) {
+                bibDup.groups = groups.filter((_, i) => i !== idx);
+                return renderBiblioLive();
+              }
+              results.forEach((r, i) => {
+                if (r.status === "rejected") {
+                  console.error(`dupresolve: trashTrack(${losers[i]}) failed`, r.reason);
+                }
+              });
+              const g = groups[idx];
+              if (g) {
+                g.members = g.members.filter((m) => m.recommend_keep || failedIds.has(m.id));
+                if (g.members.length < 2) bibDup.groups = groups.filter((_, i) => i !== idx);
+              }
+              const done = losers.length - failedIds.size;
+              toast(
+                done === 0
+                  ? "Aucun doublon n'a pu être envoyé à la corbeille"
+                  : `${done} doublon${done > 1 ? "s" : ""} envoyé${done > 1 ? "s" : ""} à la corbeille, ${failedIds.size} en échec`,
+              );
               return renderBiblioLive();
             })
-            .catch((e) => {
-              console.error("dupresolve failed", e);
-              toast("Échec : impossible d'envoyer les doublons à la corbeille");
+            .catch((e: unknown) => {
+              console.error("dupresolve: refresh failed", e);
+              toast("Échec : impossible de rafraîchir la liste");
             });
         });
       }
