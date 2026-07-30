@@ -447,9 +447,8 @@ fn run_file_track(app: &AppHandle, plan: filing::FilePlan) {
         // couvre que `execute_file`, pas la lecture de `master.db` ni le commit qui suivent. Sans
         // elle, N clics sur N pistes lançaient N ffmpeg concurrents (cf. `ENCODE_SLOTS`).
         let _slot = EncodeSlot::acquire();
-        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            filing::execute_file(&plan)
-        })) {
+        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| filing::execute_file(&plan)))
+        {
             Ok(r) => r.map_err(|e| {
                 log::error!("file_track: execute failed for track {track_id}: {e:?}");
                 e.to_string()

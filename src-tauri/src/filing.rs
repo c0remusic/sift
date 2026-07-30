@@ -733,6 +733,17 @@ pub fn commit_file(
             )?;
             action_ids.push(id);
         }
+        // BUG OUVERT — `path` ne suit PAS le fichier, alors que le rangement le déplace et le
+        // renomme (`execute_file`). Toute piste réellement déplacée garde donc un chemin SOURCE
+        // devenu inexistant, et la Bibliothèque — qui lit ce champ via `library::list_filed` puis
+        // `library-detail.ts` → `openReportInto(track.path)` — pointe un fichier absent : la piste
+        // ne se lit pas. Constaté sur un cas réel le 2026-07-30. Rien ne rattrape la ligne :
+        // `scanner::forget_path` ne supprime que les lignes `pending`.
+        //
+        // Le correctif n'est PAS d'ajouter `path=?` ici. Essayé puis retiré le 2026-07-31, le
+        // crosscheck de la gate ayant montré qu'il introduit deux défauts pires que celui qu'il
+        // corrige — voir le test `commit_file_repointe_le_chemin_sur_la_destination`, `#[ignore]`,
+        // qui porte l'analyse complète et les trois conditions à remplir ensemble.
         tx.execute(
             "UPDATE tracks SET status='filed', folder=?2, target_format=?3, confidence=?4 WHERE id=?1",
             params![plan.track_id, plan.bin_rel, target_str(plan.target), conf],
@@ -1946,6 +1957,92 @@ mod tests {
             res.is_ok(),
             "a genuine FLAC must not be blocked: {:?}",
             res.err()
+        );
+    }
+
+    /// Régression vécue le 2026-07-30 : une piste rangée depuis un dossier de téléchargement vers
+    /// la racine de bibliothèque a bien été déplacée ET renommée sur le disque, mais
+    /// `tracks.path` a gardé le chemin SOURCE — devenu inexistant. La Bibliothèque lit ce champ
+    /// (`library::list_filed` sélectionne `t.path`) : elle pointait donc un fichier absent, et la
+    /// piste ne se lisait pas. Le journal, lui, avait correctement les deux chemins.
+    ///
+    /// `commit_file` écrit `status`/`folder`/`target_format`/`confidence` et JAMAIS `path`.
+    /// `scanner::forget_path` ne rattrape rien : il ne supprime que les lignes `pending`.
+    ///
+    /// IGNORÉ — le bug est RÉEL et ce test le reproduit fidèlement, mais le correctif évident
+    /// (ajouter `path=?` à l'`UPDATE` de `commit_file`) a été écrit puis RETIRÉ le 2026-07-31 :
+    /// le crosscheck de la gate a montré qu'il casse deux choses pires. Les trois conditions
+    /// doivent être remplies ENSEMBLE, sinon le remède dépasse le mal :
+    ///
+    /// 1. **Le revert doit restaurer `path`.** `actions::revert_batch` (`actions.rs:845`) remet
+    ///    `status='pending', folder=NULL, target_format=NULL, confidence=NULL` sans toucher
+    ///    `path`. Aujourd'hui c'est cohérent — `path` était resté sur la source. Dès qu'il pointe
+    ///    la destination, une piste annulée garde le chemin d'un fichier que `revert_one_fs` vient
+    ///    de remettre à sa source : le bug, en miroir.
+    /// 2. **`size_bytes` et `mtime` doivent suivre aussi.** Un rangement EN PLACE
+    ///    (`FILE_IN_PLACE`) résout `dest_dir` vers `source.parent()` — donc un dossier SURVEILLÉ.
+    ///    Au passage suivant du watcher, `scanner::upsert_file` trouve une ligne à ce chemin dont
+    ///    la taille et la date sont celles de la SOURCE, prend la branche `Some(_)`
+    ///    (`scanner.rs:88`) et repasse la piste en `status='pending'` en effaçant `analyzed_at`,
+    ///    `fingerprint` et `report_json`. La piste rangée se dé-range toute seule.
+    /// 3. **La collision `UNIQUE(path)` doit être traitée.** Même cas : entre le déplacement et la
+    ///    transaction, le watcher peut avoir INSÉRÉ une ligne pour le fichier à sa destination.
+    ///    L'`UPDATE` viole alors la contrainte, `rollback_fs` défait le déplacement, et le
+    ///    rangement échoue pour l'utilisateur.
+    ///
+    /// L'état actuel est le moins mauvais : la lecture est cassée, mais rien ne se corrompt.
+    #[ignore = "bug ouvert : le correctif exige aussi revert+size/mtime+collision UNIQUE, voir le doc-comment"]
+    #[test]
+    fn commit_file_repointe_le_chemin_sur_la_destination() {
+        let conn = db();
+        conn.execute(
+            "INSERT INTO tracks(path, status) VALUES('D:/DL/12 - vieux nom.aif', 'pending')",
+            [],
+        )
+        .unwrap();
+        let track_id = conn.last_insert_rowid();
+
+        let plan = FilePlan {
+            track_id,
+            batch_id: "b-path".to_string(),
+            source: "D:/DL/12 - vieux nom.aif".to_string(),
+            dest: "D:/KEPT/Artiste - Titre (Club Mix).aif".to_string(),
+            conformant: true,
+            target: Target::Aiff1644,
+            canonical: Canonical {
+                artist: "Artiste".to_string(),
+                title: "Titre".to_string(),
+                version: Some("Club Mix".to_string()),
+                confidence: naming::Confidence::Green,
+            },
+            bin_rel: String::new(),
+            extras: TagExtras {
+                label: None,
+                year: None,
+                genres: vec![],
+                cover_path: None,
+            },
+        };
+        let log = vec![FsLog {
+            kind: "move",
+            from: plan.source.clone(),
+            to: plan.dest.clone(),
+            meta: None,
+        }];
+
+        commit_file(&conn, &plan, log, None, None).expect("commit_file");
+
+        let (path, status): (String, String) = conn
+            .query_row(
+                "SELECT path, status FROM tracks WHERE id=?1",
+                params![track_id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(status, "filed");
+        assert_eq!(
+            path, "D:/KEPT/Artiste - Titre (Club Mix).aif",
+            "tracks.path doit suivre le fichier, sinon la Bibliotheque pointe un fichier absent"
         );
     }
 
