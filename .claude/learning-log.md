@@ -394,3 +394,30 @@ la même famille de classes (`.sift-seg*` était déjà connu comme risqué,
 `.sift-play-btn`/`.sift-player-audition` ne l'était pas). Un sweep à
 grande échelle sur ce fichier doit inclure cette vérification comme étape
 systématique, pas seulement une liste d'exclusion pré-établie.
+
+### D16 — Le `cargo test` du hook `verify-gate` tourne sur le `target/` PARTAGÉ, pas sur le `CARGO_TARGET_DIR` isolé (2026-07-30)
+
+**Why** : `scripts/cargo-isolated.sh` protège un `tauri dev` concurrent en
+déportant `CARGO_TARGET_DIR`. Le hook pre-commit, lui, appelle
+`cargo test --manifest-path src-tauri/Cargo.toml --quiet` **sans** ce wrapper :
+il compile donc dans `target/`. Deux conséquences sur ce repo précisément :
+- le coût du hook n'est pas celui d'un `cargo test` chaud dans le dossier isolé.
+  Sur un `target/` froid (après un `tauri dev` interrompu, ou après avoir
+  travaillé uniquement via le wrapper), il s'ajoute au budget du crosscheck et
+  peut faire dépasser le plafond de l'outil Bash sur un gros diff. Vécu le
+  2026-07-30 sur un diff staged de 1975 lignes
+  (`docs/superpowers/changes/archive/2026-07-28-audit-multipasses/{audit,plan}.md`,
+  1755 + 220 lignes ajoutées, mesuré au `git show --stat` de `9e05baa`).
+- il peut réveiller le conflit de cache incrémental décrit dans
+  `.claude/rules/rust.md` (§ Fan-out) si un `tauri dev` tourne pendant le commit.
+
+**How to apply** : avant un commit à gros diff sur ce repo, faire tourner un
+`bash scripts/cargo-isolated.sh test` NE réchauffe PAS le `target/` que le hook
+utilisera. Si le hook doit être rapide, lancer un `cargo test` nu une fois avant
+(sans le wrapper) pour que son `target/` soit chaud — en s'assurant qu'aucun
+`tauri dev` ne tourne.
+
+Le comportement de la gate elle-même (fail-open sur dépassement du crosscheck,
+plafond du timeout de l'outil, course sur `HEAD`) est une leçon d'OUTILLAGE
+GLOBAL : elle vit dans `~/.claude/instinct-log.md` (D46), pas ici — seule la
+partie `target/` ci-dessus est propre à Sift.
