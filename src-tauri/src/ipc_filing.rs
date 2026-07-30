@@ -30,7 +30,7 @@ use serde::Serialize;
 use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::Mutex;
+use std::sync::{Condvar, Mutex, OnceLock};
 use tauri::{AppHandle, Emitter, Manager, State};
 
 /// Shared stop-net cancel flag for the background filing batch (sous-étape 3). Set by `file_cancel`,
@@ -442,16 +442,22 @@ fn run_file_track(app: &AppHandle, plan: filing::FilePlan) {
     // writes tags with lofty: the same "heavy work on an unvetted user file, on a thread nobody
     // joins" shape as worker.rs's analysis loop, so it gets the same catch_unwind treatment — a
     // panic here must become a normal failure, not a silently vanished thread.
-    let executed = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        filing::execute_file(&plan)
-    })) {
-        Ok(r) => r.map_err(|e| {
-            log::error!("file_track: execute failed for track {track_id}: {e:?}");
-            e.to_string()
-        }),
-        Err(payload) => {
-            log::error!("file_track: execute panicked for track {track_id}: {payload:?}");
-            Err("conversion interrompue (panic)".to_string())
+    let executed = {
+        // Place prise juste avant l'encode et rendue à la sortie du bloc : le plafond global ne
+        // couvre que `execute_file`, pas la lecture de `master.db` ni le commit qui suivent. Sans
+        // elle, N clics sur N pistes lançaient N ffmpeg concurrents (cf. `ENCODE_SLOTS`).
+        let _slot = EncodeSlot::acquire();
+        match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            filing::execute_file(&plan)
+        })) {
+            Ok(r) => r.map_err(|e| {
+                log::error!("file_track: execute failed for track {track_id}: {e:?}");
+                e.to_string()
+            }),
+            Err(payload) => {
+                log::error!("file_track: execute panicked for track {track_id}: {payload:?}");
+                Err("conversion interrompue (panic)".to_string())
+            }
         }
     };
 
@@ -635,6 +641,60 @@ fn phase2_worker_count() -> usize {
         .map(|n| (n.get() / 2).max(1))
         .unwrap_or(2)
         .min(4)
+}
+
+/// Plafond GLOBAL d'encodes ffmpeg simultanés, partagé par le chemin interactif (`run_file_track`)
+/// et le pool de phase 2 du batch (`run_file_batch`).
+///
+/// Pourquoi global : le batch se plafonnait déjà à `phase2_worker_count()`, mais `file_track` ne se
+/// bornait que PAR PISTE (`ALREADY_FILING`) — rien n'empêchait N clics sur N pistes différentes de
+/// lancer N ffmpeg concurrents, soit exactement l'oversubscription CPU/disque que le pool du batch
+/// existe pour éviter. La borne était posée d'un côté et absente de l'autre.
+///
+/// Un jeton est tenu le temps d'UN `execute_file`, jamais le temps d'un batch : un clic pendant un
+/// batch attend au pire la fin de l'encode en cours, pas la fin du batch.
+static ENCODE_SLOTS: OnceLock<(Mutex<usize>, Condvar)> = OnceLock::new();
+
+fn encode_slots() -> &'static (Mutex<usize>, Condvar) {
+    ENCODE_SLOTS.get_or_init(|| (Mutex::new(phase2_worker_count()), Condvar::new()))
+}
+
+/// Jeton RAII d'une place d'encodage. La place revient au `Drop`, y compris si `execute_file`
+/// panique — c'est ce qui empêche une panique de retirer définitivement une place du pool, mode de
+/// dégradation silencieuse déjà rencontré sur `worker.rs`.
+struct EncodeSlot;
+
+impl EncodeSlot {
+    /// Bloque jusqu'à ce qu'une place se libère.
+    ///
+    /// Sur mutex empoisonné on reprend le compteur au lieu de propager : une panique pendant la
+    /// courte section critique ne corrompt pas un simple `usize`, alors qu'abandonner ici
+    /// bloquerait tout classement pour le reste de la session. L'incident est loggé, jamais avalé
+    /// en silence.
+    fn acquire() -> Self {
+        let (lock, cv) = encode_slots();
+        let mut free = lock.lock().unwrap_or_else(|p| {
+            log::error!("encode slots: mutex empoisonné à l'acquisition, compteur repris tel quel");
+            p.into_inner()
+        });
+        while *free == 0 {
+            free = cv.wait(free).unwrap_or_else(|p| {
+                log::error!("encode slots: mutex empoisonné en attente, compteur repris tel quel");
+                p.into_inner()
+            });
+        }
+        *free -= 1;
+        EncodeSlot
+    }
+}
+
+impl Drop for EncodeSlot {
+    fn drop(&mut self) {
+        let (lock, cv) = encode_slots();
+        let mut free = lock.lock().unwrap_or_else(|p| p.into_inner());
+        *free += 1;
+        cv.notify_one();
+    }
 }
 
 /// A planned track ready for phase 2 (the concurrent encode). Carries its position in the original
@@ -824,9 +884,15 @@ fn run_file_batch(
                 // final: elle n'etait pas dans `outcomes` (aucun envoi) et pas non plus dans le
                 // rattrapage de fin de fonction, qui ne reprend que les jobs jamais depiles — or
                 // celui-ci l'avait ete. L'ecran la peignait « fait ». Audit 2026-07-28, CC-2.
-                let executed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                    filing::execute_file(&job.plan)
-                }));
+                // Même plafond global que le chemin unitaire (cf. `ENCODE_SLOTS`). Le pool est déjà
+                // borné à `worker_n`, mais il doit décompter des MÊMES places que `file_track`,
+                // sinon batch et clics s'additionnent au lieu de partager la borne.
+                let executed = {
+                    let _slot = EncodeSlot::acquire();
+                    std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                        filing::execute_file(&job.plan)
+                    }))
+                };
                 let log = match executed {
                     Ok(r) => r
                         .map_err(|e| {
@@ -1218,6 +1284,50 @@ pub fn set_setting(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Le plafond global tient sous charge : on lance quatre fois plus de prétendants qu'il n'y a
+    /// de places et on mesure le pic de porteurs simultanés.
+    ///
+    /// La seconde assertion est le TÉMOIN de l'expérience : si le pic vaut 1 alors que le plafond
+    /// est plus grand, aucune concurrence n'a réellement eu lieu et la première assertion passerait
+    /// pour de mauvaises raisons — un test vert ne prouverait alors rien.
+    #[test]
+    fn encode_slots_hold_the_global_cap_under_contention() {
+        use std::sync::atomic::AtomicUsize;
+        use std::sync::Arc;
+
+        let cap = phase2_worker_count();
+        let live = Arc::new(AtomicUsize::new(0));
+        let peak = Arc::new(AtomicUsize::new(0));
+
+        let handles: Vec<_> = (0..cap * 4)
+            .map(|_| {
+                let live = Arc::clone(&live);
+                let peak = Arc::clone(&peak);
+                std::thread::spawn(move || {
+                    let _slot = EncodeSlot::acquire();
+                    let now = live.fetch_add(1, Ordering::SeqCst) + 1;
+                    peak.fetch_max(now, Ordering::SeqCst);
+                    // Assez long pour que les prétendants se chevauchent vraiment.
+                    std::thread::sleep(std::time::Duration::from_millis(20));
+                    live.fetch_sub(1, Ordering::SeqCst);
+                })
+            })
+            .collect();
+        for h in handles {
+            h.join().expect("un thread de test a paniqué");
+        }
+
+        let observed = peak.load(Ordering::SeqCst);
+        assert!(
+            observed <= cap,
+            "pic de {observed} encodes simultanés pour un plafond de {cap}"
+        );
+        assert!(
+            cap == 1 || observed > 1,
+            "pic de {observed} : les threads ne se sont jamais chevauchés, le test ne prouve rien"
+        );
+    }
 
     #[test]
     fn metadata_sync_values_for_apply_tags_maps_fields_and_joins_genres() {

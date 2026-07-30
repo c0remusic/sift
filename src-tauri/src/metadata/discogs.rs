@@ -12,6 +12,16 @@ const USER_AGENT: &str = concat!("Sift/", env!("CARGO_PKG_VERSION"));
 /// where `identify` runs). ureq has no read timeout by default, so we set one explicitly.
 const HTTP_TIMEOUT: Duration = Duration::from_secs(15);
 
+/// Plafond de lecture des réponses JSON. `read_json` sans configuration lit sans borne : une
+/// réponse anormalement grosse — API compromise, intermédiaire hostile, ou simple changement de
+/// format côté Discogs — se désérialiserait entièrement en mémoire avant qu'on puisse en juger.
+/// `cover.rs` cape déjà ses téléchargements d'image ; les deux endpoints JSON ne l'étaient pas.
+///
+/// 2 Mo est deux ordres de grandeur au-dessus du réel observé (une recherche rend 6 résultats, une
+/// release une tracklist) : le plafond n'est pas un réglage de performance, c'est une borne de
+/// sûreté qui ne doit jamais être atteinte en fonctionnement normal.
+const JSON_BODY_LIMIT: u64 = 2 * 1024 * 1024;
+
 /// How many top candidates get a tracklist look-up (one HTTP call each) to find the matching
 /// mix. Bounded to stay well under Discogs' 60 req/min while covering the realistic best hits.
 const TRACKLIST_PROBE: usize = 6;
@@ -320,6 +330,8 @@ impl Discogs {
             .map_err(map_ureq_err)?;
         let v: Value = resp
             .body_mut()
+            .with_config()
+            .limit(JSON_BODY_LIMIT)
             .read_json()
             .map_err(|e| ProviderError::Parse(e.to_string()))?;
         Ok(parse_search(&v))
@@ -397,6 +409,8 @@ impl Discogs {
             .map_err(map_ureq_err)?;
         let v: Value = resp
             .body_mut()
+            .with_config()
+            .limit(JSON_BODY_LIMIT)
             .read_json()
             .map_err(|e| ProviderError::Parse(e.to_string()))?;
         let titles = v

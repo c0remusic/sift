@@ -98,14 +98,22 @@ fn update_metadata_commit(
         year: edit.year,
         genre,
     };
-    actions::detect_masterdb_metadata_sync_if_linked(conn, path, track_id, &values, action_id);
-
-    // (7) M8 Tier 3 (pochette): only when THIS edit actually changed the cover — unlike the
-    // metadata detector above, which always fires.
-    if let Some(cover_path) = &edit.cover_path {
-        actions::detect_masterdb_artwork_sync_if_linked(
-            conn, path, track_id, cover_path, action_id,
+    // ONE decrypt for BOTH detectors. The `_if_linked` variants each resolve the index
+    // themselves, so calling both meant decrypting a multi-MB SQLCipher `master.db` twice per
+    // edit — exactly what `resolve_masterdb_index_if_linked`'s docs forbid (actions.rs:206).
+    // Same shape as `ipc_filing::apply_tags` and `filing::commit_file`.
+    if let Some(index) = actions::resolve_masterdb_index_if_linked(conn) {
+        actions::detect_masterdb_metadata_sync_with_index(
+            conn, &index, path, track_id, &values, action_id,
         );
+
+        // (7) M8 Tier 3 (pochette): only when THIS edit actually changed the cover — unlike the
+        // metadata detector above, which always fires.
+        if let Some(cover_path) = &edit.cover_path {
+            actions::detect_masterdb_artwork_sync_with_index(
+                conn, &index, path, track_id, cover_path, action_id,
+            );
+        }
     }
 
     Ok(batch_id)

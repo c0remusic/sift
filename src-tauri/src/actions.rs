@@ -371,6 +371,14 @@ pub fn sanitize_genre_label(
 /// one detector. `filing::commit_file` also runs `detect_masterdb_repair_if_linked` for the same
 /// commit — it calls `resolve_masterdb_index_if_linked` once and uses the `_with_index` variants
 /// of both instead, to avoid decrypting `master.db` twice per row.
+/// Plus aucun appelant de production depuis que `ipc_library::update_metadata_commit` partage un
+/// index unique comme le faisaient déjà `apply_tags` et `commit_file` : tout chemin réel a
+/// désormais DEUX détecteurs à nourrir, donc passe par `resolve_masterdb_index_if_linked` +
+/// `_with_index`. Ce wrapper reste l'API du cas à un seul détecteur, et il est le seul à couvrir
+/// la résolution ET la détection d'un bloc — c'est ce que testent les cas de `mod tests`.
+/// Le supprimer obligerait à réécrire ces tests contre `_with_index`, ce qui retirerait la
+/// résolution de leur périmètre.
+#[allow(dead_code)]
 pub fn detect_masterdb_metadata_sync_if_linked(
     conn: &Connection,
     lookup_path: &str,
@@ -443,6 +451,10 @@ pub fn detect_masterdb_metadata_sync_with_index(
 ///
 /// Unlike the metadata detector, callers only invoke this when `cover_path` is actually `Some` on
 /// their current write — an edit that doesn't touch the cover must never produce a candidate.
+/// Même statut que `detect_masterdb_metadata_sync_if_linked` : plus d'appelant de production, mais
+/// conservé comme API du cas à un seul détecteur et couvert par `mod tests`, qui l'utilise pour
+/// exercer résolution et détection ensemble.
+#[allow(dead_code)]
 pub fn detect_masterdb_artwork_sync_if_linked(
     conn: &Connection,
     lookup_path: &str,
