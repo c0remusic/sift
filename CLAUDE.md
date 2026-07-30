@@ -111,11 +111,13 @@ cibler la bonne section via `Read offset=<L>`, plutôt que tout lire.
 Sommaire en tête de fichier, cibler la section avant de lire.
 
 ## Index des documents docs/
-`docs/INDEX.json` (référence, ~71 Ko) — À LIRE À LA DEMANDE (Read tool) quand tu
-cherches le statut d'un chantier/plan spécifique, PAS importé automatiquement.
-L'import `@` qui vivait ici collait 71 378 octets de JSON dans le contexte de
-CHAQUE session, y compris celles qui ne touchent jamais `docs/`. Retiré le
-2026-07-29, même précédent que `shaderlab/AGENTS.md:333`.
+`docs/INDEX.json` — À LIRE À LA DEMANDE (Read tool) quand tu cherches le statut
+d'un chantier/plan spécifique, PAS importé automatiquement. L'import `@` qui
+vivait ici collait tout le JSON dans le contexte de CHAQUE session, y compris
+celles qui ne touchent jamais `docs/` : **71 378 octets mesurés le 2026-07-29**,
+soit environ 18 000 tokens, et le fichier grossit à chaque doc ajouté —
+recompter avant de citer ce chiffre. Retiré le 2026-07-29, même précédent que
+`shaderlab/AGENTS.md:333`.
 
 Catalogue de chaque document sous `docs/` (racine + `superpowers/*`), par
 catégorie (`reference`/`specs`/`plans`/`reviews`) avec chemin/topic/résumé —
