@@ -370,10 +370,6 @@ export async function renderQueue(touchDetail = true) {
   const ql = document.getElementById("ql");
   if (!ql) return;
 
-  // Live destination bins + neutral detail prompt (replace the mockup's hardcoded ones).
-  const fldz = requireEl("#fldz", "renderQueue");
-  void refreshBins(fldz);
-
   // Returning to Revue after visiting another screen: app.js's renderRevue rebuilds
   // #qcol/#ql/#mid from scratch on every nav click (content.innerHTML, unconditional), even
   // though currentItems already holds a freshly-loaded queue in memory — only the DOM was wiped,
@@ -390,6 +386,15 @@ export async function renderQueue(touchDetail = true) {
       ensureQueueDoneToggle(qcol);
       ensureQueueSearch(qcol);
     }
+    // Live destination bins. Cet appel vit DANS le bloc de cache et non en tête de fonction :
+    // ce chemin `return` plus bas, donc il n'atteint jamais l'appel gardé par `touchDetail`, et
+    // les bacs resteraient ceux d'avant la navigation. En tête de fonction en revanche, il
+    // s'exécuterait AUSSI sur le redraw 300ms de la progression d'analyse — or `list_bins` marche
+    // toute la racine bibliothèque récursivement côté backend, ce que le garde de l'autre appel
+    // existe précisément pour éviter. Ici le poll ne passe pas : ce bloc exige `#ql` vide, et un
+    // poll d'analyse repeint une liste qui a déjà ses lignes.
+    const fldz = requireEl("#fldz", "renderQueue");
+    void refreshBins(fldz);
     if (touchDetail) {
       if (reviewMode === "batch") {
         batchRenderer?.();
