@@ -21,6 +21,14 @@ const MIGRATIONS: &[&str] = &[
         path TEXT NOT NULL UNIQUE,
         hash TEXT,
         fingerprint TEXT,
+        -- MORTE. Déclarée en v1 et jamais renseignée par le code de production : ni
+        -- `scanner::upsert_file`, ni `worker::persist_report` (qui écrit `declared_fmt`), ni
+        -- `filing` (qui écrit `target_format`). Elle était NULL sur toute vraie base, et six
+        -- lectures s'appuyaient dessus — les compteurs du tableau de bord Bibliothèque, son filtre
+        -- Lossless/MP3, sa colonne Format, et le classement des doublons (voir 76e474e). Toutes
+        -- repointées sur `target_format`. NE PAS l'utiliser ; ne pas la supprimer non plus : un
+        -- DROP ferait tourner une migration sur les bases utilisateurs pour récupérer zéro octet
+        -- (même arbitrage que `custom_tags`, tranché par Antoine le 2026-07-30).
         format TEXT,
         bitrate INTEGER,
         duration REAL,

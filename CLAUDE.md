@@ -265,10 +265,21 @@ Fichiers plats (sauf `analysis/`, `metadata/` et `usb_format/`) :
 ## Outils de dev annexes (`scripts/`, hors binaire de prod)
 - `.claude/scripts/cdp.cjs` — inspecte la vraie fenêtre `tauri dev` via CDP
   (vérifie le code `inTauri` réel : eval/screenshot/click/open-track). Remplace
-  l'ex-`scripts/cdp-inspect.mjs` (doublon, supprimé le 2026-07-20 — TECH_DEBT_AUDIT.md F15).
+  l'ex-`scripts/cdp-inspect.mjs` (doublon, supprimé le 2026-07-20 — finding F15 de
+  `docs/archive/TECH_DEBT_AUDIT.md`, archivé là le 2026-07-29).
 - `scripts/decrypt-masterdb-debug.py` — décrypte une copie `master.db` Rekordbox
   en SQLite clair pour inspection ad-hoc (spike M8, port Python de
   `rekordbox_masterdb.rs`) ; dépend de PyCryptodome externe.
+- `scripts/rekordbox-spike-helper.ps1` — **touche le VRAI dossier Pioneer.**
+  `-Action backup|swap|restore|status` : sauvegarde le dossier réel, y bascule une
+  copie de test, restaure — chaque étape vérifiée par SHA256, jamais sur parole.
+  N'écrit jamais DANS `master.db`, il ne copie que des fichiers entiers ; toute
+  mutation de contenu reste un script séparé, lancé sur la copie AVANT `swap`.
+  Refuse `swap`/`restore` si Rekordbox tourne, même invariant que le moteur Rust.
+  C'est le filet de tout futur spike sur la surface la plus risquée du projet —
+  documenté ici plutôt que supprimé (tranché par Antoine le 2026-07-30, audit
+  multi-passes SIMP-14). Avant de le lancer : relire l'état indépendamment et
+  vérifier le backup contre une référence propre, cf. § Méthode « Systèmes live ».
 
 ## Audit des dépendances (versions à jour)
 
