@@ -5,6 +5,11 @@ on:
     branches: [main]
   workflow_dispatch:
 
+# Jeton en LECTURE SEULE par defaut. Un job qui doit ecrire (publication)
+# redeclare ses propres permissions a son niveau, ou il herite de celles-ci.
+permissions:
+  contents: read
+
 jobs:
   # Job separe et independant du build des installeurs (pas de `needs:`) : un ratchet de style
   # qui casse ne doit jamais empecher la production/upload des binaires — trouve par verify-gate
@@ -12,6 +17,8 @@ jobs:
   # l'upload des artefacts sur main.
   lint-tokens:
     runs-on: ubuntu-latest
+    # Sans plafond, un job bloque consomme jusqu'a la limite du fournisseur (6 h).
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - name: Setup Node
@@ -34,14 +41,16 @@ jobs:
           - os: macos-latest
             triple: aarch64-apple-darwin
     runs-on: ${{ matrix.os }}
+    # Sans plafond, un job bloque consomme jusqu'a la limite du fournisseur (6 h).
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable, epingle 2026-07-30
 
       - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2, epingle 2026-07-30
         with:
           workspaces: "src-tauri -> target"
 

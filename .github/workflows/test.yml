@@ -22,12 +22,19 @@ on:
   pull_request:
   workflow_dispatch:
 
+# Jeton en LECTURE SEULE par defaut. Un job qui doit ecrire (publication)
+# redeclare ses propres permissions a son niveau, ou il herite de celles-ci.
+permissions:
+  contents: read
+
 jobs:
   test:
     # Windows uniquement, delibere : c'est la plateforme de developpement reelle, celle qui a
     # produit les incidents de cache incremental et de chemins UNC documentes dans
     # .claude/rules/rust.md. Une matrice macOS doublerait le temps pour un risque non observe.
     runs-on: windows-latest
+    # Sans plafond, un job bloque consomme jusqu'a la limite du fournisseur (6 h).
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
@@ -49,13 +56,13 @@ jobs:
           echo "toolchain epingle: $channel"
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@master
+        uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master, epingle 2026-07-30
         with:
           toolchain: ${{ steps.rust.outputs.channel }}
           components: clippy, rustfmt
 
       - name: Cache cargo
-        uses: Swatinem/rust-cache@v2
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2, epingle 2026-07-30
         with:
           workspaces: "src-tauri -> target"
 
