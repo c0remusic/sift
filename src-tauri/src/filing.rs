@@ -2176,6 +2176,37 @@ mod tests {
         );
     }
 
+    /// Le modèle par défaut est affiché ET proposé en réinitialisation par l'écran Réglages : le
+    /// front doit connaître sa valeur, donc elle traverse l'IPC en littéral recopié — même contrat
+    /// de miroir que les sentinelles ci-dessus.
+    #[test]
+    fn default_template_matches_contracts_ts() {
+        let expected = format!("\"{}\"", crate::settings::DEFAULT_TEMPLATE);
+        assert!(
+            CONTRACTS_TS.contains(&expected),
+            "shared/contracts.ts must contain DEFAULT_FILENAME_TEMPLATE = {expected}"
+        );
+    }
+
+    /// ... et les trois placeholders que ce modèle utilise doivent être ceux que
+    /// `render_filename` sait réellement remplacer. Un quatrième ajouté au défaut sans être câblé
+    /// ressortirait littéralement dans le nom de fichier.
+    #[test]
+    fn default_template_placeholders_are_all_rendered() {
+        let c = naming::Canonical {
+            artist: "A".into(),
+            title: "T".into(),
+            version: Some("V".into()),
+            confidence: naming::Confidence::Green,
+        };
+        let out = naming::render_filename(crate::settings::DEFAULT_TEMPLATE, &c, "aiff");
+        assert!(
+            !out.contains('{') && !out.contains('}'),
+            "un placeholder du modele par defaut n'est pas rendu: {out}"
+        );
+        assert_eq!(out, "A - T (V).aiff");
+    }
+
     /// La seule sentinelle dont la rupture SUPPRIME une ligne de la base : `ipc::analyze_path` la
     /// reconnaît pour appeler `scanner::forget_path`, et `frontend/filing.ts` pour basculer la
     /// fiche en « fichier introuvable ». Elle traversait l'IPC en littéral recopié des deux côtés.

@@ -106,8 +106,13 @@ export const reconcile = (trackId: number): Promise<Canonical> =>
 
 /** Live filename preview via the SAME naming::render_filename the real filing path uses (FIX-12) —
  * real active template + real sanitize(), not a front-side reimplementation. */
-export const previewFilename = (edited: Canonical, ext: string): Promise<string> =>
-  invoke("preview_filename", { edited, ext });
+/** `template` omis = le modèle ENREGISTRÉ. Le passer permet d'apercevoir un modèle candidat non
+ *  encore enregistré (écran Réglages) sans réimplémenter `render_filename`/`sanitize` en TS. */
+export const previewFilename = (
+  edited: Canonical,
+  ext: string,
+  template?: string | null,
+): Promise<string> => invoke("preview_filename", { edited, ext, template: template ?? null });
 
 /** Read-only release facts (label/year/genres) from the persisted `metadata` table. Fast DB read,
  * no network — used to show label/year/genres on a cold open. */

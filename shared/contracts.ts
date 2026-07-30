@@ -30,6 +30,14 @@ export const DRIVE_VANISHED = "DRIVE_VANISHED";
  * irreversible, so this is the one error the UI must never answer with "try again". */
 export const IDENTITY_MISMATCH = "IDENTITY_MISMATCH";
 
+/** Default filename template — the value `filename_template` holds until the user changes it.
+ * Mirror of Rust `settings::DEFAULT_TEMPLATE`; the two literals MUST stay identical, held by
+ * `filing.rs::default_template_matches_contracts_ts`. Placeholders, and there are only these
+ * three: `{artist}`, `{title}`, `{version}` — the last expands to " (Version)" when the track has
+ * one and to "" when it doesn't (no empty parens). Rendering is `naming::render_filename`, which
+ * also runs `sanitize()`; never re-implement either in TS — call `previewFilename` instead. */
+export const DEFAULT_FILENAME_TEMPLATE = "{artist} - {title}{version}";
+
 export interface AppInfo {
   name: string;
   version: string;

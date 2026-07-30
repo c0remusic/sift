@@ -3,8 +3,10 @@
 // god-module after ecartes-view.ts/home-sources.ts/journal.ts were split out.
 // Self-contained: unlike Bibliothèque/Rekordbox, no state here is mutated from
 // installLiveWiring's delegated click handler, so no cross-module state wiring is needed.
-import { getSetting, setSetting, openUrl, listRemovableDrives } from "./ipc";
+import { getSetting, setSetting, openUrl, listRemovableDrives, previewFilename } from "./ipc";
 import type { RemovableDrive } from "./ipc";
+import { DEFAULT_FILENAME_TEMPLATE } from "../shared/contracts";
+import type { Canonical } from "../shared/contracts";
 import { requireEl, esc } from "./dom";
 import { openUsbFormatModal } from "./usb-format-modal";
 import { setTheme } from "./theme";
@@ -61,6 +63,16 @@ export async function renderReglagesLive() {
     root = await getSetting("library_root");
   } catch (e) {
     console.error("getSetting(library_root) failed", e);
+  }
+  // Vide/absent = jamais personnalisé → on montre le défaut. `DEFAULT_FILENAME_TEMPLATE` vient de
+  // `shared/contracts.ts`, miroir de `settings::DEFAULT_TEMPLATE` tenu par un test de contrat —
+  // pas un littéral recopié ici.
+  let tmpl = DEFAULT_FILENAME_TEMPLATE;
+  try {
+    const saved = await getSetting("filename_template");
+    if (saved && saved.trim()) tmpl = saved;
+  } catch (e) {
+    console.error("getSetting(filename_template) failed", e);
   }
 
   // Cartes bordées + titre 16px/600 + texte explicatif, per la maquette (Sift.dc.html:642-691).
@@ -137,6 +149,141 @@ export async function renderReglagesLive() {
       }
     })();
   });
+
+  // Deux pistes d'exemple : l'une AVEC version, l'autre sans. C'est le seul moyen de voir ce que
+  // `{version}` fait réellement — y compris qu'il ne laisse pas de parenthèses vides quand la
+  // piste n'en a pas.
+  const TPL_SAMPLES: ReadonlyArray<{ c: Canonical; ext: string }> = [
+    {
+      c: { artist: "Chez Damier", title: "Can You Feel It", version: "Fluent Remix", confidence: "green" },
+      ext: "aiff",
+    },
+    { c: { artist: "Mr Fingers", title: "Mystery of Love", version: null, confidence: "green" }, ext: "mp3" },
+  ];
+
+  const tplBlock = document.createElement("div");
+  tplBlock.id = "sift-reglages-nommage";
+  tplBlock.dataset.section = "nommage";
+  tplBlock.className = "sift-settings-card sift-settings-list-row";
+  tplBlock.innerHTML =
+    '<div class="sift-settings-title">Modèle de nommage</div>' +
+    '<div class="sift-settings-desc">Le nom que Sift donne aux fichiers qu\'il range. Trois champs disponibles, à insérer d\'un clic. <code>{version}</code> se rend en «&nbsp;(Remix)&nbsp;» quand la piste en a une, et disparaît sinon — pas de parenthèses vides.</div>' +
+    '<div class="sift-settings-row sift-settings-row-stack">' +
+    '<div class="sift-settings-row-head">' +
+    '<div class="sift-settings-label">Modèle</div>' +
+    '<div class="sift-tpl-chips">' +
+    ["{artist}", "{title}", "{version}"]
+      .map((p) => `<button type="button" class="sift-tpl-chip" data-tpl-ph="${esc(p)}">${esc(p)}</button>`)
+      .join("") +
+    "</div></div>" +
+    `<input id="sift-tpl-input" class="sift-editor-input sift-tpl-input" spellcheck="false" aria-label="Modèle de nommage" value="${esc(tmpl)}">` +
+    "</div>" +
+    '<div class="sift-settings-row sift-settings-row-stack">' +
+    '<div class="sift-tpl-preview-label">Aperçu</div>' +
+    '<div id="sift-tpl-preview" class="sift-tpl-preview"></div>' +
+    '<div id="sift-tpl-warn" class="sift-tpl-warn" hidden></div>' +
+    "</div>" +
+    '<div class="sift-settings-subactions">' +
+    '<button type="button" id="sift-tpl-save" class="sift-settings-btn">Enregistrer</button>' +
+    '<button type="button" id="sift-tpl-reset" class="sift-settings-btn sift-settings-btn-quiet">Revenir au modèle par défaut</button>' +
+    "</div>" +
+    '<div id="sift-tpl-status" class="sift-tpl-status"></div>';
+
+  const tplInput = tplBlock.querySelector<HTMLInputElement>("#sift-tpl-input");
+  const tplPreview = tplBlock.querySelector<HTMLElement>("#sift-tpl-preview");
+  const tplWarn = tplBlock.querySelector<HTMLElement>("#sift-tpl-warn");
+  const tplStatus = tplBlock.querySelector<HTMLElement>("#sift-tpl-status");
+
+  // Les deux lignes d'aperçu sont créées UNE fois ; le handler de frappe ne mute que leur
+  // `textContent`. `input` est un événement en rafale (une frappe = un tir) : reconstruire le DOM
+  // ici saturerait le thread UI, cf. CLAUDE.md § Front — événements répétés.
+  const tplLines = TPL_SAMPLES.map(() => {
+    const el = document.createElement("div");
+    el.className = "sift-tpl-preview-line";
+    tplPreview?.appendChild(el);
+    return el;
+  });
+
+  /** Avertissement, jamais un blocage : retirer un champ est légitime si on sait ce qu'on fait —
+   *  l'aperçu montre déjà la conséquence, et `ensure_unique` gère la collision côté rangement. */
+  function tplWarning(t: string): string {
+    if (!t.trim()) return "Un modèle vide n'est pas utilisable.";
+    if (!t.includes("{title}"))
+      return "Sans {title}, deux morceaux du même artiste produisent le même nom — Sift ajoutera un suffixe numérique pour éviter l'écrasement.";
+    if (!t.includes("{artist}"))
+      return "Sans {artist}, les reprises et remixes d'un même titre se retrouvent côte à côte sans distinction.";
+    return "";
+  }
+
+  // Un aperçu = 2 appels IPC. Débounce pour ne pas en tirer un par frappe, et garde de séquence
+  // pour qu'une réponse lente n'écrase pas le résultat d'une frappe plus récente.
+  let tplDebounce: ReturnType<typeof setTimeout> | undefined;
+  let tplSeq = 0;
+  function refreshTplPreview(): void {
+    const t = tplInput?.value ?? "";
+    const w = tplWarning(t);
+    if (tplWarn) {
+      tplWarn.textContent = w;
+      tplWarn.hidden = !w;
+    }
+    clearTimeout(tplDebounce);
+    tplDebounce = setTimeout(() => {
+      const mine = ++tplSeq;
+      void Promise.all(TPL_SAMPLES.map((s) => previewFilename(s.c, s.ext, t)))
+        .then((names) => {
+          if (mine !== tplSeq) return; // une frappe plus récente a déjà répondu
+          names.forEach((n, i) => {
+            const line = tplLines[i];
+            if (line) line.textContent = `→ ${n}`;
+          });
+        })
+        .catch((e: unknown) => {
+          if (mine !== tplSeq) return;
+          console.error("[preview_filename] apercu du modele", e);
+          tplLines.forEach((l) => {
+            l.textContent = "→ aperçu indisponible";
+          });
+        });
+    }, 120);
+  }
+
+  tplInput?.addEventListener("input", refreshTplPreview);
+  tplBlock.querySelectorAll<HTMLElement>("[data-tpl-ph]").forEach((chip) => {
+    chip.addEventListener("click", () => {
+      if (!tplInput) return;
+      const ph = chip.dataset.tplPh ?? "";
+      const s = tplInput.selectionStart ?? tplInput.value.length;
+      const e = tplInput.selectionEnd ?? s;
+      tplInput.value = tplInput.value.slice(0, s) + ph + tplInput.value.slice(e);
+      tplInput.focus();
+      const caret = s + ph.length;
+      tplInput.setSelectionRange(caret, caret);
+      refreshTplPreview();
+    });
+  });
+  tplBlock.querySelector("#sift-tpl-reset")?.addEventListener("click", () => {
+    if (!tplInput) return;
+    tplInput.value = DEFAULT_FILENAME_TEMPLATE;
+    if (tplStatus) tplStatus.textContent = "";
+    refreshTplPreview();
+  });
+  tplBlock.querySelector("#sift-tpl-save")?.addEventListener("click", () => {
+    void (async () => {
+      const t = tplInput?.value ?? "";
+      if (!t.trim()) {
+        if (tplStatus) tplStatus.textContent = "Un modèle vide n'est pas enregistrable.";
+        return;
+      }
+      try {
+        await setSetting("filename_template", t);
+        if (tplStatus) tplStatus.textContent = "Modèle enregistré.";
+      } catch (e) {
+        console.error("[setSetting(filename_template)] enregistrement", e);
+        if (tplStatus) tplStatus.textContent = "Échec de l'enregistrement — réessaie.";
+      }
+    })();
+  });
+  refreshTplPreview();
 
   const themeBlock = document.createElement("div");
   themeBlock.id = "sift-reglages-apparence";
@@ -254,6 +401,8 @@ export async function renderReglagesLive() {
   list.className = "sift-settings-list sift-ui-card-soft sift-ui-card-soft-pad";
   list.appendChild(block);
   list.appendChild(libBlock);
+  // Après Bibliothèque : le modèle décrit comment nommer DANS la racine qu'elle définit.
+  list.appendChild(tplBlock);
   list.appendChild(themeBlock);
   list.appendChild(usbBlock);
   wrap.appendChild(list);

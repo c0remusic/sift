@@ -1355,6 +1355,17 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-settings-link{font-size:var(--text-sm);color:var(--color-text-secondary);cursor:pointer;text-decoration:none}
 .sift-settings-link:hover{color:var(--color-text-primary)}
 .sift-settings-subactions{display:flex;align-items:center;gap:8px;margin-top:var(--space-12)}
+/* Carte « Modèle de nommage » (Réglages). Les pastilles insèrent un placeholder à la position du
+   curseur — pilule pour les distinguer des boutons d'action carrés de la même carte. */
+.sift-tpl-chips{display:flex;gap:var(--space-4)}
+.sift-tpl-chip{font-size:var(--text-sm);font-family:var(--font-mono);color:var(--color-text-secondary);background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-pill);padding:2px var(--space-8);cursor:pointer}
+.sift-tpl-chip:hover{background:var(--color-background-primary);filter:brightness(0.96)}
+.sift-tpl-input{width:100%;font-family:var(--font-mono)}
+.sift-tpl-preview-label{font-size:var(--text-sm);letter-spacing:var(--tracking-widest);text-transform:uppercase;color:var(--color-text-quaternary)}
+.sift-tpl-preview{display:flex;flex-direction:column;gap:3px;min-width:0;width:100%}
+.sift-tpl-preview-line{font-size:var(--text-md);font-family:var(--font-mono);color:var(--color-text-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sift-tpl-warn{font-size:var(--text-sm);color:var(--color-text-warning)}
+.sift-tpl-status{font-size:var(--text-sm);color:var(--color-text-tertiary);min-height:14px;margin-top:var(--space-8)}
 /* Pastille segmentée — composant partagé (2026-07-08 : Apparence/Format USB/Détail-Lot/
    Dossiers-Genres réimplémentaient chacun leur propre variante — une seule piste encaissée +
    pastille active désormais). .sift-seg = piste (fond --color-track) ; .sift-seg-opt = option,

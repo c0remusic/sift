@@ -78,18 +78,26 @@ pub fn reconcile(conn: State<'_, Mutex<Connection>>, track_id: i64) -> Result<Ca
 /// `naming::render_filename` (real template + `sanitize()`) the actual filing path calls
 /// (FIX-12) — the front used to hardcode "{artist} - {title}" and skip `sanitize()` entirely,
 /// so a title containing `/` previewed a name that would never match the real, sanitized file.
+///
+/// `template`: `None` (le cas de tous les appelants historiques) = le modèle ENREGISTRÉ. `Some`
+/// = un modèle candidat, pas encore enregistré — c'est ce qui permet à l'écran Réglages de
+/// montrer l'effet d'une saisie en cours SANS la persister, et surtout de le montrer via cette
+/// commande plutôt qu'en réimplémentant `render_filename` + `sanitize` en TypeScript. Un modèle
+/// candidat vide ou blanc retombe sur l'enregistré : c'est un état transitoire de frappe, pas
+/// une demande de nom vide.
 #[tauri::command]
 pub fn preview_filename(
     conn: State<'_, Mutex<Connection>>,
     edited: Canonical,
     ext: String,
+    template: Option<String>,
 ) -> Result<String, String> {
     let conn = db::lock_conn(&conn)?;
-    Ok(crate::naming::render_filename(
-        &template(&conn),
-        &edited,
-        &ext,
-    ))
+    let tmpl = match template {
+        Some(t) if !t.trim().is_empty() => t,
+        _ => self::template(&conn),
+    };
+    Ok(crate::naming::render_filename(&tmpl, &edited, &ext))
 }
 
 /// Read-only identity + release facts persisted by `apply_identity` in the `metadata` table.
