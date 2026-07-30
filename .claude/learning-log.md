@@ -421,3 +421,33 @@ Le comportement de la gate elle-même (fail-open sur dépassement du crosscheck,
 plafond du timeout de l'outil, course sur `HEAD`) est une leçon d'OUTILLAGE
 GLOBAL : elle vit dans `~/.claude/instinct-log.md` (D46), pas ici — seule la
 partie `target/` ci-dessus est propre à Sift.
+
+### D17 — `tracks.path` ne suit pas le fichier au rangement, et trois mécanismes se tiennent (2026-07-30, bug remonté par Antoine)
+
+**Why** : `commit_file` (`filing.rs`) écrit `status`/`folder`/`target_format`/
+`confidence` et jamais `path`, alors que `execute_file` déplace ET renomme le
+fichier. Toute piste réellement déplacée garde un chemin source inexistant, et la
+Bibliothèque le lit (`library::list_filed` → `t.path` → `library-detail.ts:410` →
+`openReportInto`). Symptôme : la piste ne se lit pas.
+
+Deux mécanismes rendent le symptôme MUET, et c'est ce qui coûte le plus cher au
+diagnostic :
+- le cache de rapport (`ipc.rs:293`) est indexé sur `path` : la fiche s'affiche
+  entièrement, forme d'onde et verdict servis sans toucher le disque. Une sonde
+  `analyze_path` sur un fichier absent répond donc **ok** — je m'y suis fait
+  prendre en cours d'enquête ;
+- `library-detail.ts:410` passe `showAnalysisFailure: false`, ce qui supprime
+  l'affichage de l'erreur. Fichier absent, écran silencieux.
+
+**How to apply** : le correctif évident (`path=?` dans l'UPDATE) est un piège —
+il a été écrit puis retiré, le crosscheck ayant montré deux régressions pires.
+Les trois conditions tiennent ENSEMBLE et sont détaillées dans le doc-comment du
+test `commit_file_repointe_le_chemin_sur_la_destination` (`#[ignore]`, `filing.rs`) :
+restaurer `path` au revert (`actions.rs:845`), faire suivre `size_bytes`/`mtime`
+sous peine que le watcher dé-range la piste (`scanner.rs:88`, un rangement EN
+PLACE atterrit dans un dossier surveillé), et traiter la collision `UNIQUE(path)`
+avec une ligne que le watcher aurait insérée entre-temps.
+
+Règle générale à retenir de ce cas : **sur ce repo, toute écriture de
+`tracks.path` doit être pensée avec le watcher et le revert dans la même phrase.**
+Les trois se partagent la colonne, et aucun test ne les couvrait ensemble.
