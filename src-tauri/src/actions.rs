@@ -374,10 +374,15 @@ pub fn sanitize_genre_label(
 /// Plus aucun appelant de production depuis que `ipc_library::update_metadata_commit` partage un
 /// index unique comme le faisaient déjà `apply_tags` et `commit_file` : tout chemin réel a
 /// désormais DEUX détecteurs à nourrir, donc passe par `resolve_masterdb_index_if_linked` +
-/// `_with_index`. Ce wrapper reste l'API du cas à un seul détecteur, et il est le seul à couvrir
-/// la résolution ET la détection d'un bloc — c'est ce que testent les cas de `mod tests`.
-/// Le supprimer obligerait à réécrire ces tests contre `_with_index`, ce qui retirerait la
-/// résolution de leur périmètre.
+/// `_with_index`.
+///
+/// NE PAS SUPPRIMER pour autant, et la raison est plus forte qu'un simple « c'est testé » :
+/// ce wrapper porte la branche « rien n'est lié → ne rien faire », qui est **inexprimable** avec
+/// `_with_index` — cette variante exige un index par signature, donc aucun test écrit contre elle
+/// ne peut couvrir le cas où il n'y en a pas. C'est exactement ce que vérifie
+/// `detect_masterdb_metadata_sync_no_op_when_no_xml_linked` (et son jumeau côté pochette) :
+/// appeler sans chemin XML posé, puis asserter que la table reste vide. Migrer ces tests vers
+/// `_with_index` supprimerait la seule couverture de cette branche sur les deux détecteurs.
 #[allow(dead_code)]
 pub fn detect_masterdb_metadata_sync_if_linked(
     conn: &Connection,
