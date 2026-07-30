@@ -1,6 +1,9 @@
 # Sift — CLAUDE.md
 
-> Repo à worktree unique : **`C:\dev\sift`**, branche **`main`** (dev actif).
+> Repo à worktree unique : **`C:\dev\sift`**. Branche active : **`perf-mi-fixes`**
+> (46 commits devant `main` au 2026-07-30, mesuré au `rev-list` — `main` n'a rien de
+> son côté). Le dev repart de `main` pour un nouveau chantier ; recompter avant de
+> citer cet écart.
 > Le worktree `m6a-discogs` (M6a→M8) a été mergé dans `main` puis supprimé le
 > 2026-07-18 — le dev repart désormais directement sur `main`. Même dépôt Git.
 > Contexte projet complet : la skill **`sift`** le charge.
