@@ -33,7 +33,11 @@ pub struct ReconcileStats {
     pub removed: usize,
 }
 
-fn mtime_secs(meta: &std::fs::Metadata) -> i64 {
+/// Seconds since the epoch of a file's mtime, `0` when unreadable. `pub(crate)` because
+/// `filing::commit_file` and `actions::revert_batch` must write `tracks.mtime` with EXACTLY the
+/// same convention the watcher compares against in `upsert_file` — a second conversion helper
+/// would silently drift and re-open the "a filed track un-files itself" bug.
+pub(crate) fn mtime_secs(meta: &std::fs::Metadata) -> i64 {
     meta.modified()
         .ok()
         .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())

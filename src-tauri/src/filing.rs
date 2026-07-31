@@ -43,6 +43,11 @@ pub enum FilingError {
     /// existing `"NoLibraryRoot"` convention) so the front can pattern-match it distinctly from
     /// other filing errors.
     RailMismatch,
+    /// Une piste DÉJÀ RANGÉE occupe le chemin de destination (`tracks.path` est `UNIQUE`). Distinct
+    /// de la ligne `pending` que le watcher vient de créer pour le fichier qu'on est en train de
+    /// ranger — celle-là est évincée dans la transaction, sans erreur. Ici c'est un vrai conflit
+    /// métier : refus explicite, jamais un `INSERT OR REPLACE` ni un suffixe automatique sur le nom.
+    DestOccupied(String),
     Encode(String),
     Tag(String),
     Io(String),
@@ -55,6 +60,10 @@ impl std::fmt::Display for FilingError {
             FilingError::NotFound => write!(f, "track not found"),
             FilingError::Upscale => write!(f, "refused: cannot upscale lossy to lossless"),
             FilingError::RailMismatch => write!(f, "RAIL_MISMATCH"),
+            FilingError::DestOccupied(p) => write!(
+                f,
+                "destination deja occupee par une autre piste rangee: {p}"
+            ),
             FilingError::Encode(m) => write!(f, "encode: {m}"),
             FilingError::Tag(m) => write!(f, "tag: {m}"),
             FilingError::Io(m) => write!(f, "io: {m}"),
@@ -716,6 +725,29 @@ pub fn commit_file(
         naming::Confidence::Yellow => "yellow",
     };
 
+    // Le fichier tel qu'il est MAINTENANT sur le disque : phase 2 est faite, `plan.dest` existe et
+    // porte la taille/date d'APRÈS l'écriture des tags et le déplacement. Lu ICI (hors transaction,
+    // avant de prendre le verrou d'écriture SQLite) parce que c'est de l'I/O.
+    //
+    // Échec de lecture = les deux colonnes restent inchangées, le rangement PASSE quand même : un
+    // `stat` qui échoue sur un fichier qu'on vient d'écrire est une anomalie de l'environnement,
+    // pas une raison de défaire un déplacement réussi. Conséquence assumée et journalisée : un
+    // rescan du watcher pourra repasser cette piste en `pending` (voir condition (b) ci-dessous).
+    let dest_meta = match std::fs::metadata(&plan.dest) {
+        Ok(m) => Some((m.len() as i64, crate::scanner::mtime_secs(&m))),
+        Err(e) => {
+            log::error!(
+                "commit_file: metadata({}) illisible ({e}): size_bytes/mtime laisses inchanges, un rescan du watcher pourra repasser la piste {} en pending",
+                plan.dest,
+                plan.track_id
+            );
+            None
+        }
+    };
+    let dest_size = dest_meta.map(|(size, _)| size);
+    let dest_mtime = dest_meta.map(|(_, mtime)| mtime);
+    let dest_name = file_name_of(&plan.dest);
+
     // One transaction for every DB write of this track. Dropping it without `commit()` (the `?`
     // early-returns below) rolls back all inserts/updates automatically — no manual DELETE needed.
     let db_result: Result<Vec<i64>, FilingError> = (|| {
@@ -733,20 +765,67 @@ pub fn commit_file(
             )?;
             action_ids.push(id);
         }
-        // BUG OUVERT — `path` ne suit PAS le fichier, alors que le rangement le déplace et le
-        // renomme (`execute_file`). Toute piste réellement déplacée garde donc un chemin SOURCE
-        // devenu inexistant, et la Bibliothèque — qui lit ce champ via `library::list_filed` puis
-        // `library-detail.ts` → `openReportInto(track.path)` — pointe un fichier absent : la piste
-        // ne se lit pas. Constaté sur un cas réel le 2026-07-30. Rien ne rattrape la ligne :
-        // `scanner::forget_path` ne supprime que les lignes `pending`.
+        // INVARIANT — `path` suit le fichier. Le rangement déplace ET renomme (`execute_file`) :
+        // une piste dont `tracks.path` reste sur la source pointe un fichier inexistant, et la
+        // Bibliothèque — qui lit ce champ via `library::list_filed` puis `library-detail.ts` →
+        // `openReportInto(track.path)` — ne peut plus la lire (constaté sur un cas réel le
+        // 2026-07-30 ; `scanner::forget_path` ne rattrape rien, il ne supprime que les `pending`).
         //
-        // Le correctif n'est PAS d'ajouter `path=?` ici. Essayé puis retiré le 2026-07-31, le
-        // crosscheck de la gate ayant montré qu'il introduit deux défauts pires que celui qu'il
-        // corrige — voir le test `commit_file_repointe_le_chemin_sur_la_destination`, `#[ignore]`,
-        // qui porte l'analyse complète et les trois conditions à remplir ensemble.
+        // Écrire `path=?` SEUL était pire que le bug : essayé puis retiré le 2026-07-31, le
+        // crosscheck de la gate ayant montré deux régressions. Les trois conditions ci-dessous sont
+        // INDISSOCIABLES — chacune n'existe que parce que `path` bouge, et deux d'entre elles vivent
+        // hors de cette fonction. Elles sont couvertes par quatre tests nommés dans ce fichier ;
+        // toucher l'une sans les autres rouvre le défaut qu'elle couvre.
+        //
+        // (a) `actions::revert_batch` doit REMETTRE `path` (+ `size_bytes`/`mtime`/`filename`) sur
+        //     la source, sinon une piste annulée garde le chemin d'un fichier que `revert_one_fs`
+        //     vient de rendre à sa source : le même bug en miroir.
+        //     → `actions.rs`, test `revert_batch_ramene_le_chemin_et_les_metadonnees_sur_la_source`.
+        // (b) `size_bytes`/`mtime`/`filename` doivent suivre le déplacement, ici. Un rangement EN
+        //     PLACE (`FILE_IN_PLACE`) résout `dest_dir` vers `source.parent()`, donc un dossier
+        //     SURVEILLÉ : au passage suivant, `scanner::upsert_file` trouverait à ce chemin une
+        //     ligne portant la taille/date d'AVANT l'écriture des tags, prendrait la branche
+        //     `Some(_)` (`scanner.rs:88`) et repasserait la piste en `pending` en effaçant
+        //     `analyzed_at`/`fingerprint`/`report_json` — la piste rangée se dérangerait seule.
+        //     → test `un_rescan_du_fichier_range_en_place_ne_le_derange_pas`.
+        // (c) `tracks.path` est `NOT NULL UNIQUE` (`db.rs:21`). Entre le déplacement et cette
+        //     transaction, le watcher a pu INSÉRER une ligne `pending` pour le fichier à sa
+        //     destination ; sans le DELETE ci-dessous l'`UPDATE` violerait la contrainte,
+        //     `rollback_fs` défairait le déplacement et le rangement échouerait pour l'utilisateur.
+        //     Le DELETE est volontairement étroit — `status='pending'` ET `id<>` la nôtre : c'est
+        //     exactement la ligne parasite que le watcher vient de créer pour le fichier que nous
+        //     sommes en train de ranger, jamais une piste déjà rangée. Ce qui survit au DELETE est
+        //     un vrai conflit métier → `DestOccupied`, pas de `INSERT OR REPLACE`, pas de suffixe
+        //     automatique sur le nom.
+        //     → tests `commit_file_evince_la_ligne_pending_concurrente_a_la_destination` et
+        //       `commit_file_refuse_une_destination_occupee_par_une_piste_rangee`.
         tx.execute(
-            "UPDATE tracks SET status='filed', folder=?2, target_format=?3, confidence=?4 WHERE id=?1",
-            params![plan.track_id, plan.bin_rel, target_str(plan.target), conf],
+            "DELETE FROM tracks WHERE path=?1 AND id<>?2 AND status='pending'",
+            params![plan.dest, plan.track_id],
+        )?;
+        let occupied: i64 = tx.query_row(
+            "SELECT count(*) FROM tracks WHERE path=?1 AND id<>?2",
+            params![plan.dest, plan.track_id],
+            |r| r.get(0),
+        )?;
+        if occupied > 0 {
+            return Err(FilingError::DestOccupied(plan.dest.clone()));
+        }
+        tx.execute(
+            "UPDATE tracks SET status='filed', folder=?2, target_format=?3, confidence=?4,
+                    path=?5, filename=?6,
+                    size_bytes=COALESCE(?7, size_bytes), mtime=COALESCE(?8, mtime)
+             WHERE id=?1",
+            params![
+                plan.track_id,
+                plan.bin_rel,
+                target_str(plan.target),
+                conf,
+                plan.dest,
+                dest_name,
+                dest_size,
+                dest_mtime
+            ],
         )?;
         save_metadata(&tx, plan.track_id, &plan.canonical)?;
         tx.commit()?;
@@ -757,9 +836,12 @@ pub fn commit_file(
         Ok(ids) => ids,
         Err(e) => {
             // Transaction already rolled back the DB rows; reverse the filesystem effects too so
-            // nothing is left half-filed.
+            // nothing is left half-filed. L'erreur est propagée TELLE QUELLE (elle est déjà une
+            // `FilingError`) : la ré-emballer en `Db(e.to_string())` écrasait la variante — un
+            // `DestOccupied`, seul cas où l'appelant peut dire à l'utilisateur ce qui bloque,
+            // ressortait en « db: destination deja occupee… », indistinguable d'une panne SQLite.
             rollback_fs(&log);
-            return Err(FilingError::Db(e.to_string()));
+            return Err(e);
         }
     };
 
@@ -1966,32 +2048,39 @@ mod tests {
     /// (`library::list_filed` sélectionne `t.path`) : elle pointait donc un fichier absent, et la
     /// piste ne se lisait pas. Le journal, lui, avait correctement les deux chemins.
     ///
-    /// `commit_file` écrit `status`/`folder`/`target_format`/`confidence` et JAMAIS `path`.
-    /// `scanner::forget_path` ne rattrape rien : il ne supprime que les lignes `pending`.
+    /// Cause : `commit_file` écrivait `status`/`folder`/`target_format`/`confidence` et JAMAIS
+    /// `path`. Rien ne rattrapait la ligne — `scanner::forget_path` ne supprime que les `pending`.
     ///
-    /// IGNORÉ — le bug est RÉEL et ce test le reproduit fidèlement, mais le correctif évident
-    /// (ajouter `path=?` à l'`UPDATE` de `commit_file`) a été écrit puis RETIRÉ le 2026-07-31 :
-    /// le crosscheck de la gate a montré qu'il casse deux choses pires. Les trois conditions
-    /// doivent être remplies ENSEMBLE, sinon le remède dépasse le mal :
+    /// CORRIGÉ le 2026-07-31 — ce test a été `#[ignore]` un temps, et l'historique de ce refus vaut
+    /// d'être gardé : le correctif évident (ajouter `path=?` à l'`UPDATE` de `commit_file`) avait
+    /// été écrit puis RETIRÉ, le crosscheck de la gate ayant montré qu'il casse deux choses pires
+    /// que le bug. La leçon tient toujours : les trois conditions ci-dessous sont INDISSOCIABLES —
+    /// remplir la première seule fait dépasser le remède sur le mal. Elles sont aujourd'hui
+    /// SATISFAITES, chacune par son propre test ; toucher l'une sans les autres rouvre son défaut.
     ///
-    /// 1. **Le revert doit restaurer `path`.** `actions::revert_batch` (`actions.rs:845`) remet
-    ///    `status='pending', folder=NULL, target_format=NULL, confidence=NULL` sans toucher
-    ///    `path`. Aujourd'hui c'est cohérent — `path` était resté sur la source. Dès qu'il pointe
-    ///    la destination, une piste annulée garde le chemin d'un fichier que `revert_one_fs` vient
-    ///    de remettre à sa source : le bug, en miroir.
-    /// 2. **`size_bytes` et `mtime` doivent suivre aussi.** Un rangement EN PLACE
+    /// 1. **Le revert restaure `path`** (+ `filename`/`size_bytes`/`mtime`).
+    ///    `actions::revert_batch` remettait `status='pending', folder=NULL, target_format=NULL,
+    ///    confidence=NULL` sans toucher `path` — cohérent tant que `path` restait sur la source,
+    ///    mais dès qu'il pointe la destination, une piste annulée garde le chemin d'un fichier que
+    ///    `revert_one_fs` vient de rendre à sa source : le bug, en miroir. Le chemin d'origine se
+    ///    relit sur le journal (`from_path` de la ligne `move`/`convert` la plus ancienne du lot),
+    ///    seule copie qui subsiste une fois `path` repointé.
+    ///    → `revert_batch_ramene_le_chemin_et_les_metadonnees_sur_la_source`.
+    /// 2. **`size_bytes`, `mtime` et `filename` suivent le déplacement.** Un rangement EN PLACE
     ///    (`FILE_IN_PLACE`) résout `dest_dir` vers `source.parent()` — donc un dossier SURVEILLÉ.
-    ///    Au passage suivant du watcher, `scanner::upsert_file` trouve une ligne à ce chemin dont
-    ///    la taille et la date sont celles de la SOURCE, prend la branche `Some(_)`
-    ///    (`scanner.rs:88`) et repasse la piste en `status='pending'` en effaçant `analyzed_at`,
-    ///    `fingerprint` et `report_json`. La piste rangée se dé-range toute seule.
-    /// 3. **La collision `UNIQUE(path)` doit être traitée.** Même cas : entre le déplacement et la
-    ///    transaction, le watcher peut avoir INSÉRÉ une ligne pour le fichier à sa destination.
-    ///    L'`UPDATE` viole alors la contrainte, `rollback_fs` défait le déplacement, et le
-    ///    rangement échoue pour l'utilisateur.
-    ///
-    /// L'état actuel est le moins mauvais : la lecture est cassée, mais rien ne se corrompt.
-    #[ignore = "bug ouvert : le correctif exige aussi revert+size/mtime+collision UNIQUE, voir le doc-comment"]
+    ///    Au passage suivant du watcher, `scanner::upsert_file` trouvait une ligne à ce chemin dont
+    ///    la taille et la date étaient celles d'AVANT l'écriture des tags, prenait la branche
+    ///    `Some(_)` (`scanner.rs`) et repassait la piste en `status='pending'` en effaçant
+    ///    `analyzed_at`, `fingerprint` et `report_json`. La piste rangée se dérangeait toute seule.
+    ///    → `un_rescan_du_fichier_range_en_place_ne_le_derange_pas`.
+    /// 3. **La collision `UNIQUE(path)` est traitée explicitement.** Entre le déplacement et la
+    ///    transaction, le watcher peut avoir INSÉRÉ une ligne `pending` pour le fichier à sa
+    ///    destination ; l'`UPDATE` violait alors la contrainte, `rollback_fs` défaisait le
+    ///    déplacement et le rangement échouait pour l'utilisateur. Cette ligne parasite est
+    ///    évincée dans la transaction (DELETE étroit : `pending` ET `id<>` la nôtre) ; ce qui y
+    ///    survit est une piste DÉJÀ rangée à ce chemin, donc un vrai conflit métier → `DestOccupied`.
+    ///    → `commit_file_evince_la_ligne_pending_concurrente_a_la_destination` et
+    ///    `commit_file_refuse_une_destination_occupee_par_une_piste_rangee`.
     #[test]
     fn commit_file_repointe_le_chemin_sur_la_destination() {
         let conn = db();
@@ -2044,6 +2133,348 @@ mod tests {
             path, "D:/KEPT/Artiste - Titre (Club Mix).aif",
             "tracks.path doit suivre le fichier, sinon la Bibliotheque pointe un fichier absent"
         );
+    }
+
+    /// Plan minimal pour les tests de `commit_file` : seuls `track_id`, `batch_id`, `source` et
+    /// `dest` portent du sens ici (le reste alimente `save_metadata` et les colonnes de filing).
+    fn commit_plan_stub(track_id: i64, batch_id: &str, source: &str, dest: &str) -> FilePlan {
+        FilePlan {
+            track_id,
+            batch_id: batch_id.to_string(),
+            source: source.to_string(),
+            dest: dest.to_string(),
+            conformant: true,
+            target: Target::Aiff1644,
+            canonical: Canonical {
+                artist: "Artiste".to_string(),
+                title: "Titre".to_string(),
+                version: Some("Club Mix".to_string()),
+                confidence: naming::Confidence::Green,
+            },
+            bin_rel: String::new(),
+            extras: TagExtras {
+                label: None,
+                year: None,
+                genres: vec![],
+                cover_path: None,
+            },
+        }
+    }
+
+    /// Condition (a) du correctif de `commit_file_repointe_le_chemin_sur_la_destination` : dès que
+    /// `path` suit le fichier, l'annulation doit le ramener sur la SOURCE — sinon c'est le même bug
+    /// en miroir, `revert_one_fs` ayant remis le fichier à sa place d'origine. `size_bytes`, `mtime`
+    /// et `filename` suivent le même aller-retour (un converti n'a ni la taille ni le nom de son
+    /// original).
+    #[test]
+    fn revert_batch_ramene_le_chemin_et_les_metadonnees_sur_la_source() {
+        let conn = db();
+        let dir = tempfile::tempdir().unwrap();
+        let dl = dir.path().join("DL");
+        let kept = dir.path().join("KEPT");
+        let trash_dir = dir.path().join(".sift-trash");
+        std::fs::create_dir_all(&dl).unwrap();
+        std::fs::create_dir_all(&kept).unwrap();
+        std::fs::create_dir_all(&trash_dir).unwrap();
+
+        let source = dl.join("12 - vieux nom.wav");
+        let dest = kept.join("Artiste - Titre (Club Mix).aif");
+        let trashed = trash_dir.join("12 - vieux nom.wav");
+        let (source_s, dest_s, trashed_s) = (
+            source.to_str().unwrap().to_string(),
+            dest.to_str().unwrap().to_string(),
+            trashed.to_str().unwrap().to_string(),
+        );
+
+        // État du disque APRÈS `execute_file` d'un rangement non conformant : le converti est à
+        // `dest`, l'original (taille différente) est à la corbeille.
+        std::fs::write(&dest, vec![b'd'; 4096]).unwrap();
+        std::fs::write(&trashed, vec![b's'; 64]).unwrap();
+
+        conn.execute(
+            "INSERT INTO tracks(path, filename, size_bytes, mtime, status)
+             VALUES(?1, '12 - vieux nom.wav', 1, 1, 'pending')",
+            params![source_s],
+        )
+        .unwrap();
+        let track_id = conn.last_insert_rowid();
+
+        let plan = commit_plan_stub(track_id, "b-revert", &source_s, &dest_s);
+        let log = vec![
+            FsLog {
+                kind: "convert",
+                from: source_s.clone(),
+                to: dest_s.clone(),
+                meta: None,
+            },
+            FsLog {
+                kind: "trash",
+                from: source_s.clone(),
+                to: trashed_s.clone(),
+                meta: None,
+            },
+        ];
+        commit_file(&conn, &plan, log, None, None).expect("commit_file");
+
+        let filed_path: String = conn
+            .query_row(
+                "SELECT path FROM tracks WHERE id=?1",
+                params![track_id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            filed_path, dest_s,
+            "prealable : le rangement repointe `path`"
+        );
+
+        crate::actions::revert_batch(&conn, "b-revert").expect("revert_batch");
+
+        let restored_meta =
+            std::fs::metadata(&source).expect("la source est revenue sur le disque");
+        let (path, filename, size, mtime, status): (String, String, i64, i64, String) = conn
+            .query_row(
+                "SELECT path, filename, size_bytes, mtime, status FROM tracks WHERE id=?1",
+                params![track_id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+            )
+            .unwrap();
+        assert_eq!(status, "pending");
+        assert_eq!(
+            path, source_s,
+            "l'annulation doit ramener `path` sur la source, la ou revert_one_fs a remis le fichier"
+        );
+        assert_eq!(filename, "12 - vieux nom.wav");
+        assert_eq!(
+            size, 64,
+            "size_bytes doit redecrire la source restauree, pas le converti supprime"
+        );
+        assert_eq!(mtime, crate::scanner::mtime_secs(&restored_meta));
+    }
+
+    /// Condition (b) : un rangement EN PLACE (`FILE_IN_PLACE`) laisse le fichier dans un dossier
+    /// SURVEILLÉ. Si `path` suit le fichier mais pas `size_bytes`/`mtime`, le passage suivant du
+    /// watcher trouve à ce chemin une ligne dont la taille/date sont celles d'AVANT l'écriture des
+    /// tags, prend la branche `Some(_)` de `scanner::upsert_file` et repasse la piste en `pending`
+    /// en effaçant `analyzed_at`/`fingerprint`/`report_json` : la piste rangée se dé-range seule.
+    #[test]
+    fn un_rescan_du_fichier_range_en_place_ne_le_derange_pas() {
+        let conn = db();
+        let dir = tempfile::tempdir().unwrap();
+        let watched = dir.path().join("Watched");
+        std::fs::create_dir_all(&watched).unwrap();
+        conn.execute(
+            "INSERT INTO sources(path) VALUES(?1)",
+            params![watched.to_str().unwrap()],
+        )
+        .unwrap();
+        let source_id = conn.last_insert_rowid();
+
+        let source = watched.join("12 - vieux nom.aif");
+        let dest = watched.join("Artiste - Titre (Club Mix).aif");
+        let (source_s, dest_s) = (
+            source.to_str().unwrap().to_string(),
+            dest.to_str().unwrap().to_string(),
+        );
+
+        // Ce que le scanner a enregistré : le fichier tel qu'il était AVANT le rangement.
+        std::fs::write(&source, vec![b'x'; 2048]).unwrap();
+        let scanned = std::fs::metadata(&source).unwrap();
+        conn.execute(
+            "INSERT INTO tracks(path, filename, size_bytes, mtime, source_id, status, analyzed_at, fingerprint, report_json)
+             VALUES(?1, '12 - vieux nom.aif', ?2, ?3, ?4, 'pending', '2026-07-31T00:00:00Z', 'fp', '{}')",
+            params![
+                source_s,
+                scanned.len() as i64,
+                crate::scanner::mtime_secs(&scanned),
+                source_id
+            ],
+        )
+        .unwrap();
+        let track_id = conn.last_insert_rowid();
+
+        // `execute_file` conformant : écriture des tags EN PLACE (la taille et la date changent),
+        // puis renommage dans le MÊME dossier surveillé.
+        std::fs::write(&source, vec![b'x'; 3072]).unwrap();
+        std::fs::rename(&source, &dest).unwrap();
+
+        let plan = commit_plan_stub(track_id, "b-inplace", &source_s, &dest_s);
+        let log = vec![FsLog {
+            kind: "move",
+            from: source_s.clone(),
+            to: dest_s.clone(),
+            meta: None,
+        }];
+        commit_file(&conn, &plan, log, None, None).expect("commit_file");
+
+        let filed_path: String = conn
+            .query_row(
+                "SELECT path FROM tracks WHERE id=?1",
+                params![track_id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            filed_path, dest_s,
+            "prealable : le rangement repointe `path`"
+        );
+
+        // Passage suivant du watcher sur le fichier tel qu'il est MAINTENANT sur le disque.
+        let now = std::fs::metadata(&dest).unwrap();
+        let seen = crate::scanner::DiskFile {
+            path: dest_s.clone(),
+            filename: "Artiste - Titre (Club Mix).aif".to_string(),
+            size_bytes: now.len() as i64,
+            mtime: crate::scanner::mtime_secs(&now),
+        };
+        crate::scanner::upsert_file(&conn, source_id, &seen).unwrap();
+
+        let (status, analyzed_at, fingerprint, report): (
+            String,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+        ) = conn
+            .query_row(
+                "SELECT status, analyzed_at, fingerprint, report_json FROM tracks WHERE id=?1",
+                params![track_id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            status, "filed",
+            "un rescan du fichier range ne doit pas le repasser en pending"
+        );
+        assert!(analyzed_at.is_some(), "analyzed_at ne doit pas etre efface");
+        assert!(fingerprint.is_some(), "fingerprint ne doit pas etre efface");
+        assert!(report.is_some(), "report_json ne doit pas etre efface");
+
+        let rows: i64 = conn
+            .query_row("SELECT count(*) FROM tracks", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(rows, 1, "aucune ligne parasite ne doit apparaitre");
+    }
+
+    /// Condition (c), cas rattrapable : entre le déplacement et la transaction, le watcher a inséré
+    /// une ligne `pending` pour le fichier à sa destination. C'est exactement la ligne parasite du
+    /// fichier que nous sommes en train de ranger — elle est évincée, le rangement passe.
+    #[test]
+    fn commit_file_evince_la_ligne_pending_concurrente_a_la_destination() {
+        let conn = db();
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("KEPT")).unwrap();
+        let source = dir.path().join("12 - vieux nom.aif");
+        let dest = dir
+            .path()
+            .join("KEPT")
+            .join("Artiste - Titre (Club Mix).aif");
+        let (source_s, dest_s) = (
+            source.to_str().unwrap().to_string(),
+            dest.to_str().unwrap().to_string(),
+        );
+        std::fs::write(&dest, vec![b'x'; 512]).unwrap(); // le fichier est déjà déplacé
+
+        conn.execute(
+            "INSERT INTO tracks(path, status) VALUES(?1, 'pending')",
+            params![source_s],
+        )
+        .unwrap();
+        let track_id = conn.last_insert_rowid();
+        // La ligne que le watcher vient de créer pour le fichier arrivé à destination.
+        conn.execute(
+            "INSERT INTO tracks(path, filename, status) VALUES(?1, 'Artiste - Titre (Club Mix).aif', 'pending')",
+            params![dest_s],
+        )
+        .unwrap();
+
+        let plan = commit_plan_stub(track_id, "b-collision", &source_s, &dest_s);
+        let log = vec![FsLog {
+            kind: "move",
+            from: source_s.clone(),
+            to: dest_s.clone(),
+            meta: None,
+        }];
+        commit_file(&conn, &plan, log, None, None)
+            .expect("une ligne pending concurrente ne doit pas faire echouer le rangement");
+
+        let (path, status): (String, String) = conn
+            .query_row(
+                "SELECT path, status FROM tracks WHERE id=?1",
+                params![track_id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(path, dest_s);
+        assert_eq!(status, "filed");
+        let rows: i64 = conn
+            .query_row("SELECT count(*) FROM tracks", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(rows, 1, "la ligne pending concurrente doit avoir disparu");
+    }
+
+    /// Condition (c), cas non rattrapable : une piste DÉJÀ RANGÉE occupe ce chemin. Ce n'est plus
+    /// une ligne parasite du watcher mais un vrai conflit métier — refus explicite, pas de
+    /// suppression silencieuse, pas de suffixe automatique. `rollback_fs` remet le fichier à sa
+    /// source.
+    #[test]
+    fn commit_file_refuse_une_destination_occupee_par_une_piste_rangee() {
+        let conn = db();
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(dir.path().join("KEPT")).unwrap();
+        let source = dir.path().join("12 - vieux nom.aif");
+        let dest = dir
+            .path()
+            .join("KEPT")
+            .join("Artiste - Titre (Club Mix).aif");
+        let (source_s, dest_s) = (
+            source.to_str().unwrap().to_string(),
+            dest.to_str().unwrap().to_string(),
+        );
+        std::fs::write(&dest, vec![b'x'; 512]).unwrap(); // le fichier est déjà déplacé
+
+        conn.execute(
+            "INSERT INTO tracks(path, status) VALUES(?1, 'pending')",
+            params![source_s],
+        )
+        .unwrap();
+        let track_id = conn.last_insert_rowid();
+        conn.execute(
+            "INSERT INTO tracks(path, status, folder) VALUES(?1, 'filed', 'House')",
+            params![dest_s],
+        )
+        .unwrap();
+
+        let plan = commit_plan_stub(track_id, "b-occupee", &source_s, &dest_s);
+        let log = vec![FsLog {
+            kind: "move",
+            from: source_s.clone(),
+            to: dest_s.clone(),
+            meta: None,
+        }];
+        let err = commit_file(&conn, &plan, log, None, None)
+            .expect_err("une piste deja rangee a ce chemin est un vrai conflit");
+        assert_eq!(err, FilingError::DestOccupied(dest_s.clone()));
+
+        // Le rangement a été défait : le fichier est revenu à sa source, la piste reste pending.
+        assert!(source.exists(), "rollback_fs doit ramener le fichier");
+        assert!(!dest.exists());
+        let (path, status): (String, String) = conn
+            .query_row(
+                "SELECT path, status FROM tracks WHERE id=?1",
+                params![track_id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(path, source_s);
+        assert_eq!(status, "pending");
+        let occupant: String = conn
+            .query_row(
+                "SELECT status FROM tracks WHERE path=?1",
+                params![dest_s],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(occupant, "filed", "l'occupant ne doit pas etre supprime");
     }
 
     #[test]

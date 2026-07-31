@@ -785,6 +785,16 @@ pub fn revert_batch(conn: &Connection, batch_id: &str) -> Result<(), RevertError
     };
     let track_id = rows.iter().find_map(|r| r.1);
 
+    // Chemin SOURCE de la piste, pour la restauration de `tracks.path` plus bas : le `from_path` de
+    // la ligne `move`/`convert` la PLUS ANCIENNE du lot (`rows` est trié id DESC, d'où le `.rev()`).
+    // C'est la seule copie du chemin d'origine une fois que `filing::commit_file` a repointé `path`
+    // sur la destination — le journal, lui, porte toujours les deux bouts.
+    let source_path: Option<String> = rows
+        .iter()
+        .rev()
+        .find(|(_, _, kind, _, _, _)| matches!(kind.as_str(), "move" | "convert"))
+        .and_then(|(_, _, _, from_path, _, _)| from_path.clone());
+
     // LIFO safety: refuse if a newer live action touches the same track outside this batch.
     if let Some(tid) = track_id {
         let newer: i64 = conn.query_row(
@@ -841,11 +851,56 @@ pub fn revert_batch(conn: &Connection, batch_id: &str) -> Result<(), RevertError
         .all(|(_, _, kind, _, _, _)| kind.as_str() == "tag_edit");
     if let Some(tid) = track_id {
         if !tag_only {
-            conn.execute(
-                "UPDATE tracks SET status='pending', folder=NULL, target_format=NULL, confidence=NULL
-                 WHERE id=?1",
-                params![tid],
-            )?;
+            match &source_path {
+                // Condition (a) du correctif « `path` suit le fichier » (voir le bloc INVARIANT de
+                // `filing::commit_file`) : le rangement a repointé `path`/`filename`/`size_bytes`/
+                // `mtime` sur la destination, et `revert_one_fs` vient de rendre le fichier à sa
+                // source. Sans ce retour, la piste annulée pointerait un fichier qui n'est plus là —
+                // le bug d'origine, en miroir.
+                Some(src) => {
+                    // Symétrique de la garde de collision de `commit_file` : le watcher a pu
+                    // ré-insérer une ligne `pending` au chemin source dès que `revert_one_fs` y a
+                    // remis le fichier, quelques microsecondes plus tôt. Sans cette éviction,
+                    // l'`UPDATE` violerait `UNIQUE(path)` et l'annulation échouerait ALORS QUE les
+                    // effets disque sont déjà défaits — l'état le plus difficile à rattraper.
+                    conn.execute(
+                        "DELETE FROM tracks WHERE path=?1 AND id<>?2 AND status='pending'",
+                        params![src, tid],
+                    )?;
+                    // Métadonnées relues sur le fichier RESTAURÉ (un converti n'a ni la taille ni la
+                    // date de son original). Illisible = on laisse les deux colonnes en l'état et on
+                    // journalise, mais `path` revient quand même : un `path` faux casse la lecture,
+                    // une taille périmée ne fait au pire que provoquer un rescan.
+                    let (size, mtime) = match std::fs::metadata(src) {
+                        Ok(m) => (Some(m.len() as i64), Some(crate::scanner::mtime_secs(&m))),
+                        Err(e) => {
+                            log::error!(
+                                "revert_batch {batch_id}: metadata({src}) illisible ({e}), size_bytes/mtime laisses inchanges pour la piste {tid}"
+                            );
+                            (None, None)
+                        }
+                    };
+                    let filename = std::path::Path::new(src)
+                        .file_name()
+                        .map(|n| n.to_string_lossy().into_owned());
+                    conn.execute(
+                        "UPDATE tracks SET status='pending', folder=NULL, target_format=NULL, confidence=NULL,
+                                path=?2, filename=COALESCE(?3, filename),
+                                size_bytes=COALESCE(?4, size_bytes), mtime=COALESCE(?5, mtime)
+                         WHERE id=?1",
+                        params![tid, src, filename, size, mtime],
+                    )?;
+                }
+                // Lot sans `move` ni `convert` (p. ex. un `trash` seul, journalisé par
+                // `filing::commit_trash`) : rien n'a jamais déplacé le fichier, `path` est déjà bon.
+                None => {
+                    conn.execute(
+                        "UPDATE tracks SET status='pending', folder=NULL, target_format=NULL, confidence=NULL
+                         WHERE id=?1",
+                        params![tid],
+                    )?;
+                }
+            }
             // A filed track went back to pending — the dashboard duplicate-count cache's
             // (COUNT, MAX(id)) key can miss this, so invalidate explicitly (R1 coordination).
             crate::library::invalidate_duplicate_count_cache();
