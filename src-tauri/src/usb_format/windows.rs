@@ -1,4 +1,5 @@
-//! Windows backend: enumerate removable disks via WMI (`Win32_DiskDrive`), format via a scripted
+//! Windows backend: enumerate removable disks via WMI — `MSFT_Disk` for the bus type,
+//! `Win32_DiskDrive`'s associations for the volume description — and format via a scripted
 //! `diskpart`.
 //!
 //! ⚠️ **`diskpart` does NOT lift the 32 GB FAT32 ceiling.** This module claimed it was "the only
@@ -24,65 +25,71 @@ use wmi::{Variant, WMIConnection};
 
 pub struct WindowsBackend;
 
+/// `MSFT_Disk.BusType` — a numeric enum, not a string to match. 7 is USB; 11 SATA, 17 NVMe on
+/// this machine.
+pub(crate) const BUS_TYPE_USB: u16 = 7;
+
 /// What the removable decision is made from. Kept free of WMI types so the decision itself is
 /// unit-testable with fabricated values, on any OS.
 pub(crate) struct RawDiskInfo {
-    pub interface_type: Option<String>,
-    /// One of this disk's logical drives is `%SystemDrive%` — the running Windows install.
+    /// From `MSFT_Disk`, NOT `Win32_DiskDrive.InterfaceType` — see `is_confidently_removable`.
+    pub bus_type: u16,
+    pub is_boot: bool,
+    pub is_system: bool,
+    /// Belt and braces on top of `is_boot`/`is_system`: one of this disk's logical drives is
+    /// `%SystemDrive%`.
     pub carries_system_volume: bool,
 }
 
-/// The bus is the positive signal; the system volume is the veto.
+/// The bus is the positive signal; anything system-bearing is the veto.
 ///
-/// The original filter also demanded `MediaType == "Removable Media"`, and that was a second
-/// reason nothing ever showed up: measured on this machine 2026-07-31, the only USB storage
-/// device present reports `MediaType = null`, and a USB SSD reports `"Fixed hard disk media"`.
-/// Both are legitimate things to format, both were silently excluded.
+/// Two earlier versions of this filter were wrong, both measured on real hardware 2026-07-31:
 ///
-/// `InterfaceType == "USB"` already rules out every internal SATA/NVMe/IDE disk on its own — it
-/// is a stronger signal than `MediaType`, not a weaker one. `carries_system_volume` covers the
-/// residual case of a Windows install running from a USB disk, which must never be offered.
+/// 1. `MediaType == "Removable Media"` — the card reader on this machine reports no MediaType at
+///    all, and an external SSD reports `"Fixed hard disk media"`.
+/// 2. `Win32_DiskDrive.InterfaceType == "USB"` — an SSK portable SSD, a real USB drive with a
+///    500 GB DJ library on it, reports `InterfaceType = "SCSI"`. UASP enclosures speak SCSI over
+///    USB, and `Win32_DiskDrive` reports the transport protocol rather than the bus. Its
+///    `PNPDeviceID` says `SCSI\DISK&VEN_SSK_SSD…` too, and the volume's `DriveType` says `Fixed`
+///    — every CIMV2 signal agrees, and all of them are wrong about the bus.
+///
+/// `MSFT_Disk.BusType` (root\Microsoft\Windows\Storage) is the one field that answers `USB`, and
+/// it is a number rather than a locale-sensitive string. `IsBoot`/`IsSystem` come from the same
+/// class and are a far stronger veto than comparing drive letters.
 pub(crate) fn is_confidently_removable(disk: &RawDiskInfo) -> bool {
-    let on_usb_bus = disk
-        .interface_type
-        .as_deref()
-        .is_some_and(|i| i.eq_ignore_ascii_case("USB"));
-    on_usb_bus && !disk.carries_system_volume
+    disk.bus_type == BUS_TYPE_USB && !disk.is_boot && !disk.is_system && !disk.carries_system_volume
 }
+
+/// `root\Microsoft\Windows\Storage` — the namespace `Get-Disk` reads. Not the default `ROOT\CIMV2`
+/// this backend's other queries use, so `list` opens two connections.
+pub(crate) const STORAGE_NAMESPACE: &str = "ROOT\\Microsoft\\Windows\\Storage";
 
 /// `rename` is load-bearing, not cosmetic: `WMIConnection::query()` builds `SELECT … FROM <name>`
 /// where `<name>` is the *serde* name of this struct (wmi 0.18.4, `query.rs` → `build_query` →
-/// `de::meta::struct_name_and_fields`). Without it the class queried is `Win32DiskDrive`, which
-/// does not exist, and every enumeration fails with `0x80041010` (`WBEM_E_INVALID_CLASS`) — the
-/// state this backend shipped in from M7 until 2026-07-31. The `raw_query` calls below use a
-/// literal class name, so they were never affected.
+/// `de::meta::struct_name_and_fields`). Without it the class queried is `MsftDisk`, which does not
+/// exist, and every enumeration fails with `0x80041010` (`WBEM_E_INVALID_CLASS`) — exactly the
+/// state the old `Win32DiskDrive` struct shipped in from M7 until 2026-07-31.
 /// Pinned by `typed_query_targets_the_real_wmi_class`.
 #[allow(non_snake_case)]
 #[derive(Deserialize, Debug)]
-#[serde(rename = "Win32_DiskDrive")]
-struct Win32DiskDrive {
-    Index: u32,
-    /// `\\.\PHYSICALDRIVE2` — the id `RemovableDrive.id` carries and `format` parses back.
-    DeviceID: String,
-    Model: Option<String>,
-    /// Read by `live_dump_what_this_machine_reports` only — deliberately NOT part of the filter
-    /// (see `is_confidently_removable`). Kept selected because it is the field the old filter got
-    /// wrong, so the diagnostic must be able to show what it actually says on a given machine.
-    #[allow(dead_code)]
-    MediaType: Option<String>,
-    InterfaceType: Option<String>,
-    // `Size` is CIM_UINT64. Even when WMI marshals it as a BSTR, wmi 0.18.4 normalizes it back to
-    // a number before serde sees it (`variant.rs`: `CIM_UINT64 => Variant::UI8(s.parse()?)`), so
-    // `u64` is right in both marshalling paths and `String` is right in neither — it shipped as
-    // `Option<String>` from M7 and failed with `invalid type: integer`, hidden until 2026-07-31
-    // behind the class-name bug above, which failed earlier in the same call.
+#[serde(rename = "MSFT_Disk")]
+struct MsftDisk {
+    /// Same numbering as `Win32_DiskDrive.Index`, so it keys both the `\\.\PHYSICALDRIVEn` path
+    /// and the CIMV2 association queries that describe the disk's volumes.
+    Number: u32,
+    /// `"SSK SSD Portable SSD"` — cleaner than `Win32_DiskDrive.Model`, which appends the
+    /// transport (`"… SCSI Disk Device"`).
+    FriendlyName: Option<String>,
+    BusType: u16,
     Size: Option<u64>,
-    /// Frequently junk on USB bridges — measured 2026-07-31, the card reader on this machine
-    /// reports `"+"`. Never used alone as an identity anchor; see `disk_identity`.
+    /// `Option` rather than `bool` so a disk WMI cannot describe is vetoed instead of defaulting
+    /// to "safe to erase" — see how `list` unwraps these.
+    IsBoot: Option<bool>,
+    IsSystem: Option<bool>,
+    /// Real here where CIMV2's was junk: `"SSKPSSD0000000000012"` against `Win32_DiskDrive`'s
+    /// `"+"` for the same class of device.
     SerialNumber: Option<String>,
-    /// `USBSTOR\DISK&VEN_…&PROD_…\7&2615ADB3&0` — always present, structured, and what Windows
-    /// itself uses to identify a device instance.
-    PNPDeviceID: Option<String>,
+    UniqueId: Option<String>,
 }
 
 /// WQL object paths take the DeviceID **verbatim**: `\\.\PHYSICALDRIVE2`, backslashes NOT
@@ -135,23 +142,22 @@ pub(crate) fn describe_filesystem(facts: &VolumeFacts) -> String {
 /// Anti-race anchor, re-read from a fresh listing immediately before formatting. Composite on
 /// purpose: no single field survives every case.
 ///
-/// - `PNPDeviceID` is always present and unique per device instance, but for a key with no
-///   hardware serial its tail is derived from the USB port — swap two serial-less keys in the
-///   same port and it repeats.
+/// - `MSFT_Disk.UniqueId` is always present, but not always device-specific: an SSK enclosure
+///   measured 2026-07-31 reports `5000000000000001`, a value its firmware clearly makes up.
 /// - `SerialNumber` is often junk (`"+"` on this machine's card reader) or absent.
 /// - Volume serials change whenever the disk is reformatted, but a RAW disk has none.
 ///
 /// Together they catch every swap the old volume-serial-only anchor caught, plus the RAW case it
 /// could not represent at all. Opaque to the frontend — it round-trips the string, never parses it.
 pub(crate) fn disk_identity(
-    pnp_device_id: Option<&str>,
+    unique_id: Option<&str>,
     hardware_serial: Option<&str>,
     size_bytes: u64,
     volume_serials: &[String],
 ) -> String {
-    let pnp = pnp_device_id.unwrap_or("").trim();
+    let uid = unique_id.unwrap_or("").trim();
     let hw = hardware_serial.unwrap_or("").trim();
-    format!("{pnp}|{hw}|{size_bytes}|{}", volume_serials.join(","))
+    format!("{uid}|{hw}|{size_bytes}|{}", volume_serials.join(","))
 }
 
 /// `\\.\PHYSICALDRIVE2` -> `2`. Returns `None` on anything else, and the caller MUST treat that
@@ -278,59 +284,67 @@ impl WindowsBackend {
 
 impl RemovableDriveBackend for WindowsBackend {
     fn list(&self) -> Result<Vec<RemovableDrive>, UsbFormatError> {
-        let wmi_con = WMIConnection::new()
+        // Two namespaces: the bus type only exists in the Storage one, the volume description only
+        // in CIMV2.
+        let storage = WMIConnection::with_namespace_path(STORAGE_NAMESPACE).map_err(|e| {
+            UsbFormatError::Enumeration(format!("WMIConnection({STORAGE_NAMESPACE}): {e}"))
+        })?;
+        let cimv2 = WMIConnection::new()
             .map_err(|e| UsbFormatError::Enumeration(format!("WMIConnection::new: {e}")))?;
 
-        let disks: Vec<Win32DiskDrive> = wmi_con
+        let disks: Vec<MsftDisk> = storage
             .query()
-            .map_err(|e| UsbFormatError::Enumeration(format!("Win32_DiskDrive query: {e}")))?;
+            .map_err(|e| UsbFormatError::Enumeration(format!("MSFT_Disk query: {e}")))?;
 
         // `%SystemDrive%` rather than a hardcoded "C:" — a Windows install is not guaranteed to
-        // live on C:, and the veto below is the only thing standing between `diskpart clean` and
-        // the running system.
+        // live on C:, and these vetoes are what stand between `diskpart clean` and a disk the user
+        // cannot afford to lose.
         let system_drive = std::env::var("SystemDrive").unwrap_or_else(|_| "C:".to_string());
 
         let mut drives = Vec::new();
         for disk in disks {
-            // Volumes are read BEFORE the filter because the system-volume veto is derived from
-            // them. Cheap: three WMI calls per disk, on a list that is single digits long.
-            let facts = Self::volume_facts(&wmi_con, disk.Index);
+            // Volumes are read BEFORE the filter because one veto is derived from them. Cheap:
+            // a few WMI calls per disk, on a list that is single digits long.
+            let facts = Self::volume_facts(&cimv2, disk.Number);
             let carries_system_volume = facts
                 .letters
                 .iter()
                 .any(|l| l.eq_ignore_ascii_case(&system_drive));
 
             let raw = RawDiskInfo {
-                interface_type: disk.InterfaceType.clone(),
+                bus_type: disk.BusType,
+                // A disk WMI will not vouch for is treated as system-bearing, never as free to
+                // erase: the safe default for an irreversible action is to refuse.
+                is_boot: disk.IsBoot.unwrap_or(true),
+                is_system: disk.IsSystem.unwrap_or(true),
                 carries_system_volume,
             };
             if !is_confidently_removable(&raw) {
                 continue;
             }
 
-            // `Win32_DiskDrive.Size` is null on some USB bridges (measured 2026-07-31: a card
-            // reader reports Model and InterfaceType but neither MediaType nor Size). Falling back
-            // to the summed volume size keeps the row from reading "0.0 Go", which the UI would
-            // otherwise show as a plausible-looking lie.
+            // Falling back to the summed volume size keeps a row from reading "0.0 Go", which the
+            // UI would otherwise show as a plausible-looking lie.
             let size_bytes = disk.Size.unwrap_or(facts.total_size);
-            // WMI reports no size at all for an empty card-reader slot (measured 2026-07-31:
-            // `Size = None`, matching `Get-Disk`'s `OperationalStatus: No Media`). A disk holding
-            // real media always reports its capacity, formatted or not — a RAW key included.
+            // An empty card-reader slot reports no capacity (measured 2026-07-31, matching
+            // `Get-Disk`'s `OperationalStatus: No Media`). A disk holding real media always
+            // reports its capacity, formatted or not — a RAW key included.
             let has_media = size_bytes > 0;
+            let id = format!(r"\\.\PHYSICALDRIVE{}", disk.Number);
 
             drives.push(RemovableDrive {
-                id: disk.DeviceID.clone(),
-                label: disk.Model.clone().unwrap_or_else(|| disk.DeviceID.clone()),
+                label: disk.FriendlyName.clone().unwrap_or_else(|| id.clone()),
                 mount: facts.letters.join(", "),
                 size_bytes,
                 current_fs: describe_filesystem(&facts),
                 has_media,
                 identity: disk_identity(
-                    disk.PNPDeviceID.as_deref(),
+                    disk.UniqueId.as_deref(),
                     disk.SerialNumber.as_deref(),
                     size_bytes,
                     &facts.serials,
                 ),
+                id,
             });
         }
 
@@ -413,9 +427,9 @@ mod tests {
     /// fails on any CI box.
     #[test]
     fn typed_query_targets_the_real_wmi_class() {
-        let q = wmi::build_query::<Win32DiskDrive>(None).expect("build_query");
+        let q = wmi::build_query::<MsftDisk>(None).expect("build_query");
         assert!(
-            q.contains("FROM Win32_DiskDrive"),
+            q.contains("FROM MSFT_Disk"),
             "typed query must name the real WMI class, got: {q}"
         );
     }
@@ -436,55 +450,69 @@ mod tests {
         );
     }
 
-    #[test]
-    fn usb_bus_disk_is_included() {
-        assert!(is_confidently_removable(&RawDiskInfo {
-            interface_type: Some("USB".to_string()),
+    fn usb_disk() -> RawDiskInfo {
+        RawDiskInfo {
+            bus_type: BUS_TYPE_USB,
+            is_boot: false,
+            is_system: false,
             carries_system_volume: false,
-        }));
-    }
-
-    /// The regression that made this whole screen useless: the card reader measured on this
-    /// machine reports no MediaType at all, and a USB SSD reports "Fixed hard disk media".
-    /// Neither may be excluded on that basis — the bus is what decides.
-    #[test]
-    fn usb_bus_disk_is_included_whatever_the_media_type_says() {
-        // MediaType is not even an input any more; this test exists to state that on purpose.
-        assert!(is_confidently_removable(&RawDiskInfo {
-            interface_type: Some("USB".to_string()),
-            carries_system_volume: false,
-        }));
-    }
-
-    #[test]
-    fn internal_bus_disk_is_excluded() {
-        for iface in ["IDE", "SCSI", "SATA", "NVMe"] {
-            assert!(
-                !is_confidently_removable(&RawDiskInfo {
-                    interface_type: Some(iface.to_string()),
-                    carries_system_volume: false,
-                }),
-                "{iface} must never be offered"
-            );
         }
     }
 
     #[test]
-    fn missing_interface_type_is_excluded() {
-        assert!(!is_confidently_removable(&RawDiskInfo {
-            interface_type: None,
-            carries_system_volume: false,
+    fn usb_bus_disk_is_included() {
+        assert!(is_confidently_removable(&usb_disk()));
+    }
+
+    /// The exact device this filter was rewritten for: an SSK portable SSD holding a 500 GB DJ
+    /// library. Every CIMV2 signal says it is not removable — `InterfaceType = "SCSI"`,
+    /// `PNPDeviceID` starting `SCSI\`, volume `DriveType = Fixed`, `MediaType = "External hard
+    /// disk media"` — because a UASP enclosure speaks SCSI over USB. `MSFT_Disk.BusType` is the
+    /// only field that answers USB, and this test exists so nobody "simplifies" back to the
+    /// CIMV2 ones.
+    #[test]
+    fn uasp_enclosure_is_included_even_though_cimv2_calls_it_scsi() {
+        assert!(is_confidently_removable(&RawDiskInfo {
+            bus_type: BUS_TYPE_USB,
+            ..usb_disk()
         }));
     }
 
-    /// A Windows install running from a USB disk is on the USB bus like any key. The veto is the
-    /// only thing between `diskpart clean` and the running system.
+    /// SATA (11) and NVMe (17) as measured on this machine, plus the neighbours most likely to be
+    /// confused with USB.
     #[test]
-    fn usb_disk_carrying_the_system_volume_is_excluded() {
-        assert!(!is_confidently_removable(&RawDiskInfo {
-            interface_type: Some("USB".to_string()),
-            carries_system_volume: true,
-        }));
+    fn internal_bus_disk_is_excluded() {
+        for bus in [0u16, 1, 3, 8, 10, 11, 17] {
+            assert!(
+                !is_confidently_removable(&RawDiskInfo {
+                    bus_type: bus,
+                    ..usb_disk()
+                }),
+                "bus type {bus} must never be offered"
+            );
+        }
+    }
+
+    /// A Windows install running from a USB disk is on the USB bus like any key. These vetoes are
+    /// what stand between `diskpart clean` and a disk the user cannot afford to lose.
+    #[test]
+    fn usb_disk_that_carries_the_system_is_excluded_by_every_veto() {
+        for veto in [
+            RawDiskInfo {
+                is_boot: true,
+                ..usb_disk()
+            },
+            RawDiskInfo {
+                is_system: true,
+                ..usb_disk()
+            },
+            RawDiskInfo {
+                carries_system_volume: true,
+                ..usb_disk()
+            },
+        ] {
+            assert!(!is_confidently_removable(&veto));
+        }
     }
 
     #[test]
@@ -626,33 +654,54 @@ mod tests {
     #[test]
     #[ignore]
     fn live_dump_what_this_machine_reports() {
-        let con = WMIConnection::new().expect("WMIConnection::new");
-        let disks: Vec<Win32DiskDrive> = con.query().expect("Win32_DiskDrive query");
+        let storage = WMIConnection::with_namespace_path(STORAGE_NAMESPACE).expect("storage ns");
+        let cimv2 = WMIConnection::new().expect("WMIConnection::new");
+        let disks: Vec<MsftDisk> = storage.query().expect("MSFT_Disk query");
         let system_drive = std::env::var("SystemDrive").unwrap_or_else(|_| "C:".to_string());
         println!(
             "--- {} disque(s), SystemDrive={system_drive} ---",
             disks.len()
         );
         for disk in &disks {
-            let facts = WindowsBackend::volume_facts(&con, disk.Index);
+            let facts = WindowsBackend::volume_facts(&cimv2, disk.Number);
             let carries_system_volume = facts
                 .letters
                 .iter()
                 .any(|l| l.eq_ignore_ascii_case(&system_drive));
             let raw = RawDiskInfo {
-                interface_type: disk.InterfaceType.clone(),
+                bus_type: disk.BusType,
+                is_boot: disk.IsBoot.unwrap_or(true),
+                is_system: disk.IsSystem.unwrap_or(true),
                 carries_system_volume,
             };
             println!(
-                "disk {} model={:?} media={:?} iface={:?} size={:?} pnp={:?} sn={:?}",
-                disk.Index,
-                disk.Model,
-                disk.MediaType,
-                disk.InterfaceType,
+                "disk {} name={:?} bus={} size={:?} boot={:?} system={:?} sn={:?} uid={:?}",
+                disk.Number,
+                disk.FriendlyName,
+                disk.BusType,
                 disk.Size,
-                disk.PNPDeviceID,
-                disk.SerialNumber
+                disk.IsBoot,
+                disk.IsSystem,
+                disk.SerialNumber,
+                disk.UniqueId
             );
+            // The CIMV2 view of the same disk, side by side — this is where a UASP enclosure
+            // reveals itself as "SCSI" and where the old filter went wrong.
+            let cimv2_view: Vec<HashMap<String, Variant>> = cimv2
+                .raw_query(format!(
+                    "SELECT InterfaceType, MediaType, PNPDeviceID FROM Win32_DiskDrive \
+                     WHERE Index = {}",
+                    disk.Number
+                ))
+                .unwrap_or_default();
+            for v in &cimv2_view {
+                println!(
+                    "    CIMV2: iface={:?} media={:?} pnp={:?}",
+                    v.get("InterfaceType"),
+                    v.get("MediaType"),
+                    v.get("PNPDeviceID")
+                );
+            }
             println!(
                 "    volumes={:?} fs={:?} serials={:?} => offert={}",
                 facts.letters,
