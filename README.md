@@ -24,16 +24,21 @@
 | **M8 — Écriture directe `master.db` Rekordbox** | ✅ **fait** — Tier 1 (réparation de chemins), Tier 2 (dédoublonnage playlists), Tier 3 (synchro métadonnées + pochette), chaîne de sûreté backup/vérif round-trip/rollback, vérifié contre une vraie bibliothèque (2828 pistes, 2026-07-12) (`rekordbox_masterdb.rs`, `rekordbox_repairs.rs`, `ipc_library.rs`) |
 
 Scope V1 restant (décidé au brainstorm) : diffusion —
-**auto-update Tauri ✅ fait** (2026-07-24, gratuit, sans certificat OS — voir
-`docs/superpowers/changes/2026-07-24-auto-update/design.md`, vérifié en
+**auto-update Tauri ✅ fait** (2026-07-24, gratuit, sans certificat OS, vérifié en
 conditions réelles sur `v0.0.1`/`v0.0.2`) ; code-signing Windows +
 notarization macOS + site **différés** (budget) — `.github/workflows/build.yml`
 build encore des installeurs non signés, contournement documenté dans
 [`docs/install-non-signe.md`](docs/install-non-signe.md).
 
 La maquette UI/UX d'origine vit dans `index.html` + `frontend/` (migrée comme shell frontend
-de l'app). Le découpage complet et les décisions de cadrage : [`docs/plan-implementation.md`](docs/plan-implementation.md).
-Le plan détaillé de M0 : [`docs/superpowers/plans/2026-06-12-m0-scaffolding.md`](docs/superpowers/plans/2026-06-12-m0-scaffolding.md).
+de l'app).
+
+Les documents de planification et de session (plans de jalons, specs, revues, comptes rendus)
+ne sont plus suivis par git depuis le 2026-07-31 : ils décrivaient un état que le code a
+dépassé, et un contributeur ne pouvait pas savoir lesquels faisaient encore autorité. Ils
+restent lisibles dans l'historique du dépôt, qui n'a pas été réécrit. Ce qui fait autorité
+aujourd'hui : ce `README.md` pour l'état, `CLAUDE.md` pour les conventions, et les sources
+de vérité vivantes listées dans [`docs/`](docs/).
 
 ## Pile technique
 

@@ -116,8 +116,27 @@ cibler la bonne section via `Read offset=<L>`, plutôt que tout lire.
 `docs/design-system-states.md` — même règle, retiré du `@import` le 2026-07-09.
 Sommaire en tête de fichier, cibler la section avant de lire.
 
+## docs/ — liste blanche depuis le 2026-07-31 (issue #5)
+
+`.gitignore` ignore le CONTENU de `docs/` et ne ré-autorise que ce qui fait
+autorité : `install-non-signe.md` (lié depuis le README), `design-system-states.md`,
+`ressources-externes.md`, `design-system/`, `skills/`, et le seul dossier
+`superpowers/changes/` encore ouvert. Tout le reste — plans de jalons, specs,
+revues, comptes rendus de session, captures, `INDEX.json` — reste **sur cette
+machine** mais n'est plus suivi par git.
+
+Conséquences, à connaître avant de citer un chemin sous `docs/` :
+- Les références à `docs/superpowers/...` qui subsistent plus bas dans ce fichier
+  restent valables ICI et introuvables dans un clone frais. Elles pointent des
+  artefacts réels, non versionnés — ne pas les « réparer » en les supprimant, et
+  ne pas les citer à un lecteur externe.
+- L'historique git n'a pas été réécrit : tout reste récupérable par `git log --`.
+- Un nouveau document sous `docs/` est ignoré PAR DÉFAUT. Pour en publier un, il
+  faut ajouter sa négation au `.gitignore` dans le même geste — c'est voulu :
+  la liste noire précédente laissait repasser tout fichier neuf, cause du problème.
+
 ## Index des documents docs/
-`docs/INDEX.json` — À LIRE À LA DEMANDE (Read tool) quand tu cherches le statut
+`docs/INDEX.json` (local, non versionné) — À LIRE À LA DEMANDE (Read tool) quand tu cherches le statut
 d'un chantier/plan spécifique, PAS importé automatiquement. L'import `@` qui
 vivait ici collait tout le JSON dans le contexte de CHAQUE session, y compris
 celles qui ne touchent jamais `docs/` : **71 378 octets mesurés le 2026-07-29**,

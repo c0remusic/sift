@@ -55,6 +55,34 @@ skills-lock.json
 
 .superpowers/
 
+# docs/ = artefacts de travail par DÉFAUT, publication en LISTE BLANCHE (issue #5,
+# 2026-07-31). Les plans de jalons, specs, revues, comptes rendus de session et
+# captures de mise au point restent sur la machine mais sortent du suivi : ils
+# décrivaient un état que le code a dépassé, et rien ne signalait lesquels
+# faisaient encore autorité. L'historique n'est PAS réécrit — tout reste
+# récupérable par `git log --`.
+#
+# `docs/*` exclut le CONTENU et non le DOSSIER : Git peut alors redescendre dedans
+# et les négations ci-dessous fonctionnent vraiment — même piège que `.claude/`,
+# corrigé le 2026-07-28 plus haut dans ce fichier.
+#
+# Une liste NOIRE laissait repasser tout fichier neuf par défaut : c'était la cause
+# du problème. Publier un nouveau document sous `docs/` demande donc d'ajouter sa
+# négation ICI, dans le même geste. C'est voulu.
+docs/*
+!docs/install-non-signe.md
+!docs/design-system-states.md
+!docs/ressources-externes.md
+!docs/design-system/
+!docs/skills/
+# Seul chantier encore ouvert (PRD §5.3 non tranché) : il faut rouvrir chaque
+# niveau, Git ne descend pas dans un dossier exclu.
+!docs/superpowers/
+docs/superpowers/*
+!docs/superpowers/changes/
+docs/superpowers/changes/*
+!docs/superpowers/changes/2026-07-27-perf-fixes/
+
 # scratch/test copies (may contain real Rekordbox master.db, never committed)
 scratchpad/
 scratchpad-verif/
