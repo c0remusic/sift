@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Faille de sécurité
+    url: https://github.com/c0remusic/sift/security/advisories/new
+    about: N'ouvrez pas d'issue publique. Passez par le signalement privé.
+  - name: Problème d'installation sur un binaire non signé
+    url: https://github.com/c0remusic/sift/blob/main/docs/install-non-signe.md
+    about: Les avertissements Windows et macOS à l'installation sont connus et documentés.

@@ -1,0 +1,70 @@
+name: Rapport de bug
+description: Quelque chose ne marche pas comme prévu
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Merci de prendre le temps. Un bug reproductible est la contribution la
+        plus utile au projet.
+
+        **Pour une faille de sécurité, n'utilisez pas ce formulaire** — voir
+        [SECURITY.md](../blob/main/SECURITY.md).
+
+  - type: textarea
+    id: quoi
+    attributes:
+      label: Ce qui se passe
+      description: Ce que vous avez fait, et ce que l'application a fait à la place de ce que vous attendiez.
+      placeholder: |
+        J'ai rangé une piste depuis mon dossier de téléchargement.
+        Elle a disparu de la Bibliothèque au lieu d'y apparaître.
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduire
+    attributes:
+      label: Comment le reproduire
+      description: Les étapes, dans l'ordre. Si vous ne savez pas le reproduire, dites-le — c'est une information en soi.
+      placeholder: |
+        1. Ajouter une source pointant vers D:\Telechargements
+        2. Ouvrir la Revue, choisir une piste
+        3. Cliquer Ranger vers la racine de bibliothèque
+    validations:
+      required: true
+
+  - type: input
+    id: fichier
+    attributes:
+      label: Le fichier concerné
+      description: Format, extension, provenance. Beaucoup de bugs tiennent au conteneur ou à l'encodage.
+      placeholder: "MP3 320 kbps renommé en .flac, téléchargé via Soulseek"
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: Système
+      options:
+        - Windows
+        - macOS
+    validations:
+      required: true
+
+  - type: input
+    id: version
+    attributes:
+      label: Version de Sift
+      description: Visible dans Réglages. Si vous compilez depuis les sources, donnez le hash du commit.
+    validations:
+      required: true
+
+  - type: textarea
+    id: journal
+    attributes:
+      label: Journal
+      description: |
+        Utile mais facultatif. Windows : `%LOCALAPPDATA%\com.sift.app\logs`.
+        macOS : `~/Library/Logs/com.sift.app`.
+        **Relisez avant de coller** — les journaux contiennent des chemins de fichiers.
+      render: text

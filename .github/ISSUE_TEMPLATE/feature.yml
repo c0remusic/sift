@@ -1,0 +1,34 @@
+name: Proposition
+description: Suggérer un comportement ou une amélioration
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Sift a un périmètre volontairement étroit : préparer une bibliothèque
+        pour du DJing, en un geste par morceau. Une proposition qui l'élargit
+        peut être refusée pour cette seule raison — ce n'est pas un jugement
+        sur son intérêt.
+
+  - type: textarea
+    id: probleme
+    attributes:
+      label: Le problème que ça résout
+      description: Décrivez la situation, pas la solution. Ce qui vous ralentit ou vous fait douter aujourd'hui.
+      placeholder: |
+        Quand je reçois 40 fichiers d'un coup, je ne sais pas lesquels sont
+        déjà dans ma bibliothèque avant de les avoir tous écoutés.
+    validations:
+      required: true
+
+  - type: textarea
+    id: solution
+    attributes:
+      label: Ce que vous imaginez
+      description: Facultatif. Si vous avez une idée précise du comportement, décrivez-la.
+
+  - type: textarea
+    id: contournement
+    attributes:
+      label: Comment vous faites aujourd'hui
+      description: Le contournement actuel, même mauvais. Il dit beaucoup sur l'urgence réelle.
