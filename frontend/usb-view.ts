@@ -5,7 +5,8 @@
 import { listRemovableDrives } from "./ipc";
 import type { RemovableDrive } from "./ipc";
 import { requireEl, esc } from "./dom";
-import { openUsbFormatModal, driveDisplayName } from "./usb-format-modal";
+import { openUsbFormatModal } from "./usb-format-modal";
+import { usbRowHtml } from "./usb-row";
 
 /** Holds the currently-attached `sift:usb-format-done` window listener, if any, so `renderUsbLive()`
  * can remove it before attaching a new one. Without this, every re-render of the screen (each nav
@@ -47,9 +48,13 @@ export function renderUsbLive(): void {
   usbBlock.className = "sift-settings-card sift-ui-card-soft sift-ui-card-soft-pad";
   usbBlock.innerHTML =
     '<div class="sift-settings-title">Formater une clé USB</div>' +
-    '<div class="sift-settings-desc">Formate un disque amovible en FAT32 (contourne la limite ' +
-    "32 Go de l'assistant Windows) ou exFAT. Seuls les disques amovibles sont proposés — " +
-    "aucun disque interne n'apparaît ici.</div>" +
+    // Ne promet plus de "contourner la limite 32 Go de l'assistant Windows" : c'était faux, la
+    // limite est dans le pilote de formatage et diskpart la subit comme l'explorateur (vérifié
+    // 2026-07-31). La modale refuse déjà FAT32 au-delà — laisser les deux textes se contredire
+    // serait pire que l'un ou l'autre.
+    '<div class="sift-settings-desc">Formate un disque amovible en exFAT, ou en FAT32 jusqu\'à ' +
+    "32 Go — au-delà, Windows ne sait pas créer de volume FAT32. Seuls les disques amovibles " +
+    "sont proposés — aucun disque interne n'apparaît ici.</div>" +
     '<div id="sift-usb-list" class="sift-usb-list"></div>' +
     '<div class="sift-settings-subactions"><button id="sift-usb-refresh" class="sift-settings-btn sift-settings-btn-quiet">Actualiser la liste</button></div>';
 
@@ -85,20 +90,7 @@ export function renderUsbLive(): void {
     for (const d of drives) {
       const row = document.createElement("div");
       row.className = "sift-usb-row";
-      const sizeGb = (d.size_bytes / 1_000_000_000).toFixed(1);
-      // A reader with no card inserted is a real, listed device with nothing in it. Say that
-      // instead of offering a Formater button that diskpart can only refuse.
-      const meta = d.has_media
-        ? `${esc(d.label || "Disque amovible")} · ${sizeGb} Go · ${esc(d.current_fs)}`
-        : `${esc(d.label || "Lecteur amovible")} · aucun média inséré`;
-      row.innerHTML =
-        '<div class="sift-usb-row-info">' +
-        `<span class="sift-usb-row-id">${esc(driveDisplayName(d))}</span>` +
-        `<span class="sift-usb-row-meta">${meta}</span>` +
-        "</div>" +
-        (d.has_media
-          ? '<button type="button" class="sift-settings-btn" data-usb-format>Formater…</button>'
-          : "");
+      row.innerHTML = usbRowHtml(d);
       row.querySelector("[data-usb-format]")?.addEventListener("click", () => {
         openUsbFormatModal(d);
       });

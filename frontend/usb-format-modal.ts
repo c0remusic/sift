@@ -12,6 +12,7 @@
 import { DRIVE_VANISHED, ELEVATION_DECLINED, IDENTITY_MISMATCH } from "../shared/contracts";
 import { esc } from "./dom";
 import { formatDrive, type RemovableDrive, type TargetFs } from "./ipc";
+import { driveDisplayName } from "./usb-row";
 
 const CONFIRM_REARM_MS = 400; // mirrors sift-live.ts's batch-confirm floor (see BATCH_CONFIRM_THRESHOLD)
 
@@ -22,15 +23,6 @@ const CONFIRM_REARM_MS = 400; // mirrors sift-live.ts's batch-confirm floor (see
  * confirmation, so the choice is refused up front instead. */
 const FAT32_MAX_BYTES = 32 * 1024 ** 3;
 
-/** What the user calls this disk. `drive.id` became a physical-disk path (`\\.\PHYSICALDRIVE2`,
- * `/dev/disk4`) on 2026-07-31 so that unformatted keys could be listed at all — correct for the
- * backend, but not something to read on a row or retype into a confirmation box. Prefer the drive
- * letter; a disk with no mounted volume has none, so fall back to its number. */
-export function driveDisplayName(drive: RemovableDrive): string {
-  if (drive.mount) return drive.mount;
-  const n = /(?:PHYSICALDRIVE|disk)(\d+)/i.exec(drive.id)?.[1];
-  return n ? `Disque ${n}` : drive.id;
-}
 
 export function openUsbFormatModal(drive: RemovableDrive): void {
   document.getElementById("sift-usbfmt-overlay")?.remove();
