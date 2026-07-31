@@ -1,6 +1,14 @@
 //! Windows backend: enumerate removable disks via WMI (`Win32_DiskDrive`), format via a scripted
 //! `diskpart`.
 //!
+//! ⚠️ **`diskpart` does NOT lift the 32 GB FAT32 ceiling.** This module claimed it was "the only
+//! CLI path that formats FAT32 past the 32 GB ceiling the GUI imposes" — that is false, and so is
+//! the promise the Clé USB screen still shows the user. The limit lives in the Windows format
+//! driver, shared by `format.com`, `diskpart` and the Explorer dialog alike; a 64 GB key answers
+//! `format fs=fat32` with "The volume is too big for FAT32". Delivering FAT32 on a modern DJ key
+//! needs either a bundled third-party formatter (the route Rufus takes) or our own FAT32 writer —
+//! an open product decision, not something to paper over here.
+//!
 //! **Enumerates physical disks, not volumes.** It used to walk `Win32_DiskDrive` ->
 //! `Win32_DiskPartition` -> `Win32_LogicalDisk` and emit one entry per *mounted volume*, dropping
 //! any disk with no partition or no `VolumeSerialNumber`. That excluded a brand-new, RAW or

@@ -15,6 +15,13 @@ import { formatDrive, type RemovableDrive, type TargetFs } from "./ipc";
 
 const CONFIRM_REARM_MS = 400; // mirrors sift-live.ts's batch-confirm floor (see BATCH_CONFIRM_THRESHOLD)
 
+/** Windows refuses to *create* a FAT32 volume above 32 GiB. The limit is in the format driver, so
+ * `format.com`, the Explorer dialog and the `diskpart` script this screen runs all hit it alike —
+ * the backend's claim that diskpart "bypasses the 32 GB ceiling" was wrong (verified 2026-07-31).
+ * A 64 GB key would just fail with "The volume is too big for FAT32" after the user typed the
+ * confirmation, so the choice is refused up front instead. */
+const FAT32_MAX_BYTES = 32 * 1024 ** 3;
+
 /** What the user calls this disk. `drive.id` became a physical-disk path (`\\.\PHYSICALDRIVE2`,
  * `/dev/disk4`) on 2026-07-31 so that unformatted keys could be listed at all — correct for the
  * backend, but not something to read on a row or retype into a confirmation box. Prefer the drive
@@ -77,6 +84,10 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
   // display name (drive letter, or disk number when the key is unformatted) is what distinguishes
   // them, and unlike the raw `\\.\PHYSICALDRIVE2` it is retypable.
   const confirmWord = drive.label ? `${drive.label} (${displayName})` : displayName;
+  /** True when the currently-selected filesystem cannot be created on this disk at all. Read by
+   * every place that computes the confirm button's `disabled`, so arming is impossible rather
+   * than merely discouraged. */
+  const impossible = () => fs === "fat32" && drive.size_bytes > FAT32_MAX_BYTES;
 
   function render() {
     card.innerHTML =
@@ -107,6 +118,12 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
       (fs === "ex_fat"
         ? '<div class="sift-usbfmt-exfat-warning">exFAT n\'est pas garanti compatible avec tous ' +
           "les CDJ/contrôleurs DJ. FAT32 reste le choix le plus sûr pour un usage club.</div>"
+        : "") +
+      (impossible()
+        ? '<div class="sift-usbfmt-error">Windows ne sait pas créer un volume FAT32 au-delà de ' +
+          "32 Go, et ce disque fait " +
+          sizeGb +
+          " Go. Choisis exFAT, ou formate cette clé avec un outil tiers.</div>"
         : "") +
       '<div class="sift-usbfmt-typerow">' +
       '<label for="sift-usbfmt-typed">Tape <code>' +
@@ -146,7 +163,7 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
           typedAfter.value = typedBefore;
           typedOk = typedBefore.trim() === confirmWord;
           const confirmBtnAfter = card.querySelector<HTMLButtonElement>("#sift-usbfmt-confirm");
-          if (confirmBtnAfter) confirmBtnAfter.disabled = !typedOk || busy || fatal;
+          if (confirmBtnAfter) confirmBtnAfter.disabled = !typedOk || busy || fatal || impossible();
         }
       }),
     );
@@ -155,7 +172,7 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
     const confirmBtn = card.querySelector<HTMLButtonElement>("#sift-usbfmt-confirm");
     typed?.addEventListener("input", () => {
       typedOk = typed.value.trim() === confirmWord;
-      if (confirmBtn) confirmBtn.disabled = !typedOk || busy || fatal;
+      if (confirmBtn) confirmBtn.disabled = !typedOk || busy || fatal || impossible();
       // Not re-rendered here (no render() call — only the disabled attribute is touched), but
       // clears the stale error for whenever the next render() does happen (e.g. re-arming).
       lastError = null;
@@ -169,7 +186,9 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
     });
 
     confirmBtn?.addEventListener("click", () => {
-      if (!typedOk || busy) return;
+      // `impossible()` again, not just on the disabled attribute: a synthetic click has already
+      // walked through a guard in this WebView2 setup once (CLAUDE.md § Méthode).
+      if (!typedOk || busy || impossible()) return;
       if (!armedAt || Date.now() - armedAt < CONFIRM_REARM_MS) {
         // First click (or a suspiciously-fast repeat of a stale one): arm, don't format yet.
         armedAt = Date.now();
