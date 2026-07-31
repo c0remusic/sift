@@ -22,7 +22,8 @@ Pas un projet de systems-programming, pas une lib publiée, pas un service async
 - **Edition 2021** (`src-tauri/Cargo.toml:8`). Modules plats par domaine (voir
   `CLAUDE.md` racine pour la liste), pas un workspace multi-crate.
 - **MSRV : NON MESURÉE.** `src-tauri/Cargo.toml:9` déclare
-  `rust-version = "1.77.2"`, mais `src-tauri/rust-toolchain.toml` épingle le
+  `rust-version = "1.77.2"`, mais `rust-toolchain.toml` **à la racine du dépôt**
+  (pas dans `src-tauri/`, où il n'existe pas — vérifié le 2026-07-31) épingle le
   canal `1.96.0` depuis le 2026-07-28 : plus personne ne compile à la version
   déclarée, et rien — ni la CI ni un job dédié — ne la vérifie. Ce fichier
   affirmait « MSRV 1.77.2 » sous un titre « vérifiée, pas supposée » ; c'était
