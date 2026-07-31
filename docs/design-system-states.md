@@ -1388,3 +1388,38 @@ fois atterrie sur main. Après un nettoyage volontaire de dette, rejouer
 fichier baseline mis à jour pour verrouiller le gain — un worktree agent
 présent au moment du calcul double silencieusement chaque compte (piège vécu
 2026-07-24, voir historique).
+
+---
+
+## Ligne disque amovible (écran Clé USB) — trois états (2026-07-31)
+
+Story : `frontend/usb-drive-row.stories.ts`. Rendu par `usbRowHtml()`
+(`frontend/usb-row.ts`), la fonction que `renderUsbList()` appelle elle-même —
+pas une copie du markup.
+
+Deux de ces trois états **ne pouvaient pas exister avant cette date** :
+l'énumération partait du volume logique, donc un disque sans volume monté ne
+sortait jamais de `list_removable_drives`. Elle part maintenant du disque
+physique (`usb_format::windows`).
+
+| État | Ce qu'affiche la ligne | Bouton |
+|---|---|---|
+| Formatée et montée | Lettre (`E:`) · modèle · taille · système de fichiers | `Formater…` |
+| Non formatée / RAW | `Disque N` (aucune lettre à afficher) · modèle · taille · « non formaté » | `Formater…` |
+| Sans média | `Disque N` · modèle · « aucun média inséré » | **aucun** |
+
+L'identifiant affiché vient de `driveDisplayName()` : `RemovableDrive.id` est
+devenu un chemin de disque physique (`\.\PHYSICALDRIVE2`), illisible sur une
+ligne et impossible à retaper dans la confirmation de la modale.
+
+**« Sans média » est listé exprès, pas masqué.** Un lecteur de cartes vide garde
+sa lettre dans l'explorateur Windows indéfiniment : afficher « aucun disque
+amovible détecté » pendant que l'explorateur montre un lecteur USB est une
+contradiction que l'utilisateur ne peut pas résoudre. Le vide de la liste porte
+la même explication.
+
+Modale de formatage, état ajouté le même jour : FAT32 refusé au-delà de 32 Gio
+(`.sift-usbfmt-error`, sévérité `danger` déjà couverte par
+`error-pattern.stories.ts`). Windows ne sait pas créer de volume FAT32 plus
+grand — `diskpart` subit la limite comme l'explorateur, contrairement à ce que
+le module et le texte de l'écran affirmaient tous les deux.
