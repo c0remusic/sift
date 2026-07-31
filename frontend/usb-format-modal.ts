@@ -9,7 +9,7 @@
 //   2. A timestamped armed/confirmed cycle on the final button itself, same family as
 //      BATCH_CONFIRM_THRESHOLD/batchConfirmArmed (sift-live.ts) — rejects a double-click/
 //      duplicate event landing right after the button enables.
-import { DRIVE_VANISHED, IDENTITY_MISMATCH } from "../shared/contracts";
+import { DRIVE_VANISHED, ELEVATION_DECLINED, IDENTITY_MISMATCH } from "../shared/contracts";
 import { esc } from "./dom";
 import { formatDrive, type RemovableDrive, type TargetFs } from "./ipc";
 
@@ -221,8 +221,11 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
             : raw.includes(DRIVE_VANISHED)
               ? "Le disque a été débranché avant que le formatage ne commence. Rien n'a été " +
                 "formaté. Rebranche-le et resélectionne-le dans la liste."
-              : /access|denied|permission/i.test(raw)
-                ? "Accès refusé — ferme tout programme utilisant ce disque et réessaie."
+              : raw.includes(ELEVATION_DECLINED)
+                ? "Windows demande une autorisation administrateur pour formater un disque, et " +
+                  "elle a été refusée. Rien n'a été formaté — relance et accepte l'invite."
+                : /access|denied|permission/i.test(raw)
+                  ? "Accès refusé — ferme tout programme utilisant ce disque et réessaie."
                 : /not found|no such|introuvable/i.test(raw)
                   ? "Disque introuvable — a-t-il été débranché pendant le formatage ?"
                   : "Échec du formatage. Vérifie que le disque est bien branché et réessaie.";

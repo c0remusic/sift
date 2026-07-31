@@ -69,6 +69,8 @@ pub enum UsbFormatError {
     Enumeration(String),
     /// Backend-specific format failure (diskpart/diskutil exited non-zero or errored).
     Format(String),
+    /// The user dismissed the OS elevation prompt. Nothing was touched.
+    ElevationDeclined,
 }
 
 /// Le disque attendu n'est plus branché. Sentinelle traversant l'IPC — miroir de
@@ -80,6 +82,13 @@ pub const DRIVE_VANISHED: &str = "DRIVE_VANISHED";
 /// irréversible : c'est la sentinelle qui doit interdire le « réessaie », pas l'inviter.
 pub const IDENTITY_MISMATCH: &str = "IDENTITY_MISMATCH";
 
+/// L'utilisateur a fermé l'invite d'élévation Windows (UAC). Même contrat de miroir. Formater un
+/// disque exige les droits administrateur — `diskpart` refuse même `list disk` depuis un process
+/// utilisateur normal (mesuré le 2026-07-31) — donc Sift demande l'élévation pour cette seule
+/// opération. Refuser est un choix délibéré, pas une panne : rien n'a été touché, et le message
+/// doit le dire au lieu d'accuser le disque.
+pub const ELEVATION_DECLINED: &str = "ELEVATION_DECLINED";
+
 impl std::fmt::Display for UsbFormatError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -87,6 +96,7 @@ impl std::fmt::Display for UsbFormatError {
             UsbFormatError::IdentityMismatch => write!(f, "{IDENTITY_MISMATCH}"),
             UsbFormatError::Enumeration(m) => write!(f, "enumeration: {m}"),
             UsbFormatError::Format(m) => write!(f, "format: {m}"),
+            UsbFormatError::ElevationDeclined => write!(f, "{ELEVATION_DECLINED}"),
         }
     }
 }
@@ -125,7 +135,7 @@ mod tests {
 
     #[test]
     fn usb_format_sentinels_match_contracts_ts() {
-        for sentinel in [DRIVE_VANISHED, IDENTITY_MISMATCH] {
+        for sentinel in [DRIVE_VANISHED, IDENTITY_MISMATCH, ELEVATION_DECLINED] {
             let expected = format!("\"{sentinel}\"");
             assert!(
                 CONTRACTS_TS.contains(&expected),
@@ -142,6 +152,10 @@ mod tests {
         assert_eq!(
             UsbFormatError::IdentityMismatch.to_string(),
             IDENTITY_MISMATCH
+        );
+        assert_eq!(
+            UsbFormatError::ElevationDeclined.to_string(),
+            ELEVATION_DECLINED
         );
     }
 

@@ -176,6 +176,43 @@ pub(crate) fn diskpart_script(disk_index: u32, fs: TargetFs) -> String {
     )
 }
 
+/// `ERROR_CANCELLED`. What Windows reports when the user dismisses the UAC prompt; reused as the
+/// exit code of the PowerShell shim below so the two outcomes stay distinguishable.
+pub(crate) const UAC_DECLINED_EXIT: i32 = 1223;
+
+/// `diskpart` cannot run from a normal user process at all — measured 2026-07-31, even a
+/// read-only `list disk` fails with "L'opération demandée nécessite une élévation" before the
+/// process starts. Sift is not elevated, so `Command::new("diskpart")` was failing at
+/// `CreateProcess` every single time: the format has never been able to run since M7.
+///
+/// Formatting a disk requires administrator rights on Windows, full stop. The app therefore asks
+/// for elevation for this one operation (the way Disk Management does) rather than running
+/// elevated for its whole life. `Start-Process -Verb RunAs` is what raises the UAC prompt from a
+/// non-elevated parent.
+///
+/// The nested `cmd /c … > log 2>&1` is not decoration: `-Verb RunAs` cannot redirect the elevated
+/// child's stdout, so without it diskpart's own diagnosis (the FAT32-too-big message, "no media",
+/// an access error) would be lost and every failure would read the same.
+///
+/// Refuses paths containing a quote instead of escaping them — these are our own tempfile paths,
+/// so a quote means something is wrong upstream, and a mis-escaped path here is a command
+/// injection into an *elevated* shell.
+pub(crate) fn elevation_powershell(script_path: &str, log_path: &str) -> Option<String> {
+    if [script_path, log_path]
+        .iter()
+        .any(|p| p.contains('\'') || p.contains('"'))
+    {
+        return None;
+    }
+    Some(format!(
+        "$ErrorActionPreference='Stop'; \
+         try {{ $p = Start-Process -FilePath cmd.exe \
+         -ArgumentList '/c',\"diskpart /s \\\"{script_path}\\\" > \\\"{log_path}\\\" 2>&1\" \
+         -Verb RunAs -Wait -PassThru -WindowStyle Hidden; exit $p.ExitCode }} \
+         catch {{ exit {UAC_DECLINED_EXIT} }}"
+    ))
+}
+
 fn variant_to_u64(v: Option<&Variant>) -> Option<u64> {
     match v {
         Some(Variant::UI8(n)) => Some(*n),
@@ -316,21 +353,49 @@ impl RemovableDriveBackend for WindowsBackend {
             .map_err(|e| UsbFormatError::Format(format!("tempfile: {e}")))?;
         tmp.write_all(script.as_bytes())
             .map_err(|e| UsbFormatError::Format(format!("write script: {e}")))?;
-        let script_path = tmp.path().to_path_buf();
+        // `into_temp_path` closes our handle while keeping the file (and its delete-on-drop): the
+        // elevated diskpart runs as a different process and must be able to open both paths.
+        let script_path = tmp.into_temp_path();
+        let log_path = tempfile::Builder::new()
+            .suffix(".log")
+            .tempfile()
+            .map_err(|e| UsbFormatError::Format(format!("tempfile: {e}")))?
+            .into_temp_path();
 
-        let output = Command::new("diskpart")
-            .arg("/s")
-            .arg(&script_path)
+        let ps = elevation_powershell(&script_path.to_string_lossy(), &log_path.to_string_lossy())
+            .ok_or_else(|| {
+                UsbFormatError::Format(
+                    "chemin temporaire contenant un guillemet — formatage refusé".to_string(),
+                )
+            })?;
+
+        let output = Command::new("powershell")
+            .args(["-NoProfile", "-Command", &ps])
             .output()
-            .map_err(|e| UsbFormatError::Format(format!("spawn diskpart: {e}")))?;
+            .map_err(|e| UsbFormatError::Format(format!("spawn powershell: {e}")))?;
 
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            let stdout = String::from_utf8_lossy(&output.stdout);
+        let code = output.status.code().unwrap_or(-1);
+        if code == UAC_DECLINED_EXIT {
+            return Err(UsbFormatError::ElevationDeclined);
+        }
+        // diskpart's own words, captured through the `cmd /c … > log` shim. Without them every
+        // failure — volume too big for FAT32, no media, disk write-protected — reads the same.
+        let diagnosis = std::fs::read_to_string(&log_path).unwrap_or_else(|e| {
+            log::error!("usb_format: could not read diskpart log: {e}");
+            String::new()
+        });
+        if code != 0 {
             return Err(UsbFormatError::Format(format!(
-                "diskpart exited with {:?}: {stdout} {stderr}",
-                output.status.code()
+                "diskpart exited with {code}: {}",
+                diagnosis.trim()
             )));
+        }
+        // diskpart can exit 0 having refused a step it printed an error for, so the log is checked
+        // even on success — a silent no-op that reports success is worse than a loud failure.
+        if diagnosis.contains("DiskPart has encountered an error")
+            || diagnosis.contains("DiskPart a rencontré une erreur")
+        {
+            return Err(UsbFormatError::Format(diagnosis.trim().to_string()));
         }
 
         Ok(())
@@ -513,6 +578,45 @@ mod tests {
         let b = disk_identity(Some("USBSTOR\\DISK&B\\7&2"), None, 8_000_000_000, &[]);
         assert_ne!(a, b);
         assert!(!a.trim_matches('|').is_empty());
+    }
+
+    #[test]
+    fn elevation_shim_asks_for_uac_and_keeps_diskpart_output() {
+        let ps = elevation_powershell(r"C:\tmp\s.txt", r"C:\tmp\o.log").expect("shim");
+        assert!(
+            ps.contains("-Verb RunAs"),
+            "must raise the UAC prompt: {ps}"
+        );
+        assert!(
+            ps.contains("-Wait"),
+            "returning before diskpart finished would report success too early: {ps}"
+        );
+        assert!(
+            ps.contains(r"diskpart /s"),
+            "diskpart must still run the script: {ps}"
+        );
+        assert!(
+            ps.contains("o.log") && ps.contains("2>&1"),
+            "-Verb RunAs cannot redirect the child; the cmd shim is what keeps the diagnosis: {ps}"
+        );
+        assert!(
+            ps.contains(&UAC_DECLINED_EXIT.to_string()),
+            "a declined prompt must be distinguishable from a failure: {ps}"
+        );
+    }
+
+    /// These are our own tempfile paths, so a quote means something is wrong upstream — and a
+    /// mis-escaped one is a command injection into a shell that is about to be *elevated*.
+    #[test]
+    fn elevation_shim_refuses_quoted_paths() {
+        assert_eq!(
+            elevation_powershell(r"C:\tmp\a'b.txt", r"C:\tmp\o.log"),
+            None
+        );
+        assert_eq!(
+            elevation_powershell(r"C:\tmp\s.txt", "C:\\tmp\\o\".log"),
+            None
+        );
     }
 
     /// Live probe against this machine's real WMI. `--ignored` — it reports whatever is

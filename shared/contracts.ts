@@ -30,6 +30,13 @@ export const DRIVE_VANISHED = "DRIVE_VANISHED";
  * irreversible, so this is the one error the UI must never answer with "try again". */
 export const IDENTITY_MISMATCH = "IDENTITY_MISMATCH";
 
+/** `format_drive` refused: the user dismissed the Windows elevation (UAC) prompt. Mirror of Rust
+ * `usb_format::ELEVATION_DECLINED`. Formatting a disk requires administrator rights on every OS —
+ * `diskpart` refuses even `list disk` from a normal user process — so Sift asks for elevation for
+ * this one operation. Declining is a deliberate user choice, not a fault: nothing was touched, and
+ * the UI must say so rather than blame the drive. */
+export const ELEVATION_DECLINED = "ELEVATION_DECLINED";
+
 /** Default filename template — the value `filename_template` holds until the user changes it.
  * Mirror of Rust `settings::DEFAULT_TEMPLATE`; the two literals MUST stay identical, held by
  * `filing.rs::default_template_matches_contracts_ts`. Placeholders, and there are only these
