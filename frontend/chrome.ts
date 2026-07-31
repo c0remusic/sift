@@ -130,8 +130,8 @@ export function injectLeanStyle() {
   st.textContent =
     // landing/demo copy in index.html: marketing pitch, demo disclaimer, feature cards row
     ".pitch,.sub,.frow{display:none!important}" +
-    // Rekordbox/Clé USB nav items: wired to a real (simulated) export task in sift-live.ts
-    // (runNavExport) as of 2026-07-02 — no longer hidden.
+    // Rekordbox/Clé USB nav items: both have real screens now — no longer hidden. Rekordbox since
+    // 2026-07-02 (rekordbox-view.ts), Clé USB since 2026-07-31 (usb-view.ts).
     // Revue's batch mode + "traités" toggle ARE wired for real now (2026-07-08:
     // ensureReviewSeg()/ensureQueueDoneToggle() in sift-live.ts) — just under different DOM
     // (data-sift="reviewmode", #sift-qdone-toggle) than app.js's own mock attributes below, which

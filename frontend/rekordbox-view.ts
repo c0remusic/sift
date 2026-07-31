@@ -655,8 +655,8 @@ export async function renderRekordboxLive(): Promise<void> {
  *  from sift-live.ts's installLiveWiring click handler (Phase 1, tranche 1a) — this state already
  *  lived here, the dispatch logic follows it. Returns true if it handled `act` (caller must stop
  *  processing), false otherwise so the caller's chain can continue to non-Rekordbox actions.
- *  `onReexport` is injected because the actual XML export (`runNavExport`) also serves the USB nav
- *  icon and stays in sift-live.ts — this avoids a reverse import back into sift-live.ts. */
+ *  `onReexport` is injected because the actual XML export (`runNavExport`) stays in sift-live.ts —
+ *  this avoids a reverse import back into sift-live.ts. */
 export function handleRekordboxAction(
   el: HTMLElement,
   act: string,

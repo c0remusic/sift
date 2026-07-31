@@ -26,6 +26,7 @@ import { renderHomeSources, dismissRootGate } from "./home-sources";
 import { installDragDrop, injectLeanStyle, injectTitlebar, installScrollAutohide, installNavKeyboard } from "./chrome";
 import { initTheme } from "./theme";
 import { renderReglagesLive } from "./reglages-view";
+import { renderUsbLive } from "./usb-view";
 import { requireEl } from "./dom";
 import { toast } from "./filing-toast";
 import { humanizeError } from "./errors";
@@ -104,8 +105,8 @@ let exportRunning = false;
 
 /** Rekordbox export (real merge+rewrite via `export_rekordbox_xml`, called from the Rekordbox
  * page's "Réexporter maintenant" button — see renderRekordboxLive). The "Clé USB" nav item no
- * longer routes here (finding F5, audit-heuristique-visuel.md) — it now navigates straight to
- * the real "Formater une clé USB" card in Réglages instead of showing a dead-end explainer. */
+ * longer routes here (finding F5, audit-heuristique-visuel.md) — it has its own screen since
+ * 2026-07-31 (`usb-view.ts`). */
 async function runNavExport(): Promise<void> {
   if (exportRunning) return; // one export run at a time
   exportRunning = true;
@@ -176,6 +177,7 @@ export function installLiveWiring() {
   window.__siftBiblio = () => void renderBiblioLive();
   window.__siftJournal = () => void renderJournal();
   window.__siftRkb = () => void renderRekordboxLive();
+  window.__siftCle = () => renderUsbLive();
   injectLeanStyle();
   void injectTitlebar();
   void initTheme();
@@ -186,29 +188,11 @@ export function installLiveWiring() {
   installNavKeyboard();
   void installDragDrop();
 
-  // Nav "Clé USB" has no screen of its own — the real "Formater une clé USB" card lives inside
-  // Réglages (reglages-view.ts, #sift-reglages-usb). Capture phase so this runs BEFORE app.js's
-  // own bubble-phase `#pa` listener (registered first, at import time) can switch `view` to its
-  // mock screen; stopPropagation() during capture halts that path. Instead of the previous
-  // dead-end explainer toast (finding F5, audit-heuristique-visuel.md), redirect the click to the
-  // real Réglages nav item so app.js's normal router takes over, then scroll the USB card into
-  // view once it's rendered.
-  requireEl("#pa", "installLiveWiring").addEventListener(
-    "click",
-    (e) => {
-      const exp = (e.target as HTMLElement).closest<HTMLElement>('[data-view="cle"]');
-      if (!exp) return;
-      e.stopPropagation();
-      const reglagesNav = document.querySelector<HTMLElement>('[data-view="reglages"]');
-      reglagesNav?.click();
-      requestAnimationFrame(() => {
-        requestAnimationFrame(() => {
-          document.getElementById("sift-reglages-usb")?.scrollIntoView({ block: "start" });
-        });
-      });
-    },
-    { capture: true },
-  );
+  // Nav "Clé USB" (`data-view="cle"`) needs no special handling: app.js's own router renders the
+  // screen and `window.__siftCle` above swaps in the live content. It used to be intercepted here
+  // in the capture phase and redirected to Réglages, where the format card then lived — the nav
+  // item lit up "Réglages" and landed on a page about something else. Both the interception and the
+  // card moved out on 2026-07-31 (`usb-view.ts`).
 
   /** Retry analysis for a single stuck-unanalysed track. The in-flight spinner is driven through
    *  queue-panel's shared reanalyzingIds state (begin/endReanalyze), NOT by mutating the clicked
@@ -570,5 +554,6 @@ declare global {
     __siftBiblio?: () => void;
     __siftJournal?: () => void;
     __siftRkb?: () => void;
+    __siftCle?: () => void;
   }
 }

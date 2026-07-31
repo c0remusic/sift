@@ -355,7 +355,17 @@ function openLink(u){window.open(u,'_blank','noopener');}
   }
 
   function renderCle(){block();
+    // Live (Tauri): window.__siftCle() below (renderUsbLive) hides every child except ".h1" and
+    // injects the real removable-disk list — the mock volumes (USB DJ, SSD Samsung T7) and its
+    // fake confirm field are a wasted render immediately hidden. Same guard as the other render*
+    // functions above. Title is the nav label ("Clé USB"), not "Formater la clé": the screen now
+    // owns everything USB, not just the format action.
+    if(!('__TAURI_INTERNALS__' in window)){
     content.innerHTML='<div class="h1">Formater la clé</div><div style="display:flex;gap:8px;align-items:flex-start;background:var(--color-background-warning);border-radius:var(--border-radius-md);padding:9px 12px;margin-bottom:14px;font-size:11px;color:var(--color-text-warning)"><i class="ti ti-alert-triangle" style="font-size:15px;flex:none"></i><span>Volumes <strong>amovibles uniquement</strong> — le formatage <strong>efface tout</strong>.</span></div><div class="col-h">Volume</div><div class="srow"><span class="v"><i class="ti ti-usb"></i> USB DJ — 28 Go <span style="color:var(--color-text-tertiary)">(FAT32)</span></span><i class="ti ti-circle-check" style="color:var(--color-text-info);font-size:16px"></i></div><div class="srow"><span class="v"><i class="ti ti-usb"></i> SSD Samsung T7 — 500 Go <span style="color:var(--color-text-tertiary)">(exFAT)</span></span><i class="ti ti-circle" style="color:var(--color-text-tertiary);font-size:16px"></i></div><div class="col-h" style="margin-top:14px">Format</div><div style="display:flex;gap:8px;margin-bottom:14px"><span class="chip on">FAT32 — compat tous CDJ</span><span class="chip">exFAT — CDJ récents</span></div><div style="display:flex;align-items:center;gap:9px"><div style="flex:1;border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:6px 10px;font-size:12px;color:var(--color-text-tertiary)">tape « USB DJ » pour confirmer</div><button style="color:var(--color-text-danger);border-color:var(--color-border-danger)">Formater</button></div>';
+    } else {
+      content.innerHTML='<div class="h1">Clé USB</div>';
+    }
+    if(window.__siftCle)window.__siftCle();
   }
 
   function renderReglages(){block();

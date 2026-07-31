@@ -3,21 +3,13 @@
 // god-module after ecartes-view.ts/home-sources.ts/journal.ts were split out.
 // Self-contained: unlike Bibliothèque/Rekordbox, no state here is mutated from
 // installLiveWiring's delegated click handler, so no cross-module state wiring is needed.
-import { getSetting, setSetting, openUrl, listRemovableDrives, previewFilename } from "./ipc";
-import type { RemovableDrive } from "./ipc";
+import { getSetting, setSetting, openUrl, previewFilename } from "./ipc";
 import { DEFAULT_FILENAME_TEMPLATE } from "../shared/contracts";
 import type { Canonical } from "../shared/contracts";
 import { requireEl, esc } from "./dom";
-import { openUsbFormatModal } from "./usb-format-modal";
 import { setTheme } from "./theme";
 import type { ThemeChoice } from "./theme";
 import { open as openFolderDialog } from "@tauri-apps/plugin-dialog";
-
-/** Holds the currently-attached `sift:usb-format-done` window listener, if any, so
- * `renderReglagesLive()` can remove it before attaching a new one. Without this, every re-render
- * of Réglages (each nav visit to the screen) piles up another listener on `window` — unlike DOM
- * nodes, a `window` listener has no parent to disappear with, so it accumulates forever. */
-let usbFormatDoneHandler: (() => void) | null = null;
 
 /** Live Réglages view: a single scrolling page of real cards (Discogs, Bibliothèque, Apparence),
  * replacing the mockup's static placeholder rows (Dossiers source, Format lossless…), which have
@@ -327,64 +319,9 @@ export async function renderReglagesLive() {
     }),
   );
 
-  // M7: "Formater une clé USB" card — same card family as Discogs/Bibliothèque/Apparence
-  // above. Backend-side conservative filter means this list only ever shows removable disks
-  // (see usb_format::windows/macos) — no client-side re-filtering needed here.
-  const usbBlock = document.createElement("div");
-  usbBlock.id = "sift-reglages-usb";
-  usbBlock.dataset.section = "usb";
-  usbBlock.className = "sift-settings-card sift-settings-list-row";
-  usbBlock.innerHTML =
-    '<div class="sift-settings-title">Formater une clé USB</div>' +
-    '<div class="sift-settings-desc">Formate un disque amovible en FAT32 (contourne la limite ' +
-    "32 Go de l'assistant Windows) ou exFAT. Seuls les disques amovibles sont proposés — " +
-    "aucun disque interne n'apparaît ici.</div>" +
-    '<div id="sift-usb-list" class="sift-usb-list"></div>' +
-    '<div class="sift-settings-subactions"><button id="sift-usb-refresh" class="sift-settings-btn sift-settings-btn-quiet">Actualiser la liste</button></div>';
-
-  async function renderUsbList() {
-    const listEl = usbBlock.querySelector<HTMLElement>("#sift-usb-list");
-    if (!listEl) return;
-    listEl.innerHTML = '<div class="sift-usb-empty">Recherche des disques amovibles…</div>';
-    let drives: RemovableDrive[] = [];
-    try {
-      drives = await listRemovableDrives();
-    } catch (e) {
-      console.error("listRemovableDrives failed", e);
-      listEl.innerHTML = '<div class="sift-usb-empty">Impossible de lister les disques amovibles.</div>';
-      return;
-    }
-    if (!drives.length) {
-      listEl.innerHTML = '<div class="sift-usb-empty">Aucun disque amovible détecté.</div>';
-      return;
-    }
-    listEl.innerHTML = "";
-    for (const d of drives) {
-      const row = document.createElement("div");
-      row.className = "sift-usb-row";
-      const sizeGb = (d.size_bytes / 1_000_000_000).toFixed(1);
-      row.innerHTML =
-        '<div class="sift-usb-row-info">' +
-        `<span class="sift-usb-row-id">${esc(d.id)}</span>` +
-        `<span class="sift-usb-row-meta">${esc(d.label || "Disque amovible")} · ${sizeGb} Go · ${esc(d.current_fs)}</span>` +
-        "</div>" +
-        '<button type="button" class="sift-settings-btn" data-usb-format>Formater…</button>';
-      row.querySelector("[data-usb-format]")?.addEventListener("click", () => {
-        openUsbFormatModal(d);
-      });
-      listEl.appendChild(row);
-    }
-  }
-
-  usbBlock
-    .querySelector("#sift-usb-refresh")
-    ?.addEventListener("click", () => void renderUsbList());
-  if (usbFormatDoneHandler) {
-    window.removeEventListener("sift:usb-format-done", usbFormatDoneHandler);
-  }
-  usbFormatDoneHandler = () => void renderUsbList();
-  window.addEventListener("sift:usb-format-done", usbFormatDoneHandler);
-  void renderUsbList();
+  // NB : la carte « Formater une clé USB » a quitté cet écran le 2026-07-31 — elle est le contenu
+  // de l'onglet Clé USB (`usb-view.ts`), qui a désormais son propre écran. Ne pas la réintroduire
+  // ici : tout ce qui touche la clé USB vit dans cet onglet, une seule source.
 
   // Single wrapper: only #sift-reglages-live is removed/recreated per render (see the
   // 2026-07-04 fix), so every settings card — present or future — must build inside `wrap`
@@ -404,7 +341,6 @@ export async function renderReglagesLive() {
   // Après Bibliothèque : le modèle décrit comment nommer DANS la racine qu'elle définit.
   list.appendChild(tplBlock);
   list.appendChild(themeBlock);
-  list.appendChild(usbBlock);
   wrap.appendChild(list);
   content.appendChild(wrap);
   positionThemeThumb(); // now attached to the live DOM — offsetWidth/offsetLeft resolve correctly
