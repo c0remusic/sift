@@ -4,10 +4,14 @@ paths: ["src-tauri/**"]
 
 # Audit Rust — override projet Sift
 
-Chargé par `auditor.md` EN PLUS du module global `~/.claude/rules/audit/rust.md`,
-jamais à sa place. Le global porte le savoir générique du langage ; ce fichier
-ne porte QUE les spécificités vérifiées de Sift qui précisent ou relâchent le
-générique. Source : contenu spécifique déplacé depuis l'ex-agent
+⚠️ **Ce fichier est devenu autonome, et c'est une perte.** Il était écrit pour se
+charger via `~/.claude/agents/auditor.md` EN PLUS du module global
+`~/.claude/rules/audit/rust.md` — les deux ont été supprimés par le reset vanilla
+de `~/.claude` du 2026-07-31 (commit `6f6c132`, récupérables au tag
+`pre-reset-vanilla`). Il ne porte QUE les spécificités de Sift qui précisent ou
+relâchent un générique Rust **qui n'est plus chargé nulle part** : lu seul, il
+sous-couvre. Le lire comme un complément, pas comme la règle Rust complète.
+Source : contenu spécifique déplacé depuis l'ex-agent
 `dj-assistant-m6a/.claude/agents/rust-engineer.md`.
 
 Cible : backend Sift (`src-tauri/`, crate `sift_lib`) — app desktop Tauri v2.

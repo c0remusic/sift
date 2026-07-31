@@ -5,8 +5,11 @@
 # Packs de contexte (sizing) — Sift
 
 Menus de 3-8 fichiers par type de tâche (l'orchestrateur choisit, ne colle pas
-tout). Concept de sizing dans `~/.claude/CLAUDE.md` § Sizing (+ templates
-skill `sizing-templates`). Migré depuis l'ex-`docs/skills-registre.md`
+tout). ⚠️ La définition du sizing vivait dans `~/.claude/CLAUDE.md` § Sizing (+
+skill `sizing-templates`) : **supprimés** par le reset vanilla du 2026-07-31
+(récupérables au tag `pre-reset-vanilla`). Les packs ci-dessous restent valables
+tels quels ; il n'y a simplement plus de doctrine générale derrière.
+Migré depuis l'ex-`docs/skills-registre.md`
 (supprimé 2026-07-16). Chemins vérifiés sur disque à la migration.
 
 ## Pack UI live
@@ -42,8 +45,11 @@ skill `sizing-templates`). Migré depuis l'ex-`docs/skills-registre.md`
 
 - `docs/INDEX.json`.
 - Spec/plan cible.
-- Ce fichier (`context-packs.md`) si routage de packs ; `~/.claude/skills-view.md`
-  si routage de skills (remplace l'ex-`docs/skills-registre.md`).
+- Ce fichier (`context-packs.md`) si routage de packs. ⚠️ Pour le routage de
+  skills il n'y a plus d'inventaire : `~/.claude/skills-view.md` a été **supprimé**
+  par le reset vanilla du 2026-07-31 (récupérable au tag `pre-reset-vanilla`),
+  comme l'ex-`docs/skills-registre.md` qu'il remplaçait. S'en tenir aux skills
+  réellement listées par le harnais.
 - Pas de lecture large de `frontend/` ou `src-tauri/` sauf question précise.
 
 ## Pack review adverse
