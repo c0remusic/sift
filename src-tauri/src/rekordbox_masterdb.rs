@@ -2969,4 +2969,47 @@ mod tests {
             "PASS: sync_track_artwork round-trips cleanly on real master.db copy, artwork restored"
         );
     }
+
+    /// Mesure du coût fixe d'une ouverture de `master.db` : la dérivation de clés SQLCipher v4,
+    /// soit `KDF_ITER` = 256 000 itérations PBKDF2-HMAC-SHA512, plus les 2 itérations du HMAC.
+    ///
+    /// Ce chiffre est la MESURE PRÉALABLE exigée par le PRD perf-fixes §5.3 avant d'engager la
+    /// tranche « un cycle master.db par lot au lieu d'un par ligne » : le gain de la tranche vaut
+    /// exactement ce coût multiplié par le nombre de lignes évitées, et cette tranche est la seule
+    /// qui change la sémantique transactionnelle d'écriture dans le fichier d'une application
+    /// tierce — elle ne se paie que si le chiffre la justifie.
+    ///
+    /// N'ouvre AUCUN fichier : la dérivation ne dépend que de la passphrase et du sel, jamais de la
+    /// taille de la base. Aucun contact avec un `master.db` réel, donc rien à protéger ici.
+    ///
+    /// `#[ignore]` et à lancer EN RELEASE — en debug, PBKDF2 est dominé par le coût du profil de
+    /// compilation et le chiffre ne veut rien dire :
+    /// `cargo test --release --manifest-path src-tauri/Cargo.toml -- --ignored --nocapture bench_derive_keys`
+    #[ignore = "bench a la demande, a lancer en --release"]
+    #[test]
+    fn bench_derive_keys_cout_fixe_par_ouverture() {
+        let passphrase = deobfuscate_key().expect("passphrase");
+        let salt = [0x42u8; SALT_LEN];
+
+        // Un tour à blanc : il absorbe le premier remplissage de cache et la mise en route du
+        // prédicteur, qui feraient porter à la première mesure un coût qu'aucune ouverture réelle
+        // ne paie deux fois.
+        let _ = derive_keys(&passphrase, &salt);
+
+        const RUNS: u32 = 5;
+        let mut total = std::time::Duration::ZERO;
+        let mut worst = std::time::Duration::ZERO;
+        for _ in 0..RUNS {
+            let t0 = std::time::Instant::now();
+            let _ = derive_keys(&passphrase, &salt);
+            let dt = t0.elapsed();
+            total += dt;
+            worst = worst.max(dt);
+        }
+
+        println!(
+            "derive_keys: {} iterations PBKDF2-HMAC-SHA512 (+{} HMAC) | moyenne {:?} sur {RUNS} tours | pire {:?}",
+            KDF_ITER, HMAC_KDF_ITER, total / RUNS, worst
+        );
+    }
 }

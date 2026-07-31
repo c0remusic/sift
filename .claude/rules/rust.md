@@ -15,8 +15,20 @@ Pas un projet de systems-programming, pas une lib publiée, pas un service async
 
 ## Forme réelle du code (vérifiée, pas supposée)
 
-- **MSRV 1.77.2, edition 2021.** Modules plats par domaine (voir `CLAUDE.md`
-  racine pour la liste), pas un workspace multi-crate.
+- **Edition 2021** (`src-tauri/Cargo.toml:8`). Modules plats par domaine (voir
+  `CLAUDE.md` racine pour la liste), pas un workspace multi-crate.
+- **MSRV : NON MESURÉE.** `src-tauri/Cargo.toml:9` déclare
+  `rust-version = "1.77.2"`, mais `src-tauri/rust-toolchain.toml` épingle le
+  canal `1.96.0` depuis le 2026-07-28 : plus personne ne compile à la version
+  déclarée, et rien — ni la CI ni un job dédié — ne la vérifie. Ce fichier
+  affirmait « MSRV 1.77.2 » sous un titre « vérifiée, pas supposée » ; c'était
+  faux, et contradictoire avec le `CLAUDE.md` racine qui dit « à re-mesurer ».
+  Ne pas traiter 1.77.2 comme une contrainte tant qu'un build réel ne l'a pas
+  rétablie. Ce qui l'établirait, au choix : `cargo +1.77.2 check` sur un
+  toolchain réellement installé, ou `cargo msrv find` (le crate `cargo-msrv`
+  n'est pas installé sur cette machine — le vérifier avant de le prescrire).
+  Le jour où le chiffre est rétabli, il se réécrit ICI et dans le `CLAUDE.md`
+  racine dans le même geste, jamais dans un seul des deux.
 - **Sync, aucun runtime async.** Ni `tokio` ni `async-std` dans l'arbre. La
   concurrence est un petit pool `std::thread::spawn` dimensionné sur
   `std::thread::available_parallelism()`, coordonné par `Arc<Mutex<...>> +

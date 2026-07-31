@@ -201,22 +201,43 @@ aucune transition dans WebView2, le style à `opacity:0` n'étant jamais calcul�
 reflow forcé obligatoire, sans quoi les deux seuls fondus du lot seront livrés sans avoir jamais
 joué. Done : la trace DevTools confirme que le mouvement ne touche que le compositing.
 
-### 5.3 Conditionné à une mesure préalable
+### 5.3 Conditionné à une mesure préalable — MESURES FAITES le 2026-07-31
 
-Ces deux tranches ne partent pas tant que le chiffre n'existe pas. Leur amplitude repose
-entièrement sur une estimation non vérifiée.
+Ces deux tranches ne partaient pas tant que le chiffre n'existait pas. Les deux mesures ont été
+prises le 2026-07-31 ; elles tranchent en sens opposés.
 
 - **Rekordbox, un cycle master.db par lot au lieu d'un par ligne.** Mécanisme confirmé ligne à
-  ligne, mais le gain dépend de la taille réelle du master.db et du coût de `derive_keys`
-  (256 000 itérations PBKDF2). C'est aussi le seul chantier qui change la sémantique
-  transactionnelle d'écriture dans le fichier d'une application tierce. Mesure requise : durée
-  réelle d'une dérivation et taille du master.db.
-- **Export XML, suppression des quadratiques de chirurgie texte.** Mécanisme confirmé, amplitude
-  suspendue à la taille du XML lié, jamais mesurée. Mesure requise : un `stat` et un décompte des
-  pistes filed absentes du XML. Cinq minutes.
+  ligne. Les deux inconnues sont levées : le `master.db` réel de cette machine pèse
+  **21 094 400 octets (20,1 Mo)**, et `derive_keys` coûte **228 ms en moyenne, 253 ms au pire**
+  (5 tours, `--release`, après un tour à blanc — bench versionné
+  `bench_derive_keys_cout_fixe_par_ouverture`, `src-tauri/src/rekordbox_masterdb.rs`).
+  **La mesure JUSTIFIE la tranche** : ce coût est fixe par ouverture et indépendant de la taille
+  du fichier, donc un lot de 200 pistes paie aujourd'hui ~45 secondes de pur PBKDF2 que le
+  batching ramènerait à 228 ms.
+  **Elle reste néanmoins non livrable en l'état**, pour une raison qui n'est plus la mesure : c'est
+  le seul chantier qui change la sémantique transactionnelle d'écriture dans le fichier d'une
+  application tierce, et son moyen de preuve — les quatre tests `*_round_trips_on_real_masterdb_copy`
+  — exige `SIFT_M8_REAL_COPY_DIR` et Rekordbox fermé. Le garde-fou du `CLAUDE.md` (« jamais une
+  écriture sur un système live sur la seule foi d'un rapport d'agent ») interdit de la livrer sans
+  ce round-trip. Déclencheur de reprise : une session avec la copie réelle disponible.
+- **Export XML, suppression des quadratiques de chirurgie texte.** Mesure prise, elle **retire** la
+  tranche du périmètre : il n'existe aucun XML lié réel. Le réglage `rekordbox_xml_path` de la base
+  de production pointe
+  `C:\Users\LEETJ\Desktop\dj-assistant-m6a\scratchpad\m8-tier3-test\library.xml`, un artefact de
+  test d'un worktree supprimé, absent du disque — donc pas de `stat` possible. Et la base compte
+  **1 seule piste `filed` sur 3907** (3906 `pending`) : le terme quadratique n'a aucune amplitude
+  observable. Déplacée en §5.4 ci-dessous.
+  Note annexe, hors périmètre de ce PRD : qu'un réglage de production pointe un chemin de dev
+  supprimé est un défaut en soi, distinct de la performance.
 
 ### 5.4 Différé avec déclencheur nommé
 
+- **Export XML, suppression des quadratiques de chirurgie texte** — descendu de §5.3 le
+  2026-07-31 sur mesure : aucun XML lié réel (le réglage pointe un fichier de test disparu) et
+  1 seule piste `filed` sur 3907 en base. Le mécanisme quadratique reste réel dans le code ; c'est
+  son amplitude qui est nulle aujourd'hui. Déclencheur : un XML Rekordbox réellement lié ET plus
+  de quelques centaines de pistes `filed` — auquel cas reprendre par le `stat` et le décompte
+  décrits en §5.3, qui redeviennent alors mesurables.
 - **Pagination de `list_filed` / `list_pending`** — mesurée fluide à 15 000 (18,6 ms), 165 à
   250 ms à 100 000, hors cible D1. Déclencheur : un utilisateur réel avec plus de 30 000 pistes
   rangées et une lenteur perçue.
