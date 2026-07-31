@@ -37,14 +37,27 @@ pub(crate) fn is_confidently_removable(disk: &RawDiskInfo) -> bool {
     media_ok && interface_ok
 }
 
+/// `rename` is load-bearing, not cosmetic: `WMIConnection::query()` builds `SELECT … FROM <name>`
+/// where `<name>` is the *serde* name of this struct (wmi 0.18.4, `query.rs` → `build_query` →
+/// `de::meta::struct_name_and_fields`). Without it the class queried is `Win32DiskDrive`, which
+/// does not exist, and every enumeration fails with `0x80041010` (`WBEM_E_INVALID_CLASS`) — the
+/// state this backend shipped in from M7 until 2026-07-31. The three other queries below are
+/// `raw_query` with a literal class name, so they were never affected.
+/// Pinned by `typed_query_targets_the_real_wmi_class`.
 #[allow(non_snake_case)]
 #[derive(Deserialize, Debug)]
+#[serde(rename = "Win32_DiskDrive")]
 struct Win32DiskDrive {
     Index: u32,
     Model: Option<String>,
     MediaType: Option<String>,
     InterfaceType: Option<String>,
-    Size: Option<String>, // WMI returns Size as a numeric string
+    // `Size` is CIM_UINT64. Even when WMI marshals it as a BSTR, wmi 0.18.4 normalizes it back to
+    // a number before serde sees it (`variant.rs`: `CIM_UINT64 => Variant::UI8(s.parse()?)`), so
+    // `u64` is right in both marshalling paths and `String` is right in neither — it shipped as
+    // `Option<String>` from M7 and failed with `invalid type: integer`, hidden until 2026-07-31
+    // behind the class-name bug above, which failed earlier in the same call.
+    Size: Option<u64>,
 }
 
 impl RemovableDriveBackend for WindowsBackend {
@@ -110,11 +123,7 @@ impl RemovableDriveBackend for WindowsBackend {
                             continue;
                         }
                     };
-                    let size_bytes: u64 = disk
-                        .Size
-                        .as_deref()
-                        .and_then(|s| s.parse().ok())
-                        .unwrap_or(0);
+                    let size_bytes: u64 = disk.Size.unwrap_or(0);
                     drives.push(RemovableDrive {
                         id: device_id.clone(),
                         label: disk.Model.clone().unwrap_or_else(|| device_id.clone()),
@@ -170,6 +179,20 @@ impl RemovableDriveBackend for WindowsBackend {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The bug this pins was invisible to every other test here: they all feed
+    /// `is_confidently_removable` fabricated values, so the filter was covered and the query that
+    /// produces the values never was. `build_query` is the same code path `query()` takes, minus
+    /// the WMI call — so this asserts the real class name without touching the machine's WMI, and
+    /// fails on any CI box.
+    #[test]
+    fn typed_query_targets_the_real_wmi_class() {
+        let q = wmi::build_query::<Win32DiskDrive>(None).expect("build_query");
+        assert!(
+            q.contains("FROM Win32_DiskDrive"),
+            "typed query must name the real WMI class, got: {q}"
+        );
+    }
 
     #[test]
     fn removable_media_type_and_interface_is_included() {
