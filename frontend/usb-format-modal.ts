@@ -15,6 +15,16 @@ import { formatDrive, type RemovableDrive, type TargetFs } from "./ipc";
 
 const CONFIRM_REARM_MS = 400; // mirrors sift-live.ts's batch-confirm floor (see BATCH_CONFIRM_THRESHOLD)
 
+/** What the user calls this disk. `drive.id` became a physical-disk path (`\\.\PHYSICALDRIVE2`,
+ * `/dev/disk4`) on 2026-07-31 so that unformatted keys could be listed at all — correct for the
+ * backend, but not something to read on a row or retype into a confirmation box. Prefer the drive
+ * letter; a disk with no mounted volume has none, so fall back to its number. */
+export function driveDisplayName(drive: RemovableDrive): string {
+  if (drive.mount) return drive.mount;
+  const n = /(?:PHYSICALDRIVE|disk)(\d+)/i.exec(drive.id)?.[1];
+  return n ? `Disque ${n}` : drive.id;
+}
+
 export function openUsbFormatModal(drive: RemovableDrive): void {
   document.getElementById("sift-usbfmt-overlay")?.remove();
 
@@ -44,7 +54,8 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
   // irréversible de toute l'app (formatage disque). Escape ferme sauf pendant le formatage (busy).
   card.setAttribute("role", "alertdialog");
   card.setAttribute("aria-modal", "true");
-  card.setAttribute("aria-label", `Formater ${drive.id}`);
+  const displayName = driveDisplayName(drive);
+  card.setAttribute("aria-label", `Formater ${displayName}`);
   overlay.appendChild(card);
   document.body.appendChild(overlay);
 
@@ -62,14 +73,15 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
 
   const sizeGb = (drive.size_bytes / 1_000_000_000).toFixed(1);
   // drive.label is a model name (e.g. "Kingston DataTraveler USB Device") — two identical drives
-  // plugged in together would share the same confirm word otherwise (audit 2026-07-09). drive.id
-  // (the drive letter/path) is what actually distinguishes them.
-  const confirmWord = drive.label ? `${drive.label} (${drive.id})` : drive.id;
+  // plugged in together would share the same confirm word otherwise (audit 2026-07-09). The
+  // display name (drive letter, or disk number when the key is unformatted) is what distinguishes
+  // them, and unlike the raw `\\.\PHYSICALDRIVE2` it is retypable.
+  const confirmWord = drive.label ? `${drive.label} (${displayName})` : displayName;
 
   function render() {
     card.innerHTML =
       '<div class="sift-usbfmt-title">Formater ' +
-      esc(drive.id) +
+      esc(displayName) +
       "</div>" +
       '<div class="sift-usbfmt-desc">' +
       esc(drive.label || "Disque amovible") +
@@ -166,7 +178,7 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
       }
       busy = true;
       render();
-      void formatDrive(drive.id, drive.volume_serial, fs)
+      void formatDrive(drive.id, drive.identity, fs)
         .then(() => {
           close();
           window.dispatchEvent(new CustomEvent("sift:usb-format-done", { detail: { ok: true } }));
@@ -185,7 +197,7 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
           fatal = raw.includes(IDENTITY_MISMATCH) || raw.includes(DRIVE_VANISHED);
           const humanized = raw.includes(IDENTITY_MISMATCH)
             ? "Ce n'est plus le même disque : un autre volume répond maintenant à " +
-              esc(drive.id) +
+              esc(displayName) +
               ". Rien n'a été formaté. Ferme cette fenêtre et resélectionne le disque dans la liste."
             : raw.includes(DRIVE_VANISHED)
               ? "Le disque a été débranché avant que le formatage ne commence. Rien n'a été " +

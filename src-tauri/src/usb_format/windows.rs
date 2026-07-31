@@ -1,6 +1,11 @@
-//! Windows backend: enumerate removable disks via WMI (`Win32_DiskDrive` + `Win32_LogicalDisk`),
-//! format via a scripted `diskpart` (the only CLI path that formats FAT32 past the 32 GB
-//! ceiling the GUI `format.com`/Explorer imposes).
+//! Windows backend: enumerate removable disks via WMI (`Win32_DiskDrive`), format via a scripted
+//! `diskpart`.
+//!
+//! **Enumerates physical disks, not volumes.** It used to walk `Win32_DiskDrive` ->
+//! `Win32_DiskPartition` -> `Win32_LogicalDisk` and emit one entry per *mounted volume*, dropping
+//! any disk with no partition or no `VolumeSerialNumber`. That excluded a brand-new, RAW or
+//! corrupted key — the exact thing a formatting tool exists for. Volumes are still looked up, but
+//! only to *describe* a disk (drive letter, current filesystem); they never gate it.
 
 use super::{RemovableDrive, RemovableDriveBackend, TargetFs, UsbFormatError};
 use serde::Deserialize;
@@ -11,45 +16,51 @@ use wmi::{Variant, WMIConnection};
 
 pub struct WindowsBackend;
 
-/// The two WMI fields the removable filter needs. Kept separate from the raw WMI struct so
-/// the filter itself (`is_confidently_removable`) has zero WMI dependency and can be unit
-/// tested with fabricated values, on any OS.
+/// What the removable decision is made from. Kept free of WMI types so the decision itself is
+/// unit-testable with fabricated values, on any OS.
 pub(crate) struct RawDiskInfo {
-    pub media_type: Option<String>,
     pub interface_type: Option<String>,
+    /// One of this disk's logical drives is `%SystemDrive%` — the running Windows install.
+    pub carries_system_volume: bool,
 }
 
-/// Conservative removable check: BOTH `MediaType` must say "Removable Media" AND
-/// `InterfaceType` must be `USB` — matching either signal alone risks misclassifying an
-/// internal card reader or a fixed disk with an unusual driver report. Any missing field
-/// excludes the disk (never guess).
+/// The bus is the positive signal; the system volume is the veto.
+///
+/// The original filter also demanded `MediaType == "Removable Media"`, and that was a second
+/// reason nothing ever showed up: measured on this machine 2026-07-31, the only USB storage
+/// device present reports `MediaType = null`, and a USB SSD reports `"Fixed hard disk media"`.
+/// Both are legitimate things to format, both were silently excluded.
+///
+/// `InterfaceType == "USB"` already rules out every internal SATA/NVMe/IDE disk on its own — it
+/// is a stronger signal than `MediaType`, not a weaker one. `carries_system_volume` covers the
+/// residual case of a Windows install running from a USB disk, which must never be offered.
 pub(crate) fn is_confidently_removable(disk: &RawDiskInfo) -> bool {
-    let media_ok = disk
-        .media_type
-        .as_deref()
-        .map(|m| m.eq_ignore_ascii_case("Removable Media"))
-        .unwrap_or(false);
-    let interface_ok = disk
+    let on_usb_bus = disk
         .interface_type
         .as_deref()
-        .map(|i| i.eq_ignore_ascii_case("USB"))
-        .unwrap_or(false);
-    media_ok && interface_ok
+        .is_some_and(|i| i.eq_ignore_ascii_case("USB"));
+    on_usb_bus && !disk.carries_system_volume
 }
 
 /// `rename` is load-bearing, not cosmetic: `WMIConnection::query()` builds `SELECT … FROM <name>`
 /// where `<name>` is the *serde* name of this struct (wmi 0.18.4, `query.rs` → `build_query` →
 /// `de::meta::struct_name_and_fields`). Without it the class queried is `Win32DiskDrive`, which
 /// does not exist, and every enumeration fails with `0x80041010` (`WBEM_E_INVALID_CLASS`) — the
-/// state this backend shipped in from M7 until 2026-07-31. The three other queries below are
-/// `raw_query` with a literal class name, so they were never affected.
+/// state this backend shipped in from M7 until 2026-07-31. The `raw_query` calls below use a
+/// literal class name, so they were never affected.
 /// Pinned by `typed_query_targets_the_real_wmi_class`.
 #[allow(non_snake_case)]
 #[derive(Deserialize, Debug)]
 #[serde(rename = "Win32_DiskDrive")]
 struct Win32DiskDrive {
     Index: u32,
+    /// `\\.\PHYSICALDRIVE2` — the id `RemovableDrive.id` carries and `format` parses back.
+    DeviceID: String,
     Model: Option<String>,
+    /// Read by `live_dump_what_this_machine_reports` only — deliberately NOT part of the filter
+    /// (see `is_confidently_removable`). Kept selected because it is the field the old filter got
+    /// wrong, so the diagnostic must be able to show what it actually says on a given machine.
+    #[allow(dead_code)]
     MediaType: Option<String>,
     InterfaceType: Option<String>,
     // `Size` is CIM_UINT64. Even when WMI marshals it as a BSTR, wmi 0.18.4 normalizes it back to
@@ -58,12 +69,18 @@ struct Win32DiskDrive {
     // `Option<String>` from M7 and failed with `invalid type: integer`, hidden until 2026-07-31
     // behind the class-name bug above, which failed earlier in the same call.
     Size: Option<u64>,
+    /// Frequently junk on USB bridges — measured 2026-07-31, the card reader on this machine
+    /// reports `"+"`. Never used alone as an identity anchor; see `disk_identity`.
+    SerialNumber: Option<String>,
+    /// `USBSTOR\DISK&VEN_…&PROD_…\7&2615ADB3&0` — always present, structured, and what Windows
+    /// itself uses to identify a device instance.
+    PNPDeviceID: Option<String>,
 }
 
 /// WQL object paths take the DeviceID **verbatim**: `\\.\PHYSICALDRIVE2`, backslashes NOT
 /// doubled. This shipped doubling them (`\\\\.\\PHYSICALDRIVE2`) from M7, and WMI answers that
 /// with "objet introuvable" for every disk — so the partition lookup found nothing and the
-/// `Err(_) => continue` below dropped every candidate in silence. Measured on this machine
+/// error-swallowing `continue` dropped every candidate in silence. Measured on this machine
 /// 2026-07-31 against `Win32_DiskDrive` disk 0: the doubled form fails, the verbatim form
 /// returns `Disk #0, Partition #0`. Pinned by `partitions_query_does_not_double_backslashes`.
 pub(crate) fn partitions_query(disk_index: u32) -> String {
@@ -83,6 +100,137 @@ pub(crate) fn logical_disks_query(partition_id: &str) -> String {
     )
 }
 
+/// Everything the mounted volumes of one physical disk can tell us about it. All of it is
+/// descriptive: an empty `VolumeFacts` means "RAW / not formatted", which is a perfectly
+/// listable disk, not a reason to drop it.
+#[derive(Debug, Default, PartialEq)]
+pub(crate) struct VolumeFacts {
+    pub letters: Vec<String>,
+    pub filesystems: Vec<String>,
+    /// Per-volume `VolumeSerialNumber`s. Not an identity anchor by themselves (a RAW disk has
+    /// none) but they change the moment a different key is formatted into the same slot, so they
+    /// sharpen `disk_identity` when they exist.
+    pub serials: Vec<String>,
+    pub total_size: u64,
+}
+
+/// What the UI shows under "actuellement …". A disk with no readable filesystem is the normal
+/// state of a new key, so it gets a plain French label rather than the old `"unknown"`.
+pub(crate) fn describe_filesystem(facts: &VolumeFacts) -> String {
+    if facts.filesystems.is_empty() {
+        "non formaté".to_string()
+    } else {
+        facts.filesystems.join(", ")
+    }
+}
+
+/// Anti-race anchor, re-read from a fresh listing immediately before formatting. Composite on
+/// purpose: no single field survives every case.
+///
+/// - `PNPDeviceID` is always present and unique per device instance, but for a key with no
+///   hardware serial its tail is derived from the USB port — swap two serial-less keys in the
+///   same port and it repeats.
+/// - `SerialNumber` is often junk (`"+"` on this machine's card reader) or absent.
+/// - Volume serials change whenever the disk is reformatted, but a RAW disk has none.
+///
+/// Together they catch every swap the old volume-serial-only anchor caught, plus the RAW case it
+/// could not represent at all. Opaque to the frontend — it round-trips the string, never parses it.
+pub(crate) fn disk_identity(
+    pnp_device_id: Option<&str>,
+    hardware_serial: Option<&str>,
+    size_bytes: u64,
+    volume_serials: &[String],
+) -> String {
+    let pnp = pnp_device_id.unwrap_or("").trim();
+    let hw = hardware_serial.unwrap_or("").trim();
+    format!("{pnp}|{hw}|{size_bytes}|{}", volume_serials.join(","))
+}
+
+/// `\\.\PHYSICALDRIVE2` -> `2`. Returns `None` on anything else, and the caller MUST treat that
+/// as a hard error: `format` builds a `select disk N` + `clean` script, so guessing or defaulting
+/// a disk number here would wipe the wrong disk. Never add a fallback.
+pub(crate) fn disk_index_from_id(id: &str) -> Option<u32> {
+    id.rsplit_once("PHYSICALDRIVE")
+        .and_then(|(_, n)| n.trim().parse().ok())
+}
+
+/// `clean` + `create partition primary` is what makes a RAW or oddly-partitioned key formattable
+/// at all — `select volume <letter>` (what this used to do) needs a mounted volume, which is
+/// exactly what a new or corrupted key does not have. `assign` gives the result a drive letter so
+/// the key is usable the moment the modal closes.
+pub(crate) fn diskpart_script(disk_index: u32, fs: TargetFs) -> String {
+    let fs_name = match fs {
+        TargetFs::Fat32 => "fat32",
+        TargetFs::ExFat => "exfat",
+    };
+    format!(
+        "select disk {disk_index}\nclean\ncreate partition primary\nformat fs={fs_name} quick\nassign\nexit\n"
+    )
+}
+
+fn variant_to_u64(v: Option<&Variant>) -> Option<u64> {
+    match v {
+        Some(Variant::UI8(n)) => Some(*n),
+        Some(Variant::UI4(n)) => Some(u64::from(*n)),
+        Some(Variant::String(s)) => s.parse::<u64>().ok(),
+        _ => None,
+    }
+}
+
+fn variant_to_string(v: Option<&Variant>) -> Option<String> {
+    match v {
+        Some(Variant::String(s)) if !s.is_empty() => Some(s.clone()),
+        _ => None,
+    }
+}
+
+impl WindowsBackend {
+    /// Collect the mounted volumes of one physical disk. A failed lookup logs and yields whatever
+    /// was gathered so far — it must never remove the disk from the listing, since a disk we
+    /// cannot describe is still a disk the user may need to format.
+    fn volume_facts(con: &WMIConnection, disk_index: u32) -> VolumeFacts {
+        let mut facts = VolumeFacts::default();
+        let partitions: Vec<HashMap<String, Variant>> =
+            match con.raw_query(partitions_query(disk_index)) {
+                Ok(p) => p,
+                Err(e) => {
+                    // Never silent: a malformed query here used to drop the disk with no trace,
+                    // which is how the escaping bug above survived from M7 to 2026-07-31.
+                    log::error!("usb_format: partition lookup failed for disk {disk_index}: {e}");
+                    return facts;
+                }
+            };
+        for part in partitions {
+            let Some(Variant::String(part_id)) = part.get("DeviceID") else {
+                continue;
+            };
+            let logicals: Vec<HashMap<String, Variant>> =
+                match con.raw_query(logical_disks_query(part_id)) {
+                    Ok(l) => l,
+                    Err(e) => {
+                        log::error!(
+                            "usb_format: logical-disk lookup failed for partition {part_id}: {e}"
+                        );
+                        continue;
+                    }
+                };
+            for logical in logicals {
+                if let Some(letter) = variant_to_string(logical.get("DeviceID")) {
+                    facts.letters.push(letter);
+                }
+                if let Some(fs) = variant_to_string(logical.get("FileSystem")) {
+                    facts.filesystems.push(fs);
+                }
+                if let Some(serial) = variant_to_string(logical.get("VolumeSerialNumber")) {
+                    facts.serials.push(serial);
+                }
+                facts.total_size += variant_to_u64(logical.get("Size")).unwrap_or(0);
+            }
+        }
+        facts
+    }
+}
+
 impl RemovableDriveBackend for WindowsBackend {
     fn list(&self) -> Result<Vec<RemovableDrive>, UsbFormatError> {
         let wmi_con = WMIConnection::new()
@@ -92,104 +240,67 @@ impl RemovableDriveBackend for WindowsBackend {
             .query()
             .map_err(|e| UsbFormatError::Enumeration(format!("Win32_DiskDrive query: {e}")))?;
 
+        // `%SystemDrive%` rather than a hardcoded "C:" — a Windows install is not guaranteed to
+        // live on C:, and the veto below is the only thing standing between `diskpart clean` and
+        // the running system.
+        let system_drive = std::env::var("SystemDrive").unwrap_or_else(|_| "C:".to_string());
+
         let mut drives = Vec::new();
         for disk in disks {
+            // Volumes are read BEFORE the filter because the system-volume veto is derived from
+            // them. Cheap: three WMI calls per disk, on a list that is single digits long.
+            let facts = Self::volume_facts(&wmi_con, disk.Index);
+            let carries_system_volume = facts
+                .letters
+                .iter()
+                .any(|l| l.eq_ignore_ascii_case(&system_drive));
+
             let raw = RawDiskInfo {
-                media_type: disk.MediaType.clone(),
                 interface_type: disk.InterfaceType.clone(),
+                carries_system_volume,
             };
             if !is_confidently_removable(&raw) {
                 continue;
             }
 
-            // Map this physical disk to its logical volume (drive letter + fs + volume serial)
-            // via the partition->logicaldisk association. Any failure to resolve a letter for
-            // this disk excludes it (conservative -- an unmounted/unpartitioned removable disk
-            // isn't offerable for formatting through this simple query path).
-            let query = partitions_query(disk.Index);
-            let partitions: Vec<HashMap<String, Variant>> = match wmi_con.raw_query(&query) {
-                Ok(p) => p,
-                Err(e) => {
-                    // Never silent: a malformed query here used to drop the disk with no trace,
-                    // which is exactly how the escaping bug above survived from M7 to 2026-07-31.
-                    log::error!(
-                        "usb_format: partition lookup failed for disk {}: {e}",
-                        disk.Index
-                    );
-                    continue;
-                }
-            };
+            // `Win32_DiskDrive.Size` is null on some USB bridges (measured 2026-07-31: a card
+            // reader reports Model and InterfaceType but neither MediaType nor Size). Falling back
+            // to the summed volume size keeps the row from reading "0.0 Go", which the UI would
+            // otherwise show as a plausible-looking lie.
+            let size_bytes = disk.Size.unwrap_or(facts.total_size);
+            // WMI reports no size at all for an empty card-reader slot (measured 2026-07-31:
+            // `Size = None`, matching `Get-Disk`'s `OperationalStatus: No Media`). A disk holding
+            // real media always reports its capacity, formatted or not — a RAW key included.
+            let has_media = size_bytes > 0;
 
-            for part in partitions {
-                let Some(Variant::String(part_id)) = part.get("DeviceID") else {
-                    continue;
-                };
-                let logical_query = logical_disks_query(part_id);
-                let logicals: Vec<HashMap<String, Variant>> = match wmi_con
-                    .raw_query(&logical_query)
-                {
-                    Ok(l) => l,
-                    Err(e) => {
-                        log::error!(
-                            "usb_format: logical-disk lookup failed for partition {part_id}: {e}"
-                        );
-                        continue;
-                    }
-                };
-                for logical in logicals {
-                    let Some(Variant::String(device_id)) = logical.get("DeviceID") else {
-                        continue;
-                    };
-                    let fs = match logical.get("FileSystem") {
-                        Some(Variant::String(s)) => s.clone(),
-                        _ => "unknown".to_string(),
-                    };
-                    let serial = match logical.get("VolumeSerialNumber") {
-                        Some(Variant::String(s)) => s.clone(),
-                        _ => {
-                            // No serial available: cannot support the anti-race identity check
-                            // for this volume. Exclude rather than offer a drive we can't
-                            // safely re-verify at format time.
-                            continue;
-                        }
-                    };
-                    // `Win32_DiskDrive.Size` is null for some USB bridges (measured 2026-07-31:
-                    // a card reader reports Model + InterfaceType but neither MediaType nor
-                    // Size). Falling back to the volume's own size keeps the row from reading
-                    // "0.0 Go", which the UI would otherwise show as a plausible-looking lie.
-                    let size_bytes: u64 = disk
-                        .Size
-                        .or_else(|| match logical.get("Size") {
-                            Some(Variant::UI8(n)) => Some(*n),
-                            Some(Variant::UI4(n)) => Some(u64::from(*n)),
-                            Some(Variant::String(s)) => s.parse::<u64>().ok(),
-                            _ => None,
-                        })
-                        .unwrap_or(0);
-                    drives.push(RemovableDrive {
-                        id: device_id.clone(),
-                        label: disk.Model.clone().unwrap_or_else(|| device_id.clone()),
-                        size_bytes,
-                        current_fs: fs,
-                        volume_serial: serial,
-                    });
-                }
-            }
+            drives.push(RemovableDrive {
+                id: disk.DeviceID.clone(),
+                label: disk.Model.clone().unwrap_or_else(|| disk.DeviceID.clone()),
+                mount: facts.letters.join(", "),
+                size_bytes,
+                current_fs: describe_filesystem(&facts),
+                has_media,
+                identity: disk_identity(
+                    disk.PNPDeviceID.as_deref(),
+                    disk.SerialNumber.as_deref(),
+                    size_bytes,
+                    &facts.serials,
+                ),
+            });
         }
 
         Ok(drives)
     }
 
     fn format(&self, drive: &RemovableDrive, fs: TargetFs) -> Result<(), UsbFormatError> {
-        // drive.id is a logical drive DeviceID like "E:". diskpart needs the drive letter
-        // without the trailing backslash it sometimes carries.
-        let letter = drive.id.trim_end_matches('\\').trim_end_matches(':');
-        let fs_name = match fs {
-            TargetFs::Fat32 => "fat32",
-            TargetFs::ExFat => "exfat",
-        };
-
-        let script = format!("select volume {letter}\nformat fs={fs_name} quick\nexit\n");
+        // Hard failure, never a fallback: the script below runs `clean` on this number.
+        let disk_index = disk_index_from_id(&drive.id).ok_or_else(|| {
+            UsbFormatError::Format(format!(
+                "identifiant de disque non reconnu: {} — formatage refusé",
+                drive.id
+            ))
+        })?;
+        let script = diskpart_script(disk_index, fs);
 
         let mut tmp = tempfile::Builder::new()
             .suffix(".txt")
@@ -252,6 +363,150 @@ mod tests {
         );
     }
 
+    #[test]
+    fn usb_bus_disk_is_included() {
+        assert!(is_confidently_removable(&RawDiskInfo {
+            interface_type: Some("USB".to_string()),
+            carries_system_volume: false,
+        }));
+    }
+
+    /// The regression that made this whole screen useless: the card reader measured on this
+    /// machine reports no MediaType at all, and a USB SSD reports "Fixed hard disk media".
+    /// Neither may be excluded on that basis — the bus is what decides.
+    #[test]
+    fn usb_bus_disk_is_included_whatever_the_media_type_says() {
+        // MediaType is not even an input any more; this test exists to state that on purpose.
+        assert!(is_confidently_removable(&RawDiskInfo {
+            interface_type: Some("USB".to_string()),
+            carries_system_volume: false,
+        }));
+    }
+
+    #[test]
+    fn internal_bus_disk_is_excluded() {
+        for iface in ["IDE", "SCSI", "SATA", "NVMe"] {
+            assert!(
+                !is_confidently_removable(&RawDiskInfo {
+                    interface_type: Some(iface.to_string()),
+                    carries_system_volume: false,
+                }),
+                "{iface} must never be offered"
+            );
+        }
+    }
+
+    #[test]
+    fn missing_interface_type_is_excluded() {
+        assert!(!is_confidently_removable(&RawDiskInfo {
+            interface_type: None,
+            carries_system_volume: false,
+        }));
+    }
+
+    /// A Windows install running from a USB disk is on the USB bus like any key. The veto is the
+    /// only thing between `diskpart clean` and the running system.
+    #[test]
+    fn usb_disk_carrying_the_system_volume_is_excluded() {
+        assert!(!is_confidently_removable(&RawDiskInfo {
+            interface_type: Some("USB".to_string()),
+            carries_system_volume: true,
+        }));
+    }
+
+    #[test]
+    fn raw_disk_is_described_as_not_formatted() {
+        assert_eq!(describe_filesystem(&VolumeFacts::default()), "non formaté");
+    }
+
+    #[test]
+    fn formatted_disk_reports_its_filesystems() {
+        let facts = VolumeFacts {
+            filesystems: vec!["FAT32".to_string()],
+            ..Default::default()
+        };
+        assert_eq!(describe_filesystem(&facts), "FAT32");
+    }
+
+    #[test]
+    fn disk_index_is_parsed_from_the_device_path() {
+        assert_eq!(disk_index_from_id(r"\\.\PHYSICALDRIVE2"), Some(2));
+        assert_eq!(disk_index_from_id(r"\\.\PHYSICALDRIVE11"), Some(11));
+    }
+
+    /// `format` turns `None` into a refusal. Anything that could make this return `Some(0)` for a
+    /// malformed id would point `clean` at the first disk in the machine.
+    #[test]
+    fn unrecognised_disk_id_yields_no_index() {
+        for bogus in ["E:", "", "PHYSICALDRIVE", r"\\.\PHYSICALDRIVEx", "disk2"] {
+            assert_eq!(disk_index_from_id(bogus), None, "must refuse {bogus:?}");
+        }
+    }
+
+    #[test]
+    fn diskpart_script_cleans_and_recreates_the_partition() {
+        let s = diskpart_script(3, TargetFs::Fat32);
+        assert!(s.starts_with("select disk 3\n"), "got: {s}");
+        assert!(s.contains("\nclean\n"), "a RAW key needs clean: {s}");
+        assert!(
+            s.contains("\ncreate partition primary\n"),
+            "a cleaned disk has no partition to format: {s}"
+        );
+        assert!(s.contains("format fs=fat32 quick"), "got: {s}");
+        assert!(
+            s.contains("\nassign\n"),
+            "the key must come back mounted: {s}"
+        );
+    }
+
+    #[test]
+    fn diskpart_script_never_targets_a_volume_letter() {
+        let s = diskpart_script(2, TargetFs::ExFat);
+        assert!(
+            !s.contains("select volume"),
+            "selecting a volume is what made RAW keys unformattable: {s}"
+        );
+        assert!(s.contains("format fs=exfat quick"), "got: {s}");
+    }
+
+    /// Two serial-less keys swapped in the same USB port share a `PNPDeviceID`; their volume
+    /// serials are what tells them apart. A RAW disk has none — hence the composite.
+    #[test]
+    fn identity_changes_when_the_volume_serial_changes() {
+        let a = disk_identity(
+            Some("USBSTOR\\X"),
+            Some("+"),
+            16_000_000_000,
+            &["AAAA-1111".to_string()],
+        );
+        let b = disk_identity(
+            Some("USBSTOR\\X"),
+            Some("+"),
+            16_000_000_000,
+            &["BBBB-2222".to_string()],
+        );
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn identity_is_stable_for_the_same_disk() {
+        let serials = vec!["AAAA-1111".to_string()];
+        assert_eq!(
+            disk_identity(Some("USBSTOR\\X"), Some("SN123"), 16_000_000_000, &serials),
+            disk_identity(Some("USBSTOR\\X"), Some("SN123"), 16_000_000_000, &serials)
+        );
+    }
+
+    /// A RAW key has no volume serial at all — the anchor must still be non-empty and still
+    /// distinguish two different devices, or the anti-race guard silently degrades to "always OK".
+    #[test]
+    fn identity_still_distinguishes_two_raw_disks() {
+        let a = disk_identity(Some("USBSTOR\\DISK&A\\7&1"), None, 8_000_000_000, &[]);
+        let b = disk_identity(Some("USBSTOR\\DISK&B\\7&2"), None, 8_000_000_000, &[]);
+        assert_ne!(a, b);
+        assert!(!a.trim_matches('|').is_empty());
+    }
+
     /// Live probe against this machine's real WMI. `--ignored` — it reports whatever is
     /// physically plugged in, so it asserts nothing; it exists so that "aucun disque amovible
     /// détecté" can be traced to the stage that dropped the disk instead of guessed at.
@@ -261,102 +516,43 @@ mod tests {
     fn live_dump_what_this_machine_reports() {
         let con = WMIConnection::new().expect("WMIConnection::new");
         let disks: Vec<Win32DiskDrive> = con.query().expect("Win32_DiskDrive query");
-        println!("--- {} disque(s) vus par Win32_DiskDrive ---", disks.len());
+        let system_drive = std::env::var("SystemDrive").unwrap_or_else(|_| "C:".to_string());
+        println!(
+            "--- {} disque(s), SystemDrive={system_drive} ---",
+            disks.len()
+        );
         for disk in &disks {
+            let facts = WindowsBackend::volume_facts(&con, disk.Index);
+            let carries_system_volume = facts
+                .letters
+                .iter()
+                .any(|l| l.eq_ignore_ascii_case(&system_drive));
             let raw = RawDiskInfo {
-                media_type: disk.MediaType.clone(),
                 interface_type: disk.InterfaceType.clone(),
+                carries_system_volume,
             };
             println!(
-                "disk {} model={:?} media={:?} iface={:?} size={:?} => removable={}",
+                "disk {} model={:?} media={:?} iface={:?} size={:?} pnp={:?} sn={:?}",
                 disk.Index,
                 disk.Model,
                 disk.MediaType,
                 disk.InterfaceType,
                 disk.Size,
+                disk.PNPDeviceID,
+                disk.SerialNumber
+            );
+            println!(
+                "    volumes={:?} fs={:?} serials={:?} => offert={}",
+                facts.letters,
+                facts.filesystems,
+                facts.serials,
                 is_confidently_removable(&raw)
             );
-            let parts: Vec<HashMap<String, Variant>> =
-                match con.raw_query(partitions_query(disk.Index)) {
-                    Ok(p) => p,
-                    Err(e) => {
-                        println!("    partitions: ERREUR {e}");
-                        continue;
-                    }
-                };
-            println!("    {} partition(s)", parts.len());
-            for part in &parts {
-                let Some(Variant::String(pid)) = part.get("DeviceID") else {
-                    continue;
-                };
-                match con.raw_query::<HashMap<String, Variant>>(&logical_disks_query(pid)) {
-                    Ok(logicals) => {
-                        for l in &logicals {
-                            println!(
-                                "      {pid} -> id={:?} fs={:?} serial={:?} size={:?}",
-                                l.get("DeviceID"),
-                                l.get("FileSystem"),
-                                l.get("VolumeSerialNumber"),
-                                l.get("Size")
-                            );
-                        }
-                        if logicals.is_empty() {
-                            println!("      {pid} -> aucun volume logique");
-                        }
-                    }
-                    Err(e) => println!("      {pid} -> ERREUR {e}"),
-                }
-            }
         }
         let listed = WindowsBackend.list().expect("list()");
         println!("--- list() renvoie {} disque(s) ---", listed.len());
         for d in &listed {
             println!("    {d:?}");
         }
-    }
-
-    #[test]
-    fn removable_media_type_and_interface_is_included() {
-        let disk = RawDiskInfo {
-            media_type: Some("Removable Media".to_string()),
-            interface_type: Some("USB".to_string()),
-        };
-        assert!(is_confidently_removable(&disk));
-    }
-
-    #[test]
-    fn fixed_media_is_excluded() {
-        let disk = RawDiskInfo {
-            media_type: Some("Fixed hard disk".to_string()),
-            interface_type: Some("USB".to_string()),
-        };
-        assert!(!is_confidently_removable(&disk));
-    }
-
-    #[test]
-    fn non_usb_interface_is_excluded_even_if_media_says_removable() {
-        let disk = RawDiskInfo {
-            media_type: Some("Removable Media".to_string()),
-            interface_type: Some("SCSI".to_string()),
-        };
-        assert!(!is_confidently_removable(&disk));
-    }
-
-    #[test]
-    fn missing_media_type_is_excluded() {
-        let disk = RawDiskInfo {
-            media_type: None,
-            interface_type: Some("USB".to_string()),
-        };
-        assert!(!is_confidently_removable(&disk));
-    }
-
-    #[test]
-    fn missing_interface_type_is_excluded() {
-        let disk = RawDiskInfo {
-            media_type: Some("Removable Media".to_string()),
-            interface_type: None,
-        };
-        assert!(!is_confidently_removable(&disk));
     }
 }

@@ -184,20 +184,23 @@ impl RemovableDriveBackend for MacBackend {
             if !is_confidently_removable(&raw) {
                 continue;
             }
-            let volume_uuid = extract_plist_string_value(&info_xml, "VolumeUUID");
-            let Some(serial) = volume_uuid else {
-                // No stable identity anchor available for this volume: exclude it rather than
-                // offer a drive we can't safely re-verify at format time.
-                continue;
-            };
+            // A missing VolumeUUID used to exclude the disk. That is the same defect the Windows
+            // backend carried until 2026-07-31: an unformatted disk has no volume UUID, and an
+            // unformatted disk is exactly what this tool formats. The UUID now only *sharpens*
+            // the identity anchor; the whole-disk identifier and size carry it when there is none.
+            let volume_uuid =
+                extract_plist_string_value(&info_xml, "VolumeUUID").unwrap_or_default();
             let fs = extract_plist_string_value(&info_xml, "FilesystemType")
-                .unwrap_or_else(|| "unknown".to_string());
+                .unwrap_or_else(|| "non formaté".to_string());
+            let mount = extract_plist_string_value(&info_xml, "MountPoint").unwrap_or_default();
             drives.push(RemovableDrive {
                 id: disk.id.clone(),
                 label: disk.name.clone(),
+                mount,
                 size_bytes: disk.size_bytes,
                 current_fs: fs,
-                volume_serial: serial,
+                has_media: disk.size_bytes > 0,
+                identity: format!("{}|{}|{}", disk.id, disk.size_bytes, volume_uuid),
             });
         }
         Ok(drives)

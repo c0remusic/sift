@@ -374,11 +374,20 @@ export const rekordboxMasterdbDedupPlaylistGroup = (group: PlaylistDuplicateGrou
 // ---- M7 USB format utility (mirror of ipc_usb.rs) ----
 
 export interface RemovableDrive {
+  /** Physical disk path (`\\.\PHYSICALDRIVE2`, `/dev/disk4`) — never a drive letter. A new or
+   * RAW key has no volume to name, and that is the main thing this screen formats. */
   id: string;
   label: string;
+  /** Drive letter(s) if the disk has mounted volumes, `""` if it has none. Display only — an
+   * empty string means "pas encore formatée", not "lookup failed". */
+  mount: string;
   size_bytes: number;
   current_fs: string;
-  volume_serial: string;
+  /** `false` for an enumerated but empty card reader / drive bay. It still has a drive letter in
+   * Explorer, so it must be listed and explained rather than hidden — but it cannot be formatted. */
+  has_media: boolean;
+  /** Opaque anti-race anchor — round-trip it to `formatDrive`, never parse it. */
+  identity: string;
 }
 
 /** Matches `usb_format::TargetFs`'s `#[serde(rename_all = "snake_case")]`: `ExFat` -> "ex_fat". */
@@ -388,11 +397,8 @@ export type TargetFs = "fat32" | "ex_fat";
 export const listRemovableDrives = (): Promise<RemovableDrive[]> =>
   invoke("list_removable_drives");
 
-/** Format `driveId` to `fs`. `volumeSerial` must be the value last read for this drive — the
- * backend re-checks it against a fresh listing immediately before formatting and rejects with
+/** Format `driveId` to `fs`. `identity` must be the value last read for this drive — the backend
+ * re-checks it against a fresh listing immediately before formatting and rejects with
  * "IDENTITY_MISMATCH"/"DRIVE_VANISHED" if the drive was swapped since the list was fetched. */
-export const formatDrive = (
-  driveId: string,
-  volumeSerial: string,
-  fs: TargetFs,
-): Promise<void> => invoke("format_drive", { driveId, volumeSerial, fs });
+export const formatDrive = (driveId: string, identity: string, fs: TargetFs): Promise<void> =>
+  invoke("format_drive", { driveId, identity, fs });

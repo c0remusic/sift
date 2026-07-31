@@ -5,7 +5,7 @@
 import { listRemovableDrives } from "./ipc";
 import type { RemovableDrive } from "./ipc";
 import { requireEl, esc } from "./dom";
-import { openUsbFormatModal } from "./usb-format-modal";
+import { openUsbFormatModal, driveDisplayName } from "./usb-format-modal";
 
 /** Holds the currently-attached `sift:usb-format-done` window listener, if any, so `renderUsbLive()`
  * can remove it before attaching a new one. Without this, every re-render of the screen (each nav
@@ -62,11 +62,23 @@ export function renderUsbLive(): void {
       drives = await listRemovableDrives();
     } catch (e) {
       console.error("listRemovableDrives failed", e);
-      listEl.innerHTML = '<div class="sift-usb-empty">Impossible de lister les disques amovibles.</div>';
+      // The raw chain, not a generic sentence: an enumeration failure here is a backend fault and
+      // hiding it is what let a broken WMI query look like "no drive plugged in" for months
+      // (CLAUDE.md § Méthode — pas de fallback silencieux).
+      listEl.innerHTML =
+        '<div class="sift-usb-empty">Impossible de lister les disques amovibles.<br>' +
+        esc(String(e)) +
+        "</div>";
       return;
     }
     if (!drives.length) {
-      listEl.innerHTML = '<div class="sift-usb-empty">Aucun disque amovible détecté.</div>';
+      // Naming the most common false alarm: an empty card-reader slot keeps its drive letter in
+      // the Explorer sidebar forever, so "je vois E: dans l'explorateur" is not evidence that
+      // anything is plugged in.
+      listEl.innerHTML =
+        '<div class="sift-usb-empty">Aucun disque amovible détecté.<br>' +
+        "Un lecteur de cartes vide garde sa lettre dans l'explorateur Windows sans qu'aucune " +
+        "clé ne soit branchée — vérifie que la clé est bien enfoncée, puis Actualiser.</div>";
       return;
     }
     listEl.innerHTML = "";
@@ -74,12 +86,19 @@ export function renderUsbLive(): void {
       const row = document.createElement("div");
       row.className = "sift-usb-row";
       const sizeGb = (d.size_bytes / 1_000_000_000).toFixed(1);
+      // A reader with no card inserted is a real, listed device with nothing in it. Say that
+      // instead of offering a Formater button that diskpart can only refuse.
+      const meta = d.has_media
+        ? `${esc(d.label || "Disque amovible")} · ${sizeGb} Go · ${esc(d.current_fs)}`
+        : `${esc(d.label || "Lecteur amovible")} · aucun média inséré`;
       row.innerHTML =
         '<div class="sift-usb-row-info">' +
-        `<span class="sift-usb-row-id">${esc(d.id)}</span>` +
-        `<span class="sift-usb-row-meta">${esc(d.label || "Disque amovible")} · ${sizeGb} Go · ${esc(d.current_fs)}</span>` +
+        `<span class="sift-usb-row-id">${esc(driveDisplayName(d))}</span>` +
+        `<span class="sift-usb-row-meta">${meta}</span>` +
         "</div>" +
-        '<button type="button" class="sift-settings-btn" data-usb-format>Formater…</button>';
+        (d.has_media
+          ? '<button type="button" class="sift-settings-btn" data-usb-format>Formater…</button>'
+          : "");
       row.querySelector("[data-usb-format]")?.addEventListener("click", () => {
         openUsbFormatModal(d);
       });

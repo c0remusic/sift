@@ -19,17 +19,32 @@ pub mod windows;
 // `#[cfg(target_os = "macos")]` — see that file's module doc.
 pub mod macos;
 
-/// A drive Sift considers safe to offer for formatting: passed the conservative removable
-/// filter. `volume_serial` is the anti-race identity anchor — re-checked immediately before
-/// formatting (see `verify_identity_unchanged`) in case a drive letter/id was reassigned
-/// between listing and confirmation.
+/// A drive Sift considers safe to offer for formatting: passed the removable filter.
+///
+/// `id` identifies a **physical disk** (`\\.\PHYSICALDRIVE2`, `/dev/disk4`), never a mounted
+/// volume — a brand-new or RAW key has no volume, and that is precisely what this tool formats.
+///
+/// `identity` is the anti-race anchor, re-checked immediately before formatting (see
+/// `verify_identity_unchanged`) in case a different disk answers to the same id between listing
+/// and confirmation. It was `volume_serial` until 2026-07-31; a volume serial cannot exist for an
+/// unformatted disk, so anchoring on it excluded every disk the user most needed to format. It is
+/// opaque to the frontend, which round-trips the string and never parses it.
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct RemovableDrive {
     pub id: String,
     pub label: String,
+    /// Drive letter(s)/mount point(s), for display only. Empty for a disk with no mounted volume
+    /// — an empty string here is the signal that the disk is RAW, not that lookup failed.
+    pub mount: String,
     pub size_bytes: u64,
     pub current_fs: String,
-    pub volume_serial: String,
+    /// `false` for a card reader / drive bay that is enumerated but empty. Such a device is a
+    /// real removable disk with a real drive letter — Windows keeps showing `E:` in Explorer with
+    /// nothing inserted — but there is nothing to format in it. Listing it and saying so beats
+    /// hiding it: "no drive detected" while Explorer shows a USB drive letter is exactly the
+    /// contradiction that cost an evening on 2026-07-31.
+    pub has_media: bool,
+    pub identity: String,
 }
 
 /// Target filesystem for formatting. FAT32 is the default (spec: bypasses the Windows GUI's
@@ -83,16 +98,16 @@ pub trait RemovableDriveBackend {
     fn format(&self, drive: &RemovableDrive, fs: TargetFs) -> Result<(), UsbFormatError>;
 }
 
-/// Anti-race guard: re-resolve `drive` by volume serial from a **fresh** listing (`fresh`,
-/// passed in by the caller right before formatting) and fail explicitly if it's gone or its
-/// serial changed — never fall back to "the id still matches, must be the same drive".
+/// Anti-race guard: re-resolve `drive` by identity from a **fresh** listing (`fresh`, passed in
+/// by the caller right before formatting) and fail explicitly if it's gone or its identity
+/// changed — never fall back to "the id still matches, must be the same drive".
 pub fn verify_identity_unchanged(
     drive: &RemovableDrive,
     fresh: &[RemovableDrive],
 ) -> Result<(), UsbFormatError> {
     match fresh.iter().find(|d| d.id == drive.id) {
         None => Err(UsbFormatError::DriveVanished),
-        Some(d) if d.volume_serial != drive.volume_serial => Err(UsbFormatError::IdentityMismatch),
+        Some(d) if d.identity != drive.identity => Err(UsbFormatError::IdentityMismatch),
         Some(_) => Ok(()),
     }
 }
@@ -130,13 +145,15 @@ mod tests {
         );
     }
 
-    fn drive(id: &str, serial: &str) -> RemovableDrive {
+    fn drive(id: &str, identity: &str) -> RemovableDrive {
         RemovableDrive {
             id: id.to_string(),
             label: "TEST".to_string(),
+            mount: "E:".to_string(),
             size_bytes: 8_000_000_000,
             current_fs: "FAT32".to_string(),
-            volume_serial: serial.to_string(),
+            has_media: true,
+            identity: identity.to_string(),
         }
     }
 
