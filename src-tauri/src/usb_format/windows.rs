@@ -60,6 +60,29 @@ struct Win32DiskDrive {
     Size: Option<u64>,
 }
 
+/// WQL object paths take the DeviceID **verbatim**: `\\.\PHYSICALDRIVE2`, backslashes NOT
+/// doubled. This shipped doubling them (`\\\\.\\PHYSICALDRIVE2`) from M7, and WMI answers that
+/// with "objet introuvable" for every disk — so the partition lookup found nothing and the
+/// `Err(_) => continue` below dropped every candidate in silence. Measured on this machine
+/// 2026-07-31 against `Win32_DiskDrive` disk 0: the doubled form fails, the verbatim form
+/// returns `Disk #0, Partition #0`. Pinned by `partitions_query_does_not_double_backslashes`.
+pub(crate) fn partitions_query(disk_index: u32) -> String {
+    format!(
+        "ASSOCIATORS OF {{Win32_DiskDrive.DeviceID='\\\\.\\PHYSICALDRIVE{disk_index}'}} \
+         WHERE AssocClass = Win32_DiskDriveToDiskPartition"
+    )
+}
+
+/// Partition DeviceIDs look like `Disk #0, Partition #0` — no backslash, so nothing to escape
+/// here. Extracted next to `partitions_query` only so both query shapes are visible (and
+/// testable) side by side; this one was never broken.
+pub(crate) fn logical_disks_query(partition_id: &str) -> String {
+    format!(
+        "ASSOCIATORS OF {{Win32_DiskPartition.DeviceID='{partition_id}'}} \
+         WHERE AssocClass = Win32_LogicalDiskToPartition"
+    )
+}
+
 impl RemovableDriveBackend for WindowsBackend {
     fn list(&self) -> Result<Vec<RemovableDrive>, UsbFormatError> {
         let wmi_con = WMIConnection::new()
@@ -83,29 +106,36 @@ impl RemovableDriveBackend for WindowsBackend {
             // via the partition->logicaldisk association. Any failure to resolve a letter for
             // this disk excludes it (conservative -- an unmounted/unpartitioned removable disk
             // isn't offerable for formatting through this simple query path).
-            let query = format!(
-                "ASSOCIATORS OF {{Win32_DiskDrive.DeviceID='\\\\\\\\.\\\\PHYSICALDRIVE{}'}} \
-                 WHERE AssocClass = Win32_DiskDriveToDiskPartition",
-                disk.Index
-            );
+            let query = partitions_query(disk.Index);
             let partitions: Vec<HashMap<String, Variant>> = match wmi_con.raw_query(&query) {
                 Ok(p) => p,
-                Err(_) => continue,
+                Err(e) => {
+                    // Never silent: a malformed query here used to drop the disk with no trace,
+                    // which is exactly how the escaping bug above survived from M7 to 2026-07-31.
+                    log::error!(
+                        "usb_format: partition lookup failed for disk {}: {e}",
+                        disk.Index
+                    );
+                    continue;
+                }
             };
 
             for part in partitions {
                 let Some(Variant::String(part_id)) = part.get("DeviceID") else {
                     continue;
                 };
-                let logical_query = format!(
-                    "ASSOCIATORS OF {{Win32_DiskPartition.DeviceID='{part_id}'}} \
-                     WHERE AssocClass = Win32_LogicalDiskToPartition"
-                );
-                let logicals: Vec<HashMap<String, Variant>> =
-                    match wmi_con.raw_query(&logical_query) {
-                        Ok(l) => l,
-                        Err(_) => continue,
-                    };
+                let logical_query = logical_disks_query(part_id);
+                let logicals: Vec<HashMap<String, Variant>> = match wmi_con
+                    .raw_query(&logical_query)
+                {
+                    Ok(l) => l,
+                    Err(e) => {
+                        log::error!(
+                            "usb_format: logical-disk lookup failed for partition {part_id}: {e}"
+                        );
+                        continue;
+                    }
+                };
                 for logical in logicals {
                     let Some(Variant::String(device_id)) = logical.get("DeviceID") else {
                         continue;
@@ -123,7 +153,19 @@ impl RemovableDriveBackend for WindowsBackend {
                             continue;
                         }
                     };
-                    let size_bytes: u64 = disk.Size.unwrap_or(0);
+                    // `Win32_DiskDrive.Size` is null for some USB bridges (measured 2026-07-31:
+                    // a card reader reports Model + InterfaceType but neither MediaType nor
+                    // Size). Falling back to the volume's own size keeps the row from reading
+                    // "0.0 Go", which the UI would otherwise show as a plausible-looking lie.
+                    let size_bytes: u64 = disk
+                        .Size
+                        .or_else(|| match logical.get("Size") {
+                            Some(Variant::UI8(n)) => Some(*n),
+                            Some(Variant::UI4(n)) => Some(u64::from(*n)),
+                            Some(Variant::String(s)) => s.parse::<u64>().ok(),
+                            _ => None,
+                        })
+                        .unwrap_or(0);
                     drives.push(RemovableDrive {
                         id: device_id.clone(),
                         label: disk.Model.clone().unwrap_or_else(|| device_id.clone()),
@@ -192,6 +234,85 @@ mod tests {
             q.contains("FROM Win32_DiskDrive"),
             "typed query must name the real WMI class, got: {q}"
         );
+    }
+
+    /// The escaping bug was invisible to every other test: the query string was built inline at
+    /// its single call site, so nothing could read it without a live WMI connection. Extracting
+    /// the builder is what makes it assertable on any machine.
+    #[test]
+    fn partitions_query_does_not_double_backslashes() {
+        let q = partitions_query(2);
+        assert!(
+            q.contains(r"'\\.\PHYSICALDRIVE2'"),
+            "device path must be verbatim, got: {q}"
+        );
+        assert!(
+            !q.contains(r"\\\\"),
+            "doubling the backslashes makes WMI answer 'object not found', got: {q}"
+        );
+    }
+
+    /// Live probe against this machine's real WMI. `--ignored` — it reports whatever is
+    /// physically plugged in, so it asserts nothing; it exists so that "aucun disque amovible
+    /// détecté" can be traced to the stage that dropped the disk instead of guessed at.
+    /// `cargo test --manifest-path src-tauri/Cargo.toml usb_format::windows -- --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn live_dump_what_this_machine_reports() {
+        let con = WMIConnection::new().expect("WMIConnection::new");
+        let disks: Vec<Win32DiskDrive> = con.query().expect("Win32_DiskDrive query");
+        println!("--- {} disque(s) vus par Win32_DiskDrive ---", disks.len());
+        for disk in &disks {
+            let raw = RawDiskInfo {
+                media_type: disk.MediaType.clone(),
+                interface_type: disk.InterfaceType.clone(),
+            };
+            println!(
+                "disk {} model={:?} media={:?} iface={:?} size={:?} => removable={}",
+                disk.Index,
+                disk.Model,
+                disk.MediaType,
+                disk.InterfaceType,
+                disk.Size,
+                is_confidently_removable(&raw)
+            );
+            let parts: Vec<HashMap<String, Variant>> =
+                match con.raw_query(partitions_query(disk.Index)) {
+                    Ok(p) => p,
+                    Err(e) => {
+                        println!("    partitions: ERREUR {e}");
+                        continue;
+                    }
+                };
+            println!("    {} partition(s)", parts.len());
+            for part in &parts {
+                let Some(Variant::String(pid)) = part.get("DeviceID") else {
+                    continue;
+                };
+                match con.raw_query::<HashMap<String, Variant>>(&logical_disks_query(pid)) {
+                    Ok(logicals) => {
+                        for l in &logicals {
+                            println!(
+                                "      {pid} -> id={:?} fs={:?} serial={:?} size={:?}",
+                                l.get("DeviceID"),
+                                l.get("FileSystem"),
+                                l.get("VolumeSerialNumber"),
+                                l.get("Size")
+                            );
+                        }
+                        if logicals.is_empty() {
+                            println!("      {pid} -> aucun volume logique");
+                        }
+                    }
+                    Err(e) => println!("      {pid} -> ERREUR {e}"),
+                }
+            }
+        }
+        let listed = WindowsBackend.list().expect("list()");
+        println!("--- list() renvoie {} disque(s) ---", listed.len());
+        for d in &listed {
+            println!("    {d:?}");
+        }
     }
 
     #[test]
