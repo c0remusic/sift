@@ -285,6 +285,23 @@ const MIGRATIONS: &[&str] = &[
         buckets_json TEXT NOT NULL
     );
     "#,
+    // v18 — version du schéma de classement dans le cache d'occupation.
+    //
+    // v17 s'invalide sur l'espace libre, ce qui détecte un contenu qui bouge. Mais pas une RÈGLE de
+    // classement qui change : `.aif` et `.aiff` viennent d'être fusionnés en un seul format, et un
+    // disque intact resservirait indéfiniment sa ventilation d'avant, coupée en deux.
+    //
+    // Le dépôt connaît déjà ce piège — c'est toute la raison d'être de la migration v16, où un
+    // `REPORT_CACHE_VERSION` bumpé sans purge avait laissé 3907 rapports inservables. Ici la
+    // version est stockée AVEC la donnée, donc un changement de règle rend simplement les lignes
+    // périmées invisibles à `read_cache`, sans migration de rattrapage à écrire.
+    //
+    // DEFAULT 0 : les lignes écrites par la v17 portaient le schéma 1 mais ne le disaient pas.
+    // 0 ne correspond à aucune version émise, donc elles sont toutes rejetées au prochain accès et
+    // recalculées — ce qu'on veut, puisqu'elles ont justement l'ancien découpage.
+    r#"
+    ALTER TABLE volume_usage ADD COLUMN scheme_version INTEGER NOT NULL DEFAULT 0;
+    "#,
 ];
 
 /// Applies any migrations the DB hasn't seen yet, tracked via PRAGMA user_version.

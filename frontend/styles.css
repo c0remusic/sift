@@ -1483,3 +1483,88 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .ti-fill{font-family:"tabler-icons-filled";font-style:normal;speak:none;font-weight:normal;font-variant:normal;text-transform:none;line-height:1;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
 .ti-fill-trash:before{content:"\f783"}
 .ti-fill-circle-arrow-right:before{content:"\f6fc"}
+
+/* ---- Graphique d'occupation par format (ecran Cle USB + Bibliotheque) ----
+   Layout inspire de Disk Utility : en-tete icone + identite + capacite encadree, filet, barre
+   CONTIGUE (aucun espacement entre segments, comme Apple), legende en colonnes nom-au-dessus /
+   taille-en-dessous, encadre d'informations. Les aplats utilisent les tokens `-solid`, calibres
+   comme surfaces de donnee et qui ne portent jamais de texte. */
+.sift-usage-card{display:flex;flex-direction:column;gap:var(--space-16);padding:var(--space-24)}
+.sift-usage-head{display:flex;align-items:center;gap:var(--space-16)}
+.sift-usage-glyph{width:56px;height:56px;flex:none}
+.sift-usage-ident{min-width:0;display:flex;flex-direction:column}
+.sift-usage-name{font-size:20px;font-weight:600;letter-spacing:-0.01em;line-height:1.2;color:var(--color-text-primary)}
+.sift-usage-sub{font-size:var(--text-md);color:var(--color-text-secondary)}
+.sift-usage-capacity{margin-left:auto;flex:none;border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:var(--space-12) var(--space-16);font-size:var(--text-lg);font-variant-numeric:tabular-nums;color:var(--color-text-primary)}
+.sift-usage-rule{height:0.5px;background:var(--color-border-tertiary)}
+
+.sift-usage-barwrap{position:relative}
+.sift-usage-bar{display:flex;height:26px;border-radius:var(--border-radius-sm);overflow:hidden}
+.sift-usage-seg{min-width:4px;border:0;padding:0;cursor:pointer;appearance:none;transition:opacity 120ms ease,filter 120ms ease}
+.sift-usage-bar.dim .sift-usage-seg{opacity:.28}
+.sift-usage-bar.dim .sift-usage-seg.on{opacity:1;filter:brightness(1.08)}
+.sift-usage-seg:focus-visible{outline:2px solid var(--color-text-primary);outline-offset:2px;opacity:1}
+.sift-usage-seg-free{flex:1 1 auto;background:var(--color-border-tertiary);cursor:default}
+
+.sift-usage-tip{position:absolute;bottom:calc(100% + 8px);left:0;background:var(--color-text-primary);color:var(--color-background-secondary);padding:var(--space-8) var(--space-12);border-radius:var(--border-radius-sm);font-size:var(--text-md);white-space:nowrap;pointer-events:none;opacity:0;transform:translateY(3px);transition:opacity 110ms ease,transform 110ms ease;z-index:var(--z-popover)}
+.sift-usage-tip.on{opacity:1;transform:translateY(0)}
+.sift-usage-tip-ext{font-family:var(--font-mono);font-weight:600}
+.sift-usage-tip-meta{opacity:.75}
+
+.sift-usage-legend{display:grid;grid-template-columns:repeat(auto-fill,minmax(132px,1fr));gap:var(--space-12) var(--space-16)}
+.sift-usage-lg{display:flex;flex-direction:column;align-items:flex-start;background:none;border:0;padding:0;cursor:pointer;color:inherit;font-family:inherit;text-align:left;min-width:0}
+.sift-usage-lg-static{cursor:default}
+.sift-usage-lg-top{display:inline-flex;align-items:center;gap:var(--space-8);min-width:0}
+/* Carre arrondi, pas une pastille : forme de Disk Utility, reprise pour toutes les legendes. */
+.sift-usage-swatch{width:var(--space-12);height:var(--space-12);border-radius:3px;flex:none}
+.sift-usage-swatch-free{background:var(--color-border-tertiary)}
+.sift-usage-lg-name{font-family:var(--font-mono);font-size:var(--text-md);color:var(--color-text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sift-usage-lg-name-plain{font-family:var(--font-ui)}
+.sift-usage-lg-size{font-size:var(--text-md);color:var(--color-text-secondary);font-variant-numeric:tabular-nums;padding-left:calc(var(--space-12) + var(--space-8))}
+.sift-usage-lg:hover .sift-usage-lg-name{text-decoration:underline;text-underline-offset:2px}
+.sift-usage-lg-static:hover .sift-usage-lg-name{text-decoration:none}
+.sift-usage-lg:focus-visible{outline:2px solid var(--color-text-primary);outline-offset:3px;border-radius:3px}
+
+.sift-usage-info{margin:0;border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:var(--space-16);display:grid;grid-template-columns:1fr 1fr;gap:var(--space-12) var(--space-32)}
+.sift-usage-pair{display:flex;align-items:baseline;gap:var(--space-12);font-size:var(--text-md);min-width:0}
+.sift-usage-pair dt{color:var(--color-text-secondary)}
+.sift-usage-pair dd{margin:0 0 0 auto;color:var(--color-text-primary);font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sift-usage-pair dd.warn{color:var(--color-text-warning)}
+
+.sift-usage-actions{display:flex;align-items:center;gap:var(--space-8);flex-wrap:wrap}
+.sift-usage-disclose{display:inline-flex;align-items:center;gap:var(--space-8);font-family:inherit;font-size:var(--text-md);padding:var(--space-8) var(--space-12);background:var(--color-background-tertiary);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);color:var(--color-text-primary);cursor:pointer}
+.sift-usage-disclose:hover{background:var(--color-background-tertiary);border-color:var(--color-text-tertiary)}
+.sift-usage-disclose:focus-visible{outline:2px solid var(--color-text-primary);outline-offset:2px}
+.sift-usage-chev{display:inline-block;transition:transform 200ms ease;font-size:9px;opacity:.7}
+.sift-usage-disclose[aria-expanded="true"] .sift-usage-chev{transform:rotate(90deg)}
+.sift-usage-cache-note{font-size:var(--text-sm);color:var(--color-text-tertiary)}
+.sift-usage-btn{font-family:inherit;font-size:var(--text-md);padding:var(--space-8) var(--space-12);background:var(--color-background-tertiary);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);color:var(--color-text-primary);cursor:pointer}
+.sift-usage-btn:hover:not(:disabled){background:var(--color-background-tertiary);border-color:var(--color-text-tertiary)}
+.sift-usage-btn:disabled{opacity:.5;cursor:default}
+.sift-usage-btn:focus-visible{outline:2px solid var(--color-text-primary);outline-offset:2px}
+.sift-usage-actions .sift-usage-btn:first-of-type{margin-left:auto}
+.sift-usage-status:not([hidden]){border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:var(--space-12) var(--space-16);background:var(--color-background-tertiary);font-size:var(--text-md);color:var(--color-text-secondary)}
+
+/* 0fr -> 1fr anime vers une hauteur inconnue sans la mesurer en JS. Le padding vit sur
+   .sift-usage-panel-inner, jamais sur la piste mesuree, sinon elle ne se referme pas
+   completement (piege css-grid-0fr-track-padding-pitfall). */
+.sift-usage-panel{display:grid;grid-template-rows:0fr;transition:grid-template-rows 240ms ease}
+.sift-usage-panel.on{grid-template-rows:1fr}
+.sift-usage-panel-clip{overflow:hidden;min-height:0}
+.sift-usage-panel-inner{padding-top:var(--space-12);display:flex;flex-direction:column;gap:var(--space-16)}
+.sift-usage-grp{display:flex;flex-direction:column}
+.sift-usage-grp-head{display:flex;align-items:baseline;gap:var(--space-8);font-size:var(--text-sm);text-transform:uppercase;letter-spacing:0.06em;font-weight:600;color:var(--color-text-tertiary);padding-bottom:var(--space-4)}
+.sift-usage-grp-total{margin-left:auto;text-transform:none;letter-spacing:0;font-variant-numeric:tabular-nums}
+.sift-usage-prow{display:grid;grid-template-columns:104px 1fr 76px 64px;gap:var(--space-12);align-items:center;padding:var(--space-8);margin:0 calc(var(--space-8) * -1);border-top:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-sm);font-size:var(--text-md)}
+.sift-usage-prow:first-of-type{border-top:0}
+/* Surlignage TRANSITOIRE seulement : un etat confirme permanent reste neutre, seule sa
+   transition se colore. */
+.sift-usage-prow.flash{animation:sift-usage-flash 1400ms ease-out}
+@keyframes sift-usage-flash{0%,32%{background:var(--color-background-tertiary)}100%{background:transparent}}
+.sift-usage-pext{font-family:var(--font-mono);font-size:var(--text-sm);display:inline-flex;align-items:center;gap:var(--space-8)}
+.sift-usage-ptrack{height:6px;border-radius:3px;background:var(--color-border-tertiary);overflow:hidden}
+.sift-usage-pfill{height:100%;border-radius:3px}
+.sift-usage-pcount{color:var(--color-text-tertiary);font-variant-numeric:tabular-nums;text-align:right}
+.sift-usage-psize{color:var(--color-text-secondary);font-variant-numeric:tabular-nums;text-align:right}
+
+@media (prefers-reduced-motion:reduce){.sift-usage-prow.flash{animation:none}}

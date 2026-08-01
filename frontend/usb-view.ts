@@ -2,11 +2,12 @@
 // card inside Réglages (#sift-reglages-usb) with the nav item redirecting there (finding F5,
 // audit-heuristique-visuel.md), so the "Clé USB" item lit up "Réglages" and led to a page about
 // something else. Everything USB-related now lives here; Réglages no longer carries any of it.
-import { listRemovableDrives } from "./ipc";
+import { listRemovableDrives, driveUsage, ejectDrive } from "./ipc";
 import type { RemovableDrive } from "./ipc";
 import { requireEl, esc } from "./dom";
 import { openUsbFormatModal } from "./usb-format-modal";
 import { usbRowHtml } from "./usb-row";
+import { renderUsageChart } from "./usage-chart";
 
 /** Holds the currently-attached `sift:usb-format-done` window listener, if any, so `renderUsbLive()`
  * can remove it before attaching a new one. Without this, every re-render of the screen (each nav
@@ -58,6 +59,48 @@ export function renderUsbLive(): void {
     '<div id="sift-usb-list" class="sift-usb-list"></div>' +
     '<div class="sift-settings-subactions"><button id="sift-usb-refresh" class="sift-settings-btn sift-settings-btn-quiet">Actualiser la liste</button></div>';
 
+  /** Remplit `slot` avec le graphique d'occupation de `d`. Le parcours peut prendre quelques
+   * secondes au premier passage (ensuite le backend sert son cache), donc le slot annonce
+   * l'attente au lieu de rester vide — un blanc se lit comme une panne. */
+  async function mountUsage(slot: HTMLElement, d: RemovableDrive, force = false): Promise<void> {
+    slot.innerHTML = '<div class="sift-usb-empty">Analyse de l\'occupation…</div>';
+    let report;
+    try {
+      report = await driveUsage(d.id, force);
+    } catch (e) {
+      console.error("driveUsage failed", e);
+      slot.innerHTML =
+        '<div class="sift-usb-empty">Occupation indisponible.<br>' + esc(String(e)) + "</div>";
+      return;
+    }
+    const sizeGb = (d.size_bytes / 1_000_000_000).toFixed(1).replace(".", ",");
+    slot.innerHTML = "";
+    slot.appendChild(
+      renderUsageChart({
+        report,
+        title: d.mount ? `${d.mount} — ${d.label}` : d.label,
+        subtitle: `Disque USB externe · ${d.current_fs}`,
+        // Ni capacité ni connexion : la ligne au-dessus et l'encadré de capacité les portent déjà.
+        info: [
+          ["Espace libre", `${(d.free_bytes / 1_000_000_000).toFixed(1).replace(".", ",")} Go`],
+          ["Système de fichiers", d.current_fs],
+          ["Fichiers", String(report.file_count)],
+          ["Périphérique", d.id.replace(/^\\\\\.\\/, "")],
+          ["Taille totale", `${sizeGb} Go`],
+        ],
+        onRefresh: async () => {
+          await mountUsage(slot, d, true);
+        },
+        onEject: async () => {
+          await ejectDrive(d.id);
+          // Éjecté : la ligne comme le graphique n'ont plus d'objet. On repart d'une liste
+          // fraîche plutôt que de retirer la ligne à la main et risquer de mentir.
+          await renderUsbList();
+        },
+      }),
+    );
+  }
+
   async function renderUsbList() {
     const listEl = usbBlock.querySelector<HTMLElement>("#sift-usb-list");
     if (!listEl) return;
@@ -95,6 +138,14 @@ export function renderUsbLive(): void {
         openUsbFormatModal(d);
       });
       listEl.appendChild(row);
+      // Le graphique d'occupation vit sous SA ligne, pas dans une carte flottante qui
+      // réafficherait la même identité. Un disque sans média n'a rien à parcourir.
+      if (d.has_media) {
+        const slot = document.createElement("div");
+        slot.className = "sift-usb-usage-slot";
+        listEl.appendChild(slot);
+        void mountUsage(slot, d);
+      }
     }
   }
 

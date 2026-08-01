@@ -61,6 +61,31 @@ impl std::error::Error for UsageError {}
 ///
 /// Fonction pure : c'est elle qui porte toute la logique de classement, et elle se teste sans
 /// toucher un disque.
+/// Version du schéma de classement. **À incrémenter dès que `bucket_for` change de résultat.**
+///
+/// Le cache d'occupation s'invalide sur l'espace libre, ce qui detecte un contenu qui bouge — mais
+/// pas un classement qui change : un disque intact garderait indéfiniment une ventilation calculée
+/// par une ancienne règle. Le dépôt connaît déjà ce piège, c'est toute la raison d'être de la
+/// migration v16 (`analysis::REPORT_CACHE_VERSION` bumpée sans purge, 3907 rapports devenus
+/// inservables et jamais relus).
+pub const BUCKET_SCHEME_VERSION: i64 = 2;
+
+/// Deux orthographes, un seul format. Mesuré sur le vrai disque DJ le 2026-08-01 : `.aif` et
+/// `.aiff` cohabitaient, coupant 20,1 Go d'AIFF en deux segments de couleur identique — la barre
+/// donnait deux formats là où il n'y en a qu'un. Un DJ ne pense pas « aif contre aiff ».
+///
+/// Table volontairement courte : uniquement des paires dont l'équivalence ne se discute pas. Une
+/// extension inconnue n'est jamais renommée — inventer une équivalence serait pire que la scission.
+fn canonical_ext(ext: &str) -> &str {
+    match ext {
+        ".aif" => ".aiff",
+        ".jpeg" => ".jpg",
+        ".tif" => ".tiff",
+        ".mpeg" => ".mpg",
+        _ => ext,
+    }
+}
+
 pub fn bucket_for(relative: &Path) -> String {
     let mut components = relative.components();
     if let Some(Component::Normal(first)) = components.next() {
@@ -71,7 +96,9 @@ pub fn bucket_for(relative: &Path) -> String {
         }
     }
     match relative.extension().and_then(|e| e.to_str()) {
-        Some(ext) if !ext.is_empty() => format!(".{}", ext.to_ascii_lowercase()),
+        Some(ext) if !ext.is_empty() => {
+            canonical_ext(&format!(".{}", ext.to_ascii_lowercase())).to_string()
+        }
         _ => NO_EXT_BUCKET.to_string(),
     }
 }
@@ -222,6 +249,37 @@ mod tests {
     #[test]
     fn same_extension_outside_pioneer_is_not_rekordbox() {
         assert_eq!(bucket_for(&PathBuf::from("sauvegardes/export.pdb")), ".pdb");
+    }
+
+    /// Le defaut trouve en faisant tourner le graphique sur le vrai disque DJ : 14,9 Go de `.aif`
+    /// et 5,2 Go de `.aiff` en deux segments, pour un seul et meme format.
+    #[test]
+    fn aif_and_aiff_are_one_format() {
+        assert_eq!(bucket_for(&PathBuf::from("a.aif")), ".aiff");
+        assert_eq!(bucket_for(&PathBuf::from("b.AIFF")), ".aiff");
+        let out = aggregate(vec![
+            (bucket_for(&PathBuf::from("a.aif")), 100u64),
+            (bucket_for(&PathBuf::from("b.aiff")), 50),
+        ]);
+        assert_eq!(out.len(), 1, "un seul seau attendu, obtenu {out:?}");
+        assert_eq!(out[0].bytes, 150);
+    }
+
+    #[test]
+    fn other_undisputed_spellings_merge_too() {
+        assert_eq!(bucket_for(&PathBuf::from("cover.jpeg")), ".jpg");
+        assert_eq!(bucket_for(&PathBuf::from("scan.TIF")), ".tiff");
+    }
+
+    /// La table d'equivalences reste courte exprès : renommer une extension inconnue inventerait
+    /// une equivalence, ce qui est pire que la scission qu'on corrige.
+    #[test]
+    fn unknown_extensions_are_never_renamed() {
+        for p in ["a.wav", "b.mp3", "c.flac", "d.xyz", "e.opus"] {
+            let bucket = bucket_for(&PathBuf::from(p));
+            let ext = format!(".{}", p.rsplit('.').next().unwrap_or(""));
+            assert_eq!(bucket, ext, "{p} ne doit pas etre renomme");
+        }
     }
 
     #[test]

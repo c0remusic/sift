@@ -38,16 +38,28 @@ fn now_secs() -> i64 {
 /// exact, un cache d'il y a dix secondes peut être faux. Si l'espace libre du volume diffère de
 /// celui enregistré, du contenu a été ajouté ou retiré, et la ventilation ne vaut plus rien.
 pub(crate) fn read_cache(conn: &Connection, key: &str, free_bytes: u64) -> Option<UsageReport> {
-    let row: Option<(i64, i64, i64, i64, String)> = conn
+    let row: Option<(i64, i64, i64, i64, String, i64)> = conn
         .query_row(
-            "SELECT scanned_at, total_bytes, free_bytes, file_count, buckets_json
+            "SELECT scanned_at, total_bytes, free_bytes, file_count, buckets_json, scheme_version
              FROM volume_usage WHERE volume_key = ?1",
             rusqlite::params![key],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+            |r| {
+                Ok((
+                    r.get(0)?,
+                    r.get(1)?,
+                    r.get(2)?,
+                    r.get(3)?,
+                    r.get(4)?,
+                    r.get(5)?,
+                ))
+            },
         )
         .ok();
-    let (scanned_at, total, free, count, json) = row?;
-    if free as u64 != free_bytes {
+    let (scanned_at, total, free, count, json, scheme) = row?;
+    // Deux invalidations distinctes, et il en faut deux : l'espace libre attrape un contenu qui a
+    // bouge, la version de schema attrape une REGLE de classement qui a change. Ni l'une ni l'autre
+    // ne couvre le cas de l'autre.
+    if free as u64 != free_bytes || scheme != volume_usage::BUCKET_SCHEME_VERSION {
         return None;
     }
     let buckets: Vec<ExtUsage> = serde_json::from_str(&json).ok()?;
@@ -69,19 +81,21 @@ pub(crate) fn write_cache(
     let json = serde_json::to_string(&report.buckets).unwrap_or_else(|_| "[]".to_string());
     conn.execute(
         "INSERT INTO volume_usage
-            (volume_key, scanned_at, total_bytes, free_bytes, file_count, buckets_json)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+            (volume_key, scanned_at, total_bytes, free_bytes, file_count, buckets_json,
+             scheme_version)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7)
          ON CONFLICT(volume_key) DO UPDATE SET
             scanned_at=excluded.scanned_at, total_bytes=excluded.total_bytes,
             free_bytes=excluded.free_bytes, file_count=excluded.file_count,
-            buckets_json=excluded.buckets_json",
+            buckets_json=excluded.buckets_json, scheme_version=excluded.scheme_version",
         rusqlite::params![
             key,
             report.scanned_at,
             report.total_bytes as i64,
             report.free_bytes as i64,
             report.file_count as i64,
-            json
+            json,
+            volume_usage::BUCKET_SCHEME_VERSION
         ],
     )?;
     Ok(())
@@ -242,6 +256,35 @@ mod tests {
         write_cache(&conn, "K", &report(500)).expect("write");
         assert!(read_cache(&conn, "K", 499).is_none());
         assert!(read_cache(&conn, "K", 501).is_none());
+    }
+
+    /// Une ventilation calculee par une ancienne regle de classement doit etre rejetee meme si le
+    /// disque n'a pas bouge d'un octet — l'espace libre ne peut pas detecter ca.
+    #[test]
+    fn an_older_bucket_scheme_invalidates() {
+        let conn = mem_db();
+        write_cache(&conn, "K", &report(500)).expect("write");
+        conn.execute(
+            "UPDATE volume_usage SET scheme_version = ?1 WHERE volume_key = 'K'",
+            rusqlite::params![volume_usage::BUCKET_SCHEME_VERSION - 1],
+        )
+        .expect("downgrade");
+        assert!(read_cache(&conn, "K", 500).is_none());
+    }
+
+    /// Les lignes ecrites par la v17 n'avaient pas de colonne de version : la v18 leur pose 0, qui
+    /// ne correspond a aucune version emise, donc elles sont recalculees. C'est voulu — ce sont
+    /// exactement celles qui portent l'ancien decoupage .aif/.aiff.
+    #[test]
+    fn rows_from_before_the_version_column_are_recomputed() {
+        let conn = mem_db();
+        write_cache(&conn, "K", &report(500)).expect("write");
+        conn.execute(
+            "UPDATE volume_usage SET scheme_version = 0 WHERE volume_key = 'K'",
+            [],
+        )
+        .expect("legacy");
+        assert!(read_cache(&conn, "K", 500).is_none());
     }
 
     #[test]
