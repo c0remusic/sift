@@ -19,6 +19,10 @@ pub mod privileged;
 #[cfg(target_os = "windows")]
 pub mod raw_volume;
 
+/// Alignement secteur pour les ecritures sur volume brut. Pas d OS-gate : la logique est pure
+/// et ses tests doivent tourner partout.
+pub mod sector_io;
+
 #[cfg(target_os = "windows")]
 pub mod windows;
 

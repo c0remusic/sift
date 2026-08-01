@@ -15,7 +15,7 @@
 //! **Une seule invite UAC.** `diskpart` et l'écriture brute ont tous deux besoin de l'élévation ;
 //! les faire depuis le même processus élevé évite d'en demander deux fois.
 
-use super::{fat32, raw_volume::RawVolume, TargetFs};
+use super::{fat32, raw_volume::RawVolume, sector_io::SectorIo, TargetFs};
 use std::io::Write;
 
 /// Fichier ou le processus eleve depose son etape courante, et que le parent relit.
@@ -114,6 +114,7 @@ pub fn run(job: &PrivilegedJob) -> i32 {
     match win::run_diskpart_script(&script) {
         Ok(()) => {}
         Err(e) => {
+            write_step(&format!("Échec du partitionnement : {e}"));
             eprintln!("sift: partitionnement impossible: {e}");
             return EXIT_PARTITION_FAILED;
         }
@@ -142,6 +143,7 @@ pub fn run(job: &PrivilegedJob) -> i32 {
     let mut volume = match RawVolume::open(&letter) {
         Ok(v) => v,
         Err(e) => {
+            write_step(&format!("Volume inaccessible : {e}"));
             eprintln!("sift: {e}");
             return EXIT_VOLUME_LOCKED;
         }
@@ -149,7 +151,13 @@ pub fn run(job: &PrivilegedJob) -> i32 {
 
     write_step("Écriture du système de fichiers FAT32…");
     let written = match job.fs {
-        TargetFs::Fat32 => fat32::write_fat32(volume.as_file_mut(), total_bytes, &job.label),
+        TargetFs::Fat32 => {
+            // A travers l'adaptateur d'alignement : un handle de volume refuse les E/S qui ne
+            // tombent pas sur des multiples entiers de secteur, et `fatfs` ecrit comme dans un
+            // fichier. C'est ce qui a fait echouer le premier formatage reel.
+            let aligned = SectorIo::new(volume.as_file_mut(), u64::from(fat32::BYTES_PER_SECTOR));
+            fat32::write_fat32(aligned, total_bytes, &job.label)
+        }
         // exFAT passe par diskpart, qui le sait faire sans plafond — ce mode ne devrait pas être
         // sollicité pour lui, mais refuser vaut mieux qu'écrire un FAT32 à sa place.
         TargetFs::ExFat => {
@@ -165,6 +173,10 @@ pub fn run(job: &PrivilegedJob) -> i32 {
             EXIT_OK
         }
         Err(e) => {
+            // Dans le fichier d'etape, pas seulement sur stderr : `Start-Process -Verb RunAs` ne
+            // permet pas de rediriger la sortie d'un processus eleve, donc stderr est perdu et
+            // l'echec serait muet — ce qu'il a ete au premier essai reel.
+            write_step(&format!("Échec de l'écriture : {e}"));
             eprintln!("sift: écriture FAT32 impossible: {e}");
             EXIT_WRITE_FAILED
         }
