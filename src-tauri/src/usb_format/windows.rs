@@ -452,8 +452,14 @@ impl WindowsBackend {
     fn volume_health(storage: &WMIConnection) -> HashMap<String, (String, String)> {
         let mut out = HashMap::new();
         let rows: Vec<HashMap<String, Variant>> = match storage
-            .raw_query("SELECT DriveLetter, HealthStatus, OperationalStatus FROM MSFT_Volume")
-        {
+            // `FileSystemLabel` doit figurer ici, pas seulement dans la lecture plus bas : une
+            // projection WQL ne rend QUE les colonnes nommées, et un champ absent se lit comme un
+            // champ vide. C'est ce qui a fait remonter un nom de volume vide alors que la santé,
+            // issue de la même ligne, arrivait correctement.
+            .raw_query(
+                "SELECT DriveLetter, HealthStatus, OperationalStatus, FileSystemLabel \
+                 FROM MSFT_Volume",
+            ) {
             Ok(r) => r,
             Err(e) => {
                 log::error!("usb_format: MSFT_Volume query failed: {e}");
