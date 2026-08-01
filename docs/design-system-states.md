@@ -1423,3 +1423,35 @@ Modale de formatage, état ajouté le même jour : FAT32 refusé au-delà de 32 
 `error-pattern.stories.ts`). Windows ne sait pas créer de volume FAT32 plus
 grand — `diskpart` subit la limite comme l'explorateur, contrairement à ce que
 le module et le texte de l'écran affirmaient tous les deux.
+
+---
+
+## Teintes pleines `-solid` — neuf tokens (2026-08-01)
+
+Story : `frontend/hue-solid.stories.ts`. Ajoutées pour les **surfaces de donnée** : les segments
+du graphique d'occupation disque de l'écran Clé USB, où `-bg` (fond de puce, chroma 0,035–0,05)
+rend délavé et `-text` est une couleur d'encre.
+
+| Variante | Rôle | Teintes disponibles |
+|---|---|---|
+| `-bg` | fond de puce, texte par-dessus | indigo, teal, purple, pink |
+| `-text` | encre sur ce fond | indigo, teal, purple, pink, yellow |
+| `-solid` | aplat de donnée | **les neuf** : blue, indigo, teal, green, orange, yellow, purple, pink, gray |
+
+`blue`, `green`, `orange` et `gray` n'existent **qu'en `-solid`** — `-bg`/`-text` n'auraient de
+sens que pour une puce, et rien n'en demande.
+
+**Ne jamais poser de texte sur un `-solid`** : ces valeurs sont calibrées comme aplats, pas comme
+fonds lisibles. Pour une puce, `-bg` + `-text` restent le couple.
+
+**Origine des valeurs.** Ce sont les couleurs système Apple officielles converties en oklch, jeu
+clair et jeu sombre — Apple en publie deux, et réutiliser les valeurs claires sur fond sombre les
+ferait plonger. Ce n'est pas une palette étrangère plaquée : les cinq teintes déjà présentes
+étaient **déjà** dérivées d'Apple, en gardant l'angle et en abaissant la chroma (`indigo` et
+`purple` portent exactement les angles d'Apple, 278,34 et 312,41 ; `yellow` à 90,23 contre 90,38).
+`-solid` conserve l'angle ET la chroma d'origine.
+
+Les trois blocs de thème (`:root`, `@media (prefers-color-scheme:dark)`,
+`:root[data-theme="dark"]`) portent les neuf tokens. Vérifié sur les valeurs **résolues** dans
+l'app réelle : aucune manquante, et aucune identique entre les deux thèmes — le piège du bloc
+sombre resté avec les valeurs claires.

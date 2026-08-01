@@ -26,6 +26,14 @@ color-scheme:light;
 --color-border-tertiary:oklch(25.67% 0.0142 67.12 / 0.09);--color-border-secondary:oklch(25.67% 0.0142 67.12 / 0.16);
 --color-border-info:oklch(56.9% 0.1044 246.74 / .35);--color-border-danger:oklch(57.16% 0.1594 30.17 / .42);
 --color-hue-indigo-text:oklch(43.43% 0.1484 283.58);--color-hue-indigo-bg:oklch(83.28% 0.045 278.34);--color-hue-purple-text:oklch(45.72% 0.1313 307.39);--color-hue-purple-bg:oklch(86.36% 0.05 312.41);--color-hue-pink-text:oklch(45.67% 0.1331 1.47);--color-hue-pink-bg:oklch(86.03% 0.045 2.52);--color-hue-teal-text:oklch(47.62% 0.0805 184.5);--color-hue-teal-bg:oklch(91.40% 0.035 186.37);--color-hue-yellow-text:oklch(54.77% 0.1119 90.23);
+/* Remplissages pleins pour surfaces de donnee (segments de graphique), la ou -bg est un fond
+   de puce et -text une couleur d'encre. Valeurs systeme Apple officielles converties en oklch :
+   jeu clair ici, jeu sombre d'Apple dans les deux blocs sombres plus bas -- reutiliser les
+   valeurs claires sur fond sombre les ferait plonger.
+   Les cinq teintes deja presentes (-bg/-text) gardent leurs angles Apple d'origine et une chroma
+   volontairement plus basse ; -solid est la variante saturee, a n'employer QUE comme aplat de
+   donnee, jamais derriere du texte. blue/green/orange/gray n'existent qu'en -solid. */
+--color-hue-blue-solid:oklch(60.28% 0.2177 257.42);--color-hue-indigo-solid:oklch(52.95% 0.1910 278.34);--color-hue-teal-solid:oklch(69.98% 0.1109 212.72);--color-hue-green-solid:oklch(73.03% 0.1944 147.44);--color-hue-orange-solid:oklch(76.52% 0.1752 62.57);--color-hue-yellow-solid:oklch(86.52% 0.1768 90.38);--color-hue-purple-solid:oklch(61.49% 0.2129 312.41);--color-hue-pink-solid:oklch(64.97% 0.2383 17.90);--color-hue-gray-solid:oklch(64.83% 0.0073 286.19);
 /* Icon/glyph color drawn on top of a solid accent fill (ex: watch-toggle checkmark on
    --color-text-success). Was a hardcoded #fff fallback on an undefined token — worked by
    accident in light (accent fills are mid-dark here) but would go invisible in dark, where the
@@ -148,6 +156,7 @@ color-scheme:light;
     --color-border-tertiary:oklch(100.0% 0.0 89.88 / 0.09);--color-border-secondary:oklch(100.0% 0.0 89.88 / 0.22);
     --color-border-info:oklch(79.21% 0.0789 242.05 / .30);--color-border-danger:oklch(78.05% 0.0992 32.54 / .40);
     --color-hue-indigo-text:oklch(74.16% 0.1143 286.69);--color-hue-indigo-bg:oklch(34.15% 0.045 278.34);--color-hue-purple-text:oklch(77.58% 0.0892 311.64);--color-hue-purple-bg:oklch(37.40% 0.05 312.41);--color-hue-pink-text:oklch(80.76% 0.0905 355.95);--color-hue-pink-bg:oklch(39.91% 0.045 2.52);--color-hue-teal-text:oklch(84.24% 0.0961 185.53);--color-hue-teal-bg:oklch(43.48% 0.035 186.37);--color-hue-yellow-text:oklch(88.36% 0.129 93.67);
+    --color-hue-blue-solid:oklch(62.43% 0.2056 255.49);--color-hue-indigo-solid:oklch(55.64% 0.2032 278.15);--color-hue-teal-solid:oklch(77.06% 0.1181 211.98);--color-hue-green-solid:oklch(75.56% 0.2082 146.98);--color-hue-orange-solid:oklch(78.24% 0.1711 67.22);--color-hue-yellow-solid:oklch(88.49% 0.1805 94.78);--color-hue-purple-solid:oklch(65.60% 0.2274 312.42);--color-hue-pink-solid:oklch(65.77% 0.2317 16.02);--color-hue-gray-solid:oklch(68.12% 0.0073 286.21);
     --overlay-hover:oklch(100.0% 0.0 89.88 / .03);--overlay-selected:oklch(100.0% 0.0 89.88 / .06);
     --overlay-badge:oklch(100.0% 0.0 89.88 / .06);--overlay-drop:oklch(35.51% 0.0051 106.66 / .93);
     /* Hover-scrub fill on the waveform (see .sift-wave-hover) — replaces a hardcoded
@@ -169,6 +178,7 @@ color-scheme:light;
   --color-border-tertiary:oklch(100.0% 0.0 89.88 / 0.09);--color-border-secondary:oklch(100.0% 0.0 89.88 / 0.22);
   --color-border-info:oklch(79.21% 0.0789 242.05 / .30);--color-border-danger:oklch(78.05% 0.0992 32.54 / .40);
   --color-hue-indigo-text:oklch(74.16% 0.1143 286.69);--color-hue-indigo-bg:oklch(34.15% 0.045 278.34);--color-hue-purple-text:oklch(77.58% 0.0892 311.64);--color-hue-purple-bg:oklch(37.40% 0.05 312.41);--color-hue-pink-text:oklch(80.76% 0.0905 355.95);--color-hue-pink-bg:oklch(39.91% 0.045 2.52);--color-hue-teal-text:oklch(84.24% 0.0961 185.53);--color-hue-teal-bg:oklch(43.48% 0.035 186.37);--color-hue-yellow-text:oklch(88.36% 0.129 93.67);
+  --color-hue-blue-solid:oklch(62.43% 0.2056 255.49);--color-hue-indigo-solid:oklch(55.64% 0.2032 278.15);--color-hue-teal-solid:oklch(77.06% 0.1181 211.98);--color-hue-green-solid:oklch(75.56% 0.2082 146.98);--color-hue-orange-solid:oklch(78.24% 0.1711 67.22);--color-hue-yellow-solid:oklch(88.49% 0.1805 94.78);--color-hue-purple-solid:oklch(65.60% 0.2274 312.42);--color-hue-pink-solid:oklch(65.77% 0.2317 16.02);--color-hue-gray-solid:oklch(68.12% 0.0073 286.21);
   --overlay-hover:oklch(100.0% 0.0 89.88 / .03);--overlay-selected:oklch(100.0% 0.0 89.88 / .06);
   --overlay-badge:oklch(100.0% 0.0 89.88 / .06);--overlay-drop:oklch(35.51% 0.0051 106.66 / .93);
   --overlay-wave-hover:oklch(100% 0 0 / .14);
