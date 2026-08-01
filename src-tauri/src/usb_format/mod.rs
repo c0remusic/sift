@@ -9,6 +9,10 @@
 
 use serde::{Deserialize, Serialize};
 
+/// Formatage FAT32 au-dela du plafond de 32 Go de Windows. Pas d'OS-gate : les structures FAT32
+/// sont les memes partout, et les tests doivent tourner sur n'importe quelle machine.
+pub mod fat32;
+
 #[cfg(target_os = "windows")]
 pub mod windows;
 
