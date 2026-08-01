@@ -52,6 +52,10 @@ pub struct RemovableDrive {
     /// signifie un contenu différent, donc un parcours à refaire.
     pub free_bytes: u64,
     pub current_fs: String,
+    /// Nom du volume actuel (`"DJERMUSIQUE"`), vide si le disque n'est pas formate. Sert de valeur
+    /// par defaut au champ de nom de la modale : reformater une cle en gardant son nom est le cas
+    /// courant, le retaper a chaque fois serait une corvee.
+    pub volume_name: String,
     /// Etat de sante du volume, deja formule en francais par le backend. Vide quand il n'y a aucun
     /// volume monte a interroger — un disque RAW n'a pas de sante de systeme de fichiers.
     pub health: String,
@@ -131,7 +135,14 @@ impl std::fmt::Display for UsbFormatError {
 /// `macos::MacBackend`), never a mixed `cfg!` branch inside one function.
 pub trait RemovableDriveBackend {
     fn list(&self) -> Result<Vec<RemovableDrive>, UsbFormatError>;
-    fn format(&self, drive: &RemovableDrive, fs: TargetFs) -> Result<(), UsbFormatError>;
+    /// `label` est le nom donne au volume. Il est assaini par le backend (`fat32::volume_label`),
+    /// jamais pris tel quel : FAT32 n'accepte que 11 octets majuscules.
+    fn format(
+        &self,
+        drive: &RemovableDrive,
+        fs: TargetFs,
+        label: &str,
+    ) -> Result<(), UsbFormatError>;
     /// Demonte le disque pour qu il puisse etre debranche sans risque.
     ///
     /// Doit VERIFIER que le disque a bien disparu avant de rendre `Ok` : sur les deux OS la
@@ -218,6 +229,7 @@ mod tests {
             size_bytes: 8_000_000_000,
             free_bytes: 4_000_000_000,
             current_fs: "FAT32".to_string(),
+            volume_name: "TEST".to_string(),
             health: "OK".to_string(),
             has_media: true,
             identity: identity.to_string(),

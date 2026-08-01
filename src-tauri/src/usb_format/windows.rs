@@ -130,6 +130,8 @@ pub(crate) struct VolumeFacts {
     /// Etat de sante du volume, deja mis en francais (`describe_health`). Vide quand aucun volume
     /// monte n'a pu etre interroge.
     pub health: String,
+    /// Nom du premier volume monte, vide sinon.
+    pub volume_name: String,
     /// Somme des `FreeSpace` des volumes montés. C'est aussi la clé d'invalidation du cache
     /// d'occupation (`volume_usage`) : si l'espace libre a bougé, le contenu a bougé.
     pub free_bytes: u64,
@@ -323,7 +325,30 @@ fn variant_to_string(v: Option<&Variant>) -> Option<String> {
     }
 }
 
-/// Nom donné au volume par un formatage FAT32 de Sift.
+/// Réduit un nom de volume libre à ce qui peut traverser une ligne de commande PowerShell sans
+/// échappement : le champ est libre côté interface, et `privileged_elevation_powershell` refuse
+/// tout guillemet plutôt que de l'échapper. On assainit donc ici, avec la MÊME règle que
+/// `fat32::volume_label` — sinon l'utilisateur verrait un nom et le disque en porterait un autre.
+pub(crate) fn sanitize_label_for_command(label: &str) -> String {
+    let cleaned: String = label
+        .chars()
+        .take(11)
+        .map(|c| {
+            if c.is_ascii_alphanumeric() || c == '_' || c == '-' {
+                c.to_ascii_uppercase()
+            } else {
+                '_'
+            }
+        })
+        .collect();
+    if cleaned.is_empty() {
+        DEFAULT_VOLUME_LABEL.to_string()
+    } else {
+        cleaned
+    }
+}
+
+/// Nom donné au volume par un formatage FAT32 de Sift, quand l'utilisateur n'en fournit aucun.
 ///
 /// Un formatage efface tout, nom de volume compris — c'est le comportement de tous les outils, et
 /// le préserver donnerait l'illusion que quelque chose a survécu.
@@ -362,7 +387,11 @@ pub(crate) fn privileged_elevation_powershell(
 
 impl WindowsBackend {
     /// FAT32 au-delà du plafond de 32 Go, via un Sift relancé en administrateur.
-    fn format_large_fat32(&self, drive: &RemovableDrive) -> Result<(), UsbFormatError> {
+    fn format_large_fat32(
+        &self,
+        drive: &RemovableDrive,
+        label: &str,
+    ) -> Result<(), UsbFormatError> {
         let disk_index = disk_index_from_id(&drive.id).ok_or_else(|| {
             UsbFormatError::Format(format!(
                 "identifiant de disque non reconnu: {} — formatage refusé",
@@ -373,12 +402,13 @@ impl WindowsBackend {
             .map_err(|e| UsbFormatError::Format(format!("chemin de l'exécutable: {e}")))?;
         let exe = exe.to_string_lossy().to_string();
 
-        let ps = privileged_elevation_powershell(&exe, disk_index, "fat32", DEFAULT_VOLUME_LABEL)
-            .ok_or_else(|| {
-            UsbFormatError::Format(
-                "chemin d'exécutable contenant un guillemet — formatage refusé".to_string(),
-            )
-        })?;
+        let safe = sanitize_label_for_command(label);
+        let ps =
+            privileged_elevation_powershell(&exe, disk_index, "fat32", &safe).ok_or_else(|| {
+                UsbFormatError::Format(
+                    "chemin d'exécutable contenant un guillemet — formatage refusé".to_string(),
+                )
+            })?;
 
         let output = Command::new("powershell")
             .args(["-NoProfile", "-Command", &ps])
@@ -416,7 +446,7 @@ impl WindowsBackend {
     /// `MSFT_Volume` vit dans l'espace de noms Storage et n'a pas d'equivalent en CIMV2 :
     /// `Win32_LogicalDisk` ne porte aucune notion de sante. `raw_query` plutot qu'une struct
     /// typee parce que `DriveLetter` y est un `Char` WMI, pas une chaine — mesure le 2026-08-01.
-    fn volume_health(storage: &WMIConnection) -> HashMap<String, String> {
+    fn volume_health(storage: &WMIConnection) -> HashMap<String, (String, String)> {
         let mut out = HashMap::new();
         let rows: Vec<HashMap<String, Variant>> = match storage
             .raw_query("SELECT DriveLetter, HealthStatus, OperationalStatus FROM MSFT_Volume")
@@ -453,7 +483,11 @@ impl WindowsBackend {
                     .collect(),
                 _ => Vec::new(),
             };
-            out.insert(format!("{letter}:"), describe_health(health, &ops));
+            let name = match row.get("FileSystemLabel") {
+                Some(Variant::String(s)) => s.clone(),
+                _ => String::new(),
+            };
+            out.insert(format!("{letter}:"), (describe_health(health, &ops), name));
         }
         out
     }
@@ -531,11 +565,14 @@ impl RemovableDriveBackend for WindowsBackend {
             // Volumes are read BEFORE the filter because one veto is derived from them. Cheap:
             // a few WMI calls per disk, on a list that is single digits long.
             let mut facts = Self::volume_facts(&cimv2, disk.Number);
-            facts.health = facts
+            if let Some((health, name)) = facts
                 .letters
                 .iter()
                 .find_map(|l| health_by_letter.get(l).cloned())
-                .unwrap_or_default();
+            {
+                facts.health = health;
+                facts.volume_name = name;
+            }
             let carries_system_volume = facts
                 .letters
                 .iter()
@@ -568,6 +605,7 @@ impl RemovableDriveBackend for WindowsBackend {
                 size_bytes,
                 free_bytes: facts.free_bytes,
                 current_fs: describe_filesystem(&facts),
+                volume_name: facts.volume_name.clone(),
                 health: facts.health.clone(),
                 has_media,
                 identity: disk_identity(
@@ -627,12 +665,17 @@ impl RemovableDriveBackend for WindowsBackend {
         Err(UsbFormatError::EjectBusy)
     }
 
-    fn format(&self, drive: &RemovableDrive, fs: TargetFs) -> Result<(), UsbFormatError> {
+    fn format(
+        &self,
+        drive: &RemovableDrive,
+        fs: TargetFs,
+        label: &str,
+    ) -> Result<(), UsbFormatError> {
         // FAT32 au-delà de 32 Go : Windows refuse de le CRÉER, donc `diskpart` ne peut pas servir.
         // On passe par notre propre écriture, dans un Sift relancé en administrateur — c'est la
         // raison d'être de tout ce chemin, et le cas d'usage principal d'une clé DJ moderne.
         if fs == TargetFs::Fat32 && drive.size_bytes > super::fat32::WINDOWS_FAT32_CREATE_CEILING {
-            return self.format_large_fat32(drive);
+            return self.format_large_fat32(drive, label);
         }
 
         // Hard failure, never a fallback: the script below runs `clean` on this number.
@@ -827,6 +870,21 @@ mod tests {
 
     /// Le code 53263 est le seul dont j'aie vu le rendu de Windows — mesure sur le volume FAT32
     /// reel de cette machine, que `Get-Volume` annonce "Full Repair Needed".
+    /// Le champ de nom est libre cote interface : ce qui en sort doit etre sur a poser dans une
+    /// commande, et IDENTIQUE a ce que le disque portera — sinon l'utilisateur voit un nom et la
+    /// cle en porte un autre.
+    #[test]
+    fn free_text_label_is_made_safe_for_a_command() {
+        assert_eq!(sanitize_label_for_command("Cle DJ"), "CLE_DJ");
+        assert_eq!(sanitize_label_for_command("djermusique"), "DJERMUSIQUE");
+        // Le guillemet, le point-virgule, les espaces et la barre oblique tombent tous sur `_` ;
+        // seul le tiret survit. Rien de ce qui sort d'ici ne peut refermer une chaine PowerShell.
+        assert_eq!(sanitize_label_for_command("a'; rm -r /"), "A___RM_-R__");
+        assert_eq!(sanitize_label_for_command(""), DEFAULT_VOLUME_LABEL);
+        assert_eq!(sanitize_label_for_command("!!!"), "___");
+        assert_eq!(sanitize_label_for_command("BEAUCOUP_TROP_LONG").len(), 11);
+    }
+
     #[test]
     fn measured_repair_code_is_named() {
         assert_eq!(

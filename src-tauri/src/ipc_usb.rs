@@ -39,7 +39,12 @@ pub fn eject_drive(drive_id: String) -> Result<(), String> {
 /// The disk actually formatted is `confirmed` — the entry from the **fresh** listing, never the
 /// caller's. `drive_id` only selects; every field `format` acts on is backend-produced.
 #[tauri::command]
-pub fn format_drive(drive_id: String, identity: String, fs: TargetFs) -> Result<(), String> {
+pub fn format_drive(
+    drive_id: String,
+    identity: String,
+    fs: TargetFs,
+    label: String,
+) -> Result<(), String> {
     let b = backend();
     let fresh = b.list().map_err(|e| e.to_string())?;
     let candidate = RemovableDrive {
@@ -49,6 +54,7 @@ pub fn format_drive(drive_id: String, identity: String, fs: TargetFs) -> Result<
         size_bytes: 0,
         free_bytes: 0,
         current_fs: String::new(),
+        volume_name: String::new(),
         health: String::new(),
         has_media: false,
         identity,
@@ -63,5 +69,5 @@ pub fn format_drive(drive_id: String, identity: String, fs: TargetFs) -> Result<
     if !confirmed.has_media {
         return Err("Aucun média dans ce lecteur — rien à formater.".to_string());
     }
-    b.format(&confirmed, fs).map_err(|e| e.to_string())
+    b.format(&confirmed, fs, &label).map_err(|e| e.to_string())
 }

@@ -1574,3 +1574,9 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
    annuler le padding que le composant se donne pour le cas Cle USB. */
 .sift-bib-usage{margin-bottom:var(--space-12)}
 .sift-bib-usage .sift-usage-card{padding:0;background:none;border:0;gap:var(--space-12)}
+
+/* Champ de nom de volume dans la modale de formatage. Meme forme que la ligne de confirmation
+   juste en dessous, pour que les deux se lisent comme une seule sequence. */
+.sift-usbfmt-namerow{display:flex;flex-direction:column;gap:var(--space-4);font-size:var(--text-md);color:var(--color-text-secondary)}
+.sift-usbfmt-namerow input{font-family:var(--font-mono);font-size:var(--text-md);padding:var(--space-8);background:var(--color-background-primary);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);color:var(--color-text-primary)}
+.sift-usbfmt-namerow input:focus-visible{outline:2px solid var(--color-text-primary);outline-offset:2px}

@@ -386,6 +386,9 @@ export interface RemovableDrive {
    * d'invalidation au cache d'occupation côté Rust — ne pas le recalculer ici. */
   free_bytes: number;
   current_fs: string;
+  /** Nom du volume actuel ("DJERMUSIQUE"), vide si le disque n'est pas formate. Valeur par defaut
+   * du champ de nom dans la modale. */
+  volume_name: string;
   /** Etat de sante du volume, deja formule en francais par le backend ("OK",
    * "Reparation complete necessaire", "Avertissement (code N)"). Vide pour un disque RAW, qui n'a
    * pas de systeme de fichiers dont juger la sante. */
@@ -444,5 +447,9 @@ export const libraryUsage = (): Promise<UsageReport> => invoke("library_usage");
 /** Format `driveId` to `fs`. `identity` must be the value last read for this drive — the backend
  * re-checks it against a fresh listing immediately before formatting and rejects with
  * "IDENTITY_MISMATCH"/"DRIVE_VANISHED" if the drive was swapped since the list was fetched. */
-export const formatDrive = (driveId: string, identity: string, fs: TargetFs): Promise<void> =>
-  invoke("format_drive", { driveId, identity, fs });
+export const formatDrive = (
+  driveId: string,
+  identity: string,
+  fs: TargetFs,
+  label: string,
+): Promise<void> => invoke("format_drive", { driveId, identity, fs, label });

@@ -201,6 +201,7 @@ impl RemovableDriveBackend for MacBackend {
                 // diskutil expose FreeSpace ailleurs ; non cable tant que ce backend n a jamais tourne.
                 free_bytes: 0,
                 current_fs: fs,
+                volume_name: String::new(),
                 health: String::new(),
                 has_media: disk.size_bytes > 0,
                 identity: format!("{}|{}|{}", disk.id, disk.size_bytes, volume_uuid),
@@ -229,13 +230,18 @@ impl RemovableDriveBackend for MacBackend {
         )))
     }
 
-    fn format(&self, drive: &RemovableDrive, fs: TargetFs) -> Result<(), UsbFormatError> {
+    fn format(
+        &self,
+        drive: &RemovableDrive,
+        fs: TargetFs,
+        label: &str,
+    ) -> Result<(), UsbFormatError> {
         let fs_name = match fs {
             TargetFs::Fat32 => "FAT32",
             TargetFs::ExFat => "ExFAT",
         };
         let output = Command::new("diskutil")
-            .args(["eraseDisk", fs_name, &drive.label, &drive.id])
+            .args(["eraseDisk", fs_name, label, &drive.id])
             .output()
             .map_err(|e| UsbFormatError::Format(format!("spawn diskutil eraseDisk: {e}")))?;
         if !output.status.success() {

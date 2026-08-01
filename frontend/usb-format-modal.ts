@@ -16,12 +16,11 @@ import { driveDisplayName } from "./usb-row";
 
 const CONFIRM_REARM_MS = 400; // mirrors sift-live.ts's batch-confirm floor (see BATCH_CONFIRM_THRESHOLD)
 
-/** Windows refuses to *create* a FAT32 volume above 32 GiB. The limit is in the format driver, so
- * `format.com`, the Explorer dialog and the `diskpart` script this screen runs all hit it alike —
- * the backend's claim that diskpart "bypasses the 32 GB ceiling" was wrong (verified 2026-07-31).
- * A 64 GB key would just fail with "The volume is too big for FAT32" after the user typed the
- * confirmation, so the choice is refused up front instead. */
-const FAT32_MAX_BYTES = 32 * 1024 ** 3;
+/** Plafond que WINDOWS impose à la création d'un FAT32. Sift ne le subit plus — il écrit les
+ * structures lui-même (`usb_format::fat32`) — mais l'opération demande alors une élévation, et
+ * l'utilisateur doit savoir pourquoi une invite va surgir. Miroir de
+ * `fat32::WINDOWS_FAT32_CREATE_CEILING`. */
+const WINDOWS_FAT32_CEILING = 32 * 1024 ** 3;
 
 
 export function openUsbFormatModal(drive: RemovableDrive): void {
@@ -41,6 +40,10 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
   // disque confirmé n'est plus celui-là. Désarme définitivement le bouton de confirmation — la
   // seule sortie est Annuler puis une liste fraîche.
   let fatal = false;
+  // Nom du volume, prerempli avec celui de la cle : reformater en gardant son nom est le cas
+  // courant. Le backend l'assainit de toute facon (11 octets, majuscules) — ce champ ne fait que
+  // proposer, il ne decide pas de ce qui sera ecrit.
+  let volumeName = drive.volume_name || "SIFT";
 
   const overlay = document.createElement("div");
   overlay.id = "sift-usbfmt-overlay";
@@ -76,10 +79,10 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
   // display name (drive letter, or disk number when the key is unformatted) is what distinguishes
   // them, and unlike the raw `\\.\PHYSICALDRIVE2` it is retypable.
   const confirmWord = drive.label ? `${drive.label} (${displayName})` : displayName;
-  /** True when the currently-selected filesystem cannot be created on this disk at all. Read by
-   * every place that computes the confirm button's `disabled`, so arming is impossible rather
-   * than merely discouraged. */
-  const impossible = () => fs === "fat32" && drive.size_bytes > FAT32_MAX_BYTES;
+  /** Vrai quand ce formatage passera par l'écriture FAT32 de Sift plutôt que par `diskpart` —
+   * donc quand une invite d'élévation Windows va surgir. Ce n'est PAS un blocage : c'est le cas
+   * d'usage principal d'une clé DJ moderne, et le seul que Windows ne sait pas traiter. */
+  const needsElevation = () => fs === "fat32" && drive.size_bytes > WINDOWS_FAT32_CEILING;
 
   function render() {
     card.innerHTML =
@@ -111,12 +114,17 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
         ? '<div class="sift-usbfmt-exfat-warning">exFAT n\'est pas garanti compatible avec tous ' +
           "les CDJ/contrôleurs DJ. FAT32 reste le choix le plus sûr pour un usage club.</div>"
         : "") +
-      (impossible()
-        ? '<div class="sift-usbfmt-error">Windows ne sait pas créer un volume FAT32 au-delà de ' +
-          "32 Go, et ce disque fait " +
-          sizeGb +
-          " Go. Choisis exFAT, ou formate cette clé avec un outil tiers.</div>"
+      (needsElevation()
+        ? '<div class="sift-usbfmt-exfat-warning">Windows ne sait pas créer un FAT32 au-delà de ' +
+          "32 Go ; Sift l'écrit lui-même. Une autorisation administrateur sera demandée — c'est " +
+          "ce qui permet d'écrire directement sur le disque.</div>"
         : "") +
+      '<div class="sift-usbfmt-namerow">' +
+      '<label for="sift-usbfmt-name">Nom du volume</label>' +
+      '<input type="text" id="sift-usbfmt-name" maxlength="11" autocomplete="off" ' +
+      'spellcheck="false" value="' +
+      esc(volumeName) +
+      '"></div>' +
       '<div class="sift-usbfmt-typerow">' +
       '<label for="sift-usbfmt-typed">Tape <code>' +
       esc(confirmWord) +
@@ -155,16 +163,21 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
           typedAfter.value = typedBefore;
           typedOk = typedBefore.trim() === confirmWord;
           const confirmBtnAfter = card.querySelector<HTMLButtonElement>("#sift-usbfmt-confirm");
-          if (confirmBtnAfter) confirmBtnAfter.disabled = !typedOk || busy || fatal || impossible();
+          if (confirmBtnAfter) confirmBtnAfter.disabled = !typedOk || busy || fatal;
         }
       }),
     );
+
+    const nameInput = card.querySelector<HTMLInputElement>("#sift-usbfmt-name");
+    nameInput?.addEventListener("input", () => {
+      volumeName = nameInput.value;
+    });
 
     const typed = card.querySelector<HTMLInputElement>("#sift-usbfmt-typed");
     const confirmBtn = card.querySelector<HTMLButtonElement>("#sift-usbfmt-confirm");
     typed?.addEventListener("input", () => {
       typedOk = typed.value.trim() === confirmWord;
-      if (confirmBtn) confirmBtn.disabled = !typedOk || busy || fatal || impossible();
+      if (confirmBtn) confirmBtn.disabled = !typedOk || busy || fatal;
       // Not re-rendered here (no render() call — only the disabled attribute is touched), but
       // clears the stale error for whenever the next render() does happen (e.g. re-arming).
       lastError = null;
@@ -178,9 +191,7 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
     });
 
     confirmBtn?.addEventListener("click", () => {
-      // `impossible()` again, not just on the disabled attribute: a synthetic click has already
-      // walked through a guard in this WebView2 setup once (CLAUDE.md § Méthode).
-      if (!typedOk || busy || impossible()) return;
+      if (!typedOk || busy) return;
       if (!armedAt || Date.now() - armedAt < CONFIRM_REARM_MS) {
         // First click (or a suspiciously-fast repeat of a stale one): arm, don't format yet.
         armedAt = Date.now();
@@ -189,7 +200,7 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
       }
       busy = true;
       render();
-      void formatDrive(drive.id, drive.identity, fs)
+      void formatDrive(drive.id, drive.identity, fs, volumeName)
         .then(() => {
           close();
           window.dispatchEvent(new CustomEvent("sift:usb-format-done", { detail: { ok: true } }));
