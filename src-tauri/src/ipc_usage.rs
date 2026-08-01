@@ -181,8 +181,15 @@ pub fn drive_usage(
 #[tauri::command]
 pub fn library_usage(conn: State<'_, Mutex<Connection>>) -> Result<UsageReport, String> {
     let conn = db::lock_conn(&conn)?;
+    // `status = 'filed'`, EXACTEMENT le filtre de `library::list_filed`. Sans lui la requete
+    // ramenait toute la table `tracks`, pending compris : l'ecran Bibliotheque annoncait « 1 piste »
+    // pendant que le graphique juste au-dessus affichait 148,8 Go d'AIFF. Deux chiffres vrais, deux
+    // populations differentes, et rien pour le dire — vu en le faisant tourner le 2026-08-01.
     let mut stmt = conn
-        .prepare("SELECT path, size_bytes FROM tracks WHERE size_bytes IS NOT NULL")
+        .prepare(
+            "SELECT path, size_bytes FROM tracks \
+             WHERE status = 'filed' AND size_bytes IS NOT NULL",
+        )
         .map_err(|e| e.to_string())?;
     let rows = stmt
         .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?)))

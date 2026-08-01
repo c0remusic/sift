@@ -13,6 +13,8 @@ import {
 } from "./ipc";
 import type { LibraryTrack, LibraryFacets, LibraryFilter, DupGroup, DashboardStats } from "../shared/contracts";
 import { requireEl, esc } from "./dom";
+import { libraryUsage, type UsageReport } from "./ipc";
+import { renderUsageChart } from "./usage-chart";
 import { emptyStateHtml, wireEmptyState } from "./empty-state";
 import { createVirtualList, type VirtualList } from "./list-virtual";
 import {
@@ -187,6 +189,48 @@ export function positionViewModeThumb(): void {
   thumb.style.transform = `translateX(${onEl.offsetLeft}px)`;
 }
 
+/** Derniere ventilation par format de la bibliotheque, gardee entre deux rendus.
+ *
+ * `renderBiblioLive` se rejoue a chaque frappe de recherche, chaque facette et chaque tri, et il
+ * ecrase `#content` a chaque fois. Or ce graphique decrit la bibliotheque ENTIERE, pas le
+ * sous-ensemble filtre : le refaire a chaque touche couterait un aller-retour IPC pour un resultat
+ * identique, et le ferait clignoter. On le relit donc au premier affichage de l ecran seulement,
+ * et on redessine depuis cette valeur ensuite. */
+let bibUsage: UsageReport | null = null;
+
+/** Insere le graphique d occupation en tete de l ecran. `refetch` n est vrai qu au premier
+ * affichage : ensuite on redessine depuis `bibUsage`, sans aller-retour. */
+function mountBibUsage(content: HTMLElement, refetch: boolean): void {
+  const anchor = content.querySelector(".sift-library-layout");
+  if (!anchor) return;
+  const slot = document.createElement("div");
+  slot.id = "sift-bib-usage";
+  slot.className = "sift-ui-card-soft sift-ui-card-soft-pad sift-bib-usage";
+  content.insertBefore(slot, anchor);
+
+  const draw = (report: UsageReport) => {
+    slot.innerHTML = '<div class="sift-settings-title">Occupation par format</div>';
+    slot.appendChild(renderUsageChart({ report }));
+  };
+
+  if (bibUsage && !refetch) {
+    draw(bibUsage);
+    return;
+  }
+  slot.innerHTML =
+    '<div class="sift-settings-title">Occupation par format</div>' +
+    '<div class="sift-usb-empty">Lecture…</div>';
+  void libraryUsage()
+    .then((r) => {
+      bibUsage = r;
+      draw(r);
+    })
+    .catch((e: unknown) => {
+      console.error("libraryUsage failed", e);
+      slot.remove();
+    });
+}
+
 /** Live Bibliothèque view: lists filed tracks with search + quality chips + folder/genre
  * facets, wired to real data. Actions go through the #pa delegated handler (data-bib). */
 export async function renderBiblioLive() {
@@ -343,6 +387,10 @@ export async function renderBiblioLive() {
         `<div style="font-size:var(--text-md);color:var(--color-text-tertiary)">Aucun résultat pour ce filtre. <button data-bib="stat" data-stat="all" style="font-size:inherit;color:var(--color-text-info);background:none;border:none;padding:0;cursor:pointer;text-decoration:underline">Réinitialiser les filtres</button></div>`) +
       dupSection +
       `<div id="bibplayer"></div></div></div>`;
+
+  // Emplacement du graphique d occupation, rempli juste apres : `content.innerHTML` vient de tout
+  // ecraser, donc rien ne survit d un rendu a l autre et il faut le remonter a chaque fois.
+  if (!trulyEmpty) mountBibUsage(content, !alreadyRendered);
   wireEmptyState(content);
   positionFacetThumb(); // fresh node post-rebuild — no prior transform, just place it
   positionViewModeThumb();

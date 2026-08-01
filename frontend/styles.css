@@ -1568,3 +1568,9 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-usage-psize{color:var(--color-text-secondary);font-variant-numeric:tabular-nums;text-align:right}
 
 @media (prefers-reduced-motion:reduce){.sift-usage-prow.flash{animation:none}}
+
+/* Bibliotheque : le graphique est une carte de l'ecran, pas un objet flottant — il n'a ni en-tete
+   disque ni segment libre (une bibliotheque n'est pas un volume), donc sa propre carte doit
+   annuler le padding que le composant se donne pour le cas Cle USB. */
+.sift-bib-usage{margin-bottom:var(--space-12)}
+.sift-bib-usage .sift-usage-card{padding:0;background:none;border:0;gap:var(--space-12)}
