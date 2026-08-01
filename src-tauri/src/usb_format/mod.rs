@@ -75,6 +75,8 @@ pub enum UsbFormatError {
     Format(String),
     /// The user dismissed the OS elevation prompt. Nothing was touched.
     ElevationDeclined,
+    /// Éjection refusée : le volume est encore utilisé. Rien n'a été démonté.
+    EjectBusy,
 }
 
 /// Le disque attendu n'est plus branché. Sentinelle traversant l'IPC — miroir de
@@ -93,6 +95,12 @@ pub const IDENTITY_MISMATCH: &str = "IDENTITY_MISMATCH";
 /// doit le dire au lieu d'accuser le disque.
 pub const ELEVATION_DECLINED: &str = "ELEVATION_DECLINED";
 
+/// Le système a refusé de démonter le volume : un programme le tient encore ouvert. Même contrat
+/// de miroir. C'est le cas FRÉQUENT d'une éjection, pas un cas limite — Rekordbox, une fenêtre de
+/// l'explorateur ou un antivirus suffisent — et rien n'a été démonté, donc débrancher maintenant
+/// reste risqué. Le message doit dire quoi fermer, pas « réessaie ».
+pub const EJECT_BUSY: &str = "EJECT_BUSY";
+
 impl std::fmt::Display for UsbFormatError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
@@ -101,6 +109,7 @@ impl std::fmt::Display for UsbFormatError {
             UsbFormatError::Enumeration(m) => write!(f, "enumeration: {m}"),
             UsbFormatError::Format(m) => write!(f, "format: {m}"),
             UsbFormatError::ElevationDeclined => write!(f, "{ELEVATION_DECLINED}"),
+            UsbFormatError::EjectBusy => write!(f, "{EJECT_BUSY}"),
         }
     }
 }
@@ -110,6 +119,13 @@ impl std::fmt::Display for UsbFormatError {
 pub trait RemovableDriveBackend {
     fn list(&self) -> Result<Vec<RemovableDrive>, UsbFormatError>;
     fn format(&self, drive: &RemovableDrive, fs: TargetFs) -> Result<(), UsbFormatError>;
+    /// Demonte le disque pour qu il puisse etre debranche sans risque.
+    ///
+    /// Doit VERIFIER que le disque a bien disparu avant de rendre `Ok` : sur les deux OS la
+    /// demande d ejection est asynchrone et reussit silencieusement meme quand le systeme la
+    /// refuse ensuite. Annoncer un succes non verifie ici, c est inviter a debrancher un volume
+    /// encore monte.
+    fn eject(&self, drive: &RemovableDrive) -> Result<(), UsbFormatError>;
 }
 
 /// Le seul endroit du dépôt qui choisit un backend. Extrait de `ipc_usb` quand `ipc_usage` en a eu
@@ -151,7 +167,12 @@ mod tests {
 
     #[test]
     fn usb_format_sentinels_match_contracts_ts() {
-        for sentinel in [DRIVE_VANISHED, IDENTITY_MISMATCH, ELEVATION_DECLINED] {
+        for sentinel in [
+            DRIVE_VANISHED,
+            IDENTITY_MISMATCH,
+            ELEVATION_DECLINED,
+            EJECT_BUSY,
+        ] {
             let expected = format!("\"{sentinel}\"");
             assert!(
                 CONTRACTS_TS.contains(&expected),
@@ -173,6 +194,7 @@ mod tests {
             UsbFormatError::ElevationDeclined.to_string(),
             ELEVATION_DECLINED
         );
+        assert_eq!(UsbFormatError::EjectBusy.to_string(), EJECT_BUSY);
     }
 
     fn drive(id: &str, identity: &str) -> RemovableDrive {

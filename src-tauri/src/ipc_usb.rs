@@ -12,6 +12,25 @@ pub fn list_removable_drives() -> Result<Vec<RemovableDrive>, String> {
     backend().list().map_err(|e| e.to_string())
 }
 
+/// Démonte `drive_id` pour qu'il puisse être débranché sans risque.
+///
+/// Pas de garde anti-course ici, contrairement au formatage : éjecter le mauvais disque est
+/// contrariant, pas destructeur, et exiger une identité rendrait l'action impossible juste après
+/// un formatage — qui change précisément cette identité.
+///
+/// `"EJECT_BUSY"` quand le système refuse : rien n'a été démonté, donc débrancher reste risqué.
+#[tauri::command]
+pub fn eject_drive(drive_id: String) -> Result<(), String> {
+    let b = backend();
+    let fresh = b.list().map_err(|e| e.to_string())?;
+    let drive = fresh
+        .into_iter()
+        .find(|d| d.id == drive_id)
+        // Déjà absent : c'est le résultat voulu, pas une erreur à afficher.
+        .ok_or_else(|| usb_format::DRIVE_VANISHED.to_string())?;
+    b.eject(&drive).map_err(|e| e.to_string())
+}
+
 /// Format `drive_id` to `fs`. `identity` must match what the frontend last saw for this drive —
 /// re-checked against a fresh listing immediately before formatting (anti-race guard); fails with
 /// `"IDENTITY_MISMATCH"` or `"DRIVE_VANISHED"` if a different drive now answers to the same id

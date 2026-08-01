@@ -356,6 +356,50 @@ impl RemovableDriveBackend for WindowsBackend {
         Ok(drives)
     }
 
+    fn eject(&self, drive: &RemovableDrive) -> Result<(), UsbFormatError> {
+        // Un disque sans volume monté n'a rien à démonter : il est déjà débranchable.
+        let letters: Vec<&str> = drive
+            .mount
+            .split(',')
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .collect();
+        if letters.is_empty() {
+            return Ok(());
+        }
+
+        for letter in &letters {
+            let ps = eject_powershell(letter).ok_or_else(|| {
+                UsbFormatError::Enumeration(format!("lettre de lecteur inattendue: {letter}"))
+            })?;
+            let output = Command::new("powershell")
+                .args(["-NoProfile", "-Command", &ps])
+                .output()
+                .map_err(|e| UsbFormatError::Enumeration(format!("spawn powershell: {e}")))?;
+            if !output.status.success() {
+                log::error!(
+                    "usb_format: demande d'éjection refusée pour {letter}: {}",
+                    String::from_utf8_lossy(&output.stderr).trim()
+                );
+            }
+        }
+
+        // La demande a abouti ou non — c'est la disparition du disque qui tranche, pas le code de
+        // sortie du shell, qui vaut 0 même quand Windows refuse ensuite le démontage. Annoncer un
+        // succès non vérifié inviterait à débrancher un volume encore monté.
+        for _ in 0..EJECT_POLL_ATTEMPTS {
+            std::thread::sleep(EJECT_POLL_INTERVAL);
+            let still_there = self
+                .list()
+                .map(|drives| drives.iter().any(|d| d.id == drive.id))
+                .unwrap_or(true);
+            if !still_there {
+                return Ok(());
+            }
+        }
+        Err(UsbFormatError::EjectBusy)
+    }
+
     fn format(&self, drive: &RemovableDrive, fs: TargetFs) -> Result<(), UsbFormatError> {
         // Hard failure, never a fallback: the script below runs `clean` on this number.
         let disk_index = disk_index_from_id(&drive.id).ok_or_else(|| {
@@ -419,6 +463,33 @@ impl RemovableDriveBackend for WindowsBackend {
 
         Ok(())
     }
+}
+
+/// Combien de fois, et à quel rythme, on re-liste pour savoir si le disque est réellement parti.
+/// Le shell rend la main immédiatement et démonte en arrière-plan ; sans attente on conclurait
+/// « échec » sur une éjection qui aboutit une demi-seconde plus tard.
+const EJECT_POLL_ATTEMPTS: u32 = 12;
+const EJECT_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(300);
+
+/// Demande au shell d'éjecter cette lettre — le verbe exact du menu contextuel « Éjecter » de
+/// l'explorateur.
+///
+/// Ce chemin plutôt que `mountvol /P` ou un `DeviceIoControl(FSCTL_DISMOUNT_VOLUME)` : les deux
+/// exigent l'élévation, et faire surgir une invite UAC pour débrancher une clé serait absurde là
+/// où l'explorateur n'en demande aucune. Le verbe shell tourne en utilisateur normal.
+///
+/// Il ne rapporte RIEN en retour, ni succès ni échec — d'où la vérification par re-listage chez
+/// l'appelant. Refuse une lettre contenant un guillemet plutôt que d'échapper : elle vient de
+/// notre propre énumération, donc un guillemet signale un problème en amont.
+pub(crate) fn eject_powershell(letter: &str) -> Option<String> {
+    if letter.contains('\'') || letter.contains('"') {
+        return None;
+    }
+    Some(format!(
+        "$s = New-Object -ComObject Shell.Application; \
+         $v = $s.NameSpace(17).ParseName('{letter}'); \
+         if ($v) {{ $v.InvokeVerb('Eject') }}"
+    ))
 }
 
 #[cfg(test)]
@@ -611,6 +682,27 @@ mod tests {
         let b = disk_identity(Some("USBSTOR\\DISK&B\\7&2"), None, 8_000_000_000, &[]);
         assert_ne!(a, b);
         assert!(!a.trim_matches('|').is_empty());
+    }
+
+    /// Le verbe shell est le SEUL chemin d'éjection qui tourne sans élévation. `mountvol /P` et
+    /// `FSCTL_DISMOUNT_VOLUME` exigent l'administrateur, et faire surgir une invite UAC pour
+    /// débrancher une clé serait absurde là où l'explorateur n'en demande aucune.
+    #[test]
+    fn eject_uses_the_shell_verb_that_needs_no_elevation() {
+        let ps = eject_powershell("I:").expect("shim");
+        assert!(ps.contains("Shell.Application"), "{ps}");
+        assert!(ps.contains("InvokeVerb('Eject')"), "{ps}");
+        assert!(ps.contains("ParseName('I:')"), "{ps}");
+        assert!(
+            !ps.contains("RunAs") && !ps.contains("mountvol"),
+            "aucune elevation ne doit etre demandee: {ps}"
+        );
+    }
+
+    #[test]
+    fn eject_refuses_a_quoted_drive_letter() {
+        assert_eq!(eject_powershell("I'; rm -r /"), None);
+        assert_eq!(eject_powershell("I\":"), None);
     }
 
     #[test]

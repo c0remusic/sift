@@ -37,6 +37,12 @@ export const IDENTITY_MISMATCH = "IDENTITY_MISMATCH";
  * the UI must say so rather than blame the drive. */
 export const ELEVATION_DECLINED = "ELEVATION_DECLINED";
 
+/** `eject_drive` a echoue : le systeme refuse de demonter le volume, un programme le tient encore
+ * ouvert. Miroir de Rust `usb_format::EJECT_BUSY`. C'est le cas FREQUENT d'une ejection, pas un cas
+ * limite. Rien n'a ete demonte : debrancher maintenant reste risque, et le message doit dire quoi
+ * fermer plutot que d'inviter a reessayer. */
+export const EJECT_BUSY = "EJECT_BUSY";
+
 /** Default filename template — the value `filename_template` holds until the user changes it.
  * Mirror of Rust `settings::DEFAULT_TEMPLATE`; the two literals MUST stay identical, held by
  * `filing.rs::default_template_matches_contracts_ts`. Placeholders, and there are only these

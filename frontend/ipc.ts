@@ -400,6 +400,10 @@ export type TargetFs = "fat32" | "ex_fat";
 export const listRemovableDrives = (): Promise<RemovableDrive[]> =>
   invoke("list_removable_drives");
 
+/** Demonte `driveId` pour qu'il puisse etre debranche sans risque. Rejette avec `"EJECT_BUSY"`
+ * quand le systeme refuse — rien n'a ete demonte dans ce cas. */
+export const ejectDrive = (driveId: string): Promise<void> => invoke("eject_drive", { driveId });
+
 /** Une ligne du graphique d'occupation : un format, ce qu'il pèse, combien de fichiers.
  * Miroir de `volume_usage::ExtUsage`. */
 export interface ExtUsage {

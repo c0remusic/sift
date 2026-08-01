@@ -208,6 +208,26 @@ impl RemovableDriveBackend for MacBackend {
         Ok(drives)
     }
 
+    fn eject(&self, drive: &RemovableDrive) -> Result<(), UsbFormatError> {
+        let output = Command::new("diskutil")
+            .args(["eject", &drive.id])
+            .output()
+            .map_err(|e| UsbFormatError::Enumeration(format!("spawn diskutil eject: {e}")))?;
+        if output.status.success() {
+            return Ok(());
+        }
+        // `diskutil eject` est synchrone et rapporte l'échec, contrairement au verbe shell de
+        // Windows — pas de re-listage à faire ici. Un volume tenu ouvert donne "Unable to eject".
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        if stderr.contains("busy") || stderr.contains("Unable to eject") {
+            return Err(UsbFormatError::EjectBusy);
+        }
+        Err(UsbFormatError::Enumeration(format!(
+            "diskutil eject exited with {:?}: {stderr}",
+            output.status.code()
+        )))
+    }
+
     fn format(&self, drive: &RemovableDrive, fs: TargetFs) -> Result<(), UsbFormatError> {
         let fs_name = match fs {
             TargetFs::Fat32 => "FAT32",

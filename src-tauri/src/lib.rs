@@ -282,6 +282,7 @@ pub fn run() {
             ipc_library::rekordbox_masterdb_resolve_ambiguous_artwork_sync,
             ipc_usb::list_removable_drives,
             ipc_usb::format_drive,
+            ipc_usb::eject_drive,
             ipc_usage::drive_usage,
             ipc_usage::library_usage,
             dev_locate::locate_source,
