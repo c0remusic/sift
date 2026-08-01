@@ -201,6 +201,7 @@ impl RemovableDriveBackend for MacBackend {
                 // diskutil expose FreeSpace ailleurs ; non cable tant que ce backend n a jamais tourne.
                 free_bytes: 0,
                 current_fs: fs,
+                health: String::new(),
                 has_media: disk.size_bytes > 0,
                 identity: format!("{}|{}|{}", disk.id, disk.size_bytes, volume_uuid),
             });

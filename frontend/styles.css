@@ -1504,7 +1504,7 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-usage-bar.dim .sift-usage-seg{opacity:.28}
 .sift-usage-bar.dim .sift-usage-seg.on{opacity:1;filter:brightness(1.08)}
 .sift-usage-seg:focus-visible{outline:2px solid var(--color-text-primary);outline-offset:2px;opacity:1}
-.sift-usage-seg-free{flex:1 1 auto;background:var(--color-border-tertiary);cursor:default}
+.sift-usage-seg-free{flex:1 1 auto;background:var(--color-background-primary);cursor:default}
 
 .sift-usage-tip{position:absolute;bottom:calc(100% + 8px);left:0;background:var(--color-text-primary);color:var(--color-background-secondary);padding:var(--space-8) var(--space-12);border-radius:var(--border-radius-sm);font-size:var(--text-md);white-space:nowrap;pointer-events:none;opacity:0;transform:translateY(3px);transition:opacity 110ms ease,transform 110ms ease;z-index:var(--z-popover)}
 .sift-usage-tip.on{opacity:1;transform:translateY(0)}
@@ -1517,7 +1517,7 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-usage-lg-top{display:inline-flex;align-items:center;gap:var(--space-8);min-width:0}
 /* Carre arrondi, pas une pastille : forme de Disk Utility, reprise pour toutes les legendes. */
 .sift-usage-swatch{width:var(--space-12);height:var(--space-12);border-radius:3px;flex:none}
-.sift-usage-swatch-free{background:var(--color-border-tertiary)}
+.sift-usage-swatch-free{background:var(--color-background-primary);box-shadow:inset 0 0 0 0.5px var(--color-border-secondary)}
 .sift-usage-lg-name{font-family:var(--font-mono);font-size:var(--text-md);color:var(--color-text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sift-usage-lg-name-plain{font-family:var(--font-ui)}
 .sift-usage-lg-size{font-size:var(--text-md);color:var(--color-text-secondary);font-variant-numeric:tabular-nums;padding-left:calc(var(--space-12) + var(--space-8))}

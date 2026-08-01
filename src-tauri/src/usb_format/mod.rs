@@ -42,6 +42,9 @@ pub struct RemovableDrive {
     /// signifie un contenu différent, donc un parcours à refaire.
     pub free_bytes: u64,
     pub current_fs: String,
+    /// Etat de sante du volume, deja formule en francais par le backend. Vide quand il n'y a aucun
+    /// volume monte a interroger — un disque RAW n'a pas de sante de systeme de fichiers.
+    pub health: String,
     /// `false` for a card reader / drive bay that is enumerated but empty. Such a device is a
     /// real removable disk with a real drive letter — Windows keeps showing `E:` in Explorer with
     /// nothing inserted — but there is nothing to format in it. Listing it and saying so beats
@@ -205,6 +208,7 @@ mod tests {
             size_bytes: 8_000_000_000,
             free_bytes: 4_000_000_000,
             current_fs: "FAT32".to_string(),
+            health: "OK".to_string(),
             has_media: true,
             identity: identity.to_string(),
         }

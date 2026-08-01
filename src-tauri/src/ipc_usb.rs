@@ -49,6 +49,7 @@ pub fn format_drive(drive_id: String, identity: String, fs: TargetFs) -> Result<
         size_bytes: 0,
         free_bytes: 0,
         current_fs: String::new(),
+        health: String::new(),
         has_media: false,
         identity,
     };

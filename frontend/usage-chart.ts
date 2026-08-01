@@ -211,13 +211,6 @@ export function renderUsageChart(opts: UsageChartOptions): HTMLElement {
     '<span class="sift-usage-chev">▶</span><span class="sift-usage-disclose-label">Voir le détail complet</span>';
   actions.appendChild(toggle);
 
-  if (report.from_cache && opts.onRefresh) {
-    const note = document.createElement("span");
-    note.className = "sift-usage-cache-note";
-    note.textContent = "Mesure en cache";
-    actions.appendChild(note);
-  }
-
   const status = document.createElement("div");
   status.className = "sift-usage-status";
   status.setAttribute("role", "status");
@@ -227,13 +220,13 @@ export function renderUsageChart(opts: UsageChartOptions): HTMLElement {
     const refresh = document.createElement("button");
     refresh.type = "button";
     refresh.className = "sift-usage-btn";
-    refresh.textContent = "Actualiser";
+    refresh.textContent = "Relire le disque";
     refresh.addEventListener("click", () => {
       refresh.disabled = true;
-      refresh.textContent = "Analyse…";
+      refresh.textContent = "Lecture…";
       void opts.onRefresh?.().catch((e: unknown) => {
         refresh.disabled = false;
-        refresh.textContent = "Actualiser";
+        refresh.textContent = "Relire le disque";
         console.error("usage refresh failed", e);
         status.textContent = "Impossible de relire ce disque.";
         status.hidden = false;

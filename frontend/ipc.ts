@@ -386,6 +386,10 @@ export interface RemovableDrive {
    * d'invalidation au cache d'occupation côté Rust — ne pas le recalculer ici. */
   free_bytes: number;
   current_fs: string;
+  /** Etat de sante du volume, deja formule en francais par le backend ("OK",
+   * "Reparation complete necessaire", "Avertissement (code N)"). Vide pour un disque RAW, qui n'a
+   * pas de systeme de fichiers dont juger la sante. */
+  health: string;
   /** `false` for an enumerated but empty card reader / drive bay. It still has a drive letter in
    * Explorer, so it must be listed and explained rather than hidden — but it cannot be formatted. */
   has_media: boolean;

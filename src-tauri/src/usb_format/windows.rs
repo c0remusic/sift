@@ -127,9 +127,43 @@ pub(crate) struct VolumeFacts {
     /// sharpen `disk_identity` when they exist.
     pub serials: Vec<String>,
     pub total_size: u64,
+    /// Etat de sante du volume, deja mis en francais (`describe_health`). Vide quand aucun volume
+    /// monte n'a pu etre interroge.
+    pub health: String,
     /// Somme des `FreeSpace` des volumes montés. C'est aussi la clé d'invalidation du cache
     /// d'occupation (`volume_usage`) : si l'espace libre a bougé, le contenu a bougé.
     pub free_bytes: u64,
+}
+
+/// `MSFT_Volume.OperationalStatus` — code mesuré le 2026-08-01 sur un volume FAT32 réel, que
+/// `Get-Volume` rend par « Full Repair Needed ».
+pub(crate) const OP_STATUS_FULL_REPAIR_NEEDED: u16 = 53263;
+
+/// Ce que l'encadré affiche pour « Santé ».
+///
+/// `HealthStatus` porte le niveau (0 sain, 1 avertissement, 2 défaillant) et `OperationalStatus`
+/// la raison. Seul le code 53263 est traduit ici : c'est le seul dont j'aie vu le rendu de Windows.
+/// Tout autre code inconnu est affiché TEL QUEL à côté du niveau, plutôt que traduit au jugé —
+/// une santé disque inventée est pire qu'une santé disque brute.
+pub(crate) fn describe_health(health_status: Option<u16>, operational: &[u16]) -> String {
+    if operational.contains(&OP_STATUS_FULL_REPAIR_NEEDED) {
+        return "Réparation complète nécessaire".to_string();
+    }
+    match health_status {
+        Some(0) => "OK".to_string(),
+        Some(1) | Some(2) => {
+            let level = if health_status == Some(1) {
+                "Avertissement"
+            } else {
+                "Défaillant"
+            };
+            match operational.iter().find(|c| **c != 2) {
+                Some(code) => format!("{level} (code {code})"),
+                None => level.to_string(),
+            }
+        }
+        _ => "Inconnue".to_string(),
+    }
 }
 
 /// What the UI shows under "actuellement …". A disk with no readable filesystem is the normal
@@ -239,6 +273,53 @@ fn variant_to_string(v: Option<&Variant>) -> Option<String> {
 }
 
 impl WindowsBackend {
+    /// Sante de chaque volume monte, indexee par lettre (`"I:"`).
+    ///
+    /// `MSFT_Volume` vit dans l'espace de noms Storage et n'a pas d'equivalent en CIMV2 :
+    /// `Win32_LogicalDisk` ne porte aucune notion de sante. `raw_query` plutot qu'une struct
+    /// typee parce que `DriveLetter` y est un `Char` WMI, pas une chaine — mesure le 2026-08-01.
+    fn volume_health(storage: &WMIConnection) -> HashMap<String, String> {
+        let mut out = HashMap::new();
+        let rows: Vec<HashMap<String, Variant>> = match storage
+            .raw_query("SELECT DriveLetter, HealthStatus, OperationalStatus FROM MSFT_Volume")
+        {
+            Ok(r) => r,
+            Err(e) => {
+                log::error!("usb_format: MSFT_Volume query failed: {e}");
+                return out;
+            }
+        };
+        for row in rows {
+            let letter = match row.get("DriveLetter") {
+                Some(Variant::String(s)) if !s.is_empty() => s.clone(),
+                // Un Char WMI arrive en entier : c'est le point de code de la lettre.
+                Some(Variant::UI2(n)) if *n != 0 => match char::from_u32(u32::from(*n)) {
+                    Some(c) => c.to_string(),
+                    None => continue,
+                },
+                _ => continue,
+            };
+            let health = match row.get("HealthStatus") {
+                Some(Variant::UI2(n)) => Some(*n),
+                Some(Variant::UI4(n)) => u16::try_from(*n).ok(),
+                _ => None,
+            };
+            let ops: Vec<u16> = match row.get("OperationalStatus") {
+                Some(Variant::Array(items)) => items
+                    .iter()
+                    .filter_map(|v| match v {
+                        Variant::UI2(n) => Some(*n),
+                        Variant::UI4(n) => u16::try_from(*n).ok(),
+                        _ => None,
+                    })
+                    .collect(),
+                _ => Vec::new(),
+            };
+            out.insert(format!("{letter}:"), describe_health(health, &ops));
+        }
+        out
+    }
+
     /// Collect the mounted volumes of one physical disk. A failed lookup logs and yields whatever
     /// was gathered so far — it must never remove the disk from the listing, since a disk we
     /// cannot describe is still a disk the user may need to format.
@@ -304,12 +385,19 @@ impl RemovableDriveBackend for WindowsBackend {
         // live on C:, and these vetoes are what stand between `diskpart clean` and a disk the user
         // cannot afford to lose.
         let system_drive = std::env::var("SystemDrive").unwrap_or_else(|_| "C:".to_string());
+        // Une seule requete pour tous les volumes, pas une par disque.
+        let health_by_letter = Self::volume_health(&storage);
 
         let mut drives = Vec::new();
         for disk in disks {
             // Volumes are read BEFORE the filter because one veto is derived from them. Cheap:
             // a few WMI calls per disk, on a list that is single digits long.
-            let facts = Self::volume_facts(&cimv2, disk.Number);
+            let mut facts = Self::volume_facts(&cimv2, disk.Number);
+            facts.health = facts
+                .letters
+                .iter()
+                .find_map(|l| health_by_letter.get(l).cloned())
+                .unwrap_or_default();
             let carries_system_volume = facts
                 .letters
                 .iter()
@@ -342,6 +430,7 @@ impl RemovableDriveBackend for WindowsBackend {
                 size_bytes,
                 free_bytes: facts.free_bytes,
                 current_fs: describe_filesystem(&facts),
+                health: facts.health.clone(),
                 has_media,
                 identity: disk_identity(
                     disk.UniqueId.as_deref(),
@@ -589,6 +678,37 @@ mod tests {
         ] {
             assert!(!is_confidently_removable(&veto));
         }
+    }
+
+    /// Le code 53263 est le seul dont j'aie vu le rendu de Windows — mesure sur le volume FAT32
+    /// reel de cette machine, que `Get-Volume` annonce "Full Repair Needed".
+    #[test]
+    fn measured_repair_code_is_named() {
+        assert_eq!(
+            describe_health(Some(1), &[OP_STATUS_FULL_REPAIR_NEEDED]),
+            "Réparation complète nécessaire"
+        );
+    }
+
+    #[test]
+    fn healthy_volume_says_ok() {
+        assert_eq!(describe_health(Some(0), &[2]), "OK");
+    }
+
+    /// Un code inconnu s'affiche TEL QUEL a cote du niveau. Le traduire au juge inventerait un
+    /// diagnostic de disque, ce qui est pire que de montrer un nombre.
+    #[test]
+    fn unknown_codes_are_shown_not_invented() {
+        assert_eq!(
+            describe_health(Some(1), &[41234]),
+            "Avertissement (code 41234)"
+        );
+        assert_eq!(describe_health(Some(2), &[]), "Défaillant");
+    }
+
+    #[test]
+    fn absent_health_is_unknown_not_ok() {
+        assert_eq!(describe_health(None, &[]), "Inconnue");
     }
 
     #[test]
