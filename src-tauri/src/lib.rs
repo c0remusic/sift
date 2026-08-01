@@ -17,6 +17,7 @@ mod ipc;
 mod ipc_filing;
 mod ipc_identify;
 mod ipc_library;
+mod ipc_usage;
 mod ipc_usb;
 mod library;
 mod metadata;
@@ -33,6 +34,7 @@ mod settings;
 mod sources;
 mod tagging;
 mod usb_format;
+mod volume_usage;
 mod watcher;
 mod worker;
 
@@ -280,6 +282,8 @@ pub fn run() {
             ipc_library::rekordbox_masterdb_resolve_ambiguous_artwork_sync,
             ipc_usb::list_removable_drives,
             ipc_usb::format_drive,
+            ipc_usage::drive_usage,
+            ipc_usage::library_usage,
             dev_locate::locate_source,
             dev_annotate::save_annotation
         ])

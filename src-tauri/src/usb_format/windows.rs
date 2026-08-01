@@ -127,6 +127,9 @@ pub(crate) struct VolumeFacts {
     /// sharpen `disk_identity` when they exist.
     pub serials: Vec<String>,
     pub total_size: u64,
+    /// Somme des `FreeSpace` des volumes montés. C'est aussi la clé d'invalidation du cache
+    /// d'occupation (`volume_usage`) : si l'espace libre a bougé, le contenu a bougé.
+    pub free_bytes: u64,
 }
 
 /// What the UI shows under "actuellement …". A disk with no readable filesystem is the normal
@@ -276,6 +279,7 @@ impl WindowsBackend {
                     facts.serials.push(serial);
                 }
                 facts.total_size += variant_to_u64(logical.get("Size")).unwrap_or(0);
+                facts.free_bytes += variant_to_u64(logical.get("FreeSpace")).unwrap_or(0);
             }
         }
         facts
@@ -336,6 +340,7 @@ impl RemovableDriveBackend for WindowsBackend {
                 label: disk.FriendlyName.clone().unwrap_or_else(|| id.clone()),
                 mount: facts.letters.join(", "),
                 size_bytes,
+                free_bytes: facts.free_bytes,
                 current_fs: describe_filesystem(&facts),
                 has_media,
                 identity: disk_identity(

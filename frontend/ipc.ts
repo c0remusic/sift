@@ -382,6 +382,9 @@ export interface RemovableDrive {
    * empty string means "pas encore formatée", not "lookup failed". */
   mount: string;
   size_bytes: number;
+  /** Octets libres sur les volumes montés, `0` si le disque n'en a aucun. Sert aussi de clé
+   * d'invalidation au cache d'occupation côté Rust — ne pas le recalculer ici. */
+  free_bytes: number;
   current_fs: string;
   /** `false` for an enumerated but empty card reader / drive bay. It still has a drive letter in
    * Explorer, so it must be listed and explained rather than hidden — but it cannot be formatted. */
@@ -396,6 +399,39 @@ export type TargetFs = "fat32" | "ex_fat";
 /** Drives Sift is confident are removable (conservative filter, backend-side). */
 export const listRemovableDrives = (): Promise<RemovableDrive[]> =>
   invoke("list_removable_drives");
+
+/** Une ligne du graphique d'occupation : un format, ce qu'il pèse, combien de fichiers.
+ * Miroir de `volume_usage::ExtUsage`. */
+export interface ExtUsage {
+  /** `.wav`, `.mp3`, `PIONEER/` pour le bloc Rekordbox, `(sans extension)` sinon. */
+  ext: string;
+  bytes: number;
+  file_count: number;
+}
+
+/** Miroir de `ipc_usage::UsageReport`. `free_bytes` vaut 0 pour la bibliothèque, qui n'est pas un
+ * volume — ne pas y dessiner de segment « libre ». */
+export interface UsageReport {
+  total_bytes: number;
+  free_bytes: number;
+  file_count: number;
+  buckets: ExtUsage[];
+  /** Vrai quand rien n'a été parcouru. À afficher : sans ça un cache faux est indiscernable d'une
+   * mesure fraîche, et personne ne sait quoi actualiser. */
+  from_cache: boolean;
+  /** Epoch en secondes du parcours qui a produit ces chiffres. */
+  scanned_at: number;
+}
+
+/** Occupation d'un disque amovible, par format. Le backend parcourt le volume en métadonnées
+ * seules et met le résultat en cache ; l'invalidation se fait sur l'espace libre, donc `false`
+ * suffit dans le cas courant. `forceRescan` ne sert qu'au bouton « Actualiser ». */
+export const driveUsage = (driveId: string, forceRescan = false): Promise<UsageReport> =>
+  invoke("drive_usage", { driveId, forceRescan });
+
+/** Occupation de la bibliothèque, par format. Aucune entrée/sortie disque : les tailles sont déjà
+ * en base, c'est un agrégat. */
+export const libraryUsage = (): Promise<UsageReport> => invoke("library_usage");
 
 /** Format `driveId` to `fs`. `identity` must be the value last read for this drive — the backend
  * re-checks it against a fresh listing immediately before formatting and rejects with

@@ -260,6 +260,31 @@ const MIGRATIONS: &[&str] = &[
     UPDATE tracks SET report_json=NULL, report_cache_ver=NULL
     WHERE report_json IS NOT NULL AND report_json <> '';
     "#,
+    // v17 — cache d'occupation par volume (graphique de l'écran Clé USB).
+    //
+    // Le parcours d'un volume ne lit que des métadonnées, mais il lit TOUTES les entrées : sur une
+    // clé bien remplie ça se compte en secondes, et l'écran serait relancé à chaque visite. La clé
+    // primaire est l'identité de disque déjà calculée par `usb_format` (PNPDeviceID + série
+    // matérielle + taille + séries de volumes), donc deux clés différentes ne peuvent pas se
+    // marcher dessus même branchées sur le même port.
+    //
+    // `free_bytes` n'est pas décoratif : c'est la clé d'invalidation. Un volume dont l'espace libre
+    // a bougé a vu son contenu bouger, et le cache est ignoré. Comparer une date ne dirait rien —
+    // un cache d'hier peut être juste, un cache d'il y a dix secondes peut être faux.
+    //
+    // `buckets_json` plutôt qu'une table fille : le contenu fait une douzaine de lignes, il n'est
+    // jamais interrogé autrement qu'en bloc, et le dépôt stocke déjà du JSON en colonne
+    // (`tracks.report_json`).
+    r#"
+    CREATE TABLE IF NOT EXISTS volume_usage (
+        volume_key   TEXT PRIMARY KEY,
+        scanned_at   INTEGER NOT NULL,
+        total_bytes  INTEGER NOT NULL,
+        free_bytes   INTEGER NOT NULL,
+        file_count   INTEGER NOT NULL,
+        buckets_json TEXT NOT NULL
+    );
+    "#,
 ];
 
 /// Applies any migrations the DB hasn't seen yet, tracked via PRAGMA user_version.
@@ -319,8 +344,9 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         run_migrations(&conn).unwrap();
         // v4 adds `settings`, v6 adds `track_genres`, v11 adds `rekordbox_masterdb_repairs`,
-        // v13 adds `rekordbox_masterdb_metadata_syncs`, v14 adds `rekordbox_masterdb_artwork_syncs`
-        assert_eq!(table_count(&conn).unwrap(), 10);
+        // v13 adds `rekordbox_masterdb_metadata_syncs`, v14 adds `rekordbox_masterdb_artwork_syncs`,
+        // v17 adds `volume_usage`
+        assert_eq!(table_count(&conn).unwrap(), 11);
     }
 
     #[test]
@@ -328,7 +354,7 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         run_migrations(&conn).unwrap();
         run_migrations(&conn).unwrap(); // second run must not error or duplicate
-        assert_eq!(table_count(&conn).unwrap(), 10);
+        assert_eq!(table_count(&conn).unwrap(), 11);
     }
 
     /// v16 must actually WIPE the inflated report cache, not merely be declared. Applies v1..v15

@@ -37,6 +37,10 @@ pub struct RemovableDrive {
     /// — an empty string here is the signal that the disk is RAW, not that lookup failed.
     pub mount: String,
     pub size_bytes: u64,
+    /// Octets libres sur les volumes montés, `0` si le disque n'en a aucun. Affiché tel quel, et
+    /// réutilisé comme clé d'invalidation du cache d'occupation : un espace libre différent
+    /// signifie un contenu différent, donc un parcours à refaire.
+    pub free_bytes: u64,
     pub current_fs: String,
     /// `false` for a card reader / drive bay that is enumerated but empty. Such a device is a
     /// real removable disk with a real drive letter — Windows keeps showing `E:` in Explorer with
@@ -108,6 +112,18 @@ pub trait RemovableDriveBackend {
     fn format(&self, drive: &RemovableDrive, fs: TargetFs) -> Result<(), UsbFormatError>;
 }
 
+/// Le seul endroit du dépôt qui choisit un backend. Extrait de `ipc_usb` quand `ipc_usage` en a eu
+/// besoin à son tour : deux `#[cfg(target_os)]` à tenir d'accord, c'est déjà un de trop.
+#[cfg(target_os = "windows")]
+pub fn backend_for_this_os() -> impl RemovableDriveBackend {
+    windows::WindowsBackend
+}
+
+#[cfg(target_os = "macos")]
+pub fn backend_for_this_os() -> impl RemovableDriveBackend {
+    macos::MacBackend
+}
+
 /// Anti-race guard: re-resolve `drive` by identity from a **fresh** listing (`fresh`, passed in
 /// by the caller right before formatting) and fail explicitly if it's gone or its identity
 /// changed — never fall back to "the id still matches, must be the same drive".
@@ -165,6 +181,7 @@ mod tests {
             label: "TEST".to_string(),
             mount: "E:".to_string(),
             size_bytes: 8_000_000_000,
+            free_bytes: 4_000_000_000,
             current_fs: "FAT32".to_string(),
             has_media: true,
             identity: identity.to_string(),

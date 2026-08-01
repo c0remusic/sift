@@ -4,15 +4,7 @@
 
 use crate::usb_format::{self, RemovableDrive, RemovableDriveBackend, TargetFs};
 
-#[cfg(target_os = "windows")]
-fn backend() -> impl RemovableDriveBackend {
-    usb_format::windows::WindowsBackend
-}
-
-#[cfg(target_os = "macos")]
-fn backend() -> impl RemovableDriveBackend {
-    usb_format::macos::MacBackend
-}
+use usb_format::backend_for_this_os as backend;
 
 /// List drives Sift is confident are removable (conservative filter — see backend docs).
 #[tauri::command]
@@ -36,6 +28,7 @@ pub fn format_drive(drive_id: String, identity: String, fs: TargetFs) -> Result<
         label: String::new(),
         mount: String::new(),
         size_bytes: 0,
+        free_bytes: 0,
         current_fs: String::new(),
         has_media: false,
         identity,
