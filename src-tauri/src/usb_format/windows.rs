@@ -402,6 +402,9 @@ impl WindowsBackend {
             .map_err(|e| UsbFormatError::Format(format!("chemin de l'exécutable: {e}")))?;
         let exe = exe.to_string_lossy().to_string();
 
+        // Repart d'un fichier propre : une etape restee d'un formatage precedent s'afficherait
+        // comme la progression de celui-ci.
+        super::privileged::write_step("Autorisation Windows demandée…");
         let safe = sanitize_label_for_command(label);
         let ps =
             privileged_elevation_powershell(&exe, disk_index, "fat32", &safe).ok_or_else(|| {

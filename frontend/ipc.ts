@@ -407,6 +407,11 @@ export type TargetFs = "fat32" | "ex_fat";
 export const listRemovableDrives = (): Promise<RemovableDrive[]> =>
   invoke("list_removable_drives");
 
+/** Étape courante du formatage privilégié, à interroger pendant que `formatDrive` est en vol.
+ * Chaîne vide = rien en cours. Le travail se fait dans un processus élevé séparé, donc c'est le
+ * seul moyen de savoir où il en est. */
+export const formatStep = (): Promise<string> => invoke("format_step");
+
 /** Demonte `driveId` pour qu'il puisse etre debranche sans risque. Rejette avec `"EJECT_BUSY"`
  * quand le systeme refuse — rien n'a ete demonte dans ce cas. */
 export const ejectDrive = (driveId: string): Promise<void> => invoke("eject_drive", { driveId });

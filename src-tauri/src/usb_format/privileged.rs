@@ -16,6 +16,25 @@
 //! les faire depuis le même processus élevé évite d'en demander deux fois.
 
 use super::{fat32, raw_volume::RawVolume, TargetFs};
+use std::io::Write;
+
+/// Fichier ou le processus eleve depose son etape courante, et que le parent relit.
+///
+/// Un fichier plutot qu'un canal : le processus eleve est un AUTRE processus, lance par
+/// `Start-Process -Verb RunAs`, dont la sortie standard ne peut pas etre redirigee. Sans ca,
+/// l'interface n'a rien a montrer entre le clic et la fin — c'est le reproche exact fait a la
+/// premiere version.
+pub fn step_file() -> std::path::PathBuf {
+    std::env::temp_dir().join("sift-format-step.txt")
+}
+
+/// Depose l'etape courante. Traduite ici et pas cote frontend : c'est le backend qui sait ce
+/// qu'il fait, et une table de correspondance en TS derivrait au premier changement.
+pub fn write_step(step: &str) {
+    if let Ok(mut f) = std::fs::File::create(step_file()) {
+        let _ = f.write_all(step.as_bytes());
+    }
+}
 
 /// Le drapeau qui bascule `main` en mode privilégié. Préfixé `--sift-` pour qu'il ne puisse pas
 /// entrer en collision avec un argument de Tauri ou de WebView2.
@@ -90,6 +109,7 @@ pub fn run(job: &PrivilegedJob) -> i32 {
         job.disk_index, job.fs, job.label
     );
 
+    write_step("Partitionnement du disque…");
     let script = partition_script(job.disk_index);
     match win::run_diskpart_script(&script) {
         Ok(()) => {}
@@ -99,6 +119,7 @@ pub fn run(job: &PrivilegedJob) -> i32 {
         }
     }
 
+    write_step("Attente du montage par Windows…");
     // Le montage est asynchrone : `diskpart` a rendu la main, la lettre n'existe pas encore.
     let Some(letter) = wait_for_letter(job.disk_index) else {
         eprintln!(
@@ -117,6 +138,7 @@ pub fn run(job: &PrivilegedJob) -> i32 {
         }
     };
 
+    write_step("Verrouillage du volume…");
     let mut volume = match RawVolume::open(&letter) {
         Ok(v) => v,
         Err(e) => {
@@ -125,6 +147,7 @@ pub fn run(job: &PrivilegedJob) -> i32 {
         }
     };
 
+    write_step("Écriture du système de fichiers FAT32…");
     let written = match job.fs {
         TargetFs::Fat32 => fat32::write_fat32(volume.as_file_mut(), total_bytes, &job.label),
         // exFAT passe par diskpart, qui le sait faire sans plafond — ce mode ne devrait pas être
@@ -137,6 +160,7 @@ pub fn run(job: &PrivilegedJob) -> i32 {
 
     match written {
         Ok(()) => {
+            write_step("Terminé");
             eprintln!("sift: FAT32 écrit sur {letter} ({total_bytes} octets)");
             EXIT_OK
         }

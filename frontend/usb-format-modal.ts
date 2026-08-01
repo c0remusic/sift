@@ -3,15 +3,17 @@
 // this Tauri/WebView2 setup. This modal is a genuine in-app overlay (reuses the
 // .sift-report-overlay/.sift-report-overlay-card pattern already used for the track report),
 // plus TWO extra layers of friction appropriate to an irreversible disk-format action:
-//   1. A typed confirmation: the user must type the drive's id/label exactly before the final
-//      button even enables (spec requirement — stricter than the batch "armed" pattern, which
-//      only requires a second click).
-//   2. A timestamped armed/confirmed cycle on the final button itself, same family as
-//      BATCH_CONFIRM_THRESHOLD/batchConfirmArmed (sift-live.ts) — rejects a double-click/
-//      duplicate event landing right after the button enables.
+// La confirmation se fait par un cycle armé/confirmé horodaté sur le bouton final, même famille
+// que BATCH_CONFIRM_THRESHOLD/batchConfirmArmed (sift-live.ts) : le premier clic arme, le second
+// exécute, et un doublon d'événement arrivant dans la foulée est rejeté.
+//
+// Il y avait EN PLUS un mot à retaper à l'identique. Retiré le 2026-08-01 : « SSK SSD Portable SSD
+// (I:) » est increcopiable, et le bouton restait grisé sans que rien ne dise pourquoi — on se
+// croyait bloqué par l'application. CLAUDE.md exige une confirmation in-app armée et horodatée,
+// pas une dictée ; c'est ce qui reste.
 import { DRIVE_VANISHED, ELEVATION_DECLINED, IDENTITY_MISMATCH } from "../shared/contracts";
 import { esc } from "./dom";
-import { formatDrive, type RemovableDrive, type TargetFs } from "./ipc";
+import { formatDrive, formatStep, type RemovableDrive, type TargetFs } from "./ipc";
 import { driveDisplayName } from "./usb-row";
 
 const CONFIRM_REARM_MS = 400; // mirrors sift-live.ts's batch-confirm floor (see BATCH_CONFIRM_THRESHOLD)
@@ -27,7 +29,6 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
   document.getElementById("sift-usbfmt-overlay")?.remove();
 
   let fs: TargetFs = "fat32";
-  let typedOk = false;
   let armedAt: number | null = null;
   let busy = false;
   // Set by the formatDrive().catch() handler, read by render(). Must survive render() itself
@@ -44,6 +45,10 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
   // courant. Le backend l'assainit de toute facon (11 octets, majuscules) — ce champ ne fait que
   // proposer, il ne decide pas de ce qui sera ecrit.
   let volumeName = drive.volume_name || "SIFT";
+  // Étape réelle remontée par le processus élevé. Pas une animation : le travail se fait dans un
+  // autre processus, et « on ne sait pas ce qui se passe » était le reproche exact.
+  let step = "";
+  let stepTimer: number | null = null;
 
   const overlay = document.createElement("div");
   overlay.id = "sift-usbfmt-overlay";
@@ -70,15 +75,12 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
   document.addEventListener("keydown", onKeydown);
   function close(): void {
     document.removeEventListener("keydown", onKeydown);
+    if (stepTimer !== null) window.clearInterval(stepTimer);
+    stepTimer = null;
     overlay.remove();
   }
 
   const sizeGb = (drive.size_bytes / 1_000_000_000).toFixed(1);
-  // drive.label is a model name (e.g. "Kingston DataTraveler USB Device") — two identical drives
-  // plugged in together would share the same confirm word otherwise (audit 2026-07-09). The
-  // display name (drive letter, or disk number when the key is unformatted) is what distinguishes
-  // them, and unlike the raw `\\.\PHYSICALDRIVE2` it is retypable.
-  const confirmWord = drive.label ? `${drive.label} (${displayName})` : displayName;
   /** Vrai quand ce formatage passera par l'écriture FAT32 de Sift plutôt que par `diskpart` —
    * donc quand une invite d'élévation Windows va surgir. Ce n'est PAS un blocage : c'est le cas
    * d'usage principal d'une clé DJ moderne, et le seul que Windows ne sait pas traiter. */
@@ -125,32 +127,26 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
       'spellcheck="false" value="' +
       esc(volumeName) +
       '"></div>' +
-      '<div class="sift-usbfmt-typerow">' +
-      '<label for="sift-usbfmt-typed">Tape <code>' +
-      esc(confirmWord) +
-      "</code> pour confirmer</label>" +
-      '<input type="text" id="sift-usbfmt-typed" autocomplete="off" spellcheck="false">' +
-      "</div>" +
+
       '<div class="sift-usbfmt-actions">' +
       '<button type="button" id="sift-usbfmt-cancel" class="sift-settings-btn">Annuler</button>' +
-      '<button type="button" id="sift-usbfmt-confirm" class="sift-usbfmt-confirm-btn" disabled>' +
+      '<button type="button" id="sift-usbfmt-confirm" class="sift-usbfmt-confirm-btn"' +
+      (busy || fatal ? " disabled" : "") +
+      ">" +
       (busy
-        ? '<span class="sift-bt-spin" style="margin-right:6px;vertical-align:-2px"></span>Formatage en cours…'
+        ? '<span class="sift-bt-spin" style="margin-right:6px;vertical-align:-2px"></span>' +
+          esc(step || "Formatage en cours…")
         : armedAt
           ? "Confirmer — tout sera effacé"
-          : "Formater") +
+          : "Formater…") +
       "</button>" +
       (busy
-        ? '<div class="sift-usbfmt-progress-note" style="margin-top:8px;font-size:var(--text-sm);color:var(--color-text-tertiary)">Ne débranche pas le disque — cela peut prendre plusieurs minutes.</div>'
+        ? '<div class="sift-usbfmt-progress-note" style="margin-top:8px;font-size:var(--text-sm);color:var(--color-text-tertiary)">Une autorisation Windows va apparaître — accepte-la. Ne débranche pas le disque.</div>'
         : "") +
       "</div>";
 
     card.querySelectorAll<HTMLElement>("[data-usbfmt-fs]").forEach((el) =>
       el.addEventListener("click", () => {
-        // The typed confirm word depends only on the drive, not on fs — preserve it
-        // across the render() below (card.innerHTML = ... wipes #sift-usbfmt-typed
-        // otherwise, forcing a retype on a plain filesystem toggle).
-        const typedBefore = card.querySelector<HTMLInputElement>("#sift-usbfmt-typed")?.value ?? "";
         fs = el.dataset.usbfmtFs as TargetFs;
         armedAt = null; // switching filesystem resets the confirm cycle
         // ... and clears any stale error from a previous failed attempt — SAUF une erreur fatale :
@@ -158,13 +154,6 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
         // bouton reste désarmé. Effacer le message laisserait un bouton mort sans explication.
         if (!fatal) lastError = null;
         render();
-        const typedAfter = card.querySelector<HTMLInputElement>("#sift-usbfmt-typed");
-        if (typedAfter && typedBefore) {
-          typedAfter.value = typedBefore;
-          typedOk = typedBefore.trim() === confirmWord;
-          const confirmBtnAfter = card.querySelector<HTMLButtonElement>("#sift-usbfmt-confirm");
-          if (confirmBtnAfter) confirmBtnAfter.disabled = !typedOk || busy || fatal;
-        }
       }),
     );
 
@@ -173,15 +162,7 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
       volumeName = nameInput.value;
     });
 
-    const typed = card.querySelector<HTMLInputElement>("#sift-usbfmt-typed");
     const confirmBtn = card.querySelector<HTMLButtonElement>("#sift-usbfmt-confirm");
-    typed?.addEventListener("input", () => {
-      typedOk = typed.value.trim() === confirmWord;
-      if (confirmBtn) confirmBtn.disabled = !typedOk || busy || fatal;
-      // Not re-rendered here (no render() call — only the disabled attribute is touched), but
-      // clears the stale error for whenever the next render() does happen (e.g. re-arming).
-      lastError = null;
-    });
 
     const cancelBtn = card.querySelector<HTMLButtonElement>("#sift-usbfmt-cancel");
     if (cancelBtn) cancelBtn.disabled = busy;
@@ -191,7 +172,7 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
     });
 
     confirmBtn?.addEventListener("click", () => {
-      if (!typedOk || busy) return;
+      if (busy || fatal) return;
       if (!armedAt || Date.now() - armedAt < CONFIRM_REARM_MS) {
         // First click (or a suspiciously-fast repeat of a stale one): arm, don't format yet.
         armedAt = Date.now();
@@ -199,14 +180,31 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
         return;
       }
       busy = true;
+      step = "Autorisation Windows demandée…";
       render();
+      // Relit l'étape déposée par le processus élevé. 400 ms : assez pour suivre, assez rare pour
+      // ne rien coûter — c'est une lecture de fichier, pas un calcul.
+      stepTimer = window.setInterval(() => {
+        void formatStep().then((s) => {
+          if (!busy || !s || s === step) return;
+          step = s;
+          render();
+        });
+      }, 400);
+      const stopPolling = () => {
+        if (stepTimer !== null) window.clearInterval(stepTimer);
+        stepTimer = null;
+      };
       void formatDrive(drive.id, drive.identity, fs, volumeName)
         .then(() => {
+          stopPolling();
           close();
           window.dispatchEvent(new CustomEvent("sift:usb-format-done", { detail: { ok: true } }));
         })
         .catch((e: unknown) => {
+          stopPolling();
           busy = false;
+          step = "";
           armedAt = null;
           console.error("formatDrive failed", e);
           const raw = String(e);

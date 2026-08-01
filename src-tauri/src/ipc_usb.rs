@@ -12,6 +12,22 @@ pub fn list_removable_drives() -> Result<Vec<RemovableDrive>, String> {
     backend().list().map_err(|e| e.to_string())
 }
 
+/// Étape courante du formatage privilégié, pour que l'écran montre ce qui se passe.
+///
+/// Lu depuis un fichier parce que le travail se fait dans un AUTRE processus, élevé, dont la
+/// sortie ne peut pas être redirigée. Une chaîne vide veut dire « rien en cours ».
+#[tauri::command]
+pub fn format_step() -> String {
+    #[cfg(target_os = "windows")]
+    {
+        std::fs::read_to_string(usb_format::privileged::step_file()).unwrap_or_default()
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        String::new()
+    }
+}
+
 /// Démonte `drive_id` pour qu'il puisse être débranché sans risque.
 ///
 /// Pas de garde anti-course ici, contrairement au formatage : éjecter le mauvais disque est
