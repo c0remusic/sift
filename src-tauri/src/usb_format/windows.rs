@@ -219,6 +219,57 @@ pub(crate) fn diskpart_script(disk_index: u32, fs: TargetFs) -> String {
     )
 }
 
+/// Exécute un script `diskpart` **directement**, sans passer par le shim d'élévation.
+///
+/// Réservé au processus déjà élevé (`privileged::run`) : appelé depuis un Sift ordinaire, il
+/// échouerait au `CreateProcess` comme tout `diskpart` non élevé. Le shim reste le chemin normal.
+pub(crate) fn run_diskpart_script(script: &str) -> Result<(), String> {
+    let mut tmp = tempfile::Builder::new()
+        .suffix(".txt")
+        .tempfile()
+        .map_err(|e| format!("tempfile: {e}"))?;
+    tmp.write_all(script.as_bytes())
+        .map_err(|e| format!("write script: {e}"))?;
+    let path = tmp.into_temp_path();
+
+    let output = Command::new("diskpart")
+        .arg("/s")
+        .arg(&path)
+        .output()
+        .map_err(|e| format!("spawn diskpart: {e}"))?;
+    if output.status.success() {
+        return Ok(());
+    }
+    Err(format!(
+        "diskpart {:?}: {}",
+        output.status.code(),
+        String::from_utf8_lossy(&output.stdout).trim()
+    ))
+}
+
+/// Première lettre montée sur ce disque, ou `None` si Windows n'en a encore monté aucune.
+pub(crate) fn first_letter_of_disk(disk_index: u32) -> Option<String> {
+    let cimv2 = WMIConnection::new().ok()?;
+    let facts = WindowsBackend::volume_facts(&cimv2, disk_index);
+    facts.letters.first().cloned()
+}
+
+/// Taille de la PARTITION portant cette lettre, en octets.
+///
+/// La partition, pas le volume logique : juste après `create partition primary`, le volume est
+/// encore RAW et `Win32_LogicalDisk` ne rapporte rien d'exploitable. C'est pourtant cette taille
+/// qu'il faut inscrire dans le BPB.
+pub(crate) fn volume_size_bytes(letter: &str) -> Option<u64> {
+    let cimv2 = WMIConnection::new().ok()?;
+    let query = format!(
+        "ASSOCIATORS OF {{Win32_LogicalDisk.DeviceID='{}'}} \
+         WHERE AssocClass = Win32_LogicalDiskToPartition",
+        letter.trim().trim_end_matches('\\')
+    );
+    let rows: Vec<HashMap<String, Variant>> = cimv2.raw_query(query).ok()?;
+    rows.iter().find_map(|r| variant_to_u64(r.get("Size")))
+}
+
 /// `ERROR_CANCELLED`. What Windows reports when the user dismisses the UAC prompt; reused as the
 /// exit code of the PowerShell shim below so the two outcomes stay distinguishable.
 pub(crate) const UAC_DECLINED_EXIT: i32 = 1223;
@@ -272,7 +323,94 @@ fn variant_to_string(v: Option<&Variant>) -> Option<String> {
     }
 }
 
+/// Nom donné au volume par un formatage FAT32 de Sift.
+///
+/// Un formatage efface tout, nom de volume compris — c'est le comportement de tous les outils, et
+/// le préserver donnerait l'illusion que quelque chose a survécu.
+pub(crate) const DEFAULT_VOLUME_LABEL: &str = "SIFT";
+
+/// Relance Sift **lui-même**, élevé, sur son drapeau de formatage privilégié.
+///
+/// Même mécanique que `elevation_powershell`, mais la cible est notre propre exécutable au lieu de
+/// `diskpart` : partitionner et écrire un volume brut exigent tous deux l'administrateur, et les
+/// faire dans un seul processus élevé n'ouvre qu'une invite UAC au lieu de deux.
+///
+/// Refuse tout chemin ou libellé contenant un guillemet — ils viennent de notre énumération et de
+/// nos constantes, donc un guillemet signale un problème en amont, et un échappement raté serait
+/// une injection dans un shell sur le point d'être élevé.
+pub(crate) fn privileged_elevation_powershell(
+    exe: &str,
+    disk_index: u32,
+    fs_name: &str,
+    label: &str,
+) -> Option<String> {
+    if [exe, fs_name, label]
+        .iter()
+        .any(|s| s.contains('\'') || s.contains('"'))
+    {
+        return None;
+    }
+    let flag = super::privileged::PRIVILEGED_FLAG;
+    Some(format!(
+        "$ErrorActionPreference='Stop'; \
+         try {{ $p = Start-Process -FilePath '{exe}' \
+         -ArgumentList '{flag}','{disk_index}','{fs_name}','{label}' \
+         -Verb RunAs -Wait -PassThru -WindowStyle Hidden; exit $p.ExitCode }} \
+         catch {{ exit {UAC_DECLINED_EXIT} }}"
+    ))
+}
+
 impl WindowsBackend {
+    /// FAT32 au-delà du plafond de 32 Go, via un Sift relancé en administrateur.
+    fn format_large_fat32(&self, drive: &RemovableDrive) -> Result<(), UsbFormatError> {
+        let disk_index = disk_index_from_id(&drive.id).ok_or_else(|| {
+            UsbFormatError::Format(format!(
+                "identifiant de disque non reconnu: {} — formatage refusé",
+                drive.id
+            ))
+        })?;
+        let exe = std::env::current_exe()
+            .map_err(|e| UsbFormatError::Format(format!("chemin de l'exécutable: {e}")))?;
+        let exe = exe.to_string_lossy().to_string();
+
+        let ps = privileged_elevation_powershell(&exe, disk_index, "fat32", DEFAULT_VOLUME_LABEL)
+            .ok_or_else(|| {
+            UsbFormatError::Format(
+                "chemin d'exécutable contenant un guillemet — formatage refusé".to_string(),
+            )
+        })?;
+
+        let output = Command::new("powershell")
+            .args(["-NoProfile", "-Command", &ps])
+            .output()
+            .map_err(|e| UsbFormatError::Format(format!("spawn powershell: {e}")))?;
+
+        let code = output.status.code().unwrap_or(-1);
+        if code == UAC_DECLINED_EXIT {
+            return Err(UsbFormatError::ElevationDeclined);
+        }
+        if code == super::privileged::EXIT_OK {
+            return Ok(());
+        }
+        // Chaque code dit ce qui a échoué : un « échec du formatage » générique n'aiderait
+        // personne à savoir s'il faut fermer un programme ou rebrancher la clé.
+        Err(UsbFormatError::Format(match code {
+            c if c == super::privileged::EXIT_PARTITION_FAILED => {
+                "le partitionnement a échoué — le disque est-il protégé en écriture ?".to_string()
+            }
+            c if c == super::privileged::EXIT_NO_LETTER => {
+                "Windows n'a monté aucune lettre après le partitionnement".to_string()
+            }
+            c if c == super::privileged::EXIT_VOLUME_LOCKED => {
+                "un programme tient encore ce disque ouvert — ferme-les et réessaie".to_string()
+            }
+            c if c == super::privileged::EXIT_WRITE_FAILED => {
+                "l'écriture du système de fichiers a échoué".to_string()
+            }
+            other => format!("le formatage privilégié est sorti avec le code {other}"),
+        }))
+    }
+
     /// Sante de chaque volume monte, indexee par lettre (`"I:"`).
     ///
     /// `MSFT_Volume` vit dans l'espace de noms Storage et n'a pas d'equivalent en CIMV2 :
@@ -490,6 +628,13 @@ impl RemovableDriveBackend for WindowsBackend {
     }
 
     fn format(&self, drive: &RemovableDrive, fs: TargetFs) -> Result<(), UsbFormatError> {
+        // FAT32 au-delà de 32 Go : Windows refuse de le CRÉER, donc `diskpart` ne peut pas servir.
+        // On passe par notre propre écriture, dans un Sift relancé en administrateur — c'est la
+        // raison d'être de tout ce chemin, et le cas d'usage principal d'une clé DJ moderne.
+        if fs == TargetFs::Fat32 && drive.size_bytes > super::fat32::WINDOWS_FAT32_CREATE_CEILING {
+            return self.format_large_fat32(drive);
+        }
+
         // Hard failure, never a fallback: the script below runs `clean` on this number.
         let disk_index = disk_index_from_id(&drive.id).ok_or_else(|| {
             UsbFormatError::Format(format!(

@@ -131,6 +131,31 @@ fn spawn_journal_purge(app: &tauri::AppHandle) {
     });
 }
 
+/// Intercepte le mode privilégié AVANT que Tauri ne démarre.
+///
+/// Rend `Some(code)` quand le processus a été relancé en administrateur pour formater un disque :
+/// aucune fenêtre ne s'ouvre, aucune base n'est touchée, on fait le travail et on sort. `None`
+/// dans tous les autres cas, c'est-à-dire au lancement normal.
+///
+/// Ce point d'entrée existe parce qu'écrire un FAT32 au-delà de 32 Go demande d'ouvrir un volume
+/// brut, réservé à l'administrateur — et faire tourner Sift entier en élevé serait hostile.
+#[cfg(target_os = "windows")]
+pub fn run_privileged_if_asked() -> Option<i32> {
+    let args: Vec<String> = std::env::args().collect();
+    match usb_format::privileged::parse_args(&args)? {
+        Ok(job) => Some(usb_format::privileged::run(&job)),
+        Err(msg) => {
+            eprintln!("sift: {msg}");
+            Some(usb_format::privileged::EXIT_BAD_ARGS)
+        }
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
+pub fn run_privileged_if_asked() -> Option<i32> {
+    None
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()

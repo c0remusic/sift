@@ -14,6 +14,12 @@ use serde::{Deserialize, Serialize};
 pub mod fat32;
 
 #[cfg(target_os = "windows")]
+pub mod privileged;
+
+#[cfg(target_os = "windows")]
+pub mod raw_volume;
+
+#[cfg(target_os = "windows")]
 pub mod windows;
 
 // NOT OS-gated at the module level (unlike `windows` above): the macOS backend's pure
