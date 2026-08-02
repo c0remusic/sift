@@ -16,10 +16,25 @@ intégré à l'app.
 
 ## macOS
 
+Les builds publiés sont **Apple Silicon uniquement** (`aarch64`) : la matrice de
+`.github/workflows/build.yml` n'a pas d'entrée Intel, et un binaire arm64 ne démarre
+pas du tout sur un Mac Intel.
+
 1. Ouvrir le `.dmg`, glisser Sift dans Applications.
-2. Un double-clic normal affiche « Sift ne peut pas être ouvert car il
-   provient d'un développeur non identifié » et bloque le lancement.
-3. Clic droit (ou Ctrl+clic) sur Sift.app dans Applications → **Ouvrir** →
-   confirmer **Ouvrir** dans la boîte de dialogue. Nécessaire une seule fois.
-4. Alternative en ligne de commande, si l'étape 3 ne débloque pas :
+2. Un double-clic affiche « Sift ne peut pas être ouvert car il provient d'un
+   développeur non identifié » et bloque le lancement.
+3. Ouvrir **Réglages Système → Confidentialité et sécurité**, descendre jusqu'au
+   message concernant Sift, et cliquer **Ouvrir quand même**. Nécessaire une seule
+   fois.
+4. En dernier recours, si l'étape 3 ne débloque pas :
    `xattr -d com.apple.quarantine /Applications/Sift.app`
+
+> ⚠️ L'étape 3 disait « clic droit → Ouvrir » jusqu'au 2026-08-02. Ce contournement
+> a été **retiré à partir de macOS 15 Sequoia** : le menu contextuel n'offre plus de
+> dérogation pour une app non signée, et suivre l'ancienne instruction sur un Mac
+> récent mène à une impasse sans message utile. Le passage par les Réglages Système
+> fonctionne sur les deux générations.
+
+Ces mêmes étapes sont reprises dans le pied de page des notes de version, ajouté par
+`scripts/changelog-section.mjs` — c'est ce que lit quelqu'un à qui on envoie le lien
+d'une release. Les deux se corrigent ensemble.
