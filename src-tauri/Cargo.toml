@@ -56,7 +56,6 @@ percent-encoding = "2.3"
 wmi = "0.18"
 tempfile = "3.27.0"
 image = { version = "0.25", default-features = false, features = ["jpeg"] }
-fatfs = "0.3.6"
 
 # DwmExtendFrameIntoClientArea fix for the undecorated+transparent+resizable window's native
 # resize-margin showing as a solid backdrop instead of true transparency (annotation: "on a des
@@ -74,7 +73,16 @@ windows = { version = "0.61", features = [
     "Win32_System_Ioctl",
 ] }
 
+# Ecriture FAT32 au-dela du plafond de 32 Go de Windows. Dependance de PRODUCTION sur Windows
+# uniquement : macOS formate par `diskutil eraseDisk FAT32`, qui n'a pas ce plafond, et n'appelle
+# donc jamais `usb_format::fat32`. Voir le gate `cfg(any(windows, test))` sur ce module.
+fatfs = "0.3.6"
+
 [dev-dependencies]
+
+# Meme crate qu'au-dessus, redeclaree ici pour que les tests de `usb_format::fat32` compilent sur
+# une machine non-Windows — c'etait la raison pour laquelle le module n'avait pas de gate du tout.
+fatfs = "0.3.6"
 
 # Audio DSP is unusably slow in an unoptimised debug build (rustfft + per-sample loops).
 # Optimise dependencies fully, and our own code lightly, while keeping dev compile fast.

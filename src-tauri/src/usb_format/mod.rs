@@ -9,8 +9,19 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Formatage FAT32 au-dela du plafond de 32 Go de Windows. Pas d'OS-gate : les structures FAT32
-/// sont les memes partout, et les tests doivent tourner sur n'importe quelle machine.
+/// Formatage FAT32 au-dela du plafond de 32 Go de Windows.
+///
+/// Gate `any(windows, test)` et non `windows` seul, pour tenir deux exigences a la fois :
+///
+/// - **macOS n'en a aucun usage.** Il formate par `diskutil eraseDisk FAT32` (`macos.rs`), qui
+///   ne connait pas le plafond de 32 Go — ce module n'existe QUE pour contourner Windows. Ses
+///   seuls appelants, `privileged.rs` et `windows.rs`, sont eux-memes gates Windows. Sans gate,
+///   le binaire macOS compilait et liait `fatfs` pour du code que rien n'y appelle.
+/// - **Les tests doivent tourner sur n'importe quelle machine.** C'etait la raison d'etre de
+///   l'absence de gate ; `test` la preserve telle quelle. `fatfs` est donc declare deux fois
+///   dans `Cargo.toml` : en dependance `cfg(windows)` pour la production, et en
+///   dev-dependance pour que ces tests compilent partout.
+#[cfg(any(target_os = "windows", test))]
 pub mod fat32;
 
 #[cfg(target_os = "windows")]
@@ -19,8 +30,11 @@ pub mod privileged;
 #[cfg(target_os = "windows")]
 pub mod raw_volume;
 
-/// Alignement secteur pour les ecritures sur volume brut. Pas d OS-gate : la logique est pure
-/// et ses tests doivent tourner partout.
+/// Alignement secteur pour les ecritures sur volume brut. Meme gate que `fat32` ci-dessus, et
+/// pour la meme raison : son unique appelant est `privileged.rs`, gate Windows. La logique est
+/// pure (`std::io` seul, aucune dependance externe), donc `test` suffit a garder ses tests sur
+/// n'importe quelle machine.
+#[cfg(any(target_os = "windows", test))]
 pub mod sector_io;
 
 #[cfg(target_os = "windows")]
