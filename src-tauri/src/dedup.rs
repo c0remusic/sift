@@ -112,6 +112,12 @@ pub(crate) struct DupScanRow {
 
 /// Brief read: every `filed` track plus its cached fingerprint. Intended to be called under a
 /// short-held lock — the caller drops the lock before doing anything with the result.
+/// **Réservé aux tests depuis la v19.** La production ne charge plus jamais TOUTES les empreintes
+/// d'un coup : 166 Mo de RAM à 15 000 pistes (`bench_dedup.rs`) pour un chemin qui n'a besoin que
+/// des nouvelles. Voir `load_unscanned_rows`, `load_dup_candidates` et `load_dup_group_rows`.
+/// `#[cfg(test)]` fait échouer la compilation de tout futur appelant de production, au lieu de le
+/// laisser réintroduire le coût en silence — même geste que `scan_library_duplicates` plus bas.
+#[cfg(test)]
 pub(crate) fn load_dup_scan_rows(conn: &Connection) -> rusqlite::Result<Vec<DupScanRow>> {
     // `target_format`, PAS `format` : cette dernière n'est écrite par aucun code de production (voir
     // `library::list_filed`). `is_lossless_fmt` recevait donc toujours NULL, `pick_keep` n'appliquait
@@ -187,6 +193,12 @@ pub(crate) fn persist_fingerprints(conn: &Connection, entries: &[(i64, Vec<u32>)
 
 /// The O(n²) compare + union-find grouping itself. Pure — no connection touched, safe to run
 /// without any lock held. `fps` must be aligned 1:1 with `rows` (see `build_fingerprints`).
+///
+/// **Réservé aux tests depuis la v19.** La production passe par `groups_from_edges`, qui relit
+/// des comparaisons déjà faites au lieu de les refaire (≈ 2 min 31 s à 15 000 pistes, mesuré).
+/// Cette fonction reste la RÉFÉRENCE contre laquelle le chemin incrémental est vérifié — les deux
+/// doivent rendre exactement les mêmes groupes, c'est ce que verrouillent les tests d'équivalence.
+#[cfg(test)]
 pub(crate) fn group_duplicates(rows: &[DupScanRow], fps: &[Option<Vec<u32>>]) -> Vec<DupGroup> {
     let n = rows.len();
     let mut parent: Vec<usize> = (0..n).collect();
@@ -204,38 +216,59 @@ pub(crate) fn group_duplicates(rows: &[DupScanRow], fps: &[Option<Vec<u32>>]) ->
             }
             let s = fingerprint::similarity(fi, fj);
             if s >= fingerprint::MATCH_THRESHOLD {
-                // `min_sim` est indexé par RACINE, et une fusion change la racine : le minimum
-                // enregistré sous l'ancienne racine devenait orphelin, jamais relu par le
-                // `min_sim.get(&root)` final. Sur un groupe de 3 dont le lien le plus faible est la
-                // PREMIÈRE arête trouvée, `similarity` sur-rapportait — un champ publié qui mentait
-                // sur la seule chose qu'il prétend dire. Fusionner les minimums au moment du `union`
-                // est la correction ; ne pas dépendre du sens de `union` (on relit la racine après).
-                let ra = find_root(&mut parent, i);
-                let rb = find_root(&mut parent, j);
-                if ra == rb {
-                    let e = min_sim.entry(ra).or_insert(s);
-                    if s < *e {
-                        *e = s;
-                    }
-                } else {
-                    let prev_a = min_sim.remove(&ra);
-                    let prev_b = min_sim.remove(&rb);
-                    union(&mut parent, i, j);
-                    let root = find_root(&mut parent, i);
-                    let merged = prev_a
-                        .into_iter()
-                        .chain(prev_b)
-                        .chain(std::iter::once(s))
-                        .fold(f32::INFINITY, f32::min);
-                    min_sim.insert(root, merged);
-                }
+                link(&mut parent, &mut min_sim, i, j, s);
             }
         }
     }
 
+    assemble_groups(rows, &mut parent, &min_sim)
+}
+
+/// Rattache `i` et `j` dans l'union-find, en tenant à jour le minimum de similarité du groupe.
+///
+/// Extrait pour être partagé par le scan complet (`group_duplicates`) et la reconstruction
+/// depuis les arêtes persistées (`groups_from_edges`) : ce bloc porte une correction subtile, et
+/// une seconde implémentation la perdrait tôt ou tard.
+///
+/// `min_sim` est indexé par RACINE, et une fusion change la racine : le minimum enregistré sous
+/// l'ancienne racine devenait orphelin, jamais relu par le `min_sim.get(&root)` final. Sur un
+/// groupe de 3 dont le lien le plus faible est la PREMIÈRE arête trouvée, `similarity`
+/// sur-rapportait — un champ publié qui mentait sur la seule chose qu'il prétend dire. Fusionner
+/// les minimums au moment du `union` est la correction ; ne pas dépendre du sens de `union` (on
+/// relit la racine après).
+fn link(parent: &mut [usize], min_sim: &mut HashMap<usize, f32>, i: usize, j: usize, s: f32) {
+    let ra = find_root(parent, i);
+    let rb = find_root(parent, j);
+    if ra == rb {
+        let e = min_sim.entry(ra).or_insert(s);
+        if s < *e {
+            *e = s;
+        }
+    } else {
+        let prev_a = min_sim.remove(&ra);
+        let prev_b = min_sim.remove(&rb);
+        union(parent, i, j);
+        let root = find_root(parent, i);
+        let merged = prev_a
+            .into_iter()
+            .chain(prev_b)
+            .chain(std::iter::once(s))
+            .fold(f32::INFINITY, f32::min);
+        min_sim.insert(root, merged);
+    }
+}
+
+/// Assemblage final : des classes d'équivalence vers les `DupGroup` publiés, keeper recommandé
+/// compris. Partagé par les deux chemins, pour la même raison que `link`.
+fn assemble_groups(
+    rows: &[DupScanRow],
+    parent: &mut [usize],
+    min_sim: &HashMap<usize, f32>,
+) -> Vec<DupGroup> {
+    let n = rows.len();
     let mut groups: HashMap<usize, Vec<usize>> = HashMap::new();
     for i in 0..n {
-        let root = find_root(&mut parent, i);
+        let root = find_root(parent, i);
         groups.entry(root).or_default().push(i);
     }
 
@@ -276,6 +309,334 @@ pub(crate) fn group_duplicates(rows: &[DupScanRow], fps: &[Option<Vec<u32>>]) ->
     }
     out.sort_by(|a, b| a.members[0].id.cmp(&b.members[0].id));
     out
+}
+
+// ── Dédoublonnage incrémental (v19) ──────────────────────────────────────────
+//
+// Le scan complet coûte ≈ 2 min 31 s à 15 000 pistes (`bench_dedup.rs`), et il était rejoué
+// dès qu'UNE piste était rangée : `library::filed_signature` vaut `(COUNT(*), MAX(id))`, donc
+// tout rangement fait tomber le cache. Le travail réellement nécessaire dans ce cas est de
+// comparer la nouvelle piste aux autres — ~20 ms.
+//
+// Les tables `dup_edges` / `dup_scanned` mémorisent le résultat des comparaisons plutôt que le
+// comptage agrégé. Invariant : **toute paire de `dup_scanned` a été évaluée**.
+
+/// Une arête persistée : deux pistes dont la similarité atteint `MATCH_THRESHOLD`.
+pub(crate) struct DupEdge {
+    pub a_id: i64,
+    pub b_id: i64,
+    pub similarity: f32,
+}
+
+/// Les pistes déjà comparées contre lesquelles `row` doit être évaluée.
+///
+/// Reproduit EXACTEMENT le pré-filtre de `group_duplicates` : une paire n'est écartée que si les
+/// **deux** durées sont connues et distantes de plus de `DURATION_MATCH_TOL_SEC`. Une durée
+/// inconnue — des deux côtés — laisse passer.
+///
+/// C'est le point où l'incrémental pourrait diverger du scan complet sans qu'aucune erreur ne
+/// soit levée : écarter les durées inconnues serait moins cher et trouverait silencieusement
+/// moins de doublons. Le coût de l'équivalence stricte est borné — il ne concerne que les pistes
+/// sans durée, qui se comparent alors à toute la bibliothèque.
+/// `duplicate_scan_matches_full_scan_when_duration_is_null` verrouille cette équivalence.
+///
+/// `status='filed'` en plus de la jointure sur `dup_scanned` : les deux devraient toujours
+/// s'accorder, et si jamais ils divergent on préfère le statut réel de la piste.
+pub(crate) fn load_dup_candidates(
+    conn: &Connection,
+    row: &DupScanRow,
+) -> rusqlite::Result<Vec<DupScanRow>> {
+    let mut stmt = conn.prepare(
+        "SELECT t.id, t.path, t.filename, t.folder, t.target_format, t.bitrate, t.duration, \
+                t.truncated, t.fingerprint \
+         FROM tracks t \
+         JOIN dup_scanned s ON s.track_id = t.id \
+         WHERE t.status='filed' AND t.id <> ?1 \
+           AND (?2 IS NULL OR t.duration IS NULL OR ABS(t.duration - ?2) <= ?3)",
+    )?;
+    let rows = stmt
+        .query_map(params![row.id, row.duration, DURATION_MATCH_TOL_SEC], |r| {
+            Ok(DupScanRow {
+                id: r.get(0)?,
+                path: r.get(1)?,
+                filename: r.get(2)?,
+                folder: r.get(3)?,
+                format: r
+                    .get::<_, Option<String>>(4)?
+                    .as_deref()
+                    .and_then(crate::encode::Target::from_db_value)
+                    .map(|t| t.ext().to_string()),
+                bitrate: r.get(5)?,
+                duration: r.get(6)?,
+                truncated: r.get::<_, Option<i64>>(7)?.unwrap_or(0) != 0,
+                fingerprint: r.get(8)?,
+            })
+        })?
+        .collect::<rusqlite::Result<_>>()?;
+    Ok(rows)
+}
+
+/// Les pistes `filed`, SANS leur empreinte.
+///
+/// `groups_from_edges` n'a besoin que des métadonnées : les comparaisons sont déjà faites et
+/// vivent dans `dup_edges`. Charger les empreintes ici coûterait 166 Mo de RAM à 15 000 pistes
+/// (mesuré, `bench_dedup.rs`) et ~250 Mo de TEXT lus depuis SQLite, pour les jeter aussitôt.
+/// C'est le chemin NORMAL — celui qu'emprunte chaque visite du tableau de bord.
+pub(crate) fn load_dup_group_rows(conn: &Connection) -> rusqlite::Result<Vec<DupScanRow>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, path, filename, folder, target_format, bitrate, duration, truncated \
+         FROM tracks WHERE status='filed'",
+    )?;
+    let rows = stmt
+        .query_map([], |r| {
+            Ok(DupScanRow {
+                id: r.get(0)?,
+                path: r.get(1)?,
+                filename: r.get(2)?,
+                folder: r.get(3)?,
+                format: r
+                    .get::<_, Option<String>>(4)?
+                    .as_deref()
+                    .and_then(crate::encode::Target::from_db_value)
+                    .map(|t| t.ext().to_string()),
+                bitrate: r.get(5)?,
+                duration: r.get(6)?,
+                truncated: r.get::<_, Option<i64>>(7)?.unwrap_or(0) != 0,
+                // Délibérément absente : voir le doc-comment. Ne PAS la remplir « au cas où ».
+                fingerprint: None,
+            })
+        })?
+        .collect::<rusqlite::Result<_>>()?;
+    Ok(rows)
+}
+
+/// Les pistes `filed` qui n'ont encore jamais été comparées.
+pub(crate) fn load_unscanned_rows(conn: &Connection) -> rusqlite::Result<Vec<DupScanRow>> {
+    let mut stmt = conn.prepare(
+        "SELECT id, path, filename, folder, target_format, bitrate, duration, truncated, fingerprint \
+         FROM tracks \
+         WHERE status='filed' AND id NOT IN (SELECT track_id FROM dup_scanned)",
+    )?;
+    let rows = stmt
+        .query_map([], |r| {
+            Ok(DupScanRow {
+                id: r.get(0)?,
+                path: r.get(1)?,
+                filename: r.get(2)?,
+                folder: r.get(3)?,
+                format: r
+                    .get::<_, Option<String>>(4)?
+                    .as_deref()
+                    .and_then(crate::encode::Target::from_db_value)
+                    .map(|t| t.ext().to_string()),
+                bitrate: r.get(5)?,
+                duration: r.get(6)?,
+                truncated: r.get::<_, Option<i64>>(7)?.unwrap_or(0) != 0,
+                fingerprint: r.get(8)?,
+            })
+        })?
+        .collect::<rusqlite::Result<_>>()?;
+    Ok(rows)
+}
+
+/// Retire de `dup_scanned` les pistes qui ne sont plus `filed`, et leurs arêtes avec.
+///
+/// `ON DELETE CASCADE` ne couvre que la suppression d'une LIGNE `tracks` ; une piste qui repasse
+/// en `pending` (ré-encodage détecté par `scanner.rs`, dérangement) garde sa ligne et sortirait
+/// donc du jeu sans que ses arêtes disparaissent. Elles mentiraient alors sur une empreinte que
+/// `scanner.rs` vient justement d'effacer.
+pub(crate) fn prune_unfiled(conn: &Connection) -> rusqlite::Result<usize> {
+    conn.execute(
+        "DELETE FROM dup_edges WHERE a_id IN (SELECT track_id FROM dup_scanned \
+            WHERE track_id NOT IN (SELECT id FROM tracks WHERE status='filed')) \
+            OR b_id IN (SELECT track_id FROM dup_scanned \
+            WHERE track_id NOT IN (SELECT id FROM tracks WHERE status='filed'))",
+        [],
+    )?;
+    conn.execute(
+        "DELETE FROM dup_scanned \
+         WHERE track_id NOT IN (SELECT id FROM tracks WHERE status='filed')",
+        [],
+    )
+}
+
+/// Enregistre les arêtes trouvées et marque les pistes comme comparées, en une transaction.
+///
+/// L'ordre compte : les arêtes d'abord, `dup_scanned` ensuite. Une interruption entre les deux
+/// laisse des arêtes pour une piste non marquée — elle sera recomparée au prochain passage, et
+/// `INSERT OR REPLACE` réécrira les mêmes valeurs. L'ordre inverse laisserait une piste marquée
+/// « comparée » sans ses arêtes, ce qui casserait l'invariant en silence et pour de bon.
+pub(crate) fn record_scanned(
+    conn: &mut Connection,
+    edges: &[DupEdge],
+    scanned_ids: &[i64],
+) -> rusqlite::Result<()> {
+    let tx = conn.transaction()?;
+    {
+        let mut ins = tx.prepare(
+            "INSERT OR REPLACE INTO dup_edges (a_id, b_id, similarity) VALUES (?1, ?2, ?3)",
+        )?;
+        for e in edges {
+            // `a_id < b_id` : invariant tenu ICI, pas par le schéma. Sans lui la même paire
+            // pourrait exister dans les deux sens et la PRIMARY KEY ne l'attraperait pas.
+            let (a, b) = if e.a_id <= e.b_id {
+                (e.a_id, e.b_id)
+            } else {
+                (e.b_id, e.a_id)
+            };
+            ins.execute(params![a, b, e.similarity])?;
+        }
+        let mut mark = tx.prepare("INSERT OR IGNORE INTO dup_scanned (track_id) VALUES (?1)")?;
+        for id in scanned_ids {
+            mark.execute(params![id])?;
+        }
+    }
+    tx.commit()
+}
+
+/// Toutes les arêtes persistées.
+pub(crate) fn load_edges(conn: &Connection) -> rusqlite::Result<Vec<DupEdge>> {
+    let mut stmt = conn.prepare("SELECT a_id, b_id, similarity FROM dup_edges")?;
+    let rows = stmt
+        .query_map([], |r| {
+            Ok(DupEdge {
+                a_id: r.get(0)?,
+                b_id: r.get(1)?,
+                similarity: r.get::<_, f64>(2)? as f32,
+            })
+        })?
+        .collect::<rusqlite::Result<_>>()?;
+    Ok(rows)
+}
+
+/// Compare `row` à `candidates` et rend les arêtes trouvées. Pur : aucune connexion touchée,
+/// donc appelable sans tenir le verrou global — c'est ici que passe le temps CPU.
+///
+/// `fp` est l'empreinte de `row` (déjà résolue par `build_fingerprints`). Les empreintes des
+/// candidats viennent de leur colonne en cache : un candidat est dans `dup_scanned`, donc il a
+/// déjà été comparé une fois, donc son empreinte a déjà été calculée. Aucun décodage disque ici.
+pub(crate) fn edges_against(
+    row: &DupScanRow,
+    fp: &[u32],
+    candidates: &[DupScanRow],
+) -> Vec<DupEdge> {
+    let mut out = Vec::new();
+    for cand in candidates {
+        // Le pré-filtre de durée est déjà appliqué en SQL par `load_dup_candidates`, mais il est
+        // rejoué ici parce que cette fonction sert AUSSI à comparer les nouvelles pistes entre
+        // elles, où aucun SQL n'est passé. Les deux formulations doivent rester d'accord.
+        if let (Some(a), Some(b)) = (row.duration, cand.duration) {
+            if (a - b).abs() > DURATION_MATCH_TOL_SEC {
+                continue;
+            }
+        }
+        let Some(raw) = cand.fingerprint.as_deref() else {
+            continue;
+        };
+        if raw.is_empty() {
+            continue;
+        }
+        let s = fingerprint::similarity(fp, &fingerprint::decode(raw));
+        if s >= fingerprint::MATCH_THRESHOLD {
+            out.push(DupEdge {
+                a_id: row.id,
+                b_id: cand.id,
+                similarity: s,
+            });
+        }
+    }
+    out
+}
+
+/// Compare deux pistes dont les empreintes sont DÉJÀ décodées, et rend l'arête si elles matchent.
+///
+/// Sert au cas que `edges_against` ne couvre pas : deux pistes nouvellement rangées, comparées
+/// entre elles. Aucune des deux n'est dans `dup_scanned`, et leur empreinte vient d'être calculée
+/// en mémoire — la relire depuis la colonne en cache serait au mieux inutile, au pire fausse
+/// (elle n'y est pas encore écrite).
+pub(crate) fn edge_between(
+    a: &DupScanRow,
+    fa: &[u32],
+    b: &DupScanRow,
+    fb: &[u32],
+) -> Option<DupEdge> {
+    if let (Some(x), Some(y)) = (a.duration, b.duration) {
+        if (x - y).abs() > DURATION_MATCH_TOL_SEC {
+            return None;
+        }
+    }
+    let s = fingerprint::similarity(fa, fb);
+    (s >= fingerprint::MATCH_THRESHOLD).then_some(DupEdge {
+        a_id: a.id,
+        b_id: b.id,
+        similarity: s,
+    })
+}
+
+/// Enchaîne le rafraîchissement incrémental complet sur une connexion tenue du début à la fin.
+///
+/// **Réservé aux tests**, exactement comme `scan_library_duplicates` : la production ne peut PAS
+/// faire ça, parce que `build_fingerprints` décode de l'audio depuis le disque et que tenir le
+/// verrou global pendant ce temps affamerait tout le reste de l'IPC (audit SYS-1, 2026-07-28).
+/// `ipc_library::refresh_duplicate_groups` refait donc ces étapes en trois sections de verrou
+/// courtes. **Les deux doivent rester d'accord** — c'est le prix d'un test lisible, et
+/// `#[cfg(test)]` garantit au moins qu'aucun code de production ne prendra ce raccourci.
+#[cfg(test)]
+pub(crate) fn refresh_incremental(conn: &mut Connection) -> rusqlite::Result<Vec<DupGroup>> {
+    prune_unfiled(conn)?;
+    let unscanned = load_unscanned_rows(conn)?;
+    let mut candidates = Vec::with_capacity(unscanned.len());
+    for row in &unscanned {
+        candidates.push(load_dup_candidates(conn, row)?);
+    }
+
+    let built = build_fingerprints(&unscanned);
+    let mut edges = Vec::new();
+    for (i, row) in unscanned.iter().enumerate() {
+        let Some(fp) = built.fps[i].as_deref() else {
+            continue;
+        };
+        edges.extend(edges_against(row, fp, &candidates[i]));
+        for (j, other) in unscanned.iter().enumerate().skip(i + 1) {
+            let Some(other_fp) = built.fps[j].as_deref() else {
+                continue;
+            };
+            if let Some(e) = edge_between(row, fp, other, other_fp) {
+                edges.push(e);
+            }
+        }
+    }
+
+    if !built.to_persist.is_empty() {
+        persist_fingerprints(conn, &built.to_persist);
+    }
+    let ids: Vec<i64> = unscanned.iter().map(|r| r.id).collect();
+    record_scanned(conn, &edges, &ids)?;
+
+    let rows = load_dup_group_rows(conn)?;
+    let all_edges = load_edges(conn)?;
+    Ok(groups_from_edges(&rows, &all_edges))
+}
+
+/// Reconstruit les groupes depuis les arêtes persistées.
+///
+/// Passe par `link` et `assemble_groups`, les mêmes que le scan complet : c'est ce qui garantit
+/// que les deux chemins produisent des groupes identiques, y compris le `similarity` du groupe
+/// (le minimum des arêtes, dont le calcul avait déjà été faux une fois).
+///
+/// Une arête dont l'une des extrémités n'est pas dans `rows` est ignorée — `rows` est le jeu
+/// `filed` courant, et `prune_unfiled` doit avoir tourné avant.
+pub(crate) fn groups_from_edges(rows: &[DupScanRow], edges: &[DupEdge]) -> Vec<DupGroup> {
+    let index: HashMap<i64, usize> = rows.iter().enumerate().map(|(i, r)| (r.id, i)).collect();
+    let mut parent: Vec<usize> = (0..rows.len()).collect();
+    let mut min_sim: HashMap<usize, f32> = HashMap::new();
+    for e in edges {
+        let (Some(&i), Some(&j)) = (index.get(&e.a_id), index.get(&e.b_id)) else {
+            continue;
+        };
+        link(&mut parent, &mut min_sim, i, j, e.similarity);
+    }
+    assemble_groups(rows, &mut parent, &min_sim)
 }
 
 /// Group every `filed` track into duplicate clusters by acoustic fingerprint similarity
@@ -910,5 +1271,214 @@ mod tests {
         add(&conn, "/lib/lone.flac", "filed");
         let groups = scan_library_duplicates(&conn).unwrap();
         assert!(groups.is_empty());
+    }
+
+    // ── Phase 4 : le chemin incrémental doit être ÉQUIVALENT au scan complet ──
+    //
+    // L'empreinte est écrite directement en base : `build_fingerprints` réutilise alors la valeur
+    // en cache et ne touche jamais au disque. Les tests restent donc rapides ET indépendants de
+    // `src-tauri/fixtures/`, qui est gitignoré et absent d'un checkout frais.
+
+    /// Piste `filed` avec une durée et une empreinte donnée.
+    fn add_filed(conn: &Connection, path: &str, duration: Option<f64>, fp: &[u32]) -> i64 {
+        let id = add(conn, path, "filed");
+        conn.execute(
+            "UPDATE tracks SET duration=?2, fingerprint=?3 WHERE id=?1",
+            params![id, duration, fingerprint::encode(fp)],
+        )
+        .unwrap();
+        id
+    }
+
+    /// Empreinte pseudo-aléatoire déterministe, assez LONGUE pour que `similarity` discrimine.
+    ///
+    /// Une empreinte de 8 items ne discrimine pas : `similarity` vaut `matched / n`, et avec
+    /// `n = 8` un seul alignement fortuit du matcher suffit à dépasser le seuil de 0,6. Deux
+    /// pistes sans rapport se retrouvaient alors dans le même groupe. 200 items, c'est ~25 s
+    /// d'audio à la cadence de `preset_test1` — assez pour que le hasard ne décide plus.
+    fn synth_fp(seed: u32) -> Vec<u32> {
+        let mut x = seed;
+        (0..200)
+            .map(|_| {
+                x = x.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                x
+            })
+            .collect()
+    }
+
+    /// Forme comparable d'un jeu de groupes : (ids triés) par groupe, groupes triés.
+    fn shape(groups: &[DupGroup]) -> Vec<Vec<i64>> {
+        let mut out: Vec<Vec<i64>> = groups
+            .iter()
+            .map(|g| {
+                let mut ids: Vec<i64> = g.members.iter().map(|m| m.id).collect();
+                ids.sort_unstable();
+                ids
+            })
+            .collect();
+        out.sort();
+        out
+    }
+
+    #[test]
+    fn incremental_scan_matches_full_scan() {
+        let fp_a = synth_fp(1);
+        let fp_b = synth_fp(999);
+        // Garde-fou du jeu de données lui-même : si ces deux empreintes matchaient, le test
+        // passerait pour une raison sans rapport avec ce qu'il prétend vérifier.
+        assert!(
+            fingerprint::similarity(&fp_a, &fp_b) < fingerprint::MATCH_THRESHOLD,
+            "les deux empreintes de test doivent etre distinctes"
+        );
+
+        let mut inc = db();
+        add_filed(&inc, "/lib/a1.flac", Some(300.0), &fp_a);
+        add_filed(&inc, "/lib/a2.mp3", Some(300.5), &fp_a);
+        add_filed(&inc, "/lib/b1.flac", Some(300.2), &fp_b);
+        let incremental = refresh_incremental(&mut inc).unwrap();
+
+        // Même jeu de données, chemin de référence.
+        let full_conn = db();
+        add_filed(&full_conn, "/lib/a1.flac", Some(300.0), &fp_a);
+        add_filed(&full_conn, "/lib/a2.mp3", Some(300.5), &fp_a);
+        add_filed(&full_conn, "/lib/b1.flac", Some(300.2), &fp_b);
+        let full = scan_library_duplicates(&full_conn).unwrap();
+
+        assert_eq!(shape(&incremental), shape(&full));
+        assert_eq!(shape(&incremental), vec![vec![1, 2]]);
+    }
+
+    /// LE cas qui décide si l'incrémental ment. Le pré-filtre de `group_duplicates` n'écarte une
+    /// paire que si les DEUX durées sont connues ; `load_dup_candidates` doit faire pareil, sinon
+    /// une piste sans durée serait silencieusement comparée à moins de monde que dans le scan
+    /// complet — sans qu'aucune erreur ne soit levée.
+    #[test]
+    fn duplicate_scan_matches_full_scan_when_duration_is_null() {
+        let fp = [11u32, 22, 33, 44, 55, 66, 77, 88];
+
+        // 300 s contre durée inconnue : très au-delà de la tolérance de 2 s, mais l'une des deux
+        // manque, donc la paire DOIT être évaluée.
+        let mut inc = db();
+        add_filed(&inc, "/lib/known.flac", Some(300.0), &fp);
+        add_filed(&inc, "/lib/unknown.mp3", None, &fp);
+        let incremental = refresh_incremental(&mut inc).unwrap();
+
+        let full_conn = db();
+        add_filed(&full_conn, "/lib/known.flac", Some(300.0), &fp);
+        add_filed(&full_conn, "/lib/unknown.mp3", None, &fp);
+        let full = scan_library_duplicates(&full_conn).unwrap();
+
+        assert_eq!(shape(&incremental), shape(&full));
+        assert_eq!(
+            shape(&incremental),
+            vec![vec![1, 2]],
+            "une durée inconnue ne doit PAS faire écarter la paire"
+        );
+    }
+
+    /// Le gain de la Phase 4 : ranger une piste ne doit comparer que celle-là, tout en trouvant
+    /// le même groupe qu'un scan complet refait de zéro.
+    #[test]
+    fn incremental_scan_picks_up_a_newly_filed_track() {
+        let fp = [7u32, 7, 7, 7, 7, 7, 7, 7];
+        let mut conn = db();
+        add_filed(&conn, "/lib/a1.flac", Some(200.0), &fp);
+        add_filed(&conn, "/lib/a2.mp3", Some(200.0), &fp);
+
+        let first = refresh_incremental(&mut conn).unwrap();
+        assert_eq!(shape(&first), vec![vec![1, 2]]);
+
+        // Troisième exemplaire rangé après coup.
+        add_filed(&conn, "/lib/a3.aiff", Some(200.0), &fp);
+        let second = refresh_incremental(&mut conn).unwrap();
+        assert_eq!(
+            shape(&second),
+            vec![vec![1, 2, 3]],
+            "la nouvelle piste doit rejoindre le groupe existant"
+        );
+    }
+
+    /// Deux doublons rangés dans la MÊME fournée : aucun des deux n'est dans `dup_scanned`, donc
+    /// `load_dup_candidates` ne les rend pas l'un pour l'autre. Sans la comparaison des nouvelles
+    /// pistes entre elles, ils ne se verraient jamais.
+    #[test]
+    fn incremental_scan_compares_new_tracks_against_each_other() {
+        let fp = [3u32, 1, 4, 1, 5, 9, 2, 6];
+        let mut conn = db();
+        add_filed(&conn, "/lib/x1.flac", Some(180.0), &fp);
+        add_filed(&conn, "/lib/x2.mp3", Some(180.0), &fp);
+        let groups = refresh_incremental(&mut conn).unwrap();
+        assert_eq!(shape(&groups), vec![vec![1, 2]]);
+    }
+
+    /// Une piste qui quitte `filed` — ré-encodée sur place, donc remise en `pending` par
+    /// `scanner.rs`, qui efface AUSSI son empreinte — doit sortir du jeu avec ses arêtes. Sinon
+    /// elles mentiraient sur une empreinte qui n'existe plus.
+    #[test]
+    fn unfiling_a_track_drops_its_edges() {
+        let fp = [5u32, 5, 5, 5, 5, 5, 5, 5];
+        let mut conn = db();
+        let a = add_filed(&conn, "/lib/y1.flac", Some(240.0), &fp);
+        add_filed(&conn, "/lib/y2.mp3", Some(240.0), &fp);
+        assert_eq!(
+            shape(&refresh_incremental(&mut conn).unwrap()),
+            vec![vec![1, 2]]
+        );
+
+        conn.execute(
+            "UPDATE tracks SET status='pending', fingerprint=NULL WHERE id=?1",
+            params![a],
+        )
+        .unwrap();
+
+        let groups = refresh_incremental(&mut conn).unwrap();
+        assert!(
+            groups.is_empty(),
+            "il ne reste qu'une piste filed, donc plus aucun groupe"
+        );
+        let edges: i64 = conn
+            .query_row("SELECT COUNT(*) FROM dup_edges", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(edges, 0, "l'arête devait partir avec la piste dérangée");
+        let scanned: i64 = conn
+            .query_row("SELECT COUNT(*) FROM dup_scanned", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(scanned, 1, "seule la piste encore filed reste marquée");
+    }
+
+    /// Supprimer la LIGNE `tracks` doit emporter arêtes et marquage par `ON DELETE CASCADE` —
+    /// c'est ce qui rend la résolution d'un doublon (suppression du perdant) exacte et immédiate,
+    /// là où un union-find en RAM aurait imposé un scan complet.
+    #[test]
+    fn deleting_a_track_cascades_to_dup_tables() {
+        let fp = [2u32, 7, 1, 8, 2, 8, 1, 8];
+        let mut conn = db();
+        // `db()` n'active pas les clés étrangères — seul `db::open` le fait. On les active ici,
+        // sinon ce test passerait sans rien prouver du CASCADE.
+        conn.execute_batch("PRAGMA foreign_keys = ON;").unwrap();
+        let a = add_filed(&conn, "/lib/z1.flac", Some(150.0), &fp);
+        add_filed(&conn, "/lib/z2.mp3", Some(150.0), &fp);
+        refresh_incremental(&mut conn).unwrap();
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM dup_edges", [], |r| r.get::<_, i64>(0))
+                .unwrap(),
+            1
+        );
+
+        conn.execute("DELETE FROM tracks WHERE id=?1", params![a])
+            .unwrap();
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM dup_edges", [], |r| r.get::<_, i64>(0))
+                .unwrap(),
+            0,
+            "ON DELETE CASCADE devait retirer l'arête"
+        );
+        assert_eq!(
+            conn.query_row("SELECT COUNT(*) FROM dup_scanned", [], |r| r
+                .get::<_, i64>(0))
+                .unwrap(),
+            1,
+            "ON DELETE CASCADE devait retirer le marquage de la piste supprimée"
+        );
     }
 }

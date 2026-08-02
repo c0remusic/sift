@@ -158,34 +158,95 @@ pub fn update_metadata(
 }
 
 /// Group `filed` tracks by acoustic fingerprint into duplicate clusters, each with a
-/// recommended keeper. Read-only — resolving a group is a plain `trash_track` per loser.
+/// recommended keeper.
 ///
-/// Does NOT hold the global `Mutex<Connection>` across the O(n²) compare or the disk-decoding
-/// fingerprint compute (both can be slow on a large/uncached library) — that would starve every
-/// other IPC command sharing the lock, including the background analysis pool's `persist_result`
-/// (see `worker.rs`). Lock scope: brief read (`load_dup_scan_rows`), drop, unlocked compute
-/// (`build_fingerprints` + `group_duplicates`), then a brief write only if new fingerprints were
-/// computed (`persist_fingerprints`). Same duplicates detected, same fingerprints cached — only
-/// the lock's scope changed.
+/// **N'est plus en lecture seule depuis la v19** : l'appel met à jour `dup_edges` / `dup_scanned`
+/// au passage. Résoudre un groupe reste un `trash_track` par perdant, et le `ON DELETE CASCADE`
+/// du schéma s'occupe des arêtes.
+///
+/// Toute la mécanique est dans `refresh_duplicate_groups` — y compris la portée des verrous, qui
+/// reste l'invariant de SYS-1 : jamais le verrou global pendant `build_fingerprints`.
 #[tauri::command]
 pub fn scan_library_duplicates(
     conn: State<'_, Mutex<Connection>>,
 ) -> Result<Vec<crate::dedup::DupGroup>, String> {
-    let rows = {
-        let guard = db::lock_conn(&conn)?;
-        crate::dedup::load_dup_scan_rows(&guard).map_err(|e| e.to_string())?
-        // `guard` dropped here — lock released before the heavy compute below.
+    refresh_duplicate_groups(&conn)
+}
+
+/// Met l'état de dédoublonnage à jour, puis rend les groupes courants.
+///
+/// **Incrémental depuis la v19** (Phase 4). Le scan complet coûte ≈ 2 min 31 s à 15 000 pistes
+/// (`bench_dedup.rs`) et il était rejoué dès qu'UNE piste était rangée, parce que
+/// `library::filed_signature` vaut `(COUNT(*), MAX(id))`. Ici seules les pistes jamais comparées
+/// sont comparées, contre les seules candidates que le pré-filtre de durée laisse passer :
+/// ~20 ms dans le cas courant. Le premier appel sur une base existante fait le travail complet
+/// une fois, puis plus jamais.
+///
+/// **Portée des verrous**, invariant repris de SYS-1 (2026-07-28) : le verrou global n'est jamais
+/// tenu pendant `build_fingerprints`, qui décode de l'audio depuis le disque. Trois sections
+/// courtes — lecture, puis écriture, puis relecture — séparées par du calcul non verrouillé.
+fn refresh_duplicate_groups(
+    conn: &State<'_, Mutex<Connection>>,
+) -> Result<Vec<crate::dedup::DupGroup>, String> {
+    // ── 1. Lecture brève : ce qui reste à comparer, et contre quoi ────────────
+    let (unscanned, candidates) = {
+        let guard = db::lock_conn(conn)?;
+        // Avant tout le reste : une piste qui n'est plus `filed` (ré-encodée donc repassée en
+        // `pending`, ou dérangée) doit sortir du jeu AVEC ses arêtes, sinon elles mentiraient sur
+        // une empreinte que `scanner.rs` vient d'effacer.
+        crate::dedup::prune_unfiled(&guard).map_err(|e| e.to_string())?;
+        let unscanned = crate::dedup::load_unscanned_rows(&guard).map_err(|e| e.to_string())?;
+        let mut candidates = Vec::with_capacity(unscanned.len());
+        for row in &unscanned {
+            candidates
+                .push(crate::dedup::load_dup_candidates(&guard, row).map_err(|e| e.to_string())?);
+        }
+        (unscanned, candidates)
+        // `guard` relâché ici — avant le décodage disque ci-dessous.
     };
 
-    let built = crate::dedup::build_fingerprints(&rows);
-
-    if !built.to_persist.is_empty() {
-        let guard = db::lock_conn(&conn)?;
-        crate::dedup::persist_fingerprints(&guard, &built.to_persist);
-        // `guard` dropped here — held only for the write, not the compare below.
+    // ── 2. Calcul non verrouillé ─────────────────────────────────────────────
+    let built = crate::dedup::build_fingerprints(&unscanned);
+    let mut edges = Vec::new();
+    for (i, row) in unscanned.iter().enumerate() {
+        let Some(fp) = built.fps[i].as_deref() else {
+            // Empreinte impossible à calculer (fichier illisible). La piste est quand même
+            // marquée comparée : la reprendre à chaque passage rejouerait le même échec de
+            // décodage indéfiniment.
+            continue;
+        };
+        edges.extend(crate::dedup::edges_against(row, fp, &candidates[i]));
+        // Les nouvelles pistes entre elles. `load_dup_candidates` ne rend que `dup_scanned`,
+        // donc sans ceci deux doublons rangés dans la même fournée ne se verraient jamais.
+        // Fenêtre `i+1..` : chaque paire une seule fois.
+        for (j, other) in unscanned.iter().enumerate().skip(i + 1) {
+            let Some(other_fp) = built.fps[j].as_deref() else {
+                continue;
+            };
+            if let Some(e) = crate::dedup::edge_between(row, fp, other, other_fp) {
+                edges.push(e);
+            }
+        }
     }
 
-    Ok(crate::dedup::group_duplicates(&rows, &built.fps))
+    // ── 3. Écriture brève ────────────────────────────────────────────────────
+    {
+        let mut guard = db::lock_conn(conn)?;
+        if !built.to_persist.is_empty() {
+            crate::dedup::persist_fingerprints(&guard, &built.to_persist);
+        }
+        let ids: Vec<i64> = unscanned.iter().map(|r| r.id).collect();
+        crate::dedup::record_scanned(&mut guard, &edges, &ids).map_err(|e| e.to_string())?;
+    }
+
+    // ── 4. Relecture brève, puis assemblage non verrouillé ───────────────────
+    let (rows, all_edges) = {
+        let guard = db::lock_conn(conn)?;
+        let rows = crate::dedup::load_dup_group_rows(&guard).map_err(|e| e.to_string())?;
+        let edges = crate::dedup::load_edges(&guard).map_err(|e| e.to_string())?;
+        (rows, edges)
+    };
+    Ok(crate::dedup::groups_from_edges(&rows, &all_edges))
 }
 
 /// Dashboard aggregate stats for the Bibliothèque (totals, lossless/mp3 split, duplicates,
@@ -220,19 +281,12 @@ pub fn library_stats(
     // qui prend son propre jeton de single-flight et appelle `compute` par-dessus. Le cache, la
     // génération et la sérialisation des calculs concurrents vivent tous dans cette fonction ;
     // ici on ne fournit que le calcul coûteux.
+    // Le cache reste utile mais n'est plus critique : depuis la v19 son défaut de granularité
+    // (`filed_signature` bouge à chaque rangement) déclenche un recalcul INCRÉMENTAL de ~20 ms
+    // au lieu des ~2 min 31 s du scan complet. On le garde pour éviter le travail redondant entre
+    // deux visites du tableau de bord, plus pour masquer un coût qui n'existe plus.
     stats.duplicates = library::duplicate_count_or_compute(sig, || {
-        let rows = {
-            let guard = db::lock_conn(&conn)?;
-            crate::dedup::load_dup_scan_rows(&guard).map_err(|e| e.to_string())?
-            // `guard` relâché ici — avant le décodage disque ci-dessous.
-        };
-        let built = crate::dedup::build_fingerprints(&rows);
-        if !built.to_persist.is_empty() {
-            let guard = db::lock_conn(&conn)?;
-            crate::dedup::persist_fingerprints(&guard, &built.to_persist);
-            // `guard` relâché ici — tenu pour la seule écriture.
-        }
-        Ok::<i64, String>(crate::dedup::group_duplicates(&rows, &built.fps).len() as i64)
+        Ok::<i64, String>(refresh_duplicate_groups(&conn)?.len() as i64)
     })?;
     Ok(stats)
 }

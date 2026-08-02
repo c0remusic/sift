@@ -302,6 +302,43 @@ const MIGRATIONS: &[&str] = &[
     r#"
     ALTER TABLE volume_usage ADD COLUMN scheme_version INTEGER NOT NULL DEFAULT 0;
     "#,
+    // v19 — Phase 4 du chantier d'évolution architecturale. Rend le dédoublonnage incrémental.
+    //
+    // Le défaut mesuré (`bench_dedup.rs`) n'était pas le O(n²) lui-même — énumérer les
+    // 112 M paires d'une bibliothèque de 15 000 pistes coûte 123 ms. C'était la granularité
+    // d'invalidation : `library::filed_signature` vaut `(COUNT(*), MAX(id))`, donc ranger UNE
+    // piste faisait tout recalculer, ~2 min 31 s, dans une commande Tauri synchrone. Et le
+    // cache vivant en RAM, chaque redémarrage le repayait.
+    //
+    // On mémorise donc le RÉSULTAT DES COMPARAISONS, qui ne bouge que pour les pistes touchées,
+    // au lieu du comptage agrégé, qui bouge à chaque rangement.
+    //
+    // `dup_edges` ne porte QUE les paires dont la similarité atteint le seuil — quelques
+    // centaines de lignes, pas les 928 135 candidates. `a_id < b_id` est un invariant tenu par
+    // le code d'insertion : sans lui la même paire pourrait exister dans les deux sens, et
+    // `PRIMARY KEY` ne l'attraperait pas.
+    //
+    // `dup_scanned` porte l'invariant central : toute PAIRE de cette table a été évaluée.
+    // Ajouter une piste = la comparer à tout `dup_scanned`, insérer ses arêtes, puis l'y
+    // ajouter. La récurrence tient.
+    //
+    // `ON DELETE CASCADE` sur les trois clés étrangères : c'est ce qui rend la suppression
+    // exacte et gratuite. Un union-find en RAM ne sait PAS défaire une fusion — il aurait fallu
+    // retomber sur un scan complet à chaque doublon résolu, c'est-à-dire précisément quand
+    // l'écran sert à quelque chose. `db::open` active `PRAGMA foreign_keys`.
+    r#"
+    CREATE TABLE dup_edges (
+        a_id INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+        b_id INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+        similarity REAL NOT NULL,
+        PRIMARY KEY (a_id, b_id)
+    );
+    CREATE INDEX idx_dup_edges_b ON dup_edges(b_id);
+
+    CREATE TABLE dup_scanned (
+        track_id INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE
+    );
+    "#,
 ];
 
 /// Applies any migrations the DB hasn't seen yet, tracked via PRAGMA user_version.
@@ -362,8 +399,8 @@ mod tests {
         run_migrations(&conn).unwrap();
         // v4 adds `settings`, v6 adds `track_genres`, v11 adds `rekordbox_masterdb_repairs`,
         // v13 adds `rekordbox_masterdb_metadata_syncs`, v14 adds `rekordbox_masterdb_artwork_syncs`,
-        // v17 adds `volume_usage`
-        assert_eq!(table_count(&conn).unwrap(), 11);
+        // v17 adds `volume_usage`, v19 adds `dup_edges` and `dup_scanned`
+        assert_eq!(table_count(&conn).unwrap(), 13);
     }
 
     #[test]
@@ -371,7 +408,7 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         run_migrations(&conn).unwrap();
         run_migrations(&conn).unwrap(); // second run must not error or duplicate
-        assert_eq!(table_count(&conn).unwrap(), 11);
+        assert_eq!(table_count(&conn).unwrap(), 13);
     }
 
     /// v16 must actually WIPE the inflated report cache, not merely be declared. Applies v1..v15

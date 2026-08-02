@@ -1,6 +1,11 @@
 # Dédoublonnage — arrêter de tout recalculer pour une piste rangée
 
-**Ouvert** : 2026-08-02 · Phase 4 du chantier d'évolution architecturale · **design, non implémenté**
+**Ouvert** : 2026-08-02 · Phase 4 du chantier d'évolution architecturale · **livré le 2026-08-02**
+
+> Décision prise sur les durées NULL : **équivalence stricte** avec le scan complet — une paire
+> est évaluée dès que l'une des deux durées manque. L'alternative moins chère trouverait
+> silencieusement moins de doublons, et « pas de repli silencieux » est une règle du projet.
+> Verrouillé par `duplicate_scan_matches_full_scan_when_duration_is_null`.
 
 ## Ce que la mesure dit
 
@@ -116,23 +121,44 @@ la paire que si les **deux** durées sont connues. Une durée inconnue laisse pa
 Se tromper là ne produit pas une erreur — ça produit un chemin incrémental qui trouve
 silencieusement moins de doublons que le scan complet, sur les pistes dont la durée manque.
 
-Emplacement prévu, dans `dedup.rs` :
+La clause retenue, dans `dedup.rs::load_dup_candidates` :
 
-```rust
-/// Les pistes déjà comparées (`dup_scanned`) contre lesquelles `row` doit être évaluée.
-///
-/// Doit reproduire EXACTEMENT le pré-filtre de `group_duplicates` (`dedup.rs:200-203`) : une
-/// paire n'est écartée que si les deux durées sont connues ET distantes de plus de
-/// `DURATION_MATCH_TOL_SEC`. Toute divergence rend le chemin incrémental silencieusement
-/// moins complet que le scan complet — aucune erreur levée, juste des doublons manquants.
-pub(crate) fn load_dup_candidates(
-    conn: &Connection,
-    row: &DupScanRow,
-) -> rusqlite::Result<Vec<DupScanRow>> {
-    // TODO(Antoine) — la clause. Trois cas à couvrir :
-    //   - `row.duration` connue, candidate connue  → garder si |a − b| <= 2.0
-    //   - `row.duration` connue, candidate NULL    → ?
-    //   - `row.duration` NULL                      → ?
-    // Les deux derniers décident si l'incrémental est équivalent au scan complet.
-}
+```sql
+AND (?2 IS NULL OR t.duration IS NULL OR ABS(t.duration - ?2) <= ?3)
 ```
+
+Les trois cas, et pourquoi :
+
+| durée de la nouvelle | durée de la candidate | évaluée ? |
+| --- | --- | --- |
+| connue | connue | seulement si l'écart tient dans 2 s |
+| connue | NULL | **oui** |
+| NULL | n'importe | **oui** |
+
+Les deux dernières lignes sont ce qui rend l'incrémental *équivalent* au scan complet, dont le
+pré-filtre (`dedup.rs`) n'écarte que si les **deux** durées sont connues. Écarter les durées
+inconnues aurait été moins cher et aurait trouvé moins de doublons — sans lever la moindre
+erreur. Le coût de l'équivalence est borné : il ne concerne que les pistes sans durée, qui se
+comparent alors à toute la bibliothèque.
+
+## Ce qui a réellement été construit
+
+- **Migration v19** : `dup_edges(a_id, b_id, similarity)` + `dup_scanned(track_id)`, trois
+  `ON DELETE CASCADE`. `db.rs` passe l'assertion de comptage de tables de 11 à 13.
+- **`dedup.rs`** : `link` et `assemble_groups` extraits pour être partagés entre le scan complet
+  et la reconstruction depuis les arêtes — le calcul du `similarity` d'un groupe avait déjà été
+  faux une fois, une seconde implémentation aurait rejoué ce bug. Ajouts :
+  `load_dup_candidates`, `load_unscanned_rows`, `load_dup_group_rows`, `prune_unfiled`,
+  `record_scanned`, `load_edges`, `edges_against`, `edge_between`, `groups_from_edges`.
+- **`load_dup_scan_rows` et `group_duplicates` passent `#[cfg(test)]`** : la production ne charge
+  plus jamais toutes les empreintes d'un coup (166 Mo à 15 000 pistes), et `group_duplicates`
+  devient la *référence* contre laquelle l'incrémental est vérifié. Le gate fait échouer la
+  compilation de tout futur appelant de production, au lieu de le laisser réintroduire le coût.
+- **`ipc_library::refresh_duplicate_groups`** : trois sections de verrou courtes, jamais le
+  verrou global pendant `build_fingerprints` — l'invariant de SYS-1 est préservé.
+- **6 tests** : équivalence avec le scan complet, cas NULL, ajout incrémental, nouvelles pistes
+  comparées entre elles, dérangement qui retire les arêtes, `CASCADE` à la suppression.
+
+`prune_unfiled` existe parce que `ON DELETE CASCADE` ne couvre que la suppression d'une *ligne*
+`tracks`. Une piste ré-encodée sur place repasse en `pending` (`scanner.rs`) sans que sa ligne
+disparaisse : ses arêtes mentiraient alors sur une empreinte que `scanner.rs` vient d'effacer.
