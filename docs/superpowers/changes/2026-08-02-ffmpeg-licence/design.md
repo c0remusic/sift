@@ -96,6 +96,34 @@ couvre déjà.
 
 ## Trace
 
-- `scripts/fetch-ffmpeg.mjs` — URL Windows changée, commentaire de licence ajouté
-  nommant les deux sources macOS non conformes.
-- Vérifications faites dans le scratchpad de session, hors dépôt.
+- `scripts/fetch-ffmpeg.mjs` — URL Windows sur le build LGPL ; macOS ne télécharge plus rien
+  et appelle le script de compilation.
+- `scripts/build-ffmpeg-macos.sh` — la compilation et ses cinq vérifications.
+- `.github/workflows/{build,release}.yml` — cache de la compilation macOS, clé sur le hash du
+  script.
+- Vérifications de licence des anciennes sources faites dans le scratchpad de session, hors
+  dépôt. Le résultat final est vérifié en CI, à chaque build.
+
+### Ce que les six passages en CI ont appris
+
+Le build macOS n'a pas marché du premier coup, et chaque échec a appris une chose distincte.
+Trois d'entre elles n'étaient visibles que sur un vrai runner :
+
+| # | Bloqué à | Nature |
+| --- | --- | --- |
+| 1 | décodeurs | faux positif — `set -o pipefail` + `grep -q` |
+| 2 | dylibs X11/XCB | vrai défaut — `configure` liait ce qui traînait sur le runner |
+| 3 | dylib LAME | vrai défaut — `ld` préférait la forme dynamique |
+| 4 | `configure` | symptôme sans cause visible |
+| 5 | — | vidage de `config.log`, aucun correctif |
+| 6 | ✅ | `libmpg123` manquant, identifié par preuve |
+
+Le passage 5 est celui qui a débloqué la série. Deux hypothèses prédisaient le même symptôme
+(ordre des `-L`, chemin Homebrew implicite) ; en tenter une au hasard avait une chance sur deux
+de « marcher » sans qu'on puisse dire pourquoi — un build qu'on ne sait plus expliquer. Le
+vidage de `config.log` a coûté un tour et donné la vraie cause, qui n'était ni l'une ni l'autre.
+Il reste dans le script.
+
+La vérification `otool -L` a attrapé **deux** binaires (passages 2 et 3) qui passaient tous les
+autres contrôles sur le runner et auraient refusé de démarrer chez l'utilisateur. C'est la seule
+des cinq qui teste une machine absente, et c'est la plus rentable.

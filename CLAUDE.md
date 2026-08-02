@@ -41,6 +41,8 @@ Windows : npm passe par `cmd /c "npm …"` si le shell direct pose problème.
 
 ```bash
 npm ci && npm run fetch-ffmpeg   # bootstrap (ffmpeg → src-tauri/binaries/, gitignoré)
+                                 # macOS : COMPILE ffmpeg depuis les sources (LGPL), plusieurs
+                                 # minutes — aucun build LGPL statique n'est publié
 npm run tauri dev                # dev : Vite 5173 + backend Rust
 npm run dev                      # frontend seul (navigateur) — voir la mise en garde §Vérification UI
 npm run build                    # → dist/
@@ -188,7 +190,10 @@ Détails et overrides d'audit Rust : **`.claude/rules/rust.md`** (chargé pour
 
 `analysis/` (decode Symphonia · verdict · spectrum · peaks · phase · dynamics ·
 structure · tags) · `metadata/` (discogs · cover) ·
-`usb_format/` (windows · macos · fat32 · raw_volume · sector_io · privileged) ·
+`usb_format/` (windows · macos · fat32 · raw_volume · sector_io · privileged — `fat32` et
+`sector_io` sont gatés `cfg(any(windows, test))` : macOS formate par `diskutil eraseDisk`,
+qui ignore le plafond de 32 Go, donc le binaire macOS ne lie plus `fatfs` ; le bras `test`
+garde leurs tests exécutables sur n'importe quelle machine) ·
 `volume_usage.rs` (occupation par format) ·
 `scanner.rs` / `watcher.rs` / `sources.rs` / `worker.rs` / `queue.rs` (ingestion) ·
 `filing.rs` / `actions.rs` / `encode.rs` / `naming.rs` / `tagging.rs` (rangement) ·
@@ -198,7 +203,9 @@ structure · tags) · `metadata/` (discogs · cover) ·
 `ipc_usage.rs` ·
 `db.rs` / `settings.rs` / `ffmpeg.rs`.
 
-Test-only : `bench_volume.rs` (mesure `list_filed`/`list_pending` à 15k/100k lignes,
+Test-only : `bench_dedup.rs` (coût unitaire de `fingerprint::similarity`, taux de survie du
+pré-filtre de durée, `group_duplicates` bout à bout, empreinte RAM) ·
+`bench_volume.rs` (mesure `list_filed`/`list_pending` à 15k/100k lignes,
 `EXPLAIN QUERY PLAN`) — `--ignored`, jamais dans la suite normale.
 `search_corpus.rs` / `search_terms.rs` : corpus de noms de fichiers **sales** tirés
 d'une vraie bibliothèque, étalonné à la main. Chaque entrée est un motif verrouillé —
@@ -308,12 +315,17 @@ l'en-tête de `frontend/b85.ts`).
 
 `.gitignore` ignore le **contenu** de `docs/` et ne ré-autorise que ce qui fait
 autorité : `install-non-signe.md`, `design-system-states.md`, `ressources-externes.md`,
-`design-system/`, `skills/`, et `superpowers/changes/`. Plans de jalons, specs, revues,
-comptes rendus et `INDEX.json` restent **sur cette machine** mais hors suivi git.
+`design-system/`, `skills/`, et **chaque dossier de chantier** de `superpowers/changes/`
+pris un par un. Plans de jalons, specs, revues, comptes rendus et `INDEX.json` restent
+**sur cette machine** mais hors suivi git.
 
 - Un nouveau document sous `docs/` est ignoré **par défaut** ; le publier demande
   d'ajouter sa négation au `.gitignore` dans le même geste. C'est voulu — la liste noire
-  précédente laissait repasser tout fichier neuf.
+  précédente laissait repasser tout fichier neuf. ⚠️ Vaut AUSSI pour un nouveau dossier
+  sous `superpowers/changes/` : `.gitignore` ré-autorise le dossier `changes/` puis
+  ré-ignore son contenu (`docs/superpowers/changes/*`), donc il faut une ligne
+  `!docs/superpowers/changes/<date>-<slug>/` par chantier. Sans elle le dossier n'existe
+  pas pour git, en silence — constaté le 2026-08-02.
 - Les chemins `docs/superpowers/...` cités ici ou dans le code sont réels **localement**
   et introuvables dans un clone frais : ne pas les « réparer » en les supprimant, ne pas
   les citer à un lecteur externe.
@@ -334,6 +346,13 @@ la main** : créer un document sous `docs/` veut dire y ajouter son entrée dans
 geste, jamais en rattrapage différé.
 
 ## Release
+
+**Écrire la section `## vX.Y.Z` de `CHANGELOG.md` d'abord.** `release.yml` l'extrait via
+`scripts/changelog-section.mjs` et la passe en `releaseBody` ; le script sort en code 1 si
+elle manque, donc la release **échoue** au lieu de publier des notes vides. Ce texte ne sert
+pas qu'à la page GitHub : `tauri-action` le recopie dans le champ `notes` de `latest.json`,
+que **chaque installation existante télécharge**. Éditer le corps d'une release après coup
+change la page GitHub mais PAS `latest.json`, généré au build.
 
 Synchroniser les versions de `package.json`, `src-tauri/Cargo.toml` et
 `src-tauri/tauri.conf.json`, depuis `main`. Après `git tag vX.Y.Z && git push --tags`,

@@ -82,9 +82,9 @@ docs/superpowers/*
 !docs/superpowers/changes/
 docs/superpowers/changes/*
 !docs/superpowers/changes/2026-07-27-perf-fixes/
-# FFmpeg : la distribution macOS reste non conforme (`--enable-gpl`, et
-# `--enable-nonfree` sur Intel). Ce document est cité par un commentaire de
-# `scripts/fetch-ffmpeg.mjs` — il doit exister dans un clone frais.
+# FFmpeg : comment les deux plateformes sont sorties des builds GPL, et les trois
+# pièges de compilation macOS trouvés en CI. Ce document est cité par un commentaire
+# de `scripts/fetch-ffmpeg.mjs` — il doit exister dans un clone frais.
 !docs/superpowers/changes/2026-08-02-ffmpeg-licence/
 # Phase 4 du chantier d'évolution architecturale : mesures du dédoublonnage et
 # schéma d'invalidation incrémentale. Ouvert.
