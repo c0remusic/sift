@@ -1267,6 +1267,11 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
   .sift-fade-out{opacity:0;pointer-events:none;transition:opacity var(--duration-fast) var(--ease-out)}
 }
 .sift-update-banner{position:fixed;left:50%;top:var(--titlebar-h);transform:translateX(-50%);z-index:var(--z-toast);display:flex;flex-wrap:wrap;align-items:center;gap:12px;max-width:calc(100vw - var(--space-16) - var(--space-8));background:var(--color-background-secondary);border:0.5px solid var(--color-border-secondary);border-radius:0 0 var(--border-radius-md) var(--border-radius-md);padding:var(--space-8) var(--space-16);font-size:var(--text-md);color:var(--color-text-primary);box-shadow:var(--shadow-toast)}
+/* Resume des notes de version, dans le meme span que l'annonce : secondaire, car ce qu'on
+   demande a l'utilisateur est de decider, pas de lire. La troncature se fait en TS
+   (NOTES_MAX_CHARS) et non par ellipsis CSS — la banniere est en flex-wrap, donc une largeur
+   contrainte ferait retomber les boutons sur une deuxieme ligne au lieu de couper le texte. */
+.sift-update-banner-notes{color:var(--color-text-secondary);font-size:var(--text-sm)}
 .sift-update-banner-install{font-size:var(--text-sm);padding:var(--space-4) var(--space-8)}
 .sift-update-banner-later{font-size:var(--text-sm);padding:var(--space-4) var(--space-8);background:transparent;color:var(--color-text-secondary)}
 .sift-update-banner-later:hover{background:transparent;color:var(--color-text-secondary)}

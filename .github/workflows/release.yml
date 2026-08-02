@@ -48,6 +48,23 @@ jobs:
       - name: Fetch ffmpeg sidecar
         run: npm run fetch-ffmpeg
 
+      # `shell: bash` explicitement : la matrice tourne sur windows-latest, ou le shell par
+      # defaut est PowerShell et la syntaxe heredoc ci-dessous n'existe pas.
+      #
+      # Le script sort en code 1 si CHANGELOG.md n'a pas de section pour ce tag, ce qui fait
+      # echouer la release. C'est voulu : `releaseBody` part aussi dans le champ `notes` de
+      # `latest.json`, que chaque installation existante telecharge — publier vide serait un
+      # echec silencieux chez des utilisateurs, pas ici.
+      - name: Extraire les notes de version depuis CHANGELOG.md
+        id: changelog
+        shell: bash
+        run: |
+          {
+            echo 'body<<CHANGELOG_EOF'
+            node scripts/changelog-section.mjs "${{ github.ref_name }}"
+            echo 'CHANGELOG_EOF'
+          } >> "$GITHUB_OUTPUT"
+
       - name: Build, sign and publish release
         uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # action-v1.0.0, epingle 2026-07-30
         env:
@@ -57,7 +74,7 @@ jobs:
         with:
           tagName: ${{ github.ref_name }}
           releaseName: "Sift ${{ github.ref_name }}"
-          releaseBody: "Voir les fichiers joints. Installation non signée : docs/install-non-signe.md."
+          releaseBody: ${{ steps.changelog.outputs.body }}
           releaseDraft: true
           prerelease: false
           args: --config src-tauri/tauri.release.conf.json
