@@ -48,6 +48,14 @@ if [ ! -f "$LAME_PREFIX/lib/libmp3lame.a" ]; then
   exit 1
 fi
 
+# Le dossier Homebrew contient `libmp3lame.a` ET `libmp3lame.dylib`, et `ld` prefere la dylib
+# quand les deux sont visibles : pointer `-L` vers ce dossier laissait donc le choix au linker,
+# qui prenait le mauvais. Observe en CI le 2026-08-02, attrape par la verification otool.
+# On copie la seule archive statique dans un dossier a nous : le linker n'a plus d'alternative.
+LAME_STATIC="$WORK/lame-static"
+mkdir -p "$LAME_STATIC"
+cp "$LAME_PREFIX/lib/libmp3lame.a" "$LAME_STATIC/"
+
 echo "==> Sources FFmpeg $FFMPEG_VERSION"
 cd "$WORK"
 curl -fsSL -o ffmpeg.tar.xz "https://ffmpeg.org/releases/ffmpeg-$FFMPEG_VERSION.tar.xz"
@@ -82,7 +90,7 @@ echo "==> configure (LGPL : ni --enable-gpl ni --enable-nonfree)"
   --pkg-config-flags=--static \
   --disable-autodetect \
   --extra-cflags="-I$LAME_PREFIX/include" \
-  --extra-ldflags="-L$LAME_PREFIX/lib" \
+  --extra-ldflags="-L$LAME_STATIC" \
   --enable-libmp3lame \
   --enable-zlib \
   --disable-network \
