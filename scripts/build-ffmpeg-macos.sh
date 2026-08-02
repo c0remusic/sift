@@ -35,26 +35,39 @@ FFMPEG_SHA256="464beb5e7bf0c311e68b45ae2f04e9cc2af88851abb4082231742a74d97b524c"
 WORK="$(mktemp -d)"
 trap 'rm -rf "$WORK"' EXIT
 
-echo "==> Dependances (LAME)"
-# LAME fournit libmp3lame. `brew` expose l'archive statique en plus de la dylib ; c'est elle
-# qu'on veut, sinon le binaire irait chercher /opt/homebrew/lib sur la machine de l'utilisateur.
+echo "==> Dependances (LAME + mpg123)"
+# LAME fournit libmp3lame, le seul encodeur externe dont Sift a besoin.
+#
+# mpg123 n'est PAS un caprice : le LAME 4.0 de Homebrew delegue son decodeur a libmpg123
+# (`hip123_decode1` dans mpglib_interface.o). La dylib porte cette dependance en elle, l'archive
+# statique attend qu'on la lie soi-meme. Sans elle, le link echoue sur une trentaine de symboles
+# `_mpg123_*` — diagnostic obtenu en CI le 2026-08-02 via le vidage de config.log plus bas.
+# Sift n'utilise que l'ENCODEUR (ffmpeg decode le MP3 avec son decodeur natif), mais l'archive
+# est monolithique : on ne peut pas prendre l'encodeur sans son voisin. mpg123 est LGPL-2.1,
+# donc sans effet sur la licence du resultat.
 brew list lame >/dev/null 2>&1 || brew install lame
+brew list mpg123 >/dev/null 2>&1 || brew install mpg123
 brew list nasm >/dev/null 2>&1 || brew install nasm
 LAME_PREFIX="$(brew --prefix lame)"
+MPG123_PREFIX="$(brew --prefix mpg123)"
 
-if [ ! -f "$LAME_PREFIX/lib/libmp3lame.a" ]; then
-  echo "ERREUR: $LAME_PREFIX/lib/libmp3lame.a absent — sans archive statique, ffmpeg lierait" >&2
-  echo "        la dylib Homebrew, introuvable sur la machine de l'utilisateur." >&2
-  exit 1
-fi
-
-# Le dossier Homebrew contient `libmp3lame.a` ET `libmp3lame.dylib`, et `ld` prefere la dylib
-# quand les deux sont visibles : pointer `-L` vers ce dossier laissait donc le choix au linker,
-# qui prenait le mauvais. Observe en CI le 2026-08-02, attrape par la verification otool.
-# On copie la seule archive statique dans un dossier a nous : le linker n'a plus d'alternative.
-LAME_STATIC="$WORK/lame-static"
+# Le dossier Homebrew contient l'archive statique ET la dylib, et `ld` prefere la dylib quand les
+# deux sont visibles : pointer `-L` vers ce dossier laissait le choix au linker, qui prenait le
+# mauvais (attrape en CI par la verification otool). On copie les seules archives dans un dossier
+# a nous — le linker n'a plus d'alternative.
+#
+# Verifier la PRESENCE d'une archive ne prouve pas qu'elle sera UTILISEE : c'est precisement
+# l'erreur qui a produit un binaire dependant de /opt/homebrew tout en passant ce controle.
+LAME_STATIC="$WORK/static-libs"
 mkdir -p "$LAME_STATIC"
-cp "$LAME_PREFIX/lib/libmp3lame.a" "$LAME_STATIC/"
+for lib in "$LAME_PREFIX/lib/libmp3lame.a" "$MPG123_PREFIX/lib/libmpg123.a"; do
+  if [ ! -f "$lib" ]; then
+    echo "ERREUR: $lib absent — sans archive statique, ffmpeg lierait la dylib Homebrew," >&2
+    echo "        introuvable sur la machine de l'utilisateur." >&2
+    exit 1
+  fi
+  cp "$lib" "$LAME_STATIC/"
+done
 
 echo "==> Sources FFmpeg $FFMPEG_VERSION"
 cd "$WORK"
@@ -91,6 +104,7 @@ echo "==> configure (LGPL : ni --enable-gpl ni --enable-nonfree)"
   --disable-autodetect \
   --extra-cflags="-I$LAME_PREFIX/include" \
   --extra-ldflags="-L$LAME_STATIC" \
+  --extra-libs="-lmpg123" \
   --enable-libmp3lame \
   --enable-zlib \
   --disable-network \
