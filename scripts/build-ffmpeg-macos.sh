@@ -86,10 +86,20 @@ make -j"$(sysctl -n hw.ncpu)"
 
 BUILT="$WORK/ffmpeg-$FFMPEG_VERSION/ffmpeg"
 
+# Les listes sont capturees UNE fois dans des variables, et les recherches se font dessus par
+# here-string. Ne jamais ecrire `"$BUILT" -hide_banner -decoders | grep -q ...` : `grep -q` sort
+# des la premiere correspondance, ce qui envoie un SIGPIPE a ffmpeg encore en train d'ecrire, et
+# `set -o pipefail` remonte alors 141 comme statut du pipeline ALORS QUE la correspondance a ete
+# trouvee. Le test echouait donc selon la position alphabetique de ce qu'il cherchait : `aac`,
+# premier de la liste des decodeurs, faisait couper tot ; `libmp3lame`, en fin de liste des
+# encodeurs, laissait ffmpeg terminer. Observe en CI le 2026-08-02.
+CONFIG="$("$BUILT" -hide_banner -version)"
+ENCODERS="$("$BUILT" -hide_banner -encoders)"
+DECODERS="$("$BUILT" -hide_banner -decoders)"
+
 echo "==> Verification : licence"
-CONFIG="$("$BUILT" -hide_banner -version | grep '^configuration:')"
 for flag in --enable-gpl --enable-nonfree; do
-  if printf '%s' "$CONFIG" | grep -q -- "$flag"; then
+  if grep -q -- "$flag" <<<"$CONFIG"; then
     echo "ERREUR: le binaire construit porte $flag." >&2
     exit 1
   fi
@@ -99,7 +109,7 @@ echo "==> Verification : les encodeurs dont Sift a besoin"
 # `encode.rs:143-145`. Un binaire qui compile mais ne sait pas encoder en MP3 casserait la
 # fonction centrale de l'app, sur une plateforme que personne ici ne peut tester a la main.
 for enc in libmp3lame pcm_s16be pcm_s16le; do
-  "$BUILT" -hide_banner -encoders | grep -qE "^ [A-Z.]+ $enc " || {
+  grep -qE "^ [A-Z.]+ $enc " <<<"$ENCODERS" || {
     echo "ERREUR: encodeur $enc absent du binaire construit." >&2
     exit 1
   }
@@ -107,7 +117,7 @@ done
 
 echo "==> Verification : les decodeurs des formats d'entree"
 for dec in mp3 flac alac aac vorbis pcm_s16le pcm_s16be; do
-  "$BUILT" -hide_banner -decoders | grep -qE "^ [A-Z.]+ $dec " || {
+  grep -qE "^ [A-Z.]+ $dec " <<<"$DECODERS" || {
     echo "ERREUR: decodeur $dec absent du binaire construit." >&2
     exit 1
   }
