@@ -1410,7 +1410,7 @@ physique (`usb_format::windows`).
 
 L'identifiant affiché vient de `driveDisplayName()` : `RemovableDrive.id` est
 devenu un chemin de disque physique (`\.\PHYSICALDRIVE2`), illisible sur une
-ligne et impossible à retaper dans la confirmation de la modale.
+ligne.
 
 **« Sans média » est listé exprès, pas masqué.** Un lecteur de cartes vide garde
 sa lettre dans l'explorateur Windows indéfiniment : afficher « aucun disque
@@ -1455,3 +1455,39 @@ Les trois blocs de thème (`:root`, `@media (prefers-color-scheme:dark)`,
 `:root[data-theme="dark"]`) portent les neuf tokens. Vérifié sur les valeurs **résolues** dans
 l'app réelle : aucune manquante, et aucune identique entre les deux thèmes — le piège du bloc
 sombre resté avec les valeurs claires.
+
+---
+
+## Modale de formatage USB — états (2026-08-02)
+
+Trois changements issus d'un usage réel, chacun corrigeant un défaut constaté en
+se servant de l'écran et non en relisant le code.
+
+**La dictée de confirmation est supprimée.** Il fallait retaper le nom du disque
+au caractère près (`SSK SSD Portable SSD (I:)`) ; le bouton restait grisé sans
+que rien n'explique pourquoi, et on se croyait bloqué par l'application. Il reste
+le cycle armé/confirmé horodaté : premier clic arme, second exécute, et un
+doublon d'événement arrivant dans la foulée est rejeté. `CLAUDE.md` exige une
+confirmation in-app armée et horodatée pour une action destructive — la dictée
+était une couche par-dessus la règle, pas la règle.
+
+**Champ « Nom du volume »**, prérempli avec le nom actuel de la clé
+(`RemovableDrive.volume_name`). Reformater en gardant son nom est le cas courant.
+Le champ est libre ; le backend l'assainit deux fois avec la même règle — 11
+octets, majuscules ASCII, `_` et `-`, le reste devient `_`.
+
+**Le bouton porte l'étape réelle pendant l'opération**, pas une animation :
+autorisation Windows demandée, partitionnement, attente du montage, verrouillage,
+écriture. Le travail se déroule dans un processus élevé séparé dont la sortie ne
+peut pas être redirigée ; il dépose donc son étape dans un fichier que l'écran
+interroge toutes les 400 ms.
+
+**FAT32 au-delà de 32 Go n'est plus refusé.** C'était juste tant que Sift
+subissait le plafond de Windows ; il écrit maintenant les structures lui-même. Le
+bloc n'est plus une erreur mais une explication — une autorisation administrateur
+va être demandée, et l'utilisateur doit savoir pourquoi une invite surgit.
+
+⚠️ Le chemin de formatage FAT32 sur matériel réel **n'a pas encore abouti une
+seule fois**. Premier essai : partition créée, écriture de la FAT échouée sur un
+défaut d'alignement secteur, disque laissé RAW. Corrigé (`sector_io`) mais non
+rejoué. Ne pas documenter cet état comme acquis avant un succès mesuré.
