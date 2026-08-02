@@ -61,20 +61,30 @@ tar xf ffmpeg.tar.xz
 cd "ffmpeg-$FFMPEG_VERSION"
 
 echo "==> configure (LGPL : ni --enable-gpl ni --enable-nonfree)"
+# --disable-autodetect : LE drapeau qui rend ce build reproductible. Sans lui, `configure` lie
+#   tout ce qu'il trouve installe sur la machine. Sur le runner GitHub, Homebrew fournit libxcb,
+#   et ffmpeg activait donc `xcbgrab` (capture d'ecran X11, dont Sift n'a aucun usage) en tirant
+#   six dylibs de /opt/homebrew -- introuvables sur le Mac de l'utilisateur. Attrape en CI le
+#   2026-08-02 par la verification otool. Desactiver ces six-la une par une aurait ete du
+#   colmatage : le prochain runner avec une autre bibliotheque installee aurait rejoue la scene.
+#   BtbN fait le meme choix sur son build LGPL Windows (--disable-libxcb --disable-xlib).
+#   Consequence : tout ce dont on a besoin doit etre demande EXPLICITEMENT ci-dessous.
+# --enable-zlib : reclame explicitement puisque l'autodetection est coupee. Presente en systeme
+#   (/usr/lib/libz), donc conforme a l'invariant otool.
 # --disable-network : Sift ne lit que des fichiers locaux. Rien a gagner a garder les protocoles
 #   reseau, et c'est autant de surface d'attaque en moins sur un binaire qui traite des fichiers
 #   telecharges par l'utilisateur.
 # --disable-ffplay/--disable-ffprobe : seul `ffmpeg` est bundle comme sidecar.
-# --enable-static --pkg-config-flags=--static : aucune dylib non systeme dans le resultat,
-#   invariant verifie plus bas par otool.
 ./configure \
   --prefix="$WORK/prefix" \
   --enable-static \
   --disable-shared \
   --pkg-config-flags=--static \
+  --disable-autodetect \
   --extra-cflags="-I$LAME_PREFIX/include" \
   --extra-ldflags="-L$LAME_PREFIX/lib" \
   --enable-libmp3lame \
+  --enable-zlib \
   --disable-network \
   --disable-ffplay \
   --disable-ffprobe \
