@@ -97,7 +97,14 @@ echo "==> configure (LGPL : ni --enable-gpl ni --enable-nonfree)"
   --disable-ffplay \
   --disable-ffprobe \
   --disable-doc \
-  --disable-debug
+  --disable-debug || {
+  # `configure` n'imprime qu'un « X not found » et ecrit la VRAIE erreur du compilateur ou du
+  # linker dans config.log, qu'aucune CI ne lit. Sans ce vidage, chaque echec ici coute un
+  # aller-retour complet pour deviner. On le sort donc a l'echec, jamais autrement.
+  echo "===== ffbuild/config.log (60 dernieres lignes) =====" >&2
+  tail -n 60 ffbuild/config.log >&2 2>/dev/null || tail -n 60 config.log >&2 2>/dev/null || true
+  exit 1
+}
 
 echo "==> make"
 make -j"$(sysctl -n hw.ncpu)"
