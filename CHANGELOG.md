@@ -52,9 +52,37 @@ concerné : il n'a jamais eu ce plafond.
 
 ## v0.0.2
 
-Publiée le 2026-07-24, avant l'existence de ce fichier. Voir la liste des commits sur la page
-de la release.
+**Aucun changement fonctionnel.** Cette version ne contient qu'un commit de plus que la
+v0.0.1 : la montée de numéro elle-même.
+
+Elle a été publiée quinze minutes après la v0.0.1 pour vérifier la mise à jour automatique en
+conditions réelles — l'app installée ne cherche une mise à jour que s'il en existe une plus
+récente que la sienne, donc la seule façon d'éprouver ce chemin était de publier une version
+qui ne change rien d'autre.
+
+Si vous êtes en v0.0.1, cette mise à jour ne vous apporte rien. Passez directement à la
+v0.0.3.
 
 ## v0.0.1
 
-Première version publiée, le 2026-07-24. Voir la liste des commits sur la page de la release.
+Première version publiée. Elle représente le projet complet de son premier commit
+(2026-06-11) à sa publication : 896 commits, et les neuf jalons de la V1.
+
+- **Analyse** — décodage natif, détection de faux lossless au spectrogramme, clipping,
+  troncature, silence, phase. C'est la raison d'être de Sift : un MP3 ré-encodé en FLAC ne se
+  voit pas dans un tag, seulement dans son spectre.
+- **Écoute** — lecture des fichiers avec forme d'onde, verrouillage de tonalité, réglage de
+  tempo.
+- **Ranger, c'est encoder** — deux rails de sortie, refus de sur-encoder, tags et nommage
+  automatiques, bacs de destination, corbeille et annulation.
+- **Écartés** — re-sourcer une piste rejetée, liens d'achat, copie vers Soulseek.
+- **Doublons** — par nom puis confirmation à l'oreille, par empreinte acoustique.
+- **Identification** — Discogs : pochette, genres, métadonnées.
+- **Bibliothèque** — parcourir, éditer, re-ranger, tableau de bord de statistiques.
+- **Rekordbox** — export XML dont les playlists survivent à un renommage ou un déplacement,
+  puis écriture directe dans `master.db` : réparation de chemins, dédoublonnage de playlists,
+  synchronisation des métadonnées et des pochettes. Chaîne de sûreté complète — sauvegarde,
+  vérification aller-retour, retour arrière — éprouvée sur une vraie bibliothèque de
+  2828 pistes.
+- **Clé USB** — formatage FAT32/exFAT sur Windows et macOS.
+- **Mise à jour automatique**, sans certificat de signature.
