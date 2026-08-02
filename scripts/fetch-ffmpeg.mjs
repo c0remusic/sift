@@ -15,9 +15,26 @@ const triple = execSync("rustc -Vv").toString().split("\n")
   .find((l) => l.startsWith("host:")).split(" ")[1].trim();
 
 // Pinned static builds. Update these URLs if a source goes stale.
+//
+// LICENCE — Sift n'invoque que trois encodeurs (`encode.rs`) : `libmp3lame` (LGPL-2.1),
+// `pcm_s16be` et `pcm_s16le` (natifs). Aucun composant GPL-only n'est nécessaire. Un build
+// `--enable-gpl` contamine donc la distribution sans rien apporter, et un build
+// `--enable-nonfree` n'est redistribuable sous AUCUNE licence.
+//
+// Windows : build LGPL vérifié le 2026-08-02 sur `ffmpeg-master-latest-win64-lgpl.zip` —
+// `libmp3lame`, `pcm_s16be`, `pcm_s16le` présents ; décodeurs mp3/flac/alac/aac/vorbis/opus
+// présents ; `--enable-gpl` et `--enable-nonfree` absents, `--enable-version3` présent.
+//
+// ⚠️ macOS : les deux sources ci-dessous restent NON CONFORMES. Mesuré le 2026-08-02 en
+// cherchant la ligne `configuration:` dans les binaires Mach-O téléchargés :
+//   - ffmpeg711arm.zip  → `--enable-gpl`
+//   - ffmpeg7intel.zip  → `--enable-gpl` ET `--enable-nonfree`
+// Les deux embarquent libx264/libx265, dont Sift n'a aucun usage. Aucune source LGPL macOS
+// n'a encore été retenue en remplacement — voir
+// `docs/superpowers/changes/2026-08-02-ffmpeg-licence/design.md`.
 const SOURCES = {
   "x86_64-pc-windows-msvc": {
-    url: "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-gpl.zip",
+    url: "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-lgpl.zip",
     inner: "ffmpeg.exe", ext: ".exe",
   },
   "aarch64-apple-darwin": {

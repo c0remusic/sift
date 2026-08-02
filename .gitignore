@@ -82,10 +82,21 @@ docs/superpowers/*
 !docs/superpowers/changes/
 docs/superpowers/changes/*
 !docs/superpowers/changes/2026-07-27-perf-fixes/
+# FFmpeg : la distribution macOS reste non conforme (`--enable-gpl`, et
+# `--enable-nonfree` sur Intel). Ce document est cité par un commentaire de
+# `scripts/fetch-ffmpeg.mjs` — il doit exister dans un clone frais.
+!docs/superpowers/changes/2026-08-02-ffmpeg-licence/
+# Phase 4 du chantier d'évolution architecturale : mesures du dédoublonnage et
+# schéma d'invalidation incrémentale. Ouvert.
+!docs/superpowers/changes/2026-08-02-dedup-incremental/
 
 # scratch/test copies (may contain real Rekordbox master.db, never committed)
 scratchpad/
 scratchpad-verif/
+
+# Installeurs recuperes depuis les artefacts de CI (`gh run download`) pour essai local.
+# Des dizaines de Mo par fichier : rien a faire dans l'historique.
+dmg-mac/
 
 # real Rekordbox master.db backups (per-machine, never committed)
 Sift-Rekordbox-Backups/
