@@ -184,9 +184,28 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
       render();
       // Relit l'étape déposée par le processus élevé. 400 ms : assez pour suivre, assez rare pour
       // ne rien coûter — c'est une lecture de fichier, pas un calcul.
+      // `formatDrive` rend la main tout de suite : le travail continue sur un fil du backend.
+      // C'est donc CE sondage qui porte la fin de l'opération, pas la résolution de la promesse.
       stepTimer = window.setInterval(() => {
         void formatStep().then((s) => {
-          if (!busy || !s || s === step) return;
+          if (!busy || !s) return;
+          if (s === "Terminé") {
+            stopPolling();
+            busy = false;
+            close();
+            window.dispatchEvent(new CustomEvent("sift:usb-format-done", { detail: { ok: true } }));
+            return;
+          }
+          if (s.startsWith("Échec") || s.startsWith("Volume inaccessible")) {
+            stopPolling();
+            busy = false;
+            step = "";
+            armedAt = null;
+            lastError = s;
+            render();
+            return;
+          }
+          if (s === step) return;
           step = s;
           render();
         });
@@ -197,9 +216,8 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
       };
       void formatDrive(drive.id, drive.identity, fs, volumeName)
         .then(() => {
-          stopPolling();
-          close();
-          window.dispatchEvent(new CustomEvent("sift:usb-format-done", { detail: { ok: true } }));
+          // Ne signifie PLUS « c'est fini » : seulement « le travail est parti ». La fin arrive
+          // par le sondage ci-dessus.
         })
         .catch((e: unknown) => {
           stopPolling();

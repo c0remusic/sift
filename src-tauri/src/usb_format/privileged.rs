@@ -43,6 +43,14 @@ pub const PRIVILEGED_FLAG: &str = "--sift-privileged-format";
 /// Codes de sortie du processus élevé. Distincts pour que l'appelant explique la panne plutôt que
 /// de dire « échec ».
 pub const EXIT_OK: i32 = 0;
+
+/// Marqueur terminal de succes dans le fichier d etape. Le frontend interroge jusqu a le voir, ou
+/// jusqu a un message commencant par `ECHEC_PREFIX`.
+pub const STEP_DONE: &str = "Terminé";
+
+/// Prefixe de tout etat terminal d echec. Un prefixe plutot qu une valeur exacte : le message
+/// porte la cause, et le frontend doit pouvoir la montrer sans table de correspondance.
+pub const STEP_FAILED_PREFIX: &str = "Échec";
 pub const EXIT_BAD_ARGS: i32 = 2;
 pub const EXIT_PARTITION_FAILED: i32 = 3;
 pub const EXIT_NO_LETTER: i32 = 4;
@@ -168,7 +176,7 @@ pub fn run(job: &PrivilegedJob) -> i32 {
 
     match written {
         Ok(()) => {
-            write_step("Terminé");
+            write_step(STEP_DONE);
             eprintln!("sift: FAT32 écrit sur {letter} ({total_bytes} octets)");
             EXIT_OK
         }

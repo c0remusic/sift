@@ -85,5 +85,34 @@ pub fn format_drive(
     if !confirmed.has_media {
         return Err("Aucun média dans ce lecteur — rien à formater.".to_string());
     }
-    b.format(&confirmed, fs, &label).map_err(|e| e.to_string())
+
+    // Tout ce qui précède est instantané et doit échouer AVANT qu'on parte : garde anti-course,
+    // disque introuvable, lecteur vide. Ce qui suit dure — attente de l'invite UAC, partitionnement,
+    // écriture — et part donc sur son propre fil.
+    //
+    // Une commande Tauri synchrone qui attend bloque le service des AUTRES commandes : tant que
+    // `format_drive` attendait la fin du processus élevé, `format_step` ne pouvait pas être servie
+    // et l'interface entière était figée. L'affichage des étapes ne pouvait pas fonctionner par
+    // construction — c'est le gel constaté au premier formatage réel, pas une lenteur.
+    #[cfg(target_os = "windows")]
+    {
+        usb_format::privileged::write_step("Autorisation Windows demandée…");
+        std::thread::spawn(move || {
+            let outcome = backend().format(&confirmed, fs, &label);
+            // L'état terminal passe par le fichier d'étape, seul canal que le frontend interroge :
+            // ce fil n'a personne à qui répondre, la commande a déjà rendu la main.
+            match outcome {
+                Ok(()) => usb_format::privileged::write_step(usb_format::privileged::STEP_DONE),
+                Err(e) => usb_format::privileged::write_step(&format!(
+                    "{} : {e}",
+                    usb_format::privileged::STEP_FAILED_PREFIX
+                )),
+            }
+        });
+        Ok(())
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        b.format(&confirmed, fs, &label).map_err(|e| e.to_string())
+    }
 }
