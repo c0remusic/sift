@@ -55,22 +55,44 @@ Deux conséquences de nature différente, à ne pas confondre :
 Le script cherche le binaire récursivement (`where /r`), donc le changement de nom du
 dossier interne (`…-gpl/` → `…-lgpl/`) n'a demandé aucune autre modification.
 
-## macOS — bloqué
+## macOS — construit depuis les sources
 
-Aucune source LGPL macOS n'a été retenue. Les pistes, par ordre de robustesse :
+**Aucun build LGPL macOS publiable n'existe.** Vérifié le 2026-08-02 :
+`ColorsWind/FFmpeg-macOS` est bien LGPLv2, mais **partagé**
+(`--enable-shared --disable-static`) et figé en **FFmpeg 5.0.1 depuis mai 2022** — des
+dylibs à côté casseraient le sidecar mono-fichier, et quatre ans de retard sur les
+décodeurs ne se rattrapent pas.
 
-1. **Construire un FFmpeg minimal en CI.** `build.yml` a déjà un runner macOS. Sift
-   n'a besoin que de trois encodeurs et d'une poignée de décodeurs : un
-   `--disable-everything` suivi des seuls `--enable-encoder` / `--enable-decoder`
-   utiles, sans `--enable-gpl`, produirait quelques Mo au lieu de 50-75, et lèverait
-   toute ambiguïté. Coût : un job de build à écrire et à épingler.
-2. **Trouver un build LGPL macOS publié.** À vérifier de la même façon que ci-dessus
-   (lire la ligne `configuration:` du binaire, jamais se fier au nom de l'archive).
-   Non exploré.
-3. **Renoncer à l'encodage MP3 sur macOS** — écarté : c'est une fonction centrale.
+Le point qui a débloqué la question : **FFmpeg est LGPL par défaut.** Les builds publics
+sont GPL parce qu'ils activent explicitement x264/x265, pas parce que le socle le serait.
+Il n'y a donc pas besoin d'un `--disable-everything` chirurgical — il suffit de ne pas
+passer `--enable-gpl` et d'ajouter `libmp3lame`. Ça écarte le vrai risque d'un build
+minimal : oublier un démultiplexeur et casser un format d'entrée en silence, sur une
+plateforme que **personne ici ne peut tester à la main** (pas de Mac disponible).
 
-Tant que ce point n'est pas résolu, la distribution macOS reste non conforme, et le
-build Intel est le cas dur.
+`scripts/build-ffmpeg-macos.sh` construit donc FFmpeg 8.1.2, épinglé par SHA256 calculée
+sur le tarball réel (ffmpeg.org ne publie pas de `.sha256` — 404 — seulement une signature
+GPG). Appelé par `fetch-ffmpeg.mjs`, donc CI et poste de dev suivent le même chemin.
+
+Le script **échoue** plutôt que de livrer un binaire douteux. Cinq vérifications, chacune
+pour un mode de défaillance distinct :
+
+1. `--enable-gpl` / `--enable-nonfree` absents de la ligne `configuration:` — l'objectif.
+2. `libmp3lame`, `pcm_s16be`, `pcm_s16le` présents — les trois encodeurs d'`encode.rs`.
+3. `mp3`, `flac`, `alac`, `aac`, `vorbis`, `pcm_*` décodables — les formats d'entrée.
+4. **`otool -L` ne montre que `/usr/lib` et `/System`.** Le piège de ce build : une
+   dépendance vers `/opt/homebrew` passerait tous les tests sur le runner, où Homebrew
+   existe, et casserait chez l'utilisateur, où il n'existe pas.
+5. Un encodage MP3 320 réel, sur deux secondes de silence. Les listes disent qu'un
+   encodeur est compilé, pas qu'il fonctionne.
+
+Le build coûte plusieurs minutes ; `actions/cache` (clé = hash du script) évite de le
+refaire tant que ni la version ni un drapeau de configure ne bougent.
+
+**Ce qui reste ouvert** : aucune cible Intel n'est construite (`build.yml` n'a que
+`aarch64-apple-darwin`), donc la source `ffmpeg7intel` non redistribuable n'était de toute
+façon jamais atteinte par la CI. Si une cible Intel est ajoutée un jour, le même script la
+couvre déjà.
 
 ## Trace
 

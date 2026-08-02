@@ -25,32 +25,49 @@ const triple = execSync("rustc -Vv").toString().split("\n")
 // `libmp3lame`, `pcm_s16be`, `pcm_s16le` présents ; décodeurs mp3/flac/alac/aac/vorbis/opus
 // présents ; `--enable-gpl` et `--enable-nonfree` absents, `--enable-version3` présent.
 //
-// ⚠️ macOS : les deux sources ci-dessous restent NON CONFORMES. Mesuré le 2026-08-02 en
-// cherchant la ligne `configuration:` dans les binaires Mach-O téléchargés :
+// macOS : plus AUCUNE source téléchargée. Les deux builds osxexperts épinglés jusqu'au
+// 2026-08-02 étaient non conformes — mesuré en cherchant la ligne `configuration:` dans les
+// binaires Mach-O eux-mêmes, pas déduit du nom de l'archive :
 //   - ffmpeg711arm.zip  → `--enable-gpl`
 //   - ffmpeg7intel.zip  → `--enable-gpl` ET `--enable-nonfree`
-// Les deux embarquent libx264/libx265, dont Sift n'a aucun usage. Aucune source LGPL macOS
-// n'a encore été retenue en remplacement — voir
-// `docs/superpowers/changes/2026-08-02-ffmpeg-licence/design.md`.
+// Les deux embarquaient libx264/libx265, dont Sift n'a aucun usage. Aucun build LGPL macOS
+// statique et à jour n'existe publiquement (ColorsWind/FFmpeg-macOS est LGPL mais *partagé* et
+// figé en 5.0.1 depuis 2022 — des dylibs à côté casseraient le sidecar mono-fichier).
+//
+// On construit donc depuis les sources, ce qui est moins lourd qu'il n'y paraît : FFmpeg est
+// LGPL PAR DÉFAUT, et les builds publics sont GPL uniquement parce qu'ils activent x264/x265.
+// Il suffit de ne pas passer `--enable-gpl`. Voir `scripts/build-ffmpeg-macos.sh`, qui vérifie
+// le résultat (licence, encodeurs, décodeurs, absence de dylib non système, encodage MP3 réel)
+// et échoue plutôt que de livrer un binaire douteux sur une plateforme que personne ici ne peut
+// tester à la main.
 const SOURCES = {
   "x86_64-pc-windows-msvc": {
     url: "https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-win64-lgpl.zip",
     inner: "ffmpeg.exe", ext: ".exe",
   },
-  "aarch64-apple-darwin": {
-    url: "https://www.osxexperts.net/ffmpeg711arm.zip",
-    inner: "ffmpeg", ext: "",
-  },
-  "x86_64-apple-darwin": {
-    url: "https://www.osxexperts.net/ffmpeg7intel.zip",
-    inner: "ffmpeg", ext: "",
-  },
 };
+
+/** Cibles construites sur place au lieu d'être téléchargées. */
+const BUILT_FROM_SOURCE = new Set(["aarch64-apple-darwin", "x86_64-apple-darwin"]);
+
+await mkdir(outDir, { recursive: true });
+
+if (BUILT_FROM_SOURCE.has(triple)) {
+  const dest = join(outDir, `ffmpeg-${triple}`);
+  const script = join(root, "scripts", "build-ffmpeg-macos.sh");
+  console.log(`Building ffmpeg from source for ${triple} (LGPL, no --enable-gpl) ...`);
+  console.log("Ceci prend plusieurs minutes — c'est le prix d'une distribution conforme.");
+  // Pas de try/catch : un échec du build doit remonter tel quel et arrêter le bootstrap.
+  // Un repli sur un binaire téléchargé réintroduirait en silence le problème de licence.
+  execSync(`bash "${script}" "${dest}"`, { stdio: "inherit" });
+  await chmod(dest, 0o755);
+  console.log(`OK: ${dest}`);
+  process.exit(0);
+}
 
 const src = SOURCES[triple];
 if (!src) throw new Error(`No ffmpeg source pinned for target ${triple}`);
 
-await mkdir(outDir, { recursive: true });
 const tmp = join(outDir, "_dl.zip");
 console.log(`Downloading ffmpeg for ${triple} ...`);
 const res = await fetch(src.url, { redirect: "follow" });
