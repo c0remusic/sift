@@ -23,7 +23,9 @@ vocabulaire métier.
 Tauri v2 (Rust, crate lib = **`sift_lib`**) · frontend **Vite + TypeScript vanilla,
 sans framework** · **Symphonia** (décodage analyse, in-process) + **FFmpeg sidecar**
 bundlé (encodage) · **SQLite** (`rusqlite`, bundled) · `rustfft` · `lofty` ·
-`rusty-chromaprint` · `ureq` · `wavesurfer.js` v7 (lecture/waveform).
+`rusty-chromaprint` · `ureq` · `wavesurfer.js` v7 (lecture/waveform) · `fatfs`
+(écriture FAT32 au-delà du plafond de 32 Go de Windows — **MIT**, choisi contre
+`fat32format` qui est GPL, incompatible avec une distribution commerciale).
 
 Les patterns React (hooks/stores/providers) **ne s'appliquent pas ici**, et une
 migration de framework est explicitement écartée.
@@ -105,7 +107,8 @@ pas suivi (`analysis/mod.rs::spectrogram_shape_matches_contracts_ts`,
 Des **sentinelles littérales** doivent rester identiques des deux côtés (voir les
 commentaires de `shared/contracts.ts`, qui nomment le test Rust qui les épingle) :
 `FILE_IN_PLACE` · `EXTERNAL_DEST_PREFIX` · `FILE_GONE` (sa rupture **supprime une ligne
-en base**) · `DRIVE_VANISHED` / `IDENTITY_MISMATCH` (formatage USB, irréversible) ·
+en base**) · `DRIVE_VANISHED` / `IDENTITY_MISMATCH` / `ELEVATION_DECLINED` /
+`EJECT_BUSY` (formatage et éjection USB) ·
 `DEFAULT_FILENAME_TEMPLATE`. Ne jamais réimplémenter le rendu de nom de fichier en TS :
 appeler `previewFilename`.
 
@@ -132,7 +135,8 @@ classique**. Une capture issue de `npm run dev` ne prouve rien sur ces fichiers.
 
 `main.ts` (boot) · `chrome.ts` (shell, nav rail, routing) · `home-sources.ts` (Accueil) ·
 `report-view.ts` (Revue : son-d'abord, waveform, verdict) · `bibliotheque-view.ts` ·
-`ecartes-view.ts` · `rekordbox-view.ts` · `reglages-view.ts` · `library-detail.ts`.
+`ecartes-view.ts` · `rekordbox-view.ts` · `reglages-view.ts` · `usb-view.ts` (Clé USB) ·
+`library-detail.ts`.
 
 `sift-live.ts` reste le **point d'entrée du wiring et le dispatch de clic centralisé**
 pour la plupart des écrans. Un seul écart volontaire : `rekordbox-view.ts` porte son
@@ -151,6 +155,7 @@ de la chaîne brute — pas de table code→message, délibérément) · `dom.ts
 `confirm-modal.ts` · `list-virtual.ts` · `queue-panel.ts` / `batch-panel.ts` /
 `batch-tracklist.ts` (file Revue, mode Lot) · `journal.ts` (journal d'actions + revert) ·
 `progress-zone.ts` · `theme.ts` · `updater.ts` · `usb-format-modal.ts` ·
+`usb-row.ts` · `usage-chart.ts` (graphique d'occupation, Clé USB + Bibliothèque) ·
 `empty-state.ts` · `library-views.ts` · `identify-shared.ts` · `genre-families.ts` ·
 `styles.css`.
 
@@ -182,12 +187,15 @@ Détails et overrides d'audit Rust : **`.claude/rules/rust.md`** (chargé pour
 ### Modules Rust, par domaine
 
 `analysis/` (decode Symphonia · verdict · spectrum · peaks · phase · dynamics ·
-structure · tags) · `metadata/` (discogs · cover) · `usb_format/` (windows · macos) ·
+structure · tags) · `metadata/` (discogs · cover) ·
+`usb_format/` (windows · macos · fat32 · raw_volume · sector_io · privileged) ·
+`volume_usage.rs` (occupation par format) ·
 `scanner.rs` / `watcher.rs` / `sources.rs` / `worker.rs` / `queue.rs` (ingestion) ·
 `filing.rs` / `actions.rs` / `encode.rs` / `naming.rs` / `tagging.rs` (rangement) ·
 `dedup.rs` / `fingerprint.rs` · `library.rs` / `ecartes.rs` / `genres.rs` ·
 `rekordbox_xml.rs` / `rekordbox_masterdb.rs` / `rekordbox_repairs.rs` (M8 Tier 1/2/3) ·
-`ipc.rs` + `ipc_filing.rs` / `ipc_identify.rs` / `ipc_library.rs` / `ipc_usb.rs` ·
+`ipc.rs` + `ipc_filing.rs` / `ipc_identify.rs` / `ipc_library.rs` / `ipc_usb.rs` /
+`ipc_usage.rs` ·
 `db.rs` / `settings.rs` / `ffmpeg.rs`.
 
 Test-only : `bench_volume.rs` (mesure `list_filed`/`list_pending` à 15k/100k lignes,
