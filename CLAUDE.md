@@ -48,6 +48,7 @@ npm run dev                      # frontend seul (navigateur) — voir la mise e
 npm run build                    # → dist/
 npm run tauri build              # installeurs → src-tauri/target/release/bundle/
 npm run lint:tokens              # couleurs/z-index/spacing en dur qui contournent un token
+npm run check:security           # scope asset et CSP — refuse le retour du wildcard (aussi en CI)
 npm run storybook                # doc visuelle des états UI (port 6006), stories = frontend/*.stories.ts
 
 npx tsc --noEmit                                                            # type-check front
@@ -117,6 +118,9 @@ appeler `previewFilename`.
 Le spectrogramme voyage en **base85** (`frontend/b85.ts` ↔ `src-tauri/src/b85_bytes.rs`,
 miroir exact du crate `base85` 2.0.0) pour éviter les ~3,7 caractères/octet de
 `serde_json` sur un `Vec<u8>` de ~360 ko par piste.
+Depuis le 2026-08-03 la grille ne voyage **plus au repos** : elle n'est plus stockée dans
+`tracks.report_json` et se recalcule à l'ouverture du collapse Diagnostic (631 ms mesurées).
+Le rapport en cache est passé de 829 ko à 39 ko, la base de 4,11 Go à 119 Mo.
 
 ### Le frontend a deux vies : `app.js` et les modules live
 
@@ -206,7 +210,9 @@ garde leurs tests exécutables sur n'importe quelle machine) ·
 Test-only : `bench_dedup.rs` (coût unitaire de `fingerprint::similarity`, taux de survie du
 pré-filtre de durée, `group_duplicates` bout à bout, empreinte RAM) ·
 `bench_volume.rs` (mesure `list_filed`/`list_pending` à 15k/100k lignes,
-`EXPLAIN QUERY PLAN`) — `--ignored`, jamais dans la suite normale.
+`EXPLAIN QUERY PLAN`) · `bench_sqlite.rs` (Phase 5 : attente du verrou et `SQLITE_BUSY`
+sous charge, coût d'une analyse sur de vrais fichiers via `SIFT_BENCH_TRACKS_DIR`)
+— `--ignored`, jamais dans la suite normale.
 `search_corpus.rs` / `search_terms.rs` : corpus de noms de fichiers **sales** tirés
 d'une vraie bibliothèque, étalonné à la main. Chaque entrée est un motif verrouillé —
 en ajouter un quand on rencontre un motif nouveau, **jamais en retirer un pour faire
