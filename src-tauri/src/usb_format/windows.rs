@@ -435,15 +435,41 @@ impl WindowsBackend {
         drive: &RemovableDrive,
         label: &str,
     ) -> Option<Result<(), UsbFormatError>> {
-        // `mount` est un affichage (« E:, I: ») : la première lettre est celle du volume principal.
-        let letter = drive.mount.split(',').next()?.trim().to_string();
+        // CHAQUE sortie de cette fonction se journalise. La première version n'en traçait qu'une
+        // sur trois : quand un UAC est apparu là où il ne devait pas (2026-08-03), il était
+        // impossible de dire laquelle avait décidé. `write_step` n'aide pas — il ÉCRASE, donc
+        // l'étape suivante efface le diagnostic. C'est `log::info!` qui garde la trace.
+        let letter = drive.mount.split(',').next().unwrap_or("").trim().to_string();
         if letter.is_empty() {
+            log::info!(
+                "format {}: aucune lettre montée (mount={:?}) — élévation nécessaire",
+                drive.id,
+                drive.mount
+            );
             return None; // disque RAW — rien à réutiliser, l'élévation est légitime
         }
-        let volume_bytes = volume_size_bytes(&letter)?;
+        let Some(volume_bytes) = volume_size_bytes(&letter) else {
+            log::info!(
+                "format {}: taille de la partition {letter} illisible (WMI) — élévation nécessaire",
+                drive.id
+            );
+            return None;
+        };
         if !partition_covers_disk(volume_bytes, drive.size_bytes) {
+            log::info!(
+                "format {}: partition {letter} de {volume_bytes} o pour un disque de {} o \
+                 ({:.1} %) — sous le seuil, repartitionnement nécessaire",
+                drive.id,
+                drive.size_bytes,
+                100.0 * volume_bytes as f64 / (drive.size_bytes.max(1)) as f64,
+            );
             return None;
         }
+        log::info!(
+            "format {}: partition {letter} réutilisable ({volume_bytes} o / {} o) — sans élévation",
+            drive.id,
+            drive.size_bytes
+        );
 
         super::privileged::write_step("Verrouillage du volume…");
         let mut volume = match super::raw_volume::RawVolume::open(&letter) {
@@ -451,6 +477,7 @@ impl WindowsBackend {
             // Le verrou refusé n'est PAS un échec silencieux : l'étape s'affiche, et l'appelant
             // enchaîne sur le chemin élevé, dont le `clean` sait forcer un volume récalcitrant.
             Err(e) => {
+                log::info!("format {}: verrou refusé sur {letter}: {e}", drive.id);
                 super::privileged::write_step(&format!(
                     "Volume {letter} non verrouillable ({e}) — passage par l'élévation…"
                 ));
