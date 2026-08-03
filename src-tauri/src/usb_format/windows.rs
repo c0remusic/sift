@@ -416,6 +416,50 @@ pub(crate) fn partition_covers_disk(volume_bytes: u64, disk_bytes: u64) -> bool 
     volume_bytes.saturating_mul(100) >= disk_bytes.saturating_mul(90)
 }
 
+/// Types MBR dans lesquels écrire du FAT32 est cohérent : `0x0B` (FAT32 CHS) et `0x0C` (FAT32 LBA).
+pub(crate) const MBR_FAT32_CHS: u16 = 0x0B;
+pub(crate) const MBR_FAT32_LBA: u16 = 0x0C;
+
+/// Peut-on écrire du FAT32 dans une partition de ce type, sans toucher à la table de partitions ?
+///
+/// Ce contrôle a coûté un volume. `try_format_in_place` réutilisait la partition existante sans
+/// regarder son octet de type : sur le SSD d'Antoine il valait `0x06` (FAT16, posé par le
+/// `create partition primary` sans `id=` de `partition_script`, corrigé depuis). Écrire du FAT32
+/// dedans donne un volume que Windows monte comme du FAT16, trouve incohérent, et déclare
+/// « endommagé et illisible » — os error 1392, le 2026-08-03.
+///
+/// Corriger le type demande d'écrire la table de partitions, donc `\\.\PhysicalDriveN`, donc
+/// l'administrateur. C'est précisément ce que le chemin sans élévation ne peut pas faire : quand
+/// le type ne convient pas, la seule réponse correcte est de repartitionner.
+pub(crate) fn mbr_type_accepts_fat32(mbr_type: u16) -> bool {
+    mbr_type == MBR_FAT32_CHS || mbr_type == MBR_FAT32_LBA
+}
+
+/// `MSFT_Partition.MbrType` de la partition portant `letter`, `None` si illisible ou si le disque
+/// est en GPT (où le type est un GUID et la question ne se pose pas de la même façon).
+fn partition_mbr_type(letter: &str) -> Option<u16> {
+    #[derive(Deserialize)]
+    #[serde(rename = "MSFT_Partition")]
+    #[serde(rename_all = "PascalCase")]
+    struct MsftPartition {
+        drive_letter: Option<String>,
+        mbr_type: Option<u16>,
+    }
+    let storage = WMIConnection::with_namespace_path(STORAGE_NAMESPACE).ok()?;
+    let rows: Vec<MsftPartition> = storage.query().ok()?;
+    // `DriveLetter` est le caractère seul (« E »), pas « E: » — d'où la comparaison sur l'initiale.
+    let wanted = letter.trim().chars().next()?.to_ascii_uppercase();
+    rows.into_iter()
+        .find(|p| {
+            p.drive_letter
+                .as_deref()
+                .and_then(|d| d.chars().next())
+                .map(|c| c.to_ascii_uppercase() == wanted)
+                .unwrap_or(false)
+        })
+        .and_then(|p| p.mbr_type)
+}
+
 impl WindowsBackend {
     /// Écrit la FAT32 **sans élévation**, dans la partition déjà montée. Rend `None` quand le
     /// disque n'offre pas de partition réutilisable — c'est-à-dire quand il faut vraiment
@@ -439,7 +483,13 @@ impl WindowsBackend {
         // sur trois : quand un UAC est apparu là où il ne devait pas (2026-08-03), il était
         // impossible de dire laquelle avait décidé. `write_step` n'aide pas — il ÉCRASE, donc
         // l'étape suivante efface le diagnostic. C'est `log::info!` qui garde la trace.
-        let letter = drive.mount.split(',').next().unwrap_or("").trim().to_string();
+        let letter = drive
+            .mount
+            .split(',')
+            .next()
+            .unwrap_or("")
+            .trim()
+            .to_string();
         if letter.is_empty() {
             log::info!(
                 "format {}: aucune lettre montée (mount={:?}) — élévation nécessaire",
@@ -464,6 +514,26 @@ impl WindowsBackend {
                 100.0 * volume_bytes as f64 / (drive.size_bytes.max(1)) as f64,
             );
             return None;
+        }
+        // Le type MBR doit déjà accepter du FAT32 : le corriger exigerait d'écrire la table de
+        // partitions, donc l'administrateur, donc précisément ce que ce chemin évite.
+        match partition_mbr_type(&letter) {
+            Some(t) if mbr_type_accepts_fat32(t) => {}
+            Some(t) => {
+                log::info!(
+                    "format {}: partition {letter} de type MBR 0x{t:02X}, incompatible FAT32 \
+                     — repartitionnement nécessaire",
+                    drive.id
+                );
+                return None;
+            }
+            None => {
+                log::info!(
+                    "format {}: type MBR de {letter} illisible — repartitionnement par sécurité",
+                    drive.id
+                );
+                return None;
+            }
         }
         log::info!(
             "format {}: partition {letter} réutilisable ({volume_bytes} o / {} o) — sans élévation",
@@ -895,6 +965,22 @@ pub(crate) fn eject_powershell(letter: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Le contrôle qui manquait, et qui a rendu un volume illisible (os error 1392, 2026-08-03) :
+    /// écrire du FAT32 dans une partition typée FAT16 produit un volume que Windows monte avec le
+    /// mauvais pilote. Seuls 0x0B et 0x0C sont cohérents ; tout le reste impose de repartitionner.
+    #[test]
+    fn seuls_les_types_mbr_fat32_acceptent_une_ecriture_en_place() {
+        assert!(mbr_type_accepts_fat32(MBR_FAT32_CHS)); // 0x0B
+        assert!(mbr_type_accepts_fat32(MBR_FAT32_LBA)); // 0x0C
+                                                        // 0x06 = FAT16, le defaut de `create partition primary` sans `id=`. C'est CE type qui a
+                                                        // ete trouve sur le SSD, et FAT16 plafonne a 2 Go — 465 Go typees ainsi sont hors spec.
+        assert!(!mbr_type_accepts_fat32(0x06));
+        assert!(!mbr_type_accepts_fat32(0x07)); // NTFS/exFAT
+        assert!(!mbr_type_accepts_fat32(0x0E)); // FAT16 LBA
+        assert!(!mbr_type_accepts_fat32(0x00)); // vide
+        assert!(!mbr_type_accepts_fat32(0xEE)); // protective MBR d'un disque GPT
+    }
 
     /// Ce seuil décide s'il y aura un UAC ou non, ET s'il peut y avoir une clé amputée. Les deux
     /// erreurs coûtent, dans des directions opposées : trop strict et on élève pour rien, trop

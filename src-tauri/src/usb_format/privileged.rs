@@ -68,7 +68,12 @@ const LETTER_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_mill
 /// tout le disque, `assign` lui donne une lettre. Pas de `format fs=...` : c'est précisément ce
 /// que Windows refuse au-delà de 32 Go, et toute la raison de ce module.
 pub fn partition_script(disk_index: u32) -> String {
-    format!("select disk {disk_index}\nclean\ncreate partition primary\nassign\nexit\n")
+    // `id=0c` n'est PAS cosmétique. Sans lui, `diskpart` pose son type par défaut — 0x06, FAT16 —
+    // et nous écrivons ensuite du FAT32 dedans. Or FAT16 plafonne à 2 Go : une partition de
+    // 465 Go typée 0x06 est hors spécification, et Windows finit par la déclarer « endommagée et
+    // illisible » (os error 1392, constaté sur le SSD d'Antoine le 2026-08-03). 0x0C est le type
+    // FAT32 avec adressage LBA, le seul correct au-delà de 8 Go.
+    format!("select disk {disk_index}\nclean\ncreate partition primary id=0c\nassign\nexit\n")
 }
 
 /// Analyse les arguments du mode privilégié.
@@ -263,7 +268,10 @@ mod tests {
         let s = partition_script(2);
         assert!(s.starts_with("select disk 2\n"), "{s}");
         assert!(s.contains("\nclean\n"), "{s}");
-        assert!(s.contains("\ncreate partition primary\n"), "{s}");
+        // `id=0c` est la seule chose que diskpart doit dire du systeme de fichiers : le type MBR.
+        // Sans lui il pose 0x06 (FAT16), et le FAT32 qu'on ecrit ensuite devient illisible
+        // (os error 1392, constate le 2026-08-03). Le contenu, lui, reste notre travail.
+        assert!(s.contains("\ncreate partition primary id=0c\n"), "{s}");
         assert!(s.contains("\nassign\n"), "{s}");
         assert!(
             !s.contains("format"),
