@@ -42,8 +42,14 @@ pub struct Spectrogram {
     pub sec_per_frame: f32,
     /// `frames * bins` values, row-major by frame. 0 = -100 dBFS, 255 = 0 dBFS.
     ///
-    /// Travels (both at rest in `tracks.report_json` and over the Tauri IPC) as a base85
-    /// RFC1924 STRING, not as serde's default array of decimal integers — see `crate::b85_bytes`.
+    /// Travels over the Tauri IPC as a base85 RFC1924 STRING, not as serde's default array of
+    /// decimal integers — see `crate::b85_bytes`.
+    ///
+    /// PLUS au repos : depuis le 2026-08-03, cette grille n'est plus stockée dans
+    /// `tracks.report_json` (`ipc::cache_json` la retire, le pool analyse avec
+    /// `with_spectrogram: false`). Elle se recalcule à l'ouverture du collapse Diagnostic —
+    /// 631 ms mesurées, contre ~450 ko par piste économisés, soit 4,11 Go → 119 Mo sur la base
+    /// de production. Le champ vaut donc `Default` sur tout rapport lu depuis le cache.
     /// The layout and the quantization above are unchanged; only the encoding is. Consumers
     /// outside Rust must decode it (`shared/contracts.ts` mirrors the decoded type).
     #[serde(with = "crate::b85_bytes")]
