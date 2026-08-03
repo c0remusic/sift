@@ -2,13 +2,32 @@
 //! `Win32_DiskDrive`'s associations for the volume description — and format via a scripted
 //! `diskpart`.
 //!
-//! ⚠️ **`diskpart` does NOT lift the 32 GB FAT32 ceiling.** This module claimed it was "the only
-//! CLI path that formats FAT32 past the 32 GB ceiling the GUI imposes" — that is false, and so is
-//! the promise the Clé USB screen still shows the user. The limit lives in the Windows format
-//! driver, shared by `format.com`, `diskpart` and the Explorer dialog alike; a 64 GB key answers
-//! `format fs=fat32` with "The volume is too big for FAT32". Delivering FAT32 on a modern DJ key
-//! needs either a bundled third-party formatter (the route Rufus takes) or our own FAT32 writer —
-//! an open product decision, not something to paper over here.
+//! ⚠️ **`diskpart` does NOT lift the 32 GB FAT32 ceiling**, et c'est pour ça que Windows ne
+//! formate pas ici. La limite vit dans le pilote de formatage de Windows, partagé à l'identique
+//! par `format.com`, `diskpart` et la boîte de dialogue de l'explorateur : une clé de 64 Go
+//! répond « The volume is too big for FAT32 » à `format fs=fat32`.
+//!
+//! La décision est prise et livrée — Sift écrit le système de fichiers lui-même, avec
+//! `fat32::write_fat32` (crate `fatfs`, MIT) à travers `SectorIo` qui aligne sur le secteur.
+//!
+//! **L'élévation n'est PAS incontournable, et ne l'a jamais été.** La frontière de Windows ne
+//! sépare pas « lecture » et « écriture brute » : elle sépare le VOLUME du DISQUE. Mesuré le
+//! 2026-08-03 depuis un process non élevé — `\\.\<lettre>` rend un handle
+//! `FILE_GENERIC_WRITE` et accepte `FSCTL_LOCK_VOLUME`, là où `\\.\PhysicalDrive0` répond
+//! `ACCESS_DENIED`. C'est toute l'explication du fait que `fat32format` n'affiche aucun UAC :
+//! il ne partitionne pas, on lui donne une lettre déjà montée.
+//!
+//! D'où les deux chemins de `format_large_fat32` :
+//!
+//! - partition existante qui couvre le disque → `try_format_in_place`, **sans aucun UAC** ;
+//! - disque RAW, sans lettre, ou partition trop petite → `diskpart` dans un Sift relancé en
+//!   administrateur, qui **partitionne seulement** (`privileged.rs`, `run_diskpart_script`),
+//!   puis le même `write_fat32`.
+//!
+//! Ce bloc a porté deux affirmations fausses successives : « `diskpart` est le seul chemin CLI
+//! qui formate FAT32 au-delà de 32 Go », puis « livrer FAT32 reste une décision produit ouverte »
+//! alors que `fat32.rs` la tranchait déjà. Les deux ont survécu au correctif qu'elles
+//! surplombaient. Celle-ci est mesurée, pas déduite.
 //!
 //! **Enumerates physical disks, not volumes.** It used to walk `Win32_DiskDrive` ->
 //! `Win32_DiskPartition` -> `Win32_LogicalDisk` and emit one entry per *mounted volume*, dropping
@@ -385,13 +404,81 @@ pub(crate) fn privileged_elevation_powershell(
     ))
 }
 
+/// Une partition déjà montée est-elle réutilisable telle quelle, ou faut-il repartitionner ?
+///
+/// C'est la seule décision de `try_format_in_place` qui puisse nuire en silence : réutiliser une
+/// partition plus petite que le disque rendrait une clé amputée sans rien dire, alors que
+/// l'utilisateur a demandé « formate ce disque », pas « formate ce qui reste d'une partition
+/// d'avant ». La marge de 10 % absorbe l'écart normal entre la taille du disque et celle de la
+/// partition (table de partitions, alignement sur 1 Mio, secteurs de réserve) — elle ne doit PAS
+/// être élargie pour faire passer un cas : au-delà, repartitionner est la bonne réponse.
+pub(crate) fn partition_covers_disk(volume_bytes: u64, disk_bytes: u64) -> bool {
+    volume_bytes.saturating_mul(100) >= disk_bytes.saturating_mul(90)
+}
+
 impl WindowsBackend {
-    /// FAT32 au-delà du plafond de 32 Go, via un Sift relancé en administrateur.
+    /// Écrit la FAT32 **sans élévation**, dans la partition déjà montée. Rend `None` quand le
+    /// disque n'offre pas de partition réutilisable — c'est-à-dire quand il faut vraiment
+    /// repartitionner, seul cas qui justifie un UAC.
+    ///
+    /// La frontière de Windows ne sépare pas « lecture » et « écriture brute », contrairement à ce
+    /// que ce module supposait : elle sépare le VOLUME du DISQUE. Mesuré le 2026-08-03 sur une clé
+    /// FAT32, depuis un process non élevé :
+    ///   `\\.\G:`             -> handle FILE_GENERIC_WRITE obtenu, `FSCTL_LOCK_VOLUME` accepté ;
+    ///   `\\.\PhysicalDrive0` -> ACCESS_DENIED (Win32 5).
+    /// C'est pour ça que `fat32format` n'affiche aucun UAC : il ne partitionne pas, on lui donne
+    /// une lettre déjà montée. Le UAC de Sift ne venait jamais du formatage — il venait du
+    /// `clean`/`create partition` de `diskpart`, fait systématiquement même quand le disque avait
+    /// déjà exactement la partition qu'il fallait.
+    fn try_format_in_place(
+        &self,
+        drive: &RemovableDrive,
+        label: &str,
+    ) -> Option<Result<(), UsbFormatError>> {
+        // `mount` est un affichage (« E:, I: ») : la première lettre est celle du volume principal.
+        let letter = drive.mount.split(',').next()?.trim().to_string();
+        if letter.is_empty() {
+            return None; // disque RAW — rien à réutiliser, l'élévation est légitime
+        }
+        let volume_bytes = volume_size_bytes(&letter)?;
+        if !partition_covers_disk(volume_bytes, drive.size_bytes) {
+            return None;
+        }
+
+        super::privileged::write_step("Verrouillage du volume…");
+        let mut volume = match super::raw_volume::RawVolume::open(&letter) {
+            Ok(v) => v,
+            // Le verrou refusé n'est PAS un échec silencieux : l'étape s'affiche, et l'appelant
+            // enchaîne sur le chemin élevé, dont le `clean` sait forcer un volume récalcitrant.
+            Err(e) => {
+                super::privileged::write_step(&format!(
+                    "Volume {letter} non verrouillable ({e}) — passage par l'élévation…"
+                ));
+                return None;
+            }
+        };
+
+        super::privileged::write_step("Écriture du système de fichiers FAT32…");
+        let aligned = super::sector_io::SectorIo::new(
+            volume.as_file_mut(),
+            u64::from(super::fat32::BYTES_PER_SECTOR),
+        );
+        Some(
+            super::fat32::write_fat32(aligned, volume_bytes, label)
+                .map_err(|e| UsbFormatError::Format(e.to_string())),
+        )
+    }
+
+    /// FAT32 au-delà du plafond de 32 Go. Sans élévation quand la partition existante convient,
+    /// via un Sift relancé en administrateur seulement quand il faut repartitionner.
     fn format_large_fat32(
         &self,
         drive: &RemovableDrive,
         label: &str,
     ) -> Result<(), UsbFormatError> {
+        if let Some(res) = self.try_format_in_place(drive, label) {
+            return res;
+        }
         let disk_index = disk_index_from_id(&drive.id).ok_or_else(|| {
             UsbFormatError::Format(format!(
                 "identifiant de disque non reconnu: {} — formatage refusé",
@@ -781,6 +868,27 @@ pub(crate) fn eject_powershell(letter: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Ce seuil décide s'il y aura un UAC ou non, ET s'il peut y avoir une clé amputée. Les deux
+    /// erreurs coûtent, dans des directions opposées : trop strict et on élève pour rien, trop
+    /// laxiste et on formate une partition qui ne couvre pas le disque en le passant sous silence.
+    #[test]
+    fn partition_reutilisable_seulement_si_elle_couvre_le_disque() {
+        const DISQUE: u64 = 465_600_000_000; // le SSD DJ réel, 465,6 Go
+
+        // Cas courant : une partition unique, à quelques Mio près de la taille du disque.
+        assert!(partition_covers_disk(DISQUE - 4_194_304, DISQUE));
+        assert!(partition_covers_disk(DISQUE, DISQUE));
+        // Une partition à 89 % : formater là-dedans rendrait 51 Go inaccessibles sans le dire.
+        assert!(!partition_covers_disk(DISQUE / 100 * 89, DISQUE));
+        assert!(!partition_covers_disk(DISQUE / 2, DISQUE));
+        // Un disque RAW n'a pas de volume : 0 octet ne couvre jamais rien.
+        assert!(!partition_covers_disk(0, DISQUE));
+        // Pas de débordement sur des valeurs absurdes — la décision doit rester une décision,
+        // jamais une panique dans le chemin de formatage.
+        assert!(partition_covers_disk(u64::MAX, u64::MAX));
+        assert!(partition_covers_disk(u64::MAX, 1));
+    }
 
     /// The bug this pins was invisible to every other test here: they all feed
     /// `is_confidently_removable` fabricated values, so the filter was covered and the query that
