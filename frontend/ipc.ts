@@ -13,6 +13,7 @@ import type {
   BatchResult,
   FileProgress,
   RejectBatchResult,
+  PurgeResult,
   JournalEntry,
   Target,
   EcarteItem,
@@ -227,8 +228,9 @@ export const restoreTrack = (trackId: number): Promise<void> =>
 export const requeueTrack = (trackId: number): Promise<void> =>
   invoke("requeue_track", { trackId });
 
-/** Permanently empty the bin. Returns how many tracks were purged. */
-export const purgeTrash = (): Promise<number> => invoke("purge_trash");
+/** Permanently empty the bin. Tracks whose file could not be deleted stay in the bin and come
+ *  back in `failed` — the count alone would look like a success with fewer tracks. */
+export const purgeTrash = (): Promise<PurgeResult> => invoke("purge_trash");
 
 /** Open an external http(s) URL in the default browser (Écartés buy links). */
 export const openUrl = (url: string): Promise<void> => invoke("open_url", { url });

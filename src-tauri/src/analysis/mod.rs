@@ -30,7 +30,11 @@ pub enum Verdict {
 }
 
 /// Time×frequency magnitude grid (dB, quantized to u8) for the UI spectrogram (M2c).
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+///
+/// `Default` = the empty grid, which is a real state and not just a derive convenience: it is
+/// what `analyze(path, false)` produces, and what the report cache stores (see
+/// `ipc::cache_json` — the grid is computed on demand when the Revue collapse opens).
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 pub struct Spectrogram {
     pub frames: usize,
     pub bins: usize,

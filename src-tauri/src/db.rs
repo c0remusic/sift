@@ -339,7 +339,50 @@ const MIGRATIONS: &[&str] = &[
         track_id INTEGER PRIMARY KEY REFERENCES tracks(id) ON DELETE CASCADE
     );
     "#,
+    // v20 — SECONDE migration de contenu, et exactement le même piège que v16 pris par l'autre
+    // bout. v16 avait bumpé REPORT_CACHE_VERSION à 6 puis vidé le cache ; toute la bibliothèque
+    // s'est ré-analysée et réécrite en version 6. Le cap `MAX_PEAKS` (commit 689b700) est arrivé
+    // APRÈS, le même jour, SANS toucher la version — donc les rapports écrits entre les deux
+    // portent une enveloppe non plafonnée tout en étant indiscernables des bons, et
+    // `worker::select_pending` ne re-sélectionne que sur `report_json` NULL.
+    //
+    // Mesuré sur la base de production le 2026-08-03 : 2 703 rapports sur 2 710 dans cet état,
+    // 10 000 à 50 000 points d'enveloppe au lieu de 4 000. 1,00 Go de `peaks` là où le cap en
+    // prévoyait 0,12 — 45 % de la base pour des points qu'aucun écran ne dessine.
+    //
+    // PAS de bump de REPORT_CACHE_VERSION : le FORMAT n'a pas changé, seule la donnée est
+    // mauvaise. Un bump invaliderait aussi les 7 rapports corrects. `peaks_step`, ajouté par le
+    // commit du cap, distingue exactement les deux populations : absent = écrit avant le cap.
+    //
+    // Le coût est mesuré, pas supposé (`bench_sqlite::bench_analysis_cost_on_real_tracks`) :
+    // l'analyse tourne à 594x le temps réel, donc ré-analyser les 297 h d'audio de cette
+    // bibliothèque coûte ~30 min sur un thread, quelques minutes sur le pool. C'est ce qui a
+    // écarté l'alternative — un mécanisme de correction de données en Rust, pour re-capper en
+    // place sans redécoder : machinerie permanente contre deux minutes de fond.
+    //
+    // Mêmes précautions que v16, pour les mêmes raisons : NULL et jamais '' (sentinelle de
+    // `persist_failure`), et le garde `report_json <> ''` protège les fichiers déjà connus comme
+    // illisibles. NO VACUUM ici non plus — voir v16.
+    r#"
+    UPDATE tracks SET report_json=NULL, report_cache_ver=NULL
+    WHERE report_json IS NOT NULL AND report_json <> ''
+      AND json_extract(report_json, '$.peaks_step') IS NULL;
+    "#,
 ];
+
+/// Applies ONE migration and its `user_version` bump in a SINGLE transaction, so a batch that
+/// fails halfway leaves neither a partial schema nor a half-bumped version — see the test
+/// `une_migration_echouee_ne_laisse_ni_schema_partiel_ni_version` for what that costs when it
+/// isn't atomic. `unchecked_transaction` since we only hold `&Connection` (same reason as
+/// `filing::commit_file`). `PRAGMA user_version` is a header write and IS transactional, so it
+/// rolls back with the DDL. This is why no entry of `MIGRATIONS` may ever contain its own
+/// `BEGIN`/`COMMIT` — none does today.
+fn apply_migration(conn: &Connection, sql: &str, version: i64) -> rusqlite::Result<()> {
+    let tx = conn.unchecked_transaction()?;
+    tx.execute_batch(sql)?;
+    tx.execute_batch(&format!("PRAGMA user_version = {version}"))?;
+    tx.commit()
+}
 
 /// Applies any migrations the DB hasn't seen yet, tracked via PRAGMA user_version.
 /// Idempotent: running twice is a no-op the second time.
@@ -348,8 +391,7 @@ pub fn run_migrations(conn: &Connection) -> rusqlite::Result<()> {
     for (i, sql) in MIGRATIONS.iter().enumerate() {
         let version = (i + 1) as i64;
         if version > current {
-            conn.execute_batch(sql)?;
-            conn.execute_batch(&format!("PRAGMA user_version = {version}"))?;
+            apply_migration(conn, sql, version)?;
         }
     }
     Ok(())
@@ -401,6 +443,93 @@ mod tests {
         // v13 adds `rekordbox_masterdb_metadata_syncs`, v14 adds `rekordbox_masterdb_artwork_syncs`,
         // v17 adds `volume_usage`, v19 adds `dup_edges` and `dup_scanned`
         assert_eq!(table_count(&conn).unwrap(), 13);
+    }
+
+    /// Une migration qui casse à mi-parcours ne doit laisser NI la table déjà créée, NI la
+    /// version incrémentée. Sans transaction, `execute_batch` valide chaque instruction en
+    /// auto-commit : la première table survivait et `user_version` restait en arrière, donc au
+    /// démarrage suivant la MÊME migration rejouait et mourait sur « table already exists ».
+    /// Base utilisateur inouvrable, sans chemin de retour.
+    #[test]
+    fn une_migration_echouee_ne_laisse_ni_schema_partiel_ni_version() {
+        let conn = Connection::open_in_memory().unwrap();
+        // Deux instructions : la première passe, la seconde est du SQL invalide.
+        let cassee = "CREATE TABLE moitie (id INTEGER); CREATE TABLE ;";
+        assert!(apply_migration(&conn, cassee, 1).is_err());
+        assert_eq!(
+            schema_version(&conn).unwrap(),
+            0,
+            "user_version a bougé alors que la migration a échoué"
+        );
+        let restees: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='moitie'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(restees, 0, "la table de la migration échouée a survécu");
+    }
+
+    /// v20 doit viser EXACTEMENT les rapports écrits avant le cap `MAX_PEAKS`, reconnaissables à
+    /// l'absence de `peaks_step`. Trois populations dans le même test, parce que c'est la
+    /// distinction qui porte tout le risque : effacer un rapport correct coûterait une ré-analyse
+    /// inutile, et effacer la sentinelle `''` re-mettrait en file un fichier connu comme illisible.
+    #[test]
+    fn migration_v20_ne_vide_que_les_rapports_anterieurs_au_cap() {
+        let conn = Connection::open_in_memory().unwrap();
+        for sql in MIGRATIONS.iter().take(19) {
+            conn.execute_batch(sql).unwrap();
+        }
+        conn.execute_batch("PRAGMA user_version = 19").unwrap();
+        // 1 — écrit avant le cap : pas de peaks_step. À vider.
+        conn.execute(
+            "INSERT INTO tracks (id, path, status, report_json, report_cache_ver)
+             VALUES (1, '/avant.mp3', 'pending', '{\"peaks\":[0.1,0.2],\"verdict\":\"ok\"}', 6)",
+            [],
+        )
+        .unwrap();
+        // 2 — écrit après le cap : peaks_step présent. À garder.
+        conn.execute(
+            "INSERT INTO tracks (id, path, status, report_json, report_cache_ver)
+             VALUES (2, '/apres.mp3', 'pending', '{\"peaks\":[0.1],\"peaks_step\":4096}', 6)",
+            [],
+        )
+        .unwrap();
+        // 3 — sentinelle de persist_failure. À laisser strictement intacte.
+        conn.execute(
+            "INSERT INTO tracks (id, path, status, report_json, analysis_attempts)
+             VALUES (3, '/casse.mp3', 'pending', '', 1)",
+            [],
+        )
+        .unwrap();
+
+        run_migrations(&conn).unwrap();
+
+        let lu = |id: i64| -> Option<String> {
+            conn.query_row(
+                "SELECT report_json FROM tracks WHERE id=?1",
+                rusqlite::params![id],
+                |r| r.get(0),
+            )
+            .unwrap()
+        };
+        assert_eq!(lu(1), None, "le rapport anterieur au cap n'a pas ete vide");
+        assert!(
+            lu(2).is_some_and(|s| s.contains("peaks_step")),
+            "un rapport deja plafonne a ete vide — cout: une re-analyse pour rien"
+        );
+        assert_eq!(
+            lu(3),
+            Some(String::new()),
+            "la sentinelle de fichier illisible a ete effacee — le fichier repasserait en file"
+        );
+        let ver: Option<i64> = conn
+            .query_row("SELECT report_cache_ver FROM tracks WHERE id=1", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(ver, None, "report_cache_ver doit tomber avec le rapport");
     }
 
     #[test]

@@ -167,9 +167,17 @@ pub fn restore_track(conn: &Connection, track_id: i64) -> Result<(), String> {
     Ok(())
 }
 
+/// Outcome of a purge. `failed` holds the track ids whose file could NOT be deleted — they stay
+/// in the bin rather than being reported as gone. Mirrors `RejectBatchResult`'s shape (and its
+/// entry in `shared/contracts.ts`): a count of what worked, the ids of what didn't.
+#[derive(Debug, serde::Serialize)]
+pub struct PurgeResult {
+    pub purged: usize,
+    pub failed: Vec<i64>,
+}
+
 /// Permanently delete the files of all trashed tracks and mark them `purged`. Irreversible.
-/// Returns how many were purged.
-pub fn purge_trash(conn: &Connection) -> Result<usize, String> {
+pub fn purge_trash(conn: &Connection) -> Result<PurgeResult, String> {
     let mut stmt = conn
         .prepare(
             "SELECT t.id, a.id, a.to_path FROM tracks t
@@ -187,12 +195,26 @@ pub fn purge_trash(conn: &Connection) -> Result<usize, String> {
     // we only hold `&Connection`. The file deletions (`remove_file`) are irreversible and stay
     // best-effort outside the transaction's rollback semantics — a failed DB commit would leave
     // already-deleted files gone, but the DB status flips (the only thing the transaction guards)
-    // roll back atomically. `n` counts rows scheduled for purge, unchanged from before.
+    // roll back atomically.
     let tx = conn.unchecked_transaction().map_err(|e| e.to_string())?;
     let mut n = 0;
+    let mut failed: Vec<i64> = Vec::new();
     for (tid, aid, to) in rows {
         if let Some(p) = &to {
-            let _ = std::fs::remove_file(p);
+            match std::fs::remove_file(p) {
+                Ok(()) => {}
+                // Already gone IS the outcome we wanted, so it counts as purged. This is also
+                // what a pass interrupted after the deletions but before the commit leaves
+                // behind — tolerating it is what lets a retry converge instead of wedging.
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                // Anything else (typically the file held open by another program) leaves the
+                // track in the bin. Marking it `purged` would claim a deletion that never
+                // happened and remove the only screen where the user could still see the file.
+                Err(_) => {
+                    failed.push(tid);
+                    continue;
+                }
+            }
         }
         tx.execute("UPDATE actions SET undone=1 WHERE id=?1", params![aid])
             .map_err(|e| e.to_string())?;
@@ -205,13 +227,21 @@ pub fn purge_trash(conn: &Connection) -> Result<usize, String> {
     }
     // Sweep any trashed track without a live trash action (orphaned journal) so it doesn't
     // linger in Écartés forever — there's no file path to delete, just clear the status.
-    tx.execute("UPDATE tracks SET status='purged' WHERE status='trash'", [])
-        .map_err(|e| e.to_string())?;
+    // The `NOT EXISTS` states that orphan definition directly instead of "everything still in
+    // trash": the rows we just skipped DO still have a live trash action, so an unconditional
+    // sweep would purge them one statement after we decided not to.
+    tx.execute(
+        "UPDATE tracks SET status='purged' WHERE status='trash'
+         AND NOT EXISTS (SELECT 1 FROM actions a
+                         WHERE a.track_id=tracks.id AND a.type='trash' AND a.undone=0)",
+        [],
+    )
+    .map_err(|e| e.to_string())?;
     tx.commit().map_err(|e| e.to_string())?;
     // The filed set can shift around trash lifecycle changes — drop the dashboard duplicate-count
     // cache so it recomputes (coordination with R1's cache; cheap, a purge is a rare action).
     crate::library::invalidate_duplicate_count_cache();
-    Ok(n)
+    Ok(PurgeResult { purged: n, failed })
 }
 
 #[cfg(test)]
@@ -405,7 +435,7 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(purge_trash(&conn).unwrap(), 1);
+        assert_eq!(purge_trash(&conn).unwrap().purged, 1);
         assert!(!trash.exists());
         let status: String = conn
             .query_row("SELECT status FROM tracks WHERE id=?1", params![tid], |r| {
@@ -413,5 +443,48 @@ mod tests {
             })
             .unwrap();
         assert_eq!(status, "purged");
+    }
+
+    /// Une suppression qui échoue ne doit PAS produire un `purged`. La ligne disparaissait
+    /// d'Écartés en annonçant une suppression définitive pendant que le fichier restait sur le
+    /// disque — l'utilisateur croyait avoir récupéré la place, et n'avait plus aucun écran où
+    /// revoir le fichier. Le cas réel est un fichier tenu ouvert par un autre programme
+    /// (Rekordbox), pas un répertoire ; le répertoire est juste le moyen le plus portable de
+    /// faire refuser `remove_file` sans dépendre d'un verrou.
+    #[test]
+    fn purge_ne_marque_pas_purged_un_fichier_qui_resiste() {
+        let conn = db();
+        let dir = tempfile::tempdir().unwrap();
+        let obstacle = dir.path().join(".sift-trash/2__x.mp3");
+        std::fs::create_dir_all(&obstacle).unwrap(); // un RÉPERTOIRE à la place du fichier
+        conn.execute(
+            "INSERT INTO tracks(path, status) VALUES('orig2.mp3','trash')",
+            [],
+        )
+        .unwrap();
+        let tid = conn.last_insert_rowid();
+        crate::actions::record(
+            &conn,
+            "b2",
+            Some(tid),
+            "trash",
+            Some("orig2.mp3"),
+            Some(obstacle.to_str().unwrap()),
+        )
+        .unwrap();
+
+        let res = purge_trash(&conn).unwrap();
+        assert!(obstacle.exists(), "l'obstacle a disparu, test invalide");
+        let status: String = conn
+            .query_row("SELECT status FROM tracks WHERE id=?1", params![tid], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(
+            status, "trash",
+            "piste marquée purgée alors que son fichier est toujours sur le disque"
+        );
+        assert_eq!(res.purged, 0);
+        assert_eq!(res.failed, vec![tid]);
     }
 }

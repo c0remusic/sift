@@ -1008,6 +1008,11 @@ pub fn batch_canonical(conn: &Connection, track_id: i64) -> Option<Canonical> {
 pub fn reject_track(conn: &Connection, track_id: i64) -> Result<(), FilingError> {
     let source = track_path(conn, track_id)?;
     let batch_id = new_batch_id(track_id);
+    // The journal row and the status flip are one fact, so they go in one transaction (same
+    // `unchecked_transaction` reason as `commit_file`: we only hold `&Connection`). Dropping `tx`
+    // on an early `?` rolls both back. No filesystem compensation to do — unlike filing and
+    // trashing, rejecting moves nothing on disk.
+    let tx = conn.unchecked_transaction()?;
     actions::record(
         conn,
         &batch_id,
@@ -1021,6 +1026,7 @@ pub fn reject_track(conn: &Connection, track_id: i64) -> Result<(), FilingError>
         "UPDATE tracks SET status='resourcing' WHERE id=?1",
         params![track_id],
     )?;
+    tx.commit()?;
     Ok(())
 }
 
@@ -1808,6 +1814,41 @@ mod tests {
             )
             .unwrap();
         assert_eq!(rejects, 1);
+    }
+
+    /// `reject_track` écrit DEUX lignes : le journal, puis le statut. Sans transaction, un statut
+    /// refusé laissait une action `reject` orpheline — le journal annonçait un écart qui n'a
+    /// jamais eu lieu, et « Annuler » proposait de défaire une action fantôme. Pas de fixture ici :
+    /// `track_path` ne lit que la colonne, le fichier n'a pas besoin d'exister.
+    #[test]
+    fn reject_track_ne_laisse_pas_d_action_orpheline_si_le_statut_est_refuse() {
+        let conn = db();
+        conn.execute(
+            "INSERT INTO tracks(path, status) VALUES('orphelin.mp3','pending')",
+            [],
+        )
+        .unwrap();
+        let id = conn.last_insert_rowid();
+        // Ce trigger refuse la SECONDE écriture seulement, jamais la première.
+        conn.execute_batch(
+            "CREATE TRIGGER refuse_resourcing BEFORE UPDATE OF status ON tracks
+             WHEN NEW.status='resourcing'
+             BEGIN SELECT RAISE(ABORT, 'refus de test'); END;",
+        )
+        .unwrap();
+
+        assert!(reject_track(&conn, id).is_err());
+        let rejects: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM actions WHERE type='reject'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            rejects, 0,
+            "action `reject` journalisée alors que la piste n'a jamais changé de statut"
+        );
     }
 
     #[test]

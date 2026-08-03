@@ -679,11 +679,14 @@ export function audioBufferToWav(buf: AudioBuffer): Blob {
  * The old path here fetched the WHOLE file into an ArrayBuffer, decoded it fully with Web
  * Audio, then re-encoded a 40-80MB WAV blob sample-by-sample in JS — for every format, on
  * every cache-miss open. The media element streams instead; with pre-computed peaks passed
- * to `ws.load` there is nothing left to decode up-front. */
+ * to `ws.load` there is nothing left to decode up-front.
+ *
+ * Every format now round-trips through `playback_url`, AIFF or not: the `asset:` scope starts
+ * empty, so that command is also what grants the webview read access to this one file. Returning
+ * `path` directly here would yield a URL the webview is forbidden to fetch. The extra IPC costs
+ * one round-trip per track opened — nothing next to loading the audio itself. */
 async function playableUrl(path: string): Promise<string> {
-  const ext = path.split(".").pop()?.toLowerCase() ?? "";
-  if (ext === "aif" || ext === "aiff") return invoke<string>("playback_url", { path });
-  return path;
+  return invoke<string>("playback_url", { path });
 }
 
 /** Point the player's media element at the track (streaming, no up-front decode). `peaks`/

@@ -43,7 +43,11 @@ export async function runSelfTest(limit = 15): Promise<void> {
       // combination the player uses, so a flaky "ready" here = the real bug, headless.
       const r = await analyzePath(it.path, false);
       const tAna = performance.now();
-      const resp = await fetch(convertFileSrc(it.path));
+      // Through `playback_url` like the real player: the `asset:` scope starts empty, so a raw
+      // `convertFileSrc(it.path)` is a URL the webview is not allowed to fetch. Mirroring the
+      // player means mirroring how it earns that access, not just how it decodes.
+      const playable = await invoke<string>("playback_url", { path: it.path });
+      const resp = await fetch(convertFileSrc(playable));
       if (!resp.ok) throw new Error(`fetch ${resp.status}`);
       const arr = await resp.arrayBuffer();
       const tFetch = performance.now();

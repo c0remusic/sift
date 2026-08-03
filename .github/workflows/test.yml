@@ -89,6 +89,11 @@ jobs:
 
       # Ordre delibere : du moins cher au plus cher, pour que l'echec le plus rapide sorte en
       # premier. tsc ne compile pas Rust, fmt ne compile rien, clippy compile mais ne lie pas.
+      # La lecture de config passe avant tout le reste : elle coute une lecture de fichier, et
+      # aucune des autres etapes ne regarde tauri.conf.json.
+      - name: Config Tauri (scope asset, CSP)
+        run: node scripts/check-tauri-security.mjs
+
       - name: Type-check frontend
         run: npx tsc --noEmit
 

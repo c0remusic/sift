@@ -348,11 +348,13 @@ pub fn analyze_path(
             return Err(e);
         }
     };
-    // self-heal the cache: store the freshly-computed report (spectrogram included when
-    // requested) so the next open of this track is instant either way.
+    // self-heal the cache: store the freshly-computed report — SANS sa grille de spectrogramme —
+    // pour que la prochaine ouverture de cette piste soit instantanée. Le report rendu à
+    // l'appelant garde la sienne : seule la version écrite en base est allégée.
+    let mut report = report;
     match conn.lock() {
         Ok(conn) => {
-            if let Ok(json) = serde_json::to_string(&report) {
+            if let Some(json) = cache_json(&mut report) {
                 let _ = conn.execute(
                     "UPDATE tracks SET report_json=?2, report_cache_ver=?3 WHERE path=?1",
                     rusqlite::params![path, json, crate::analysis::REPORT_CACHE_VERSION],
@@ -389,18 +391,63 @@ pub fn reanalyze_tracks(
     Ok(n)
 }
 
-/// Return a filesystem path the webview's audio engine can actually play. Chromium plays
-/// mp3/wav/flac/m4a/ogg directly, but NOT AIFF — so for .aif/.aiff we transcode once to a
-/// cached temp WAV and return that. The caller wraps the result with convertFileSrc.
+/// Sérialise `report` pour le cache `tracks.report_json`, **sans** sa grille de spectrogramme,
+/// puis la lui rend. Emprunte `&mut` plutôt que de cloner : la grille pèse ~376 ko, et la rendre
+/// intacte à l'appelant fait partie du contrat — le rapport retourné à la webview doit rester
+/// complet, c'est seulement la copie EN BASE qui est allégée.
+///
+/// Pourquoi ce n'est pas un détail d'implémentation : c'est le seul point du code où le rapport
+/// est écrit en base côté IPC, donc le seul endroit où la grille pourrait se réintroduire dans le
+/// cache sans que personne le remarque — exactement ce qui est arrivé au cap `MAX_PEAKS`
+/// (migration v20). L'invariant est verrouillé par `cache_json_ne_stocke_jamais_la_grille`.
+fn cache_json(report: &mut crate::analysis::AnalysisReport) -> Option<String> {
+    let grid = std::mem::take(&mut report.spectrogram);
+    let json = serde_json::to_string(&*report).ok();
+    report.spectrogram = grid;
+    json
+}
+
+/// Return a filesystem path the webview's audio engine can actually play, AND grant the asset
+/// protocol read access to exactly that one file. Chromium plays mp3/wav/flac/m4a/ogg directly,
+/// but NOT AIFF — so for .aif/.aiff we transcode once to a cached temp WAV and return that.
+/// The caller wraps the result with convertFileSrc.
+///
+/// The `asset:` scope starts EMPTY (`tauri.conf.json`), so this command is the only door for
+/// audio. That is also why it refuses a path the DB doesn't know: without that check it would
+/// hand out read access to any path on demand, and the empty scope would buy nothing — an
+/// injected script would call `playback_url` on `~/.ssh/id_rsa` and then simply read it. The
+/// check narrows the blast radius to files Sift already indexed, which the webview can enumerate
+/// through the normal listing commands anyway.
 #[tauri::command]
-pub fn playback_url(path: String) -> Result<String, String> {
+pub fn playback_url(
+    app: AppHandle,
+    conn: State<'_, Mutex<Connection>>,
+    path: String,
+) -> Result<String, String> {
+    {
+        let c = db::lock_conn(&conn)?;
+        let known: i64 = c
+            .query_row(
+                "SELECT count(*) FROM tracks WHERE path=?1",
+                rusqlite::params![path],
+                |r| r.get(0),
+            )
+            .map_err(|e| e.to_string())?;
+        if known == 0 {
+            return Err(format!("chemin inconnu de la bibliotheque: {path}"));
+        }
+    }
     let ext = std::path::Path::new(&path)
         .extension()
         .and_then(|e| e.to_str())
         .unwrap_or("")
         .to_ascii_lowercase();
     if ext != "aif" && ext != "aiff" {
-        return Ok(path); // browser can play it as-is
+        // Browser can play it as-is — it just has to become readable first.
+        app.asset_protocol_scope()
+            .allow_file(&path)
+            .map_err(|e| e.to_string())?;
+        return Ok(path);
     }
     use std::hash::{Hash, Hasher};
     let mut h = std::collections::hash_map::DefaultHasher::new();
@@ -425,6 +472,10 @@ pub fn playback_url(path: String) -> Result<String, String> {
         )
         .map_err(|e| e.to_string())?;
     }
+    // The temp WAV, not the source: it is what the webview will actually fetch.
+    app.asset_protocol_scope()
+        .allow_file(&out)
+        .map_err(|e| e.to_string())?;
     Ok(out.to_string_lossy().to_string())
 }
 
@@ -486,4 +537,44 @@ fn spawn_scan(app: AppHandle, source_id: i64) {
         app.emit("queue:changed", ()).ok();
         crate::worker::refill(&app);
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::analysis::Spectrogram;
+
+    /// L'invariant qui tient la Phase 5 : ce qui part en base ne contient JAMAIS la grille, et le
+    /// rapport rendu à l'appelant la garde intacte. Les deux moitiés comptent — n'écrire que la
+    /// première laisserait la webview sans spectrogramme au moment précis où elle vient de le
+    /// demander.
+    #[test]
+    fn cache_json_ne_stocke_jamais_la_grille() {
+        let mut r = crate::worker::tests::fake_report();
+        r.spectrogram = Spectrogram {
+            frames: 2,
+            bins: 3,
+            hz_per_bin: 21.5,
+            sec_per_frame: 0.05,
+            mag_db: vec![9, 8, 7, 6, 5, 4],
+        };
+
+        let json = cache_json(&mut r).expect("serialisation");
+
+        let relu: crate::analysis::AnalysisReport =
+            serde_json::from_str(&json).expect("le cache doit rester deserialisable");
+        assert!(
+            relu.spectrogram.mag_db.is_empty(),
+            "la grille est partie en base — c'est 450 ko par piste qui reviennent"
+        );
+        assert_eq!(relu.spectrogram.frames, 0);
+        // Ce qui DOIT survivre au passage en cache : le verdict et la waveform, les deux choses
+        // qui doivent rester instantanées à l'ouverture d'une piste.
+        assert_eq!(relu.peaks, r.peaks);
+        assert_eq!(relu.verdict, r.verdict);
+        assert_eq!(relu.cutoff_hz, r.cutoff_hz);
+        // Et le rapport de l'appelant est rendu intact.
+        assert_eq!(r.spectrogram.mag_db, vec![9, 8, 7, 6, 5, 4]);
+        assert_eq!(r.spectrogram.frames, 2);
+    }
 }

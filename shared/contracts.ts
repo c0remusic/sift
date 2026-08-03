@@ -232,6 +232,13 @@ export interface RejectBatchResult {
   failed: number[];
 }
 
+/** Result of emptying the bin (mirror of ecartes.rs PurgeResult): how many files were really
+ *  deleted, and the ids of the tracks whose file resisted deletion — those stay in the bin. */
+export interface PurgeResult {
+  purged: number;
+  failed: number[];
+}
+
 /** One rejected/trashed track for the Écartés view. */
 export interface EcarteItem {
   id: number;

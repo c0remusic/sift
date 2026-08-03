@@ -284,7 +284,18 @@ export function installLiveWiring() {
         ).then((ok) => {
           if (!ok) return;
           void purgeTrash()
-            .then(renderEcartes)
+            .then((res) => {
+              // Files that resisted deletion (typically held open by another program) keep
+              // their track in the bin. Staying silent would read as "the purge worked and
+              // some tracks came back" — the one reading the user cannot act on.
+              if (res.failed.length) {
+                const s = res.failed.length > 1 ? "s" : "";
+                toast(
+                  `${res.purged} supprimé${res.purged > 1 ? "s" : ""} — ${res.failed.length} fichier${s} impossible${s} à supprimer (ouvert dans un autre programme ?)`,
+                );
+              }
+              return renderEcartes();
+            })
             .catch((err) => {
               console.error("purge failed", err);
               toast("Échec : purge de la corbeille impossible");

@@ -1248,15 +1248,18 @@ pub fn requeue_track(
     Ok(())
 }
 
-/// Permanently empty the bin (delete trashed files). Returns how many were purged.
+/// Permanently empty the bin (delete trashed files). Returns what was purged and what resisted.
 #[tauri::command]
-pub fn purge_trash(app: AppHandle, conn: State<'_, Mutex<Connection>>) -> Result<usize, String> {
-    let n = {
+pub fn purge_trash(
+    app: AppHandle,
+    conn: State<'_, Mutex<Connection>>,
+) -> Result<ecartes::PurgeResult, String> {
+    let res = {
         let conn = db::lock_conn(&conn)?;
         ecartes::purge_trash(&conn)?
     };
     app.emit("queue:changed", ()).ok();
-    Ok(n)
+    Ok(res)
 }
 
 /// Read one app setting (null when unset).

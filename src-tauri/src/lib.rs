@@ -4,6 +4,8 @@ mod b85_bytes;
 #[cfg(test)]
 mod bench_dedup;
 #[cfg(test)]
+mod bench_sqlite;
+#[cfg(test)]
 mod bench_volume;
 mod db;
 mod dedup;
@@ -230,6 +232,26 @@ pub fn run() {
                 .map_err(|e| format!("ecriture de l'identifiant de session impossible: {e}"))?;
             app.manage(Mutex::new(conn));
             app.manage(ipc_filing::FilingCancel::default());
+            // Le scope du protocole `asset:` part VIDE (`tauri.conf.json`) et se remplit ici, au
+            // strict nécessaire. Il valait `["**"]`, c'est-à-dire : n'importe quel fichier de la
+            // machine lisible depuis la webview. Sur une app qui affiche des tags de fichiers
+            // inconnus — et qui a déjà livré un XSS stocké une fois — ça transforme la moindre
+            // injection en lecture de `~/.ssh/id_rsa`. Deux sources seulement :
+            //   - les pochettes, écrites par Sift dans son propre cache (dossier entier, borné) ;
+            //   - le fichier audio en cours de lecture, autorisé UN PAR UN par `playback_url`.
+            // Le `?` est délibéré : sans pochettes lisibles l'app est visiblement cassée, ce qui
+            // vaut mieux qu'un écran muet dont personne ne trouve la cause.
+            let covers = app
+                .path()
+                .app_cache_dir()
+                .map_err(|e| format!("dossier de cache de l'application introuvable: {e}"))?
+                .join("covers");
+            std::fs::create_dir_all(&covers).map_err(|e| {
+                format!("creation du cache de pochettes {} impossible: {e}", covers.display())
+            })?;
+            app.asset_protocol_scope()
+                .allow_directory(&covers, false)
+                .map_err(|e| format!("autorisation du cache de pochettes impossible: {e}"))?;
             watcher::init_state(app.handle());
             watcher::start_all(app.handle());
             worker::init(app.handle());

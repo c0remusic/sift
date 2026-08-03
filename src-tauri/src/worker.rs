@@ -323,19 +323,29 @@ fn worker_loop(app: AppHandle, inner: Arc<(Mutex<Queue>, Condvar)>) {
     while let Some(id) = pop(&inner) {
         if let Some(path) = read_path(&app, id) {
             // Heavy work runs WITHOUT holding the DB lock — UI stays responsive.
-            // FIX-3: collect the display spectrogram here too (the FFT itself already runs
-            // regardless of this flag — see SpectrumAccumulator::new) so it's cached in
-            // report_json and the Revue spectrogram click never has to re-decode.
-            // The IN-MEMORY matrix is indeed bounded (MAX_COLS=1200 u8 columns, spectrum.rs:226),
-            // but the comment used to read as if that bound held ON DISK, and it does not: serde
-            // writes Vec<u8> as a decimal-integer JSON array (~4 chars per byte). Measured
-            // 2026-07-27 read-only on the production DB (%APPDATA%/com.sift.app/sift.db, 3907
-            // tracks): report_json averages 1657 KB, peaks at 3191 KB, totals 6323 MB = 97% of
-            // the 6521 MB file. The fix is the ENCODING, not dropping the cache.
+            //
+            // `false` = ne PAS collecter la grille d'affichage. FIX-3 (2026-07) l'avait mise à
+            // `true` pour que le clic sur le spectrogramme n'ait jamais à redécoder, puis
+            // l'encodage base85 (v16) a été présenté comme LE correctif de taille. Mesuré sur la
+            // base de production le 2026-08-03, après base85 : 2 714 pistes, 817 ko de rapport
+            // moyen, dont 1,21 Go de spectrogrammes — 4,11 Go de fichier pour 7,6 Mo de données
+            // réelles. L'encodage a divisé le gaspillage, il ne l'a pas supprimé.
+            //
+            // Le marché refusé, une fois ses deux côtés chiffrés : le cache coûtait ~450 ko par
+            // piste et faisait gagner 631 ms à l'ouverture du collapse
+            // (`bench_sqlite::bench_analysis_cost_on_real_tracks`). Il est recalculé à la demande,
+            // ce que `report-view.ts::wireSpectrogram` sait déjà faire — le chemin existait,
+            // il n'était simplement jamais emprunté. Le verdict et la waveform, eux, restent en
+            // cache : ce sont eux qui doivent être instantanés.
+            //
+            // Note utile si ce flag retente `true` : la FFT tourne de toute façon (le verdict en
+            // dépend, voir `SpectrumAccumulator::new`). Ce flag ne décide que de la CONSERVATION
+            // de la grille, pas de son calcul — d'où les 91 ms d'écart seulement entre les deux.
+            //
             // analyze() decodes arbitrary user-supplied audio files (Symphonia/FFT); catch a
             // panic here so one corrupt file doesn't silently kill this pool thread forever.
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                analysis::analyze(&path, true)
+                analysis::analyze(&path, false)
             }))
             .unwrap_or_else(|payload| {
                 let msg = payload
@@ -354,7 +364,9 @@ fn worker_loop(app: AppHandle, inner: Arc<(Mutex<Queue>, Condvar)>) {
 }
 
 #[cfg(test)]
-mod tests {
+// `pub(crate)` pour que `fake_report` serve aussi aux tests d'`ipc.rs` : construire un
+// `AnalysisReport` à la main coûte 25 champs, et deux copies divergeraient au premier champ ajouté.
+pub(crate) mod tests {
     use super::*;
     use crate::analysis::{AnalysisReport, Rail, Spectrogram, Verdict};
 
@@ -375,7 +387,7 @@ mod tests {
         conn.last_insert_rowid()
     }
 
-    fn fake_report() -> AnalysisReport {
+    pub(crate) fn fake_report() -> AnalysisReport {
         AnalysisReport {
             path: "x.flac".into(),
             sample_rate: 44100,
