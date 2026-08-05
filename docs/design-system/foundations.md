@@ -70,9 +70,13 @@ Anti-references :
 | Vision produit | `PRODUCT.md` |
 | Routage skills/agents | `docs/skills/sift-ui-design-governance.md` |
 | Regles projet | `AGENTS.md` |
-| Maquettes exploratoires | `docs/mockups/` uniquement pour explorer |
+| Maquette exploratoire | `frontend/app.js` — voir la note ci-dessous |
 
-`docs/mockups/` peut servir a tester une direction, mais l'app reelle est la
+⚠️ `docs/mockups/`, cite ici jusqu'au 2026-08-05, **n'existe pas** : aucun `.html`
+nulle part sous `docs/`. La maquette reelle est `frontend/app.js`, chargee
+inconditionnellement par `frontend/main.ts` — elle tourne donc en production.
+
+Une maquette peut servir a tester une direction, mais l'app reelle est la
 surface de design. Toute decision durable doit finir dans les fichiers de
 production et dans la documentation canonique concernee.
 

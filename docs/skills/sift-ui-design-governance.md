@@ -10,7 +10,7 @@
 
 ```yaml
 name: sift-ui-design-governance
-description: Enforce Sift-specific UI/UX, design-system, theme, layout, and user-flow governance. Use for any Sift task that designs, implements, audits, polishes, or reviews UI in the real Tauri app; changes frontend/styles.css, frontend/*.ts rendering, docs/mockups, visual hierarchy, spacing, colors, dark/light theme, navigation, Revue flow, "A finaliser", Diagnostic audio, Metadonnees, or final verification after UI work.
+description: Enforce Sift-specific UI/UX, design-system, theme, layout, and user-flow governance. Use for any Sift task that designs, implements, audits, polishes, or reviews UI in the real Tauri app; changes frontend/styles.css, frontend/*.ts rendering, visual hierarchy, spacing, colors, dark/light theme, navigation, Revue flow, "A finaliser", Diagnostic audio, Metadonnees, or final verification after UI work.
 ```
 
 ## Purpose
@@ -38,7 +38,10 @@ Before acting, read only the relevant parts:
 7. The real rendering files, usually `frontend/report-view.ts`,
    `frontend/filing.ts`, `frontend/chrome.ts`, and `frontend/styles.css`.
 
-Do not use `docs/mockups/` as source of truth. Mockups are exploration only.
+Do not treat a mockup as source of truth - mockups are exploration only. The real
+one is `frontend/app.js`, loaded unconditionally by `frontend/main.ts`, so it runs
+in production. ⚠️ `docs/mockups/`, cited here until 2026-08-05, **does not exist**:
+there is no `.html` anywhere under `docs/`.
 
 ## Routing
 

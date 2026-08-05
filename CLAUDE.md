@@ -252,7 +252,10 @@ Sources de vérité design : **`frontend/styles.css`** (`:root`, canonique uniqu
 tokens) + `docs/design-system-states.md`. Ne jamais créer de fichier de thème parallèle,
 ni extraire une valeur d'une capture d'écran. ⚠️ `.interface-design/system.md` existe
 encore sur le disque avec une **palette et une typo périmées** : ne jamais y puiser une
-valeur. Les wireframes de feature vivent dans `docs/wireframes/<feature>.html`.
+valeur. ⚠️ `docs/wireframes/<feature>.html`, cité ici jusqu'au 2026-08-05 comme lieu de
+vie des wireframes de feature, **n'existe pas** — aucun `.html` nulle part sous `docs/`.
+La seule maquette réelle est `frontend/app.js`, chargée inconditionnellement par
+`frontend/main.ts` (§ Architecture) : elle tourne en prod, et ne fait pas autorité.
 
 **Jamais de style ou de comportement UI sorti de la mémoire d'entraînement.** Avant tout
 élément neuf sans exemple fourni, consulter une référence réelle et **citer laquelle** a
