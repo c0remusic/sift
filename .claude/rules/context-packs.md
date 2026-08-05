@@ -20,7 +20,11 @@ Migré depuis l'ex-`docs/skills-registre.md`
 - `frontend/styles.css`.
 - Fichiers frontend touchés (`report-view.ts`, `filing.ts`,
   `batch-tracklist.ts`, etc.).
-- Commande de vérification par défaut : `npx tsc --noEmit`.
+- Commandes de vérification par défaut : `npx tsc --noEmit`, puis `npm run test`
+  (Vitest, env Node) et `npm run lint`. Le harnais Vitest n'existe que depuis le
+  2026-08-05 ; son périmètre est la LOGIQUE PURE, pas le DOM — un module qui a
+  besoin de `document` se vérifie par Storybook ou par la vraie fenêtre
+  (skill `run-sift`), jamais ici.
 
 ## Pack Rust backend
 
