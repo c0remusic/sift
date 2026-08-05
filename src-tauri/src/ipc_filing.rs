@@ -635,7 +635,7 @@ struct FileProgress {
 /// Bounded phase-2 worker count. FFmpeg already uses several internal threads per process, so we
 /// deliberately UNDER-subscribe (half the cores) and cap at 4 — spawning one ffmpeg per core would
 /// oversubscribe the CPU and thrash the disk without going faster. Min 1 (never zero).
-fn phase2_worker_count() -> usize {
+pub(crate) fn phase2_worker_count() -> usize {
     std::thread::available_parallelism()
         .map(|n| (n.get() / 2).max(1))
         .unwrap_or(2)

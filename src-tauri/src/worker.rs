@@ -109,8 +109,11 @@ pub fn persist_report(
             r.id3_version,
             r.has_cover as i64,
             r.tags_cdj_ok as i64,
-            // cache the full report, spectrogram included (FIX-3) — instant re-open AND instant
-            // spectrogram, no re-decode either way. Serialised by the caller, off the lock.
+            // Cache le rapport SANS la grille de spectrogramme : verdict, pics de waveform et
+            // métadonnées, c'est-à-dire ce qui doit être instantané à la ré-ouverture. La grille,
+            // elle, se recalcule à l'ouverture du collapse Diagnostic — décision du 2026-08-03,
+            // chiffrée dans le commentaire de `worker_loop` (~450 ko par piste contre 631 ms
+            // gagnées ; base passée de 4,11 Go à 119 Mo). Sérialisé par l'appelant, hors du lock.
             report_json,
             analysis::REPORT_CACHE_VERSION,
         ],
@@ -151,12 +154,20 @@ fn persist_failure(conn: &Connection, id: i64, err: &str) -> rusqlite::Result<()
     Ok(())
 }
 
-/// Starts the worker pool and registers its managed state. Call once in setup, after the DB.
-pub fn init(app: &AppHandle) {
-    let n = std::thread::available_parallelism()
+/// Taille du pool d'analyse. Extraite de `init` pour que `bench_cpu_budget` mesure la VRAIE
+/// formule de production au lieu d'une copie qui dériverait en silence — c'est exactement le
+/// défaut relevé par l'audit du 2026-08-05 sur la ligne 6 du diagnostic architectural.
+/// Son pendant côté encodage est `ipc_filing::phase2_worker_count`.
+pub(crate) fn analysis_pool_size() -> usize {
+    std::thread::available_parallelism()
         .map(|n| n.get())
         .unwrap_or(2)
-        .clamp(1, 8);
+        .clamp(1, 8)
+}
+
+/// Starts the worker pool and registers its managed state. Call once in setup, after the DB.
+pub fn init(app: &AppHandle) {
+    let n = analysis_pool_size();
     let worker = AnalysisWorker {
         inner: Arc::new((
             Mutex::new(Queue {
