@@ -9,16 +9,19 @@ Sources obligatoires :
 
 1. `frontend/styles.css` pour les tokens ;
 2. `docs/design-system-states.md` pour les composants et etats ;
-3. `~/.claude/skills-view.md` + `docs/skills/sift-ui-design-governance.md` pour le routage skills/agents ;
+3. `docs/skills/sift-ui-design-governance.md` pour le routage skills/agents ;
 4. `AGENTS.md` pour les contraintes projet ;
 5. `PRODUCT.md` pour la direction produit.
 
 ## Routage Skills Et Agents
 
-Avant toute tache substantielle, consulter `~/.claude/skills-view.md` et
+Avant toute tache substantielle, consulter
 `docs/skills/sift-ui-design-governance.md`. Le choix
 du skill/agent fait partie du design system parce qu'il determine la qualite de
-la decision.
+la decision. ⚠️ `~/.claude/skills-view.md`, cite ici jusqu'au 2026-08-05 comme
+inventaire des skills, **n'existe plus** (supprime par le reset vanilla du
+2026-07-31, recuperable au tag `pre-reset-vanilla`) : s'en tenir aux skills
+reellement listees par le harnais.
 
 Routage courant :
 
@@ -55,7 +58,7 @@ source de verite.
 | Nouveau pattern de parcours | `docs/design-system/patterns.md` |
 | Nouveau libelle canonique | `docs/design-system/content.md` |
 | Nouvelle regle de process | `docs/design-system/governance.md` |
-| Nouveau doc sous `docs/` | `docs/INDEX.json` |
+| Nouveau doc sous `docs/` | negation dans `.gitignore` (plus de catalogue) |
 
 ## Interdits
 
@@ -82,8 +85,7 @@ Pour une modification UI reelle :
 Pour une modification docs-only :
 
 1. verifier que les docs ne contredisent pas `AGENTS.md` ;
-2. verifier que `docs/INDEX.json` reste valide ;
-3. ne pas lancer de build inutile.
+2. ne pas lancer de build inutile.
 
 ## Definition De Fini
 
@@ -92,5 +94,6 @@ Un changement de design system est fini quand :
 - la source de verite reelle est modifiee ou referencee ;
 - la doc correspond au comportement reel ;
 - le routage skill/agent reste explicite ;
-- `docs/INDEX.json` reference tout nouveau document ;
+- tout nouveau document sous `docs/` a sa negation dans `.gitignore` (⚠️ il n'y
+  a plus de catalogue : `docs/INDEX.json` n'existe plus depuis le 2026-08-05) ;
 - les limites de verification sont dites clairement.

@@ -37,13 +37,17 @@ Migré depuis l'ex-`docs/skills-registre.md`
 - `CLAUDE.md` : garde-fou « Jamais une écriture sur un système live ».
 - `docs/ressources-externes.md` : évaluations Rekordbox pertinentes (voir
   sommaire en tête de fichier, cibler par ligne).
-- Specs/plans M8 actifs uniquement (`docs/INDEX.json` → section `specs`/`plans`).
+- Specs/plans M8 actifs uniquement — les repérer en listant
+  `docs/superpowers/changes/`. ⚠️ `docs/INDEX.json`, qui servait d'index, **n'existe
+  plus** (vérifié absent le 2026-08-05, voir `CLAUDE.md` § `docs/`).
 - Fichiers Rust/TS concernés.
 - Toute vérification dans le vrai Rekordbox reste manuelle par Antoine.
 
 ## Pack docs / planning
 
-- `docs/INDEX.json`.
+- Le dossier de chantier visé sous `docs/superpowers/changes/`. ⚠️ `docs/INDEX.json`
+  **n'existe plus** (vérifié absent le 2026-08-05) : il n'y a plus de catalogue, on
+  liste le dossier.
 - Spec/plan cible.
 - Ce fichier (`context-packs.md`) si routage de packs. ⚠️ Pour le routage de
   skills il n'y a plus d'inventaire : `~/.claude/skills-view.md` a été **supprimé**

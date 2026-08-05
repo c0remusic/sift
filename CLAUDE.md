@@ -336,7 +336,7 @@ l'en-tête de `frontend/b85.ts`).
 `.gitignore` ignore le **contenu** de `docs/` et ne ré-autorise que ce qui fait
 autorité : `install-non-signe.md`, `design-system-states.md`, `ressources-externes.md`,
 `design-system/`, `skills/`, et **chaque dossier de chantier** de `superpowers/changes/`
-pris un par un. Plans de jalons, specs, revues, comptes rendus et `INDEX.json` restent
+pris un par un. Plans de jalons, specs, revues et comptes rendus restent
 **sur cette machine** mais hors suivi git.
 
 - Un nouveau document sous `docs/` est ignoré **par défaut** ; le publier demande
@@ -360,10 +360,12 @@ techniques ; section « Écarté » = tranché, « Différé » = pas assez de p
 trigger de réouverture — ne pas confondre) et `docs/design-system-states.md` (états
 réels des composants, miroir des stories Storybook).
 
-`docs/INDEX.json` (local, non versionné) catalogue chaque document — le lire quand on
-cherche le statut d'un chantier, jamais l'importer (≈18 000 tokens). Il est **maintenu à
-la main** : créer un document sous `docs/` veut dire y ajouter son entrée dans le même
-geste, jamais en rattrapage différé.
+⚠️ `docs/INDEX.json` **n'existe plus** — vérifié absent le 2026-08-05. Ce catalogue local
+listait chaque document ; sa règle de maintien (« créer un document sous `docs/` veut
+dire y ajouter son entrée dans le même geste ») est donc **caduque** : ne pas la suivre,
+et ne pas recréer le fichier sans décision explicite. Il n'a jamais été versionné, aucun
+`git log` ne le ramène. Pour trouver le statut d'un chantier, lire directement le dossier
+`docs/superpowers/changes/<date>-<slug>/` correspondant.
 
 ## Release
 

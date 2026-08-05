@@ -1,8 +1,12 @@
 # Sift UI Design Governance Skill
 
-> Source suivie par Git pour la skill locale
-> `.agents/skills/sift-ui-design-governance/SKILL.md`. `.agents/` est ignore par
-> Git, donc ce fichier conserve le contenu canonique cote repo.
+> Contenu canonique cote repo. Ce fichier etait la source suivie par Git de la
+> skill locale `.agents/skills/sift-ui-design-governance/SKILL.md`.
+> ⚠️ Ce miroir **n'existe plus** (verifie le 2026-08-05 : `.agents/skills/` ne
+> contient plus qu'`impeccable`), et le harnais Claude Code ne liste pas cette
+> skill. Aucun agent ne charge donc ce fichier automatiquement : les regles qui
+> doivent agir vivent dans `CLAUDE.md`, celui-ci porte leur rationale et leurs
+> sources. Le lire a la demande sur toute tache UI.
 
 ```yaml
 name: sift-ui-design-governance
@@ -22,7 +26,9 @@ must be true before a UI task is considered done.
 
 Before acting, read only the relevant parts:
 
-1. `~/.claude/skills-view.md` for skill/agent inventory, `.claude/rules/context-packs.md` for task-scoped packs.
+1. `.claude/rules/context-packs.md` for task-scoped packs. (There is no skill
+   inventory file any more - `~/.claude/skills-view.md` was deleted by the
+   2026-07-31 vanilla reset. Rely on the skills the harness actually lists.)
 2. `docs/design-system/governance.md` for Sift UI process and verification.
 3. `docs/design-system/foundations.md` for product/user intent.
 4. `docs/design-system/components.md` and `docs/design-system/patterns.md` for
@@ -169,8 +175,9 @@ Before final response on a UI/design task:
 7. Keyboard/action rail contracts still make sense.
 8. `npx tsc --noEmit` was run if TypeScript changed, or the skipped verification
    is stated.
-9. `docs/design-system-*`, `docs/design-system/`, or `docs/INDEX.json` were
-   updated if the design system changed.
+9. `docs/design-system-*` or `docs/design-system/` were updated if the design
+   system changed. (`docs/INDEX.json` is gone as of 2026-08-05 - there is no
+   catalogue to update; a new doc needs its negation in `.gitignore` instead.)
 10. An impressionistic (L1) request was restated at L2 - surface, decision,
     directions - before any token or px value moved.
 11. Every "done" claim in the final report carries citable evidence; anything
