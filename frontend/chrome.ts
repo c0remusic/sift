@@ -219,7 +219,15 @@ export async function injectTitlebar(): Promise<void> {
   // 1px light border with rounded corners around the whole window (annotation: "il semble y
   // avoir un cadre ou une bordure le long de la fenetre") — this app already draws its own
   // rounded/transparent frame via body:has(#sift-titlebar), so the native shadow is redundant.
-  void w.setShadow(false);
+  // `void` sur cette promesse a masqué le défaut pendant tout ce temps : la permission
+  // `core:window:allow-set-shadow` manquait de `capabilities/default.json`, l'appel était rejeté
+  // à CHAQUE démarrage, et le rejet non géré ne se lisait que dans le log de `tauri dev`. Le
+  // correctif ci-dessus n'avait donc jamais pris effet — la bordure était toujours là. Permission
+  // ajoutée le 2026-08-05 ; l'échec est désormais bruyant, conformément au « pas de fallback
+  // silencieux » du projet.
+  w.setShadow(false).catch((e: unknown) => {
+    console.error("setShadow(false) refusé — la bordure native restera visible :", e);
+  });
   const maxBtn = bar.querySelector<HTMLElement>('[data-win="max"]');
 
   bar.querySelectorAll<HTMLElement>(".sift-win").forEach((b) =>
