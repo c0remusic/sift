@@ -97,6 +97,17 @@ jobs:
       - name: Type-check frontend
         run: npx tsc --noEmit
 
+      # Ajoutes le 2026-08-05, en meme temps que le harnais lui-meme. Les mettre ici et pas
+      # seulement en local suit la raison d'etre de ce fichier, ecrite en tete : une gate qui
+      # ne vit que sur la machine d'Antoine n'existe pas pour une PR, et cesse d'etre lancee
+      # des qu'elle devient penible. Elles restent avant les etapes Rust car elles ne
+      # compilent rien.
+      - name: Tests frontend
+        run: npm run test
+
+      - name: Lint frontend
+        run: npm run lint
+
       - name: Rustfmt
         run: cargo fmt --manifest-path src-tauri/Cargo.toml --check
 

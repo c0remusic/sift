@@ -21,7 +21,8 @@ vocabulaire métier.
 ## Stack
 
 Tauri v2 (Rust, crate lib = **`sift_lib`**) · frontend **Vite + TypeScript vanilla,
-sans framework** · **Symphonia** (décodage analyse, in-process) + **FFmpeg sidecar**
+sans framework** (tests **Vitest** en env Node + **ESLint** flat config, ajoutés le
+2026-08-05) · **Symphonia** (décodage analyse, in-process) + **FFmpeg sidecar**
 bundlé (encodage) · **SQLite** (`rusqlite`, bundled) · `rustfft` · `lofty` ·
 `rusty-chromaprint` · `ureq` · `wavesurfer.js` v7 (lecture/waveform) · `fatfs`
 (écriture FAT32 au-delà du plafond de 32 Go de Windows — **MIT**, choisi contre
@@ -47,6 +48,10 @@ npm run tauri dev                # dev : Vite 5173 + backend Rust
 npm run dev                      # frontend seul (navigateur) — voir la mise en garde §Vérification UI
 npm run build                    # → dist/
 npm run tauri build              # installeurs → src-tauri/target/release/bundle/
+npm run test                     # Vitest, un seul projet `unit` en env Node
+npm run test:watch               # idem en watch
+npx vitest run test/b85.test.ts  # un seul fichier · par nom : npx vitest run -t "vecteur gelé"
+npm run lint                     # ESLint (binaire local, pas `npx eslint`)
 npm run lint:tokens              # couleurs/z-index/spacing en dur qui contournent un token
 npm run check:security           # scope asset et CSP — refuse le retour du wildcard (aussi en CI)
 npm run storybook                # doc visuelle des états UI (port 6006), stories = frontend/*.stories.ts
@@ -88,8 +93,12 @@ Deux gardiens, à connaître avant de dire « terminé » :
   `pre-reset-vanilla`). Le script est intact — le lancer à la main. Le seul hook
   encore actif sur ce dépôt est celui d'`impeccable` (`.claude/settings.local.json`).
 - **`.github/workflows/test.yml`** — sur **toute** branche et toute PR (Windows) :
-  `tsc --noEmit` → `cargo fmt --check` → `clippy -D warnings` → `cargo test`. Ordre
-  délibéré, du moins cher au plus cher. Le job régénère fixtures + ffmpeg d'abord.
+  `tsc --noEmit` → `npm run test` → `npm run lint` → `cargo fmt --check` →
+  `clippy -D warnings` → `cargo test`. Ordre délibéré, du moins cher au plus cher : les
+  trois gates frontend ne compilent rien. Le job régénère fixtures + ffmpeg d'abord.
+  ⚠️ `.claude/verify.sh` n'a **pas** été étendu aux deux nouvelles gates — il reste
+  `tsc --noEmit` + `lint:tokens` + `cargo check`, et de toute façon plus rien ne le
+  déclenche (voir ci-dessus).
 
 `build.yml` (installeurs non signés Win+Mac) et `release.yml` ne se déclenchent que sur
 `main` / tags — ils ne sont pas un filet de branche.
@@ -132,6 +141,12 @@ présent** (`"__TAURI_INTERNALS__" in window` → `installLiveWiring()`).
 Conséquence à ne jamais oublier : `sift-live.ts`, `filing*.ts`, `report-view.ts`,
 `*-view.ts` — tout ce qui touche l'IPC — **ne s'exécutent jamais dans un navigateur
 classique**. Une capture issue de `npm run dev` ne prouve rien sur ces fichiers.
+
+C'est aussi pourquoi la suite Vitest tourne en **env Node, sans jsdom** : un jsdom
+fournirait un `window` SANS Tauri, donc n'exécuterait justement pas le wiring live — tout
+en donnant l'illusion de le couvrir. Périmètre de `test/` : la **logique pure** dont une
+erreur est silencieuse (codecs, échappement, mappings, calculs). Le DOM réel se vérifie
+par la vraie fenêtre (skill `run-sift`, CDP), les états visuels par Storybook.
 
 `dev-inspector.ts` / `selftest.ts` sont chargés dynamiquement sous
 `import.meta.env.DEV` (éliminés du build de prod). Côté Rust, `dev_locate.rs` /
@@ -314,6 +329,12 @@ déplacer les tokens de `styles.css`.
 - Tout élément rendu via `innerHTML` avec des données non fiables passe par `esc()`
   (`dom.ts`) — vérifier systématiquement à la création d'un nouveau fichier frontend :
   un XSS stocké réel a été livré par le seul fichier qui l'avait oublié.
+  **Son contrat s'arrête au texte et aux valeurs d'attribut ENTRE GUILLEMETS**, et c'est
+  suffisant parce qu'une URL ne devient jamais un attribut ici : elle part par `openUrl()`
+  vers `ipc.rs::open_url`, qui refuse tout schéma autre que `http(s)://`. Gelé par
+  `test/dom.test.ts`. Le premier `href="${…}"`, attribut non quoté ou donnée dans un
+  `<script>` casse ce raisonnement — il demande alors une SECONDE fonction (`safeUrl` /
+  `escAttr`), jamais un `esc()` élargi qui alourdirait les dizaines de sites corrects.
 
 Jargon anglais volontairement conservé dans l'UI (ne pas « corriger ») : LOSSLESS,
 DUPLICATE, MATCH, CHECK MATCH, FAKE, kbps, kHz, MP3, AIFF, WAV.
