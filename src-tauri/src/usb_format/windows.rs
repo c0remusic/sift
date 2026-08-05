@@ -941,25 +941,65 @@ impl RemovableDriveBackend for WindowsBackend {
 const EJECT_POLL_ATTEMPTS: u32 = 12;
 const EJECT_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(300);
 
-/// Demande au shell d'éjecter cette lettre — le verbe exact du menu contextuel « Éjecter » de
-/// l'explorateur.
+/// Corps PowerShell de l'éjection, séparé pour ne PAS passer par `format!` : il contient des
+/// accolades C# à chaque ligne, qu'il faudrait toutes doubler. Seule la lettre est interpolée,
+/// dans `eject_powershell` juste en dessous.
 ///
-/// Ce chemin plutôt que `mountvol /P` ou un `DeviceIoControl(FSCTL_DISMOUNT_VOLUME)` : les deux
-/// exigent l'élévation, et faire surgir une invite UAC pour débrancher une clé serait absurde là
-/// où l'explorateur n'en demande aucune. Le verbe shell tourne en utilisateur normal.
+/// Attend `$sift_letter` déjà défini par l'appelant.
+const EJECT_PS_BODY: &str = r#"
+$ErrorActionPreference = 'Stop'
+$part = Get-Partition -DriveLetter ($sift_letter.TrimEnd(':'))
+$pnpId = (Get-CimInstance Win32_DiskDrive | Where-Object { $_.Index -eq $part.DiskNumber }).PNPDeviceID
+if (-not $pnpId) { Write-Error "aucun PNPDeviceID pour le disque $($part.DiskNumber)"; exit 1 }
+Add-Type -TypeDefinition @'
+using System;using System.Runtime.InteropServices;using System.Text;
+public static class SiftEject {
+ [DllImport("cfgmgr32.dll",CharSet=CharSet.Unicode)] public static extern int CM_Locate_DevNodeW(out uint p,string id,uint f);
+ [DllImport("cfgmgr32.dll")] public static extern int CM_Get_Parent(out uint p,uint d,uint f);
+ [DllImport("cfgmgr32.dll",CharSet=CharSet.Unicode)] public static extern int CM_Request_Device_EjectW(uint d,out int veto,StringBuilder name,int len,uint f);
+}
+'@
+$dev = 0
+if ([SiftEject]::CM_Locate_DevNodeW([ref]$dev, $pnpId, 0) -ne 0) { Write-Error "CM_Locate_DevNode a echoue"; exit 1 }
+$parent = 0
+if ([SiftEject]::CM_Get_Parent([ref]$parent, $dev, 0) -ne 0) { Write-Error "CM_Get_Parent a echoue"; exit 1 }
+$veto = 0
+$vetoName = New-Object System.Text.StringBuilder 260
+$cr = [SiftEject]::CM_Request_Device_EjectW($parent, [ref]$veto, $vetoName, $vetoName.Capacity, 0)
+if ($cr -ne 0 -or $veto -ne 0) { Write-Error "VETO cr=$cr type=$veto name=$($vetoName.ToString())"; exit 1 }
+"#;
+
+/// Demande l'éjection du PÉRIPHÉRIQUE portant cette lettre, par `CM_Request_Device_Eject` — le
+/// chemin qu'emprunte l'icône « Retirer le périphérique en toute sécurité » de la barre des
+/// tâches.
 ///
-/// Il ne rapporte RIEN en retour, ni succès ni échec — d'où la vérification par re-listage chez
-/// l'appelant. Refuse une lettre contenant un guillemet plutôt que d'échapper : elle vient de
-/// notre propre énumération, donc un guillemet signale un problème en amont.
+/// **Pourquoi pas le verbe shell du volume, qui était ici jusqu'au 2026-08-05.** Il n'existe pas
+/// sur un disque que Windows classe en FIXE, et un SSD USB en est un : mesuré sur un SSK 500 Go,
+/// `Shell.Application.NameSpace(17).ParseName('E:').Verbs()` ne contient aucun verbe d'éjection
+/// (`Win32_LogicalDisk` le donne en `DriveType=3`, `MediaType=12`, alors que `Get-Disk` sait
+/// pourtant que son `BusType` est USB — même famille de mensonge que `InterfaceType` sur les
+/// boîtiers UASP). `InvokeVerb` sur un verbe absent est un **no-op silencieux** : PowerShell sortait
+/// 0 sans que rien n'ait été demandé, la sonde de disparition ne voyait rien partir, et
+/// l'utilisateur recevait `EJECT_BUSY` — « ferme Rekordbox » — alors que rien ne tenait le disque.
+/// Le bug est invisible sur une petite clé USB, qui est bien vue comme amovible ; il ne se
+/// manifeste que sur le matériel des vrais utilisateurs.
+///
+/// Toujours pas d'élévation : `CM_Request_Device_Eject` tourne en utilisateur normal, comme
+/// l'icône de la barre des tâches. `mountvol /P` et `DeviceIoControl(FSCTL_DISMOUNT_VOLUME)`
+/// restent écartés pour cette raison — faire surgir une UAC pour débrancher une clé serait absurde.
+///
+/// Contrairement au verbe shell, cette API rend un **veto** : `vetoType` et `vetoName` disent QUI
+/// bloque. Le script les remonte en stderr, ce qui rend enfin possible un message d'erreur qui
+/// nomme le vrai coupable au lieu de deviner.
+///
+/// La vérification par re-listage chez l'appelant reste le juge final : la demande est asynchrone.
+/// Refuse une lettre contenant un guillemet plutôt que d'échapper : elle vient de notre propre
+/// énumération, donc un guillemet signale un problème en amont.
 pub(crate) fn eject_powershell(letter: &str) -> Option<String> {
     if letter.contains('\'') || letter.contains('"') {
         return None;
     }
-    Some(format!(
-        "$s = New-Object -ComObject Shell.Application; \
-         $v = $s.NameSpace(17).ParseName('{letter}'); \
-         if ($v) {{ $v.InvokeVerb('Eject') }}"
-    ))
+    Some(format!("$sift_letter = '{letter}'{EJECT_PS_BODY}"))
 }
 
 #[cfg(test)]
@@ -1237,19 +1277,56 @@ mod tests {
         assert!(!a.trim_matches('|').is_empty());
     }
 
-    /// Le verbe shell est le SEUL chemin d'éjection qui tourne sans élévation. `mountvol /P` et
-    /// `FSCTL_DISMOUNT_VOLUME` exigent l'administrateur, et faire surgir une invite UAC pour
-    /// débrancher une clé serait absurde là où l'explorateur n'en demande aucune.
+    /// `CM_Request_Device_Eject` tourne sans élévation, comme l'icône « Retirer le périphérique
+    /// en toute sécurité » de la barre des tâches. `mountvol /P` et `FSCTL_DISMOUNT_VOLUME`
+    /// exigent l'administrateur : faire surgir une UAC pour débrancher une clé serait absurde.
     #[test]
-    fn eject_uses_the_shell_verb_that_needs_no_elevation() {
+    fn eject_uses_the_device_level_api_that_needs_no_elevation() {
         let ps = eject_powershell("I:").expect("shim");
-        assert!(ps.contains("Shell.Application"), "{ps}");
-        assert!(ps.contains("InvokeVerb('Eject')"), "{ps}");
-        assert!(ps.contains("ParseName('I:')"), "{ps}");
+        assert!(ps.contains("CM_Request_Device_EjectW"), "{ps}");
+        assert!(ps.contains("$sift_letter = 'I:'"), "{ps}");
         assert!(
             !ps.contains("RunAs") && !ps.contains("mountvol"),
             "aucune elevation ne doit etre demandee: {ps}"
         );
+    }
+
+    /// Le PARENT, pas le disque. L'icône de la barre des tâches éjecte le périphérique de stockage
+    /// USB ; viser le devnode du disque ne démonte rien. Mesuré le 2026-08-05 : disque = devnode 1,
+    /// parent = devnode 2 (`USB\VID_090C&PID_2320\…`), et seul le second a rendu `CR=0 veto=0`.
+    #[test]
+    fn eject_targets_the_parent_devnode_not_the_disk() {
+        let ps = eject_powershell("I:").expect("shim");
+        assert!(ps.contains("CM_Get_Parent"), "{ps}");
+        let parent = ps.find("CM_Get_Parent").expect("CM_Get_Parent");
+        let eject = ps
+            .find("CM_Request_Device_EjectW($parent")
+            .expect("appel sur $parent");
+        assert!(
+            parent < eject,
+            "le parent doit etre resolu AVANT l'ejection: {ps}"
+        );
+    }
+
+    /// Le verbe shell du VOLUME n'existe pas sur un disque que Windows classe en fixe — et un SSD
+    /// USB en est un. Ce test empêche le retour d'un chemin mesuré inopérant le 2026-08-05, dont
+    /// le mode de panne est silencieux : `InvokeVerb` sur un verbe absent sort 0 sans rien faire.
+    #[test]
+    fn eject_never_falls_back_to_the_volume_shell_verb() {
+        let ps = eject_powershell("I:").expect("shim");
+        assert!(
+            !ps.contains("InvokeVerb"),
+            "no-op silencieux sur un disque vu comme fixe: {ps}"
+        );
+    }
+
+    /// L'API rend un veto qui nomme le bloqueur. Le remonter est ce qui permettra un message
+    /// d'erreur honnête, là où l'ancien chemin ne rendait rien et faisait deviner « Rekordbox ».
+    #[test]
+    fn eject_surfaces_the_veto_so_the_message_can_name_the_blocker() {
+        let ps = eject_powershell("I:").expect("shim");
+        assert!(ps.contains("$veto"), "{ps}");
+        assert!(ps.contains("vetoName"), "{ps}");
     }
 
     #[test]
