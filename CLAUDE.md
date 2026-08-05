@@ -238,6 +238,13 @@ Garde-fous issus d'incidents réels :
   les mêmes validations et dispositions de fichiers que la production.
 - **Debug UI** : après deux correctifs visuels infructueux, mesurer la vraie fenêtre
   `tauri dev` (CDP, ci-dessous) avant un troisième essai.
+- **Pas d'affirmation d'implémentation invérifiable.** Toute phrase de rapport qui dit
+  qu'une chose est faite se rattache à une preuve citable — `fichier:ligne`, sortie de
+  commande, capture. Ce qui n'a pas été vérifié se dit « non vérifié », jamais au passé
+  composé. Le risque n'est pas le mensonge, c'est de décrire l'intention comme si
+  c'était l'artefact — et l'écart se concentre sur ce qu'une capture ne montre pas :
+  état, focus clavier, chemin d'erreur. Mesure et source :
+  `docs/skills/sift-ui-design-governance.md` § Design Theater.
 
 ## Front — CSS et événements
 
@@ -258,6 +265,13 @@ les tokens de `styles.css`.
 - Toute édition de token doit rester cohérente dans `:root`, le bloc sombre système
   (`prefers-color-scheme`) **et** `:root[data-theme="dark"]` — et comparer les valeurs
   **résolues** des deux tokens dans les deux thèmes, pas seulement leurs noms.
+- **Concept avant chiffres.** Une demande impressionniste (« ça fait tassé », « pas
+  assez sérieux ») ne se répond pas par une édition de token. La reformuler d'abord en
+  vocabulaire de surface — quel écran, quelle décision utilisateur, deux directions
+  candidates — puis descendre au px/token sur celle retenue. Deux correctifs visuels
+  ratés d'affilée sur la même surface = l'accord de surface n'a jamais eu lieu :
+  remonter, pas préciser. Détail et rationale :
+  `docs/skills/sift-ui-design-governance.md` § Lexical Granularity.
 - Renderer déclenché par un événement en rafale (progress, watcher, scroll, resize) :
   **créer les nœuds une fois, muter ensuite**. Jamais d'`innerHTML =` dans un handler
   appelé en boucle. Modèle : `progress-zone.ts`. En écrivant un handler, **nommer la

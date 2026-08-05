@@ -68,6 +68,78 @@ docs. Never invent a parallel process.
 6. Verify and update documentation when behavior, components, tokens, or patterns
    changed.
 
+## Lexical Granularity: Concept Before Numbers
+
+Design talk moves across three levels of granularity:
+
+- **L1 (vibe)** - impressionistic: "feels cramped", "not serious enough".
+- **L2 (design domain)** - named surfaces and patterns, no numbers: "collapse
+  Diagnostic", "action rail", "empty state", "section spacing".
+- **L3 (operational)** - `padding: 24px`, `#2563EB`, a specific token or
+  `frontend/styles.css` line.
+
+Rule: **do not answer an L1 request with an L3 edit.** Restate an
+impressionistic request at L2 first - name the surface, the user decision it
+serves, and two candidate directions - then drop to L3 for the chosen one.
+Specificity only helps once the concept is agreed; introduced earlier it narrows
+the search space around the wrong idea, and every later fix inherits it. This is
+not a blocking gate: when the app makes the direction obvious, pick one, say
+which and why, and continue.
+
+Corollary when a visual fix does not land: the failure mode is rarely "not
+enough detail". Go back up a level. Two failed L3 edits on the same surface mean
+the L2 agreement was never made - stop editing, restate the surface and the
+decision, offer directions again. This is the language-side twin of the
+`CLAUDE.md` rule to measure the real `tauri dev` window after two failed visual
+fixes: measuring fixes the evidence, going back up fixes the target.
+
+Going back up is not the same as same-level tuning: `padding: 32px` ->
+`padding: 24px` is iteration and needs no restatement.
+
+Source: Sato, D. (2026), "From Vibe to Code - and Back: Lexical Oscillation in
+the Formation of Design Intent with Generative AI", arXiv:2607.23126v1 -
+preprint, qualitative, N = 5. The L1/L2/L3 lens and "conceptual alignment
+precedes operational alignment" are taken from it. The paper explicitly scopes
+its findings out of programming practice, so it is borrowed here as vocabulary
+for the design conversation, not as evidence about code.
+
+## Design Theater: Claims Must Be Checkable
+
+Generative UI tools narrate what they built. That narration reads as evidence of
+deliberate work whether or not it matches the artifact. Measured across 120
+generated interfaces: roughly 25% of stated design rationales were not
+implemented, rising to 34% on functional requirements. Claude scored best on that
+alignment (0.87) yet implemented only 6% of the *implicit* functional UX
+principles - visibility of system status, user control and freedom, error
+prevention and recovery - when a prompt implied them instead of naming them.
+
+Regime caveat: that benchmark is one-shot whole-interface generation in vanilla
+HTML/CSS/JS at default settings. Sift work is incremental editing of an existing
+codebase with `CLAUDE.md` loaded, `npx tsc --noEmit`, fixed tokens, and CDP
+verification against the real window. The numbers do not transfer. The failure
+mode does.
+
+Operating rule (see `CLAUDE.md` § Methode): every sentence in a report claiming
+something is done must attach to citable evidence - `file:line`, command output,
+screenshot. Borrow the benchmark's extraction test: a claim that cannot be scored
+1.0 / 0.5 / 0.0 against the code is not a claim, it is decoration. Unverified work
+is stated as unverified, never in the past tense.
+
+Watch the invisible tier first. A wrong color shows up in a screenshot; a missing
+state, an untabbable control, or a dead-end error path does not. That is exactly
+where the measured gap concentrates.
+
+Countermeasures Sift already has - do not rebuild them: `confirm-modal.ts` with
+`BATCH_CONFIRM_THRESHOLD` and armed, timestamped confirmation (user control);
+`journal.ts` with mass revert (error recovery); and the `CLAUDE.md` ban on UI
+drawn from training memory, which is also what keeps generated interfaces from
+converging on the same cross-tool defaults.
+
+Source: Imteyaz, K., Imteyaz, K., Rajpal, N., Shaikh, K., Muller, M., Savage, S.
+(2026), "Design Theater: Evaluating the Gap Between User-Facing Design Reasoning
+and Implementation in Generative UI Tools", arXiv:2607.22928v2 - 24 tasks x 5
+tools = 120 interfaces, two independent raters.
+
 ## Sift UI Rules
 
 - Favor continuous surfaces over card stacks.
@@ -99,4 +171,8 @@ Before final response on a UI/design task:
    is stated.
 9. `docs/design-system-*`, `docs/design-system/`, or `docs/INDEX.json` were
    updated if the design system changed.
+10. An impressionistic (L1) request was restated at L2 - surface, decision,
+    directions - before any token or px value moved.
+11. Every "done" claim in the final report carries citable evidence; anything
+    unverified is labelled unverified, not written in the past tense.
 
