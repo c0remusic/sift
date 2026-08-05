@@ -82,6 +82,10 @@ docs/*
 !docs/ressources-externes.md
 !docs/design-system/
 !docs/skills/
+# Règles de consommation lues par les skills d'agent (tracker d'issues, labels de
+# triage, docs de domaine). `CLAUDE.md` § Agent skills, versionné, pointe dessus :
+# sans cette négation les trois chemins sont introuvables dans un clone frais.
+!docs/agents/
 # Seul chantier encore ouvert (PRD §5.3 non tranché) : il faut rouvrir chaque
 # niveau, Git ne descend pas dans un dossier exclu.
 !docs/superpowers/
@@ -100,6 +104,19 @@ docs/superpowers/changes/*
 # de `docs/design-system/`, qui portaient la même taxonomie sans jamais citer la
 # source. Contient l'inventaire des écarts mesurés. Ouvert.
 !docs/superpowers/changes/2026-08-05-hig/
+# Chantier design : faire ressembler Sift à une app Apple, par opposition au chantier
+# HIG ci-dessus qui était de la conformité invisible à l'écran. Porte les trois couches
+# de mesure (compte de source, comptage CDP dans la vraie fenêtre, lecture de capture)
+# et la reformulation L2 en attente d'arbitrage. Ouvert.
+!docs/superpowers/changes/2026-08-05-design-apple/
+# Audit final du chantier d'évolution architecturale (5 phases livrées), fait contre le
+# diagnostic d'origine ligne par ligne. Conclut 4 lignes traitées, 2 écartées sur mesure,
+# 1 comptée close sans jamais avoir été mesurée. Ouvert.
+!docs/superpowers/changes/2026-08-05-audit-archi/
+# Identité visuelle, ouvert après DEUX rejets de propositions de mise en page le même jour :
+# une surface plus utile n'est pas une surface plus belle. Porte la mesure qui unifie le
+# constat — l'app est plate en taille, espacement, clarté ET couleur simultanément. Ouvert.
+!docs/superpowers/changes/2026-08-05-identite-visuelle/
 
 # scratch/test copies (may contain real Rekordbox master.db, never committed)
 scratchpad/

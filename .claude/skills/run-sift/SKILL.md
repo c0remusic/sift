@@ -154,14 +154,44 @@ npm run check:security
 | `open-track` exits with *track never painted* | Analysis is slow on a cold cache (`analyze_path` runs the decode + FFT inline, synchronously). Retry, or pick an already-analysed track. |
 | `floor` exits non-zero with `nbTexts: 0` | Nothing was painted — the result is meaningless. Run `open-track` or navigate to a screen first. |
 | `launch` reports *the launch died silently* | The build failed with an empty log. Run `npm run tauri dev` in the foreground to see the real error. |
-| `launch` times out but the app is actually **open** | Known defect, 2026-08-05. `sift.exe` was found running with no debug port: the `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` variable does not reliably reach WebView2 through `spawn(..., {shell:true, detached:true})` on Windows. Root cause not isolated. **Workaround, verified:** launch in the foreground with the variable inline, then drive with the other subcommands — that is how every measurement in this repo was taken. `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9333 npm run tauri dev` |
+| `launch` times out but the app is actually **open** | Seen once on 2026-08-05, **did not reproduce** the same day (see Known limitation). Before blaming `launch`, check for a stale `sift.exe` from an earlier run and confirm the port range is free — that is the explanation the evidence supports. Fallback that always works: `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9333 npm run tauri dev` in the foreground. |
+| You need to read the app's **boot log** | A detached `npm` writes nothing into the inherited descriptor, so `tauri-dev.log` stays at 0 bytes and `driver.mjs launch` cannot show you the boot. Launch it in the foreground (command above) with the output captured — that is the only path where `SMOKE OK`, panics and unhandled rejections are actually readable. |
+| An `eval` returns `error: timeout` and nothing else | `cdp.cjs` closes its socket after **15 s** (`.claude/scripts/cdp.cjs:39`). An `(async …)` IIFE that walks all 8 rail views with a 3 s settle needs 24 s and dies with no partial result. Split into batches of ≤ 4 views. Found 2026-08-05 while measuring painted font sizes. |
 
 ## Known limitation
 
-`launch` is the one subcommand **not verified end to end**. It correctly spawns the build
-(observed: `cargo`/`rustc` running, then `sift.exe` alive), but the debug port did not come
-up in that path — see the last Troubleshooting row. `status`, `eval`, `open-track`,
-`floor`, `shot` and `stop` were each exercised against the real window.
+**Lifted 2026-08-05, same day it was written.** `launch` was exercised end to end and
+succeeded: `node driver.mjs launch --port 9333` reported *ready after ~8s*, the CDP port
+answered, and `document.title` was `Sift — prépa sons DJ`. The app was then driven, rebuilt
+by the watcher, and came back on the same port ~10 s later — the port survives a rebuild
+cycle. Every subcommand is now verified against the real window.
+
+The 2026-08-05 failure therefore **did not reproduce**, and its stated cause was measured
+false (below). The most likely explanation of the original observation is the third
+possibility, not the first: a stale `sift.exe` from an earlier run, or the port range being
+squatted that day — 9222 *and* 9223 were both held by other processes at the time. Always
+confirm identity before trusting a session; never assume a live `sift.exe` is yours.
+
+### What was RULED OUT on 2026-08-05 — do not re-test it
+
+The obvious theory was that `spawn(..., {shell: true, detached: true})` drops the
+environment variable on Windows. **Measured, and false.** A probe spawned a child under all
+four combinations of `{shell, detached}` and had it report its own environment: the variable
+arrived intact in **all four**, including `shell:true` + `detached:true`.
+
+Two false readings were produced before that verdict, and both are worth knowing because
+they look exactly like a positive result:
+
+1. Using `process.execPath` as the command — under `shell: true`, `C:\Program
+   Files\nodejs\node.exe` splits on its space and the child dies before reading anything.
+2. Letting the child `console.log` into an inherited descriptor — under `detached: true` the
+   output never reaches the file, so the probe reads empty and scores it "lost". This is the
+   *same* blindness that keeps `tauri-dev.log` at 0 bytes, and it makes an absence look like
+   an answer. The fix is for the child to write its own result file.
+
+So the variable reaches the process. The failure is downstream — WebView2 not applying it,
+a readiness check racing the window, or the observed portless `sift.exe` having been a stale
+process from an earlier launch. Start there, not at the spawn options.
 
 Corollary worth knowing before killing anything: this machine runs **several Tauri
 projects at once**. On 2026-08-05, four of six live `cargo.exe` belonged to two *other*
