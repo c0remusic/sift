@@ -260,10 +260,26 @@ La seule maquette réelle est `frontend/app.js`, chargée inconditionnellement p
 **Jamais de style ou de comportement UI sorti de la mémoire d'entraînement.** Avant tout
 élément neuf sans exemple fourni, consulter une référence réelle et **citer laquelle** a
 guidé la structure ou le comportement : micro-composants → MCP `shadcn`, MCP `ui-thing`,
-puis 21st.dev ; décisions desktop → Apple HIG ; référence donnée par Antoine → la lire
-telle quelle, sans extrapoler. Ces sources servent à étudier structure, variantes et
-états : ne jamais les installer dans `package.json`, ni copier leur palette, ni déplacer
-les tokens de `styles.css`.
+puis 21st.dev ; décisions desktop → **Apple HIG § Foundations** (layout, matériaux,
+typographie, accessibilité, densité) et **Apple Design Resources** (guides couleur
+officiels — source amont de la palette de `styles.css`) ; référence donnée par Antoine →
+la lire telle quelle, sans extrapoler. Ces sources servent à étudier structure, variantes
+et états : ne jamais les installer dans `package.json`, ni copier leur palette, ni
+déplacer les tokens de `styles.css`.
+
+- **Les pages HIG ne se lisent pas avec `WebFetch`** — SPA, la réponse est « I don't have
+  access to browse web pages ». Passer par le Browser pane (`get_page_text`), vérifié le
+  2026-08-05 sur `designing-for-macos`. `developer.apple.com/design/` n'est qu'un hall
+  d'entrée : il ne contient aucune page « principles », ceux-ci vivent dans les HIG.
+- **HIG § « Designing for <plateforme> » : garder l'intention, jeter le mécanisme.** Sift
+  cible Windows **et** macOS avec `"decorations": false`
+  (`src-tauri/tauri.conf.json:22`) — donc aucune barre de menus native, et des boutons de
+  fenêtre dessinés par l'app. Test à appliquer phrase par phrase : si elle nomme un
+  **organe du système** (menu bar globale, Dock, Space, plein écran comme Space, position
+  des traffic lights), elle ne vaut que pour la cible macOS ; si elle nomme un **fait
+  humain ou matériel** (densité d'information confortable, distance de vue 0,3–0,9 m,
+  raccourcis clavier comme accélérateurs, pointage de précision, personnalisation des
+  vues), elle vaut pour les deux.
 
 - Toute édition de token doit rester cohérente dans `:root`, le bloc sombre système
   (`prefers-color-scheme`) **et** `:root[data-theme="dark"]` — et comparer les valeurs
@@ -308,7 +324,7 @@ DUPLICATE, MATCH, CHECK MATCH, FAKE, kbps, kHz, MP3, AIFF, WAV.
 ne pas driver l'app à sa place. `computer-use` est écarté par défaut.
 
 Pour une inspection ponctuelle du code `inTauri` réel :
-`WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9222` **au lancement de
+`WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=<port>` **au lancement de
 la commande dev** expose un endpoint CDP standard sur la vraie fenêtre WebView2
 (`.claude/scripts/cdp.cjs`). Deux règles :
 
@@ -317,7 +333,15 @@ la commande dev** expose un endpoint CDP standard sur la vraie fenêtre WebView2
 - Le port est squattable par un projet Tauri voisin : vérifier que `document.title`
   (ou `curl http://127.0.0.1:<port>/json`) correspond bien à Sift avant de faire
   confiance à une session. Si non, changer de port — ne jamais tuer le process d'un
-  autre projet.
+  autre projet. **Constaté le 2026-08-05 : 9222 ET 9223 étaient tous deux tenus par un
+  autre projet Tauri, dont le CDP répond normalement.** Mesurer sans vérifier l'identité
+  produit un résultat faux et crédible.
+
+**Ne pas rejouer cette plomberie à la main** : le skill `run-sift`
+(`.claude/skills/run-sift/`, invoquable par `/run-sift`) enveloppe le tout — choix d'un
+port libre *et* vérifié Sift, attente du build, ouverture d'une piste jusqu'à ce que
+`#mid` soit réellement peint, capture, arrêt des trois processus. Son `SKILL.md` porte les
+douze pièges rencontrés ; son `driver.mjs` est le seul chemin agent recommandé.
 
 ## Dépendances et docs externes
 
@@ -389,6 +413,12 @@ trouve rien, silencieusement, pour toujours**.
 
 - `.claude/rules/context-packs.md` — packs de contexte par type de tâche.
 - `.claude/rules/rust.md` — override projet pour tout travail sur `src-tauri/**`.
+- `.claude/skills/run-sift/` — lancer et **piloter** la vraie fenêtre (§ Vérification UI).
+  Versionné par une négation ciblée dans `.gitignore`, contrairement au reste de
+  `.claude/skills/`.
 - `docs/skills/sift-ui-design-governance.md` — gouvernance des décisions UI (versionné).
+- `docs/superpowers/changes/2026-08-05-hig/` — repliage des Apple HIG : inventaire des
+  écarts mesurés (`design.md`), plan (`plan.md`), protocole et résultats de vérification
+  (`review.md`).
 - `.claude/learning-log.md` — incidents et leçons machine-locales.
 - `AGENTS.md` — simple pointeur vers ce fichier (ne pas y dupliquer de contenu).

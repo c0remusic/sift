@@ -47,7 +47,13 @@ function coverHtml(st: EditState): string {
   return (
     `<button data-lib="cover" title="Changer la pochette" aria-label="Changer la pochette" style="position:relative;width:72px;height:72px;flex:none;border-radius:var(--border-radius-md);overflow:hidden;background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);display:flex;align-items:center;justify-content:center;padding:0;cursor:pointer">` +
     inner +
-    `<span style="position:absolute;inset:auto 0 0 0;background:var(--overlay-scrim);color:var(--color-text-on-accent);font-size:var(--text-2xs);padding:2px 0;text-align:center">changer</span>` +
+    // Encre + scrim theme-INVARIANTS : ce bandeau est posé sur la pochette de l'utilisateur, pas
+    // sur une surface de l'app, donc son ratio dépend de l'image et non des tokens. Utilisait
+    // --color-text-on-accent, qui bascule sur une encre sombre en thème sombre : encre sombre sur
+    // scrim noir, mesuré à 1,42:1 sur pochette noire et 1,29:1 sur gris moyen. --color-text-on-scrim
+    // ne bascule jamais, et --overlay-scrim-caption est assez dense pour garantir le pire cas
+    // (pochette blanche) à 7,26:1 dans les deux thèmes. Voir leurs commentaires dans styles.css.
+    `<span style="position:absolute;inset:auto 0 0 0;background:var(--overlay-scrim-caption);color:var(--color-text-on-scrim);font-size:var(--text-xs);padding:2px 0;text-align:center">changer</span>` +
     `</button>`
   );
 }

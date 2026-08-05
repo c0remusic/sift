@@ -112,8 +112,17 @@ function libraryGridTileHtml(t: LibraryTrack, curId: number | null): string {
   const cov = t.cover_path
     ? `<img src="${esc(convertFileSrc(t.cover_path))}" alt="" class="sift-lib-tile-cov">`
     : `<i class="ti ti-vinyl sift-lib-tile-cov-fallback"></i>`;
+  // Composite name, same reason as libraryTableRowHtml's rowLabel: role="button" alone announces
+  // just "button" and the two text lines the tile paints are lost. One rule throughout: the name
+  // says what the tile actually paints, nothing more. Hence NOT the row's 4-column label (a tile
+  // shows no genre/year, naming them would announce what the sighted user can't see there); hence
+  // also no "Artiste inconnu" segment — when t.artist is empty the .sift-lib-tile-sub line below
+  // is painted EMPTY, unlike libraryTableRowHtml which paints an explicit "—" that "Artiste
+  // inconnu" honestly stands for. The title slot reuses the tile's own bibName() fallback so an
+  // untitled track is named by what's actually painted rather than by "Titre inconnu".
+  const tileLabel = t.artist ? `${t.artist} — ${t.title || bibName(t)}` : t.title || bibName(t);
   return (
-    `<div class="sift-lib-tile${cur}" data-bib="tile" data-id="${t.id}" tabindex="0" role="button">` +
+    `<div class="sift-lib-tile${cur}" data-bib="tile" data-id="${t.id}" tabindex="0" role="button" aria-label="${esc(tileLabel)}">` +
     cov +
     `<div class="sift-lib-tile-title">${esc(t.title || bibName(t))}</div>` +
     `<div class="sift-lib-tile-sub">${esc(t.artist || "")}</div>` +

@@ -303,6 +303,18 @@ export function renderBatch() {
 
   // BEFORE (file name) + AFTER (Discogs artist — title once identified). When not yet identified
   // only the filename shows; identifying it (Identify all) reveals the clean name above the file.
+  //
+  // CONTRASTE — paire connue, laissée EN L'ÉTAT sciemment, pas oubliée. Le `opacity:.55` sur le mot
+  // « was » de la 2e ligne est le SEUL reste d'opacité de cette fonction, et il échoue AA dans les
+  // DEUX thèmes: 2,28:1 en clair, 3,63:1 en sombre (--color-text-tertiary sur
+  // --color-background-primary, le fond de `.pa` styles.css:265 ; compositing sRGB gamma 8 bits,
+  // le modèle du navigateur). Le retrait de l'opacité de ligne dans pendingRow ci-dessous a DÉPLACÉ
+  // cette paire — elle valait 1,60:1 / 2,17:1 sous .6 × .55 = .33 effectif — sans la faire passer.
+  // Non corrigée ici parce que ce n'est pas une décision de px: le même idiome vit à
+  // rekordbox-view.ts:233, donc trancher revient à décider ce qu'EST ce libellé — un texte
+  // informatif soumis au 1.4.3, ou une vraie atténuation portée par un token comme le reste de la
+  // ligne. Accord de surface d'abord, chiffre ensuite (CLAUDE.md § Front, « Concept avant
+  // chiffres »), et dans le même geste que rekordbox-view.ts pour que les deux ne divergent pas.
   const nameCell = (it: QueueItem, dim = false) => {
     const after = it.artist && it.title ? `${it.artist} — ${it.title}` : null;
     const before = it.filename || it.path;
@@ -337,7 +349,7 @@ export function renderBatch() {
       verdictDot(it.verdict) +
       nameCell(it) +
       (it.dup
-        ? '<span style="flex:none;font-size:var(--text-2xs);font-weight:600;letter-spacing:.03em;padding:var(--space-4) var(--space-8);border-radius:999px;background:var(--color-background-warning);color:var(--color-text-warning)">DUPLICATE</span>'
+        ? '<span style="flex:none;font-size:var(--text-xs);font-weight:600;letter-spacing:.03em;padding:var(--space-4) var(--space-8);border-radius:999px;background:var(--color-background-warning);color:var(--color-text-warning)">DUPLICATE</span>'
         : "") +
       `</div>`
     );
@@ -354,13 +366,49 @@ export function renderBatch() {
           ? "CHECK"
           : "analyse…";
     return (
-      `<div style="display:flex;align-items:center;gap:var(--space-8);padding:var(--space-8);opacity:.6">` +
+      // PAS d'opacité sur la ligne. Elle portait `opacity:.6`, qui estompait aussi le badge DUP et
+      // le mot d'état.
+      // MODÈLE DE MESURE, valable pour tous les ratios de ce bloc: compositing sRGB gamma sur 8 bits
+      // — celui du navigateur — sur --color-background-primary (fond de `.pa`, styles.css:265). Un
+      // compositing en lumière linéaire donne d'autres nombres (2,18 et 1,96 pour les deux premiers
+      // ci-dessous) ; c'est le mauvais modèle pour du CSS `opacity`, ne pas le rejouer.
+      // Sous .6, en thème clair: DUP tombait à 2,75:1 et « analyse… / CHECK / échec » à 2,49:1, très
+      // loin du seuil AA de 4,5:1 — alors que « échec » est précisément l'information qu'on n'a pas
+      // le droit d'estomper (une piste dont l'analyse a échoué doit se voir MIEUX que les autres,
+      // pas moins bien). À pleine opacité les mêmes paires mesurent 6,21:1 et 5,49:1 en clair,
+      // 4,98:1 et 8,49:1 en sombre — AA dans les deux thèmes.
+      // Ce qui porte l'atténuation, exactement: la LIGNE DE TITRE de `nameCell(it, true)`, par un
+      // TOKEN (--color-text-secondary au lieu de --color-text-primary: 5,69:1 en clair, 8,95:1 en
+      // sombre — ratio dépendant du token, qui a bougé le 2026-08-05, cf. styles.css:196). Deux
+      // restrictions à ne pas gommer: (1) cette ligne n'est atténuée que TANT QUE la piste n'est pas
+      // identifiée — dès qu'un couple artiste/titre existe, `topColor` repasse à
+      // --color-text-primary et le titre n'est plus atténué du tout ; (2) `nameCell` n'est PAS purgé
+      // d'opacité, le mot « was » de sa 2e ligne garde un `opacity:.55` qui échoue AA dans les deux
+      // thèmes (paire connue et ouverte, mesurée dans le commentaire de nameCell ci-dessus).
+      // Pourquoi un TOKEN plutôt qu'une opacité sur ce texte — la raison est STRUCTURELLE, ce n'est
+      // PAS un argument de contraste. La contrefactuelle réelle est une opacité sur
+      // --color-text-primary (c'est lui que le token remplace, cf. `topColor`), et elle passe AA:
+      // dès ~.71 en clair (.70 → 4,47:1, échec ; .71 → 4,56:1, passe) et dès ~.50 en sombre. À .71
+      // l'atténuation se voit franchement, et le résultat est même PLUS atténué que la version
+      // token (4,56:1 contre 5,69:1). Ce qui départage les deux: une opacité estompe TOUT le
+      // sous-arbre — précisément ce que faisait l'`opacity:.6` retiré ci-dessus, badge DUP et mot
+      // d'état compris — là où un token ne touche que l'encre de la ligne visée. Ne pas réécrire
+      // ceci en « aucune opacité ne passe AA »: ce seuil-là (~.89 en clair) porte sur une opacité
+      // appliquée à --color-text-SECONDARY, c'est-à-dire « puis-je assombrir ENCORE le token déjà
+      // atténué ? » — une autre question que le choix de conception.
+      // Le reste de l'inertie du groupe est déjà porté par la structure: pas de case à cocher, pas
+      // de fond de SÉLECTION (readyRow/fakeRow portent --overlay-hover dès qu'ils sont cochés, et
+      // batchSelInit les coche tous au premier rendu), pas de border-radius, pas de
+      // cursor/tabindex/role, pas de classe .bx-row donc pas son margin-top inter-lignes
+      // (styles.css:718), en-tête « En analyse ». Aucun survol là-dedans: .bx-row n'a AUCUNE règle
+      // :hover — le fond que portent les lignes cochées est un état de sélection, pas un survol.
+      `<div style="display:flex;align-items:center;gap:var(--space-8);padding:var(--space-8)">` +
       verdictDot(it.verdict) +
       nameCell(it, true) +
       (it.dup
-        ? '<span style="flex:none;font-size:var(--text-2xs);font-weight:600;padding:var(--space-4) var(--space-8);border-radius:999px;background:var(--color-background-warning);color:var(--color-text-warning)">DUP</span>'
+        ? '<span style="flex:none;font-size:var(--text-xs);font-weight:600;padding:var(--space-4) var(--space-8);border-radius:999px;background:var(--color-background-warning);color:var(--color-text-warning)">DUP</span>'
         : "") +
-      `<span style="flex:none;font-size:var(--text-2xs);color:var(--color-text-tertiary)">${label}</span>` +
+      `<span style="flex:none;font-size:var(--text-xs);color:var(--color-text-tertiary)">${label}</span>` +
       `<button data-sift="batchopen" data-id="${it.id}" style="flex:none;font-size:var(--text-xs);padding:var(--space-4) var(--space-8);color:var(--color-text-info)">Ouvrir en Détail</button>` +
       `</div>`
     );
@@ -377,7 +425,7 @@ export function renderBatch() {
       `<input type="checkbox" class="sift-batch-ck" ${on ? "checked" : ""} tabindex="-1">` +
       verdictDot(it.verdict) +
       nameCell(it, true) +
-      '<span style="flex:none;font-size:var(--text-2xs);font-weight:600;letter-spacing:.03em;padding:var(--space-4) var(--space-8);border-radius:999px;background:var(--color-background-danger);color:var(--color-text-danger)">FAKE</span>' +
+      '<span style="flex:none;font-size:var(--text-xs);font-weight:600;letter-spacing:.03em;padding:var(--space-4) var(--space-8);border-radius:999px;background:var(--color-background-danger);color:var(--color-text-danger)">FAKE</span>' +
       `<button data-sift="batchopen" data-id="${it.id}" style="flex:none;font-size:var(--text-xs);padding:var(--space-4) var(--space-8);color:var(--color-text-info)">Ouvrir en Détail</button>` +
       `</div>`
     );

@@ -41,6 +41,13 @@ Thumbs.db
 !.claude/rules/**
 !.claude/scripts/
 !.claude/scripts/**
+# Le skill de lancement doit voyager avec le dépôt : sans lui, un clone frais sait compiler
+# l'app mais pas la piloter (choix du port de debug, attente du build, ouverture d'une piste).
+# Négation ciblée — `skills/` contient aussi des skills vendues qui, elles, restent ignorées.
+!.claude/skills/
+.claude/skills/*
+!.claude/skills/run-sift/
+!.claude/skills/run-sift/**
 !.claude/verify.sh
 !.claude/learning-log.md
 .codex/
@@ -89,6 +96,10 @@ docs/superpowers/changes/*
 # Phase 4 du chantier d'évolution architecturale : mesures du dédoublonnage et
 # schéma d'invalidation incrémentale. Ouvert.
 !docs/superpowers/changes/2026-08-02-dedup-incremental/
+# Repliage des Apple HIG (Foundations, Patterns, Components) dans les six documents
+# de `docs/design-system/`, qui portaient la même taxonomie sans jamais citer la
+# source. Contient l'inventaire des écarts mesurés. Ouvert.
+!docs/superpowers/changes/2026-08-05-hig/
 
 # scratch/test copies (may contain real Rekordbox master.db, never committed)
 scratchpad/

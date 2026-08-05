@@ -112,6 +112,24 @@ function listColumnHtml(sources: Source[]): string {
   return header + `<div style="flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column;gap:2px">${rows}</div>` + bottomBar;
 }
 
+/** Texte d'attente de la colonne détail quand rien n'est sélectionné. Partagé avec le
+ *  placeholder de chargement (renderHomeSources) : sur une liste vide, listSources() résolu
+ *  repeint la même ligne (au bandeau racine près), donc pas de saut de contenu. */
+const INSPECTOR_HINT_NO_SELECTION = "Sélectionne un dossier surveillé pour voir son détail.";
+
+/** Colonne détail réduite à une ligne d'aide — pas de sélection, chargement en cours, ou échec
+ *  du chargement. `hint` et `lead` sont des littéraux de ce module (jamais de donnée utilisateur),
+ *  et l'enveloppe est celle du détail complet pour que #homeinspector — la colonne large,
+ *  `.sift-inspector{flex:1}` (styles.css:343), sans fond ni bordure — ne soit jamais un canevas nu. */
+function inspectorHintHtml(hint: string, lead = ""): string {
+  return (
+    `<div class="sift-screen-stack" style="flex:1;overflow-y:auto;padding:20px 30px">` +
+    lead +
+    `<div style="font-size:var(--text-md);color:var(--color-text-tertiary)">${hint}</div>` +
+    `</div>`
+  );
+}
+
 function inspectorHtml(selected: Source | null, root: string | null, allSources: Source[]): string {
   const rootGateHtml = root || rootGateDismissed
     ? ""
@@ -122,12 +140,7 @@ function inspectorHtml(selected: Source | null, root: string | null, allSources:
       '<button data-sift="dismiss-rootgate" class="lk-icon" title="Masquer pour cette session" aria-label="Masquer ce message pour cette session" style="flex:none;background:none;border:none;color:var(--color-text-warning);cursor:pointer;padding:0 0 0 8px"><i class="ti ti-x"></i></button></div>';
 
   if (!selected) {
-    return (
-      `<div class="sift-screen-stack" style="flex:1;overflow-y:auto;padding:20px 30px">` +
-      rootGateHtml +
-      `<div style="font-size:var(--text-md);color:var(--color-text-tertiary)">Sélectionne un dossier surveillé pour voir son détail.</div>` +
-      `</div>`
-    );
+    return inspectorHintHtml(INSPECTOR_HINT_NO_SELECTION, rootGateHtml);
   }
 
   const sm = statusMeta(selected);
@@ -178,11 +191,62 @@ export async function renderHomeSources() {
   const inspectorCol = document.querySelector<HTMLElement>("#homeinspector");
   if (!queueCol || !inspectorCol) return;
 
+  // Accueil est le premier écran peint (app.js:22 : `var view="home"`) et app.js:106 recrée les
+  // deux colonnes VIDES à chaque passage sur Accueil — sans signal, les deux restent littéralement
+  // vides le temps du round-trip listSources(), et l'absence de contenu se lit comme une panne
+  // (Apple HIG § Loading : « Show something as soon as possible »). Même « Chargement… » que
+  // renderQueue() (queue-panel.ts) sur le rail jumeau #ql, et côté #homeinspector la ligne d'aide
+  // « pas de sélection » plutôt qu'un second spinner (deux animations simultanées pour un seul
+  // chargement) : la colonne large porte un texte, pas un canevas nu.
+  //
+  // Le marqueur du garde couvre le contenu réellement peint (la barre « + Ajouter un dossier »,
+  // toujours présente dans listColumnHtml, liste vide comprise) ET le placeholder lui-même —
+  // équivalent du `!ql.childElementCount` de renderQueue (queue-panel.ts:422), où le placeholder
+  // compte aussi comme contenu. Sans ce second marqueur, deux renderHomeSources() concurrents
+  // pendant le round-trip (onQueueChanged, debounce 150 ms → refresh() → renderHomeSources() en
+  // premier, sift-live.ts:513-517 et :164-165 ; scanner.rs pingue tous les 25 fichiers nets)
+  // réécriraient le même markup, donc un nouveau <i class="sift-spin"> et une animation CSS
+  // repartie à 0 deg — le spinner saccaderait pendant un scan de dossier. La carte d'erreur
+  // ci-dessous ne porte exprès aucun des deux marqueurs : son « Réessayer » doit pouvoir
+  // réafficher le spinner.
+  //
+  // Sans ce garde, chaque re-render — clic de ligne ([data-sift="homerow"]), bascule Surveiller
+  // ([data-sift="togglewatch"]), retrait ([data-sift="rmsrc"]), et le refresh() déclenché par les
+  // événements backend (sift-live.ts:165, seule voie par laquelle « Rescanner » repeint) —
+  // blanchirait la liste avant de la repeindre alors que des données valides sont déjà à l'écran.
+  //
+  // La variante « peindre depuis le cache » de renderQueue (queue-panel.ts:377) ne s'applique PAS
+  // ici : ce module ne garde aucune copie de `sources` en mémoire (seul selectedSourceId survit
+  // aux re-renders), il n'y a donc rien à repeindre instantanément au retour sur Accueil.
+  const alreadyRendered = !!queueCol.querySelector('[data-sift="addsrc"], [data-sift="srcloading"]');
+  if (!alreadyRendered) {
+    queueCol.innerHTML =
+      '<div data-sift="srcloading" style="display:flex;align-items:center;gap:var(--space-8);padding:var(--space-8);color:var(--color-text-tertiary);font-size:var(--text-md)">' +
+      '<i class="ti ti-loader sift-spin" style="font-size:var(--text-md)"></i> Chargement…</div>';
+    inspectorCol.innerHTML = inspectorHintHtml(INSPECTOR_HINT_NO_SELECTION);
+  }
+
   let sources: Source[] = [];
   try {
     sources = await listSources();
   } catch (e) {
     console.error("listSources failed", e);
+    // Sortir sec laisserait le placeholder ci-dessus tourner indéfiniment : un spinner permanent
+    // est un échec silencieux. Même carte d'erreur + « Réessayer » que renderEcartes()
+    // (ecartes-view.ts), à la largeur du rail. L'inspecteur reçoit une ligne d'aide et non une
+    // seconde carte rouge : l'échec et son action de reprise se disent une fois, dans le rail,
+    // mais la colonne large ne peut pas rester muette pour toujours sur ce chemin.
+    inspectorCol.innerHTML = inspectorHintHtml(
+      "Détail indisponible : la liste des dossiers surveillés n'a pas pu être chargée.",
+    );
+    queueCol.innerHTML =
+      '<div class="sift-ui-card-soft sift-ui-card-soft-pad" style="color:var(--color-text-danger)">' +
+      "Impossible de charger les dossiers surveillés. Vérifie la connexion à la base et réessaie." +
+      '<div style="margin-top:var(--space-8)"><button data-sift="retrysrc" style="font-size:var(--text-xs);color:var(--color-text-info)">Réessayer</button></div>' +
+      "</div>";
+    queueCol
+      .querySelector<HTMLButtonElement>('[data-sift="retrysrc"]')
+      ?.addEventListener("click", () => void renderHomeSources());
     return;
   }
   let root: string | null = null;

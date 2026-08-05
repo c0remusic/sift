@@ -39,6 +39,15 @@ color-scheme:light;
    accident in light (accent fills are mid-dark here) but would go invisible in dark, where the
    same accent tokens are light (see palette-coherence audit, 2026-07-10). */
 --color-text-on-accent:oklch(100% 0 0);
+/* Encre posée sur un SCRIM (pas sur un aplat d'accent) : blanche, et theme-invariant — déclarée
+   une seule fois ici, jamais redéfinie dans les deux blocs sombres. C'est la différence avec
+   --color-text-on-accent juste au-dessus, qui doit basculer parce que les tokens d'accent
+   basculent. Un scrim, lui, est noir dans les deux thèmes : une encre qui bascule y devient de
+   l'encre sombre sur du noir. Défaut réel corrigé le 2026-08-05 sur le libellé « changer » de la
+   pochette (library-detail.ts), qui utilisait --color-text-on-accent : en thème sombre il
+   mesurait 1,42:1 sur pochette noire, 1,29:1 sur gris moyen et 3,11:1 sur pochette blanche —
+   illisible sur la majorité des pochettes. Le thème clair, lui, passait déjà (4,76 à 21:1). */
+--color-text-on-scrim:oklch(100% 0 0);
 /* Neutral overlay tints (hover/selection/left-bar/badge on neutral surfaces) — dark-tinted here
    since the surface is light; flipped to light-tinted in the dark variant below. Anything that
    used to hardcode rgba(255,255,255,...) for "selected row" must use these instead, or it goes
@@ -61,10 +70,23 @@ color-scheme:light;
    bouton Destination du rail (base + tint info), thème-aware. Remplace l'ancien rgba sombre
    codé en dur qui ignorait le thème clair. Voir chrome.ts ensureDropStyle. */
 --overlay-drop:oklch(86.27% 0.011 76.59 / .93);
-/* Caption scrim drawn over an image thumbnail (e.g. cover "changer" label) — theme-invariant
-   (always dark-on-image regardless of light/dark mode, unlike the surface-tinted overlays above),
-   so defined once here and not repeated in the dark blocks. */
+/* Scrim posé sur une image / au-dessus de l'app (fond des libellés de temps de la waveform, voile
+   de la modale de rapport, fond de l'étiquette de réticule du spectrogramme peinte au canvas —
+   report-view.ts la relit au montage). Theme-invariant (toujours sombre sur l'image quel que soit
+   le mode), donc déclaré une seule fois ici et jamais répété dans les blocs sombres. */
 --overlay-scrim:oklch(0% 0 0 / .55);
+/* Bandeau de légende posé sur une image ARBITRAIRE (le libellé « changer » de la pochette,
+   library-detail.ts). Séparé de --overlay-scrim, et plus dense, pour une raison mesurée : le ratio
+   n'y dépend pas des tokens mais de la pochette de l'utilisateur, donc il faut garantir le PIRE
+   cas — une pochette blanche. Encre blanche fixe sur noir à 55 % : 4,76:1 sur pochette blanche
+   (AA passé de justesse) ; à 66 % : 7,26:1, soit la cible 7:1 que les HIG Dark Mode fixent pour
+   une couleur personnalisée sur du PETIT texte (le libellé est à --text-xs, la plus petite taille
+   de l'app depuis le retrait de --text-2xs le 2026-08-05 ; le ratio, lui, ne dépend pas de la
+   taille). Mesures du 2026-08-05, composition alpha en sRGB gamma-encodé (ce que fait le moteur).
+   Ne PAS rendre theme-aware : --overlay-scrim et celui-ci sont lus tels quels par-dessus des
+   pixels d'image, jamais par-dessus une surface de l'app, donc le thème n'entre pas dans le calcul.
+   C'est l'ENCRE qui devait cesser de basculer — voir --color-text-on-scrim. */
+--overlay-scrim-caption:oklch(0% 0 0 / .66);
 /* Radius scale (2026-07-08, structure adapted from tweakcn "ZFlow" — a single base derived via
    calc() instead of 4 independent literals, so the whole scale moves together from one number.
    Base raised 10px→14px (rounder, per user request) but the internal deltas (sm=base-6,
@@ -91,7 +113,34 @@ color-scheme:light;
 --font-mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
 /* Type scale (audit P-1): the allowed font sizes. Values match what the UI already used so
    migrating inline font-size:Npx → var(--text-*) is a visual no-op. Use these, not literals. */
---text-3xs:8px;--text-2xs:9px;--text-xs:10px;--text-sm:11px;--text-md:12px;--text-base:13px;
+/* --text-3xs et --text-2xs : DEUX CRANS RETIRÉS de l'échelle le 2026-08-05. Raison : le plancher
+   de lisibilité macOS des HIG est 10 pt (HIG Typography et HIG Accessibility donnent la même
+   table — 13 pt par défaut, 10 pt minimum). --text-2xs valait 9px et --text-3xs 8px ; ce dernier
+   avait été remonté à 10px plus tôt le même jour, ce qui en faisait déjà un doublon exact de
+   --text-xs et cassait la monotonie de l'échelle (3xs = 10 > 2xs = 9).
+   Le geste n'a PAS été d'éditer leur valeur : porter --text-2xs à 10px l'aurait rendu identique à
+   --text-xs, et l'échelle aurait porté TROIS barreaux de même valeur — ce qui invite la divergence
+   au lieu de la fermer. Les consommateurs ont migré un par un sur var(--text-xs) : les 13 règles de
+   ce fichier, .sift-slider-label pour --text-3xs, et les 8 styles inline du TS (batch-panel.ts,
+   ecartes-view.ts, library-detail.ts).
+   DEUX sélecteurs de ce fichier codaient en plus une taille sous le plancher EN DUR et
+   contournaient donc le token — une édition de token les aurait ratés tous les deux, une migration
+   par sélecteur les rattrape : `.nv-grp` (9px, aucun consommateur — ni index.html, ni app.js, ni
+   .ts, le rail n'a plus d'en-têtes de groupe : rattrapage textuel, rien ne bouge à l'écran) et
+   `.sift-usage-chev` (9px, VIVANT — usage-chart.ts:211 peint son ▶ sur Clé USB et Bibliothèque,
+   c'est le seul des deux qui grandit réellement, de 1px). Cette paire vaut pour CE fichier à cette
+   date et se re-vérifie, elle ne se croit pas :
+   `grep -nE 'font-size: ?[0-9.]+(px|pt|rem|em)' frontend/styles.css` — les autres littéraux qu'il
+   sort sont tous ≥ 10px. Elle ne dit rien des styles inline du TS, qui se cherchent à part.
+   ÉCART ASSUMÉ, pas une imitation : les deux déclarations restent écrites ci-dessous, inertes, sur
+   décision explicite du 2026-08-05 — pour que la mesure garde son témoin et qu'une décision future
+   qui voudrait rouvrir un cran sous 10 px sache exactement ce qu'elle rouvre. C'est une DÉROGATION
+   à la règle citée deux fois ailleurs dans ce même :root (bloc des hauteurs, --h-32/--h-44 ; bloc
+   du mouvement) : « ne pas déclarer ce qui n'a pas de consommateur ». Ces deux hauteurs-là ont été
+   SUPPRIMÉES, seule leur prose a survécu ; ici on garde le code mort. Qui suit ce précédent doit
+   savoir qu'il pointe vers l'inverse.
+--text-3xs:10px;--text-2xs:9px; */
+--text-xs:10px;--text-sm:11px;--text-md:12px;--text-base:13px;
 --text-lg:14px;--text-xl:16px;--text-2xl:26px;
 /* Spacing scale (system.md): the ONLY allowed values. */
 --space-4:4px;--space-8:8px;--space-12:12px;--space-16:16px;--space-24:24px;--space-32:32px;
@@ -122,10 +171,18 @@ color-scheme:light;
    wiring, not a new scale. The 250ms arming delay of the destructive confirm and the 5s auto-
    disarm of the batch rail are NOT here: both are behaviour driven by a JS timer, and their
    single source of truth has to be the constant the setTimeout reads.
-   EVERY consumer of these tokens sits inside `@media (prefers-reduced-motion: no-preference)` —
-   an opt-in, never a global `animation:none` kill switch: filing-identify.ts advances its own
-   state on `animationend` (:227, :680), and killing animations app-wide would strand it there
-   forever. */
+   These tokens have exactly TWO consumers — `.sift-fade-in` / `.sift-fade-out` — and both sit
+   inside `@media (prefers-reduced-motion: no-preference)`. That is a true statement ABOUT THE
+   TOKENS, and it says nothing about the app. Of the 7 `animation:` declarations in this file, two
+   were ALREADY guarded and are not part of that gap: `.sift-baction-arm` (:704) lives inside a
+   `no-preference` block, so under `reduce` the element stays `display:none`, and
+   `.sift-usage-prow.flash` (:1575) was already killed by the pre-existing `reduce` block. The 33
+   `transition:` and the 5 remaining `animation:` declarations never reference these tokens, so
+   until the HIG Motion audit of 2026-08-05 THOSE ran at full length whatever the OS setting was.
+   The global guard now lives in the single `@media (prefers-reduced-motion: reduce)` block at the
+   END of this file — and it is still not an `animation:none` kill switch: it zeroes the DURATION,
+   so `animationend` keeps firing and filing-identify.ts is never stranded on
+   `.sift-identified-flash` / `.sift-applytags-flash` (:227, :681). */
 --duration-fast:100ms;--duration-base:150ms;--ease-out:cubic-bezier(.2,0,0,1);
 }
 /* Dark variant — same warm-neutral family, garde les 4 teintes sémantiques distinctes
@@ -151,7 +208,18 @@ color-scheme:light;
     /* bg-{info,danger,success,warning}: solid, not alpha-over-surface — see light block for the
        contrast rationale (measured as low as 3.37:1 against paired text on the darkest cards). */
     --color-background-info:oklch(39.16% 0.035 246.74);--color-background-danger:oklch(37.65% 0.045 30.17);--color-background-success:oklch(44.00% 0.035 150.63);--color-background-warning:oklch(42.79% 0.045 73.21);
-    --color-text-primary:oklch(95.9% 0.0115 77.5);--color-text-secondary:oklch(81.67% 0.0171 77.5);--color-text-tertiary:oklch(81.92% 0.0148 77.5);--color-text-quaternary:oklch(76.72% 0.0153 77.5);
+    /* --color-text-secondary : 81.67% → 83.5% le 2026-08-05. Motif MESURÉ, et ce n'est pas celui
+       qu'on croyait : en sombre, secondary (81.67) était plus SOMBRE que tertiary (81.92), donc
+       moins accentué que le ton censé être plus discret que lui — la hiérarchie du thème clair
+       (secondary 45.4 < tertiary 46.15, plus sombre = plus accentué sur fond clair) était inversée.
+       À 83.5 l'ordre est rétabli. Effet de bord recherché : sur --color-background-success, ce
+       token passe de 4,32:1 (sous AA) à 4,59:1. C'est ce qui rend utilisable l'encre des trois
+       membres textuels de .sift-filed-banner — -name et -path y étaient déjà, -bin les rejoint
+       depuis tertiary (4,36:1, sous AA aussi). Sans risque ailleurs — le
+       token n'est JAMAIS un fond ni une bordure, uniquement de l'encre, et toutes les surfaces du
+       thème sombre sont sombres : l'éclaircir ne peut qu'augmenter chaque ratio. Garder cette
+       valeur identique dans les DEUX blocs sombres. */
+    --color-text-primary:oklch(95.9% 0.0115 77.5);--color-text-secondary:oklch(83.5% 0.0171 77.5);--color-text-tertiary:oklch(81.92% 0.0148 77.5);--color-text-quaternary:oklch(76.72% 0.0153 77.5);
     --color-text-info:oklch(79.21% 0.0789 242.05);--color-text-danger:oklch(78.05% 0.0992 32.54);--color-text-success:oklch(84.99% 0.0947 151.66);--color-text-warning:oklch(84.04% 0.1108 78.51);
     --color-border-tertiary:oklch(100.0% 0.0 89.88 / 0.09);--color-border-secondary:oklch(100.0% 0.0 89.88 / 0.22);
     --color-border-info:oklch(79.21% 0.0789 242.05 / .30);--color-border-danger:oklch(78.05% 0.0992 32.54 / .40);
@@ -173,7 +241,9 @@ color-scheme:light;
   --color-background-primary:oklch(27.57% 0.009 77.5);--color-background-secondary:oklch(34.77% 0.011 77.5);--color-background-tertiary:oklch(31.64% 0.009 77.5);--color-background-queue:oklch(30.01% 0.009 77.5);--color-surface-raised:oklch(38.94% 0.011 77.5);
   --color-track:var(--color-background-primary);--color-row-active:oklch(36.73% 0.012 77.5);--color-nav-active:oklch(35.23% 0.011 77.5);
   --color-background-info:oklch(39.16% 0.035 246.74);--color-background-danger:oklch(37.65% 0.045 30.17);--color-background-success:oklch(44.00% 0.035 150.63);--color-background-warning:oklch(42.79% 0.045 73.21);
-  --color-text-primary:oklch(95.9% 0.0115 77.5);--color-text-secondary:oklch(81.67% 0.0171 77.5);--color-text-tertiary:oklch(81.92% 0.0148 77.5);--color-text-quaternary:oklch(76.72% 0.0153 77.5);
+  /* 83.5% : même valeur et même motif que le bloc prefers-color-scheme ci-dessus (hiérarchie
+     secondary/tertiary inversée en sombre). Les deux blocs doivent rester d'accord. */
+  --color-text-primary:oklch(95.9% 0.0115 77.5);--color-text-secondary:oklch(83.5% 0.0171 77.5);--color-text-tertiary:oklch(81.92% 0.0148 77.5);--color-text-quaternary:oklch(76.72% 0.0153 77.5);
   --color-text-info:oklch(79.21% 0.0789 242.05);--color-text-danger:oklch(78.05% 0.0992 32.54);--color-text-success:oklch(84.99% 0.0947 151.66);--color-text-warning:oklch(84.04% 0.1108 78.51);
   --color-border-tertiary:oklch(100.0% 0.0 89.88 / 0.09);--color-border-secondary:oklch(100.0% 0.0 89.88 / 0.22);
   --color-border-info:oklch(79.21% 0.0789 242.05 / .30);--color-border-danger:oklch(78.05% 0.0992 32.54 / .40);
@@ -221,7 +291,7 @@ html,body{margin:0;padding:0;height:100%}
 .sb{width:152px;flex:none;display:flex;flex-direction:column;gap:var(--space-4);padding:var(--space-16) var(--space-12);background:var(--color-background-tertiary);border-right:0.5px solid var(--color-border-tertiary);align-items:stretch}
 .nav-brand{display:flex;align-items:center;gap:8px;padding:var(--space-4) var(--space-8) var(--space-12);font-size:18px;font-weight:600;color:var(--color-text-primary);letter-spacing:var(--tracking-normal)}
 .nav-brand i{font-size:16px;color:var(--color-text-info)}
-.nv-grp{font-size:9px;font-weight:400;letter-spacing:.08em;text-transform:uppercase;color:var(--color-text-tertiary);padding:var(--space-12) var(--space-8) var(--space-4)}
+.nv-grp{font-size:var(--text-xs);font-weight:400;letter-spacing:.08em;text-transform:uppercase;color:var(--color-text-tertiary);padding:var(--space-12) var(--space-8) var(--space-4)}
 .nv{min-height:34px;border-radius:var(--border-radius-md);display:flex;flex-direction:row;align-items:center;gap:var(--space-12);padding:var(--space-8) var(--space-8);color:var(--color-text-tertiary);cursor:pointer}
 .nv span{font-size:12.5px;letter-spacing:var(--tracking-normal);text-align:left;line-height:1.1;flex:1;min-width:0}
 .nv i{font-size:17px;flex:none}
@@ -252,7 +322,7 @@ html,body{margin:0;padding:0;height:100%}
 .sift-pz-head{display:flex;align-items:center;justify-content:space-between;gap:var(--space-8)}
 .sift-pz-name{display:inline-flex;align-items:center;gap:var(--space-4);min-width:0;font-size:var(--text-xs);color:var(--color-text-secondary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sift-pz-name i{font-size:var(--text-sm);color:var(--color-text-tertiary);flex:none}
-.sift-pz-count{flex:none;font-family:var(--font-mono);font-variant-numeric:tabular-nums;font-size:var(--text-2xs);color:var(--color-text-tertiary)}
+.sift-pz-count{flex:none;font-family:var(--font-mono);font-variant-numeric:tabular-nums;font-size:var(--text-xs);color:var(--color-text-tertiary)}
 .sift-pz-end{display:inline-flex;align-items:center;gap:var(--space-4);flex:none}
 .sift-pz-cancel{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;padding:0;border:none;border-radius:3px;background:transparent;color:var(--color-text-tertiary);cursor:pointer}
 .sift-pz-cancel:hover{color:var(--color-text-danger);background:var(--color-background-danger)}
@@ -485,7 +555,7 @@ html,body{margin:0;padding:0;height:100%}
 .lk-icon{width:22px;height:22px;border-radius:var(--border-radius-md);flex:none;padding:0;display:inline-flex;align-items:center;justify-content:center;opacity:.6;transition:background .16s ease,opacity .16s ease}
 /* Bibliothèque — vue tableau (2026-07-09) : en-tête triable + colonnes, réutilise .lr pour les
    lignes elles-mêmes (cov/play/pill/link inchangés, juste plus de colonnes qu'avant). */
-.sift-lib-thead{display:flex;align-items:center;gap:var(--space-8);padding:var(--space-4) var(--space-8);font-size:var(--text-2xs);text-transform:uppercase;letter-spacing:.06em;color:var(--color-text-tertiary);border-bottom:0.5px solid var(--color-border-tertiary)}
+.sift-lib-thead{display:flex;align-items:center;gap:var(--space-8);padding:var(--space-4) var(--space-8);font-size:var(--text-xs);text-transform:uppercase;letter-spacing:.06em;color:var(--color-text-tertiary);border-bottom:0.5px solid var(--color-border-tertiary)}
 .sift-lib-thead-cov{width:44px;flex:none}
 .sift-lib-thead button{padding:0;border:0;background:none;font:inherit;color:inherit;cursor:pointer;text-align:left}
 .sift-lib-thead button:hover{color:var(--color-text-primary)}
@@ -635,11 +705,11 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-text-info)}
 @keyframes sift-spin{to{transform:rotate(360deg)}}
 .sift-spin{animation:sift-spin .7s linear infinite;display:inline-block}
 /* Per-track batch progress list (batch-tracklist.ts): one row per file, state pill wait/run/done/fail. */
-.sift-bt-head{font-size:var(--text-2xs);text-transform:uppercase;letter-spacing:.04em;color:var(--color-text-tertiary);margin:var(--space-8) 0 var(--space-4)}
+.sift-bt-head{font-size:var(--text-xs);text-transform:uppercase;letter-spacing:.04em;color:var(--color-text-tertiary);margin:var(--space-8) 0 var(--space-4)}
 .sift-bt-list{display:flex;flex-direction:column;gap:var(--space-4)}
 .sift-bt-row{display:flex;align-items:center;gap:var(--space-8);font-size:var(--text-sm);color:var(--color-text-secondary)}
 .sift-bt-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.sift-bt-src{flex:none;padding-left:8px;font-family:var(--font-mono);font-size:var(--text-2xs);color:var(--color-text-tertiary);white-space:nowrap}
+.sift-bt-src{flex:none;padding-left:8px;font-family:var(--font-mono);font-size:var(--text-xs);color:var(--color-text-tertiary);white-space:nowrap}
 .sift-bt-pill{padding:var(--space-4) var(--space-8);flex:none;display:inline-flex;align-items:center;gap:var(--space-4);justify-content:center;border-radius:var(--border-radius-pill);font-size:var(--text-sm);white-space:nowrap}
 .sift-bt-pill-label{font-size:var(--text-xs);font-weight:500;opacity:.9}
 .sift-bt-wait{color:var(--color-text-tertiary)}
@@ -743,7 +813,7 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-text-info)}
 .jrnl-cat-hd::-webkit-details-marker{display:none}
 .jrnl-cat-chev{flex:none;font-size:12px;color:var(--color-text-tertiary);transition:transform .15s;display:inline-block}
 details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
-.jrnl-cat-label{flex:none;font-size:var(--text-2xs);font-weight:600;letter-spacing:var(--tracking-widest);text-transform:uppercase;color:var(--color-text-tertiary)}
+.jrnl-cat-label{flex:none;font-size:var(--text-xs);font-weight:600;letter-spacing:var(--tracking-widest);text-transform:uppercase;color:var(--color-text-tertiary)}
 .jrnl-cat-badge{flex:none;font-size:var(--text-xs);color:var(--color-text-tertiary);background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-pill);padding:0 6px;line-height:1.6}
 .jrnl-mass{margin-left:auto;flex:none;background:transparent;border:none;font-size:var(--text-xs);cursor:pointer;padding:var(--space-4) var(--space-8)}
 .jrnl-mass:hover{opacity:.8}
@@ -752,7 +822,7 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .jrnl-row{display:flex;align-items:center;gap:var(--space-8);padding:var(--space-8) 0;border-bottom:0.5px solid var(--color-border-tertiary)}
 .jrnl-row-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:var(--space-4)}
 .jrnl-name{font-size:var(--text-sm);font-weight:500;color:var(--color-text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.jrnl-dest{font-size:var(--text-2xs);font-family:var(--font-mono);color:var(--color-text-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.jrnl-dest{font-size:var(--text-xs);font-family:var(--font-mono);color:var(--color-text-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .jrnl-revert{flex:none;background:transparent;border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);color:var(--color-text-secondary);font-size:var(--text-xs);padding:var(--space-4) var(--space-8);cursor:pointer;line-height:1.4}
 .jrnl-revert:hover{color:var(--color-text-primary);border-color:var(--color-border-secondary)}
 /* Confirmation toast — fades out automatically via CSS, no JS timer */
@@ -771,7 +841,7 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .jrnl-voir-tout:hover{color:var(--color-text-secondary)}
 /* Session groups (extended view) */
 .jrnl-session-group{margin-bottom:var(--space-12)}
-.jrnl-session-hd{font-size:var(--text-2xs);text-transform:uppercase;letter-spacing:var(--tracking-wider);color:var(--color-text-tertiary);padding:var(--space-4) 0 var(--space-8);border-top:0.5px solid var(--color-border-tertiary);margin-bottom:var(--space-4)}
+.jrnl-session-hd{font-size:var(--text-xs);text-transform:uppercase;letter-spacing:var(--tracking-wider);color:var(--color-text-tertiary);padding:var(--space-4) 0 var(--space-8);border-top:0.5px solid var(--color-border-tertiary);margin-bottom:var(--space-4)}
 
 /* M8 Tier 1/3 candidate lists (rekordbox-view.ts) — collapsible groups by app session,
    "Tout sélectionner"/"Tout désélectionner" per group. Mirrors .jrnl-session-* above (same
@@ -779,9 +849,9 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
    plain label. */
 .rb-session-group{margin-bottom:var(--space-8)}
 .rb-session-hd{display:flex;align-items:center;gap:var(--space-8);padding:var(--space-4) 0}
-.rb-session-toggle{background:none;border:none;padding:0;font-size:var(--text-2xs);text-transform:uppercase;letter-spacing:var(--tracking-wider);color:var(--color-text-tertiary);cursor:pointer}
+.rb-session-toggle{background:none;border:none;padding:0;font-size:var(--text-xs);text-transform:uppercase;letter-spacing:var(--tracking-wider);color:var(--color-text-tertiary);cursor:pointer}
 .rb-session-toggle:hover{color:var(--color-text-secondary)}
-.rb-session-selectall{margin-left:auto;font-size:var(--text-2xs)}
+.rb-session-selectall{margin-left:auto;font-size:var(--text-xs)}
 
 /* ── Revue detail (report-view.ts) — extracted inline styles, byte-identical values ───── */
 /* No scrollbar-gutter/overflow-y:scroll here (was added, then removed): in the Revue screen
@@ -926,7 +996,7 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-volume-block:hover .sift-volume-track,
 .sift-volume-block:focus-within .sift-volume-track,
 .sift-volume-block:has(.sift-slider-track.dragging) .sift-volume-track{opacity:1}
-.sift-slider-label{font-size:var(--text-3xs);letter-spacing:.1em;text-transform:uppercase;color:var(--color-text-tertiary);display:flex;align-items:center;justify-content:space-between}
+.sift-slider-label{font-size:var(--text-xs);letter-spacing:.1em;text-transform:uppercase;color:var(--color-text-tertiary);display:flex;align-items:center;justify-content:space-between}
 .sift-tempo-out{font-family:var(--font-mono);color:var(--color-text-secondary);text-transform:none;letter-spacing:0}
 .sift-slider-track{position:relative;height:16px;display:flex;align-items:center;cursor:pointer;touch-action:none;user-select:none}
 /* --color-border-secondary → --color-track (annotation: "devraient avoir la meme couleur" —
@@ -1065,7 +1135,7 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
    cases") — LOSSLESS was already all-caps jargon (see the English-jargon allowlist), while CDJ
    compatible/incompatible was sentence case; same badge shape, same case treatment now, matching
    the small-label convention already used elsewhere (.col-h, .sift-final-name-label, etc.). */
-.sift-chip-badge{font-size:var(--text-2xs);font-weight:600;padding:var(--space-4) var(--space-8);text-transform:uppercase;letter-spacing:var(--tracking-wide);
+.sift-chip-badge{font-size:var(--text-xs);font-weight:600;padding:var(--space-4) var(--space-8);text-transform:uppercase;letter-spacing:var(--tracking-wide);
   border-radius:var(--border-radius-pill);border:none;font-family:inherit}
 /* Flash de confirmation sur .sift-identified-line au moment où un choix Discogs vient d'être
    appliqué (onIdentityApplied, Task 4 Step 5) — jamais sur une réouverture
@@ -1119,7 +1189,7 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-spectro-tech-summary::before{content:"▸ ";display:inline-block}
 .sift-spectro-tech[open] .sift-spectro-tech-summary::before{content:"▾ "}
 .sift-tags-box{margin-bottom:4px}
-.sift-tags-title{font-size:var(--text-2xs);letter-spacing:var(--tracking-wider);text-transform:uppercase;color:var(--color-text-tertiary);margin-bottom:var(--space-4)}
+.sift-tags-title{font-size:var(--text-xs);letter-spacing:var(--tracking-wider);text-transform:uppercase;color:var(--color-text-tertiary);margin-bottom:var(--space-4)}
 .sift-codec-error{margin-top:12px;font-size:var(--text-sm);color:var(--color-text-warning)}
 .sift-verdict-stub{display:flex;align-items:center;gap:var(--space-8);margin:var(--space-4) 0 var(--space-12);font-size:var(--text-sm);color:var(--color-text-tertiary)}
 .sift-analysis-fail{margin-bottom:12px;font-size:var(--text-sm);color:var(--color-text-warning)}
@@ -1239,7 +1309,7 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-rebuy{margin-bottom:var(--space-12)}
 .sift-rebuy:empty{margin-bottom:0}
 .sift-rebuy-btn{width:100%;font-size:var(--text-sm);font-weight:500;color:var(--color-text-warning);background:var(--color-background-warning);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md)}
-.sift-kbd-hint-id{font-size:var(--text-2xs);border-color:var(--color-border-tertiary);color:var(--color-text-tertiary)}
+.sift-kbd-hint-id{font-size:var(--text-xs);border-color:var(--color-border-tertiary);color:var(--color-text-tertiary)}
 .sift-identified-line{display:flex;align-items:center;gap:var(--space-8);padding:var(--space-4) var(--space-4)}
 .sift-identified-cover{width:28px;height:28px;border-radius:3px;object-fit:cover;flex:none}
 .sift-identified-noart{width:28px;height:28px;border-radius:3px;background:var(--color-background-secondary);display:inline-flex;align-items:center;justify-content:center;flex:none}
@@ -1282,11 +1352,34 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-filed-banner-head{display:flex;align-items:center;gap:var(--space-8);margin-bottom:var(--space-4)}
 .sift-filed-banner-head i{font-size:var(--text-md);color:var(--color-text-success)}
 .sift-filed-banner-label{color:var(--color-text-success);font-weight:500}
-.sift-filed-banner-bin{color:var(--color-text-tertiary);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* Encre neutre sur --color-background-success (2026-08-05). Les trois membres TEXTUELS du bandeau
+   — -bin, -name, -path — sont en --color-text-secondary, pas en tertiary. En sombre, tertiary y
+   mesure 4,36:1, sous le 4,5:1 exigé pour du texte normal — et les trois y sont bien : -bin hérite
+   --text-sm (11px), -name et -path sont à --text-xs (10px) — -path était à --text-2xs (9px)
+   jusqu'au retrait de ce cran le 2026-08-05 —, tous très loin du seuil « large text » de 18 pt /
+   14 pt gras. secondary ne suffisait pas non plus tel quel
+   (4,32:1, plus SOMBRE que tertiary : c'était l'inversion de hiérarchie corrigée plus haut) ; c'est
+   le relèvement de --color-text-secondary à L=83.5 qui l'amène à 4,59:1. Clair : 5,91 → 6,12:1,
+   pas de régression.
+   Les trois d'un seul geste, et pas seulement celui qu'un audit pointe : ils portent la même chose
+   à l'écran — le bac et le chemin réels du fichier rangé, filing-actions.ts (showFiledConfirm)
+   écrivant le bac dans -bin — et deux encres neutres différentes sur le même aplat ne se lisent pas
+   comme une hiérarchie.
+   -close reste en tertiary : c'est un bouton icône seule, donc du non-textuel, seuil 3:1 — il
+   mesure 4,36:1 en sombre et 5,91:1 en clair, il passe.
+   Portée exacte de la paire, à ne pas élargir : --color-background-success ne rencontre de l'encre
+   neutre QU'ICI — vérifié sur tous ses sites sous frontend/, app.js compris, où il est partout
+   ailleurs appairé à --color-text-success. Ce n'est en revanche PAS le seul aplat sémantique de
+   l'app à recevoir de l'encre neutre : .sift-dup-banner-where (plus bas) est en
+   --color-text-tertiary et reçoit --color-background-warning depuis filing.ts:273 (branche `sure`)
+   et rekordbox-view.ts:586 — mesuré 4,70:1 en sombre et 6,64:1 en clair, AA passe, rien à y
+   corriger. */
+.sift-filed-banner-bin{color:var(--color-text-secondary);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sift-filed-banner-close{margin-left:auto;flex:none;background:none;border:none;color:var(--color-text-tertiary);cursor:pointer;padding:0;line-height:1}
 .sift-filed-banner-close i{font-size:var(--text-md)}
 .sift-filed-banner-name{color:var(--color-text-secondary);font-family:var(--font-mono);font-size:var(--text-xs);word-break:break-all;line-height:1.5;margin-bottom:var(--space-4)}
-.sift-filed-banner-path{color:var(--color-text-tertiary);font-family:var(--font-mono);font-size:var(--text-2xs);word-break:break-all;line-height:1.4;margin-bottom:var(--space-8)}
+/* tertiary → secondary : voir le commentaire de famille sur .sift-filed-banner-bin ci-dessus. */
+.sift-filed-banner-path{color:var(--color-text-secondary);font-family:var(--font-mono);font-size:var(--text-xs);word-break:break-all;line-height:1.4;margin-bottom:var(--space-8)}
 .sift-filed-banner-revert{display:inline-flex;align-items:center;gap:var(--space-4);font-size:var(--text-sm);padding:var(--space-4) var(--space-12);background:var(--color-background-secondary);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);color:var(--color-text-secondary);cursor:pointer}
 .sift-filed-banner-revert i{font-size:var(--text-md);vertical-align:-2px}
 .sift-dup-banner{display:flex;align-items:flex-start;gap:8px;border-radius:var(--border-radius-md);padding:var(--space-8) var(--space-12);margin-bottom:var(--space-12);font-size:var(--text-sm)}
@@ -1540,7 +1633,7 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-usage-disclose{display:inline-flex;align-items:center;gap:var(--space-8);font-family:inherit;font-size:var(--text-md);padding:var(--space-8) var(--space-12);background:var(--color-background-tertiary);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);color:var(--color-text-primary);cursor:pointer}
 .sift-usage-disclose:hover{background:var(--color-background-tertiary);border-color:var(--color-text-tertiary)}
 .sift-usage-disclose:focus-visible{outline:2px solid var(--color-text-primary);outline-offset:2px}
-.sift-usage-chev{display:inline-block;transition:transform 200ms ease;font-size:9px;opacity:.7}
+.sift-usage-chev{display:inline-block;transition:transform 200ms ease;font-size:var(--text-xs);opacity:.7}
 .sift-usage-disclose[aria-expanded="true"] .sift-usage-chev{transform:rotate(90deg)}
 .sift-usage-cache-note{font-size:var(--text-sm);color:var(--color-text-tertiary)}
 .sift-usage-btn{font-family:inherit;font-size:var(--text-md);padding:var(--space-8) var(--space-12);background:var(--color-background-tertiary);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);color:var(--color-text-primary);cursor:pointer}
@@ -1572,8 +1665,6 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-usage-pcount{color:var(--color-text-tertiary);font-variant-numeric:tabular-nums;text-align:right}
 .sift-usage-psize{color:var(--color-text-secondary);font-variant-numeric:tabular-nums;text-align:right}
 
-@media (prefers-reduced-motion:reduce){.sift-usage-prow.flash{animation:none}}
-
 /* Bibliotheque : le graphique est une carte de l'ecran, pas un objet flottant — il n'a ni en-tete
    disque ni segment libre (une bibliotheque n'est pas un volume), donc sa propre carte doit
    annuler le padding que le composant se donne pour le cas Cle USB. */
@@ -1585,3 +1676,76 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-usbfmt-namerow{display:flex;flex-direction:column;gap:var(--space-4);font-size:var(--text-md);color:var(--color-text-secondary)}
 .sift-usbfmt-namerow input{font-family:var(--font-mono);font-size:var(--text-md);padding:var(--space-8);background:var(--color-background-primary);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);color:var(--color-text-primary)}
 .sift-usbfmt-namerow input:focus-visible{outline:2px solid var(--color-text-primary);outline-offset:2px}
+
+/* ── Mouvement reduit — garde GLOBALE, unique bloc `reduce` du fichier ────────────────────────
+   HIG § Motion : « Make motion optional. Not everyone can or wants to experience the motion in
+   your app. » Avant ce bloc, la garde ne couvrait que les deux `@media (prefers-reduced-motion:
+   no-preference)` plus haut (.sift-baction-arm ; .sift-fade-in / .sift-fade-out) et le flash
+   .sift-usage-prow : les 33 autres `transition:` et les 5 autres `animation:` du fichier
+   tournaient a pleine longueur quel que soit le reglage systeme (mesure 2026-08-05).
+
+   ADDITIF par choix, pas par paresse. Couvrir ces 38 declarations « proprement » voudrait dire
+   les extraire une par une dans des blocs `no-preference` — 38 selecteurs vivants deplaces, dont
+   des etats de fin calcules (grid-template-rows 0fr->1fr, transform des thumbs), pour un
+   resultat identique a une neutralisation par la fin. Ici aucune regle existante ne bouge, et le
+   pire cas d'une erreur est une duree trop courte, pas un etat perdu. En bonus, une transition
+   ajoutee demain est couverte sans qu'on y pense.
+
+   On neutralise la DUREE, pas la propriete. `animation:none` supprimerait l'evenement
+   `animationend` dont filing-identify.ts depend pour retirer .sift-identified-flash et
+   .sift-applytags-flash (:227, :681) — la classe resterait collee a vie. `transition:none`, lui,
+   ferait perdre les etats de fin calcules. A .01ms l'animation se deroule et notifie, elle ne se
+   voit simplement pas.
+
+   `animation-delay` / `transition-delay` ne sont volontairement PAS remis a zero : aucune regle
+   de ce fichier n'en declare, et le seul delai inline de l'app (.sift-baction-arm,
+   batch-panel.ts:540) porte sur un element qui reste `display:none` sous `reduce`. Meme regle
+   d'audit que pour les tokens plus haut — on ne declare pas ce qui n'a pas de consommateur.
+   Idem pour `scroll-behavior` : aucun `smooth` dans le CSS, aucun `scrollIntoView` dans le
+   frontend. A rajouter le jour ou l'un des deux apparait.
+
+   Un seul trou demandait une ligne EN PLUS, pas un elargissement : `.sift-fade-out` n'etait
+   declaree qu'a :1275, DANS le bloc `no-preference`. Sous `reduce` elle n'apportait donc ni
+   `opacity:0` ni `pointer-events:none` : le toast que filing-toast.ts:102 marque ainsi (seul
+   consommateur) restait pleinement visible ET cliquable — bouton « Annuler » atteignable —
+   pendant les 100 ms de TOAST_EXIT_MS (filing-toast.ts:19) avant que son timer (:106, meme
+   fichier) ne retire le noeud. La ligne ci-dessous redonne l'etat de sortie sans le mouvement :
+   pas de transition, l'element s'efface sec. Aucune regle concurrente — `.sift-toast` (:1260) ne
+   declare ni opacity ni pointer-events, et l'id est retire avant (filing-toast.ts:101).
+
+   ── Exemptions : ce qui continue de bouger, et pourquoi ───────────────────────────────────────
+   1. .sift-spin / .sift-bt-spin — ce ne sont pas des decorations, ce sont les seuls indicateurs
+      de progression INDETERMINEE de l'app (« Analyse en cours… », « Conversion… », « Recherche… »,
+      pastille "en cours" de batch-tracklist). Un spinner fige ne se lit pas comme du calme, il se
+      lit comme une app plantee — et les HIG demandent justement qu'un indicateur d'activite
+      continue de bouger. Rotation sur place : ni deplacement, ni changement d'echelle, ni
+      parallaxe, c'est-a-dire pas la classe de mouvement que `reduce` vise.
+   2. .jrnl-toast — son animation n'est pas decorative non plus : elle EST le mecanisme de
+      disparition (aucun timer JS, cf. son commentaire plus haut). A .01ms le message disparaitrait
+      avant d'etre lu ; a `animation:none` il resterait affiche pour toujours. On garde donc sa
+      duree et on redefinit ses keyframes pour REPOUSSER la sortie a la toute fin : `0%,99%` au
+      lieu de `0%,60%`, soit ~2,77 s de pleine opacite (le temps de lecture) puis une disparition
+      de 28 ms. Le frame 100% est INCHANGE, `height/padding/margin/border-width` a 0 compris :
+      l'affaissement a toujours lieu et la liste du journal remonte toujours. Ces declarations
+      sont ce qui libere la place — les retirer laisserait le toast occuper sa ligne a opacite 0
+      pour toujours (`forwards`, :767). Ce qui change n'est donc pas l'existence du mouvement mais
+      sa duree : 28 ms au lieu de 1,12 s (les 40 % de 2,8 s de l'original), soit sous le seuil de
+      perception au lieu de s'etaler. Une redefinition de meme nom, plus bas dans l'ordre du
+      document et dans un `@media` qui matche, gagne — l'originale reste intacte hors `reduce`.
+   Les exemptions sont ecrites DANS le selecteur (`:not()`), pas rejouees en dessous avec leur
+   valeur : les trois classes ne matchent simplement pas la garde et gardent la duree declaree a
+   :644 / :657 / :767. Aucun nombre magique duplique, donc aucune divergence possible le jour ou
+   l'une de ces durees change. Sur ici parce qu'aucune des trois n'a de descendant anime a
+   exempter : .sift-spin est un `<i>` feuille, .sift-bt-spin un `<span>` feuille, et .jrnl-toast
+   ne contient que du texte passe a esc() (journal.ts:351-352). Ajouter une exemption = ajouter un
+   `:not()`, apres avoir verifie ce meme point. */
+@media (prefers-reduced-motion:reduce){
+  *:not(.sift-spin):not(.sift-bt-spin):not(.jrnl-toast),*::before,*::after{animation-duration:.01ms !important;animation-iteration-count:1 !important;transition-duration:.01ms !important}
+  @keyframes jrnl-toast-fade{0%,99%{opacity:1}100%{opacity:0;height:0;padding:0;margin:0;border-width:0;overflow:hidden}}
+  /* Sortie du toast de filing-toast.ts, sans le fondu (cf. le trou nomme plus haut). */
+  .sift-fade-out{opacity:0;pointer-events:none}
+  /* Deja presente avant ce bloc (elle vivait seule juste sous .sift-usage-prow.flash), fusionnee
+     ici telle quelle. `animation:none` y est sur — usage-chart.ts retire puis remet la classe
+     lui-meme avec un reflow force (:308-312), il n'attend aucun `animationend`. */
+  .sift-usage-prow.flash{animation:none}
+}

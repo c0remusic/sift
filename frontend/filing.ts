@@ -594,10 +594,15 @@ export function installFilingKeys(): void {
   });
 }
 
-/** Wire a one-time global Ctrl+Z → undo (ignored while editing a field). */
+/** Wire a one-time global undo shortcut — Ctrl+Z on Windows, Cmd+Z on macOS (ignored while
+ * editing a field). Accepts either modifier rather than branching on `platform()`: that lookup
+ * has a failure path (chrome.ts:194 falls back to the Windows layout when it throws), and a
+ * shortcut is the wrong place to inherit one. Until 2026-08-05 only `ctrlKey` was tested, so
+ * macOS had NO keyboard undo at all — and no Edit menu either to fall back on, since the window
+ * runs with `decorations: false`. */
 export function installUndoShortcut(): void {
   document.addEventListener("keydown", (e) => {
-    if (!(e.ctrlKey && (e.key === "z" || e.key === "Z"))) return;
+    if (!((e.ctrlKey || e.metaKey) && (e.key === "z" || e.key === "Z"))) return;
     const t = e.target as HTMLElement;
     if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
     e.preventDefault();

@@ -1,26 +1,29 @@
 # Sift Design System - Components
 
-> Catalogue oriente usage. Pour les etats precis, consulter
+> Catalogue orienté usage. Pour les états précis, consulter
 > `docs/design-system-states.md`.
 
 ## Shell
 
 Sources principales :
 
-- `frontend/chrome.ts`
+- `index.html` (racine du dépôt) — le markup du rail y est **écrit en dur**, lignes 13+ :
+  `<div class="nv" … data-view="…">`. Ce fichier manquait à cette liste jusqu'au
+  2026-08-05 ;
+- `frontend/chrome.ts` — title bar, routage, badges ;
 - `frontend/styles.css`
 
-Roles :
+Rôles :
 
 - title bar native/custom ;
 - rail de navigation ;
 - espace central ;
 - panneaux contextuels.
 
-Regles :
+Règles :
 
 - la title bar doit prolonger visuellement le rail gauche et le fond principal ;
-- les separations doivent etre continues, sans decalage ni double bordure ;
+- les séparations doivent être continues, sans décalage ni double bordure ;
 - le rail est une structure permanente, pas une carte ;
 - la navigation active reste neutre et lisible.
 
@@ -28,20 +31,22 @@ Regles :
 
 Sources principales :
 
-- `frontend/chrome.ts`
+- `frontend/queue-panel.ts` — le vrai propriétaire : virtualisation, navigation clavier,
+  recherche, rendu des lignes, état Détail/Lot. Cette page citait `chrome.ts`, qui ne
+  contient rien de la file (corrigé le 2026-08-05) ;
 - `frontend/styles.css`
 
-Roles :
+Rôles :
 
 - montrer le contexte de traitement ;
-- permettre la selection rapide ;
+- permettre la sélection rapide ;
 - garder la progression mentale dans un lot.
 
-Regles :
+Règles :
 
-- le panneau peut etre flottant/collapsible ;
-- pas d'ombre portee si la position et le fond suffisent ;
-- la ligne active doit etre evidente sans ecraser la liste ;
+- le panneau peut être flottant/collapsible ;
+- pas d'ombre portée si la position et le fond suffisent ;
+- la ligne active doit être évidente sans écraser la liste ;
 - les noms longs doivent rester scannables.
 
 ## Hero Lecteur
@@ -51,18 +56,18 @@ Sources principales :
 - `frontend/report-view.ts`
 - classes `.sift-player-row`, waveform, sliders.
 
-Roles :
+Rôles :
 
-- donner l'identite du morceau ;
-- permettre l'ecoute rapide ;
+- donner l'identité du morceau ;
+- permettre l'écoute rapide ;
 - montrer le signal audio au premier niveau.
 
-Regles :
+Règles :
 
-- le hero est la premiere ancre de l'ecran Revue ;
-- il peut etre plus grand que les sections d'analyse ;
-- waveform, lecture, volume, key-lock et tempo appartiennent au meme groupe ;
-- ne pas transformer le lecteur en carte decorative isolee.
+- le hero est la première ancre de l'écran Revue ;
+- il peut être plus grand que les sections d'analyse ;
+- waveform, lecture, volume, key-lock et tempo appartiennent au même groupe ;
+- ne pas transformer le lecteur en carte décorative isolée.
 
 ## Sections Revue
 
@@ -74,17 +79,22 @@ Sources principales :
 
 Sections canoniques :
 
-- Diagnostic audio ;
-- Metadonnees ;
-- A finaliser.
+- Diagnostic audio — libellé réellement rendu (`report-view.ts:570`) ;
+- Métadonnées — libellé réellement rendu (`filing-identify.ts:430`) ;
+- ⚠️ **« À finaliser » n'est rendu nulle part.** Le libellé n'existe que dans des
+  commentaires, et `report-view.ts:541-542` documente que cet état *a été essayé puis
+  retiré* sur retour utilisateur (« on ne comprend pas ce qui reste à finaliser ?
+  Redondant ? »). Cette page le listait comme troisième section canonique : c'était une
+  intention abandonnée, décrite comme un fait. Constaté le 2026-08-05. Le nom reste
+  utilisé dans le vocabulaire interne et dans `content.md` — à réconcilier.
 
-Regles :
+Règles :
 
-- Diagnostic audio au-dessus de Metadonnees en layout vertical ;
-- les sections reposent sur le fond, pas dans des cartes imbriquees ;
-- les titres de section peuvent etre des bulles/pills ;
-- pas de separateurs internes gratuits ;
-- espacement homogene par niveau : entre sections, entre groupes, entre lignes.
+- Diagnostic audio au-dessus de Métadonnées en layout vertical ;
+- les sections reposent sur le fond, pas dans des cartes imbriquées ;
+- les titres de section peuvent être des bulles/pills ;
+- pas de séparateurs internes gratuits ;
+- espacement homogène par niveau : entre sections, entre groupes, entre lignes.
 
 ## Diagnostic Audio
 
@@ -93,39 +103,45 @@ Sources principales :
 - `frontend/report-view.ts`
 - spectrogramme et lignes de mesures.
 
-Roles :
+Rôles :
 
 - confirmer le verdict audio ;
 - rendre visible le cutoff, la dynamique, le conteneur, les anomalies.
 
-Regles :
+Règles :
 
-- "Signal" et "Conteneur" sont des categories, pas des alertes ;
-- ne pas les rendre ambre par defaut ;
-- le spectrogramme est une preuve, pas une decoration ;
-- les valeurs techniques doivent etre compactes et comparables.
+- ⚠️ les catégories « Signal » et « Conteneur », décrites ici jusqu'au 2026-08-05,
+  **n'existent pas dans l'UI**. Le seul rendu voisin est la ligne de mesure
+  « Conteneur OK » (`report-view.ts:611`). La règle qui suivait — « ne pas les rendre
+  ambre par défaut » — portait donc sur des éléments absents ; elle garde sa valeur
+  d'intention pour toute catégorie future, mais ne décrit rien d'existant ;
+- le spectrogramme est une preuve, pas une décoration ;
+- les valeurs techniques doivent être compactes et comparables.
 
-## Metadonnees
+## Métadonnées
 
 Sources principales :
 
-- `frontend/filing.ts`
-- `frontend/identify-shared.ts`
+- `frontend/filing-identify.ts` — propriétaire réel de la zone (Discogs, éditeur,
+  apply-tags). Cette page citait `filing.ts`, qui n'est plus que l'orchestration
+  résiduelle depuis le split (corrigé le 2026-08-05) ;
+- `frontend/identify-shared.ts` — rendu des lignes de candidats, partagé avec
+  `library-detail.ts`.
 
-Roles :
+Rôles :
 
 - confirmer ou corriger Discogs ;
 - appliquer les tags utiles ;
-- signaler clairement ce qui n'est pas encore grave dans le fichier.
+- signaler clairement ce qui n'est pas encore gravé dans le fichier.
 
-Regles :
+Règles :
 
-- un warning ID3 dans Metadonnees suffit ; ne pas le dupliquer dans A finaliser ;
+- un warning ID3 dans Métadonnées suffit ; ne pas le dupliquer dans À finaliser ;
 - les candidats Discogs doivent rester lisibles ;
-- les genres sont des tags de selection, pas des badges de statut ;
-- "metadonnees fiables" doit rester un signal discret.
+- les genres sont des tags de sélection, pas des badges de statut ;
+- "métadonnées fiables" doit rester un signal discret.
 
-## A Finaliser
+## À Finaliser
 
 Sources principales :
 
@@ -133,44 +149,154 @@ Sources principales :
 - `#filfoot`
 - `#fldz`
 
-Roles :
+Rôles :
 
 - choisir la destination ;
 - choisir le format ;
-- voir le nom final apres format ;
-- ranger ou jeter.
+- voir le nom final après format ;
+- convertir ou écarter — les verbes « ranger ou jeter » qui figuraient ici ont été
+  remplacés dans l'UI le 2026-07-10 (`filing.ts:95` et `:175`), ce que cette page disait
+  déjà correctement quinze lignes plus bas.
 
-Ordre recommande :
+Ordre recommandé :
 
 1. titre compact "Destination" ;
-2. selection de destination ;
+2. sélection de destination ;
 3. choix de format ;
 4. nom final ;
 5. actions principales.
 
-Regles :
+Règles :
 
-- Destination est obligatoire, car elle dit ou ranger ;
-- le nom final vient apres le format, car le format change son extension ;
-- le nom final ne doit pas dominer visuellement la decision ;
-- les actions Convertir/Écarter restent proches du resultat final ;
-- `#filfoot` et `#fldz` restent des siblings de `.mid`, pas des enfants de
-  l'inspecteur.
+- Destination est obligatoire, car elle dit où ranger ;
+- le nom final vient après le format, car le format change son extension ;
+- le nom final ne doit pas dominer visuellement la décision ;
+- les actions Convertir/Écarter restent proches du résultat final ;
+- `#filfoot` et `#fldz` restent des siblings de `.mid`. Précision apportée le
+  2026-08-05 : la formulation d'origine ajoutait « pas des enfants de l'inspecteur », ce
+  qui est faux et opposait deux choses compatibles. Markup réel, `app.js:122` :
+  `<div class="sift-inspector" id="rvinspector"><div class="mid" id="mid"></div><div id="filfoot"></div><div id="fldz" hidden></div></div>` —
+  les trois sont siblings **et** tous enfants de l'inspecteur.
 
 ## Feedback
 
-Composants concernes :
+Composants concernés :
 
 - verdict ;
 - warning ;
 - toast ;
 - progression ;
-- etats de selection.
+- états de sélection.
 
-Regles :
+Règles :
 
-- pas d'aplat vert permanent pour dire "c'est fait" si l'etat est deja compris ;
-- utiliser un flash court lors d'une confirmation, puis revenir a un etat neutre ;
-- les erreurs bloquantes doivent etre plus visibles que les recommandations ;
-- aucune action destructive ne doit dependre de `window.confirm()`.
+- pas d'aplat vert permanent pour dire "c'est fait" si l'état est déjà compris ;
+- utiliser un flash court lors d'une confirmation, puis revenir à un état neutre ;
+- les erreurs bloquantes doivent être plus visibles que les recommandations ;
+- aucune action destructive ne doit dépendre de `window.confirm()`.
 
+Ajouts HIG Feedback :
+
+- le canal doit correspondre à l'importance : un statut se consulte quand on veut, un
+  risque de perte interrompt ;
+- ne pas confirmer ce qui réussit toujours — l'utilisateur attend le succès, il n'a
+  besoin d'un signal que pour l'échec ;
+- un retour ne doit jamais reposer sur un seul canal : couleur **et** texte.
+
+## Rail De Navigation
+
+HIG Sidebars, transposé. Le rail de Sift tient le rôle de sidebar sans en avoir la forme.
+
+**À viser — rien de ceci n'est acquis** (formulation corrigée le 2026-08-05 : c'était
+écrit sous l'intitulé « Retenu », qui laissait croire à un état de fait) :
+
+- laisser l'utilisateur masquer la navigation quand il veut de la place pour le contenu.
+  Aucune affordance de repli n'existe : `styles.css:221` fixe `.sb` à `width:152px`, sans
+  variante ni bascule ;
+- si la liste s'allonge, grouper par disclosure plutôt qu'étirer ;
+- l'ordre du rail reflète l'importance, pas l'ordre d'implémentation.
+
+Non transposé : Liquid Glass, background extension effect, SF Symbols — organes ou API
+natifs. Voir le test de transposition dans `foundations.md`.
+
+## Listes Et Tables
+
+HIG Lists and tables.
+
+- une table qui sert à **naviguer** garde la ligne sélectionnée visible en permanence ;
+  une table qui sert à **choisir** ne surligne que brièvement, puis marque le choix par
+  un signe durable. Le retour de sélection doit dire lequel des deux rôles la table joue ;
+- texte d'item court : troncature et retour à la ligne cassent le scan ;
+- réordonnancement apprécié même quand l'ajout et la suppression sont impossibles.
+
+Sur des listes virtualisées, une sélection persistante doit être portée par l'état, pas
+par le nœud DOM — celui-ci est recyclé.
+
+⚠️ **Écart relevé le 2026-08-05 : la file de Revue n'est pas focalisable.**
+`queue-panel.ts:332` rend `<div class="qi" … title="…" style="cursor:pointer">` — ni
+`tabindex`, ni `role`, ni `aria`. Or `home-sources.ts:80` rend la **même classe `.qi`**
+avec `tabindex="0" role="button" aria-pressed`, et `library-views.ts:86` fait de même
+pour `.lr`. Le même composant visuel est donc accessible sur Accueil et muet sur Revue,
+qui est l'écran principal.
+
+Nuance : la navigation clavier existe (`queue-panel.ts:265-279`, flèches haut/bas via une
+couche document). Ce qui manque n'est pas le déplacement, c'est l'**exposition** — focus
+visible et rôle annoncé. C'est précisément ce qu'une capture d'écran ne montre jamais.
+
+## Regle De Focus
+
+Tout élément reconstruit à la main qui se comporte comme un contrôle doit porter
+`tabindex` **et** `role`, comme le fait déjà la majorité du dépôt : arbre de destination
+(`filing-bins.ts:241`), facettes (`bibliotheque-view.ts:312`), lignes et tuiles
+(`library-views.ts:86,116`), rail de navigation (`index.html:13-21`).
+
+Préférer l'élément natif quand il existe — les candidats Discogs
+(`identify-shared.ts:23`) sont de vrais `<button>`, les divulgations de `report-view.ts:457`
+et `:600` de vrais `<details>`, les en-têtes de tri de vrais `<th aria-sort>`. C'est la
+bonne pente : un natif n'oublie jamais son focus.
+
+Les tuiles de `library-views.ts` ont reçu leur `aria-label` composite le 2026-08-05.
+
+⚠️ **La file de Revue reste l'exception, et pour une raison à connaître avant d'y
+toucher.** Lui donner `role="button"` promettrait une activation par Entrée et Espace —
+que l'app détourne déjà. `filing.ts:560` installe un `keydown` au niveau **document** dont
+la seule garde est `if (!state.track) return` : sur Revue, Espace = écouter,
+**Entrée = convertir**, Retour arrière = écarter. Et `installFilingKeys()` est enregistré
+à `sift-live.ts:185`, *avant* `installQueueNavKeys()` à `:186`, donc un écouteur plus
+tardif en phase bouillonnante ne peut pas le devancer.
+
+Poser le rôle sans lever ce conflit remplacerait une lacune d'accessibilité par un piège :
+la touche que le rôle annonce comme « activer » déclencherait l'action principale. Le
+correctif demande un lot coordonné sur `queue-panel.ts` + `filing.ts`, pas une retouche de
+markup. Vérifié le 2026-08-05, non corrigé.
+
+## Indicateur De Progression
+
+Source : `frontend/progress-zone.ts`.
+
+- déterminé par défaut (`done/total`), jamais indéterminé sans raison ;
+- `role="progressbar"` et `aria-valuenow` maintenus à chaque tick, pas seulement à la
+  création ;
+- animé par `transform`, jamais par un relayout ;
+- transitoire : il disparaît à la fin et ne laisse pas d'état coloré permanent.
+
+## Confirmation In-App
+
+Source : `frontend/confirm-modal.ts`.
+
+- remplace `window.confirm()`, qu'un clic synthétique a déjà traversée ;
+- armée et horodatée contre le double clic ;
+- HIG Alerts : un titre, un texte informatif optionnel, **trois boutons au maximum** ;
+- ne jamais s'en servir pour informer sans action possible — un avertissement non
+  actionnable vit dans le contexte concerné, pas dans une interruption.
+
+## Contrôles De Disclosure
+
+HIG Disclosure controls. Concerne les collapses Diagnostic audio et Métadonnées, et tout
+groupe repliable du rail.
+
+- ce qui est le plus utilisé reste en haut, toujours visible ; seul l'avancé se cache ;
+- le libellé dit ce qui est masqué — "Diagnostic audio" nomme la zone, pas son contenu
+  caché : à réévaluer si l'état fermé perd de l'information utile à la décision ;
+- direction de l'indicateur : vers l'intérieur quand c'est fermé, vers le bas quand
+  c'est ouvert.
