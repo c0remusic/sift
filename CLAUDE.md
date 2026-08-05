@@ -251,6 +251,13 @@ Garde-fous issus d'incidents réels :
   étape vérifiée par SHA256, refuse d'agir si Rekordbox tourne).
 - **Tests réalistes** : un test qui seed un setting ou fichier de config doit passer par
   les mêmes validations et dispositions de fichiers que la production.
+- **Un test de non-régression se mesure en mutant le code qu'il garde.** Vert ne veut pas
+  dire tenant : casser volontairement la ligne visée et vérifier qu'il tombe, avant de le
+  déclarer couvrant. Mesuré le 2026-08-05 sur `frontend/b85.ts` — les 24 vecteurs de
+  round-trip produits par le crate Rust décodaient à l'identique avec la constante de
+  padding 126, 84, 85 ou 127 ; la couverture du chemin de reste n'aurait tenu aucune des
+  valeurs que son propre commentaire interdit. La tenir a demandé des entrées hors image
+  de l'encodeur (`test/b85.test.ts`, `RUST_PADDING_PROBES`).
 - **Debug UI** : après deux correctifs visuels infructueux, mesurer la vraie fenêtre
   `tauri dev` (CDP, ci-dessous) avant un troisième essai.
 - **Pas d'affirmation d'implémentation invérifiable.** Toute phrase de rapport qui dit
