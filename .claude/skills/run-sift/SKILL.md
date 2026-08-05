@@ -154,3 +154,18 @@ npm run check:security
 | `open-track` exits with *track never painted* | Analysis is slow on a cold cache (`analyze_path` runs the decode + FFT inline, synchronously). Retry, or pick an already-analysed track. |
 | `floor` exits non-zero with `nbTexts: 0` | Nothing was painted — the result is meaningless. Run `open-track` or navigate to a screen first. |
 | `launch` reports *the launch died silently* | The build failed with an empty log. Run `npm run tauri dev` in the foreground to see the real error. |
+| `launch` times out but the app is actually **open** | Known defect, 2026-08-05. `sift.exe` was found running with no debug port: the `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS` variable does not reliably reach WebView2 through `spawn(..., {shell:true, detached:true})` on Windows. Root cause not isolated. **Workaround, verified:** launch in the foreground with the variable inline, then drive with the other subcommands — that is how every measurement in this repo was taken. `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9333 npm run tauri dev` |
+
+## Known limitation
+
+`launch` is the one subcommand **not verified end to end**. It correctly spawns the build
+(observed: `cargo`/`rustc` running, then `sift.exe` alive), but the debug port did not come
+up in that path — see the last Troubleshooting row. `status`, `eval`, `open-track`,
+`floor`, `shot` and `stop` were each exercised against the real window.
+
+Corollary worth knowing before killing anything: this machine runs **several Tauri
+projects at once**. On 2026-08-05, four of six live `cargo.exe` belonged to two *other*
+projects. Their command lines are relative (`"cargo" run …`) and carry no project path — a
+naive `taskkill` would have destroyed a neighbour's build. Identify by walking
+`ParentProcessId` up to a command line that names the project, or by `ExecutablePath` for
+the app binary.
