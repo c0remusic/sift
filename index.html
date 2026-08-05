@@ -21,6 +21,9 @@
       <div class="nv" tabindex="0" role="button" data-view="reglages" title="Réglages"><i class="ti ti-settings" aria-hidden="true"></i><span>Réglages</span></div>
     </div>
   </div>
+  <!-- Titre de page accessible, invisible à l'œil, mis à jour par app.js::render(). Hors de
+       #content exprès : les vues y réécrivent innerHTML et l'emporteraient. Voir .sift-sr-only. -->
+  <h1 id="sift-view-title" class="sift-sr-only">Accueil</h1>
   <div id="content" style="flex:1;min-width:0;display:flex"></div>
 </div>
 <script type="module" src="/frontend/main.ts"></script>

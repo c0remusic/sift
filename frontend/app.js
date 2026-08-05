@@ -60,7 +60,13 @@ function openLink(u){window.open(u,'_blank','noopener');}
       document.addEventListener('mouseup',onUp);
     });
   }
-  function render(){Array.prototype.forEach.call(nav.querySelectorAll('.nv'),function(n){n.classList.toggle('on',n.dataset.view===view);});
+  function render(){var vt=document.getElementById('sift-view-title');
+    Array.prototype.forEach.call(nav.querySelectorAll('.nv'),function(n){var on=n.dataset.view===view;n.classList.toggle('on',on);
+      // Tient a jour le <h1> accessible (invisible, voir .sift-sr-only). Le libelle du rail EST
+      // le nom humain de la vue : le relire ici plutot que de maintenir une table vue->titre,
+      // qui divergerait au premier renommage. Le premier <span> est le libelle ; le second, sur
+      // Revue, est le badge de compte.
+      if(on&&vt){var lbl=n.querySelector('span');if(lbl)vt.textContent=lbl.textContent;}});
     if(view==="revue")return revMode==="batch"?renderBatch():renderRevue();
     if(view==="home")return renderHome();if(view==="biblio")return renderBiblio();if(view==="rkb")return renderRkb();if(view==="cle")return renderCle();if(view==="ecarts")return renderEcarts();if(view==="journal")return renderJournal();return renderReglages();}
 
