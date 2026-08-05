@@ -34,6 +34,7 @@ import type {
   PendingArtworkSync,
   ApplyArtworkSyncOutcome,
   PlaylistDuplicateGroupDto,
+  Spectrogram,
 } from "../shared/contracts";
 import { decodeB85 } from "./b85";
 
@@ -64,10 +65,57 @@ type WireAnalysisReport = Omit<AnalysisReport, "spectrogram"> & {
   spectrogram: Omit<AnalysisReport["spectrogram"], "mag_db"> & { mag_db: string };
 };
 
+/** Vérifie l'unique invariant de taille du spectrogramme : `mag_db.length === frames * bins`.
+ *
+ *  POURQUOI ICI. `decodeB85` sait dire « ces caractères ne sont pas du base85 » ; il ne sait pas
+ *  combien d'octets l'appelant attendait — c'est un miroir littéral du crate Rust (`b85.ts:1-14`),
+ *  pas un lecteur de rapport d'analyse. La longueur attendue n'existe qu'ici, où le champ
+ *  `frames`/`bins` qui la définit arrive dans le même objet. Et `analyzePath` est le SEUL point de
+ *  décodage du frontend, donc la seule garde à écrire.
+ *
+ *  POURQUOI ÇA LÈVE PLUTÔT QUE DE DÉGRADER. Aucun chemin backend légitime ne produit d'écart :
+ *  - `spectrum.rs:230-238` — rien à afficher → `frames: 0, bins: 0, mag_db: vec![]`. `0 === 0*0`,
+ *    donc la sentinelle « pas de spectrogramme » satisfait l'invariant, elle n'y échappe pas ;
+ *  - `spectrum.rs:264-268` — sinon `Vec::with_capacity(frames * out_bins)` rempli colonne par
+ *    colonne, exactement `frames*bins` octets ;
+ *  - `ipc.rs::cache_json` retire la grille par `std::mem::take` sur la struct ENTIÈRE, donc un
+ *    rapport lu du cache vaut `Default` complet — jamais des `frames`/`bins` orphelins.
+ *  Un écart ne peut donc venir que d'une chaîne tronquée sur le fil, d'une divergence entre ce
+ *  décodeur et le crate, ou d'un bug backend. C'est un bug, pas un état de fonctionnement.
+ *
+ *  CE QUE ÇA COÛTE. Le seul appelant qui demande la grille est `report-view.ts:1087` (ouverture du
+ *  collapse Diagnostic), déjà enveloppé dans un `try/catch` qui affiche « échec — réessayer »
+ *  (`report-view.ts:1091-1096`). L'écran Revue lui-même s'ouvre avec `withSpectrogram=false`
+ *  (`report-view.ts:1174`), comme le prefetch, la modale et le self-test : lever ne leur retire
+ *  rien.
+ *
+ *  CE QUE ÇA PROTÈGE. `spectroPointAt` et `drawSpectrogram` indexent `mag_db[f * bins + b]` avec
+ *  `f` et `b` bornés à `frames-1`/`bins-1` — index maximum `frames*bins - 1`. Sous cet invariant
+ *  l'accès est toujours défini, ce qui est la raison pour laquelle le `|| 0` de ces deux lignes a
+ *  pu partir : il transformait un `undefined` en 0, c'est-à-dire en -100 dBFS, c'est-à-dire en
+ *  silence — une grille décalée finissant en noir, sans une seule erreur nulle part. */
+export function assertSpectrogramLength(sg: Spectrogram): void {
+  const expected = sg.frames * sg.bins;
+  const actual = sg.mag_db.length;
+  if (actual === expected) return;
+  // Égalité stricte, pas `actual < expected` : une grille plus LONGUE s'indexerait sans erreur,
+  // mais elle voudrait dire que `frames`/`bins` ne décrivent pas les octets qui les accompagnent
+  // — donc que ce qui s'affiche n'est pas ce que l'analyse a mesuré. Même désaccord de contrat.
+  //
+  // Le message cite les deux longueurs ET leurs deux facteurs : sans eux on saurait qu'il y a un
+  // écart sans pouvoir dire de quel côté il vient — chaîne tronquée sur le fil, ou `frames`/`bins`
+  // qui mentent. Même exigence que `valueAt` (`b85.ts:33`), qui cite le caractère ET sa position.
+  throw new Error(
+    `assertSpectrogramLength: grille incohérente — ${expected} octets attendus ` +
+      `(frames ${sg.frames} × bins ${sg.bins}), ${actual} reçus`,
+  );
+}
+
 /** Debug: run the M2a analysis engine on a file path and return the full report.
  * `withSpectrogram` builds the heavy display grid (verdict/scalars are identical either way).
  * SINGLE base85 decode point for the whole frontend: every consumer of `spectrogram.mag_db`
- * (report-view spectroPointAt / drawSpectrogram) goes through here. */
+ * (report-view spectroPointAt / drawSpectrogram) goes through here — et le seul endroit où la
+ * taille de la grille décodée est confrontée aux `frames`/`bins` qui l'accompagnent. */
 export const analyzePath = async (
   path: string,
   withSpectrogram = false,
@@ -81,10 +129,9 @@ export const analyzePath = async (
     withSpectrogram,
     allowForget,
   });
-  return {
-    ...wire,
-    spectrogram: { ...wire.spectrogram, mag_db: decodeB85(wire.spectrogram.mag_db) },
-  };
+  const spectrogram = { ...wire.spectrogram, mag_db: decodeB85(wire.spectrogram.mag_db) };
+  assertSpectrogramLength(spectrogram);
+  return { ...wire, spectrogram };
 };
 
 /** Background-analysis progress (pending analysed / total pending). */

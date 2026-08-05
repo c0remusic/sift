@@ -152,7 +152,14 @@ function spectroPointAt(
 ): { freqHz: number; dbfs: number; timeSec: number } {
   const f = Math.min(sg.frames - 1, Math.max(0, Math.floor((x / w) * sg.frames)));
   const b = Math.min(sg.bins - 1, Math.max(0, Math.floor(((h - 1 - y) / h) * sg.bins)));
-  const val = sg.mag_db[f * sg.bins + b] || 0;
+  // Aucun repli sur cet accès, ici comme dans drawSpectrogram : `f` et `b` sont bornés juste
+  // au-dessus, donc l'index maximum vaut `frames*bins - 1`, et `assertSpectrogramLength`
+  // (`ipc.ts`, au point de décodage) garantit que la grille est exactement de cette taille.
+  // Le `|| 0` qui se trouvait là ne pouvait rattraper qu'une violation de cet invariant — et il
+  // la peignait en 0, c'est-à-dire -100 dBFS, c'est-à-dire du silence : grille décalée, fin en
+  // noir, aucune erreur nulle part. Il masquait aussi un vrai 0, donc même en relisant la valeur
+  // on ne pouvait plus distinguer « lu » de « absent ».
+  const val = sg.mag_db[f * sg.bins + b];
   // Fréquence dérivée du bin b lui-même (son centre), pas d'un ratio y/h calculé séparément
   // — garantit que la fréquence affichée correspond exactement au bin dont la dB est lue
   // juste au-dessus, plutôt que deux formules légèrement décalées d'1px (revue finale).
@@ -319,7 +326,8 @@ function drawSpectrogram(canvas: HTMLCanvasElement, r: AnalysisReport) {
     const f = Math.min(sg.frames - 1, Math.floor((x / w) * sg.frames));
     for (let y = 0; y < h; y++) {
       const b = Math.min(sg.bins - 1, Math.floor(((h - 1 - y) / h) * sg.bins));
-      const val = sg.mag_db[f * sg.bins + b] || 0;
+      // Sans repli — voir spectroPointAt pour l'invariant qui rend cet accès toujours défini.
+      const val = sg.mag_db[f * sg.bins + b];
       const [cr, cg, cb] = spectroColor(val);
       const i = (y * w + x) * 4;
       img.data[i] = cr;
