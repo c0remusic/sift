@@ -46,10 +46,13 @@ Pas un projet de systems-programming, pas une lib publiée, pas un service async
 - **Pas de FFI au sens C/`bindgen`/`cbindgen`.** La seule frontière qui y
   ressemble est le sidecar FFmpeg (`ffmpeg-sidecar` spawne un binaire bundlé en
   sous-process) — c'est de l'I/O de process, pas un passage d'ABI. Le codebase a
-  exactement **un** bloc `unsafe` (`lib.rs`, `DwmExtendFrameIntoClientArea`, API
-  Win32 de titlebar), avec son commentaire `// SAFETY:` depuis 2026-07-17
-  (commit `c94685c`) — s'il est touché, préserver/mettre à jour ce commentaire,
-  pas le supprimer. Pas de surface `no_std`/embarqué/WASM — ne pas appliquer
+  **4** blocs `unsafe`, comptés le 2026-08-05 : un dans `lib.rs`
+  (`DwmExtendFrameIntoClientArea`, API Win32 de titlebar), avec son commentaire
+  `// SAFETY:` depuis 2026-07-17 (commit `c94685c`), et **trois dans
+  `usb_format/raw_volume.rs`** (handles Win32 sur volume brut), également commentés.
+  Ce fichier a longtemps annoncé « exactement un » sous un titre « vérifiée, pas
+  supposée » — c'était faux. Un bloc touché préserve ou met à jour son commentaire,
+  jamais le supprimer. Pas de surface `no_std`/embarqué/WASM — ne pas appliquer
   ces patterns.
 - **Erreurs : enums à la main** (`Debug, Clone, PartialEq` + `Display` manuel +
   `impl std::error::Error`), ex. `MasterDbError` (`rekordbox_masterdb.rs`). À la
@@ -62,8 +65,9 @@ Pas un projet de systems-programming, pas une lib publiée, pas un service async
   fail fast, pas de fallback silencieux) — plus strict que le global (« documenter
   l'invariant et utiliser `expect` »). `Option<T>` seulement pour de l'optionnel
   réel, jamais comme échappatoire d'erreur.
-- **Perf : pas de `criterion`.** L'unique benchmark (`bench_volume.rs`) est un
-  `#[cfg(test)] mod` lancé via `cargo test --release -- --ignored --nocapture` —
+- **Perf : pas de `criterion`.** Les quatre benchmarks (`bench_volume.rs`,
+  `bench_dedup.rs`, `bench_sqlite.rs`, `bench_cpu_budget.rs`) sont des
+  `#[cfg(test)] mod` lancés via `cargo test --release -- --ignored --nocapture` —
   suivre ce pattern plutôt que d'introduire criterion. `profile.dev` met déjà les
   dépendances à `opt-level = 3` pour les hot paths DSP ; bencher en `--release`.
 - **Tests : `#[cfg(test)] mod tests` inline par module.** Pas de `proptest`,

@@ -199,8 +199,10 @@ envoyée par `save_annotation` qui append `docs/annotations.jsonl`.
   la frontière IPC. Le projet n'utilise **pas** `thiserror`/`anyhow` — c'est un choix,
   pas un défaut ; ne pas les introduire sans le signaler.
 - **`unwrap()`/`expect()` hors `#[cfg(test)]` = interdit dur.**
-- Un seul bloc `unsafe` (`lib.rs`, `DwmExtendFrameIntoClientArea`), avec son commentaire
-  `// SAFETY:` — le préserver s'il est touché.
+- **4 blocs `unsafe`**, tous avec leur `// SAFETY:` (comptés le 2026-08-05) : un dans
+  `lib.rs` (`DwmExtendFrameIntoClientArea`, titlebar Win32) et **trois dans
+  `usb_format/raw_volume.rs`** (handles Win32 sur volume brut). Un bloc touché garde ou
+  met à jour son commentaire, jamais le supprimer.
 
 Détails et overrides d'audit Rust : **`.claude/rules/rust.md`** (chargé pour
 `src-tauri/**`).
@@ -227,6 +229,10 @@ pré-filtre de durée, `group_duplicates` bout à bout, empreinte RAM) ·
 `bench_volume.rs` (mesure `list_filed`/`list_pending` à 15k/100k lignes,
 `EXPLAIN QUERY PLAN`) · `bench_sqlite.rs` (Phase 5 : attente du verrou et `SQLITE_BUSY`
 sous charge, coût d'une analyse sur de vrais fichiers via `SIFT_BENCH_TRACKS_DIR`)
+· `bench_cpu_budget.rs` (budget CPU partagé entre le pool d'analyse et le pool
+d'encodage, mesuré en **débits** — fichiers/seconde sur une fenêtre de durée fixe — et
+non en durées : la forme en durées a été réfutée à sa première exécution, l'analyse
+finissant dans les 5 % premiers de la fenêtre commune)
 — `--ignored`, jamais dans la suite normale.
 `search_corpus.rs` / `search_terms.rs` : corpus de noms de fichiers **sales** tirés
 d'une vraie bibliothèque, étalonné à la main. Chaque entrée est un motif verrouillé —
@@ -390,7 +396,7 @@ l'en-tête de `frontend/b85.ts`).
 
 `.gitignore` ignore le **contenu** de `docs/` et ne ré-autorise que ce qui fait
 autorité : `install-non-signe.md`, `design-system-states.md`, `ressources-externes.md`,
-`design-system/`, `skills/`, et **chaque dossier de chantier** de `superpowers/changes/`
+`design-system/`, `skills/`, `agents/`, et **chaque dossier de chantier** de `superpowers/changes/`
 pris un par un. Plans de jalons, specs, revues et comptes rendus restent
 **sur cette machine** mais hors suivi git.
 
@@ -450,3 +456,27 @@ trouve rien, silencieusement, pour toujours**.
   (`review.md`).
 - `.claude/learning-log.md` — incidents et leçons machine-locales.
 - `AGENTS.md` — simple pointeur vers ce fichier (ne pas y dupliquer de contenu).
+
+## Agent skills
+
+### Issue tracker
+
+Les issues vivent dans les GitHub Issues de `c0remusic/sift`, pilotées via la CLI `gh`. Voir `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Les cinq rôles canoniques, chaînes de label inchangées (`needs-triage`, `needs-info`,
+`ready-for-agent`, `ready-for-human`, `wontfix`) — les cinq existent réellement sur le
+dépôt, vérifiés par `gh label list` le 2026-08-11, aux côtés des six `wayfinder:*`.
+Voir `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Dépôt single-context : le glossaire est `CONTEXT.md` à la racine. **`docs/adr/` n'existe
+pas** (vérifié absent le 2026-08-11) — c'est l'emplacement prévu si un ADR est un jour
+écrit, pas un dossier à lire. `docs/agents/domain.md` demande d'ailleurs de passer en
+silence sur son absence, et non de le créer d'avance. Voir `docs/agents/domain.md`.
+
+### Wayfinder
+
+Chantier trop gros pour une session : `/wayfinder` charte la carte sur le tracker ci-dessus. Labels `wayfinder:map` et `wayfinder:{research,prototype,grilling,task}` créés. Sous-issues et blocage natif GitHub disponibles — pas de repli par convention de corps.
