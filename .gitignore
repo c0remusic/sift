@@ -130,6 +130,11 @@ docs/superpowers/changes/*
 # une surface plus utile n'est pas une surface plus belle. Porte la mesure qui unifie le
 # constat — l'app est plate en taille, espacement, clarté ET couleur simultanément. Ouvert.
 !docs/superpowers/changes/2026-08-05-identite-visuelle/
+# Échecs silencieux : 21 impasses localisées en cherchant les blocages du premier lancement,
+# dont 15 où un écran vide et un écran cassé se ressemblent. Hors map wayfinder — rien à y
+# décider, ce sont des défauts. Les trois plus graves frappent l'utilisateur actuel, pas un
+# nouveau venu. Ouvert.
+!docs/superpowers/changes/2026-08-11-echecs-silencieux/
 
 # scratch/test copies (may contain real Rekordbox master.db, never committed)
 scratchpad/
