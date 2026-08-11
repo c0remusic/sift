@@ -50,6 +50,15 @@ Thumbs.db
 !.claude/skills/run-sift/**
 !.claude/verify.sh
 !.claude/learning-log.md
+# `verify.sh` était versionné mais PAS ce qui le déclenche : le hook Stop vivait
+# dans `~/.claude`, supprimé par le reset vanilla du 2026-07-31, et la gate n'était
+# donc plus lancée par rien. Rebranché en hook Stop de projet le 2026-08-11 — il
+# doit voyager avec le dépôt, sinon un clone frais retombe dans le même trou.
+!.claude/settings.json
+# Subagents de projet (xss-esc-auditor) : même raison que run-sift, ils encodent
+# une contrainte du dépôt et ne servent à rien s'ils restent sur une seule machine.
+!.claude/agents/
+!.claude/agents/**
 .codex/
 .agents/
 
