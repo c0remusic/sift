@@ -203,10 +203,50 @@ document ne les attend.**
 - Le message d'échec FFmpeg, le comportement de `dirs::config_dir()` et la zone grise WMI de
   Clé USB se déterminent **en lisant**.
 
-**Un seul trou réel subsiste, et il se lit aussi** : `frontend/app.js` (55 ko) n'a jamais été lu,
-alors qu'il est importé inconditionnellement par `main.ts` et tourne donc en production. Ce qu'il
-peint entre son chargement et la fin de `installLiveWiring()` est un angle mort de cet
-inventaire. C'est la première tâche de ce chantier.
+**Un seul trou réel subsistait, et il se lisait aussi** : `frontend/app.js` n'avait jamais été lu,
+alors qu'il est importé inconditionnellement par `main.ts` et tourne donc en production. Fait le
+2026-08-11 — voir la section suivante. **Le trou est fermé, et la réponse est rassurante.**
+
+## `app.js` en production — angle mort fermé le 2026-08-11
+
+439 lignes, lues intégralement. `main.ts:12` l'importe **avant** `installLiveWiring()` (`:24`),
+et son IIFE se termine par un `render()` (`app.js:438`) : la maquette peint donc bien, au boot,
+avant le wiring live.
+
+**Elle ne peint pas ses données de démo pour autant.** Huit des dix fonctions de rendu portent la
+même garde `if(!('__TAURI_INTERNALS__' in window))` et ne rendent, dans Tauri, qu'une coquille :
+`renderHome` (`:78`), `renderRevue` (`:134`), `renderRkb` (`:253`), `renderBiblio` (`:265`),
+`renderEcarts` (`:324`), `renderCle` (`:369`), `renderReglages` (`:382`), plus le handler clavier
+(`:432`) qui sort immédiatement. `renderJournal` (`:318`) vide `#content` et délègue à
+`window.__siftJournal()`.
+
+Deux fonctions n'ont pas de garde, et il fallait vérifier leur atteignabilité :
+
+- **`renderMid` (`:156`) est inatteignable** : son unique appel depuis `renderRevue` est ligne
+  150, **à l'intérieur** de la garde.
+- **`renderBatch` (`:240`) n'a pas de garde et serait atteignable** par `render()` (`:70`) dès que
+  `revMode === "batch"`. Sa seule porte d'entrée est le bascule `[data-act="revmode"]`
+  (`app.js:405`), et **`injectLeanStyle()` le masque** (`chrome.ts:139`). Cette injection est
+  appelée depuis `sift-live.ts:181`, donc dans Tauri uniquement. Le vrai mode Lot vit ailleurs,
+  sous `data-sift="reviewmode"` (`queue-panel.ts:496`).
+
+**Mesuré dans la vraie fenêtre**, pas déduit : les 2 bascules de la maquette sont présentes dans
+le DOM, toutes deux en `display: none` et à 0×0 ; la feuille `#sift-lean-style` est bien injectée ;
+les 2 boutons du vrai segmented control sont là.
+
+⚠️ **Risque résiduel, pour un agent et non pour un utilisateur.** `display:none` retire l'élément
+de la souris, pas du DOM : un clic synthétique (`.click()`) atteint toujours le handler, met
+`revMode` à `"batch"` et repeint la maquette **par-dessus** la vue live, avec Mr. Fingers et Chez
+Damier. C'est le piège que documente déjà `.claude/skills/run-sift/SKILL.md`. Il ne touche pas
+l'utilisateur — aucun clic humain ne peut viser un élément de taille nulle.
+
+Sur la présence du drapeau au moment du boot : `main.ts:20-21` calcule `inTauri` avec le **même**
+test, et c'est lui qui conditionne `installLiveWiring()`. Le wiring live tourne, donc le drapeau
+est présent à l'évaluation du module — et `app.js`, importé dans la même passe synchrone, le voit
+aussi.
+
+**Conséquence pour ce chantier** : aucune impasse ne vient de la maquette. Elle est correctement
+neutralisée. Le point B4 est clos sans correctif.
 
 ## Ce que ce chantier ne fait pas
 
