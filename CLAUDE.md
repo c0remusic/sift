@@ -86,19 +86,22 @@ de `rekordbox_masterdb.rs`, dépend de PyCryptodome).
 
 Deux gardiens, à connaître avant de dire « terminé » :
 
-- **`.claude/verify.sh`** — `tsc --noEmit` + `lint:tokens` + `cargo check` borné à
-  25 s (abandonné sans échec au-delà : une gate de fin de tour doit être rapide ou
-  muette). ⚠️ **Plus déclenchée par rien** : le hook Stop global a été supprimé par
-  le reset vanilla de `~/.claude` du 2026-07-31 (commit `6f6c132`, sauvegarde au tag
-  `pre-reset-vanilla`). Le script est intact — le lancer à la main. Le seul hook
-  encore actif sur ce dépôt est celui d'`impeccable` (`.claude/settings.local.json`).
+- **`.claude/verify.sh`** — `tsc --noEmit` + `lint:tokens` + `cargo check`. Seul
+  `cargo check` est borné, à 25 s (`verify.sh:44`, abandonné **sans échec** au-delà :
+  une gate de fin de tour doit être rapide ou muette). **Déclenchée automatiquement**
+  par un hook `Stop` déclaré dans `.claude/settings.json`, versionné, timeout 90 s.
+  Elle avait cessé de l'être entre le reset vanilla de `~/.claude` du 2026-07-31
+  (commit `6f6c132`, sauvegarde au tag `pre-reset-vanilla`) et son rebranchement par
+  `f9fa086` le 2026-08-11 — ne pas rejouer ce lancement à la main. **Deux** hooks sont
+  actifs sur ce dépôt : celui-ci, et celui d'`impeccable` en `PostToolUse`
+  (`.claude/settings.local.json`, non versionné).
 - **`.github/workflows/test.yml`** — sur **toute** branche et toute PR (Windows) :
   `tsc --noEmit` → `npm run test` → `npm run lint` → `cargo fmt --check` →
   `clippy -D warnings` → `cargo test`. Ordre délibéré, du moins cher au plus cher : les
   trois gates frontend ne compilent rien. Le job régénère fixtures + ffmpeg d'abord.
   ⚠️ `.claude/verify.sh` n'a **pas** été étendu aux deux nouvelles gates — il reste
-  `tsc --noEmit` + `lint:tokens` + `cargo check`, et de toute façon plus rien ne le
-  déclenche (voir ci-dessus).
+  `tsc --noEmit` + `lint:tokens` + `cargo check`. Une fin de tour verte ne dit donc
+  rien de `npm run test` ni de `clippy` : ces deux-là ne tombent qu'en CI.
 
 `build.yml` (installeurs non signés Win+Mac) et `release.yml` ne se déclenchent que sur
 `main` / tags — ils ne sont pas un filet de branche.
@@ -178,7 +181,9 @@ de la chaîne brute — pas de table code→message, délibérément) · `dom.ts
 `progress-zone.ts` · `theme.ts` · `updater.ts` · `usb-format-modal.ts` ·
 `usb-row.ts` · `usage-chart.ts` (graphique d'occupation, Clé USB + Bibliothèque) ·
 `empty-state.ts` · `library-views.ts` · `identify-shared.ts` · `genre-families.ts` ·
-`styles.css`.
+`popover-position.ts` (géométrie d'ancrage d'un popover `position:fixed`, **sans DOM** —
+séparée de `filing-bins.ts` pour être testable en env Node, qui ne peut pas charger un
+module important `./ipc`) · `styles.css`.
 
 `dev-inspector.ts` + `dev-annotate.ts` forment l'outil d'annotation **Alt+Clic**
 (dev-only) : cadre de sélection, localisation du source via `locate_source`, note libre

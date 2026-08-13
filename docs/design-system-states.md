@@ -57,45 +57,45 @@
 - L280 — Pochette/cover `.sift-cover-frame` — `alt` fixé 07-03, bug `[hidden]` réellement cassé fixé 07-05.
 - L305 — Boutons icon-only — vérifiés, titlebar corrigée 07-03.
 - L314 — Barre de progression `.pbar`/`.sift-pz-fill` — perf `transform` 07-03.
-- L323 — Popover Destination `.sift-dest-popover` — RAS, scope limité.
-- L329 — Bouton Identifier `.sift-id-btn` — tokenisé+dark 07-03, exception 3ᵉ teinte levée 07-06.
-- L346 — Bordure latérale `.sift-filed-banner` — anti-pattern side-stripe retiré 07-03.
-- L355 — Ombres portées `.sift-toast`/`.sift-report-overlay-card` — tokenisées 07-03.
-- L362 — Échelles hauteur/radius — audit 07-03, `--h-36` retiré 07-09 (0 lecteur).
-- L399 — Token `disabled` de `Sift.dc.html` — vérifié non manquant.
-- L418 — Autres couleurs non tokenisées — restant, pas classées bug.
-- L430 — `--text-hero` → `--text-2xl`.
-- L442 — Cartes Réglages `.sift-settings-list` — refonte 4→1 carte 07-08.
-- L472 — Zone de dépôt drag OS `.sift-dz-on` — token `--overlay-drop` 07-05.
-- L496 — Lien rebuy Beatport `.sift-rebuy-btn` — créé 07-05.
-- L512 — CTA « Revoir N morceaux → » Accueil — créé 07-05.
-- L521 — Page Rekordbox `renderRekordboxLive()` — écran dédié + sections Tier 1/Tier 2 master.db.
-- L604 — Écran Revue — zones repliables Diagnostic/Métadonnées, refonte 07-05.
-- L640 — `.sift-applytags-btn` — déplacé header Genres 07-09.
-- L661 — `.sift-zone-toggle` — accordéon exclusif + animation 07-09.
-- L676 — Spectrogramme — légende incrustée + réticule interactif 07-09.
-- L699 — `.lk` / `.lk-icon` — bug de réutilisation corrigé 07-07.
-- L715 — Pastille segmentée `.sift-seg`/`.sift-seg-opt` unifiée — 6 sites, thumb glissant 07-08.
-- L817 — Grammaire de carte — 2 rôles (Groupée/Flottante), jamais 3 — 07-08.
-- L853 — Tokens globaux — adaptation tweakcn "ZFlow" (ombres/tracking/radius/OKLCH) 07-08.
-- L881 — Écran Accueil — audit référence canonique 07-08.
-- L901 — Écran Revue — audit référence canonique 07-08/09.
-- L925 — Écran Écartés — audit référence canonique 07-09.
-- L943 — Écran Journal — audit référence canonique 07-09, conforme (rien corrigé).
-- L954 — Écran Bibliothèque — audit référence canonique 07-09.
-- L973 — Écrans Réglages+Rekordbox+Clé USB — audit référence canonique 07-09.
-- L993 — Pattern d'erreur/échec (`.sift-*-error`/`-fail`/`-warn`, 9 sites) — déjà cohérent, documenté ici (gap = défaut de doc, pas de code, audit 2026-07-19).
-- L1041 — Écran Écartés — chargement + bouton "Réessayer" (07-24).
-- L1052 — Écran Bibliothèque — chargement, tri en vue Grille, "Réinitialiser les filtres" corrigé (07-24).
-- L1075 — Bibliothèque éditeur — suppression confirmée, borne Année, autocomplétion Genres (07-24).
-- L1083 — Page Rekordbox — état d'erreur visible sur les 4 sections M8, boutons "en cours", CTA en `.sift-ranger-btn` (07-24).
-- L1098 — Accueil — confirmation "Retirer", swatches `aria-pressed` (07-24).
-- L1105 — Journal — titres de section datés lisibles (07-24).
-- L1112 — Revue — bannières `role="status" aria-live="polite"`, légende "écarter" (07-24).
-- L1120 — Lot — lignes de sélection accessibles au clavier, bouton "Annuler" sur confirmation armée (07-24).
-- L1128 — `styles.css` — tokens `--color-text-warning`/`-success` clair recalibrés, hover réaffirmé (07-24).
-- L1141 — Historique des corrections (chronologique, par date de session).
-- L1324 — Conventions de cohérence (sémantique couleur, hiérarchie de poids, discipline classe partagée) — à consulter AVANT tout nouveau composant (07-24).
+- L323 — Popover Destination `.sift-dest-popover` — CSS minimal, placement en JS : flip + recadrage viewport 08-13.
+- L348 — Bouton Identifier `.sift-id-btn` — tokenisé+dark 07-03, exception 3ᵉ teinte levée 07-06.
+- L365 — Bordure latérale `.sift-filed-banner` — anti-pattern side-stripe retiré 07-03.
+- L374 — Ombres portées `.sift-toast`/`.sift-report-overlay-card` — tokenisées 07-03.
+- L381 — Échelles hauteur/radius — audit 07-03, `--h-36` retiré 07-09 (0 lecteur).
+- L418 — Token `disabled` de `Sift.dc.html` — vérifié non manquant.
+- L437 — Autres couleurs non tokenisées — restant, pas classées bug.
+- L449 — `--text-hero` → `--text-2xl`.
+- L461 — Cartes Réglages `.sift-settings-list` — refonte 4→1 carte 07-08.
+- L491 — Zone de dépôt drag OS `.sift-dz-on` — token `--overlay-drop` 07-05.
+- L515 — Lien rebuy Beatport `.sift-rebuy-btn` — créé 07-05.
+- L531 — CTA « Revoir N morceaux → » Accueil — créé 07-05.
+- L540 — Page Rekordbox `renderRekordboxLive()` — écran dédié + sections Tier 1/Tier 2 master.db.
+- L623 — Écran Revue — zones repliables Diagnostic/Métadonnées, refonte 07-05.
+- L659 — `.sift-applytags-btn` — déplacé header Genres 07-09.
+- L680 — `.sift-zone-toggle` — accordéon exclusif + animation 07-09.
+- L695 — Spectrogramme — légende incrustée + réticule interactif 07-09.
+- L718 — `.lk` / `.lk-icon` — bug de réutilisation corrigé 07-07.
+- L734 — Pastille segmentée `.sift-seg`/`.sift-seg-opt` unifiée — 6 sites, thumb glissant 07-08.
+- L836 — Grammaire de carte — 2 rôles (Groupée/Flottante), jamais 3 — 07-08.
+- L872 — Tokens globaux — adaptation tweakcn "ZFlow" (ombres/tracking/radius/OKLCH) 07-08.
+- L900 — Écran Accueil — audit référence canonique 07-08.
+- L920 — Écran Revue — audit référence canonique 07-08/09.
+- L944 — Écran Écartés — audit référence canonique 07-09.
+- L962 — Écran Journal — audit référence canonique 07-09, conforme (rien corrigé).
+- L973 — Écran Bibliothèque — audit référence canonique 07-09.
+- L992 — Écrans Réglages+Rekordbox+Clé USB — audit référence canonique 07-09.
+- L1012 — Pattern d'erreur/échec (`.sift-*-error`/`-fail`/`-warn`, 9 sites) — déjà cohérent, documenté ici (gap = défaut de doc, pas de code, audit 2026-07-19).
+- L1060 — Écran Écartés — chargement + bouton "Réessayer" (07-24).
+- L1071 — Écran Bibliothèque — chargement, tri en vue Grille, "Réinitialiser les filtres" corrigé (07-24).
+- L1094 — Bibliothèque éditeur — suppression confirmée, borne Année, autocomplétion Genres (07-24).
+- L1102 — Page Rekordbox — état d'erreur visible sur les 4 sections M8, boutons "en cours", CTA en `.sift-ranger-btn` (07-24).
+- L1117 — Accueil — confirmation "Retirer", swatches `aria-pressed` (07-24).
+- L1124 — Journal — titres de section datés lisibles (07-24).
+- L1131 — Revue — bannières `role="status" aria-live="polite"`, légende "écarter" (07-24).
+- L1139 — Lot — lignes de sélection accessibles au clavier, bouton "Annuler" sur confirmation armée (07-24).
+- L1147 — `styles.css` — tokens `--color-text-warning`/`-success` clair recalibrés, hover réaffirmé (07-24).
+- L1160 — Historique des corrections (chronologique, par date de session).
+- L1343 — Conventions de cohérence (sémantique couleur, hiérarchie de poids, discipline classe partagée) — à consulter AVANT tout nouveau composant (07-24).
 
 ## Ligne de queue — `.qi` (`styles.css:289-297`)
 
@@ -260,7 +260,7 @@ pas de fond), cohérent avec une liste de résultats de recherche. Différent
 pattern des lignes `.qi`/`.jrnl-qrow` (fond au survol), à garder en tête pour ne
 pas "corriger" par erreur vers l'uniformité lors d'un futur portage.
 
-## Bouton Destination — `.sift-dest-btn` (`styles.css:161`, `filing.ts:917`)
+## Bouton Destination — `.sift-dest-btn` (`styles.css:564`, `filing.ts:185` et `:199`)
 
 Même famille que `.sift-ranger-btn` — vrai `<button>`, hérite hover/disabled/focus
 du sélecteur générique. RAS.
@@ -321,11 +321,30 @@ Impeccable) : `.sift-pz-fill` animait `width` (propriété de layout) — passé
 `progress-zone.ts` mis à jour en conséquence (`style.transform` au lieu de
 `style.width`, deux points d'écriture).
 
-## Popover Destination — `.sift-dest-popover` (`styles.css:176-182`) — RAS (scope limité)
+## Popover Destination — `.sift-dest-popover` (`styles.css:603`, `filing-bins.ts` + `popover-position.ts`)
 
-Seul état géré en CSS : `[hidden]` (fermé). Pas de transition d'ouverture ni
-d'état focus-trap dédié, mais rien qui contredise un token ou une décision
-actée — pas classé bug, juste minimal.
+Seul état géré **en CSS** : `[hidden]` (fermé). Pas de transition d'ouverture ni
+d'état focus-trap dédié — minimal, et non classé bug.
+
+Son **placement**, lui, est entièrement en JS : `position:fixed` sans repli CSS, donc
+tout se joue dans `positionDestPopover`. Trois états de position, ajoutés le 2026-08-13
+(issue #27) :
+
+| état | déclencheur | résultat |
+|---|---|---|
+| **au-dessus** (défaut) | la hauteur tient au-dessus du bouton | `top = bouton.top − hauteur − 8` |
+| **basculé en dessous** | ne tient pas au-dessus **et** il y a plus de place en dessous | `top = bouton.bottom + 8` |
+| **recadré** | un bord sortirait de la fenêtre | ramené à 8 px du bord, sur les deux axes |
+
+L'état basculé est **inatteignable dans la vraie fenêtre** : le bouton Destination vit
+dans la barre d'action ancrée en bas, donc il y a toujours plus de place au-dessus. Il
+est couvert par `test/popover-position.test.ts` précisément pour ça — sinon il partirait
+en production sans avoir jamais été exercé. Le recadrage horizontal, lui, se déclenche
+réellement : à la taille minimale déclarée (920×640), le bord droit tombait 73 px hors
+fenêtre avant correction.
+
+Deux points d'entrée, un seul chemin : mode Détail (`filing.ts:199`) et mode Lot
+(`batch-panel.ts:663`) passent tous deux par `toggleDestPopover`.
 
 ## Bouton Identifier — `.sift-id-btn` (`styles.css:237-238`)
 
