@@ -465,7 +465,26 @@ export function repositionDestPopoverIfOpen(): void {
  *  the position purely from two getBoundingClientRect() calls (button + popover), both in the
  *  same coordinate space by construction, sidesteps that mismatch entirely. */
 function positionDestPopover(pop: HTMLElement): void {
-  const btn = document.querySelector<HTMLElement>('[data-fil="destbtn"]');
+  // Document-wide query, and it MUST stay one: there is exactly one Destination button at a time,
+  // because the Detail rail (`filing.ts` renderFoot) and the Batch rail (`batch-panel.ts`
+  // renderBatchRail) both write `innerHTML` into the SAME host, `#filfoot` — each render destroys
+  // the other's button. Invariant measured on 2026-08-13 (issue #28): querySelectorAll length 1 in
+  // both modes, in the real window.
+  //
+  // Do NOT "improve" this into a stored anchor passed at open time: those same innerHTML rewrites
+  // replace the button node on every rail rebuild, so a held reference goes stale and would
+  // re-anchor the popover to a detached element. Re-resolving here is what makes
+  // `repositionDestPopoverIfOpen()` work after a rebuild at all.
+  const buttons = document.querySelectorAll<HTMLElement>('[data-fil="destbtn"]');
+  if (import.meta.env.DEV && buttons.length > 1) {
+    // Loud on the only path that could break the invariant — a second rail host. Silent otherwise
+    // it anchors to whichever comes first in the DOM, which is the "position aléatoire" symptom
+    // the comment on repositionDestPopoverIfOpen describes having already chased once.
+    console.error(
+      `positionDestPopover: ${buttons.length} boutons Destination dans le document, l'invariant "un seul #filfoot" est rompu — le popover s'ancre au premier`,
+    );
+  }
+  const btn = buttons[0];
   if (!btn) return;
   const r = btn.getBoundingClientRect();
   const { height: popH, width: popW } = pop.getBoundingClientRect();
