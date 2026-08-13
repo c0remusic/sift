@@ -142,10 +142,21 @@ const files = walk(REPO_ROOT, []);
 
 const COLOR_RE = /(#(?:[0-9a-fA-F]{3}){1,2}\b|#[0-9a-fA-F]{8}\b|\brgba?\([^)]*\)|\boklch\([^)]*\))/g;
 const ZINDEX_RE = /z-index\s*:\s*(-?\d+(?:\.\d+)?)/g;
-const SPACING_PROP_RE = /\b(padding|margin|width|height|gap)(-(?:top|right|bottom|left|inline|block)(?:-(?:start|end))?)?\s*:\s*([^;{}]+);/g;
+// La declaration se termine par `;` OU par le `}` du bloc — en LOOKAHEAD, sans consommer le
+// delimiteur. Le motif exigeait un `;` litteral jusqu'au 2026-08-13, ce qui rendait invisible
+// toute declaration DERNIERE de son bloc : 112 declarations d'espacement sur 451, dont 41 en px
+// dur, jamais examinees. Silencieusement — elles n'etaient pas ignorees, elles n'existaient pas
+// pour le linter, et la baseline avait ete gravee sur ce compte tronque. C'est la forme la plus
+// courante d'une regle mono-propriete, donc precisement celle qu'un `max-width` prend : les trois
+// `max-width:560px` de la feuille passaient tous les trois (issue #29).
+const SPACING_PROP_RE = /\b(padding|margin|width|height|gap)(-(?:top|right|bottom|left|inline|block)(?:-(?:start|end))?)?\s*:\s*([^;{}]+)(?=[;}])/g;
 const PX_VALUE_RE = /(-?\d+(?:\.\d+)?)px/g;
 
 const findings = []; // { file, line, category, value, suggestion }
+// Compte POSITIF de ce qui a ete examine, pas seulement de ce qui a ete trouve. Une liste de
+// findings vide et un motif qui ne matche plus rien se ressemblent exactement — c'est ce qui a
+// laisse passer #29 pendant toute la vie du script. Ce nombre est le temoin qui les separe.
+let spacingDeclsSeen = 0;
 
 function nearestSpacingToken(px) {
   if (spacingPxValues.has(px)) return spacingPxValues.get(px);
@@ -231,6 +242,7 @@ for (const file of files) {
   let sm2;
   SPACING_PROP_RE.lastIndex = 0;
   while ((sm2 = SPACING_PROP_RE.exec(text))) {
+    spacingDeclsSeen++;
     const declValue = sm2[3];
     let pxm;
     PX_VALUE_RE.lastIndex = 0;
@@ -285,7 +297,7 @@ for (const [file, list] of [...byFile.entries()].sort()) {
 console.log('Summary:');
 console.log(`  colors:      ${counts.color}`);
 console.log(`  z-index:     ${counts['z-index']}`);
-console.log(`  px-spacing:  ${counts['px-spacing']}`);
+console.log(`  px-spacing:  ${counts['px-spacing']} (sur ${spacingDeclsSeen} declarations examinees)`);
 
 // ---- Step 4: ratchet against baseline ---------------------------------------------------
 
