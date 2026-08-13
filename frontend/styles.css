@@ -1678,9 +1678,12 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
    elements explicitly opting into `.ti-fill` get a filled glyph. Trial per 2026-07-12 feedback
    (poubelle confirmed filled; flèche circle in trial) — codepoints verified against the vendor's
    own filled/*.svg comments, not guessed. */
-/* Le @font-face qui vivait ici pointait sur un CDN. Il est supprime: `main.ts` importe desormais
-   la feuille du paquet (@tabler/icons-webfont), qui declare la meme famille et fait bundler la
-   police par Vite. Une seule declaration, locale. Audit 2026-07-28, SIMP-1. */
+/* Le @font-face qui vivait ici pointait sur un CDN. L'audit SIMP-1 du 2026-07-28 l'a remplace par
+   un import de la feuille filled du paquet depuis `main.ts` — precisement ce que le paragraphe
+   ci-dessus interdit, et le rail y a perdu trois icones (issue #22). La bonne forme est celle-ci :
+   le @font-face est declare a la main, la police vient du paquet (donc bundlee par Vite, aucune
+   ressource reseau), et AUCUNE regle vendeur `.ti` n'entre dans la cascade. */
+@font-face{font-family:"tabler-icons-filled";font-style:normal;font-weight:400;src:url("../node_modules/@tabler/icons-webfont/dist/fonts/tabler-icons-filled.woff2") format("woff2")}
 .ti-fill{font-family:"tabler-icons-filled";font-style:normal;speak:none;font-weight:normal;font-variant:normal;text-transform:none;line-height:1;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
 .ti-fill-trash:before{content:"\f783"}
 .ti-fill-circle-arrow-right:before{content:"\f6fc"}

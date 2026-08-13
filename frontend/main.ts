@@ -7,8 +7,15 @@ import "@fontsource/jetbrains-mono/400.css";
 // <link> dans index.html, seule ressource reseau restante de l'app : hors ligne — en club, en
 // cabine, sur une machine sans wifi — TOUTE l'iconographie tombait en tofu, y compris les icones
 // de la barre de titre et du rail de navigation. Audit 2026-07-28, SIMP-1.
+// La feuille `tabler-icons-filled.min.css` du meme paquet NE DOIT PAS etre importee ici, et
+// styles.css:1675 le disait deja : elle redefinit `.ti` avec `font-family:"tabler-icons-filled"
+// !important`, donc l'ordre des imports n'y change rien. Importee le 2026-07-28 (audit SIMP-1)
+// pour recuperer son @font-face, elle a bascule TOUTES les icones de l'app sur la police pleine,
+// et les trois glyphes sans variante pleine ont rendu a vide : Accueil (ti-home), Journal
+// (ti-history), Cle USB (ti-usb) mesurees a 0 px de large dans la vraie fenetre le 2026-08-11
+// (issue #22), contre 17 px pour les cinq autres entrees du rail. Le @font-face de la police
+// pleine est declare a la main dans styles.css, ou seule `.ti-fill` l'utilise.
 import "@tabler/icons-webfont/dist/tabler-icons.min.css";
-import "@tabler/icons-webfont/dist/tabler-icons-filled.min.css";
 import "./app.js";
 import { invoke } from "@tauri-apps/api/core";
 import { appInfo, dbHealth, ffmpegVersion } from "./ipc";
