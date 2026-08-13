@@ -30,10 +30,15 @@ Tokens principaux :
 
 Usage :
 
-- `primary` : fond principal de l'espace de travail ;
-- `tertiary` : rail/navigation et chrome latéral ;
-- `queue` : file de morceaux ;
-- `surface-raised` : panneau flottant ou popover ;
+- `primary` : fond principal de l'espace de travail, **et les champs**, creusés
+  (convention du 2026-07-10, `styles.css:1372-1375`) ;
+- `tertiary` / `queue` : rail, chrome latéral, file de morceaux **et cartes groupées** —
+  même valeur depuis la fusion du 2026-08-05 ;
+- `secondary` : contrôle monté, c'est-à-dire ancré dans la charpente (issue #8) ;
+- `surface-raised` : cran saillant d'un contrôle monté (état actif, déclencheur) et
+  surface flottante. ⚠️ **Pas** réservé au flottant : il peint aussi `.sift-play-btn`,
+  `.sift-seg-thumb`, `.sift-settings-btn`, `.sift-ident-search-btn` ;
+- `track` : rail creusé d'un segmented control ;
 - `row-active` / `nav-active` : sélection, hover structurel, état courant.
 
 ### États Sémantiques

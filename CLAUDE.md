@@ -277,7 +277,13 @@ Garde-fous issus d'incidents réels :
 ## Front — CSS et événements
 
 Sources de vérité design : **`frontend/styles.css`** (`:root`, canonique unique des
-tokens) + `docs/design-system-states.md`. Ne jamais créer de fichier de thème parallèle,
+tokens) + `docs/design-system-states.md` (états réels des composants) +
+**`docs/design-system/`** — 6 fichiers versionnés : `foundations.md` (personnalité
+visuelle, anti-références), `components.md`, `tokens.md`, `patterns.md`, `governance.md`,
+`content.md`. Ils portent l'historique **daté** des décisions de surface : les lire avant
+de qualifier un écart visuel de « dérive » — la collision de surfaces relevée par l'issue
+#23 était l'intersection de deux décisions volontaires, pas un accident.
+Ne jamais créer de fichier de thème parallèle,
 ni extraire une valeur d'une capture d'écran. ⚠️ `.interface-design/system.md` existe
 encore sur le disque avec une **palette et une typo périmées** : ne jamais y puiser une
 valeur. ⚠️ `docs/wireframes/<feature>.html`, cité ici jusqu'au 2026-08-05 comme lieu de

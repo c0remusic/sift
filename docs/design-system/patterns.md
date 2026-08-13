@@ -33,12 +33,23 @@ Utiliser une carte seulement pour :
 - séparateurs entre lignes quand le spacing suffit ;
 - ombres pour compenser une hiérarchie floue.
 
-**Tension connue avec les HIG.** HIG Materials pose l'inverse : une couche fonctionnelle
-(contrôles, navigation) visuellement distincte de la couche contenu, matérialisée par
-Liquid Glass. Le matériau lui-même est natif macOS et hors de portée d'une WebView sans
-imitation coûteuse, mais le principe — différencier les contrôles du contenu — contredit
-frontalement la surface continue. Tension à trancher explicitement le jour où elle se
-pose sur un écran réel, pas à résoudre par défaut dans un sens ou dans l'autre.
+**Tension avec les HIG — tranchée le 2026-08-13** (issue #8). Fausse opposition : HIG
+Materials parle des **contrôles**, la surface continue interdit d'encadrer des **sections
+de contenu**. Les deux règles portent sur des objets différents, donc elles tiennent
+ensemble — et elles tiennent déjà. Sift clive ses plans par rang de clarté, jamais
+inversé entre les deux thèmes.
+
+La règle, en quatre axes :
+
+- le plan au repos suit l'**ancrage** — charpente montée, contenu au sol cerné d'une
+  bordure, flottant au-dessus ;
+- un **champ est creusé**, quel que soit son ancrage ;
+- le survol est **transitoire** et ne définit jamais le plan de repos ;
+- le rôle décide de la **teinte et du poids, jamais du plan**.
+
+Aucune exception : le bouton lecture redescend au sol, sa géométrie ronde suffit à le
+distinguer. Liquid Glass reste hors de portée d'une WebView, mais c'était le *rendu* du
+clivage à deux plans, pas sa cause. Détail, mesures et preuves : issue #8.
 
 ## Sections Collapsables
 
