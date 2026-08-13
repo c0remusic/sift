@@ -13,6 +13,7 @@ import { EXTERNAL_DEST_PREFIX } from "../shared/contracts";
 import { open } from "@tauri-apps/plugin-dialog";
 import { esc } from "./dom";
 import { toast } from "./filing-toast";
+import { destPopoverPosition } from "./popover-position";
 
 const LIBRARY_ROOT = "library_root";
 
@@ -444,7 +445,16 @@ export function repositionDestPopoverIfOpen(): void {
 
 /** Anchors the popover to the Destination button's real on-screen position (position:fixed,
  *  recalculated here) instead of a hardcoded left/bottom — keeps it aligned if the rail's height
- *  changes (e.g. a longer secondary-button label wrapping).
+ *  changes (e.g. a longer secondary-button label wrapping), then keeps it inside the window.
+ *
+ *  The anchor alone used to be the whole function, and it clipped: at the declared minimum window
+ *  size (920x640) the button sits at left 705 and the popover is 288 wide, so its right edge landed
+ *  at 993 — 73px outside, filter field and folder rows unreachable. Measured in the real window on
+ *  2026-08-13 (issue #27). The vertical case predicted by that issue did NOT reproduce there (top
+ *  resolved to 132, positive); it needs a full bin list at the 340px max-height AND a taller
+ *  wrapped action bar, which the flip below now covers regardless. Structure follows Floating UI's
+ *  flip-then-shift order (main axis flips, cross axis shifts) — read, not installed: adding it is
+ *  an open question of map #6 and this fix must not preempt it.
  *
  *  Uses `top` derived from the popover's OWN measured height, not `bottom` derived from
  *  `window.innerHeight` — the previous `bottom:${window.innerHeight - r.top + 8}px` formula
@@ -458,11 +468,23 @@ function positionDestPopover(pop: HTMLElement): void {
   const btn = document.querySelector<HTMLElement>('[data-fil="destbtn"]');
   if (!btn) return;
   const r = btn.getBoundingClientRect();
-  const popH = pop.getBoundingClientRect().height;
-  pop.style.left = `${r.left}px`;
+  const { height: popH, width: popW } = pop.getBoundingClientRect();
+  // Layout viewport, NOT window.innerWidth/innerHeight: this is the same coordinate space as the
+  // getBoundingClientRect values above, by construction — which is exactly what the paragraph above
+  // says window.innerHeight failed to be. Measured equal today (920/640, scrollX/Y 0, dpr 1) in the
+  // real window; using these keeps them equal on a machine where they would diverge.
+  const { top, left } = destPopoverPosition(
+    { top: r.top, bottom: r.bottom, left: r.left },
+    popW,
+    popH,
+    document.documentElement.clientWidth,
+    document.documentElement.clientHeight,
+  );
   pop.style.bottom = "auto";
-  pop.style.top = `${r.top - popH - 8}px`;
+  pop.style.top = `${top}px`;
+  pop.style.left = `${left}px`;
 }
+
 
 /** Open/close the destination popover (#fldz). Its own hidden state persists across renderFoot's
  *  innerHTML rewrites since #fldz is a sibling of #filfoot, never touched by them. Exported: Batch
