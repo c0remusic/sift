@@ -432,6 +432,14 @@ techniques ; section « Écarté » = tranché, « Différé » = pas assez de p
 trigger de réouverture — ne pas confondre) et `docs/design-system-states.md` (états
 réels des composants, miroir des stories Storybook).
 
+⚠️ **Ces sommaires citent des numéros de ligne, donc une section qui grandit les périme
+en bloc.** Agrandir une section décale tout ce qui la suit, et le sommaire devient faux
+sur toutes ses entrées suivantes — silencieusement, puisqu'un `Read offset=<L>` tombe
+alors à côté sans erreur. Renuméroter dans le MÊME geste. La vérification ne se fait pas
+à l'œil : comparer la distribution des écarts sommaire → titre avec celle de
+`git show HEAD:<fichier>` ; identiques = juste. C'est ce qui a attrapé un off-by-one le
+2026-08-13, invisible autrement.
+
 ⚠️ `docs/INDEX.json` **n'existe plus** — vérifié absent le 2026-08-05. Ce catalogue local
 listait chaque document ; sa règle de maintien (« créer un document sous `docs/` veut
 dire y ajouter son entrée dans le même geste ») est donc **caduque** : ne pas la suivre,
