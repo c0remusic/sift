@@ -287,7 +287,11 @@ tokens) + `docs/design-system-states.md` (états réels des composants) +
 visuelle, anti-références), `components.md`, `tokens.md`, `patterns.md`, `governance.md`,
 `content.md`. Ils portent l'historique **daté** des décisions de surface : les lire avant
 de qualifier un écart visuel de « dérive » — la collision de surfaces relevée par l'issue
-#23 était l'intersection de deux décisions volontaires, pas un accident.
+#23 était l'intersection de deux décisions volontaires, pas un accident. **Résolu le
+2026-08-14** : les surfaces de contenu ont été retirées (avoir une surface devient la marque
+de la charpente), et la mesure dans la vraie fenêtre a montré que le mécanisme invoqué par le
+ticket — `.sift-ui-card` — n'existait **pas** dans le DOM de Revue. La leçon tient, sa cause
+supposée non : lire l'historique daté ne dispense pas de mesurer.
 Ne jamais créer de fichier de thème parallèle,
 ni extraire une valeur d'une capture d'écran. ⚠️ `.interface-design/system.md` existe
 encore sur le disque avec une **palette et une typo périmées** : ne jamais y puiser une

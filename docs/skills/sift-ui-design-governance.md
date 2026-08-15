@@ -112,6 +112,28 @@ precedes operational alignment" are taken from it. The paper explicitly scopes
 its findings out of programming practice, so it is borrowed here as vocabulary
 for the design conversation, not as evidence about code.
 
+## A Wireframe Must Contain What the Decision Is Judged Against
+
+Measured 2026-08-14, issue #23. A nine-cell matrix compared three surface planes x three
+groupings, drawn from the real `styles.css` tokens at the widths issue #9 had settled. It
+was rejected - "il me faut de vrais mockups" - and it deserved to be: **it did not show
+the nav rail**.
+
+A surface's plane is not readable on its own. It reads *against the chrome* - the nav
+rail, the queue column, the action bar. A thumbnail that omits them compares greys in a
+vacuum, and stays structurally unable to settle the very thing it claims to settle, no
+matter how faithful its tokens are.
+
+The counter-measure, measured the same day: the four planes injected **live into the real
+window** over CDP - no file touched, `git status` empty before and after - settled in one
+minute what nine thumbnails had not. And the captures were stacked at the same position,
+not laid side by side: a few points of lightness only read when you flip between two
+images in place. Side-by-side lets the eye compensate.
+
+Rule: **before drawing a wireframe, name what the decision is judged against, and check
+that it is inside the frame.** When that something is the app itself, do not draw - inject
+into the real window (skill `run-sift`).
+
 ## Design Theater: Claims Must Be Checkable
 
 Generative UI tools narrate what they built. That narration reads as evidence of

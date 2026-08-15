@@ -124,6 +124,23 @@ npm run check:security
   (which then blocks the next launch), and the WebView2 window that keeps holding the debug
   port. Kill only the parent and `status` still reports *running*. Always by exact PID —
   never `taskkill /IM node.exe`, other projects on this machine use node.
+- **A FAILED `launch` also leaves a Vite behind, and that is worse.** Measured 2026-08-14:
+  `driver.mjs launch` reported *the launch died silently* with an empty log — but its Vite
+  had already grabbed 5173 and survived. The next attempt then fails on `Error: Port 5173 is
+  already in use`, which names a different culprit than the real one, and the loop repeats.
+  Free 5173 and relaunch **in one command** so nothing can race in between, and only kill a
+  holder whose `CommandLine` contains `dev\sift`.
+- **`status` reads the CDP *target* title, not the live document.** A dead page still reports
+  `running: true` with the correct `Sift — prépa sons DJ` title. The live check is
+  `driver.mjs eval 'document.title'`: a page whose Vite died returns `"localhost"`, and its
+  body reads `ERR_CONNECTION_REFUSED`. Never trust `status` alone before measuring.
+- **Never truncate the pipe of a foregrounded `npm run tauri dev`.** `| head -N` or
+  PowerShell's `| Select-Object -First N` closes the pipe at the Nth line, which kills npm,
+  which kills Vite — the window stays open on an error page while `status` still says
+  running. Same blindness as the `tail` gotcha above, opposite cause.
+- **`shot <name>` ignores the cwd** and writes to the repo root — it polluted `C:\dev\sift`
+  with a stray PNG before being caught by `git status`. Pass an absolute path into the
+  session scratchpad.
 - **An empty measurement is not a pass.** Filtering for offenders returns `[]` both when a
   screen is compliant and when nothing was painted. Every check must carry a positive count
   (`nbTexts`, `minPx`). This produced three false "conformant" results before being caught.
