@@ -51,6 +51,79 @@ Aucune exception : le bouton lecture redescend au sol, sa géométrie ronde suff
 distinguer. Liquid Glass reste hors de portée d'une WebView, mais c'était le *rendu* du
 clivage à deux plans, pas sa cause. Détail, mesures et preuves : issue #8.
 
+**Appliqué à Revue le 2026-08-14** (issue #23), et la forme retenue durcit la règle
+ci-dessus : une surface de contenu ne peint **rien** — ni fond, ni bordure, ni rayon.
+
+Conséquence, et c'est la formulation à retenir : **avoir une surface est la marque de la
+charpente.** Le rail de navigation, la colonne file et la barre d'action gardent la leur ;
+le milieu de Revue n'en a plus aucune. La distinction cesse d'être un dégradé de gris qu'il
+faut comparer pour lire, et devient binaire.
+
+Trois sélecteurs vidés : `.sift-player-row`, `.sift-spectro-box`,
+`.sift-fil-editor.sift-fil-editor-margin`. Vérifié dans la vraie fenêtre par un compte
+positif — **zéro** élément de `#mid` peint la valeur de la charpente, et les trois surfaces
+de charpente la peignent toujours.
+
+Trois choses à savoir avant de toucher à ça :
+
+- **Ça renverse une décision d'Antoine du 2026-07-07**, prise deux fois (« je préferais en
+  plein je crois, mais de la meme couleur »), après avoir essayé puis annulé la version plate
+  le même jour. Le choix de 2026-08-14 est postérieur à #8 et #9, qui n'existaient pas alors,
+  et il a été fait sur les quatre plans capturés dans la vraie fenêtre et superposés. Les
+  paragraphes de juillet sont conservés dans `styles.css` : l'historique est daté, pas réécrit.
+- **Le padding horizontal disparaît avec la carte.** Il insérait le contenu depuis un bord qui
+  n'existe plus, ce qui le désalignait des blocs frères rendus à ras. Le vertical reste : c'est
+  de la respiration, pas un inset.
+- **Une règle qui peignait la bordure ne devient pas inerte, elle se supprime.** Le survol des
+  disclosures highlightait la `border-color` du cadre ancêtre ; sans bordure, la règle aurait
+  continué à déclarer une propriété sans rien à peindre — le mode de défaillance exact de
+  l'issue #33. Retirée ; l'affordance survit sur le libellé du toggle.
+
+⚠️ **Effet de bord non tranché** : sans cadre, en thème clair, le spectrogramme (image sombre
+et saturée) se lit comme un trou dans la page. Le cinquième cas de la liste ci-dessus — « un
+outil qui a besoin d'un cadre fonctionnel » — pourrait le légitimer. Question ouverte sur la
+map #6, avec son avertissement posé dans `styles.css` à l'endroit exact.
+
+## Adresses
+
+Tranché le 2026-08-14 (issue #26). Une fonction habite toujours le même endroit de la
+charpente : le contenu change, le squelette non.
+
+Mais la lecture des HIG a changé ce que « graver une adresse » veut dire. Chez Apple
+(`/toolbars` § Item groupings), les trois positions ne sont pas un rangement — **elles
+décident de la survie** quand la fenêtre rétrécit : le leading « aren't customizable », le
+trailing « remain visible at all window sizes », le centre « automatically collapse into the
+system-managed overflow menu ».
+
+**Une adresse est donc une promesse de disponibilité.** Mettre une commande en trailing,
+c'est jurer qu'elle ne disparaîtra jamais, à aucune largeur.
+
+| Adresse | Ce qui y habite | Promesse |
+|---|---|---|
+| leading | navigation — le rail, toujours ; jamais de second niveau de nav ailleurs | ne se personnalise pas |
+| en-tête, leading | titre d'écran | peut être vide s'il est redondant |
+| en-tête, trailing | action primaire de l'écran, **une seule** | reste visible à toute largeur |
+| trailing | recherche et filtres | jamais une action destructive |
+| pied | action d'engagement — ranger, formater, exporter | reste visible à toute largeur |
+| au-dessus | confirmation et popover | seule couche autorisée à flotter (règle de plan, #8) |
+
+Trois règles chiffrées viennent avec, reprises telles quelles : une seule action primaire ;
+trois groupes de contrôles au maximum ; titre sous 15 caractères, jamais le nom de l'app.
+
+Deux points où Apple **ne se transporte pas**, et il faut le savoir avant de citer les HIG
+ici :
+
+- « Make every toolbar item available as a command in the menu bar » est **écarté**. C'est un
+  organe système, et `tauri.conf.json` déclare `"decorations": false` : Sift n'a aucune barre
+  de menus, sur aucune des deux plateformes.
+- **L'overflow automatique est un service système** — Apple dit même de ne pas en ajouter un à
+  la main. Sift n'a pas de toolbar système. On retient donc la **propriété** — c'est le centre
+  qui cède, jamais le trailing — sans importer le mécanisme.
+
+⚠️ **Non vérifié** : les 8 écrans n'ont pas été lus un par un. Ces adresses viennent de
+`styles.css` et de la charpente existante (rail, `#filfoot`). Confirmer écran par écran, et
+lister ceux qui divergent, reste à faire.
+
 ## Sections Collapsables
 
 Diagnostic audio et Métadonnées peuvent être collapsables, mais la page doit

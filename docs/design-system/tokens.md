@@ -193,6 +193,63 @@ suppression peut casser un usage futur déjà prévu).
 Règle : les dimensions de contrôles répétés doivent être stables. Un hover,
 un état actif ou un libellé long ne doit jamais faire bouger le layout.
 
+### Géométrie Concentrique
+
+Tranché le 2026-08-14 (issue #26). Deux règles, qui ne s'appliquent pas au même endroit :
+
+> Un rayon **de surface** se choisit dans l'échelle. Un rayon **imbriqué** se calcule à partir
+> de celui de son conteneur moins l'inset — il ne se choisit pas.
+
+`calc(<rayon du conteneur> - <inset>)`. C'est ce qui fait « parenter » visuellement deux
+écrans sans rapport : les courbes intérieure et extérieure restent concentriques au lieu de
+diverger.
+
+Trois choses à ne pas confondre :
+
+- **Apple énonce une propriété, pas une arithmétique.** `/toolbars` § Best practices dit que
+  les boutons, champs, en-têtes et pieds standard ont des rayons *concentriques* avec ceux de
+  la barre, et qu'un composant custom doit l'être aussi. Aucune formule n'est publiée, et
+  `/layout` n'en parle pas du tout (vérifié : une seule occurrence de « corner radius », sur le
+  châssis des iPhone). La soustraction est la **définition géométrique** de concentrique, pas
+  une valeur Apple recopiée — ce que `governance.md` interdirait de toute façon.
+- **« By default » n'existe pas ici.** Apple l'obtient gratuitement de ses composants système ;
+  sa consigne ne s'active que pour du custom. L'issue #25 a établi que Sift n'emprunte aucun
+  kit : **tout** y est custom, donc la règle n'est jamais gratuite et se tient à la main.
+- **L'échelle ci-dessus n'est pas remplacée.** `sm`/`md`/`lg` dérivent d'une base unique par
+  deltas fixes (`styles.css:112-113`) : c'est un jeu fermé de 4, pour les surfaces. La règle
+  concentrique, elle, calcule, et peut tomber n'importe où. Les deux cohabitent parce
+  qu'elles ne s'adressent pas au même objet.
+
+Les 12 littéraux de rayon encore présents dans `styles.css` — dont `999px` et `50%`, qui
+doublonnent `--border-radius-pill` — se nettoient par exécution, pas par décision.
+
+## Mesures
+
+Tranché le 2026-08-13 (issue #9). Un **jeu fermé de trois mesures**, adressées par rôle :
+
+| Rôle | Mesure |
+|---|---|
+| donnée | 1200 |
+| carte et formulaire | 560 |
+| dialogue | 760 |
+
+Aucune n'a été inventée : les trois existaient déjà dans le dépôt sans être écrites nulle
+part. **La mesure borne la surface, pas le contenu.**
+
+⚠️ **Seule la mesure « donnée » est déclarée**, comme `--measure-data` (`styles.css`), et son
+nombre est **dupliqué côté Rust** dans `analysis::spectrum::MAX_COLS` — c'est le plafond de
+colonnes du spectrogramme, donc la largeur au-delà de laquelle la donnée serait étirée et se
+présenterait comme mesurée. Le désaccord serait silencieux, d'où un test Rust qui **lit
+`styles.css`** et compare : `analysis::spectrum::tests::css_data_measure_matches_max_cols`
+(issue #30, 2026-08-14). Éditer l'un sans l'autre fait tomber `cargo test`.
+
+Les deux autres mesures ne sont **pas** déclarées : un token sans consommateur est un token
+mort (voir `--h-40` plus haut). Elles se déclarent au moment où on les applique.
+
+**Réserve héritée de #9, non tranchée** : 560 px porte 99 à 107 caractères par ligne
+(Outfit 400, 12–13 px), bien au-dessus de la fourchette confortable. La mesure bornant la
+surface et non le contenu, une carte à 560 qui porterait de la prose n'est pas protégée.
+
 ## Ombres
 
 Les ombres sont rares. Sur Sift, elles servent surtout à détacher une surface

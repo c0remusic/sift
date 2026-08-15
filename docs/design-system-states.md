@@ -848,6 +848,19 @@ sans règle (ombre seule, bordure seule, les deux) ; ramené à 2 rôles :
 | **Groupée** (bordure ou fond teinté, jamais d'ombre) | `.sift-ui-card`, `.sift-ui-card-soft` | Spectrogramme (`.sift-spectro-box`), rail d'action (`.sift-action-rail`), carte lecteur (`.sift-player-row`), éditeur filing (`.sift-fil-editor-margin`), colonne queue (`#qcol`), colonne queue Accueil (`#homequeue`), Réglages, Bibliothèque, Journal (`.jrnl-insp-card`, bordure corrigée 1px→0.5px) |
 | **Flottante** (bordure + ombre, réservée aux vraies superpositions) | `.sift-report-overlay-card` | Modales (confirmation, formatage USB) — seul site qui garde une ombre |
 
+⚠️ **La colonne « Sites » de la ligne Groupée est périmée depuis le 2026-08-14** (issue #23).
+Trois de ses sites — `.sift-spectro-box`, `.sift-player-row`,
+`.sift-fil-editor.sift-fil-editor-margin` — n'ont **plus aucune surface** : ni fond, ni
+bordure, ni rayon. Ce sont des surfaces de **contenu**, et la règle retenue est qu'une
+surface est désormais la marque de la **charpente**. Restent Groupées : le rail d'action
+(`.sift-action-rail`), la colonne queue (`#qcol`), la colonne queue d'Accueil (`#homequeue`),
+Réglages, Bibliothèque, Journal.
+
+Les deux **rôles** ne changent pas — retirer une surface n'en crée pas un troisième, et la
+grammaire à 2 rôles du 2026-07-08 tient. C'est la liste des sites qui a bougé, et cette ligne
+est conservée telle quelle parce qu'elle documente l'état d'avant, daté. Détail et raison :
+`docs/design-system/patterns.md` § Surface Continue.
+
 **Harmonisation famille "queue" (2026-07-08)** : `#qcol` avait perdu sa
 bordure lors d'une passe antérieure ("ajoute un cadre style pastille sans
 bordure", fond teinté seul) tandis que `#homequeue` gardait la sienne, hors
