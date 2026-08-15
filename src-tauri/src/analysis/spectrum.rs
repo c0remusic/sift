@@ -12,6 +12,37 @@ use std::sync::{Arc, OnceLock};
 const FFT_SIZE: usize = 4096;
 static FFT_PLAN: OnceLock<Arc<dyn Fft<f32>>> = OnceLock::new();
 
+/// Plafond de colonnes temporelles du spectrogramme d'affichage. Au-delà, les colonnes sources
+/// sont poolées (voir `build_spectrogram`) : la charge utile reste bornée quelle que soit la
+/// durée du morceau.
+///
+/// ⚠️ **Ce nombre est dupliqué dans `frontend/styles.css`**, où il est déclaré comme
+/// `--measure-data` — la mesure « donnée » tranchée par l'issue #9 borne à cette même largeur
+/// toute surface qui porte de la donnée mesurée, pour qu'un pixel de spectrogramme reste un
+/// pixel de spectrogramme.
+///
+/// Le désaccord serait **silencieux**, et c'est le mode de défaillance qui compte :
+/// - si cette constante baisse et que le CSS reste à 1200, la surface est plus large que sa
+///   donnée — le spectrogramme est interpolé et se présente comme mesuré. Pour une app dont le
+///   métier est de détecter du faux lossless, afficher du lissé comme du réel est un problème
+///   de véracité, pas d'esthétique ;
+/// - si elle monte et que le CSS reste à 1200, de l'information analysée n'est jamais montrée.
+///
+/// Dans les deux cas : aucune erreur, aucun test rouge, rien dans la console.
+///
+/// D'où [`tests::css_data_measure_matches_max_cols`], qui **lit le fichier CSS réel** et
+/// compare. Le motif n'est pas neuf ici : la frontière IPC est un miroir manuel tenu par des
+/// tests et non par la discipline (`analysis/mod.rs::spectrogram_shape_matches_contracts_ts`),
+/// et `dev_locate.rs` a déjà un test qui va lire dans `frontend/`.
+///
+/// Tranché le 2026-08-14 (issue #30) contre deux alternatives : faire voyager la valeur par
+/// l'IPC — écarté, le contrat `Spectrogram` expose `frames` (le nombre réel de colonnes de CE
+/// morceau, donc ≤ 1200 et pas le plafond), donc il aurait fallu AJOUTER un champ au miroir
+/// manuel, puis l'épingler à son tour, et accepter une largeur qui dépend d'un appel IPC donc
+/// un saut de layout au premier rendu ; assumer la duplication avec un simple commentaire
+/// croisé — écarté, un commentaire ne tombe pas.
+pub(crate) const MAX_COLS: usize = 1200;
+
 fn shared_fft(fft_size: usize) -> Arc<dyn Fft<f32>> {
     // The shared plan is only valid for the canonical size; any other size (tests) plans ad hoc.
     if fft_size == FFT_SIZE {
@@ -218,12 +249,11 @@ impl SpectrumAccumulator {
         }
     }
 
-    /// Builds a display-sized spectrogram: caps time columns to `MAX_COLS` and pools the
+    /// Builds a display-sized spectrogram: caps time columns to [`MAX_COLS`] and pools the
     /// frequency bins down to ~`DISPLAY_BINS` (max-pool). Keeps the UI payload small and
     /// bounded regardless of track length. Cutoff detection is unaffected — it runs on the
     /// full-resolution LTAS, not on these display columns.
     fn build_spectrogram(&self) -> Spectrogram {
-        const MAX_COLS: usize = 1200;
         const DISPLAY_BINS: usize = 384;
 
         let src_cols = self.spec_cols.len();
@@ -282,6 +312,54 @@ mod tests {
     use std::f32::consts::PI;
 
     const SR: u32 = 44100;
+
+    /// Épingle la duplication de [`MAX_COLS`] entre le Rust et `frontend/styles.css` (issue #30).
+    ///
+    /// Le test lit le fichier CSS **réel** — pas une copie, pas une constante recopiée ici, ce
+    /// qui ne prouverait rien — et compare la valeur du token `--measure-data` à `MAX_COLS`.
+    /// Éditer l'un sans l'autre fait tomber ce test, ce qui est exactement le point : le
+    /// désaccord des deux déclarations est autrement silencieux (voir le commentaire de
+    /// `MAX_COLS` pour les deux modes de défaillance).
+    ///
+    /// Chemin résolu comme dans `dev_locate::frontend_dir` : `CARGO_MANIFEST_DIR` est
+    /// `src-tauri/`, donc le dépôt est son parent. Volontairement pas de `unwrap()` masqué —
+    /// un fichier introuvable doit dire lequel, pas paniquer sur un `Option` nu.
+    #[test]
+    fn css_data_measure_matches_max_cols() {
+        let css_path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("src-tauri/ a toujours un parent (la racine du dépôt)")
+            .join("frontend")
+            .join("styles.css");
+        let css = std::fs::read_to_string(&css_path)
+            .unwrap_or_else(|e| panic!("lecture de {} impossible: {e}", css_path.display()));
+
+        // `--measure-data:1200px` — on tolère les espaces autour du `:` mais pas l'absence du
+        // token : sa disparition doit casser, pas passer inaperçue.
+        let decl = css
+            .split("--measure-data")
+            .nth(1)
+            .unwrap_or_else(|| panic!("token --measure-data absent de {}", css_path.display()));
+        let value: String = decl
+            .trim_start()
+            .strip_prefix(':')
+            .unwrap_or_else(|| panic!("--measure-data n'est pas suivi de ':' dans styles.css"))
+            .trim_start()
+            .chars()
+            .take_while(|c| c.is_ascii_digit())
+            .collect();
+
+        let css_px: usize = value.parse().unwrap_or_else(|e| {
+            panic!("valeur de --measure-data illisible ({value:?}) dans styles.css: {e}")
+        });
+
+        assert_eq!(
+            css_px, MAX_COLS,
+            "--measure-data ({css_px}px) et analysis::spectrum::MAX_COLS ({MAX_COLS}) ont \
+             divergé. Les deux bornent la MÊME chose — la largeur utile d'une surface de \
+             donnée. Les remettre d'accord, ou changer la décision de l'issue #9 explicitement."
+        );
+    }
 
     /// Hard band-limited signal: a dense sum of equal-amplitude sine tones spaced every
     /// 100 Hz from 100 Hz up to `top_hz`. There is **no** energy above `top_hz`, so the

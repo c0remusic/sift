@@ -1,6 +1,17 @@
-// Self-hosted UI fonts — Outfit (UI: 400 body, 600 titles/labels) + JetBrains Mono (numbers).
-// Bundled via @fontsource so the desktop app needs no network. See system.md (Typographie).
+// Self-hosted UI fonts — Outfit (UI: 400 body, 500 medium, 600 titles/labels) + JetBrains Mono
+// (numbers). Bundled via @fontsource so the desktop app needs no network. See system.md
+// (Typographie).
+// La 500 n'etait PAS importee jusqu'au 2026-08-14, alors que styles.css la declare 24 fois. Sans
+// face correspondante, l'algorithme de matching de CSS Fonts 4 essaie les graisses INFERIEURES
+// avant les superieures : les 24 sites peignaient donc du 400, silencieusement. Mesure dans la
+// vraie fenetre (issue #33) : meme libelle a 242,109 px en 400 ET en 500, contre 247,109 en 600.
+// Piege associe — `document.fonts.check('500 13px Outfit')` repond `true` meme sans la face, car
+// il dit qu'un texte peut etre rendu, pas qu'il le sera a la bonne graisse. Seule la largeur
+// discrimine. Trois graisses et pas deux : decision d'Antoine, alignee sur la table de styles
+// macOS d'Apple, ou Medium est une graisse de premiere classe (Caption 2) et ou Headline et Body
+// ne different QUE par la graisse a metriques identiques.
 import "@fontsource/outfit/400.css";
+import "@fontsource/outfit/500.css";
 import "@fontsource/outfit/600.css";
 import "@fontsource/jetbrains-mono/400.css";
 // Police d'icones, meme regle que les trois ci-dessus. Elle etait chargee depuis un CDN par un

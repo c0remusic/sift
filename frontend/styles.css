@@ -111,6 +111,20 @@ color-scheme:light;
    already semantically "infinite". */
 --border-radius-base:14px;
 --border-radius-sm:calc(var(--border-radius-base) - 6px);--border-radius-md:calc(var(--border-radius-base) - 4px);--border-radius-lg:var(--border-radius-base);--border-radius-pill:999px;
+/* Mesure « donnée » de l'issue #9 : une surface qui porte de la donnée mesurée se borne ici.
+   ⚠️ Ce nombre est DUPLIQUÉ côté Rust — `analysis::spectrum::MAX_COLS` plafonne le spectrogramme
+   au même chiffre. Le désaccord serait SILENCIEUX : un CSS plus large étirerait la donnée
+   analysée et la présenterait comme mesurée (problème de véracité pour une app qui détecte du
+   faux lossless) ; un CSS plus étroit cacherait de l'information analysée. Aucune erreur, aucun
+   test rouge, rien dans la console.
+   Épinglé le 2026-08-14 (issue #30) par un test Rust qui LIT ce fichier et compare :
+   `analysis::spectrum::tests::css_data_measure_matches_max_cols`. Éditer ce nombre sans éditer
+   `MAX_COLS` fait tomber `cargo test`. Ne pas remplacer par un littéral au point d'usage : le
+   test cherche cette déclaration de token, pas ses consommateurs.
+   Les deux autres mesures de #9 — carte et formulaire 560, dialogue 760 — ne sont PAS encore
+   déclarées : leur application est un geste séparé, et un token sans consommateur est un token
+   mort (voir --h-40, tokens.md:185). */
+--measure-data:1200px;
 /* Elevation shadows — only the two floating surfaces that need them (toast, modal overlay) plus
    one subtle panel accent. Black at fixed alpha reads fine on both themes, same as the rest of
    the app's overlay tints — kept from the original recipe, just layered (2026-07-08, adapted
@@ -560,6 +574,11 @@ html,body{margin:0;padding:0;height:100%}
    je crois, mais de la meme couleur") — the continuous/transparent take from earlier the same day
    was tried and reversed: filled cards were preferred after all, just consistently colored across
    all 4 (see .sift-spectro-box/.sift-fil-editor.sift-fil-editor-margin below, which now match). */
+/* ⚠️ « all 4 » n'est plus vrai depuis le 2026-08-14 (issue #23). Les trois autres — player row,
+   spectro box, éditeur — ont perdu leur surface : ce sont des surfaces de CONTENU. Celle-ci la
+   garde parce qu'elle est de la CHARPENTE, au même titre que le rail de navigation et la colonne
+   file. C'est précisément ce que la décision rend lisible : avoir une surface = être la charpente.
+   Ne pas « rétablir la cohérence des 4 » en repeignant les trois autres. */
 .sift-action-rail{flex:none;display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-12);padding:var(--space-12) var(--space-16);overflow:visible;background:var(--color-background-queue);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg)}
 .sift-dest-btn{display:flex;align-items:center;gap:8px;flex:none;width:auto;max-width:220px;padding:var(--space-8) var(--space-12);background:var(--color-background-secondary);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);color:var(--color-text-primary);font-size:var(--text-sm);cursor:pointer}
 .sift-dest-btn-label{color:var(--color-text-tertiary);flex:none}
@@ -991,7 +1010,16 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
    the Diagnostic/Métadonnées toggles, then back to filled once more: the toggles' own wrappers
    (.sift-spectro-box/.sift-fil-editor.sift-fil-editor-margin, below) now carry this exact same
    background+shadow instead, so all 4 stay consistent as filled cards, not flat ones. */
-.sift-player-row{display:flex;flex-direction:column;gap:var(--space-16);margin-bottom:var(--space-16);padding:var(--space-16) var(--space-16);background:var(--color-background-queue);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg)}
+/* RENVERSÉ le 2026-08-14 (issue #23, décision d'Antoine sur les 4 plans capturés dans la vraie
+   fenêtre et superposés) : une surface de CONTENU ne peint plus rien — ni fond, ni bordure, ni
+   rayon. Ce qui rend la règle de plan de #8 lisible : avoir une surface devient la marque de la
+   CHARPENTE (rail, colonne file, .sift-action-rail), et la distinction cesse d'être un dégradé de
+   gris pour devenir binaire. Le paragraphe ci-dessus reste : il documente que la version plate
+   avait déjà été essayée ET annulée le 2026-07-07, sur un substrat antérieur à #8 et #9.
+   Padding horizontal passé à 0 : il insérait le contenu de 16px depuis le bord d'une carte qui
+   n'existe plus, ce qui le désalignait des blocs frères rendus à ras (voir .sift-report-scroll
+   ci-dessus, même raisonnement). Le vertical reste, c'est de la respiration, pas un inset. */
+.sift-player-row{display:flex;flex-direction:column;gap:var(--space-16);margin-bottom:var(--space-16);padding:var(--space-16) 0;max-width:var(--measure-data)}
 /* gap sized so the waveform's left edge lines up with the title block's left edge above it
    (annotation: "aligne les deux") — header-body starts at 68px cover + 14px gap = 82px; the play
    button's margin-left was snapped 11px→var(--space-12) in the 2026-07-24 spacing sweep, so the
@@ -1160,7 +1188,15 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
    0fr/1fr row measures, see .sift-zone-toggle-body-pad below — fixed there, not here). Kept anyway
    so nothing can ever visually escape this card's rounded bounds; no effect on normal layout since
    content already fits inside by design. */
-.sift-spectro-box{margin-bottom:var(--space-12);background:var(--color-background-queue);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);overflow:hidden}
+/* Surface retirée le 2026-08-14 (issue #23) — voir .sift-player-row pour la décision complète.
+   overflow:hidden CONSERVÉ : il n'était pas là pour clipper les coins mais comme confinement
+   défensif de la grille 0fr/1fr (raison réelle documentée sur .sift-zone-toggle-body-pad). Le
+   retirer rouvrirait un bug déjà corrigé.
+   ⚠️ En thème CLAIR, sans cadre, le spectrogramme (image sombre et saturée) se lit comme un trou
+   dans la page — mesuré dans la vraie fenêtre le 2026-08-14. Non tranché : patterns.md § Surface
+   Continue a un cinquième cas, « outil qui a besoin d'un cadre fonctionnel », qui pourrait le
+   rendre légitime ici. Question ouverte sur la map #6, pas un oubli. */
+.sift-spectro-box{margin-bottom:var(--space-12);overflow:hidden;max-width:var(--measure-data)}
 .sift-zone-toggle-label{display:inline-flex;align-items:center}
 .sift-spectro-caret{display:inline-block;transition:transform .25s;color:var(--color-text-tertiary)}
 .sift-spectro-hint{font-size:var(--text-sm);color:var(--color-text-info);flex:none}
@@ -1186,13 +1222,16 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-zone-toggle-label{transition:color .15s ease}
 .sift-zone-toggle:hover{background:none}
 .sift-zone-toggle:hover .sift-zone-toggle-label{color:var(--color-text-primary)}
-/* Survoler le toggle highlight aussi la bordure du cadre qui le contient (.sift-spectro-box pour
-   Diagnostic, .sift-fil-editor.sift-fil-editor-margin pour Métadonnées) — :has() cible le cadre
-   ANCÊTRE depuis l'état du bouton descendant, sans dupliquer le hover sur toute la surface de la
-   carte (seul le toggle déclenche, pas un survol du contenu ouvert en dessous). */
-.sift-spectro-box:has(.sift-zone-toggle:hover),
-.sift-fil-editor.sift-fil-editor-margin:has(.sift-zone-toggle:hover){
-  transition:border-color .15s ease;border-color:var(--color-border-secondary)}
+/* SUPPRIMÉ le 2026-08-14 (issue #23). Une règle `:has(.sift-zone-toggle:hover)` highlightait la
+   bordure du cadre ancêtre (.sift-spectro-box, .sift-fil-editor.sift-fil-editor-margin). Ces deux
+   cadres n'ont plus de bordure depuis le retrait des surfaces de contenu : la règle serait devenue
+   INERTE — elle aurait continué à déclarer un `border-color` sans rien à peindre, exactement le
+   mode de défaillance de l'issue #33 (24 `font-weight:500` sans face chargée). Retirée plutôt que
+   laissée muette.
+   L'affordance de survol NE disparaît PAS : `.sift-zone-toggle:hover .sift-zone-toggle-label`
+   (ci-dessous) éclaircit le libellé en --color-text-primary. Le cadre était un second signal, pas
+   le seul. Si ce signal résiduel se révèle trop faible à l'usage, le remplacement se décide sur
+   mesure — pas en réintroduisant une bordure que #23 vient de retirer. */
 /* Measured via CDP against the real running app: the row's tallest child (the badge, 19px) sat
    ~4px above true center because the old padding was 2px top / 10px bottom (asymmetric) —
    consistent between both toggles, so they matched each other, but neither was actually centered.
@@ -1513,7 +1552,9 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 /* overflow:hidden — defensive containment (see .sift-spectro-box above for why this alone didn't
    fix the actual bug: real cause was padding on the grid item itself, fixed on
    .sift-zone-toggle-body-pad below). */
-.sift-fil-editor.sift-fil-editor-margin{padding:0;background:var(--color-background-queue);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg);overflow:hidden}
+/* Surface retirée le 2026-08-14 (issue #23) — voir .sift-player-row. overflow:hidden conservé
+   pour la même raison que .sift-spectro-box (confinement de grille, pas clipping de coins). */
+.sift-fil-editor.sift-fil-editor-margin{padding:0;overflow:hidden}
 /* Carries the inset for everything BELOW the toggle (ident-head, inputs, genres, etc.) now that the
    card itself (above) no longer provides it. On a THIRD nested div (-pad), not on .sift-zone-toggle-
    body-inner (the grid item the 0fr/1fr row actually measures) and not on #sift-meta-body (the grid
