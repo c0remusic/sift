@@ -18,7 +18,35 @@ color-scheme:light;
    warning) vivent entre 37 et 44 % en sombre et près du plafond en clair ; remonter les cartes
    les aurait écrasés contre eux et aurait détruit la lisibilité des puces de verdict.
    Chroma et teinte INCHANGÉES — l'accord L2 réserve la couleur au sens. Seule la clarté bouge. */
---color-background-primary:oklch(87.00% 0.0109 76.59);--color-background-secondary:oklch(96.60% 0.0091 78.28);--color-background-tertiary:oklch(91.00% 0.0103 81.79);
+/* BASE NEUTRE PASSÉE AUX GRIS SYSTÈME D'APPLE — décision d'Antoine, 2026-08-16, ligne 6 de la
+   checklist SIGNATURE (issue #26). Ce qui change est la TEINTE, pas l'échelle : mesurées en OKLCH,
+   les valeurs d'Apple tombaient déjà sur les plans de Sift à moins de 1,4 point près. Sift était à
+   H≈77-82 (ambre, chroma ~0,010) ; Apple est à H≈286 (froid, chroma ~0,0067), soit une chroma
+   divisée par ~1,5 et l'angle opposé sur la roue.
+   PROVENANCE : HIG § Color, table « iOS, iPadOS system gray colors », valeurs lues le 2026-08-16
+   dans l'attribut `alt` des pastilles de la page (`alt="R-242,G-242,B-247"`) — c'est du texte
+   publié par Apple, PAS un échantillonnage d'écran, que CLAUDE.md interdit.
+   ⚠️ ÉCART ASSUMÉ ET NOMMÉ : ce sont les gris **iOS**. Apple ne publie AUCUNE valeur de gris pour
+   macOS — sa page ne donne que ~40 rôles nommés (windowBackgroundColor, controlBackgroundColor…)
+   dont les valeurs sont dynamiques et jamais chiffrées. Les seules AppKit réelles s'obtiendraient
+   en échantillonnant un Mac qui tourne. La table iOS est donc la meilleure source citable, pas la
+   source exacte. Ne pas « corriger » vers des valeurs macOS sans dire d'où elles viennent.
+   Correspondance appliquée (clair) : primary→systemGray4, tertiary→systemGray5,
+   secondary→systemGray6, raised→blanc.
+   Les couleurs SÉMANTIQUES ne bougent pas : elles étaient déjà celles d'Apple depuis 2026-07-06
+   (voir plus bas).
+   ⚠️ QUESTION LAISSÉE OUVERTE, à trancher par Antoine — les tokens de TEXTE n'ont pas été
+   re-teintés. Ils restent à H=77,5 (chauds) sur des surfaces désormais à H≈286 (froides), et ils
+   sont 2 à 4 fois plus chromatiques que les nouveaux fonds (0,0115-0,0171 contre 0,0034-0,0068).
+   L'audit de cohérence de palette du 2026-07-10 avait justement réuni la famille neutre sur UNE
+   teinte ; laisser le texte en arrière recrée cette division, ailleurs. Mais une encre chaude sur
+   fond froid peut être un choix, pas un oubli, donc rien n'a été changé sans décision.
+   Le coût n'est PAS le contraste, mesuré dans la vraie fenêtre le 2026-08-16 : re-teinter le
+   texte à 286 en gardant sa clarté déplace les ratios de 0,02 au plus. Le changement de fond,
+   lui, les a fait passer de 16,07 à 15,09 (primary sur fond), 10,89 → 10,23 (secondary),
+   10,34 → 9,71 (tertiary), 8,64 → 8,12 (quaternary), 8,20 → 7,95 (tertiary sur rail). Le plus
+   bas reste au-dessus de AAA (7:1). Aucune régression d'accessibilité. */
+--color-background-primary:oklch(86.22% 0.0068 286.3);--color-background-secondary:oklch(96.26% 0.0066 286.3);--color-background-tertiary:oklch(92.33% 0.0067 286.3);
 /* Extra warm-grey surfaces from DESIGN.md (Sift.dc.html theme map): the queue column, elevated
    surface (raised buttons/popovers), the recessed segmented "track"/well, and the SOLID
    hover/selection fills for nav items and rows (the mockup uses solids, not translucent overlays). */
@@ -31,7 +59,11 @@ color-scheme:light;
    même couche de chrome — et les deux états actifs rejoignent `secondary`. Un élément
    sélectionné EST promu au niveau du contenu ; lui donner un gris propre inventait un
    quatrième plan qui n'existe pas. Reste : fond < chrome < contenu < surélevé. */
---color-background-queue:var(--color-background-tertiary);--color-surface-raised:oklch(99.20% 0.0069 88.64);--color-track:oklch(89.06% 0.0138 78.26);--color-row-active:var(--color-background-secondary);--color-nav-active:var(--color-background-secondary);
+/* 2026-08-16, suite du passage aux gris d'Apple : `surface-raised` prend le BLANC — c'est la valeur
+   d'Apple pour le plan le plus haut en clair, et 99,20 % n'en était qu'à 0,8 point. `track` garde
+   sa clarté (89,06 %, arrêtée après trois tours de retour utilisateur en 2026-07-10, cette
+   décision-là n'est pas rouverte) et ne change que de teinte pour rejoindre la famille. */
+--color-background-queue:var(--color-background-tertiary);--color-surface-raised:oklch(100.00% 0 286.3);--color-track:oklch(89.06% 0.0067 286.3);--color-row-active:var(--color-background-secondary);--color-nav-active:var(--color-background-secondary);
 /* bg-{info,danger,success,warning} + hue-*-bg: solid (opaque), not alpha-over-surface — an alpha
    fill composites differently depending which grey card sits beneath it, and measured contrast
    against the paired text token dropped as low as 3.37:1 on the darkest cards (fails AA 4.5:1),
@@ -40,7 +72,10 @@ color-scheme:light;
 --color-background-info:oklch(87.46% 0.035 246.74);--color-background-danger:oklch(90.45% 0.045 30.17);--color-background-success:oklch(93.42% 0.035 150.63);--color-background-warning:oklch(99.00% 0.045 73.21);
 --color-text-primary:oklch(31.16% 0.0105 73.53);--color-text-secondary:oklch(45.4% 0.0145 67.45);--color-text-tertiary:oklch(46.15% 0.0133 79.76);--color-text-quaternary:oklch(50.30% 0.0139 82.4);
 --color-text-info:oklch(45.37% 0.0835 246.66);--color-text-danger:oklch(48.88% 0.1399 30.93);--color-text-success:oklch(44% 0.0735 151.97);--color-text-warning:oklch(48% 0.103 75.31);
---color-border-tertiary:oklch(25.67% 0.0142 67.12 / 0.09);--color-border-secondary:oklch(25.67% 0.0142 67.12 / 0.16);
+/* Encre de bordure re-teintée le 2026-08-16 avec la base neutre : clarté et alphas inchangés
+   (0,09 et 0,16, mesurés), seuls l'angle et la chroma rejoignent la famille Apple. Le bloc sombre
+   n'a rien à changer : ses bordures sont déjà du blanc à alpha, donc sans teinte. */
+--color-border-tertiary:oklch(25.67% 0.0060 286.3 / 0.09);--color-border-secondary:oklch(25.67% 0.0060 286.3 / 0.16);
 --color-border-info:oklch(56.9% 0.1044 246.74 / .35);--color-border-danger:oklch(57.16% 0.1594 30.17 / .42);
 --color-hue-indigo-text:oklch(43.43% 0.1484 283.58);--color-hue-indigo-bg:oklch(83.28% 0.045 278.34);--color-hue-purple-text:oklch(45.72% 0.1313 307.39);--color-hue-purple-bg:oklch(86.36% 0.05 312.41);--color-hue-pink-text:oklch(45.67% 0.1331 1.47);--color-hue-pink-bg:oklch(86.03% 0.045 2.52);--color-hue-teal-text:oklch(47.62% 0.0805 184.5);--color-hue-teal-bg:oklch(91.40% 0.035 186.37);--color-hue-yellow-text:oklch(54.77% 0.1119 90.23);
 /* Remplissages pleins pour surfaces de donnee (segments de graphique), la ou -bg est un fond
@@ -242,7 +277,16 @@ color-scheme:light;
    20,00 fond < 25,00 file < 28,50 rail < 34,77 cartes < 41,00 surélevé, soit 21 points au lieu
    de 11,4. Ce bloc et son jumeau `prefers-color-scheme` portent la MÊME chaîne, remplacée d'un
    seul geste pour qu'ils ne puissent pas diverger. */
---color-background-primary:oklch(20.00% 0.009 77.5);--color-background-secondary:oklch(34.77% 0.011 77.5);--color-background-tertiary:oklch(28.50% 0.009 77.5);--color-background-queue:var(--color-background-tertiary);--color-surface-raised:oklch(41.00% 0.011 77.5);
+/* GRIS D'APPLE, JEU SOMBRE — 2026-08-16, même geste que le bloc clair (voir sa provenance en tête
+   de fichier). Correspondance : primary→systemGray6, tertiary→systemGray5, secondary→systemGray4,
+   raised→systemGray3.
+   ⚠️ CE QUE ÇA COÛTE, mesuré : l'échelle passe de 21 points d'écart (20,00→41,00) à 17,5
+   (22,73→40,24), parce que le fond d'Apple est 2,73 points plus clair que celui que Sift s'était
+   donné. Le commentaire ci-dessus célébrait justement l'élargissement à 21 points ; il décrit donc
+   l'intention, plus le chiffre. Le haut de l'échelle, lui, ne bouge pas assez pour rouvrir la
+   collision avec les fonds sémantiques sombres (37,65–44,00 %) : raised passe de 41,00 à 40,24,
+   toujours dans la même zone qu'avant. */
+--color-background-primary:oklch(22.73% 0.0038 286.1);--color-background-secondary:oklch(34.92% 0.0034 286.2);--color-background-tertiary:oklch(29.39% 0.0036 286.2);--color-background-queue:var(--color-background-tertiary);--color-surface-raised:oklch(40.24% 0.0033 286.3);
     /* --color-track was a standalone literal (32.04%, then 22.5%, then 25% across 3 rounds of
        retour utilisateur 2026-07-10 — too light/recessed-wrong, then too dark/heavy each time).
        Settled on reusing --color-background-primary directly: same grey already validated on
@@ -290,7 +334,16 @@ color-scheme:light;
    20,00 fond < 25,00 file < 28,50 rail < 34,77 cartes < 41,00 surélevé, soit 21 points au lieu
    de 11,4. Ce bloc et son jumeau `prefers-color-scheme` portent la MÊME chaîne, remplacée d'un
    seul geste pour qu'ils ne puissent pas diverger. */
---color-background-primary:oklch(20.00% 0.009 77.5);--color-background-secondary:oklch(34.77% 0.011 77.5);--color-background-tertiary:oklch(28.50% 0.009 77.5);--color-background-queue:var(--color-background-tertiary);--color-surface-raised:oklch(41.00% 0.011 77.5);
+/* GRIS D'APPLE, JEU SOMBRE — 2026-08-16, même geste que le bloc clair (voir sa provenance en tête
+   de fichier). Correspondance : primary→systemGray6, tertiary→systemGray5, secondary→systemGray4,
+   raised→systemGray3.
+   ⚠️ CE QUE ÇA COÛTE, mesuré : l'échelle passe de 21 points d'écart (20,00→41,00) à 17,5
+   (22,73→40,24), parce que le fond d'Apple est 2,73 points plus clair que celui que Sift s'était
+   donné. Le commentaire ci-dessus célébrait justement l'élargissement à 21 points ; il décrit donc
+   l'intention, plus le chiffre. Le haut de l'échelle, lui, ne bouge pas assez pour rouvrir la
+   collision avec les fonds sémantiques sombres (37,65–44,00 %) : raised passe de 41,00 à 40,24,
+   toujours dans la même zone qu'avant. */
+--color-background-primary:oklch(22.73% 0.0038 286.1);--color-background-secondary:oklch(34.92% 0.0034 286.2);--color-background-tertiary:oklch(29.39% 0.0036 286.2);--color-background-queue:var(--color-background-tertiary);--color-surface-raised:oklch(40.24% 0.0033 286.3);
   /* Même réduction à 4 niveaux que le bloc clair, mêmes raisons. Les deux blocs sombres portent
    la MÊME chaîne, remplacée d'un seul geste pour qu'ils ne puissent pas diverger. */
 --color-track:var(--color-background-primary);--color-row-active:var(--color-background-secondary);--color-nav-active:var(--color-background-secondary);

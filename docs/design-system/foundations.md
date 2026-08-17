@@ -46,7 +46,13 @@ avec des panneaux uniquement quand ils ont une vraie fonction structurelle.
 
 Direction actuelle :
 
-- gris chauds comme base ;
+- gris système d'Apple comme base — **changé le 2026-08-16**, la base était « gris chauds »
+  depuis l'origine (H≈77-82, chroma ~0,010). Décision d'Antoine sur la ligne 6 de la checklist
+  SIGNATURE (issue #26). Ce qui a bougé est la teinte, pas l'échelle : mesurées en OKLCH, les
+  valeurs d'Apple tombaient déjà sur les plans de Sift à moins de 1,4 point près, et l'app est
+  passée de H≈77 (ambre) à H≈286 (froid), chroma divisée par ~1,5. Valeurs et provenance —
+  y compris pourquoi ce sont les gris *iOS* et non macOS — en tête de `frontend/styles.css` ;
+- la couleur SÉMANTIQUE, elle, était déjà celle d'Apple depuis 2026-07-06 et n'a pas bougé ;
 - vert pour succès/compatibilité ;
 - ambre pour attention/décision ;
 - rouge pour risque réel ;
