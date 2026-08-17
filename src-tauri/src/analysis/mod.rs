@@ -258,6 +258,79 @@ pub fn analyze(path: &str, with_spectrogram: bool) -> Result<AnalysisReport, Str
 }
 
 #[cfg(test)]
+mod corpus {
+    /// Mesure le détecteur sur un dossier RÉEL et imprime du CSV — le harnais de l'étape 2 du
+    /// chantier « le détecteur de faux marche-t-il » (2026-08-17).
+    ///
+    /// Existe parce que le corpus de fixtures du dépôt descend entièrement d'UN sinus balayé passé
+    /// par UN encodeur à deux débits : vert dessus ne dit rien de la vraie musique. Ce test ne
+    /// vérifie rien lui-même — il produit la mesure, et c'est le corpus étiqueté qui porte le
+    /// jugement.
+    ///
+    /// `SIFT_CORPUS_DIR=<dossier> cargo test --manifest-path src-tauri/Cargo.toml --release
+    ///   corpus_scan -- --ignored --nocapture`
+    ///
+    /// `--release` obligatoire en pratique : le décodage d'un morceau de 6 minutes en debug se
+    /// compte en minutes.
+    #[test]
+    #[ignore]
+    fn corpus_scan() {
+        let Ok(dir) = std::env::var("SIFT_CORPUS_DIR") else {
+            eprintln!("SIFT_CORPUS_DIR non défini — rien à mesurer");
+            return;
+        };
+        // Compte positif obligatoire : une liste vide et un dossier illisible se ressemblent, et
+        // c'est exactement le défaut que ce dépôt passe son temps à corriger.
+        let mut seen = 0usize;
+        let mut failed = 0usize;
+        println!("fichier;rail;debit_declare;cutoff_hz;verdict;est_kbps");
+        for e in walkdir::WalkDir::new(&dir).into_iter().flatten() {
+            if !e.file_type().is_file() {
+                continue;
+            }
+            let path = e.path();
+            let ext = path
+                .extension()
+                .and_then(|x| x.to_str())
+                .unwrap_or("")
+                .to_lowercase();
+            if !matches!(
+                ext.as_str(),
+                "aif" | "aiff" | "flac" | "wav" | "mp3" | "m4a" | "ogg" | "opus" | "wma"
+            ) {
+                continue;
+            }
+            let name = path
+                .file_name()
+                .and_then(|x| x.to_str())
+                .unwrap_or("(illisible)");
+            seen += 1;
+            match super::analyze(&path.to_string_lossy(), false) {
+                Ok(r) => println!(
+                    "{name};{:?};{};{:.0};{:?};{}",
+                    r.declared_rail,
+                    r.declared_bitrate
+                        .map(|b| b.to_string())
+                        .unwrap_or_else(|| "-".into()),
+                    r.cutoff_hz,
+                    r.verdict,
+                    r.est_kbps
+                ),
+                Err(err) => {
+                    failed += 1;
+                    // Un échec d'analyse est une LIGNE du résultat, pas un silence : c'est
+                    // précisément le cas qui, non dit, ferait passer un corpus incomplet pour
+                    // un corpus propre.
+                    println!("{name};ERREUR;-;-;-;{err}");
+                }
+            }
+        }
+        println!("-- {seen} fichiers audio parcourus, {failed} en echec");
+        assert!(seen > 0, "aucun fichier audio dans {dir} — mesure vide");
+    }
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
 
