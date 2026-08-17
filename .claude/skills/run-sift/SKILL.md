@@ -124,6 +124,21 @@ npm run check:security
   (which then blocks the next launch), and the WebView2 window that keeps holding the debug
   port. Kill only the parent and `status` still reports *running*. Always by exact PID —
   never `taskkill /IM node.exe`, other projects on this machine use node.
+- **And `stop` reporting three kills does not mean the app is gone.** Measured 2026-08-17:
+  `driver.mjs stop` printed `killed pid` three times and exited clean, 5173 was correctly
+  free — and a `sift.exe` was **still running**, confirmed mine by
+  `ExecutablePath = C:\dev\sift\src-tauri\target\debug\sift.exe`. `stop` kills the PIDs it
+  recorded at launch; the app binary `cargo` spawns underneath is not always among them.
+  So the count printed by `stop` is not the check. **Always verify after stopping**, and
+  only then kill what is left, by exact PID:
+  ```
+  Get-CimInstance Win32_Process -Filter "Name='sift.exe'" | Select ProcessId, ExecutablePath
+  ```
+  `ExecutablePath` is the only field that proves the process is yours — a Tauri binary's
+  command line is the relative `"target\debug\sift.exe"` and names no project, and this
+  machine runs several Tauri projects. A survivor left here is what makes the *next* launch
+  find a stale window, which is the failure mode the Known limitation section blames for the
+  2026-08-05 timeout.
 - **A FAILED `launch` also leaves a Vite behind, and that is worse.** Measured 2026-08-14:
   `driver.mjs launch` reported *the launch died silently* with an empty log — but its Vite
   had already grabbed 5173 and survived. The next attempt then fails on `Error: Port 5173 is
