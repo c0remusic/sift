@@ -77,10 +77,16 @@ Ces builds ne sont pas signes : le systeme avertit au premier lancement. Une seu
 **Windows** — SmartScreen affiche « Windows a protege votre ordinateur » : cliquer
 **Informations complementaires**, puis **Executer quand meme**.
 
-**macOS** (Apple Silicon uniquement) — ouvrir le \`.dmg\`, glisser Sift dans Applications, puis
-**Reglages Systeme > Confidentialite et securite**, descendre jusqu'au message concernant Sift
-et cliquer **Ouvrir quand meme**. En dernier recours :
-\`xattr -d com.apple.quarantine /Applications/Sift.app\`
+**macOS** (Apple Silicon uniquement) — telecharger \`Sift_<version>_aarch64.dmg\`, PAS le
+\`.app.tar.gz\`, qui sert a l'auto-update et pese pourtant plus lourd. Ouvrir le \`.dmg\`, glisser
+Sift dans Applications, puis selon le message affiche :
+
+- « developpeur non identifie » : **Reglages Systeme > Confidentialite et securite**, descendre
+  jusqu'au message concernant Sift, cliquer **Ouvrir quand meme**.
+- « Sift is damaged and can't be opened » : ce message n'offre PAS de bouton « Ouvrir quand
+  meme ». Dans le Terminal — le \`-r\` est indispensable, un \`.app\` est un dossier :
+  \`xattr -dr com.apple.quarantine /Applications/Sift.app\`
+  Si le message persiste : \`codesign --force --deep --sign - /Applications/Sift.app\`
 `;
 
 process.stdout.write(body + "\n" + FOOTER);

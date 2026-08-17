@@ -20,20 +20,53 @@ Les builds publiés sont **Apple Silicon uniquement** (`aarch64`) : la matrice d
 `.github/workflows/build.yml` n'a pas d'entrée Intel, et un binaire arm64 ne démarre
 pas du tout sur un Mac Intel.
 
+Télécharger **`Sift_<version>_aarch64.dmg`**. La page de release expose huit fichiers ;
+les autres ne sont pas des installeurs — `latest.json` et les `.sig` servent à
+l'auto-update, et `Sift_<version>_aarch64.app.tar.gz` est l'archive que l'app télécharge
+elle-même pour se mettre à jour. Le `.tar.gz` pèse d'ailleurs **plus** que le `.dmg`
+(34,2 Mo contre 33,2 en v0.0.3), ce qui le fait facilement prendre pour le bon fichier.
+
 1. Ouvrir le `.dmg`, glisser Sift dans Applications.
-2. Un double-clic affiche « Sift ne peut pas être ouvert car il provient d'un
-   développeur non identifié » et bloque le lancement.
+2. Au double-clic, macOS affiche **l'un des deux messages suivants**. Ils n'ont pas le
+   même contournement, et c'est le point qui a fait échouer une installation réelle le
+   2026-08-16 :
+
+### Cas A — « développeur non identifié »
+
 3. Ouvrir **Réglages Système → Confidentialité et sécurité**, descendre jusqu'au
    message concernant Sift, et cliquer **Ouvrir quand même**. Nécessaire une seule
    fois.
-4. En dernier recours, si l'étape 3 ne débloque pas :
-   `xattr -d com.apple.quarantine /Applications/Sift.app`
+
+### Cas B — « "Sift" is damaged and can't be opened. You should move it to the Trash. »
+
+**Le bouton « Ouvrir quand même » n'existe pas pour ce message** : la boîte ne propose
+que *Cancel* et *Move to Trash*. Le cas A ne s'applique pas, et suivre ses étapes ne mène
+nulle part. L'app n'est pas endommagée — elle est mise en quarantaine par le navigateur et
+son bundle n'a pas de signature (voir la note en bas). Dans le Terminal :
+
+3. `xattr -dr com.apple.quarantine /Applications/Sift.app`
+
+   Le `-r` n'est pas optionnel : un `.app` est un **dossier**, l'attribut de quarantaine
+   est posé fichier par fichier, et sans `-r` les binaires imbriqués — dont le sidecar
+   ffmpeg — restent marqués.
+
+4. Si le message persiste, resigner le bundle en ad-hoc :
+   `codesign --force --deep --sign - /Applications/Sift.app`
 
 > ⚠️ L'étape 3 disait « clic droit → Ouvrir » jusqu'au 2026-08-02. Ce contournement
 > a été **retiré à partir de macOS 15 Sequoia** : le menu contextuel n'offre plus de
 > dérogation pour une app non signée, et suivre l'ancienne instruction sur un Mac
 > récent mène à une impasse sans message utile. Le passage par les Réglages Système
 > fonctionne sur les deux générations.
+
+> ⚠️ **Pourquoi deux messages.** Aucun bloc `bundle.macOS` n'existe dans
+> `src-tauri/tauri.conf.json` ni dans `tauri.release.conf.json` : `signingIdentity` n'est
+> déclaré nulle part, donc `tauri build` ne code-signe pas le bundle (l'étape de
+> `build.yml` s'appelle d'ailleurs « Build Tauri app (**unsigned**) »). Un `.app` sans
+> signature de bundle, mis en quarantaine par un navigateur, produit le cas B plutôt que
+> le cas A. Si une signature ad-hoc au build suffirait à ramener tout le monde au cas A
+> reste **à mesurer sur un vrai Mac** — c'est l'objet de l'issue #36, et tant que ce n'est
+> pas mesuré, ne pas activer l'option en croyant que ça corrige quelque chose.
 
 Ces mêmes étapes sont reprises dans le pied de page des notes de version, ajouté par
 `scripts/changelog-section.mjs` — c'est ce que lit quelqu'un à qui on envoie le lien
