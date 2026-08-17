@@ -41,6 +41,13 @@ const LADDER_MAX_ATTEMPTS: usize = 3;
 fn map_ureq_err(e: ureq::Error) -> ProviderError {
     match e {
         ureq::Error::StatusCode(429) => ProviderError::RateLimited { retry_after_s: 60 },
+        // Impasse A10 (issue #15) : 401 et 403 tombaient dans `Network` avec le reste, et l'écran
+        // envoyait l'utilisateur vérifier sa connexion pour un jeton refusé. Discogs rend 401 pour
+        // un jeton invalide et 403 pour un jeton valide mais sans le droit demandé ; les deux sont
+        // des cas d'authentification, aucun ne se résout en réessayant.
+        ureq::Error::StatusCode(code @ (401 | 403)) => {
+            ProviderError::BadToken(format!("HTTP {code}"))
+        }
         ureq::Error::StatusCode(code) => ProviderError::Network(format!("HTTP {code}")),
         other => ProviderError::Network(other.to_string()),
     }

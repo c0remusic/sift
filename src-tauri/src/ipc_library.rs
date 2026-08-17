@@ -309,6 +309,45 @@ pub struct RekordboxLinkStatus {
     /// repair could not safely proceed. Previously only visible in the server log. Cleared by a
     /// fresh `link_rekordbox_xml` or the next successful repair.
     pub drift_detected: bool,
+    /// Impasse A13 ([issue #15](https://github.com/c0remusic/sift/issues/15)) : pourquoi les
+    /// quatre cartes de synchronisation M8 ne peuvent RIEN faire, quand c'est le cas.
+    ///
+    /// `error` ci-dessus ne couvre que le XML lié. Les quatre détecteurs M8, eux, lisent
+    /// `master.db` — un tout autre fichier, à un tout autre endroit — et transforment chacun leur
+    /// échec en `None` muet. Zéro ligne détectée donnait donc un corps de carte vide, que l'écran
+    /// peignait « à jour » : l'app affirmait que tout était synchronisé précisément quand rien ne
+    /// pouvait l'être.
+    ///
+    /// **Portée exacte, à ne pas élargir en lisant ce champ** : il répond à « le fichier est-il là,
+    /// à l'endroit où on le cherche ». Il ne dit PAS qu'il se déchiffre — ça coûterait le
+    /// déchiffrement SQLCipher multi-Mo à chaque affichage de l'écran, et cet appel-ci est un
+    /// statut. Un `master.db` présent mais illisible reste, lui, un `None` chez les détecteurs.
+    pub masterdb_error: Option<String>,
+}
+
+/// Le `masterdb_error` de `RekordboxLinkStatus` : `None` si rien n'est lié (les cartes M8 ne sont
+/// pas en jeu, l'écran montre la porte « lier un XML »), sinon un compte positif de ce qui manque.
+///
+/// Deux causes distinctes, dites séparément plutôt qu'aplaties : le dossier de configuration de
+/// l'OS est introuvable, ou `master.db` n'est pas dedans. La seconde est le cas d'une machine sans
+/// Rekordbox — celui de l'inventaire du premier lancement.
+///
+/// N'ouvre pas le fichier : `exists()` seul, pour que le coût reste celui d'un statut.
+fn masterdb_error(linked: bool) -> Option<String> {
+    if !linked {
+        return None;
+    }
+    let Some(dir) = crate::actions::rekordbox_pioneer_dir() else {
+        return Some(
+            "dossier de configuration introuvable — impossible de localiser master.db".into(),
+        );
+    };
+    let path = dir.join("master.db");
+    if path.exists() {
+        None
+    } else {
+        Some(format!("master.db introuvable ({})", path.display()))
+    }
 }
 
 /// Read the persisted drift flag (see `settings::REKORDBOX_XML_DRIFT`) for building a
@@ -352,6 +391,7 @@ fn link_rekordbox_xml_inner(conn: &Connection, path: &str) -> Result<RekordboxLi
         track_count: parsed.collection.len(),
         error: None,
         drift_detected: false,
+        masterdb_error: masterdb_error(true),
     })
 }
 
@@ -391,6 +431,7 @@ fn rekordbox_status_from_disk(path: Option<String>, drift: bool) -> RekordboxLin
             track_count: 0,
             error: None,
             drift_detected: false,
+            masterdb_error: None,
         };
     };
     match std::fs::read(&path)
@@ -404,7 +445,11 @@ fn rekordbox_status_from_disk(path: Option<String>, drift: bool) -> RekordboxLin
             track_count: parsed.collection.len(),
             error: None,
             drift_detected: drift,
+            masterdb_error: masterdb_error(true),
         },
+        // Le XML est illisible ET `master.db` est peut-être absent : ce sont deux fichiers
+        // différents, donc deux champs, jamais l'un rabattu sur l'autre. C'est exactement la
+        // confusion que corrige A13 — l'écran n'annonçait « indisponible » que sur le premier.
         Err(e) => RekordboxLinkStatus {
             path: Some(path),
             linked: true,
@@ -412,6 +457,7 @@ fn rekordbox_status_from_disk(path: Option<String>, drift: bool) -> RekordboxLin
             track_count: 0,
             error: Some(e),
             drift_detected: drift,
+            masterdb_error: masterdb_error(true),
         },
     }
 }
@@ -454,6 +500,7 @@ fn export_rekordbox_xml_inner(conn: &Connection) -> Result<RekordboxLinkStatus, 
         track_count: parsed.collection.len(),
         error: None,
         drift_detected: drift_detected(conn),
+        masterdb_error: masterdb_error(true),
     })
 }
 
@@ -1077,5 +1124,37 @@ mod rekordbox_tests {
         let status = link_rekordbox_xml_inner(&conn, xml_path.to_str().unwrap()).unwrap();
         assert!(!status.drift_detected, "re-linking clears prior drift");
         assert!(!rekordbox_status_inner(&conn).unwrap().drift_detected);
+    }
+
+    /// Impasse A13 ([issue #15](https://github.com/c0remusic/sift/issues/15)) : le statut doit
+    /// distinguer « XML lié et master.db là » de « XML lié et master.db absent », faute de quoi
+    /// les quatre cartes de synchronisation s'affichent « à jour » sur une machine sans Rekordbox.
+    ///
+    /// Les trois branches sont couvertes dans le même test parce qu'elles ne valent que
+    /// L'UNE PAR RAPPORT AUX AUTRES : un `Some` seul ne prouve pas que le champ discrimine quoi
+    /// que ce soit — il pourrait être `Some` en permanence.
+    #[test]
+    fn masterdb_error_distinguishes_a_missing_master_db_from_a_present_one() {
+        let dir = tempfile::tempdir().unwrap();
+        crate::actions::set_pioneer_dir_override_for_test(dir.path().to_path_buf());
+
+        assert_eq!(
+            masterdb_error(false),
+            None,
+            "rien de lié : les cartes M8 ne sont pas en jeu, pas d'erreur à signaler"
+        );
+
+        let absent = masterdb_error(true).expect("master.db absent doit produire un message");
+        assert!(
+            absent.contains("master.db introuvable"),
+            "le message nomme le fichier manquant, pas un échec générique : {absent}"
+        );
+
+        std::fs::write(dir.path().join("master.db"), b"pas un vrai SQLCipher").unwrap();
+        assert_eq!(
+            masterdb_error(true),
+            None,
+            "fichier présent : ce champ ne parle QUE de présence, pas de lisibilité"
+        );
     }
 }

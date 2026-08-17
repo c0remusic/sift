@@ -5,6 +5,7 @@
 // filed track's metadata). Keeps the candidate markup in one place (spec: zero duplication).
 import type { Candidate } from "./ipc";
 import { esc } from "./dom";
+import { humanizeError } from "./errors";
 
 /** Cover thumbnail (or vinyl placeholder) for a candidate row. */
 function candCoverHtml(c: Candidate): string {
@@ -40,4 +41,53 @@ export function renderCandidates(host: HTMLElement, list: Candidate[]): void {
     ? `<details class="sift-cand-more"><summary class="sift-cand-more-summary">▸ ${rest.length} autre${rest.length > 1 ? "s" : ""} résultat${rest.length > 1 ? "s" : ""}</summary>${rest.map((c, i) => candRowHtml(c, i + 1)).join("")}</details>`
     : "";
   host.innerHTML = candRowHtml(first, 0) + moreHtml;
+}
+
+/** Ce qu'un échec d'identification Discogs dit à l'utilisateur, en un seul endroit.
+ *
+ *  Les deux appelants (`filing-identify.ts`, `library-detail.ts`) portaient la même cascade de
+ *  branches, dupliquée — et donc les mêmes deux défauts, deux fois :
+ *
+ *  - **A9** (issue #15) : le texte NO_TOKEN parlait de « recherches anonymes ». Il n'en existe
+ *    aucune. `ipc_identify.rs` rend `NO_TOKEN` AVANT tout appel réseau et `settings.rs` le dit —
+ *    « Empty/unset = identification disabled ». Sans jeton l'identification n'est pas dégradée,
+ *    elle est absente.
+ *  - **A10** (issue #15) : un jeton refusé (401/403) arrivait ici en `NETWORK:` et s'affichait
+ *    « Discogs injoignable », envoyant l'utilisateur vérifier une connexion qui allait bien.
+ *    `BAD_TOKEN:` existe désormais côté Rust ; il se dit comme ce qu'il est.
+ *
+ *  Ce n'est PAS la table code -> message qu'`errors.ts` refuse : là-bas le refus porte sur un
+ *  humanisateur générique deviné, appliqué à toutes les erreurs de l'app. Ici les quatre codes
+ *  sont produits par un seul `ProviderError::code()`, à trois `match` de distance, et l'un d'eux
+ *  porte une donnée à afficher (les secondes du débit).
+ *
+ *  La chaîne brute part en console ICI, une fois, via `humanizeError` — c'est le seul point qui
+ *  voit toutes les branches, donc le seul où la garantie ne peut pas être oubliée par une branche
+ *  ajoutée plus tard. */
+export function identifyErrorHtml(err: unknown): { html: string; gotoReglages: boolean } {
+  const msg = String(err);
+  humanizeError(err, msg, "identify");
+  if (msg.includes("NO_TOKEN")) {
+    return {
+      html: `<div class="sift-cands-msg">L'identification Discogs demande un jeton — sans lui, Sift n'interroge pas Discogs du tout. Il est gratuit et se colle dans Réglages.</div>`,
+      gotoReglages: true,
+    };
+  }
+  if (msg.includes("BAD_TOKEN")) {
+    return {
+      html: `<div class="sift-cands-msg sift-cands-error"><i class="ti ti-alert-triangle sift-cand-error-icon"></i>Discogs a refusé le jeton — il est invalide, expiré ou révoqué. Ce n'est pas la connexion : réessayer ne changera rien.</div>`,
+      gotoReglages: true,
+    };
+  }
+  const rl = msg.match(/RATE_LIMITED:(\d+)/);
+  if (rl) {
+    return {
+      html: `<div class="sift-cands-msg">Discogs limite le débit — réessaie dans ${esc(rl[1])}s.</div>`,
+      gotoReglages: false,
+    };
+  }
+  return {
+    html: `<div class="sift-cands-msg sift-cands-error"><i class="ti ti-alert-triangle sift-cand-error-icon"></i>Discogs injoignable.</div>`,
+    gotoReglages: false,
+  };
 }

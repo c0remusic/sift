@@ -3,7 +3,7 @@ import type { Candidate, AppliedIdentity } from "./ipc";
 import type { AnalysisReport } from "../shared/contracts";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { zoneToggleHtml, row } from "./report-view";
-import { renderCandidates } from "./identify-shared";
+import { identifyErrorHtml, renderCandidates } from "./identify-shared";
 import { resolveGenreFamily } from "./genre-families";
 import { requireEl, esc } from "./dom";
 import { state, openState } from "./filing-state";
@@ -381,28 +381,22 @@ async function doIdentify(
     wireCandidateClicks(host, candidates, editor, mid, btn);
   } catch (err) {
     if (myseq !== openState.openSeq) return;
-    const msg = String(err);
-    if (msg.includes("NO_TOKEN")) {
-      // [C2/m5] explain WHY + give a direct action to open Réglages
-      host.innerHTML =
-        `<div class="sift-cands-msg">Discogs limite les recherches anonymes — ajoute ton jeton (gratuit) dans Réglages.</div>` +
-        `<button class="sift-cand-jump sift-goto-reglages" data-fil="goto-reglages"><i class="ti ti-arrow-right"></i> Ouvrir Réglages</button>`;
-      const gotoBtn = host.querySelector<HTMLElement>('[data-fil="goto-reglages"]');
-      gotoBtn?.addEventListener("click", () => {
-        // Navigate to the Réglages view via the existing nav click handler in app.js
-        requireEl('[data-view="reglages"]', "filing goto-reglages").dispatchEvent(
-          new MouseEvent("click", { bubbles: true }),
-        );
-      });
-    } else {
-      const rl = msg.match(/RATE_LIMITED:(\d+)/);
-      if (rl) {
-        host.innerHTML = `<div class="sift-cands-msg">Discogs limite le débit — réessaie dans ${rl[1]}s.</div>`;
-      } else {
-        // [m10] network/server errors get a warning icon to distinguish from "no results"
-        host.innerHTML = `<div class="sift-cands-msg sift-cands-error"><i class="ti ti-alert-triangle sift-cand-error-icon"></i>Discogs injoignable.</div>`;
-      }
-    }
+    // [C2/m5] expliquer POURQUOI + donner une action directe vers Réglages. La cascade de branches
+    // vit dans `identifyErrorHtml` depuis le 2026-08-17 : elle était dupliquée à l'identique dans
+    // `library-detail.ts`, donc chacun de ses deux défauts (A9, A10 — issue #15) existait en deux
+    // exemplaires. Le `console.error` reste garanti par `humanizeError`.
+    const { html, gotoReglages } = identifyErrorHtml(err);
+    host.innerHTML =
+      html +
+      (gotoReglages
+        ? `<button class="sift-cand-jump sift-goto-reglages" data-fil="goto-reglages"><i class="ti ti-arrow-right"></i> Ouvrir Réglages</button>`
+        : "");
+    host.querySelector<HTMLElement>('[data-fil="goto-reglages"]')?.addEventListener("click", () => {
+      // Navigate to the Réglages view via the existing nav click handler in app.js
+      requireEl('[data-view="reglages"]', "filing goto-reglages").dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+    });
   } finally {
     btn.disabled = false;
     btn.innerHTML = origLabel;

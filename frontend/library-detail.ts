@@ -14,7 +14,7 @@ import {
 } from "./ipc";
 import type { Candidate, AppliedIdentity } from "./ipc";
 import type { LibraryTrack, MetadataEdit } from "../shared/contracts";
-import { renderCandidates } from "./identify-shared";
+import { identifyErrorHtml, renderCandidates } from "./identify-shared";
 import { confirmAction } from "./confirm-modal";
 import { openReportInto } from "./report-view";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -219,22 +219,20 @@ async function doIdentify(
     renderCandidates(host, candidates);
     wireCandidateClicks(host, candidates, edit, st);
   } catch (err) {
-    const msg = String(err);
-    if (msg.includes("NO_TOKEN")) {
-      host.innerHTML =
-        `<div class="sift-cands-msg">Discogs limite les recherches anonymes — ajoute ton jeton (gratuit) dans Réglages.</div>` +
-        `<button class="sift-cand-jump sift-goto-reglages" data-lib="goto-reglages"><i class="ti ti-arrow-right"></i> Ouvrir Réglages</button>`;
-      host.querySelector('[data-lib="goto-reglages"]')?.addEventListener("click", () => {
-        requireEl('[data-view="reglages"]', "library-detail goto-reglages").dispatchEvent(
-          new MouseEvent("click", { bubbles: true }),
-        );
-      });
-    } else {
-      const rl = msg.match(/RATE_LIMITED:(\d+)/);
-      host.innerHTML = rl
-        ? `<div class="sift-cands-msg">Discogs limite le débit — réessaie dans ${rl[1]}s.</div>`
-        : `<div class="sift-cands-msg sift-cands-error"><i class="ti ti-alert-triangle" style="font-size:var(--text-md);vertical-align:-2px;margin-right:4px"></i>Discogs injoignable.</div>`;
-    }
+    // Même cascade que `filing-identify.ts`, et c'est le problème qu'on retire : elle était
+    // recopiée ici, donc les impasses A9 et A10 (issue #15) y vivaient en double. Une seule
+    // source désormais — `identifyErrorHtml`.
+    const { html, gotoReglages } = identifyErrorHtml(err);
+    host.innerHTML =
+      html +
+      (gotoReglages
+        ? `<button class="sift-cand-jump sift-goto-reglages" data-lib="goto-reglages"><i class="ti ti-arrow-right"></i> Ouvrir Réglages</button>`
+        : "");
+    host.querySelector('[data-lib="goto-reglages"]')?.addEventListener("click", () => {
+      requireEl('[data-view="reglages"]', "library-detail goto-reglages").dispatchEvent(
+        new MouseEvent("click", { bubbles: true }),
+      );
+    });
   } finally {
     btn.disabled = false;
     btn.innerHTML = orig;

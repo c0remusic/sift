@@ -387,6 +387,13 @@ export interface RekordboxLinkStatus {
   /** True when a prior filing/move's Rekordbox repair hit an ambiguous match and could not
    *  safely patch the linked XML — surfaced as a warning banner (see Task 3). */
   drift_detected: boolean;
+  /** Pourquoi les 4 cartes de synchronisation M8 ne peuvent rien faire, quand c'est le cas.
+   *  `error` juste au-dessus ne parle QUE du XML lié ; les détecteurs M8 lisent `master.db`, un
+   *  autre fichier à un autre endroit. Sans ce champ, `master.db` introuvable donnait quatre
+   *  cartes vides que l'écran peignait « à jour » — impasse A13, issue #15.
+   *  Portée : présence du fichier à l'endroit attendu. PAS sa lisibilité — le déchiffrer coûterait
+   *  plusieurs Mo de SQLCipher à chaque affichage de l'écran. */
+  masterdb_error: string | null;
 }
 
 // ---- M8 Tier 1 master.db path-repair candidates (mirror of src-tauri/src/ipc_library.rs) ----

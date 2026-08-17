@@ -250,7 +250,17 @@ pub fn apply_identity(
 #[derive(Debug)]
 pub enum ProviderError {
     NoToken,
-    RateLimited { retry_after_s: u64 },
+    /// Le jeton EXISTE mais Discogs le refuse — invalide, expiré, révoqué, ou mal collé.
+    ///
+    /// Impasse A10 ([issue #15](https://github.com/c0remusic/sift/issues/15)) : 401 et 403
+    /// tombaient dans `Network` avec tous les autres statuts, et l'écran disait « Discogs
+    /// injoignable ». L'utilisateur partait vérifier sa connexion, qui allait très bien, pendant
+    /// que la cause était à un clic de là, dans Réglages. C'est un cas d'authentification, pas de
+    /// réseau : il ne se résout pas en réessayant.
+    BadToken(String),
+    RateLimited {
+        retry_after_s: u64,
+    },
     Network(String),
     Parse(String),
 }
@@ -260,6 +270,7 @@ impl ProviderError {
     pub fn code(&self) -> String {
         match self {
             ProviderError::NoToken => "NO_TOKEN".into(),
+            ProviderError::BadToken(m) => format!("BAD_TOKEN:{m}"),
             ProviderError::RateLimited { retry_after_s } => format!("RATE_LIMITED:{retry_after_s}"),
             ProviderError::Network(m) => format!("NETWORK:{m}"),
             ProviderError::Parse(m) => format!("PARSE:{m}"),

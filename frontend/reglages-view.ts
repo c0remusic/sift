@@ -78,7 +78,12 @@ export async function renderReglagesLive() {
   block.className = "sift-settings-card sift-settings-list-row";
   block.innerHTML =
     '<div class="sift-settings-title">Discogs</div>' +
-    '<div class="sift-settings-desc">Le jeton permet à Sift d\'interroger l\'API Discogs pour identifier tes morceaux (label, année, genre). Sans jeton, les recherches sont limitées et plus lentes.</div>' +
+    // Impasse A9 (issue #15) : la phrase précédente — « Sans jeton, les recherches sont limitées
+    // et plus lentes » — décrivait une désactivation TOTALE comme une dégradation. La réalité est
+    // dans le code : `ipc_identify.rs` rend `NO_TOKEN` AVANT tout appel réseau, et `settings.rs`
+    // le dit en toutes lettres, « Empty/unset = identification disabled ». Aucune recherche n'est
+    // ni limitée ni ralentie : il n'y en a aucune.
+    '<div class="sift-settings-desc">Le jeton permet à Sift d\'interroger l\'API Discogs pour identifier tes morceaux (label, année, genre). Sans jeton, Sift n\'interroge pas Discogs du tout : le bouton Identifier renvoie ici. Le jeton est gratuit et se génère depuis un compte Discogs.</div>' +
     '<div class="sift-settings-row sift-settings-row-stack">' +
     '<div class="sift-settings-row-head">' +
     '<label for="sift-discogs-token" class="sift-settings-label">Jeton d\'accès</label>' +
@@ -381,22 +386,39 @@ export async function renderReglagesLive() {
   );
 
   let saveTimer: ReturnType<typeof setTimeout> | undefined;
+
+  /** Écrit le jeton et le dit. Annule le débounce en cours pour que l'appel immédiat du `blur` ne
+   *  se fasse pas doubler par le timer qui allait échoir. */
+  async function saveToken(): Promise<void> {
+    clearTimeout(saveTimer);
+    if (!inp) return;
+    const val = inp.value.trim();
+    try {
+      await setSetting("discogs_token", val);
+      if (status) {
+        // Ce libellé ne dit QUE ce qui s'est passé : l'écriture. Il ne dit pas que le jeton est
+        // valide — rien ici ne l'a testé. Ce qu'il vaut se découvre au premier Identifier, qui
+        // sait maintenant distinguer un jeton refusé d'une panne réseau (impasse A10, issue #15).
+        status.textContent = val ? "Jeton enregistré." : "Jeton effacé.";
+        setTimeout(() => {
+          if (status) status.textContent = "";
+        }, 2000);
+      }
+    } catch (e) {
+      if (status) status.textContent = "Erreur d'enregistrement.";
+      console.error("setSetting(discogs_token) failed", e);
+    }
+  }
+
   inp?.addEventListener("input", () => {
     clearTimeout(saveTimer);
-    saveTimer = setTimeout(async () => {
-      const val = inp.value.trim();
-      try {
-        await setSetting("discogs_token", val);
-        if (status) {
-          status.textContent = val ? "Jeton enregistré." : "Jeton effacé.";
-          setTimeout(() => {
-            if (status) status.textContent = "";
-          }, 2000);
-        }
-      } catch (e) {
-        if (status) status.textContent = "Erreur d'enregistrement.";
-        console.error("setSetting(discogs_token) failed", e);
-      }
-    }, 600);
+    saveTimer = setTimeout(() => void saveToken(), 600);
   });
+  // Moitié débounce de l'impasse A11 (issue #15) : le timer de 600 ms n'était vidé ni à la
+  // navigation ni à la fermeture, donc coller un jeton puis quitter l'écran sous 600 ms le perdait
+  // SANS TRACE — ni message, ni log, et le champ réaffichait l'ancienne valeur au retour. Un clic
+  // sur le rail de navigation retire le focus du champ avant de démonter l'écran : c'est ce `blur`
+  // qui rattrape la saisie. (Le retrait du DOM seul ne déclenche pas `blur` dans Chromium — donc
+  // c'est bien l'ordre des événements du clic qui porte la garantie, pas le démontage.)
+  inp?.addEventListener("blur", () => void saveToken());
 }

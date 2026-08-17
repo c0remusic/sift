@@ -86,6 +86,17 @@ let lastPendingArtworkSyncs: PendingArtworkSync[] = [];
  *  audit-heuristique-visuel.md). null until the first render. */
 let lastLinkStatus: RekordboxLinkStatus | null = null;
 
+/** Une carte de synchronisation ne peut rien faire dans DEUX cas, pas un.
+ *
+ *  Impasse A13 (issue #15) : les quatre appels ne testaient que `lastLinkStatus.error`, qui ne
+ *  parle que du XML lié. Les détecteurs M8, eux, lisent `master.db` — absent sur toute machine
+ *  sans Rekordbox, et leurs erreurs deviennent des `None` muets côté Rust. Le corps de carte
+ *  restait donc vide, et un corps vide se peint « à jour ». L'app affirmait que tout était
+ *  synchronisé exactement quand rien ne pouvait l'être. */
+function syncUnavailable(): boolean {
+  return lastLinkStatus?.error != null || lastLinkStatus?.masterdb_error != null;
+}
+
 /** Ids of every pending row in `rows` whose `session_id` matches `sessionKey`
  * (`SESSION_GROUP_NONE` for null) — shared by the 3 group-select click handlers in sift-live.ts. */
 function idsInSessionGroup<T extends { id: number; session_id: string | null }>(
@@ -159,9 +170,17 @@ function busyLabel(text: string): string {
  * reset that section's `lastPending*` array to [] so the umbrella pending count above the 4
  * cards stays consistent with what's actually shown. */
 function sectionErrorHtml(): string {
+  // Impasse A15 (issue #15) : « réessaie plus tard » était dit à une condition PERMANENTE. Sur une
+  // machine sans Rekordbox, `master.db` ne réapparaîtra pas tout seul — réessayer ne changera
+  // jamais rien, et le message envoyait l'utilisateur attendre. Quand la cause est connue on la
+  // nomme ; le conseil d'attendre ne subsiste que pour ce qui est vraiment transitoire.
+  const known = lastLinkStatus?.masterdb_error;
+  const msg = known
+    ? `${known} — la synchronisation Rekordbox reste indisponible tant qu'il manque.`
+    : "Impossible de charger — réessaie plus tard.";
   return (
     `<div class="sift-ui-card-outline" style="padding:10px 12px;margin-bottom:6px">` +
-    `<div style="font-size:var(--text-sm);color:var(--color-text-danger)">Impossible de charger — réessaie plus tard.</div>` +
+    `<div style="font-size:var(--text-sm);color:var(--color-text-danger)">${esc(msg)}</div>` +
     `</div>`
   );
 }
@@ -298,7 +317,7 @@ function masterdbRepairsSectionHtml(rows: PendingMasterdbRepair[]): string {
       ? ""
       : subtext + (ambiguousRows ? `<div style="margin-bottom:8px">${ambiguousRows}</div>` : "") + pendingRows + applyBar;
 
-  return `<div id="sift-rkb-masterdb-section">${syncCardHtml("Fichiers", pending.length, body, lastLinkStatus?.error != null)}</div>`;
+  return `<div id="sift-rkb-masterdb-section">${syncCardHtml("Fichiers", pending.length, body, syncUnavailable())}</div>`;
 }
 
 /** Re-renders only the Tier 1 repairs section from already-cached data (`lastPendingRepairs`),
@@ -404,7 +423,7 @@ function metadataSyncsSectionHtml(rows: PendingMetadataSync[]): string {
       ? ""
       : subtext + (ambiguousRows ? `<div style="margin-bottom:8px">${ambiguousRows}</div>` : "") + pendingRows + applyBar;
 
-  return `<div id="sift-rkb-mds-section">${syncCardHtml("Métadonnées", pending.length, body, lastLinkStatus?.error != null)}</div>`;
+  return `<div id="sift-rkb-mds-section">${syncCardHtml("Métadonnées", pending.length, body, syncUnavailable())}</div>`;
 }
 
 /** Same discipline as `rerenderMasterdbRepairsSection` for the Tier 3 metadata section. */
@@ -499,7 +518,7 @@ function artworkSyncsSectionHtml(rows: PendingArtworkSync[]): string {
       ? ""
       : subtext + (ambiguousRows ? `<div style="margin-bottom:8px">${ambiguousRows}</div>` : "") + pendingRows + applyBar;
 
-  return `<div id="sift-rkb-mas-section">${syncCardHtml("Pochettes", pending.length, body, lastLinkStatus?.error != null)}</div>`;
+  return `<div id="sift-rkb-mas-section">${syncCardHtml("Pochettes", pending.length, body, syncUnavailable())}</div>`;
 }
 
 /** Same discipline as `rerenderMasterdbRepairsSection` for the Tier 3 artwork section. */
@@ -539,7 +558,7 @@ function playlistDuplicatesSectionHtml(groups: PlaylistDuplicateGroupDto[]): str
       );
     })
     .join("");
-  return syncCardHtml("Playlists", groups.length, rows, lastLinkStatus?.error != null);
+  return syncCardHtml("Playlists", groups.length, rows, syncUnavailable());
 }
 
 /** Rekordbox integration page (data-view="rkb") — real screen replacing the old one-click nav
@@ -594,6 +613,12 @@ export async function renderRekordboxLive(): Promise<void> {
       `</div></div>`
     : "";
 
+  // Impasse A14 (issue #15) : les quatre `catch` remettent leur tableau à `[]` AVANT le calcul de
+  // `totalPending` plus bas. Quatre cartes en erreur donnaient donc un total de 0, et un en-tête
+  // qui annonçait « à jour » au-dessus d'elles. Compter les sections tombées est ce qui permet à
+  // l'en-tête de dire autre chose que le total.
+  let failedSections = 0;
+
   let masterdbSection = "";
   try {
     const repairs = await rekordboxMasterdbPendingRepairs();
@@ -601,6 +626,7 @@ export async function renderRekordboxLive(): Promise<void> {
   } catch (e) {
     console.error("rekordbox_masterdb_pending_repairs failed", e);
     lastPendingRepairs = [];
+    failedSections++;
     masterdbSection = `<div id="sift-rkb-masterdb-section">${sectionErrorHtml()}</div>`;
   }
 
@@ -611,6 +637,7 @@ export async function renderRekordboxLive(): Promise<void> {
   } catch (e) {
     console.error("rekordbox_masterdb_scan_playlist_duplicates failed", e);
     lastScannedDuplicateGroups = [];
+    failedSections++;
     dedupSection = sectionErrorHtml();
   }
 
@@ -621,6 +648,7 @@ export async function renderRekordboxLive(): Promise<void> {
   } catch (e) {
     console.error("rekordbox_masterdb_pending_metadata_syncs failed", e);
     lastPendingMetadataSyncs = [];
+    failedSections++;
     metadataSyncSection = `<div id="sift-rkb-mds-section">${sectionErrorHtml()}</div>`;
   }
 
@@ -631,19 +659,29 @@ export async function renderRekordboxLive(): Promise<void> {
   } catch (e) {
     console.error("rekordbox_masterdb_pending_artwork_syncs failed", e);
     lastPendingArtworkSyncs = [];
+    failedSections++;
     artworkSyncSection = `<div id="sift-rkb-mas-section">${sectionErrorHtml()}</div>`;
   }
 
   // Umbrella line above the 4 M8 cards — total pending count across Tiers 1/2/3, so the whole
   // "synchroniser avec Rekordbox" queue reads as one thing even though each tier is a separate
   // card underneath (grill-me session, 2026-07-11).
+  //
+  // Trois états et non deux depuis le 2026-08-17 : « à jour » n'est dit que quand les quatre
+  // sections ont RÉPONDU et qu'aucune n'a rien en attente. Zéro sur un écran cassé n'est pas
+  // zéro — c'est une absence de réponse (impasses A13 et A14, issue #15).
   const totalPending = lastPendingRepairs.length + lastScannedDuplicateGroups.length + lastPendingMetadataSyncs.length + lastPendingArtworkSyncs.length;
+  const syncState = syncUnavailable()
+    ? esc(lastLinkStatus?.masterdb_error ?? "synchronisation indisponible")
+    : failedSections > 0
+      ? `état inconnu — ${failedSections} section${failedSections > 1 ? "s" : ""} n'a pas répondu`
+      : totalPending > 0
+        ? `${totalPending} piste${totalPending > 1 ? "s" : ""} en attente de synchronisation`
+        : "à jour";
   const syncOverline =
     `<div style="display:flex;justify-content:space-between;align-items:center;margin:2px 0 8px 2px">` +
     `<span style="font-size:var(--text-sm);color:var(--color-text-secondary)">Synchroniser avec Rekordbox</span>` +
-    `<span style="font-size:var(--text-sm);color:var(--color-text-secondary)">${
-      totalPending > 0 ? `${totalPending} piste${totalPending > 1 ? "s" : ""} en attente de synchronisation` : "à jour"
-    }</span>` +
+    `<span style="font-size:var(--text-sm);color:var(--color-text-${syncUnavailable() || failedSections > 0 ? "warning" : "secondary"})">${syncState}</span>` +
     `</div>`;
 
   content.innerHTML =
