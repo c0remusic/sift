@@ -253,6 +253,19 @@ function clearPane(mid: HTMLElement, emptyQueue = false): void {
     ? emptyStateHtml({
         title: "Rien à revoir",
         note: "Les morceaux à traiter apparaissent ici une fois ajoutés depuis Accueil ou déposés dans la file.",
+        // Impasse A6 (issue #15) : Revue vide était le SEUL cul-de-sac sans action de l'app. Pas
+        // de `backToRevue` — on y est déjà, c'est bien l'écran d'entrée — mais Bibliothèque,
+        // Écartés et Journal renvoient tous VERS Revue, si bien qu'un nouvel utilisateur faisait
+        // deux clics pour atterrir sur le seul écran qui lui dit d'aller ailleurs à la main. La
+        // note nommait Accueil sans y mener.
+        // `data-view="home"` est routé par le délégué de clic d'`app.js` posé sur `#pa`
+        // (`e.target.closest('[data-view]')`, app.js:392-393), et `#mid` vit sous `#content`, donc
+        // sous `#pa` : le bouton n'a besoin d'aucun câblage ici — c'est le contrat d'`actionHtml`.
+        // La clé est `home` et NON `accueil` : c'est le libellé humain qui est « Accueil », le
+        // `data-view` du rail vaut `home` (index.html:13). Vérifié dans le markup avant d'écrire
+        // cette ligne, pas déduit du nom affiché.
+        actionHtml:
+          '<button type="button" data-view="home" class="sift-empty-link"><i class="ti-fill ti-fill-circle-arrow-right"></i> Ajouter un dossier depuis Accueil</button>',
       })
     : '<div class="sift-clear-pane">Sélectionne un morceau dans la file pour l\'écouter et le convertir.</div>';
   // The validation footer lives in the rail (#filfoot); clear it too so no stale controls linger

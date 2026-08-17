@@ -62,8 +62,25 @@ fn resolve_pioneer_dir(conn: &Connection) -> Result<std::path::PathBuf, String> 
     crate::settings::get(conn, crate::settings::REKORDBOX_XML_PATH)
         .map_err(|e| e.to_string())?
         .ok_or("aucun XML Rekordbox lié — relie un fichier avant de synchroniser")?;
-    crate::actions::rekordbox_pioneer_dir()
-        .ok_or_else(|| "impossible de déterminer le dossier Pioneer sur ce système".to_string())
+    let dir = crate::actions::rekordbox_pioneer_dir()
+        .ok_or_else(|| "impossible de déterminer le dossier Pioneer sur ce système".to_string())?;
+    // Impasse A12 ([issue #15](https://github.com/c0remusic/sift/issues/15)) : `rekordbox_pioneer_dir`
+    // rend `Some(<chemin codé en dur>)` SANS `exists()`, donc sur une machine sans Rekordbox elle
+    // rend un chemin qui n'existe pas et le `ok_or_else` ci-dessus ne tire jamais — il ne se
+    // déclenche que si `dirs::config_dir()` elle-même échoue, ce qui n'arrive pas sur les deux
+    // cibles. Le seul message qui parle du dossier Pioneer était donc de fait inatteignable.
+    //
+    // Le contrôle est posé ICI et pas dans `rekordbox_pioneer_dir` : les DÉTECTEURS ont un contrat
+    // de no-op silencieux assumé (ils tournent après chaque rangement, en arrière-plan, et ne
+    // doivent rien interrompre), alors que ce chemin-ci ne s'atteint que par un clic explicite sur
+    // « Appliquer ». Là, échouer en nommant la cause est exactement ce qu'il faut.
+    if !dir.is_dir() {
+        return Err(format!(
+            "dossier Pioneer introuvable ({}) — Rekordbox ne semble pas installé sur cette machine",
+            dir.display()
+        ));
+    }
+    Ok(dir)
 }
 
 /// One timestamp per batch call (not per row) — shared across every row so rows applied
@@ -984,6 +1001,40 @@ mod tests {
         let xml_path = dir.join("masterPlaylists6.xml");
         std::fs::write(&xml_path, b"<DJ_PLAYLISTS/>").unwrap();
         xml_path
+    }
+
+    /// Impasse A12 ([issue #15](https://github.com/c0remusic/sift/issues/15)) : sur une machine
+    /// sans Rekordbox, un « Appliquer » doit dire que le dossier Pioneer n'est pas là.
+    ///
+    /// Avant le contrôle `is_dir()`, `rekordbox_pioneer_dir` rendait `Some(<chemin inexistant>)`
+    /// et cette fonction le rendait tel quel : l'échec ne se manifestait que plus loin, en erreur
+    /// d'ouverture de fichier, avec un message qui ne nommait pas la cause.
+    ///
+    /// Le contrôle positif compte autant que l'échec : sans lui, un test qui n'observe qu'un `Err`
+    /// passerait aussi si la fonction échouait TOUJOURS.
+    #[test]
+    fn applying_names_a_missing_pioneer_folder_instead_of_failing_later() {
+        let tmp = tempfile::tempdir().unwrap();
+        let pioneer = tmp.path().join("Pioneer/rekordbox");
+        let conn = db();
+        let xml_path = seed_pioneer_dir(&pioneer);
+        crate::settings::set(
+            &conn,
+            crate::settings::REKORDBOX_XML_PATH,
+            xml_path.to_str().unwrap(),
+        )
+        .unwrap();
+
+        // Contrôle positif : le dossier existe, la résolution aboutit.
+        assert_eq!(resolve_pioneer_dir(&conn).unwrap(), pioneer);
+
+        // Le dossier disparaît (== une machine sans Rekordbox), le réglage XML reste.
+        std::fs::remove_dir_all(&pioneer).unwrap();
+        let err = resolve_pioneer_dir(&conn).expect_err("un dossier Pioneer absent doit échouer");
+        assert!(
+            err.contains("dossier Pioneer introuvable"),
+            "le message nomme la cause plutôt qu'un échec d'ouverture plus loin : {err}"
+        );
     }
 
     fn seed_repair_row(
