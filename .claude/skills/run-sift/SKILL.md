@@ -130,6 +130,18 @@ npm run check:security
   already in use`, which names a different culprit than the real one, and the loop repeats.
   Free 5173 and relaunch **in one command** so nothing can race in between, and only kill a
   holder whose `CommandLine` contains `dev\sift`.
+- **`stop` then `launch` back to back loses the race, and the symptom points nowhere.** Measured
+  2026-08-16. `driver.mjs stop` returns as soon as it has killed its three PIDs, but the old Vite
+  is still releasing 5173. A `launch` fired immediately after finds the port taken, its own Vite
+  never binds — and `tauri dev` **opens the window anyway**. Result: `sift.exe` alive, nothing
+  listening on 5173, no CDP on any port in 9333+, `status` reporting `running: false`, and the
+  `launch` process hanging until its own timeout. Nothing in that picture names the real cause.
+  Diagnose with two checks, in this order: `Get-NetTCPConnection -LocalPort 5173 -State Listen`
+  (empty = Vite is dead, so the window is on `ERR_CONNECTION_REFUSED`) and
+  `Get-CimInstance Win32_Process -Filter "ProcessId=<pid>" | Select ExecutablePath` — the
+  command line of a Tauri binary is the relative `"target\debug\sift.exe"` and names no project,
+  so **only `ExecutablePath` proves the process is yours** on a machine running several Tauri
+  projects. Then kill by exact PID, confirm 5173 is free, and only then relaunch.
 - **`status` reads the CDP *target* title, not the live document.** A dead page still reports
   `running: true` with the correct `Sift — prépa sons DJ` title. The live check is
   `driver.mjs eval 'document.title'`: a page whose Vite died returns `"localhost"`, and its
