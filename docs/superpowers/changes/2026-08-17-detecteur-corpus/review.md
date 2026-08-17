@@ -145,11 +145,32 @@ dans le MP3 à passe-bas dur et n'existe pas ailleurs. Aucun réglage de seuil n
 
 Rendre l'AAC et le haut débit détectables demande un **autre signal**, ce qui est une décision de
 conception et pas un correctif. Pistes connues, non évaluées ici : la finesse de structure du haut
-du spectre (les trous de quantification MDCT survivent au ré-encodage), l'énergie résiduelle par
-bande au-dessus de 16 kHz plutôt que la position d'une coupure, ou le rapport taille FLAC / durée —
-observé en passant pendant ce chantier, le ré-emballage d'un transcodage compresse **beaucoup moins
-bien** que l'original (45 Mo contre 78–106 Mo pour la même piste), parce que le signal lossy n'a plus
-la redondance bit-à-bit d'un master. Ce dernier est gratuit à mesurer et n'a jamais été essayé.
+du spectre (les trous de quantification MDCT survivent au ré-encodage), ou l'énergie résiduelle par
+bande au-dessus de 16 kHz plutôt que la position d'une coupure.
+
+### Une piste écartée par la mesure — le taux de compression FLAC
+
+Une version antérieure de ce document annonçait comme piste prometteuse le rapport taille FLAC /
+durée : le ré-emballage d'un transcodage semblait compresser beaucoup moins bien que l'original
+(45 Mo contre 78–106 Mo pour la même piste), le signal lossy n'ayant plus la redondance bit-à-bit
+d'un master.
+
+**C'était mesuré sur les fichiers contaminés par le biais s32.** Les transcodages étaient en 24 bit
+et l'original en 16 : la moitié de l'écart annoncé était de la profondeur de bits, pas de
+l'entropie. À profondeur égale (s16), sur la même piste :
+
+| fichier | taille |
+|---|---|
+| authentique | 45,2 Mo |
+| aac128 | **43,7 Mo** |
+| opus128 | 46,1 Mo |
+| lame128 | 70,7 Mo |
+| lameV0 | 71,0 Mo |
+
+Le signal existe pour le MP3 — mais le MP3 est justement la famille que le détecteur voit déjà.
+Pour l'AAC il pointe **dans le mauvais sens** (le transcodage compresse *mieux* que l'original), et
+pour Opus il ne dit rien. Autrement dit il est absent là où le trou est, et redondant là où il n'y
+en a pas. La piste est écartée, et c'est la mesure qui l'écarte, pas une intuition.
 
 ## Étape 3 — le cross-test Fakin' The Funk
 
