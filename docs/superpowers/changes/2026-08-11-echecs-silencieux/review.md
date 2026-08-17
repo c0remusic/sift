@@ -76,9 +76,44 @@ propre corps la confusion « vide vs cassé ».
 
 **Ce que ces tests NE couvrent pas**, et il faut le lire tel quel : aucun ne s'exécute dans la
 vraie fenêtre. Tous les correctifs frontend — dix-sept des vingt lignes du tableau — sont vérifiés
-par `tsc`, ESLint et la relecture, **jamais par une capture**. La suite Vitest tourne en env Node
-sans DOM par construction (`CLAUDE.md` § Architecture), donc elle ne pouvait pas les couvrir non
-plus. Aucun toast, aucune carte d'erreur, aucun bouton Réessayer n'a été VU.
+par `tsc`, ESLint et la relecture. La suite Vitest tourne en env Node sans DOM par construction
+(`CLAUDE.md` § Architecture), donc elle ne pouvait pas les couvrir non plus.
+
+## Passe de non-régression dans la vraie fenêtre — 2026-08-17, `run-sift`
+
+Faite. Elle prouve que rien n'est **cassé** ; elle ne prouve presque rien sur les correctifs
+eux-mêmes, et la distinction est le point de cette section.
+
+Identité de la session vérifiée avant toute mesure (`document.title` = `Sift — prépa sons DJ`), et
+**binaire Rust confirmé à jour** par une sonde qui ne pouvait répondre que sur le nouveau code :
+`rekordbox_status` rend bien la clé `masterdb_error`. Sans ça, un `tauri dev` de 8 s aurait pu
+servir un binaire d'avant les correctifs.
+
+- **Les 8 écrans du rail peignent**, avec un compte positif chacun — `#content` non vide, texte de
+  130 à 3038 caractères. Aucun `[]` ne sert de preuve ici.
+- **Zéro `console.error`, zéro `onerror`, zéro `unhandledrejection`** sur le parcours complet, avec
+  les trois collecteurs installés AVANT la navigation.
+- Ouverture d'une piste réelle : 45 lignes de file, `#mid` peint, 2 zones. Le chemin Revue complet
+  (waveform, verdict, pied d'action) est intact — c'est `filing.ts` que A6 a touché.
+- Plancher typographique : `nbTexts: 166`, `minPx: 10`, `under10: []` — le compte positif rend ce
+  `[]` lisible.
+- Capture de Revue prise et regardée.
+
+**Deux correctifs seulement ont été VUS s'exécuter** :
+
+- **A9** — le texte de Réglages lu dans le DOM est bien le nouveau (« Sans jeton, Sift n'interroge
+  pas Discogs du tout : le bouton Identifier renvoie ici »).
+- **A6** indirectement : l'écran Revue se comporte normalement, mais la file d'Antoine contient
+  2709 morceaux, donc **l'état vide ne s'est pas rendu** et le bouton ajouté n'a pas été vu.
+
+**A13/A14/A15 n'ont PAS été exercés**, et c'est un résultat, pas un oubli : aucun XML Rekordbox
+n'est lié sur cette machine (`rekordbox_status` rend `linked: false`), donc l'écran affiche son
+état « Aucun XML Rekordbox lié » et les quatre cartes de synchronisation **ainsi que la ligne
+d'en-tête que A14 modifie ne sont jamais construites**. Le résultat vide de la mesure a été
+diagnostiqué en dumpant le texte de l'écran, pas compté comme une réussite.
+
+Tous les autres correctifs se déclenchent sur un ÉCHEC, qu'aucun parcours normal ne produit : ils
+restent non observés. Le protocole ci-dessous est ce qu'il faudrait faire pour les voir.
 
 ## Portée exacte de `masterdb_error`, à ne pas élargir en le lisant
 
