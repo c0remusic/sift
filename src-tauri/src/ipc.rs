@@ -174,6 +174,18 @@ pub fn rescan_source(app: AppHandle, id: i64) -> Result<(), String> {
 pub struct ImportResult {
     pub files_added: usize,
     pub folders_added: usize,
+    /// Impasse A5 ([issue #15](https://github.com/c0remusic/sift/issues/15)) : pourquoi rien n'a
+    /// été pris, quand la raison n'est PAS le contenu déposé.
+    ///
+    /// Deux compteurs à zéro voulaient dire trois choses : le dépôt ne contenait rien
+    /// d'importable, aucune racine de bibliothèque n'était réglée (donc un dossier déposé sur
+    /// « Où on va » ne pouvait devenir un bac), ou la création du bac a échoué — et l'écran disait
+    /// la première, « Rien d'importable dans ce dépôt ». Le message accusait le contenu déposé au
+    /// lieu de nommer le réglage absent, à un endroit où le commentaire du code nommait déjà le
+    /// trou (`chrome.ts`).
+    ///
+    /// `None` = les compteurs suffisent à expliquer le résultat. Un message ici prime sur eux.
+    pub blocked_by: Option<String>,
 }
 
 /// Import OS-dropped paths. Audio files always become pending queue items (deduped by
@@ -190,6 +202,7 @@ pub fn import_paths(
     let as_dest = mode.as_deref() == Some("dest");
     let mut files_added = 0usize;
     let mut folders_added = 0usize;
+    let mut blocked_by: Option<String> = None;
     let mut scan_ids: Vec<i64> = Vec::new();
     {
         let conn = db::lock_conn(&conn)?;
@@ -207,10 +220,35 @@ pub fn import_paths(
             if pb.is_dir() {
                 if as_dest {
                     // register a new destination bin named after the dropped folder
-                    if let Some(root) = &dest_root {
-                        let name = pb.file_name().and_then(|n| n.to_str()).unwrap_or("");
-                        if !name.is_empty() && crate::library::create_bin(root, "", name).is_ok() {
-                            folders_added += 1;
+                    match &dest_root {
+                        Some(root) => {
+                            let name = pb.file_name().and_then(|n| n.to_str()).unwrap_or("");
+                            // Le garde `name.is_empty()` reste un `if` SÉPARÉ et non un bras de
+                            // match : un match évalue son scrutin d'abord, donc `create_bin` serait
+                            // appelée avec un nom vide avant que le garde ne s'applique. Le `&&`
+                            // d'origine court-circuitait ; cette forme le préserve.
+                            if !name.is_empty() {
+                                // Second aplatissement d'A5, au même endroit :
+                                // `create_bin(..).is_ok()` jetait l'échec réel, si bien qu'un droit
+                                // d'écriture manquant sur la racine se lisait « rien d'importable ».
+                                match crate::library::create_bin(root, "", name) {
+                                    Ok(_) => folders_added += 1,
+                                    Err(e) => {
+                                        blocked_by.get_or_insert(format!(
+                                            "Impossible de créer le bac « {name} » : {e}"
+                                        ));
+                                    }
+                                }
+                            }
+                        }
+                        // Le cas de l'inventaire : un dossier déposé sur « Où on va » sans racine
+                        // de bibliothèque réglée. Rien ne peut aboutir, et ce n'est pas la faute
+                        // de ce qui a été déposé.
+                        None => {
+                            blocked_by.get_or_insert(
+                                "Aucune racine de bibliothèque n'est réglée — un dossier déposé ici ne peut pas devenir une destination. Choisis-la dans Réglages."
+                                    .to_string(),
+                            );
                         }
                     }
                 } else if let Ok(id) = sources::add(&conn, p) {
@@ -236,6 +274,7 @@ pub fn import_paths(
     Ok(ImportResult {
         files_added,
         folders_added,
+        blocked_by,
     })
 }
 
@@ -489,8 +528,26 @@ pub fn open_url(url: String) -> Result<(), String> {
     open::that(&url).map_err(|e| e.to_string())
 }
 
+/// Impasse A4 ([issue #15](https://github.com/c0remusic/sift/issues/15)) : dire au front qu'un
+/// scan n'a pas eu lieu.
+///
+/// Sans ça, `spawn_scan` avait quatre sorties silencieuses — deux `return` nus et deux
+/// `log::error!` — après lesquelles la source restait à `pending_count = 0`, ce que l'écran
+/// Accueil peint d'une pastille verte « À jour ». Le cas transitoire (scan encore en cours) se
+/// corrige tout seul ; ces quatre-là rendaient le mensonge PERMANENT, et un journal serveur que
+/// personne ne lit n'est pas un signal.
+///
+/// Un événement plutôt qu'une colonne : rien ici n'a besoin de survivre au redémarrage — un scan
+/// se rejoue, et la migration de schéma que coûterait une colonne d'état serait payée par toutes
+/// les bases utilisateurs pour une information qui vaut le temps d'une session.
+fn emit_scan_failed(app: &AppHandle, source_id: i64, reason: String) {
+    log::error!("scan source {source_id} failed: {reason}");
+    app.emit("scan:failed", (source_id, reason)).ok();
+}
+
 /// Runs a reconcile for `source_id` on a background thread (walkdir is blocking IO),
-/// then starts the live watcher and notifies the front. Errors are logged, not fatal.
+/// then starts the live watcher and notifies the front. Errors are logged AND surfaced to the
+/// front via `scan:failed` — see `emit_scan_failed` for why a log alone was not enough.
 fn spawn_scan(app: AppHandle, source_id: i64) {
     std::thread::spawn(move || {
         // Use a SEPARATE connection: a full-folder walkdir + per-file upserts must not hold
@@ -499,12 +556,23 @@ fn spawn_scan(app: AppHandle, source_id: i64) {
         // concurrently (writers serialize briefly instead of erroring).
         let db_path = match app.path().app_data_dir() {
             Ok(d) => d.join("sift.db"),
-            Err(_) => return,
+            Err(e) => {
+                emit_scan_failed(
+                    &app,
+                    source_id,
+                    format!("dossier de données de l'application introuvable : {e}"),
+                );
+                return;
+            }
         };
         let conn = match Connection::open(&db_path) {
             Ok(c) => c,
             Err(e) => {
-                log::error!("scan: open db failed: {e}");
+                emit_scan_failed(
+                    &app,
+                    source_id,
+                    format!("ouverture de la base échouée : {e}"),
+                );
                 return;
             }
         };
@@ -517,7 +585,16 @@ fn spawn_scan(app: AppHandle, source_id: i64) {
                 |r| r.get(0),
             )
             .ok();
-        let Some(path) = path else { return };
+        let Some(path) = path else {
+            // La ligne source a disparu entre l'ordre de scan et son exécution — un retrait
+            // concurrent, typiquement. Rien à scanner, mais le front doit cesser d'attendre.
+            emit_scan_failed(
+                &app,
+                source_id,
+                "ce dossier surveillé n'existe plus en base".to_string(),
+            );
+            return;
+        };
 
         // Ré-émet queue:changed tous les PROGRESS_BATCH fichiers net-changés (scanner.rs) pendant
         // le scan, en plus de l'émission finale ci-dessous — le front debounce déjà sa redraw
@@ -531,7 +608,7 @@ fn spawn_scan(app: AppHandle, source_id: i64) {
             },
         ) {
             Ok(stats) => log::info!("scan source {source_id}: {stats:?}"),
-            Err(e) => log::error!("scan source {source_id} failed: {e}"),
+            Err(e) => emit_scan_failed(&app, source_id, e.to_string()),
         }
         crate::watcher::start(&app, source_id, &path);
         app.emit("queue:changed", ()).ok();

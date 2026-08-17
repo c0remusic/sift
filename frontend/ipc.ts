@@ -146,6 +146,14 @@ export const onQueueChanged = (cb: () => void): Promise<UnlistenFn> =>
 export const onAnalysisChanged = (cb: () => void): Promise<UnlistenFn> =>
   listen("analysis:changed", () => cb());
 
+/** Un scan de dossier surveillé n'a PAS eu lieu — payload `[source_id, raison]`.
+ *
+ *  Impasse A4 (issue #15) : `spawn_scan` avait quatre sorties silencieuses après lesquelles la
+ *  source restait à `pending_count = 0`, que l'écran Accueil peint « À jour » en vert. Rien ne
+ *  distinguait « rien de nouveau » de « le scan n'a jamais tourné ». */
+export const onScanFailed = (cb: (sourceId: number, reason: string) => void): Promise<UnlistenFn> =>
+  listen<[number, string]>("scan:failed", (e) => cb(e.payload[0], e.payload[1]));
+
 // ---- M4 filing loop (mirror of ipc_filing.rs) ----
 
 /** Reconcile a track's tags + filename into the canonical record + confidence. */
@@ -287,11 +295,13 @@ export const findDuplicate = (trackId: number): Promise<DupMatch | null> =>
   invoke("find_duplicate", { trackId });
 
 /** Import OS-dropped paths: directories become watched sources, audio files become pending
- * queue items. Returns how many of each were added. */
+ * queue items. Returns how many of each were added, plus `blocked_by` — la raison quand zéro
+ * n'est PAS explicable par le contenu déposé (impasse A5, issue #15 : pas de racine de
+ * bibliothèque en mode dest, ou création de bac en échec). `blocked_by` prime sur les compteurs. */
 export const importPaths = (
   paths: string[],
   mode: "source" | "dest" = "source",
-): Promise<{ files_added: number; folders_added: number }> =>
+): Promise<{ files_added: number; folders_added: number; blocked_by: string | null }> =>
   invoke("import_paths", { paths, mode });
 
 // ---- M6a Discogs identification ----

@@ -81,8 +81,21 @@ function dropModeAt(pos: { x: number; y: number }): "source" | "dest" {
  * LIBRARY_ROOT is set (otherwise folders_added stays 0 with no error). Five .txt files dropped
  * must read "rien d'importable", not "5 reçus". Wording follows the backend's own split:
  * morceaux (files) vs dossiers (folders), never a merged "éléments". */
-function reportImport(res: { files_added: number; folders_added: number }): void {
+function reportImport(res: {
+  files_added: number;
+  folders_added: number;
+  blocked_by: string | null;
+}): void {
   const { files_added, folders_added } = res;
+  // Impasse A5 (issue #15), et ce commentaire est celui qui nommait déjà le trou juste au-dessus :
+  // « en mode dest un dossier ne compte que si LIBRARY_ROOT est réglé (sinon folders_added reste 0
+  // sans erreur) ». Le backend le dit maintenant au lieu de le laisser deviner, et sa raison PRIME
+  // sur les compteurs — accuser le contenu déposé quand c'est un réglage qui manque envoie
+  // l'utilisateur chercher au mauvais endroit.
+  if (res.blocked_by) {
+    toast(res.blocked_by);
+    return;
+  }
   if (!files_added && !folders_added) {
     toast("Rien d'importable dans ce dépôt");
     return;

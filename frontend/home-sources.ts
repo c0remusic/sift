@@ -72,8 +72,27 @@ interface StatusMeta {
 /** `tone` drives the badge background in inspectorHtml (audit-ref, réf. shadcn Badge "Custom
  * Colors" : fond teinté par état plutôt que fond neutre + texte teinté seul). `color` reste
  * utilisé tel quel pour le point de statut de rowHtml (pas un badge, juste une puce). */
+/** Sources dont le dernier scan a échoué, par id, avec la raison — alimenté par l'événement
+ *  `scan:failed` (voir `installScanFailureWatch`). Vidé pour une source dès qu'un scan réussit,
+ *  ce qui se voit à son `pending_count` qui repart ou, plus sûrement, au rescan explicite.
+ *
+ *  Impasse A4 (issue #15) : sans cette table, un scan qui n'a jamais tourné laissait la source à
+ *  `pending_count = 0`, indiscernable d'un dossier réellement à jour — et peint en vert. */
+const scanFailures = new Map<number, string>();
+
+/** Enregistre l'échec d'un scan et repeint. Appelé par le wiring live au boot. */
+export function noteScanFailure(sourceId: number, reason: string): void {
+  scanFailures.set(sourceId, reason);
+  void renderHomeSources();
+}
+
 function statusMeta(s: Source): StatusMeta {
   if (!s.accessible) return { label: "Inaccessible", color: "var(--color-text-danger)", tone: "danger" };
+  // AVANT le test de `pending_count` : un scan tombé peut très bien laisser des pistes en attente
+  // d'un passage précédent, et afficher « 3 nouveaux » masquerait le fait que la liste n'est plus
+  // tenue à jour. L'échec est la chose la plus vraie qu'on sache de cette source.
+  if (scanFailures.has(s.id))
+    return { label: "Scan en échec", color: "var(--color-text-danger)", tone: "danger" };
   if (s.pending_count > 0) return { label: `${s.pending_count} nouveau${s.pending_count > 1 ? "x" : ""}`, color: "var(--color-text-info)", tone: "info" };
   if (!s.watched) return { label: "En pause", color: "var(--color-text-tertiary)", tone: "neutral" };
   return { label: "À jour", color: "var(--color-text-success)", tone: "success" };
@@ -320,8 +339,13 @@ export async function renderHomeSources() {
   inspectorCol.querySelector('[data-sift="rescansrc"]')?.addEventListener("click", async (e) => {
     const el = e.currentTarget as HTMLElement;
     const id = Number(el.dataset.id);
+    // Optimiste : on retire l'échec AVANT de relancer, pour que la pastille rouge parte
+    // immédiatement. Si le scan retombe, `scan:failed` la remet — c'est le backend qui a le
+    // dernier mot, jamais cette ligne.
+    scanFailures.delete(id);
     try {
       await rescanSource(id);
+      await renderHomeSources();
     } catch (err) {
       toast(humanizeError(err, "Le rescan de ce dossier n'a pas démarré.", "rescanSource"));
     }

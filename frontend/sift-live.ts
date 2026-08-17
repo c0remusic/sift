@@ -4,6 +4,7 @@ import {
   onFileDone,
   onFileProgress,
   onQueueChanged,
+  onScanFailed,
   onAnalysisChanged,
   analysisProgress,
   setSourceColor,
@@ -22,7 +23,7 @@ import { refreshBinsForBatch } from "./filing-bins";
 import { confirmAction } from "./confirm-modal";
 // Views/chrome extracted from this god-module (audit P-3) — kept stateless, wired here.
 import { renderEcartes } from "./ecartes-view";
-import { renderHomeSources, dismissRootGate } from "./home-sources";
+import { renderHomeSources, dismissRootGate, noteScanFailure } from "./home-sources";
 import { installDragDrop, injectLeanStyle, injectTitlebar, installScrollAutohide, installNavKeyboard } from "./chrome";
 import { initTheme } from "./theme";
 import { renderReglagesLive } from "./reglages-view";
@@ -356,15 +357,23 @@ export function installLiveWiring() {
             });
             if (!chosen || Array.isArray(chosen)) return;
             const status = await linkRekordboxXml(chosen);
+            // Impasse A16 (issue #15) : cette branche testait `status.error`, que
+            // `link_rekordbox_xml_inner` construit TOUJOURS à `None` — il échoue en `Err` avant de
+            // renvoyer quoi que ce soit. Elle était donc inatteignable, et la seule chose qu'elle
+            // pouvait dire vivait déjà dans le `catch`. Retirée plutôt que réparée : un succès qui
+            // porterait une erreur n'existe pas dans ce contrat.
             toast(
-              status.error
-                ? "XML Rekordbox illisible — relie un autre fichier"
-                : `XML Rekordbox lié : ${status.track_count} pistes, ${status.playlist_count} playlists`,
+              `XML Rekordbox lié : ${status.track_count} pistes, ${status.playlist_count} playlists`,
             );
             void renderRekordboxLive();
           } catch (e) {
-            console.error("link_rekordbox_xml failed", e);
-            toast("Liaison du XML Rekordbox échouée");
+            // Seconde moitié d'A16 : trois erreurs backend distinctes — fichier illisible
+            // (`ipc_library.rs`, « lecture impossible »), XML invalide (`rekordbox_xml.rs`), et
+            // échec d'écriture du réglage — devenaient un seul « Liaison échouée » qui ne disait à
+            // l'utilisateur ni ce qui n'allait pas, ni s'il devait choisir un autre fichier. Les
+            // messages backend sont déjà en français et déjà précis : les afficher suffit, sans
+            // table de correspondance.
+            toast(humanizeError(e, `Liaison du XML Rekordbox échouée : ${String(e)}`, "link_rekordbox_xml"));
           }
         })();
         return;
@@ -514,6 +523,15 @@ export function installLiveWiring() {
   void onQueueChanged(() => {
     clearTimeout(queueChangeTimer);
     queueChangeTimer = setTimeout(() => void refresh(), 150);
+  });
+  // Impasse A4 (issue #15) : un scan de dossier surveillé qui n'a pas tourné laissait sa source
+  // en « À jour » vert, indiscernable d'un dossier réellement à jour. La raison arrive en toast
+  // (dite une fois, en toutes lettres) et l'état persiste sur la pastille de la source.
+  // Fréquence : au plus un par ajout ou rescan de dossier — jamais en rafale, contrairement à
+  // `queue:changed` juste au-dessus, qui est debouncé pour cette raison.
+  void onScanFailed((sourceId, reason) => {
+    noteScanFailure(sourceId, reason);
+    toast(`Le scan du dossier surveillé a échoué : ${reason}`);
   });
   void onFileDone(onFileBatchDone);
   void onFileProgress(pushFileProgress);

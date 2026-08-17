@@ -13,6 +13,7 @@ import { EXTERNAL_DEST_PREFIX } from "../shared/contracts";
 import { open } from "@tauri-apps/plugin-dialog";
 import { esc } from "./dom";
 import { toast } from "./filing-toast";
+import { humanizeError } from "./errors";
 import { destPopoverPosition } from "./popover-position";
 
 const LIBRARY_ROOT = "library_root";
@@ -24,6 +25,12 @@ interface DestState {
   binRel: string | null; // selected destination ("" = root, relative to root otherwise)
   creating: boolean; // "+ nouveau" inline input open
   binFilter: string; // folder search text (empty = show the full tree)
+  /** Impasse A8 (issue #15) : pourquoi `rootSet` est faux. Le `catch` de `loadBins` posait
+   *  `rootSet = false` sur un ÉCHEC DE LECTURE, ce qui rendait la porte « Choisis ta racine de
+   *  bibliothèque » à quelqu'un qui l'avait déjà choisie — et l'invitait à la re-choisir pour
+   *  résoudre un problème qui n'était pas le sien. « Non choisie » et « pas lisible » sont deux
+   *  états, et un seul booléen ne peut pas les porter. `null` = vraiment pas choisie. */
+  loadError: string | null;
 }
 
 const destState: DestState = {
@@ -33,6 +40,7 @@ const destState: DestState = {
   binRel: null,
   creating: false,
   binFilter: "",
+  loadError: null,
 };
 
 /** Detail mode's "file in place" state — mirrors sift-live.ts's batchInPlace for batch mode. A
@@ -80,6 +88,7 @@ export function registerDestChangeHook(fn: () => void): void {
 async function loadBins(): Promise<void> {
   try {
     const root = await getSetting(LIBRARY_ROOT);
+    destState.loadError = null;
     destState.rootPath = root ?? null;
     destState.rootSet = !!(root && root.trim());
     destState.bins = destState.rootSet ? await listBins() : [];
@@ -100,8 +109,14 @@ async function loadBins(): Promise<void> {
     // Default to filing at the root until the user picks a sub-folder.
     if (destState.rootSet && destState.binRel === null) destState.binRel = "";
   } catch (e) {
-    console.error("loadBins failed", e);
-    destState.rootSet = false;
+    // `rootSet` reste tel quel : ce `catch` ne sait RIEN de la racine, il sait que la lecture a
+    // échoué. Le remettre à false était le mensonge d'A8 (issue #15). `loadError` porte la cause,
+    // et `renderBins` s'en sert pour montrer l'échec au lieu de la porte de premier réglage.
+    destState.loadError = humanizeError(
+      e,
+      "L'arbre de destination n'a pas pu être lu.",
+      "loadBins",
+    );
     destState.bins = [];
   }
 }
@@ -263,6 +278,19 @@ function flatBinHtml(b: Bin): string {
 /** Render the destination column (#fldz): root picker when unset, else a folder filter + either
  * the collapsible tree (no filter) or a flat list of matching folders (filter active). */
 function renderBins(fldz: HTMLElement): void {
+  // Ordre délibéré : l'échec de lecture se dit AVANT la porte de premier réglage. Les deux
+  // pouvaient se produire ensemble (première lecture, qui échoue), et dans ce cas c'est l'échec
+  // qui est actionnable — proposer de choisir une racine qu'on ne saura pas relire ensuite ne mène
+  // nulle part. Impasse A8, issue #15.
+  if (destState.loadError) {
+    fldz.innerHTML =
+      `<div class="sift-fldz-hint" style="color:var(--color-text-danger)">${esc(destState.loadError)}</div>` +
+      '<button data-fil="retrybins">Réessayer</button>';
+    fldz.querySelector('[data-fil="retrybins"]')?.addEventListener("click", () => {
+      void loadBins().then(() => renderBins(fldz));
+    });
+    return;
+  }
   if (!destState.rootSet) {
     fldz.innerHTML =
       '<div class="sift-fldz-hint">Choisis ta racine de bibliothèque pour commencer à convertir.</div>' +

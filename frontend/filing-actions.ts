@@ -121,9 +121,24 @@ export async function doRanger(
     else if (msg.includes("ALREADY_FILING"))
       toast("Ce morceau est déjà en cours de conversion.", false);
     else if (msg.toLowerCase().includes("upscale")) toast("Refusé : pas de surqualité lossy → lossless.", false);
+    // Impasse A2 (issue #15). Cette branche passe AVANT le test de fichier introuvable, et l'ordre
+    // est le correctif : `encode.rs` rend « ffmpeg: spawn failed: <erreur d'E/S> », et sur Windows
+    // le message d'E/S est traduit par le système — « ... introuvable » en français. La branche
+    // générique juste en dessous le matchait donc, et accusait le MORCEAU d'avoir été déplacé,
+    // alors que c'est le binaire d'encodage qui manque. Le générique, lui, disait « Réessaie » à
+    // une condition qui ne peut jamais aboutir : sans FFmpeg, aucun essai ne convertira jamais
+    // rien. L'analyse passe par Symphonia in-process, donc l'utilisateur peut ajouter, scanner,
+    // analyser et écouter avant de le découvrir — au premier « Ranger », c'est-à-dire ici.
+    // Le littéral testé vient de notre propre code (`encode.rs`, EncodeError::Ffmpeg), pas d'un
+    // message système : c'est ce qui le rend stable.
+    else if (msg.includes("spawn failed"))
+      toast(
+        "FFmpeg est introuvable — Sift ne peut convertir aucun fichier tant qu'il manque. Réinstaller l'app le rétablit.",
+        false,
+      );
     else if (/permission|access|denied/i.test(msg)) toast("Refusé : accès au fichier/dossier refusé.", false);
     else if (/no such file|not found|introuvable/i.test(msg)) toast("Fichier introuvable — a-t-il été déplacé ?", false);
-    else toast("Une erreur est survenue pendant la conversion. Réessaie.", false);
+    else toast("La conversion a échoué. Le détail exact est dans la console.", false);
     console.error("file_track failed", e);
     setActionsDisabled(false);
     if (ranger && orig != null) ranger.innerHTML = orig;
