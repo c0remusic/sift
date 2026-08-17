@@ -16,6 +16,20 @@ pub const LOSSLESS_OK_HZ: f32 = 20000.0; // ≥ → authentic lossless
 pub const LOSSY_CLIFF_HZ: f32 = 19500.0; // ≤ → lossy lowpass cliff → fake
                                          // (LOSSY_CLIFF_HZ, LOSSLESS_OK_HZ) → grey zone
 
+/// Ce que rend `spectrum::detect_cutoff` quand il n'avait **rien à mesurer** — aucune trame
+/// décodée. Ce n'est pas une coupure à 0 Hz : c'est l'absence de mesure.
+///
+/// La valeur est un sentinel sans ambiguïté, et pas par convention : les deux seules autres
+/// sorties de `detect_cutoff` sont `k * hz_per_bin` avec `k` au-dessus de son plancher de
+/// balayage (donc > 2 kHz) et `nyq_hz`. Zéro n'est atteignable que par le retour anticipé.
+///
+/// Mesuré le 2026-08-17 sur la bibliothèque réelle : **deux MP3** de plus de six minutes,
+/// déclarés 320 kbps, `codec_error` NULL — donc aucune erreur remontée nulle part — rendaient
+/// `cutoff_hz = 0`, que `verdict()` lisait comme « coupe à 0 Hz, très en dessous du plancher de
+/// 19 000 pour du 320 » et marquait FAKE. Un échec de décodage se présentait comme une preuve
+/// de fraude.
+pub const NO_MEASUREMENT_HZ: f32 = 0.0;
+
 /// Minimum cutoff a *genuine* MP3 of the given bitrate should reach (≈ encoder lowpass minus
 /// a margin for genre/encoder spread). A declared bitrate whose real cutoff is below this is
 /// over-encoded (transcoded up from a worse source).
@@ -62,7 +76,11 @@ pub fn verdict(
     match declared {
         Rail::Lossless => {
             if content_rail == Rail::Lossy {
+                // Le désaccord de conteneur reste EN PREMIER : c'est une fraude établie sans le
+                // spectre, donc l'absence de mesure ne doit pas l'effacer.
                 Verdict::Fake
+            } else if cutoff_hz <= NO_MEASUREMENT_HZ {
+                Verdict::Grey
             } else if cutoff_hz >= LOSSLESS_OK_HZ {
                 Verdict::Ok
             } else if cutoff_hz <= LOSSY_CLIFF_HZ {
@@ -72,6 +90,10 @@ pub fn verdict(
             }
         }
         Rail::Lossy => match declared_bitrate {
+            // Rien mesuré → on ne sait pas. Ce bras passe AVANT celui du débit : sans lui, un
+            // cutoff de 0 est inférieur à tous les planchers de `min_cutoff_hz_for_bitrate` et
+            // accuse le fichier de sur-encodage sur la foi d'un décodage qui n'a pas eu lieu.
+            _ if cutoff_hz <= NO_MEASUREMENT_HZ => Verdict::Grey,
             // declared bitrate the real spectrum can't support → over-encoded fraud
             Some(b) if cutoff_hz < min_cutoff_hz_for_bitrate(b) => Verdict::Fake,
             _ => Verdict::Ok,
@@ -173,6 +195,46 @@ mod tests {
         assert_eq!(
             verdict(13000.0, Rail::Lossy, None, Rail::Lossy),
             Verdict::Ok
+        );
+    }
+
+    /// Un décodage qui n'a produit aucune trame ne doit accuser personne.
+    ///
+    /// Mesuré sur la bibliothèque réelle le 2026-08-17 : deux MP3 320 kbps de plus de six minutes,
+    /// sans `codec_error`, portaient `cutoff_hz = 0` et sortaient FAKE. Sur les deux rails, parce
+    /// que le défaut est le même des deux côtés — un zéro qui se fait lire comme une mesure.
+    ///
+    /// Le contrôle positif est dans le même corps : la MÊME entrée avec un cutoff réellement bas
+    /// doit toujours sortir Fake. Sans lui, on ne saurait pas si le correctif distingue l'absence
+    /// de mesure ou s'il a simplement désarmé la détection de sur-encodage.
+    #[test]
+    fn no_measurement_is_grey_not_fake() {
+        assert_eq!(
+            verdict(NO_MEASUREMENT_HZ, Rail::Lossy, Some(320), Rail::Lossy),
+            Verdict::Grey
+        );
+        assert_eq!(
+            verdict(NO_MEASUREMENT_HZ, Rail::Lossless, None, Rail::Lossless),
+            Verdict::Grey
+        );
+        // Contrôle positif : une vraie mesure basse reste une fraude.
+        assert_eq!(
+            verdict(16000.0, Rail::Lossy, Some(320), Rail::Lossy),
+            Verdict::Fake
+        );
+        assert_eq!(
+            verdict(16000.0, Rail::Lossless, None, Rail::Lossless),
+            Verdict::Fake
+        );
+    }
+
+    /// L'absence de mesure n'efface pas une fraude déjà établie SANS le spectre : un MP3 renommé
+    /// en `.flac` est un faux même si rien n'a pu être décodé.
+    #[test]
+    fn no_measurement_does_not_erase_a_container_mismatch() {
+        assert_eq!(
+            verdict(NO_MEASUREMENT_HZ, Rail::Lossless, None, Rail::Lossy),
+            Verdict::Fake
         );
     }
 

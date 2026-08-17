@@ -167,9 +167,17 @@ impl SpectrumAccumulator {
     /// band. If no such cliff exists, the energy tapers all the way up → genuine full-band
     /// → Nyquist.
     ///
-    /// This is robust to bass-heavy music: it keys off the *shape* (a relative cliff), not
-    /// an absolute level relative to the (bass) spectral peak — which used to make quiet but
-    /// real treble look "absent" and under-report the cutoff.
+    /// This keys off the *shape* (a relative cliff), not an absolute level relative to the (bass)
+    /// spectral peak — which used to make quiet but real treble look "absent" and under-report
+    /// the cutoff.
+    ///
+    /// ⚠️ Cette ligne a longtemps dit « This is robust to bass-heavy music ». **C'était faux, et
+    /// mesuré faux le 2026-08-17** : la même propriété de forme qui rattrape un aigu discret rend
+    /// aussi le PIED DE BASSE éligible, parce qu'un plateau de graves suivi du médium satisfait
+    /// littéralement « chute de `DROP_DB` sur 500 Hz qui ne récupère jamais » — rien au-dessus ne
+    /// remonte au niveau des graves. Dix fichiers authentiques de la bibliothèque étaient marqués
+    /// FAKE pour cette raison. Ce qui rend maintenant l'affirmation vraie est le
+    /// `SEARCH_FLOOR_HZ` ci-dessous, pas la nature relative du critère.
     ///
     /// Deliberately does NOT require the level above the cliff to collapse near the file's
     /// absolute quietest bin (a prior version did — see BUG-2). A real encoder's residual
@@ -224,7 +232,37 @@ impl SpectrumAccumulator {
         if self.bins <= 2 * guard {
             return nyq_hz;
         }
-        for k in (guard..self.bins - guard).rev() {
+        // Plancher de balayage — sans lui, le PIED DE BASSE de n'importe quel morceau satisfait le
+        // critère de falaise et se fait rendre comme une coupure.
+        //
+        // Mesuré le 2026-08-17 sur la bibliothèque réelle (2705 pistes analysées) : 10 fichiers
+        // rendaient un cutoff entre 571 et 1367 Hz, dont 4 exactement à 571,0 Hz — soit le bin 53,
+        // c'est-à-dire `guard` lui-même, le plus bas testable. Un morceau house de 5 minutes n'a
+        // pas zéro contenu au-dessus de 571 Hz : c'étaient des faux positifs, tous marqués FAKE.
+        //
+        // La sonde `ltas_probe` a montré le mécanisme exact, et il n'y avait AUCUNE falaise dans
+        // ces fichiers : spectre lisse jusqu'à 21 kHz. La seule chute de 18 dB sur 500 Hz s'y
+        // trouve au passage grave->médium (+24 dB à 120 Hz, -0,1 dB à 800 Hz), et rien au-dessus
+        // ne remonte à moins de `RECOVERY_TOL` du niveau des GRAVES — donc `recovers` est faux et
+        // la boucle rend son propre plancher. Comparé au témoin sain de la même mesure, la seule
+        // différence est 4 dB de pente : 17 dB de chute (sous le seuil) contre 21 (au-dessus).
+        // Le verdict d'un fichier authentique se jouait à ça.
+        //
+        // 2 kHz, et pas une valeur ajustée aux fichiers observés : aucun passe-bas d'encodeur ne
+        // descend là — le plus bas que ce module ait à juger est le palier 12 000 Hz de
+        // `min_cutoff_hz_for_bitrate`, et un MP3 64 kbps coupe encore vers 10-11 kHz. Le plancher
+        // est donc au moins cinq fois sous toute coupure réelle, et bien au-dessus du pied de
+        // basse. Contrôle sur la même bibliothèque : **zéro fichier** n'a de cutoff entre 1400 et
+        // 8400 Hz, donc n'importe quelle valeur de ce trou retire les 10 faux positifs et ne
+        // déplace aucune autre mesure. Ce n'est pas un seuil calibré sur un corpus — c'est une
+        // borne physique, et le corpus ne fait que confirmer qu'elle ne coûte rien.
+        const SEARCH_FLOOR_HZ: f32 = 2000.0;
+        let floor_bin = (SEARCH_FLOOR_HZ / hz_per_bin).ceil() as usize;
+        let lowest = guard.max(floor_bin);
+        if self.bins <= lowest + guard {
+            return nyq_hz;
+        }
+        for k in (lowest..self.bins - guard).rev() {
             let above = (k + 1..=k + band).map(smooth).sum::<f32>() / band as f32;
             let below = (k - band..k).map(smooth).sum::<f32>() / band as f32;
             if below - above < DROP_DB {
@@ -312,6 +350,74 @@ mod tests {
     use std::f32::consts::PI;
 
     const SR: u32 = 44100;
+
+    /// Sonde de diagnostic — imprime le LTAS lissé d'un fichier RÉEL et ce que `detect_cutoff`
+    /// en tire. Ne teste rien : elle existe pour établir un mécanisme au lieu de le déduire du
+    /// code, et c'est elle qui a servi à mesurer le plancher de balayage (2026-08-17).
+    ///
+    /// `SIFT_PROBE_FILE=<chemin> cargo test --manifest-path src-tauri/Cargo.toml --release
+    ///   ltas_probe -- --ignored --nocapture`
+    ///
+    /// `--release` n'est pas décoratif : le décodage complet d'un morceau de 5 minutes en debug
+    /// prend des minutes.
+    #[test]
+    #[ignore]
+    fn ltas_probe() {
+        let Ok(path) = std::env::var("SIFT_PROBE_FILE") else {
+            eprintln!("SIFT_PROBE_FILE non défini — rien à sonder");
+            return;
+        };
+        // Mono (1 canal) : c'est ce que consomme `push`, et le LTAS ne dépend pas de la stéréo.
+        // `acc` est construit APRÈS le décodage parce que le taux d'échantillonnage natif n'est
+        // connu qu'au retour — le construire à 44100 d'avance fausserait le mapping bin -> Hz sur
+        // un fichier 48 k, ce que le test `analysis_uses_native_sample_rate_for_frequency_mapping`
+        // épingle par ailleurs.
+        let mut blocks: Vec<f32> = Vec::new();
+        let info = crate::analysis::decode::decode_pcm(&path, 1, |b| blocks.extend_from_slice(b))
+            .expect("décodage");
+        let mut acc = SpectrumAccumulator::new(info.sample_rate, FFT_SIZE, false);
+        acc.push(&blocks);
+
+        let hz_per_bin = acc.sr as f32 / acc.fft_size as f32;
+        let avg_db: Vec<f32> = acc
+            .ltas
+            .iter()
+            .map(|&s| {
+                let avg = s / acc.frames_total as f64;
+                if avg <= 1e-12 {
+                    -120.0
+                } else {
+                    10.0 * (avg as f32).log10()
+                }
+            })
+            .collect();
+        let win = 5usize;
+        let smooth = |k: usize| -> f32 {
+            let lo = k.saturating_sub(win);
+            let hi = (k + win + 1).min(acc.bins);
+            avg_db[lo..hi].iter().sum::<f32>() / (hi - lo) as f32
+        };
+
+        println!("--- {path}");
+        println!(
+            "sr={} bins={} hz_per_bin={:.3} frames={} cutoff={:.0} Hz",
+            acc.sr,
+            acc.bins,
+            hz_per_bin,
+            acc.frames_total,
+            acc.detect_cutoff()
+        );
+        println!("   Hz      dB(lissé)");
+        for hz in [
+            60.0f32, 120.0, 250.0, 500.0, 571.0, 800.0, 1000.0, 2000.0, 4000.0, 8000.0, 12000.0,
+            14000.0, 16000.0, 18000.0, 19000.0, 20000.0, 21000.0,
+        ] {
+            let k = (hz / hz_per_bin).round() as usize;
+            if k < acc.bins {
+                println!("{hz:8.0}   {:8.1}", smooth(k));
+            }
+        }
+    }
 
     /// Épingle la duplication de [`MAX_COLS`] entre le Rust et `frontend/styles.css` (issue #30).
     ///
@@ -479,6 +585,80 @@ mod tests {
             report.cutoff_hz > 15500.0 && report.cutoff_hz < 17000.0,
             "cutoff {} should sit at the ~16.2kHz cliff despite gradual residual decay above it \
              (a real encoder never collapses to true digital silence within one averaging band)",
+            report.cutoff_hz
+        );
+    }
+
+    /// Un master lossless authentique à BASSES DOMINANTES ne doit pas voir son pied de basse
+    /// rendu comme une coupure.
+    ///
+    /// Forme LTAS **mesurée** (sonde `ltas_probe`, 2026-08-17) sur
+    /// `[0012] QA 0-127 - Millennium.aif` — un morceau house de 4 min que le détecteur rendait à
+    /// **571 Hz**, donc marqué FAKE. Il n'y a aucune falaise dans ce fichier : le spectre descend
+    /// sans rupture jusqu'à 21 kHz. La seule chute de 18 dB sur 500 Hz est le passage
+    /// grave->médium, et rien au-dessus ne remonte à moins de `RECOVERY_TOL` du niveau des graves,
+    /// donc `recovers` était faux et la boucle rendait son propre plancher (bin 53 = 571 Hz —
+    /// quatre fichiers de la bibliothèque atterrissaient sur cette valeur exacte).
+    ///
+    /// Le test ne vérifie pas seulement « pas 571 » mais « au moins 20 kHz » : rendre une valeur
+    /// intermédiaire serait tout aussi faux, et un `assert_ne!` laisserait passer ça.
+    ///
+    /// ⚠️ **La forme ci-dessous est synthétique, pas le relevé du fichier.** Une première version
+    /// de ce test rejouait les 18 points mesurés tels quels et **passait aussi sans le
+    /// correctif** — donc ne gardait rien. Raison, calculée : `below` et `above` sont des moyennes
+    /// sur des bandes de 47 bins, et une interpolation linéaire entre des points espacés de
+    /// 130 à 250 Hz adoucit la transition grave->médium à **16,3 dB** de chute, sous le seuil de
+    /// 18 — là où le fichier réel donne 21. Le relevé grossier ne reproduit pas sa propre panne.
+    ///
+    /// La forme retenue garde donc les niveaux mesurés (plateau de basse ~+25 dB, médium à 0,
+    /// descente continue jusqu'à -35 dB au Nyquist) mais place la transition sur une largeur
+    /// serrée, pour que la condition de falaise soit franchement satisfaite au pied de basse. Ce
+    /// que le test épingle est la **classe** de panne — un plateau de basse dominant suivi d'une
+    /// pente douce sans rupture — pas un fichier particulier.
+    #[test]
+    fn bass_heavy_lossless_master_does_not_report_its_bass_shelf_as_a_cutoff() {
+        const POINTS: &[(f32, f32)] = &[
+            (0.0, 25.0),
+            (450.0, 25.0),
+            (700.0, 0.0),
+            (2000.0, -4.9),
+            (4000.0, -7.1),
+            (8000.0, -9.2),
+            (12000.0, -9.7),
+            (14000.0, -12.6),
+            (16000.0, -16.9),
+            (18000.0, -23.6),
+            (19000.0, -28.7),
+            (20000.0, -30.4),
+            (21000.0, -36.4),
+            (22050.0, -38.0),
+        ];
+        fn interp_db(freq: f32) -> f32 {
+            if freq <= POINTS[0].0 {
+                return POINTS[0].1;
+            }
+            for w in POINTS.windows(2) {
+                let (f0, d0) = w[0];
+                let (f1, d1) = w[1];
+                if freq <= f1 {
+                    let t = (freq - f0) / (f1 - f0);
+                    return d0 + t * (d1 - d0);
+                }
+            }
+            POINTS.last().expect("POINTS non vide").1
+        }
+
+        let mut a = SpectrumAccumulator::new(SR, 4096, false);
+        let hz_per_bin = a.sr as f32 / a.fft_size as f32;
+        a.frames_total = 1;
+        for k in 0..a.bins {
+            a.ltas[k] = 10f64.powf(interp_db(k as f32 * hz_per_bin) as f64 / 10.0);
+        }
+        let report = a.finish();
+        assert!(
+            report.cutoff_hz >= 20000.0,
+            "cutoff {} : ce master n'a aucune falaise, sa pente est continue jusqu'a 21 kHz — \
+             tout ce qui est sous 20 kHz est le pied de basse pris pour une coupure",
             report.cutoff_hz
         );
     }

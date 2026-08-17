@@ -368,6 +368,44 @@ const MIGRATIONS: &[&str] = &[
     WHERE report_json IS NOT NULL AND report_json <> ''
       AND json_extract(report_json, '$.peaks_step') IS NULL;
     "#,
+    // v21 — TROISIÈME migration de contenu, même famille que v16 et v20 : le format est bon, la
+    // donnée est fausse pour une sous-population que le code ne peut plus produire.
+    //
+    // Deux défauts du détecteur de coupure, mesurés sur la base de production le 2026-08-17 et
+    // corrigés le même jour (`spectrum.rs::SEARCH_FLOOR_HZ`, `verdict.rs::NO_MEASUREMENT_HZ`) :
+    //
+    // - **Le pied de basse pris pour une coupure.** La boucle de `detect_cutoff` n'avait pas de
+    //   plancher, or le plateau de graves d'un morceau suivi du médium satisfait littéralement
+    //   « chute de 18 dB sur 500 Hz qui ne récupère jamais ». 10 fichiers rendaient entre 571 et
+    //   1367 Hz — dont 4 exactement à 571,0 Hz, le bin le plus bas testable — et étaient marqués
+    //   FAKE. La sonde `spectrum::tests::ltas_probe` a montré qu'il n'y a AUCUNE falaise dans ces
+    //   fichiers : spectre lisse jusqu'à 21 kHz.
+    // - **Un décodage vide lu comme une mesure.** 2 MP3 de plus de six minutes, déclarés
+    //   320 kbps, `codec_error` NULL, portaient `cutoff_hz = 0`, que le verdict lisait comme une
+    //   coupure à 0 Hz — donc FAKE.
+    //
+    // Discriminant : `cutoff_hz < 2000`. Il est exact et pas approché — depuis le correctif,
+    // `detect_cutoff` ne peut plus rendre que `nyq_hz` ou une valeur au-dessus de son plancher de
+    // 2 kHz, donc TOUTE ligne sous 2000 vient forcément d'un des deux chemins cassés. Contrôle
+    // sur la base réelle : zéro fichier entre 1400 et 8400 Hz, la population visée est isolée.
+    //
+    // Portée mesurée : 12 lignes sur 2705, soit moins de 0,5 % de la bibliothèque — c'est ce qui
+    // écarte le bump de `REPORT_CACHE_VERSION`, qui ré-analyserait les 2693 autres pour rien
+    // (v16 l'a fait et a coûté toute la bibliothèque). Le FORMAT n'a pas changé.
+    //
+    // `verdict` et `cutoff_hz` sont mis à NULL en plus du rapport : ils ne sont couverts par
+    // AUCUNE version de cache — c'est le défaut « une seule des trois sorties d'étape est
+    // versionnée » relevé sur la map — donc rien d'autre ne les corrigerait, et une piste dont le
+    // rapport revient bon garderait un badge FAKE faux dans la file, la Bibliothèque et le compte
+    // « à re-sourcer ».
+    //
+    // Mêmes précautions que v16 et v20 : NULL et jamais '' (sentinelle de `persist_failure`), et
+    // le garde `report_json <> ''` protège les fichiers déjà connus comme illisibles. NO VACUUM.
+    r#"
+    UPDATE tracks SET report_json=NULL, report_cache_ver=NULL, verdict=NULL, cutoff_hz=NULL
+    WHERE cutoff_hz IS NOT NULL AND cutoff_hz < 2000
+      AND (report_json IS NULL OR report_json <> '');
+    "#,
 ];
 
 /// Applies ONE migration and its `user_version` bump in a SINGLE transaction, so a batch that
@@ -530,6 +568,85 @@ mod tests {
             })
             .unwrap();
         assert_eq!(ver, None, "report_cache_ver doit tomber avec le rapport");
+    }
+
+    /// v21 ne doit reprendre QUE les lignes produites par les deux chemins cassés du détecteur de
+    /// coupure, et rendre leur verdict à l'indéterminé plutôt que de le laisser à FAKE.
+    ///
+    /// Le test porte les deux populations en même temps, parce que le risque est symétrique : trop
+    /// large, on ré-analyse une bibliothèque entière pour rien (ce que v16 a coûté) ; trop étroit,
+    /// un badge FAKE faux reste en place dans la file, la Bibliothèque et le compte
+    /// « à re-sourcer », qu'aucune version de cache ne corrigerait — `verdict` et `cutoff_hz` ne
+    /// sont couverts par aucune.
+    #[test]
+    fn migration_v21_ne_reprend_que_les_coupures_impossibles() {
+        let conn = Connection::open_in_memory().unwrap();
+        for sql in MIGRATIONS.iter().take(20) {
+            conn.execute_batch(sql).unwrap();
+        }
+        conn.execute_batch("PRAGMA user_version = 20").unwrap();
+        // 1 — pied de basse pris pour une coupure (bin 53). À reprendre.
+        conn.execute(
+            "INSERT INTO tracks (id, path, status, cutoff_hz, verdict, report_json, report_cache_ver)
+             VALUES (1, '/basse.aif', 'pending', 571.0, 'fake', '{\"peaks_step\":4096}', 6)",
+            [],
+        )
+        .unwrap();
+        // 2 — décodage vide lu comme une mesure. À reprendre.
+        conn.execute(
+            "INSERT INTO tracks (id, path, status, cutoff_hz, verdict, report_json, report_cache_ver)
+             VALUES (2, '/vide.mp3', 'pending', 0.0, 'fake', '{\"peaks_step\":4096}', 6)",
+            [],
+        )
+        .unwrap();
+        // 3 — VRAI faux lossless, coupure à 15,9 kHz. Doit rester intact : le re-décoder ne
+        //     changerait rien et son verdict est juste.
+        conn.execute(
+            "INSERT INTO tracks (id, path, status, cutoff_hz, verdict, report_json, report_cache_ver)
+             VALUES (3, '/vrai-faux.aif', 'pending', 15967.0, 'fake', '{\"peaks_step\":4096}', 6)",
+            [],
+        )
+        .unwrap();
+        // 4 — sentinelle de persist_failure, avec un cutoff bas hérité. À laisser strictement
+        //     intacte : la vider remettrait un fichier illisible en file.
+        conn.execute(
+            "INSERT INTO tracks (id, path, status, cutoff_hz, report_json, analysis_attempts)
+             VALUES (4, '/casse.mp3', 'pending', 0.0, '', 1)",
+            [],
+        )
+        .unwrap();
+
+        run_migrations(&conn).unwrap();
+
+        let row = |id: i64| -> (Option<String>, Option<String>, Option<f64>) {
+            conn.query_row(
+                "SELECT report_json, verdict, cutoff_hz FROM tracks WHERE id=?1",
+                rusqlite::params![id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap()
+        };
+        for id in [1i64, 2] {
+            let (json, verdict, cutoff) = row(id);
+            assert_eq!(json, None, "ligne {id} : le rapport doit tomber");
+            assert_eq!(
+                verdict, None,
+                "ligne {id} : un verdict FAKE faux resterait sinon — rien d'autre ne le corrige"
+            );
+            assert_eq!(cutoff, None, "ligne {id} : la mesure fausse doit tomber");
+        }
+        let (json3, verdict3, cutoff3) = row(3);
+        assert!(
+            json3.is_some(),
+            "un vrai faux lossless a ete repris — cout: une re-analyse pour rien"
+        );
+        assert_eq!(verdict3.as_deref(), Some("fake"), "son verdict etait juste");
+        assert_eq!(cutoff3, Some(15967.0));
+        assert_eq!(
+            row(4).0,
+            Some(String::new()),
+            "la sentinelle de fichier illisible a ete effacee — le fichier repasserait en file"
+        );
     }
 
     #[test]
