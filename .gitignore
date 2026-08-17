@@ -136,6 +136,11 @@ docs/superpowers/changes/*
 # nouveau venu. Ouvert.
 !docs/superpowers/changes/2026-08-11-echecs-silencieux/
 
+# Le detecteur de faux lossless mesure sur un corpus etalonne de VRAIE musique, au lieu du sinus
+# balaye dont descendent toutes les fixtures du depot. Deux faux positifs corriges, puis un taux de
+# faux negatifs mesure a 68 % sur 150 transcodages de provenance connue. Ouvert.
+!docs/superpowers/changes/2026-08-17-detecteur-corpus/
+
 # scratch/test copies (may contain real Rekordbox master.db, never committed)
 scratchpad/
 scratchpad-verif/
