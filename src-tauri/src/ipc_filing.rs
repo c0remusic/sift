@@ -1188,7 +1188,10 @@ pub fn list_journal(
     session_id: Option<String>,
 ) -> Result<Vec<JournalEntry>, String> {
     let conn = db::lock_conn(&conn)?;
-    Ok(actions::list_journal(&conn, limit, session_id.as_deref()))
+    // `map_err` et non `Ok(...)` depuis le 2026-08-17 : `actions::list_journal` rend un `Result`
+    // (impasse A17, issue #15). Ce wrapper ne pouvait rien remonter tant que la fonction rendait
+    // un `Vec`, et l'écran Journal peignait « Rien dans cette session » sur une base illisible.
+    actions::list_journal(&conn, limit, session_id.as_deref()).map_err(|e| e.to_string())
 }
 
 /// The current app session ID (generated at launch, persisted in settings). Used by the

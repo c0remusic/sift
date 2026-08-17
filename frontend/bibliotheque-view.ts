@@ -13,6 +13,7 @@ import {
 } from "./ipc";
 import type { LibraryTrack, LibraryFacets, LibraryFilter, DupGroup, DashboardStats } from "../shared/contracts";
 import { requireEl, esc } from "./dom";
+import { humanizeError } from "./errors";
 import { libraryUsage, type UsageReport } from "./ipc";
 import { renderUsageChart } from "./usage-chart";
 import { emptyStateHtml, wireEmptyState } from "./empty-state";
@@ -226,8 +227,24 @@ function mountBibUsage(content: HTMLElement, refetch: boolean): void {
       draw(r);
     })
     .catch((e: unknown) => {
-      console.error("libraryUsage failed", e);
-      slot.remove();
+      // Impasse A19 (issue #15) : `slot.remove()` faisait disparaître la section, si bien que du
+      // point de vue de l'utilisateur elle n'avait jamais existé — rien à réessayer, rien à
+      // signaler. Le cas jumeau de Clé USB (`usb-view.ts::mountUsage`) garde son slot et affiche
+      // la chaîne brute ; c'est ce modèle qu'on porte ici, plus une porte de sortie.
+      slot.innerHTML =
+        '<div class="sift-settings-title">Occupation par format</div>' +
+        '<div class="sift-usb-empty">' +
+        esc(humanizeError(e, "Occupation indisponible.", "libraryUsage")) +
+        "<br>" +
+        esc(String(e)) +
+        "</div>" +
+        '<div class="sift-settings-subactions"><button data-bib="retryusage" class="sift-settings-btn sift-settings-btn-quiet">Réessayer</button></div>';
+      slot
+        .querySelector<HTMLButtonElement>('[data-bib="retryusage"]')
+        ?.addEventListener("click", () => {
+          slot.remove();
+          mountBibUsage(content, true);
+        });
     });
 }
 
@@ -262,12 +279,24 @@ export async function renderBiblioLive() {
       libraryStats(),
     ]);
   } catch (e) {
-    console.error("library load failed", e);
+    // Impasse A20 (issue #15) : cette carte était la seule des trois sans porte de sortie — Écartés
+    // (`ecartes-view.ts`) et le bloc doublons plus bas en ont une depuis leur audit respectif.
+    // « réessaie » sans bouton demande à l'utilisateur de deviner comment.
     content.innerHTML =
       '<div class="h1">Bibliothèque</div>' +
       '<div class="sift-ui-card-soft sift-ui-card-soft-pad" style="color:var(--color-text-danger)">' +
-      "Impossible de charger la Bibliothèque. Vérifie la connexion à la base et réessaie." +
+      esc(
+        humanizeError(
+          e,
+          "Impossible de charger la Bibliothèque. Vérifie la connexion à la base et réessaie.",
+          "library load",
+        ),
+      ) +
+      '<div style="margin-top:var(--space-8)"><button data-bib="retryload" style="font-size:var(--text-xs);color:var(--color-text-info)">Réessayer</button></div>' +
       "</div>";
+    content
+      .querySelector<HTMLButtonElement>('[data-bib="retryload"]')
+      ?.addEventListener("click", () => void renderBiblioLive());
     return;
   }
 

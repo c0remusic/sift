@@ -9,6 +9,8 @@ import type { Canonical } from "../shared/contracts";
 import { requireEl, esc } from "./dom";
 import { setTheme } from "./theme";
 import type { ThemeChoice } from "./theme";
+import { toast } from "./filing-toast";
+import { humanizeError } from "./errors";
 import { open as openFolderDialog } from "@tauri-apps/plugin-dialog";
 
 /** Live Réglages view: a single scrolling page of real cards (Discogs, Bibliothèque, Apparence),
@@ -312,7 +314,20 @@ export async function renderReglagesLive() {
   themeBlock.querySelectorAll<HTMLElement>("[data-theme-choice]").forEach((el) =>
     el.addEventListener("click", () => {
       const choice = el.dataset.themeChoice as ThemeChoice;
-      void setTheme(choice);
+      // Le `.on` suit l'APPLICATION, qui est immédiate et ne peut pas échouer — le thème demandé
+      // est bien celui à l'écran. Ce que le bouton allumé ne dit pas, c'est si le choix a été
+      // ENREGISTRÉ ; impasse A21 (issue #15), où l'échec d'écriture ne se voyait qu'au lancement
+      // suivant, quand le thème revenait tout seul.
+      void setTheme(choice).then((r) => {
+        if (r.persisted) return;
+        toast(
+          humanizeError(
+            r.error,
+            "Thème appliqué, mais pas enregistré : il reviendra à sa valeur précédente au prochain lancement.",
+            "setTheme",
+          ),
+        );
+      });
       themeBlock.querySelectorAll("[data-theme-choice]").forEach((c) => c.classList.remove("on"));
       el.classList.add("on");
       positionThemeThumb();

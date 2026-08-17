@@ -10,6 +10,12 @@ import { open } from "@tauri-apps/plugin-dialog";
 import type { Source } from "../shared/contracts";
 import { esc } from "./dom";
 import { confirmAction } from "./confirm-modal";
+// Les quatre actions de cet écran (ajouter / surveiller / rescanner / retirer) échouaient en
+// `console.error` seul — impasse A3 de l'inventaire des échecs silencieux (issue #15). Un toast
+// est le seul porteur disponible ici : ces actions n'ont pas de zone de statut à elles, et le
+// rail se repeint par-dessus toute erreur qu'on y écrirait.
+import { toast } from "./filing-toast";
+import { humanizeError } from "./errors";
 
 const LIBRARY_ROOT = "library_root"; // same setting key filing.ts gates the destination tree on
 
@@ -300,7 +306,15 @@ export async function renderHomeSources() {
       await setSourceWatched(id, next);
       await renderHomeSources();
     } catch (err) {
-      console.error("setSourceWatched failed", err);
+      toast(
+        humanizeError(
+          err,
+          next
+            ? "La surveillance n'a pas pu être activée sur ce dossier."
+            : "La surveillance n'a pas pu être désactivée sur ce dossier.",
+          "setSourceWatched",
+        ),
+      );
     }
   });
   inspectorCol.querySelector('[data-sift="rescansrc"]')?.addEventListener("click", async (e) => {
@@ -309,7 +323,7 @@ export async function renderHomeSources() {
     try {
       await rescanSource(id);
     } catch (err) {
-      console.error("rescanSource failed", err);
+      toast(humanizeError(err, "Le rescan de ce dossier n'a pas démarré.", "rescanSource"));
     }
   });
   inspectorCol.querySelector('[data-sift="rmsrc"]')?.addEventListener("click", async (e) => {
@@ -322,7 +336,10 @@ export async function renderHomeSources() {
       if (selectedSourceId === id) selectedSourceId = null;
       await renderHomeSources();
     } catch (err) {
-      console.error("removeSource failed", err);
+      // Le pire des quatre : la confirmation destructive a été ACCEPTÉE, la modale s'est fermée,
+      // et la ligne est toujours là. Sans ce toast l'utilisateur lit ça comme « le clic n'a pas
+      // pris » et recommence.
+      toast(humanizeError(err, "Ce dossier surveillé n'a pas pu être retiré.", "removeSource"));
     }
   });
 }
@@ -337,7 +354,10 @@ export async function pickAndAddFolder(onChange: () => void | Promise<void>) {
       selectedSourceId = added.id;
       await onChange();
     } catch (e) {
-      console.error("addSource failed", e);
+      // Le mensonge type de l'inventaire A3 : le sélecteur se ferme, et la liste continue
+      // d'afficher « Aucun dossier surveillé — ajoute-en un ci-dessous. » sur un dossier qu'on
+      // vient justement d'ajouter. Un écran vide et un écran cassé se ressemblent.
+      toast(humanizeError(e, `« ${baseName(dir)} » n'a pas pu être ajouté.`, "addSource"));
     }
   }
 }

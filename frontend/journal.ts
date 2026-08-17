@@ -10,6 +10,7 @@
 import type { JournalEntry } from "../shared/contracts";
 import { listJournal, getSessionId, revertBatch } from "./ipc";
 import { requireEl, esc } from "./dom";
+import { humanizeError } from "./errors";
 import { confirmAction } from "./confirm-modal";
 import { emptyStateHtml, wireEmptyState } from "./empty-state";
 
@@ -309,7 +310,7 @@ function installDelegate(
         b.classList.toggle("on", b.dataset.jact === "mode-session"),
       );
       positionJournalThumb(root);
-      void renderJournal();
+      paintJournal(() => renderJournal(), "renderJournal");
       return;
     }
     if (t.closest("[data-jact='mode-all']")) {
@@ -317,7 +318,7 @@ function installDelegate(
         b.classList.toggle("on", b.dataset.jact === "mode-all"),
       );
       positionJournalThumb(root);
-      void renderJournalExtended();
+      paintJournal(() => renderJournalExtended(), "renderJournalExtended");
       return;
     }
   }, { signal: _delegateAbort.signal });
@@ -327,8 +328,43 @@ function installDelegate(
 // Current-session journal
 // ---------------------------------------------------------------------------
 
+/** Peint le Journal en rattrapant l'échec, pour les appelants qui ne peuvent pas `await`.
+ *
+ *  Impasse A18 (issue #15) : les trois `void render…()` de ce fichier et de `sift-live.ts`
+ *  laissaient partir la promesse sans `.catch`, alors que `app.js:318` a DÉJÀ vidé `#content`
+ *  avant de déléguer. Un rejet ne donnait donc même pas un état vide : un écran nu, et une
+ *  unhandled rejection en console que personne ne lit.
+ *
+ *  Le bouton rejoue exactement le même rendu — c'est le seul geste qui a du sens ici, la cause
+ *  la plus probable étant un verrou de base momentané. */
+export function paintJournal(render: () => Promise<void>, context: string): void {
+  void render().catch((e: unknown) => {
+    const display = humanizeError(
+      e,
+      "Impossible de charger le journal. Vérifie la connexion à la base et réessaie.",
+      context,
+    );
+    // `requireEl` lèverait à son tour si `#content` manquait — dans un `catch`, on ne peut pas se
+    // permettre un second échec.
+    const content = document.getElementById("content");
+    if (!content) return;
+    content.innerHTML =
+      '<div class="jrnl-wrap">' +
+      '<div class="sift-ui-card-soft sift-ui-card-soft-pad" style="color:var(--color-text-danger)">' +
+      esc(display) +
+      '<div style="margin-top:var(--space-8)"><button data-jact="retry" style="font-size:var(--text-xs);color:var(--color-text-info)">Réessayer</button></div>' +
+      "</div></div>";
+    content
+      .querySelector<HTMLButtonElement>('[data-jact="retry"]')
+      ?.addEventListener("click", () => paintJournal(render, context));
+  });
+}
+
 export async function renderJournal(toast?: string, warn?: string): Promise<void> {
-  // Fail-fast: both calls throw on IPC error — no silent fallback.
+  // Fail-fast des deux côtés depuis le 2026-08-17 : `list_journal` rendait un `Vec` et avalait ses
+  // erreurs par construction (impasse A17, issue #15), donc ce commentaire était vrai pour la
+  // couche TS et faux deux couches plus bas — une base illisible arrivait ici en liste vide, et
+  // l'écran affirmait « Rien dans cette session ». La signature Rust est maintenant un `Result`.
   const sessionId = await getSessionId();
   const entries = await listJournal(50, sessionId);
 

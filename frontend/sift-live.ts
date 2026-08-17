@@ -68,7 +68,7 @@ import {
   registerRefreshHook,
   onBatchInPlaceChange,
 } from "./batch-panel";
-import { renderJournal } from "./journal";
+import { paintJournal, renderJournal } from "./journal";
 import { open as openFolderDialog } from "@tauri-apps/plugin-dialog";
 import { dirname } from "@tauri-apps/api/path";
 import { setTask, clearTask, setCancelHandler } from "./progress-zone";
@@ -175,7 +175,7 @@ export function installLiveWiring() {
   window.__siftEcarts = renderEcartes;
   window.__siftReglages = () => void renderReglagesLive();
   window.__siftBiblio = () => void renderBiblioLive();
-  window.__siftJournal = () => void renderJournal();
+  window.__siftJournal = () => paintJournal(() => renderJournal(), "renderJournal");
   window.__siftRkb = () => void renderRekordboxLive();
   window.__siftCle = () => renderUsbLive();
   injectLeanStyle();

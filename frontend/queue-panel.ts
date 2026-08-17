@@ -11,6 +11,7 @@ import { MAX_ANALYSIS_ATTEMPTS, type QueueItem } from "../shared/contracts";
 import { confirmAction } from "./confirm-modal";
 import { requireEl, esc } from "./dom";
 import { toast } from "./filing-toast";
+import { humanizeError } from "./errors";
 import { filingFailure, isFilingInFlight, onFilingOutcome } from "./filing-state";
 
 /** A pending track still worth (re)analysing: no current verdict AND not yet terminally broken.
@@ -420,15 +421,46 @@ export async function renderQueue(touchDetail = true) {
   // time (audit UI/UX 2026-07-03, fix 4). Gated on "no rows yet" so later polls (queue:changed,
   // the 300ms debounce) never flash this over the still-valid existing rows.
   if (!ql.childElementCount) {
+    // `data-sift="qloading"` n'est pas décoratif : c'est ce qui permet au `catch` de `listQueue`
+    // plus bas de savoir s'il regarde CE placeholder (à remplacer par une erreur) ou de vraies
+    // lignes déjà peintes (à ne pas détruire). Sans marque, il faudrait deviner.
     ql.innerHTML =
-      '<div style="display:flex;align-items:center;gap:8px;padding:8px 7px;color:var(--color-text-tertiary);font-size:var(--text-md)">' +
+      '<div data-sift="qloading" style="display:flex;align-items:center;gap:8px;padding:8px 7px;color:var(--color-text-tertiary);font-size:var(--text-md)">' +
       '<i class="ti ti-loader sift-spin" style="font-size:var(--text-md)"></i> Chargement…</div>';
   }
   let items: QueueItem[] = [];
   try {
     items = await listQueue();
   } catch (e) {
-    console.error("listQueue failed", e);
+    // Impasse A7 (issue #15) : ce `catch` faisait `console.error` + `return` sec, donc le
+    // « Chargement… » peint juste au-dessus tournait pour toujours. Un spinner permanent est un
+    // échec silencieux — le rail jumeau (`home-sources.ts`, renderHomeSources) le dit et le
+    // corrige déjà, la correction n'avait pas été portée ici.
+    const display = humanizeError(
+      e,
+      "Impossible de charger la file. Vérifie la connexion à la base et réessaie.",
+      "listQueue",
+    );
+    // Deux cas, pas un. Rail encore vide (premier chargement) : c'est LE spinner qu'il faut
+    // remplacer, par une carte d'erreur avec sa porte de sortie. Rail déjà peuplé (un poll de
+    // `queue:changed` qui échoue) : les lignes affichées restent valides, les écraser perdrait
+    // de l'information juste — un toast dit l'échec sans détruire l'état.
+    if (ql.querySelector('[data-sift="qloading"]')) {
+      ql.innerHTML =
+        '<div class="sift-ui-card-soft sift-ui-card-soft-pad" style="color:var(--color-text-danger)">' +
+        esc(display) +
+        '<div style="margin-top:var(--space-8)"><button data-sift="retryqueue" style="font-size:var(--text-xs);color:var(--color-text-info)">Réessayer</button></div>' +
+        "</div>";
+      ql.querySelector<HTMLButtonElement>('[data-sift="retryqueue"]')?.addEventListener(
+        "click",
+        () => {
+          ql.innerHTML = "";
+          void renderQueue(touchDetail);
+        },
+      );
+    } else {
+      toast(display);
+    }
     return;
   }
   // P5 (PRD 2026-07-27, D3): a track whose conversion is still running in the background has left

@@ -1123,12 +1123,25 @@ pub struct JournalEntry {
 /// the batch's FIRST action row — MIN id — so a convert+trash filing shows kind="convert").
 /// `session_id_filter` = Some(sid) to restrict to one session; None = all sessions.
 /// `tag_edit` batches are excluded (they have no category in the Journal view).
+///
+/// Rend un `Result` et non un `Vec` depuis le 2026-08-17 — impasse A17 de l'inventaire des échecs
+/// silencieux ([issue #15](https://github.com/c0remusic/sift/issues/15)). La signature précédente
+/// avalait ses erreurs par construction, à trois endroits : `prepare` en échec rendait
+/// `Vec::new()`, `query_map` en échec rendait `Vec::new()`, et un `.filter_map(|r| r.ok())` jetait
+/// silencieusement les lignes illisibles une par une. Zéro ligne rendue signifiait donc à la fois
+/// « aucune action dans cette session » et « la base est illisible », et l'écran affichait le
+/// premier des deux : « Rien dans cette session ». Le correctif est ICI et pas dans le `catch` du
+/// frontend — un front ne peut pas distinguer deux cas qu'on lui livre déjà confondus.
+///
+/// Une ligne illisible fait maintenant échouer l'appel entier plutôt que de disparaître : le
+/// journal est une liste de ce qui a été fait au disque de l'utilisateur, une entrée manquante y
+/// est plus grave qu'un écran d'erreur.
 pub fn list_journal(
     conn: &Connection,
     limit: i64,
     session_id_filter: Option<&str>,
-) -> Vec<JournalEntry> {
-    let mut stmt = match conn.prepare(
+) -> rusqlite::Result<Vec<JournalEntry>> {
+    let mut stmt = conn.prepare(
         "SELECT a.batch_id, a.track_id, a.type, a.from_path, a.to_path, a.ts,
                 a.session_id, g.cnt
          FROM actions a
@@ -1141,10 +1154,7 @@ pub fn list_journal(
          WHERE (?2 IS NULL OR a.session_id = ?2)
          ORDER BY a.id DESC
          LIMIT ?1",
-    ) {
-        Ok(s) => s,
-        Err(_) => return Vec::new(),
-    };
+    )?;
     let rows = stmt.query_map(params![limit, session_id_filter], |r| {
         Ok(JournalEntry {
             batch_id: r.get(0)?,
@@ -1156,11 +1166,8 @@ pub fn list_journal(
             session_id: r.get(6)?,
             track_count: r.get(7)?,
         })
-    });
-    match rows {
-        Ok(it) => it.filter_map(|r| r.ok()).collect(),
-        Err(_) => Vec::new(),
-    }
+    })?;
+    rows.collect()
 }
 
 #[cfg(test)]
@@ -1877,10 +1884,36 @@ mod tests {
         seed_filed(&conn, &dir.path().join("one"), "b1");
         seed_filed(&conn, &dir.path().join("two"), "b2");
 
-        let entries = list_journal(&conn, 10, None);
+        let entries = list_journal(&conn, 10, None).unwrap();
         let ids: Vec<&str> = entries.iter().map(|e| e.batch_id.as_str()).collect();
         assert_eq!(ids, vec!["b2", "b1"]); // newest first, one per batch
         assert_eq!(entries[0].kind, "convert"); // representative (first) action of the batch
+    }
+
+    /// Impasse A17 ([issue #15](https://github.com/c0remusic/sift/issues/15)) : une base illisible
+    /// doit remonter, pas se déguiser en journal vide.
+    ///
+    /// Le test mute la seule chose qui distingue les deux : il retire la table que la requête lit.
+    /// Avec l'ancienne signature (`-> Vec<JournalEntry>`, `Err(_) => return Vec::new()`) il rendait
+    /// une liste vide indiscernable d'une session sans action — le `assert!(is_err())` tombe donc
+    /// bien sur le code d'avant, et pas seulement sur une base cassée.
+    #[test]
+    fn journal_surfaces_a_broken_schema_instead_of_reading_empty() {
+        let conn = db();
+        let dir = tempfile::tempdir().unwrap();
+        seed_filed(&conn, &dir.path().join("one"), "b1");
+        // Contrôle positif : sans ça, un test qui n'attrape qu'un `Err` ne prouve pas que le
+        // chemin nominal rendait quelque chose. Une liste vide et un échec se ressemblent — c'est
+        // exactement le défaut qu'on corrige, il ne faut pas le rejouer dans son propre test.
+        assert_eq!(list_journal(&conn, 10, None).unwrap().len(), 1);
+
+        conn.execute_batch("ALTER TABLE actions RENAME TO actions_gone")
+            .unwrap();
+
+        assert!(
+            list_journal(&conn, 10, None).is_err(),
+            "une table absente doit rendre Err, jamais un Vec vide"
+        );
     }
 
     /// Seed a non-conformant `.aif` filing in `dir`, SAME folder: `Track.aif` was converted into

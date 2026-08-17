@@ -26,12 +26,27 @@ export async function initTheme(): Promise<ThemeChoice> {
   return choice;
 }
 
-/** Apply + persist a new choice (Réglages toggle). */
-export async function setTheme(choice: ThemeChoice): Promise<void> {
+/** Apply + persist a new choice (Réglages toggle).
+ *
+ *  Rend le résultat de la PERSISTANCE, pas celui de l'application : les deux réussissent
+ *  séparément. `apply()` ne peut pas échouer (elle écrit un attribut du document), donc le thème
+ *  demandé est toujours à l'écran au retour ; `setSetting` traverse l'IPC et la base, et peut
+ *  échouer seule.
+ *
+ *  Impasse A21 (issue #15) : ce `catch` était `console.error` seul, et le segmented control
+ *  basculait son `.on` inconditionnellement. L'utilisateur voyait donc une préférence confirmée
+ *  — thème appliqué, bouton allumé — qui était perdue au lancement suivant. L'appelant a besoin
+ *  de la distinction pour le dire ; il ne peut pas la deviner. */
+export async function setTheme(
+  choice: ThemeChoice,
+): Promise<{ persisted: true } | { persisted: false; error: unknown }> {
   apply(choice);
   try {
     await setSetting(THEME_SETTING, choice);
+    return { persisted: true };
   } catch (e) {
-    console.error("setSetting(ui_theme) failed", e);
+    // Pas de `console.error` ici : c'est `humanizeError` chez l'appelant qui garantit la chaîne
+    // brute en console, et journaliser aux deux endroits doublerait chaque échec.
+    return { persisted: false, error: e };
   }
 }
