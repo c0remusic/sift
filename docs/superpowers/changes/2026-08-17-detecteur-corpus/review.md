@@ -498,20 +498,35 @@ depuis le début — ils n'avaient simplement jamais été passés sur la bande 
 
 ## Ce qu'on rate encore, caractérisé (2026-08-18)
 
-Les 34 transcodages (23 %) que l'union des deux bandes laisse passer, mesurés :
+⚠️ **Chiffres refaits le 2026-08-18 par le chemin Rust**, au plancher honnête de −5,8 (voir la
+section suivante). La version précédente de ce tableau annonçait 34 ratés à partir de mesures de la
+sonde JS : elle comparait un détecteur à des seuils qui n'étaient pas les siens.
+
+Les **52 transcodages (34,7 %)** que l'union des deux bandes laisse passer :
 
 | variante | ratés | distance au seuil le plus proche |
 |---|---|---|
-| aacmf256 | 8/10 | 0,01 à 2,68 dB |
-| aac256 | 7/10 | 0,17 à 2,74 dB |
-| aacmf128 | 7/10 | 0,08 à 2,70 dB |
-| lameV0 | 5/10 | 0,25 à 2,65 dB |
-| mfmp3_128 | 4/10 | 1,57 à 1,93 dB |
-| aac128, mfmp3_320, wma192 | 1 chacun | 0,33 à 2,67 dB |
+| aac256 | 9/10 | 0,07 à 3,15 dB |
+| aacmf256 | 9/10 | 0,38 à 3,08 dB |
+| lame320 | 8/10 | 0,08 à 2,63 dB |
+| aacmf128 | 7/10 | 0,07 à 3,11 dB |
+| lameV0 | 5/10 | 0,76 à 2,99 dB |
+| mfmp3_128 | 4/10 | 0,01 à 2,64 dB |
+| aac128 | 3/10 | 0,12 à 1,59 dB |
+| opus128 | 3/10 | 0,24 à 2,59 dB |
+| lame128, mfmp3_320, vorbisq5, wma192 | 1 chacun | 0,64 à 2,91 dB |
 
-**Aucun n'est hors de portée.** 12 sur 34 sont à moins d'1 dB d'un seuil, 23 à moins de 2, et
-**aucun au-delà de 2,74 dB**. Ce n'est pas un trou de capacité mais une marge — et 22 des 34 sont
-de l'AAC à débit élevé, qui est le noyau dur.
+**Aucun n'est hors de portée.** 16 sur 52 sont à moins d'1 dB d'un seuil, 35 à moins de 2, et
+**aucun au-delà de 3,15 dB**. Ce n'est pas un trou de capacité mais une marge — et 25 des 52 sont
+de l'AAC, qui reste le noyau dur.
+
+Se rejoue par :
+
+```
+SIFT_CORPUS_DIR=C:\sift-corpus\fake cargo test --manifest-path src-tauri/Cargo.toml --release \
+  corpus_scan -- --ignored --nocapture > scan-fake.txt
+node scripts/score-corpus.mjs C:\sift-corpus\labels.json scan.csv
+```
 
 ### Une meilleure règle de décision ne suffit pas — mesuré, cinq règles testées
 
@@ -519,26 +534,32 @@ Les seuils sont déjà posés au plancher des authentiques : les baisser créera
 L'espoir restant était que les deux mesures, **prises ensemble**, séparent là où chacune seule
 échoue. Testé :
 
+Refait par le chemin Rust le 2026-08-18 (`scripts/score-corpus.mjs`, seuils lus dans `verdict.rs`) :
+
 | règle | détection | faux positifs |
 |---|---|---|
-| **OU des deux seuils (actuel)** | **77 %** | **0/10** |
-| somme des deux axes < min authentique | 67 % | 0/10 |
-| OU des trois (seuils + somme) | 77 % | 0/10 |
-| z-score minimal < min authentique | 74 % | 0/10 |
-| les deux sous la médiane authentique | 55 % | **4/10** |
-| OU des seuils, OU les deux sous la médiane | 86 % | **4/10** |
+| **OU des deux seuils (actuel)** | **65,3 %** | **0/10** |
+| somme des deux axes < min authentique | 70,0 % | 0/10 |
+| OU des trois (seuils + somme) | 78,0 % | 0/10 |
+| z-score minimal < min authentique | 75,3 % | 0/10 |
+| les deux sous la médiane authentique | 56,0 % | **4/10** |
+| OU des seuils, OU les deux sous la médiane | 80,7 % | **4/10** |
 
-**Aucune combinaison ne bat le OU actuel à zéro faux positif.** Celle qui monte à 86 % coûte
-**4 faux positifs sur 10 authentiques** — inutilisable pour un logiciel qui accuse un fichier.
+**Ce tableau ne dit PAS que trois règles battent le OU actuel**, et la version précédente le lisait
+mal en concluant l'inverse avec la même sérénité. Les règles 2 à 6 tirent leur référence des **10
+authentiques qu'on est en train de scorer** : leur colonne « faux positifs » est nulle *par
+construction*, pas par mesure. Le OU actuel, lui, applique un plancher venu d'un autre jeu de
+fichiers — c'est la seule ligne dont le 0/10 soit une mesure. Comparer les six colonnes revient à
+comparer une note d'examen à une note qu'on s'est donnée soi-même.
 
-Conclusion soutenable : dans cet espace à deux dimensions, la population authentique et les
-transcodages ratés **se chevauchent réellement**. Il ne manque pas une meilleure règle, il manque
-une **troisième mesure indépendante**. Toute heure passée à régler la décision sur ces deux
-features-ci est perdue d'avance, et c'est ce que ce tableau existe pour éviter.
+Ce que le tableau dit vraiment : **une règle calibrée sur les fichiers qu'elle juge gagne 13
+points**, et c'est la mesure de ce qu'un seuil auto-référentiel s'offre gratuitement. Les deux
+lignes à 4/10 sont les seules dont la référence ne suffit pas à se protéger — elles échouent même
+à leur propre examen.
 
-⚠️ Ces seuils reposent sur **10 authentiques** (ceux du corpus), pas sur les 44 : la borne de la
-bande fixe se trouve identique (−5,4), celle de la relative n'a que ces 10 fichiers derrière elle,
-dont un seul la tire à −10,9. Un jeu authentique plus large déplacerait ces chiffres.
+Conclusion soutenable, inchangée : dans cet espace à deux dimensions, la population authentique et
+les transcodages ratés **se chevauchent réellement**. Il ne manque pas une meilleure règle, il
+manque une **troisième mesure indépendante**.
 
 ## Le troisième signal : ce que dit la littérature, et pourquoi notre approximation échoue
 
@@ -590,11 +611,75 @@ transformée du codec **et cherchent le décalage de trame**.
 C'est donc un chantier d'implémentation — MDCT, commutation de fenêtres, recherche d'alignement —
 et pas une sonde. Il n'a pas été entrepris, et rien ici ne dit qu'il aboutirait.
 
+## Le seuil et son juge n'étaient pas mesurés par le même code (2026-08-18)
+
+Tous les taux publiés plus haut sur les bandes de platitude — 61 %, 63 %, 17 %, 68 %, 77 % —
+venaient de `scripts/hf-flatness-probe.mjs` : décodage forcé en **mono 44,1 kHz**, DFT naïve, 200
+trames échantillonnées, 150 s au plus. Le code qui analyse un fichier dans l'app mesure au **taux
+natif**, sur tout le fichier, par la FFT de `spectrum.rs`. Personne n'avait comparé les deux.
+
+`corpus_scan` imprime maintenant les deux colonnes de platitude, donc le corpus se mesure enfin par
+le chemin qui juge. Les 10 authentiques :
+
+| | sonde JS (publié) | chemin Rust (mesuré) |
+|---|---|---|
+| plage bande fixe | −5,4 à −2,6 | **−5,79** à −2,63 |
+
+**Un seul fichier fait toute la différence, et c'est un achat** : `src09`
+(*Paco & The Julia Set — The Deep Wire*, .wav) mesure −5,79 par le chemin Rust, la sonde le situait
+à −5,4. Au seuil livré de −5,4, ce fichier acheté basculait en **Douteux**.
+
+Ça touche aussi une conclusion de méthode publiée plus haut : la « distribution bimodale » avec un
+vide entre −6,5 et −5,4. Le vide n'est vide que pour la sonde ; par le chemin Rust, `src09` tombe
+dedans. **L'amas de trois fichiers à la borne basse (−5,4 / −5,3 / −5,3) reste à re-mesurer** — il
+n'a jamais été passé par le juge.
+
+### Ce que coûte le plancher, mesuré
+
+| plancher bande fixe | union détecte | authentiques touchés |
+|---|---|---|
+| −5,0 | 110/150 | 2/10 |
+| **−5,4** (livré jusqu'ici) | 105/150 | **1/10** |
+| −5,6 | 104/150 | 1/10 |
+| **−5,8** (retenu) | **98/150** | **0/10** |
+| −6,0 | 96/150 | 0/10 |
+
+Sept détections payées pour zéro faux positif. Le dépôt a une contrainte permanente à zéro faux
+positif ; elle tranche. `HF_FIXED_FLOOR_DB = -5.8` — arrondi vers le bas depuis −5,79, parce
+qu'une borne posée sur la valeur exacte d'un fichier réel dépend de son troisième chiffre.
+
+⚠️ **Ce plancher repose sur 10 fichiers**, et c'est le défaut que ce chantier a déjà corrigé une
+fois. Ce qui le lèverait : repasser les 44 authentiques de la référence élargie par le chemin
+Rust. Ils ne sont pas sur cette machine.
+
+### La platitude entre dans le verdict — Douteux, pas Faux
+
+`verdict()` lit désormais les deux bandes, mais **seulement quand la coupure n'a plus rien à dire**
+(bande pleine, ≥ 20 kHz). Elle ne dégrade jamais un verdict déjà négatif ; elle rattrape ce que la
+falaise ne peut pas voir. Le résultat est **Douteux**, jamais Faux : la plage de référence tient sur
+44 fichiers dont deux ambient s'approchent légitimement du plancher, et accuser sur cette base
+produirait des faux positifs sur du matériel acheté.
+
+Matrice complète, corpus entier, seuils du juge :
+
+| | Ok | Douteux | Faux | |
+|---|---|---|---|---|
+| authentique (10) | **10** | 0 | 0 | 0 faux positif |
+| faux (150) | 47 | 62 | 41 | **31,3 % de faux négatifs** |
+
+Contre la ligne de base du 2026-08-17 (102 Ok / 7 Douteux / 40 Faux, soit 68 % de faux négatifs) :
+**les faux négatifs passent de 102 à 47.** Le nombre d'accusations, lui, ne bouge pas (40 → 41) —
+tout le gain est en zone grise, ce qui est exactement le contrat : Sift signale davantage sans
+accuser davantage.
+
+Angles morts restants, tous en AAC ou en MP3 haut débit : `aac256` et `aacmf256` 9/10 ratés,
+`lame320` 8/10, `aacmf128` 7/10, `lameV0` 5/10.
+
 ## Étape 3 — le cross-test Fakin' The Funk
 
 Pas encore fait. Sa valeur a changé : avant, il aurait servi de second avis sur un détecteur dont on
 ignorait la qualité. Maintenant, la question est précise et bien meilleure — **est-ce que FTF
-détecte les 102 que Sift rate ?**
+détecte les 47 que Sift laisse en Ok ?**
 
 - S'il les détecte, sa méthode ne repose pas sur la position d'une coupure, et il vaut la peine de
   comprendre laquelle.

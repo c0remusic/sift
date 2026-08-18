@@ -9,7 +9,8 @@ La question a changé de nature après l'étape 2. Avant, FTF aurait servi de se
 détecteur dont on ignorait la qualité — et un accord entre deux outils n'aurait rien prouvé, deux
 méthodes voisines pouvant partager un angle mort.
 
-Maintenant la question est précise : **est-ce que FTF détecte les 102 transcodages que Sift rate ?**
+Maintenant la question est précise : **est-ce que FTF détecte les 47 transcodages que Sift laisse
+en Ok ?**
 
 - **S'il les détecte** — sa méthode ne repose pas sur la position d'une falaise spectrale, et il
   vaut la peine de comprendre laquelle. C'est le cas qui rapporte.
@@ -61,15 +62,20 @@ garde théorique — la table `sources` ne contient qu'une ligne,
 
 ## Le chiffre à battre
 
-Mesuré le 2026-08-17 sur ce corpus, Sift après les correctifs de `ce97d92` :
+Mesuré le **2026-08-18**, une fois la platitude de l'aigu entrée dans `verdict()` :
 
-| | Ok | Grey | Fake |
+| | Ok | Douteux | Faux |
 |---|---|---|---|
 | authentique (10) | 10 | 0 | 0 |
-| faux (149 mesurés) | 102 | 7 | 40 |
+| faux (150 mesurés) | 47 | 62 | 41 |
 
-**0 faux positif, 68 % de faux négatifs.** Les 102 ratés sont : tout l'AAC (40), LAME 320 (10),
-LAME V0 (10), MediaFoundation 320 (10), Opus (10), Vorbis (10), WMA (10), et 2 isolés.
+**0 faux positif, 31,3 % de faux négatifs.** Les 47 ratés sont surtout de l'AAC (`aac256` et
+`aacmf256` 9/10 chacun, `aacmf128` 7/10, `aac128` 3/10), du MP3 haut débit (`lame320` 8/10,
+`lameV0` 5/10) et quelques isolés.
+
+Ligne de base précédente, pour situer le progrès — même corpus, Sift à `ce97d92`, coupure seule :
+102 Ok / 7 Douteux / 40 Faux, soit **68 % de faux négatifs**. Le nombre d'accusations n'a pas bougé
+(40 → 41) : tout le gain est passé en zone grise.
 
 ## Ce que ce protocole ne mesurera pas
 
