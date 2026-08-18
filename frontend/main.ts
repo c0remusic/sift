@@ -10,10 +10,17 @@
 // discrimine. Trois graisses et pas deux : decision d'Antoine, alignee sur la table de styles
 // macOS d'Apple, ou Medium est une graisse de premiere classe (Caption 2) et ou Headline et Body
 // ne different QUE par la graisse a metriques identiques.
+// Le meme oubli vivait encore sur l'AUTRE famille au 2026-08-18 : trois regles demandent du
+// mono en 500 et 600 — `.sift-time-elapsed,.sift-time-total` (styles.css:1145),
+// `.sift-key-btn` (1224), `.sift-usage-tip-ext` (1814) — et seule la 400 etait importee.
+// Meme silence, meme synthese approximative. Trouve en ecrivant `test/font-weights.test.ts`,
+// qui confronte desormais les deux fichiers a chaque `npm run test`.
 import "@fontsource/outfit/400.css";
 import "@fontsource/outfit/500.css";
 import "@fontsource/outfit/600.css";
 import "@fontsource/jetbrains-mono/400.css";
+import "@fontsource/jetbrains-mono/500.css";
+import "@fontsource/jetbrains-mono/600.css";
 // Police d'icones, meme regle que les trois ci-dessus. Elle etait chargee depuis un CDN par un
 // <link> dans index.html, seule ressource reseau restante de l'app : hors ligne — en club, en
 // cabine, sur une machine sans wifi — TOUTE l'iconographie tombait en tofu, y compris les icones
