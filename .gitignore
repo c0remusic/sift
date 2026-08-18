@@ -87,6 +87,7 @@ skills-lock.json
 # négation ICI, dans le même geste. C'est voulu.
 docs/*
 !docs/install-non-signe.md
+!docs/manuel.md
 !docs/design-system-states.md
 !docs/ressources-externes.md
 !docs/design-system/

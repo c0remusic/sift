@@ -52,6 +52,12 @@ describe("notes de release", () => {
     expect(sortie).toContain("xattr -dr com.apple.quarantine");
   });
 
+  it("mène au manuel, qui est le seul texte disant comment s'en servir", () => {
+    // Installer et utiliser ne sont pas le même moment (issue #19). Quelqu'un qui reçoit le lien
+    // n'ouvre pas forcément le dépôt : sans cette ligne, le manuel n'existe que pour qui le fait.
+    expect(notes(premiereVersion())).toContain("docs/manuel.md");
+  });
+
   it("contient les notes de la version, pas seulement le pied de page", () => {
     const tag = premiereVersion();
     const sortie = notes(tag);

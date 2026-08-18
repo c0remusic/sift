@@ -7,6 +7,17 @@
 > au moment du rangement, **renomme** depuis Discogs, et pousse tes dossiers en **playlists
 > Rekordbox**. Un seul geste par morceau : écouter → ranger ou écarter.
 
+## Se servir de Sift
+
+| | |
+|---|---|
+| **Installer** | [`docs/install-non-signe.md`](docs/install-non-signe.md) — quel fichier prendre, et quoi faire de l'avertissement du système |
+| **Utiliser** | [`docs/manuel.md`](docs/manuel.md) — le vocabulaire, les huit écrans, et ce que la détection laisse passer |
+
+Ces deux liens passent avant tout ce qui suit, et ce n'est pas une question de mise en page :
+quelqu'un à qui on envoie ce dépôt cherche une app, pas une fiche de projet. Tout ce qui vient
+ensuite s'adresse à qui veut la **construire**.
+
 ## État du projet
 
 | Jalon | Statut |
@@ -71,10 +82,8 @@ npm run tauri dev        # compile le backend Rust + ouvre la fenêtre native
 
 ## Installer (utilisateur final)
 
-Un premier lancement affiche un avertissement Windows SmartScreen ou macOS
-Gatekeeper (build non signé) — voir
-[`docs/install-non-signe.md`](docs/install-non-signe.md) pour le contourner.
-Nécessaire une seule fois ; les mises à jour suivantes sont automatiques.
+Voir § [Se servir de Sift](#se-servir-de-sift) en tête de ce fichier — les deux liens y sont, et
+n'étaient ici qu'à la ligne 72, sous la pile technique et les prérequis de développement.
 
 ## Lancer juste le frontend web (sans Tauri)
 

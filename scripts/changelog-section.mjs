@@ -109,6 +109,11 @@ selon le message affiche :
   meme ». Dans le Terminal — le \`-r\` est indispensable, un \`.app\` est un dossier :
   \`xattr -dr com.apple.quarantine /Applications/Sift.app\`
   Si le message persiste : \`codesign --force --deep --sign - /Applications/Sift.app\`
+
+### Se servir de Sift
+
+Le manuel — vocabulaire, les huit ecrans, et ce que la detection laisse passer :
+https://github.com/c0remusic/sift/blob/main/docs/manuel.md
 `;
 
 process.stdout.write(body + "\n" + FOOTER);
