@@ -8,9 +8,30 @@ avertissement de l'OS. Ces étapes ne sont nécessaires qu'à la **première**
 installation manuelle — les mises à jour suivantes passent par l'auto-update
 intégré à l'app.
 
+## Quel fichier prendre
+
+La page de release expose huit fichiers. Un seul s'installe, selon la machine :
+
+| machine | fichier |
+|---|---|
+| Windows | `Sift_<version>_x64-setup.exe` |
+| Mac Apple Silicon | `Sift_<version>_aarch64.dmg` |
+
+Tout le reste sert à la mise à jour automatique et ne s'installe pas : `.app.tar.gz`, `.msi`,
+les `.sig`, `latest.json`.
+
+⚠️ Ce tableau vient d'un échec réel. Le 2026-08-16, la première installation sans
+accompagnement s'est arrêtée sur « is damaged » parce que la personne avait téléchargé
+`Sift_0.0.3_aarch64.app.tar.gz` — **34 198 810 octets contre 33 204 781 pour le `.dmg`** : le
+fichier de mise à jour pèse plus lourd que l'installeur, donc il a l'air d'être le bon. Un `.app`
+sorti d'une archive téléchargée porte la quarantaine et n'est pas signé.
+
+Le `.msi` s'installe aussi sur Windows, mais un seul fichier nommé vaut mieux que deux
+équivalents à départager : l'`.exe` est celui que l'auto-update utilise ensuite.
+
 ## Windows
 
-1. Double-cliquer l'installeur (`.exe` ou `.msi`) téléchargé.
+1. Double-cliquer `Sift_<version>_x64-setup.exe`.
 2. Windows SmartScreen affiche « Windows a protégé votre ordinateur ».
 3. Cliquer **Informations complémentaires**, puis **Exécuter quand même**.
 
@@ -20,13 +41,7 @@ Les builds publiés sont **Apple Silicon uniquement** (`aarch64`) : la matrice d
 `.github/workflows/build.yml` n'a pas d'entrée Intel, et un binaire arm64 ne démarre
 pas du tout sur un Mac Intel.
 
-Télécharger **`Sift_<version>_aarch64.dmg`**. La page de release expose huit fichiers ;
-les autres ne sont pas des installeurs — `latest.json` et les `.sig` servent à
-l'auto-update, et `Sift_<version>_aarch64.app.tar.gz` est l'archive que l'app télécharge
-elle-même pour se mettre à jour. Le `.tar.gz` pèse d'ailleurs **plus** que le `.dmg`
-(34,2 Mo contre 33,2 en v0.0.3), ce qui le fait facilement prendre pour le bon fichier.
-
-1. Ouvrir le `.dmg`, glisser Sift dans Applications.
+1. Ouvrir `Sift_<version>_aarch64.dmg` (§ Quel fichier prendre), glisser Sift dans Applications.
 2. Au double-clic, macOS affiche **l'un des deux messages suivants**. Ils n'ont pas le
    même contournement, et c'est le point qui a fait échouer une installation réelle le
    2026-08-16 :

@@ -67,6 +67,18 @@ if (body.includes("CHANGELOG_EOF")) {
 // Les etapes macOS sont donnees en clair plutot que par un simple lien : c'est la premiere
 // chose que rencontre quelqu'un a qui on envoie le lien, et le contournement par clic droit
 // ne fonctionne plus depuis macOS 15 Sequoia.
+//
+// Le tableau du fichier a prendre passe AVANT les messages du systeme, et ce n'est pas un choix
+// de mise en page. Le 2026-08-16, la premiere installation sans accompagnement a echoue avant
+// meme d'atteindre Gatekeeper : la release expose HUIT assets, et l'ami d'Antoine a telecharge
+// `Sift_0.0.3_aarch64.app.tar.gz` (34 198 810 octets, confirme contre la taille vue sur sa
+// capture) au lieu du `.dmg` (33 204 781). L'artefact d'auto-update pese plus lourd que
+// l'installeur, donc il a l'air d'etre le bon. Un `.app` sorti d'un tar.gz telecharge porte la
+// quarantaine et n'est pas signe : « is damaged », sans bouton pour continuer.
+//
+// La doc existait et etait juste. Le defaut etait de PRESENTATION des assets, pas de contenu —
+// d'ou ce tableau, et la liste explicite de ce qui ne s'installe pas. Vaut aussi pour Windows,
+// ou `.exe` et `.msi` sont tous deux publies et ou rien ne disait lequel prendre.
 const FOOTER = `
 ---
 
@@ -74,12 +86,22 @@ const FOOTER = `
 
 Ces builds ne sont pas signes : le systeme avertit au premier lancement. Une seule fois.
 
+**Un seul fichier a telecharger, selon la machine :**
+
+| machine | fichier |
+|---|---|
+| Windows | \`Sift_<version>_x64-setup.exe\` |
+| Mac Apple Silicon | \`Sift_<version>_aarch64.dmg\` |
+
+Tout le reste de la liste sert a la mise a jour automatique et **ne s'installe pas** :
+\`.app.tar.gz\`, \`.msi\`, les \`.sig\`, \`latest.json\`. Le \`.app.tar.gz\` est le piege — il pese
+PLUS LOURD que le \`.dmg\`, donc il a l'air d'etre le bon.
+
 **Windows** — SmartScreen affiche « Windows a protege votre ordinateur » : cliquer
 **Informations complementaires**, puis **Executer quand meme**.
 
-**macOS** (Apple Silicon uniquement) — telecharger \`Sift_<version>_aarch64.dmg\`, PAS le
-\`.app.tar.gz\`, qui sert a l'auto-update et pese pourtant plus lourd. Ouvrir le \`.dmg\`, glisser
-Sift dans Applications, puis selon le message affiche :
+**macOS** (Apple Silicon uniquement) — ouvrir le \`.dmg\`, glisser Sift dans Applications, puis
+selon le message affiche :
 
 - « developpeur non identifie » : **Reglages Systeme > Confidentialite et securite**, descendre
   jusqu'au message concernant Sift, cliquer **Ouvrir quand meme**.
