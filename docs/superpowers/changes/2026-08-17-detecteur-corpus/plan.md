@@ -36,7 +36,10 @@ node scripts/make-corpus.mjs "C:\Users\LEETJ\Desktop\MUSIQUE A TRIER\Nouveau dos
 - `labels.json` — la vérité terrain, une ligne par fichier.
 
 ⚠️ Ne jamais laisser Sift surveiller ce dossier : 160 FLAC dont 150 sont des faux délibérés
-entreraient dans la vraie bibliothèque.
+entreraient dans la vraie bibliothèque. **Vérifié le 2026-08-18** plutôt que laissé en
+garde théorique — la table `sources` ne contient qu'une ligne,
+`C:\Users\LEETJ\Documents\Soulseek Downloads\complete`, et `C:\sift-corpus` est en dehors.
+À re-vérifier si une source est ajoutée.
 
 ## Ce qu'Antoine fait (les seules étapes qui demandent une main humaine)
 
