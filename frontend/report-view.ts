@@ -7,6 +7,7 @@ import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import WaveSurfer from "wavesurfer.js";
 import type { AnalysisReport } from "../shared/contracts";
 import { requireEl, esc } from "./dom";
+import { durationText, hfDensityText } from "./report-figures";
 
 /** Fallback step, only for a report predating `peaks_step` (mirrors analysis::PEAKS_WINDOW and
  *  analysis::default_peaks_step). Never use it when the report carries its own step: the envelope
@@ -597,7 +598,11 @@ function spectroAndTagsHtml(r: AnalysisReport): string {
     `<div class="sift-spectro-rows">` +
     row("Verdict", r.verdict, false) +
     row("Coupure", fmt(r.cutoff_hz, 0) + " Hz") +
-    row("Durée", fmt(r.duration_sec, 1) + " s") +
+    // Deuxième mesure spectrale, à côté de la coupure parce que c'est la même nature de fait — et
+    // PAS près du verdict, qu'elle n'alimente pas. Absente des rapports d'avant sa mise en place :
+    // `null` veut dire « pas mesuré », jamais zéro, donc la ligne ne se rend pas du tout.
+    (r.hf_flatness_db != null ? row("Densité de l'aigu", hfDensityText(r.hf_flatness_db, fmt)) : "") +
+    row("Durée", durationText(r.duration_sec, r.decoded_duration_sec, fmt)) +
     `</div>` +
     // Non-technical users open "Diagnostic audio" to understand a verdict, not to read raw
     // engineering measurements — verdict/coupure/durée above answer that; everything else
