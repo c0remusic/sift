@@ -172,6 +172,62 @@ Pour l'AAC il pointe **dans le mauvais sens** (le transcodage compresse *mieux* 
 pour Opus il ne dit rien. Autrement dit il est absent là où le trou est, et redondant là où il n'y
 en a pas. La piste est écartée, et c'est la mesure qui l'écarte, pas une intuition.
 
+## Élargir le corpus — ce que la provenance permet vraiment (2026-08-18)
+
+Le côté authentique reposait sur 10 achats. Le chiffre fragile de l'étape 2 est le **0/10 en faux
+positifs** : c'est lui qui protège Antoine de re-sourcer un bon fichier, et dix, c'est peu. D'où la
+recherche de sources supplémentaires **de provenance établie**.
+
+### Le piège du marqueur trop lâche
+
+Les achats Beatport portent un marqueur écrit par le magasin. Premier essai : grep de la chaîne
+`Beatport` n'importe où dans le fichier. Sur `BACKUP USB` (676 fichiers lossless, l'export Rekordbox
+d'Antoine), **116 correspondances** — trop beau.
+
+Le cas qui l'a démasqué, `Kyoto (Ariane Blank Remix).wav`, 77 Mo, `pcm_s16le` :
+
+```
+encoded_by : dBpoweramp 2024-05-30      <- pas Beatport
+cutoff     : 16031 Hz  ->  FAKE
+```
+
+Acheté sur Beatport à l'origine — le commentaire `Purchased at Beatport` est encore là — puis
+**converti localement en WAV**, et le cutoff à 16 kHz dit que la source de cette conversion était un
+MP3 128–160 kbps. Le tag d'achat survit à la conversion ; il atteste l'origine du morceau, pas
+l'intégrité du fichier.
+
+Second essai, marqueur strict (`Encoded by Beatport` exact) : **rate 5 des 10 achats connus**, parce
+que Beatport écrit tantôt `Beatport`, tantôt `Encoded by Beatport` dans le même champ.
+
+Ce qui marche est de lire le **champ** `encoded_by`, pas de grepper les octets.
+
+### Ce que `BACKUP USB` contient réellement
+
+676 fichiers lossless, champ `encoded_by` lu un par un :
+
+| `encoded_by` | fichiers | lecture |
+|---|---|---|
+| *(absent)* | 520 (77 %) | provenance inconnue |
+| `dBpoweramp` (3 versions) | 123 | converti localement, source inconnue |
+| `Lavf60.3.100` | 17 | converti localement (ffmpeg) |
+| `Beatport` / `Encoded by Beatport` | **13** | fichier de magasin |
+| autres convertisseurs | 3 | — |
+
+**12 titres uniques** utilisables, tous `Ok` (cutoff 20241 à 22050). Le corpus passe donc de 10 à
+22 sources authentiques — l'échantillon qui porte le taux de faux positifs plus que double.
+
+### Le chiffre inconfortable, et ce qu'il ne prouve pas
+
+Sur les 123 fichiers convertis au dBpoweramp, Sift en flague **3**. Ce n'est pas rassurant : c'est
+un **plancher**. Le détecteur rate 68 % des transcodages de notre corpus et ne voit rien de l'AAC ni
+du haut débit, donc les 89 « Ok » de cette population sont exactement les fichiers dont on sait
+qu'ils ont été reconvertis depuis quelque chose, et dont le détecteur actuel ne peut pas dire quoi.
+
+⚠️ On ne peut PAS en tirer un nombre de faux cachés. Extrapoler 3 avec le taux de détection du
+corpus supposerait que les conversions d'Antoine ont le même mélange d'encodeurs sources que nos 15
+variantes, ce que rien n'établit. Le seul énoncé soutenable est qualitatif : **le nombre réel est
+supérieur à 3, d'un facteur inconnu.**
+
 ## Étape 3 — le cross-test Fakin' The Funk
 
 Pas encore fait. Sa valeur a changé : avant, il aurait servi de second avis sur un détecteur dont on
