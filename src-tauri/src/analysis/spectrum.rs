@@ -56,8 +56,8 @@ pub(crate) const MAX_COLS: usize = 1200;
 ///
 /// Mesuré le 2026-08-18 sur un corpus étiqueté de 150 transcodages et 20 authentiques
 /// (`docs/superpowers/changes/2026-08-17-detecteur-corpus/`) : les authentiques tiennent dans
-/// [-5,4 ; -2,6] dB, les transcodages descendent à -43,8, et 91 des 150 tombent sous le plancher
-/// des authentiques. La coupure spectrale n'en attrape que 40 — et **aucun** AAC, aucun LAME 320,
+/// [-5,4 ; -2,5] dB — 44 fichiers, trois familles musicales, trois provenances d'achat — les
+/// transcodages descendent à -43,8, et 91 des 150 tombent sous le plancher des authentiques. La coupure spectrale n'en attrape que 40 — et **aucun** AAC, aucun LAME 320,
 /// aucun V0, aucun Vorbis, aucun WMA. Deux signaux différents, pas deux réglages du même.
 ///
 /// ⚠️ La valeur est RENDUE, pas jugée : aucun seuil n'est appliqué ici et `verdict()` ne la lit

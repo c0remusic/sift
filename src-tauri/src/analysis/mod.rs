@@ -101,8 +101,9 @@ pub struct AnalysisReport {
     /// sombre et un transcodage donnent la meme valeur, et c'est pourquoi `verdict()` NE LA LIT
     /// PAS — la nommer FAKE reviendrait a accuser un master d'une histoire qu'on n'a pas etablie.
     ///
-    /// Repere mesure (corpus etiquete, 2026-08-18) : authentiques dans [-5,4 ; -2,6] dB,
-    /// transcodages jusqu'a -43,8. Voir `spectrum::HF_FLATNESS_LO_HZ` pour le detail.
+    /// Repere mesure (2026-08-18) : 44 fichiers authentiques de trois familles musicales et trois
+    /// provenances d'achat tiennent dans [-5,4 ; -2,5] dB, les transcodages descendent a -43,8.
+    /// Voir `spectrum::HF_FLATNESS_LO_HZ` pour le detail.
     #[serde(default)]
     pub hf_flatness_db: Option<f32>,
     /// Duree REELLEMENT decodee, en secondes — a comparer a `duration_sec`, qui vient de l'en-tete.

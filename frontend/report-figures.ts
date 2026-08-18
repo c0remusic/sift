@@ -13,14 +13,28 @@
  *  à côté de la valeur pour que le lecteur situe ce qu'il voit — une mesure sans échelle ne dit
  *  rien à personne.
  *
- *  Et surtout : **pas de jauge à trois crans**, qui mentirait. La marge entre le plus bas
- *  authentique et le suivant est de **0,12 dB** (corpus étiqueté, voir
- *  `docs/superpowers/changes/2026-08-17-detecteur-corpus/review.md`). Un fichier juste sous la
- *  borne n'est pas « suspect » : il est juste sous la borne, et c'est tout ce qu'on peut en dire.
+ *  **44 fichiers de provenance d'achat, trois familles musicales** (house/techno, ambient, broken
+ *  beat acoustique), trois provenances indépendantes (Beatport magasin, Beatport clé USB, achats
+ *  Bandcamp). Tous dans [-5,4 ; -2,5].
  *
- *  20 fichiers de deux provenances, une seule famille musicale. Ces bornes bougeront. */
+ *  La borne basse n'est pas un point isolé : trois fichiers y convergent (-5,4 / -5,3 / -5,3).
+ *  C'est ce qui la rend utilisable — un minimum unique serait un accident d'échantillon, un amas
+ *  est une frontière. La distribution mesurée est d'ailleurs **bimodale** : 44 fichiers ici, puis
+ *  un vide de 1,1 dB, puis 5 fichiers entre -12,7 et -6,5.
+ *
+ *  ⚠️ Ces 5-là sont EXCLUS de la référence, et c'est un jugement, pas une mesure. Sa raison : le
+ *  vide qui les sépare, plus l'inspection spectrale de l'un d'eux, qui montre le contenu s'arrêter
+ *  à ~18 kHz sur un plancher plat à -49 dB. Ce sont deux populations, pas une queue de
+ *  distribution. Mais ils sont ACHETÉS eux aussi — donc ces bornes décrivent « un master à bande
+ *  pleine », pas « un fichier légitime ». Un master volontairement sombre tombera dessous sans
+ *  être fautif, et c'est pourquoi rien ici n'accuse.
+ *
+ *  Détail et méthode : `docs/superpowers/changes/2026-08-17-detecteur-corpus/review.md`.
+ *
+ *  Et surtout : **pas de jauge à trois crans.** Un fichier juste sous la borne n'est pas
+ *  « suspect », il est juste sous la borne, et c'est tout ce qu'on peut en dire. */
 export const HF_REF_LO = -5.4;
-export const HF_REF_HI = -2.6;
+export const HF_REF_HI = -2.5;
 
 /** Écart au-delà duquel la durée décodée s'affiche à côté de la durée déclarée, en secondes.
  *

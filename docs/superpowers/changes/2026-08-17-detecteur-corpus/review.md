@@ -365,6 +365,35 @@ La coupure rend 22050 sur les deux, parce que la pente ne fait jamais 18 dB sur 
    un plancher — indication forte, pas preuve. Seule la provenance trancherait, et elle n'est pas
    établie pour ces fichiers.
 
+### La référence consolidée — 44 fichiers, et une distribution bimodale
+
+La réserve qui restait était la fragilité du seuil : « 0,12 dB entre le plus bas authentique et le
+suivant ». Consolidation de tout ce qui a été mesuré, trois provenances d'achat indépendantes et
+trois familles musicales :
+
+| jeu | n | plage |
+|---|---|---|
+| corpus Beatport | 10 | −5,4 à −2,6 |
+| corpus Beatport clé USB | 10 | −4,7 à −2,8 |
+| fournis par Antoine, ceux qui passent | 24 | −5,3 à −2,5 |
+| **référence élargie** | **44** | **−5,4 à −2,5** |
+| les 5 écartés | 5 | −12,7 à −6,5 |
+
+**La lecture de la « marge » était fausse.** La borne basse n'est pas un point isolé : trois
+fichiers y convergent (−5,4 / −5,3 / −5,3). Un minimum unique serait un accident d'échantillon ;
+un amas est une frontière. Et la distribution est **bimodale** — 44 fichiers d'un côté, **un vide
+de 1,1 dB**, puis 5 fichiers entre −12,7 et −6,5. Il n'y a rien entre −6,5 et −5,4.
+
+Les 44 couvrent house/techno acheté, ambient (Nova Tekk), et un album de broken beat acoustique
+entier (Kaidi Tatham, 15 titres) — le matériel dont on craignait qu'il fasse des faux positifs.
+
+**L'exclusion des 5 est un jugement, pas une mesure**, et il faut le lire comme tel. Sa raison :
+le vide qui les sépare, plus l'inspection spectrale de l'un d'eux (contenu s'arrêtant à ~18 kHz sur
+un plancher plat à −49 dB). Deux populations, pas une queue de distribution. Mais **ils sont
+achetés eux aussi** — donc ces bornes décrivent « un master à bande pleine », pas « un fichier
+légitime ». Un master volontairement sombre tombera dessous sans être fautif, et c'est exactement
+pourquoi l'affichage n'accuse pas.
+
 ### Ce que ça n'établit toujours pas
 
 - **20 fichiers authentiques**, tous house/techno achetée. Du classique, du jazz, de l'ambient, un
