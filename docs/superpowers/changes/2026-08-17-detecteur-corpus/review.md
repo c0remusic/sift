@@ -540,6 +540,56 @@ features-ci est perdue d'avance, et c'est ce que ce tableau existe pour éviter.
 bande fixe se trouve identique (−5,4), celle de la relative n'a que ces 10 fichiers derrière elle,
 dont un seul la tire à −10,9. Un jeu authentique plus large déplacerait ces chiffres.
 
+## Le troisième signal : ce que dit la littérature, et pourquoi notre approximation échoue
+
+L'AAC à débit élevé reste le noyau dur (aac256 et aacmf256 à 2/10). La piste classique en
+forensique audio est la **structure de quantification MDCT** : un encodeur met à zéro des bandes
+entières de coefficients, et cette structure survit au décodage.
+
+La littérature publique le confirme et donne la forme de la solution — notamment
+[*Detection of Genuine Lossless Audio Files: Application to the MPEG-AAC Codec*](https://www.researchgate.net/publication/331400801_Detection_of_Genuine_Lossless_Audio_Files_Application_to_the_MPEG-AAC_Codec),
+qui distingue un lossless authentique d'un ré-encodage **sans apprentissage automatique**, par
+détection des erreurs de quantification dans le domaine temps-fréquence ; et
+[*AAC Audio Compression Detection Based on QMDCT Coefficient*](https://link.springer.com/chapter/10.1007/978-3-030-00021-9_32),
+qui exploite la distribution des coefficients MDCT nuls.
+
+### Trois formulations testées sur notre FFT — toutes réfutées
+
+Bande 12-18 kHz, mesures relatives à la médiane de chaque trame :
+
+1. **fraction de bins très creux** (> 25 dB sous la médiane de leur trame) ;
+2. **plus longue plage CONTIGUE** de bins creux — les bandes de facteur d'échelle sont contiguës ;
+3. **écart p50−p10** de la distribution en dB, comme indice de bimodalité.
+
+Les trois montrent le bon ordre sur `src01` (authentique 2,31 % → aacmf256 3,95 % → aac256 4,85 %
+→ aac128 9,01 %) et **rien du tout** sur `src05` (0,36 % contre 0,46 % et 0,38 %). Les valeurs
+absolues sont pilotées par le MATÉRIAU, pas par le codec.
+
+Taux mesuré sur les 10 sources, critère « le faux dépasse de 50 % l'authentique **de la même
+source** » :
+
+| | séparé |
+|---|---|
+| fraction de bins creux, aac256 **et** aacmf256 | **1/10** |
+
+Et ce critère est déjà **trop favorable** : il compare chaque fichier à son propre original, ce
+qu'on n'a jamais dans la vraie vie. La source 09 va même dans le mauvais sens (authentique 5,53 %
+contre 4,49 % pour le transcodage).
+
+### Ce que ça établit, et ce que ça n'établit pas
+
+**Établi** : une statistique de « trous » calculée sur une FFT Hann 4096 à 50 % de recouvrement ne
+sépare pas l'AAC haut débit d'un master. Inutile d'y revenir sous cette forme.
+
+**Non établi, et c'est important** : que l'idée soit fausse. La cause probable est que notre FFT
+**n'est pas la transformée du codec**. L'AAC quantifie dans une MDCT à fenêtres 2048/256 avec
+commutation, à un décalage de trame inconnu ; une FFT d'une autre base, d'une autre fenêtre et d'un
+autre alignement étale cette structure jusqu'à l'effacer. Les méthodes publiées reproduisent la
+transformée du codec **et cherchent le décalage de trame**.
+
+C'est donc un chantier d'implémentation — MDCT, commutation de fenêtres, recherche d'alignement —
+et pas une sonde. Il n'a pas été entrepris, et rien ici ne dit qu'il aboutirait.
+
 ## Étape 3 — le cross-test Fakin' The Funk
 
 Pas encore fait. Sa valeur a changé : avant, il aurait servi de second avis sur un détecteur dont on
