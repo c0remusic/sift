@@ -675,6 +675,69 @@ accuser davantage.
 Angles morts restants, tous en AAC ou en MP3 haut débit : `aac256` et `aacmf256` 9/10 ratés,
 `lame320` 8/10, `aacmf128` 7/10, `lameV0` 5/10.
 
+## La grille du codec se retrouve — mécanisme établi, détecteur non (2026-08-18)
+
+Reprise de la piste MDCT, celle que la section précédente laissait comme « chantier
+d'implémentation ». `src-tauri/src/analysis/mdct.rs` porte la transformée (fenêtre sinus, blocs
+longs AAC : 2048 échantillons → 1024 coefficients) et une sonde d'alignement.
+
+### Ce qui change par rapport aux trois formulations réfutées
+
+Elles mesuraient une sparsité **absolue**, et la conclusion était que « les valeurs absolues sont
+pilotées par le matériau, pas par le codec ». La sonde mesure un **contraste** : fraction de
+coefficients creux au meilleur décalage de trame, divisée par la même fraction au décalage médian.
+
+Le raisonnement, et il est vérifiable indépendamment du taux : un master n'a aucune raison d'avoir
+un alignement privilégié, quel que soit son matériau. Un fichier passé par un encodeur AAC a été
+quantifié sur UNE grille. Le rapport élimine le niveau absolu, donc le matériau.
+
+### Le résultat qui compte n'est pas le taux, c'est le décalage retenu
+
+L'entrée est décalée de **17 échantillons** avant analyse (`SIFT_MDCT_SKIP`), pour que
+l'alignement vrai ne soit pas celui de nos fichiers fabriqués depuis l'échantillon 0. L'alignement
+vrai devient donc 1024 − 17 = **1007**.
+
+Décalage retenu sur les 20 faux (10 sources × aac256, aacmf256) :
+
+```
+22 1007 154 17 792 592 599 1007 776 1007 91 1007 1007 1007 1007 1007 122 161 1007 1007
+```
+
+**1007 exactement, sur 10 des 20.** Les 10 authentiques, eux, pointent n'importe où : 70, 217,
+939, 582, 324, 43, 942, 1014, 56, 713.
+
+La grille de quantification du codec est retrouvée **à l'échantillon près**, sur la moitié des
+faux, et jamais sur un master. C'est une preuve de mécanisme plus forte qu'un taux de détection :
+un artefact de protocole ne tombe pas sur le seul décalage qui a un sens physique.
+
+### Comme détecteur, ce n'est pas livrable
+
+| | authentiques | non appariée | appariée |
+|---|---|---|---|
+| grille de 32, aligné | 1,022–1,048 | 17/20 | 19/20 |
+| grille de 32, décalé de 17 | 1,022–1,063 | 5/20 | 12/20 |
+| pas de 1, décalé de 17 | 0,988–1,056 | **10/20** | 16/20 |
+
+Trois choses à lire, et deux sont des mises en garde :
+
+1. **Le pic fait moins de ±16 échantillons de large.** La ligne 1 contre la ligne 2 le dit : sur
+   une grille grossière, le taux s'effondre dès que le fichier est rogné. Le 17/20 de la première
+   ligne était une propriété de la façon dont on fabrique le corpus, pas du signal.
+2. **Le seuil est posé au maximum des 10 authentiques** — auto-référentiel, exactement le défaut
+   corrigé plus haut sur la platitude. Le 0/10 de faux positifs est une construction.
+3. Le balayage au pas de 1 rattrape (5/20 → 10/20) sans revenir au niveau aligné, parce qu'un
+   maximum sur 1024 candidats est gonflé **pour les deux populations** — le plus haut authentique
+   monte de 1,048 à 1,056.
+
+### Le levier suivant, nommé par la mesure
+
+Le maximum sur les décalages est une statistique bruitée, et le repérage ne dispose que de 8
+trames. Ce que le tableau des décalages suggère est meilleur : **faire voter les trames**. Un
+fichier AAC doit voir toutes ses trames désigner le MÊME décalage ; un master doit les voir se
+disperser. C'est une mesure d'accord, insensible au niveau absolu comme au gonflement du maximum.
+
+Rien de tout ça n'est branché sur `verdict()`, et le module le dit en tête.
+
 ## Étape 3 — le cross-test Fakin' The Funk
 
 Pas encore fait. Sa valeur a changé : avant, il aurait servi de second avis sur un détecteur dont on
