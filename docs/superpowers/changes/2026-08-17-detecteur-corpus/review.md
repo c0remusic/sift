@@ -298,6 +298,41 @@ Le seuil (−5,4 dB) est le **minimum des 10 authentiques** — donc ajusté sur
 pas servi à fixer le seuil. Résultat : **−4,7 à −2,8 dB, zéro faux positif**. Les 20 authentiques
 des deux jeux tiennent dans [−5,4 ; −2,6] ; les transcodages descendent à −43,8.
 
+### Épreuve sur matériel musicalement différent (2026-08-18)
+
+La réserve principale était que 20 authentiques house/techno ne disent rien du classique, de
+l'ambient ou d'un master acoustique — le matériel dont l'aigu est naturellement clairsemé, donc là
+où cette feature ferait ses faux positifs. Antoine a fourni **29 fichiers de son disque**, dont un
+album de broken beat acoustique entier (Kaidi Tatham, 15 titres) et deux titres ambient.
+
+**24 passent, 5 flaguent.** Et les 5 sont invisibles pour la coupure : `Ok`, cutoff 22050 partout.
+
+| matériel | platitude |
+|---|---|
+| Kaidi Tatham, 15 titres acoustiques | −2,5 à −5,3 dB — tous ok |
+| Nova Tekk ambient ×2 | −2,9 / −3,1 dB — ok |
+| divers house/électro (8) | −2,8 à −5,3 dB — ok |
+| **Sheeq — Just B4** | **−6,5 dB** |
+| **Alex Neri, EP entier (4 titres)** | **−10,8 à −12,7 dB** |
+
+**Le cas redouté n'a pas cassé** : l'album acoustique passe en entier, l'ambient aussi.
+
+Forme spectrale de l'EP Alex Neri, mesurée : décroissance régulière jusqu'à −47 dB à 19 kHz puis un
+**plateau plat à −49 dB** de 19 à 20,5 kHz. Ce plateau est un plancher de bruit, pas du contenu — il
+n'y a plus rien de musical au-dessus de ~18 kHz, dans un fichier déclaré **24 bits** (2117 kbps).
+Témoin passant (Kaidi Tatham) sur la même mesure : −17 à −23 dB de vrai contenu jusqu'à 20 kHz.
+La coupure rend 22050 sur les deux, parce que la pente ne fait jamais 18 dB sur 500 Hz.
+
+**Deux réserves qui restent ouvertes :**
+
+1. **La marge est trop mince pour livrer.** Plusieurs authentiques sont à −4,8 / −5,0 / −5,3 pour un
+   seuil à −5,4. Sur du matériel encore plus varié les faux positifs commenceraient juste en
+   dessous. Le seuil ne peut pas rester le minimum observé ; il faut soit une marge décidée, soit
+   une bande grise comme pour la coupure.
+2. **Rien ne PROUVE que les 5 flagués sont des faux.** La mesure dit que leur aigu s'arrête tôt sur
+   un plancher — indication forte, pas preuve. Seule la provenance trancherait, et elle n'est pas
+   établie pour ces fichiers.
+
 ### Ce que ça n'établit toujours pas
 
 - **20 fichiers authentiques**, tous house/techno achetée. Du classique, du jazz, de l'ambient, un
