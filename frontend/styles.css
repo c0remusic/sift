@@ -1364,6 +1364,11 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-spectro-overlay{position:absolute;inset:0;width:100%;height:100%;border-radius:var(--border-radius-md);pointer-events:none}
 .sift-spectro-rows{padding:var(--space-8) var(--space-16);display:grid;grid-template-columns:1fr 1fr;gap:0 var(--space-32);font-size:var(--text-md)}
 .sift-row{display:flex;justify-content:space-between;gap:16px;padding:var(--space-4) 0;border-bottom:0.5px solid var(--color-border-tertiary)}
+/* Une ligne de mesure qui porte sa REFERENCE en plus de sa valeur ne tient pas dans une demi-
+   colonne : mesuree dans la vraie fenetre, « Densite de l'aigu » y cassait son libelle ET sa
+   valeur sur deux lignes chacun, doublant sa hauteur au milieu de lignes courtes. Elle prend donc
+   les deux colonnes. Pas de nouveau token : seule la portee de grille change. */
+.sift-row-wide{grid-column:1/-1}
 /* Last visual row (2-col grid, row() called an even number of times below) sits flush against
    .sift-spectro-box's own border — its border-bottom just doubled that edge as a second line. */
 .sift-spectro-rows .sift-row:nth-last-child(-n+2){border-bottom:none}

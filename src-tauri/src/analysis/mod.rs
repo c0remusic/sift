@@ -137,7 +137,20 @@ pub struct AnalysisReport {
 /// A change to the ENCODING of an existing field counts too (v6: `mag_db` moved to base85), even
 /// when the tolerant deserializer would still read the old rows — bumping makes the invalidation
 /// explicit instead of leaving inflated rows served forever.
-pub const REPORT_CACHE_VERSION: i64 = 6;
+///
+/// ⚠️ **Un ajout de champ ne suffit PAS à se garder tout seul quand il porte `#[serde(default)]`.**
+/// Le commentaire ci-dessus dit qu'une addition de champ est « deja attrapee par
+/// `serde_json::from_str` qui echoue » — c'est vrai d'un champ nu, et faux d'un champ defaulte.
+/// v7 : `hf_flatness_db` et `decoded_duration_sec` sont arrives avec un `default`, donc les
+/// anciens rapports se relisaient sans erreur et rendaient `None`/`0`. Consequence mesuree dans
+/// la vraie fenetre le 2026-08-18 : la ligne « Densite de l'aigu » n'apparaissait sur AUCUNE piste
+/// de la bibliotheque, alors que la mesure venait d'etre branchee. Une mesure invisible ne mesure
+/// rien.
+///
+/// Le cout est celui de v16, mesure a l'epoque : la bibliotheque se re-analyse (~30 min sur le
+/// pool pour 297 h d'audio). Il se paie en arriere-plan pour les pistes en file, et a l'ouverture
+/// pour les pistes rangees (`ipc::analyze_path` se repare tout seul).
+pub const REPORT_CACHE_VERSION: i64 = 7;
 
 use dynamics::{ClipAccumulator, DcAccumulator, TruePeakAccumulator};
 use peaks::PeaksAccumulator;

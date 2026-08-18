@@ -357,6 +357,13 @@ function peaksCoverage(r: AnalysisReport): string {
 // reading (Hz, dBTP, %, runs) — .sift-row-value's monospace treatment fits digits/units, but reads
 // as an odd mismatch on plain text (annotation: "j'aime bien le texte de verdict mais celui de ok
 // pas fan"). Default stays mono so every other numeric row call site is unaffected.
+/** Une ligne de mesure sur les DEUX colonnes de la grille. Pour celles qui portent une référence
+ *  en plus de leur valeur : mesuré dans la vraie fenêtre, « Densité de l'aigu » cassait libellé et
+ *  valeur sur deux lignes chacun dans une demi-colonne. */
+export function rowWide(label: string, value: string): string {
+  return `<div class="sift-row sift-row-wide"><span class="sift-row-label">${label}</span><span class="sift-row-value">${value}</span></div>`;
+}
+
 export function row(label: string, value: string, mono = true): string {
   const valueCls = mono ? "sift-row-value" : "sift-row-value sift-row-value-plain";
   return `<div class="sift-row"><span class="sift-row-label">${label}</span><span class="${valueCls}">${value}</span></div>`;
@@ -601,7 +608,7 @@ function spectroAndTagsHtml(r: AnalysisReport): string {
     // Deuxième mesure spectrale, à côté de la coupure parce que c'est la même nature de fait — et
     // PAS près du verdict, qu'elle n'alimente pas. Absente des rapports d'avant sa mise en place :
     // `null` veut dire « pas mesuré », jamais zéro, donc la ligne ne se rend pas du tout.
-    (r.hf_flatness_db != null ? row("Densité de l'aigu", hfDensityText(r.hf_flatness_db, fmt)) : "") +
+    (r.hf_flatness_db != null ? rowWide("Densité de l'aigu", hfDensityText(r.hf_flatness_db, fmt)) : "") +
     row("Durée", durationText(r.duration_sec, r.decoded_duration_sec, fmt)) +
     `</div>` +
     // Non-technical users open "Diagnostic audio" to understand a verdict, not to read raw
