@@ -196,11 +196,23 @@ impl SpectrumAccumulator {
     /// arithmétique, en dB. 0 dB = parfaitement plat ; très négatif = quelques pics isolés sur du
     /// vide. Voir [`HF_FLATNESS_LO_HZ`] pour ce que ça mesure.
     ///
-    /// Par trame plutôt que sur le LTAS, pour une raison **de robustesse et non de pouvoir de
-    /// séparation** : la médiane ignore les trames de silence, qu'une moyenne long terme
-    /// laisserait peser. ⚠️ Que le par-trame sépare MIEUX que le LTAS est plausible — le LTAS noie
-    /// la structure temporelle — mais **n'a pas été mesuré** : le corpus n'a été passé qu'avec la
-    /// forme par-trame. Ne pas présenter l'écart comme établi.
+    /// Par trame plutôt que sur le LTAS, et l'écart **est mesuré** (2026-08-18, corpus étiqueté,
+    /// même règle de seuil pour les deux — le plancher des authentiques) :
+    ///
+    /// | agrégation | seuil | détection |
+    /// |---|---|---|
+    /// | par trame, médiane | -5,4 dB | **91/150 = 61 %** |
+    /// | LTAS, moyenne puis platitude | -3,1 dB | 56/150 = 37 % |
+    ///
+    /// Et tout l'écart est sur les familles que la coupure spectrale rate déjà : aac128 6 contre 1,
+    /// lameV0 5 contre 0, lame320 3 contre 0, vorbisq5 8 contre 2, wma192 8 contre 4. Sur les LAME
+    /// 128/160/192/256, que la coupure attrape, **les deux formes font 10/10** — le par-trame
+    /// n'apporte rien là où le signal est déjà franc.
+    ///
+    /// Autrement dit la moyenne long terme détruit bien la structure temporelle qui trahit
+    /// l'encodeur : un aigu présent sur 10 % des trames et absent ailleurs y ressemble à un aigu
+    /// faible mais continu. C'est la même raison qui rend `detect_cutoff`, calculée sur le LTAS,
+    /// aveugle à l'AAC.
     fn record_hf_flatness(&mut self) {
         let hz_per_bin = self.sr as f32 / self.fft_size as f32;
         let lo = (HF_FLATNESS_LO_HZ / hz_per_bin).ceil() as usize;

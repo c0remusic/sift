@@ -298,6 +298,38 @@ Le seuil (−5,4 dB) est le **minimum des 10 authentiques** — donc ajusté sur
 pas servi à fixer le seuil. Résultat : **−4,7 à −2,8 dB, zéro faux positif**. Les 20 authentiques
 des deux jeux tiennent dans [−5,4 ; −2,6] ; les transcodages descendent à −43,8.
 
+### Par trame contre LTAS — l'agrégation fait les deux tiers du signal
+
+Le choix d'agréger la platitude **par trame** (médiane) plutôt que de la calculer sur le LTAS était
+justifié dans le code par la seule robustesse aux trames de silence, avec la mention explicite que
+le gain de séparation **n'avait pas été mesuré**. Il l'est maintenant — même corpus, même règle de
+seuil (le plancher des authentiques) :
+
+| agrégation | seuil | détection |
+|---|---|---|
+| **par trame, médiane** | −5,4 dB | **91/150 = 61 %** |
+| LTAS, moyenne puis platitude | −3,1 dB | 56/150 = 37 % |
+
+Et l'écart est concentré exactement sur les familles que la coupure rate :
+
+| | par trame | LTAS |
+|---|---|---|
+| aac128 / aacmf128 | 6 / 3 | 1 / 0 |
+| lame320 / lameV0 | 3 / 5 | 0 / 0 |
+| mfmp3_320 | 9 | 4 |
+| vorbisq5 / wma192 | 8 / 8 | 2 / 4 |
+| lame 128/160/192/256 | 10 chacun | 10 chacun |
+
+Sur les LAME que la coupure attrape déjà, **les deux formes font 10/10** : le par-trame n'apporte
+rien là où le signal est franc, et tout là où il ne l'est pas.
+
+Ça confirme le mécanisme supposé : la moyenne long terme détruit la structure temporelle qui trahit
+l'encodeur — un aigu présent sur 10 % des trames et absent ailleurs y ressemble à un aigu faible
+mais continu. C'est la même raison qui rend `detect_cutoff`, calculée sur le LTAS, aveugle à l'AAC.
+
+**Ce que ça ne répare pas** : la marge du seuil est de **0,12 dB** entre le plus bas authentique et
+le suivant, dans les DEUX formes. La fragilité du seuil n'est pas un problème d'agrégation.
+
 ### Épreuve sur matériel musicalement différent (2026-08-18)
 
 La réserve principale était que 20 authentiques house/techno ne disent rien du classique, de
