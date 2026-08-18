@@ -404,6 +404,59 @@ pourquoi l'affichage n'accuse pas.
 - La sonde est `scripts/hf-flatness-probe.mjs` ; **rien n'est branché dans le détecteur**. C'est un
   candidat mesuré, pas une décision.
 
+## L'angle mort Opus, fermé par une seconde bande (2026-08-18)
+
+Opus était invisible aux deux signaux : 0/10 en coupure, 0/10 en platitude. Diagnostic mesuré : les
+fichiers Opus sont à **48 kHz** — le codec force ce taux — donc la bande fixe 16-20 kHz y tombe à
+**33-42 % du Nyquist**, en pleine bande passante, là où Opus a encore tout son contenu.
+
+**Un piège écarté avant de conclure.** Séparer Opus des authentiques pouvait n'être que séparer
+48 kHz de 44,1 kHz, tous les authentiques du corpus étant à 44,1. Trois témoins 48 kHz **sans
+codec** ont donc été fabriqués (rééchantillonnage des sources), pour que la comparaison porte sur
+le codec et pas sur le taux :
+
+| bande | authentique 44k | témoin 48k sans codec | opus128 48k |
+|---|---|---|---|
+| 16-20 kHz (fixe) | −5,1 / −4,4 / −5,1 | −5,0 / −4,4 / −5,1 | −4,9 / −3,2 / −2,9 |
+| 0,80-0,98 × Nyquist | −3,2 / −4,1 / −10,8 | −4,4 / −6,3 / −14,1 | **−21,9 / −31,7 / −29,3** |
+
+### Les deux bandes sont complémentaires, pas redondantes
+
+Sur les 150 transcodages, seuil = plancher des authentiques pour chaque bande :
+
+| | fixe | relative | union |
+|---|---|---|---|
+| opus128 | 0/10 | **10/10** | 10/10 |
+| lame320 | 3/10 | **10/10** | 10/10 |
+| aac128 | 6/10 | **9/10** | 9/10 |
+| lame128 / lame160 / mfmp3_128 | **10 / 10 / 6** | 0 / 0 / 0 | inchangé |
+| vorbisq5 / wma192 | 8 / 8 | 8 / 8 | **10 / 9** |
+| **total** | **61 %** | 50 % | **77 %** |
+
+Le mécanisme est symétrique et explicable : sur un MP3 128 qui coupe à 16,8 kHz, la bande relative
+(17,6-21,6 kHz à 44,1 kHz) tombe **entièrement au-dessus de la coupure**, sur un plancher résiduel
+uniforme — donc parfaitement plat, donc « rien à signaler ». Chaque bande est aveugle là où l'autre
+voit. Un test l'épingle, mesuré par mutation : rendre les deux bandes identiques le fait tomber.
+
+### Bilan des trois signaux
+
+| | détection sur 150 transcodages | angle mort |
+|---|---|---|
+| coupure spectrale (Sift **et** FTF) | 27 % | AAC, 320, V0, Opus, Vorbis, WMA |
+| + platitude bande fixe | 61 % | Opus, une partie de l'AAC |
+| + platitude bande relative | **77 %** | ce qui reste n'est plus une famille entière |
+
+Faux positifs : **0** sur 44 authentiques pour la bande fixe, 0 sur 20 pour la relative — par
+construction, les seuils étant posés au plancher observé.
+
+### Ce que ça n'établit pas
+
+- La référence de la bande **relative** ne s'appuie que sur **20 fichiers** (contre 44 pour la
+  fixe), et l'un d'eux tire son plancher à −10,9. C'est pourquoi cette mesure vit dans les détails
+  techniques et pas dans les lignes principales.
+- Les 23 % restants n'ont pas été caractérisés : on sait combien passent, pas lesquels ni pourquoi.
+- Aucun transcodage en chaîne, toujours.
+
 ## Étape 3 — le cross-test Fakin' The Funk
 
 Pas encore fait. Sa valeur a changé : avant, il aurait servi de second avis sur un détecteur dont on
