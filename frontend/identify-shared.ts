@@ -65,29 +65,52 @@ export function renderCandidates(host: HTMLElement, list: Candidate[]): void {
  *  voit toutes les branches, donc le seul où la garantie ne peut pas être oubliée par une branche
  *  ajoutée plus tard. */
 export function identifyErrorHtml(err: unknown): { html: string; gotoReglages: boolean } {
+  const { texte, grave, gotoReglages } = identifyErrorText(err);
+  const classe = grave ? "sift-cands-msg sift-cands-error" : "sift-cands-msg";
+  const icone = grave ? `<i class="ti ti-alert-triangle sift-cand-error-icon"></i>` : "";
+  return { html: `<div class="${classe}">${icone}${esc(texte)}</div>`, gotoReglages };
+}
+
+/** La MÊME phrase, sans balise — pour une surface qui n'est pas la liste de candidats.
+ *
+ *  Extrait le 2026-08-18 en câblant le bouton « Vérifier » des Réglages (impasse A11, issue #15).
+ *  Le second appelant aurait sinon recopié les quatre branches, et c'est exactement le défaut que
+ *  cette fonction-ci a été écrite pour corriger : la cascade dupliquée portait deux fois les mêmes
+ *  deux erreurs de texte (A9 et A10).
+ *
+ *  `grave` sépare ce qui accuse le fichier ou le jeton de ce qui demande d'attendre — c'est la
+ *  seule distinction dont une surface a besoin pour choisir son ton. `humanizeError` reste appelé
+ *  ICI, une fois, pour que la chaîne brute parte en console quelle que soit la branche. */
+export function identifyErrorText(err: unknown): {
+  texte: string;
+  grave: boolean;
+  gotoReglages: boolean;
+} {
   const msg = String(err);
   humanizeError(err, msg, "identify");
   if (msg.includes("NO_TOKEN")) {
     return {
-      html: `<div class="sift-cands-msg">L'identification Discogs demande un jeton — sans lui, Sift n'interroge pas Discogs du tout. Il est gratuit et se colle dans Réglages.</div>`,
+      texte:
+        "L'identification Discogs demande un jeton — sans lui, Sift n'interroge pas Discogs du tout. Il est gratuit et se colle dans Réglages.",
+      grave: false,
       gotoReglages: true,
     };
   }
   if (msg.includes("BAD_TOKEN")) {
     return {
-      html: `<div class="sift-cands-msg sift-cands-error"><i class="ti ti-alert-triangle sift-cand-error-icon"></i>Discogs a refusé le jeton — il est invalide, expiré ou révoqué. Ce n'est pas la connexion : réessayer ne changera rien.</div>`,
+      texte:
+        "Discogs a refusé le jeton — il est invalide, expiré ou révoqué. Ce n'est pas la connexion : réessayer ne changera rien.",
+      grave: true,
       gotoReglages: true,
     };
   }
   const rl = msg.match(/RATE_LIMITED:(\d+)/);
   if (rl) {
     return {
-      html: `<div class="sift-cands-msg">Discogs limite le débit — réessaie dans ${esc(rl[1])}s.</div>`,
+      texte: `Discogs limite le débit — réessaie dans ${rl[1]}s.`,
+      grave: false,
       gotoReglages: false,
     };
   }
-  return {
-    html: `<div class="sift-cands-msg sift-cands-error"><i class="ti ti-alert-triangle sift-cand-error-icon"></i>Discogs injoignable.</div>`,
-    gotoReglages: false,
-  };
+  return { texte: "Discogs injoignable.", grave: true, gotoReglages: false };
 }

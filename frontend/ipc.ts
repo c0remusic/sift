@@ -336,6 +336,13 @@ export const identify = (trackId: number): Promise<Candidate[]> =>
 export const applyIdentity = (trackId: number, candidate: Candidate): Promise<AppliedIdentity> =>
   invoke("apply_identity_cmd", { trackId, candidate });
 
+/** Demande à Discogs si le jeton enregistré est accepté. Résout sur un jeton valide, rejette avec
+ *  les MÊMES codes qu'`identify` — `identifyErrorHtml` les traduit déjà.
+ *
+ *  Le jeton n'est pas passé en argument : il est lu côté Rust dans les réglages, donc il ne
+ *  traverse pas l'IPC pour un appel qui ne fait que le vérifier. */
+export const verifyDiscogsToken = (): Promise<void> => invoke("verify_discogs_token", {});
+
 // ---- M6b library browser (mirror of ipc_library.rs) ----
 
 /** Filed tracks for the Bibliothèque list, with optional filters. */

@@ -3,7 +3,8 @@
 // god-module after ecartes-view.ts/home-sources.ts/journal.ts were split out.
 // Self-contained: unlike Bibliothèque/Rekordbox, no state here is mutated from
 // installLiveWiring's delegated click handler, so no cross-module state wiring is needed.
-import { getSetting, setSetting, openUrl, previewFilename } from "./ipc";
+import { getSetting, setSetting, openUrl, previewFilename, verifyDiscogsToken } from "./ipc";
+import { identifyErrorText } from "./identify-shared";
 import { DEFAULT_FILENAME_TEMPLATE } from "../shared/contracts";
 import type { Canonical } from "../shared/contracts";
 import { requireEl, esc } from "./dom";
@@ -100,7 +101,15 @@ export async function renderReglagesLive() {
     `<input id="sift-discogs-token" type="password" placeholder="Jeton Discogs…" value="${esc(token ?? "")}" class="sift-editor-input" style="width:100%;font-family:var(--font-mono);padding-right:30px">` +
     '<button type="button" id="sift-discogs-token-toggle" title="Afficher le jeton" aria-label="Afficher le jeton" style="position:absolute;right:2px;top:50%;transform:translateY(-50%);width:26px;height:26px;padding:0;border:none;background:transparent;color:var(--color-text-tertiary);cursor:pointer;display:flex;align-items:center;justify-content:center"><i class="ti ti-eye" style="font-size:var(--text-md)"></i></button>' +
     "</div>" +
+    // « Vérifier » : impasse A11 de l'issue #15. Enregistrer un jeton ne dit que l'écriture ; sa
+    // validité ne se découvrait qu'au premier Identifier, plus tard et dans un autre écran.
+    // Libellé descriptif, donc TEXTE SEUL (règle CLAUDE.md : l'icône est réservée à ce qui n'a pas
+    // d'équivalent textuel). Le bouton ne redéfinit aucun `background`, donc il garde le `:hover`
+    // générique sans avoir à le réaffirmer.
+    '<div style="display:flex;align-items:center;gap:8px;margin-top:6px">' +
+    '<button type="button" id="sift-discogs-verify">Vérifier</button>' +
     '<div id="sift-discogs-status" style="font-size:var(--text-sm);color:var(--color-text-tertiary);min-height:14px"></div>' +
+    "</div>" +
     "</div>";
 
   const libBlock = document.createElement("div");
@@ -369,6 +378,33 @@ export async function renderReglagesLive() {
   const status = block.querySelector<HTMLElement>("#sift-discogs-status");
   const link = block.querySelector<HTMLElement>("#sift-discogs-link");
   const toggle = block.querySelector<HTMLButtonElement>("#sift-discogs-token-toggle");
+  const verify = block.querySelector<HTMLButtonElement>("#sift-discogs-verify");
+
+  verify?.addEventListener("click", () => {
+    void (async () => {
+      if (!status) return;
+      // Le jeton est écrit AVANT d'être vérifié : sans ça, un clic direct après la frappe
+      // vérifierait la valeur précédente, puisque `verify_discogs_token` lit les réglages et non
+      // le champ. Le débounce de 600 ms rend ce cas parfaitement atteignable.
+      await saveToken();
+      verify.disabled = true;
+      status.textContent = "Vérification…";
+      status.style.color = "var(--color-text-tertiary)";
+      try {
+        await verifyDiscogsToken();
+        status.textContent = "Jeton accepté par Discogs.";
+        status.style.color = "var(--color-text-success)";
+      } catch (e) {
+        const { texte, grave } = identifyErrorText(e);
+        status.textContent = texte;
+        status.style.color = grave
+          ? "var(--color-text-danger)"
+          : "var(--color-text-tertiary)";
+      } finally {
+        verify.disabled = false;
+      }
+    })();
+  });
 
   toggle?.addEventListener("click", () => {
     if (!inp) return;

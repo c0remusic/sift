@@ -309,6 +309,7 @@ pub fn run() {
             ipc_filing::find_duplicate,
             ipc_identify::identify,
             ipc_identify::apply_identity_cmd,
+            ipc_identify::verify_discogs_token,
             ipc_library::list_library,
             ipc_library::library_folders,
             ipc_library::update_metadata,

@@ -319,6 +319,41 @@ fn rank_by_match(cands: Vec<Candidate>, scores: &[i32]) -> Vec<Candidate> {
 }
 
 impl Discogs {
+    /// Demande à Discogs si ce jeton est accepté, sans rien chercher d'utile.
+    ///
+    /// Impasse A11 de l'issue #15 : jusqu'ici, enregistrer un jeton disait « Jeton enregistré. »,
+    /// ce qui est exact et ne dit rien de sa validité — un jeton faux ne se découvrait qu'au
+    /// premier Identifier, plus tard et dans un autre écran.
+    ///
+    /// **Pourquoi la recherche et pas `/oauth/identity`**, qui serait l'endpoint attendu : celui-ci
+    /// n'a jamais été appelé par ce code, et sa forme de réponse comme son comportement sur un
+    /// jeton personnel ne sont pas vérifiés ici. La recherche est le chemin déjà éprouvé en
+    /// production, avec la MÊME en-tête d'autorisation et le MÊME mappage d'erreurs — dont le
+    /// 401/403 vers `BadToken`, qui est toute la question posée. Le coût est une requête comptée
+    /// dans le quota, sur un bouton actionné à la main.
+    ///
+    /// `per_page=1` parce que le corps ne sert à rien : seul le code HTTP est lu.
+    pub fn verify_token(&self) -> Result<(), ProviderError> {
+        if self.token.trim().is_empty() {
+            // Fail fast, et la garde est porteuse — MESURÉE le 2026-08-18 en la retirant : l'appel
+            // rend alors `Ok(())` sur un jeton vide, parce que la recherche Discogs répond 200
+            // sans en-tête d'autorisation. Sans cette ligne, un champ vide s'annoncerait « accepté ».
+            return Err(ProviderError::BadToken("jeton vide".into()));
+        }
+        ureq::get("https://api.discogs.com/database/search")
+            .config()
+            .timeout_global(Some(HTTP_TIMEOUT))
+            .build()
+            .header("User-Agent", USER_AGENT)
+            .header("Authorization", &format!("Discogs token={}", self.token))
+            .query("type", "release")
+            .query("q", "a")
+            .query("per_page", "1")
+            .call()
+            .map_err(map_ureq_err)?;
+        Ok(())
+    }
+
     /// Fetch a release's tracklist titles. Best-effort: the caller treats Err as "no tracklist"
     /// and simply doesn't refine that candidate (so a rate-limit on a detail call is non-fatal).
     /// One Discogs full-text release search for `q_str`, mapped to ranked Candidates. The
@@ -855,6 +890,24 @@ mod tests {
         let titles = vec!["Completely".to_string(), "Unrelated".to_string()];
         let (_score, title) = best_track_match(&titles, "Sean", Some("Dub"));
         assert_eq!(title, None);
+    }
+
+    /// Un jeton vide se refuse SANS toucher au réseau.
+    ///
+    /// Ce n'est pas une micro-optimisation : la recherche Discogs répond 200 sans autorisation,
+    /// donc un aller-retour sur un champ vide conclurait « jeton accepté ». Le test tient ce
+    /// raisonnement-là, et il tourne hors ligne parce que le chemin qu'il couvre n'appelle rien.
+    #[test]
+    fn verify_token_refuse_un_jeton_vide_sans_reseau() {
+        for vide in ["", "   ", "\t"] {
+            let d = Discogs {
+                token: vide.to_string(),
+            };
+            match d.verify_token() {
+                Err(ProviderError::BadToken(_)) => {}
+                other => panic!("attendu BadToken sur {vide:?}, obtenu {other:?}"),
+            }
+        }
     }
 
     #[test]

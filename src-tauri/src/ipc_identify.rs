@@ -34,6 +34,32 @@ pub fn identify(
     provider.search(&query).map_err(|e| e.code())
 }
 
+/// Demande à Discogs si le jeton enregistré est accepté. Rend les MÊMES codes que `identify`.
+///
+/// Impasse A11 de l'issue #15 : « Jeton enregistré. » dit l'écriture et rien d'autre, et un jeton
+/// faux ne se découvrait qu'au premier Identifier — plus tard, dans un autre écran, sur un morceau
+/// qu'on voulait traiter. Ce bouton déplace la découverte au moment où on colle le jeton.
+///
+/// Les codes sont ceux de `ProviderError::code()`, déjà traduits par `identifyErrorHtml` côté
+/// front : pas de second vocabulaire d'erreur pour la même API.
+#[tauri::command]
+pub fn verify_discogs_token(conn: State<'_, Mutex<Connection>>) -> Result<(), String> {
+    let token = {
+        let conn = db::lock_conn(&conn)?;
+        settings::get(&conn, settings::DISCOGS_TOKEN)
+            .map_err(|e| e.to_string())?
+            .unwrap_or_default()
+    };
+    // Même garde que `identify`, et pour la même raison : sans jeton il n'y a pas de recherche
+    // anonyme à tenter, donc rien à demander au réseau.
+    if token.trim().is_empty() {
+        return Err("NO_TOKEN".into());
+    }
+    metadata::discogs::Discogs { token }
+        .verify_token()
+        .map_err(|e| e.code())
+}
+
 /// Assemble la requête depuis les DEUX sources, chacune dans son domaine de compétence.
 ///
 /// Les tags embarqués priment quand ils sont propres : ils peuvent avoir été corrigés par
