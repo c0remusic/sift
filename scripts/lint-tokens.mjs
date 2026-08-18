@@ -273,9 +273,17 @@ for (const f of findings) {
 const counts = { color: 0, 'z-index': 0, 'px-spacing': 0 };
 for (const f of findings) counts[f.category]++;
 
+// Le temoin part dans la baseline AVEC les counts, mais il ne vit pas dans `counts` : le
+// cliquet de l'etape 4 y cherche une HAUSSE, alors qu'une chute du temoin est le signal.
+// Deux sens de lecture opposes, deux emplacements.
+const witness = { spacingDeclsSeen };
+
 if (WRITE_BASELINE) {
-  writeFileSync(BASELINE_FILE, JSON.stringify(counts, null, 2) + '\n');
-  console.log(`lint-tokens: baseline written to ${relative(REPO_ROOT, BASELINE_FILE)}:`, counts);
+  writeFileSync(BASELINE_FILE, JSON.stringify({ ...counts, ...witness }, null, 2) + '\n');
+  console.log(`lint-tokens: baseline written to ${relative(REPO_ROOT, BASELINE_FILE)}:`, {
+    ...counts,
+    ...witness,
+  });
   process.exit(0);
 }
 
@@ -310,6 +318,42 @@ if (!existsSync(BASELINE_FILE)) {
 }
 
 const baseline = JSON.parse(readFileSync(BASELINE_FILE, 'utf8'));
+
+// ---- Step 4a: le temoin, dans le sens inverse du cliquet -----------------------------------
+//
+// Une CHUTE du nombre de declarations examinees veut dire que le motif a cesse de voir une
+// partie de la feuille. C'est le mode de panne exact de #29 : le 2026-08-13, SPACING_PROP_RE
+// exigeait un `;` litteral et rendait invisibles les 112 declarations dernieres de leur bloc.
+// Les findings tombent EUX AUSSI, donc le cliquet de l'etape 4 lit une amelioration et passe.
+//
+// Verifie par mutation le 2026-08-18, en remettant le motif dans sa forme d'avant le
+// correctif : 762 -> 584 declarations examinees, 70 -> 59 findings, et la gate sortait 0 en
+// annoncant « below baseline — nothing blocking ». Le nombre etait imprime depuis le
+// correctif de #29 et compare a rien : un temoin que personne ne confronte ne separe rien.
+//
+// Toute baisse bloque. Une reduction legitime (suppression reelle de CSS) se valide par
+// --write-baseline, ce qui force quelqu'un a regarder le nombre — c'est precisement le
+// geste qui manquait.
+if (typeof baseline.spacingDeclsSeen !== 'number') {
+  console.log(
+    `\nlint-tokens: la baseline ne porte pas encore spacingDeclsSeen — re-lancer avec ` +
+    `--write-baseline pour enregistrer le temoin. Non bloquant pour cette execution.`,
+  );
+} else if (spacingDeclsSeen < baseline.spacingDeclsSeen) {
+  console.log(
+    `\nlint-tokens: le nombre de declarations d'espacement EXAMINEES a chute : ` +
+    `${baseline.spacingDeclsSeen} -> ${spacingDeclsSeen} ` +
+    `(-${baseline.spacingDeclsSeen - spacingDeclsSeen}).`,
+  );
+  console.log(
+    `  Deux causes possibles, et une seule est benigne :\n` +
+    `    1. SPACING_PROP_RE ne voit plus une partie de la feuille — c'est le bug #29, et\n` +
+    `       il rend les findings faussement bas. Corriger le motif.\n` +
+    `    2. Du CSS a reellement ete supprime. Alors --write-baseline pour l'enregistrer.`,
+  );
+  process.exit(1);
+}
+
 const regressed = [];
 for (const cat of Object.keys(counts)) {
   if (counts[cat] > (baseline[cat] ?? 0)) {
