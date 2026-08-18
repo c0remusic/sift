@@ -283,7 +283,13 @@ mod corpus {
         // c'est exactement le défaut que ce dépôt passe son temps à corriger.
         let mut seen = 0usize;
         let mut failed = 0usize;
-        println!("fichier;rail;debit_declare;cutoff_hz;verdict;est_kbps");
+        // Le nom de fichier passe EN DERNIER, et ce n'est pas cosmétique : mesuré le 2026-08-18
+        // sur 967 fichiers d'une vraie clé USB, 4 lignes étaient tordues parce que le nom
+        // contenait le séparateur — « Jacob Todd - Nevermore (Original ;… ».wav » décalait toutes
+        // les colonnes suivantes, et le verdict lu était un bout de titre. En dernière position,
+        // un `;` dans le nom ne peut plus déplacer quoi que ce soit : les cinq champs qui
+        // précèdent se lisent par position, et le nom est « tout ce qui reste ».
+        println!("rail;debit_declare;cutoff_hz;verdict;est_kbps;fichier");
         for e in walkdir::WalkDir::new(&dir).into_iter().flatten() {
             if !e.file_type().is_file() {
                 continue;
@@ -307,7 +313,7 @@ mod corpus {
             seen += 1;
             match super::analyze(&path.to_string_lossy(), false) {
                 Ok(r) => println!(
-                    "{name};{:?};{};{:.0};{:?};{}",
+                    "{:?};{};{:.0};{:?};{};{name}",
                     r.declared_rail,
                     r.declared_bitrate
                         .map(|b| b.to_string())
@@ -321,7 +327,7 @@ mod corpus {
                     // Un échec d'analyse est une LIGNE du résultat, pas un silence : c'est
                     // précisément le cas qui, non dit, ferait passer un corpus incomplet pour
                     // un corpus propre.
-                    println!("{name};ERREUR;-;-;-;{err}");
+                    println!("ERREUR;-;-;-;{err};{name}");
                 }
             }
         }

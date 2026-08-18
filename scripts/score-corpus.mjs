@@ -22,9 +22,14 @@ const labels = JSON.parse(readFileSync(LABELS, "utf8"));
 
 const rows = readFileSync(CSV, "utf8")
   .split(/\r?\n/)
-  .filter((l) => l.includes(";") && !l.startsWith("fichier;") && !l.startsWith("--"))
+  .filter((l) => l.includes(";") && !l.startsWith("rail;") && !l.startsWith("--"))
   .map((l) => {
-    const [file, rail, bitrate, cutoff, verdict, est] = l.split(";");
+    // Le nom est en DERNIER et se prend comme « tout ce qui reste » : un `;` dans un titre ne
+    // peut donc plus décaler les colonnes. Mesuré le 2026-08-18 — 4 lignes sur 967 étaient
+    // tordues quand le nom venait en premier, et le verdict lu etait un bout de titre.
+    const parts = l.split(";");
+    const [rail, bitrate, cutoff, verdict, est] = parts;
+    const file = parts.slice(5).join(";");
     return { file, rail, bitrate, cutoff: Number(cutoff), verdict, est };
   });
 
