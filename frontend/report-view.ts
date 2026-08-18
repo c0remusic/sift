@@ -624,7 +624,7 @@ function spectroAndTagsHtml(r: AnalysisReport): string {
     // s'appuie que sur 20 fichiers contre 44, et deux lignes de densité en tête noieraient celle
     // qui porte la mesure la mieux étayée. Elle reste indispensable : c'est la SEULE qui voit Opus.
     (r.hf_flatness_top_db != null
-      ? row("Densité du haut du spectre", hfTopDensityText(r.hf_flatness_top_db, fmt))
+      ? rowWide("Densité du haut du spectre", hfTopDensityText(r.hf_flatness_top_db, fmt))
       : "") +
     row("Canaux", String(r.channels) + (r.dual_mono ? " (dual-mono)" : "")) +
     row("True-peak", fmt(r.true_peak_dbtp, 2) + " dBTP") +
