@@ -159,6 +159,17 @@ export interface AnalysisReport {
   container_ok: boolean;
   codec_error: string | null;
   truncated: boolean;
+  /** Durée RÉELLEMENT décodée, à comparer à `duration_sec` qui vient de l'en-tête.
+   *
+   *  Les deux étaient une seule valeur — la déclarée — et rien ne vérifiait qu'elle correspondait
+   *  au son présent. Un en-tête peut annoncer 6 minutes sur un fichier tronqué à 40 secondes :
+   *  `truncated` ne l'attrape pas, il teste une coupure ABRUPTE du signal, pas un désaccord de
+   *  comptage. Les deux échouent sur des cas différents.
+   *
+   *  Brut plutôt que booléen : la tolérance est une décision d'affichage, et un écart se lit mieux
+   *  en secondes. Ancien rapport en cache : `0` (le `#[serde(default)]` côté Rust), donc traiter
+   *  zéro comme « pas mesuré » et non comme « durée nulle ». */
+  decoded_duration_sec: number;
   silence_head_ms: number;
   silence_tail_ms: number;
   id3_version: string | null;

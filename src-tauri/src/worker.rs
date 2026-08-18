@@ -404,6 +404,7 @@ pub(crate) mod tests {
             sample_rate: 44100,
             channels: 2,
             duration_sec: 123.0,
+            decoded_duration_sec: 123.0,
             declared_format: "flac".into(),
             declared_bitrate: Some(900),
             declared_rail: Rail::Lossless,

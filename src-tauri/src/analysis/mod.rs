@@ -93,6 +93,21 @@ pub struct AnalysisReport {
     pub container_ok: bool,
     pub codec_error: Option<String>,
     pub truncated: bool,
+    /// Duree REELLEMENT decodee, en secondes — a comparer a `duration_sec`, qui vient de l'en-tete.
+    ///
+    /// Les deux etaient jusqu'ici une seule valeur, celle DECLAREE, et personne ne verifiait
+    /// qu'elle correspondait au son present. Un en-tete peut annoncer 6 minutes sur un fichier
+    /// tronque a 40 secondes : rien dans le rapport ne le disait, parce que `truncated` teste une
+    /// coupure ABRUPTE du signal, pas un desaccord de comptage. Les deux echouent sur des cas
+    /// differents — un fichier qui fond proprement vers le silence avant sa fin annoncee passe
+    /// l'un et pas l'autre.
+    ///
+    /// Rendu brut plutot qu'en booleen : c'est l'appelant qui decide de la tolerance, et un ecart
+    /// se lit mieux en secondes qu'en « vrai ». Fakin' The Funk fait la meme comparaison et en
+    /// tire sa classe CORROMPU (« Actual duration does not match stated duration ») ; nous ne la
+    /// faisions pas du tout, alors que le fichier est deja decode entierement.
+    #[serde(default)]
+    pub decoded_duration_sec: f32,
     pub silence_head_ms: u32,
     pub silence_tail_ms: u32,
     pub id3_version: Option<String>,
@@ -156,7 +171,12 @@ pub fn analyze(path: &str, with_spectrogram: bool) -> Result<AnalysisReport, Str
     let mut spec = SpectrumAccumulator::new(sr, FFT_SIZE, with_spectrogram);
     let mut ph = PhaseAccumulator::new();
 
+    // Nombre d'echantillons MONO reellement decodes — la seule facon de savoir combien de son le
+    // fichier contient vraiment, par opposition a ce que son en-tete annonce. Compte ici et pas
+    // dans un accumulateur existant pour que la mesure ne depende d'aucun de leurs seuils.
+    let mut decoded_mono_samples: u64 = 0;
     let info = decode::decode_pcm(path, target_ch, |block| {
+        decoded_mono_samples += (block.len() / target_ch as usize) as u64;
         if target_ch == 2 {
             ph.push(block); // interleaved L,R
             let mono: Vec<f32> = block
@@ -249,6 +269,7 @@ pub fn analyze(path: &str, with_spectrogram: bool) -> Result<AnalysisReport, Str
         container_ok: info.codec_error.is_none(),
         codec_error: info.codec_error,
         truncated,
+        decoded_duration_sec: decoded_mono_samples as f32 / sr as f32,
         silence_head_ms,
         silence_tail_ms,
         id3_version: tag.id3_version,
@@ -338,6 +359,75 @@ mod corpus {
 
 #[cfg(test)]
 mod tests {
+
+    /// La durée décodée doit être MESURÉE, pas recopiée de l'en-tête.
+    ///
+    /// La fixture est fabriquée ici et pas prise dans `fixtures/` : `truncated.wav` est un fichier
+    /// COMPLET de 1,5 s malgré son nom, donc son en-tête et son contenu s'accordent et il ne
+    /// discrimine rien — une première version de ce test l'utilisait et passait AUSSI quand on
+    /// remplissait le champ avec `tag.duration_sec`. Ce qu'il faut est un en-tête qui MENT.
+    ///
+    /// On écrit donc un WAV dont le chunk `data` annonce deux fois les octets réellement présents :
+    /// c'est exactement le cas d'un téléchargement interrompu, et le seul où les deux durées
+    /// divergent.
+    #[test]
+    fn decoded_duration_is_measured_not_copied_from_the_header() {
+        const SR: u32 = 44100;
+        const REAL_SAMPLES: u32 = SR; // 1 s réellement présente
+        let declared_bytes = REAL_SAMPLES * 2 * 2; // on ANNONCE le double (2 s)
+        let real_bytes = REAL_SAMPLES * 2; // mono 16 bits => 1 s d'octets
+
+        let mut w = Vec::new();
+        w.extend_from_slice(b"RIFF");
+        w.extend_from_slice(&(36 + declared_bytes).to_le_bytes());
+        w.extend_from_slice(b"WAVEfmt ");
+        w.extend_from_slice(&16u32.to_le_bytes());
+        w.extend_from_slice(&1u16.to_le_bytes()); // PCM
+        w.extend_from_slice(&1u16.to_le_bytes()); // mono
+        w.extend_from_slice(&SR.to_le_bytes());
+        w.extend_from_slice(&(SR * 2).to_le_bytes()); // byte rate
+        w.extend_from_slice(&2u16.to_le_bytes()); // block align
+        w.extend_from_slice(&16u16.to_le_bytes()); // bits
+        w.extend_from_slice(b"data");
+        w.extend_from_slice(&declared_bytes.to_le_bytes());
+        for n in 0..REAL_SAMPLES {
+            let v = ((n as f32 * 440.0 * std::f32::consts::TAU / SR as f32).sin() * 12000.0) as i16;
+            w.extend_from_slice(&v.to_le_bytes());
+        }
+        assert_eq!(w.len() as u32, 44 + real_bytes, "fixture mal formee");
+
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("header_lies.wav");
+        std::fs::write(&path, &w).unwrap();
+        let p = path.to_string_lossy().to_string();
+
+        let r = analyze(&p, false).expect("analyze");
+        // Contrôle positif : sans lui, un zéro partout passerait l'assertion suivante.
+        assert!(
+            r.decoded_duration_sec > 0.5,
+            "rien n'a ete decode, la mesure ne vaut rien: {}",
+            r.decoded_duration_sec
+        );
+        assert!(
+            (r.decoded_duration_sec - 1.0).abs() < 0.15,
+            "1 s de son est reellement presente, mesure {}",
+            r.decoded_duration_sec
+        );
+        // Ce que la fixture établit, et ce qu'elle n'établit pas — mesuré, pas supposé : sur ce
+        // WAV incohérent lofty ne rend PAS la durée annoncée, il rend **0** (il refuse de croire
+        // l'en-tête plutôt que de le recopier). Donc `duration_sec` vaut 0 ici, et c'est ce qui
+        // fait tenir ce test sous mutation : remplir le champ avec `tag.duration_sec` donne 0 et
+        // fait tomber le contrôle positif ci-dessus. Vérifié en mutant réellement le code.
+        //
+        // En revanche la fixture ne montre PAS le cas « l'en-tête annonce plus que le contenu »
+        // vu depuis `duration_sec`, puisque lofty s'y dérobe. Ce cas-là existe (un MP3 dont le
+        // Xing ment) et n'est couvert par aucun test.
+        assert_eq!(
+            r.duration_sec, 0.0,
+            "lofty rend 0 sur cet en-tete incoherent — si ca change, ce test doit etre relu"
+        );
+    }
+
     use super::*;
 
     /// Mirrors shared/contracts.ts's `Spectrogram`. Exhaustive destructure (no `..`): fails to
@@ -400,6 +490,7 @@ mod tests {
             container_ok: false,
             codec_error: None,
             truncated: false,
+            decoded_duration_sec: 0.0,
             silence_head_ms: 0,
             silence_tail_ms: 0,
             id3_version: None,
@@ -430,6 +521,7 @@ mod tests {
             container_ok,
             codec_error,
             truncated,
+            decoded_duration_sec,
             silence_head_ms,
             silence_tail_ms,
             id3_version,
@@ -460,6 +552,7 @@ mod tests {
             container_ok,
             codec_error,
             truncated,
+            decoded_duration_sec,
             silence_head_ms,
             silence_tail_ms,
             id3_version,
@@ -500,6 +593,7 @@ mod tests {
             container_ok: true,
             codec_error: None,
             truncated: false,
+            decoded_duration_sec: 0.0,
             silence_head_ms: 0,
             silence_tail_ms: 0,
             id3_version: None,
