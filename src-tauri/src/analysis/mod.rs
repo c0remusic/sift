@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 pub mod decode;
 pub mod dynamics;
+pub mod mdct;
 pub mod peaks;
 pub mod phase;
 pub mod spectrum;
@@ -98,8 +99,12 @@ pub struct AnalysisReport {
     ///
     /// Un FAIT sur le fichier tel qu'il est, pas une affirmation sur son histoire : « l'aigu est
     /// clairseme » se mesure, « ca a ete un MP3 » ne se deduit pas. Un master volontairement
-    /// sombre et un transcodage donnent la meme valeur, et c'est pourquoi `verdict()` NE LA LIT
-    /// PAS — la nommer FAKE reviendrait a accuser un master d'une histoire qu'on n'a pas etablie.
+    /// sombre et un transcodage donnent la meme valeur.
+    ///
+    /// Depuis le 2026-08-18, `verdict()` LA LIT — mais uniquement pour rendre DOUTEUX, jamais
+    /// Faux, et seulement sur un fichier a bande pleine ou la coupure n'a plus rien a dire. La
+    /// nommer Faux reviendrait a accuser un master d'une histoire qu'on n'a pas etablie ; le dire
+    /// douteux ne dit que ce qui est mesure.
     ///
     /// Repere mesure (2026-08-18) : 44 fichiers authentiques de trois familles musicales et trois
     /// provenances d'achat tiennent dans [-5,4 ; -2,5] dB, les transcodages descendent a -43,8.

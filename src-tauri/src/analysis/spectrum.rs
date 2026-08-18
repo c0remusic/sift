@@ -60,10 +60,16 @@ pub(crate) const MAX_COLS: usize = 1200;
 /// transcodages descendent à -43,8, et 91 des 150 tombent sous le plancher des authentiques. La coupure spectrale n'en attrape que 40 — et **aucun** AAC, aucun LAME 320,
 /// aucun V0, aucun Vorbis, aucun WMA. Deux signaux différents, pas deux réglages du même.
 ///
-/// ⚠️ La valeur est RENDUE, pas jugée : aucun seuil n'est appliqué ici et `verdict()` ne la lit
-/// pas. Un master volontairement sombre donne la même mesure qu'un transcodage — « l'aigu s'arrête
-/// tôt » est vrai des deux, « ça a été du lossy » ne l'est que d'un seul, et rien ici ne permet de
-/// trancher lequel.
+/// ⚠️ La valeur est RENDUE, pas jugée : aucun seuil n'est appliqué ICI. C'est `verdict()` qui en
+/// applique un depuis le 2026-08-18 (`HF_FIXED_FLOOR_DB`), et il ne peut en sortir que DOUTEUX.
+/// Un master volontairement sombre donne la même mesure qu'un transcodage — « l'aigu s'arrête tôt »
+/// est vrai des deux, « ça a été du lossy » ne l'est que d'un seul, et rien dans cette valeur ne
+/// permet de trancher lequel : c'est exactement pourquoi le verdict qui en découle est un doute et
+/// pas une accusation.
+///
+/// ⚠️ Le seuil de `verdict()` n'est PAS la borne citée ci-dessus. Celle-ci vient de
+/// `scripts/hf-flatness-probe.mjs` (mono 44,1 kHz forcé, DFT naïve) ; le juge mesure par CE
+/// code-ci, au taux natif, et les deux chemins désaccordent jusqu'à 0,4 dB sur les mêmes fichiers.
 const HF_FLATNESS_LO_HZ: f32 = 16000.0;
 const HF_FLATNESS_HI_HZ: f32 = 20000.0;
 
