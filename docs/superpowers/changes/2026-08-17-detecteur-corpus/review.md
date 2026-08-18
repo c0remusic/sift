@@ -457,6 +457,45 @@ construction, les seuils étant posés au plancher observé.
 - Les 23 % restants n'ont pas été caractérisés : on sait combien passent, pas lesquels ni pourquoi.
 - Aucun transcodage en chaîne, toujours.
 
+## CORRECTION — le 77 % était payé par des faux positifs non mesurés (2026-08-18)
+
+Les chiffres de la section précédente reposaient sur un seuil de bande relative à **−10,9 dB**,
+tiré des **10** authentiques du corpus. Le jeu authentique a été élargi à **32 fichiers** de trois
+familles musicales, et le seuil honnête — celui qui ne déclenche sur aucun d'eux — tombe à
+**−23,8 dB**.
+
+**Ce qui le fixe : deux morceaux ambient.** Nova Tekk, *Chill Out Vol. 6* : −23,8 et −21,9 sur la
+bande relative, alors qu'ils sont parfaitement normaux sur la bande fixe (−3,1 et −2,9). **Le haut
+du spectre d'un master ambient est légitimement clairsemé.** Avec l'ancienne borne, ces deux
+fichiers achetés auraient été annoncés « sous la plage » — un faux positif sur du matériel
+authentique, dans un affichage censé ne rien accuser.
+
+| | seuils 10 authentiques (−5,4 / −10,9) | **seuils 32 authentiques (−5,3 / −23,8)** |
+|---|---|---|
+| bande fixe seule | 91/150 = 61 % | 94/150 = 63 % |
+| bande relative seule | 75/150 = 50 % | **25/150 = 17 %** |
+| **union** | **116/150 = 77 %** | **102/150 = 68 %** |
+
+Par encodeur, aux seuils honnêtes :
+
+| variante | fixe | relative | union |
+|---|---|---|---|
+| opus128 | 0/10 | **6/10** | 6/10 |
+| wma192 | 8/10 | 7/10 | **9/10** |
+| lame192 / lame256 | 10/10 | 5/10 | 10/10 |
+| lame128 / lame160 | 10/10 | 0/10 | 10/10 |
+| aac256 / aacmf256 | 2/10 | 0/10 | 2/10 |
+| lame320 | 4/10 | 0/10 | 4/10 |
+
+**La bande relative garde une utilité mais bien moindre qu'annoncé** : elle reste la seule à voir
+Opus (0 → 6/10) et elle ajoute wma192. Elle ne « ferme » pas l'angle mort Opus, elle l'entame.
+
+**Ce que cet épisode dit de la méthode**, et c'est la vraie leçon : le 77 % n'était pas une erreur
+de calcul, c'était un chiffre mesuré sur un jeu authentique trop étroit. Un seuil posé au plancher
+de 10 fichiers d'une seule famille musicale n'est pas un seuil, c'est une propriété de
+l'échantillon. Les deux morceaux ambient qui l'ont démenti étaient dans le lot fourni par Antoine
+depuis le début — ils n'avaient simplement jamais été passés sur la bande relative.
+
 ## Ce qu'on rate encore, caractérisé (2026-08-18)
 
 Les 34 transcodages (23 %) que l'union des deux bandes laisse passer, mesurés :

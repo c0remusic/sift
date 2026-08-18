@@ -112,8 +112,10 @@ pub struct AnalysisReport {
     /// parfaitement plat ; un Opus est a 48 kHz et garde du contenu jusqu'a 20 kHz, donc la bande
     /// FIXE y est en pleine bande passante et ne voit rien.
     ///
-    /// Mesure sur les 150 transcodages : fixe 61 %, relative 50 %, UNION 77 %. Opus passe de 0/10
-    /// a 10/10, LAME 320 de 3/10 a 10/10. Voir `spectrum::HF_FLATNESS_REL_LO`.
+    /// Mesure sur les 150 transcodages, seuils poses au plancher de 32 authentiques : fixe 63 %,
+    /// relative 17 %, UNION 68 %. Opus passe de 0/10 a 6/10. Un premier chiffre de 77 % reposait
+    /// sur un seuil relatif tire de 10 authentiques seulement, qui produisait des faux positifs
+    /// sur de l'ambient. Voir `spectrum::HF_FLATNESS_REL_LO`.
     #[serde(default)]
     pub hf_flatness_top_db: Option<f32>,
     /// Duree REELLEMENT decodee, en secondes — a comparer a `duration_sec`, qui vient de l'en-tete.

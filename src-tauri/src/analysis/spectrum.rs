@@ -82,10 +82,16 @@ const HF_FLATNESS_HI_HZ: f32 = 20000.0;
 ///
 /// | | fixe | relative | union |
 /// |---|---|---|---|
-/// | opus128 | 0/10 | **10/10** | 10/10 |
-/// | lame320 | 3/10 | **10/10** | 10/10 |
+/// | opus128 | 0/10 | **6/10** | 6/10 |
 /// | lame128 / lame160 | **10/10** | 0/10 | 10/10 |
-/// | total | 61 % | 50 % | **77 %** |
+/// | wma192 | 8/10 | 7/10 | **9/10** |
+/// | total | 63 % | 17 % | **68 %** |
+///
+/// ⚠️ Chiffres RÉVISÉS. Une première mesure annonçait 77 % avec un seuil relatif de -10,9, tiré
+/// des 10 authentiques du corpus. Élargi à 32 authentiques, ce seuil tombe à -23,8 — fixé par
+/// deux morceaux AMBIENT dont le haut du spectre est légitimement clairsemé — et la bande
+/// relative perd les deux tiers de son pouvoir. Le 77 % comptait des détections payées par des
+/// faux positifs qu'on n'avait pas encore mesurés.
 ///
 /// 0,98 et pas 1,0 : les tout derniers bins portent le repliement et la pente du filtre de
 /// décimation, pas du signal.

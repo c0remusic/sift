@@ -80,14 +80,22 @@ export function durationText(
 
 /** Bornes des masters authentiques sur la bande RELATIVE au Nyquist, en dB.
  *
- *  Plus larges que celles de la bande fixe, et c'est attendu : le haut du spectre d'un master
- *  varie beaucoup plus d'un morceau à l'autre que la zone 16-20 kHz. Un seul des 20 authentiques
- *  descend à -10,9, les autres tiennent au-dessus de -6.
+ *  **Beaucoup plus larges que celles de la bande fixe, et c'est la mesure qui l'impose.** Une
+ *  première version annonçait -10,9, adossée aux 10 fichiers du corpus. Élargie à 32 authentiques
+ *  de trois familles musicales, la borne tombe à **-23,8** — fixée par deux morceaux **ambient**
+ *  (Nova Tekk, Chill Out Vol. 6), parfaitement normaux sur la bande fixe (-3,1 et -2,9) et très
+ *  bas ici.
  *
- *  ⚠️ Adossées à **20 fichiers seulement**, contre 44 pour la bande fixe : moins solides, et
- *  c'est pourquoi cette mesure vit dans les détails techniques et pas dans les lignes
- *  principales. */
-export const HF_TOP_REF_LO = -10.9;
+ *  Autrement dit : **le haut du spectre d'un master ambient est légitimement clairsemé.** Avec
+ *  l'ancienne borne, ces deux fichiers authentiques auraient été annoncés « sous la plage » — un
+ *  faux positif sur du matériel acheté, pour un affichage censé ne rien accuser.
+ *
+ *  Le prix est réel : à ce seuil, cette bande ne détecte plus que 25 des 150 transcodages du
+ *  corpus au lieu de 75. Elle reste utile — c'est la seule qui voit Opus (0/10 pour la bande fixe,
+ *  6/10 ici) — mais elle est BEAUCOUP moins discriminante qu'annoncé d'abord.
+ *
+ *  Détail : `docs/superpowers/changes/2026-08-17-detecteur-corpus/review.md`. */
+export const HF_TOP_REF_LO = -23.8;
 export const HF_TOP_REF_HI = -2.5;
 
 /** La densité du tout-haut du spectre, telle qu'elle s'affiche.

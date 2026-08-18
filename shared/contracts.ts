@@ -179,7 +179,9 @@ export interface AnalysisReport {
    *  uniforme — parfaitement plat, donc « authentique » ; un Opus est à 48 kHz et garde du contenu
    *  jusqu'à 20 kHz, donc la bande FIXE y est en pleine bande passante et ne voit rien.
    *
-   *  Mesuré sur 150 transcodages : fixe 61 %, relative 50 %, union 77 %. Opus 0/10 → 10/10. */
+   *  Mesuré sur 150 transcodages, seuils au plancher de 32 authentiques : fixe 63 %, relative
+   *  17 %, union 68 %. Opus 0/10 → 6/10. Sa plage de référence est très large (−23,8 à −2,5) parce
+   *  que le haut du spectre d'un master ambient est légitimement clairsemé. */
   hf_flatness_top_db: number | null;
   /** Durée RÉELLEMENT décodée, à comparer à `duration_sec` qui vient de l'en-tête.
    *
