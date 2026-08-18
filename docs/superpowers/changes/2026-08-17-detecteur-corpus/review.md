@@ -457,6 +457,50 @@ construction, les seuils étant posés au plancher observé.
 - Les 23 % restants n'ont pas été caractérisés : on sait combien passent, pas lesquels ni pourquoi.
 - Aucun transcodage en chaîne, toujours.
 
+## Ce qu'on rate encore, caractérisé (2026-08-18)
+
+Les 34 transcodages (23 %) que l'union des deux bandes laisse passer, mesurés :
+
+| variante | ratés | distance au seuil le plus proche |
+|---|---|---|
+| aacmf256 | 8/10 | 0,01 à 2,68 dB |
+| aac256 | 7/10 | 0,17 à 2,74 dB |
+| aacmf128 | 7/10 | 0,08 à 2,70 dB |
+| lameV0 | 5/10 | 0,25 à 2,65 dB |
+| mfmp3_128 | 4/10 | 1,57 à 1,93 dB |
+| aac128, mfmp3_320, wma192 | 1 chacun | 0,33 à 2,67 dB |
+
+**Aucun n'est hors de portée.** 12 sur 34 sont à moins d'1 dB d'un seuil, 23 à moins de 2, et
+**aucun au-delà de 2,74 dB**. Ce n'est pas un trou de capacité mais une marge — et 22 des 34 sont
+de l'AAC à débit élevé, qui est le noyau dur.
+
+### Une meilleure règle de décision ne suffit pas — mesuré, cinq règles testées
+
+Les seuils sont déjà posés au plancher des authentiques : les baisser créerait des faux positifs.
+L'espoir restant était que les deux mesures, **prises ensemble**, séparent là où chacune seule
+échoue. Testé :
+
+| règle | détection | faux positifs |
+|---|---|---|
+| **OU des deux seuils (actuel)** | **77 %** | **0/10** |
+| somme des deux axes < min authentique | 67 % | 0/10 |
+| OU des trois (seuils + somme) | 77 % | 0/10 |
+| z-score minimal < min authentique | 74 % | 0/10 |
+| les deux sous la médiane authentique | 55 % | **4/10** |
+| OU des seuils, OU les deux sous la médiane | 86 % | **4/10** |
+
+**Aucune combinaison ne bat le OU actuel à zéro faux positif.** Celle qui monte à 86 % coûte
+**4 faux positifs sur 10 authentiques** — inutilisable pour un logiciel qui accuse un fichier.
+
+Conclusion soutenable : dans cet espace à deux dimensions, la population authentique et les
+transcodages ratés **se chevauchent réellement**. Il ne manque pas une meilleure règle, il manque
+une **troisième mesure indépendante**. Toute heure passée à régler la décision sur ces deux
+features-ci est perdue d'avance, et c'est ce que ce tableau existe pour éviter.
+
+⚠️ Ces seuils reposent sur **10 authentiques** (ceux du corpus), pas sur les 44 : la borne de la
+bande fixe se trouve identique (−5,4), celle de la relative n'a que ces 10 fichiers derrière elle,
+dont un seul la tire à −10,9. Un jeu authentique plus large déplacerait ces chiffres.
+
 ## Étape 3 — le cross-test Fakin' The Funk
 
 Pas encore fait. Sa valeur a changé : avant, il aurait servi de second avis sur un détecteur dont on
