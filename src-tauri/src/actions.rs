@@ -2407,8 +2407,8 @@ mod tests {
     #[test]
     fn normalize_masterdb_path_folds_separators_and_case() {
         assert_eq!(
-            normalize_masterdb_path(r"C:\Users\LEETJ\Music\Track.mp3"),
-            normalize_masterdb_path("C:/Users/LEETJ/Music/Track.mp3"),
+            normalize_masterdb_path(r"C:\Users\dj\Music\Track.mp3"),
+            normalize_masterdb_path("C:/Users/dj/Music/Track.mp3"),
         );
         assert_eq!(
             normalize_masterdb_path(r"D:\Fixture\track1.MP3"),
