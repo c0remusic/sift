@@ -58,6 +58,67 @@ pub fn estimate_kbps(cutoff_hz: f32) -> u32 {
     128
 }
 
+/// Les deux bandes de platitude de l'aigu, passées ENSEMBLE et NOMMÉES.
+///
+/// Deux `Option<f32>` positionnels côte à côte s'inverseraient sans que rien ne le dise — et les
+/// inverser change le sens : la bande fixe (16-20 kHz) et la bande relative (0,80-0,98 × Nyquist)
+/// n'ont ni la même plage de valeurs ni les mêmes angles morts. Voir `spectrum.rs`.
+///
+/// `Default` = aucune mesure, et c'est un état réel : la bande n'existe pas à tous les taux
+/// d'échantillonnage, et un fichier trop court ne rend aucune trame.
+#[derive(Debug, Clone, Copy, Default, PartialEq)]
+pub struct HfFlatness {
+    /// Bande FIXE 16-20 kHz, médiane sur les trames, en dB.
+    pub fixed_db: Option<f32>,
+    /// Bande RELATIVE au Nyquist, médiane sur les trames, en dB.
+    pub top_db: Option<f32>,
+}
+
+/// Planchers de la plage des masters, une par bande. Un lossless à bande pleine qui passe SOUS
+/// l'un des deux n'est plus annoncé Vrai lossless — il devient Douteux.
+///
+/// ⚠️ **Ce ne sont PAS les bornes d'affichage de `frontend/report-figures.ts`, et c'est délibéré.**
+/// Celles-là (`HF_REF_LO = -5.4`) viennent de `scripts/hf-flatness-probe.mjs` : décodage forcé en
+/// mono 44,1 kHz, DFT naïve, 200 trames échantillonnées, 150 s au plus. Le juge, lui, mesure au
+/// taux natif, sur tout le fichier, par la FFT de `spectrum.rs`. **Deux chemins de mesure, deux
+/// valeurs** — et un seuil n'est comparable qu'aux mesures qui l'ont produit.
+///
+/// Ce que le mélange coûtait, mesuré le 2026-08-18 par un scan complet du corpus : à -5,4, le
+/// fichier `src09` du corpus — un ACHAT — mesure -5,79 par le chemin Rust et bascule en Douteux.
+/// Un faux positif sur du matériel acheté, produit par un seuil que le code qui juge n'avait
+/// jamais mesuré. La sonde le situait à -5,4 ; le review en a même tiré une « distribution
+/// bimodale » avec un vide entre -6,5 et -5,4, où ce fichier tombe pourtant.
+///
+/// D'où vient -5,8 : minimum des 10 authentiques du corpus MESURÉS PAR CE CHEMIN (-5,79), arrondi
+/// vers le bas — la valeur exacte serait une borne posée sur un fichier réel, à la merci de son
+/// troisième chiffre. Coût mesuré : 98/150 au lieu de 105/150, contre 0/10 faux positifs au lieu
+/// de 1/10.
+///
+/// ⚠️ **Provisoire, et sur DIX fichiers.** C'est le défaut que ce chantier a déjà corrigé une fois
+/// (un seuil posé au plancher de 10 fichiers d'une famille musicale est une propriété de
+/// l'échantillon). Ce qui le lèverait : re-mesurer les 44 authentiques de la référence élargie par
+/// ce chemin-ci, pas par la sonde. Tant que ce n'est pas fait, ce plancher se lit comme une borne
+/// prudente, pas comme la frontière des masters.
+const HF_FIXED_FLOOR_DB: f32 = -5.8;
+
+/// Bande relative. Toujours la valeur issue de la sonde, et gardée telle quelle parce qu'elle est
+/// CONSERVATRICE ici : les 10 authentiques du corpus descendent à -10,77 par le chemin Rust, très
+/// au-dessus de ce plancher, donc aucun d'eux n'en dépend. Elle vaut le même avertissement — elle
+/// n'a pas non plus été mesurée par le code qui juge.
+const HF_TOP_FLOOR_DB: f32 = -23.8;
+
+/// Vrai quand au moins une des deux bandes sort par le bas de la plage des masters.
+///
+/// L'UNION et pas l'intersection : mesuré sur le corpus étiqueté, les deux bandes sont aveugles à
+/// des endroits différents — la fixe ne voit aucun Opus, la relative ne voit aucun MP3 128, dont
+/// la coupure passe sous elle. Exiger les deux ramènerait la détection à ce que chacune rate.
+///
+/// Une bande non mesurée n'est pas un grief : `None` ne déclenche rien.
+fn below_master_range(f: HfFlatness) -> bool {
+    f.fixed_db.is_some_and(|v| v < HF_FIXED_FLOOR_DB)
+        || f.top_db.is_some_and(|v| v < HF_TOP_FLOOR_DB)
+}
+
 /// Maps cutoff + declared rail + declared bitrate to a verdict.
 ///
 /// `content_rail` is the rail sniffed from the actual container/codec (independent of the
@@ -72,6 +133,7 @@ pub fn verdict(
     declared: Rail,
     declared_bitrate: Option<u32>,
     content_rail: Rail,
+    flatness: HfFlatness,
 ) -> Verdict {
     match declared {
         Rail::Lossless => {
@@ -82,7 +144,14 @@ pub fn verdict(
             } else if cutoff_hz <= NO_MEASUREMENT_HZ {
                 Verdict::Grey
             } else if cutoff_hz >= LOSSLESS_OK_HZ {
-                Verdict::Ok
+                // Bande pleine : la coupure n'a plus rien à dire. C'est ici, et seulement ici, que
+                // la platitude de l'aigu tranche — elle ne DÉGRADE jamais un verdict déjà négatif,
+                // elle rattrape ce que la falaise ne peut pas voir.
+                if below_master_range(flatness) {
+                    Verdict::Grey
+                } else {
+                    Verdict::Ok
+                }
             } else if cutoff_hz <= LOSSY_CLIFF_HZ {
                 Verdict::Fake
             } else {
@@ -109,7 +178,13 @@ mod tests {
     #[test]
     fn lossless_with_full_band_is_ok() {
         assert_eq!(
-            verdict(21000.0, Rail::Lossless, None, Rail::Lossless),
+            verdict(
+                21000.0,
+                Rail::Lossless,
+                None,
+                Rail::Lossless,
+                HfFlatness::default()
+            ),
             Verdict::Ok
         );
     }
@@ -117,11 +192,23 @@ mod tests {
     #[test]
     fn lossless_with_lossy_cliff_is_fake() {
         assert_eq!(
-            verdict(16000.0, Rail::Lossless, None, Rail::Lossless),
+            verdict(
+                16000.0,
+                Rail::Lossless,
+                None,
+                Rail::Lossless,
+                HfFlatness::default()
+            ),
             Verdict::Fake
         );
         assert_eq!(
-            verdict(19000.0, Rail::Lossless, None, Rail::Lossless),
+            verdict(
+                19000.0,
+                Rail::Lossless,
+                None,
+                Rail::Lossless,
+                HfFlatness::default()
+            ),
             Verdict::Fake
         );
     }
@@ -129,8 +216,113 @@ mod tests {
     #[test]
     fn lossless_in_grey_band_is_grey() {
         assert_eq!(
-            verdict(19800.0, Rail::Lossless, None, Rail::Lossless),
+            verdict(
+                19800.0,
+                Rail::Lossless,
+                None,
+                Rail::Lossless,
+                HfFlatness::default()
+            ),
             Verdict::Grey
+        );
+    }
+
+    /// Un lossless à bande PLEINE dont l'aigu est creux devient **Douteux**, pas Vrai lossless.
+    ///
+    /// C'est le cas que la coupure ne peut pas voir : le fichier va jusqu'au bout du spectre, donc
+    /// il n'y a aucune falaise à seuiller — et pourtant l'aigu est clairsemé au point de sortir de
+    /// la plage des masters mesurés. Mesuré sur le corpus étiqueté : c'est la forme de tout l'AAC
+    /// haut débit, du LAME 320 et du V0 (voir `docs/superpowers/changes/2026-08-17-detecteur-corpus/`).
+    ///
+    /// **Douteux et pas Faux, délibérément.** La plage de référence repose sur 32 authentiques,
+    /// et deux morceaux ambient s'en approchent légitimement : le haut du spectre d'un master
+    /// sombre EST clairsemé. Accuser sur cette seule base produirait des faux positifs sur du
+    /// matériel acheté. Douteux dit ce qu'on sait — « cet aigu ne ressemble pas à un master » —
+    /// sans dire ce qu'on ne sait pas.
+    #[test]
+    fn lossless_a_bande_pleine_mais_aigu_creux_est_douteux() {
+        assert_eq!(
+            verdict(
+                21000.0,
+                Rail::Lossless,
+                None,
+                Rail::Lossless,
+                HfFlatness {
+                    fixed_db: Some(-40.0),
+                    top_db: Some(-4.0),
+                },
+            ),
+            Verdict::Grey
+        );
+    }
+
+    /// L'AUTRE moitié de l'union : la bande relative seule suffit, la fixe étant normale.
+    ///
+    /// C'est la forme d'un Opus — 48 kHz, du contenu jusqu'à 20 kHz, donc la bande fixe 16-20 kHz
+    /// tombe en pleine bande passante et ne voit rien. Sans ce cas, retirer la clause relative de
+    /// `below_master_range` laisserait toute la suite verte.
+    ///
+    /// ⚠️ Ce test n'a jamais été rouge : l'union était déjà écrite quand il est arrivé. Il pinne,
+    /// il n'a rien piloté — et c'est un écart à la boucle, pas une propriété du code.
+    #[test]
+    fn lossless_dont_seul_le_tout_haut_est_creux_est_douteux() {
+        assert_eq!(
+            verdict(
+                21000.0,
+                Rail::Lossless,
+                None,
+                Rail::Lossless,
+                HfFlatness {
+                    fixed_db: Some(-3.0),
+                    top_db: Some(-30.0),
+                },
+            ),
+            Verdict::Grey
+        );
+    }
+
+    /// Le plancher est une borne INCLUSE : à la valeur exacte, on est encore dans la plage.
+    ///
+    /// Ce que ça protège : les deux morceaux ambient qui ont fait descendre la borne relative à
+    /// -23,8 sont EXACTEMENT à cette valeur. Un `<=` au lieu d'un `<` les annoncerait douteux —
+    /// c'est-à-dire le faux positif que ce seuil existe pour éviter.
+    #[test]
+    fn un_authentique_pile_sur_le_plancher_reste_vrai_lossless() {
+        assert_eq!(
+            verdict(
+                21000.0,
+                Rail::Lossless,
+                None,
+                Rail::Lossless,
+                HfFlatness {
+                    fixed_db: Some(HF_FIXED_FLOOR_DB),
+                    top_db: Some(HF_TOP_FLOOR_DB),
+                },
+            ),
+            Verdict::Ok
+        );
+    }
+
+    /// Une bande NON MESURÉE n'est pas un grief. `None` ne doit jamais valoir « creux ».
+    ///
+    /// Le cas réel : la bande fixe 16-20 kHz n'existe pas sous 40 kHz d'échantillonnage, et un
+    /// fichier trop court ne rend aucune trame. Traiter cette absence comme une mesure basse
+    /// accuserait un fichier pour n'avoir pas pu être mesuré — le défaut exact que
+    /// `NO_MEASUREMENT_HZ` corrige sur la coupure.
+    #[test]
+    fn une_bande_non_mesuree_ne_declenche_rien() {
+        assert_eq!(
+            verdict(
+                21000.0,
+                Rail::Lossless,
+                None,
+                Rail::Lossless,
+                HfFlatness {
+                    fixed_db: None,
+                    top_db: None,
+                },
+            ),
+            Verdict::Ok
         );
     }
 
@@ -138,11 +330,23 @@ mod tests {
     fn honest_mp3_matching_its_bitrate_is_ok() {
         // genuine 320 (~20.5k), genuine 128 (~16k)
         assert_eq!(
-            verdict(20500.0, Rail::Lossy, Some(320), Rail::Lossy),
+            verdict(
+                20500.0,
+                Rail::Lossy,
+                Some(320),
+                Rail::Lossy,
+                HfFlatness::default()
+            ),
             Verdict::Ok
         );
         assert_eq!(
-            verdict(16000.0, Rail::Lossy, Some(128), Rail::Lossy),
+            verdict(
+                16000.0,
+                Rail::Lossy,
+                Some(128),
+                Rail::Lossy,
+                HfFlatness::default()
+            ),
             Verdict::Ok
         );
     }
@@ -151,12 +355,24 @@ mod tests {
     fn over_encoded_mp3_is_fake() {
         // declared 320 but cuts at 16k (transcoded up from ~128) → fraud
         assert_eq!(
-            verdict(16000.0, Rail::Lossy, Some(320), Rail::Lossy),
+            verdict(
+                16000.0,
+                Rail::Lossy,
+                Some(320),
+                Rail::Lossy,
+                HfFlatness::default()
+            ),
             Verdict::Fake
         );
         // declared 256 but cuts at 15k
         assert_eq!(
-            verdict(15000.0, Rail::Lossy, Some(256), Rail::Lossy),
+            verdict(
+                15000.0,
+                Rail::Lossy,
+                Some(256),
+                Rail::Lossy,
+                HfFlatness::default()
+            ),
             Verdict::Fake
         );
     }
@@ -166,11 +382,23 @@ mod tests {
     #[test]
     fn honest_192_and_160_mp3_is_ok() {
         assert_eq!(
-            verdict(17000.0, Rail::Lossy, Some(192), Rail::Lossy),
+            verdict(
+                17000.0,
+                Rail::Lossy,
+                Some(192),
+                Rail::Lossy,
+                HfFlatness::default()
+            ),
             Verdict::Ok
         );
         assert_eq!(
-            verdict(16000.0, Rail::Lossy, Some(160), Rail::Lossy),
+            verdict(
+                16000.0,
+                Rail::Lossy,
+                Some(160),
+                Rail::Lossy,
+                HfFlatness::default()
+            ),
             Verdict::Ok
         );
     }
@@ -179,12 +407,24 @@ mod tests {
     fn over_encoded_192_and_160_mp3_is_fake() {
         // declared 192 but cuts at 15k (below the 16500Hz floor for 192) → fraud
         assert_eq!(
-            verdict(15000.0, Rail::Lossy, Some(192), Rail::Lossy),
+            verdict(
+                15000.0,
+                Rail::Lossy,
+                Some(192),
+                Rail::Lossy,
+                HfFlatness::default()
+            ),
             Verdict::Fake
         );
         // declared 160 but cuts at 14k (below the 15500Hz floor for 160) → fraud
         assert_eq!(
-            verdict(14000.0, Rail::Lossy, Some(160), Rail::Lossy),
+            verdict(
+                14000.0,
+                Rail::Lossy,
+                Some(160),
+                Rail::Lossy,
+                HfFlatness::default()
+            ),
             Verdict::Fake
         );
     }
@@ -193,7 +433,13 @@ mod tests {
     fn lossy_without_known_bitrate_is_ok() {
         // can't judge over-encoding without a declared bitrate → don't false-flag
         assert_eq!(
-            verdict(13000.0, Rail::Lossy, None, Rail::Lossy),
+            verdict(
+                13000.0,
+                Rail::Lossy,
+                None,
+                Rail::Lossy,
+                HfFlatness::default()
+            ),
             Verdict::Ok
         );
     }
@@ -210,20 +456,44 @@ mod tests {
     #[test]
     fn no_measurement_is_grey_not_fake() {
         assert_eq!(
-            verdict(NO_MEASUREMENT_HZ, Rail::Lossy, Some(320), Rail::Lossy),
+            verdict(
+                NO_MEASUREMENT_HZ,
+                Rail::Lossy,
+                Some(320),
+                Rail::Lossy,
+                HfFlatness::default()
+            ),
             Verdict::Grey
         );
         assert_eq!(
-            verdict(NO_MEASUREMENT_HZ, Rail::Lossless, None, Rail::Lossless),
+            verdict(
+                NO_MEASUREMENT_HZ,
+                Rail::Lossless,
+                None,
+                Rail::Lossless,
+                HfFlatness::default()
+            ),
             Verdict::Grey
         );
         // Contrôle positif : une vraie mesure basse reste une fraude.
         assert_eq!(
-            verdict(16000.0, Rail::Lossy, Some(320), Rail::Lossy),
+            verdict(
+                16000.0,
+                Rail::Lossy,
+                Some(320),
+                Rail::Lossy,
+                HfFlatness::default()
+            ),
             Verdict::Fake
         );
         assert_eq!(
-            verdict(16000.0, Rail::Lossless, None, Rail::Lossless),
+            verdict(
+                16000.0,
+                Rail::Lossless,
+                None,
+                Rail::Lossless,
+                HfFlatness::default()
+            ),
             Verdict::Fake
         );
     }
@@ -233,7 +503,13 @@ mod tests {
     #[test]
     fn no_measurement_does_not_erase_a_container_mismatch() {
         assert_eq!(
-            verdict(NO_MEASUREMENT_HZ, Rail::Lossless, None, Rail::Lossy),
+            verdict(
+                NO_MEASUREMENT_HZ,
+                Rail::Lossless,
+                None,
+                Rail::Lossy,
+                HfFlatness::default()
+            ),
             Verdict::Fake
         );
     }
@@ -241,7 +517,13 @@ mod tests {
     #[test]
     fn unknown_rail_is_grey() {
         assert_eq!(
-            verdict(16000.0, Rail::Unknown, None, Rail::Unknown),
+            verdict(
+                16000.0,
+                Rail::Unknown,
+                None,
+                Rail::Unknown,
+                HfFlatness::default()
+            ),
             Verdict::Grey
         );
     }
@@ -252,7 +534,13 @@ mod tests {
     #[test]
     fn declared_lossless_but_content_lossy_is_fake() {
         assert_eq!(
-            verdict(20500.0, Rail::Lossless, None, Rail::Lossy),
+            verdict(
+                20500.0,
+                Rail::Lossless,
+                None,
+                Rail::Lossy,
+                HfFlatness::default()
+            ),
             Verdict::Fake
         );
     }
@@ -262,7 +550,13 @@ mod tests {
     #[test]
     fn declared_lossless_content_unknown_falls_back_to_cutoff() {
         assert_eq!(
-            verdict(21000.0, Rail::Lossless, None, Rail::Unknown),
+            verdict(
+                21000.0,
+                Rail::Lossless,
+                None,
+                Rail::Unknown,
+                HfFlatness::default()
+            ),
             Verdict::Ok
         );
     }
@@ -272,11 +566,23 @@ mod tests {
     #[test]
     fn declared_lossy_content_lossy_unchanged_behavior() {
         assert_eq!(
-            verdict(20500.0, Rail::Lossy, Some(320), Rail::Lossy),
+            verdict(
+                20500.0,
+                Rail::Lossy,
+                Some(320),
+                Rail::Lossy,
+                HfFlatness::default()
+            ),
             Verdict::Ok
         );
         assert_eq!(
-            verdict(16000.0, Rail::Lossy, Some(320), Rail::Lossy),
+            verdict(
+                16000.0,
+                Rail::Lossy,
+                Some(320),
+                Rail::Lossy,
+                HfFlatness::default()
+            ),
             Verdict::Fake
         );
     }

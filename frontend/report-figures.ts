@@ -9,9 +9,16 @@
 
 /** Bornes des masters authentiques mesurés, en dB de platitude spectrale 16–20 kHz.
  *
- *  Ce ne sont PAS des seuils : rien ne branche dessus, aucun verdict ne les lit. Elles s'affichent
- *  à côté de la valeur pour que le lecteur situe ce qu'il voit — une mesure sans échelle ne dit
- *  rien à personne.
+ *  Ce ne sont PAS les seuils qui décident. Depuis le 2026-08-18 `verdict()` en applique un
+ *  (`HF_FIXED_FLOOR_DB`, verdict.rs) — mais **pas celui-ci, et l'écart est délibéré** : ces
+ *  bornes-là sont mesurées par `scripts/hf-flatness-probe.mjs` (mono 44,1 kHz forcé, DFT naïve,
+ *  200 trames échantillonnées), le juge mesure au taux natif sur tout le fichier par la FFT de
+ *  `spectrum.rs`. Sur les 10 authentiques du corpus, les deux chemins désaccordent jusqu'à 0,4 dB,
+ *  assez pour faire basculer un achat. Tant que ces 44 fichiers n'ont pas été repassés par le
+ *  chemin Rust, la borne d'affichage et la borne de décision restent deux nombres distincts.
+ *
+ *  Ce qui suit décrit donc l'ÉCHELLE affichée à côté de la valeur — une mesure sans échelle ne dit
+ *  rien à personne — et pas la frontière du verdict.
  *
  *  **44 fichiers de provenance d'achat, trois familles musicales** (house/techno, ambient, broken
  *  beat acoustique), trois provenances indépendantes (Beatport magasin, Beatport clé USB, achats
@@ -101,8 +108,12 @@ export const HF_TOP_REF_HI = -2.5;
 /** La densité du tout-haut du spectre, telle qu'elle s'affiche.
  *
  *  Mesure séparée et non remplaçante : les deux bandes sont aveugles à des endroits différents.
- *  Celle-ci est la seule qui voit Opus (0/10 pour la bande fixe, 10/10 pour celle-ci) et le
- *  LAME 320 ; la fixe est la seule qui voit un MP3 128, dont la coupure est en dessous d'elle. */
+ *  Celle-ci est la seule qui voit Opus (0/10 pour la bande fixe, **6/10** ici) ; la fixe est la
+ *  seule qui voit un MP3 128, dont la coupure passe en dessous d'elle.
+ *
+ *  ⚠️ Ce commentaire annonçait « 10/10 » pour Opus — le chiffre d'avant la correction de seuil du
+ *  2026-08-18, resté ici alors que le bloc dix lignes plus haut le corrigeait déjà. Deux chiffres
+ *  contradictoires dans le même fichier. */
 export function hfTopDensityText(db: number, fmt: (v: number, d: number) => string): string {
   const situe = db >= HF_TOP_REF_LO ? "dans" : "sous";
   return `${fmt(db, 1)} dB — ${situe} la plage des masters mesurés (${fmt(HF_TOP_REF_LO, 1)} à ${fmt(HF_TOP_REF_HI, 1)})`;

@@ -270,6 +270,10 @@ pub fn analyze(path: &str, with_spectrogram: bool) -> Result<AnalysisReport, Str
         tag.declared_rail,
         tag.declared_bitrate,
         content_rail,
+        verdict::HfFlatness {
+            fixed_db: spec_res.hf_flatness_db,
+            top_db: spec_res.hf_flatness_top_db,
+        },
     );
     let est_kbps = verdict::estimate_kbps(cutoff_hz);
     let (capped_peaks, peaks_factor) = peaks::cap(pk.finish(), MAX_PEAKS);
@@ -348,9 +352,14 @@ mod corpus {
         // sur 967 fichiers d'une vraie clé USB, 4 lignes étaient tordues parce que le nom
         // contenait le séparateur — « Jacob Todd - Nevermore (Original ;… ».wav » décalait toutes
         // les colonnes suivantes, et le verdict lu était un bout de titre. En dernière position,
-        // un `;` dans le nom ne peut plus déplacer quoi que ce soit : les cinq champs qui
+        // un `;` dans le nom ne peut plus déplacer quoi que ce soit : les sept champs qui
         // précèdent se lisent par position, et le nom est « tout ce qui reste ».
-        println!("rail;debit_declare;cutoff_hz;verdict;est_kbps;fichier");
+        //
+        // Les deux colonnes de platitude sont là depuis le 2026-08-18 parce que les taux publiés
+        // sur ces bandes (77 % puis 68 %) venaient de scripts ad-hoc perdus avec leur session :
+        // impossible de les rejouer, donc impossible de les corriger. Elles sortent du MÊME
+        // `analyze()` que le verdict, qui, lui, ne les lit pas encore.
+        println!("rail;debit_declare;cutoff_hz;verdict;est_kbps;hf_flat_db;hf_flat_top_db;fichier");
         for e in walkdir::WalkDir::new(&dir).into_iter().flatten() {
             if !e.file_type().is_file() {
                 continue;
@@ -374,21 +383,34 @@ mod corpus {
             seen += 1;
             match super::analyze(&path.to_string_lossy(), false) {
                 Ok(r) => println!(
-                    "{:?};{};{:.0};{:?};{};{name}",
+                    "{:?};{};{:.0};{:?};{};{};{};{name}",
                     r.declared_rail,
                     r.declared_bitrate
                         .map(|b| b.to_string())
                         .unwrap_or_else(|| "-".into()),
                     r.cutoff_hz,
                     r.verdict,
-                    r.est_kbps
+                    r.est_kbps,
+                    // « - » et pas 0 : la bande n'existe pas à tous les taux d'échantillonnage, et
+                    // un zéro se lirait comme une mesure plate — exactement l'inverse du fait.
+                    r.hf_flatness_db
+                        .map(|v| format!("{v:.2}"))
+                        .unwrap_or_else(|| "-".into()),
+                    r.hf_flatness_top_db
+                        .map(|v| format!("{v:.2}"))
+                        .unwrap_or_else(|| "-".into()),
                 ),
                 Err(err) => {
                     failed += 1;
                     // Un échec d'analyse est une LIGNE du résultat, pas un silence : c'est
                     // précisément le cas qui, non dit, ferait passer un corpus incomplet pour
                     // un corpus propre.
-                    println!("ERREUR;-;-;-;{err};{name}");
+                    //
+                    // Le MÊME nombre de colonnes que la ligne normale, et ce n'est pas cosmétique :
+                    // le lecteur prend le nom en position fixe. Une ligne d'erreur plus courte
+                    // ferait tomber le nom ailleurs, donc hors jointure — un fichier en échec
+                    // compterait alors comme « non mesuré » au lieu de « en erreur ».
+                    println!("ERREUR;-;-;-;{err};-;-;{name}");
                 }
             }
         }
