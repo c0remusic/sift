@@ -228,6 +228,86 @@ corpus supposerait que les conversions d'Antoine ont le même mélange d'encodeu
 variantes, ce que rien n'établit. Le seul énoncé soutenable est qualitatif : **le nombre réel est
 supérieur à 3, d'un facteur inconnu.**
 
+## Comment FTF décide, et pourquoi il plafonne au même endroit que nous (2026-08-18)
+
+Établi depuis **ses propres fichiers de langue et sa base de réglages**, pas par désassemblage :
+son algorithme n'a pas été lu et n'a pas été copié.
+
+Son unique critère de faux, verbatim (`Languages\en-US.txt`) :
+
+```
+MSG_FAKE_FILE = Mr. Funk says: FAKE! Actual bitrate (%d) is lower than stated bitrate (%d)
+```
+
+Et le « débit réel » sort de la coupure : `Settings:CutoffLevl = 19600` (l'UI l'appelle
+« Allow cutoffs above: »), placeholders `$frequency` et `$realbitrate` côte à côte, log
+`Analyzing frequency (aggressive) for %s`. C'est **exactement notre branche lossy**, avec un seuil
+au lieu de deux. Son mode « agressif » est vague dans sa propre interface : *« might detect more
+fakes »*.
+
+**Ce qu'il fait et pas nous** — un seul point compte : `Actual duration != stated duration`
+(colonnes `Duration`/`ActualDuration`, peuplées et distinctes dans sa base). Nous prenons
+`duration_sec` de l'en-tête et ne la comparons **jamais** au décodé (`analysis/mod.rs`), alors
+qu'on décode déjà tout le fichier. C'est gratuit et ce n'est pas fait. Il a aussi une classe
+CORROMPU distincte (silence long en plein morceau) et un `SupportFHGEncoder`.
+
+**Ce que nous faisons et pas lui** : le désaccord de conteneur (un MP3 renommé `.flac` — rien dans
+son schéma ni ses messages), la zone grise (il est binaire), phase/dual-mono/true-peak.
+
+**Sa colonne `hasHole`** — la piste qui semblait la plus prometteuse — vaut **0 sur les 14 fichiers
+de sa base**, dont de vrais MP3, et aucune chaîne d'interface ne la mentionne. Elle a l'air
+vestigiale.
+
+Son seuil de 19600 appliqué à **nos coupures déjà mesurées** donne 32 à 48 détections sur 150.
+Nous : 40. **Les deux sont dans le bruit l'un de l'autre**, parce que c'est le même signal.
+
+## Un signal qui double la détection — la platitude spectrale de l'aigu
+
+Le plafond n'est pas un réglage, c'est le choix du signal. Deux candidats testés et **réfutés par la
+mesure** avant celui qui marche :
+
+- **Alignement sur la grille de trames du codec** (MP3 1152, AAC 1024) : les longueurs décodées sont
+  **identiques** entre l'authentique et ses 7 transcodages (17 722 908 échantillons). ffmpeg honore
+  les infos gapless dans les deux sens, la grille est effacée. Mort sur un corpus fabriqué
+  proprement.
+- **Corrélation des enveloppes aigu/médium** (hypothèse : un aigu resynthétisé par SBR suit la bande
+  basse de trop près) : authentiques 0,48–0,65, faux 0,31–0,66. Se chevauchent. Mort.
+
+**Ce qui marche.** Un encodeur lossy ne supprime pas l'aigu : il ne garde que ses coefficients les
+plus forts et met le reste à zéro. L'aigu devient **clairsemé et pointu**, là où un master porte un
+plancher de bruit continu. Ça se mesure par la platitude spectrale (moyenne géométrique / moyenne
+arithmétique) de la bande 16-20 kHz, médiane sur les trames. Le sens est l'inverse de l'intuition
+de départ : les transcodages sont **moins** plats, pas plus.
+
+| | détecte | angle mort |
+|---|---|---|
+| coupure (Sift **et** FTF) | 40/150 = 27 % | AAC, LAME 320, V0, Opus, Vorbis, WMA |
+| **platitude de l'aigu** | **91/150 = 61 %** | Opus seul (0/10) |
+
+Elle attrape ce que la coupure rate entièrement : mfmp3_320 9/10, vorbisq5 8/10, wma192 8/10,
+aac128 6/10, lameV0 5/10, lame320 3/10 — tous à 0/10 en coupure. Et elle garde 10/10 sur les LAME
+128/160/192/256 que la coupure attrape déjà : **elle la domine sur ce corpus**, elle ne la complète
+pas.
+
+### La validation, parce que le seuil est ajusté
+
+Le seuil (−5,4 dB) est le **minimum des 10 authentiques** — donc ajusté sur eux par construction, et
+61 % serait un chiffre creux sans épreuve indépendante.
+
+Épreuve : les **10 authentiques de `BACKUP USB`**, achats Beatport d'une autre provenance, qui n'ont
+pas servi à fixer le seuil. Résultat : **−4,7 à −2,8 dB, zéro faux positif**. Les 20 authentiques
+des deux jeux tiennent dans [−5,4 ; −2,6] ; les transcodages descendent à −43,8.
+
+### Ce que ça n'établit toujours pas
+
+- **20 fichiers authentiques**, tous house/techno achetée. Du classique, du jazz, de l'ambient, un
+  master analogique ancien — tout ce dont l'aigu est naturellement clairsemé — n'a **pas** été
+  testé, et c'est exactement là que cette feature ferait des faux positifs.
+- **Opus reste invisible** (0/10) : il ne creuse pas l'aigu.
+- Rien sur les transcodages en chaîne, ni sur les fichiers réels de la bibliothèque.
+- La sonde est `scripts/hf-flatness-probe.mjs` ; **rien n'est branché dans le détecteur**. C'est un
+  candidat mesuré, pas une décision.
+
 ## Étape 3 — le cross-test Fakin' The Funk
 
 Pas encore fait. Sa valeur a changé : avant, il aurait servi de second avis sur un détecteur dont on
