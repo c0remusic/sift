@@ -67,6 +67,42 @@ pub(crate) const MAX_COLS: usize = 1200;
 const HF_FLATNESS_LO_HZ: f32 = 16000.0;
 const HF_FLATNESS_HI_HZ: f32 = 20000.0;
 
+/// SECONDE bande de platitude, exprimée en fraction du Nyquist et non en Hz — et les deux sont
+/// nécessaires, chacune étant aveugle là où l'autre voit.
+///
+/// Le mécanisme, mesuré : sur un MP3 128 kbps qui coupe à 16,8 kHz, la bande fixe 16-20 kHz
+/// chevauche la falaise et la voit ; la bande relative (17,6-21,6 kHz à 44,1 kHz) tombe
+/// ENTIÈREMENT dans la zone morte au-dessus de la coupure, où le plancher résiduel est uniforme —
+/// donc parfaitement plat, donc « authentique ». Symétriquement, un fichier Opus est à 48 kHz et
+/// garde du contenu jusqu'à 20 kHz : la bande fixe y est à 33-42 % du Nyquist, en pleine bande
+/// passante, et ne voit rien — la bande relative, elle, tombe sur son extinction.
+///
+/// Mesuré le 2026-08-18 sur les 150 transcodages étiquetés, seuil = plancher des authentiques
+/// pour chaque bande :
+///
+/// | | fixe | relative | union |
+/// |---|---|---|---|
+/// | opus128 | 0/10 | **10/10** | 10/10 |
+/// | lame320 | 3/10 | **10/10** | 10/10 |
+/// | lame128 / lame160 | **10/10** | 0/10 | 10/10 |
+/// | total | 61 % | 50 % | **77 %** |
+///
+/// 0,98 et pas 1,0 : les tout derniers bins portent le repliement et la pente du filtre de
+/// décimation, pas du signal.
+const HF_FLATNESS_REL_LO: f32 = 0.80;
+const HF_FLATNESS_REL_HI: f32 = 0.98;
+
+/// Médiane d'une série de platitudes par trame. `None` sur une série vide — aucune trame n'a pu
+/// être mesurée (bande hors spectre, ou fichier trop court).
+fn median_of(v: &[f32]) -> Option<f32> {
+    if v.is_empty() {
+        return None;
+    }
+    let mut s = v.to_vec();
+    s.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    Some(s[s.len() / 2])
+}
+
 fn shared_fft(fft_size: usize) -> Arc<dyn Fft<f32>> {
     // The shared plan is only valid for the canonical size; any other size (tests) plans ad hoc.
     if fft_size == FFT_SIZE {
@@ -84,6 +120,9 @@ pub struct SpectrumResult {
     /// Platitude spectrale de la bande 16-20 kHz, médiane sur les trames, en dB. `None` quand la
     /// bande n'existe pas à ce taux d'échantillonnage. Voir [`HF_FLATNESS_LO_HZ`].
     pub hf_flatness_db: Option<f32>,
+    /// Idem sur la bande RELATIVE au Nyquist — voir [`HF_FLATNESS_REL_LO`] pour pourquoi les deux
+    /// sont nécessaires. Ne remplace pas la précédente : leurs angles morts sont complémentaires.
+    pub hf_flatness_top_db: Option<f32>,
     pub spectrogram: Spectrogram,
 }
 
@@ -110,6 +149,8 @@ pub struct SpectrumAccumulator {
     /// ligne : la médiane résiste aux trames de silence, qui donneraient des valeurs aberrantes,
     /// et un morceau commence souvent par du silence.
     hf_flatness_per_frame: Vec<f32>,
+    /// Idem sur la bande relative au Nyquist. Voir [`HF_FLATNESS_REL_LO`].
+    hf_flatness_top_per_frame: Vec<f32>,
     /// `norm_sqr()` of a full-scale sine at this window's coherent gain — the 0 dBFS
     /// reference for the display-only `db` conversion in `process_frame`. Unnormalized FFT
     /// output scales with `fft_size`, so without this a full-scale signal reads as +50 to
@@ -147,6 +188,7 @@ impl SpectrumAccumulator {
             collect_display,
             bins,
             hf_flatness_per_frame: Vec::new(),
+            hf_flatness_top_per_frame: Vec::new(),
             ref_mag_sqr: ref_mag * ref_mag,
         }
     }
@@ -215,13 +257,30 @@ impl SpectrumAccumulator {
     /// aveugle à l'AAC.
     fn record_hf_flatness(&mut self) {
         let hz_per_bin = self.sr as f32 / self.fft_size as f32;
-        let lo = (HF_FLATNESS_LO_HZ / hz_per_bin).ceil() as usize;
-        let hi = ((HF_FLATNESS_HI_HZ / hz_per_bin).floor() as usize).min(self.bins);
-        // Bande absente à ce taux d'échantillonnage (un 32 kHz n'a pas de 20 kHz) : ne rien
-        // enregistrer, plutôt qu'une valeur calculée sur trois bins qui serait du bruit présenté
-        // comme une mesure.
+        let nyq = self.sr as f32 / 2.0;
+        if let Some(v) = self.band_flatness(
+            (HF_FLATNESS_LO_HZ / hz_per_bin).ceil() as usize,
+            (HF_FLATNESS_HI_HZ / hz_per_bin).floor() as usize,
+        ) {
+            self.hf_flatness_per_frame.push(v);
+        }
+        if let Some(v) = self.band_flatness(
+            (HF_FLATNESS_REL_LO * nyq / hz_per_bin).ceil() as usize,
+            (HF_FLATNESS_REL_HI * nyq / hz_per_bin).floor() as usize,
+        ) {
+            self.hf_flatness_top_per_frame.push(v);
+        }
+    }
+
+    /// Platitude d'une bande de bins pour la trame courante — moyenne géométrique sur moyenne
+    /// arithmétique, en dB. `None` quand la bande est trop étroite ou hors spectre.
+    fn band_flatness(&self, lo: usize, hi: usize) -> Option<f32> {
+        let hi = hi.min(self.bins);
+        // Bande absente à ce taux d'échantillonnage (un 32 kHz n'a pas de 20 kHz) : ne rien rendre,
+        // plutôt qu'une valeur calculée sur trois bins qui serait du bruit présenté comme une
+        // mesure.
         if hi <= lo + 8 {
-            return;
+            return None;
         }
         let mut log_sum = 0.0f64;
         let mut sum = 0.0f64;
@@ -233,19 +292,17 @@ impl SpectrumAccumulator {
             sum += v;
         }
         let n = (hi - lo) as f64;
-        self.hf_flatness_per_frame
-            .push((10.0 * ((log_sum / n).exp() / (sum / n)).log10()) as f32);
+        Some((10.0 * ((log_sum / n).exp() / (sum / n)).log10()) as f32)
     }
 
     /// Médiane des platitudes par trame. `None` si aucune trame n'a pu être mesurée — bande
     /// absente à ce taux d'échantillonnage, ou fichier trop court.
     fn hf_flatness_db(&self) -> Option<f32> {
-        if self.hf_flatness_per_frame.is_empty() {
-            return None;
-        }
-        let mut v = self.hf_flatness_per_frame.clone();
-        v.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-        Some(v[v.len() / 2])
+        median_of(&self.hf_flatness_per_frame)
+    }
+
+    fn hf_flatness_top_db(&self) -> Option<f32> {
+        median_of(&self.hf_flatness_top_per_frame)
     }
 
     /// Detect the cutoff as the **highest sharp relative cliff** in the LTAS.
@@ -371,9 +428,11 @@ impl SpectrumAccumulator {
     pub fn finish(self) -> SpectrumResult {
         let cutoff_hz = self.detect_cutoff();
         let hf_flatness_db = self.hf_flatness_db();
+        let hf_flatness_top_db = self.hf_flatness_top_db();
         SpectrumResult {
             cutoff_hz,
             hf_flatness_db,
+            hf_flatness_top_db,
             spectrogram: self.build_spectrogram(),
         }
     }
@@ -677,6 +736,50 @@ mod tests {
             "cutoff {} should sit at the ~16.2kHz cliff despite gradual residual decay above it \
              (a real encoder never collapses to true digital silence within one averaging band)",
             report.cutoff_hz
+        );
+    }
+
+    /// Les deux bandes doivent être aveugles à des endroits DIFFÉRENTS — c'est la seule raison
+    /// d'en avoir deux, et rien d'autre ne le garde.
+    ///
+    /// Signal construit pour ça : plein jusqu'à 16 kHz, puis rien. C'est la forme d'un MP3 à
+    /// passe-bas dur. La bande fixe (16-20 kHz) chevauche la falaise et voit un aigu clairsemé ;
+    /// la bande relative (17,6-21,6 kHz à 44,1 kHz) tombe ENTIÈREMENT au-dessus de la coupure, où
+    /// il ne reste qu'un plancher uniforme — donc parfaitement plat, donc « rien à signaler ».
+    ///
+    /// Si un jour les deux se mettent d'accord sur ce signal, l'une des deux est devenue inutile
+    /// et ce test doit tomber pour le dire.
+    #[test]
+    fn the_two_bands_are_blind_in_different_places() {
+        let n = (SR as f32 * 3.0) as usize;
+        let mut seed = 999u32;
+        // Bruit passe-bas grossier : moyenne glissante sur 3 échantillons, qui atténue fortement
+        // au-dessus de ~16 kHz sans introduire de raies.
+        let raw: Vec<f32> = (0..n + 2)
+            .map(|_| {
+                seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+                (seed >> 8) as f32 / (1u32 << 24) as f32 * 2.0 - 1.0
+            })
+            .collect();
+        let sig: Vec<f32> = (0..n)
+            .map(|i| (raw[i] + raw[i + 1] + raw[i + 2]) / 3.0 * 0.3)
+            .collect();
+
+        let mut a = SpectrumAccumulator::new(SR, 4096, false);
+        a.push(&sig);
+        let r = a.finish();
+        let fixe = r.hf_flatness_db.expect("bande fixe mesurable a 44,1 kHz");
+        let top = r
+            .hf_flatness_top_db
+            .expect("bande relative mesurable a 44,1 kHz");
+        // Contrôle positif : les deux ont bien mesuré quelque chose de fini.
+        assert!(
+            fixe.is_finite() && top.is_finite(),
+            "fixe {fixe}, relative {top}"
+        );
+        assert!(
+            top > fixe,
+            "la bande relative, entierement au-dessus de la coupure, doit voir un plancher PLUS              plat que la bande fixe qui chevauche la falaise : fixe {fixe}, relative {top}"
         );
     }
 

@@ -7,7 +7,7 @@ import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import WaveSurfer from "wavesurfer.js";
 import type { AnalysisReport } from "../shared/contracts";
 import { requireEl, esc } from "./dom";
-import { durationText, hfDensityText } from "./report-figures";
+import { durationText, hfDensityText, hfTopDensityText } from "./report-figures";
 
 /** Fallback step, only for a report predating `peaks_step` (mirrors analysis::PEAKS_WINDOW and
  *  analysis::default_peaks_step). Never use it when the report carries its own step: the envelope
@@ -620,6 +620,12 @@ function spectroAndTagsHtml(r: AnalysisReport): string {
     `<details class="sift-spectro-tech">` +
     `<summary class="sift-spectro-tech-summary">Détails techniques</summary>` +
     `<div class="sift-spectro-rows">` +
+    // Seconde bande de platitude — ici et pas dans les lignes principales : sa référence ne
+    // s'appuie que sur 20 fichiers contre 44, et deux lignes de densité en tête noieraient celle
+    // qui porte la mesure la mieux étayée. Elle reste indispensable : c'est la SEULE qui voit Opus.
+    (r.hf_flatness_top_db != null
+      ? row("Densité du haut du spectre", hfTopDensityText(r.hf_flatness_top_db, fmt))
+      : "") +
     row("Canaux", String(r.channels) + (r.dual_mono ? " (dual-mono)" : "")) +
     row("True-peak", fmt(r.true_peak_dbtp, 2) + " dBTP") +
     row("DC offset", fmt(r.dc_offset, 5)) +

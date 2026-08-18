@@ -5,6 +5,8 @@ import {
   HF_REF_LO,
   durationText,
   hfDensityText,
+  hfTopDensityText,
+  HF_TOP_REF_LO,
 } from "../frontend/report-figures";
 
 // `fmt` est injecté par report-view (virgule décimale française). Ici on en passe une version
@@ -62,5 +64,29 @@ describe("durée", () => {
   // de mesure présentée comme une mesure, exactement le défaut que ce dépôt corrige partout.
   it("traite 0 comme « pas mesuré », jamais comme une durée nulle", () => {
     expect(durationText(212.4, 0, fmt)).toBe("212.4 s");
+  });
+});
+
+describe("densité du haut du spectre", () => {
+  it("situe sans juger, comme l'autre bande", () => {
+    expect(hfTopDensityText(-3.0, fmt)).toContain("dans la plage");
+    expect(hfTopDensityText(-25.0, fmt)).toContain("sous la plage");
+  });
+
+  // Même garde que pour la bande fixe : la mesure ne distingue pas un master sombre d'un
+  // transcodage, donc le texte ne doit rien affirmer sur l'histoire du fichier.
+  it("n'accuse jamais", () => {
+    const t = hfTopDensityText(-31.7, fmt).toLowerCase();
+    for (const mot of ["fake", "faux", "suspect", "transcod", "opus", "lossy"]) {
+      expect(t).not.toContain(mot);
+    }
+  });
+
+  // Les deux bandes ont des références DIFFÉRENTES, et les confondre ferait passer pour normal un
+  // haut de spectre éteint (-8 dB est dans la plage relative, mais bien sous la plage fixe).
+  it("n'utilise pas les bornes de la bande fixe", () => {
+    expect(HF_TOP_REF_LO).not.toBe(HF_REF_LO);
+    expect(hfTopDensityText(-8.0, fmt)).toContain("dans la plage");
+    expect(hfDensityText(-8.0, fmt)).toContain("sous la plage");
   });
 });

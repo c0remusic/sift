@@ -405,6 +405,7 @@ pub(crate) mod tests {
             channels: 2,
             duration_sec: 123.0,
             hf_flatness_db: Some(-3.0),
+            hf_flatness_top_db: Some(-3.0),
             decoded_duration_sec: 123.0,
             declared_format: "flac".into(),
             declared_bitrate: Some(900),

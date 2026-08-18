@@ -77,3 +77,25 @@ export function durationText(
   }
   return `${declared} annoncée — ${fmt(decodedSec, 1)} s réellement décodée`;
 }
+
+/** Bornes des masters authentiques sur la bande RELATIVE au Nyquist, en dB.
+ *
+ *  Plus larges que celles de la bande fixe, et c'est attendu : le haut du spectre d'un master
+ *  varie beaucoup plus d'un morceau à l'autre que la zone 16-20 kHz. Un seul des 20 authentiques
+ *  descend à -10,9, les autres tiennent au-dessus de -6.
+ *
+ *  ⚠️ Adossées à **20 fichiers seulement**, contre 44 pour la bande fixe : moins solides, et
+ *  c'est pourquoi cette mesure vit dans les détails techniques et pas dans les lignes
+ *  principales. */
+export const HF_TOP_REF_LO = -10.9;
+export const HF_TOP_REF_HI = -2.5;
+
+/** La densité du tout-haut du spectre, telle qu'elle s'affiche.
+ *
+ *  Mesure séparée et non remplaçante : les deux bandes sont aveugles à des endroits différents.
+ *  Celle-ci est la seule qui voit Opus (0/10 pour la bande fixe, 10/10 pour celle-ci) et le
+ *  LAME 320 ; la fixe est la seule qui voit un MP3 128, dont la coupure est en dessous d'elle. */
+export function hfTopDensityText(db: number, fmt: (v: number, d: number) => string): string {
+  const situe = db >= HF_TOP_REF_LO ? "dans" : "sous";
+  return `${fmt(db, 1)} dB — ${situe} la plage des masters mesurés (${fmt(HF_TOP_REF_LO, 1)} à ${fmt(HF_TOP_REF_HI, 1)})`;
+}

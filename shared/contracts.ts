@@ -172,6 +172,15 @@ export interface AnalysisReport {
    *
    *  Ancien rapport en cache : `null` — traiter comme « pas mesuré », jamais comme 0. */
   hf_flatness_db: number | null;
+  /** Même mesure sur une bande RELATIVE au Nyquist (0,80–0,98) plutôt qu'en Hz fixes.
+   *
+   *  Les deux sont nécessaires, chacune étant aveugle là où l'autre voit : un MP3 128 coupe à
+   *  16,8 kHz, donc la bande relative tombe entièrement au-dessus de sa coupure sur un plancher
+   *  uniforme — parfaitement plat, donc « authentique » ; un Opus est à 48 kHz et garde du contenu
+   *  jusqu'à 20 kHz, donc la bande FIXE y est en pleine bande passante et ne voit rien.
+   *
+   *  Mesuré sur 150 transcodages : fixe 61 %, relative 50 %, union 77 %. Opus 0/10 → 10/10. */
+  hf_flatness_top_db: number | null;
   /** Durée RÉELLEMENT décodée, à comparer à `duration_sec` qui vient de l'en-tête.
    *
    *  Les deux étaient une seule valeur — la déclarée — et rien ne vérifiait qu'elle correspondait

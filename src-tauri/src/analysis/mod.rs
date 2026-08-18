@@ -106,6 +106,16 @@ pub struct AnalysisReport {
     /// Voir `spectrum::HF_FLATNESS_LO_HZ` pour le detail.
     #[serde(default)]
     pub hf_flatness_db: Option<f32>,
+    /// Meme mesure sur une bande RELATIVE au Nyquist (0,80-0,98) et non en Hz fixes. Les deux sont
+    /// necessaires : chacune est aveugle la ou l'autre voit. Un MP3 128 coupe a 16,8 kHz, donc la
+    /// bande relative tombe entierement au-dessus de sa coupure, sur un plancher uniforme donc
+    /// parfaitement plat ; un Opus est a 48 kHz et garde du contenu jusqu'a 20 kHz, donc la bande
+    /// FIXE y est en pleine bande passante et ne voit rien.
+    ///
+    /// Mesure sur les 150 transcodages : fixe 61 %, relative 50 %, UNION 77 %. Opus passe de 0/10
+    /// a 10/10, LAME 320 de 3/10 a 10/10. Voir `spectrum::HF_FLATNESS_REL_LO`.
+    #[serde(default)]
+    pub hf_flatness_top_db: Option<f32>,
     /// Duree REELLEMENT decodee, en secondes — a comparer a `duration_sec`, qui vient de l'en-tete.
     ///
     /// Les deux etaient jusqu'ici une seule valeur, celle DECLAREE, et personne ne verifiait
@@ -151,7 +161,7 @@ pub struct AnalysisReport {
 /// Le cout est celui de v16, mesure a l'epoque : la bibliotheque se re-analyse (~30 min sur le
 /// pool pour 297 h d'audio). Il se paie en arriere-plan pour les pistes en file, et a l'ouverture
 /// pour les pistes rangees (`ipc::analyze_path` se repare tout seul).
-pub const REPORT_CACHE_VERSION: i64 = 7;
+pub const REPORT_CACHE_VERSION: i64 = 8;
 
 use dynamics::{ClipAccumulator, DcAccumulator, TruePeakAccumulator};
 use peaks::PeaksAccumulator;
@@ -296,6 +306,7 @@ pub fn analyze(path: &str, with_spectrogram: bool) -> Result<AnalysisReport, Str
         codec_error: info.codec_error,
         truncated,
         hf_flatness_db: spec_res.hf_flatness_db,
+        hf_flatness_top_db: spec_res.hf_flatness_top_db,
         decoded_duration_sec: decoded_mono_samples as f32 / sr as f32,
         silence_head_ms,
         silence_tail_ms,
@@ -518,6 +529,7 @@ mod tests {
             codec_error: None,
             truncated: false,
             hf_flatness_db: None,
+            hf_flatness_top_db: None,
             decoded_duration_sec: 0.0,
             silence_head_ms: 0,
             silence_tail_ms: 0,
@@ -550,6 +562,7 @@ mod tests {
             codec_error,
             truncated,
             hf_flatness_db,
+            hf_flatness_top_db,
             decoded_duration_sec,
             silence_head_ms,
             silence_tail_ms,
@@ -582,6 +595,7 @@ mod tests {
             codec_error,
             truncated,
             hf_flatness_db,
+            hf_flatness_top_db,
             decoded_duration_sec,
             silence_head_ms,
             silence_tail_ms,
@@ -624,6 +638,7 @@ mod tests {
             codec_error: None,
             truncated: false,
             hf_flatness_db: None,
+            hf_flatness_top_db: None,
             decoded_duration_sec: 0.0,
             silence_head_ms: 0,
             silence_tail_ms: 0,
