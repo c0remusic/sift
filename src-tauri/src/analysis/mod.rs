@@ -93,6 +93,18 @@ pub struct AnalysisReport {
     pub container_ok: bool,
     pub codec_error: Option<String>,
     pub truncated: bool,
+    /// Platitude spectrale de la bande 16-20 kHz, mediane sur les trames, en dB. `None` quand la
+    /// bande n'existe pas a ce taux d'echantillonnage.
+    ///
+    /// Un FAIT sur le fichier tel qu'il est, pas une affirmation sur son histoire : « l'aigu est
+    /// clairseme » se mesure, « ca a ete un MP3 » ne se deduit pas. Un master volontairement
+    /// sombre et un transcodage donnent la meme valeur, et c'est pourquoi `verdict()` NE LA LIT
+    /// PAS — la nommer FAKE reviendrait a accuser un master d'une histoire qu'on n'a pas etablie.
+    ///
+    /// Repere mesure (corpus etiquete, 2026-08-18) : authentiques dans [-5,4 ; -2,6] dB,
+    /// transcodages jusqu'a -43,8. Voir `spectrum::HF_FLATNESS_LO_HZ` pour le detail.
+    #[serde(default)]
+    pub hf_flatness_db: Option<f32>,
     /// Duree REELLEMENT decodee, en secondes — a comparer a `duration_sec`, qui vient de l'en-tete.
     ///
     /// Les deux etaient jusqu'ici une seule valeur, celle DECLAREE, et personne ne verifiait
@@ -269,6 +281,7 @@ pub fn analyze(path: &str, with_spectrogram: bool) -> Result<AnalysisReport, Str
         container_ok: info.codec_error.is_none(),
         codec_error: info.codec_error,
         truncated,
+        hf_flatness_db: spec_res.hf_flatness_db,
         decoded_duration_sec: decoded_mono_samples as f32 / sr as f32,
         silence_head_ms,
         silence_tail_ms,
@@ -490,6 +503,7 @@ mod tests {
             container_ok: false,
             codec_error: None,
             truncated: false,
+            hf_flatness_db: None,
             decoded_duration_sec: 0.0,
             silence_head_ms: 0,
             silence_tail_ms: 0,
@@ -521,6 +535,7 @@ mod tests {
             container_ok,
             codec_error,
             truncated,
+            hf_flatness_db,
             decoded_duration_sec,
             silence_head_ms,
             silence_tail_ms,
@@ -552,6 +567,7 @@ mod tests {
             container_ok,
             codec_error,
             truncated,
+            hf_flatness_db,
             decoded_duration_sec,
             silence_head_ms,
             silence_tail_ms,
@@ -593,6 +609,7 @@ mod tests {
             container_ok: true,
             codec_error: None,
             truncated: false,
+            hf_flatness_db: None,
             decoded_duration_sec: 0.0,
             silence_head_ms: 0,
             silence_tail_ms: 0,

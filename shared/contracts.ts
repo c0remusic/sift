@@ -159,6 +159,19 @@ export interface AnalysisReport {
   container_ok: boolean;
   codec_error: string | null;
   truncated: boolean;
+  /** Platitude spectrale de la bande 16–20 kHz, médiane sur les trames, en dB. `null` quand la
+   *  bande n'existe pas à ce taux d'échantillonnage.
+   *
+   *  Un FAIT sur le fichier tel qu'il est, pas une affirmation sur son histoire. « L'aigu est
+   *  clairsemé » se mesure ; « ça a été un MP3 » ne s'en déduit pas — un master volontairement
+   *  sombre donne la même valeur qu'un transcodage. C'est pourquoi le verdict ne la lit pas, et
+   *  pourquoi un affichage ne doit jamais la présenter comme une accusation.
+   *
+   *  Repère mesuré (corpus étiqueté, 2026-08-18) : authentiques dans [−5,4 ; −2,6] dB,
+   *  transcodages jusqu'à −43,8. Plus c'est négatif, plus l'aigu est clairsemé.
+   *
+   *  Ancien rapport en cache : `null` — traiter comme « pas mesuré », jamais comme 0. */
+  hf_flatness_db: number | null;
   /** Durée RÉELLEMENT décodée, à comparer à `duration_sec` qui vient de l'en-tête.
    *
    *  Les deux étaient une seule valeur — la déclarée — et rien ne vérifiait qu'elle correspondait

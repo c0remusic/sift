@@ -43,6 +43,30 @@ static FFT_PLAN: OnceLock<Arc<dyn Fft<f32>>> = OnceLock::new();
 /// croisé — écarté, un commentaire ne tombe pas.
 pub(crate) const MAX_COLS: usize = 1200;
 
+/// Bande sur laquelle se mesure la platitude de l'aigu, et **pourquoi ces bornes**.
+///
+/// 16 kHz : au-dessus de tout passe-bas d'encodeur courant sauf les plus bas débits, donc la bande
+/// porte encore du contenu réel sur un master et déjà plus grand-chose sur un transcodage.
+/// 20 kHz : sous le Nyquist de 44,1 kHz avec de la marge, pour ne pas mesurer du repliement.
+///
+/// Ce que la mesure dit — et c'est un FAIT sur le fichier, pas une accusation sur son histoire :
+/// un encodeur lossy ne supprime pas l'aigu, il ne garde que ses coefficients les plus forts et
+/// met le reste à zéro. L'aigu devient clairsemé et pointu, donc peu plat, là où un master porte
+/// un plancher continu (dither + contenu naturel), donc plat.
+///
+/// Mesuré le 2026-08-18 sur un corpus étiqueté de 150 transcodages et 20 authentiques
+/// (`docs/superpowers/changes/2026-08-17-detecteur-corpus/`) : les authentiques tiennent dans
+/// [-5,4 ; -2,6] dB, les transcodages descendent à -43,8, et 91 des 150 tombent sous le plancher
+/// des authentiques. La coupure spectrale n'en attrape que 40 — et **aucun** AAC, aucun LAME 320,
+/// aucun V0, aucun Vorbis, aucun WMA. Deux signaux différents, pas deux réglages du même.
+///
+/// ⚠️ La valeur est RENDUE, pas jugée : aucun seuil n'est appliqué ici et `verdict()` ne la lit
+/// pas. Un master volontairement sombre donne la même mesure qu'un transcodage — « l'aigu s'arrête
+/// tôt » est vrai des deux, « ça a été du lossy » ne l'est que d'un seul, et rien ici ne permet de
+/// trancher lequel.
+const HF_FLATNESS_LO_HZ: f32 = 16000.0;
+const HF_FLATNESS_HI_HZ: f32 = 20000.0;
+
 fn shared_fft(fft_size: usize) -> Arc<dyn Fft<f32>> {
     // The shared plan is only valid for the canonical size; any other size (tests) plans ad hoc.
     if fft_size == FFT_SIZE {
@@ -57,6 +81,9 @@ fn shared_fft(fft_size: usize) -> Arc<dyn Fft<f32>> {
 /// Result of the spectral pass.
 pub struct SpectrumResult {
     pub cutoff_hz: f32,
+    /// Platitude spectrale de la bande 16-20 kHz, médiane sur les trames, en dB. `None` quand la
+    /// bande n'existe pas à ce taux d'échantillonnage. Voir [`HF_FLATNESS_LO_HZ`].
+    pub hf_flatness_db: Option<f32>,
     pub spectrogram: Spectrogram,
 }
 
@@ -79,6 +106,10 @@ pub struct SpectrumAccumulator {
     spec_cols: Vec<Vec<u8>>,
     collect_display: bool,
     bins: usize,
+    /// Une platitude par trame, agrégée en médiane au `finish()`. Stockée plutôt que moyennée en
+    /// ligne : la médiane résiste aux trames de silence, qui donneraient des valeurs aberrantes,
+    /// et un morceau commence souvent par du silence.
+    hf_flatness_per_frame: Vec<f32>,
     /// `norm_sqr()` of a full-scale sine at this window's coherent gain — the 0 dBFS
     /// reference for the display-only `db` conversion in `process_frame`. Unnormalized FFT
     /// output scales with `fft_size`, so without this a full-scale signal reads as +50 to
@@ -115,6 +146,7 @@ impl SpectrumAccumulator {
             spec_cols: Vec::new(),
             collect_display,
             bins,
+            hf_flatness_per_frame: Vec::new(),
             ref_mag_sqr: ref_mag * ref_mag,
         }
     }
@@ -156,7 +188,52 @@ impl SpectrumAccumulator {
                 .collect();
             self.spec_cols.push(col);
         }
+        self.record_hf_flatness();
         self.frames_total += 1;
+    }
+
+    /// Platitude spectrale de la bande haute POUR CETTE TRAME — moyenne géométrique sur moyenne
+    /// arithmétique, en dB. 0 dB = parfaitement plat ; très négatif = quelques pics isolés sur du
+    /// vide. Voir [`HF_FLATNESS_LO_HZ`] pour ce que ça mesure.
+    ///
+    /// Par trame plutôt que sur le LTAS, pour une raison **de robustesse et non de pouvoir de
+    /// séparation** : la médiane ignore les trames de silence, qu'une moyenne long terme
+    /// laisserait peser. ⚠️ Que le par-trame sépare MIEUX que le LTAS est plausible — le LTAS noie
+    /// la structure temporelle — mais **n'a pas été mesuré** : le corpus n'a été passé qu'avec la
+    /// forme par-trame. Ne pas présenter l'écart comme établi.
+    fn record_hf_flatness(&mut self) {
+        let hz_per_bin = self.sr as f32 / self.fft_size as f32;
+        let lo = (HF_FLATNESS_LO_HZ / hz_per_bin).ceil() as usize;
+        let hi = ((HF_FLATNESS_HI_HZ / hz_per_bin).floor() as usize).min(self.bins);
+        // Bande absente à ce taux d'échantillonnage (un 32 kHz n'a pas de 20 kHz) : ne rien
+        // enregistrer, plutôt qu'une valeur calculée sur trois bins qui serait du bruit présenté
+        // comme une mesure.
+        if hi <= lo + 8 {
+            return;
+        }
+        let mut log_sum = 0.0f64;
+        let mut sum = 0.0f64;
+        for &m2 in &self.mags[lo..hi] {
+            // Plancher identique aux deux moyennes : sans lui, un bin exactement nul enverrait le
+            // logarithme à -inf et la trame entière à NaN.
+            let v = m2 as f64 + 1e-20;
+            log_sum += v.ln();
+            sum += v;
+        }
+        let n = (hi - lo) as f64;
+        self.hf_flatness_per_frame
+            .push((10.0 * ((log_sum / n).exp() / (sum / n)).log10()) as f32);
+    }
+
+    /// Médiane des platitudes par trame. `None` si aucune trame n'a pu être mesurée — bande
+    /// absente à ce taux d'échantillonnage, ou fichier trop court.
+    fn hf_flatness_db(&self) -> Option<f32> {
+        if self.hf_flatness_per_frame.is_empty() {
+            return None;
+        }
+        let mut v = self.hf_flatness_per_frame.clone();
+        v.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+        Some(v[v.len() / 2])
     }
 
     /// Detect the cutoff as the **highest sharp relative cliff** in the LTAS.
@@ -281,8 +358,10 @@ impl SpectrumAccumulator {
 
     pub fn finish(self) -> SpectrumResult {
         let cutoff_hz = self.detect_cutoff();
+        let hf_flatness_db = self.hf_flatness_db();
         SpectrumResult {
             cutoff_hz,
+            hf_flatness_db,
             spectrogram: self.build_spectrogram(),
         }
     }
@@ -586,6 +665,61 @@ mod tests {
             "cutoff {} should sit at the ~16.2kHz cliff despite gradual residual decay above it \
              (a real encoder never collapses to true digital silence within one averaging band)",
             report.cutoff_hz
+        );
+    }
+
+    /// La platitude de l'aigu doit séparer un aigu CLAIRSEMÉ d'un aigu CONTINU **à énergie de bande
+    /// comparable**.
+    ///
+    /// L'égalisation d'énergie est le point : sans elle, le test prouverait seulement qu'un signal
+    /// est plus fort que l'autre, ce que n'importe quelle mesure d'énergie ferait déjà. Ce qui est
+    /// épinglé ici est la RÉPARTITION — un master a un plancher continu, un transcodage n'a que
+    /// quelques raies survivantes sur du vide, et la coupure spectrale ne les distingue pas
+    /// puisque les deux atteignent le Nyquist.
+    ///
+    /// ⚠️ Les deux signaux sont STATIONNAIRES, donc ce test ne dit rien de l'agrégation par trame :
+    /// mesuré, il passe aussi si `hf_flatness_db` est calculée sur le LTAS. Ce qu'il garde est la
+    /// formule de platitude et ses bornes de bande, pas le choix du par-trame.
+    #[test]
+    fn hf_flatness_separates_a_sparse_treble_from_a_continuous_one() {
+        fn measure(sig: &[f32]) -> f32 {
+            let mut a = SpectrumAccumulator::new(SR, 4096, false);
+            a.push(sig);
+            a.finish()
+                .hf_flatness_db
+                .expect("la bande 16-20 kHz existe a 44,1 kHz")
+        }
+        let n = (SR as f32 * 3.0) as usize;
+
+        // Aigu CONTINU : bruit large bande, comme le plancher d'un master.
+        let mut seed = 12345u32;
+        let continuous: Vec<f32> = (0..n)
+            .map(|_| {
+                seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
+                ((seed >> 8) as f32 / (1u32 << 24) as f32 * 2.0 - 1.0) * 0.2
+            })
+            .collect();
+
+        // Aigu CLAIRSEMÉ : trois raies pures dans la bande, rien entre elles.
+        let tau = std::f32::consts::TAU;
+        let sparse: Vec<f32> = (0..n)
+            .map(|i| {
+                let t = i as f32 / SR as f32;
+                0.35 * ((tau * 16500.0 * t).sin()
+                    + (tau * 18000.0 * t).sin()
+                    + (tau * 19500.0 * t).sin())
+            })
+            .collect();
+
+        let flat_continuous = measure(&continuous);
+        let flat_sparse = measure(&sparse);
+        assert!(
+            flat_continuous > -8.0,
+            "un aigu continu doit etre proche de 0 dB, mesure {flat_continuous}"
+        );
+        assert!(
+            flat_sparse < flat_continuous - 15.0,
+            "un aigu clairseme doit etre franchement moins plat : clairseme {flat_sparse}, continu {flat_continuous}"
         );
     }
 
