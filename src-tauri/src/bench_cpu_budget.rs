@@ -280,3 +280,92 @@ fn bench_analysis_and_encode_cpu_budget() {
         println!("    est en cause, pas le budget total — le semaphore n'y repondrait pas.");
     }
 }
+
+/// Latence d'UNE analyse interactive, seule puis sous les deux pools de fond.
+///
+/// Pourquoi cette mesure existe en plus de la précédente : celle-ci mesure ce que l'utilisateur
+/// ATTEND, l'autre mesure ce que deux tâches de fond se prennent l'une à l'autre. Ce ne sont pas
+/// les mêmes chemins de code. `ipc::analyze_path` sert le rapport en cache quand il existe, et
+/// sinon décode SUR LE THREAD D'INVOKE — donc hors du pool d'analyse comme du pool d'encodage.
+///
+/// La conséquence porte l'arbitrage de l'issue #18 : un sémaphore PARTAGÉ ENTRE LES DEUX POOLS ne
+/// peut rien pour cette latence-là, puisqu'elle n'appartient à aucun des deux. Il ne ferait que
+/// redistribuer du débit entre deux tâches de fond.
+fn latences_sequentielles(files: &[PathBuf], n: usize) -> Vec<Duration> {
+    let mut v = Vec::with_capacity(n);
+    for i in 0..n {
+        let f = &files[i % files.len()];
+        let t = Instant::now();
+        let _ = crate::analysis::analyze(&f.to_string_lossy(), false);
+        v.push(t.elapsed());
+    }
+    v.sort();
+    v
+}
+
+#[test]
+#[ignore]
+fn bench_interactive_latency_under_load() {
+    let Some(files) = bench_files() else { return };
+    crate::ffmpeg::init_ffmpeg_path();
+
+    let n_analysis = crate::worker::analysis_pool_size();
+    let n_encode = crate::ipc_filing::phase2_worker_count();
+    let out_dir = std::env::temp_dir().join("sift-bench-interactive");
+    std::fs::create_dir_all(&out_dir).expect("creation du dossier de sortie");
+    let enc = |p: &Path, seq: usize| encode_work(&out_dir, p, seq);
+    let mesures = files.len().min(8);
+
+    println!("\n=== Issue #18 · latence du chemin INTERACTIF ===");
+    println!("  ce chemin est `ipc::analyze_path` en defaut de cache : un decode sur le thread");
+    println!("  d'invoke, donc NI dans le pool d'analyse NI dans le pool d'encodage.");
+    println!("  mesures : {mesures} analyses sequentielles, mediane et pire cas");
+
+    // Préchauffage, même raison que dans l'autre mesure : sans lui la première fenêtre paie les
+    // lectures disque des suivantes.
+    let never = AtomicBool::new(false);
+    let _ = run_window(&files, n_analysis, &never, &analysis_work);
+
+    let seule = latences_sequentielles(&files, mesures);
+    let med_seule = seule[seule.len() / 2];
+
+    // Sous charge : les deux pools de fond tournent pendant la mesure. `stop` les arrête dès que
+    // la mesure est finie, sinon ils continueraient à tourner pour rien.
+    let stop = AtomicBool::new(false);
+    let sous_charge = std::thread::scope(|s| {
+        s.spawn(|| {
+            run_window(&files, n_analysis, &stop, &analysis_work);
+        });
+        s.spawn(|| {
+            run_window(&files, n_encode, &stop, &enc);
+        });
+        let v = latences_sequentielles(&files, mesures);
+        stop.store(true, Ordering::Relaxed);
+        v
+    });
+    let med_charge = sous_charge[sous_charge.len() / 2];
+
+    println!(
+        "\n  seule       : mediane {:>7.2?}   pire {:>7.2?}",
+        med_seule,
+        seule[seule.len() - 1]
+    );
+    println!(
+        "  sous charge : mediane {:>7.2?}   pire {:>7.2?}",
+        med_charge,
+        sous_charge[sous_charge.len() - 1]
+    );
+    let facteur = med_charge.as_secs_f64() / med_seule.as_secs_f64().max(f64::EPSILON);
+    println!("\n  FACTEUR SUR L'ATTENTE PERCUE : x{facteur:.2}");
+    println!(
+        "  Lecture : {}",
+        if facteur < 1.5 {
+            "le fond ne gene pas l'ouverture d'une piste."
+        } else if facteur < 3.0 {
+            "gene reelle. Le levier est de brider LES DEUX pools pendant un decode interactif,"
+        } else {
+            "gene majeure : l'ouverture d'une piste paie tout le travail de fond."
+        }
+    );
+    println!("  et surtout PAS un semaphore entre eux, qui laisserait ce chemin inchange.");
+}
