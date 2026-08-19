@@ -1092,4 +1092,6 @@ les cinq classes de teinte inatteignables hors IPC manuel, contre § 4 (« coule
 source ») et § 15 (« leur pastille de couleur »). Restaurée dans `frontend/source-color.ts` (module
 pur, testé env Node : cycle gelé, position par id croissant, miroir CSS épinglé). L'override manuel
 reste sans UI depuis la mort du picker d'Accueil — le menu contextuel des sources est son
-emplacement naturel si on le veut de retour.
+emplacement naturel si on le veut de retour (chantier ouvert le 2026-08-20, session dédiée).
+Gap antérieur relevé au passage : les états de la pastille de source (teinte / `--error`) n'ont ni
+entrée dans `design-system-states.md` ni story — même famille que l'item 4 du « Reste » ci-dessus.
