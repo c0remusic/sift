@@ -74,7 +74,11 @@ cargo fmt --manifest-path src-tauri/Cargo.toml --check
 les a pas, et les tests `analysis::decode` échouent en *file not found* — ce n'est pas
 un vrai bug. Régénérer : `node scripts/make-fixtures.mjs`. Les deux anchors
 authentiques facultatives (`src-tauri/fixtures/README.md`) restent manuelles ; les
-tests de caractérisation les sautent quand elles sont absentes.
+tests de caractérisation les sautent quand elles sont absentes. **Même piège pour
+`src-tauri/binaries/`** : sans le sidecar, `cargo check` lui-même sort en 101
+(``resource path `binaries\ffmpeg-…` doesn't exist``) — `npm run fetch-ffmpeg`
+d'abord, PUIS `make-fixtures.mjs`, qui plante en `ENOENT` si `binaries/` manque
+(vécu le 2026-08-20 sur deux worktrees).
 
 ⚠️ **Ne pas lancer `cargo test`/`clippy` pendant qu'un `tauri dev` compile** : ils se
 disputent le lock du `target/` (attente, ou corruption du cache incrémental).
@@ -193,7 +197,9 @@ de la chaîne brute — pas de table code→message, délibérément) · `dom.ts
 `empty-state.ts` · `library-views.ts` · `identify-shared.ts` · `genre-families.ts` ·
 `popover-position.ts` (géométrie d'ancrage d'un popover `position:fixed`, **sans DOM** —
 séparée de `filing-bins.ts` pour être testable en env Node, qui ne peut pas charger un
-module important `./ipc`) · `styles.css`.
+module important `./ipc`) · `source-color.ts` (teinte d'identité des sources du rail :
+override manuel sinon cycle par ordre d'ajout — même motif sans-DOM/testable env Node,
+importée par `rail-sources.ts`) · `styles.css`.
 
 `dev-inspector.ts` + `dev-annotate.ts` forment l'outil d'annotation **Alt+Clic**
 (dev-only) : cadre de sélection, localisation du source via `locate_source`, note libre
