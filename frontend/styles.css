@@ -104,23 +104,16 @@ color-scheme:light;
    Relevé sur `docs/design-refs/macos-big-sur-ui-kit.png` § 02-Buttons / 01-Push Buttons : un push
    button primaire macOS est un APLAT d'accent avec du texte blanc, pas un fond pâle avec du texte
    teinté. Sift n'avait aucun token pour ça — `--color-background-info` est un fond pâle
-   (informatif), et `--color-hue-blue-solid` interdit explicitement le texte par-dessus, son
-   commentaire le dit : « à n'employer QUE comme aplat de donnée ».
-   Les deux valeurs sont THEME-INVARIANTES, comme `--color-text-on-scrim` juste au-dessus et pour
-   la même raison : ce couple ne se pose pas sur une surface de l'app, il EST sa propre surface.
-   Un fill qui basculerait avec le thème changerait le contraste de la paire, alors que la paire
-   est justement ce qu'on veut constant.
-   La luminance n'est PAS celle du systemBlue d'Apple (L 60,3 %) : DESIGN.md § 4 impose un plancher
-   AA 4,5:1 partout et vise 7:1 sur du petit texte, et le libellé d'un bouton est du petit texte.
-   Mesuré dans la vraie fenêtre par lecture de pixel — `getComputedStyle` rend `oklch(...)` littéral
-   dans ce moteur, donc tout calcul fait sur la chaîne lit les composantes OKLCH comme du RGB et
-   produit un chiffre faux (première mesure : 2,47, corrigée par un canvas 1×1) :
-
-       L 50 % → 6,14:1     L 48 % → 6,65:1     L 46 % → 7,27:1     L 44 % → 7,95:1
-
-   Retenu 46 %, le premier cran qui atteint la cible en restant un bleu franc. Le plancher du dépôt
-   prime sur la valeur d'Apple, et l'écart se nomme plutôt qu'il ne se subit. */
---color-accent-fill:oklch(46% 0.2177 257.42);
+   (informatif), et `--color-hue-blue-solid` interdit explicitement le texte par-dessus.
+   Les deux valeurs sont THEME-INVARIANTES, comme `--color-text-on-scrim` : ce couple ne se pose
+   pas sur une surface de l'app, il EST sa propre surface, et c'est le rapport interne de la paire
+   qu'on veut constant.
+   La valeur EST le systemBlue d'Apple, identique à `--color-hue-blue-solid`. Elle avait été
+   assombrie à L 46 % le 2026-08-19 pour atteindre 7:1 avec du blanc ; rendue à L 60,28 % le même
+   jour sur décision d'Antoine — Sift est son outil, pas un produit à auditer, et la fidélité au
+   kit prime ici sur le plancher de contraste. Blanc sur ce bleu mesure ~3,9:1, exactement ce que
+   fait macOS. Voir DESIGN.md § 4, qui porte la portée de cette décision. */
+--color-accent-fill:var(--color-hue-blue-solid);
 --color-accent-ink:oklch(100% 0 0);
 /* Neutral overlay tints (hover/selection/left-bar/badge on neutral surfaces) — dark-tinted here
    since the surface is light; flipped to light-tinted in the dark variant below. Anything that
@@ -1596,8 +1589,17 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 /* --color-text-info → --color-surface-raised (annotation: "trop blanc" — same fix as the play
    button, same reasoning: text-info resolves to the same bright off-white as text-primary in dark
    mode, sized for a card surface that no longer exists here). */
-.sift-slider-fill{position:absolute;height:3px;border-radius:2px;background:var(--color-surface-raised);pointer-events:none}
-.sift-slider-thumb{position:absolute;top:50%;transform:translate(-50%,-50%) scale(1);width:13px;height:13px;border-radius:50%;background:var(--color-background-primary);border:1.5px solid var(--color-surface-raised);pointer-events:none;transition:transform var(--duration-fast),box-shadow var(--duration-fast)}
+/* REMPLISSAGE = accent, forme du kit (§ 04-Pickers / 07-Slider Pickers) : la portion parcourue
+   est bleue, la portion restante grise. C'est le seul endroit du slider qui porte la VALEUR, et
+   la peindre en gris la rendait indiscernable de la piste — il fallait chercher le pouce pour
+   lire le réglage.
+   L'annotation d'origine (« trop blanc ») visait `--color-text-info`, qui résout vers un
+   blanc cassé en thème sombre. L'aplat d'accent n'a pas ce défaut : il est bleu dans les deux
+   thèmes, puisque theme-invariant. */
+.sift-slider-fill{position:absolute;height:3px;border-radius:2px;background:var(--color-accent-fill);pointer-events:none}
+/* POUCE = rond GRIS PLEIN, comme le kit. C'était un anneau : fond sombre + bordure claire, donc
+   un trou dans la piste plutôt qu'une prise posée dessus. */
+.sift-slider-thumb{position:absolute;top:50%;transform:translate(-50%,-50%) scale(1);width:13px;height:13px;border-radius:50%;background:var(--color-hue-gray-solid);border:0;box-shadow:var(--shadow-panel-subtle);pointer-events:none;transition:transform var(--duration-fast),box-shadow var(--duration-fast)}
 .sift-slider-track:hover .sift-slider-thumb{transform:translate(-50%,-50%) scale(1.15)}
 .sift-slider-track.dragging .sift-slider-thumb{transform:translate(-50%,-50%) scale(1.3);box-shadow:0 0 0 4px var(--overlay-selected)}
 /* Volume opts out of the scale+glow click feedback (bug report: "bizarre le feedback sur la boule

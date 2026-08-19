@@ -205,15 +205,30 @@ Les deux sont **theme-invariants**, comme `--color-text-on-scrim` : ce couple ne
 une surface de l'app, il **est** sa propre surface, et c'est le rapport interne de la paire qu'on
 veut constant.
 
-La luminance n'est pas celle du systemBlue d'Apple (L 60,3 %, ~3,9:1 avec du blanc) : le § ci-dessus
-impose 4,5:1 partout et vise 7:1 sur du petit texte, ce qu'est le libellé d'un bouton. Mesuré par
-lecture de pixel dans la vraie fenêtre — L 50 % → 6,14:1 · L 48 % → 6,65 · **L 46 % → 7,27** ·
-L 44 % → 7,95. Retenu 46 %.
+La valeur **est** le systemBlue d'Apple (`--color-hue-blue-solid`, L 60,28 %). Blanc dessus mesure
+~3,9:1, donc sous le plancher AA — voir la portée ci-dessous.
 
-⚠️ Le **fond** d'un bouton secondaire, lui, ne fait que 1,86:1 contre la page — sous le 3:1 des HIG
-pour un élément d'interface non textuel. Écart assumé et partagé avec Apple, dont le Secondary
-tourne autour de 2,3:1 sur carte sombre : la lisibilité d'un bouton vient de son texte (8,12:1
-mesuré), pas du détachement de son fond.
+⚠️ Le **fond** d'un bouton secondaire ne fait que 1,86:1 contre la page, sous le 3:1 des HIG pour un
+élément d'interface non textuel. Le kit fait le même écart (~2,3:1 sur carte sombre) : la lisibilité
+d'un bouton vient de son texte, mesuré à 8,12:1.
+
+### Portée du plancher de contraste — révisée le 2026-08-19
+
+Décision d'Antoine, et elle prime sur ce que la section dit plus haut : **Sift est son outil
+personnel, pas un produit à auditer.** Le plancher AA 4,5:1 cesse d'être une contrainte bloquante.
+
+Ce que ça change : un arbitrage entre *fidélité au kit* et *ratio de contraste* se tranche
+désormais en faveur de la fidélité. `--color-accent-fill` en est le premier cas — il avait été
+assombri à L 46 % pour atteindre 7:1, il est rendu à la valeur d'Apple.
+
+Ce que ça ne change pas : la **lisibilité** reste un critère de qualité, pour un lecteur d'un seul
+utilisateur comme pour mille. Un texte qu'on ne lit pas confortablement reste un défaut, mesuré ou
+non. Et les deux règles issues de défauts réels tiennent, parce qu'elles ne parlent pas
+d'accessibilité mais d'honnêteté : l'atténuation d'un état ne se fait pas à l'opacité, et « échec »
+est l'information qu'on n'a pas le droit d'estomper.
+
+Corollaire pratique : aucun attribut ARIA n'est ajouté aux composants neufs. Ceux déjà en place
+restent — les retirer coûterait du temps pour rien et casserait des sélecteurs de test.
 
 Deux encres qui ne basculent **jamais** avec le thème, parce qu'elles se posent sur des
 pixels d'image et non sur une surface de l'app : `--color-text-on-scrim` et les deux
