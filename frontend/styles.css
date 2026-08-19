@@ -1928,7 +1928,11 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-cand-error-icon{font-size:var(--text-md);vertical-align:-2px;margin-right:4px}
 .sift-searching-icon{font-size:var(--text-sm);vertical-align:-1px}
 .sift-goto-reglages{margin-top:var(--space-4);font-size:var(--text-sm);padding:var(--space-4) var(--space-8)}
-.sift-toast{position:fixed;right:var(--space-16);bottom:var(--space-16);z-index:var(--z-toast);display:flex;align-items:center;gap:12px;background:var(--color-background-secondary);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:var(--space-8) var(--space-12);font-size:var(--text-md);color:var(--color-text-primary);box-shadow:var(--shadow-toast)}
+/* TOAST, forme du kit (§ 03-Notifications) : aucune bordure — l'ombre porte le décollement — et un
+   rayon franc. Ce qui du kit ne se transpose PAS : le nom d'app et l'horodatage, qui sont des
+   organes du centre de notifications système. Un toast in-app n'a ni l'un ni l'autre à dire.
+   (CLAUDE.md § HIG : garder l'intention, jeter le mécanisme quand il nomme un organe système.) */
+.sift-toast{position:fixed;right:var(--space-16);bottom:var(--space-16);z-index:var(--z-toast);display:flex;align-items:center;gap:12px;background:var(--color-background-secondary);border:0;border-radius:var(--border-radius-lg);padding:var(--space-8) var(--space-12);font-size:var(--text-md);color:var(--color-text-primary);box-shadow:var(--shadow-toast)}
 .sift-toast-undo{font-size:var(--text-sm);padding:var(--space-4) var(--space-8)}
 /* Shared entry/exit fade, used by the confirm overlay (entry only) and the toast (both).
    BOTH the transition AND the from-state live inside the media query: that is what makes reduced
