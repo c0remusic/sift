@@ -42,6 +42,24 @@ function rerenderQueueWindow(): void {
 // verdict) the filing pane needs.
 export let currentItems: QueueItem[] = [];
 
+/** Source dont la file est filtrée, ou `null` pour tout voir. Au niveau module : le filtre survit
+ *  aux re-rendus de la file (progression d'analyse, événement `queue:changed`) et ne doit tomber
+ *  que sur une action explicite. */
+let queueSourceFilter: number | null = null;
+
+/** Restreint la file à une source, ou lève le filtre avec `null`. Rend la valeur appliquée pour
+ *  que l'appelant puisse marquer l'entrée de rail correspondante sans relire l'état d'ici. */
+export function setQueueSourceFilter(id: number | null): number | null {
+  queueSourceFilter = id;
+  queueCacheStale = true; // le cache tient la file NON filtrée : le repeindre ignorerait le filtre
+  return queueSourceFilter;
+}
+
+/** La source filtrée, pour que le rail sache quelle entrée marquer active. */
+export function activeQueueSource(): number | null {
+  return queueSourceFilter;
+}
+
 // True when `currentItems` is known to no longer reflect the backend, so the "repaint from cache"
 // fast path below must NOT be taken. Set when a background conversion fails (P5): that track was
 // filtered out of `currentItems` while in flight and has to come back, but nothing else will ever
@@ -470,6 +488,12 @@ export async function renderQueue(touchDetail = true) {
   // from converting it a second time, in the rail as well as in Lot mode (both read currentItems).
   // It comes back on its own if the conversion fails: see the onFilingOutcome subscription below.
   items = items.filter((it) => !isFilingInFlight(it.id));
+  // Filtre de SOURCE (fusion 1, DESIGN.md § 15) : cliquer un dossier surveillé dans le rail
+  // restreint la file à ses fichiers, comme cliquer une source dans la sidebar de Finder restreint
+  // sa liste. Appliqué ICI, au point unique où le front prend livraison de la file — donc le mode
+  // Lot, le badge et l'auto-avance voient tous la même liste, sans qu'aucun ait à connaître le
+  // filtre. `source_id` existe déjà dans le contrat : aucun aller-retour backend n'est ajouté.
+  if (queueSourceFilter != null) items = items.filter((it) => it.source_id === queueSourceFilter);
   currentItems = items;
   // This IS the fresh delivery the stale flag was waiting for, and the single point where the
   // front takes the queue in — so it is also where the badge is brought back in step with the rail.

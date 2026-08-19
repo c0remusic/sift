@@ -7,6 +7,11 @@
 <link rel="stylesheet" href="/frontend/styles.css">
 </head>
 <body>
+<!-- Porte de premier reglage : racine de bibliotheque non definie. Elle vivait sur Accueil
+     (fusion 1) — donc sur l'ecran qu'on quitte. Remontee au niveau fenetre, elle est visible
+     depuis TOUS les ecrans, ce qui est precisement ce que la fusion fait gagner. Bandeau et non
+     entree de barre : le message est une phrase, pas un controle. -->
+<div id="sift-gate" hidden></div>
 <div class="pa" id="pa" tabindex="0">
   <div class="sb" id="nav">
     <div class="nav-brand"><i class="ti ti-filter" aria-hidden="true"></i><span>Sift</span>
@@ -17,8 +22,12 @@
          on traite, puis on range, puis on exporte. Un seul niveau d'indentation, en-tetes en
          petites capitales discretes (.nv-grp, qui existait dans la feuille SANS aucun
          consommateur depuis sa creation — il en a un maintenant). -->
+    <!-- Section Sources : remplie par rail-sources.ts depuis listSources(). L'ecran Accueil a
+         disparu ici (fusion 1, DESIGN.md § 15) — il ne listait que des dossiers surveilles, et
+         dans Finder une source est une entree de sidebar, pas un ecran. Cliquer une source filtre
+         Revue sur ses fichiers. -->
+    <div id="sift-rail-sources"></div>
     <div class="nv-grp">Traiter</div>
-    <div class="nv" tabindex="0" role="button" data-view="home" title="Accueil"><i class="ti ti-home" aria-hidden="true"></i><span>Accueil</span></div>
     <div class="nv" tabindex="0" role="button" data-view="revue" title="Revue"><i class="ti ti-headphones" aria-hidden="true"></i><span>Revue</span><span class="nav-badge" data-badge="revue"></span></div>
     <div class="nv" tabindex="0" role="button" data-view="journal" title="Journal des actions"><i class="ti ti-history" aria-hidden="true"></i><span>Journal</span></div>
     <div class="nv-grp">Bibliothèque</div>

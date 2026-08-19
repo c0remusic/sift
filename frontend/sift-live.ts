@@ -18,16 +18,19 @@ import {
   rekordboxStatus,
   reanalyzeTracks,
   rejectTrack,
+  getSetting,
 } from "./ipc";
 import { installUndoShortcut, installFilingKeys } from "./filing";
 import { refreshBinsForBatch } from "./filing-bins";
 import { confirmAction } from "./confirm-modal";
 // Views/chrome extracted from this god-module (audit P-3) — kept stateless, wired here.
 import { renderEcartes } from "./ecartes-view";
-import { renderHomeSources, dismissRootGate, noteScanFailure } from "./home-sources";
+import { dismissRootGate, noteScanFailure } from "./home-sources";
 import { installDragDrop, injectLeanStyle, injectTitlebar, installScrollAutohide, installNavKeyboard, installRailToggle } from "./chrome";
 import { initTheme } from "./theme";
+import { installRailSources, renderRailSources } from "./rail-sources";
 import { openContextMenu } from "./context-menu";
+import { renderRootGate, dismissRootGateBanner } from "./toolbar";
 import { closeAside } from "./toolbar";
 import { onSettingsCategoryPick } from "./reglages-view";
 import { onRekordboxSectionPick } from "./rekordbox-view";
@@ -165,8 +168,22 @@ function setReviewMode(m: "detail" | "batch") {
   }
 }
 
+/** Relit `library_root` et peint la porte. Le réglage est la source de vérité, jamais un état
+ *  local : Réglages peut en poser une à tout moment, et la porte doit tomber tout de suite. */
+export async function refreshRootGate(): Promise<void> {
+  try {
+    renderRootGate(await getSetting("library_root"));
+  } catch (e) {
+    // Échec de lecture : ne PAS peindre la porte. Elle affirmerait « aucune racine », ce qui est
+    // un fait non mesuré — l'erreur de lecture se dit ailleurs, elle ne se déguise pas en gate.
+    console.error("getSetting(library_root) failed", e);
+  }
+}
+
 async function refresh() {
-  await renderHomeSources();
+  // La section Sources du rail remplace l'écran Accueil (fusion 1) : elle porte les mêmes comptes
+  // de fichiers en attente, donc elle se rafraîchit exactement où `renderHomeSources` le faisait.
+  await renderRailSources();
   await renderQueue();
   updateRevueBadge(currentItems.length);
 }
@@ -186,6 +203,8 @@ export function installLiveWiring() {
   installScrollAutohide();
   installNavKeyboard();
   installRailToggle();
+  installRailSources();
+  void refreshRootGate();
   installWindowShortcuts();
   void installDragDrop();
 
@@ -230,6 +249,12 @@ export function installLiveWiring() {
     const qi = (e.target as HTMLElement).closest<HTMLElement>(".qi[data-id]");
     if (qi?.dataset.id) {
       handleQueueItemClick(qi, e);
+      return;
+    }
+    // Porte de racine manquante : masquer pour la session.
+    if ((e.target as HTMLElement).closest('[data-gate="dismiss"]')) {
+      e.stopPropagation();
+      dismissRootGateBanner();
       return;
     }
     // Rekordbox : choix d'une section dans la colonne de gauche (étape 10).

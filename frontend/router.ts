@@ -18,7 +18,6 @@
 // ce qui est correct : le wiring live n'existe pas dans un navigateur.
 import { requireEl } from "./dom";
 import { closeAside } from "./toolbar";
-import { renderHomeSources } from "./home-sources";
 import { renderQueue } from "./queue-panel";
 import { renderEcartes } from "./ecartes-view";
 import { renderReglagesLive } from "./reglages-view";
@@ -27,15 +26,17 @@ import { renderJournal, paintJournal } from "./journal";
 import { renderRekordboxLive } from "./rekordbox-view";
 import { renderUsbLive } from "./usb-view";
 
-export type ViewId = "home" | "revue" | "ecarts" | "journal" | "biblio" | "rkb" | "cle" | "reglages";
+export type ViewId = "revue" | "ecarts" | "journal" | "biblio" | "rkb" | "cle" | "reglages";
 
-const VIEWS: readonly ViewId[] = ["home", "revue", "ecarts", "journal", "biblio", "rkb", "cle", "reglages"];
+const VIEWS: readonly ViewId[] = ["revue", "ecarts", "journal", "biblio", "rkb", "cle", "reglages"];
 
 function isViewId(v: string | undefined): v is ViewId {
   return !!v && (VIEWS as readonly string[]).includes(v);
 }
 
-let currentView: ViewId = "home";
+/** Revue au démarrage, et non plus Accueil : Accueil a fusionné dans le rail (DESIGN.md § 15,
+ *  fusion 1). L'app s'ouvre donc sur son poste de travail plutôt que sur un inventaire. */
+let currentView: ViewId = "revue";
 
 /** La vue affichée. Lue par le futur titre de barre unifiée (étape 2) — et par les tests. */
 export function activeView(): ViewId {
@@ -119,20 +120,9 @@ function blockShell(content: HTMLElement): void {
 }
 
 
-/** Accueil et Revue posent leurs propres colonnes DANS la zone C, donc ils lui prennent son
- *  défilement : `overflow:hidden` ici, et chaque colonne défile chez elle. C'est la même règle
- *  que partout ailleurs — la page ne défile jamais — appliquée un cran plus bas. */
-function homeShell(content: HTMLElement): void {
-  content.style.display = "flex";
-  content.style.flexDirection = "column";
-  content.style.overflowY = "hidden";
-  content.innerHTML =
-    `<div class="home-body">` +
-    `<div class="queue" id="homequeue" style="width:${QCOL_DEFAULT}px"></div>` +
-    `<div class="sift-inspector" id="homeinspector"></div>` +
-    `</div>`;
-}
-
+/** Revue pose ses propres colonnes DANS la zone C, donc elle lui prend son défilement :
+ *  `overflow:hidden` ici, et chaque colonne défile chez elle. C'est la règle générale — la page
+ *  ne défile jamais — appliquée un cran plus bas. */
 function revueShell(content: HTMLElement): void {
   content.style.display = "flex";
   content.style.flexDirection = "";
@@ -196,10 +186,6 @@ export function render(): void {
   closeAside();
 
   switch (currentView) {
-    case "home":
-      homeShell(content);
-      void renderHomeSources();
-      return;
     case "revue":
       revueShell(content);
       void renderQueue();

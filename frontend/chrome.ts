@@ -197,8 +197,14 @@ export function injectLeanStyle() {
     '.sift-tb-mac .sift-win[data-win="min"]{background:var(--color-text-warning)}' +
     '.sift-tb-mac .sift-win[data-win="max"]{background:var(--color-text-success)}' +
     ".sift-tb-mac .sift-win-close:hover{background:var(--color-text-danger)}" +
-    // Laisser la place à la barre : le shell rétrécit d'autant, sinon il est rogné en bas.
-    "#pa{height:calc(100vh - var(--toolbar-h))!important}";
+    // `<body>` devient une COLONNE flex et `#pa` prend le reste, plutôt qu'un
+    // `height:calc(100vh - var(--toolbar-h))`. Le calc marchait tant que la barre était la seule
+    // chose au-dessus du shell ; il devient faux dès qu'une deuxième surface s'y ajoute — et c'est
+    // le cas depuis que la porte de racine manquante est remontée au niveau fenêtre (fusion 1).
+    // Une hauteur qui doit connaître le nombre de ses voisins est la même erreur que le
+    // `calc(100dvh - 210px)` retiré de la colonne de facettes à l'étape 3.
+    "body{display:flex;flex-direction:column}" +
+    "#pa{flex:1;min-height:0;height:auto!important}";
   document.head.appendChild(st);
 }
 
