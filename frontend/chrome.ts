@@ -298,7 +298,7 @@ export async function injectTitlebar(): Promise<void> {
  * cliquables sans équivalent clavier — `app.js` (importé sans garde `inTauri`, main.ts:6) gère déjà
  * le clic réel (`e.target.closest('[data-view]')`) mais n'écoute que "click". Complète en Enter/
  * Espace sans toucher app.js (figé) : redispatche un clic synthétique sur l'élément focus. Couvre
- * aussi les lignes `.qi[data-sift="homerow"]` (home-sources.ts), l'arbre de destination
+ * aussi les lignes `.qi[data-sift="homerow"]` (rail de sources, supprime le 2026-08-19), l'arbre de destination
  * `[data-fil="bin"]` (audit-ref R4, Revue, filing.ts) et les facettes/lignes Bibliothèque
  * `[data-bib="pick"]`/`[data-bib="row"]` (audit-ref B1) et la ligne de sélection réparations
  * master.db `[data-sift="mdbpick"]` (audit-ref G3, Rekordbox) — mêmes `tabindex`+`role` posés côté

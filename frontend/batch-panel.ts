@@ -777,7 +777,7 @@ function fileNote(html: string, color = "var(--color-text-secondary)") {
 
 let refreshHook: (() => Promise<void>) | null = null;
 
-/** Registers sift-live.ts's refresh() (renderHomeSources + renderQueue + updateRevueBadge) so
+/** Registers sift-live.ts's refresh() (renderRailSources + renderQueue + updateRevueBadge) so
  *  onFileBatchDone/runBatchDiscard can trigger a full view refresh after filing without a static
  *  import back to sift-live.ts (mirrors registerBatchRenderer in queue-panel.ts, opposite
  *  direction: this module calls OUT to the orchestrator instead of being called INTO). */

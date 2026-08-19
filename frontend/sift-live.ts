@@ -25,10 +25,9 @@ import { refreshBinsForBatch } from "./filing-bins";
 import { confirmAction } from "./confirm-modal";
 // Views/chrome extracted from this god-module (audit P-3) — kept stateless, wired here.
 import { renderEcartes } from "./ecartes-view";
-import { dismissRootGate, noteScanFailure } from "./home-sources";
 import { installDragDrop, injectLeanStyle, injectTitlebar, installScrollAutohide, installNavKeyboard, installRailToggle } from "./chrome";
 import { initTheme } from "./theme";
-import { installRailSources, renderRailSources } from "./rail-sources";
+import { installRailSources, renderRailSources, noteScanFailure } from "./rail-sources";
 import { openContextMenu } from "./context-menu";
 import { applyRowClick, renderSelectionSummary } from "./bibliotheque-view";
 import { sortTracks } from "./library-views";
@@ -184,7 +183,7 @@ export async function refreshRootGate(): Promise<void> {
 
 async function refresh() {
   // La section Sources du rail remplace l'écran Accueil (fusion 1) : elle porte les mêmes comptes
-  // de fichiers en attente, donc elle se rafraîchit exactement où `renderHomeSources` le faisait.
+  // de fichiers en attente, donc elle se rafraîchit exactement où l'écran Accueil le faisait.
   await renderRailSources();
   await renderQueue();
   updateRevueBadge(currentItems.length);
@@ -561,10 +560,6 @@ export function installLiveWiring() {
       e.stopPropagation();
       const hue = el.dataset.hue ?? null;
       void setSourceColor(Number(el.dataset.id), hue).then(refresh);
-    } else if (act === "dismiss-rootgate") {
-      e.stopPropagation();
-      dismissRootGate();
-      void refresh();
     } else if (act === "reviewmode") {
       e.stopPropagation();
       setReviewMode(el.dataset.m === "batch" ? "batch" : "detail");

@@ -1060,7 +1060,7 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-text-info)}
 /* Audit-ref C2 (Accueil, 2026-07-08, réf. shadcn Checkbox) : case sans coche ni états —
    ambiguë (fond vert plein ne dit pas "coché" vs décoratif), pas de hover/focus, <div> non
    focusable. Coche ti-check ajoutée à l'état coché ; tabindex+role posés côté TS
-   (home-sources.ts) pour que le ring :focus-visible générique (styles.css:384) s'applique. */
+   (rail de sources) pour que le ring :focus-visible générique s'applique. */
 .sift-home-watch-toggle-box{width:15px;height:15px;border-radius:4px;border:1px solid var(--color-border-secondary);background:transparent;flex:none;display:flex;align-items:center;justify-content:center;transition:background-color var(--duration-fast) ease,border-color var(--duration-fast) ease}
 .sift-home-watch-toggle-box i{font-size:11px;color:var(--color-text-on-accent);opacity:0;transform:scale(.6);transition:opacity var(--duration-fast) ease,transform var(--duration-fast) ease}
 .sift-home-watch-toggle[data-watched="1"] .sift-home-watch-toggle-box{background:var(--color-text-success);border-color:var(--color-text-success)}

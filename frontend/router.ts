@@ -96,7 +96,7 @@ function installQueueResize(qcol: HTMLElement, handle: HTMLElement): void {
 //
 // Chacune ne pose que la structure que la vue live exige, puis lui rend la main. Les identifiants
 // sont contractuels : `queue-panel.ts` exige `#qcol`, `filing*.ts` exigent `#mid`, `#filfoot` et
-// `#fldz`, `home-sources.ts` exige `#homequeue` et `#homeinspector`. Les changer casse un
+// `#fldz`. Les changer casse un
 // `requireEl` au montage — fail-fast, mais au montage seulement.
 //
 // `.h1` est également contractuel : `reglages-view.ts:36` et `usb-view.ts:35` parcourent les

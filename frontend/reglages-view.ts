@@ -1,6 +1,6 @@
 // Live Réglages screen — extracted from sift-live.ts (clean-architecture audit F1,
 // 2026-07-09): this was one of several full-screen renderers still inlined in the
-// god-module after ecartes-view.ts/home-sources.ts/journal.ts were split out.
+// god-module after ecartes-view.ts/journal.ts were split out.
 // Self-contained: unlike Bibliothèque/Rekordbox, no state here is mutated from
 // installLiveWiring's delegated click handler, so no cross-module state wiring is needed.
 import { getSetting, setSetting, openUrl, previewFilename, verifyDiscogsToken } from "./ipc";
@@ -16,7 +16,7 @@ import { open as openFolderDialog } from "@tauri-apps/plugin-dialog";
 
 /** Live Réglages view: a single scrolling page of real cards (Discogs, Bibliothèque, Apparence),
  * replacing the mockup's static placeholder rows (Dossiers source, Format lossless…), which have
- * no backing data and led nowhere — same "lean Tauri UI" pattern as home-sources.ts (hide the mock
+ * no backing data and led nowhere — same "lean Tauri UI" pattern as usb-view.ts (hide the mock
  * content, keep only the title, inject the real thing). One page, not tabs: every card is always
  * visible and reachable by scrolling, per the maquette's "PAS des onglets exclusifs" rule. */
 /** Libellés des catégories, indexés par la clé `dataset.section` que chaque bloc porte déjà.

@@ -452,7 +452,7 @@ export async function renderQueue(touchDetail = true) {
   } catch (e) {
     // Impasse A7 (issue #15) : ce `catch` faisait `console.error` + `return` sec, donc le
     // « Chargement… » peint juste au-dessus tournait pour toujours. Un spinner permanent est un
-    // échec silencieux — le rail jumeau (`home-sources.ts`, renderHomeSources) le dit et le
+    // échec silencieux — le rail de sources (`rail-sources.ts`) le dit et le
     // corrige déjà, la correction n'avait pas été portée ici.
     const display = humanizeError(
       e,

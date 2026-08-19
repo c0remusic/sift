@@ -8,10 +8,10 @@
 // fichiers — le rail devient le sélecteur de provenance, exactement comme la sidebar de Finder.
 // Les actions par source (surveillance, rescan, retrait) passent au clic droit, où vivent les
 // actions secondaires partout ailleurs depuis l'étape 5.
-import { listSources, setSourceWatched, rescanSource, removeSource } from "./ipc";
+import { listSources, setSourceWatched, rescanSource, removeSource, addSource } from "./ipc";
+import { open } from "@tauri-apps/plugin-dialog";
 import type { Source } from "../shared/contracts";
 import { esc } from "./dom";
-import { pickAndAddFolder } from "./home-sources";
 import { setQueueSourceFilter, activeQueueSource, renderQueue } from "./queue-panel";
 import { goTo } from "./router";
 import { openContextMenu } from "./context-menu";
@@ -25,6 +25,33 @@ const SECTION_ID = "sift-rail-sources";
  *  relancer un aller-retour IPC entre le clic droit et l'affichage du menu. */
 let sources: Source[] = [];
 
+/** Échecs de scan par source. Rapatriés de `home-sources.ts` avec la suppression de l'écran
+ *  Accueil : un scan tombé rend `pending_count = 0`, indiscernable d'un dossier réellement à jour.
+ *  C'est le fait le plus vrai qu'on sache d'une source, donc il prime sur le compte. */
+const scanFailures = new Map<number, string>();
+
+/** Enregistre l'échec d'un scan et repeint le rail. Appelé par le wiring live. */
+export function noteScanFailure(sourceId: number, reason: string): void {
+  scanFailures.set(sourceId, reason);
+  void renderRailSources();
+}
+
+/** Ouvre le sélecteur natif de répertoire et ajoute la source choisie.
+ *
+ *  Le mensonge type de l'inventaire A3 : le sélecteur se ferme, et la liste continue d'afficher
+ *  « Aucun dossier surveillé » sur un dossier qu'on vient justement d'ajouter. Un écran vide et un
+ *  écran cassé se ressemblent — d'où le toast sur l'échec. */
+export async function pickAndAddFolder(onChange: () => void | Promise<void>): Promise<void> {
+  const dir = await open({ directory: true, multiple: false });
+  if (typeof dir !== "string") return;
+  try {
+    await addSource(dir);
+    await onChange();
+  } catch (e) {
+    toast(humanizeError(e, `« ${baseName(dir)} » n'a pas pu être ajouté.`, "addSource"));
+  }
+}
+
 function baseName(p: string): string {
   return p.split(/[\\/]/).filter(Boolean).pop() || p;
 }
@@ -36,8 +63,14 @@ function baseName(p: string): string {
 function sourceEntryHtml(s: Source, active: boolean): string {
   const hue = s.color_key ? ` sift-src-swatch-${esc(s.color_key)}` : "";
   const count = s.pending_count > 0 ? `<span class="nav-badge">${s.pending_count}</span>` : "";
-  const warn = s.accessible ? "" : ` sift-rail-src--error`;
-  const title = s.accessible ? s.path : `${s.path} — dossier inaccessible`;
+  const failure = scanFailures.get(s.id);
+  const broken = !s.accessible || failure != null;
+  const warn = broken ? ` sift-rail-src--error` : "";
+  const title = !s.accessible
+    ? `${s.path} — dossier inaccessible`
+    : failure
+      ? `${s.path} — scan en échec : ${failure}`
+      : s.path;
   return (
     `<div class="nv sift-rail-src${active ? " on" : ""}${warn}" data-src="${s.id}" tabindex="0" role="button" title="${esc(title)}">` +
     `<span class="sift-rail-src-dot${hue}" aria-hidden="true"></span>` +
