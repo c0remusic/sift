@@ -856,18 +856,44 @@ souvent. Un renderer appelé en rafale crée ses nœuds une fois et mute ensuite
 Du plus structurant au plus cosmétique. Chaque étape est livrable seule et laisse l'app
 utilisable.
 
-| # | Étape | Débloque | Frictions closes |
-|---|---|---|---|
-| 1 | **Sortir la maquette du chemin de production.** `app.js` cesse d'être le routeur : le routage de vue devient un module réel. Les six renderers de démo et `renderBatch` disparaissent | Tout le reste — aucune décision de shell n'est tenable tant que le routeur est écrit pour une démo | F11 |
-| 2 | **Barre unifiée.** `--toolbar-h`, fusion titlebar+toolbar, titre de vue, recherche à droite, bandeau de racine manquante. Suivre le consommateur de `--titlebar-h` | Recherche globale, actions de vue, titre unique | F2, F9 |
-| 3 | **Shell à trois zones.** Une seule zone qui flexe, plus de `block()`, plus de défilement de page. Tokens `--rail-w`, `--pane-w` | Le mapping entier | F1, F5, F6 |
-| 4 | **Rail restructuré.** Trois sections + Sources, repliable, largeur dérivée. Fusion d'Accueil et d'Écartés | Deux destinations supprimées | F3 (accès), fusions 1 et 2 |
-| 5 | **Table unique.** `--row-h`, colonnes BPM et Durée, tri sur toutes les colonnes, largeurs mémorisées, sélection multiple, menu contextuel | La vie quotidienne du DJ | Table § 16 |
-| 6 | **Clavier couche 1 et couche 2.** ⌘1…8, ⌘F, ⌘,, Échap, plus la couche liste complète | L'usage sans souris | F4 |
-| 7 | **Grammaire de boîte à deux niveaux.** Retrait de `.sift-ui-card-outline`, ligne Rekordbox propre, padding dans l'échelle | Cohérence de surface | F8 |
-| 8 | **Motion unifiée.** `--duration-slow`, migration des 37 `transition:` sur les trois crans | — | § 6 |
-| 9 | **Réglages en deux colonnes.** Catégories à gauche, panneau borné à `--measure-form` | — | F7, O‑3 |
-| 10 | **Rekordbox en quatre entrées.** Les sections M8 quittent l'empilement vertical | — | F10 |
+> **État au 2026-08-19.** Huit étapes livrées et vérifiées dans la vraie fenêtre, deux
+> partielles. Ce qui reste est nommé sous le tableau — pas « presque fini », la liste exacte.
+
+| # | Étape | État | Débloque | Frictions closes |
+|---|---|---|---|---|
+| 1 | **Sortir la maquette du chemin de production** — `router.ts`, `app.js` hors Tauri | ✅ livrée | Tout le reste | F11 |
+| 2 | **Barre unifiée** — `--toolbar-h`, titre de vue, recherche à droite | ✅ livrée | Recherche, actions, titre unique | F2, F9 |
+| 3 | **Shell à trois zones** — plus de `block()`, inspecteur hors du flux | ✅ livrée | Le mapping entier | F1, F5, F6 |
+| 4 | **Rail restructuré** — 3 sections, repli, `--rail-w` mesurée | ⚠️ partielle | Navigation lisible | F3 (accès) |
+| 5 | **Table unique** — BPM, Durée, `--row-h`, menu contextuel | ⚠️ partielle | La vie quotidienne du DJ | § 16 |
+| 6 | **Clavier couche 1** — ⌘1…8, ⌘F, ⌘,, ⌘B, Échap | ✅ livrée | L'usage sans souris | F4 |
+| 7 | **Grammaire de boîte à deux niveaux** — `outline` retirée | ✅ livrée | Cohérence de surface | F8 |
+| 8 | **Motion unifiée** — 54 durées sur trois crans | ✅ livrée | — | § 6 |
+| 9 | **Réglages en deux colonnes** | ✅ livrée | — | F7, O‑3 |
+| 10 | **Rekordbox en quatre entrées** | ✅ livrée¹ | — | F10 |
+
+¹ Implémentée et vérifiée sur son **chemin d'état vide** seulement : cette machine n'a aucun XML
+Rekordbox lié, et en lier un est une action sur un système live. La disposition à quatre entrées
+n'a donc **pas** été vue tourner.
+
+### Ce qui reste
+
+**Étape 4 — les deux fusions.** Accueil dans le rail (section Sources) et Écartés en deux sources
+de Bibliothèque. Le rail est structuré et prêt à les recevoir ; les fusions elles-mêmes suppriment
+deux destinations qu'Antoine utilise, et `DESIGN.md` § 15 les pose comme des **propositions**. Elles
+demandent sa validation avant d'être faites, pas seulement du code. Techniquement : Écartés lit
+`listEcartes` avec ses propres formes de ligne (restaurer, purger), pas `listLibrary` — la fusion
+est une réécriture de rendu, pas un déplacement d'entrée de rail.
+
+**Étape 5 — sélection multiple.** Le menu contextuel est livré ; la sélection multiple (⇧+clic,
+⌘+clic, ⌘A, résumé agrégé dans l'inspecteur) ne l'est pas. Elle demande de décider d'abord quelles
+actions s'appliquent réellement à N pistes déjà rangées — question ouverte notée dans
+`docs/ui-specs/bibliotheque.md`, et y répondre au jugé peuplerait le menu de masse d'actions qui
+n'ont pas de sens.
+
+**Résidu de l'étape 3.** Deux débordements internes subsistent dans l'inspecteur, tous deux dans le
+lecteur large rendu en colonne étroite. La zone D elle-même ne défile pas horizontalement, donc la
+règle du shell tient ; c'est un travail de composant, pas de shell.
 
 Étapes 1 à 3 : rien n'est visible pour l'utilisateur avant la fin de la 3. Elles se
 livrent ensemble ou l'app reste à moitié dans deux shells.
