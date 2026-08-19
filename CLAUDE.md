@@ -72,7 +72,9 @@ cargo fmt --manifest-path src-tauri/Cargo.toml --check
 
 ⚠️ **`src-tauri/fixtures/*` est gitignoré.** Un checkout frais (clone ou worktree) ne
 les a pas, et les tests `analysis::decode` échouent en *file not found* — ce n'est pas
-un vrai bug. Régénérer : `node scripts/make-fixtures.mjs`. Les deux anchors
+un vrai bug. Régénérer : `node scripts/make-fixtures.mjs` — qui exige
+`src-tauri/binaries/` (gitignoré aussi) : `npm run fetch-ffmpeg` d'abord, ou
+copier binaries + fixtures depuis le checkout principal. Les deux anchors
 authentiques facultatives (`src-tauri/fixtures/README.md`) restent manuelles ; les
 tests de caractérisation les sautent quand elles sont absentes.
 
