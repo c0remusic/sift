@@ -91,6 +91,7 @@ docs/*
 !docs/design-system-states.md
 !docs/ressources-externes.md
 !docs/design-system/
+!docs/ui-specs/
 !docs/skills/
 # Règles de consommation lues par les skills d'agent (tracker d'issues, labels de
 # triage, docs de domaine). `CLAUDE.md` § Agent skills, versionné, pointe dessus :

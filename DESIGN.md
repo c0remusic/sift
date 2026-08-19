@@ -532,16 +532,25 @@ cible. Traduire dégraderait la reconnaissance.
 
 Une ligne par écran. Le contenu vit dans `docs/ui-specs/`, jamais ici.
 
-| Écran | Spec | Statut |
+| Surface | Spec | Statut |
 |---|---|---|
-| Accueil | `docs/ui-specs/accueil.md` | à écrire |
-| Revue | `docs/ui-specs/revue.md` | à écrire |
-| Écartés | `docs/ui-specs/ecartes.md` | à écrire |
-| Journal | `docs/ui-specs/journal.md` | à écrire |
-| Bibliothèque | `docs/ui-specs/bibliotheque.md` | à écrire |
-| Rekordbox | `docs/ui-specs/rekordbox.md` | à écrire |
-| Clé USB | `docs/ui-specs/cle-usb.md` | à écrire |
-| Réglages | `docs/ui-specs/reglages.md` | à écrire |
+| **Rail** (zone B, tous écrans) | [`docs/ui-specs/rail.md`](docs/ui-specs/rail.md) | écrite |
+| Bibliothèque — *table canonique* | [`docs/ui-specs/bibliotheque.md`](docs/ui-specs/bibliotheque.md) | écrite |
+| Revue | [`docs/ui-specs/revue.md`](docs/ui-specs/revue.md) | écrite |
+| Journal | [`docs/ui-specs/journal.md`](docs/ui-specs/journal.md) | écrite |
+| Rekordbox | [`docs/ui-specs/rekordbox.md`](docs/ui-specs/rekordbox.md) | écrite |
+| Clé USB | [`docs/ui-specs/cle-usb.md`](docs/ui-specs/cle-usb.md) | écrite |
+| Réglages | [`docs/ui-specs/reglages.md`](docs/ui-specs/reglages.md) | écrite |
+
+Les deux vues absorbées ne sont pas orphelines, elles ont une destination écrite :
+
+| Vue absorbée | Où son contenu vit désormais |
+|---|---|
+| **Accueil** | `rail.md` (section Sources) · la porte de racine manquante remonte dans la barre unifiée, voir `reglages.md` |
+| **Écartés** | `bibliotheque.md` — « À re-sourcer » et « Corbeille », deux sources de la même table |
+
+⚠️ `docs/` est en liste blanche. `docs/ui-specs/` est ré-autorisé par `!docs/ui-specs/`
+dans `.gitignore` — sans cette ligne le dossier n'existerait pas pour git, en silence.
 
 Patron macOS de chacun : § 15. Ordre d'écriture : § 17.
 
