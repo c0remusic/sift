@@ -708,7 +708,26 @@ définie) perd son emplacement. Elle remonte dans la barre unifiée, comme bande
 persistant tant que la racine manque — ce qui la rend d'ailleurs visible depuis tous
 les écrans, pas seulement depuis celui qu'on quitte.
 
-### Fusion 2 — Écartés devient deux sources de Bibliothèque
+### Fusion 2 — RÉFUTÉE PAR LA MESURE, le 2026-08-19
+
+Ce qui suit était la proposition. Elle repose sur « Écartés est une vue filtrée de la même
+donnée », et **c'est faux** : `EcarteItem` porte **8 champs** contre **16** pour `LibraryTrack`
+(`shared/contracts.ts`). Ni BPM, ni durée, ni format, ni genre, ni année, ni pochette. Les six
+colonnes de la table rendraient donc cinq tirets sur six pour chaque ligne écartée.
+
+Et l'écran porte **sept affordances** que la table n'a pas : `store` (liens boutiques pour
+racheter la piste), `copy-query`, `requeue`, `restore`, `retry`, `trash`, `purge`. Ce sont elles
+qui font l'écran — le fondre dans la table les perdrait ou obligerait à les y ajouter, donc à
+transporter l'écran dans la table plutôt que l'inverse.
+
+**Écartés reste une destination.** La moitié utile de la fusion a été faite : il vit dans la
+section « Bibliothèque » du rail, à côté de « Rangés », donc la parenté se lit dans la navigation.
+Ce qui manquait n'était pas la fusion, c'était le groupement.
+
+Réouvrir cette décision demanderait d'abord d'enrichir `EcarteItem`, ce qui est un chantier
+backend, pas de design.
+
+### Proposition d'origine, conservée pour l'historique
 
 **Motif.** Écartés est une **vue filtrée de la même donnée** : des pistes, avec un
 statut. Finder ne fait pas un écran pour la Corbeille — c'est un item de sidebar qui
@@ -856,21 +875,22 @@ souvent. Un renderer appelé en rafale crée ses nœuds une fois et mute ensuite
 Du plus structurant au plus cosmétique. Chaque étape est livrable seule et laisse l'app
 utilisable.
 
-> **État au 2026-08-19.** Huit étapes livrées et vérifiées dans la vraie fenêtre, deux
-> partielles. Ce qui reste est nommé sous le tableau — pas « presque fini », la liste exacte.
+> **État au 2026-08-19.** Les dix étapes livrées et vérifiées dans la vraie fenêtre. Ce qui reste est nommé sous le tableau — pas « presque fini », la liste exacte.
 
 | # | Étape | État | Débloque | Frictions closes |
 |---|---|---|---|---|
 | 1 | **Sortir la maquette du chemin de production** — `router.ts`, `app.js` hors Tauri | ✅ livrée | Tout le reste | F11 |
 | 2 | **Barre unifiée** — `--toolbar-h`, titre de vue, recherche à droite | ✅ livrée | Recherche, actions, titre unique | F2, F9 |
 | 3 | **Shell à trois zones** — plus de `block()`, inspecteur hors du flux | ✅ livrée | Le mapping entier | F1, F5, F6 |
-| 4 | **Rail restructuré** — 3 sections, repli, `--rail-w` mesurée | ⚠️ partielle | Navigation lisible | F3 (accès) |
-| 5 | **Table unique** — BPM, Durée, `--row-h`, menu contextuel | ⚠️ partielle | La vie quotidienne du DJ | § 16 |
+| 4 | **Rail restructuré** — 3 sections + Sources, repli, fusion 1 | ✅ livrée | Navigation lisible, Accueil absorbé | F3 (accès) |
+| 5 | **Table unique** — BPM, Durée, `--row-h`, menu contextuel, sélection multiple | ✅ livrée² | La vie quotidienne du DJ | § 16 |
 | 6 | **Clavier couche 1** — ⌘1…8, ⌘F, ⌘,, ⌘B, Échap | ✅ livrée | L'usage sans souris | F4 |
 | 7 | **Grammaire de boîte à deux niveaux** — `outline` retirée | ✅ livrée | Cohérence de surface | F8 |
 | 8 | **Motion unifiée** — 54 durées sur trois crans | ✅ livrée | — | § 6 |
 | 9 | **Réglages en deux colonnes** | ✅ livrée | — | F7, O‑3 |
 | 10 | **Rekordbox en quatre entrées** | ✅ livrée¹ | — | F10 |
+
+² Sauf les **actions de masse** et la navigation clavier de la table — voir « Ce qui reste ».
 
 ¹ Implémentée et vérifiée sur son **chemin d'état vide** seulement : cette machine n'a aucun XML
 Rekordbox lié, et en lier un est une action sur un système live. La disposition à quatre entrées
@@ -878,18 +898,18 @@ n'a donc **pas** été vue tourner.
 
 ### Ce qui reste
 
-**Étape 4 — les deux fusions.** Accueil dans le rail (section Sources) et Écartés en deux sources
-de Bibliothèque. Le rail est structuré et prêt à les recevoir ; les fusions elles-mêmes suppriment
-deux destinations qu'Antoine utilise, et `DESIGN.md` § 15 les pose comme des **propositions**. Elles
-demandent sa validation avant d'être faites, pas seulement du code. Techniquement : Écartés lit
-`listEcartes` avec ses propres formes de ligne (restaurer, purger), pas `listLibrary` — la fusion
-est une réécriture de rendu, pas un déplacement d'entrée de rail.
+**Fusion 1 — faite.** Accueil a disparu dans le rail : les dossiers surveillés y sont une section,
+cliquer l'un d'eux filtre Revue, et la porte de racine manquante est remontée au niveau fenêtre.
 
-**Étape 5 — sélection multiple.** Le menu contextuel est livré ; la sélection multiple (⇧+clic,
-⌘+clic, ⌘A, résumé agrégé dans l'inspecteur) ne l'est pas. Elle demande de décider d'abord quelles
-actions s'appliquent réellement à N pistes déjà rangées — question ouverte notée dans
-`docs/ui-specs/bibliotheque.md`, et y répondre au jugé peuplerait le menu de masse d'actions qui
-n'ont pas de sens.
+**Fusion 2 — réfutée, pas reportée.** Voir § 15 : la mesure a montré que les deux écrans ne
+portent pas la même donnée. Écartés reste une destination, groupée avec Rangés dans le rail.
+
+**Sélection multiple — faite.** Clic, ⇧+clic, ⌘/Ctrl+clic, ⌘/Ctrl+A, et résumé agrégé dans la
+zone D. Ce qui n'est PAS fait : les **actions de masse**. Elles demandent de décider d'abord
+lesquelles s'appliquent réellement à N pistes déjà rangées — question ouverte de
+`docs/ui-specs/bibliotheque.md` — et y répondre au jugé peuplerait un menu d'actions qui n'ont pas
+de sens. La navigation clavier de la table (↑↓, ⇧+↑↓) n'est pas faite non plus : les lignes n'ont
+pas de gestion de focus de liste aujourd'hui.
 
 **Résidu de l'étape 3.** Deux débordements internes subsistent dans l'inspecteur, tous deux dans le
 lecteur large rendu en colonne étroite. La zone D elle-même ne défile pas horizontalement, donc la

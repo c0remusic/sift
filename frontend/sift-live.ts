@@ -30,6 +30,8 @@ import { installDragDrop, injectLeanStyle, injectTitlebar, installScrollAutohide
 import { initTheme } from "./theme";
 import { installRailSources, renderRailSources } from "./rail-sources";
 import { openContextMenu } from "./context-menu";
+import { applyRowClick, renderSelectionSummary } from "./bibliotheque-view";
+import { sortTracks } from "./library-views";
 import { renderRootGate, dismissRootGateBanner } from "./toolbar";
 import { closeAside } from "./toolbar";
 import { onSettingsCategoryPick } from "./reglages-view";
@@ -464,7 +466,27 @@ export function installLiveWiring() {
       } else if (act === "link") {
         const rid = bibEl.dataset.rid;
         if (rid) void openUrl(`https://www.discogs.com/release/${rid}`);
-      } else if (act === "play" || act === "row" || act === "identify" || act === "tile") {
+      } else if (act === "row") {
+        // SÉLECTION (étape 5). Clic simple : sélectionne et ouvre. ⇧+clic : étend la plage.
+        // ⌘/Ctrl+clic : ajoute ou retire. Les deux modificateurs ne touchent PAS au détail ouvert —
+        // étendre une sélection n'est pas ouvrir une piste, et rouvrir à chaque touche de plage
+        // lancerait autant de chargements de rapport qu'il y a de lignes traversées.
+        const id = Number(bibEl.dataset.id);
+        const ordered = sortTracks(bibState.tracks, bibState.sort).map((t) => t.id);
+        applyRowClick(id, { shift: e.shiftKey, meta: e.metaKey || e.ctrlKey }, ordered);
+        if (e.shiftKey || e.metaKey || e.ctrlKey) {
+          void renderBiblioLive().then(renderSelectionSummary);
+        } else {
+          // Clic simple : marquer la ligne EN PLACE plutôt que rebuilder. Même motif que le `.cur`
+          // juste en dessous — la liste est virtualisée, les lignes hors fenêtre n'existent pas
+          // dans le DOM, et `bibSelection` les couvre au remontage. Sans ce marquage immédiat, la
+          // sélection existait en état sans rien peindre : mesuré à 0 ligne `.sel` après un clic
+          // simple, alors que ⇧+clic en montrait bien trois.
+          document.querySelectorAll(".lr.sel").forEach((n) => n.classList.remove("sel"));
+          document.querySelector(`.lr[data-id="${id}"]`)?.classList.add("sel");
+          openBiblioDetail(id);
+        }
+      } else if (act === "play" || act === "identify" || act === "tile") {
         // Open the unified detail/edit panel (report + inline editor + identify + actions).
         openBiblioDetail(Number(bibEl.dataset.id));
       } else if (act === "dupscan") {

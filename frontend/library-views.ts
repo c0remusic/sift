@@ -115,8 +115,8 @@ export function libraryTableHeaderHtml(sort: LibrarySortState): string {
 /** One table row — cover thumbnail + the 4 sortable columns + the existing play/quality/verdict/
  * Discogs affordances (unchanged from the pre-table single-line row, just no longer squeezed into
  * one "artist — title" string). No duration column (explicit decision, see the design spec). */
-export function libraryTableRowHtml(t: LibraryTrack, curId: number | null): string {
-  const cur = t.id === curId ? " cur" : "";
+export function libraryTableRowHtml(t: LibraryTrack, curId: number | null, selected = false): string {
+  const cur = (t.id === curId ? " cur" : "") + (selected ? " sel" : "");
   const cov = t.cover_path
     ? `<img src="${esc(convertFileSrc(t.cover_path))}" alt="" class="sift-lib-cov">`
     : `<i class="ti ti-vinyl sift-lib-cov-fallback"></i>`;
@@ -128,7 +128,7 @@ export function libraryTableRowHtml(t: LibraryTrack, curId: number | null): stri
   // reading mode would otherwise give.
   const rowLabel = `${t.artist || "Artiste inconnu"} — ${t.title || "Titre inconnu"}, ${fmtBpm(t.bpm)} BPM, ${fmtDuration(t.duration)}, ${t.genres[0] || "genre inconnu"}, ${t.year != null ? t.year : "année inconnue"}`;
   return (
-    `<div class="lr${cur}" data-bib="row" data-id="${t.id}" tabindex="0" role="button" aria-label="${esc(rowLabel)}">` +
+    `<div class="lr${cur}" data-bib="row" data-id="${t.id}" tabindex="0" role="option" aria-selected="${selected}" aria-label="${esc(rowLabel)}">` +
     `<button class="pb" data-bib="play" data-id="${t.id}" aria-label="Écouter"><i class="ti ti-player-play" style="font-size:var(--text-md)"></i></button>` +
     cov +
     `<span class="sift-lib-col sift-lib-col-artist">${esc(t.artist || "—")}</span>` +

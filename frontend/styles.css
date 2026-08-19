@@ -640,7 +640,12 @@ body.sift-rail-collapsed .nav-brand{justify-content:center}
    presence, et le nombre reste a l'etat deplie ou il a la place d'etre lu. C'est aussi ce que
    fait la sidebar repliee de Mail. */
 body.sift-rail-collapsed .nv{position:relative}
-body.sift-rail-collapsed .nav-badge{position:absolute;top:4px;right:6px;width:6px;height:6px;min-width:0;padding:0;border-radius:50%;font-size:0;line-height:0;color:transparent;background:var(--color-text-info);overflow:hidden}
+/* Le texte du compte est CLIPPE par la boite de 6px, pas reduit a `font-size:0`. La difference
+   n'est pas cosmetique : le controle de plancher typographique (`run-sift floor`) lit la taille de
+   police peinte, et un 0px y entre comme un texte illisible — il ne peut pas distinguer « masque
+   volontairement » de « trop petit ». Mesure du 2026-08-19 : `minPx` tombait de 10 a 0 avec deux
+   badges signales. Clipper garde la taille declaree honnete et le controle utilisable. */
+body.sift-rail-collapsed .nav-badge{position:absolute;top:4px;right:6px;width:6px;height:6px;min-width:0;padding:0;border-radius:50%;color:transparent;background:var(--color-text-info);overflow:hidden;white-space:nowrap}
 body.sift-rail-collapsed .nav-badge:empty{display:none}
 /* La pastille de source devient son ICONE une fois replie — c'est la seule chose qui identifie une
    source, et a 8px elle ne se lit plus une fois seule dans la colonne. */
@@ -925,6 +930,18 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
    grandirait plutot que de rogner, et un rognage silencieux sur une bibliotheque de 100k lignes
    est exactement le genre de perte qu'on ne voit jamais. */
 .lr{min-height:var(--row-h)}
+/* Ligne SELECTIONNEE : promue au plan du contenu, comme tout etat actif de l'app (DESIGN.md § 4,
+   quatre plans neutres). Jamais un accent colore ni une barre laterale — un etat permanent reste
+   neutre. La ligne OUVERTE (.cur) garde son propre marquage : selectionner et ouvrir sont deux
+   choses, et la table doit pouvoir montrer les deux en meme temps. */
+.lr.sel{background:var(--color-background-secondary)}
+/* Resume agrege de la selection, zone D. Meme grammaire libelle/valeur que le reste de
+   l'inspecteur : libelle a gauche en encre secondaire, valeur a droite en primaire. */
+.sift-sel-count{font-size:var(--text-xl);font-weight:600;margin-bottom:var(--space-12)}
+.sift-sel-rows{display:grid;grid-template-columns:1fr auto;gap:var(--space-4) var(--space-12);margin:0;font-size:var(--text-md)}
+.sift-sel-rows dt{color:var(--color-text-secondary)}
+.sift-sel-rows dd{margin:0;text-align:right;color:var(--color-text-primary);font-variant-numeric:tabular-nums}
+.sift-sel-partial{color:var(--color-text-tertiary);font-size:var(--text-sm)}
 /* Les affordances de la ligne se serrent a la hauteur de ligne : sans cela le bouton lecture, la
    pastille de qualite (22) et l'icone Discogs (22) fixaient la hauteur a leur place, et --row-h
    n'aurait ete qu'un plancher jamais atteint. Le bouton lecture est passe de 23 a 22px sur SA

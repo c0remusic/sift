@@ -61,6 +61,86 @@ export const bibState: {
  *  une minuterie accrochée à lui partirait alors avec lui, en laissant un rendu programmé. */
 let bibSearchTimer: number | undefined;
 
+/** Sélection courante de la table (étape 5, `docs/ui-specs/bibliotheque.md`).
+ *
+ *  Un `Set` d'ids et non d'index : la liste est virtualisée ET triable, donc un index ne désigne
+ *  pas la même piste d'un rendu à l'autre. L'ancre du ⇧+clic est un id pour la même raison. */
+export const bibSelection = new Set<number>();
+let bibAnchor: number | null = null;
+
+/** Applique un clic de ligne selon ses modificateurs, à la convention système.
+ *  Rend `true` quand la sélection a changé et que l'écran doit se repeindre. */
+export function applyRowClick(id: number, mods: { shift: boolean; meta: boolean }, ordered: number[]): void {
+  if (mods.shift && bibAnchor != null) {
+    const a = ordered.indexOf(bibAnchor);
+    const b = ordered.indexOf(id);
+    if (a >= 0 && b >= 0) {
+      bibSelection.clear();
+      for (let i = Math.min(a, b); i <= Math.max(a, b); i++) bibSelection.add(ordered[i]);
+      return;
+    }
+  }
+  if (mods.meta) {
+    // Bascule : ⌘/Ctrl+clic ajoute ou retire, il ne remplace jamais.
+    if (bibSelection.has(id)) bibSelection.delete(id);
+    else bibSelection.add(id);
+    bibAnchor = id;
+    return;
+  }
+  bibSelection.clear();
+  bibSelection.add(id);
+  bibAnchor = id;
+}
+
+/** Sélectionne tout ce que le filtre courant laisse voir — pas toute la bibliothèque. ⌘A dans une
+ *  liste filtrée qui sélectionnerait au-delà du filtre est le raccourci le plus dangereux qui
+ *  soit : il porte sur ce qu'on ne voit pas. */
+export function selectAllVisible(): void {
+  bibSelection.clear();
+  for (const t of bibState.tracks) bibSelection.add(t.id);
+  bibAnchor = bibState.tracks[0]?.id ?? null;
+}
+
+/** Résumé agrégé de la sélection dans la zone D.
+ *
+ *  Multi-sélection = résumé, JAMAIS un état vide (DESIGN.md § 14). Un inspecteur qui se vide dès
+ *  qu'on sélectionne deux lignes punit exactement le geste qu'on vient d'apprendre à l'utilisateur.
+ *  Ce qu'il montre est ce qui a un sens agrégé — un compte, des formats, une durée totale — et
+ *  rien d'autre : un « artiste » agrégé n'existe pas. */
+export function renderSelectionSummary(): void {
+  if (bibSelection.size < 2) return;
+  const host = openAside();
+  if (!host) return;
+  const picked = bibState.tracks.filter((t) => bibSelection.has(t.id));
+  const fmts = new Map<string, number>();
+  let total = 0;
+  let unknown = 0;
+  for (const t of picked) {
+    const f = (t.format || "?").toUpperCase();
+    fmts.set(f, (fmts.get(f) ?? 0) + 1);
+    if (t.duration != null && Number.isFinite(t.duration)) total += t.duration;
+    else unknown++;
+  }
+  const h = Math.floor(total / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const dur = h > 0 ? `${h} h ${String(m).padStart(2, "0")}` : `${m} min`;
+  host.innerHTML =
+    `<div class="col-h">Sélection</div>` +
+    `<div class="sift-sel-count">${picked.length} pistes</div>` +
+    `<dl class="sift-sel-rows">` +
+    [...fmts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([f, n]) => `<dt>${esc(f)}</dt><dd>${n}</dd>`)
+      .join("") +
+    `<dt>Durée totale</dt><dd>${dur}${unknown ? ` <span class="sift-sel-partial">+ ${unknown} sans durée</span>` : ""}</dd>` +
+    `</dl>`;
+}
+
+export function clearBibSelection(): void {
+  bibSelection.clear();
+  bibAnchor = null;
+}
+
 export const bibDup: {
   groups: DupGroup[] | null;
   loading: boolean;
@@ -469,7 +549,7 @@ export async function renderBiblioLive() {
         host: biblist,
         scrollContainer: content,
         items: sortedTracks,
-        rowHtml: (t) => libraryTableRowHtml(t, bibOpenId),
+        rowHtml: (t) => libraryTableRowHtml(t, bibOpenId, bibSelection.has(t.id)),
         probeHtml: LIBRARY_TABLE_PROBE_HTML,
         fallbackRowH: 32, // --row-h : repli seulement, la sonde mesure la vraie ligne
       });

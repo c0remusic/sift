@@ -17,6 +17,7 @@
 import { goTo, type ViewId } from "./router";
 import { focusBarSearch } from "./toolbar";
 import { toggleRail } from "./chrome";
+import { selectAllVisible, renderBiblioLive, renderSelectionSummary } from "./bibliotheque-view";
 
 /** Ordre des destinations pour ⌘/Ctrl + 1…8. Lu depuis le rail plutôt que codé ici : le rail EST
  *  l'ordre affiché, et une table parallèle divergerait au premier réarrangement. */
@@ -101,6 +102,16 @@ export function installWindowShortcuts(): void {
         e.preventDefault();
         toggleRail();
         return;
+      case "a":
+      case "A": {
+        // ⌘/Ctrl+A n'agit QUE sur une table présente à l'écran. Ailleurs on laisse passer : la
+        // sélection de texte du navigateur reste le comportement attendu partout ailleurs.
+        if (!document.querySelector('.lr[data-bib="row"]')) return;
+        e.preventDefault();
+        selectAllVisible();
+        void renderBiblioLive().then(renderSelectionSummary);
+        return;
+      }
       default:
         return;
     }
