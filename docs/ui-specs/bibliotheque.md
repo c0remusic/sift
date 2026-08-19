@@ -53,6 +53,15 @@ active. Il ne prend plus une colonne à lui : il filtrait, et un filtre appartie
 barre. Ce geste supprime `.sift-library-side` et sa hauteur
 `calc(100dvh - 210px)`, qui encodait la hauteur du bloc au-dessus.
 
+**Livré le 2026-08-19.** Le bouton porte le type en encre secondaire et la valeur active
+en encre primaire — la hiérarchie d'un chemin de Finder : on lit d'abord où on est.
+Le panneau s'ouvre **sous** le bouton (`anchoredBelowPosition`, jumelle de la géométrie
+du popover de destination : celle-là sert un bouton en bas de fenêtre, celle-ci un bouton
+en tête de table). Une facette sans valeur le dit — « Aucun dossier pour l'instant. » —
+au lieu d'ouvrir trois onglets sur du vide, ce qui se lit comme un défaut de chargement.
+`.sift-library-layout` est partie avec `.sift-library-side`, et avec elle les **quatre**
+rattrapages de largeur qu'elle documentait (150 → 190 → 245 → 272).
+
 ### Zone C — table
 
 Colonnes, largeurs, tri, densité, sélection, menu contextuel : **`DESIGN.md` § 16 sans
@@ -66,6 +75,16 @@ compte de pistes. Les cartes de statistiques d'aujourd'hui (`statsCardsHtml`) qu
 le haut de l'écran — elles poussaient tout le contenu vers le bas et forçaient la
 constante `210`. Leur donnée remonte dans l'inspecteur en état « aucune sélection ».
 
+**Livré le 2026-08-19**, et la mesure chiffre le geste : la première ligne de la table
+commençait à **396 px** du haut de la fenêtre, elle commence à **138**. `statsCardsHtml`
+est supprimée, et `library_stats` ne fait plus partie des appels de l'écran — un
+aller-retour IPC de moins à chaque frappe de recherche.
+
+La surface de la table remplit désormais la zone C (`min-height:100%`) : avec deux pistes
+affichées elle mesurait 152 px dans une zone de 864, et le fond s'interrompait au milieu de
+l'écran comme si le contenu était coupé. Dans Finder les **lignes** s'arrêtent, la surface
+non.
+
 **Mode Grille** : mêmes données, tuiles de pochette. Il hérite du tri de la table et
 n'a pas de contrôle de tri propre. `LIBRARY_GRID_TILES_PER_ROW` reste piloté par la
 largeur réelle de la zone, pas par une constante.
@@ -78,6 +97,14 @@ défilement, plus `#content`.
 - **Aucune sélection** — résumé de la source active : nombre de pistes, répartition par
   format, occupation disque. C'est là que vont les cartes de statistiques retirées de
   la zone C.
+
+  ⚠️ **La répartition se calcule sur ce que la table montre, jamais sur `library_stats`.**
+  Mesuré le 2026-08-19 : la première version reprenait les compteurs globaux, et sous un
+  titre « TECH HOUSE · 2 pistes » on lisait « Lossless 2 · MP3 1 » — trois pistes sous un
+  titre qui en annonce deux. C'est exactement le défaut que sortir ces cartes de la zone C
+  devait supprimer, pas déplacer. Le graphique d'occupation, lui, reste global et garde son
+  cache : il décrit la bibliothèque entière et le refaire à chaque frappe coûterait un
+  aller-retour pour un résultat identique.
 - **Une piste** — pochette, artiste, titre, version · lecture et forme d'onde ·
   verdict avec son détail · métadonnées (label, année, genres, BPM, durée, format,
   débit) · chemin du fichier · actions : Identifier, Fiche Discogs, Réanalyser.

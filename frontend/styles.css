@@ -2091,7 +2091,6 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
    Le geste d'aujourd'hui va au bout du même raisonnement — un filtre n'appartient pas au contenu.
    `.sift-bib-search-pending` est partie avec elle : l'attente se peint maintenant sur l'enveloppe
    du champ (`.sift-bar-search--pending`), sans créer de nœud à chaque frappe. */
-.sift-library-layout{display:flex;align-items:flex-start;gap:var(--space-16)}
 /* 150px → 190px (2026-07-08, retour utilisateur : la pastille Dossiers/Genres était tronquée) —
    la piste segmentée + son padding de carte (16px×2) dépassaient les ~118px utiles restants à
    150px. .sift-library-main est flex:1 dans .sift-library-layout, s'adapte sans casser.
@@ -2113,8 +2112,38 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
    Largeur passee au token --pane-w : c'est la meme mesure que la file de Revue et le rail de
    sources d'Accueil, et elle etait ecrite en dur ici pour la quatrieme fois (150 → 190 → 245
    → 272). */
-.sift-library-side{width:var(--pane-w);flex:none;align-self:flex-start;position:sticky;top:0;max-height:100%;overflow:auto;padding-bottom:var(--space-12)}
-.sift-library-main{flex:1;min-width:0}
+/* `.sift-library-layout` et `.sift-library-side` RETIRÉES le 2026-08-19. La colonne de facette a
+   quitté la zone C pour un popover ancré à un bouton (`docs/ui-specs/bibliotheque.md`) : elle
+   filtrait, et un filtre n'appartient pas au contenu. Avec elle partent les quatre rattrapages de
+   largeur documentés ci-dessus (150 → 190 → 245 → 272) — une valeur rattrapée quatre fois n'a
+   jamais été dérivée, et la meilleure façon de la dériver était de ne plus en avoir besoin.
+   `.sift-library-main` reste : elle est maintenant seule dans la zone C, donc `flex:1` n'a plus de
+   voisin à qui disputer la place — gardé pour que la boîte remplisse la zone. */
+/* `min-height:100%` : la surface de la table remplit la zone C au lieu de s'arrêter sous sa
+   dernière ligne. Mesuré le 2026-08-19 — avec 2 pistes affichées, la carte faisait 152px dans une
+   zone de 864, et le fond s'interrompait au milieu de l'écran comme si le contenu était coupé.
+   Dans Finder la liste occupe la fenêtre ; les LIGNES s'arrêtent, la surface non.
+   `box-sizing` est déjà global, donc les 100% incluent le padding de la carte et rien ne déborde
+   du `#content` qui la porte (hauteur explicite, `overflow-y:auto`). */
+.sift-library-main{flex:1;min-width:0;min-height:100%}
+/* Une seule ligne au-dessus de la table : facette · valeur active · compte. Elle remplace un
+   bandeau de cartes de statistiques (~118px) + un graphique d'occupation (~180px), tous deux
+   montés dans la zone D — mesuré le 2026-08-19, la première ligne de la table commençait à 396px
+   du haut de la fenêtre. */
+.sift-bib-headline{display:flex;align-items:center;justify-content:space-between;gap:var(--space-8);margin-bottom:var(--space-8)}
+/* Bouton de facette : le libellé du TYPE en encre secondaire, la valeur active en encre primaire.
+   C'est la hiérarchie d'un chemin de Finder — on lit d'abord où on est, le type ne fait que
+   qualifier. Pas de bordure au repos : l'affordance vient du chevron, comme un menu contextuel de
+   la barre unifiée. */
+.sift-bib-facet-btn{display:inline-flex;align-items:center;gap:var(--space-8);padding:var(--space-4) var(--space-8);border:0;background:none;border-radius:var(--border-radius-sm);cursor:pointer;font-size:var(--text-base);color:var(--color-text-primary)}
+.sift-bib-facet-btn:hover{background:var(--overlay-hover)}
+.sift-bib-facet-btn .sift-bib-facet-kind{color:var(--color-text-secondary)}
+.sift-bib-facet-btn .sift-bib-facet-val{font-weight:500}
+.sift-bib-facet-btn i{font-size:var(--text-md);color:var(--color-text-tertiary)}
+.sift-bib-count{font-size:var(--text-sm);color:var(--color-text-tertiary)}
+/* Même matériau que le popover de destination — un seul type de surface flottante dans l'app. */
+.sift-facet-pop{position:fixed;width:var(--pane-w);max-height:340px;display:flex;flex-direction:column;padding:var(--space-12);background:color-mix(in srgb,var(--color-background-secondary) 70%,transparent);backdrop-filter:blur(16px) saturate(160%);-webkit-backdrop-filter:blur(16px) saturate(160%);border:1px solid var(--color-border-secondary);border-radius:var(--border-radius-lg);overflow-y:auto;z-index:var(--z-popover)}
+.sift-facet-empty{padding:var(--space-8);font-size:var(--text-md);color:var(--color-text-tertiary)}
 /* Shared empty state (DESIGN.md "État vide") — top-aligned, never centred. Used by Revue (queue),
    Écartés, Bibliothèque, Rekordbox et Journal (2026-07-08) when the screen is a real dead-end. */
 .sift-empty-state{padding:var(--space-32) var(--space-32);display:flex;flex-direction:column;align-items:flex-start;gap:var(--space-8);max-width:360px}
@@ -2237,7 +2266,9 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 /* Bibliotheque : le graphique est une carte de l'ecran, pas un objet flottant — il n'a ni en-tete
    disque ni segment libre (une bibliotheque n'est pas un volume), donc sa propre carte doit
    annuler le padding que le composant se donne pour le cas Cle USB. */
-.sift-bib-usage{margin-bottom:var(--space-12)}
+/* Dans la zone D depuis le 2026-08-19 : plus de marge basse, c'est le dernier bloc de la
+   colonne, et une marge y creuserait un vide contre le bord de la fenetre. */
+.sift-bib-usage{margin-top:var(--space-16)}
 .sift-bib-usage .sift-usage-card{padding:0;background:none;border:0;gap:var(--space-12)}
 
 /* Champ de nom de volume dans la modale de formatage. Meme forme que la ligne de confirmation

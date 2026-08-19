@@ -1,6 +1,7 @@
 import { describe, it, expect } from "vitest";
 import {
   destPopoverPosition,
+  anchoredBelowPosition,
   clampToViewport,
   POPOVER_GAP,
   POPOVER_MARGIN,
@@ -58,6 +59,37 @@ describe("destPopoverPosition", () => {
     const { top } = destPopoverPosition({ top: 400, bottom: 432, left: 100 }, POP_W, 700, 920, 640);
     expect(top).toBe(POPOVER_MARGIN);
     expect(top).toBeGreaterThanOrEqual(0); // jamais négatif : c'est le défaut d'origine
+  });
+});
+
+describe("anchoredBelowPosition", () => {
+  // Le sélecteur de facette vit en TÊTE de la table, pas en bas de fenêtre comme le bouton
+  // Destination. Réutiliser `destPopoverPosition` y donnait le mauvais côté : avec un bouton à
+  // ~360px du haut, la place au-dessus (≈344) dépasse la hauteur du popover (340), donc rien ne
+  // basculait et le panneau s'ouvrait vers le haut, par-dessus la barre unifiée.
+  const btn = { top: 360, bottom: 388, left: 240 };
+
+  it("s'ouvre SOUS le bouton par défaut, même quand la place au-dessus suffirait", () => {
+    const { top } = anchoredBelowPosition(btn, POP_W, 340, 1200, 900);
+    expect(top).toBe(btn.bottom + POPOVER_GAP);
+  });
+
+  it("bascule au-dessus seulement si le dessous ne contient pas ET que le dessus est plus large", () => {
+    // Bouton bas de fenêtre : 90px sous lui, 470 au-dessus, popover de 300.
+    const low = { top: 520, bottom: 548, left: 240 };
+    const { top } = anchoredBelowPosition(low, POP_W, 300, 1200, 640);
+    expect(top).toBe(low.top - 300 - POPOVER_GAP);
+  });
+
+  it("garde le dessous quand aucun côté ne contient, si le dessous est le plus large", () => {
+    const high = { top: 120, bottom: 148, left: 240 };
+    const { top } = anchoredBelowPosition(high, POP_W, 900, 1200, 640);
+    expect(top).toBe(POPOVER_MARGIN); // recalé, pas basculé vers le côté étroit
+  });
+
+  it("recale horizontalement comme sa jumelle", () => {
+    const { left } = anchoredBelowPosition({ ...btn, left: 1150 }, POP_W, 340, 1200, 900);
+    expect(left).toBe(1200 - POP_W - POPOVER_MARGIN);
   });
 });
 

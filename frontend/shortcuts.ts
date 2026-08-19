@@ -17,7 +17,13 @@
 import { goTo, type ViewId } from "./router";
 import { focusBarSearch } from "./toolbar";
 import { toggleRail } from "./chrome";
-import { selectAllVisible, renderBiblioLive, renderSelectionSummary, stepBibSelection } from "./bibliotheque-view";
+import {
+  selectAllVisible,
+  renderBiblioLive,
+  renderSelectionSummary,
+  stepBibSelection,
+  closeFacetPopover,
+} from "./bibliotheque-view";
 
 /** Ordre des destinations pour ⌘/Ctrl + 1…8. Lu depuis le rail plutôt que codé ici : le rail EST
  *  l'ordre affiché, et une table parallèle divergerait au premier réarrangement. */
@@ -52,6 +58,13 @@ function dismissTopmost(): boolean {
   const popover = document.querySelector<HTMLElement>(".sift-dest-popover:not([hidden])");
   if (popover) {
     document.querySelector<HTMLElement>('[data-fil="destbtn"]')?.click();
+    return true;
+  }
+  // Sélecteur de facette de Bibliothèque (2026-08-19). Fermé directement et non par un clic
+  // simulé sur son bouton, contrairement au popover de destination : la bascule passerait par
+  // l'état de module et rouvrirait ce qu'on veut fermer.
+  if (document.querySelector(".sift-facet-pop:not([hidden])")) {
+    closeFacetPopover();
     return true;
   }
   return false;

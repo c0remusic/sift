@@ -46,6 +46,30 @@ export function destPopoverPosition(
   return { top: clampToViewport(top, popH, vh), left: clampToViewport(btn.left, popW, vw) };
 }
 
+/** Position d'un popover ancré SOUS son déclencheur, ramené dans la fenêtre.
+ *
+ *  Jumelle de `destPopoverPosition`, et l'inverse de son défaut : celle-là sert un bouton ancré en
+ *  bas de fenêtre (barre d'action), celle-ci un bouton en HAUT — le sélecteur de facette, qui vit
+ *  en tête de la table. Réutiliser la première y donnait le mauvais côté : avec un bouton à ~360px
+ *  du haut, `roomAbove` (≈344) dépasse la hauteur du popover (340), donc rien ne basculait et le
+ *  panneau se serait ouvert vers le haut, par-dessus la barre unifiée.
+ *
+ *  Même ordre que sa jumelle — flip sur l'axe principal, shift sur l'axe croisé — seul le côté
+ *  préféré change. */
+export function anchoredBelowPosition(
+  btn: AnchorRect,
+  popW: number,
+  popH: number,
+  vw: number,
+  vh: number,
+): { top: number; left: number } {
+  const roomBelow = vh - btn.bottom - POPOVER_GAP - POPOVER_MARGIN;
+  const roomAbove = btn.top - POPOVER_GAP - POPOVER_MARGIN;
+  const flipAbove = popH > roomBelow && roomAbove > roomBelow;
+  const top = flipAbove ? btn.top - popH - POPOVER_GAP : btn.bottom + POPOVER_GAP;
+  return { top: clampToViewport(top, popH, vh), left: clampToViewport(btn.left, popW, vw) };
+}
+
 /** Maintient un segment de longueur `size` démarrant en `start` dans un axe long de `viewport`, en
  *  laissant `POPOVER_MARGIN` à chaque bout. La borne basse est appliquée EN DERNIER : un popover
  *  plus grand que la fenêtre se colle au bord haut au lieu d'être poussé au-delà. Inatteignable

@@ -8,7 +8,6 @@
 import {
   listLibrary,
   libraryFolders,
-  libraryStats,
   scanLibraryDuplicates,
   reanalyzeTracks,
   rejectBatch,
@@ -17,10 +16,11 @@ import {
   openUrl,
 } from "./ipc";
 import { openContextMenu } from "./context-menu";
+import { anchoredBelowPosition } from "./popover-position";
 import { installColumnGestures, resetColumns, columnsAreCustomized } from "./library-columns";
 import { confirmAction, BATCH_CONFIRM_THRESHOLD } from "./confirm-modal";
 import { toast } from "./filing-toast";
-import type { LibraryTrack, LibraryFacets, LibraryFilter, DupGroup, DashboardStats } from "../shared/contracts";
+import type { LibraryTrack, LibraryFacets, LibraryFilter, DupGroup } from "../shared/contracts";
 import { requireEl, esc } from "./dom";
 import { mountBarActions, mountBarSearch, openAside, closeAside } from "./toolbar";
 import { humanizeError } from "./errors";
@@ -143,6 +143,53 @@ export function renderSelectionSummary(): void {
       .join("") +
     `<dt>Durée totale</dt><dd>${dur}${unknown ? ` <span class="sift-sel-partial">+ ${unknown} sans durée</span>` : ""}</dd>` +
     `</dl>`;
+}
+
+/** Zone D, état « aucune sélection » (`docs/ui-specs/bibliotheque.md`) : le résumé de la source
+ *  active — compte, répartition par format, occupation disque.
+ *
+ *  C'est ici que vont les cartes de statistiques et le graphique d'occupation qui vivaient EN TÊTE
+ *  DE LA ZONE C. Ils y poussaient la table vers le bas — mesuré le 2026-08-19, ~300px avant la
+ *  première ligne dans une fenêtre de 908px de haut — et ils décrivaient la bibliothèque entière
+ *  pendant que la table, elle, montrait un sous-ensemble filtré. Deux portées dans la même colonne.
+ *
+ *  L'inspecteur est leur place : il porte le contexte de ce que la zone C montre, jamais du contenu
+ *  à parcourir. C'est le patron Finder — la colonne de droite décrit, elle ne liste pas. */
+function renderBibInspectorIdle(): void {
+  const host = openAside();
+  if (!host) return;
+  const f = bibState.filter;
+  const source = f.folder ?? f.genre ?? f.artist ?? "Tous";
+  const n = bibState.tracks.length;
+  // Répartition calculée sur CE QUE LA TABLE MONTRE, jamais sur `library_stats`.
+  //
+  // Mesuré le 2026-08-19 : la première version reprenait les compteurs globaux, et sous un titre
+  // « TECH HOUSE · 2 pistes » on lisait « Lossless 2 · MP3 1 » — trois pistes sous un titre qui en
+  // annonce deux. C'est le défaut que sortir ces cartes de la zone C devait supprimer, pas
+  // déplacer : un inspecteur décrit ce que la zone C montre, sinon il décrit autre chose sans le
+  // dire. `library_stats` n'est plus appelé du tout par cet écran.
+  const fmts = new Map<string, number>();
+  let fake = 0;
+  for (const t of bibState.tracks) {
+    const k = (t.format || "?").toUpperCase();
+    fmts.set(k, (fmts.get(k) ?? 0) + 1);
+    if (t.verdict === "fake") fake++;
+  }
+  host.innerHTML =
+    `<div class="col-h">${esc(source)}</div>` +
+    `<div class="sift-sel-count">${n} piste${n > 1 ? "s" : ""}</div>` +
+    `<dl class="sift-sel-rows">` +
+    [...fmts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([k, c]) => `<dt>${esc(k)}</dt><dd>${c}</dd>`)
+      .join("") +
+    // « À re-sourcer » n'apparaît que s'il y en a. Une ligne à zéro en permanence occupe la place
+    // d'une information et n'en porte aucune — et § 4 interdit d'estomper un échec, pas de le taire
+    // quand il n'existe pas.
+    (fake ? `<dt>À re-sourcer</dt><dd>${fake}</dd>` : "") +
+    `</dl>` +
+    `<div id="sift-bib-usage" class="sift-bib-usage"></div>`;
+  mountBibUsage(host);
 }
 
 /** Ordre courant des ids, tel qu'affiché. Recalculé à chaque pas plutôt que mis en cache : le tri
@@ -462,31 +509,51 @@ function dupGroupHtml(g: DupGroup, idx: number): string {
   );
 }
 
-function statsCardsHtml(s: DashboardStats): string {
-  const activeStat =
-    bibState.filter.verdict === "fake"
-      ? "fake"
-      : bibDup.shown
-        ? "duplicates"
-        : (bibState.filter.quality ?? "all");
-  const card = (label: string, value: number, action: string, extra = "") => {
-    const on = action === activeStat;
-    return (
-      `<button data-bib="stat" data-stat="${action}" style="flex:1;min-width:90px;text-align:left;border:0.5px solid ${on ? "var(--color-border-secondary)" : "var(--color-border-tertiary)"};border-radius:var(--border-radius-md);padding:8px 10px;background:${on ? "var(--color-row-active)" : "transparent"};cursor:pointer">` +
-      `<div style="font-size:var(--text-xl);font-weight:600">${value}</div>` +
-      `<div style="font-size:var(--text-sm);color:var(--color-text-tertiary)">${esc(label)}${extra}</div>` +
-      `</button>`
-    );
-  };
-  return (
-    `<div style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:12px">` +
-    card("Total", s.total, "all") +
-    card("Lossless", s.lossless, "lossless") +
-    card("MP3", s.mp3, "mp3") +
-    card("Doublons", s.duplicates, "duplicates") +
-    card("À re-sourcer", s.fake, "fake") +
-    `</div>`
+/** Ouvre ou ferme le sélecteur de facette, ancré sous son bouton.
+ *
+ *  Le popover est peint `hidden` par le rendu : tant qu'il l'est, ses nœuds mesurent 0 — d'où
+ *  l'ordre ici, montrer PUIS mesurer PUIS placer, et le pouce du contrôle segmenté positionné
+ *  seulement après. Le placer avant l'affichage le collerait à l'origine, sans erreur visible. */
+/** Le popover est-il ouvert ? État de MODULE et non lecture du DOM : chaque changement d'onglet
+ *  (Dossiers / Genres / Artistes) relance `renderBiblioLive`, qui réécrit `#content` — le popover
+ *  repart donc `hidden` à chaque fois. Sans mémoire, il se refermerait sous le doigt au premier
+ *  onglet cliqué. */
+let facetPopOpen = false;
+
+export function toggleFacetPopover(): void {
+  facetPopOpen = !facetPopOpen;
+  if (facetPopOpen) showFacetPopover();
+  else closeFacetPopover();
+}
+
+/** Affiche et place le popover. Séparée de la bascule pour être rappelable après un rendu, quand
+ *  l'état dit ouvert mais que le nœud vient d'être recréé fermé. */
+function showFacetPopover(): void {
+  const pop = document.getElementById("sift-facet-pop");
+  const btn = document.querySelector<HTMLElement>('[data-bib="facetpop"]');
+  if (!pop || !btn) return;
+  pop.hidden = false;
+  btn.setAttribute("aria-expanded", "true");
+  const r = btn.getBoundingClientRect();
+  const { top, left } = anchoredBelowPosition(
+    { top: r.top, bottom: r.bottom, left: r.left },
+    pop.offsetWidth,
+    pop.offsetHeight,
+    document.documentElement.clientWidth,
+    document.documentElement.clientHeight,
   );
+  pop.style.top = `${top}px`;
+  pop.style.left = `${left}px`;
+  positionFacetThumb();
+  pop.querySelector<HTMLElement>(".fld, .sift-seg-opt")?.focus();
+}
+
+export function closeFacetPopover(): void {
+  facetPopOpen = false;
+  const pop = document.getElementById("sift-facet-pop");
+  if (!pop || pop.hidden) return;
+  pop.hidden = true;
+  document.querySelector('[data-bib="facetpop"]')?.setAttribute("aria-expanded", "false");
 }
 
 /** Positions the Dossiers/Genres thumb from whichever button currently carries `.on`. Called both
@@ -522,27 +589,26 @@ export function positionViewModeThumb(): void {
  * et on redessine depuis cette valeur ensuite. */
 let bibUsage: UsageReport | null = null;
 
-/** Insere le graphique d occupation en tete de l ecran. `refetch` n est vrai qu au premier
- * affichage : ensuite on redessine depuis `bibUsage`, sans aller-retour. */
-function mountBibUsage(content: HTMLElement, refetch: boolean): void {
-  const anchor = content.querySelector(".sift-library-layout");
-  if (!anchor) return;
-  const slot = document.createElement("div");
-  slot.id = "sift-bib-usage";
-  slot.className = "sift-ui-card-soft sift-ui-card-soft-pad sift-bib-usage";
-  content.insertBefore(slot, anchor);
+/** Dessine le graphique d'occupation dans le slot que `renderBibInspectorIdle` vient de poser.
+ *
+ *  Le premier affichage lit l'IPC, les suivants redessinent depuis `bibUsage` : ce graphique décrit
+ *  la bibliothèque ENTIÈRE, pas le sous-ensemble filtré, donc le refaire à chaque frappe de
+ *  recherche coûterait un aller-retour pour un résultat identique — et le ferait clignoter. */
+function mountBibUsage(host: HTMLElement): void {
+  const slot = host.querySelector<HTMLElement>("#sift-bib-usage");
+  if (!slot) return;
 
   const draw = (report: UsageReport) => {
-    slot.innerHTML = '<div class="sift-settings-title">Occupation par format</div>';
+    slot.innerHTML = '<div class="col-h">Occupation</div>';
     slot.appendChild(renderUsageChart({ report }));
   };
 
-  if (bibUsage && !refetch) {
+  if (bibUsage) {
     draw(bibUsage);
     return;
   }
   slot.innerHTML =
-    '<div class="sift-settings-title">Occupation par format</div>' +
+    '<div class="col-h">Occupation</div>' +
     '<div class="sift-usb-empty">Lecture…</div>';
   void libraryUsage()
     .then((r) => {
@@ -555,7 +621,7 @@ function mountBibUsage(content: HTMLElement, refetch: boolean): void {
       // signaler. Le cas jumeau de Clé USB (`usb-view.ts::mountUsage`) garde son slot et affiche
       // la chaîne brute ; c'est ce modèle qu'on porte ici, plus une porte de sortie.
       slot.innerHTML =
-        '<div class="sift-settings-title">Occupation par format</div>' +
+        '<div class="col-h">Occupation</div>' +
         '<div class="sift-usb-empty">' +
         esc(humanizeError(e, "Occupation indisponible.", "libraryUsage")) +
         "<br>" +
@@ -565,8 +631,8 @@ function mountBibUsage(content: HTMLElement, refetch: boolean): void {
       slot
         .querySelector<HTMLButtonElement>('[data-bib="retryusage"]')
         ?.addEventListener("click", () => {
-          slot.remove();
-          mountBibUsage(content, true);
+          // `bibUsage` est resté nul (l'appel a échoué), donc ce remontage relit vraiment l'IPC.
+          mountBibUsage(host);
         });
     });
 }
@@ -594,13 +660,11 @@ export async function renderBiblioLive() {
       '<i class="ti ti-loader sift-spin" style="font-size:var(--text-md)"></i> Chargement…</div>';
   }
   let facets: LibraryFacets = { folders: [], genres: [], artists: [] };
-  let stats: DashboardStats | null = null;
   try {
-    [bibState.tracks, facets, stats] = await Promise.all([
-      listLibrary(bibState.filter),
-      libraryFolders(),
-      libraryStats(),
-    ]);
+    // `library_stats` a quitté ce Promise.all le 2026-08-19 : il n'alimentait que les cartes de
+    // statistiques, retirées de la zone C, et l'inspecteur compte désormais ce que la table montre
+    // plutôt que la bibliothèque entière. Un aller-retour IPC de moins à chaque frappe de recherche.
+    [bibState.tracks, facets] = await Promise.all([listLibrary(bibState.filter), libraryFolders()]);
   } catch (e) {
     // Impasse A20 (issue #15) : cette carte était la seule des trois sans porte de sortie — Écartés
     // (`ecartes-view.ts`) et le bloc doublons plus bas en ont une depuis leur audit respectif.
@@ -643,6 +707,8 @@ export async function renderBiblioLive() {
       : bibState.facet === "genre"
         ? bibState.filter.genre
         : bibState.filter.artist;
+  const facetLabel =
+    bibState.facet === "folder" ? "Dossiers" : bibState.facet === "genre" ? "Genres" : "Artistes";
   const side =
     // Segmented pill (2026-07-08, was .chip/.chip.on) — a strictly exclusive 3-way choice is the
     // same job as Apparence/Format USB/Détail-Lot, not a filter chip (chips stay the "tag/filter"
@@ -657,12 +723,18 @@ export async function renderBiblioLive() {
     `<button class="sift-seg-opt${bibState.facet === "genre" ? " on" : ""}" data-bib="facet" data-f="genre">Genres</button>` +
     `<button class="sift-seg-opt${bibState.facet === "artist" ? " on" : ""}" data-bib="facet" data-f="artist">Artistes</button></div>` +
     // Audit-ref B1 : tabindex/role="button", clavier via installNavKeyboard() étendu (chrome.ts).
-    facetList
-      .map(
-        (b) =>
-          `<div class="fld${activeFacetVal === b.name ? " on" : ""}" data-bib="pick" data-key="${sideKey}" data-val="${esc(b.name)}" tabindex="0" role="button" style="justify-content:space-between"><span>${esc(b.name)}</span><span style="font-size:var(--text-sm);opacity:.7">${b.count}</span></div>`,
-      )
-      .join("");
+    (facetList.length
+      ? facetList
+          .map(
+            (b) =>
+              `<div class="fld${activeFacetVal === b.name ? " on" : ""}" data-bib="pick" data-key="${sideKey}" data-val="${esc(b.name)}" tabindex="0" role="button" style="justify-content:space-between"><span>${esc(b.name)}</span><span style="font-size:var(--text-sm);opacity:.7">${b.count}</span></div>`,
+          )
+          .join("")
+      : // Facette sans valeur : le dire. Mesuré le 2026-08-19 sur une vraie bibliothèque — la
+        // facette Dossiers ne rend rien tant qu'aucune piste n'est rangée dans un sous-dossier, et
+        // le popover s'ouvrait alors sur ses trois onglets et du vide, ce qui se lit comme un
+        // défaut de chargement plutôt que comme une absence.
+        `<div class="sift-facet-empty">Aucun ${bibState.facet === "folder" ? "dossier" : bibState.facet === "genre" ? "genre" : "artiste"} pour l'instant.</div>`);
 
   // The list is virtualized (createVirtualList below) — this placeholder is the mount host, filled
   // with only the visible window of rows after content.innerHTML. Rendering all bibState.tracks
@@ -727,29 +799,45 @@ export async function renderBiblioLive() {
     `<button class="sift-seg-opt${bibState.viewMode === "table" ? " on" : ""}" data-bib="viewmode" data-mode="table" aria-label="Vue tableau"><i class="ti ti-list"></i></button>` +
     `<button class="sift-seg-opt${bibState.viewMode === "grid" ? " on" : ""}" data-bib="viewmode" data-mode="grid" aria-label="Vue grille"><i class="ti ti-layout-grid"></i></button></div>`;
 
+  // Zone C = la table, et rien d'autre (`docs/ui-specs/bibliotheque.md`). Trois blocs l'ont quittée
+  // le 2026-08-19 : les cartes de statistiques et le graphique d'occupation sont montés dans la
+  // zone D (ils décrivent, ils ne se parcourent pas), et le sélecteur de facette est replié en un
+  // BOUTON portant la valeur active — il filtrait, et un filtre n'appartient pas au contenu.
+  // Ce qui reste au-dessus de la table est une seule ligne : facette · valeur · compte.
   content.innerHTML = trulyEmpty
     ? emptyStateHtml({
         title: "Bibliothèque vide",
         note: "Les pistes que tu convertis depuis Revue apparaissent ici, prêtes à exporter vers Rekordbox ou une clé USB.",
         backToRevue: true,
       })
-    : (stats ? statsCardsHtml(stats) : "") +
-      `<div class="sift-library-layout"><div class="sift-library-side sift-ui-card-soft sift-ui-card-soft-pad"><div class="col-h">Bibliothèque</div>${side}</div>` +
-      `<div class="sift-library-main sift-ui-card sift-ui-card-pad"><div style="display:flex;justify-content:space-between;margin-bottom:5px"><span style="font-size:var(--text-base);font-weight:500">${esc(activeFacetVal || "Tous")}</span><span style="font-size:var(--text-sm);color:var(--color-text-tertiary)">${bibState.tracks.length} piste${bibState.tracks.length > 1 ? "s" : ""}</span></div>${tableHead}` +
+    : `<div class="sift-library-main sift-ui-card sift-ui-card-pad">` +
+      `<div class="sift-bib-headline">` +
+      `<button data-bib="facetpop" class="sift-bib-facet-btn" aria-haspopup="true" aria-expanded="false">` +
+      `<span class="sift-bib-facet-kind">${esc(facetLabel)}</span>` +
+      `<span class="sift-bib-facet-val">${esc(activeFacetVal || "Tous")}</span>` +
+      `<i class="ti ti-chevron-down" aria-hidden="true"></i></button>` +
+      `<span class="sift-bib-count">${bibState.tracks.length} piste${bibState.tracks.length > 1 ? "s" : ""}</span>` +
+      `</div>${tableHead}` +
       (rows ||
         `<div style="font-size:var(--text-md);color:var(--color-text-tertiary)">Aucun résultat pour ce filtre. <button data-bib="stat" data-stat="all" style="font-size:inherit;color:var(--color-text-info);background:none;border:none;padding:0;cursor:pointer;text-decoration:underline">Réinitialiser les filtres</button></div>`) +
       dupSection +
-      `</div></div>`;
+      `</div>` +
+      // Le popover de facette vit DANS `#content` mais en `position:fixed` : il est peint par le
+      // même rendu que son bouton, donc il ne peut pas survivre à un changement d'écran — un
+      // popover orphelin resterait à l'écran en pointant une facette qui n'existe plus.
+      `<div class="sift-facet-pop" id="sift-facet-pop" hidden>${side}</div>`;
 
-  // Emplacement du graphique d occupation, rempli juste apres : `content.innerHTML` vient de tout
-  // ecraser, donc rien ne survit d un rendu a l autre et il faut le remonter a chaque fois.
-  if (!trulyEmpty) mountBibUsage(content, !alreadyRendered);
+  // Zone D. Une sélection multiple montre son résumé agrégé, une piste ouverte son détail, et
+  // sinon l'inspecteur porte le contexte de la source active — jamais rien.
+  if (!trulyEmpty && bibSelection.size < 2 && bibOpenId == null) renderBibInspectorIdle();
   wireEmptyState(content);
   // Redimensionnement et réordonnancement des colonnes (`DESIGN.md` § 16, livrés le 2026-08-19).
   // Réinstallés à chaque rendu parce que la ligne d'en-tête est un nœud NEUF à chaque fois : rien
   // ne fuit, les écouteurs partent avec le nœud que `content.innerHTML` vient de remplacer.
   const thead = content.querySelector<HTMLElement>(".sift-lib-thead");
   if (thead) installColumnGestures(thead, () => void renderBiblioLive());
+  // Le popover vient d'être recréé fermé par le rebuild — le rouvrir si l'état dit qu'il l'était.
+  if (facetPopOpen) showFacetPopover();
   positionFacetThumb(); // fresh node post-rebuild — no prior transform, just place it
   positionViewModeThumb();
 

@@ -34,6 +34,8 @@ import {
   openBiblioContextMenu,
   openColumnHeaderMenu,
   paintBibSelection,
+  toggleFacetPopover,
+  closeFacetPopover,
 } from "./bibliotheque-view";
 import { sortTracks } from "./library-views";
 import { consumeSortSuppression } from "./library-columns";
@@ -433,8 +435,14 @@ export function installLiveWiring() {
         // stat-card "À re-sourcer" restait actif indéfiniment (cul-de-sac trouvé à l'audit 2026-07-09).
         if (q === "all") bibState.filter.verdict = undefined;
         void renderBiblioLive();
+      } else if (act === "facetpop") {
+        e.stopPropagation(); // sinon la fermeture au clic-dehors (plus bas) le rouvre aussitôt
+        toggleFacetPopover();
       } else if (act === "facet") {
-        bibState.facet = bibEl.dataset.f === "genre" ? "genre" : "folder";
+        // Les TROIS valeurs, pas deux : « Artistes » retombait sur `folder` depuis l'ajout du
+        // troisième onglet — cliquer Artistes sélectionnait Dossiers, en silence.
+        const f = bibEl.dataset.f;
+        bibState.facet = f === "genre" ? "genre" : f === "artist" ? "artist" : "folder";
         // Toggle in place first (existing node, animates) — renderBiblioLive() is async (IPC),
         // so the browser paints this before the rebuild overwrites the DOM.
         document
@@ -461,6 +469,7 @@ export function installLiveWiring() {
             : { field, dir: "asc" };
         void renderBiblioLive();
       } else if (act === "pick") {
+        closeFacetPopover(); // une valeur choisie ferme le sélecteur ; changer d'ONGLET le garde
         const key = bibEl.dataset.key as "folder" | "genre" | "artist";
         const val = bibEl.dataset.val;
         // toggle off if re-clicking the active facet value
@@ -599,6 +608,14 @@ export function installLiveWiring() {
     void revealTrack(Number(row.dataset.id)).catch((err: unknown) =>
       toast(humanizeError(err, "Impossible d'ouvrir l'emplacement", "reveal_track")),
     );
+  });
+
+  // Fermeture du sélecteur de facette au clic dehors. Sur `document` et non sur `#pa` : un clic
+  // dans le rail ou dans la barre unifiée doit le fermer aussi, et ces deux-là vivent hors de `#pa`.
+  document.addEventListener("click", (e) => {
+    const t = e.target as HTMLElement;
+    if (t.closest(".sift-facet-pop") || t.closest('[data-bib="facetpop"]')) return;
+    closeFacetPopover();
   });
 
   document.addEventListener("contextmenu", (e) => {
