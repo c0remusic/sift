@@ -458,18 +458,18 @@ html{background:transparent}
    feature-card row) is gone from index.html — the app IS the window now, per the maquette's root
    (height:100%;width:100%;display:flex, no centered wrapper). */
 html,body{margin:0;padding:0;height:100%}
-/* CADRE DE FENETRE. `chrome.ts:264` invoquait deja `body:has(#sift-titlebar)` comme la raison de
-   couper l'ombre native de Windows — mais la regle n'a jamais existe : le commentaire decrivait
-   une intention, pas un artefact. Constate le 2026-08-19, et c'est visible : Windows 11 arrondit
-   une fenetre sans decorations, rien a l'interieur ne suivait cette courbe, donc la zone gauche de
-   la barre unifiee peignait son ton jusqu'a un angle DROIT et l'arrondi laissait voir la couche du
+/* CADRE DE FENÊTRE. `chrome.ts:264` invoquait déjà `body:has(#sift-titlebar)` comme la raison de
+   couper l'ombre native de Windows — mais la règle n'a jamais existé : le commentaire décrivait
+   une intention, pas un artefact. Constaté le 2026-08-19, et c'est visible : Windows 11 arrondit
+   une fenêtre sans décorations, rien à l'intérieur ne suivait cette courbe, donc la zone gauche de
+   la barre unifiée peignait son ton jusqu'à un angle DROIT et l'arrondi laissait voir la couche du
    dessous — une encoche qui coupe la barre au lieu de la continuer.
-   Poser le rayon sur `body` avec `overflow:hidden` clippe TOUTES les couches a la meme courbe, en
-   un seul point : la barre, le rail et le contenu s'arretent ensemble. Le rayon est
-   `--border-radius-sm` (8px), le cran le plus petit de l'echelle du depot — et c'est aussi
-   l'arrondi de fenetre de Windows 11, donc la courbe dessinee epouse celle du systeme.
-   `:has(#sift-titlebar)` borne la regle a Tauri : la demo navigateur n'a pas de barre custom et
-   n'a rien a arrondir. */
+   Poser le rayon sur `body` avec `overflow:hidden` clippe TOUTES les couches à la même courbe, en
+   un seul point : la barre, le rail et le contenu s'arrêtent ensemble. Le rayon est
+   `--border-radius-sm` (8px), le cran le plus petit de l'échelle du dépôt — et c'est aussi
+   l'arrondi de fenêtre de Windows 11, donc la courbe dessinée épouse celle du système.
+   `:has(#sift-titlebar)` borne la règle à Tauri : la démo navigateur n'a pas de barre custom et
+   n'a rien à arrondir. */
 body:has(#sift-titlebar){border-radius:var(--border-radius-sm);overflow:hidden}
 .pa{height:100%;width:100%;display:flex;background:var(--color-background-primary);overflow:hidden;font-size:12px}
 /* Single source of truth for the content-area inset from the window chrome (was re-set
@@ -537,13 +537,13 @@ body:has(#sift-titlebar){border-radius:var(--border-radius-sm);overflow:hidden}
    rangee, pas sur un coupable designe, parce que la rangee est un composant partage dont la
    composition change (l'erreur de lecture n'apparait que sur echec). */
 /* `.sift-player-row` est une COLONNE. Dans un flex en colonne, un enfant prend la largeur de son
-   propre contenu, pas celle du conteneur — d'ou les 369px mesures pour 287 disponibles le
+   propre contenu, pas celle du conteneur — d'où les 369px mesurés pour 287 disponibles le
    2026-08-19, sur .sift-player-header (pochette 68 + corps 285) comme sur .sift-player-audition
-   (bouton 46 + forme d'onde 287). `min-width:0` etait pose sur EUX, un niveau trop haut : il les
-   autorisait a retrecir, mais rien a l'interieur ne cedait.
+   (bouton 46 + forme d'onde 287). `min-width:0` était posé sur EUX, un niveau trop haut : il les
+   autorisait à rétrécir, mais rien à l'intérieur ne cédait.
    Deux gestes, et un seul suffirait mal : `width:100%` les borne au conteneur, `min-width:0` sur
-   LEURS enfants permet a la ligne interne de tenir dans cette borne. Et `flex-wrap` retire — en
-   colonne, `wrap` ne renvoie pas a la ligne, il cree une deuxieme COLONNE. */
+   LEURS enfants permet à la ligne interne de tenir dans cette borne. Et `flex-wrap` retiré — en
+   colonne, `wrap` ne renvoie pas à la ligne, il crée une deuxième COLONNE. */
 #sift-aside .sift-player-row{flex-wrap:nowrap}
 #sift-aside .sift-player-header,#sift-aside .sift-player-audition{width:100%;min-width:0}
 #sift-aside .sift-player-header>*,#sift-aside .sift-player-audition>*{min-width:0}
@@ -2662,12 +2662,12 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .sift-usage-barwrap{position:relative}
 .sift-usage-bar{display:flex;height:26px;border-radius:var(--border-radius-sm);overflow:hidden}
 /* `border-radius:0` EXPLICITE, et c'est la correction du 2026-08-19. Un segment est un `<button>`,
-   donc il heritait des 10px du selecteur `button` generique (styles.css:999) : chaque segment etait
-   une pilule arrondie, et au milieu de la barre DEUX courbes se faisaient face. L'oeil y lisait une
+   donc il héritait des 10px du sélecteur `button` générique (styles.css:999) : chaque segment était
+   une pilule arrondie, et au milieu de la barre DEUX courbes se faisaient face. L'œil y lisait une
    coupure entre les deux couleurs au lieu d'une barre continue — l'`overflow:hidden` du conteneur
-   ne clippait que les bords EXTERIEURS, jamais la jointure interne.
-   L'arrondi appartient a la barre entiere (.sift-usage-bar, --border-radius-sm), pas a ses parts :
-   une donnee continue se rend d'un seul trait, et ses subdivisions se lisent par la couleur. */
+   ne clippait que les bords EXTÉRIEURS, jamais la jointure interne.
+   L'arrondi appartient à la barre entière (.sift-usage-bar, --border-radius-sm), pas à ses parts :
+   une donnée continue se rend d'un seul trait, et ses subdivisions se lisent par la couleur. */
 /* `filter` retiré de la transition le 2026-08-19 (DESIGN.md § 6 : un `filter` animé recompose le
    segment à chaque frame). `opacity` reste, et c'est elle qui porte l'essentiel du geste : la barre
    entière s'estompe à .28 et seul le segment visé revient à 1. Le `brightness(1.08)` de ce segment

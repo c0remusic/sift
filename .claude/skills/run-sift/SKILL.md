@@ -73,6 +73,24 @@ node .claude/skills/run-sift/driver.mjs floor
 { "nbTexts": 177, "minPx": 10, "under10": [] }
 ```
 
+Real engine pseudo-states — `:hover` and `:focus-visible` CANNOT be triggered from the page
+(`dispatchEvent` skips the engine's hit-testing; `focus()` only counts as focus-visible after a
+real keyboard interaction). These inject true `Input.dispatch*` events over one continuous
+WebSocket session (see probe.mjs's header for why cdp.cjs can't do it), measure rest/state/back,
+and write 1:1 cropped screenshots when an output dir is given:
+
+```bash
+node .claude/skills/run-sift/driver.mjs hover ".nv" 1 C:/abs/out-dir
+```
+
+```bash
+node .claude/skills/run-sift/driver.mjs focus ".sift-bib-facet-btn" C:/abs/out-dir
+```
+
+Gotchas of their own: an open modal STEALS focus (its trap wins over `focus()` — close it first),
+and a state class added by hand (`el.classList.add("dim")`) is swept away by the component's next
+re-render, so only states reachable by real interaction can be measured live.
+
 Stop everything — npm parent, Vite, and the window:
 
 ```bash
@@ -204,7 +222,7 @@ npm run check:security
 | `open-track` exits with *no queue rows* | The library is empty or still scanning. Add a source folder on Accueil first — the OS folder picker is native and cannot be driven by CDP. |
 | `open-track` exits with *track never painted* | Analysis is slow on a cold cache (`analyze_path` runs the decode + FFT inline, synchronously). Retry, or pick an already-analysed track. |
 | `floor` exits non-zero with `nbTexts: 0` | Nothing was painted — the result is meaningless. Run `open-track` or navigate to a screen first. |
-| `launch` reports *the launch died silently* | The build failed with an empty log. Run `npm run tauri dev` in the foreground to see the real error. |
+| `launch` reports *the launch died silently* | **The message itself can be FALSE.** Measured 2026-08-19: it printed this and exited 1 while cargo/vite/tauri were all alive — the window came up on its own minutes later. Before believing it: `tasklist \| grep -i cargo` (PowerShell tool on Windows); processes there = build still running, wait, then `status` + `eval 'document.title'`. Only if nothing is alive: the build failed with an empty log — run `npm run tauri dev` in the foreground to see the real error. |
 | `launch` times out but the app is actually **open** | Seen once on 2026-08-05, **did not reproduce** the same day (see Known limitation). Before blaming `launch`, check for a stale `sift.exe` from an earlier run and confirm the port range is free — that is the explanation the evidence supports. Fallback that always works: `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9333 npm run tauri dev` in the foreground. |
 | You need to read the app's **boot log** | A detached `npm` writes nothing into the inherited descriptor, so `tauri-dev.log` stays at 0 bytes and `driver.mjs launch` cannot show you the boot. Launch it in the foreground (command above) with the output captured — that is the only path where `SMOKE OK`, panics and unhandled rejections are actually readable. |
 | An `eval` returns `error: timeout` and nothing else | `cdp.cjs` closes its socket after **15 s** (`.claude/scripts/cdp.cjs:39`). An `(async …)` IIFE that walks all 8 rail views with a 3 s settle needs 24 s and dies with no partial result. Split into batches of ≤ 4 views. Found 2026-08-05 while measuring painted font sizes. |
