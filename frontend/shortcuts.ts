@@ -17,7 +17,7 @@
 import { goTo, type ViewId } from "./router";
 import { focusBarSearch } from "./toolbar";
 import { toggleRail } from "./chrome";
-import { selectAllVisible, renderBiblioLive, renderSelectionSummary } from "./bibliotheque-view";
+import { selectAllVisible, renderBiblioLive, renderSelectionSummary, stepBibSelection } from "./bibliotheque-view";
 
 /** Ordre des destinations pour ⌘/Ctrl + 1…8. Lu depuis le rail plutôt que codé ici : le rail EST
  *  l'ordre affiché, et une table parallèle divergerait au premier réarrangement. */
@@ -63,6 +63,17 @@ export function installWindowShortcuts(): void {
     if (e.key === "Escape") {
       if (dismissTopmost()) return; // la surface concernée gère elle-même sa fermeture
       if (inTextField(e.target)) (e.target as HTMLElement).blur();
+      return;
+    }
+
+    // COUCHE 2 — la liste. Avant le test de modificateur : ⇧+↑↓ étend une plage, et ⇧ n'est pas un
+    // modificateur de commande. Bornée à un écran qui porte réellement une table, sinon ↑↓ y
+    // volerait le défilement de la page.
+    if (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "Home" || e.key === "End") {
+      if (e.ctrlKey || e.metaKey || e.altKey) return;
+      if (inTextField(e.target)) return;
+      if (!document.querySelector('.lr[data-bib="row"]')) return;
+      if (stepBibSelection(e.key, e.shiftKey)) e.preventDefault();
       return;
     }
 

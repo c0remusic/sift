@@ -432,6 +432,19 @@ html{background:transparent}
    feature-card row) is gone from index.html — the app IS the window now, per the maquette's root
    (height:100%;width:100%;display:flex, no centered wrapper). */
 html,body{margin:0;padding:0;height:100%}
+/* CADRE DE FENETRE. `chrome.ts:264` invoquait deja `body:has(#sift-titlebar)` comme la raison de
+   couper l'ombre native de Windows — mais la regle n'a jamais existe : le commentaire decrivait
+   une intention, pas un artefact. Constate le 2026-08-19, et c'est visible : Windows 11 arrondit
+   une fenetre sans decorations, rien a l'interieur ne suivait cette courbe, donc la zone gauche de
+   la barre unifiee peignait son ton jusqu'a un angle DROIT et l'arrondi laissait voir la couche du
+   dessous — une encoche qui coupe la barre au lieu de la continuer.
+   Poser le rayon sur `body` avec `overflow:hidden` clippe TOUTES les couches a la meme courbe, en
+   un seul point : la barre, le rail et le contenu s'arretent ensemble. Le rayon est
+   `--border-radius-sm` (8px), le cran le plus petit de l'echelle du depot — et c'est aussi
+   l'arrondi de fenetre de Windows 11, donc la courbe dessinee epouse celle du systeme.
+   `:has(#sift-titlebar)` borne la regle a Tauri : la demo navigateur n'a pas de barre custom et
+   n'a rien a arrondir. */
+body:has(#sift-titlebar){border-radius:var(--border-radius-sm);overflow:hidden}
 .pa{height:100%;width:100%;display:flex;background:var(--color-background-primary);overflow:hidden;font-size:12px}
 /* Single source of truth for the content-area inset from the window chrome (was re-set
    imperatively per-screen in app.js's block()/renderHome()/renderRevue(), with Revue alone
@@ -497,8 +510,17 @@ html,body{margin:0;padding:0;height:100%}
    `min-width:0` corrige un cran plus bas ; il se pose sur TOUS les descendants directs de la
    rangee, pas sur un coupable designe, parce que la rangee est un composant partage dont la
    composition change (l'erreur de lecture n'apparait que sur echec). */
-#sift-aside .sift-player-row{flex-wrap:wrap}
-#sift-aside .sift-player-row>*{min-width:0}
+/* `.sift-player-row` est une COLONNE. Dans un flex en colonne, un enfant prend la largeur de son
+   propre contenu, pas celle du conteneur — d'ou les 369px mesures pour 287 disponibles le
+   2026-08-19, sur .sift-player-header (pochette 68 + corps 285) comme sur .sift-player-audition
+   (bouton 46 + forme d'onde 287). `min-width:0` etait pose sur EUX, un niveau trop haut : il les
+   autorisait a retrecir, mais rien a l'interieur ne cedait.
+   Deux gestes, et un seul suffirait mal : `width:100%` les borne au conteneur, `min-width:0` sur
+   LEURS enfants permet a la ligne interne de tenir dans cette borne. Et `flex-wrap` retire — en
+   colonne, `wrap` ne renvoie pas a la ligne, il cree une deuxieme COLONNE. */
+#sift-aside .sift-player-row{flex-wrap:nowrap}
+#sift-aside .sift-player-header,#sift-aside .sift-player-audition{width:100%;min-width:0}
+#sift-aside .sift-player-header>*,#sift-aside .sift-player-audition>*{min-width:0}
 #sift-aside .sift-player-controls{flex-direction:column;align-items:stretch;width:100%}
 #sift-aside .sift-listen-advanced,#sift-aside .sift-listen-advanced-body{width:100%}
 #sift-aside .sift-listen-advanced-body>*{min-width:0}
@@ -2091,7 +2113,14 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 
 .sift-usage-barwrap{position:relative}
 .sift-usage-bar{display:flex;height:26px;border-radius:var(--border-radius-sm);overflow:hidden}
-.sift-usage-seg{min-width:4px;border:0;padding:0;cursor:pointer;appearance:none;transition:opacity var(--duration-fast) ease,filter var(--duration-fast) ease}
+/* `border-radius:0` EXPLICITE, et c'est la correction du 2026-08-19. Un segment est un `<button>`,
+   donc il heritait des 10px du selecteur `button` generique (styles.css:999) : chaque segment etait
+   une pilule arrondie, et au milieu de la barre DEUX courbes se faisaient face. L'oeil y lisait une
+   coupure entre les deux couleurs au lieu d'une barre continue — l'`overflow:hidden` du conteneur
+   ne clippait que les bords EXTERIEURS, jamais la jointure interne.
+   L'arrondi appartient a la barre entiere (.sift-usage-bar, --border-radius-sm), pas a ses parts :
+   une donnee continue se rend d'un seul trait, et ses subdivisions se lisent par la couleur. */
+.sift-usage-seg{min-width:4px;border:0;border-radius:0;padding:0;cursor:pointer;appearance:none;transition:opacity var(--duration-fast) ease,filter var(--duration-fast) ease}
 .sift-usage-bar.dim .sift-usage-seg{opacity:.28}
 .sift-usage-bar.dim .sift-usage-seg.on{opacity:1;filter:brightness(1.08)}
 .sift-usage-seg:focus-visible{outline:2px solid var(--color-text-primary);outline-offset:2px;opacity:1}

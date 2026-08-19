@@ -136,6 +136,65 @@ export function renderSelectionSummary(): void {
     `</dl>`;
 }
 
+/** Ordre courant des ids, tel qu'affiché. Recalculé à chaque pas plutôt que mis en cache : le tri
+ *  et le filtre changent sous les pieds, et une liste mémorisée ferait sauter la sélection d'une
+ *  piste à une autre sans que rien ne bouge à l'écran. */
+function orderedIds(): number[] {
+  return sortTracks(bibState.tracks, bibState.sort).map((t) => t.id);
+}
+
+/** Couche 2 du clavier (DESIGN.md § 9) : ↑ ↓ déplacent, ⇧+↑↓ étendent, Début/Fin vont aux bouts.
+ *
+ *  Le déplacement se fait par INDEX dans la liste ordonnée, jamais en marchant sur les nœuds du
+ *  DOM : la table est virtualisée, donc les lignes hors fenêtre n'existent pas — parcourir le DOM
+ *  s'arrêterait silencieusement au bord de ce qui se trouve rendu. Même leçon que
+ *  `stepQueueSelection` pour la file de Revue.
+ *
+ *  Rend `true` si la touche a été consommée. */
+export function stepBibSelection(key: string, shift: boolean): boolean {
+  const ids = orderedIds();
+  if (!ids.length) return false;
+  const cursor = bibAnchor != null ? ids.indexOf(bibAnchor) : -1;
+  let next: number;
+  switch (key) {
+    case "ArrowDown":
+      next = cursor < 0 ? 0 : Math.min(ids.length - 1, cursor + 1);
+      break;
+    case "ArrowUp":
+      next = cursor < 0 ? ids.length - 1 : Math.max(0, cursor - 1);
+      break;
+    case "Home":
+      next = 0;
+      break;
+    case "End":
+      next = ids.length - 1;
+      break;
+    default:
+      return false;
+  }
+  const target = ids[next];
+  if (shift && bibAnchor != null) {
+    // ⇧ étend depuis l'ancre SANS la déplacer — c'est ce qui permet de revenir en arrière dans la
+    // même plage. Déplacer l'ancre à chaque pas transformerait l'extension en déplacement.
+    const a = ids.indexOf(bibAnchor);
+    bibSelection.clear();
+    for (let i = Math.min(a, next); i <= Math.max(a, next); i++) bibSelection.add(ids[i]);
+  } else {
+    bibSelection.clear();
+    bibSelection.add(target);
+    bibAnchor = target;
+  }
+  void renderBiblioLive().then(() => {
+    renderSelectionSummary();
+    // La ligne visée peut être hors de la fenêtre virtualisée, donc absente du DOM : `scrollIntoView`
+    // ne trouverait rien. On ne peut pas non plus la faire apparaître sans défiler d'abord. Ce
+    // `?.` est donc un no-op assumé au-delà de la fenêtre — la sélection, elle, reste juste, et le
+    // prochain rendu la marquera quand la ligne remontera.
+    document.querySelector(`.lr[data-id="${target}"]`)?.scrollIntoView({ block: "nearest" });
+  });
+  return true;
+}
+
 export function clearBibSelection(): void {
   bibSelection.clear();
   bibAnchor = null;
