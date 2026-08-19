@@ -36,6 +36,7 @@ import {
   paintBibSelection,
   toggleFacetPopover,
   closeFacetPopover,
+  installFacetPopoverDismiss,
 } from "./bibliotheque-view";
 import { sortTracks } from "./library-views";
 import { consumeSortSuppression } from "./library-columns";
@@ -53,7 +54,6 @@ import {
   loadDuplicates,
   renderBiblioLive,
   openBiblioDetail,
-  positionFacetThumb,
   positionViewModeThumb,
 } from "./bibliotheque-view";
 import { renderRekordboxLive, handleRekordboxAction } from "./rekordbox-view";
@@ -443,12 +443,9 @@ export function installLiveWiring() {
         // troisième onglet — cliquer Artistes sélectionnait Dossiers, en silence.
         const f = bibEl.dataset.f;
         bibState.facet = f === "genre" ? "genre" : f === "artist" ? "artist" : "folder";
-        // Toggle in place first (existing node, animates) — renderBiblioLive() is async (IPC),
-        // so the browser paints this before the rebuild overwrites the DOM.
-        document
-          .querySelectorAll<HTMLElement>("#sift-bib-facet-seg [data-bib='facet']")
-          .forEach((b) => b.classList.toggle("on", b.dataset.f === bibState.facet));
-        positionFacetThumb();
+        // Plus de bascule en place : le type de facette est un item de MENU depuis le 2026-08-19,
+        // et un menu se referme sur le rendu suivant de toute façon. La classe `.on` qu'on togglait
+        // ici appartenait au contrôle segmenté supprimé.
         void renderBiblioLive();
       } else if (act === "viewmode") {
         bibState.viewMode = bibEl.dataset.mode === "grid" ? "grid" : "table";
@@ -609,6 +606,8 @@ export function installLiveWiring() {
       toast(humanizeError(err, "Impossible d'ouvrir l'emplacement", "reveal_track")),
     );
   });
+
+  installFacetPopoverDismiss();
 
   // Fermeture du sélecteur de facette au clic dehors. Sur `document` et non sur `#pa` : un clic
   // dans le rail ou dans la barre unifiée doit le fermer aussi, et ces deux-là vivent hors de `#pa`.

@@ -58,9 +58,44 @@ en encre primaire — la hiérarchie d'un chemin de Finder : on lit d'abord où 
 Le panneau s'ouvre **sous** le bouton (`anchoredBelowPosition`, jumelle de la géométrie
 du popover de destination : celle-là sert un bouton en bas de fenêtre, celle-ci un bouton
 en tête de table). Une facette sans valeur le dit — « Aucun dossier pour l'instant. » —
-au lieu d'ouvrir trois onglets sur du vide, ce qui se lit comme un défaut de chargement.
+au lieu d'ouvrir ses types sur du vide, ce qui se lit comme un défaut de chargement.
 `.sift-library-layout` est partie avec `.sift-library-side`, et avec elle les **quatre**
 rattrapages de largeur qu'elle documentait (150 → 190 → 245 → 272).
+
+#### Le composant est un pop-up button, pas une carte flottante
+
+Première version : une carte de `--pane-w` contenant un **contrôle segmenté** à trois
+onglets empilé au-dessus d'une liste. Refaite le jour même sur retour d'Antoine (« le
+panneau est placé bizarrement, regarde comment fait Apple Music »), contre deux sources.
+
+- **HIG « Pop-up buttons »** : « A pop-up button displays a menu of mutually exclusive
+  options », et « the button can update its content to indicate the current selection ».
+  La même page renvoie au **pull-down button** dès qu'il faut un sous-menu — or empiler un
+  sélecteur de type au-dessus d'une liste de valeurs, c'est exactement un sous-menu déguisé.
+- **`docs/design-refs/macos-big-sur-ui-kit.png`**, § 04-Pickers / **02-Menu Pickers**,
+  dark mode : le menu ouvert est une liste d'items compacts, largeur prise sur le contenu,
+  **coche à gauche sur le seul item sélectionné** avec gouttière réservée pour les autres.
+  Les **Segmented Pickers** y sont un composant *voisin et distinct* — c'est celui qu'on
+  avait mis à l'intérieur.
+
+Conséquences appliquées : plus de contrôle segmenté (le type devient la première **section**
+du menu, séparée par un filet), largeur `max-content` bornée 180–320 px au lieu de
+`--pane-w`, items à `role="menuitemradio"`, et la coche à l'**encre du texte** — relevée
+blanche dans le kit, pas à l'accent.
+
+⚠️ **Aucune dimension n'est reprise de cette planche.** Son échelle d'export n'est pas
+établie (5129 × 32768 px, lue par bandes), donc seule sa **structure** fait autorité, comme
+le demande la doctrine.
+
+#### Le placement se recalcule, il ne se mémorise pas
+
+Le panneau est rouvert par `renderBiblioLive` après un rebuild complet de `#content` — donc
+au milieu d'un cycle de mise en page où la barre unifiée et la liste virtualisée ne sont pas
+encore montées. L'ancrage se fait donc au **second frame** (un `requestAnimationFrame`
+s'exécute avant le recalcul de style : même leçon que `playFadeIn` dans `confirm-modal.ts`),
+et défiler ou redimensionner **ferme** le menu au lieu de courir après sa géométrie — c'est
+déjà la règle de `context-menu.ts`, et une seule règle pour deux surfaces flottantes vaut
+mieux que deux comportements à retenir.
 
 ### Zone C — table
 
@@ -68,7 +103,16 @@ Colonnes, largeurs, tri, densité, sélection, menu contextuel : **`DESIGN.md` �
 écart**. Rappel des deux ajouts : **BPM** et **Durée**, colonnes fixes en `--font-mono`
 avec `tabular-nums`, alignées à droite.
 
-En-tête de table figé pendant le défilement.
+En-tête de table figé pendant le défilement. **Livré le 2026-08-19** : `position:sticky`
+sur `.sift-lib-thead`, le conteneur de défilement étant `#content` et non la table — aucun
+nombre n'a donc à connaître la hauteur de ce qui précède, même raisonnement que le retrait
+de `calc(100dvh - 210px)`. Fond **opaque** obligatoire, sinon les lignes défilent visiblement
+sous l'en-tête et les deux textes se superposent. Mesuré : l'en-tête passe de 116 px à 68 =
+`contentTop (44) + paddingTop (24)`, et la première ligne se cale à 85, donc dessous.
+
+Ni shadcn ni ui-thing n'exposent de composant d'en-tête figé (cherché le 2026-08-19, zéro
+résultat des deux côtés) — la référence ici est le mécanisme CSS, pas un composant, et c'est
+dit comme tel plutôt que d'inventer une source.
 
 Au-dessus de la table, une seule ligne : bouton de facette · nom de la valeur active ·
 compte de pistes. Les cartes de statistiques d'aujourd'hui (`statsCardsHtml`) quittent
@@ -120,12 +164,17 @@ Aujourd'hui rendue dans le flux, sous la table. Elle devient un **mode de la zon
 lancer le scan remplace la table par la liste des groupes, avec un retour explicite.
 Un scan est un résultat, pas un appendice de liste.
 
+**Livré le 2026-08-19.** La ligne d'en-tête change de contenu avec le mode : le bouton de
+facette cède la place à « ← Retour à la table », au même endroit — ce qui pilote la zone C
+reste à la même place d'un mode à l'autre. Le retour est une porte **nommée** : sans elle,
+on sort d'un résultat en devinant quel contrôle le referme.
+
 ## États
 
 | État | Rendu |
 |---|---|
 | **Vide, sans filtre** | `emptyStateHtml` — « Bibliothèque vide », note vers Revue, une action. Impasse assumée : le rail et la barre restent |
-| **Vide, avec filtre** | La table seule est remplacée par « Aucun résultat » + « Réinitialiser les filtres ». Barre, facettes et recherche **restent à l'écran** — le filtre doit pouvoir être défait |
+| **Vide, avec filtre** | « Aucun résultat » + « Réinitialiser les filtres » s'affichent **sous l'en-tête de colonnes**, qui reste. Réf. shadcn `data-table-demo`, dont l'état vide est une ligne du corps (`colSpan`, texte centré) : remplacer la table emporterait les en-têtes, donc les contrôles de tri — on retirerait les commandes qui pourraient défaire le filtre. Barre et recherche restent aussi |
 | **Chargement, premier rendu** | Squelette de lignes dans la structure finale. Jamais un écran blanc |
 | **Chargement, re-rendu** | Les données valides restent affichées. Un rendu déclenché par une frappe, un clic de facette ou un changement de tri **ne blanchit jamais** l'écran |
 | **Recherche en cours** | Indicateur discret dans la barre unifiée, à droite du champ. Débounce 250 ms |

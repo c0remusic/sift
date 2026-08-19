@@ -534,6 +534,26 @@ function showFacetPopover(): void {
   if (!pop || !btn) return;
   pop.hidden = false;
   btn.setAttribute("aria-expanded", "true");
+  // Placement au SECOND frame, pas dans la foulée. Un rAF s'exécute AVANT le recalcul de style
+  // dans Chromium/WebView2 — mesurer là donne les dimensions d'avant l'affichage, et l'ancrage
+  // part d'une géométrie qui n'existe déjà plus. Même leçon que `playFadeIn` (confirm-modal.ts),
+  // qui attend le second frame pour la même raison.
+  //
+  // Ce qui a rendu la leçon nécessaire ici : ce panneau est rouvert par `renderBiblioLive` après
+  // un rebuild complet de `#content`, donc au milieu d'un cycle de mise en page où la barre
+  // unifiée et la liste virtualisée ne sont pas encore montées. Un ancrage calculé à cet instant
+  // se retrouve décalé de tout ce qui s'est monté ensuite.
+  requestAnimationFrame(() => requestAnimationFrame(() => placeFacetPopover()));
+  pop.querySelector<HTMLElement>(".fld, .sift-seg-opt")?.focus();
+}
+
+/** Ancre le panneau sous son bouton, depuis la géométrie du moment. Séparée de l'affichage pour
+ *  être rejouable — le placement d'un popover n'est valable que pour la mise en page qui l'a vu
+ *  naître. */
+function placeFacetPopover(): void {
+  const pop = document.getElementById("sift-facet-pop");
+  const btn = document.querySelector<HTMLElement>('[data-bib="facetpop"]');
+  if (!pop || pop.hidden || !btn) return;
   const r = btn.getBoundingClientRect();
   const { top, left } = anchoredBelowPosition(
     { top: r.top, bottom: r.bottom, left: r.left },
@@ -544,8 +564,16 @@ function showFacetPopover(): void {
   );
   pop.style.top = `${top}px`;
   pop.style.left = `${left}px`;
-  positionFacetThumb();
-  pop.querySelector<HTMLElement>(".fld, .sift-seg-opt")?.focus();
+}
+
+/** Le panneau est ancré à un POINT, pas à un élément : dès que la mise en page bouge sous lui, il
+ *  désigne autre chose que ce qu'il montre. Défiler ou redimensionner le FERME plutôt que de
+ *  courir après la géométrie — c'est déjà la règle du menu contextuel (`context-menu.ts`), et une
+ *  seule règle pour deux surfaces flottantes vaut mieux que deux comportements à retenir. */
+export function installFacetPopoverDismiss(): void {
+  const close = () => closeFacetPopover();
+  document.addEventListener("scroll", close, { capture: true });
+  window.addEventListener("resize", close);
 }
 
 export function closeFacetPopover(): void {
@@ -556,19 +584,6 @@ export function closeFacetPopover(): void {
   document.querySelector('[data-bib="facetpop"]')?.setAttribute("aria-expanded", "false");
 }
 
-/** Positions the Dossiers/Genres thumb from whichever button currently carries `.on`. Called both
- * right after a full rebuild (fresh node — just places it) and immediately on facet click before
- * renderBiblioLive()'s async IPC round-trip rebuilds everything — that's the call that actually
- * animates, same pattern as Journal's positionJournalThumb(). Exported: sift-live.ts's click
- * handler calls this directly for the instant pre-rebuild toggle. */
-export function positionFacetThumb(): void {
-  const seg = document.getElementById("sift-bib-facet-seg");
-  const thumb = seg?.querySelector<HTMLElement>(".sift-seg-thumb");
-  const onEl = seg?.querySelector<HTMLElement>("[data-bib='facet'].on");
-  if (!thumb || !onEl) return;
-  thumb.style.width = `${onEl.offsetWidth}px`;
-  thumb.style.transform = `translateX(${onEl.offsetLeft}px)`;
-}
 
 /** Same thumb-glide pattern as positionFacetThumb(), for the Tableau/Grille segmented. */
 export function positionViewModeThumb(): void {
@@ -653,7 +668,9 @@ export async function renderBiblioLive() {
   // call — search keystroke, facet/quality-chip click, table/grid toggle, sort change, dup scan —
   // would blank the whole panel (stats/facets/toolbar/list) before repainting, even though valid
   // data is already showing.
-  const alreadyRendered = !!content.querySelector("#sift-bib-facet-seg");
+  // Le repère du « déjà rendu » suit la ligne d'en-tête depuis que le contrôle segmenté de
+  // facette a disparu (2026-08-19) : viser un nœud supprimé aurait blanchi l'écran à chaque frappe.
+  const alreadyRendered = !!content.querySelector(".sift-bib-headline");
   if (!alreadyRendered) {
     content.innerHTML =
       '<div style="display:flex;align-items:center;gap:8px;padding:8px 7px;color:var(--color-text-tertiary);font-size:var(--text-md)">' +
@@ -709,32 +726,52 @@ export async function renderBiblioLive() {
         : bibState.filter.artist;
   const facetLabel =
     bibState.facet === "folder" ? "Dossiers" : bibState.facet === "genre" ? "Genres" : "Artistes";
+  // MENU, pas carte flottante — refonte du 2026-08-19 sur la remarque d'Antoine (« le panneau est
+  // placé bizarrement, regarde comment fait Apple Music »).
+  //
+  // Source : HIG « Pop-up buttons », lue le 2026-08-19. « A pop-up button displays a menu of
+  // mutually exclusive options » et « the button can update its content to indicate the current
+  // selection » — c'est exactement ce couple bouton/valeur. La même page envoie vers le
+  // pull-down button dès qu'il y a un SOUS-MENU, ce que la version précédente avait de fait : un
+  // contrôle segmenté à trois onglets empilé au-dessus d'une liste, dans une carte de 272px.
+  //
+  // Ce qui change : plus de contrôle segmenté (le type devient une première SECTION du menu,
+  // séparée par un filet), largeur prise sur le contenu au lieu d'un `--pane-w` hérité de la
+  // colonne qu'on a supprimée, items compacts, et la valeur active portée par une COCHE — la
+  // marque d'un item choisi dans un menu macOS, pas un fond plein comme dans une liste.
+  const facetTypes: [typeof bibState.facet, string][] = [
+    ["folder", "Dossiers"],
+    ["genre", "Genres"],
+    ["artist", "Artistes"],
+  ];
+  const check = (on: boolean) =>
+    `<span class="sift-menu-check" aria-hidden="true">${on ? "✓" : ""}</span>`;
   const side =
-    // Segmented pill (2026-07-08, was .chip/.chip.on) — a strictly exclusive 3-way choice is the
-    // same job as Apparence/Format USB/Détail-Lot, not a filter chip (chips stay the "tag/filter"
-    // grammar elsewhere, e.g. genre chips).
-    // Audit-ref B3 (Bibliothèque, 2026-07-09) : <span> converti en <button>, incohérent avec le
-    // reste de l'app où .sift-seg-opt est toujours un vrai bouton (déjà clavier-natif du coup).
-    // Thumb glissant ajouté (retour Antoine, même jour) — voir positionFacetThumb() : classes
-    // togglées en place au clic avant le rebuild (async, IPC), même pattern que Journal.
-    `<div class="sift-seg sift-seg-thumbed" id="sift-bib-facet-seg" style="margin-bottom:8px">` +
-    `<div class="sift-seg-thumb"></div>` +
-    `<button class="sift-seg-opt${bibState.facet === "folder" ? " on" : ""}" data-bib="facet" data-f="folder">Dossiers</button>` +
-    `<button class="sift-seg-opt${bibState.facet === "genre" ? " on" : ""}" data-bib="facet" data-f="genre">Genres</button>` +
-    `<button class="sift-seg-opt${bibState.facet === "artist" ? " on" : ""}" data-bib="facet" data-f="artist">Artistes</button></div>` +
-    // Audit-ref B1 : tabindex/role="button", clavier via installNavKeyboard() étendu (chrome.ts).
+    `<div class="sift-menu-section">` +
+    facetTypes
+      .map(
+        ([f, label]) =>
+          `<button type="button" class="sift-menu-item" data-bib="facet" data-f="${f}" role="menuitemradio" aria-checked="${bibState.facet === f}">${check(bibState.facet === f)}<span class="sift-menu-label">${label}</span></button>`,
+      )
+      .join("") +
+    `</div>` +
+    // Audit-ref B1 : rôle et clavier natifs — ce sont de vrais `<button>`, donc Entrée/Espace
+    // marchent sans passer par `installNavKeyboard`.
+    `<div class="sift-menu-section">` +
     (facetList.length
-      ? facetList
+      ? `<button type="button" class="sift-menu-item" data-bib="pick" data-key="${sideKey}" data-val="" role="menuitemradio" aria-checked="${!activeFacetVal}">${check(!activeFacetVal)}<span class="sift-menu-label">Tous</span></button>` +
+        facetList
           .map(
             (b) =>
-              `<div class="fld${activeFacetVal === b.name ? " on" : ""}" data-bib="pick" data-key="${sideKey}" data-val="${esc(b.name)}" tabindex="0" role="button" style="justify-content:space-between"><span>${esc(b.name)}</span><span style="font-size:var(--text-sm);opacity:.7">${b.count}</span></div>`,
+              `<button type="button" class="sift-menu-item" data-bib="pick" data-key="${sideKey}" data-val="${esc(b.name)}" role="menuitemradio" aria-checked="${activeFacetVal === b.name}">${check(activeFacetVal === b.name)}<span class="sift-menu-label">${esc(b.name)}</span><span class="sift-menu-count">${b.count}</span></button>`,
           )
           .join("")
       : // Facette sans valeur : le dire. Mesuré le 2026-08-19 sur une vraie bibliothèque — la
         // facette Dossiers ne rend rien tant qu'aucune piste n'est rangée dans un sous-dossier, et
-        // le popover s'ouvrait alors sur ses trois onglets et du vide, ce qui se lit comme un
-        // défaut de chargement plutôt que comme une absence.
-        `<div class="sift-facet-empty">Aucun ${bibState.facet === "folder" ? "dossier" : bibState.facet === "genre" ? "genre" : "artiste"} pour l'instant.</div>`);
+        // le menu s'ouvrait alors sur ses trois types et du vide, ce qui se lit comme un défaut de
+        // chargement plutôt que comme une absence.
+        `<div class="sift-facet-empty">Aucun ${bibState.facet === "folder" ? "dossier" : bibState.facet === "genre" ? "genre" : "artiste"} pour l'instant.</div>`) +
+    `</div>`;
 
   // The list is virtualized (createVirtualList below) — this placeholder is the mount host, filled
   // with only the visible window of rows after content.innerHTML. Rendering all bibState.tracks
@@ -763,6 +800,10 @@ export async function renderBiblioLive() {
   // L'état d'ERREUR passe avant tout le reste : tant qu'il est posé, on ne dit rien sur le
   // contenu de la bibliothèque. Dire « aucun doublon » après un scan qui a échoué serait
   // affirmer un fait qu'on n'a pas mesuré.
+  // Le scan est un MODE de la zone C depuis le 2026-08-19, plus un appendice sous la table
+  // (`docs/ui-specs/bibliotheque.md`) : « un scan est un résultat, pas un appendice de liste ».
+  // Rendu sous la table, il obligeait à faire défiler tout un inventaire pour lire la réponse à
+  // une question qu'on venait de poser, et laissait deux listes concurrentes à l'écran.
   const dupSection = !bibDup.shown
     ? ""
     : bibDup.loading
@@ -811,16 +852,28 @@ export async function renderBiblioLive() {
         backToRevue: true,
       })
     : `<div class="sift-library-main sift-ui-card sift-ui-card-pad">` +
-      `<div class="sift-bib-headline">` +
-      `<button data-bib="facetpop" class="sift-bib-facet-btn" aria-haspopup="true" aria-expanded="false">` +
-      `<span class="sift-bib-facet-kind">${esc(facetLabel)}</span>` +
-      `<span class="sift-bib-facet-val">${esc(activeFacetVal || "Tous")}</span>` +
-      `<i class="ti ti-chevron-down" aria-hidden="true"></i></button>` +
-      `<span class="sift-bib-count">${bibState.tracks.length} piste${bibState.tracks.length > 1 ? "s" : ""}</span>` +
-      `</div>${tableHead}` +
-      (rows ||
-        `<div style="font-size:var(--text-md);color:var(--color-text-tertiary)">Aucun résultat pour ce filtre. <button data-bib="stat" data-stat="all" style="font-size:inherit;color:var(--color-text-info);background:none;border:none;padding:0;cursor:pointer;text-decoration:underline">Réinitialiser les filtres</button></div>`) +
-      dupSection +
+      (bibDup.shown
+        ? // MODE SCAN. La table cède la place, et le retour est une porte nommée : sans elle, on
+          // sort d'un résultat en devinant quel contrôle le referme.
+          `<div class="sift-bib-headline">` +
+          `<button data-bib="dupscan" class="sift-bib-back"><i class="ti ti-chevron-left" aria-hidden="true"></i> Retour à la table</button>` +
+          `<span class="sift-bib-count">Doublons — toute la bibliothèque</span>` +
+          `</div>` +
+          dupSection
+        : `<div class="sift-bib-headline">` +
+          `<button data-bib="facetpop" class="sift-bib-facet-btn" aria-haspopup="true" aria-expanded="false">` +
+          `<span class="sift-bib-facet-kind">${esc(facetLabel)}</span>` +
+          `<span class="sift-bib-facet-val">${esc(activeFacetVal || "Tous")}</span>` +
+          `<i class="ti ti-chevron-down" aria-hidden="true"></i></button>` +
+          `<span class="sift-bib-count">${bibState.tracks.length} piste${bibState.tracks.length > 1 ? "s" : ""}</span>` +
+          `</div>${tableHead}` +
+          // « Aucun résultat » reste SOUS l'en-tête de colonnes, il ne le remplace pas.
+          // Référence : shadcn `data-table-demo`, dont l'état vide est une ligne du corps
+          // (`colSpan`, texte centré) et non un bloc à la place de la table. Le motif tient
+          // au-delà du style : remplacer la table emporte les en-têtes, donc les contrôles de
+          // tri — on retire à l'utilisateur les commandes qui pourraient défaire son filtre.
+          (rows ||
+            `<div class="sift-bib-noresult">Aucun résultat pour ce filtre. <button data-bib="stat" data-stat="all">Réinitialiser les filtres</button></div>`)) +
       `</div>` +
       // Le popover de facette vit DANS `#content` mais en `position:fixed` : il est peint par le
       // même rendu que son bouton, donc il ne peut pas survivre à un changement d'écran — un
@@ -838,7 +891,6 @@ export async function renderBiblioLive() {
   if (thead) installColumnGestures(thead, () => void renderBiblioLive());
   // Le popover vient d'être recréé fermé par le rebuild — le rouvrir si l'état dit qu'il l'était.
   if (facetPopOpen) showFacetPopover();
-  positionFacetThumb(); // fresh node post-rebuild — no prior transform, just place it
   positionViewModeThumb();
 
   if (trulyEmpty) {

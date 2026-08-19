@@ -898,7 +898,7 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
 /* Destination popover: replaces the persistent tree column, anchored above its trigger button.
    Hidden by default ([hidden] attribute, toggled in filing.ts); #fldz keeps its id so renderBins'
    existing document.getElementById("fldz") callers need no change. */
-.sift-dest-popover{position:fixed;width:288px;max-height:340px;display:flex;flex-direction:column;padding:var(--space-12);background:color-mix(in srgb,var(--color-background-secondary) 70%,transparent);backdrop-filter:blur(16px) saturate(160%);-webkit-backdrop-filter:blur(16px) saturate(160%);border:1px solid var(--color-border-secondary);border-radius:var(--border-radius-lg);overflow-y:auto;z-index:var(--z-popover)}
+.sift-dest-popover{position:fixed;width:288px;max-height:340px;display:flex;flex-direction:column;padding:var(--space-4);background:var(--color-surface-raised);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);box-shadow:var(--shadow-toast);overflow-y:auto;z-index:var(--z-popover)}
 /* An author `display:flex` rule beats the browser's own `[hidden]{display:none}` in the cascade
    (author origin always wins over user-agent origin, regardless of specificity) — so setting
    `.hidden = true` on this element via JS never actually hid it, it just kept getting
@@ -956,7 +956,17 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
 .lk-icon{width:22px;height:22px;border-radius:var(--border-radius-md);flex:none;padding:0;display:inline-flex;align-items:center;justify-content:center;opacity:.6;transition:background var(--duration-base) ease,opacity var(--duration-base) ease}
 /* Bibliothèque — vue tableau (2026-07-09) : en-tête triable + colonnes, réutilise .lr pour les
    lignes elles-mêmes (cov/play/pill/link inchangés, juste plus de colonnes qu'avant). */
-.sift-lib-thead{display:flex;align-items:center;gap:var(--space-8);padding:var(--space-4) var(--space-8);font-size:var(--text-xs);text-transform:uppercase;letter-spacing:.06em;color:var(--color-text-tertiary);border-bottom:0.5px solid var(--color-border-tertiary)}
+/* En-tête FIGÉ pendant le défilement (`docs/ui-specs/bibliotheque.md`, zone C). Le conteneur de
+   défilement est `#content`, pas la table : `position:sticky` colle donc l'en-tête au haut de la
+   zone, sans qu'aucun nombre n'ait à connaître la hauteur de ce qui le précède — c'est le même
+   raisonnement qui avait fait retirer `calc(100dvh - 210px)` de l'ancienne colonne de facette.
+   `top:0` colle l'en-tête au bord intérieur du padding de `#content` — c'est le repère des
+   offsets sticky, pas le bord de la fenêtre.
+   Le fond OPAQUE n'est pas décoratif : sans lui, les lignes défilent visiblement sous un en-tête
+   translucide et les deux textes se superposent. Il reprend le ton de la surface qui le porte.
+   Ni shadcn ni ui-thing n'exposent de composant d'en-tête figé (recherché le 2026-08-19, zéro
+   résultat des deux côtés) — la référence ici est le mécanisme CSS, pas un composant. */
+.sift-lib-thead{position:sticky;top:0;z-index:1;background:var(--color-background-secondary);display:flex;align-items:center;gap:var(--space-8);padding:var(--space-4) var(--space-8);font-size:var(--text-xs);text-transform:uppercase;letter-spacing:.06em;color:var(--color-text-tertiary);border-bottom:0.5px solid var(--color-border-tertiary)}
 /* COLONNES DE LA TABLE (DESIGN.md § 16). Les largeurs vivent ici et non en style inline sur
    chaque cellule : l'en-tete et la ligne doivent s'aligner, et deux listes de flex inline ecrites
    a deux endroits divergent au premier ajout de colonne — ce qui est arrive, l'en-tete ayant
@@ -2141,8 +2151,31 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-bib-facet-btn .sift-bib-facet-val{font-weight:500}
 .sift-bib-facet-btn i{font-size:var(--text-md);color:var(--color-text-tertiary)}
 .sift-bib-count{font-size:var(--text-sm);color:var(--color-text-tertiary)}
+/* Porte de sortie du mode scan. Même place que le bouton de facette qu'elle remplace : ce qui
+   pilote la zone C reste au même endroit d'un mode à l'autre. */
+.sift-bib-back{display:inline-flex;align-items:center;gap:var(--space-4);padding:var(--space-4) var(--space-8);border:0;background:none;border-radius:var(--border-radius-sm);cursor:pointer;font-size:var(--text-base);color:var(--color-text-info)}
+.sift-bib-back:hover{background:var(--overlay-hover)}
+/* « Aucun résultat » : sous l'en-tête de colonnes, jamais à sa place (réf. shadcn data-table-demo,
+   dont l'état vide est une ligne du corps). Centré et respirant, pour ne pas se lire comme une
+   première ligne de données. */
+.sift-bib-noresult{padding:var(--space-32) var(--space-16);text-align:center;font-size:var(--text-md);color:var(--color-text-tertiary)}
+.sift-bib-noresult button{font:inherit;color:var(--color-text-info);background:none;border:0;padding:0;cursor:pointer;text-decoration:underline}
 /* Même matériau que le popover de destination — un seul type de surface flottante dans l'app. */
-.sift-facet-pop{position:fixed;width:var(--pane-w);max-height:340px;display:flex;flex-direction:column;padding:var(--space-12);background:color-mix(in srgb,var(--color-background-secondary) 70%,transparent);backdrop-filter:blur(16px) saturate(160%);-webkit-backdrop-filter:blur(16px) saturate(160%);border:1px solid var(--color-border-secondary);border-radius:var(--border-radius-lg);overflow-y:auto;z-index:var(--z-popover)}
+.sift-facet-pop{position:fixed;width:max-content;min-width:180px;max-width:320px;max-height:340px;display:flex;flex-direction:column;padding:var(--space-12);background:color-mix(in srgb,var(--color-background-secondary) 70%,transparent);backdrop-filter:blur(16px) saturate(160%);-webkit-backdrop-filter:blur(16px) saturate(160%);border:1px solid var(--color-border-secondary);border-radius:var(--border-radius-lg);overflow-y:auto;z-index:var(--z-popover)}
+/* Items de menu, calqués sur `.sift-ctx-item` — une seule grammaire de menu dans l'app. La COCHE
+   marque l'item actif, comme dans un menu macOS ; un fond plein serait la grammaire d'une LISTE,
+   et ce panneau n'en est plus une depuis qu'il est un pop-up button (HIG « Pop-up buttons »). */
+.sift-menu-section{display:flex;flex-direction:column}
+.sift-menu-section + .sift-menu-section{margin-top:var(--space-4);padding-top:var(--space-4);border-top:0.5px solid var(--color-border-tertiary)}
+.sift-menu-item{display:flex;align-items:center;gap:var(--space-8);width:100%;padding:var(--space-4) var(--space-8);border:0;background:none;border-radius:var(--border-radius-sm);cursor:pointer;font-size:var(--text-base);color:var(--color-text-primary);text-align:left}
+.sift-menu-item:hover{background:var(--overlay-hover)}
+/* Coche à l'encre du TEXTE, pas à l'accent : relevé sur `docs/design-refs/macos-big-sur-ui-kit.png`
+   § 04-Pickers / 02-Menu Pickers, dark mode — elle y est blanche comme le libellé qu'elle marque.
+   Aucune dimension n'est reprise de cette planche : son échelle d'export n'est pas établie, donc
+   seule sa STRUCTURE fait autorité (gouttière réservée sur les items non cochés, comprise). */
+.sift-menu-check{flex:none;width:12px;font-size:var(--text-sm);color:var(--color-text-primary)}
+.sift-menu-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sift-menu-count{flex:none;font-size:var(--text-sm);color:var(--color-text-tertiary);font-variant-numeric:tabular-nums}
 .sift-facet-empty{padding:var(--space-8);font-size:var(--text-md);color:var(--color-text-tertiary)}
 /* Shared empty state (DESIGN.md "État vide") — top-aligned, never centred. Used by Revue (queue),
    Écartés, Bibliothèque, Rekordbox et Journal (2026-07-08) when the screen is a real dead-end. */
