@@ -41,8 +41,10 @@ export function renderUsbLive(): void {
 
   // Backend-side conservative filter means this list only ever shows removable disks
   // (see usb_format::windows/macos) — no client-side re-filtering needed here.
-  // A single block on its own screen, so no .sift-settings-list-row hairline: a divider needs a
-  // sibling to divide from, and one item alone in a list is just chrome (CLAUDE.md § Front — CSS).
+  // A single block on its own screen, so no divider hairline: a divider needs a visible sibling to
+  // divide from, and one item alone in a list is just chrome (CLAUDE.md § Front — CSS). Réglages a
+  // fini par apprendre la même chose — son filet .sift-settings-list-row a été retiré le 2026-08-19,
+  // parce qu'une seule catégorie y est visible à la fois.
   const usbBlock = document.createElement("div");
   usbBlock.id = "sift-usb-card";
   usbBlock.dataset.section = "usb";

@@ -560,10 +560,21 @@ function ensureBatchDestUI(): void {
  *  Verb was "Ranger" (not "Filer") to match the Détail rail's verb — one action, one name (audit
  *  UI/UX 2026-07-03, fix 2). Changed to "Convertir" (2026-07-10, retour utilisateur: more explicit
  *  about what the button does) — the Détail-rail/batch-rail pair still shares one verb, see
- *  filing.ts's refreshRangerButton (internal name kept, only the displayed word changed). */
+ *  filing.ts's refreshRangerButton (internal name kept, only the displayed word changed).
+ *
+ *  DEUX GRAMMAIRES, PAS TROIS (2026-08-19, kit § 02-Buttons) : primaire = aplat d'accent
+ *  (`--color-accent-fill`/`--color-accent-ink`), secondaire = aplat GRIS (`--color-surface-raised`)
+ *  dont le rôle se dit par l'ENCRE. « Stop » et « Écarter » portaient un fond danger PÂLE, qui se lit
+ *  comme un bandeau d'avertissement posé dans le rail plutôt que comme un bouton — même correctif
+ *  que `.sift-secondary-trash` et `.sift-usbfmt-confirm-btn`. Un aplat rouge reste réservé à un
+ *  primaire destructif, que ce rail n'a pas.
+ *  ⚠️ Le fond est INLINE, donc il bat `button:hover` : au survol il ne reste que le
+ *  `filter:brightness(0.95)` de la règle générique, sur le même gris. C'est le hover voulu (le kit
+ *  garde son matériau au survol) — mais ça veut dire qu'un futur `:hover` écrit en CSS pour ces
+ *  boutons n'aurait AUCUN effet sur leur fond. */
 function actionButtonHtml(running: boolean): string {
   if (running) {
-    return '<button data-sift="batchstop" class="sift-baction" style="background:var(--color-background-danger);color:var(--color-text-danger)">Stop</button>';
+    return '<button data-sift="batchstop" class="sift-baction" style="background:var(--color-surface-raised);color:var(--color-text-danger)">Stop</button>';
   }
   const fileN = batchSel.size;
   const fakeN = batchFakeSel.size;
@@ -601,7 +612,7 @@ function actionButtonHtml(running: boolean): string {
   if (fakeN === 0)
     return `<button data-sift="batchaction" class="sift-baction" style="background:var(--color-accent-fill);color:var(--color-accent-ink)">Convertir (${fileN})</button>`;
   if (fileN === 0)
-    return `<button data-sift="batchaction" class="sift-baction" style="background:var(--color-background-danger);color:var(--color-text-danger)">Écarter (${fakeN})</button>`;
+    return `<button data-sift="batchaction" class="sift-baction" style="background:var(--color-surface-raised);color:var(--color-text-danger)">Écarter (${fakeN})</button>`;
   return `<button data-sift="batchaction" class="sift-baction" style="background:var(--color-accent-fill);color:var(--color-accent-ink)">Convertir (${fileN}) · Écarter (${fakeN})</button>`;
 }
 

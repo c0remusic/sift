@@ -815,13 +815,18 @@ async function mountPlayer(root: HTMLElement, path: string, peaks?: number[], du
   let keyLock = true; // DJ default: tempo doesn't move the pitch (browser time-stretch)
   let tempoValue = 0; // -8..8, drives both playback rate and the custom slider visuals
   const applyRate = () => ws.setPlaybackRate(1 + tempoValue / 100, keyLock);
+  // Les deux états du toggle, en style INLINE parce que c'est le JS qui bascule — mais avec la
+  // grammaire de bouton du kit (§ 02-Buttons), pas une couleur à lui : ON = aplat d'accent + encre
+  // blanche (un toggle actif PORTE l'accent), OFF = aplat gris secondaire. Aucune bordure : le kit
+  // n'a aucun bouton bordé, et l'ancien couple « fond pâle info + filet info » se lisait comme un
+  // champ désactivé plutôt que comme un contrôle allumé. Le fond inline bat `button:hover`, qui ne
+  // garde donc que son `filter:brightness(0.95)` — exactement le hover voulu pour les deux états.
   const refreshKey = () => {
     if (!keyEl) return;
     keyEl.textContent = keyLock ? "ON" : "OFF";
     keyEl.setAttribute("aria-pressed", String(keyLock)); // audit-ref R2 (Revue, 2026-07-08)
-    keyEl.style.background = keyLock ? "var(--color-background-info)" : "transparent";
-    keyEl.style.color = keyLock ? "var(--color-text-info)" : "var(--color-text-tertiary)";
-    keyEl.style.borderColor = keyLock ? "var(--color-border-info)" : "var(--color-border-tertiary)";
+    keyEl.style.background = keyLock ? "var(--color-accent-fill)" : "var(--color-surface-raised)";
+    keyEl.style.color = keyLock ? "var(--color-accent-ink)" : "var(--color-text-secondary)";
   };
   keyEl?.addEventListener("click", () => {
     keyLock = !keyLock;

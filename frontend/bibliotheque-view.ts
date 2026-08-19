@@ -420,7 +420,12 @@ export function openBiblioContextMenu(x: number, y: number, id: number): void {
       onPick: one && rid ? () => void openUrl(`https://www.discogs.com/release/${rid}`) : undefined,
     },
     { label: `Réanalyser${suffix}`, separated: true, onPick: () => void bulkReanalyze(ids) },
-    { label: `Écarter${suffix}`, danger: true, separated: true, onPick: () => void bulkReject(ids) },
+    // « Écarter » n'est PAS `danger`, et ce n'est pas un oubli : `DESIGN.md` § 4 réserve le rouge au
+    // « risque réel, destructif », pas à un simple avertissement. Écarter range la piste dans
+    // Écartés, d'où elle se restaure — le geste est réversible et ne touche pas au fichier. Le
+    // rouge y perdait son sens pour l'entrée d'en dessous, la seule des deux qui sorte quelque
+    // chose de la bibliothèque. Deux rouges côte à côte n'en font qu'un.
+    { label: `Écarter${suffix}`, separated: true, onPick: () => void bulkReject(ids) },
     { label: `Envoyer à la corbeille${suffix}`, danger: true, onPick: () => void bulkTrash(ids) },
   ]);
 }

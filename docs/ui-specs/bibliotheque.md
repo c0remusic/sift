@@ -269,7 +269,7 @@ Ordre figé, positions stables, libellés qui portent le compte au-delà d'une p
 | 2 | **Ouvrir le détail** / **Masquer le détail** | une seule piste. Le libellé suit l'état : `openBiblioDetail` bascule |
 | 3 | **Fiche Discogs** | une seule piste, et identifiée |
 | 4 | **Réanalyser** | toujours |
-| 5 | **Écarter** | toujours · `danger` |
+| 5 | **Écarter** | toujours — pas `danger` : réversible depuis Écartés, et DESIGN.md § 4 réserve le rouge au risque réel (corrigé le 2026-08-19) |
 | 6 | **Envoyer à la corbeille** | toujours · `danger` |
 
 **« Identifier » n'a pas d'entrée**, et ce n'est pas un oubli : le bouton `identify` de la ligne

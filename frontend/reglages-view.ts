@@ -108,7 +108,7 @@ export async function renderReglagesLive() {
   const block = document.createElement("div");
   block.id = "sift-reglages-discogs";
   block.dataset.section = "discogs";
-  block.className = "sift-settings-card sift-settings-list-row";
+  block.className = "sift-settings-card";
   block.innerHTML =
     '<div class="sift-settings-title">Discogs</div>' +
     // Impasse A9 (issue #15) : la phrase précédente — « Sans jeton, les recherches sont limitées
@@ -147,7 +147,7 @@ export async function renderReglagesLive() {
   const libBlock = document.createElement("div");
   libBlock.id = "sift-reglages-bibliotheque";
   libBlock.dataset.section = "bibliotheque";
-  libBlock.className = "sift-settings-card sift-settings-list-row";
+  libBlock.className = "sift-settings-card";
   libBlock.innerHTML =
     '<div class="sift-settings-title">Bibliothèque</div>' +
     '<div class="sift-settings-desc">Le dossier racine est l\'endroit réel sur ton disque où Sift convertit les morceaux filés. L\'arborescence de destination (House/Deep, Techno…) vit à l\'intérieur.</div>' +
@@ -204,7 +204,7 @@ export async function renderReglagesLive() {
   const tplBlock = document.createElement("div");
   tplBlock.id = "sift-reglages-nommage";
   tplBlock.dataset.section = "nommage";
-  tplBlock.className = "sift-settings-card sift-settings-list-row";
+  tplBlock.className = "sift-settings-card";
   tplBlock.innerHTML =
     '<div class="sift-settings-title">Modèle de nommage</div>' +
     '<div class="sift-settings-desc">Le nom que Sift donne aux fichiers qu\'il range. Trois champs disponibles, à insérer d\'un clic. <code>{version}</code> se rend en «&nbsp;(Remix)&nbsp;» quand la piste en a une, et disparaît sinon — pas de parenthèses vides.</div>' +
@@ -328,7 +328,7 @@ export async function renderReglagesLive() {
   const themeBlock = document.createElement("div");
   themeBlock.id = "sift-reglages-apparence";
   themeBlock.dataset.section = "apparence";
-  themeBlock.className = "sift-settings-card sift-settings-list-row";
+  themeBlock.className = "sift-settings-card";
   // Audit-ref G1 (Réglages, 2026-07-09) : <span> → <button>, incohérent avec le reste de l'app.
   const themeBtn = (v: ThemeChoice, label: string) =>
     `<button class="sift-seg-opt${theme === v ? " on" : ""}" data-theme-choice="${v}">${label}</button>`;
@@ -391,9 +391,17 @@ export async function renderReglagesLive() {
   // 2026-07-08: the 4 sections used to each be their own .sift-ui-card-soft box, but each one
   // only ever holds a single setting — a box groups "related information" (HIG "Boxes"),
   // grouping one item alone just adds chrome (retour utilisateur : "trop de boîtes"). They now
-  // share one .sift-ui-card-soft list, divided by a hairline (.sift-settings-list-row) instead
-  // of 4 separate cards. Any future settings section must append inside `list`, same rule as
-  // `wrap` above — not as a direct sibling of `content`.
+  // share one .sift-ui-card-soft list instead of 4 separate cards. Any future settings section
+  // must append inside `list`, same rule as `wrap` above — not as a direct sibling of `content`.
+  //
+  // 2026-08-19 : le filet qui divisait ces lignes (.sift-settings-list-row) est RETIRÉ, classe
+  // comprise. Il datait du jour où les 4 sections étaient empilées et visibles ensemble ; depuis la
+  // colonne de catégories (étape 9), `selectSettingsCategory` en cache trois sur quatre — mais
+  // `:not(:first-child)` est structurel, un frère `hidden` compte encore. Mesuré dans la vraie
+  // fenêtre : Bibliothèque, Nommage et Apparence rendaient un `border-top` de 1px AU-DESSUS de leur
+  // titre, Discogs non. Un séparateur sépare deux voisines VISIBLES ; ici il n'y en a jamais deux,
+  // il ouvrait donc le panneau. Le rythme vertical vient maintenant de la carte seule
+  // (.sift-ui-card-soft-pad), identique pour les quatre catégories.
   const list = document.createElement("div");
   list.id = "sift-reglages-list";
   list.className = "sift-settings-list sift-ui-card-soft sift-ui-card-soft-pad";

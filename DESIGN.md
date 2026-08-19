@@ -883,9 +883,18 @@ texte**, dans la colonne 1, identique dans les cinq tables.
 | Verdict | Teinte | Libellé |
 |---|---|---|
 | Lossless authentique | `success` | `LOSSLESS` |
+| Authentique, rail lossy | `success` | `AUTHENTIQUE` |
 | Faux lossless | `danger` | `FAKE` |
-| Doublon | `warning` | `DUPLICATE` |
+| Douteux | `warning` | `À VÉRIFIER` |
 | Non analysé | neutre | `—` |
+
+⚠️ **Révisé le 2026-08-19 contre les littéraux réels du backend** (`worker.rs::verdict_str` :
+`ok` / `fake` / `grey`, plus NULL). Deux corrections mesurées, pas des choix : **`DUPLICATE` n'est
+atteignable par aucune valeur de `tracks.verdict`** — un doublon sort du scan de dédoublonnage
+(`DupGroup`) et se rend en mode Lot et en Revue, pas dans cette colonne ; et `ok` sur un fichier
+lossy ne peut pas s'écrire `LOSSLESS` sans mentir — le libellé reprend le vocabulaire déjà présent
+(`report-view.ts` « qualité authentique », `queue-panel.ts::verdictWord` « à vérifier »).
+`LOSSLESS` exige les deux faits, comme `qualityChipTone` : verdict sain ET rail lossless.
 
 Le libellé texte n'est pas décoratif : c'est lui qui rattrape la couleur pour un
 utilisateur daltonien, et les HIG interdisent de porter un état par la seule couleur.

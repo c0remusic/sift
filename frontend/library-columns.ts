@@ -22,7 +22,14 @@
 // le repli du rail. L'argument « `settings` survit à un changement de machine » qui avait ouvert la
 // question était faux : la base vit dans `app_data_dir()` (`src-tauri/src/lib.rs:222`).
 
-export type LibraryColumnField = "artist" | "title" | "bpm" | "duration" | "genre" | "year";
+export type LibraryColumnField =
+  | "verdict"
+  | "artist"
+  | "title"
+  | "bpm"
+  | "duration"
+  | "genre"
+  | "year";
 
 export interface LibraryColumn {
   field: LibraryColumnField;
@@ -36,6 +43,13 @@ export interface LibraryColumn {
 /** Ordre et libellés d'origine — `DESIGN.md` § 16. Le tableau sert aussi de validation : une entrée
  *  mémorisée qui ne s'y trouve pas est jetée au chargement. */
 const DEFAULT_COLUMNS: readonly LibraryColumn[] = [
+  // Colonne 1 (`DESIGN.md` § 16). Elle entre dans le SYSTÈME de colonnes et non dans les espaceurs
+  // d'en-tête (`.sift-lib-thead-cov` / `-tail`) : c'est ce qui la rend triable, redimensionnable,
+  // déplaçable et réinitialisable comme les six autres. Conséquence assumée : elle se peint APRÈS
+  // le bouton lecture et la pochette, qui ne sont pas des colonnes mais des affordances de ligne
+  // (§ 16, « Reste dans la ligne : le bouton lecture, et lui seul »). Elle est donc la première
+  // colonne de DONNÉE, pas le premier pixel de la ligne.
+  { field: "verdict", label: "Verdict", cls: "sift-lib-col-verdict" },
   { field: "artist", label: "Artiste", cls: "sift-lib-col-artist" },
   { field: "title", label: "Titre", cls: "sift-lib-col-title" },
   { field: "bpm", label: "BPM", cls: "sift-lib-col-num" },
@@ -86,7 +100,15 @@ function load(): LibraryColumn[] {
     const c = byField.get(f as LibraryColumnField);
     if (c && !out.some((o) => o.field === c.field)) out.push({ ...c });
   }
-  for (const c of DEFAULT_COLUMNS) if (!out.some((o) => o.field === c.field)) out.push({ ...c });
+  // Une colonne absente du stockage est une colonne NOUVELLE — un ordre partiel n'arrive jamais
+  // par geste (moveColumn persiste l'ordre complet), seulement par un stockage écrit avant qu'elle
+  // existe. L'utilisateur n'a donc jamais exprimé de préférence à son sujet : elle prend son index
+  // PAR DÉFAUT (plafonné), pas la fin de liste. Sans ça, Verdict — colonne 1 de DESIGN.md § 16 —
+  // se peignait en dernière position sur toute disposition mémorisée d'avant le 2026-08-19, et la
+  // seule sortie était « Réinitialiser les colonnes », au prix des largeurs.
+  DEFAULT_COLUMNS.forEach((c, i) => {
+    if (!out.some((o) => o.field === c.field)) out.splice(Math.min(i, out.length), 0, { ...c });
+  });
   for (const c of out) {
     const w = stored.width?.[c.field];
     if (typeof w === "number" && Number.isFinite(w)) c.width = clampWidth(w);

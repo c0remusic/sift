@@ -921,9 +921,9 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
    not one bold pill next to plain text. */
 /* ⚠️ Cette « recette partagée » a perdu trois de ses quatre membres : .chip.on est passé au gris
    (§ Scope Buttons), .sift-secondary-trash à l'aplat gris + encre danger, et celui-ci, LE primaire
-   de Revue, prend l'aplat d'accent le 2026-08-19. Le quatrième, .sift-key-btn, n'a PAS pu suivre :
-   report-view.ts:822-824 peint ses deux états en style INLINE, qu'aucune règle d'ici ne peut
-   atteindre sans !important — sa conversion appartient donc à une passe TS, pas à ce fichier.
+   de Revue, prend l'aplat d'accent le 2026-08-19. Le quatrième, .sift-key-btn, a suivi le même jour
+   mais PAR LE TS : ses deux états sont peints en style INLINE (report-view.ts refreshKey), qu'aucune
+   règle d'ici ne peut atteindre sans !important — ON = aplat d'accent, OFF = aplat gris.
    Ce qui était « une recette pour tout ce qui est sélectionné/primaire/destructif » est redevenu
    trois grammaires distinctes, parce que le kit en distingue trois (§ 02-Buttons) : primaire =
    aplat d'accent + encre blanche, secondaire = aplat gris, sélection = gris.
@@ -1064,6 +1064,32 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
    un caractère — mesuré, Titre à 49px et Genre à 35px après un glissement d'Artiste. Le
    `min-width:0` d'origine servait à autoriser l'ellipse ; `overflow:hidden` sur `.sift-lib-col`
    la donne déjà, donc rien n'est perdu. */
+/* COLONNE 1 — VERDICT (DESIGN.md § 16, « Signal de compatibilité — une seule forme, partout »).
+   Pastille pleine + libelle : la couleur seule ne porte jamais un etat, c'est le libelle qui la
+   rattrape pour un lecteur daltonien. Donc jamais d'opacite ici, et jamais sous --text-xs.
+   Taille retenue --text-sm (11px), pas le plancher --text-xs : le § 16 pose un PLANCHER, et 11px
+   est deja la taille de l'autre marque categorielle de la ligne (.pill, la pastille de qualite).
+   Largeur MESUREE le 2026-08-19 dans la vraie fenetre (police Outfit, 11px, 600, .03em) : le plus
+   long libelle atteignable est AUTHENTIQUE a 81,67px — DUPLICATE (62,5) ne l'est pas, aucun champ
+   ne le produit (voir library-views.ts). 81,67 + pastille 6 + gap 4 = 91,67, arrondi au multiple de
+   4 superieur = 92. Fixe : une colonne de verdict qui respire ferait bouger tout ce qui la suit a
+   chaque filtre.
+   La GEOMETRIE (largeur, gap) est partagee avec l'en-tete — c'est elle qui tient l'alignement des
+   deux lignes — mais la TYPOGRAPHIE du libelle ne vaut que dans la ligne : l'en-tete a la sienne,
+   --text-xs en capitales espacees, et un « VERDICT » plus gros que « ARTISTE » a cote se lirait
+   comme une erreur. */
+.sift-lib-col-verdict{flex:none;width:92px;display:flex;align-items:center;gap:var(--space-4)}
+.lr .sift-lib-col-verdict{font-size:var(--text-sm);font-weight:600;letter-spacing:.03em}
+/* La pastille prend currentColor : une seule classe de teinte par verdict suffit alors pour le
+   point ET le libelle, et il devient impossible de les desaccorder. 6px = le diametre le plus petit
+   qui reste un disque et non un pixel a 11px de texte. */
+.sift-lib-verdict-dot{width:6px;height:6px;border-radius:50%;background:currentColor;flex:none}
+/* Les quatre teintes de DESIGN.md § 4, une par sens. Posees sur la CELLULE, donc elles gagnent sur
+   la couleur que .lr.cur pose sur la ligne : un verdict ne change pas quand on ouvre sa piste. */
+.sift-lib-v-ok{color:var(--color-text-success)}
+.sift-lib-v-fake{color:var(--color-text-danger)}
+.sift-lib-v-check{color:var(--color-text-warning)}
+.sift-lib-v-none{color:var(--color-text-tertiary)}
 .sift-lib-col-artist{flex:1.4;min-width:var(--col-min-w)}
 .sift-lib-col-title{flex:1.4;min-width:var(--col-min-w)}
 .sift-lib-col-genre{flex:1;min-width:var(--col-min-w)}
@@ -1781,11 +1807,16 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .sift-listen-advanced-body{display:flex;align-items:center;gap:var(--space-16);margin-top:8px}
 .sift-key-block{flex:none;display:flex;flex-direction:column;align-items:center;gap:var(--space-8);cursor:pointer}
 /* min-width+centered text added (annotation: "devrait avoir la meme taille on ou off") — the JS
-   toggle (report-view.ts refreshKey) only changes background/color/border-color between states,
-   never size, but the label text itself does ("ON" vs "OFF" — one character longer), so the fixed
+   toggle (report-view.ts refreshKey) only changes background/color between states, never size, but
+   the label text itself does ("ON" vs "OFF" — one character longer), so the fixed
    padding alone let the button's overall width shrink/grow with the label. min-width pinned to fit
    "OFF" (the wider state) at this font, so both states render at the same size. */
-.sift-key-btn{font-family:var(--font-mono);font-size:var(--text-xs);padding:var(--space-4) var(--space-12);min-width:38px;text-align:center;border-radius:var(--border-radius-md);border:1px solid var(--color-border-tertiary);background:transparent;font-weight:600}
+/* PAS DE BORDURE, PAS DE FOND ICI (2026-08-19). Le repos portait `border:1px` + `background:
+   transparent`, soit un contour vide — la grammaire que le kit n'a nulle part (§ 02-Buttons). Les
+   deux fonds sont désormais posés par refreshKey() : accent quand ON, aplat gris quand OFF. Le fond
+   au repos vient de la règle `button` générique (--color-surface-raised), donc un rendu SANS JS
+   (une story, un markup statique) montre déjà l'état OFF correct au lieu d'un cadre vide. */
+.sift-key-btn{font-family:var(--font-mono);font-size:var(--text-xs);padding:var(--space-4) var(--space-12);min-width:38px;text-align:center;border-radius:var(--border-radius-md);border:0;font-weight:600}
 .sift-vchip{display:inline-flex;align-items:center;padding:var(--space-4) var(--space-8);border-radius:var(--border-radius-pill);font-size:var(--text-xs);font-weight:600;letter-spacing:var(--tracking-wide)}
 /* Verdict conclusion pill removed entirely (annotation: "supprime ça en fait") — duplicated the
    tone-coded quality badge already in the Diagnostic audio disclosure header. */
@@ -2271,8 +2302,9 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .sift-icon-flex-none{flex:none}
 /* Réglages — 1 boîte, lignes divisées (2026-07-08 : chaque section n'a qu'un seul réglage,
    4 cartes empilées n'avaient rien à grouper — HIG "Boxes" groupe des informations liées, pas
-   un item seul). Une carte .sift-ui-card-soft unique porte les 4 sections ; chaque section est
-   une ligne divisée par un filet, pas sa propre carte. Titre 16px/600, texte explicatif inchangés. */
+   un item seul). Une carte .sift-ui-card-soft unique porte les 4 sections ; chaque section est une
+   ligne de cette carte, pas sa propre carte (le filet qui les divisait est parti le 2026-08-19, voir
+   .sift-settings-list plus bas). Titre 16px/600, texte explicatif inchangés. */
 /* DEUX COLONNES (etape 9). Le plafond de 560px reste — c'est une MESURE DE FORMULAIRE, et
    Reglages Systeme emploie exactement ca. Ce qui manquait n'etait pas de la largeur, c'etait la
    colonne de categories a cote. Elle prend --pane-w, la meme mesure que toute zone fixe laterale
@@ -2302,10 +2334,16 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 /* Une section masquee est retiree du FLUX (`hidden`), pas seulement invisible : un champ dans une
    section cachee resterait tabulable, et le focus disparaitrait de l'ecran en plein Tab. */
 #sift-reglages-list>[hidden]{display:none}
+/* Le filet de division des lignes (.sift-settings-list-row) est RETIRÉ le 2026-08-19, règles et
+   classe. Il était juste le 2026-07-08, quand les 4 sections étaient empilées et visibles ensemble.
+   La colonne de catégories (étape 9) en cache trois sur quatre (`hidden`) — mais `:not(:first-child)`
+   est STRUCTUREL : un frère caché compte encore. Mesuré dans la vraie fenêtre avant correctif :
+   Bibliothèque, Nommage et Apparence rendaient `border-top: 1px solid oklch(1 0 89.88 / 0.09)` et
+   `padding-top: 24px`, Discogs `0px none` — donc un filet AU-DESSUS du titre du panneau, et une
+   mesure de panneau qui changeait selon la catégorie choisie. Un séparateur sépare deux voisines
+   VISIBLES ; il n'ouvre pas un panneau. Le rythme vertical est celui de la carte
+   (.sift-ui-card-soft-pad), le même pour les quatre. */
 .sift-settings-list{display:flex;flex-direction:column}
-.sift-settings-list-row{padding-bottom:var(--space-24)}
-.sift-settings-list-row:not(:first-child){padding-top:var(--space-24);border-top:0.5px solid var(--color-border-tertiary)}
-.sift-settings-list-row:last-child{padding-bottom:0}
 .sift-settings-card{max-width:560px}
 .sift-settings-title{font-size:var(--text-xl);font-weight:600;margin-bottom:4px;color:var(--color-text-primary)}
 .sift-settings-desc{font-size:var(--text-md);color:var(--color-text-tertiary);line-height:1.45;margin-bottom:12px}

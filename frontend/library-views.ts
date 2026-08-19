@@ -12,12 +12,51 @@ function qualPill(t: LibraryTrack): string {
   return `<span class="pill" style="flex:none">${esc(f)}</span>`;
 }
 
-function verdictBadge(v: string | null): string {
-  if (v === "fake")
-    return `<span class="pill" style="background:var(--color-background-danger);color:var(--color-text-danger);flex:none">fake</span>`;
-  if (v === "grey")
-    return `<span class="pill" style="background:var(--color-background-warning);color:var(--color-text-warning);flex:none">?</span>`;
-  return "";
+/** Le SIGNAL de compatibilité de la colonne 1 (`DESIGN.md` § 16) : pastille pleine + libellé, une
+ *  seule forme partout. Le libellé n'est pas décoratif — c'est lui qui rattrape la couleur pour un
+ *  lecteur daltonien, donc il ne s'atténue jamais et ne descend jamais sous `--text-xs`.
+ *
+ *  ⚠️ Les valeurs RÉELLES du champ sont `ok` / `fake` / `grey` / NULL — `worker.rs::verdict_str`,
+ *  les trois seuls littéraux que le backend écrive dans `tracks.verdict`. Deux écarts avec le
+ *  tableau de `DESIGN.md` § 16, tous deux constatés le 2026-08-19 et NON improvisés ici :
+ *
+ *  1. **`DUPLICATE` n'est atteignable par aucune valeur de ce champ.** Un doublon n'est pas un
+ *     verdict de piste : il sort du scan de dédoublonnage (`scan_library_duplicates` → `DupGroup`)
+ *     et se rend dans le mode Lot (`batch-panel.ts:356`) et dans la Revue (`filing.ts:559`). La
+ *     ligne « Doublon | warning | DUPLICATE » du § 16 n'a donc pas de source ici. Rien n'est peint
+ *     pour elle plutôt qu'inventer une donnée.
+ *  2. **`grey` n'a pas de ligne dans le § 16**, et `ok` sur un fichier LOSSY non plus. Le § 4 donne
+ *     pourtant la teinte du premier (ambre = « doute, décision attendue »), et le vocabulaire des
+ *     deux existe déjà dans l'app : « à vérifier » (`queue-panel.ts::verdictWord`,
+ *     `report-view.ts:94`) et « authentique » (`queue-panel.ts` VERDICT_DOT, `report-view.ts:85`
+ *     « qualité authentique »). Ce sont ces mots-là qui sont repris, aucun n'est neuf.
+ *
+ *  `LOSSLESS` demande les DEUX faits, comme `qualityChipTone` (`report-view.ts:576`) : verdict sain
+ *  ET rail lossless. `LibraryTrack` n'a pas de `declared_rail`, mais son `format` est le format que
+ *  Sift a réellement ÉCRIT en rangeant (`library.rs`, `target_format` → `Target::ext()`), donc il
+ *  EST le rail du fichier sur le disque. Écrire `LOSSLESS` sur un MP3 authentique serait faux, et
+ *  la bibliothèque de test en contient un (piste 60, `verdict:"ok"`, `format:"mp3"`). */
+const LOSSLESS_EXT = new Set(["aiff", "wav", "flac", "alac"]);
+
+interface VerdictView {
+  /** Classe de teinte, jamais une couleur en dur — la pastille hérite de `currentColor`. */
+  cls: string;
+  label: string;
+  /** Rang de tri : ce qui demande une décision d'abord, ce qui est sain en dernier. */
+  rank: number;
+}
+
+function verdictView(t: LibraryTrack): VerdictView {
+  if (t.verdict === "fake") return { cls: "sift-lib-v-fake", label: "FAKE", rank: 0 };
+  if (t.verdict === "grey") return { cls: "sift-lib-v-check", label: "À VÉRIFIER", rank: 1 };
+  if (t.verdict === "ok") {
+    return LOSSLESS_EXT.has((t.format ?? "").toLowerCase())
+      ? { cls: "sift-lib-v-ok", label: "LOSSLESS", rank: 4 }
+      : { cls: "sift-lib-v-ok", label: "AUTHENTIQUE", rank: 3 };
+  }
+  // Non analysé — neutre, et un tiret cadratin plutôt qu'une cellule vide : une cellule vide se lit
+  // comme un défaut de rendu, un tiret dit « rien à ce sujet ».
+  return { cls: "sift-lib-v-none", label: "—", rank: 2 };
 }
 
 /** Display name for a library row (artist — title, else filename). */
@@ -37,6 +76,12 @@ export function sortTracks(tracks: readonly LibraryTrack[], sort: LibrarySortSta
   const mul = sort.dir === "asc" ? 1 : -1;
   const sorted = [...tracks];
   sorted.sort((a, b) => {
+    // Le verdict est CATÉGORIEL (`DESIGN.md` § 16) : il se trie par rang, jamais sur la chaîne du
+    // champ. Trier sur `tracks.verdict` marcherait par accident aujourd'hui — « fake » < « grey » <
+    // « ok » en ordre alphabétique — et se retournerait au premier littéral renommé côté Rust, sans
+    // rien casser de visible. Ascendant = ce qui demande une décision d'abord ; « l'échec est
+    // l'information qu'on n'a pas le droit d'estomper » (§ 4), donc il ne se cache pas en queue.
+    if (sort.field === "verdict") return (verdictView(a).rank - verdictView(b).rank) * mul;
     // Les trois champs NUMÉRIQUES se comparent en nombres, pas en chaînes : un tri lexical
     // classerait un BPM de 100 avant 92, et une durée de 7:48 avant 12:03. `-Infinity` place les
     // valeurs manquantes en tête en ascendant, donc en queue en descendant — c'est le bon défaut
@@ -87,6 +132,10 @@ function fmtBpm(bpm: number | null): string {
  *  seul moment où l'oubli est rattrapable — une cellule vide, elle, se lit comme une donnée absente. */
 function cellText(field: LibraryColumnField, t: LibraryTrack): string {
   switch (field) {
+    case "verdict":
+      // Le TEXTE seul : la pastille est ajoutée par `cellHtml`. Ce libellé sert aussi au nom
+      // composite de la ligne, donc il ne peut pas vivre uniquement dans le markup.
+      return verdictView(t).label;
     case "artist":
       return esc(t.artist || "—");
     case "title":
@@ -105,6 +154,16 @@ function cellText(field: LibraryColumnField, t: LibraryTrack): string {
 /** Une cellule. `data-col` est le crochet que `paintColumnWidth` mute pendant un redimensionnement —
  *  c'est lui qui permet d'écrire une largeur sur les lignes déjà montées sans re-rendre la liste. */
 function cellHtml(col: LibraryColumn, t: LibraryTrack): string {
+  // Seule cellule à deux nœuds : la pastille pleine et son libellé. La pastille est un `<span>` vide
+  // et non un caractère « ● » — un rond typographique change de taille et de calage avec la police,
+  // et il serait lu à voix haute par-dessus le libellé qui dit déjà l'état.
+  if (col.field === "verdict") {
+    const v = verdictView(t);
+    return (
+      `<span class="sift-lib-col ${col.cls} ${v.cls}" data-col="${col.field}"${columnStyle(col)}>` +
+      `<span class="sift-lib-verdict-dot" aria-hidden="true"></span>${esc(v.label)}</span>`
+    );
+  }
   return `<span class="sift-lib-col ${col.cls}" data-col="${col.field}"${columnStyle(col)}>${cellText(col.field, t)}</span>`;
 }
 
@@ -149,9 +208,15 @@ export function libraryTableHeaderHtml(sort: LibrarySortState): string {
   );
 }
 
-/** One table row — cover thumbnail + the 4 sortable columns + the existing play/quality/verdict/
- * Discogs affordances (unchanged from the pre-table single-line row, just no longer squeezed into
- * one "artist — title" string). No duration column (explicit decision, see the design spec). */
+/** One table row — play button + cover thumbnail + the sortable columns of `libraryColumns()` +
+ * the quality pill and the Discogs affordance.
+ *
+ * L'ancienne pastille de verdict de fin de ligne (`verdictBadge`, une puce « fake » / « ? » posée
+ * après les colonnes) est partie le 2026-08-19 avec l'arrivée de la colonne Verdict : deux marques
+ * pour un même état dans la même ligne, dont l'une en minuscules et sans libellé pour `grey`.
+ * `DESIGN.md` § 16 en veut UNE, « identique dans les cinq tables ». Les espaceurs d'en-tête ne
+ * bougent pas pour autant : `.sift-lib-thead-tail` mesure la pastille de qualité et l'icône
+ * Discogs, jamais cette puce-là, qui n'était peinte que sur deux verdicts sur quatre. */
 export function libraryTableRowHtml(t: LibraryTrack, curId: number | null, selected = false): string {
   const cur = (t.id === curId ? " cur" : "") + (selected ? " sel" : "");
   const cov = t.cover_path
@@ -160,16 +225,16 @@ export function libraryTableRowHtml(t: LibraryTrack, curId: number | null, selec
   const link = t.discogs_release_id
     ? `<button class="lk-icon" data-bib="link" data-rid="${esc(t.discogs_release_id)}" aria-label="Page Discogs"><i class="ti ti-external-link" style="font-size:var(--text-base);color:var(--color-text-tertiary)"></i></button>`
     : `<button class="lk-icon" data-bib="identify" data-id="${t.id}" aria-label="Identifier"><i class="ti ti-search" style="font-size:var(--text-md);color:var(--color-text-tertiary)"></i></button>`;
-  // Composite name so a screen reader announces the 4 sortable columns for this row instead of
+  // Composite name so a screen reader announces the sortable columns for this row instead of
   // just "button" — role="button" alone loses the artist/title/genre/year association a table
-  // reading mode would otherwise give.
-  const rowLabel = `${t.artist || "Artiste inconnu"} — ${t.title || "Titre inconnu"}, ${fmtBpm(t.bpm)} BPM, ${fmtDuration(t.duration)}, ${t.genres[0] || "genre inconnu"}, ${t.year != null ? t.year : "année inconnue"}`;
+  // reading mode would otherwise give. Le verdict ouvre la phrase depuis le 2026-08-19, à la place
+  // qu'il occupe à l'écran : la colonne 1 est le premier mot lu comme elle est le premier regard.
+  const rowLabel = `${cellText("verdict", t)}, ${t.artist || "Artiste inconnu"} — ${t.title || "Titre inconnu"}, ${fmtBpm(t.bpm)} BPM, ${fmtDuration(t.duration)}, ${t.genres[0] || "genre inconnu"}, ${t.year != null ? t.year : "année inconnue"}`;
   return (
     `<div class="lr${cur}" data-bib="row" data-id="${t.id}" tabindex="0" role="option" aria-selected="${selected}" aria-label="${esc(rowLabel)}">` +
     `<button class="pb" data-bib="play" data-id="${t.id}" aria-label="Écouter"><i class="ti ti-player-play" style="font-size:var(--text-md)"></i></button>` +
     cov +
     libraryColumns().map((col) => cellHtml(col, t)).join("") +
-    verdictBadge(t.verdict) +
     qualPill(t) +
     link +
     `</div>`
