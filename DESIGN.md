@@ -20,9 +20,8 @@ Une recommandation qui ne s'appuie sur aucun des quatre se marque
 
 ## Ce que ce socle ne décide pas
 
-Le shell — zones, dimensions, redimensionnement, panneaux repliables — et le mapping
-des huit écrans dedans sont la **phase 3**. Les specs d'écran sont la phase 4, dans
-`docs/ui-specs/<vue>.md`. Ce fichier n'en tient que l'index.
+Les specs d'écran sont la **phase 4**, dans `docs/ui-specs/<vue>.md`. Ce fichier n'en
+tient que l'index. Le shell et le mapping des écrans, eux, sont ici — sections 14 à 17.
 
 ---
 
@@ -544,4 +543,322 @@ Une ligne par écran. Le contenu vit dans `docs/ui-specs/`, jamais ici.
 | Clé USB | `docs/ui-specs/cle-usb.md` | à écrire |
 | Réglages | `docs/ui-specs/reglages.md` | à écrire |
 
-Ordre d'écriture et patron macOS de chacun : phase 3.
+Patron macOS de chacun : § 15. Ordre d'écriture : § 17.
+
+---
+
+# Phase 3 — Shell, mapping, table
+
+## 14. Le shell unique
+
+### La règle qui remplace les deux grammaires
+
+Aujourd'hui l'app porte **deux grammaires incompatibles** : Revue et Accueil sont en
+panneaux fixes sans défilement de page ; les six autres écrans passent par `block()`
+(`app.js:33`) et laissent la page entière défiler. Le modèle mental change à chaque
+changement d'écran.
+
+Une seule règle les remplace :
+
+> **Trois zones. Une seule flexe — celle qui porte l'objet d'attention. Les deux
+> autres sont à largeur fixe. La page ne défile jamais ; chaque zone défile chez elle.**
+
+C'est la règle de macOS lui-même, pas une invention : dans Finder la liste flexe et
+l'inspecteur est fixe ; dans un éditeur de photo le canevas flexe et la palette d'outils
+est fixe. La zone qui flexe est celle qu'on regarde.
+
+### Les quatre zones
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│ A · Barre unifiée        --toolbar-h                             │
+├──────────┬───────────────────────────────┬───────────────────────┤
+│          │                               │                       │
+│ B · Rail │  C · Zone centrale            │  D · Inspecteur       │
+│ --rail-w │                               │  --pane-w             │
+│          │                               │                       │
+│  fixe    │                               │  fixe, repliable      │
+│ repliable│                               │                       │
+└──────────┴───────────────────────────────┴───────────────────────┘
+```
+
+#### A — Barre unifiée (titlebar + toolbar fusionnées)
+
+Une seule barre, jamais deux empilées. Elle absorbe l'actuelle barre de titre de 30 px.
+
+De gauche à droite : contrôles de fenêtre (à gauche sur macOS, à droite ailleurs) ·
+**titre de la vue courante** · actions contextuelles de la vue, deux ou trois au
+maximum · modes de vue · **recherche, toujours à droite**.
+
+Icônes seules avec infobulle, jamais de libellé sous une icône. Les espaces vides sont
+zone de drag.
+
+**Hauteur — dérivée, pas choisie.** La barre vaut le contrôle le plus haut qu'elle
+porte, plus un cran d'espacement au-dessus et au-dessous. Le contrôle le plus haut est
+le champ de recherche : `--text-md` sur une ligne, plus son padding vertical de 6 px,
+soit ~29 px calculés depuis `styles.css`. D'où `--toolbar-h: 29 + 8 + 8 ≈ 44px`.
+
+⚠️ `--titlebar-h` a un consommateur au-delà de `chrome.ts` : le bandeau de mise à jour
+s'y positionne. Le passage de 30 à 44 doit le suivre dans le même geste.
+
+#### B — Rail de navigation
+
+Fixe, repliable. Porte la **teinte de chrome** (`--color-background-tertiary`), la même
+que la zone gauche de la barre unifiée : la bordure verticale court sans interruption
+de la barre jusqu'en bas du rail.
+
+**Largeur — dérivée.** Le libellé le plus long est « Bibliothèque ». À `--text-base`,
+plus l'icône (17 px), le gap (`--space-12`), le padding horizontal (`--space-8` × 2) et
+un badge de compte à droite (~26 px + `--space-8`), le total dépasse les 152 px
+actuels — ce qui explique qu'un seul item porte un badge aujourd'hui. `--rail-w: 200px`,
+premier multiple de 8 qui loge l'ensemble, et la valeur tombe dans la bande 200–260 px
+des apps système. **À confirmer par une mesure dans la vraie fenêtre avant
+implémentation** : la largeur d'un texte ne se déduit pas d'un calcul.
+
+Contenu groupé par sections, en-têtes en petites capitales discrètes, **un seul niveau
+d'indentation**. Item actif : fond plein arrondi (`--color-background-secondary`),
+jamais de bordure ni de barre latérale colorée.
+
+Replié, le rail garde ses icônes et perd ses libellés — il ne disparaît pas.
+Raccourci de bascule : proposition ⌥⌘S sur macOS (convention Finder), Ctrl+B ailleurs.
+**Marqué proposition — à vérifier dans les HIG avant d'être figé.**
+
+#### C — Zone centrale
+
+C'est presque toujours **la table** (§ 16). Deux exceptions, et elles sont nommées :
+la surface de travail de Revue, et le panneau de formulaire de Réglages.
+
+Défile chez elle, jamais en emportant les autres zones. Le champ de recherche, les
+filtres et les en-têtes de colonne restent visibles quand la liste défile.
+
+#### D — Inspecteur
+
+Fixe à `--pane-w`, repliable. Affiche le détail de la **sélection courante**.
+
+Sélection multiple : un **résumé agrégé** (nombre, formats, durée totale, actions
+possibles), jamais un état vide. Sections repliables à en-têtes discrets ; libellé à
+gauche en `--color-text-secondary`, valeur à droite en `--color-text-primary`.
+
+**L'inspecteur n'est jamais un bloc dans le flux.** Aujourd'hui le détail de
+Bibliothèque est rendu dans `#bibplayer`, placé après la liste et après la section
+doublons : ouvrir une piste au rang 300 pousse son détail hors de l'écran.
+
+### Les deux profils
+
+Même trois zones, même règle. Ce qui change est **laquelle flexe**.
+
+| Profil | Zone fixe gauche | Zone qui flexe | Zone fixe droite | Objet d'attention |
+|---|---|---|---|---|
+| **Parcours** | rail | table centrale | inspecteur | La liste |
+| **Poste de décision** | rail + file (`--pane-w`) | surface de travail | — | La piste ouverte |
+
+Le profil Poste de décision existe pour une raison mesurable, pas par confort : la
+surface de travail de Revue porte le spectrogramme, borné à `--measure-data` (1200 px)
+et **dupliqué côté Rust** dans `analysis::spectrum::MAX_COLS`. Une zone de largeur fixe
+y présenterait de la donnée étirée ou tronquée — c'est-à-dire fausse, dans une app dont
+le métier est de détecter du faux.
+
+### Redimensionnement et persistance
+
+- Rail : repliable, largeur non redimensionnable (elle est dérivée du contenu).
+- File de Revue : redimensionnable, bornes 220–480 px, valeur persistée. Le mécanisme
+  existe déjà (`app.js:39`) et ne change pas.
+- Inspecteur : repliable, largeur non redimensionnable.
+- Toute largeur persistée est relue au montage, jamais gardée dans une variable JS
+  vivante — chaque changement d'écran reconstruit la zone.
+
+---
+
+## 15. Mapping des vues
+
+Aucune vue orpheline. Deux fusions proposées, chacune avec son motif.
+
+| Vue | Patron macOS | Profil | Zone C | Zone D |
+|---|---|---|---|---|
+| **Bibliothèque** | Finder / Music | Parcours | Table des pistes rangées | Détail de la piste |
+| **Journal** | Console | Parcours | Table des actions, groupées par session | Détail de l'entrée + annuler |
+| **Revue** | Finder + Utilitaire de disque (mode Lot) | Poste de décision | Surface de travail : lecture, verdict, identification, rangement | — (la file tient lieu de zone fixe) |
+| **Rekordbox** | Utilitaire de disque | Parcours | Liste des candidats de la section choisie | Détail du candidat |
+| **Clé USB** | Utilitaire de disque | Parcours | Liste des disques amovibles | Occupation + formatage du disque choisi |
+| **Réglages** | Réglages Système | Parcours | Panneau du réglage choisi, borné à `--measure-form` | — (les catégories occupent la zone gauche) |
+
+### Fusion 1 — Accueil disparaît dans le rail
+
+**Motif.** Accueil ne montre qu'une chose : les dossiers surveillés et leur état de
+scan. Dans Finder, une source n'est pas un écran — c'est une **entrée de sidebar**. Un
+écran entier pour lister des sources est un détour : l'utilisateur y va pour en ajouter
+une, puis en repart.
+
+**Sort.** Les dossiers surveillés deviennent une section du rail (« Sources »), avec
+leur pastille de couleur, leur compte de nouveaux fichiers et leur bascule de
+surveillance au clic droit. Le bouton « ajouter un dossier » vit au pied de la section.
+Cliquer une source **filtre Revue** sur ses fichiers.
+
+**Ce que la fusion coûte.** La porte de premier réglage (racine de bibliothèque non
+définie) perd son emplacement. Elle remonte dans la barre unifiée, comme bandeau
+persistant tant que la racine manque — ce qui la rend d'ailleurs visible depuis tous
+les écrans, pas seulement depuis celui qu'on quitte.
+
+### Fusion 2 — Écartés devient deux sources de Bibliothèque
+
+**Motif.** Écartés est une **vue filtrée de la même donnée** : des pistes, avec un
+statut. Finder ne fait pas un écran pour la Corbeille — c'est un item de sidebar qui
+change le contenu de la même table.
+
+**Sort.** Deux entrées dans la section « Bibliothèque » du rail : « À re-sourcer » et
+« Corbeille ». Même table, mêmes colonnes, colonne Verdict qui porte le motif d'écart
+(tronqué, faux, doublon). Les liens boutiques et l'action « purger » deviennent des
+actions de la barre unifiée quand ces sources sont actives.
+
+**Ce que la fusion coûte.** Rien de mesuré. Écartés a aujourd'hui ses propres hauteurs
+de ligne (58 px et 42 px, `ecartes-view.ts:162,173`) : elles rejoignent celle de la
+table, ce qui est le but.
+
+### Bilan
+
+**Huit destinations deviennent six.** Le rail passe de huit items plats à trois
+sections : Traiter (Revue · Journal) · Bibliothèque (Rangés · À re-sourcer · Corbeille) ·
+Exporter (Rekordbox · Clé USB), plus Réglages au pied. Les sources surveillées forment
+une quatrième section, au-dessus.
+
+### Sous-modes
+
+- **Revue / Lot** — ce n'est pas un écran mais un **changement de zone C** : la surface
+  de travail devient une table à cases à cocher. La file reste, le rail reste, la barre
+  reste. La bascule vit dans la barre unifiée, en contrôle segmenté.
+- **Bibliothèque / Table et Grille** — deux rendus de la même zone C, bascule dans la
+  barre unifiée. Le tri est partagé entre les deux.
+- **Rekordbox / 4 sections M8** — les quatre sections deviennent quatre **entrées de la
+  zone gauche**, plus un item « Tout ». La zone C montre les candidats de celle qui est
+  choisie. Cela résout l'empilement vertical de quatre cartes concurrentes.
+
+---
+
+## 16. La table centrale
+
+L'écran de vie du DJ. Une seule table, un seul comportement, partout où il y a des
+pistes : Bibliothèque, À re-sourcer, Corbeille, file de Revue, mode Lot.
+
+### Colonnes par défaut
+
+| # | Colonne | Largeur | Rendu |
+|---|---|---|---|
+| 1 | **Verdict** | fixe | Pastille + libellé (§ « Signal » ci-dessous) |
+| 2 | Pochette | 44 px | Vignette, repli sur une icône de vinyle |
+| 3 | **Artiste** | flex 1.4 | `--color-text-primary` |
+| 4 | **Titre** | flex 1.4 | `--color-text-primary` |
+| 5 | **BPM** | fixe | `--font-mono`, `tabular-nums`, aligné à droite |
+| 6 | **Durée** | fixe | `--font-mono`, `tabular-nums`, aligné à droite |
+| 7 | Genre | flex 1 | `--color-text-secondary` |
+| 8 | Année | flex 0.6 | `--font-mono`, `tabular-nums` |
+| 9 | Qualité | fixe | Pastille format + débit |
+
+**BPM et Durée sont des ajouts, et ce sont les deux plus importants.** Les deux champs
+existent déjà dans le contrat (`shared/contracts.ts:313-314`, `duration` et `bpm`), et
+**aucun des deux n'est affiché** : la table actuelle trie sur Artiste, Titre, Genre,
+Année (`library-views.ts:48-53`). Un DJ trie sa bibliothèque par tempo. L'information
+est en base et n'atteint pas l'écran.
+
+⚠️ **Tonalité et énergie n'existent nulle part.** Vérifié le 2026-08-19 : aucun champ
+de tonalité dans `shared/contracts.ts`, aucune colonne dans `db.rs` (le seul `key TEXT`
+est la clé de la table `settings`). Le brief de la skill dit que la cible pense en
+« BPM, tonalité, énergie » : un tiers de cette phrase est affichable aujourd'hui, un
+tiers l'est après ce changement, et le dernier tiers **n'est pas une décision de
+design** — c'est de l'analyse à écrire côté Rust. Aucune colonne fantôme ne sera
+spécifiée pour du vide.
+
+### Tri, largeur, ordre
+
+- **Toutes** les colonnes sont triables au clic sur l'en-tête, indicateur de direction
+  visible, `aria-sort` tenu à jour. Aujourd'hui quatre le sont.
+- Largeurs redimensionnables au glisser sur le séparateur d'en-tête, **mémorisées**.
+- Colonnes réordonnables au glisser, ordre mémorisé.
+- Le tri est **partagé** entre Table et Grille, et **stable** : il ne se rejoue jamais
+  sur un tick de données, seulement sur une action utilisateur.
+
+### Densité
+
+**Une seule hauteur de ligne pour toute l'app.** Aujourd'hui il y en a quatre —
+34 px en Bibliothèque, 150 px en grille, 58 px et 42 px en Écartés
+(`bibliotheque-view.ts:455,468`, `ecartes-view.ts:162,173`).
+
+`--row-h: 32px`, dérivé : vignette de pochette 24 px (le plus petit format où une
+pochette reste reconnaissable) plus `--space-4` au-dessus et au-dessous. C'est au-dessus
+de la bande 24–28 px d'une liste Finder, et la raison est nommée : la ligne de Sift
+porte une pochette, celle de Finder n'en porte pas.
+
+Pas d'alternance de fond de ligne. La séparation vient de l'espace, pas d'un trait ni
+d'un zébrage.
+
+### Signal de compatibilité — une seule forme, partout
+
+Le verdict est **catégoriel**, pas continu. Il se rend en **pastille pleine + libellé
+texte**, dans la colonne 1, identique dans les cinq tables.
+
+| Verdict | Teinte | Libellé |
+|---|---|---|
+| Lossless authentique | `success` | `LOSSLESS` |
+| Faux lossless | `danger` | `FAKE` |
+| Doublon | `warning` | `DUPLICATE` |
+| Non analysé | neutre | `—` |
+
+Le libellé texte n'est pas décoratif : c'est lui qui rattrape la couleur pour un
+utilisateur daltonien, et les HIG interdisent de porter un état par la seule couleur.
+Il ne descend jamais sous `--text-xs` (10 px) et ne s'atténue jamais à l'opacité —
+voir § 4, « l'échec est l'information qu'on n'a pas le droit d'estomper ».
+
+**Aucun dégradé.** Un dégradé suggère un continuum là où le jugement est discret. Voir
+§ 11, O‑4.
+
+### Sélection multiple
+
+Standard système, et **elle n'existe pas aujourd'hui** en Bibliothèque (les lignes sont
+`data-bib="row"`, ouverture simple ; seul le mode Lot a des cases).
+
+Clic = sélectionner · ⇧+clic = étendre la plage · ⌘/Ctrl+clic = ajouter ou retirer ·
+⌘/Ctrl+A = tout · ↑ ↓ = déplacer · ⇧+↑↓ = étendre · Entrée = action principale ·
+⌫ = écarter · Début / Fin = extrémités.
+
+La sélection survit au tri et au changement de filtre tant que les lignes restent
+visibles. L'inspecteur montre le résumé agrégé.
+
+### Menu contextuel
+
+**Il n'y en a aucun dans toute l'app** — vérifié le 2026-08-19, zéro gestionnaire
+`contextmenu` dans `frontend/`. C'est le manque le plus coûteux de la table : chaque
+action secondaire est aujourd'hui un bouton dans la ligne, et chaque bouton mange de la
+largeur sur 15k lignes pour être utilisé sur une.
+
+Le clic droit ouvre les actions secondaires : Ouvrir l'emplacement · Identifier ·
+Fiche Discogs · Réanalyser · Changer la destination · Écarter · Restaurer.
+
+**Reste dans la ligne :** le bouton lecture, et lui seul. C'est le geste primaire.
+
+### Temps réel
+
+Les mises à jour ne provoquent **aucun saut de layout** : largeurs stables, nombres en
+chiffres tabulaires alignés à droite. Aucune animation sur une valeur qui change
+souvent. Un renderer appelé en rafale crée ses nœuds une fois et mute ensuite.
+
+---
+
+## 17. Ordre d'implémentation
+
+Du plus structurant au plus cosmétique. Chaque étape est livrable seule et laisse l'app
+utilisable.
+
+| # | Étape | Débloque | Frictions closes |
+|---|---|---|---|
+| 1 | **Sortir la maquette du chemin de production.** `app.js` cesse d'être le routeur : le routage de vue devient un module réel. Les six renderers de démo et `renderBatch` disparaissent | Tout le reste — aucune décision de shell n'est tenable tant que le routeur est écrit pour une démo | F11 |
+| 2 | **Barre unifiée.** `--toolbar-h`, fusion titlebar+toolbar, titre de vue, recherche à droite, bandeau de racine manquante. Suivre le consommateur de `--titlebar-h` | Recherche globale, actions de vue, titre unique | F2, F9 |
+| 3 | **Shell à trois zones.** Une seule zone qui flexe, plus de `block()`, plus de défilement de page. Tokens `--rail-w`, `--pane-w` | Le mapping entier | F1, F5, F6 |
+| 4 | **Rail restructuré.** Trois sections + Sources, repliable, largeur dérivée. Fusion d'Accueil et d'Écartés | Deux destinations supprimées | F3 (accès), fusions 1 et 2 |
+| 5 | **Table unique.** `--row-h`, colonnes BPM et Durée, tri sur toutes les colonnes, largeurs mémorisées, sélection multiple, menu contextuel | La vie quotidienne du DJ | Table § 16 |
+| 6 | **Clavier couche 1 et couche 2.** ⌘1…8, ⌘F, ⌘,, Échap, plus la couche liste complète | L'usage sans souris | F4 |
+| 7 | **Grammaire de boîte à deux niveaux.** Retrait de `.sift-ui-card-outline`, ligne Rekordbox propre, padding dans l'échelle | Cohérence de surface | F8 |
+| 8 | **Motion unifiée.** `--duration-slow`, migration des 37 `transition:` sur les trois crans | — | § 6 |
+| 9 | **Réglages en deux colonnes.** Catégories à gauche, panneau borné à `--measure-form` | — | F7, O‑3 |
+| 10 | **Rekordbox en quatre entrées.** Les sections M8 quittent l'empilement vertical | — | F10 |
+
+Étapes 1 à 3 : rien n'est visible pour l'utilisateur avant la fin de la 3. Elles se
+livrent ensemble ou l'app reste à moitié dans deux shells.
