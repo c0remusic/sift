@@ -102,12 +102,18 @@ function installQueueResize(qcol: HTMLElement, handle: HTMLElement): void {
 // ---------------------------------------------------------------------------
 
 /** Écran qui défile d'un bloc (Bibliothèque, Écartés, Journal, Rekordbox, Clé USB, Réglages).
- *  Reprend `block()` de la maquette — étape 3 le remplacera par le shell à trois zones. */
-function blockShell(content: HTMLElement, title: string): void {
+ *  Reprend `block()` de la maquette — étape 3 le remplacera par le shell à trois zones.
+ *
+ *  Ne pose plus de `.h1` depuis l'étape 2 : le titre d'écran a quitté le contenu pour la barre
+ *  unifiée, où il est unique et toujours à la même place. Les six écrans qui l'émettaient
+ *  eux-mêmes ont cessé dans le même geste. `reglages-view.ts` et `usb-view.ts` parcourent encore
+ *  les enfants de `#content` pour garder un `.h1` et masquer le reste — avec zéro enfant leur
+ *  boucle ne fait rien, ce qui est le comportement voulu. */
+function blockShell(content: HTMLElement): void {
   content.style.display = "block";
   content.style.flexDirection = "";
   content.style.overflowY = "auto";
-  content.innerHTML = title ? `<div class="h1">${title}</div>` : "";
+  content.innerHTML = "";
 }
 
 function homeShell(content: HTMLElement): void {
@@ -146,24 +152,41 @@ function revueShell(content: HTMLElement): void {
 // Rendu
 // ---------------------------------------------------------------------------
 
+/** Vide les deux emplacements de la barre unifiée. Appelé avant chaque rendu : une vue qui monte
+ *  une action ou une recherche la laisserait sinon sur l'écran suivant. */
+function clearBarSlots(): void {
+  const actions = document.getElementById("sift-tb-actions");
+  const search = document.getElementById("sift-tb-search");
+  if (actions) actions.textContent = "";
+  if (search) search.textContent = "";
+}
+
 /** Le libellé du rail EST le nom humain de la vue : le relire plutôt que maintenir une table
  *  vue → titre, qui divergerait au premier renommage. Le premier `<span>` porte le libellé ; le
- *  second, sur Revue, est le badge de compte. */
+ *  second, sur Revue, est le badge de compte — d'où `querySelector("span")` et non `textContent`,
+ *  qui rendrait « Revue2710 ».
+ *
+ *  Le libellé alimente DEUX destinations, et c'est le point de l'étape 2 : le `<h1>` accessible
+ *  invisible d'`index.html`, et le titre de la barre unifiée. Les écrans n'émettent donc plus de
+ *  `.h1` dans leur contenu — le titre a quitté le contenu pour la fenêtre. */
 function syncNav(view: ViewId): void {
   const nav = requireEl<HTMLElement>("#nav", "syncNav");
   const viewTitle = document.getElementById("sift-view-title");
+  const barTitle = document.getElementById("sift-tb-title");
   nav.querySelectorAll<HTMLElement>(".nv").forEach((n) => {
     const on = n.dataset.view === view;
     n.classList.toggle("on", on);
-    if (!on || !viewTitle) return;
-    const label = n.querySelector("span");
-    if (label) viewTitle.textContent = label.textContent;
+    if (!on) return;
+    const label = n.querySelector("span")?.textContent ?? "";
+    if (viewTitle) viewTitle.textContent = label;
+    if (barTitle) barTitle.textContent = label;
   });
 }
 
 export function render(): void {
   const content = requireEl<HTMLElement>("#content", "render");
   syncNav(currentView);
+  clearBarSlots();
 
   switch (currentView) {
     case "home":
@@ -175,29 +198,27 @@ export function render(): void {
       void renderQueue();
       return;
     case "biblio":
-      blockShell(content, "");
+      blockShell(content);
       void renderBiblioLive();
       return;
     case "ecarts":
-      blockShell(content, "");
+      blockShell(content);
       void renderEcartes();
       return;
     case "journal":
-      blockShell(content, "");
+      blockShell(content);
       paintJournal(() => renderJournal(), "renderJournal");
       return;
     case "rkb":
-      blockShell(content, "");
+      blockShell(content);
       void renderRekordboxLive();
       return;
     case "cle":
-      // `usb-view.ts` garde le premier `.h1` et masque le reste : le titre lui appartient.
-      blockShell(content, "Clé USB");
+      blockShell(content);
       renderUsbLive();
       return;
     case "reglages":
-      // Même contrat que Clé USB (`reglages-view.ts:36`).
-      blockShell(content, "Réglages");
+      blockShell(content);
       void renderReglagesLive();
       return;
   }

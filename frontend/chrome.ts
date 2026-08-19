@@ -152,19 +152,32 @@ export function injectLeanStyle() {
   const st = document.createElement("style");
   st.id = "sift-lean-style";
   st.textContent =
-    // custom frameless titlebar (decorations are off in tauri.conf — Tauri only). Two REAL DOM
-    // zones (not a linear-gradient background trick, which can show a soft sub-pixel seam): the
-    // left zone is the nav rail's own width/tone (152px, matching .sb below it) so the titlebar
-    // reads as a continuation of the nav column, the right zone is the content tone. The vertical
-    // border between them is the same border-right the nav rail uses, so the line runs unbroken
-    // from the titlebar straight into .sb (no horizontal line is added anywhere in this bar).
-    "#sift-titlebar{height:30px;flex:none;display:flex;align-items:stretch;" +
+    // Barre UNIFIÉE (decorations:false — Tauri seulement) : barre de titre et toolbar fusionnées,
+    // une seule barre, jamais deux empilées. Deux VRAIES zones DOM (pas un dégradé de fond, qui
+    // laisse une couture sous-pixel) : la gauche prend la largeur et le ton du rail (--rail-w,
+    // --color-background-tertiary) pour que la barre se lise comme sa continuation, la droite
+    // prend le ton du contenu. La bordure verticale entre les deux est le même border-right que
+    // le rail, donc la ligne court sans interruption de la barre jusque dans .sb — et AUCUNE
+    // ligne horizontale n'est ajoutée ici.
+    // Hauteur : var(--toolbar-h), dérivée du contrôle le plus haut que la barre porte (voir le
+    // bloc de géométrie de styles.css). Elle était codée en dur à 30px ici ET dans le calc de #pa
+    // plus bas, pendant que --titlebar-h vivait dans styles.css avec un seul autre consommateur.
+    "#sift-titlebar{height:var(--toolbar-h);flex:none;display:flex;align-items:stretch;" +
     "background:var(--color-background-primary);-webkit-user-select:none;user-select:none}" +
-    "#sift-tb-left{width:152px;flex:none;display:flex;align-items:center;" +
+    "#sift-tb-left{width:var(--rail-w);flex:none;display:flex;align-items:center;" +
     "background:var(--color-background-tertiary);border-right:0.5px solid var(--color-border-tertiary)}" +
-    "#sift-tb-right{flex:1;min-width:0;display:flex;align-items:center;justify-content:space-between}" +
-    "#sift-tb-title{padding-left:13px;font-size:var(--text-sm);letter-spacing:.04em;color:var(--color-text-tertiary);" +
-    "overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}" +
+    "#sift-tb-right{flex:1;min-width:0;display:flex;align-items:center;gap:var(--space-12);" +
+    "padding:0 var(--space-8) 0 var(--space-16)}" +
+    // Titre de la VUE courante, plus le littéral « Sift » : le nom de l'app est déjà dans le rail,
+    // et une barre qui répète le nom du logiciel à la place du nom de l'écran ne renseigne rien.
+    "#sift-tb-title{font-size:var(--text-base);font-weight:500;color:var(--color-text-primary);" +
+    "overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:none}" +
+    // Deux emplacements que les vues remplissent : actions contextuelles (2 à 3 au maximum) et
+    // recherche. Vides, ils n'occupent rien. L'espaceur entre eux pousse la recherche à droite,
+    // où elle est sur toutes les apps système — et l'y garde quelle que soit la vue.
+    "#sift-tb-actions{display:flex;align-items:center;gap:var(--space-8);min-width:0}" +
+    "#sift-tb-spacer{flex:1;min-width:var(--space-8)}" +
+    "#sift-tb-search{display:flex;align-items:center;gap:var(--space-8);flex:none}" +
     "#sift-tb-controls{display:flex;height:100%}" +
     ".sift-win{width:44px;height:100%;display:flex;align-items:center;justify-content:center;border:none;" +
     "background:transparent;color:var(--color-text-tertiary);cursor:pointer;border-radius:0;padding:0}" +
@@ -174,16 +187,18 @@ export function injectLeanStyle() {
     // Reuses the same buttons/click-wiring; only placement (markup order) and this styling differ.
     // The controls move into the left (nav-tone) zone, the title stays alone in the right zone.
     ".sift-tb-mac #sift-tb-left{justify-content:flex-start;gap:8px;padding-left:12px}" +
-    ".sift-tb-mac #sift-tb-right{justify-content:flex-start}" +
-    ".sift-tb-mac #sift-tb-title{padding-left:12px}" +
+    // Ni `justify-content` ni `padding-left` a re-declarer ici depuis la barre unifiee : la zone
+    // droite porte son propre padding et son propre espaceur, identiques sur les deux cibles.
+    // Seul le PLACEMENT des boutons de fenetre differe entre macOS et le reste, et il est deja
+    // porte par le markup (zone gauche contre zone droite), pas par ces deux regles.
     ".sift-tb-mac .sift-win{width:12px;height:12px;border-radius:50%;color:transparent;font-size:0}" +
     ".sift-tb-mac .sift-win:hover{color:inherit;font-size:8px}" +
     '.sift-tb-mac .sift-win[data-win="close"]{background:var(--color-text-danger)}' +
     '.sift-tb-mac .sift-win[data-win="min"]{background:var(--color-text-warning)}' +
     '.sift-tb-mac .sift-win[data-win="max"]{background:var(--color-text-success)}' +
     ".sift-tb-mac .sift-win-close:hover{background:var(--color-text-danger)}" +
-    // make room for the 30px bar: shrink the app shell so nothing is clipped
-    "#pa{height:calc(100vh - 30px)!important}";
+    // Laisser la place à la barre : le shell rétrécit d'autant, sinon il est rogné en bas.
+    "#pa{height:calc(100vh - var(--toolbar-h))!important}";
   document.head.appendChild(st);
 }
 
@@ -213,7 +228,14 @@ export async function injectTitlebar(): Promise<void> {
   bar.id = "sift-titlebar";
   if (isMac) bar.classList.add("sift-tb-mac");
   bar.setAttribute("data-tauri-drag-region", "");
-  const title = '<span id="sift-tb-title" data-tauri-drag-region title="Sift">Sift</span>';
+  // Le titre est rempli par router.ts à chaque rendu de vue (`setBarTitle`) ; « Sift » n'est que
+  // la valeur avant le premier rendu. Les deux emplacements qui l'accompagnent sont vides et le
+  // restent tant qu'une vue n'y monte rien.
+  const title =
+    '<span id="sift-tb-title" data-tauri-drag-region>Sift</span>' +
+    '<div id="sift-tb-actions"></div>' +
+    '<div id="sift-tb-spacer" data-tauri-drag-region></div>' +
+    '<div id="sift-tb-search"></div>';
   const controls =
     '<div id="sift-tb-controls">' +
     '<button class="sift-win" data-win="min" title="Réduire" aria-label="Réduire"><i class="ti ti-minus"></i></button>' +

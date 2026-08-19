@@ -204,7 +204,11 @@ export function installLiveWiring() {
     }
   }
 
-  requireEl("#pa", "installLiveWiring").addEventListener("click", (e) => {
+  // Racine de dispatch : `document`, plus `#pa`. La barre unifiée (`#sift-titlebar`) est le
+  // premier enfant de `<body>`, donc HORS de `#pa` — un écouteur enraciné sur `#pa` ne voit aucun
+  // contrôle qu'une vue monte dans la barre. Chaque branche ci-dessous filtre déjà par `closest()`
+  // sur son propre sélecteur, donc élargir la racine n'élargit pas ce qui est attrapé.
+  document.addEventListener("click", (e) => {
     // Reanalyze-this-track button on an unanalysed queue row — checked BEFORE the .qi row-open
     // branch below (the button lives inside a .qi row) so clicking it never also opens the track.
     const reanalyzeBtn = (e.target as HTMLElement).closest<HTMLElement>("[data-reanalyze]");
@@ -503,7 +507,7 @@ export function installLiveWiring() {
   });
 
   // "File in place" checkbox (under the #fldz tree, batch mode) — a checkbox, so it needs change.
-  requireEl("#pa", "installLiveWiring").addEventListener("change", (e) => {
+  document.addEventListener("change", (e) => {
     const ip = (e.target as HTMLElement).closest<HTMLInputElement>('input[data-sift="inplace"]');
     if (ip) onBatchInPlaceChange(ip.checked);
   });

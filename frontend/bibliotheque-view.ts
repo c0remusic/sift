@@ -13,6 +13,7 @@ import {
 } from "./ipc";
 import type { LibraryTrack, LibraryFacets, LibraryFilter, DupGroup, DashboardStats } from "../shared/contracts";
 import { requireEl, esc } from "./dom";
+import { mountBarActions, mountBarSearch } from "./toolbar";
 import { humanizeError } from "./errors";
 import { libraryUsage, type UsageReport } from "./ipc";
 import { renderUsageChart } from "./usage-chart";
@@ -55,6 +56,11 @@ export const bibState: {
 // collapsaient en `groups = []` dans les catch de sift-live.ts, donc un scan en ECHEC affichait
 // « Aucun doublon dans toute la bibliotheque » — une affirmation sur l'etat du disque de
 // l'utilisateur, produite par une commande qui n'a jamais abouti. Audit 2026-07-28, CC-1.
+/** Minuterie du debounce de recherche. Au niveau module et non sur le nœud : le champ vit
+ *  désormais dans la barre unifiée et survit aux rendus, mais il disparaît au changement d'écran —
+ *  une minuterie accrochée à lui partirait alors avec lui, en laissant un rendu programmé. */
+let bibSearchTimer: number | undefined;
+
 export const bibDup: {
   groups: DupGroup[] | null;
   loading: boolean;
@@ -283,7 +289,6 @@ export async function renderBiblioLive() {
     // (`ecartes-view.ts`) et le bloc doublons plus bas en ont une depuis leur audit respectif.
     // « réessaie » sans bouton demande à l'utilisateur de deviner comment.
     content.innerHTML =
-      '<div class="h1">Bibliothèque</div>' +
       '<div class="sift-ui-card-soft sift-ui-card-soft-pad" style="color:var(--color-text-danger)">' +
       esc(
         humanizeError(
@@ -393,15 +398,17 @@ export async function renderBiblioLive() {
   // au-dessus du panneau — une seule information (le filtre courant), grouper ça seul ajoute du
   // chrome pour rien (même règle HIG Boxes que la consolidation Réglages, 2026-07-08). Intégré
   // maintenant comme bandeau supérieur du panneau .sift-library-main, séparé par un filet.
-  const header =
-    `<div class="sift-library-toolbar">` +
-    `<div class="sift-search-wrap" style="flex:1;display:flex;align-items:center;gap:7px;border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:6px 10px"><i class="ti ti-search" style="font-size:var(--text-lg);color:var(--color-text-tertiary)"></i><input id="bibq" placeholder="Rechercher…" aria-label="Rechercher dans la bibliothèque" value="${esc(bibState.filter.q || "")}" style="flex:1;border:0;background:transparent;color:inherit;font-size:var(--text-md)"></div>` +
+  // Étape 2 (DESIGN.md § 17) : filtres, mode de vue et recherche ont quitté le panneau pour la
+  // barre unifiée. Ils n'appartenaient pas au contenu — ce sont des contrôles de la fenêtre, et
+  // leur place change aujourd'hui d'un écran à l'autre. La recherche y gagne en plus de survivre
+  // au rendu : dans `#content` elle était détruite par le rebuild `innerHTML` que sa PROPRE frappe
+  // déclenchait, donc le focus tombait à chaque recherche (voir `toolbar.ts`).
+  const barActionsHtml =
     chips +
     `<div class="sift-seg sift-seg-thumbed" id="sift-bib-viewmode-seg">` +
     `<div class="sift-seg-thumb"></div>` +
     `<button class="sift-seg-opt${bibState.viewMode === "table" ? " on" : ""}" data-bib="viewmode" data-mode="table" aria-label="Vue tableau"><i class="ti ti-list"></i></button>` +
-    `<button class="sift-seg-opt${bibState.viewMode === "grid" ? " on" : ""}" data-bib="viewmode" data-mode="grid" aria-label="Vue grille"><i class="ti ti-layout-grid"></i></button></div>` +
-    `</div>`;
+    `<button class="sift-seg-opt${bibState.viewMode === "grid" ? " on" : ""}" data-bib="viewmode" data-mode="grid" aria-label="Vue grille"><i class="ti ti-layout-grid"></i></button></div>`;
 
   content.innerHTML = trulyEmpty
     ? emptyStateHtml({
@@ -411,7 +418,7 @@ export async function renderBiblioLive() {
       })
     : (stats ? statsCardsHtml(stats) : "") +
       `<div class="sift-library-layout"><div class="sift-library-side sift-ui-card-soft sift-ui-card-soft-pad"><div class="col-h">Bibliothèque</div>${side}</div>` +
-      `<div class="sift-library-main sift-ui-card sift-ui-card-pad">${header}<div style="display:flex;justify-content:space-between;margin-bottom:5px"><span style="font-size:var(--text-base);font-weight:500">${esc(activeFacetVal || "Tous")}</span><span style="font-size:var(--text-sm);color:var(--color-text-tertiary)">${bibState.tracks.length} piste${bibState.tracks.length > 1 ? "s" : ""}</span></div>${tableHead}` +
+      `<div class="sift-library-main sift-ui-card sift-ui-card-pad"><div style="display:flex;justify-content:space-between;margin-bottom:5px"><span style="font-size:var(--text-base);font-weight:500">${esc(activeFacetVal || "Tous")}</span><span style="font-size:var(--text-sm);color:var(--color-text-tertiary)">${bibState.tracks.length} piste${bibState.tracks.length > 1 ? "s" : ""}</span></div>${tableHead}` +
       (rows ||
         `<div style="font-size:var(--text-md);color:var(--color-text-tertiary)">Aucun résultat pour ce filtre. <button data-bib="stat" data-stat="all" style="font-size:inherit;color:var(--color-text-info);background:none;border:none;padding:0;cursor:pointer;text-decoration:underline">Réinitialiser les filtres</button></div>`) +
       dupSection +
@@ -424,21 +431,33 @@ export async function renderBiblioLive() {
   positionFacetThumb(); // fresh node post-rebuild — no prior transform, just place it
   positionViewModeThumb();
 
-  if (trulyEmpty) return; // no header/search — nothing left to wire
+  if (trulyEmpty) {
+    // Bibliothèque vide : pas de filtre à offrir, donc rien dans la barre. C'est une impasse
+    // assumée (DESIGN.md § 8) — le rail et le titre restent, les contrôles non.
+    mountBarActions("");
+    return;
+  }
 
-  const q = document.getElementById("bibq") as HTMLInputElement | null;
-  q?.addEventListener("input", () => {
-    bibState.filter.q = q.value || undefined;
-    clearTimeout((q as unknown as { _t?: number })._t);
-    const toolbar = q.closest<HTMLElement>(".sift-library-toolbar");
-    toolbar?.querySelector(".sift-bib-search-pending")?.remove();
-    const pending = document.createElement("span");
-    pending.className = "sift-bib-search-pending";
-    pending.style.cssText = "font-size:var(--text-xs);color:var(--color-text-tertiary)";
-    pending.textContent = "Recherche…";
-    toolbar?.appendChild(pending);
-    (q as unknown as { _t?: number })._t = window.setTimeout(() => void renderBiblioLive(), 250);
+  mountBarActions(barActionsHtml);
+  positionViewModeThumb(); // le nœud vient d'être (re)créé dans la barre — le placer après montage
+
+  // La recherche est le seul contrôle frappé pendant que son écran se re-rend : `mountBarSearch`
+  // réutilise le champ existant et ne pousse la valeur que si elle diffère, sinon le curseur
+  // sauterait en fin de champ à chaque re-rendu. Le voile d'attente se pose sur l'enveloppe plutôt
+  // que par un nœud ajouté-retiré : un nœud créé à chaque frappe est exactement ce que la règle
+  // « créer une fois, muter ensuite » interdit.
+  const searchInput = mountBarSearch({
+    placeholder: "Rechercher…",
+    ariaLabel: "Rechercher dans la bibliothèque",
+    value: bibState.filter.q ?? "",
+    onInput: (value) => {
+      bibState.filter.q = value || undefined;
+      clearTimeout(bibSearchTimer);
+      document.querySelector(".sift-bar-search")?.classList.add("sift-bar-search--pending");
+      bibSearchTimer = window.setTimeout(() => void renderBiblioLive(), 250);
+    },
   });
+  if (searchInput) document.querySelector(".sift-bar-search")?.classList.remove("sift-bar-search--pending");
 
   // Virtualize the filed-track list: #content is the scroll container (app.js's block() set it to
   // overflow-y:auto), but the list is only ONE section of it (stats/rekordbox/header/facets sit

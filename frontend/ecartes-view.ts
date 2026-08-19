@@ -103,7 +103,6 @@ export async function renderEcartes() {
   const alreadyRendered = !!content.querySelector(".sift-ec-sections, .sift-empty-state");
   if (!alreadyRendered) {
     content.innerHTML =
-      '<div class="h1">Écartés</div>' +
       '<div style="display:flex;align-items:center;gap:8px;padding:8px 8px;color:var(--color-text-tertiary);font-size:var(--text-md)">' +
       '<i class="ti ti-loader sift-spin" style="font-size:var(--text-md)"></i> Chargement…</div>';
   }
@@ -114,7 +113,6 @@ export async function renderEcartes() {
   } catch (e) {
     console.error("listEcartes failed", e);
     content.innerHTML =
-      '<div class="h1">Écartés</div>' +
       '<div class="sift-ui-card-soft sift-ui-card-soft-pad" style="color:var(--color-text-danger)">' +
       "Impossible de charger Écartés. Vérifie la connexion à la base et réessaie." +
       '<div style="margin-top:8px"><button data-ec="retry" style="font-size:var(--text-xs);padding:4px 10px;color:var(--color-text-info)">Réessayer</button></div>' +
@@ -128,7 +126,6 @@ export async function renderEcartes() {
   const trash = items.filter((i) => i.status === "trash");
 
   content.innerHTML =
-    '<div class="h1">Écartés</div>' +
     (items.length === 0
       ? emptyStateHtml({
           title: "Rien dans Écartés",

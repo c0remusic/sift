@@ -575,13 +575,11 @@ export async function renderRekordboxLive(): Promise<void> {
   } catch (e) {
     console.error("rekordbox_status failed", e);
     content.innerHTML =
-      `<div class="h1">Rekordbox</div>` +
       `<div style="font-size:var(--text-md);color:var(--color-text-tertiary)">Statut Rekordbox indisponible.</div>`;
     return;
   }
 
   const intro =
-    `<div class="h1">Rekordbox</div>` +
     `<div style="font-size:var(--text-md);color:var(--color-text-tertiary);margin-bottom:12px">` +
     `Sift convertit tes morceaux → l'export fusionne les nouveaux dans le XML lié → réimporte-le dans Rekordbox pour les voir apparaître.` +
     `</div>`;

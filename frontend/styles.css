@@ -235,9 +235,32 @@ color-scheme:light;
    --h-36 lost its only consumer, .sift-play-btn, when the Revue continuous-surface redesign
    enlarged that button to a 46px literal — dropped 2026-07-09 for the same reason). */
 --h-40:40px;
-/* Custom titlebar height (desktop-only): shared between chrome.ts #sift-titlebar drag region
-   and update banner top position to ensure they never overlap or leave gaps. */
---titlebar-h:30px;
+/* GEOMETRIE DU SHELL (DESIGN.md §§ 10 et 14). Trois mesures, chacune DERIVEE de ce qu'elle
+   porte, jamais choisie — et chacune ecrite plusieurs fois dans l'arbre avant d'etre un token.
+
+   --toolbar-h : la barre unifiee vaut le controle le plus haut qu'elle porte plus un cran
+   d'espacement au-dessus et au-dessous. Le plus haut est le champ de recherche : --text-md sur
+   une ligne plus 6px de padding vertical, ~29px, d'ou 29 + 8 + 8 = 45, ramene a 44 (multiple de
+   4, l'echelle d'espacement). Remplace --titlebar-h:30px, qui n'etait la hauteur de rien : la
+   barre ne portait aucun controle, seulement un titre inerte et les boutons de fenetre.
+   ⚠️ Son consommateur au-dela de chrome.ts est .sift-update-banner, qui s'y positionne — il
+   suit ici dans le meme geste, sinon le bandeau chevauche la barre de 14px.
+
+   --rail-w : le rail vaut son libelle le plus long plus l'icone, le gap, le padding et un badge
+   de compte. MESURE dans la vraie fenetre le 2026-08-19 (CDP, Range.getBoundingClientRect sur le
+   texte lui-meme, pas sur le span qui s'etire) : « Bibliotheque » = 73,7px d'encre, le badge de
+   Revue rempli (« 2710 ») = 36,9px. Reste : padding du rail 2x12, padding de l'item 2x8, icone
+   17, gap 12. A 152px il restait 83px pour le libelle — le libelle seul passait (73,7), le
+   libelle AVEC son badge non, ce qui explique qu'un seul item du rail en portait un. A 200px il
+   reste 131px, soit 57px de marge apres le libelle le plus long : le badge y tient. La valeur
+   tombe aussi dans la bande 200-260px des apps systeme, mais c'est la mesure qui la fixe.
+
+   --pane-w : largeur canonique d'une zone fixe laterale — file de Revue, rail de sources
+   d'Accueil, inspecteur. Ecrite trois fois avant d'etre un token (deux fois dans app.js, une
+   dans .sift-library-side), avec son intention documentee en prose et jamais en valeur, et
+   rattrapee quatre fois : 150 → 190 → 245 → 272. router.ts:QCOL_DEFAULT la mire cote JS, ou
+   elle sert de repli avant lecture du CSS. */
+--toolbar-h:44px;--rail-w:200px;--pane-w:272px;
 /* Motion (P6, 2026-07-27). Only the two durations that actually have a consumer are declared —
    same audit rule as the height scale above (--h-32/--h-44 were dropped for having none). They
    match values already recurring in the transitions further down (.1s / .15s), so this is token
@@ -257,6 +280,13 @@ color-scheme:light;
    so `animationend` keeps firing and filing-identify.ts is never stranded on
    `.sift-identified-flash` / `.sift-applytags-flash` (:227, :681). */
 --duration-fast:100ms;--duration-base:150ms;--ease-out:cubic-bezier(.2,0,0,1);
+/* --duration-slow : le cran manquant, ajoute le 2026-08-19 (DESIGN.md § 10, D-3). Mesure avant :
+   37 declarations `transition:` dans ce fichier, DEUX referencant un token, pour NEUF durees
+   litterales distinctes (.08s .1s .12s .15s .16s .18s .2s .25s .3s) contre une echelle a deux
+   valeurs. Les quatre litteraux hors echelle (.18s a .3s) sont tous du DEPLACEMENT DE MATIERE —
+   pouce de controle segmente, panneau, barre de progression — qui n'avait pas de cran. Sans lui,
+   migrer les 37 sites ecrase une intention. */
+--duration-slow:250ms;
 }
 /* Dark variant — same warm-neutral family, garde les 4 teintes sémantiques distinctes
    (success/danger/warning/info — palette Apple system colors, 2026-07-06). Auto = suit
@@ -414,7 +444,24 @@ html,body{margin:0;padding:0;height:100%}
    lire le texte lettre par lettre par certains lecteurs. */
 .sift-sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap;border:0}
 /* Wide, labelled, grouped nav rail (brand + PROCESS/ORGANIZE/EXPORT groups + neutral selection). */
-.sb{width:152px;flex:none;display:flex;flex-direction:column;gap:var(--space-4);padding:var(--space-16) var(--space-12);background:var(--color-background-tertiary);border-right:0.5px solid var(--color-border-tertiary);align-items:stretch}
+/* Champ de recherche de la barre unifiee (toolbar.ts). Sa hauteur est ce dont --toolbar-h est
+   derivee : ~29px de contenu plus un cran d'espacement au-dessus et au-dessous. Le
+   `appearance:none` retire la croix de reinitialisation propre a `type=search`, qui n'est peinte
+   que par certains moteurs et casserait l'alignement sur l'un et pas sur l'autre. */
+.sift-bar-search{display:flex;align-items:center;gap:var(--space-8);width:220px;padding:var(--space-4) var(--space-8);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);background:var(--color-background-secondary);color:var(--color-text-tertiary)}
+.sift-bar-search i{font-size:var(--text-lg);flex:none}
+.sift-bar-search input{flex:1;min-width:0;border:0;background:transparent;color:var(--color-text-primary);font:inherit;font-size:var(--text-md);appearance:none}
+.sift-bar-search input::-webkit-search-cancel-button{appearance:none}
+.sift-bar-search:focus-within{outline:2px solid var(--color-border-info);outline-offset:1px}
+/* Attente de recherche : l'icone devient un spinner, sans ajouter ni retirer de noeud. Un nœud
+   cree a chaque frappe est exactement ce que la regle « creer une fois, muter ensuite » interdit,
+   et la frappe est l'evenement en rafale par excellence. */
+.sift-bar-search--pending i{opacity:.45}
+/* Actions contextuelles de la barre : meme grammaire de chip et de controle segmente qu'ailleurs,
+   seulement plus compactes — la barre est haute de --toolbar-h et rien n'y respire. */
+#sift-tb-actions .chip{font-size:var(--text-sm)}
+#sift-tb-actions .sift-seg{flex:none}
+.sb{width:var(--rail-w);flex:none;display:flex;flex-direction:column;gap:var(--space-4);padding:var(--space-16) var(--space-12);background:var(--color-background-tertiary);border-right:0.5px solid var(--color-border-tertiary);align-items:stretch}
 /* DEUX LITTÉRAUX DE TAILLE RENTRÉS DANS L'ÉCHELLE — 2026-08-11, suite de l'axe « taille » de
    l'accord L2 (chantier identité visuelle). C'étaient les deux derniers hors barreau, et ils
    avaient survécu au chantier précédent pour une raison instrumentale : ses mesures CDP ne
@@ -1536,7 +1583,7 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
   .sift-fade-in.sift-fade-from{opacity:0}
   .sift-fade-out{opacity:0;pointer-events:none;transition:opacity var(--duration-fast) var(--ease-out)}
 }
-.sift-update-banner{position:fixed;left:50%;top:var(--titlebar-h);transform:translateX(-50%);z-index:var(--z-toast);display:flex;flex-wrap:wrap;align-items:center;gap:12px;max-width:calc(100vw - var(--space-16) - var(--space-8));background:var(--color-background-secondary);border:0.5px solid var(--color-border-secondary);border-radius:0 0 var(--border-radius-md) var(--border-radius-md);padding:var(--space-8) var(--space-16);font-size:var(--text-md);color:var(--color-text-primary);box-shadow:var(--shadow-toast)}
+.sift-update-banner{position:fixed;left:50%;top:var(--toolbar-h);transform:translateX(-50%);z-index:var(--z-toast);display:flex;flex-wrap:wrap;align-items:center;gap:12px;max-width:calc(100vw - var(--space-16) - var(--space-8));background:var(--color-background-secondary);border:0.5px solid var(--color-border-secondary);border-radius:0 0 var(--border-radius-md) var(--border-radius-md);padding:var(--space-8) var(--space-16);font-size:var(--text-md);color:var(--color-text-primary);box-shadow:var(--shadow-toast)}
 /* Resume des notes de version, dans le meme span que l'annonce : secondaire, car ce qu'on
    demande a l'utilisateur est de decider, pas de lire. La troncature se fait en TS
    (NOTES_MAX_CHARS) et non par ellipsis CSS — la banniere est en flex-wrap, donc une largeur
@@ -1715,7 +1762,7 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
    (4 vs 3), so it always wins regardless of source order. */
 .sift-seg-thumbed .sift-seg-opt.on,
 .sift-seg-thumbed .sift-seg-opt.on:hover{background:none;border:none}
-.sift-seg-thumb{position:absolute;top:0;bottom:0;left:0;background:var(--color-surface-raised);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-pill);box-shadow:var(--shadow-panel-subtle);transition:transform .18s ease;pointer-events:none;z-index:0}
+.sift-seg-thumb{position:absolute;top:0;bottom:0;left:0;background:var(--color-surface-raised);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-pill);box-shadow:var(--shadow-panel-subtle);transition:transform var(--duration-slow) var(--ease-out);pointer-events:none;z-index:0}
 /* Hover is text-only (color shift), no background box — retour utilisateur 2026-07-08 ("dans
    Claude il y a simplement le texte qui highlight, pas une case qui se superpose"). Transition on
    background+color so both the hover shift and the selected pill moving from one option to
@@ -1739,9 +1786,15 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-seg-opt.on i{color:var(--color-text-primary)}
 .sift-seg-opt.on:hover{background:var(--color-surface-raised)}
 .sift-usb-empty{font-size:var(--text-sm);color:var(--color-text-tertiary);padding:var(--space-8) 0}
-/* Intégré au panneau .sift-library-main (2026-07-09, retour Antoine) — plus sa propre boîte
-   flottante, filet de séparation à la place (même langage que .sift-settings-list-row). */
-.sift-library-toolbar{display:flex;align-items:center;gap:8px;padding-bottom:var(--space-12);margin-bottom:var(--space-12);border-bottom:0.5px solid var(--color-border-tertiary)}
+/* .sift-library-toolbar RETIRÉE le 2026-08-19 (étape 2, DESIGN.md § 17) : son contenu —
+   recherche, chips de qualité, mode de vue — a quitté le panneau pour la barre unifiée, où ces
+   contrôles sont à la même place sur tous les écrans. La règle n'avait plus de consommateur, et
+   le dépôt ne garde pas un sélecteur sans consommateur (voir --h-32/--h-44). Son histoire tient
+   en une ligne : elle était sa propre boîte flottante au-dessus du panneau, ramenée en bandeau
+   intégré le 2026-07-09 parce qu'une boîte pour une seule information ajoute du chrome pour rien.
+   Le geste d'aujourd'hui va au bout du même raisonnement — un filtre n'appartient pas au contenu.
+   `.sift-bib-search-pending` est partie avec elle : l'attente se peint maintenant sur l'enveloppe
+   du champ (`.sift-bar-search--pending`), sans créer de nœud à chaque frappe. */
 .sift-library-layout{display:flex;align-items:flex-start;gap:var(--space-16)}
 /* 150px → 190px (2026-07-08, retour utilisateur : la pastille Dossiers/Genres était tronquée) —
    la piste segmentée + son padding de carte (16px×2) dépassaient les ~118px utiles restants à
