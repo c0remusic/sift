@@ -1083,3 +1083,13 @@ périmés (les deux sujets étaient déjà traités par `f475ae0`). La session �
 a convergé proprement — `57f64b2` renomme les cinq teintes en `.sift-rail-src-dot-*` d'après
 leur porteur réel et met `rail-sources.ts` à jour ; son merge `7611875` réconcilie les deux
 nettoyages parallèles sans perte. Plus rien à surveiller sur ce point.
+
+**Addendum du 2026-08-20 — le point ci-dessus cachait une perte plus ancienne.** L'auto-assignation
+des teintes par ordre d'ajout (`resolveSourceColorKey`, livrée par `4befc09`) n'avait pas survécu à
+la fusion 1 : `ab64074` a réécrit le rendu avec un repli **neutre** sur `color_key` null, et
+l'inventaire des survivants de `6d1cc85` ne l'a pas comptée — toutes les pastilles étaient grises,
+les cinq classes de teinte inatteignables hors IPC manuel, contre § 4 (« couleur de dossier
+source ») et § 15 (« leur pastille de couleur »). Restaurée dans `frontend/source-color.ts` (module
+pur, testé env Node : cycle gelé, position par id croissant, miroir CSS épinglé). L'override manuel
+reste sans UI depuis la mort du picker d'Accueil — le menu contextuel des sources est son
+emplacement naturel si on le veut de retour.
