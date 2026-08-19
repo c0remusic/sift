@@ -33,6 +33,17 @@
 > Revue/Écartés/Bibliothèque/Bibliothèque éditeur/Rekordbox/Accueil/Journal/
 > Revue-bannières/Lot + 2 tokens couleur clair + 2 hover manquants — voir
 > entrées dédiées ci-dessous et l'entrée d'Historique du 2026-07-24.
+>
+> **Repasse du 2026-08-19 — deux refontes portées ici** : le Journal est devenu
+> une table (`.lr.jrnl-row`, groupes, inspecteur zone D — aucune classe de
+> l'ancien écran n'a survécu) et la Bibliothèque a gagné une colonne Verdict
+> (`verdictView()`, `.sift-lib-v-*`, la puce `verdictBadge` de fin de ligne est
+> retirée). Les sections périmées ne sont pas réécrites en silence : elles
+> gardent leur texte daté et portent un ⚠️ qui nomme ce qui les remplace. Les
+> deux nouveaux états ont leur story — `frontend/journal-table.stories.ts` et
+> `frontend/library-verdict.stories.ts` — Storybook étant le miroir vivant de ce
+> fichier. Sommaire renuméroté dans le même geste, écarts sommaire → titre
+> vérifiés inchangés entrée par entrée.
 
 ## Sommaire
 
@@ -41,61 +52,62 @@
 > 2026-07-09) : ouvrir la section visée via son numéro de ligne plutôt que tout
 > lire.
 
-- L99 — Ligne de queue `.qi` — RAS, 4 états déclarés.
-- L110 — Mot de verdict Détail `verdictWord()` — nouvel état "échec" (07-24).
-- L133 — Item de navigation `.nv` — RAS.
-- L144 — Bouton d'action principal `.sift-ranger-btn` — hover désormais déclaré explicitement (07-24), disabled/focus restent génériques.
-- L163 — Chip/tag `.chip` — hover corrigé 07-03.
-- L175 — Case à cocher `.cbx` — supprimée (code mort).
-- L182 — Segmented control `.sift-seg-opt` (ancien, voir aussi pastille unifiée L715) — RAS.
-- L192 — Ligne de journal `.jrnl-qrow` — RAS.
-- L202 — Toggle switch `.tog` — perf `transform` corrigée 07-03.
-- L215 — Slots verdict `.sift-fil-verdict` / `.sift-verdict-stub` — renommés/scindés depuis `.sift-verdict-card` (le composant carte a été supprimé au redesign 07-06, `verdictCardHtml()` est un no-op), resynchronisé 07-24.
-- L249 — Ligne candidat `.sift-cand` — hover discret volontaire (bordure seule).
-- L262 — Bouton Destination `.sift-dest-btn` — hérite générique.
-- L267 — Sliders volume/tempo `.sift-slider-*` — hover/drag ajoutés 07-03.
-- L280 — Pochette/cover `.sift-cover-frame` — `alt` fixé 07-03, bug `[hidden]` réellement cassé fixé 07-05.
-- L305 — Boutons icon-only — vérifiés, titlebar corrigée 07-03.
-- L314 — Barre de progression `.pbar`/`.sift-pz-fill` — perf `transform` 07-03.
-- L323 — Popover Destination `.sift-dest-popover` — CSS minimal, placement en JS : flip + recadrage viewport 08-13.
-- L348 — Bouton Identifier `.sift-id-btn` — tokenisé+dark 07-03, exception 3ᵉ teinte levée 07-06.
-- L365 — Bordure latérale `.sift-filed-banner` — anti-pattern side-stripe retiré 07-03.
-- L374 — Ombres portées `.sift-toast`/`.sift-report-overlay-card` — tokenisées 07-03.
-- L381 — Échelles hauteur/radius — audit 07-03, `--h-36` retiré 07-09 (0 lecteur).
-- L418 — Token `disabled` de `Sift.dc.html` — vérifié non manquant.
-- L437 — Autres couleurs non tokenisées — restant, pas classées bug.
-- L449 — `--text-hero` → `--text-2xl`.
-- L461 — Cartes Réglages `.sift-settings-list` — refonte 4→1 carte 07-08.
-- L491 — Zone de dépôt drag OS `.sift-dz-on` — token `--overlay-drop` 07-05.
-- L515 — Lien rebuy Beatport `.sift-rebuy-btn` — créé 07-05.
-- L531 — CTA « Revoir N morceaux → » Accueil — créé 07-05.
-- L540 — Page Rekordbox `renderRekordboxLive()` — écran dédié + sections Tier 1/Tier 2 master.db.
-- L623 — Écran Revue — zones repliables Diagnostic/Métadonnées, refonte 07-05.
-- L659 — `.sift-applytags-btn` — déplacé header Genres 07-09.
-- L680 — `.sift-zone-toggle` — accordéon exclusif + animation 07-09.
-- L695 — Spectrogramme — légende incrustée + réticule interactif 07-09.
-- L718 — `.lk` / `.lk-icon` — bug de réutilisation corrigé 07-07.
-- L734 — Pastille segmentée `.sift-seg`/`.sift-seg-opt` unifiée — 6 sites, thumb glissant 07-08.
-- L836 — Grammaire de carte — 2 rôles (Groupée/Flottante), jamais 3 — 07-08.
-- L872 — Tokens globaux — adaptation tweakcn "ZFlow" (ombres/tracking/radius/OKLCH) 07-08.
-- L900 — Écran Accueil — audit référence canonique 07-08.
-- L920 — Écran Revue — audit référence canonique 07-08/09.
-- L944 — Écran Écartés — audit référence canonique 07-09.
-- L962 — Écran Journal — audit référence canonique 07-09, conforme (rien corrigé).
-- L973 — Écran Bibliothèque — audit référence canonique 07-09.
-- L992 — Écrans Réglages+Rekordbox+Clé USB — audit référence canonique 07-09.
-- L1012 — Pattern d'erreur/échec (`.sift-*-error`/`-fail`/`-warn`, 9 sites) — déjà cohérent, documenté ici (gap = défaut de doc, pas de code, audit 2026-07-19).
-- L1060 — Écran Écartés — chargement + bouton "Réessayer" (07-24).
-- L1071 — Écran Bibliothèque — chargement, tri en vue Grille, "Réinitialiser les filtres" corrigé (07-24).
-- L1094 — Bibliothèque éditeur — suppression confirmée, borne Année, autocomplétion Genres (07-24).
-- L1102 — Page Rekordbox — état d'erreur visible sur les 4 sections M8, boutons "en cours", CTA en `.sift-ranger-btn` (07-24).
-- L1117 — Accueil — confirmation "Retirer", swatches `aria-pressed` (07-24).
-- L1124 — Journal — titres de section datés lisibles (07-24).
-- L1131 — Revue — bannières `role="status" aria-live="polite"`, légende "écarter" (07-24).
-- L1139 — Lot — lignes de sélection accessibles au clavier, bouton "Annuler" sur confirmation armée (07-24).
-- L1147 — `styles.css` — tokens `--color-text-warning`/`-success` clair recalibrés, hover réaffirmé (07-24).
-- L1160 — Historique des corrections (chronologique, par date de session).
-- L1343 — Conventions de cohérence (sémantique couleur, hiérarchie de poids, discipline classe partagée) — à consulter AVANT tout nouveau composant (07-24).
+- L112 — Ligne de queue `.qi` — RAS, 4 états déclarés.
+- L123 — Mot de verdict Détail `verdictWord()` — nouvel état "échec" (07-24).
+- L146 — Item de navigation `.nv` — RAS.
+- L157 — Bouton d'action principal `.sift-ranger-btn` — hover désormais déclaré explicitement (07-24), disabled/focus restent génériques.
+- L176 — Chip/tag `.chip` — hover corrigé 07-03.
+- L188 — Case à cocher `.cbx` — supprimée (code mort).
+- L195 — Segmented control `.sift-seg-opt` (ancien, voir aussi pastille unifiée L816) — RAS.
+- L205 — Ligne de journal `.lr.jrnl-row` — refonte 08-19 : table, colonnes, groupes, états, inspecteur zone D (`.jrnl-qrow` et toutes les classes de l'ancien Journal ont disparu).
+- L273 — Toggle switch `.tog` — perf `transform` corrigée 07-03.
+- L286 — Slots verdict `.sift-fil-verdict` / `.sift-verdict-stub` — renommés/scindés depuis `.sift-verdict-card` (le composant carte a été supprimé au redesign 07-06, `verdictCardHtml()` est un no-op), resynchronisé 07-24.
+- L320 — Ligne candidat `.sift-cand` — hover discret volontaire (bordure seule).
+- L334 — Bouton Destination `.sift-dest-btn` — hérite générique.
+- L339 — Sliders volume/tempo `.sift-slider-*` — hover/drag ajoutés 07-03.
+- L352 — Pochette/cover `.sift-cover-frame` — `alt` fixé 07-03, bug `[hidden]` réellement cassé fixé 07-05.
+- L377 — Boutons icon-only — vérifiés, titlebar corrigée 07-03.
+- L386 — Barre de progression `.pbar`/`.sift-pz-fill` — perf `transform` 07-03.
+- L395 — Popover Destination `.sift-dest-popover` — CSS minimal, placement en JS : flip + recadrage viewport 08-13.
+- L420 — Bouton Identifier `.sift-id-btn` — tokenisé+dark 07-03, exception 3ᵉ teinte levée 07-06.
+- L437 — Bordure latérale `.sift-filed-banner` — anti-pattern side-stripe retiré 07-03.
+- L446 — Ombres portées `.sift-toast`/`.sift-report-overlay-card` — tokenisées 07-03.
+- L453 — Échelles hauteur/radius — audit 07-03, `--h-36` retiré 07-09 (0 lecteur).
+- L501 — Token `disabled` de `Sift.dc.html` — vérifié non manquant.
+- L520 — Autres couleurs non tokenisées — restant, pas classées bug.
+- L532 — `--text-hero` → `--text-2xl`.
+- L544 — Cartes Réglages `.sift-settings-list` — refonte 4→1 carte 07-08.
+- L574 — Zone de dépôt drag OS `.sift-dz-on` — token `--overlay-drop` 07-05.
+- L598 — Lien rebuy Beatport `.sift-rebuy-btn` — créé 07-05.
+- L614 — CTA « Revoir N morceaux → » Accueil — créé 07-05.
+- L623 — Page Rekordbox `renderRekordboxLive()` — écran dédié + sections Tier 1/Tier 2 master.db.
+- L706 — Écran Revue — zones repliables Diagnostic/Métadonnées, refonte 07-05.
+- L742 — `.sift-applytags-btn` — déplacé header Genres 07-09.
+- L763 — `.sift-zone-toggle` — accordéon exclusif + animation 07-09.
+- L778 — Spectrogramme — légende incrustée + réticule interactif 07-09.
+- L801 — `.lk` / `.lk-icon` — bug de réutilisation corrigé 07-07.
+- L817 — Pastille segmentée `.sift-seg`/`.sift-seg-opt` unifiée — 6 sites, thumb glissant 07-08.
+- L924 — Grammaire de carte — 2 rôles (Groupée/Flottante), jamais 3 — 07-08.
+- L980 — Tokens globaux — adaptation tweakcn "ZFlow" (ombres/tracking/radius/OKLCH) 07-08.
+- L1008 — Écran Accueil — audit référence canonique 07-08.
+- L1028 — Écran Revue — audit référence canonique 07-08/09.
+- L1052 — Écran Écartés — audit référence canonique 07-09.
+- L1070 — Écran Journal — audit référence canonique 07-09, conforme (rien corrigé).
+- L1092 — Écran Bibliothèque — audit référence canonique 07-09.
+- L1111 — Écrans Réglages+Rekordbox+Clé USB — audit référence canonique 07-09.
+- L1131 — Pattern d'erreur/échec (`.sift-*-error`/`-fail`/`-warn`, 9 sites) — déjà cohérent, documenté ici (gap = défaut de doc, pas de code, audit 2026-07-19).
+- L1189 — Écran Écartés — chargement + bouton "Réessayer" (07-24).
+- L1200 — Écran Bibliothèque — chargement, tri en vue Grille, "Réinitialiser les filtres" corrigé (07-24).
+- L1223 — Table Bibliothèque, colonne Verdict — les 5 rendus de `verdictView()`, pastille + libellé, `verdictBadge` retiré (08-19).
+- L1290 — Bibliothèque éditeur — suppression confirmée, borne Année, autocomplétion Genres (07-24).
+- L1298 — Page Rekordbox — état d'erreur visible sur les 4 sections M8, boutons "en cours", CTA en `.sift-ranger-btn` (07-24).
+- L1313 — Accueil — confirmation "Retirer", swatches `aria-pressed` (07-24).
+- L1320 — Journal — titres de section datés lisibles (07-24).
+- L1335 — Revue — bannières `role="status" aria-live="polite"`, légende "écarter" (07-24).
+- L1343 — Lot — lignes de sélection accessibles au clavier, bouton "Annuler" sur confirmation armée (07-24).
+- L1351 — `styles.css` — tokens `--color-text-warning`/`-success` clair recalibrés, hover réaffirmé (07-24).
+- L1364 — Historique des corrections (chronologique, par date de session).
+- L1546 — Conventions de cohérence (sémantique couleur, hiérarchie de poids, discipline classe partagée) — à consulter AVANT tout nouveau composant (07-24).
 
 ## Ligne de queue — `.qi` (`styles.css:289-297`)
 
@@ -190,15 +202,73 @@ cocher, elle est à construire, pas à réutiliser.
 
 RAS.
 
-## Ligne de journal — `.jrnl-qrow` (`styles.css:561-571`)
+## Ligne de journal — `.lr.jrnl-row` (refonte 2026-08-19, `journal.ts` + `styles.css` § Journal d'actions)
 
-| État | Sélecteur | Valeur |
+⚠️ **`.jrnl-qrow` n'existe plus**, ni aucune autre classe de l'ancien Journal.
+L'écran est passé à sa spec le 2026-08-19 (`docs/ui-specs/journal.md`) : une
+table d'événements horodatés, groupée, avec un inspecteur en zone D. Le bloc
+« REFONTE DU 2026-08-19 » en tête de la section Journal de `frontend/styles.css`
+nomme chaque classe retirée et ce qui la remplace — résumé :
+
+| Classe retirée | Ce qui la remplace |
+|---|---|
+| `.jrnl-qrow` / `-bar` / `-dot` | `.lr.jrnl-row` — la ligne de table de l'app, réutilisée telle quelle |
+| `.jrnl-cat*` (catégories `<details>` FILÉS/JETÉS/REJETÉS) | `.jrnl-group*` — groupes de session, et de jour au-dessus en mode historique |
+| `.jrnl-revert` (bouton par ligne) | l'inspecteur (zone D) et le menu contextuel — une colonne de boutons sur un historique long coûte de la largeur en permanence pour un usage rare |
+| `.jrnl-mass` | le même bouton d'inspecteur, libellé « Annuler la sélection (N) » |
+| `.jrnl-toast` / `.jrnl-banner` | le toast partagé `.sift-toast` |
+| `.jrnl-voir-tout`, `.jrnl-mode`/`-btn`, `.jrnl-qmode` | le contrôle segmenté de la barre unifiée (`mountBarSegmented`, id `sift-jrnl-seg`) |
+| `.jrnl-hd` | le titre de la barre unifiée (`router.ts::syncNav`) |
+| `.jrnl-insp-card` | la zone D partagée `#sift-aside` (`toolbar.ts::openAside`) |
+| `.jrnl-session-*` | `.jrnl-group-*` (deux niveaux au lieu d'un) |
+
+**La ligne réutilise `.lr`** — hauteur (`--row-h`), survol, sélection neutre,
+filet, focus : une seule grammaire de ligne pour Bibliothèque et Journal. Ne vit
+dans la section Journal que ce qui lui est propre : colonnes, groupes, états.
+
+| État | Sélecteur | Rendu |
 |---|---|---|
-| Normal | `.jrnl-qrow` | — |
-| Hover | `.jrnl-qrow:hover` | `background: var(--color-row-active)` |
-| Sélectionnée | `.jrnl-qrow.on` | `background: var(--color-row-active)` + liseré gauche `.jrnl-qrow-bar{opacity:1}` (0 au repos) |
+| Normal | `.lr.jrnl-row` | heure en `--font-mono` tabulaire `--color-text-secondary`, piste en `--color-text-primary`, destination et état en `--color-text-tertiary` ; cellule État = « Appliqué » |
+| Hover / focus | hérité de `.lr:hover` / `.lr:focus-within` | `background: var(--color-row-active)` |
+| Sélectionnée | `.lr.jrnl-row.sel` | `background: var(--color-background-secondary)` — neutre, jamais un accent coloré ; `aria-selected` suit |
+| Annulation en cours | `.jrnl-row--pending` | `.jrnl-c-state` en `--color-text-info` — **le seul état coloré, parce que le seul transitoire** ; la ligne et la table restent utilisables |
+| Annulée (permanent) | `.jrnl-row--reverted` | piste et état en `--color-text-tertiary` — l'encre baisse d'un cran, elle ne s'éteint pas (aucune opacité) |
+| Flash d'annulation | `.jrnl-row--flash` | `@keyframes jrnl-revert-flash` : `--color-background-success` → transparent en `--duration-base`, classe retirée à `animationend` (`journal.ts:659-660`) — **seule la transition se colore** |
+| Échec | `.jrnl-row--failed` | piste, destination et état en `--color-text-danger` — un échec ne s'estompe jamais ; son motif se lit dans `.jrnl-insp-fail` |
+| Chargement | `.jrnl-row--skel` + `.jrnl-skel` | squelette DANS la structure finale (mêmes colonnes, même hauteur de ligne), sans animation |
 
-RAS — même famille visuelle que `.qi`, cohérent.
+**Colonnes** — `.jrnl-c` + `.jrnl-c-time|-act|-track|-dest|-state`. Les trois
+largeurs fixes sont déclarées une seule fois sur `.jrnl-wrap`
+(`--jrnl-col-time:44px`, `--jrnl-col-act:68px`, `--jrnl-col-state:76px`, dérivées
+du plus long contenu MESURÉ dans la vraie fenêtre le 2026-08-19) : hors de ce
+wrapper, ces trois `width:var(…)` ne résolvent rien et la table se disloque.
+`.jrnl-batch` porte la marque `×N` d'un lot. La destination tronque par la
+GAUCHE (`direction:rtl` + `text-align:left`) et son chemin est enveloppé d'un
+`<bdi>` **obligatoire** : sans isolation, l'algorithme bidi renvoie en fin de
+ligne un segment initial neutre — « (2002) The Universal Sky » se peignait
+« The Universal Sky … (2002) ». L'en-tête `.jrnl-thead` est collant, de même
+matériau que `.sift-lib-thead` mais de classe distincte (le clic droit sur
+`.sift-lib-thead` ouvre les réglages de colonnes, que le Journal n'a pas).
+
+**Groupes** — `.jrnl-group--l1` (session) et `--l2` (session sous un jour, mode
+historique, un seul cran d'indentation). L'en-tête `.jrnl-group-hd` est un vrai
+`<button>` avec `aria-expanded`, portant `.jrnl-group-chev` (pivote en
+`transform` seul), `.jrnl-group-label` et `.jrnl-group-count`. Replié, le corps
+`.jrnl-group-body` est VIDÉ, pas caché.
+
+**Zone D (inspecteur)** — `.jrnl-insp-title`, `.jrnl-insp-path`/`-pathval`,
+`.jrnl-insp-fail`, `.jrnl-insp-note`, `.jrnl-insp-actions`, posés dans
+`#sift-aside` et réutilisant `.col-h` / `.sift-sel-count` / `.sift-sel-rows` de
+Bibliothèque. Trois contenus : résumé sans sélection, détail pour une entrée,
+agrégat pour plusieurs. C'est lui qui porte « Annuler », plus la ligne.
+
+**Autres états d'écran** — `.jrnl-noresult` (filtre sans résultat : reste SOUS
+l'en-tête de colonnes, qui ne se retire jamais, sinon on emporte les commandes
+qui permettent de défaire le filtre), `.jrnl-error` + `.jrnl-error-actions`
+(lecture échouée : l'écran n'affirme RIEN du contenu, et propose « Réessayer »),
+et l'état vide partagé `emptyStateHtml()` en deux textes selon le mode.
+
+Stories : `frontend/journal-table.stories.ts` (« Journal — ligne de table »).
 
 ## Toggle switch — `.tog` (`styles.css:203`)
 
@@ -257,7 +327,8 @@ panneau Diagnostic (`qualityChipTone()`, `report-view.ts:549-553`, couleurs
 
 Pas un bug — juste noté : le hover ici est délibérément discret (bordure seule,
 pas de fond), cohérent avec une liste de résultats de recherche. Différent
-pattern des lignes `.qi`/`.jrnl-qrow` (fond au survol), à garder en tête pour ne
+pattern des lignes `.qi`/`.lr` (fond au survol ; `.jrnl-qrow`, cité ici jusqu'au
+2026-08-19, a été remplacé par `.lr.jrnl-row`), à garder en tête pour ne
 pas "corriger" par erreur vers l'uniformité lors d'un futur portage.
 
 ## Bouton Destination — `.sift-dest-btn` (`styles.css:564`, `filing.ts:185` et `:199`)
@@ -398,6 +469,17 @@ son seul consommateur — la refonte Revue "surface continue" du 2026-07-06
 que ce paragraphe soit mis à jour en conséquence. Confirmé par grep (`var(--h-36)`
 : zéro match) puis supprimé de `styles.css`. `--h-40` reste câblé sur
 `.jrnl-insp-revert`, seul survivant de l'échelle hauteur.
+
+⚠️ **Périmé depuis le 2026-08-19** : `.jrnl-insp-revert` est parti avec la refonte
+du Journal (le bouton « Annuler » a quitté la ligne pour l'inspecteur). `--h-40`
+est donc déclaré sans lecteur — vérifié, `var(--h-40)` a zéro occurrence dans
+`frontend/` — et l'échelle hauteur n'a plus aucun consommateur. Le constat est
+déjà porté par `styles.css` (commentaire du bloc des tokens de hauteur) et par
+`docs/design-system/tokens.md` ; il n'est pas retouché ici, seulement rattaché à
+sa cause. Même remarque pour les classes citées dans la partie **Radius**
+ci-dessous (`.jrnl-cat-badge`, `.jrnl-qrow-dot`, `.jrnl-insp-dot`, `.jrnl-qmode`,
+`.jrnl-qrow`, `.jrnl-cat`) : elles n'existent plus, seul le câblage
+`var(--border-radius-pill)`/`-sm` des autres sites reste vrai.
 
 **Radius** (`--border-radius-*`, `styles.css:29`) — `system.md` déclare 4
 valeurs (sharp 4 / default 6 / soft 10 / pill 999) mais seuls `md`(6)/`lg`(10)
@@ -752,7 +834,12 @@ Sites : Apparence (Réglages), Format USB (`usb-format-modal.ts`), Détail/Lot
 (`#sift-revseg`, `sift-live.ts` `ensureReviewSeg()`), Dossiers/Genres
 (Bibliothèque, `sift-live.ts`), Session/Historique (Journal, `journal.ts`
 `headerHtml()` — 6ᵉ site trouvé dans une 2ᵉ passe, `.jrnl-mode`/
-`.jrnl-mode-btn`). `#sift-revseg` garde une règle CSS propre
+`.jrnl-mode-btn`) — ⚠️ **périmé pour le Journal depuis le 2026-08-19** :
+`headerHtml()`, `.jrnl-mode` et `.jrnl-mode-btn` n'existent plus, le contrôle
+Session / Tout l'historique est monté dans la barre unifiée par
+`mountBarSegmented()` (`toolbar.ts:139`, id `sift-jrnl-seg`). Même composant —
+`.sift-seg.sift-seg-thumbed` > `.sift-seg-thumb` + `.sift-seg-opt` en vrais
+`<button>` — seul le point de montage a changé. `#sift-revseg` garde une règle CSS propre
 (`align-self:center;margin-bottom:10px`, positionnement dans `#qcol`) en plus
 de `.sift-seg` — seul le positionnement reste spécifique au site, jamais le
 style de piste/pastille. `white-space:nowrap` ajouté à `.sift-seg-opt` pour
@@ -855,6 +942,13 @@ bordure, ni rayon. Ce sont des surfaces de **contenu**, et la règle retenue est
 surface est désormais la marque de la **charpente**. Restent Groupées : le rail d'action
 (`.sift-action-rail`), la colonne queue (`#qcol`), la colonne queue d'Accueil (`#homequeue`),
 Réglages, Bibliothèque, Journal.
+
+⚠️ **Second décalage, du 2026-08-19** : le `.jrnl-insp-card` cité dans la colonne « Sites »
+n'existe plus. L'inspecteur du Journal a rejoint la zone D partagée `#sift-aside`, qui n'est pas
+une carte — ni fond, ni bordure complète, ni rayon, seulement un filet gauche
+(`border-left:0.5px solid var(--color-border-tertiary)`). Le rôle **Groupée** du Journal se lit
+donc désormais sur la charpente de la fenêtre, pas sur une carte à lui. La ligne du tableau reste
+telle quelle, elle documente l'état d'avant, daté.
 
 Les deux **rôles** ne changent pas — retirer une surface n'en crée pas un troisième, et la
 grammaire à 2 rôles du 2026-07-08 tient. C'est la liste des sites qui a bougé, et cette ligne
@@ -982,6 +1076,17 @@ accessible par défaut), vrais `<button>` partout (revert par ligne,
 mass-revert, mode Session/Historique — déjà `.sift-seg` unifié le
 2026-07-08), toasts déjà `aria-live="polite"`/`"assertive"`.
 
+⚠️ **Cet audit décrit un écran qui n'existe plus** (refonte du 2026-08-19, voir
+« Ligne de journal — `.lr.jrnl-row` » plus haut) : plus de `<details>/<summary>`,
+plus de bouton d'annulation par ligne ni de mass-revert en pied de liste, plus de
+toast propre au Journal. Les acquis d'accessibilité sont tenus autrement, et
+c'est vérifiable dans `journal.ts` : en-tête de groupe = vrai `<button>` avec
+`aria-expanded` (donc Entrée/Espace natifs), lignes en `role="option"` +
+`aria-selected` + nom composite (`aria-label` : heure, action, piste,
+destination, état), clavier ↑ ↓ ⇧ Début Fin ⌘A parcourant l'ordre VISIBLE (un
+groupe replié ne fournit aucun voisin), menu contextuel dont les entrées
+inapplicables sont DÉSACTIVÉES et non retirées.
+
 ---
 
 ## Écran Bibliothèque — audit référence canonique (2026-07-09)
@@ -1047,8 +1152,18 @@ pending/erreur), red (danger), blue (info)"*.
 | Échec d'analyse (`report-view.ts:1199`) | `.sift-analysis-fail` | `color:var(--color-text-warning)` | warning |
 | Formatage USB (`usb-format-modal.ts:76`) | `.sift-usbfmt-error` / `.sift-usbfmt-warning`/`-exfat-warning` | `error` = `color:var(--color-text-danger)` (irréversible) ; `warning` = ambre | danger (error) / warning |
 | File d'attente (`.sift-pz-row.error`, `progress-zone.ts`) | `.sift-pz-fill` sur ligne `.error` | `background:var(--color-text-danger)` | danger |
-| Toasts/bannières Journal (`journal.ts`) | `.jrnl-toast--warn`/`.jrnl-banner--warn` | `color-mix` sur `--color-text-warning` | warning |
+| ~~Toasts/bannières Journal~~ → Journal (`journal.ts`, refonte 2026-08-19) | `.jrnl-error` (lecture échouée) · `.jrnl-insp-fail` (motif d'une annulation échouée) · `.jrnl-row--failed` (la ligne) — `.jrnl-toast--warn`/`.jrnl-banner--warn` n'existent plus, les confirmations passent par le toast partagé `.sift-toast` | `color:var(--color-text-danger)` | danger |
 | Overlay modal (`styles.css:1052`) | `.sift-report-overlay-error` | `color:var(--color-text-danger)` | danger |
+
+⚠️ **Le Journal a changé de sévérité le 2026-08-19**, et c'est délibéré : ses
+échecs sont peints en `danger` là où l'ancien écran les peignait en `warning`.
+La raison est écrite dans `styles.css` (« un échec ne s'estompe jamais ») et
+tranche pour la LISIBILITÉ de l'échec plutôt que pour la lecture stricte du
+couple warning/danger de cette section, où `danger` désigne l'irréversible. Une
+annulation qui échoue n'est pas destructive — elle est simplement l'information
+que l'écran n'a pas le droit d'atténuer. À trancher pour de bon si un troisième
+site adopte la même lecture ; noté ici pour que l'écart ne passe pas pour une
+étourderie.
 
 **Convention structurelle constante** (visible sur les 6 sites qui affichent
 un message, pas juste une couleur de pastille) : `<div class="sift-{site}-{error|fail|warn}">`
@@ -1105,6 +1220,73 @@ résultat pour ce filtre" (`data-bib="stat" data-stat="all"`,
 recherche et facette comprises — avant ce fix il ne couvrait que
 `quality`/`verdict`.
 
+## Table Bibliothèque — colonne Verdict (2026-08-19) — `library-views.ts`
+
+Colonne 1 de la table (`DESIGN.md` § 16) : **pastille pleine + libellé**, une
+seule forme partout. Le libellé n'est pas décoratif — c'est lui qui rattrape la
+couleur pour un lecteur daltonien, donc il ne s'atténue jamais et ne descend
+jamais sous `--text-xs`.
+
+⚠️ **`verdictBadge` n'existe plus** : l'ancienne puce de FIN de ligne (« fake » /
+« ? », en minuscules, et sans libellé du tout pour `grey`) est partie dans le
+même geste — deux marques pour un même état dans la même ligne. Les espaceurs
+d'en-tête ne bougent pas pour autant : `.sift-lib-thead-tail` mesure la pastille
+de qualité et l'icône Discogs, jamais cette puce, qui n'était peinte que sur
+deux verdicts sur quatre.
+
+Les cinq rendus de `verdictView()` (`library-views.ts:49`) :
+
+| `tracks.verdict` | Condition supplémentaire | Libellé | Classe | Encre | Rang de tri |
+|---|---|---|---|---|---|
+| `"ok"` | `format` ∈ aiff/wav/flac/alac | `LOSSLESS` | `.sift-lib-v-ok` | `--color-text-success` | 4 |
+| `"ok"` | tout autre format | `AUTHENTIQUE` | `.sift-lib-v-ok` | `--color-text-success` | 3 |
+| `"fake"` | — | `FAKE` | `.sift-lib-v-fake` | `--color-text-danger` | 0 |
+| `"grey"` | — | `À VÉRIFIER` | `.sift-lib-v-check` | `--color-text-warning` | 1 |
+| `NULL` | non analysé | `—` (tiret cadratin) | `.sift-lib-v-none` | `--color-text-tertiary` | 2 |
+
+Il n'y a **pas de sixième rendu**. `DUPLICATE`, que le § 16 nomme, n'est
+atteignable par aucune valeur de ce champ — un doublon sort du scan de
+dédoublonnage (`scan_library_duplicates`), pas de `tracks.verdict`, et se rend
+dans le mode Lot et dans la Revue. Les trois seuls littéraux que le backend
+écrive sont `ok`/`fake`/`grey` (`worker.rs::verdict_str`). `LOSSLESS` demande
+les DEUX faits (verdict sain **et** rail lossless), comme `qualityChipTone` en
+Revue : `format` est le format que Sift a réellement écrit en rangeant, donc il
+EST le rail du fichier sur le disque, et écrire `LOSSLESS` sur un MP3
+authentique serait faux.
+
+Structure et géométrie :
+
+- Cellule `<span class="sift-lib-col sift-lib-col-verdict {teinte}" data-col="verdict">`
+  contenant `<span class="sift-lib-verdict-dot" aria-hidden="true">` puis le
+  libellé. La pastille est un `<span>` vide, jamais un caractère « ● » : un rond
+  typographique change de taille et de calage avec la police, et serait lu à voix
+  haute par-dessus le libellé qui dit déjà l'état.
+- La pastille prend `currentColor` — **une seule classe de teinte** peint le
+  point ET le libellé, il devient impossible de les désaccorder.
+- La teinte est posée sur la CELLULE, donc elle gagne sur le fond que `.lr.cur`
+  met sur la ligne : un verdict ne change pas quand on ouvre sa piste.
+- Largeur **fixe** 92px (`AUTHENTIQUE`, le plus long libellé atteignable, mesuré
+  à 81,67px dans la vraie fenêtre + 6 de pastille + 4 de gap, arrondi au cran de
+  4). Une colonne de verdict qui respire ferait bouger tout ce qui la suit à
+  chaque filtre. La géométrie (largeur, gap) est partagée avec l'en-tête — c'est
+  elle qui tient l'alignement des deux lignes — mais pas la typographie :
+  l'en-tête garde `--text-xs` en capitales espacées.
+- Tri **catégoriel** par `rank`, jamais sur la chaîne du champ : ascendant = ce
+  qui demande une décision d'abord. Trier sur `tracks.verdict` marcherait par
+  accident aujourd'hui (fake < grey < ok en alphabétique) et se retournerait au
+  premier littéral renommé côté Rust, sans rien casser de visible.
+- La colonne entre dans le SYSTÈME de colonnes (`library-columns.ts`) : triable,
+  redimensionnable, déplaçable, réinitialisable comme les six autres. Elle se
+  peint donc APRÈS le bouton lecture et la pochette, qui sont des affordances de
+  ligne et non des colonnes — première colonne de DONNÉE, pas premier pixel.
+- Le libellé ouvre le nom composite de la ligne (`aria-label`), à la place qu'il
+  occupe à l'écran.
+
+Stories : `frontend/library-verdict.stories.ts` (« Bibliothèque — colonne
+Verdict »), qui rend les cinq cas par la vraie `libraryTableRowHtml()` — elles
+exécutent `verdictView()` au lieu de la recopier, donc elles ne peuvent pas en
+diverger.
+
 ## Bibliothèque éditeur — confirmation suppression + bornes Année + autocomplétion Genres (2026-07-24) — `library-detail.ts`
 
 | Élément | État | Détail |
@@ -1141,6 +1323,14 @@ principaux plutôt que texte seul.
 |---|---|---|
 | Titre de section d'historique (vue étendue) | ID de session brut | `formatSessionLabel()` (`journal.ts:367-378`) dérive `"Session du {jj}/{mm} {hh}h{min}"` depuis le timestamp encodé dans l'ID (`{millis}-{pid}`) ; fallback sur l'ID brut si le format est inattendu ou la date invalide |
 | Badge de catégorie (Session) | — | `"{N} actions"` (`journal.ts:115`), déjà présent au format compteur, RAS |
+
+⚠️ **Renommé et dédoublé le 2026-08-19** : `formatSessionLabel()` s'appelle
+`sessionLabel()` (`journal.ts:166`) et rend deux formes selon le niveau de
+groupe — « Session du jj/mm/aaaa hhhmm » au niveau 1 (mode session, où la date
+situe), « Session de hhhmm » au niveau 2 (sous un en-tête de jour, en mode
+historique, où la répéter serait du bruit). Le repli sur l'ID brut est conservé,
+et la dérivation depuis la partie `{millis}` de `{millis}-{pid}` aussi. Le
+compteur « N actions » est passé sur `.jrnl-group-count`.
 
 ## Revue — bannières accessibles (2026-07-24)
 
