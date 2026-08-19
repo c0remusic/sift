@@ -451,3 +451,54 @@ avec une ligne que le watcher aurait insérée entre-temps.
 Règle générale à retenir de ce cas : **sur ce repo, toute écriture de
 `tracks.path` doit être pensée avec le watcher et le revert dans la même phrase.**
 Les trois se partagent la colonne, et aucun test ne les couvrait ensemble.
+
+---
+
+### 2026-08-19 — Une regex large sur de la PROSE casse deux fois dans la même session
+
+**Symptôme.** Deux passes automatiques, deux dégâts, même mécanique.
+La première migrait les durées de `transition:` sur les tokens : le motif
+`(transition:)([^;}]*)` a mordu la phrase « The 33 `transition:` and the 5
+remaining… » **dans un commentaire**, couru jusqu'au prochain `;` — donc dans la
+déclaration de tokens deux lignes plus bas — et produit
+`--duration-fast:var(--duration-fast)`, une auto-référence. La seconde
+ré-accentuait le français de `styles.css` : 334 lignes réécrites, un commentaire
+**anglais** accentué (`control éléments`), et le verbe « a » transformé en « à ».
+
+**Diagnostic.** Ce n'est pas un bug de script mais une erreur de portée. Un
+fichier de code contient de la prose (commentaires) et de la syntaxe, et une
+regex ne distingue pas les deux. Le mot-clé cherché apparaît des DEUX côtés :
+c'est justement parce qu'un commentaire parle de `transition:` qu'il en contient
+le texte.
+
+**How to apply** : sur ce dépôt, une substitution de masse ne se lance PAS sur un
+fichier mixte sans borner la portée aux blocs de commentaire (`/* … */`) ou aux
+blocs de code, explicitement. Et le résultat se relit par `git diff` avant
+commit — les deux fois, c'est la lecture du diff qui a attrapé le dégât, jamais
+une gate : `tsc`, `eslint`, `vitest` et le build sont tous restés **verts** sur
+un `--duration-fast:var(--duration-fast)`. Une valeur CSS auto-référente n'est
+une erreur pour aucun de ces outils.
+
+Corollaire vécu : le second dégât a été réparé en **révertant** puis en refaisant
+à la main les 19 lignes qui comptaient. Réparer une passe large par une seconde
+passe large est ce qu'il ne faut pas faire.
+
+### 2026-08-19 — `<th>` hors `<table>` est supprimé par le parseur, avec ses attributs
+
+**Symptôme.** L'en-tête de la table Bibliothèque est un `<div class="sift-lib-thead">`
+qui rendait des `<th aria-sort="…">`. Mesuré dans la vraie fenêtre :
+`document.querySelectorAll(".sift-lib-thead th")` rend **0**, et les enfants réels
+sont les `<button>` qui étaient DANS les `<th>`.
+
+**Diagnostic.** Hors contexte de table, le parseur HTML jette la balise et
+remonte son contenu. La classe de largeur et l'`aria-sort` partaient donc avec
+elle : les colonnes d'en-tête ne pouvaient pas s'aligner sur celles des lignes, et
+la direction de tri n'était annoncée à aucun lecteur d'écran. Le défaut était
+antérieur de plusieurs mois et **invisible tant que l'en-tête n'avait aucune
+largeur à porter** — il n'est apparu qu'en ajoutant des colonnes numériques.
+
+**How to apply** : dans un layout flex qui imite une table, employer
+`role="row"` / `role="columnheader"` sur des `<span>`, jamais `<th>`/`<tr>`. Et le
+symptôme se cherche par un `querySelectorAll` dans la vraie fenêtre, pas dans le
+source : le source contient bien la balise, c'est le DOM qui ne l'a plus.
+
