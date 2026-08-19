@@ -668,6 +668,13 @@ body:has(#sift-titlebar){border-radius:var(--border-radius-sm);overflow:hidden}
    meme etat actif, meme survol : la section n'est pas un composant a part. Seule la pastille de
    couleur s'ajoute, et c'est un accent CATEGORIEL, pas un etat. */
 .sift-rail-src-dot{width:8px;height:8px;border-radius:50%;flex:none;background:var(--color-text-tertiary)}
+/* Teinte par `color_key` (rail-sources.ts). Même spécificité (0,1,0) que la règle de base :
+   seul l'ordre des règles les fait gagner — elles restent APRÈS elle. */
+.sift-rail-src-dot-indigo{background:var(--color-hue-indigo-text)}
+.sift-rail-src-dot-purple{background:var(--color-hue-purple-text)}
+.sift-rail-src-dot-pink{background:var(--color-hue-pink-text)}
+.sift-rail-src-dot-teal{background:var(--color-hue-teal-text)}
+.sift-rail-src-dot-yellow{background:var(--color-hue-yellow-text)}
 .sift-rail-src--error{color:var(--color-text-danger)}
 .sift-rail-src-msg{padding:var(--space-4) var(--space-8);font-size:var(--text-sm);color:var(--color-text-tertiary)}
 /* Le bouton d'ajout prend la grammaire d'une entree de rail plutot que celle d'un bouton : il vit
@@ -1492,19 +1499,6 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .sift-genre-chip-discofunksoul{background:var(--color-hue-pink-bg);color:var(--color-hue-pink-text)}
 .sift-genre-chip-hiphop{background:var(--color-hue-purple-bg);color:var(--color-hue-purple-text)}
 .sift-genre-chip-autre{background:var(--color-background-secondary);color:var(--color-text-tertiary)}
-.sift-src-dot{width:7px;height:7px;border-radius:999px;flex:none}
-.sift-src-dot-indigo{background:var(--color-hue-indigo-text)}
-.sift-src-dot-purple{background:var(--color-hue-purple-text)}
-.sift-src-dot-pink{background:var(--color-hue-pink-text)}
-.sift-src-dot-teal{background:var(--color-hue-teal-text)}
-.sift-src-dot-yellow{background:var(--color-hue-yellow-text)}
-.sift-src-swatch{width:20px;height:20px;border-radius:999px;border:2px solid transparent;padding:0;cursor:pointer}
-.sift-src-swatch.on{border-color:var(--color-text-primary)}
-.sift-src-swatch-indigo{background:var(--color-hue-indigo-text)}
-.sift-src-swatch-purple{background:var(--color-hue-purple-text)}
-.sift-src-swatch-pink{background:var(--color-hue-pink-text)}
-.sift-src-swatch-teal{background:var(--color-hue-teal-text)}
-.sift-src-swatch-yellow{background:var(--color-hue-yellow-text)}
 /* "Tags not written to the file" banner, shown just below Apply. Look only — visibility is driven
    solely by inline display (none ↔ flex) in refreshDiscrepancy, never the `hidden` attribute. Amber
    (warning) tokens — the SAME "attention / to handle" language as the duplicate marker. */

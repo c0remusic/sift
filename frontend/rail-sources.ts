@@ -61,7 +61,7 @@ function baseName(p: string): string {
  *  couleur est un accent CATÉGORIEL — elle identifie la source ailleurs dans l'app, elle ne porte
  *  aucun état (DESIGN.md § 4). */
 function sourceEntryHtml(s: Source, active: boolean): string {
-  const hue = s.color_key ? ` sift-src-swatch-${esc(s.color_key)}` : "";
+  const hue = s.color_key ? ` sift-rail-src-dot-${esc(s.color_key)}` : "";
   const count = s.pending_count > 0 ? `<span class="nav-badge">${s.pending_count}</span>` : "";
   const failure = scanFailures.get(s.id);
   const broken = !s.accessible || failure != null;
