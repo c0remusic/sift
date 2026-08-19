@@ -471,7 +471,7 @@ export async function renderBiblioLive() {
         items: sortedTracks,
         rowHtml: (t) => libraryTableRowHtml(t, bibOpenId),
         probeHtml: LIBRARY_TABLE_PROBE_HTML,
-        fallbackRowH: 34,
+        fallbackRowH: 32, // --row-h : repli seulement, la sonde mesure la vraie ligne
       });
     } else {
       const gridRows: LibraryTrack[][] = [];

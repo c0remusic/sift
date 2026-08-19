@@ -269,8 +269,14 @@ color-scheme:light;
    un editeur. 320px est le HAUT de la bande 280-320px des apps systeme, choisi parce que le
    panneau porte un editeur et pas seulement de la lecture. Les regles etroites scopees
    #sift-aside plus bas font le reste — elles ne sont pas un rattrapage de la largeur, elles
-   disent qu'une colonne n'est pas une page. */
---toolbar-h:44px;--rail-w:200px;--rail-w-collapsed:56px;--pane-w:272px;--aside-w:320px;
+   disent qu'une colonne n'est pas une page.
+
+   --row-h : UNE hauteur de ligne pour toute l'app (DESIGN.md § 16). Il y en avait quatre —
+   34px en Bibliotheque, 150 en grille, 58 et 42 en Ecartes. Derivee : vignette de pochette 24px,
+   le plus petit format ou une pochette reste reconnaissable, plus --space-4 au-dessus et
+   au-dessous. C'est au-DESSUS de la bande 24-28px d'une liste Finder, et la raison est nommee :
+   la ligne de Sift porte une pochette, celle de Finder n'en porte pas. */
+--toolbar-h:44px;--rail-w:200px;--rail-w-collapsed:56px;--pane-w:272px;--aside-w:320px;--row-h:32px;
 /* Motion (P6, 2026-07-27). Only the two durations that actually have a consumer are declared —
    same audit rule as the height scale above (--h-32/--h-44 were dropped for having none). They
    match values already recurring in the transitions further down (.1s / .15s), so this is token
@@ -627,7 +633,7 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
 .sift-pz-cancel:hover{color:var(--color-text-danger);background:var(--color-background-danger)}
 .sift-pz-cancel i{font-size:var(--text-xs)}
 .sift-pz-track{height:3px;border-radius:3px;background:var(--color-border-tertiary);overflow:hidden}
-.sift-pz-fill{height:100%;width:100%;border-radius:3px;background:var(--color-text-info);transform-origin:left;transition:transform .3s}
+.sift-pz-fill{height:100%;width:100%;border-radius:3px;background:var(--color-text-info);transform-origin:left;transition:transform var(--duration-slow)}
 .sift-pz-row.error .sift-pz-fill{background:var(--color-text-danger)}
 .queue{flex:none;display:flex;flex-direction:column;padding:var(--space-12) var(--space-8);overflow:hidden;background:var(--color-background-queue)}
 /* padding-right added (annotation: "la barre de scrolling... est trop pres de .qi.cur") —
@@ -837,8 +843,8 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
 .srow{display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:0.5px solid var(--color-border-tertiary);font-size:12px}.srow .v{color:var(--color-text-secondary);display:flex;align-items:center;gap:var(--space-8)}
 .h1{font-size:16px;font-weight:500;margin-bottom:12px}
 .chip{font-size:11px;padding:var(--space-4) var(--space-8);border-radius:var(--border-radius-md);border:0.5px solid var(--color-border-tertiary);color:var(--color-text-secondary);cursor:pointer}.chip:hover{background:var(--color-background-secondary)}.chip.on{background:var(--color-background-info);color:var(--color-text-info);border-color:var(--color-border-info)}.chip.on:hover{background:var(--color-background-info)}
-.tog{width:30px;height:17px;border-radius:9px;background:var(--color-text-info);position:relative;flex:none;cursor:pointer;transition:background .12s}.tog::after{content:"";position:absolute;left:2px;top:2px;width:13px;height:13px;border-radius:50%;background:var(--color-text-on-accent);transform:translateX(13px);transition:transform .12s}.tog.off{background:var(--color-border-secondary)}.tog.off::after{transform:translateX(0)}
-.lr{display:flex;align-items:center;gap:var(--space-8);padding:var(--space-4) var(--space-8);border-bottom:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);font-size:12px;cursor:pointer;transition:background .16s ease,color .16s ease,transform .12s ease}
+.tog{width:30px;height:17px;border-radius:9px;background:var(--color-text-info);position:relative;flex:none;cursor:pointer;transition:background var(--duration-fast)}.tog::after{content:"";position:absolute;left:2px;top:2px;width:13px;height:13px;border-radius:50%;background:var(--color-text-on-accent);transform:translateX(13px);transition:transform var(--duration-fast)}.tog.off{background:var(--color-border-secondary)}.tog.off::after{transform:translateX(0)}
+.lr{display:flex;align-items:center;gap:var(--space-8);padding:var(--space-4) var(--space-8);border-bottom:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);font-size:12px;cursor:pointer;transition:background var(--duration-base) ease,color var(--duration-base) ease,transform var(--duration-fast) ease}
 .lr:hover{background:var(--color-row-active)}
 /* Explicit rather than relying on source order (both selectors have equal specificity) — same
    hardening as .sift-seg-opt.on:hover. */
@@ -848,7 +854,7 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
 .lr.cur{background:var(--color-background-info);color:var(--color-text-primary)}
 .lr.cur .bib-name{font-weight:500}
 .lr.cur .lk-icon,.lr.cur .pb{background:var(--color-surface-raised)}
-.lr .pb{width:23px;height:23px;border-radius:50%;flex:none;padding:0;display:inline-flex;align-items:center;justify-content:center;opacity:.72;transition:background .16s ease,color .16s ease,opacity .16s ease}
+.lr .pb{width:22px;height:22px;border-radius:50%;flex:none;padding:0;display:inline-flex;align-items:center;justify-content:center;opacity:.72;transition:background var(--duration-base) ease,color var(--duration-base) ease,opacity var(--duration-base) ease}
 .lr:hover .pb,.lr:focus-within .pb{background:var(--color-surface-raised)}
 .lr:hover .pb,.lr:hover .lk-icon,.lr:focus-within .pb,.lr:focus-within .lk-icon,.lr.cur .pb,.lr.cur .lk-icon{opacity:1}
 /* Icon-only 22x22 buttons (Discogs link, Identifier, Écartés requeue/trash) — NOT for text
@@ -856,19 +862,49 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
    forced long labels ("Réexporter maintenant", "Lier un fichier XML Rekordbox"...) to wrap inside
    a fixed 22px box and visually overflow/overlap neighboring text. Text buttons now fall through
    to the plain `button{}` reset (bordered, auto-sized, already correct everywhere else). */
-.lk-icon{width:22px;height:22px;border-radius:var(--border-radius-md);flex:none;padding:0;display:inline-flex;align-items:center;justify-content:center;opacity:.6;transition:background .16s ease,opacity .16s ease}
+.lk-icon{width:22px;height:22px;border-radius:var(--border-radius-md);flex:none;padding:0;display:inline-flex;align-items:center;justify-content:center;opacity:.6;transition:background var(--duration-base) ease,opacity var(--duration-base) ease}
 /* Bibliothèque — vue tableau (2026-07-09) : en-tête triable + colonnes, réutilise .lr pour les
    lignes elles-mêmes (cov/play/pill/link inchangés, juste plus de colonnes qu'avant). */
 .sift-lib-thead{display:flex;align-items:center;gap:var(--space-8);padding:var(--space-4) var(--space-8);font-size:var(--text-xs);text-transform:uppercase;letter-spacing:.06em;color:var(--color-text-tertiary);border-bottom:0.5px solid var(--color-border-tertiary)}
-.sift-lib-thead-cov{width:44px;flex:none}
+/* COLONNES DE LA TABLE (DESIGN.md § 16). Les largeurs vivent ici et non en style inline sur
+   chaque cellule : l'en-tete et la ligne doivent s'aligner, et deux listes de flex inline ecrites
+   a deux endroits divergent au premier ajout de colonne — ce qui est arrive, l'en-tete ayant
+   quatre colonnes quand la ligne en rendait quatre plus trois affordances sans en-tete.
+   BPM, Duree et Annee sont NUMERIQUES : mono, chiffres tabulaires, alignes a droite, largeur fixe.
+   Le tabulaire est ce qui empeche la colonne de sauter quand un 9 remplace un 1. */
+.sift-lib-col-artist{flex:1.4;min-width:0}
+.sift-lib-col-title{flex:1.4;min-width:0}
+.sift-lib-col-genre{flex:1;min-width:0}
+.sift-lib-col-num,.sift-lib-col-year{flex:none;width:52px;text-align:right;font-family:var(--font-mono);font-variant-numeric:tabular-nums;color:var(--color-text-secondary)}
+.sift-lib-thead .sift-lib-col-num,.sift-lib-thead .sift-lib-col-year{width:52px;flex:none;text-align:right}
+.sift-lib-thead .sift-lib-col-num button,.sift-lib-thead .sift-lib-col-year button{text-align:right;width:100%}
+/* Hauteur de ligne unique. `min-height` et non `height` : une ligne dont le contenu deborderait
+   grandirait plutot que de rogner, et un rognage silencieux sur une bibliotheque de 100k lignes
+   est exactement le genre de perte qu'on ne voit jamais. */
+.lr{min-height:var(--row-h)}
+/* Les affordances de la ligne se serrent a la hauteur de ligne : sans cela le bouton lecture, la
+   pastille de qualite (22) et l'icone Discogs (22) fixaient la hauteur a leur place, et --row-h
+   n'aurait ete qu'un plancher jamais atteint. Le bouton lecture est passe de 23 a 22px sur SA
+   regle d'origine (.lr .pb) plutot qu'ici : un second selecteur identique gagne par l'ordre, ce
+   qui marche et rend la vraie valeur introuvable au grep suivant. */
+.lr .pill{line-height:1.1}
+/* Espaceurs d'alignement de l'en-tete. 54 = bouton lecture 22 + gap 8 + pochette 24 ; le gap de
+   l'en-tete lui-meme fournit le 8 restant. 69 = pastille de qualite (la plus large, « LOSSLESS »)
+   + gap + icone Discogs. Mesures du 2026-08-19 dans la vraie fenetre. */
+.sift-lib-thead-cov{width:54px;flex:none}
+.sift-lib-thead-tail{width:69px;flex:none}
 .sift-lib-thead button{padding:0;border:0;background:none;font:inherit;color:inherit;cursor:pointer;text-align:left}
 .sift-lib-thead button:hover{color:var(--color-text-primary)}
-.sift-lib-cov{width:32px;height:32px;border-radius:var(--border-radius-sm);object-fit:cover;flex:none}
-.sift-lib-cov-fallback{width:32px;height:32px;border-radius:var(--border-radius-sm);background:var(--color-background-secondary);display:inline-flex;align-items:center;justify-content:center;color:var(--color-text-tertiary);flex:none}
+/* 32px → 24px le 2026-08-19 : --row-h est DERIVEE de cette vignette (24 + --space-4 en haut et en
+   bas = 32). A 32px de pochette la ligne mesurait 41px dans la vraie fenetre, donc le token
+   decrivait une hauteur que rien ne produisait. 24px reste le plus petit format ou une pochette
+   se reconnait — c'est la borne basse de la derivation, pas un choix de densite. */
+.sift-lib-cov{width:24px;height:24px;border-radius:var(--border-radius-sm);object-fit:cover;flex:none}
+.sift-lib-cov-fallback{width:24px;height:24px;border-radius:var(--border-radius-sm);background:var(--color-background-secondary);display:inline-flex;align-items:center;justify-content:center;color:var(--color-text-tertiary);flex:none}
 .sift-lib-col{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 /* Vue grille pochettes — tuiles façon casier de disques, une ligne virtualisée = LIBRARY_GRID_TILES_PER_ROW tuiles. */
 .sift-lib-grid-row{display:grid;grid-template-columns:repeat(4,1fr);gap:var(--space-12);padding:var(--space-8) var(--space-4)}
-.sift-lib-tile{cursor:pointer;border-radius:var(--border-radius-md);padding:var(--space-8);transition:background .16s ease}
+.sift-lib-tile{cursor:pointer;border-radius:var(--border-radius-md);padding:var(--space-8);transition:background var(--duration-base) ease}
 .sift-lib-tile:hover,.sift-lib-tile:focus-within{background:var(--color-row-active)}
 .sift-lib-tile.cur{background:var(--color-background-info)}
 .sift-lib-tile-cov{width:100%;aspect-ratio:1;border-radius:var(--border-radius-md);object-fit:cover;display:block;margin-bottom:var(--space-8)}
@@ -936,7 +972,22 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-text-info)}
    repetitions in rekordbox-view.ts (audit 2026-07-24, "prevent this from drifting again"): each
    site kept its own margin/padding/display inline (those genuinely vary per card), only the
    look (border+radius) is now a single source of truth. */
-.sift-ui-card-outline{border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md)}
+/* `.sift-ui-card-outline` RETIREE le 2026-08-19 (etape 7, DESIGN.md § 5). Cinq classes se
+   disputaient le meme travail — comptage exact du 2026-08-19 : soft 19, soft-pad 14, outline 8,
+   card 7, pad 4. `outline` n'etait pas un troisieme niveau semantique : ses HUIT usages sur huit
+   vivaient dans `rekordbox-view.ts`, chacun avec un `padding:10px 12px` en style inline dont le
+   10 n'appartient a aucune echelle. Ce n'etait pas une boite, c'etait LA LIGNE d'un ecran,
+   rembourree a la main huit fois.
+   Elle devient `.rb-row` ci-dessous, avec un padding pris dans l'echelle. Il reste DEUX niveaux :
+   `.sift-ui-card` (contenu, fond sans bordure) et `.sift-ui-card-soft` (chrome doux, fond +
+   bordure). Une boite est une decision, pas une decoration. */
+/* La ligne de Rekordbox. Un ecart nomme : sa marge basse et sa disposition varient selon la
+   section, donc trois modificateurs plutot que trois styles inline repetes. */
+.rb-row{border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:var(--space-8) var(--space-12);margin-bottom:var(--space-8)}
+.rb-row--idle{opacity:.55}
+.rb-row--last{margin-bottom:var(--space-12)}
+.rb-row--split{display:flex;justify-content:space-between;align-items:center;gap:var(--space-12)}
+.rb-row--inline{display:flex;align-items:center;gap:var(--space-8)}
 .sift-ui-kicker{font-size:var(--text-xs);letter-spacing:.09em;text-transform:uppercase;color:var(--color-text-tertiary);margin-bottom:var(--space-8)}
 .sift-ui-card-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .sift-ui-card-actions{display:flex;gap:8px;margin-top:var(--space-12)}
@@ -950,8 +1001,8 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-text-info)}
    ambiguë (fond vert plein ne dit pas "coché" vs décoratif), pas de hover/focus, <div> non
    focusable. Coche ti-check ajoutée à l'état coché ; tabindex+role posés côté TS
    (home-sources.ts) pour que le ring :focus-visible générique (styles.css:384) s'applique. */
-.sift-home-watch-toggle-box{width:15px;height:15px;border-radius:4px;border:1px solid var(--color-border-secondary);background:transparent;flex:none;display:flex;align-items:center;justify-content:center;transition:background-color .12s ease,border-color .12s ease}
-.sift-home-watch-toggle-box i{font-size:11px;color:var(--color-text-on-accent);opacity:0;transform:scale(.6);transition:opacity .12s ease,transform .12s ease}
+.sift-home-watch-toggle-box{width:15px;height:15px;border-radius:4px;border:1px solid var(--color-border-secondary);background:transparent;flex:none;display:flex;align-items:center;justify-content:center;transition:background-color var(--duration-fast) ease,border-color var(--duration-fast) ease}
+.sift-home-watch-toggle-box i{font-size:11px;color:var(--color-text-on-accent);opacity:0;transform:scale(.6);transition:opacity var(--duration-fast) ease,transform var(--duration-fast) ease}
 .sift-home-watch-toggle[data-watched="1"] .sift-home-watch-toggle-box{background:var(--color-text-success);border-color:var(--color-text-success)}
 .sift-home-watch-toggle[data-watched="1"] .sift-home-watch-toggle-box i{opacity:1;transform:scale(1)}
 /* Audit-ref C1 (Accueil, 2026-07-08, réf. shadcn Badge/Button) : ces 2 boutons posent leur
@@ -974,7 +1025,7 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-text-info)}
 .lib-detail-head{display:flex;align-items:center;justify-content:space-between;gap:var(--space-12)}
 .lib-detail-head-main{min-width:0;display:flex;flex-direction:column;gap:var(--space-4)}
 .lib-detail-head-title{font-size:var(--text-base);font-weight:500;color:var(--color-text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.lib-detail-close{width:28px;height:28px;padding:0;display:inline-flex;align-items:center;justify-content:center;flex:none;opacity:.72;transition:background .16s ease,opacity .16s ease}
+.lib-detail-close{width:28px;height:28px;padding:0;display:inline-flex;align-items:center;justify-content:center;flex:none;opacity:.72;transition:background var(--duration-base) ease,opacity var(--duration-base) ease}
 .lib-detail-close:hover,.lib-detail-close:focus-visible{opacity:1;background:var(--color-surface-raised)}
 .lib-detail-close i{font-size:var(--text-base);color:var(--color-text-tertiary)}
 .lib-edit{display:flex;flex-direction:column;gap:var(--space-12)}
@@ -1121,7 +1172,7 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-text-info)}
 .jrnl-cat{display:block;margin-bottom:var(--space-12)}
 .jrnl-cat-hd{display:flex;align-items:center;gap:var(--space-8);padding:var(--space-4) 0;cursor:pointer;list-style:none;user-select:none}
 .jrnl-cat-hd::-webkit-details-marker{display:none}
-.jrnl-cat-chev{flex:none;font-size:12px;color:var(--color-text-tertiary);transition:transform .15s;display:inline-block}
+.jrnl-cat-chev{flex:none;font-size:12px;color:var(--color-text-tertiary);transition:transform var(--duration-base);display:inline-block}
 details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .jrnl-cat-label{flex:none;font-size:var(--text-xs);font-weight:600;letter-spacing:var(--tracking-widest);text-transform:uppercase;color:var(--color-text-tertiary)}
 .jrnl-cat-badge{flex:none;font-size:var(--text-xs);color:var(--color-text-tertiary);background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-pill);padding:0 6px;line-height:1.6}
@@ -1141,8 +1192,8 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .jrnl-banner{font-size:var(--text-sm);border-radius:var(--border-radius-md);padding:var(--space-8) var(--space-12);margin-bottom:var(--space-8);border:1px solid}
 .jrnl-banner--ok{color:var(--color-text-success);background:color-mix(in srgb,var(--color-text-success) 12%,transparent);border-color:color-mix(in srgb,var(--color-text-success) 30%,transparent)}
 .jrnl-banner--warn{color:var(--color-text-warning);background:color-mix(in srgb,var(--color-text-warning) 12%,transparent);border-color:color-mix(in srgb,var(--color-text-warning) 30%,transparent)}
-.jrnl-row--loading{opacity:.6;transition:opacity .15s}
-.jrnl-row--reverted{opacity:.4;transition:opacity .15s}
+.jrnl-row--loading{opacity:.6;transition:opacity var(--duration-base)}
+.jrnl-row--reverted{opacity:.4;transition:opacity var(--duration-base)}
 .jrnl-row--reverted .jrnl-name{text-decoration:line-through}
 .jrnl-row--reverted .jrnl-revert{color:var(--color-text-success)}
 @keyframes jrnl-toast-fade{0%,60%{opacity:1}100%{opacity:0;height:0;padding:0;margin:0;border-width:0;overflow:hidden}}
@@ -1220,8 +1271,8 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
    --color-surface-raised/--color-text-primary (annotation: "trop blanc" — the bright fill was
    sized for the card background this button used to sit on, which no longer surrounds it; a
    moderate neutral fill with a light icon reads calmer against the flat inspector). */
-.sift-play-btn{flex:none;width:46px;height:46px;margin-left:var(--space-12);border-radius:50%;display:inline-flex;align-items:center;justify-content:center;padding:0;border:none;background:var(--color-surface-raised);transition:filter .1s ease}
-.sift-play-btn i{font-size:20px;color:var(--color-text-primary);transition:opacity .15s ease}
+.sift-play-btn{flex:none;width:46px;height:46px;margin-left:var(--space-12);border-radius:50%;display:inline-flex;align-items:center;justify-content:center;padding:0;border:none;background:var(--color-surface-raised);transition:filter var(--duration-fast) ease}
+.sift-play-btn i{font-size:20px;color:var(--color-text-primary);transition:opacity var(--duration-base) ease}
 /* background re-asserted here: the generic button:hover{background:var(--color-background-secondary)}
    (specificity 0,1,1) otherwise beats this button's own non-hover background rule (0,1,0), so on
    hover the circle silently repainted to a card background token that no longer surrounds it and
@@ -1271,7 +1322,7 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-report-text-pending{visibility:hidden}
 .sift-player-path{font-size:var(--text-sm);color:var(--color-text-tertiary);font-family:var(--font-mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sift-wave-wrap{position:relative;flex:1;min-width:0}
-.sift-player-wave{cursor:pointer;transition:opacity .15s ease}
+.sift-player-wave{cursor:pointer;transition:opacity var(--duration-base) ease}
 .sift-wave-wrap.is-paused .sift-player-wave{opacity:.55}
 .sift-wave-wrap.is-paused:hover .sift-player-wave{opacity:1}
 /* Alpha-masked to a snapshot of the wave canvas (see mountPlayer's updateWaveMask) so only the
@@ -1290,7 +1341,7 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
    seulement en hover") — width transition + overflow:hidden clips the label/track, which stay in
    normal flow (not removed), so re-expanding needs no re-render. The icon is a separate absolutely
    positioned layer, faded out once expanded. */
-.sift-volume-block{position:relative;width:20px;overflow:hidden;transition:width .18s ease}
+.sift-volume-block{position:relative;width:20px;overflow:hidden;transition:width var(--duration-slow) ease}
 /* :has(.dragging) added (bug report: "il est tout buggé ton volume") — pure :hover meant the
    block collapsed the instant the cursor left its 20px hit-box, which happens constantly mid-drag
    (dragging the thumb across the full 130px track moves the cursor well outside that 20px zone) —
@@ -1300,7 +1351,7 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-volume-block:hover,.sift-volume-block:focus-within,.sift-volume-block:has(.sift-slider-track.dragging){width:130px}
 /* Bigger now that it's the control's only identity, no label alongside it (annotation: "enlever
    le texte Volume et grossir l'icone"). */
-.sift-volume-icon{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:18px;color:var(--color-text-tertiary);opacity:1;transition:opacity .12s ease;pointer-events:none}
+.sift-volume-icon{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:18px;color:var(--color-text-tertiary);opacity:1;transition:opacity var(--duration-fast) ease;pointer-events:none}
 /* Track explicitly hidden at rest (bug report: "la barre devrait totalement disparaitre à part en
    survol, type youtube") — the icon has no opaque background, so it only visually OVERLAPPED the
    rail without hiding it; the narrow 20px sliver of rail/fill still showed through around the
@@ -1310,7 +1361,7 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
    .sift-volume-block clips with overflow:hidden — at 100% volume the thumb (13px, centered via
    translateX(-50%)) used to have its right half clipped off (bug report: "la boule de sélection
    est tronquée quand le volume est à fond"). */
-.sift-volume-block .sift-volume-track{opacity:0;transition:opacity .12s ease;margin:0 var(--space-8)}
+.sift-volume-block .sift-volume-track{opacity:0;transition:opacity var(--duration-fast) ease;margin:0 var(--space-8)}
 .sift-volume-block:hover .sift-volume-icon,.sift-volume-block:focus-within .sift-volume-icon,.sift-volume-block:has(.sift-slider-track.dragging) .sift-volume-icon{opacity:0}
 .sift-volume-block:hover .sift-volume-track,
 .sift-volume-block:focus-within .sift-volume-track,
@@ -1330,7 +1381,7 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
    button, same reasoning: text-info resolves to the same bright off-white as text-primary in dark
    mode, sized for a card surface that no longer exists here). */
 .sift-slider-fill{position:absolute;height:3px;border-radius:2px;background:var(--color-surface-raised);pointer-events:none}
-.sift-slider-thumb{position:absolute;top:50%;transform:translate(-50%,-50%) scale(1);width:13px;height:13px;border-radius:50%;background:var(--color-background-primary);border:1.5px solid var(--color-surface-raised);pointer-events:none;transition:transform .08s,box-shadow .08s}
+.sift-slider-thumb{position:absolute;top:50%;transform:translate(-50%,-50%) scale(1);width:13px;height:13px;border-radius:50%;background:var(--color-background-primary);border:1.5px solid var(--color-surface-raised);pointer-events:none;transition:transform var(--duration-fast),box-shadow var(--duration-fast)}
 .sift-slider-track:hover .sift-slider-thumb{transform:translate(-50%,-50%) scale(1.15)}
 .sift-slider-track.dragging .sift-slider-thumb{transform:translate(-50%,-50%) scale(1.3);box-shadow:0 0 0 4px var(--overlay-selected)}
 /* Volume opts out of the scale+glow click feedback (bug report: "bizarre le feedback sur la boule
@@ -1386,12 +1437,12 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
    rendre légitime ici. Question ouverte sur la map #6, pas un oubli. */
 .sift-spectro-box{margin-bottom:var(--space-12);overflow:hidden;max-width:var(--measure-data)}
 .sift-zone-toggle-label{display:inline-flex;align-items:center}
-.sift-spectro-caret{display:inline-block;transition:transform .25s;color:var(--color-text-tertiary)}
+.sift-spectro-caret{display:inline-block;transition:transform var(--duration-slow);color:var(--color-text-tertiary)}
 .sift-spectro-hint{font-size:var(--text-sm);color:var(--color-text-info);flex:none}
 /* Grid 0fr→1fr trick instead of animating max-height: max-height forces a full layout
    recalc every frame (visible as the surrounding cards jittering while this opens);
    animating the grid track's fr size is layout-cheap and needs no JS scrollHeight read. */
-.sift-spectro-body{display:grid;grid-template-rows:0fr;transition:grid-template-rows .3s ease}
+.sift-spectro-body{display:grid;grid-template-rows:0fr;transition:grid-template-rows var(--duration-slow) ease}
 .sift-spectro-body.is-open{grid-template-rows:1fr}
 .sift-spectro-body-inner{overflow:hidden;min-height:0}
 .sift-spectro-declared{padding:var(--space-8) var(--space-16);font-size:var(--text-xs);color:var(--color-text-tertiary);line-height:1.5}
@@ -1407,7 +1458,7 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
    button:hover{background:var(--color-background-secondary)} (élément+pseudo-classe, 0,1,1) bat
    sinon silencieusement la règle de base .sift-zone-toggle{background:none} (classe seule, 0,1,0)
    au survol — même piège documenté dans CLAUDE.md pour .sift-play-btn. */
-.sift-zone-toggle-label{transition:color .15s ease}
+.sift-zone-toggle-label{transition:color var(--duration-base) ease}
 .sift-zone-toggle:hover{background:none}
 .sift-zone-toggle:hover .sift-zone-toggle-label{color:var(--color-text-primary)}
 /* SUPPRIMÉ le 2026-08-14 (issue #23). Une règle `:has(.sift-zone-toggle:hover)` highlightait la
@@ -1442,7 +1493,7 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
    card, so nothing else regresses. */
 .sift-zone-toggle.sift-spectro-toggle,#sift-meta-toggle{padding:var(--space-8) var(--space-16)}
 .sift-zone-toggle-car{display:inline-block;margin-right:var(--space-8);color:var(--color-text-tertiary);
-  transition:transform .15s ease}
+  transition:transform var(--duration-base) ease}
 .sift-zone-toggle-open .sift-zone-toggle-car{transform:rotate(90deg)}
 .sift-zone-toggle-right{display:flex;align-items:center;gap:8px}
 /* Root cause of the badge misalignment, found by CDP measurement against the real running app
@@ -1456,7 +1507,7 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 /* Même trick grid 0fr→1fr que .sift-spectro-body (Diagnostic) — Métadonnées se fermait avant
    en display:none/block, sans transition (annotation : "on a une belle animation pour analyse
    audio mais pas pour métadonnées"). */
-.sift-zone-toggle-body{display:grid;grid-template-rows:0fr;transition:grid-template-rows .3s ease}
+.sift-zone-toggle-body{display:grid;grid-template-rows:0fr;transition:grid-template-rows var(--duration-slow) ease}
 .sift-zone-toggle-body.sift-zone-toggle-body-open{grid-template-rows:1fr}
 .sift-zone-toggle-body-inner{overflow:hidden;min-height:0}
 /* Badge d'en-tête (ex. "MP3 ≈ X kbps", "CDJ incompatible") — visible replié, cohérent avec
@@ -1569,7 +1620,7 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-report-overlay-modal{max-width:760px;width:100%;max-height:90vh;overflow:auto;padding:var(--space-24)}
 
 /* ── Revue filing rail (filing.ts) — extracted inline styles, byte-identical values ───── */
-.sift-fld-caret{display:inline-block;width:14px;text-align:center;cursor:pointer;color:var(--color-text-tertiary);transition:transform .2s}
+.sift-fld-caret{display:inline-block;width:14px;text-align:center;cursor:pointer;color:var(--color-text-tertiary);transition:transform var(--duration-slow)}
 .sift-fld-caret-spacer{display:inline-block;width:14px;flex:none}
 .sift-fld-row{display:flex;align-items:center;gap:4px}
 .sift-fld-flat-row{padding:var(--space-4) var(--space-8);display:flex;align-items:center;gap:var(--space-4)}
@@ -1857,7 +1908,7 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
    another animate instead of swapping instantly — only actually visible where the option markup
    persists across state changes (in-place classList toggle) rather than being rebuilt from a
    fresh innerHTML string on every change; see ensureReviewSeg(). */
-.sift-seg-opt{display:inline-flex;align-items:center;gap:5px;border:none;background:none;font-family:inherit;font-size:var(--text-md);padding:5px 12px;border-radius:var(--border-radius-pill);cursor:pointer;font-weight:500;color:var(--color-text-secondary);white-space:nowrap;transition:background .15s ease,color .15s ease}
+.sift-seg-opt{display:inline-flex;align-items:center;gap:5px;border:none;background:none;font-family:inherit;font-size:var(--text-md);padding:5px 12px;border-radius:var(--border-radius-pill);cursor:pointer;font-weight:500;color:var(--color-text-secondary);white-space:nowrap;transition:background var(--duration-base) ease,color var(--duration-base) ease}
 /* background:none réaffirmé explicitement — sinon le générique button:hover{background:
    var(--color-background-secondary)} (styles.css, reset des boutons) l'emporte quand même sur
    l'état non sélectionné, faisant apparaître une "bulle" de fond en plus du texte qui highlight
@@ -1952,7 +2003,7 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 
 .sift-usage-barwrap{position:relative}
 .sift-usage-bar{display:flex;height:26px;border-radius:var(--border-radius-sm);overflow:hidden}
-.sift-usage-seg{min-width:4px;border:0;padding:0;cursor:pointer;appearance:none;transition:opacity 120ms ease,filter 120ms ease}
+.sift-usage-seg{min-width:4px;border:0;padding:0;cursor:pointer;appearance:none;transition:opacity var(--duration-fast) ease,filter var(--duration-fast) ease}
 .sift-usage-bar.dim .sift-usage-seg{opacity:.28}
 .sift-usage-bar.dim .sift-usage-seg.on{opacity:1;filter:brightness(1.08)}
 .sift-usage-seg:focus-visible{outline:2px solid var(--color-text-primary);outline-offset:2px;opacity:1}
@@ -1987,7 +2038,7 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-usage-disclose{display:inline-flex;align-items:center;gap:var(--space-8);font-family:inherit;font-size:var(--text-md);padding:var(--space-8) var(--space-12);background:var(--color-background-tertiary);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);color:var(--color-text-primary);cursor:pointer}
 .sift-usage-disclose:hover{background:var(--color-background-tertiary);border-color:var(--color-text-tertiary)}
 .sift-usage-disclose:focus-visible{outline:2px solid var(--color-text-primary);outline-offset:2px}
-.sift-usage-chev{display:inline-block;transition:transform 200ms ease;font-size:var(--text-xs);opacity:.7}
+.sift-usage-chev{display:inline-block;transition:transform var(--duration-slow) ease;font-size:var(--text-xs);opacity:.7}
 .sift-usage-disclose[aria-expanded="true"] .sift-usage-chev{transform:rotate(90deg)}
 .sift-usage-cache-note{font-size:var(--text-sm);color:var(--color-text-tertiary)}
 .sift-usage-btn{font-family:inherit;font-size:var(--text-md);padding:var(--space-8) var(--space-12);background:var(--color-background-tertiary);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);color:var(--color-text-primary);cursor:pointer}
@@ -2000,7 +2051,7 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 /* 0fr -> 1fr anime vers une hauteur inconnue sans la mesurer en JS. Le padding vit sur
    .sift-usage-panel-inner, jamais sur la piste mesuree, sinon elle ne se referme pas
    completement (piege css-grid-0fr-track-padding-pitfall). */
-.sift-usage-panel{display:grid;grid-template-rows:0fr;transition:grid-template-rows 240ms ease}
+.sift-usage-panel{display:grid;grid-template-rows:0fr;transition:grid-template-rows var(--duration-slow) ease}
 .sift-usage-panel.on{grid-template-rows:1fr}
 .sift-usage-panel-clip{overflow:hidden;min-height:0}
 .sift-usage-panel-inner{padding-top:var(--space-12);display:flex;flex-direction:column;gap:var(--space-16)}

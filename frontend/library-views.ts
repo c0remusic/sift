@@ -24,7 +24,7 @@ export function bibName(t: LibraryTrack): string {
   return t.artist && t.title ? `${t.artist} — ${t.title}` : t.path.split(/[\\/]/).pop() || t.path;
 }
 
-type LibrarySortField = "artist" | "title" | "genre" | "year";
+type LibrarySortField = "artist" | "title" | "bpm" | "duration" | "genre" | "year";
 export type LibrarySortState = { field: LibrarySortField; dir: "asc" | "desc" };
 
 /** Client-side sort — the filed-track list is small enough (a personal DJ crate, not a
@@ -33,9 +33,13 @@ export function sortTracks(tracks: readonly LibraryTrack[], sort: LibrarySortSta
   const mul = sort.dir === "asc" ? 1 : -1;
   const sorted = [...tracks];
   sorted.sort((a, b) => {
-    if (sort.field === "year") {
-      const av = a.year ?? -Infinity,
-        bv = b.year ?? -Infinity;
+    // Les trois champs NUMÉRIQUES se comparent en nombres, pas en chaînes : un tri lexical
+    // classerait un BPM de 100 avant 92, et une durée de 7:48 avant 12:03. `-Infinity` place les
+    // valeurs manquantes en tête en ascendant, donc en queue en descendant — c'est le bon défaut
+    // pour un DJ qui trie par tempo : ce qui n'a pas de BPM est ce qu'il reste à analyser.
+    if (sort.field === "year" || sort.field === "bpm" || sort.field === "duration") {
+      const av = a[sort.field] ?? -Infinity,
+        bv = b[sort.field] ?? -Infinity;
       return (av - bv) * mul;
     }
     const av = sort.field === "genre" ? (a.genres[0] ?? "") : (a[sort.field] ?? "");
@@ -45,26 +49,67 @@ export function sortTracks(tracks: readonly LibraryTrack[], sort: LibrarySortSta
   return sorted;
 }
 
-const SORT_COLUMNS: { field: LibrarySortField; label: string }[] = [
-  { field: "artist", label: "Artiste" },
-  { field: "title", label: "Titre" },
-  { field: "genre", label: "Genre" },
-  { field: "year", label: "Année" },
+/** Colonnes de la table, dans l'ordre d'affichage (DESIGN.md § 16).
+ *
+ *  BPM et Durée sont des AJOUTS du 2026-08-19, et ce sont les deux plus importants. Les deux
+ *  champs existent depuis toujours dans le contrat (`shared/contracts.ts`, `bpm` et `duration`) et
+ *  n'atteignaient pas l'écran : la table triait sur Artiste, Titre, Genre, Année. Un DJ trie sa
+ *  bibliothèque par tempo.
+ *
+ *  Ni tonalité ni énergie : vérifié le 2026-08-19, aucun des deux n'existe dans `contracts.ts` ni
+ *  dans `db.rs`. Aucune colonne fantôme n'est déclarée pour du vide — les ajouter est un chantier
+ *  d'analyse Rust, pas une décision de design. */
+const SORT_COLUMNS: { field: LibrarySortField; label: string; cls: string }[] = [
+  { field: "artist", label: "Artiste", cls: "sift-lib-col-artist" },
+  { field: "title", label: "Titre", cls: "sift-lib-col-title" },
+  { field: "bpm", label: "BPM", cls: "sift-lib-col-num" },
+  { field: "duration", label: "Durée", cls: "sift-lib-col-num" },
+  { field: "genre", label: "Genre", cls: "sift-lib-col-genre" },
+  { field: "year", label: "Année", cls: "sift-lib-col-year" },
 ];
+
+/** `mm:ss` — jamais `Intl.NumberFormat`, qui rendrait une durée comme un nombre. Une valeur
+ *  absente rend un tiret cadratin, pas « 0:00 » : zéro seconde est un fait, l'absence en est un
+ *  autre, et les confondre ferait croire à un fichier vide. */
+function fmtDuration(sec: number | null): string {
+  if (sec == null || !Number.isFinite(sec)) return "—";
+  const m = Math.floor(sec / 60);
+  const r = Math.round(sec % 60);
+  return `${m}:${String(r).padStart(2, "0")}`;
+}
+
+/** BPM entier. Le backend en rend un flottant ; afficher « 121,97 » dans une colonne de 44px
+ *  n'aide personne à mixer, et un DJ raisonne au BPM entier. */
+function fmtBpm(bpm: number | null): string {
+  return bpm == null || !Number.isFinite(bpm) ? "—" : String(Math.round(bpm));
+}
 
 /** Sortable column header row — each header is a real <button> (native keyboard support),
  * aria-sort on the active column announces direction to screen readers. */
 export function libraryTableHeaderHtml(sort: LibrarySortState): string {
-  const cells = SORT_COLUMNS.map(({ field, label }) => {
+  const cells = SORT_COLUMNS.map(({ field, label, cls }) => {
     const active = sort.field === field;
     const ariaSort = active ? (sort.dir === "asc" ? "ascending" : "descending") : "none";
     const arrow = active ? (sort.dir === "asc" ? " ▴" : " ▾") : "";
-    return `<th aria-sort="${ariaSort}"><button data-bib="sort" data-field="${field}">${esc(label)}${arrow}</button></th>`;
+    // `<span role="columnheader">` et NON `<th>`. Mesure du 2026-08-19 dans la vraie fenêtre : la
+    // ligne d'en-tête est un `<div>`, pas un `<table>`, et le parseur HTML SUPPRIME un `<th>` hors
+    // contexte de table — il ne gardait que le `<button>` à l'intérieur. La classe de largeur et
+    // l'`aria-sort` partaient donc avec la balise : les colonnes ne s'alignaient pas sur celles de
+    // la ligne, et la direction de tri n'était annoncée à personne. Le défaut était antérieur à
+    // l'ajout de BPM et Durée ; il ne se voyait pas tant que l'en-tête n'avait aucune largeur à
+    // porter.
+    return `<span class="${cls}" role="columnheader" aria-sort="${ariaSort}"><button data-bib="sort" data-field="${field}">${esc(label)}${arrow}</button></span>`;
   }).join("");
   // No wrapping role="table"/"grid" exists (this is a flex layout, not a real <table>) — role="row"
   // here without that ancestor was a half-applied ARIA table pattern a screen reader can't make
   // sense of. Dropped; each data row instead carries a composite aria-label (see libraryTableRowHtml).
-  return `<div class="sift-lib-thead"><span class="sift-lib-thead-cov"></span>${cells}</div>`;
+  // Deux espaceurs, pas un. La ligne porte des affordances AVANT ses colonnes (bouton lecture,
+  // pochette) et APRÈS (pastille de qualité, lien Discogs) ; sans un espaceur de chaque côté,
+  // l'en-tête flotte décalé au-dessus des colonnes qu'il nomme. Mesuré : 62px devant, 69 derrière.
+  return (
+    `<div class="sift-lib-thead" role="row"><span class="sift-lib-thead-cov"></span>${cells}` +
+    `<span class="sift-lib-thead-tail" aria-hidden="true"></span></div>`
+  );
 }
 
 /** One table row — cover thumbnail + the 4 sortable columns + the existing play/quality/verdict/
@@ -81,15 +126,17 @@ export function libraryTableRowHtml(t: LibraryTrack, curId: number | null): stri
   // Composite name so a screen reader announces the 4 sortable columns for this row instead of
   // just "button" — role="button" alone loses the artist/title/genre/year association a table
   // reading mode would otherwise give.
-  const rowLabel = `${t.artist || "Artiste inconnu"} — ${t.title || "Titre inconnu"}, ${t.genres[0] || "genre inconnu"}, ${t.year != null ? t.year : "année inconnue"}`;
+  const rowLabel = `${t.artist || "Artiste inconnu"} — ${t.title || "Titre inconnu"}, ${fmtBpm(t.bpm)} BPM, ${fmtDuration(t.duration)}, ${t.genres[0] || "genre inconnu"}, ${t.year != null ? t.year : "année inconnue"}`;
   return (
     `<div class="lr${cur}" data-bib="row" data-id="${t.id}" tabindex="0" role="button" aria-label="${esc(rowLabel)}">` +
     `<button class="pb" data-bib="play" data-id="${t.id}" aria-label="Écouter"><i class="ti ti-player-play" style="font-size:var(--text-md)"></i></button>` +
     cov +
-    `<span class="sift-lib-col" style="flex:1.4">${esc(t.artist || "—")}</span>` +
-    `<span class="sift-lib-col" style="flex:1.4">${esc(t.title || "—")}</span>` +
-    `<span class="sift-lib-col" style="flex:1">${esc(t.genres[0] || "—")}</span>` +
-    `<span class="sift-lib-col" style="flex:0.6">${esc(t.year ? String(t.year) : "—")}</span>` +
+    `<span class="sift-lib-col sift-lib-col-artist">${esc(t.artist || "—")}</span>` +
+    `<span class="sift-lib-col sift-lib-col-title">${esc(t.title || "—")}</span>` +
+    `<span class="sift-lib-col sift-lib-col-num">${fmtBpm(t.bpm)}</span>` +
+    `<span class="sift-lib-col sift-lib-col-num">${fmtDuration(t.duration)}</span>` +
+    `<span class="sift-lib-col sift-lib-col-genre">${esc(t.genres[0] || "—")}</span>` +
+    `<span class="sift-lib-col sift-lib-col-year">${esc(t.year ? String(t.year) : "—")}</span>` +
     verdictBadge(t.verdict) +
     qualPill(t) +
     link +

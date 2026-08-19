@@ -179,7 +179,7 @@ function sectionErrorHtml(): string {
     ? `${known} — la synchronisation Rekordbox reste indisponible tant qu'il manque.`
     : "Impossible de charger — réessaie plus tard.";
   return (
-    `<div class="sift-ui-card-outline" style="padding:10px 12px;margin-bottom:6px">` +
+    `<div class="rb-row">` +
     `<div style="font-size:var(--text-sm);color:var(--color-text-danger)">${esc(msg)}</div>` +
     `</div>`
   );
@@ -201,7 +201,7 @@ function syncCardHtml(title: string, count: number, body: string, unavailable: b
       : `<span style="font-size:var(--text-xs);background:var(--color-background-secondary);color:var(--color-text-secondary);padding:2px 7px;border-radius:var(--border-radius-pill)">${count}</span>`) +
     `</div>`;
   return (
-    `<div class="sift-ui-card-outline" style="padding:10px 12px;margin-bottom:6px;${idle ? "opacity:.55" : ""}">` +
+    `<div class="rb-row${idle ? " rb-row--idle" : ""}">` +
     header +
     body +
     `</div>`
@@ -224,7 +224,7 @@ function rekordboxCardHtml(s: RekordboxLinkStatus): string {
     ? ""
     : `<button data-sift="rkbreexport" class="sift-ranger-btn" style="flex:none">Réexporter maintenant</button>`;
   return (
-    `<div class="sift-ui-card-outline" style="padding:10px 12px;margin-bottom:12px;display:flex;justify-content:space-between;align-items:center;gap:12px">` +
+    `<div class="rb-row rb-row--split rb-row--last">` +
     `<div style="min-width:0">${body}</div>` +
     `<div style="display:flex;gap:8px;flex:none">${reexport}<button data-bib="rkblink" style="flex:none">Changer de XML lié</button></div>` +
     `</div>`
@@ -273,7 +273,7 @@ function masterdbRepairsSectionHtml(rows: PendingMasterdbRepair[]): string {
         )
         .join("");
       return (
-        `<div class="sift-ui-card-outline" style="padding:10px 12px;margin-bottom:6px">` +
+        `<div class="rb-row">` +
         `<div style="display:flex;gap:10px;align-items:flex-start">${pathBlock(r)}` +
         `<button data-sift="mdbdismiss" data-id="${r.id}" style="flex:none">Ignorer</button></div>` +
         `<div style="margin-top:6px;display:flex;flex-direction:column;gap:3px">${candidateBtns}</div>` +
@@ -382,7 +382,7 @@ function metadataSyncsSectionHtml(rows: PendingMetadataSync[]): string {
         )
         .join("");
       return (
-        `<div class="sift-ui-card-outline" style="padding:10px 12px;margin-bottom:6px">` +
+        `<div class="rb-row">` +
         `<div style="display:flex;gap:10px;align-items:flex-start">${infoBlock(r)}` +
         `<button data-sift="mdsdismiss" data-id="${r.id}" style="flex:none">Ignorer</button></div>` +
         `<div style="margin-top:6px;display:flex;flex-direction:column;gap:3px">${candidateBtns}</div>` +
@@ -477,7 +477,7 @@ function artworkSyncsSectionHtml(rows: PendingArtworkSync[]): string {
         )
         .join("");
       return (
-        `<div class="sift-ui-card-outline" style="padding:10px 12px;margin-bottom:6px">` +
+        `<div class="rb-row">` +
         `<div style="display:flex;gap:10px;align-items:flex-start">${infoBlock(r)}` +
         `<button data-sift="masdismiss" data-id="${r.id}" style="flex:none">Ignorer</button></div>` +
         `<div style="margin-top:6px;display:flex;flex-direction:column;gap:3px">${candidateBtns}</div>` +
@@ -545,7 +545,7 @@ function playlistDuplicatesSectionHtml(groups: PlaylistDuplicateGroupDto[]): str
       const trackLabel = g.track_path ? g.track_path.split(/[\\/]/).pop() || g.track_path : `Piste ${g.content_id}`;
       const count = g.remove.length;
       return (
-        `<div class="sift-ui-card-outline" style="padding:10px 12px;margin-bottom:6px;display:flex;gap:10px;align-items:center">` +
+        `<div class="rb-row rb-row--inline">` +
         `<div style="min-width:0;flex:1">` +
         `<div style="font-size:var(--text-sm)">${esc(playlistLabel)}</div>` +
         `<div style="font-family:var(--font-mono);font-size:var(--text-xs);color:var(--color-text-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(trackLabel)} — ${count} doublon${count > 1 ? "s" : ""}</div>` +
