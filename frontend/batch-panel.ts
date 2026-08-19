@@ -579,7 +579,9 @@ function actionButtonHtml(running: boolean): string {
   const fileN = batchSel.size;
   const fakeN = batchFakeSel.size;
   if (fileN === 0 && fakeN === 0)
-    return '<button class="sift-baction" disabled style="background:var(--color-accent-fill);color:var(--color-accent-ink);opacity:.5;pointer-events:none">Convertir (0)</button>';
+    // Pas d'opacity inline : `button:disabled` du générique porte déjà l'atténuation système
+    // (styles.css, exemption documentée) — deux valeurs pour la même indisponibilité divergent.
+    return '<button class="sift-baction" disabled style="background:var(--color-accent-fill);color:var(--color-accent-ink);pointer-events:none">Convertir (0)</button>';
   // Second-click confirm for large batches (see BATCH_CONFIRM_THRESHOLD) — armed only for the
   // exact selection it was requested for, so ticking/unticking a track after arming falls back
   // to asking again instead of silently confirming a changed selection. The button looks like a
@@ -605,7 +607,12 @@ function actionButtonHtml(running: boolean): string {
     // no way to back out of the armed state before the second click except waiting it out. Reuses
     // the exact same reset (see "batchcancelconfirm" in the click handler below).
     return (
-      `<button data-sift="batchaction" class="sift-baction sift-baction-armed" style="background:var(--color-background-danger);color:var(--color-text-danger)">Confirmer — convertir ${fileN} ?${drain}</button>` +
+      // L'armement ne repeint PAS le bouton : convertir n'est pas destructif (rangement annulable
+      // par le journal), et HIG § Buttons/Role ne colore en rouge que la destruction — « a
+      // destructive button uses the system red color ». L'état armé se dit par le libellé et par
+      // la barre de drain ; un fond danger ici disait « risque réel » pour une confirmation
+      // anti-clic-synthétique (DESIGN.md § 4, tranché le 2026-08-19 contre la page HIG lue).
+      `<button data-sift="batchaction" class="sift-baction sift-baction-armed" style="background:var(--color-accent-fill);color:var(--color-accent-ink)">Confirmer — convertir ${fileN} ?${drain}</button>` +
       `<button data-sift="batchcancelconfirm" class="sift-baction-cancel" style="background:none;border:none;color:var(--color-text-tertiary);font-size:var(--text-xs);padding:0 var(--space-8);cursor:pointer">Annuler</button>`
     );
   }

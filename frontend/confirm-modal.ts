@@ -53,7 +53,10 @@ export function confirmAction(message: string, confirmLabel = "Confirmer"): Prom
     overlay.className = "sift-report-overlay";
 
     const card = document.createElement("div");
-    card.className = "sift-report-overlay-card sift-confirm-card sift-report-overlay-card-blur";
+    // `sift-report-overlay-card-blur` retirée le 2026-08-19 avec sa règle CSS : c'était la dernière
+    // fausse translucidité de l'app (color-mix + backdrop-filter + !important). La carte retombe sur
+    // l'aplat opaque de `.sift-report-overlay-card`. Voir styles.css, au-dessus de cette règle.
+    card.className = "sift-report-overlay-card sift-confirm-card";
     // Audit-ref R5 (Revue, 2026-07-08, réf. shadcn Alert Dialog) : ni sémantique modale ni Escape
     // avant ce fix — seul le clic sur le fond annulait. Cette modale gère des actions destructives
     // (règle CLAUDE.md anti-window.confirm()), donc le clavier doit marcher comme partout ailleurs.

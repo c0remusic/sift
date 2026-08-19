@@ -314,7 +314,8 @@ color-scheme:light;
    were ALREADY guarded and are not part of that gap: `.sift-baction-arm` (:704) lives inside a
    `no-preference` block, so under `reduce` the element stays `display:none`, and
    `.sift-usage-prow.flash` (:1575) was already killed by the pre-existing `reduce` block. The 33
-   `transition:` and the 5 remaining `animation:` declarations never reference these tokens, so
+   `transition:` (25 depuis le sweep motion du 2026-08-19 — ce compte est celui du 2026-08-05)
+   and the 5 remaining `animation:` declarations never reference these tokens, so
    until the HIG Motion audit of 2026-08-05 THOSE ran at full length whatever the OS setting was.
    The global guard now lives in the single `@media (prefers-reduced-motion: reduce)` block at the
    END of this file — and it is still not an `animation:none` kill switch: it zeroes the DURATION,
@@ -940,7 +941,12 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
    grammaire d'avant, et elle faisait lire ce bouton comme aussi engageant que le primaire à
    côté de lui. Un aplat rouge est réservé à un primaire destructif, que cet écran n'a pas. */
 .sift-secondary-trash{flex:none;white-space:nowrap;background:var(--color-surface-raised);color:var(--color-text-danger);border:0}
-.sift-secondary-trash:hover{background:var(--color-background-danger)}
+/* `:hover` était déclaré DEUX fois de suite ici, à spécificité égale et à un `filter` près — le
+   même défaut que `.sift-confirm-btn:disabled` plus bas, et le cousin du bug corrigé sur
+   `.sift-confirm-btn:hover`. Sans conséquence visuelle celui-là (la seconde gagnait par l'ordre
+   source, et elle était un sur-ensemble strict de la première), mais une ligne morte devant une
+   ligne vivante se lit comme deux intentions concurrentes à la prochaine édition. Fusionnées le
+   2026-08-19, sans changer ce qui est peint : fond `--color-background-danger` + assombrissement. */
 .sift-secondary-trash:hover{background:var(--color-background-danger);filter:brightness(0.95)}
 /* Destination popover: replaces the persistent tree column, anchored above its trigger button.
    Hidden by default ([hidden] attribute, toggled in filing.ts); #fldz keeps its id so renderBins'
@@ -971,7 +977,14 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
 .fld{display:flex;align-items:center;gap:var(--space-8);padding:var(--space-8) var(--space-8);border-radius:var(--border-radius-md);color:var(--color-text-secondary);cursor:pointer;font-size:12px}
 /* Hover added 2026-07-08: was clickable (cursor:pointer) with zero visual feedback — same bug
    already fixed on .chip 2026-07-03 ("cliquable sans retour visuel"). */
-.fld:hover{background:var(--color-background-secondary)}
+/* ⚠️ Et ce survol était INVISIBLE À SON TOUR, corrigé le 2026-08-19 : c'est EXACTEMENT le défaut
+   de la sélection traitée juste en dessous, un cran plus tôt dans la même règle. Ces items vivent
+   dans une carte `.sift-ui-card-soft`, dont le fond EST `--color-background-secondary` — « survolé »
+   et « au repos » résolvaient donc à la même couleur, et le retour visuel que cette règle existe
+   pour donner n'existait pas. Le survol de DESIGN.md § 8 est `--overlay-hover` : un voile alpha qui
+   se COMPOSE sur ce qui le porte au lieu de nommer un plan, donc il se voit à tous les plans. C'est
+   déjà le token de `.chip`, `.lk-icon`, `.sift-cand`, `.sift-menu-item`, `.sift-bib-back`. */
+.fld:hover{background:var(--overlay-hover)}
 /* Item ACTIF d'une liste de navigation (categories de Reglages, sections Rekordbox) : neutre.
    DESIGN.md § 8 : « Selection : --color-background-secondary, promue au plan du contenu. Jamais
    un accent colore. » Cette regle peignait un fond bleu pale avec de l'encre bleue, donc la meme
@@ -987,6 +1000,12 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
    Ce n'est pas une exception à § 8, c'en est la lecture relative — et c'est le geste déjà fait sur
    .chip.on au sweep précédent, pour la même raison. La sélection reste NEUTRE : aucun accent. */
 .fld.on{background:var(--color-surface-raised);color:var(--color-text-primary);font-weight:500}
+/* L'ACTIF ne prend pas le voile : il réaffirme son propre plan. Deux raisons, et la seconde est la
+   vraie. Spécificité d'abord — (0,2,1) contre (0,1,1) pour `.fld:hover`, donc cette ligne gagne
+   quel que soit l'ordre source. Grammaire ensuite : un état permanent reste neutre et STABLE
+   (DESIGN.md § 8) ; survoler l'élément déjà choisi ne doit rien annoncer, puisqu'il n'y a rien à
+   déclencher. Sans cette ligne, `--overlay-hover` s'ajouterait par-dessus `--color-surface-raised`
+   et l'item actif deviendrait le plus clair de la liste au passage de la souris. */
 .fld.on:hover{background:var(--color-surface-raised)}
 .kbd{font-family:var(--font-mono);font-size:10px;border:0.5px solid var(--color-border-secondary);border-radius:3px;padding:0 var(--space-4);color:var(--color-text-tertiary)}
 .bars{display:flex;align-items:center;gap:var(--space-4);height:42px;cursor:pointer}.bars span{flex:1;border-radius:1px}
@@ -1010,8 +1029,17 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
    la position du pouce. Les cases et radios natives voisines sont déjà sur --color-accent-fill
    (`accent-color`, plus bas) : le switch rejoint la même famille au lieu d'emprunter une encre.
    OFF inchangé (gris de bordure), c'est bien ce que montre le kit. */
-.tog{width:30px;height:17px;border-radius:9px;background:var(--color-accent-fill);position:relative;flex:none;cursor:pointer;transition:background var(--duration-fast)}.tog::after{content:"";position:absolute;left:2px;top:2px;width:13px;height:13px;border-radius:50%;background:var(--color-accent-ink);transform:translateX(13px);transition:transform var(--duration-fast)}.tog.off{background:var(--color-border-secondary)}.tog.off::after{transform:translateX(0)}
-.lr{display:flex;align-items:center;gap:var(--space-8);padding:var(--space-4) var(--space-8);border-bottom:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);font-size:12px;cursor:pointer;transition:background var(--duration-base) ease,color var(--duration-base) ease,transform var(--duration-fast) ease}
+/* La PISTE n'anime plus son fond (2026-08-19, DESIGN.md § 6 : « transform et opacity, jamais autre
+   chose »). Le POUCE garde sa transition de `transform`, et c'est lui qui porte le mouvement du
+   switch — le fond bascule sec sous un pouce qui glisse, ce qui est exactement le rendu d'un
+   NSSwitch. Ce qu'on perd n'est visible que si l'on regarde le fond seul, pendant 100 ms. */
+.tog{width:30px;height:17px;border-radius:9px;background:var(--color-accent-fill);position:relative;flex:none;cursor:pointer}.tog::after{content:"";position:absolute;left:2px;top:2px;width:13px;height:13px;border-radius:50%;background:var(--color-accent-ink);transform:translateX(13px);transition:transform var(--duration-fast)}.tog.off{background:var(--color-border-secondary)}.tog.off::after{transform:translateX(0)}
+/* `background` et `color` retirés de la transition le 2026-08-19 (DESIGN.md § 6). `.lr` est la
+   LIGNE de la table : elle est virtualisée et repeinte en rafale au défilement, et une transition
+   de fond sur une ligne recyclée fait traîner la couleur de la ligne PRÉCÉDENTE pendant 150 ms sur
+   la nouvelle donnée. `transform` reste, seul : c'est l'enfoncement de `:active`, un retour sous le
+   doigt et non un état de donnée. */
+.lr{display:flex;align-items:center;gap:var(--space-8);padding:var(--space-4) var(--space-8);border-bottom:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);font-size:12px;cursor:pointer;transition:transform var(--duration-fast) ease}
 .lr:hover{background:var(--color-row-active)}
 /* Explicit rather than relying on source order (both selectors have equal specificity) — same
    hardening as .sift-seg-opt.on:hover. */
@@ -1022,7 +1050,10 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
 .lr.cur .bib-name{font-weight:500}
 .lr.cur .lk-icon,.lr.cur .pb{background:var(--color-surface-raised)}
 .lr:hover .lk-icon,.lr.cur .lk-icon{color:var(--color-text-primary)}
-.lr .pb{width:22px;height:22px;border-radius:50%;flex:none;padding:0;display:inline-flex;align-items:center;justify-content:center;opacity:.72;transition:background var(--duration-base) ease,color var(--duration-base) ease,opacity var(--duration-base) ease}
+/* `background` et `color` retirés (2026-08-19, DESIGN.md § 6). `opacity` RESTE, et c'est la seule
+   propriété que ce bouton avait besoin d'animer : elle porte son apparition au survol de la ligne
+   (voir la note deux lignes plus bas), et `opacity` est l'une des deux propriétés que § 6 autorise. */
+.lr .pb{width:22px;height:22px;border-radius:50%;flex:none;padding:0;display:inline-flex;align-items:center;justify-content:center;opacity:.72;transition:opacity var(--duration-base) ease}
 .lr:hover .pb,.lr:focus-within .pb{background:var(--color-surface-raised)}
 /* `.lk-icon` a quitte cette regle le 2026-08-19 : il ne s'attenue plus a l'opacite, donc il n'a
    plus rien a restaurer. `.pb` (bouton lecture) la garde -- il se revele au survol de la ligne,
@@ -1038,7 +1069,11 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
    termes : « l'attenuation d'un etat ne se fait pas a l'opacite, le levier est le token ».
    Cette regle portait pourtant `opacity:.6`, ce qui attenuait l'icone ET son eventuel fond, et
    faisait varier le contraste avec la surface au lieu de le choisir. */
-.lk-icon{width:22px;height:22px;border-radius:var(--border-radius-md);flex:none;padding:0;display:inline-flex;align-items:center;justify-content:center;background:none;color:var(--color-text-tertiary);transition:background var(--duration-base) var(--ease-out),color var(--duration-base) var(--ease-out)}
+/* Plus AUCUNE transition depuis le 2026-08-19 : ses deux propriétés animées étaient `background` et
+   `color`, les deux interdites par DESIGN.md § 6, et il ne restait rien à animer une fois les deux
+   retirées — la déclaration entière part plutôt qu'une liste vide. L'aplat de survol apparaît sec,
+   ce qui est le rendu d'un bouton icône du kit (§ 07-Icon Buttons) : il n'a pas d'état intermédiaire. */
+.lk-icon{width:22px;height:22px;border-radius:var(--border-radius-md);flex:none;padding:0;display:inline-flex;align-items:center;justify-content:center;background:none;color:var(--color-text-tertiary)}
 .lk-icon:hover{background:var(--overlay-hover);color:var(--color-text-primary)}
 /* Bibliothèque — vue tableau (2026-07-09) : en-tête triable + colonnes, réutilise .lr pour les
    lignes elles-mêmes (cov/play/pill/link inchangés, juste plus de colonnes qu'avant). */
@@ -1155,7 +1190,10 @@ body.sift-col-resizing,body.sift-col-resizing *{cursor:col-resize!important;user
 .sift-lib-col{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 /* Vue grille pochettes — tuiles façon casier de disques, une ligne virtualisée = LIBRARY_GRID_TILES_PER_ROW tuiles. */
 .sift-lib-grid-row{display:grid;grid-template-columns:repeat(4,1fr);gap:var(--space-12);padding:var(--space-8) var(--space-4)}
-.sift-lib-tile{cursor:pointer;border-radius:var(--border-radius-md);padding:var(--space-8);transition:background var(--duration-base) ease}
+/* Transition de `background` retirée le 2026-08-19 (DESIGN.md § 6). Même motif que `.lr`, en plus
+   net : la grille est virtualisée par RANGÉE de quatre tuiles, donc une tuile recyclée gardait
+   150 ms le fond de celle qu'elle remplace. */
+.sift-lib-tile{cursor:pointer;border-radius:var(--border-radius-md);padding:var(--space-8)}
 .sift-lib-tile:hover,.sift-lib-tile:focus-within{background:var(--color-row-active)}
 .sift-lib-tile.cur{background:var(--color-background-info)}
 .sift-lib-tile-cov{width:100%;aspect-ratio:1;border-radius:var(--border-radius-md);object-fit:cover;display:block;margin-bottom:var(--space-8)}
@@ -1306,7 +1344,9 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .lib-detail-head{display:flex;align-items:center;justify-content:space-between;gap:var(--space-12)}
 .lib-detail-head-main{min-width:0;display:flex;flex-direction:column;gap:var(--space-4)}
 .lib-detail-head-title{font-size:var(--text-base);font-weight:500;color:var(--color-text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.lib-detail-close{width:28px;height:28px;padding:0;display:inline-flex;align-items:center;justify-content:center;flex:none;opacity:.72;transition:background var(--duration-base) ease,opacity var(--duration-base) ease}
+/* `background` retiré de la transition le 2026-08-19 (DESIGN.md § 6) ; `opacity` reste, elle porte
+   le passage de .72 à 1 au survol et au focus. */
+.lib-detail-close{width:28px;height:28px;padding:0;display:inline-flex;align-items:center;justify-content:center;flex:none;opacity:.72;transition:opacity var(--duration-base) ease}
 .lib-detail-close:hover,.lib-detail-close:focus-visible{opacity:1;background:var(--color-surface-raised)}
 .lib-detail-close i{font-size:var(--text-base);color:var(--color-text-tertiary)}
 .lib-edit{display:flex;flex-direction:column;gap:var(--space-12)}
@@ -1666,7 +1706,12 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    --color-surface-raised/--color-text-primary (annotation: "trop blanc" — the bright fill was
    sized for the card background this button used to sit on, which no longer surrounds it; a
    moderate neutral fill with a light icon reads calmer against the flat inspector). */
-.sift-play-btn{flex:none;width:46px;height:46px;margin-left:var(--space-12);border-radius:50%;display:inline-flex;align-items:center;justify-content:center;padding:0;border:none;background:var(--color-surface-raised);transition:filter var(--duration-fast) ease}
+/* Transition de `filter` retirée le 2026-08-19. DESIGN.md § 6 n'autorise que `transform` et
+   `opacity` : `filter` est un effet de composition, il force un repaint du bouton entier à chaque
+   frame. L'assombrissement au survol reste — c'est le `filter:brightness(0.95)` du générique
+   `button:hover` — il s'applique simplement d'un coup. C'était la seule propriété animée ici, donc
+   la déclaration part entière. */
+.sift-play-btn{flex:none;width:46px;height:46px;margin-left:var(--space-12);border-radius:50%;display:inline-flex;align-items:center;justify-content:center;padding:0;border:none;background:var(--color-surface-raised)}
 .sift-play-btn i{font-size:20px;color:var(--color-text-primary);transition:opacity var(--duration-base) ease}
 /* background re-asserted here: the generic button:hover{background:var(--color-background-secondary)}
    (specificity 0,1,1) otherwise beats this button's own non-hover background rule (0,1,0), so on
@@ -1736,6 +1781,12 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    seulement en hover") — width transition + overflow:hidden clips the label/track, which stay in
    normal flow (not removed), so re-expanding needs no re-render. The icon is a separate absolutely
    positioned layer, faded out once expanded. */
+/* EXEMPTION VOLONTAIRE à DESIGN.md § 6 (`width` ne s'anime pas), confirmée au sweep du 2026-08-19 —
+   la seule du fichier sur `width`. Ici la transition n'est pas une décoration posée sur un contrôle :
+   elle EST le contrôle. Le repli à 20 px et l'ouverture au survol sont le mécanisme demandé
+   (annotation « le bouton de volume qui collapse et qui s'ouvre seulement en hover »), et DESIGN.md
+   § 17 le note nommément : « `.sift-volume-track` déborde et ce n'est PAS un défaut… le corriger
+   casserait le contrôle. » Portée bornée : un seul nœud, jamais peint en rafale. */
 .sift-volume-block{position:relative;width:20px;overflow:hidden;transition:width var(--duration-slow) ease}
 /* :has(.dragging) added (bug report: "il est tout buggé ton volume") — pure :hover meant the
    block collapsed the instant the cursor left its 20px hit-box, which happens constantly mid-drag
@@ -1785,7 +1836,9 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .sift-slider-fill{position:absolute;height:3px;border-radius:2px;background:var(--color-accent-fill);pointer-events:none}
 /* POUCE = rond GRIS PLEIN, comme le kit. C'était un anneau : fond sombre + bordure claire, donc
    un trou dans la piste plutôt qu'une prise posée dessus. */
-.sift-slider-thumb{position:absolute;top:50%;transform:translate(-50%,-50%) scale(1);width:13px;height:13px;border-radius:50%;background:var(--color-hue-gray-solid);border:0;box-shadow:var(--shadow-panel-subtle);pointer-events:none;transition:transform var(--duration-fast),box-shadow var(--duration-fast)}
+/* `box-shadow` retire de la transition le 2026-08-19 (DESIGN.md § 6 : transform/opacity seuls) —
+   le glow du drag apparait sec, le grossissement du pouce reste anime par transform. */
+.sift-slider-thumb{position:absolute;top:50%;transform:translate(-50%,-50%) scale(1);width:13px;height:13px;border-radius:50%;background:var(--color-hue-gray-solid);border:0;box-shadow:var(--shadow-panel-subtle);pointer-events:none;transition:transform var(--duration-fast)}
 .sift-slider-track:hover .sift-slider-thumb{transform:translate(-50%,-50%) scale(1.15)}
 .sift-slider-track.dragging .sift-slider-thumb{transform:translate(-50%,-50%) scale(1.3);box-shadow:0 0 0 4px var(--overlay-selected)}
 /* Volume opts out of the scale+glow click feedback (bug report: "bizarre le feedback sur la boule
@@ -1851,6 +1904,12 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 /* Grid 0fr→1fr trick instead of animating max-height: max-height forces a full layout
    recalc every frame (visible as the surrounding cards jittering while this opens);
    animating the grid track's fr size is layout-cheap and needs no JS scrollHeight read. */
+/* EXEMPTION VOLONTAIRE à DESIGN.md § 6, confirmée au sweep du 2026-08-19 — l'une des trois du
+   fichier sur `grid-template-rows` (avec .sift-zone-toggle-body et .sift-usage-panel). § 6 vise
+   `height`/`width`, et c'est justement ce que ce trick REMPLACE : la seule alternative pour ouvrir
+   vers une hauteur inconnue sans la mesurer en JS serait `max-height`, plus chère et plus fausse.
+   Le retirer ferait apparaître le panneau d'un coup, ce qui est une régression demandée par
+   personne. Non déplaçable vers `transform` : la matière qui suit doit être poussée, pas recouverte. */
 .sift-spectro-body{display:grid;grid-template-rows:0fr;transition:grid-template-rows var(--duration-slow) ease}
 .sift-spectro-body.is-open{grid-template-rows:1fr}
 .sift-spectro-body-inner{overflow:hidden;min-height:0}
@@ -1867,7 +1926,11 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    button:hover{background:var(--color-background-secondary)} (élément+pseudo-classe, 0,1,1) bat
    sinon silencieusement la règle de base .sift-zone-toggle{background:none} (classe seule, 0,1,0)
    au survol — même piège documenté dans CLAUDE.md pour .sift-play-btn. */
-.sift-zone-toggle-label{transition:color var(--duration-base) ease}
+/* La règle `.sift-zone-toggle-label{transition:color …}` a été RETIRÉE le 2026-08-19 : `color` est
+   interdit par DESIGN.md § 6, et c'était sa seule déclaration — il ne restait donc pas de règle une
+   fois la propriété enlevée. Le highlight du libellé au survol (ligne suivante) reste, il devient
+   sec. ⚠️ Ne pas confondre avec `.sift-zone-toggle-label{display:inline-flex;align-items:center}`
+   (plus haut, § Diagnostic), qui est une autre règle du même sélecteur et qui, elle, reste. */
 .sift-zone-toggle:hover{background:none}
 .sift-zone-toggle:hover .sift-zone-toggle-label{color:var(--color-text-primary)}
 /* SUPPRIMÉ le 2026-08-14 (issue #23). Une règle `:has(.sift-zone-toggle:hover)` highlightait la
@@ -1915,7 +1978,8 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .sift-zone-toggle-hint{font-size:var(--text-xs);color:var(--color-text-tertiary)}
 /* Même trick grid 0fr→1fr que .sift-spectro-body (Diagnostic) — Métadonnées se fermait avant
    en display:none/block, sans transition (annotation : "on a une belle animation pour analyse
-   audio mais pas pour métadonnées"). */
+   audio mais pas pour métadonnées"). EXEMPTION VOLONTAIRE à DESIGN.md § 6, au même titre et pour
+   le même motif que .sift-spectro-body, dont le commentaire porte la justification complète. */
 .sift-zone-toggle-body{display:grid;grid-template-rows:0fr;transition:grid-template-rows var(--duration-slow) ease}
 .sift-zone-toggle-body.sift-zone-toggle-body-open{grid-template-rows:1fr}
 .sift-zone-toggle-body-inner{overflow:hidden;min-height:0}
@@ -1999,7 +2063,15 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    de l'app. Retirée le 2026-08-19. Portée réelle à ne pas sous-estimer : les trois modales de
    l'app héritent cette classe — confirmation (confirm-modal.ts), formatage USB, rapport. */
 .sift-report-overlay-card{background:var(--color-background-primary);color:var(--color-text-primary);border:0;border-radius:var(--border-radius-lg);box-shadow:var(--shadow-overlay)}
-.sift-report-overlay-card-blur{background:color-mix(in srgb,var(--color-background-primary) 75%,transparent)!important;backdrop-filter:blur(18px) saturate(160%);-webkit-backdrop-filter:blur(18px) saturate(160%)}
+/* `.sift-report-overlay-card-blur` a été SUPPRIMÉE le 2026-08-19, avec son unique point d'usage
+   (`confirm-modal.ts`, chaîne de classes de la carte). C'était la dernière fausse translucidité de
+   l'app — même défaut, même correctif que `.sift-facet-pop` plus bas : `color-mix(… 75%,
+   transparent)` + `backdrop-filter:blur(18px) saturate(160%)`, le tout imposé par un `!important`
+   qui écrasait l'aplat de la ligne au-dessus. Ce que ce flou révélait : notre propre gris. Une
+   modale se pose sur `--overlay-scrim`, pas sur le bureau — flouter un fond QUE NOUS PEIGNONS ne
+   montre rien du système, ça montre une version délavée de nous-mêmes, et ça coûte une couche de
+   composition sur la surface la plus haute de l'app. La carte retombe sur l'aplat opaque
+   ci-dessus, dont l'ombre porte seule le décollement. Un seul matériau de surface flottante. */
 .sift-report-overlay-loading{padding:var(--space-24) var(--space-24);font-size:var(--text-base);display:flex;align-items:center;gap:8px}
 .sift-report-overlay-error{padding:var(--space-24) var(--space-24);font-size:var(--text-base);color:var(--color-text-danger)}
 .sift-usbfmt-card{padding:var(--space-24);width:380px;display:flex;flex-direction:column;gap:var(--space-12)}
@@ -2039,7 +2111,6 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    moment précis où l'utilisateur vise le bouton. Une seule règle désormais, et c'est la forme du
    kit : même fond, assombri. */
 .sift-confirm-btn:hover{background:var(--color-accent-fill);filter:brightness(0.95)}
-.sift-confirm-btn:disabled{opacity:.5;cursor:default}
 /* The destructive button is genuinely `disabled` for its first 250ms (confirm-modal.ts), because
    `pointer-events:none` does NOT stop HTMLElement.click() — the synthetic click is the exact
    failure mode this whole module exists to answer. A guard that silently swallows clicks is worse
@@ -2048,6 +2119,11 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 /* Le fond réaffirmé ici suivait l'ancien pâle (`--color-background-info`) : un bouton désactivé
    changeait donc quand même de couleur au survol — le contraire de ce que cette règle existe pour
    garantir. Il reprend le fond du REPOS (l'aplat d'accent) ; seul `filter:none` reste son geste. */
+/* ⚠️ `:disabled` était lui aussi déclaré DEUX fois — `opacity:.5;cursor:default` une dizaine de
+   lignes plus haut, puis celui-ci. Spécificité égale, l'ordre source tranchait : le `.5` n'a jamais
+   rien peint. La ligne morte est retirée le 2026-08-19, et c'est bien celle-ci qui reste : `.4` est
+   la valeur du générique `button:disabled` (styles.css `button:disabled{opacity:.4}`), et
+   `not-allowed` dit ce que `default` taisait — le bouton refuse, il n'est pas simplement inerte. */
 .sift-confirm-btn:disabled{opacity:.4;cursor:not-allowed}
 .sift-confirm-btn:disabled:hover{background:var(--color-accent-fill);filter:none}
 .sift-usbfmt-error{font-size:var(--text-sm);color:var(--color-text-danger)}
@@ -2413,12 +2489,15 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .sift-seg-thumbed .sift-seg-opt.on:hover{background:none;border:none}
 .sift-seg-thumb{position:absolute;top:0;bottom:0;left:0;background:var(--color-surface-raised);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-sm);box-shadow:var(--shadow-panel-subtle);transition:transform var(--duration-slow) var(--ease-out);pointer-events:none;z-index:0}
 /* Hover is text-only (color shift), no background box — retour utilisateur 2026-07-08 ("dans
-   Claude il y a simplement le texte qui highlight, pas une case qui se superpose"). Transition on
-   background+color so both the hover shift and the selected pill moving from one option to
-   another animate instead of swapping instantly — only actually visible where the option markup
-   persists across state changes (in-place classList toggle) rather than being rebuilt from a
-   fresh innerHTML string on every change; see ensureReviewSeg(). */
-.sift-seg-opt{display:inline-flex;align-items:center;gap:5px;border:none;background:none;font-family:inherit;font-size:var(--text-md);padding:5px 12px;border-radius:var(--border-radius-sm);cursor:pointer;font-weight:500;color:var(--color-text-secondary);white-space:nowrap;transition:background var(--duration-base) ease,color var(--duration-base) ease}
+   Claude il y a simplement le texte qui highlight, pas une case qui se superpose"). */
+/* ⚠️ La transition `background+color` qui vivait ici est RETIRÉE le 2026-08-19 (DESIGN.md § 6 :
+   `transform` et `opacity`, jamais autre chose) — les deux propriétés étaient fautives, donc la
+   déclaration part entière. Son commentaire d'origine justifiait la transition par le déplacement
+   de la pilule sélectionnée d'une option à l'autre : ce mouvement N'A JAMAIS dépendu d'elle. Il est
+   porté par `.sift-seg-thumb`, un nœud unique qui GLISSE en `transform` (plus haut, `--duration-slow`)
+   — et en mode « thumbed » les options ont justement `background:none`, donc il n'y avait rien à
+   animer sur elles. Ce qui perd sa transition est le seul highlight de survol, et il devient sec. */
+.sift-seg-opt{display:inline-flex;align-items:center;gap:5px;border:none;background:none;font-family:inherit;font-size:var(--text-md);padding:5px 12px;border-radius:var(--border-radius-sm);cursor:pointer;font-weight:500;color:var(--color-text-secondary);white-space:nowrap}
 /* background:none réaffirmé explicitement — sinon le générique button:hover{background:
    var(--color-background-secondary)} (styles.css, reset des boutons) l'emporte quand même sur
    l'état non sélectionné, faisant apparaître une "bulle" de fond en plus du texte qui highlight
@@ -2593,10 +2672,23 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    ne clippait que les bords EXTERIEURS, jamais la jointure interne.
    L'arrondi appartient a la barre entiere (.sift-usage-bar, --border-radius-sm), pas a ses parts :
    une donnee continue se rend d'un seul trait, et ses subdivisions se lisent par la couleur. */
-.sift-usage-seg{min-width:4px;border:0;border-radius:0;padding:0;cursor:pointer;appearance:none;transition:opacity var(--duration-fast) ease,filter var(--duration-fast) ease}
+/* `filter` retiré de la transition le 2026-08-19 (DESIGN.md § 6 : un `filter` animé recompose le
+   segment à chaque frame). `opacity` reste, et c'est elle qui porte l'essentiel du geste : la barre
+   entière s'estompe à .28 et seul le segment visé revient à 1. Le `brightness(1.08)` de ce segment
+   s'applique désormais d'un coup. */
+.sift-usage-seg{min-width:4px;border:0;border-radius:0;padding:0;cursor:pointer;appearance:none;transition:opacity var(--duration-fast) ease}
 .sift-usage-bar.dim .sift-usage-seg{opacity:.28}
 .sift-usage-bar.dim .sift-usage-seg.on{opacity:1;filter:brightness(1.08)}
-.sift-usage-seg:focus-visible{outline:2px solid var(--color-text-primary);outline-offset:2px;opacity:1}
+/* ── Les quatre `:focus-visible` de la carte d'occupation rejoignent l'anneau GÉNÉRIQUE le
+   2026-08-19 ─────────────────────────────────────────────────────────────────────────────────
+   Ils traçaient `2px solid var(--color-text-primary)`, c'est-à-dire l'ENCRE de titre : le seul
+   endroit de l'app où le focus se peignait en noir (ou en blanc cassé en thème sombre) au lieu du
+   bleu. DESIGN.md § 8 ne laisse pas cette question ouverte — « Focus visible : outline 2px solid
+   var(--color-border-info) » — et le générique `button:focus-visible` l'écrit déjà à la ligne du
+   reset. Ces quatre-là n'y échappaient que parce qu'ils redéclaraient la propriété.
+   L'OFFSET reste propre à chaque site (2px, 2px, 3px, 2px) : il dépend de ce qui entoure le
+   contrôle, pas de la couleur de l'anneau. Le token, lui, est global. */
+.sift-usage-seg:focus-visible{outline:2px solid var(--color-border-info);outline-offset:2px;opacity:1}
 .sift-usage-seg-free{flex:1 1 auto;background:var(--color-background-primary);cursor:default}
 
 .sift-usage-tip{position:absolute;bottom:calc(100% + 8px);left:0;background:var(--color-text-primary);color:var(--color-background-secondary);padding:var(--space-8) var(--space-12);border-radius:var(--border-radius-sm);font-size:var(--text-md);white-space:nowrap;pointer-events:none;opacity:0;transform:translateY(3px);transition:opacity 110ms ease,transform 110ms ease;z-index:var(--z-popover)}
@@ -2616,7 +2708,7 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .sift-usage-lg-size{font-size:var(--text-md);color:var(--color-text-secondary);font-variant-numeric:tabular-nums;padding-left:calc(var(--space-12) + var(--space-8))}
 .sift-usage-lg:hover .sift-usage-lg-name{text-decoration:underline;text-underline-offset:2px}
 .sift-usage-lg-static:hover .sift-usage-lg-name{text-decoration:none}
-.sift-usage-lg:focus-visible{outline:2px solid var(--color-text-primary);outline-offset:3px;border-radius:3px}
+.sift-usage-lg:focus-visible{outline:2px solid var(--color-border-info);outline-offset:3px;border-radius:3px}
 
 .sift-usage-info{margin:0;border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:var(--space-16);display:grid;grid-template-columns:1fr 1fr;gap:var(--space-12) var(--space-32)}
 .sift-usage-pair{display:flex;align-items:baseline;gap:var(--space-12);font-size:var(--text-md);min-width:0}
@@ -2632,19 +2724,21 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    écrit ici désormais : aplat gris surélevé, pas de bordure, survol assombri, comme tout bouton.
    Le CHEVRON reste (c'est un disclosure) : seule la boîte change. */
 .sift-usage-disclose{display:inline-flex;align-items:center;gap:var(--space-8);font-family:inherit;font-size:var(--text-md);padding:var(--space-8) var(--space-12);border:0;border-radius:var(--border-radius-md);color:var(--color-text-primary);cursor:pointer}
-.sift-usage-disclose:focus-visible{outline:2px solid var(--color-text-primary);outline-offset:2px}
+.sift-usage-disclose:focus-visible{outline:2px solid var(--color-border-info);outline-offset:2px}
 .sift-usage-chev{display:inline-block;transition:transform var(--duration-slow) ease;font-size:var(--text-xs);opacity:.7}
 .sift-usage-disclose[aria-expanded="true"] .sift-usage-chev{transform:rotate(90deg)}
 .sift-usage-cache-note{font-size:var(--text-sm);color:var(--color-text-tertiary)}
 .sift-usage-btn{font-family:inherit;font-size:var(--text-md);padding:var(--space-8) var(--space-12);border:0;border-radius:var(--border-radius-md);color:var(--color-text-primary);cursor:pointer}
 .sift-usage-btn:disabled{opacity:.5;cursor:default}
-.sift-usage-btn:focus-visible{outline:2px solid var(--color-text-primary);outline-offset:2px}
+.sift-usage-btn:focus-visible{outline:2px solid var(--color-border-info);outline-offset:2px}
 .sift-usage-actions .sift-usage-btn:first-of-type{margin-left:auto}
 .sift-usage-status:not([hidden]){border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:var(--space-12) var(--space-16);background:var(--color-background-tertiary);font-size:var(--text-md);color:var(--color-text-secondary)}
 
 /* 0fr -> 1fr anime vers une hauteur inconnue sans la mesurer en JS. Le padding vit sur
    .sift-usage-panel-inner, jamais sur la piste mesuree, sinon elle ne se referme pas
-   completement (piege css-grid-0fr-track-padding-pitfall). */
+   completement (piege css-grid-0fr-track-padding-pitfall). EXEMPTION VOLONTAIRE a DESIGN.md § 6,
+   troisieme et derniere du fichier sur `grid-template-rows` — justification complete sur
+   .sift-spectro-body. */
 .sift-usage-panel{display:grid;grid-template-rows:0fr;transition:grid-template-rows var(--duration-slow) ease}
 .sift-usage-panel.on{grid-template-rows:1fr}
 .sift-usage-panel-clip{overflow:hidden;min-height:0}
@@ -2684,6 +2778,10 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    no-preference)` plus haut (.sift-baction-arm ; .sift-fade-in / .sift-fade-out) et le flash
    .sift-usage-prow : les 33 autres `transition:` et les 5 autres `animation:` du fichier
    tournaient a pleine longueur quel que soit le reglage systeme (mesure 2026-08-05).
+   ⚠️ Les nombres de ce bloc sont ceux du 2026-08-05 et ne se relisent pas comme un etat courant :
+   le sweep motion du 2026-08-19 a ramene le fichier a 25 declarations `transition:` (6 supprimees,
+   4 elaguees), toutes sur `transform` ou `opacity` sauf quatre exemptions nommees. Le raisonnement
+   ci-dessous, lui, ne depend d'aucun de ces comptes.
 
    ADDITIF par choix, pas par paresse. Couvrir ces 38 declarations « proprement » voudrait dire
    les extraire une par une dans des blocs `no-preference` — 38 selecteurs vivants deplaces, dont
