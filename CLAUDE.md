@@ -279,6 +279,11 @@ Garde-fous issus d'incidents réels :
   padding 126, 84, 85 ou 127 ; la couverture du chemin de reste n'aurait tenu aucune des
   valeurs que son propre commentaire interdit. La tenir a demandé des entrées hors image
   de l'encodeur (`test/b85.test.ts`, `RUST_PADDING_PROBES`).
+- **Texte français écrit dans un fichier : accents vérifiés avant commit.** Un strip
+  silencieux a désaccentué ~20 commits (2026-07-28 → 08-19) — commentaires, titres de
+  commits et d'issues. `styles.css` purgé en entier (a2dd5d6) ; périmètre restant et
+  méthode : issue #43. En corrigeant, ne toucher ni l'anglais ni les citations verbatim
+  (annotations d'Antoine) — l'excès inverse est documenté (learning-log, 2026-08-19).
 - **Debug UI** : après deux correctifs visuels infructueux, mesurer la vraie fenêtre
   `tauri dev` (CDP, ci-dessous) avant un troisième essai.
 - **Pas d'affirmation d'implémentation invérifiable.** Toute phrase de rapport qui dit
@@ -411,7 +416,8 @@ la commande dev** expose un endpoint CDP standard sur la vraie fenêtre WebView2
   coordonnées du nœud), `Input.dispatchKeyEvent` (Tab réel) puis `focus()`. `driver.mjs hover|focus`
   encapsule la recette ; détail : mémoire `cdp-real-pseudo-states-for-verification`.
 - **Un override de token injecté doit s'écrire `:root:root:root`.** Le bloc sombre du dépôt
-  est `:root:not([data-theme="light"])` (`styles.css:267`), de spécificité (0,2,0) : une
+  est `:root:not([data-theme="light"])` (`styles.css:339` au 2026-08-20 — le numéro dérive,
+  le retrouver par `grep -n ':root:not'`), de spécificité (0,2,0) : une
   feuille injectée en `:root` perd, quelle que soit sa position. Constaté le 2026-08-19 —
   quatre variantes d'encre capturées **octet pour octet identiques**, ce qui se lit comme
   « re-teinter ne change rien ». Relire la valeur calculée après injection ET après retrait,
