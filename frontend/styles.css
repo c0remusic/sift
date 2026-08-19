@@ -981,15 +981,25 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
 .lr.cur{background:var(--color-background-info);color:var(--color-text-primary)}
 .lr.cur .bib-name{font-weight:500}
 .lr.cur .lk-icon,.lr.cur .pb{background:var(--color-surface-raised)}
+.lr:hover .lk-icon,.lr.cur .lk-icon{color:var(--color-text-primary)}
 .lr .pb{width:22px;height:22px;border-radius:50%;flex:none;padding:0;display:inline-flex;align-items:center;justify-content:center;opacity:.72;transition:background var(--duration-base) ease,color var(--duration-base) ease,opacity var(--duration-base) ease}
 .lr:hover .pb,.lr:focus-within .pb{background:var(--color-surface-raised)}
-.lr:hover .pb,.lr:hover .lk-icon,.lr:focus-within .pb,.lr:focus-within .lk-icon,.lr.cur .pb,.lr.cur .lk-icon{opacity:1}
+/* `.lk-icon` a quitte cette regle le 2026-08-19 : il ne s'attenue plus a l'opacite, donc il n'a
+   plus rien a restaurer. `.pb` (bouton lecture) la garde -- il se revele au survol de la ligne,
+   ce qui est une apparition, pas une attenuation d'etat. */
+.lr:hover .pb,.lr:focus-within .pb,.lr.cur .pb{opacity:1}
 /* Icon-only 22x22 buttons (Discogs link, Identifier, Écartés requeue/trash) — NOT for text
    buttons. `.lk` used to double as a generic "minimal button" class for text content too, which
    forced long labels ("Réexporter maintenant", "Lier un fichier XML Rekordbox"...) to wrap inside
    a fixed 22px box and visually overflow/overlap neighboring text. Text buttons now fall through
    to the plain `button{}` reset (bordered, auto-sized, already correct everywhere else). */
-.lk-icon{width:22px;height:22px;border-radius:var(--border-radius-md);flex:none;padding:0;display:inline-flex;align-items:center;justify-content:center;opacity:.6;transition:background var(--duration-base) ease,opacity var(--duration-base) ease}
+/* BOUTON ICONE, forme du kit (§ 02-Buttons / 07-Icon Buttons) : rien au repos, un aplat au
+   survol. Le kit n'attenue JAMAIS a l'opacite -- et DESIGN.md § 4 l'interdit dans les memes
+   termes : « l'attenuation d'un etat ne se fait pas a l'opacite, le levier est le token ».
+   Cette regle portait pourtant `opacity:.6`, ce qui attenuait l'icone ET son eventuel fond, et
+   faisait varier le contraste avec la surface au lieu de le choisir. */
+.lk-icon{width:22px;height:22px;border-radius:var(--border-radius-md);flex:none;padding:0;display:inline-flex;align-items:center;justify-content:center;background:none;color:var(--color-text-tertiary);transition:background var(--duration-base) var(--ease-out),color var(--duration-base) var(--ease-out)}
+.lk-icon:hover{background:var(--overlay-hover);color:var(--color-text-primary)}
 /* Bibliothèque — vue tableau (2026-07-09) : en-tête triable + colonnes, réutilise .lr pour les
    lignes elles-mêmes (cov/play/pill/link inchangés, juste plus de colonnes qu'avant). */
 /* En-tête FIGÉ pendant le défilement (`docs/ui-specs/bibliotheque.md`, zone C). Le conteneur de
@@ -2101,7 +2111,11 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
    symétrique, laissait un liseré de piste visible au-dessus/en dessous de la pastille sélectionnée,
    perçu comme un espace libre. La pastille .on occupe maintenant exactement la hauteur/largeur de
    sa cellule, sans marge — seul .gap:2px sépare les options entre elles. */
-.sift-seg{display:inline-flex;gap:2px;background:var(--color-track);border-radius:var(--border-radius-pill)}
+/* CONTROLE SEGMENTE, forme du kit (§ 04-Pickers / 01-Segmented Pickers) : une piste en RECTANGLE
+   ARRONDI, pas une pill. Sift posait --border-radius-pill (999px) sur la piste et sur chaque
+   segment, ce qui donne des gelules la ou macOS donne un bloc. Le rayon du pouce se derive de
+   celui de la piste, comme l'exige DESIGN.md § 3 : dans une boite `md`, l'element prend `sm`. */
+.sift-seg{display:inline-flex;gap:2px;background:var(--color-track);border-radius:var(--border-radius-md);padding:2px}
 /* #qcol is a flex column (align-items:stretch by default) — without a fixed align-self the
    control stretched to the column's full width and its tabs grew with it whenever the column
    was resized (annotation 2026-07-06: fixed size/position expected, not a stretchy control). */
@@ -2123,14 +2137,14 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
    (4 vs 3), so it always wins regardless of source order. */
 .sift-seg-thumbed .sift-seg-opt.on,
 .sift-seg-thumbed .sift-seg-opt.on:hover{background:none;border:none}
-.sift-seg-thumb{position:absolute;top:0;bottom:0;left:0;background:var(--color-surface-raised);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-pill);box-shadow:var(--shadow-panel-subtle);transition:transform var(--duration-slow) var(--ease-out);pointer-events:none;z-index:0}
+.sift-seg-thumb{position:absolute;top:0;bottom:0;left:0;background:var(--color-surface-raised);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-sm);box-shadow:var(--shadow-panel-subtle);transition:transform var(--duration-slow) var(--ease-out);pointer-events:none;z-index:0}
 /* Hover is text-only (color shift), no background box — retour utilisateur 2026-07-08 ("dans
    Claude il y a simplement le texte qui highlight, pas une case qui se superpose"). Transition on
    background+color so both the hover shift and the selected pill moving from one option to
    another animate instead of swapping instantly — only actually visible where the option markup
    persists across state changes (in-place classList toggle) rather than being rebuilt from a
    fresh innerHTML string on every change; see ensureReviewSeg(). */
-.sift-seg-opt{display:inline-flex;align-items:center;gap:5px;border:none;background:none;font-family:inherit;font-size:var(--text-md);padding:5px 12px;border-radius:var(--border-radius-pill);cursor:pointer;font-weight:500;color:var(--color-text-secondary);white-space:nowrap;transition:background var(--duration-base) ease,color var(--duration-base) ease}
+.sift-seg-opt{display:inline-flex;align-items:center;gap:5px;border:none;background:none;font-family:inherit;font-size:var(--text-md);padding:5px 12px;border-radius:var(--border-radius-sm);cursor:pointer;font-weight:500;color:var(--color-text-secondary);white-space:nowrap;transition:background var(--duration-base) ease,color var(--duration-base) ease}
 /* background:none réaffirmé explicitement — sinon le générique button:hover{background:
    var(--color-background-secondary)} (styles.css, reset des boutons) l'emporte quand même sur
    l'état non sélectionné, faisant apparaître une "bulle" de fond en plus du texte qui highlight
@@ -2143,9 +2157,15 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
    wins over inheritance, decoupling it from :hover while the un-wrapped label text keeps
    inheriting and animating normally. Only the real selected state (.on) brightens the icon. */
 .sift-seg-opt i{color:var(--color-text-secondary)}
-.sift-seg-opt.on{background:var(--color-surface-raised);border:0.5px solid var(--color-border-tertiary);color:var(--color-text-primary)}
+.sift-seg-opt.on{background:var(--color-surface-raised);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-sm);color:var(--color-text-primary)}
 .sift-seg-opt.on i{color:var(--color-text-primary)}
 .sift-seg-opt.on:hover{background:var(--color-surface-raised)}
+/* Filet vertical entre deux segments INACTIFS — le kit en met un, et il disparait de part et
+   d'autre du segment actif (dont l'aplat fait deja la separation). Rendu en ::before pour ne pas
+   ajouter de noeud a un composant que trois ecrans montent. */
+.sift-seg-opt + .sift-seg-opt::before{content:"";position:absolute;left:-1px;top:20%;bottom:20%;width:1px;background:var(--color-border-tertiary)}
+.sift-seg-opt.on::before,.sift-seg-opt.on + .sift-seg-opt::before{display:none}
+.sift-seg-opt{position:relative}
 .sift-usb-empty{font-size:var(--text-sm);color:var(--color-text-tertiary);padding:var(--space-8) 0}
 /* .sift-library-toolbar RETIRÉE le 2026-08-19 (étape 2, DESIGN.md § 17) : son contenu —
    recherche, chips de qualité, mode de vue — a quitté le panneau pour la barre unifiée, où ces
