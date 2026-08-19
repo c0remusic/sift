@@ -1361,10 +1361,11 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .sift-bt-spin{width:10px;height:10px;border:2px solid var(--color-border-secondary);border-top-color:var(--color-text-info);border-radius:50%;animation:sift-bt-rot .7s linear infinite}
 @keyframes sift-bt-rot{to{transform:rotate(360deg)}}
 /* Batch group-header tri-state checkbox (Ready-to-file format groups + Fakes). */
-/* Vertical padding on the token scale (was a literal 3px, off .jrnl-cat-hd/.rb-session-hd's
-   var(--space-4) by 1px — audit 2026-07-24). Horizontal 9px kept as-is and NOT converged to
-   their 0: this header lives inside #qcol/.queue, which already carries its own 8px horizontal
-   padding (styles.css .queue rule) — .jrnl-cat-hd/.rb-session-hd instead sit directly in
+/* Vertical padding on the token scale (was a literal 3px, off .jrnl-group-hd/.rb-session-hd's
+   var(--space-4) by 1px — audit 2026-07-24 ; .jrnl-cat-hd, l'ancien nom cité ici, est devenu
+   .jrnl-group-hd à la refonte du Journal du 2026-08-19, à padding identique). Horizontal 9px kept
+   as-is and NOT converged to their 0: this header lives inside #qcol/.queue, which already carries
+   its own 8px horizontal padding (styles.css .queue rule) — .jrnl-group-hd/.rb-session-hd sit in
    #content (18px horizontal), so 0 extra padding there already gives them a comparable real
    inset from the window edge. Forcing raw numbers to match would actually make the two headers'
    TRUE visual inset diverge, not converge — the two live in different padded containers. */
@@ -1462,68 +1463,118 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    fond et rayon par simple ordre source. */
 .sift-tag-stale{font-style:italic;background:var(--color-background-warning)!important;border-radius:var(--border-radius-md)!important;padding:var(--space-4) var(--space-8)}
 /* ── Journal d'actions ──────────────────────────────────────────────── */
-.jrnl-wrap{display:flex;flex-direction:column;gap:var(--space-8);padding-bottom:var(--space-16)}
-/* Header */
-.jrnl-hd{display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--space-4)}
-.jrnl-hd>span{font-size:var(--text-lg);font-weight:600;color:var(--color-text-primary)}
-/* Collapsible category — deliberately card-less, matching .sift-bt-head's flat/uppercase
-   language (audit 2026-07-05, direction A: keep the fold/badge/mass-action, drop the bordered
-   card + filled header background). Rows keep a thin separator (unlike batch's gap-only list)
-   since journal rows carry two lines of text (name + dest) and read better with a rule between. */
-.jrnl-cat{display:block;margin-bottom:var(--space-12)}
-.jrnl-cat-hd{display:flex;align-items:center;gap:var(--space-8);padding:var(--space-4) 0;cursor:pointer;list-style:none;user-select:none}
-.jrnl-cat-hd::-webkit-details-marker{display:none}
-.jrnl-cat-chev{flex:none;font-size:12px;color:var(--color-text-tertiary);transition:transform var(--duration-base);display:inline-block}
-details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
-.jrnl-cat-label{flex:none;font-size:var(--text-xs);font-weight:600;letter-spacing:var(--tracking-widest);text-transform:uppercase;color:var(--color-text-tertiary)}
-.jrnl-cat-badge{flex:none;font-size:var(--text-xs);color:var(--color-text-tertiary);background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-pill);padding:0 6px;line-height:1.6}
-.jrnl-mass{margin-left:auto;flex:none;background:transparent;border:none;font-size:var(--text-xs);cursor:pointer;padding:var(--space-4) var(--space-8)}
-.jrnl-mass:hover{opacity:.8}
-/* Rows */
-.jrnl-rows{display:flex;flex-direction:column;border-top:0.5px solid var(--color-border-tertiary)}
-.jrnl-row{display:flex;align-items:center;gap:var(--space-8);padding:var(--space-8) 0;border-bottom:0.5px solid var(--color-border-tertiary)}
-.jrnl-row-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:var(--space-4)}
-.jrnl-name{font-size:var(--text-sm);font-weight:500;color:var(--color-text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.jrnl-dest{font-size:var(--text-xs);font-family:var(--font-mono);color:var(--color-text-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-/* Secondaire nu (2026-08-19) : ni fond transparent ni cadre — le reset `button{}` donne l'aplat
-   gris du kit (§ 01-Push Buttons, colonne Secondary), et son survol assombrit ce même aplat. Le
-   `:hover` d'origine ne changeait QUE la couleur d'un cadre déjà présent, donc il n'avait plus
-   d'organe une fois le cadre parti : il ne garde que le passage d'encre.
-   ⚠️ Le chantier 2 (refonte Journal, docs/ui-specs/journal.md) sort « Annuler » de la ligne pour
-   l'emmener dans un menu contextuel — cette règle disparaîtra alors. Elle est corrigée ici parce
-   qu'elle est encore peinte, pas parce qu'on la garde. */
-.jrnl-revert{flex:none;border-radius:var(--border-radius-md);color:var(--color-text-secondary);font-size:var(--text-xs);padding:var(--space-4) var(--space-8);cursor:pointer;line-height:1.4}
-.jrnl-revert:hover{color:var(--color-text-primary)}
-/* Confirmation toast — fades out automatically via CSS, no JS timer */
-/* FONDS SÉMANTIQUES OPAQUES, 2026-08-19. Les cinq règles ci-dessous composaient leur fond à la
-   volée — `color-mix(… 12%, transparent)` sur une encre — soit exactement ce que DESIGN.md § 4
-   interdit : un fond alpha se compose différemment selon le gris qui passe dessous, et l'audit de
-   palette du 2026-07-10 y avait mesuré des ratios tombant à 3,37:1 sur les cartes les plus sombres.
-   Les tokens `--color-background-success` / `-warning` existent pour ça, appairés à leur encre.
-   Les bordures partent avec (kit § 03-Notifications : aucune bordure, l'ombre ou le fond portent
-   le décollement) — `.jrnl-banner` déclarait même un `border:1px solid` sans couleur, donc peint
-   avec la couleur du TEXTE, un cadre vert ou ambre selon la variante.
-   ⚠️ Comme `.jrnl-revert`, ces règles sont dans le viseur du chantier 2 : la spec Journal les
-   remplace par les toasts partagés. Corrigées ici tant qu'elles peignent. */
-.jrnl-toast{font-size:var(--text-sm);color:var(--color-text-success);background:var(--color-background-success);border:0;border-radius:var(--border-radius-md);padding:var(--space-8) var(--space-12);margin-bottom:var(--space-8);animation:jrnl-toast-fade 2.8s ease forwards}
-.jrnl-toast--warn{color:var(--color-text-warning);background:var(--color-background-warning)}
-.jrnl-banner{font-size:var(--text-sm);border-radius:var(--border-radius-md);padding:var(--space-8) var(--space-12);margin-bottom:var(--space-8);border:0}
-.jrnl-banner--ok{color:var(--color-text-success);background:var(--color-background-success)}
-.jrnl-banner--warn{color:var(--color-text-warning);background:var(--color-background-warning)}
-.jrnl-row--loading{opacity:.6;transition:opacity var(--duration-base)}
-.jrnl-row--reverted{opacity:.4;transition:opacity var(--duration-base)}
-.jrnl-row--reverted .jrnl-name{text-decoration:line-through}
-.jrnl-row--reverted .jrnl-revert{color:var(--color-text-success)}
-@keyframes jrnl-toast-fade{0%,60%{opacity:1}100%{opacity:0;height:0;padding:0;margin:0;border-width:0;overflow:hidden}}
-/* "Voir tout" footer */
-.jrnl-voir-tout{background:transparent;border:none;color:var(--color-text-tertiary);font-size:var(--text-sm);cursor:pointer;padding:var(--space-4) 0;text-align:left;margin-top:var(--space-4)}
-.jrnl-voir-tout:hover{color:var(--color-text-secondary)}
-/* Session groups (extended view) */
-.jrnl-session-group{margin-bottom:var(--space-12)}
-.jrnl-session-hd{font-size:var(--text-xs);text-transform:uppercase;letter-spacing:var(--tracking-wider);color:var(--color-text-tertiary);padding:var(--space-4) 0 var(--space-8);border-top:0.5px solid var(--color-border-tertiary);margin-bottom:var(--space-4)}
+/* REFONTE DU 2026-08-19 — l'écran est passé à sa spec (`docs/ui-specs/journal.md`, chantier 2).
+   Aucune règle de l'ancien Journal n'a survécu, et chacune est partie avec son consommateur :
+     .jrnl-hd            le titre a rejoint la barre unifiée, il y était en double ;
+     .jrnl-cat*          les catégories <details> (FILÉS/JETÉS/REJETÉS) sont remplacées par des
+                         groupes de session, et de jour au-dessus en mode historique ;
+     .jrnl-mass          l'annulation de masse est passée à l'inspecteur (zone D) ;
+     .jrnl-revert        « Annuler » a quitté la LIGNE pour le menu contextuel et l'inspecteur —
+                         une colonne de boutons sur un historique long coûte de la largeur en
+                         permanence pour un usage rare ;
+     .jrnl-toast/-banner les confirmations passent par le toast partagé `.sift-toast` ;
+     .jrnl-voir-tout     le pied de liste est devenu le contrôle segmenté de la barre ;
+     .jrnl-session-*     remplacé par .jrnl-group-* (deux niveaux au lieu d'un).
+   Le `@keyframes jrnl-toast-fade` et l'exemption `:not(.jrnl-toast)` du bloc
+   `prefers-reduced-motion` en fin de fichier sont partis dans le même geste : ils n'avaient plus
+   d'organe.
+
+   LA LIGNE RÉUTILISE `.lr`, la ligne de table de l'app — --row-h, survol, sélection neutre,
+   filet, focus. Une seule grammaire de ligne pour Bibliothèque et Journal ; ce qui est propre au
+   Journal vit ici, et rien d'autre : les colonnes, les groupes, les états. */
+.jrnl-wrap{display:flex;flex-direction:column;
+  /* Largeurs des trois colonnes FIXES, déclarées ici une seule fois. Pas en `ch` ni en `em` :
+     l'en-tête est à --text-xs et les lignes à 12px, donc la même largeur relative y résoudrait
+     deux valeurs différentes et les colonnes ne s'aligneraient pas.
+     Chacune est DÉRIVÉE du plus long contenu qu'elle porte, MESURÉ dans la vraie fenêtre le
+     2026-08-19 (CDP, une sonde `<span>` posée dans la cellule elle-même, donc sur la police
+     réellement résolue — pas un calcul) :
+       heure  « 00:00 » en --font-mono/12px = 36,0px   (en-tête « HEURE »  = 34,9px)  → 44px
+       action « Écarté » 35,2 + --space-4 + « ×123 » 19,7 = 58,9px (« ACTION » = 40,6px) → 68px
+       état   « Annulation… » = 66,8px                  (en-tête « ÉTAT »   = 25,5px)  → 76px
+     Chaque largeur laisse ~9px de respiration et tombe sur le cran de 4 de l'échelle. */
+  --jrnl-col-time:44px;--jrnl-col-act:68px;--jrnl-col-state:76px}
+/* En-tête de colonnes, collant en haut de la zone C. Même matériau que `.sift-lib-thead`, classe
+   distincte et non réutilisée : le clic droit sur `.sift-lib-thead` ouvre les réglages de COLONNES
+   de la Bibliothèque (`sift-live.ts`), que le Journal n'a pas — ni tri, ni redimensionnement. */
+.jrnl-thead{position:sticky;top:0;z-index:1;background:var(--color-background-secondary);display:flex;align-items:center;gap:var(--space-8);padding:var(--space-4) var(--space-8);font-size:var(--text-xs);text-transform:uppercase;letter-spacing:var(--tracking-widest);color:var(--color-text-tertiary);border-bottom:0.5px solid var(--color-border-tertiary)}
+/* Colonnes. Aucun zébrage : la séparation vient du filet de `.lr` et de l'espace (DESIGN.md § 16). */
+.jrnl-c{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.jrnl-c-time{flex:none;width:var(--jrnl-col-time)}
+.jrnl-c-act{flex:none;width:var(--jrnl-col-act)}
+.jrnl-c-track{flex:2;min-width:var(--col-min-w)}
+.jrnl-c-dest{flex:1.5;min-width:var(--col-min-w)}
+.jrnl-c-state{flex:none;width:var(--jrnl-col-state)}
+/* Le rendu (police, encre) est scopé à la LIGNE : l'en-tête garde sa propre langue — petites
+   capitales grises — et n'hérite ni du mono ni de la troncature par la gauche. */
+.jrnl-row .jrnl-c-time{font-family:var(--font-mono);font-variant-numeric:tabular-nums;color:var(--color-text-secondary)}
+.jrnl-row .jrnl-c-track{color:var(--color-text-primary)}
+/* Destination tronquée par la GAUCHE : c'est la FIN d'un chemin qui identifie le fichier, le début
+   se devine. `direction:rtl` déplace l'ellipse au début, `text-align:left` garde la colonne alignée
+   sur ses voisines.
+   ⚠️ Le `<bdi>` que la ligne pose autour du chemin est OBLIGATOIRE, pas une précaution : sans
+   isolation, l'algorithme bidi renvoie en fin de ligne tout segment initial neutre ou faible, et
+   un dossier « (2002) The Universal Sky » se peignait « The Universal Sky … (2002) ». Mesuré dans
+   la vraie fenêtre le 2026-08-19 — le `textContent` était juste, seul le rendu mentait. L'isolat
+   rend le chemin atomique pour le réordonnancement du parent, et le laisse quand même se faire
+   rogner par l'ellipse. */
+.jrnl-row .jrnl-c-dest{font-family:var(--font-mono);font-size:var(--text-sm);color:var(--color-text-tertiary);direction:rtl;text-align:left}
+.jrnl-row .jrnl-c-dest bdi{direction:ltr;unicode-bidi:isolate}
+.jrnl-row .jrnl-c-state{color:var(--color-text-tertiary)}
+.jrnl-batch{margin-left:var(--space-4);font-size:var(--text-xs);color:var(--color-text-tertiary)}
+/* Groupes. En-têtes en petites capitales discrètes, repliables au clic — un vrai <button>, donc
+   Entrée/Espace marchent sans câblage. Le niveau 2 (session sous un jour) s'indente d'un seul
+   cran : un seul niveau d'indentation dans toute l'app (DESIGN.md § 14). */
+.jrnl-group--l1{margin-top:var(--space-16)}
+.jrnl-group--l1:first-child{margin-top:var(--space-8)}
+.jrnl-group--l2{margin-top:var(--space-4);padding-left:var(--space-12)}
+.jrnl-group-hd{display:flex;align-items:center;gap:var(--space-8);width:100%;padding:var(--space-4) 0;background:none;border-radius:0;font-size:var(--text-xs);font-weight:600;letter-spacing:var(--tracking-widest);text-transform:uppercase;color:var(--color-text-tertiary);text-align:left}
+/* `background:none` et `filter:none` réaffirmés : le générique `button:hover` (:1213) repeint un
+   aplat gris et l'assombrit, ce qui donnerait une barre pleine à la place d'un en-tête discret. */
+.jrnl-group-hd:hover{background:none;filter:none;color:var(--color-text-secondary)}
+.jrnl-group-chev{flex:none;font-size:var(--text-md);transition:transform var(--duration-base) var(--ease-out)}
+.jrnl-group-hd[aria-expanded="true"] .jrnl-group-chev{transform:rotate(90deg)}
+.jrnl-group-label{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.jrnl-group-count{margin-left:auto;flex:none;font-weight:400;letter-spacing:normal;text-transform:none;color:var(--color-text-quaternary)}
+/* ÉTATS (spec § États). Aucun ne passe par l'opacité — DESIGN.md § 4 l'interdit ; c'est l'ENCRE
+   qui porte l'état, le geste du correctif `.rb-row--idle`. */
+/* En cours : transitoire, donc il a le droit de se colorer. La ligne reste utilisable, et le reste
+   de la table aussi — rien n'est désactivé au-delà du bouton de l'inspecteur. */
+.jrnl-row--pending .jrnl-c-state{color:var(--color-text-info)}
+/* Annulé : ton neutre et PERMANENT. L'encre baisse d'un cran, elle ne s'éteint pas. */
+.jrnl-row--reverted .jrnl-c-track,.jrnl-row--reverted .jrnl-c-state{color:var(--color-text-tertiary)}
+/* Échec : encre danger sur la ligne entière — un échec ne s'estompe jamais (§ 4). */
+.jrnl-row--failed .jrnl-c-track,.jrnl-row--failed .jrnl-c-state,.jrnl-row--failed .jrnl-c-dest{color:var(--color-text-danger)}
+/* Seule la TRANSITION se colore, et brièvement : --duration-base, la durée que la spec nomme. Même
+   patron que `.sift-identified-flash`. La classe est retirée à `animationend` (journal.ts) — sinon
+   une seconde annulation sur la même ligne ne rejouerait rien. Sous `prefers-reduced-motion` la
+   durée tombe à .01ms mais l'événement arrive quand même, donc rien ne reste accroché. */
+.jrnl-row--flash{animation:jrnl-revert-flash var(--duration-base) ease}
+@keyframes jrnl-revert-flash{0%{background:var(--color-background-success)}100%{background:transparent}}
+/* Chargement : squelette DANS la structure finale (DESIGN.md § 8) — mêmes colonnes, même hauteur
+   de ligne, donc l'arrivée des données ne déplace rien. Pas d'animation : un squelette qui pulse
+   attire l'œil sur une attente qui dure une centaine de millisecondes. */
+.jrnl-row--skel{cursor:default}
+.jrnl-skel{display:block;height:var(--space-8);border-radius:var(--border-radius-sm);background:var(--color-background-secondary)}
+/* Filtre sans résultat : reste SOUS l'en-tête de colonnes, ne le remplace pas — retirer l'en-tête
+   emporterait les commandes qui permettent de défaire le filtre (même règle que la Bibliothèque). */
+.jrnl-noresult{padding:var(--space-16) var(--space-8);font-size:var(--text-md);color:var(--color-text-tertiary)}
+/* Erreur de lecture : l'écran n'affirme RIEN du contenu (DESIGN.md § 8). */
+.jrnl-error{color:var(--color-text-danger)}
+.jrnl-error-actions{margin-top:var(--space-8)}
+.jrnl-error-actions button{font-size:var(--text-xs)}
+/* Zone D. `.jrnl-insp-title` porte le nom de la piste et redescend --text-xl (`.sift-sel-count`,
+   fait pour un NOMBRE) à --text-base : un nom de fichier à 20px déborde une colonne de 320px. */
+.jrnl-insp-title{font-size:var(--text-base);font-weight:600;overflow-wrap:anywhere}
+.jrnl-insp-path{margin-top:var(--space-12)}
+.jrnl-insp-pathval{font-family:var(--font-mono);font-size:var(--text-sm);color:var(--color-text-secondary);overflow-wrap:anywhere}
+.jrnl-insp-fail{margin-top:var(--space-8);font-size:var(--text-sm);color:var(--color-text-danger)}
+.jrnl-insp-note{margin-top:var(--space-8);font-size:var(--text-sm);color:var(--color-text-tertiary)}
+.jrnl-insp-actions{margin-top:var(--space-16)}
+.jrnl-insp-actions button{width:100%}
 
 /* M8 Tier 1/3 candidate lists (rekordbox-view.ts) — collapsible groups by app session,
-   "Tout sélectionner"/"Tout désélectionner" per group. Mirrors .jrnl-session-* above (same
+   "Tout sélectionner"/"Tout désélectionner" per group. Mirrors .jrnl-group-* above (same
    grouping concept, Journal) but needs a header row (toggle + select-all button) instead of a
    plain label. */
 .rb-session-group{margin-bottom:var(--space-8)}
@@ -2632,28 +2683,22 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
       lit comme une app plantee — et les HIG demandent justement qu'un indicateur d'activite
       continue de bouger. Rotation sur place : ni deplacement, ni changement d'echelle, ni
       parallaxe, c'est-a-dire pas la classe de mouvement que `reduce` vise.
-   2. .jrnl-toast — son animation n'est pas decorative non plus : elle EST le mecanisme de
-      disparition (aucun timer JS, cf. son commentaire plus haut). A .01ms le message disparaitrait
-      avant d'etre lu ; a `animation:none` il resterait affiche pour toujours. On garde donc sa
-      duree et on redefinit ses keyframes pour REPOUSSER la sortie a la toute fin : `0%,99%` au
-      lieu de `0%,60%`, soit ~2,77 s de pleine opacite (le temps de lecture) puis une disparition
-      de 28 ms. Le frame 100% est INCHANGE, `height/padding/margin/border-width` a 0 compris :
-      l'affaissement a toujours lieu et la liste du journal remonte toujours. Ces declarations
-      sont ce qui libere la place — les retirer laisserait le toast occuper sa ligne a opacite 0
-      pour toujours (`forwards`, :767). Ce qui change n'est donc pas l'existence du mouvement mais
-      sa duree : 28 ms au lieu de 1,12 s (les 40 % de 2,8 s de l'original), soit sous le seuil de
-      perception au lieu de s'etaler. Une redefinition de meme nom, plus bas dans l'ordre du
-      document et dans un `@media` qui matche, gagne — l'originale reste intacte hors `reduce`.
+   2. .jrnl-toast — RETIREE le 2026-08-19 avec la refonte du Journal (chantier 2). Cette exemption
+      existait parce que l'animation de ce toast ETAIT son mecanisme de disparition — aucun timer
+      JS — donc `.01ms` l'aurait fait partir avant d'etre lu. Le Journal passe desormais par le
+      toast partage `.sift-toast`, qui a un vrai timer (filing-toast.ts) : il n'y a plus rien a
+      exempter, et la classe n'existe plus. Le `@keyframes jrnl-toast-fade` redefini ici est parti
+      dans le meme geste. Le flash d'annulation qui l'a remplace (`.jrnl-row--flash`) n'est PAS
+      une exemption : il n'est que du signal, sa classe se retire a `animationend`, et une duree
+      ramenee a .01ms laisse l'evenement arriver — exactement le cas .sift-identified-flash.
    Les exemptions sont ecrites DANS le selecteur (`:not()`), pas rejouees en dessous avec leur
-   valeur : les trois classes ne matchent simplement pas la garde et gardent la duree declaree a
-   :644 / :657 / :767. Aucun nombre magique duplique, donc aucune divergence possible le jour ou
-   l'une de ces durees change. Sur ici parce qu'aucune des trois n'a de descendant anime a
-   exempter : .sift-spin est un `<i>` feuille, .sift-bt-spin un `<span>` feuille, et .jrnl-toast
-   ne contient que du texte passe a esc() (journal.ts:351-352). Ajouter une exemption = ajouter un
-   `:not()`, apres avoir verifie ce meme point. */
+   valeur : les deux classes ne matchent simplement pas la garde et gardent la duree declaree a
+   :644 / :657. Aucun nombre magique duplique, donc aucune divergence possible le jour ou l'une de
+   ces durees change. Sur ici parce qu'aucune des deux n'a de descendant anime a exempter :
+   .sift-spin est un `<i>` feuille et .sift-bt-spin un `<span>` feuille. Ajouter une exemption =
+   ajouter un `:not()`, apres avoir verifie ce meme point. */
 @media (prefers-reduced-motion:reduce){
-  *:not(.sift-spin):not(.sift-bt-spin):not(.jrnl-toast),*::before,*::after{animation-duration:.01ms !important;animation-iteration-count:1 !important;transition-duration:.01ms !important}
-  @keyframes jrnl-toast-fade{0%,99%{opacity:1}100%{opacity:0;height:0;padding:0;margin:0;border-width:0;overflow:hidden}}
+  *:not(.sift-spin):not(.sift-bt-spin),*::before,*::after{animation-duration:.01ms !important;animation-iteration-count:1 !important;transition-duration:.01ms !important}
   /* Sortie du toast de filing-toast.ts, sans le fondu (cf. le trou nomme plus haut). */
   .sift-fade-out{opacity:0;pointer-events:none}
   /* Deja presente avant ce bloc (elle vivait seule juste sous .sift-usage-prow.flash), fusionnee

@@ -85,6 +85,98 @@ export function mountBarSearch(opts: BarSearchOptions): HTMLInputElement | null 
   return input;
 }
 
+// ---------------------------------------------------------------------------
+// Contrôle segmenté de la barre — un MODE DE VUE, pas une action
+// ---------------------------------------------------------------------------
+
+export interface BarSegOption {
+  /** Identifiant rendu dans `data-barseg` et repassé à `onPick`. */
+  id: string;
+  /** Libellé visible. */
+  label: string;
+}
+
+export interface BarSegmentedOptions {
+  /** `id` du nœud segmenté, pour le retrouver d'un rendu à l'autre. */
+  id: string;
+  options: readonly BarSegOption[];
+  /** Option active. */
+  active: string;
+  /** Libellé accessible du groupe. */
+  ariaLabel: string;
+  /** Appelé au clic sur une option INACTIVE, avec son `id`. */
+  onPick: (id: string) => void;
+}
+
+/** Positionne le pouce depuis le bouton qui porte `.on`. Séparé du montage pour être rejouable :
+ *  le pouce se déplace au clic, AVANT le rendu asynchrone qui suivra — sinon il n'y a rien à
+ *  animer (`CLAUDE.md` § Front : une transition n'anime rien si le render reconstruit le nœud). */
+function paintBarSegmented(seg: HTMLElement, active: string): void {
+  seg.querySelectorAll<HTMLElement>("[data-barseg]").forEach((b) => {
+    const on = b.dataset.barseg === active;
+    b.classList.toggle("on", on);
+    b.setAttribute("aria-pressed", on ? "true" : "false");
+  });
+  const thumb = seg.querySelector<HTMLElement>(".sift-seg-thumb");
+  // Relu depuis le DOM plutôt que retenu de la boucle : c'est la classe qui vient d'être posée qui
+  // fait foi, et la géométrie se mesure sur le nœud tel qu'il est maintenant.
+  const onEl = seg.querySelector<HTMLElement>("[data-barseg].on");
+  if (!thumb || !onEl) return;
+  thumb.style.width = `${onEl.offsetWidth}px`;
+  thumb.style.transform = `translateX(${onEl.offsetLeft}px)`;
+}
+
+/** Monte (ou réutilise) un contrôle segmenté dans l'emplacement d'actions de la barre.
+ *
+ *  Même discipline que `mountBarSearch` — créer une fois, muter ensuite — et pour une raison
+ *  visible à l'écran plutôt que par principe : le pouce de `.sift-seg-thumbed` glisse par
+ *  `transform`, donc il lui faut un nœud qui SURVIT au changement d'état. `mountBarActions`
+ *  réécrit l'emplacement à chaque appel ; un segmenté monté par là ne glisse jamais, il
+ *  réapparaît déjà en place (même leçon que `ensureReviewSeg`, `queue-panel.ts`).
+ *
+ *  `router.ts::clearBarSlots()` vide l'emplacement à chaque changement d'écran : le nœud est donc
+ *  recréé au retour sur la vue, ce qui est correct — c'est un remontage, pas un re-rendu. */
+export function mountBarSegmented(opts: BarSegmentedOptions): void {
+  const host = barActions();
+  if (!host) return;
+
+  let seg = document.getElementById(opts.id);
+  if (!seg || !host.contains(seg)) {
+    host.innerHTML =
+      `<div class="sift-seg sift-seg-thumbed" id="${esc(opts.id)}" role="group" ` +
+      `aria-label="${esc(opts.ariaLabel)}">` +
+      `<div class="sift-seg-thumb"></div>` +
+      opts.options
+        .map(
+          (o) =>
+            `<button type="button" class="sift-seg-opt" data-barseg="${esc(o.id)}">${esc(o.label)}</button>`,
+        )
+        .join("") +
+      `</div>`;
+    seg = document.getElementById(opts.id);
+    if (!seg) return;
+  }
+
+  // Un seul gestionnaire vivant à la fois, stocké sur le nœud : le précédent capture l'ancien
+  // `active` et le rejouerait. Même motif que `mountBarSearch`, même raison.
+  const holder = seg as HTMLElement & { _siftOnSegPick?: (e: Event) => void };
+  if (holder._siftOnSegPick) seg.removeEventListener("click", holder._siftOnSegPick);
+  const segEl = seg;
+  const handler = (e: Event) => {
+    const btn = (e.target as HTMLElement | null)?.closest<HTMLElement>("[data-barseg]");
+    const picked = btn?.dataset.barseg;
+    if (!picked || picked === opts.active) return;
+    // Le pouce bouge tout de suite, sur les nœuds existants ; le rendu qui suit est asynchrone
+    // (aller-retour IPC), le navigateur a donc le temps de peindre le déplacement.
+    paintBarSegmented(segEl, picked);
+    opts.onPick(picked);
+  };
+  holder._siftOnSegPick = handler;
+  seg.addEventListener("click", handler);
+
+  paintBarSegmented(seg, opts.active);
+}
+
 /** Place le focus dans la recherche de la barre. Rend `false` quand la vue courante n'en monte
  *  aucune — l'appelant (le raccourci ⌘/Ctrl+F) peut alors ne rien faire plutôt que d'échouer en
  *  silence sur un `?.` qui ressemble à un succès. */
