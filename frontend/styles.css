@@ -1492,14 +1492,11 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .sift-genre-chip-discofunksoul{background:var(--color-hue-pink-bg);color:var(--color-hue-pink-text)}
 .sift-genre-chip-hiphop{background:var(--color-hue-purple-bg);color:var(--color-hue-purple-text)}
 .sift-genre-chip-autre{background:var(--color-background-secondary);color:var(--color-text-tertiary)}
-.sift-src-dot{width:7px;height:7px;border-radius:999px;flex:none}
-.sift-src-dot-indigo{background:var(--color-hue-indigo-text)}
-.sift-src-dot-purple{background:var(--color-hue-purple-text)}
-.sift-src-dot-pink{background:var(--color-hue-pink-text)}
-.sift-src-dot-teal{background:var(--color-hue-teal-text)}
-.sift-src-dot-yellow{background:var(--color-hue-yellow-text)}
-.sift-src-swatch{width:20px;height:20px;border-radius:999px;border:2px solid transparent;padding:0;cursor:pointer}
-.sift-src-swatch.on{border-color:var(--color-text-primary)}
+/* TEINTES DE SOURCE — seules survivantes de l'ancien écran Accueil (2026-08-20). Le sélecteur de
+   pastille (`.sift-src-swatch`, un <button> 20px avec état .on) et le point 7px (`.sift-src-dot-*`)
+   sont partis avec home-sources.ts (fusion 1, commit 6d1cc85) ; ces cinq variantes de fond restent
+   parce que `rail-sources.ts:64` les pose sur la pastille du rail (`.sift-rail-src-dot`) via
+   `color_key`. Elles ne déclarent QUE le fond — la géométrie appartient à la pastille porteuse. */
 .sift-src-swatch-indigo{background:var(--color-hue-indigo-text)}
 .sift-src-swatch-purple{background:var(--color-hue-purple-text)}
 .sift-src-swatch-pink{background:var(--color-hue-pink-text)}
@@ -2679,6 +2676,11 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .sift-usage-seg{min-width:4px;border:0;border-radius:0;padding:0;cursor:pointer;appearance:none;transition:opacity var(--duration-fast) ease}
 .sift-usage-bar.dim .sift-usage-seg{opacity:.28}
 .sift-usage-bar.dim .sift-usage-seg.on{opacity:1;filter:brightness(1.08)}
+/* Un segment FOCALISÉ pendant l'atténuation reste pleinement lisible — c'était l'intention du
+   `opacity:1` que portait `.sift-usage-seg:focus-visible` (0,2,0), battu en silence par la règle
+   `.dim` ci-dessus (0,3,0). La déclaration vit maintenant à la spécificité qui gagne (0,4,0) ;
+   l'anneau, lui, reste sur la règle générique du segment. Mesuré le 2026-08-20. */
+.sift-usage-bar.dim .sift-usage-seg:focus-visible{opacity:1}
 /* ── Les quatre `:focus-visible` de la carte d'occupation rejoignent l'anneau GÉNÉRIQUE le
    2026-08-19 ─────────────────────────────────────────────────────────────────────────────────
    Ils traçaient `2px solid var(--color-text-primary)`, c'est-à-dire l'ENCRE de titre : le seul
@@ -2688,7 +2690,7 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    reset. Ces quatre-là n'y échappaient que parce qu'ils redéclaraient la propriété.
    L'OFFSET reste propre à chaque site (2px, 2px, 3px, 2px) : il dépend de ce qui entoure le
    contrôle, pas de la couleur de l'anneau. Le token, lui, est global. */
-.sift-usage-seg:focus-visible{outline:2px solid var(--color-border-info);outline-offset:2px;opacity:1}
+.sift-usage-seg:focus-visible{outline:2px solid var(--color-border-info);outline-offset:2px}
 .sift-usage-seg-free{flex:1 1 auto;background:var(--color-background-primary);cursor:default}
 
 .sift-usage-tip{position:absolute;bottom:calc(100% + 8px);left:0;background:var(--color-text-primary);color:var(--color-background-secondary);padding:var(--space-8) var(--space-12);border-radius:var(--border-radius-sm);font-size:var(--text-md);white-space:nowrap;pointer-events:none;opacity:0;transform:translateY(3px);transition:opacity 110ms ease,transform 110ms ease;z-index:var(--z-popover)}
@@ -2770,7 +2772,9 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    juste en dessous, pour que les deux se lisent comme une seule sequence. */
 .sift-usbfmt-namerow{display:flex;flex-direction:column;gap:var(--space-4);font-size:var(--text-md);color:var(--color-text-secondary)}
 .sift-usbfmt-namerow input{font-family:var(--font-mono);font-size:var(--text-md);padding:var(--space-8);background:var(--color-background-primary);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);color:var(--color-text-primary)}
-.sift-usbfmt-namerow input:focus-visible{outline:2px solid var(--color-text-primary);outline-offset:2px}
+/* Pas de :focus-visible propre (retiré 2026-08-20) : une SAISIE remplace l'anneau par une bordure
+   (DESIGN.md § 8) — le générique `input:not([type=checkbox]):focus-visible` fait exactement ça, et
+   la règle d'ici posait un anneau PAR-DESSUS cette bordure, deux indicateurs pour un seul focus. */
 
 /* ── Mouvement reduit — garde GLOBALE, unique bloc `reduce` du fichier ────────────────────────
    HIG § Motion : « Make motion optional. Not everyone can or wants to experience the motion in
