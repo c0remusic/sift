@@ -12,6 +12,7 @@ import { listSources, setSourceWatched, rescanSource, removeSource, addSource } 
 import { open } from "@tauri-apps/plugin-dialog";
 import type { Source } from "../shared/contracts";
 import { esc } from "./dom";
+import { resolveSourceColorKey } from "./source-color";
 import { setQueueSourceFilter, activeQueueSource, renderQueue } from "./queue-panel";
 import { goTo } from "./router";
 import { openContextMenu } from "./context-menu";
@@ -59,9 +60,10 @@ function baseName(p: string): string {
 /** Une entrée de source. Même grammaire que les autres entrées du rail (`.nv`) : la section
  *  Sources n'est pas un composant à part, c'est le rail avec un contenu de plus. La pastille de
  *  couleur est un accent CATÉGORIEL — elle identifie la source ailleurs dans l'app, elle ne porte
- *  aucun état (DESIGN.md § 4). */
+ *  aucun état (DESIGN.md § 4). Teinte : override manuel sinon cycle par ordre d'ajout
+ *  (`source-color.ts`) — jamais neutre : un gris uniforme n'identifierait rien. */
 function sourceEntryHtml(s: Source, active: boolean): string {
-  const hue = s.color_key ? ` sift-rail-src-dot-${esc(s.color_key)}` : "";
+  const hue = ` sift-rail-src-dot-${esc(resolveSourceColorKey(sources, s))}`;
   const count = s.pending_count > 0 ? `<span class="nav-badge">${s.pending_count}</span>` : "";
   const failure = scanFailures.get(s.id);
   const broken = !s.accessible || failure != null;

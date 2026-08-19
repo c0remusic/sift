@@ -153,7 +153,8 @@ pub fn set_source_watched(
 }
 
 /// Sets or clears a source's manual color override (one of the 5 categorical
-/// hue keys, or None to fall back to auto-assignment by add-order).
+/// hue keys, or None to fall back to auto-assignment by add-order — computed
+/// frontend-side in frontend/source-color.ts, never stored).
 #[tauri::command]
 pub fn set_source_color(
     conn: State<'_, Mutex<Connection>>,

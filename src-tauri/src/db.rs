@@ -167,9 +167,10 @@ const MIGRATIONS: &[&str] = &[
     CREATE INDEX idx_rkbmdb_repairs_status ON rekordbox_masterdb_repairs(status);
     "#,
     // v12 — Apple system-colors palette: per-source manual color override.
-    // NULL = auto-assign by add-order (frontend computes this from list order,
-    // no need to store the derived value); a hue name persists an explicit
-    // override chosen in Réglages.
+    // NULL = auto-assign by add-order (frontend/source-color.ts computes it from
+    // id order, no need to store the derived value); a hue name persists an
+    // explicit override — writable today only through the set_source_color IPC,
+    // the Accueil picker died when the screen merged into the rail.
     r#"
     ALTER TABLE sources ADD COLUMN color_key TEXT;
     "#,
