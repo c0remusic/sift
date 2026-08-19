@@ -183,6 +183,25 @@ reste éditable dans l'inspecteur (`library-detail.ts:89`), là où il est déj�
 demandé par `DESIGN.md` § 16 (largeurs et ordre mémorisés), et ce jour-là Label est le
 premier candidat.
 
+### Menu contextuel — la liste réelle
+
+Ordre figé, positions stables, libellés qui portent le compte au-delà d'une piste :
+
+| # | Entrée | Active quand |
+|---|---|---|
+| 1 | **Ouvrir l'emplacement** | une seule piste — révéler N fichiers ouvrirait N fenêtres |
+| 2 | **Ouvrir le détail** / **Masquer le détail** | une seule piste. Le libellé suit l'état : `openBiblioDetail` bascule |
+| 3 | **Fiche Discogs** | une seule piste, et identifiée |
+| 4 | **Réanalyser** | toujours |
+| 5 | **Écarter** | toujours · `danger` |
+| 6 | **Envoyer à la corbeille** | toujours · `danger` |
+
+**« Identifier » n'a pas d'entrée**, et ce n'est pas un oubli : le bouton `identify` de la ligne
+ouvre déjà le détail (`sift-live.ts`, `act === "identify"` → `openBiblioDetail`), donc une entrée du
+même nom ferait exactement ce que fait « Ouvrir le détail » — deux libellés pour une action. Le
+choix d'un candidat Discogs vit dans l'inspecteur, et il ne peut pas en sortir : identifier demande
+de **choisir**.
+
 ### Persistance des largeurs de colonnes — `localStorage`, et l'argument d'origine était faux
 
 La question opposait `settings` à `localStorage` au motif que « le premier survit à un
@@ -200,24 +219,40 @@ La ligne de partage réelle est celle que le dépôt applique déjà :
 Une largeur de colonne est de la première catégorie. Décision : `localStorage`, avec le
 `try/catch` du rail — un stockage refusé ne doit pas casser la table.
 
-⚠️ **Le geste n'existe pas encore.** Vérifié le 2026-08-19 : aucun redimensionnement ni
-réordonnancement de colonnes dans le dépôt — `col-resize` n'apparaît que sur la poignée
-de la file de Revue (`styles.css:729,761`). Cette décision est donc une **règle en
-attente de son premier consommateur**, pas un changement à faire aujourd'hui.
+**Livré le 2026-08-19** (`frontend/library-columns.ts`). Le geste n'existait pas quand la décision
+a été prise — `col-resize` n'apparaissait que sur la poignée de la file de Revue. Règles :
 
-## Écarts constatés entre cette spec et le code, au 2026-08-19
+- Le séparateur est un **enfant** de son en-tête, sur son bord droit : il suit la colonne quand
+  celle-ci change de largeur ou de place. Zone de prise 7 px, comme `.qdrag`.
+- Une colonne **non touchée garde sa règle CSS** et continue donc de s'adapter à la largeur de la
+  zone. Draguée, elle se **fige en px** — c'est le sens du geste.
+- Bornes 48–600 px. Le plancher n'est pas cosmétique : sous 48 px l'en-tête ne montre plus son
+  libellé ni sa flèche, et la colonne devient impossible à réélargir puisque sa propre poignée n'a
+  plus de prise.
+- **Clic droit sur l'en-tête** (patron Finder) : « Réinitialiser les colonnes », désactivée tant que
+  la disposition est d'origine. C'est la porte de sortie obligatoire.
+- Un ordre mémorisé est **filtré** contre les colonnes connues et **complété** par les manquantes :
+  une entrée inconnue peindrait une cellule vide par ligne, une entrée absente ferait disparaître
+  une donnée en silence. Gelé par `test/library-columns.test.ts`.
 
-Relevés en tranchant les questions ci-dessus. Aucun n'est corrigé dans ce geste.
+### Ce qu'un en-tête doit faire des deux gestes qu'il porte
 
-- **« Ouvrir l'emplacement » n'est appelable par rien.** La section Souris la donne en
-  première entrée du clic droit, et le double-clic est censé faire la même chose.
-  Aucune commande ne l'expose : zéro occurrence de `reveal`, `open_path` ou équivalent
-  dans `frontend/ipc.ts` **et** dans `src-tauri/src/ipc*.rs`. C'est une commande Rust à
-  écrire, pas une entrée de menu à ajouter.
-- **« Restaurer » et « Purger » au clic droit** supposent que « À re-sourcer » et
-  « Corbeille » soient rendues par cette table — c'est la fusion 2, **réfutée par la
-  mesure** (`DESIGN.md` § 15). Ces deux actions restent chez Écartés.
-- **Largeurs et ordre de colonnes au glisser** : non implémentés, voir ci-dessus.
+Il est **à la fois** bouton de tri et poignée de déplacement. Un seuil de 5 px sépare les deux :
+en dessous, le geste reste un clic et trie ; au-delà, il déplace et le clic qui suit est neutralisé.
+Sans ce garde, tout réordonnancement trierait aussi la table — deux effets pour un geste.
+
+## Écarts entre cette spec et le code — état au 2026-08-19
+
+- ~~**« Ouvrir l'emplacement » n'est appelable par rien**~~ — **corrigé**. Commande Rust
+  `reveal_track` (`ipc_filing.rs`) : prend un `track_id`, jamais un chemin, et résout depuis la base
+  — avec un chemin fourni par le front, la branche Windows serait un moyen de pointer Explorer
+  n'importe où. Un fichier absent **échoue** au lieu d'ouvrir son dossier parent : ouvrir le dossier
+  d'un fichier qui n'y est pas ressemblerait à un succès et ne dirait rien de la question qu'on
+  vient de poser. Câblée sur l'entrée 1 du menu **et** sur le double-clic.
+- **« Restaurer » et « Purger » au clic droit** supposent que « À re-sourcer » et « Corbeille »
+  soient rendues par cette table — c'est la fusion 2, **réfutée par la mesure** (`DESIGN.md` § 15).
+  Ces deux actions restent chez Écartés. Rien à corriger ici.
+- ~~**Largeurs et ordre de colonnes au glisser**~~ — **livrés**, voir ci-dessus.
 
 ## Hors périmètre
 

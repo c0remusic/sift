@@ -1091,6 +1091,64 @@ pub fn reject_batch(
     Ok(res)
 }
 
+/// Reveal a track's file in the OS file manager, with the file itself selected.
+///
+/// Takes a `track_id`, never a path: the path is resolved from the database, so the front can't
+/// hand this command an arbitrary target. That matters because the Windows arm spawns a process —
+/// with a caller-supplied path it would be a way to point Explorer anywhere on disk.
+///
+/// Missing file = an error, not a silent fallback to the parent directory. Opening the folder of a
+/// file that isn't there would look like a success and tell the user nothing about why the track
+/// can't be found, which is exactly the question they opened the folder to answer.
+///
+/// ⚠️ `explorer.exe` exits with a NON-ZERO status even when it succeeds — a documented quirk. So the
+/// status is deliberately not inspected here; only a failure to spawn is reported. Reading the exit
+/// code would turn every successful reveal into an error message.
+#[tauri::command]
+pub fn reveal_track(conn: State<'_, Mutex<Connection>>, track_id: i64) -> Result<(), String> {
+    let path = {
+        let conn = db::lock_conn(&conn)?;
+        filing::track_path(&conn, track_id).map_err(|e| e.to_string())?
+    };
+    if !std::path::Path::new(&path).exists() {
+        return Err(format!("fichier introuvable sur le disque : {path}"));
+    }
+    reveal_in_file_manager(&path)
+}
+
+/// The per-platform half of `reveal_track`. Three `#[cfg]` FUNCTIONS rather than three `#[cfg]`
+/// blocks inside one body: only one of them is ever compiled, so a block form needs a `return` to
+/// leave the function — and `-D clippy::needless_return` rejects that `return` precisely because,
+/// on the compiled target, it IS the last expression.
+#[cfg(windows)]
+fn reveal_in_file_manager(path: &str) -> Result<(), String> {
+    std::process::Command::new("explorer")
+        .arg(format!("/select,{path}"))
+        .spawn()
+        .map_err(|e| format!("ouverture de l'explorateur impossible : {e}"))?;
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn reveal_in_file_manager(path: &str) -> Result<(), String> {
+    std::process::Command::new("open")
+        .arg("-R")
+        .arg(path)
+        .spawn()
+        .map_err(|e| format!("ouverture du Finder impossible : {e}"))?;
+    Ok(())
+}
+
+/// Neither target Sift ships on. Reveal-with-selection has no portable equivalent, so the parent
+/// directory is the honest best effort — and this arm is only reached on a platform we don't build.
+#[cfg(not(any(windows, target_os = "macos")))]
+fn reveal_in_file_manager(path: &str) -> Result<(), String> {
+    let dir = std::path::Path::new(path)
+        .parent()
+        .ok_or_else(|| format!("aucun dossier parent pour {path}"))?;
+    open::that(dir).map_err(|e| e.to_string())
+}
+
 /// Move a track's file to `.sift-trash` (reversible via undo) and mark it trashed. FIX-6: no
 /// library-root precondition — the trash dir lives under Documents, not the library root.
 #[tauri::command]

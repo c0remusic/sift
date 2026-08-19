@@ -17,6 +17,7 @@ import {
   linkRekordboxXml,
   rekordboxStatus,
   reanalyzeTracks,
+  revealTrack,
   getSetting,
 } from "./ipc";
 import { installUndoShortcut, installFilingKeys } from "./filing";
@@ -27,8 +28,15 @@ import { renderEcartes } from "./ecartes-view";
 import { installDragDrop, injectLeanStyle, injectTitlebar, installScrollAutohide, installNavKeyboard, installRailToggle } from "./chrome";
 import { initTheme } from "./theme";
 import { installRailSources, renderRailSources, noteScanFailure } from "./rail-sources";
-import { applyRowClick, renderSelectionSummary, openBiblioContextMenu, paintBibSelection } from "./bibliotheque-view";
+import {
+  applyRowClick,
+  renderSelectionSummary,
+  openBiblioContextMenu,
+  openColumnHeaderMenu,
+  paintBibSelection,
+} from "./bibliotheque-view";
 import { sortTracks } from "./library-views";
+import { consumeSortSuppression } from "./library-columns";
 import { renderRootGate, dismissRootGateBanner } from "./toolbar";
 import { onSettingsCategoryPick } from "./reglages-view";
 import { onRekordboxSectionPick } from "./rekordbox-view";
@@ -442,6 +450,10 @@ export function installLiveWiring() {
         positionViewModeThumb();
         void renderBiblioLive();
       } else if (act === "sort") {
+        // Un en-tête est à la fois un bouton de tri et la poignée de déplacement de sa colonne.
+        // Quand le geste s'est terminé en déplacement, le `click` arrive quand même ici — et trier
+        // en plus de réordonner ferait deux choses pour un seul geste.
+        if (consumeSortSuppression()) return;
         const field = bibEl.dataset.field as LibrarySortState["field"];
         bibState.sort =
           bibState.sort.field === field
@@ -576,7 +588,26 @@ export function installLiveWiring() {
   // Il ne retire PAS d'un coup les boutons de la ligne : le bouton lecture reste, c'est le geste
   // primaire, et les deux affordances restantes (identifier, fiche Discogs) sont doublées ici. Le
   // menu est ce qui permettra de les sortir de la ligne sans perdre l'action.
+  // Double-clic sur une ligne = ouvrir l'emplacement du fichier (`docs/ui-specs/bibliotheque.md`
+  // § Interactions). Enraciné sur `document` comme le clic droit, et pas sur `#pa` : la table peut
+  // vivre hors de ce conteneur selon l'écran.
+  document.addEventListener("dblclick", (e) => {
+    const row = (e.target as HTMLElement).closest<HTMLElement>('.lr[data-bib="row"]');
+    if (!row?.dataset.id) return;
+    // Le premier clic du double a déjà ouvert le détail (dispatch de `click`) — c'est voulu, les
+    // deux gestes se complètent : on regarde la piste, puis on va voir son fichier.
+    void revealTrack(Number(row.dataset.id)).catch((err: unknown) =>
+      toast(humanizeError(err, "Impossible d'ouvrir l'emplacement", "reveal_track")),
+    );
+  });
+
   document.addEventListener("contextmenu", (e) => {
+    // L'en-tête d'abord : il porte ses propres réglages (colonnes), pas les actions d'une piste.
+    if ((e.target as HTMLElement).closest(".sift-lib-thead")) {
+      e.preventDefault();
+      openColumnHeaderMenu(e.clientX, e.clientY);
+      return;
+    }
     const row = (e.target as HTMLElement).closest<HTMLElement>('.lr[data-bib="row"]');
     if (!row?.dataset.id) return;
     e.preventDefault();

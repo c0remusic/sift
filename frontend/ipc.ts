@@ -241,6 +241,12 @@ export const rejectTrack = (trackId: number): Promise<void> =>
 export const trashTrack = (trackId: number): Promise<void> =>
   invoke("trash_track", { trackId });
 
+/** Reveal a track's file in Explorer (Windows) or Finder (macOS), the file itself selected.
+ *  Takes an id, never a path: the backend resolves it from the database, so this command can't be
+ *  pointed at an arbitrary location. A missing file rejects rather than opening its folder. */
+export const revealTrack = (trackId: number): Promise<void> =>
+  invoke("reveal_track", { trackId });
+
 /** All destination bins (recursive subdirs of the library root). */
 export const listBins = (): Promise<Bin[]> => invoke("list_bins");
 

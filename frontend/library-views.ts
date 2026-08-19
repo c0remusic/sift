@@ -5,6 +5,7 @@
 import type { LibraryTrack } from "../shared/contracts";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { esc } from "./dom";
+import { libraryColumns, columnStyle, type LibraryColumn, type LibraryColumnField } from "./library-columns";
 
 function qualPill(t: LibraryTrack): string {
   const f = (t.format || "?").toUpperCase();
@@ -24,7 +25,10 @@ export function bibName(t: LibraryTrack): string {
   return t.artist && t.title ? `${t.artist} — ${t.title}` : t.path.split(/[\\/]/).pop() || t.path;
 }
 
-type LibrarySortField = "artist" | "title" | "bpm" | "duration" | "genre" | "year";
+// Le champ de tri EST le champ de colonne : toutes les colonnes sont triables (`DESIGN.md` § 16),
+// donc deux listes séparées ne pourraient que diverger. L'alias garde le nom que le reste du code
+// emploie déjà.
+type LibrarySortField = LibraryColumnField;
 export type LibrarySortState = { field: LibrarySortField; dir: "asc" | "desc" };
 
 /** Client-side sort — the filed-track list is small enough (a personal DJ crate, not a
@@ -49,24 +53,18 @@ export function sortTracks(tracks: readonly LibraryTrack[], sort: LibrarySortSta
   return sorted;
 }
 
-/** Colonnes de la table, dans l'ordre d'affichage (DESIGN.md § 16).
- *
- *  BPM et Durée sont des AJOUTS du 2026-08-19, et ce sont les deux plus importants. Les deux
- *  champs existent depuis toujours dans le contrat (`shared/contracts.ts`, `bpm` et `duration`) et
- *  n'atteignaient pas l'écran : la table triait sur Artiste, Titre, Genre, Année. Un DJ trie sa
- *  bibliothèque par tempo.
- *
- *  Ni tonalité ni énergie : vérifié le 2026-08-19, aucun des deux n'existe dans `contracts.ts` ni
- *  dans `db.rs`. Aucune colonne fantôme n'est déclarée pour du vide — les ajouter est un chantier
- *  d'analyse Rust, pas une décision de design. */
-const SORT_COLUMNS: { field: LibrarySortField; label: string; cls: string }[] = [
-  { field: "artist", label: "Artiste", cls: "sift-lib-col-artist" },
-  { field: "title", label: "Titre", cls: "sift-lib-col-title" },
-  { field: "bpm", label: "BPM", cls: "sift-lib-col-num" },
-  { field: "duration", label: "Durée", cls: "sift-lib-col-num" },
-  { field: "genre", label: "Genre", cls: "sift-lib-col-genre" },
-  { field: "year", label: "Année", cls: "sift-lib-col-year" },
-];
+// Les colonnes, leur ordre et leurs largeurs vivent dans `library-columns.ts` depuis le 2026-08-19 :
+// elles sont devenues un ÉTAT (réordonnable, redimensionnable, mémorisé), et un état ne se déclare
+// pas dans le module qui le peint.
+//
+// BPM et Durée sont des AJOUTS du 2026-08-19, et ce sont les deux plus importants. Les deux champs
+// existent depuis toujours dans le contrat (`shared/contracts.ts`, `bpm` et `duration`) et
+// n'atteignaient pas l'écran : la table triait sur Artiste, Titre, Genre, Année. Un DJ trie sa
+// bibliothèque par tempo.
+//
+// Ni tonalité ni énergie : vérifié le 2026-08-19, aucun des deux n'existe dans `contracts.ts` ni
+// dans `db.rs`. Aucune colonne fantôme n'est déclarée pour du vide — les ajouter est un chantier
+// d'analyse Rust, pas une décision de design.
 
 /** `mm:ss` — jamais `Intl.NumberFormat`, qui rendrait une durée comme un nombre. Une valeur
  *  absente rend un tiret cadratin, pas « 0:00 » : zéro seconde est un fait, l'absence en est un
@@ -84,10 +82,41 @@ function fmtBpm(bpm: number | null): string {
   return bpm == null || !Number.isFinite(bpm) ? "—" : String(Math.round(bpm));
 }
 
+/** Contenu texte d'une cellule, par champ. Les six branches sont exhaustives sur
+ *  `LibraryColumnField` : ajouter une colonne sans son rendu casse la compilation, ce qui est le
+ *  seul moment où l'oubli est rattrapable — une cellule vide, elle, se lit comme une donnée absente. */
+function cellText(field: LibraryColumnField, t: LibraryTrack): string {
+  switch (field) {
+    case "artist":
+      return esc(t.artist || "—");
+    case "title":
+      return esc(t.title || "—");
+    case "bpm":
+      return fmtBpm(t.bpm);
+    case "duration":
+      return fmtDuration(t.duration);
+    case "genre":
+      return esc(t.genres[0] || "—");
+    case "year":
+      return esc(t.year ? String(t.year) : "—");
+  }
+}
+
+/** Une cellule. `data-col` est le crochet que `paintColumnWidth` mute pendant un redimensionnement —
+ *  c'est lui qui permet d'écrire une largeur sur les lignes déjà montées sans re-rendre la liste. */
+function cellHtml(col: LibraryColumn, t: LibraryTrack): string {
+  return `<span class="sift-lib-col ${col.cls}" data-col="${col.field}"${columnStyle(col)}>${cellText(col.field, t)}</span>`;
+}
+
 /** Sortable column header row — each header is a real <button> (native keyboard support),
- * aria-sort on the active column announces direction to screen readers. */
+ * aria-sort on the active column announces direction to screen readers.
+ *
+ * Chaque en-tête porte aussi, depuis le 2026-08-19, les deux gestes de `library-columns.ts` : il est
+ * la POIGNÉE de déplacement de sa colonne, et il se termine par un séparateur de redimensionnement.
+ * Les deux cohabitent avec le clic de tri par un seuil de déplacement — voir `DRAG_THRESHOLD`. */
 export function libraryTableHeaderHtml(sort: LibrarySortState): string {
-  const cells = SORT_COLUMNS.map(({ field, label, cls }) => {
+  const cells = libraryColumns().map((col) => {
+    const { field, label, cls } = col;
     const active = sort.field === field;
     const ariaSort = active ? (sort.dir === "asc" ? "ascending" : "descending") : "none";
     const arrow = active ? (sort.dir === "asc" ? " ▴" : " ▾") : "";
@@ -98,7 +127,15 @@ export function libraryTableHeaderHtml(sort: LibrarySortState): string {
     // la ligne, et la direction de tri n'était annoncée à personne. Le défaut était antérieur à
     // l'ajout de BPM et Durée ; il ne se voyait pas tant que l'en-tête n'avait aucune largeur à
     // porter.
-    return `<span class="${cls}" role="columnheader" aria-sort="${ariaSort}"><button data-bib="sort" data-field="${field}">${esc(label)}${arrow}</button></span>`;
+    return (
+      `<span class="${cls} sift-lib-colhead" role="columnheader" aria-sort="${ariaSort}"` +
+      ` data-colhead="${field}" data-col="${field}"${columnStyle(col)}>` +
+      `<button data-bib="sort" data-field="${field}">${esc(label)}${arrow}</button>` +
+      // Le séparateur est un enfant de l'en-tête, pas un frère : il doit rester collé au bord droit
+      // de SA colonne quand celle-ci change de largeur ou de place, et un frère se serait décalé.
+      `<span class="sift-lib-colsep" data-for="${field}" aria-hidden="true"></span>` +
+      `</span>`
+    );
   }).join("");
   // No wrapping role="table"/"grid" exists (this is a flex layout, not a real <table>) — role="row"
   // here without that ancestor was a half-applied ARIA table pattern a screen reader can't make
@@ -131,12 +168,7 @@ export function libraryTableRowHtml(t: LibraryTrack, curId: number | null, selec
     `<div class="lr${cur}" data-bib="row" data-id="${t.id}" tabindex="0" role="option" aria-selected="${selected}" aria-label="${esc(rowLabel)}">` +
     `<button class="pb" data-bib="play" data-id="${t.id}" aria-label="Écouter"><i class="ti ti-player-play" style="font-size:var(--text-md)"></i></button>` +
     cov +
-    `<span class="sift-lib-col sift-lib-col-artist">${esc(t.artist || "—")}</span>` +
-    `<span class="sift-lib-col sift-lib-col-title">${esc(t.title || "—")}</span>` +
-    `<span class="sift-lib-col sift-lib-col-num">${fmtBpm(t.bpm)}</span>` +
-    `<span class="sift-lib-col sift-lib-col-num">${fmtDuration(t.duration)}</span>` +
-    `<span class="sift-lib-col sift-lib-col-genre">${esc(t.genres[0] || "—")}</span>` +
-    `<span class="sift-lib-col sift-lib-col-year">${esc(t.year ? String(t.year) : "—")}</span>` +
+    libraryColumns().map((col) => cellHtml(col, t)).join("") +
     verdictBadge(t.verdict) +
     qualPill(t) +
     link +

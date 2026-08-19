@@ -160,6 +160,16 @@ color-scheme:light;
    déclarées : leur application est un geste séparé, et un token sans consommateur est un token
    mort (voir --h-40, tokens.md:185). */
 --measure-data:1200px;
+/* Plancher d'une colonne de la table Bibliothèque. Ce n'est pas une valeur de confort : sous ce
+   seuil un en-tête ne montre plus son libellé ni sa flèche de tri, et la colonne devient
+   impossible à réélargir puisque sa propre poignée n'a plus de prise.
+   Le CSS le pose sur les colonnes de TEXTE — c'est le navigateur qui garantit alors l'invariant,
+   pas un calcul JS. Mesuré le 2026-08-19 : le plafond dynamique de `startResize` seul laissait
+   Genre tomber à 35px, parce que la répartition d'un `flex-shrink` n'atterrit pas là où un calcul
+   de marge disponible le prévoit.
+   `MIN_COL_W` (library-columns.ts) MIRE ce token, comme `QCOL_DEFAULT` mire --pane-w : même
+   discipline, même geste unique. */
+--col-min-w:48px;
 /* Elevation shadows — only the two floating surfaces that need them (toast, modal overlay) plus
    one subtle panel accent. Black at fixed alpha reads fine on both themes, same as the rest of
    the app's overlay tints — kept from the original recipe, just layered (2026-07-08, adapted
@@ -953,9 +963,14 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
    quatre colonnes quand la ligne en rendait quatre plus trois affordances sans en-tete.
    BPM, Duree et Annee sont NUMERIQUES : mono, chiffres tabulaires, alignes a droite, largeur fixe.
    Le tabulaire est ce qui empeche la colonne de sauter quand un 9 remplace un 1. */
-.sift-lib-col-artist{flex:1.4;min-width:0}
-.sift-lib-col-title{flex:1.4;min-width:0}
-.sift-lib-col-genre{flex:1;min-width:0}
+/* `min-width` = le plancher de colonne, PAS 0 : depuis que les largeurs sont redimensionnables
+   (2026-08-19), élargir une colonne pousse les autres, et sans plancher elles s'écrasent jusqu'à
+   un caractère — mesuré, Titre à 49px et Genre à 35px après un glissement d'Artiste. Le
+   `min-width:0` d'origine servait à autoriser l'ellipse ; `overflow:hidden` sur `.sift-lib-col`
+   la donne déjà, donc rien n'est perdu. */
+.sift-lib-col-artist{flex:1.4;min-width:var(--col-min-w)}
+.sift-lib-col-title{flex:1.4;min-width:var(--col-min-w)}
+.sift-lib-col-genre{flex:1;min-width:var(--col-min-w)}
 .sift-lib-col-num,.sift-lib-col-year{flex:none;width:52px;text-align:right;font-family:var(--font-mono);font-variant-numeric:tabular-nums;color:var(--color-text-secondary)}
 .sift-lib-thead .sift-lib-col-num,.sift-lib-thead .sift-lib-col-year{width:52px;flex:none;text-align:right}
 .sift-lib-thead .sift-lib-col-num button,.sift-lib-thead .sift-lib-col-year button{text-align:right;width:100%}
@@ -988,6 +1003,27 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
 .sift-lib-thead-tail{width:69px;flex:none}
 .sift-lib-thead button{padding:0;border:0;background:none;font:inherit;color:inherit;cursor:pointer;text-align:left}
 .sift-lib-thead button:hover{color:var(--color-text-primary)}
+/* Colonnes redimensionnables et reordonnables (library-columns.ts, 2026-08-19). Source Apple pour
+   le redimensionnement : HIG « Lists and tables » § macOS, « Let people resize columns ». Le
+   reordonnancement vient de DESIGN.md § 16 — cette page HIG ne parle que de reordonner des LIGNES.
+   Le separateur est un ENFANT de l'en-tete, positionne sur son bord droit : il doit suivre la
+   colonne quand elle change de largeur ou de place. Sa zone de prise fait 7px, comme .qdrag, et
+   deborde de 3px a droite pour que la prise reste attrapable au pixel pres. */
+.sift-lib-colhead{position:relative}
+.sift-lib-colsep{position:absolute;top:0;right:-3px;bottom:0;width:7px;cursor:col-resize;z-index:1}
+/* Le filet n'apparait qu'au survol et pendant le glissement : au repos la separation vient de
+   l'espace, pas d'un trait (DESIGN.md § 16). Il s'anime en opacite seule. */
+.sift-lib-colsep::after{content:"";position:absolute;top:2px;bottom:2px;left:3px;width:1px;background:var(--color-border-secondary);opacity:0;transition:opacity var(--duration-fast) var(--ease-out)}
+.sift-lib-colsep:hover::after,.sift-lib-colsep--active::after{opacity:1}
+.sift-lib-colsep--active::after{background:var(--color-border-info)}
+/* Pendant un glissement, le curseur et la non-selection valent pour TOUTE la fenetre : la souris
+   sort de la poignee des le premier mouvement rapide, et sans cela le curseur clignote et le texte
+   des lignes se selectionne sous le pointeur. */
+body.sift-col-resizing,body.sift-col-resizing *{cursor:col-resize!important;user-select:none}
+.sift-lib-colhead--dragging{opacity:.5}
+.sift-lib-colhead--dropbefore::before,.sift-lib-colhead--dropafter::after{content:"";position:absolute;top:0;bottom:0;width:2px;background:var(--color-border-info)}
+.sift-lib-colhead--dropbefore::before{left:-1px}
+.sift-lib-colhead--dropafter::after{right:-1px}
 /* 32px → 24px le 2026-08-19 : --row-h est DERIVEE de cette vignette (24 + --space-4 en haut et en
    bas = 32). A 32px de pochette la ligne mesurait 41px dans la vraie fenetre, donc le token
    decrivait une hauteur que rien ne produisait. 24px reste le plus petit format ou une pochette

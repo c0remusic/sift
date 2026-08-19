@@ -13,9 +13,11 @@ import {
   reanalyzeTracks,
   rejectBatch,
   trashTrack,
+  revealTrack,
   openUrl,
 } from "./ipc";
 import { openContextMenu } from "./context-menu";
+import { installColumnGestures, resetColumns, columnsAreCustomized } from "./library-columns";
 import { confirmAction, BATCH_CONFIRM_THRESHOLD } from "./confirm-modal";
 import { toast } from "./filing-toast";
 import type { LibraryTrack, LibraryFacets, LibraryFilter, DupGroup, DashboardStats } from "../shared/contracts";
@@ -300,6 +302,27 @@ async function bulkTrash(ids: number[]): Promise<void> {
   await afterBulkRemoval();
 }
 
+/** Menu contextuel de la LIGNE D'EN-TÊTE. Patron Finder : le clic droit sur un en-tête de colonne
+ *  ouvre les réglages de colonnes, pas les actions de piste.
+ *
+ *  Une seule entrée pour l'instant, et c'est la porte de sortie du redimensionnement : une colonne
+ *  réduite à son plancher ou déplacée par mégarde pendant un clic de tri doit pouvoir être défaite
+ *  sans aller vider un stockage navigateur. Désactivée quand la disposition est déjà d'origine —
+ *  désactivée et non masquée, comme toutes les entrées de `context-menu.ts`. */
+export function openColumnHeaderMenu(x: number, y: number): void {
+  openContextMenu(x, y, [
+    {
+      label: "Réinitialiser les colonnes",
+      onPick: columnsAreCustomized()
+        ? () => {
+            resetColumns();
+            void renderBiblioLive();
+          }
+        : undefined,
+    },
+  ]);
+}
+
 /** Menu contextuel de la table (`docs/ui-specs/bibliotheque.md`, décisions du 2026-08-19).
  *
  *  La liste des entrées et leur ordre ne changent JAMAIS avec la taille de la sélection : ce qui
@@ -327,8 +350,24 @@ export function openBiblioContextMenu(x: number, y: number, id: number): void {
   const suffix = one ? "" : ` (${ids.length})`;
   const track = one ? bibState.tracks.find((t) => t.id === ids[0]) : undefined;
   const rid = track?.discogs_release_id;
+  // `openBiblioDetail` BASCULE. Le libellé suit donc l'état réel : sur une piste déjà ouverte,
+  // l'entrée referme le panneau, et annoncer « Ouvrir » y était faux.
+  const detailOpen = one && bibOpenId === ids[0];
   openContextMenu(x, y, [
-    { label: "Ouvrir le détail", onPick: one ? () => openBiblioDetail(ids[0]) : undefined },
+    {
+      label: "Ouvrir l'emplacement",
+      // Une piste à la fois : révéler N fichiers ouvrirait N fenêtres d'explorateur.
+      onPick: one
+        ? () =>
+            void revealTrack(ids[0]).catch((err: unknown) =>
+              toast(humanizeError(err, "Impossible d'ouvrir l'emplacement", "reveal_track")),
+            )
+        : undefined,
+    },
+    {
+      label: detailOpen ? "Masquer le détail" : "Ouvrir le détail",
+      onPick: one ? () => openBiblioDetail(ids[0]) : undefined,
+    },
     {
       label: "Fiche Discogs",
       onPick: one && rid ? () => void openUrl(`https://www.discogs.com/release/${rid}`) : undefined,
@@ -706,6 +745,11 @@ export async function renderBiblioLive() {
   // ecraser, donc rien ne survit d un rendu a l autre et il faut le remonter a chaque fois.
   if (!trulyEmpty) mountBibUsage(content, !alreadyRendered);
   wireEmptyState(content);
+  // Redimensionnement et réordonnancement des colonnes (`DESIGN.md` § 16, livrés le 2026-08-19).
+  // Réinstallés à chaque rendu parce que la ligne d'en-tête est un nœud NEUF à chaque fois : rien
+  // ne fuit, les écouteurs partent avec le nœud que `content.innerHTML` vient de remplacer.
+  const thead = content.querySelector<HTMLElement>(".sift-lib-thead");
+  if (thead) installColumnGestures(thead, () => void renderBiblioLive());
   positionFacetThumb(); // fresh node post-rebuild — no prior transform, just place it
   positionViewModeThumb();
 

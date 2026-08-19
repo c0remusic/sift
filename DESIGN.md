@@ -800,7 +800,20 @@ spécifiée pour du vide.
 - **Toutes** les colonnes sont triables au clic sur l'en-tête, indicateur de direction
   visible, `aria-sort` tenu à jour. Aujourd'hui quatre le sont.
 - Largeurs redimensionnables au glisser sur le séparateur d'en-tête, **mémorisées**.
-- Colonnes réordonnables au glisser, ordre mémorisé.
+  *Livré le 2026-08-19* (`frontend/library-columns.ts`). Source Apple : HIG « Lists and tables »
+  § macOS, « Let people resize columns ». Bornes 48–600 px, `localStorage`, et une colonne
+  non touchée garde sa règle CSS — c'est ce qui lui permet de continuer à suivre la largeur
+  de la zone.
+- Colonnes réordonnables au glisser, ordre mémorisé. *Livré le même jour.* Pas de source
+  Apple : la page HIG ne parle que de réordonner des **lignes**. Cette règle vient d'ici,
+  et se marque comme telle.
+- **Un en-tête porte deux gestes.** Bouton de tri et poignée de déplacement sur le même
+  élément, séparés par un seuil de 5 px de déplacement — sans lui, réordonner trierait
+  aussi, deux effets pour un geste.
+- ⚠️ La même page HIG conseille « Consider using alternating row colors ». Le § Densité
+  ci-dessous l'interdit. Conflit tranché par la précédence (ce fichier avant les HIG), et
+  l'argument d'Apple ne mord pas : il vise une table **large**, celle de Sift vit entre un
+  rail et un inspecteur.
 - Le tri est **partagé** entre Table et Grille, et **stable** : il ne se rejoue jamais
   sur un tick de données, seulement sur une action utilisateur.
 
@@ -941,6 +954,20 @@ quatre sections à la seule choisie. Ce qui n'a **pas** été vu est le rendu av
 attente : les cinq comptes valent 0, tout est « à jour ». Table de candidats, inspecteur de
 candidat, sheet de progression et rapport restent donc non vérifiés — et le devenir demande une
 divergence réelle entre Sift et Rekordbox, pas une manipulation à fabriquer.
+
+**Colonnes redimensionnables et réordonnables — livrées le 2026-08-19.** `frontend/library-columns.ts`,
+plus un menu contextuel d'en-tête (patron Finder) qui porte « Réinitialiser les colonnes ». Vérifié
+dans la vraie fenêtre : glissement d'un séparateur, glissement d'un en-tête, tri **inchangé** après
+un déplacement, réinitialisation qui vide le stockage. Deux planchers, et il en fallait deux : le
+token `--col-min-w` empêche une colonne VOISINE de s'écraser (mesuré, Genre tombait à 35 px avec le
+seul garde JS), le plafond dynamique de `startResize` empêche la ligne de déborder. Après correctif,
+un glissement de 900 px donne Artiste 545, Titre 48, Genre 48, et `scrollWidth == clientWidth`.
+
+**« Ouvrir l'emplacement » — livré le 2026-08-19.** Commande Rust `reveal_track` : prend un
+`track_id`, jamais un chemin, parce que la branche Windows lance un processus. Câblée sur la
+première entrée du menu et sur le double-clic. Chemin nominal exécuté dans la vraie fenêtre, et le
+chemin d'erreur aussi — il a d'ailleurs trouvé une piste de la base dont le fichier n'existe plus
+sur le disque, ce que la commande dit en toutes lettres au lieu d'ouvrir un dossier au hasard.
 
 **Débordement de l'inspecteur — corrigé le 2026-08-19, et la cause n'était pas celle qu'on
 cherchait.** `.sift-report-scroll` annonçait 369 px pour 287 alors que chacun de ses enfants
