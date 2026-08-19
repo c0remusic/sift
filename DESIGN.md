@@ -890,12 +890,13 @@ utilisable.
 | 9 | **Réglages en deux colonnes** | ✅ livrée | — | F7, O‑3 |
 | 10 | **Rekordbox en quatre entrées** | ✅ livrée¹ | — | F10 |
 
-² Sauf les **actions de masse** — voir « Ce qui reste vraiment ». La navigation clavier de la
-table a été livrée le 2026-08-19.
+² Complète depuis le 2026-08-19 : navigation clavier de la table, puis actions de masse dans le
+menu contextuel (Réanalyser · Écarter · Corbeille). Voir « Ce qui reste vraiment » pour ce qui n'a
+pas été exécuté contre la base réelle.
 
-¹ Implémentée et vérifiée sur son **chemin d'état vide** seulement : cette machine n'a aucun XML
-Rekordbox lié, et en lier un est une action sur un système live. La disposition à quatre entrées
-n'a donc **pas** été vue tourner.
+¹ Vue tourner le 2026-08-19 sur un XML **réellement lié** (24 playlists, 2828 pistes) : cinq
+entrées peintes, sélection exclusive, zone C qui suit. Reste non vérifié le rendu **avec des
+candidats en attente** — les cinq comptes valent 0.
 
 ### Ce qui reste
 
@@ -917,20 +918,39 @@ tirée du mécanisme envisagé, pas de la contrainte.
 
 ### Ce qui reste vraiment
 
-**Actions de masse.** La sélection existe, les actions groupées non. Elles demandent de trancher
-d'abord lesquelles s'appliquent réellement à N pistes **déjà rangées** — question ouverte de
-`docs/ui-specs/bibliotheque.md`. Y répondre au jugé peuplerait un menu d'actions sans objet.
+**Actions de masse — faites le 2026-08-19.** Trois actions passent à N, et les trois sont
+**mesurées contre le contrat IPC**, pas choisies : Réanalyser (`reanalyze_tracks` prend déjà un
+tableau), Écarter (`reject_batch`, l'IPC du mode Lot), Corbeille (`trash_track` unitaire, bouclé
+séquentiellement — le backend sérialise de toute façon derrière son Mutex). Identifier n'y est pas,
+et c'est une décision : chaque identification demande de **choisir** un candidat. Le menu garde la
+même liste d'entrées aux mêmes positions quelle que soit la taille de la sélection ; ce qui ne
+s'applique pas est désactivé, jamais retiré. Motifs et tableau complet :
+`docs/ui-specs/bibliotheque.md` § Décisions du 2026-08-19.
 
-**Rekordbox à quatre entrées : jamais vu tourner.** Implémenté, vérifié sur son seul chemin d'état
-vide. Cette machine n'a aucun XML Rekordbox lié, et en lier un est une action sur un système live.
-Ce qui manque est une **vérification**, pas du code.
+Vérifié dans la vraie fenêtre : sélection de 3 par ⇧+clic → les deux entrées singulières
+désactivées, les trois autres portant `(3)`, résumé agrégé en zone D. Clic droit **hors** sélection
+→ la sélection tombe à la ligne visée et le menu repasse en unitaire. **Non exécuté** : aucune des
+trois actions n'a été lancée contre la base réelle — écarter ou jeter de vraies pistes n'est pas
+une vérification à prendre seul.
 
-**Deux débordements internes dans l'inspecteur.** `.sift-report-scroll` et `.sift-player-row`
-annoncent 369 px de largeur de défilement pour 287 disponibles, alors que **chacun de leurs enfants
-directs mesure 287** — mesuré le 2026-08-19 après le correctif à deux niveaux. La zone D
-elle-même ne défile pas horizontalement, donc rien n'est coupé côté lecteur et la règle du shell
-tient. Reste à trouver quel descendant porte les 369 : c'est un travail de composant sur le lecteur
-large rendu en colonne étroite, pas un travail de shell.
+**Rekordbox à quatre entrées : vu tourner le 2026-08-19.** L'affirmation précédente — « cette
+machine n'a aucun XML lié » — était **fausse** : `C:\Users\LEETJ\Documents\rekordbox\library.xml`
+est lié, 24 playlists et 2828 pistes. Les cinq entrées (Tout · Fichiers · Métadonnées · Pochettes ·
+Playlists) sont peintes, la sélection est exclusive (`all*` → `files*`) et la zone C passe bien des
+quatre sections à la seule choisie. Ce qui n'a **pas** été vu est le rendu avec des candidats en
+attente : les cinq comptes valent 0, tout est « à jour ». Table de candidats, inspecteur de
+candidat, sheet de progression et rapport restent donc non vérifiés — et le devenir demande une
+divergence réelle entre Sift et Rekordbox, pas une manipulation à fabriquer.
+
+**Débordement de l'inspecteur — corrigé le 2026-08-19, et la cause n'était pas celle qu'on
+cherchait.** `.sift-report-scroll` annonçait 369 px pour 287 alors que chacun de ses enfants
+directs mesurait 287, parce que le coupable ne débordait pas par sa **largeur** mais par sa
+**position** : `.sift-player-controls` porte `margin-left:82px` (alignement sur la forme d'onde,
+conçu pour la surface large de Revue) et la surcharge de zone D lui donnait `width:100%` — 287 de
+large à partir de 82, donc un bord droit à 369. Un filtre `scrollWidth > clientWidth` ne pouvait
+pas le voir ; il fallait comparer les **bords droits**. Correctif : `margin-left:0` dans le seul
+bloc `#sift-aside` (`styles.css`). Mesure après : `scrollWidth` 287 sur les deux conteneurs, zéro
+élément dépassant à droite, et `.sift-volume-block` toujours replié à 20 px au repos.
 
 **`.sift-volume-track` déborde et ce n'est PAS un défaut** — noté ici pour qu'un prochain passage ne
 le « corrige » pas : le bloc de volume est volontairement replié à 20 px au repos et s'ouvre au

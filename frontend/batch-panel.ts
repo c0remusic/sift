@@ -28,6 +28,7 @@ import {
   clearBatchTracklist,
 } from "./batch-tracklist";
 import { currentItems, reviewMode, verdictDot, prefetchNextAfter, enterDetailMode } from "./queue-panel";
+import { BATCH_CONFIRM_THRESHOLD } from "./confirm-modal";
 
 /** Human label for the batch destination (resolves the in-place sentinel to its prose). */
 const IN_PLACE_LABEL = "Dossier source de chaque morceau";
@@ -39,7 +40,10 @@ const IN_PLACE_LABEL = "Dossier source de chaque morceau";
 // synthetic click ran straight through confirm() in this Tauri webview (no dialog, no block),
 // filing ~265 real tracks before Stop could catch up — a native dialog is not a trustworthy
 // guard here regardless of the cause, so the guard must be the app's own UI.
-const BATCH_CONFIRM_THRESHOLD = 10;
+// Le nombre lui-même vit dans `confirm-modal.ts` depuis le 2026-08-19 : les actions de masse de la
+// Bibliothèque posent la même question sur le même seuil, et deux copies auraient divergé en
+// silence. Ce qui reste ici est le mécanisme propre au mode Lot — l'armement DANS le bouton du
+// rail plutôt qu'une modale, parce qu'un run de lot n'a pas d'écran de récapitulatif.
 /** How long the armed state survives without a second click. SINGLE source of truth: read by the
  *  auto-disarm `setTimeout` below AND by the inline `animation-duration` of the drain bar in
  *  actionButtonHtml. Two copies of this number would let the bar finish draining while the button

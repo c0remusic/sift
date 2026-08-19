@@ -8,6 +8,18 @@
 // friction level, just delivered reliably.
 const OVERLAY_ID = "sift-confirm-overlay";
 
+/** Above how many tracks a destructive mass action asks a second time.
+ *
+ *  Déclarée ICI et non chez son premier appelant : deux écrans posent désormais la même question
+ *  — le mode Lot de Revue (`batch-panel.ts`, qui l'arme dans son propre bouton) et les actions de
+ *  masse de la Bibliothèque (`bibliotheque-view.ts`, qui passe par `confirmAction`). Deux copies
+ *  du nombre laisseraient les deux écrans diverger sans que rien ne le signale.
+ *
+ *  Le seuil ne vise pas la réversibilité — écarter et corbeille sont l'un et l'autre annulables —
+ *  il vise le clic qui n'est pas humain, et `⌘/Ctrl+A` sur une liste virtualisée sélectionne
+ *  précisément ce que l'utilisateur ne voit pas. */
+export const BATCH_CONFIRM_THRESHOLD = 10;
+
 /** How long the destructive button stays genuinely `disabled` after the overlay opens.
  *  Single source of truth: read by the `disabled` timer AND by the timestamped guard in the
  *  confirm handler, so the two can never disagree about the window they enforce. */

@@ -10,7 +10,14 @@ import {
   libraryFolders,
   libraryStats,
   scanLibraryDuplicates,
+  reanalyzeTracks,
+  rejectBatch,
+  trashTrack,
+  openUrl,
 } from "./ipc";
+import { openContextMenu } from "./context-menu";
+import { confirmAction, BATCH_CONFIRM_THRESHOLD } from "./confirm-modal";
+import { toast } from "./filing-toast";
 import type { LibraryTrack, LibraryFacets, LibraryFilter, DupGroup, DashboardStats } from "../shared/contracts";
 import { requireEl, esc } from "./dom";
 import { mountBarActions, mountBarSearch, openAside, closeAside } from "./toolbar";
@@ -198,6 +205,138 @@ export function stepBibSelection(key: string, shift: boolean): boolean {
 export function clearBibSelection(): void {
   bibSelection.clear();
   bibAnchor = null;
+}
+
+/** Repeint la marque de sélection sur les lignes MONTÉES, sans reconstruire l'écran.
+ *
+ *  Un `renderBiblioLive()` complet ferait un aller-retour IPC et remonterait la liste virtuelle,
+ *  ce qui émet un `scroll` — or le menu contextuel se ferme au premier défilement (il est ancré à
+ *  un point, pas à un élément). Repeindre en place est donc la seule façon d'ouvrir un menu sur
+ *  une sélection qu'on vient de changer.
+ *
+ *  Les lignes hors fenêtre virtualisée ne sont pas dans le DOM ; elles ne sont pas oubliées pour
+ *  autant : `libraryTableRowHtml` relit `bibSelection` à chaque montage. */
+export function paintBibSelection(): void {
+  document.querySelectorAll<HTMLElement>('.lr[data-bib="row"]').forEach((n) => {
+    const on = bibSelection.has(Number(n.dataset.id));
+    n.classList.toggle("sel", on);
+    n.setAttribute("aria-selected", on ? "true" : "false");
+  });
+}
+
+/** Après une action de masse qui retire des pistes de la vue : la sélection ne désigne plus rien,
+ *  l'inspecteur montrait ce qui vient de partir. Les deux se vident, puis l'écran se relit. */
+function afterBulkRemoval(): Promise<void> {
+  clearBibSelection();
+  closeAside();
+  return renderBiblioLive();
+}
+
+/** « n piste » / « n pistes » — le compte est dit en toutes lettres dans chaque toast, jamais
+ *  laissé au libellé du menu : l'utilisateur lit le résultat, pas ce qu'il a cliqué. */
+function plural(n: number): string {
+  return n > 1 ? `${n} pistes` : `${n} piste`;
+}
+
+async function bulkReanalyze(ids: number[]): Promise<void> {
+  try {
+    // `reanalyze_tracks` rend le nombre réellement remis en file — il peut différer de ce qui a été
+    // demandé (une piste déjà en analyse n'est pas réempilée). C'est ce nombre-là qui est annoncé.
+    const n = await reanalyzeTracks(ids);
+    toast(n === 0 ? "Rien à réanalyser — déjà en file" : `${plural(n)} remise${n > 1 ? "s" : ""} en analyse`);
+  } catch (err: unknown) {
+    toast(humanizeError(err, "Échec de la réanalyse — réessaie", "reanalyze_tracks"));
+  }
+}
+
+async function bulkReject(ids: number[]): Promise<void> {
+  if (
+    ids.length > BATCH_CONFIRM_THRESHOLD &&
+    !(await confirmAction(`Écarter ${plural(ids.length)} de la bibliothèque ?`, "Écarter"))
+  )
+    return;
+  try {
+    const r = await rejectBatch(ids);
+    // `failed` n'est pas décoratif : un compte seul se lirait comme un succès plus petit, et
+    // l'utilisateur croirait avoir écarté ce qui est resté. Voir `docs/ui-specs/bibliotheque.md`.
+    toast(
+      r.failed.length
+        ? `${plural(r.rejected)} écartée${r.rejected > 1 ? "s" : ""}, ${r.failed.length} en échec`
+        : `${plural(r.rejected)} écartée${r.rejected > 1 ? "s" : ""}`,
+    );
+  } catch (err: unknown) {
+    toast(humanizeError(err, "Impossible d'écarter", "reject_batch"));
+    return;
+  }
+  await afterBulkRemoval();
+}
+
+async function bulkTrash(ids: number[]): Promise<void> {
+  if (
+    ids.length > BATCH_CONFIRM_THRESHOLD &&
+    !(await confirmAction(`Envoyer ${plural(ids.length)} à la corbeille ?`, "Envoyer à la corbeille"))
+  )
+    return;
+  // SÉQUENTIEL, et ce n'est pas un oubli : `trash_track` est unitaire côté IPC, et le backend est
+  // synchrone derrière un Mutex unique (`db::lock_conn`). Un `Promise.all` sur une grande sélection
+  // lancerait autant d'invokes concurrents sur une frontière qui les sérialise de toute façon, en
+  // bloquant tout le reste de l'IPC pendant ce temps.
+  let done = 0;
+  const failed: number[] = [];
+  for (const id of ids) {
+    try {
+      await trashTrack(id);
+      done++;
+    } catch (err: unknown) {
+      console.error("trash_track failed", id, err);
+      failed.push(id);
+    }
+  }
+  toast(
+    failed.length
+      ? `${plural(done)} à la corbeille, ${failed.length} en échec`
+      : `${plural(done)} à la corbeille`,
+  );
+  await afterBulkRemoval();
+}
+
+/** Menu contextuel de la table (`docs/ui-specs/bibliotheque.md`, décisions du 2026-08-19).
+ *
+ *  La liste des entrées et leur ordre ne changent JAMAIS avec la taille de la sélection : ce qui
+ *  ne s'applique pas à N pistes est désactivé, pas retiré (règle de `context-menu.ts` — un menu
+ *  dont les entrées vont et viennent doit se relire à chaque ouverture). Seuls les libellés
+ *  portent le compte.
+ *
+ *  Trois actions passent à N, et les trois ont été mesurées contre le contrat, pas choisies :
+ *  `reanalyze_tracks` prend déjà un tableau, `reject_batch` est l'IPC du mode Lot, `trash_track`
+ *  est unitaire et se boucle. Identifier n'y est pas : chaque identification demande de CHOISIR un
+ *  candidat, donc l'appliquer en masse serait décider à la place de l'utilisateur. */
+export function openBiblioContextMenu(x: number, y: number, id: number): void {
+  // Convention système : un clic droit HORS de la sélection la remplace par la ligne visée ; un
+  // clic droit DEDANS la garde entière. Sans cette règle, un clic droit sur la troisième ligne
+  // d'une sélection de cent agirait soit sur une piste, soit sur cent, selon ce que le code a
+  // décidé — et l'utilisateur ne pourrait pas le prédire.
+  if (!bibSelection.has(id)) {
+    applyRowClick(id, { shift: false, meta: false }, orderedIds());
+    paintBibSelection();
+    renderSelectionSummary();
+  }
+  const ids = [...bibSelection];
+  if (ids.length === 0) return;
+  const one = ids.length === 1;
+  const suffix = one ? "" : ` (${ids.length})`;
+  const track = one ? bibState.tracks.find((t) => t.id === ids[0]) : undefined;
+  const rid = track?.discogs_release_id;
+  openContextMenu(x, y, [
+    { label: "Ouvrir le détail", onPick: one ? () => openBiblioDetail(ids[0]) : undefined },
+    {
+      label: "Fiche Discogs",
+      onPick: one && rid ? () => void openUrl(`https://www.discogs.com/release/${rid}`) : undefined,
+    },
+    { label: `Réanalyser${suffix}`, separated: true, onPick: () => void bulkReanalyze(ids) },
+    { label: `Écarter${suffix}`, danger: true, separated: true, onPick: () => void bulkReject(ids) },
+    { label: `Envoyer à la corbeille${suffix}`, danger: true, onPick: () => void bulkTrash(ids) },
+  ]);
 }
 
 export const bibDup: {

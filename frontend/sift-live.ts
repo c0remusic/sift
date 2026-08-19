@@ -17,7 +17,6 @@ import {
   linkRekordboxXml,
   rekordboxStatus,
   reanalyzeTracks,
-  rejectTrack,
   getSetting,
 } from "./ipc";
 import { installUndoShortcut, installFilingKeys } from "./filing";
@@ -28,11 +27,9 @@ import { renderEcartes } from "./ecartes-view";
 import { installDragDrop, injectLeanStyle, injectTitlebar, installScrollAutohide, installNavKeyboard, installRailToggle } from "./chrome";
 import { initTheme } from "./theme";
 import { installRailSources, renderRailSources, noteScanFailure } from "./rail-sources";
-import { openContextMenu } from "./context-menu";
-import { applyRowClick, renderSelectionSummary } from "./bibliotheque-view";
+import { applyRowClick, renderSelectionSummary, openBiblioContextMenu, paintBibSelection } from "./bibliotheque-view";
 import { sortTracks } from "./library-views";
 import { renderRootGate, dismissRootGateBanner } from "./toolbar";
-import { closeAside } from "./toolbar";
 import { onSettingsCategoryPick } from "./reglages-view";
 import { onRekordboxSectionPick } from "./rekordbox-view";
 import { installWindowShortcuts } from "./shortcuts";
@@ -481,8 +478,10 @@ export function installLiveWiring() {
           // dans le DOM, et `bibSelection` les couvre au remontage. Sans ce marquage immédiat, la
           // sélection existait en état sans rien peindre : mesuré à 0 ligne `.sel` après un clic
           // simple, alors que ⇧+clic en montrait bien trois.
-          document.querySelectorAll(".lr.sel").forEach((n) => n.classList.remove("sel"));
-          document.querySelector(`.lr[data-id="${id}"]`)?.classList.add("sel");
+          // `paintBibSelection` plutôt que deux `classList` locales depuis le 2026-08-19 : le clic
+          // droit repeint par la même fonction, et elle tient aussi `aria-selected`. Deux
+          // marquages côte à côte auraient divergé sur ce que le lecteur d'écran annonce.
+          paintBibSelection();
           openBiblioDetail(id);
         }
       } else if (act === "play" || act === "identify" || act === "tile") {
@@ -581,42 +580,10 @@ export function installLiveWiring() {
     const row = (e.target as HTMLElement).closest<HTMLElement>('.lr[data-bib="row"]');
     if (!row?.dataset.id) return;
     e.preventDefault();
-    const id = Number(row.dataset.id);
-    const track = bibState.tracks.find((t) => t.id === id);
-    if (!track) return;
-    const rid = track.discogs_release_id;
-    openContextMenu(e.clientX, e.clientY, [
-      { label: "Ouvrir le détail", onPick: () => openBiblioDetail(id) },
-      {
-        label: "Fiche Discogs",
-        // Désactivée et non masquée quand la piste n'est pas identifiée : voir `context-menu.ts` —
-        // un menu dont les entrées vont et viennent doit se relire à chaque ouverture.
-        onPick: rid ? () => void openUrl(`https://www.discogs.com/release/${rid}`) : undefined,
-      },
-      {
-        label: "Réanalyser",
-        separated: true,
-        onPick: () =>
-          void reanalyzeTracks([id])
-            .then(() => toast("Réanalyse relancée"))
-            .catch((err: unknown) =>
-              toast(humanizeError(err, "Échec de la réanalyse — réessaie", "reanalyze_tracks")),
-            ),
-      },
-      {
-        label: "Écarter",
-        danger: true,
-        separated: true,
-        onPick: () =>
-          void rejectTrack(id)
-            .then(() => {
-              toast("Piste écartée");
-              closeAside();
-              return renderBiblioLive();
-            })
-            .catch((err: unknown) => toast(humanizeError(err, "Impossible d'écarter", "reject_track"))),
-      },
-    ]);
+    // Le menu et ses actions vivent dans `bibliotheque-view.ts`, avec la sélection sur laquelle
+    // ils portent : depuis les actions de masse (2026-08-19), ouvrir ce menu peut CHANGER la
+    // sélection, et cet état n'a jamais habité ici.
+    openBiblioContextMenu(e.clientX, e.clientY, Number(row.dataset.id));
   });
 
   document.addEventListener("change", (e) => {

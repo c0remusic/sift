@@ -521,7 +521,18 @@ body:has(#sift-titlebar){border-radius:var(--border-radius-sm);overflow:hidden}
 #sift-aside .sift-player-row{flex-wrap:nowrap}
 #sift-aside .sift-player-header,#sift-aside .sift-player-audition{width:100%;min-width:0}
 #sift-aside .sift-player-header>*,#sift-aside .sift-player-audition>*{min-width:0}
-#sift-aside .sift-player-controls{flex-direction:column;align-items:stretch;width:100%}
+/* Le dernier debordement de la zone D, mesure le 2026-08-19 dans la vraie fenetre : .sift-report-
+   scroll annoncait 369px de defilement pour 287 disponibles alors que chacun de ses enfants
+   DIRECTS mesurait bien 287. Le coupable ne debordait pas par sa largeur, il debordait par sa
+   POSITION — .sift-player-controls porte `margin-left:82px` (alignement sur la forme d'onde,
+   voir sa regle de base), et le `width:100%` de cette surcharge lui donnait 287 de large A PARTIR
+   de 82, soit un bord droit a 369. Un filtre `scrollWidth > clientWidth` ne le voyait pas : il
+   faut comparer les bords droits, pas les largeurs.
+   L'inset tombe a 0 ici, il ne se reduit pas : dans une colonne de 287px, 82px d'alignement
+   decoratif mangent 29% de la largeur des controles, et DESIGN.md § 1 met la densite avant la
+   decoration. A 0, les controles s'alignent sur .sift-player-header, qui est le bloc de reference
+   a gauche dans cette colonne. La surface large de Revue ne change pas. */
+#sift-aside .sift-player-controls{flex-direction:column;align-items:stretch;width:100%;margin-left:0}
 #sift-aside .sift-listen-advanced,#sift-aside .sift-listen-advanced-body{width:100%}
 #sift-aside .sift-listen-advanced-body>*{min-width:0}
 #sift-aside .sift-editor-input{width:100%}

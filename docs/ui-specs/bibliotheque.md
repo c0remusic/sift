@@ -134,16 +134,93 @@ Changement de facette et de tri : instantané, aucune animation sur les lignes.
 Le pouce du contrôle segmenté glisse en `--duration-slow`.
 Aucune animation sur le défilement ni sur le tri.
 
-## Hors périmètre / questions ouvertes
+## Décisions du 2026-08-19
+
+Les trois questions ouvertes de cette spec sont tranchées ci-dessous, chacune par une
+mesure du dépôt et non par arbitrage de goût.
+
+### Actions de masse — trois, et le contrat IPC les nomme
+
+La question était : « quelles actions s'appliquent réellement à N pistes **déjà
+rangées** ? » Le mode Lot de Revue n'en offre que deux, Convertir et Écarter
+(`batch-panel.ts::actionButtonHtml`), et la première n'a pas d'objet ici : une piste de
+la Bibliothèque est par définition déjà convertie et rangée. Il restait donc à mesurer
+ce que le contrat permet, action par action.
+
+| Action | En masse ? | Pourquoi |
+|---|---|---|
+| **Réanalyser** | oui | `reanalyzeTracks(trackIds: number[])` prend déjà un tableau (`ipc.ts:51`). Non destructive |
+| **Écarter** | oui | `rejectBatch(trackIds)` existe et rend `{rejected, failed[]}` (`ipc.ts:233`) — c'est l'IPC du mode Lot |
+| **Corbeille** | oui | `trashTrack(trackId)` est unitaire : la boucle se fait côté frontend, séquentiellement |
+| Ouvrir le détail | non | Singulier par définition — un inspecteur montre une piste |
+| Fiche Discogs | non | Ouvrirait N pages de navigateur |
+| Identifier | non | Réseau Discogs, et chaque identification demande de **choisir** un candidat. Une identification de masse serait un choix pris à la place de l'utilisateur |
+
+Le menu contextuel garde donc **la même liste d'entrées à la même position**, que la
+sélection porte une piste ou mille — règle de `context-menu.ts` : ce qui ne s'applique
+pas est **désactivé, jamais retiré**. Seuls les libellés portent le compte au-delà de
+une.
+
+**Confirmation.** Écarter et Corbeille au-delà de `BATCH_CONFIRM_THRESHOLD` (10, la
+constante du mode Lot) passent par `confirmAction()` — modale in-app armée, jamais
+`window.confirm()`. Le motif n'est pas la réversibilité (les deux sont annulables) mais
+le clic qui n'est pas humain, et `⌘/Ctrl+A` sur une liste virtualisée sélectionne
+précisément ce qu'on ne voit pas.
+
+**Compte-rendu.** `rejectBatch` rend `failed[]` : le toast dit le nombre réellement
+traité et nomme les échecs. Un compte seul se lirait comme un succès plus petit.
+
+### Colonne Label — inspecteur seul
+
+`LibraryTrack.label` existe et reste **hors des colonnes**. Une colonne optionnelle
+supposerait un mécanisme de colonnes activables qui n'existe nulle part : `SORT_COLUMNS`
+(`library-views.ts:62`) est une liste fixe de six entrées et les largeurs sont des
+règles CSS (`.sift-lib-col-*`, `styles.css:945-949`). Construire ce mécanisme pour un
+seul champ dont personne ne trie une bibliothèque de DJ est disproportionné. Le label
+reste éditable dans l'inspecteur (`library-detail.ts:89`), là où il est déjà.
+
+À rouvrir si le mécanisme de colonnes optionnelles arrive par ailleurs — il est déjà
+demandé par `DESIGN.md` § 16 (largeurs et ordre mémorisés), et ce jour-là Label est le
+premier candidat.
+
+### Persistance des largeurs de colonnes — `localStorage`, et l'argument d'origine était faux
+
+La question opposait `settings` à `localStorage` au motif que « le premier survit à un
+changement de machine ». **C'est faux** : la base vit dans `app_data_dir()`
+(`src-tauri/src/lib.rs:222`), donc dans le profil utilisateur de la machine, exactement
+comme `localStorage`. Ni l'un ni l'autre ne suit l'utilisateur ailleurs.
+
+La ligne de partage réelle est celle que le dépôt applique déjà :
+
+- `localStorage` — **état d'affichage de la fenêtre**, que le backend ne lit jamais.
+  Précédent : le repli du rail (`chrome.ts:377`).
+- `settings` (SQLite) — **configuration produit** que Rust lit aussi : racine de
+  bibliothèque, token Discogs, thème, gabarit de nom de fichier.
+
+Une largeur de colonne est de la première catégorie. Décision : `localStorage`, avec le
+`try/catch` du rail — un stockage refusé ne doit pas casser la table.
+
+⚠️ **Le geste n'existe pas encore.** Vérifié le 2026-08-19 : aucun redimensionnement ni
+réordonnancement de colonnes dans le dépôt — `col-resize` n'apparaît que sur la poignée
+de la file de Revue (`styles.css:729,761`). Cette décision est donc une **règle en
+attente de son premier consommateur**, pas un changement à faire aujourd'hui.
+
+## Écarts constatés entre cette spec et le code, au 2026-08-19
+
+Relevés en tranchant les questions ci-dessus. Aucun n'est corrigé dans ce geste.
+
+- **« Ouvrir l'emplacement » n'est appelable par rien.** La section Souris la donne en
+  première entrée du clic droit, et le double-clic est censé faire la même chose.
+  Aucune commande ne l'expose : zéro occurrence de `reveal`, `open_path` ou équivalent
+  dans `frontend/ipc.ts` **et** dans `src-tauri/src/ipc*.rs`. C'est une commande Rust à
+  écrire, pas une entrée de menu à ajouter.
+- **« Restaurer » et « Purger » au clic droit** supposent que « À re-sourcer » et
+  « Corbeille » soient rendues par cette table — c'est la fusion 2, **réfutée par la
+  mesure** (`DESIGN.md` § 15). Ces deux actions restent chez Écartés.
+- **Largeurs et ordre de colonnes au glisser** : non implémentés, voir ci-dessus.
+
+## Hors périmètre
 
 - **Tonalité et énergie** — absentes du modèle (`shared/contracts.ts`, `db.rs`, vérifié
   le 2026-08-19). Aucune colonne n'est spécifiée pour elles. Les ajouter est un
   chantier d'analyse Rust, pas de design.
-- **Colonne Label** — le champ existe (`LibraryTrack.label`) et n'entre pas dans les
-  colonnes par défaut. À trancher : colonne optionnelle activable, ou inspecteur seul.
-- **Persistance des largeurs de colonnes** — via `settings` (même magasin que
-  `ui_theme`) ou `localStorage` ? Le premier survit à un changement de machine, le
-  second est plus simple. Non tranché.
-- **Sélection multiple et actions de masse** — quelles actions sont réellement
-  applicables à N pistes rangées ? Le mode Lot de Revue en a la liste ; il faut vérifier
-  laquelle vaut ici avant de peupler le menu contextuel.
