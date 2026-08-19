@@ -437,3 +437,9 @@ function openLink(u){window.open(u,'_blank','noopener');}
   });
   render();
 })();
+
+// Module ESM depuis 2026-08-19 (etape 1) : ce fichier n'est plus charge que hors Tauri, par
+// un import dynamique de main.ts, et un import dynamique exige un module. `openLink` cesse d'etre
+// une globale et devient portee-module — son seul appelant est l'IIFE ci-dessus (lignes 418, 423),
+// aucun attribut `onclick=` ne s'y refere.
+export {};

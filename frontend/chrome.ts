@@ -133,23 +133,25 @@ export async function installDragDrop() {
   }
 }
 
-/** Lean Tauri UI: hide the mockup's not-yet-real surfaces (nav tabs + Revue toggles) so the
- * app shows only what actually works — Accueil (sources) and Revue (queue/report/filing).
- * Injected once; the demo (plain browser) never runs this, so its full mockup is untouched. */
+/** Feuille du shell de bureau : barre de titre custom (decorations:false) et hauteur de #pa.
+ *
+ * Elle s'appelait "lean" parce qu'elle masquait les surfaces de la maquette que le rendu live
+ * n'écrasait pas. Ces deux règles ont été retirées le 2026-08-19 avec l'étape 1
+ * (DESIGN.md § 17), pour deux raisons distinctes, chacune vérifiée :
+ *
+ * - `.pitch, .sub, .frow` ne correspondait à RIEN — aucun de ces trois sélecteurs n'existe dans
+ *   `index.html`, `app.js` ni `frontend/*.ts`. Règle morte, sans doute depuis une réécriture
+ *   d'`index.html` qui a emporté le bloc marketing sans emporter sa règle ;
+ * - `[data-act="revmode"], [data-act="togglequeue"]` masquait les bascules de la maquette, que le
+ *   rendu live doublait sous un autre DOM (`data-sift="reviewmode"`, `#sift-qdone-toggle`).
+ *   `app.js` ne tourne plus dans Tauri, donc ces attributs n'y existent plus du tout.
+ *
+ * Injectée une fois ; la démo navigateur ne l'exécute jamais. */
 export function injectLeanStyle() {
   if (document.getElementById("sift-lean-style")) return;
   const st = document.createElement("style");
   st.id = "sift-lean-style";
   st.textContent =
-    // landing/demo copy in index.html: marketing pitch, demo disclaimer, feature cards row
-    ".pitch,.sub,.frow{display:none!important}" +
-    // Rekordbox/Clé USB nav items: both have real screens now — no longer hidden. Rekordbox since
-    // 2026-07-02 (rekordbox-view.ts), Clé USB since 2026-07-31 (usb-view.ts).
-    // Revue's batch mode + "traités" toggle ARE wired for real now (2026-07-08:
-    // ensureReviewSeg()/ensureQueueDoneToggle() in sift-live.ts) — just under different DOM
-    // (data-sift="reviewmode", #sift-qdone-toggle) than app.js's own mock attributes below, which
-    // this rule hides since the mock's copy is otherwise never overwritten by the live render.
-    '[data-act="revmode"],[data-act="togglequeue"]{display:none!important}' +
     // custom frameless titlebar (decorations are off in tauri.conf — Tauri only). Two REAL DOM
     // zones (not a linear-gradient background trick, which can show a soft sub-pixel seam): the
     // left zone is the nav rail's own width/tone (152px, matching .sb below it) so the titlebar

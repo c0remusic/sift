@@ -34,10 +34,10 @@ import "@fontsource/jetbrains-mono/600.css";
 // (issue #22), contre 17 px pour les cinq autres entrees du rail. Le @font-face de la police
 // pleine est declare a la main dans styles.css, ou seule `.ti-fill` l'utilise.
 import "@tabler/icons-webfont/dist/tabler-icons.min.css";
-import "./app.js";
 import { invoke } from "@tauri-apps/api/core";
 import { appInfo, dbHealth, ffmpegVersion } from "./ipc";
 import { installLiveWiring } from "./sift-live";
+import { installRouter } from "./router";
 import { installUpdateBanner } from "./updater";
 
 // Only exercise the IPC layer inside the Tauri app. In a plain browser (e.g. the
@@ -45,8 +45,18 @@ import { installUpdateBanner } from "./updater";
 const inTauri =
   typeof window !== "undefined" && "__TAURI_INTERNALS__" in window;
 
+// `app.js` — la maquette d'origine — n'est PLUS importée sans condition (étape 1 de
+// DESIGN.md § 17). Elle routait l'app réelle : état de vue, clic `[data-view]`, coquilles,
+// titre, et six de ses sept renderers de démo étaient neutralisés par un garde `inTauri`
+// répété six fois pour ne pas écraser les vraies données. `router.ts` reprend ce qu'elle
+// fournissait à la production ; elle redevient ce qu'elle est, une démo navigateur, et ses
+// gardes `inTauri` y sont désormais toujours faux — elle rend donc enfin sa maquette complète.
+// Import dynamique : Vite l'élimine ainsi du chemin de démarrage de l'app de bureau.
+if (!inTauri) void import("./app.js");
+
 if (inTauri) {
   installLiveWiring();
+  installRouter();
   void installUpdateBanner();
   (async () => {
     try {

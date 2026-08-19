@@ -26,8 +26,6 @@ import { renderEcartes } from "./ecartes-view";
 import { renderHomeSources, dismissRootGate, noteScanFailure } from "./home-sources";
 import { installDragDrop, injectLeanStyle, injectTitlebar, installScrollAutohide, installNavKeyboard } from "./chrome";
 import { initTheme } from "./theme";
-import { renderReglagesLive } from "./reglages-view";
-import { renderUsbLive } from "./usb-view";
 import { requireEl } from "./dom";
 import { toast } from "./filing-toast";
 import { humanizeError } from "./errors";
@@ -69,7 +67,6 @@ import {
   registerRefreshHook,
   onBatchInPlaceChange,
 } from "./batch-panel";
-import { paintJournal, renderJournal } from "./journal";
 import { open as openFolderDialog } from "@tauri-apps/plugin-dialog";
 import { dirname } from "@tauri-apps/api/path";
 import { setTask, clearTask, setCancelHandler } from "./progress-zone";
@@ -171,14 +168,9 @@ async function refresh() {
 export function installLiveWiring() {
   registerBatchRenderer(renderBatch);
   registerRefreshHook(refresh);
-  window.__siftHome = renderHomeSources;
-  window.__siftQueue = renderQueue;
-  window.__siftEcarts = renderEcartes;
-  window.__siftReglages = () => void renderReglagesLive();
-  window.__siftBiblio = () => void renderBiblioLive();
-  window.__siftJournal = () => paintJournal(() => renderJournal(), "renderJournal");
-  window.__siftRkb = () => void renderRekordboxLive();
-  window.__siftCle = () => renderUsbLive();
+  // Les huit globales `window.__sift*` ont disparu avec la maquette (etape 1, DESIGN.md § 17) :
+  // `router.ts` appelle les renderers de vue directement, par import. app.js etait leur unique
+  // appelant, et elle ne tourne plus dans Tauri.
   injectLeanStyle();
   void injectTitlebar();
   void initTheme();
@@ -574,15 +566,3 @@ export function installLiveWiring() {
   void refresh();
 }
 
-declare global {
-  interface Window {
-    __siftHome?: () => void;
-    __siftQueue?: () => void;
-    __siftEcarts?: () => void;
-    __siftReglages?: () => void;
-    __siftBiblio?: () => void;
-    __siftJournal?: () => void;
-    __siftRkb?: () => void;
-    __siftCle?: () => void;
-  }
-}
