@@ -92,7 +92,7 @@ function renderEdit(edit: HTMLElement, st: EditState): void {
     `<div class="lib-edit-meta">${releaseRowHtml(st)}</div>` +
     `<div class="sift-cands" hidden></div>` +
     `<div class="lib-edit-actions">` +
-    `<button data-lib="save" style="flex:1;background:var(--color-background-info);color:var(--color-text-info);border:none;font-weight:500">Enregistrer</button>` +
+    `<button data-lib="save" style="flex:1;background:var(--color-accent-fill);color:var(--color-accent-ink);border:none;font-weight:500">Enregistrer</button>` +
     `<button data-lib="trash" class="sift-secondary-trash" title="Envoyer à la corbeille" aria-label="Envoyer à la corbeille">Supprimer</button>` +
     `</div>`;
 

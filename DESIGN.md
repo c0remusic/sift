@@ -194,6 +194,27 @@ Quatre niveaux d'encre : `--color-text-primary` → `quaternary`. Les fonds sém
 sont **opaques**, jamais en alpha : un fond alpha se compose différemment selon le gris
 sous-jacent, et le contraste mesuré descendait à 3,37:1 sur les cartes les plus sombres.
 
+### Aplat d'accent — le fond d'un bouton primaire, et rien d'autre
+
+`--color-accent-fill` + `--color-accent-ink`, ajoutés le 2026-08-19. Un bouton primaire macOS
+est un **aplat** d'accent avec du texte blanc (kit Big Sur, § 02-Buttons / 01-Push Buttons) ;
+Sift n'avait aucun token pour ça — `--color-background-info` est un fond *pâle* et
+`--color-hue-blue-solid` interdit le texte par-dessus, son propre commentaire le dit.
+
+Les deux sont **theme-invariants**, comme `--color-text-on-scrim` : ce couple ne se pose pas sur
+une surface de l'app, il **est** sa propre surface, et c'est le rapport interne de la paire qu'on
+veut constant.
+
+La luminance n'est pas celle du systemBlue d'Apple (L 60,3 %, ~3,9:1 avec du blanc) : le § ci-dessus
+impose 4,5:1 partout et vise 7:1 sur du petit texte, ce qu'est le libellé d'un bouton. Mesuré par
+lecture de pixel dans la vraie fenêtre — L 50 % → 6,14:1 · L 48 % → 6,65 · **L 46 % → 7,27** ·
+L 44 % → 7,95. Retenu 46 %.
+
+⚠️ Le **fond** d'un bouton secondaire, lui, ne fait que 1,86:1 contre la page — sous le 3:1 des HIG
+pour un élément d'interface non textuel. Écart assumé et partagé avec Apple, dont le Secondary
+tourne autour de 2,3:1 sur carte sombre : la lisibilité d'un bouton vient de son texte (8,12:1
+mesuré), pas du détachement de son fond.
+
 Deux encres qui ne basculent **jamais** avec le thème, parce qu'elles se posent sur des
 pixels d'image et non sur une surface de l'app : `--color-text-on-scrim` et les deux
 scrims `--overlay-scrim` / `--overlay-scrim-caption`.

@@ -100,6 +100,28 @@ color-scheme:light;
    mesurait 1,42:1 sur pochette noire, 1,29:1 sur gris moyen et 3,11:1 sur pochette blanche —
    illisible sur la majorité des pochettes. Le thème clair, lui, passait déjà (4,76 à 21:1). */
 --color-text-on-scrim:oklch(100% 0 0);
+/* APLAT D'ACCENT — le fond d'un bouton primaire, et rien d'autre.
+   Relevé sur `docs/design-refs/macos-big-sur-ui-kit.png` § 02-Buttons / 01-Push Buttons : un push
+   button primaire macOS est un APLAT d'accent avec du texte blanc, pas un fond pâle avec du texte
+   teinté. Sift n'avait aucun token pour ça — `--color-background-info` est un fond pâle
+   (informatif), et `--color-hue-blue-solid` interdit explicitement le texte par-dessus, son
+   commentaire le dit : « à n'employer QUE comme aplat de donnée ».
+   Les deux valeurs sont THEME-INVARIANTES, comme `--color-text-on-scrim` juste au-dessus et pour
+   la même raison : ce couple ne se pose pas sur une surface de l'app, il EST sa propre surface.
+   Un fill qui basculerait avec le thème changerait le contraste de la paire, alors que la paire
+   est justement ce qu'on veut constant.
+   La luminance n'est PAS celle du systemBlue d'Apple (L 60,3 %) : DESIGN.md § 4 impose un plancher
+   AA 4,5:1 partout et vise 7:1 sur du petit texte, et le libellé d'un bouton est du petit texte.
+   Mesuré dans la vraie fenêtre par lecture de pixel — `getComputedStyle` rend `oklch(...)` littéral
+   dans ce moteur, donc tout calcul fait sur la chaîne lit les composantes OKLCH comme du RGB et
+   produit un chiffre faux (première mesure : 2,47, corrigée par un canvas 1×1) :
+
+       L 50 % → 6,14:1     L 48 % → 6,65:1     L 46 % → 7,27:1     L 44 % → 7,95:1
+
+   Retenu 46 %, le premier cran qui atteint la cible en restant un bleu franc. Le plancher du dépôt
+   prime sur la valeur d'Apple, et l'écart se nomme plutôt qu'il ne se subit. */
+--color-accent-fill:oklch(46% 0.2177 257.42);
+--color-accent-ink:oklch(100% 0 0);
 /* Neutral overlay tints (hover/selection/left-bar/badge on neutral surfaces) — dark-tinted here
    since the surface is light; flipped to light-tinted in the dark variant below. Anything that
    used to hardcode rgba(255,255,255,...) for "selected row" must use these instead, or it goes
@@ -893,7 +915,12 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
 .sift-ranger-btn{flex:none;white-space:nowrap;background:var(--color-background-info);color:var(--color-text-info);border:0.5px solid var(--color-border-info);font-weight:500}
 .sift-ranger-btn:hover{background:var(--color-background-info);filter:brightness(0.95)}
 .sift-secondary-resource{flex:none;white-space:nowrap;color:var(--color-text-warning)}
-.sift-secondary-trash{flex:none;white-space:nowrap;background:var(--color-background-danger);color:var(--color-text-danger);border:0.5px solid var(--color-border-danger)}
+/* Destructif SECONDAIRE : la forme d'un bouton secondaire (aplat gris, pas de bordure), et le
+   danger porté par l'ENCRE seule. Le kit n'a aucun bouton bordé — un cadre coloré était la
+   grammaire d'avant, et elle faisait lire ce bouton comme aussi engageant que le primaire à
+   côté de lui. Un aplat rouge est réservé à un primaire destructif, que cet écran n'a pas. */
+.sift-secondary-trash{flex:none;white-space:nowrap;background:var(--color-surface-raised);color:var(--color-text-danger);border:0}
+.sift-secondary-trash:hover{background:var(--color-background-danger)}
 .sift-secondary-trash:hover{background:var(--color-background-danger);filter:brightness(0.95)}
 /* Destination popover: replaces the persistent tree column, anchored above its trigger button.
    Hidden by default ([hidden] attribute, toggled in filing.ts); #fldz keeps its id so renderBins'
@@ -933,7 +960,16 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
 .mc{background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:var(--space-12) var(--space-12)}.mc .l{font-size:11px;color:var(--color-text-secondary)}.mc .n{font-size:20px;font-weight:500;margin-top:var(--space-4)}
 .srow{display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:0.5px solid var(--color-border-tertiary);font-size:12px}.srow .v{color:var(--color-text-secondary);display:flex;align-items:center;gap:var(--space-8)}
 .h1{font-size:16px;font-weight:500;margin-bottom:12px}
-.chip{font-size:11px;padding:var(--space-4) var(--space-8);border-radius:var(--border-radius-md);border:0.5px solid var(--color-border-tertiary);color:var(--color-text-secondary);cursor:pointer}.chip:hover{background:var(--color-background-secondary)}.chip.on{background:var(--color-background-info);color:var(--color-text-info);border-color:var(--color-border-info)}.chip.on:hover{background:var(--color-background-info)}
+/* CHIPS = les Scope Buttons du kit (§ 02-Buttons / 05-Scope Buttons), et le kit en donne les
+   quatre états nommés : Selected/Not Selected × Normal/Hover. Ce qu'il montre : AUCUNE bordure,
+   et l'état sélectionné porté par un aplat GRIS — pas par une teinte. Sift teintait l'actif en
+   bleu pâle, ce qui le faisait lire comme un état sémantique (« info ») alors que c'est une
+   portée de filtre. La teinte est rendue à la sémantique, le gris prend la sélection — et c'est
+   la même règle que DESIGN.md § 8 applique déjà aux lignes sélectionnées. */
+.chip{font-size:11px;padding:var(--space-4) var(--space-8);border-radius:var(--border-radius-md);border:0;background:none;color:var(--color-text-secondary);cursor:pointer}
+.chip:hover{background:var(--overlay-hover)}
+.chip.on{background:var(--color-surface-raised);color:var(--color-text-primary)}
+.chip.on:hover{background:var(--color-surface-raised)}
 .tog{width:30px;height:17px;border-radius:9px;background:var(--color-text-info);position:relative;flex:none;cursor:pointer;transition:background var(--duration-fast)}.tog::after{content:"";position:absolute;left:2px;top:2px;width:13px;height:13px;border-radius:50%;background:var(--color-text-on-accent);transform:translateX(13px);transition:transform var(--duration-fast)}.tog.off{background:var(--color-border-secondary)}.tog.off::after{transform:translateX(0)}
 .lr{display:flex;align-items:center;gap:var(--space-8);padding:var(--space-4) var(--space-8);border-bottom:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);font-size:12px;cursor:pointer;transition:background var(--duration-base) ease,color var(--duration-base) ease,transform var(--duration-fast) ease}
 .lr:hover{background:var(--color-row-active)}
@@ -1053,7 +1089,18 @@ body.sift-col-resizing,body.sift-col-resizing *{cursor:col-resize!important;user
 .br{display:flex;align-items:center;gap:var(--space-8);padding:var(--space-8) var(--space-4);border-bottom:0.5px solid var(--color-border-tertiary);font-size:12px;cursor:pointer}
 .mf{margin-bottom:var(--space-8)}.mf .lab{font-size:10px;color:var(--color-text-tertiary);margin-bottom:var(--space-4)}.mf .inp{border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:var(--space-4) var(--space-8);font-size:12px}
 .cov{width:40px;height:40px;flex:none;border-radius:6px;background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);display:flex;align-items:center;justify-content:center;color:var(--color-text-tertiary)}.cov i{font-size:20px}
-button{font-family:inherit;background:transparent;border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:var(--space-4) var(--space-12);color:var(--color-text-primary);cursor:pointer;font-size:13px}
+/* BOUTON SECONDAIRE, forme du kit (§ 02-Buttons / 01-Push Buttons, dark mode) : un aplat GRIS
+   plein, sans bordure.
+   ⚠️ Son fond ne fait que 1,86:1 contre la page (mesuré), donc SOUS le 3:1 que les HIG
+   demandent à un élément d'interface non textuel. C'est un écart assumé, et le kit fait le
+   même : son Secondary sur carte sombre tourne autour de 2,3:1. La lisibilité d'un bouton
+   vient de son TEXTE — ici 8,12:1 — pas du détachement de son fond. Remonter le gris jusqu'à
+   3:1 demanderait un L d'environ 58 % en thème sombre, ce qui donne un bouton plus clair que
+   les surfaces qui le portent : le contrôle cesserait de se lire comme posé SUR la carte. Sift posait l'inverse — fond transparent + filet 0.5px — ce qui donne un
+   bouton qui se lit comme un contour vide plutôt que comme une surface qu'on presse. La bordure
+   part, le fond arrive ; la hiérarchie avec le primaire vient alors de la COULEUR du fond, pas
+   de la présence d'un cadre. */
+button{font-family:inherit;background:var(--color-surface-raised);border:0;border-radius:var(--border-radius-md);padding:var(--space-4) var(--space-12);color:var(--color-text-primary);cursor:pointer;font-size:13px}
 /* Keyboard-first: a visible focus ring on interactive elements, accent-coloured. :focus-visible
    keeps it keyboard-only (no ring on mouse click). See interaction-model.md §7.
    --color-border-info (translucent), not --color-text-info (solid) — bug report: "quand
@@ -1198,7 +1245,10 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-text-info)}
 .sift-cand-more-summary::-webkit-details-marker{display:none}
 .sift-cand-more[open] .sift-cand-more-summary{color:var(--color-text-secondary)}
 /* [C1] Identifier primary button: info/blue fill, same role as .sift-ranger-btn/.chip.on */
-.sift-id-btn{background:var(--color-background-info);border-color:var(--color-border-info);color:var(--color-text-info);font-weight:500;font-size:12px;padding:var(--space-4) var(--space-12)}
+/* Identifier / Ré-identifier : action secondaire, donc grammaire secondaire. Elle portait un fond
+   bleu pâle qui la mettait au même rang visuel qu'« Enregistrer », alors qu'elle ouvre une
+   recherche et n'engage rien. */
+.sift-id-btn{background:var(--color-surface-raised);border:0;color:var(--color-text-primary);font-weight:500;font-size:12px;padding:var(--space-4) var(--space-12)}
 .sift-id-btn:hover{background:var(--color-background-info);filter:brightness(0.95)}
 /* [C3] "changer" / "Ouvrir Réglages" inline jump link */
 .sift-cand-jump{font-size:11px;padding:var(--space-4) var(--space-8);color:var(--color-text-info);border-color:var(--color-border-info)}
@@ -1741,7 +1791,12 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-confirm-card{padding:var(--space-24);width:320px;display:flex;flex-direction:column;gap:var(--space-16);text-align:center}
 .sift-confirm-msg{font-size:var(--text-sm);color:var(--color-text-secondary);white-space:pre-line}
 .sift-confirm-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
-.sift-confirm-btn{padding:var(--space-8) var(--space-16);border-radius:var(--border-radius-md);border:none;background:var(--color-background-info);color:var(--color-text-info);cursor:pointer;font-family:inherit}
+/* BOUTON PRIMAIRE, forme du kit (§ 02-Buttons / 01-Push Buttons) : aplat d'accent, encre blanche.
+   Était un fond pâle avec du texte teinté, ce qui donnait deux boutons de même poids visuel dans
+   une modale où l'un des deux est destructif. */
+.sift-confirm-btn{padding:var(--space-8) var(--space-16);border-radius:var(--border-radius-md);border:none;background:var(--color-accent-fill);color:var(--color-accent-ink);cursor:pointer;font-family:inherit;font-weight:500}
+.sift-confirm-btn:hover{background:var(--color-accent-fill)}
+.sift-confirm-btn:disabled{opacity:.5;cursor:default}
 .sift-confirm-btn:hover{background:var(--color-background-info);filter:brightness(0.95)}
 /* The destructive button is genuinely `disabled` for its first 250ms (confirm-modal.ts), because
    `pointer-events:none` does NOT stop HTMLElement.click() — the synthetic click is the exact
@@ -2012,7 +2067,7 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-settings-row-stack{flex-direction:column;align-items:flex-start;gap:8px}
 .sift-settings-row-head{display:flex;align-items:center;justify-content:space-between;gap:var(--space-12);width:100%}
 .sift-settings-label{font-size:var(--text-base);color:var(--color-text-primary)}
-.sift-settings-btn{flex:none;font-size:var(--text-md);color:var(--color-text-secondary);cursor:pointer;padding:var(--space-4) var(--space-12);border-radius:var(--border-radius-md);border:0.5px solid var(--color-border-secondary);background:var(--color-surface-raised);font-family:inherit}
+.sift-settings-btn{flex:none;font-size:var(--text-md);color:var(--color-text-primary);cursor:pointer;padding:var(--space-4) var(--space-12);border-radius:var(--border-radius-md);border:0;background:var(--color-surface-raised);font-family:inherit}
 .sift-settings-btn:hover{filter:brightness(0.95)}
 .sift-settings-btn-quiet{font-size:var(--text-sm);color:var(--color-text-tertiary);background:transparent}
 .sift-settings-link{font-size:var(--text-sm);color:var(--color-text-secondary);cursor:pointer;text-decoration:none}
@@ -2161,7 +2216,11 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-bib-noresult{padding:var(--space-32) var(--space-16);text-align:center;font-size:var(--text-md);color:var(--color-text-tertiary)}
 .sift-bib-noresult button{font:inherit;color:var(--color-text-info);background:none;border:0;padding:0;cursor:pointer;text-decoration:underline}
 /* Même matériau que le popover de destination — un seul type de surface flottante dans l'app. */
-.sift-facet-pop{position:fixed;width:max-content;min-width:180px;max-width:320px;max-height:340px;display:flex;flex-direction:column;padding:var(--space-12);background:color-mix(in srgb,var(--color-background-secondary) 70%,transparent);backdrop-filter:blur(16px) saturate(160%);-webkit-backdrop-filter:blur(16px) saturate(160%);border:1px solid var(--color-border-secondary);border-radius:var(--border-radius-lg);overflow-y:auto;z-index:var(--z-popover)}
+/* `:not([hidden])` OBLIGATOIRE — règle du dépôt (CLAUDE.md § Front) : toute règle auteur qui
+   pose `display` bat l'attribut `hidden`. Reproduit ici le 2026-08-19 : le menu mesurait
+   `hidden: true` ET `display: flex`, donc restait peint en bas de la fenêtre, sans style inline
+   (le rebuild l'avait effacé) — un `position:fixed` sans `top` retombe à sa place de flux. */
+.sift-facet-pop:not([hidden]){position:fixed;width:max-content;min-width:180px;max-width:320px;max-height:340px;display:flex;flex-direction:column;padding:var(--space-12);background:color-mix(in srgb,var(--color-background-secondary) 70%,transparent);backdrop-filter:blur(16px) saturate(160%);-webkit-backdrop-filter:blur(16px) saturate(160%);border:1px solid var(--color-border-secondary);border-radius:var(--border-radius-lg);overflow-y:auto;z-index:var(--z-popover)}
 /* Items de menu, calqués sur `.sift-ctx-item` — une seule grammaire de menu dans l'app. La COCHE
    marque l'item actif, comme dans un menu macOS ; un fond plein serait la grammaire d'une LISTE,
    et ce panneau n'en est plus une depuis qu'il est un pop-up button (HIG « Pop-up buttons »). */

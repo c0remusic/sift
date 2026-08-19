@@ -514,16 +514,28 @@ function dupGroupHtml(g: DupGroup, idx: number): string {
  *  Le popover est peint `hidden` par le rendu : tant qu'il l'est, ses nœuds mesurent 0 — d'où
  *  l'ordre ici, montrer PUIS mesurer PUIS placer, et le pouce du contrôle segmenté positionné
  *  seulement après. Le placer avant l'affichage le collerait à l'origine, sans erreur visible. */
-/** Le popover est-il ouvert ? État de MODULE et non lecture du DOM : chaque changement d'onglet
- *  (Dossiers / Genres / Artistes) relance `renderBiblioLive`, qui réécrit `#content` — le popover
- *  repart donc `hidden` à chaque fois. Sans mémoire, il se refermerait sous le doigt au premier
- *  onglet cliqué. */
-let facetPopOpen = false;
+/** Le menu survit-il au PROCHAIN rendu ? Un seul, et seulement celui qu'il a lui-même déclenché.
+ *
+ *  Changer de type (Dossiers / Genres / Artistes) relance `renderBiblioLive`, qui réécrit
+ *  `#content` : sans mémoire, le menu se refermerait sous le doigt au premier type cliqué. Mais la
+ *  première version gardait un simple booléen « ouvert », que CHAQUE rendu relisait — et les rendus
+ *  arrivent de partout, y compris d'un tick de scan. Mesuré le 2026-08-19 : le menu se rouvrait
+ *  indéfiniment et finissait ancré à 884 px du haut, seul en bas de la fenêtre, sur un écran où
+ *  personne ne l'avait demandé.
+ *
+ *  Un jeton à usage unique plutôt qu'un état durable : c'est le geste qui prolonge le menu, pas le
+ *  temps qui passe. */
+let facetPopSurviveNextRender = false;
+
+/** Appelée par le dispatch avant de relancer un rendu depuis le menu lui-même. */
+export function keepFacetPopoverOpen(): void {
+  facetPopSurviveNextRender = true;
+}
 
 export function toggleFacetPopover(): void {
-  facetPopOpen = !facetPopOpen;
-  if (facetPopOpen) showFacetPopover();
-  else closeFacetPopover();
+  const pop = document.getElementById("sift-facet-pop");
+  if (pop && !pop.hidden) closeFacetPopover();
+  else showFacetPopover();
 }
 
 /** Affiche et place le popover. Séparée de la bascule pour être rappelable après un rendu, quand
@@ -532,6 +544,13 @@ function showFacetPopover(): void {
   const pop = document.getElementById("sift-facet-pop");
   const btn = document.querySelector<HTMLElement>('[data-bib="facetpop"]');
   if (!pop || !btn) return;
+  // Un bouton de largeur nulle n'est pas encore peint : l'ancrer donnerait une position calculée
+  // sur une géométrie vide, et le menu partirait dans un coin de la fenêtre — vu le 2026-08-19,
+  // ouvert en bas à gauche après un rendu. Mieux vaut refermer que placer au hasard.
+  if (!btn.getBoundingClientRect().width) {
+    closeFacetPopover();
+    return;
+  }
   pop.hidden = false;
   btn.setAttribute("aria-expanded", "true");
   // Placement au SECOND frame, pas dans la foulée. Un rAF s'exécute AVANT le recalcul de style
@@ -577,7 +596,7 @@ export function installFacetPopoverDismiss(): void {
 }
 
 export function closeFacetPopover(): void {
-  facetPopOpen = false;
+  facetPopSurviveNextRender = false;
   const pop = document.getElementById("sift-facet-pop");
   if (!pop || pop.hidden) return;
   pop.hidden = true;
@@ -889,8 +908,12 @@ export async function renderBiblioLive() {
   // ne fuit, les écouteurs partent avec le nœud que `content.innerHTML` vient de remplacer.
   const thead = content.querySelector<HTMLElement>(".sift-lib-thead");
   if (thead) installColumnGestures(thead, () => void renderBiblioLive());
-  // Le popover vient d'être recréé fermé par le rebuild — le rouvrir si l'état dit qu'il l'était.
-  if (facetPopOpen) showFacetPopover();
+  // Le menu ne revient que s'il a demandé CE rendu (changement de type). Le jeton se consomme :
+  // tout autre rendu — frappe de recherche, tick de scan, changement de tri — le laisse fermé.
+  if (facetPopSurviveNextRender) {
+    facetPopSurviveNextRender = false;
+    showFacetPopover();
+  }
   positionViewModeThumb();
 
   if (trulyEmpty) {

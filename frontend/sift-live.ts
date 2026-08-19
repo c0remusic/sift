@@ -36,6 +36,7 @@ import {
   paintBibSelection,
   toggleFacetPopover,
   closeFacetPopover,
+  keepFacetPopoverOpen,
   installFacetPopoverDismiss,
 } from "./bibliotheque-view";
 import { sortTracks } from "./library-views";
@@ -443,6 +444,7 @@ export function installLiveWiring() {
         // troisième onglet — cliquer Artistes sélectionnait Dossiers, en silence.
         const f = bibEl.dataset.f;
         bibState.facet = f === "genre" ? "genre" : f === "artist" ? "artist" : "folder";
+        keepFacetPopoverOpen(); // ce rendu vient du menu : il est le seul à le rouvrir
         // Plus de bascule en place : le type de facette est un item de MENU depuis le 2026-08-19,
         // et un menu se referme sur le rendu suivant de toute façon. La classe `.on` qu'on togglait
         // ici appartenait au contrôle segmenté supprimé.

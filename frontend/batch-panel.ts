@@ -568,7 +568,7 @@ function actionButtonHtml(running: boolean): string {
   const fileN = batchSel.size;
   const fakeN = batchFakeSel.size;
   if (fileN === 0 && fakeN === 0)
-    return '<button class="sift-baction" disabled style="background:var(--color-background-info);color:var(--color-text-info);opacity:.5;pointer-events:none">Convertir (0)</button>';
+    return '<button class="sift-baction" disabled style="background:var(--color-accent-fill);color:var(--color-accent-ink);opacity:.5;pointer-events:none">Convertir (0)</button>';
   // Second-click confirm for large batches (see BATCH_CONFIRM_THRESHOLD) — armed only for the
   // exact selection it was requested for, so ticking/unticking a track after arming falls back
   // to asking again instead of silently confirming a changed selection. The button looks like a
@@ -599,10 +599,10 @@ function actionButtonHtml(running: boolean): string {
     );
   }
   if (fakeN === 0)
-    return `<button data-sift="batchaction" class="sift-baction" style="background:var(--color-background-info);color:var(--color-text-info)">Convertir (${fileN})</button>`;
+    return `<button data-sift="batchaction" class="sift-baction" style="background:var(--color-accent-fill);color:var(--color-accent-ink)">Convertir (${fileN})</button>`;
   if (fileN === 0)
     return `<button data-sift="batchaction" class="sift-baction" style="background:var(--color-background-danger);color:var(--color-text-danger)">Écarter (${fakeN})</button>`;
-  return `<button data-sift="batchaction" class="sift-baction" style="background:var(--color-background-info);color:var(--color-text-info)">Convertir (${fileN}) · Écarter (${fakeN})</button>`;
+  return `<button data-sift="batchaction" class="sift-baction" style="background:var(--color-accent-fill);color:var(--color-accent-ink)">Convertir (${fileN}) · Écarter (${fakeN})</button>`;
 }
 
 /** Positions the batch Format thumb from whichever button currently carries `.on`. Called both
