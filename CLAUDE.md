@@ -310,6 +310,14 @@ la lire telle quelle, sans extrapoler. Ces sources servent à étudier structure
 et états : ne jamais les installer dans `package.json`, ni copier leur palette, ni
 déplacer les tokens de `styles.css`.
 
+**Apple donne une chaîne de dérivation, presque jamais une valeur.** Avant de proposer un
+arbitrage d'interface, la question n'est pas « quelle valeur Apple donne » mais **« Apple
+laisse-t-elle cette question exister »**. Séparation ← le conteneur · poids d'icône ← le
+texte voisin · rayon imbriqué ← la barre · tracking ← la taille · encre ← le matériau ·
+densité ← un cran. Si la doc répond par une règle, ne pas transformer ses issues en menu
+d'options : écrire la règle, et ne trancher que la **racine**, seule chose qu'Apple ne
+publie jamais. Nommer la racine depuis une mesure du dépôt quand elle existe.
+
 - **Les pages HIG ne se lisent pas avec `WebFetch`** — SPA, la réponse est « I don't have
   access to browse web pages ». Passer par le Browser pane (`get_page_text`), vérifié le
   2026-08-05 sur `designing-for-macos`. `developer.apple.com/design/` n'est qu'un hall
@@ -375,7 +383,7 @@ ne pas driver l'app à sa place. `computer-use` est écarté par défaut.
 Pour une inspection ponctuelle du code `inTauri` réel :
 `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=<port>` **au lancement de
 la commande dev** expose un endpoint CDP standard sur la vraie fenêtre WebView2
-(`.claude/scripts/cdp.cjs`). Deux règles :
+(`.claude/scripts/cdp.cjs`). Trois règles :
 
 - **Ne JAMAIS** poser ce port via `additionalBrowserArgs` dans `tauri.conf.json` : il
   s'appliquerait aux builds de prod distribués et écrase les arguments par défaut de wry.
@@ -385,6 +393,12 @@ la commande dev** expose un endpoint CDP standard sur la vraie fenêtre WebView2
   autre projet. **Constaté le 2026-08-05 : 9222 ET 9223 étaient tous deux tenus par un
   autre projet Tauri, dont le CDP répond normalement.** Mesurer sans vérifier l'identité
   produit un résultat faux et crédible.
+- **Un override de token injecté doit s'écrire `:root:root:root`.** Le bloc sombre du dépôt
+  est `:root:not([data-theme="light"])` (`styles.css:267`), de spécificité (0,2,0) : une
+  feuille injectée en `:root` perd, quelle que soit sa position. Constaté le 2026-08-19 —
+  quatre variantes d'encre capturées **octet pour octet identiques**, ce qui se lit comme
+  « re-teinter ne change rien ». Relire la valeur calculée après injection ET après retrait,
+  avant de faire confiance à une capture.
 
 **Ne pas rejouer cette plomberie à la main** : le skill `run-sift`
 (`.claude/skills/run-sift/`, invoquable par `/run-sift`) enveloppe le tout — choix d'un

@@ -171,6 +171,13 @@ npm run check:security
 - **An empty measurement is not a pass.** Filtering for offenders returns `[]` both when a
   screen is compliant and when nothing was painted. Every check must carry a positive count
   (`nbTexts`, `minPx`). This produced three false "conformant" results before being caught.
+- **Assert which screen you are on before capturing, not after.** A capture run that never
+  navigated silently photographed Réglages for four "Revue" variants. Make the view identity
+  a precondition that throws: `document.querySelector(".nv.on").textContent` — note it carries
+  the badge count, so match with `startsWith`, not equality.
+- **`driver.mjs eval` prints `JSON.stringify(value)`.** A value that is *already* a JSON string
+  comes back double-encoded, so `JSON.parse` yields a string, not an object — and a guard reading
+  its fields sees `undefined` and aborts on a healthy app. Parse twice, or return a bare object.
 - **Clicking a queue row does not mean the track opened.** `#mid` stays empty for seconds
   while the report loads. Poll `childElementCount`, never trust the click returning.
 - **`cdp.cjs open-track` fails on the live DOM** — it returns
