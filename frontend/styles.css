@@ -587,7 +587,11 @@ body:has(#sift-titlebar){border-radius:var(--border-radius-sm);overflow:hidden}
    derivee : ~29px de contenu plus un cran d'espacement au-dessus et au-dessous. Le
    `appearance:none` retire la croix de reinitialisation propre a `type=search`, qui n'est peinte
    que par certains moteurs et casserait l'alignement sur l'un et pas sur l'autre. */
-.sift-bar-search{display:flex;align-items:center;gap:var(--space-8);width:220px;padding:var(--space-4) var(--space-8);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);background:var(--color-background-secondary);color:var(--color-text-tertiary)}
+/* CHAMP DE RECHERCHE, forme du kit (§ 03-Fields and Labels / 02-Search Fields) : un aplat arrondi
+   avec sa loupe, SANS bordure au repos — le contour n'apparait qu'au focus, et il est bleu. Sift
+   posait un filet permanent, donc le champ se lisait comme actif en permanence et le focus n'avait
+   plus qu'un anneau a ajouter par-dessus un cadre deja la. */
+.sift-bar-search{display:flex;align-items:center;gap:var(--space-8);width:220px;padding:var(--space-4) var(--space-8);border:0;border-radius:var(--border-radius-md);background:var(--color-background-secondary);color:var(--color-text-tertiary)}
 .sift-bar-search i{font-size:var(--text-lg);flex:none}
 .sift-bar-search input{flex:1;min-width:0;border:0;background:transparent;color:var(--color-text-primary);font:inherit;font-size:var(--text-md);appearance:none}
 .sift-bar-search input::-webkit-search-cancel-button{appearance:none}
@@ -952,8 +956,15 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
 /* Hover added 2026-07-08: was clickable (cursor:pointer) with zero visual feedback — same bug
    already fixed on .chip 2026-07-03 ("cliquable sans retour visuel"). */
 .fld:hover{background:var(--color-background-secondary)}
-.fld.on{background:var(--color-background-info);color:var(--color-text-info);font-weight:500}
-.fld.on:hover{background:var(--color-background-info)}
+/* Item ACTIF d'une liste de navigation (categories de Reglages, sections Rekordbox) : neutre.
+   DESIGN.md § 8 : « Selection : --color-background-secondary, promue au plan du contenu. Jamais
+   un accent colore. » Cette regle peignait un fond bleu pale avec de l'encre bleue, donc la meme
+   grammaire qu'un etat semantique « info » pour ce qui n'est qu'un element choisi dans une liste.
+   Le kit ne tranche pas dans notre sens ici — sa sidebar active est bleue (§ 06-Sidebars) — et
+   c'est un conflit assume, consigne dans DESIGN.md § 14 : dans Sift le bleu est deja pris par la
+   semantique et par l'aplat des boutons primaires. */
+.fld.on{background:var(--color-background-secondary);color:var(--color-text-primary);font-weight:500}
+.fld.on:hover{background:var(--color-background-secondary)}
 .kbd{font-family:var(--font-mono);font-size:10px;border:0.5px solid var(--color-border-secondary);border-radius:3px;padding:0 var(--space-4);color:var(--color-text-tertiary)}
 .bars{display:flex;align-items:center;gap:var(--space-4);height:42px;cursor:pointer}.bars span{flex:1;border-radius:1px}
 .spec{display:flex;align-items:flex-end;gap:var(--space-4);height:22px}.spec span{flex:1;border-radius:1px 1px 0 0}
@@ -1141,6 +1152,12 @@ input:not([type="checkbox"]):focus-visible{outline:none;border-color:var(--color
    real checkbox was silently falling back to the unthemed browser-default focus ring. Narrower
    outline+offset than the generic one (1.5px/1px vs 2px/1px): a native checkbox is ~13px, the
    generic ring reads disproportionately heavy at that size. */
+/* Cases et radios : natives, teintees par `accent-color` sur l'aplat d'accent de l'app.
+   Le kit (§ 02-Buttons / 02-Checkboxes et 03-Radio Buttons) montre des controles remplis en
+   ACCENT quand ils sont coches — Sift laissait le bleu par defaut du moteur, qui n'est pas le
+   sien. `accent-color` fait exactement ce geste sans reimplementer le controle : reimplementer
+   couterait le focus natif, la coche indeterminee et le clavier, pour une teinte. */
+input[type="checkbox"],input[type="radio"]{accent-color:var(--color-accent-fill)}
 input[type="checkbox"]:focus-visible{outline:1.5px solid var(--color-border-info);outline-offset:1px}
 /* Text selection highlight — was entirely unstyled (browser default blue, same unthemed-system-
    color class of bug as the pre-fix .sift-wave-hover/.sift-kbd-hint-id). --color-border-info is

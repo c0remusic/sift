@@ -649,6 +649,14 @@ Contenu groupé par sections, en-têtes en petites capitales discrètes, **un se
 d'indentation**. Item actif : fond plein arrondi (`--color-background-secondary`),
 jamais de bordure ni de barre latérale colorée.
 
+⚠️ **Conflit tranché, à ne pas « corriger » à la prochaine passe.** Le kit Big Sur
+(§ 06-Sidebars) montre l'item actif d'une sidebar en **bleu accent plein, texte blanc**.
+Ce fichier l'interdit — ici même, et au § 8 : « Sélection : jamais un accent coloré ».
+La précédence tranche (ce fichier avant le kit), et le motif tient : dans Sift, le bleu
+est déjà pris par une sémantique (« interactif, focus, sélection, lien ») et par l'aplat
+d'accent des boutons primaires. Un rail bleu ferait du rail la chose la plus accentuée
+d'un écran dont le sujet est la table. Le rail garde son gris.
+
 Replié, le rail garde ses icônes et perd ses libellés — il ne disparaît pas.
 Raccourci de bascule : proposition ⌥⌘S sur macOS (convention Finder), Ctrl+B ailleurs.
 **Marqué proposition — à vérifier dans les HIG avant d'être figé.**
