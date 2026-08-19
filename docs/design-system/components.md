@@ -233,11 +233,14 @@ Sur des listes virtualisées, une sélection persistante doit être portée par 
 par le nœud DOM — celui-ci est recyclé.
 
 ⚠️ **Écart relevé le 2026-08-05 : la file de Revue n'est pas focalisable.**
-`queue-panel.ts:332` rend `<div class="qi" … title="…" style="cursor:pointer">` — ni
-`tabindex`, ni `role`, ni `aria`. Or `home-sources.ts:80` rend la **même classe `.qi`**
-avec `tabindex="0" role="button" aria-pressed`, et `library-views.ts:86` fait de même
-pour `.lr`. Le même composant visuel est donc accessible sur Accueil et muet sur Revue,
-qui est l'écran principal.
+`queue-panel.ts:351` rend `<div class="qi" … title="…" style="cursor:pointer">` — ni
+`tabindex`, ni `role`, ni `aria`. **Toujours vrai le 2026-08-19**, ligne re-vérifiée.
+Le point de comparaison, lui, a changé : `home-sources.ts` rendait la même classe `.qi`
+avec `tabindex="0" role="button" aria-pressed`, et ce fichier a été **supprimé** le
+2026-08-19 avec la fusion d'Accueil dans le rail. La comparaison tient encore par
+`library-views.ts`, qui donne `tabindex`/`role`/`aria-selected` à `.lr`, et par les
+entrées de source du rail (`rail-sources.ts`), qui sont focalisables. Le même composant
+visuel reste donc muet sur Revue seulement — l'écran principal.
 
 Nuance : la navigation clavier existe (`queue-panel.ts:265-279`, flèches haut/bas via une
 couche document). Ce qui manque n'est pas le déplacement, c'est l'**exposition** — focus

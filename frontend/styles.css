@@ -235,30 +235,30 @@ color-scheme:light;
    --h-36 lost its only consumer, .sift-play-btn, when the Revue continuous-surface redesign
    enlarged that button to a 46px literal — dropped 2026-07-09 for the same reason). */
 --h-40:40px;
-/* GEOMETRIE DU SHELL (DESIGN.md §§ 10 et 14). Trois mesures, chacune DERIVEE de ce qu'elle
-   porte, jamais choisie — et chacune ecrite plusieurs fois dans l'arbre avant d'etre un token.
+/* GÉOMÉTRIE DU SHELL (DESIGN.md §§ 10 et 14). Trois mesures, chacune DÉRIVÉE de ce qu'elle
+   porte, jamais choisie — et chacune écrite plusieurs fois dans l'arbre avant d'être un token.
 
-   --toolbar-h : la barre unifiee vaut le controle le plus haut qu'elle porte plus un cran
+   --toolbar-h : la barre unifiée vaut le contrôle le plus haut qu'elle porte plus un cran
    d'espacement au-dessus et au-dessous. Le plus haut est le champ de recherche : --text-md sur
-   une ligne plus 6px de padding vertical, ~29px, d'ou 29 + 8 + 8 = 45, ramene a 44 (multiple de
-   4, l'echelle d'espacement). Remplace --titlebar-h:30px, qui n'etait la hauteur de rien : la
-   barre ne portait aucun controle, seulement un titre inerte et les boutons de fenetre.
-   ⚠️ Son consommateur au-dela de chrome.ts est .sift-update-banner, qui s'y positionne — il
-   suit ici dans le meme geste, sinon le bandeau chevauche la barre de 14px.
+   une ligne plus 6px de padding vertical, ~29px, d'où 29 + 8 + 8 = 45, ramené à 44 (multiple de
+   4, l'échelle d'espacement). Remplace --titlebar-h:30px, qui n'était la hauteur de rien : la
+   barre ne portait aucun contrôle, seulement un titre inerte et les boutons de fenêtre.
+   ⚠️ Son consommateur au-delà de chrome.ts est .sift-update-banner, qui s'y positionne — il
+   suit ici dans le même geste, sinon le bandeau chevauche la barre de 14px.
 
-   --rail-w : le rail vaut son libelle le plus long plus l'icone, le gap, le padding et un badge
-   de compte. MESURE dans la vraie fenetre le 2026-08-19 (CDP, Range.getBoundingClientRect sur le
-   texte lui-meme, pas sur le span qui s'etire) : « Bibliotheque » = 73,7px d'encre, le badge de
-   Revue rempli (« 2710 ») = 36,9px. Reste : padding du rail 2x12, padding de l'item 2x8, icone
-   17, gap 12. A 152px il restait 83px pour le libelle — le libelle seul passait (73,7), le
-   libelle AVEC son badge non, ce qui explique qu'un seul item du rail en portait un. A 200px il
-   reste 131px, soit 57px de marge apres le libelle le plus long : le badge y tient. La valeur
-   tombe aussi dans la bande 200-260px des apps systeme, mais c'est la mesure qui la fixe.
+   --rail-w : le rail vaut son libellé le plus long plus l'icône, le gap, le padding et un badge
+   de compte. MESURÉ dans la vraie fenêtre le 2026-08-19 (CDP, Range.getBoundingClientRect sur le
+   texte lui-même, pas sur le span qui s'étire) : « Bibliothèque » = 73,7px d'encre, le badge de
+   Revue rempli (« 2710 ») = 36,9px. Reste : padding du rail 2×12, padding de l'item 2×8, icône
+   17, gap 12. À 152px il restait 83px pour le libellé — le libellé seul passait (73,7), le
+   libellé AVEC son badge non, ce qui explique qu'un seul item du rail en portait un. À 200px il
+   reste 131px, soit 57px de marge après le libellé le plus long : le badge y tient. La valeur
+   tombe aussi dans la bande 200-260px des apps système, mais c'est la mesure qui la fixe.
 
-   --pane-w : largeur canonique d'une zone fixe laterale — file de Revue, rail de sources
-   d'Accueil, inspecteur. Ecrite trois fois avant d'etre un token (deux fois dans app.js, une
-   dans .sift-library-side), avec son intention documentee en prose et jamais en valeur, et
-   rattrapee quatre fois : 150 → 190 → 245 → 272. router.ts:QCOL_DEFAULT la mire cote JS, ou
+   --pane-w : largeur canonique d'une zone fixe latérale — file de Revue, rail de sources
+   d'Accueil, inspecteur. Écrite trois fois avant d'être un token (deux fois dans app.js, une
+   dans .sift-library-side), avec son intention documentée en prose et jamais en valeur, et
+   rattrapée quatre fois : 150 → 190 → 245 → 272. router.ts:QCOL_DEFAULT la mire côté JS, où
    elle sert de repli avant lecture du CSS.
 
    --aside-w : l'inspecteur (zone D) a sa PROPRE largeur, distincte de --pane-w. DESIGN.md § 14 le

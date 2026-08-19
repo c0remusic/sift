@@ -890,7 +890,8 @@ utilisable.
 | 9 | **Réglages en deux colonnes** | ✅ livrée | — | F7, O‑3 |
 | 10 | **Rekordbox en quatre entrées** | ✅ livrée¹ | — | F10 |
 
-² Sauf les **actions de masse** et la navigation clavier de la table — voir « Ce qui reste ».
+² Sauf les **actions de masse** — voir « Ce qui reste vraiment ». La navigation clavier de la
+table a été livrée le 2026-08-19.
 
 ¹ Implémentée et vérifiée sur son **chemin d'état vide** seulement : cette machine n'a aucun XML
 Rekordbox lié, et en lier un est une action sur un système live. La disposition à quatre entrées
@@ -905,15 +906,39 @@ cliquer l'un d'eux filtre Revue, et la porte de racine manquante est remontée a
 portent pas la même donnée. Écartés reste une destination, groupée avec Rangés dans le rail.
 
 **Sélection multiple — faite.** Clic, ⇧+clic, ⌘/Ctrl+clic, ⌘/Ctrl+A, et résumé agrégé dans la
-zone D. Ce qui n'est PAS fait : les **actions de masse**. Elles demandent de décider d'abord
-lesquelles s'appliquent réellement à N pistes déjà rangées — question ouverte de
-`docs/ui-specs/bibliotheque.md` — et y répondre au jugé peuplerait un menu d'actions qui n'ont pas
-de sens. La navigation clavier de la table (↑↓, ⇧+↑↓) n'est pas faite non plus : les lignes n'ont
-pas de gestion de focus de liste aujourd'hui.
+zone D.
 
-**Résidu de l'étape 3.** Deux débordements internes subsistent dans l'inspecteur, tous deux dans le
-lecteur large rendu en colonne étroite. La zone D elle-même ne défile pas horizontalement, donc la
-règle du shell tient ; c'est un travail de composant, pas de shell.
+**Couche 2 du clavier — faite le 2026-08-19.** ↑ ↓ déplacent, ⇧+↑↓ étendent, Début/Fin vont aux
+extrémités (`bibliotheque-view.ts::stepBibSelection`). Le déplacement se fait par **index** dans la
+liste ordonnée et jamais en marchant sur les nœuds du DOM : la table est virtualisée, un parcours
+du DOM s'arrêterait au bord de ce qui se trouve rendu. Une version antérieure de cette section
+disait cette navigation impossible faute de gestion de focus de liste — c'était une conclusion
+tirée du mécanisme envisagé, pas de la contrainte.
+
+### Ce qui reste vraiment
+
+**Actions de masse.** La sélection existe, les actions groupées non. Elles demandent de trancher
+d'abord lesquelles s'appliquent réellement à N pistes **déjà rangées** — question ouverte de
+`docs/ui-specs/bibliotheque.md`. Y répondre au jugé peuplerait un menu d'actions sans objet.
+
+**Rekordbox à quatre entrées : jamais vu tourner.** Implémenté, vérifié sur son seul chemin d'état
+vide. Cette machine n'a aucun XML Rekordbox lié, et en lier un est une action sur un système live.
+Ce qui manque est une **vérification**, pas du code.
+
+**Deux débordements internes dans l'inspecteur.** `.sift-report-scroll` et `.sift-player-row`
+annoncent 369 px de largeur de défilement pour 287 disponibles, alors que **chacun de leurs enfants
+directs mesure 287** — mesuré le 2026-08-19 après le correctif à deux niveaux. La zone D
+elle-même ne défile pas horizontalement, donc rien n'est coupé côté lecteur et la règle du shell
+tient. Reste à trouver quel descendant porte les 369 : c'est un travail de composant sur le lecteur
+large rendu en colonne étroite, pas un travail de shell.
+
+**`.sift-volume-track` déborde et ce n'est PAS un défaut** — noté ici pour qu'un prochain passage ne
+le « corrige » pas : le bloc de volume est volontairement replié à 20 px au repos et s'ouvre au
+survol. Le corriger casserait le contrôle.
+
+**`docs/archive/TECH_DEBT_AUDIT.md` porte une tâche ouverte (F08) sur un fichier supprimé** —
+`frontend/home-sources.ts:40`. Archive, donc non corrigée dans ce geste, mais la case reste cochable
+sur un fichier qui n'existe plus.
 
 Étapes 1 à 3 : rien n'est visible pour l'utilisateur avant la fin de la 3. Elles se
 livrent ensemble ou l'app reste à moitié dans deux shells.

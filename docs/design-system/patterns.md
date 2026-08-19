@@ -266,9 +266,11 @@ Règles :
 
 - préférer toujours une progression déterminée ; l'indéterminée ne dit rien d'utile ;
 - montrer quelque chose immédiatement plutôt qu'un espace vide : l'absence se lit comme
-  une panne. ⚠️ **Accueil viole cette règle**, et c'est le premier écran affiché :
-  `home-sources.ts` n'a aucun « Chargement… », là où `bibliotheque-view.ts:254`,
-  `ecartes-view.ts:108` et `queue-panel.ts:425` en ont un. Voir E7 ;
+  une panne. ⚠️ L'écart relevé ici visait **Accueil**, qui n'avait aucun « Chargement… »
+  là où `bibliotheque-view.ts`, `ecartes-view.ts` et `queue-panel.ts` en ont un (E7).
+  **Caduc depuis le 2026-08-19** : Accueil a fusionné dans le rail et `home-sources.ts`
+  a été supprimé. Le premier écran affiché est désormais **Revue** (`router.ts:39`),
+  qui porte son propre état de chargement ;
 - ne jamais exiger la fin d'une opération pour rendre le reste utilisable ;
 - une progression qui atteint 90 % en cinq secondes puis stagne est perçue comme
   mensongère — mieux vaut un rythme régulier qu'un rythme exact.
@@ -392,9 +394,11 @@ HIG Launching + Onboarding + Offering help. État mesuré le 2026-08-05 :
   redémarre sur Accueil, sans position de défilement ;
 - **aucun onboarding, tutoriel ni écran de bienvenue** — zéro occurrence dans le dépôt ;
 - toute l'aide tient dans le survol et l'accessibilité : 46 `title=` et 37 `aria-label` ;
-- six modules rendent un état vide via `emptyStateHtml` : `home-sources.ts`,
-  `bibliotheque-view.ts`, `ecartes-view.ts`, `filing.ts`, `journal.ts`,
-  `rekordbox-view.ts`.
+- **cinq** modules rendent un état vide via `emptyStateHtml` : `bibliotheque-view.ts`,
+  `ecartes-view.ts`, `filing.ts`, `journal.ts`, `rekordbox-view.ts` — recompté le
+  2026-08-19. Le comptage précédent en annonçait six et incluait `home-sources.ts`, qui
+  n'a jamais appelé `emptyStateHtml` (il employait exprès un indice compact à son
+  échelle) et qui a depuis été supprimé. Deux erreurs empilées, dans le même sens.
 
 Règles :
 
