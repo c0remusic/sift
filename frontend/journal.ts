@@ -38,15 +38,14 @@ import { bibState } from "./bibliotheque-view";
 
 type JrnlMode = "session" | "all";
 
-/** Ce que le front sait de l'issue d'une annulation. ABSENT = « Appliqué », l'état de toute entrée
- *  que le backend vient de rendre.
+/** Ce que le front sait de l'issue d'une annulation. ABSENT = « Appliqué ».
  *
- *  ⚠️ ÉCART SPEC ↔ RÉEL, à ne pas prendre pour un oubli. `actions::list_journal` (Rust) filtre
- *  `WHERE undone=0` : une entrée annulée DISPARAÎT de la liste au prochain chargement. L'état
- *  « Annulé » de la spec est donc tenu ici, en mémoire, pour la durée de vie de la vue — la table
- *  ne se recharge pas après une annulation, précisément pour que la ligne reste lisible avec son
- *  état. Le rendre permanent demanderait au backend de rendre aussi les batches annulés, avec leur
- *  drapeau : un changement de contrat, hors de ce chantier. */
+ *  Deux sources, et l'ordre compte. « Annulé » vient de la DONNÉE : `JournalEntry.undone` traverse
+ *  l'IPC depuis le 2026-08-19, et `loadAndPaint` en sème la carte à chaque lecture — l'état survit
+ *  donc au rechargement et au retour sur l'écran. « Annulation… » et « Échec » restent purement
+ *  locaux : ils décrivent une tentative de CETTE vue, que la base n'enregistre pas (un revert
+ *  échoué laisse ses lignes telles quelles). La mutation locale immédiate après une annulation
+ *  réussie reste elle aussi en place : elle fait la transition sans attendre une relecture. */
 type JrnlStatus = "pending" | "reverted" | "failed";
 
 const jrnlState: {
@@ -211,8 +210,18 @@ function plural(n: number, one: string, many = `${one}s`): string {
   return `${n} ${n > 1 ? many : one}`;
 }
 
-/** Une entrée déjà annulée (ou en cours) ne se ré-annule pas. */
+/** Une entrée déjà annulée (ou en cours) ne se ré-annule pas.
+ *
+ *  `e.undone` d'abord, et pas seulement la carte d'état : c'est la donnée qui fait foi, la carte
+ *  n'en est qu'un miroir semé au chargement. Tout ce qui décide d'un désarmement passe par ici —
+ *  le bouton « Annuler cette action » de l'inspecteur, le `(N)` de « Annuler la sélection », le
+ *  menu contextuel et la boucle de `revertSelection` — donc brancher CE point sur la donnée les
+ *  branche tous les quatre.
+ *
+ *  Un lot PARTIELLEMENT annulé rend `undone:false` côté Rust (`MIN(undone)`) : il reste annulable,
+ *  ce qui est exactement ce qu'il faut pour rejouer un revert interrompu. */
 function revertible(e: JournalEntry): boolean {
+  if (e.undone) return false;
   const s = jrnlState.status.get(e.batch_id);
   return s !== "reverted" && s !== "pending";
 }
@@ -492,6 +501,11 @@ async function loadAndPaint(): Promise<void> {
 
   jrnlState.entries = entries;
   jrnlState.root = root;
+  // Statuts initiaux DEPUIS LA DONNÉE : un lot annulé se relit annulé, au montage comme au
+  // changement de mode. On POSE seulement, on n'efface jamais — un « Échec » local décrit une
+  // tentative que la base n'enregistre pas (ses lignes restent `undone=0`), et l'effacer ici
+  // retirerait de l'écran le motif de l'échec au premier changement de mode.
+  for (const e of entries) if (e.undone) jrnlState.status.set(e.batch_id, "reverted");
   // Une sélection qui désigne une entrée disparue ne pointe plus rien.
   const live = new Set(entries.map((e) => e.batch_id));
   for (const id of [...jrnlState.selection]) if (!live.has(id)) jrnlState.selection.delete(id);
@@ -814,8 +828,10 @@ let revertRunning = false;
  *  non réentrant (`db::lock_conn`). Des `revert_batch` concurrents se sérialiseraient de toute
  *  façon, en bloquant tout le reste de l'IPC pendant ce temps.
  *
- *  La table NE SE RECHARGE PAS après coup : `list_journal` filtre `undone=0`, donc un rechargement
- *  ferait disparaître les lignes qu'on vient d'annuler au lieu de les montrer annulées. */
+ *  La table NE SE RECHARGE PAS après coup, et ce n'est plus la même raison qu'avant. Le
+ *  rechargement RENDRAIT désormais les bonnes lignes (`list_journal` ne filtre plus `undone=0`) ;
+ *  il est simplement inutile — la mutation locale montre le résultat sans aller-retour, et sans
+ *  faire sauter la position de défilement ni la sélection sous la main de l'utilisateur. */
 async function revertSelection(): Promise<void> {
   // Un seul cycle d'annulation à la fois. Les entrées déjà en cours sont exclues par
   // `revertible`, mais rien n'empêcherait autrement de changer de sélection pendant la boucle et

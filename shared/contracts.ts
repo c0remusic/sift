@@ -286,7 +286,7 @@ export interface EcarteItem {
   title: string;
 }
 
-/** One consultable undo-journal entry (a live batch, summarized by its first action). */
+/** One consultable undo-journal entry (a batch, summarized by its first action). */
 export interface JournalEntry {
   batch_id: string;
   track_id: number | null;
@@ -299,6 +299,12 @@ export interface JournalEntry {
   session_id: string | null;
   /** Distinct track count in the batch — used to gate the last-batch confirmation on > 10. */
   track_count: number;
+  /** Whether the batch is undone AS A WHOLE (`MIN(undone) != 0` over its rows, actions.rs). A
+   *  batch only PARTIALLY undone — a revert that failed mid-way, still retryable — reads false.
+   *  Pinned by `actions.rs::journal_lists_undone_batches_with_their_flag`, which destructures
+   *  `JournalEntry` exhaustively: a new Rust field breaks its compilation until this mirror
+   *  follows. */
+  undone: boolean;
 }
 
 // ---- M6b library browser (mirror of library.rs) ----

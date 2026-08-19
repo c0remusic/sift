@@ -1102,7 +1102,7 @@ pub fn purge_expired_journal(
     Ok(deleted)
 }
 
-/// One entry of the consultable journal: a live batch, summarized by its FIRST action.
+/// One entry of the consultable journal: a batch, summarized by its FIRST action.
 /// `track_count` = number of distinct tracks in the batch (used by the front to gate
 /// "last batch" confirmation on > 10 tracks). `session_id` = NULL for pre-migration rows.
 #[derive(Debug, Clone, PartialEq, Serialize)]
@@ -1117,12 +1117,25 @@ pub struct JournalEntry {
     pub ts: String,
     pub session_id: Option<String>,
     pub track_count: i64,
+    /// Whether the batch is undone AS A WHOLE — from `list_journal`'s `MIN(undone) != 0` over
+    /// every row of the batch. A batch only PARTIALLY undone (a `revert_batch` that failed
+    /// mid-way and stays retryable, see `revert_batch_resumes_after_partial_fs_failure`) reads
+    /// `false`: it is still live work, and the front must keep offering to finish it.
+    pub undone: bool,
 }
 
-/// Recent live (not-yet-undone) batches, newest first, one entry per batch (summarized by
-/// the batch's FIRST action row — MIN id — so a convert+trash filing shows kind="convert").
+/// Recent batches, newest first, one entry per batch (summarized by the batch's FIRST action
+/// row — MIN id — so a convert+trash filing shows kind="convert"), each carrying whether it
+/// has been undone as a whole.
 /// `session_id_filter` = Some(sid) to restrict to one session; None = all sessions.
 /// `tag_edit` batches are excluded (they have no category in the Journal view).
+///
+/// Rend AUSSI les lots annulés depuis le 2026-08-19, et c'est le point du changement. La
+/// sous-requête filtrait `undone=0`, donc une entrée annulée DISPARAISSAIT au rechargement
+/// suivant : le front ne pouvait tenir son état « Annulé » qu'en mémoire de vue, perdu au
+/// premier retour sur l'écran. L'état voyage maintenant dans la donnée (`undone`), et le
+/// filtre a été retiré — `mid` et `cnt` se calculent donc sur TOUTES les lignes du lot, plus
+/// seulement sur ses lignes vivantes.
 ///
 /// Rend un `Result` et non un `Vec` depuis le 2026-08-17 — impasse A17 de l'inventaire des échecs
 /// silencieux ([issue #15](https://github.com/c0remusic/sift/issues/15)). La signature précédente
@@ -1142,13 +1155,17 @@ pub fn list_journal(
     session_id_filter: Option<&str>,
 ) -> rusqlite::Result<Vec<JournalEntry>> {
     let mut stmt = conn.prepare(
+        // `MIN(undone)` et non `MAX` : un lot n'est annulé QUE si toutes ses lignes le sont.
+        // Avec `MAX`, un lot à moitié annulé (revert interrompu, encore rejouable) se
+        // présenterait comme fini et le front désarmerait son bouton d'annulation.
         "SELECT a.batch_id, a.track_id, a.type, a.from_path, a.to_path, a.ts,
-                a.session_id, g.cnt
+                a.session_id, g.cnt, g.all_undone
          FROM actions a
          JOIN (
-             SELECT batch_id, MIN(id) AS mid, count(DISTINCT track_id) AS cnt
+             SELECT batch_id, MIN(id) AS mid, count(DISTINCT track_id) AS cnt,
+                    MIN(undone) AS all_undone
              FROM actions
-             WHERE undone=0 AND batch_id IS NOT NULL AND type NOT IN ('tag_edit')
+             WHERE batch_id IS NOT NULL AND type NOT IN ('tag_edit')
              GROUP BY batch_id
          ) g ON a.id = g.mid
          WHERE (?2 IS NULL OR a.session_id = ?2)
@@ -1165,6 +1182,7 @@ pub fn list_journal(
             ts: r.get(5)?,
             session_id: r.get(6)?,
             track_count: r.get(7)?,
+            undone: r.get::<_, i64>(8)? != 0,
         })
     })?;
     rows.collect()
@@ -1888,6 +1906,86 @@ mod tests {
         let ids: Vec<&str> = entries.iter().map(|e| e.batch_id.as_str()).collect();
         assert_eq!(ids, vec!["b2", "b1"]); // newest first, one per batch
         assert_eq!(entries[0].kind, "convert"); // representative (first) action of the batch
+    }
+
+    /// L'état « annulé » traverse l'IPC : `list_journal` rend AUSSI les lots annulés, porteurs du
+    /// drapeau qui les distingue. Avant le 2026-08-19 sa sous-requête filtrait `undone=0`, donc une
+    /// entrée annulée DISPARAISSAIT au rechargement suivant et le front ne pouvait tenir son état
+    /// « Annulé » qu'en mémoire de vue — perdu dès qu'on quittait l'écran.
+    ///
+    /// Le lot PARTIEL est le cas qui tranche entre `MIN` et `MAX` : une ligne sur deux annulée,
+    /// exactement ce qu'un `revert_batch` interrompu laisse derrière lui (voir
+    /// `revert_batch_resumes_after_partial_fs_failure`). Il doit rester `undone:false`, parce qu'il
+    /// est encore rejouable ; avec `MAX(undone)` il passerait à `true` et le front désarmerait le
+    /// bouton qui sert à le finir. C'est aussi la ligne MIN(id) du lot qui est annulée ici, donc le
+    /// test couvre au passage le fait que `kind`/`track_count` se calculent bien sur TOUTES les
+    /// lignes et non sur les seules vivantes.
+    ///
+    /// L'annulation est posée par un `UPDATE` direct et NON par `revert_batch` : celui-ci déplace
+    /// de vrais fichiers, alors que ce test-ci ne mesure QUE le listage. L'`UPDATE` écrit
+    /// exactement ce que `revert_batch` écrit en base (`undone=1` sur les lignes du lot), ce que
+    /// `revert_batch_restores_file_and_status_and_marks_undone` vérifie de son côté.
+    #[test]
+    fn journal_lists_undone_batches_with_their_flag() {
+        let conn = db();
+        let dir = tempfile::tempdir().unwrap();
+        // Chaque lot dans son propre dossier : `seed_filed` écrit un vrai fichier à destination.
+        seed_filed(&conn, &dir.path().join("live"), "b_live");
+        seed_filed(&conn, &dir.path().join("partial"), "b_partial");
+        seed_filed(&conn, &dir.path().join("undone"), "b_undone");
+
+        // Lot entièrement annulé.
+        assert_eq!(
+            conn.execute("UPDATE actions SET undone=1 WHERE batch_id='b_undone'", [])
+                .unwrap(),
+            2,
+            "seed_filed pose deux lignes par lot (convert puis move)"
+        );
+        // Lot partiel : la PREMIÈRE ligne seulement (celle que `MIN(id)` désigne).
+        assert_eq!(
+            conn.execute(
+                "UPDATE actions SET undone=1 WHERE batch_id='b_partial' AND type='convert'",
+                []
+            )
+            .unwrap(),
+            1
+        );
+
+        let entries = list_journal(&conn, 10, None).unwrap();
+        let seen: Vec<(&str, bool)> = entries
+            .iter()
+            .map(|e| (e.batch_id.as_str(), e.undone))
+            .collect();
+        assert_eq!(
+            seen,
+            vec![("b_undone", true), ("b_partial", false), ("b_live", false),],
+            "les trois lots sont rendus, seul le lot ENTIÈREMENT annulé porte undone=true"
+        );
+
+        // Garde de contrat : destructuration EXHAUSTIVE, sans `..`. Un champ ajouté à
+        // `JournalEntry` casse la compilation de ce test tant que `shared/contracts.ts` n'a pas
+        // suivi dans le même geste (`CLAUDE.md` § La frontière IPC est un miroir manuel).
+        let JournalEntry {
+            batch_id,
+            track_id,
+            kind,
+            from_path,
+            to_path,
+            ts,
+            session_id,
+            track_count,
+            undone,
+        } = entries[0].clone();
+        assert_eq!(batch_id, "b_undone");
+        assert!(track_id.is_some());
+        // Le lot annulé garde le `kind` et le compte de sa PREMIÈRE ligne, annulée comprise.
+        assert_eq!(kind, "convert");
+        assert_eq!(track_count, 1);
+        assert!(undone);
+        assert!(from_path.is_some() && to_path.is_some());
+        assert!(!ts.is_empty());
+        // NULL en base tant qu'aucune session n'est ouverte : `seed_filed` n'en pose pas.
+        assert!(session_id.is_none());
     }
 
     /// Impasse A17 ([issue #15](https://github.com/c0remusic/sift/issues/15)) : une base illisible
