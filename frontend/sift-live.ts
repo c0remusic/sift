@@ -17,6 +17,7 @@ import {
   linkRekordboxXml,
   rekordboxStatus,
   reanalyzeTracks,
+  rejectTrack,
 } from "./ipc";
 import { installUndoShortcut, installFilingKeys } from "./filing";
 import { refreshBinsForBatch } from "./filing-bins";
@@ -26,6 +27,8 @@ import { renderEcartes } from "./ecartes-view";
 import { renderHomeSources, dismissRootGate, noteScanFailure } from "./home-sources";
 import { installDragDrop, injectLeanStyle, injectTitlebar, installScrollAutohide, installNavKeyboard, installRailToggle } from "./chrome";
 import { initTheme } from "./theme";
+import { openContextMenu } from "./context-menu";
+import { closeAside } from "./toolbar";
 import { onSettingsCategoryPick } from "./reglages-view";
 import { onRekordboxSectionPick } from "./rekordbox-view";
 import { installWindowShortcuts } from "./shortcuts";
@@ -526,6 +529,54 @@ export function installLiveWiring() {
   });
 
   // "File in place" checkbox (under the #fldz tree, batch mode) — a checkbox, so it needs change.
+  // MENU CONTEXTUEL de la table (étape 5). Enraciné sur `document` pour la même raison que le
+  // clic : la barre unifiée vit hors de `#pa`, et une entrée de rail y viendra un jour.
+  //
+  // Il ne retire PAS d'un coup les boutons de la ligne : le bouton lecture reste, c'est le geste
+  // primaire, et les deux affordances restantes (identifier, fiche Discogs) sont doublées ici. Le
+  // menu est ce qui permettra de les sortir de la ligne sans perdre l'action.
+  document.addEventListener("contextmenu", (e) => {
+    const row = (e.target as HTMLElement).closest<HTMLElement>('.lr[data-bib="row"]');
+    if (!row?.dataset.id) return;
+    e.preventDefault();
+    const id = Number(row.dataset.id);
+    const track = bibState.tracks.find((t) => t.id === id);
+    if (!track) return;
+    const rid = track.discogs_release_id;
+    openContextMenu(e.clientX, e.clientY, [
+      { label: "Ouvrir le détail", onPick: () => openBiblioDetail(id) },
+      {
+        label: "Fiche Discogs",
+        // Désactivée et non masquée quand la piste n'est pas identifiée : voir `context-menu.ts` —
+        // un menu dont les entrées vont et viennent doit se relire à chaque ouverture.
+        onPick: rid ? () => void openUrl(`https://www.discogs.com/release/${rid}`) : undefined,
+      },
+      {
+        label: "Réanalyser",
+        separated: true,
+        onPick: () =>
+          void reanalyzeTracks([id])
+            .then(() => toast("Réanalyse relancée"))
+            .catch((err: unknown) =>
+              toast(humanizeError(err, "Échec de la réanalyse — réessaie", "reanalyze_tracks")),
+            ),
+      },
+      {
+        label: "Écarter",
+        danger: true,
+        separated: true,
+        onPick: () =>
+          void rejectTrack(id)
+            .then(() => {
+              toast("Piste écartée");
+              closeAside();
+              return renderBiblioLive();
+            })
+            .catch((err: unknown) => toast(humanizeError(err, "Impossible d'écarter", "reject_track"))),
+      },
+    ]);
+  });
+
   document.addEventListener("change", (e) => {
     const ip = (e.target as HTMLElement).closest<HTMLInputElement>('input[data-sift="inplace"]');
     if (ip) onBatchInPlaceChange(ip.checked);

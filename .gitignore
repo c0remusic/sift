@@ -93,6 +93,11 @@ docs/*
 !docs/design-system/
 !docs/ui-specs/
 !docs/skills/
+# Exports PNG du kit Apple Design Resources, lus par la skill sift-macos-ui.
+# 145 MB : stockes en Git LFS (voir .gitattributes), pas en objets git bruts,
+# pour ne pas faire passer le .git de 14 MB a ~160 MB de facon definitive.
+# Un clone sans git-lfs installe recupere des pointeurs texte, pas les images.
+!docs/design-refs/
 # Règles de consommation lues par les skills d'agent (tracker d'issues, labels de
 # triage, docs de domaine). `CLAUDE.md` § Agent skills, versionné, pointe dessus :
 # sans cette négation les trois chemins sont introuvables dans un clone frais.

@@ -1844,6 +1844,20 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-rkb-layout{display:flex;align-items:flex-start;gap:var(--space-16);margin-top:var(--space-12)}
 .sift-rkb-side{width:var(--pane-w);flex:none;position:sticky;top:0}
 .sift-rkb-main{flex:1;min-width:0}
+/* MENU CONTEXTUEL (etape 5). Surface surelevee, au-dessus des popovers et sous les modales — un
+   menu contextuel ne doit jamais passer devant une confirmation destructive.
+   Largeur bornee et non fixe : les libelles varient d'un ecran a l'autre, et une largeur fixe
+   tronquerait le plus long ou ferait flotter le plus court. */
+.sift-ctx-menu{position:fixed;z-index:var(--z-popover);min-width:180px;max-width:280px;padding:var(--space-4);background:var(--color-surface-raised);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);box-shadow:var(--shadow-toast);display:flex;flex-direction:column}
+.sift-ctx-item{display:block;width:100%;text-align:left;padding:var(--space-4) var(--space-8);border:0;background:transparent;color:var(--color-text-primary);font:inherit;font-size:var(--text-md);border-radius:var(--border-radius-sm);cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sift-ctx-item:hover{background:var(--overlay-hover)}
+.sift-ctx-item--danger{color:var(--color-text-danger)}
+/* Une entree desactivee reste LISIBLE : elle est estompee par son token d'encre, jamais par
+   l'opacite — aucune valeur d'opacite ne franchit 4,5:1 sur ce texte avant ~0,92, ou l'attenuation
+   ne se voit plus (mesure du 2026-08-05, gravee dans DESIGN.md § 4). */
+.sift-ctx-item--disabled{color:var(--color-text-tertiary);cursor:default}
+.sift-ctx-item--disabled:hover{background:transparent}
+.sift-ctx-item--sep{margin-top:var(--space-4);border-top:0.5px solid var(--color-border-tertiary);padding-top:var(--space-8)}
 .sift-settings-side{width:var(--pane-w);flex:none;position:sticky;top:0}
 /* Une section masquee est retiree du FLUX (`hidden`), pas seulement invisible : un champ dans une
    section cachee resterait tabulable, et le focus disparaitrait de l'ecran en plein Tab. */
