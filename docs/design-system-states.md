@@ -80,34 +80,34 @@
 - L574 — Zone de dépôt drag OS `.sift-dz-on` — token `--overlay-drop` 07-05.
 - L598 — Lien rebuy Beatport `.sift-rebuy-btn` — créé 07-05.
 - L614 — CTA « Revoir N morceaux → » Accueil — créé 07-05.
-- L623 — Page Rekordbox `renderRekordboxLive()` — écran dédié + sections Tier 1/Tier 2 master.db.
-- L706 — Écran Revue — zones repliables Diagnostic/Métadonnées, refonte 07-05.
-- L742 — `.sift-applytags-btn` — déplacé header Genres 07-09.
-- L763 — `.sift-zone-toggle` — accordéon exclusif + animation 07-09.
-- L778 — Spectrogramme — légende incrustée + réticule interactif 07-09.
-- L801 — `.lk` / `.lk-icon` — bug de réutilisation corrigé 07-07.
-- L817 — Pastille segmentée `.sift-seg`/`.sift-seg-opt` unifiée — 6 sites, thumb glissant 07-08.
-- L924 — Grammaire de carte — 2 rôles (Groupée/Flottante), jamais 3 — 07-08.
-- L980 — Tokens globaux — adaptation tweakcn "ZFlow" (ombres/tracking/radius/OKLCH) 07-08.
-- L1008 — Écran Accueil — audit référence canonique 07-08.
-- L1028 — Écran Revue — audit référence canonique 07-08/09.
-- L1052 — Écran Écartés — audit référence canonique 07-09.
-- L1070 — Écran Journal — audit référence canonique 07-09, conforme (rien corrigé).
-- L1092 — Écran Bibliothèque — audit référence canonique 07-09.
-- L1111 — Écrans Réglages+Rekordbox+Clé USB — audit référence canonique 07-09.
-- L1131 — Pattern d'erreur/échec (`.sift-*-error`/`-fail`/`-warn`, 9 sites) — déjà cohérent, documenté ici (gap = défaut de doc, pas de code, audit 2026-07-19).
-- L1189 — Écran Écartés — chargement + bouton "Réessayer" (07-24).
-- L1200 — Écran Bibliothèque — chargement, tri en vue Grille, "Réinitialiser les filtres" corrigé (07-24).
-- L1223 — Table Bibliothèque, colonne Verdict — les 5 rendus de `verdictView()`, pastille + libellé, `verdictBadge` retiré (08-19).
-- L1290 — Bibliothèque éditeur — suppression confirmée, borne Année, autocomplétion Genres (07-24).
-- L1298 — Page Rekordbox — état d'erreur visible sur les 4 sections M8, boutons "en cours", CTA en `.sift-ranger-btn` (07-24).
-- L1313 — Accueil — confirmation "Retirer", swatches `aria-pressed` (07-24).
-- L1320 — Journal — titres de section datés lisibles (07-24).
-- L1335 — Revue — bannières `role="status" aria-live="polite"`, légende "écarter" (07-24).
-- L1343 — Lot — lignes de sélection accessibles au clavier, bouton "Annuler" sur confirmation armée (07-24).
-- L1351 — `styles.css` — tokens `--color-text-warning`/`-success` clair recalibrés, hover réaffirmé (07-24).
-- L1364 — Historique des corrections (chronologique, par date de session).
-- L1546 — Conventions de cohérence (sémantique couleur, hiérarchie de poids, discipline classe partagée) — à consulter AVANT tout nouveau composant (07-24).
+- L628 — Page Rekordbox `renderRekordboxLive()` — écran dédié + sections Tier 1/Tier 2 master.db.
+- L711 — Écran Revue — zones repliables Diagnostic/Métadonnées, refonte 07-05.
+- L747 — `.sift-applytags-btn` — déplacé header Genres 07-09.
+- L768 — `.sift-zone-toggle` — accordéon exclusif + animation 07-09.
+- L783 — Spectrogramme — légende incrustée + réticule interactif 07-09.
+- L806 — `.lk` / `.lk-icon` — bug de réutilisation corrigé 07-07.
+- L822 — Pastille segmentée `.sift-seg`/`.sift-seg-opt` unifiée — 6 sites, thumb glissant 07-08.
+- L929 — Grammaire de carte — 2 rôles (Groupée/Flottante), jamais 3 — 07-08.
+- L985 — Tokens globaux — adaptation tweakcn "ZFlow" (ombres/tracking/radius/OKLCH) 07-08.
+- L1013 — Écran Accueil — audit référence canonique 07-08.
+- L1033 — Écran Revue — audit référence canonique 07-08/09.
+- L1057 — Écran Écartés — audit référence canonique 07-09.
+- L1075 — Écran Journal — audit référence canonique 07-09, conforme (rien corrigé).
+- L1097 — Écran Bibliothèque — audit référence canonique 07-09.
+- L1116 — Écrans Réglages+Rekordbox+Clé USB — audit référence canonique 07-09.
+- L1136 — Pattern d'erreur/échec (`.sift-*-error`/`-fail`/`-warn`, 9 sites) — déjà cohérent, documenté ici (gap = défaut de doc, pas de code, audit 2026-07-19).
+- L1194 — Écran Écartés — chargement + bouton "Réessayer" (07-24).
+- L1205 — Écran Bibliothèque — chargement, tri en vue Grille, "Réinitialiser les filtres" corrigé (07-24).
+- L1228 — Table Bibliothèque, colonne Verdict — les 5 rendus de `verdictView()`, pastille + libellé, `verdictBadge` retiré (08-19).
+- L1295 — Bibliothèque éditeur — suppression confirmée, borne Année, autocomplétion Genres (07-24).
+- L1303 — Page Rekordbox — état d'erreur visible sur les 4 sections M8, boutons "en cours", CTA en `.sift-ranger-btn` (07-24).
+- L1318 — Accueil — confirmation "Retirer", swatches `aria-pressed` (07-24).
+- L1325 — Journal — titres de section datés lisibles (07-24).
+- L1340 — Revue — bannières `role="status" aria-live="polite"`, légende "écarter" (07-24).
+- L1348 — Lot — lignes de sélection accessibles au clavier, bouton "Annuler" sur confirmation armée (07-24).
+- L1356 — `styles.css` — tokens `--color-text-warning`/`-success` clair recalibrés, hover réaffirmé (07-24).
+- L1369 — Historique des corrections (chronologique, par date de session).
+- L1551 — Conventions de cohérence (sémantique couleur, hiérarchie de poids, discipline classe partagée) — à consulter AVANT tout nouveau composant (07-24).
 
 ## Ligne de queue — `.qi` (`styles.css:289-297`)
 
@@ -612,6 +612,11 @@ http(s) uniquement, pas de whitelist domaine). Teinte ambre volontaire (cohéren
 « le danger fusionne dans l'ambre »), pas de side-stripe.
 
 ## CTA « Revoir N morceaux → » — Accueil (`home-sources.ts` `listColumnHtml()`)
+
+⚠️ **Composant disparu le 2026-08-19** : `home-sources.ts` est parti avec la fusion 1
+(Accueil absorbé par le rail, commit `6d1cc85`), et les règles CSS `.sift-home-*` ont été
+retirées le même jour (`813b83b`). L'entrée reste comme journal ; cliquer une source du rail
+filtre Revue, ce qui remplace ce CTA.
 
 Bouton pill dans l'en-tête de la colonne Sources, affiché **seulement quand**
 `pending_count` cumulé sur toutes les sources > 0.

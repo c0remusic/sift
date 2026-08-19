@@ -1042,3 +1042,44 @@ sur un fichier qui n'existe plus.
 
 Étapes 1 à 3 : rien n'est visible pour l'utilisateur avant la fin de la 3. Elles se
 livrent ensemble ou l'app reste à moitié dans deux shells.
+
+---
+
+### Sweep 2 — réconcilié au wrap-up du 2026-08-20
+
+**Livré et poussé** (`813b83b` → `f475ae0`, audit du chantier :
+`docs/superpowers/changes/2026-08-19-kit-sweep-2/audit.md`, local) :
+- Composants restants alignés sur le kit : primaires en aplat d'accent partout (Revue,
+  Rekordbox, modale), secondaires en aplat gris sans bordure, pop-up Destination, switch/range/
+  tri-état sur l'accent, sélection et survol des catégories Réglages enfin visibles, un seul
+  matériau de surface flottante, fonds sémantiques opaques, KEY-LOCK accent/gris, Stop/Écarter
+  du Lot en gris à encre danger, bouton armé qui garde l'accent (HIG § Buttons/Role, lu).
+- **Journal porté à sa spec** (table, groupes session/jour, segmenté en barre, Annuler au menu
+  contextuel + inspecteur) et **l'état « annulé » traverse l'IPC** (`JournalEntry.undone`,
+  `MIN(undone)` par lot, test de contrat destructurant, mutation-check exécuté).
+- **Colonne Verdict** en Bibliothèque — mapping mesuré contre `worker.rs::verdict_str` ; le
+  tableau § 16 ci-dessus corrigé en conséquence (`DUPLICATE` inatteignable, `AUTHENTIQUE` et
+  `À VÉRIFIER` ajoutés). Une colonne nouvelle s'insère à son index par défaut dans une
+  disposition mémorisée d'avant elle.
+- Motion resserrée sur transform/opacity (4 exemptions nommées), focus rings unifiés,
+  14 stories neuves (Journal, Verdict), sommaire de `design-system-states.md` renuméroté
+  (17/55 offsets étaient déjà faux avant la session).
+
+**Reste, dans l'ordre proposé :**
+1. **Passe thème clair des 7 écrans** — tout le sweep s'est mesuré en sombre ; une seule
+   capture claire prise (Journal). C'est la moitié non vérifiée du travail livré.
+2. O‑2 (§ 11) — encre chaude (H≈77,5) sur fonds froids (H≈286), choix esthétique en attente.
+3. `--color-accent-fill` n'est pas value-invariant entre thèmes (suit `--color-hue-blue-solid`,
+   L 60,28 clair ↔ 62,43 sombre) — figer ou documenter l'intention.
+4. Stories du sweep 1 absentes (boutons accent, chips, segmented, sliders, toast) — le miroir
+   Storybook ne couvre que Journal/Verdict et l'existant antérieur.
+5. Non observé en conditions réelles, à voir au premier usage : état « Annulé » rendu depuis la
+   donnée (aucune entrée annulée en base au 2026-08-20), actions de masse exécutées contre la
+   base, Rekordbox avec candidats en attente, segment d'occupation focalisé pendant `dim`.
+6. Spectrogramme sans cadre en thème clair — question ouverte de la map #6, inchangée.
+
+Résolu pendant le wrap-up : deux sessions locales avaient été lancées depuis des chips
+périmés (les deux sujets étaient déjà traités par `f475ae0`). La session « famille swatch »
+a convergé proprement — `57f64b2` renomme les cinq teintes en `.sift-rail-src-dot-*` d'après
+leur porteur réel et met `rail-sources.ts` à jour ; son merge `7611875` réconcilie les deux
+nettoyages parallèles sans perte. Plus rien à surveiller sur ce point.
