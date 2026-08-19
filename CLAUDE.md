@@ -281,6 +281,9 @@ Garde-fous issus d'incidents réels :
 
 ## Front — CSS et événements
 
+**Tout travail UI/UX/design passe par la skill `sift-macos-ui`
+(`.claude/skills/sift-macos-ui/`) — la consulter avant toute recommandation visuelle.**
+
 Sources de vérité design : **`frontend/styles.css`** (`:root`, canonique unique des
 tokens) + `docs/design-system-states.md` (états réels des composants) +
 **`docs/design-system/`** — 6 fichiers versionnés : `foundations.md` (personnalité
