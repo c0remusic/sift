@@ -6,6 +6,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 > (app non publiée, pas de branche de release à protéger) — pas de branche de chantier
 > par défaut. L'écart de branche **ne se note pas, il se mesure** — un nombre écrit ici
 > est faux dès le commit suivant : `git rev-list --left-right --count main...<branche>`.
+> Une session en worktree livre sur `main` aussi : gates vertes → `git push origin
+> HEAD:main` (fast-forward). Non-ff = une session parallèle a avancé `main` : re-vérifier
+> que le travail n'est pas déjà fait, `git merge origin/main` (jamais de rebase d'une
+> branche déjà poussée), re-gater, re-pousser. Jamais de tag.
 
 ## Quoi
 
