@@ -286,7 +286,21 @@ const main = async () => {
   }
   if (cmd === "open-track") return cmdOpenTrack(port);
   if (cmd === "floor") return cmdFloor(port);
-  console.error("usage: status | launch | stop | eval <expr> | shot <file> | open-track | floor");
+  // Pseudo-états réels (:hover, :focus-visible) : session WebSocket continue obligatoire
+  // (Input.dispatch*), donc un module dédié plutôt que cdp.cjs — voir l'en-tête de probe.mjs.
+  if (cmd === "hover" || cmd === "focus") {
+    const r = spawnSync(process.execPath, [resolve(HERE, "probe.mjs"), String(port), cmd, ...rest], {
+      cwd: REPO,
+      encoding: "utf8",
+      maxBuffer: 32 * 1024 * 1024,
+    });
+    process.stdout.write(r.stdout || "");
+    process.stderr.write(r.stderr || "");
+    return void process.exit(r.status ?? 1);
+  }
+  console.error(
+    "usage: status | launch | stop | eval <expr> | shot <file> | open-track | floor | hover <sel> [idx] [outDir] | focus <sel> [outDir]",
+  );
   process.exit(1);
 };
 

@@ -163,10 +163,14 @@ par la vraie fenêtre (skill `run-sift`, CDP), les états visuels par Storybook.
 
 ### Modules frontend, par écran
 
-`main.ts` (boot) · `chrome.ts` (shell, nav rail, routing) · `home-sources.ts` (Accueil) ·
-`report-view.ts` (Revue : son-d'abord, waveform, verdict) · `bibliotheque-view.ts` ·
-`ecartes-view.ts` · `rekordbox-view.ts` · `reglages-view.ts` · `usb-view.ts` (Clé USB) ·
-`library-detail.ts`.
+`main.ts` (boot) · `router.ts` (routage réel — `app.js` ne tourne plus sous Tauri) ·
+`chrome.ts` (shell, barre unifiée, fenêtre) · `toolbar.ts` (recherche, actions et segmenté
+de la barre) · `rail-sources.ts` (sources du rail, ex-Accueil — `home-sources.ts` supprimé
+par `6d1cc85`) · `shortcuts.ts` (clavier couches 1-2) · `report-view.ts` (Revue :
+son-d'abord, waveform, verdict) · `bibliotheque-view.ts` + `library-columns.ts` /
+`library-views.ts` (table : colonnes persistées, rendus, tri) · `ecartes-view.ts` ·
+`rekordbox-view.ts` · `reglages-view.ts` · `usb-view.ts` (Clé USB) · `library-detail.ts` ·
+`context-menu.ts` (menu contextuel partagé).
 
 `sift-live.ts` reste le **point d'entrée du wiring et le dispatch de clic centralisé**
 pour la plupart des écrans. Un seul écart volontaire : `rekordbox-view.ts` porte son
@@ -402,6 +406,10 @@ la commande dev** expose un endpoint CDP standard sur la vraie fenêtre WebView2
   autre projet. **Constaté le 2026-08-05 : 9222 ET 9223 étaient tous deux tenus par un
   autre projet Tauri, dont le CDP répond normalement.** Mesurer sans vérifier l'identité
   produit un résultat faux et crédible.
+- **`:hover` et `:focus-visible` ne se déclenchent PAS par le DOM** (`dispatchEvent`/`focus()`
+  seuls) : seuls de vrais événements CDP les posent — `Input.dispatchMouseEvent` (mouseMoved aux
+  coordonnées du nœud), `Input.dispatchKeyEvent` (Tab réel) puis `focus()`. `driver.mjs hover|focus`
+  encapsule la recette ; détail : mémoire `cdp-real-pseudo-states-for-verification`.
 - **Un override de token injecté doit s'écrire `:root:root:root`.** Le bloc sombre du dépôt
   est `:root:not([data-theme="light"])` (`styles.css:267`), de spécificité (0,2,0) : une
   feuille injectée en `:root` perd, quelle que soit sa position. Constaté le 2026-08-19 —
