@@ -76,7 +76,7 @@ function renderEdit(edit: HTMLElement, st: EditState): void {
     `<div style="display:flex;gap:12px;align-items:flex-start">` +
     coverHtml(st) +
     `<div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:6px">` +
-    `<div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">` +
+    `<div class="lib-edit-pair">` +
     // Audit-ref B4 (Bibliothèque, 2026-07-09, réf. shadcn Field) : placeholder seul n'est pas une
     // vraie étiquette accessible (disparaît une fois rempli) — aria-label ajouté, valeur = placeholder.
     `<input data-lib="artist" placeholder="Artiste" aria-label="Artiste" value="${esc(t.artist ?? "")}" class="sift-editor-input" style="width:100%">` +
@@ -84,7 +84,7 @@ function renderEdit(edit: HTMLElement, st: EditState): void {
     `</div>` +
     `<input data-lib="genres" list="sift-genre-list" placeholder="Genres (séparés par une virgule)" aria-label="Genres" value="${esc(t.genres.join(", "))}" class="sift-editor-input" style="width:100%">` +
     `<datalist id="sift-genre-list"></datalist>` +
-    `<div style="display:grid;grid-template-columns:90px 1fr;gap:6px">` +
+    `<div class="lib-edit-labelled">` +
     `<input data-lib="year" type="number" min="1900" max="2100" placeholder="Année" aria-label="Année" value="${t.year ?? ""}" class="sift-editor-input" style="width:100%">` +
     `<input data-lib="label" placeholder="Label" aria-label="Label" value="${esc(t.label ?? "")}" class="sift-editor-input" style="width:100%">` +
     `</div>` +

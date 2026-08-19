@@ -13,7 +13,7 @@ import {
 } from "./ipc";
 import type { LibraryTrack, LibraryFacets, LibraryFilter, DupGroup, DashboardStats } from "../shared/contracts";
 import { requireEl, esc } from "./dom";
-import { mountBarActions, mountBarSearch } from "./toolbar";
+import { mountBarActions, mountBarSearch, openAside, closeAside } from "./toolbar";
 import { humanizeError } from "./errors";
 import { libraryUsage, type UsageReport } from "./ipc";
 import { renderUsageChart } from "./usage-chart";
@@ -422,7 +422,7 @@ export async function renderBiblioLive() {
       (rows ||
         `<div style="font-size:var(--text-md);color:var(--color-text-tertiary)">Aucun résultat pour ce filtre. <button data-bib="stat" data-stat="all" style="font-size:inherit;color:var(--color-text-info);background:none;border:none;padding:0;cursor:pointer;text-decoration:underline">Réinitialiser les filtres</button></div>`) +
       dupSection +
-      `<div id="bibplayer"></div></div></div>`;
+      `</div></div>`;
 
   // Emplacement du graphique d occupation, rempli juste apres : `content.innerHTML` vient de tout
   // ecraser, donc rien ne survit d un rendu a l autre et il faut le remonter a chaque fois.
@@ -494,12 +494,19 @@ export async function renderBiblioLive() {
  * On save, patch the row label in place (player stays alive); on delete, re-render the list. */
 export function openBiblioDetail(id: number): void {
   const t = bibState.tracks.find((x) => x.id === id);
-  const host = requireEl("#bibplayer", "openBiblioDetail");
-  if (!t) return;
+  // Zone D du shell depuis l'étape 3, plus `#bibplayer` en fin de liste. Le détail y était rendu
+  // APRÈS la table et après la section doublons : ouvrir une piste au rang 300 poussait son propre
+  // détail hors de l'écran, et il fallait faire défiler pour voir ce qu'on venait d'ouvrir.
+  const host = openAside();
+  if (!host) return;
+  if (!t) {
+    closeAside();
+    return;
+  }
   if (bibOpenId === id) {
     bibOpenId = null;
     document.querySelectorAll(".lr.cur").forEach((n) => n.classList.remove("cur"));
-    host.innerHTML = "";
+    closeAside(); // vider sans refermer laisserait une colonne vide occuper --pane-w
     return;
   }
   // Track the open id so the `.cur` highlight is re-stamped by biblioRowHtml when a scrolled-away
@@ -522,7 +529,7 @@ export function openBiblioDetail(id: number): void {
     () => {
       bibOpenId = null;
       document.querySelectorAll(".lr.cur").forEach((n) => n.classList.remove("cur"));
-      host.innerHTML = "";
+      closeAside();
     },
   );
 }

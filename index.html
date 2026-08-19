@@ -24,7 +24,12 @@
   <!-- Titre de page accessible, invisible à l'œil, mis à jour par app.js::render(). Hors de
        #content exprès : les vues y réécrivent innerHTML et l'emporteraient. Voir .sift-sr-only. -->
   <h1 id="sift-view-title" class="sift-sr-only">Accueil</h1>
-  <div id="content" style="flex:1;min-width:0;display:flex"></div>
+  <div id="content"></div>
+  <!-- Zone D du shell (DESIGN.md § 14) : l'inspecteur. Soeur de #content et non enfant, pour la
+       raison meme qui le rend necessaire — un detail rendu DANS la zone qui defile part hors
+       ecran des qu'on ouvre une ligne loin dans la liste. Masque tant qu'aucune vue ne le
+       remplit ; une vue qui le remplit retire son [hidden]. -->
+  <div id="sift-aside" hidden></div>
 </div>
 <script type="module" src="/frontend/main.ts"></script>
 </body>

@@ -95,3 +95,30 @@ export function focusBarSearch(): boolean {
   input.select();
   return true;
 }
+
+// ---------------------------------------------------------------------------
+// Zone D — l'inspecteur (DESIGN.md § 14)
+//
+// Ici et non dans `router.ts` pour une raison de cycle, pas de rangement : les vues ouvrent et
+// referment la zone D, et `router.ts` importe les vues. Une vue qui importerait le routeur en
+// retour fermerait la boucle. Même règle que les splits de `filing*.ts` — jamais d'import statique
+// retour (`CLAUDE.md` § Modules frontend). `toolbar.ts` n'importe que `./dom`, donc il est en
+// dessous de tout le monde.
+// ---------------------------------------------------------------------------
+
+/** Ouvre la zone D et rend son hôte, ou `null` si le shell n'en a pas. */
+export function openAside(): HTMLElement | null {
+  const aside = document.getElementById("sift-aside");
+  if (!aside) return null;
+  aside.hidden = false;
+  return aside;
+}
+
+/** Referme et vide la zone D. Appelée à chaque changement d'écran par `router.ts` : un inspecteur
+ *  laissé ouvert montrerait le détail d'une sélection qui n'est plus à l'écran. */
+export function closeAside(): void {
+  const aside = document.getElementById("sift-aside");
+  if (!aside) return;
+  aside.hidden = true;
+  aside.textContent = "";
+}

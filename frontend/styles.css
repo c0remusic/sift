@@ -259,8 +259,18 @@ color-scheme:light;
    d'Accueil, inspecteur. Ecrite trois fois avant d'etre un token (deux fois dans app.js, une
    dans .sift-library-side), avec son intention documentee en prose et jamais en valeur, et
    rattrapee quatre fois : 150 → 190 → 245 → 272. router.ts:QCOL_DEFAULT la mire cote JS, ou
-   elle sert de repli avant lecture du CSS. */
---toolbar-h:44px;--rail-w:200px;--pane-w:272px;
+   elle sert de repli avant lecture du CSS.
+
+   --aside-w : l'inspecteur (zone D) a sa PROPRE largeur, distincte de --pane-w. DESIGN.md § 14 le
+   posait a --pane-w ; la mesure a refute ce choix. A 272px de large, 271 utiles, NEUF elements du
+   panneau de detail debordaient dans la vraie fenetre le 2026-08-19 — le nom de piste demandait
+   591px pour 155 disponibles, les champs d'edition tombaient a 57px. Une liste et un inspecteur ne
+   portent pas la meme chose : l'une des lignes d'une ligne, l'autre des paires libelle/valeur et
+   un editeur. 320px est le HAUT de la bande 280-320px des apps systeme, choisi parce que le
+   panneau porte un editeur et pas seulement de la lecture. Les regles etroites scopees
+   #sift-aside plus bas font le reste — elles ne sont pas un rattrapage de la largeur, elles
+   disent qu'une colonne n'est pas une page. */
+--toolbar-h:44px;--rail-w:200px;--pane-w:272px;--aside-w:320px;
 /* Motion (P6, 2026-07-27). Only the two durations that actually have a consumer are declared —
    same audit rule as the height scale above (--h-32/--h-44 were dropped for having none). They
    match values already recurring in the transitions further down (.1s / .15s), so this is token
@@ -429,7 +439,57 @@ html,body{margin:0;padding:0;height:100%}
    l'espacement passait par 4 et 8 px. Commencer par la marge extérieure plutôt que par les
    écarts internes : c'est le seul réglage qui fait respirer TOUS les écrans d'un geste, sans
    toucher à la densité des listes que l'accord veut préserver. */
-#content{padding:var(--space-24) var(--space-24)}
+/* ZONE C du shell — la zone qui porte l'objet d'attention, et la SEULE qui flexe
+   (DESIGN.md § 14). Elle defile chez elle : la page, elle, ne defile jamais. Avant l'etape 3,
+   `block()` lui posait `display:block; overflow-y:auto` a chaque rendu d'ecran, et six ecrans sur
+   huit laissaient donc defiler leur contenu ENTIER — filtres et colonne de facettes compris. Les
+   deux qui n'y passaient pas (Revue, Accueil) posaient leurs propres colonnes : deux grammaires
+   pour huit ecrans. Le comportement est desormais dans la feuille, pose une fois, et les ecrans
+   ne touchent plus ni au display ni a l'overflow de leur hote. */
+#content{flex:1;min-width:0;overflow-y:auto;padding:var(--space-24)}
+/* ZONE D — l'inspecteur. Largeur fixe --pane-w, defilement propre, et un filet a gauche plutot
+   qu'un fond distinct : la separation vient du trait le plus discret possible, pas d'une surface
+   de plus (DESIGN.md § 5, deux niveaux de boite et pas cinq). */
+#sift-aside{width:var(--aside-w);flex:none;overflow-y:auto;padding:var(--space-24) var(--space-16);border-left:0.5px solid var(--color-border-tertiary)}
+/* Regle d'auteur qui pose `display` : elle bat [hidden], donc :not([hidden]) est obligatoire ici —
+   sans lui l'inspecteur reste visible une fois masque (piege deja rencontre dans ce fichier). */
+#sift-aside:not([hidden]){display:block}
+/* La zone D est une COLONNE, pas une page reduite. Ces regles disent ce que ca change, et chacune
+   repond a un debordement mesure le 2026-08-19 dans la vraie fenetre (9 elements, du nom de piste
+   a 591px pour 155 disponibles aux champs d'edition tombes a 57px).
+   Elles sont scopees a #sift-aside : le meme composant rendu dans la surface large de Revue garde
+   son rendu d'origine, ce qui est le point — un composant partage s'adapte a son hote, il ne se
+   duplique pas. */
+#sift-aside .sift-player-name,#sift-aside .sift-report-name{font-size:var(--text-lg);white-space:normal;overflow-wrap:anywhere}
+#sift-aside .sift-player-path{white-space:normal;overflow-wrap:anywhere}
+#sift-aside .sift-spectro-rows{grid-template-columns:1fr;gap:0}
+#sift-aside .sift-listen-advanced-body{flex-wrap:wrap;gap:var(--space-8)}
+#sift-aside .lib-edit-meta{flex-direction:column;align-items:stretch}
+#sift-aside .lib-edit-meta .sift-editor-input{width:100%}
+#sift-aside .sift-editor-fields{grid-template-columns:1fr}
+/* Deux debordements survivaient au premier tour (mesure du 2026-08-19, apres passage a 320px :
+   9 elements → 3). Un enfant de flex ne retrecit pas sous son contenu sans min-width:0, et un
+   champ d'edition dans une colonne prend toute la colonne — il n'a rien a partager avec un voisin.
+   Le troisieme survivant, .sift-volume-track, N'EST PAS un defaut : le bloc de volume est
+   volontairement replie a 20px au repos et s'ouvre au survol (.sift-volume-block, overflow:hidden
+   + transition de width). Le corriger casserait le controle. */
+/* « Ecoute avancee » : son bloc ne mesurait que 88px pour 195 de contenu, non pas parce qu'il
+   debordait mais parce que son PARENT le contraignait — .sift-player-controls est une rangee flex
+   concue pour la surface large de Revue. Dans une colonne, les controles passent en colonne. */
+/* `min-width:auto` est la valeur PAR DEFAUT d'un enfant de flex, et elle l'empeche de retrecir
+   sous la largeur de son contenu : mesures du 2026-08-19 dans la zone D, .sift-player-header et
+   .sift-player-audition reclamaient 369px pour 287 disponibles, sans deborder d'aucun contenu
+   irreductible — seulement parce que rien ne les autorisait a se serrer. C'est le meme defaut que
+   `min-width:0` corrige un cran plus bas ; il se pose sur TOUS les descendants directs de la
+   rangee, pas sur un coupable designe, parce que la rangee est un composant partage dont la
+   composition change (l'erreur de lecture n'apparait que sur echec). */
+#sift-aside .sift-player-row{flex-wrap:wrap}
+#sift-aside .sift-player-row>*{min-width:0}
+#sift-aside .sift-player-controls{flex-direction:column;align-items:stretch;width:100%}
+#sift-aside .sift-listen-advanced,#sift-aside .sift-listen-advanced-body{width:100%}
+#sift-aside .sift-listen-advanced-body>*{min-width:0}
+#sift-aside .sift-editor-input{width:100%}
+#sift-aside .lib-edit-pair{grid-template-columns:1fr}
 /* Titre de page accessible, invisible à l'œil. Mesuré le 2026-08-05 : l'application ne
    contenait AUCUN `<h1>`–`<h6>`, ni dans `index.html`, ni dans `app.js`, ni dans un seul `.ts`,
    et aucun repli `role="heading"`/`aria-level` — un lecteur d'écran n'avait donc aucun plan de
@@ -900,6 +960,12 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-text-info)}
    --color-background-queue family as the Revue metadata editor; it needs the same recessed
    .sift-editor-input default now, not the lightest token in the system floating on top of it. */
 .lib-edit-meta{display:flex;align-items:center;gap:var(--space-8);flex-wrap:wrap}
+/* Les deux grilles de l'editeur de piste. Elles etaient en style inline (library-detail.ts), donc
+   hors de portee du scope #sift-aside qui replie la colonne — et un style inline gagne de toute
+   facon contre une regle d'auteur. Nommees ici pour que la zone D puisse les replier a une
+   colonne, et pour que leur gap cesse d'etre un 6px hors echelle. */
+.lib-edit-pair{display:grid;grid-template-columns:1fr 1fr;gap:var(--space-8)}
+.lib-edit-labelled{display:grid;grid-template-columns:90px 1fr;gap:var(--space-8)}
 .lib-edit-actions{display:flex;gap:8px}
 .lib-edit-actions [data-lib="save"]{flex:1}
 /* M6a — Discogs candidate picker */
@@ -1809,7 +1875,15 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
    (.sift-player-row, report-view.ts) démarrait à une position horizontale différente entre
    Bibliothèque et Revue parce que leurs panneaux de gauche respectifs n'avaient pas la même
    largeur — même composant, deux départs différents au changement d'écran. */
-.sift-library-side{width:272px;flex:none;align-self:flex-start;height:calc(100dvh - 210px);overflow:auto;padding-bottom:var(--space-12)}
+/* `height:calc(100dvh - 210px)` RETIRE le 2026-08-19 (etape 3). Le 210 encodait la hauteur de ce
+   qui se trouvait au-dessus — cartes de statistiques comprises — donc toute retouche de ce bloc
+   faussait la colonne en silence, et la colonne ouvrait un second contexte de defilement a
+   l'interieur d'une page qui defilait deja. `position:sticky` la tient en haut de la zone C
+   pendant que la liste defile, sans qu'aucun nombre n'ait a connaitre ses voisins.
+   Largeur passee au token --pane-w : c'est la meme mesure que la file de Revue et le rail de
+   sources d'Accueil, et elle etait ecrite en dur ici pour la quatrieme fois (150 → 190 → 245
+   → 272). */
+.sift-library-side{width:var(--pane-w);flex:none;align-self:flex-start;position:sticky;top:0;max-height:100%;overflow:auto;padding-bottom:var(--space-12)}
 .sift-library-main{flex:1;min-width:0}
 /* Shared empty state (DESIGN.md "État vide") — top-aligned, never centred. Used by Revue (queue),
    Écartés, Bibliothèque, Rekordbox et Journal (2026-07-08) when the screen is a real dead-end. */

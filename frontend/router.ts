@@ -17,6 +17,7 @@
 // maquette complète au lieu de coquilles vides, et ses appels `window.__sift*` ne trouvent rien —
 // ce qui est correct : le wiring live n'existe pas dans un navigateur.
 import { requireEl } from "./dom";
+import { closeAside } from "./toolbar";
 import { renderHomeSources } from "./home-sources";
 import { renderQueue } from "./queue-panel";
 import { renderEcartes } from "./ecartes-view";
@@ -101,25 +102,30 @@ function installQueueResize(qcol: HTMLElement, handle: HTMLElement): void {
 // enfants de `#content`, gardent le premier `.h1` et masquent le reste.
 // ---------------------------------------------------------------------------
 
-/** Écran qui défile d'un bloc (Bibliothèque, Écartés, Journal, Rekordbox, Clé USB, Réglages).
- *  Reprend `block()` de la maquette — étape 3 le remplacera par le shell à trois zones.
+/** Zone C vide, pour un écran qui n'a qu'elle.
  *
- *  Ne pose plus de `.h1` depuis l'étape 2 : le titre d'écran a quitté le contenu pour la barre
- *  unifiée, où il est unique et toujours à la même place. Les six écrans qui l'émettaient
- *  eux-mêmes ont cessé dans le même geste. `reglages-view.ts` et `usb-view.ts` parcourent encore
- *  les enfants de `#content` pour garder un `.h1` et masquer le reste — avec zéro enfant leur
- *  boucle ne fait rien, ce qui est le comportement voulu. */
+ *  Ne pose plus ni `display` ni `overflow` depuis l'étape 3 : `#content` EST la zone C, et son
+ *  comportement vit dans la feuille de style, posé une fois. Un écran qui le redécidait à chaque
+ *  rendu est exactement ce qui produisait deux grammaires de layout pour huit écrans.
+ *
+ *  Ne pose plus de `.h1` depuis l'étape 2 : le titre a quitté le contenu pour la barre unifiée.
+ *  `reglages-view.ts` et `usb-view.ts` parcourent encore les enfants de `#content` pour garder un
+ *  `.h1` et masquer le reste — avec zéro enfant leur boucle ne fait rien, ce qui est voulu. */
 function blockShell(content: HTMLElement): void {
-  content.style.display = "block";
+  content.style.display = "";
   content.style.flexDirection = "";
-  content.style.overflowY = "auto";
+  content.style.overflowY = "";
   content.innerHTML = "";
 }
 
+
+/** Accueil et Revue posent leurs propres colonnes DANS la zone C, donc ils lui prennent son
+ *  défilement : `overflow:hidden` ici, et chaque colonne défile chez elle. C'est la même règle
+ *  que partout ailleurs — la page ne défile jamais — appliquée un cran plus bas. */
 function homeShell(content: HTMLElement): void {
   content.style.display = "flex";
   content.style.flexDirection = "column";
-  content.style.overflowY = "auto";
+  content.style.overflowY = "hidden";
   content.innerHTML =
     `<div class="home-body">` +
     `<div class="queue" id="homequeue" style="width:${QCOL_DEFAULT}px"></div>` +
@@ -130,7 +136,7 @@ function homeShell(content: HTMLElement): void {
 function revueShell(content: HTMLElement): void {
   content.style.display = "flex";
   content.style.flexDirection = "";
-  content.style.overflowY = "";
+  content.style.overflowY = "hidden";
   content.innerHTML =
     `<div class="sift-revue-row">` +
     `<div class="queue" id="qcol" style="width:${qcolWidth()}px">` +
@@ -187,6 +193,7 @@ export function render(): void {
   const content = requireEl<HTMLElement>("#content", "render");
   syncNav(currentView);
   clearBarSlots();
+  closeAside();
 
   switch (currentView) {
     case "home":
