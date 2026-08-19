@@ -270,7 +270,7 @@ color-scheme:light;
    panneau porte un editeur et pas seulement de la lecture. Les regles etroites scopees
    #sift-aside plus bas font le reste — elles ne sont pas un rattrapage de la largeur, elles
    disent qu'une colonne n'est pas une page. */
---toolbar-h:44px;--rail-w:200px;--pane-w:272px;--aside-w:320px;
+--toolbar-h:44px;--rail-w:200px;--rail-w-collapsed:56px;--pane-w:272px;--aside-w:320px;
 /* Motion (P6, 2026-07-27). Only the two durations that actually have a consumer are declared —
    same audit rule as the height scale above (--h-32/--h-44 were dropped for having none). They
    match values already recurring in the transitions further down (.1s / .15s), so this is token
@@ -546,7 +546,7 @@ html,body{margin:0;padding:0;height:100%}
    non borné est un défaut séparé, non traité ici.
    `.nav-brand i` (16px) et `.nv i` (17px) ne sont PAS touchés : ce sont des tailles d'icône, et
    l'échelle typographique n'en est pas une — il n'existe aucun token d'icône dans ce `:root`. */
-.nav-brand{display:flex;align-items:center;gap:8px;padding:var(--space-4) var(--space-8) var(--space-12);font-size:var(--text-lg);font-weight:600;color:var(--color-text-primary);letter-spacing:var(--tracking-normal)}
+.nav-brand{display:flex;align-items:center;gap:var(--space-8);padding:var(--space-4) var(--space-8) var(--space-12);font-size:var(--text-lg);font-weight:600;color:var(--color-text-primary);letter-spacing:var(--tracking-normal)}
 .nav-brand i{font-size:16px;color:var(--color-text-info)}
 .nv-grp{font-size:var(--text-xs);font-weight:400;letter-spacing:.08em;text-transform:uppercase;color:var(--color-text-tertiary);padding:var(--space-12) var(--space-8) var(--space-4)}
 .nv{min-height:34px;border-radius:var(--border-radius-md);display:flex;flex-direction:row;align-items:center;gap:var(--space-12);padding:var(--space-8) var(--space-8);color:var(--color-text-tertiary);cursor:pointer}
@@ -584,6 +584,28 @@ html,body{margin:0;padding:0;height:100%}
    and stacks the progress zone ABOVE Settings. The zone grows UPWARD into the free space, so neither
    Settings nor the nav items above it shift when a background task starts. */
 .nav-foot{margin-top:auto;display:flex;flex-direction:column;gap:var(--space-4)}
+/* RAIL REPLIE (etape 4). --rail-w est redefinie sur <body>, donc le rail ET la zone gauche de la
+   barre unifiee suivent d'un seul geste — c'est ce qui garde la bordure verticale continue entre
+   les deux, l'invariant que le token existait pour tenir.
+   56px derives : icone 17 + padding de l'item 2x8 + padding du rail 2x12 = 57, ramene a 56
+   (multiple de 8, l'echelle d'espacement).
+   AUCUNE transition. DESIGN.md § 6 interdit d'animer `width`, et un repli de rail EST un
+   changement de largeur : l'animer forcerait un relayout de tout le shell a chaque frame. Le repli
+   est donc instantane, et c'est un choix, pas un oubli. */
+body.sift-rail-collapsed{--rail-w:var(--rail-w-collapsed)}
+body.sift-rail-collapsed .nav-brand span,body.sift-rail-collapsed .nv>span:first-of-type,body.sift-rail-collapsed .nv-grp{display:none}
+body.sift-rail-collapsed .sb{padding-left:var(--space-8);padding-right:var(--space-8)}
+body.sift-rail-collapsed .nv{justify-content:center;gap:0}
+body.sift-rail-collapsed .nav-brand{justify-content:center}
+/* Le badge de compte survit au repli, en pastille superposee : c'est la seule information du rail
+   qu'un libelle ne porte pas, donc la seule qui serait perdue. */
+body.sift-rail-collapsed .nav-badge{position:absolute;top:2px;right:2px;padding:0 var(--space-4);font-size:var(--text-xs)}
+body.sift-rail-collapsed .nv{position:relative}
+/* La bascule reste VISIBLE une fois repliee — la masquer enfermerait l'utilisateur dans l'etat
+   replie, sans autre issue que le raccourci clavier. Elle prend seulement la place de la marque. */
+#sift-rail-toggle{margin-left:auto;flex:none}
+body.sift-rail-collapsed .nav-brand>i{display:none}
+body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
 /* Séparateur de Réglages (annotation Antoine, 2026-07-09) : la ligne vit au-dessus du bouton
    Réglages, pas au-dessus de la zone de progression — les lignes de tâche (.sift-pz-row) doivent
    apparaître AU-DESSUS du séparateur, Réglages toujours en dessous, zone active ou non. */

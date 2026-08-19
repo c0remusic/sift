@@ -336,3 +336,54 @@ export function installScrollAutohide() {
     true,
   );
 }
+
+/** Repli du rail (étape 4, DESIGN.md § 14).
+ *
+ *  Le rail replié garde ses icônes et perd ses libellés — il ne disparaît pas : une navigation qui
+ *  s'évapore oblige à la rouvrir pour savoir où l'on est. L'état est persisté, comme la largeur de
+ *  la file de Revue : c'est une préférence de poste de travail, pas un état de session.
+ *
+ *  Le geste est instantané. `--rail-w` est redéfinie sur `<body>`, donc le rail ET la zone gauche
+ *  de la barre unifiée bougent ensemble et la bordure verticale reste continue — l'invariant pour
+ *  lequel le token existe. Animer serait animer une largeur, ce que DESIGN.md § 6 interdit. */
+const RAIL_KEY = "sift-rail-collapsed";
+
+function applyRailCollapsed(collapsed: boolean): void {
+  document.body.classList.toggle("sift-rail-collapsed", collapsed);
+  const btn = document.getElementById("sift-rail-toggle");
+  if (!btn) return;
+  const label = collapsed ? "Déplier le rail" : "Replier le rail";
+  btn.title = label;
+  btn.setAttribute("aria-label", label);
+  btn.setAttribute("aria-expanded", collapsed ? "false" : "true");
+  const icon = btn.querySelector("i");
+  if (icon)
+    icon.className = collapsed
+      ? "ti ti-layout-sidebar-left-expand"
+      : "ti ti-layout-sidebar-left-collapse";
+}
+
+/** Bascule le rail et persiste le nouvel état. Exportée pour le raccourci clavier. */
+export function toggleRail(): void {
+  const next = !document.body.classList.contains("sift-rail-collapsed");
+  applyRailCollapsed(next);
+  try {
+    localStorage.setItem(RAIL_KEY, next ? "1" : "0");
+  } catch {
+    // Stockage refusé (mode privé, quota) : la bascule marche quand même, elle ne survit pas.
+  }
+}
+
+export function installRailToggle(): void {
+  let collapsed = false;
+  try {
+    collapsed = localStorage.getItem(RAIL_KEY) === "1";
+  } catch {
+    // Idem : l'absence de stockage vaut « déplié », l'état par défaut.
+  }
+  applyRailCollapsed(collapsed);
+  document.getElementById("sift-rail-toggle")?.addEventListener("click", (e) => {
+    e.stopPropagation(); // le bouton vit dans #nav, où un clic délégué chercherait un [data-view]
+    toggleRail();
+  });
+}

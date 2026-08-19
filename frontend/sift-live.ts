@@ -24,8 +24,9 @@ import { confirmAction } from "./confirm-modal";
 // Views/chrome extracted from this god-module (audit P-3) — kept stateless, wired here.
 import { renderEcartes } from "./ecartes-view";
 import { renderHomeSources, dismissRootGate, noteScanFailure } from "./home-sources";
-import { installDragDrop, injectLeanStyle, injectTitlebar, installScrollAutohide, installNavKeyboard } from "./chrome";
+import { installDragDrop, injectLeanStyle, injectTitlebar, installScrollAutohide, installNavKeyboard, installRailToggle } from "./chrome";
 import { initTheme } from "./theme";
+import { installWindowShortcuts } from "./shortcuts";
 import { requireEl } from "./dom";
 import { toast } from "./filing-toast";
 import { humanizeError } from "./errors";
@@ -179,6 +180,8 @@ export function installLiveWiring() {
   installQueueNavKeys();
   installScrollAutohide();
   installNavKeyboard();
+  installRailToggle();
+  installWindowShortcuts();
   void installDragDrop();
 
   // Nav "Clé USB" (`data-view="cle"`) needs no special handling: app.js's own router renders the
