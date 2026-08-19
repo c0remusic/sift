@@ -26,6 +26,8 @@ import { renderEcartes } from "./ecartes-view";
 import { renderHomeSources, dismissRootGate, noteScanFailure } from "./home-sources";
 import { installDragDrop, injectLeanStyle, injectTitlebar, installScrollAutohide, installNavKeyboard, installRailToggle } from "./chrome";
 import { initTheme } from "./theme";
+import { onSettingsCategoryPick } from "./reglages-view";
+import { onRekordboxSectionPick } from "./rekordbox-view";
 import { installWindowShortcuts } from "./shortcuts";
 import { requireEl } from "./dom";
 import { toast } from "./filing-toast";
@@ -225,6 +227,20 @@ export function installLiveWiring() {
     const qi = (e.target as HTMLElement).closest<HTMLElement>(".qi[data-id]");
     if (qi?.dataset.id) {
       handleQueueItemClick(qi, e);
+      return;
+    }
+    // Rekordbox : choix d'une section dans la colonne de gauche (étape 10).
+    const rkbSec = (e.target as HTMLElement).closest<HTMLElement>('[data-rkb="section"]');
+    if (rkbSec?.dataset.sec) {
+      e.stopPropagation();
+      onRekordboxSectionPick(rkbSec.dataset.sec);
+      return;
+    }
+    // Réglages : choix d'une catégorie dans la colonne de gauche (étape 9).
+    const cat = (e.target as HTMLElement).closest<HTMLElement>('[data-reglages="cat"]');
+    if (cat?.dataset.cat) {
+      e.stopPropagation();
+      onSettingsCategoryPick(cat.dataset.cat);
       return;
     }
     // Écartés actions (copy query / send-to-bin / restore / empty bin)

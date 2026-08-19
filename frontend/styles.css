@@ -1833,7 +1833,21 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
    4 cartes empilées n'avaient rien à grouper — HIG "Boxes" groupe des informations liées, pas
    un item seul). Une carte .sift-ui-card-soft unique porte les 4 sections ; chaque section est
    une ligne divisée par un filet, pas sa propre carte. Titre 16px/600, texte explicatif inchangés. */
+/* DEUX COLONNES (etape 9). Le plafond de 560px reste — c'est une MESURE DE FORMULAIRE, et
+   Reglages Systeme emploie exactement ca. Ce qui manquait n'etait pas de la largeur, c'etait la
+   colonne de categories a cote. Elle prend --pane-w, la meme mesure que toute zone fixe laterale
+   de l'app, et elle colle en haut pendant que le panneau defile. */
 .sift-settings-stack{max-width:560px}
+.sift-settings-layout{display:flex;align-items:flex-start;gap:var(--space-16)}
+/* Rekordbox : meme grammaire a deux colonnes que Reglages et Bibliotheque. Trois ecrans, une
+   seule facon de poser une zone fixe a gauche — c'est le point du shell. */
+.sift-rkb-layout{display:flex;align-items:flex-start;gap:var(--space-16);margin-top:var(--space-12)}
+.sift-rkb-side{width:var(--pane-w);flex:none;position:sticky;top:0}
+.sift-rkb-main{flex:1;min-width:0}
+.sift-settings-side{width:var(--pane-w);flex:none;position:sticky;top:0}
+/* Une section masquee est retiree du FLUX (`hidden`), pas seulement invisible : un champ dans une
+   section cachee resterait tabulable, et le focus disparaitrait de l'ecran en plein Tab. */
+#sift-reglages-list>[hidden]{display:none}
 .sift-settings-list{display:flex;flex-direction:column}
 .sift-settings-list-row{padding-bottom:var(--space-24)}
 .sift-settings-list-row:not(:first-child){padding-top:var(--space-24);border-top:0.5px solid var(--color-border-tertiary)}

@@ -19,6 +19,38 @@ import { open as openFolderDialog } from "@tauri-apps/plugin-dialog";
  * no backing data and led nowhere — same "lean Tauri UI" pattern as home-sources.ts (hide the mock
  * content, keep only the title, inject the real thing). One page, not tabs: every card is always
  * visible and reachable by scrolling, per the maquette's "PAS des onglets exclusifs" rule. */
+/** Libellés des catégories, indexés par la clé `dataset.section` que chaque bloc porte déjà.
+ *  Une clé sans libellé retombe sur la clé elle-même : une section neuve apparaît donc dans la
+ *  colonne, mal nommée mais VISIBLE — un oubli qui se voit vaut mieux qu'une section introuvable. */
+const SECTION_LABELS: Record<string, string> = {
+  discogs: "Identification",
+  bibliotheque: "Bibliothèque",
+  nommage: "Nommage",
+  apparence: "Apparence",
+};
+
+/** Catégorie affichée. Au niveau module : l'écran se re-rend à chaque réglage appliqué (pas de
+ *  bouton Enregistrer, application immédiate), et un état local retomberait sur la première
+ *  catégorie à chaque frappe dans le champ de jeton. */
+let activeSection = "discogs";
+
+/** Montre une seule section et marque son entrée. Les autres sont retirées du flux par `hidden`,
+ *  pas seulement masquées : un champ dans une section cachée resterait tabulable. */
+function selectSettingsCategory(key: string): void {
+  activeSection = key;
+  document.querySelectorAll<HTMLElement>("#sift-reglages-list > [data-section]").forEach((el) => {
+    el.hidden = el.dataset.section !== key;
+  });
+  document.querySelectorAll<HTMLElement>('[data-reglages="cat"]').forEach((el) => {
+    el.classList.toggle("on", el.dataset.cat === key);
+  });
+}
+
+/** Appelée par le dispatch délégué de `sift-live.ts` au clic sur une catégorie. */
+export function onSettingsCategoryPick(key: string): void {
+  selectSettingsCategory(key);
+}
+
 export async function renderReglagesLive() {
   const content = requireEl("#content", "renderReglagesLive");
 
@@ -371,7 +403,36 @@ export async function renderReglagesLive() {
   list.appendChild(tplBlock);
   list.appendChild(themeBlock);
   wrap.appendChild(list);
-  content.appendChild(wrap);
+
+  // DEUX COLONNES depuis l'étape 9 (DESIGN.md § 17, question ouverte O-3).
+  //
+  // L'écran était une colonne unique plafonnée à 560px, qui laissait 44 % de la fenêtre vide sur
+  // 1200 (rail 152 + padding 2×24 retirés : 1000 utiles, 560 employés). La correction n'était PAS
+  // d'élargir la colonne : Réglages Système emploie justement un panneau étroit — mais à côté
+  // d'une sidebar de catégories. Ce qui manquait n'était pas de la largeur, c'était la seconde
+  // colonne. Le panneau garde donc sa mesure de formulaire ; il est accompagné.
+  //
+  // Les catégories sont DÉRIVÉES des sections déjà rendues (`dataset.section`), jamais d'une table
+  // parallèle : une liste écrite ici divergerait à la première section ajoutée, exactement comme
+  // l'aurait fait une table vue → titre dans le routeur.
+  const layout = document.createElement("div");
+  layout.className = "sift-settings-layout";
+  const side = document.createElement("nav");
+  side.className = "sift-settings-side sift-ui-card-soft sift-ui-card-soft-pad";
+  side.setAttribute("aria-label", "Catégories de réglages");
+  side.innerHTML = `<div class="col-h">Réglages</div>`;
+  for (const el of [block, libBlock, tplBlock, themeBlock]) {
+    const key = el.dataset.section ?? "";
+    const label = SECTION_LABELS[key] ?? key;
+    side.insertAdjacentHTML(
+      "beforeend",
+      `<div class="fld" data-reglages="cat" data-cat="${esc(key)}" tabindex="0" role="button">${esc(label)}</div>`,
+    );
+  }
+  layout.appendChild(side);
+  layout.appendChild(wrap);
+  content.appendChild(layout);
+  selectSettingsCategory(activeSection);
   positionThemeThumb(); // now attached to the live DOM — offsetWidth/offsetLeft resolve correctly
 
   const inp = block.querySelector<HTMLInputElement>("#sift-discogs-token");

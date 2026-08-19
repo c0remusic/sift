@@ -682,8 +682,57 @@ export async function renderRekordboxLive(): Promise<void> {
     `<span style="font-size:var(--text-sm);color:var(--color-text-${syncUnavailable() || failedSections > 0 ? "warning" : "secondary"})">${syncState}</span>` +
     `</div>`;
 
+  // QUATRE ENTRÉES, plus « Tout » — étape 10 (DESIGN.md § 17, spec `docs/ui-specs/rekordbox.md`).
+  //
+  // Les quatre sections M8 étaient quatre cartes EMPILÉES dans une page qui défilait, chacune avec
+  // sa propre action. Quatre cibles et quatre actions dans un même flux vertical : rien ne disait
+  // laquelle on traite. C'est exactement ce que le patron Utilitaire de disque règle — on choisit
+  // une cible avant qu'une action existe. Elles deviennent des entrées de la zone gauche.
+  //
+  // Une section dont l'appel IPC a échoué GARDE son entrée, avec son compte remplacé par un
+  // marqueur : une section absente se lirait « rien à faire », ce qui est un mensonge. C'est le
+  // même raisonnement que les trois états de `syncState` ci-dessus.
+  const sections: { key: string; label: string; html: string; count: number | null }[] = [
+    { key: "files", label: "Fichiers", html: masterdbSection, count: lastPendingRepairs.length },
+    { key: "meta", label: "Métadonnées", html: metadataSyncSection, count: lastPendingMetadataSyncs.length },
+    { key: "art", label: "Pochettes", html: artworkSyncSection, count: lastPendingArtworkSyncs.length },
+    { key: "dedup", label: "Playlists", html: dedupSection, count: lastScannedDuplicateGroups.length },
+  ];
+  if (!sections.some((x) => x.key === activeRkbSection) && activeRkbSection !== "all") activeRkbSection = "all";
+
+  const entry = (key: string, label: string, count: number | null): string =>
+    `<div class="fld${activeRkbSection === key ? " on" : ""}" data-rkb="section" data-sec="${key}" tabindex="0" role="button" style="justify-content:space-between">` +
+    `<span>${esc(label)}</span>` +
+    `<span style="font-size:var(--text-sm);opacity:.7">${count == null ? "—" : count}</span></div>`;
+
+  const side =
+    `<nav class="sift-rkb-side sift-ui-card-soft sift-ui-card-soft-pad" aria-label="Sections de synchronisation">` +
+    `<div class="col-h">Synchroniser</div>` +
+    entry("all", "Tout", totalPending) +
+    sections.map((x) => entry(x.key, x.label, x.count)).join("") +
+    `</nav>`;
+
+  const body =
+    activeRkbSection === "all"
+      ? sections.map((x) => x.html).join("")
+      : (sections.find((x) => x.key === activeRkbSection)?.html ?? "");
+
   content.innerHTML =
-    intro + driftBanner + rekordboxCardHtml(status) + syncOverline + masterdbSection + metadataSyncSection + artworkSyncSection + dedupSection;
+    intro +
+    driftBanner +
+    rekordboxCardHtml(status) +
+    `<div class="sift-rkb-layout">${side}<div class="sift-rkb-main">${syncOverline}${body}</div></div>`;
+}
+
+/** Section affichée. Au niveau module, comme les quatre tableaux d'état au-dessus : l'écran se
+ *  re-rend après chaque synchronisation, et un état local ramènerait l'utilisateur sur « Tout »
+ *  juste après qu'il ait choisi une cible. */
+let activeRkbSection = "all";
+
+/** Appelée par le dispatch délégué au clic sur une entrée de section. */
+export function onRekordboxSectionPick(key: string): void {
+  activeRkbSection = key;
+  void renderRekordboxLive();
 }
 
 /** Routes the Rekordbox master.db action panel's delegated clicks (Tier 1 path repairs, Tier 3
