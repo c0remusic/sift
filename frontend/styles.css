@@ -878,7 +878,12 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
    file. C'est précisément ce que la décision rend lisible : avoir une surface = être la charpente.
    Ne pas « rétablir la cohérence des 4 » en repeignant les trois autres. */
 .sift-action-rail{flex:none;display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-12);padding:var(--space-12) var(--space-16);overflow:visible;background:var(--color-background-queue);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg)}
-.sift-dest-btn{display:flex;align-items:center;gap:8px;flex:none;width:auto;max-width:220px;padding:var(--space-8) var(--space-12);background:var(--color-background-secondary);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);color:var(--color-text-primary);font-size:var(--text-sm);cursor:pointer}
+/* POP-UP BUTTON, forme du kit (§ 02-Buttons / 09-Pop Up Buttons) : un aplat gris SANS bordure.
+   Ni fond ni bordure ne sont plus écrits ici — un pop-up button EST un bouton secondaire, et le
+   reset `button{}` (plus haut) donne déjà exactement ça (`--color-surface-raised`, `border:0`).
+   Les redéclarer aurait recréé la divergence que ce sweep ferme. Ce qui reste ici est ce qui lui
+   est propre : sa largeur bornée, son padding et sa mise en ligne libellé/valeur/chevron. */
+.sift-dest-btn{display:flex;align-items:center;gap:8px;flex:none;width:auto;max-width:220px;padding:var(--space-8) var(--space-12);border-radius:var(--border-radius-md);color:var(--color-text-primary);font-size:var(--text-sm);cursor:pointer}
 .sift-dest-btn-label{color:var(--color-text-tertiary);flex:none}
 .sift-dest-btn .sift-fil-bin{flex:1;min-width:0;text-align:left;overflow:hidden;text-overflow:ellipsis;font-weight:500;max-width:120px}
 .sift-dest-btn-caret{flex:none;font-size:var(--text-sm);color:var(--color-text-tertiary)}
@@ -886,7 +891,12 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
    full-strength danger/warning tokens used for verdict states (this isn't a problem, just a
    pending action) — border tint only, background stays neutral so it doesn't compete visually
    with the actual verdict pill above it. */
-.sift-dest-btn-empty{border-color:var(--color-text-warning);color:var(--color-text-warning)}
+/* La TEINTE DE BORDURE est tombée le 2026-08-19 avec la bordure elle-même : CLAUDE.md § Front
+   interdit un cadre coloré comme accent, et le bouton n'a plus de bordure du tout (voir au-dessus).
+   L'intention de cette règle ne change pas — « il manque une destination » reste dit en ambre —
+   seul son organe change : l'ENCRE du libellé la porte seule désormais. Le fond reste neutre,
+   ce que la note d'origine demandait déjà. */
+.sift-dest-btn-empty{color:var(--color-text-warning)}
 .sift-dest-btn-empty .sift-dest-btn-label{color:var(--color-text-warning)}
 /* Format group: label + chips inline together, no longer a stacked "col-h" block. */
 .sift-rail-fmt-group{display:flex;align-items:center;gap:var(--space-8);flex:none}
@@ -909,8 +919,21 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
    state already use (just with their own hue). Écarter (.sift-secondary-trash) gets the identical
    treatment in danger's hue, so the rail's two actions read as equally-weighted colored pills,
    not one bold pill next to plain text. */
-.sift-ranger-btn{flex:none;white-space:nowrap;background:var(--color-background-info);color:var(--color-text-info);border:0.5px solid var(--color-border-info);font-weight:500}
-.sift-ranger-btn:hover{background:var(--color-background-info);filter:brightness(0.95)}
+/* ⚠️ Cette « recette partagée » a perdu trois de ses quatre membres : .chip.on est passé au gris
+   (§ Scope Buttons), .sift-secondary-trash à l'aplat gris + encre danger, et celui-ci, LE primaire
+   de Revue, prend l'aplat d'accent le 2026-08-19. Le quatrième, .sift-key-btn, n'a PAS pu suivre :
+   report-view.ts:822-824 peint ses deux états en style INLINE, qu'aucune règle d'ici ne peut
+   atteindre sans !important — sa conversion appartient donc à une passe TS, pas à ce fichier.
+   Ce qui était « une recette pour tout ce qui est sélectionné/primaire/destructif » est redevenu
+   trois grammaires distinctes, parce que le kit en distingue trois (§ 02-Buttons) : primaire =
+   aplat d'accent + encre blanche, secondaire = aplat gris, sélection = gris.
+   Le pâle bordé qu'il portait était en plus une INCOHÉRENCE INTERNE mesurée : le bouton d'action du
+   mode Lot (.sift-baction, couleurs inline dans batch-panel.ts) est déjà un aplat accent depuis le
+   sweep précédent — deux primaires, deux grammaires, à un écran d'écart.
+   Hover = même fond + brightness, le pattern déjà posé sur .sift-confirm-btn : un primaire ne change
+   pas de couleur au survol, il s'assombrit. */
+.sift-ranger-btn{flex:none;white-space:nowrap;background:var(--color-accent-fill);color:var(--color-accent-ink);border:0;font-weight:500}
+.sift-ranger-btn:hover{background:var(--color-accent-fill);filter:brightness(0.95)}
 .sift-secondary-resource{flex:none;white-space:nowrap;color:var(--color-text-warning)}
 /* Destructif SECONDAIRE : la forme d'un bouton secondaire (aplat gris, pas de bordure), et le
    danger porté par l'ENCRE seule. Le kit n'a aucun bouton bordé — un cadre coloré était la
@@ -956,8 +979,15 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
    Le kit ne tranche pas dans notre sens ici — sa sidebar active est bleue (§ 06-Sidebars) — et
    c'est un conflit assume, consigne dans DESIGN.md § 14 : dans Sift le bleu est deja pris par la
    semantique et par l'aplat des boutons primaires. */
-.fld.on{background:var(--color-background-secondary);color:var(--color-text-primary);font-weight:500}
-.fld.on:hover{background:var(--color-background-secondary)}
+/* PROMU D'UN PLAN DE PLUS, le 2026-08-19. « Sélection = --color-background-secondary » (DESIGN.md
+   § 8) suppose que la sélection se détache de ce qui la porte. Ici elle ne le pouvait pas : ces
+   items vivent dans une carte .sift-ui-card-soft, dont le fond EST --color-background-secondary —
+   l'item actif de Réglages ne se distinguait donc que par sa graisse. La règle qui vaut sur une
+   surface de contenu se lit un cran plus haut sur une surface déjà secondary : --color-surface-raised.
+   Ce n'est pas une exception à § 8, c'en est la lecture relative — et c'est le geste déjà fait sur
+   .chip.on au sweep précédent, pour la même raison. La sélection reste NEUTRE : aucun accent. */
+.fld.on{background:var(--color-surface-raised);color:var(--color-text-primary);font-weight:500}
+.fld.on:hover{background:var(--color-surface-raised)}
 .kbd{font-family:var(--font-mono);font-size:10px;border:0.5px solid var(--color-border-secondary);border-radius:3px;padding:0 var(--space-4);color:var(--color-text-tertiary)}
 .bars{display:flex;align-items:center;gap:var(--space-4);height:42px;cursor:pointer}.bars span{flex:1;border-radius:1px}
 .spec{display:flex;align-items:flex-end;gap:var(--space-4);height:22px}.spec span{flex:1;border-radius:1px 1px 0 0}
@@ -974,7 +1004,13 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
 .chip:hover{background:var(--overlay-hover)}
 .chip.on{background:var(--color-surface-raised);color:var(--color-text-primary)}
 .chip.on:hover{background:var(--color-surface-raised)}
-.tog{width:30px;height:17px;border-radius:9px;background:var(--color-text-info);position:relative;flex:none;cursor:pointer;transition:background var(--duration-fast)}.tog::after{content:"";position:absolute;left:2px;top:2px;width:13px;height:13px;border-radius:50%;background:var(--color-text-on-accent);transform:translateX(13px);transition:transform var(--duration-fast)}.tog.off{background:var(--color-border-secondary)}.tog.off::after{transform:translateX(0)}
+/* SWITCH — kit § 02-Buttons / 04-Switches : piste ON = l'ACCENT, pouce blanc. La piste était en
+   --color-text-info, un token d'ENCRE : en thème sombre il résout en blanc cassé (L 79,21 %), donc
+   le switch allumé y était une pilule blanche à pouce blanc — l'état ON ne se lisait plus que par
+   la position du pouce. Les cases et radios natives voisines sont déjà sur --color-accent-fill
+   (`accent-color`, plus bas) : le switch rejoint la même famille au lieu d'emprunter une encre.
+   OFF inchangé (gris de bordure), c'est bien ce que montre le kit. */
+.tog{width:30px;height:17px;border-radius:9px;background:var(--color-accent-fill);position:relative;flex:none;cursor:pointer;transition:background var(--duration-fast)}.tog::after{content:"";position:absolute;left:2px;top:2px;width:13px;height:13px;border-radius:50%;background:var(--color-accent-ink);transform:translateX(13px);transition:transform var(--duration-fast)}.tog.off{background:var(--color-border-secondary)}.tog.off::after{transform:translateX(0)}
 .lr{display:flex;align-items:center;gap:var(--space-8);padding:var(--space-4) var(--space-8);border-bottom:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);font-size:12px;cursor:pointer;transition:background var(--duration-base) ease,color var(--duration-base) ease,transform var(--duration-fast) ease}
 .lr:hover{background:var(--color-row-active)}
 /* Explicit rather than relying on source order (both selectors have equal specificity) — same
@@ -1156,12 +1192,32 @@ input[type="checkbox"]:focus-visible{outline:1.5px solid var(--color-border-info
    color class of bug as the pre-fix .sift-wave-hover/.sift-kbd-hint-id). --color-border-info is
    already the app's translucent-accent token for exactly this kind of overlay tint. */
 ::selection{background:var(--color-border-info);color:var(--color-text-primary)}
-button:hover{background:var(--color-background-secondary)}button:disabled{opacity:.4;cursor:default}
+/* SURVOL D'UN BOUTON = le même fond, assombri — pas un autre gris. La règle repeignait en
+   --color-background-secondary un bouton dont le repos est --color-surface-raised : mesuré en
+   sombre, L 40,24 % → L 34,92 %, soit une chute de 5,3 points de clarté au simple passage de la
+   souris, plus visible que la plupart des changements d'ÉTAT de l'app. Le kit ne fait pas ça : son
+   hover reste sur le même matériau (§ 02-Buttons, colonnes Normal/Hover des Scope Buttons).
+   `brightness(0.95)` est le geste déjà posé un par un sur .sift-confirm-btn, .sift-secondary-trash,
+   .sift-ident-search-btn — il devient la règle, et ces sites cessent d'être des exceptions.
+   ⚠️ SPÉCIFICITÉ GELÉE À (0,1,1). Ne pas « préciser » ce sélecteur (`button:hover:not(:disabled)`,
+   `button:not(.x):hover`…) : plusieurs composants réaffirment leur propre fond au survol avec une
+   classe seule, à (0,1,0) ou (0,2,0) — .sift-zone-toggle:hover, .sift-play-btn, .sift-ec-store-link
+   — et monter d'un cran ferait silencieusement gagner cette règle-ci contre eux. Le fond réaffirmé
+   suffit ; c'est la raison de la règle CLAUDE.md « un bouton qui redéfinit background le réaffirme
+   dans son :hover ».
+   `opacity` sur :disabled est la SEULE atténuation à l'opacité que ce fichier s'autorise, et c'en
+   est l'exemption explicite (DESIGN.md § 4 l'interdit pour un état) : macOS grise ses contrôles
+   désactivés exactement comme ça (kit § 02-Buttons, colonne « Disabled »), et « indisponible »
+   n'est pas un état atténué du contenu — c'est l'absence de contrôle. Toute autre opacité de ce
+   fichier doit passer par un token d'encre. */
+button:hover{background:var(--color-surface-raised);filter:brightness(0.95)}button:disabled{opacity:.4;cursor:default}
 /* Audit-ref E1 (Écartés, 2026-07-09) : liens boutique (ecStoreLinks), <button> transparent
    converti depuis <a> sans href (non focusable) — réaffirme transparent au survol par prudence,
    même si le style inline devrait déjà l'emporter sur button:hover par spec (non mesuré ici). */
 .sift-ec-store-link:hover{background:transparent}
-input{font-family:inherit}input[type=range]{accent-color:var(--color-text-info)}
+/* Même correction que les cases/radios juste au-dessus : `accent-color` prend l'aplat d'accent de
+   l'app, pas le token d'ENCRE info (qui résout en blanc cassé sur le thème sombre). */
+input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill)}
 .home-body{display:flex;gap:var(--space-16);flex:1;min-height:0;overflow:hidden}
 .home-left{flex:1;min-width:0;overflow-y:auto;padding-right:4px}
 .home-right{width:200px;flex:none;overflow-y:auto}
@@ -1190,7 +1246,14 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-text-info)}
 /* La ligne de Rekordbox. Un ecart nomme : sa marge basse et sa disposition varient selon la
    section, donc trois modificateurs plutot que trois styles inline repetes. */
 .rb-row{border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:var(--space-8) var(--space-12);margin-bottom:var(--space-8)}
-.rb-row--idle{opacity:.55}
+/* « À jour » / « indisponible » : une section qui n'a rien en attente s'atténue par son ENCRE, pas
+   par l'opacité (DESIGN.md § 4 — aucune valeur d'opacité ne franchit le seuil de lisibilité avant
+   ~0,92, où l'atténuation ne se voit plus). Le fond et le filet de la ligne ne bougent pas : la
+   carte reste une carte, seul son texte recule d'un cran d'encre. Une `.rb-row--idle` ne contient
+   QUE son en-tête (`idle` ⇔ body vide, rekordbox-view.ts:194), dont le titre hérite sa couleur et
+   dont le libellé d'état est déjà en tertiary — un `color` sur la ligne suffit, sans sélecteur
+   descendant qui écraserait une encre sémantique d'enfant. */
+.rb-row--idle{color:var(--color-text-tertiary)}
 .rb-row--last{margin-bottom:var(--space-12)}
 .rb-row--split{display:flex;justify-content:space-between;align-items:center;gap:var(--space-12)}
 .rb-row--inline{display:flex;align-items:center;gap:var(--space-8)}
@@ -1198,33 +1261,19 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-text-info)}
 .sift-ui-card-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
 .sift-ui-card-actions{display:flex;gap:8px;margin-top:var(--space-12)}
 .sift-ui-card-actions-main{flex:1}
-.sift-home-warning{display:flex;gap:8px;align-items:flex-start;font-size:var(--text-sm);color:var(--color-text-warning)}
-.sift-home-source-path{max-width:560px}
-.sift-home-source-path-value{font-family:var(--font-mono);font-size:var(--text-md);color:var(--color-text-secondary);word-break:break-all}
-.sift-home-watch-toggle{display:flex;align-items:center;gap:8px;font-size:var(--text-md);padding:var(--space-8) var(--space-12);border-radius:var(--border-radius-md);background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);cursor:pointer;color:var(--color-text-secondary)}
-.sift-home-watch-toggle:hover{background:var(--color-surface-raised)}
-/* Audit-ref C2 (Accueil, 2026-07-08, réf. shadcn Checkbox) : case sans coche ni états —
-   ambiguë (fond vert plein ne dit pas "coché" vs décoratif), pas de hover/focus, <div> non
-   focusable. Coche ti-check ajoutée à l'état coché ; tabindex+role posés côté TS
-   (rail de sources) pour que le ring :focus-visible générique s'applique. */
-.sift-home-watch-toggle-box{width:15px;height:15px;border-radius:4px;border:1px solid var(--color-border-secondary);background:transparent;flex:none;display:flex;align-items:center;justify-content:center;transition:background-color var(--duration-fast) ease,border-color var(--duration-fast) ease}
-.sift-home-watch-toggle-box i{font-size:11px;color:var(--color-text-on-accent);opacity:0;transform:scale(.6);transition:opacity var(--duration-fast) ease,transform var(--duration-fast) ease}
-.sift-home-watch-toggle[data-watched="1"] .sift-home-watch-toggle-box{background:var(--color-text-success);border-color:var(--color-text-success)}
-.sift-home-watch-toggle[data-watched="1"] .sift-home-watch-toggle-box i{opacity:1;transform:scale(1)}
-/* Audit-ref C1 (Accueil, 2026-07-08, réf. shadcn Badge/Button) : ces 2 boutons posent leur
-   fond en style inline, mais le button:hover{background:gris} générique (styles.css:385) gagne
-   au survol et efface la teinte — le bouton devient gris au lieu de s'assombrir. Réaffirmé ici,
-   même schéma que .sift-play-btn (2026-07-06). */
-.sift-home-cta-revue:hover{background:var(--color-background-success)}
-.sift-home-cta-add:hover{background:var(--color-background-info)}
-/* Audit-ref (Accueil, 2026-07-08, réf. shadcn Badge "Custom Colors") : badge statut passait
-   d'un fond neutre + texte teinté à un vrai fond teinté par état — cohérent avec la carte
-   verdict (report-view.ts) qui fait déjà ce pattern ailleurs dans l'app. */
-.sift-home-status-badge{font-family:var(--font-mono);font-size:var(--text-sm);padding:var(--space-4) var(--space-12);border-radius:var(--border-radius-pill);display:inline-flex;align-items:center;gap:var(--space-4)}
-.sift-home-status-badge-success{background:var(--color-background-success);color:var(--color-text-success)}
-.sift-home-status-badge-danger{background:var(--color-background-danger);color:var(--color-text-danger)}
-.sift-home-status-badge-info{background:var(--color-background-info);color:var(--color-text-info)}
-.sift-home-status-badge-neutral{background:var(--color-background-secondary);color:var(--color-text-tertiary)}
+/* LES 16 RÈGLES `.sift-home-*` ONT ÉTÉ RETIRÉES ICI le 2026-08-19 — écran Accueil, cartes source,
+   bascule « Surveiller ce dossier », badges de statut et les deux CTA. Leur unique consommateur,
+   `home-sources.ts`, a été supprimé par 6d1cc85 (« Accueil merged into the rail ») : ces règles
+   n'avaient plus de markup à peindre.
+   Preuve avant retrait, les trois lieux exigés par CLAUDE.md : absentes de `frontend/*.ts`, de
+   `index.html` ET de `frontend/app.js` (la maquette, qui charge pourtant cette feuille hors Tauri
+   et retient encore d'autres classes mortes — .mf/.mc/.bars/.spec — lesquelles restent donc en
+   place). Elles ne subsistent que dans deux documents d'audit datés, où elles racontent une
+   correction faite, pas un composant vivant.
+   Certaines portaient en plus des défauts que ce sweep corrige ailleurs (bordure sur un
+   secondaire, aplat `--color-text-success` sur une case cochée) : elles ont été retirées plutôt que
+   corrigées, parce qu'on ne repeint pas un composant qui n'existe plus.
+   `git log -- frontend/styles.css` les ramène si l'écran Accueil renaît. */
 .sift-ec-sections{display:flex;flex-direction:column;gap:12px}
 .sift-ec-section{display:flex;flex-direction:column;gap:var(--space-12)}
 .lib-detail-stack{display:flex;flex-direction:column;gap:var(--space-12);margin-top:12px;padding-top:12px;border-top:0.5px solid var(--color-border-tertiary)}
@@ -1254,8 +1303,16 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-text-info)}
 /* [m10] error state: warning colour + icon (set in JS as .sift-cands-error) */
 .sift-cands-error{color:var(--color-text-warning)}
 /* [m7] use theme variable for subtle borders — not hardcoded rgba that's invisible on light bg */
-.sift-cand{display:flex;gap:8px;align-items:center;text-align:left;background:none;border:1px solid var(--color-border-tertiary);border-radius:6px;padding:var(--space-4) var(--space-8);cursor:pointer;color:inherit;width:100%}
-.sift-cand:hover{border-color:var(--color-border-secondary)}
+/* UNE LISTE N'ENCADRE PAS SES ITEMS, 2026-08-19. Chaque candidat Discogs était une boîte bordée, et
+   son seul retour de survol était un cadre qui devenait un peu plus opaque — la grammaire d'une
+   collection de cartes, pas d'une liste de résultats à parcourir. Le kit et l'app font l'inverse
+   partout ailleurs (`.sift-menu-item`, `.sift-ctx-item`, `.chip`) : rien au repos, un APLAT au
+   survol. `--overlay-hover` est le token de survol de DESIGN.md § 8, et le radius rejoint l'échelle
+   (le `6px` d'origine n'appartenait à aucun cran).
+   Le fond réaffirmé au survol EST la réaffirmation qu'exige CLAUDE.md pour un <button> qui pose son
+   propre fond : sans elle, le générique `button:hover` repeindrait l'item en surface surélevée. */
+.sift-cand{display:flex;gap:8px;align-items:center;text-align:left;background:none;border:0;border-radius:var(--border-radius-sm);padding:var(--space-4) var(--space-8);cursor:pointer;color:inherit;width:100%}
+.sift-cand:hover{background:var(--overlay-hover)}
 .sift-cand img,.sift-cand-noart{width:36px;height:36px;border-radius:var(--border-radius-sm);object-fit:cover;display:grid;place-items:center;background:var(--color-background-secondary);flex:none}
 .sift-cand-meta{display:flex;flex-direction:column;min-width:0}
 .sift-cand-meta small{color:var(--color-text-tertiary)}
@@ -1268,10 +1325,25 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-text-info)}
 /* Identifier / Ré-identifier : action secondaire, donc grammaire secondaire. Elle portait un fond
    bleu pâle qui la mettait au même rang visuel qu'« Enregistrer », alors qu'elle ouvre une
    recherche et n'engage rien. */
+/* Le survol repeignait ce bouton gris en fond INFO pâle : un secondaire qui change de famille de
+   couleur au passage de la souris se lit comme s'il changeait d'état. Même fond, assombri — la
+   règle générique du fichier depuis le 2026-08-19, réaffirmée ici parce que le bouton pose son
+   propre fond. */
 .sift-id-btn{background:var(--color-surface-raised);border:0;color:var(--color-text-primary);font-weight:500;font-size:12px;padding:var(--space-4) var(--space-12)}
-.sift-id-btn:hover{background:var(--color-background-info);filter:brightness(0.95)}
+.sift-id-btn:hover{background:var(--color-surface-raised);filter:brightness(0.95)}
 /* [C3] "changer" / "Ouvrir Réglages" inline jump link */
-.sift-cand-jump{font-size:11px;padding:var(--space-4) var(--space-8);color:var(--color-text-info);border-color:var(--color-border-info)}
+/* Grammaire de LIEN (2026-08-19) : ce contrôle saute ailleurs, il n'engage rien — il n'a donc pas
+   à porter l'aplat gris d'un bouton secondaire, qu'il prenait du reset `button{}`. Fond
+   transparent, encre info, survol `--overlay-hover` (le geste de `.sift-bib-back`, l'autre
+   bouton-lien de l'app). Le fond `none` DOIT être réaffirmé au survol, sinon le générique le
+   repeint en gris.
+   ⚠️ Correction d'un fait, pas seulement du style : son `border-color:var(--color-border-info)` ne
+   peignait RIEN. Le reset pose `border:0`, donc cette déclaration était inerte faute de largeur —
+   elle décrivait une bordure que personne n'a jamais vue. Retirée comme telle, pas « corrigée ».
+   Vaut pour ses deux consommateurs, « changer » et « modifier » (`.sift-cand-change-btn`, qui ne
+   s'emploie jamais seul : filing-identify.ts:279 le pose toujours AVEC cette classe). */
+.sift-cand-jump{font-size:11px;padding:var(--space-4) var(--space-8);color:var(--color-text-info);background:none;border:0}
+.sift-cand-jump:hover{background:var(--overlay-hover)}
 @keyframes sift-spin{to{transform:rotate(360deg)}}
 .sift-spin{animation:sift-spin .7s linear infinite;display:inline-block}
 /* Per-track batch progress list (batch-tracklist.ts): one row per file, state pill wait/run/done/fail. */
@@ -1308,8 +1380,16 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-text-info)}
    etre bleu quand selectionné, point") — .on used to borrow the green success color, which read as an
    unrelated status (verdict-like) rather than a plain selection state; info is the tone already used
    app-wide for "selected"/"active" (.fld.on, .chip.on). */
-.sift-bgrp-box.on{border-color:var(--color-text-info);background:var(--color-text-info);color:var(--color-background-primary)}
-.sift-bgrp-box.partial{border-color:var(--color-text-info);color:var(--color-text-info)}
+/* 2026-08-19 : « bleu quand sélectionné » ne change pas, son TOKEN change. Cette case tri-état est
+   le jumeau custom des cases NATIVES qui la voisinent dans la même liste (mode Lot), et celles-ci
+   sont peintes par `accent-color:var(--color-accent-fill)` depuis le sweep précédent — deux bleus
+   différents côte à côte sur le même geste. `--color-text-info` est de plus une encre : en sombre
+   elle résout en blanc cassé, donc la case cochée y était blanche. Coche sur `--color-accent-ink`,
+   comme le kit § 02-Buttons / 02-Checkboxes (fond accent, glyphe blanc, et l'indéterminée porte le
+   même couple). La référence à `.fld.on`/`.chip.on` ci-dessus est PÉRIMÉE : ces deux-là sont passés
+   au gris neutre — une sélection de LISTE est neutre, une case cochée est un contrôle accentué. */
+.sift-bgrp-box.on{border-color:var(--color-accent-fill);background:var(--color-accent-fill);color:var(--color-accent-ink)}
+.sift-bgrp-box.partial{border-color:var(--color-accent-fill);color:var(--color-accent-fill)}
 /* The single rail action button (adaptive Filer/Discarder / Stop) — same sizing/weight as the
    Détail rail's .sift-ranger-btn (inherits the generic button rule), just with its own variant
    colors set inline per state. */
@@ -1361,14 +1441,26 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-text-info)}
 /* "Tags not written to the file" banner, shown just below Apply. Look only — visibility is driven
    solely by inline display (none ↔ flex) in refreshDiscrepancy, never the `hidden` attribute. Amber
    (warning) tokens — the SAME "attention / to handle" language as the duplicate marker. */
-.sift-tag-warn{align-items:center;gap:var(--space-8);margin-top:var(--space-8);padding:var(--space-8) var(--space-8);border-radius:var(--border-radius-md);background:var(--color-background-warning);border:1px solid var(--color-text-warning);color:var(--color-text-warning);font-size:var(--text-sm)}
+/* Bordure retirée le 2026-08-19 : un fond sémantique opaque plus son encre disent déjà « ambre »
+   deux fois ; le cadre le disait une troisième et faisait de ce bandeau la seule boîte cerclée de
+   la carte. Kit § 03-Notifications : pas de bordure. */
+.sift-tag-warn{align-items:center;gap:var(--space-8);margin-top:var(--space-8);padding:var(--space-8) var(--space-8);border-radius:var(--border-radius-md);background:var(--color-background-warning);border:0;color:var(--color-text-warning);font-size:var(--text-sm)}
 /* Field whose displayed value is NOT yet written to the file (see refreshDiscrepancy): desaturated +
    italic + a SOLID amber border (no dashes), using warning tokens. !important overrides the inputs'
    inline border. */
 /* padding matched to .sift-editor-input's own (4px 7px, not 3px 5px) — annotation: "la case ne
    semble pas de la même taille que les autres dans la section" — this box sits among the other
    field-like boxes in Métadonnées and had its own smaller padding, reading as an odd size out. */
-.sift-tag-stale{font-style:italic;filter:saturate(.55);border:1px solid var(--color-text-warning)!important;background:var(--color-background-warning)!important;border-radius:var(--border-radius-md)!important;padding:var(--space-4) var(--space-8)}
+/* 2026-08-19 — DEUX organes retirés, un gardé. `filter:saturate(.55)` désaturait le champ pour dire
+   « pas encore écrit » : c'est une atténuation de rendu, que DESIGN.md § 4 refuse au même titre que
+   l'opacité — et elle mordait sur le fond ambre lui-même, donc le signal s'affaiblissait à mesure
+   qu'il devait se voir. La bordure ambre partait avec, comme sur `.sift-tag-warn` juste au-dessus.
+   Restent le fond sémantique OPAQUE et l'italique : un fond dit l'état, une italique dit « valeur
+   en attente », et le champ garde la bordure ordinaire de `.sift-editor-input` — il reste un champ.
+   Les deux `!important` survivants ne sont pas décoratifs : `.sift-editor-input` est de même
+   spécificité (une classe) et déclarée PLUS BAS dans ce fichier, donc sans eux elle reprendrait
+   fond et rayon par simple ordre source. */
+.sift-tag-stale{font-style:italic;background:var(--color-background-warning)!important;border-radius:var(--border-radius-md)!important;padding:var(--space-4) var(--space-8)}
 /* ── Journal d'actions ──────────────────────────────────────────────── */
 .jrnl-wrap{display:flex;flex-direction:column;gap:var(--space-8);padding-bottom:var(--space-16)}
 /* Header */
@@ -1393,14 +1485,31 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .jrnl-row-main{flex:1;min-width:0;display:flex;flex-direction:column;gap:var(--space-4)}
 .jrnl-name{font-size:var(--text-sm);font-weight:500;color:var(--color-text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .jrnl-dest{font-size:var(--text-xs);font-family:var(--font-mono);color:var(--color-text-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.jrnl-revert{flex:none;background:transparent;border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);color:var(--color-text-secondary);font-size:var(--text-xs);padding:var(--space-4) var(--space-8);cursor:pointer;line-height:1.4}
-.jrnl-revert:hover{color:var(--color-text-primary);border-color:var(--color-border-secondary)}
+/* Secondaire nu (2026-08-19) : ni fond transparent ni cadre — le reset `button{}` donne l'aplat
+   gris du kit (§ 01-Push Buttons, colonne Secondary), et son survol assombrit ce même aplat. Le
+   `:hover` d'origine ne changeait QUE la couleur d'un cadre déjà présent, donc il n'avait plus
+   d'organe une fois le cadre parti : il ne garde que le passage d'encre.
+   ⚠️ Le chantier 2 (refonte Journal, docs/ui-specs/journal.md) sort « Annuler » de la ligne pour
+   l'emmener dans un menu contextuel — cette règle disparaîtra alors. Elle est corrigée ici parce
+   qu'elle est encore peinte, pas parce qu'on la garde. */
+.jrnl-revert{flex:none;border-radius:var(--border-radius-md);color:var(--color-text-secondary);font-size:var(--text-xs);padding:var(--space-4) var(--space-8);cursor:pointer;line-height:1.4}
+.jrnl-revert:hover{color:var(--color-text-primary)}
 /* Confirmation toast — fades out automatically via CSS, no JS timer */
-.jrnl-toast{font-size:var(--text-sm);color:var(--color-text-success);background:color-mix(in srgb,var(--color-text-success) 12%,transparent);border:1px solid color-mix(in srgb,var(--color-text-success) 30%,transparent);border-radius:var(--border-radius-md);padding:var(--space-8) var(--space-12);margin-bottom:var(--space-8);animation:jrnl-toast-fade 2.8s ease forwards}
-.jrnl-toast--warn{color:var(--color-text-warning);background:color-mix(in srgb,var(--color-text-warning) 12%,transparent);border-color:color-mix(in srgb,var(--color-text-warning) 30%,transparent)}
-.jrnl-banner{font-size:var(--text-sm);border-radius:var(--border-radius-md);padding:var(--space-8) var(--space-12);margin-bottom:var(--space-8);border:1px solid}
-.jrnl-banner--ok{color:var(--color-text-success);background:color-mix(in srgb,var(--color-text-success) 12%,transparent);border-color:color-mix(in srgb,var(--color-text-success) 30%,transparent)}
-.jrnl-banner--warn{color:var(--color-text-warning);background:color-mix(in srgb,var(--color-text-warning) 12%,transparent);border-color:color-mix(in srgb,var(--color-text-warning) 30%,transparent)}
+/* FONDS SÉMANTIQUES OPAQUES, 2026-08-19. Les cinq règles ci-dessous composaient leur fond à la
+   volée — `color-mix(… 12%, transparent)` sur une encre — soit exactement ce que DESIGN.md § 4
+   interdit : un fond alpha se compose différemment selon le gris qui passe dessous, et l'audit de
+   palette du 2026-07-10 y avait mesuré des ratios tombant à 3,37:1 sur les cartes les plus sombres.
+   Les tokens `--color-background-success` / `-warning` existent pour ça, appairés à leur encre.
+   Les bordures partent avec (kit § 03-Notifications : aucune bordure, l'ombre ou le fond portent
+   le décollement) — `.jrnl-banner` déclarait même un `border:1px solid` sans couleur, donc peint
+   avec la couleur du TEXTE, un cadre vert ou ambre selon la variante.
+   ⚠️ Comme `.jrnl-revert`, ces règles sont dans le viseur du chantier 2 : la spec Journal les
+   remplace par les toasts partagés. Corrigées ici tant qu'elles peignent. */
+.jrnl-toast{font-size:var(--text-sm);color:var(--color-text-success);background:var(--color-background-success);border:0;border-radius:var(--border-radius-md);padding:var(--space-8) var(--space-12);margin-bottom:var(--space-8);animation:jrnl-toast-fade 2.8s ease forwards}
+.jrnl-toast--warn{color:var(--color-text-warning);background:var(--color-background-warning)}
+.jrnl-banner{font-size:var(--text-sm);border-radius:var(--border-radius-md);padding:var(--space-8) var(--space-12);margin-bottom:var(--space-8);border:0}
+.jrnl-banner--ok{color:var(--color-text-success);background:var(--color-background-success)}
+.jrnl-banner--warn{color:var(--color-text-warning);background:var(--color-background-warning)}
 .jrnl-row--loading{opacity:.6;transition:opacity var(--duration-base)}
 .jrnl-row--reverted{opacity:.4;transition:opacity var(--duration-base)}
 .jrnl-row--reverted .jrnl-name{text-decoration:line-through}
@@ -1752,7 +1861,10 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
    secondaire de correction, pas le focus de l'écran (retour utilisateur 2026-07-05). */
 .sift-id-btn-neutral{background:var(--color-surface-raised);border-color:var(--color-border-tertiary);
   color:var(--color-text-secondary);font-weight:500}
-.sift-id-btn-neutral:hover{background:var(--color-row-active)}
+/* Survol unifié sur la famille (2026-08-19) : `--color-row-active` est le gris d'une LIGNE
+   sélectionnée, emprunté ici pour un survol de bouton. Même fond que le repos, assombri, comme
+   `.sift-id-btn` juste au-dessus — les deux variantes du même bouton réagissent enfin pareil. */
+.sift-id-btn-neutral:hover{background:var(--color-surface-raised);filter:brightness(0.95)}
 /* width:100% → calc(...)+margin (annotation: "reduis .sift-sg.sift-spectro-canvas pour qu'il fit
    la largeur des .sift-row") — .sift-spectro-declared/.sift-spectro-rows both have their own 18px
    horizontal padding, but this canvas bled edge-to-edge of their shared container
@@ -1799,7 +1911,12 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-analysis-fail{margin-bottom:12px;font-size:var(--text-sm);color:var(--color-text-warning)}
 .sift-player-error{margin:var(--space-8) 0 0;font-size:var(--text-sm);color:var(--color-text-warning)}
 .sift-report-overlay{position:fixed;inset:0;z-index:var(--z-modal);background:var(--overlay-scrim);display:flex;align-items:center;justify-content:center;padding:24px}
-.sift-report-overlay-card{background:var(--color-background-primary);color:var(--color-text-primary);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-lg);box-shadow:var(--shadow-overlay)}
+/* Kit § 06-Windows / 01-Sheets et 02-Alerts : une feuille ou une alerte n'a PAS de bordure — son
+   ombre porte seule le décollement, exactement comme les notifications (§ 03). La bordure de
+   0,5px doublait donc un signal déjà porté par `--shadow-overlay`, sur la surface la plus haute
+   de l'app. Retirée le 2026-08-19. Portée réelle à ne pas sous-estimer : les trois modales de
+   l'app héritent cette classe — confirmation (confirm-modal.ts), formatage USB, rapport. */
+.sift-report-overlay-card{background:var(--color-background-primary);color:var(--color-text-primary);border:0;border-radius:var(--border-radius-lg);box-shadow:var(--shadow-overlay)}
 .sift-report-overlay-card-blur{background:color-mix(in srgb,var(--color-background-primary) 75%,transparent)!important;backdrop-filter:blur(18px) saturate(160%);-webkit-backdrop-filter:blur(18px) saturate(160%)}
 .sift-report-overlay-loading{padding:var(--space-24) var(--space-24);font-size:var(--text-base);display:flex;align-items:center;gap:8px}
 .sift-report-overlay-error{padding:var(--space-24) var(--space-24);font-size:var(--text-base);color:var(--color-text-danger)}
@@ -1811,7 +1928,16 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-usbfmt-typerow{display:flex;flex-direction:column;gap:4px;font-size:var(--text-sm);color:var(--color-text-secondary)}
 .sift-usbfmt-typerow input{font-size:var(--text-md);padding:var(--space-4) var(--space-8);background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);color:var(--color-text-primary);font-family:var(--font-mono)}
 .sift-usbfmt-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:4px}
-.sift-usbfmt-confirm-btn{padding:var(--space-8) var(--space-16);border-radius:var(--border-radius-md);border:none;background:var(--color-background-danger);color:var(--color-text-danger);cursor:pointer;font-family:inherit}
+/* DESTRUCTIF = un bouton NORMAL à encre rouge (2026-08-19). HIG : le rôle `destructive` de SwiftUI
+   ne peint pas un aplat rouge, il teinte le libellé ; le kit n'a pas non plus de bouton rouge plein.
+   Ce bouton portait un fond `--color-background-danger` pâle, ce qui le faisait lire comme un
+   PANNEAU d'avertissement de plus dans une modale qui en contient déjà un — pas comme la commande
+   qui déclenche l'effacement. Il prend donc la grammaire secondaire du reset `button{}` (aplat
+   `--color-surface-raised`, aucune bordure, survol assombri) et garde le danger dans son encre :
+   c'est mot pour mot ce que fait `.sift-secondary-trash` sur le rail de Revue, l'autre destructif
+   de l'app. Le garde-fou réel de cette action n'a jamais été sa couleur — c'est la saisie du nom
+   du volume plus l'armement horodaté de la modale. */
+.sift-usbfmt-confirm-btn{padding:var(--space-8) var(--space-16);border-radius:var(--border-radius-md);border:none;color:var(--color-text-danger);cursor:pointer;font-family:inherit}
 .sift-usbfmt-confirm-btn:disabled{opacity:.4;cursor:not-allowed}
 /* shadcn Alert Dialog "sm" size (ui.shadcn.com/docs/components/base/alert-dialog) — narrower
    than the default alert-dialog width, footer buttons equal-width side by side instead of
@@ -1824,16 +1950,24 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
    Était un fond pâle avec du texte teinté, ce qui donnait deux boutons de même poids visuel dans
    une modale où l'un des deux est destructif. */
 .sift-confirm-btn{padding:var(--space-8) var(--space-16);border-radius:var(--border-radius-md);border:none;background:var(--color-accent-fill);color:var(--color-accent-ink);cursor:pointer;font-family:inherit;font-weight:500}
-.sift-confirm-btn:hover{background:var(--color-accent-fill)}
+/* ⚠️ BUG RÉEL CORRIGÉ le 2026-08-19, pas un ajustement : `:hover` était déclaré DEUX fois pour ce
+   sélecteur — accent d'abord, puis `--color-background-info` (le fond pâle d'avant) quelques lignes
+   plus bas. Spécificité égale, donc l'ordre source tranchait : la seconde gagnait, et le primaire
+   accent SE REPEIGNAIT EN PÂLE au survol, annulant le passage à l'aplat du sweep précédent au
+   moment précis où l'utilisateur vise le bouton. Une seule règle désormais, et c'est la forme du
+   kit : même fond, assombri. */
+.sift-confirm-btn:hover{background:var(--color-accent-fill);filter:brightness(0.95)}
 .sift-confirm-btn:disabled{opacity:.5;cursor:default}
-.sift-confirm-btn:hover{background:var(--color-background-info);filter:brightness(0.95)}
 /* The destructive button is genuinely `disabled` for its first 250ms (confirm-modal.ts), because
    `pointer-events:none` does NOT stop HTMLElement.click() — the synthetic click is the exact
    failure mode this whole module exists to answer. A guard that silently swallows clicks is worse
    than none: it has to be visible, hence this state. `:hover` is re-asserted because the rule
    above would otherwise brighten a button that is refusing input. */
+/* Le fond réaffirmé ici suivait l'ancien pâle (`--color-background-info`) : un bouton désactivé
+   changeait donc quand même de couleur au survol — le contraire de ce que cette règle existe pour
+   garantir. Il reprend le fond du REPOS (l'aplat d'accent) ; seul `filter:none` reste son geste. */
 .sift-confirm-btn:disabled{opacity:.4;cursor:not-allowed}
-.sift-confirm-btn:disabled:hover{background:var(--color-background-info);filter:none}
+.sift-confirm-btn:disabled:hover{background:var(--color-accent-fill);filter:none}
 .sift-usbfmt-error{font-size:var(--text-sm);color:var(--color-text-danger)}
 .sift-usb-list{display:flex;flex-direction:column;gap:var(--space-8);margin:var(--space-12) 0}
 .sift-usb-row{display:flex;align-items:center;justify-content:space-between;gap:var(--space-12);padding:var(--space-8) var(--space-8);background:var(--color-background-primary);border-radius:var(--border-radius-md)}
@@ -1896,7 +2030,12 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 /* :not([hidden]) — an author display rule always beats the UA [hidden]{display:none} regardless of
    specificity (same pitfall already documented for .sift-player-cover); this button starts hidden
    on an unidentified track and gets unhidden in JS on a fresh identify. */
-.sift-applytags-btn:not([hidden]){display:inline-flex;align-items:center;justify-content:center;gap:var(--space-8);padding:var(--space-4) var(--space-12);font-size:var(--text-sm);color:var(--color-text-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);background:var(--color-background-secondary)}
+/* 2026-08-19 : fond et bordure retirés, la boîte revient au secondaire du reset `button{}`
+   (`--color-surface-raised`, aucune bordure). La note ci-dessus explique pourquoi la bordure valait
+   `-tertiary` : c'était pour ÉGALER les champs voisins `.sift-editor-input`. Cet accord n'est plus
+   la question — le kit ne borde aucun bouton, et un bouton n'a pas à se déguiser en champ de
+   saisie. `:not([hidden])` reste OBLIGATOIRE : la règle pose `display`, qui bat l'attribut. */
+.sift-applytags-btn:not([hidden]){display:inline-flex;align-items:center;justify-content:center;gap:var(--space-8);padding:var(--space-4) var(--space-12);font-size:var(--text-sm);color:var(--color-text-primary);border:0;border-radius:var(--border-radius-md)}
 .sift-applytags-btn i{flex:none}
 /* Own :disabled overrides the generic button:disabled{opacity:.4} (annotation: "sa couleur quand
    il est grisé semble off") — a blanket opacity fade pushes this button's background toward the
@@ -1917,7 +2056,13 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 }
 .sift-rebuy{margin-bottom:var(--space-12)}
 .sift-rebuy:empty{margin-bottom:0}
-.sift-rebuy-btn{width:100%;font-size:var(--text-sm);font-weight:500;color:var(--color-text-warning);background:var(--color-background-warning);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md)}
+/* Le fond ambre RESTE : ce bouton ne propose pas une action neutre, il porte un état — « ce fichier
+   mérite d'être racheté ». C'est la bordure qui part (2026-08-19, kit § 01-Push Buttons : aucun
+   bouton bordé), et elle était en plus `-tertiary`, un gris neutre posé autour d'un aplat ambre.
+   Le survol doit RÉAFFIRMER ce fond (règle CLAUDE.md) : sans cette ligne, le générique
+   `button:hover` repeignait le bouton en gris surélevé et l'ambre disparaissait sous la souris. */
+.sift-rebuy-btn{width:100%;font-size:var(--text-sm);font-weight:500;color:var(--color-text-warning);background:var(--color-background-warning);border:0;border-radius:var(--border-radius-md)}
+.sift-rebuy-btn:hover{background:var(--color-background-warning);filter:brightness(0.95)}
 .sift-kbd-hint-id{font-size:var(--text-xs);border-color:var(--color-border-tertiary);color:var(--color-text-tertiary)}
 .sift-identified-line{display:flex;align-items:center;gap:var(--space-8);padding:var(--space-4) var(--space-4)}
 .sift-identified-cover{width:28px;height:28px;border-radius:3px;object-fit:cover;flex:none}
@@ -1949,7 +2094,12 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
   .sift-fade-in.sift-fade-from{opacity:0}
   .sift-fade-out{opacity:0;pointer-events:none;transition:opacity var(--duration-fast) var(--ease-out)}
 }
-.sift-update-banner{position:fixed;left:50%;top:var(--toolbar-h);transform:translateX(-50%);z-index:var(--z-toast);display:flex;flex-wrap:wrap;align-items:center;gap:12px;max-width:calc(100vw - var(--space-16) - var(--space-8));background:var(--color-background-secondary);border:0.5px solid var(--color-border-secondary);border-radius:0 0 var(--border-radius-md) var(--border-radius-md);padding:var(--space-8) var(--space-16);font-size:var(--text-md);color:var(--color-text-primary);box-shadow:var(--shadow-toast)}
+/* Bordure retirée le 2026-08-19 — kit § 03-Notifications : une surface flottante à ombre ne se
+   borde pas, l'ombre EST son décollement (même geste que `.sift-toast` au sweep précédent).
+   Ce qui n'est PAS du kit et reste délibérément : le rayon `0 0 md md` et l'ancrage sous la barre.
+   Ce bandeau ne flotte pas librement, il PEND de la barre unifiée — c'est un choix d'ancrage propre
+   à Sift, pas une imitation du centre de notifications macOS. */
+.sift-update-banner{position:fixed;left:50%;top:var(--toolbar-h);transform:translateX(-50%);z-index:var(--z-toast);display:flex;flex-wrap:wrap;align-items:center;gap:12px;max-width:calc(100vw - var(--space-16) - var(--space-8));background:var(--color-background-secondary);border:0;border-radius:0 0 var(--border-radius-md) var(--border-radius-md);padding:var(--space-8) var(--space-16);font-size:var(--text-md);color:var(--color-text-primary);box-shadow:var(--shadow-toast)}
 /* Resume des notes de version, dans le meme span que l'annonce : secondaire, car ce qu'on
    demande a l'utilisateur est de decider, pas de lire. La troncature se fait en TS
    (NOTES_MAX_CHARS) et non par ellipsis CSS — la banniere est en flex-wrap, donc une largeur
@@ -1993,7 +2143,15 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-filed-banner-name{color:var(--color-text-secondary);font-family:var(--font-mono);font-size:var(--text-xs);word-break:break-all;line-height:1.5;margin-bottom:var(--space-4)}
 /* tertiary → secondary : voir le commentaire de famille sur .sift-filed-banner-bin ci-dessus. */
 .sift-filed-banner-path{color:var(--color-text-secondary);font-family:var(--font-mono);font-size:var(--text-xs);word-break:break-all;line-height:1.4;margin-bottom:var(--space-8)}
-.sift-filed-banner-revert{display:inline-flex;align-items:center;gap:var(--space-4);font-size:var(--text-sm);padding:var(--space-4) var(--space-12);background:var(--color-background-secondary);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);color:var(--color-text-secondary);cursor:pointer}
+/* Secondaire nu (2026-08-19) : ni fond propre ni cadre, il tombe sur le reset `button{}` — la
+   raison est l'unification, pas le contraste. Mesuré, l'écart de clarté contre l'aplat vert du
+   bandeau (`--color-background-success`) CHANGE DE SENS selon le thème : en sombre, le
+   `--color-background-secondary` qu'il posait s'en détachait davantage (34,92 % contre 44,00 %,
+   9,1 points) que le `--color-surface-raised` qu'il prend maintenant (40,24 %, 3,8 points) ; en
+   clair c'est l'inverse (100 % contre 93,42 %, 6,6 points, contre 3,2 pour secondary). Aucun des
+   deux n'est « le bon » sur les deux thèmes — d'où le choix de la cohérence : un bouton secondaire
+   a partout le même fond, et ce bandeau cesse d'être le seul à en porter un autre, bordé. */
+.sift-filed-banner-revert{display:inline-flex;align-items:center;gap:var(--space-4);font-size:var(--text-sm);padding:var(--space-4) var(--space-12);border-radius:var(--border-radius-md);color:var(--color-text-secondary);cursor:pointer}
 .sift-filed-banner-revert i{font-size:var(--text-md);vertical-align:-2px}
 .sift-dup-banner{display:flex;align-items:flex-start;gap:8px;border-radius:var(--border-radius-md);padding:var(--space-8) var(--space-12);margin-bottom:var(--space-12);font-size:var(--text-sm)}
 .sift-dup-banner i{font-size:var(--text-lg);flex:none}
@@ -2044,11 +2202,15 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
    above #filfoot instead of at the top of the detail pane. */
 .sift-fil-dup{flex:none}
 /* Identification — flux non identifié en lecture seule (Sift.dc.html:357-362) : note + bouton
-   bordé "Rechercher sur Discogs", sans passer par le mode édition. */
+   "Rechercher sur Discogs", sans passer par le mode édition. */
+/* Le mot « bordé » a quitté la note ci-dessus avec la bordure elle-même, le 2026-08-19 : le kit
+   n'a aucun bouton bordé, et celui-ci était déjà sur le bon fond (`--color-surface-raised`), donc
+   il ne lui restait qu'un cadre à perdre. Fond et survol viennent maintenant du reset `button{}` :
+   sa règle `:hover{filter:brightness(0.95)}` propre est devenue le comportement générique du
+   fichier, elle n'a plus à être écrite ici. */
 .sift-ident-idle{display:flex;align-items:center;justify-content:space-between;gap:var(--space-16);margin-bottom:var(--space-8)}
 .sift-ident-idle-note{font-size:var(--text-md);color:var(--color-text-tertiary)}
-.sift-ident-search-btn{flex:none;font-size:var(--text-md);font-weight:500;color:var(--color-text-primary);cursor:pointer;padding:var(--space-8) var(--space-12);border-radius:var(--border-radius-md);border:0.5px solid var(--color-border-secondary);background:var(--color-surface-raised);font-family:inherit}
-.sift-ident-search-btn:hover{filter:brightness(0.95)}
+.sift-ident-search-btn{flex:none;font-size:var(--text-md);font-weight:500;color:var(--color-text-primary);cursor:pointer;padding:var(--space-8) var(--space-12);border-radius:var(--border-radius-md);border:0;font-family:inherit}
 .sift-icon-inline-base{font-size:var(--text-base);vertical-align:-2px}
 .sift-icon-inline-lg{font-size:var(--text-lg)}
 .sift-icon-inline-sm{font-size:var(--text-sm);vertical-align:-1px}
@@ -2258,12 +2420,19 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
    première ligne de données. */
 .sift-bib-noresult{padding:var(--space-32) var(--space-16);text-align:center;font-size:var(--text-md);color:var(--color-text-tertiary)}
 .sift-bib-noresult button{font:inherit;color:var(--color-text-info);background:none;border:0;padding:0;cursor:pointer;text-decoration:underline}
-/* Même matériau que le popover de destination — un seul type de surface flottante dans l'app. */
+/* ⚠️ Cette phrase était FAUSSE quand elle a été écrite, et c'est le finding : ce popover était le
+   SEUL translucide de l'app (`color-mix(… 70%, transparent)` + `backdrop-filter: blur+saturate`)
+   pendant que `.sift-dest-popover` et `.sift-ctx-menu`, ses deux jumeaux, sont des aplats
+   `--color-surface-raised`. Corrigé le 2026-08-19, dans le sens des deux autres : patterns-macos.md
+   § 5 préfère l'aplat à la fausse translucidité — un blur de 16px sur un fond d'app QUE NOUS
+   PEIGNONS ne révèle rien du système : il floute notre propre gris, pour un effet que le thème
+   rend de toute façon presque plat. L'ombre rejoint le lot : sans elle, un aplat opaque se lit comme un
+   panneau posé DANS la page, pas au-dessus. Un seul matériau de surface flottante, pour de bon. */
 /* `:not([hidden])` OBLIGATOIRE — règle du dépôt (CLAUDE.md § Front) : toute règle auteur qui
    pose `display` bat l'attribut `hidden`. Reproduit ici le 2026-08-19 : le menu mesurait
    `hidden: true` ET `display: flex`, donc restait peint en bas de la fenêtre, sans style inline
    (le rebuild l'avait effacé) — un `position:fixed` sans `top` retombe à sa place de flux. */
-.sift-facet-pop:not([hidden]){position:fixed;width:max-content;min-width:180px;max-width:320px;max-height:340px;display:flex;flex-direction:column;padding:var(--space-12);background:color-mix(in srgb,var(--color-background-secondary) 70%,transparent);backdrop-filter:blur(16px) saturate(160%);-webkit-backdrop-filter:blur(16px) saturate(160%);border:1px solid var(--color-border-secondary);border-radius:var(--border-radius-lg);overflow-y:auto;z-index:var(--z-popover)}
+.sift-facet-pop:not([hidden]){position:fixed;width:max-content;min-width:180px;max-width:320px;max-height:340px;display:flex;flex-direction:column;padding:var(--space-12);background:var(--color-surface-raised);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-lg);box-shadow:var(--shadow-toast);overflow-y:auto;z-index:var(--z-popover)}
 /* Items de menu, calqués sur `.sift-ctx-item` — une seule grammaire de menu dans l'app. La COCHE
    marque l'item actif, comme dans un menu macOS ; un fond plein serait la grammaire d'une LISTE,
    et ce panneau n'en est plus une depuis qu'il est un pop-up button (HIG « Pop-up buttons »). */
@@ -2285,8 +2454,12 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-empty-title{font-size:var(--text-xl);font-weight:600;color:var(--color-text-primary)}
 .sift-empty-note{font-size:var(--text-md);color:var(--color-text-tertiary);line-height:1.5}
 /* Action secondaire d'état vide : même grammaire desktop calme que les autres CTA de support. */
-.sift-empty-link{margin-top:var(--space-4);display:inline-flex;align-items:center;gap:8px;font-size:var(--text-sm);font-weight:500;color:var(--color-text-secondary);background:var(--color-surface-raised);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:var(--space-8) var(--space-12);cursor:pointer;font-family:inherit}
-.sift-empty-link:hover{color:var(--color-text-primary);background:var(--color-row-active)}
+/* « Même grammaire que les autres » est désormais littéral (2026-08-19) : plus de bordure ni de
+   fond propres, le reset `button{}` les donne. Le survol passait à `--color-row-active`, le gris
+   d'une LIGNE sélectionnée — un troisième gris pour un simple survol de bouton. Il ne garde que son
+   passage d'encre ; le fond, lui, s'assombrit comme partout ailleurs. */
+.sift-empty-link{margin-top:var(--space-4);display:inline-flex;align-items:center;gap:8px;font-size:var(--text-sm);font-weight:500;color:var(--color-text-secondary);border:0;border-radius:var(--border-radius-md);padding:var(--space-8) var(--space-12);cursor:pointer;font-family:inherit}
+.sift-empty-link:hover{color:var(--color-text-primary)}
 .sift-empty-link i{font-size:var(--text-md);color:var(--color-text-tertiary)}
 /* Compact inline hint (2026-07-08) — deliberately NOT .sift-empty-state: that component is scaled
    for a whole dead-end screen, this is a single line inside a list whose header/actions stay
@@ -2363,14 +2536,18 @@ details[open]>.jrnl-cat-hd .jrnl-cat-chev{transform:rotate(90deg)}
 .sift-usage-pair dd.warn{color:var(--color-text-warning)}
 
 .sift-usage-actions{display:flex;align-items:center;gap:var(--space-8);flex-wrap:wrap}
-.sift-usage-disclose{display:inline-flex;align-items:center;gap:var(--space-8);font-family:inherit;font-size:var(--text-md);padding:var(--space-8) var(--space-12);background:var(--color-background-tertiary);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);color:var(--color-text-primary);cursor:pointer}
-.sift-usage-disclose:hover{background:var(--color-background-tertiary);border-color:var(--color-text-tertiary)}
+/* Les deux contrôles de la carte d'occupation (ce disclosure et `.sift-usage-btn` plus bas) sont
+   passés au secondaire du reset `button{}` le 2026-08-19 : ils posaient un fond
+   `--color-background-tertiary` — la couleur du CHROME (rail, colonne file), pas celle d'un bouton —
+   plus une bordure, et leur survol ne changeait que la couleur de ce cadre. Rien de tout ça n'est
+   écrit ici désormais : aplat gris surélevé, pas de bordure, survol assombri, comme tout bouton.
+   Le CHEVRON reste (c'est un disclosure) : seule la boîte change. */
+.sift-usage-disclose{display:inline-flex;align-items:center;gap:var(--space-8);font-family:inherit;font-size:var(--text-md);padding:var(--space-8) var(--space-12);border:0;border-radius:var(--border-radius-md);color:var(--color-text-primary);cursor:pointer}
 .sift-usage-disclose:focus-visible{outline:2px solid var(--color-text-primary);outline-offset:2px}
 .sift-usage-chev{display:inline-block;transition:transform var(--duration-slow) ease;font-size:var(--text-xs);opacity:.7}
 .sift-usage-disclose[aria-expanded="true"] .sift-usage-chev{transform:rotate(90deg)}
 .sift-usage-cache-note{font-size:var(--text-sm);color:var(--color-text-tertiary)}
-.sift-usage-btn{font-family:inherit;font-size:var(--text-md);padding:var(--space-8) var(--space-12);background:var(--color-background-tertiary);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);color:var(--color-text-primary);cursor:pointer}
-.sift-usage-btn:hover:not(:disabled){background:var(--color-background-tertiary);border-color:var(--color-text-tertiary)}
+.sift-usage-btn{font-family:inherit;font-size:var(--text-md);padding:var(--space-8) var(--space-12);border:0;border-radius:var(--border-radius-md);color:var(--color-text-primary);cursor:pointer}
 .sift-usage-btn:disabled{opacity:.5;cursor:default}
 .sift-usage-btn:focus-visible{outline:2px solid var(--color-text-primary);outline-offset:2px}
 .sift-usage-actions .sift-usage-btn:first-of-type{margin-left:auto}
