@@ -1091,13 +1091,14 @@ l'inventaire des survivants de `6d1cc85` ne l'a pas comptée — toutes les past
 les cinq classes de teinte inatteignables hors IPC manuel, contre § 4 (« couleur de dossier
 source ») et § 15 (« leur pastille de couleur »). Restaurée dans `frontend/source-color.ts` (module
 pur, testé env Node : cycle gelé, position par id croissant, miroir CSS épinglé). L'override manuel
-a retrouvé son UI le même jour (`67cdffb`) : rangée de pastilles dans le menu contextuel des
+a **retrouvé son UI le 2026-08-20** (`67cdffb`) : rangée de pastilles dans le menu contextuel des
 sources — patron Finder Tags, wireframe validé (variante A, 5 teintes ; sous-menu, sélecteur libre
 et rangée de 9 écartés, motifs et citations dans `rail.md` § Interactions) — plus « Couleur
-automatique » (`set_source_color(id, null)`, désactivée sans override, jamais retirée). Vérifié
-dans la vraie fenêtre par CDP : cycle pose/retrait contre la base réelle, anneau sur la teinte
-résolue, `:hover` moteur (bordure secondaire ; fond et `filter` du `button:hover` générique battus,
-mesuré transparent/none), et les **deux thèmes** aux tokens exacts.
+automatique » (`set_source_color(id, null)`, désactivée sans override, jamais retirée). Catalogue
+et story : section « Menu contextuel » de `design-system-states.md`, `context-menu.stories.ts`.
+Vérifié dans la vraie fenêtre par CDP : cycle pose/retrait contre la base réelle, anneau sur la
+teinte résolue, `:hover` moteur (bordure secondaire ; fond et `filter` du `button:hover` générique
+battus, mesuré transparent/none), et les **deux thèmes** aux tokens exacts.
 Gap antérieur relevé au passage : les états de la pastille de source (teinte / `--error`) n'ont ni
 entrée dans `design-system-states.md` ni story — même famille que l'item 4 du « Reste » ci-dessus.
 **Clos le 2026-08-20** : entrée « Ligne de source du rail » au catalogue + `rail-sources.stories.ts`
