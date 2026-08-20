@@ -521,20 +521,26 @@ Sans lui, la migration des 37 sites est impossible sans écraser une intention.
 
 Quatre points que ce socle ne tranche pas seul.
 
-### O‑1 · Outfit ou une famille plus proche de SF
+### O‑1 · Outfit ou une famille plus proche de SF — RÉSOLU le 2026-08-16 (#34)
 
-Le brief de la skill nomme Inter comme candidat standard. **Le dépôt emploie Outfit**,
-et ce n'est pas un défaut : trois graisses ont été chargées et alignées sur la table de
-styles macOS d'Apple, où Medium est une graisse de première classe, et un test
-(`test/font-weights.test.ts`) garde la correspondance. Changer de famille est une
-décision d'identité, pas une correction. **Rien n'a été changé.**
+**Outfit reste.** Décision d'Antoine sur #34, après mesure dans la vraie fenêtre : le
+défaut n'était pas la famille, c'était le bundle — `main.ts` n'importait que trois des
+neuf faces livrées, et le contraste manquant vivait dans la face 700 jamais chargée
+(400→700 = +3,67 % de largeur, plus que le 400→600 de Segoe UI). La table de styles
+macOS d'Apple est adoptée verbatim (#31), avec le saut Regular→Bold d'Apple. La skill
+`sift-macos-ui` § « Décisions d'identité » dit encore « Inter remplace Outfit »
+(2026-08-19) : **écart nommé, le tracker prime** — voir la chronologie sur #34.
+Reste d'exécution, porté par le chantier des rôles (#31) : importer la face 700, et le
+test `test/font-weights.test.ts` suit dans le même geste.
 
-### O‑2 · L'encre reste chaude sur des fonds devenus froids
+### O‑2 · L'encre reste chaude sur des fonds devenus froids — RÉSOLU le 2026-08-19 (#37)
 
-`styles.css` le note explicitement : les tokens de texte sont restés à H≈77,5 quand les
-surfaces sont passées à H≈286, et ils sont 2 à 4 fois plus chromatiques que les fonds.
-Le coût **n'est pas** le contraste — mesuré, l'écart est de 0,02 au plus, et le plus bas
-ratio reste au-dessus de AAA. C'est un choix esthétique en attente, pas un bug.
+**L'encre neutre a rejoint la famille froide des fonds** — variante B de #37, appliquée
+par `5a6eae4` : H 286.3, chroma 0,0067 uniforme sur les huit tokens de texte, clarté
+strictement inchangée (c'est elle qui porte le contraste), dans les trois blocs. Le
+commentaire « question laissée ouverte » de `styles.css` est réécrit en décision datée
+(`styles.css:38`). Les valeurs listées par la skill `sift-macos-ui` (chromas
+différenciés, H 286.2) décrivent une variante antérieure : le code et #37 font foi.
 
 ### O‑3 · Le plafond de 560 px
 
