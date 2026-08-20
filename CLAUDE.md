@@ -70,11 +70,16 @@ cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
 cargo fmt --manifest-path src-tauri/Cargo.toml --check
 ```
 
-⚠️ **`src-tauri/fixtures/*` est gitignoré.** Un checkout frais (clone ou worktree) ne
-les a pas, et les tests `analysis::decode` échouent en *file not found* — ce n'est pas
-un vrai bug. Régénérer : `node scripts/make-fixtures.mjs`. Les deux anchors
-authentiques facultatives (`src-tauri/fixtures/README.md`) restent manuelles ; les
-tests de caractérisation les sautent quand elles sont absentes.
+⚠️ **`src-tauri/fixtures/*` et `src-tauri/binaries/` sont gitignorés.** Un checkout
+frais (clone ou worktree) n'a ni l'un ni l'autre, et chaque absence casse autrement :
+sans le sidecar, `cargo check` lui-même sort en 101 (``resource path
+`binaries\ffmpeg-…` doesn't exist``) ; sans fixtures, les tests `analysis::decode`
+échouent en *file not found*. Ni l'un ni l'autre n'est un vrai bug. Bootstrap dans
+l'ordre : `npm run fetch-ffmpeg` PUIS `node scripts/make-fixtures.mjs` (qui plante en
+`ENOENT` si `binaries/` manque) — ou copier binaries + fixtures depuis le checkout
+principal. Vécu le 2026-08-20 sur deux worktrees. Les deux anchors authentiques
+facultatives (`src-tauri/fixtures/README.md`) restent manuelles ; les tests de
+caractérisation les sautent quand elles sont absentes.
 
 ⚠️ **Ne pas lancer `cargo test`/`clippy` pendant qu'un `tauri dev` compile** : ils se
 disputent le lock du `target/` (attente, ou corruption du cache incrémental).
@@ -193,7 +198,9 @@ de la chaîne brute — pas de table code→message, délibérément) · `dom.ts
 `empty-state.ts` · `library-views.ts` · `identify-shared.ts` · `genre-families.ts` ·
 `popover-position.ts` (géométrie d'ancrage d'un popover `position:fixed`, **sans DOM** —
 séparée de `filing-bins.ts` pour être testable en env Node, qui ne peut pas charger un
-module important `./ipc`) · `styles.css`.
+module important `./ipc`) · `source-color.ts` (teinte d'identité des sources du rail :
+override manuel sinon cycle par ordre d'ajout — même motif sans-DOM/testable env Node,
+importée par `rail-sources.ts`) · `styles.css`.
 
 `dev-inspector.ts` + `dev-annotate.ts` forment l'outil d'annotation **Alt+Clic**
 (dev-only) : cadre de sélection, localisation du source via `locate_source`, note libre
@@ -279,6 +286,11 @@ Garde-fous issus d'incidents réels :
   padding 126, 84, 85 ou 127 ; la couverture du chemin de reste n'aurait tenu aucune des
   valeurs que son propre commentaire interdit. La tenir a demandé des entrées hors image
   de l'encodeur (`test/b85.test.ts`, `RUST_PADDING_PROBES`).
+- **Texte français écrit dans un fichier : accents vérifiés avant commit.** Un strip
+  silencieux a désaccentué ~20 commits (2026-07-28 → 08-19) — commentaires, titres de
+  commits et d'issues. `styles.css` purgé en entier (a2dd5d6) ; périmètre restant et
+  méthode : issue #43. En corrigeant, ne toucher ni l'anglais ni les citations verbatim
+  (annotations d'Antoine) — l'excès inverse est documenté (learning-log, 2026-08-19).
 - **Debug UI** : après deux correctifs visuels infructueux, mesurer la vraie fenêtre
   `tauri dev` (CDP, ci-dessous) avant un troisième essai.
 - **Pas d'affirmation d'implémentation invérifiable.** Toute phrase de rapport qui dit
@@ -411,7 +423,8 @@ la commande dev** expose un endpoint CDP standard sur la vraie fenêtre WebView2
   coordonnées du nœud), `Input.dispatchKeyEvent` (Tab réel) puis `focus()`. `driver.mjs hover|focus`
   encapsule la recette ; détail : mémoire `cdp-real-pseudo-states-for-verification`.
 - **Un override de token injecté doit s'écrire `:root:root:root`.** Le bloc sombre du dépôt
-  est `:root:not([data-theme="light"])` (`styles.css:267`), de spécificité (0,2,0) : une
+  est `:root:not([data-theme="light"])` (`styles.css:339` au 2026-08-20 — le numéro dérive,
+  le retrouver par `grep -n ':root:not'`), de spécificité (0,2,0) : une
   feuille injectée en `:root` perd, quelle que soit sa position. Constaté le 2026-08-19 —
   quatre variantes d'encre capturées **octet pour octet identiques**, ce qui se lit comme
   « re-teinter ne change rien ». Relire la valeur calculée après injection ET après retrait,

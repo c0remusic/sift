@@ -7,7 +7,6 @@ import {
   onScanFailed,
   onAnalysisChanged,
   analysisProgress,
-  setSourceColor,
   trashTrack,
   restoreTrack,
   requeueTrack,
@@ -560,11 +559,7 @@ export function installLiveWiring() {
     const el = (e.target as HTMLElement).closest<HTMLElement>("[data-sift]");
     if (!el) return;
     const act = el.dataset.sift;
-    if (act === "setsrccolor") {
-      e.stopPropagation();
-      const hue = el.dataset.hue ?? null;
-      void setSourceColor(Number(el.dataset.id), hue).then(refresh);
-    } else if (act === "reviewmode") {
+    if (act === "reviewmode") {
       e.stopPropagation();
       setReviewMode(el.dataset.m === "batch" ? "batch" : "detail");
     } else if (handleBatchAction(el, act ?? "", e)) {
