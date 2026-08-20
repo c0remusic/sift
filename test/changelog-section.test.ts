@@ -46,7 +46,7 @@ describe("notes de release", () => {
 
   it("donne les deux messages de Gatekeeper, dont celui qui n'offre aucun bouton", () => {
     const sortie = notes(premiereVersion());
-    expect(sortie).toContain("developpeur non identifie");
+    expect(sortie).toContain("développeur non identifié");
     expect(sortie).toContain("is damaged");
     // Le `-r` est la partie qui compte : un `.app` est un dossier, `xattr -d` seul ne suffit pas.
     expect(sortie).toContain("xattr -dr com.apple.quarantine");
