@@ -1095,3 +1095,7 @@ reste sans UI depuis la mort du picker d'Accueil — le menu contextuel des sour
 emplacement naturel si on le veut de retour (chantier ouvert le 2026-08-20, session dédiée).
 Gap antérieur relevé au passage : les états de la pastille de source (teinte / `--error`) n'ont ni
 entrée dans `design-system-states.md` ni story — même famille que l'item 4 du « Reste » ci-dessus.
+**Clos le 2026-08-20** : entrée « Ligne de source du rail » au catalogue + `rail-sources.stories.ts`
+(teintes · `--error` · suspendue), livrés avec l'état « Surveillance suspendue » de `rail.md`
+§ États — pastille vidée en contour, teinte conservée, markup extrait en module pur
+`rail-source-entry.ts` (précédence échec > suspension gelée par `test/rail-source-entry.test.ts`).

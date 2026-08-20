@@ -11,8 +11,8 @@
 import { listSources, setSourceWatched, rescanSource, removeSource, addSource, setSourceColor } from "./ipc";
 import { open } from "@tauri-apps/plugin-dialog";
 import type { Source } from "../shared/contracts";
-import { esc } from "./dom";
 import { resolveSourceColorKey, SOURCE_HUE_CYCLE } from "./source-color";
+import { baseName, sourceEntryHtml } from "./rail-source-entry";
 import { setQueueSourceFilter, activeQueueSource, renderQueue } from "./queue-panel";
 import { goTo } from "./router";
 import { openContextMenu } from "./context-menu";
@@ -53,33 +53,6 @@ export async function pickAndAddFolder(onChange: () => void | Promise<void>): Pr
   }
 }
 
-function baseName(p: string): string {
-  return p.split(/[\\/]/).filter(Boolean).pop() || p;
-}
-
-/** Une entrée de source. Même grammaire que les autres entrées du rail (`.nv`) : la section
- *  Sources n'est pas un composant à part, c'est le rail avec un contenu de plus. La pastille de
- *  couleur est un accent CATÉGORIEL — elle identifie la source ailleurs dans l'app, elle ne porte
- *  aucun état (DESIGN.md § 4). Teinte : override manuel sinon cycle par ordre d'ajout
- *  (`source-color.ts`) — jamais neutre : un gris uniforme n'identifierait rien. */
-function sourceEntryHtml(s: Source, active: boolean): string {
-  const hue = ` sift-rail-src-dot-${esc(resolveSourceColorKey(sources, s))}`;
-  const count = s.pending_count > 0 ? `<span class="nav-badge">${s.pending_count}</span>` : "";
-  const failure = scanFailures.get(s.id);
-  const broken = !s.accessible || failure != null;
-  const warn = broken ? ` sift-rail-src--error` : "";
-  const title = !s.accessible
-    ? `${s.path} — dossier inaccessible`
-    : failure
-      ? `${s.path} — scan en échec : ${failure}`
-      : s.path;
-  return (
-    `<div class="nv sift-rail-src${active ? " on" : ""}${warn}" data-src="${s.id}" tabindex="0" role="button" title="${esc(title)}">` +
-    `<span class="sift-rail-src-dot${hue}" aria-hidden="true"></span>` +
-    `<span>${esc(baseName(s.path))}</span>${count}</div>`
-  );
-}
-
 /** (Re)peint la section. `innerHTML` sur la section entière et non par ligne : le rail se repeint
  *  au plus une fois par ajout, rescan ou changement de file — jamais en rafale, contrairement à la
  *  progression d'analyse. La règle « créer une fois, muter ensuite » vise les handlers en boucle,
@@ -102,7 +75,7 @@ export async function renderRailSources(): Promise<void> {
   host.innerHTML =
     `<div class="nv-grp">Sources</div>` +
     (sources.length
-      ? sources.map((s) => sourceEntryHtml(s, s.id === active)).join("")
+      ? sources.map((s) => sourceEntryHtml(s, sources, s.id === active, scanFailures.get(s.id))).join("")
       : `<div class="sift-rail-src-msg">Aucun dossier surveillé</div>`) +
     `<button class="nv sift-rail-src-add" data-src-add="1" type="button">` +
     `<i class="ti ti-plus" aria-hidden="true"></i><span>Ajouter un dossier</span></button>`;

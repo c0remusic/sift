@@ -668,16 +668,29 @@ body:has(#sift-titlebar){border-radius:var(--border-radius-sm);overflow:hidden}
    même état actif, même survol : la section n'est pas un composant à part. Seule la pastille de
    couleur s'ajoute, et c'est un accent CATÉGORIEL, pas un état. */
 .sift-rail-src-dot{width:8px;height:8px;border-radius:50%;flex:none;background:var(--color-text-tertiary)}
-/* Teinte par `color_key` (rail-sources.ts) — seules survivantes du sélecteur de couleur de l'ancien
-   écran Accueil (fusion 1), renommées d'après leur porteur réel. Elles ne déclarent QUE le fond :
-   la géométrie appartient à la pastille. Même spécificité (0,1,0) que la règle de base : seul
-   l'ordre des règles les fait gagner — elles restent APRÈS elle. */
-.sift-rail-src-dot-indigo{background:var(--color-hue-indigo-text)}
-.sift-rail-src-dot-purple{background:var(--color-hue-purple-text)}
-.sift-rail-src-dot-pink{background:var(--color-hue-pink-text)}
-.sift-rail-src-dot-teal{background:var(--color-hue-teal-text)}
-.sift-rail-src-dot-yellow{background:var(--color-hue-yellow-text)}
+/* Teinte par `color_key` (rail-source-entry.ts) — seules survivantes du sélecteur de couleur de
+   l'ancien écran Accueil (fusion 1), renommées d'après leur porteur réel. Chacune déclare la
+   TEINTE (`--src-hue`) et le fond qui s'en dérive, jamais la géométrie : elle appartient à la
+   pastille. Le fond reste déclaré ici — et non dérivé par la seule règle de base — parce que les
+   fills du picker (`.sift-ctx-swatch-fill`, context-menu.ts) portent une classe de teinte SANS la
+   classe de base. Même spécificité (0,1,0) que la règle de base : seul l'ordre des règles les
+   fait gagner — elles restent APRÈS elle. */
+.sift-rail-src-dot-indigo{--src-hue:var(--color-hue-indigo-text);background:var(--src-hue)}
+.sift-rail-src-dot-purple{--src-hue:var(--color-hue-purple-text);background:var(--src-hue)}
+.sift-rail-src-dot-pink{--src-hue:var(--color-hue-pink-text);background:var(--src-hue)}
+.sift-rail-src-dot-teal{--src-hue:var(--color-hue-teal-text);background:var(--src-hue)}
+.sift-rail-src-dot-yellow{--src-hue:var(--color-hue-yellow-text);background:var(--src-hue)}
 .sift-rail-src--error{color:var(--color-text-danger)}
+/* SURVEILLANCE SUSPENDUE (rail.md § États : « ligne en --color-text-tertiary, pastille vidée.
+   État permanent donc neutre »). Aucune règle d'encre, et c'est mesuré, pas oublié : le repos de
+   `.nv` (ci-dessus) est DÉJÀ --color-text-tertiary — la valeur que la spec prescrit. Le signal est
+   la pastille VIDÉE : contour sans fond, TEINTE CONSERVÉE — la pastille identifie la source
+   (DESIGN.md § 4), l'état est porté par la forme pleine/creuse, jamais par la couleur seule.
+   Contour en box-shadow inset (précédent : .sift-usage-swatch-free), pas en border : la géométrie
+   de la pastille ne bouge pas. Épaisseur dérivée du ratio de l'anneau du picker (2px sur 18px,
+   1/9 du diamètre) : 8px → 1px ; 14px replié → 1.5px, règle au bloc replié plus bas. L'échec
+   prime (« jamais atténuée ») : rail-source-entry.ts ne pose --suspended que sans --error. */
+.sift-rail-src--suspended .sift-rail-src-dot{background:transparent;box-shadow:inset 0 0 0 1px var(--src-hue,var(--color-text-tertiary))}
 .sift-rail-src-msg{padding:var(--space-4) var(--space-8);font-size:var(--text-sm);color:var(--color-text-tertiary)}
 /* Le bouton d'ajout prend la grammaire d'une entrée de rail plutôt que celle d'un bouton : il vit
    dans la colonne de navigation, pas dans un panneau, et un bouton plein y crierait plus fort que
@@ -722,6 +735,9 @@ body.sift-rail-collapsed .nav-badge:empty{display:none}
 /* La pastille de source devient son ICÔNE une fois replié — c'est la seule chose qui identifie une
    source, et à 8px elle ne se lit plus une fois seule dans la colonne. */
 body.sift-rail-collapsed .sift-rail-src-dot{width:14px;height:14px}
+/* Le contour de l'état suspendu suit la pastille qui grandit : même ratio 1/9 que la règle
+   déclarée en section Sources (14px → 1.5px). */
+body.sift-rail-collapsed .sift-rail-src--suspended .sift-rail-src-dot{box-shadow:inset 0 0 0 1.5px var(--src-hue,var(--color-text-tertiary))}
 /* Les en-têtes de section tombent à 0 de hauteur une fois repliés, donc les quatre groupes se
    fondaient en une seule colonne d'icônes indifférenciée — le rail perdait justement ce que la
    mise en sections lui avait donné. Un filet le rend sans prendre de place. */

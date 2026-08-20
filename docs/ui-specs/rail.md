@@ -85,7 +85,7 @@ répertoire.
 | **Scan en cours** | Indicateur sur la ligne de la source, compte figé jusqu'à la fin. Le rail reste utilisable |
 | **Scan échoué** | Ligne en encre `danger`, motif au survol et au clic droit. **Jamais atténuée** — un échec se voit mieux que le reste, pas moins bien |
 | **Dossier inaccessible** | Même traitement. La ligne reste : la faire disparaître se lirait comme « supprimée » |
-| **Surveillance suspendue** | Ligne en `--color-text-tertiary`, pastille vidée. État permanent donc neutre |
+| **Surveillance suspendue** | Ligne en `--color-text-tertiary`, pastille vidée. État permanent donc neutre. **« Vidée » tranché le 2026-08-20** : contour sans fond (`box-shadow` inset, 1 px — ratio 1/9 de l'anneau du picker, 1.5 px replié), **teinte conservée** — la pastille identifie (§ Sources), l'état est porté par la forme pleine/creuse. L'encre de repos du rail est déjà tertiaire : aucune règle d'encre dédiée. L'échec prime toujours |
 | **Racine de bibliothèque non définie** | **Pas dans le rail** — le bandeau remonte dans la barre unifiée, où il est visible depuis tous les écrans. C'est ce que la fusion d'Accueil a gagné : la porte ne vit plus sur l'écran qu'on quitte |
 | **Replié** | Icônes seules, comptes en pastille superposée, infobulle au survol portant le libellé et le compte |
 
