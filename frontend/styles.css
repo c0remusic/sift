@@ -2402,6 +2402,20 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .sift-ctx-item--disabled{color:var(--color-text-tertiary);cursor:default}
 .sift-ctx-item--disabled:hover{background:transparent}
 .sift-ctx-item--sep{margin-top:var(--space-4);border-top:0.5px solid var(--color-border-tertiary);padding-top:var(--space-8)}
+/* Rangée de pastilles du menu (couleur de source — patron Finder Tags : les couleurs vivent EN
+   RANGÉE dans le menu contextuel même, guide macOS « Utiliser des tags »). La teinte vit sur le
+   span intérieur via `.sift-rail-src-dot-<teinte>`, dont le contrat est de ne déclarer QUE le
+   fond ; le bouton, lui, garde un fond transparent au repos ET au survol — règle CLAUDE.md : sans
+   cette réaffirmation, `button:hover` (0,1,1) bat la classe (0,1,0) et peint son gris générique
+   sous l'anneau (il pose aussi un filter, remis à none ici). L'anneau `.on` marque la teinte
+   RÉSOLUE (override ou cycle) ; il reste déclaré APRÈS :hover, même spécificité, pour survivre
+   au survol. */
+.sift-ctx-swatchrow{display:flex;align-items:center;gap:var(--space-8);padding:var(--space-4) var(--space-8)}
+.sift-ctx-swatchlabel{flex:1;font-size:var(--text-md);color:var(--color-text-tertiary);white-space:nowrap}
+.sift-ctx-swatch{width:18px;height:18px;padding:0;background:transparent;border:2px solid transparent;border-radius:50%;box-sizing:border-box;flex:none}
+.sift-ctx-swatch:hover{background:transparent;filter:none;border-color:var(--color-border-secondary)}
+.sift-ctx-swatch.on{border-color:var(--color-text-primary)}
+.sift-ctx-swatch-fill{display:block;width:100%;height:100%;border-radius:50%}
 .sift-settings-side{width:var(--pane-w);flex:none;position:sticky;top:0}
 /* Une section masquee est retiree du FLUX (`hidden`), pas seulement invisible : un champ dans une
    section cachee resterait tabulable, et le focus disparaitrait de l'ecran en plein Tab. */

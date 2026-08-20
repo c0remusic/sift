@@ -19,6 +19,22 @@ export interface MenuItem {
   danger?: boolean;
   /** Séparateur au-dessus de cette entrée. */
   separated?: boolean;
+  /** Rangée de pastilles de teinte à la place d'un bouton pleine largeur (patron Finder Tags :
+   *  les couleurs vivent EN RANGÉE dans le menu contextuel même, jamais dans un sous-menu — les
+   *  HIG § Menus réservent le sous-menu au terme répété sur 3+ entrées, et il « cache les
+   *  éléments qu'il contient »). `label` devient l'étiquette de la rangée ; `onPick` et `danger`
+   *  sont ignorés sur cette entrée. */
+  swatches?: SwatchRow;
+}
+
+export interface SwatchRow {
+  /** Teintes dans l'ordre d'affichage. `key` est une clé de `.sift-rail-src-dot-<key>` —
+   *  la classe qui ne déclare QUE le fond (styles.css, section Sources du rail) ; `label`
+   *  est l'infobulle humaine. */
+  hues: readonly { key: string; label: string }[];
+  /** Teinte marquée d'un anneau : la couleur RÉSOLUE (override posé, sinon cycle auto). */
+  active: string;
+  onPick: (key: string) => void;
 }
 
 const MENU_ID = "sift-context-menu";
@@ -47,11 +63,23 @@ export function openContextMenu(x: number, y: number, items: MenuItem[]): void {
   menu.setAttribute("role", "menu");
   menu.innerHTML = items
     .map((it, i) => {
+      const sep = it.separated && i > 0 ? " sift-ctx-item--sep" : "";
+      if (it.swatches) {
+        const dots = it.swatches.hues
+          .map(
+            (h) =>
+              `<button type="button" class="sift-ctx-swatch${h.key === it.swatches!.active ? " on" : ""}"` +
+              ` role="menuitem" data-ctx="${i}" data-hue="${esc(h.key)}" title="${esc(h.label)}">` +
+              `<span class="sift-ctx-swatch-fill sift-rail-src-dot-${esc(h.key)}" aria-hidden="true"></span></button>`,
+          )
+          .join("");
+        return `<div class="sift-ctx-swatchrow${sep}"><span class="sift-ctx-swatchlabel">${esc(it.label)}</span>${dots}</div>`;
+      }
       const cls =
         "sift-ctx-item" +
         (it.danger ? " sift-ctx-item--danger" : "") +
         (it.onPick ? "" : " sift-ctx-item--disabled") +
-        (it.separated && i > 0 ? " sift-ctx-item--sep" : "");
+        sep;
       const dis = it.onPick ? "" : ' aria-disabled="true"';
       return `<button type="button" class="${cls}" role="menuitem" data-ctx="${i}"${dis}>${esc(it.label)}</button>`;
     })
@@ -69,8 +97,10 @@ export function openContextMenu(x: number, y: number, items: MenuItem[]): void {
     if (!btn) return;
     e.stopPropagation();
     const item = items[Number(btn.dataset.ctx)];
+    const hue = btn.dataset.hue;
     closeContextMenu();
-    item?.onPick?.();
+    if (item?.swatches && hue != null) item.swatches.onPick(hue);
+    else item?.onPick?.();
   });
 
   // Fermeture. `capture` sur le clic pour partir AVANT que le clic n'atteigne ce qu'il vise —
