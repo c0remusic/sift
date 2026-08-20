@@ -78,13 +78,13 @@ color-scheme:light;
 --color-border-tertiary:oklch(25.67% 0.0060 286.3 / 0.09);--color-border-secondary:oklch(25.67% 0.0060 286.3 / 0.16);
 --color-border-info:oklch(56.9% 0.1044 246.74 / .35);--color-border-danger:oklch(57.16% 0.1594 30.17 / .42);
 --color-hue-indigo-text:oklch(43.43% 0.1484 283.58);--color-hue-indigo-bg:oklch(83.28% 0.045 278.34);--color-hue-purple-text:oklch(45.72% 0.1313 307.39);--color-hue-purple-bg:oklch(86.36% 0.05 312.41);--color-hue-pink-text:oklch(45.67% 0.1331 1.47);--color-hue-pink-bg:oklch(86.03% 0.045 2.52);--color-hue-teal-text:oklch(47.62% 0.0805 184.5);--color-hue-teal-bg:oklch(91.40% 0.035 186.37);--color-hue-yellow-text:oklch(54.77% 0.1119 90.23);
-/* Remplissages pleins pour surfaces de donnee (segments de graphique), la ou -bg est un fond
-   de puce et -text une couleur d'encre. Valeurs systeme Apple officielles converties en oklch :
-   jeu clair ici, jeu sombre d'Apple dans les deux blocs sombres plus bas -- reutiliser les
+/* Remplissages pleins pour surfaces de donnée (segments de graphique), là où -bg est un fond
+   de puce et -text une couleur d'encre. Valeurs système Apple officielles converties en oklch :
+   jeu clair ici, jeu sombre d'Apple dans les deux blocs sombres plus bas -- réutiliser les
    valeurs claires sur fond sombre les ferait plonger.
-   Les cinq teintes deja presentes (-bg/-text) gardent leurs angles Apple d'origine et une chroma
-   volontairement plus basse ; -solid est la variante saturee, a n'employer QUE comme aplat de
-   donnee, jamais derriere du texte. blue/green/orange/gray n'existent qu'en -solid. */
+   Les cinq teintes déjà présentes (-bg/-text) gardent leurs angles Apple d'origine et une chroma
+   volontairement plus basse ; -solid est la variante saturée, à n'employer QUE comme aplat de
+   donnée, jamais derrière du texte. blue/green/orange/gray n'existent qu'en -solid. */
 --color-hue-blue-solid:oklch(60.28% 0.2177 257.42);--color-hue-indigo-solid:oklch(52.95% 0.1910 278.34);--color-hue-teal-solid:oklch(69.98% 0.1109 212.72);--color-hue-green-solid:oklch(73.03% 0.1944 147.44);--color-hue-orange-solid:oklch(76.52% 0.1752 62.57);--color-hue-yellow-solid:oklch(86.52% 0.1768 90.38);--color-hue-purple-solid:oklch(61.49% 0.2129 312.41);--color-hue-pink-solid:oklch(64.97% 0.2383 17.90);--color-hue-gray-solid:oklch(64.83% 0.0073 286.19);
 /* Icon/glyph color drawn on top of a solid accent fill (ex: watch-toggle checkmark on
    --color-text-success). Was a hardcoded #fff fallback on an undefined token — worked by
@@ -125,10 +125,10 @@ color-scheme:light;
    nothing in light theme (regression found via the follow-up coherence audit, same session). */
 --overlay-wave-hover:oklch(25.67% 0.0142 67.12 / .16);
 /* Barres NON LUES de la waveform. Lu par report-view.ts au montage du lecteur (WaveSurfer peint
-   sur un canvas et exige une couleur resolue, pas un var()). Le token etait consomme sans avoir
-   jamais ete declare : getPropertyValue rendait "" et un repli code en dur prenait la main — du
-   blanc a 35 % d'opacite sur un theme dont la base est CLAIRE, donc une waveform quasi invisible
-   par defaut. Audit 2026-07-28, SJ-1.
+   sur un canvas et exige une couleur résolue, pas un var()). Le token était consommé sans avoir
+   jamais été déclaré : getPropertyValue rendait "" et un repli code en dur prenait la main — du
+   blanc à 35 % d'opacité sur un thème dont la base est CLAIRE, donc une waveform quasi invisible
+   par défaut. Audit 2026-07-28, SJ-1.
    Alpha volontairement plus fort que --overlay-wave-hover (.16) : le survol se peint PAR-DESSUS
    les barres, il doit rester lisible sur elles. */
 --overlay-bar:oklch(25.67% 0.0142 67.12 / .32);
@@ -287,19 +287,19 @@ color-scheme:light;
    elle sert de repli avant lecture du CSS.
 
    --aside-w : l'inspecteur (zone D) a sa PROPRE largeur, distincte de --pane-w. DESIGN.md § 14 le
-   posait a --pane-w ; la mesure a refute ce choix. A 272px de large, 271 utiles, NEUF elements du
-   panneau de detail debordaient dans la vraie fenetre le 2026-08-19 — le nom de piste demandait
-   591px pour 155 disponibles, les champs d'edition tombaient a 57px. Une liste et un inspecteur ne
-   portent pas la meme chose : l'une des lignes d'une ligne, l'autre des paires libelle/valeur et
-   un editeur. 320px est le HAUT de la bande 280-320px des apps systeme, choisi parce que le
-   panneau porte un editeur et pas seulement de la lecture. Les regles etroites scopees
+   posait à --pane-w ; la mesure a réfuté ce choix. À 272px de large, 271 utiles, NEUF éléments du
+   panneau de détail débordaient dans la vraie fenêtre le 2026-08-19 — le nom de piste demandait
+   591px pour 155 disponibles, les champs d'édition tombaient à 57px. Une liste et un inspecteur ne
+   portent pas la même chose : l'une des lignes d'une ligne, l'autre des paires libellé/valeur et
+   un éditeur. 320px est le HAUT de la bande 280-320px des apps système, choisi parce que le
+   panneau porte un éditeur et pas seulement de la lecture. Les règles étroites scopées
    #sift-aside plus bas font le reste — elles ne sont pas un rattrapage de la largeur, elles
    disent qu'une colonne n'est pas une page.
 
    --row-h : UNE hauteur de ligne pour toute l'app (DESIGN.md § 16). Il y en avait quatre —
-   34px en Bibliotheque, 150 en grille, 58 et 42 en Ecartes. Derivee : vignette de pochette 24px,
-   le plus petit format ou une pochette reste reconnaissable, plus --space-4 au-dessus et
-   au-dessous. C'est au-DESSUS de la bande 24-28px d'une liste Finder, et la raison est nommee :
+   34px en Bibliothèque, 150 en grille, 58 et 42 en Écartés. Dérivée : vignette de pochette 24px,
+   le plus petit format où une pochette reste reconnaissable, plus --space-4 au-dessus et
+   au-dessous. C'est au-DESSUS de la bande 24-28px d'une liste Finder, et la raison est nommée :
    la ligne de Sift porte une pochette, celle de Finder n'en porte pas. */
 --toolbar-h:44px;--rail-w:200px;--rail-w-collapsed:56px;--pane-w:272px;--aside-w:320px;--row-h:32px;
 /* Motion (P6, 2026-07-27). Only the two durations that actually have a consumer are declared —
@@ -322,12 +322,12 @@ color-scheme:light;
    so `animationend` keeps firing and filing-identify.ts is never stranded on
    `.sift-identified-flash` / `.sift-applytags-flash` (:227, :681). */
 --duration-fast:100ms;--duration-base:150ms;--ease-out:cubic-bezier(.2,0,0,1);
-/* --duration-slow : le cran manquant, ajoute le 2026-08-19 (DESIGN.md § 10, D-3). Mesure avant :
-   37 declarations `transition:` dans ce fichier, DEUX referencant un token, pour NEUF durees
-   litterales distinctes (.08s .1s .12s .15s .16s .18s .2s .25s .3s) contre une echelle a deux
-   valeurs. Les quatre litteraux hors echelle (.18s a .3s) sont tous du DEPLACEMENT DE MATIERE —
-   pouce de controle segmente, panneau, barre de progression — qui n'avait pas de cran. Sans lui,
-   migrer les 37 sites ecrase une intention. */
+/* --duration-slow : le cran manquant, ajouté le 2026-08-19 (DESIGN.md § 10, D-3). Mesure avant :
+   37 déclarations `transition:` dans ce fichier, DEUX référençant un token, pour NEUF durées
+   littérales distinctes (.08s .1s .12s .15s .16s .18s .2s .25s .3s) contre une échelle à deux
+   valeurs. Les quatre littéraux hors échelle (.18s à .3s) sont tous du DÉPLACEMENT DE MATIÈRE —
+   pouce de contrôle segmenté, panneau, barre de progression — qui n'avait pas de cran. Sans lui,
+   migrer les 37 sites écrase une intention. */
 --duration-slow:250ms;
 }
 /* Dark variant — same warm-neutral family, garde les 4 teintes sémantiques distinctes
@@ -485,33 +485,33 @@ body:has(#sift-titlebar){border-radius:var(--border-radius-sm);overflow:hidden}
    écarts internes : c'est le seul réglage qui fait respirer TOUS les écrans d'un geste, sans
    toucher à la densité des listes que l'accord veut préserver. */
 /* ZONE C du shell — la zone qui porte l'objet d'attention, et la SEULE qui flexe
-   (DESIGN.md § 14). Elle defile chez elle : la page, elle, ne defile jamais. Avant l'etape 3,
-   `block()` lui posait `display:block; overflow-y:auto` a chaque rendu d'ecran, et six ecrans sur
-   huit laissaient donc defiler leur contenu ENTIER — filtres et colonne de facettes compris. Les
+   (DESIGN.md § 14). Elle défile chez elle : la page, elle, ne défile jamais. Avant l'étape 3,
+   `block()` lui posait `display:block; overflow-y:auto` à chaque rendu d'écran, et six écrans sur
+   huit laissaient donc défiler leur contenu ENTIER — filtres et colonne de facettes compris. Les
    deux qui n'y passaient pas (Revue, Accueil) posaient leurs propres colonnes : deux grammaires
-   pour huit ecrans. Le comportement est desormais dans la feuille, pose une fois, et les ecrans
-   ne touchent plus ni au display ni a l'overflow de leur hote. */
+   pour huit écrans. Le comportement est désormais dans la feuille, posé une fois, et les écrans
+   ne touchent plus ni au display ni à l'overflow de leur hôte. */
 #content{flex:1;min-width:0;overflow-y:auto;padding:var(--space-24)}
-/* ZONE D — l'inspecteur. Largeur fixe --pane-w, defilement propre, et un filet a gauche plutot
-   qu'un fond distinct : la separation vient du trait le plus discret possible, pas d'une surface
-   de plus (DESIGN.md § 5, deux niveaux de boite et pas cinq). */
-/* Bandeau de porte de premier reglage. Sous la barre, pleine largeur, avant #pa : il pousse le
+/* ZONE D — l'inspecteur. Largeur fixe --pane-w, défilement propre, et un filet à gauche plutôt
+   qu'un fond distinct : la séparation vient du trait le plus discret possible, pas d'une surface
+   de plus (DESIGN.md § 5, deux niveaux de boîte et pas cinq). */
+/* Bandeau de porte de premier réglage. Sous la barre, pleine largeur, avant #pa : il pousse le
    shell vers le bas au lieu de le recouvrir — un bandeau qui flotte au-dessus masque une ligne de
-   contenu et n'est jamais tout a fait au bon endroit. Ton `warning`, pas `danger` : rien n'est
-   casse, une decision manque. */
+   contenu et n'est jamais tout à fait au bon endroit. Ton `warning`, pas `danger` : rien n'est
+   cassé, une décision manque. */
 #sift-gate{display:flex;align-items:center;gap:var(--space-8);padding:var(--space-8) var(--space-16);background:var(--color-background-warning);color:var(--color-text-warning);font-size:var(--text-md);flex:none}
 #sift-gate[hidden]{display:none}
 #sift-gate .sift-gate-cta{margin-left:auto;flex:none;background:transparent;color:var(--color-text-warning);border-color:currentColor}
 #sift-gate .sift-gate-cta:hover{background:transparent;color:var(--color-text-warning)}
 #sift-aside{width:var(--aside-w);flex:none;overflow-y:auto;padding:var(--space-24) var(--space-16);border-left:0.5px solid var(--color-border-tertiary)}
-/* Regle d'auteur qui pose `display` : elle bat [hidden], donc :not([hidden]) est obligatoire ici —
-   sans lui l'inspecteur reste visible une fois masque (piege deja rencontre dans ce fichier). */
+/* Règle d'auteur qui pose `display` : elle bat [hidden], donc :not([hidden]) est obligatoire ici —
+   sans lui l'inspecteur reste visible une fois masqué (piège déjà rencontré dans ce fichier). */
 #sift-aside:not([hidden]){display:block}
-/* La zone D est une COLONNE, pas une page reduite. Ces regles disent ce que ca change, et chacune
-   repond a un debordement mesure le 2026-08-19 dans la vraie fenetre (9 elements, du nom de piste
-   a 591px pour 155 disponibles aux champs d'edition tombes a 57px).
-   Elles sont scopees a #sift-aside : le meme composant rendu dans la surface large de Revue garde
-   son rendu d'origine, ce qui est le point — un composant partage s'adapte a son hote, il ne se
+/* La zone D est une COLONNE, pas une page réduite. Ces règles disent ce que ça change, et chacune
+   répond à un débordement mesuré le 2026-08-19 dans la vraie fenêtre (9 éléments, du nom de piste
+   à 591px pour 155 disponibles aux champs d'édition tombés à 57px).
+   Elles sont scopées à #sift-aside : le même composant rendu dans la surface large de Revue garde
+   son rendu d'origine, ce qui est le point — un composant partagé s'adapte à son hôte, il ne se
    duplique pas. */
 #sift-aside .sift-player-name,#sift-aside .sift-report-name{font-size:var(--text-lg);white-space:normal;overflow-wrap:anywhere}
 #sift-aside .sift-player-path{white-space:normal;overflow-wrap:anywhere}
@@ -520,22 +520,22 @@ body:has(#sift-titlebar){border-radius:var(--border-radius-sm);overflow:hidden}
 #sift-aside .lib-edit-meta{flex-direction:column;align-items:stretch}
 #sift-aside .lib-edit-meta .sift-editor-input{width:100%}
 #sift-aside .sift-editor-fields{grid-template-columns:1fr}
-/* Deux debordements survivaient au premier tour (mesure du 2026-08-19, apres passage a 320px :
-   9 elements → 3). Un enfant de flex ne retrecit pas sous son contenu sans min-width:0, et un
-   champ d'edition dans une colonne prend toute la colonne — il n'a rien a partager avec un voisin.
-   Le troisieme survivant, .sift-volume-track, N'EST PAS un defaut : le bloc de volume est
-   volontairement replie a 20px au repos et s'ouvre au survol (.sift-volume-block, overflow:hidden
-   + transition de width). Le corriger casserait le controle. */
-/* « Ecoute avancee » : son bloc ne mesurait que 88px pour 195 de contenu, non pas parce qu'il
-   debordait mais parce que son PARENT le contraignait — .sift-player-controls est une rangee flex
-   concue pour la surface large de Revue. Dans une colonne, les controles passent en colonne. */
-/* `min-width:auto` est la valeur PAR DEFAUT d'un enfant de flex, et elle l'empeche de retrecir
+/* Deux débordements survivaient au premier tour (mesure du 2026-08-19, après passage à 320px :
+   9 éléments → 3). Un enfant de flex ne rétrécit pas sous son contenu sans min-width:0, et un
+   champ d'édition dans une colonne prend toute la colonne — il n'a rien à partager avec un voisin.
+   Le troisième survivant, .sift-volume-track, N'EST PAS un défaut : le bloc de volume est
+   volontairement replié à 20px au repos et s'ouvre au survol (.sift-volume-block, overflow:hidden
+   + transition de width). Le corriger casserait le contrôle. */
+/* « Écoute avancée » : son bloc ne mesurait que 88px pour 195 de contenu, non pas parce qu'il
+   débordait mais parce que son PARENT le contraignait — .sift-player-controls est une rangée flex
+   conçue pour la surface large de Revue. Dans une colonne, les contrôles passent en colonne. */
+/* `min-width:auto` est la valeur PAR DÉFAUT d'un enfant de flex, et elle l'empêche de rétrécir
    sous la largeur de son contenu : mesures du 2026-08-19 dans la zone D, .sift-player-header et
-   .sift-player-audition reclamaient 369px pour 287 disponibles, sans deborder d'aucun contenu
-   irreductible — seulement parce que rien ne les autorisait a se serrer. C'est le meme defaut que
+   .sift-player-audition réclamaient 369px pour 287 disponibles, sans déborder d'aucun contenu
+   irréductible — seulement parce que rien ne les autorisait à se serrer. C'est le même défaut que
    `min-width:0` corrige un cran plus bas ; il se pose sur TOUS les descendants directs de la
-   rangee, pas sur un coupable designe, parce que la rangee est un composant partage dont la
-   composition change (l'erreur de lecture n'apparait que sur echec). */
+   rangée, pas sur un coupable désigné, parce que la rangée est un composant partagé dont la
+   composition change (l'erreur de lecture n'apparaît que sur échec). */
 /* `.sift-player-row` est une COLONNE. Dans un flex en colonne, un enfant prend la largeur de son
    propre contenu, pas celle du conteneur — d'où les 369px mesurés pour 287 disponibles le
    2026-08-19, sur .sift-player-header (pochette 68 + corps 285) comme sur .sift-player-audition
@@ -547,17 +547,17 @@ body:has(#sift-titlebar){border-radius:var(--border-radius-sm);overflow:hidden}
 #sift-aside .sift-player-row{flex-wrap:nowrap}
 #sift-aside .sift-player-header,#sift-aside .sift-player-audition{width:100%;min-width:0}
 #sift-aside .sift-player-header>*,#sift-aside .sift-player-audition>*{min-width:0}
-/* Le dernier debordement de la zone D, mesure le 2026-08-19 dans la vraie fenetre : .sift-report-
-   scroll annoncait 369px de defilement pour 287 disponibles alors que chacun de ses enfants
-   DIRECTS mesurait bien 287. Le coupable ne debordait pas par sa largeur, il debordait par sa
+/* Le dernier débordement de la zone D, mesuré le 2026-08-19 dans la vraie fenêtre : .sift-report-
+   scroll annonçait 369px de défilement pour 287 disponibles alors que chacun de ses enfants
+   DIRECTS mesurait bien 287. Le coupable ne débordait pas par sa largeur, il débordait par sa
    POSITION — .sift-player-controls porte `margin-left:82px` (alignement sur la forme d'onde,
-   voir sa regle de base), et le `width:100%` de cette surcharge lui donnait 287 de large A PARTIR
-   de 82, soit un bord droit a 369. Un filtre `scrollWidth > clientWidth` ne le voyait pas : il
+   voir sa règle de base), et le `width:100%` de cette surcharge lui donnait 287 de large À PARTIR
+   de 82, soit un bord droit à 369. Un filtre `scrollWidth > clientWidth` ne le voyait pas : il
    faut comparer les bords droits, pas les largeurs.
-   L'inset tombe a 0 ici, il ne se reduit pas : dans une colonne de 287px, 82px d'alignement
-   decoratif mangent 29% de la largeur des controles, et DESIGN.md § 1 met la densite avant la
-   decoration. A 0, les controles s'alignent sur .sift-player-header, qui est le bloc de reference
-   a gauche dans cette colonne. La surface large de Revue ne change pas. */
+   L'inset tombe à 0 ici, il ne se réduit pas : dans une colonne de 287px, 82px d'alignement
+   décoratif mangent 29% de la largeur des contrôles, et DESIGN.md § 1 met la densité avant la
+   décoration. À 0, les contrôles s'alignent sur .sift-player-header, qui est le bloc de référence
+   à gauche dans cette colonne. La surface large de Revue ne change pas. */
 #sift-aside .sift-player-controls{flex-direction:column;align-items:stretch;width:100%;margin-left:0}
 #sift-aside .sift-listen-advanced,#sift-aside .sift-listen-advanced-body{width:100%}
 #sift-aside .sift-listen-advanced-body>*{min-width:0}
@@ -577,24 +577,24 @@ body:has(#sift-titlebar){border-radius:var(--border-radius-sm);overflow:hidden}
    lire le texte lettre par lettre par certains lecteurs. */
 .sift-sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0 0 0 0);clip-path:inset(50%);white-space:nowrap;border:0}
 /* Wide, labelled, grouped nav rail (brand + PROCESS/ORGANIZE/EXPORT groups + neutral selection). */
-/* Champ de recherche de la barre unifiee (toolbar.ts). Sa hauteur est ce dont --toolbar-h est
-   derivee : ~29px de contenu plus un cran d'espacement au-dessus et au-dessous. Le
-   `appearance:none` retire la croix de reinitialisation propre a `type=search`, qui n'est peinte
+/* Champ de recherche de la barre unifiée (toolbar.ts). Sa hauteur est ce dont --toolbar-h est
+   dérivée : ~29px de contenu plus un cran d'espacement au-dessus et au-dessous. Le
+   `appearance:none` retire la croix de réinitialisation propre à `type=search`, qui n'est peinte
    que par certains moteurs et casserait l'alignement sur l'un et pas sur l'autre. */
 /* CHAMP DE RECHERCHE, forme du kit (§ 03-Fields and Labels / 02-Search Fields) : un aplat arrondi
-   avec sa loupe, SANS bordure au repos — le contour n'apparait qu'au focus, et il est bleu. Sift
+   avec sa loupe, SANS bordure au repos — le contour n'apparaît qu'au focus, et il est bleu. Sift
    posait un filet permanent, donc le champ se lisait comme actif en permanence et le focus n'avait
-   plus qu'un anneau a ajouter par-dessus un cadre deja la. */
+   plus qu'un anneau à ajouter par-dessus un cadre déjà là. */
 .sift-bar-search{display:flex;align-items:center;gap:var(--space-8);width:220px;padding:var(--space-4) var(--space-8);border:0;border-radius:var(--border-radius-md);background:var(--color-background-secondary);color:var(--color-text-tertiary)}
 .sift-bar-search i{font-size:var(--text-lg);flex:none}
 .sift-bar-search input{flex:1;min-width:0;border:0;background:transparent;color:var(--color-text-primary);font:inherit;font-size:var(--text-md);appearance:none}
 .sift-bar-search input::-webkit-search-cancel-button{appearance:none}
 .sift-bar-search:focus-within{outline:2px solid var(--color-border-info);outline-offset:1px}
-/* Attente de recherche : l'icone devient un spinner, sans ajouter ni retirer de noeud. Un nœud
-   cree a chaque frappe est exactement ce que la regle « creer une fois, muter ensuite » interdit,
-   et la frappe est l'evenement en rafale par excellence. */
+/* Attente de recherche : l'icône devient un spinner, sans ajouter ni retirer de nœud. Un nœud
+   créé à chaque frappe est exactement ce que la règle « créer une fois, muter ensuite » interdit,
+   et la frappe est l'événement en rafale par excellence. */
 .sift-bar-search--pending i{opacity:.45}
-/* Actions contextuelles de la barre : meme grammaire de chip et de controle segmente qu'ailleurs,
+/* Actions contextuelles de la barre : même grammaire de chip et de contrôle segmenté qu'ailleurs,
    seulement plus compactes — la barre est haute de --toolbar-h et rien n'y respire. */
 #sift-tb-actions .chip{font-size:var(--text-sm)}
 #sift-tb-actions .sift-seg{flex:none}
@@ -644,9 +644,9 @@ body:has(#sift-titlebar){border-radius:var(--border-radius-sm);overflow:hidden}
    ⚠️ Le `line-height:1` de `.nav-badge` est la CONTREPARTIE de ce `:not()` : le badge recevait
    `1.1` de cette règle-ci par le même accident de spécificité, et le lui retirer sans le rendre
    explicite laissait son rang à 37px. Mesuré : 1 → 34px, 1,1 → 35, 1,2 → 36. */
-/* `flex:1` sur le libelle d'une entree — il pousse le badge a droite. La pastille de couleur des
-   sources est un <span> elle aussi, donc EXCLUE ici : sans cette exclusion elle heritait de
-   `flex:1` et se peignait a 49px de large au lieu de 8 (mesure du 2026-08-19, elle rendait un
+/* `flex:1` sur le libellé d'une entrée — il pousse le badge à droite. La pastille de couleur des
+   sources est un <span> elle aussi, donc EXCLUE ici : sans cette exclusion elle héritait de
+   `flex:1` et se peignait à 49px de large au lieu de 8 (mesure du 2026-08-19, elle rendait un
    ovale blanc). */
 .nv span:not(.nav-badge):not(.sift-rail-src-dot){font-size:var(--text-base);letter-spacing:var(--tracking-normal);text-align:left;line-height:1.1;flex:1;min-width:0}
 .nv i{font-size:17px;flex:none}
@@ -664,9 +664,9 @@ body:has(#sift-titlebar){border-radius:var(--border-radius-sm);overflow:hidden}
 /* Bottom group of the rail: holds the margin-top:auto (so Settings stays pinned to the very bottom)
    and stacks the progress zone ABOVE Settings. The zone grows UPWARD into the free space, so neither
    Settings nor the nav items above it shift when a background task starts. */
-/* SECTION SOURCES du rail (fusion 1). Une entree de source EST une entree de rail — meme .nv,
-   meme etat actif, meme survol : la section n'est pas un composant a part. Seule la pastille de
-   couleur s'ajoute, et c'est un accent CATEGORIEL, pas un etat. */
+/* SECTION SOURCES du rail (fusion 1). Une entrée de source EST une entrée de rail — même .nv,
+   même état actif, même survol : la section n'est pas un composant à part. Seule la pastille de
+   couleur s'ajoute, et c'est un accent CATÉGORIEL, pas un état. */
 .sift-rail-src-dot{width:8px;height:8px;border-radius:50%;flex:none;background:var(--color-text-tertiary)}
 /* Teinte par `color_key` (rail-sources.ts) — seules survivantes du sélecteur de couleur de l'ancien
    écran Accueil (fusion 1), renommées d'après leur porteur réel. Elles ne déclarent QUE le fond :
@@ -679,56 +679,56 @@ body:has(#sift-titlebar){border-radius:var(--border-radius-sm);overflow:hidden}
 .sift-rail-src-dot-yellow{background:var(--color-hue-yellow-text)}
 .sift-rail-src--error{color:var(--color-text-danger)}
 .sift-rail-src-msg{padding:var(--space-4) var(--space-8);font-size:var(--text-sm);color:var(--color-text-tertiary)}
-/* Le bouton d'ajout prend la grammaire d'une entree de rail plutot que celle d'un bouton : il vit
+/* Le bouton d'ajout prend la grammaire d'une entrée de rail plutôt que celle d'un bouton : il vit
    dans la colonne de navigation, pas dans un panneau, et un bouton plein y crierait plus fort que
-   les destinations elles-memes. */
+   les destinations elles-mêmes. */
 .sift-rail-src-add{border:0;background:transparent;color:var(--color-text-tertiary);cursor:pointer;font:inherit;font-size:var(--text-md);text-align:left}
 .sift-rail-src-add:hover{background:var(--overlay-hover);color:var(--color-text-primary)}
 body.sift-rail-collapsed .sift-rail-src-msg,body.sift-rail-collapsed .sift-rail-src-add span{display:none}
 .nav-foot{margin-top:auto;display:flex;flex-direction:column;gap:var(--space-4)}
-/* RAIL REPLIE (etape 4). --rail-w est redefinie sur <body>, donc le rail ET la zone gauche de la
-   barre unifiee suivent d'un seul geste — c'est ce qui garde la bordure verticale continue entre
+/* RAIL REPLIÉ (étape 4). --rail-w est redéfinie sur <body>, donc le rail ET la zone gauche de la
+   barre unifiée suivent d'un seul geste — c'est ce qui garde la bordure verticale continue entre
    les deux, l'invariant que le token existait pour tenir.
-   56px derives : icone 17 + padding de l'item 2x8 + padding du rail 2x12 = 57, ramene a 56
-   (multiple de 8, l'echelle d'espacement).
+   56px dérivés : icône 17 + padding de l'item 2x8 + padding du rail 2x12 = 57, ramené à 56
+   (multiple de 8, l'échelle d'espacement).
    AUCUNE transition. DESIGN.md § 6 interdit d'animer `width`, et un repli de rail EST un
-   changement de largeur : l'animer forcerait un relayout de tout le shell a chaque frame. Le repli
-   est donc instantane, et c'est un choix, pas un oubli. */
+   changement de largeur : l'animer forcerait un relayout de tout le shell à chaque frame. Le repli
+   est donc instantané, et c'est un choix, pas un oubli. */
 body.sift-rail-collapsed{--rail-w:var(--rail-w-collapsed)}
-/* Rail replie : on masque le LIBELLE, jamais la pastille. `:first-of-type` visait le libelle tant
-   qu'il etait le premier <span> d'une entree ; depuis la section Sources, le premier <span> d'une
-   entree de source est sa pastille de couleur — la regle aurait masque l'identite de la source et
-   garde son nom, exactement l'inverse. Cibler par ce que l'element EST, pas par sa position. */
+/* Rail replié : on masque le LIBELLÉ, jamais la pastille. `:first-of-type` visait le libellé tant
+   qu'il était le premier <span> d'une entrée ; depuis la section Sources, le premier <span> d'une
+   entrée de source est sa pastille de couleur — la règle aurait masqué l'identité de la source et
+   gardé son nom, exactement l'inverse. Cibler par ce que l'élément EST, pas par sa position. */
 body.sift-rail-collapsed .nav-brand span,body.sift-rail-collapsed .nv>span:not(.nav-badge):not(.sift-rail-src-dot){display:none}
 body.sift-rail-collapsed .sb{padding-left:var(--space-8);padding-right:var(--space-8)}
 body.sift-rail-collapsed .nv{justify-content:center;gap:0}
 body.sift-rail-collapsed .nav-brand{justify-content:center}
 /* LE BADGE NE SURVIT PAS AU REPLI, et c'est une correction du 2026-08-19 : ce fichier disait
-   l'inverse et la mesure l'a refute. Un compte reel de cette app fait quatre chiffres (2710 pistes
-   en file, mesure dans la vraie fenetre) ; en pastille superposee sur un item de 39px dans un rail
-   de 56, il debordait par la gauche et se faisait rogner. Deux badges empiles se lisaient alors
+   l'inverse et la mesure l'a réfuté. Un compte réel de cette app fait quatre chiffres (2710 pistes
+   en file, mesuré dans la vraie fenêtre) ; en pastille superposée sur un item de 39px dans un rail
+   de 56, il débordait par la gauche et se faisait rogner. Deux badges empilés se lisaient alors
    comme du bruit, pas comme deux comptes.
-   Un rail replie dit qu'il y a QUELQUE CHOSE, pas combien : le badge devient une pastille de
-   presence, et le nombre reste a l'etat deplie ou il a la place d'etre lu. C'est aussi ce que
-   fait la sidebar repliee de Mail. */
+   Un rail replié dit qu'il y a QUELQUE CHOSE, pas combien : le badge devient une pastille de
+   présence, et le nombre reste à l'état déplié où il a la place d'être lu. C'est aussi ce que
+   fait la sidebar repliée de Mail. */
 body.sift-rail-collapsed .nv{position:relative}
-/* Le texte du compte est CLIPPE par la boite de 6px, pas reduit a `font-size:0`. La difference
-   n'est pas cosmetique : le controle de plancher typographique (`run-sift floor`) lit la taille de
-   police peinte, et un 0px y entre comme un texte illisible — il ne peut pas distinguer « masque
-   volontairement » de « trop petit ». Mesure du 2026-08-19 : `minPx` tombait de 10 a 0 avec deux
-   badges signales. Clipper garde la taille declaree honnete et le controle utilisable. */
+/* Le texte du compte est CLIPPÉ par la boîte de 6px, pas réduit à `font-size:0`. La différence
+   n'est pas cosmétique : le contrôle de plancher typographique (`run-sift floor`) lit la taille de
+   police peinte, et un 0px y entre comme un texte illisible — il ne peut pas distinguer « masqué
+   volontairement » de « trop petit ». Mesure du 2026-08-19 : `minPx` tombait de 10 à 0 avec deux
+   badges signalés. Clipper garde la taille déclarée honnête et le contrôle utilisable. */
 body.sift-rail-collapsed .nav-badge{position:absolute;top:4px;right:6px;width:6px;height:6px;min-width:0;padding:0;border-radius:50%;color:transparent;background:var(--color-text-info);overflow:hidden;white-space:nowrap}
 body.sift-rail-collapsed .nav-badge:empty{display:none}
-/* La pastille de source devient son ICONE une fois replie — c'est la seule chose qui identifie une
-   source, et a 8px elle ne se lit plus une fois seule dans la colonne. */
+/* La pastille de source devient son ICÔNE une fois replié — c'est la seule chose qui identifie une
+   source, et à 8px elle ne se lit plus une fois seule dans la colonne. */
 body.sift-rail-collapsed .sift-rail-src-dot{width:14px;height:14px}
-/* Les en-tetes de section tombent a 0 de hauteur une fois replies, donc les quatre groupes se
-   fondaient en une seule colonne d'icones indifferenciee — le rail perdait justement ce que la
-   mise en sections lui avait donne. Un filet le rend sans prendre de place. */
+/* Les en-têtes de section tombent à 0 de hauteur une fois repliés, donc les quatre groupes se
+   fondaient en une seule colonne d'icônes indifférenciée — le rail perdait justement ce que la
+   mise en sections lui avait donné. Un filet le rend sans prendre de place. */
 body.sift-rail-collapsed .nv-grp{display:block;height:0;margin:var(--space-8) auto;padding:0;width:20px;border-top:0.5px solid var(--color-border-tertiary);overflow:hidden}
 body.sift-rail-collapsed .nv-grp:first-of-type{border-top:0}
-/* La bascule reste VISIBLE une fois repliee — la masquer enfermerait l'utilisateur dans l'etat
-   replie, sans autre issue que le raccourci clavier. Elle prend seulement la place de la marque. */
+/* La bascule reste VISIBLE une fois repliée — la masquer enfermerait l'utilisateur dans l'état
+   replié, sans autre issue que le raccourci clavier. Elle prend seulement la place de la marque. */
 #sift-rail-toggle{margin-left:auto;flex:none}
 body.sift-rail-collapsed .nav-brand>i{display:none}
 body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
@@ -994,13 +994,13 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
    se COMPOSE sur ce qui le porte au lieu de nommer un plan, donc il se voit à tous les plans. C'est
    déjà le token de `.chip`, `.lk-icon`, `.sift-cand`, `.sift-menu-item`, `.sift-bib-back`. */
 .fld:hover{background:var(--overlay-hover)}
-/* Item ACTIF d'une liste de navigation (categories de Reglages, sections Rekordbox) : neutre.
-   DESIGN.md § 8 : « Selection : --color-background-secondary, promue au plan du contenu. Jamais
-   un accent colore. » Cette regle peignait un fond bleu pale avec de l'encre bleue, donc la meme
-   grammaire qu'un etat semantique « info » pour ce qui n'est qu'un element choisi dans une liste.
+/* Item ACTIF d'une liste de navigation (catégories de Réglages, sections Rekordbox) : neutre.
+   DESIGN.md § 8 : « Sélection : --color-background-secondary, promue au plan du contenu. Jamais
+   un accent coloré. » Cette règle peignait un fond bleu pâle avec de l'encre bleue, donc la même
+   grammaire qu'un état sémantique « info » pour ce qui n'est qu'un élément choisi dans une liste.
    Le kit ne tranche pas dans notre sens ici — sa sidebar active est bleue (§ 06-Sidebars) — et
-   c'est un conflit assume, consigne dans DESIGN.md § 14 : dans Sift le bleu est deja pris par la
-   semantique et par l'aplat des boutons primaires. */
+   c'est un conflit assumé, consigné dans DESIGN.md § 14 : dans Sift le bleu est déjà pris par la
+   sémantique et par l'aplat des boutons primaires. */
 /* PROMU D'UN PLAN DE PLUS, le 2026-08-19. « Sélection = --color-background-secondary » (DESIGN.md
    § 8) suppose que la sélection se détache de ce qui la porte. Ici elle ne le pouvait pas : ces
    items vivent dans une carte .sift-ui-card-soft, dont le fond EST --color-background-secondary —
@@ -1064,19 +1064,19 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
    (voir la note deux lignes plus bas), et `opacity` est l'une des deux propriétés que § 6 autorise. */
 .lr .pb{width:22px;height:22px;border-radius:50%;flex:none;padding:0;display:inline-flex;align-items:center;justify-content:center;opacity:.72;transition:opacity var(--duration-base) ease}
 .lr:hover .pb,.lr:focus-within .pb{background:var(--color-surface-raised)}
-/* `.lk-icon` a quitte cette regle le 2026-08-19 : il ne s'attenue plus a l'opacite, donc il n'a
-   plus rien a restaurer. `.pb` (bouton lecture) la garde -- il se revele au survol de la ligne,
-   ce qui est une apparition, pas une attenuation d'etat. */
+/* `.lk-icon` a quitté cette règle le 2026-08-19 : il ne s'atténue plus à l'opacité, donc il n'a
+   plus rien à restaurer. `.pb` (bouton lecture) la garde -- il se révèle au survol de la ligne,
+   ce qui est une apparition, pas une atténuation d'état. */
 .lr:hover .pb,.lr:focus-within .pb,.lr.cur .pb{opacity:1}
 /* Icon-only 22x22 buttons (Discogs link, Identifier, Écartés requeue/trash) — NOT for text
    buttons. `.lk` used to double as a generic "minimal button" class for text content too, which
    forced long labels ("Réexporter maintenant", "Lier un fichier XML Rekordbox"...) to wrap inside
    a fixed 22px box and visually overflow/overlap neighboring text. Text buttons now fall through
    to the plain `button{}` reset (bordered, auto-sized, already correct everywhere else). */
-/* BOUTON ICONE, forme du kit (§ 02-Buttons / 07-Icon Buttons) : rien au repos, un aplat au
-   survol. Le kit n'attenue JAMAIS a l'opacite -- et DESIGN.md § 4 l'interdit dans les memes
-   termes : « l'attenuation d'un etat ne se fait pas a l'opacite, le levier est le token ».
-   Cette regle portait pourtant `opacity:.6`, ce qui attenuait l'icone ET son eventuel fond, et
+/* BOUTON ICÔNE, forme du kit (§ 02-Buttons / 07-Icon Buttons) : rien au repos, un aplat au
+   survol. Le kit n'atténue JAMAIS à l'opacité -- et DESIGN.md § 4 l'interdit dans les mêmes
+   termes : « l'atténuation d'un état ne se fait pas à l'opacité, le levier est le token ».
+   Cette règle portait pourtant `opacity:.6`, ce qui atténuait l'icône ET son éventuel fond, et
    faisait varier le contraste avec la surface au lieu de le choisir. */
 /* Plus AUCUNE transition depuis le 2026-08-19 : ses deux propriétés animées étaient `background` et
    `color`, les deux interdites par DESIGN.md § 6, et il ne restait rien à animer une fois les deux
@@ -1098,37 +1098,37 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
    résultat des deux côtés) — la référence ici est le mécanisme CSS, pas un composant. */
 .sift-lib-thead{position:sticky;top:0;z-index:1;background:var(--color-background-secondary);display:flex;align-items:center;gap:var(--space-8);padding:var(--space-4) var(--space-8);font-size:var(--text-xs);text-transform:uppercase;letter-spacing:.06em;color:var(--color-text-tertiary);border-bottom:0.5px solid var(--color-border-tertiary)}
 /* COLONNES DE LA TABLE (DESIGN.md § 16). Les largeurs vivent ici et non en style inline sur
-   chaque cellule : l'en-tete et la ligne doivent s'aligner, et deux listes de flex inline ecrites
-   a deux endroits divergent au premier ajout de colonne — ce qui est arrive, l'en-tete ayant
-   quatre colonnes quand la ligne en rendait quatre plus trois affordances sans en-tete.
-   BPM, Duree et Annee sont NUMERIQUES : mono, chiffres tabulaires, alignes a droite, largeur fixe.
-   Le tabulaire est ce qui empeche la colonne de sauter quand un 9 remplace un 1. */
+   chaque cellule : l'en-tête et la ligne doivent s'aligner, et deux listes de flex inline écrites
+   à deux endroits divergent au premier ajout de colonne — ce qui est arrivé, l'en-tête ayant
+   quatre colonnes quand la ligne en rendait quatre plus trois affordances sans en-tête.
+   BPM, Durée et Année sont NUMÉRIQUES : mono, chiffres tabulaires, alignés à droite, largeur fixe.
+   Le tabulaire est ce qui empêche la colonne de sauter quand un 9 remplace un 1. */
 /* `min-width` = le plancher de colonne, PAS 0 : depuis que les largeurs sont redimensionnables
    (2026-08-19), élargir une colonne pousse les autres, et sans plancher elles s'écrasent jusqu'à
    un caractère — mesuré, Titre à 49px et Genre à 35px après un glissement d'Artiste. Le
    `min-width:0` d'origine servait à autoriser l'ellipse ; `overflow:hidden` sur `.sift-lib-col`
    la donne déjà, donc rien n'est perdu. */
 /* COLONNE 1 — VERDICT (DESIGN.md § 16, « Signal de compatibilité — une seule forme, partout »).
-   Pastille pleine + libelle : la couleur seule ne porte jamais un etat, c'est le libelle qui la
-   rattrape pour un lecteur daltonien. Donc jamais d'opacite ici, et jamais sous --text-xs.
+   Pastille pleine + libellé : la couleur seule ne porte jamais un état, c'est le libellé qui la
+   rattrape pour un lecteur daltonien. Donc jamais d'opacité ici, et jamais sous --text-xs.
    Taille retenue --text-sm (11px), pas le plancher --text-xs : le § 16 pose un PLANCHER, et 11px
-   est deja la taille de l'autre marque categorielle de la ligne (.pill, la pastille de qualite).
-   Largeur MESUREE le 2026-08-19 dans la vraie fenetre (police Outfit, 11px, 600, .03em) : le plus
-   long libelle atteignable est AUTHENTIQUE a 81,67px — DUPLICATE (62,5) ne l'est pas, aucun champ
+   est déjà la taille de l'autre marque catégorielle de la ligne (.pill, la pastille de qualité).
+   Largeur MESURÉE le 2026-08-19 dans la vraie fenêtre (police Outfit, 11px, 600, .03em) : le plus
+   long libellé atteignable est AUTHENTIQUE à 81,67px — DUPLICATE (62,5) ne l'est pas, aucun champ
    ne le produit (voir library-views.ts). 81,67 + pastille 6 + gap 4 = 91,67, arrondi au multiple de
-   4 superieur = 92. Fixe : une colonne de verdict qui respire ferait bouger tout ce qui la suit a
+   4 supérieur = 92. Fixe : une colonne de verdict qui respire ferait bouger tout ce qui la suit à
    chaque filtre.
-   La GEOMETRIE (largeur, gap) est partagee avec l'en-tete — c'est elle qui tient l'alignement des
-   deux lignes — mais la TYPOGRAPHIE du libelle ne vaut que dans la ligne : l'en-tete a la sienne,
-   --text-xs en capitales espacees, et un « VERDICT » plus gros que « ARTISTE » a cote se lirait
+   La GÉOMÉTRIE (largeur, gap) est partagée avec l'en-tête — c'est elle qui tient l'alignement des
+   deux lignes — mais la TYPOGRAPHIE du libellé ne vaut que dans la ligne : l'en-tête a la sienne,
+   --text-xs en capitales espacées, et un « VERDICT » plus gros que « ARTISTE » à côté se lirait
    comme une erreur. */
 .sift-lib-col-verdict{flex:none;width:92px;display:flex;align-items:center;gap:var(--space-4)}
 .lr .sift-lib-col-verdict{font-size:var(--text-sm);font-weight:600;letter-spacing:.03em}
 /* La pastille prend currentColor : une seule classe de teinte par verdict suffit alors pour le
-   point ET le libelle, et il devient impossible de les desaccorder. 6px = le diametre le plus petit
-   qui reste un disque et non un pixel a 11px de texte. */
+   point ET le libellé, et il devient impossible de les désaccorder. 6px = le diamètre le plus petit
+   qui reste un disque et non un pixel à 11px de texte. */
 .sift-lib-verdict-dot{width:6px;height:6px;border-radius:50%;background:currentColor;flex:none}
-/* Les quatre teintes de DESIGN.md § 4, une par sens. Posees sur la CELLULE, donc elles gagnent sur
+/* Les quatre teintes de DESIGN.md § 4, une par sens. Posées sur la CELLULE, donc elles gagnent sur
    la couleur que .lr.cur pose sur la ligne : un verdict ne change pas quand on ouvre sa piste. */
 .sift-lib-v-ok{color:var(--color-text-success)}
 .sift-lib-v-fake{color:var(--color-text-danger)}
@@ -1140,60 +1140,60 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
 .sift-lib-col-num,.sift-lib-col-year{flex:none;width:52px;text-align:right;font-family:var(--font-mono);font-variant-numeric:tabular-nums;color:var(--color-text-secondary)}
 .sift-lib-thead .sift-lib-col-num,.sift-lib-thead .sift-lib-col-year{width:52px;flex:none;text-align:right}
 .sift-lib-thead .sift-lib-col-num button,.sift-lib-thead .sift-lib-col-year button{text-align:right;width:100%}
-/* Hauteur de ligne unique. `min-height` et non `height` : une ligne dont le contenu deborderait
-   grandirait plutot que de rogner, et un rognage silencieux sur une bibliotheque de 100k lignes
+/* Hauteur de ligne unique. `min-height` et non `height` : une ligne dont le contenu déborderait
+   grandirait plutôt que de rogner, et un rognage silencieux sur une bibliothèque de 100k lignes
    est exactement le genre de perte qu'on ne voit jamais. */
 .lr{min-height:var(--row-h)}
-/* Ligne SELECTIONNEE : promue au plan du contenu, comme tout etat actif de l'app (DESIGN.md § 4,
-   quatre plans neutres). Jamais un accent colore ni une barre laterale — un etat permanent reste
-   neutre. La ligne OUVERTE (.cur) garde son propre marquage : selectionner et ouvrir sont deux
-   choses, et la table doit pouvoir montrer les deux en meme temps. */
+/* Ligne SÉLECTIONNÉE : promue au plan du contenu, comme tout état actif de l'app (DESIGN.md § 4,
+   quatre plans neutres). Jamais un accent coloré ni une barre latérale — un état permanent reste
+   neutre. La ligne OUVERTE (.cur) garde son propre marquage : sélectionner et ouvrir sont deux
+   choses, et la table doit pouvoir montrer les deux en même temps. */
 .lr.sel{background:var(--color-background-secondary)}
-/* Resume agrege de la selection, zone D. Meme grammaire libelle/valeur que le reste de
-   l'inspecteur : libelle a gauche en encre secondaire, valeur a droite en primaire. */
+/* Résumé agrégé de la sélection, zone D. Même grammaire libellé/valeur que le reste de
+   l'inspecteur : libellé à gauche en encre secondaire, valeur à droite en primaire. */
 .sift-sel-count{font-size:var(--text-xl);font-weight:600;margin-bottom:var(--space-12)}
 .sift-sel-rows{display:grid;grid-template-columns:1fr auto;gap:var(--space-4) var(--space-12);margin:0;font-size:var(--text-md)}
 .sift-sel-rows dt{color:var(--color-text-secondary)}
 .sift-sel-rows dd{margin:0;text-align:right;color:var(--color-text-primary);font-variant-numeric:tabular-nums}
 .sift-sel-partial{color:var(--color-text-tertiary);font-size:var(--text-sm)}
-/* Les affordances de la ligne se serrent a la hauteur de ligne : sans cela le bouton lecture, la
-   pastille de qualite (22) et l'icone Discogs (22) fixaient la hauteur a leur place, et --row-h
-   n'aurait ete qu'un plancher jamais atteint. Le bouton lecture est passe de 23 a 22px sur SA
-   regle d'origine (.lr .pb) plutot qu'ici : un second selecteur identique gagne par l'ordre, ce
+/* Les affordances de la ligne se serrent à la hauteur de ligne : sans cela le bouton lecture, la
+   pastille de qualité (22) et l'icône Discogs (22) fixaient la hauteur à leur place, et --row-h
+   n'aurait été qu'un plancher jamais atteint. Le bouton lecture est passé de 23 à 22px sur SA
+   règle d'origine (.lr .pb) plutôt qu'ici : un second sélecteur identique gagne par l'ordre, ce
    qui marche et rend la vraie valeur introuvable au grep suivant. */
 .lr .pill{line-height:1.1}
-/* Espaceurs d'alignement de l'en-tete. 54 = bouton lecture 22 + gap 8 + pochette 24 ; le gap de
-   l'en-tete lui-meme fournit le 8 restant. 69 = pastille de qualite (la plus large, « LOSSLESS »)
-   + gap + icone Discogs. Mesures du 2026-08-19 dans la vraie fenetre. */
+/* Espaceurs d'alignement de l'en-tête. 54 = bouton lecture 22 + gap 8 + pochette 24 ; le gap de
+   l'en-tête lui-même fournit le 8 restant. 69 = pastille de qualité (la plus large, « LOSSLESS »)
+   + gap + icône Discogs. Mesures du 2026-08-19 dans la vraie fenêtre. */
 .sift-lib-thead-cov{width:54px;flex:none}
 .sift-lib-thead-tail{width:69px;flex:none}
 .sift-lib-thead button{padding:0;border:0;background:none;font:inherit;color:inherit;cursor:pointer;text-align:left}
 .sift-lib-thead button:hover{color:var(--color-text-primary)}
-/* Colonnes redimensionnables et reordonnables (library-columns.ts, 2026-08-19). Source Apple pour
+/* Colonnes redimensionnables et réordonnables (library-columns.ts, 2026-08-19). Source Apple pour
    le redimensionnement : HIG « Lists and tables » § macOS, « Let people resize columns ». Le
-   reordonnancement vient de DESIGN.md § 16 — cette page HIG ne parle que de reordonner des LIGNES.
-   Le separateur est un ENFANT de l'en-tete, positionne sur son bord droit : il doit suivre la
+   réordonnancement vient de DESIGN.md § 16 — cette page HIG ne parle que de réordonner des LIGNES.
+   Le séparateur est un ENFANT de l'en-tête, positionné sur son bord droit : il doit suivre la
    colonne quand elle change de largeur ou de place. Sa zone de prise fait 7px, comme .qdrag, et
-   deborde de 3px a droite pour que la prise reste attrapable au pixel pres. */
+   déborde de 3px à droite pour que la prise reste attrapable au pixel près. */
 .sift-lib-colhead{position:relative}
 .sift-lib-colsep{position:absolute;top:0;right:-3px;bottom:0;width:7px;cursor:col-resize;z-index:1}
-/* Le filet n'apparait qu'au survol et pendant le glissement : au repos la separation vient de
-   l'espace, pas d'un trait (DESIGN.md § 16). Il s'anime en opacite seule. */
+/* Le filet n'apparaît qu'au survol et pendant le glissement : au repos la séparation vient de
+   l'espace, pas d'un trait (DESIGN.md § 16). Il s'anime en opacité seule. */
 .sift-lib-colsep::after{content:"";position:absolute;top:2px;bottom:2px;left:3px;width:1px;background:var(--color-border-secondary);opacity:0;transition:opacity var(--duration-fast) var(--ease-out)}
 .sift-lib-colsep:hover::after,.sift-lib-colsep--active::after{opacity:1}
 .sift-lib-colsep--active::after{background:var(--color-border-info)}
-/* Pendant un glissement, le curseur et la non-selection valent pour TOUTE la fenetre : la souris
-   sort de la poignee des le premier mouvement rapide, et sans cela le curseur clignote et le texte
-   des lignes se selectionne sous le pointeur. */
+/* Pendant un glissement, le curseur et la non-sélection valent pour TOUTE la fenêtre : la souris
+   sort de la poignée dès le premier mouvement rapide, et sans cela le curseur clignote et le texte
+   des lignes se sélectionne sous le pointeur. */
 body.sift-col-resizing,body.sift-col-resizing *{cursor:col-resize!important;user-select:none}
 .sift-lib-colhead--dragging{opacity:.5}
 .sift-lib-colhead--dropbefore::before,.sift-lib-colhead--dropafter::after{content:"";position:absolute;top:0;bottom:0;width:2px;background:var(--color-border-info)}
 .sift-lib-colhead--dropbefore::before{left:-1px}
 .sift-lib-colhead--dropafter::after{right:-1px}
-/* 32px → 24px le 2026-08-19 : --row-h est DERIVEE de cette vignette (24 + --space-4 en haut et en
-   bas = 32). A 32px de pochette la ligne mesurait 41px dans la vraie fenetre, donc le token
-   decrivait une hauteur que rien ne produisait. 24px reste le plus petit format ou une pochette
-   se reconnait — c'est la borne basse de la derivation, pas un choix de densite. */
+/* 32px → 24px le 2026-08-19 : --row-h est DÉRIVÉE de cette vignette (24 + --space-4 en haut et en
+   bas = 32). À 32px de pochette la ligne mesurait 41px dans la vraie fenêtre, donc le token
+   décrivait une hauteur que rien ne produisait. 24px reste le plus petit format où une pochette
+   se reconnaît — c'est la borne basse de la dérivation, pas un choix de densité. */
 .sift-lib-cov{width:24px;height:24px;border-radius:var(--border-radius-sm);object-fit:cover;flex:none}
 .sift-lib-cov-fallback{width:24px;height:24px;border-radius:var(--border-radius-sm);background:var(--color-background-secondary);display:inline-flex;align-items:center;justify-content:center;color:var(--color-text-tertiary);flex:none}
 .sift-lib-col{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -1254,11 +1254,11 @@ input:not([type="checkbox"]):focus-visible{outline:none;border-color:var(--color
    real checkbox was silently falling back to the unthemed browser-default focus ring. Narrower
    outline+offset than the generic one (1.5px/1px vs 2px/1px): a native checkbox is ~13px, the
    generic ring reads disproportionately heavy at that size. */
-/* Cases et radios : natives, teintees par `accent-color` sur l'aplat d'accent de l'app.
-   Le kit (§ 02-Buttons / 02-Checkboxes et 03-Radio Buttons) montre des controles remplis en
-   ACCENT quand ils sont coches — Sift laissait le bleu par defaut du moteur, qui n'est pas le
-   sien. `accent-color` fait exactement ce geste sans reimplementer le controle : reimplementer
-   couterait le focus natif, la coche indeterminee et le clavier, pour une teinte. */
+/* Cases et radios : natives, teintées par `accent-color` sur l'aplat d'accent de l'app.
+   Le kit (§ 02-Buttons / 02-Checkboxes et 03-Radio Buttons) montre des contrôles remplis en
+   ACCENT quand ils sont cochés — Sift laissait le bleu par défaut du moteur, qui n'est pas le
+   sien. `accent-color` fait exactement ce geste sans réimplémenter le contrôle : réimplémenter
+   coûterait le focus natif, la coche indéterminée et le clavier, pour une teinte. */
 input[type="checkbox"],input[type="radio"]{accent-color:var(--color-accent-fill)}
 input[type="checkbox"]:focus-visible{outline:1.5px solid var(--color-border-info);outline-offset:1px}
 /* Text selection highlight — was entirely unstyled (browser default blue, same unthemed-system-
@@ -1307,17 +1307,17 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    repetitions in rekordbox-view.ts (audit 2026-07-24, "prevent this from drifting again"): each
    site kept its own margin/padding/display inline (those genuinely vary per card), only the
    look (border+radius) is now a single source of truth. */
-/* `.sift-ui-card-outline` RETIREE le 2026-08-19 (etape 7, DESIGN.md § 5). Cinq classes se
-   disputaient le meme travail — comptage exact du 2026-08-19 : soft 19, soft-pad 14, outline 8,
-   card 7, pad 4. `outline` n'etait pas un troisieme niveau semantique : ses HUIT usages sur huit
+/* `.sift-ui-card-outline` RETIRÉE le 2026-08-19 (étape 7, DESIGN.md § 5). Cinq classes se
+   disputaient le même travail — comptage exact du 2026-08-19 : soft 19, soft-pad 14, outline 8,
+   card 7, pad 4. `outline` n'était pas un troisième niveau sémantique : ses HUIT usages sur huit
    vivaient dans `rekordbox-view.ts`, chacun avec un `padding:10px 12px` en style inline dont le
-   10 n'appartient a aucune echelle. Ce n'etait pas une boite, c'etait LA LIGNE d'un ecran,
-   rembourree a la main huit fois.
-   Elle devient `.rb-row` ci-dessous, avec un padding pris dans l'echelle. Il reste DEUX niveaux :
+   10 n'appartient à aucune échelle. Ce n'était pas une boîte, c'était LA LIGNE d'un écran,
+   rembourrée à la main huit fois.
+   Elle devient `.rb-row` ci-dessous, avec un padding pris dans l'échelle. Il reste DEUX niveaux :
    `.sift-ui-card` (contenu, fond sans bordure) et `.sift-ui-card-soft` (chrome doux, fond +
-   bordure). Une boite est une decision, pas une decoration. */
-/* La ligne de Rekordbox. Un ecart nomme : sa marge basse et sa disposition varient selon la
-   section, donc trois modificateurs plutot que trois styles inline repetes. */
+   bordure). Une boîte est une décision, pas une décoration. */
+/* La ligne de Rekordbox. Un écart nommé : sa marge basse et sa disposition varient selon la
+   section, donc trois modificateurs plutôt que trois styles inline répétés. */
 .rb-row{border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:var(--space-8) var(--space-12);margin-bottom:var(--space-8)}
 /* « À jour » / « indisponible » : une section qui n'a rien en attente s'atténue par son ENCRE, pas
    par l'opacité (DESIGN.md § 4 — aucune valeur d'opacité ne franchit le seuil de lisibilité avant
@@ -1363,10 +1363,10 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    --color-background-queue family as the Revue metadata editor; it needs the same recessed
    .sift-editor-input default now, not the lightest token in the system floating on top of it. */
 .lib-edit-meta{display:flex;align-items:center;gap:var(--space-8);flex-wrap:wrap}
-/* Les deux grilles de l'editeur de piste. Elles etaient en style inline (library-detail.ts), donc
-   hors de portee du scope #sift-aside qui replie la colonne — et un style inline gagne de toute
-   facon contre une regle d'auteur. Nommees ici pour que la zone D puisse les replier a une
-   colonne, et pour que leur gap cesse d'etre un 6px hors echelle. */
+/* Les deux grilles de l'éditeur de piste. Elles étaient en style inline (library-detail.ts), donc
+   hors de portée du scope #sift-aside qui replie la colonne — et un style inline gagne de toute
+   façon contre une règle d'auteur. Nommées ici pour que la zone D puisse les replier à une
+   colonne, et pour que leur gap cesse d'être un 6px hors échelle. */
 .lib-edit-pair{display:grid;grid-template-columns:1fr 1fr;gap:var(--space-8)}
 .lib-edit-labelled{display:grid;grid-template-columns:90px 1fr;gap:var(--space-8)}
 .lib-edit-actions{display:flex;gap:8px}
@@ -1832,8 +1832,8 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .sift-slider-fill{position:absolute;height:3px;border-radius:2px;background:var(--color-accent-fill);pointer-events:none}
 /* POUCE = rond GRIS PLEIN, comme le kit. C'était un anneau : fond sombre + bordure claire, donc
    un trou dans la piste plutôt qu'une prise posée dessus. */
-/* `box-shadow` retire de la transition le 2026-08-19 (DESIGN.md § 6 : transform/opacity seuls) —
-   le glow du drag apparait sec, le grossissement du pouce reste anime par transform. */
+/* `box-shadow` retiré de la transition le 2026-08-19 (DESIGN.md § 6 : transform/opacity seuls) —
+   le glow du drag apparaît sec, le grossissement du pouce reste animé par transform. */
 .sift-slider-thumb{position:absolute;top:50%;transform:translate(-50%,-50%) scale(1);width:13px;height:13px;border-radius:50%;background:var(--color-hue-gray-solid);border:0;box-shadow:var(--shadow-panel-subtle);pointer-events:none;transition:transform var(--duration-fast)}
 .sift-slider-track:hover .sift-slider-thumb{transform:translate(-50%,-50%) scale(1.15)}
 .sift-slider-track.dragging .sift-slider-thumb{transform:translate(-50%,-50%) scale(1.3);box-shadow:0 0 0 4px var(--overlay-selected)}
@@ -2022,10 +2022,10 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .sift-spectro-overlay{position:absolute;inset:0;width:100%;height:100%;border-radius:var(--border-radius-md);pointer-events:none}
 .sift-spectro-rows{padding:var(--space-8) var(--space-16);display:grid;grid-template-columns:1fr 1fr;gap:0 var(--space-32);font-size:var(--text-md)}
 .sift-row{display:flex;justify-content:space-between;gap:16px;padding:var(--space-4) 0;border-bottom:0.5px solid var(--color-border-tertiary)}
-/* Une ligne de mesure qui porte sa REFERENCE en plus de sa valeur ne tient pas dans une demi-
-   colonne : mesuree dans la vraie fenetre, « Densite de l'aigu » y cassait son libelle ET sa
+/* Une ligne de mesure qui porte sa RÉFÉRENCE en plus de sa valeur ne tient pas dans une demi-
+   colonne : mesurée dans la vraie fenêtre, « Densité de l'aigu » y cassait son libellé ET sa
    valeur sur deux lignes chacun, doublant sa hauteur au milieu de lignes courtes. Elle prend donc
-   les deux colonnes. Pas de nouveau token : seule la portee de grille change. */
+   les deux colonnes. Pas de nouveau token : seule la portée de grille change. */
 .sift-row-wide{grid-column:1/-1}
 /* Last visual row (2-col grid, row() called an even number of times below) sits flush against
    .sift-spectro-box's own border — its border-bottom just doubled that edge as a second line. */
@@ -2254,10 +2254,10 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    Ce bandeau ne flotte pas librement, il PEND de la barre unifiée — c'est un choix d'ancrage propre
    à Sift, pas une imitation du centre de notifications macOS. */
 .sift-update-banner{position:fixed;left:50%;top:var(--toolbar-h);transform:translateX(-50%);z-index:var(--z-toast);display:flex;flex-wrap:wrap;align-items:center;gap:12px;max-width:calc(100vw - var(--space-16) - var(--space-8));background:var(--color-background-secondary);border:0;border-radius:0 0 var(--border-radius-md) var(--border-radius-md);padding:var(--space-8) var(--space-16);font-size:var(--text-md);color:var(--color-text-primary);box-shadow:var(--shadow-toast)}
-/* Resume des notes de version, dans le meme span que l'annonce : secondaire, car ce qu'on
-   demande a l'utilisateur est de decider, pas de lire. La troncature se fait en TS
-   (NOTES_MAX_CHARS) et non par ellipsis CSS — la banniere est en flex-wrap, donc une largeur
-   contrainte ferait retomber les boutons sur une deuxieme ligne au lieu de couper le texte. */
+/* Résumé des notes de version, dans le même span que l'annonce : secondaire, car ce qu'on
+   demande à l'utilisateur est de décider, pas de lire. La troncature se fait en TS
+   (NOTES_MAX_CHARS) et non par ellipsis CSS — la bannière est en flex-wrap, donc une largeur
+   contrainte ferait retomber les boutons sur une deuxième ligne au lieu de couper le texte. */
 .sift-update-banner-notes{color:var(--color-text-secondary);font-size:var(--text-sm)}
 .sift-update-banner-install{font-size:var(--text-sm);padding:var(--space-4) var(--space-8)}
 .sift-update-banner-later{font-size:var(--text-sm);padding:var(--space-4) var(--space-8);background:transparent;color:var(--color-text-secondary)}
@@ -2377,28 +2377,28 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    un item seul). Une carte .sift-ui-card-soft unique porte les 4 sections ; chaque section est une
    ligne de cette carte, pas sa propre carte (le filet qui les divisait est parti le 2026-08-19, voir
    .sift-settings-list plus bas). Titre 16px/600, texte explicatif inchangés. */
-/* DEUX COLONNES (etape 9). Le plafond de 560px reste — c'est une MESURE DE FORMULAIRE, et
-   Reglages Systeme emploie exactement ca. Ce qui manquait n'etait pas de la largeur, c'etait la
-   colonne de categories a cote. Elle prend --pane-w, la meme mesure que toute zone fixe laterale
-   de l'app, et elle colle en haut pendant que le panneau defile. */
+/* DEUX COLONNES (étape 9). Le plafond de 560px reste — c'est une MESURE DE FORMULAIRE, et
+   Réglages Système emploie exactement ça. Ce qui manquait n'était pas de la largeur, c'était la
+   colonne de catégories à côté. Elle prend --pane-w, la même mesure que toute zone fixe latérale
+   de l'app, et elle colle en haut pendant que le panneau défile. */
 .sift-settings-stack{max-width:560px}
 .sift-settings-layout{display:flex;align-items:flex-start;gap:var(--space-16)}
-/* Rekordbox : meme grammaire a deux colonnes que Reglages et Bibliotheque. Trois ecrans, une
-   seule facon de poser une zone fixe a gauche — c'est le point du shell. */
+/* Rekordbox : même grammaire à deux colonnes que Réglages et Bibliothèque. Trois écrans, une
+   seule façon de poser une zone fixe à gauche — c'est le point du shell. */
 .sift-rkb-layout{display:flex;align-items:flex-start;gap:var(--space-16);margin-top:var(--space-12)}
 .sift-rkb-side{width:var(--pane-w);flex:none;position:sticky;top:0}
 .sift-rkb-main{flex:1;min-width:0}
-/* MENU CONTEXTUEL (etape 5). Surface surelevee, au-dessus des popovers et sous les modales — un
+/* MENU CONTEXTUEL (étape 5). Surface surélevée, au-dessus des popovers et sous les modales — un
    menu contextuel ne doit jamais passer devant une confirmation destructive.
-   Largeur bornee et non fixe : les libelles varient d'un ecran a l'autre, et une largeur fixe
+   Largeur bornée et non fixe : les libellés varient d'un écran à l'autre, et une largeur fixe
    tronquerait le plus long ou ferait flotter le plus court. */
 .sift-ctx-menu{position:fixed;z-index:var(--z-popover);min-width:180px;max-width:280px;padding:var(--space-4);background:var(--color-surface-raised);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);box-shadow:var(--shadow-toast);display:flex;flex-direction:column}
 .sift-ctx-item{display:block;width:100%;text-align:left;padding:var(--space-4) var(--space-8);border:0;background:transparent;color:var(--color-text-primary);font:inherit;font-size:var(--text-md);border-radius:var(--border-radius-sm);cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sift-ctx-item:hover{background:var(--overlay-hover)}
 .sift-ctx-item--danger{color:var(--color-text-danger)}
-/* Une entree desactivee reste LISIBLE : elle est estompee par son token d'encre, jamais par
-   l'opacite — aucune valeur d'opacite ne franchit 4,5:1 sur ce texte avant ~0,92, ou l'attenuation
-   ne se voit plus (mesure du 2026-08-05, gravee dans DESIGN.md § 4). */
+/* Une entrée désactivée reste LISIBLE : elle est estompée par son token d'encre, jamais par
+   l'opacité — aucune valeur d'opacité ne franchit 4,5:1 sur ce texte avant ~0,92, où l'atténuation
+   ne se voit plus (mesure du 2026-08-05, gravée dans DESIGN.md § 4). */
 .sift-ctx-item--disabled{color:var(--color-text-tertiary);cursor:default}
 .sift-ctx-item--disabled:hover{background:transparent}
 .sift-ctx-item--sep{margin-top:var(--space-4);border-top:0.5px solid var(--color-border-tertiary);padding-top:var(--space-8)}
@@ -2417,8 +2417,8 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .sift-ctx-swatch.on{border-color:var(--color-text-primary)}
 .sift-ctx-swatch-fill{display:block;width:100%;height:100%;border-radius:50%}
 .sift-settings-side{width:var(--pane-w);flex:none;position:sticky;top:0}
-/* Une section masquee est retiree du FLUX (`hidden`), pas seulement invisible : un champ dans une
-   section cachee resterait tabulable, et le focus disparaitrait de l'ecran en plein Tab. */
+/* Une section masquée est retirée du FLUX (`hidden`), pas seulement invisible : un champ dans une
+   section cachée resterait tabulable, et le focus disparaîtrait de l'écran en plein Tab. */
 #sift-reglages-list>[hidden]{display:none}
 /* Le filet de division des lignes (.sift-settings-list-row) est RETIRÉ le 2026-08-19, règles et
    classe. Il était juste le 2026-07-08, quand les 4 sections étaient empilées et visibles ensemble.
@@ -2471,10 +2471,10 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    symétrique, laissait un liseré de piste visible au-dessus/en dessous de la pastille sélectionnée,
    perçu comme un espace libre. La pastille .on occupe maintenant exactement la hauteur/largeur de
    sa cellule, sans marge — seul .gap:2px sépare les options entre elles. */
-/* CONTROLE SEGMENTE, forme du kit (§ 04-Pickers / 01-Segmented Pickers) : une piste en RECTANGLE
+/* CONTRÔLE SEGMENTÉ, forme du kit (§ 04-Pickers / 01-Segmented Pickers) : une piste en RECTANGLE
    ARRONDI, pas une pill. Sift posait --border-radius-pill (999px) sur la piste et sur chaque
-   segment, ce qui donne des gelules la ou macOS donne un bloc. Le rayon du pouce se derive de
-   celui de la piste, comme l'exige DESIGN.md § 3 : dans une boite `md`, l'element prend `sm`. */
+   segment, ce qui donne des gélules là où macOS donne un bloc. Le rayon du pouce se dérive de
+   celui de la piste, comme l'exige DESIGN.md § 3 : dans une boîte `md`, l'élément prend `sm`. */
 .sift-seg{display:inline-flex;gap:2px;background:var(--color-track);border-radius:var(--border-radius-md);padding:2px}
 /* #qcol is a flex column (align-items:stretch by default) — without a fixed align-self the
    control stretched to the column's full width and its tabs grew with it whenever the column
@@ -2523,9 +2523,9 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .sift-seg-opt.on{background:var(--color-surface-raised);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-sm);color:var(--color-text-primary)}
 .sift-seg-opt.on i{color:var(--color-text-primary)}
 .sift-seg-opt.on:hover{background:var(--color-surface-raised)}
-/* Filet vertical entre deux segments INACTIFS — le kit en met un, et il disparait de part et
-   d'autre du segment actif (dont l'aplat fait deja la separation). Rendu en ::before pour ne pas
-   ajouter de noeud a un composant que trois ecrans montent. */
+/* Filet vertical entre deux segments INACTIFS — le kit en met un, et il disparaît de part et
+   d'autre du segment actif (dont l'aplat fait déjà la séparation). Rendu en ::before pour ne pas
+   ajouter de nœud à un composant que trois écrans montent. */
 .sift-seg-opt + .sift-seg-opt::before{content:"";position:absolute;left:-1px;top:20%;bottom:20%;width:1px;background:var(--color-border-tertiary)}
 .sift-seg-opt.on::before,.sift-seg-opt.on + .sift-seg-opt::before{display:none}
 .sift-seg-opt{position:relative}
@@ -2552,13 +2552,13 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    (.sift-player-row, report-view.ts) démarrait à une position horizontale différente entre
    Bibliothèque et Revue parce que leurs panneaux de gauche respectifs n'avaient pas la même
    largeur — même composant, deux départs différents au changement d'écran. */
-/* `height:calc(100dvh - 210px)` RETIRE le 2026-08-19 (etape 3). Le 210 encodait la hauteur de ce
+/* `height:calc(100dvh - 210px)` RETIRÉ le 2026-08-19 (étape 3). Le 210 encodait la hauteur de ce
    qui se trouvait au-dessus — cartes de statistiques comprises — donc toute retouche de ce bloc
-   faussait la colonne en silence, et la colonne ouvrait un second contexte de defilement a
-   l'interieur d'une page qui defilait deja. `position:sticky` la tient en haut de la zone C
-   pendant que la liste defile, sans qu'aucun nombre n'ait a connaitre ses voisins.
-   Largeur passee au token --pane-w : c'est la meme mesure que la file de Revue et le rail de
-   sources d'Accueil, et elle etait ecrite en dur ici pour la quatrieme fois (150 → 190 → 245
+   faussait la colonne en silence, et la colonne ouvrait un second contexte de défilement à
+   l'intérieur d'une page qui défilait déjà. `position:sticky` la tient en haut de la zone C
+   pendant que la liste défile, sans qu'aucun nombre n'ait à connaître ses voisins.
+   Largeur passée au token --pane-w : c'est la même mesure que la file de Revue et le rail de
+   sources d'Accueil, et elle était écrite en dur ici pour la quatrième fois (150 → 190 → 245
    → 272). */
 /* `.sift-library-layout` et `.sift-library-side` RETIRÉES le 2026-08-19. La colonne de facette a
    quitté la zone C pour un popover ancré à un bouton (`docs/ui-specs/bibliotheque.md`) : elle
@@ -2649,21 +2649,21 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    elements explicitly opting into `.ti-fill` get a filled glyph. Trial per 2026-07-12 feedback
    (poubelle confirmed filled; flèche circle in trial) — codepoints verified against the vendor's
    own filled/*.svg comments, not guessed. */
-/* Le @font-face qui vivait ici pointait sur un CDN. L'audit SIMP-1 du 2026-07-28 l'a remplace par
-   un import de la feuille filled du paquet depuis `main.ts` — precisement ce que le paragraphe
-   ci-dessus interdit, et le rail y a perdu trois icones (issue #22). La bonne forme est celle-ci :
-   le @font-face est declare a la main, la police vient du paquet (donc bundlee par Vite, aucune
-   ressource reseau), et AUCUNE regle vendeur `.ti` n'entre dans la cascade. */
+/* Le @font-face qui vivait ici pointait sur un CDN. L'audit SIMP-1 du 2026-07-28 l'a remplacé par
+   un import de la feuille filled du paquet depuis `main.ts` — précisément ce que le paragraphe
+   ci-dessus interdit, et le rail y a perdu trois icônes (issue #22). La bonne forme est celle-ci :
+   le @font-face est déclaré à la main, la police vient du paquet (donc bundlée par Vite, aucune
+   ressource réseau), et AUCUNE règle vendeur `.ti` n'entre dans la cascade. */
 @font-face{font-family:"tabler-icons-filled";font-style:normal;font-weight:400;src:url("../node_modules/@tabler/icons-webfont/dist/fonts/tabler-icons-filled.woff2") format("woff2")}
 .ti-fill{font-family:"tabler-icons-filled";font-style:normal;speak:none;font-weight:normal;font-variant:normal;text-transform:none;line-height:1;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
 .ti-fill-trash:before{content:"\f783"}
 .ti-fill-circle-arrow-right:before{content:"\f6fc"}
 
-/* ---- Graphique d'occupation par format (ecran Cle USB + Bibliotheque) ----
-   Layout inspire de Disk Utility : en-tete icone + identite + capacite encadree, filet, barre
-   CONTIGUE (aucun espacement entre segments, comme Apple), legende en colonnes nom-au-dessus /
-   taille-en-dessous, encadre d'informations. Les aplats utilisent les tokens `-solid`, calibres
-   comme surfaces de donnee et qui ne portent jamais de texte. */
+/* ---- Graphique d'occupation par format (écran Clé USB + Bibliothèque) ----
+   Layout inspiré de Disk Utility : en-tête icône + identité + capacité encadrée, filet, barre
+   CONTIGUË (aucun espacement entre segments, comme Apple), légende en colonnes nom-au-dessus /
+   taille-en-dessous, encadré d'informations. Les aplats utilisent les tokens `-solid`, calibrés
+   comme surfaces de donnée et qui ne portent jamais de texte. */
 .sift-usage-card{display:flex;flex-direction:column;gap:var(--space-16);padding:var(--space-24)}
 .sift-usage-head{display:flex;align-items:center;gap:var(--space-16)}
 .sift-usage-glyph{width:56px;height:56px;flex:none}
@@ -2750,9 +2750,9 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .sift-usage-status:not([hidden]){border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:var(--space-12) var(--space-16);background:var(--color-background-tertiary);font-size:var(--text-md);color:var(--color-text-secondary)}
 
 /* 0fr -> 1fr anime vers une hauteur inconnue sans la mesurer en JS. Le padding vit sur
-   .sift-usage-panel-inner, jamais sur la piste mesuree, sinon elle ne se referme pas
-   completement (piege css-grid-0fr-track-padding-pitfall). EXEMPTION VOLONTAIRE a DESIGN.md § 6,
-   troisieme et derniere du fichier sur `grid-template-rows` — justification complete sur
+   .sift-usage-panel-inner, jamais sur la piste mesurée, sinon elle ne se referme pas
+   complètement (piège css-grid-0fr-track-padding-pitfall). EXEMPTION VOLONTAIRE à DESIGN.md § 6,
+   troisième et dernière du fichier sur `grid-template-rows` — justification complète sur
    .sift-spectro-body. */
 .sift-usage-panel{display:grid;grid-template-rows:0fr;transition:grid-template-rows var(--duration-slow) ease}
 .sift-usage-panel.on{grid-template-rows:1fr}
@@ -2763,7 +2763,7 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .sift-usage-grp-total{margin-left:auto;text-transform:none;letter-spacing:0;font-variant-numeric:tabular-nums}
 .sift-usage-prow{display:grid;grid-template-columns:104px 1fr 76px 64px;gap:var(--space-12);align-items:center;padding:var(--space-8);margin:0 calc(var(--space-8) * -1);border-top:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-sm);font-size:var(--text-md)}
 .sift-usage-prow:first-of-type{border-top:0}
-/* Surlignage TRANSITOIRE seulement : un etat confirme permanent reste neutre, seule sa
+/* Surlignage TRANSITOIRE seulement : un état confirmé permanent reste neutre, seule sa
    transition se colore. */
 .sift-usage-prow.flash{animation:sift-usage-flash 1400ms ease-out}
 @keyframes sift-usage-flash{0%,32%{background:var(--color-background-tertiary)}100%{background:transparent}}
@@ -2773,89 +2773,89 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .sift-usage-pcount{color:var(--color-text-tertiary);font-variant-numeric:tabular-nums;text-align:right}
 .sift-usage-psize{color:var(--color-text-secondary);font-variant-numeric:tabular-nums;text-align:right}
 
-/* Bibliotheque : le graphique est une carte de l'ecran, pas un objet flottant — il n'a ni en-tete
-   disque ni segment libre (une bibliotheque n'est pas un volume), donc sa propre carte doit
-   annuler le padding que le composant se donne pour le cas Cle USB. */
+/* Bibliothèque : le graphique est une carte de l'écran, pas un objet flottant — il n'a ni en-tête
+   disque ni segment libre (une bibliothèque n'est pas un volume), donc sa propre carte doit
+   annuler le padding que le composant se donne pour le cas Clé USB. */
 /* Dans la zone D depuis le 2026-08-19 : plus de marge basse, c'est le dernier bloc de la
-   colonne, et une marge y creuserait un vide contre le bord de la fenetre. */
+   colonne, et une marge y creuserait un vide contre le bord de la fenêtre. */
 .sift-bib-usage{margin-top:var(--space-16)}
 .sift-bib-usage .sift-usage-card{padding:0;background:none;border:0;gap:var(--space-12)}
 
-/* Champ de nom de volume dans la modale de formatage. Meme forme que la ligne de confirmation
-   juste en dessous, pour que les deux se lisent comme une seule sequence. */
+/* Champ de nom de volume dans la modale de formatage. Même forme que la ligne de confirmation
+   juste en dessous, pour que les deux se lisent comme une seule séquence. */
 .sift-usbfmt-namerow{display:flex;flex-direction:column;gap:var(--space-4);font-size:var(--text-md);color:var(--color-text-secondary)}
 .sift-usbfmt-namerow input{font-family:var(--font-mono);font-size:var(--text-md);padding:var(--space-8);background:var(--color-background-primary);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);color:var(--color-text-primary)}
 /* Pas de :focus-visible propre (retiré 2026-08-20) : une SAISIE remplace l'anneau par une bordure
    (DESIGN.md § 8) — le générique `input:not([type=checkbox]):focus-visible` fait exactement ça, et
    la règle d'ici posait un anneau PAR-DESSUS cette bordure, deux indicateurs pour un seul focus. */
 
-/* ── Mouvement reduit — garde GLOBALE, unique bloc `reduce` du fichier ────────────────────────
+/* ── Mouvement réduit — garde GLOBALE, unique bloc `reduce` du fichier ────────────────────────
    HIG § Motion : « Make motion optional. Not everyone can or wants to experience the motion in
    your app. » Avant ce bloc, la garde ne couvrait que les deux `@media (prefers-reduced-motion:
    no-preference)` plus haut (.sift-baction-arm ; .sift-fade-in / .sift-fade-out) et le flash
    .sift-usage-prow : les 33 autres `transition:` et les 5 autres `animation:` du fichier
-   tournaient a pleine longueur quel que soit le reglage systeme (mesure 2026-08-05).
-   ⚠️ Les nombres de ce bloc sont ceux du 2026-08-05 et ne se relisent pas comme un etat courant :
-   le sweep motion du 2026-08-19 a ramene le fichier a 25 declarations `transition:` (6 supprimees,
-   4 elaguees), toutes sur `transform` ou `opacity` sauf quatre exemptions nommees. Le raisonnement
-   ci-dessous, lui, ne depend d'aucun de ces comptes.
+   tournaient à pleine longueur quel que soit le réglage système (mesure 2026-08-05).
+   ⚠️ Les nombres de ce bloc sont ceux du 2026-08-05 et ne se relisent pas comme un état courant :
+   le sweep motion du 2026-08-19 a ramené le fichier à 25 déclarations `transition:` (6 supprimées,
+   4 élaguées), toutes sur `transform` ou `opacity` sauf quatre exemptions nommées. Le raisonnement
+   ci-dessous, lui, ne dépend d'aucun de ces comptes.
 
-   ADDITIF par choix, pas par paresse. Couvrir ces 38 declarations « proprement » voudrait dire
-   les extraire une par une dans des blocs `no-preference` — 38 selecteurs vivants deplaces, dont
-   des etats de fin calcules (grid-template-rows 0fr->1fr, transform des thumbs), pour un
-   resultat identique a une neutralisation par la fin. Ici aucune regle existante ne bouge, et le
-   pire cas d'une erreur est une duree trop courte, pas un etat perdu. En bonus, une transition
-   ajoutee demain est couverte sans qu'on y pense.
+   ADDITIF par choix, pas par paresse. Couvrir ces 38 déclarations « proprement » voudrait dire
+   les extraire une par une dans des blocs `no-preference` — 38 sélecteurs vivants déplacés, dont
+   des états de fin calculés (grid-template-rows 0fr->1fr, transform des thumbs), pour un
+   résultat identique à une neutralisation par la fin. Ici aucune règle existante ne bouge, et le
+   pire cas d'une erreur est une durée trop courte, pas un état perdu. En bonus, une transition
+   ajoutée demain est couverte sans qu'on y pense.
 
-   On neutralise la DUREE, pas la propriete. `animation:none` supprimerait l'evenement
-   `animationend` dont filing-identify.ts depend pour retirer .sift-identified-flash et
-   .sift-applytags-flash (:227, :681) — la classe resterait collee a vie. `transition:none`, lui,
-   ferait perdre les etats de fin calcules. A .01ms l'animation se deroule et notifie, elle ne se
+   On neutralise la DURÉE, pas la propriété. `animation:none` supprimerait l'événement
+   `animationend` dont filing-identify.ts dépend pour retirer .sift-identified-flash et
+   .sift-applytags-flash (:227, :681) — la classe resterait collée à vie. `transition:none`, lui,
+   ferait perdre les états de fin calculés. À .01ms l'animation se déroule et notifie, elle ne se
    voit simplement pas.
 
-   `animation-delay` / `transition-delay` ne sont volontairement PAS remis a zero : aucune regle
-   de ce fichier n'en declare, et le seul delai inline de l'app (.sift-baction-arm,
-   batch-panel.ts:540) porte sur un element qui reste `display:none` sous `reduce`. Meme regle
-   d'audit que pour les tokens plus haut — on ne declare pas ce qui n'a pas de consommateur.
+   `animation-delay` / `transition-delay` ne sont volontairement PAS remis à zéro : aucune règle
+   de ce fichier n'en déclare, et le seul délai inline de l'app (.sift-baction-arm,
+   batch-panel.ts:540) porte sur un élément qui reste `display:none` sous `reduce`. Même règle
+   d'audit que pour les tokens plus haut — on ne déclare pas ce qui n'a pas de consommateur.
    Idem pour `scroll-behavior` : aucun `smooth` dans le CSS, aucun `scrollIntoView` dans le
-   frontend. A rajouter le jour ou l'un des deux apparait.
+   frontend. À rajouter le jour où l'un des deux apparaît.
 
-   Un seul trou demandait une ligne EN PLUS, pas un elargissement : `.sift-fade-out` n'etait
-   declaree qu'a :1275, DANS le bloc `no-preference`. Sous `reduce` elle n'apportait donc ni
+   Un seul trou demandait une ligne EN PLUS, pas un élargissement : `.sift-fade-out` n'était
+   déclarée qu'à :1275, DANS le bloc `no-preference`. Sous `reduce` elle n'apportait donc ni
    `opacity:0` ni `pointer-events:none` : le toast que filing-toast.ts:102 marque ainsi (seul
    consommateur) restait pleinement visible ET cliquable — bouton « Annuler » atteignable —
-   pendant les 100 ms de TOAST_EXIT_MS (filing-toast.ts:19) avant que son timer (:106, meme
-   fichier) ne retire le noeud. La ligne ci-dessous redonne l'etat de sortie sans le mouvement :
-   pas de transition, l'element s'efface sec. Aucune regle concurrente — `.sift-toast` (:1260) ne
-   declare ni opacity ni pointer-events, et l'id est retire avant (filing-toast.ts:101).
+   pendant les 100 ms de TOAST_EXIT_MS (filing-toast.ts:19) avant que son timer (:106, même
+   fichier) ne retire le nœud. La ligne ci-dessous redonne l'état de sortie sans le mouvement :
+   pas de transition, l'élément s'efface sec. Aucune règle concurrente — `.sift-toast` (:1260) ne
+   déclare ni opacity ni pointer-events, et l'id est retiré avant (filing-toast.ts:101).
 
    ── Exemptions : ce qui continue de bouger, et pourquoi ───────────────────────────────────────
-   1. .sift-spin / .sift-bt-spin — ce ne sont pas des decorations, ce sont les seuls indicateurs
-      de progression INDETERMINEE de l'app (« Analyse en cours… », « Conversion… », « Recherche… »,
-      pastille "en cours" de batch-tracklist). Un spinner fige ne se lit pas comme du calme, il se
-      lit comme une app plantee — et les HIG demandent justement qu'un indicateur d'activite
-      continue de bouger. Rotation sur place : ni deplacement, ni changement d'echelle, ni
-      parallaxe, c'est-a-dire pas la classe de mouvement que `reduce` vise.
-   2. .jrnl-toast — RETIREE le 2026-08-19 avec la refonte du Journal (chantier 2). Cette exemption
-      existait parce que l'animation de ce toast ETAIT son mecanisme de disparition — aucun timer
-      JS — donc `.01ms` l'aurait fait partir avant d'etre lu. Le Journal passe desormais par le
-      toast partage `.sift-toast`, qui a un vrai timer (filing-toast.ts) : il n'y a plus rien a
-      exempter, et la classe n'existe plus. Le `@keyframes jrnl-toast-fade` redefini ici est parti
-      dans le meme geste. Le flash d'annulation qui l'a remplace (`.jrnl-row--flash`) n'est PAS
-      une exemption : il n'est que du signal, sa classe se retire a `animationend`, et une duree
-      ramenee a .01ms laisse l'evenement arriver — exactement le cas .sift-identified-flash.
-   Les exemptions sont ecrites DANS le selecteur (`:not()`), pas rejouees en dessous avec leur
-   valeur : les deux classes ne matchent simplement pas la garde et gardent la duree declaree a
-   :644 / :657. Aucun nombre magique duplique, donc aucune divergence possible le jour ou l'une de
-   ces durees change. Sur ici parce qu'aucune des deux n'a de descendant anime a exempter :
+   1. .sift-spin / .sift-bt-spin — ce ne sont pas des décorations, ce sont les seuls indicateurs
+      de progression INDÉTERMINÉE de l'app (« Analyse en cours… », « Conversion… », « Recherche… »,
+      pastille "en cours" de batch-tracklist). Un spinner figé ne se lit pas comme du calme, il se
+      lit comme une app plantée — et les HIG demandent justement qu'un indicateur d'activité
+      continue de bouger. Rotation sur place : ni déplacement, ni changement d'échelle, ni
+      parallaxe, c'est-à-dire pas la classe de mouvement que `reduce` vise.
+   2. .jrnl-toast — RETIRÉE le 2026-08-19 avec la refonte du Journal (chantier 2). Cette exemption
+      existait parce que l'animation de ce toast ÉTAIT son mécanisme de disparition — aucun timer
+      JS — donc `.01ms` l'aurait fait partir avant d'être lu. Le Journal passe désormais par le
+      toast partagé `.sift-toast`, qui a un vrai timer (filing-toast.ts) : il n'y a plus rien à
+      exempter, et la classe n'existe plus. Le `@keyframes jrnl-toast-fade` redéfini ici est parti
+      dans le même geste. Le flash d'annulation qui l'a remplacé (`.jrnl-row--flash`) n'est PAS
+      une exemption : il n'est que du signal, sa classe se retire à `animationend`, et une durée
+      ramenée à .01ms laisse l'événement arriver — exactement le cas .sift-identified-flash.
+   Les exemptions sont écrites DANS le sélecteur (`:not()`), pas rejouées en dessous avec leur
+   valeur : les deux classes ne matchent simplement pas la garde et gardent la durée déclarée à
+   :644 / :657. Aucun nombre magique dupliqué, donc aucune divergence possible le jour où l'une de
+   ces durées change. Sûr ici parce qu'aucune des deux n'a de descendant animé à exempter :
    .sift-spin est un `<i>` feuille et .sift-bt-spin un `<span>` feuille. Ajouter une exemption =
-   ajouter un `:not()`, apres avoir verifie ce meme point. */
+   ajouter un `:not()`, après avoir vérifié ce même point. */
 @media (prefers-reduced-motion:reduce){
   *:not(.sift-spin):not(.sift-bt-spin),*::before,*::after{animation-duration:.01ms !important;animation-iteration-count:1 !important;transition-duration:.01ms !important}
-  /* Sortie du toast de filing-toast.ts, sans le fondu (cf. le trou nomme plus haut). */
+  /* Sortie du toast de filing-toast.ts, sans le fondu (cf. le trou nommé plus haut). */
   .sift-fade-out{opacity:0;pointer-events:none}
-  /* Deja presente avant ce bloc (elle vivait seule juste sous .sift-usage-prow.flash), fusionnee
-     ici telle quelle. `animation:none` y est sur — usage-chart.ts retire puis remet la classe
-     lui-meme avec un reflow force (:308-312), il n'attend aucun `animationend`. */
+  /* Déjà présente avant ce bloc (elle vivait seule juste sous .sift-usage-prow.flash), fusionnée
+     ici telle quelle. `animation:none` y est sûr — usage-chart.ts retire puis remet la classe
+     lui-même avec un reflow forcé (:308-312), il n'attend aucun `animationend`. */
   .sift-usage-prow.flash{animation:none}
 }
