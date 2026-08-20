@@ -25,6 +25,7 @@ import { renderBiblioLive } from "./bibliotheque-view";
 import { paintJournal } from "./journal";
 import { renderRekordboxLive } from "./rekordbox-view";
 import { renderUsbLive } from "./usb-view";
+import { bumpViewEpoch } from "./view-epoch";
 
 export type ViewId = "revue" | "ecarts" | "journal" | "biblio" | "rkb" | "cle" | "reglages";
 
@@ -181,6 +182,11 @@ function syncNav(view: ViewId): void {
 
 export function render(): void {
   const content = requireEl<HTMLElement>("#content", "render");
+  // Ouvre une génération de rendu AVANT de déléguer (issue #42) : les renderers ci-dessous sont
+  // asynchrones et lancés en `void`, donc celui de l'écran qu'on QUITTE peut encore être en vol.
+  // Le jeton qu'il a capturé devient périmé ici, et son écriture tardive sera refusée au lieu de
+  // repeindre le `#content` de l'écran qu'on vient d'ouvrir.
+  bumpViewEpoch();
   syncNav(currentView);
   clearBarSlots();
   closeAside();

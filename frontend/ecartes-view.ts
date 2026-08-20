@@ -5,6 +5,7 @@
 import { listEcartes } from "./ipc";
 import type { EcarteItem } from "../shared/contracts";
 import { requireEl, esc } from "./dom";
+import { isStaleViewRender, viewEpoch } from "./view-epoch";
 import { createVirtualList, type VirtualList } from "./list-virtual";
 import { emptyStateHtml, wireEmptyState } from "./empty-state";
 
@@ -90,6 +91,9 @@ function sectionCardHtml(title: string, hostId: string): string {
 // Copy-query + send-to-bin / restore / empty-bin wired via the #pa handler.
 export async function renderEcartes() {
   const content = requireEl("#content", "renderEcartes");
+  // Jeton capturé avec `#content` (issue #42) : `listEcartes()` ci-dessous peut mettre des secondes
+  // sous scan, et l'écriture qui suit ne doit pas atterrir sur un autre écran.
+  const token = viewEpoch();
   resVirtual?.destroy();
   trashVirtual?.destroy();
   resVirtual = null;
@@ -110,8 +114,10 @@ export async function renderEcartes() {
   let items: EcarteItem[] = [];
   try {
     items = await listEcartes();
+    if (isStaleViewRender(token)) return;
   } catch (e) {
     console.error("listEcartes failed", e);
+    if (isStaleViewRender(token)) return;
     content.innerHTML =
       '<div class="sift-ui-card-soft sift-ui-card-soft-pad" style="color:var(--color-text-danger)">' +
       "Impossible de charger Écartés. Vérifie la connexion à la base et réessaie." +

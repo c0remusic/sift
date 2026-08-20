@@ -16,6 +16,7 @@ import {
   openUrl,
 } from "./ipc";
 import { openContextMenu } from "./context-menu";
+import { isStaleViewRender, viewEpoch } from "./view-epoch";
 import { anchoredBelowPosition } from "./popover-position";
 import { installColumnGestures, resetColumns, columnsAreCustomized } from "./library-columns";
 import { confirmAction, BATCH_CONFIRM_THRESHOLD } from "./confirm-modal";
@@ -672,6 +673,9 @@ function mountBibUsage(host: HTMLElement): void {
  * facets, wired to real data. Actions go through the #pa delegated handler (data-bib). */
 export async function renderBiblioLive() {
   const content = requireEl("#content", "renderBiblioLive");
+  // Jeton capturé avec `#content` (issue #42) : sous scan, le `Promise.all` ci-dessous attend le
+  // `Mutex<Connection>` que le scanner tient, et l'utilisateur a le temps de changer d'écran.
+  const token = viewEpoch();
   // Tear down any previous virtual list first: its scroll listener sits on the permanent #content,
   // which this render is about to overwrite — leaving it attached would leak the listener and fire
   // renders against a detached host.
@@ -698,10 +702,12 @@ export async function renderBiblioLive() {
     // statistiques, retirées de la zone C, et l'inspecteur compte désormais ce que la table montre
     // plutôt que la bibliothèque entière. Un aller-retour IPC de moins à chaque frappe de recherche.
     [bibState.tracks, facets] = await Promise.all([listLibrary(bibState.filter), libraryFolders()]);
+    if (isStaleViewRender(token)) return;
   } catch (e) {
     // Impasse A20 (issue #15) : cette carte était la seule des trois sans porte de sortie — Écartés
     // (`ecartes-view.ts`) et le bloc doublons plus bas en ont une depuis leur audit respectif.
     // « réessaie » sans bouton demande à l'utilisateur de deviner comment.
+    if (isStaleViewRender(token)) return;
     content.innerHTML =
       '<div class="sift-ui-card-soft sift-ui-card-soft-pad" style="color:var(--color-text-danger)">' +
       esc(

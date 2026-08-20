@@ -30,6 +30,7 @@
 import type { JournalEntry } from "../shared/contracts";
 import { listJournal, getSessionId, revertBatch, revealTrack, getSetting } from "./ipc";
 import { requireEl, esc, plural } from "./dom";
+import { isStaleViewRender, viewEpoch } from "./view-epoch";
 import { humanizeError } from "./errors";
 import { confirmAction, BATCH_CONFIRM_THRESHOLD } from "./confirm-modal";
 import { emptyStateHtml, wireEmptyState } from "./empty-state";
@@ -516,7 +517,11 @@ function liveGroupHtml(g: JrnlGroup, level: 1 | 2): string {
  *  L'erreur passe avant tout le reste (DESIGN.md § 8) : sur une lecture échouée, l'écran n'affirme
  *  RIEN du contenu — pas de « rien dans cette session », qui serait un fait non mesuré. */
 export function paintJournal(reset = false): void {
+  // Jeton pris À L'APPEL, pas dans le `catch` : c'est l'écran pour lequel ce rendu a été demandé
+  // qu'on veut comparer, et le `catch` s'exécute après l'attente (issue #42).
+  const token = viewEpoch();
   void (reset ? renderJournal() : loadAndPaint()).catch((e: unknown) => {
+    if (isStaleViewRender(token)) return;
     const display = humanizeError(
       e,
       "Impossible de lire le journal. Vérifie la connexion à la base et réessaie.",
@@ -561,6 +566,7 @@ function switchMode(mode: JrnlMode): void {
 
 async function loadAndPaint(): Promise<void> {
   const content = requireEl<HTMLElement>("#content", "renderJournal");
+  const token = viewEpoch();
   // Le SEUL point qui lève le drapeau, et il couvre les deux issues : le rendu abouti pose
   // `.jrnl-wrap` par `paintTable`, la lecture échouée par le `catch` de `paintJournal`. Voir
   // `journalOnScreen`.
@@ -589,6 +595,9 @@ async function loadAndPaint(): Promise<void> {
       return null;
     }),
   ]);
+  // L'écran a pu changer pendant l'attente (issue #42) : ne rien peindre, et surtout ne pas semer
+  // `jrnlState` depuis un rendu que plus personne ne regarde.
+  if (isStaleViewRender(token)) return;
 
   jrnlState.entries = entries;
   jrnlState.byId = new Map(entries.map((e) => [e.batch_id, e]));
