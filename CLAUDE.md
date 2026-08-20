@@ -200,7 +200,9 @@ de la chaîne brute — pas de table code→message, délibérément) · `dom.ts
 séparée de `filing-bins.ts` pour être testable en env Node, qui ne peut pas charger un
 module important `./ipc`) · `source-color.ts` (teinte d'identité des sources du rail :
 override manuel sinon cycle par ordre d'ajout — même motif sans-DOM/testable env Node,
-importée par `rail-sources.ts`) · `styles.css`.
+importée par `rail-sources.ts`) · `rail-source-entry.ts` (markup d'une entrée de source du
+rail : teintes, `--error`, suspendue — même motif sans-DOM/testable, story et Vitest exécutent
+le vrai rendu, importé par `rail-sources.ts`) · `styles.css`.
 
 `dev-inspector.ts` + `dev-annotate.ts` forment l'outil d'annotation **Alt+Clic**
 (dev-only) : cadre de sélection, localisation du source via `locate_source`, note libre
