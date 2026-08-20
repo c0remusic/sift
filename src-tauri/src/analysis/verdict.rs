@@ -10,6 +10,47 @@
 
 use crate::analysis::{Rail, Verdict};
 
+/// Version du PRODUCTEUR de verdict, stampée dans `tracks.verdict_ver` par
+/// `worker::persist_report` (migration v22). Rien ne l'expose au frontend.
+///
+/// **À incrémenter dès que `verdict()` ne rend plus le MÊME verdict pour les mêmes entrées** :
+/// les bandes de décision (`LOSSLESS_OK_HZ`, `LOSSY_CLIFF_HZ`, `NO_MEASUREMENT_HZ`), le barème de
+/// `min_cutoff_hz_for_bitrate`, les planchers de platitude (`HF_FIXED_FLOOR_DB`,
+/// `HF_TOP_FLOOR_DB`, tous deux annoncés provisoires ci-dessous), ou l'arrivée d'une entrée
+/// nouvelle dans l'arbitrage.
+///
+/// ⚠️ **Elle n'est PAS redondante avec `analysis::REPORT_CACHE_VERSION`** — établi en lisant qui
+/// écrit la colonne `verdict`, pas supposé (issue #39, « ce qui n'est pas tranché ici ») :
+///
+/// - `worker::persist_report` écrit `verdict` et `report_cache_ver` dans le MÊME `UPDATE`, donc
+///   les deux sont d'accord à l'écriture ;
+/// - mais `ipc::analyze_path` répare le cache sur désaccord de version en réécrivant
+///   `report_json` + `report_cache_ver` **sans jamais toucher `verdict`** ;
+/// - et `worker::select_pending` ne re-sélectionne que sur `report_json` absent, jamais sur une
+///   version périmée (constaté et payé par la migration v16).
+///
+/// Après un bump de `REPORT_CACHE_VERSION`, une piste rangée retrouve donc un rapport courant en
+/// gardant dans sa colonne le verdict calculé par l'ANCIEN moteur — et c'est cette colonne, pas le
+/// rapport, que lisent la Bibliothèque, les Écartés et le compte « à re-sourcer ». Le dépôt le
+/// note déjà noir sur blanc dans le commentaire de la migration v21 (`db.rs`) : « `verdict` et
+/// `cutoff_hz` ne sont couverts par AUCUNE version de cache ».
+pub const VERDICT_CACHE_VERSION: i64 = 1;
+
+/// Lit le cache `(tracks.verdict, tracks.verdict_ver)`. Version absente (NULL — ligne d'avant la
+/// v22 que son backfill n'a pas stampée) ou différente = **pas de verdict courant**, rendu comme
+/// `None`. C'est exactement l'état qu'un `verdict` NULL décrit déjà et que toute l'app sait
+/// afficher : file d'attente qui propose « Réanalyser », badge absent en Bibliothèque, ligne hors
+/// du compte « à re-sourcer ». Jamais une erreur.
+///
+/// Même raison qu'`fingerprint::cached` de passer par une fonction plutôt que par un littéral en
+/// SQL : la constante reste déclarée une seule fois.
+pub fn cached(raw: Option<String>, ver: Option<i64>) -> Option<String> {
+    match ver {
+        Some(v) if v == VERDICT_CACHE_VERSION => raw,
+        _ => None,
+    }
+}
+
 /// Decision bands (Hz) for a file DECLARED lossless. `cutoff_hz` is stored raw upstream so
 /// these thresholds stay reconfigurable without re-analysis (Réglages, M2b+).
 pub const LOSSLESS_OK_HZ: f32 = 20000.0; // ≥ → authentic lossless
@@ -174,6 +215,28 @@ pub fn verdict(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Les trois états que `cached` doit distinguer. Le cas NULL est celui de toute ligne d'avant
+    /// la v22 que son backfill n'a pas stampée — un rapport lui-même périmé, typiquement.
+    #[test]
+    fn cached_ne_sert_que_la_version_courante() {
+        let v = || Some("fake".to_string());
+        assert_eq!(
+            cached(v(), Some(VERDICT_CACHE_VERSION)),
+            v(),
+            "version courante : le verdict en cache doit etre servi tel quel"
+        );
+        assert_eq!(
+            cached(v(), None),
+            None,
+            "version absente (base d'avant la v22) : pas de verdict courant"
+        );
+        assert_eq!(
+            cached(v(), Some(VERDICT_CACHE_VERSION + 1)),
+            None,
+            "version differente : pas de verdict courant"
+        );
+    }
 
     #[test]
     fn lossless_with_full_band_is_ok() {
