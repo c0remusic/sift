@@ -70,17 +70,16 @@ cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings
 cargo fmt --manifest-path src-tauri/Cargo.toml --check
 ```
 
-⚠️ **`src-tauri/fixtures/*` est gitignoré.** Un checkout frais (clone ou worktree) ne
-les a pas, et les tests `analysis::decode` échouent en *file not found* — ce n'est pas
-un vrai bug. Régénérer : `node scripts/make-fixtures.mjs` — qui exige
-`src-tauri/binaries/` (gitignoré aussi) : `npm run fetch-ffmpeg` d'abord, ou
-copier binaries + fixtures depuis le checkout principal. Les deux anchors
-authentiques facultatives (`src-tauri/fixtures/README.md`) restent manuelles ; les
-tests de caractérisation les sautent quand elles sont absentes. **Même piège pour
-`src-tauri/binaries/`** : sans le sidecar, `cargo check` lui-même sort en 101
-(``resource path `binaries\ffmpeg-…` doesn't exist``) — `npm run fetch-ffmpeg`
-d'abord, PUIS `make-fixtures.mjs`, qui plante en `ENOENT` si `binaries/` manque
-(vécu le 2026-08-20 sur deux worktrees).
+⚠️ **`src-tauri/fixtures/*` et `src-tauri/binaries/` sont gitignorés.** Un checkout
+frais (clone ou worktree) n'a ni l'un ni l'autre, et chaque absence casse autrement :
+sans le sidecar, `cargo check` lui-même sort en 101 (``resource path
+`binaries\ffmpeg-…` doesn't exist``) ; sans fixtures, les tests `analysis::decode`
+échouent en *file not found*. Ni l'un ni l'autre n'est un vrai bug. Bootstrap dans
+l'ordre : `npm run fetch-ffmpeg` PUIS `node scripts/make-fixtures.mjs` (qui plante en
+`ENOENT` si `binaries/` manque) — ou copier binaries + fixtures depuis le checkout
+principal. Vécu le 2026-08-20 sur deux worktrees. Les deux anchors authentiques
+facultatives (`src-tauri/fixtures/README.md`) restent manuelles ; les tests de
+caractérisation les sautent quand elles sont absentes.
 
 ⚠️ **Ne pas lancer `cargo test`/`clippy` pendant qu'un `tauri dev` compile** : ils se
 disputent le lock du `target/` (attente, ou corruption du cache incrémental).
