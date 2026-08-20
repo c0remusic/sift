@@ -11,15 +11,17 @@
 //!    du crate. `similarity` appelle `match_fingerprints` (rusty-chromaprint 0.3.0) : deux `Vec`
 //!    alloués de `len1+len2`, un `sort_unstable`, puis un balayage à histogramme. Ce n'est pas la
 //!    comparaison de bits que promet le doc-comment de `fingerprint.rs`.
-//! 2. **Le taux de survie du pré-filtre de durée** (`dedup.rs:200`, tolérance
-//!    `DURATION_MATCH_TOL_SEC` = 2 s). C'est la SEULE chose qui décide si le `O(n²)` est tenable :
-//!    `n²/2` paires sont énumérées quoi qu'il arrive, mais seules les survivantes paient le coût
-//!    unitaire ci-dessus. Compté par arithmétique pure, sans appeler `similarity` — mesurer ne
-//!    doit pas perturber ce qu'on mesure.
+//! 2. **Le taux de survie du pré-filtre de durée** (tolérance `DURATION_MATCH_TOL_SEC` = 2 s).
+//!    C'est ce qui décide combien de paires paient le coût unitaire ci-dessus. Compté par
+//!    arithmétique pure, sans appeler `similarity` — mesurer ne doit pas perturber ce qu'on mesure.
 //! 3. **`group_duplicates` en bout à bout**, aux tailles réelles, pour confronter le produit
 //!    (1) × (2) à la réalité.
 //! 4. **L'empreinte mémoire** des empreintes acoustiques tenues simultanément en RAM par
 //!    `build_fingerprints` — un coût que le temps CPU ne révèle pas.
+//! 5. **L'énumération nue** (#38) : le balayage seul, celui qui reste quand le pré-filtre écarte
+//!    tout. Jusqu'à #38, `n²/2` paires étaient parcourues quoi qu'il arrive — le pré-filtre
+//!    décidait qui payait `similarity`, pas qui était énuméré. Ce bench compare l'ancienne double
+//!    boucle à la fenêtre glissante qui l'a remplacée, dans la même exécution.
 //!
 //! Cadence d'item de `Configuration::preset_test1()` : `(4096 - 4096·2/3) / 11025` =
 //! 0,1238 s/item. Une piste de 6 min pèse donc ≈ 2900 `u32`, soit ≈ 11,6 ko.
@@ -86,9 +88,9 @@ fn synth_reencode(base: &[u32], seed: u32) -> Vec<u32> {
 /// Durée, en secondes, de la piste d'indice `i` dans le corpus synthétique de taille `n`.
 ///
 /// **C'est LA décision qui gouverne tout ce benchmark**, et c'est pour ça qu'elle est isolée dans
-/// sa propre fonction : `n²/2` paires sont énumérées quoi qu'il arrive, mais seules celles dont
-/// les deux durées tiennent dans ±2 s paient le coût d'un `match_fingerprints`. Le rapport entre
-/// les deux — le taux de survie — est fixé ici, et par rien d'autre.
+/// sa propre fonction : seules les paires dont les deux durées tiennent dans ±2 s paient le coût
+/// d'un `match_fingerprints`, et depuis #38 ce sont aussi les seules énumérées. Leur nombre est
+/// fixé ici, et par rien d'autre.
 ///
 /// L'étalement uniforme ci-dessous est **provisoire et optimiste**. Une vraie bibliothèque DJ
 /// n'est pas uniforme : elle s'agglutine autour des formats de production (edits radio ~3 min,
@@ -292,8 +294,19 @@ fn bench_dedup_group_duplicates_end_to_end() {
 /// construite ici — seules les durées, ce qui rend le `n = 100 000` tenable en RAM (≈ 1,6 Mo au
 /// lieu de ≈ 1,1 Go).
 ///
-/// Ce que dit le chiffre : si l'énumération nue à 100 k tient en quelques centaines de
-/// millisecondes, #38 est une optimisation opportuniste ; si elle tient la minute, c'est un mur.
+/// Ce que disait le chiffre : mesuré le 2026-08-20 sur cette machine, la double boucle seule
+/// coûtait **75,77 ms à 15 000 pistes** et **3,22 s à 100 000** — ni « quelques centaines de
+/// millisecondes » (ce qui aurait rendu #38 opportuniste), ni la minute (ce qui en aurait fait un
+/// mur), mais un plancher bien réel qui grandit en `n²` : ×6,7 sur `n`, ×42 sur le temps.
+///
+/// Les deux formes sont mesurées dans la MÊME exécution, sur le MÊME corpus, pour que l'écart soit
+/// lisible sans comparer deux machines ou deux jours :
+/// - la double boucle d'origine (`count_prefilter`), conservée exprès comme référence ;
+/// - `dedup::for_each_candidate_pair`, qui trie puis ne parcourt que la fenêtre de tolérance.
+///
+/// Le bench ASSERTE que les deux rendent le même nombre de paires survivantes. Un gain de vitesse
+/// obtenu en oubliant des paires serait un faux gain, et un bench qui se contente d'imprimer deux
+/// durées ne le verrait pas.
 #[test]
 #[ignore]
 fn bench_dedup_bare_enumeration() {
@@ -308,12 +321,26 @@ fn bench_dedup_bare_enumeration() {
         let naive = count_prefilter(&durations);
         let naive_elapsed = t.elapsed();
 
+        let t = Instant::now();
+        let mut visited = 0u64;
+        crate::dedup::for_each_candidate_pair(&durations, |_, _| visited += 1);
+        let windowed_elapsed = t.elapsed();
+
+        assert_eq!(
+            visited, naive.pairs_survived,
+            "la fenêtre doit rendre EXACTEMENT les paires que le pré-filtre laissait passer"
+        );
+
         println!(
-            "  n = {n:>7} · double boucle : {naive_elapsed:>10.2?} pour {:>13} paires parcourues \
-             · {} survivantes ({:>6.3} %)",
+            "  n = {n:>7} · double boucle      : {naive_elapsed:>10.2?} · {:>13} paires parcourues",
             naive.pairs_total,
-            naive.pairs_survived,
-            100.0 * naive.pairs_survived as f64 / naive.pairs_total as f64,
+        );
+        println!(
+            "  {:>11}   fenêtre glissante : {windowed_elapsed:>10.2?} · {visited:>13} paires \
+             parcourues ({:>6.3} % du total) · ×{:.1} plus rapide",
+            "",
+            100.0 * visited as f64 / naive.pairs_total as f64,
+            naive_elapsed.as_secs_f64() / windowed_elapsed.as_secs_f64().max(f64::MIN_POSITIVE),
         );
     }
 }
@@ -381,6 +408,9 @@ mod tests {
         for k in 0..4 {
             assert_eq!(durations[2 * k + 1], durations[2 * k]);
         }
-        assert_ne!(durations[9], durations[8], "au-dela de dup_pairs, plus de partage");
+        assert_ne!(
+            durations[9], durations[8],
+            "au-dela de dup_pairs, plus de partage"
+        );
     }
 }

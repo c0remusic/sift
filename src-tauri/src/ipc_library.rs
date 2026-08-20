@@ -216,18 +216,23 @@ fn refresh_duplicate_groups(
             continue;
         };
         edges.extend(crate::dedup::edges_against(row, fp, &candidates[i]));
-        // Les nouvelles pistes entre elles. `load_dup_candidates` ne rend que `dup_scanned`,
-        // donc sans ceci deux doublons rangés dans la même fournée ne se verraient jamais.
-        // Fenêtre `i+1..` : chaque paire une seule fois.
-        for (j, other) in unscanned.iter().enumerate().skip(i + 1) {
-            let Some(other_fp) = built.fps[j].as_deref() else {
-                continue;
-            };
-            if let Some(e) = crate::dedup::edge_between(row, fp, other, other_fp) {
-                edges.push(e);
-            }
-        }
     }
+    // Les nouvelles pistes entre elles. `load_dup_candidates` ne rend que `dup_scanned`, donc sans
+    // ceci deux doublons rangés dans la même fournée ne se verraient jamais.
+    //
+    // `for_each_candidate_pair` remplace la double boucle `i+1..` depuis #38 : elle rendait chaque
+    // paire une seule fois, mais les rendait TOUTES — et le premier passage sur une base existante
+    // a `unscanned == toute la bibliothèque`, donc `n²/2` (3,22 s de balayage nu à 100 000 pistes,
+    // mesuré). Les paires qui atteignent `edge_between` sont exactement les mêmes.
+    let new_durations: Vec<Option<f64>> = unscanned.iter().map(|r| r.duration).collect();
+    crate::dedup::for_each_candidate_pair(&new_durations, |i, j| {
+        let (Some(fi), Some(fj)) = (built.fps[i].as_deref(), built.fps[j].as_deref()) else {
+            return;
+        };
+        if let Some(e) = crate::dedup::edge_between(&unscanned[i], fi, &unscanned[j], fj) {
+            edges.push(e);
+        }
+    });
 
     // ── 3. Écriture brève ────────────────────────────────────────────────────
     {
