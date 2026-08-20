@@ -158,10 +158,13 @@ fn seed_dataset(conn: &mut Connection, n: usize, filed_fraction: f64) -> rusqlit
     let filed_permille = (filed_fraction * 1000.0).round() as usize;
     let tx = conn.transaction()?;
     {
+        // `verdict_ver` semée avec le verdict : sans elle, la base de mesure porterait 15 000
+        // verdicts que `verdict::cached` efface à la lecture, et le compte « À re-sourcer » qu'on
+        // vient mesurer rendrait 0 (issue #39).
         let mut ins_track = tx.prepare(
             "INSERT INTO tracks
-                (id, path, format, bitrate, duration, verdict, status, folder, has_cover, filename)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
+                (id, path, format, bitrate, duration, verdict, verdict_ver, status, folder, has_cover, filename)
+             VALUES (?1,?2,?3,?4,?5,?6,?11,?7,?8,?9,?10)",
         )?;
         let mut ins_meta = tx.prepare(
             "INSERT INTO metadata (track_id, artist, title, label, year, bpm)
@@ -191,7 +194,17 @@ fn seed_dataset(conn: &mut Connection, n: usize, filed_fraction: f64) -> rusqlit
             let filename = format!("{id}.{format}");
 
             ins_track.execute(rusqlite::params![
-                id, path, format, bitrate, duration, verdict, status, folder, has_cover, filename,
+                id,
+                path,
+                format,
+                bitrate,
+                duration,
+                verdict,
+                status,
+                folder,
+                has_cover,
+                filename,
+                crate::analysis::verdict::VERDICT_CACHE_VERSION,
             ])?;
 
             let artist = artist_for(i);
@@ -635,9 +648,11 @@ fn build_filing_dataset(
         {
             let mut ins_track = tx
                 .prepare(
+                    // `verdict_ver` avec le verdict — même raison que le seed de `bench_volume`
+                    // plus haut : un verdict sans version est effacé à la lecture.
                     "INSERT INTO tracks
-                        (id, path, format, bitrate, duration, verdict, status, folder, has_cover, filename)
-                     VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10)",
+                        (id, path, format, bitrate, duration, verdict, verdict_ver, status, folder, has_cover, filename)
+                     VALUES (?1,?2,?3,?4,?5,?6,?11,?7,?8,?9,?10)",
                 )
                 .expect("prepare track insert");
             let mut ins_meta = tx
@@ -721,6 +736,7 @@ fn build_filing_dataset(
                         folder,
                         (i % 3 == 0) as i64,
                         filename,
+                        crate::analysis::verdict::VERDICT_CACHE_VERSION,
                     ])
                     .expect("insert track");
                 ins_meta
@@ -956,7 +972,8 @@ fn assert_sound_confirmed_match(conn: &Connection, track_id: i64) {
 fn clear_fingerprints(conn: &Connection, ids: &[i64]) {
     for id in ids {
         conn.execute(
-            "UPDATE tracks SET fingerprint=NULL WHERE id=?1",
+            // La version tombe avec la valeur, comme `scanner::upsert_file` le fait en production.
+            "UPDATE tracks SET fingerprint=NULL, fingerprint_ver=NULL WHERE id=?1",
             rusqlite::params![id],
         )
         .expect("clear fingerprint cache");

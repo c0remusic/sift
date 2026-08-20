@@ -407,6 +407,51 @@ const MIGRATIONS: &[&str] = &[
     WHERE cutoff_hz IS NOT NULL AND cutoff_hz < 2000
       AND (report_json IS NULL OR report_json <> '');
     "#,
+    // v22 — versions de cache de l'empreinte et du verdict (issue #39).
+    //
+    // Des trois sorties d'étape mises en cache par l'analyse, une seule était versionnée : le
+    // rapport, par `report_cache_ver` (v9), lu par `ipc::analyze_path`. L'empreinte acoustique et
+    // le verdict ne l'étaient par rien — le commentaire de la v21 juste au-dessus le constate déjà
+    // en toutes lettres. Conséquence : un changement d'algorithme ne casse rien de VISIBLE. Le
+    // dédoublonnage comparerait des empreintes anciennes à des neuves, c'est-à-dire des choses
+    // incomparables, et une bibliothèque porterait deux générations de verdicts mélangées. Pas un
+    // plantage : un taux de doublons qui change sans raison affichable, sur une fonction dont
+    // l'utilisateur ne peut pas vérifier le résultat à la main.
+    //
+    // Les deux UPDATE ne sont PAS une purge, c'est l'inverse : ils **backfillent** la version
+    // courante sur les lignes dont on peut établir qu'elles ont bien été produites par le code
+    // d'aujourd'hui. Sans eux, toute ligne existante partirait à NULL, donc périmée, et cette
+    // migration déclencherait le jour de sa livraison exactement ce que le ticket refuse de
+    // décider d'avance : ré-empreinter la bibliothèque entière (un DÉCODAGE audio par piste — le
+    // coût même par lequel `db.rs:393` écarte déjà un bump dans un cas voisin) et la ré-analyser.
+    // Ce ticket demande que le désaccord soit DÉTECTABLE ; la décision d'invalider appartient au
+    // jour du bump.
+    //
+    // Le backfill dit vrai, il ne se contente pas d'arranger :
+    //
+    // - `fingerprint_ver = 1` : toute empreinte non vide en base a été produite par
+    //   `fingerprint::compute_for_path` sous rusty-chromaprint 0.3 + `preset_test1`, ce qui est
+    //   précisément la définition de la version 1. Le garde `fingerprint <> ''` laisse à NULL une
+    //   colonne vide, qui n'est de toute façon pas un cache.
+    // - `verdict_ver = 1` : seulement pour les lignes dont le rapport compagnon est LUI-MÊME à
+    //   jour (`report_cache_ver = 8`). `worker::persist_report` écrit verdict et rapport dans le
+    //   même UPDATE : un rapport en version courante atteste que le verdict d'à côté sort du même
+    //   passage. Une ligne au rapport périmé garde `verdict_ver` NULL — donc un verdict périmé,
+    //   ce qu'elle est réellement.
+    //
+    // Les deux `1` et le `8` sont des LITTÉRAUX, pas les constantes Rust, et c'est délibéré : une
+    // migration est gelée dans le temps. Écrire `FINGERPRINT_CACHE_VERSION` ici ferait qu'un futur
+    // bump réécrirait rétroactivement le sens de cette migration et stamperait « courant » des
+    // lignes produites par l'ancien algorithme — le défaut exact que la colonne existe pour
+    // empêcher.
+    r#"
+    ALTER TABLE tracks ADD COLUMN fingerprint_ver INTEGER;
+    ALTER TABLE tracks ADD COLUMN verdict_ver INTEGER;
+    UPDATE tracks SET fingerprint_ver = 1
+    WHERE fingerprint IS NOT NULL AND fingerprint <> '';
+    UPDATE tracks SET verdict_ver = 1
+    WHERE verdict IS NOT NULL AND report_cache_ver = 8;
+    "#,
 ];
 
 /// Applies ONE migration and its `user_version` bump in a SINGLE transaction, so a batch that
@@ -648,6 +693,96 @@ mod tests {
             Some(String::new()),
             "la sentinelle de fichier illisible a ete effacee — le fichier repasserait en file"
         );
+    }
+
+    /// v22 ne PURGE rien : elle stampe la version courante sur ce dont on peut établir que le code
+    /// d'aujourd'hui l'a produit, et laisse NULL — donc périmé — tout le reste.
+    ///
+    /// Les quatre populations sont dans le même test parce que le risque est symétrique, comme
+    /// pour v20 et v21. Trop large : la migration déclare « courant » un verdict d'un autre moteur,
+    /// exactement ce que la colonne existe pour empêcher. Trop étroit : elle périme toute la
+    /// bibliothèque le jour de sa livraison — une empreinte périmée coûte un DÉCODAGE audio par
+    /// piste, et `db.rs:393` écarte déjà un bump pour ce coût-là.
+    ///
+    /// Les littéraux `1` et `8` sont ceux de la migration, délibérément : elle est gelée dans le
+    /// temps, et un futur bump des constantes Rust ne doit rien changer à ce qu'elle a fait.
+    #[test]
+    fn migration_v22_stampe_le_courant_et_laisse_le_reste_perime() {
+        let conn = Connection::open_in_memory().unwrap();
+        for sql in MIGRATIONS.iter().take(21) {
+            conn.execute_batch(sql).unwrap();
+        }
+        conn.execute_batch("PRAGMA user_version = 21").unwrap();
+        // 1 — empreinte présente + verdict dont le rapport compagnon est à jour. Les deux à stamper.
+        conn.execute(
+            "INSERT INTO tracks (id, path, status, fingerprint, verdict, report_cache_ver)
+             VALUES (1, '/a.mp3', 'filed', '1,2,3', 'fake', 8)",
+            [],
+        )
+        .unwrap();
+        // 2 — empreinte VIDE : ce n'est pas un cache, rien à stamper.
+        conn.execute(
+            "INSERT INTO tracks (id, path, status, fingerprint) VALUES (2, '/b.mp3', 'filed', '')",
+            [],
+        )
+        .unwrap();
+        // 3 — verdict présent mais rapport compagnon PÉRIMÉ (version 7). Rien n'atteste que ce
+        //     verdict sort du moteur courant : il doit rester périmé, c'est ce qu'il est.
+        conn.execute(
+            "INSERT INTO tracks (id, path, status, verdict, report_cache_ver)
+             VALUES (3, '/c.mp3', 'filed', 'ok', 7)",
+            [],
+        )
+        .unwrap();
+        // 4 — sentinelle de `persist_failure` : verdict NULL, rapport ''. Aucune version ne doit
+        //     apparaître, sinon la ligne prétendrait porter un verdict courant qu'elle n'a pas.
+        conn.execute(
+            "INSERT INTO tracks (id, path, status, verdict, report_json, analysis_attempts)
+             VALUES (4, '/d.mp3', 'pending', NULL, '', 1)",
+            [],
+        )
+        .unwrap();
+
+        run_migrations(&conn).unwrap();
+
+        let vers = |id: i64| -> (Option<i64>, Option<i64>) {
+            conn.query_row(
+                "SELECT fingerprint_ver, verdict_ver FROM tracks WHERE id=?1",
+                rusqlite::params![id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap()
+        };
+        assert_eq!(
+            vers(1),
+            (Some(1), Some(1)),
+            "empreinte reelle + verdict au rapport courant : les deux devaient etre stampes, \
+             sinon la livraison de cette migration re-empreinte et re-analyse toute la bibliotheque"
+        );
+        assert_eq!(
+            vers(2).0,
+            None,
+            "une empreinte vide n'est pas un cache — la stamper la rendrait servable"
+        );
+        assert_eq!(
+            vers(3).1,
+            None,
+            "verdict au rapport perime : rien n'atteste qu'il sort du moteur courant"
+        );
+        assert_eq!(
+            vers(4),
+            (None, None),
+            "la sentinelle de fichier illisible ne doit porter aucune version"
+        );
+        // La sentinelle elle-même reste intacte : v22 est purement additive, contrairement à
+        // v16/v20/v21 qui sont des migrations de contenu.
+        let sentinelle: Option<String> = conn
+            .query_row("SELECT report_json FROM tracks WHERE id=4", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(sentinelle.as_deref(), Some(""));
+        assert_eq!(schema_version(&conn).unwrap(), MIGRATIONS.len() as i64);
     }
 
     #[test]

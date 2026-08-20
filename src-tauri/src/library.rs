@@ -269,9 +269,13 @@ pub fn library_stats(conn: &rusqlite::Connection) -> rusqlite::Result<DashboardS
         [],
         |r| r.get(0),
     )?;
+    // `verdict_ver` en plus de `verdict` : la carte « À re-sourcer » propose une action sur des
+    // fichiers achetés, elle ne doit compter que des verdicts que le moteur COURANT produirait
+    // (issue #39). Un FAKE d'une génération précédente sort du compte au lieu d'y rester
+    // indéfiniment — la piste réapparaîtra dès qu'un verdict courant sera écrit.
     let fake: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM tracks WHERE status='filed' AND verdict='fake'",
-        [],
+        "SELECT COUNT(*) FROM tracks WHERE status='filed' AND verdict='fake' AND verdict_ver=?1",
+        rusqlite::params![crate::analysis::verdict::VERDICT_CACHE_VERSION],
         |r| r.get(0),
     )?;
     // Rempli par l'appelant, hors verrou — voir la doc de cette fonction.
@@ -306,10 +310,14 @@ pub fn list_filed(
     conn: &rusqlite::Connection,
     f: &LibraryFilter,
 ) -> rusqlite::Result<Vec<LibraryTrack>> {
+    // `t.verdict_ver` voyage avec `t.verdict` (dernière colonne, pour ne pas décaler les index
+    // existants) et la valeur brute ne sort jamais sans `verdict::cached` : un badge FAKE produit
+    // par un moteur périmé s'efface au lieu de rester affiché (issue #39). La version elle-même
+    // n'est pas publiée — `LibraryTrack` et `shared/contracts.ts` sont inchangés.
     let mut sql = String::from(
         "SELECT t.id, t.path, t.target_format, t.bitrate, t.duration, t.verdict, t.folder, t.has_cover, \
                 m.artist, m.title, m.label, m.year, m.bpm, m.cover_path, m.discogs_release_id, \
-                m.version \
+                m.version, t.verdict_ver \
          FROM tracks t LEFT JOIN metadata m ON m.track_id = t.id \
          WHERE t.status = 'filed'",
     );
@@ -330,7 +338,10 @@ pub fn list_filed(
         }
     }
     if f.verdict.is_some() {
-        sql.push_str(" AND t.verdict = :verdict");
+        // Filtrer sur le verdict SANS sa version rendrait des lignes que la colonne Verdict de la
+        // même table affiche vides (`verdict::cached` les efface) — un filtre qui trouve ce que
+        // l'écran ne montre pas.
+        sql.push_str(" AND t.verdict = :verdict AND t.verdict_ver = :verdict_ver");
     }
     if f.q.is_some() {
         // `m.version` fait partie du titre affiché (voir la composition plus bas) : sans elle,
@@ -348,6 +359,7 @@ pub fn list_filed(
     sql.push_str(" ORDER BY m.artist, m.title, t.path");
 
     let like = f.q.as_ref().map(|q| format!("%{q}%"));
+    let verdict_ver = crate::analysis::verdict::VERDICT_CACHE_VERSION;
     let mut stmt = conn.prepare(&sql)?;
     let params: Vec<(&str, &dyn rusqlite::ToSql)> = {
         let mut p: Vec<(&str, &dyn rusqlite::ToSql)> = Vec::new();
@@ -356,6 +368,7 @@ pub fn list_filed(
         }
         if let Some(v) = &f.verdict {
             p.push((":verdict", v));
+            p.push((":verdict_ver", &verdict_ver));
         }
         if let Some(l) = &like {
             p.push((":like", l));
@@ -387,6 +400,7 @@ pub fn list_filed(
                 r.get::<_, Option<String>>(13)?,
                 r.get::<_, Option<String>>(14)?,
                 r.get::<_, Option<String>>(15)?,
+                r.get::<_, Option<i64>>(16)?,
             ))
         })?
         .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -426,6 +440,7 @@ pub fn list_filed(
         cover_path,
         rel,
         version,
+        verdict_ver_row,
     ) in rows
     {
         out.push(LibraryTrack {
@@ -447,7 +462,7 @@ pub fn list_filed(
             discogs_release_id: rel,
             cover_path,
             has_cover: has_cover.unwrap_or(0) != 0,
-            verdict,
+            verdict: crate::analysis::verdict::cached(verdict, verdict_ver_row),
             folder,
         });
     }
@@ -919,13 +934,20 @@ mod tests {
         conn
     }
 
+    /// La version de cache que `worker::persist_report` stampe dans le MÊME `UPDATE` que le
+    /// verdict. Tout seed de test qui écrit `verdict` doit l'écrire aussi : sans elle la ligne
+    /// décrit un état que la production ne produit plus (un verdict d'avant la v22), et
+    /// `verdict::cached` l'efface à la lecture — le test mesurerait alors l'invalidation au lieu
+    /// de ce qu'il vise.
+    const VER: i64 = crate::analysis::verdict::VERDICT_CACHE_VERSION;
+
     #[test]
     fn list_filed_joins_metadata_and_genres() {
         let conn = db();
         conn.execute(
-            "INSERT INTO tracks(id, path, target_format, bitrate, duration, verdict, status, folder, has_cover) \
-             VALUES(1, '/lib/House/a.aiff', 'aiff_16_44', 1411, 360.0, 'ok', 'filed', 'House', 1)",
-            [],
+            "INSERT INTO tracks(id, path, target_format, bitrate, duration, verdict, verdict_ver, status, folder, has_cover) \
+             VALUES(1, '/lib/House/a.aiff', 'aiff_16_44', 1411, 360.0, 'ok', ?1, 'filed', 'House', 1)",
+            rusqlite::params![VER],
         )
         .unwrap();
         conn.execute(
@@ -1023,13 +1045,15 @@ mod tests {
     fn list_filed_filters_by_verdict() {
         let conn = db();
         conn.execute(
-            "INSERT INTO tracks(id, path, status, verdict) VALUES(1, '/lib/a.mp3', 'filed', 'fake')",
-            [],
+            "INSERT INTO tracks(id, path, status, verdict, verdict_ver) \
+             VALUES(1, '/lib/a.mp3', 'filed', 'fake', ?1)",
+            rusqlite::params![VER],
         )
         .unwrap();
         conn.execute(
-            "INSERT INTO tracks(id, path, status, verdict) VALUES(2, '/lib/b.mp3', 'filed', 'ok')",
-            [],
+            "INSERT INTO tracks(id, path, status, verdict, verdict_ver) \
+             VALUES(2, '/lib/b.mp3', 'filed', 'ok', ?1)",
+            rusqlite::params![VER],
         )
         .unwrap();
         let f = LibraryFilter {
@@ -1163,15 +1187,15 @@ mod tests {
     fn stats_filter_and_format_column_read_what_filing_actually_writes() {
         let conn = db();
         conn.execute(
-            "INSERT INTO tracks(id, path, status, target_format, verdict) \
-             VALUES(1, '/lib/a.aiff', 'filed', 'aiff_16_44', 'ok')",
-            [],
+            "INSERT INTO tracks(id, path, status, target_format, verdict, verdict_ver) \
+             VALUES(1, '/lib/a.aiff', 'filed', 'aiff_16_44', 'ok', ?1)",
+            rusqlite::params![VER],
         )
         .unwrap();
         conn.execute(
-            "INSERT INTO tracks(id, path, status, target_format, verdict) \
-             VALUES(2, '/lib/b.mp3', 'filed', 'mp3_320', 'ok')",
-            [],
+            "INSERT INTO tracks(id, path, status, target_format, verdict, verdict_ver) \
+             VALUES(2, '/lib/b.mp3', 'filed', 'mp3_320', 'ok', ?1)",
+            rusqlite::params![VER],
         )
         .unwrap();
 
@@ -1198,25 +1222,82 @@ mod tests {
         assert_eq!(list_filed(&conn, &mp3).unwrap().len(), 1);
     }
 
+    /// Les trois lectures du verdict en Bibliothèque doivent tomber d'accord quand sa version est
+    /// distancée : la colonne se vide, le compte « À re-sourcer » l'exclut, et le filtre ne le
+    /// trouve plus (issue #39).
+    ///
+    /// Les trois dans le même test parce que leur désaccord serait invisible autrement : un compte
+    /// qui annonce « 1 à re-sourcer » au-dessus d'une table dont la colonne Verdict est vide, ou un
+    /// filtre qui rend une ligne que l'écran affiche sans badge. C'est ce que coûterait d'oublier
+    /// `verdict_ver` sur une seule des trois requêtes.
+    ///
+    /// Mutation portée par la ligne, pas par la `const` : `VER + 1` place la ligne dans l'état
+    /// qu'elle aurait le lendemain d'un bump, donc le test reste vrai après.
+    #[test]
+    fn un_verdict_perime_disparait_du_compte_du_filtre_et_de_la_colonne() {
+        let conn = db();
+        conn.execute(
+            "INSERT INTO tracks(id, path, status, target_format, verdict, verdict_ver) \
+             VALUES(1, '/lib/a.mp3', 'filed', 'mp3_320', 'fake', ?1)",
+            rusqlite::params![VER],
+        )
+        .unwrap();
+        let seul_fake = LibraryFilter {
+            verdict: Some("fake".into()),
+            ..Default::default()
+        };
+
+        assert_eq!(library_stats(&conn).unwrap().fake, 1);
+        assert_eq!(list_filed(&conn, &seul_fake).unwrap().len(), 1);
+        assert_eq!(
+            list_filed(&conn, &LibraryFilter::default()).unwrap()[0]
+                .verdict
+                .as_deref(),
+            Some("fake")
+        );
+
+        conn.execute(
+            "UPDATE tracks SET verdict_ver=?1 WHERE id=1",
+            rusqlite::params![VER + 1],
+        )
+        .unwrap();
+
+        assert_eq!(
+            library_stats(&conn).unwrap().fake,
+            0,
+            "la carte « A re-sourcer » proposait une action sur un verdict d'un autre moteur"
+        );
+        assert_eq!(
+            list_filed(&conn, &seul_fake).unwrap().len(),
+            0,
+            "le filtre trouvait une ligne que la colonne Verdict affiche vide"
+        );
+        assert_eq!(
+            list_filed(&conn, &LibraryFilter::default()).unwrap()[0].verdict,
+            None,
+            "un badge FAKE perime restait affiche"
+        );
+    }
+
     #[test]
     fn library_stats_aggregates_counts() {
         let conn = db();
         conn.execute(
-            "INSERT INTO tracks(id, path, status, target_format, verdict) \
-             VALUES(1, '/lib/a.wav', 'filed', 'wav_16_44', 'ok')",
-            [],
+            "INSERT INTO tracks(id, path, status, target_format, verdict, verdict_ver) \
+             VALUES(1, '/lib/a.wav', 'filed', 'wav_16_44', 'ok', ?1)",
+            rusqlite::params![VER],
         )
         .unwrap();
         conn.execute(
-            "INSERT INTO tracks(id, path, status, target_format, verdict) \
-             VALUES(2, '/lib/b.mp3', 'filed', 'mp3_320', 'ok')",
-            [],
+            "INSERT INTO tracks(id, path, status, target_format, verdict, verdict_ver) \
+             VALUES(2, '/lib/b.mp3', 'filed', 'mp3_320', 'ok', ?1)",
+            rusqlite::params![VER],
         )
         .unwrap();
         conn.execute(
-            "INSERT INTO tracks(id, path, status, target_format, verdict) \
-             VALUES(3, '/lib/c.mp3', 'filed', 'mp3_320', 'fake')",
-            [],
+            "INSERT INTO tracks(id, path, status, target_format, verdict, verdict_ver) \
+             VALUES(3, '/lib/c.mp3', 'filed', 'mp3_320', 'fake', ?1)",
+            rusqlite::params![VER],
         )
         .unwrap();
         // Une piste en attente n'a pas encore de `target_format` — c'est l'état réel, et elle ne

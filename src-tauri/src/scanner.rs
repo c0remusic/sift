@@ -91,8 +91,15 @@ pub fn upsert_file(conn: &Connection, source_id: i64, f: &DiskFile) -> rusqlite:
         Some((size, mtime)) if size == f.size_bytes && mtime == f.mtime => Ok(false),
         Some(_) => {
             conn.execute(
+                // `fingerprint_ver` tombe AVEC `fingerprint` : une version ne doit jamais survivre
+                // à la donnée qu'elle date, sinon elle atteste une empreinte effacée. `verdict` et
+                // `verdict_ver` ne sont volontairement PAS touchés ici — cet UPDATE laisse déjà le
+                // vieux verdict en place (voir `worker::persist_failure`), et les deux doivent
+                // bouger ensemble ou pas du tout. `analyzed_at=NULL` suffit à faire repasser la
+                // piste par l'analyse.
                 "UPDATE tracks SET filename=?2, size_bytes=?3, mtime=?4, source_id=?5,
-                        status='pending', analyzed_at=NULL, fingerprint=NULL, report_json=NULL
+                        status='pending', analyzed_at=NULL, fingerprint=NULL,
+                        fingerprint_ver=NULL, report_json=NULL
                  WHERE path=?1",
                 rusqlite::params![f.path, f.filename, f.size_bytes, f.mtime, source_id],
             )?;
@@ -285,10 +292,11 @@ mod tests {
         let p = root.join("t.wav");
         fs::write(&p, b"123").unwrap();
         reconcile_with_progress(&conn, sid, root, |_| {}).unwrap();
-        // pretend it was analysed
+        // pretend it was analysed — `verdict` ET sa version, comme `worker::persist_report` les
+        // écrit toujours ensemble ; un seed qui n'écrit que l'un décrit un état hors production.
         conn.execute(
-            "UPDATE tracks SET analyzed_at=datetime('now'), verdict='ok'",
-            [],
+            "UPDATE tracks SET analyzed_at=datetime('now'), verdict='ok', verdict_ver=?1",
+            rusqlite::params![crate::analysis::verdict::VERDICT_CACHE_VERSION],
         )
         .unwrap();
 

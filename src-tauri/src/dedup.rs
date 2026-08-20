@@ -192,7 +192,10 @@ pub(crate) struct DupScanRow {
     pub bitrate: Option<i64>,
     pub duration: Option<f64>,
     pub truncated: bool,
-    /// Cached fingerprint as stored (may be empty/NULL → recompute lazily below).
+    /// Empreinte en cache, **déjà passée par `fingerprint::cached`** au moment de la lecture : une
+    /// version périmée arrive donc ici en `None`, indiscernable d'une absence, et se recalcule
+    /// (`build_fingerprints`). Chaque chargeur qui remplit ce champ doit passer par cette fonction
+    /// — sinon il ressert une empreinte produite par un autre algorithme (issue #39).
     pub fingerprint: Option<String>,
 }
 
@@ -211,7 +214,8 @@ pub(crate) fn load_dup_scan_rows(conn: &Connection) -> rusqlite::Result<Vec<DupS
     // battait un AIFF sur tous les groupes mixtes. Le geste suivant que propose l'écran est une
     // suppression.
     let mut stmt = conn.prepare(
-        "SELECT id, path, filename, folder, target_format, bitrate, duration, truncated, fingerprint \
+        "SELECT id, path, filename, folder, target_format, bitrate, duration, truncated, \
+                fingerprint, fingerprint_ver \
          FROM tracks WHERE status='filed'",
     )?;
     let rows: Vec<DupScanRow> = stmt
@@ -231,7 +235,7 @@ pub(crate) fn load_dup_scan_rows(conn: &Connection) -> rusqlite::Result<Vec<DupS
                 bitrate: r.get(5)?,
                 duration: r.get(6)?,
                 truncated: r.get::<_, Option<i64>>(7)?.unwrap_or(0) != 0,
-                fingerprint: r.get(8)?,
+                fingerprint: fingerprint::cached(r.get(8)?, r.get(9)?),
             })
         })?
         .collect::<rusqlite::Result<_>>()?;
@@ -268,11 +272,19 @@ pub(crate) fn build_fingerprints(rows: &[DupScanRow]) -> BuiltFingerprints {
 
 /// Persist newly-computed fingerprints (cache warm-up). Intended to be called under a
 /// short-held lock, after the heavy compute is already done.
+///
+/// `fingerprint_ver` part dans le MÊME `UPDATE` que la valeur : une écriture qui l'oublierait
+/// laisserait la ligne éternellement périmée aux yeux de `fingerprint::cached`, donc recalculée à
+/// chaque passage — un décodage audio par piste et par appel, en silence.
 pub(crate) fn persist_fingerprints(conn: &Connection, entries: &[(i64, Vec<u32>)]) {
     for (id, fp) in entries {
         let _ = conn.execute(
-            "UPDATE tracks SET fingerprint=?2 WHERE id=?1",
-            params![id, fingerprint::encode(fp)],
+            "UPDATE tracks SET fingerprint=?2, fingerprint_ver=?3 WHERE id=?1",
+            params![
+                id,
+                fingerprint::encode(fp),
+                fingerprint::FINGERPRINT_CACHE_VERSION
+            ],
         );
     }
 }
@@ -434,7 +446,7 @@ pub(crate) fn load_dup_candidates(
 ) -> rusqlite::Result<Vec<DupScanRow>> {
     let mut stmt = conn.prepare(
         "SELECT t.id, t.path, t.filename, t.folder, t.target_format, t.bitrate, t.duration, \
-                t.truncated, t.fingerprint \
+                t.truncated, t.fingerprint, t.fingerprint_ver \
          FROM tracks t \
          JOIN dup_scanned s ON s.track_id = t.id \
          WHERE t.status='filed' AND t.id <> ?1 \
@@ -455,7 +467,7 @@ pub(crate) fn load_dup_candidates(
                 bitrate: r.get(5)?,
                 duration: r.get(6)?,
                 truncated: r.get::<_, Option<i64>>(7)?.unwrap_or(0) != 0,
-                fingerprint: r.get(8)?,
+                fingerprint: fingerprint::cached(r.get(8)?, r.get(9)?),
             })
         })?
         .collect::<rusqlite::Result<_>>()?;
@@ -499,7 +511,8 @@ pub(crate) fn load_dup_group_rows(conn: &Connection) -> rusqlite::Result<Vec<Dup
 /// Les pistes `filed` qui n'ont encore jamais été comparées.
 pub(crate) fn load_unscanned_rows(conn: &Connection) -> rusqlite::Result<Vec<DupScanRow>> {
     let mut stmt = conn.prepare(
-        "SELECT id, path, filename, folder, target_format, bitrate, duration, truncated, fingerprint \
+        "SELECT id, path, filename, folder, target_format, bitrate, duration, truncated, \
+                fingerprint, fingerprint_ver \
          FROM tracks \
          WHERE status='filed' AND id NOT IN (SELECT track_id FROM dup_scanned)",
     )?;
@@ -518,7 +531,7 @@ pub(crate) fn load_unscanned_rows(conn: &Connection) -> rusqlite::Result<Vec<Dup
                 bitrate: r.get(5)?,
                 duration: r.get(6)?,
                 truncated: r.get::<_, Option<i64>>(7)?.unwrap_or(0) != 0,
-                fingerprint: r.get(8)?,
+                fingerprint: fingerprint::cached(r.get(8)?, r.get(9)?),
             })
         })?
         .collect::<rusqlite::Result<_>>()?;
@@ -901,12 +914,15 @@ pub fn find_duplicate(conn: &Connection, track_id: i64) -> rusqlite::Result<Opti
 
 /// Fetch a track's fingerprint from the `tracks.fingerprint` cache, or compute it from the
 /// file and cache it. `None` if the audio can't be fingerprinted (short/corrupt/missing).
+///
+/// Une empreinte dont `fingerprint_ver` n'est pas la version courante est traitée comme absente
+/// (`fingerprint::cached`) : elle se recalcule et s'écrase, elle ne remonte jamais une erreur.
 fn get_or_compute_fp(conn: &Connection, track_id: i64, path: &str) -> Option<Vec<u32>> {
     let cached: Option<String> = conn
         .query_row(
-            "SELECT fingerprint FROM tracks WHERE id=?1",
+            "SELECT fingerprint, fingerprint_ver FROM tracks WHERE id=?1",
             params![track_id],
-            |r| r.get(0),
+            |r| Ok(fingerprint::cached(r.get(0)?, r.get(1)?)),
         )
         .ok()
         .flatten();
@@ -918,8 +934,12 @@ fn get_or_compute_fp(conn: &Connection, track_id: i64, path: &str) -> Option<Vec
     match fingerprint::compute_for_path(path) {
         Ok(fp) => {
             let _ = conn.execute(
-                "UPDATE tracks SET fingerprint=?2 WHERE id=?1",
-                params![track_id, fingerprint::encode(&fp)],
+                "UPDATE tracks SET fingerprint=?2, fingerprint_ver=?3 WHERE id=?1",
+                params![
+                    track_id,
+                    fingerprint::encode(&fp),
+                    fingerprint::FINGERPRINT_CACHE_VERSION
+                ],
             );
             Some(fp)
         }
@@ -1007,6 +1027,17 @@ mod tests {
         )
         .unwrap();
         conn.last_insert_rowid()
+    }
+
+    /// Sème une empreinte en cache **par le chemin de production** (`persist_fingerprints`), donc
+    /// avec son `fingerprint_ver`. Un `UPDATE tracks SET fingerprint=…` écrit à la main laisserait
+    /// la version NULL : `fingerprint::cached` rendrait `None`, `build_fingerprints` tenterait un
+    /// décodage disque, et le test échouerait pour une raison qui n'est pas la sienne. C'est
+    /// exactement ce qui est arrivé aux dix tests de ce module à l'ajout de la v22 — un seed qui
+    /// contourne la production ne prouve rien sur la production.
+    fn seed_fingerprint(conn: &Connection, ids: &[i64], fp: &[u32]) {
+        let entries: Vec<(i64, Vec<u32>)> = ids.iter().map(|&id| (id, fp.to_vec())).collect();
+        persist_fingerprints(conn, &entries);
     }
 
     #[test]
@@ -1154,6 +1185,78 @@ mod tests {
         assert_eq!(g.members.iter().filter(|m| m.recommend_keep).count(), 1);
     }
 
+    /// Une empreinte dont la version n'est plus la courante doit se lire comme ABSENTE, sur les
+    /// trois chargeurs qui remontent la colonne — c'est la lecture qui donne son effet à
+    /// `fingerprint_ver` (issue #39).
+    ///
+    /// Le test ne peut pas muter une `const`, alors il fait l'inverse, ce qui est équivalent du
+    /// point de vue de la ligne : il écrit `FINGERPRINT_CACHE_VERSION + 1`, exactement l'état
+    /// qu'aurait une empreinte existante le jour où la constante est incrémentée. Relatif et pas
+    /// absolu, donc il reste vrai après un bump. Sans cette mutation, un test ne prouverait rien —
+    /// il passerait aussi avec la lecture d'avant.
+    #[test]
+    fn une_empreinte_d_une_autre_version_se_lit_comme_absente() {
+        let conn = db();
+        let id = add_filed(&conn, "/lib/versionnee.flac", Some(120.0), &[1, 2, 3, 4]);
+
+        // Version courante : les trois chargeurs servent l'empreinte.
+        assert!(
+            load_unscanned_rows(&conn).unwrap()[0].fingerprint.is_some(),
+            "empreinte a la version courante : elle doit etre servie"
+        );
+
+        // Une seule colonne bouge — la valeur reste identique, seule sa version diverge.
+        conn.execute(
+            "UPDATE tracks SET fingerprint_ver=?2 WHERE id=?1",
+            params![id, fingerprint::FINGERPRINT_CACHE_VERSION + 1],
+        )
+        .unwrap();
+
+        let rows = load_unscanned_rows(&conn).unwrap();
+        assert!(
+            rows[0].fingerprint.is_none(),
+            "load_unscanned_rows resservait une empreinte d'un autre algorithme"
+        );
+        assert!(
+            load_dup_scan_rows(&conn).unwrap()[0].fingerprint.is_none(),
+            "load_dup_scan_rows resservait une empreinte d'un autre algorithme"
+        );
+        // `load_dup_candidates` ne rend que des pistes déjà dans `dup_scanned` : on l'y met, puis
+        // on interroge depuis une AUTRE piste, ce qui est sa vraie forme d'appel.
+        conn.execute(
+            "INSERT INTO dup_scanned (track_id) VALUES (?1)",
+            params![id],
+        )
+        .unwrap();
+        let autre = add_filed(&conn, "/lib/autre.flac", Some(120.0), &[9, 9, 9, 9]);
+        let sonde = DupScanRow {
+            id: autre,
+            path: "/lib/autre.flac".into(),
+            filename: None,
+            folder: None,
+            format: None,
+            bitrate: None,
+            duration: Some(120.0),
+            truncated: false,
+            fingerprint: None,
+        };
+        let cands = load_dup_candidates(&conn, &sonde).unwrap();
+        assert_eq!(cands.len(), 1);
+        assert!(
+            cands[0].fingerprint.is_none(),
+            "load_dup_candidates resservait une empreinte d'un autre algorithme"
+        );
+
+        // Et le défaut de cache est bien traité comme une ABSENCE, pas comme une erreur :
+        // `build_fingerprints` retombe sur un décodage disque, qui échoue ici (chemin fictif) et
+        // rend `None` sans rien faire tomber.
+        let built = build_fingerprints(&rows);
+        assert!(
+            built.fps[0].is_none() && built.to_persist.is_empty(),
+            "un defaut de cache doit mener au recalcul, jamais a une erreur"
+        );
+    }
+
     /// Régression : le scan lisait `tracks.format`, colonne qu'aucun code de production n'écrit.
     /// `is_lossless_fmt` recevait donc toujours NULL et `pick_keep` n'appliquait jamais son premier
     /// critère — le membre recommandé se décidait au bitrate seul, donc un MP3 320 battait un AIFF
@@ -1180,12 +1283,7 @@ mod tests {
             [],
         )
         .unwrap();
-        let fp = fingerprint::encode(&[1, 2, 3, 4, 5, 6, 7, 8]);
-        conn.execute(
-            "UPDATE tracks SET fingerprint=?1 WHERE id IN (1,2)",
-            params![fp],
-        )
-        .unwrap();
+        seed_fingerprint(&conn, &[1, 2], &[1, 2, 3, 4, 5, 6, 7, 8]);
 
         let groups = scan_library_duplicates(&conn).unwrap();
         assert_eq!(groups.len(), 1);
@@ -1214,12 +1312,7 @@ mod tests {
         )
         .unwrap();
         // Fake-match the pair directly via a shared cached fingerprint (bypasses real decode).
-        let fp = fingerprint::encode(&[1, 2, 3, 4, 5, 6, 7, 8]);
-        conn.execute(
-            "UPDATE tracks SET fingerprint=?1 WHERE id IN (1,2)",
-            params![fp],
-        )
-        .unwrap();
+        seed_fingerprint(&conn, &[1, 2], &[1, 2, 3, 4, 5, 6, 7, 8]);
 
         let groups = scan_library_duplicates(&conn).unwrap();
 
@@ -1308,12 +1401,7 @@ mod tests {
             [],
         )
         .unwrap();
-        let fp = fingerprint::encode(&[1, 2, 3, 4, 5, 6, 7, 8]);
-        conn.execute(
-            "UPDATE tracks SET fingerprint=?1 WHERE id IN (1,2)",
-            params![fp],
-        )
-        .unwrap();
+        seed_fingerprint(&conn, &[1, 2], &[1, 2, 3, 4, 5, 6, 7, 8]);
 
         let groups = scan_library_duplicates(&conn).unwrap();
         assert!(
@@ -1338,12 +1426,7 @@ mod tests {
             [],
         )
         .unwrap();
-        let fp = fingerprint::encode(&[1, 2, 3, 4, 5, 6, 7, 8]);
-        conn.execute(
-            "UPDATE tracks SET fingerprint=?1 WHERE id IN (1,2)",
-            params![fp],
-        )
-        .unwrap();
+        seed_fingerprint(&conn, &[1, 2], &[1, 2, 3, 4, 5, 6, 7, 8]);
 
         let groups = scan_library_duplicates(&conn).unwrap();
         assert_eq!(
@@ -1373,10 +1456,11 @@ mod tests {
     fn add_filed(conn: &Connection, path: &str, duration: Option<f64>, fp: &[u32]) -> i64 {
         let id = add(conn, path, "filed");
         conn.execute(
-            "UPDATE tracks SET duration=?2, fingerprint=?3 WHERE id=?1",
-            params![id, duration, fingerprint::encode(fp)],
+            "UPDATE tracks SET duration=?2 WHERE id=?1",
+            params![id, duration],
         )
         .unwrap();
+        seed_fingerprint(conn, &[id], fp);
         id
     }
 
@@ -1515,8 +1599,11 @@ mod tests {
             vec![vec![1, 2]]
         );
 
+        // Mêmes colonnes que `scanner::upsert_file` remet à zéro sur un changement de contenu —
+        // `fingerprint_ver` comprise : une version ne survit pas à la donnée qu'elle date.
         conn.execute(
-            "UPDATE tracks SET status='pending', fingerprint=NULL WHERE id=?1",
+            "UPDATE tracks SET status='pending', fingerprint=NULL, fingerprint_ver=NULL \
+             WHERE id=?1",
             params![a],
         )
         .unwrap();

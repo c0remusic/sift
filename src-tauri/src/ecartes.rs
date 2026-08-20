@@ -72,8 +72,12 @@ pub fn requeue_track(conn: &Connection, track_id: i64) -> Result<(), String> {
 
 /// All rejected/trashed tracks, oldest first.
 pub fn list_ecartes(conn: &Connection) -> rusqlite::Result<Vec<EcarteItem>> {
+    // `verdict_ver` lu avec `verdict`, et la valeur brute passée par `verdict::cached` : le badge
+    // de raison des Écartés ne doit pas justifier un rejet par un verdict qu'un autre moteur a
+    // produit (issue #39). Périmé = pas de badge, comme un verdict absent — la version ne traverse
+    // pas l'IPC, `EcarteItem` est inchangé.
     let mut stmt = conn.prepare(
-        "SELECT id, path, filename, status, verdict, truncated
+        "SELECT id, path, filename, status, verdict, truncated, verdict_ver
          FROM tracks WHERE status IN ('resourcing','trash') ORDER BY id",
     )?;
     type EcarteRow = (
@@ -91,7 +95,7 @@ pub fn list_ecartes(conn: &Connection) -> rusqlite::Result<Vec<EcarteItem>> {
                 r.get(1)?,
                 r.get(2)?,
                 r.get(3)?,
-                r.get(4)?,
+                crate::analysis::verdict::cached(r.get(4)?, r.get(6)?),
                 r.get(5)?,
             ))
         })?
@@ -262,9 +266,13 @@ mod tests {
             [],
         )
         .unwrap();
+        // `verdict_ver` avec `verdict`, comme `worker::persist_report` les écrit ensemble : sans
+        // elle la ligne décrit un verdict d'avant la v22, que `verdict::cached` efface — le test
+        // mesurerait l'invalidation au lieu du filtre de statut qu'il vise.
         conn.execute(
-            "INSERT INTO tracks(path, status, verdict) VALUES('b.mp3','resourcing','fake')",
-            [],
+            "INSERT INTO tracks(path, status, verdict, verdict_ver) \
+             VALUES('b.mp3','resourcing','fake',?1)",
+            params![crate::analysis::verdict::VERDICT_CACHE_VERSION],
         )
         .unwrap();
         conn.execute(
@@ -284,6 +292,21 @@ mod tests {
         assert_eq!(items[0].verdict.as_deref(), Some("fake"));
         assert_eq!(items[1].status, "trash");
         assert!(items[1].truncated);
+
+        // Même ligne, version distancée : le badge de raison disparaît (issue #39). La ligne, elle,
+        // reste — c'est son STATUT qui la met dans les Écartés, pas son verdict. Mutation portée
+        // par la ligne et non par la `const`, donc encore vraie après un bump.
+        conn.execute(
+            "UPDATE tracks SET verdict_ver=?1 WHERE path='b.mp3'",
+            params![crate::analysis::verdict::VERDICT_CACHE_VERSION + 1],
+        )
+        .unwrap();
+        let items = list_ecartes(&conn).unwrap();
+        assert_eq!(items.len(), 2, "le statut n'a pas bouge, la ligne reste");
+        assert_eq!(
+            items[0].verdict, None,
+            "un rejet justifie par un verdict d'un autre moteur restait affiche"
+        );
     }
 
     #[test]

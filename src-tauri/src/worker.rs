@@ -44,11 +44,35 @@ fn verdict_str(v: Verdict) -> &'static str {
 /// forces SQLite to load an ~800 KB value per row just to find out it is absent (see queue.rs
 /// list_pending for the measurement). This runs on every `queue:changed`, so it is the same hot
 /// path, and the sentinel test still works — `''` is text, never `'null'`.
+///
+/// Troisième clause depuis l'issue #39 : **un verdict présent mais périmé** vaut « à re-analyser ».
+/// C'est la lecture qui va avec `verdict_ver`, sur le modèle d'`ipc::analyze_path` — désaccord de
+/// version = défaut de cache, on recalcule. Sans elle, la version serait détectable et jamais
+/// réparée : `queue::list_pending` afficherait « non analysé » pour toujours sur des pistes que le
+/// pool ne reprendrait jamais.
+///
+/// Deux bornes, et elles sont délibérées :
+///
+/// - `verdict IS NOT NULL` : une piste SANS verdict n'est pas périmée, elle est non analysée — et
+///   surtout, `persist_failure` laisse exactement cet état (verdict NULL, `verdict_ver` NULL,
+///   `report_json=''`). Sans ce garde, un fichier illisible redeviendrait éligible à chaque
+///   passage, échouerait à chaque fois, et `analysis_attempts` grimperait tout seul jusqu'au seuil
+///   terminal. C'est le piège que la sentinelle `''` existe pour éviter.
+/// - `status='pending'` (déjà là) : la bibliothèque RANGÉE n'est jamais reprise ici. Invalider
+///   3907 pistes rangées d'un bump est ce qu'a coûté la v16 ; cette décision-là appartient au jour
+///   du bump, pas à ce filet.
 pub fn select_pending(conn: &Connection) -> rusqlite::Result<Vec<i64>> {
     let mut stmt = conn.prepare(
-        "SELECT id FROM tracks WHERE status='pending' AND (analyzed_at IS NULL OR typeof(report_json)='null') ORDER BY id",
+        "SELECT id FROM tracks \
+         WHERE status='pending' \
+           AND (analyzed_at IS NULL OR typeof(report_json)='null' \
+                OR (verdict IS NOT NULL AND verdict_ver IS NOT ?1)) \
+         ORDER BY id",
     )?;
-    let rows = stmt.query_map([], |r| r.get::<_, i64>(0))?;
+    let rows = stmt.query_map(
+        rusqlite::params![analysis::verdict::VERDICT_CACHE_VERSION],
+        |r| r.get::<_, i64>(0),
+    )?;
     rows.collect()
 }
 
@@ -85,7 +109,7 @@ pub fn persist_report(
             clip_runs=?8, clip_pct=?9, true_peak_dbtp=?10, dc_offset=?11, phase_correlation=?12,
             dual_mono=?13, truncated=?14, silence_head_ms=?15, silence_tail_ms=?16,
             container_ok=?17, codec_error=?18, id3_version=?19, has_cover=?20, tags_cdj_ok=?21,
-            report_json=?22, report_cache_ver=?23, analyzed_at=datetime('now')
+            report_json=?22, report_cache_ver=?23, verdict_ver=?24, analyzed_at=datetime('now')
          WHERE id=?1",
         rusqlite::params![
             id,
@@ -116,6 +140,11 @@ pub fn persist_report(
             // gagnées ; base passée de 4,11 Go à 119 Mo). Sérialisé par l'appelant, hors du lock.
             report_json,
             analysis::REPORT_CACHE_VERSION,
+            // Dans le MÊME UPDATE que `verdict`, et c'est tout l'intérêt : les deux ne peuvent pas
+            // diverger à l'écriture. Ce qui les faisait diverger APRÈS, c'est
+            // `ipc::analyze_path`, qui répare `report_json`/`report_cache_ver` sans toucher au
+            // verdict — d'où une constante distincte (issue #39, `verdict::VERDICT_CACHE_VERSION`).
+            analysis::verdict::VERDICT_CACHE_VERSION,
         ],
     )?;
     Ok(())
@@ -147,7 +176,7 @@ fn persist_failure(conn: &Connection, id: i64, err: &str) -> rusqlite::Result<()
             clip_runs=NULL, clip_pct=NULL, true_peak_dbtp=NULL, dc_offset=NULL,
             phase_correlation=NULL, dual_mono=NULL, truncated=NULL, silence_head_ms=NULL,
             silence_tail_ms=NULL, id3_version=NULL, has_cover=NULL, tags_cdj_ok=NULL,
-            report_cache_ver=NULL
+            report_cache_ver=NULL, verdict_ver=NULL
          WHERE id=?1",
         rusqlite::params![id, err],
     )?;
@@ -462,6 +491,68 @@ pub(crate) mod tests {
         assert_eq!(select_pending(&conn).unwrap(), vec![a, d]);
     }
 
+    /// La lecture qui répare le verdict : un verdict PRÉSENT dont la version a été distancée
+    /// redevient éligible à l'analyse (issue #39) — et un échec de décodage, lui, ne l'est
+    /// TOUJOURS pas.
+    ///
+    /// Ce second cas porte tout le risque, et c'est pourquoi la clause exige `verdict IS NOT NULL`.
+    /// `persist_failure` laisse verdict NULL, `verdict_ver` NULL et `report_json=''` : sans ce
+    /// garde, cette ligne serait « périmée » à chaque passage, le fichier illisible serait repris
+    /// en boucle, le décodage échouerait à chaque fois et `analysis_attempts` grimperait tout seul
+    /// jusqu'au seuil terminal. C'est exactement le piège que la sentinelle `''` existe pour
+    /// éviter, et une version de cache mal gardée le rouvrirait par l'autre bout.
+    ///
+    /// La mutation se fait sur la ligne, pas sur la `const` : écrire `VERDICT_CACHE_VERSION + 1`
+    /// place la ligne dans l'état qu'elle aurait le jour d'un bump. Relatif, donc encore vrai
+    /// après ce bump.
+    #[test]
+    fn select_pending_reprend_un_verdict_perime_mais_jamais_un_echec_de_decodage() {
+        let conn = db();
+        let courant = add_pending(&conn, "courant.flac");
+        let perime = add_pending(&conn, "perime.flac");
+        let jamais_stampe = add_pending(&conn, "prev22.flac");
+        let casse = add_pending(&conn, "casse.mp3");
+
+        // Trois pistes analysées avec succès : rapport en cache, verdict écrit.
+        let stampe = |id: i64, ver: Option<i64>| {
+            conn.execute(
+                "UPDATE tracks SET analyzed_at=datetime('now'), report_json='{}', \
+                 verdict='ok', verdict_ver=?2 WHERE id=?1",
+                rusqlite::params![id, ver],
+            )
+            .unwrap();
+        };
+        stampe(courant, Some(analysis::verdict::VERDICT_CACHE_VERSION));
+        stampe(perime, Some(analysis::verdict::VERDICT_CACHE_VERSION + 1));
+        stampe(jamais_stampe, None); // ligne d'avant la v22 que le backfill n'a pas atteinte
+                                     // Et une piste dans l'état exact que laisse `persist_failure`.
+        conn.execute(
+            "UPDATE tracks SET analyzed_at=datetime('now'), report_json='', verdict=NULL, \
+             verdict_ver=NULL, analysis_attempts=1 WHERE id=?1",
+            rusqlite::params![casse],
+        )
+        .unwrap();
+
+        let selected = select_pending(&conn).unwrap();
+        assert!(
+            !selected.contains(&courant),
+            "un verdict a la version courante n'a aucune raison d'etre recalcule"
+        );
+        assert!(
+            selected.contains(&perime),
+            "un verdict d'un autre moteur doit etre repris — sinon la version est detectable \
+             et jamais reparee, et la file affiche « non analyse » pour toujours"
+        );
+        assert!(
+            selected.contains(&jamais_stampe),
+            "une version absente vaut une version differente : defaut de cache"
+        );
+        assert!(
+            !selected.contains(&casse),
+            "un fichier illisible serait repris en boucle et brulerait ses analysis_attempts"
+        );
+    }
+
     #[test]
     fn persist_report_writes_columns_and_marks_analysed() {
         let conn = db();
@@ -479,6 +570,15 @@ pub(crate) mod tests {
         assert!((cutoff - 16000.0).abs() < 1e-3);
         assert_eq!(dual, 0);
         assert!(analyzed.is_some(), "analyzed_at stamped");
+        // `verdict_ver` part dans le MÊME UPDATE que `verdict` : c'est l'invariant qui rend la
+        // colonne fiable. L'oublier laisserait la ligne périmée dès l'écriture, donc reprise à
+        // chaque refill — ce que l'assertion suivante attraperait aussi, mais sans le nommer.
+        let ver: Option<i64> = conn
+            .query_row("SELECT verdict_ver FROM tracks WHERE id=?1", [id], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(ver, Some(analysis::verdict::VERDICT_CACHE_VERSION));
         // and it leaves select_pending empty now
         assert!(select_pending(&conn).unwrap().is_empty());
     }
