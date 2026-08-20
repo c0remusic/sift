@@ -229,8 +229,26 @@ Trois choses à ne pas confondre :
   C'est cet écart, maximal et à l'endroit le plus visible de l'app, qui a fait borner la
   règle à sa source : une barre et ses éléments, pas la chaîne fenêtre → surface.
 
-Les 12 littéraux de rayon encore présents dans `styles.css` — dont `999px` et `50%`, qui
-doublonnent `--border-radius-pill` — se nettoient par exécution, pas par décision.
+**Nettoyé le 2026-08-20.** Le compte de 12 était faux : `styles.css` en portait **34**. Les 22
+qui doublonnaient un token sont passées dessus, toutes à géométrie **identique au pixel** —
+11 pilules (un rayon déjà ≥ la moitié du petit côté : pistes de 3 à 6 px de haut, pouce
+d'ascenseur, piste du switch, poignée `.qdrag`), 10 cercles sur des boîtes carrées à taille
+fixe (`50%` et `999px` rendent le même disque dès que la boîte est carrée) et un `8px` qui
+était `--border-radius-sm` au chiffre près.
+
+Les **12 qui restent** ne doublonnent rien, et c'est pour ça qu'elles restent :
+
+| Littéral | Sites | Pourquoi il reste |
+|---|---|---|
+| `0` | `.sift-qdone-toggle`, `.jrnl-group-hd`, `.sift-usage-seg` | remise à zéro explicite ; `0` n'est pas un cran de l'échelle. Le troisième est une correction datée (2026-08-19) avec sa justification en place |
+| `3px` | `.sift-pz-cancel` (15×15), `.kbd`, `.sift-identified-cover`/`-noart` (28×28), `.sift-usage-swatch` (12×12), `.sift-usage-lg:focus-visible` | boîtes trop petites pour `sm` : à 8 px, un carré de 12 à 15 px devient une pastille. L'anneau de focus, lui, n'a pas de boîte à lui — son rayon est propre au site, comme son offset |
+| `1px` / `1px 1px 0 0` | `.bars span`, `.spec span` | barres d'égaliseur : adoucissement d'un pixel, aucun cran à moins de 7 px — et la seconde a **quatre** valeurs, qu'aucun token n'exprime |
+| `6px` | `.cov` (40×40) | à 2 px de `sm`. Écart réel, pas nul : l'aligner unifierait la vignette avec `.sift-cover-frame` (68×68, `sm`), mais c'est une décision de surface, pas une exécution |
+
+Aucun de ces 12 n'est un rayon **imbriqué serré** : les deux seules paires « barre et ses
+éléments » du fichier — `.sift-seg`/`.sift-seg-opt`+`.sift-seg-thumb` et
+`.sift-usage-bar`/`.sift-usage-seg` — sont déjà tokenisées et satisfont déjà la règle
+concentrique ci-dessus.
 
 ## Mesures
 
