@@ -22,6 +22,8 @@ import {
 } from "./report-view";
 import type { Canonical, Target, QueueItem } from "../shared/contracts";
 import { requireEl, esc } from "./dom";
+import { railFromExtension } from "./rails";
+import { slideSegThumb } from "./seg-thumb";
 import { emptyStateHtml } from "./empty-state";
 import {
   hasDestination,
@@ -129,14 +131,12 @@ function ensureKbdLegend(foot: HTMLElement): void {
 /** Slides #sift-fmt-seg's .sift-seg-thumb to the currently selected format chip (or removes it if
  *  every chip is disabled, e.g. a lossy source with only MP3 clickable — .on never gets set on a
  *  disabled span, so onEl is null and the thumb just stays wherever it last was, invisible behind
- *  the disabled chips since none of them carry z-index:1). Same pattern as ensureReviewSeg(). */
+ *  the disabled chips since none of them carry z-index:1). Placement partagé par les six segmentés
+ *  de l'app (`seg-thumb.ts`) ; la portée reste #sift-fmt-seg, pas `foot` — un `[data-fil="fmt"].on`
+ *  ailleurs dans le rail déplacerait ce pouce-ci. */
 function positionFmtThumb(foot: HTMLElement): void {
   const seg = foot.querySelector<HTMLElement>("#sift-fmt-seg");
-  const thumb = seg?.querySelector<HTMLElement>(".sift-seg-thumb");
-  const onEl = seg?.querySelector<HTMLElement>('[data-fil="fmt"].on');
-  if (!thumb || !onEl) return;
-  thumb.style.width = `${onEl.offsetWidth}px`;
-  thumb.style.transform = `translateX(${onEl.offsetLeft}px)`;
+  if (seg) slideSegThumb(seg, '[data-fil="fmt"].on');
 }
 
 /** Render the filing rail (format + actions) into `foot`. The metadata editor (Identify + editable
@@ -292,21 +292,6 @@ function dupBanner(m: DupMatch): string {
  *  is bumped on every open; an in-flight open bails at its await points if a newer one started
  *  (prevents a slow analyze/reconcile from clobbering the pane of a track opened since) — see
  *  filing-state.ts for the full rationale. */
-/** Rail déduit de la seule extension. DERNIER RECOURS : n'est consulté que si l'analyse a échoué
- *  (`report` nul) ET que l'item de file n'a pas encore de rail. Sert uniquement à l'affichage — la
- *  puce de format et l'extension du nom prévisionnel — jamais à décider ce qui est envoyé au
- *  backend, qui dérive la cible lui-même (`encode::target_for`).
- *
- *  Recopie volontaire, et bornée, de `analysis::tags::rail_from_ext` (src-tauri/src/analysis/tags.rs
- *  lignes 24-30). La version précédente de cette table était écrite de mémoire et avait divergé :
- *  elle ignorait `opus`. Toute correction ici doit d'abord être vérifiée là-bas. */
-function railFromExtension(path: string): string {
-  const ext = (path.split(".").pop() || "").toLowerCase();
-  if (["flac", "wav", "aif", "aiff", "alac"].includes(ext)) return "lossless";
-  if (["mp3", "aac", "m4a", "ogg", "opus"].includes(ext)) return "lossy";
-  return "unknown";
-}
-
 export async function openFilingInto(
   mid: HTMLElement,
   item: QueueItem,
@@ -507,6 +492,11 @@ export async function openFilingInto(
   // NOTE sur `declared_rail` : il vient de `tag.declared_rail` (analysis/mod.rs:225), c'est-à-dire
   // du format DÉCLARÉ. Le rail reniflé aux octets s'appelle `content_rail` et n'est PAS exposé au
   // front — seul `container_mismatch` l'est. Ne pas décrire `declared_rail` comme content-sniffé.
+  //
+  // `railFromExtension` (rails.ts) est le DERNIER RECOURS : il n'est consulté que si l'analyse a
+  // échoué (`report` nul) ET que l'item de file n'a pas encore de rail. Il ne sert qu'à l'affichage
+  // — la puce de format et l'extension du nom prévisionnel — jamais à décider ce qui est envoyé au
+  // backend, qui dérive la cible lui-même (`encode::target_for`).
   const rail = report?.declared_rail ?? item.rail ?? railFromExtension(item.path);
   state.rail = rail; // so refreshPreview defaults the extension like the lit chip does
 

@@ -8,6 +8,7 @@ import { identifyErrorText } from "./identify-shared";
 import { DEFAULT_FILENAME_TEMPLATE } from "../shared/contracts";
 import type { Canonical } from "../shared/contracts";
 import { requireEl, esc } from "./dom";
+import { slideSegThumb } from "./seg-thumb";
 import { setTheme } from "./theme";
 import type { ThemeChoice } from "./theme";
 import { toast } from "./filing-toast";
@@ -57,12 +58,11 @@ function selectSettingsCategory(key: string): void {
  *  s'appeler QUE lorsque la carte Apparence est dans le flux — sur `display:none`, offsetWidth/Left
  *  valent 0 et le pouce se voit écrire un filet de 0px. */
 function positionThemeThumb(): void {
+  // Fusion du 2026-08-20 : le REPLAY au changement de catégorie vient d'une session parallèle
+  // (eed4b26), le calcul partagé de la passe simplify (`seg-thumb.ts`, 6 copies fondues en une).
   const card = document.getElementById("sift-reglages-apparence");
-  const thumb = card?.querySelector<HTMLElement>(".sift-seg-thumb");
-  const onEl = card?.querySelector<HTMLElement>("[data-theme-choice].on");
-  if (!thumb || !onEl) return;
-  thumb.style.width = `${onEl.offsetWidth}px`;
-  thumb.style.transform = `translateX(${onEl.offsetLeft}px)`;
+  if (!card) return;
+  slideSegThumb(card, "[data-theme-choice].on");
 }
 
 /** Appelée par le dispatch délégué de `sift-live.ts` au clic sur une catégorie. */

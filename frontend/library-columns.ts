@@ -106,8 +106,11 @@ function load(): LibraryColumn[] {
   // PAR DÉFAUT (plafonné), pas la fin de liste. Sans ça, Verdict — colonne 1 de DESIGN.md § 16 —
   // se peignait en dernière position sur toute disposition mémorisée d'avant le 2026-08-19, et la
   // seule sortie était « Réinitialiser les colonnes », au prix des largeurs.
+  // `i` est passé nu : `splice` borne déjà son `start` à la longueur du tableau, donc le
+  // `Math.min(i, out.length)` qui était écrit ici ne pouvait rien corriger — une garde inerte, qui
+  // laissait croire qu'un dépassement était possible et méritait d'être surveillé.
   DEFAULT_COLUMNS.forEach((c, i) => {
-    if (!out.some((o) => o.field === c.field)) out.splice(Math.min(i, out.length), 0, { ...c });
+    if (!out.some((o) => o.field === c.field)) out.splice(i, 0, { ...c });
   });
   for (const c of out) {
     const w = stored.width?.[c.field];

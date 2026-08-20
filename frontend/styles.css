@@ -938,8 +938,9 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
    trois grammaires distinctes, parce que le kit en distingue trois (§ 02-Buttons) : primaire =
    aplat d'accent + encre blanche, secondaire = aplat gris, sélection = gris.
    Le pâle bordé qu'il portait était en plus une INCOHÉRENCE INTERNE mesurée : le bouton d'action du
-   mode Lot (.sift-baction, couleurs inline dans batch-panel.ts) est déjà un aplat accent depuis le
-   sweep précédent — deux primaires, deux grammaires, à un écran d'écart.
+   mode Lot (.sift-baction, alors peint en couleurs INLINE depuis batch-panel.ts ; devenu
+   .sift-baction--primary ici même le 2026-08-20) est déjà un aplat accent depuis le sweep
+   précédent — deux primaires, deux grammaires, à un écran d'écart.
    Hover = même fond + brightness, le pattern déjà posé sur .sift-confirm-btn : un primaire ne change
    pas de couleur au survol, il s'assombrit. */
 .sift-ranger-btn{flex:none;white-space:nowrap;background:var(--color-accent-fill);color:var(--color-accent-ink);border:0;font-weight:500}
@@ -1467,9 +1468,28 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .sift-bgrp-box.on{border-color:var(--color-accent-fill);background:var(--color-accent-fill);color:var(--color-accent-ink)}
 .sift-bgrp-box.partial{border-color:var(--color-accent-fill);color:var(--color-accent-fill)}
 /* The single rail action button (adaptive Filer/Discarder / Stop) — same sizing/weight as the
-   Détail rail's .sift-ranger-btn (inherits the generic button rule), just with its own variant
-   colors set inline per state. */
+   Détail rail's .sift-ranger-btn (inherits the generic button rule).
+   DEUX GRAMMAIRES, PAS TROIS (2026-08-19, kit § 02-Buttons), et depuis le 2026-08-20 ce sont deux
+   CLASSES et non plus sept `style="background:…;color:…"` recopiés dans actionButtonHtml :
+   --primary = aplat d'accent ; --quiet = aplat GRIS dont le rôle se dit par l'ENCRE (un aplat rouge
+   reste réservé à un primaire destructif, que ce rail n'a pas).
+   ⚠️ Le `:hover` de chacune n'est pas décoratif, il est OBLIGATOIRE : `button:hover` (:1286) est
+   gelé à (0,1,1), donc une classe simple à (0,1,0) perdrait son fond au survol et le bouton
+   redeviendrait gris. Réaffirmé par classe, le sélecteur monte à (0,2,0) et gagne — c'est la règle
+   « un bouton qui redéfinit background le réaffirme dans son :hover » (CLAUDE.md § Front). Tant que
+   le fond était inline, la question ne se posait pas ; c'est le prix de l'avoir sorti du markup, et
+   il est payé ici une fois pour toutes. */
 .sift-baction{flex:none;white-space:nowrap;font-weight:500;border:none;cursor:pointer}
+.sift-baction--primary{background:var(--color-accent-fill);color:var(--color-accent-ink)}
+.sift-baction--primary:hover{background:var(--color-accent-fill);filter:brightness(0.95)}
+.sift-baction--quiet{background:var(--color-surface-raised);color:var(--color-text-danger)}
+.sift-baction--quiet:hover{background:var(--color-surface-raised);filter:brightness(0.95)}
+/* La sortie explicite de l'état armé — un lien, pas un bouton d'action : aucun matériau, l'encre
+   tertiaire seule. Même raison de réaffirmer `background` au survol que les deux ci-dessus, sinon
+   `button:hover` lui peindrait un aplat gris qu'elle n'a jamais eu. Le `filter:brightness` de la
+   règle générique, lui, reste — c'est le survol qu'elle avait déjà quand ce style était inline. */
+.sift-baction-cancel{background:none;border:none;color:var(--color-text-tertiary);font-size:var(--text-xs);padding:0 var(--space-8);cursor:pointer}
+.sift-baction-cancel:hover{background:none}
 /* display:contents: the slot is a stable DOM hook for in-place button swaps (see
    updateBatchRailSelection) but must not itself take part in the rail's flex layout — the
    button inside becomes a direct flex child of #filfoot, staying on the same line as
@@ -1489,7 +1509,12 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .sift-baction-arm{display:none}
 @keyframes sift-arm-drain{from{transform:scaleX(1)}to{transform:scaleX(0)}}
 @media (prefers-reduced-motion:no-preference){
-  .sift-baction-arm{display:block;position:absolute;left:0;right:0;bottom:0;height:2px;background:var(--color-text-danger);transform-origin:left center;pointer-events:none;animation:sift-arm-drain linear forwards}
+  /* AMBRE, pas danger (2026-08-20) : ce drain est un compte à rebours d'ATTENTE, pas un risque —
+     « ambre = décision attendue » (DESIGN.md § 4), et c'est exactement ce que la barre dit, que le
+     second clic vienne ou non. Le bouton qu'elle traverse a cessé d'être danger dans le même range
+     (l'armement ne repeint plus le bouton : convertir n'est pas destructif) ; le rouge n'y survivait
+     que sur ces 2px. */
+  .sift-baction-arm{display:block;position:absolute;left:0;right:0;bottom:0;height:2px;background:var(--color-text-warning);transform-origin:left center;pointer-events:none;animation:sift-arm-drain linear forwards}
 }
 /* min-height reserved (annotation: "laisser suffisament d'espace... pour ne rien déplacer") — empty
    (no genres yet) collapsed to 1px, so everything below jumped down once chips appeared after

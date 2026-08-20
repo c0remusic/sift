@@ -11,6 +11,7 @@
 // l'arbre que le rendu écrase — mais il faut encore garantir qu'un remontage ne la recrée pas
 // sous les doigts. D'où la discipline ci-dessous : créer une fois, muter ensuite.
 import { esc } from "./dom";
+import { slideSegThumb } from "./seg-thumb";
 
 export const BAR_SEARCH_ID = "sift-bar-search-input";
 
@@ -29,7 +30,10 @@ export function barSearch(): HTMLElement | null {
 }
 
 /** Remplit l'emplacement des actions. Écrase — c'est voulu : les actions sont dérivées de l'état
- *  de la vue et se recalculent à chaque rendu, contrairement au champ de recherche. */
+ *  de la vue et se recalculent à chaque rendu, contrairement au champ de recherche.
+ *
+ *  Corollaire à ne pas perdre : appelée APRÈS `mountBarSegmented` sur le même hôte, elle détruit le
+ *  segmenté qui venait d'y être monté — les deux ne se partagent pas un écran. */
 export function mountBarActions(html: string): void {
   const host = barActions();
   if (host) host.innerHTML = html;
@@ -110,20 +114,15 @@ export interface BarSegmentedOptions {
 
 /** Positionne le pouce depuis le bouton qui porte `.on`. Séparé du montage pour être rejouable :
  *  le pouce se déplace au clic, AVANT le rendu asynchrone qui suivra — sinon il n'y a rien à
- *  animer (`CLAUDE.md` § Front : une transition n'anime rien si le render reconstruit le nœud). */
+ *  animer (`CLAUDE.md` § Front : une transition n'anime rien si le render reconstruit le nœud).
+ *  Le placement lui-même est celui de `seg-thumb.ts`, partagé par les six segmentés de l'app. */
 function paintBarSegmented(seg: HTMLElement, active: string): void {
   seg.querySelectorAll<HTMLElement>("[data-barseg]").forEach((b) => {
     const on = b.dataset.barseg === active;
     b.classList.toggle("on", on);
     b.setAttribute("aria-pressed", on ? "true" : "false");
   });
-  const thumb = seg.querySelector<HTMLElement>(".sift-seg-thumb");
-  // Relu depuis le DOM plutôt que retenu de la boucle : c'est la classe qui vient d'être posée qui
-  // fait foi, et la géométrie se mesure sur le nœud tel qu'il est maintenant.
-  const onEl = seg.querySelector<HTMLElement>("[data-barseg].on");
-  if (!thumb || !onEl) return;
-  thumb.style.width = `${onEl.offsetWidth}px`;
-  thumb.style.transform = `translateX(${onEl.offsetLeft}px)`;
+  slideSegThumb(seg, "[data-barseg].on");
 }
 
 /** Monte (ou réutilise) un contrôle segmenté dans l'emplacement d'actions de la barre.
@@ -174,7 +173,13 @@ export function mountBarSegmented(opts: BarSegmentedOptions): void {
   holder._siftOnSegPick = handler;
   seg.addEventListener("click", handler);
 
-  paintBarSegmented(seg, opts.active);
+  // Repeindre SEULEMENT si le montage ne dit pas déjà `opts.active`. Le chemin normal est un clic :
+  // le gestionnaire ci-dessus a déjà déplacé le pouce, puis le rendu de la vue rappelle cette
+  // fonction avec cette même option — repeindre à l'identique reforcerait une seconde mise en page
+  // (`offsetWidth`/`offsetLeft` lisent la géométrie, donc synchronisent le layout) pour le même
+  // pixel. Au premier montage il n'y a aucun `.on`, la comparaison échoue, et le pouce est placé.
+  const mounted = seg.querySelector<HTMLElement>("[data-barseg].on")?.dataset.barseg;
+  if (mounted !== opts.active) paintBarSegmented(seg, opts.active);
 }
 
 /** Place le focus dans la recherche de la barre. Rend `false` quand la vue courante n'en monte
@@ -194,8 +199,8 @@ export function focusBarSearch(): boolean {
 // Ici et non dans `router.ts` pour une raison de cycle, pas de rangement : les vues ouvrent et
 // referment la zone D, et `router.ts` importe les vues. Une vue qui importerait le routeur en
 // retour fermerait la boucle. Même règle que les splits de `filing*.ts` — jamais d'import statique
-// retour (`CLAUDE.md` § Modules frontend). `toolbar.ts` n'importe que `./dom`, donc il est en
-// dessous de tout le monde.
+// retour (`CLAUDE.md` § Modules frontend). `toolbar.ts` n'importe que des modules FEUILLES
+// (`./dom`, `./seg-thumb`), donc il est en dessous de tout le monde.
 // ---------------------------------------------------------------------------
 
 /** Ouvre la zone D et rend son hôte, ou `null` si le shell n'en a pas. */

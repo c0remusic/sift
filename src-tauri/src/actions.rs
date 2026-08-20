@@ -1135,7 +1135,9 @@ pub struct JournalEntry {
 /// suivant : le front ne pouvait tenir son état « Annulé » qu'en mémoire de vue, perdu au
 /// premier retour sur l'écran. L'état voyage maintenant dans la donnée (`undone`), et le
 /// filtre a été retiré — `mid` et `cnt` se calculent donc sur TOUTES les lignes du lot, plus
-/// seulement sur ses lignes vivantes.
+/// seulement sur ses lignes vivantes. Le `LIMIT ?1` compte lui aussi les lots annulés depuis ce
+/// jour-là : à limite égale, l'historique remonte moins loin qu'avant le 2026-08-19, d'autant de
+/// lots que l'utilisateur en a annulés.
 ///
 /// Rend un `Result` et non un `Vec` depuis le 2026-08-17 — impasse A17 de l'inventaire des échecs
 /// silencieux ([issue #15](https://github.com/c0remusic/sift/issues/15)). La signature précédente

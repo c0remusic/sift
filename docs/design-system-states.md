@@ -77,38 +77,38 @@
 - L521 — Autres couleurs non tokenisées — restant, pas classées bug.
 - L533 — `--text-hero` → `--text-2xl`.
 - L545 — Cartes Réglages `.sift-settings-list` — refonte 4→1 carte 07-08.
-- L575 — Zone de dépôt drag OS `.sift-dz-on` — token `--overlay-drop` 07-05.
-- L599 — Lien rebuy Beatport `.sift-rebuy-btn` — créé 07-05.
-- L615 — CTA « Revoir N morceaux → » Accueil — créé 07-05.
-- L629 — Page Rekordbox `renderRekordboxLive()` — écran dédié + sections Tier 1/Tier 2 master.db.
-- L712 — Écran Revue — zones repliables Diagnostic/Métadonnées, refonte 07-05.
-- L748 — `.sift-applytags-btn` — déplacé header Genres 07-09.
-- L769 — `.sift-zone-toggle` — accordéon exclusif + animation 07-09.
-- L784 — Spectrogramme — légende incrustée + réticule interactif 07-09.
-- L807 — `.lk` / `.lk-icon` — bug de réutilisation corrigé 07-07.
-- L823 — Pastille segmentée `.sift-seg`/`.sift-seg-opt` unifiée — 6 sites, thumb glissant 07-08.
-- L930 — Grammaire de carte — 2 rôles (Groupée/Flottante), jamais 3 — 07-08.
-- L986 — Tokens globaux — adaptation tweakcn "ZFlow" (ombres/tracking/radius/OKLCH) 07-08.
-- L1014 — Écran Accueil — audit référence canonique 07-08.
-- L1034 — Écran Revue — audit référence canonique 07-08/09.
-- L1058 — Écran Écartés — audit référence canonique 07-09.
-- L1076 — Écran Journal — audit référence canonique 07-09, conforme (rien corrigé).
-- L1098 — Écran Bibliothèque — audit référence canonique 07-09.
-- L1117 — Écrans Réglages+Rekordbox+Clé USB — audit référence canonique 07-09.
-- L1137 — Pattern d'erreur/échec (`.sift-*-error`/`-fail`/`-warn`, 9 sites) — déjà cohérent, documenté ici (gap = défaut de doc, pas de code, audit 2026-07-19).
-- L1195 — Écran Écartés — chargement + bouton "Réessayer" (07-24).
-- L1206 — Écran Bibliothèque — chargement, tri en vue Grille, "Réinitialiser les filtres" corrigé (07-24).
-- L1229 — Table Bibliothèque, colonne Verdict — les 5 rendus de `verdictView()`, pastille + libellé, `verdictBadge` retiré (08-19).
-- L1296 — Bibliothèque éditeur — suppression confirmée, borne Année, autocomplétion Genres (07-24).
-- L1304 — Page Rekordbox — état d'erreur visible sur les 4 sections M8, boutons "en cours", CTA en `.sift-ranger-btn` (07-24).
-- L1319 — Accueil — confirmation "Retirer", swatches `aria-pressed` (07-24).
-- L1326 — Journal — titres de section datés lisibles (07-24).
-- L1341 — Revue — bannières `role="status" aria-live="polite"`, légende "écarter" (07-24).
-- L1349 — Lot — lignes de sélection accessibles au clavier, bouton "Annuler" sur confirmation armée (07-24).
-- L1357 — `styles.css` — tokens `--color-text-warning`/`-success` clair recalibrés, hover réaffirmé (07-24).
-- L1370 — Historique des corrections (chronologique, par date de session).
-- L1552 — Conventions de cohérence (sémantique couleur, hiérarchie de poids, discipline classe partagée) — à consulter AVANT tout nouveau composant (07-24).
-- L1723 — Menu contextuel `.sift-ctx-menu` — états catalogués + rangée de pastilles couleur de source (08-20).
+- L589 — Zone de dépôt drag OS `.sift-dz-on` — token `--overlay-drop` 07-05.
+- L613 — Lien rebuy Beatport `.sift-rebuy-btn` — créé 07-05.
+- L629 — CTA « Revoir N morceaux → » Accueil — créé 07-05.
+- L643 — Page Rekordbox `renderRekordboxLive()` — écran dédié + sections Tier 1/Tier 2 master.db.
+- L726 — Écran Revue — zones repliables Diagnostic/Métadonnées, refonte 07-05.
+- L762 — `.sift-applytags-btn` — déplacé header Genres 07-09.
+- L783 — `.sift-zone-toggle` — accordéon exclusif + animation 07-09.
+- L798 — Spectrogramme — légende incrustée + réticule interactif 07-09.
+- L821 — `.lk` / `.lk-icon` — bug de réutilisation corrigé 07-07.
+- L837 — Pastille segmentée `.sift-seg`/`.sift-seg-opt` unifiée — 6 sites, thumb glissant 07-08.
+- L944 — Grammaire de carte — 2 rôles (Groupée/Flottante), jamais 3 — 07-08.
+- L1000 — Tokens globaux — adaptation tweakcn "ZFlow" (ombres/tracking/radius/OKLCH) 07-08.
+- L1028 — Écran Accueil — audit référence canonique 07-08.
+- L1048 — Écran Revue — audit référence canonique 07-08/09.
+- L1072 — Écran Écartés — audit référence canonique 07-09.
+- L1090 — Écran Journal — audit référence canonique 07-09, conforme (rien corrigé).
+- L1112 — Écran Bibliothèque — audit référence canonique 07-09.
+- L1131 — Écrans Réglages+Rekordbox+Clé USB — audit référence canonique 07-09.
+- L1151 — Pattern d'erreur/échec (`.sift-*-error`/`-fail`/`-warn`, 9 sites) — déjà cohérent, documenté ici (gap = défaut de doc, pas de code, audit 2026-07-19).
+- L1209 — Écran Écartés — chargement + bouton "Réessayer" (07-24).
+- L1220 — Écran Bibliothèque — chargement, tri en vue Grille, "Réinitialiser les filtres" corrigé (07-24).
+- L1243 — Table Bibliothèque, colonne Verdict — les 5 rendus de `verdictView()`, pastille + libellé, `verdictBadge` retiré (08-19).
+- L1317 — Bibliothèque éditeur — suppression confirmée, borne Année, autocomplétion Genres (07-24).
+- L1325 — Page Rekordbox — état d'erreur visible sur les 4 sections M8, boutons "en cours", CTA en `.sift-ranger-btn` (07-24).
+- L1340 — Accueil — confirmation "Retirer", swatches `aria-pressed` (07-24).
+- L1347 — Journal — titres de section datés lisibles (07-24).
+- L1362 — Revue — bannières `role="status" aria-live="polite"`, légende "écarter" (07-24).
+- L1370 — Lot — lignes de sélection accessibles au clavier, bouton "Annuler" sur confirmation armée (07-24).
+- L1378 — `styles.css` — tokens `--color-text-warning`/`-success` clair recalibrés, hover réaffirmé (07-24).
+- L1391 — Historique des corrections (chronologique, par date de session).
+- L1573 — Conventions de cohérence (sémantique couleur, hiérarchie de poids, discipline classe partagée) — à consulter AVANT tout nouveau composant (07-24).
+- L1744 — Menu contextuel `.sift-ctx-menu` — états catalogués + rangée de pastilles couleur de source (08-20).
 
 ## Ligne de queue — `.qi` (`styles.css:289-297`)
 
@@ -553,6 +553,20 @@ une seule n'ajoute que du chrome. Les 4 sections partagent maintenant **une
 seule** `.sift-ui-card-soft` (id `sift-reglages-list`), séparées par un filet
 horizontal (`.sift-settings-list-row`, bordure `--color-border-tertiary`
 0.5px sur toutes les lignes sauf la première).
+
+⚠️ **`.sift-settings-list-row` n'existe plus depuis le 2026-08-19/20** : le
+filet a été retiré, et la classe avec lui — ses règles ont quitté
+`frontend/styles.css` et l'attribut a quitté `reglages-view.ts`. Motif mesuré
+dans la vraie fenêtre : depuis la colonne de catégories (étape 9),
+`selectSettingsCategory` en cache trois sur quatre, mais `:not(:first-child)`
+est structurel — un frère `hidden` compte encore. Bibliothèque, Nommage et
+Apparence rendaient donc un `border-top` **au-dessus de leur titre**, Discogs
+non : un séparateur qui ne séparait aucune paire visible et ouvrait le panneau.
+Le rythme vertical vient maintenant de la carte seule
+(`.sift-ui-card-soft-pad`), identique pour les quatre catégories. La ligne
+« Ligne (section) » du tableau ci-dessous et la mention de la classe dans
+« Structure DOM » sont périmées d'autant ; la règle qui tient, elle, est
+inchangée : **toute nouvelle section s'ajoute à l'intérieur de `list`**.
 
 | État | Sélecteur | Valeur |
 |---|---|---|
@@ -1244,7 +1258,7 @@ Les cinq rendus de `verdictView()` (`library-views.ts:49`) :
 
 | `tracks.verdict` | Condition supplémentaire | Libellé | Classe | Encre | Rang de tri |
 |---|---|---|---|---|---|
-| `"ok"` | `format` ∈ aiff/wav/flac/alac | `LOSSLESS` | `.sift-lib-v-ok` | `--color-text-success` | 4 |
+| `"ok"` | `format` ∈ flac/wav/aif/aiff/alac | `LOSSLESS` | `.sift-lib-v-ok` | `--color-text-success` | 4 |
 | `"ok"` | tout autre format | `AUTHENTIQUE` | `.sift-lib-v-ok` | `--color-text-success` | 3 |
 | `"fake"` | — | `FAKE` | `.sift-lib-v-fake` | `--color-text-danger` | 0 |
 | `"grey"` | — | `À VÉRIFIER` | `.sift-lib-v-check` | `--color-text-warning` | 1 |
@@ -1259,6 +1273,13 @@ les DEUX faits (verdict sain **et** rail lossless), comme `qualityChipTone` en
 Revue : `format` est le format que Sift a réellement écrit en rangeant, donc il
 EST le rail du fichier sur le disque, et écrire `LOSSLESS` sur un MP3
 authentique serait faux.
+
+⚠️ **La liste d'extensions de la première ligne a été corrigée le 2026-08-20** :
+elle se lisait aiff/wav/flac/alac, parce que `library-views.ts` portait sa
+propre copie (`LOSSLESS_EXT`) de la table de `analysis::tags::rail_from_ext` et
+qu'il y manquait `aif` — un `.aif` authentique rendait AUTHENTIQUE. La copie est
+supprimée : le rail se lit désormais par `railFromExt()` (`frontend/rails.ts`),
+seule copie frontend de la table Rust.
 
 Structure et géométrie :
 

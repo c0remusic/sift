@@ -5,6 +5,7 @@
 import type { LibraryTrack } from "../shared/contracts";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { esc } from "./dom";
+import { railFromExt } from "./rails";
 import { libraryColumns, columnStyle, type LibraryColumn, type LibraryColumnField } from "./library-columns";
 
 function qualPill(t: LibraryTrack): string {
@@ -35,9 +36,13 @@ function qualPill(t: LibraryTrack): string {
  *  ET rail lossless. `LibraryTrack` n'a pas de `declared_rail`, mais son `format` est le format que
  *  Sift a réellement ÉCRIT en rangeant (`library.rs`, `target_format` → `Target::ext()`), donc il
  *  EST le rail du fichier sur le disque. Écrire `LOSSLESS` sur un MP3 authentique serait faux, et
- *  la bibliothèque de test en contient un (piste 60, `verdict:"ok"`, `format:"mp3"`). */
-const LOSSLESS_EXT = new Set(["aiff", "wav", "flac", "alac"]);
-
+ *  la bibliothèque de test en contient un (piste 60, `verdict:"ok"`, `format:"mp3"`).
+ *
+ *  ⚠️ La table d'extensions est celle de `rails.ts`, seule copie frontend de
+ *  `analysis::tags::rail_from_ext`. Ce module en portait une SECONDE (`LOSSLESS_EXT`, écrite de
+ *  mémoire) où `aif` manquait : un `.aif` authentique — extension que l'autorité Rust reconnaît
+ *  depuis toujours — lisait AUTHENTIQUE au lieu de LOSSLESS. Corrigé le 2026-08-20 en supprimant la
+ *  copie, pas en y ajoutant l'entrée manquante. */
 interface VerdictView {
   /** Classe de teinte, jamais une couleur en dur — la pastille hérite de `currentColor`. */
   cls: string;
@@ -46,17 +51,32 @@ interface VerdictView {
   rank: number;
 }
 
+/** Le rang SEUL, sans construire la vue. C'est lui le branchement sur la piste — la présentation
+ *  s'en dérive ci-dessous plutôt que de rebrancher une seconde fois sur `t.verdict`, deux
+ *  branchements sur le même fait finissant toujours par diverger. Sans allocation : le comparateur
+ *  de `sortTracks` l'appelle deux fois par comparaison, soit O(n log n) objets jetés pour un
+ *  nombre. */
+function verdictRank(t: LibraryTrack): number {
+  return t.verdict === "fake"
+    ? 0
+    : t.verdict === "grey"
+      ? 1
+      : t.verdict !== "ok"
+        ? 2 // non analysé
+        : railFromExt(t.format ?? "") === "lossless"
+          ? 4
+          : 3;
+}
+
 function verdictView(t: LibraryTrack): VerdictView {
-  if (t.verdict === "fake") return { cls: "sift-lib-v-fake", label: "FAKE", rank: 0 };
-  if (t.verdict === "grey") return { cls: "sift-lib-v-check", label: "À VÉRIFIER", rank: 1 };
-  if (t.verdict === "ok") {
-    return LOSSLESS_EXT.has((t.format ?? "").toLowerCase())
-      ? { cls: "sift-lib-v-ok", label: "LOSSLESS", rank: 4 }
-      : { cls: "sift-lib-v-ok", label: "AUTHENTIQUE", rank: 3 };
-  }
+  const rank = verdictRank(t);
+  if (rank === 0) return { cls: "sift-lib-v-fake", label: "FAKE", rank };
+  if (rank === 1) return { cls: "sift-lib-v-check", label: "À VÉRIFIER", rank };
   // Non analysé — neutre, et un tiret cadratin plutôt qu'une cellule vide : une cellule vide se lit
   // comme un défaut de rendu, un tiret dit « rien à ce sujet ».
-  return { cls: "sift-lib-v-none", label: "—", rank: 2 };
+  if (rank === 2) return { cls: "sift-lib-v-none", label: "—", rank };
+  // Sain : même encre pour les deux rails, seul le mot change.
+  return { cls: "sift-lib-v-ok", label: rank === 4 ? "LOSSLESS" : "AUTHENTIQUE", rank };
 }
 
 /** Display name for a library row (artist — title, else filename). */
@@ -81,7 +101,7 @@ export function sortTracks(tracks: readonly LibraryTrack[], sort: LibrarySortSta
     // « ok » en ordre alphabétique — et se retournerait au premier littéral renommé côté Rust, sans
     // rien casser de visible. Ascendant = ce qui demande une décision d'abord ; « l'échec est
     // l'information qu'on n'a pas le droit d'estomper » (§ 4), donc il ne se cache pas en queue.
-    if (sort.field === "verdict") return (verdictView(a).rank - verdictView(b).rank) * mul;
+    if (sort.field === "verdict") return (verdictRank(a) - verdictRank(b)) * mul;
     // Les trois champs NUMÉRIQUES se comparent en nombres, pas en chaînes : un tri lexical
     // classerait un BPM de 100 avant 92, et une durée de 7:48 avant 12:03. `-Infinity` place les
     // valeurs manquantes en tête en ascendant, donc en queue en descendant — c'est le bon défaut
@@ -133,8 +153,10 @@ function fmtBpm(bpm: number | null): string {
 function cellText(field: LibraryColumnField, t: LibraryTrack): string {
   switch (field) {
     case "verdict":
-      // Le TEXTE seul : la pastille est ajoutée par `cellHtml`. Ce libellé sert aussi au nom
-      // composite de la ligne, donc il ne peut pas vivre uniquement dans le markup.
+      // Le TEXTE seul, la pastille étant ajoutée par `cellHtml`. Ses deux consommateurs réels — la
+      // cellule et le nom composite de la ligne — lisent le libellé de la vue calculée UNE fois par
+      // ligne, donc cette branche n'est plus atteinte par eux ; elle reste parce que c'est elle qui
+      // garde le `switch` exhaustif, ce qui est tout l'intérêt de cette fonction.
       return verdictView(t).label;
     case "artist":
       return esc(t.artist || "—");
@@ -152,19 +174,27 @@ function cellText(field: LibraryColumnField, t: LibraryTrack): string {
 }
 
 /** Une cellule. `data-col` est le crochet que `paintColumnWidth` mute pendant un redimensionnement —
- *  c'est lui qui permet d'écrire une largeur sur les lignes déjà montées sans re-rendre la liste. */
-function cellHtml(col: LibraryColumn, t: LibraryTrack): string {
+ *  c'est lui qui permet d'écrire une largeur sur les lignes déjà montées sans re-rendre la liste.
+ *
+ *  UN SEUL gabarit d'enrobage, quelle que soit la colonne : la classe, le `data-col` et la largeur
+ *  sont ce qui fait qu'une cellule s'aligne sur son en-tête, et deux `return` les écrivaient deux
+ *  fois — une correction de géométrie appliquée à l'un des deux seulement se serait vue comme un
+ *  désalignement de la seule colonne Verdict. Seuls la classe de teinte et le contenu varient.
+ *
+ *  `v` est la vue de verdict de la LIGNE, calculée une fois par `libraryTableRowHtml` : la cellule
+ *  Verdict et le nom composite de la ligne disent le même mot, ils lisent donc le même objet. */
+function cellHtml(col: LibraryColumn, t: LibraryTrack, v: VerdictView): string {
+  const isVerdict = col.field === "verdict";
   // Seule cellule à deux nœuds : la pastille pleine et son libellé. La pastille est un `<span>` vide
   // et non un caractère « ● » — un rond typographique change de taille et de calage avec la police,
   // et il serait lu à voix haute par-dessus le libellé qui dit déjà l'état.
-  if (col.field === "verdict") {
-    const v = verdictView(t);
-    return (
-      `<span class="sift-lib-col ${col.cls} ${v.cls}" data-col="${col.field}"${columnStyle(col)}>` +
-      `<span class="sift-lib-verdict-dot" aria-hidden="true"></span>${esc(v.label)}</span>`
-    );
-  }
-  return `<span class="sift-lib-col ${col.cls}" data-col="${col.field}"${columnStyle(col)}>${cellText(col.field, t)}</span>`;
+  const inner = isVerdict
+    ? `<span class="sift-lib-verdict-dot" aria-hidden="true"></span>${esc(v.label)}`
+    : cellText(col.field, t);
+  return (
+    `<span class="sift-lib-col ${col.cls}${isVerdict ? ` ${v.cls}` : ""}"` +
+    ` data-col="${col.field}"${columnStyle(col)}>${inner}</span>`
+  );
 }
 
 /** Sortable column header row — each header is a real <button> (native keyboard support),
@@ -218,6 +248,9 @@ export function libraryTableHeaderHtml(sort: LibrarySortState): string {
  * bougent pas pour autant : `.sift-lib-thead-tail` mesure la pastille de qualité et l'icône
  * Discogs, jamais cette puce-là, qui n'était peinte que sur deux verdicts sur quatre. */
 export function libraryTableRowHtml(t: LibraryTrack, curId: number | null, selected = false): string {
+  // UNE fois par ligne, pour ses deux lecteurs : la cellule Verdict et le nom composite ci-dessous.
+  // Ils disent le même mot — le calculer deux fois, c'est autoriser deux mots.
+  const v = verdictView(t);
   const cur = (t.id === curId ? " cur" : "") + (selected ? " sel" : "");
   const cov = t.cover_path
     ? `<img src="${esc(convertFileSrc(t.cover_path))}" alt="" class="sift-lib-cov">`
@@ -229,12 +262,12 @@ export function libraryTableRowHtml(t: LibraryTrack, curId: number | null, selec
   // just "button" — role="button" alone loses the artist/title/genre/year association a table
   // reading mode would otherwise give. Le verdict ouvre la phrase depuis le 2026-08-19, à la place
   // qu'il occupe à l'écran : la colonne 1 est le premier mot lu comme elle est le premier regard.
-  const rowLabel = `${cellText("verdict", t)}, ${t.artist || "Artiste inconnu"} — ${t.title || "Titre inconnu"}, ${fmtBpm(t.bpm)} BPM, ${fmtDuration(t.duration)}, ${t.genres[0] || "genre inconnu"}, ${t.year != null ? t.year : "année inconnue"}`;
+  const rowLabel = `${v.label}, ${t.artist || "Artiste inconnu"} — ${t.title || "Titre inconnu"}, ${fmtBpm(t.bpm)} BPM, ${fmtDuration(t.duration)}, ${t.genres[0] || "genre inconnu"}, ${t.year != null ? t.year : "année inconnue"}`;
   return (
     `<div class="lr${cur}" data-bib="row" data-id="${t.id}" tabindex="0" role="option" aria-selected="${selected}" aria-label="${esc(rowLabel)}">` +
     `<button class="pb" data-bib="play" data-id="${t.id}" aria-label="Écouter"><i class="ti ti-player-play" style="font-size:var(--text-md)"></i></button>` +
     cov +
-    libraryColumns().map((col) => cellHtml(col, t)).join("") +
+    libraryColumns().map((col) => cellHtml(col, t, v)).join("") +
     qualPill(t) +
     link +
     `</div>`

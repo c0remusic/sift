@@ -45,7 +45,7 @@ import { onSettingsCategoryPick } from "./reglages-view";
 import { onRekordboxSectionPick } from "./rekordbox-view";
 import { installWindowShortcuts } from "./shortcuts";
 import { requireEl } from "./dom";
-import { toast } from "./filing-toast";
+import { toast, copyToClipboard } from "./filing-toast";
 import { humanizeError } from "./errors";
 import type { LibrarySortState } from "./library-views";
 import {
@@ -286,28 +286,13 @@ export function installLiveWiring() {
       const act = ec.dataset.ec;
       const id = Number(ec.dataset.id);
       if (act === "copy-query") {
-        // « Copié » était peint AVANT que l'écriture ne réussisse, et le `catch` était vide : un
-        // refus du presse-papier (permission, focus perdu) affichait quand même la coche, et
-        // l'utilisateur collait l'ancien contenu sans savoir pourquoi. La coche attend maintenant
-        // le `.then()`, et l'échec le dit.
-        const prev = ec.innerHTML;
-        void navigator.clipboard
-          .writeText(ec.dataset.q || "")
-          .then(() => {
-            // Le nœud peut avoir été détaché entre le clic et la résolution : toute action
-            // Écartés (corbeille, restauration) et tout changement d'écran reconstruisent
-            // `#content` par `innerHTML`. Écrire dedans partirait dans le vide en silence.
-            if (!ec.isConnected) return;
-            ec.innerHTML =
-              '<i class="ti ti-check" style="font-size:var(--text-xs);vertical-align:-1px"></i> Copié';
-            setTimeout(() => {
-              if (ec.isConnected) ec.innerHTML = prev;
-            }, 1200);
-          })
-          .catch((err: unknown) => {
-            console.error("clipboard writeText failed", err);
-            toast("Copie impossible — le presse-papier a refusé");
-          });
+        // Retour par TOAST (`filing-toast.ts::copyToClipboard`), plus par une coche écrite dans le
+        // bouton : celui-ci peut avoir été détaché entre le clic et la résolution — toute action
+        // Écartés (corbeille, restauration) et tout changement d'écran reconstruisent `#content` par
+        // `innerHTML` —, et le succès partait alors dans le vide en silence. La règle qui a motivé
+        // ce site tient toujours et vit maintenant dans l'aide partagée : rien n'est peint AVANT que
+        // l'écriture ait réussi, et un refus du presse-papier se dit.
+        copyToClipboard(ec.dataset.q || "", "Recherche copiée");
       } else if (act === "trash") {
         void trashTrack(id)
           .then(renderEcartes)
