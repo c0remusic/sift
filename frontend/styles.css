@@ -35,17 +35,17 @@ color-scheme:light;
    secondary→systemGray6, raised→blanc.
    Les couleurs SÉMANTIQUES ne bougent pas : elles étaient déjà celles d'Apple depuis 2026-07-06
    (voir plus bas).
-   ⚠️ QUESTION LAISSÉE OUVERTE, à trancher par Antoine — les tokens de TEXTE n'ont pas été
-   re-teintés. Ils restent à H=77,5 (chauds) sur des surfaces désormais à H≈286 (froides), et ils
-   sont 2 à 4 fois plus chromatiques que les nouveaux fonds (0,0115-0,0171 contre 0,0034-0,0068).
-   L'audit de cohérence de palette du 2026-07-10 avait justement réuni la famille neutre sur UNE
-   teinte ; laisser le texte en arrière recrée cette division, ailleurs. Mais une encre chaude sur
-   fond froid peut être un choix, pas un oubli, donc rien n'a été changé sans décision.
-   Le coût n'est PAS le contraste, mesuré dans la vraie fenêtre le 2026-08-16 : re-teinter le
-   texte à 286 en gardant sa clarté déplace les ratios de 0,02 au plus. Le changement de fond,
-   lui, les a fait passer de 16,07 à 15,09 (primary sur fond), 10,89 → 10,23 (secondary),
-   10,34 → 9,71 (tertiary), 8,64 → 8,12 (quaternary), 8,20 → 7,95 (tertiary sur rail). Le plus
-   bas reste au-dessus de AAA (7:1). Aucune régression d'accessibilité. */
+   ENCRE RE-TEINTÉE — décision d'Antoine, 2026-08-19, issue #37 (variante B) : l'encre neutre
+   rejoint la famille des fonds sur les DEUX axes, angle ET chroma (0.0067 286.3). Clartés et
+   alphas inchangés sur les huit tokens (4 clairs, 4 sombres). En clair, ce geste efface aussi
+   les quatre teintes divergentes que l'encre portait (73,53 · 67,45 · 79,76 · 82,4 — 14,95°
+   d'étendue dans une même famille). Fondement : la seule règle qu'Apple publie sur l'encre est
+   une règle de RELATION, pas une valeur — l'encre se définit par rapport à sa surface (HIG
+   /materials, dont le contre-exemple « poor contrast » est un gris fixe posé comme label, soit
+   l'état d'avant). La vibrance ne se transporte pas (plans opaques), l'intention si.
+   Coût contraste mesuré avant décision : 0,02 au plus, tous les tokens restent au-dessus de
+   AAA (7:1). Les couleurs SÉMANTIQUES (--color-text-info/-danger/-success/-warning et les
+   --color-hue-*) ne bougent pas : l'accord L2 réserve la couleur au sens. */
 --color-background-primary:oklch(86.22% 0.0068 286.3);--color-background-secondary:oklch(96.26% 0.0066 286.3);--color-background-tertiary:oklch(92.33% 0.0067 286.3);
 /* Extra warm-grey surfaces from DESIGN.md (Sift.dc.html theme map): the queue column, elevated
    surface (raised buttons/popovers), the recessed segmented "track"/well, and the SOLID
@@ -70,7 +70,7 @@ color-scheme:light;
    see the palette-coherence audit (2026-07-10). Same hue as before, chroma resized for a solid
    "pastel card" look, resolved to ~5:1 against their own text token everywhere. */
 --color-background-info:oklch(87.46% 0.035 246.74);--color-background-danger:oklch(90.45% 0.045 30.17);--color-background-success:oklch(93.42% 0.035 150.63);--color-background-warning:oklch(99.00% 0.045 73.21);
---color-text-primary:oklch(31.16% 0.0105 73.53);--color-text-secondary:oklch(45.4% 0.0145 67.45);--color-text-tertiary:oklch(46.15% 0.0133 79.76);--color-text-quaternary:oklch(50.30% 0.0139 82.4);
+--color-text-primary:oklch(31.16% 0.0067 286.3);--color-text-secondary:oklch(45.4% 0.0067 286.3);--color-text-tertiary:oklch(46.15% 0.0067 286.3);--color-text-quaternary:oklch(50.30% 0.0067 286.3);
 --color-text-info:oklch(45.37% 0.0835 246.66);--color-text-danger:oklch(48.88% 0.1399 30.93);--color-text-success:oklch(44% 0.0735 151.97);--color-text-warning:oklch(48% 0.103 75.31);
 /* Encre de bordure re-teintée le 2026-08-16 avec la base neutre : clarté et alphas inchangés
    (0,09 et 0,16, mesurés), seuls l'angle et la chroma rejoignent la famille Apple. Le bloc sombre
@@ -381,7 +381,7 @@ color-scheme:light;
        token n'est JAMAIS un fond ni une bordure, uniquement de l'encre, et toutes les surfaces du
        thème sombre sont sombres : l'éclaircir ne peut qu'augmenter chaque ratio. Garder cette
        valeur identique dans les DEUX blocs sombres. */
-    --color-text-primary:oklch(95.9% 0.0115 77.5);--color-text-secondary:oklch(83.5% 0.0171 77.5);--color-text-tertiary:oklch(81.92% 0.0148 77.5);--color-text-quaternary:oklch(76.72% 0.0153 77.5);
+    --color-text-primary:oklch(95.9% 0.0067 286.3);--color-text-secondary:oklch(83.5% 0.0067 286.3);--color-text-tertiary:oklch(81.92% 0.0067 286.3);--color-text-quaternary:oklch(76.72% 0.0067 286.3);
     --color-text-info:oklch(79.21% 0.0789 242.05);--color-text-danger:oklch(78.05% 0.0992 32.54);--color-text-success:oklch(84.99% 0.0947 151.66);--color-text-warning:oklch(84.04% 0.1108 78.51);
     --color-border-tertiary:oklch(100.0% 0.0 89.88 / 0.09);--color-border-secondary:oklch(100.0% 0.0 89.88 / 0.22);
     --color-border-info:oklch(79.21% 0.0789 242.05 / .30);--color-border-danger:oklch(78.05% 0.0992 32.54 / .40);
@@ -422,7 +422,7 @@ color-scheme:light;
   --color-background-info:oklch(39.16% 0.035 246.74);--color-background-danger:oklch(37.65% 0.045 30.17);--color-background-success:oklch(44.00% 0.035 150.63);--color-background-warning:oklch(42.79% 0.045 73.21);
   /* 83.5% : même valeur et même motif que le bloc prefers-color-scheme ci-dessus (hiérarchie
      secondary/tertiary inversée en sombre). Les deux blocs doivent rester d'accord. */
-  --color-text-primary:oklch(95.9% 0.0115 77.5);--color-text-secondary:oklch(83.5% 0.0171 77.5);--color-text-tertiary:oklch(81.92% 0.0148 77.5);--color-text-quaternary:oklch(76.72% 0.0153 77.5);
+  --color-text-primary:oklch(95.9% 0.0067 286.3);--color-text-secondary:oklch(83.5% 0.0067 286.3);--color-text-tertiary:oklch(81.92% 0.0067 286.3);--color-text-quaternary:oklch(76.72% 0.0067 286.3);
   --color-text-info:oklch(79.21% 0.0789 242.05);--color-text-danger:oklch(78.05% 0.0992 32.54);--color-text-success:oklch(84.99% 0.0947 151.66);--color-text-warning:oklch(84.04% 0.1108 78.51);
   --color-border-tertiary:oklch(100.0% 0.0 89.88 / 0.09);--color-border-secondary:oklch(100.0% 0.0 89.88 / 0.22);
   --color-border-info:oklch(79.21% 0.0789 242.05 / .30);--color-border-danger:oklch(78.05% 0.0992 32.54 / .40);
