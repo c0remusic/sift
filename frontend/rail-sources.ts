@@ -12,7 +12,7 @@ import { listSources, setSourceWatched, rescanSource, removeSource, addSource, s
 import { open } from "@tauri-apps/plugin-dialog";
 import type { Source } from "../shared/contracts";
 import { resolveSourceColorKey, SOURCE_HUE_CYCLE } from "./source-color";
-import { baseName, sourceEntryHtml } from "./rail-source-entry";
+import { baseName, railRowState, railShapeKey, sourceEntryHtml } from "./rail-source-entry";
 import { setQueueSourceFilter, activeQueueSource, renderQueue } from "./queue-panel";
 import { goTo } from "./router";
 import { openContextMenu } from "./context-menu";
@@ -53,10 +53,29 @@ export async function pickAndAddFolder(onChange: () => void | Promise<void>): Pr
   }
 }
 
-/** (Re)peint la section. `innerHTML` sur la section entière et non par ligne : le rail se repeint
- *  au plus une fois par ajout, rescan ou changement de file — jamais en rafale, contrairement à la
- *  progression d'analyse. La règle « créer une fois, muter ensuite » vise les handlers en boucle,
- *  pas un rendu ponctuel. */
+/** Forme actuellement montée dans le DOM (`railShapeKey`). `null` = rien de mutable en place :
+ *  jamais rendu, ou la section porte un message (erreur, « aucun dossier ») au lieu de lignes. */
+let mountedShape: string | null = null;
+
+/** (Re)peint la section.
+ *
+ *  FRÉQUENCE — c'est le fait qui gouverne toute cette fonction : ce rendu est appelé par `refresh()`
+ *  (`sift-live.ts`) sur CHAQUE `queue:changed`, debouncé a 150 ms. Or `queue:changed` est reemis
+ *  tous les 25 fichiers net-changes pendant un scan (`PROGRESS_BATCH`, `scanner.rs` → `ipc.rs`),
+ *  plus une fois par lot du watcher (`watcher.rs`). Sur les 3944 fichiers du ticket #42, cela fait
+ *  un repeint toutes les ~150 ms pendant toute la duree du scan — soit exactement le « handler
+ *  appele en boucle » que CLAUDE.md § Front interdit de servir par `innerHTML =`.
+ *
+ *  Le commentaire precedent affirmait ici l'inverse (« au plus une fois par ajout, rescan ou
+ *  changement de file — jamais en rafale ») et c'est cette affirmation, pas le code, qui etait
+ *  fausse. Le cout n'etait pas la peinture mais la DESTRUCTION : chaque `innerHTML =` detruisait
+ *  des noeuds vivants — focus clavier d'une ligne (`tabindex="0"`), ancre d'un menu contextuel
+ *  ouvert, et la cible d'un clic dont le mousedown et le mouseup encadraient un repeint (le
+ *  navigateur retarge alors le `click` sur un ancetre, donc le clic est avale).
+ *
+ *  Donc : creer les noeuds une fois, muter ensuite (modele `progress-zone.ts`). On ne reconstruit
+ *  que lorsque l'ENSEMBLE des lignes change (`railShapeKey` — ajout, retrait, reordonnancement) ;
+ *  le cas de loin le plus frequent, un compte en attente qui avance, ne fait qu'ecrire du texte. */
 export async function renderRailSources(): Promise<void> {
   const host = document.getElementById(SECTION_ID);
   if (!host) return;
@@ -69,9 +88,40 @@ export async function renderRailSources(): Promise<void> {
     host.innerHTML =
       `<div class="nv-grp">Sources</div>` +
       `<div class="sift-rail-src-msg sift-rail-src--error">Liste indisponible</div>`;
+    mountedShape = null;
     return;
   }
   const active = activeQueueSource();
+  const shape = railShapeKey(sources);
+
+  // Chemin rapide : même ensemble de lignes qu'au dernier rendu, et les nœuds sont toujours là.
+  // Le compte de `[data-src]` est reverifie et non suppose — une autre main a pu toucher au rail
+  // entre-temps, et une mutation sur un DOM qui ne correspond plus laisserait des lignes fausses
+  // en silence. Toute discordance retombe sur la reconstruction, jamais sur un rendu partiel.
+  if (sources.length && shape === mountedShape) {
+    const rows = host.querySelectorAll<HTMLElement>("[data-src]");
+    if (rows.length === sources.length) {
+      let applied = 0;
+      sources.forEach((s, i) => {
+        const row = rows[i];
+        const dot = row?.firstElementChild as HTMLElement | null;
+        const label = dot?.nextElementSibling as HTMLElement | null;
+        const badge = label?.nextElementSibling as HTMLElement | null;
+        if (!row || !dot || !label || !badge) return;
+        const r = railRowState(s, sources, s.id === active, scanFailures.get(s.id));
+        // `textContent`/`title`/`className` : des proprietes DOM, qui ne parsent rien. Les valeurs
+        // brutes de `railRowState` y vont telles quelles — les echapper afficherait les entites.
+        if (row.className !== r.rowClass) row.className = r.rowClass;
+        if (row.title !== r.title) row.title = r.title;
+        if (dot.className !== r.dotClass) dot.className = r.dotClass;
+        if (label.textContent !== r.label) label.textContent = r.label;
+        if (badge.textContent !== r.badge) badge.textContent = r.badge;
+        applied++;
+      });
+      if (applied === sources.length) return;
+    }
+  }
+
   host.innerHTML =
     `<div class="nv-grp">Sources</div>` +
     (sources.length
@@ -79,6 +129,7 @@ export async function renderRailSources(): Promise<void> {
       : `<div class="sift-rail-src-msg">Aucun dossier surveillé</div>`) +
     `<button class="nv sift-rail-src-add" data-src-add="1" type="button">` +
     `<i class="ti ti-plus" aria-hidden="true"></i><span>Ajouter un dossier</span></button>`;
+  mountedShape = sources.length ? shape : null;
 }
 
 /** Clic sur une source : filtre Revue et y va. Re-cliquer la source active lève le filtre —

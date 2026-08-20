@@ -28,21 +28,81 @@ export function sourceEntryHtml(
   active: boolean,
   failure: string | undefined,
 ): string {
-  const hue = ` sift-rail-src-dot-${esc(resolveSourceColorKey(all, s))}`;
-  const count = s.pending_count > 0 ? `<span class="nav-badge">${s.pending_count}</span>` : "";
+  const r = railRowState(s, all, active, failure);
+  return (
+    `<div class="${esc(r.rowClass)}" data-src="${r.id}" tabindex="0" role="button" title="${esc(r.title)}">` +
+    `<span class="${esc(r.dotClass)}" aria-hidden="true"></span>` +
+    `<span>${esc(r.label)}</span>` +
+    `<span class="nav-badge">${esc(r.badge)}</span></div>`
+  );
+}
+
+/** Ce qu'une ligne de source doit MONTRER, sous forme de données et non de markup.
+ *
+ *  Une seule description, deux consommateurs : `sourceEntryHtml` ci-dessus la sérialise quand il
+ *  faut créer les nœuds, et `rail-sources.ts` l'applique aux nœuds DÉJÀ en place quand il faut
+ *  seulement les mettre à jour. C'est ce qui empêche les deux chemins de diverger — le rendu
+ *  initial et la mutation ne peuvent pas dire deux choses différentes s'ils lisent la même
+ *  fonction. Même motif que la story, qui appelle le vrai rendu plutôt que d'en recopier le markup.
+ *
+ *  ⚠️ Les champs texte sont BRUTS, jamais pré-échappés. `esc()` appartient au chemin HTML, qui
+ *  interpole dans des attributs et du contenu ; le chemin mutation affecte `textContent`,
+ *  `title` et `className`, trois propriétés DOM qui ne parsent rien et pour lesquelles un
+ *  échappement produirait des entités VISIBLES à l'écran. Pré-échapper ici casserait donc la
+ *  moitié mutation, en silence. */
+export interface RailRowState {
+  id: number;
+  /** Nom affiché — dernier segment du chemin. */
+  label: string;
+  /** Texte du badge, VIDE (et non absent) quand rien n'est en attente : `.nav-badge:empty`
+   *  (`styles.css`) replie la pastille, exactement comme pour le badge de Revue
+   *  (`updateRevueBadge`, `queue-panel.ts`). Un span toujours présent se met à jour par
+   *  `textContent`, sans jamais créer ni détruire de nœud — c'est ce qui rend la ligne mutable. */
+  badge: string;
+  /** Classe complète de la pastille, teinte comprise. */
+  dotClass: string;
+  /** Classe complète de la ligne : grammaire `.nv`, marqueur actif, état. */
+  rowClass: string;
+  /** Infobulle. */
+  title: string;
+}
+
+/** États (rail.md § États) : l'échec PRIME sur la suspension — « jamais atténuée » — donc
+ *  `--suspended` ne se pose que sans `--error`. */
+export function railRowState(
+  s: Source,
+  all: Source[],
+  active: boolean,
+  failure: string | undefined,
+): RailRowState {
   const broken = !s.accessible || failure != null;
   const suspended = !s.watched && !broken;
   const state = broken ? " sift-rail-src--error" : suspended ? " sift-rail-src--suspended" : "";
-  const title = !s.accessible
-    ? `${s.path} — dossier inaccessible`
-    : failure
-      ? `${s.path} — scan en échec : ${failure}`
-      : suspended
-        ? `${s.path} — surveillance suspendue`
-        : s.path;
-  return (
-    `<div class="nv sift-rail-src${active ? " on" : ""}${state}" data-src="${s.id}" tabindex="0" role="button" title="${esc(title)}">` +
-    `<span class="sift-rail-src-dot${hue}" aria-hidden="true"></span>` +
-    `<span>${esc(baseName(s.path))}</span>${count}</div>`
-  );
+  return {
+    id: s.id,
+    label: baseName(s.path),
+    badge: s.pending_count > 0 ? String(s.pending_count) : "",
+    dotClass: `sift-rail-src-dot sift-rail-src-dot-${resolveSourceColorKey(all, s)}`,
+    rowClass: `nv sift-rail-src${active ? " on" : ""}${state}`,
+    title: !s.accessible
+      ? `${s.path} — dossier inaccessible`
+      : failure
+        ? `${s.path} — scan en échec : ${failure}`
+        : suspended
+          ? `${s.path} — surveillance suspendue`
+          : s.path,
+  };
+}
+
+/** Identité et ORDRE des lignes — tout ce qu'une mise à jour en place ne sait PAS rattraper.
+ *
+ *  Le compte en attente, l'état, la teinte et l'infobulle n'en font délibérément pas partie : ce
+ *  sont précisément les champs qui bougent à chaque tick de scan, et les muter sur place est le
+ *  but. Ne rentre ici que ce qui exige de créer ou de retirer un nœud — donc les identifiants,
+ *  dans leur ordre d'affichage.
+ *
+ *  Deux listes de même clé sont interchangeables ligne à ligne : `rail-sources.ts` peut alors
+ *  garder ses nœuds et n'écrire que les valeurs. Clé différente = reconstruction. */
+export function railShapeKey(sources: Source[]): string {
+  return sources.map((s) => s.id).join(",");
 }
