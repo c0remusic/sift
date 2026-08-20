@@ -8,6 +8,7 @@ import { identifyErrorText } from "./identify-shared";
 import { DEFAULT_FILENAME_TEMPLATE } from "../shared/contracts";
 import type { Canonical } from "../shared/contracts";
 import { requireEl, esc } from "./dom";
+import { isStaleViewRender, viewEpoch } from "./view-epoch";
 import { slideSegThumb } from "./seg-thumb";
 import { setTheme } from "./theme";
 import type { ThemeChoice } from "./theme";
@@ -72,6 +73,8 @@ export function onSettingsCategoryPick(key: string): void {
 
 export async function renderReglagesLive() {
   const content = requireEl("#content", "renderReglagesLive");
+  // `viewToken` et non `token` : ce module a déjà un `token`, celui de Discogs.
+  const viewToken = viewEpoch();
 
   // Remove any previous live-settings wrapper so we don't duplicate on re-render.
   // All cards live inside this single wrapper (not as separate #content siblings)
@@ -120,6 +123,14 @@ export async function renderReglagesLive() {
   } catch (e) {
     console.error("getSetting(filename_template) failed", e);
   }
+
+  // Dernier point d'attente avant que quoi que ce soit soit construit puis attaché à `#content`
+  // (issue #42) : quatre `getSetting` séquentiels viennent de passer, et sous scan chacun attend le
+  // `Mutex<Connection>`. Sans ce garde, la pile de cartes de Réglages s'ajoutait au `#content` de
+  // l'écran qu'on venait d'ouvrir. Le bloc synchrone en tête de fonction (retrait de
+  // `#sift-reglages-live`, masquage des enfants) n'a PAS besoin du garde : aucun `await` ne le
+  // précède, il s'exécute donc toujours dans le tour où l'écran est encore le sien.
+  if (isStaleViewRender(viewToken)) return;
 
   // Cartes bordées + titre 16px/600 + texte explicatif, per la maquette (Sift.dc.html:642-691).
   // Divergence assumée : le jeton reste un input à sauvegarde auto (fonctionnel) au lieu du

@@ -33,6 +33,7 @@ import type {
   ApplyMetadataSyncOutcome,
 } from "../shared/contracts";
 import { requireEl, esc } from "./dom";
+import { isStaleViewRender, viewEpoch } from "./view-epoch";
 import { toast } from "./filing-toast";
 import { emptyStateHtml, wireEmptyState } from "./empty-state";
 import { confirmAction } from "./confirm-modal";
@@ -568,16 +569,23 @@ function playlistDuplicatesSectionHtml(groups: PlaylistDuplicateGroupDto[]): str
  * of either linked state (never modeled as a 4-way exclusive if/else). */
 export async function renderRekordboxLive(): Promise<void> {
   const content = requireEl("#content", "renderRekordboxLive");
+  // Jeton capturé dans le même geste que `#content` (issue #42). Cet écran est le plus exposé de
+  // tous : CINQ allers-retours IPC séquentiels avant sa première écriture complète, chacun bloqué
+  // par le `Mutex<Connection>` que le scan tient en rafale.
+  const token = viewEpoch();
   let status: RekordboxLinkStatus;
   try {
     status = await rekordboxStatus();
     lastLinkStatus = status;
   } catch (e) {
     console.error("rekordbox_status failed", e);
+    if (isStaleViewRender(token)) return;
     content.innerHTML =
       `<div style="font-size:var(--text-md);color:var(--color-text-tertiary)">Statut Rekordbox indisponible.</div>`;
     return;
   }
+
+  if (isStaleViewRender(token)) return;
 
   const intro =
     `<div style="font-size:var(--text-md);color:var(--color-text-tertiary);margin-bottom:12px">` +
@@ -717,6 +725,7 @@ export async function renderRekordboxLive(): Promise<void> {
       ? sections.map((x) => x.html).join("")
       : (sections.find((x) => x.key === activeRkbSection)?.html ?? "");
 
+  if (isStaleViewRender(token)) return;
   content.innerHTML =
     intro +
     driftBanner +
