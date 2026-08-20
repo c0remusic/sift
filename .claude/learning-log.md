@@ -502,3 +502,17 @@ largeur à porter** — il n'est apparu qu'en ajoutant des colonnes numériques.
 symptôme se cherche par un `querySelectorAll` dans la vraie fenêtre, pas dans le
 source : le source contient bien la balise, c'est le DOM qui ne l'a plus.
 
+
+### 2026-08-20 — Screenshot du Browser pane impossible en session autonome : le pane ne composite pas
+
+**Constat.** `computer{action:"screenshot"}` répond « the Browser pane is not
+displayed, so the page is not compositing frames » dès que la session tourne
+sans écran attaché (session distante, chip, wrap-up nocturne). `read_page` et
+`get_page_text` continuent de fonctionner — le DOM vit, seuls les pixels
+manquent.
+
+**How to apply** : en session autonome, vérifier un layout d'artifact par
+calcul (géométrie déclarée : positions absolues, largeurs, offsets) ou par
+`read_page`, jamais en comptant sur une capture. Pour une vraie preuve pixel
+sur l'app Sift, le chemin reste la fenêtre WebView2 par CDP
+(`cdp.cjs screenshot`), qui composite toujours, pane ou pas.
