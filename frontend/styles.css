@@ -456,7 +456,7 @@ html{background:transparent}
 ::-webkit-scrollbar-track{background:transparent}
 /* Auto-hide: thumb is invisible at rest, appears only while hovering the area or actively
    scrolling (.sift-scrolling toggled in JS), so it's gone when you're idle at top/bottom. */
-::-webkit-scrollbar-thumb{background:transparent;background-clip:padding-box;border:2px solid transparent;border-radius:9px}
+::-webkit-scrollbar-thumb{background:transparent;background-clip:padding-box;border:2px solid transparent;border-radius:var(--border-radius-pill)}
 :hover::-webkit-scrollbar-thumb,.sift-scrolling::-webkit-scrollbar-thumb{background:var(--color-border-secondary)}
 .sift-scrolling:hover::-webkit-scrollbar-thumb{background:var(--color-text-tertiary)}
 ::-webkit-scrollbar-corner{background:transparent}
@@ -673,7 +673,7 @@ body:has(#sift-titlebar){border-radius:var(--border-radius-sm);overflow:hidden}
 /* SECTION SOURCES du rail (fusion 1). Une entrée de source EST une entrée de rail — même .nv,
    même état actif, même survol : la section n'est pas un composant à part. Seule la pastille de
    couleur s'ajoute, et c'est un accent CATÉGORIEL, pas un état. */
-.sift-rail-src-dot{width:8px;height:8px;border-radius:50%;flex:none;background:var(--color-text-tertiary)}
+.sift-rail-src-dot{width:8px;height:8px;border-radius:var(--border-radius-pill);flex:none;background:var(--color-text-tertiary)}
 /* Teinte par `color_key` (rail-source-entry.ts) — seules survivantes du sélecteur de couleur de
    l'ancien écran Accueil (fusion 1), renommées d'après leur porteur réel. Chacune déclare la
    TEINTE (`--src-hue`) et le fond qui s'en dérive, jamais la géométrie : elle appartient à la
@@ -736,7 +736,7 @@ body.sift-rail-collapsed .nv{position:relative}
    police peinte, et un 0px y entre comme un texte illisible — il ne peut pas distinguer « masqué
    volontairement » de « trop petit ». Mesure du 2026-08-19 : `minPx` tombait de 10 à 0 avec deux
    badges signalés. Clipper garde la taille déclarée honnête et le contrôle utilisable. */
-body.sift-rail-collapsed .nav-badge{position:absolute;top:4px;right:6px;width:6px;height:6px;min-width:0;padding:0;border-radius:50%;color:transparent;background:var(--color-text-info);overflow:hidden;white-space:nowrap}
+body.sift-rail-collapsed .nav-badge{position:absolute;top:4px;right:6px;width:6px;height:6px;min-width:0;padding:0;border-radius:var(--border-radius-pill);color:transparent;background:var(--color-text-info);overflow:hidden;white-space:nowrap}
 body.sift-rail-collapsed .nav-badge:empty{display:none}
 /* La pastille de source devient son ICÔNE une fois replié — c'est la seule chose qui identifie une
    source, et à 8px elle ne se lit plus une fois seule dans la colonne. */
@@ -774,8 +774,8 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
 .sift-pz-cancel{display:inline-flex;align-items:center;justify-content:center;width:15px;height:15px;padding:0;border:none;border-radius:3px;background:transparent;color:var(--color-text-tertiary);cursor:pointer}
 .sift-pz-cancel:hover{color:var(--color-text-danger);background:var(--color-background-danger)}
 .sift-pz-cancel i{font-size:var(--text-xs)}
-.sift-pz-track{height:3px;border-radius:3px;background:var(--color-border-tertiary);overflow:hidden}
-.sift-pz-fill{height:100%;width:100%;border-radius:3px;background:var(--color-text-info);transform-origin:left;transition:transform var(--duration-slow)}
+.sift-pz-track{height:3px;border-radius:var(--border-radius-pill);background:var(--color-border-tertiary);overflow:hidden}
+.sift-pz-fill{height:100%;width:100%;border-radius:var(--border-radius-pill);background:var(--color-text-info);transform-origin:left;transition:transform var(--duration-slow)}
 .sift-pz-row.error .sift-pz-fill{background:var(--color-text-danger)}
 .queue{flex:none;display:flex;flex-direction:column;padding:var(--space-12) var(--space-8);overflow:hidden;background:var(--color-background-queue)}
 /* padding-right added (annotation: "la barre de scrolling... est trop pres de .qi.cur") —
@@ -831,7 +831,7 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
 #ql:hover::-webkit-scrollbar-thumb{background:var(--color-border-secondary);background-clip:padding-box}
 #ql::-webkit-scrollbar-thumb:hover{background:var(--color-text-tertiary);background-clip:padding-box}
 .qdrag{width:7px;flex:none;cursor:col-resize;background:transparent;border-left:0.5px solid var(--color-border-tertiary);display:flex;align-items:center;justify-content:center}
-.qdrag::after{content:"";width:2px;height:26px;border-radius:2px;background:var(--color-border-secondary)}
+.qdrag::after{content:"";width:2px;height:26px;border-radius:var(--border-radius-pill);background:var(--color-border-secondary)}
 .qdrag:hover::after{background:var(--color-text-info)}
 /* Padding on the token scale (was a literal 5px/7px, drifted off .bx-row — Lot's row of the same
    "selectable highlighted row" family, styles.css:255 — which already uses var(--space-8)
@@ -848,7 +848,7 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
    side-stripe accent, the same anti-pattern already banned for real borders elsewhere; the
    background+weight change alone is enough to read as selected. */
 .qi.cur{background:var(--color-row-active);color:var(--color-text-primary);font-weight:500}.qi i{font-size:13px;flex:none}
-.pbar{height:4px;background:var(--color-border-tertiary);border-radius:3px;margin:var(--space-4) 0 var(--space-8);overflow:hidden}.pfill{height:100%;background:var(--color-text-info);border-radius:3px}
+.pbar{height:4px;background:var(--color-border-tertiary);border-radius:var(--border-radius-pill);margin:var(--space-4) 0 var(--space-8);overflow:hidden}.pfill{height:100%;background:var(--color-text-info);border-radius:var(--border-radius-pill)}
 /* Inspector column (col 3): .mid (scrollable son-first detail) stacked above the anchored-bottom
    action rail (#filfoot). Siblings, not parent/child — openFilingInto rewrites .mid's innerHTML on
    every track open, so #filfoot/#fldz living OUTSIDE .mid is what lets them survive that rewrite. */
@@ -1065,7 +1065,7 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
    chose »). Le POUCE garde sa transition de `transform`, et c'est lui qui porte le mouvement du
    switch — le fond bascule sec sous un pouce qui glisse, ce qui est exactement le rendu d'un
    NSSwitch. Ce qu'on perd n'est visible que si l'on regarde le fond seul, pendant 100 ms. */
-.tog{width:30px;height:17px;border-radius:9px;background:var(--color-accent-fill);position:relative;flex:none;cursor:pointer}.tog::after{content:"";position:absolute;left:2px;top:2px;width:13px;height:13px;border-radius:50%;background:var(--color-accent-ink);transform:translateX(13px);transition:transform var(--duration-fast)}.tog.off{background:var(--color-border-secondary)}.tog.off::after{transform:translateX(0)}
+.tog{width:30px;height:17px;border-radius:var(--border-radius-pill);background:var(--color-accent-fill);position:relative;flex:none;cursor:pointer}.tog::after{content:"";position:absolute;left:2px;top:2px;width:13px;height:13px;border-radius:var(--border-radius-pill);background:var(--color-accent-ink);transform:translateX(13px);transition:transform var(--duration-fast)}.tog.off{background:var(--color-border-secondary)}.tog.off::after{transform:translateX(0)}
 /* `background` et `color` retirés de la transition le 2026-08-19 (DESIGN.md § 6). `.lr` est la
    LIGNE de la table : elle est virtualisée et repeinte en rafale au défilement, et une transition
    de fond sur une ligne recyclée fait traîner la couleur de la ligne PRÉCÉDENTE pendant 150 ms sur
@@ -1085,7 +1085,7 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
 /* `background` et `color` retirés (2026-08-19, DESIGN.md § 6). `opacity` RESTE, et c'est la seule
    propriété que ce bouton avait besoin d'animer : elle porte son apparition au survol de la ligne
    (voir la note deux lignes plus bas), et `opacity` est l'une des deux propriétés que § 6 autorise. */
-.lr .pb{width:22px;height:22px;border-radius:50%;flex:none;padding:0;display:inline-flex;align-items:center;justify-content:center;opacity:.72;transition:opacity var(--duration-fast) ease}
+.lr .pb{width:22px;height:22px;border-radius:var(--border-radius-pill);flex:none;padding:0;display:inline-flex;align-items:center;justify-content:center;opacity:.72;transition:opacity var(--duration-fast) ease}
 .lr:hover .pb,.lr:focus-within .pb{background:var(--color-surface-raised)}
 /* `.lk-icon` a quitté cette règle le 2026-08-19 : il ne s'atténue plus à l'opacité, donc il n'a
    plus rien à restaurer. `.pb` (bouton lecture) la garde -- il se révèle au survol de la ligne,
@@ -1150,7 +1150,7 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
 /* La pastille prend currentColor : une seule classe de teinte par verdict suffit alors pour le
    point ET le libellé, et il devient impossible de les désaccorder. 6px = le diamètre le plus petit
    qui reste un disque et non un pixel à 11px de texte. */
-.sift-lib-verdict-dot{width:6px;height:6px;border-radius:50%;background:currentColor;flex:none}
+.sift-lib-verdict-dot{width:6px;height:6px;border-radius:var(--border-radius-pill);background:currentColor;flex:none}
 /* Les quatre teintes de DESIGN.md § 4, une par sens. Posées sur la CELLULE, donc elles gagnent sur
    la couleur que .lr.cur pose sur la ligne : un verdict ne change pas quand on ouvre sa piste. */
 .sift-lib-v-ok{color:var(--color-text-success)}
@@ -1456,7 +1456,7 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .sift-bt-run{color:var(--color-text-info)}
 .sift-bt-done{color:var(--color-text-success)}
 .sift-bt-fail{color:var(--color-text-warning)}
-.sift-bt-spin{width:10px;height:10px;border:2px solid var(--color-border-secondary);border-top-color:var(--color-text-info);border-radius:50%;animation:sift-bt-rot .7s linear infinite}
+.sift-bt-spin{width:10px;height:10px;border:2px solid var(--color-border-secondary);border-top-color:var(--color-text-info);border-radius:var(--border-radius-pill);animation:sift-bt-rot .7s linear infinite}
 @keyframes sift-bt-rot{to{transform:rotate(360deg)}}
 /* Batch group-header tri-state checkbox (Ready-to-file format groups + Fakes). */
 /* Vertical padding on the token scale (was a literal 3px, off .jrnl-group-hd/.rb-session-hd's
@@ -1754,7 +1754,7 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    frame. L'assombrissement au survol reste — c'est le `filter:brightness(0.95)` du générique
    `button:hover` — il s'applique simplement d'un coup. C'était la seule propriété animée ici, donc
    la déclaration part entière. */
-.sift-play-btn{flex:none;width:46px;height:46px;margin-left:var(--space-12);border-radius:50%;display:inline-flex;align-items:center;justify-content:center;padding:0;border:none;background:var(--color-surface-raised)}
+.sift-play-btn{flex:none;width:46px;height:46px;margin-left:var(--space-12);border-radius:var(--border-radius-pill);display:inline-flex;align-items:center;justify-content:center;padding:0;border:none;background:var(--color-surface-raised)}
 .sift-play-btn i{font-size:20px;color:var(--color-text-primary);transition:opacity var(--duration-fast) ease}
 /* background re-asserted here: the generic button:hover{background:var(--color-background-secondary)}
    (specificity 0,1,1) otherwise beats this button's own non-hover background rule (0,1,0), so on
@@ -1773,7 +1773,7 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    duplicated; a flat icon glyph sidesteps that. Enlarged to 68px (continuous-surface redesign) —
    the hero is the primary listening point on the page. Frame bg raised to --color-surface-raised
    (a step lighter than tertiary) for contrast against the icon. */
-.sift-cover-frame{width:68px;height:68px;border-radius:8px;flex:none;position:relative;overflow:hidden;background:var(--color-surface-raised);display:flex;align-items:center;justify-content:center}
+.sift-cover-frame{width:68px;height:68px;border-radius:var(--border-radius-sm);flex:none;position:relative;overflow:hidden;background:var(--color-surface-raised);display:flex;align-items:center;justify-content:center}
 .sift-cover-fallback{font-size:28px;color:var(--color-text-tertiary)}
 /* Real art present → hide the fallback glyph entirely (its own equivalent of the old ::before/
    z-index approach, now that there's no ::before to layer under the <img>). */
@@ -1865,7 +1865,7 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    sit over an identical backdrop, so the same translucent value alpha-blends to two different
    final colors. --color-track is an opaque, dedicated "slider track" token (already exists,
    unused until now) — same value in both places regardless of backdrop. */
-.sift-slider-rail{position:absolute;left:0;right:0;height:3px;border-radius:2px;background:var(--color-track)}
+.sift-slider-rail{position:absolute;left:0;right:0;height:3px;border-radius:var(--border-radius-pill);background:var(--color-track)}
 /* --color-text-info → --color-surface-raised (annotation: "trop blanc" — same fix as the play
    button, same reasoning: text-info resolves to the same bright off-white as text-primary in dark
    mode, sized for a card surface that no longer exists here). */
@@ -1876,12 +1876,12 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    L'annotation d'origine (« trop blanc ») visait `--color-text-info`, qui résout vers un
    blanc cassé en thème sombre. L'aplat d'accent n'a pas ce défaut : il est bleu dans les deux
    thèmes, puisque theme-invariant. */
-.sift-slider-fill{position:absolute;height:3px;border-radius:2px;background:var(--color-accent-fill);pointer-events:none}
+.sift-slider-fill{position:absolute;height:3px;border-radius:var(--border-radius-pill);background:var(--color-accent-fill);pointer-events:none}
 /* POUCE = rond GRIS PLEIN, comme le kit. C'était un anneau : fond sombre + bordure claire, donc
    un trou dans la piste plutôt qu'une prise posée dessus. */
 /* `box-shadow` retiré de la transition le 2026-08-19 (DESIGN.md § 6 : transform/opacity seuls) —
    le glow du drag apparaît sec, le grossissement du pouce reste animé par transform. */
-.sift-slider-thumb{position:absolute;top:50%;transform:translate(-50%,-50%) scale(1);width:13px;height:13px;border-radius:50%;background:var(--color-hue-gray-solid);border:0;box-shadow:var(--shadow-panel-subtle);pointer-events:none;transition:transform var(--duration-fast)}
+.sift-slider-thumb{position:absolute;top:50%;transform:translate(-50%,-50%) scale(1);width:13px;height:13px;border-radius:var(--border-radius-pill);background:var(--color-hue-gray-solid);border:0;box-shadow:var(--shadow-panel-subtle);pointer-events:none;transition:transform var(--duration-fast)}
 .sift-slider-track:hover .sift-slider-thumb{transform:translate(-50%,-50%) scale(1.15)}
 .sift-slider-track.dragging .sift-slider-thumb{transform:translate(-50%,-50%) scale(1.3);box-shadow:0 0 0 4px var(--overlay-selected)}
 /* Volume opts out of the scale+glow click feedback (bug report: "bizarre le feedback sur la boule
@@ -2470,10 +2470,10 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    au survol. */
 .sift-ctx-swatchrow{display:flex;align-items:center;gap:var(--space-8);padding:var(--space-4) var(--space-8)}
 .sift-ctx-swatchlabel{flex:1;font-size:var(--text-md);color:var(--color-text-tertiary);white-space:nowrap}
-.sift-ctx-swatch{width:18px;height:18px;padding:0;background:transparent;border:2px solid transparent;border-radius:50%;box-sizing:border-box;flex:none}
+.sift-ctx-swatch{width:18px;height:18px;padding:0;background:transparent;border:2px solid transparent;border-radius:var(--border-radius-pill);box-sizing:border-box;flex:none}
 .sift-ctx-swatch:hover{background:transparent;filter:none;border-color:var(--color-border-secondary)}
 .sift-ctx-swatch.on{border-color:var(--color-text-primary)}
-.sift-ctx-swatch-fill{display:block;width:100%;height:100%;border-radius:50%}
+.sift-ctx-swatch-fill{display:block;width:100%;height:100%;border-radius:var(--border-radius-pill)}
 .sift-settings-side{width:var(--pane-w);flex:none;position:sticky;top:0}
 /* Une section masquée est retirée du FLUX (`hidden`), pas seulement invisible : un champ dans une
    section cachée resterait tabulable, et le focus disparaîtrait de l'écran en plein Tab. */
@@ -2826,8 +2826,8 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .sift-usage-prow.flash{animation:sift-usage-flash 1400ms ease-out}
 @keyframes sift-usage-flash{0%,32%{background:var(--color-background-tertiary)}100%{background:transparent}}
 .sift-usage-pext{font-family:var(--font-mono);font-size:var(--text-sm);display:inline-flex;align-items:center;gap:var(--space-8)}
-.sift-usage-ptrack{height:6px;border-radius:3px;background:var(--color-border-tertiary);overflow:hidden}
-.sift-usage-pfill{height:100%;border-radius:3px}
+.sift-usage-ptrack{height:6px;border-radius:var(--border-radius-pill);background:var(--color-border-tertiary);overflow:hidden}
+.sift-usage-pfill{height:100%;border-radius:var(--border-radius-pill)}
 .sift-usage-pcount{color:var(--color-text-tertiary);font-variant-numeric:tabular-nums;text-align:right}
 .sift-usage-psize{color:var(--color-text-secondary);font-variant-numeric:tabular-nums;text-align:right}
 
