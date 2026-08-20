@@ -54,6 +54,15 @@ describe("sourceEntryHtml — états", () => {
     const html = sourceEntryHtml(s, [s], false, undefined);
     expect(html).toMatch(/sift-rail-src-dot-(indigo|purple|pink|teal|yellow)/);
   });
+
+  it("échappe un color_key adverse : la base ne contraint PAS les 5 valeurs (audit 2026-08-20)", () => {
+    // `set_source_color` (ipc.rs) écrit la valeur telle quelle — aucune validation, aucun CHECK
+    // SQL. Le seul verrou est le menu du frontend, donc ce champ se traite comme non fiable.
+    const s = src({ color_key: `"><script>x</script>` });
+    const html = sourceEntryHtml(s, [s], false, undefined);
+    expect(html).not.toContain("<script>");
+    expect(html).toContain("&quot;&gt;&lt;script&gt;");
+  });
 });
 
 describe("sourceEntryHtml — échappement", () => {
