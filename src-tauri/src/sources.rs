@@ -27,6 +27,31 @@ pub struct Source {
     pub color_key: Option<String>,
 }
 
+/// The 5 categorical hue keys a source colour override may take. EXACT mirror of
+/// `SOURCE_HUE_CYCLE` (`frontend/source-color.ts`) and of the `.sift-rail-src-dot-<hue>`
+/// classes in `styles.css` — pinned frontend-side by `test/source-color.test.ts`, Rust-side
+/// by `hue_keys_mirror_frontend_cycle` below (reads the .ts file, order included). The taxonomy
+/// is a closed set (`DESIGN.md` § 4): any value outside it is rejected at the IPC boundary by
+/// `validate_color_key`, never stored.
+pub const SOURCE_HUE_KEYS: [&str; 5] = ["indigo", "purple", "pink", "teal", "yellow"];
+
+/// Rejects a colour override that isn't one of the 5 hue keys. `None` (clear the override,
+/// back to add-order auto-assignment) is always valid. Pure so the IPC boundary stays testable
+/// without a Tauri `State`; called by `ipc::set_source_color` before anything reaches the DB.
+///
+/// Why this exists: the `color_key` column has no `CHECK` (`db.rs`), and the only guard was the
+/// frontend menu — a raw IPC caller could write arbitrary text into the base. `esc()` closes the
+/// render path (`frontend/rail-source-entry.ts`), but the base itself was unguarded.
+pub fn validate_color_key(color_key: Option<&str>) -> Result<(), String> {
+    match color_key {
+        None => Ok(()),
+        Some(key) if SOURCE_HUE_KEYS.contains(&key) => Ok(()),
+        Some(key) => Err(format!(
+            "couleur de source invalide: {key:?} — attendu l'une de {SOURCE_HUE_KEYS:?} ou null"
+        )),
+    }
+}
+
 /// Canonicalises `path` (so disk-scan and live-watch keys stay consistent), inserts it,
 /// and returns the new source id. If the path is already a source, returns the existing id.
 pub fn add(conn: &Connection, path: &str) -> rusqlite::Result<i64> {
@@ -89,9 +114,9 @@ pub fn set_watched(conn: &Connection, id: i64, watched: bool) -> rusqlite::Resul
     )
 }
 
-/// Sets (or clears, with `None`) a source's manual color override. Persists
-/// one of the 5 categorical hue names (`"indigo"|"purple"|"pink"|"teal"|"yellow"`)
-/// — validation of the value itself happens at the IPC layer, this just stores it.
+/// Sets (or clears, with `None`) a source's manual color override. Raw store: the value is
+/// validated upstream by `validate_color_key` at the IPC boundary (`ipc::set_source_color`),
+/// so callers must go through there — this function trusts its input and just writes it.
 pub fn set_color(conn: &Connection, id: i64, color_key: Option<String>) -> rusqlite::Result<()> {
     conn.execute(
         "UPDATE sources SET color_key=?2 WHERE id=?1",
@@ -173,5 +198,73 @@ mod tests {
         let sources = list(&conn).unwrap();
         let s = sources.iter().find(|s| s.id == id).unwrap();
         assert_eq!(s.color_key, None);
+    }
+
+    #[test]
+    fn validate_color_key_accepts_none_and_the_five_hues() {
+        assert!(
+            validate_color_key(None).is_ok(),
+            "clear the override is always valid"
+        );
+        for hue in SOURCE_HUE_KEYS {
+            assert!(
+                validate_color_key(Some(hue)).is_ok(),
+                "{hue} is a cycle key"
+            );
+        }
+    }
+
+    #[test]
+    fn validate_color_key_rejects_anything_else() {
+        // The frontend menu only offers the 5 keys, but a raw IPC caller isn't bound by it —
+        // and the DB column has no CHECK. This boundary is what keeps the base clean.
+        for bad in ["", "INDIGO", "red", "\"><script>x</script>", "indigo "] {
+            let r = validate_color_key(Some(bad));
+            assert!(r.is_err(), "{bad:?} must be rejected");
+            assert!(
+                r.unwrap_err().contains(bad),
+                "the error names the offending value"
+            );
+        }
+    }
+
+    /// `SOURCE_HUE_KEYS` and the frontend `SOURCE_HUE_CYCLE` are one taxonomy in two languages.
+    /// This reads the .ts source and pins them equal, ORDER INCLUDED — same discipline as the
+    /// serde-mirror contract tests. A rename on either side (like 57f64b2, which renamed the
+    /// family) breaks this instead of silently splitting validation from the rendered class.
+    #[test]
+    fn hue_keys_mirror_frontend_cycle() {
+        let ts_path = Path::new(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .expect("src-tauri/ a toujours un parent (la racine du dépôt)")
+            .join("frontend")
+            .join("source-color.ts");
+        let ts = std::fs::read_to_string(&ts_path)
+            .unwrap_or_else(|e| panic!("lecture de {} impossible: {e}", ts_path.display()));
+
+        // `export const SOURCE_HUE_CYCLE = ["indigo", "purple", …] as const;` — on isole le
+        // contenu entre crochets, sa disparition doit casser, pas passer inaperçue.
+        let after = ts
+            .split("SOURCE_HUE_CYCLE")
+            .nth(1)
+            .unwrap_or_else(|| panic!("SOURCE_HUE_CYCLE absent de {}", ts_path.display()));
+        let inside = after
+            .split_once('[')
+            .and_then(|(_, rest)| rest.split_once(']'))
+            .map(|(list, _)| list)
+            .unwrap_or_else(|| panic!("SOURCE_HUE_CYCLE n'est pas un littéral de tableau"));
+        let ts_keys: Vec<String> = inside
+            .split(',')
+            .map(|s| s.trim().trim_matches(['"', '\'']).to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+
+        assert_eq!(
+            ts_keys,
+            SOURCE_HUE_KEYS.to_vec(),
+            "SOURCE_HUE_KEYS (Rust) et SOURCE_HUE_CYCLE (frontend/source-color.ts) ont divergé. \
+             C'est la MÊME taxonomie fermée (DESIGN.md § 4) — la valider ici et la rendre là-bas. \
+             Les remettre d'accord, ordre compris."
+        );
     }
 }

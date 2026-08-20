@@ -155,12 +155,17 @@ pub fn set_source_watched(
 /// Sets or clears a source's manual color override (one of the 5 categorical
 /// hue keys, or None to fall back to auto-assignment by add-order — computed
 /// frontend-side in frontend/source-color.ts, never stored).
+///
+/// The value is validated here, before the DB: the `color_key` column has no `CHECK`
+/// (`db.rs`), so this boundary is the only guard against an arbitrary value polluting the
+/// base (`sources::validate_color_key`, mirror-pinned to the frontend cycle).
 #[tauri::command]
 pub fn set_source_color(
     conn: State<'_, Mutex<Connection>>,
     id: i64,
     color_key: Option<String>,
 ) -> Result<(), String> {
+    sources::validate_color_key(color_key.as_deref())?;
     let conn = db::lock_conn(&conn)?;
     sources::set_color(&conn, id, color_key).map_err(|e| e.to_string())
 }
