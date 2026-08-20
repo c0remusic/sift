@@ -308,6 +308,17 @@ export async function injectTitlebar(): Promise<void> {
 export function installNavKeyboard() {
   document.addEventListener("keydown", (e) => {
     if (e.key !== "Enter" && e.key !== " ") return;
+    // Entrée/Espace NUS seulement — c'est le geste d'activation (couche 3, shortcuts.ts).
+    // ⌘/Ctrl et Alt appartiennent à d'autres couches : les combinaisons à modificateur sont les
+    // raccourcis de FENÊTRE de la couche 1 (`installWindowShortcuts`, dont le contrat est de ne
+    // prendre QUE des combinaisons avec modificateur pour cohabiter avec ces accélérateurs à une
+    // touche), et Alt est le geste de l'inspecteur dev (`dev-inspector.ts`, Alt+Clic). Sans cette
+    // garde, ⌘Entrée/Ctrl+Espace/Alt+Espace sur une destination du rail focalisée redéclenchaient
+    // une navigation à travers le routeur `#pa` — bug voisin repéré en diagnostiquant #42, hors de
+    // son correctif. ⇧ est épargné : la couche 1 ne le réclame pas, c'est le modificateur de plage,
+    // et le clic synthétique ci-dessous ne porte de toute façon aucun modificateur — ⇧Entrée reste
+    // donc une activation simple, sans jamais devenir un geste de plage par ce chemin.
+    if (e.ctrlKey || e.metaKey || e.altKey) return;
     const target = e.target as HTMLElement;
     // .lr (audit-ref B1) nests a real <button> (lecture) — if THAT has focus, its own native Enter/
     // Space handling must fire alone; closest() would otherwise also match the ancestor row and
