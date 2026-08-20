@@ -15,9 +15,9 @@
 //   node scripts/hf-flatness-probe.mjs <fichier.flac> [...]
 //
 // Résultat mesuré le 2026-08-18 sur le corpus étiqueté (voir review.md) :
-//   20 authentiques (2 provenances) : -5,4 a -2,6 dB
-//   150 transcodages               : jusqu'a -43,8 dB, 91 sous le seuil
-//   detection 61 % contre 27 % pour la coupure, 0 faux positif
+//   20 authentiques (2 provenances) : -5,4 à -2,6 dB
+//   150 transcodages               : jusqu'à -43,8 dB, 91 sous le seuil
+//   détection 61 % contre 27 % pour la coupure, 0 faux positif
 //   angle mort restant : Opus (0/10) — il ne creuse pas l'aigu.
 import { execFileSync } from "node:child_process";
 import { readdirSync } from "node:fs";

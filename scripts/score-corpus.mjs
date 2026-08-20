@@ -57,7 +57,7 @@ const rows = lines
   .map((l) => {
     // Le nom est en DERNIER et se prend comme « tout ce qui reste » : un `;` dans un titre ne
     // peut donc plus décaler les colonnes. Mesuré le 2026-08-18 — 4 lignes sur 967 étaient
-    // tordues quand le nom venait en premier, et le verdict lu etait un bout de titre.
+    // tordues quand le nom venait en premier, et le verdict lu était un bout de titre.
     const parts = l.split(";");
     const [rail, bitrate, cutoff, verdict, est, hf, hfTop] = parts;
     const file = parts.slice(NCOL).join(";");
@@ -192,7 +192,7 @@ for (const v of variants) {
 const missed = fakes.filter((j) => !union(j));
 const distance = (j) => Math.min(j.hf - HF_REF_LO, j.hfTop - HF_TOP_REF_LO);
 console.log(`\n=== CE QUE L'UNION RATE : ${missed.length}/${fakes.length}${pct(missed.length, fakes.length)} ===`);
-console.log("variante        rates   distance au seuil le plus proche (dB)");
+console.log("variante        ratés   distance au seuil le plus proche (dB)");
 for (const v of variants) {
   const g = missed.filter((j) => j.via === v);
   if (!g.length) continue;
@@ -200,14 +200,14 @@ for (const v of variants) {
   const n = fakes.filter((j) => j.via === v).length;
   console.log(
     `${v.padEnd(14)} ${String(g.length).padStart(4)}/${String(n).padEnd(4)} ` +
-      `${Math.min(...d).toFixed(2)} a ${Math.max(...d).toFixed(2)}`,
+      `${Math.min(...d).toFixed(2)} à ${Math.max(...d).toFixed(2)}`,
   );
 }
 if (missed.length) {
   const d = missed.map(distance).sort((a, b) => a - b);
   const under = (x) => d.filter((v) => v < x).length;
   console.log(
-    `repartition: ${under(1)} a moins d'un dB, ${under(2)} a moins de deux, max ${d[d.length - 1].toFixed(2)}`,
+    `répartition: ${under(1)} à moins d'un dB, ${under(2)} à moins de deux, max ${d[d.length - 1].toFixed(2)}`,
   );
 }
 
@@ -242,11 +242,11 @@ const RULES = [
   ["somme des deux axes < min authentique", (j) => sum(j) < minSum],
   ["OU des trois (seuils + somme)", (j) => union(j) || sum(j) < minSum],
   ["z-score minimal < min authentique", (j) => zMin(j) < minZ],
-  ["les deux sous la mediane authentique", bothUnderMedian],
-  ["OU des seuils, OU les deux sous la mediane", (j) => union(j) || bothUnderMedian(j)],
+  ["les deux sous la médiane authentique", bothUnderMedian],
+  ["OU des seuils, OU les deux sous la médiane", (j) => union(j) || bothUnderMedian(j)],
 ];
-console.log("\n=== REGLES DE DECISION (references tirees des authentiques DU CORPUS) ===");
-console.log("regle                                          detection   faux positifs");
+console.log("\n=== RÈGLES DE DÉCISION (références tirées des authentiques DU CORPUS) ===");
+console.log("règle                                          détection   faux positifs");
 for (const [name, f] of RULES) {
   const det = fakes.filter(f).length;
   const fp = gens.filter(f).length;

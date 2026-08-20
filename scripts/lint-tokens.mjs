@@ -98,8 +98,8 @@ while ((m = TOKEN_DECL_RE.exec(tokenSrc))) {
 // off-scale spacing/color/z-index sites — the file most in need of this lint.
 // `:root` suivi d'un nombre quelconque de qualificatifs : attribut (`[data-theme="dark"]`) ET
 // pseudo-classe fonctionnelle (`:not([data-theme="light"])`). L'ancien motif n'acceptait que
-// l'attribut, donc le bloc `@media (prefers-color-scheme:dark) { :root:not(...) }` n'etait pas
-// reconnu et toutes ses declarations de tokens etaient comptees comme des couleurs en dur.
+// l'attribut, donc le bloc `@media (prefers-color-scheme:dark) { :root:not(...) }` n'était pas
+// reconnu et toutes ses déclarations de tokens étaient comptées comme des couleurs en dur.
 const ROOT_SEL = String.raw`:root(?:(?::not\([^)]*\))|(?:\[[^\]]*\]))*`;
 const TOKEN_BLOCK_RE = new RegExp(
   `(@media[^{]*\\{\\s*${ROOT_SEL}\\s*\\{[^{}]*\\}\\s*\\})|(${ROOT_SEL}\\s*\\{[^{}]*\\})`,
@@ -110,18 +110,18 @@ const CSS_COMMENT_RE = /\/\*[\s\S]*?\*\//g;
 // Blanking keeps length AND newlines, so every later offset and line number stays exact.
 const blank = (s) => s.replace(/[^\n]/g, ' ');
 
-// Les commentaires sont neutralises AVANT la recherche des blocs de tokens, pour deux raisons
-// distinctes — la premiere est un bug, la seconde une nuisance :
+// Les commentaires sont neutralisés AVANT la recherche des blocs de tokens, pour deux raisons
+// distinctes — la première est un bug, la seconde une nuisance :
 //
 // 1. TOKEN_BLOCK_RE exige `[^{}]*` entre les accolades du bloc. Un commentaire contenant une
 //    accolade — et styles.css en a un, `bg-{info,danger,success,warning}` dans le bloc `:root` de
-//    base — coupe le motif en deux : le bloc n'est PAS reconnu, donc pas neutralise, donc toutes
-//    ses declarations de tokens sont comptees comme des couleurs codees en dur. Mesure du
-//    2026-07-28 : 1 bloc reconnu sur 3, et l'essentiel des 122 derives couleur de la baseline
-//    etaient en realite des declarations de tokens. Un ratchet qui compte surtout du bruit ne
-//    protege de rien : il empeche seulement d'AJOUTER un token.
-// 2. Un litteral cite dans un commentaire pour expliquer ce qu'on vient d'en retirer n'est pas
-//    une derive. Sans ce traitement, documenter une correction la fait echouer.
+//    base — coupe le motif en deux : le bloc n'est PAS reconnu, donc pas neutralisé, donc toutes
+//    ses déclarations de tokens sont comptées comme des couleurs codées en dur. Mesure du
+//    2026-07-28 : 1 bloc reconnu sur 3, et l'essentiel des 122 dérives couleur de la baseline
+//    étaient en réalité des déclarations de tokens. Un ratchet qui compte surtout du bruit ne
+//    protège de rien : il empêche seulement d'AJOUTER un token.
+// 2. Un littéral cité dans un commentaire pour expliquer ce qu'on vient d'en retirer n'est pas
+//    une dérive. Sans ce traitement, documenter une correction la fait échouer.
 //
 // Audit multi-passes 2026-07-28, finding SYS-4(b).
 function blankOutTokenBlocks(text) {
@@ -131,9 +131,9 @@ function blankOutTokenBlocks(text) {
   return out;
 }
 
-/// Nombre de blocs de declaration de tokens reconnus dans un texte CSS. Sert au garde-fou
-/// ci-dessous : une regression silencieuse de TOKEN_BLOCK_RE se traduirait par une explosion du
-/// nombre de findings, ce qui ressemble a de la vraie derive.
+/// Nombre de blocs de déclaration de tokens reconnus dans un texte CSS. Sert au garde-fou
+/// ci-dessous : une régression silencieuse de TOKEN_BLOCK_RE se traduirait par une explosion du
+/// nombre de findings, ce qui ressemble à de la vraie dérive.
 function countTokenBlocks(text) {
   return (text.replace(CSS_COMMENT_RE, blank).match(TOKEN_BLOCK_RE) || []).length;
 }
@@ -142,20 +142,20 @@ const files = walk(REPO_ROOT, []);
 
 const COLOR_RE = /(#(?:[0-9a-fA-F]{3}){1,2}\b|#[0-9a-fA-F]{8}\b|\brgba?\([^)]*\)|\boklch\([^)]*\))/g;
 const ZINDEX_RE = /z-index\s*:\s*(-?\d+(?:\.\d+)?)/g;
-// La declaration se termine par `;` OU par le `}` du bloc — en LOOKAHEAD, sans consommer le
-// delimiteur. Le motif exigeait un `;` litteral jusqu'au 2026-08-13, ce qui rendait invisible
-// toute declaration DERNIERE de son bloc : 112 declarations d'espacement sur 451, dont 41 en px
-// dur, jamais examinees. Silencieusement — elles n'etaient pas ignorees, elles n'existaient pas
-// pour le linter, et la baseline avait ete gravee sur ce compte tronque. C'est la forme la plus
-// courante d'une regle mono-propriete, donc precisement celle qu'un `max-width` prend : les trois
+// La déclaration se termine par `;` OU par le `}` du bloc — en LOOKAHEAD, sans consommer le
+// délimiteur. Le motif exigeait un `;` littéral jusqu'au 2026-08-13, ce qui rendait invisible
+// toute déclaration DERNIÈRE de son bloc : 112 déclarations d'espacement sur 451, dont 41 en px
+// dur, jamais examinées. Silencieusement — elles n'étaient pas ignorées, elles n'existaient pas
+// pour le linter, et la baseline avait été gravée sur ce compte tronqué. C'est la forme la plus
+// courante d'une règle mono-propriété, donc précisément celle qu'un `max-width` prend : les trois
 // `max-width:560px` de la feuille passaient tous les trois (issue #29).
 const SPACING_PROP_RE = /\b(padding|margin|width|height|gap)(-(?:top|right|bottom|left|inline|block)(?:-(?:start|end))?)?\s*:\s*([^;{}]+)(?=[;}])/g;
 const PX_VALUE_RE = /(-?\d+(?:\.\d+)?)px/g;
 
 const findings = []; // { file, line, category, value, suggestion }
-// Compte POSITIF de ce qui a ete examine, pas seulement de ce qui a ete trouve. Une liste de
+// Compte POSITIF de ce qui a été examiné, pas seulement de ce qui a été trouvé. Une liste de
 // findings vide et un motif qui ne matche plus rien se ressemblent exactement — c'est ce qui a
-// laisse passer #29 pendant toute la vie du script. Ce nombre est le temoin qui les separe.
+// laissé passer #29 pendant toute la vie du script. Ce nombre est le témoin qui les sépare.
 let spacingDeclsSeen = 0;
 
 function nearestSpacingToken(px) {
@@ -188,12 +188,12 @@ for (const file of files) {
     continue;
   }
   if (resolve(file) === resolve(TOKEN_FILE)) {
-    // Garde-fou : styles.css declare TROIS blocs de theme (`:root`, le bloc
+    // Garde-fou : styles.css déclare TROIS blocs de thème (`:root`, le bloc
     // `@media (prefers-color-scheme:dark)`, et `:root[data-theme="dark"]`). Si TOKEN_BLOCK_RE
-    // cesse d'en reconnaitre un — comme c'etait le cas jusqu'au 2026-07-28 ou il n'en voyait
-    // qu'un — le nombre de findings explose et se lit comme une vraie derive. Echouer ici,
-    // bruyamment, coute une minute ; laisser passer coute une baseline de bruit qu'on re-grave
-    // ensuite a chaque commit.
+    // cesse d'en reconnaître un — comme c'était le cas jusqu'au 2026-07-28 où il n'en voyait
+    // qu'un — le nombre de findings explose et se lit comme une vraie dérive. Échouer ici,
+    // bruyamment, coûte une minute ; laisser passer coûte une baseline de bruit qu'on re-grave
+    // ensuite à chaque commit.
     const blocks = countTokenBlocks(text);
     if (blocks !== 3) {
       console.error(
@@ -273,9 +273,9 @@ for (const f of findings) {
 const counts = { color: 0, 'z-index': 0, 'px-spacing': 0 };
 for (const f of findings) counts[f.category]++;
 
-// Le temoin part dans la baseline AVEC les counts, mais il ne vit pas dans `counts` : le
-// cliquet de l'etape 4 y cherche une HAUSSE, alors qu'une chute du temoin est le signal.
-// Deux sens de lecture opposes, deux emplacements.
+// Le témoin part dans la baseline AVEC les counts, mais il ne vit pas dans `counts` : le
+// cliquet de l'étape 4 y cherche une HAUSSE, alors qu'une chute du témoin est le signal.
+// Deux sens de lecture opposés, deux emplacements.
 const witness = { spacingDeclsSeen };
 
 if (WRITE_BASELINE) {
@@ -305,7 +305,7 @@ for (const [file, list] of [...byFile.entries()].sort()) {
 console.log('Summary:');
 console.log(`  colors:      ${counts.color}`);
 console.log(`  z-index:     ${counts['z-index']}`);
-console.log(`  px-spacing:  ${counts['px-spacing']} (sur ${spacingDeclsSeen} declarations examinees)`);
+console.log(`  px-spacing:  ${counts['px-spacing']} (sur ${spacingDeclsSeen} déclarations examinées)`);
 
 // ---- Step 4: ratchet against baseline ---------------------------------------------------
 
@@ -319,37 +319,37 @@ if (!existsSync(BASELINE_FILE)) {
 
 const baseline = JSON.parse(readFileSync(BASELINE_FILE, 'utf8'));
 
-// ---- Step 4a: le temoin, dans le sens inverse du cliquet -----------------------------------
+// ---- Step 4a: le témoin, dans le sens inverse du cliquet -----------------------------------
 //
-// Une CHUTE du nombre de declarations examinees veut dire que le motif a cesse de voir une
+// Une CHUTE du nombre de déclarations examinées veut dire que le motif a cessé de voir une
 // partie de la feuille. C'est le mode de panne exact de #29 : le 2026-08-13, SPACING_PROP_RE
-// exigeait un `;` litteral et rendait invisibles les 112 declarations dernieres de leur bloc.
-// Les findings tombent EUX AUSSI, donc le cliquet de l'etape 4 lit une amelioration et passe.
+// exigeait un `;` littéral et rendait invisibles les 112 déclarations dernières de leur bloc.
+// Les findings tombent EUX AUSSI, donc le cliquet de l'étape 4 lit une amélioration et passe.
 //
-// Verifie par mutation le 2026-08-18, en remettant le motif dans sa forme d'avant le
-// correctif : 762 -> 584 declarations examinees, 70 -> 59 findings, et la gate sortait 0 en
-// annoncant « below baseline — nothing blocking ». Le nombre etait imprime depuis le
-// correctif de #29 et compare a rien : un temoin que personne ne confronte ne separe rien.
+// Vérifié par mutation le 2026-08-18, en remettant le motif dans sa forme d'avant le
+// correctif : 762 -> 584 déclarations examinées, 70 -> 59 findings, et la gate sortait 0 en
+// annonçant « below baseline — nothing blocking ». Le nombre était imprimé depuis le
+// correctif de #29 et comparé à rien : un témoin que personne ne confronte ne sépare rien.
 //
-// Toute baisse bloque. Une reduction legitime (suppression reelle de CSS) se valide par
-// --write-baseline, ce qui force quelqu'un a regarder le nombre — c'est precisement le
+// Toute baisse bloque. Une réduction légitime (suppression réelle de CSS) se valide par
+// --write-baseline, ce qui force quelqu'un à regarder le nombre — c'est précisément le
 // geste qui manquait.
 if (typeof baseline.spacingDeclsSeen !== 'number') {
   console.log(
     `\nlint-tokens: la baseline ne porte pas encore spacingDeclsSeen — re-lancer avec ` +
-    `--write-baseline pour enregistrer le temoin. Non bloquant pour cette execution.`,
+    `--write-baseline pour enregistrer le témoin. Non bloquant pour cette exécution.`,
   );
 } else if (spacingDeclsSeen < baseline.spacingDeclsSeen) {
   console.log(
-    `\nlint-tokens: le nombre de declarations d'espacement EXAMINEES a chute : ` +
+    `\nlint-tokens: le nombre de déclarations d'espacement EXAMINÉES a chuté : ` +
     `${baseline.spacingDeclsSeen} -> ${spacingDeclsSeen} ` +
     `(-${baseline.spacingDeclsSeen - spacingDeclsSeen}).`,
   );
   console.log(
-    `  Deux causes possibles, et une seule est benigne :\n` +
+    `  Deux causes possibles, et une seule est bénigne :\n` +
     `    1. SPACING_PROP_RE ne voit plus une partie de la feuille — c'est le bug #29, et\n` +
     `       il rend les findings faussement bas. Corriger le motif.\n` +
-    `    2. Du CSS a reellement ete supprime. Alors --write-baseline pour l'enregistrer.`,
+    `    2. Du CSS a réellement été supprimé. Alors --write-baseline pour l'enregistrer.`,
   );
   process.exit(1);
 }
