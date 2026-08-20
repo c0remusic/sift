@@ -195,10 +195,13 @@ un état actif ou un libellé long ne doit jamais faire bouger le layout.
 
 ### Géométrie Concentrique
 
-Tranché le 2026-08-14 (issue #26). Deux règles, qui ne s'appliquent pas au même endroit :
+Tranché le 2026-08-14 (issue #26), portée bornée le 2026-08-19 (commentaire de correction
+sur #26). Deux règles, qui ne s'appliquent pas au même endroit :
 
-> Un rayon **de surface** se choisit dans l'échelle. Un rayon **imbriqué** se calcule à partir
-> de celui de son conteneur moins l'inset — il ne se choisit pas.
+> Un rayon **de surface** se choisit dans l'échelle. Un rayon **imbriqué serré** — un élément
+> dans une barre, une pastille dans une carte — se calcule à partir de celui de son conteneur
+> moins l'inset. **La règle ne remonte pas jusqu'à la coque** : au-delà de quelques pixels
+> d'inset, la concentricité ne décrit plus rien, et Apple ne la réclame pas.
 
 `calc(<rayon du conteneur> - <inset>)`. C'est ce qui fait « parenter » visuellement deux
 écrans sans rapport : les courbes intérieure et extérieure restent concentriques au lieu de
@@ -219,6 +222,12 @@ Trois choses à ne pas confondre :
   deltas fixes (`styles.css:112-113`) : c'est un jeu fermé de 4, pour les surfaces. La règle
   concentrique, elle, calcule, et peut tomber n'importe où. Les deux cohabitent parce
   qu'elles ne s'adressent pas au même objet.
+- **Ce que la généralisation produisait chez Sift, mesuré le 2026-08-19** : `#content` pose un
+  inset de 24 px (`styles.css:402`) et la première carte porte 14 px ; « 14 = R − 24 »
+  exigerait une fenêtre à 38 px — elle est à 0, aucun rayon de coque n'étant posé nulle part,
+  ni en CSS ni par `DWMWA_WINDOW_CORNER_PREFERENCE` (question distincte, ouverte en #41).
+  C'est cet écart, maximal et à l'endroit le plus visible de l'app, qui a fait borner la
+  règle à sa source : une barre et ses éléments, pas la chaîne fenêtre → surface.
 
 Les 12 littéraux de rayon encore présents dans `styles.css` — dont `999px` et `50%`, qui
 doublonnent `--border-radius-pill` — se nettoient par exécution, pas par décision.
