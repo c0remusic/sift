@@ -1085,7 +1085,7 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
 /* `background` et `color` retirés (2026-08-19, DESIGN.md § 6). `opacity` RESTE, et c'est la seule
    propriété que ce bouton avait besoin d'animer : elle porte son apparition au survol de la ligne
    (voir la note deux lignes plus bas), et `opacity` est l'une des deux propriétés que § 6 autorise. */
-.lr .pb{width:22px;height:22px;border-radius:50%;flex:none;padding:0;display:inline-flex;align-items:center;justify-content:center;opacity:.72;transition:opacity var(--duration-base) ease}
+.lr .pb{width:22px;height:22px;border-radius:50%;flex:none;padding:0;display:inline-flex;align-items:center;justify-content:center;opacity:.72;transition:opacity var(--duration-fast) ease}
 .lr:hover .pb,.lr:focus-within .pb{background:var(--color-surface-raised)}
 /* `.lk-icon` a quitté cette règle le 2026-08-19 : il ne s'atténue plus à l'opacité, donc il n'a
    plus rien à restaurer. `.pb` (bouton lecture) la garde -- il se révèle au survol de la ligne,
@@ -1378,7 +1378,7 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .lib-detail-head-title{font-size:var(--text-base);font-weight:500;color:var(--color-text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 /* `background` retiré de la transition le 2026-08-19 (DESIGN.md § 6) ; `opacity` reste, elle porte
    le passage de .72 à 1 au survol et au focus. */
-.lib-detail-close{width:28px;height:28px;padding:0;display:inline-flex;align-items:center;justify-content:center;flex:none;opacity:.72;transition:opacity var(--duration-base) ease}
+.lib-detail-close{width:28px;height:28px;padding:0;display:inline-flex;align-items:center;justify-content:center;flex:none;opacity:.72;transition:opacity var(--duration-fast) ease}
 .lib-detail-close:hover,.lib-detail-close:focus-visible{opacity:1;background:var(--color-surface-raised)}
 .lib-detail-close i{font-size:var(--text-base);color:var(--color-text-tertiary)}
 .lib-edit{display:flex;flex-direction:column;gap:var(--space-12)}
@@ -1755,7 +1755,7 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    `button:hover` — il s'applique simplement d'un coup. C'était la seule propriété animée ici, donc
    la déclaration part entière. */
 .sift-play-btn{flex:none;width:46px;height:46px;margin-left:var(--space-12);border-radius:50%;display:inline-flex;align-items:center;justify-content:center;padding:0;border:none;background:var(--color-surface-raised)}
-.sift-play-btn i{font-size:20px;color:var(--color-text-primary);transition:opacity var(--duration-base) ease}
+.sift-play-btn i{font-size:20px;color:var(--color-text-primary);transition:opacity var(--duration-fast) ease}
 /* background re-asserted here: the generic button:hover{background:var(--color-background-secondary)}
    (specificity 0,1,1) otherwise beats this button's own non-hover background rule (0,1,0), so on
    hover the circle silently repainted to a card background token that no longer surrounds it and
@@ -2007,8 +2007,13 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    editor's body content gets its inset from #sift-meta-body instead (below), not from the editor
    card, so nothing else regresses. */
 .sift-zone-toggle.sift-spectro-toggle,#sift-meta-toggle{padding:var(--space-8) var(--space-16)}
+/* Cran recalé sur le CORPS qu'il ouvre (re-crantage par rôle de #10) : `.sift-zone-toggle-body`
+   (plus bas) s'ouvre en `--duration-slow`, donc le caret tourne au même cran. Il était à
+   `--duration-base` — hérité du sweep de tokenisation, pas d'un rôle — et la rotation finissait
+   150 ms avant que le panneau n'ait fini de pousser la matière sous elle. Même appariement que
+   `.sift-spectro-caret`/`.sift-spectro-body` et `.sift-usage-chev`/`.sift-usage-panel`. */
 .sift-zone-toggle-car{display:inline-block;margin-right:var(--space-8);color:var(--color-text-tertiary);
-  transition:transform var(--duration-base) ease}
+  transition:transform var(--duration-slow) ease}
 .sift-zone-toggle-open .sift-zone-toggle-car{transform:rotate(90deg)}
 .sift-zone-toggle-right{display:flex;align-items:center;gap:8px}
 /* Root cause of the badge misalignment, found by CDP measurement against the real running app
@@ -2178,7 +2183,13 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .sift-report-overlay-modal{max-width:760px;width:100%;max-height:90vh;overflow:auto;padding:var(--space-24)}
 
 /* ── Revue filing rail (filing.ts) — extracted inline styles, byte-identical values ───── */
-.sift-fld-caret{display:inline-block;width:14px;text-align:center;cursor:pointer;color:var(--color-text-tertiary);transition:transform var(--duration-slow)}
+/* Même règle « le caret prend le cran de son corps » que `.sift-zone-toggle-car`, appliquée dans
+   l'autre sens : l'arbre de destination n'a AUCUN corps animé — `filing-bins.ts:378` réécrit
+   `fldz.innerHTML` en entier au dépli, et `binNodeHtml` (:247) pose le `rotate(90deg)` en style
+   inline à la construction. Le nœud est donc détruit et recréé : cette transition ne joue jamais
+   (CLAUDE.md § Front, « une transition n'anime rien si le render rebuild via innerHTML »). Elle
+   passe à la référence plutôt qu'à l'ample — 300 ms décrivaient un panneau qui n'existe pas ici. */
+.sift-fld-caret{display:inline-block;width:14px;text-align:center;cursor:pointer;color:var(--color-text-tertiary);transition:transform var(--duration-base)}
 .sift-fld-caret-spacer{display:inline-block;width:14px;flex:none}
 .sift-fld-row{display:flex;align-items:center;gap:4px}
 .sift-fld-flat-row{padding:var(--space-4) var(--space-8);display:flex;align-items:center;gap:var(--space-4)}
