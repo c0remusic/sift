@@ -323,6 +323,11 @@ de qualifier un écart visuel de « dérive » — la collision de surfaces rele
 de la charpente), et la mesure dans la vraie fenêtre a montré que le mécanisme invoqué par le
 ticket — `.sift-ui-card` — n'existait **pas** dans le DOM de Revue. La leçon tient, sa cause
 supposée non : lire l'historique daté ne dispense pas de mesurer.
+⚠️ **`DESIGN.md` (racine) n'est PAS une source de décision.** Couche systémique posée le
+2026-08-19, il a divergé du tracker le jour même (mouvement 100/150/250 en § 6/D-3 contre
+la racine 75/150/300 de l'issue #10, recalé le 2026-08-20). Exécuter une décision de
+design = lire le ticket de la map ; en cas d'écart, le tracker prime et l'écart se nomme
+dans les deux fichiers.
 Ne jamais créer de fichier de thème parallèle,
 ni extraire une valeur d'une capture d'écran. ⚠️ `.interface-design/system.md` existe
 encore sur le disque avec une **palette et une typo périmées** : ne jamais y puiser une
@@ -366,6 +371,10 @@ publie jamais. Nommer la racine depuis une mesure du dépôt quand elle existe.
 - Toute édition de token doit rester cohérente dans `:root`, le bloc sombre système
   (`prefers-color-scheme`) **et** `:root[data-theme="dark"]` — et comparer les valeurs
   **résolues** des deux tokens dans les deux thèmes, pas seulement leurs noms.
+  Un token peut aussi avoir un **miroir JS déclaré** (`TOAST_EXIT_MS` ↔ `--duration-fast`
+  dans `filing-toast.ts`, `QCOL_DEFAULT` ↔ `--pane-w` dans `router.ts`) : avant de changer
+  une valeur, `grep -rn "stay in step|miroir de" frontend/` et faire suivre le miroir dans
+  le même geste.
 - **Concept avant chiffres.** Une demande impressionniste (« ça fait tassé », « pas
   assez sérieux ») ne se répond pas par une édition de token. La reformuler d'abord en
   vocabulaire de surface — quel écran, quelle décision utilisateur, deux directions
