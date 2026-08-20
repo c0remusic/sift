@@ -384,6 +384,14 @@ publie jamais. Nommer la racine depuis une mesure du dépôt quand elle existe.
   perd face au `button:hover` générique).
 - Toute règle auteur qui pose `display` bat `[hidden]` : garder `:not([hidden])` sur
   tout élément togglé par `hidden`.
+- Un placement qui lit `offsetWidth`/`offsetLeft`/`getBoundingClientRect()` (pouce
+  glissant, ancrage de popover, centrage mesuré) rend **0** tant que son conteneur est
+  `display:none`. Ne le lancer que lorsque le conteneur est dans le flux, et le rejouer
+  au point unique qui le réaffiche (handler d'onglet/catégorie), pas seulement au render
+  initial ; mettre la fonction de placement au niveau module, pas en closure du render,
+  pour que ce point de réaffichage puisse l'appeler. Mesuré 2026-08-20 : le pouce du
+  segmenté Thème de Réglages, placé au render pendant que sa carte était cachée par la
+  colonne de catégories, restait à 0px jusqu'au premier clic sur un bouton de thème.
 - Avant qu'un `querySelector` dépende d'une classe, vérifier sa présence dans le markup
   réellement rendu — et **lire la règle CSS** avant de réutiliser un nom de classe
   générique.

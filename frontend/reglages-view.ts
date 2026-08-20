@@ -58,8 +58,11 @@ function selectSettingsCategory(key: string): void {
  *  s'appeler QUE lorsque la carte Apparence est dans le flux — sur `display:none`, offsetWidth/Left
  *  valent 0 et le pouce se voit écrire un filet de 0px. */
 function positionThemeThumb(): void {
+  // Fusion du 2026-08-20 : le REPLAY au changement de catégorie vient d'une session parallèle
+  // (eed4b26), le calcul partagé de la passe simplify (`seg-thumb.ts`, 6 copies fondues en une).
   const card = document.getElementById("sift-reglages-apparence");
-  if (card) slideSegThumb(card, "[data-theme-choice].on");
+  if (!card) return;
+  slideSegThumb(card, "[data-theme-choice].on");
 }
 
 /** Appelée par le dispatch délégué de `sift-live.ts` au clic sur une catégorie. */

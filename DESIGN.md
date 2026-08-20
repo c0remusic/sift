@@ -1099,3 +1099,33 @@ entrée dans `design-system-states.md` ni story — même famille que l'item 4 d
 (teintes · `--error` · suspendue), livrés avec l'état « Surveillance suspendue » de `rail.md`
 § États — pastille vidée en contour, teinte conservée, markup extrait en module pur
 `rail-source-entry.ts` (précédence échec > suspension gelée par `test/rail-source-entry.test.ts`).
+
+### Passe /simplify du 2026-08-20 — réconciliée au wrap-up suivant
+
+**Soldé** (`e0598ca` + merge `0f17418`, quatre angles de review sur `f1517de..HEAD`) : `rails.ts`
+devient le miroir frontend unique de `tags::rail_from_ext` — et corrige un défaut réel, `aif`
+manquait de la table de la colonne Verdict ; `fake` passe au rouge dans la file de Revue (le
+« vert/ambre uniquement » datait du brief 2026-07, § 16 prime) ; `seg-thumb.ts` fond les six
+copies du pouce segmenté (le replay du thème d'`eed4b26` tourne dessus) ; le bouton du Lot quitte
+ses couleurs inline pour `.sift-baction--primary/--quiet` à `:hover` réaffirmé, son drain passe à
+l'ambre ; `journal.ts` perd sa seconde source de vérité « annulé », ses agrégats dupliqués et ses
+scans linéaires, et ses helpers de rendu deviennent purs et exportés — la story les exécute au
+lieu d'en recopier 66 lignes.
+
+**Entré, dans l'ordre d'utilité :**
+1. `row-selection.ts` partagé — la couche 2 (§ 9) vit en trois copies (bibliothèque, journal,
+   file) : math d'index pure, testable env Node, à extraire **au prochain passage** sur l'un des
+   trois (verdict de la review : réel mais pas urgent, les copies sont justes aujourd'hui).
+2. Registre clavier partagé dans `shortcuts.ts` (`registerListKeyboard`) — deux écouteurs globaux
+   non coordonnés se disputeront la couche 2 au premier troisième écran.
+3. `errorStateHtml` dans `empty-state.ts` — sept panneaux « message + Réessayer » ad hoc.
+4. `basename` frontend ×13, `rowsHtml` ×3 — copies locales, `dom.ts` est la place.
+5. `CREATE INDEX idx_actions_batch` (suivi déjà nommé dans `actions.rs:1051`) — `list_journal`
+   lit strictement plus de lignes depuis que les lots annulés sont rendus ; et `LIMIT` compte
+   désormais les annulés, donc l'historique remonte moins loin à limite égale (documenté dans le
+   commentaire SQL).
+6. `jrnlState.collapsed` survit au changement d'écran alors que son commentaire dit l'inverse —
+   pré-existant, mesuré pendant la passe.
+7. Écartés : la coche « Copié » inline est devenue le toast standard (`copyToClipboard` partagé) —
+   changement de comportement assumé, à revoir si le toast gêne.
+
