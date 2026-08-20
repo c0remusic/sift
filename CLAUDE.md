@@ -58,7 +58,9 @@ npm run test                     # Vitest, un seul projet `unit` en env Node
 npm run test:watch               # idem en watch
 npx vitest run test/b85.test.ts  # un seul fichier · par nom : npx vitest run -t "vecteur gelé"
 npm run lint                     # ESLint (binaire local, pas `npx eslint`)
-npm run lint:tokens              # couleurs/z-index/spacing en dur qui contournent un token
+npm run lint:tokens              # couleurs/z-index/spacing en dur qui contournent un token —
+                                 # ratchet à baseline versionnée (scripts/lint-tokens-baseline.json) :
+                                 # un +N délibéré se grave par `node scripts/lint-tokens.mjs --write-baseline`
 npm run check:security           # scope asset et CSP — refuse le retour du wildcard (aussi en CI)
 npm run storybook                # doc visuelle des états UI (port 6006), stories = frontend/*.stories.ts
 
@@ -202,7 +204,9 @@ module important `./ipc`) · `source-color.ts` (teinte d'identité des sources d
 override manuel sinon cycle par ordre d'ajout — même motif sans-DOM/testable env Node,
 importée par `rail-sources.ts`) · `rail-source-entry.ts` (markup d'une entrée de source du
 rail : teintes, `--error`, suspendue — même motif sans-DOM/testable, story et Vitest exécutent
-le vrai rendu, importé par `rail-sources.ts`) · `styles.css`.
+le vrai rendu, importé par `rail-sources.ts`) · `rails.ts` (miroir frontend unique de
+`tags::rail_from_ext`) · `seg-thumb.ts` (pouce de contrôle segmenté partagé, ex-six copies) ·
+`styles.css`.
 
 `dev-inspector.ts` + `dev-annotate.ts` forment l'outil d'annotation **Alt+Clic**
 (dev-only) : cadre de sélection, localisation du source via `locate_source`, note libre
