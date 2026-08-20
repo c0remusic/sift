@@ -175,6 +175,8 @@ par la vraie fenêtre (skill `run-sift`, CDP), les états visuels par Storybook.
 ### Modules frontend, par écran
 
 `main.ts` (boot) · `router.ts` (routage réel — `app.js` ne tourne plus sous Tauri) ·
+`view-epoch.ts` (feuille sans dépendance : époque de vue qui invalide un rendu async en
+retard — correctif #42 de la course de rendu ; DOM-free, testable env Node) ·
 `chrome.ts` (shell, barre unifiée, fenêtre) · `toolbar.ts` (recherche, actions et segmenté
 de la barre) · `rail-sources.ts` (sources du rail, ex-Accueil — `home-sources.ts` supprimé
 par `6d1cc85`) · `shortcuts.ts` (clavier couches 1-2) · `report-view.ts` (Revue :
