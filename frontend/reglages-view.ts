@@ -45,6 +45,21 @@ function selectSettingsCategory(key: string): void {
   document.querySelectorAll<HTMLElement>('[data-reglages="cat"]').forEach((el) => {
     el.classList.toggle("on", el.dataset.cat === key);
   });
+  // Apparence redevient visible : rejouer le placement du pouce du segmenté Thème. Il se mesure sur
+  // `offsetWidth`/`offsetLeft`, tous deux 0 tant que la carte est `hidden` (display:none) — donc le
+  // seul placement au render tombait à 0px quand une AUTRE catégorie était active à l'ouverture, et
+  // rien ne le rejouait au changement de catégorie (seul un clic sur un bouton de thème le
+  // réparait). Ici la carte vient de rentrer dans le flux, la mesure est enfin non nulle.
+  if (key === "apparence") positionThemeThumb();
+}
+
+/** Place le pouce `.sift-seg-thumb` du segmenté Thème sur l'option active. Au niveau module (et non
+ *  closure de `renderReglagesLive`) pour que `selectSettingsCategory` puisse le rejouer : il ne doit
+ *  s'appeler QUE lorsque la carte Apparence est dans le flux — sur `display:none`, offsetWidth/Left
+ *  valent 0 et le pouce se voit écrire un filet de 0px. */
+function positionThemeThumb(): void {
+  const card = document.getElementById("sift-reglages-apparence");
+  if (card) slideSegThumb(card, "[data-theme-choice].on");
 }
 
 /** Appelée par le dispatch délégué de `sift-live.ts` au clic sur une catégorie. */
@@ -349,10 +364,6 @@ export async function renderReglagesLive() {
     themeBtn("light", "Clair") +
     themeBtn("dark", "Sombre") +
     "</div></div>";
-  // L'hôte est le BLOC, pas le `.sift-seg` : il n'en contient qu'un, et c'est lui qu'on tient déjà.
-  const positionThemeThumb = () => slideSegThumb(themeBlock, "[data-theme-choice].on");
-  // Not called here yet — themeBlock isn't attached to the live DOM until content.appendChild(wrap)
-  // below, and offsetWidth/offsetLeft read 0 on a detached element. Called after that instead.
   themeBlock.querySelectorAll<HTMLElement>("[data-theme-choice]").forEach((el) =>
     el.addEventListener("click", () => {
       const choice = el.dataset.themeChoice as ThemeChoice;
@@ -436,8 +447,9 @@ export async function renderReglagesLive() {
   layout.appendChild(side);
   layout.appendChild(wrap);
   content.appendChild(layout);
+  // Montre la catégorie active ET, si c'est « apparence », place le pouce du segmenté Thème
+  // maintenant qu'il est dans le flux (selectSettingsCategory s'en charge).
   selectSettingsCategory(activeSection);
-  positionThemeThumb(); // now attached to the live DOM — offsetWidth/offsetLeft resolve correctly
 
   const inp = block.querySelector<HTMLInputElement>("#sift-discogs-token");
   const status = block.querySelector<HTMLElement>("#sift-discogs-status");
