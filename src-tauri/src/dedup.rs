@@ -95,6 +95,92 @@ fn union(parent: &mut [usize], a: usize, b: usize) {
 /// known — a missing duration falls through to the full comparison (fail-open, no false skip).
 const DURATION_MATCH_TOL_SEC: f64 = 2.0;
 
+/// Énumère les paires `(i, j)`, `i < j`, que le pré-filtre de durée ne peut PAS écarter — et
+/// seulement celles-là.
+///
+/// **C'est le point de l'issue #38.** Le pré-filtre vivait à l'intérieur de la double boucle : il
+/// décidait qui payait `fingerprint::similarity`, pas qui était ÉNUMÉRÉ. `n²/2` paires étaient donc
+/// parcourues quoi qu'il arrive — 5 × 10⁹ à 100 000 pistes, **3,22 s de balayage nu** avant tout
+/// travail utile (mesuré, `bench_dedup::bench_dedup_bare_enumeration`).
+///
+/// Ici les durées connues sont triées une fois, puis balayées par fenêtre glissante : depuis une
+/// piste de durée `d`, on s'arrête au premier voisin de durée `> d + DURATION_MATCH_TOL_SEC`,
+/// puisque le tri garantit que tous les suivants le sont aussi. Coût : un tri `O(n log n)` plus une
+/// visite par paire survivante.
+///
+/// **Équivalence, au bit près.** La condition d'origine est `(a - b).abs() <= tol`. Sur une suite
+/// triée croissante on a `b >= a`, et l'arrondi IEEE-754 au plus proche est symétrique, donc
+/// `b - a == -(a - b)` exactement, donc `(a - b).abs() == b - a`. La fenêtre ne teste pas une
+/// approximation de la condition : elle teste la même expression, sans epsilon et sans marge.
+///
+/// **Ce que la fenêtre ne peut pas couvrir** passe par la condition d'origine appliquée telle
+/// quelle, contre tout le reste :
+/// - durée absente — la condition exige les DEUX durées, donc une paire dont un membre n'a pas de
+///   durée n'est jamais écartée. C'est déjà le raisonnement de `load_dup_candidates`, et
+///   `duplicate_scan_matches_full_scan_when_duration_is_null` le verrouille ;
+/// - durée non finie (NaN, ±∞) — elle ne se trie pas, et son comportement sous la condition
+///   d'origine est contre-intuitif : `NaN > tol` est faux donc une paire NaN SURVIT, `+∞` contre
+///   une durée finie est écartée, mais `+∞` contre `+∞` survit puisque `∞ - ∞` vaut NaN. Rejouer
+///   la condition littérale est la seule façon de ne pas se tromper, et le coût est nul : ces
+///   lignes n'existent pas dans une base normale.
+///
+/// L'ordre de visite n'est PAS l'ordre d'index — c'est celui des durées croissantes. Les deux
+/// consommateurs y sont insensibles : `link` fusionne les minimums sans dépendre de l'ordre des
+/// arêtes, et `record_scanned` normalise `(a_id, b_id)` avant un `INSERT OR REPLACE`.
+pub(crate) fn for_each_candidate_pair(
+    durations: &[Option<f64>],
+    mut visit: impl FnMut(usize, usize),
+) {
+    // `finite` se trie donc se fenêtre ; `loose` est tout le reste, comparé au prédicat littéral.
+    let mut finite: Vec<(f64, usize)> = Vec::with_capacity(durations.len());
+    let mut loose: Vec<usize> = Vec::new();
+    for (i, d) in durations.iter().enumerate() {
+        match *d {
+            Some(v) if v.is_finite() => finite.push((v, i)),
+            _ => loose.push(i),
+        }
+    }
+    // `total_cmp` plutôt que `partial_cmp` : un ordre total, donc aucun `unwrap` à écrire sur un
+    // `Option` de comparaison — et `unwrap` hors test est un interdit dur du projet.
+    finite.sort_unstable_by(|a, b| a.0.total_cmp(&b.0));
+
+    for (p, &(dp, ip)) in finite.iter().enumerate() {
+        for &(dq, iq) in &finite[p + 1..] {
+            if dq - dp > DURATION_MATCH_TOL_SEC {
+                break; // trié : tous les suivants sont plus loin encore
+            }
+            visit(ip.min(iq), ip.max(iq));
+        }
+    }
+
+    for (k, &il) in loose.iter().enumerate() {
+        for &(_, iq) in &finite {
+            visit_if_within_tol(durations, il, iq, &mut visit);
+        }
+        for &io in &loose[k + 1..] {
+            visit_if_within_tol(durations, il, io, &mut visit);
+        }
+    }
+}
+
+/// Applique la condition de durée D'ORIGINE, littéralement, puis visite la paire normalisée.
+///
+/// Réservée aux durées que la fenêtre ne sait pas ordonner (absentes ou non finies) : recopier la
+/// condition plutôt que la réinterpréter est ce qui rend l'équivalence vraie sans raisonnement.
+fn visit_if_within_tol<V: FnMut(usize, usize)>(
+    durations: &[Option<f64>],
+    a: usize,
+    b: usize,
+    visit: &mut V,
+) {
+    if let (Some(x), Some(y)) = (durations[a], durations[b]) {
+        if (x - y).abs() > DURATION_MATCH_TOL_SEC {
+            return;
+        }
+    }
+    visit(a.min(b), a.max(b));
+}
+
 /// One row loaded from `tracks` for a duplicate scan — everything the O(n²) compare and the
 /// group-building step need, so they can run without touching the connection.
 pub(crate) struct DupScanRow {
@@ -191,8 +277,15 @@ pub(crate) fn persist_fingerprints(conn: &Connection, entries: &[(i64, Vec<u32>)
     }
 }
 
-/// The O(n²) compare + union-find grouping itself. Pure — no connection touched, safe to run
-/// without any lock held. `fps` must be aligned 1:1 with `rows` (see `build_fingerprints`).
+/// Le comparateur + union-find lui-même. Pur — aucune connexion touchée, exécutable verrou
+/// relâché. `fps` doit être aligné 1:1 avec `rows` (voir `build_fingerprints`).
+///
+/// **Plus en `O(n²)` depuis #38** : l'énumération passe par `for_each_candidate_pair`, qui trie les
+/// durées puis ne parcourt que la fenêtre de tolérance. Le pré-filtre n'est plus une décision prise
+/// à l'intérieur de la double boucle, c'est la boucle elle-même. L'ENSEMBLE des paires qui
+/// atteignent `similarity` est inchangé, au bit près — voir la preuve dans le doc-comment de
+/// `for_each_candidate_pair`, et `group_duplicates_matches_the_naive_pairwise_scan` qui la
+/// verrouille contre une réimplémentation littérale de l'ancienne double boucle.
 ///
 /// **Réservé aux tests depuis la v19.** La production passe par `groups_from_edges`, qui relit
 /// des comparaisons déjà faites au lieu de les refaire (≈ 2 min 31 s à 15 000 pistes, mesuré).
@@ -203,23 +296,16 @@ pub(crate) fn group_duplicates(rows: &[DupScanRow], fps: &[Option<Vec<u32>>]) ->
     let n = rows.len();
     let mut parent: Vec<usize> = (0..n).collect();
     let mut min_sim: HashMap<usize, f32> = HashMap::new();
-    for i in 0..n {
-        let Some(fi) = &fps[i] else { continue };
-        let di = rows[i].duration;
-        for (j, fj) in fps.iter().enumerate().skip(i + 1) {
-            let Some(fj) = fj else { continue };
-            // Cheap pre-filter: known durations too far apart → not the same recording.
-            if let (Some(a), Some(b)) = (di, rows[j].duration) {
-                if (a - b).abs() > DURATION_MATCH_TOL_SEC {
-                    continue;
-                }
-            }
-            let s = fingerprint::similarity(fi, fj);
-            if s >= fingerprint::MATCH_THRESHOLD {
-                link(&mut parent, &mut min_sim, i, j, s);
-            }
+    let durations: Vec<Option<f64>> = rows.iter().map(|r| r.duration).collect();
+    for_each_candidate_pair(&durations, |i, j| {
+        let (Some(fi), Some(fj)) = (&fps[i], &fps[j]) else {
+            return;
+        };
+        let s = fingerprint::similarity(fi, fj);
+        if s >= fingerprint::MATCH_THRESHOLD {
+            link(&mut parent, &mut min_sim, i, j, s);
         }
-    }
+    });
 
     assemble_groups(rows, &mut parent, &min_sim)
 }
@@ -597,15 +683,18 @@ pub(crate) fn refresh_incremental(conn: &mut Connection) -> rusqlite::Result<Vec
             continue;
         };
         edges.extend(edges_against(row, fp, &candidates[i]));
-        for (j, other) in unscanned.iter().enumerate().skip(i + 1) {
-            let Some(other_fp) = built.fps[j].as_deref() else {
-                continue;
-            };
-            if let Some(e) = edge_between(row, fp, other, other_fp) {
-                edges.push(e);
-            }
-        }
     }
+    // Les nouvelles pistes entre elles, par fenêtre de durée (#38). Miroir exact de
+    // `ipc_library::refresh_duplicate_groups` — les deux doivent rester d'accord.
+    let new_durations: Vec<Option<f64>> = unscanned.iter().map(|r| r.duration).collect();
+    for_each_candidate_pair(&new_durations, |i, j| {
+        let (Some(fi), Some(fj)) = (built.fps[i].as_deref(), built.fps[j].as_deref()) else {
+            return;
+        };
+        if let Some(e) = edge_between(&unscanned[i], fi, &unscanned[j], fj) {
+            edges.push(e);
+        }
+    });
 
     if !built.to_persist.is_empty() {
         persist_fingerprints(conn, &built.to_persist);
@@ -841,6 +930,7 @@ fn get_or_compute_fp(conn: &Connection, track_id: i64, path: &str) -> Option<Vec
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeSet;
 
     /// Mirrors shared/contracts.ts's `DupGroupMember`. Exhaustive destructure (no `..`): fails
     /// to compile if a field is added/removed/renamed on the Rust struct — the forcing function
@@ -1479,6 +1569,264 @@ mod tests {
                 .unwrap(),
             1,
             "ON DELETE CASCADE devait retirer le marquage de la piste supprimée"
+        );
+    }
+
+    // ── #38 : la fenêtre de durée doit énumérer EXACTEMENT ce que la double boucle énumérait ──
+    //
+    // Les tests d'équivalence de la Phase 4 ci-dessus comparent l'incrémental au scan complet. Ils
+    // ne suffisent PLUS : les deux chemins partagent maintenant `for_each_candidate_pair`, donc
+    // leur accord ne prouve que leur accord. Il faut un oracle extérieur — la double boucle
+    // d'origine, recopiée littéralement, qui n'a aucune raison de se tromper de la même façon.
+
+    /// L'ensemble EXACT des paires qui atteignaient `fingerprint::similarity` avant #38 : le
+    /// pré-filtre à l'intérieur de la double boucle, `n²/2` paires parcourues.
+    fn naive_candidate_pairs(durations: &[Option<f64>]) -> BTreeSet<(usize, usize)> {
+        let mut out = BTreeSet::new();
+        for i in 0..durations.len() {
+            for j in (i + 1)..durations.len() {
+                if let (Some(a), Some(b)) = (durations[i], durations[j]) {
+                    if (a - b).abs() > DURATION_MATCH_TOL_SEC {
+                        continue;
+                    }
+                }
+                out.insert((i, j));
+            }
+        }
+        out
+    }
+
+    /// Le même ensemble, vu par la fenêtre glissante. Vérifie au passage deux propriétés que
+    /// l'égalité d'ensembles masquerait : les paires sortent normalisées (`i < j`), et aucune n'est
+    /// visitée deux fois — sans quoi l'énumération ne serait pas une partition et `similarity`
+    /// serait payé plusieurs fois pour rien.
+    fn windowed_candidate_pairs(durations: &[Option<f64>]) -> BTreeSet<(usize, usize)> {
+        let mut out = BTreeSet::new();
+        for_each_candidate_pair(durations, |i, j| {
+            assert!(i < j, "paire non normalisee: ({i}, {j})");
+            assert!(out.insert((i, j)), "paire ({i}, {j}) visitee deux fois");
+        });
+        out
+    }
+
+    /// Cas limites choisis un par un, pas une moyenne.
+    #[test]
+    fn for_each_candidate_pair_matches_the_naive_double_loop_on_edge_cases() {
+        let durations = vec![
+            Some(300.0),
+            Some(100.0),
+            None,
+            Some(102.0),       // exactement 2,0 de 100,0 → DOIT passer
+            Some(104.0),       // exactement 2,0 de 102,0 → DOIT passer
+            Some(102.0),       // durée strictement égale à une autre
+            Some(104.000_001), // 2,000001 de 102,0 → DOIT être écartée
+            Some(0.0),
+            None,
+            Some(-5.0),
+            Some(300.000_5),
+            Some(99.999_999),
+            Some(1_000_000.0),
+            Some(1_000_001.5),
+        ];
+        assert_eq!(
+            windowed_candidate_pairs(&durations),
+            naive_candidate_pairs(&durations)
+        );
+        let pairs = windowed_candidate_pairs(&durations);
+        assert!(
+            pairs.contains(&(1, 3)),
+            "une paire EXACTEMENT a la tolerance doit etre enumeree"
+        );
+        assert!(
+            !pairs.contains(&(3, 6)),
+            "une paire juste au-dela de la tolerance ne doit pas l'etre"
+        );
+    }
+
+    /// La forme qui MORD, d'après #38 : une bibliothèque de DJ s'agglutine autour de quelques
+    /// durées de production, donc beaucoup de paires survivent et les bords de fenêtre sont
+    /// franchis dans tous les sens. L'ordre d'entrée est délibérément non trié.
+    #[test]
+    fn for_each_candidate_pair_matches_the_naive_double_loop_on_a_clustered_corpus() {
+        let mut x: u32 = 12_345;
+        let mut next = || {
+            x = x.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            x
+        };
+        let bands = [180.0f64, 240.0, 390.0, 420.0];
+        let durations: Vec<Option<f64>> = (0..400)
+            .map(|i| {
+                if i % 37 == 0 {
+                    return None; // des durées inconnues, qui se comparent à tout le monde
+                }
+                let band = bands[(next() % 4) as usize];
+                // ±3 s autour de la bande : de part et d'autre de la tolérance de 2 s.
+                Some(band + (next() % 6_001) as f64 / 1000.0 - 3.0)
+            })
+            .collect();
+
+        let naive = naive_candidate_pairs(&durations);
+        assert_eq!(windowed_candidate_pairs(&durations), naive);
+
+        // Le test ne vaut que si le corpus fait vraiment travailler les deux côtés : ni un jeu si
+        // clairsemé que rien ne survit, ni un jeu si dense que le pré-filtre n'écarte rien.
+        let total = 400 * 399 / 2;
+        assert!(
+            naive.len() > 1_000 && naive.len() < total,
+            "premisse du test cassee: {} paires survivantes sur {total}",
+            naive.len()
+        );
+    }
+
+    /// Les durées non finies ne se trient pas : elles sortent de la fenêtre et repassent par la
+    /// condition littérale. Leur comportement d'origine est contre-intuitif, donc facile à casser
+    /// en « simplifiant » — `NaN > tol` est FAUX donc une paire NaN SURVIT ; `+∞` contre une durée
+    /// finie est écartée ; `+∞` contre `+∞` survit, parce que `∞ - ∞` vaut NaN.
+    #[test]
+    fn for_each_candidate_pair_reproduces_the_non_finite_corner_cases() {
+        let durations = vec![
+            Some(100.0),
+            Some(f64::NAN),
+            Some(f64::INFINITY),
+            Some(f64::INFINITY),
+            Some(f64::NEG_INFINITY),
+            None,
+            Some(101.0),
+        ];
+        let pairs = windowed_candidate_pairs(&durations);
+        assert_eq!(pairs, naive_candidate_pairs(&durations));
+        assert!(
+            pairs.contains(&(0, 1)),
+            "NaN contre une duree finie doit SURVIVRE"
+        );
+        assert!(
+            pairs.contains(&(2, 3)),
+            "+inf contre +inf doit survivre (inf - inf = NaN)"
+        );
+        assert!(
+            !pairs.contains(&(0, 2)),
+            "+inf contre 100 s doit etre ecartee"
+        );
+        assert!(
+            !pairs.contains(&(2, 4)),
+            "+inf contre -inf doit etre ecartee"
+        );
+    }
+
+    /// Réimplémentation LITTÉRALE de la double boucle d'avant #38, pré-filtre à l'intérieur. C'est
+    /// l'oracle de `group_duplicates` : sans elle, la fonction serait sa propre référence.
+    fn group_duplicates_naive(rows: &[DupScanRow], fps: &[Option<Vec<u32>>]) -> Vec<DupGroup> {
+        let n = rows.len();
+        let mut parent: Vec<usize> = (0..n).collect();
+        let mut min_sim: HashMap<usize, f32> = HashMap::new();
+        for i in 0..n {
+            let Some(fi) = &fps[i] else { continue };
+            let di = rows[i].duration;
+            for (j, fj) in fps.iter().enumerate().skip(i + 1) {
+                let Some(fj) = fj else { continue };
+                if let (Some(a), Some(b)) = (di, rows[j].duration) {
+                    if (a - b).abs() > DURATION_MATCH_TOL_SEC {
+                        continue;
+                    }
+                }
+                let s = fingerprint::similarity(fi, fj);
+                if s >= fingerprint::MATCH_THRESHOLD {
+                    link(&mut parent, &mut min_sim, i, j, s);
+                }
+            }
+        }
+        assemble_groups(rows, &mut parent, &min_sim)
+    }
+
+    fn row_at(id: i64, duration: Option<f64>) -> DupScanRow {
+        DupScanRow {
+            id,
+            path: format!("/lib/t{id}.aiff"),
+            filename: Some(format!("t{id}.aiff")),
+            folder: Some("House".to_string()),
+            format: Some("aiff".to_string()),
+            bitrate: Some(1411),
+            duration,
+            truncated: false,
+            fingerprint: None,
+        }
+    }
+
+    /// Le résultat PUBLIÉ doit être inchangé, pas seulement l'ensemble des paires.
+    ///
+    /// Toutes les pistes partagent la même empreinte, donc toute paire évaluée matche : ce qui
+    /// décide des groupes est alors la durée, et rien d'autre. Le jeu est construit autour des
+    /// bords — deux liens EXACTEMENT à la tolérance, un juste au-delà — et le dernier membre ne
+    /// rejoint le groupe que par TRANSITIVITÉ, jamais par un lien direct avec le premier.
+    #[test]
+    fn group_duplicates_matches_the_naive_pairwise_scan_across_window_edges() {
+        let fp = synth_fp(4_242);
+        // 199,0 · 200,5 · 201,0 · 203,0 · 205,000001
+        //   (1,3) = 2,0 exactement → lie · (3,4) = 2,0 exactement → lie
+        //   (4,5) = 2,000001 → n'a PAS le droit de lier
+        let durations = [199.0, 200.5, 201.0, 203.0, 205.000_001];
+        let rows: Vec<DupScanRow> = durations
+            .iter()
+            .enumerate()
+            .map(|(i, &d)| row_at(i as i64 + 1, Some(d)))
+            .collect();
+        let fps: Vec<Option<Vec<u32>>> = (0..rows.len()).map(|_| Some(fp.clone())).collect();
+
+        let windowed = group_duplicates(&rows, &fps);
+        assert_eq!(
+            shape(&windowed),
+            shape(&group_duplicates_naive(&rows, &fps))
+        );
+        assert_eq!(
+            shape(&windowed),
+            vec![vec![1, 2, 3, 4]],
+            "la 5e est a 2,000001 s de la 4e — au-dela de la tolerance, donc dehors"
+        );
+
+        // Un seul micro-pas ramène la 5e EXACTEMENT à la tolérance : elle doit entrer.
+        let mut rows = rows;
+        rows[4].duration = Some(205.0);
+        let windowed = group_duplicates(&rows, &fps);
+        assert_eq!(
+            shape(&windowed),
+            shape(&group_duplicates_naive(&rows, &fps))
+        );
+        assert_eq!(
+            shape(&windowed),
+            vec![vec![1, 2, 3, 4, 5]],
+            "exactement a la tolerance = dedans, la condition est `>` et pas `>=`"
+        );
+    }
+
+    /// Même exigence sur le chemin de PRODUCTION (`refresh_incremental` est son miroir de test) :
+    /// une piste sans durée doit continuer de se comparer à toute la bibliothèque, et les liens de
+    /// bord doivent survivre au passage par `dup_edges`.
+    #[test]
+    fn incremental_scan_matches_the_naive_pairwise_scan_across_window_edges() {
+        let fp = synth_fp(777);
+        let durations = [Some(240.0), Some(242.0), Some(244.0), None, Some(400.0)];
+
+        let mut conn = db();
+        for (i, d) in durations.iter().enumerate() {
+            add_filed(&conn, &format!("/lib/t{}.aiff", i + 1), *d, &fp);
+        }
+        let incremental = refresh_incremental(&mut conn).unwrap();
+
+        let rows: Vec<DupScanRow> = durations
+            .iter()
+            .enumerate()
+            .map(|(i, &d)| row_at(i as i64 + 1, d))
+            .collect();
+        let fps: Vec<Option<Vec<u32>>> = (0..rows.len()).map(|_| Some(fp.clone())).collect();
+
+        assert_eq!(
+            shape(&incremental),
+            shape(&group_duplicates_naive(&rows, &fps))
+        );
+        assert_eq!(
+            shape(&incremental),
+            vec![vec![1, 2, 3, 4, 5]],
+            "chaine 240-242-244 par bords exacts, puis la 4e sans duree agrege la 5e"
         );
     }
 }
