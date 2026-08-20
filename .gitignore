@@ -90,6 +90,7 @@ docs/*
 !docs/manuel.md
 !docs/design-system-states.md
 !docs/ressources-externes.md
+!docs/cdj-metadata-formats.md
 !docs/design-system/
 !docs/ui-specs/
 !docs/skills/

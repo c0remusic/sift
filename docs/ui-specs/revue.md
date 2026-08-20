@@ -80,9 +80,12 @@ Ordre vertical, et il est le parcours de décision :
    qu'il sera écrit — artiste, titre, version, genres — ce qui remplit le volet
    fonctionnellement. L'édition (recherche Discogs, champs canoniques, application des tags)
    est un **mode qu'on entre** via « Identifier », pas un formulaire ouvert en permanence
-   avec des champs vides. Le badge de lisibilité CDJ vit sur cet en-tête ; son critère et son
-   libellé exact sont en cours de révision (le check actuel ne vérifie que la présence
-   d'Artiste+Titre, pas le format de tag — [#46](https://github.com/c0remusic/sift/issues/46)).
+   avec des champs vides. Le badge de lisibilité CDJ vit sur cet en-tête. Son **critère est
+   maintenant défini** (`docs/cdj-metadata-formats.md`, 2026-08-21) : la platine affiche
+   Artiste + Titre si le tag est dans un format qu'elle lit — le **WAV est exclu** (tags RIFF
+   INFO non affichés fiablement, elle retombe sur le nom de fichier). Le code ne l'applique
+   pas encore ([#46](https://github.com/c0remusic/sift/issues/46)) : il teste la seule
+   présence d'Artiste+Titre, donc un WAV taggé passe faussement « compatible ».
 
 ### Zone C, pied — rail d'action
 
@@ -181,7 +184,9 @@ pas une transition d'écran. La forme d'onde ne s'anime pas au chargement.
   repris de Finder « Lire les informations » et du panneau Info de Photos, mais ces panneaux
   ne sont **pas** dans `docs/design-refs/` (vues grille/liste seulement). À confirmer sur les
   HIG avant l'implémentation.
-- **Critère et libellé du badge CDJ.** Le check actuel ne vérifie que la présence
-  d'Artiste+Titre, pas le format de tag qu'une platine sait lire
-  ([#46](https://github.com/c0remusic/sift/issues/46)). Une recherche sourcée établit la
-  matrice ; le libellé du badge dans la section Métadonnées en dépend.
+- **Critère du badge CDJ — établi, code à recâbler.** La matrice format-de-tag × platine est
+  documentée (`docs/cdj-metadata-formats.md`) : le WAV est le vrai cas d'échec (tags non
+  affichés fiablement), la version ID3 n'est pas une contrainte. Le check `tags_cdj_ok`
+  (`analysis/tags.rs:85`) reste à recâbler sur le format réel via `lofty`
+  ([#46](https://github.com/c0remusic/sift/issues/46)). Question restante : faut-il intégrer
+  la contrainte codec / génération (FLAC/ALAC ≥ 2016) au badge, ou la laisser hors champ.
