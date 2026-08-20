@@ -265,7 +265,7 @@ function clearPane(mid: HTMLElement, emptyQueue = false): void {
         // `data-view` du rail vaut `home` (index.html:13). Vérifié dans le markup avant d'écrire
         // cette ligne, pas déduit du nom affiché.
         actionHtml:
-          '<button type="button" data-view="home" class="sift-empty-link"><i class="ti-fill ti-fill-circle-arrow-right"></i> Ajouter un dossier depuis Accueil</button>',
+          '<button type="button" data-view="home" class="sift-empty-link">Ajouter un dossier depuis Accueil</button>',
       })
     : '<div class="sift-clear-pane">Sélectionne un morceau dans la file pour l\'écouter et le convertir.</div>';
   // The validation footer lives in the rail (#filfoot); clear it too so no stale controls linger
