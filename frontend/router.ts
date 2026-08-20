@@ -170,7 +170,22 @@ function syncNav(view: ViewId): void {
   const nav = requireEl<HTMLElement>("#nav", "syncNav");
   const viewTitle = document.getElementById("sift-view-title");
   const barTitle = document.getElementById("sift-tb-title");
-  nav.querySelectorAll<HTMLElement>(".nv").forEach((n) => {
+  // `[data-view]` EST le filtre, pas un ornement (issue #42). Le rail porte deux familles de `.nv` :
+  // les sept destinations, et les entrees de source de la section Sources (`rail-source-entry.ts`,
+  // meme grammaire `.nv`, meme marqueur `on`, mais AUCUN `data-view`). Sans ce filtre, la boucle
+  // ci-dessous evaluait `undefined === view` sur chaque source — donc faux — et son
+  // `classList.toggle("on", false)` ARRACHAIT le marqueur d'une source active, que
+  // `renderRailSources()` venait de poser et reposera au prochain repeint.
+  //
+  // Le resultat n'etait pas « une source jamais marquee » mais pire : un marqueur qui clignotait
+  // entre les deux moitiés du systeme, a la frequence des repeints du rail — plusieurs fois par
+  // seconde pendant un scan. `#sift-rail-sources` precedant les destinations dans `index.html`,
+  // « la premiere entree active du rail » designait tantot la source, tantot l'ecran courant. Un
+  // etat qui depend de qui a repeint en dernier n'est pas un etat.
+  //
+  // Le marquage d'une source appartient a `rail-sources.ts`, qui seul connait le filtre de file.
+  // Le routeur n'y touche plus.
+  nav.querySelectorAll<HTMLElement>(".nv[data-view]").forEach((n) => {
     const on = n.dataset.view === view;
     n.classList.toggle("on", on);
     if (!on) return;
