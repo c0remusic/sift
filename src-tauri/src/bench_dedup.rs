@@ -103,16 +103,34 @@ fn duration_for(i: usize, n: usize) -> f64 {
     120.0 + (i as f64 / n as f64) * 480.0
 }
 
+/// Les durées du corpus synthétique de taille `n`, doublons compris.
+///
+/// Extraite de `synth_rows` pour que l'énumération NUE puisse se mesurer sans construire une seule
+/// empreinte : à 100 000 pistes elles pèsent ≈ 1,1 Go de RAM, et le balayage ne les regarde jamais.
+/// Une seule source pour la distribution des durées — c'est elle, et rien d'autre, qui décide du
+/// nombre de paires survivantes.
+fn synth_durations(n: usize, dup_pairs: usize) -> Vec<Option<f64>> {
+    let mut d: Vec<Option<f64>> = (0..n).map(|i| Some(duration_for(i, n))).collect();
+    // Les doublons sont posés APRÈS coup, par paires voisines : la piste `2k+1` prend la durée de
+    // la piste `2k`. Voisines pour que le pré-filtre les laisse passer — un doublon que le
+    // pré-filtre écarte ne serait pas un doublon.
+    for k in 0..dup_pairs.min(n / 2) {
+        d[2 * k + 1] = d[2 * k];
+    }
+    d
+}
+
 /// Un corpus de `n` pistes `filed`, dont `dup_pairs` vraies paires de doublons (même durée, même
 /// enregistrement ré-encodé) — sinon `group_duplicates` ne construirait jamais un seul groupe et
 /// on ne mesurerait pas le chemin `union`/`min_sim`.
 fn synth_rows(n: usize, dup_pairs: usize) -> (Vec<DupScanRow>, Vec<Option<Vec<u32>>>) {
+    let durations = synth_durations(n, dup_pairs);
     let mut rows = Vec::with_capacity(n);
     let mut fps: Vec<Option<Vec<u32>>> = Vec::with_capacity(n);
 
-    for i in 0..n {
-        let duration = duration_for(i, n);
-        let items = (duration / ITEM_DURATION_SEC) as usize;
+    for (i, &duration) in durations.iter().enumerate() {
+        let secs = duration.unwrap_or(0.0);
+        let items = (secs / ITEM_DURATION_SEC) as usize;
         rows.push(DupScanRow {
             id: i as i64 + 1,
             path: format!("C:/library/artist{}/track{i}.aiff", i % 200),
@@ -120,20 +138,18 @@ fn synth_rows(n: usize, dup_pairs: usize) -> (Vec<DupScanRow>, Vec<Option<Vec<u3
             folder: Some(format!("artist{}", i % 200)),
             format: Some(if i % 3 == 0 { "aiff" } else { "mp3" }.to_string()),
             bitrate: Some(if i % 3 == 0 { 1411 } else { 320 }),
-            duration: Some(duration),
+            duration,
             truncated: false,
             fingerprint: None,
         });
         fps.push(Some(synth_fingerprint(i as u32 + 1, items)));
     }
 
-    // Les doublons sont posés APRÈS coup, par paires voisines : la piste `2k+1` devient un
-    // ré-encodage de la piste `2k`, durée comprise. Voisines pour que le pré-filtre les laisse
-    // passer — un doublon que le pré-filtre écarte ne serait pas un doublon.
+    // La piste `2k+1` devient un ré-encodage de la piste `2k` ; sa durée est déjà celle de `2k`,
+    // posée par `synth_durations`.
     for k in 0..dup_pairs.min(n / 2) {
         let (a, b) = (2 * k, 2 * k + 1);
         let base = fps[a].clone().unwrap_or_default();
-        rows[b].duration = rows[a].duration;
         fps[b] = Some(synth_reencode(&base, b as u32 + 7));
     }
 
@@ -147,15 +163,18 @@ struct PrefilterCount {
     pairs_survived: u64,
 }
 
-/// Rejoue EXACTEMENT la condition de `dedup.rs:200-203` sur les durées, sans rien comparer
-/// d'acoustique. Donne le dénominateur et le numérateur du taux de survie.
-fn count_prefilter(rows: &[DupScanRow]) -> PrefilterCount {
+/// Rejoue EXACTEMENT la condition de durée de `dedup.rs` sur la DOUBLE BOUCLE d'origine, sans rien
+/// comparer d'acoustique. Donne le dénominateur et le numérateur du taux de survie.
+///
+/// C'est aussi l'ORACLE de l'énumération : toute forme plus maligne doit rendre exactement les
+/// `pairs_survived` comptées ici, en en parcourant moins.
+fn count_prefilter(durations: &[Option<f64>]) -> PrefilterCount {
     let mut pairs_total = 0u64;
     let mut pairs_survived = 0u64;
-    for (i, ri) in rows.iter().enumerate() {
-        for rj in rows.iter().skip(i + 1) {
+    for (i, di) in durations.iter().enumerate() {
+        for dj in durations.iter().skip(i + 1) {
             pairs_total += 1;
-            match (ri.duration, rj.duration) {
+            match (di, dj) {
                 // Le `continue` de production ne s'applique QUE si les deux durées sont connues :
                 // une durée NULL laisse passer la paire.
                 (Some(a), Some(b)) if (a - b).abs() > DURATION_TOL_SEC => {}
@@ -221,9 +240,10 @@ fn bench_dedup_prefilter_survival() {
 
     for &n in &[1_000usize, 5_000, 15_000] {
         let (rows, fps) = synth_rows(n, n / 100);
+        let durations: Vec<Option<f64>> = rows.iter().map(|r| r.duration).collect();
 
         let t = Instant::now();
-        let c = count_prefilter(&rows);
+        let c = count_prefilter(&durations);
         let counting = t.elapsed();
 
         let fp_bytes: usize = fps
@@ -262,6 +282,40 @@ fn bench_dedup_group_duplicates_end_to_end() {
     }
     println!("\n  (extrapoler vers 15 000 avec le coût unitaire + le taux de survie —");
     println!("   pas en supposant un n² propre : le pré-filtre casse la courbe.)");
+}
+
+/// (5) **L'ÉNUMÉRATION NUE** — le balayage seul, celui qui reste quand le pré-filtre écarte tout.
+///
+/// C'est le chiffre que l'issue #38 réclame comme PREMIER geste, avant tout correctif : les quatre
+/// benchs ci-dessus mesurent le coût unitaire, le taux de survie, le bout à bout et la RAM, mais
+/// aucun ne dit ce que coûte le simple fait de PARCOURIR `n²/2` paires. Aucune empreinte n'est
+/// construite ici — seules les durées, ce qui rend le `n = 100 000` tenable en RAM (≈ 1,6 Mo au
+/// lieu de ≈ 1,1 Go).
+///
+/// Ce que dit le chiffre : si l'énumération nue à 100 k tient en quelques centaines de
+/// millisecondes, #38 est une optimisation opportuniste ; si elle tient la minute, c'est un mur.
+#[test]
+#[ignore]
+fn bench_dedup_bare_enumeration() {
+    println!("\n=== #38 · énumération nue (durées seules, aucun `similarity` appelé) ===");
+    println!("(mêmes réserves sur `duration_for` que les benchs ci-dessus : étalement uniforme");
+    println!(" 2→10 min, donc un taux de survie PLANCHER — une vraie bibliothèque s'agglutine.)\n");
+
+    for &n in &[15_000usize, 100_000] {
+        let durations = synth_durations(n, n / 100);
+
+        let t = Instant::now();
+        let naive = count_prefilter(&durations);
+        let naive_elapsed = t.elapsed();
+
+        println!(
+            "  n = {n:>7} · double boucle : {naive_elapsed:>10.2?} pour {:>13} paires parcourues \
+             · {} survivantes ({:>6.3} %)",
+            naive.pairs_total,
+            naive.pairs_survived,
+            100.0 * naive.pairs_survived as f64 / naive.pairs_total as f64,
+        );
+    }
 }
 
 #[cfg(test)]
@@ -307,22 +361,26 @@ mod tests {
     /// Le comptage doit refléter la règle réelle : une durée inconnue NE fait PAS écarter la paire.
     #[test]
     fn unknown_duration_survives_the_prefilter() {
-        let mk = |id: i64, duration: Option<f64>| DupScanRow {
-            id,
-            path: format!("p{id}"),
-            filename: None,
-            folder: None,
-            format: None,
-            bitrate: None,
-            duration,
-            truncated: false,
-            fingerprint: None,
-        };
-        // 100 s vs 400 s : très au-delà de la tolérance, mais l'une est inconnue.
-        let rows = vec![mk(1, Some(100.0)), mk(2, None), mk(3, Some(400.0))];
-        let c = count_prefilter(&rows);
+        // 100 s vs 400 s : très au-delà de la tolérance, mais l'une des trois est inconnue.
+        let durations = vec![Some(100.0), None, Some(400.0)];
+        let c = count_prefilter(&durations);
         assert_eq!(c.pairs_total, 3);
         // (1,2) et (2,3) survivent par durée inconnue ; (1,3) est écartée.
         assert_eq!(c.pairs_survived, 2);
+    }
+
+    /// `synth_durations` doit poser les doublons EXACTEMENT là où `synth_rows` les attend, sinon
+    /// les deux corpus divergeraient en silence et les benchs ne mesureraient plus la même chose.
+    #[test]
+    fn synth_durations_matches_the_rows_it_feeds() {
+        let (rows, _fps) = synth_rows(40, 4);
+        let durations = synth_durations(40, 4);
+        let from_rows: Vec<Option<f64>> = rows.iter().map(|r| r.duration).collect();
+        assert_eq!(from_rows, durations);
+        // Les 4 premières paires voisines partagent leur durée — c'est ce qui les rend doublons.
+        for k in 0..4 {
+            assert_eq!(durations[2 * k + 1], durations[2 * k]);
+        }
+        assert_ne!(durations[9], durations[8], "au-dela de dup_pairs, plus de partage");
     }
 }
