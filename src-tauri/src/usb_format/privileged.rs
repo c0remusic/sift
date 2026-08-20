@@ -18,17 +18,17 @@
 use super::{fat32, raw_volume::RawVolume, sector_io::SectorIo, TargetFs};
 use std::io::Write;
 
-/// Fichier ou le processus eleve depose son etape courante, et que le parent relit.
+/// Fichier où le processus élevé dépose son étape courante, et que le parent relit.
 ///
-/// Un fichier plutot qu'un canal : le processus eleve est un AUTRE processus, lance par
-/// `Start-Process -Verb RunAs`, dont la sortie standard ne peut pas etre redirigee. Sans ca,
+/// Un fichier plutôt qu'un canal : le processus élevé est un AUTRE processus, lancé par
+/// `Start-Process -Verb RunAs`, dont la sortie standard ne peut pas être redirigée. Sans ça,
 /// l'interface n'a rien a montrer entre le clic et la fin — c'est le reproche exact fait a la
-/// premiere version.
+/// première version.
 pub fn step_file() -> std::path::PathBuf {
     std::env::temp_dir().join("sift-format-step.txt")
 }
 
-/// Depose l'etape courante. Traduite ici et pas cote frontend : c'est le backend qui sait ce
+/// Dépose l'étape courante. Traduite ici et pas côté frontend : c'est le backend qui sait ce
 /// qu'il fait, et une table de correspondance en TS derivrait au premier changement.
 pub fn write_step(step: &str) {
     if let Ok(mut f) = std::fs::File::create(step_file()) {
@@ -44,11 +44,11 @@ pub const PRIVILEGED_FLAG: &str = "--sift-privileged-format";
 /// de dire « échec ».
 pub const EXIT_OK: i32 = 0;
 
-/// Marqueur terminal de succes dans le fichier d etape. Le frontend interroge jusqu a le voir, ou
+/// Marqueur terminal de succès dans le fichier d étape. Le frontend interroge jusqu a le voir, ou
 /// jusqu a un message commencant par `ECHEC_PREFIX`.
 pub const STEP_DONE: &str = "Terminé";
 
-/// Prefixe de tout etat terminal d echec. Un prefixe plutot qu une valeur exacte : le message
+/// Préfixe de tout état terminal d échec. Un préfixe plutôt qu une valeur exacte : le message
 /// porte la cause, et le frontend doit pouvoir la montrer sans table de correspondance.
 pub const STEP_FAILED_PREFIX: &str = "Échec";
 pub const EXIT_BAD_ARGS: i32 = 2;
@@ -166,8 +166,8 @@ pub fn run(job: &PrivilegedJob) -> i32 {
     let written = match job.fs {
         TargetFs::Fat32 => {
             // A travers l'adaptateur d'alignement : un handle de volume refuse les E/S qui ne
-            // tombent pas sur des multiples entiers de secteur, et `fatfs` ecrit comme dans un
-            // fichier. C'est ce qui a fait echouer le premier formatage reel.
+            // tombent pas sur des multiples entiers de secteur, et `fatfs` écrit comme dans un
+            // fichier. C'est ce qui a fait échouer le premier formatage réel.
             let aligned = SectorIo::new(volume.as_file_mut(), u64::from(fat32::BYTES_PER_SECTOR));
             fat32::write_fat32(aligned, total_bytes, &job.label)
         }
@@ -186,9 +186,9 @@ pub fn run(job: &PrivilegedJob) -> i32 {
             EXIT_OK
         }
         Err(e) => {
-            // Dans le fichier d'etape, pas seulement sur stderr : `Start-Process -Verb RunAs` ne
+            // Dans le fichier d'étape, pas seulement sur stderr : `Start-Process -Verb RunAs` ne
             // permet pas de rediriger la sortie d'un processus eleve, donc stderr est perdu et
-            // l'echec serait muet — ce qu'il a ete au premier essai reel.
+            // l'échec serait muet — ce qu'il a été au premier essai réel.
             write_step(&format!("Échec de l'écriture : {e}"));
             eprintln!("sift: écriture FAT32 impossible: {e}");
             EXIT_WRITE_FAILED
@@ -237,7 +237,7 @@ mod tests {
         );
     }
 
-    /// Un index illisible doit ARRETER le processus, jamais retomber sur une valeur par defaut :
+    /// Un index illisible doit ARRÊTER le processus, jamais retomber sur une valeur par défaut :
     /// le disque 0 est le premier de la machine.
     #[test]
     fn an_unreadable_index_is_refused_not_defaulted() {
@@ -262,14 +262,14 @@ mod tests {
     }
 
     /// Le script ne doit JAMAIS contenir `format` : c'est ce que Windows refuse au-dela de 32 Go,
-    /// et le laisser passer ramenerait le bug que ce module existe pour contourner.
+    /// et le laisser passer ramènerait le bug que ce module existe pour contourner.
     #[test]
     fn partition_script_creates_but_never_formats() {
         let s = partition_script(2);
         assert!(s.starts_with("select disk 2\n"), "{s}");
         assert!(s.contains("\nclean\n"), "{s}");
-        // `id=0c` est la seule chose que diskpart doit dire du systeme de fichiers : le type MBR.
-        // Sans lui il pose 0x06 (FAT16), et le FAT32 qu'on ecrit ensuite devient illisible
+        // `id=0c` est la seule chose que diskpart doit dire du système de fichiers : le type MBR.
+        // Sans lui il pose 0x06 (FAT16), et le FAT32 qu'on écrit ensuite devient illisible
         // (os error 1392, constate le 2026-08-03). Le contenu, lui, reste notre travail.
         assert!(s.contains("\ncreate partition primary id=0c\n"), "{s}");
         assert!(s.contains("\nassign\n"), "{s}");

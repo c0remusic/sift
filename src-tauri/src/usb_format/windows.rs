@@ -146,8 +146,8 @@ pub(crate) struct VolumeFacts {
     /// sharpen `disk_identity` when they exist.
     pub serials: Vec<String>,
     pub total_size: u64,
-    /// Etat de sante du volume, deja mis en francais (`describe_health`). Vide quand aucun volume
-    /// monte n'a pu etre interroge.
+    /// État de santé du volume, déjà mis en français (`describe_health`). Vide quand aucun volume
+    /// monté n'a pu être interrogé.
     pub health: String,
     /// Nom du premier volume monte, vide sinon.
     pub volume_name: String,
@@ -586,7 +586,7 @@ impl WindowsBackend {
             .map_err(|e| UsbFormatError::Format(format!("chemin de l'exécutable: {e}")))?;
         let exe = exe.to_string_lossy().to_string();
 
-        // Repart d'un fichier propre : une etape restee d'un formatage precedent s'afficherait
+        // Repart d'un fichier propre : une étape restée d'un formatage précédent s'afficherait
         // comme la progression de celui-ci.
         super::privileged::write_step("Autorisation Windows demandée…");
         let safe = sanitize_label_for_command(label);
@@ -628,11 +628,11 @@ impl WindowsBackend {
         }))
     }
 
-    /// Sante de chaque volume monte, indexee par lettre (`"I:"`).
+    /// Santé de chaque volume monté, indexée par lettre (`"I:"`).
     ///
     /// `MSFT_Volume` vit dans l'espace de noms Storage et n'a pas d'equivalent en CIMV2 :
-    /// `Win32_LogicalDisk` ne porte aucune notion de sante. `raw_query` plutot qu'une struct
-    /// typee parce que `DriveLetter` y est un `Char` WMI, pas une chaine — mesure le 2026-08-01.
+    /// `Win32_LogicalDisk` ne porte aucune notion de santé. `raw_query` plutôt qu'une struct
+    /// typée parce que `DriveLetter` y est un `Char` WMI, pas une chaîne — mesuré le 2026-08-01.
     fn volume_health(storage: &WMIConnection) -> HashMap<String, (String, String)> {
         let mut out = HashMap::new();
         let rows: Vec<HashMap<String, Variant>> = match storage
@@ -750,7 +750,7 @@ impl RemovableDriveBackend for WindowsBackend {
         // live on C:, and these vetoes are what stand between `diskpart clean` and a disk the user
         // cannot afford to lose.
         let system_drive = std::env::var("SystemDrive").unwrap_or_else(|_| "C:".to_string());
-        // Une seule requete pour tous les volumes, pas une par disque.
+        // Une seule requête pour tous les volumes, pas une par disque.
         let health_by_letter = Self::volume_health(&storage);
 
         let mut drives = Vec::new();
@@ -1013,7 +1013,7 @@ mod tests {
     fn seuls_les_types_mbr_fat32_acceptent_une_ecriture_en_place() {
         assert!(mbr_type_accepts_fat32(MBR_FAT32_CHS)); // 0x0B
         assert!(mbr_type_accepts_fat32(MBR_FAT32_LBA)); // 0x0C
-                                                        // 0x06 = FAT16, le defaut de `create partition primary` sans `id=`. C'est CE type qui a
+                                                        // 0x06 = FAT16, le défaut de `create partition primary` sans `id=`. C'est CE type qui a
                                                         // ete trouve sur le SSD, et FAT16 plafonne a 2 Go — 465 Go typees ainsi sont hors spec.
         assert!(!mbr_type_accepts_fat32(0x06));
         assert!(!mbr_type_accepts_fat32(0x07)); // NTFS/exFAT
@@ -1139,8 +1139,8 @@ mod tests {
     }
 
     /// Le code 53263 est le seul dont j'aie vu le rendu de Windows — mesure sur le volume FAT32
-    /// reel de cette machine, que `Get-Volume` annonce "Full Repair Needed".
-    /// Le champ de nom est libre cote interface : ce qui en sort doit etre sur a poser dans une
+    /// réel de cette machine, que `Get-Volume` annonce "Full Repair Needed".
+    /// Le champ de nom est libre côté interface : ce qui en sort doit être sûr à poser dans une
     /// commande, et IDENTIQUE a ce que le disque portera — sinon l'utilisateur voit un nom et la
     /// cle en porte un autre.
     #[test]
@@ -1287,7 +1287,7 @@ mod tests {
         assert!(ps.contains("$sift_letter = 'I:'"), "{ps}");
         assert!(
             !ps.contains("RunAs") && !ps.contains("mountvol"),
-            "aucune elevation ne doit etre demandee: {ps}"
+            "aucune élévation ne doit être demandée: {ps}"
         );
     }
 
@@ -1304,7 +1304,7 @@ mod tests {
             .expect("appel sur $parent");
         assert!(
             parent < eject,
-            "le parent doit etre resolu AVANT l'ejection: {ps}"
+            "le parent doit être résolu AVANT l'éjection: {ps}"
         );
     }
 

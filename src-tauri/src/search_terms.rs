@@ -990,7 +990,7 @@ mod tests {
         let labels: Vec<&str> = t.ladder.iter().map(|a| a.label).collect();
         assert!(
             labels.contains(&"titre+version") && labels.contains(&"titre"),
-            "sans artiste, la cascade doit quand meme proposer des essais : {labels:?}"
+            "sans artiste, la cascade doit quand même proposer des essais : {labels:?}"
         );
     }
 

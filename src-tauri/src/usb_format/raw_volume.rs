@@ -168,12 +168,12 @@ mod tests {
         assert_eq!(volume_path(" I: "), r"\\.\I:");
     }
 
-    /// La lettre systeme est refusee quelle que soit sa casse ou sa ponctuation : c'est la
-    /// derniere barriere avant une ecriture brute, elle ne doit pas dependre d'une forme exacte.
+    /// La lettre système est refusée quelle que soit sa casse ou sa ponctuation : c'est la
+    /// dernière barrière avant une écriture brute, elle ne doit pas dépendre d'une forme exacte.
     #[test]
     fn system_volume_is_refused_in_any_form() {
         for l in ["C:", "c:", "C:\\", " c: "] {
-            assert!(is_system_volume(l, "C:"), "{l} doit etre refuse");
+            assert!(is_system_volume(l, "C:"), "{l} doit être refusé");
         }
     }
 
@@ -184,7 +184,7 @@ mod tests {
         }
     }
 
-    /// `%SystemDrive%` n'est pas toujours C: — une installation sur D: doit proteger D:, pas C:.
+    /// `%SystemDrive%` n'est pas toujours C: — une installation sur D: doit protéger D:, pas C:.
     #[test]
     fn the_system_letter_is_read_not_assumed() {
         assert!(is_system_volume("D:", "D:"));

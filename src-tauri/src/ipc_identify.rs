@@ -160,7 +160,7 @@ mod tests {
         let q2 = build_query("/dl/complete/01 Awaken Abyss.mp3");
         assert_eq!(
             q2.artist, "",
-            "aucun artiste derivable: le vide est correct"
+            "aucun artiste dérivable: le vide est correct"
         );
         assert_eq!(q2.title, "Awaken Abyss");
     }
@@ -232,7 +232,7 @@ mod tests {
         assert_eq!(
             q.version.as_deref(),
             Some("Club Mix"),
-            "la version vient du nom de fichier meme quand les tags gagnent"
+            "la version vient du nom de fichier même quand les tags gagnent"
         );
         assert_eq!(
             q.attempts.first().map(|s| s.as_str()),

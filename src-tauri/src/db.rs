@@ -598,15 +598,15 @@ mod tests {
             )
             .unwrap()
         };
-        assert_eq!(lu(1), None, "le rapport anterieur au cap n'a pas ete vide");
+        assert_eq!(lu(1), None, "le rapport antérieur au cap n'a pas été vidé");
         assert!(
             lu(2).is_some_and(|s| s.contains("peaks_step")),
-            "un rapport deja plafonne a ete vide — cout: une re-analyse pour rien"
+            "un rapport déjà plafonné a été vidé — coût: une re-analyse pour rien"
         );
         assert_eq!(
             lu(3),
             Some(String::new()),
-            "la sentinelle de fichier illisible a ete effacee — le fichier repasserait en file"
+            "la sentinelle de fichier illisible a été effacée — le fichier repasserait en file"
         );
         let ver: Option<i64> = conn
             .query_row("SELECT report_cache_ver FROM tracks WHERE id=1", [], |r| {
@@ -684,14 +684,14 @@ mod tests {
         let (json3, verdict3, cutoff3) = row(3);
         assert!(
             json3.is_some(),
-            "un vrai faux lossless a ete repris — cout: une re-analyse pour rien"
+            "un vrai faux lossless a été repris — coût: une re-analyse pour rien"
         );
-        assert_eq!(verdict3.as_deref(), Some("fake"), "son verdict etait juste");
+        assert_eq!(verdict3.as_deref(), Some("fake"), "son verdict était juste");
         assert_eq!(cutoff3, Some(15967.0));
         assert_eq!(
             row(4).0,
             Some(String::new()),
-            "la sentinelle de fichier illisible a ete effacee — le fichier repasserait en file"
+            "la sentinelle de fichier illisible a été effacée — le fichier repasserait en file"
         );
     }
 
@@ -756,7 +756,7 @@ mod tests {
         assert_eq!(
             vers(1),
             (Some(1), Some(1)),
-            "empreinte reelle + verdict au rapport courant : les deux devaient etre stampes, \
+            "empreinte réelle + verdict au rapport courant : les deux devaient être stampes, \
              sinon la livraison de cette migration re-empreinte et re-analyse toute la bibliotheque"
         );
         assert_eq!(

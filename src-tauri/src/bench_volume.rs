@@ -810,7 +810,7 @@ fn measure_dest_bins(ds: &FilingDataset) {
         ),
     );
     summarize(
-        "list_bins (meme arbre, 0 fichier)",
+        "list_bins (même arbre, 0 fichier)",
         measure(
             || {
                 library::list_bins(&ds.empty_root);
@@ -819,9 +819,9 @@ fn measure_dest_bins(ds: &FilingDataset) {
         ),
     );
     println!(
-        "  NOTE: les deux lignes ci-dessus sont un regime de CACHE CHAUD — le meme arbre est\n\
-         \x20       reparcouru 50 fois d'affilee, les metadonnees NTFS restent en cache. Le premier\n\
-         \x20       parcours apres demarrage (a plus forte raison sur 15 000 fichiers reels ou sur un\n\
+        "  NOTE: les deux lignes ci-dessus sont un régime de CACHE CHAUD — le même arbre est\n\
+         \x20       reparcouru 50 fois d'affilée, les métadonnées NTFS restent en cache. Le premier\n\
+         \x20       parcours après démarrage (à plus forte raison sur 15 000 fichiers réels ou sur un\n\
          \x20       disque externe) est materiellement plus cher et n'est PAS couvert ici: ces deux\n\
          \x20       chiffres sont un PLANCHER, comme celui d'execute_file plus bas."
     );
@@ -831,7 +831,7 @@ fn measure_dest_bins(ds: &FilingDataset) {
 /// (settings read + `naming::render_filename`), plus the settings read alone so the two costs are
 /// separable. The front debounces this at 150 ms per keystroke (`frontend/filing-preview.ts:79`).
 fn measure_final_name(ds: &FilingDataset) {
-    println!("\n=== Boucle de rangement: resolution du nom final ===");
+    println!("\n=== Boucle de rangement: résolution du nom final ===");
     let (id, _) = ds.sources[0];
     let canonical = crate::filing::reconcile_track(&ds.conn, id).expect("reconcile");
     summarize(
@@ -950,7 +950,7 @@ fn measure_track_open(ds: &FilingDataset) {
          \x20       dedup.rs:347 lance fingerprint::compute_for_path, qui DECODE l'audio complet\n\
          \x20       (fingerprint.rs:20-27 -> analysis::decode::decode_pcm) puis ecrit un UPDATE\n\
          \x20       (dedup.rs:349-352) — deux fichiers, sous le verrou que ipc_filing.rs:771 tient sur\n\
-         \x20       toute la commande. Sources synthetiques de ~{:.1} Mo: sur un lossless reel de\n\
+         \x20       toute la commande. Sources synthétiques de ~{:.1} Mo: sur un lossless réel de\n\
          \x20       30-40 Mo la ligne \"NON en cache\" est encore un plancher. C'est le patron de P4.",
         (SOURCE_FRAMES * 2 + 44) as f64 / 1_048_576.0
     );
@@ -1053,9 +1053,9 @@ fn measure_filing(ds: &FilingDataset, bin_rel: &str) {
     summarize("file_track complet (hors encodage)", total_d);
     println!(
         "  NOTE: execute_file mesure une source de ~{:.1} Mo (tag write + rename intra-volume). Un vrai\n\
-         \x20       lossless de 30-40 Mo, ou un move cross-disque (copy_verify_delete), coute davantage —\n\
-         \x20       ce chiffre est un PLANCHER. Aucun Rekordbox XML/master.db lie ici: les detections de\n\
-         \x20       commit_file sortent immediatement, un utilisateur lie paie plus (cible de P4).",
+         \x20       lossless de 30-40 Mo, ou un move cross-disque (copy_verify_delete), coûte davantage —\n\
+         \x20       ce chiffre est un PLANCHER. Aucun Rekordbox XML/master.db lié ici: les détections de\n\
+         \x20       commit_file sortent immédiatement, un utilisateur lié paie plus (cible de P4).",
         (SOURCE_FRAMES * 2 + 44) as f64 / 1_048_576.0
     );
 }
@@ -1066,7 +1066,7 @@ fn measure_filing(ds: &FilingDataset, bin_rel: &str) {
 fn explain_filing_queries(conn: &Connection) {
     explain(
         conn,
-        "track_path / reconcile_track / find_duplicate (etape 1)",
+        "track_path / reconcile_track / find_duplicate (étape 1)",
         "SELECT path FROM tracks WHERE id=1",
     );
     explain(
@@ -1101,7 +1101,7 @@ fn explain_filing_queries(conn: &Connection) {
 fn bench_filing_loop_15k() {
     let ds = build_filing_dataset(15_000, 12_000, 30, NAME_COLLISIONS);
     println!(
-        "\n########## Boucle de rangement @ {} pistes ({} filed sur disque, {} bacs, {} sources reelles, {} paires de doublons) ##########",
+        "\n########## Boucle de rangement @ {} pistes ({} filed sur disque, {} bacs, {} sources réelles, {} paires de doublons) ##########",
         ds.total,
         ds.filed_files,
         ds.bins.len(),

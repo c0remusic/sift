@@ -460,7 +460,7 @@ mod tests {
             "pas de version dans le titre de base"
         );
         assert_eq!(version.as_deref(), Some("Fluent Remix"));
-        assert_eq!(year, Some(1993), "l'edit doit quand meme s'appliquer");
+        assert_eq!(year, Some(1993), "l'edit doit quand même s'appliquer");
     }
 
     /// L'autre moitié : retirer la parenthèse du champ Titre EST la façon de supprimer la version

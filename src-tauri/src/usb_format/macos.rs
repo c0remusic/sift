@@ -198,7 +198,7 @@ impl RemovableDriveBackend for MacBackend {
                 label: disk.name.clone(),
                 mount,
                 size_bytes: disk.size_bytes,
-                // diskutil expose FreeSpace ailleurs ; non cable tant que ce backend n a jamais tourne.
+                // diskutil expose FreeSpace ailleurs ; non câblé tant que ce backend n a jamais tourné.
                 free_bytes: 0,
                 current_fs: fs,
                 volume_name: String::new(),

@@ -159,10 +159,10 @@ mod sonde {
     use super::*;
 
     const N: usize = 1024; // bloc long AAC : fenêtre 2048, 1024 coefficients
-    /// Pas de la grille de REFERENCE, celle qui donne la mediane. Elle n'a pas besoin d'etre fine :
-    /// elle sert a etablir le niveau ordinaire, pas a trouver un pic.
+    /// Pas de la grille de RÉFÉRENCE, celle qui donne la médiane. Elle n'a pas besoin d'être fine :
+    /// elle sert à établir le niveau ordinaire, pas à trouver un pic.
     const PAS_REFERENCE: usize = 32;
-    /// Trames du reperage — peu, parce qu'il tourne sur les 1024 decalages.
+    /// Trames du repérage — peu, parce qu'il tourne sur les 1024 décalages.
     const TRAMES_REPERAGE: usize = 8;
     const TRAMES: usize = 60;
     const BANDE_LO_HZ: f32 = 8000.0;
@@ -238,7 +238,7 @@ mod sonde {
     #[ignore]
     fn mdct_alignment() {
         let Ok(liste) = std::env::var("SIFT_MDCT_PATHS") else {
-            eprintln!("SIFT_MDCT_PATHS non defini — rien a sonder");
+            eprintln!("SIFT_MDCT_PATHS non défini — rien à sonder");
             return;
         };
         let plan = MdctPlan::new(N);
@@ -351,7 +351,7 @@ mod tests {
             let reconstruit = a[N + i] + b[i];
             assert!(
                 (reconstruit - signal[N + i]).abs() < 1e-3,
-                "echantillon {i} : {reconstruit} contre {} attendu",
+                "échantillon {i} : {reconstruit} contre {} attendu",
                 signal[N + i]
             );
         }
@@ -427,7 +427,7 @@ mod tests {
         let voisinage: f32 = x[K - 1..=K + 1].iter().map(|v| v * v).sum();
         assert!(
             voisinage / total > 0.95,
-            "energie hors du voisinage du bin {K} : {:.2} % dedans seulement",
+            "énergie hors du voisinage du bin {K} : {:.2} % dedans seulement",
             100.0 * voisinage / total
         );
     }

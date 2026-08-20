@@ -791,7 +791,7 @@ mod tests {
         );
         assert!(
             top > fixe,
-            "la bande relative, entierement au-dessus de la coupure, doit voir un plancher PLUS              plat que la bande fixe qui chevauche la falaise : fixe {fixe}, relative {top}"
+            "la bande relative, entièrement au-dessus de la coupure, doit voir un plancher PLUS              plat que la bande fixe qui chevauche la falaise : fixe {fixe}, relative {top}"
         );
     }
 
@@ -842,11 +842,11 @@ mod tests {
         let flat_sparse = measure(&sparse);
         assert!(
             flat_continuous > -8.0,
-            "un aigu continu doit etre proche de 0 dB, mesure {flat_continuous}"
+            "un aigu continu doit être proche de 0 dB, mesure {flat_continuous}"
         );
         assert!(
             flat_sparse < flat_continuous - 15.0,
-            "un aigu clairseme doit etre franchement moins plat : clairseme {flat_sparse}, continu {flat_continuous}"
+            "un aigu clairsemé doit être franchement moins plat : clairsemé {flat_sparse}, continu {flat_continuous}"
         );
     }
 

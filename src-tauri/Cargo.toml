@@ -66,22 +66,22 @@ windows = { version = "0.61", features = [
     "Win32_Foundation",
     "Win32_Graphics_Dwm",
     "Win32_UI_Controls",
-    # Ouverture, verrouillage et demontage d'un volume brut pour l'ecriture FAT32.
+    # Ouverture, verrouillage et démontage d'un volume brut pour l'écriture FAT32.
     "Win32_Security",
     "Win32_Storage_FileSystem",
     "Win32_System_IO",
     "Win32_System_Ioctl",
 ] }
 
-# Ecriture FAT32 au-dela du plafond de 32 Go de Windows. Dependance de PRODUCTION sur Windows
+# Écriture FAT32 au-delà du plafond de 32 Go de Windows. Dépendance de PRODUCTION sur Windows
 # uniquement : macOS formate par `diskutil eraseDisk FAT32`, qui n'a pas ce plafond, et n'appelle
 # donc jamais `usb_format::fat32`. Voir le gate `cfg(any(windows, test))` sur ce module.
 fatfs = "0.3.6"
 
 [dev-dependencies]
 
-# Meme crate qu'au-dessus, redeclaree ici pour que les tests de `usb_format::fat32` compilent sur
-# une machine non-Windows — c'etait la raison pour laquelle le module n'avait pas de gate du tout.
+# Même crate qu'au-dessus, redéclarée ici pour que les tests de `usb_format::fat32` compilent sur
+# une machine non-Windows — c'était la raison pour laquelle le module n'avait pas de gate du tout.
 fatfs = "0.3.6"
 
 # Audio DSP is unusably slow in an unoptimised debug build (rustfft + per-sample loops).

@@ -57,7 +57,7 @@ pub(crate) fn read_cache(conn: &Connection, key: &str, free_bytes: u64) -> Optio
         .ok();
     let (scanned_at, total, free, count, json, scheme) = row?;
     // Deux invalidations distinctes, et il en faut deux : l'espace libre attrape un contenu qui a
-    // bouge, la version de schema attrape une REGLE de classement qui a change. Ni l'une ni l'autre
+    // bouge, la version de schéma attrape une RÈGLE de classement qui a changé. Ni l'une ni l'autre
     // ne couvre le cas de l'autre.
     if free as u64 != free_bytes || scheme != volume_usage::BUCKET_SCHEME_VERSION {
         return None;
@@ -181,10 +181,10 @@ pub fn drive_usage(
 #[tauri::command]
 pub fn library_usage(conn: State<'_, Mutex<Connection>>) -> Result<UsageReport, String> {
     let conn = db::lock_conn(&conn)?;
-    // `status = 'filed'`, EXACTEMENT le filtre de `library::list_filed`. Sans lui la requete
-    // ramenait toute la table `tracks`, pending compris : l'ecran Bibliotheque annoncait « 1 piste »
+    // `status = 'filed'`, EXACTEMENT le filtre de `library::list_filed`. Sans lui la requête
+    // ramenait toute la table `tracks`, pending compris : l'écran Bibliothèque annonçait « 1 piste »
     // pendant que le graphique juste au-dessus affichait 148,8 Go d'AIFF. Deux chiffres vrais, deux
-    // populations differentes, et rien pour le dire — vu en le faisant tourner le 2026-08-01.
+    // populations différentes, et rien pour le dire — vu en le faisant tourner le 2026-08-01.
     let mut stmt = conn
         .prepare(
             "SELECT path, size_bytes FROM tracks \
@@ -265,8 +265,8 @@ mod tests {
         assert!(read_cache(&conn, "K", 501).is_none());
     }
 
-    /// Une ventilation calculee par une ancienne regle de classement doit etre rejetee meme si le
-    /// disque n'a pas bouge d'un octet — l'espace libre ne peut pas detecter ca.
+    /// Une ventilation calculée par une ancienne règle de classement doit être rejetée même si le
+    /// disque n'a pas bougé d'un octet — l'espace libre ne peut pas détecter ça.
     #[test]
     fn an_older_bucket_scheme_invalidates() {
         let conn = mem_db();
@@ -279,9 +279,9 @@ mod tests {
         assert!(read_cache(&conn, "K", 500).is_none());
     }
 
-    /// Les lignes ecrites par la v17 n'avaient pas de colonne de version : la v18 leur pose 0, qui
-    /// ne correspond a aucune version emise, donc elles sont recalculees. C'est voulu — ce sont
-    /// exactement celles qui portent l'ancien decoupage .aif/.aiff.
+    /// Les lignes écrites par la v17 n'avaient pas de colonne de version : la v18 leur pose 0, qui
+    /// ne correspond à aucune version émise, donc elles sont recalculées. C'est voulu — ce sont
+    /// exactement celles qui portent l'ancien découpage .aif/.aiff.
     #[test]
     fn rows_from_before_the_version_column_are_recomputed() {
         let conn = mem_db();
@@ -320,7 +320,7 @@ mod tests {
         let n: i64 = conn
             .query_row("SELECT COUNT(*) FROM volume_usage", [], |r| r.get(0))
             .expect("count");
-        assert_eq!(n, 1, "la cle primaire doit ecraser, pas empiler");
+        assert_eq!(n, 1, "la clé primaire doit écraser, pas empiler");
         assert_eq!(read_cache(&conn, "K", 400).expect("hit").file_count, 9);
     }
 

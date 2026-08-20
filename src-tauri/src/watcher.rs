@@ -36,7 +36,7 @@ pub fn start_all(app: &AppHandle) {
             Ok(c) => c,
             Err(e) => {
                 log::error!(
-                    "watcher start_all: verrou DB empoisonne, aucune source surveillee: {e}"
+                    "watcher start_all: verrou DB empoisonné, aucune source surveillée: {e}"
                 );
                 return;
             }
@@ -44,14 +44,14 @@ pub fn start_all(app: &AppHandle) {
         let mut stmt = match conn.prepare("SELECT id, path FROM sources WHERE watched=1") {
             Ok(s) => s,
             Err(e) => {
-                log::error!("watcher start_all: preparation de la requete sources echouee: {e}");
+                log::error!("watcher start_all: préparation de la requête sources échouée: {e}");
                 return;
             }
         };
         let rows = match stmt.query_map([], |r| Ok((r.get(0)?, r.get(1)?))) {
             Ok(r) => r,
             Err(e) => {
-                log::error!("watcher start_all: lecture des sources echouee: {e}");
+                log::error!("watcher start_all: lecture des sources échouée: {e}");
                 return;
             }
         };

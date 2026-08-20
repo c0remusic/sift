@@ -681,7 +681,7 @@ mod dup_count_cache_tests {
         );
     }
 
-    /// Une signature differente est un jeu `filed` different : le cache ne doit pas repondre.
+    /// Une signature différente est un jeu `filed` différent : le cache ne doit pas répondre.
     #[test]
     fn a_different_signature_recomputes() {
         let _serial = fresh();
@@ -723,13 +723,13 @@ mod dup_count_cache_tests {
         assert_eq!(
             recomputed.load(Ordering::SeqCst),
             1,
-            "un comptage calcule par-dessus une invalidation ne doit jamais etre memorise"
+            "un comptage calculé par-dessus une invalidation ne doit jamais être mémorisé"
         );
         assert_eq!(second, 9);
     }
 
-    /// Sans invalidation concurrente, le resultat DOIT etre archive — sinon le garde de generation
-    /// serait trop strict et le cache ne servirait jamais. Temoin symetrique du test precedent.
+    /// Sans invalidation concurrente, le résultat DOIT être archivé — sinon le garde de génération
+    /// serait trop strict et le cache ne servirait jamais. Témoin symétrique du test précédent.
     #[test]
     fn without_concurrent_invalidation_the_result_is_stored() {
         let _serial = fresh();
@@ -765,7 +765,7 @@ mod dup_count_cache_tests {
         assert_eq!(
             calls.load(Ordering::SeqCst),
             1,
-            "un echec ne doit rien memoriser"
+            "un échec ne doit rien mémoriser"
         );
     }
 }
@@ -1212,7 +1212,7 @@ mod tests {
         assert_eq!(
             rows[0].format.as_deref(),
             Some("aiff"),
-            "l'ecran doit montrer une extension, pas 'aiff_16_44'"
+            "l'écran doit montrer une extension, pas 'aiff_16_44'"
         );
 
         let mp3 = LibraryFilter {
@@ -1324,7 +1324,7 @@ mod tests {
         // calculer le comptage elle-même, l'assertion casse et signale le retour en arrière.
         assert_eq!(
             stats.duplicates, 0,
-            "library_stats ne doit PAS calculer le comptage de doublons: il decode du disque et \
+            "library_stats ne doit PAS calculer le comptage de doublons: il décode du disque et \
              son appelant le fait hors du verrou global (SYS-1)"
         );
         let house = stats.genres.iter().find(|g| g.genre == "House").unwrap();

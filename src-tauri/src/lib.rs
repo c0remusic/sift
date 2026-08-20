@@ -216,9 +216,9 @@ pub fn run() {
             let dir = app
                 .path()
                 .app_data_dir()
-                .map_err(|e| format!("dossier de donnees de l'application introuvable: {e}"))?;
+                .map_err(|e| format!("dossier de données de l'application introuvable: {e}"))?;
             std::fs::create_dir_all(&dir)
-                .map_err(|e| format!("creation du dossier de donnees {} impossible: {e}", dir.display()))?;
+                .map_err(|e| format!("création du dossier de données {} impossible: {e}", dir.display()))?;
             let db_path = dir.join("sift.db");
             let conn = db::open(&db_path)
                 .map_err(|e| format!("ouverture de la base {} impossible: {e}", db_path.display()))?;
@@ -231,7 +231,7 @@ pub fn run() {
                 std::process::id()
             );
             settings::set(&conn, settings::CURRENT_SESSION_ID, &session_id)
-                .map_err(|e| format!("ecriture de l'identifiant de session impossible: {e}"))?;
+                .map_err(|e| format!("écriture de l'identifiant de session impossible: {e}"))?;
             app.manage(Mutex::new(conn));
             app.manage(ipc_filing::FilingCancel::default());
             // Le scope du protocole `asset:` part VIDE (`tauri.conf.json`) et se remplit ici, au
@@ -249,7 +249,7 @@ pub fn run() {
                 .map_err(|e| format!("dossier de cache de l'application introuvable: {e}"))?
                 .join("covers");
             std::fs::create_dir_all(&covers).map_err(|e| {
-                format!("creation du cache de pochettes {} impossible: {e}", covers.display())
+                format!("création du cache de pochettes {} impossible: {e}", covers.display())
             })?;
             app.asset_protocol_scope()
                 .allow_directory(&covers, false)

@@ -520,7 +520,7 @@ impl MetadataProvider for Discogs {
                         return Err(e);
                     }
                     log::warn!(
-                        "Discogs search [{rank}] q={attempt:?} a echoue, arret de la cascade sur les candidats deja trouves: {e:?}"
+                        "Discogs search [{rank}] q={attempt:?} a échoué, arrêt de la cascade sur les candidats déjà trouvés: {e:?}"
                     );
                     break;
                 }
@@ -626,7 +626,7 @@ mod tests {
             (1 + TRACKLIST_PROBE) + (LADDER_MAX_ATTEMPTS - 1) * (1 + TRACKLIST_PROBE_DEGRADED);
         assert!(
             new_worst <= old_worst,
-            "budget reseau degrade : {new_worst} requetes au pire contre {old_worst} avant"
+            "budget réseau dégradé : {new_worst} requêtes au pire contre {old_worst} avant"
         );
     }
 

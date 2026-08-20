@@ -14,12 +14,12 @@ use serde::{Deserialize, Serialize};
 /// Gate `any(windows, test)` et non `windows` seul, pour tenir deux exigences a la fois :
 ///
 /// - **macOS n'en a aucun usage.** Il formate par `diskutil eraseDisk FAT32` (`macos.rs`), qui
-///   ne connait pas le plafond de 32 Go — ce module n'existe QUE pour contourner Windows. Ses
+///   ne connaît pas le plafond de 32 Go — ce module n'existe QUE pour contourner Windows. Ses
 ///   seuls appelants, `privileged.rs` et `windows.rs`, sont eux-memes gates Windows. Sans gate,
 ///   le binaire macOS compilait et liait `fatfs` pour du code que rien n'y appelle.
-/// - **Les tests doivent tourner sur n'importe quelle machine.** C'etait la raison d'etre de
+/// - **Les tests doivent tourner sur n'importe quelle machine.** C'était la raison d'être de
 ///   l'absence de gate ; `test` la preserve telle quelle. `fatfs` est donc declare deux fois
-///   dans `Cargo.toml` : en dependance `cfg(windows)` pour la production, et en
+///   dans `Cargo.toml` : en dépendance `cfg(windows)` pour la production, et en
 ///   dev-dependance pour que ces tests compilent partout.
 #[cfg(any(target_os = "windows", test))]
 pub mod fat32;
@@ -30,9 +30,9 @@ pub mod privileged;
 #[cfg(target_os = "windows")]
 pub mod raw_volume;
 
-/// Alignement secteur pour les ecritures sur volume brut. Meme gate que `fat32` ci-dessus, et
-/// pour la meme raison : son unique appelant est `privileged.rs`, gate Windows. La logique est
-/// pure (`std::io` seul, aucune dependance externe), donc `test` suffit a garder ses tests sur
+/// Alignement secteur pour les écritures sur volume brut. Même gate que `fat32` ci-dessus, et
+/// pour la même raison : son unique appelant est `privileged.rs`, gate Windows. La logique est
+/// pure (`std::io` seul, aucune dépendance externe), donc `test` suffit à garder ses tests sur
 /// n'importe quelle machine.
 #[cfg(any(target_os = "windows", test))]
 pub mod sector_io;
@@ -71,11 +71,11 @@ pub struct RemovableDrive {
     pub free_bytes: u64,
     pub current_fs: String,
     /// Nom du volume actuel (`"DJERMUSIQUE"`), vide si le disque n'est pas formate. Sert de valeur
-    /// par defaut au champ de nom de la modale : reformater une cle en gardant son nom est le cas
+    /// par défaut au champ de nom de la modale : reformater une clé en gardant son nom est le cas
     /// courant, le retaper a chaque fois serait une corvee.
     pub volume_name: String,
-    /// Etat de sante du volume, deja formule en francais par le backend. Vide quand il n'y a aucun
-    /// volume monte a interroger — un disque RAW n'a pas de sante de systeme de fichiers.
+    /// État de santé du volume, déjà formulé en français par le backend. Vide quand il n'y a aucun
+    /// volume monté à interroger — un disque RAW n'a pas de santé de système de fichiers.
     pub health: String,
     /// `false` for a card reader / drive bay that is enumerated but empty. Such a device is a
     /// real removable disk with a real drive letter — Windows keeps showing `E:` in Explorer with
@@ -161,11 +161,11 @@ pub trait RemovableDriveBackend {
         fs: TargetFs,
         label: &str,
     ) -> Result<(), UsbFormatError>;
-    /// Demonte le disque pour qu il puisse etre debranche sans risque.
+    /// Démonte le disque pour qu il puisse être débranché sans risque.
     ///
-    /// Doit VERIFIER que le disque a bien disparu avant de rendre `Ok` : sur les deux OS la
-    /// demande d ejection est asynchrone et reussit silencieusement meme quand le systeme la
-    /// refuse ensuite. Annoncer un succes non verifie ici, c est inviter a debrancher un volume
+    /// Doit VÉRIFIER que le disque a bien disparu avant de rendre `Ok` : sur les deux OS la
+    /// demande d éjection est asynchrone et réussit silencieusement même quand le système la
+    /// refuse ensuite. Annoncer un succès non vérifié ici, c est inviter à débrancher un volume
     /// encore monte.
     fn eject(&self, drive: &RemovableDrive) -> Result<(), UsbFormatError>;
 }

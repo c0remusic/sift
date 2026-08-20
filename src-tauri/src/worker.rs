@@ -536,16 +536,16 @@ pub(crate) mod tests {
         let selected = select_pending(&conn).unwrap();
         assert!(
             !selected.contains(&courant),
-            "un verdict a la version courante n'a aucune raison d'etre recalcule"
+            "un verdict à la version courante n'a aucune raison d'être recalculé"
         );
         assert!(
             selected.contains(&perime),
-            "un verdict d'un autre moteur doit etre repris — sinon la version est detectable \
-             et jamais reparee, et la file affiche « non analyse » pour toujours"
+            "un verdict d'un autre moteur doit être repris — sinon la version est détectable \
+             et jamais réparée, et la file affiche « non analysé » pour toujours"
         );
         assert!(
             selected.contains(&jamais_stampe),
-            "une version absente vaut une version differente : defaut de cache"
+            "une version absente vaut une version différente : défaut de cache"
         );
         assert!(
             !selected.contains(&casse),

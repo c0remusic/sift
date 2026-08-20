@@ -63,7 +63,7 @@ impl std::error::Error for UsageError {}
 /// toucher un disque.
 /// Version du schéma de classement. **À incrémenter dès que `bucket_for` change de résultat.**
 ///
-/// Le cache d'occupation s'invalide sur l'espace libre, ce qui detecte un contenu qui bouge — mais
+/// Le cache d'occupation s'invalide sur l'espace libre, ce qui détecte un contenu qui bouge — mais
 /// pas un classement qui change : un disque intact garderait indéfiniment une ventilation calculée
 /// par une ancienne règle. Le dépôt connaît déjà ce piège, c'est toute la raison d'être de la
 /// migration v16 (`analysis::REPORT_CACHE_VERSION` bumpée sans purge, 3907 rapports devenus
@@ -251,8 +251,8 @@ mod tests {
         assert_eq!(bucket_for(&PathBuf::from("sauvegardes/export.pdb")), ".pdb");
     }
 
-    /// Le defaut trouve en faisant tourner le graphique sur le vrai disque DJ : 14,9 Go de `.aif`
-    /// et 5,2 Go de `.aiff` en deux segments, pour un seul et meme format.
+    /// Le défaut trouvé en faisant tourner le graphique sur le vrai disque DJ : 14,9 Go de `.aif`
+    /// et 5,2 Go de `.aiff` en deux segments, pour un seul et même format.
     #[test]
     fn aif_and_aiff_are_one_format() {
         assert_eq!(bucket_for(&PathBuf::from("a.aif")), ".aiff");
@@ -272,13 +272,13 @@ mod tests {
     }
 
     /// La table d'equivalences reste courte exprès : renommer une extension inconnue inventerait
-    /// une equivalence, ce qui est pire que la scission qu'on corrige.
+    /// une équivalence, ce qui est pire que la scission qu'on corrige.
     #[test]
     fn unknown_extensions_are_never_renamed() {
         for p in ["a.wav", "b.mp3", "c.flac", "d.xyz", "e.opus"] {
             let bucket = bucket_for(&PathBuf::from(p));
             let ext = format!(".{}", p.rsplit('.').next().unwrap_or(""));
-            assert_eq!(bucket, ext, "{p} ne doit pas etre renomme");
+            assert_eq!(bucket, ext, "{p} ne doit pas être renommé");
         }
     }
 
@@ -352,7 +352,7 @@ mod tests {
         let wav = find(".wav").expect("wav manquant");
         assert_eq!(
             wav.bytes, 1500,
-            "les deux .wav de dossiers differents s'additionnent"
+            "les deux .wav de dossiers différents s'additionnent"
         );
         assert_eq!(wav.file_count, 2);
         assert_eq!(find(".mp3").expect("mp3").bytes, 200);

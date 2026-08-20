@@ -224,7 +224,7 @@ mod tests {
         assert_eq!(
             cached(v(), Some(VERDICT_CACHE_VERSION)),
             v(),
-            "version courante : le verdict en cache doit etre servi tel quel"
+            "version courante : le verdict en cache doit être servi tel quel"
         );
         assert_eq!(
             cached(v(), None),
@@ -234,7 +234,7 @@ mod tests {
         assert_eq!(
             cached(v(), Some(VERDICT_CACHE_VERSION + 1)),
             None,
-            "version differente : pas de verdict courant"
+            "version différente : pas de verdict courant"
         );
     }
 

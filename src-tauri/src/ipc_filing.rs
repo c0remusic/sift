@@ -387,7 +387,7 @@ fn reserve_filing(track_id: i64, dest: &str) -> Result<(), String> {
                 log::error!(
                     "file_track: destination already claimed by another in-flight filing: {dest}"
                 );
-                return Err("destination deja reservee par une conversion en cours".to_string());
+                return Err("destination déjà réservée par une conversion en cours".to_string());
             }
             Ok(())
         }
@@ -776,7 +776,7 @@ fn run_file_batch(
         // as "not in flight": the batch keeps running, and the claim below still refuses the real
         // collision — bailing out of an already-launched batch would be worse.
         if is_filing_inflight(id).unwrap_or(false) {
-            log::warn!("file_batch: piste {id} deja en cours de rangement, mise en validation");
+            log::warn!("file_batch: piste {id} déjà en cours de rangement, mise en validation");
             needs_validation.push(id);
             continue;
         }
@@ -865,7 +865,7 @@ fn run_file_batch(
                         Ok(mut q) => q.pop(),
                         Err(e) => {
                             // Sortir en silence ici rendait un worker aveugle sans une trace:
-                            // meme defaut que celui corrige dans worker.rs (.claude/rules/rust.md,
+                            // même défaut que celui corrigé dans worker.rs (.claude/rules/rust.md,
                             // « Mutex empoisonne : logger avant de bailer, jamais un retour muet »).
                             log::error!("file_batch: job queue poisoned, worker stops: {e}");
                             break;
@@ -875,14 +875,14 @@ fn run_file_batch(
                 let Some(job) = job else { break };
                 // catch_unwind, comme `run_file_track` (phase 2 du chemin UNITAIRE, plus haut dans
                 // ce fichier) qui l'a depuis un audit precedent. `execute_file` decode et reencode
-                // un fichier utilisateur arbitraire via le sidecar ffmpeg puis ecrit des tags avec
-                // lofty: surface d'entree non maitrisee, sur un thread que personne ne join.
+                // un fichier utilisateur arbitraire via le sidecar ffmpeg puis écrit des tags avec
+                // lofty: surface d'entrée non maîtrisée, sur un thread que personne ne join.
                 //
                 // Sans cette garde, un panic tuait le worker AVANT son `tx.send`. La piste
                 // n'apparaissait alors NI dans `filed` NI dans `needs_validation` du BatchResult
-                // final: elle n'etait pas dans `outcomes` (aucun envoi) et pas non plus dans le
+                // final: elle n'était pas dans `outcomes` (aucun envoi) et pas non plus dans le
                 // rattrapage de fin de fonction, qui ne reprend que les jobs jamais depiles — or
-                // celui-ci l'avait ete. L'ecran la peignait « fait ». Audit 2026-07-28, CC-2.
+                // celui-ci l'avait été. L'écran la peignait « fait ». Audit 2026-07-28, CC-2.
                 // Même plafond global que le chemin unitaire (cf. `ENCODE_SLOTS`). Le pool est déjà
                 // borné à `worker_n`, mais il doit décompter des MÊMES places que `file_track`,
                 // sinon batch et clics s'additionnent au lieu de partager la borne.
@@ -903,7 +903,7 @@ fn run_file_batch(
                             "file_batch: execute panicked for track {}: {payload:?}",
                             job.id
                         );
-                        None // traite comme un echec ordinaire -> needs_validation en phase 3
+                        None // traité comme un échec ordinaire -> needs_validation en phase 3
                     }
                 };
                 if tx
@@ -1006,8 +1006,8 @@ fn run_file_batch(
                     Err(_) => needs_validation.push(o.id),
                 }
             }
-            // execute_file a echoue ou panique; il a lui-meme remis le systeme de fichiers en
-            // etat, y compris les tags ecrits en place sur le chemin conformant (CR-3).
+            // execute_file a échoué ou paniqué; il a lui-même remis le système de fichiers en
+            // état, y compris les tags écrits en place sur le chemin conformant (CR-3).
             None => needs_validation.push(o.id),
         }
         app.emit(

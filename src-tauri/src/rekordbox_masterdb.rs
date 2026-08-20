@@ -3008,7 +3008,7 @@ mod tests {
         }
 
         println!(
-            "derive_keys: {} iterations PBKDF2-HMAC-SHA512 (+{} HMAC) | moyenne {:?} sur {RUNS} tours | pire {:?}",
+            "derive_keys: {} itérations PBKDF2-HMAC-SHA512 (+{} HMAC) | moyenne {:?} sur {RUNS} tours | pire {:?}",
             KDF_ITER, HMAC_KDF_ITER, total / RUNS, worst
         );
     }

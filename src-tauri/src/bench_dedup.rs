@@ -410,7 +410,7 @@ mod tests {
         }
         assert_ne!(
             durations[9], durations[8],
-            "au-dela de dup_pairs, plus de partage"
+            "au-delà de dup_pairs, plus de partage"
         );
     }
 }

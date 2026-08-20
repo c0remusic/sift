@@ -142,7 +142,7 @@ fn bench_sqlite_lock_wait_under_analysis_load() {
                         {
                             busy.fetch_add(1, Ordering::Relaxed);
                         }
-                        Err(e) => panic!("ecriture inattendue en echec: {e}"),
+                        Err(e) => panic!("écriture inattendue en échec: {e}"),
                     }
                     drop(c);
                     i += workers;
@@ -185,7 +185,7 @@ fn bench_sqlite_lock_wait_under_analysis_load() {
         println!("\n=== Phase 5 · {label} ===");
         let n_writes = writes.load(Ordering::Relaxed);
         println!(
-            "  {workers} threads · {n_writes} ecritures de {} ko en {:.1?} · {} SQLITE_BUSY \
+            "  {workers} threads · {n_writes} écritures de {} ko en {:.1?} · {} SQLITE_BUSY \
              · verrou tenu {:.1} % du temps",
             REPORT_BYTES / 1024,
             ui_elapsed,
@@ -195,7 +195,7 @@ fn bench_sqlite_lock_wait_under_analysis_load() {
         );
         if n_writes == 0 {
             println!(
-                "  !! AUCUNE ECRITURE pendant la fenetre — la mesure ci-dessous est celle d'une \
+                "  !! AUCUNE ÉCRITURE pendant la fenêtre — la mesure ci-dessous est celle d'une \
                  base au repos, pas sous charge"
             );
         }
@@ -203,7 +203,7 @@ fn bench_sqlite_lock_wait_under_analysis_load() {
         let expected = (UI_WINDOW.as_millis() / UI_SAMPLE_EVERY.as_millis().max(1)) as usize;
         if waits.len() * 4 < expected {
             println!(
-                "  !! FAMINE : {} echantillon(s) au lieu de ~{expected} en {:.1?} — l'interface \
+                "  !! FAMINE : {} échantillon(s) au lieu de ~{expected} en {:.1?} — l'interface \
                  n'obtient pas le verrou, le chiffre ci-dessous n'est pas une latence mais une attente",
                 waits.len(),
                 ui_elapsed,
@@ -215,7 +215,7 @@ fn bench_sqlite_lock_wait_under_analysis_load() {
             "  attente du verrou (n={})  p50 {w50:>9.2?}  p95 {w95:>9.2?}  max {wmax:>9.2?}",
             waits.len()
         );
-        println!("  requete elle-meme         p50 {q50:>9.2?}  p95 {q95:>9.2?}  max {qmax:>9.2?}");
+        println!("  requête elle-même         p50 {q50:>9.2?}  p95 {q95:>9.2?}  max {qmax:>9.2?}");
     }
 }
 
@@ -230,9 +230,9 @@ fn bench_sqlite_lock_wait_under_analysis_load() {
 #[ignore]
 fn bench_analysis_cost_on_real_tracks() {
     let Ok(dir) = std::env::var("SIFT_BENCH_TRACKS_DIR") else {
-        println!("\n=== Phase 5 · cout d'analyse : IGNORE ===");
+        println!("\n=== Phase 5 · coût d'analyse : IGNORÉ ===");
         println!(
-            "  definir SIFT_BENCH_TRACKS_DIR sur un dossier contenant de vrais fichiers audio"
+            "  définir SIFT_BENCH_TRACKS_DIR sur un dossier contenant de vrais fichiers audio"
         );
         return;
     };
@@ -252,7 +252,7 @@ fn bench_analysis_cost_on_real_tracks() {
     files.sort();
     files.truncate(MAX_FILES);
 
-    println!("\n=== Phase 5 · cout d'une analyse (avec spectrogramme) ===");
+    println!("\n=== Phase 5 · coût d'une analyse (avec spectrogramme) ===");
     if files.is_empty() {
         println!("  aucun fichier audio dans {dir}");
         return;
@@ -292,24 +292,24 @@ fn bench_analysis_cost_on_real_tracks() {
                     &name[..name.len().min(40)],
                 );
             }
-            Err(e) => println!("  echec sur {name} : {e}"),
+            Err(e) => println!("  échec sur {name} : {e}"),
         }
     }
     if total_cpu.as_secs_f64() > 0.0 {
         let ratio = total_audio / total_cpu.as_secs_f64();
         println!(
-            "\n  cumul : {:.0} s d'audio en {:.1?} = {ratio:.1}x temps reel, un seul thread",
+            "\n  cumul : {:.0} s d'audio en {:.1?} = {ratio:.1}x temps réel, un seul thread",
             total_audio, total_cpu
         );
-        // 297,2 h = la duree totale des 2 690 pistes de plus de 60 s de la base de production
-        // (mesuree le 2026-08-03). C'est ce qu'une migration qui vide le cache ferait redecoder.
+        // 297,2 h = la durée totale des 2 690 pistes de plus de 60 s de la base de production
+        // (mesurée le 2026-08-03). C'est ce qu'une migration qui vide le cache ferait redécoder.
         let library_hours = 297.2f64;
         let single = library_hours * 3600.0 / ratio / 3600.0;
         let threads = std::thread::available_parallelism()
             .map(|n| n.get())
             .unwrap_or(4) as f64;
         println!(
-            "  extrapolation bibliotheque reelle (297,2 h d'audio) : {single:.1} h sur 1 thread, \
+            "  extrapolation bibliothèque réelle (297,2 h d'audio) : {single:.1} h sur 1 thread, \
              soit ~{:.1} h sur {threads:.0} threads",
             single / threads
         );

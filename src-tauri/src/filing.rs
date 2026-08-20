@@ -62,7 +62,7 @@ impl std::fmt::Display for FilingError {
             FilingError::RailMismatch => write!(f, "RAIL_MISMATCH"),
             FilingError::DestOccupied(p) => write!(
                 f,
-                "destination deja occupee par une autre piste rangee: {p}"
+                "destination déjà occupée par une autre piste rangée: {p}"
             ),
             FilingError::Encode(m) => write!(f, "encode: {m}"),
             FilingError::Tag(m) => write!(f, "tag: {m}"),
@@ -554,21 +554,21 @@ pub fn execute_file(plan: &FilePlan) -> Result<Vec<FsLog>, FilingError> {
             plan.extras.cover_path.as_deref(),
         )
         .map_err(FilingError::Tag)?;
-        // Le `?` nu manquait ici, et c'etait la seule fenetre du chemin conformant ou les tags
-        // etaient DEJA ecrases sur le fichier de l'utilisateur sans que rien ne puisse les
-        // remettre. Le deplacement echoue (disque plein, destination verrouillee, permission) et
+        // Le `?` nu manquait ici, et c'était la seule fenêtre du chemin conformant où les tags
+        // étaient DÉJÀ écrasés sur le fichier de l'utilisateur sans que rien ne puisse les
+        // remettre. Le déplacement échoue (disque plein, destination verrouillée, permission) et
         // la fonction sortait en laissant le fichier a sa place SOURCE, avec les nouveaux tags
-        // ecrits en place — et sans ligne de journal, puisque le journal n'est ecrit qu'en phase 3
+        // écrits en place — et sans ligne de journal, puisque le journal n'est écrit qu'en phase 3
         // depuis le `log` RETOURNE. Donc: aucun revert possible depuis l'app, aucune trace, et des
-        // tags que l'utilisateur n'a pas demandes sur un fichier qu'il croit intact.
+        // tags que l'utilisateur n'a pas demandés sur un fichier qu'il croit intact.
         //
-        // `log` porte deja la ligne `tag_edit` avec l'instantane des anciens tags (poussee juste
-        // au-dessus, AVANT l'ecriture, precisement pour ce cas). `rollback_fs` sait la rejouer.
-        // C'est le meme filet que celui de la phase 3 (commit_file), applique a la seule etape qui
-        // en etait privee. Audit 2026-07-28, CR-3.
+        // `log` porte déjà la ligne `tag_edit` avec l'instantané des anciens tags (poussée juste
+        // au-dessus, AVANT l'écriture, précisément pour ce cas). `rollback_fs` sait la rejouer.
+        // C'est le même filet que celui de la phase 3 (commit_file), appliqué à la seule étape qui
+        // en était privée. Audit 2026-07-28, CR-3.
         if let Err(e) = move_cross_disk_safe(&plan.source, Path::new(&plan.dest)) {
             log::error!(
-                "execute_file: move a echoue pour {}, restauration des tags d'origine: {e:?}",
+                "execute_file: move a échoué pour {}, restauration des tags d'origine: {e:?}",
                 plan.source
             );
             rollback_fs(&log);
@@ -678,7 +678,7 @@ fn rollback_fs(log: &[FsLog]) {
                 }
             }
             other => log::error!(
-                "rollback_fs: type d'effet inconnu {other:?} pour {}, non defait",
+                "rollback_fs: type d'effet inconnu {other:?} pour {}, non défait",
                 fs.from
             ),
         }
@@ -839,7 +839,7 @@ pub fn commit_file(
             // nothing is left half-filed. L'erreur est propagée TELLE QUELLE (elle est déjà une
             // `FilingError`) : la ré-emballer en `Db(e.to_string())` écrasait la variante — un
             // `DestOccupied`, seul cas où l'appelant peut dire à l'utilisateur ce qui bloque,
-            // ressortait en « db: destination deja occupee… », indistinguable d'une panne SQLite.
+            // ressortait en « db: destination déjà occupée… », indistinguable d'une panne SQLite.
             rollback_fs(&log);
             return Err(e);
         }
@@ -1459,30 +1459,30 @@ mod tests {
             "ce test ne vaut que pour le chemin conformant (tag en place puis move)"
         );
 
-        // Fait echouer le deplacement, apres que le plan a fige la destination.
+        // Fait échouer le déplacement, après que le plan a figé la destination.
         std::fs::remove_dir_all(root.join("House")).unwrap();
 
         // `FsLog` ne derive pas Debug (et ce n'est pas a ce test de le lui ajouter): on teste donc
-        // la variante d'erreur, pas la valeur complete.
+        // la variante d'erreur, pas la valeur complète.
         let err = execute_file(&plan).err();
         assert!(
             err.is_some(),
-            "le deplacement doit echouer une fois le dossier de destination supprime"
+            "le déplacement doit échouer une fois le dossier de destination supprimé"
         );
 
         assert!(
             src.exists(),
-            "le fichier source doit etre encore la: rien ne l'a deplace"
+            "le fichier source doit être encore là: rien ne l'a déplacé"
         );
         assert!(
             !std::path::Path::new(&plan.dest).exists(),
-            "rien ne doit avoir ete ecrit a la destination"
+            "rien ne doit avoir été écrit à la destination"
         );
         let after = crate::tagging::read_tags_full(src.to_str().unwrap()).unwrap();
         assert_eq!(
             after.artist.as_deref(),
             Some("OLD Artist"),
-            "les tags ecrits avant le move rate doivent avoir ete defaits: le fichier de \
+            "les tags écrits avant le move raté doivent avoir été défaits: le fichier de \
              l'utilisateur ne doit pas garder des tags issus d'un rangement qui n'a pas eu lieu"
         );
         assert_eq!(after.title.as_deref(), Some("OLD Title"));
@@ -2172,7 +2172,7 @@ mod tests {
         assert_eq!(status, "filed");
         assert_eq!(
             path, "D:/KEPT/Artiste - Titre (Club Mix).aif",
-            "tracks.path doit suivre le fichier, sinon la Bibliotheque pointe un fichier absent"
+            "tracks.path doit suivre le fichier, sinon la Bibliothèque pointe un fichier absent"
         );
     }
 
@@ -2266,7 +2266,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             filed_path, dest_s,
-            "prealable : le rangement repointe `path`"
+            "préalable : le rangement repointe `path`"
         );
 
         crate::actions::revert_batch(&conn, "b-revert").expect("revert_batch");
@@ -2288,7 +2288,7 @@ mod tests {
         assert_eq!(filename, "12 - vieux nom.wav");
         assert_eq!(
             size, 64,
-            "size_bytes doit redecrire la source restauree, pas le converti supprime"
+            "size_bytes doit redécrire la source restaurée, pas le converti supprimé"
         );
         assert_eq!(mtime, crate::scanner::mtime_secs(&restored_meta));
     }
@@ -2358,7 +2358,7 @@ mod tests {
             .unwrap();
         assert_eq!(
             filed_path, dest_s,
-            "prealable : le rangement repointe `path`"
+            "préalable : le rangement repointe `path`"
         );
 
         // Passage suivant du watcher sur le fichier tel qu'il est MAINTENANT sur le disque.
@@ -2398,14 +2398,14 @@ mod tests {
             status, "filed",
             "un rescan du fichier range ne doit pas le repasser en pending"
         );
-        assert!(analyzed_at.is_some(), "analyzed_at ne doit pas etre efface");
-        assert!(fingerprint.is_some(), "fingerprint ne doit pas etre efface");
-        assert!(report.is_some(), "report_json ne doit pas etre efface");
+        assert!(analyzed_at.is_some(), "analyzed_at ne doit pas être effacé");
+        assert!(fingerprint.is_some(), "fingerprint ne doit pas être effacé");
+        assert!(report.is_some(), "report_json ne doit pas être effacé");
 
         let rows: i64 = conn
             .query_row("SELECT count(*) FROM tracks", [], |r| r.get(0))
             .unwrap();
-        assert_eq!(rows, 1, "aucune ligne parasite ne doit apparaitre");
+        assert_eq!(rows, 1, "aucune ligne parasite ne doit apparaître");
     }
 
     /// Condition (c), cas rattrapable : entre le déplacement et la transaction, le watcher a inséré
@@ -2448,7 +2448,7 @@ mod tests {
             meta: None,
         }];
         commit_file(&conn, &plan, log, None, None)
-            .expect("une ligne pending concurrente ne doit pas faire echouer le rangement");
+            .expect("une ligne pending concurrente ne doit pas faire échouer le rangement");
 
         let (path, status): (String, String) = conn
             .query_row(
@@ -2505,7 +2505,7 @@ mod tests {
             meta: None,
         }];
         let err = commit_file(&conn, &plan, log, None, None)
-            .expect_err("une piste deja rangee a ce chemin est un vrai conflit");
+            .expect_err("une piste déjà rangée à ce chemin est un vrai conflit");
         assert_eq!(err, FilingError::DestOccupied(dest_s.clone()));
 
         // Le rangement a été défait : le fichier est revenu à sa source, la piste reste pending.
@@ -2527,7 +2527,7 @@ mod tests {
                 |r| r.get(0),
             )
             .unwrap();
-        assert_eq!(occupant, "filed", "l'occupant ne doit pas etre supprime");
+        assert_eq!(occupant, "filed", "l'occupant ne doit pas être supprimé");
     }
 
     #[test]
@@ -2783,7 +2783,7 @@ mod tests {
         let out = naming::render_filename(crate::settings::DEFAULT_TEMPLATE, &c, "aiff");
         assert!(
             !out.contains('{') && !out.contains('}'),
-            "un placeholder du modele par defaut n'est pas rendu: {out}"
+            "un placeholder du modèle par défaut n'est pas rendu: {out}"
         );
         assert_eq!(out, "A - T (V).aiff");
     }

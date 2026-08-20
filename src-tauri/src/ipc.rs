@@ -479,7 +479,7 @@ pub fn playback_url(
             )
             .map_err(|e| e.to_string())?;
         if known == 0 {
-            return Err(format!("chemin inconnu de la bibliotheque: {path}"));
+            return Err(format!("chemin inconnu de la bibliothèque: {path}"));
         }
     }
     let ext = std::path::Path::new(&path)
@@ -642,7 +642,7 @@ mod tests {
             mag_db: vec![9, 8, 7, 6, 5, 4],
         };
 
-        let json = cache_json(&mut r).expect("serialisation");
+        let json = cache_json(&mut r).expect("sérialisation");
 
         let relu: crate::analysis::AnalysisReport =
             serde_json::from_str(&json).expect("le cache doit rester deserialisable");

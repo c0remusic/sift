@@ -188,22 +188,22 @@ mod tests {
         assert_eq!(
             cached(fp(), Some(FINGERPRINT_CACHE_VERSION)),
             fp(),
-            "version courante : l'empreinte en cache doit etre servie telle quelle"
+            "version courante : l'empreinte en cache doit être servie telle quelle"
         );
         assert_eq!(
             cached(fp(), None),
             None,
-            "version absente (base d'avant la v22) : defaut de cache, pas une erreur"
+            "version absente (base d'avant la v22) : défaut de cache, pas une erreur"
         );
         assert_eq!(
             cached(fp(), Some(FINGERPRINT_CACHE_VERSION + 1)),
             None,
-            "version differente : defaut de cache"
+            "version différente : défaut de cache"
         );
         assert_eq!(
             cached(fp(), Some(FINGERPRINT_CACHE_VERSION - 1)),
             None,
-            "une version ANCIENNE est aussi peremee — la comparaison est d'egalite, pas d'ordre"
+            "une version ANCIENNE est aussi périmée — la comparaison est d'égalité, pas d'ordre"
         );
     }
 }

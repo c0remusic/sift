@@ -60,7 +60,7 @@ const WINDOW: Duration = Duration::from_secs(20);
 fn bench_files() -> Option<Vec<PathBuf>> {
     let Ok(dir) = std::env::var("SIFT_BENCH_TRACKS_DIR") else {
         println!("\n=== Ligne 6 · budget CPU : IGNORE ===");
-        println!("  definir SIFT_BENCH_TRACKS_DIR sur un dossier de vrais fichiers audio");
+        println!("  définir SIFT_BENCH_TRACKS_DIR sur un dossier de vrais fichiers audio");
         return None;
     };
     let mut files: Vec<PathBuf> = std::fs::read_dir(&dir)
@@ -173,16 +173,16 @@ fn bench_analysis_and_encode_cpu_budget() {
         .unwrap_or(0);
 
     let out_dir = std::env::temp_dir().join("sift-bench-cpu-budget");
-    std::fs::create_dir_all(&out_dir).expect("creation du dossier de sortie");
+    std::fs::create_dir_all(&out_dir).expect("création du dossier de sortie");
     let enc = |p: &Path, seq: usize| encode_work(&out_dir, p, seq);
 
     println!("\n=== Ligne 6 · budget CPU partage analyse <-> encodage ===");
-    println!("  coeurs disponibles   : {cores}");
+    println!("  cœurs disponibles   : {cores}");
     println!("  pool analyse (prod)  : {n_analysis} threads  [worker::analysis_pool_size]");
     println!("  pool encodage (prod) : {n_encode} process   [ipc_filing::phase2_worker_count]");
     println!("  lot                  : {} fichiers", files.len());
-    println!("  fenetre              : {WINDOW:?} par mesure");
-    println!("  ⚠ chaque process ffmpeg est lui-meme multi-thread : le total reel depasse");
+    println!("  fenêtre              : {WINDOW:?} par mesure");
+    println!("  ⚠ chaque process ffmpeg est lui-même multi-thread : le total réel dépasse");
     println!("    {n_analysis} + {n_encode} threads, c'est tout l'objet de la mesure.");
 
     // Préchauffage : une passe d'analyse hors mesure, pour que le cache disque du système soit
@@ -191,11 +191,11 @@ fn bench_analysis_and_encode_cpu_budget() {
     // jetée de ce benchmark.
     let never = AtomicBool::new(false);
     let warm = run_window(&files, n_analysis, &never, &analysis_work);
-    println!("\n  prechauffage (hors mesure) : {} lectures\n", warm.ok);
+    println!("\n  préchauffage (hors mesure) : {} lectures\n", warm.ok);
 
     let a_alone = run_window(&files, n_analysis, &never, &analysis_work);
     println!(
-        "  A · analyse seule    : {:>5} ok / {:>3} echecs en {:>6.2?}  -> {:>6.2} fichiers/s",
+        "  A · analyse seule    : {:>5} ok / {:>3} échecs en {:>6.2?}  -> {:>6.2} fichiers/s",
         a_alone.ok,
         a_alone.err,
         a_alone.elapsed,
@@ -204,7 +204,7 @@ fn bench_analysis_and_encode_cpu_budget() {
 
     let b_alone = run_window(&files, n_encode, &never, &enc);
     println!(
-        "  B · encodage seul    : {:>5} ok / {:>3} echecs en {:>6.2?}  -> {:>6.2} fichiers/s",
+        "  B · encodage seul    : {:>5} ok / {:>3} échecs en {:>6.2?}  -> {:>6.2} fichiers/s",
         b_alone.ok,
         b_alone.err,
         b_alone.elapsed,
@@ -232,11 +232,11 @@ fn bench_analysis_and_encode_cpu_budget() {
         )
     });
     println!(
-        "\n  C · analyse PENDANT encodage  : {:>5} ok / {:>3} echecs en {:>6.2?}  -> {:>6.2} fichiers/s",
+        "\n  C · analyse PENDANT encodage  : {:>5} ok / {:>3} échecs en {:>6.2?}  -> {:>6.2} fichiers/s",
         a_shared.ok, a_shared.err, a_shared.elapsed, a_shared.rate()
     );
     println!(
-        "  C · encodage PENDANT analyse  : {:>5} ok / {:>3} echecs en {:>6.2?}  -> {:>6.2} fichiers/s",
+        "  C · encodage PENDANT analyse  : {:>5} ok / {:>3} échecs en {:>6.2?}  -> {:>6.2} fichiers/s",
         b_shared.ok, b_shared.err, b_shared.elapsed, b_shared.rate()
     );
 
@@ -250,17 +250,17 @@ fn bench_analysis_and_encode_cpu_budget() {
             "    analyse {} ok, encodage {} ok — corriger l'environnement (ffmpeg bundle ?",
             a_alone.ok, b_alone.ok
         );
-        println!("    fichiers decodables ?) avant de relire ce benchmark.");
+        println!("    fichiers décodables ?) avant de relire ce benchmark.");
         return;
     }
 
     let keep_a = a_shared.rate() / a_alone.rate() * 100.0;
     let keep_b = b_shared.rate() / b_alone.rate() * 100.0;
-    println!("\n  DEBIT CONSERVE EN PARTAGE");
+    println!("\n  DÉBIT CONSERVÉ EN PARTAGE");
     println!("    analyse  : {keep_a:>6.1} %");
     println!("    encodage : {keep_b:>6.1} %");
     println!(
-        "    somme    : {:>6.1} %   (200 % = cohabitation parfaite, 100 % = ressource saturee)",
+        "    somme    : {:>6.1} %   (200 % = cohabitation parfaite, 100 % = ressource saturée)",
         keep_a + keep_b
     );
 
@@ -268,16 +268,16 @@ fn bench_analysis_and_encode_cpu_budget() {
     println!(
         "\n  Lecture : {}",
         if sum >= 170.0 {
-            "cohabitation. Fermer la ligne 6 en « ecartee, motif mesure »."
+            "cohabitation. Fermer la ligne 6 en « écartée, motif mesure »."
         } else if sum >= 130.0 {
-            "contention partielle. Decider sur la gene percue, pas sur ce seul chiffre."
+            "contention partielle. Décider sur la gêne perçue, pas sur ce seul chiffre."
         } else {
-            "ressource saturee. Le budget partage de la spec est justifie."
+            "ressource saturée. Le budget partagé de la spec est justifié."
         }
     );
     if (keep_a - keep_b).abs() > 40.0 {
-        println!("  ⚠ Asymetrie forte : une charge ecrase l'autre. C'est l'ordonnancement qui");
-        println!("    est en cause, pas le budget total — le semaphore n'y repondrait pas.");
+        println!("  ⚠ Asymétrie forte : une charge écrase l'autre. C'est l'ordonnancement qui");
+        println!("    est en cause, pas le budget total — le sémaphore n'y répondrait pas.");
     }
 }
 
@@ -312,14 +312,14 @@ fn bench_interactive_latency_under_load() {
     let n_analysis = crate::worker::analysis_pool_size();
     let n_encode = crate::ipc_filing::phase2_worker_count();
     let out_dir = std::env::temp_dir().join("sift-bench-interactive");
-    std::fs::create_dir_all(&out_dir).expect("creation du dossier de sortie");
+    std::fs::create_dir_all(&out_dir).expect("création du dossier de sortie");
     let enc = |p: &Path, seq: usize| encode_work(&out_dir, p, seq);
     let mesures = files.len().min(8);
 
     println!("\n=== Issue #18 · latence du chemin INTERACTIF ===");
-    println!("  ce chemin est `ipc::analyze_path` en defaut de cache : un decode sur le thread");
+    println!("  ce chemin est `ipc::analyze_path` en défaut de cache : un decode sur le thread");
     println!("  d'invoke, donc NI dans le pool d'analyse NI dans le pool d'encodage.");
-    println!("  mesures : {mesures} analyses sequentielles, mediane et pire cas");
+    println!("  mesures : {mesures} analyses séquentielles, médiane et pire cas");
 
     // Préchauffage, même raison que dans l'autre mesure : sans lui la première fenêtre paie les
     // lectures disque des suivantes.
@@ -346,26 +346,26 @@ fn bench_interactive_latency_under_load() {
     let med_charge = sous_charge[sous_charge.len() / 2];
 
     println!(
-        "\n  seule       : mediane {:>7.2?}   pire {:>7.2?}",
+        "\n  seule       : médiane {:>7.2?}   pire {:>7.2?}",
         med_seule,
         seule[seule.len() - 1]
     );
     println!(
-        "  sous charge : mediane {:>7.2?}   pire {:>7.2?}",
+        "  sous charge : médiane {:>7.2?}   pire {:>7.2?}",
         med_charge,
         sous_charge[sous_charge.len() - 1]
     );
     let facteur = med_charge.as_secs_f64() / med_seule.as_secs_f64().max(f64::EPSILON);
-    println!("\n  FACTEUR SUR L'ATTENTE PERCUE : x{facteur:.2}");
+    println!("\n  FACTEUR SUR L'ATTENTE PERÇUE : x{facteur:.2}");
     println!(
         "  Lecture : {}",
         if facteur < 1.5 {
             "le fond ne gene pas l'ouverture d'une piste."
         } else if facteur < 3.0 {
-            "gene reelle. Le levier est de brider LES DEUX pools pendant un decode interactif,"
+            "gêne réelle. Le levier est de brider LES DEUX pools pendant un decode interactif,"
         } else {
             "gene majeure : l'ouverture d'une piste paie tout le travail de fond."
         }
     );
-    println!("  et surtout PAS un semaphore entre eux, qui laisserait ce chemin inchange.");
+    println!("  et surtout PAS un sémaphore entre eux, qui laisserait ce chemin inchangé.");
 }

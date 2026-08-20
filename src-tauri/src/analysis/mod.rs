@@ -94,26 +94,26 @@ pub struct AnalysisReport {
     pub container_ok: bool,
     pub codec_error: Option<String>,
     pub truncated: bool,
-    /// Platitude spectrale de la bande 16-20 kHz, mediane sur les trames, en dB. `None` quand la
-    /// bande n'existe pas a ce taux d'echantillonnage.
+    /// Platitude spectrale de la bande 16-20 kHz, médiane sur les trames, en dB. `None` quand la
+    /// bande n'existe pas à ce taux d'échantillonnage.
     ///
     /// Un FAIT sur le fichier tel qu'il est, pas une affirmation sur son histoire : « l'aigu est
-    /// clairseme » se mesure, « ca a ete un MP3 » ne se deduit pas. Un master volontairement
-    /// sombre et un transcodage donnent la meme valeur.
+    /// clairsemé » se mesure, « ça a été un MP3 » ne se déduit pas. Un master volontairement
+    /// sombre et un transcodage donnent la même valeur.
     ///
     /// Depuis le 2026-08-18, `verdict()` LA LIT — mais uniquement pour rendre DOUTEUX, jamais
     /// Faux, et seulement sur un fichier a bande pleine ou la coupure n'a plus rien a dire. La
-    /// nommer Faux reviendrait a accuser un master d'une histoire qu'on n'a pas etablie ; le dire
+    /// nommer Faux reviendrait à accuser un master d'une histoire qu'on n'a pas établie ; le dire
     /// douteux ne dit que ce qui est mesure.
     ///
-    /// Repere mesure (2026-08-18) : 44 fichiers authentiques de trois familles musicales et trois
+    /// Repère mesuré (2026-08-18) : 44 fichiers authentiques de trois familles musicales et trois
     /// provenances d'achat tiennent dans [-5,4 ; -2,5] dB, les transcodages descendent a -43,8.
-    /// Voir `spectrum::HF_FLATNESS_LO_HZ` pour le detail.
+    /// Voir `spectrum::HF_FLATNESS_LO_HZ` pour le détail.
     #[serde(default)]
     pub hf_flatness_db: Option<f32>,
-    /// Meme mesure sur une bande RELATIVE au Nyquist (0,80-0,98) et non en Hz fixes. Les deux sont
-    /// necessaires : chacune est aveugle la ou l'autre voit. Un MP3 128 coupe a 16,8 kHz, donc la
-    /// bande relative tombe entierement au-dessus de sa coupure, sur un plancher uniforme donc
+    /// Même mesure sur une bande RELATIVE au Nyquist (0,80-0,98) et non en Hz fixes. Les deux sont
+    /// nécessaires : chacune est aveugle là où l'autre voit. Un MP3 128 coupe à 16,8 kHz, donc la
+    /// bande relative tombe entièrement au-dessus de sa coupure, sur un plancher uniforme donc
     /// parfaitement plat ; un Opus est a 48 kHz et garde du contenu jusqu'a 20 kHz, donc la bande
     /// FIXE y est en pleine bande passante et ne voit rien.
     ///
@@ -123,19 +123,19 @@ pub struct AnalysisReport {
     /// sur de l'ambient. Voir `spectrum::HF_FLATNESS_REL_LO`.
     #[serde(default)]
     pub hf_flatness_top_db: Option<f32>,
-    /// Duree REELLEMENT decodee, en secondes — a comparer a `duration_sec`, qui vient de l'en-tete.
+    /// Durée RÉELLEMENT décodée, en secondes — à comparer à `duration_sec`, qui vient de l'en-tête.
     ///
-    /// Les deux etaient jusqu'ici une seule valeur, celle DECLAREE, et personne ne verifiait
-    /// qu'elle correspondait au son present. Un en-tete peut annoncer 6 minutes sur un fichier
+    /// Les deux étaient jusqu'ici une seule valeur, celle DÉCLARÉE, et personne ne vérifiait
+    /// qu'elle correspondait au son présent. Un en-tête peut annoncer 6 minutes sur un fichier
     /// tronque a 40 secondes : rien dans le rapport ne le disait, parce que `truncated` teste une
-    /// coupure ABRUPTE du signal, pas un desaccord de comptage. Les deux echouent sur des cas
-    /// differents — un fichier qui fond proprement vers le silence avant sa fin annoncee passe
+    /// coupure ABRUPTE du signal, pas un désaccord de comptage. Les deux échouent sur des cas
+    /// différents — un fichier qui fond proprement vers le silence avant sa fin annoncée passe
     /// l'un et pas l'autre.
     ///
-    /// Rendu brut plutot qu'en booleen : c'est l'appelant qui decide de la tolerance, et un ecart
-    /// se lit mieux en secondes qu'en « vrai ». Fakin' The Funk fait la meme comparaison et en
+    /// Rendu brut plutôt qu'en booléen : c'est l'appelant qui décide de la tolérance, et un écart
+    /// se lit mieux en secondes qu'en « vrai ». Fakin' The Funk fait la même comparaison et en
     /// tire sa classe CORROMPU (« Actual duration does not match stated duration ») ; nous ne la
-    /// faisions pas du tout, alors que le fichier est deja decode entierement.
+    /// faisions pas du tout, alors que le fichier est déjà décodé entièrement.
     #[serde(default)]
     pub decoded_duration_sec: f32,
     pub silence_head_ms: u32,
@@ -157,17 +157,17 @@ pub struct AnalysisReport {
 /// explicit instead of leaving inflated rows served forever.
 ///
 /// ⚠️ **Un ajout de champ ne suffit PAS à se garder tout seul quand il porte `#[serde(default)]`.**
-/// Le commentaire ci-dessus dit qu'une addition de champ est « deja attrapee par
-/// `serde_json::from_str` qui echoue » — c'est vrai d'un champ nu, et faux d'un champ defaulte.
+/// Le commentaire ci-dessus dit qu'une addition de champ est « déjà attrapée par
+/// `serde_json::from_str` qui échoue » — c'est vrai d'un champ nu, et faux d'un champ defaulte.
 /// v7 : `hf_flatness_db` et `decoded_duration_sec` sont arrives avec un `default`, donc les
-/// anciens rapports se relisaient sans erreur et rendaient `None`/`0`. Consequence mesuree dans
-/// la vraie fenetre le 2026-08-18 : la ligne « Densite de l'aigu » n'apparaissait sur AUCUNE piste
-/// de la bibliotheque, alors que la mesure venait d'etre branchee. Une mesure invisible ne mesure
+/// anciens rapports se relisaient sans erreur et rendaient `None`/`0`. Conséquence mesurée dans
+/// la vraie fenêtre le 2026-08-18 : la ligne « Densité de l'aigu » n'apparaissait sur AUCUNE piste
+/// de la bibliothèque, alors que la mesure venait d'être branchée. Une mesure invisible ne mesure
 /// rien.
 ///
-/// Le cout est celui de v16, mesure a l'epoque : la bibliotheque se re-analyse (~30 min sur le
-/// pool pour 297 h d'audio). Il se paie en arriere-plan pour les pistes en file, et a l'ouverture
-/// pour les pistes rangees (`ipc::analyze_path` se repare tout seul).
+/// Le coût est celui de v16, mesuré à l'époque : la bibliothèque se re-analyse (~30 min sur le
+/// pool pour 297 h d'audio). Il se paie en arrière-plan pour les pistes en file, et à l'ouverture
+/// pour les pistes rangées (`ipc::analyze_path` se répare tout seul).
 pub const REPORT_CACHE_VERSION: i64 = 8;
 
 use dynamics::{ClipAccumulator, DcAccumulator, TruePeakAccumulator};
@@ -214,9 +214,9 @@ pub fn analyze(path: &str, with_spectrogram: bool) -> Result<AnalysisReport, Str
     let mut spec = SpectrumAccumulator::new(sr, FFT_SIZE, with_spectrogram);
     let mut ph = PhaseAccumulator::new();
 
-    // Nombre d'echantillons MONO reellement decodes — la seule facon de savoir combien de son le
+    // Nombre d'échantillons MONO réellement décodés — la seule façon de savoir combien de son le
     // fichier contient vraiment, par opposition a ce que son en-tete annonce. Compte ici et pas
-    // dans un accumulateur existant pour que la mesure ne depende d'aucun de leurs seuils.
+    // dans un accumulateur existant pour que la mesure ne dépende d'aucun de leurs seuils.
     let mut decoded_mono_samples: u64 = 0;
     let info = decode::decode_pcm(path, target_ch, |block| {
         decoded_mono_samples += (block.len() / target_ch as usize) as u64;
@@ -419,7 +419,7 @@ mod corpus {
                 }
             }
         }
-        println!("-- {seen} fichiers audio parcourus, {failed} en echec");
+        println!("-- {seen} fichiers audio parcourus, {failed} en échec");
         assert!(seen > 0, "aucun fichier audio dans {dir} — mesure vide");
     }
 }
@@ -472,12 +472,12 @@ mod tests {
         // Contrôle positif : sans lui, un zéro partout passerait l'assertion suivante.
         assert!(
             r.decoded_duration_sec > 0.5,
-            "rien n'a ete decode, la mesure ne vaut rien: {}",
+            "rien n'a été décodé, la mesure ne vaut rien: {}",
             r.decoded_duration_sec
         );
         assert!(
             (r.decoded_duration_sec - 1.0).abs() < 0.15,
-            "1 s de son est reellement presente, mesure {}",
+            "1 s de son est réellement présente, mesure {}",
             r.decoded_duration_sec
         );
         // Ce que la fixture établit, et ce qu'elle n'établit pas — mesuré, pas supposé : sur ce
@@ -491,7 +491,7 @@ mod tests {
         // Xing ment) et n'est couvert par aucun test.
         assert_eq!(
             r.duration_sec, 0.0,
-            "lofty rend 0 sur cet en-tete incoherent — si ca change, ce test doit etre relu"
+            "lofty rend 0 sur cet en-tête incohérent — si ça change, ce test doit être relu"
         );
     }
 

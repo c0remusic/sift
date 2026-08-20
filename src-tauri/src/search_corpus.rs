@@ -45,7 +45,7 @@ pub const CASES: &[Case] = &[
         artist: "Subsound",
         title: "Universal Sky",
         version: None,
-        note: "face vinyle 'A1.' en tete, sinon nom propre",
+        note: "face vinyle 'A1.' en tête, sinon nom propre",
     },
     Case {
         folder: "(2002) The Universal Sky",
@@ -53,7 +53,7 @@ pub const CASES: &[Case] = &[
         artist: "Subsound",
         title: "Electronix",
         version: None,
-        note: "face vinyle 'B2.' en tete",
+        note: "face vinyle 'B2.' en tête",
     },
     Case {
         folder: "(2002) The Universal Sky",
@@ -61,7 +61,7 @@ pub const CASES: &[Case] = &[
         artist: "Subsound",
         title: "Universal Sky",
         version: None,
-        note: "TEMOIN: nom deja propre, ne doit pas se degrader",
+        note: "TÉMOIN: nom déjà propre, ne doit pas se dégrader",
     },
     Case {
         folder: "(sk029) The Persuader - City Of Islands (1998)",
@@ -69,7 +69,7 @@ pub const CASES: &[Case] = &[
         artist: "The Persuader",
         title: "Djurgardsbron",
         version: None,
-        note: "face vinyle entre parentheses '(a1)' en tete",
+        note: "face vinyle entre parenthèses '(a1)' en tête",
     },
     Case {
         folder: "(SOMA 21) Slam-Snapshots",
@@ -77,7 +77,7 @@ pub const CASES: &[Case] = &[
         artist: "Slam",
         title: "Stepback",
         version: None,
-        note: "face collee 'A1-', artiste UNIQUEMENT dans le dossier '(LABEL NN) Artiste-Album'",
+        note: "face collée 'A1-', artiste UNIQUEMENT dans le dossier '(LABEL NN) Artiste-Album'",
     },
     Case {
         folder: "(SOMA 21) Slam-Snapshots",
@@ -85,7 +85,7 @@ pub const CASES: &[Case] = &[
         artist: "Slam",
         title: "Stepback 2",
         version: None,
-        note: "face collee + titre finissant par un chiffre (ne pas confondre avec un numero)",
+        note: "face collée + titre finissant par un chiffre (ne pas confondre avec un numéro)",
     },
     Case {
         folder: "(SOMA 146) Tony Thomas-Good Fortune  Jump",
@@ -93,7 +93,7 @@ pub const CASES: &[Case] = &[
         artist: "Tony Thomas",
         title: "Good Fortune",
         version: Some("DJ Hal's Lunar Love Mix"),
-        note: "artiste du dossier + version conservee (apostrophe droite dans la version)",
+        note: "artiste du dossier + version conservée (apostrophe droite dans la version)",
     },
     Case {
         folder: "2_040924",
@@ -109,16 +109,16 @@ pub const CASES: &[Case] = &[
         artist: "Magnetic Disorder",
         title: "The Observer",
         version: None,
-        note: "face 'A.' APRES le separateur, cote titre + double espace",
+        note: "face 'A.' APRÈS le séparateur, côté titre + double espace",
     },
-    // ---------- numero de piste en tete ----------
+    // ---------- numéro de piste en tête ----------
     Case {
         folder: "complete",
         stem: "01 Awaken Abyss",
         artist: "",
         title: "Awaken Abyss",
         version: None,
-        note: "numero seul, AUCUN artiste derivable (dossier muet) - artiste vide est l'attendu",
+        note: "numéro seul, AUCUN artiste dérivable (dossier muet) - artiste vide est l'attendu",
     },
     Case {
         folder: "complete",
@@ -126,7 +126,7 @@ pub const CASES: &[Case] = &[
         artist: "",
         title: "Give U Love",
         version: None,
-        note: "numero seul, titre court",
+        note: "numéro seul, titre court",
     },
     Case {
         folder: "complete",
@@ -134,7 +134,7 @@ pub const CASES: &[Case] = &[
         artist: "",
         title: "Give U Love",
         version: Some("Deep Mix"),
-        note: "sans artiste MAIS avec version - aujourd'hui la version est jetee (naming.rs:135)",
+        note: "sans artiste MAIS avec version - aujourd'hui la version est jetée (naming.rs:135)",
     },
     Case {
         folder: "complete",
@@ -142,7 +142,7 @@ pub const CASES: &[Case] = &[
         artist: "",
         title: "Music For The Soul",
         version: Some("Dob s Mix"),
-        note: "souligne A L'INTERIEUR de la version (apostrophe perdue a l'encodage du nom)",
+        note: "souligné À L'INTÉRIEUR de la version (apostrophe perdue à l'encodage du nom)",
     },
     Case {
         folder: "complete",
@@ -150,7 +150,7 @@ pub const CASES: &[Case] = &[
         artist: "",
         title: "Rainforest",
         version: Some("Rare electro mix"),
-        note: "double numero disque-piste '01-14' (ne pas lire 01 comme artiste)",
+        note: "double numéro disque-piste '01-14' (ne pas lire 01 comme artiste)",
     },
     Case {
         folder: "complete",
@@ -158,7 +158,7 @@ pub const CASES: &[Case] = &[
         artist: "Olsvanger",
         title: "The Triss",
         version: None,
-        note: "numero + separateur normal",
+        note: "numéro + séparateur normal",
     },
     Case {
         folder: "complete",
@@ -174,7 +174,7 @@ pub const CASES: &[Case] = &[
         artist: "Roman IV",
         title: "Happy",
         version: None,
-        note: "'NN - Artiste - Titre' : le numero est le 1er champ, PAS l'artiste",
+        note: "'NN - Artiste - Titre' : le numéro est le 1er champ, PAS l'artiste",
     },
     Case {
         folder: "20_20 Vision\u{2044}VIS050 Ralph Lawson - Visionaries Volume One FLAC",
@@ -182,7 +182,7 @@ pub const CASES: &[Case] = &[
         artist: "Wolf n' Flow",
         title: "Activate",
         version: None,
-        note: "dossier contenant une barre de fraction U+2044 (substitut de separateur de chemin)",
+        note: "dossier contenant une barre de fraction U+2044 (substitut de séparateur de chemin)",
     },
     Case {
         folder: "complete",
@@ -206,16 +206,16 @@ pub const CASES: &[Case] = &[
         artist: "A. Jas",
         title: "Dirty Carnival Music",
         version: Some("Original"),
-        note: "numero a 3 chiffres + point + double tiret, artiste avec initiale 'A. '",
+        note: "numéro à 3 chiffres + point + double tiret, artiste avec initiale 'A. '",
     },
-    // ---------- separateurs exotiques ----------
+    // ---------- séparateurs exotiques ----------
     Case {
         folder: "complete",
         stem: "01_dj_hal_and_jay_thomas_-_dont_stop_(tony_thomas_remix)",
         artist: "dj hal and jay thomas",
         title: "dont stop",
         version: Some("tony thomas remix"),
-        note: "separateur '_-_' + tout en souligne",
+        note: "séparateur '_-_' + tout en souligné",
     },
     Case {
         folder: "complete",
@@ -223,7 +223,7 @@ pub const CASES: &[Case] = &[
         artist: "jeff bennett",
         title: "falling up",
         version: None,
-        note: "separateur '_-_' + suffixe scene '-sq' a retirer",
+        note: "séparateur '_-_' + suffixe scene '-sq' à retirer",
     },
     Case {
         folder: "complete",
@@ -231,7 +231,7 @@ pub const CASES: &[Case] = &[
         artist: "maetrik",
         title: "force feeling",
         version: Some("decomposed subsonic remix"),
-        note: "separateur '--' + suffixe scene '-dh'",
+        note: "séparateur '--' + suffixe scene '-dh'",
     },
     Case {
         folder: "complete",
@@ -239,7 +239,7 @@ pub const CASES: &[Case] = &[
         artist: "vince watson",
         title: "method of emotion",
         version: None,
-        note: "separateur '-' colle + hash hexadecimal 8 chiffres en queue",
+        note: "séparateur '-' collé + hash hexadécimal 8 chiffres en queue",
     },
     Case {
         folder: "complete",
@@ -247,7 +247,7 @@ pub const CASES: &[Case] = &[
         artist: "Janeret",
         title: "Mush Vitamina",
         version: None,
-        note: "'NN-Artiste-Titre' entierement colle",
+        note: "'NN-Artiste-Titre' entièrement collé",
     },
     Case {
         folder: "complete",
@@ -263,7 +263,7 @@ pub const CASES: &[Case] = &[
         artist: "Maetrik",
         title: "Force Feeling",
         version: Some("Decomposed Subsonic Rmx"),
-        note: "meme forme + version ('Rmx' abrege)",
+        note: "même forme + version ('Rmx' abrégé)",
     },
     Case {
         folder: "1 prog 90's 5",
@@ -271,7 +271,7 @@ pub const CASES: &[Case] = &[
         artist: "DJ RAGE",
         title: "Waiting",
         version: Some("Antoine Clamaran remix"),
-        note: "separateur '.-' colle + version collee + suffixe '(mp3)' + ESPACE FINAL",
+        note: "séparateur '.-' collé + version collée + suffixe '(mp3)' + ESPACE FINAL",
     },
     Case {
         folder: "1 prog 90's 5",
@@ -279,7 +279,7 @@ pub const CASES: &[Case] = &[
         artist: "Laurent Garnier",
         title: "Crispy Bacon",
         version: Some("King Unique Remix"),
-        note: "suffixe '(mp3)' colle a la version + espace final",
+        note: "suffixe '(mp3)' collé à la version + espace final",
     },
     Case {
         folder: "1 prog 90's 5",
@@ -287,7 +287,7 @@ pub const CASES: &[Case] = &[
         artist: "CJ Art",
         title: "Acedia",
         version: Some("Original mix"),
-        note: "tiret DEMI-CADRATIN comme separateur + catalogue et label en queue",
+        note: "tiret DEMI-CADRATIN comme séparateur + catalogue et label en queue",
     },
     Case {
         folder: "complete",
@@ -303,7 +303,7 @@ pub const CASES: &[Case] = &[
         artist: "rene breitbarth",
         title: "sci-fi",
         version: None,
-        note: "PIEGE: 'sci-fi' a un tiret INTRAMOT qui n'est PAS un separateur",
+        note: "PIÈGE: 'sci-fi' a un tiret INTRAMOT qui n'est PAS un séparateur",
     },
     Case {
         folder: "2_040924",
@@ -311,7 +311,7 @@ pub const CASES: &[Case] = &[
         artist: "QA 0-127",
         title: "Fiction",
         version: None,
-        note: "PIEGE: artiste contenant chiffres ET tiret intramot, apres un catalogue",
+        note: "PIÈGE: artiste contenant chiffres ET tiret intramot, après un catalogue",
     },
     // ---------- crochets ----------
     Case {
@@ -320,7 +320,7 @@ pub const CASES: &[Case] = &[
         artist: "DJ Gregory",
         title: "Freeze",
         version: None,
-        note: "catalogue en tete - motif du plus gros dossier (524 pistes), rejete en bloc aujourd'hui",
+        note: "catalogue en tête - motif du plus gros dossier (524 pistes), rejeté en bloc aujourd'hui",
     },
     Case {
         folder: "2_040924",
@@ -336,7 +336,7 @@ pub const CASES: &[Case] = &[
         artist: "Baron Feat. Daddy E",
         title: "Boomselecter",
         version: None,
-        note: "PIEGE: le catalogue contient ' - ', le separateur naif coupe dedans",
+        note: "PIÈGE: le catalogue contient ' - ', le séparateur naïf coupe dedans",
     },
     Case {
         folder: "2_040924",
@@ -352,7 +352,7 @@ pub const CASES: &[Case] = &[
         artist: "Jaimy & Kenny D.",
         title: "Like A Bitch",
         version: None,
-        note: "catalogue numerique court + artiste finissant par un point",
+        note: "catalogue numérique court + artiste finissant par un point",
     },
     Case {
         folder: "2_040924",
@@ -360,7 +360,7 @@ pub const CASES: &[Case] = &[
         artist: "Cle Acklin",
         title: "My Face",
         version: Some("Original Dirty Mix"),
-        note: "PIEGE: crochet DEPAREILLE '(...]' - le retrait par paires echoue",
+        note: "PIÈGE: crochet DÉPAREILLÉ '(...]' - le retrait par paires échoue",
     },
     Case {
         folder: "complete",
@@ -376,7 +376,7 @@ pub const CASES: &[Case] = &[
         artist: "Korsakow",
         title: "Abduction",
         version: Some("benonedit"),
-        note: "meme titre, artiste recupere du dossier 'ANNEE - Artiste - Album'",
+        note: "même titre, artiste récupéré du dossier 'ANNÉE - Artiste - Album'",
     },
     Case {
         folder: "complete",
@@ -392,7 +392,7 @@ pub const CASES: &[Case] = &[
         artist: "Neighbour",
         title: "Ordinary Unusual",
         version: Some("Original Mix"),
-        note: "crochet AU MILIEU (nom d'EP) + version apres un ' - ' et non entre parentheses",
+        note: "crochet AU MILIEU (nom d'EP) + version après un ' - ' et non entre parenthèses",
     },
     Case {
         folder: "complete",
@@ -400,9 +400,9 @@ pub const CASES: &[Case] = &[
         artist: "Demarkus Lewis",
         title: "U-Too",
         version: None,
-        note: "PIEGE MAJEUR: '(1)' est un suffixe de doublon de telechargement, PAS une version",
+        note: "PIÈGE MAJEUR: '(1)' est un suffixe de doublon de téléchargement, PAS une version",
     },
-    // ---------- URL / debit / bruit de source ----------
+    // ---------- URL / débit / bruit de source ----------
     Case {
         folder: "Francesco Del Garda's Track IDs",
         stem: "Oris Jay ft. Delsena - Trippin (Original Mix) -  [320 kbps]",
@@ -417,7 +417,7 @@ pub const CASES: &[Case] = &[
         artist: "Slippy G",
         title: "Pixel Waterfall",
         version: Some("Original Mix"),
-        note: "URL COLLEE a la version, sans parentheses autour de 'Original Mix'",
+        note: "URL COLLÉE à la version, sans parenthèses autour de 'Original Mix'",
     },
     Case {
         folder: "Francesco Del Garda",
@@ -425,7 +425,7 @@ pub const CASES: &[Case] = &[
         artist: "John Dimas",
         title: "Self Control",
         version: Some("Original Mix"),
-        note: "URL en queue separee par une espace",
+        note: "URL en queue séparée par une espace",
     },
     Case {
         folder: "Francesco Del Garda's Track IDs",
@@ -433,7 +433,7 @@ pub const CASES: &[Case] = &[
         artist: "100Hz",
         title: "The Field",
         version: Some("Original Mix"),
-        note: "PIEGE: l'artiste '100Hz' contient un token de qualite ('hz') et des chiffres",
+        note: "PIÈGE: l'artiste '100Hz' contient un token de qualité ('hz') et des chiffres",
     },
     Case {
         folder: "1 prog 90's 5",
@@ -441,7 +441,7 @@ pub const CASES: &[Case] = &[
         artist: "Dane Jolly",
         title: "Boomslang",
         version: Some("Super Fly's Vision Tool Mix"),
-        note: "suffixe numerique '-001' en queue",
+        note: "suffixe numérique '-001' en queue",
     },
     Case {
         folder: "1 prog 90's 5",
@@ -449,7 +449,7 @@ pub const CASES: &[Case] = &[
         artist: "Dane Jolly",
         title: "Boomslang",
         version: Some("Super Fly's Vision Tool Mix"),
-        note: "TEMOIN: meme piste SANS le suffixe, les deux doivent donner le meme resultat",
+        note: "TÉMOIN: même piste SANS le suffixe, les deux doivent donner le même résultat",
     },
     Case {
         folder: "1 prog 90's 5",
@@ -465,7 +465,7 @@ pub const CASES: &[Case] = &[
         artist: "onionz and the dcl project",
         title: "chili con huevos",
         version: Some("pepo remix"),
-        note: "numero + souligne + suffixe scene '-ccat'",
+        note: "numéro + souligné + suffixe scene '-ccat'",
     },
     Case {
         folder: "1 prog 90's 5",
@@ -473,7 +473,7 @@ pub const CASES: &[Case] = &[
         artist: "pablo briales and ruben cano",
         title: "delirium",
         version: Some("sergio fernandez remix"),
-        note: "artiste long en souligne + suffixe scene '-scmt'",
+        note: "artiste long en souligné + suffixe scene '-scmt'",
     },
     Case {
         folder: "complete",
@@ -481,7 +481,7 @@ pub const CASES: &[Case] = &[
         artist: "infunktuation",
         title: "feel real good",
         version: Some("club version"),
-        note: "trois pistes du meme titre ne different QUE par la version - elle est decisive",
+        note: "trois pistes du même titre ne diffèrent QUE par la version - elle est décisive",
     },
     Case {
         folder: "complete",
@@ -489,7 +489,7 @@ pub const CASES: &[Case] = &[
         artist: "infunktuation",
         title: "feel real good",
         version: Some("dub version"),
-        note: "meme titre, version differente (voir cas precedent)",
+        note: "même titre, version différente (voir cas précédent)",
     },
     Case {
         folder: "complete",
@@ -497,7 +497,7 @@ pub const CASES: &[Case] = &[
         artist: "infunktuation",
         title: "feel real good",
         version: Some("obscure version"),
-        note: "meme titre, 3e version (voir deux cas precedents)",
+        note: "même titre, 3e version (voir deux cas précédents)",
     },
     Case {
         folder: "complete",
@@ -505,7 +505,7 @@ pub const CASES: &[Case] = &[
         artist: "jas",
         title: "soul doing dishes",
         version: Some("luke fair mix"),
-        note: "artiste tres court (3 lettres) colle entre deux tirets",
+        note: "artiste très court (3 lettres) collé entre deux tirets",
     },
     Case {
         folder: "complete",
@@ -521,7 +521,7 @@ pub const CASES: &[Case] = &[
         artist: "Retiro",
         title: "An-2",
         version: Some("Fluent Remix"),
-        note: "PIEGE: titre 'An-2' a tiret intramot, version sans parentheses, souligne FINAL",
+        note: "PIÈGE: titre 'An-2' à tiret intramot, version sans parenthèses, souligné FINAL",
     },
     Case {
         folder: "complete",
@@ -537,7 +537,7 @@ pub const CASES: &[Case] = &[
         artist: "Zwicker Meets James Teipdeck",
         title: "Homage to XY",
         version: None,
-        note: "TEMOIN propre pour comparer avec la variante scene ci-dessous",
+        note: "TÉMOIN propre pour comparer avec la variante scene ci-dessous",
     },
     Case {
         folder: "complete",
@@ -545,7 +545,7 @@ pub const CASES: &[Case] = &[
         artist: "zwicker meets james teipdeck",
         title: "homage to xy",
         version: None,
-        note: "MEME piste que le temoin ci-dessus, forme scene - doit converger",
+        note: "MÊME piste que le témoin ci-dessus, forme scene - doit converger",
     },
     Case {
         folder: "1 prog 90's 5",
@@ -553,7 +553,7 @@ pub const CASES: &[Case] = &[
         artist: "Ozgur Ozkan",
         title: "Too Late",
         version: Some("CJ Art's Too Tribal Mix"),
-        note: "TEMOIN: deja propre, ne doit pas se degrader",
+        note: "TÉMOIN: déjà propre, ne doit pas se dégrader",
     },
     // ---------- compilations : l'artiste n'est PAS le premier champ ----------
     Case {
@@ -570,7 +570,7 @@ pub const CASES: &[Case] = &[
         artist: "Digs, Woosh & Mr Ski",
         title: "Rumpfunk",
         version: Some("Raw Substance mix"),
-        note: "meme compil, artiste contenant des virgules (le comptage de champs ne suffit pas)",
+        note: "même compil, artiste contenant des virgules (le comptage de champs ne suffit pas)",
     },
     Case {
         folder: "(2004) Doin\u{2019} It After Dark, Volume 2",
@@ -578,7 +578,7 @@ pub const CASES: &[Case] = &[
         artist: "Markus Enochson feat. E\u{2010}Man",
         title: "Sweetlove",
         version: Some("Alex Phountzi remix"),
-        note: "meme compil + 'feat.' + tiret U+2010 dans le nom d'artiste",
+        note: "même compil + 'feat.' + tiret U+2010 dans le nom d'artiste",
     },
     Case {
         folder: "(2004) Doin\u{2019} It After Dark, Volume 2",
@@ -586,7 +586,7 @@ pub const CASES: &[Case] = &[
         artist: "Sam Paganini",
         title: "Gonna Make You Sweat",
         version: None,
-        note: "meme compil sans version - la repetition finale de l'artiste est le seul repere",
+        note: "même compil sans version - la répétition finale de l'artiste est le seul repère",
     },
     Case {
         folder: "(2005) Lo Rez - You Don't Win Friends With Salad (Vinyl-FLAC)",
@@ -594,7 +594,7 @@ pub const CASES: &[Case] = &[
         artist: "Lo Rez",
         title: "LS11",
         version: None,
-        note: "'[CAT - ANNEE] Album - FACE - Artiste - Titre' : artiste en 3e position",
+        note: "'[CAT - ANNÉE] Album - FACE - Artiste - Titre' : artiste en 3e position",
     },
     Case {
         folder: "1 prog 90's 5",
@@ -602,7 +602,7 @@ pub const CASES: &[Case] = &[
         artist: "Photek",
         title: "Mine To Give",
         version: Some("Satoshi Tomiie Dub"),
-        note: "compil '[CAT - ANNEE] Album (UnMixed) - NN - Artiste - Titre (Version)'",
+        note: "compil '[CAT - ANNÉE] Album (UnMixed) - NN - Artiste - Titre (Version)'",
     },
     Case {
         folder: "1 prog 90's 5",
@@ -610,7 +610,7 @@ pub const CASES: &[Case] = &[
         artist: "Paul Rogers",
         title: "Krafty",
         version: Some("Gpal Pandesia Dub Mix"),
-        note: "PIEGE: le titre 'Krafty' est AUSSI le nom de la release, en 1re position",
+        note: "PIÈGE: le titre 'Krafty' est AUSSI le nom de la release, en 1re position",
     },
     Case {
         folder: "(SUR020 - 2001) The Mingers & Mr. G - The Mingers Do Church",
@@ -618,7 +618,7 @@ pub const CASES: &[Case] = &[
         artist: "The Mingers & Mr. G",
         title: "The Mingers Do Church",
         version: Some("Mr G's Not On Sundays Dub"),
-        note: "catalogue entre PARENTHESES + titre identique a l'album, repete",
+        note: "catalogue entre PARENTHÈSES + titre identique à l'album, répété",
     },
     Case {
         folder: "complete",
@@ -626,7 +626,7 @@ pub const CASES: &[Case] = &[
         artist: "Maetrik",
         title: "Force Feeling",
         version: None,
-        note: "'ANNEE - Album - NN - Artiste - Titre' : cinq champs, artiste en 4e position",
+        note: "'ANNÉE - Album - NN - Artiste - Titre' : cinq champs, artiste en 4e position",
     },
     // ---------- vraiment sans espoir : l'attendu EST le vide ----------
     Case {
@@ -659,7 +659,7 @@ pub const CASES: &[Case] = &[
         artist: "",
         title: "-ism",
         version: None,
-        note: "PIEGE: '-ism' ressemble a un suffixe scene mais c'est LE titre - ne pas le manger",
+        note: "PIÈGE: '-ism' ressemble à un suffixe scene mais c'est LE titre - ne pas le manger",
     },
 ];
 
@@ -686,14 +686,14 @@ mod tests {
             if !c.artist.is_empty() {
                 assert!(
                     !c.title.is_empty(),
-                    "artiste sans titre pour {:?} — attendu incoherent",
+                    "artiste sans titre pour {:?} — attendu incohérent",
                     c.stem
                 );
             }
         }
         assert!(
             CASES.len() >= 70,
-            "corpus trop maigre pour etre un etalon : {} cas",
+            "corpus trop maigre pour être un étalon : {} cas",
             CASES.len()
         );
     }
@@ -774,9 +774,9 @@ mod tests {
                 BASELINE_TITLE,
                 BASELINE_VERSION
             ),
-            "\nLa ligne de base du corpus a bouge (exact/artiste/titre/version).\n\
-             Si c'est voulu (amelioration de naming.rs), mettre les quatre constantes a jour DANS\n\
-             LE MEME changement, en disant pourquoi. Sinon c'est une regression.\n"
+            "\nLa ligne de base du corpus a bougé (exact/artiste/titre/version).\n\
+             Si c'est voulu (amélioration de naming.rs), mettre les quatre constantes à jour DANS\n\
+             LE MÊME changement, en disant pourquoi. Sinon c'est une régression.\n"
         );
     }
 
@@ -852,8 +852,8 @@ mod tests {
         assert_eq!(
             (exact, artist_ok, title_ok, version_ok),
             (TERMS_EXACT, TERMS_ARTIST, TERMS_TITLE, TERMS_VERSION),
-            "\nLe resultat de search_terms sur le corpus a bouge.\n\
-             Mettre les quatre constantes a jour DANS LE MEME changement, en disant pourquoi.\n"
+            "\nLe résultat de search_terms sur le corpus a bougé.\n\
+             Mettre les quatre constantes à jour DANS LE MÊME changement, en disant pourquoi.\n"
         );
     }
 }

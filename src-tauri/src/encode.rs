@@ -200,7 +200,7 @@ mod tests {
             let in_lossy = TARGET_LOSSY_SQL_IN.contains(&quoted);
             assert!(
                 in_lossless ^ in_lossy,
-                "{db} doit etre dans exactement une des deux listes SQL"
+                "{db} doit être dans exactement une des deux listes SQL"
             );
             assert_eq!(
                 in_lossless,

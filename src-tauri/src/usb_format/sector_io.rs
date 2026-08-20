@@ -144,7 +144,7 @@ mod tests {
     use super::*;
     use std::io::Cursor;
 
-    /// Toute E/S poussee vers le support doit etre alignee : c'est la seule raison d'etre de ce
+    /// Toute E/S poussée vers le support doit être alignée : c'est la seule raison d'être de ce
     /// type. Un support espion enregistre chaque appel et refuse ce qui ne l'est pas.
     struct AlignedOnly {
         data: Vec<u8>,
@@ -175,7 +175,7 @@ mod tests {
         fn write(&mut self, data: &[u8]) -> IoResult<usize> {
             if self.pos % self.sector != 0 || data.len() as u64 % self.sector != 0 {
                 self.violations.borrow_mut().push(format!(
-                    "ecriture {} @ {}",
+                    "écriture {} @ {}",
                     data.len(),
                     self.pos
                 ));
@@ -204,8 +204,8 @@ mod tests {
         }
     }
 
-    /// LE test : des ecritures minuscules et desalignees ne doivent produire QUE des E/S alignees.
-    /// C'est ce qui manquait au premier formatage reel, qui a laisse un disque RAW.
+    /// LE test : des écritures minuscules et désalignées ne doivent produire QUE des E/S alignées.
+    /// C'est ce qui manquait au premier formatage réel, qui a laissé un disque RAW.
     #[test]
     fn unaligned_writes_reach_the_device_aligned() {
         let violations = std::rc::Rc::new(std::cell::RefCell::new(Vec::new()));
@@ -224,13 +224,13 @@ mod tests {
         drop(io);
         assert!(
             violations.borrow().is_empty(),
-            "E/S non alignees: {:?}",
+            "E/S non alignées: {:?}",
             violations.borrow()
         );
     }
 
-    /// Une ecriture partielle ne doit PAS effacer les octets voisins du meme secteur : sans
-    /// lecture-modification-ecriture, chaque petite ecriture zapperait 511 octets autour d'elle.
+    /// Une écriture partielle ne doit PAS effacer les octets voisins du même secteur : sans
+    /// lecture-modification-écriture, chaque petite écriture zapperait 511 octets autour d'elle.
     #[test]
     fn a_partial_write_preserves_its_neighbours() {
         let mut backing = Cursor::new(vec![0xAAu8; 1024]);
@@ -261,7 +261,7 @@ mod tests {
         assert_eq!(back, payload);
     }
 
-    /// Le dernier secteur doit partir meme sans `flush` explicite : `fatfs` rend la main sans
+    /// Le dernier secteur doit partir même sans `flush` explicite : `fatfs` rend la main sans
     /// toujours vider, et 512 octets manquants suffisent a rendre le volume non montable.
     #[test]
     fn dropping_flushes_the_last_sector() {

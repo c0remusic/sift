@@ -3472,16 +3472,16 @@ mod tests {
         assert_eq!(
             batch_rows(&conn, "free"),
             0,
-            "temoin: une action ordinaire du meme age doit bien partir"
+            "témoin: une action ordinaire du même âge doit bien partir"
         );
         assert_eq!(
             batch_rows(&conn, "live-trash"),
             1,
-            "la ligne trash d'une piste TOUJOURS ecartee doit survivre: c'est elle qui porte \
+            "la ligne trash d'une piste TOUJOURS écartée doit survivre: c'est elle qui porte \
              from_path/to_path pour ecartes::restore_track, et le JOIN qui fait exister la piste \
-             dans l'ecran Ecartes. La purger perd le fichier en silence."
+             dans l'écran Écartés. La purger perd le fichier en silence."
         );
-        assert_eq!(deleted, 1, "seul le temoin doit avoir ete supprime");
+        assert_eq!(deleted, 1, "seul le témoin doit avoir été supprimé");
     }
 
     /// Le pendant du précédent : une fois la piste sortie de `trash` (restaurée, ou purgée
@@ -3512,7 +3512,7 @@ mod tests {
         assert_eq!(
             batch_rows(&conn, "old-trash"),
             0,
-            "la piste n'est plus dans la corbeille: plus rien ne depend de cette ligne"
+            "la piste n'est plus dans la corbeille: plus rien ne dépend de cette ligne"
         );
         assert_eq!(deleted, 1);
     }

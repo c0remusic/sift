@@ -1202,7 +1202,7 @@ mod tests {
         // Version courante : les trois chargeurs servent l'empreinte.
         assert!(
             load_unscanned_rows(&conn).unwrap()[0].fingerprint.is_some(),
-            "empreinte a la version courante : elle doit etre servie"
+            "empreinte à la version courante : elle doit être servie"
         );
 
         // Une seule colonne bouge — la valeur reste identique, seule sa version diverge.
@@ -1253,7 +1253,7 @@ mod tests {
         let built = build_fingerprints(&rows);
         assert!(
             built.fps[0].is_none() && built.to_persist.is_empty(),
-            "un defaut de cache doit mener au recalcul, jamais a une erreur"
+            "un défaut de cache doit mener au recalcul, jamais à une erreur"
         );
     }
 
@@ -1292,7 +1292,7 @@ mod tests {
         assert_eq!(
             keep.format.as_deref(),
             Some("aiff"),
-            "l'ecran doit montrer une extension, pas 'aiff_16_44'"
+            "l'écran doit montrer une extension, pas 'aiff_16_44'"
         );
     }
 
@@ -1352,7 +1352,7 @@ mod tests {
         );
         assert!(
             ab < ac && ab < bc && ab >= fingerprint::MATCH_THRESHOLD,
-            "premisse du test cassee: ab={ab} ac={ac} bc={bc}"
+            "prémisse du test cassée: ab={ab} ac={ac} bc={bc}"
         );
 
         let row = |id: i64, path: &str| DupScanRow {
@@ -1378,7 +1378,7 @@ mod tests {
         assert_eq!(groups[0].members.len(), 3);
         assert!(
             (groups[0].similarity - ab).abs() < 1e-6,
-            "similarity doit etre le lien le plus FAIBLE ({ab}), pas {}",
+            "similarity doit être le lien le plus FAIBLE ({ab}), pas {}",
             groups[0].similarity
         );
     }
@@ -1502,7 +1502,7 @@ mod tests {
         // passerait pour une raison sans rapport avec ce qu'il prétend vérifier.
         assert!(
             fingerprint::similarity(&fp_a, &fp_b) < fingerprint::MATCH_THRESHOLD,
-            "les deux empreintes de test doivent etre distinctes"
+            "les deux empreintes de test doivent être distinctes"
         );
 
         let mut inc = db();
@@ -1690,8 +1690,8 @@ mod tests {
     fn windowed_candidate_pairs(durations: &[Option<f64>]) -> BTreeSet<(usize, usize)> {
         let mut out = BTreeSet::new();
         for_each_candidate_pair(durations, |i, j| {
-            assert!(i < j, "paire non normalisee: ({i}, {j})");
-            assert!(out.insert((i, j)), "paire ({i}, {j}) visitee deux fois");
+            assert!(i < j, "paire non normalisée: ({i}, {j})");
+            assert!(out.insert((i, j)), "paire ({i}, {j}) visitée deux fois");
         });
         out
     }
@@ -1722,11 +1722,11 @@ mod tests {
         let pairs = windowed_candidate_pairs(&durations);
         assert!(
             pairs.contains(&(1, 3)),
-            "une paire EXACTEMENT a la tolerance doit etre enumeree"
+            "une paire EXACTEMENT à la tolérance doit être énumérée"
         );
         assert!(
             !pairs.contains(&(3, 6)),
-            "une paire juste au-dela de la tolerance ne doit pas l'etre"
+            "une paire juste au-delà de la tolérance ne doit pas l'être"
         );
     }
 
@@ -1760,7 +1760,7 @@ mod tests {
         let total = 400 * 399 / 2;
         assert!(
             naive.len() > 1_000 && naive.len() < total,
-            "premisse du test cassee: {} paires survivantes sur {total}",
+            "prémisse du test cassée: {} paires survivantes sur {total}",
             naive.len()
         );
     }
@@ -1784,7 +1784,7 @@ mod tests {
         assert_eq!(pairs, naive_candidate_pairs(&durations));
         assert!(
             pairs.contains(&(0, 1)),
-            "NaN contre une duree finie doit SURVIVRE"
+            "NaN contre une durée finie doit SURVIVRE"
         );
         assert!(
             pairs.contains(&(2, 3)),
@@ -1792,11 +1792,11 @@ mod tests {
         );
         assert!(
             !pairs.contains(&(0, 2)),
-            "+inf contre 100 s doit etre ecartee"
+            "+inf contre 100 s doit être écartée"
         );
         assert!(
             !pairs.contains(&(2, 4)),
-            "+inf contre -inf doit etre ecartee"
+            "+inf contre -inf doit être écartée"
         );
     }
 
@@ -1867,7 +1867,7 @@ mod tests {
         assert_eq!(
             shape(&windowed),
             vec![vec![1, 2, 3, 4]],
-            "la 5e est a 2,000001 s de la 4e — au-dela de la tolerance, donc dehors"
+            "la 5e est a 2,000001 s de la 4e — au-delà de la tolérance, donc dehors"
         );
 
         // Un seul micro-pas ramène la 5e EXACTEMENT à la tolérance : elle doit entrer.
@@ -1913,7 +1913,7 @@ mod tests {
         assert_eq!(
             shape(&incremental),
             vec![vec![1, 2, 3, 4, 5]],
-            "chaine 240-242-244 par bords exacts, puis la 4e sans duree agrege la 5e"
+            "chaîne 240-242-244 par bords exacts, puis la 4e sans durée agrège la 5e"
         );
     }
 }

@@ -119,8 +119,8 @@ mod tests {
     use std::io::{Seek, SeekFrom};
 
     /// Un volume de 40 Go : au-dela du plafond de 32 Go que Windows oppose, donc le cas que cet
-    /// ecran existe pour traiter. Adosse a un fichier temporaire qui ne grandit qu a la mesure de
-    /// ce qui est reellement ecrit (~10 Mo de FAT), pas a 40 Go.
+    /// écran existe pour traiter. Adossé à un fichier temporaire qui ne grandit qu a la mesure de
+    /// ce qui est réellement écrit (~10 Mo de FAT), pas à 40 Go.
     fn format_and_reopen(total_bytes: u64, label: &str) -> fatfs::FileSystem<std::fs::File> {
         let tmp = tempfile::NamedTempFile::new().expect("tempfile");
         let path = tmp.path().to_path_buf();
@@ -137,13 +137,13 @@ mod tests {
             .write(true)
             .open(&path)
             .expect("reopen");
-        // La NamedTempFile est volontairement gardee vivante par le retour : `into_file` la
+        // La NamedTempFile est volontairement gardée vivante par le retour : `into_file` la
         // detacherait de la suppression automatique.
         std::mem::forget(tmp);
         fatfs::FileSystem::new(reopened, fatfs::FsOptions::new()).expect("mount")
     }
 
-    /// LE test de cette fonctionnalite. Windows refuse de creer ce volume ; nous le creons.
+    /// LE test de cette fonctionnalité. Windows refuse de créer ce volume ; nous le créons.
     #[test]
     fn formats_beyond_the_windows_ceiling() {
         let forty_gb = 40 * 1024 * 1024 * 1024u64;
@@ -155,7 +155,7 @@ mod tests {
         assert_eq!(fs.fat_type(), FatType::Fat32);
     }
 
-    /// 32 Kio est la valeur de compatibilite maximale, et celle que porte deja un disque DJ
+    /// 32 Kio est la valeur de compatibilité maximale, et celle que porte déjà un disque DJ
     /// formate par un outil tiers. Au-dela, `fatfs` lui-meme avertit d incompatibilite.
     #[test]
     fn picks_a_cdj_compatible_cluster_size() {
@@ -164,7 +164,7 @@ mod tests {
         assert_eq!(cluster, 32 * 1024, "taille de cluster obtenue: {cluster}");
     }
 
-    /// Formater n est pas ecrire un secteur d amorcage : le volume doit reellement accepter des
+    /// Formater n est pas écrire un secteur d amorçage : le volume doit réellement accepter des
     /// fichiers et les rendre. C est ce qu un CDJ fera.
     #[test]
     fn the_formatted_volume_actually_holds_files() {
@@ -188,8 +188,8 @@ mod tests {
         assert_eq!(fs.volume_label().trim_end(), "SIFT_TEST");
     }
 
-    /// Le secteur d amorcage doit porter la signature 0x55AA, sans quoi aucun systeme ne
-    /// reconnait le volume — verification independante de `fatfs`, qui vient de l ecrire.
+    /// Le secteur d amorçage doit porter la signature 0x55AA, sans quoi aucun système ne
+    /// reconnaît le volume — vérification indépendante de `fatfs`, qui vient de l écrire.
     #[test]
     fn boot_sector_carries_the_signature() {
         let tmp = tempfile::NamedTempFile::new().expect("tempfile");
@@ -215,7 +215,7 @@ mod tests {
         assert_eq!(&boot[82..87], b"FAT32");
     }
 
-    /// Accents ET espaces deviennent `_`. L'espace est autorise par la specification, mais un nom
+    /// Accents ET espaces deviennent `_`. L'espace est autorisé par la spécification, mais un nom
     /// de volume a espaces se retape mal sur un CDJ et complique toute commande qui le manipule.
     /// La regle est donc sans exception a retenir : alphanumerique ASCII, `_` et `-` passent, tout
     /// le reste devient `_`.
