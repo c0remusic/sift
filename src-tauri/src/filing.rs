@@ -2322,13 +2322,14 @@ mod tests {
         std::fs::write(&source, vec![b'x'; 2048]).unwrap();
         let scanned = std::fs::metadata(&source).unwrap();
         conn.execute(
-            "INSERT INTO tracks(path, filename, size_bytes, mtime, source_id, status, analyzed_at, fingerprint, report_json)
-             VALUES(?1, '12 - vieux nom.aif', ?2, ?3, ?4, 'pending', '2026-07-31T00:00:00Z', 'fp', '{}')",
+            "INSERT INTO tracks(path, filename, size_bytes, mtime, source_id, status, analyzed_at, fingerprint, fingerprint_ver, report_json)
+             VALUES(?1, '12 - vieux nom.aif', ?2, ?3, ?4, 'pending', '2026-07-31T00:00:00Z', 'fp', ?5, '{}')",
             params![
                 source_s,
                 scanned.len() as i64,
                 crate::scanner::mtime_secs(&scanned),
-                source_id
+                source_id,
+                crate::fingerprint::FINGERPRINT_CACHE_VERSION
             ],
         )
         .unwrap();
@@ -2370,6 +2371,9 @@ mod tests {
         };
         crate::scanner::upsert_file(&conn, source_id, &seen).unwrap();
 
+        // `fingerprint` est relue par `fingerprint::cached`, comme en production : garder la valeur
+        // en effaçant sa version rendrait le cache muet — un décodage audio complet au prochain
+        // dédoublonnage, sans que rien ne le signale (issue #39).
         let (status, analyzed_at, fingerprint, report): (
             String,
             Option<String>,
@@ -2377,9 +2381,17 @@ mod tests {
             Option<String>,
         ) = conn
             .query_row(
-                "SELECT status, analyzed_at, fingerprint, report_json FROM tracks WHERE id=?1",
+                "SELECT status, analyzed_at, fingerprint, report_json, fingerprint_ver \
+                 FROM tracks WHERE id=?1",
                 params![track_id],
-                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+                |r| {
+                    Ok((
+                        r.get(0)?,
+                        r.get(1)?,
+                        crate::fingerprint::cached(r.get(2)?, r.get(4)?),
+                        r.get(3)?,
+                    ))
+                },
             )
             .unwrap();
         assert_eq!(

@@ -7,7 +7,9 @@ use serde::Serialize;
 // count is a frontend display rule — its single source of truth is MAX_ANALYSIS_ATTEMPTS in
 // shared/contracts.ts, not duplicated here.
 
-/// One row in the live queue. `verdict` is NULL until the worker (M2b) analyses it.
+/// One row in the live queue. `verdict` is NULL until the worker (M2b) analyses it — et aussi
+/// quand la colonne porte un verdict dont `verdict_ver` n'est plus la version courante
+/// (`verdict::cached`) : un verdict d'un autre moteur n'est pas un verdict.
 #[derive(Debug, Serialize, PartialEq)]
 pub struct QueueItem {
     pub id: i64,
@@ -39,6 +41,11 @@ pub struct QueueItem {
     /// (caught in review: an earlier version of this field mirrored ONLY select_pending's
     /// condition and silently excluded every decode-failed track from the retry UI meant for
     /// exactly that case).
+    ///
+    /// Troisième cas depuis l'issue #39 : un verdict PRÉSENT dont `verdict_ver` a été distancé par
+    /// `verdict::VERDICT_CACHE_VERSION`. Il n'y a alors pas de verdict courant à montrer, et
+    /// `select_pending` reprend la piste par la même clause — les deux conditions restent
+    /// jumelles, ce que verrouille `un_verdict_perime_vaut_besoin_d_analyse`.
     pub needs_analysis: bool,
     /// How many times analysis has failed for this track (worker::persist_failure increments it,
     /// reset_analysis clears it). The frontend treats it as terminally broken past a threshold
@@ -55,28 +62,36 @@ pub fn list_pending(conn: &Connection) -> rusqlite::Result<Vec<QueueItem>> {
     // DB (2713 rows): 1872 ms for that one predicate against 20.7 ms for `typeof`, which reads
     // the type from the row header and never touches the payload. This query is on the critical
     // path of opening Revue; at 1.9 s it read as a freeze.
+    // `t.verdict_ver` accompagne `t.verdict` partout : la colonne brute ne sort JAMAIS d'ici sans
+    // passer par `verdict::cached`, sinon la file rendrait un badge produit par un moteur qui
+    // n'existe plus (issue #39). Le champ publié reste un `Option<String>` — la version ne
+    // traverse pas l'IPC, `shared/contracts.ts` est inchangé.
     let mut stmt = conn.prepare(
         "SELECT t.id, t.path, t.filename, t.source_id, t.verdict, t.real_quality, m.artist, m.title,
-                (t.verdict IS NULL OR t.analyzed_at IS NULL OR typeof(t.report_json)='null'),
-                t.analysis_attempts
+                (t.verdict IS NULL OR t.analyzed_at IS NULL OR typeof(t.report_json)='null'
+                 OR (t.verdict IS NOT NULL AND t.verdict_ver IS NOT ?1)),
+                t.analysis_attempts, t.verdict_ver
          FROM tracks t LEFT JOIN metadata m ON m.track_id = t.id
          WHERE t.status='pending' ORDER BY t.id",
     )?;
-    let rows = stmt.query_map([], |r| {
-        Ok(QueueItem {
-            id: r.get(0)?,
-            path: r.get(1)?,
-            filename: r.get(2)?,
-            source_id: r.get(3)?,
-            verdict: r.get(4)?,
-            rail: r.get(5)?,
-            artist: r.get(6)?,
-            title: r.get(7)?,
-            dup: false,
-            needs_analysis: r.get(8)?,
-            analysis_attempts: r.get(9)?,
-        })
-    })?;
+    let rows = stmt.query_map(
+        rusqlite::params![crate::analysis::verdict::VERDICT_CACHE_VERSION],
+        |r| {
+            Ok(QueueItem {
+                id: r.get(0)?,
+                path: r.get(1)?,
+                filename: r.get(2)?,
+                source_id: r.get(3)?,
+                verdict: crate::analysis::verdict::cached(r.get(4)?, r.get(10)?),
+                rail: r.get(5)?,
+                artist: r.get(6)?,
+                title: r.get(7)?,
+                dup: false,
+                needs_analysis: r.get(8)?,
+                analysis_attempts: r.get(9)?,
+            })
+        },
+    )?;
     rows.collect()
 }
 
@@ -95,7 +110,9 @@ pub fn reset_analysis(conn: &Connection, track_ids: &[i64]) -> rusqlite::Result<
     let mut n = 0;
     {
         let mut stmt = tx.prepare(
-            "UPDATE tracks SET verdict=NULL, report_json=NULL, analyzed_at=NULL,
+            // `verdict_ver` tombe avec `verdict` : les deux se posent et se retirent ensemble,
+            // sinon la version atteste un verdict qui n'existe plus (issue #39).
+            "UPDATE tracks SET verdict=NULL, verdict_ver=NULL, report_json=NULL, analyzed_at=NULL,
                 codec_error=NULL, container_ok=NULL, analysis_attempts=0
              WHERE id=?1 AND status='pending'",
         )?;
@@ -117,6 +134,13 @@ mod tests {
         crate::db::run_migrations(&conn).unwrap();
         conn
     }
+
+    /// La version que `worker::persist_report` stampe dans le MÊME `UPDATE` que le verdict. Tout
+    /// seed qui écrit un verdict RÉEL doit l'écrire aussi, sinon la ligne décrit un verdict
+    /// périmé — un état que la production ne produit plus, et que `verdict::cached` efface.
+    /// (Les seeds qui miment `persist_failure` gardent `verdict` NULL et pas de version : c'est
+    /// l'état réel de ce chemin-là.)
+    const VER: i64 = crate::analysis::verdict::VERDICT_CACHE_VERSION;
 
     #[test]
     fn list_pending_returns_only_pending() {
@@ -205,20 +229,63 @@ mod tests {
         );
     }
 
+    /// Un verdict dont la version a été distancée n'est pas un verdict : la file ne l'affiche pas
+    /// et propose de réanalyser (issue #39). Les deux moitiés ensemble, parce qu'elles doivent
+    /// rester d'accord — un badge effacé sans `needs_analysis` laisserait une ligne muette sans
+    /// aucun geste possible, et l'inverse afficherait un verdict pendant qu'on propose de le
+    /// refaire.
+    ///
+    /// Mutation portée par la ligne, pas par la `const` : `VERDICT_CACHE_VERSION + 1` est l'état
+    /// qu'aurait cette ligne le lendemain d'un bump.
+    #[test]
+    fn un_verdict_perime_vaut_besoin_d_analyse() {
+        let conn = db();
+        conn.execute(
+            "INSERT INTO tracks (path, filename, status, verdict, verdict_ver, report_json, analyzed_at)
+             VALUES ('v.mp3','v.mp3','pending','fake',?1,'{}','2026-01-01')",
+            rusqlite::params![VER],
+        )
+        .unwrap();
+        let id = conn.last_insert_rowid();
+
+        let q = list_pending(&conn).unwrap();
+        assert_eq!(q[0].verdict.as_deref(), Some("fake"));
+        assert!(
+            !q[0].needs_analysis,
+            "un verdict courant et un rapport en cache : rien a refaire"
+        );
+
+        conn.execute(
+            "UPDATE tracks SET verdict_ver=?2 WHERE id=?1",
+            rusqlite::params![id, VER + 1],
+        )
+        .unwrap();
+
+        let q = list_pending(&conn).unwrap();
+        assert_eq!(
+            q[0].verdict, None,
+            "un badge FAKE produit par un autre moteur resterait affiche"
+        );
+        assert!(
+            q[0].needs_analysis,
+            "sans ca la ligne n'affiche plus rien ET ne propose aucun geste"
+        );
+    }
+
     #[test]
     fn reset_analysis_only_touches_pending_rows() {
         let conn = db();
         conn.execute(
-            "INSERT INTO tracks (path, filename, status, verdict, report_json, analyzed_at)
-             VALUES ('a.mp3','a.mp3','pending','ok','{}','2026-01-01')",
-            [],
+            "INSERT INTO tracks (path, filename, status, verdict, verdict_ver, report_json, analyzed_at)
+             VALUES ('a.mp3','a.mp3','pending','ok',?1,'{}','2026-01-01')",
+            rusqlite::params![VER],
         )
         .unwrap();
         let pending_id = conn.last_insert_rowid();
         conn.execute(
-            "INSERT INTO tracks (path, filename, status, verdict, report_json, analyzed_at)
-             VALUES ('b.mp3','b.mp3','filed','ok','{}','2026-01-01')",
-            [],
+            "INSERT INTO tracks (path, filename, status, verdict, verdict_ver, report_json, analyzed_at)
+             VALUES ('b.mp3','b.mp3','filed','ok',?1,'{}','2026-01-01')",
+            rusqlite::params![VER],
         )
         .unwrap();
         let filed_id = conn.last_insert_rowid();
@@ -268,9 +335,9 @@ mod tests {
     fn reset_analysis_makes_the_track_selectable_again() {
         let conn = db();
         conn.execute(
-            "INSERT INTO tracks (path, filename, status, verdict, report_json, analyzed_at)
-             VALUES ('a.mp3','a.mp3','pending','ok','{}','2026-01-01')",
-            [],
+            "INSERT INTO tracks (path, filename, status, verdict, verdict_ver, report_json, analyzed_at)
+             VALUES ('a.mp3','a.mp3','pending','ok',?1,'{}','2026-01-01')",
+            rusqlite::params![VER],
         )
         .unwrap();
         let id = conn.last_insert_rowid();
