@@ -1,6 +1,6 @@
 // Shared empty-state component (DESIGN.md "État vide"): a real dead-end screen — top-aligned
 // (never vertically centred), title + explanatory note, and for Bibliothèque/Écartés a
-// "Aller à Revue →" link (Revue itself is the entry point, so it never gets the link). Single
+// "Ouvrir Revue" link (Revue itself is the entry point, so it never gets the link). Single
 // source of markup so the three callers (filing.ts, ecartes-view.ts, sift-live.ts) render the
 // exact same structure instead of three ad hoc variants.
 import { requireEl, esc } from "./dom";
@@ -10,7 +10,7 @@ export interface EmptyStateOpts {
   title: string;
   /** One line of explanatory copy. */
   note: string;
-  /** Show the "Aller à Revue →" link. Omit for Revue itself — already the entry point. */
+  /** Show the "Ouvrir Revue" link. Omit for Revue itself — already the entry point. */
   backToRevue?: boolean;
   /** Pre-built button/link markup for a screen-specific action (e.g. Rekordbox's "Lier un
    *  fichier XML Rekordbox"). Rendered after the back-to-Revue link, if both are present. The
@@ -25,7 +25,7 @@ export interface EmptyStateOpts {
  *  handler. */
 export function emptyStateHtml(opts: EmptyStateOpts): string {
   const link = opts.backToRevue
-    ? `<button type="button" data-empty="revue" class="sift-empty-link"><i class="ti-fill ti-fill-circle-arrow-right"></i> Ouvrir Revue</button>`
+    ? `<button type="button" data-empty="revue" class="sift-empty-link">Ouvrir Revue</button>`
     : "";
   return (
     `<div class="sift-empty-state">` +
@@ -37,7 +37,7 @@ export function emptyStateHtml(opts: EmptyStateOpts): string {
   );
 }
 
-/** Wire the "Aller à Revue →" link (a no-op if the markup didn't include one). Navigates via the
+/** Wire the "Ouvrir Revue" link (a no-op if the markup didn't include one). Navigates via the
  *  same nav-click pattern already used elsewhere (filing.ts goto-reglages): dispatch a click on
  *  the real nav item rather than duplicating the router. */
 export function wireEmptyState(root: ParentNode): void {

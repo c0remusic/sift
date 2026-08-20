@@ -2728,9 +2728,15 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    fond propres, le reset `button{}` les donne. Le survol passait à `--color-row-active`, le gris
    d'une LIGNE sélectionnée — un troisième gris pour un simple survol de bouton. Il ne garde que son
    passage d'encre ; le fond, lui, s'assombrit comme partout ailleurs. */
-.sift-empty-link{margin-top:var(--space-4);display:inline-flex;align-items:center;gap:8px;font-size:var(--text-sm);font-weight:500;color:var(--color-text-secondary);border:0;border-radius:var(--border-radius-md);padding:var(--space-8) var(--space-12);cursor:pointer;font-family:inherit}
+/* TEXTE SEUL depuis le 2026-08-20 (CLAUDE.md § Front : « CTA à label descriptif : texte seul.
+   Icône réservée à ce qui n'a pas d'équivalent textuel »). La flèche `ti-fill-circle-arrow-right`
+   des deux seuls consommateurs — empty-state.ts (« Ouvrir Revue ») et filing.ts (« Ajouter un
+   dossier depuis Accueil ») — ne disait rien que le libellé ne disait déjà. Partent avec elle :
+   le `gap:8px` (un seul enfant reste, il ne sépare plus rien — et c'était un littéral hors de
+   l'échelle d'espacement) et la règle `.sift-empty-link i`, devenue sans consommateur.
+   `display:inline-flex` RESTE : c'est lui qui garde le bouton à la largeur de son texte. */
+.sift-empty-link{margin-top:var(--space-4);display:inline-flex;align-items:center;font-size:var(--text-sm);font-weight:500;color:var(--color-text-secondary);border:0;border-radius:var(--border-radius-md);padding:var(--space-8) var(--space-12);cursor:pointer;font-family:inherit}
 .sift-empty-link:hover{color:var(--color-text-primary)}
-.sift-empty-link i{font-size:var(--text-md);color:var(--color-text-tertiary)}
 /* Compact inline hint (2026-07-08) — deliberately NOT .sift-empty-state: that component is scaled
    for a whole dead-end screen, this is a single line inside a list whose header/actions stay
    functional around it (e.g. Accueil's source list with 0 sources). */
@@ -2740,7 +2746,10 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    never do that. This is a scoped equivalent: same font file, own family name, own class, so only
    elements explicitly opting into `.ti-fill` get a filled glyph. Trial per 2026-07-12 feedback
    (poubelle confirmed filled; flèche circle in trial) — codepoints verified against the vendor's
-   own filled/*.svg comments, not guessed. */
+   own filled/*.svg comments, not guessed.
+   L'essai de la flèche est CLOS depuis le 2026-08-20 : ses deux consommateurs étaient des CTA à
+   libellé descriptif, que « texte seul » a vidés de leur icône, donc `ti-fill-circle-arrow-right`
+   est parti avec eux. Seule la poubelle reste, et c'est elle qui justifie encore tout ce bloc. */
 /* Le @font-face qui vivait ici pointait sur un CDN. L'audit SIMP-1 du 2026-07-28 l'a remplacé par
    un import de la feuille filled du paquet depuis `main.ts` — précisément ce que le paragraphe
    ci-dessus interdit, et le rail y a perdu trois icônes (issue #22). La bonne forme est celle-ci :
@@ -2749,7 +2758,6 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 @font-face{font-family:"tabler-icons-filled";font-style:normal;font-weight:400;src:url("../node_modules/@tabler/icons-webfont/dist/fonts/tabler-icons-filled.woff2") format("woff2")}
 .ti-fill{font-family:"tabler-icons-filled";font-style:normal;speak:none;font-weight:normal;font-variant:normal;text-transform:none;line-height:1;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
 .ti-fill-trash:before{content:"\f783"}
-.ti-fill-circle-arrow-right:before{content:"\f6fc"}
 
 /* ---- Graphique d'occupation par format (écran Clé USB + Bibliothèque) ----
    Layout inspiré de Disk Utility : en-tête icône + identité + capacité encadrée, filet, barre
