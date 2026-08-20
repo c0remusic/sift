@@ -79,9 +79,13 @@ sans le sidecar, `cargo check` lui-même sort en 101 (``resource path
 échouent en *file not found*. Ni l'un ni l'autre n'est un vrai bug. Bootstrap dans
 l'ordre : `npm run fetch-ffmpeg` PUIS `node scripts/make-fixtures.mjs` (qui plante en
 `ENOENT` si `binaries/` manque) — ou copier binaries + fixtures depuis le checkout
-principal. Vécu le 2026-08-20 sur deux worktrees. Les deux anchors authentiques
-facultatives (`src-tauri/fixtures/README.md`) restent manuelles ; les tests de
-caractérisation les sautent quand elles sont absentes.
+principal. Vécu le 2026-08-20 sur deux worktrees. ⚠️ En copiant : `fixtures/README.md`
+est SUIVI par git, donc le dossier `fixtures/` existe déjà dans un worktree frais, et
+`Copy-Item -Recurse` y IMBRIQUE alors la copie (`src-tauri/fixtures/fixtures/`) — même
+symptôme *file not found* que l'absence. Copier le CONTENU (`fixtures\*`), pas le
+dossier. Vécu le 2026-08-20 (agent #38). Les deux anchors authentiques facultatives
+(`src-tauri/fixtures/README.md`) restent manuelles ; les tests de caractérisation les
+sautent quand elles sont absentes.
 
 ⚠️ **Ne pas lancer `cargo test`/`clippy` pendant qu'un `tauri dev` compile** : ils se
 disputent le lock du `target/` (attente, ou corruption du cache incrémental).
