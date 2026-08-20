@@ -1,38 +1,38 @@
 // Self-hosted UI fonts — Outfit (UI: 400 body, 500 medium, 600 titles/labels) + JetBrains Mono
 // (numbers). Bundled via @fontsource so the desktop app needs no network. See system.md
 // (Typographie).
-// La 500 n'etait PAS importee jusqu'au 2026-08-14, alors que styles.css la declare 24 fois. Sans
-// face correspondante, l'algorithme de matching de CSS Fonts 4 essaie les graisses INFERIEURES
-// avant les superieures : les 24 sites peignaient donc du 400, silencieusement. Mesure dans la
-// vraie fenetre (issue #33) : meme libelle a 242,109 px en 400 ET en 500, contre 247,109 en 600.
-// Piege associe — `document.fonts.check('500 13px Outfit')` repond `true` meme sans la face, car
-// il dit qu'un texte peut etre rendu, pas qu'il le sera a la bonne graisse. Seule la largeur
-// discrimine. Trois graisses et pas deux : decision d'Antoine, alignee sur la table de styles
-// macOS d'Apple, ou Medium est une graisse de premiere classe (Caption 2) et ou Headline et Body
-// ne different QUE par la graisse a metriques identiques.
-// Le meme oubli vivait encore sur l'AUTRE famille au 2026-08-18 : trois regles demandent du
+// La 500 n'était PAS importée jusqu'au 2026-08-14, alors que styles.css la déclare 24 fois. Sans
+// face correspondante, l'algorithme de matching de CSS Fonts 4 essaie les graisses INFÉRIEURES
+// avant les supérieures : les 24 sites peignaient donc du 400, silencieusement. Mesuré dans la
+// vraie fenêtre (issue #33) : même libellé à 242,109 px en 400 ET en 500, contre 247,109 en 600.
+// Piège associé — `document.fonts.check('500 13px Outfit')` répond `true` même sans la face, car
+// il dit qu'un texte peut être rendu, pas qu'il le sera à la bonne graisse. Seule la largeur
+// discrimine. Trois graisses et pas deux : décision d'Antoine, alignée sur la table de styles
+// macOS d'Apple, où Medium est une graisse de première classe (Caption 2) et où Headline et Body
+// ne diffèrent QUE par la graisse à métriques identiques.
+// Le même oubli vivait encore sur l'AUTRE famille au 2026-08-18 : trois règles demandent du
 // mono en 500 et 600 — `.sift-time-elapsed,.sift-time-total` (styles.css:1145),
-// `.sift-key-btn` (1224), `.sift-usage-tip-ext` (1814) — et seule la 400 etait importee.
-// Meme silence, meme synthese approximative. Trouve en ecrivant `test/font-weights.test.ts`,
-// qui confronte desormais les deux fichiers a chaque `npm run test`.
+// `.sift-key-btn` (1224), `.sift-usage-tip-ext` (1814) — et seule la 400 était importée.
+// Même silence, même synthèse approximative. Trouvé en écrivant `test/font-weights.test.ts`,
+// qui confronte désormais les deux fichiers à chaque `npm run test`.
 import "@fontsource/outfit/400.css";
 import "@fontsource/outfit/500.css";
 import "@fontsource/outfit/600.css";
 import "@fontsource/jetbrains-mono/400.css";
 import "@fontsource/jetbrains-mono/500.css";
 import "@fontsource/jetbrains-mono/600.css";
-// Police d'icones, meme regle que les trois ci-dessus. Elle etait chargee depuis un CDN par un
-// <link> dans index.html, seule ressource reseau restante de l'app : hors ligne — en club, en
-// cabine, sur une machine sans wifi — TOUTE l'iconographie tombait en tofu, y compris les icones
+// Police d'icônes, même règle que les trois ci-dessus. Elle était chargée depuis un CDN par un
+// <link> dans index.html, seule ressource réseau restante de l'app : hors ligne — en club, en
+// cabine, sur une machine sans wifi — TOUTE l'iconographie tombait en tofu, y compris les icônes
 // de la barre de titre et du rail de navigation. Audit 2026-07-28, SIMP-1.
-// La feuille `tabler-icons-filled.min.css` du meme paquet NE DOIT PAS etre importee ici, et
-// styles.css:1675 le disait deja : elle redefinit `.ti` avec `font-family:"tabler-icons-filled"
-// !important`, donc l'ordre des imports n'y change rien. Importee le 2026-07-28 (audit SIMP-1)
-// pour recuperer son @font-face, elle a bascule TOUTES les icones de l'app sur la police pleine,
-// et les trois glyphes sans variante pleine ont rendu a vide : Accueil (ti-home), Journal
-// (ti-history), Cle USB (ti-usb) mesurees a 0 px de large dans la vraie fenetre le 2026-08-11
-// (issue #22), contre 17 px pour les cinq autres entrees du rail. Le @font-face de la police
-// pleine est declare a la main dans styles.css, ou seule `.ti-fill` l'utilise.
+// La feuille `tabler-icons-filled.min.css` du même paquet NE DOIT PAS être importée ici, et
+// styles.css:1675 le disait déjà : elle redéfinit `.ti` avec `font-family:"tabler-icons-filled"
+// !important`, donc l'ordre des imports n'y change rien. Importée le 2026-07-28 (audit SIMP-1)
+// pour récupérer son @font-face, elle a basculé TOUTES les icônes de l'app sur la police pleine,
+// et les trois glyphes sans variante pleine ont rendu à vide : Accueil (ti-home), Journal
+// (ti-history), Clé USB (ti-usb) mesurées à 0 px de large dans la vraie fenêtre le 2026-08-11
+// (issue #22), contre 17 px pour les cinq autres entrées du rail. Le @font-face de la police
+// pleine est déclaré à la main dans styles.css, où seule `.ti-fill` l'utilise.
 import "@tabler/icons-webfont/dist/tabler-icons.min.css";
 import { invoke } from "@tauri-apps/api/core";
 import { appInfo, dbHealth, ffmpegVersion } from "./ipc";

@@ -60,22 +60,22 @@ let mountedShape: string | null = null;
 /** (Re)peint la section.
  *
  *  FRÉQUENCE — c'est le fait qui gouverne toute cette fonction : ce rendu est appelé par `refresh()`
- *  (`sift-live.ts`) sur CHAQUE `queue:changed`, debouncé a 150 ms. Or `queue:changed` est reemis
+ *  (`sift-live.ts`) sur CHAQUE `queue:changed`, debouncé à 150 ms. Or `queue:changed` est réémis
  *  tous les 25 fichiers net-changes pendant un scan (`PROGRESS_BATCH`, `scanner.rs` → `ipc.rs`),
  *  plus une fois par lot du watcher (`watcher.rs`). Sur les 3944 fichiers du ticket #42, cela fait
- *  un repeint toutes les ~150 ms pendant toute la duree du scan — soit exactement le « handler
- *  appele en boucle » que CLAUDE.md § Front interdit de servir par `innerHTML =`.
+ *  un repeint toutes les ~150 ms pendant toute la durée du scan — soit exactement le « handler
+ *  appelé en boucle » que CLAUDE.md § Front interdit de servir par `innerHTML =`.
  *
- *  Le commentaire precedent affirmait ici l'inverse (« au plus une fois par ajout, rescan ou
- *  changement de file — jamais en rafale ») et c'est cette affirmation, pas le code, qui etait
- *  fausse. Le cout n'etait pas la peinture mais la DESTRUCTION : chaque `innerHTML =` detruisait
- *  des noeuds vivants — focus clavier d'une ligne (`tabindex="0"`), ancre d'un menu contextuel
+ *  Le commentaire précédent affirmait ici l'inverse (« au plus une fois par ajout, rescan ou
+ *  changement de file — jamais en rafale ») et c'est cette affirmation, pas le code, qui était
+ *  fausse. Le coût n'était pas la peinture mais la DESTRUCTION : chaque `innerHTML =` détruisait
+ *  des nœuds vivants — focus clavier d'une ligne (`tabindex="0"`), ancre d'un menu contextuel
  *  ouvert, et la cible d'un clic dont le mousedown et le mouseup encadraient un repeint (le
- *  navigateur retarge alors le `click` sur un ancetre, donc le clic est avale).
+ *  navigateur retarge alors le `click` sur un ancêtre, donc le clic est avalé).
  *
- *  Donc : creer les noeuds une fois, muter ensuite (modele `progress-zone.ts`). On ne reconstruit
- *  que lorsque l'ENSEMBLE des lignes change (`railShapeKey` — ajout, retrait, reordonnancement) ;
- *  le cas de loin le plus frequent, un compte en attente qui avance, ne fait qu'ecrire du texte. */
+ *  Donc : créer les nœuds une fois, muter ensuite (modèle `progress-zone.ts`). On ne reconstruit
+ *  que lorsque l'ENSEMBLE des lignes change (`railShapeKey` — ajout, retrait, réordonnancement) ;
+ *  le cas de loin le plus fréquent, un compte en attente qui avance, ne fait qu'écrire du texte. */
 export async function renderRailSources(): Promise<void> {
   const host = document.getElementById(SECTION_ID);
   if (!host) return;
@@ -95,7 +95,7 @@ export async function renderRailSources(): Promise<void> {
   const shape = railShapeKey(sources);
 
   // Chemin rapide : même ensemble de lignes qu'au dernier rendu, et les nœuds sont toujours là.
-  // Le compte de `[data-src]` est reverifie et non suppose — une autre main a pu toucher au rail
+  // Le compte de `[data-src]` est revérifié et non supposé — une autre main a pu toucher au rail
   // entre-temps, et une mutation sur un DOM qui ne correspond plus laisserait des lignes fausses
   // en silence. Toute discordance retombe sur la reconstruction, jamais sur un rendu partiel.
   if (sources.length && shape === mountedShape) {
@@ -109,8 +109,8 @@ export async function renderRailSources(): Promise<void> {
         const badge = label?.nextElementSibling as HTMLElement | null;
         if (!row || !dot || !label || !badge) return;
         const r = railRowState(s, sources, s.id === active, scanFailures.get(s.id));
-        // `textContent`/`title`/`className` : des proprietes DOM, qui ne parsent rien. Les valeurs
-        // brutes de `railRowState` y vont telles quelles — les echapper afficherait les entites.
+        // `textContent`/`title`/`className` : des propriétés DOM, qui ne parsent rien. Les valeurs
+        // brutes de `railRowState` y vont telles quelles — les échapper afficherait les entités.
         if (row.className !== r.rowClass) row.className = r.rowClass;
         if (row.title !== r.title) row.title = r.title;
         if (dot.className !== r.dotClass) dot.className = r.dotClass;

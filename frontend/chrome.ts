@@ -187,10 +187,10 @@ export function injectLeanStyle() {
     // Reuses the same buttons/click-wiring; only placement (markup order) and this styling differ.
     // The controls move into the left (nav-tone) zone, the title stays alone in the right zone.
     ".sift-tb-mac #sift-tb-left{justify-content:flex-start;gap:8px;padding-left:12px}" +
-    // Ni `justify-content` ni `padding-left` a re-declarer ici depuis la barre unifiee : la zone
+    // Ni `justify-content` ni `padding-left` à re-déclarer ici depuis la barre unifiée : la zone
     // droite porte son propre padding et son propre espaceur, identiques sur les deux cibles.
-    // Seul le PLACEMENT des boutons de fenetre differe entre macOS et le reste, et il est deja
-    // porte par le markup (zone gauche contre zone droite), pas par ces deux regles.
+    // Seul le PLACEMENT des boutons de fenêtre diffère entre macOS et le reste, et il est déjà
+    // porté par le markup (zone gauche contre zone droite), pas par ces deux règles.
     ".sift-tb-mac .sift-win{width:12px;height:12px;border-radius:50%;color:transparent;font-size:0}" +
     ".sift-tb-mac .sift-win:hover{color:inherit;font-size:8px}" +
     '.sift-tb-mac .sift-win[data-win="close"]{background:var(--color-text-danger)}' +

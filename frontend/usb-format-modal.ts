@@ -41,9 +41,9 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
   // disque confirmé n'est plus celui-là. Désarme définitivement le bouton de confirmation — la
   // seule sortie est Annuler puis une liste fraîche.
   let fatal = false;
-  // Nom du volume, prerempli avec celui de la cle : reformater en gardant son nom est le cas
-  // courant. Le backend l'assainit de toute facon (11 octets, majuscules) — ce champ ne fait que
-  // proposer, il ne decide pas de ce qui sera ecrit.
+  // Nom du volume, prérempli avec celui de la clé : reformater en gardant son nom est le cas
+  // courant. Le backend l'assainit de toute façon (11 octets, majuscules) — ce champ ne fait que
+  // proposer, il ne décide pas de ce qui sera écrit.
   let volumeName = drive.volume_name || "SIFT";
   // Étape réelle remontée par le processus élevé. Pas une animation : le travail se fait dans un
   // autre processus, et « on ne sait pas ce qui se passe » était le reproche exact.

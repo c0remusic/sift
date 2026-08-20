@@ -199,8 +199,8 @@ async function refresh() {
 export function installLiveWiring() {
   registerBatchRenderer(renderBatch);
   registerRefreshHook(refresh);
-  // Les huit globales `window.__sift*` ont disparu avec la maquette (etape 1, DESIGN.md § 17) :
-  // `router.ts` appelle les renderers de vue directement, par import. app.js etait leur unique
+  // Les huit globales `window.__sift*` ont disparu avec la maquette (étape 1, DESIGN.md § 17) :
+  // `router.ts` appelle les renderers de vue directement, par import. app.js était leur unique
   // appelant, et elle ne tourne plus dans Tauri.
   injectLeanStyle();
   void injectTitlebar();
@@ -363,8 +363,8 @@ export function installLiveWiring() {
           bibState.filter.verdict = undefined;
         } else if (stat === "duplicates") {
           bibDup.shown = !bibDup.shown;
-          // Relance aussi apres une erreur : sans `|| bibDup.error`, un scan echoue laissait
-          // l'ecran bloque sur son message, le chip ne rejouant jamais rien.
+          // Relance aussi après une erreur : sans `|| bibDup.error`, un scan échoué laissait
+          // l'écran bloqué sur son message, le chip ne rejouant jamais rien.
           if (bibDup.shown && (bibDup.groups === null || bibDup.error)) {
             loadDuplicates();
             return;

@@ -63,9 +63,9 @@ export const bibState: {
 // Reassigned both here and from sift-live.ts's click handler (the "Doublons" stat/chip and its
 // resolve action) — kept as one object rather than 3 loose lets precisely so that cross-module
 // reassignment is a property write, not a rebinding.
-// `error` distingue « le scan a echoue » de « le scan a rendu zero groupe ». Les deux
-// collapsaient en `groups = []` dans les catch de sift-live.ts, donc un scan en ECHEC affichait
-// « Aucun doublon dans toute la bibliotheque » — une affirmation sur l'etat du disque de
+// `error` distingue « le scan a échoué » de « le scan a rendu zéro groupe ». Les deux
+// collapsaient en `groups = []` dans les catch de sift-live.ts, donc un scan en ÉCHEC affichait
+// « Aucun doublon dans toute la bibliothèque » — une affirmation sur l'état du disque de
 // l'utilisateur, produite par une commande qui n'a jamais abouti. Audit 2026-07-28, CC-1.
 /** Minuterie du debounce de recherche. Au niveau module et non sur le nœud : le champ vit
  *  désormais dans la barre unifiée et survit aux rendus, mais il disparaît au changement d'écran —
@@ -440,10 +440,10 @@ export const bibDup: {
 
 /// Lance le scan de doublons et repeint, quel que soit l'issue.
 ///
-/// Existe pour supprimer une duplication qui avait deja diverge en pratique : `sift-live.ts`
-/// portait DEUX copies de cette sequence (chip « doublons » et bouton dupscan), chacune avec son
+/// Existe pour supprimer une duplication qui avait déjà divergé en pratique : `sift-live.ts`
+/// portait DEUX copies de cette séquence (chip « doublons » et bouton dupscan), chacune avec son
 /// `.catch` posant `groups = []` — donc chacune capable d'annoncer « aucun doublon » sur un scan
-/// echoue. Un seul endroit, un seul comportement. Audit 2026-07-28, CC-1.
+/// échoué. Un seul endroit, un seul comportement. Audit 2026-07-28, CC-1.
 export function loadDuplicates(): void {
   bibDup.loading = true;
   bibDup.error = null;
@@ -455,7 +455,7 @@ export function loadDuplicates(): void {
     })
     .catch((e: unknown) => {
       console.error("scan_library_duplicates failed", e);
-      // `groups` reste a null : sans resultat, on ne pretend RIEN sur la bibliotheque.
+      // `groups` reste à null : sans résultat, on ne prétend RIEN sur la bibliothèque.
       bibDup.groups = null;
       bibDup.error = humanizeScanError(e);
     })
@@ -465,8 +465,8 @@ export function loadDuplicates(): void {
     });
 }
 
-/// Message court et actionnable a partir d'une erreur IPC brute. La chaine brute reste en
-/// console.error ; l'ecran n'affiche jamais un `Error: ...` non traduit.
+/// Message court et actionnable à partir d'une erreur IPC brute. La chaîne brute reste en
+/// console.error ; l'écran n'affiche jamais un `Error: ...` non traduit.
 function humanizeScanError(e: unknown): string {
   const raw = String(e);
   if (raw.includes("db lock") || raw.includes("poisoned")) {
@@ -612,12 +612,12 @@ export function positionViewModeThumb(): void {
   if (seg) slideSegThumb(seg, "[data-bib='viewmode'].on");
 }
 
-/** Derniere ventilation par format de la bibliotheque, gardee entre deux rendus.
+/** Dernière ventilation par format de la bibliothèque, gardée entre deux rendus.
  *
- * `renderBiblioLive` se rejoue a chaque frappe de recherche, chaque facette et chaque tri, et il
- * ecrase `#content` a chaque fois. Or ce graphique decrit la bibliotheque ENTIERE, pas le
- * sous-ensemble filtre : le refaire a chaque touche couterait un aller-retour IPC pour un resultat
- * identique, et le ferait clignoter. On le relit donc au premier affichage de l ecran seulement,
+ * `renderBiblioLive` se rejoue à chaque frappe de recherche, chaque facette et chaque tri, et il
+ * écrase `#content` à chaque fois. Or ce graphique décrit la bibliothèque ENTIÈRE, pas le
+ * sous-ensemble filtré : le refaire à chaque touche coûterait un aller-retour IPC pour un résultat
+ * identique, et le ferait clignoter. On le relit donc au premier affichage de l'écran seulement,
  * et on redessine depuis cette valeur ensuite. */
 let bibUsage: UsageReport | null = null;
 

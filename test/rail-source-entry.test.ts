@@ -82,16 +82,16 @@ describe("sourceEntryHtml — échappement", () => {
   });
 });
 
-// Le rail se met a jour EN PLACE pendant un scan (issue #42) : `rail-sources.ts` garde ses noeuds
-// et n'ecrit que des valeurs. Les trois contrats ci-dessous sont ce dont ce chemin depend, et
+// Le rail se met à jour EN PLACE pendant un scan (issue #42) : `rail-sources.ts` garde ses nœuds
+// et n'écrit que des valeurs. Les trois contrats ci-dessous sont ce dont ce chemin dépend, et
 // chacun casse en SILENCE — pas d'exception, juste un rail qui ment.
 describe("railRowState — contrat du chemin mutation", () => {
-  it("rend du texte BRUT, jamais pre-echappe : le chemin mutation ecrit des proprietes DOM", () => {
-    // `textContent`/`title`/`className` ne parsent rien. Pre-echapper ici afficherait « &lt;b&gt; »
-    // a l'ecran, dans le rail, en clair. C'est l'inverse exact du bug d'echappement habituel — et
-    // c'est pourquoi ce test regarde `not.toContain("&")` la ou les autres exigent des entites.
-    // Dernier segment SANS `/` : `baseName` decoupe sur les deux separateurs, donc un `</b>` dans
-    // le nom couperait le libelle et masquerait ce qu'on mesure ici.
+  it("rend du texte BRUT, jamais pré-échappé : le chemin mutation écrit des propriétés DOM", () => {
+    // `textContent`/`title`/`className` ne parsent rien. Pré-échapper ici afficherait « &lt;b&gt; »
+    // à l'écran, dans le rail, en clair. C'est l'inverse exact du bug d'échappement habituel — et
+    // c'est pourquoi ce test regarde `not.toContain("&")` là où les autres exigent des entités.
+    // Dernier segment SANS `/` : `baseName` découpe sur les deux séparateurs, donc un `</b>` dans
+    // le nom couperait le libellé et masquerait ce qu'on mesure ici.
     const s = src({ path: `C:\\music\\<b>"pièges"` });
     const r = railRowState(s, [s], false, `<img src=x>`);
     expect(r.label).toBe(`<b>"pièges"`);
@@ -100,9 +100,9 @@ describe("railRowState — contrat du chemin mutation", () => {
     expect(r.title).not.toContain("&lt;");
   });
 
-  it("le badge est une chaine VIDE a zero, jamais absent — sinon la ligne n'est plus mutable", () => {
-    // Un span toujours present se met a jour par `textContent`. S'il disparaissait a zero, passer
-    // de 0 a 1 exigerait de CREER un noeud, donc de reconstruire — ce que tout ce chemin evite.
+  it("le badge est une chaîne VIDE à zéro, jamais absent — sinon la ligne n'est plus mutable", () => {
+    // Un span toujours présent se met à jour par `textContent`. S'il disparaissait à zéro, passer
+    // de 0 à 1 exigerait de CRÉER un nœud, donc de reconstruire — ce que tout ce chemin évite.
     // `.nav-badge:empty` (styles.css) replie la pastille, comme pour le badge de Revue.
     expect(railRowState(src({ pending_count: 0 }), [src()], false, undefined).badge).toBe("");
     expect(railRowState(src({ pending_count: 12 }), [src()], false, undefined).badge).toBe("12");
@@ -114,7 +114,7 @@ describe("railRowState — contrat du chemin mutation", () => {
     expect(railRowState(s, [s], false, undefined).rowClass).toBe("nv sift-rail-src");
   });
 
-  it("dotClass porte la classe de base ET la teinte : le chemin mutation ecrase className entier", () => {
+  it("dotClass porte la classe de base ET la teinte : le chemin mutation écrase className entier", () => {
     // `dot.className = r.dotClass` remplace tout. Si `dotClass` oubliait `sift-rail-src-dot`, la
     // pastille perdrait sa taille et sa forme au premier tick de scan, pas au rendu initial.
     const r = railRowState(src(), [src()], false, undefined);
@@ -122,8 +122,8 @@ describe("railRowState — contrat du chemin mutation", () => {
   });
 });
 
-describe("sourceEntryHtml — structure exigee par le chemin mutation", () => {
-  it("emet TOUJOURS les trois enfants, dans l'ordre pastille → libelle → badge", () => {
+describe("sourceEntryHtml — structure exigée par le chemin mutation", () => {
+  it("émet TOUJOURS les trois enfants, dans l'ordre pastille → libellé → badge", () => {
     // `rail-sources.ts` marche `firstElementChild` → `nextElementSibling` → `nextElementSibling`.
     // Cet ordre est un contrat entre deux fichiers, invisible depuis chacun d'eux pris seul.
     const s = src({ pending_count: 0 });
@@ -135,20 +135,20 @@ describe("sourceEntryHtml — structure exigee par le chemin mutation", () => {
     expect(children[2]).toContain("nav-badge");
   });
 
-  it("le badge est present meme a zero en attente", () => {
+  it("le badge est présent même à zéro en attente", () => {
     const s = src({ pending_count: 0 });
     expect(sourceEntryHtml(s, [s], false, undefined)).toContain('<span class="nav-badge"></span>');
   });
 });
 
-describe("railShapeKey — ce qu'une mise a jour en place ne rattrape PAS", () => {
+describe("railShapeKey — ce qu'une mise à jour en place ne rattrape PAS", () => {
   const a = src({ id: 1, path: "C:\\a" });
   const b = src({ id: 2, path: "C:\\b" });
 
-  it("ignore tout ce que la mutation sait ecrire — sinon le scan reconstruirait a chaque tick", () => {
+  it("ignore tout ce que la mutation sait écrire — sinon le scan reconstruirait à chaque tick", () => {
     // C'est LE test du correctif : pendant un scan, `pending_count` avance en permanence. S'il
-    // entrait dans la cle, la forme changerait a chaque tick et on reconstruirait le rail 6 fois
-    // par seconde — le bug d'origine, reintroduit par la porte de derriere.
+    // entrait dans la clé, la forme changerait à chaque tick et on reconstruirait le rail 6 fois
+    // par seconde — le bug d'origine, réintroduit par la porte de derrière.
     const base = railShapeKey([a, b]);
     expect(railShapeKey([{ ...a, pending_count: 999 }, b])).toBe(base);
     expect(railShapeKey([{ ...a, watched: false }, b])).toBe(base);
@@ -156,14 +156,14 @@ describe("railShapeKey — ce qu'une mise a jour en place ne rattrape PAS", () =
     expect(railShapeKey([{ ...a, color_key: "teal" }, b])).toBe(base);
   });
 
-  it("change des qu'il faut creer, retirer ou deplacer un noeud", () => {
+  it("change dès qu'il faut créer, retirer ou déplacer un nœud", () => {
     const base = railShapeKey([a, b]);
     expect(railShapeKey([a])).not.toBe(base); // retrait
     expect(railShapeKey([a, b, src({ id: 3 })])).not.toBe(base); // ajout
-    expect(railShapeKey([b, a])).not.toBe(base); // reordonnancement
+    expect(railShapeKey([b, a])).not.toBe(base); // réordonnancement
   });
 
-  it("une liste vide a sa propre cle : la section montre alors un message, pas des lignes", () => {
+  it("une liste vide a sa propre clé : la section montre alors un message, pas des lignes", () => {
     expect(railShapeKey([])).toBe("");
     expect(railShapeKey([])).not.toBe(railShapeKey([a]));
   });

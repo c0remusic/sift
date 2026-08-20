@@ -62,9 +62,9 @@ function openLink(u){window.open(u,'_blank','noopener');}
   }
   function render(){var vt=document.getElementById('sift-view-title');
     Array.prototype.forEach.call(nav.querySelectorAll('.nv'),function(n){var on=n.dataset.view===view;n.classList.toggle('on',on);
-      // Tient a jour le <h1> accessible (invisible, voir .sift-sr-only). Le libelle du rail EST
-      // le nom humain de la vue : le relire ici plutot que de maintenir une table vue->titre,
-      // qui divergerait au premier renommage. Le premier <span> est le libelle ; le second, sur
+      // Tient à jour le <h1> accessible (invisible, voir .sift-sr-only). Le libellé du rail EST
+      // le nom humain de la vue : le relire ici plutôt que de maintenir une table vue->titre,
+      // qui divergerait au premier renommage. Le premier <span> est le libellé ; le second, sur
       // Revue, est le badge de compte.
       if(on&&vt){var lbl=n.querySelector('span');if(lbl)vt.textContent=lbl.textContent;}});
     if(view==="revue")return revMode==="batch"?renderBatch():renderRevue();
@@ -438,8 +438,8 @@ function openLink(u){window.open(u,'_blank','noopener');}
   render();
 })();
 
-// Module ESM depuis 2026-08-19 (etape 1) : ce fichier n'est plus charge que hors Tauri, par
-// un import dynamique de main.ts, et un import dynamique exige un module. `openLink` cesse d'etre
-// une globale et devient portee-module — son seul appelant est l'IIFE ci-dessus (lignes 418, 423),
-// aucun attribut `onclick=` ne s'y refere.
+// Module ESM depuis 2026-08-19 (étape 1) : ce fichier n'est plus chargé que hors Tauri, par
+// un import dynamique de main.ts, et un import dynamique exige un module. `openLink` cesse d'être
+// une globale et devient portée-module — son seul appelant est l'IIFE ci-dessus (lignes 418, 423),
+// aucun attribut `onclick=` ne s'y réfère.
 export {};

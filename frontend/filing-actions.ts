@@ -302,9 +302,9 @@ async function doRevert(batchId: string): Promise<void> {
     toast("Annulé — retour dans la file", false);
   } catch (e) {
     // Le message de domaine passe en `display` : les DEUX branches traversent donc
-    // `humanizeError`, et aucune ne reste sans trace. Une version anterieure de ce correctif
+    // `humanizeError`, et aucune ne reste sans trace. Une version antérieure de ce correctif
     // n'appelait le module que dans le `else` tout en retirant le `console.error` qui couvrait les
-    // deux — la branche « source gone », la plus documentee de ce chemin, n'ecrivait plus rien.
+    // deux — la branche « source gone », la plus documentée de ce chemin, n'écrivait plus rien.
     const msg = String(e);
     toast(
       humanizeError(

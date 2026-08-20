@@ -458,12 +458,12 @@ export interface RemovableDrive {
    * d'invalidation au cache d'occupation côté Rust — ne pas le recalculer ici. */
   free_bytes: number;
   current_fs: string;
-  /** Nom du volume actuel ("DJERMUSIQUE"), vide si le disque n'est pas formate. Valeur par defaut
+  /** Nom du volume actuel ("DJERMUSIQUE"), vide si le disque n'est pas formaté. Valeur par défaut
    * du champ de nom dans la modale. */
   volume_name: string;
-  /** Etat de sante du volume, deja formule en francais par le backend ("OK",
-   * "Reparation complete necessaire", "Avertissement (code N)"). Vide pour un disque RAW, qui n'a
-   * pas de systeme de fichiers dont juger la sante. */
+  /** État de santé du volume, déjà formulé en français par le backend ("OK",
+   * "Réparation complète nécessaire", "Avertissement (code N)"). Vide pour un disque RAW, qui n'a
+   * pas de système de fichiers dont juger la santé. */
   health: string;
   /** `false` for an enumerated but empty card reader / drive bay. It still has a drive letter in
    * Explorer, so it must be listed and explained rather than hidden — but it cannot be formatted. */
@@ -484,8 +484,8 @@ export const listRemovableDrives = (): Promise<RemovableDrive[]> =>
  * seul moyen de savoir où il en est. */
 export const formatStep = (): Promise<string> => invoke("format_step");
 
-/** Demonte `driveId` pour qu'il puisse etre debranche sans risque. Rejette avec `"EJECT_BUSY"`
- * quand le systeme refuse — rien n'a ete demonte dans ce cas. */
+/** Démonte `driveId` pour qu'il puisse être débranché sans risque. Rejette avec `"EJECT_BUSY"`
+ * quand le système refuse — rien n'a été démonté dans ce cas. */
 export const ejectDrive = (driveId: string): Promise<void> => invoke("eject_drive", { driveId });
 
 /** Une ligne du graphique d'occupation : un format, ce qu'il pèse, combien de fichiers.

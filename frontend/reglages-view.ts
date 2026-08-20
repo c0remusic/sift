@@ -309,7 +309,7 @@ export async function renderReglagesLive() {
         })
         .catch((e: unknown) => {
           if (mine !== tplSeq) return;
-          console.error("[preview_filename] apercu du modele", e);
+          console.error("[preview_filename] aperçu du modèle", e);
           tplLines.forEach((l) => {
             l.textContent = "→ aperçu indisponible";
           });
