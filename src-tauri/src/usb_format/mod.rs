@@ -9,18 +9,18 @@
 
 use serde::{Deserialize, Serialize};
 
-/// Formatage FAT32 au-dela du plafond de 32 Go de Windows.
+/// Formatage FAT32 au-delà du plafond de 32 Go de Windows.
 ///
-/// Gate `any(windows, test)` et non `windows` seul, pour tenir deux exigences a la fois :
+/// Gate `any(windows, test)` et non `windows` seul, pour tenir deux exigences à la fois :
 ///
 /// - **macOS n'en a aucun usage.** Il formate par `diskutil eraseDisk FAT32` (`macos.rs`), qui
 ///   ne connaît pas le plafond de 32 Go — ce module n'existe QUE pour contourner Windows. Ses
-///   seuls appelants, `privileged.rs` et `windows.rs`, sont eux-memes gates Windows. Sans gate,
+///   seuls appelants, `privileged.rs` et `windows.rs`, sont eux-mêmes gates Windows. Sans gate,
 ///   le binaire macOS compilait et liait `fatfs` pour du code que rien n'y appelle.
 /// - **Les tests doivent tourner sur n'importe quelle machine.** C'était la raison d'être de
-///   l'absence de gate ; `test` la preserve telle quelle. `fatfs` est donc declare deux fois
+///   l'absence de gate ; `test` la préserve telle quelle. `fatfs` est donc déclaré deux fois
 ///   dans `Cargo.toml` : en dépendance `cfg(windows)` pour la production, et en
-///   dev-dependance pour que ces tests compilent partout.
+///   dev-dépendance pour que ces tests compilent partout.
 #[cfg(any(target_os = "windows", test))]
 pub mod fat32;
 
@@ -70,9 +70,9 @@ pub struct RemovableDrive {
     /// signifie un contenu différent, donc un parcours à refaire.
     pub free_bytes: u64,
     pub current_fs: String,
-    /// Nom du volume actuel (`"DJERMUSIQUE"`), vide si le disque n'est pas formate. Sert de valeur
+    /// Nom du volume actuel (`"DJERMUSIQUE"`), vide si le disque n'est pas formaté. Sert de valeur
     /// par défaut au champ de nom de la modale : reformater une clé en gardant son nom est le cas
-    /// courant, le retaper a chaque fois serait une corvee.
+    /// courant, le retaper à chaque fois serait une corvée.
     pub volume_name: String,
     /// État de santé du volume, déjà formulé en français par le backend. Vide quand il n'y a aucun
     /// volume monté à interroger — un disque RAW n'a pas de santé de système de fichiers.
@@ -161,12 +161,12 @@ pub trait RemovableDriveBackend {
         fs: TargetFs,
         label: &str,
     ) -> Result<(), UsbFormatError>;
-    /// Démonte le disque pour qu il puisse être débranché sans risque.
+    /// Démonte le disque pour qu'il puisse être débranché sans risque.
     ///
     /// Doit VÉRIFIER que le disque a bien disparu avant de rendre `Ok` : sur les deux OS la
-    /// demande d éjection est asynchrone et réussit silencieusement même quand le système la
-    /// refuse ensuite. Annoncer un succès non vérifié ici, c est inviter à débrancher un volume
-    /// encore monte.
+    /// demande d'éjection est asynchrone et réussit silencieusement même quand le système la
+    /// refuse ensuite. Annoncer un succès non vérifié ici, c'est inviter à débrancher un volume
+    /// encore monté.
     fn eject(&self, drive: &RemovableDrive) -> Result<(), UsbFormatError>;
 }
 

@@ -2815,7 +2815,7 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .sift-usage-lg{display:flex;flex-direction:column;align-items:flex-start;background:none;border:0;padding:0;cursor:pointer;color:inherit;font-family:inherit;text-align:left;min-width:0}
 .sift-usage-lg-static{cursor:default}
 .sift-usage-lg-top{display:inline-flex;align-items:center;gap:var(--space-8);min-width:0}
-/* Carre arrondi, pas une pastille : forme de Disk Utility, reprise pour toutes les legendes. */
+/* Carré arrondi, pas une pastille : forme de Disk Utility, reprise pour toutes les légendes. */
 .sift-usage-swatch{width:var(--space-12);height:var(--space-12);border-radius:3px;flex:none}
 .sift-usage-swatch-free{background:var(--color-background-primary);box-shadow:inset 0 0 0 0.5px var(--color-border-secondary)}
 .sift-usage-lg-name{font-family:var(--font-mono);font-size:var(--text-md);color:var(--color-text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}

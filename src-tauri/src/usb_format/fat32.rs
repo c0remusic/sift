@@ -118,8 +118,8 @@ mod tests {
     use super::*;
     use std::io::{Seek, SeekFrom};
 
-    /// Un volume de 40 Go : au-dela du plafond de 32 Go que Windows oppose, donc le cas que cet
-    /// écran existe pour traiter. Adossé à un fichier temporaire qui ne grandit qu a la mesure de
+    /// Un volume de 40 Go : au-delà du plafond de 32 Go que Windows oppose, donc le cas que cet
+    /// écran existe pour traiter. Adossé à un fichier temporaire qui ne grandit qu'à la mesure de
     /// ce qui est réellement écrit (~10 Mo de FAT), pas à 40 Go.
     fn format_and_reopen(total_bytes: u64, label: &str) -> fatfs::FileSystem<std::fs::File> {
         let tmp = tempfile::NamedTempFile::new().expect("tempfile");
@@ -156,7 +156,7 @@ mod tests {
     }
 
     /// 32 Kio est la valeur de compatibilité maximale, et celle que porte déjà un disque DJ
-    /// formate par un outil tiers. Au-dela, `fatfs` lui-meme avertit d incompatibilite.
+    /// formaté par un outil tiers. Au-delà, `fatfs` lui-même avertit d'incompatibilité.
     #[test]
     fn picks_a_cdj_compatible_cluster_size() {
         let fs = format_and_reopen(40 * 1024 * 1024 * 1024u64, "SIFT_TEST");
@@ -164,8 +164,8 @@ mod tests {
         assert_eq!(cluster, 32 * 1024, "taille de cluster obtenue: {cluster}");
     }
 
-    /// Formater n est pas écrire un secteur d amorçage : le volume doit réellement accepter des
-    /// fichiers et les rendre. C est ce qu un CDJ fera.
+    /// Formater n'est pas écrire un secteur d'amorçage : le volume doit réellement accepter des
+    /// fichiers et les rendre. C'est ce qu'un CDJ fera.
     #[test]
     fn the_formatted_volume_actually_holds_files() {
         let fs = format_and_reopen(40 * 1024 * 1024 * 1024u64, "SIFT_TEST");
@@ -188,8 +188,8 @@ mod tests {
         assert_eq!(fs.volume_label().trim_end(), "SIFT_TEST");
     }
 
-    /// Le secteur d amorçage doit porter la signature 0x55AA, sans quoi aucun système ne
-    /// reconnaît le volume — vérification indépendante de `fatfs`, qui vient de l écrire.
+    /// Le secteur d'amorçage doit porter la signature 0x55AA, sans quoi aucun système ne
+    /// reconnaît le volume — vérification indépendante de `fatfs`, qui vient de l'écrire.
     #[test]
     fn boot_sector_carries_the_signature() {
         let tmp = tempfile::NamedTempFile::new().expect("tempfile");
@@ -211,7 +211,7 @@ mod tests {
             &[0x55, 0xAA],
             "signature de secteur absente"
         );
-        // "FAT32   " a l offset 82 : le type declare par le BPB lui-meme.
+        // "FAT32   " à l'offset 82 : le type déclaré par le BPB lui-même.
         assert_eq!(&boot[82..87], b"FAT32");
     }
 

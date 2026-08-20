@@ -44,11 +44,11 @@ pub const PRIVILEGED_FLAG: &str = "--sift-privileged-format";
 /// de dire « échec ».
 pub const EXIT_OK: i32 = 0;
 
-/// Marqueur terminal de succès dans le fichier d étape. Le frontend interroge jusqu a le voir, ou
-/// jusqu a un message commencant par `ECHEC_PREFIX`.
+/// Marqueur terminal de succès dans le fichier d'étape. Le frontend interroge jusqu'à le voir, ou
+/// jusqu'à un message commençant par `ECHEC_PREFIX`.
 pub const STEP_DONE: &str = "Terminé";
 
-/// Préfixe de tout état terminal d échec. Un préfixe plutôt qu une valeur exacte : le message
+/// Préfixe de tout état terminal d'échec. Un préfixe plutôt qu'une valeur exacte : le message
 /// porte la cause, et le frontend doit pouvoir la montrer sans table de correspondance.
 pub const STEP_FAILED_PREFIX: &str = "Échec";
 pub const EXIT_BAD_ARGS: i32 = 2;
@@ -261,7 +261,7 @@ mod tests {
         assert!(parse_args(&args).expect("drapeau present").is_err());
     }
 
-    /// Le script ne doit JAMAIS contenir `format` : c'est ce que Windows refuse au-dela de 32 Go,
+    /// Le script ne doit JAMAIS contenir `format` : c'est ce que Windows refuse au-delà de 32 Go,
     /// et le laisser passer ramènerait le bug que ce module existe pour contourner.
     #[test]
     fn partition_script_creates_but_never_formats() {

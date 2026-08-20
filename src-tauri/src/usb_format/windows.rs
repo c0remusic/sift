@@ -149,7 +149,7 @@ pub(crate) struct VolumeFacts {
     /// État de santé du volume, déjà mis en français (`describe_health`). Vide quand aucun volume
     /// monté n'a pu être interrogé.
     pub health: String,
-    /// Nom du premier volume monte, vide sinon.
+    /// Nom du premier volume monté, vide sinon.
     pub volume_name: String,
     /// Somme des `FreeSpace` des volumes montés. C'est aussi la clé d'invalidation du cache
     /// d'occupation (`volume_usage`) : si l'espace libre a bougé, le contenu a bougé.
@@ -1141,7 +1141,7 @@ mod tests {
     /// Le code 53263 est le seul dont j'aie vu le rendu de Windows — mesure sur le volume FAT32
     /// réel de cette machine, que `Get-Volume` annonce "Full Repair Needed".
     /// Le champ de nom est libre côté interface : ce qui en sort doit être sûr à poser dans une
-    /// commande, et IDENTIQUE a ce que le disque portera — sinon l'utilisateur voit un nom et la
+    /// commande, et IDENTIQUE à ce que le disque portera — sinon l'utilisateur voit un nom et la
     /// cle en porte un autre.
     #[test]
     fn free_text_label_is_made_safe_for_a_command() {
@@ -1168,7 +1168,7 @@ mod tests {
         assert_eq!(describe_health(Some(0), &[2]), "OK");
     }
 
-    /// Un code inconnu s'affiche TEL QUEL a cote du niveau. Le traduire au juge inventerait un
+    /// Un code inconnu s'affiche TEL QUEL à côté du niveau. Le traduire au juge inventerait un
     /// diagnostic de disque, ce qui est pire que de montrer un nombre.
     #[test]
     fn unknown_codes_are_shown_not_invented() {
