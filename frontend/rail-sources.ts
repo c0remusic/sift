@@ -8,11 +8,11 @@
 // fichiers — le rail devient le sélecteur de provenance, exactement comme la sidebar de Finder.
 // Les actions par source (surveillance, rescan, retrait) passent au clic droit, où vivent les
 // actions secondaires partout ailleurs depuis l'étape 5.
-import { listSources, setSourceWatched, rescanSource, removeSource, addSource } from "./ipc";
+import { listSources, setSourceWatched, rescanSource, removeSource, addSource, setSourceColor } from "./ipc";
 import { open } from "@tauri-apps/plugin-dialog";
 import type { Source } from "../shared/contracts";
 import { esc } from "./dom";
-import { resolveSourceColorKey } from "./source-color";
+import { resolveSourceColorKey, SOURCE_HUE_CYCLE } from "./source-color";
 import { setQueueSourceFilter, activeQueueSource, renderQueue } from "./queue-panel";
 import { goTo } from "./router";
 import { openContextMenu } from "./context-menu";
@@ -117,11 +117,22 @@ function pickSource(id: number): void {
   void renderRailSources();
 }
 
+/** Infobulles des pastilles du menu — les clés techniques du cycle ne sont pas des mots d'UI. */
+const SOURCE_HUE_LABELS: Record<string, string> = {
+  indigo: "Indigo",
+  purple: "Violet",
+  pink: "Rose",
+  teal: "Turquoise",
+  yellow: "Jaune",
+};
+
 function sourceMenu(s: Source, x: number, y: number): void {
+  // `ok` vide = succès silencieux : quand l'effet est déjà visible à l'écran (la pastille du rail
+  // change sous le clic), un toast par-dessus est du bruit. L'échec, lui, se dit toujours.
   const after = async (p: Promise<unknown>, ok: string, ko: string, cmd: string) => {
     try {
       await p;
-      toast(ok);
+      if (ok) toast(ok);
     } catch (e) {
       toast(humanizeError(e, ko, cmd));
     }
@@ -142,6 +153,33 @@ function sourceMenu(s: Source, x: number, y: number): void {
     {
       label: "Rescanner",
       onPick: () => void after(rescanSource(s.id), "Rescan lancé", "Rescan impossible", "rescan_source"),
+    },
+    {
+      // Rangée de pastilles (patron Finder Tags), anneau sur la teinte RÉSOLUE — l'override si
+      // posé, sinon la teinte du cycle. Poser l'override = `set_source_color(id, teinte)`.
+      label: "Couleur",
+      separated: true,
+      swatches: {
+        hues: SOURCE_HUE_CYCLE.map((k) => ({ key: k, label: SOURCE_HUE_LABELS[k] ?? k })),
+        active: resolveSourceColorKey(sources, s),
+        onPick: (key) =>
+          void after(setSourceColor(s.id, key), "", "Impossible de changer la couleur", "set_source_color"),
+      },
+    },
+    {
+      // Retour au cycle : `set_source_color(id, null)`. Désactivée — pas retirée — quand aucun
+      // override n'est posé : le menu garde les mêmes entrées aux mêmes positions (doctrine
+      // du menu stable, patterns-macos.md § 8).
+      label: "Couleur automatique",
+      onPick: s.color_key
+        ? () =>
+            void after(
+              setSourceColor(s.id, null),
+              "",
+              "Impossible de rétablir la couleur automatique",
+              "set_source_color",
+            )
+        : undefined,
     },
     {
       // Désactivée, PAS omise. `openUrl` refuse côté Rust tout schéma autre que `http(s)://`, donc

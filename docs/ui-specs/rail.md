@@ -94,8 +94,23 @@ répertoire.
 ### Souris
 
 - **Clic** item : navigue. **Clic** source : filtre Revue sur cette source.
-- **Clic droit** sur une source : Suspendre la surveillance · Changer la couleur ·
-  Ouvrir l'emplacement · Retirer.
+- **Clic droit** sur une source : Suspendre la surveillance · Rescanner · **Couleur**
+  (rangée) · Couleur automatique · Ouvrir l'emplacement · Retirer.
+- **Couleur — forme actée le 2026-08-20 (wireframe validé, variante A).** Rangée de
+  pastilles *dans le menu même*, patron Finder Tags (guide macOS « Utiliser des tags » :
+  « choisissez une couleur au-dessus de Tags » dans le menu contextuel ; jusqu'à sept tags
+  y vivent en rangée). Pas de sous-menu — HIG § Menus : « Use submenus sparingly … [it]
+  hides the items it contains », réservé au terme répété sur 3+ entrées. Pas de sélecteur
+  libre — une valeur unique stockée ne peut pas suivre les deux thèmes, et la taxonomie
+  est un ensemble fermé (`DESIGN.md` § 4). Détail :
+  - cinq pastilles = `SOURCE_HUE_CYCLE`, anneau `--color-text-primary` sur la teinte
+    **résolue** (override, sinon cycle) — reprise du picker d'Accueil (`4befc09`) ;
+  - clic pastille → `set_source_color(id, teinte)` ; « Couleur automatique » →
+    `set_source_color(id, null)`, **désactivée** (jamais retirée) quand aucun override ;
+  - succès silencieux — la pastille du rail change sous le clic ; seul l'échec toaste.
+  - Élargir aux 9 teintes de la taxonomie (§ 4) resterait conforme : demanderait de
+    dériver 4 tokens `--color-hue-*-text` (blue, green, orange, gray) × 3 blocs. Écarté
+    le 2026-08-20 — 5 suffisent, décision réversible.
 - **Clic droit** sur « Corbeille » : Purger (confirmation armée).
 - **Glisser** un dossier depuis l'OS sur la section Sources : ajout à la surveillance.
 - **Glisser** des fichiers audio sur « Revue » : import dans la file.
