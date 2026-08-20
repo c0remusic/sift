@@ -13,6 +13,7 @@ import {
 } from "./filing-bins";
 import { fileBatch, fileCancel, rejectBatch } from "./ipc";
 import { requireEl, esc } from "./dom";
+import { slideSegThumb } from "./seg-thumb";
 import type { QueueItem, BatchResult, FileProgress, Target } from "../shared/contracts";
 import { FILE_IN_PLACE, EXTERNAL_DEST_PREFIX, MAX_ANALYSIS_ATTEMPTS } from "../shared/contracts";
 import {
@@ -568,20 +569,26 @@ function ensureBatchDestUI(): void {
  *  comme un bandeau d'avertissement posé dans le rail plutôt que comme un bouton — même correctif
  *  que `.sift-secondary-trash` et `.sift-usbfmt-confirm-btn`. Un aplat rouge reste réservé à un
  *  primaire destructif, que ce rail n'a pas.
- *  ⚠️ Le fond est INLINE, donc il bat `button:hover` : au survol il ne reste que le
- *  `filter:brightness(0.95)` de la règle générique, sur le même gris. C'est le hover voulu (le kit
- *  garde son matériau au survol) — mais ça veut dire qu'un futur `:hover` écrit en CSS pour ces
- *  boutons n'aurait AUCUN effet sur leur fond. */
+ *
+ *  Ces deux grammaires sont des CLASSES depuis le 2026-08-20 — `.sift-baction--primary` et
+ *  `.sift-baction--quiet` (styles.css) — au lieu de sept `style="background:…;color:…"` recopiés
+ *  dans les branches ci-dessous, où toute retouche de matériau devait être appliquée sept fois.
+ *  Le piège qui était documenté ici DISPARAÎT AVEC EUX : il n'y a plus de fond inline pour battre
+ *  `button:hover`, et donc plus de `:hover` CSS sans effet. Il est remplacé par sa contrepartie,
+ *  écrite dans la feuille : chacune des deux classes DOIT réaffirmer son `background` au survol,
+ *  sinon `button:hover` (0,1,1) la bat et le bouton redevient gris. */
 function actionButtonHtml(running: boolean): string {
   if (running) {
-    return '<button data-sift="batchstop" class="sift-baction" style="background:var(--color-surface-raised);color:var(--color-text-danger)">Stop</button>';
+    return '<button data-sift="batchstop" class="sift-baction sift-baction--quiet">Stop</button>';
   }
   const fileN = batchSel.size;
   const fakeN = batchFakeSel.size;
   if (fileN === 0 && fakeN === 0)
     // Pas d'opacity inline : `button:disabled` du générique porte déjà l'atténuation système
     // (styles.css, exemption documentée) — deux valeurs pour la même indisponibilité divergent.
-    return '<button class="sift-baction" disabled style="background:var(--color-accent-fill);color:var(--color-accent-ink);pointer-events:none">Convertir (0)</button>';
+    // `pointer-events:none` est parti dans le même geste (2026-08-20) : un `<button disabled>`
+    // n'émet aucun clic, la ceinture était redondante avec les bretelles du HTML.
+    return '<button class="sift-baction sift-baction--primary" disabled>Convertir (0)</button>';
   // Second-click confirm for large batches (see BATCH_CONFIRM_THRESHOLD) — armed only for the
   // exact selection it was requested for, so ticking/unticking a track after arming falls back
   // to asking again instead of silently confirming a changed selection. The button looks like a
@@ -612,15 +619,15 @@ function actionButtonHtml(running: boolean): string {
       // destructive button uses the system red color ». L'état armé se dit par le libellé et par
       // la barre de drain ; un fond danger ici disait « risque réel » pour une confirmation
       // anti-clic-synthétique (DESIGN.md § 4, tranché le 2026-08-19 contre la page HIG lue).
-      `<button data-sift="batchaction" class="sift-baction sift-baction-armed" style="background:var(--color-accent-fill);color:var(--color-accent-ink)">Confirmer — convertir ${fileN} ?${drain}</button>` +
-      `<button data-sift="batchcancelconfirm" class="sift-baction-cancel" style="background:none;border:none;color:var(--color-text-tertiary);font-size:var(--text-xs);padding:0 var(--space-8);cursor:pointer">Annuler</button>`
+      `<button data-sift="batchaction" class="sift-baction sift-baction--primary sift-baction-armed">Confirmer — convertir ${fileN} ?${drain}</button>` +
+      `<button data-sift="batchcancelconfirm" class="sift-baction-cancel">Annuler</button>`
     );
   }
   if (fakeN === 0)
-    return `<button data-sift="batchaction" class="sift-baction" style="background:var(--color-accent-fill);color:var(--color-accent-ink)">Convertir (${fileN})</button>`;
+    return `<button data-sift="batchaction" class="sift-baction sift-baction--primary">Convertir (${fileN})</button>`;
   if (fileN === 0)
-    return `<button data-sift="batchaction" class="sift-baction" style="background:var(--color-surface-raised);color:var(--color-text-danger)">Écarter (${fakeN})</button>`;
-  return `<button data-sift="batchaction" class="sift-baction" style="background:var(--color-accent-fill);color:var(--color-accent-ink)">Convertir (${fileN}) · Écarter (${fakeN})</button>`;
+    return `<button data-sift="batchaction" class="sift-baction sift-baction--quiet">Écarter (${fakeN})</button>`;
+  return `<button data-sift="batchaction" class="sift-baction sift-baction--primary">Convertir (${fileN}) · Écarter (${fakeN})</button>`;
 }
 
 /** Positions the batch Format thumb from whichever button currently carries `.on`. Called both
@@ -628,11 +635,7 @@ function actionButtonHtml(running: boolean): string {
  * format click (see the "batchformat" handler) so the move is what actually animates. */
 function positionBatchFmtThumb(): void {
   const seg = document.getElementById("sift-batch-fmt-seg");
-  const thumb = seg?.querySelector<HTMLElement>(".sift-seg-thumb");
-  const onEl = seg?.querySelector<HTMLElement>("[data-sift='batchformat'].on");
-  if (!thumb || !onEl) return;
-  thumb.style.width = `${onEl.offsetWidth}px`;
-  thumb.style.transform = `translateX(${onEl.offsetLeft}px)`;
+  if (seg) slideSegThumb(seg, "[data-sift='batchformat'].on");
 }
 
 /** Right-rail summary for batch mode (board's SELECTION / DESTINATION / WILL ENCODE / EXCLUDED).

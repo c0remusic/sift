@@ -10,6 +10,7 @@ import { homeProgressZone } from "./progress-zone";
 import { MAX_ANALYSIS_ATTEMPTS, type QueueItem } from "../shared/contracts";
 import { confirmAction } from "./confirm-modal";
 import { requireEl, esc } from "./dom";
+import { slideSegThumb } from "./seg-thumb";
 import { toast } from "./filing-toast";
 import { humanizeError } from "./errors";
 import { filingFailure, isFilingInFlight, onFilingOutcome } from "./filing-state";
@@ -304,11 +305,20 @@ export function installQueueNavKeys(): void {
 // pruned to the currently-ready set on every batch render so a filed/removed id can't linger.
 export let reviewMode: "detail" | "batch" = "detail";
 
-// Verdict = meaning only, vert/ambre uniquement (voir brief refonte 2026-07) — jamais un hex en
-// dur ici (l'ancien `#e2685e` rouge cassait cette règle) : lire les tokens CSS, pas une 3e teinte.
+// Verdict = sens seul, et la teinte vient de la table verdict de `DESIGN.md` § 16 — la même que la
+// colonne Verdict de la Bibliothèque (`library-views.ts`), pour que le même fait n'ait pas deux
+// couleurs selon l'écran où on le lit.
+//
+// Le « vert/ambre uniquement » du brief de refonte 2026-07 est PÉRIMÉ depuis la révision du
+// 2026-08-19 : `fake` passe à `danger`. C'était le seul écran où un faux lossless se disait en
+// ambre, c'est-à-dire du même ton que « à vérifier » — or « l'échec est l'information qu'on n'a pas
+// le droit d'estomper » (§ 4), et c'est la raison d'être de l'app.
+//
+// La règle qui, elle, ne bouge pas : JAMAIS un hex en dur ici (l'ancien `#e2685e` rouge la
+// cassait) — lire les tokens CSS, pas une 3ᵉ teinte inventée à côté.
 const VERDICT_DOT: Record<string, [string, string]> = {
   ok: ["var(--color-text-success)", "authentique"],
-  fake: ["var(--color-text-warning)", "faux / sur-encodé"],
+  fake: ["var(--color-text-danger)", "faux / sur-encodé"],
   grey: ["var(--color-text-warning)", "zone grise"],
 };
 export function verdictDot(v: string | null): string {
@@ -326,7 +336,7 @@ export function verdictDot(v: string | null): string {
 function verdictWord(it: Pick<QueueItem, "verdict" | "analysis_attempts">): [string, string] {
   const v = it.verdict;
   return v === "fake"
-    ? ["faux", "var(--color-text-warning)"]
+    ? ["faux", "var(--color-text-danger)"]
     : v === "grey"
       ? ["à vérifier", "var(--color-text-warning)"]
       : v === "ok"
@@ -565,18 +575,12 @@ export function ensureReviewSeg() {
   // le changement d'état "swappait" instantanément) — .sift-seg-opt's CSS transition only has
   // something to animate between if the button persists across calls rather than being torn
   // down/recreated from a fresh innerHTML string every time.
-  const onBtn = Array.from(
-    seg.querySelectorAll<HTMLButtonElement>('[data-sift="reviewmode"]'),
-  ).find((btn) => {
-    const on = btn.dataset.m === reviewMode;
-    btn.classList.toggle("on", on);
-    return on;
-  });
-  const thumb = seg.querySelector<HTMLElement>(".sift-seg-thumb");
-  if (thumb && onBtn) {
-    thumb.style.width = `${onBtn.offsetWidth}px`;
-    thumb.style.transform = `translateX(${onBtn.offsetLeft}px)`;
-  }
+  seg.querySelectorAll<HTMLButtonElement>('[data-sift="reviewmode"]').forEach((btn) =>
+    btn.classList.toggle("on", btn.dataset.m === reviewMode),
+  );
+  // Le pouce est relu depuis le `.on` qui vient d'être posé (`seg-thumb.ts`), pas retenu de la
+  // boucle : c'est le DOM tel qu'il est maintenant qui porte la géométrie à mesurer.
+  slideSegThumb(seg);
 }
 
 /** "Non analysés uniquement" filter toggle — surfaces tracks still waiting on/stuck in background

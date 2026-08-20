@@ -21,15 +21,21 @@
 // de navigation. Le seul `innerHTML` dans un chemin répété est celui du CORPS de la table sur
 // frappe de recherche ; les marques d'état d'une ligne (sélection, annulation en cours, annulée,
 // échec) se posent par mutation de classe sur les nœuds existants, jamais par reconstruction.
+//
+// QUATRE FONCTIONS DE MARKUP SONT PUBLIQUES — `theadHtml`, `skeletonHtml`, `rowHtml`, `groupHtml` —
+// et elles ne lisent PAS `jrnlState` : ce que la vue sait (sélection, statut, racine, repli) leur
+// arrive en argument. C'est ce qui permet à `journal-table.stories.ts` d'EXÉCUTER le vrai rendu au
+// lieu d'en recopier ~90 lignes qui divergeaient en silence (modèle : `library-verdict.stories.ts`
+// et `libraryTableRowHtml`). L'état entre en un seul point, `liveGroupHtml`.
 import type { JournalEntry } from "../shared/contracts";
 import { listJournal, getSessionId, revertBatch, revealTrack, getSetting } from "./ipc";
-import { requireEl, esc } from "./dom";
+import { requireEl, esc, plural } from "./dom";
 import { humanizeError } from "./errors";
 import { confirmAction, BATCH_CONFIRM_THRESHOLD } from "./confirm-modal";
 import { emptyStateHtml, wireEmptyState } from "./empty-state";
 import { openContextMenu } from "./context-menu";
 import { mountBarSearch, mountBarSegmented, openAside, closeAside } from "./toolbar";
-import { toast } from "./filing-toast";
+import { toast, copyToClipboard } from "./filing-toast";
 import { bibState } from "./bibliotheque-view";
 
 // ---------------------------------------------------------------------------
@@ -38,19 +44,22 @@ import { bibState } from "./bibliotheque-view";
 
 type JrnlMode = "session" | "all";
 
-/** Ce que le front sait de l'issue d'une annulation. ABSENT = « Appliqué ».
+/** Ce que le front sait de l'issue d'une annulation. ABSENT (`null`) = « Appliqué ».
  *
- *  Deux sources, et l'ordre compte. « Annulé » vient de la DONNÉE : `JournalEntry.undone` traverse
- *  l'IPC depuis le 2026-08-19, et `loadAndPaint` en sème la carte à chaque lecture — l'état survit
- *  donc au rechargement et au retour sur l'écran. « Annulation… » et « Échec » restent purement
- *  locaux : ils décrivent une tentative de CETTE vue, que la base n'enregistre pas (un revert
- *  échoué laisse ses lignes telles quelles). La mutation locale immédiate après une annulation
- *  réussie reste elle aussi en place : elle fait la transition sans attendre une relecture. */
-type JrnlStatus = "pending" | "reverted" | "failed";
+ *  Deux sources, et l'ordre compte — il est écrit une seule fois, dans `statusOf`. « Annulé » vient
+ *  de la DONNÉE : `JournalEntry.undone` traverse l'IPC depuis le 2026-08-19, donc l'état survit au
+ *  rechargement et au retour sur l'écran. « Annulation… » et « Échec » restent purement locaux : ils
+ *  décrivent une tentative de CETTE vue, que la base n'enregistre pas (un revert échoué laisse ses
+ *  lignes telles quelles). */
+export type JrnlStatus = "pending" | "reverted" | "failed";
 
 const jrnlState: {
   mode: JrnlMode;
   entries: JournalEntry[];
+  /** Index `batch_id` → entrée, reconstruit au SEUL point d'écriture d'`entries` (`loadAndPaint`).
+   *  Quatre chemins cherchaient l'entrée par balayage linéaire — inspecteur, menu contextuel,
+   *  double-clic, purge de sélection après une frappe — sur une liste qui monte à 500. */
+  byId: Map<string, JournalEntry>;
   q: string;
   /** Clés de groupe repliées. Survit aux rendus, pas aux changements d'écran. */
   collapsed: Set<string>;
@@ -65,6 +74,7 @@ const jrnlState: {
 } = {
   mode: "session",
   entries: [],
+  byId: new Map(),
   q: "",
   collapsed: new Set(),
   selection: new Set(),
@@ -122,9 +132,24 @@ function parseTs(ts: string): Date | null {
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
+// Les trois formateurs sont construits UNE fois, au chargement du module. `Intl.DateTimeFormat`
+// résout et compile sa locale à la construction, et `d.toLocaleTimeString("fr-FR", opts)` en
+// refabrique un À CHAQUE APPEL — deux par ligne de table pour la seule heure, plus un par en-tête de
+// jour. Les options sont exactement celles des trois `toLocale*` remplacées (hour+minute ;
+// dateStyle+timeStyle ; weekday+day+month+year), et aucune n'entre dans le jeu « requis » qui
+// déclencherait des valeurs par défaut différentes entre les deux formes : même sortie.
+const TIME_FMT = new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit" });
+const STAMP_FMT = new Intl.DateTimeFormat("fr-FR", { dateStyle: "long", timeStyle: "medium" });
+const DAY_FMT = new Intl.DateTimeFormat("fr-FR", {
+  weekday: "long",
+  day: "numeric",
+  month: "long",
+  year: "numeric",
+});
+
 function fmtTime(ts: string): string {
   const d = parseTs(ts);
-  return d ? d.toLocaleTimeString("fr-FR", { hour: "2-digit", minute: "2-digit" }) : ts;
+  return d ? TIME_FMT.format(d) : ts;
 }
 
 /** `jj/mm` — la date courte qui accompagne une heure quand la plage traverse des jours. */
@@ -136,7 +161,7 @@ function fmtDay(ts: string): string {
 
 function fmtStamp(ts: string): string {
   const d = parseTs(ts);
-  return d ? d.toLocaleString("fr-FR", { dateStyle: "long", timeStyle: "medium" }) : ts;
+  return d ? STAMP_FMT.format(d) : ts;
 }
 
 /** Clé de jour LOCALE (et non la date de `ts`, qui est en UTC) : un rangement de 01 h 30 le
@@ -150,7 +175,7 @@ function dayKey(ts: string): string {
 function dayLabel(ts: string): string {
   const d = parseTs(ts);
   if (!d) return "Date inconnue";
-  return d.toLocaleDateString("fr-FR", { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  return DAY_FMT.format(d);
 }
 
 // `session_id` backend = "{millis}-{pid}" (`lib.rs`). On dérive un libellé lisible depuis la partie
@@ -193,36 +218,50 @@ function actionLabel(kind: JournalEntry["kind"]): string {
   }
 }
 
-function statusLabel(id: string): string {
-  switch (jrnlState.status.get(id)) {
-    case "pending":
-      return "Annulation…";
-    case "reverted":
-      return "Annulé";
-    case "failed":
-      return "Échec";
-    default:
-      return "Appliqué";
-  }
-}
-
-function plural(n: number, one: string, many = `${one}s`): string {
-  return `${n} ${n > 1 ? many : one}`;
-}
-
-/** Une entrée déjà annulée (ou en cours) ne se ré-annule pas.
+/** Ce qu'un statut vaut à l'écran : le mot de la cellule État, et la classe de la ligne.
  *
- *  `e.undone` d'abord, et pas seulement la carte d'état : c'est la donnée qui fait foi, la carte
- *  n'en est qu'un miroir semé au chargement. Tout ce qui décide d'un désarmement passe par ici —
- *  le bouton « Annuler cette action » de l'inspecteur, le `(N)` de « Annuler la sélection », le
- *  menu contextuel et la boucle de `revertSelection` — donc brancher CE point sur la donnée les
- *  branche tous les quatre.
+ *  UNE table, parce qu'il y en avait deux et demie — un `switch` de libellés, une chaîne de
+ *  ternaires dans `rowHtml`, trois `classList.toggle` dans `paintRowStatus` — plus une quatrième
+ *  copie dans `journal-table.stories.ts`, qui avait déjà DÉDUIT cette forme `Record<statut,
+ *  {label, cls}>` : la story était la preuve que le besoin existait ici.
+ *
+ *  « Appliqué » n'y figure pas et n'a pas de classe : c'est l'ABSENCE de statut (`statusOf` → null),
+ *  l'état de toute entrée que le backend vient de rendre. */
+const ROW_STATE: Record<JrnlStatus, { label: string; cls: string }> = {
+  pending: { label: "Annulation…", cls: "jrnl-row--pending" },
+  reverted: { label: "Annulé", cls: "jrnl-row--reverted" },
+  failed: { label: "Échec", cls: "jrnl-row--failed" },
+};
+
+/** L'état d'une entrée, en UN point. Deux sources et l'ordre compte : la carte locale d'abord — elle
+ *  décrit une tentative de CETTE vue, que la base n'enregistre pas — puis la donnée, `undone`, qui
+ *  fait survivre « Annulé » au rechargement comme au changement de mode.
+ *
+ *  Remplace un semis : `loadAndPaint` recopiait `e.undone` dans la carte à chaque lecture, et les
+ *  cinq lecteurs se partageaient les deux sources sans le même ordre — `revertible` lisait la donnée
+ *  d'abord, les quatre autres la carte seule. Le semis avait un effet de bord que ce `??` n'a plus :
+ *  il ÉCRASAIT un « Échec » local dès que la base rendait le lot annulé. Le cas exige qu'un
+ *  `revert_batch` ait jeté APRÈS avoir tout annulé, puis un changement de mode ; l'entrée s'y lit
+ *  désormais « Échec » et reste rejouable — ce qu'un échec doit dire. */
+function statusOf(e: JournalEntry): JrnlStatus | null {
+  return jrnlState.status.get(e.batch_id) ?? (e.undone ? "reverted" : null);
+}
+
+/** Prend le STATUT et non l'entrée : `rowHtml` le tient de son argument (c'est ce qui le rend
+ *  exécutable hors de la vue), les autres appelants le tirent de `statusOf(e)`. */
+function statusLabel(s: JrnlStatus | null): string {
+  return s ? ROW_STATE[s].label : "Appliqué";
+}
+
+/** Une entrée déjà annulée (ou en cours) ne se ré-annule pas. Tout ce qui décide d'un désarmement
+ *  passe par ici — le bouton « Annuler cette action » de l'inspecteur, le `(N)` de « Annuler la
+ *  sélection », le menu contextuel et la boucle de `revertSelection` — donc brancher CE point sur
+ *  `statusOf` les branche tous les quatre sur la même lecture que la table.
  *
  *  Un lot PARTIELLEMENT annulé rend `undone:false` côté Rust (`MIN(undone)`) : il reste annulable,
  *  ce qui est exactement ce qu'il faut pour rejouer un revert interrompu. */
 function revertible(e: JournalEntry): boolean {
-  if (e.undone) return false;
-  const s = jrnlState.status.get(e.batch_id);
+  const s = statusOf(e);
   return s !== "reverted" && s !== "pending";
 }
 
@@ -249,7 +288,7 @@ function matchesQuery(e: JournalEntry, q: string): boolean {
   return hay.includes(q);
 }
 
-interface JrnlGroup {
+export interface JrnlGroup {
   key: string;
   label: string;
   entries: JournalEntry[];
@@ -259,45 +298,60 @@ interface JrnlGroup {
 
 /** Groupes dans l'ordre d'affichage. Mode session : un niveau (la session). Mode historique : deux
  *  (jour, puis session) — la spec demande le jour comme niveau supplémentaire AU-DESSUS, parce que
- *  c'est par là qu'on cherche dans un historique long. */
+ *  c'est par là qu'on cherche dans un historique long.
+ *
+ *  Pas de tableau `order` en parallèle des `Map` : une `Map` itère dans l'ordre d'INSERTION, donc
+ *  `[...map.values()]` rend déjà les groupes dans l'ordre où la première entrée de chacun est
+ *  arrivée. La fabrique passée à `push` porte aussi les libellés, qui ne sont donc calculés qu'à la
+ *  CRÉATION du groupe — `dayLabel` (un `Intl.format`) partait une fois par entrée pour un résultat
+ *  constant sur toute une journée. */
 function buildGroups(entries: JournalEntry[]): JrnlGroup[] {
-  const push = (map: Map<string, JrnlGroup>, order: string[], key: string, label: string): JrnlGroup => {
+  const push = (map: Map<string, JrnlGroup>, key: string, make: () => JrnlGroup): JrnlGroup => {
     let g = map.get(key);
     if (!g) {
-      g = { key, label, entries: [], children: [] };
+      g = make();
       map.set(key, g);
-      order.push(key);
     }
     return g;
   };
 
   if (jrnlState.mode === "session") {
     const map = new Map<string, JrnlGroup>();
-    const order: string[] = [];
     for (const e of entries) {
-      const g = push(map, order, `s:${e.session_id ?? "none"}`, sessionLabel(e.session_id, true));
-      g.entries.push(e);
+      const key = `s:${e.session_id ?? "none"}`;
+      push(map, key, () => ({
+        key,
+        label: sessionLabel(e.session_id, true),
+        entries: [],
+        children: [],
+      })).entries.push(e);
     }
-    return order.map((k) => map.get(k)!);
+    return [...map.values()];
   }
 
   const days = new Map<string, JrnlGroup>();
-  const dayOrder: string[] = [];
   const sessions = new Map<string, JrnlGroup>();
   for (const e of entries) {
     const dk = dayKey(e.ts);
-    const day = push(days, dayOrder, `d:${dk}`, dayLabel(e.ts));
+    const dKey = `d:${dk}`;
+    const day = push(days, dKey, () => ({ key: dKey, label: dayLabel(e.ts), entries: [], children: [] }));
     day.entries.push(e);
-    const sk = `s:${dk}:${e.session_id ?? "none"}`;
-    let sess = sessions.get(sk);
-    if (!sess) {
-      sess = { key: sk, label: sessionLabel(e.session_id, false), entries: [], children: [] };
-      sessions.set(sk, sess);
-      day.children.push(sess);
-    }
+    const sKey = `s:${dk}:${e.session_id ?? "none"}`;
+    // Le rattachement au jour vit DANS la fabrique : elle ne tourne qu'à la création, donc le
+    // sous-groupe n'entre qu'une fois dans `day.children`, sans test d'appartenance.
+    const sess = push(sessions, sKey, () => {
+      const s: JrnlGroup = {
+        key: sKey,
+        label: sessionLabel(e.session_id, false),
+        entries: [],
+        children: [],
+      };
+      day.children.push(s);
+      return s;
+    });
     sess.entries.push(e);
   }
-  return dayOrder.map((k) => days.get(k)!);
+  return [...days.values()];
 }
 
 /** Les `batch_id` VISIBLES, dans l'ordre affiché — un groupe replié n'en fournit aucun.
@@ -326,8 +380,14 @@ function currentGroups(): JrnlGroup[] {
   return buildGroups(jrnlState.entries.filter((e) => matchesQuery(e, q)));
 }
 
+/** L'ordre visible pour l'état COURANT — filtre et replis compris. Les quatre appelants (clic ⇧,
+ *  menu contextuel, flèches, ⌘A) en avaient la même paire d'appels écrite à la main. */
+function visibleIds(): string[] {
+  return visibleOrder(currentGroups());
+}
+
 function entryById(id: string): JournalEntry | undefined {
-  return jrnlState.entries.find((e) => e.batch_id === id);
+  return jrnlState.byId.get(id);
 }
 
 // ---------------------------------------------------------------------------
@@ -345,7 +405,7 @@ const COLS: readonly { cls: string; label: string }[] = [
 /** Ligne d'en-tête, collante en haut de la zone C — même grammaire que `.sift-lib-thead` de
  *  Bibliothèque, classe propre : le clic droit sur `.sift-lib-thead` ouvre les réglages de COLONNES
  *  de la Bibliothèque (`sift-live.ts`), et le Journal n'a ni tri ni colonnes redimensionnables. */
-function theadHtml(): string {
+export function theadHtml(): string {
   return (
     `<div class="jrnl-thead" role="row">` +
     COLS.map((c) => `<span class="jrnl-c ${c.cls}" role="columnheader">${c.label}</span>`).join("") +
@@ -353,27 +413,32 @@ function theadHtml(): string {
   );
 }
 
-function rowHtml(e: JournalEntry): string {
+/** Tout ce que `rowHtml` a besoin de savoir de la VUE — et rien de plus. La ligne ne lit donc pas
+ *  `jrnlState` : elle est peignable depuis une story comme depuis l'app. */
+export interface JrnlRowView {
+  selected: boolean;
+  status: JrnlStatus | null;
+  /** Racine de bibliothèque, pour rendre la destination relative (`relDest`). */
+  root: string | null;
+}
+
+export function rowHtml(e: JournalEntry, view: JrnlRowView): string {
   const id = esc(e.batch_id);
-  const time = esc(fmtTime(e.ts));
+  // Une seule fois : l'heure sert à la cellule ET à l'`aria-label`, et `fmtTime` traverse un
+  // `parseTs` + un formatage par appel.
+  const time = fmtTime(e.ts);
   const act = actionLabel(e.kind);
   const name = trackName(e);
-  const dest = relDest(e.to_path, jrnlState.root);
-  const state = statusLabel(e.batch_id);
-  const sel = jrnlState.selection.has(e.batch_id);
-  const st = jrnlState.status.get(e.batch_id);
+  const dest = relDest(e.to_path, view.root);
+  const state = statusLabel(view.status);
   const cls =
-    "lr jrnl-row" +
-    (sel ? " sel" : "") +
-    (st === "pending" ? " jrnl-row--pending" : "") +
-    (st === "reverted" ? " jrnl-row--reverted" : "") +
-    (st === "failed" ? " jrnl-row--failed" : "");
+    "lr jrnl-row" + (view.selected ? " sel" : "") + (view.status ? ` ${ROW_STATE[view.status].cls}` : "");
   const count = e.track_count > 1 ? ` (${e.track_count} morceaux)` : "";
-  const label = `${fmtTime(e.ts)}, ${act}${count}, ${name}, ${dest || "sans destination"}, ${state}`;
+  const label = `${time}, ${act}${count}, ${name}, ${dest || "sans destination"}, ${state}`;
   return (
-    `<div class="${cls}" data-jrow="${id}" tabindex="0" role="option" aria-selected="${sel}" ` +
+    `<div class="${cls}" data-jrow="${id}" tabindex="0" role="option" aria-selected="${view.selected}" ` +
     `aria-label="${esc(label)}">` +
-    `<span class="jrnl-c jrnl-c-time">${time}</span>` +
+    `<span class="jrnl-c jrnl-c-time">${esc(time)}</span>` +
     `<span class="jrnl-c jrnl-c-act">${esc(act)}${e.track_count > 1 ? `<span class="jrnl-batch">×${e.track_count}</span>` : ""}</span>` +
     `<span class="jrnl-c jrnl-c-track">${esc(name)}</span>` +
     // `<bdi>` n'est pas décoratif : la cellule est en `direction:rtl` pour tronquer par la GAUCHE,
@@ -388,20 +453,16 @@ function rowHtml(e: JournalEntry): string {
   );
 }
 
-function groupHtml(g: JrnlGroup, level: 1 | 2): string {
-  const open = !jrnlState.collapsed.has(g.key);
-  const n = g.entries.length;
-  const body = !open
-    ? ""
-    : g.children.length
-      ? g.children.map((c) => groupHtml(c, 2)).join("")
-      : g.entries.map(rowHtml).join("");
+/** En-tête repliable + corps. `open` et `body` sont des ARGUMENTS : le repli est un état de vue
+ *  (`jrnlState.collapsed`) et le corps peut être des lignes comme des sous-groupes — les décider ici
+ *  rendrait la fonction dépendante de l'écran. Corps VIDÉ quand le groupe est replié, pas caché. */
+export function groupHtml(g: JrnlGroup, level: 1 | 2, open: boolean, body: string): string {
   return (
     `<div class="jrnl-group jrnl-group--l${level}">` +
     `<button type="button" class="jrnl-group-hd" data-jgroup="${esc(g.key)}" aria-expanded="${open}">` +
     `<i class="ti ti-chevron-right jrnl-group-chev" aria-hidden="true"></i>` +
     `<span class="jrnl-group-label">${esc(g.label)}</span>` +
-    `<span class="jrnl-group-count">${esc(plural(n, "action"))}</span>` +
+    `<span class="jrnl-group-count">${esc(plural(g.entries.length, "action"))}</span>` +
     `</button>` +
     `<div class="jrnl-group-body">${body}</div>` +
     `</div>`
@@ -410,10 +471,30 @@ function groupHtml(g: JrnlGroup, level: 1 | 2): string {
 
 /** Squelette DANS la structure finale (DESIGN.md § 8) : mêmes colonnes, mêmes hauteurs de ligne,
  *  pour que l'arrivée des données ne déplace rien. */
-function skeletonHtml(): string {
+export function skeletonHtml(): string {
   const cell = (c: string) => `<span class="jrnl-c ${c}"><span class="jrnl-skel"></span></span>`;
   const row = `<div class="lr jrnl-row jrnl-row--skel" aria-hidden="true">${COLS.map((c) => cell(c.cls)).join("")}</div>`;
   return `<div class="jrnl-body">${row.repeat(6)}</div>`;
+}
+
+/** LE point où `jrnlState` entre dans le markup, et le seul : sous lui, `groupHtml` et `rowHtml` ne
+ *  lisent que leurs arguments. */
+function liveGroupHtml(g: JrnlGroup, level: 1 | 2): string {
+  const open = !jrnlState.collapsed.has(g.key);
+  const body = !open
+    ? ""
+    : g.children.length
+      ? g.children.map((c) => liveGroupHtml(c, 2)).join("")
+      : g.entries
+          .map((e) =>
+            rowHtml(e, {
+              selected: jrnlState.selection.has(e.batch_id),
+              status: statusOf(e),
+              root: jrnlState.root,
+            }),
+          )
+          .join("");
+  return groupHtml(g, level, open, body);
 }
 
 // ---------------------------------------------------------------------------
@@ -422,18 +503,24 @@ function skeletonHtml(): string {
 
 /** Peint le Journal en rattrapant l'échec, pour les appelants qui ne peuvent pas `await`.
  *
+ *  `reset` distingue les deux entrées : le routeur ouvre l'écran (`true` — état d'ouverture remis à
+ *  neuf par `renderJournal`), le contrôle segmenté et le bouton « Réessayer » rechargent seulement
+ *  (`false`). Le retry NE réinitialise donc PAS le mode, et c'est la sémantique d'avant : la HOF à
+ *  deux paramètres qu'il remplace se rappelait avec la même fonction de rendu, mais `renderJournal`
+ *  avait déjà posé son état AVANT le jet — le rejouer était sans effet.
+ *
  *  Impasse A18 (issue #15) : les `void render…()` laissaient partir la promesse sans `.catch`,
  *  alors que le routeur a DÉJÀ vidé `#content` avant de déléguer. Un rejet ne donnait donc même pas
  *  un état vide : un écran nu, et une unhandled rejection en console que personne ne lit.
  *
  *  L'erreur passe avant tout le reste (DESIGN.md § 8) : sur une lecture échouée, l'écran n'affirme
  *  RIEN du contenu — pas de « rien dans cette session », qui serait un fait non mesuré. */
-export function paintJournal(render: () => Promise<void>, context: string): void {
-  void render().catch((e: unknown) => {
+export function paintJournal(reset = false): void {
+  void (reset ? renderJournal() : loadAndPaint()).catch((e: unknown) => {
     const display = humanizeError(
       e,
       "Impossible de lire le journal. Vérifie la connexion à la base et réessaie.",
-      context,
+      `renderJournal(${jrnlState.mode})`,
     );
     // `requireEl` lèverait à son tour si `#content` manquait — dans un `catch`, on ne peut pas se
     // permettre un second échec.
@@ -447,12 +534,12 @@ export function paintJournal(render: () => Promise<void>, context: string): void
       `</div></div>`;
     content
       .querySelector<HTMLButtonElement>('[data-jact="retry"]')
-      ?.addEventListener("click", () => paintJournal(render, context));
+      ?.addEventListener("click", () => paintJournal());
   });
 }
 
-/** Point d'entrée du routeur. Remet la vue à son état d'ouverture — mode session, sans filtre ni
- *  sélection héritée d'une visite précédente. */
+/** Remet la vue à son état d'ouverture — mode session, sans filtre ni sélection héritée d'une visite
+ *  précédente. Passe par `paintJournal(true)` : le routeur ne peut pas `await`. */
 export async function renderJournal(): Promise<void> {
   jrnlState.mode = "session";
   jrnlState.q = "";
@@ -469,11 +556,15 @@ function switchMode(mode: JrnlMode): void {
   jrnlState.mode = mode;
   jrnlState.selection.clear();
   jrnlState.anchor = null;
-  paintJournal(() => loadAndPaint(), `renderJournal(${mode})`);
+  paintJournal();
 }
 
 async function loadAndPaint(): Promise<void> {
   const content = requireEl<HTMLElement>("#content", "renderJournal");
+  // Le SEUL point qui lève le drapeau, et il couvre les deux issues : le rendu abouti pose
+  // `.jrnl-wrap` par `paintTable`, la lecture échouée par le `catch` de `paintJournal`. Voir
+  // `journalOnScreen`.
+  journalPainted = true;
 
   // La barre AVANT la lecture : ses deux contrôles ne dépendent pas des données, et une lecture qui
   // échoue doit laisser le mode changeable — sinon l'écran d'erreur est une impasse.
@@ -500,16 +591,12 @@ async function loadAndPaint(): Promise<void> {
   ]);
 
   jrnlState.entries = entries;
+  jrnlState.byId = new Map(entries.map((e) => [e.batch_id, e]));
   jrnlState.root = root;
-  // Statuts initiaux DEPUIS LA DONNÉE : un lot annulé se relit annulé, au montage comme au
-  // changement de mode. On POSE seulement, on n'efface jamais — un « Échec » local décrit une
-  // tentative que la base n'enregistre pas (ses lignes restent `undone=0`), et l'effacer ici
-  // retirerait de l'écran le motif de l'échec au premier changement de mode.
-  for (const e of entries) if (e.undone) jrnlState.status.set(e.batch_id, "reverted");
-  // Une sélection qui désigne une entrée disparue ne pointe plus rien.
-  const live = new Set(entries.map((e) => e.batch_id));
-  for (const id of [...jrnlState.selection]) if (!live.has(id)) jrnlState.selection.delete(id);
-  if (jrnlState.anchor && !live.has(jrnlState.anchor)) jrnlState.anchor = null;
+  // Aucun semis de statuts : `statusOf` lit `undone` directement sur l'entrée. Une sélection qui
+  // désigne une entrée disparue, elle, ne pointe plus rien — et l'index sert de test d'existence.
+  for (const id of [...jrnlState.selection]) if (!jrnlState.byId.has(id)) jrnlState.selection.delete(id);
+  if (jrnlState.anchor && !jrnlState.byId.has(jrnlState.anchor)) jrnlState.anchor = null;
 
   paintTable(content);
   installJournalHandlers();
@@ -523,29 +610,26 @@ async function loadAndPaint(): Promise<void> {
 /** UN seul wrapper pour tout ce que la vue pose dans `#content` (règle `CLAUDE.md` § Front) :
  *  retiré et recréé en un point unique, ici. */
 function paintTable(content: HTMLElement): void {
-  const groups = currentGroups();
-  const nothingAtAll = jrnlState.entries.length === 0;
+  resetSelectionMirror();
 
-  if (nothingAtAll) {
+  if (jrnlState.entries.length === 0) {
     // Impasse assumée : rien à filtrer, donc pas d'en-tête de colonnes à garder à l'écran.
-    content.innerHTML = `<div class="jrnl-wrap">${
+    const empty =
       jrnlState.mode === "all"
-        ? emptyStateHtml({
+        ? {
             title: "Aucune action enregistrée",
             note: "L'historique complet des rangements, écarts et purges apparaîtra ici, prêt à être annulé.",
-            backToRevue: true,
-          })
-        : emptyStateHtml({
+          }
+        : {
             title: "Rien dans cette session",
             note: "Les actions de cette session apparaissent ici au fur et à mesure. L'historique complet reste accessible depuis la barre.",
-            backToRevue: true,
-          })
-    }</div>`;
+          };
+    content.innerHTML = `<div class="jrnl-wrap">${emptyStateHtml({ ...empty, backToRevue: true })}</div>`;
     wireEmptyState(content);
     return;
   }
 
-  content.innerHTML = `<div class="jrnl-wrap">${theadHtml()}${bodyHtml(groups)}</div>`;
+  content.innerHTML = `<div class="jrnl-wrap">${theadHtml()}${bodyHtml(currentGroups())}</div>`;
 }
 
 /** Le corps, groupes ou « aucun résultat ». Un seul endroit le construit : `paintTable` (rendu
@@ -558,7 +642,7 @@ function bodyHtml(groups: JrnlGroup[]): string {
   if (!groups.length) {
     return `<div class="jrnl-body"><div class="jrnl-noresult">Aucune action ne correspond à « ${esc(jrnlState.q)} ».</div></div>`;
   }
-  return `<div class="jrnl-body">${groups.map((g) => groupHtml(g, 1)).join("")}</div>`;
+  return `<div class="jrnl-body">${groups.map((g) => liveGroupHtml(g, 1)).join("")}</div>`;
 }
 
 /** Repeint le CORPS seul — pour la frappe de recherche et le repli d'un groupe, qui ne relisent
@@ -573,6 +657,7 @@ function repaintBody(): void {
     return;
   }
   old.outerHTML = bodyHtml(currentGroups());
+  resetSelectionMirror();
 }
 
 function mountBar(): void {
@@ -620,16 +705,35 @@ let searchTimer: number | undefined;
 // Sélection
 // ---------------------------------------------------------------------------
 
+function bodyEl(): HTMLElement | null {
+  return document.querySelector<HTMLElement>("#content .jrnl-body");
+}
+
+function rowEl(id: string): HTMLElement | null {
+  return bodyEl()?.querySelector<HTMLElement>(`.jrnl-row[data-jrow="${CSS.escape(id)}"]`) ?? null;
+}
+
+/** Remplace la sélection par la plage `[a,b]` de `ids`, bornes comprises et dans les deux sens.
+ *  Écrite deux fois à l'identique — clic ⇧ et ⇧+flèche. */
+function selectRange(ids: readonly string[], a: number, b: number): void {
+  jrnlState.selection.clear();
+  for (let i = Math.min(a, b); i <= Math.max(a, b); i++) jrnlState.selection.add(ids[i]);
+}
+
 /** Applique un clic de ligne à la convention système : clic remplace, ⇧ étend depuis l'ancre,
  *  ⌘/Ctrl bascule. Calqué sur `applyRowClick` (Bibliothèque) — un seul geste à apprendre pour les
- *  deux tables. */
-function applyJrnlClick(id: string, mods: { shift: boolean; meta: boolean }, ordered: string[]): void {
+ *  deux tables.
+ *
+ *  L'ordre visible se calcule DANS la branche ⇧ : c'est la seule qui s'en sert, et le reconstruire
+ *  demande de refiltrer et de regrouper toutes les entrées — pour un clic simple, la dépense était
+ *  entière et le résultat jeté. */
+function applyJrnlClick(id: string, mods: { shift: boolean; meta: boolean }): void {
   if (mods.shift && jrnlState.anchor != null) {
+    const ordered = visibleIds();
     const a = ordered.indexOf(jrnlState.anchor);
     const b = ordered.indexOf(id);
     if (a >= 0 && b >= 0) {
-      jrnlState.selection.clear();
-      for (let i = Math.min(a, b); i <= Math.max(a, b); i++) jrnlState.selection.add(ordered[i]);
+      selectRange(ordered, a, b);
       return;
     }
   }
@@ -644,27 +748,58 @@ function applyJrnlClick(id: string, mods: { shift: boolean; meta: boolean }, ord
   jrnlState.anchor = id;
 }
 
+/** Ce que les lignes MONTÉES portent réellement comme marque de sélection — le miroir dont
+ *  `paintSelection` déduit les seules lignes à toucher. */
+let selPainted = new Set<string>();
+
+/** Toute reconstruction du corps repeint les marques depuis `jrnlState.selection` (c'est `rowHtml`
+ *  qui les pose) : le miroir doit repartir de là, sinon il reste en AVANCE sur le DOM et
+ *  `paintSelection` saute une ligne dont la marque vient d'être refaite. Le cas se produit dès que
+ *  la sélection change sans repeinte — la purge de la frappe de recherche — puis qu'un ⌘A la
+ *  ré-ajoute : la ligne est dans l'ancien miroir ET dans la nouvelle sélection, donc hors de la
+ *  différence symétrique, et elle resterait sélectionnée en état sans l'être à l'écran. */
+function resetSelectionMirror(): void {
+  selPainted = new Set(jrnlState.selection);
+}
+
 /** Repeint la marque de sélection sur les lignes MONTÉES, sans reconstruire la table : le menu
- *  contextuel se ferme au premier défilement, et un rebuild en émettrait un. */
+ *  contextuel se ferme au premier défilement, et un rebuild en émettrait un.
+ *
+ *  Ne touche QUE la différence symétrique avec l'état déjà peint, et cherche sous `.jrnl-body` :
+ *  la forme précédente balayait `document` en entier et réécrivait deux attributs sur les 500
+ *  lignes à chaque flèche du clavier, pour en changer deux. */
 function paintSelection(): void {
-  document.querySelectorAll<HTMLElement>(".jrnl-row[data-jrow]").forEach((n) => {
-    const on = jrnlState.selection.has(n.dataset.jrow ?? "");
+  const body = bodyEl();
+  if (!body) return;
+  const touched: string[] = [];
+  for (const id of selPainted) if (!jrnlState.selection.has(id)) touched.push(id);
+  for (const id of jrnlState.selection) if (!selPainted.has(id)) touched.push(id);
+  for (const id of touched) {
+    const n = body.querySelector<HTMLElement>(`.jrnl-row[data-jrow="${CSS.escape(id)}"]`);
+    if (!n) continue;
+    const on = jrnlState.selection.has(id);
     n.classList.toggle("sel", on);
     n.setAttribute("aria-selected", on ? "true" : "false");
-  });
+  }
+  resetSelectionMirror();
+}
+
+/** La paire que tout changement de sélection doit poser : la marque sur les lignes, et l'inspecteur
+ *  qui décrit ce qui est sélectionné. Quatre sites l'écrivaient à la suite. */
+function syncSelectionUi(): void {
+  paintSelection();
+  paintAside();
 }
 
 /** Repeint l'état d'UNE ligne (cellule État + classe), par mutation. Aucune reconstruction : la
  *  table reste utilisable pendant qu'une annulation tourne (spec, « Annulation en cours »). */
-function paintRowStatus(id: string): void {
-  const row = document.querySelector<HTMLElement>(`.jrnl-row[data-jrow="${CSS.escape(id)}"]`);
+function paintRowStatus(e: JournalEntry): void {
+  const row = rowEl(e.batch_id);
   if (!row) return;
-  const st = jrnlState.status.get(id);
-  row.classList.toggle("jrnl-row--pending", st === "pending");
-  row.classList.toggle("jrnl-row--reverted", st === "reverted");
-  row.classList.toggle("jrnl-row--failed", st === "failed");
+  const st = statusOf(e);
+  for (const [key, v] of Object.entries(ROW_STATE)) row.classList.toggle(v.cls, key === st);
   const cell = row.querySelector<HTMLElement>(".jrnl-c-state");
-  if (cell) cell.textContent = statusLabel(id);
+  if (cell) cell.textContent = statusLabel(st);
   if (st === "reverted") {
     // SEULE la transition se colore ; l'état annulé, lui, reste neutre et permanent (DESIGN.md
     // § 8). La classe se retire à `animationend` — sinon une seconde annulation sur la même ligne
@@ -687,6 +822,18 @@ function rowsHtml(pairs: readonly [string, string][]): string {
   );
 }
 
+/** « combien par libellé d'action », dans l'ordre de première apparition. Les deux inspecteurs qui
+ *  le montrent — le résumé sans sélection et l'agrégat multi-sélection — en avaient chacun leur
+ *  copie de la boucle. */
+function countByAction(entries: readonly JournalEntry[]): [string, string][] {
+  const byAction = new Map<string, number>();
+  for (const e of entries) {
+    const l = actionLabel(e.kind);
+    byAction.set(l, (byAction.get(l) ?? 0) + 1);
+  }
+  return [...byAction].map(([k, v]): [string, string] => [k, String(v)]);
+}
+
 function paintAside(): void {
   const host = openAside();
   if (!host) return;
@@ -707,23 +854,19 @@ function paintAside(): void {
 /** Aucune sélection — le résumé de ce que la table montre. Jamais un état vide : l'inspecteur
  *  porte le contexte de la zone C (DESIGN.md § 14). */
 function asideSummaryHtml(): string {
-  const shown = jrnlState.entries.filter((e) => matchesQuery(e, jrnlState.q.trim().toLowerCase()));
-  const byAction = new Map<string, number>();
-  let failed = 0;
-  let first: string | null = null;
-  let last: string | null = null;
-  for (const e of shown) {
-    const l = actionLabel(e.kind);
-    byAction.set(l, (byAction.get(l) ?? 0) + 1);
-    if (jrnlState.status.get(e.batch_id) === "failed") failed++;
-    // Le backend rend du plus récent au plus ancien : la première ligne est la plus récente.
-    if (first == null) first = e.ts;
-    last = e.ts;
-  }
-  const pairs: [string, string][] = [...byAction.entries()].map(([k, v]) => [k, String(v)]);
+  // `q` normalisé UNE fois, hors du filtre : `trim().toLowerCase()` par entrée allouait deux
+  // chaînes par ligne pour un résultat constant.
+  const q = jrnlState.q.trim().toLowerCase();
+  const shown = jrnlState.entries.filter((e) => matchesQuery(e, q));
+  const pairs = countByAction(shown);
   // Un compteur à zéro en permanence occupe la place d'une information sans en porter : les échecs
   // ne s'affichent que s'il y en a. Ils ne s'atténuent jamais pour autant (DESIGN.md § 4).
+  const failed = shown.filter((e) => statusOf(e) === "failed").length;
   if (failed) pairs.push(["Échecs", String(failed)]);
+  // Le backend rend du plus récent au plus ancien : les bornes de la plage sont les deux BOUTS de
+  // la liste, pas une accumulation.
+  const first = shown.length ? shown[0].ts : null;
+  const last = shown.length ? shown[shown.length - 1].ts : null;
   if (first && last) {
     // Une heure seule ne situe rien quand la plage traverse des jours : en mode historique elle
     // dirait « 19:32 → 21:23 » pour trois semaines d'écart. La date rejoint donc l'heure là, et
@@ -749,7 +892,7 @@ function asideOneHtml(e: JournalEntry): string {
   const pairs: [string, string][] = [["Horodatage", fmtStamp(e.ts)]];
   if (e.track_count > 1) pairs.push(["Morceaux du lot", String(e.track_count)]);
   if (fmt) pairs.push(["Format produit", fmt]);
-  pairs.push(["État", statusLabel(e.batch_id)]);
+  pairs.push(["État", statusLabel(statusOf(e))]);
   const reason = jrnlState.failReason.get(e.batch_id);
   const applicable = revertible(e);
   return (
@@ -772,16 +915,9 @@ function pathBlock(label: string, p: string | null): string {
 
 function asideManyHtml(ids: string[]): string {
   const picked = ids.map(entryById).filter((e): e is JournalEntry => !!e);
-  const byAction = new Map<string, number>();
-  let tracks = 0;
-  for (const e of picked) {
-    const l = actionLabel(e.kind);
-    byAction.set(l, (byAction.get(l) ?? 0) + 1);
-    tracks += e.track_count;
-  }
   const applicable = picked.filter(revertible);
-  const pairs: [string, string][] = [...byAction.entries()].map(([k, v]) => [k, String(v)]);
-  pairs.push(["Morceaux concernés", String(tracks)]);
+  const pairs = countByAction(picked);
+  pairs.push(["Morceaux concernés", String(picked.reduce((s, e) => s + e.track_count, 0))]);
   if (applicable.length !== picked.length) {
     pairs.push(["Déjà annulées", String(picked.length - applicable.length)]);
   }
@@ -808,15 +944,18 @@ function wireAside(host: HTMLElement): void {
 // Annulation
 // ---------------------------------------------------------------------------
 
+/** La table de domaine reste ici — elle est PLUS précise que tout repli générique (`errors.ts`) —
+ *  mais la plomberie part : `humanizeError` garantit le `console.error`, et lui passe l'objet
+ *  d'erreur, donc la STACK repart en console au lieu du seul `message` que ce site en tirait. */
 function humanRevertError(err: unknown): string {
   const raw = err instanceof Error ? err.message : String(err);
-  console.error("[journal] revert_batch failed:", raw);
+  let display = "Annulation impossible — réessaie.";
   if (raw.includes("destination occupied"))
-    return "Fichier déjà à l'emplacement d'origine — doublon probable (sync cloud ?).";
-  if (raw.includes("source gone"))
-    return "Fichier introuvable à destination — déplacé ou supprimé manuellement ?";
-  if (raw.includes("newer action")) return "Action plus récente à annuler d'abord.";
-  return "Annulation impossible — réessaie.";
+    display = "Fichier déjà à l'emplacement d'origine — doublon probable (sync cloud ?).";
+  else if (raw.includes("source gone"))
+    display = "Fichier introuvable à destination — déplacé ou supprimé manuellement ?";
+  else if (raw.includes("newer action")) display = "Action plus récente à annuler d'abord.";
+  return humanizeError(err, display, "revert_batch");
 }
 
 /** Un cycle d'annulation est-il en cours ? Voir le garde de `revertSelection`. */
@@ -860,7 +999,7 @@ async function revertSelection(): Promise<void> {
   revertRunning = true;
   for (const e of picked) {
     jrnlState.status.set(e.batch_id, "pending");
-    paintRowStatus(e.batch_id);
+    paintRowStatus(e);
   }
   paintAside(); // le bouton se désarme : ses entrées ne sont plus annulables
 
@@ -879,7 +1018,7 @@ async function revertSelection(): Promise<void> {
         jrnlState.failReason.set(e.batch_id, msg);
         failures.push(msg);
       }
-      paintRowStatus(e.batch_id);
+      paintRowStatus(e);
     }
   } finally {
     // `finally` et non une ligne après la boucle : un jet inattendu (un `paintRowStatus` sur un DOM
@@ -889,9 +1028,10 @@ async function revertSelection(): Promise<void> {
   }
 
   paintAside();
-  if (failures.length === 0) toast(`${plural(ok, "action")} annulée${ok > 1 ? "s" : ""}`);
+  const done = `${plural(ok, "action")} annulée${ok > 1 ? "s" : ""}`;
+  if (failures.length === 0) toast(done);
   else if (ok === 0) toast(failures[0]);
-  else toast(`${plural(ok, "action")} annulée${ok > 1 ? "s" : ""}, ${failures.length} en échec`);
+  else toast(`${done}, ${failures.length} en échec`);
 }
 
 // ---------------------------------------------------------------------------
@@ -910,18 +1050,6 @@ async function openLocation(e: JournalEntry): Promise<void> {
   }
 }
 
-function copyPath(e: JournalEntry): void {
-  const p = e.to_path ?? e.from_path ?? "";
-  if (!p) return;
-  void navigator.clipboard
-    .writeText(p)
-    .then(() => toast("Chemin copié"))
-    .catch((err: unknown) => {
-      console.error("[journal] clipboard writeText failed", err);
-      toast("Copie impossible — le presse-papier a refusé");
-    });
-}
-
 /** Ouvre Bibliothèque filtrée sur le nom de la piste. La navigation passe par un clic sur la
  *  destination du rail, pas par un import du routeur : `router.ts` importe CE module, un import
  *  retour fermerait le cycle (`CLAUDE.md` § Modules frontend). */
@@ -938,9 +1066,8 @@ function openJournalContextMenu(x: number, y: number, id: string): void {
   // Convention système : un clic droit HORS de la sélection la remplace ; DEDANS il la garde
   // entière. Sans cette règle, le même geste porterait tantôt sur une ligne, tantôt sur cent.
   if (!jrnlState.selection.has(id)) {
-    applyJrnlClick(id, { shift: false, meta: false }, visibleOrder(currentGroups()));
-    paintSelection();
-    paintAside();
+    applyJrnlClick(id, { shift: false, meta: false });
+    syncSelectionUi();
   }
   const ids = [...jrnlState.selection];
   if (ids.length === 0) return;
@@ -948,6 +1075,7 @@ function openJournalContextMenu(x: number, y: number, id: string): void {
   const one = picked.length === 1 ? picked[0] : undefined;
   const applicable = picked.filter(revertible).length;
   const suffix = applicable > 1 ? ` (${applicable})` : "";
+  const path = one ? (one.to_path ?? one.from_path) : null;
   // Une entrée sans action est DÉSACTIVÉE, pas retirée (`context-menu.ts`) : un menu dont les
   // entrées vont et viennent se relit à chaque ouverture.
   openContextMenu(x, y, [
@@ -960,7 +1088,7 @@ function openJournalContextMenu(x: number, y: number, id: string): void {
       separated: true,
       onPick: one && one.track_id != null ? () => void openLocation(one) : undefined,
     },
-    { label: "Copier le chemin", onPick: one ? () => copyPath(one) : undefined },
+    { label: "Copier le chemin", onPick: path ? () => copyToClipboard(path, "Chemin copié") : undefined },
     {
       label: "Voir la piste dans Bibliothèque",
       onPick: one ? () => showInLibrary(one) : undefined,
@@ -972,7 +1100,7 @@ function openJournalContextMenu(x: number, y: number, id: string): void {
  *  par INDEX dans la liste ordonnée VISIBLE, jamais en marchant le DOM (un groupe replié n'a pas de
  *  nœuds, et le voisin DOM ne serait pas le voisin de liste). */
 function stepJrnlSelection(key: string, shift: boolean): boolean {
-  const ids = visibleOrder(currentGroups());
+  const ids = visibleIds();
   if (!ids.length) return false;
   const cursor = jrnlState.anchor != null ? ids.indexOf(jrnlState.anchor) : -1;
   let next: number;
@@ -996,25 +1124,34 @@ function stepJrnlSelection(key: string, shift: boolean): boolean {
   if (shift && jrnlState.anchor != null) {
     // ⇧ étend depuis l'ancre SANS la déplacer — c'est ce qui permet de revenir en arrière dans la
     // même plage.
-    const a = ids.indexOf(jrnlState.anchor);
-    jrnlState.selection.clear();
-    for (let i = Math.min(a, next); i <= Math.max(a, next); i++) jrnlState.selection.add(ids[i]);
+    selectRange(ids, ids.indexOf(jrnlState.anchor), next);
   } else {
     jrnlState.selection.clear();
     jrnlState.selection.add(target);
     jrnlState.anchor = target;
   }
-  paintSelection();
-  paintAside();
-  document.querySelector(`.jrnl-row[data-jrow="${CSS.escape(target)}"]`)?.scrollIntoView({ block: "nearest" });
+  syncSelectionUi();
+  rowEl(target)?.scrollIntoView({ block: "nearest" });
   return true;
 }
 
 /** Vrai quand la table du Journal est à l'écran. Les gestionnaires globaux ci-dessous sont posés
  *  UNE fois et vivent jusqu'à la fermeture de l'app : c'est cette garde, et non un
- *  ajout/retrait d'écouteur, qui les borne à cet écran. */
+ *  ajout/retrait d'écouteur, qui les borne à cet écran.
+ *
+ *  Deux étages, et l'ordre EST le point. Ces gestionnaires reçoivent chaque clic, chaque frappe et
+ *  chaque clic droit des six autres écrans : hors Journal, la garde tient maintenant en un test de
+ *  booléen, sans toucher au DOM. Le `querySelector` ne tranche que sous drapeau levé — et le baisse
+ *  définitivement dès que le routeur a rendu autre chose, si bien qu'un seul événement paie la
+ *  sortie de l'écran. Le drapeau est posé par `loadAndPaint` et n'est jamais effacé de l'extérieur :
+ *  aucun des six voisins ne connaît le Journal, et leur demander de le prévenir serait une
+ *  obligation croisée qui pourrirait au premier écran ajouté. */
+let journalPainted = false;
+
 function journalOnScreen(): boolean {
-  return !!document.querySelector("#content .jrnl-wrap");
+  if (!journalPainted) return false;
+  journalPainted = !!document.querySelector("#content .jrnl-wrap");
+  return journalPainted;
 }
 
 let handlersInstalled = false;
@@ -1042,9 +1179,8 @@ function installJournalHandlers(): void {
     const row = t.closest<HTMLElement>(".jrnl-row[data-jrow]");
     const id = row?.dataset.jrow;
     if (!id) return;
-    applyJrnlClick(id, { shift: e.shiftKey, meta: e.metaKey || e.ctrlKey }, visibleOrder(currentGroups()));
-    paintSelection();
-    paintAside();
+    applyJrnlClick(id, { shift: e.shiftKey, meta: e.metaKey || e.ctrlKey });
+    syncSelectionUi();
   });
 
   document.getElementById("content")?.addEventListener("dblclick", (e: MouseEvent) => {
@@ -1068,9 +1204,12 @@ function installJournalHandlers(): void {
   // les traite. ⌫ ne fait RIEN ici : supprimer une entrée d'historique n'a pas de sens, et la
   // touche est destructive ailleurs.
   document.addEventListener("keydown", (e: KeyboardEvent) => {
-    if (!journalOnScreen()) return;
+    // La garde de champ de saisie AVANT celle d'écran : les deux doivent passer, et celle-ci est la
+    // moins chère — c'est elle qui absorbe la frappe dans la recherche de la barre, l'événement
+    // clavier le plus fréquent de cet écran.
     const el = e.target as HTMLElement | null;
     if (el && (el.tagName === "INPUT" || el.tagName === "TEXTAREA" || el.isContentEditable)) return;
+    if (!journalOnScreen()) return;
 
     if (e.key === "ArrowDown" || e.key === "ArrowUp" || e.key === "Home" || e.key === "End") {
       if (e.ctrlKey || e.metaKey || e.altKey) return;
@@ -1078,7 +1217,7 @@ function installJournalHandlers(): void {
       return;
     }
     if ((e.key === "a" || e.key === "A") && (e.ctrlKey || e.metaKey) && !e.altKey) {
-      const ids = visibleOrder(currentGroups());
+      const ids = visibleIds();
       if (!ids.length) return;
       e.preventDefault();
       // Tout ce que le filtre laisse VOIR, jamais au-delà : ⌘A qui porterait sur des lignes hors
@@ -1086,8 +1225,7 @@ function installJournalHandlers(): void {
       jrnlState.selection.clear();
       for (const id of ids) jrnlState.selection.add(id);
       jrnlState.anchor = ids[0];
-      paintSelection();
-      paintAside();
+      syncSelectionUi();
       return;
     }
     if (e.key === "Enter") {

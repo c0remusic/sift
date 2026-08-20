@@ -32,3 +32,13 @@ export function esc(s: string): string {
     c === "&" ? "&amp;" : c === "<" ? "&lt;" : c === ">" ? "&gt;" : c === '"' ? "&quot;" : "&#39;",
   );
 }
+
+/** « 1 piste » / « 3 pistes » — le COMPTE avec son nom accordé, jamais le nom seul : l'utilisateur
+ *  lit un résultat, pas le libellé de ce qu'il a cliqué.
+ *
+ *  Le pluriel s'accorde à partir de 2, comme en français courant — `n > 1`, donc « 0 piste » et non
+ *  « 0 pistes ». `many` est déduit en ajoutant un « s » ; le passer explicitement sert aux mots qui
+ *  ne se pluralisent pas comme ça (« un dossier surveillé » → « des dossiers surveillés »). */
+export function plural(n: number, one: string, many = `${one}s`): string {
+  return `${n} ${n > 1 ? many : one}`;
+}

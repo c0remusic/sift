@@ -8,6 +8,7 @@ import { identifyErrorText } from "./identify-shared";
 import { DEFAULT_FILENAME_TEMPLATE } from "../shared/contracts";
 import type { Canonical } from "../shared/contracts";
 import { requireEl, esc } from "./dom";
+import { slideSegThumb } from "./seg-thumb";
 import { setTheme } from "./theme";
 import type { ThemeChoice } from "./theme";
 import { toast } from "./filing-toast";
@@ -348,13 +349,8 @@ export async function renderReglagesLive() {
     themeBtn("light", "Clair") +
     themeBtn("dark", "Sombre") +
     "</div></div>";
-  function positionThemeThumb(): void {
-    const thumb = themeBlock.querySelector<HTMLElement>(".sift-seg-thumb");
-    const onEl = themeBlock.querySelector<HTMLElement>("[data-theme-choice].on");
-    if (!thumb || !onEl) return;
-    thumb.style.width = `${onEl.offsetWidth}px`;
-    thumb.style.transform = `translateX(${onEl.offsetLeft}px)`;
-  }
+  // L'hôte est le BLOC, pas le `.sift-seg` : il n'en contient qu'un, et c'est lui qu'on tient déjà.
+  const positionThemeThumb = () => slideSegThumb(themeBlock, "[data-theme-choice].on");
   // Not called here yet — themeBlock isn't attached to the live DOM until content.appendChild(wrap)
   // below, and offsetWidth/offsetLeft read 0 on a detached element. Called after that instead.
   themeBlock.querySelectorAll<HTMLElement>("[data-theme-choice]").forEach((el) =>

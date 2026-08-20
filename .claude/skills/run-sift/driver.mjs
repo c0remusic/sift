@@ -64,6 +64,18 @@ async function isSift(port) {
   return t.some((x) => /Sift/i.test(x.title || "") || /localhost:5173/.test(x.url || ""));
 }
 
+/** L'URL WebSocket de la page Sift sur `port`, ou null. Résolue ICI et passée à probe.mjs :
+ *  l'identité se juge par la règle d'`isSift` — titre « Sift » OU url du serveur de dev — alors que
+ *  probe.mjs, laissé à lui-même, la rejuge sur le TITRE SEUL et refuse une fenêtre dont le titre
+ *  n'est pas encore posé. Une cible déjà validée ne se revalide pas plus faiblement. */
+async function siftPageWs(port) {
+  const t = (await targets(port)) || [];
+  const page = t.find(
+    (x) => x.type === "page" && (/Sift/i.test(x.title || "") || /localhost:5173/.test(x.url || "")),
+  );
+  return page?.webSocketDebuggerUrl || null;
+}
+
 async function findSiftPort() {
   const saved = readState().port;
   const candidates = [portArg, saved, 9333, 9334, 9335, 9222, 9223].filter(Boolean);
@@ -289,7 +301,12 @@ const main = async () => {
   // Pseudo-états réels (:hover, :focus-visible) : session WebSocket continue obligatoire
   // (Input.dispatch*), donc un module dédié plutôt que cdp.cjs — voir l'en-tête de probe.mjs.
   if (cmd === "hover" || cmd === "focus") {
-    const r = spawnSync(process.execPath, [resolve(HERE, "probe.mjs"), String(port), cmd, ...rest], {
+    // La cible est passée résolue (`--ws`) quand on l'a : le port reste fourni pour le repli et pour
+    // les messages d'erreur.
+    const ws = await siftPageWs(port);
+    const probeArgs = [resolve(HERE, "probe.mjs"), String(port), cmd, ...rest];
+    if (ws) probeArgs.push("--ws", ws);
+    const r = spawnSync(process.execPath, probeArgs, {
       cwd: REPO,
       encoding: "utf8",
       maxBuffer: 32 * 1024 * 1024,

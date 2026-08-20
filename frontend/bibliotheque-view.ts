@@ -21,7 +21,8 @@ import { installColumnGestures, resetColumns, columnsAreCustomized } from "./lib
 import { confirmAction, BATCH_CONFIRM_THRESHOLD } from "./confirm-modal";
 import { toast } from "./filing-toast";
 import type { LibraryTrack, LibraryFacets, LibraryFilter, DupGroup } from "../shared/contracts";
-import { requireEl, esc } from "./dom";
+import { requireEl, esc, plural } from "./dom";
+import { slideSegThumb } from "./seg-thumb";
 import { mountBarActions, mountBarSearch, openAside, closeAside } from "./toolbar";
 import { humanizeError } from "./errors";
 import { libraryUsage, type UsageReport } from "./ipc";
@@ -281,18 +282,12 @@ function afterBulkRemoval(): Promise<void> {
   return renderBiblioLive();
 }
 
-/** « n piste » / « n pistes » — le compte est dit en toutes lettres dans chaque toast, jamais
- *  laissé au libellé du menu : l'utilisateur lit le résultat, pas ce qu'il a cliqué. */
-function plural(n: number): string {
-  return n > 1 ? `${n} pistes` : `${n} piste`;
-}
-
 async function bulkReanalyze(ids: number[]): Promise<void> {
   try {
     // `reanalyze_tracks` rend le nombre réellement remis en file — il peut différer de ce qui a été
     // demandé (une piste déjà en analyse n'est pas réempilée). C'est ce nombre-là qui est annoncé.
     const n = await reanalyzeTracks(ids);
-    toast(n === 0 ? "Rien à réanalyser — déjà en file" : `${plural(n)} remise${n > 1 ? "s" : ""} en analyse`);
+    toast(n === 0 ? "Rien à réanalyser — déjà en file" : `${plural(n, "piste")} remise${n > 1 ? "s" : ""} en analyse`);
   } catch (err: unknown) {
     toast(humanizeError(err, "Échec de la réanalyse — réessaie", "reanalyze_tracks"));
   }
@@ -301,7 +296,7 @@ async function bulkReanalyze(ids: number[]): Promise<void> {
 async function bulkReject(ids: number[]): Promise<void> {
   if (
     ids.length > BATCH_CONFIRM_THRESHOLD &&
-    !(await confirmAction(`Écarter ${plural(ids.length)} de la bibliothèque ?`, "Écarter"))
+    !(await confirmAction(`Écarter ${plural(ids.length, "piste")} de la bibliothèque ?`, "Écarter"))
   )
     return;
   try {
@@ -310,8 +305,8 @@ async function bulkReject(ids: number[]): Promise<void> {
     // l'utilisateur croirait avoir écarté ce qui est resté. Voir `docs/ui-specs/bibliotheque.md`.
     toast(
       r.failed.length
-        ? `${plural(r.rejected)} écartée${r.rejected > 1 ? "s" : ""}, ${r.failed.length} en échec`
-        : `${plural(r.rejected)} écartée${r.rejected > 1 ? "s" : ""}`,
+        ? `${plural(r.rejected, "piste")} écartée${r.rejected > 1 ? "s" : ""}, ${r.failed.length} en échec`
+        : `${plural(r.rejected, "piste")} écartée${r.rejected > 1 ? "s" : ""}`,
     );
   } catch (err: unknown) {
     toast(humanizeError(err, "Impossible d'écarter", "reject_batch"));
@@ -323,7 +318,7 @@ async function bulkReject(ids: number[]): Promise<void> {
 async function bulkTrash(ids: number[]): Promise<void> {
   if (
     ids.length > BATCH_CONFIRM_THRESHOLD &&
-    !(await confirmAction(`Envoyer ${plural(ids.length)} à la corbeille ?`, "Envoyer à la corbeille"))
+    !(await confirmAction(`Envoyer ${plural(ids.length, "piste")} à la corbeille ?`, "Envoyer à la corbeille"))
   )
     return;
   // SÉQUENTIEL, et ce n'est pas un oubli : `trash_track` est unitaire côté IPC, et le backend est
@@ -343,8 +338,8 @@ async function bulkTrash(ids: number[]): Promise<void> {
   }
   toast(
     failed.length
-      ? `${plural(done)} à la corbeille, ${failed.length} en échec`
-      : `${plural(done)} à la corbeille`,
+      ? `${plural(done, "piste")} à la corbeille, ${failed.length} en échec`
+      : `${plural(done, "piste")} à la corbeille`,
   );
   await afterBulkRemoval();
 }
@@ -609,14 +604,11 @@ export function closeFacetPopover(): void {
 }
 
 
-/** Same thumb-glide pattern as positionFacetThumb(), for the Tableau/Grille segmented. */
+/** Le pouce du segmenté Tableau/Grille — placement partagé (`seg-thumb.ts`). Le renvoi qui vivait
+ *  ici, « même motif que positionFacetThumb() », était MORT : cette fonction-là n'existe plus. */
 export function positionViewModeThumb(): void {
   const seg = document.getElementById("sift-bib-viewmode-seg");
-  const thumb = seg?.querySelector<HTMLElement>(".sift-seg-thumb");
-  const onEl = seg?.querySelector<HTMLElement>("[data-bib='viewmode'].on");
-  if (!thumb || !onEl) return;
-  thumb.style.width = `${onEl.offsetWidth}px`;
-  thumb.style.transform = `translateX(${onEl.offsetLeft}px)`;
+  if (seg) slideSegThumb(seg, "[data-bib='viewmode'].on");
 }
 
 /** Derniere ventilation par format de la bibliotheque, gardee entre deux rendus.

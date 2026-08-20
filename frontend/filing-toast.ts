@@ -106,3 +106,27 @@ export function toast(message: string, undo = false, onUndo?: () => void): void 
     window.setTimeout(() => el.remove(), TOAST_EXIT_MS);
   }, 6000);
 }
+
+/** Écrit `text` dans le presse-papier et dit ce qui s'est passé — les deux issues, jamais une seule.
+ *
+ *  Ici parce que le retour est un toast, et que le toast vit ici : ce module ne dépend de rien
+ *  d'autre que d'`./ipc` et d'`./errors`, donc tout écran peut l'appeler sans créer de cycle.
+ *
+ *  `okToast` n'est PAS peint avant l'écriture. C'est la leçon du site Écartés (`sift-live.ts`), où
+ *  la coche « Copié » était posée d'avance et le `catch` vide : un refus du presse-papier
+ *  (permission, focus perdu) affichait quand même le succès, et l'utilisateur collait l'ancien
+ *  contenu sans savoir pourquoi. L'échec est donc dit à l'écran ET journalisé — `errors.ts` garantit
+ *  la chaîne brute en console, le toast n'en donne que la version lisible.
+ *
+ *  Le succès se dit par un toast et non par un changement dans le bouton cliqué : une seule
+ *  grammaire de retour pour « copié », valable même quand le bouton a disparu entre le clic et la
+ *  résolution (tout changement d'écran reconstruit `#content` par `innerHTML`). */
+export function copyToClipboard(text: string, okToast: string): void {
+  void navigator.clipboard
+    .writeText(text)
+    .then(() => toast(okToast))
+    .catch((err: unknown) => {
+      console.error("clipboard writeText failed", err);
+      toast("Copie impossible — le presse-papier a refusé");
+    });
+}

@@ -22,7 +22,7 @@ import { renderQueue } from "./queue-panel";
 import { renderEcartes } from "./ecartes-view";
 import { renderReglagesLive } from "./reglages-view";
 import { renderBiblioLive } from "./bibliotheque-view";
-import { renderJournal, paintJournal } from "./journal";
+import { paintJournal } from "./journal";
 import { renderRekordboxLive } from "./rekordbox-view";
 import { renderUsbLive } from "./usb-view";
 
@@ -200,7 +200,7 @@ export function render(): void {
       return;
     case "journal":
       blockShell(content);
-      paintJournal(() => renderJournal(), "renderJournal");
+      paintJournal(true);
       return;
     case "rkb":
       blockShell(content);

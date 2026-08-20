@@ -12,11 +12,16 @@ import { libraryTableHeaderHtml, libraryTableRowHtml } from "./library-views";
 // `libraryTableRowHtml()` (library-views.ts:220) en réglant les deux seuls champs qui la
 // pilotent — `verdict` et `format`. Une story ne peut donc pas diverger du code : elle l'exécute.
 //
-//   verdict "ok"   + format lossless (aiff/wav/flac/alac) → LOSSLESS      `.sift-lib-v-ok`
+//   verdict "ok"   + format lossless                      → LOSSLESS      `.sift-lib-v-ok`
 //   verdict "ok"   + format lossy                         → AUTHENTIQUE   `.sift-lib-v-ok`
 //   verdict "fake"                                        → FAKE          `.sift-lib-v-fake`
 //   verdict "grey"                                        → À VÉRIFIER    `.sift-lib-v-check`
 //   verdict null (non analysé)                            → —             `.sift-lib-v-none`
+//
+// « lossless » se lit dans `rails.ts` (`railFromExt`, seule copie frontend de
+// `analysis::tags::rail_from_ext`) : flac · wav · aif · aiff · alac. Le 2026-08-20 cette table était
+// encore recopiée dans `library-views.ts` sans `aif`, si bien qu'un `.aif` authentique rendait
+// AUTHENTIQUE — d'où l'option `aif` dans le contrôle `format` ci-dessous, qui rend le cas cliquable.
 //
 // Il n'y a pas de sixième rendu : `DUPLICATE` n'est atteignable par AUCUNE valeur de ce champ (un
 // doublon sort du scan de dédoublonnage, pas de `tracks.verdict`), et les trois seuls littéraux
@@ -68,7 +73,7 @@ const meta: Meta<LibraryTrack> = {
   render: (args) => table([args]),
   argTypes: {
     verdict: { control: "radio", options: ["ok", "fake", "grey", null] },
-    format: { control: "radio", options: ["aiff", "wav", "flac", "alac", "mp3"] },
+    format: { control: "radio", options: ["aiff", "aif", "wav", "flac", "alac", "mp3"] },
     artist: { control: "text" },
     title: { control: "text" },
     bpm: { control: "number" },

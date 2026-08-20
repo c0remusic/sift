@@ -7,6 +7,7 @@
 // commandes. Invoqué par driver.mjs (`hover` / `focus`), utilisable seul :
 //   node probe.mjs <port> hover  <selector> [idx] [outDir]
 //   node probe.mjs <port> focus  <selector> [outDir]
+//   … avec `--ws <url>` n'importe où, ou une URL `ws://…` à la place du port (voir plus bas).
 // Sortie : JSON sur stdout (mesures repos/état/retour) ; captures recadrées 1:1 si outDir fourni.
 // Pièges documentés (mémoire cdp-real-pseudo-states-for-verification) : une modale ouverte VOLE le
 // focus (son piège Tab) — fermer d'abord ; une classe d'état posée à la main est balayée par le
@@ -14,23 +15,44 @@
 import fs from "node:fs";
 import path from "node:path";
 
-const [, , portArg, mode, sel, ...restArgs] = process.argv;
+// Les drapeaux sont retirés AVANT la lecture positionnelle : `[idx]` et `[outDir]` se lisent par
+// leur rang, et un `--ws` laissé dans le tableau ferait passer son URL pour un dossier de sortie.
+const rawArgs = process.argv.slice(2);
+let wsUrl = null;
+const argv = [];
+for (let i = 0; i < rawArgs.length; i++) {
+  if (rawArgs[i] === "--ws") wsUrl = rawArgs[++i];
+  else argv.push(rawArgs[i]);
+}
+if (/^wss?:\/\//i.test(argv[0] || "")) wsUrl = argv.shift();
+const [portArg, mode, sel, ...restArgs] = argv;
 const PORT = Number(portArg);
-if (!PORT || !mode || !sel) {
-  console.error("usage: node probe.mjs <port> hover <selector> [idx] [outDir] | focus <selector> [outDir]");
+if ((!PORT && !wsUrl) || !mode || !sel) {
+  console.error(
+    "usage: node probe.mjs <port|ws-url> hover <selector> [idx] [outDir] | focus <selector> [outDir]  [--ws <url>]",
+  );
   process.exit(1);
 }
 const idx = mode === "hover" && /^\d+$/.test(restArgs[0] || "") ? Number(restArgs.shift()) : 0;
 const OUT = restArgs[0] || null;
 if (OUT) fs.mkdirSync(OUT, { recursive: true });
 
-const targets = await (await fetch(`http://127.0.0.1:${PORT}/json`)).json();
-const page = targets.find((t) => t.type === "page");
-if (!page) throw new Error("no page target");
-// Le port est squattable par un projet Tauri voisin : l'identité se vérifie AVANT toute mesure.
-if (!/Sift/i.test(page.title || "")) throw new Error(`target is NOT Sift: ${page.title}`);
+// Cible FOURNIE par l'appelant → découverte ET contrôle d'identité sautés, parce qu'ils ont déjà
+// eu lieu chez lui. `driver.mjs` la passe : il reconnaît la fenêtre par « titre Sift OU url du
+// serveur de dev », règle plus large que le titre seul revérifié ici — et cette revérification
+// rejetait à tort une fenêtre dont le titre n'était pas encore posé, un refus qui se lisait comme
+// « ce n'est pas Sift ».
+// Sans elle, rien ne change : le port est squattable par un projet Tauri voisin, donc l'identité
+// se vérifie AVANT toute mesure.
+if (!wsUrl) {
+  const targets = await (await fetch(`http://127.0.0.1:${PORT}/json`)).json();
+  const page = targets.find((t) => t.type === "page");
+  if (!page) throw new Error("no page target");
+  if (!/Sift/i.test(page.title || "")) throw new Error(`target is NOT Sift: ${page.title}`);
+  wsUrl = page.webSocketDebuggerUrl;
+}
 
-const ws = new WebSocket(page.webSocketDebuggerUrl);
+const ws = new WebSocket(wsUrl);
 await new Promise((r) => (ws.onopen = r));
 let nextId = 1;
 const pending = new Map();
@@ -56,15 +78,27 @@ async function evalJs(expression) {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 const PROPS = ["background-color", "color", "outline-color", "outline-width", "outline-style", "border-color", "opacity", "filter"];
+// L'expression qui DÉSIGNE l'élément mesuré, écrite une fois : les quatre évaluations ci-dessous
+// doivent viser exactement le même nœud, et quatre copies de la même chaîne sont quatre occasions
+// d'en corriger trois.
+const EL = `document.querySelectorAll(${JSON.stringify(sel)})[${idx}]`;
 async function styleOf() {
-  return evalJs(`(()=>{const e=document.querySelectorAll(${JSON.stringify(sel)})[${idx}];if(!e)return null;
+  return evalJs(`(()=>{const e=${EL};if(!e)return null;
     const c=getComputedStyle(e);const o={};${JSON.stringify(PROPS)}.forEach(p=>o[p]=c.getPropertyValue(p));
     o.hovered=e.matches(":hover");o.focusVisible=e.matches(":focus-visible");
     o.isActive=document.activeElement===e;return o;})()`);
 }
 async function rectOf() {
-  return evalJs(`(()=>{const e=document.querySelectorAll(${JSON.stringify(sel)})[${idx}];if(!e)return null;
+  return evalJs(`(()=>{const e=${EL};if(!e)return null;
     const r=e.getBoundingClientRect();return {x:r.x,y:r.y,w:r.width,h:r.height,vis:r.width>0&&r.height>0};})()`);
+}
+/** Déplace le VRAI pointeur en (x,y), laisse retomber les transitions, puis mesure. 260 ms >
+ *  --duration-base : ce qui reste à animer a fini avant la lecture. Les trois temps du mode hover
+ *  — repos, survol, retour — sont le même geste, donc la même fonction. */
+async function measureAt(x, y) {
+  await send("Input.dispatchMouseEvent", { type: "mouseMoved", x, y, button: "none", buttons: 0 });
+  await sleep(260);
+  return styleOf();
 }
 async function shot(file, rect, pad = 6) {
   if (!OUT) return null;
@@ -86,19 +120,12 @@ if (!rect || !rect.vis) {
 
 let out;
 if (mode === "hover") {
-  // repos → survol (vrai mouseMoved, hit-testing moteur) → repos. 260ms > --duration-base :
-  // toute transition restante a fini avant la mesure.
-  await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 2, y: 2, button: "none", buttons: 0 });
-  await sleep(260);
-  const rest = await styleOf();
+  // repos → survol (vrai mouseMoved, hit-testing moteur) → repos.
+  const rest = await measureAt(2, 2);
   const shotRest = await shot(`probe-${slug}-rest.png`, rect);
-  await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: rect.x + rect.w / 2, y: rect.y + rect.h / 2, button: "none", buttons: 0 });
-  await sleep(260);
-  const hover = await styleOf();
+  const hover = await measureAt(rect.x + rect.w / 2, rect.y + rect.h / 2);
   const shotHover = await shot(`probe-${slug}-hover.png`, rect);
-  await send("Input.dispatchMouseEvent", { type: "mouseMoved", x: 2, y: 2, button: "none", buttons: 0 });
-  await sleep(260);
-  const back = await styleOf();
+  const back = await measureAt(2, 2);
   out = { sel, idx, engineHoverMatched: hover.hovered, changed: rest["background-color"] !== hover["background-color"],
     restored: back["background-color"] === rest["background-color"], rest, hover, shots: [shotRest, shotHover].filter(Boolean) };
 } else if (mode === "focus") {
@@ -108,7 +135,7 @@ if (mode === "hover") {
   await send("Input.dispatchKeyEvent", { type: "rawKeyDown", key: "Tab", code: "Tab", windowsVirtualKeyCode: 9, nativeVirtualKeyCode: 9 });
   await send("Input.dispatchKeyEvent", { type: "keyUp", key: "Tab", code: "Tab", windowsVirtualKeyCode: 9, nativeVirtualKeyCode: 9 });
   await sleep(80);
-  await evalJs(`document.querySelectorAll(${JSON.stringify(sel)})[${idx}]?.focus()`);
+  await evalJs(`${EL}?.focus()`);
   await sleep(200);
   const focused = await styleOf();
   const shotFocus = await shot(`probe-${slug}-focus.png`, rect);
