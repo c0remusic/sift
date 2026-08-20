@@ -299,7 +299,7 @@ information, il ne prend pas de boîte : l'espacement suffit à le grouper.
 ## 6. Motion
 
 ```
---duration-fast:100ms   --duration-base:150ms   --ease-out:cubic-bezier(.2,0,0,1)
+--duration-fast:75ms   --duration-base:150ms   --duration-slow:300ms   --ease-out:cubic-bezier(.2,0,0,1)
 ```
 
 ### État mesuré le 2026-08-19
@@ -310,13 +310,20 @@ token de durée. Les littéraux emploient **9 durées distinctes** : `.08s .1s .
 
 ### Décision
 
-Trois durées, et elles couvrent tout :
+Trois durées, et elles couvrent tout. ⚠️ Les valeurs ci-dessous sont celles de la
+**racine tranchée par Antoine sur l'issue #10** (2026-08-19, échelle 75/150/300, référence
+150 = médiane du cluster portant 30 des 44 déclarations d'alors). Ce document avait posé
+100/250 le même jour sans avoir lu le ticket ; recalé le 2026-08-20, `styles.css` fait foi.
 
 | Token | Valeur | Emploi |
 |---|---|---|
-| `--duration-fast` | 100 ms | Retour immédiat sous le doigt : survol, pression, bascule |
-| `--duration-base` | 150 ms | Changement d'état visible : sélection, ouverture de popover, apparition de chip |
-| `--duration-slow` | 250 ms | **Nouveau.** Déplacement de matière : pouce de contrôle segmenté, panneau qui s'ouvre, progression |
+| `--duration-fast` | 75 ms | Micro-retour sous le doigt : survol, focus, pression, bascule |
+| `--duration-base` | 150 ms | **Référence** — tout retour d'action : sélection, ouverture de popover, apparition de chip |
+| `--duration-slow` | 300 ms | Ample — déplacement de matière : pouce de contrôle segmenté, panneau qui s'ouvre, progression |
+
+Par-dessus l'échelle, la règle d'Apple (`/motion`) que #10 retient : **zéro mouvement sur
+le geste fréquent** — le pas de la file de Revue, répété des centaines de fois par session,
+n'a droit à aucun cran (vérifié : aucune classe de la file ne porte de `transition`).
 
 Une seule courbe, `--ease-out`. Une entrée sort de la courbe ; une sortie est linéaire
 et plus courte.
@@ -483,6 +490,10 @@ CSS. Elle **mire** le token, comme `shared/contracts.ts` mire les structs serde 
 discipline, même geste unique.
 
 ### D‑3 · `--duration-slow:250ms` — nouveau
+
+⚠️ **Recalé le 2026-08-20** : le cran existe toujours, mais sa valeur est **300 ms** — la
+racine de l'issue #10 (75/150/300, décision d'Antoine du 2026-08-19) prime sur le 250
+posé ici sans avoir lu le ticket. Voir § 6.
 
 ```diff
 --duration-fast:100ms;--duration-base:150ms;--ease-out:cubic-bezier(.2,0,0,1);

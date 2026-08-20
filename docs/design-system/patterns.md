@@ -219,6 +219,26 @@ Quand un bloc paraît cassé, auditer dans cet ordre :
 4. une carte ou une bordure parasite crée-t-elle du bruit ?
 5. la couleur signale-t-elle un vrai état ?
 
+## Séparation
+
+Racine tranchée par l'issue #10 (2026-08-19) : le moyen de séparation dominant n'est
+**pas un choix de direction, c'est le conteneur qui décide** — HIG `/lists-and-tables`.
+
+- **Table multicolonne longue** (Bibliothèque) : alternance de rangées. C'est le style
+  qu'Apple nomme pour macOS (« alternating row backgrounds » sur les grandes tables,
+  pour suivre une rangée à travers les colonnes).
+- **Liste en colonne unique** (file de Revue) : espace et en-têtes, pas de bandes.
+  C'est le style « grouped » d'Apple.
+
+Les anciennes directions « Table » et « Souffle » du comparateur de #10 n'étaient donc
+pas concurrentes : même règle, deux conteneurs.
+
+Contrainte liée : **l'alternance exige une hauteur de rangée fixe** — les rangées à
+hauteur variable cassent la parité et la bande paraît irrégulière (mesuré le
+2026-08-19 : trois hauteurs sur quatorze rangées dans la file). Le cran de densité de
+#32 (25 · 41 · 57 px, une valeur par cran) fournit cette hauteur. Une alternance posée
+sur des hauteurs variables est un défaut, pas un style.
+
 ## Annulation
 
 HIG Undo and redo, confronté à `frontend/journal.ts`.

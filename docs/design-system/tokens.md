@@ -259,6 +259,27 @@ ne pas ajouter d'ombre.
 Cas récent : le panneau File flottant ne doit pas porter d'ombre s'il est déjà
 compris comme une surface latéralement séparée.
 
+## Mouvement
+
+Racine tranchée par l'issue #10 (2026-08-19), appliquée le 2026-08-20 : échelle à
+trois crans, une seule courbe.
+
+| Token | Valeur | Rôle |
+|---|---|---|
+| `--duration-fast` | 75 ms | micro — survol, focus, pression, bascule |
+| `--duration-base` | 150 ms | **référence** — tout retour d'action |
+| `--duration-slow` | 300 ms | ample — déplacement de matière : panneau, pouce, progression |
+
+La référence est **mesurée, pas choisie** : 150 ms était la médiane du cluster portant
+30 des 44 déclarations de `transition` d'alors. Courbe unique `--ease-out`.
+
+Deux règles au-dessus de l'échelle :
+
+- **zéro mouvement sur le geste fréquent** (HIG `/motion`) — le pas de la file de
+  Revue, répété des centaines de fois par session, n'a droit à aucun cran ;
+- seuls `transform` et `opacity` s'animent (CLAUDE.md § Front) — les exceptions sont
+  des mécanismes nommés dans `styles.css`, pas de la décoration.
+
 ## Mise À Jour
 
 Quand un token change :

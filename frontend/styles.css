@@ -321,14 +321,20 @@ color-scheme:light;
    END of this file — and it is still not an `animation:none` kill switch: it zeroes the DURATION,
    so `animationend` keeps firing and filing-identify.ts is never stranded on
    `.sift-identified-flash` / `.sift-applytags-flash` (:227, :681). */
---duration-fast:100ms;--duration-base:150ms;--ease-out:cubic-bezier(.2,0,0,1);
+/* ÉCHELLE RECALÉE À 75/150/300 — décision d'Antoine, 2026-08-19, issue #10 (racine « mouvement »).
+   La référence est 150 ms, médiane du cluster qui portait 30 des 44 déclarations d'alors ; 75 =
+   micro (survol, focus), 300 = ample (panneau, modale). Les valeurs 100/250 avaient été posées le
+   même jour par une session parallèle (P6 + D-3 de DESIGN.md) qui n'avait pas lu le ticket ; le
+   tracker prime, elles sont recalées ici. Par-dessus l'échelle, la règle d'Apple (/motion) :
+   zéro mouvement sur le geste fréquent — le pas de la file de Revue n'a droit à aucun cran. */
+--duration-fast:75ms;--duration-base:150ms;--ease-out:cubic-bezier(.2,0,0,1);
 /* --duration-slow : le cran manquant, ajouté le 2026-08-19 (DESIGN.md § 10, D-3). Mesure avant :
    37 déclarations `transition:` dans ce fichier, DEUX référençant un token, pour NEUF durées
    littérales distinctes (.08s .1s .12s .15s .16s .18s .2s .25s .3s) contre une échelle à deux
    valeurs. Les quatre littéraux hors échelle (.18s à .3s) sont tous du DÉPLACEMENT DE MATIÈRE —
    pouce de contrôle segmenté, panneau, barre de progression — qui n'avait pas de cran. Sans lui,
    migrer les 37 sites écrase une intention. */
---duration-slow:250ms;
+--duration-slow:300ms;
 }
 /* Dark variant — same warm-neutral family, garde les 4 teintes sémantiques distinctes
    (success/danger/warning/info — palette Apple system colors, 2026-07-06). Auto = suit
@@ -2747,7 +2753,7 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .sift-usage-seg:focus-visible{outline:2px solid var(--color-border-info);outline-offset:2px}
 .sift-usage-seg-free{flex:1 1 auto;background:var(--color-background-primary);cursor:default}
 
-.sift-usage-tip{position:absolute;bottom:calc(100% + 8px);left:0;background:var(--color-text-primary);color:var(--color-background-secondary);padding:var(--space-8) var(--space-12);border-radius:var(--border-radius-sm);font-size:var(--text-md);white-space:nowrap;pointer-events:none;opacity:0;transform:translateY(3px);transition:opacity 110ms ease,transform 110ms ease;z-index:var(--z-popover)}
+.sift-usage-tip{position:absolute;bottom:calc(100% + 8px);left:0;background:var(--color-text-primary);color:var(--color-background-secondary);padding:var(--space-8) var(--space-12);border-radius:var(--border-radius-sm);font-size:var(--text-md);white-space:nowrap;pointer-events:none;opacity:0;transform:translateY(3px);transition:opacity var(--duration-fast) ease,transform var(--duration-fast) ease;z-index:var(--z-popover)}
 .sift-usage-tip.on{opacity:1;transform:translateY(0)}
 .sift-usage-tip-ext{font-family:var(--font-mono);font-weight:600}
 .sift-usage-tip-meta{opacity:.75}

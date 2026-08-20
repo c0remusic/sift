@@ -16,7 +16,7 @@ let toastTimer: number | undefined;
 
 /** Exit fade length. Must stay in step with `--duration-fast` in styles.css: this timer is what
  *  actually removes the node, the CSS only paints the fade. */
-const TOAST_EXIT_MS = 100;
+const TOAST_EXIT_MS = 75;
 
 /** A transient toast at the bottom-right with an optional "Undo" action. With `onUndo` the Undo
  *  button runs that callback (e.g. a targeted revert of a specific batch); without it, Undo falls
