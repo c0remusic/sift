@@ -417,6 +417,10 @@ function playerRowHtml(name: string, path: string, closeBtn = false, headerOpts:
     `<div class="sift-wave-wrap is-paused">` +
     `<div class="sift-wave sift-player-wave"></div>` +
     `<div class="sift-wave-hover"></div>` +
+    // Pouce de lecture — le knob du slider Apple (kit § 04 / slider de zoom de Photos : piste fine +
+    // pastille blanche ronde à bordure et ombre légères). La waveform tient lieu de piste ; le pouce
+    // marque la tête de lecture. Caché tant que la durée n'est pas connue (updateTime le positionne).
+    `<div class="sift-wave-playhead" hidden></div>` +
     `<span class="sift-time-elapsed">0:00</span>` +
     `<span class="sift-time-total">0:00</span>` +
     `</div>` +
@@ -807,7 +811,8 @@ async function mountPlayer(root: HTMLElement, path: string, peaks?: number[], du
   const progressColor = token("--color-waveform-elapsed", "#ff5500");
   const ws = WaveSurfer.create({
     container,
-    height: 58, // bumped from 46 (continuous-surface redesign, 2026-07-06) — larger hero waveform
+    height: 40, // aminci (58→40) pour lire comme un slider Apple avec texture de waveform, pas un
+                // gros bloc (Antoine 2026-08-21) — la piste porte le pouce rond (.sift-wave-playhead)
     barWidth: 2,
     barGap: 1,
     barRadius: 1,
@@ -895,9 +900,17 @@ async function mountPlayer(root: HTMLElement, path: string, peaks?: number[], du
   // right side counts DOWN (duration - elapsed), not a static total, so it actually ticks.
   const timeElapsedEl = root.querySelector<HTMLElement>(".sift-time-elapsed");
   const timeTotalEl = root.querySelector<HTMLElement>(".sift-time-total");
+  const playheadEl = root.querySelector<HTMLElement>(".sift-wave-playhead");
   const updateTime = () => {
-    if (timeElapsedEl) timeElapsedEl.textContent = mmss(ws.getCurrentTime());
-    if (timeTotalEl) timeTotalEl.textContent = `-${mmss(Math.max(0, ws.getDuration() - ws.getCurrentTime()))}`;
+    const cur = ws.getCurrentTime();
+    const dur = ws.getDuration();
+    if (timeElapsedEl) timeElapsedEl.textContent = mmss(cur);
+    if (timeTotalEl) timeTotalEl.textContent = `-${mmss(Math.max(0, dur - cur))}`;
+    // Pouce Apple à la tête de lecture (kit § 04). Révélé dès que la durée est connue.
+    if (playheadEl && dur > 0) {
+      playheadEl.hidden = false;
+      playheadEl.style.left = `${Math.min(100, (cur / dur) * 100)}%`;
+    }
   };
   ws.on("ready", () => {
     updateTime();

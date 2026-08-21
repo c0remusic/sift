@@ -1884,6 +1884,12 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 /* Alpha-masked to a snapshot of the wave canvas (see mountPlayer's updateWaveMask) so only the
    bar pixels tint, not the transparent gaps between them — no rectangle/line ever shows. */
 .sift-wave-hover{position:absolute;top:0;left:0;bottom:0;width:0;background:var(--overlay-wave-hover);pointer-events:none}
+/* Pouce de lecture — le knob du slider Apple (kit § 04 / slider de zoom de Photos) : pastille blanche
+   ronde, bordure et ombre légères, centrée verticalement sur la waveform, posée à la tête de lecture
+   par updateTime (left en %). La waveform tient lieu de piste. */
+.sift-wave-playhead{position:absolute;top:50%;width:13px;height:13px;border-radius:var(--border-radius-pill);
+  background:var(--color-surface-raised);border:0.5px solid var(--color-border-secondary);
+  box-shadow:var(--shadow-panel-subtle);transform:translate(-50%,-50%);pointer-events:none;z-index:1}
 .sift-time-elapsed,.sift-time-total{position:absolute;bottom:var(--space-4);font-family:var(--font-mono);font-size:var(--text-xs);font-weight:500;line-height:1.2;padding:var(--space-4) var(--space-8);border-radius:var(--border-radius-sm);background:var(--overlay-scrim);pointer-events:none}
 .sift-time-elapsed{left:var(--space-8);color:var(--color-waveform-elapsed)}
 .sift-time-total{right:var(--space-8);color:rgba(255,255,255,.7)}
