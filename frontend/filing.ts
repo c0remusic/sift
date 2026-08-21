@@ -110,23 +110,6 @@ function refreshFootButton(): void {
 }
 
 
-/** Create-once (idempotent) keyboard-shortcut legend, inserted as its OWN row directly AFTER
- *  #filfoot (annotation, 2nd round: "devrait etre en fin de page en fait, sous le bloc de
- *  destination etc") — not one of the rail's flex-wrap items (it used to live inside the rail
- *  where it could get squeezed/wrapped away under width pressure; it should instead "rester
- *  toujours visible", in its own space) and not above the rail either, per this later correction —
- *  the very last thing on the page, below Destination/Format/Ranger. Static content (never
- *  changes across renders), so a single append is enough — renderFoot calls this every time
- *  purely to guarantee it exists, not to refresh it. */
-function ensureKbdLegend(foot: HTMLElement): void {
-  if (document.getElementById("sift-kbd-legend")) return;
-  const el = document.createElement("div");
-  el.id = "sift-kbd-legend";
-  el.className = "sift-kbd-legend";
-  el.innerHTML = keyboardHintsHtml();
-  foot.parentElement?.insertBefore(el, foot.nextSibling);
-}
-
 /** Slides #sift-fmt-seg's .sift-seg-thumb to the currently selected format chip (or removes it if
  *  every chip is disabled, e.g. a lossy source with only MP3 clickable — .on never gets set on a
  *  disabled span, so onEl is null and the thumb just stays wherever it last was, invisible behind
@@ -173,28 +156,37 @@ function renderFoot(foot: HTMLElement, mid: HTMLElement, rail: string): void {
     ? '<button data-fil="resource" class="sift-secondary-resource" title="Fichier faux — va dans Écartés (⌫)">Re-source</button>'
     : '<button data-fil="trash" class="sift-secondary-trash" title="Écarter — va dans Écartés (⌫)">Écarter</button>';
 
-  ensureKbdLegend(foot); // its own always-visible strip directly above the rail, not a rail item
-
-  // Destination button opens the tree as a popover (#fldz, a sibling of #filfoot — see styles.css)
-  // instead of the old persistent .dest column. Two rows (spec revue.md § Zone C pied, direction
-  // « verdict promu ») : réglage en haut (Destination → Format → Nom final), engagement groupé au
-  // bord trailing en bas (Écarter ghost, puis Convertir dominant le plus à droite — la convention
-  // macOS du bouton par défaut au bord trailing). Chaque rangée prend sa propre ligne via
-  // .sift-rail-row (flex:1 0 100%), donc plus de .sift-rail-spacer ici. Rebuilt inside this
-  // innerHTML so a format-chip re-render keeps it; the popover's own hidden state lives on #fldz
-  // itself, untouched by this rewrite.
+  // Rail à plat et structuré (wireframe v2 option 3, choisi 2026-08-21) : réglages en haut, chacun
+  // sous son petit label (Destination · Format · Nom final) séparés par des filets verticaux ; ligne
+  // d'actions en bas, séparée par un filet, légende clavier à gauche et Convertir dominant au bord
+  // trailing. Plus de carte grise — .sift-action-rail--flat retire fond/bordure (le rail de Lot garde
+  // la carte). La légende clavier vit maintenant DANS la ligne d'actions, plus dans un strip séparé.
+  // #fldz (popover Destination) vit hors de foot, son état hidden est intact par ce rewrite.
+  foot.classList.add("sift-action-rail--flat");
+  document.getElementById("sift-kbd-legend")?.remove();
   foot.innerHTML =
-    `<div class="sift-rail-row sift-rail-row-settings">` +
+    `<div class="sift-rail-settings">` +
+    `<div class="sift-rail-field">` +
+    `<span class="sift-rail-flabel">Destination</span>` +
     `<button data-fil="destbtn" class="sift-dest-btn${hasDestination() ? "" : " sift-dest-btn-empty"}">` +
-    `<span class="sift-dest-btn-label">Destination</span>` +
     `<span class="sift-fil-bin">${esc(destValueLabel())}</span>` +
     `<i class="ti ti-chevron-down sift-dest-btn-caret"></i></button>` +
-    `<div class="sift-rail-fmt-group"><span class="col-h">Format</span><div class="sift-seg sift-seg-thumbed" id="sift-fmt-seg"><div class="sift-seg-thumb"></div>${chips}</div></div>` +
-    `<div class="sift-rail-final-group"><span class="sift-final-name-label">Nom final</span><span class="sift-fil-prev"></span></div>` +
     `</div>` +
-    `<div class="sift-rail-row sift-rail-row-actions">` +
-    secondary +
-    `<button data-fil="ranger" class="sift-ranger-btn"></button>` +
+    `<span class="sift-rail-vsep"></span>` +
+    `<div class="sift-rail-field">` +
+    `<span class="sift-rail-flabel">Format</span>` +
+    `<div class="sift-seg sift-seg-thumbed" id="sift-fmt-seg"><div class="sift-seg-thumb"></div>${chips}</div>` +
+    `</div>` +
+    `<span class="sift-rail-vsep"></span>` +
+    `<div class="sift-rail-field sift-rail-field-grow">` +
+    `<span class="sift-rail-flabel">Nom final</span>` +
+    `<span class="sift-fil-prev"></span>` +
+    `</div>` +
+    `</div>` +
+    `<div class="sift-rail-actions-row">` +
+    `<span class="sift-rail-kbd">${keyboardHintsHtml()}</span>` +
+    `<div class="sift-rail-abtns">` + secondary +
+    `<button data-fil="ranger" class="sift-ranger-btn"></button></div>` +
     `</div>`;
   if (filedBanner) foot.prepend(filedBanner); // restore the banner above the freshly-rendered controls
   refreshRangerButton(); // single source of truth for the button's label/disabled state

@@ -642,6 +642,7 @@ function positionBatchFmtThumb(): void {
  * Replaces the filing footer + hides the folder tree while batching. */
 function renderBatchRail(reviewN: number) {
   const foot = requireEl("#filfoot", "renderBatchRail");
+  foot.classList.remove("sift-action-rail--flat"); // le rail de Lot garde sa carte (renderFoot pose --flat pour Détail)
   requireEl("#fldz", "renderBatchRail"); // fail-fast: asserts the popover host exists
   ensureBatchDestUI();
   // Preserve the LIVE run's progress list across this wholesale rebuild (renderBatch rebuilds the rail
