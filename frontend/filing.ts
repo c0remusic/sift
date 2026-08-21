@@ -89,12 +89,10 @@ function refreshRangerButton(): void {
   const ok = hasDestination();
   btn.disabled = !ok;
   btn.title = ok ? "" : "Choisis une destination avant de convertir";
-  // Text only, no decorative kbd glyph next to an already-descriptive label (annotation: "supprime
-  // les icones" — same rule already applied to Ranger/Jeter elsewhere, see CLAUDE.md). The shortcut
-  // itself is still shown in the standalone kbd-hints legend (keyboardHintsHtml), not repeated here.
-  btn.innerHTML = ok
-    ? `Convertir → <span class="sift-fil-bin">${esc(binLabel())}</span>`
-    : "Choisis une destination pour convertir";
+  // Juste « Convertir » : la destination est déjà affichée dans son champ du rail (Antoine
+  // 2026-08-21), la répéter dans le bouton faisait doublon. L'état désactivé + le champ Destination
+  // en ambre (« Choisir… ») disent qu'il manque une destination ; le raccourci vit dans la légende.
+  btn.textContent = "Convertir";
 }
 
 /** Re-render everything a destination change touches: the Destination button's own label/ambre

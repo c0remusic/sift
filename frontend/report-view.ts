@@ -28,6 +28,9 @@ document.addEventListener("sift:accordion-open", (e) => {
 // Single live player at a time — destroyed before any re-render so audio never lingers.
 let currentWs: WaveSurfer | null = null;
 function destroyPlayer() {
+  // NB : ne PAS déconnecter coverObserver ici — mountPlayer appelle destroyPlayer APRÈS que
+  // fillVerdictLanding a créé l'observer, ce qui le tuerait avant qu'il voie le texte grandir. Il est
+  // géré par sizeCoverToBody seul (déconnecte le précédent à chaque ouverture).
   if (currentWs) {
     try {
       currentWs.destroy();
@@ -394,6 +397,10 @@ function playerHeaderHtml(name: string, path: string, closeBtn: boolean, opts: P
     `<div class="sift-player-header-body">` +
     `<div class="sift-report-name sift-player-name${pendingCls}">${esc(name)}</div>` +
     `<div class="sift-report-sub sift-player-sub${pendingCls}">${esc(opts.subtitle ?? "")}</div>` +
+    // Verdict en ligne d'état DANS l'en-tête (en-tête B, choisi 2026-08-21) : entre l'artiste et le
+    // chemin. Vide dans la coque initiale ; rempli par fillVerdictLanding (point + mot teintés +
+    // format réel) quand l'analyse résout.
+    `<div class="sift-player-verdict"></div>` +
     `<div class="sift-player-path" title="${esc(path)}">${esc(shortPath(path))}</div>` +
     `</div>` +
     (closeBtn ? `<button class="sift-close sift-report-close">fermer</button>` : "") +
@@ -405,10 +412,6 @@ function playerRowHtml(name: string, path: string, closeBtn = false, headerOpts:
   return (
     `<div class="sift-player-row">` +
     playerHeaderHtml(name, path, closeBtn, headerOpts) +
-    // Verdict landing slot — the promoted verdict lands here, between the track header and the
-    // audition (spec revue.md § Zone C). Empty in the initial shell; filled by fillVerdictLanding
-    // once analysis resolves (openReportInto) or immediately (renderReportInto / modal).
-    `<div class="sift-report-verdict-slot"></div>` +
     `<div class="sift-player-audition">` +
     `<button class="sift-play sift-play-btn" title="Lecture / pause (espace)" aria-label="Lecture / pause (espace)"><i class="ti ti-player-play"></i></button>` +
     `<div class="sift-wave-wrap is-paused">` +
@@ -417,50 +420,22 @@ function playerRowHtml(name: string, path: string, closeBtn = false, headerOpts:
     `<span class="sift-time-elapsed">0:00</span>` +
     `<span class="sift-time-total">0:00</span>` +
     `</div>` +
-    `</div>` +
-    `<div class="sift-player-error" hidden></div>` +
-    `<div class="sift-player-controls">` +
-    // Collapsed to an icon at rest, expands on hover (annotation: "le bouton de volume qui
-    // collapse et qui s'ouvre seulement en hover") — width-transition + overflow:hidden in CSS,
-    // the icon is a separate absolutely-positioned element that fades out once expanded.
-    // "Volume" label dropped (annotation: "tu peux enlever le texte Volume et grossir l'icone") —
-    // the icon alone is the trigger/identity now.
+    // Volume intégré dans la rangée de transport (façon Apple Music) — plus de bloc « contrôles »
+    // séparé. Tempo & key-lock (l'« Écoute avancée ») retirés : le pitch DJ n'est pas voulu sur cet
+    // écran de décision (Antoine 2026-08-21), et la HIG ne justifie un contrôle audio custom que pour
+    // une commande absente du système. L'icône de volume reste (contrôle standard, cohérent).
     `<div class="sift-slider-block sift-volume-block">` +
-    // ti-volume-2 swapped for the plainer ti-volume (annotation: "pas fan de l'icone de volume") —
-    // a simpler speaker glyph, no sound-wave arcs, consistent with the flat/abstract direction
-    // already taken for the cover fallback.
     `<i class="ti ti-volume sift-volume-icon" role="img" title="Volume" aria-label="Volume"></i>` +
-    // Audit-ref R1 (Revue, 2026-07-08, réf. shadcn Slider/Radix) : aucun role="slider"/
-    // aria-valuenow dans tout le projet avant ce fix — drag-only (pointerdown), pas de clavier.
-    // aria-valuenow tenu à jour dans renderVolume/renderTempo (mountPlayer, plus bas).
+    // Audit-ref R1 (Revue, 2026-07-08, réf. shadcn Slider/Radix) : role="slider" + aria-valuenow,
+    // tenu à jour dans renderVolume (mountPlayer). Slider custom (pas de <input type=range>), drag +
+    // clavier flèches/Home/End.
     `<div class="sift-slider-track sift-volume-track" tabindex="0" role="slider" aria-label="Volume" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100">` +
     `<div class="sift-slider-rail"></div>` +
     `<div class="sift-slider-fill sift-volume-fill"></div>` +
     `<div class="sift-slider-thumb sift-volume-thumb"></div>` +
     `</div></div>` +
-    `<div class="sift-player-spacer"></div>` +
-    // Tempo/key-lock are DJ mixing controls, not needed for the actual task on this screen
-    // (verify the file, decide where it goes) — moved behind a disclosure so a non-technical
-    // user isn't shown 2 extra controls to ignore on every single track (audit finding #6,
-    // 2026-07-10). Volume stays visible (basic playback, expected by anyone). Native
-    // <details>/<summary> — elements stay in the DOM when collapsed, so mountPlayer's
-    // querySelector-based wiring below is unaffected by visibility.
-    `<details class="sift-listen-advanced">` +
-    `<summary class="sift-listen-advanced-summary">Écoute avancée</summary>` +
-    `<div class="sift-listen-advanced-body">` +
-    `<div class="sift-key-block" title="Key-lock : le tempo ne change pas la tonalité (off = varispeed)">` +
-    `<span class="sift-slider-label">Key-lock</span>` +
-    `<button class="sift-key sift-key-btn" aria-pressed="true">ON</button>` +
     `</div>` +
-    `<div class="sift-slider-block">` +
-    `<span class="sift-slider-label">Tempo<span class="sift-tempo-out">0%</span></span>` +
-    `<div class="sift-slider-track sift-tempo-track" title="Tempo — double-clic = réinitialiser" tabindex="0" role="slider" aria-label="Tempo" aria-valuemin="-8" aria-valuemax="8" aria-valuenow="0">` +
-    `<div class="sift-slider-rail"></div>` +
-    `<div class="sift-slider-fill sift-tempo-fill"></div>` +
-    `<div class="sift-slider-thumb sift-tempo-thumb"></div>` +
-    `</div></div>` +
-    `</div></details>` +
-    `</div></div>`
+    `<div class="sift-player-error" hidden></div>`
   );
 }
 
@@ -554,19 +529,70 @@ function verdictWordTone(r: AnalysisReport): { word: string; cls: string } {
     : { word: "AUTHENTIQUE", cls: "sift-lib-v-ok" };
 }
 
-/** Fill the verdict landing slot (`.sift-report-verdict-slot`, rendered empty by playerRowHtml
- *  inside the player row, between the track header and the audition). Kept as a slot-fill rather
- *  than inlined so the async open path (openReportInto) can paint the player shell before analysis
- *  resolves, then drop the verdict in when it does. */
+/** Résumé de format pour la ligne d'état du verdict : format déclaré + la mesure la plus parlante —
+ *  kbps pour un fichier lossy (c'est ce qui définit sa qualité), sinon la fréquence d'échantillonnage
+ *  en kHz. Uniquement des données réelles (declared_format / declared_bitrate / sample_rate), pas de
+ *  profondeur de bits inventée. */
+function formatSummary(r: AnalysisReport): string {
+  const parts: string[] = [];
+  if (r.declared_format) parts.push(r.declared_format.toUpperCase());
+  const khz = r.sample_rate ? `${(r.sample_rate / 1000).toFixed(1).replace(".", ",")} kHz` : "";
+  // Lossless : la fréquence d'échantillonnage définit la qualité (le « débit » PCM est trompeur —
+  // 1411 kbps pour un simple 16/44). Lossy : c'est le débit qui compte.
+  if (r.declared_rail === "lossless") {
+    if (khz) parts.push(khz);
+  } else if (r.declared_bitrate) {
+    parts.push(`${r.declared_bitrate} kbps`);
+  } else if (khz) {
+    parts.push(khz);
+  }
+  return parts.join(" · ");
+}
+
+/** Fill the verdict status line (`.sift-player-verdict`, rendered empty by playerHeaderHtml between
+ *  the artist and the path — en-tête B, 2026-08-21). Point + mot teintés par la classe `.sift-lib-v-*`
+ *  de la table (§ 16, via currentColor), suivis du format réel en encre secondaire. Slot-fill : la
+ *  coque du header est peinte avant que l'analyse résolve, puis le verdict s'y dépose. */
 function fillVerdictLanding(root: HTMLElement, r: AnalysisReport): void {
-  const slot = root.querySelector<HTMLElement>(".sift-report-verdict-slot");
+  const slot = root.querySelector<HTMLElement>(".sift-player-verdict");
   if (!slot) return;
   const { word, cls } = verdictWordTone(r);
+  const fmtInfo = formatSummary(r);
+  slot.className = `sift-player-verdict ${cls}`;
   slot.innerHTML =
-    `<div class="sift-verdict-landing ${cls}">` +
-    `<span class="sift-verdict-landing-dot" aria-hidden="true"></span>` +
-    `<span class="sift-verdict-landing-word">${esc(word)}</span>` +
-    `</div>`;
+    `<span class="sift-player-verdict-dot" aria-hidden="true"></span>` +
+    `<span class="sift-player-verdict-word">${esc(word)}</span>` +
+    (fmtInfo ? `<span class="sift-player-verdict-fmt">· ${esc(fmtInfo)}</span>` : "");
+  // La pochette prend la hauteur du bloc texte (en-tête B, Antoine 2026-08-21) : on mesure le corps
+  // UNE FOIS le verdict posé (il ajoute sa ligne) et on rend la cover carrée à cette hauteur. Le pur
+  // CSS (aspect-ratio:1 + align-self:stretch) rendait une largeur nulle dans ce contexte flex,
+  // mesuré via CDP — d'où la mesure JS, au point unique où la hauteur finale est connue.
+  sizeCoverToBody(root);
+}
+
+let coverObserver: ResizeObserver | null = null;
+/** La pochette (carrée) prend la hauteur du bloc texte de l'en-tête (en-tête B, Antoine 2026-08-21).
+ *  Un ResizeObserver la garde synchrone quel que soit le moment où cette hauteur se stabilise :
+ *  chargement d'Outfit (police système d'abord, mesuré 81→100px), pose du verdict, mise à jour tardive
+ *  du nom par updateHeaderName. Le pur CSS (aspect-ratio:1 + align-self:stretch) rendait une largeur
+ *  nulle dans ce contexte flex, et une mesure ponctuelle rate le reflow tardif. Un seul observer à la
+ *  fois — reconnecté à chaque ouverture, déconnecté par destroyPlayer. */
+function sizeCoverToBody(root: HTMLElement): void {
+  coverObserver?.disconnect();
+  coverObserver = null;
+  const body = root.querySelector<HTMLElement>(".sift-player-header-body");
+  const cover = root.querySelector<HTMLElement>(".sift-cover-frame");
+  if (!body || !cover) return;
+  const apply = () => {
+    const s = `${body.offsetHeight}px`;
+    cover.style.width = s;
+    cover.style.height = s;
+  };
+  apply();
+  if ("ResizeObserver" in window) {
+    coverObserver = new ResizeObserver(apply);
+    coverObserver.observe(body);
+  }
 }
 
 function spectroAndTagsHtml(r: AnalysisReport): string {
@@ -747,13 +773,9 @@ export function prefetchTrack(path: string): void {
 async function mountPlayer(root: HTMLElement, path: string, peaks?: number[], duration?: number) {
   const container = requireEl<HTMLElement>(".sift-wave", "mountPlayer", root);
   const playBtn = root.querySelector<HTMLButtonElement>(".sift-play");
-  const tempoOut = root.querySelector<HTMLElement>(".sift-tempo-out");
   const volumeTrack = root.querySelector<HTMLElement>(".sift-volume-track");
   const volumeFill = root.querySelector<HTMLElement>(".sift-volume-fill");
   const volumeThumb = root.querySelector<HTMLElement>(".sift-volume-thumb");
-  const tempoTrack = root.querySelector<HTMLElement>(".sift-tempo-track");
-  const tempoFill = root.querySelector<HTMLElement>(".sift-tempo-fill");
-  const tempoThumb = root.querySelector<HTMLElement>(".sift-tempo-thumb");
   const errorEl = root.querySelector<HTMLElement>(".sift-player-error");
 
   ensureStyles();
@@ -803,30 +825,6 @@ async function mountPlayer(root: HTMLElement, path: string, peaks?: number[], du
     const i = playBtn?.querySelector("i");
     if (i) i.className = `ti ti-${name}`;
   };
-  const keyEl = root.querySelector<HTMLButtonElement>(".sift-key");
-  let keyLock = true; // DJ default: tempo doesn't move the pitch (browser time-stretch)
-  let tempoValue = 0; // -8..8, drives both playback rate and the custom slider visuals
-  const applyRate = () => ws.setPlaybackRate(1 + tempoValue / 100, keyLock);
-  // Les deux états du toggle, en style INLINE parce que c'est le JS qui bascule — mais avec la
-  // grammaire de bouton du kit (§ 02-Buttons), pas une couleur à lui : ON = aplat d'accent + encre
-  // blanche (un toggle actif PORTE l'accent), OFF = aplat gris secondaire. Aucune bordure : le kit
-  // n'a aucun bouton bordé, et l'ancien couple « fond pâle info + filet info » se lisait comme un
-  // champ désactivé plutôt que comme un contrôle allumé. Le fond inline bat `button:hover`, qui ne
-  // garde donc que son `filter:brightness(0.95)` — exactement le hover voulu pour les deux états.
-  const refreshKey = () => {
-    if (!keyEl) return;
-    keyEl.textContent = keyLock ? "ON" : "OFF";
-    keyEl.setAttribute("aria-pressed", String(keyLock)); // audit-ref R2 (Revue, 2026-07-08)
-    keyEl.style.background = keyLock ? "var(--color-accent-fill)" : "var(--color-surface-raised)";
-    keyEl.style.color = keyLock ? "var(--color-accent-ink)" : "var(--color-text-secondary)";
-  };
-  keyEl?.addEventListener("click", () => {
-    keyLock = !keyLock;
-    refreshKey();
-    applyRate();
-  });
-  refreshKey();
-
   // Custom sliders (never native <input type=range> — see DESIGN.md): drag anywhere on the
   // track, thumb/fill follow the mouse until release. Volume fills from the left; tempo fills
   // from the centre (0 = neutral), matching the pitch-fader convention.
@@ -892,71 +890,6 @@ async function mountPlayer(root: HTMLElement, path: string, peaks?: number[], du
     });
   }
 
-  let tempoRateFrame: number | null = null;
-  const scheduleTempoRate = () => {
-    if (tempoRateFrame != null) return;
-    tempoRateFrame = window.requestAnimationFrame(() => {
-      tempoRateFrame = null;
-      applyRate();
-    });
-  };
-
-  const renderTempo = (syncAudio = true) => {
-    const pct = ((tempoValue + 8) / 16) * 100;
-    if (tempoFill) {
-      const left = Math.min(pct, 50);
-      tempoFill.style.left = `${left}%`;
-      tempoFill.style.width = `${Math.abs(pct - 50)}%`;
-    }
-    if (tempoThumb) tempoThumb.style.left = `${pct}%`;
-    if (tempoOut) tempoOut.textContent = `${tempoValue > 0 ? "+" : ""}${Math.round(tempoValue)}%`;
-    tempoTrack?.setAttribute("aria-valuenow", String(Math.round(tempoValue))); // audit-ref R1
-    if (syncAudio) scheduleTempoRate();
-  };
-  renderTempo();
-  if (tempoTrack) {
-    dragSlider(tempoTrack, (pct) => {
-      // Rounding tempoValue to the nearest whole percent on every mousemove (annotation: "encore
-      // sticky") snapped the thumb across one of only 17 fixed positions instead of following the
-      // cursor, unlike the volume slider's continuous ws.setVolume(pct) — that discreteness is what
-      // read as "sticky"/notchy. Keep the underlying value continuous (smooth drag, smooth pitch
-      // change); only the displayed "%" text rounds, in renderTempo above.
-      tempoValue = Math.max(-8, Math.min(8, -8 + pct * 16));
-      renderTempo();
-    });
-    tempoTrack.addEventListener("dblclick", () => {
-      tempoValue = 0;
-      renderTempo(false);
-      applyRate();
-    });
-    // Audit-ref R1 (Revue, 2026-07-08) : flèches ±1% (le pas affiché), Home/End aux bornes.
-    tempoTrack.addEventListener("keydown", (e) => {
-      if (e.key === "ArrowLeft" || e.key === "ArrowDown") {
-        e.preventDefault();
-        tempoValue = Math.max(-8, tempoValue - 1);
-        renderTempo();
-      } else if (e.key === "ArrowRight" || e.key === "ArrowUp") {
-        e.preventDefault();
-        tempoValue = Math.min(8, tempoValue + 1);
-        renderTempo();
-      } else if (e.key === "Home") {
-        e.preventDefault();
-        tempoValue = -8;
-        renderTempo();
-      } else if (e.key === "End") {
-        e.preventDefault();
-        tempoValue = 8;
-        renderTempo();
-      } else if (e.key === "0") {
-        // Parité clavier avec le double-clic souris (dblclick → 0%, ligne juste au-dessus) —
-        // sans ça, un utilisateur clavier doit presser une flèche jusqu'à 8 fois (audit 2026-07-09).
-        e.preventDefault();
-        tempoValue = 0;
-        renderTempo(false);
-        applyRate();
-      }
-    });
-  }
   // SoundCloud-style: elapsed (left) + remaining (right) shown at once, overlaid on the waveform
   // itself — no elapsed/remaining toggle needed since both are always visible together. The
   // right side counts DOWN (duration - elapsed), not a static total, so it actually ticks.
@@ -967,7 +900,6 @@ async function mountPlayer(root: HTMLElement, path: string, peaks?: number[], du
     if (timeTotalEl) timeTotalEl.textContent = `-${mmss(Math.max(0, ws.getDuration() - ws.getCurrentTime()))}`;
   };
   ws.on("ready", () => {
-    applyRate();
     updateTime();
     if (errorEl) errorEl.hidden = true;
     // Resync the icon on the REAL state. The button is clickable from the moment mountPlayer

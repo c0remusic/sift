@@ -1204,15 +1204,16 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
 .sift-lib-v-fake{color:var(--color-text-danger)}
 .sift-lib-v-check{color:var(--color-text-warning)}
 .sift-lib-v-none{color:var(--color-text-tertiary)}
-/* Verdict promu — le bloc d'atterrissage de Revue (spec revue.md § Zone C, direction « verdict
-   promu », 2026-08-21). SANS surface (#8/#23) : la pastille catégorielle de la table (§ 16),
-   agrandie. La teinte vient de la classe .sift-lib-v-* posée sur le conteneur ; le point (fond =
-   currentColor, comme .sift-lib-verdict-dot) et le mot la partagent, donc les deux signaux ne
-   divergent pas. Mot = --text-xl (20 px, le cran de l'échelle le plus proche du 19 px du
-   wireframe) : le verdict est le signal central, l'œil doit tomber dessus. */
-.sift-verdict-landing{display:flex;align-items:center;gap:var(--space-8);margin:var(--space-4) 0 var(--space-12)}
-.sift-verdict-landing-dot{width:12px;height:12px;border-radius:var(--border-radius-pill);background:currentColor;flex:none}
-.sift-verdict-landing-word{font-size:var(--text-xl);font-weight:600;letter-spacing:var(--tracking-normal)}
+/* Verdict en LIGNE D'ÉTAT dans l'en-tête (en-tête B, 2026-08-21) : point + mot teintés par la classe
+   .sift-lib-v-* posée sur le conteneur (currentColor, comme .sift-lib-verdict-dot, donc point et mot
+   ne divergent pas), suivis du format réel en encre secondaire. Petit (--text-md) — c'est une
+   métadonnée de qualité posée sous l'artiste, pas un titre. Masqué tant qu'il est vide (coque avant
+   analyse) pour ne pas ajouter de ligne blanche au header. */
+.sift-player-verdict{display:flex;align-items:center;gap:var(--space-8);font-size:var(--text-md);min-width:0}
+.sift-player-verdict:empty{display:none}
+.sift-player-verdict-dot{width:9px;height:9px;border-radius:var(--border-radius-pill);background:currentColor;flex:none}
+.sift-player-verdict-word{font-weight:600;letter-spacing:var(--tracking-normal)}
+.sift-player-verdict-fmt{color:var(--color-text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .sift-lib-col-artist{flex:1.4;min-width:var(--col-min-w)}
 .sift-lib-col-title{flex:1.4;min-width:var(--col-min-w)}
 .sift-lib-col-genre{flex:1;min-width:var(--col-min-w)}
@@ -1833,6 +1834,10 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 /* Held down (mousedown, not yet released) — whole button dims, distinct from the icon-only hover
    dim above. */
 .sift-play-btn:active{filter:brightness(.8)}
+/* La pochette prend la hauteur du bloc texte (titre · artiste · verdict · chemin) — l'inverse de
+   l'ancien réglage où le texte s'étalait pour matcher une pochette fixe (Antoine, en-tête B
+   2026-08-21). Le carré exact est posé en JS (fillVerdictLanding) car aspect-ratio + align-self:
+   stretch rendait une largeur nulle en flex ; le 68px ci-dessous n'est qu'un repli avant analyse. */
 .sift-player-header{display:flex;align-items:center;gap:var(--space-16);margin-bottom:0}
 /* Cover frame: real art fills it once identified (.sift-player-cover unhides, sits above the
    fallback icon and covers it completely). Until then a plain abstract note glyph shows instead
