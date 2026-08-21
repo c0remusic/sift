@@ -1,4 +1,4 @@
-import { identify, applyIdentity, applyTags, revertBatch, trackFileTags, openUrl } from "./ipc";
+import { identify, applyIdentity, applyTags, trackFileTags, openUrl } from "./ipc";
 import type { Candidate, AppliedIdentity } from "./ipc";
 import type { AnalysisReport } from "../shared/contracts";
 import { convertFileSrc } from "@tauri-apps/api/core";
@@ -101,10 +101,9 @@ export function refreshDiscrepancy(): void {
   mark(".sift-genres", d.genres);
 
   // Grey out "Appliquer" when there's nothing to write — a write with no discrepancy is a no-op
-  // click that gives the user nothing to do. Never touches the button in its "Annuler" (applied)
-  // state, which is a distinct action with its own always-clickable semantics.
+  // click that gives the user nothing to do.
   const applyBtn = editor.querySelector<HTMLButtonElement>('[data-fil="applytags"]');
-  if (applyBtn && applyBtn.dataset.applied !== "1") {
+  if (applyBtn) {
     applyBtn.disabled = !d.any;
     applyBtn.title = d.any
       ? "Applique les tags ID3 au fichier"
@@ -197,6 +196,10 @@ function onIdentityApplied(
   // feeds the file-vs-display discrepancy check (joined form), so it must live in state, not only DOM.
   state.genres = applied.styles;
   renderGenres();
+  // Label est lecture seule (rendu par renderEditor) mais onIdentityApplied ne re-render pas
+  // l'éditeur — patcher sa valeur en place, comme les inputs artiste/titre/version plus haut.
+  const labelRo = editor.querySelector<HTMLElement>('[data-fil="label-ro"]');
+  if (labelRo) labelRo.textContent = state.label ?? "—";
 
   // A Discogs match now exists → if the file is a fake/transcode, offer the rebuy search link.
   state.identified = true;
@@ -400,6 +403,11 @@ export function renderEditor(host: HTMLElement, mid: HTMLElement, rail: string, 
     `<div class="sift-attr"><span class="sift-attr-k">Artiste</span><input data-fil="artist" placeholder="—" value="${esc(c.artist)}" class="sift-attr-input" aria-label="Artiste"></div>` +
     `<div class="sift-attr"><span class="sift-attr-k">Titre</span><input data-fil="title" placeholder="—" value="${esc(c.title)}" class="sift-attr-input" aria-label="Titre"></div>` +
     `<div class="sift-attr"><span class="sift-attr-k">Version</span><input data-fil="version" placeholder="—" value="${esc(c.version ?? "")}" class="sift-attr-input" aria-label="Version"></div>` +
+    // Label — fait de release Discogs, LECTURE SEULE : apply_tags reçoit un Canonical (artiste/titre/
+    // version) et écrit le label depuis la métadonnée stockée, pas depuis une saisie ; l'éditer
+    // demanderait d'élargir le contrat IPC (backend, hors #47). Mis à jour en place par
+    // onIdentityApplied quand une release est choisie. "—" quand aucun label connu.
+    `<div class="sift-attr"><span class="sift-attr-k">Label</span><span class="sift-attr-ro" data-fil="label-ro">${esc(state.label ?? "—")}</span></div>` +
     `</div>` +
     // Apply ID3 tags: write these fields onto the file in place (no move, no encode, no 'filed'
     // change), revertable. Distinct from File (rail) — a neutral secondary button in the editor.
@@ -537,38 +545,20 @@ function refreshRebuyLink(): void {
   });
 }
 
-// Apply-button state machine. ONE button toggles between "Apply ID3 tags" (writes the file) and
-// "Appliqué ✓ — Annuler" (reverts the batch just written). `onclick` is reassigned (not
-// addEventListener) so a toggle never stacks handlers.
+// Apply button — une seule action « Appliquer » (grave les tags ID3 en place). Plus de bascule inline
+// vers « Annuler » (Antoine 2026-08-21) : l'apply est journalisé (tag_edit, actions.rs), donc l'undo
+// vit dans Ctrl+Z (undoLast) et l'écran Journal — le bouton inline faisait doublon.
 const APPLY_IDLE_HTML =
   '<i class="ti ti-tag sift-icon-inline-md"></i> Appliquer';
 
 /** Put the Apply button in its idle "write" state. Left ENABLED here — refreshDiscrepancy() is
  *  what actually gates .disabled against tagFieldDiffs().any right after (called on every path
- *  that can call this: open, edit, apply, undo), so this only needs to clear the "applied" marker
- *  the disable check keys off. */
+ *  that can call this: open, edit, apply), so this only sets the label + handler. */
 function setApplyIdle(btn: HTMLButtonElement): void {
   btn.disabled = false;
-  delete btn.dataset.applied;
   btn.style.color = "var(--color-text-secondary)";
   btn.innerHTML = APPLY_IDLE_HTML;
   btn.onclick = () => void doApplyTags(btn);
-}
-
-/** Put the Apply button in its "applied — click to undo" state (the whole button reverts `batchId`).
- *  Green is a brief flash (.sift-applytags-flash), not a permanent color — same convention already
- *  applied to the CDJ badge / candidate selection / Discogs CTA: a confirmed state stays neutral,
- *  only the transition into it is colored. Plain text, no icon (annotation: "vire les icones" —
- *  matches .sift-toast-undo's plain "Annuler", not a decorative checkmark next to a label that
- *  already says what happened). */
-function setApplyApplied(btn: HTMLButtonElement, batchId: string): void {
-  btn.disabled = false;
-  btn.dataset.applied = "1"; // refreshDiscrepancy() never disables an "Annuler" button on d.any===false
-  btn.style.color = "var(--color-text-primary)";
-  btn.textContent = "Annuler";
-  btn.onclick = () => void doUndoApply(btn, batchId);
-  btn.classList.add("sift-applytags-flash");
-  btn.addEventListener("animationend", () => btn.classList.remove("sift-applytags-flash"), { once: true });
 }
 
 /** Reset a possibly-"applied" Apply button back to idle (e.g. when the identity changes under it). */
@@ -590,7 +580,7 @@ async function doApplyTags(btn: HTMLButtonElement): Promise<void> {
   btn.innerHTML =
     '<i class="ti ti-loader-2 sift-spin sift-icon-inline-md"></i> Applying…';
   try {
-    const batchId = await applyTags(trackId, edited);
+    await applyTags(trackId, edited);
     const snap = await trackFileTags(trackId); // file changed → refresh the in-memory snapshot
     if (myseq !== openState.openSeq) return; // another track opened meanwhile — leave its state/UI alone
     state.fileTags = snap;
@@ -608,7 +598,10 @@ async function doApplyTags(btn: HTMLButtonElement): Promise<void> {
         : "var(--color-background-warning)";
       cdjBadgeAfterApply.style.color = cdjOk ? "var(--color-text-success)" : "var(--color-text-warning)";
     }
-    setApplyApplied(btn, batchId);
+    // Plus de bascule "Annuler" (Antoine 2026-08-21) : l'apply est journalisé (tag_edit), donc l'undo
+    // vit dans Ctrl+Z / l'écran Journal. Le bouton revient à l'idle ; refreshDiscrepancy ci-dessus l'a
+    // déjà désactivé, puisqu'il n'y a plus de divergence.
+    setApplyIdle(btn);
   } catch (e) {
     console.error("apply_tags failed", e);
     toast("Échec de l'écriture des tags", false);
@@ -616,27 +609,3 @@ async function doApplyTags(btn: HTMLButtonElement): Promise<void> {
   }
 }
 
-/** Undo the just-applied tag write (targeted revert of its batch). The file returns to its old tags
- *  → re-snapshot → the marker reappears and the button returns to idle. openState.openSeq-guarded. */
-async function doUndoApply(btn: HTMLButtonElement, batchId: string): Promise<void> {
-  const trackId = state.track?.id;
-  const myseq = openState.openSeq;
-  btn.disabled = true;
-  btn.innerHTML =
-    '<i class="ti ti-loader-2 sift-spin sift-icon-inline-md"></i> Annulation…';
-  try {
-    await revertBatch(batchId);
-    if (trackId != null) {
-      const snap = await trackFileTags(trackId);
-      if (myseq !== openState.openSeq) return;
-      state.fileTags = snap;
-    }
-    if (myseq !== openState.openSeq) return;
-    refreshDiscrepancy(); // file back to old tags → display diverges again → marker reappears
-    setApplyIdle(btn);
-  } catch (e) {
-    console.error("revert tag_edit failed", e);
-    toast("Annulation impossible", false);
-    if (myseq === openState.openSeq) setApplyApplied(btn, batchId); // stay applied so the user can retry
-  }
-}
