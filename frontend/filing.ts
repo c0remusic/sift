@@ -45,11 +45,10 @@ import {
 } from "./filing-preview";
 import {
   renderEditor,
-  restoreIdentifiedLine,
+  restoreCover,
   renderGenres,
   refreshDiscrepancy,
   releaseCache,
-  resetIdentEditing,
 } from "./filing-identify";
 import { doRanger, doSecondary } from "./filing-actions";
 
@@ -177,20 +176,26 @@ function renderFoot(foot: HTMLElement, mid: HTMLElement, rail: string): void {
   ensureKbdLegend(foot); // its own always-visible strip directly above the rail, not a rail item
 
   // Destination button opens the tree as a popover (#fldz, a sibling of #filfoot — see styles.css)
-  // instead of the old persistent .dest column. Rail order (2026-07-06 redesign): Destination →
-  // Format → Nom final (moved here from the verdict conclusion) → spacer → secondary → Ranger.
-  // Rebuilt inside this innerHTML so a format-chip re-render keeps it; the popover's own hidden
-  // state lives on #fldz itself, untouched by this rewrite.
+  // instead of the old persistent .dest column. Two rows (spec revue.md § Zone C pied, direction
+  // « verdict promu ») : réglage en haut (Destination → Format → Nom final), engagement groupé au
+  // bord trailing en bas (Écarter ghost, puis Convertir dominant le plus à droite — la convention
+  // macOS du bouton par défaut au bord trailing). Chaque rangée prend sa propre ligne via
+  // .sift-rail-row (flex:1 0 100%), donc plus de .sift-rail-spacer ici. Rebuilt inside this
+  // innerHTML so a format-chip re-render keeps it; the popover's own hidden state lives on #fldz
+  // itself, untouched by this rewrite.
   foot.innerHTML =
+    `<div class="sift-rail-row sift-rail-row-settings">` +
     `<button data-fil="destbtn" class="sift-dest-btn${hasDestination() ? "" : " sift-dest-btn-empty"}">` +
     `<span class="sift-dest-btn-label">Destination</span>` +
     `<span class="sift-fil-bin">${esc(destValueLabel())}</span>` +
     `<i class="ti ti-chevron-down sift-dest-btn-caret"></i></button>` +
     `<div class="sift-rail-fmt-group"><span class="col-h">Format</span><div class="sift-seg sift-seg-thumbed" id="sift-fmt-seg"><div class="sift-seg-thumb"></div>${chips}</div></div>` +
     `<div class="sift-rail-final-group"><span class="sift-final-name-label">Nom final</span><span class="sift-fil-prev"></span></div>` +
-    `<div class="sift-rail-spacer"></div>` +
+    `</div>` +
+    `<div class="sift-rail-row sift-rail-row-actions">` +
     secondary +
-    `<button data-fil="ranger" class="sift-ranger-btn"></button>`;
+    `<button data-fil="ranger" class="sift-ranger-btn"></button>` +
+    `</div>`;
   if (filedBanner) foot.prepend(filedBanner); // restore the banner above the freshly-rendered controls
   refreshRangerButton(); // single source of truth for the button's label/disabled state
   refreshPreview(); // repaint .sift-fil-prev just added above — it was empty until now
@@ -314,7 +319,6 @@ export async function openFilingInto(
   state.releaseCountry = cachedRelease?.country ?? null;
   state.releaseFormat = cachedRelease?.format ?? null;
   state.filedConfirm = null; // opening a track dismisses any "Filed ↩" confirmation
-  resetIdentEditing(); // Identification card always opens in read-only display mode
 
   mid.innerHTML =
     '<div class="sift-fil sift-fil-root">' +
@@ -503,11 +507,12 @@ export async function openFilingInto(
   renderFoot(footEl, mid, rail);
   const editorEl = requireEl<HTMLElement>(".sift-fil-editor", "openFilingInto", mid);
   renderEditor(editorEl, mid, rail, report);
-  // Already-identified track → show the "Identified" line (cover + release) in place of the bare
-  // Fetch button, rebuilt from metadata (no network). Runs inside the openState.openSeq-guarded section above,
-  // so a superseded open never paints this onto the wrong track.
-  if (release.identified && state.canonical) {
-    restoreIdentifiedLine(editorEl, mid, state.canonical.artist, state.canonical.title, release.cover_path);
+  // Already-identified track → restore the hero cover from metadata (no network). The identity
+  // itself is shown by the always-visible attribute inputs (direction B), so only the cover needs
+  // re-applying. Runs inside the openState.openSeq-guarded section above, so a superseded open never
+  // paints this onto the wrong track.
+  if (release.identified) {
+    restoreCover(mid, release.cover_path);
   }
   renderGenres(); // fill .sift-genres from state.genres (also shows genres on reopen, not just fresh fetch)
   refreshDiscrepancy(); // flag the marker if the file's tags differ from the displayed identity

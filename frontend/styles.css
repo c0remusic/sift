@@ -963,8 +963,16 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
 .sift-rail-final-group{display:flex;align-items:center;gap:var(--space-8);flex:none;min-width:0;max-width:340px}
 .sift-final-name-label{font-size:10px;letter-spacing:var(--tracking-wider);color:var(--color-text-tertiary);text-transform:uppercase;flex:none}
 .sift-fil-prev{font-family:var(--font-mono);font-size:var(--text-xs);color:var(--color-text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
-/* Pushes secondary/primary to the right edge of the rail. */
+/* Pushes secondary/primary to the right edge of the rail. Still used by the Lot rail
+   (batch-panel.ts); the Détail rail below moved to two explicit rows instead. */
 .sift-rail-spacer{flex:1;min-width:8px}
+/* Détail rail, deux rangées (spec revue.md § Zone C pied) : chaque rangée occupe sa propre ligne
+   dans le flex-wrap de .sift-action-rail — le motif flex:1 0 100% déjà employé par la bannière
+   « Rangé » et la légende clavier pour forcer leur propre ligne. La rangée d'engagement pousse ses
+   deux boutons au bord trailing (Convertir, le primaire, finit le plus à droite : convention macOS
+   du bouton par défaut au bord trailing). */
+.sift-rail-row{flex:1 0 100%;display:flex;align-items:center;gap:var(--space-8);flex-wrap:wrap;min-width:0}
+.sift-rail-row-actions{justify-content:flex-end;gap:var(--space-12)}
 /* Filled pill restored (annotation 2026-07-07: ".sift-key-btn / .chip.on / .sift-ranger-btn
    devraient avoir le même style", same message asking .sift-secondary-trash to gain "une case
    colorée avec contour") — the "bulle" removed in the PRIOR round is back, but this time as one
@@ -1179,6 +1187,15 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
 .sift-lib-v-fake{color:var(--color-text-danger)}
 .sift-lib-v-check{color:var(--color-text-warning)}
 .sift-lib-v-none{color:var(--color-text-tertiary)}
+/* Verdict promu — le bloc d'atterrissage de Revue (spec revue.md § Zone C, direction « verdict
+   promu », 2026-08-21). SANS surface (#8/#23) : la pastille catégorielle de la table (§ 16),
+   agrandie. La teinte vient de la classe .sift-lib-v-* posée sur le conteneur ; le point (fond =
+   currentColor, comme .sift-lib-verdict-dot) et le mot la partagent, donc les deux signaux ne
+   divergent pas. Mot = --text-xl (20 px, le cran de l'échelle le plus proche du 19 px du
+   wireframe) : le verdict est le signal central, l'œil doit tomber dessus. */
+.sift-verdict-landing{display:flex;align-items:center;gap:var(--space-8);margin:var(--space-4) 0 var(--space-12)}
+.sift-verdict-landing-dot{width:12px;height:12px;border-radius:var(--border-radius-pill);background:currentColor;flex:none}
+.sift-verdict-landing-word{font-size:var(--text-xl);font-weight:600;letter-spacing:var(--tracking-normal)}
 .sift-lib-col-artist{flex:1.4;min-width:var(--col-min-w)}
 .sift-lib-col-title{flex:1.4;min-width:var(--col-min-w)}
 .sift-lib-col-genre{flex:1;min-width:var(--col-min-w)}
@@ -2241,6 +2258,29 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .sift-chip-disabled{opacity:.4;cursor:not-allowed}
 .sift-col-h-tight{margin-bottom:4px}
 .sift-ident-display{font-size:var(--text-lg);font-weight:500;margin-bottom:var(--space-12)}
+/* Métadonnées : header statique (spec revue.md § Zone C), plus un accordéon. Label à gauche, badge
+   CDJ + bouton d'entrée/sortie d'édition à droite. Le bouton est un aplat gris compact — grammaire
+   secondaire du dépôt (§ Scope Buttons : aucun bouton bordé), pas le ghost bordé du wireframe. */
+.sift-meta-header{display:flex;align-items:center;justify-content:space-between;gap:var(--space-8);margin-bottom:var(--space-8)}
+.sift-meta-title{font-size:var(--text-md);color:var(--color-text-secondary)}
+.sift-meta-header-right{display:flex;align-items:center;gap:var(--space-8);flex:none}
+.sift-meta-ident-btn{flex:none;white-space:nowrap;background:var(--color-surface-raised);color:var(--color-text-secondary);border:0;padding:var(--space-4) var(--space-12);font-size:var(--text-sm);border-radius:var(--border-radius-sm)}
+.sift-meta-ident-btn:hover{background:var(--color-surface-raised);filter:brightness(0.97)}
+/* Liste d'attributs éditable en place (direction B) : ligne label/valeur, la valeur EST un input
+   stylé comme du texte au repos (transparent, sans bord), révélé au survol et au focus. La bordure
+   de focus est une bordure info (DESIGN.md § 8 : une saisie remplace l'anneau par une bordure),
+   posée en box-shadow inset pour ne pas décaler la ligne. */
+.sift-attr-list{margin-bottom:var(--space-12)}
+.sift-attr{display:flex;align-items:center;justify-content:space-between;gap:var(--space-12);
+  padding:var(--space-4) 0;border-bottom:0.5px solid var(--color-border-tertiary)}
+.sift-attr-k{flex:none;color:var(--color-text-tertiary);font-size:var(--text-md)}
+.sift-attr-input{flex:1;min-width:0;text-align:right;font-family:inherit;font-size:var(--text-base);
+  color:var(--color-text-primary);background:transparent;border:0;border-radius:var(--border-radius-sm);
+  padding:var(--space-4) var(--space-8)}
+.sift-attr-input::placeholder{color:var(--color-text-quaternary)}
+.sift-attr:hover .sift-attr-input{background:var(--overlay-hover)}
+.sift-attr-input:focus{outline:none;background:var(--color-surface-raised);
+  box-shadow:inset 0 0 0 1px var(--color-text-info)}
 /* No longer full-width (annotation: "les boutons n'ont pas besoin d'etre aussi larges") — sizes
    to its own content now, like every other button in this section. */
 .sift-id-btn-full{margin-bottom:8px}

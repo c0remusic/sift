@@ -59,35 +59,6 @@ const mmss = (s: number) => {
 };
 const fmt = (n: number, d = 1) => (Number.isFinite(n) ? n.toFixed(d) : String(n));
 
-/** The file's REAL quality (what the audio actually is), derived from the analysis — shown
- * next to what it was declared as. */
-function realQuality(r: AnalysisReport): { label: string; bg: string; fg: string } {
-  // Real quality of a transcode, expressed as the equivalent MP3 bitrate. FIX-11: r.est_kbps is
-  // computed in Rust from the SAME table verdict() uses — no local recompute, no risk of the two
-  // numbers drifting apart (they used to, with a shifted table).
-  if (r.verdict === "fake") {
-    return {
-      // container_mismatch = extension lies about the rail (e.g. an MP3 renamed .flac) — a
-      // distinct fraud from a genuine over-encoded transcode, so it gets a distinct label
-      // instead of the shared "MP3 ≈ X kbps" (which reads like a borderline bitrate call,
-      // not "this .flac isn't a real FLAC at all"). Mirrors spectroCaption()'s distinction.
-      label: r.container_mismatch ? "Extension falsifiée" : `MP3 ≈ ${r.est_kbps} kbps`,
-      bg: "var(--color-background-danger)",
-      fg: "var(--color-text-danger)",
-    };
-  }
-  if (r.verdict === "grey")
-    return { label: `MP3 ≈ ${r.est_kbps} kbps — à vérifier`, bg: "var(--color-background-warning)", fg: "var(--color-text-warning)" };
-  // genuine: describe the actual quality, not a yes/no
-  const real =
-    r.declared_rail === "lossless"
-      ? "lossless · pleine bande"
-      : r.declared_bitrate
-        ? `${r.declared_bitrate} kbps réels`
-        : "qualité authentique";
-  return { label: real, bg: "var(--color-background-success)", fg: "var(--color-text-success)" };
-}
-
 function spectroCaption(v: AnalysisReport["verdict"], containerMismatch: boolean): string {
   if (v === "fake" && containerMismatch) return "conteneur .flac mais contenu MP3 détecté — extension falsifiée";
   if (v === "fake") return "coupure nette = transcodage probable";
@@ -434,6 +405,10 @@ function playerRowHtml(name: string, path: string, closeBtn = false, headerOpts:
   return (
     `<div class="sift-player-row">` +
     playerHeaderHtml(name, path, closeBtn, headerOpts) +
+    // Verdict landing slot — the promoted verdict lands here, between the track header and the
+    // audition (spec revue.md § Zone C). Empty in the initial shell; filled by fillVerdictLanding
+    // once analysis resolves (openReportInto) or immediately (renderReportInto / modal).
+    `<div class="sift-report-verdict-slot"></div>` +
     `<div class="sift-player-audition">` +
     `<button class="sift-play sift-play-btn" title="Lecture / pause (espace)" aria-label="Lecture / pause (espace)"><i class="ti ti-player-play"></i></button>` +
     `<div class="sift-wave-wrap is-paused">` +
@@ -558,39 +533,56 @@ export function zoneToggleHtml(opts: {
  *  (annotation: "on ne comprend pas ce qui reste à finaliser ? Redondant ?") — the pill alone
  *  couldn't explain WHAT needed finalizing, and it duplicated the Destination button's own
  *  "Choisir…" CTA, which is the actual, self-explanatory place that signal belongs. */
-// Removed entirely (annotation: "supprime ça en fait") — the verdict pill (Prêt à ranger/À
-// vérifier d'abord/Sur-encodé) duplicated the tone-coded quality badge already shown in the
-// Diagnostic audio disclosure header (qualityChipTone/spectroAndTagsHtml below), same pattern as
-// the earlier removals of the confidence badge and CHECK MATCH this session. `verdictContainer`
-// (`.sift-fil-verdict`) still exists and is still used for the "Analyse en cours…"/error states
-// elsewhere in this file — only the success-path HTML this function used to build is gone; kept
-// as a no-op (not deleted outright) so those call sites don't need touching.
-export function verdictCardHtml(_r: AnalysisReport): string {
-  return "";
+/** The promoted verdict — the "landing block" that sits high, right under the track header
+ *  (spec `docs/ui-specs/revue.md` § Zone C, direction « verdict promu », validée le 2026-08-21).
+ *  It is said ONCE, here: the tone-coded badge that used to sit on the Diagnostic disclosure
+ *  header was the duplicate this replaces (the pill removed 2026-07-06 was another). NO surface —
+ *  #8/#23 forbid a content surface in the middle of Revue — so it renders the same categorical
+ *  pastille as the library table (`DESIGN.md` § 16), scaled up: a filled dot that inherits the
+ *  tone `currentColor` plus the verdict word.
+ *
+ *  Mirrors `library-views.ts::verdictView` — LOSSLESS demands the TWO facts (verdict `ok` AND a
+ *  lossless rail), and it reuses the library's own `.sift-lib-v-*` tone classes so the two signals
+ *  cannot drift apart. `declared_rail` is the rail directly here (AnalysisReport carries it;
+ *  LibraryTrack instead derives it from the written format). */
+function verdictWordTone(r: AnalysisReport): { word: string; cls: string } {
+  if (r.verdict === "fake") return { word: "FAKE", cls: "sift-lib-v-fake" };
+  if (r.verdict === "grey") return { word: "À VÉRIFIER", cls: "sift-lib-v-check" };
+  if (r.verdict !== "ok") return { word: "—", cls: "sift-lib-v-none" };
+  return r.declared_rail === "lossless"
+    ? { word: "LOSSLESS", cls: "sift-lib-v-ok" }
+    : { word: "AUTHENTIQUE", cls: "sift-lib-v-ok" };
 }
 
-/** Quality label + tone for the spectral-disclosure header badge (verdict-derived: LOSSLESS,
- *  "MP3 ≈ X kbps", etc.) — single source consumed by spectroAndTagsHtml() below. */
-function qualityChipTone(r: AnalysisReport): { label: string; tone: "success" | "danger" | "warning" | "neutral" } {
-  const rq = realQuality(r);
-  if (r.verdict === "ok" && r.declared_rail === "lossless") return { label: "LOSSLESS", tone: "success" };
-  return { label: rq.label, tone: r.verdict === "fake" ? "danger" : r.verdict === "grey" ? "warning" : "neutral" };
+/** Fill the verdict landing slot (`.sift-report-verdict-slot`, rendered empty by playerRowHtml
+ *  inside the player row, between the track header and the audition). Kept as a slot-fill rather
+ *  than inlined so the async open path (openReportInto) can paint the player shell before analysis
+ *  resolves, then drop the verdict in when it does. */
+function fillVerdictLanding(root: HTMLElement, r: AnalysisReport): void {
+  const slot = root.querySelector<HTMLElement>(".sift-report-verdict-slot");
+  if (!slot) return;
+  const { word, cls } = verdictWordTone(r);
+  slot.innerHTML =
+    `<div class="sift-verdict-landing ${cls}">` +
+    `<span class="sift-verdict-landing-dot" aria-hidden="true"></span>` +
+    `<span class="sift-verdict-landing-word">${esc(word)}</span>` +
+    `</div>`;
 }
 
 function spectroAndTagsHtml(r: AnalysisReport): string {
   const yn = (b: boolean) => (b ? "oui" : "non");
-  const { label: qualityLabel, tone: qualityTone } = qualityChipTone(r);
   return (
     `<div class="sift-spectro-box">` +
     zoneToggleHtml({
       label: "Diagnostic audio",
+      // No verdict badge on this header anymore: the verdict is said ONCE, in the promoted
+      // landing block above (spec revue.md § Zone C, 2026-08-21). The badge span stays (hidden by
+      // default) so the shared zoneToggle markup is unchanged; only the hint span is still used
+      // here, for wireSpectrogram's transient "calcul…"/"échec" text.
       badgeId: "sift-quality-badge",
       toggleExtraClass: "sift-sg-toggle sift-spectro-toggle",
       caretExtraClass: "sift-sg-caret sift-spectro-caret",
       hintExtraClass: "sift-sg-hint sift-spectro-hint",
-      badgeLabel: qualityLabel,
-      badgeTone: qualityTone,
-      badgeHidden: false,
     }) +
     `<div class="sift-sg-body sift-spectro-body">` +
     `<div class="sift-spectro-body-inner">` +
@@ -1152,7 +1144,10 @@ export function renderReportInto(
   headerOpts: PlayerHeaderOptions = {},
 ) {
   container.innerHTML = `<div class="sift-report-scroll">${reportHtml(r, false, headerOpts)}</div>`;
-  if (verdictContainer) verdictContainer.innerHTML = verdictCardHtml(r);
+  fillVerdictLanding(container, r);
+  // verdictContainer (the low .sift-fil-verdict slot, after Identification) now only carries the
+  // transient "Analyse en cours…"/error states — clear it on the success path.
+  if (verdictContainer) verdictContainer.innerHTML = "";
   wireReport(container, r);
 }
 
@@ -1238,7 +1233,8 @@ export async function openReportInto(
     void mountPlayer(container, path, earlyResult.peaks, earlyResult.duration_sec || undefined);
     const verdictEl = verdictHost();
     const bodyEl = container.querySelector<HTMLElement>(".sift-analysis-body");
-    if (verdictEl) verdictEl.innerHTML = verdictCardHtml(earlyResult);
+    if (verdictEl) verdictEl.innerHTML = "";
+    fillVerdictLanding(container, earlyResult);
     if (bodyEl) {
       bodyEl.innerHTML = spectroAndTagsHtml(earlyResult);
       bodyEl.hidden = false;
@@ -1261,7 +1257,8 @@ export async function openReportInto(
     if (seq !== openSeq) return null;
     const verdictEl = verdictHost();
     const bodyEl = container.querySelector<HTMLElement>(".sift-analysis-body");
-    if (verdictEl) verdictEl.innerHTML = verdictCardHtml(r);
+    if (verdictEl) verdictEl.innerHTML = "";
+    fillVerdictLanding(container, r);
     if (bodyEl) {
       bodyEl.innerHTML = spectroAndTagsHtml(r);
       bodyEl.hidden = false;
@@ -1307,7 +1304,8 @@ export async function openReportModal(path: string) {
     const r = await analyzePath(path, false);
     const card = document.createElement("div");
     card.className = "sift-report-overlay-card sift-report-overlay-modal";
-    card.innerHTML = reportHtml(r, true) + verdictCardHtml(r);
+    card.innerHTML = reportHtml(r, true);
+    fillVerdictLanding(card, r);
     ov.innerHTML = "";
     ov.appendChild(card);
     card.querySelector(".sift-close")?.addEventListener("click", () => {

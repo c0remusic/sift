@@ -85,7 +85,7 @@ const meta: Meta<LibraryTrack> = {
 export default meta;
 type Story = StoryObj<LibraryTrack>;
 
-/** Sain ET sur un rail lossless — les DEUX faits sont exigés, comme pour `qualityChipTone`. Le
+/** Sain ET sur un rail lossless — les DEUX faits sont exigés, comme pour `verdictWordTone`. Le
  *  `format` d'une piste rangée est celui que Sift a réellement ÉCRIT, donc il EST le rail du
  *  fichier sur le disque. */
 export const Lossless: Story = { args: { verdict: "ok", format: "aiff" } };

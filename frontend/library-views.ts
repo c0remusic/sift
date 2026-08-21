@@ -32,7 +32,7 @@ function qualPill(t: LibraryTrack): string {
  *     `report-view.ts:94`) et « authentique » (`queue-panel.ts` VERDICT_DOT, `report-view.ts:85`
  *     « qualité authentique »). Ce sont ces mots-là qui sont repris, aucun n'est neuf.
  *
- *  `LOSSLESS` demande les DEUX faits, comme `qualityChipTone` (`report-view.ts:576`) : verdict sain
+ *  `LOSSLESS` demande les DEUX faits, comme `verdictWordTone` (`report-view.ts`) : verdict sain
  *  ET rail lossless. `LibraryTrack` n'a pas de `declared_rail`, mais son `format` est le format que
  *  Sift a réellement ÉCRIT en rangeant (`library.rs`, `target_format` → `Target::ext()`), donc il
  *  EST le rail du fichier sur le disque. Écrire `LOSSLESS` sur un MP3 authentique serait faux, et

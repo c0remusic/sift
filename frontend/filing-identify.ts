@@ -2,7 +2,7 @@ import { identify, applyIdentity, applyTags, revertBatch, trackFileTags, openUrl
 import type { Candidate, AppliedIdentity } from "./ipc";
 import type { AnalysisReport } from "../shared/contracts";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { zoneToggleHtml, row } from "./report-view";
+import { row } from "./report-view";
 import { identifyErrorHtml, renderCandidates } from "./identify-shared";
 import { resolveGenreFamily } from "./genre-families";
 import { requireEl, esc } from "./dom";
@@ -10,21 +10,6 @@ import { state, openState } from "./filing-state";
 import { toast } from "./filing-toast";
 import { refreshPreview, updateHeaderName, titleCase } from "./filing-preview";
 import { humanizeError } from "./errors";
-
-// Identification card display mode: false = read-only grid (maquette default), true = the
-// existing editable artist/title/version inputs. Reset on every track open (Step 3) so a new
-// track never inherits the previous track's edit-mode.
-let identEditing = false;
-
-// openFilingInto (filing.ts, Task 6) also resets this on every track open — a coupling the Task 4
-// brief's "read/written exclusively inside renderEditor" note missed (found during this
-// extraction, not anticipated). A plain `let` can't be reassigned from an importing module (ESM
-// import bindings are read-only to the importer), so expose a setter rather than the raw `let` —
-// same reasoning as filing-state.ts's openState object for openSeq/acting, applied here at
-// function scope instead of promoting this into shared module state it doesn't need to be.
-export function resetIdentEditing(): void {
-  identEditing = false;
-}
 
 // Exclusive accordion (shadcn Accordion reference, ui.shadcn.com/docs/components/base/accordion):
 // opening Métadonnées closes Diagnostic and vice versa. Coordinated with report-view.ts (no
@@ -263,9 +248,8 @@ function onIdentityApplied(
   if (applyBtn) void doApplyTags(applyBtn);
 }
 
-/** Markup for the "Identified: artist — title" confirmation line (cover thumb + "change" button).
- *  Single source of truth, reused by a fresh fetch (onIdentityApplied) and by the reopen of an
- *  already-identified track (restoreIdentifiedLine) so both render identically. */
+/** Markup for the "Identified: artist — title" confirmation line (cover thumb + "change" button),
+ *  shown in the candidate zone by onIdentityApplied right after a fresh Discogs release is applied. */
 function identifiedLineHtml(artist: string, title: string, coverPath: string | null): string {
   const coverThumb = coverPath
     ? `<img src="${esc(convertFileSrc(coverPath))}" alt="" class="sift-identified-cover">`
@@ -281,40 +265,20 @@ function identifiedLineHtml(artist: string, title: string, coverPath: string | n
   );
 }
 
-/** On (re)open of an already-identified track (track_release.identified), show the "Identified" line
- *  in place of the bare Fetch button — same markup as a fresh fetch, rebuilt from `metadata` (cover
- *  included), ZERO network. The original candidate list is gone after a close / cold start, so here
- *  "change" re-runs a Discogs fetch (Antoine's call) rather than re-showing a list we no longer have.
- *  `editor` is the center editor host; `.sift-cands` + the Identifier button live inside it. */
-export function restoreIdentifiedLine(
-  editor: HTMLElement,
-  mid: HTMLElement,
-  artist: string,
-  title: string,
-  coverPath: string | null,
-): void {
-  const host = editor.querySelector<HTMLElement>(".sift-cands");
-  const idBtn = editor.querySelector<HTMLButtonElement>('[data-fil="identifier"]');
-  if (!host || !idBtn) return;
-  host.hidden = false;
-  host.innerHTML = identifiedLineHtml(artist, title, coverPath);
-  // Cover was only ever set on a FRESH identify this session (onIdentityApplied) — never on
-  // reopen of an already-identified track, so the hero/player cover stayed hidden until you
-  // re-ran Identify (docs/superpowers/reviews/2026-07-02-audit-fidelite-ecran-par-ecran.md décision #5, bug de branchement confirmé).
-  if (coverPath) {
-    const src = convertFileSrc(coverPath);
-    mid.querySelectorAll<HTMLImageElement>(".sift-report-cover").forEach((covEl) => {
-      // See onIdentityApplied: Discogs placeholder art can fail to render — re-hide on error.
-      covEl.onerror = () => { covEl.hidden = true; };
-      covEl.src = src;
-      covEl.hidden = false;
-    });
-  }
-  // [C1] Match the post-fetch state: the primary button reads "Re-identify".
-  idBtn.innerHTML = '<i class="ti ti-refresh sift-icon-inline-sm"></i> Ré-identifier';
-  // Cold-start "change": the original candidates aren't in memory → re-run a Discogs fetch.
-  host.querySelector<HTMLElement>('[data-fil="cand-changer"]')?.addEventListener("click", () => {
-    void doIdentify(idBtn, host, editor, mid);
+/** On reopen of an already-identified track, restore the hero cover (mid `.sift-report-cover`) from
+ *  the Discogs cover path — the identity's cover isn't carried by the analysis report, so without
+ *  this the hero/player cover stayed hidden until you re-ran Identify
+ *  (docs/superpowers/reviews/2026-07-02-audit-fidelite-ecran-par-ecran.md décision #5). Discogs
+ *  placeholder art can fail to decode → re-hide on error, same as onIdentityApplied. In direction B
+ *  the identity itself is shown by the always-visible attribute inputs, so no "Identifié :" line is
+ *  drawn on reopen — only the cover needs restoring. */
+export function restoreCover(mid: HTMLElement, coverPath: string | null): void {
+  if (!coverPath) return;
+  const src = convertFileSrc(coverPath);
+  mid.querySelectorAll<HTMLImageElement>(".sift-report-cover").forEach((covEl) => {
+    covEl.onerror = () => { covEl.hidden = true; };
+    covEl.src = src;
+    covEl.hidden = false;
   });
 }
 
@@ -410,59 +374,33 @@ export function renderEditor(host: HTMLElement, mid: HTMLElement, rail: string, 
     host.innerHTML = "";
     return;
   }
-  const inputCss = "sift-editor-input";
-
-  // [C1] "Fetch metadata from Discogs" is the primary entry point (gold filled), above the inputs.
-  // [C2] title= explains what it does; the kbd hint shows the I shortcut.
-  // Vertical order: pick the Discogs release FIRST (badge → Fetch → candidates), then edit the
-  // fields it populates (artist/title/version → Genres directly under Version). The Final name
-  // preview moved to the rail (next to File). `.sift-cands` sits above the inputs so choosing a
-  // release precedes editing.
-  const displayName =
-    c.artist && c.title ? `${c.artist} — ${c.title}${c.version ? ` (${c.version})` : ""}` : "Non identifié";
   host.innerHTML =
-    zoneToggleHtml({ label: "Métadonnées", toggleId: "sift-meta-toggle", badgeId: "sift-cdj-badge" }) +
-    // Grid 0fr→1fr open/close animation (same trick as Diagnostic's .sift-spectro-body) — the
-    // -inner wrapper carries overflow:hidden so the grid track can animate from/to zero height.
-    // Padding lives on a THIRD nested div (-pad), never on -inner itself: overflow:hidden only
-    // zeroes a track's automatic minimum size from CONTENT, not from padding on the item the grid
-    // actually measures — padding directly on -inner would floor the closed row at its own padding
-    // sum instead of true 0 (found live via CDP: gridTemplateRows stuck at 16px, matching 8px+8px
-    // vertical padding — annotation: "ça rajoute une longueur bizarre", then "c'est encore pire"
-    // after padding-bottom was added). Diagnostic never hit this because its inset lives on a child
-    // row (.sift-spectro-declared), not on .sift-spectro-body-inner itself, which has zero padding.
-    `<div class="sift-zone-toggle-body" id="sift-meta-body">` +
-    `<div class="sift-zone-toggle-body-inner">` +
-    `<div class="sift-zone-toggle-body-pad">` +
-    // .sift-ident-head/.sift-editor-title ("Identification · Discogs") removed (annotation:
-    // "supprime") — redundant with the toggle header above it ("Métadonnées"), which already
-    // names this section before it's even expanded.
-    // Confidence badge ("métadonnées fiables"/"à confirmer") removed (annotation: "ça ne veut rien
-    // dire, c'est à l'user de définir la fiabilité") — the extraction confidence is Sift's own
-    // internal signal, not a claim the user should be told to trust or distrust up front.
-    (identEditing
-      ? `<button data-fil="identifier" class="sift-id-btn sift-id-btn-full${c.artist && c.title ? " sift-id-btn-neutral" : ""}" title="Rechercher les métadonnées sur Discogs (pochette, label, année, genres)"><i class="ti ti-search sift-icon-inline-sm"></i> ${c.artist && c.title ? "Rechercher à nouveau" : "Récupérer les métadonnées Discogs"} <span class="kbd sift-kbd-hint-id">I</span></button>` +
-        `<div class="sift-cands sift-cands-host" hidden></div>` +
-        // Persistent labels above each field (annotation: "on ne sait pas à quoi correspondent les
-        // champs") — a placeholder alone disappears the moment there's real text in the input, so
-        // a reopened, already-filled track showed three bare boxes with no indication of which
-        // field was which. The group header ("Données de la piste") this originally shipped with
-        // was removed one round later (annotation: "redondant avec le titre des données qu'on
-        // affiche maintenant") — the field labels alone already say what each one is.
-        `<div class="sift-editor-fields">` +
-        `<div class="sift-editor-field"><span class="sift-editor-field-label">Artiste</span><input data-fil="artist" placeholder="Artiste" value="${esc(c.artist)}" class="${inputCss}"></div>` +
-        `<div class="sift-editor-field"><span class="sift-editor-field-label">Titre</span><input data-fil="title" placeholder="Titre" value="${esc(c.title)}" class="${inputCss}"></div>` +
-        `<div class="sift-editor-field"><span class="sift-editor-field-label">Version</span><input data-fil="version" placeholder="Version (ex. Remix, Dub)" value="${esc(c.version ?? "")}" class="${inputCss}"></div>` +
-        `</div>`
-      : c.artist && c.title
-        ? `<div class="sift-ident-display">${esc(displayName)}</div>`
-        : // Unidentified + read-only: the maquette's simplified card (Sift.dc.html:357-362) — a
-          // direct "Rechercher sur Discogs" entry point, without having to open edit mode first.
-          // Same data-fil="identifier" + .sift-cands contract as edit mode, so the existing
-          // doIdentify wiring below and the [m9] I shortcut find them unchanged.
-          `<div class="sift-ident-idle"><span class="sift-ident-idle-note">Aucune correspondance Discogs pour l'instant.</span>` +
-          `<button data-fil="identifier" class="sift-ident-search-btn">Rechercher sur Discogs</button></div>` +
-          `<div class="sift-cands sift-cands-host" hidden></div>`) +
+    // Header statique (spec revue.md § Zone C, direction B validée 2026-08-21) : Métadonnées est
+    // TOUJOURS visible, sans accordéon NI bascule read-only/édition. Les valeurs s'éditent EN PLACE —
+    // chaque ligne d'attribut porte son input, stylé comme du texte au repos, révélé au survol et au
+    // focus. Un seul rendu quel que soit l'état : c'est tout le point de la direction B. Le bouton
+    // "Identifier" ne bascule plus un mode, il lance la recherche Discogs qui remplit ces mêmes
+    // champs. Le badge CDJ (critère code recâblé par #46, hors périmètre) vit sur ce header.
+    `<div class="sift-meta-header">` +
+    `<span class="sift-meta-title">Métadonnées</span>` +
+    `<span class="sift-meta-header-right">` +
+    `<span class="sift-chip-badge" id="sift-cdj-badge" hidden></span>` +
+    `<button data-fil="identifier" class="sift-meta-ident-btn" title="Rechercher les métadonnées sur Discogs (pochette, label, année, genres)"><i class="ti ti-search sift-icon-inline-sm"></i> ${c.artist && c.title ? "Ré-identifier" : "Identifier"} <span class="kbd sift-kbd-hint-id">I</span></button>` +
+    `</span></div>` +
+    `<div class="sift-meta-body">` +
+    // Résultats Discogs — vide au repos, rempli le temps d'une recherche (doIdentify), au-dessus des
+    // attributs pour que le choix d'une release précède l'édition. onIdentityApplied remplit ensuite
+    // les inputs data-fil ci-dessous en place, sans re-render.
+    `<div class="sift-cands sift-cands-host" hidden></div>` +
+    // Liste d'attributs éditable en place : la valeur EST un input (data-fil écouté par `upd` à la
+    // saisie et par onIdentityApplied au remplissage), stylé comme du texte tant qu'on ne le touche
+    // pas. Labels persistants — annotation "on ne sait pas à quoi correspondent les champs".
+    // Placeholder "—" quand vide, jamais une ligne vide.
+    `<div class="sift-attr-list">` +
+    `<div class="sift-attr"><span class="sift-attr-k">Artiste</span><input data-fil="artist" placeholder="—" value="${esc(c.artist)}" class="sift-attr-input" aria-label="Artiste"></div>` +
+    `<div class="sift-attr"><span class="sift-attr-k">Titre</span><input data-fil="title" placeholder="—" value="${esc(c.title)}" class="sift-attr-input" aria-label="Titre"></div>` +
+    `<div class="sift-attr"><span class="sift-attr-k">Version</span><input data-fil="version" placeholder="—" value="${esc(c.version ?? "")}" class="sift-attr-input" aria-label="Version"></div>` +
+    `</div>` +
     // Apply ID3 tags: write these fields onto the file in place (no move, no encode, no 'filed'
     // change), revertable. Distinct from File (rail) — a neutral secondary button in the editor.
     // Moved into the Genres header row (annotation: "à côté de genres") — short label + explanatory
@@ -477,7 +415,7 @@ export function renderEditor(host: HTMLElement, mid: HTMLElement, rail: string, 
     // finding nothing on a track that was unidentified when this markup was first built.
     `<div class="sift-genres-header">` +
     `<div class="col-h sift-col-h-tight">Genres</div>` +
-    `<button data-fil="applytags" class="sift-applytags-btn" title="Applique les tags ID3 au fichier"${c.artist && c.title ? "" : " hidden"}><i class="ti ti-tag sift-icon-inline-md"></i> Appliquer</button>` +
+    `<button data-fil="applytags" class="sift-applytags-btn" title="Applique les tags ID3 au fichier (ou Entrée après avoir édité un champ)"${c.artist && c.title ? "" : " hidden"}><i class="ti ti-tag sift-icon-inline-md"></i> Appliquer</button>` +
     `</div>` +
     `<div class="sift-genres sift-genres-box"></div>` +
     // Rebuy link slot — filled by refreshRebuyLink() only for a fake track that also has a Discogs
@@ -501,12 +439,8 @@ export function renderEditor(host: HTMLElement, mid: HTMLElement, rail: string, 
     // visibility mechanism is refreshDiscrepancy toggling style.display (no `hidden`+display conflict).
     // Look lives in .sift-tag-warn (styles.css). Shown only when the display diverges from the file.
     `<div class="sift-tag-warn" role="status" aria-live="polite" style="display:none"><i class="ti ti-alert-triangle sift-icon-inline-md sift-icon-flex-none"></i><span>Artiste et Titre pas encore gravés dans le fichier (seulement identifiés ci-dessus) — un CDJ ne peut pas les lire tant que ce n'est pas fait. <strong>Convertir</strong> ou <strong>Appliquer les tags</strong> pour corriger.</span></div>` +
-    `</div>` + // ferme .sift-zone-toggle-body-pad
-    `</div>` + // ferme .sift-zone-toggle-body-inner
-    `</div>`; // ferme #sift-meta-body ouvert au début de host.innerHTML
+    `</div>`; // ferme .sift-meta-body
 
-  const metaToggle = host.querySelector<HTMLButtonElement>("#sift-meta-toggle");
-  const metaBody = host.querySelector<HTMLElement>("#sift-meta-body");
   const cdjBadge = host.querySelector<HTMLElement>("#sift-cdj-badge");
   if (cdjBadge && report) {
     const ok = report.tags_cdj_ok;
@@ -514,73 +448,13 @@ export function renderEditor(host: HTMLElement, mid: HTMLElement, rail: string, 
     cdjBadge.style.background = ok ? "var(--color-background-success)" : "var(--color-background-warning)";
     cdjBadge.style.color = ok ? "var(--color-text-success)" : "var(--color-text-warning)";
     cdjBadge.title = "Un CDJ a besoin d'Artiste + Titre gravés dans les tags du fichier";
-    // Toujours visible, replié ou ouvert (annotation 2026-07-06: disparaissait à l'ouverture —
-    // le corps n'affiche en fait pas d'équivalent explicite "CDJ compatible/incompatible" une
-    // fois déplié, donc le cacher perdait l'info plutôt que de la déduire de l'ouverture).
-    cdjBadge.hidden = false;
+    cdjBadge.hidden = false; // vit sur le header statique, visible en lecture-seule comme en édition
   }
-  // Forces the just-rebuilt zone (renderEditor was called fresh) back into its open, expanded state
-  // — zoneToggleHtml always starts a fresh render collapsed, but both call sites below (opening +
-  // entering edit mode in one click, and "Terminé") want to land on the open body, not a closed one.
-  const forceMetaOpen = () => {
-    const freshBody = host.querySelector<HTMLElement>("#sift-meta-body");
-    const freshToggle = host.querySelector<HTMLButtonElement>("#sift-meta-toggle");
-    // Force a reflow before adding the open class: freshBody was JUST created by the innerHTML
-    // rebuild above, still closed (grid-template-rows:0fr) and never painted. Without this read,
-    // the browser coalesces "created closed" + "add -open" into one paint and the grid-template-rows
-    // transition never has a prior state to animate from — it just jumps straight to open (annotation:
-    // "la taille a changé mais on a pas l'animation d'ouverture"). Reading offsetHeight commits the
-    // closed layout first, so the class add right after is a genuine, animatable state change.
-    if (freshBody) void freshBody.offsetHeight;
-    freshBody?.classList.add("sift-zone-toggle-body-open");
-    freshToggle?.classList.add("sift-zone-toggle-open");
-    freshToggle?.setAttribute("aria-expanded", "true");
-  };
 
-  const closeMeta = () => {
-    const freshBody = host.querySelector<HTMLElement>("#sift-meta-body");
-    const freshToggle = host.querySelector<HTMLButtonElement>("#sift-meta-toggle");
-    if (!freshBody?.classList.contains("sift-zone-toggle-body-open")) return;
-    // Closing: exit edit mode too, so the next open always starts from this same single click.
-    identEditing = false;
-    freshBody.classList.remove("sift-zone-toggle-body-open");
-    freshToggle?.classList.remove("sift-zone-toggle-open");
-    freshToggle?.setAttribute("aria-expanded", "false");
-    // Closing the zone resets the Apply button to idle (2026-07-06 annotation): "Appliqué ✓" is a
-    // transient confirmation for the write that just happened, not a state that should survive a
-    // collapse/reopen with no track change — reopening always starts from the write action again.
-    resetApplyButton(host);
-  };
-  closeMetaZone = closeMeta; // this instance is now the one "sift:accordion-open" can close
-
-  metaToggle?.addEventListener("click", () => {
-    const wasOpen = metaBody?.classList.contains("sift-zone-toggle-body-open") ?? false;
-    if (!wasOpen) {
-      // Exclusive accordion (shadcn Accordion reference): opening this closes Diagnostic.
-      document.dispatchEvent(new CustomEvent("sift:accordion-open", { detail: { zone: "metadonnees" } }));
-      // 2026-07-06 annotation: the separate pencil "Modifier manuellement" button was redundant
-      // with this same click (opening the zone only revealed a *read-only* display; a second click
-      // on the pencil was needed to actually edit, and — since it re-rendered the whole zone from
-      // scratch with no open state to restore — visually closed the panel it was meant to open).
-      // A single click on the header now opens AND edits directly; the pencil button is removed.
-      identEditing = true;
-      renderEditor(host, mid, rail, report);
-      forceMetaOpen();
-      // renderEditor() alone only rebuilds the static markup — replay the same post-render steps
-      // openFilingInto runs after its own first renderEditor() call, or this reopen regresses to a
-      // blank "search Discogs" view even though the track is already identified (2026-07-06
-      // annotation: the "Identifié :" line + genres were vanishing on every collapse/reopen).
-      if (state.identified && state.canonical) {
-        restoreIdentifiedLine(host, mid, state.canonical.artist, state.canonical.title, state.coverPath);
-      }
-      renderGenres();
-      refreshDiscrepancy();
-      updateHeaderName(mid);
-      refreshPreview();
-      return;
-    }
-    closeMeta();
-  });
+  // Métadonnées ne se replie plus (spec revue.md § Zone C) : rien à fermer quand Diagnostic s'ouvre,
+  // donc l'accordéon exclusif est neutralisé côté Métadonnées (closeMetaZone reste null). Diagnostic
+  // garde son propre repli, indépendant.
+  closeMetaZone = null;
 
   const upd = () => {
     const a = host.querySelector<HTMLInputElement>('[data-fil="artist"]');
@@ -594,9 +468,24 @@ export function renderEditor(host: HTMLElement, mid: HTMLElement, rail: string, 
     updateHeaderName(mid); // keep the report header's clean name in sync with edits
     refreshDiscrepancy(); // editing a field may make the display diverge from the file (or re-converge)
   };
+  // Entrée dans un champ = appliquer les tags au fichier (demande d'Antoine 2026-08-21) : éditer en
+  // place puis valider par Entrée grave les tags, sans détour par le bouton. Passe par le MÊME
+  // doApplyTags que le bouton Appliquer, et respecte son état désactivé (rien à appliquer si l'édition
+  // n'a rien changé — refreshDiscrepancy pilote `.disabled`). preventDefault empêche l'Entrée globale
+  // (Convertir) de se déclencher ; elle est de toute façon gardée hors des INPUT (DESIGN.md § 9).
+  const applyOnEnter = (e: KeyboardEvent): void => {
+    if (e.key !== "Enter") return;
+    e.preventDefault();
+    const applyBtn = host.querySelector<HTMLButtonElement>('[data-fil="applytags"]');
+    if (applyBtn && !applyBtn.disabled) void doApplyTags(applyBtn);
+    (e.currentTarget as HTMLInputElement).blur();
+  };
   host
     .querySelectorAll<HTMLInputElement>('[data-fil="artist"],[data-fil="title"],[data-fil="version"]')
-    .forEach((el) => el.addEventListener("input", upd));
+    .forEach((el) => {
+      el.addEventListener("input", upd);
+      el.addEventListener("keydown", applyOnEnter);
+    });
 
   const idBtn = host.querySelector<HTMLButtonElement>('[data-fil="identifier"]');
   const candsHost = host.querySelector<HTMLElement>(".sift-cands");

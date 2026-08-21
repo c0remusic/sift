@@ -31,9 +31,9 @@ export interface RevueState {
   // selected — kept here so the read-only release line below Genres keeps showing them afterwards).
   releaseCountry: string | null;
   releaseFormat: string | null;
-  // Cover of the applied/persisted release — needed to re-run restoreIdentifiedLine() outside the
-  // openFilingInto cold-open path (2026-07-06 annotation: reopening the Métadonnées zone re-renders
-  // the editor and must be able to redraw the "Identifié :" confirmation line the same way).
+  // Cover of the applied/persisted release — restoreCover() re-applies it to the hero on reopen of
+  // an already-identified track (the analysis report doesn't carry the Discogs cover, so without the
+  // stored path the cover would stay hidden until a re-identify).
   coverPath: string | null;
   // The would-write sub-genres for the open track (DB track_genres order), shown in .sift-genres and
   // compared (joined) against the file. Set on open from track_release, or from `applied.styles`.
