@@ -1,5 +1,15 @@
 # Spec — Revue
 
+> ⚠️ **En retard sur le code depuis la session du 2026-08-21.** Le volet Détail a été affiné
+> en direct au-delà de cette spec — voir [#47](https://github.com/c0remusic/sift/issues/47).
+> Écarts principaux : le verdict est passé du « bloc d'atterrissage » (§ Zone C, point 2) à une
+> **ligne d'état dans l'en-tête** (verdict + format réel, sous l'artiste) ; le **tempo et le
+> key-lock (« Écoute avancée ») sont retirés** du lecteur ; les Métadonnées s'éditent **en place,
+> en permanence** (plus de mode entré via « Identifier ») ; le rail d'action est **à plat et
+> structuré** (labels de section + séparateurs). La **direction du lecteur n'est pas figée** :
+> Antoine veut le vrai composant scrubber d'Apple, pas la waveform. Réconcilier cette spec une
+> fois cette dernière décision prise.
+
 > L'écran de décision. Le seul en profil **Poste de décision** (`DESIGN.md` § 14).
 
 ## Contexte dans le shell
