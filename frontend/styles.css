@@ -2271,10 +2271,16 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    de focus est une bordure info (DESIGN.md § 8 : une saisie remplace l'anneau par une bordure),
    posée en box-shadow inset pour ne pas décaler la ligne. */
 .sift-attr-list{margin-bottom:var(--space-12)}
-.sift-attr{display:flex;align-items:center;justify-content:space-between;gap:var(--space-12);
+.sift-attr{display:flex;align-items:center;gap:var(--space-12);
   padding:var(--space-4) 0;border-bottom:0.5px solid var(--color-border-tertiary)}
-.sift-attr-k{flex:none;color:var(--color-text-tertiary);font-size:var(--text-md)}
-.sift-attr-input{flex:1;min-width:0;text-align:right;font-family:inherit;font-size:var(--text-base);
+/* Colonne de label à largeur FIXE : les champs (les « barres » d'édition) démarrent tous au même x
+   à gauche, quel que soit le label — sans quoi chacun commence après son propre label et ils se
+   décalent (Antoine 2026-08-21). Patron inspecteur : colonne label | colonne valeur. */
+.sift-attr-k{flex:none;width:4.5rem;color:var(--color-text-tertiary);font-size:var(--text-md)}
+/* Valeur alignée à GAUCHE : on tape de gauche à droite et rien n'est coupé au bord droit. Le
+   right-align tronquait le texte en italique de l'état « édité, pas encore gravé » (.sift-tag-stale,
+   font-style:italic) contre le bord de l'input. */
+.sift-attr-input{flex:1;min-width:0;text-align:left;font-family:inherit;font-size:var(--text-base);
   color:var(--color-text-primary);background:transparent;border:0;border-radius:var(--border-radius-sm);
   padding:var(--space-4) var(--space-8)}
 .sift-attr-input::placeholder{color:var(--color-text-quaternary)}

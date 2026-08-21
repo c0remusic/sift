@@ -465,19 +465,25 @@ export function renderEditor(host: HTMLElement, mid: HTMLElement, rail: string, 
     state.canonical.title = t?.value ?? "";
     state.canonical.version = v?.value.trim() ? v.value.trim() : null;
     refreshPreview();
-    updateHeaderName(mid); // keep the report header's clean name in sync with edits
     refreshDiscrepancy(); // editing a field may make the display diverge from the file (or re-converge)
   };
-  // Entrée dans un champ = appliquer les tags au fichier (demande d'Antoine 2026-08-21) : éditer en
-  // place puis valider par Entrée grave les tags, sans détour par le bouton. Passe par le MÊME
-  // doApplyTags que le bouton Appliquer, et respecte son état désactivé (rien à appliquer si l'édition
-  // n'a rien changé — refreshDiscrepancy pilote `.disabled`). preventDefault empêche l'Entrée globale
-  // (Convertir) de se déclencher ; elle est de toute façon gardée hors des INPUT (DESIGN.md § 9).
+  // Le titre en haut (hero, `.sift-report-name`) ne se met à jour qu'à la FIN de l'édition — au blur
+  // ou sur Entrée — pas à chaque frappe (Antoine 2026-08-21 : « pas en même temps »). Le Nom final du
+  // rail, lui, suit en direct (refreshPreview dans upd).
+  const commitTitle = (): void => updateHeaderName(mid);
+  // Entrée dans un champ = appliquer les tags au fichier (Antoine 2026-08-21). upd() d'abord pour que
+  // state.canonical porte la dernière saisie, puis on grave dès qu'il y a une vraie divergence avec le
+  // fichier (`tagFieldDiffs().any`) — plus fiable que l'état `.disabled` du bouton, qui reste
+  // « Annuler » après l'apply auto d'une identification et ne se ré-arme pas. Même doApplyTags que le
+  // bouton. preventDefault : l'Entrée globale « Convertir » est de toute façon gardée hors des INPUT
+  // (filing.ts:570, DESIGN.md § 9).
   const applyOnEnter = (e: KeyboardEvent): void => {
     if (e.key !== "Enter") return;
     e.preventDefault();
+    upd();
+    commitTitle();
     const applyBtn = host.querySelector<HTMLButtonElement>('[data-fil="applytags"]');
-    if (applyBtn && !applyBtn.disabled) void doApplyTags(applyBtn);
+    if (applyBtn && tagFieldDiffs().any) void doApplyTags(applyBtn);
     (e.currentTarget as HTMLInputElement).blur();
   };
   host
@@ -485,6 +491,7 @@ export function renderEditor(host: HTMLElement, mid: HTMLElement, rail: string, 
     .forEach((el) => {
       el.addEventListener("input", upd);
       el.addEventListener("keydown", applyOnEnter);
+      el.addEventListener("blur", commitTitle);
     });
 
   const idBtn = host.querySelector<HTMLButtonElement>('[data-fil="identifier"]');
