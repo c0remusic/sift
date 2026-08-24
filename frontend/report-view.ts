@@ -779,6 +779,7 @@ async function mountPlayer(root: HTMLElement, path: string, peaks?: number[], du
   const volumeTrack = root.querySelector<HTMLElement>(".sift-volume-track");
   const volumeFill = root.querySelector<HTMLElement>(".sift-volume-fill");
   const volumeThumb = root.querySelector<HTMLElement>(".sift-volume-thumb");
+  const volumeIcon = root.querySelector<HTMLElement>(".sift-volume-icon");
   const errorEl = root.querySelector<HTMLElement>(".sift-player-error");
 
   ensureStyles();
@@ -861,6 +862,10 @@ async function mountPlayer(root: HTMLElement, path: string, peaks?: number[], du
     if (volumeFill) volumeFill.style.width = `${pct * 100}%`;
     if (volumeThumb) volumeThumb.style.left = `${pct * 100}%`;
     volumeTrack?.setAttribute("aria-valuenow", String(Math.round(pct * 100))); // audit-ref R1
+    // L'icône reflète l'état muet : glyphe barré à 0 (kit § 14). Elle reste visible et cliquable à
+    // gauche du slider déplié — clic = mute (voir plus bas).
+    if (volumeIcon)
+      volumeIcon.className = pct <= 0 ? "ti ti-volume-off sift-volume-icon" : "ti ti-volume sift-volume-icon";
   };
   renderVolume(1); // WaveSurfer's own default (full volume)
   if (volumeTrack) {
@@ -890,6 +895,22 @@ async function mountPlayer(root: HTMLElement, path: string, peaks?: number[], du
         e.preventDefault();
         ws.setVolume(1);
         renderVolume(1);
+      }
+    });
+  }
+  if (volumeIcon) {
+    // Clic sur le haut-parleur = mute / démute (kit § 14). Mémorise le dernier volume non nul.
+    let lastVolume = 1;
+    volumeIcon.addEventListener("click", () => {
+      const cur = ws.getVolume();
+      if (cur > 0) {
+        lastVolume = cur;
+        ws.setVolume(0);
+        renderVolume(0);
+      } else {
+        const restore = lastVolume > 0 ? lastVolume : 1;
+        ws.setVolume(restore);
+        renderVolume(restore);
       }
     });
   }

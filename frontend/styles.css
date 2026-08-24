@@ -1903,16 +1903,17 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .sift-player-controls{display:flex;align-items:center;gap:var(--space-16);margin-left:82px}
 .sift-slider-block{flex:none;width:130px;display:flex;flex-direction:column;gap:var(--space-8)}
 /* Collapsed to just an icon at rest (annotation: "le bouton de volume qui collapse et qui s'ouvre
-   seulement en hover") — width transition + overflow:hidden clips the label/track, which stay in
-   normal flow (not removed), so re-expanding needs no re-render. The icon is a separate absolutely
-   positioned layer, faded out once expanded. */
+   seulement en hover") — width transition + overflow:hidden clips the track, which stays in normal
+   flow (not removed), so re-expanding needs no re-render. The speaker icon is the LEADING flex item
+   (kit volume pill, §14) : it stays visible when expanded and is clickable to toggle mute ; the
+   track fades in to its right. (Was an inset:0 overlay that faded out — replaced 2026-08-24.) */
 /* EXEMPTION VOLONTAIRE à DESIGN.md § 6 (`width` ne s'anime pas), confirmée au sweep du 2026-08-19 —
    la seule du fichier sur `width`. Ici la transition n'est pas une décoration posée sur un contrôle :
    elle EST le contrôle. Le repli à 20 px et l'ouverture au survol sont le mécanisme demandé
    (annotation « le bouton de volume qui collapse et qui s'ouvre seulement en hover »), et DESIGN.md
    § 17 le note nommément : « `.sift-volume-track` déborde et ce n'est PAS un défaut… le corriger
    casserait le contrôle. » Portée bornée : un seul nœud, jamais peint en rafale. */
-.sift-volume-block{position:relative;width:20px;overflow:hidden;transition:width var(--duration-slow) ease}
+.sift-volume-block{position:relative;flex-direction:row;align-items:center;gap:0;width:20px;overflow:hidden;transition:width var(--duration-slow) ease}
 /* :has(.dragging) added (bug report: "il est tout buggé ton volume") — pure :hover meant the
    block collapsed the instant the cursor left its 20px hit-box, which happens constantly mid-drag
    (dragging the thumb across the full 130px track moves the cursor well outside that 20px zone) —
@@ -1922,7 +1923,7 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .sift-volume-block:hover,.sift-volume-block:focus-within,.sift-volume-block:has(.sift-slider-track.dragging){width:130px}
 /* Bigger now that it's the control's only identity, no label alongside it (annotation: "enlever
    le texte Volume et grossir l'icone"). */
-.sift-volume-icon{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:18px;color:var(--color-text-tertiary);opacity:1;transition:opacity var(--duration-fast) ease;pointer-events:none}
+.sift-volume-icon{flex:none;display:flex;align-items:center;justify-content:center;font-size:18px;color:var(--color-text-tertiary);cursor:pointer}
 /* Track explicitly hidden at rest (bug report: "la barre devrait totalement disparaitre à part en
    survol, type youtube") — the icon has no opaque background, so it only visually OVERLAPPED the
    rail without hiding it; the narrow 20px sliver of rail/fill still showed through around the
@@ -1932,8 +1933,7 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    .sift-volume-block clips with overflow:hidden — at 100% volume the thumb (13px, centered via
    translateX(-50%)) used to have its right half clipped off (bug report: "la boule de sélection
    est tronquée quand le volume est à fond"). */
-.sift-volume-block .sift-volume-track{opacity:0;transition:opacity var(--duration-fast) ease;margin:0 var(--space-8)}
-.sift-volume-block:hover .sift-volume-icon,.sift-volume-block:focus-within .sift-volume-icon,.sift-volume-block:has(.sift-slider-track.dragging) .sift-volume-icon{opacity:0}
+.sift-volume-block .sift-volume-track{flex:1;opacity:0;transition:opacity var(--duration-fast) ease;margin:0 var(--space-8)}
 .sift-volume-block:hover .sift-volume-track,
 .sift-volume-block:focus-within .sift-volume-track,
 .sift-volume-block:has(.sift-slider-track.dragging) .sift-volume-track{opacity:1}
