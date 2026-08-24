@@ -88,6 +88,17 @@ Deux registres, et la coupure entre eux est le point de l'échelle :
 descend sous 10 px**, ni par token ni par littéral. Deux crans inférieurs ont existé
 (9 px, 8 px) et ont été retirés le 2026-08-05.
 
+**Discipline par écran (ajout du 2026-08-21).** L'échelle autorise sept crans dans
+l'app ; un **écran** n'en emploie que **trois ou quatre** — un titre, un corps, une
+légende — sous peine de bruit. La hiérarchie se fait d'abord par l'**encre** (§ 4 :
+primary / secondary / tertiary), pas par une pluie de tailles proches. Le **monospace**
+(`--font-mono`) est réservé aux **chiffres qui s'alignent en colonne** (durées, BPM,
+mesures) avec `tabular-nums` ; il ne sert **pas** à « faire technique » sur un chemin, un
+format ou un temps isolé — ceux-là restent en `--font-ui`. Les **chemins de fichier** se
+rendent en `--font-ui` et en **segments** (`Dossier › fichier`, patron *path control* des
+HIG), jamais en chaîne monospace tronquée. Mesure du 2026-08-21 : 25 usages de
+`--font-mono` dans `styles.css`, source du « fouillis » relevé sur la surface Revue.
+
 ### Tracking
 
 ```
@@ -747,7 +758,7 @@ Aucune vue orpheline. Deux fusions proposées, chacune avec son motif.
 |---|---|---|---|---|
 | **Bibliothèque** | Finder / Music | Parcours | Table des pistes rangées | Détail de la piste |
 | **Journal** | Console | Parcours | Table des actions, groupées par session | Détail de l'entrée + annuler |
-| **Revue** | Finder + Utilitaire de disque (mode Lot) | Poste de décision | Surface de travail : lecture, verdict, identification, rangement | — (la file tient lieu de zone fixe) |
+| **Revue** | Finder + Utilitaire de disque (mode Batch) | Poste de décision | Surface de travail : lecture, verdict, identification, rangement | — (la file tient lieu de zone fixe) |
 | **Rekordbox** | Utilitaire de disque | Parcours | Liste des candidats de la section choisie | Détail du candidat |
 | **Clé USB** | Utilitaire de disque | Parcours | Liste des disques amovibles | Occupation + formatage du disque choisi |
 | **Réglages** | Réglages Système | Parcours | Panneau du réglage choisi, borné à `--measure-form` | — (les catégories occupent la zone gauche) |
@@ -812,9 +823,17 @@ une quatrième section, au-dessus.
 
 ### Sous-modes
 
-- **Revue / Lot** — ce n'est pas un écran mais un **changement de zone C** : la surface
-  de travail devient une table à cases à cocher. La file reste, le rail reste, la barre
-  reste. La bascule vit dans la barre unifiée, en contrôle segmenté.
+- **Revue / Batch** — ce n'est pas un écran mais un **changement de zone C** : la surface
+  de travail devient le **résumé de la sélection** (compte, verdicts, totaux, « Ranger la
+  sélection »). La file reste, le rail reste, la barre reste. ⚠️ **Révisé le 2026-08-21,
+  complété le 2026-08-24** : pour Revue, la recherche reste dans la **colonne file**,
+  désormais **en tête** (décision E, patron HIG d'une liste) ; le segmenté **Détail / Lot
+  est retiré**, le mode **Batch** s'arme par une **icône de sélection dans la barre**
+  (§ 11 option 4, patron « Sélectionner » Photos) qui fait apparaître les **cases par
+  ligne** dans la file — plus de table à part. La recherche **pas** dans la barre unifiée =
+  écart assumé à la règle « modes de vue dans la barre » (§ 14 A), **local à Revue** ;
+  Bibliothèque Table/Grille garde sa bascule dans la barre. Détail :
+  `docs/ui-specs/revue.md` § Zone A / B′.
 - **Bibliothèque / Table et Grille** — deux rendus de la même zone C, bascule dans la
   barre unifiée. Le tri est partagé entre les deux.
 - **Rekordbox / 4 sections M8** — les quatre sections deviennent quatre **entrées de la
@@ -826,7 +845,7 @@ une quatrième section, au-dessus.
 ## 16. La table centrale
 
 L'écran de vie du DJ. Une seule table, un seul comportement, partout où il y a des
-pistes : Bibliothèque, À re-sourcer, Corbeille, file de Revue, mode Lot.
+pistes : Bibliothèque, À re-sourcer, Corbeille, file de Revue, mode Batch.
 
 ### Colonnes par défaut
 
