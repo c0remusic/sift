@@ -49,6 +49,10 @@ export interface RevueState {
   // reopen). Gates the "rebuy on Beatport" link: searching a raw filename is useless — only a
   // confirmed artist+title is worth a store search.
   identified: boolean;
+  // Nombre de morceaux RANGÉS dans cette session (filings, jamais un simple écarté). Pilote le fork
+  // de l'empty-state : >0 → « Tout est trié » (→ Bibliothèque, il y a quelque chose à voir) ; 0 →
+  // « Rien à revoir » (→ Accueil, rien de rangé, en ajouter). Remis à 0 seulement au rechargement.
+  filedThisSession: number;
 }
 
 export const state: RevueState = {
@@ -65,6 +69,7 @@ export const state: RevueState = {
   fileTags: null,
   filedConfirm: null,
   identified: false,
+  filedThisSession: 0,
 };
 
 // ---- Background filing (P5 — PRD 2026-07-27, D3/D5) ----

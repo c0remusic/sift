@@ -279,6 +279,9 @@ function settleFilingBanner(o: TrackFileOutcome, started: InFlightFiling | null)
     toast(`Conversion échouée — ${name} est revenu dans la file`, false);
     return;
   }
+  // Rangé avec succès : compté pour le fork empty-state (Tout est trié vs Rien à revoir). Compte les
+  // filings Détail ; le lot incrémentera de même en Lane 3 (onFileBatchDone, batch-panel.ts).
+  state.filedThisSession++;
   if (mine) {
     paintFiledBanner(mine, "done");
     // Flash vert bref au rangement (DESIGN §8 : un état permanent reste neutre, seule la transition

@@ -206,7 +206,7 @@ et le plancher horodaté de 250 ms reste le garde. In-app, **jamais** `window.co
 
 | État | Rendu |
 |---|---|
-| **File vide** | `emptyStateHtml` dans la zone C — « Tout est trié », compte de ce qui a été traité, action vers Bibliothèque |
+| **File vide** | `emptyStateHtml` en zone C, **deux cas** (`state.filedThisSession`) : rangé quelque chose cette session (>0) → « Tout est trié » + compte + **Bibliothèque** ; rien rangé (=0) → « Rien à revoir » + **Accueil** (fix #15 — Revue vide n'est jamais un cul-de-sac) |
 | **Aucune piste ouverte** | Zone C en indice sobre, jamais un canevas nu |
 | **Analyse en cours** | Ligne de file avec indicateur ; la zone C montre ce qui est déjà connu (tags, nom) et un **squelette statique** pour ce qui manque (placeholder **sans animation** — `DESIGN.md` § 6 « la donnée ne s'anime jamais », précédence `.jrnl-skel` ; jamais un spinner nu) |
 | **Analyse échouée** | La ligne se voit **mieux** que les autres, pas moins bien (teinte **danger** rouge, distincte de l'ambre « à vérifier »). Jamais d'atténuation à l'opacité. Bouton Réanalyser dans la ligne |
