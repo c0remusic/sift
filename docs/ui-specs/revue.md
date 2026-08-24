@@ -190,11 +190,12 @@ barre déterminée + ligne d'étape + disclosure « Afficher les détails ») ; 
 chiffres, puis Rangés / À valider / Échecs dépliables, chaque item « Ouvrir en Détail »
 (`batchopen`). Le « pourquoi » par ligne d'échec suppose d'enrichir `BatchResult` côté Rust.
 
-**Confirmation au-delà du seuil** : patron **alerte** du kit (§ 06-02) — carte + titre +
-message + boutons **secondaire gris / primaire bleu** + case **« ne plus demander »**.
-Le « ne plus demander » est la réponse retenue à la question du seuil (plutôt que deux
-réglages) : la confirmation reste, elle vise un clic non humain, et l'utilisateur régulier
-la coupe lui-même. In-app, **jamais** `window.confirm()`.
+**Confirmation au-delà du seuil** : **alerte modale** du kit (§ 06-02) — carte + titre +
+**corps récap structuré** (N prêts → Convertir · M FAKE → Écarter · exclus ignorés ·
+destination · format) + boutons **secondaire gris / primaire bleu** + case **« ne plus me
+demander »**. Elle **remplace l'armement in-rail** (non ancré Apple). Le « ne plus demander »
+vaut pour **la session**, pas un réglage permanent : la confirmation vise un clic non humain,
+et le plancher horodaté de 250 ms reste le garde. In-app, **jamais** `window.confirm()`.
 
 ## États
 
@@ -206,7 +207,7 @@ la coupe lui-même. In-app, **jamais** `window.confirm()`.
 | **Analyse échouée** | La ligne se voit **mieux** que les autres, pas moins bien. Jamais d'atténuation à l'opacité. Bouton Réanalyser dans la ligne |
 | **Rangement en cours** | Bouton Convertir en attente, rail verrouillé, file non bloquée |
 | **Rangé** | Bandeau **au-dessus du rail**, avec le chemin final et « Annuler ». **Neutre** en permanence ; au rangement il **flashe vert brièvement** puis retombe neutre (`DESIGN.md` § 8 : un état permanent ne se colore pas) |
-| **Lot, confirmation** | Alerte in-app **armée et horodatée** + « ne plus demander ». Jamais `window.confirm()` |
+| **Lot, confirmation** | **Alerte modale** (kit § 06-02), corps **récap structuré** (N prêts → Convertir · M FAKE → Écarter · exclus ignorés · destination · format) + case « Ne plus me demander (**cette session**) ». Remplace l'armement in-rail. Plancher 250 ms horodaté = garde anti-clic. Jamais `window.confirm()` |
 | **Lot, progression** | Sheet **non-modale** attachée (forme mince, feuille de copie Finder) : barre déterminée + ligne d'étape + disclosure « Afficher les détails » ; bouton **« Arrêter »** (la piste en cours finit). Puis la sheet **devient le rapport** (chiffres + Rangés / À valider / Échecs dépliables, « Ouvrir en Détail ») |
 | **Destination non réglée** | Porte de premier réglage dans le popover Destination. L'échec de lecture de l'arbre se dit **avant** la porte |
 
