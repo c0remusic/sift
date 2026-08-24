@@ -4,7 +4,6 @@ import type { AnalysisReport } from "../shared/contracts";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { row } from "./report-view";
 import { identifyErrorHtml, renderCandidates } from "./identify-shared";
-import { resolveGenreFamily } from "./genre-families";
 import { requireEl, esc } from "./dom";
 import { state, openState } from "./filing-state";
 import { toast } from "./filing-toast";
@@ -32,22 +31,37 @@ export const releaseCache = new Map<
   { label: string | null; year: number | null; country: string | null; format: string | null }
 >();
 
-/** Render the genre chips into `.sift-genres` from `state.genres` (single source — set on open from
- *  track_release, or from `applied.styles` on identify). Empty list → empty box (no chips). */
+/** Render the genres into `.sift-genres` from `state.genres` (single source — set on open from
+ *  track_release, or from `applied.styles` on identify) as plain text preceded by a tag glyph
+ *  (fork F, 2026-08-24 — plus de chips colorées par famille). Empty list → empty box. */
 export function renderGenres(): void {
   const el = document.querySelector<HTMLElement>(".sift-genres");
   if (!el) return; // editor not mounted
-  el.innerHTML = state.genres
-    .map((s) => {
-      const fam = resolveGenreFamily(s);
-      return `<span class="sift-genre-chip sift-genre-chip-${fam}" title="Sous-genres Discogs">${esc(s)}</span>`;
-    })
-    .join("");
+  el.innerHTML = state.genres.length
+    ? `<i class="ti ti-tag sift-genres-tagicon" aria-hidden="true"></i>${esc(state.genres.join(", "))}`
+    : "";
 }
 
 /** Join genres EXACTLY like write_tags_full (trim, drop empties, "A; B"), so the comparison against
  *  the file's single Genre field is like-for-like. */
 const joinGenres = (g: string[]): string => g.map((s) => s.trim()).filter(Boolean).join("; ");
+
+/** Peint le badge « Prêt CDJ » (fork F, 2026-08-24) : coche + mot en ok, warning + raison sinon —
+ *  jamais masqué. Deux sites d'appel (au render et après apply_tags) passent par ce helper unique
+ *  pour ne pas diverger. Le critère est le bool `tags_cdj_ok` (Artiste+Titre gravés) ; la « raison »
+ *  fine n'existe pas encore côté Rust (#46) — le bandeau .sift-tag-warn la détaille. Libellé fixe,
+ *  pas de donnée non fiable → innerHTML sans esc. */
+function paintCdjBadge(el: HTMLElement, ok: boolean): void {
+  el.innerHTML = ok
+    ? `<i class="ti ti-check sift-icon-inline-sm" aria-hidden="true"></i>Prêt CDJ`
+    : `<i class="ti ti-alert-triangle sift-icon-inline-sm" aria-hidden="true"></i>CDJ — tags manquants`;
+  el.style.background = ok ? "var(--color-background-success)" : "var(--color-background-warning)";
+  el.style.color = ok ? "var(--color-text-success)" : "var(--color-text-warning)";
+  el.title = ok
+    ? "Artiste + Titre sont gravés dans les tags du fichier — un CDJ peut les lire."
+    : "Un CDJ a besoin d'Artiste + Titre gravés dans les tags du fichier (pas encore fait).";
+  el.hidden = false;
+}
 
 /** Which displayed tag fields would CHANGE the file if written — i.e. diverge from `state.fileTags`.
  *  Mirrors write_tags_full's semantics: artist/title are ALWAYS written (compare directly), while
@@ -450,14 +464,8 @@ export function renderEditor(host: HTMLElement, mid: HTMLElement, rail: string, 
     `</div>`; // ferme .sift-meta-body
 
   const cdjBadge = host.querySelector<HTMLElement>("#sift-cdj-badge");
-  if (cdjBadge && report) {
-    const ok = report.tags_cdj_ok;
-    cdjBadge.textContent = ok ? "CDJ compatible" : "CDJ incompatible";
-    cdjBadge.style.background = ok ? "var(--color-background-success)" : "var(--color-background-warning)";
-    cdjBadge.style.color = ok ? "var(--color-text-success)" : "var(--color-text-warning)";
-    cdjBadge.title = "Un CDJ a besoin d'Artiste + Titre gravés dans les tags du fichier";
-    cdjBadge.hidden = false; // vit sur le header statique, visible en lecture-seule comme en édition
-  }
+  // Vit sur le header statique, visible en lecture-seule comme en édition (jamais masqué, fork F).
+  if (cdjBadge && report) paintCdjBadge(cdjBadge, report.tags_cdj_ok);
 
   // Métadonnées ne se replie plus (spec revue.md § Zone C) : rien à fermer quand Diagnostic s'ouvre,
   // donc l'accordéon exclusif est neutralisé côté Métadonnées (closeMetaZone reste null). Diagnostic
@@ -497,8 +505,24 @@ export function renderEditor(host: HTMLElement, mid: HTMLElement, rail: string, 
   host
     .querySelectorAll<HTMLInputElement>('[data-fil="artist"],[data-fil="title"],[data-fil="version"]')
     .forEach((el) => {
+      let focusVal = el.value;
+      el.addEventListener("focusin", () => {
+        focusVal = el.value;
+      });
       el.addEventListener("input", upd);
-      el.addEventListener("keydown", applyOnEnter);
+      el.addEventListener("keydown", (e) => {
+        if (e.key === "Enter") {
+          applyOnEnter(e);
+        } else if (e.key === "Escape") {
+          // Échap = annuler l'édition : revert à la valeur du focus-in, resync l'état (upd), et
+          // stopPropagation pour ne pas remonter fermer un popover/la fenêtre (couche 1, shortcuts.ts).
+          e.preventDefault();
+          e.stopPropagation();
+          el.value = focusVal;
+          upd();
+          el.blur();
+        }
+      });
       el.addEventListener("blur", commitTitle);
     });
 
@@ -591,13 +615,7 @@ async function doApplyTags(btn: HTMLButtonElement): Promise<void> {
     // partial write; this re-verifies against the actual file.
     const cdjOk = !!(snap.artist?.trim() && snap.title?.trim());
     const cdjBadgeAfterApply = document.querySelector<HTMLElement>("#sift-cdj-badge");
-    if (cdjBadgeAfterApply) {
-      cdjBadgeAfterApply.textContent = cdjOk ? "CDJ compatible" : "CDJ incompatible";
-      cdjBadgeAfterApply.style.background = cdjOk
-        ? "var(--color-background-success)"
-        : "var(--color-background-warning)";
-      cdjBadgeAfterApply.style.color = cdjOk ? "var(--color-text-success)" : "var(--color-text-warning)";
-    }
+    if (cdjBadgeAfterApply) paintCdjBadge(cdjBadgeAfterApply, cdjOk);
     // Plus de bascule "Annuler" (Antoine 2026-08-21) : l'apply est journalisé (tag_edit), donc l'undo
     // vit dans Ctrl+Z / l'écran Journal. Le bouton revient à l'idle ; refreshDiscrepancy ci-dessus l'a
     // déjà désactivé, puisqu'il n'y a plus de divergence.
