@@ -69,8 +69,10 @@ place du signal doublon. Hauteur `--row-h`. **Quand le mode Batch est armé** (Z
 (« Faux », « Faux + Doublons »…) ouvre un menu à **cases à cocher** : `Lossless`, `MP3`,
 `Faux`, `Doublons`, chacun avec son compte, un séparateur, puis « Tout afficher ». Plusieurs
 critères cochés = **union** (Faux *ou* Doublons). « Tout afficher » remet à zéro. Le bouton
-résume la combinaison ; la recherche (en tête) reste **par-dessus** le filtre. Le filtre
-isole une catégorie pour la cocher vite en mode Batch.
+résume la combinaison. La recherche (en tête) **gare** le filtre : elle interroge la file
+source **entière**, pas le sous-ensemble filtré (patron Finder — saisir passe en mode
+résultats — ce qui tue le piège « 0 résultat = bug »). Le filtre isole une catégorie pour la
+cocher vite en mode Batch.
 
 Au pied de la colonne : bascule « + N traités » quand la file en contient. Poignée de
 redimensionnement à droite, révélée au survol.
@@ -197,7 +199,7 @@ la coupe lui-même. In-app, **jamais** `window.confirm()`.
 |---|---|
 | **File vide** | `emptyStateHtml` dans la zone C — « Tout est trié », compte de ce qui a été traité, action vers Bibliothèque |
 | **Aucune piste ouverte** | Zone C en indice sobre, jamais un canevas nu |
-| **Analyse en cours** | Ligne de file avec indicateur ; la zone C montre ce qui est déjà connu (tags, nom) et un **squelette** pour ce qui manque (patron HIG *Loading* : placeholder animé, jamais un spinner nu sur canevas vide) |
+| **Analyse en cours** | Ligne de file avec indicateur ; la zone C montre ce qui est déjà connu (tags, nom) et un **squelette statique** pour ce qui manque (placeholder **sans animation** — `DESIGN.md` § 6 « la donnée ne s'anime jamais », précédence `.jrnl-skel` ; jamais un spinner nu) |
 | **Analyse échouée** | La ligne se voit **mieux** que les autres, pas moins bien. Jamais d'atténuation à l'opacité. Bouton Réanalyser dans la ligne |
 | **Rangement en cours** | Bouton Convertir en attente, rail verrouillé, file non bloquée |
 | **Rangé** | Bandeau **au-dessus du rail**, avec le chemin final et « Annuler ». **Neutre** en permanence ; au rangement il **flashe vert brièvement** puis retombe neutre (`DESIGN.md` § 8 : un état permanent ne se colore pas) |
@@ -235,13 +237,17 @@ Couches 1 et 2 de `DESIGN.md` § 9, plus la couche 3 propre à cet écran :
 Règles de focus, non négociables : aucun raccourci ne se déclenche dans un `INPUT` ou
 un `TEXTAREA` ; un raccourci à une lettre retire le focus du bouton actif avant d'agir
 (sinon `Espace` active le bouton focalisé **et** la lecture) ; en mode Batch, les lignes
-de sélection possèdent `Espace` et `Entrée` exclusivement.
+de sélection possèdent `Espace` et `Entrée` exclusivement. `Échap` dans un champ
+Métadonnées **annule l'édition** (revert à la valeur du focus-in) et `stopPropagation` — il
+ne remonte pas fermer un popover ou la fenêtre.
 
 ### Retour
 
 Le pouce du contrôle segmenté glisse en `--duration-slow`. Le passage d'une piste à
 l'autre ne rejoue aucune animation d'entrée : c'est un changement de contenu, pas une
-transition d'écran. La forme d'onde ne s'anime pas au chargement.
+transition d'écran. La forme d'onde ne s'anime pas au chargement. En **fin de piste**, la
+lecture s'arrête et le playhead revient à **0** — pas d'auto-avance vers la suivante (la
+zone C ne se recompose pas sous l'utilisateur, patron Musique piste isolée).
 
 ## Composants — calés sur le kit Big Sur (PDF)
 
