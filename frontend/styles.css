@@ -1726,9 +1726,11 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 @keyframes jrnl-revert-flash{0%{background:var(--color-background-success)}100%{background:transparent}}
 /* Chargement : squelette DANS la structure finale (DESIGN.md § 8) — mêmes colonnes, même hauteur
    de ligne, donc l'arrivée des données ne déplace rien. Pas d'animation : un squelette qui pulse
-   attire l'œil sur une attente qui dure une centaine de millisecondes. */
+   attire l'œil sur une attente qui dure une centaine de millisecondes. `.sift-skel` est la
+   primitive PARTAGÉE (barre placeholder), consommée par le Journal, la Revue (détail en analyse)
+   et les autres écrans — renommée depuis `.jrnl-skel` le 2026-08-24. */
 .jrnl-row--skel{cursor:default}
-.jrnl-skel{display:block;height:var(--space-8);border-radius:var(--border-radius-sm);background:var(--color-background-secondary)}
+.sift-skel{display:block;height:var(--space-8);border-radius:var(--border-radius-sm);background:var(--color-background-secondary)}
 /* Filtre sans résultat : reste SOUS l'en-tête de colonnes, ne le remplace pas — retirer l'en-tête
    emporterait les commandes qui permettent de défaire le filtre (même règle que la Bibliothèque). */
 .jrnl-noresult{padding:var(--space-16) var(--space-8);font-size:var(--text-md);color:var(--color-text-tertiary)}
@@ -2435,11 +2437,15 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 /* flex:1 0 100% forces its own line in the #filfoot flex-wrap row regardless of prepend/append order
    — without it the banner just squeezed in next to the compact action buttons (2026-07-06 annotation:
    read as inert/easy to miss, on top of sitting last in DOM order — see showFiledConfirm). */
-.sift-filed-banner{flex:1 0 100%;margin-bottom:12px;padding:var(--space-8) var(--space-12);background:var(--color-background-success);border-radius:var(--border-radius-md);font-size:var(--text-sm)}
+.sift-filed-banner{flex:1 0 100%;margin-bottom:12px;padding:var(--space-8) var(--space-12);background:var(--color-background-secondary);border-radius:var(--border-radius-md);font-size:var(--text-sm)}
 .sift-filed-banner-head{display:flex;align-items:center;gap:var(--space-8);margin-bottom:var(--space-4)}
 .sift-filed-banner-head i{font-size:var(--text-md);color:var(--color-text-success)}
 .sift-filed-banner-label{color:var(--color-text-success);font-weight:500}
-/* Encre neutre sur --color-background-success (2026-08-05). Les trois membres TEXTUELS du bandeau
+/* ⚠️ Fond passé au NEUTRE (--color-background-secondary) le 2026-08-24 — components.md:193 interdit
+   l'aplat vert permanent « c'est fait » ; le vert transitoire vient désormais du flash
+   .sift-identified-flash au rangement (settleFilingBanner). L'encre reste sur la surface standard de
+   l'app (row-active), contraste éprouvé. L'analyse ci-dessous documente l'ANCIEN fond success.
+   Encre neutre sur --color-background-success (2026-08-05). Les trois membres TEXTUELS du bandeau
    — -bin, -name, -path — sont en --color-text-secondary, pas en tertiary. En sombre, tertiary y
    mesure 4,36:1, sous le 4,5:1 exigé pour du texte normal — et les trois y sont bien : -bin hérite
    --text-sm (11px), -name et -path sont à --text-xs (10px) — -path était à --text-2xs (9px)

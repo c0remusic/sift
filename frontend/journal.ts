@@ -473,7 +473,7 @@ export function groupHtml(g: JrnlGroup, level: 1 | 2, open: boolean, body: strin
 /** Squelette DANS la structure finale (DESIGN.md § 8) : mêmes colonnes, mêmes hauteurs de ligne,
  *  pour que l'arrivée des données ne déplace rien. */
 export function skeletonHtml(): string {
-  const cell = (c: string) => `<span class="jrnl-c ${c}"><span class="jrnl-skel"></span></span>`;
+  const cell = (c: string) => `<span class="jrnl-c ${c}"><span class="sift-skel"></span></span>`;
   const row = `<div class="lr jrnl-row jrnl-row--skel" aria-hidden="true">${COLS.map((c) => cell(c.cls)).join("")}</div>`;
   return `<div class="jrnl-body">${row.repeat(6)}</div>`;
 }

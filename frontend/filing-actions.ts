@@ -223,16 +223,13 @@ type FiledBannerState = "running" | "done" | "failed";
 function paintFiledBanner(banner: HTMLElement, s: FiledBannerState): void {
   const failed = s === "failed";
   const running = s === "running";
-  // `.sift-filed-banner` is green by class (a filing used to only ever be shown once it had
-  // succeeded), so BOTH other states have to re-tint: a failure to the warning tokens, and
-  // `running` to the neutral secondary surface — announcing success in green while ffmpeg is still
-  // encoding is exactly the lie P5 introduced. Inline, since these are states of an existing
+  // `.sift-filed-banner` is now NEUTRAL by class (--color-background-secondary, 2026-08-24: no
+  // permanent green aplat, components.md:193). Only `failed` re-tints, to the warning surface;
+  // `running` and `done` both fall to the neutral class. The transient green lives in the flash
+  // added at settle (settleFilingBanner), not here — announcing success in green while ffmpeg is
+  // still encoding was exactly the lie P5 introduced. Inline, since these are states of an existing
   // component, not a new one (no new CSS rule).
-  banner.style.background = failed
-    ? "var(--color-background-warning)"
-    : running
-      ? "var(--color-background-secondary)"
-      : "";
+  banner.style.background = failed ? "var(--color-background-warning)" : "";
   const neutral = failed ? "var(--color-text-warning)" : running ? "var(--color-text-tertiary)" : "";
   const icon = banner.querySelector<HTMLElement>('[data-fil="filed-icon"]');
   if (icon) {
@@ -282,7 +279,15 @@ function settleFilingBanner(o: TrackFileOutcome, started: InFlightFiling | null)
     toast(`Conversion échouée — ${name} est revenu dans la file`, false);
     return;
   }
-  if (mine) paintFiledBanner(mine, "done");
+  if (mine) {
+    paintFiledBanner(mine, "done");
+    // Flash vert bref au rangement (DESIGN §8 : un état permanent reste neutre, seule la transition
+    // se colore). Réutilise .sift-identified-flash, retiré à animationend (comme filing-identify.ts).
+    mine.classList.add("sift-identified-flash");
+    mine.addEventListener("animationend", () => mine.classList.remove("sift-identified-flash"), {
+      once: true,
+    });
+  }
 }
 
 // Registered at module load (pure bookkeeping — the Tauri subscription itself is installed lazily
