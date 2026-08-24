@@ -1,4 +1,4 @@
-import { identify, applyIdentity, applyTags, trackFileTags, openUrl } from "./ipc";
+import { identify, applyIdentity, applyTags, trackFileTags, openUrl, revertBatch } from "./ipc";
 import type { Candidate, AppliedIdentity } from "./ipc";
 import type { AnalysisReport } from "../shared/contracts";
 import { convertFileSrc } from "@tauri-apps/api/core";
@@ -314,6 +314,24 @@ function wireCandidateClicks(
   });
 }
 
+/** ↑/↓ dans la liste ouverte : déplace le focus entre les candidats (le gate de queue-panel laisse
+ *  passer quand le focus est dans .sift-cands). Attaché à la listbox FRAÎCHE de chaque render, donc
+ *  pas d'accumulation de handlers d'un search à l'autre. */
+function wireListboxArrows(host: HTMLElement): void {
+  const listbox = host.querySelector<HTMLElement>(".sift-cands-list");
+  if (!listbox) return;
+  listbox.addEventListener("keydown", (e) => {
+    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+    const btns = Array.from(listbox.querySelectorAll<HTMLElement>("[data-cand]"));
+    const cur = btns.indexOf(document.activeElement as HTMLElement);
+    const next = e.key === "ArrowDown" ? cur + 1 : cur - 1;
+    if (next >= 0 && next < btns.length) {
+      e.preventDefault();
+      btns[next].focus();
+    }
+  });
+}
+
 /** Run the Discogs identify flow for the current track. */
 async function doIdentify(
   btn: HTMLButtonElement,
@@ -339,6 +357,7 @@ async function doIdentify(
     if (myseq !== openState.openSeq) return; // a newer open started while we awaited — drop this result
     renderCandidates(host, candidates, { open: true, selectedIdx: 0 });
     wireCandidateClicks(host, candidates, editor, mid, btn);
+    wireListboxArrows(host); // ↑/↓ déplace le focus entre candidats (le gate de queue-panel laisse passer)
     // Auto-applique le meilleur match (candidat 0, fork A) : pré-remplit les champs sans clic, même
     // chemin que le clic (applyIdentity → onIdentityApplied) mais write=false (ne grave pas). Sous la
     // garde openSeq ; liste vide → rien. Graver reste au clic d'un match (décision F.2).
@@ -597,7 +616,7 @@ async function doApplyTags(btn: HTMLButtonElement): Promise<void> {
   btn.innerHTML =
     '<i class="ti ti-loader-2 sift-spin sift-icon-inline-md"></i> Applying…';
   try {
-    await applyTags(trackId, edited);
+    const batchId = await applyTags(trackId, edited);
     const snap = await trackFileTags(trackId); // file changed → refresh the in-memory snapshot
     if (myseq !== openState.openSeq) return; // another track opened meanwhile — leave its state/UI alone
     state.fileTags = snap;
@@ -609,9 +628,13 @@ async function doApplyTags(btn: HTMLButtonElement): Promise<void> {
     const cdjOk = !!(snap.artist?.trim() && snap.title?.trim());
     const cdjBadgeAfterApply = document.querySelector<HTMLElement>("#sift-cdj-badge");
     if (cdjBadgeAfterApply) paintCdjBadge(cdjBadgeAfterApply, cdjOk);
-    // Plus de bascule "Annuler" (Antoine 2026-08-21) : l'apply est journalisé (tag_edit), donc l'undo
-    // vit dans Ctrl+Z / l'écran Journal. Le bouton revient à l'idle ; refreshDiscrepancy ci-dessus l'a
-    // déjà désactivé, puisqu'il n'y a plus de divergence.
+    // Pas de bouton « Annuler » INLINE (Antoine 2026-08-21, doublon du Journal) — mais un filet
+    // « Rétablir » en TOAST (décision F.2, 2026-08-24, qui prime) : graver est un geste auto, on met
+    // l'undo ciblé à portée immédiate. revertBatch(CE tag_edit) ; le Journal / Ctrl+Z restent le
+    // filet durable. Le bouton d'undo du toast porte le mot « Annuler » (constant dans l'app).
+    toast("Tags gravés dans le fichier", true, () =>
+      void revertBatch(batchId).catch((e) => console.error("revertBatch (tag_edit) failed", e)),
+    );
     setApplyIdle(btn);
   } catch (e) {
     console.error("apply_tags failed", e);

@@ -283,6 +283,9 @@ export function installQueueNavKeys(): void {
     const t = e.target as HTMLElement | null;
     if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
     if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+    // Liste de candidats Discogs ouverte (fork F) : là, ↑/↓ navigue la liste, pas la file. Gate sans
+    // importer filing-state (règle d'import unidirectionnelle) ; la listbox gère ses propres flèches.
+    if (t && t.closest(".sift-cands")) return;
     // Same gate as filing.ts's installFilingKeys (`if (!state.track) return`), but reached without
     // importing filing.ts's internal `state` (would violate the one-directional import rule —
     // filing.ts must never import from sift-live.ts, and sift-live.ts already imports FROM
