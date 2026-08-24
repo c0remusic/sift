@@ -299,10 +299,13 @@ valeurs chiffrées restent des tokens `styles.css`, jamais extraites au pixel.
 Relevés par le brainstorm Phase 1 (2026-08-24), **chacun vérifié sur le code**. Le code
 contredit une décision figée ; c'est le **code** qui bouge, pas la décision.
 
-1. **Volume permanent** — `report-view.ts:431-439` monte un slider volume toujours visible ;
-   décision D veut la **pilule repliée en icône au repos, dépliée au survol**. → replier
-   (variante « espace réservé » recommandée : zéro reflow, reste focusable clavier). Câbler
-   aussi le **mute** (icône → bouton, glyphe muet à 0), absent aujourd'hui.
+1. **Volume — déjà replié (finding Phase 1 périmé, corrigé Phase 2)** — vérifié :
+   `styles.css:1912-1936` replie `.sift-volume-block` à 20 px au repos et le déplie à 130 px
+   sur `:hover`/`:focus-within`, et `DESIGN.md` § 17 note que le débordement de
+   `.sift-volume-track` **n'est pas un défaut**. La décision D est **déjà implémentée** ; le
+   finding Phase 1 (« slider toujours visible ») lisait mal le code — ne pas l'arracher. Reste
+   seulement à **câbler le mute** (`report-view.ts:432` : icône cliquable → `setVolume(0)` ↔
+   dernier volume, glyphe muet à 0), absent aujourd'hui.
 2. **Deux temps au lecteur** — `report-view.ts:898-908` affiche écoulé **et** restant (façon
    SoundCloud) ; la spec (Zone C, lecture) veut **un seul temps cliquable**. → un seul.
 3. **Bandeau « Rangé » vert permanent** — `styles.css:2438`
