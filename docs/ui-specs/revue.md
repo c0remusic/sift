@@ -126,7 +126,10 @@ Ordre vertical, et il est le parcours de décision :
    de section porte, à droite du titre « Métadonnées » : le badge **« Prêt CDJ »** (coche +
    mot ; passe en **warning + raison** si la piste n'est pas prête, jamais masqué) puis le
    bouton **« Identifier »** — « Identifier » lance la recherche Discogs et remplit ces
-   mêmes champs, **sans changer de mode** (plus de formulaire à entrer). **La ligne
+   mêmes champs, **sans changer de mode** (plus de formulaire à entrer). Quand **plusieurs
+   éditions** matchent, elles s'affichent en **liste ouverte inline** (patron Spotlight « Top
+   Hit ») : le meilleur match est **pré-appliqué**, les alternatives se permutent d'un clic
+   (navigables ↑↓), sans popover ni changement de mode. **La ligne
    « Tags ID3 » est supprimée** (tautologique : « Tags ID3 : ID3 »). Critère CDJ défini
    (`docs/cdj-metadata-formats.md`, WAV exclu) mais code à recâbler
    ([#46](https://github.com/c0remusic/sift/issues/46)).
