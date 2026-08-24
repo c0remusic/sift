@@ -129,7 +129,9 @@ Ordre vertical, et il est le parcours de décision :
    mêmes champs, **sans changer de mode** (plus de formulaire à entrer). Quand **plusieurs
    éditions** matchent, elles s'affichent en **liste ouverte inline** (patron Spotlight « Top
    Hit ») : le meilleur match est **pré-appliqué**, les alternatives se permutent d'un clic
-   (navigables ↑↓), sans popover ni changement de mode. **La ligne
+   (navigables ↑↓), sans popover ni changement de mode. Le clic sur un match **écrit l'ID3
+   immédiatement** (décision datée 2026-08-21, « Entrée = graver »), avec un filet
+   **« Rétablir »** inline (+ `Échap`) pour défaire. **La ligne
    « Tags ID3 » est supprimée** (tautologique : « Tags ID3 : ID3 »). Critère CDJ défini
    (`docs/cdj-metadata-formats.md`, WAV exclu) mais code à recâbler
    ([#46](https://github.com/c0remusic/sift/issues/46)).
@@ -207,7 +209,7 @@ et le plancher horodaté de 250 ms reste le garde. In-app, **jamais** `window.co
 | **File vide** | `emptyStateHtml` dans la zone C — « Tout est trié », compte de ce qui a été traité, action vers Bibliothèque |
 | **Aucune piste ouverte** | Zone C en indice sobre, jamais un canevas nu |
 | **Analyse en cours** | Ligne de file avec indicateur ; la zone C montre ce qui est déjà connu (tags, nom) et un **squelette statique** pour ce qui manque (placeholder **sans animation** — `DESIGN.md` § 6 « la donnée ne s'anime jamais », précédence `.jrnl-skel` ; jamais un spinner nu) |
-| **Analyse échouée** | La ligne se voit **mieux** que les autres, pas moins bien. Jamais d'atténuation à l'opacité. Bouton Réanalyser dans la ligne |
+| **Analyse échouée** | La ligne se voit **mieux** que les autres, pas moins bien (teinte **danger** rouge, distincte de l'ambre « à vérifier »). Jamais d'atténuation à l'opacité. Bouton Réanalyser dans la ligne |
 | **Rangement en cours** | Bouton Convertir en attente, rail verrouillé, file non bloquée |
 | **Rangé** | Bandeau **au-dessus du rail**, avec le chemin final et « Annuler ». **Neutre** en permanence ; au rangement il **flashe vert brièvement** puis retombe neutre (`DESIGN.md` § 8 : un état permanent ne se colore pas) |
 | **Lot, confirmation** | **Alerte modale** (kit § 06-02), corps **récap structuré** (N prêts → Convertir · M FAKE → Écarter · exclus ignorés · destination · format) + case « Ne plus me demander (**cette session**) ». Remplace l'armement in-rail. Plancher 250 ms horodaté = garde anti-clic. Jamais `window.confirm()` |
@@ -317,10 +319,9 @@ contredit une décision figée ; c'est le **code** qui bouge, pas la décision.
    unifiée ; décision E a mis la recherche dans la **colonne file**. → ⌘F doit poser le focus
    dans la recherche de la colonne file en Revue (câblage à confirmer au moment du fix).
 
-Reclassé, **pas** un conflit : « échec » en ambre vs danger (`queue-panel.ts:345`) —
-`DESIGN.md:265` exige seulement que l'échec se voie **mieux** (déjà le cas, ligne mise en
-avant), pas une couleur danger. Le passage ambre→danger est une **proposition neuve**, à
-trancher avec les autres forks design (Phase suivante).
+Tranché (Phase 1, fork) : « échec » passe de l'ambre au **danger** rouge (`queue-panel.ts:345`),
+pour le séparer du doute « à vérifier » (qui garde l'ambre). `DESIGN.md:265` n'imposait que la
+**visibilité** de l'échec (déjà acquise) ; la couleur, elle, était ouverte.
 
 ## Hors périmètre / questions ouvertes
 
