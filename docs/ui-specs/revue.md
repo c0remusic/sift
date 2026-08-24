@@ -279,6 +279,36 @@ valeurs chiffrées restent des tokens `styles.css`, jamais extraites au pixel.
   (durées, mesures) + `tabular-nums`. Échelle SF Pro du styleguide confirmée
   (26/22/17/15/13/11/10 pt).
 
+## Conflits code ↔ spec — à corriger à l'implémentation
+
+Relevés par le brainstorm Phase 1 (2026-08-24), **chacun vérifié sur le code**. Le code
+contredit une décision figée ; c'est le **code** qui bouge, pas la décision.
+
+1. **Volume permanent** — `report-view.ts:431-439` monte un slider volume toujours visible ;
+   décision D veut la **pilule repliée en icône au repos, dépliée au survol**. → replier
+   (variante « espace réservé » recommandée : zéro reflow, reste focusable clavier). Câbler
+   aussi le **mute** (icône → bouton, glyphe muet à 0), absent aujourd'hui.
+2. **Deux temps au lecteur** — `report-view.ts:898-908` affiche écoulé **et** restant (façon
+   SoundCloud) ; la spec (Zone C, lecture) veut **un seul temps cliquable**. → un seul.
+3. **Bandeau « Rangé » vert permanent** — `styles.css:2438`
+   (`background:var(--color-background-success)`) ; `docs/design-system/components.md:193`
+   interdit « un aplat vert permanent pour dire "c'est fait" » et `DESIGN.md` § 4 veut un état
+   permanent neutre. → fond **neutre + flash** vert bref au rangement (`sift-identified-flash`,
+   ne rejoue qu'au rangement, pas à la navigation). Le commentaire daté 2026-08-05 ne portait
+   que sur l'**encre**, pas sur le fond.
+4. **Rail verrouillé à l'opacité** — `filing-actions.ts:30` (`b.style.opacity = "0.55"`) ;
+   `DESIGN.md:262` interdit l'atténuation par opacité (« aucune valeur d'opacité ne franchit
+   4,5:1 avant ~0,92 »), le levier est le **token** (encre secondary / disabled). → token,
+   pas opacité.
+5. **⌘F rate la recherche de Revue** — `focusBarSearch` (`toolbar.ts:188`) cible la barre
+   unifiée ; décision E a mis la recherche dans la **colonne file**. → ⌘F doit poser le focus
+   dans la recherche de la colonne file en Revue (câblage à confirmer au moment du fix).
+
+Reclassé, **pas** un conflit : « échec » en ambre vs danger (`queue-panel.ts:345`) —
+`DESIGN.md:265` exige seulement que l'échec se voie **mieux** (déjà le cas, ligne mise en
+avant), pas une couleur danger. Le passage ambre→danger est une **proposition neuve**, à
+trancher avec les autres forks design (Phase suivante).
+
 ## Hors périmètre / questions ouvertes
 
 - **Analyse froide et réactivité.** `analyze_path` est une commande Tauri **synchrone**
