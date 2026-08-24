@@ -223,7 +223,7 @@ et le plancher horodaté de 250 ms reste le garde. In-app, **jamais** `window.co
   ligne). **Clic** sur le **bouton de filtre** (tête de file) : ouvre le menu cochable.
 - **Clic droit** ligne : Ouvrir l'emplacement · Réanalyser · Écarter · Changer la
   destination. En mode Batch, agit sur la sélection.
-- **Clic** sur la waveform : déplace la lecture. Survol : indicateur de position.
+- **Clic** sur la waveform : déplace la lecture. **Survol** : ghost fill jusqu'au curseur + ligne fine + bulle mm:ss (teinte **transitoire**, distincte du fill de lecture) — patron QuickTime + réticule spectro.
 - **Clic** sur le temps : **bascule écoulé / restant** (une seule valeur affichée).
 - **Glisser** la poignée : largeur de la file, persistée.
 - **Glisser** des fichiers depuis l'OS sur la file : import. Sur le rail d'action :
