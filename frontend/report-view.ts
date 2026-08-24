@@ -421,8 +421,7 @@ function playerRowHtml(name: string, path: string, closeBtn = false, headerOpts:
     // pastille blanche ronde à bordure et ombre légères). La waveform tient lieu de piste ; le pouce
     // marque la tête de lecture. Caché tant que la durée n'est pas connue (updateTime le positionne).
     `<div class="sift-wave-playhead" hidden></div>` +
-    `<span class="sift-time-elapsed">0:00</span>` +
-    `<span class="sift-time-total">0:00</span>` +
+    `<span class="sift-time" role="button" tabindex="0" title="Temps écoulé / restant — cliquer pour basculer">0:00</span>` +
     `</div>` +
     // Volume intégré dans la rangée de transport (façon Apple Music) — plus de bloc « contrôles »
     // séparé. Tempo & key-lock (l'« Écoute avancée ») retirés : le pitch DJ n'est pas voulu sur cet
@@ -895,23 +894,34 @@ async function mountPlayer(root: HTMLElement, path: string, peaks?: number[], du
     });
   }
 
-  // SoundCloud-style: elapsed (left) + remaining (right) shown at once, overlaid on the waveform
-  // itself — no elapsed/remaining toggle needed since both are always visible together. The
-  // right side counts DOWN (duration - elapsed), not a static total, so it actually ticks.
-  const timeElapsedEl = root.querySelector<HTMLElement>(".sift-time-elapsed");
-  const timeTotalEl = root.querySelector<HTMLElement>(".sift-time-total");
+  // Un seul temps affiché, cliquable (patron Musique/Podcasts — jamais les deux à la fois). Le clic
+  // (ou Entrée/Espace au clavier) bascule écoulé ↔ restant ; le restant décompte (durée - écoulé).
+  const timeEl = root.querySelector<HTMLElement>(".sift-time");
   const playheadEl = root.querySelector<HTMLElement>(".sift-wave-playhead");
+  let showRemaining = false;
   const updateTime = () => {
     const cur = ws.getCurrentTime();
     const dur = ws.getDuration();
-    if (timeElapsedEl) timeElapsedEl.textContent = mmss(cur);
-    if (timeTotalEl) timeTotalEl.textContent = `-${mmss(Math.max(0, dur - cur))}`;
+    if (timeEl) timeEl.textContent = showRemaining ? `-${mmss(Math.max(0, dur - cur))}` : mmss(cur);
     // Pouce Apple à la tête de lecture (kit § 04). Révélé dès que la durée est connue.
     if (playheadEl && dur > 0) {
       playheadEl.hidden = false;
       playheadEl.style.left = `${Math.min(100, (cur / dur) * 100)}%`;
     }
   };
+  if (timeEl) {
+    const toggleTime = () => {
+      showRemaining = !showRemaining;
+      updateTime();
+    };
+    timeEl.addEventListener("click", toggleTime);
+    timeEl.addEventListener("keydown", (e) => {
+      if (e.key === "Enter" || e.key === " ") {
+        e.preventDefault();
+        toggleTime();
+      }
+    });
+  }
   ws.on("ready", () => {
     updateTime();
     if (errorEl) errorEl.hidden = true;
@@ -945,6 +955,10 @@ async function mountPlayer(root: HTMLElement, path: string, peaks?: number[], du
   ws.on("finish", () => {
     setIcon("player-play");
     waveWrapEl?.classList.add("is-paused");
+    // Fin de piste : stop + playhead ramené à 0, pas d'auto-avance (la zone C ne se recompose pas
+    // sous l'utilisateur, patron Musique piste isolée). Un Espace relit du début.
+    ws.setTime(0);
+    updateTime();
   });
 
   // Hover-scrub preview: recolor the waveform's own bars from the start up to the cursor (no
@@ -982,15 +996,6 @@ async function mountPlayer(root: HTMLElement, path: string, peaks?: number[], du
         waveHoverEl.style.setProperty(`${prop}-repeat`, "no-repeat");
         waveHoverEl.style.setProperty(`${prop}-size`, size);
         waveHoverEl.style.setProperty(`${prop}-position`, "0 0");
-      }
-      // WaveSurfer rounds its rendered canvas down to a whole number of bar+gap units, so it's
-      // often a few pixels narrower than `.sift-wave-wrap` itself — a static `left:6px`/`right:6px`
-      // on the pills would then float past the wave's real edges. Anchor them to the canvas's
-      // own measured edges instead, so they track it exactly regardless of that rounding.
-      if (waveWrapEl) {
-        const wrapRect = waveWrapEl.getBoundingClientRect();
-        if (timeElapsedEl) timeElapsedEl.style.left = `${Math.round(rect.left - wrapRect.left) + 6}px`;
-        if (timeTotalEl) timeTotalEl.style.right = `${Math.round(wrapRect.right - rect.right) + 6}px`;
       }
     } catch {
       // getImageData/toDataURL can throw on a tainted canvas — hover preview just stays unmasked.
@@ -1192,7 +1197,9 @@ export async function openReportInto(
   // real. Only now does the loader text get shown.
   const pendingEl = verdictHost();
   if (pendingEl) {
-    pendingEl.innerHTML = `<i class="ti ti-loader-2 sift-spin"></i>Analyse en cours…`;
+    // Squelette STATIQUE (DESIGN §6 : la donnée ne s'anime jamais ; jamais un spinner nu) : une barre
+    // placeholder à la place du verdict, le temps que l'analyse résolve. Pas de .sift-spin ici.
+    pendingEl.innerHTML = `<span class="sift-skel" style="width:6em;height:var(--space-16)"></span>`;
   }
   void mountPlayer(container, path);
 

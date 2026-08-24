@@ -1892,9 +1892,10 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .sift-wave-playhead{position:absolute;top:50%;width:13px;height:13px;border-radius:var(--border-radius-pill);
   background:var(--color-surface-raised);border:0.5px solid var(--color-border-secondary);
   box-shadow:var(--shadow-panel-subtle);transform:translate(-50%,-50%);pointer-events:none;z-index:1}
-.sift-time-elapsed,.sift-time-total{position:absolute;bottom:var(--space-4);font-family:var(--font-mono);font-size:var(--text-xs);font-weight:500;line-height:1.2;padding:var(--space-4) var(--space-8);border-radius:var(--border-radius-sm);background:var(--overlay-scrim);pointer-events:none}
-.sift-time-elapsed{left:var(--space-8);color:var(--color-waveform-elapsed)}
-.sift-time-total{right:var(--space-8);color:rgba(255,255,255,.7)}
+/* Un seul temps, cliquable (bascule écoulé ↔ restant) — patron Musique/Podcasts. Ancré bas-gauche
+   par CSS (plus de mesure des bords du canvas : un seul temps n'a pas besoin de suivre le bord droit).
+   :hover dans ensureStyles (report-view.ts). */
+.sift-time{position:absolute;bottom:var(--space-4);left:var(--space-8);font-family:var(--font-mono);font-size:var(--text-xs);font-weight:500;line-height:1.2;padding:var(--space-4) var(--space-8);border-radius:var(--border-radius-sm);background:var(--overlay-scrim);color:var(--color-waveform-elapsed);cursor:pointer}
 /* margin-left:82px matches where the waveform starts directly above (68px cover + 14px header gap
    = 82px, same math already used to align the wave itself — see .sift-player-audition's own
    comment) — the volume icon is this row's first item, so it now lines up with the wave's left
