@@ -132,17 +132,19 @@ export function refreshDiscrepancy(): void {
   }
 }
 
-/** Apply an identity result to the editing fields + filename preview.
- * [C3] `host` + `allCandidates` are kept so we can show a "changer" confirmation row
- * instead of dead-ending (no new API call needed — re-renders from in-memory list). */
+/** Apply an identity result to the editing fields + filename preview. Liste ouverte (fork F) :
+ *  `host` + `chosenIdx` servent à MARQUER le candidat appliqué (aria-selected) dans la liste qui
+ *  reste ouverte, sans la replier. `write` grave l'ID3 tout de suite (clic sur un match, décision
+ *  F.2) ; l'auto-apply du meilleur match passe `write=false` — il PRÉ-REMPLIT sans graver (fork A). */
 function onIdentityApplied(
   applied: AppliedIdentity,
   chosen: Candidate,
+  chosenIdx: number,
   editor: HTMLElement,
   mid: HTMLElement,
   host: HTMLElement,
-  allCandidates: Candidate[],
   idBtn: HTMLButtonElement,
+  write = true,
 ): void {
   if (!state.canonical) return;
   state.canonical.artist = applied.canonical.artist;
@@ -219,30 +221,25 @@ function onIdentityApplied(
   state.identified = true;
   refreshRebuyLink();
 
-  // [C3] Collapse candidate zone to a confirmation row + "changer" link (no dead-end).
-  // Re-labelling the Identifier button to "Ré-identifier" is also handled here.
+  // Liste ouverte (fork F) : au lieu de replier en ligne « Identifié », on MARQUE le candidat appliqué
+  // (aria-selected) dans la liste qui reste visible, et on le flashe brièvement. Permuter = cliquer un
+  // autre item. Plus d'identifiedLineHtml ni de bouton « changer ».
   host.hidden = false;
-  host.innerHTML = identifiedLineHtml(applied.canonical.artist, applied.canonical.title, applied.cover_path);
-  const identifiedLineEl = host.querySelector<HTMLElement>(".sift-identified-line");
-  if (identifiedLineEl) {
-    identifiedLineEl.classList.add("sift-identified-flash");
-    identifiedLineEl.addEventListener(
-      "animationend",
-      () => identifiedLineEl.classList.remove("sift-identified-flash"),
-      { once: true },
-    );
+  host.querySelectorAll<HTMLElement>("[data-cand]").forEach((el) => {
+    el.setAttribute("aria-selected", String(Number(el.dataset.cand) === chosenIdx));
+    el.style.opacity = "";
+    el.style.pointerEvents = "";
+  });
+  const selEl = host.querySelector<HTMLElement>(`[data-cand="${chosenIdx}"]`);
+  if (selEl) {
+    selEl.classList.add("sift-identified-flash");
+    selEl.addEventListener("animationend", () => selEl.classList.remove("sift-identified-flash"), {
+      once: true,
+    });
   }
   // Read-only unidentified card (sift-ident-idle): the idle note ("Aucune correspondance…") is now
-  // false — drop it, keeping the search button (relabelled Ré-identifier below) next to the line.
+  // false — drop it, keeping the search button (relabelled Ré-identifier below).
   editor.querySelector(".sift-ident-idle-note")?.remove();
-
-  const changerBtn = host.querySelector<HTMLElement>('[data-fil="cand-changer"]');
-  changerBtn?.addEventListener("click", () => {
-    // Re-show the full candidate list from memory (no new API call).
-    host.innerHTML = "";
-    renderCandidates(host, allCandidates);
-    wireCandidateClicks(host, allCandidates, editor, mid, idBtn);
-  });
 
   // [C1] Relabel Identifier → Ré-identifier once an identity has been applied.
   idBtn.innerHTML = '<i class="ti ti-refresh sift-icon-inline-sm"></i> Ré-identifier';
@@ -257,29 +254,11 @@ function onIdentityApplied(
   resetApplyButton(editor);
   refreshDiscrepancy();
 
-  // Identifying a Discogs title now writes the ID3 tags automatically instead of requiring a
-  // second manual click every time (user request) — a fresh identity is useless to a CDJ until the
-  // file's own tags actually match it. Reuses the exact same doApplyTags() path a manual click on
-  // the button would run (loading spinner → "Appliqué ✓" → toast on failure), just triggered here
-  // instead of waiting for the user to press it.
-  if (applyBtn) void doApplyTags(applyBtn);
-}
-
-/** Markup for the "Identified: artist — title" confirmation line (cover thumb + "change" button),
- *  shown in the candidate zone by onIdentityApplied right after a fresh Discogs release is applied. */
-function identifiedLineHtml(artist: string, title: string, coverPath: string | null): string {
-  const coverThumb = coverPath
-    ? `<img src="${esc(convertFileSrc(coverPath))}" alt="" class="sift-identified-cover">`
-    : `<span class="sift-identified-noart"><i class="ti ti-vinyl"></i></span>`;
-  return (
-    `<div class="sift-identified-line">` +
-    coverThumb +
-    `<span class="sift-identified-text">` +
-    `<span class="sift-identified-label">Identifié :</span> ${esc(artist)} — ${esc(title)}` +
-    `</span>` +
-    `<button class="sift-cand-jump sift-cand-change-btn" data-fil="cand-changer">modifier</button>` +
-    `</div>`
-  );
+  // Choisir un match (clic) grave l'ID3 tout de suite (décision F.2, auto-grave) via le MÊME
+  // doApplyTags() qu'un clic manuel sur Appliquer (spinner → « Appliqué ✓ » → toast+Rétablir sur
+  // le résultat). L'auto-apply du meilleur match (write=false) PRÉ-REMPLIT sans graver : les champs
+  // sont prêts, mais rien n'est écrit tant que l'utilisateur n'a pas confirmé un match.
+  if (write && applyBtn) void doApplyTags(applyBtn);
 }
 
 /** On reopen of an already-identified track, restore the hero cover (mid `.sift-report-cover`) from
@@ -322,7 +301,7 @@ function wireCandidateClicks(
       void applyIdentity(state.track.id, c)
         .then((applied) => {
           if (myseq !== openState.openSeq) return; // a newer open started while we awaited — drop this result
-          onIdentityApplied(applied, c, editor, mid, host, candidates, idBtn);
+          onIdentityApplied(applied, c, idx, editor, mid, host, idBtn);
         })
         .catch((e) => {
           if (myseq !== openState.openSeq) return;
@@ -358,8 +337,22 @@ async function doIdentify(
   try {
     candidates = await identify(trackId);
     if (myseq !== openState.openSeq) return; // a newer open started while we awaited — drop this result
-    renderCandidates(host, candidates);
+    renderCandidates(host, candidates, { open: true, selectedIdx: 0 });
     wireCandidateClicks(host, candidates, editor, mid, btn);
+    // Auto-applique le meilleur match (candidat 0, fork A) : pré-remplit les champs sans clic, même
+    // chemin que le clic (applyIdentity → onIdentityApplied) mais write=false (ne grave pas). Sous la
+    // garde openSeq ; liste vide → rien. Graver reste au clic d'un match (décision F.2).
+    if (candidates.length) {
+      const auto = candidates[0];
+      void applyIdentity(trackId, auto)
+        .then((applied) => {
+          if (myseq !== openState.openSeq) return;
+          onIdentityApplied(applied, auto, 0, editor, mid, host, btn, false);
+        })
+        .catch(() => {
+          /* auto-apply échoué : la liste ouverte reste, l'utilisateur peut cliquer un item */
+        });
+    }
   } catch (err) {
     if (myseq !== openState.openSeq) return;
     // [C2/m5] expliquer POURQUOI + donner une action directe vers Réglages. La cascade de branches

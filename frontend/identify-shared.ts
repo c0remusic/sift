@@ -15,13 +15,16 @@ function candCoverHtml(c: Candidate): string {
   return '<span class="sift-cand-noart"><i class="ti ti-vinyl" style="font-size:var(--text-xl);color:var(--color-text-tertiary)"></i></span>';
 }
 
-/** One candidate button row (sub-line: label · year · country · format). */
-function candRowHtml(c: Candidate, idx: number): string {
+/** One candidate button row (sub-line: label · year · country · format). In an open listbox (Revue,
+ *  fork F) it carries role=option + aria-selected via `opt`; the collapsed variant (Bibliothèque)
+ *  omits it. */
+function candRowHtml(c: Candidate, idx: number, opt?: { selected: boolean }): string {
   const sub = [c.label, c.year != null ? String(c.year) : null, c.country, c.format]
     .filter(Boolean)
     .join(" · ");
+  const roleAttr = opt ? ` role="option" aria-selected="${opt.selected}"` : "";
   return (
-    `<button class="sift-cand" data-cand="${idx}">` +
+    `<button class="sift-cand" data-cand="${idx}"${roleAttr}>` +
     candCoverHtml(c) +
     `<span class="sift-cand-meta"><span>${esc(c.artist)} — ${esc(c.title)}</span>` +
     (sub ? `<small>${esc(sub)}</small>` : "") +
@@ -29,11 +32,27 @@ function candRowHtml(c: Candidate, idx: number): string {
   );
 }
 
-/** Render candidates into `host`: first result inline, the rest behind a "N autres résultats"
- * disclosure. Empty list → a neutral "no results" message (no warning styling). */
-export function renderCandidates(host: HTMLElement, list: Candidate[]): void {
+/** Render candidates into `host`. Two layouts :
+ *  - Revue (fork F, `opts.open`) : une LISTE OUVERTE (listbox) — tous les candidats visibles, le
+ *    meilleur (`opts.selectedIdx`, défaut 0) pré-sélectionné (aria-selected). La décision centrale
+ *    ne coûte pas un clic d'ouverture, et se navigue au clavier.
+ *  - Bibliothèque (défaut) : premier résultat inline, le reste derrière un « N autres résultats ».
+ *  Empty list → a neutral "no results" message (no warning styling). */
+export function renderCandidates(
+  host: HTMLElement,
+  list: Candidate[],
+  opts?: { open?: boolean; selectedIdx?: number },
+): void {
   if (list.length === 0) {
     host.innerHTML = '<div class="sift-cands-msg">Rien sur Discogs.</div>';
+    return;
+  }
+  if (opts?.open) {
+    const sel = opts.selectedIdx ?? 0;
+    host.innerHTML =
+      `<div class="sift-cands-list" role="listbox" aria-label="Éditions Discogs">` +
+      list.map((c, i) => candRowHtml(c, i, { selected: i === sel })).join("") +
+      `</div>`;
     return;
   }
   const [first, ...rest] = list;
