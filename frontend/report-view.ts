@@ -417,6 +417,9 @@ function playerRowHtml(name: string, path: string, closeBtn = false, headerOpts:
     `<div class="sift-wave-wrap is-paused">` +
     `<div class="sift-wave sift-player-wave"></div>` +
     `<div class="sift-wave-hover"></div>` +
+    // Survol : ligne fine + bulle mm:ss à la cible (patron QuickTime), en plus du ghost fill.
+    `<div class="sift-wave-hoverline" hidden></div>` +
+    `<div class="sift-wave-hovertime" hidden></div>` +
     // Pouce de lecture — le knob du slider Apple (kit § 04 / slider de zoom de Photos : piste fine +
     // pastille blanche ronde à bordure et ombre légères). La waveform tient lieu de piste ; le pouce
     // marque la tête de lecture. Caché tant que la durée n'est pas connue (updateTime le positionne).
@@ -982,8 +985,9 @@ async function mountPlayer(root: HTMLElement, path: string, peaks?: number[], du
     updateTime();
   });
 
-  // Hover-scrub preview: recolor the waveform's own bars from the start up to the cursor (no
-  // extra rectangle/line drawn on top) — dimmer than the actual orange playhead fill. WaveSurfer
+  // Hover-scrub preview: recolor the waveform's own bars from the start up to the cursor — dimmer
+  // than the actual orange playhead fill — plus a thin cursor line and a mm:ss time bubble at the
+  // cursor (QuickTime pattern, added 2026-08-24). WaveSurfer
   // renders into a shadow-DOM canvas (bars opaque, gaps transparent); `waveHoverEl` is a plain
   // absolutely-positioned div, alpha-masked to a live snapshot of that same canvas so only the
   // bar pixels — not the gaps between them — pick up the tint as its width tracks the cursor.
@@ -1024,13 +1028,29 @@ async function mountPlayer(root: HTMLElement, path: string, peaks?: number[], du
   };
   ws.on("redrawcomplete", updateWaveMask);
   if (waveHoverEl) {
+    const hoverLine = root.querySelector<HTMLElement>(".sift-wave-hoverline");
+    const hoverTime = root.querySelector<HTMLElement>(".sift-wave-hovertime");
     container.addEventListener("mousemove", (e) => {
       const rect = container.getBoundingClientRect();
       const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / Math.max(1, rect.width)));
       waveHoverEl.style.width = `${pct * 100}%`;
+      // Ligne + bulle mm:ss à la cible (patron QuickTime) : le ghost dit la zone, la ligne + l'heure
+      // le point exact. Nœuds créés une fois, mutés ici (mousemove = rafale, jamais innerHTML=).
+      const leftPct = `${pct * 100}%`;
+      if (hoverLine) {
+        hoverLine.hidden = false;
+        hoverLine.style.left = leftPct;
+      }
+      if (hoverTime) {
+        hoverTime.hidden = false;
+        hoverTime.style.left = leftPct;
+        hoverTime.textContent = mmss(pct * ws.getDuration());
+      }
     });
     container.addEventListener("mouseleave", () => {
       waveHoverEl.style.width = "0";
+      if (hoverLine) hoverLine.hidden = true;
+      if (hoverTime) hoverTime.hidden = true;
     });
   }
   ws.on("error", (e) => {
