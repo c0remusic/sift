@@ -183,9 +183,12 @@ dominante). Le **clic droit** sur la sélection porte les mêmes actions (Ranger
 Changer la destination). Combiné au **filtre** (Zone B′), il isole une catégorie pour la
 cocher vite (« Faux » + tout cocher = agir sur une catégorie).
 
-Le rangement d'un lot affiche la **progression** en **sheet** attachée à la fenêtre (carte
-blanche arrondie glissant du haut, ombre douce, patron *sheet* du kit § 06-01) ; le
-**rapport** final donne rangés / à valider / échecs avec accès au détail des échecs.
+Le rangement d'un lot affiche la **progression** en **sheet non-modale** attachée à la fenêtre
+(carte glissant du haut, ombre douce, kit § 06-01), **forme mince** (feuille de copie Finder :
+barre déterminée + ligne d'étape + disclosure « Afficher les détails ») ; bouton **« Arrêter »**
+(la piste en cours finit, rien n'est annulé). À la fin, **la sheet se transforme en rapport** :
+chiffres, puis Rangés / À valider / Échecs dépliables, chaque item « Ouvrir en Détail »
+(`batchopen`). Le « pourquoi » par ligne d'échec suppose d'enrichir `BatchResult` côté Rust.
 
 **Confirmation au-delà du seuil** : patron **alerte** du kit (§ 06-02) — carte + titre +
 message + boutons **secondaire gris / primaire bleu** + case **« ne plus demander »**.
@@ -204,7 +207,7 @@ la coupe lui-même. In-app, **jamais** `window.confirm()`.
 | **Rangement en cours** | Bouton Convertir en attente, rail verrouillé, file non bloquée |
 | **Rangé** | Bandeau **au-dessus du rail**, avec le chemin final et « Annuler ». **Neutre** en permanence ; au rangement il **flashe vert brièvement** puis retombe neutre (`DESIGN.md` § 8 : un état permanent ne se colore pas) |
 | **Lot, confirmation** | Alerte in-app **armée et horodatée** + « ne plus demander ». Jamais `window.confirm()` |
-| **Lot, progression** | Sheet attachée, barre déterminée, étape en texte, Annuler toujours présent |
+| **Lot, progression** | Sheet **non-modale** attachée (forme mince, feuille de copie Finder) : barre déterminée + ligne d'étape + disclosure « Afficher les détails » ; bouton **« Arrêter »** (la piste en cours finit). Puis la sheet **devient le rapport** (chiffres + Rangés / À valider / Échecs dépliables, « Ouvrir en Détail ») |
 | **Destination non réglée** | Porte de premier réglage dans le popover Destination. L'échec de lecture de l'arbre se dit **avant** la porte |
 
 ## Interactions
