@@ -95,6 +95,10 @@ color-scheme:light;
    (sinon blanc sur blanc en theme sombre). --color-slider-capsule = piste (gris clair clair / gris
    moyen sombre, cf. bloc sombre). */
 --color-slider-capsule:oklch(89.06% 0.0067 286.3);
+/* Encre du haut-parleur du volume = gris foncé du kit (#464646 ≈ oklch 38%), INVARIANT : l'icône
+   est toujours posée sur le remplissage BLANC (min 20px, cf. .sift-volume-fill), donc un ton foncé
+   marche dans les deux thèmes. */
+--color-knob-glyph:oklch(38% 0 286.3);
 /* Icon/glyph color drawn on top of a solid accent fill (ex: watch-toggle checkmark on
    --color-text-success). Was a hardcoded #fff fallback on an undefined token — worked by
    accident in light (accent fills are mid-dark here) but would go invisible in dark, where the
@@ -1914,27 +1918,26 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    comment) — the volume icon is this row's first item, so it now lines up with the wave's left
    edge instead of sitting flush at the row's own left edge. */
 .sift-player-controls{display:flex;align-items:center;gap:var(--space-16);margin-left:82px}
-/* Volume — composant capsule macOS Big Sur (kit § 07-Slider Pickers, rangée 1, relevé sur les PDF
-   docs/design-refs/ le 2026-08-25). Remplace le repli-au-survol précédent, rejeté par Antoine
-   (« le design n'est pas bon du tout ») : la capsule reste TOUJOURS visible — haut-parleur intégré
-   à gauche, gros pouce rond, piste pleine à gauche du pouce. La base partagée .sift-slider-* et le
-   slider tempo, seuls autres consommateurs, ont disparu avec elle. La position du pouce et la
-   largeur du remplissage sont pilotées par la custom-prop --vol (0..1) posée par renderVolume :
-   aucune lecture de rect au rendu, et le pouce reste borné [11px … largeur-11px] via calc(), donc
-   jamais tronqué aux extrêmes.
-   Remplissage = --color-knob (BLANC) ; piste = --color-slider-capsule (GRISE, pour que le blanc
-   ressorte, sinon blanc sur blanc en clair) ; icône = SVG du kit en gris moyen (cf. .sift-volume-icon).
-   Remplissage = VALEUR réelle (var(--vol) * 100%) : 0 au mute, donc la capsule y est toute grise —
-   PAS de pastille blanche isolée à fond fermé (« pas très esthétique quand fermé à fond », Antoine
-   2026-08-25). Pouce = 22px = HAUTEUR de la capsule (kit § 07, ratio ~1,0). Le pouce est TRANSPARENT :
-   sa couleur vient de ce qu'il y a EN DESSOUS (bordure --color-slider-capsule + ombre dessinent le
-   cercle). Il descend jusqu'à 0, PAR-DESSUS le haut-parleur — transparent, il laisse voir le logo au
-   minimum. Au mute il est sur la piste grise (l'icône grise reste lisible) ; le remplissage blanc le
-   rejoint à mesure que le volume monte. */
+/* Volume — capsule macOS Big Sur, reproduction FIDÈLE de l'export SVG d'Antoine (Slider-pickers,
+   états 0/50/100%, 2026-08-25). La capsule reste toujours visible ; le slider tempo et la base
+   partagée .sift-slider-* ont disparu avec l'ex-repli-au-survol. Géométrie pilotée par --vol (0..1)
+   posée par renderVolume, aucune lecture de rect au rendu. Modèle du kit (capsule 22px, inset 1px) :
+   - Piste : --color-slider-capsule (grise, themée), bordure + ombre. (Le kit : blanc @10% + inner
+     shadow ; on garde un gris opaque, thème-robuste.)
+   - Remplissage : rect BLANC (--color-knob), inset 1px, rx pill, largeur = max(20px, --vol·(100%-2px)).
+     Le MINIMUM 20px est clé : à 0 (mute) c'est un CERCLE blanc (20×20) qui porte l'icône — l'icône
+     foncée est donc TOUJOURS sur du blanc (résout la lisibilité au mute), et ce cercle est le knob à
+     l'arrêt. (Mon ancien fill=0 « tout gris » était une sur-interprétation ; le kit garde ce cercle.)
+   - Pouce : cercle BLANC PLEIN 20px (--color-knob) + ombre portée, à droite du remplissage (bord
+     droit du pouce = bord droit du remplissage). Blanc sur blanc, l'OMBRE le détache — c'est l'effet
+     « couleur venue du remplissage » qu'Antoine décrivait ; le kit le fait avec un pouce plein, pas
+     transparent.
+   - Icône : --color-knob-glyph (#464646, foncé invariant), SVG exact du kit. speaker.fill est
+     reconstruit symétrique par miroir (cf. spkIconInner, report-view.ts). */
 .sift-volume-track{position:relative;flex:none;width:112px;height:22px;border-radius:var(--border-radius-pill);background:var(--color-slider-capsule);border:1px solid var(--color-border-secondary);box-shadow:var(--shadow-panel-subtle);cursor:pointer;touch-action:none;user-select:none;--vol:1}
 /* Remplissage sous l'icône (part du bord gauche), coins arrondis pour épouser la capsule ; le bord
    droit rond est couvert par le pouce. */
-.sift-volume-fill{position:absolute;left:0;top:0;bottom:0;width:calc(var(--vol) * 100%);background:var(--color-knob);border-radius:var(--border-radius-pill);pointer-events:none}
+.sift-volume-fill{position:absolute;left:1px;top:1px;bottom:1px;width:max(20px, calc(var(--vol) * (100% - 2px)));background:var(--color-knob);border-radius:var(--border-radius-pill);pointer-events:none}
 /* Haut-parleur intégré à gauche, cliquable (mute) ; encre = text-primary, lisible sur l'accent
    (rempli) comme sur la piste (volume bas). Glyphe barré à 0 via renderVolume. */
 /* Empilement par l'ORDRE DOM (fill → icône → pouce, cf. markup), pas de z-index : entre siblings
@@ -1944,8 +1947,8 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    suit `color`. Gris moyen (--color-hue-gray-solid) : lisible sur le remplissage blanc (fort volume)
    ET sur la piste grise (au mute, où il n'y a plus de remplissage) — une encre foncée disparaîtrait
    sur le gris sombre. */
-.sift-volume-icon{position:absolute;left:6px;top:50%;transform:translateY(-50%);width:15px;height:15px;color:var(--color-hue-gray-solid);cursor:pointer}
-.sift-volume-thumb{position:absolute;top:50%;left:calc(11px + var(--vol) * (100% - 22px));transform:translate(-50%,-50%);width:22px;height:22px;border-radius:var(--border-radius-pill);background:transparent;border:1px solid var(--color-slider-capsule);box-shadow:var(--shadow-panel-subtle);pointer-events:none}
+.sift-volume-icon{position:absolute;left:5px;top:50%;transform:translateY(-50%);width:13px;height:13px;color:var(--color-knob-glyph);cursor:pointer}
+.sift-volume-thumb{position:absolute;top:1px;left:calc(max(20px, var(--vol) * (100% - 2px)) - 19px);width:20px;height:20px;border-radius:var(--border-radius-pill);background:var(--color-knob);box-shadow:var(--shadow-panel-subtle);pointer-events:none}
 .sift-volume-track:focus{outline:none}
 .sift-volume-track:focus-visible{outline:2px solid var(--color-accent-fill);outline-offset:2px}
 .sift-player-spacer{flex:1}

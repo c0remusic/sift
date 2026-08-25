@@ -14,19 +14,34 @@ import { durationText, hfDensityText, hfTopDensityText } from "./report-figures"
  *  is max-pooled above analysis::MAX_PEAKS points, so the real step is a multiple of this. */
 const PEAKS_WINDOW_FALLBACK = 512;
 
-// Icônes haut-parleur du kit macOS Big Sur (extraites du PDF docs/design-refs/ le 2026-08-25,
-// vectorielles, viewBox 0 0 10.63 10.2) — remplacent les icônes Tabler (retour Antoine : « tu n'as
-// pas repris l'icône de volume apple »). SPK_MUTE = speaker.slash tel quel dans le kit ; SPK_FILL =
-// speaker.fill reconstruit — le kit ne le donne que barré, avec un canal blanc ÉVIDÉ pour le trait.
-// On garde ses deux moitiés (cône #0 + corps #2) et on COMBLE le canal par son quadrilatère (les
-// deux arêtes internes), le tout en fill-rule NONZERO pour que ça s'unionne. (Le pont par la seule
-// arête droite laissait le corps tronqué — retour Antoine « le premier semble tronqué ».) Le trait
-// du glyphe barré est un knockout : renderVolume pose le `d` ET le `fill-rule` par état (evenodd
-// pour SPK_MUTE, nonzero pour SPK_FILL).
+// Icônes haut-parleur du kit macOS Big Sur — coordonnées EXACTES de l'export SVG d'Antoine
+// (Slider-pickers/.../Icons/System, viewBox 0 0 11 11 ; retours « reprends l'icône apple » puis
+// export direct). SPK_MUTE = speaker.slash tel quel. SPK_FILL = speaker.fill : le kit ne fournit
+// que la version barrée, dont le corps est ÉVIDÉ d'un canal blanc pour le trait ; on garde ses deux
+// moitiés (cône + corps) et on COMBLE le canal par son quadrilatère (les deux arêtes internes), en
+// fill-rule NONZERO pour que tout s'unionne (le pont par la seule arête droite tronquait le corps —
+// « le premier semble tronqué »). Le trait du glyphe barré est un knockout : renderVolume pose le
+// `d` ET le `fill-rule` par état (evenodd pour SPK_MUTE, nonzero pour SPK_FILL).
 const SPK_FILL =
-  "M8.035 6.134L8.035 0.634C8.035 0.285 7.783 0.0 7.417 0.0C7.165 0.0 6.999 0.113 6.719 0.371L4.56 2.374C4.533 2.396 4.501 2.417 4.469 2.417L4.308 2.417L8.035 6.134ZM2.734 6.918L4.265 6.918C4.318 6.918 4.361 6.934 4.399 6.966L6.719 9.136C6.972 9.373 7.176 9.475 7.423 9.475C7.702 9.475 7.912 9.335 7.998 9.029L1.875 2.911C1.719 3.088 1.638 3.357 1.638 3.717L1.638 5.774C1.638 6.553 2.003 6.918 2.734 6.918ZM4.308 2.417L8.035 6.134L7.998 9.029L1.875 2.911Z";
+  "M7.50879 6.1333V0.633301C7.50879 0.28418 7.25635 -0.000488281 6.89111 -0.000488281C6.63867 -0.000488281 6.47217 0.112305 6.19287 0.370117L4.03369 2.37354C4.00684 2.39502 3.97461 2.4165 3.94238 2.4165H3.78125L7.50879 6.1333ZM2.20752 6.91748H3.73828C3.79199 6.91748 3.83496 6.93359 3.87256 6.96582L6.19287 9.13574C6.44531 9.37207 6.64941 9.47412 6.89648 9.47412C7.17578 9.47412 7.38525 9.33447 7.47119 9.02832L1.34814 2.91064C1.19238 3.08789 1.11182 3.35645 1.11182 3.71631V5.77344C1.11182 6.55225 1.47705 6.91748 2.20752 6.91748ZM3.78125 2.4165L7.50879 6.1333L7.47119 9.02832L1.34814 2.91064Z";
 const SPK_MUTE =
-  "M8.035 6.134L8.035 0.634C8.035 0.285 7.783 0.0 7.417 0.0C7.165 0.0 6.999 0.113 6.719 0.371L4.56 2.374C4.533 2.396 4.501 2.417 4.469 2.417L4.308 2.417L8.035 6.134ZM9.888 10.039C10.049 10.2 10.318 10.2 10.474 10.039C10.635 9.872 10.635 9.614 10.474 9.453L1.278 0.258C1.117 0.097 0.849 0.097 0.688 0.258C0.526 0.414 0.526 0.688 0.688 0.843L9.888 10.039ZM2.734 6.918L4.265 6.918C4.318 6.918 4.361 6.934 4.399 6.966L6.719 9.136C6.972 9.373 7.176 9.475 7.423 9.475C7.702 9.475 7.912 9.335 7.998 9.029L1.875 2.911C1.719 3.088 1.638 3.357 1.638 3.717L1.638 5.774C1.638 6.553 2.003 6.918 2.734 6.918Z";
+  "M7.50879 6.1333V0.633301C7.50879 0.28418 7.25635 -0.000488281 6.89111 -0.000488281C6.63867 -0.000488281 6.47217 0.112305 6.19287 0.370117L4.03369 2.37354C4.00684 2.39502 3.97461 2.4165 3.94238 2.4165H3.78125L7.50879 6.1333ZM9.36182 10.0381C9.52295 10.1992 9.7915 10.1992 9.94727 10.0381C10.1084 9.87158 10.1084 9.61377 9.94727 9.45264L0.751953 0.257324C0.59082 0.0961914 0.322266 0.0961914 0.161133 0.257324C0 0.413086 0 0.687012 0.161133 0.842773L9.36182 10.0381ZM2.20752 6.91748H3.73828C3.79199 6.91748 3.83496 6.93359 3.87256 6.96582L6.19287 9.13574C6.44531 9.37207 6.64941 9.47412 6.89648 9.47412C7.17578 9.47412 7.38525 9.33447 7.47119 9.02832L1.34814 2.91064C1.19238 3.08789 1.11182 3.35645 1.11182 3.71631V5.77344C1.11182 6.55225 1.47705 6.91748 2.20752 6.91748Z";
+
+/** Contenu SVG de l'icône par état. Le kit ne fournit le haut-parleur QUE barré, et son corps
+ *  reste asymétrique une fois le trait retiré (chambre décalée, cône lopsided). speaker.fill est
+ *  donc reconstruit SYMÉTRIQUE (idée d'Antoine « coupe en 2 au milieu, duplique la moitié non
+ *  tronquée ») : on clippe la moitié HAUTE de SPK_FILL et on la reflète vers le bas autour de la
+ *  médiane yc≈4.737 (rect de clip haut de yc+1, miroir matrix(1 0 0 -1 0 2·yc)). Le mute garde le
+ *  trait (knockout → fill-rule evenodd). */
+function spkIconInner(mute: boolean): string {
+  const title = "<title>Volume — cliquer pour couper</title>";
+  if (mute) return `${title}<path fill="currentColor" fill-rule="evenodd" d="${SPK_MUTE}"></path>`;
+  return (
+    `${title}<defs><clipPath id="sift-vol-half"><rect x="-1" y="-1" width="13" height="5.737"></rect></clipPath></defs>` +
+    `<g fill="currentColor"><g clip-path="url(#sift-vol-half)"><path d="${SPK_FILL}"></path></g>` +
+    `<g clip-path="url(#sift-vol-half)" transform="matrix(1 0 0 -1 0 9.474)"><path d="${SPK_FILL}"></path></g></g>`
+  );
+}
 
 // Accordion behavior (shadcn Accordion reference, ui.shadcn.com/docs/components/base/accordion):
 // Diagnostic and Métadonnées are exclusive — opening one closes the other. They're wired in two
@@ -451,7 +466,7 @@ function playerRowHtml(name: string, path: string, closeBtn = false, headerOpts:
     // visible — remplace le repli-au-survol rejeté (« le design n'est pas bon du tout », Antoine 2026-08-25).
     `<div class="sift-volume-track" tabindex="0" role="slider" aria-label="Volume" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100">` +
     `<div class="sift-volume-fill"></div>` +
-    `<svg class="sift-volume-icon" viewBox="0 0 10.63 10.2" role="img" aria-label="Volume"><title>Volume — cliquer pour couper</title><path fill="currentColor" fill-rule="nonzero" d="${SPK_FILL}"></path></svg>` +
+    `<svg class="sift-volume-icon" viewBox="0 0 11 11" role="img" aria-label="Volume">${spkIconInner(false)}</svg>` +
     `<div class="sift-volume-thumb"></div>` +
     `</div>` +
     `</div>` +
@@ -881,16 +896,10 @@ async function mountPlayer(root: HTMLElement, path: string, peaks?: number[], du
     // — le pouce reste borné dans la capsule, jamais tronqué. On ne pose plus width/left à la main.
     volumeTrack?.style.setProperty("--vol", String(pct));
     volumeTrack?.setAttribute("aria-valuenow", String(Math.round(pct * 100))); // audit-ref R1
-    // L'icône reflète l'état muet : glyphe barré à 0 (kit § 14). Intégrée à gauche de la capsule,
-    // cliquable — clic = mute (voir plus bas).
-    if (volumeIcon) {
-      const iconPath = volumeIcon.querySelector("path");
-      if (iconPath) {
-        iconPath.setAttribute("d", pct <= 0 ? SPK_MUTE : SPK_FILL);
-        // speaker.slash : le trait est un knockout → evenodd ; speaker.fill est plein → nonzero.
-        iconPath.setAttribute("fill-rule", pct <= 0 ? "evenodd" : "nonzero");
-      }
-    }
+    // L'icône reflète l'état muet : speaker.slash à 0, speaker.fill sinon (kit). Intégrée à gauche
+    // de la capsule, cliquable — clic = mute (voir plus bas). innerHTML : le fill est une paire de
+    // paths clippés+reflétés (spkIconInner), pas un simple `d`.
+    if (volumeIcon) volumeIcon.innerHTML = spkIconInner(pct <= 0);
   };
   renderVolume(1); // WaveSurfer's own default (full volume)
   if (volumeTrack) {
