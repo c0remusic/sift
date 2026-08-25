@@ -93,8 +93,8 @@ color-scheme:light;
 /* Volume capsule blanche (choix Antoine 2026-08-25, fidele au kit) : remplissage = --color-knob
    (blanc), donc la PISTE doit etre grise (sinon blanc sur blanc en theme clair) et l'ICONE foncee
    (sinon blanc sur blanc en theme sombre). --color-slider-capsule = piste (gris clair clair / gris
-   moyen sombre, cf. bloc sombre) ; --color-knob-glyph = encre du haut-parleur, foncee invariante. */
---color-knob-glyph:oklch(37% 0.006 286.3);--color-slider-capsule:oklch(89.06% 0.0067 286.3);
+   moyen sombre, cf. bloc sombre). */
+--color-slider-capsule:oklch(89.06% 0.0067 286.3);
 /* Icon/glyph color drawn on top of a solid accent fill (ex: watch-toggle checkmark on
    --color-text-success). Was a hardcoded #fff fallback on an undefined token — worked by
    accident in light (accent fills are mid-dark here) but would go invisible in dark, where the
@@ -1922,25 +1922,29 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    largeur du remplissage sont pilotées par la custom-prop --vol (0..1) posée par renderVolume :
    aucune lecture de rect au rendu, et le pouce reste borné [11px … largeur-11px] via calc(), donc
    jamais tronqué aux extrêmes.
-   Remplissage = --color-knob (BLANC, fidèle au kit — choix Antoine 2026-08-25) ; piste =
-   --color-slider-capsule (GRISE, pour que le blanc ressorte, sinon blanc sur blanc en clair) ;
-   icône = --color-knob-glyph (FONCÉE, posée sur le remplissage blanc).
-   Pouce = 22px = HAUTEUR de la capsule (kit § 07 mesuré au PDF : ratio ~1,0, un gros rond qui
-   remplit la piste). Le pouce est TRANSPARENT (retour Antoine 2026-08-25) : sa couleur vient du
-   remplissage EN DESSOUS (bordure + ombre dessinent le cercle, le blanc le colore). Il descend
-   jusqu'à 0, PAR-DESSUS le haut-parleur — et comme il est transparent, le logo reste visible à
-   travers lui au minimum. Le remplissage va jusqu'au BORD DROIT du pouce (+11px vs le centre du
-   pouce), donc le pouce repose toujours sur le blanc et couvre l'icône de blanc à volume 0. */
+   Remplissage = --color-knob (BLANC) ; piste = --color-slider-capsule (GRISE, pour que le blanc
+   ressorte, sinon blanc sur blanc en clair) ; icône = SVG du kit en gris moyen (cf. .sift-volume-icon).
+   Remplissage = VALEUR réelle (var(--vol) * 100%) : 0 au mute, donc la capsule y est toute grise —
+   PAS de pastille blanche isolée à fond fermé (« pas très esthétique quand fermé à fond », Antoine
+   2026-08-25). Pouce = 22px = HAUTEUR de la capsule (kit § 07, ratio ~1,0). Le pouce est TRANSPARENT :
+   sa couleur vient de ce qu'il y a EN DESSOUS (bordure --color-slider-capsule + ombre dessinent le
+   cercle). Il descend jusqu'à 0, PAR-DESSUS le haut-parleur — transparent, il laisse voir le logo au
+   minimum. Au mute il est sur la piste grise (l'icône grise reste lisible) ; le remplissage blanc le
+   rejoint à mesure que le volume monte. */
 .sift-volume-track{position:relative;flex:none;width:112px;height:22px;border-radius:var(--border-radius-pill);background:var(--color-slider-capsule);border:1px solid var(--color-border-secondary);box-shadow:var(--shadow-panel-subtle);cursor:pointer;touch-action:none;user-select:none;--vol:1}
 /* Remplissage sous l'icône (part du bord gauche), coins arrondis pour épouser la capsule ; le bord
    droit rond est couvert par le pouce. */
-.sift-volume-fill{position:absolute;left:0;top:0;bottom:0;width:calc(22px + var(--vol) * (100% - 22px));background:var(--color-knob);border-radius:var(--border-radius-pill);pointer-events:none}
+.sift-volume-fill{position:absolute;left:0;top:0;bottom:0;width:calc(var(--vol) * 100%);background:var(--color-knob);border-radius:var(--border-radius-pill);pointer-events:none}
 /* Haut-parleur intégré à gauche, cliquable (mute) ; encre = text-primary, lisible sur l'accent
    (rempli) comme sur la piste (volume bas). Glyphe barré à 0 via renderVolume. */
 /* Empilement par l'ORDRE DOM (fill → icône → pouce, cf. markup), pas de z-index : entre siblings
    tous position:absolute, le plus tardif peint au-dessus — l'icône couvre le remplissage, le pouce
    couvre l'icône. */
-.sift-volume-icon{position:absolute;left:7px;top:50%;transform:translateY(-50%);font-size:14px;line-height:1;color:var(--color-knob-glyph);cursor:pointer}
+/* Icône = SVG inline du kit (speaker.fill / speaker.slash, cf. report-view.ts), `fill:currentColor`
+   suit `color`. Gris moyen (--color-hue-gray-solid) : lisible sur le remplissage blanc (fort volume)
+   ET sur la piste grise (au mute, où il n'y a plus de remplissage) — une encre foncée disparaîtrait
+   sur le gris sombre. */
+.sift-volume-icon{position:absolute;left:6px;top:50%;transform:translateY(-50%);width:15px;height:15px;color:var(--color-hue-gray-solid);cursor:pointer}
 .sift-volume-thumb{position:absolute;top:50%;left:calc(11px + var(--vol) * (100% - 22px));transform:translate(-50%,-50%);width:22px;height:22px;border-radius:var(--border-radius-pill);background:transparent;border:1px solid var(--color-slider-capsule);box-shadow:var(--shadow-panel-subtle);pointer-events:none}
 .sift-volume-track:focus{outline:none}
 .sift-volume-track:focus-visible{outline:2px solid var(--color-accent-fill);outline-offset:2px}

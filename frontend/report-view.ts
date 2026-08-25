@@ -14,6 +14,17 @@ import { durationText, hfDensityText, hfTopDensityText } from "./report-figures"
  *  is max-pooled above analysis::MAX_PEAKS points, so the real step is a multiple of this. */
 const PEAKS_WINDOW_FALLBACK = 512;
 
+// Icônes haut-parleur du kit macOS Big Sur (extraites du PDF docs/design-refs/ le 2026-08-25,
+// vectorielles, viewBox 0 0 10.63 10.2) — remplacent les icônes Tabler (retour Antoine : « tu n'as
+// pas repris l'icône de volume apple »). SPK_MUTE = speaker.slash tel quel dans le kit ; SPK_FILL =
+// speaker.fill reconstruit (le kit ne le donne que barré, avec un canal blanc pour le trait — le
+// canal est ponté par l'arête droite pour retrouver le corps plein). fill-rule evenodd : dans le
+// glyphe barré, le trait est un knockout.
+const SPK_FILL =
+  "M1.638 3.717L1.638 5.774C1.638 6.553 2.003 6.918 2.734 6.918L4.265 6.918C4.318 6.918 4.361 6.934 4.399 6.966L6.719 9.136C6.972 9.373 7.176 9.475 7.423 9.475C7.702 9.475 7.912 9.335 7.998 9.029L8.035 0.634C8.035 0.285 7.783 0.0 7.417 0.0C7.165 0.0 6.999 0.113 6.719 0.371L4.56 2.374C4.533 2.396 4.501 2.417 4.469 2.417L1.638 3.717Z";
+const SPK_MUTE =
+  "M8.035 6.134L8.035 0.634C8.035 0.285 7.783 0.0 7.417 0.0C7.165 0.0 6.999 0.113 6.719 0.371L4.56 2.374C4.533 2.396 4.501 2.417 4.469 2.417L4.308 2.417L8.035 6.134ZM9.888 10.039C10.049 10.2 10.318 10.2 10.474 10.039C10.635 9.872 10.635 9.614 10.474 9.453L1.278 0.258C1.117 0.097 0.849 0.097 0.688 0.258C0.526 0.414 0.526 0.688 0.688 0.843L9.888 10.039ZM2.734 6.918L4.265 6.918C4.318 6.918 4.361 6.934 4.399 6.966L6.719 9.136C6.972 9.373 7.176 9.475 7.423 9.475C7.702 9.475 7.912 9.335 7.998 9.029L1.875 2.911C1.719 3.088 1.638 3.357 1.638 3.717L1.638 5.774C1.638 6.553 2.003 6.918 2.734 6.918Z";
+
 // Accordion behavior (shadcn Accordion reference, ui.shadcn.com/docs/components/base/accordion):
 // Diagnostic and Métadonnées are exclusive — opening one closes the other. They're wired in two
 // separate modules (this file + filing.ts) with no shared ancestor passed down, so coordination
@@ -437,7 +448,7 @@ function playerRowHtml(name: string, path: string, closeBtn = false, headerOpts:
     // visible — remplace le repli-au-survol rejeté (« le design n'est pas bon du tout », Antoine 2026-08-25).
     `<div class="sift-volume-track" tabindex="0" role="slider" aria-label="Volume" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100">` +
     `<div class="sift-volume-fill"></div>` +
-    `<i class="ti ti-volume sift-volume-icon" role="img" title="Volume — cliquer pour couper" aria-label="Volume"></i>` +
+    `<svg class="sift-volume-icon" viewBox="0 0 10.63 10.2" role="img" aria-label="Volume"><title>Volume — cliquer pour couper</title><path fill="currentColor" fill-rule="evenodd" d="${SPK_FILL}"></path></svg>` +
     `<div class="sift-volume-thumb"></div>` +
     `</div>` +
     `</div>` +
@@ -869,8 +880,10 @@ async function mountPlayer(root: HTMLElement, path: string, peaks?: number[], du
     volumeTrack?.setAttribute("aria-valuenow", String(Math.round(pct * 100))); // audit-ref R1
     // L'icône reflète l'état muet : glyphe barré à 0 (kit § 14). Intégrée à gauche de la capsule,
     // cliquable — clic = mute (voir plus bas).
-    if (volumeIcon)
-      volumeIcon.className = pct <= 0 ? "ti ti-volume-off sift-volume-icon" : "ti ti-volume sift-volume-icon";
+    if (volumeIcon) {
+      const iconPath = volumeIcon.querySelector("path");
+      if (iconPath) iconPath.setAttribute("d", pct <= 0 ? SPK_MUTE : SPK_FILL);
+    }
   };
   renderVolume(1); // WaveSurfer's own default (full volume)
   if (volumeTrack) {
