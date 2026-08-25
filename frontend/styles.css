@@ -1027,6 +1027,16 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
    ligne vivante se lit comme deux intentions concurrentes à la prochaine édition. Fusionnées le
    2026-08-19, sans changer ce qui est peint : fond `--color-background-danger` + assombrissement. */
 .sift-secondary-trash:hover{background:var(--color-background-danger);filter:brightness(0.95)}
+/* État disabled du rail par TOKEN, pas par opacité (DESIGN.md:262) — patron .sift-applytags-btn:disabled
+   (2320). opacity:1 annule le générique button:disabled (1373, laissé intact : exception :disabled
+   documentée 1368) ; encre secondaire neutre pour les trois boutons ; le primaire Convertir perd EN PLUS
+   son fond accent. :disabled:hover réaffirmé neutre — spécificité (0,3,0) qui bat button:hover (1373) et
+   les :hover propres (1016/1029). */
+.sift-ranger-btn:disabled,.sift-secondary-resource:disabled,.sift-secondary-trash:disabled{opacity:1;color:var(--color-text-secondary);cursor:default}
+.sift-ranger-btn:disabled,.sift-secondary-trash:disabled{background:var(--color-surface-raised)}
+.sift-secondary-resource:disabled{background:transparent}
+.sift-ranger-btn:disabled:hover,.sift-secondary-trash:disabled:hover{background:var(--color-surface-raised);filter:none}
+.sift-secondary-resource:disabled:hover{background:transparent;filter:none}
 /* Destination popover: replaces the persistent tree column, anchored above its trigger button.
    Hidden by default ([hidden] attribute, toggled in filing.ts); #fldz keeps its id so renderBins'
    existing document.getElementById("fldz") callers need no change. */

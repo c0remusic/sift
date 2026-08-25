@@ -26,9 +26,10 @@ function setActionsDisabled(disabled: boolean): void {
   document
     .querySelectorAll<HTMLButtonElement>('[data-fil="ranger"],[data-fil="resource"],[data-fil="trash"]')
     .forEach((b) => {
+      // État disabled porté par le CSS token (`:disabled` dans styles.css), pas par une opacité
+      // inline — DESIGN.md:262 interdit l'atténuation d'état à l'opacité. `b.disabled` bloque déjà
+      // le clic ; le `pointer-events:none` inline était redondant.
       b.disabled = disabled;
-      b.style.opacity = disabled ? "0.55" : "";
-      b.style.pointerEvents = disabled ? "none" : "";
     });
 }
 
