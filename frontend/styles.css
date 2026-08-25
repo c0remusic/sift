@@ -2469,9 +2469,9 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .sift-filed-banner-bin{color:var(--color-text-secondary);min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sift-filed-banner-close{margin-left:auto;flex:none;background:none;border:none;color:var(--color-text-tertiary);cursor:pointer;padding:0;line-height:1}
 .sift-filed-banner-close i{font-size:var(--text-md)}
-.sift-filed-banner-name{color:var(--color-text-secondary);font-family:var(--font-mono);font-size:var(--text-xs);word-break:break-all;line-height:1.5;margin-bottom:var(--space-4)}
+.sift-filed-banner-name{color:var(--color-text-primary);font-family:var(--font-mono);font-size:var(--text-sm);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.4;margin-bottom:var(--space-4)}
 /* tertiary → secondary : voir le commentaire de famille sur .sift-filed-banner-bin ci-dessus. */
-.sift-filed-banner-path{color:var(--color-text-secondary);font-family:var(--font-mono);font-size:var(--text-xs);word-break:break-all;line-height:1.4;margin-bottom:var(--space-8)}
+.sift-filed-banner-path{color:var(--color-text-secondary);font-family:var(--font-mono);font-size:var(--text-sm);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;line-height:1.4;margin-bottom:var(--space-8)}
 /* Secondaire nu (2026-08-19) : ni fond propre ni cadre, il tombe sur le reset `button{}` — la
    raison est l'unification, pas le contraste. Mesuré, l'écart de clarté contre l'aplat vert du
    bandeau (`--color-background-success`) CHANGE DE SENS selon le thème : en sombre, le
