@@ -1217,18 +1217,6 @@ pub fn list_bins(conn: State<'_, Mutex<Connection>>) -> Result<Vec<Bin>, String>
     Ok(library::list_bins(&root))
 }
 
-/// Create a new bin under `parent_rel` ("" = root level). Returns the created bin.
-#[tauri::command]
-pub fn create_bin(
-    conn: State<'_, Mutex<Connection>>,
-    parent_rel: String,
-    name: String,
-) -> Result<Bin, String> {
-    let conn = db::lock_conn(&conn)?;
-    let root = library_root(&conn)?;
-    library::create_bin(&root, &parent_rel, &name)
-}
-
 /// Undo the most recent live batch (LIFO). Returns the reverted batch id, or null when there
 /// is nothing to undo.
 #[tauri::command]

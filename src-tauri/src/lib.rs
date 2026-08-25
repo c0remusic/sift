@@ -296,7 +296,6 @@ pub fn run() {
             ipc_filing::trash_track,
             ipc_filing::reveal_track,
             ipc_filing::list_bins,
-            ipc_filing::create_bin,
             ipc_filing::undo_last,
             ipc_filing::revert_batch,
             ipc_filing::list_journal,
