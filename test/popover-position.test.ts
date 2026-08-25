@@ -18,9 +18,10 @@ const POP_H = 222; // hauteur mesurée avec la vraie liste de dossiers (max-heig
 
 describe("destPopoverPosition", () => {
   it("laisse le popover collé au bouton quand la fenêtre est large", () => {
-    const { top, left } = destPopoverPosition(BTN_MESURE, POP_W, POP_H, 1920, 1080);
+    const { top, left, placement } = destPopoverPosition(BTN_MESURE, POP_W, POP_H, 1920, 1080);
     expect(left).toBe(BTN_MESURE.left); // aligné à gauche sur le bouton, aucun recalage
     expect(top).toBe(BTN_MESURE.top - POP_H - POPOVER_GAP); // 132, au-dessus
+    expect(placement).toBe("above"); // bec en bas de la carte (Lane 4, #47)
   });
 
   // Vecteur gelé du défaut d'origine : `left` valait 705 sans recalage, donc un bord droit à 993
@@ -42,9 +43,10 @@ describe("destPopoverPosition", () => {
   // il y a toujours plus de place au-dessus. C'est précisément pour ça que le cas est ici.
   it("bascule sous le bouton quand la place manque au-dessus et qu'il y en a plus en dessous", () => {
     const btn = { top: 100, bottom: 132, left: 100 };
-    const { top } = destPopoverPosition(btn, POP_W, POP_H, 920, 640);
+    const { top, placement } = destPopoverPosition(btn, POP_W, POP_H, 920, 640);
     expect(top).toBe(btn.bottom + POPOVER_GAP); // 140
     expect(top).toBeGreaterThan(btn.bottom); // vraiment en dessous
+    expect(placement).toBe("below"); // basculé sous → bec en haut de la carte (--below)
   });
 
   it("garde le côté le plus large quand aucun des deux ne suffit", () => {
@@ -70,15 +72,17 @@ describe("anchoredBelowPosition", () => {
   const btn = { top: 360, bottom: 388, left: 240 };
 
   it("s'ouvre SOUS le bouton par défaut, même quand la place au-dessus suffirait", () => {
-    const { top } = anchoredBelowPosition(btn, POP_W, 340, 1200, 900);
+    const { top, placement } = anchoredBelowPosition(btn, POP_W, 340, 1200, 900);
     expect(top).toBe(btn.bottom + POPOVER_GAP);
+    expect(placement).toBe("below");
   });
 
   it("bascule au-dessus seulement si le dessous ne contient pas ET que le dessus est plus large", () => {
     // Bouton bas de fenêtre : 90px sous lui, 470 au-dessus, popover de 300.
     const low = { top: 520, bottom: 548, left: 240 };
-    const { top } = anchoredBelowPosition(low, POP_W, 300, 1200, 640);
+    const { top, placement } = anchoredBelowPosition(low, POP_W, 300, 1200, 640);
     expect(top).toBe(low.top - 300 - POPOVER_GAP);
+    expect(placement).toBe("above");
   });
 
   it("garde le dessous quand aucun côté ne contient, si le dessous est le plus large", () => {

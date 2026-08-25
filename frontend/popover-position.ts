@@ -19,6 +19,16 @@ export interface AnchorRect {
   left: number;
 }
 
+/** Résultat d'un placement : coordonnées `position:fixed` + le côté réellement retenu. L'appelant
+ *  a besoin de `placement` pour poser le bec du popover du bon côté (Lane 4 Destination, #47) — le
+ *  côté ne doit PAS être recalculé côté JS, sinon bec et carte se contredisent au flip. Champ ajouté
+ *  sans casser les appelants existants, qui ne déstructurent que `{ top, left }`. */
+export interface PopoverPosition {
+  top: number;
+  left: number;
+  placement: "above" | "below";
+}
+
 /** Position d'un popover ancré au-dessus de son déclencheur, ramené dans la fenêtre.
  *
  *  `vw`/`vh` sont le viewport de MISE EN PAGE (`documentElement.clientWidth/clientHeight`), pas
@@ -33,7 +43,7 @@ export function destPopoverPosition(
   popH: number,
   vw: number,
   vh: number,
-): { top: number; left: number } {
+): PopoverPosition {
   // Vertical : au-dessus par défaut. Bascule en dessous seulement si ça ne tient pas au-dessus ET
   // qu'il y a plus de place en dessous — quand aucun des deux ne tient, garder le côté le plus
   // large perd le moins de contenu.
@@ -43,7 +53,11 @@ export function destPopoverPosition(
   const top = flipBelow ? btn.bottom + POPOVER_GAP : btn.top - popH - POPOVER_GAP;
   // Horizontal : ne bascule jamais — le popover est aligné à gauche sur le bouton et ne fait que
   // se recaler dans la fenêtre.
-  return { top: clampToViewport(top, popH, vh), left: clampToViewport(btn.left, popW, vw) };
+  return {
+    top: clampToViewport(top, popH, vh),
+    left: clampToViewport(btn.left, popW, vw),
+    placement: flipBelow ? "below" : "above",
+  };
 }
 
 /** Position d'un popover ancré SOUS son déclencheur, ramené dans la fenêtre.
@@ -62,12 +76,16 @@ export function anchoredBelowPosition(
   popH: number,
   vw: number,
   vh: number,
-): { top: number; left: number } {
+): PopoverPosition {
   const roomBelow = vh - btn.bottom - POPOVER_GAP - POPOVER_MARGIN;
   const roomAbove = btn.top - POPOVER_GAP - POPOVER_MARGIN;
   const flipAbove = popH > roomBelow && roomAbove > roomBelow;
   const top = flipAbove ? btn.top - popH - POPOVER_GAP : btn.bottom + POPOVER_GAP;
-  return { top: clampToViewport(top, popH, vh), left: clampToViewport(btn.left, popW, vw) };
+  return {
+    top: clampToViewport(top, popH, vh),
+    left: clampToViewport(btn.left, popW, vw),
+    placement: flipAbove ? "above" : "below",
+  };
 }
 
 /** Maintient un segment de longueur `size` démarrant en `start` dans un axe long de `viewport`, en
