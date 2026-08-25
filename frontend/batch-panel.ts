@@ -37,6 +37,7 @@ import {
 import { currentItems, reviewMode, prefetchNextAfter, enterDetailMode, queueBatchSel } from "./queue-panel";
 import { selectionSummaryHtml } from "./selection-summary";
 import { confirmAction, BATCH_CONFIRM_THRESHOLD } from "./confirm-modal";
+import { showBatchSheet, updateBatchSheet, transformToReport, closeBatchSheet } from "./batch-sheet";
 
 /** Human label for the batch destination (resolves the in-place sentinel to its prose). */
 const IN_PLACE_LABEL = "Dossier source de chaque morceau";
@@ -128,6 +129,7 @@ export function pushFileProgress(p: FileProgress) {
     }, 1200);
   }
   updateBatchTracklist(p.done);
+  updateBatchSheet(p.done, p.total);
 }
 
 export function onFileStop() {
@@ -261,10 +263,9 @@ async function runBatchFile(ids: number[]) {
   renderBatchRail();
   batchTrackIds = ids;
   startBatchTracklist(ensureBatchTracklistHost(), ids.map(batchTrackItem));
-  fileNote(
-    '<i class="ti ti-loader sift-spin" style="font-size:var(--text-md);vertical-align:-1px"></i> Conversion en arrière-plan…',
-  );
   setTask("file", { done: 0, total: ids.length, state: "running" });
+  const inspector = document.querySelector<HTMLElement>(".sift-inspector");
+  if (inspector) showBatchSheet(inspector, ids, batchTrackName);
   // Cible imposée UNIQUEMENT aux pistes de rail lossless. Les autres — lossy, `unknown`, pas
   // encore analysées — restent absentes de la table : le backend dérive la cible depuis le rail
   // source (`encode::target_for`), ce qui rend l'upscale impossible par construction.
@@ -370,6 +371,7 @@ export async function onFileBatchDone(res: BatchResult) {
     }`,
     tone.color,
   );
+  transformToReport(res);
 }
 
 async function runBatchDiscard(ids: number[]) {
@@ -419,6 +421,20 @@ export function handleBatchAction(el: HTMLElement, act: string, e: MouseEvent): 
   } else if (act === "batchstop") {
     e.stopPropagation();
     onFileStop();
+  } else if (act === "batchsheetdetail") {
+    e.stopPropagation();
+    const id = Number(el.dataset.id);
+    const item = currentItems.find((it) => it.id === id);
+    closeBatchSheet();
+    enterDetailMode();
+    const mid = requireEl("#mid", "batchsheetdetail");
+    if (item && mid) {
+      void openFilingInto(mid, item);
+      prefetchNextAfter(item.id);
+    }
+  } else if (act === "batchsheetclose") {
+    e.stopPropagation();
+    closeBatchSheet();
   } else {
     return false;
   }

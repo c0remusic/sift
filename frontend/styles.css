@@ -262,7 +262,7 @@ color-scheme:light;
    local intra-component stacking (a resize handle above its own row, a cover image above
    its own fallback) stays a plain z-index:1/0 literal, not part of this scale. Toast sits
    BELOW modal on purpose (a modal opening over an active toast must win). */
---z-popover:20;--z-toast:9998;--z-modal:9999;
+--z-sheet:10;--z-popover:20;--z-toast:9998;--z-modal:9999;
 /* Tracking scale (2026-07-08, structure adapted from tweakcn "ZFlow" theme's tracking-* scale —
    values are Sift's own, only the 4 exact literals that already recurred ≥2x across the app
    before this token existed (audit rule from the 2026-07-03 radius/height pass: wire what
@@ -1896,6 +1896,36 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .sift-bsel-pill.other{background:var(--overlay-hover);color:var(--color-text-secondary)}
 .sift-bsel-meta{font-size:var(--text-xs);color:var(--color-text-secondary)}
 .sift-bsel-actions{display:flex;gap:var(--space-8)}
+/* ── Batch sheet (wireframe § 17) — non-modal progress + terminal report ──
+   Slides from the top of .sift-inspector (position:relative host). Below popovers
+   (--z-sheet < --z-popover) so the destination popover stays reachable. */
+.sift-batch-sheet{position:absolute;top:0;left:0;right:0;z-index:var(--z-sheet);background:var(--color-surface-raised);border-bottom:0.5px solid var(--color-border-secondary);border-radius:0 0 var(--border-radius-lg) var(--border-radius-lg);box-shadow:var(--shadow-toast);padding:var(--space-16);display:flex;flex-direction:column;gap:var(--space-12);transform:translateY(-100%);transition:transform var(--duration-normal) ease-out;overflow:hidden}
+.sift-batch-sheet--open{transform:translateY(0)}
+.sift-bs-head{display:flex;align-items:center;justify-content:space-between;gap:var(--space-8)}
+.sift-bs-title{font-size:var(--text-md);font-weight:600;color:var(--color-text-primary)}
+.sift-bs-title--report{font-size:var(--text-lg)}
+.sift-bs-bar{width:100%;height:4px;appearance:none;border:none;border-radius:var(--border-radius-pill);background:var(--color-border-tertiary)}
+.sift-bs-bar::-webkit-progress-bar{background:var(--color-border-tertiary);border-radius:var(--border-radius-pill)}
+.sift-bs-bar::-webkit-progress-value{background:var(--color-accent-fill);border-radius:var(--border-radius-pill);transition:width var(--duration-fast) ease-out}
+.sift-bs-step{font-size:var(--text-sm);color:var(--color-text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sift-bs-details{font-size:var(--text-sm);color:var(--color-text-secondary)}
+.sift-bs-details>summary{cursor:pointer;user-select:none}
+.sift-bs-tracks{max-height:200px;overflow-y:auto;display:flex;flex-direction:column;gap:var(--space-4);padding-top:var(--space-8)}
+.sift-bs-track{padding:var(--space-4) var(--space-8);border-radius:var(--border-radius-xs);font-size:var(--text-sm);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--color-text-tertiary)}
+.sift-bs-track[data-state="run"]{color:var(--color-text-info)}
+.sift-bs-track[data-state="done"]{color:var(--color-text-success)}
+.sift-bs-section{font-size:var(--text-sm);border-radius:var(--border-radius-sm);padding:var(--space-8)}
+.sift-bs-section>summary{cursor:pointer;user-select:none;font-weight:500;color:var(--color-text-primary)}
+.sift-bs-section--ok>summary{color:var(--color-text-success)}
+.sift-bs-section--warning>summary{color:var(--color-text-warning)}
+.sift-bs-section--error>summary{color:var(--color-text-danger)}
+.sift-bs-items{display:flex;flex-direction:column;gap:var(--space-4);padding-top:var(--space-8);max-height:200px;overflow-y:auto}
+.sift-bs-item{display:flex;align-items:center;gap:var(--space-8);padding:var(--space-4) var(--space-8);font-size:var(--text-sm);color:var(--color-text-primary)}
+.sift-bs-item-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sift-bs-item-err{flex:none;font-size:var(--text-xs);color:var(--color-text-danger);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.sift-bs-item-link{flex:none;background:none;border:none;font-size:var(--text-xs);color:var(--color-text-info);cursor:pointer;padding:0}
+.sift-bs-item-link:hover{text-decoration:underline}
+.sift-bs-footer{display:flex;justify-content:flex-end;gap:var(--space-8);padding-top:var(--space-8);border-top:0.5px solid var(--color-border-tertiary)}
 /* min-height reserved (annotation: "laisser suffisament d'espace... pour ne rien déplacer") — empty
    (no genres yet) collapsed to 1px, so everything below jumped down once chips appeared after
    identify; one chip-row's worth of height now, empty or not. */
