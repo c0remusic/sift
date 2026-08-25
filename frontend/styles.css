@@ -2402,8 +2402,11 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    rayon franc. Ce qui du kit ne se transpose PAS : le nom d'app et l'horodatage, qui sont des
    organes du centre de notifications système. Un toast in-app n'a ni l'un ni l'autre à dire.
    (CLAUDE.md § HIG : garder l'intention, jeter le mécanisme quand il nomme un organe système.) */
-.sift-toast{position:fixed;right:var(--space-16);bottom:var(--space-16);z-index:var(--z-toast);display:flex;align-items:center;gap:12px;background:var(--color-background-secondary);border:0;border-radius:var(--border-radius-lg);padding:var(--space-8) var(--space-12);font-size:var(--text-md);color:var(--color-text-primary);box-shadow:var(--shadow-toast)}
-.sift-toast-undo{font-size:var(--text-sm);padding:var(--space-4) var(--space-8)}
+/* Centré en bas + surface RAISED (élevée, pas la surface de rangée) + plus grand : le toast se
+   voyait trop peu, bas-droite (retour Antoine 2026-08-25). Toujours sans bordure — l'ombre EST son
+   décollement (décision ci-dessus). Le fade ne touche que l'opacité, le translateX(-50%) tient. */
+.sift-toast{position:fixed;left:50%;transform:translateX(-50%);bottom:var(--space-24);z-index:var(--z-toast);display:flex;align-items:center;gap:var(--space-16);background:var(--color-surface-raised);border:0;border-radius:var(--border-radius-lg);padding:var(--space-12) var(--space-16);font-size:var(--text-md);color:var(--color-text-primary);box-shadow:var(--shadow-toast)}
+.sift-toast-undo{font-size:var(--text-sm);font-weight:500;padding:var(--space-4) var(--space-8)}
 /* Shared entry/exit fade, used by the confirm overlay (entry only) and the toast (both).
    BOTH the transition AND the from-state live inside the media query: that is what makes reduced
    motion an opt-in rather than a kill switch — when the user prefers reduced motion, .sift-fade-from
