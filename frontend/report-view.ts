@@ -14,34 +14,23 @@ import { durationText, hfDensityText, hfTopDensityText } from "./report-figures"
  *  is max-pooled above analysis::MAX_PEAKS points, so the real step is a multiple of this. */
 const PEAKS_WINDOW_FALLBACK = 512;
 
-// Icônes haut-parleur du kit macOS Big Sur — coordonnées EXACTES de l'export SVG d'Antoine
-// (Slider-pickers/.../Icons/System, viewBox 0 0 11 11 ; retours « reprends l'icône apple » puis
-// export direct). SPK_MUTE = speaker.slash tel quel. SPK_FILL = speaker.fill : le kit ne fournit
-// que la version barrée, dont le corps est ÉVIDÉ d'un canal blanc pour le trait ; on garde ses deux
-// moitiés (cône + corps) et on COMBLE le canal par son quadrilatère (les deux arêtes internes), en
-// fill-rule NONZERO pour que tout s'unionne (le pont par la seule arête droite tronquait le corps —
-// « le premier semble tronqué »). Le trait du glyphe barré est un knockout : renderVolume pose le
-// `d` ET le `fill-rule` par état (evenodd pour SPK_MUTE, nonzero pour SPK_FILL).
-const SPK_FILL =
-  "M7.50879 6.1333V0.633301C7.50879 0.28418 7.25635 -0.000488281 6.89111 -0.000488281C6.63867 -0.000488281 6.47217 0.112305 6.19287 0.370117L4.03369 2.37354C4.00684 2.39502 3.97461 2.4165 3.94238 2.4165H3.78125L7.50879 6.1333ZM2.20752 6.91748H3.73828C3.79199 6.91748 3.83496 6.93359 3.87256 6.96582L6.19287 9.13574C6.44531 9.37207 6.64941 9.47412 6.89648 9.47412C7.17578 9.47412 7.38525 9.33447 7.47119 9.02832L1.34814 2.91064C1.19238 3.08789 1.11182 3.35645 1.11182 3.71631V5.77344C1.11182 6.55225 1.47705 6.91748 2.20752 6.91748ZM3.78125 2.4165L7.50879 6.1333L7.47119 9.02832L1.34814 2.91064Z";
-const SPK_MUTE =
-  "M7.50879 6.1333V0.633301C7.50879 0.28418 7.25635 -0.000488281 6.89111 -0.000488281C6.63867 -0.000488281 6.47217 0.112305 6.19287 0.370117L4.03369 2.37354C4.00684 2.39502 3.97461 2.4165 3.94238 2.4165H3.78125L7.50879 6.1333ZM9.36182 10.0381C9.52295 10.1992 9.7915 10.1992 9.94727 10.0381C10.1084 9.87158 10.1084 9.61377 9.94727 9.45264L0.751953 0.257324C0.59082 0.0961914 0.322266 0.0961914 0.161133 0.257324C0 0.413086 0 0.687012 0.161133 0.842773L9.36182 10.0381ZM2.20752 6.91748H3.73828C3.79199 6.91748 3.83496 6.93359 3.87256 6.96582L6.19287 9.13574C6.44531 9.37207 6.64941 9.47412 6.89648 9.47412C7.17578 9.47412 7.38525 9.33447 7.47119 9.02832L1.34814 2.91064C1.19238 3.08789 1.11182 3.35645 1.11182 3.71631V5.77344C1.11182 6.55225 1.47705 6.91748 2.20752 6.91748Z";
-
-/** Contenu SVG de l'icône par état. Le kit ne fournit le haut-parleur QUE barré, et son corps
- *  reste asymétrique une fois le trait retiré (chambre décalée, cône lopsided). speaker.fill est
- *  donc reconstruit SYMÉTRIQUE (idée d'Antoine « coupe en 2 au milieu, duplique la moitié non
- *  tronquée ») : on clippe la moitié HAUTE de SPK_FILL et on la reflète vers le bas autour de la
- *  médiane yc≈4.737 (rect de clip haut de yc+1, miroir matrix(1 0 0 -1 0 2·yc)). Le mute garde le
- *  trait (knockout → fill-rule evenodd). */
-function spkIconInner(mute: boolean): string {
-  const title = "<title>Volume — cliquer pour couper</title>";
-  if (mute) return `${title}<path fill="currentColor" fill-rule="evenodd" d="${SPK_MUTE}"></path>`;
-  return (
-    `${title}<defs><clipPath id="sift-vol-half"><rect x="-1" y="-1" width="13" height="5.737"></rect></clipPath></defs>` +
-    `<g fill="currentColor"><g clip-path="url(#sift-vol-half)"><path d="${SPK_FILL}"></path></g>` +
-    `<g clip-path="url(#sift-vol-half)" transform="matrix(1 0 0 -1 0 9.474)"><path d="${SPK_FILL}"></path></g></g>`
-  );
-}
+// Volume = COPIE DIRECTE de l'export SVG du kit macOS Big Sur (Antoine 2026-08-25 : « tu as juste
+// à copier les éléments des svg »). On inline ses éléments TELS QUELS — rect piste (blanc @10% +
+// inner-shadow), rect remplissage (blanc), cercle pouce (blanc + drop-shadow), path haut-parleur
+// barré (#464646) — dans un viewBox 0 0 112 24 (piste large de 112 au lieu des 256 du kit ; tout le
+// reste identique : hauteur 22, inset 1px, pouce r10, icône ancrée à x≈6). renderVolume ne touche
+// QUE `width` du remplissage et `cx` du pouce. L'icône reste speaker.slash de l'export (le kit
+// l'affiche à tous les niveaux — c'est le glyphe du contrôle, pas un indicateur d'état).
+const SPK_SLASH =
+  "M13.5728 12.0239V6.52393C13.5728 6.1748 13.3203 5.89014 12.9551 5.89014C12.7026 5.89014 12.5361 6.00293 12.2568 6.26074L10.0977 8.26416C10.0708 8.28564 10.0386 8.30713 10.0063 8.30713H9.84521L13.5728 12.0239ZM15.4258 15.9287C15.5869 16.0898 15.8555 16.0898 16.0112 15.9287C16.1724 15.7622 16.1724 15.5044 16.0112 15.3433L6.81592 6.14795C6.65479 5.98682 6.38623 5.98682 6.2251 6.14795C6.06396 6.30371 6.06396 6.57764 6.2251 6.7334L15.4258 15.9287ZM8.27148 12.8081H9.80225C9.85596 12.8081 9.89893 12.8242 9.93652 12.8564L12.2568 15.0264C12.5093 15.2627 12.7134 15.3647 12.9604 15.3647C13.2397 15.3647 13.4492 15.2251 13.5352 14.9189L7.41211 8.80127C7.25635 8.97852 7.17578 9.24707 7.17578 9.60693V11.6641C7.17578 12.4429 7.54102 12.8081 8.27148 12.8081Z";
+// Filtres du kit, copiés depuis 100%.svg : inner-shadow de la piste, drop-shadow du pouce. Seule
+// différence : la région du drop-shadow est élargie à toute la largeur (x0 w112) pour suivre le
+// pouce mobile (le kit la fixait à la position 100%).
+const VOL_DEFS =
+  `<defs>` +
+  `<filter id="sift-vol-inner" x="0" y="0" width="112" height="22" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB"><feFlood flood-opacity="0" result="bg"></feFlood><feBlend mode="normal" in="SourceGraphic" in2="bg" result="shape"></feBlend><feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"></feColorMatrix><feMorphology radius="2" operator="erode" in="SourceAlpha" result="inner"></feMorphology><feOffset></feOffset><feGaussianBlur stdDeviation="2.5"></feGaussianBlur><feComposite in2="hardAlpha" operator="arithmetic" k2="-1" k3="1"></feComposite><feColorMatrix type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.05 0"></feColorMatrix><feBlend mode="normal" in2="shape" result="inner"></feBlend></filter>` +
+  `<filter id="sift-vol-drop" x="0" y="0" width="112" height="24" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB"><feFlood flood-opacity="0" result="bg"></feFlood><feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"></feColorMatrix><feMorphology radius="1" operator="dilate" in="SourceAlpha" result="drop"></feMorphology><feOffset dy="1"></feOffset><feGaussianBlur stdDeviation="0.5"></feGaussianBlur><feColorMatrix type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.1 0"></feColorMatrix><feBlend mode="normal" in2="bg" result="drop"></feBlend><feBlend mode="normal" in="SourceGraphic" in2="drop" result="shape"></feBlend></filter>` +
+  `</defs>`;
 
 // Accordion behavior (shadcn Accordion reference, ui.shadcn.com/docs/components/base/accordion):
 // Diagnostic and Métadonnées are exclusive — opening one closes the other. They're wired in two
@@ -460,15 +449,17 @@ function playerRowHtml(name: string, path: string, closeBtn = false, headerOpts:
     // séparé. Tempo & key-lock (l'« Écoute avancée ») retirés : le pitch DJ n'est pas voulu sur cet
     // écran de décision (Antoine 2026-08-21), et la HIG ne justifie un contrôle audio custom que pour
     // une commande absente du système. L'icône de volume reste (contrôle standard, cohérent).
-    // Volume = capsule macOS Big Sur (kit § 07-Slider Pickers, rangée 1) : la capsule EST le slider
-    // (role="slider", drag + clavier flèches/Home/End, audit-ref R1 2026-07-08). Haut-parleur intégré
-    // à gauche (clic = mute), remplissage + pouce pilotés par --vol (voir renderVolume). Toujours
-    // visible — remplace le repli-au-survol rejeté (« le design n'est pas bon du tout », Antoine 2026-08-25).
-    `<div class="sift-volume-track" tabindex="0" role="slider" aria-label="Volume" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100">` +
-    `<div class="sift-volume-fill"></div>` +
-    `<svg class="sift-volume-icon" viewBox="0 0 11 11" role="img" aria-label="Volume">${spkIconInner(false)}</svg>` +
-    `<div class="sift-volume-thumb"></div>` +
-    `</div>` +
+    // Volume = SVG du kit inliné tel quel (COPIE, cf. SPK_SLASH/VOL_DEFS). Le <svg> EST le slider
+    // (role="slider", drag + clavier ; audit-ref R1 2026-07-08). Clic sur le haut-parleur = mute.
+    // renderVolume ne pilote que `width` du remplissage et `cx` du pouce.
+    `<svg class="sift-volume" viewBox="0 0 112 24" role="slider" tabindex="0" aria-label="Volume" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100">` +
+    `<title>Volume — cliquer pour couper</title>` +
+    `<g filter="url(#sift-vol-inner)"><rect width="112" height="22" rx="11" fill="white" fill-opacity="0.1"></rect></g>` +
+    `<rect class="sift-vol-fill" x="1" y="1" width="110" height="20" rx="10" fill="white"></rect>` +
+    `<g filter="url(#sift-vol-drop)"><circle class="sift-vol-knob" cx="101" cy="11" r="10" fill="white"></circle></g>` +
+    `<path class="sift-volume-icon" d="${SPK_SLASH}" fill="#464646"></path>` +
+    VOL_DEFS +
+    `</svg>` +
     `</div>` +
     `<div class="sift-player-error" hidden></div>`
   );
@@ -808,8 +799,10 @@ export function prefetchTrack(path: string): void {
 async function mountPlayer(root: HTMLElement, path: string, peaks?: number[], duration?: number) {
   const container = requireEl<HTMLElement>(".sift-wave", "mountPlayer", root);
   const playBtn = root.querySelector<HTMLButtonElement>(".sift-play");
-  const volumeTrack = root.querySelector<HTMLElement>(".sift-volume-track");
-  const volumeIcon = root.querySelector<HTMLElement>(".sift-volume-icon");
+  const volumeTrack = root.querySelector<SVGSVGElement>(".sift-volume");
+  const volumeIcon = root.querySelector<SVGElement>(".sift-volume-icon");
+  const volumeFill = root.querySelector<SVGElement>(".sift-vol-fill");
+  const volumeKnob = root.querySelector<SVGElement>(".sift-vol-knob");
   const errorEl = root.querySelector<HTMLElement>(".sift-player-error");
 
   ensureStyles();
@@ -863,7 +856,7 @@ async function mountPlayer(root: HTMLElement, path: string, peaks?: number[], du
   // Custom sliders (never native <input type=range> — see DESIGN.md): drag anywhere on the
   // track, thumb/fill follow the mouse until release. Volume fills from the left; tempo fills
   // from the centre (0 = neutral), matching the pitch-fader convention.
-  const dragSlider = (track: HTMLElement, onMove: (pct: number) => void) => {
+  const dragSlider = (track: SVGSVGElement, onMove: (pct: number) => void) => {
     const update = (clientX: number) => {
       const rect = track.getBoundingClientRect();
       onMove(Math.max(0, Math.min(1, (clientX - rect.left) / Math.max(1, rect.width))));
@@ -872,7 +865,7 @@ async function mountPlayer(root: HTMLElement, path: string, peaks?: number[], du
       if (e.button !== 0) return;
       // Le haut-parleur vit DANS la capsule (mute au clic) : un pointerdown dessus ne doit pas armer
       // un drag de volume ni sauter la valeur — son propre handler de clic gère le mute.
-      if ((e.target as HTMLElement).closest?.(".sift-volume-icon")) return;
+      if ((e.target as Element).closest?.(".sift-volume-icon")) return;
       e.preventDefault();
       track.classList.add("dragging");
       track.setPointerCapture(e.pointerId);
@@ -892,14 +885,13 @@ async function mountPlayer(root: HTMLElement, path: string, peaks?: number[], du
   };
 
   const renderVolume = (pct: number) => {
-    // Capsule : le remplissage (largeur) ET le pouce (position) dérivent de --vol en CSS via calc()
-    // — le pouce reste borné dans la capsule, jamais tronqué. On ne pose plus width/left à la main.
-    volumeTrack?.style.setProperty("--vol", String(pct));
+    // On ne pilote QUE les deux éléments SVG qui bougent (kit) : la largeur du rect de remplissage
+    // et le cx du cercle-pouce. Reste identique au kit. Remplissage min 20 (cercle blanc au repos qui
+    // porte l'icône) ; le pouce colle au bord droit du remplissage (cx = bord droit - rayon).
+    const fillW = Math.max(20, pct * 110); // 110 = 112 (piste) − 2 (inset 1px de chaque côté)
+    volumeFill?.setAttribute("width", String(fillW));
+    volumeKnob?.setAttribute("cx", String(1 + fillW - 10));
     volumeTrack?.setAttribute("aria-valuenow", String(Math.round(pct * 100))); // audit-ref R1
-    // L'icône reflète l'état muet : speaker.slash à 0, speaker.fill sinon (kit). Intégrée à gauche
-    // de la capsule, cliquable — clic = mute (voir plus bas). innerHTML : le fill est une paire de
-    // paths clippés+reflétés (spkIconInner), pas un simple `d`.
-    if (volumeIcon) volumeIcon.innerHTML = spkIconInner(pct <= 0);
   };
   renderVolume(1); // WaveSurfer's own default (full volume)
   if (volumeTrack) {
