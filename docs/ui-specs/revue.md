@@ -3,14 +3,34 @@
 > **Réconciliée le 2026-08-21**, **complétée le 2026-08-24** avec les six décisions A–F du
 > wireframe (§ 08, tranchées sur visuel) : Batch armé par une **icône de sélection dans la
 > barre** (§ 11 option 4), **filtre** en pop-up cochable, **popover Destination**, **états**,
-> **volume replié**, **recherche en tête** de la file, **genres** en texte + tag et badge
-> **« Prêt CDJ »**. Wireframe aux tokens réels
+> ~~**volume replié**~~, **recherche en tête** de la file, **genres** en texte + tag et
+> ~~badge **« Prêt CDJ »**~~ (les deux barrées ont été retranchées le 2026-08-25, ci-dessous).
+> Wireframe aux tokens réels
 > (https://claude.ai/code/artifact/cec49229-4c84-4e6b-bfac-0843488ecb35), kit Big Sur lu sur
 > les **PDF vectoriels** (`docs/design-refs/*.pdf`). Implémentation à faire (issue
 > [#47](https://github.com/c0remusic/sift/issues/47)), en **série stricte** par lane de
 > fichiers.
 
+> **Révisée le 2026-08-25.** Quatre points du wireframe ont été retranchés depuis — bec du
+> popover, « + Nouveau dossier », badge « Prêt CDJ », taille de la pochette : voir la section
+> suivante. S'y ajoutent quatre décisions qui vivent dans leur section respective : largeur de
+> lecture **dynamique** (Zone C), bouton de lecture en **triangle nu** (Zone C, 3), **volume**
+> (Composants) et **rayons re-racinés sur le kit** (Composants). Sur tout le reste, le
+> wireframe fait foi.
+
 > L'écran de décision. Le seul en profil **Poste de décision** (`DESIGN.md` § 14).
+
+## Décisions postérieures au wireframe — tranchées le 2026-08-25
+
+Quatre points où une décision prise **après** le wireframe diverge du dessin. Les quatre
+gardent la décision postérieure, **pas** le wireframe — tranchés par Antoine.
+
+| Point | Wireframe | Retenu le 2026-08-25 |
+|---|---|---|
+| **Bec du popover Destination** | carte + **bec** vers l'ancre (§ 12) | **Sans bec** : un bouton « ▾ » ouvre un *pulldown* macOS ancré à un point, structuré en sections « Bibliothèque » / « Autres ». Le bec appartient au `NSPopover` détaché |
+| **« + Nouveau dossier »** | crée un sous-dossier in-library, **inline** (§ 12) | **Sélecteur natif** : les deux boutons du pied versent dans « Autres » ; la commande IPC `create_bin` est retirée |
+| **Badge « Prêt CDJ »** | **retenu**, dans l'en-tête Métadonnées (§ 16) | **Retiré** : le helper `paintCdjBadge` est supprimé du code |
+| **Taille de la pochette** | **taille fixe**, jamais étirée (*fix 6*) | **Mesure JS conservée** : la pochette carrée prend la hauteur du bloc texte de l'en-tête (`sizeCoverToBody`) |
 
 ## Contexte dans le shell
 
@@ -85,12 +105,17 @@ verdict — le signal central — n'était qu'un badge sur un accordéon replié
 patron **Mail** (volet de lecture plein) sans toucher à la grammaire colonne-unique de la
 file.
 
-**Largeur de lecture — le plein écran.** Chaque bloc (path bar, en-tête, lecteur,
-Métadonnées, rail) est borné à une **largeur de lecture unique (~720 px)**, sur un **seul
-bord de conduite** gauche partagé avec la file. Seul le **spectrogramme** s'étend jusqu'à
-`--measure-data` (1200 px), sur ce même bord. C'est le correctif du plein écran :
-aujourd'hui seule `.sift-player-row` est bornée ; `.sift-fil-editor` (Métadonnées) et
-`#filfoot` (rail) n'ont pas de `max-width`, d'où l'étalement en fenêtre large.
+**Largeur de lecture — dynamique, tranché le 2026-08-25.** Les blocs de la zone C (path bar,
+en-tête, lecteur, Métadonnées, rail) **suivent la largeur de la fenêtre**, comme tout le reste
+du contenu : **pas de plafond de lecture fixe**. Une version antérieure de cette spec les
+bornait à une « largeur de lecture unique (~720 px) » — c'était une proposition, jamais
+livrée, et elle est abandonnée. Ils gardent en revanche le **même bord de conduite gauche**,
+partagé avec la file.
+
+Seul le **spectrogramme** garde une borne, et elle est **technique, pas confortable** :
+`--measure-data` (1200 px), **dupliquée côté Rust** dans `analysis::spectrum::MAX_COLS` (cf.
+§ Contexte dans le shell). Au-delà, la donnée serait étirée — donc fausse, dans l'app qui
+détecte du faux.
 
 Ordre vertical, et il est le parcours de décision :
 
@@ -99,47 +124,55 @@ Ordre vertical, et il est le parcours de décision :
    monospace**. Patron *path control* (HIG « Path controls » / `NSPathControl`, la barre
    de chemin du Finder) : segments, troncature **par le milieu** si trop long (garder le
    premier et le dernier). Le mono est un réflexe Terminal, écarté ici.
-2. **En-tête piste** — **pochette à taille fixe** (~56 px, alignée en haut, **jamais
-   étirée** à la hauteur du texte : `sizeCoverToBody` est abandonné) + titre + artiste +
-   **format** (petite ligne : `FLAC · 44,1 kHz`). Le **verdict** est une **pastille
+2. **En-tête piste** — **pochette carrée, à la hauteur du bloc texte** + titre + artiste +
+   **format** (petite ligne : `FLAC · 44,1 kHz`). Cette hauteur se **mesure en JS**
+   (`sizeCoverToBody` + un `ResizeObserver`) : le pur CSS (`aspect-ratio:1` +
+   `align-self:stretch`) rend une largeur **nulle** dans ce contexte flex, mesuré au CDP, et
+   une mesure ponctuelle raterait le reflow tardif (chargement d'Outfit, pose du verdict).
+   **Conservée le 2026-08-25** contre le *fix 6* du wireframe, qui voulait une taille fixe —
+   décision d'Antoine. Le **verdict** est une **pastille
    discrète en haut à droite**, au niveau du titre : **point coloré + mot** (`LOSSLESS`,
    `FAKE`, `À VÉRIFIER`, `—`), **sans capsule**, ~10 px / 500. La couleur (teinte de la
    table, `.sift-lib-v-*`) double le libellé (§ 16, daltonisme). **Dit une seule fois**,
    ici — jamais répété plus bas. Discret par choix : Apple Music tient « Lossless » en
    indicateur neutre parce qu'il n'a qu'un état ; Sift garde la couleur (verdict
    catégoriel : lossless / faux / douteux) mais lâche le poids (fond, majuscules 600).
-3. **Lecture** — bouton play **triangle nu** (sans cercle, patron Voice Memos / Musique) ·
+3. **Lecture** — bouton play **triangle nu** : sans cercle **ni pastille** derrière lui
+   (patron Voice Memos / Musique ; reconfirmé le 2026-08-25) ·
    **waveform-overview** fine + pouce rond blanc (bord + ombre) : l'onde tient lieu de
    piste de navigation, exactement le *scrubber* de Voice Memos ; l'inspection fine du
    signal reste au spectrogramme, pas ici · **un seul temps affiché, cliquable** (bascule
-   écoulé ↔ restant, patron Musique / Podcasts — jamais les deux à la fois) · volume
-   **replié en icône au repos, déplié au survol** (décision D, 2026-08-24) : au repos une
-   **icône haut-parleur** seule (cône simple du kit, § 04-07) ; au survol la **pilule volume
-   macOS** se déplie — piste fine + pastille ronde blanche, fill accent, icône intégrée à
-   gauche. La waveform ne s'anime pas au chargement. Tempo / key-lock **retirés** : le
-   pitch DJ n'est pas voulu sur un écran de décision.
+   écoulé ↔ restant, patron Musique / Podcasts — jamais les deux à la fois) · **volume =
+   capsule du kit, toujours visible** : pilule pleine hauteur, haut-parleur intégré à gauche
+   (clic = couper), gros pouce rond, remplissage à gauche du pouce. Le repli-au-survol de la
+   décision D (2026-08-24) est **abandonné le 2026-08-25** ; teintes, survol et pressé :
+   § Composants — Volume. La waveform ne s'anime pas au chargement. Tempo / key-lock
+   **retirés** : le pitch DJ n'est pas voulu sur un écran de décision.
 4. **Métadonnées** — **toujours visible**, en **liste d'attributs éditables en place**
    (*text field inline* : texte au repos, champ + anneau d'accent au focus ; patron
    inspecteur Finder « Lire les informations »). Artiste / Titre / Version éditables ;
    Label en lecture seule ; **genres en texte + icône tag** (glyphe *tag* du kit, § 01
    Icons — « Electronic, Synth-pop », **pas de chips** ; décision F, 2026-08-24). L'en-tête
-   de section porte, à droite du titre « Métadonnées » : le badge **« Prêt CDJ »** (coche +
-   mot ; passe en **warning + raison** si la piste n'est pas prête, jamais masqué) puis le
-   bouton **« Identifier »** — « Identifier » lance la recherche Discogs et remplit ces
+   de section porte, à droite du titre « Métadonnées », le **seul** bouton
+   **« Identifier »** : le badge **« Prêt CDJ »** qui l'y précédait a été **retiré le
+   2026-08-25** (demande d'Antoine ; le helper `paintCdjBadge` est supprimé du code).
+   « Identifier » lance la recherche Discogs et remplit ces
    mêmes champs, **sans changer de mode** (plus de formulaire à entrer). Quand **plusieurs
    éditions** matchent, elles s'affichent en **liste ouverte inline** (patron Spotlight « Top
    Hit ») : le meilleur match est **pré-appliqué**, les alternatives se permutent d'un clic
    (navigables ↑↓), sans popover ni changement de mode. Le clic sur un match **écrit l'ID3
    immédiatement** (décision datée 2026-08-21, « Entrée = graver »), avec un filet
    **« Rétablir »** inline (+ `Échap`) pour défaire. **La ligne
-   « Tags ID3 » est supprimée** (tautologique : « Tags ID3 : ID3 »). Critère CDJ défini
-   (`docs/cdj-metadata-formats.md`, WAV exclu) mais code à recâbler
-   ([#46](https://github.com/c0remusic/sift/issues/46)).
+   « Tags ID3 » est supprimée** (tautologique : « Tags ID3 : ID3 »). Le critère CDJ reste
+   défini (`docs/cdj-metadata-formats.md`, WAV exclu) et son recâblage reste ouvert
+   ([#46](https://github.com/c0remusic/sift/issues/46)) — il n'a simplement **plus de porteur
+   visuel** sur cet écran depuis le retrait du badge.
 5. **Diagnostic audio** — **placé sous les Métadonnées** (on identifie plus souvent qu'on
    n'inspecte ; les détails techniques vont en bas du volet). Repliable, **fermé par
    défaut**, en-tête **nu** : « ▸ Diagnostic audio », **sans sous-texte** (un disclosure
-   macOS = chevron + titre, rien d'autre). Ouvert : le **spectrogramme domine** (pleine
-   largeur de lecture, la preuve du verdict) ; sous lui, **deux pastilles compactes**
+   macOS = chevron + titre, rien d'autre). Ouvert : le **spectrogramme domine** (toute la
+   largeur disponible jusqu'à sa borne `--measure-data`, la preuve du verdict) ; sous lui,
+   **deux pastilles compactes**
    (format · lecture du spectro, ex. `FLAC` · `Pleine bande · 22 kHz`) ; puis **« Détails »**
    qui replie **toutes** les mesures chiffrées (coupure, densité de l'aigu, durée,
    true-peak, phase, écrêtage, canaux, silence…). Le verdict n'est **pas** répété ici, ni
@@ -263,10 +296,13 @@ transition d'écran. La forme d'onde ne s'anime pas au chargement. En **fin de p
 lecture s'arrête et le playhead revient à **0** — pas d'auto-avance vers la suivante (la
 zone C ne se recompose pas sous l'utilisateur, patron Musique piste isolée).
 
-## Composants — calés sur le kit Big Sur (PDF)
+## Composants — calés sur le kit Big Sur
 
 Relevés sur `docs/design-refs/macOS Big Sur UI Kit (Community).pdf` (vectoriel) ; les
-valeurs chiffrées restent des tokens `styles.css`, jamais extraites au pixel.
+valeurs chiffrées restent des tokens `styles.css`, jamais extraites au pixel. Depuis le
+**2026-08-25**, le kit est aussi relevé au **pont Figma REST** (fileKey
+`k3ek2XpmIKjqiFUsyn5kCi`), **nœud par nœud** — c'est ce relevé qui a re-raciné l'échelle de
+rayons (ci-dessous).
 
 - **Convertir** = *push button* primaire : aplat d'accent (`--color-accent-fill`) + texte
   blanc (`--color-accent-ink`).
@@ -285,22 +321,34 @@ valeurs chiffrées restent des tokens `styles.css`, jamais extraites au pixel.
 - **Slider** (waveform-overview) = piste fine + **pastille ronde** (bord + ombre) ; portion
   active en accent.
 - **Volume** = **capsule macOS Big Sur toujours visible** (kit § 07-Slider Pickers, rangée 1) :
-  pilule pleine hauteur, **haut-parleur intégré à gauche** (clic = mute), gros pouce rond,
-  remplissage à gauche du pouce. Le repli-au-survol (ex-décision D) est **abandonné** —
-  « le design n'est pas bon du tout » (Antoine 2026-08-25), on tient le composant du PDF.
-  Remplissage = **blanc** (`--color-knob`, fidèle au kit — Antoine préfère le blanc, 2026-08-25) ;
-  piste grise (`--color-slider-capsule`, sinon blanc sur blanc en thème clair), icône foncée
-  (`--color-knob-glyph`, sinon blanc sur blanc en sombre) toujours posée sur le blanc, pouce blanc
-  détaché par son ombre. Pouce et remplissage bornés à gauche (24px) pour tenir l'icône sur le blanc.
-- **Badge « Prêt CDJ »** = *label* d'état (coche + mot) dans l'en-tête Métadonnées ; variante
-  **warning + raison** quand la piste n'est pas prête.
-- **Popover** (Destination) = carte arrondie + **bec** vers l'ancre + ombre ; arbre +
-  groupe « Autres » (dossiers custom) + « Nouveau dossier » / « Choisir un dossier… » →
-  explorateur natif, le dossier choisi **entre dans la liste**.
+  pilule pleine hauteur, **haut-parleur intégré à gauche** (clic = couper), gros pouce rond,
+  remplissage à gauche du pouce, pouce et remplissage **bornés à gauche** pour que l'icône
+  reste posée sur le remplissage. Le repli-au-survol (ex-décision D) est **abandonné** —
+  « le design n'est pas bon du tout » (Antoine 2026-08-25), on tient le composant du kit.
+
+  **Inversion en thème clair, tranchée le 2026-08-25.** En **sombre**, le remplissage reste
+  **clair sur piste sombre**, fidèle au kit. En **clair**, il passe **foncé sur piste claire**.
+  La mesure qui a décidé : le contraste remplissage / piste vaut **1,45:1 en clair** contre
+  **12,67:1 en sombre** — sous le **3:1** qu'exige WCAG 1.4.11 pour un composant d'interface.
+  En clair, le remplissage du kit ne se voyait donc pas du tout ; ce n'est pas une préférence
+  de teinte, c'est un seuil franchi. **Survol et pressé** sont ajoutés dans le même geste : le
+  kit les donne, la première version ne portait que le repos.
+- **Popover** (Destination) = carte arrondie **sans bec** + ombre, ancrée au bouton « ▾ »
+  (*pulldown* du kit § 05 ; le bec appartient au `NSPopover` détaché, **retiré le
+  2026-08-25**) ; sections façon sidebar Finder — en-tête « Bibliothèque » sur l'arbre,
+  « Autres » sur les dossiers custom — puis « Nouveau dossier » / « Choisir un dossier… » →
+  sélecteur natif, le dossier choisi **entre dans la liste**.
 - **Alerte** (Lot) = carte + titre + message + boutons secondaire/primaire + « ne plus
   demander ».
 - **Rail (sidebar)** = item actif **gris arrondi**, **jamais bleu** (le kit montre le bleu ;
   `DESIGN.md` § 14 l'écarte, le bleu est déjà pris — on tient le gris).
+- **Rayons** = échelle **re-racinée sur le kit le 2026-08-25** (commit `b973ce3`,
+  `DESIGN.md` § 3) : `--border-radius-xs` **4** (case à cocher) · `--border-radius-sm` **5**
+  (item de menu, champ texte, segmenté) · `--border-radius-md` **7** (bouton, champ de
+  recherche, pulldown, bouton icône) · `--border-radius-lg` **14** (grandes surfaces,
+  inchangé, et seul cran qui ne vient pas du kit). L'ancienne dérivation par `calc()` donnait
+  8 et 10 : les neuf composants livrés de Revue étaient **tous** décalés d'un cran vers le
+  rond, pour cette seule raison. Toujours le token, **jamais un littéral**.
 - **Typographie** = 3 tailles effectives (`--text-lg` 15 / `--text-base` 13 / `--text-sm`
   11), hiérarchie par l'**encre**, **monospace réservé** aux chiffres alignés en colonne
   (durées, mesures) + `tabular-nums`. Échelle SF Pro du styleguide confirmée
@@ -314,13 +362,15 @@ contredit une décision figée ; c'est le **code** qui bouge, pas la décision.
 1. **Volume — capsule Big Sur, repli abandonné (résolu 2026-08-25)** — le repli-au-survol
    (ex-décision D) a été **retiré** : Antoine l'a rejeté (« le design n'est pas bon du tout »)
    au profit du **composant capsule du kit** (§ 07-Slider Pickers, rangée 1, relevé sur les PDF
-   `docs/design-refs/`). `.sift-volume-block` et la base partagée `.sift-slider-*` (seul autre
-   consommateur, le slider tempo, déjà retiré) sont supprimés ; `.sift-volume-track` **est**
-   désormais la capsule — position du pouce et largeur du remplissage pilotées par `--vol`,
-   pouce borné dans la capsule (jamais tronqué). Mute câblé (icône intégrée à gauche, clic →
-   `setVolume(0)` ↔ dernier volume, glyphe barré à 0). Géométrie mesurée dans les deux thèmes
-   avant livraison. ⚠️ `DESIGN.md` § 17 (« le débordement de `.sift-volume-track` n'est pas un
-   défaut ») décrit le mécanisme retiré — périmé, ne pas s'y fier pour restaurer le repli.
+   `docs/design-refs/`). `.sift-volume-block`, `.sift-volume-track` et la base partagée
+   `.sift-slider-*` (seul autre consommateur, le slider tempo, déjà retiré) sont supprimés ;
+   la capsule est désormais le **SVG du kit inliné tel quel** — `.sift-volume`, qui **est**
+   le slider (`role="slider"`), le rendu ne pilotant que la largeur du remplissage et le `cx`
+   du pouce. Coupure du son câblée (icône intégrée à gauche, clic → `setVolume(0)` ↔ dernier
+   volume, glyphe barré à 0). Géométrie mesurée dans les deux thèmes avant livraison.
+   ⚠️ `DESIGN.md` § 17 (« le débordement de `.sift-volume-track` n'est pas un défaut »)
+   décrivait le mécanisme retiré : **marqué périmé sur place le 2026-08-25**, à ne pas
+   invoquer pour restaurer le repli.
 2. **Deux temps au lecteur** — `report-view.ts:898-908` affiche écoulé **et** restant (façon
    SoundCloud) ; la spec (Zone C, lecture) veut **un seul temps cliquable**. → un seul.
 3. **Bandeau « Rangé » vert permanent** — `styles.css:2438`
@@ -348,11 +398,13 @@ pour le séparer du doute « à vérifier » (qui garde l'ambre). `DESIGN.md:265
   Le dépôt a l'outil pour chiffrer la durée (`bench_sqlite.rs` via
   `SIFT_BENCH_TRACKS_DIR`, `--ignored`) et ce chiffre n'existe pas. **Décision
   d'architecture, pas de design.**
-- **Critère du badge CDJ — établi, code à recâbler.** Le WAV est le vrai cas d'échec
-  (tags non affichés fiablement). `tags_cdj_ok` (`analysis/tags.rs`) reste à recâbler sur
-  le format réel via `lofty` ([#46](https://github.com/c0remusic/sift/issues/46)).
-  Question restante : intégrer la contrainte codec / génération (FLAC/ALAC ≥ 2016) au
-  badge, ou la laisser hors champ.
+- **Critère CDJ — établi, badge retiré, code à recâbler.** Le badge **« Prêt CDJ » n'existe
+  plus** sur cet écran (retiré le 2026-08-25, `paintCdjBadge` supprimé) : ce qui reste ouvert
+  est **backend**, pas visuel. Le WAV est le vrai cas d'échec (tags non affichés fiablement),
+  et `tags_cdj_ok` (`analysis/tags.rs`) reste à recâbler sur le format réel via `lofty`
+  ([#46](https://github.com/c0remusic/sift/issues/46)). La question « intégrer la contrainte
+  codec / génération (FLAC/ALAC ≥ 2016) » ne se rouvrira qu'avec un éventuel nouveau porteur
+  visuel.
 - **Patron inspecteur des Métadonnées** — repris de Finder « Lire les informations » ; le
   *text field inline* du kit (§ 03-03) le confirme comme composant. La disposition exacte
   (ordre des champs, densité) se cale à l'implémentation.

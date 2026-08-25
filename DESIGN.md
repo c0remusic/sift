@@ -134,18 +134,37 @@ Règles d'application :
 
 ### Rayons
 
-Un seul nombre pilote l'échelle :
+**Re-racinés sur le kit macOS Big Sur le 2026-08-25** (commit `b973ce3`). Un seul nombre ne
+pilote plus l'échelle : les crans de contrôle sont des **valeurs relevées composant par
+composant** sur le kit (pont Figma REST, fileKey `k3ek2XpmIKjqiFUsyn5kCi`), chacune avec le
+nœud qui la porte.
 
 ```
+--border-radius-xs:4px    /* case à cocher — Buttons/Checkbox 44:314 */
+--border-radius-sm:5px    /* item de menu, champ texte, segmenté — Menu-items 58:49,
+                             Text-fields 45:1008, Segmented 47:23 */
+--border-radius-md:7px    /* bouton, champ de recherche, pulldown, bouton icône —
+                             Push 43:43, Search-fields 45:812, Pulldown 45:152, Icon 45:88 */
 --border-radius-base:14px
---border-radius-sm: calc(base - 6px)   /*  8px */
---border-radius-md: calc(base - 4px)   /* 10px */
---border-radius-lg: base               /* 14px */
+--border-radius-lg:var(--border-radius-base)   /* grandes surfaces — inchangé */
 --border-radius-pill:999px
 ```
 
-Rayon imbriqué : il se dérive du conteneur, jamais choisi séparément. Un élément
-dans une boîte `lg` prend `md` ; dans une boîte `md`, il prend `sm`.
+**Pourquoi la dérivation est tombée.** L'échelle précédente partait de 14 avec
+`sm = base − 6` (8 px) et `md = base − 4` (10 px) : aucun cran ne tombait sur une valeur du
+kit, donc les neuf composants livrés de Revue étaient tous décalés d'un cran vers le rond —
+pour une seule et même raison. Apple donne **une valeur par composant**, pas une échelle ; le
+`calc()` était la mauvaise forme pour cette source. Antoine a tranché le re-racinage plutôt
+que l'ajout de crans, tous les écrans devant changer de toute façon : les ~107 usages de
+l'app bougent avec, et c'est l'intention, pas un effet de bord.
+
+`base` / `lg` (14) **ne vient pas du kit** et ne bouge pas ; les grandes surfaces seront
+confrontées au kit quand sheets et alertes y seront mesurées.
+
+Rayon imbriqué : quand le kit **ne donne pas** de valeur pour la surface en cause, il se
+dérive du conteneur, jamais choisi séparément — un élément dans une boîte `lg` prend `md` ;
+dans une boîte `md`, il prend `sm`. Quand le kit **donne** la valeur du composant, c'est elle
+qui gagne sur la dérivation.
 
 ### Mesures et hauteurs
 
@@ -830,9 +849,12 @@ une quatrième section, au-dessus.
   désormais **en tête** (décision E, patron HIG d'une liste) ; le segmenté **Détail / Lot
   est retiré**, le mode **Batch** s'arme par une **icône de sélection dans la barre**
   (§ 11 option 4, patron « Sélectionner » Photos) qui fait apparaître les **cases par
-  ligne** dans la file — plus de table à part. La recherche **pas** dans la barre unifiée =
-  écart assumé à la règle « modes de vue dans la barre » (§ 14 A), **local à Revue** ;
-  Bibliothèque Table/Grille garde sa bascule dans la barre. Détail :
+  ligne** dans la file — plus de table à part. **Deux écarts assumés à la règle « modes de vue
+  dans la barre » (§ 14 A), tous deux locaux à Revue**, reconfirmés le 2026-08-25 : la
+  recherche n'est **pas** dans la barre unifiée, et Revue n'a **plus aucun contrôle de mode de
+  vue** — ni dans la barre, ni dans la colonne file, puisque le segmenté Détail / Lot est
+  retiré et que le sous-mode Batch s'arme par une **action** (l'icône de sélection), pas par
+  un sélecteur de mode. Bibliothèque Table/Grille garde sa bascule dans la barre. Détail :
   `docs/ui-specs/revue.md` § Zone A / B′.
 - **Bibliothèque / Table et Grille** — deux rendus de la même zone C, bascule dans la
   barre unifiée. Le tri est partagé entre les deux.
@@ -1068,9 +1090,14 @@ pas le voir ; il fallait comparer les **bords droits**. Correctif : `margin-left
 bloc `#sift-aside` (`styles.css`). Mesure après : `scrollWidth` 287 sur les deux conteneurs, zéro
 élément dépassant à droite, et `.sift-volume-block` toujours replié à 20 px au repos.
 
-**`.sift-volume-track` déborde et ce n'est PAS un défaut** — noté ici pour qu'un prochain passage ne
-le « corrige » pas : le bloc de volume est volontairement replié à 20 px au repos et s'ouvre au
-survol. Le corriger casserait le contrôle.
+**~~`.sift-volume-track` déborde et ce n'est PAS un défaut~~ — PÉRIMÉ le 2026-08-25.** Ce paragraphe
+protégeait un mécanisme qui n'existe plus : le repli-au-survol a été **retiré** (Antoine, 2026-08-25,
+« le design n'est pas bon du tout »), `.sift-volume-block` avec lui, et le volume est désormais la
+**capsule du kit Big Sur, toujours visible**, inlinée telle quelle en SVG (`.sift-volume` dans
+`report-view.ts`). Il n'y a donc plus ni bloc replié à 20 px au repos, ni débordement à ne pas
+corriger. La note reste ici **barrée plutôt que supprimée** parce qu'elle servait justement à
+empêcher un « correctif » sur un choix volontaire : qui la relit doit voir qu'elle a été levée, et
+non ne rien trouver. Composant et décision : `docs/ui-specs/revue.md` § Composants — Volume.
 
 **`docs/archive/TECH_DEBT_AUDIT.md` porte une tâche ouverte (F08) sur un fichier supprimé** —
 `frontend/home-sources.ts:40`. Archive, donc non corrigée dans ce geste, mais la case reste cochable
