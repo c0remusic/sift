@@ -152,15 +152,20 @@ Ordre vertical, et il est le parcours de décision :
 Barre persistante, **à plat** (pas de carte, `.sift-action-rail--flat`), jamais dans le
 flux de défilement.
 
-Rangée du haut, réglages : **Destination** (bouton ouvrant l'arbre en **popover** — carte
-arrondie + **bec** pointant vers le bouton, patron *popover* du kit § 06-03, avec ombre ;
+Rangée du haut, réglages : **Destination** (bouton ouvrant l'arbre en **pulldown** — carte
+arrondie alignée au bouton, **sans bec**, patron *menu/pulldown* du kit § 05, avec ombre ;
 détail ci-dessous) · **Format** (contrôle segmenté : MP3 320 · AIFF 16/44 · WAV 16/44,
 options lossless désactivées sur source lossy) · **Nom final** (aperçu, rendu par
 `previewFilename`, **jamais** réimplémenté en TS).
 
-**Popover Destination** (décision B, 2026-08-24). Une carte + bec (kit § 06-03). En haut,
+**Popover Destination** (décision B, 2026-08-24 ; **bec retiré le 2026-08-25** — un bouton « ▾ »
+ouvre un *pulldown* macOS, ancré à un point et **sans bec** ; le bec appartient au NSPopover
+détaché, kit § 06-03, cf. `patterns-macos.md` § 8). Une carte alignée, structurée en **sections
+façon sidebar Finder** : un en-tête **« Bibliothèque »** coiffe l'arbre, **« Autres »** coiffe les
+dossiers externes (style relevé du composant kit `Sidebars/Sidebar-section` via le pont Figma :
+10px / poids 600 / tracking 0.12 / casse normale, encre mappée sur token gris). En haut,
 l'**arbre** des dossiers de la bibliothèque (chevron + icône dossier + nom, indentés) ; le
-dossier courant est **surligné**. Sous un groupe **« Autres »**, les **dossiers custom**
+dossier courant est **surligné**. Sous le groupe **« Autres »**, les **dossiers custom**
 déjà choisis hors bibliothèque (ex. `Sets 2026 · D:\Promo`). Un séparateur, puis **« Ranger
 sur place (ne pas déplacer) »** (case). En pied : **« + Nouveau dossier »** — ouvre
 l'**explorateur natif** pour choisir où le créer — et **« Choisir un dossier… »** —
