@@ -14,6 +14,7 @@ import { slideSegThumb } from "./seg-thumb";
 import { toast } from "./filing-toast";
 import { humanizeError } from "./errors";
 import { filingFailure, isFilingInFlight, onFilingOutcome } from "./filing-state";
+import { anchoredBelowPosition } from "./popover-position";
 
 /** A pending track still worth (re)analysing: no current verdict AND not yet terminally broken.
  *  Single source of truth for the "Non analysés" count, filter, and bulk-retry set — a track that
@@ -100,6 +101,25 @@ let queueSearchTerm = "";
 // while thousands of genuinely not-yet-reviewed tracks sat hidden behind the toggle.
 let queueUnanalyzedOnly = false;
 
+// Filtre par facettes (UNION multi-critères) — cases cochées dans le popover « Filtrer ». Set au
+// niveau module : survit aux re-rendus (poll 300ms, queue:changed), ne tombe que sur une action
+// explicite (case décochée, « Tout afficher »). Vide = tout montrer. Critères dérivés de QueueItem,
+// zéro Rust (verdict/rail/dup, shared/contracts.ts). « MP3 » = approximation `rail==="lossy"` :
+// QueueItem n'a pas de champ format/extension, un MP3-vs-AAC exact exigerait un champ de contrat.
+const queueFacetFilter = new Set<string>();
+const QUEUE_FACETS: readonly { id: string; label: string; match: (it: QueueItem) => boolean }[] = [
+  { id: "lossless", label: "Lossless", match: (it) => it.rail === "lossless" },
+  { id: "mp3", label: "MP3", match: (it) => it.rail === "lossy" },
+  { id: "fake", label: "Faux", match: (it) => it.verdict === "fake" },
+  { id: "dup", label: "Doublons", match: (it) => it.dup },
+];
+
+/** UNION : un item passe s'il satisfait AU MOINS une facette active. Set vide = aucun filtre. */
+function matchesFacet(it: QueueItem): boolean {
+  if (queueFacetFilter.size === 0) return true;
+  return QUEUE_FACETS.some((f) => queueFacetFilter.has(f.id) && f.match(it));
+}
+
 function visibleQueueItems(): QueueItem[] {
   // Search deliberately searches ALL items regardless of the analysis filter — limiting search
   // results to whatever's currently shown would silently return 0 hits for an analyzed track
@@ -110,13 +130,16 @@ function visibleQueueItems(): QueueItem[] {
     : queueUnanalyzedOnly
       ? unanalyzedItems()
       : currentItems;
-  if (!queueSearchTerm) return base;
   const q = queueSearchTerm.toLowerCase();
+  // Recherche (si présente) ET facettes (union) se composent : la recherche cherche dans tout
+  // (ci-dessus), les facettes restreignent ; Set de facettes vide → matchesFacet rend true.
   return base.filter(
     (it) =>
-      (it.filename ?? it.path).toLowerCase().includes(q) ||
-      (it.artist ?? "").toLowerCase().includes(q) ||
-      (it.title ?? "").toLowerCase().includes(q),
+      (!queueSearchTerm ||
+        (it.filename ?? it.path).toLowerCase().includes(q) ||
+        (it.artist ?? "").toLowerCase().includes(q) ||
+        (it.title ?? "").toLowerCase().includes(q)) &&
+      matchesFacet(it),
   );
 }
 
@@ -417,6 +440,7 @@ export async function renderQueue(touchDetail = true) {
     if (qcol) {
       ensureQueueDoneToggle(qcol);
       ensureQueueSearch(qcol);
+      ensureQueueFacet(qcol);
     }
     // Live destination bins. Cet appel vit DANS le bloc de cache et non en tête de fonction :
     // ce chemin `return` plus bas, donc il n'atteint jamais l'appel gardé par `touchDetail`, et
@@ -517,6 +541,7 @@ export async function renderQueue(touchDetail = true) {
   if (qcol) {
     ensureQueueDoneToggle(qcol);
     ensureQueueSearch(qcol);
+    ensureQueueFacet(qcol);
   }
   // Background-analysis progress moved to the global progress zone (bottom of #nav, persistent
   // across views) — see pushAnalyzeProgress, fed by the analysis:changed event below.
@@ -737,6 +762,156 @@ export function focusQueueSearch(): boolean {
   input.focus();
   input.select();
   return true;
+}
+
+// ---------------------------------------------------------------------------
+// Filtre par facettes — bouton dans l'en-tête « File » + popover cochable
+// ---------------------------------------------------------------------------
+
+/** Re-applique le filtre à la file affichée (après une case cochée / « Tout afficher »). */
+function applyFacetFilter(): void {
+  const ql = document.getElementById("ql");
+  if (ql) {
+    ql.scrollTop = 0; // une liste plus courte peut laisser scrollTop pointer dans le vide
+    renderQueueWindow(ql);
+  }
+}
+
+/** Ferme le popover de facettes. Exporté pour dismissTopmost (shortcuts.ts) + l'auto-fermeture. */
+export function closeQueueFacet(): void {
+  const pop = document.getElementById("sift-qfacet-pop");
+  if (!pop || pop.hidden) return;
+  pop.hidden = true;
+  document.querySelector('[data-fil="qfacet"]')?.setAttribute("aria-expanded", "false");
+}
+
+/** Ancre le popover sous le bouton filtre, depuis la géométrie du moment (rejouable). */
+function placeQueueFacet(): void {
+  const pop = document.getElementById("sift-qfacet-pop");
+  const btn = document.querySelector<HTMLElement>('[data-fil="qfacet"]');
+  if (!pop || pop.hidden || !btn) return;
+  const r = btn.getBoundingClientRect();
+  const { top, left } = anchoredBelowPosition(
+    { top: r.top, bottom: r.bottom, left: r.left },
+    pop.offsetWidth,
+    pop.offsetHeight,
+    document.documentElement.clientWidth,
+    document.documentElement.clientHeight,
+  );
+  pop.style.top = `${top}px`;
+  pop.style.left = `${left}px`;
+}
+
+/** Ouvre/ferme le popover. Les cases reflètent queueFacetFilter à chaque ouverture (muter, pas
+ *  rebuild). Placement au SECOND frame — le style n'est pas recalculé au premier dans WebView2
+ *  (même leçon que le popover de facettes de Bibliothèque et le placement du popover Destination). */
+function toggleQueueFacet(): void {
+  const pop = document.getElementById("sift-qfacet-pop");
+  const btn = document.querySelector<HTMLElement>('[data-fil="qfacet"]');
+  if (!pop || !btn) return;
+  if (!pop.hidden) {
+    closeQueueFacet();
+    return;
+  }
+  pop.querySelectorAll<HTMLInputElement>("input[data-facet]").forEach((cb) => {
+    cb.checked = queueFacetFilter.has(cb.dataset.facet || "");
+  });
+  pop.hidden = false;
+  btn.setAttribute("aria-expanded", "true");
+  requestAnimationFrame(() => requestAnimationFrame(() => placeQueueFacet()));
+}
+
+/** Reflète le nombre de facettes actives sur le bouton (compte + teinte d'accent). */
+function paintFacetButton(btn: HTMLElement): void {
+  const n = queueFacetFilter.size;
+  btn.classList.toggle("on", n > 0);
+  btn.setAttribute("aria-pressed", n > 0 ? "true" : "false");
+  const count = btn.querySelector<HTMLElement>(".sift-qfacet-count");
+  if (count) count.textContent = n > 0 ? String(n) : "";
+}
+
+// Auto-fermeture (scroll / resize / clic extérieur), câblée une fois. Le popover est ancré à un
+// POINT : défiler ou redimensionner le ferme plutôt que courir après la géométrie — même règle que
+// le menu contextuel et le popover de facettes de Bibliothèque.
+let queueFacetDismissWired = false;
+function ensureQueueFacetDismiss(): void {
+  if (queueFacetDismissWired) return;
+  queueFacetDismissWired = true;
+  const close = () => closeQueueFacet();
+  document.addEventListener("scroll", close, { capture: true });
+  window.addEventListener("resize", close);
+  document.addEventListener(
+    "click",
+    (e) => {
+      const pop = document.getElementById("sift-qfacet-pop");
+      if (!pop || pop.hidden) return;
+      const t = e.target as Node;
+      if (pop.contains(t) || (t as HTMLElement).closest?.('[data-fil="qfacet"]')) return;
+      closeQueueFacet();
+    },
+    { capture: true },
+  );
+}
+
+/** Bouton « Filtrer » (dans l'en-tête .sift-qhead) + son popover cochable, créés UNE fois puis mutés
+ *  — appelé au rendu de la file (poll compris), donc JAMAIS innerHTML= en rafale : le markup est posé
+ *  au premier montage, les appels suivants ne re-peignent que l'état (compte, teinte). Réutilise la
+ *  classe .sift-facet-pop (styles.css) et la géométrie anchoredBelowPosition (popover-position.ts). */
+function ensureQueueFacet(qcol: HTMLElement): void {
+  ensureQueueFacetDismiss();
+  const head = qcol.querySelector<HTMLElement>(".sift-qhead");
+  let btn = document.getElementById("sift-qfacet-btn");
+  if (head && !btn) {
+    btn = document.createElement("button");
+    btn.id = "sift-qfacet-btn";
+    btn.className = "sift-qfacet-btn";
+    btn.setAttribute("type", "button");
+    btn.setAttribute("data-fil", "qfacet");
+    btn.setAttribute("aria-haspopup", "true");
+    btn.setAttribute("aria-expanded", "false");
+    btn.setAttribute("title", "Filtrer la file");
+    btn.setAttribute("aria-label", "Filtrer la file");
+    btn.innerHTML =
+      '<i class="ti ti-filter" aria-hidden="true"></i><span class="sift-qfacet-count" aria-hidden="true"></span>';
+    btn.addEventListener("click", (e) => {
+      e.stopPropagation();
+      toggleQueueFacet();
+    });
+    head.appendChild(btn);
+  }
+  if (!document.getElementById("sift-qfacet-pop")) {
+    const pop = document.createElement("div");
+    pop.id = "sift-qfacet-pop";
+    pop.className = "sift-facet-pop";
+    pop.hidden = true;
+    // Libellés STATIQUES (QUEUE_FACETS), aucune donnée non fiable — esc() par prudence de site neuf.
+    pop.innerHTML =
+      QUEUE_FACETS.map(
+        (f) =>
+          `<label class="sift-qfacet-opt"><input type="checkbox" data-facet="${esc(f.id)}"> ${esc(f.label)}</label>`,
+      ).join("") +
+      '<button type="button" class="sift-qfacet-reset" data-facet-reset>Tout afficher</button>';
+    pop.querySelectorAll<HTMLInputElement>("input[data-facet]").forEach((cb) =>
+      cb.addEventListener("change", () => {
+        const id = cb.dataset.facet || "";
+        if (cb.checked) queueFacetFilter.add(id);
+        else queueFacetFilter.delete(id);
+        const b = document.getElementById("sift-qfacet-btn");
+        if (b) paintFacetButton(b);
+        applyFacetFilter();
+      }),
+    );
+    pop.querySelector("[data-facet-reset]")?.addEventListener("click", () => {
+      queueFacetFilter.clear();
+      pop.querySelectorAll<HTMLInputElement>("input[data-facet]").forEach((cb) => (cb.checked = false));
+      const b = document.getElementById("sift-qfacet-btn");
+      if (b) paintFacetButton(b);
+      applyFacetFilter();
+      closeQueueFacet();
+    });
+    qcol.appendChild(pop);
+  }
+  if (btn) paintFacetButton(btn);
 }
 
 /** Fill the Review nav badge with the pending count (board's "Revue [18]"). Runs from refresh()

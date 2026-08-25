@@ -131,7 +131,7 @@ function revueShell(content: HTMLElement): void {
   content.innerHTML =
     `<div class="sift-revue-row">` +
     `<div class="queue" id="qcol" style="width:${qcolWidth()}px">` +
-    `<span class="col-h">File</span>` +
+    `<div class="sift-qhead"><span class="col-h">File</span></div>` +
     `<div id="ql"></div>` +
     `</div>` +
     `<div class="sift-qresize" title="Redimensionner la file"></div>` +

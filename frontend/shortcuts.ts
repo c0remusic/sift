@@ -16,7 +16,7 @@
 // une couche globale qui prendrait une lettre nue les écraserait sur tous les écrans.
 import { goTo, type ViewId } from "./router";
 import { focusBarSearch } from "./toolbar";
-import { focusQueueSearch } from "./queue-panel";
+import { focusQueueSearch, closeQueueFacet } from "./queue-panel";
 import { toggleRail } from "./chrome";
 import {
   selectAllVisible,
@@ -59,6 +59,14 @@ function dismissTopmost(): boolean {
   const popover = document.querySelector<HTMLElement>(".sift-dest-popover:not([hidden])");
   if (popover) {
     document.querySelector<HTMLElement>('[data-fil="destbtn"]')?.click();
+    return true;
+  }
+  // Filtre de la file de Revue (#sift-qfacet-pop) : même classe `.sift-facet-pop` que le sélecteur
+  // de Bibliothèque, mais un id et une fermeture propres — la branche biblio ci-dessous fermerait
+  // #sift-facet-pop, pas celui-ci. D'où le test par id, AVANT elle.
+  const qfacet = document.getElementById("sift-qfacet-pop");
+  if (qfacet && !qfacet.hidden) {
+    closeQueueFacet();
     return true;
   }
   // Sélecteur de facette de Bibliothèque (2026-08-19). Fermé directement et non par un clic
