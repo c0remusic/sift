@@ -1,8 +1,6 @@
 import { identify, applyIdentity, applyTags, trackFileTags, openUrl, revertBatch } from "./ipc";
 import type { Candidate, AppliedIdentity } from "./ipc";
-import type { AnalysisReport } from "../shared/contracts";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { row } from "./report-view";
 import { identifyErrorHtml, renderCandidates } from "./identify-shared";
 import { requireEl, esc } from "./dom";
 import { state, openState } from "./filing-state";
@@ -348,7 +346,7 @@ async function doIdentify(
   }
 }
 
-export function renderEditor(host: HTMLElement, mid: HTMLElement, rail: string, report: AnalysisReport | null): void {
+export function renderEditor(host: HTMLElement, mid: HTMLElement, rail: string): void {
   void rail;
   const c = state.canonical;
   if (!c) {
@@ -394,20 +392,17 @@ export function renderEditor(host: HTMLElement, mid: HTMLElement, rail: string, 
     // Rebuy link slot — filled by refreshRebuyLink() only for a fake track that also has a Discogs
     // match (empty, no gap, otherwise). Placed after genres so the identity block reads whole first.
     `<div class="sift-rebuy"></div>` +
-    // Tags ID3: moved here from the spectral-proof box (report-view.ts) — the maquette groups it
-    // with Label/Année/Genre in Identification, not with the spectrum evidence. Compatibilité CDJ
-    // moved OUT of this card (FIX-4): it now surfaces as an explicit "CDJ" chip right under the
-    // main verdict (report-view.ts::evidenceChipsHtml) instead of a generic yes/no row buried here.
-    // Renamed from "Version ID3" (2026-07-06 annotation): id3_version is a container-tag-presence
-    // flag (backend only ever sets it for .mp3, tags.rs), unrelated to the Discogs release Version
-    // field edited just above — the shared word "version" read as if applying the Discogs identity
-    // should populate this row, which it never does. Row is omitted entirely (not "—") when the
-    // container has no ID3 tag reading (AIFF/WAV, or analysis failure) — nothing to report there.
-    (report?.id3_version
-      ? `<div class="sift-spectro-rows">` +
-        row("Tags ID3", report.id3_version) +
-        `</div>`
-      : "") +
+    // Plus de ligne « Tags ID3 » ici (spec docs/ui-specs/revue.md § Zone C, point 4, annotation
+    // d'Antoine « supprimé ») : `report.id3_version` est un drapeau de PRÉSENCE de tag conteneur —
+    // le backend ne le renseigne que pour .mp3, et il y vaut la chaîne « ID3 » (analysis/tags.rs) —
+    // si bien que la ligne rendue disait « Tags ID3 : ID3 ». Tautologique. Elle avait déjà été
+    // renommée une fois (« Version ID3 », annotation 2026-07-06) parce que le mot « version »
+    // partagé avec le champ Version de Discogs juste au-dessus laissait croire qu'appliquer une
+    // identité la remplissait, ce qu'elle n'a jamais fait : le renommage n'a pas suffi, la ligne
+    // part. Ne pas la restaurer sans rouvrir la décision. Ce que la piste vaut pour un CDJ se dit
+    // par le badge « Prêt CDJ » de l'en-tête Métadonnées (critère à recâbler, #46), pas ici.
+    // Elle était le SEUL usage du rapport d'analyse dans cet éditeur : le paramètre `report` de
+    // renderEditor et l'import de `row` (report-view) sont partis avec elle.
     // Discrepancy banner — sits JUST BELOW Apply. Hidden by default via inline display:none; the LONE
     // visibility mechanism is refreshDiscrepancy toggling style.display (no `hidden`+display conflict).
     // Look lives in .sift-tag-warn (styles.css). Shown only when the display diverges from the file.
@@ -455,6 +450,18 @@ export function renderEditor(host: HTMLElement, mid: HTMLElement, rail: string, 
     .querySelectorAll<HTMLInputElement>('[data-fil="artist"],[data-fil="title"],[data-fil="version"],[data-fil="label"]')
     .forEach((el) => {
       let focusVal = el.value;
+      // Drapeau « ce blur-ci vient d'Échap, il ne grave RIEN ». Posé juste avant `el.blur()` du
+      // chemin Échap, lu par le handler de blur ci-dessous. Corrige le bug du 2026-08-25 : Échap
+      // annulait à l'écran (revert à `focusVal`) puis appelait `blur()`, dont le handler grave dès
+      // que l'affichage diverge du fichier — donc ANNULER ÉCRIVAIT sur le disque. Le cas qui le rend
+      // visible : une piste identifiée mais pas encore gravée, où `focusVal` diverge DÉJÀ du fichier,
+      // si bien que le revert ne fait pas retomber `tagFieldDiffs().any`.
+      // Drapeau plutôt que retrait/repose du listener : `blur()` est dispatché SYNCHRONEMENT, donc
+      // la durée de vie du drapeau est exactement celle de l'appel et il ne peut pas fuir sur un blur
+      // ultérieur ; un retrait/repose, lui, laisserait le champ définitivement sans écriture si un
+      // throw traversait entre les deux. Ne touche pas `applyingTags` (garde anti-double-fire de
+      // l'Entrée, doApplyTags), qui répond à une autre question.
+      let escapeCancel = false;
       el.addEventListener("focusin", () => {
         focusVal = el.value;
       });
@@ -469,13 +476,24 @@ export function renderEditor(host: HTMLElement, mid: HTMLElement, rail: string, 
           e.stopPropagation();
           el.value = focusVal;
           upd();
-          el.blur();
+          escapeCancel = true;
+          try {
+            el.blur();
+          } finally {
+            // `finally` et pas une remise à false dans le handler : si `el` n'a plus le focus,
+            // `blur()` est un no-op, AUCUN événement blur n'est dispatché — et le drapeau resté
+            // levé avalerait la prochaine vraie fin d'édition.
+            escapeCancel = false;
+          }
         }
       });
       el.addEventListener("blur", () => {
         // Graver EN FINISSANT l'édition (retour Antoine : plus de bouton Appliquer) — si un champ a
         // divergé du fichier. doApplyTags se garde contre le double-fire avec l'Entrée (applyingTags).
+        // `commitTitle` reste appelé même sur Échap : le titre du hero doit afficher la valeur
+        // RESTAURÉE, pas celle que l'annulation vient de jeter.
         commitTitle();
+        if (escapeCancel) return; // Échap : annuler ne grave jamais (voir escapeCancel plus haut)
         if (tagFieldDiffs().any) void doApplyTags();
       });
     });

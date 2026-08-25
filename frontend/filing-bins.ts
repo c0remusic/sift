@@ -265,14 +265,19 @@ function binNodeHtml(node: { rel: string; name: string; depth: number }): string
       }">▸</span>`
     : '<span class="sift-fld-caret-spacer"></span>';
   const icon = node.depth === 0 ? "ti-database" : "ti-folder";
-  // Highlight for the selected destination comes from .fld.on (styles.css) — background, text
-  // color and weight. Only the icon colour is genuinely new (icon isn't covered by .fld.on).
+  // Highlight for the selected destination comes from .fld.on (styles.css) — text colour and
+  // weight from the base rule, background from the popover-scoped `.sift-dest-popover .fld.on`
+  // (le fond du plan surélevé est invisible ICI : c'est déjà celui du popover). Only the icon
+  // colour is genuinely new (icon isn't covered by .fld.on).
   const iconColor = on ? "var(--color-text-info)" : "var(--color-text-tertiary)";
   // Audit-ref R4 (Revue, 2026-07-08, réf. shadcn Sidebar) : tabindex+role, clavier via
   // installNavKeyboard() (chrome.ts, sélecteur étendu pour [data-fil="bin"]).
-  let html = `<div class="fld${on} sift-fld-row" data-fil="bin" data-rel="${esc(node.rel)}" tabindex="0" role="button" title="${esc(
+  // `padding-left` reste EN LIGNE : c'est l'indentation par profondeur, la seule dimension de la
+  // rangée qui dépend de la donnée. Sa base vaut le padding horizontal du gabarit d'item
+  // (--space-8), pour que la racine parte du même bord que les rangées à plat et le pied.
+  let html = `<div class="fld${on}" data-fil="bin" data-rel="${esc(node.rel)}" tabindex="0" role="button" title="${esc(
     absPath(node.rel),
-  )}" style="padding-left:${6 + indent}px">${caret}<i class="ti ${icon} sift-fld-icon" style="font-size:var(--text-base);color:${iconColor}"></i><span class="sift-fld-label">${esc(
+  )}" style="padding-left:${8 + indent}px">${caret}<i class="ti ${icon} sift-fld-icon" style="font-size:var(--text-base);color:${iconColor}"></i><span class="sift-fld-label">${esc(
     node.name,
   )}</span></div>`;
   if (kids.length && isOpen) html += kids.map(binNodeHtml).join("");
@@ -280,11 +285,14 @@ function binNodeHtml(node: { rel: string; name: string; depth: number }): string
 }
 
 /** Flat selectable row for the filtered view: shows the full relative path so the location is
- * obvious without the tree context, with the same highlight + absolute-path tooltip as the tree. */
+ * obvious without the tree context, with the same highlight + absolute-path tooltip as the tree.
+ * Même classe `.fld` que la rangée d'arbre — un seul patron d'item de menu dans ce popover, les
+ * ex-`.sift-fld-row` / `.sift-fld-flat-row` ne portaient plus que des variantes de padding et de
+ * gap que le gabarit du kit unifie (styles.css, bloc « un seul patron d'item »). */
 function flatBinHtml(b: Bin): string {
   const on = b.rel === selRel() ? " on" : "";
   const color = on ? "var(--color-text-info)" : "var(--color-text-tertiary)";
-  return `<div class="fld${on} sift-fld-flat-row" data-fil="bin" data-rel="${esc(b.rel)}" tabindex="0" role="button" title="${esc(
+  return `<div class="fld${on}" data-fil="bin" data-rel="${esc(b.rel)}" tabindex="0" role="button" title="${esc(
     absPath(b.rel),
   )}"><i class="ti ti-folder sift-fld-icon" style="font-size:var(--text-base);color:${color}"></i><span class="sift-fld-label">${esc(
     b.rel,
@@ -301,7 +309,7 @@ function customDestHtml(path: string): string {
   const on = rel === selRel() ? " on" : "";
   const color = on ? "var(--color-text-info)" : "var(--color-text-tertiary)";
   const name = path.split(/[\\/]/).filter(Boolean).pop() || path;
-  return `<div class="fld${on} sift-fld-flat-row" data-fil="bin" data-rel="${esc(rel)}" tabindex="0" role="button" title="${esc(
+  return `<div class="fld${on}" data-fil="bin" data-rel="${esc(rel)}" tabindex="0" role="button" title="${esc(
     path,
   )}"><i class="ti ti-folder-open sift-fld-icon" style="font-size:var(--text-base);color:${color}"></i><span class="sift-fld-label"><span class="sift-custom-name">${esc(
     name,
@@ -383,7 +391,11 @@ function renderBins(fldz: HTMLElement): void {
   // wrapper — checking the box must never make itself un-clickable.
   const inPlaceChecked = binPick ? binPick.inert : detailInPlace;
   const inPlaceAttr = binPick ? 'data-sift="inplace"' : 'data-fil="inplace"';
-  const inPlaceRow = `<label class="sift-inplace-toggle"><input type="checkbox" ${inPlaceAttr}${
+  // `.fld` en plus de `.sift-inplace-toggle` : cette rangée était le seul élément du popover à ne
+  // PAS être un item de menu — un <label> nu, sans padding, sans rayon, sans survol, posé au
+  // milieu d'items qui en avaient. Elle prend le gabarit commun et garde sa case native (le dépôt
+  // ne réimplémente pas les cases, il les teinte par `accent-color` — styles.css, bloc des cases).
+  const inPlaceRow = `<label class="fld sift-inplace-toggle"><input type="checkbox" ${inPlaceAttr}${
     inPlaceChecked ? " checked" : ""
   }><span>Sur place <span class="sift-inplace-note">(dossier du fichier)</span></span></label>`;
   // Real disk path caption (maquette: "📁 {rootPath}\"), title= carries the full path for a
@@ -396,18 +408,38 @@ function renderBins(fldz: HTMLElement): void {
   // résultat entre dans « Autres » puis est sélectionné (browseExternalDest). Hors .sift-fldz-tree,
   // comme la case Sur place : toujours cliquables même quand l'arbre est grisé (in-place coché) —
   // ce sont des actions du système de fichiers, sans concept de bibliothèque.
+  //
+  // De vrais <button> depuis le 2026-08-25 : c'étaient des <div class="fld">, donc ni focusables ni
+  // annoncés, alors que ce sont les deux DERNIÈRES actions du menu. Le <button> apporte le rôle, le
+  // focus et l'activation Entrée/Espace nativement — `installNavKeyboard` (chrome.ts) ne synthétise
+  // le clic que pour les sélecteurs qu'il énumère (`[data-fil="bin"][tabindex]` en fait partie, pas
+  // ces deux-là) et il RETOURNE TÔT sur une cible <button>, donc aucun double-déclenchement n'est
+  // possible par ce chemin. Le dispatch de clic ne change pas : mêmes `data-fil`, mêmes listeners.
+  //
+  // Icônes au MÊME cran que les rangées d'arbre et « Autres » (`.sift-fld-icon` + `--text-base`) :
+  // elles portaient `.sift-icon-inline-lg` (--text-lg, 15px), deux crans au-dessus des 13px de
+  // toutes les autres rangées. C'était le dernier reste du pied comme patron distinct — un seul
+  // patron d'item veut aussi une seule colonne d'icône (kit Menu/Menu-items, node 58:49).
   const footRow =
     `<div class="sift-fldz-foot">` +
-    `<div class="fld" data-fil="newfolder"><i class="ti ti-folder-plus sift-icon-inline-lg"></i> Nouveau dossier…</div>` +
-    `<div class="fld" data-fil="browsecustom"><i class="ti ti-folder-open sift-icon-inline-lg"></i> Choisir un dossier…</div>` +
+    `<button type="button" class="fld" data-fil="newfolder"><i class="ti ti-folder-plus sift-fld-icon" style="font-size:var(--text-base)"></i> Nouveau dossier…</button>` +
+    `<button type="button" class="fld" data-fil="browsecustom"><i class="ti ti-folder-open sift-fld-icon" style="font-size:var(--text-base)"></i> Choisir un dossier…</button>` +
     `</div>`;
 
   // Ordre (décision B, revue.md:161-168) : arbre biblio + « Autres » dans le wrapper grisable
   // (filterRow/rootCaption = chrome de bibliothèque, grisés avec), puis un séparateur, puis la case
   // Sur place, puis le pied. Seuls la case ET le pied restent HORS du wrapper : cocher Sur place ne
   // doit jamais rendre sa propre case ni les actions natives non cliquables (régression connue).
+  //
+  // L'EN-TÊTE « Bibliothèque » EST DESCENDU (2026-08-25). Il ouvrait le wrapper, et le champ de
+  // filtre puis la légende de chemin s'intercalaient entre lui et le premier dossier : un en-tête
+  // de section façon sidebar Finder (kit Sidebars/Sidebar-section 61:1678) coiffe DIRECTEMENT ce
+  // qu'il nomme. C'est l'en-tête qui descend et non l'intercalaire qui remonte, parce que le
+  // filtre et la légende doivent rester DANS le wrapper grisable : sortis de là, on filtrerait et
+  // on lirait le chemin d'un arbre rendu inerte par « Sur place ». Ordre retenu :
+  // légende (quelle bibliothèque) → filtre (le contrôle) → « Bibliothèque » → arbre → « Autres ».
   fldz.innerHTML =
-    `<div class="sift-fldz-tree"><div class="sift-fldz-group-label">Bibliothèque</div>${filterRow}${rootCaption}${body}${autresGroup}</div>` +
+    `<div class="sift-fldz-tree">${rootCaption}${filterRow}<div class="sift-fldz-group-label">Bibliothèque</div>${body}${autresGroup}</div>` +
     `<div class="sift-fldz-sep"></div>` +
     inPlaceRow +
     footRow;

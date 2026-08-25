@@ -327,6 +327,11 @@ export async function openFilingInto(
     '<div class="sift-fil-scroll">' +
     '<div class="sift-fil-report"></div>' +
     '<div class="sift-fil-editor sift-fil-editor-margin"></div>' +
+    // Diagnostic SOUS les Métadonnées (wireframe § 06, fix 4) : on identifie plus souvent qu'on
+    // n'inspecte, donc les détails techniques finissent le volet — patron inspecteur. Le
+    // conteneur est rempli par openReportInto (5ᵉ argument) ; il reste vide si l'analyse échoue,
+    // ce qui est le même état qu'avant la scission (le corps d'analyse ne s'affichait pas non plus).
+    '<div class="sift-fil-diag sift-fil-editor-margin"></div>' +
     '<div class="sift-fil-verdict sift-fil-editor-margin"></div>' +
     '</div>' +
     '<div class="sift-fil-dup"></div>' +
@@ -335,6 +340,8 @@ export async function openFilingInto(
   // Verdict is the CONCLUSION — rendered last, after Identification, matching the maquette
   // (see docs/superpowers/plans/2026-07-02-refonte-ui-plan.md, décision du 2026-07-02). Passed to openReportInto below.
   const verdictEl = requireEl<HTMLElement>(".sift-fil-verdict", "openFilingInto", mid);
+  // Hôte du Diagnostic, entre les Métadonnées et le verdict (voir le markup ci-dessus).
+  const diagEl = requireEl<HTMLElement>(".sift-fil-diag", "openFilingInto", mid);
   // The validation footer now lives in the right rail (#filfoot in the .dest column), below the
   // destination tree — so #mid is a pure son-first detail and the rail holds the filing stack.
   const footEl = requireEl("#filfoot", "openFilingInto");
@@ -368,12 +375,18 @@ export async function openFilingInto(
   // covering the cache-staleness case needs its own file-existence check, a separate fix.
   let fileGone = false;
   const [report, canonical, release, fileTags] = await Promise.all([
-    openReportInto(reportEl, item.path, verdictEl, {
-      deferText: true,
-      onAnalysisError: (msg) => {
-        if (msg.includes(FILE_GONE)) fileGone = true;
+    openReportInto(
+      reportEl,
+      item.path,
+      verdictEl,
+      {
+        deferText: true,
+        onAnalysisError: (msg) => {
+          if (msg.includes(FILE_GONE)) fileGone = true;
+        },
       },
-    }),
+      diagEl,
+    ),
     reconcile(item.id).catch((e): Canonical => {
       console.error("reconcile failed", e);
       readError = true;
@@ -511,7 +524,9 @@ export async function openFilingInto(
 
   renderFoot(footEl, mid, rail);
   const editorEl = requireEl<HTMLElement>(".sift-fil-editor", "openFilingInto", mid);
-  renderEditor(editorEl, mid, rail, report);
+  // Plus de `report` passé ici : l'éditeur n'en tirait que la ligne « Tags ID3 », supprimée
+  // (spec docs/ui-specs/revue.md § Zone C, point 4). `report` reste lu juste au-dessus, pour le rail.
+  renderEditor(editorEl, mid, rail);
   // Already-identified track → restore the hero cover from metadata (no network). The identity
   // itself is shown by the always-visible attribute inputs (direction B), so only the cover needs
   // re-applying. Runs inside the openState.openSeq-guarded section above, so a superseded open never

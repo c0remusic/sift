@@ -16,11 +16,18 @@ const PEAKS_WINDOW_FALLBACK = 512;
 
 // Volume = COPIE DIRECTE de l'export SVG du kit macOS Big Sur (Antoine 2026-08-25 : « tu as juste
 // à copier les éléments des svg »). On inline ses éléments TELS QUELS — rect piste (blanc @10% +
-// inner-shadow), rect remplissage (blanc), cercle pouce (blanc + drop-shadow), path haut-parleur
-// barré (#464646) — dans un viewBox 0 0 112 24 (piste large de 112 au lieu des 256 du kit ; tout le
-// reste identique : hauteur 22, inset 1px, pouce r10, icône ancrée à x≈6). renderVolume ne touche
-// QUE `width` du remplissage et `cx` du pouce. L'icône reste speaker.slash de l'export (le kit
-// l'affiche à tous les niveaux — c'est le glyphe du contrôle, pas un indicateur d'état).
+// inner-shadow), rect remplissage, cercle pouce (+ drop-shadow), path haut-parleur barré — dans un
+// viewBox 0 0 112 24 (piste large de 112 au lieu des 256 du kit ; tout le reste identique :
+// hauteur 22, inset 1px, pouce r10, icône ancrée à x≈6). renderVolume ne touche QUE `width` du
+// remplissage et `cx` du pouce. L'icône reste speaker.slash de l'export (le kit l'affiche à tous
+// les niveaux — c'est le glyphe du contrôle, pas un indicateur d'état).
+// SEUL ÉCART À LA COPIE (2026-08-25) : les trois ENCRES — remplissage, pouce, glyphe — ne sont plus
+// des attributs de présentation en dur (blanc / blanc / #464646) mais des tokens, posés par
+// .sift-vol-fill / .sift-vol-knob / .sift-volume-icon dans styles.css. Motif mesuré dans la vraie
+// fenêtre : le remplissage blanc du kit ne vaut que 1,45:1 contre sa piste en thème CLAIR (12,67:1
+// en sombre), sous le 3:1 que WCAG 1.4.11 demande à un composant d'interface — or c'est CE
+// contraste-là qui dit le niveau. Géométrie, rayons et les deux filtres restent la copie exacte.
+// Le rationale complet et le choix des tokens sont au-dessus de .sift-vol-fill (styles.css).
 const SPK_SLASH =
   "M13.5728 12.0239V6.52393C13.5728 6.1748 13.3203 5.89014 12.9551 5.89014C12.7026 5.89014 12.5361 6.00293 12.2568 6.26074L10.0977 8.26416C10.0708 8.28564 10.0386 8.30713 10.0063 8.30713H9.84521L13.5728 12.0239ZM15.4258 15.9287C15.5869 16.0898 15.8555 16.0898 16.0112 15.9287C16.1724 15.7622 16.1724 15.5044 16.0112 15.3433L6.81592 6.14795C6.65479 5.98682 6.38623 5.98682 6.2251 6.14795C6.06396 6.30371 6.06396 6.57764 6.2251 6.7334L15.4258 15.9287ZM8.27148 12.8081H9.80225C9.85596 12.8081 9.89893 12.8242 9.93652 12.8564L12.2568 15.0264C12.5093 15.2627 12.7134 15.3647 12.9604 15.3647C13.2397 15.3647 13.4492 15.2251 13.5352 14.9189L7.41211 8.80127C7.25635 8.97852 7.17578 9.24707 7.17578 9.60693V11.6641C7.17578 12.4429 7.54102 12.8081 8.27148 12.8081Z";
 // Filtres du kit, copiés depuis 100%.svg : inner-shadow de la piste, drop-shadow du pouce. Seule
@@ -85,6 +92,25 @@ function spectroCaption(v: AnalysisReport["verdict"], containerMismatch: boolean
   if (v === "fake") return "coupure nette = transcodage probable";
   if (v === "grey") return "à vérifier visuellement";
   return "énergie pleine bande = encodage conforme";
+}
+
+/** La LECTURE de l'image, en deux mots, pour la pastille de spectre du Diagnostic ouvert
+ *  (spec `docs/ui-specs/revue.md` § Zone C, point 5 : « Pleine bande · 22 kHz »).
+ *
+ *  Chaque retour est un FRAGMENT VERBATIM de `spectroCaption` juste au-dessus, sur les mêmes
+ *  entrées et les mêmes branches : rien n'est reformulé, aucun seuil neuf n'est introduit — la
+ *  décision reste celle du backend (`verdict`), exactement comme pour la phrase longue. Celle-ci
+ *  n'est d'ailleurs pas perdue : elle devient le `title` de la pastille.
+ *
+ *  Ce n'est PAS le verdict. Le verdict est dit une seule fois, dans la rangée de titre de
+ *  l'en-tête (`fillVerdictLanding`), et ne se répète jamais ici — c'est la règle qui a fait
+ *  retirer la ligne « Verdict » du Diagnostic le 2026-08-25. Ce qui est dit ici est ce que
+ *  l'image MONTRE, la preuve à côté de laquelle elle est affichée. */
+function spectroBandReading(v: AnalysisReport["verdict"], containerMismatch: boolean): string {
+  if (v === "fake" && containerMismatch) return "Extension falsifiée";
+  if (v === "fake") return "Coupure nette";
+  if (v === "grey") return "À vérifier visuellement";
+  return "Pleine bande";
 }
 
 /** Audacity's own spectrogram convention (manual.audacityteam.org/man/spectrogram_view.html,
@@ -349,6 +375,11 @@ function peaksCoverage(r: AnalysisReport): string {
 // reading (Hz, dBTP, %, runs) — .sift-row-value's monospace treatment fits digits/units, but reads
 // as an odd mismatch on plain text (annotation: "j'aime bien le texte de verdict mais celui de ok
 // pas fan"). Default stays mono so every other numeric row call site is unaffected.
+// ⚠️ Plus AUCUN appelant ne passe `false` depuis le 2026-08-25 : la ligne « Verdict » — le seul
+// mot catégoriel du Diagnostic — a été retirée, le verdict n'étant dit qu'une fois, dans l'en-tête.
+// L'opt-out est gardé parce que sa règle CSS (`.sift-row-value-plain`) existe toujours ; les deux
+// se retirent ensemble ou pas du tout, sinon il reste une règle inerte (mode de défaillance déjà
+// documenté sur `.sift-spectro-box`, styles.css).
 /** Une ligne de mesure sur les DEUX colonnes de la grille. Pour celles qui portent une référence
  *  en plus de leur valeur : mesuré dans la vraie fenêtre, « Densité de l'aigu » cassait libellé et
  *  valeur sur deux lignes chacun dans une demi-colonne. */
@@ -374,19 +405,36 @@ export function keyboardHintsHtml(): string {
   );
 }
 
-/** Single header, folded into the player card itself (2026-07-02: the standalone Hero above the
- *  player was pure duplication — same title/artist/path, twice). Cover (real art once identified,
- *  a minimalist vinyl placeholder via `.sift-cover-frame`'s CSS until then) + title + artist ·
- *  version + raw path, optionally a close button (`openReportModal`'s popup only). Keeps the
- *  shared `.sift-report-cover`/`.sift-report-name`/`.sift-report-sub` hooks that filing.ts writes
- *  into (cover src on identify, clean displayName on reconcile). */
-/** Last 2 segments of a path ("…\parent\file.aiff"), so the ellipsis truncation (CSS
- *  text-overflow, which cuts from the right) never hides the filename — the one part of the
- *  raw path actually worth reading. Full path stays available via the title tooltip
- *  (audit UI/UX 2026-07-03, fix 7). */
-function shortPath(path: string): string {
+/** Chemin d'origine en PATH CONTROL (wireframe fix 10 ; HIG « Path controls » / `NSPathControl`,
+ *  la barre de chemin du Finder) : des SEGMENTS séparés par un chevron, plus une chaîne collée.
+ *  Hiérarchie par l'encre, posée en CSS : intermédiaires en secondaire, dernier segment — le nom
+ *  de fichier — en primaire.
+ *
+ *  Troncature : on garde les 2 DERNIERS segments (ex-`shortPath`, replié ici avec sa raison).
+ *  L'ellipse CSS coupe par la droite, donc laisser le chemin entier au `text-overflow` mangeait
+ *  justement le nom de fichier, la seule part du chemin qui vaut d'être lue (audit UI/UX
+ *  2026-07-03, fix 7). La spec (`docs/ui-specs/revue.md` § Zone C, point 1) veut à terme une
+ *  troncature PAR LE MILIEU (premier + dernier segments) : elle demande de mesurer la place
+ *  réellement disponible, ce que ce rendu-chaîne ne fait pas — non implémenté ici, pas oublié.
+ *  Le chemin complet reste dans le `title`.
+ *
+ *  `esc()` sur CHAQUE segment : ce sont des noms de dossiers et de fichiers utilisateur. */
+function pathControlHtml(path: string): string {
   const parts = path.split(/[\\/]/).filter(Boolean);
-  return parts.length > 2 ? `…${parts.slice(-2).join("/")}` : path;
+  const shown = parts.length > 2 ? parts.slice(-2) : parts;
+  const sep = `<i class="ti ti-chevron-right sift-player-path-sep" aria-hidden="true"></i>`;
+  // Le segment élidé est un segment comme un autre dans la série (« … › dossier › fichier »),
+  // exactement la barre de chemin tronquée du Finder — pas un préfixe collé au premier nom.
+  const head = shown.length < parts.length ? [`<span class="sift-player-path-seg is-elided">…</span>`] : [];
+  const segs = shown.map(
+    (seg, i) =>
+      `<span class="sift-player-path-seg${i === shown.length - 1 ? " is-leaf" : ""}">${esc(seg)}</span>`,
+  );
+  return (
+    `<div class="sift-player-path" title="${esc(path)}">` +
+    head.concat(segs).join(sep) +
+    `</div>`
+  );
 }
 
 interface PlayerHeaderOptions {
@@ -401,6 +449,14 @@ interface PlayerHeaderOptions {
   onAnalysisError?: (message: string) => void;
 }
 
+/** Single header, folded into the player card itself (2026-07-02: the standalone Hero above the
+ *  player was pure duplication — same title/artist/path, twice). Cover (real art once identified,
+ *  a minimalist vinyl placeholder via `.sift-cover-frame`'s CSS until then) + title + verdict ·
+ *  artiste · version · chemin en path control, optionally a close button (`openReportModal`'s
+ *  popup only). Keeps the shared `.sift-report-cover`/`.sift-report-name`/`.sift-report-sub` hooks
+ *  that filing.ts writes into (cover src on identify, clean displayName on reconcile).
+ *  (Ce bloc décrivait déjà cette fonction ; il était posé au-dessus de l'ex-`shortPath`, deux
+ *  définitions plus haut — remis sur son sujet le 2026-08-25.) */
 function playerHeaderHtml(name: string, path: string, closeBtn: boolean, opts: PlayerHeaderOptions = {}): string {
   const pendingCls = opts.deferText ? " sift-report-text-pending" : "";
   return (
@@ -413,13 +469,18 @@ function playerHeaderHtml(name: string, path: string, closeBtn: boolean, opts: P
     `<img class="sift-report-cover sift-player-cover" hidden alt="Pochette — ${esc(name)}">` +
     `</div>` +
     `<div class="sift-player-header-body">` +
+    // Le verdict est AU NIVEAU DU TITRE, à droite (wireframe « Poste de décision » § 05, patron
+    // Mail : le statut en haut à droite du message) — d'où cette rangée qui les tient tous les
+    // deux. Il était la 3e de quatre lignes empilées, alignée à gauche entre l'artiste et le
+    // chemin (en-tête B, 2026-08-21) : c'est le PLACEMENT qui a changé, pas son rendu.
+    `<div class="sift-player-title-row">` +
     `<div class="sift-report-name sift-player-name${pendingCls}">${esc(name)}</div>` +
-    `<div class="sift-report-sub sift-player-sub${pendingCls}">${esc(opts.subtitle ?? "")}</div>` +
-    // Verdict en ligne d'état DANS l'en-tête (en-tête B, choisi 2026-08-21) : entre l'artiste et le
-    // chemin. Vide dans la coque initiale ; rempli par fillVerdictLanding (point + mot teintés +
-    // format réel) quand l'analyse résout.
+    // Vide dans la coque initiale ; rempli par fillVerdictLanding (point + mot teintés + format
+    // réel) quand l'analyse résout. Le slot doit donc EXISTER ici, peint ou non.
     `<div class="sift-player-verdict"></div>` +
-    `<div class="sift-player-path" title="${esc(path)}">${esc(shortPath(path))}</div>` +
+    `</div>` +
+    `<div class="sift-report-sub sift-player-sub${pendingCls}">${esc(opts.subtitle ?? "")}</div>` +
+    pathControlHtml(path) +
     `</div>` +
     (closeBtn ? `<button class="sift-close sift-report-close">fermer</button>` : "") +
     `</div>`
@@ -451,13 +512,18 @@ function playerRowHtml(name: string, path: string, closeBtn = false, headerOpts:
     // une commande absente du système. L'icône de volume reste (contrôle standard, cohérent).
     // Volume = SVG du kit inliné tel quel (COPIE, cf. SPK_SLASH/VOL_DEFS). Le <svg> EST le slider
     // (role="slider", drag + clavier ; audit-ref R1 2026-07-08). Clic sur le haut-parleur = mute.
-    // renderVolume ne pilote que `width` du remplissage et `cx` du pouce.
+    // renderVolume ne pilote que `width` du remplissage et `cx` du pouce ; les trois encres
+    // (remplissage, pouce, glyphe) viennent de styles.css, seul écart assumé à la copie du kit —
+    // voir le commentaire de SPK_SLASH en tête de fichier. La piste, elle, garde le blanc @10 % du
+    // kit dans les deux thèmes : c'est le remplissage qui s'inverse, pas elle.
+    // Les attributs `width`/`cx` de départ valent le plein volume sous la géométrie de renderVolume
+    // (fillW = 110 et cx = 101 à pct = 1) — les changer sans elle désaccorderait la première frame.
     `<svg class="sift-volume" viewBox="0 0 112 24" role="slider" tabindex="0" aria-label="Volume" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100">` +
     `<title>Volume — cliquer pour couper</title>` +
     `<g filter="url(#sift-vol-inner)"><rect width="112" height="22" rx="11" fill="white" fill-opacity="0.1"></rect></g>` +
-    `<rect class="sift-vol-fill" x="1" y="1" width="110" height="20" rx="10" fill="white"></rect>` +
-    `<g filter="url(#sift-vol-drop)"><circle class="sift-vol-knob" cx="101" cy="11" r="10" fill="white"></circle></g>` +
-    `<path class="sift-volume-icon" d="${SPK_SLASH}" fill="#464646"></path>` +
+    `<rect class="sift-vol-fill" x="1" y="1" width="110" height="20" rx="10"></rect>` +
+    `<g filter="url(#sift-vol-drop)"><circle class="sift-vol-knob" cx="101" cy="11" r="10"></circle></g>` +
+    `<path class="sift-volume-icon" d="${SPK_SLASH}"></path>` +
     VOL_DEFS +
     `</svg>` +
     `</div>` +
@@ -575,10 +641,11 @@ function formatSummary(r: AnalysisReport): string {
   return parts.join(" · ");
 }
 
-/** Fill the verdict status line (`.sift-player-verdict`, rendered empty by playerHeaderHtml between
- *  the artist and the path — en-tête B, 2026-08-21). Point + mot teintés par la classe `.sift-lib-v-*`
- *  de la table (§ 16, via currentColor), suivis du format réel en encre secondaire. Slot-fill : la
- *  coque du header est peinte avant que l'analyse résolve, puis le verdict s'y dépose. */
+/** Fill the verdict slot (`.sift-player-verdict`, rendered empty by playerHeaderHtml dans la rangée
+ *  de titre, à droite du nom — wireframe § 05, patron Mail). Point + mot teintés par la classe
+ *  `.sift-lib-v-*` de la table (§ 16, via currentColor), suivis du format réel en encre secondaire.
+ *  Slot-fill : la coque du header est peinte avant que l'analyse résolve, puis le verdict s'y
+ *  dépose — c'est pourquoi ce slot ne se crée PAS ici. */
 function fillVerdictLanding(root: HTMLElement, r: AnalysisReport): void {
   const slot = root.querySelector<HTMLElement>(".sift-player-verdict");
   if (!slot) return;
@@ -589,10 +656,14 @@ function fillVerdictLanding(root: HTMLElement, r: AnalysisReport): void {
     `<span class="sift-player-verdict-dot" aria-hidden="true"></span>` +
     `<span class="sift-player-verdict-word">${esc(word)}</span>` +
     (fmtInfo ? `<span class="sift-player-verdict-fmt">· ${esc(fmtInfo)}</span>` : "");
-  // La pochette prend la hauteur du bloc texte (en-tête B, Antoine 2026-08-21) : on mesure le corps
-  // UNE FOIS le verdict posé (il ajoute sa ligne) et on rend la cover carrée à cette hauteur. Le pur
-  // CSS (aspect-ratio:1 + align-self:stretch) rendait une largeur nulle dans ce contexte flex,
-  // mesuré via CDP — d'où la mesure JS, au point unique où la hauteur finale est connue.
+  // La pochette prend la hauteur du bloc texte (en-tête B, Antoine 2026-08-21 ; mesure JS
+  // CONFIRMÉE le 2026-08-25 contre la piste « pochette fixe 56px » de la spec). Le pur CSS
+  // (aspect-ratio:1 + align-self:stretch) rendait une largeur nulle dans ce contexte flex, mesuré
+  // via CDP — d'où la mesure JS, au point unique où la hauteur finale est connue.
+  // ⚠️ Le verdict n'AJOUTE PLUS sa ligne depuis qu'il est passé dans la rangée de titre : le bloc
+  // texte est descendu de 4 lignes à 3, donc la pochette est plus petite qu'avant. C'est voulu, la
+  // pochette suit le texte. La mesure reste appelée ici parce que la pose du verdict peut encore
+  // faire varier la hauteur de la rangée de titre (retour à la ligne dans une colonne étroite).
   sizeCoverToBody(root);
 }
 
@@ -638,7 +709,12 @@ function spectroAndTagsHtml(r: AnalysisReport): string {
     }) +
     `<div class="sift-sg-body sift-spectro-body">` +
     `<div class="sift-spectro-body-inner">` +
-    `<div class="sift-spectro-declared">Déclaré <span class="pill">${esc(r.declared_format)}</span> ${r.declared_rail}${r.declared_bitrate ? " · " + r.declared_bitrate + " kbps" : ""} · coupure ${fmt(r.cutoff_hz, 0)} Hz — ${spectroCaption(r.verdict, r.container_mismatch)}</div>` +
+    // Le spectrogramme d'ABORD, et seul en haut du panneau : c'est la preuve du verdict, et la
+    // prose qui le précédait la repoussait sous le pli (wireframe « Poste de décision » § 06,
+    // fix 5 ; spec `docs/ui-specs/revue.md` § Zone C, point 5). La ligne
+    // `.sift-spectro-declared` qui vivait ici — « Déclaré <format> <rail> · coupure N Hz — … » —
+    // est retirée le 2026-08-25 : le format déclaré est déjà dit par `formatSummary` dans
+    // l'en-tête de piste, et la coupure descend aux Détails techniques avec les autres mesures.
     `<div class="sift-spectro-canvas-wrap">` +
     `<canvas class="sift-sg sift-spectro-canvas" width="720" height="180" role="img" aria-label="Spectrogramme audio"></canvas>` +
     // Canvas transparent superposé — ne dessine QUE le réticule au survol (wireSpectroHover),
@@ -646,27 +722,40 @@ function spectroAndTagsHtml(r: AnalysisReport): string {
     // un mousemove ne doit jamais redéclencher la boucle pixel-par-pixel de drawSpectrogram.
     `<canvas class="sift-spectro-overlay" width="720" height="180"></canvas>` +
     `</div>` +
-    `<div class="sift-spectro-rows">` +
-    row("Verdict", r.verdict, false) +
-    row("Coupure", fmt(r.cutoff_hz, 0) + " Hz") +
-    // Deuxième mesure spectrale, à côté de la coupure parce que c'est la même nature de fait — et
-    // PAS près du verdict, qu'elle n'alimente pas. Absente des rapports d'avant sa mise en place :
-    // `null` veut dire « pas mesuré », jamais zéro, donc la ligne ne se rend pas du tout.
-    (r.hf_flatness_db != null ? rowWide("Densité de l'aigu", hfDensityText(r.hf_flatness_db, fmt)) : "") +
-    row("Durée", durationText(r.duration_sec, r.decoded_duration_sec, fmt)) +
+    // DEUX pastilles compactes sous l'image, et deux seulement : le format, et la lecture du
+    // spectre. Tout ce qui se chiffre est aux Détails techniques. La pastille de spectre porte la
+    // coupure ARRONDIE au kHz — la lecture, pas la mesure ; le hertz exact reste une ligne
+    // là-dessous. `.pill` est la pastille générique du dépôt (styles.css), réutilisée telle
+    // quelle. Format absent = pas de pastille vide : `formatSummary` se garde déjà pareil.
+    `<div class="sift-spectro-pills">` +
+    (r.declared_format ? `<span class="pill">${esc(r.declared_format.toUpperCase())}</span>` : "") +
+    `<span class="pill" title="${spectroCaption(r.verdict, r.container_mismatch)}">` +
+    `${spectroBandReading(r.verdict, r.container_mismatch)} · ${fmt(r.cutoff_hz / 1000, 0)} kHz</span>` +
     `</div>` +
     // Non-technical users open "Diagnostic audio" to understand a verdict, not to read raw
-    // engineering measurements — verdict/coupure/durée above answer that; everything else
-    // (true-peak, DC offset, écrêtage, corrélation de phase…) is jargon with no vulgarization,
-    // so it moves behind a second, nested disclosure (audit finding #5, 2026-07-10). Native
-    // <details> — no new JS wiring needed, doesn't touch wireSpectrogram's querySelector-based
-    // toggle for the OUTER "Diagnostic audio" panel.
+    // engineering measurements — the spectrogram plus the two pills above answer that; every
+    // FIGURE (true-peak, DC offset, écrêtage, corrélation de phase…) is jargon with no
+    // vulgarization, so it sits behind a second, nested disclosure (audit finding #5,
+    // 2026-07-10). Native <details> — no new JS wiring needed, doesn't touch wireSpectrogram's
+    // querySelector-based toggle for the OUTER "Diagnostic audio" panel.
+    // ⚠️ Depuis le 2026-08-25, coupure / densité de l'aigu / durée ont REJOINT ce disclosure : le
+    // panneau ouvert ne montrait plus la preuve, il montrait un tableau. Aucun de ces textes n'est
+    // reformulé au passage — hfDensityText et durationText sont appelés à l'identique.
     `<details class="sift-spectro-tech">` +
     `<summary class="sift-spectro-tech-summary">Détails techniques</summary>` +
     `<div class="sift-spectro-rows">` +
-    // Seconde bande de platitude — ici et pas dans les lignes principales : sa référence ne
-    // s'appuie que sur 20 fichiers contre 44, et deux lignes de densité en tête noieraient celle
-    // qui porte la mesure la mieux étayée. Elle reste indispensable : c'est la SEULE qui voit Opus.
+    // Coupure et durée en tête, appariées sur la grille à deux colonnes ; les deux mesures de
+    // densité les suivent, chacune sur toute la largeur (rowWide — elles portent leur référence
+    // en plus de leur valeur). Absentes des rapports d'avant leur mise en place : `null` veut dire
+    // « pas mesuré », jamais zéro, donc la ligne ne se rend pas du tout.
+    row("Coupure", fmt(r.cutoff_hz, 0) + " Hz") +
+    row("Durée", durationText(r.duration_sec, r.decoded_duration_sec, fmt)) +
+    (r.hf_flatness_db != null ? rowWide("Densité de l'aigu", hfDensityText(r.hf_flatness_db, fmt)) : "") +
+    // Seconde bande de platitude, APRÈS celle du dessus et jamais avant : sa référence ne s'appuie
+    // que sur 20 fichiers contre 44, et la faire lire en premier noierait celle qui porte la mesure
+    // la mieux étayée. Elle reste indispensable : c'est la SEULE qui voit Opus. (L'ordre est tout
+    // ce qui reste de cette précaution — les deux vivent dans le même disclosure depuis que les
+    // lignes principales ont disparu, 2026-08-25.)
     (r.hf_flatness_top_db != null
       ? rowWide("Densité du haut du spectre", hfTopDensityText(r.hf_flatness_top_db, fmt))
       : "") +
@@ -809,8 +898,16 @@ async function mountPlayer(root: HTMLElement, path: string, peaks?: number[], du
   destroyPlayer();
   // WaveSurfer draws to canvas, so it needs resolved color strings, not var(--x) references —
   // same read-at-mount pattern already used for the spectrogram cutoff line (drawSpectrogram
-  // below). --overlay-bar is the token for the UNPLAYED wave bars; progress keeps
-  // --color-waveform-elapsed, the dedicated (theme-fixed by design) waveform accent token.
+  // below). --overlay-bar is the token for the UNPLAYED wave bars.
+  //
+  // La portion JOUÉE prend l'ACCENT DU DÉPÔT (--color-accent-fill → --color-hue-blue-solid), et
+  // plus --color-waveform-elapsed (2026-08-25). Ce dernier n'est pas un accent : il résout en
+  // var(--color-text-info), une ENCRE, qui vaut oklch(79,21 % 0,0789 242) en thème sombre — un bleu
+  // si pâle et si peu chromé qu'il se lit comme du blanc cassé sur les barres, donc un lecteur SANS
+  // accent une fois le thème sombre actif. --color-accent-fill, lui, EST le systemBlue dans les
+  // deux thèmes (60,28 % / 62,43 % de clarté, chroma ≈ 0,21) : l'accent tient des deux côtés.
+  // ⚠️ --color-waveform-elapsed (styles.css) perd ici son DERNIER consommateur — token désormais
+  // mort, à retirer par le geste qui a le droit d'éditer :root (hors périmètre de cette lane).
   //
   // Jusqu'au 2026-07-28 (audit SJ-1), --overlay-bar n'était déclaré NULLE PART : getPropertyValue
   // rendait "" et un repli littéral blanc à 35 % d'opacité prenait la main à chaque montage — sur
@@ -831,7 +928,9 @@ async function mountPlayer(root: HTMLElement, path: string, peaks?: number[], du
     return v;
   };
   const waveColor = token("--overlay-bar", "rgba(0,0,0,.32)");
-  const progressColor = token("--color-waveform-elapsed", "#ff5500");
+  // Le repli reste cette orange criarde À DESSEIN : elle n'appartient à aucune palette du dépôt,
+  // donc si le token disparaît le lecteur le CRIE à l'écran en plus du console.error ci-dessus.
+  const progressColor = token("--color-accent-fill", "#ff5500");
   const ws = WaveSurfer.create({
     container,
     height: 40, // aminci (58→40) pour lire comme un slider Apple avec texture de waveform, pas un
@@ -853,13 +952,35 @@ async function mountPlayer(root: HTMLElement, path: string, peaks?: number[], du
     const i = playBtn?.querySelector("i");
     if (i) i.className = `ti ti-${name}`;
   };
-  // Custom sliders (never native <input type=range> — see DESIGN.md): drag anywhere on the
-  // track, thumb/fill follow the mouse until release. Volume fills from the left; tempo fills
-  // from the centre (0 = neutral), matching the pitch-fader convention.
+  // Géométrie de la capsule, en unités du viewBox du kit (0 0 112 24). UNE seule source pour le
+  // rendu ET pour le drag : les deux se déduisaient de constantes séparées, et c'est exactement ce
+  // qui les avait désaccordés (voir dragSlider ci-dessous). VOL_TRAVEL est la course RÉELLE du
+  // centre du pouce, pas la largeur de la piste — un pouce de rayon 10 ne peut jamais sortir de la
+  // capsule, donc son centre vit dans [11, 101] et non dans [0, 112].
+  const VOL_VB_W = 112; // largeur du viewBox
+  const VOL_INSET = 1; // marge du remplissage dans la piste (kit)
+  const VOL_KNOB_R = 10; // rayon du pouce (kit)
+  const VOL_CX_MIN = VOL_INSET + VOL_KNOB_R; // 11 — pouce à fond à gauche
+  const VOL_CX_MAX = VOL_VB_W - VOL_INSET - VOL_KNOB_R; // 101 — pouce à fond à droite
+  const VOL_TRAVEL = VOL_CX_MAX - VOL_CX_MIN; // 90
+
+  // Slider custom (jamais un <input type=range> natif — voir DESIGN.md) : on empoigne n'importe où
+  // sur la capsule, pouce et remplissage suivent le pointeur jusqu'au relâchement. Le tempo, qui
+  // remplissait depuis le centre, a été retiré de cet écran (spec Revue, Zone C, point 3) — il ne
+  // reste que le volume, qui remplit depuis la gauche.
+  // ⚠️ La conversion pixels → valeur passe par la COURSE DU POUCE, pas par la largeur de la piste.
+  // Jusqu'au 2026-08-25 elle mappait 0..112 px sur 0..1 alors que le pouce ne parcourt que 11..101 :
+  // le pouce traînait jusqu'à 11 px derrière le pointeur (recalculé : pointeur à x = 101, pouce à
+  // cx = 90,2), et le geste n'atteignait 100 % qu'au tout dernier pixel de la capsule, alors que le
+  // pouce butait déjà à droite onze pixels plus tôt. Avec la course, cx vaut exactement le x du
+  // pointeur partout dans [11, 101] — c'est la définition de « le pouce suit le pointeur ».
   const dragSlider = (track: SVGSVGElement, onMove: (pct: number) => void) => {
     const update = (clientX: number) => {
       const rect = track.getBoundingClientRect();
-      onMove(Math.max(0, Math.min(1, (clientX - rect.left) / Math.max(1, rect.width))));
+      // Le SVG est rendu 1:1 (112 px pour un viewBox de 112), mais on repasse par la largeur mesurée
+      // pour rester juste si la feuille de style change un jour la taille rendue.
+      const vbX = ((clientX - rect.left) / Math.max(1, rect.width)) * VOL_VB_W;
+      onMove(Math.max(0, Math.min(1, (vbX - VOL_CX_MIN) / VOL_TRAVEL)));
     };
     track.addEventListener("pointerdown", (e) => {
       if (e.button !== 0) return;
@@ -886,11 +1007,21 @@ async function mountPlayer(root: HTMLElement, path: string, peaks?: number[], du
 
   const renderVolume = (pct: number) => {
     // On ne pilote QUE les deux éléments SVG qui bougent (kit) : la largeur du rect de remplissage
-    // et le cx du cercle-pouce. Reste identique au kit. Remplissage min 20 (cercle blanc au repos qui
-    // porte l'icône) ; le pouce colle au bord droit du remplissage (cx = bord droit - rayon).
-    const fillW = Math.max(20, pct * 110); // 110 = 112 (piste) − 2 (inset 1px de chaque côté)
+    // et le cx du cercle-pouce. Reste identique au kit.
+    // Le POUCE mène, le remplissage suit : dans le kit le pouce EST le bout arrondi du remplissage
+    // (même encre, il n'existe que pour porter l'ombre), donc son bord droit et celui du remplissage
+    // sont le même trait.
+    // ⚠️ Jusqu'au 2026-08-25 c'était l'inverse — `fillW = Math.max(20, pct * 110)` puis
+    // `cx = 1 + fillW - 10`. Le clamp gelait DEUX choses à la fois : le pouce restait à cx = 11 tant
+    // que pct < 0,182, soit 18 % de course sans le moindre mouvement à l'œil, et un mute
+    // visuellement identique à un volume faible. Le plancher de 20 n'a pas disparu, il a changé de
+    // nature : il est maintenant la CONSÉQUENCE de la course (à pct = 0 le remplissage vaut
+    // exactement le diamètre du pouce), donc le glyphe du haut-parleur reste posé sur le
+    // remplissage à tous les niveaux — sa raison d'être — sans plus écraser le bas de course.
+    const cx = VOL_CX_MIN + pct * VOL_TRAVEL;
+    const fillW = cx + VOL_KNOB_R - VOL_INSET; // 20 à pct = 0, 110 à pct = 1
     volumeFill?.setAttribute("width", String(fillW));
-    volumeKnob?.setAttribute("cx", String(1 + fillW - 10));
+    volumeKnob?.setAttribute("cx", String(cx));
     volumeTrack?.setAttribute("aria-valuenow", String(Math.round(pct * 100))); // audit-ref R1
   };
   renderVolume(1); // WaveSurfer's own default (full volume)
@@ -1150,19 +1281,35 @@ function wireReport(root: HTMLElement, r: AnalysisReport) {
 }
 
 /** Renders the report INLINE into `container` (e.g. the Revue #mid pane). `verdictContainer`,
- *  when given, gets the verdict conclusion card instead of `container` — see `openReportInto`. */
+ *  when given, gets the verdict conclusion card instead of `container` — see `openReportInto`.
+ *  `diagContainer`, when given, gets the Diagnostic (spectrogramme + mesures) instead of leaving
+ *  it right under the player — see `openReportInto` for why. */
 export function renderReportInto(
   container: HTMLElement,
   r: AnalysisReport,
   verdictContainer?: HTMLElement,
   headerOpts: PlayerHeaderOptions = {},
+  diagContainer?: HTMLElement,
 ) {
-  container.innerHTML = `<div class="sift-report-scroll">${reportHtml(r, false, headerOpts)}</div>`;
+  const name = headerOpts.title ?? (r.path.split(/[\\/]/).pop() || r.path);
+  container.innerHTML =
+    `<div class="sift-report-scroll">` +
+    (diagContainer ? playerRowHtml(name, r.path, false, headerOpts) : reportHtml(r, false, headerOpts)) +
+    `</div>`;
+  // Même enveloppe `.sift-analysis-body` que le chemin asynchrone d'openReportInto : sans elle, le
+  // Diagnostic n'aurait pas la même structure selon qu'on ouvre une piste pour la première fois
+  // (analyse) ou qu'on y revient (cache de session) — et la première règle CSS posée sur ce slot
+  // ne s'appliquerait qu'à un cas sur deux, en silence.
+  if (diagContainer) diagContainer.innerHTML = `<div class="sift-analysis-body">${spectroAndTagsHtml(r)}</div>`;
   fillVerdictLanding(container, r);
   // verdictContainer (the low .sift-fil-verdict slot, after Identification) now only carries the
   // transient "Analyse en cours…"/error states — clear it on the success path.
   if (verdictContainer) verdictContainer.innerHTML = "";
-  wireReport(container, r);
+  mountPlayer(container, r.path, r.peaks, r.duration_sec);
+  // Le spectrogramme se câble sur SON hôte : ses nœuds sont partis avec lui quand le Diagnostic
+  // vit sous les Métadonnées (wireSpectrogram ne lit que des `.sift-spectro-*`/`.sift-sg-*`,
+  // aucune dépendance au lecteur — vérifié à la scission, 2026-08-25).
+  wireSpectrogram(diagContainer ?? container, r);
 }
 
 // In-session report cache (path → report). Backend already caches in the DB; this skips even
@@ -1195,6 +1342,7 @@ export async function openReportInto(
   path: string,
   verdictContainer?: HTMLElement,
   headerOpts: PlayerHeaderOptions = {},
+  diagContainer?: HTMLElement,
 ): Promise<AnalysisReport | null> {
   destroyPlayer();
   ensureStyles();
@@ -1202,7 +1350,7 @@ export async function openReportInto(
 
   const cached = reportCache.get(path);
   if (cached) {
-    renderReportInto(container, cached, verdictContainer, headerOpts);
+    renderReportInto(container, cached, verdictContainer, headerOpts, diagContainer);
     return cached;
   }
 
@@ -1219,12 +1367,19 @@ export async function openReportInto(
   // and their own verdict slot), else in a `.sift-verdict-stub` kept inside this same scroll
   // (openReportModal, which has no Identification card of its own). Filled in later (seq-guarded).
   const verdictHost = () => verdictContainer ?? container.querySelector<HTMLElement>(".sift-verdict-stub");
+  // Le Diagnostic descend SOUS les Métadonnées quand l'appelant fournit `diagContainer` (Revue,
+  // wireframe § 06 fix 4 : « on identifie plus souvent qu'on n'inspecte », patron inspecteur qui
+  // met les détails techniques en fin de volet). Le corps d'analyse est déjà un slot rempli plus
+  // tard — il change seulement d'hôte, aucun autre chemin ne bouge. Sans `diagContainer`
+  // (openReportModal, library-detail) il reste dans le scroll du rapport, comme avant.
+  const bodyHost = diagContainer ?? container;
   container.innerHTML =
     `<div class="sift-report-scroll">` +
     playerRowHtml(name, path, false, headerOpts) +
-    `<div class="sift-analysis-body" hidden></div>` +
+    (diagContainer ? "" : `<div class="sift-analysis-body" hidden></div>`) +
     (verdictContainer ? "" : `<div class="sift-verdict-stub"></div>`) +
     `</div>`;
+  if (diagContainer) diagContainer.innerHTML = `<div class="sift-analysis-body" hidden></div>`;
 
   // Race the analysis against a short timeout. For already-analyzed tracks (DB cache hit)
   // we win the race and can pass peaks to WaveSurfer.create() — which renders the waveform
@@ -1246,13 +1401,13 @@ export async function openReportInto(
     // Pass peaks to the constructor — the only path that renders the waveform immediately.
     void mountPlayer(container, path, earlyResult.peaks, earlyResult.duration_sec || undefined);
     const verdictEl = verdictHost();
-    const bodyEl = container.querySelector<HTMLElement>(".sift-analysis-body");
+    const bodyEl = bodyHost.querySelector<HTMLElement>(".sift-analysis-body");
     if (verdictEl) verdictEl.innerHTML = "";
     fillVerdictLanding(container, earlyResult);
     if (bodyEl) {
       bodyEl.innerHTML = spectroAndTagsHtml(earlyResult);
       bodyEl.hidden = false;
-      wireSpectrogram(container, earlyResult);
+      wireSpectrogram(bodyHost, earlyResult);
     }
     return earlyResult;
   }
@@ -1272,13 +1427,13 @@ export async function openReportInto(
     reportCache.set(path, r);
     if (seq !== openSeq) return null;
     const verdictEl = verdictHost();
-    const bodyEl = container.querySelector<HTMLElement>(".sift-analysis-body");
+    const bodyEl = bodyHost.querySelector<HTMLElement>(".sift-analysis-body");
     if (verdictEl) verdictEl.innerHTML = "";
     fillVerdictLanding(container, r);
     if (bodyEl) {
       bodyEl.innerHTML = spectroAndTagsHtml(r);
       bodyEl.hidden = false;
-      wireSpectrogram(container, r);
+      wireSpectrogram(bodyHost, r);
     }
     return r;
   } catch (e) {

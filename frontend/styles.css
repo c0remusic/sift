@@ -252,8 +252,12 @@ color-scheme:light;
    sépare enfin le registre « donnée » (10-13) du registre « titre » (15-32).
    Peu de sites touchés, mesuré : --text-lg 12 usages, --text-xl 5, --text-2xl 1. */
 --text-lg:15px;--text-xl:20px;--text-2xl:32px;
-/* Spacing scale (system.md): the ONLY allowed values. */
---space-4:4px;--space-8:8px;--space-12:12px;--space-16:16px;--space-24:24px;--space-32:32px;
+/* Spacing scale (system.md): the ONLY allowed values.
+   --space-6 AJOUTÉ le 2026-08-25 (#47) : le kit macOS Big Sur pose un padding vertical de 6 sur
+   ses contrôles (push 43:43, champ texte 45:1008, pulldown 45:152) et l'échelle sautait de 4 à 8 —
+   le rail de Revue et les champs de Métadonnées tenaient donc sur un littéral 6px chacun. Cran
+   posé avec ses consommateurs, jamais spéculativement (même règle que le bloc des hauteurs). */
+--space-4:4px;--space-6:6px;--space-8:8px;--space-12:12px;--space-16:16px;--space-24:24px;--space-32:32px;
 /* Z-index scale (2026-07-19 audit): named layers for cross-component stacking only —
    local intra-component stacking (a resize handle above its own row, a cover image above
    its own fallback) stays a plain z-index:1/0 literal, not part of this scale. Toast sits
@@ -270,8 +274,16 @@ color-scheme:light;
    image size, not a control height. Only the one size a real control still uses (audit
    2026-07-03: --h-32/--h-44 had zero consumers, dropped rather than declared speculatively;
    --h-36 lost its only consumer, .sift-play-btn, when the Revue continuous-surface redesign
-   enlarged that button to a 46px literal — dropped 2026-07-09 for the same reason). */
---h-40:40px;
+   enlarged that button to a 46px literal — dropped 2026-07-09 for the same reason).
+   Deux crans AJOUTÉS le 2026-08-25 (#47), et la règle « pas de token spéculatif » est respectée :
+   ils naissent AVEC leurs consommateurs, relevés au kit macOS Big Sur (pont Figma REST).
+     --h-control    28 → bouton push (43:43), champ de recherche (45:812), pulldown (45:152),
+                         bouton icône de barre (45:88) — la hauteur de contrôle « normale » du kit
+     --h-control-sm 22 → champ texte (45:1008), item de menu (58:49), segmenté (47:23)
+   L'audit des composants de Revue avait montré que la hauteur n'était déclarée NULLE PART : elle
+   tombait du padding plus la boîte de ligne, d'où des écarts de 2 à 8px qu'aucune relecture ne
+   pouvait attraper. C'est cette absence, pas une valeur, qui était le défaut. */
+--h-40:40px;--h-control:28px;--h-control-sm:22px;
 /* GÉOMÉTRIE DU SHELL (DESIGN.md §§ 10 et 14). Trois mesures, chacune DÉRIVÉE de ce qu'elle
    porte, jamais choisie — et chacune écrite plusieurs fois dans l'arbre avant d'être un token.
 
@@ -532,7 +544,18 @@ body:has(#sift-titlebar){border-radius:var(--border-radius-sm);overflow:hidden}
    son rendu d'origine, ce qui est le point — un composant partagé s'adapte à son hôte, il ne se
    duplique pas. */
 #sift-aside .sift-player-name,#sift-aside .sift-report-name{font-size:var(--text-lg);white-space:normal;overflow-wrap:anywhere}
-#sift-aside .sift-player-path{white-space:normal;overflow-wrap:anywhere}
+/* Le titre passe à la ligne ici (règle du dessus) : lui coller le verdict à droite ne laisserait
+   ni à l'un ni à l'autre de quoi se lire dans une colonne de 287px. En zone D la rangée de titre
+   redevient une pile — le verdict garde son rang (juste sous le titre, au-dessus de l'artiste),
+   il perd seulement son coin. `gap` calé sur celui de .sift-player-header-body (--space-4 vaut
+   exactement le 4px littéral que cette règle-là porte encore). */
+#sift-aside .sift-player-title-row{flex-direction:column;align-items:flex-start;gap:var(--space-4)}
+/* Le chemin est désormais un path control (une rangée flex de segments), plus un nœud de texte :
+   c'est aux SEGMENTS de passer à la ligne, et à la rangée de les y autoriser. Poser
+   `white-space:normal` sur le conteneur, comme avant le 2026-08-25, ne toucherait plus rien —
+   ses enfants portent leur propre `nowrap`. */
+#sift-aside .sift-player-path{flex-wrap:wrap}
+#sift-aside .sift-player-path-seg{white-space:normal;overflow-wrap:anywhere}
 #sift-aside .sift-spectro-rows{grid-template-columns:1fr;gap:0}
 #sift-aside .sift-listen-advanced-body{flex-wrap:wrap;gap:var(--space-8)}
 #sift-aside .lib-edit-meta{flex-direction:column;align-items:stretch}
@@ -956,9 +979,16 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
 /* POP-UP BUTTON, forme du kit (§ 02-Buttons / 09-Pop Up Buttons) : un aplat gris SANS bordure.
    Ni fond ni bordure ne sont plus écrits ici — un pop-up button EST un bouton secondaire, et le
    reset `button{}` (plus haut) donne déjà exactement ça (`--color-surface-raised`, `border:0`).
-   Les redéclarer aurait recréé la divergence que ce sweep ferme. Ce qui reste ici est ce qui lui
-   est propre : sa largeur bornée, son padding et sa mise en ligne libellé/valeur/chevron. */
-.sift-dest-btn{display:flex;align-items:center;gap:8px;flex:none;width:auto;max-width:220px;padding:var(--space-8) var(--space-12);border-radius:var(--border-radius-md);color:var(--color-text-primary);font-size:var(--text-sm);cursor:pointer}
+   Les redéclarer aurait recréé la divergence que ce sweep ferme.
+   ⚠️ Le PADDING et le RAYON partent le 2026-08-25, pour la même raison un cran plus loin. Ce bouton
+   portait `8/12` et un `border-radius` recopié du reset, pendant que les trois boutons de la ligne
+   d'actions du MÊME rail héritaient du `4/12` de ce reset : deux gabarits dans une seule barre, et
+   aucune HAUTEUR déclarée nulle part. Le gabarit push du kit est maintenant écrit UNE fois, plus bas
+   (`.sift-action-rail .sift-dest-btn, …`) ; le rayon revient au reset, qui vaut déjà les 7 du kit
+   depuis le re-racinement de l'échelle (b973ce3). Ne pas les réécrire ici.
+   Ce qui reste est ce qui lui est vraiment propre : largeur bornée, encre, taille de texte, et la
+   mise en ligne libellé / valeur / chevron. */
+.sift-dest-btn{display:flex;align-items:center;gap:var(--space-8);flex:none;width:auto;max-width:220px;color:var(--color-text-primary);font-size:var(--text-sm);cursor:pointer}
 .sift-dest-btn-label{color:var(--color-text-tertiary);flex:none}
 .sift-dest-btn .sift-fil-bin{flex:1;min-width:0;text-align:left;overflow:hidden;text-overflow:ellipsis;font-weight:500;max-width:120px}
 .sift-dest-btn-caret{flex:none;font-size:var(--text-sm);color:var(--color-text-tertiary)}
@@ -1011,6 +1041,31 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
   padding-top:var(--space-12);border-top:0.5px solid var(--color-border-tertiary)}
 .sift-rail-kbd{min-width:0;overflow:hidden}
 .sift-rail-abtns{display:flex;align-items:center;gap:var(--space-12);flex:none}
+/* ── GABARIT PUSH DU KIT, un seul pour tout le rail ───────────────────────────────────────────
+   Relevé au pont Figma le 2026-08-25, kit macOS Big Sur, nœuds 43:43 (primaire) / 43:44
+   (secondaire) / 43:45 (désactivé) : hauteur 28, padding 6 haut-bas et 8 gauche-droite.
+   POURQUOI UNE RÈGLE PARTAGÉE. Le rail portait DEUX gabarits : le bouton Destination avec son
+   padding 8/12 à lui, la ligne d'actions avec le 4/12 du reset `button{}`. Et aucune HAUTEUR n'était
+   déclarée nulle part — les 24px mesurés sur `.sift-secondary-trash` dans la vraie fenêtre le
+   2026-08-25 n'étaient qu'un RÉSIDU de padding, donc une valeur qui bouge avec la taille du texte,
+   la police de secours ou la densité. Elle est posée ici, une fois, pour les quatre boutons.
+   Le RAYON n'est pas redéclaré : le reset `button{}` donne déjà --border-radius-md, re-raciné à 7
+   sur ce même relevé du kit (b973ce3). Le réécrire recréerait la divergence que ce fichier ferme.
+   La PEINTURE n'est pas touchée non plus — règle du dépôt qui prime sur le kit : le bouton
+   secondaire de Sift est un aplat gris, jamais le blanc à ombre du kit ni un bouton bordé
+   (CLAUDE.md § Front, `docs/ui-specs/revue.md` § Composants). Cette règle ne fait que la géométrie.
+   Les deux mesures sont des TOKENS depuis le 2026-08-25 : `--h-control` (28, hauteur de contrôle
+   du kit) et `--space-6` (6, son padding vertical), tous deux posés dans `:root` avec ce site pour
+   consommateur — la dette signalée ici à leur place a été soldée dans le même chantier.
+   PORTÉE = le rail, délibérément. `.sift-secondary-trash` habille AUSSI le « Supprimer » de
+   `library-detail.ts` (Bibliothèque), hors périmètre : l'ancrage sur .sift-action-rail évite de
+   redimensionner par effet de bord un bouton d'un autre écran. `.sift-dest-btn` du rail de Lot
+   (batch-panel.ts) est en revanche pris volontairement — c'est le même composant, dans la même
+   barre, et il portait exactement le même écart. */
+.sift-action-rail .sift-dest-btn,
+.sift-action-rail .sift-ranger-btn,
+.sift-action-rail .sift-secondary-resource,
+.sift-action-rail .sift-secondary-trash{height:var(--h-control);padding:var(--space-6) var(--space-8)}
 /* Filled pill restored (annotation 2026-07-07: ".sift-key-btn / .chip.on / .sift-ranger-btn
    devraient avoir le même style", same message asking .sift-secondary-trash to gain "une case
    colorée avec contour") — the "bulle" removed in the PRIOR round is back, but this time as one
@@ -1053,12 +1108,19 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
    l'exception :disabled documentée du fichier) ; encre secondaire neutre pour les trois boutons ; le
    primaire Convertir perd EN PLUS son fond accent. :disabled:hover réaffirmé neutre — spécificité
    (0,3,0) qui bat button:hover et les :hover propres (.sift-ranger-btn:hover / .sift-secondary-trash:hover).
-   Numéros de ligne volontairement omis (ils dérivent — cf. CLAUDE.md). */
-.sift-ranger-btn:disabled,.sift-secondary-resource:disabled,.sift-secondary-trash:disabled{opacity:1;color:var(--color-text-secondary);cursor:default}
-.sift-ranger-btn:disabled,.sift-secondary-trash:disabled{background:var(--color-surface-raised)}
-.sift-secondary-resource:disabled{background:transparent}
-.sift-ranger-btn:disabled:hover,.sift-secondary-trash:disabled:hover{background:var(--color-surface-raised);filter:none}
-.sift-secondary-resource:disabled:hover{background:transparent;filter:none}
+   Numéros de ligne volontairement omis (ils dérivent — cf. CLAUDE.md).
+   ⚠️ UN SEUL BLOC depuis le 2026-08-25, et c'est un CORRECTIF, pas un rangement. Les cinq règles
+   d'avant disaient « désactivé » de deux façons dans la même barre : Convertir et Écarter gardaient
+   l'aplat gris (`--color-surface-raised`), Re-source passait en `background:transparent` et perdait
+   donc sa boîte entièrement — seul des trois. Un bouton désactivé reste un bouton VISIBLE dont on lit
+   qu'il est hors service ; celui qui s'efface se lit comme absent, ce que le kit ne fait nulle part
+   (nœud 43:45 : le désactivé garde sa forme, il change d'encre). Les trois portent maintenant
+   exactement le même repos ET le même survol. Re-source n'écrit aucun fond au repos — il prend celui
+   du reset `button{}` — donc lui donner ici l'aplat gris ne fait que le RÉAFFIRMER, ça ne le peint
+   pas d'une couleur qu'il n'aurait pas. */
+.sift-ranger-btn:disabled,.sift-secondary-resource:disabled,.sift-secondary-trash:disabled,
+.sift-ranger-btn:disabled:hover,.sift-secondary-resource:disabled:hover,.sift-secondary-trash:disabled:hover{
+  opacity:1;background:var(--color-surface-raised);color:var(--color-text-secondary);cursor:default;filter:none}
 /* Destination popover: replaces the persistent tree column, anchored above its trigger button.
    Hidden by default ([hidden] attribute, toggled in filing.ts); #fldz keeps its id so renderBins'
    existing document.getElementById("fldz") callers need no change. */
@@ -1236,15 +1298,20 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
 .sift-lib-v-fake{color:var(--color-text-danger)}
 .sift-lib-v-check{color:var(--color-text-warning)}
 .sift-lib-v-none{color:var(--color-text-tertiary)}
-/* Verdict en LIGNE D'ÉTAT dans l'en-tête (en-tête B, 2026-08-21) : point + mot teintés par la classe
-   .sift-lib-v-* posée sur le conteneur (currentColor, comme .sift-lib-verdict-dot, donc point et mot
-   ne divergent pas), suivis du format réel en encre secondaire. Petit (--text-md) — c'est une
-   métadonnée de qualité posée sous l'artiste, pas un titre. Masqué tant qu'il est vide (coque avant
-   analyse) pour ne pas ajouter de ligne blanche au header. */
-.sift-player-verdict{display:flex;align-items:center;gap:var(--space-8);font-size:var(--text-md);min-width:0}
+/* Verdict AU COIN HAUT-DROIT de l'en-tête, au niveau du titre (wireframe « Poste de décision »
+   § 05, patron Mail : le statut en haut à droite du message). Il tenait sa propre ligne sous
+   l'artiste jusqu'au 2026-08-25 (en-tête B, 2026-08-21) ; seul le PLACEMENT a bougé — point + mot
+   teintés par la classe .sift-lib-v-* posée sur le conteneur (currentColor, comme
+   .sift-lib-verdict-dot, donc point et mot ne divergent pas), suivis du format réel en encre
+   secondaire, inchangés. Petit (--text-md) : c'est une métadonnée de qualité posée à côté du
+   titre, pas un titre. Masqué tant qu'il est vide (coque avant analyse) pour que la rangée de
+   titre ne réserve pas de place à un verdict qui n'est pas encore là.
+   `flex:0 1 auto` : il cède devant le titre, mais uniquement en rognant son suffixe de format —
+   le MOT du verdict, lui, ne se tronque jamais (flex:none plus bas), c'est le signal central. */
+.sift-player-verdict{display:flex;align-items:center;gap:var(--space-8);font-size:var(--text-md);min-width:0;flex:0 1 auto}
 .sift-player-verdict:empty{display:none}
 .sift-player-verdict-dot{width:9px;height:9px;border-radius:var(--border-radius-pill);background:currentColor;flex:none}
-.sift-player-verdict-word{font-weight:600;letter-spacing:var(--tracking-normal)}
+.sift-player-verdict-word{font-weight:600;letter-spacing:var(--tracking-normal);white-space:nowrap;flex:none}
 .sift-player-verdict-fmt{color:var(--color-text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .sift-lib-col-artist{flex:1.4;min-width:var(--col-min-w)}
 .sift-lib-col-title{flex:1.4;min-width:var(--col-min-w)}
@@ -1667,7 +1734,20 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    Les deux `!important` survivants ne sont pas décoratifs : `.sift-editor-input` est de même
    spécificité (une classe) et déclarée PLUS BAS dans ce fichier, donc sans eux elle reprendrait
    fond et rayon par simple ordre source. */
-.sift-tag-stale{font-style:italic;background:var(--color-background-warning)!important;border-radius:var(--border-radius-md)!important;padding:var(--space-4) var(--space-8)}
+/* 2026-08-25 — ce que les `!important` protègent a CHANGÉ, et le rayon est recalé sur le kit.
+   `.sift-editor-input` (library-detail, Réglages) n'est plus jamais porté par le même élément :
+   refreshDiscrepancy ne marque que `[data-fil="artist"]`, `[data-fil="title"]` et `.sift-genres`,
+   c'est-à-dire des `.sift-attr-input` de l'inspecteur. Le vrai adversaire du fond est maintenant
+   `.sift-attr:hover .sift-attr-input` et `.sift-attr-input:focus`, toutes deux (0,2,0) contre
+   (0,1,0) ici : sans `!important` le survol et le focus repeindraient le champ en blanc et
+   effaceraient le marqueur d'état. Il reste donc load-bearing — mais il ne mange plus l'anneau de
+   focus, qui a quitté le fond pour un box-shadow (voir `.sift-attr-input:focus`).
+   Le rayon passe de md (7) à sm (5) : c'est le rayon « text field » du kit Big Sur, celui que
+   `.sift-attr-input` porte déjà. À md, un champ divergent changeait de géométrie en même temps que
+   de couleur — un marqueur d'état ne doit pas redessiner la boîte. Son `!important` n'a plus
+   d'adversaire (aucune règle plus spécifique ne pose de rayon sur ces champs) ; il est gardé pour
+   `.sift-genres`, qui n'a AUCUN rayon propre et tient le sien uniquement d'ici. */
+.sift-tag-stale{font-style:italic;background:var(--color-background-warning)!important;border-radius:var(--border-radius-sm)!important;padding:var(--space-4) var(--space-8)}
 /* ── Journal d'actions ──────────────────────────────────────────────── */
 /* REFONTE DU 2026-08-19 — l'écran est passé à sa spec (`docs/ui-specs/journal.md`, chantier 2).
    Aucune règle de l'ancien Journal n'a survécu, et chacune est partie avec son consommateur :
@@ -1839,36 +1919,58 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 /* gap sized so the waveform's left edge lines up with the title block's left edge above it
    (annotation: "aligne les deux") — header-body starts at 68px cover + 14px gap = 82px; the play
    button's margin-left was snapped 11px→var(--space-12) in the 2026-07-24 spacing sweep, so the
-   wave now needs 82 - 12 - 46 = 24px of gap (was 25px) to keep starting at that same 82px. */
+   wave now needs 82 - 12 - 46 = 24px of gap (was 25px) to keep starting at that same 82px.
+   ⚠️ Ce calcul suppose une pochette de 68px, et elle ne l'est plus : sizeCoverToBody la rend
+   CARRÉE À LA HAUTEUR DU BLOC TEXTE depuis le 2026-08-21, donc sa largeur bouge avec le nombre de
+   lignes. Le passage du verdict dans la rangée de titre (2026-08-25) fait tomber ce bloc de 4
+   lignes à 3 : la pochette rétrécit d'autant et l'alignement à 82px dérive. Aucun gap fixe ne peut
+   suivre une largeur calculée en JS — À MESURER dans la vraie fenêtre avant de retoucher ce 24,
+   et si l'écart compte, c'est un padding-left calé sur la même mesure qu'il faudra, pas un gap. */
 .sift-player-audition{display:flex;align-items:center;gap:var(--space-24)}
 /* margin-left: computed centering (68px cover - 46px button) / 2 = 11px exactly, snapped to
    var(--space-12) in the 2026-07-24 spacing sweep (1px off perfect center — accepted per the
    strict-snap decision, docs/superpowers/changes/2026-07-19-spacing-scale-sweep/). */
-/* fill/icon swapped from --color-text-primary/--color-background-primary to
-   --color-surface-raised/--color-text-primary (annotation: "trop blanc" — the bright fill was
-   sized for the card background this button used to sit on, which no longer surrounds it; a
-   moderate neutral fill with a light icon reads calmer against the flat inspector). */
-/* Transition de `filter` retirée le 2026-08-19. DESIGN.md § 6 n'autorise que `transform` et
-   `opacity` : `filter` est un effet de composition, il force un repaint du bouton entier à chaque
-   frame. L'assombrissement au survol reste — c'est le `filter:brightness(0.95)` du générique
-   `button:hover` — il s'applique simplement d'un coup. C'était la seule propriété animée ici, donc
-   la déclaration part entière. */
-.sift-play-btn{flex:none;width:46px;height:46px;margin-left:var(--space-12);border-radius:var(--border-radius-pill);display:inline-flex;align-items:center;justify-content:center;padding:0;border:none;background:var(--color-surface-raised)}
-/* Même cas que `.cov i` : un contrôle icône-seule (46px de rond) n'a AUCUN texte voisin, donc
-   rien à quoi rapporter la taille du glyphe. Le fichier a déjà tranché la question deux fois pour
-   des boutons de ce genre — `.lib-detail-close i` (--text-base) et `.sift-filed-banner-close i`
-   (--text-md) — en ancrant sur l'échelle. Substitution exacte : 20px littéral → --text-xl,
-   déclaré 20px (styles.css:242). */
-.sift-play-btn i{font-size:var(--text-xl);color:var(--color-text-primary);transition:opacity var(--duration-fast) ease}
-/* background re-asserted here: the generic button:hover{background:var(--color-background-secondary)}
-   (specificity 0,1,1) otherwise beats this button's own non-hover background rule (0,1,0), so on
-   hover the circle silently repainted to a card background token that no longer surrounds it and
-   visually vanished. */
-.sift-play-btn:hover{background:var(--color-surface-raised);filter:brightness(1.1)}
-.sift-play-btn:hover i{opacity:.65}
-/* Held down (mousedown, not yet released) — whole button dims, distinct from the icon-only hover
-   dim above. */
-.sift-play-btn:active{filter:brightness(.8)}
+/* TRIANGLE NU, plus de pastille (wireframe fix 2 ; annotation Alt+Clic d'Antoine : « change le
+   pour le design component apple »). Mesuré dans la vraie fenêtre le 2026-08-25 avant le
+   changement : 46×46, rayon 999px, fond oklch(0.4024 0.0033 286.3) — un disque opaque, alors que
+   Musique et Dictaphone posent le glyphe seul. Le fond et le rayon-pastille partent ; c'est le
+   deuxième cercle de la rangée qui disparaît, celui-là même que la pochette avait déjà troqué
+   contre un glyphe plat pour ne pas se dédoubler (voir .sift-cover-frame).
+   La BOÎTE reste 46×46 : la cible de clic ne rétrécit pas avec le décor. Le rayon devient
+   --border-radius-md (7px, le rayon « bouton / bouton icône » du kit) — plus aucun aplat ne le
+   montre, il ne sert qu'à donner sa forme à l'anneau de focus générique.
+   Le glyphe monte de --text-xl à --text-2xl : la pastille portait la masse visuelle du contrôle,
+   sans elle un triangle de 20px se perd dans une rangée qui fait 46px de haut et toute la largeur
+   de lecture. Même méthode que ci-dessous — pas de texte voisin auquel se rapporter, donc on
+   ancre sur l'échelle, et 32 est le cran au-dessus, il n'y a rien entre les deux.
+   Deux traces que le retrait du fond ne doit pas effacer : (a) l'aplat avait DÉJÀ été jugé « trop
+   blanc » une fois — il était en --color-text-primary avant de tomber à --color-surface-raised,
+   parce qu'un fond clair était dimensionné pour une carte qui n'entoure plus ce bouton ; qui
+   voudrait rendre une pastille repart de là, pas du blanc. (b) `filter` n'est PAS animable ici
+   (DESIGN.md § 6 : transform et opacity seulement) — sa transition avait été retirée le
+   2026-08-19, et la déclaration entière part maintenant que le survol ne l'utilise plus. */
+.sift-play-btn{flex:none;width:46px;height:46px;margin-left:var(--space-12);border-radius:var(--border-radius-md);display:inline-flex;align-items:center;justify-content:center;padding:0;border:none;background:none}
+/* Même cas que `.cov i` : un contrôle icône-seule n'a AUCUN texte voisin, donc rien à quoi
+   rapporter la taille du glyphe. Le fichier a déjà tranché la question deux fois pour des boutons
+   de ce genre — `.lib-detail-close i` (--text-base) et `.sift-filed-banner-close i` (--text-md) —
+   en ancrant sur l'échelle.
+   `transform` et non `opacity` : le survol d'un contrôle doit le RENFORCER, et l'ancien
+   `opacity:.65` l'affaiblissait (en plus d'atténuer par l'opacité, ce que DESIGN.md interdit hors
+   :disabled). Le glyphe est déjà en encre primaire au repos, il n'a pas de cran d'encre au-dessus :
+   le seul levier sobre restant est l'échelle. La transformation porte sur le GLYPHE, pas sur le
+   bouton — la cible de clic et l'anneau de focus ne bougent pas d'un pixel. */
+.sift-play-btn i{font-size:var(--text-2xl);color:var(--color-text-primary);transition:transform var(--duration-fast) ease}
+/* background ET filter réaffirmés ici : le générique `button:hover`
+   {background:var(--color-surface-raised);filter:brightness(0.95)} est à (0,1,1) et bat la règle
+   de base de ce bouton (0,1,0) — sans ça la pastille qu'on vient de retirer REVIENDRAIT au survol,
+   et le brightness assombrirait le glyphe, l'inverse de l'effet voulu. C'est la règle CLAUDE.md
+   « un bouton qui redéfinit background le réaffirme dans son :hover », appliquée aussi au filter
+   parce que le générique en pose un. */
+.sift-play-btn:hover{background:none;filter:none}
+.sift-play-btn:hover i{transform:scale(1.08)}
+/* Enfoncé (mousedown, pas encore relâché) : le glyphe rentre. Symétrique du survol, même levier. */
+.sift-play-btn:active{background:none;filter:none}
+.sift-play-btn:active i{transform:scale(.92)}
 /* La pochette prend la hauteur du bloc texte (titre · artiste · verdict · chemin) — l'inverse de
    l'ancien réglage où le texte s'étalait pour matcher une pochette fixe (Antoine, en-tête B
    2026-08-21). Le carré exact est posé en JS (fillVerdictLanding) car aspect-ratio + align-self:
@@ -1898,11 +2000,23 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    spreading the lines out closer to that same 68px makes the text column read as filling the same
    vertical footprint as the cover next to it, instead of a smaller block adrift in a taller row. */
 .sift-player-header-body{min-width:0;flex:1;display:flex;flex-direction:column;justify-content:center;gap:4px}
+/* Rangée de titre : le nom à gauche, le VERDICT au coin haut-droit (wireframe « Poste de décision »
+   § 05, patron Mail). `align-items:center` et non `baseline` : .sift-player-verdict est lui-même un
+   flex dont la première boîte est le point, un span VIDE — la baseline d'un flex container est
+   celle de son premier item, et celle d'un item vide est son bord bas, donc un alignement baseline
+   se calerait sur le bas du point et non sur le texte du verdict. Centré, l'écart 32px ↔ 12px est
+   prévisible. ⚠️ À REGARDER dans la vraie fenêtre : c'est le seul point de cette rangée qui ne se
+   déduit pas d'une mesure. */
+.sift-player-title-row{display:flex;align-items:center;gap:var(--space-12);min-width:0}
 /* --text-xl → --text-2xl (annotation: "la taille du texte hero pour qu'elle fit la vignette") —
    16px read as small next to the 68px cover; 26px is the only step big enough to feel like an
    actual hero title at this row height. (--text-2xl had no title consumer before this — its
-   dedicated hero-title role, not reused casually.) */
-.sift-player-name{font-size:var(--text-2xl);font-weight:600;color:var(--color-text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+   dedicated hero-title role, not reused casually.)
+   `flex:1 1 auto;min-width:0` depuis que le verdict partage sa rangée : c'est le titre qui prend
+   la place libre (donc le verdict se pose bien au bord droit) et c'est lui qui rétrécit, son
+   ellipse existante prenant le relais. Sans `min-width:0`, un enfant de flex refuse de passer sous
+   la largeur de son contenu et pousserait le verdict hors de l'en-tête. */
+.sift-player-name{font-size:var(--text-2xl);font-weight:600;color:var(--color-text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1 1 auto;min-width:0}
 /* Bumped one step each (annotation: "augmente encore le texte pour que ça fit aussi en haut" —
    the block reached the cover's bottom edge once centered but still fell short of the top; more
    overall block height, not just the title, closes that remaining gap). Artist bumped again +
@@ -1911,7 +2025,25 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    identifying half. */
 .sift-player-sub{font-size:var(--text-lg);font-weight:500;color:var(--color-text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sift-report-text-pending{visibility:hidden}
-.sift-player-path{font-size:var(--text-sm);color:var(--color-text-tertiary);font-family:var(--font-mono);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* PATH CONTROL (wireframe fix 10 ; HIG « Path controls » / NSPathControl, la barre de chemin du
+   Finder) : des segments séparés par un chevron, plus une chaîne collée coupée par une ellipse.
+   Deux changements portés par la spec (docs/ui-specs/revue.md § Zone C, point 1) :
+   — le MONO part. « Le mono est un réflexe Terminal, écarté ici » : le chemin se lit en police
+     système comme le reste de l'en-tête, et --font-mono reste réservé aux chiffres alignés en
+     colonne (durées, mesures).
+   — l'encre passe d'un tertiaire uniforme à une HIÉRARCHIE : intermédiaires en secondaire, feuille
+     (le nom de fichier) en primaire. C'est la seule part du chemin qui vaut d'être lue, et la
+     teinte unique la noyait dans son dossier parent.
+   Rétrécissement : la feuille cède en DERNIER. Un flex répartit le manque au prorata du facteur ×
+   la taille de base, donc un facteur 3 sur les intermédiaires les fait céder les premiers ; la
+   feuille garde 1 pour rester ellipsable si elle est seule à ne pas tenir (un `flex:none` la ferait
+   couper net, sans ellipse, par l'`overflow:hidden` du conteneur). */
+.sift-player-path{display:flex;align-items:center;gap:var(--space-4);font-size:var(--text-sm);color:var(--color-text-secondary);min-width:0;overflow:hidden}
+.sift-player-path-seg{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0;flex:0 3 auto}
+.sift-player-path-seg.is-leaf{color:var(--color-text-primary);flex:0 1 auto}
+/* Le segment élidé (« … ») ne se rétrécit pas : c'est lui qui DIT la troncature. */
+.sift-player-path-seg.is-elided{flex:none}
+.sift-player-path-sep{font-size:var(--text-xs);color:var(--color-text-tertiary);flex:none}
 .sift-wave-wrap{position:relative;flex:1;min-width:0}
 .sift-player-wave{cursor:pointer;transition:opacity var(--duration-base) ease}
 .sift-wave-wrap.is-paused .sift-player-wave{opacity:.55}
@@ -1924,10 +2056,30 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .sift-wave-hovertime{position:absolute;top:var(--space-4);transform:translateX(-50%);font-family:var(--font-mono);font-size:var(--text-xs);font-weight:500;padding:var(--space-4) var(--space-8);border-radius:var(--border-radius-sm);background:var(--overlay-scrim);color:var(--color-text-on-scrim);pointer-events:none;white-space:nowrap}
 /* Pouce de lecture — le knob du slider Apple (kit § 04 / slider de zoom de Photos) : pastille blanche
    ronde, bordure et ombre légères, centrée verticalement sur la waveform, posée à la tête de lecture
-   par updateTime (left en %). La waveform tient lieu de piste. */
+   par updateTime (left en %). La waveform tient lieu de piste.
+   ⚠️ Le fond était --color-surface-raised : pastille bien BLANCHE en thème clair (le token y vaut
+   oklch(100 % 0 0)) mais gris moyen (40,24 %) en sombre — donc pas la pastille du kit dans les deux
+   thèmes, ce que la spec demande (revue.md § Composants — Slider). Corrigé le 2026-08-25 sur
+   --color-accent-ink. Le dépôt a DEUX blancs theme-invariants et le choix se joue entre eux :
+   --color-text-on-scrim est de l'encre posée sur des pixels d'IMAGE (sa déclaration le dit), tandis
+   que --color-accent-ink « EST sa propre surface » — c'est exactement la nature d'un pouce. Écart
+   assumé : ce dernier reste nommé pour l'encre d'un bouton primaire, donc il bougerait si l'accent
+   changeait de couple ; le token juste serait --color-knob, qui n'existe pas (voir rapport de lane).
+   La BORDURE, elle, garde --color-border-secondary et ce n'est pas un oubli : sombre @16 % en thème
+   clair (le liseré qui détache la pastille de la carte blanche), blanc @22 % en sombre (invisible sur
+   la pastille — mais inutile là, où la pastille tranche déjà sur la carte sombre). Le token fait donc
+   son travail exactement là où il est nécessaire.
+   Survol / pressé : le pouce reste pointer-events:none — le lui retirer intercepterait le clic de
+   déplacement de lecture et le survol-fantôme, tous deux servis par .sift-wave-wrap. Ce sont donc les
+   états du WRAP (la surface de scrub, qui porte déjà la convention de survol juste au-dessus) qui
+   pilotent la réaction du pouce. On anime `transform` seul (jamais width/height) : l'élément persiste
+   d'une frame à l'autre — updateTime ne mute que `left` — donc la transition a bien un sujet. */
 .sift-wave-playhead{position:absolute;top:50%;width:13px;height:13px;border-radius:var(--border-radius-pill);
-  background:var(--color-surface-raised);border:0.5px solid var(--color-border-secondary);
-  box-shadow:var(--shadow-panel-subtle);transform:translate(-50%,-50%);pointer-events:none;z-index:1}
+  background:var(--color-accent-ink);border:0.5px solid var(--color-border-secondary);
+  box-shadow:var(--shadow-panel-subtle);transform:translate(-50%,-50%);pointer-events:none;z-index:1;
+  transition:transform var(--duration-fast) var(--ease-out)}
+.sift-wave-wrap:hover .sift-wave-playhead{transform:translate(-50%,-50%) scale(1.15)}
+.sift-wave-wrap:active .sift-wave-playhead{transform:translate(-50%,-50%) scale(.92)}
 /* Un seul temps, cliquable (bascule écoulé ↔ restant) — patron Musique/Podcasts. À CÔTÉ de l'onde
    (élément de flux dans .sift-player-audition, plus un overlay scrim sur la forme d'onde — retour
    Antoine). :hover dans ensureStyles (report-view.ts). */
@@ -1938,15 +2090,51 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    edge instead of sitting flush at the row's own left edge. */
 .sift-player-controls{display:flex;align-items:center;gap:var(--space-16);margin-left:82px}
 /* Volume — SVG du kit macOS Big Sur inliné TEL QUEL (copie directe ; cf. SPK_SLASH / VOL_DEFS et le
-   markup dans report-view.ts). Tous les éléments (rect piste blanc @10% + inner-shadow, rect
-   remplissage blanc, cercle pouce blanc + drop-shadow, path haut-parleur barré gris foncé) et leurs
-   couleurs/filtres viennent du markup SVG ; renderVolume ne pilote que `width` du remplissage et
-   `cx` du pouce. Le CSS ne fait que dimensionner le <svg> (viewBox 0 0 112 24, rendu 112×24, 1:1)
-   et le rendre interactif (le <svg> EST le slider). */
+   markup dans report-view.ts). Géométrie, rayons, inner-shadow de la piste et drop-shadow du pouce
+   viennent du markup SVG ; renderVolume ne pilote que `width` du remplissage et `cx` du pouce. Le CSS
+   dimensionne le <svg> (viewBox 0 0 112 24, rendu 112×24, 1:1), le rend interactif (le <svg> EST le
+   slider) et — SEUL écart à la copie — porte les trois ENCRES, ci-dessous. */
 .sift-volume{flex:none;width:112px;height:24px;cursor:pointer;touch-action:none;user-select:none}
-.sift-volume-icon{cursor:pointer}
 .sift-volume:focus{outline:none}
 .sift-volume:focus-visible{outline:2px solid var(--color-accent-fill);outline-offset:2px}
+/* LES TROIS ENCRES — inversion en thème clair, tranchée par Antoine le 2026-08-25 (revue.md
+   § Composants — Volume). Le kit ne peint qu'un trio blanc / blanc / #464646, fidèle en SOMBRE et
+   cassé en CLAIR : mesuré dans la vraie fenêtre le 2026-08-25, le contraste remplissage / piste vaut
+   12,67:1 en sombre mais 1,45:1 en clair (piste rgb(214,214,218) sur surface rgb(209,209,214)), sous
+   le 3:1 que WCAG 1.4.11 exige d'un composant d'interface. Ce n'est pas une préférence de teinte :
+   c'est CE contraste qui dit le niveau, et en clair il ne se voyait pas. En clair on inverse donc —
+   remplissage foncé sur piste claire, comme macOS en clair ; en sombre rien ne change de forme.
+   Les deux tokens choisis basculent d'eux-mêmes, donc AUCUN bloc de thème n'est nécessaire ici :
+     --color-text-primary   rgb(241,241,246) en sombre / rgb(48,48,52) en clair → le remplissage.
+                            Ratios RECALCULÉS sur les pistes mesurées ci-dessus (oklch → sRGB puis
+                            WCAG) : 11,20:1 en sombre, 9,07:1 en clair. Le sombre perd 1,4 point
+                            contre le blanc pur du kit et reste à 3,7× le plancher de 3:1.
+     --color-text-on-accent l'encre d'un glyphe posé sur un APLAT plein (c'est sa définition) :
+                            rgb(28,28,30) en sombre, blanc en clair → toujours lisible SUR le
+                            remplissage, dans les deux sens (15,11:1 et 13,14:1).
+   ⚠️ Le POUCE prend la même encre que le remplissage, et ce n'est pas un raccourci : dans le kit le
+   pouce EST le bout arrondi du remplissage — même blanc, il n'existe que pour porter l'ombre. Lui
+   donner une encre propre (un pouce blanc sur remplissage foncé, par exemple) rendrait le glyphe
+   INSOLUBLE : il est posé sur le pouce à volume 0 et sur le remplissage au-delà, donc il lui faudrait
+   deux encres opposées, et aucune encre unique ne tient 3:1 contre les deux extrêmes à la fois.
+   ⚠️ La PISTE, elle, garde le blanc @10 % du markup dans les deux thèmes : c'est le remplissage qui
+   s'inverse, pas elle (« remplissage foncé sur piste claire »).
+   Tokens que la spec nomme et que le dépôt n'a PAS : --color-knob, --color-slider-capsule,
+   --color-knob-glyph. Les deux ci-dessus sont les plus proches existants — voir rapport de lane. */
+.sift-vol-fill,.sift-vol-knob{fill:var(--color-text-primary)}
+.sift-volume-icon{fill:var(--color-text-on-accent);cursor:pointer}
+/* Survol et pressé — le kit les donne, la première version ne portait que le repos ; mesure du
+   2026-08-25 dans la vraie fenêtre : le survol était bien reçu par le moteur et ne changeait RIEN au
+   rendu. Patron slider macOS : c'est le POUCE qui réagit, pas la capsule. On anime `transform` seul
+   (règle du dépôt) ; `transform-box:fill-box` parce que l'origine par défaut d'un élément SVG est
+   celle du viewBox, pas celle de la forme — sans lui le scale déplacerait le pouce au lieu de le
+   grossir, et d'autant plus qu'il est loin de l'origine (cx bouge de 11 à 101).
+   `.dragging` double `:active` : la classe est posée par dragSlider (report-view.ts) pendant toute la
+   capture du pointeur, donc l'état pressé tient même quand le pointeur sort de la capsule en cours de
+   glissement. Aucune règle ici ne touche l'outline de focus ci-dessus. */
+.sift-vol-knob{transform-box:fill-box;transform-origin:center;transition:transform var(--duration-fast) var(--ease-out)}
+.sift-volume:hover .sift-vol-knob{transform:scale(1.06)}
+.sift-volume:active .sift-vol-knob,.sift-volume.dragging .sift-vol-knob{transform:scale(.94)}
 .sift-player-spacer{flex:1}
 /* Tempo/key-lock disclosure (audit 2026-07-10, finding #6) — same suppressed-marker/caret
    convention as .sift-spectro-tech. flex:none so it doesn't stretch to fill .sift-player-spacer's
@@ -2013,7 +2201,13 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .sift-spectro-body{display:grid;grid-template-rows:0fr;transition:grid-template-rows var(--duration-slow) ease}
 .sift-spectro-body.is-open{grid-template-rows:1fr}
 .sift-spectro-body-inner{overflow:hidden;min-height:0}
-.sift-spectro-declared{padding:var(--space-8) var(--space-16);font-size:var(--text-xs);color:var(--color-text-tertiary);line-height:1.5}
+/* `.sift-spectro-declared` (la phrase « Déclaré <format> <rail> · coupure N Hz — … » qui coiffait
+   le spectrogramme) est SUPPRIMÉE le 2026-08-25 avec son markup — wireframe « Poste de décision »
+   § 06 fix 5 : elle redisait le format déjà porté par l'en-tête de piste (`formatSummary`) et
+   repoussait la preuve sous le pli. Ce qu'elle disait n'est pas perdu : les deux pastilles
+   (`.sift-spectro-pills`, plus bas) portent format et lecture du spectre, la coupure exacte
+   descend aux Détails techniques. Règle retirée plutôt que laissée sans markup — une règle inerte
+   est le mode de défaillance déjà documenté sur `.sift-spectro-box`. */
 /* Toggle de zone partagé (Diagnostic ET Métadonnées) — un seul style pour les deux disclosures,
    pour qu'elles lisent comme le même composant (retour utilisateur 2026-07-05 : elles avaient
    deux styles différents et une seule des deux zones avait un fond teinté). */
@@ -2053,7 +2247,8 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    for that (tried: 16/16/24 — looked oversized/goofy) was solving the wrong problem. Match
    Métadonnées's toggle at the row level instead: same vertical padding as .sift-zone-toggle
    already gives it, horizontal padding to line up with the sibling rows below
-   (.sift-spectro-declared/.sift-spectro-rows) instead of sitting flush against the
+   (.sift-spectro-pills/.sift-spectro-rows — c'était .sift-spectro-declared avant son retrait le
+   2026-08-25, même inset) instead of sitting flush against the
    box edge. Bumped 11px→18px (annotation: "aligne le panneau du bas sur celui du hero, surtout
    sur la gauche") to match .sift-player-row's own 18px inset exactly. */
 /* #sift-meta-toggle restored to this rule (annotation, 3rd round: "n'a pas la meme largeur que
@@ -2116,18 +2311,36 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    `.sift-id-btn` juste au-dessus — les deux variantes du même bouton réagissent enfin pareil. */
 .sift-id-btn-neutral:hover{background:var(--color-surface-raised);filter:brightness(0.95)}
 /* width:100% → calc(...)+margin (annotation: "reduis .sift-sg.sift-spectro-canvas pour qu'il fit
-   la largeur des .sift-row") — .sift-spectro-declared/.sift-spectro-rows both have their own 18px
-   horizontal padding, but this canvas bled edge-to-edge of their shared container
+   la largeur des .sift-row") — .sift-spectro-pills/.sift-spectro-rows both have their own
+   --space-16 horizontal padding (la phrase originale disait « 18px », le littéral d'avant la
+   tokenisation), but this canvas bled edge-to-edge of their shared container
    (.sift-spectro-body-inner has none), so it visually overflowed past the rows above/below it.
    drawSpectrogram (report-view.ts) already reads the canvas's real rendered width via
-   getBoundingClientRect() to size its backing store, so it adapts automatically — no JS change. */
+   getBoundingClientRect() to size its backing store, so it adapts automatically — no JS change.
+   ⚠️ Ces deux voisins étaient .sift-spectro-declared (au-dessus) et .sift-spectro-rows (en
+   dessous) jusqu'au 2026-08-25 ; la phrase du dessus est retirée, donc le canvas est désormais le
+   PREMIER enfant du corps et n'a plus rien qui l'écarte du toggle : d'où le margin-top ci-dessous,
+   qui reprend le --space-8 que l'inset vertical de la phrase lui donnait. */
 /* Rounded frame + hairline border (annotation: "il a l'air un peu posé au milieu de nulle part") —
    a flush black rectangle with no edge treatment of its own read as floating/undefined inside the
    box, unlike every other "case" in the app. border-radius on a <canvas> clips its own painted
    pixels to the rounded box, same as an <img>. */
-.sift-spectro-canvas-wrap{position:relative;margin:0 var(--space-16)}
+.sift-spectro-canvas-wrap{position:relative;margin:var(--space-8) var(--space-16) 0}
 .sift-spectro-canvas{width:100%;display:block;background:#000;border-radius:var(--border-radius-md);border:0.5px solid var(--color-border-tertiary)}
 .sift-spectro-overlay{position:absolute;inset:0;width:100%;height:100%;border-radius:var(--border-radius-md);pointer-events:none}
+/* Les DEUX pastilles du Diagnostic ouvert — format · lecture du spectre (spec
+   `docs/ui-specs/revue.md` § Zone C, point 5 ; wireframe § 06, fix 5). Elles remplacent la phrase
+   `.sift-spectro-declared` retirée le même jour : sous l'image, deux marques compactes, et tout
+   ce qui se chiffre derrière « Détails techniques ».
+   Aucun style de pastille ici : `.pill` (générique, plus haut dans ce fichier) porte fond, encre
+   et rayon. Cette règle ne fait que POSER la rangée — même inset horizontal (`--space-16`) que
+   `.sift-spectro-rows` et que le toggle au-dessus, pour que les trois lisent comme une seule
+   colonne. ⚠️ Les commentaires voisins parlent encore d'un inset « 18px » : c'est le littéral
+   d'avant la tokenisation, `--space-16` vaut 16px (styles.css:256, vérifié le 2026-08-25).
+   `flex-wrap` parce que la pastille de spectre porte du texte : en colonne étroite elle
+   passe sous celle du format au lieu de déborder du cadre. */
+.sift-spectro-pills{display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-8);
+  padding:var(--space-8) var(--space-16)}
 .sift-spectro-rows{padding:var(--space-8) var(--space-16);display:grid;grid-template-columns:1fr 1fr;gap:0 var(--space-32);font-size:var(--text-md)}
 .sift-row{display:flex;justify-content:space-between;gap:16px;padding:var(--space-4) 0;border-bottom:0.5px solid var(--color-border-tertiary)}
 /* Une ligne de mesure qui porte sa RÉFÉRENCE en plus de sa valeur ne tient pas dans une demi-
@@ -2144,11 +2357,15 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    fitting only for the numeric/unit rows around it (annotation: "j'aime le texte de verdict mais
    celui de ok pas fan"). */
 .sift-row-value-plain{font-family:inherit}
-/* Nested disclosure inside "Diagnostic audio" (audit 2026-07-10, finding #5): verdict/coupure/
-   durée stay always visible above, everything else (true-peak, DC offset, écrêtage…) is jargon
-   with no vulgarization for a non-technical user — moved behind this second toggle. Native
-   <details>/<summary>, default marker suppressed in favor of the same caret glyph zoneToggleHtml
-   uses elsewhere, for a consistent look without needing new JS wiring. */
+/* Nested disclosure inside "Diagnostic audio" (audit 2026-07-10, finding #5): the jargon with no
+   vulgarization for a non-technical user (true-peak, DC offset, écrêtage…) sits behind this second
+   toggle. Native <details>/<summary>, default marker suppressed in favor of the same caret glyph
+   zoneToggleHtml uses elsewhere, for a consistent look without needing new JS wiring.
+   ⚠️ Le partage a CHANGÉ le 2026-08-25 (wireframe « Poste de décision » § 06, fix 5) : ce
+   disclosure prend maintenant TOUTES les mesures chiffrées, coupure / densité de l'aigu / durée
+   comprises — le panneau ouvert ne garde que le spectrogramme (la preuve) et les deux pastilles
+   `.sift-spectro-pills`. La phrase d'origine disait « verdict/coupure/durée stay always visible
+   above » : c'est faux depuis, et le verdict n'est plus dit ici du tout. */
 .sift-spectro-tech{border-top:0.5px solid var(--color-border-tertiary);margin-top:var(--space-4)}
 .sift-spectro-tech-summary{list-style:none;cursor:pointer;padding:var(--space-8) var(--space-16);font-size:var(--text-sm);color:var(--color-text-tertiary);user-select:none}
 .sift-spectro-tech-summary::-webkit-details-marker{display:none}
@@ -2240,34 +2457,118 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 
 /* ── Revue filing rail (filing.ts) — extracted inline styles, byte-identical values ───── */
 /* Même règle « le caret prend le cran de son corps » que `.sift-zone-toggle-car`, appliquée dans
-   l'autre sens : l'arbre de destination n'a AUCUN corps animé — `filing-bins.ts:378` réécrit
-   `fldz.innerHTML` en entier au dépli, et `binNodeHtml` (:247) pose le `rotate(90deg)` en style
+   l'autre sens : l'arbre de destination n'a AUCUN corps animé — `renderBins` (filing-bins.ts)
+   réécrit `fldz.innerHTML` en entier au dépli, et `binNodeHtml` pose le `rotate(90deg)` en style
    inline à la construction. Le nœud est donc détruit et recréé : cette transition ne joue jamais
    (CLAUDE.md § Front, « une transition n'anime rien si le render rebuild via innerHTML »). Elle
-   passe à la référence plutôt qu'à l'ample — 300 ms décrivaient un panneau qui n'existe pas ici. */
+   passe à la référence plutôt qu'à l'ample — 300 ms décrivaient un panneau qui n'existe pas ici.
+   (Numéros de ligne retirés le 2026-08-25 : ils dérivaient déjà — cf. CLAUDE.md.) */
 .sift-fld-caret{display:inline-block;width:14px;text-align:center;cursor:pointer;color:var(--color-text-tertiary);transition:transform var(--duration-base)}
 .sift-fld-caret-spacer{display:inline-block;width:14px;flex:none}
-.sift-fld-row{display:flex;align-items:center;gap:4px}
-.sift-fld-flat-row{padding:var(--space-4) var(--space-8);display:flex;align-items:center;gap:var(--space-4)}
 .sift-fld-icon{flex:none}
-.sift-fld-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis}
+/* `white-space:nowrap` ajouté avec le gabarit d'item ci-dessous, et il est structurel : sans lui,
+   `text-overflow:ellipsis` ne coupait RIEN (il ne s'applique qu'à une ligne qui ne se replie pas)
+   — le libellé d'un dossier « Autres » (nom + chemin complet) passait à la ligne, et une rangée à
+   hauteur de gabarit l'aurait rogné au lieu de l'abréger. Une ligne, une rangée de 22. */
+.sift-fld-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sift-binfilter{width:100%;font-size:var(--text-sm);padding:var(--space-4) var(--space-8);margin-bottom:var(--space-8);background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);color:var(--color-text-primary);box-sizing:border-box}
 .sift-fldz-hint{font-size:var(--text-sm);color:var(--color-text-tertiary);margin-bottom:8px}
-.sift-fldz-empty-note{font-size:var(--text-xs);color:var(--color-text-tertiary);padding:var(--space-4) 0 var(--space-4) 33px}
-.sift-fldz-no-match{font-size:var(--text-xs);color:var(--color-text-tertiary);padding:4px 0}
-.sift-fldz-rootpath{display:flex;align-items:center;gap:var(--space-4);font-family:var(--font-mono);font-size:var(--text-xs);color:var(--color-text-tertiary);white-space:nowrap;overflow:hidden;padding:var(--space-8) 0;margin-bottom:4px;border-bottom:0.5px solid var(--color-border-tertiary)}
+/* LES DEUX NOTES SUIVENT LA GOUTTIÈRE DU GABARIT D'ITEM (recalées le 2026-08-25). Ce ne sont pas
+   des items — pas de survol, pas de sélection, rien à cliquer — mais leur bord gauche se lit
+   contre celui des rangées voisines, et le gabarit du kit a déplacé ce bord. Les deux littéraux
+   sont des alignements, pas des espacements : aucun token ne les porte (cf. le bloc du gabarit,
+   plus bas, sur 3px/2px/16px).
+   « vide — crée un dossier » se glisse SOUS la racine et se lit comme la première rangée de
+   l'arbre : elle vise donc la colonne d'icône d'un dossier enfant. Elle valait 33 = 6 (ex-padding
+   inline de la rangée) + 13 (indentation d'un cran) + 14 (caret) ; le gabarit a porté ce padding
+   à 8 et ajouté une gouttière de 2, d'où 2 + 8 + 13 + 14 = 37.
+   « Aucun dossier correspondant. » REMPLACE la liste pendant un filtre : aucun parent à indenter
+   sous, elle vise le bord de TEXTE d'un item à plat, 2 (gouttière) + 8 (padding) = 10. Elle
+   partait de 0, donc du bord du popover, quand les rangées qu'elle remplace partaient de 6. */
+.sift-fldz-empty-note{font-size:var(--text-xs);color:var(--color-text-tertiary);padding:var(--space-4) 0 var(--space-4) 37px}
+.sift-fldz-no-match{font-size:var(--text-xs);color:var(--color-text-tertiary);padding:var(--space-4) var(--space-8) var(--space-4) 10px}
+/* La légende de chemin a REMONTÉ au-dessus de l'en-tête « Bibliothèque » (2026-08-25, avec le
+   champ de filtre) : l'en-tête de section doit coiffer directement le premier dossier. Son
+   `border-bottom` part dans le même geste — il séparait la légende de l'arbre, ce qu'il ne fait
+   plus ; posé là où il était, il n'aurait plus rien fait que barrer entre la légende et le champ
+   de filtre. La respiration avant l'en-tête vient du `margin-top` de celui-ci.
+   Gouttière de 2px et padding de --space-8 : la légende partage le bord gauche du texte des items
+   de menu (même 2 + 8), au lieu de partir du bord du wrapper. */
+.sift-fldz-rootpath{display:flex;align-items:center;gap:var(--space-4);font-family:var(--font-mono);font-size:var(--text-xs);color:var(--color-text-tertiary);white-space:nowrap;overflow:hidden;margin:0 2px;padding:var(--space-4) var(--space-8)}
 .sift-fldz-rootpath i{flex:none}
 .sift-fldz-rootpath span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
 /* En-tête de section (« Bibliothèque »/« Autres ») = composant kit Sidebars/Sidebar-section
    (61:1678, relevé via le pont Figma) : SF 10px / poids 600 / tracking 0.12 / casse normale. Le
    fill noir du kit est le placeholder de label système → mappé sur le token gris, jamais le noir
-   brut (« Don't hard code system color values », references/figma-bridge.md). */
-.sift-fldz-group-label{font-size:var(--text-xs);font-weight:600;letter-spacing:0.12px;color:var(--color-text-tertiary);margin:var(--space-8) 0 var(--space-4);padding-left:var(--space-8)}
+   brut (« Don't hard code system color values », references/figma-bridge.md).
+   Même gouttière de 2px que les items pour aligner les bords gauches de texte (2 + --space-8). */
+.sift-fldz-group-label{font-size:var(--text-xs);font-weight:600;letter-spacing:0.12px;color:var(--color-text-tertiary);margin:var(--space-8) 2px var(--space-4);padding-left:var(--space-8)}
 .sift-fldz-group-label:first-child{margin-top:0}
 .sift-custom-path{color:var(--color-text-tertiary);font-size:var(--text-xs)}
 .sift-fldz-sep{height:0;border-top:0.5px solid var(--color-border-tertiary);margin:var(--space-8) 0}
+/* `display:flex;flex-direction:column` sur les deux CONTENEURS d'items, et ce n'est pas décoratif :
+   la gouttière verticale du gabarit ci-dessous est une MARGE, et deux marges verticales voisines
+   FUSIONNENT en flux normal — le pas serait tombé de 22 à 19px entre deux rangées. Un contexte
+   flex ne fusionne pas les marges. (`.sift-dest-popover` est déjà en flex column, donc la case
+   « Sur place » et les séparateurs, qui en sont des enfants directs, étaient déjà couverts.) */
+.sift-fldz-tree,.sift-fldz-foot{display:flex;flex-direction:column}
 .sift-fldz-foot{margin-top:var(--space-8);padding-top:var(--space-8);border-top:0.5px solid var(--color-border-tertiary)}
-.sift-chip-disabled{opacity:.4;cursor:not-allowed}
+/* ── Popover Destination : UN SEUL patron d'item (kit Menu/Menu-items, node 58:49) ────────
+   Le popover empilait QUATRE patrons de rangée : l'arbre (`.fld`, padding vertical 8), le groupe
+   « Autres » (`.sift-fld-flat-row`, padding 4/8), la case « Sur place » (un <label> nu — ni
+   padding, ni rayon, ni survol) et le pied (`.fld`). Les deux classes de rangée ont disparu, il
+   ne reste que `.fld` : le kit ne connaît qu'un item, décliné.
+   Gabarit relevé : rangée de 22, gouttière 3 haut-bas / 2 gauche-droite, contenu au rayon 5
+   (--border-radius-sm), libellé 11px (--text-sm). Le padding vertical de 8 que portait `.fld`
+   valait à lui seul les 16px de contenu du kit.
+   La gouttière est une MARGE et pas un padding : c'est le CONTENU — le rectangle de 16 qui reste
+   — qui porte l'aplat de survol et de sélection, comme un item de menu macOS. En padding, l'aplat
+   aurait été peint jusqu'au bord de la rangée et deux items sélectionnables se seraient touchés.
+   ⚠️ 3px / 2px / 16px sont des LITTÉRAUX : l'échelle --space-* ne descend pas sous 4, et aucun
+   token de hauteur de contrôle n'existe (`.sift-attr-input`, plus haut, demande déjà
+   `--h-control-sm:22px`). Les poser dans `:root` revient à la lane qui en a le droit ; ils sont
+   à substituer ici ensuite, pas à réinventer.
+   La portée est le popover, PAS `.fld` : la même classe habille les catégories de Réglages et les
+   sections Rekordbox, qui ne sont pas des items de menu et ne doivent pas rétrécir avec celui-ci. */
+.sift-dest-popover .fld{min-height:16px;margin:3px 2px;padding:0 var(--space-8);gap:var(--space-4);border-radius:var(--border-radius-sm);font-size:var(--text-sm)}
+/* SÉLECTION VISIBLE (bug relevé le 2026-08-25). `.fld.on` peint `--color-surface-raised`, qui est
+   EXACTEMENT le fond de `.sift-dest-popover` : le dossier choisi ne se distinguait que par sa
+   graisse et la teinte de son icône. C'est le défaut déjà corrigé sur `.fld:hover` le 2026-08-19,
+   un cran plus loin dans la même règle — un token de PLAN ne se voit pas sur une surface du même
+   plan, un voile alpha se compose sur ce qui le porte et se voit partout. `--overlay-selected`
+   (.06) est le voile de sélection du dépôt (déjà celui de `.sift-cand[aria-selected="true"]`),
+   plus dense que `--overlay-hover` (.035) pour que « choisi » et « survolé » ne se confondent pas.
+   NEUTRE, jamais bleu : le kit peint sa sidebar active en bleu, DESIGN.md § 14 l'écarte (le bleu
+   est déjà pris par la sémantique et par l'aplat des primaires) — conflit assumé, gris arrondi.
+   `:hover` réaffirme le même aplat : un état permanent reste stable, survoler ce qui est déjà
+   choisi n'annonce rien (même raison que `.fld.on:hover`, plus haut). */
+.sift-dest-popover .fld.on,.sift-dest-popover .fld.on:hover{background:var(--overlay-selected)}
+/* Pied : deux VRAIS <button> depuis le 2026-08-25 (ils étaient des <div>, donc ni focusables ni
+   annoncés — voir `footRow` dans filing-bins.ts). Le reset `button{}` leur donnerait l'aplat gris
+   d'un bouton secondaire et un survol assombri : les deux sont annulés ici pour qu'ils restent des
+   items de menu, et pas deux boutons posés dans un menu. `filter:none` neutralise le
+   `brightness(0.95)` de `button:hover`, que ce sélecteur (0,3,1) bat. */
+.sift-dest-popover .sift-fldz-foot .fld{background:none;text-align:left}
+.sift-dest-popover .sift-fldz-foot .fld:hover{background:var(--overlay-hover);filter:none}
+/* Option de format hors d'atteinte (AIFF/WAV sur une source lossy — filing.ts, renderFoot).
+   DÉSACTIVÉ PAR L'ENCRE, jamais par l'opacité : `opacity:.4` était ici jusqu'au 2026-08-25, et
+   DESIGN.md § Contraste l'interdit (« l'atténuation d'un état ne se fait pas à l'opacité » — aucune
+   valeur d'opacité ne franchit 4,5:1 avant ~0,92). Même geste que les trois boutons du rail, dont
+   c'est le voisin immédiat à l'écran ; la cible est ici un <span> — une option de segmenté, pas un
+   <button> — donc `:disabled` ne s'y applique pas et c'est la classe qui porte l'état.
+   ⚠️ SPÉCIFICITÉ (0,2,0) OBLIGATOIRE, et ce n'est pas de la prudence : `.sift-seg-opt` est déclaré
+   PLUS BAS dans ce fichier, à spécificité ÉGALE (0,1,0). Une règle `.sift-chip-disabled` seule
+   perdait donc par l'ordre source sur toute propriété que `.sift-seg-opt` déclare aussi — c'est
+   pourquoi le `cursor:not-allowed` d'origine n'a jamais rien fait : une option désactivée montrait
+   la main de `.sift-seg-opt{cursor:pointer}`. Le `:hover` est réaffirmé pour la même raison :
+   `.sift-seg-opt:hover` vaut aussi (0,2,0) et gagnerait par l'ordre, rallumant l'encre primaire sous
+   la souris d'un contrôle qui refuse le clic. `not-allowed` est GARDÉ : le fichier a déjà tranché
+   (voir `.sift-confirm-btn:disabled`) que « le bouton refuse » se dit autrement qu'« inerte ».
+   L'encre est --color-text-quaternary et pas -secondary comme sur les boutons du rail, parce que le
+   point de départ n'est pas le même : `.sift-seg-opt` au REPOS est déjà --color-text-secondary, et
+   secondary → tertiary ne vaut pas un cran ici (45,4 % contre 46,15 % de clarté en thème clair).
+   quaternary est le seul pas réellement visible sous le repos, dans les deux thèmes. */
+.sift-seg-opt.sift-chip-disabled,.sift-seg-opt.sift-chip-disabled:hover{color:var(--color-text-quaternary);cursor:not-allowed}
 .sift-col-h-tight{margin-bottom:4px}
 .sift-ident-display{font-size:var(--text-lg);font-weight:500;margin-bottom:var(--space-12)}
 /* Métadonnées : header statique (spec revue.md § Zone C), plus un accordéon. Label à gauche, badge
@@ -2279,9 +2580,20 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .sift-meta-ident-btn{flex:none;white-space:nowrap;background:var(--color-surface-raised);color:var(--color-text-secondary);border:0;padding:var(--space-4) var(--space-12);font-size:var(--text-sm);border-radius:var(--border-radius-sm)}
 .sift-meta-ident-btn:hover{background:var(--color-surface-raised);filter:brightness(0.97)}
 /* Liste d'attributs éditable en place (direction B) : ligne label/valeur, la valeur EST un input
-   stylé comme du texte au repos (transparent, sans bord), révélé au survol et au focus. La bordure
-   de focus est une bordure info (DESIGN.md § 8 : une saisie remplace l'anneau par une bordure),
-   posée en box-shadow inset pour ne pas décaler la ligne. */
+   stylé comme du texte au repos (transparent, sans bord), révélé au survol et au focus.
+   2026-08-25 — le champ passe au GABARIT « Text-fields » du kit Big Sur (relevé au pont Figma,
+   nœuds 45:1008 inactif / 45:1009 focus) : hauteur 22, rayon 5 (--border-radius-sm), padding 6/8,
+   texte 13, fond + ombre portée légère quand le champ est dessiné, trait d'accent de 3px au focus.
+   Ce que le kit dit « au repos » est ici porté par le SURVOL, pas par l'état de repos : la spec de
+   l'écran (docs/ui-specs/revue.md § Zone C-4 et § Composants) impose « texte au repos, champ +
+   anneau au focus » — un champ dessiné en permanence en ferait une grille de saisie, pas un
+   inspecteur. Le nœud « inactif » du kit est un champ DÉJÀ dessiné mais pas focalisé : c'est
+   exactement l'état révélé au survol. Pour repasser au kit littéral (boîte permanente), il suffit
+   de déplacer le couple fond+ombre du `:hover` vers `.sift-attr-input` — un seul geste.
+   L'ancienne bordure info de focus (inset 1px, DESIGN.md § 8) est REMPLACÉE : la spec dit
+   « anneau d'accent », le kit aussi, et DESIGN.md n'est pas source de décision (CLAUDE.md § Front).
+   L'anneau est un box-shadow NON inset et le fond ne porte plus le signal de focus — voir le
+   commentaire de `.sift-attr-input:focus` ci-dessous, qui dit pourquoi les deux comptent. */
 .sift-attr-list{margin-bottom:var(--space-12)}
 .sift-attr{display:flex;align-items:center;gap:var(--space-12);
   padding:var(--space-4) 0;border-bottom:0.5px solid var(--color-border-tertiary)}
@@ -2292,13 +2604,49 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 /* Valeur alignée à GAUCHE : on tape de gauche à droite et rien n'est coupé au bord droit. Le
    right-align tronquait le texte en italique de l'état « édité, pas encore gravé » (.sift-tag-stale,
    font-style:italic) contre le bord de l'input. */
-.sift-attr-input{flex:1;min-width:0;text-align:left;font-family:inherit;font-size:var(--text-base);
+/* HAUTEUR DÉCLARÉE (kit 45:1008 : 22). Elle tombait jusqu'ici du padding + de la boîte de ligne,
+   donc elle SUIVAIT la police : les quatre lignes de l'inspecteur se re-mesuraient à chaque
+   changement de --text-base ou de --font-ui, et un champ marqué `.sift-tag-stale` (italique) ne
+   faisait pas exactement la même hauteur que ses voisins.
+   La hauteur est le token `--h-control-sm` (22, kit 45:1008), posé dans :root le 2026-08-25 avec ce
+   site et l'item de menu pour consommateurs — le littéral qui vivait ici a été soldé dans le même
+   chantier. Les deux tokens de hauteur qui existaient avant (--h-32/--h-44) avaient été SUPPRIMÉS
+   le 2026-08-05 pour absence de consommateur : la règle est tenue, pas contournée.
+   Padding vertical : `--space-4` est gardé alors que le kit donne 6 (`--space-6` existe désormais).
+   À hauteur FIXE et sur une seule ligne, le padding vertical ne fait plus que centrer — l'écart de
+   2px ne se voit pas, et le passer à 6 ne changerait rien de mesurable ici.
+   `margin-right` — RÉSERVE POUR L'ANNEAU DE FOCUS, pas un espacement décoratif. Le champ est
+   `flex:1` dans une ligne sans padding horizontal, donc son bord droit touchait celui de
+   `.sift-fil-editor`, qui porte `overflow:hidden` (confinement de grille, voir son bloc) : les 3px
+   d'anneau peints à l'extérieur y étaient rognés À DROITE seulement, ce qui donne un anneau ouvert.
+   La réserve est mise sur l'INPUT et pas sur `.sift-attr` pour que le filet de séparation de la
+   ligne reste, lui, pleine largeur. */
+.sift-attr-input{flex:1;min-width:0;height:var(--h-control-sm);margin-right:var(--space-4);text-align:left;font-family:inherit;font-size:var(--text-base);
   color:var(--color-text-primary);background:transparent;border:0;border-radius:var(--border-radius-sm);
   padding:var(--space-4) var(--space-8)}
 .sift-attr-input::placeholder{color:var(--color-text-quaternary)}
-.sift-attr:hover .sift-attr-input{background:var(--overlay-hover)}
+/* Survol = le champ SE DESSINE (nœud « inactif » du kit) : aplat surélevé + ombre portée légère.
+   --shadow-panel-subtle est la seule ombre « légère » de l'échelle (les deux autres sont des
+   ombres de surface flottante, toast et overlay) ; la valeur exacte du kit n'a pas été relevée. */
+.sift-attr:hover .sift-attr-input{background:var(--color-surface-raised);box-shadow:var(--shadow-panel-subtle)}
+/* FOCUS = anneau d'accent de 3px, et RIEN D'AUTRE ne porte ce signal.
+   C'est le correctif du conflit avec `.sift-tag-stale` (« édité, pas encore gravé ») : cet état-là
+   pose son fond ambre en `!important`, plus fort que le fond posé ici — un focus qui se disait par
+   son FOND disparaissait donc sur un champ divergent, alors que les deux disent deux choses
+   différentes (« je suis en train d'éditer ce champ » vs « cette valeur n'est pas dans le
+   fichier »). En sortant le signal de focus du fond, les deux coexistent par construction : le fond
+   reste au marqueur d'état, l'anneau reste au focus, et aucun `!important` ne peut plus les mettre
+   en concurrence.
+   `box-shadow` NON inset plutôt qu'un `outline` : le générique `input:not([type="checkbox"]):
+   focus-visible` (0,2,1, plus haut dans ce fichier) pose `outline:none` et bat cette règle (0,2,0)
+   — un outline écrit ici serait effacé au focus CLAVIER, précisément le cas où l'anneau compte.
+   Non inset aussi parce que 3px pris à l'intérieur d'un champ de 22px ne laisseraient que 16px au
+   texte de 13px : le champ se refermerait sur sa propre valeur. À l'extérieur, l'anneau vit dans le
+   padding de 4px de `.sift-attr` en haut/bas et dans le `margin-right` réservé sur l'input à droite
+   (voir son bloc) — c'est ce qui l'empêche d'être rogné par l'`overflow:hidden` de
+   `.sift-fil-editor`. Un anneau posé ici sans cette réserve revient à un anneau ouvert à droite. */
 .sift-attr-input:focus{outline:none;background:var(--color-surface-raised);
-  box-shadow:inset 0 0 0 1px var(--color-text-info)}
+  box-shadow:0 0 0 3px var(--color-accent-fill),var(--shadow-panel-subtle)}
 /* No longer full-width (annotation: "les boutons n'ont pas besoin d'etre aussi larges") — sizes
    to its own content now, like every other button in this section. */
 .sift-id-btn-full{margin-bottom:8px}
@@ -2464,8 +2812,19 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .sift-dup-banner-head{font-weight:500}
 .sift-dup-banner-where{color:var(--color-text-tertiary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sift-clear-pane{flex:1;display:flex;align-items:center;justify-content:center;color:var(--color-text-tertiary);font-size:var(--text-md);padding:var(--space-24);text-align:center}
-.sift-inplace-toggle{display:flex;align-items:center;gap:var(--space-8);margin-top:12px;font-size:var(--text-sm);color:var(--color-text-secondary);cursor:pointer}
-.sift-inplace-toggle input{cursor:pointer;flex:none}
+/* La rangée « Sur place » porte `.fld` depuis le 2026-08-25 : elle est un item du popover
+   Destination comme les autres (gabarit kit Menu/Menu-items — voir son bloc plus haut), et non
+   plus un <label> nu sans padding, sans rayon ni survol au milieu d'items qui en avaient. Tout ce
+   que cette règle déclarait — flex, gap, taille, encre, curseur — venait d'être dit deux fois ;
+   son `margin-top:12px` était en plus battu par la gouttière du gabarit. Il ne reste que ce qui
+   est PROPRE à la case : elle ne rétrécit pas, et elle est cliquable comme son libellé. La case
+   elle-même reste NATIVE, teintée par `accent-color` (bloc des cases/radios) — le rayon de 4 du
+   kit ne s'applique donc pas ici : le dépôt ne réimplémente pas le contrôle.
+   `margin:0` annule la marge par défaut du moteur autour d'une case native (3px haut/bas dans
+   Chromium) : mesurée le 2026-08-25 dans un harnais statique sur cette feuille, elle portait
+   CETTE rangée à 19px de contenu quand les six autres en faisaient 16 — le seul item du popover
+   à sortir du gabarit était encore celui-là. L'écart avec le libellé vient du `gap` de l'item. */
+.sift-inplace-toggle input{cursor:pointer;flex:none;margin:0}
 .sift-batch-ck{cursor:pointer;flex:none}
 .sift-inplace-note{color:var(--color-text-tertiary)}
 /* This is the ACTUAL scrolling ancestor in the Revue flow (filing.ts openFilingInto): the inner
