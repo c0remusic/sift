@@ -424,8 +424,9 @@ function playerRowHtml(name: string, path: string, closeBtn = false, headerOpts:
     // pastille blanche ronde à bordure et ombre légères). La waveform tient lieu de piste ; le pouce
     // marque la tête de lecture. Caché tant que la durée n'est pas connue (updateTime le positionne).
     `<div class="sift-wave-playhead" hidden></div>` +
-    `<span class="sift-time" role="button" tabindex="0" title="Temps écoulé / restant — cliquer pour basculer">0:00</span>` +
     `</div>` +
+    // Temps À CÔTÉ de l'onde (retour Antoine : plus overlay dans la forme d'onde). Un seul, cliquable.
+    `<span class="sift-time" role="button" tabindex="0" title="Temps écoulé / restant — cliquer pour basculer">0:00</span>` +
     // Volume intégré dans la rangée de transport (façon Apple Music) — plus de bloc « contrôles »
     // séparé. Tempo & key-lock (l'« Écoute avancée ») retirés : le pitch DJ n'est pas voulu sur cet
     // écran de décision (Antoine 2026-08-21), et la HIG ne justifie un contrôle audio custom que pour
