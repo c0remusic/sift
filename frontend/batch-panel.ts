@@ -36,7 +36,8 @@ import {
 } from "./batch-tracklist";
 import { currentItems, reviewMode, prefetchNextAfter, enterDetailMode, queueBatchSel } from "./queue-panel";
 import { selectionSummaryHtml } from "./selection-summary";
-import { confirmAction, BATCH_CONFIRM_THRESHOLD } from "./confirm-modal";
+import { confirmBatchAlert, BATCH_CONFIRM_THRESHOLD } from "./confirm-modal";
+import type { BatchAlertData } from "./confirm-modal";
 import { showBatchSheet, updateBatchSheet, transformToReport, closeBatchSheet } from "./batch-sheet";
 
 /** Human label for the batch destination (resolves the in-place sentinel to its prose). */
@@ -48,6 +49,7 @@ export let batchInPlace = false;
 // Format de sortie du rail LOSSLESS uniquement. Le rail lossy n'a pas de choix: y demander AIFF ou
 // WAV serait de l'upscale, que le backend refuse (`filing.rs`, `guard_no_upscale`).
 let batchLosslessFormat: Target = "aiff_16_44";
+let skipBatchConfirm = false;
 // The ordered ids submitted to the currently-running batch — drives the per-track tracklist (the
 // nth `file:progress.done` maps to batchTrackIds[n]). Set at submit, used at file:done.
 let batchTrackIds: number[] = [];
@@ -454,14 +456,21 @@ export async function handleBatchQueueAction(action: "file" | "discard"): Promis
   if (action === "file") {
     const fileIds = selected.filter((it) => it.verdict !== "fake").map((it) => it.id);
     if (fileIds.length === 0) return;
-    if (fileIds.length > BATCH_CONFIRM_THRESHOLD) {
+    if (fileIds.length > BATCH_CONFIRM_THRESHOLD && !skipBatchConfirm) {
       const fakeN = selected.filter((it) => it.verdict === "fake").length;
-      const recap =
-        `${fileIds.length} piste${fileIds.length > 1 ? "s" : ""} à ranger` +
-        (fakeN > 0 ? ` · ${fakeN} faux exclus` : "") +
-        `\nDestination : ${batchDestLabel()}`;
-      const ok = await confirmAction(recap, `Ranger ${fileIds.length}`);
-      if (!ok) return;
+      const { lossless, lossy } = batchSelectionByRail();
+      const fmtParts: string[] = [];
+      if (lossless > 0) fmtParts.push(TARGET_LABEL[batchLosslessFormat]);
+      if (lossy > 0) fmtParts.push("MP3 320");
+      const alertData: BatchAlertData = {
+        fileCount: fileIds.length,
+        fakeCount: fakeN,
+        destLabel: batchDestLabel(),
+        formatSummary: fmtParts.join(" + "),
+      };
+      const result = await confirmBatchAlert(alertData);
+      if (!result.confirmed) return;
+      if (result.skipFuture) skipBatchConfirm = true;
     }
     void runBatchFile(fileIds);
   } else {

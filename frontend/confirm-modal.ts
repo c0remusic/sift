@@ -41,6 +41,123 @@ function playFadeIn(el: HTMLElement): void {
 // attached forever, so its Tab-focus-trap kept hijacking every Tab keypress app-wide afterwards.
 let activeFinish: ((result: boolean) => void) | null = null;
 
+export interface BatchAlertData {
+  fileCount: number;
+  fakeCount: number;
+  destLabel: string;
+  formatSummary: string;
+}
+
+export interface BatchAlertResult {
+  confirmed: boolean;
+  skipFuture: boolean;
+}
+
+export function confirmBatchAlert(data: BatchAlertData): Promise<BatchAlertResult> {
+  activeFinish?.(false);
+  document.getElementById(OVERLAY_ID)?.remove();
+  const previouslyFocused = document.activeElement as HTMLElement | null;
+  return new Promise((resolve) => {
+    let skipChecked = false;
+
+    const overlay = document.createElement("div");
+    overlay.id = OVERLAY_ID;
+    overlay.className = "sift-report-overlay";
+
+    const card = document.createElement("div");
+    card.className = "sift-report-overlay-card sift-confirm-card sift-batch-alert";
+    card.setAttribute("role", "alertdialog");
+    card.setAttribute("aria-modal", "true");
+    card.setAttribute("aria-label", "Ranger la sélection ?");
+
+    const title = document.createElement("div");
+    title.className = "sift-batch-alert-title";
+    title.textContent = "Ranger la sélection ?";
+
+    const recap = document.createElement("div");
+    recap.className = "sift-batch-alert-recap";
+    const parts: string[] = [];
+    parts.push(`${data.fileCount} prête${data.fileCount > 1 ? "s" : ""} → Convertir`);
+    if (data.fakeCount > 0) {
+      parts.push(`${data.fakeCount} FAKE → Écarter`);
+    }
+    recap.textContent = parts.join(" · ");
+
+    const destLine = document.createElement("div");
+    destLine.className = "sift-batch-alert-dest";
+    destLine.textContent = `Destination · ${data.destLabel} · ${data.formatSummary}`;
+
+    const checkLabel = document.createElement("label");
+    checkLabel.className = "sift-batch-alert-skip";
+    const checkInput = document.createElement("input");
+    checkInput.type = "checkbox";
+    checkInput.addEventListener("change", () => {
+      skipChecked = checkInput.checked;
+    });
+    const checkText = document.createTextNode(" Ne plus me demander (cette session)");
+    checkLabel.append(checkInput, checkText);
+
+    const actions = document.createElement("div");
+    actions.className = "sift-confirm-actions";
+    const cancelBtn = document.createElement("button");
+    cancelBtn.type = "button";
+    cancelBtn.className = "sift-settings-btn";
+    cancelBtn.textContent = "Annuler";
+    const confirmBtn = document.createElement("button");
+    confirmBtn.type = "button";
+    confirmBtn.className = "sift-confirm-btn";
+    confirmBtn.textContent = `Ranger ${data.fileCount}`;
+    confirmBtn.disabled = true;
+    const armTimer = window.setTimeout(() => {
+      confirmBtn.disabled = false;
+    }, CONFIRM_ARM_MS);
+    const openedAt = Date.now();
+    actions.append(cancelBtn, confirmBtn);
+
+    card.append(title, recap, destLine, checkLabel, actions);
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+    playFadeIn(overlay);
+    cancelBtn.focus();
+
+    const finish = (confirmed: boolean) => {
+      document.removeEventListener("keydown", onKeydown);
+      clearTimeout(armTimer);
+      overlay.remove();
+      previouslyFocused?.focus();
+      activeFinish = null;
+      resolve({ confirmed, skipFuture: confirmed && skipChecked });
+    };
+    activeFinish = (result: boolean) => finish(result);
+    const onKeydown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        finish(false);
+        return;
+      }
+      if (e.key === "Tab") {
+        e.preventDefault();
+        const focusable: HTMLElement[] = [cancelBtn, checkInput, confirmBtn];
+        const idx = focusable.indexOf(document.activeElement as HTMLElement);
+        const next = e.shiftKey
+          ? (idx <= 0 ? focusable.length - 1 : idx - 1)
+          : idx >= focusable.length - 1
+            ? 0
+            : idx + 1;
+        (focusable[next] as HTMLElement).focus();
+      }
+    };
+    document.addEventListener("keydown", onKeydown);
+    cancelBtn.addEventListener("click", () => finish(false));
+    confirmBtn.addEventListener("click", () => {
+      if (Date.now() - openedAt < CONFIRM_ARM_MS) return;
+      finish(true);
+    });
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) finish(false);
+    });
+  });
+}
+
 export function confirmAction(message: string, confirmLabel = "Confirmer"): Promise<boolean> {
   // Settle any still-open prior call first — removes its keydown listener and resolves its
   // promise, instead of leaking both when this new call replaces its overlay below.

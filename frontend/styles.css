@@ -2642,6 +2642,11 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .sift-confirm-card{padding:var(--space-24);width:320px;display:flex;flex-direction:column;gap:var(--space-16);text-align:center}
 .sift-confirm-msg{font-size:var(--text-sm);color:var(--color-text-secondary);white-space:pre-line}
 .sift-confirm-actions{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+.sift-batch-alert{text-align:left;width:360px}
+.sift-batch-alert-title{font-weight:600;font-size:var(--text-md)}
+.sift-batch-alert-recap{font-size:var(--text-sm);color:var(--color-text-secondary)}
+.sift-batch-alert-dest{font-size:var(--text-sm);color:var(--color-text-tertiary)}
+.sift-batch-alert-skip{display:flex;align-items:center;gap:var(--space-8);font-size:var(--text-sm);color:var(--color-text-secondary);cursor:pointer}
 /* BOUTON PRIMAIRE, forme du kit (§ 02-Buttons / 01-Push Buttons) : aplat d'accent, encre blanche.
    Était un fond pâle avec du texte teinté, ce qui donnait deux boutons de même poids visuel dans
    une modale où l'un des deux est destructif. */
