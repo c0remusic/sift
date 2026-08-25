@@ -743,6 +743,7 @@ struct Phase2Outcome {
     /// est désormais appelé sur cette branche. Ne pas réaffirmer cet invariant ailleurs sans
     /// vérifier qu'aucune sortie d'erreur de `execute_file` ne l'a enfreint.
     log: Option<Vec<filing::FsLog>>,
+    error: Option<String>,
 }
 
 /// Background body of `file_batch` (off the main thread). Three stages:
@@ -916,18 +917,20 @@ fn run_file_batch(
                         filing::execute_file(&job.plan)
                     }))
                 };
-                let log = match executed {
-                    Ok(r) => r
-                        .map_err(|e| {
-                            log::error!("file_batch: execute failed for track {}: {e:?}", job.id)
-                        })
-                        .ok(),
+                let (log, error) = match executed {
+                    Ok(Ok(log)) => (Some(log), None),
+                    Ok(Err(e)) => {
+                        let msg = format!("{e:?}");
+                        log::error!("file_batch: execute failed for track {}: {msg}", job.id);
+                        (None, Some(msg))
+                    }
                     Err(payload) => {
+                        let msg = format!("{payload:?}");
                         log::error!(
-                            "file_batch: execute panicked for track {}: {payload:?}",
+                            "file_batch: execute panicked for track {}: {msg}",
                             job.id
                         );
-                        None // traité comme un échec ordinaire -> needs_validation en phase 3
+                        (None, Some(msg))
                     }
                 };
                 if tx
@@ -936,6 +939,7 @@ fn run_file_batch(
                         id: job.id,
                         plan: job.plan,
                         log,
+                        error,
                     })
                     .is_err()
                 {
@@ -969,6 +973,8 @@ fn run_file_batch(
 
     // ---- Phase 3 (serial, DB lock per file): commit each encoded job, emit progress per file. ----
     let mut filed = 0usize;
+    let mut filed_ids: Vec<i64> = Vec::new();
+    let mut errors: Vec<filing::BatchError> = Vec::new();
     // Accumulates every (from, to) pair needing a linked-Rekordbox-XML repair across the WHOLE
     // batch, instead of each commit_file call doing its own read+parse+write of the same file
     // (audited 2026-07-05, finding P4 — up to 200 independent cycles on a 200-track batch).
@@ -1005,9 +1011,10 @@ fn run_file_batch(
                 let conn = match state.lock() {
                     Ok(c) => c,
                     Err(e) => {
+                        let msg = format!("DB lock poisoned: {e}");
                         log::error!("file_batch: DB lock poisoned committing file {}: {e}", o.id);
-                        // Can't commit — treat as unfiled; execute_file already left the FS clean.
                         needs_validation.push(o.id);
+                        errors.push(filing::BatchError { track_id: o.id, message: msg });
                         app.emit(
                             "file:progress",
                             &FileProgress {
@@ -1026,13 +1033,25 @@ fn run_file_batch(
                     Some(&mut xml_repair_pairs),
                     masterdb_index.as_ref(),
                 ) {
-                    Ok(_) => filed += 1,
-                    Err(_) => needs_validation.push(o.id),
+                    Ok(_) => {
+                        filed += 1;
+                        filed_ids.push(o.id);
+                    }
+                    Err(e) => {
+                        needs_validation.push(o.id);
+                        errors.push(filing::BatchError {
+                            track_id: o.id,
+                            message: e.to_string(),
+                        });
+                    }
                 }
             }
-            // execute_file a échoué ou paniqué; il a lui-même remis le système de fichiers en
-            // état, y compris les tags écrits en place sur le chemin conformant (CR-3).
-            None => needs_validation.push(o.id),
+            None => {
+                needs_validation.push(o.id);
+                if let Some(msg) = o.error {
+                    errors.push(filing::BatchError { track_id: o.id, message: msg });
+                }
+            }
         }
         app.emit(
             "file:progress",
@@ -1079,6 +1098,8 @@ fn run_file_batch(
             filed,
             needs_validation,
             cancelled,
+            filed_ids,
+            errors,
         },
     )
     .ok();

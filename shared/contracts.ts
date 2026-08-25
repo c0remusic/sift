@@ -241,13 +241,22 @@ export interface FileResult {
   batch_id: string;
 }
 
+/** One track that errored during batch filing (mirror of filing.rs BatchError). */
+export interface BatchError {
+  track_id: number;
+  message: string;
+}
+
 /** Result of filing a batch: how many filed, and the ids left needing validation. `cancelled` is
  *  true when the run was stop-net cancelled before processing every id (the result is then partial;
- *  nothing is rolled back). */
+ *  nothing is rolled back). `filed_ids` lists which tracks filed (in batch order); `errors` carries
+ *  per-track error messages for the subset of `needs_validation` that hit a real error. */
 export interface BatchResult {
   filed: number;
   needs_validation: number[];
   cancelled: boolean;
+  filed_ids: number[];
+  errors: BatchError[];
 }
 
 /** Outcome of the BACKGROUND half of an interactive filing, delivered on the `file:track:done`

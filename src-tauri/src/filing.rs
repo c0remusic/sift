@@ -85,6 +85,13 @@ pub struct FileResult {
     pub batch_id: String,
 }
 
+/// One track that errored during batch filing (execute or commit failed).
+#[derive(Debug, Clone, PartialEq, Serialize)]
+pub struct BatchError {
+    pub track_id: i64,
+    pub message: String,
+}
+
 /// Outcome of a batch filing.
 #[derive(Debug, Clone, PartialEq, Serialize)]
 pub struct BatchResult {
@@ -93,6 +100,8 @@ pub struct BatchResult {
     /// True when the run was stop-net cancelled before processing every id (the summary is then
     /// partial: what was filed before the stop stays filed — nothing is rolled back).
     pub cancelled: bool,
+    pub filed_ids: Vec<i64>,
+    pub errors: Vec<BatchError>,
 }
 
 /// Outcome of a batch reject (re-sourcing): how many were marked, and which ids failed — so the
@@ -2842,12 +2851,16 @@ mod tests {
             filed: 0,
             needs_validation: Vec::new(),
             cancelled: false,
+            filed_ids: Vec::new(),
+            errors: Vec::new(),
         };
         let BatchResult {
             filed,
             needs_validation,
             cancelled,
+            filed_ids,
+            errors,
         } = v;
-        let _ = (filed, needs_validation, cancelled);
+        let _ = (filed, needs_validation, cancelled, filed_ids, errors);
     }
 }
