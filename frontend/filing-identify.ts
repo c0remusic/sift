@@ -46,23 +46,6 @@ export function renderGenres(): void {
  *  the file's single Genre field is like-for-like. */
 const joinGenres = (g: string[]): string => g.map((s) => s.trim()).filter(Boolean).join("; ");
 
-/** Peint le badge « Prêt CDJ » (fork F, 2026-08-24) : coche + mot en ok, warning + raison sinon —
- *  jamais masqué. Deux sites d'appel (au render et après apply_tags) passent par ce helper unique
- *  pour ne pas diverger. Le critère est le bool `tags_cdj_ok` (Artiste+Titre gravés) ; la « raison »
- *  fine n'existe pas encore côté Rust (#46) — le bandeau .sift-tag-warn la détaille. Libellé fixe,
- *  pas de donnée non fiable → innerHTML sans esc. */
-function paintCdjBadge(el: HTMLElement, ok: boolean): void {
-  el.innerHTML = ok
-    ? `<i class="ti ti-check sift-icon-inline-sm" aria-hidden="true"></i>Prêt CDJ`
-    : `<i class="ti ti-alert-triangle sift-icon-inline-sm" aria-hidden="true"></i>CDJ — tags manquants`;
-  el.style.background = ok ? "var(--color-background-success)" : "var(--color-background-warning)";
-  el.style.color = ok ? "var(--color-text-success)" : "var(--color-text-warning)";
-  el.title = ok
-    ? "Artiste + Titre sont gravés dans les tags du fichier — un CDJ peut les lire."
-    : "Un CDJ a besoin d'Artiste + Titre gravés dans les tags du fichier (pas encore fait).";
-  el.hidden = false;
-}
-
 /** Which displayed tag fields would CHANGE the file if written — i.e. diverge from `state.fileTags`.
  *  Mirrors write_tags_full's semantics: artist/title are ALWAYS written (compare directly), while
  *  label/year/genres are only written when non-empty (an empty would-write never clears the file, so
@@ -358,20 +341,10 @@ async function doIdentify(
     renderCandidates(host, candidates, { open: true, selectedIdx: 0 });
     wireCandidateClicks(host, candidates, editor, mid, btn);
     wireListboxArrows(host); // ↑/↓ déplace le focus entre candidats (le gate de queue-panel laisse passer)
-    // Auto-applique le meilleur match (candidat 0, fork A) : pré-remplit les champs sans clic, même
-    // chemin que le clic (applyIdentity → onIdentityApplied) mais write=false (ne grave pas). Sous la
-    // garde openSeq ; liste vide → rien. Graver reste au clic d'un match (décision F.2).
-    if (candidates.length) {
-      const auto = candidates[0];
-      void applyIdentity(trackId, auto)
-        .then((applied) => {
-          if (myseq !== openState.openSeq) return;
-          onIdentityApplied(applied, auto, 0, editor, mid, host, btn, false);
-        })
-        .catch(() => {
-          /* auto-apply échoué : la liste ouverte reste, l'utilisateur peut cliquer un item */
-        });
-    }
+    // PAS d'auto-apply (retour Antoine : un match auto appliqué à tort abîmerait le fichier). La
+    // recherche AFFICHE les candidats, elle ne remplit rien — l'utilisateur clique un match pour
+    // graver. On focus le meilleur (candidat 0) pour que ↑/↓ navigue la liste tout de suite.
+    host.querySelector<HTMLElement>(".sift-cand")?.focus();
   } catch (err) {
     if (myseq !== openState.openSeq) return;
     // [C2/m5] expliquer POURQUOI + donner une action directe vers Réglages. La cascade de branches
@@ -413,7 +386,6 @@ export function renderEditor(host: HTMLElement, mid: HTMLElement, rail: string, 
     `<div class="sift-meta-header">` +
     `<span class="sift-meta-title">Métadonnées</span>` +
     `<span class="sift-meta-header-right">` +
-    `<span class="sift-chip-badge" id="sift-cdj-badge" hidden></span>` +
     `<button data-fil="identifier" class="sift-meta-ident-btn" title="Rechercher les métadonnées sur Discogs (pochette, label, année, genres)"><i class="ti ti-search sift-icon-inline-sm"></i> ${c.artist && c.title ? "Ré-identifier" : "Identifier"} <span class="kbd sift-kbd-hint-id">I</span></button>` +
     `</span></div>` +
     `<div class="sift-meta-body">` +
@@ -434,6 +406,7 @@ export function renderEditor(host: HTMLElement, mid: HTMLElement, rail: string, 
     // demanderait d'élargir le contrat IPC (backend, hors #47). Mis à jour en place par
     // onIdentityApplied quand une release est choisie. "—" quand aucun label connu.
     `<div class="sift-attr"><span class="sift-attr-k">Label</span><span class="sift-attr-ro" data-fil="label-ro">${esc(state.label ?? "—")}</span></div>` +
+    `<div class="sift-attr"><span class="sift-attr-k">Genres</span><span class="sift-genres"></span></div>` +
     `</div>` +
     // Apply ID3 tags: write these fields onto the file in place (no move, no encode, no 'filed'
     // change), revertable. Distinct from File (rail) — a neutral secondary button in the editor.
@@ -447,11 +420,9 @@ export function renderEditor(host: HTMLElement, mid: HTMLElement, rail: string, 
     // patches this exact element in place (unhides it + triggers the auto-apply) without a full
     // renderEditor() re-render — omitting it entirely would leave onIdentityApplied's querySelector
     // finding nothing on a track that was unidentified when this markup was first built.
-    `<div class="sift-genres-header">` +
-    `<div class="col-h sift-col-h-tight">Genres</div>` +
+    `<div class="sift-applytags-row">` +
     `<button data-fil="applytags" class="sift-applytags-btn" title="Applique les tags ID3 au fichier (ou Entrée après avoir édité un champ)"${c.artist && c.title ? "" : " hidden"}><i class="ti ti-tag sift-icon-inline-md"></i> Appliquer</button>` +
     `</div>` +
-    `<div class="sift-genres sift-genres-box"></div>` +
     // Rebuy link slot — filled by refreshRebuyLink() only for a fake track that also has a Discogs
     // match (empty, no gap, otherwise). Placed after genres so the identity block reads whole first.
     `<div class="sift-rebuy"></div>` +
@@ -474,10 +445,6 @@ export function renderEditor(host: HTMLElement, mid: HTMLElement, rail: string, 
     // Look lives in .sift-tag-warn (styles.css). Shown only when the display diverges from the file.
     `<div class="sift-tag-warn" role="status" aria-live="polite" style="display:none"><i class="ti ti-alert-triangle sift-icon-inline-md sift-icon-flex-none"></i><span>Artiste et Titre pas encore gravés dans le fichier (seulement identifiés ci-dessus) — un CDJ ne peut pas les lire tant que ce n'est pas fait. <strong>Convertir</strong> ou <strong>Appliquer les tags</strong> pour corriger.</span></div>` +
     `</div>`; // ferme .sift-meta-body
-
-  const cdjBadge = host.querySelector<HTMLElement>("#sift-cdj-badge");
-  // Vit sur le header statique, visible en lecture-seule comme en édition (jamais masqué, fork F).
-  if (cdjBadge && report) paintCdjBadge(cdjBadge, report.tags_cdj_ok);
 
   // Métadonnées ne se replie plus (spec revue.md § Zone C) : rien à fermer quand Diagnostic s'ouvre,
   // donc l'accordéon exclusif est neutralisé côté Métadonnées (closeMetaZone reste null). Diagnostic
@@ -621,13 +588,6 @@ async function doApplyTags(btn: HTMLButtonElement): Promise<void> {
     if (myseq !== openState.openSeq) return; // another track opened meanwhile — leave its state/UI alone
     state.fileTags = snap;
     refreshDiscrepancy(); // file == display now → marker clears
-    // Derived from `snap` (a REAL re-read of the file's tags, track_file_tags — not assumed from
-    // apply_tags returning Ok) — same Artist+Title-present criterion as tags_cdj_ok (tags.rs) at
-    // initial analysis. Trusting the write result alone would show "compatible" even on a silent
-    // partial write; this re-verifies against the actual file.
-    const cdjOk = !!(snap.artist?.trim() && snap.title?.trim());
-    const cdjBadgeAfterApply = document.querySelector<HTMLElement>("#sift-cdj-badge");
-    if (cdjBadgeAfterApply) paintCdjBadge(cdjBadgeAfterApply, cdjOk);
     // Pas de bouton « Annuler » INLINE (Antoine 2026-08-21, doublon du Journal) — mais un filet
     // « Rétablir » en TOAST (décision F.2, 2026-08-24, qui prime) : graver est un geste auto, on met
     // l'undo ciblé à portée immédiate. revertBatch(CE tag_edit) ; le Journal / Ctrl+Z restent le

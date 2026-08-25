@@ -1611,8 +1611,9 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    identify; one chip-row's worth of height now, empty or not. */
 /* Genres en TEXTE + glyphe tag (kit § 01 Icons, fork F 2026-08-24) — plus de chips colorées par
    famille. min-height réservée pour ne rien déplacer (empty box quand pas de genres). */
-.sift-genres{display:flex;align-items:center;gap:var(--space-4);margin-top:var(--space-4);margin-bottom:var(--space-4);min-height:21px;font-size:var(--text-sm);color:var(--color-text-secondary)}
+.sift-genres{display:inline-flex;align-items:center;gap:var(--space-4);color:var(--color-text-secondary)}
 .sift-genres-tagicon{color:var(--color-text-tertiary);flex:none}
+.sift-applytags-row{display:flex;justify-content:flex-end;margin-top:var(--space-8)}
 /* "Tags not written to the file" banner, shown just below Apply. Look only — visibility is driven
    solely by inline display (none ↔ flex) in refreshDiscrepancy, never the `hidden` attribute. Amber
    (warning) tokens — the SAME "attention / to handle" language as the duplicate marker. */
@@ -1917,7 +1918,7 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    (annotation « le bouton de volume qui collapse et qui s'ouvre seulement en hover »), et DESIGN.md
    § 17 le note nommément : « `.sift-volume-track` déborde et ce n'est PAS un défaut… le corriger
    casserait le contrôle. » Portée bornée : un seul nœud, jamais peint en rafale. */
-.sift-volume-block{position:relative;flex-direction:row;align-items:center;gap:0;width:20px;overflow:hidden;transition:width var(--duration-slow) ease}
+.sift-volume-block{position:relative;display:flex;flex-direction:row;align-items:center;gap:0;width:20px;overflow:hidden;transition:width var(--duration-slow) ease}
 /* :has(.dragging) added (bug report: "il est tout buggé ton volume") — pure :hover meant the
    block collapsed the instant the cursor left its 20px hit-box, which happens constantly mid-drag
    (dragging the thumb across the full 130px track moves the cursor well outside that 20px zone) —
@@ -1927,7 +1928,7 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .sift-volume-block:hover,.sift-volume-block:focus-within,.sift-volume-block:has(.sift-slider-track.dragging){width:130px}
 /* Bigger now that it's the control's only identity, no label alongside it (annotation: "enlever
    le texte Volume et grossir l'icone"). */
-.sift-volume-icon{flex:none;display:flex;align-items:center;justify-content:center;font-size:18px;color:var(--color-text-tertiary);cursor:pointer}
+.sift-volume-icon{flex:none;width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:18px;color:var(--color-text-tertiary);cursor:pointer}
 /* Track explicitly hidden at rest (bug report: "la barre devrait totalement disparaitre à part en
    survol, type youtube") — the icon has no opaque background, so it only visually OVERLAPPED the
    rail without hiding it; the narrow 20px sliver of rail/fill still showed through around the
