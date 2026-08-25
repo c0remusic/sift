@@ -250,12 +250,12 @@ export const revealTrack = (trackId: number): Promise<void> =>
 /** All destination bins (recursive subdirs of the library root). */
 export const listBins = (): Promise<Bin[]> => invoke("list_bins");
 
-// `createBin` / la commande IPC `create_bin` : plus AUCUN appelant frontend depuis le retrait de la
-// création de dossier in-library en Revue (décision B, #47, 2026-08-25 — les deux boutons du pied
-// du popover ouvrent le picker natif). La fonction Rust `library::create_bin` reste vivante (elle
-// auto-crée un bac au filing, cf. ipc.rs), mais la commande exposée `ipc_filing::create_bin` + ce
-// wrapper étaient orphelins côté front. Wrapper retiré ici ; la commande Rust orpheline est à
-// retirer ou documenter dans une session Rust (hors périmètre frontend, cargo requis).
+// `createBin` / la commande IPC `create_bin` : retirées toutes deux depuis le retrait de la création
+// de dossier in-library en Revue (décision B, #47, 2026-08-25 — les deux boutons du pied du popover
+// ouvrent le picker natif). Le wrapper frontend a disparu ici, et la commande exposée
+// `ipc_filing::create_bin` + son entrée dans l'`invoke_handler` de lib.rs ont été retirées côté Rust.
+// La fonction `library::create_bin` reste vivante — elle auto-crée un bac au filing (cf. ipc.rs) —
+// mais n'est plus atteignable par une commande Tauri.
 
 /** Undo the most recent live batch (LIFO). Resolves to the reverted batch id, or null. */
 export const undoLast = (): Promise<string | null> => invoke("undo_last");
