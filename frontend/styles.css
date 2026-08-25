@@ -639,6 +639,32 @@ body:has(#sift-titlebar){border-radius:var(--border-radius-sm);overflow:hidden}
    seulement plus compactes — la barre est haute de --toolbar-h et rien n'y respire. */
 #sift-tb-actions .chip{font-size:var(--text-sm)}
 #sift-tb-actions .sift-seg{flex:none}
+/* BOUTON ICÔNE RECTANGULAIRE de la barre unifiée — kit Buttons/Icon/Rectangular (nœuds 45:88 au
+   repos, 45:112 au survol), gabarit 36x28. Aujourd'hui un seul porteur : l'icône de sélection de
+   Revue, qui arme le mode Lot (`docs/ui-specs/revue.md` § Zone A, `toolbar.ts`).
+   LA LARGEUR N'EST PAS ÉCRITE, elle se dérive — l'icône vaut --text-xl (20) et le padding
+   horizontal --space-8 de chaque côté, soit 36 pile. Un gabarit du kit se DÉRIVE de ses tokens ;
+   36 n'est pas un barreau de l'échelle et n'a donc rien à faire ici en dur. La hauteur, elle, EST
+   un barreau : --h-control, la hauteur de contrôle du kit.
+   Le RAYON n'est pas redéclaré : le reset `button{}` donne déjà --border-radius-md, qui est le
+   rayon « bouton / bouton icône » du kit — même raisonnement qu'en ligne 1052.
+   Repos sans aplat, aplat au survol : la grammaire de bouton icône du kit (§ 07-Icon Buttons),
+   celle de `.lk-icon`. Aucune atténuation à l'opacité — DESIGN.md § 4 pose le levier sur le token
+   d'encre, et c'est --color-text-tertiary qui le porte. */
+.sift-bar-icon{box-sizing:border-box;height:var(--h-control);padding:var(--space-6) var(--space-8);display:inline-flex;align-items:center;justify-content:center;flex:none;background:none;color:var(--color-text-tertiary)}
+.sift-bar-icon i{font-size:var(--text-xl);line-height:1}
+.sift-bar-icon:hover{background:var(--overlay-hover);color:var(--color-text-primary)}
+/* ARMÉ : aplat d'accent + encre d'accent (§ Zone A — « active, elle prend la teinte d'accent »).
+   Son survol RÉAFFIRME les deux. `.on` et `:hover` ci-dessus ont la MÊME spécificité (0,2,0) : au
+   survol d'un bouton armé, seul l'ordre de déclaration les départage aujourd'hui, et un état
+   visible ne doit pas dépendre de quelle ligne vient en premier — une insertion au-dessus
+   suffirait à repeindre l'accent en gris. La règle (0,3,0) tranche pour de bon, et c'est aussi ce
+   qu'exige CLAUDE.md § Front : un bouton qui redéfinit `background` le réaffirme dans son `:hover`.
+   Le `filter:brightness(.95)` du `button:hover` générique n'est PAS neutralisé : sur un aplat
+   plein il donne exactement le retour de survol attendu d'un bouton armé, et `.lk-icon` le laisse
+   passer aussi. */
+.sift-bar-icon.on{background:var(--color-accent-fill);color:var(--color-accent-ink)}
+.sift-bar-icon.on:hover{background:var(--color-accent-fill);color:var(--color-accent-ink)}
 .sb{width:var(--rail-w);flex:none;display:flex;flex-direction:column;gap:var(--space-4);padding:var(--space-16) var(--space-12);background:var(--color-background-tertiary);border-right:0.5px solid var(--color-border-tertiary);align-items:stretch}
 /* DEUX LITTÉRAUX DE TAILLE RENTRÉS DANS L'ÉCHELLE — 2026-08-11, suite de l'axe « taille » de
    l'accord L2 (chantier identité visuelle). C'étaient les deux derniers hors barreau, et ils
@@ -829,21 +855,147 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
 .sift-pz-fill{height:100%;width:100%;border-radius:var(--border-radius-pill);background:var(--color-text-info);transform-origin:left;transition:transform var(--duration-slow)}
 .sift-pz-row.error .sift-pz-fill{background:var(--color-text-danger)}
 .queue{flex:none;display:flex;flex-direction:column;padding:var(--space-12) var(--space-8);overflow:hidden;background:var(--color-background-queue)}
+/* CHAMP DE RECHERCHE DE LA FILE — gabarit « Search fields » du kit Big Sur (relevé au pont Figma :
+   45:812 au repos, 45:825 au focus, 45:899 avec clear), posé le 2026-08-25 (#47, spec
+   `docs/ui-specs/revue.md` §§ Zone B′ et Composants). Aligné sur le champ JUMEAU de la barre
+   unifiée (`.sift-bar-search`, plus haut dans ce fichier) et non réinventé : même grammaire loupe
+   en flux + input transparent. La file ajoute ce que le kit donne et que la barre n'a pas — trait
+   au repos, bouton clear, hauteur et rayon DÉCLARÉS.
+   Ce bloc remplace des styles inline de `ensureQueueSearch` (queue-panel.ts) : une loupe en
+   overlay `position:absolute` à droite qui disparaissait à la première frappe, et 30px de
+   gouttière droite qui, eux, RESTAIENT réservés une fois l'icône partie — donc 30px de vide inerte
+   sur un champ rempli, exactement là où le kit pose son clear.
+   Hauteur `--h-control` (28) et rayon `--border-radius-md` (7) : les deux crans que le kit donne à
+   ce composant (voir le bloc des tokens de hauteur dans :root, qui nomme 45:812). Le padding
+   vertical `--space-6` est celui du kit ; à hauteur fixe il ne fait plus que centrer, il est écrit
+   pour que le gabarit se lise. Le trait de repos est le filet 0.5px du dépôt (#qcol, .sb,
+   .sift-facet-pop portent le même) — il n'a pas de token.
+   CONSOMMATEUR UNIQUE : `#sift-qsearch`. C'est ce qui autorise `flex:none` et la marge basse à
+   vivre ici alors qu'ils relèvent du PLACEMENT dans la colonne et non du composant ; un second
+   consommateur les en sortirait. Marge BASSE (et non haute) : la recherche est en tête, l'espace
+   la sépare de ce qui la suit.
+   Le traitement de FOCUS n'est pas ici : il vit avec les autres traitements de focus de champ,
+   `.sift-search-wrap:focus-within`, à chercher par ce sélecteur. */
+.sift-search-wrap{flex:none;display:flex;align-items:center;gap:var(--space-8);height:var(--h-control);margin-bottom:var(--space-8);padding:var(--space-6) var(--space-8);background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md)}
+/* Loupe : `--text-base` (13) contre `--text-md` (12) pour le texte du champ, soit un barreau
+   au-dessus de son voisin — l'icône s'exprime relativement au texte, jamais en pixels (issue #10). */
+.sift-search-wrap>i{flex:none;font-size:var(--text-base);color:var(--color-text-tertiary)}
+.sift-search-wrap input{flex:1;min-width:0;border:0;background:transparent;color:var(--color-text-primary);font:inherit;font-size:var(--text-md);appearance:none}
+.sift-search-wrap input::placeholder{color:var(--color-text-tertiary)}
+/* Le clear est le NÔTRE (bouton ci-dessous), pas celui du navigateur : sans cette ligne,
+   `type="search"` en peint un SECOND, non stylable et décalé. Même geste que `.sift-bar-search`. */
+.sift-search-wrap input::-webkit-search-cancel-button{appearance:none}
+/* Bouton clear — n'existe QUE quand il y a du texte (`hidden` piloté par queue-panel.ts). Le
+   `:not([hidden])` n'est pas décoratif : toute règle auteur qui pose `display` bat le
+   `[hidden]{display:none}` du navigateur, et le bouton resterait affiché sur un champ vide —
+   même piège que `.sift-qdone-toggle[hidden]` plus bas, qui l'a vécu (bug 2026-07-20).
+   `filter:none` au survol : le générique `button:hover` repeint un fond ET applique un
+   `brightness(.95)` qui, en thème sombre, ASSOMBRIT le glyphe — l'inverse du signal voulu, alors
+   que l'encre passe justement de tertiary à secondary (plus contrastée dans les DEUX thèmes).
+   `align-self:stretch` : la cible de clic prend toute la hauteur INTÉRIEURE du champ au lieu de la
+   seule boîte du glyphe, sans qu'aucune taille soit inventée — la hauteur de la zone de clic du
+   clear n'est pas relevée au kit. Elle reste étroite en largeur ; à mesurer dans la vraie fenêtre. */
+.sift-search-clear:not([hidden]){display:inline-flex;align-items:center;justify-content:center;flex:none;align-self:stretch;padding:0;background:none;border:0;color:var(--color-text-tertiary);cursor:pointer}
+.sift-search-clear i{font-size:var(--text-base)}
+.sift-search-clear:hover{background:none;filter:none;color:var(--color-text-secondary)}
 /* padding-right added (annotation: "la barre de scrolling... est trop pres de .qi.cur") —
    scrollbar-gutter:stable reserves exactly the scrollbar's own 6px width, no breathing room beyond
    it, so a selected row's highlighted background butted directly against the track/thumb. */
 #ql{flex:1;min-height:0;overflow-y:scroll;scrollbar-gutter:stable;padding-right:var(--space-8)}
 /* "+N traités" toggle (2026-07-08, real port of the app.js mockup — see ensureQueueDoneToggle) */
 .sift-qdone-toggle{display:block;flex:none;font-size:var(--text-xs);color:var(--color-text-tertiary);cursor:pointer;text-decoration:underline;padding:var(--space-4) var(--space-4) 0;background:transparent;border:none;border-radius:0;font-family:inherit}
-/* En-tête de la colonne file : « File » à gauche, bouton filtre à droite (Lane 2 #47). */
-.sift-qhead{display:flex;align-items:center;justify-content:space-between;gap:var(--space-8)}
-.sift-qfacet-btn{display:inline-flex;align-items:center;gap:var(--space-4);color:var(--color-text-tertiary);cursor:pointer;font-size:var(--text-base);padding:var(--space-4);border-radius:var(--border-radius-sm);background:transparent;border:0}
-.sift-qfacet-btn:hover{background:var(--overlay-hover)}
-.sift-qfacet-btn.on{color:var(--color-text-info)}
-.sift-qfacet-count{font-size:var(--text-xs);font-weight:600}
-.sift-qfacet-opt{display:flex;align-items:center;gap:var(--space-8);padding:var(--space-4) var(--space-8);cursor:pointer;font-size:var(--text-sm);color:var(--color-text-primary);border-radius:var(--border-radius-sm)}
+/* RANGÉE DE FILTRE de la colonne file (ex-en-tête « File », Lane 2 #47). Depuis le 2026-08-25
+   (wireframe « Poste de décision » §§ 09-10, spec `docs/ui-specs/revue.md` § Zone B′) elle ne porte
+   plus de TITRE : le libellé « File » est retiré — la barre unifiée nomme déjà l'écran — et la
+   rangée porte le PULLDOWN de filtre à gauche, le COMPTE DE PISTES VISIBLES à droite.
+   Le filet qui la sépare de la liste est le filet 0.5px du dépôt (#qcol, .sb, .sift-facet-pop
+   portent le même) — il n'a pas de token. `padding-bottom` décolle le filet du bouton,
+   `margin-bottom` décolle la liste du filet ; la marge basse remplace celle que `.col-h` portait
+   avec le titre disparu. */
+.sift-qhead{display:flex;align-items:center;justify-content:space-between;gap:var(--space-8);padding-bottom:var(--space-4);margin-bottom:var(--space-8);border-bottom:0.5px solid var(--color-border-tertiary)}
+/* Compte de pistes — jumeau de `.sift-bib-count` (Bibliothèque : même rangée pulldown + compte),
+   même taille et même encre, pour que le même fait ne se dise pas de deux façons selon l'écran. */
+.sift-qhead-count{flex:none;font-size:var(--text-sm);color:var(--color-text-tertiary)}
+/* PULLDOWN de filtre — gabarit *pulldown* du kit Big Sur (relevé au pont Figma : 45:152 au repos,
+   45:169 au survol, 45:186 pressé) : hauteur `--h-control` (28), rayon `--border-radius-md` (7),
+   padding `--space-6` / `--space-8`, gap `--space-4` (4) entre le libellé et le chevron. À hauteur
+   fixe le padding vertical ne fait plus que centrer — il est écrit pour que le gabarit se lise,
+   même geste que `.sift-search-wrap` plus haut dans ce fichier.
+   Ce bloc remplace un bouton ICÔNE (glyphe entonnoir + compte de critères « 2 ») au rayon `-sm` et
+   au padding `--space-4` : ni la hauteur ni le rayon du kit n'y étaient déclarés.
+   `min-width:0` + l'ellipse sur le libellé : la colonne est redimensionnable, et « Lossless + MP3 +
+   Faux + Doublons » ne doit pas pousser le compte hors de la colonne.
+   `filter:none` au survol : le générique `button:hover` (plus bas dans ce fichier) applique un
+   `brightness(.95)` qui, en thème sombre, ASSOMBRIT le libellé — l'inverse du signal voulu. Même
+   correctif, et pour la même raison, que `.sift-search-clear:hover` plus haut. */
+.sift-qfacet-btn{box-sizing:border-box;display:inline-flex;align-items:center;min-width:0;height:var(--h-control);gap:var(--space-4);padding:var(--space-6) var(--space-8);border:0;border-radius:var(--border-radius-md);background:transparent;color:var(--color-text-primary);font-size:var(--text-base);cursor:pointer}
+.sift-qfacet-btn:hover{background:var(--overlay-hover);filter:none}
+/* Pressé — et MAINTENU pressé tant que son menu est ouvert (`aria-expanded`), patron macOS : un
+   pulldown relâché sous son propre popover se lit comme un menu orphelin. Déclaré APRÈS le survol,
+   même spécificité (0,2,0) : survoler un pulldown ouvert garde donc l'état pressé. */
+.sift-qfacet-btn:active,.sift-qfacet-btn[aria-expanded="true"]{background:var(--overlay-selected);filter:none}
+/* Filtre POSÉ vs « Tout afficher » : la distinction passe par l'ENCRE, jamais par une teinte
+   d'accent — l'ancien `.on{color:var(--color-text-info)}` peignait tout le bouton en bleu, or le
+   bleu est réservé au focus/accent. Sans filtre, le libellé nomme une absence : encre tertiaire. */
+.sift-qfacet-label{min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--color-text-tertiary)}
+.sift-qfacet-btn.on .sift-qfacet-label{color:var(--color-text-primary);font-weight:500}
+/* Chevron un cran SOUS le libellé (`--text-md` 12 contre `--text-base` 13) : une icône s'exprime
+   relativement au texte voisin, jamais en pixels (issue #10). Même rapport que le pulldown jumeau
+   de la Bibliothèque, `.sift-bib-facet-btn i`. */
+.sift-qfacet-btn>i{flex:none;font-size:var(--text-md);color:var(--color-text-tertiary)}
+/* OPTIONS DU MENU — gabarit kit Menu/Menu-items (node 58:49), le MÊME que celui du popover
+   Destination (`.sift-dest-popover .fld`, plus bas dans ce fichier) : une seule grammaire de menu
+   dans l'app. Rangée de 22 (`--h-control-sm`), gouttière 3 haut-bas / 2 gauche-droite, contenu de
+   16 au rayon `--border-radius-sm`, libellé `--text-sm`.
+   La gouttière est une MARGE et pas un padding, pour la raison déjà écrite sur `.fld` : c'est le
+   CONTENU — le rectangle de 16 qui reste — qui porte l'aplat de survol, comme un item de menu
+   macOS ; en padding, l'aplat serait peint jusqu'au bord de la rangée et deux options cochables
+   se toucheraient. Le padding vertical de 4 que cette règle portait valait à lui seul les 16px de
+   contenu du kit. `position:relative` ancre la case native rendue invisible (bloc suivant).
+   ⚠️ 3px / 2px / 16px sont des LITTÉRAUX : l'échelle `--space-*` ne descend pas sous 4 et aucun
+   token ne porte la hauteur de CONTENU d'un item de menu (`--h-control-sm` porte celle de la
+   rangée entière). Mêmes littéraux, même raison et même dette que `.sift-dest-popover .fld` — à
+   substituer dans le même geste quand la lane qui en a le droit les posera dans `:root`. */
+.sift-qfacet-opt{position:relative;display:flex;align-items:center;gap:var(--space-8);min-height:16px;margin:3px 2px;padding:0 var(--space-8);cursor:pointer;font-size:var(--text-sm);color:var(--color-text-primary);border-radius:var(--border-radius-sm)}
 .sift-qfacet-opt:hover{background:var(--overlay-hover)}
-.sift-qfacet-reset{display:block;width:100%;margin-top:var(--space-4);padding:var(--space-8) var(--space-8) var(--space-4);border:0;border-top:0.5px solid var(--color-border-tertiary);background:transparent;font-family:inherit;font-size:var(--text-sm);color:var(--color-text-info);text-align:left;cursor:pointer}
+/* CASE À COCHER au gabarit du kit (16×16, rayon `--border-radius-xs` 4) — le wireframe « Poste de
+   décision » § 10 la dessine, le menu n'avait jusqu'ici qu'une case NATIVE nue.
+   La case native RESTE le contrôle : elle garde le clavier (espace), l'événement `change` et le
+   nom accessible que lui donne son <label>. Elle est seulement rendue invisible et doublée d'un
+   <span> peint — patron déjà posé par `.sift-bgrp-box`, la case tri-état du mode Lot, et c'est
+   pourquoi ce site-ci ne contredit pas le bloc « cases et radios natives » plus bas : il ne
+   réimplémente pas le contrôle, il l'habille.
+   `opacity:0` n'atténue AUCUN état ici (DESIGN.md:262 vise l'atténuation d'un état, pas le
+   masquage d'un contrôle qu'on remplace) ; `visibility`/`display` sont écartés, ils sortiraient la
+   case de l'ordre de tabulation. `pointer-events:none` laisse le <label> recevoir tous les clics,
+   donc un seul basculement par clic.
+   ⚠️ La largeur du trait n'a PAS été relevée au kit : elle est celle de `.sift-bgrp-box`, la case
+   custom voisine du même écran, pour que Revue ne porte pas deux traits de case différents. */
+.sift-qfacet-ck{position:absolute;left:var(--space-8);width:16px;height:16px;margin:0;opacity:0;pointer-events:none}
+.sift-qfacet-box{flex:none;display:inline-flex;align-items:center;justify-content:center;width:16px;height:16px;border-radius:var(--border-radius-xs);border:1.5px solid var(--color-border-secondary);background:var(--color-background-secondary);color:var(--color-accent-ink);font-size:var(--text-xs)}
+.sift-qfacet-box>i{visibility:hidden}
+/* Cochée = aplat d'accent + coche à l'encre d'accent — même couple que `.sift-bgrp-box.on` et que
+   le kit § 02-Buttons / 02-Checkboxes (fond accent, glyphe blanc). */
+.sift-qfacet-ck:checked+.sift-qfacet-box{border-color:var(--color-accent-fill);background:var(--color-accent-fill)}
+.sift-qfacet-ck:checked+.sift-qfacet-box>i{visibility:visible}
+/* L'anneau de focus se reporte sur la boîte peinte : `input[type="checkbox"]:focus-visible` (plus
+   bas dans ce fichier) s'applique toujours, mais ne peut pas se voir sur un contrôle à
+   `opacity:0`. Mêmes valeurs que lui, pour que la case du menu et les cases natives de l'app
+   montrent le même anneau. */
+.sift-qfacet-ck:focus-visible+.sift-qfacet-box{outline:1.5px solid var(--color-border-info);outline-offset:1px}
+/* Séparateur de 0,5 avant « Tout afficher » (wireframe § 10) — le filet 0.5px du dépôt, sans marge
+   propre : les 3px de gouttière des deux rangées qui l'encadrent le centrent déjà. Il traverse
+   toute la largeur du popover là où les rangées s'arrêtent 2px avant, comme un menu macOS. */
+.sift-qfacet-sep{flex:none;height:0;margin:0;border-top:0.5px solid var(--color-border-tertiary)}
+/* « Tout afficher » = un item de menu comme les autres depuis le 2026-08-25 (même gouttière, même
+   rayon, même taille), et non plus une rangée à part en `display:block`, à padding asymétrique,
+   qui portait elle-même le filet de séparation — celui-ci est passé sur `.sift-qfacet-sep`.
+   `:hover` OBLIGATOIRE : `button:hover` est gelé à (0,1,1) et repeindrait le fond en
+   `--color-surface-raised`, qui EST le fond du popover (donc un survol invisible), avec un
+   `brightness(.95)` qui assombrit l'encre en thème sombre. Réaffirmé par classe, ce sélecteur vaut
+   (0,2,0) et gagne — même geste, et même raison, que `.sift-qfacet-btn:hover` plus haut. */
+.sift-qfacet-reset{display:flex;align-items:center;gap:var(--space-8);min-height:16px;margin:3px 2px;padding:0 var(--space-8);border:0;border-radius:var(--border-radius-sm);background:transparent;font-family:inherit;font-size:var(--text-sm);color:var(--color-text-info);text-align:left;cursor:pointer}
+.sift-qfacet-reset:hover{background:var(--overlay-hover);filter:none}
 /* The class's own `display:block` above out-specifies the UA [hidden]{display:none} rule, so
    the `.hidden = true` toggling in queue-panel.ts silently did nothing visually — bug report
    2026-07-20, "Non analysés uniquement (0)" stayed visible with the count at zero. */
@@ -908,6 +1060,62 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
    side-stripe accent, the same anti-pattern already banned for real borders elsewhere; the
    background+weight change alone is enough to read as selected. */
 .qi.cur{background:var(--color-row-active);color:var(--color-text-primary);font-weight:500}
+/* CURSEUR CLAVIER — le SECOND état de la ligne, et il ne doit pas se lire comme `.cur` ci-dessus.
+   Deux faits distincts, donc deux traitements distincts : `.cur` dit « cette piste est ouverte en
+   zone C » et le dit par un APLAT (fond + encre primaire + graisse 500) ; `.kbd` dit « le clavier
+   est ici » et le dit par un ANNEAU. C'est la séparation sélection / focus des HIG, et elle tient
+   quand les deux tombent sur la même ligne — le cas normal après une flèche : l'aplat reste lisible
+   sous l'anneau. Elles se séparent en mode Lot (aucun `.cur`, `highlightId` forcé à `null` dans
+   `renderQueueWindow`) et quand la piste ouverte sort de la vue filtrée.
+
+   Le porteur du focus est `#ql`, PAS la ligne : la liste est virtualisée, et un `tabindex` par ligne
+   perdrait le focus au premier repeint qui démonte la ligne focalisée. `#ql` n'est jamais remplacé
+   (seul son `innerHTML` l'est), donc `:focus-visible` y survit à chaque fenêtre rendue.
+   `:focus-visible` et non `:focus` : un clic souris focalise aussi le conteneur, et un anneau posé
+   au clic est précisément ce que le reste du fichier évite (voir le bloc `button:focus-visible`).
+
+   `#ql:focus-visible{outline:none}` est OBLIGATOIRE, pas cosmétique : le générique
+   `[tabindex]:focus-visible` (0,2,0), plus haut dans ce fichier, cadrerait sinon la COLONNE ENTIÈRE
+   d'un anneau de 2px. `#ql:focus-visible` vaut (1,1,0) et le bat par son id.
+   `outline-offset:-2px` ramène l'anneau À L'INTÉRIEUR de la ligne, où il suit son
+   `--border-radius-md` — même geste et même raison que `.sift-seg .sift-seg-opt:focus-visible` plus
+   bas : posé à +1px il déborderait sur la ligne voisine et sur la gouttière de scroll de `#ql`.
+   Largeur et encre reprises telles quelles du générique : le dépôt n'a pas de token de largeur
+   d'anneau, et `--color-border-info` (translucide) est l'encre de focus imposée par le rapport de
+   bug « une barre blanche s'affiche sous la titlebar » — ne pas la remplacer par --color-text-info. */
+#ql:focus-visible{outline:none}
+#ql:focus-visible .qi.kbd{outline:2px solid var(--color-border-info);outline-offset:-2px}
+/* Repli quand la ligne du curseur est HORS FENÊTRE virtualisée : il n'y a alors aucun `.kbd` monté
+   à cercler, alors que `#ql` peut très bien garder le focus (Tab dans la file, puis Fin/PagePrec la
+   fait défiler nativement sans le lâcher). L'anneau se reporte sur la colonne — « le clavier est
+   dans cette liste » — et la première flèche le rend à sa ligne, `stepQueueSelection` ramenant la
+   cible dans la fenêtre avant de repeindre. La classe est posée par `renderQueueWindow`, qui seul
+   sait ce qu'il vient de monter ; elle ne se dérive PAS en CSS, un `:has()` sur ce nœud ferait payer
+   une invalidation de style à chaque fenêtre rendue. (1,2,0) : passe devant le `outline:none`
+   ci-dessus, quel que soit l'ordre source. */
+#ql:focus-visible.ql-cursor-off{outline:2px solid var(--color-border-info);outline-offset:-2px}
+/* Pastille DUPLICATE, au bord droit de la ligne (wireframe « Poste de décision » §§ 09-10). Elle
+   remplace un glyphe ⧉ nu teinté warning, stylé en attributs inline dans `queueRowHtml` — la ligne
+   étant concaténée dans la boucle de `renderQueueWindow`, chaque attribut inline se payait à chaque
+   fenêtre rendue (poll de 300 ms + scroll rAF-throttlé, le point chaud du frontend).
+
+   NEUTRE, pas warning : un doublon n'est pas un verdict (il ne sort pas de `tracks.verdict` mais du
+   scan de dédoublonnage — `design-system-states.md`, « il n'y a pas de sixième rendu »), donc il ne
+   prend pas l'ambre de « à vérifier ». `--overlay-selected` est translucide : la pastille tient
+   aussi bien sur la ligne nue que sur l'aplat de `.cur`.
+
+   Sélecteur `.qi .qi-dup` et non `.qi-dup` : `.qi span` (0,1,1) plus haut pose
+   `overflow:hidden;text-overflow:ellipsis`, qui rognerait le mot. Deux classes valent (0,2,0) et
+   passent devant. `flex:none` ferme la question dans l'autre sens — la pastille ne se comprime pas.
+   `line-height:1` n'est pas un ornement (même précédent que `.nav-badge`) : `measureQueueRowHeight`
+   ne mesure QU'UNE hauteur de ligne et la met en cache pour toute la file, donc une ligne à doublon
+   plus haute que les autres décalerait le calcul de fenêtre de la virtualisation. Épinglée, la
+   pastille vaut 11 + 2×4 = 19px et reste sous les deux lignes de nom/artiste — la hauteur de la
+   ligne ne dépend pas de `it.dup`. C'est aussi ce que le glyphe ⧉ remplacé ici mettait en défaut :
+   il était à `--text-base` (13) DANS une ligne à `--text-md` (12).
+   ⚠️ Padding vertical : le wireframe donne 2, le dépôt n'a AUCUN token de 2 (`--space-4` est le plus
+   petit barreau) — écart assumé de 2px, signalé au rapport de Q-5 comme token manquant. */
+.qi .qi-dup{flex:none;padding:var(--space-4) var(--space-6);border-radius:var(--border-radius-sm);background:var(--overlay-selected);color:var(--color-text-secondary);font-size:var(--text-sm);line-height:1;font-weight:600;letter-spacing:var(--tracking-wide)}
 /* Icône de verdict sur l'échelle typographique (issue #10 : « taille d'icône exprimée
    relativement au corps du texte voisin, jamais en pixels »). Le corps voisin est le
    `font-size:12px` de `.qi` ci-dessus — la valeur de --text-md, écrite en littéral — et l'icône
@@ -1427,12 +1635,26 @@ button:focus-visible,select:focus-visible,a:focus-visible,[tabindex]:focus-visib
    a first pass with both read as "2 borders" and was judged less discreet (retour utilisateur,
    même session). Follows the box's own border-radius instead of a squared-off outline. */
 input:not([type="checkbox"]):focus-visible{outline:none;border-color:var(--color-text-info)}
-/* Les deux champs de recherche (file d'attente, Bibliothèque) sont des <input> SANS bordure dans
-   un conteneur qui porte l'apparence : la règle ci-dessus, qui ne fait que déplacer une couleur de
-   bordure, n'a rien à colorer et ne montrait donc RIEN. Un `outline:none` en style inline sur les
-   deux inputs achevait de supprimer le repli du navigateur — les deux champs n'avaient aucun
-   indicateur de focus clavier. Le ring va sur le conteneur, avec le token du ring générique. */
-.sift-search-wrap:focus-within{outline:2px solid var(--color-border-info);outline-offset:1px}
+/* Un champ de recherche est un <input> SANS bordure dans un conteneur qui porte l'apparence : la
+   règle ci-dessus, qui ne fait que déplacer une couleur de bordure, n'a rien à colorer sur lui et
+   ne montrait donc RIEN. C'est ce que ce bloc protège — le signal de focus vit sur le CONTENEUR —
+   et ça n'a pas changé le 2026-08-25.
+   Ce qui a changé ce jour-là, c'est la FORME (kit Big Sur, « Search fields » 45:825) : c'était un
+   anneau `outline` DÉTACHÉ, flottant 1px à l'extérieur de la boîte. Le kit ne pose aucun anneau
+   détaché : il ÉPAISSIT le trait du champ. Le filet de repos (0.5px, `.sift-search-wrap` dans la
+   région de la colonne file) passe donc à l'accent et se double vers l'INTÉRIEUR.
+   `box-shadow` inset et pas `border-width` : une bordure qui passerait de 0.5 à 2px décalerait le
+   texte du champ d'1,5px au moment du focus, sous les doigts de qui vient d'y taper. Inset et non
+   extérieur parce que le padding de `--space-6` (6) absorbe entièrement un trait intérieur de
+   1,5px : l'épaississement se voit, et rien dans le champ ne bouge.
+   ⚠️ 0.5 + 1.5 = 2px de trait au focus, et le 2 ne vient PAS du kit : l'épaisseur du trait de
+   45:825 n'a pas été relevée. 2px est le plancher que WCAG 2.2 SC 2.4.11 demande à un périmètre de
+   focus — une valeur dérivée d'une règle, à remplacer par celle du kit dès qu'elle est relevée.
+   `--color-accent-fill` (encre d'anneau de focus du dépôt, cf. `.sift-attr-input:focus`) et non
+   `--color-border-info`, translucide à 35 %, qui ne se lirait pas comme un trait.
+   Un seul consommateur : la recherche de la file (Revue). Celle de Bibliothèque est passée dans la
+   barre unifiée et porte `.sift-bar-search`, qui a son propre traitement. */
+.sift-search-wrap:focus-within{border-color:var(--color-accent-fill);box-shadow:inset 0 0 0 1.5px var(--color-accent-fill)}
 /* Checkboxes need an explicit rule of their own (2026-07-10, follow-up coherence audit) — none of
    the app's checkboxes actually matched the generic button/select/a/[tabindex] rule above unless
    they happened to carry a tabindex attribute (the batch ones do, tabindex="-1", but the "Sur
@@ -2979,12 +3201,37 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 /* padding:0 (retour Antoine 2026-07-09, 4e tentative) — le 2px d'inset précédent, bien que
    symétrique, laissait un liseré de piste visible au-dessus/en dessous de la pastille sélectionnée,
    perçu comme un espace libre. La pastille .on occupe maintenant exactement la hauteur/largeur de
-   sa cellule, sans marge — seul .gap:2px sépare les options entre elles. */
+   sa cellule, sans marge — seul .gap:2px sépare les options entre elles.
+   ⚠️ PARTIELLEMENT ROUVERT le 2026-08-25 par le gabarit du kit (bloc suivant) : la piste reprend un
+   inset, de 1px cette fois, et `.sift-seg-thumb` s'y insère aussi au lieu d'aller bord à bord. Un
+   liseré redevient donc visible au-dessus et en dessous de la pastille — c'est exactement ce que ce
+   retour rejetait, mais il le rejetait à 2px. Le kit montre ce liseré à 1px et c'est lui qui fait
+   lire la pastille comme CONTENUE dans la piste. C'est le SEUL point du gabarit qui rouvre un
+   arbitrage daté : à repasser sous l'œil d'Antoine dans la vraie fenêtre avant d'être acquis. */
 /* CONTRÔLE SEGMENTÉ, forme du kit (§ 04-Pickers / 01-Segmented Pickers) : une piste en RECTANGLE
    ARRONDI, pas une pill. Sift posait --border-radius-pill (999px) sur la piste et sur chaque
-   segment, ce qui donne des gélules là où macOS donne un bloc. Le rayon du pouce se dérive de
-   celui de la piste, comme l'exige DESIGN.md § 3 : dans une boîte `md`, l'élément prend `sm`. */
-.sift-seg{display:inline-flex;gap:2px;background:var(--color-track);border-radius:var(--border-radius-md);padding:2px}
+   segment, ce qui donne des gélules là où macOS donne un bloc.
+   ── GABARIT RE-RELEVÉ AU KIT le 2026-08-25 (pont Figma REST, Pickers/Segmented : conteneur 47:23,
+   item 47:9 ; tâche G-1 de #47). Mesure préalable dans la vraie fenêtre : la piste faisait 29px de
+   haut (padding 2 + item de 25 en padding 5/12), soit 14px de chrome là où le kit en met 8
+   (1+1 de piste, 3+3 d'item) pour une hauteur totale de 22. Trois valeurs bougent :
+     · HAUTEUR — désormais DÉCLARÉE, `--h-control-sm` (22). Le nœud 47:23 est l'un des consommateurs
+       qui ont fait naître ce token (voir son commentaire dans :root). Elle tombait jusqu'ici du
+       padding plus la boîte de ligne, et c'est cette ABSENCE, pas une valeur, que l'audit des
+       composants de Revue nommait comme le défaut.
+     · RAYON — `md` (7) → `sm` (5). Le kit donne la valeur du conteneur ET celle de l'item, toutes
+       deux `sm` ; DESIGN.md § Rayons tranche qu'une valeur relevée gagne sur la dérivation
+       concentrique (laquelle aurait donné `xs` à l'item : 5 moins 1px d'inset). La phrase « le rayon
+       du pouce se dérive de celui de la piste » qui vivait ici énonçait la règle de REPLI, celle qui
+       ne vaut que quand le kit se tait — elle ne s'applique plus à ce composant.
+     · PADDING — 2 → 1. ⚠️ 1px N'EST PAS SUR L'ÉCHELLE (`--space-*` commence à 4). Il est porté par
+       `--seg-pad`, propriété locale de CE composant, jamais un token de `:root` : le pouce doit
+       s'insérer du même retrait exact que l'option (voir `.sift-seg-thumb`), donc la valeur ne peut
+       vivre qu'à un seul endroit. Même motif que `--src-hue` sur `.sift-rail-src-dot-*`.
+   `align-items:stretch` est le défaut du flex, écrit ici parce qu'il devient PORTEUR : c'est lui qui
+   donne ses 20px à l'option, depuis la hauteur déclarée de la piste, et non plus le padding de
+   l'option. Le retirer ferait retomber la hauteur dans l'addition que ce geste supprime. */
+.sift-seg{--seg-pad:1px;display:inline-flex;align-items:stretch;gap:2px;background:var(--color-track);border-radius:var(--border-radius-sm);padding:var(--seg-pad);height:var(--h-control-sm)}
 /* #qcol is a flex column (align-items:stretch by default) — without a fixed align-self the
    control stretched to the column's full width and its tabs grew with it whenever the column
    was resized (annotation 2026-07-06: fixed size/position expected, not a stretchy control). */
@@ -3006,7 +3253,15 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    (4 vs 3), so it always wins regardless of source order. */
 .sift-seg-thumbed .sift-seg-opt.on,
 .sift-seg-thumbed .sift-seg-opt.on:hover{background:none;border:none}
-.sift-seg-thumb{position:absolute;top:0;bottom:0;left:0;background:var(--color-surface-raised);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-sm);box-shadow:var(--shadow-panel-subtle);transition:transform var(--duration-slow) var(--ease-out);pointer-events:none;z-index:0}
+/* Le pouce s'insère du MÊME retrait que les options — `var(--seg-pad)`, la propriété locale posée
+   sur `.sift-seg`, qui hérite jusqu'ici. `top`/`bottom:0` visaient la boîte de PADDING de la piste
+   (containing block d'un absolu), donc le pouce allait bord à bord en hauteur pendant que l'option,
+   elle, était rentrée : la pastille se lisait aussi haute que sa piste. Kit : elle est contenue.
+   L'HORIZONTALE, elle, n'a jamais eu besoin de correction et n'en prend pas — `slideSegThumb` pose
+   `translateX(offsetLeft)`, et `offsetLeft` se mesure depuis cette même boîte de padding : le
+   retrait de la piste y est déjà compris, quelle que soit sa valeur. C'est pourquoi passer de 2 à 1 ne
+   touche pas `seg-thumb.ts` (vérifié le 2026-08-25, voir l'en-tête de ce fichier-là). */
+.sift-seg-thumb{position:absolute;top:var(--seg-pad);bottom:var(--seg-pad);left:0;background:var(--color-surface-raised);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-sm);box-shadow:var(--shadow-panel-subtle);transition:transform var(--duration-slow) var(--ease-out);pointer-events:none;z-index:0}
 /* Hover is text-only (color shift), no background box — retour utilisateur 2026-07-08 ("dans
    Claude il y a simplement le texte qui highlight, pas une case qui se superpose"). */
 /* ⚠️ La transition `background+color` qui vivait ici est RETIRÉE le 2026-08-19 (DESIGN.md § 6 :
@@ -3016,13 +3271,38 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    porté par `.sift-seg-thumb`, un nœud unique qui GLISSE en `transform` (plus haut, `--duration-slow`)
    — et en mode « thumbed » les options ont justement `background:none`, donc il n'y avait rien à
    animer sur elles. Ce qui perd sa transition est le seul highlight de survol, et il devient sec. */
-.sift-seg-opt{display:inline-flex;align-items:center;gap:5px;border:none;background:none;font-family:inherit;font-size:var(--text-md);padding:5px 12px;border-radius:var(--border-radius-sm);cursor:pointer;font-weight:500;color:var(--color-text-secondary);white-space:nowrap}
+/* PADDING DU KIT (item 47:9) : 8 à gauche et à droite — `--space-8`, contre 12 auparavant — et
+   VERTICALEMENT RIEN. Le kit donne 3 haut-bas, mais ce 3 ne décide plus de rien : la hauteur de
+   l'option vient du `stretch` sur la hauteur DÉCLARÉE de la piste (22 − 1 − 1 = 20), plus de
+   l'addition padding + boîte de ligne. Écrire `3px` ici donnerait une option de 21px en intention
+   et de 20px en réalité — deux nombres pour une seule mesure, précisément ce que la déclaration de
+   hauteur vient supprimer (et 3 n'est pas non plus sur l'échelle `--space-*`). Le texte, 12px pour
+   une boîte de ligne mesurée à 15px, est centré dans ces 20px par `align-items:center`. */
+.sift-seg-opt{display:inline-flex;align-items:center;gap:5px;border:none;background:none;font-family:inherit;font-size:var(--text-md);padding:0 var(--space-8);border-radius:var(--border-radius-sm);cursor:pointer;font-weight:500;color:var(--color-text-secondary);white-space:nowrap}
 /* background:none réaffirmé explicitement — sinon le générique button:hover{background:
    var(--color-background-secondary)} (styles.css, reset des boutons) l'emporte quand même sur
    l'état non sélectionné, faisant apparaître une "bulle" de fond en plus du texte qui highlight
    (retour utilisateur 2026-07-08). Voir CLAUDE.md : un composant qui redéfinit background doit
    le réaffirmer dans son propre :hover. */
 .sift-seg-opt:hover{background:none;color:var(--color-text-primary)}
+/* ANNEAU DE FOCUS CLAVIER, ramené À L'INTÉRIEUR de l'option. `outline-offset:-2px` avec une largeur
+   de 2px pose l'anneau exactement sur les 2px les plus extérieurs DE l'option, en suivant son rayon.
+   Le générique `button:focus-visible{outline:2px;outline-offset:1px}` (plus haut dans ce fichier)
+   posait le sien 1px au-DELÀ de la boîte de l'option : la piste ne mesure plus que 1px autour d'elle
+   depuis le gabarit du kit, donc cet anneau-là débordait la piste entière et se lisait comme une
+   bordure bleue posée sur le composant, pas comme le focus d'UNE option. Même raisonnement, et même
+   précédent, que `input[type="checkbox"]:focus-visible`, qui resserre déjà l'anneau générique parce
+   qu'il est disproportionné sur un contrôle de 13px.
+   SPÉCIFICITÉ (0,3,0) DÉLIBÉRÉE : `[tabindex]:focus-visible` vaut (0,2,0), et un
+   `.sift-seg-opt:focus-visible` nu vaudrait (0,2,0) aussi — à égalité c'est l'ordre source qui
+   tranche, exactement le piège déjà documenté plus haut sur `.sift-chip-disabled`. Le sélecteur
+   descendant met la question hors de portée d'un déplacement de règle.
+   ⚠️ NE S'ALLUME PAS ENCORE SUR REVUE : les options du segmenté Format sont des <span> sans
+   `tabindex` ni `role` (`filing.ts:142`) — rien ne peut y prendre le focus. La règle ne vaut
+   aujourd'hui que pour les cinq sites qui montent de vrais <button>. Le changement de markup qui
+   manque (un seul point d'entrée au clavier, `role="radiogroup"`/`radio`, tabindex roulant, flèches)
+   est décrit dans le rapport de la tâche G-1 (#47) ; il n'est pas dans le périmètre de ce fichier. */
+.sift-seg .sift-seg-opt:focus-visible{outline:2px solid var(--color-border-info);outline-offset:-2px}
 /* Icon color pinned explicitly (2026-07-08, retour utilisateur : "on ne veut que le texte en
    highlight") — without this, the icon inherits the button's own `color` just like the label
    text node does, so it would highlight on hover too. An explicit rule on the icon itself always

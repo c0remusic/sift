@@ -123,7 +123,34 @@ function blockShell(content: HTMLElement): void {
 
 /** Revue pose ses propres colonnes DANS la zone C, donc elle lui prend son défilement :
  *  `overflow:hidden` ici, et chaque colonne défile chez elle. C'est la règle générale — la page
- *  ne défile jamais — appliquée un cran plus bas. */
+ *  ne défile jamais — appliquée un cran plus bas.
+ *
+ *  #qcol ne porte ICI que ses deux ancres : l'en-tête de filtre `.sift-qhead` et la liste `#ql`.
+ *  Le champ de recherche (au-DESSUS de l'en-tête) et les bascules de pied (sous `#ql`) sont
+ *  injectés par `queue-panel.ts`, qui les range d'après `QCOL_ORDER` — c'est là, et nulle part
+ *  ailleurs, que l'ordre de la colonne est déclaré. Cette fonction reconstruit #qcol EN ENTIER à
+ *  chaque navigation vers Revue, donc les blocs injectés disparaissent avec lui et sont reposés
+ *  au rendu suivant : ne pas supposer qu'un nœud de la colonne survit à un aller-retour.
+ *
+ *  Le segmenté Détail / Lot a été retiré de cette colonne le 2026-08-25 (spec
+ *  `docs/ui-specs/revue.md` §§ Zone A / Zone B′) : le mode Lot s'arme par l'icône de sélection de
+ *  la barre unifiée, pas par un onglet de la file.
+ *
+ *  `.sift-qhead` n'est plus un TITRE mais la RANGÉE DE FILTRE (wireframe « Poste de décision »
+ *  §§ 09-10, 2026-08-25) : le libellé « File » est retiré — la barre unifiée nomme déjà l'écran —
+ *  et la rangée porte le pulldown de filtre à gauche (injecté par `queue-panel.ts`, qui possède son
+ *  état) et le compte de pistes VISIBLES à droite. Seul le nœud du compte est posé ici, VIDE : son
+ *  texte vient de `renderQueueWindow`, qui seul connaît la liste réellement affichée.
+ *
+ *  `#ql` est une LISTBOX (`role` + `tabindex="0"`), et c'est le SEUL point d'entrée du clavier dans
+ *  la file : les lignes restent non focusables, la ligne courante se nomme par
+ *  `aria-activedescendant` (patron listbox de l'APG, posé par `renderQueueWindow`). Raison
+ *  structurelle et non stylistique — la liste est virtualisée, un `tabindex` par ligne ferait
+ *  tomber le focus au premier repeint qui démonte la ligne focalisée (toutes les 300 ms pendant une
+ *  analyse) ; `#ql`, lui, n'est jamais remplacé, seul son `innerHTML` l'est. Les trois attributs
+ *  vivent ICI et pas dans `renderQueueWindow` : ils sont STATIQUES, et ce rendu-là est le chemin
+ *  chaud de la colonne. ⚠️ Cette fonction recrée `#ql` à chaque navigation vers Revue — le focus est
+ *  donc réellement perdu en quittant l'écran, ce qui est le comportement voulu. */
 function revueShell(content: HTMLElement): void {
   content.style.display = "flex";
   content.style.flexDirection = "";
@@ -131,8 +158,8 @@ function revueShell(content: HTMLElement): void {
   content.innerHTML =
     `<div class="sift-revue-row">` +
     `<div class="queue" id="qcol" style="width:${qcolWidth()}px">` +
-    `<div class="sift-qhead"><span class="col-h">File</span></div>` +
-    `<div id="ql"></div>` +
+    `<div class="sift-qhead"><span class="sift-qhead-count" id="sift-qcount"></span></div>` +
+    `<div id="ql" role="listbox" tabindex="0" aria-label="File de revue"></div>` +
     `</div>` +
     `<div class="sift-qresize" title="Redimensionner la file"></div>` +
     `<div class="sift-inspector" id="rvinspector">` +
@@ -153,8 +180,13 @@ function revueShell(content: HTMLElement): void {
  *  une action ou une recherche la laisserait sinon sur l'écran suivant. */
 function clearBarSlots(): void {
   const actions = document.getElementById("sift-tb-actions");
+  const actionsRight = document.getElementById("sift-tb-actions-right");
   const search = document.getElementById("sift-tb-search");
   if (actions) actions.textContent = "";
+  // L'emplacement de bord droit se vide comme les deux autres : l'icône de sélection de Revue y
+  // vit, et sans ce nettoyage elle resterait affichée sur Bibliothèque ou Réglages, où le mode Lot
+  // n'existe pas. C'est `syncBarBatchToggle` (sift-live.ts) qui la remonte au rendu de Revue.
+  if (actionsRight) actionsRight.textContent = "";
   if (search) search.textContent = "";
 }
 

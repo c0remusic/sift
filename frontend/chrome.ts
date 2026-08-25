@@ -175,7 +175,7 @@ export function injectLeanStyle() {
     // Deux emplacements que les vues remplissent : actions contextuelles (2 à 3 au maximum) et
     // recherche. Vides, ils n'occupent rien. L'espaceur entre eux pousse la recherche à droite,
     // où elle est sur toutes les apps système — et l'y garde quelle que soit la vue.
-    "#sift-tb-actions{display:flex;align-items:center;gap:var(--space-8);min-width:0}" +
+    "#sift-tb-actions,#sift-tb-actions-right{display:flex;align-items:center;gap:var(--space-8);min-width:0}" +
     "#sift-tb-spacer{flex:1;min-width:var(--space-8)}" +
     "#sift-tb-search{display:flex;align-items:center;gap:var(--space-8);flex:none}" +
     "#sift-tb-controls{display:flex;height:100%}" +
@@ -241,6 +241,12 @@ export async function injectTitlebar(): Promise<void> {
     '<span id="sift-tb-title" data-tauri-drag-region>Sift</span>' +
     '<div id="sift-tb-actions"></div>' +
     '<div id="sift-tb-spacer" data-tauri-drag-region></div>' +
+    // Emplacement d'action de BORD DROIT, distinct de #sift-tb-actions qui suit le titre. Il existe
+    // parce que la spec de Revue (docs/ui-specs/revue.md § Zone A) place l'icône de sélection « au
+    // bord droit, avant les contrôles de fenêtre » — patron toolbar de Photos macOS, où l'action de
+    // sélection est à l'opposé du titre. Monté à gauche, le même bouton se lisait comme un ornement
+    // du titre (mesuré le 2026-08-25 : x=263 sur une barre de 2620px).
+    '<div id="sift-tb-actions-right"></div>' +
     '<div id="sift-tb-search"></div>';
   const controls =
     '<div id="sift-tb-controls">' +

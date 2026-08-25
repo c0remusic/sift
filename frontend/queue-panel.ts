@@ -3,6 +3,11 @@
 // are owned here — all their reassignments already lived in this code before the move. The batch
 // controller (tranche 1c) imports these as read values and calls setReviewMode() to mutate mode,
 // never reassigns directly (ES module import bindings are read-only from outside this file).
+//
+// `reviewMode` reste ici, mais son COMMUTATEUR n'est plus dans cette colonne : le segmenté
+// Détail / Lot a été retiré le 2026-08-25 (spec `docs/ui-specs/revue.md` §§ Zone A / Zone B′,
+// décision du wireframe « Poste de décision »). Le mode Lot s'arme désormais par l'icône de
+// sélection de la barre unifiée. Ne pas réintroduire d'onglet de mode dans #qcol.
 import { listQueue, reanalyzeTracks } from "./ipc";
 import { openFilingInto, syncDetail } from "./filing";
 import { refreshBins, clearBinPick } from "./filing-bins";
@@ -10,7 +15,6 @@ import { homeProgressZone } from "./progress-zone";
 import { MAX_ANALYSIS_ATTEMPTS, type QueueItem } from "../shared/contracts";
 import { confirmAction } from "./confirm-modal";
 import { requireEl, esc } from "./dom";
-import { slideSegThumb } from "./seg-thumb";
 import { toast } from "./filing-toast";
 import { humanizeError } from "./errors";
 import { filingFailure, isFilingInFlight, onFilingOutcome } from "./filing-state";
@@ -165,6 +169,48 @@ function measureQueueRowHeight(ql: HTMLElement): number {
   return queueRowHeightCache;
 }
 
+/** Compte de la rangée de filtre — « 5 pistes », à DROITE de l'en-tête (wireframe « Poste de
+ *  décision » §§ 09-10). Il dit ce que la colonne MONTRE, donc il se lit sur `visibleQueueItems()`
+ *  (recherche + facettes appliquées) et jamais sur `currentItems` : le total de la file, lui, est
+ *  déjà porté par le badge du rail (`updateRevueBadge`) et par le titre de la barre unifiée.
+ *
+ *  Appelé depuis `renderQueueWindow`, donc sur le CHEMIN CHAUD de la colonne (poll de 300ms +
+ *  scroll rAF-throttlé) : d'où la comparaison avant écriture — une affectation `textContent`
+ *  identique reste une écriture DOM, et ce rendu est le point chaud du frontend. La comparaison
+ *  interroge le NŒUD et non un cache au niveau module : la navigation recrée l'en-tête vide
+ *  (`revueShell`, `content.innerHTML`), et un cache mémoire répondrait alors « déjà peint » sur une
+ *  rangée qui n'affiche plus rien. */
+function paintQueueCount(n: number): void {
+  const el = document.getElementById("sift-qcount");
+  if (!el) return;
+  // Accord : 0 et 1 prennent le singulier en français, 2 et au-delà le pluriel. Même règle que le
+  // compte jumeau de la Bibliothèque (`bibliotheque-view.ts`, `.sift-bib-count`).
+  const label = `${n} piste${n > 1 ? "s" : ""}`;
+  if (el.textContent !== label) el.textContent = label;
+}
+
+/** Ligne portant le CURSEUR CLAVIER de la file — celle d'où `stepQueueSelection` partirait, donc
+ *  celle qui doit montrer l'anneau de focus (`.qi.kbd`, peint seulement sous `#ql:focus-visible`).
+ *
+ *  Ce n'est PAS `.cur` : `.cur` dit « cette piste est ouverte en zone C » (aplat + encre + graisse),
+ *  le curseur dit « le clavier est ici » (anneau). Les deux coïncident après une flèche, mais se
+ *  séparent dès que la piste ouverte sort de la vue filtrée (recherche, facettes) ou que le mode Lot
+ *  supprime tout `.cur` (`highlightId` forcé à `null` plus bas) — d'où deux rendus distincts.
+ *
+ *  Repli sur la PREMIÈRE ligne visible quand la piste ouverte n'est pas dans la vue : c'est déjà là
+ *  qu'un ↓ atterrit (`curIndex` vaut -1, donc `nextIndex` 0), et surtout ça garantit qu'un `#ql`
+ *  focalisé montre TOUJOURS un anneau — un conteneur focusable sans focus visible serait un trou
+ *  WCAG 2.4.7 créé par le `tabindex` qu'on vient de lui donner.
+ *
+ *  Coût sur le chemin chaud : un `some()` court-circuité sur la liste DÉJÀ filtrée, sauté
+ *  entièrement quand rien n'est ouvert. Un cran sous le balayage de comptes des facettes
+ *  (`paintQueueFacetButton`, O(file × facettes)) que ce même rendu paie déjà. */
+function keyboardCursorId(items: QueueItem[]): number {
+  const open = currentOpenId;
+  if (open != null && items.some((it) => it.id === open)) return open;
+  return items[0].id;
+}
+
 /** Renders only the rows within the visible scroll window (+ QUEUE_ROW_BUFFER above/below) into
  * `ql`, framed by two spacer divs so the scrollbar stays proportional to the full list. Fixes the
  * 7000+-track freeze (memory: sift-large-queue-black-screen) — rebuilding thousands of DOM nodes
@@ -172,6 +218,9 @@ function measureQueueRowHeight(ql: HTMLElement): number {
  * the actual cost, not just paint. */
 function renderQueueWindow(ql: HTMLElement): void {
   const items = visibleQueueItems();
+  // Le compte de la rangée de filtre se lit sur CETTE liste, pas sur `currentItems` — d'où sa
+  // peinture ici et pas ailleurs : c'est le seul point qui tient la liste réellement affichée.
+  paintQueueCount(items.length);
   if (!items.length) {
     // "File vide." reads as "nothing was ever here" — misleading when a track is still
     // shown in Detail (currentOpenId set) because it's the last one just treated and the
@@ -186,6 +235,7 @@ function renderQueueWindow(ql: HTMLElement): void {
             : "File vide.";
     ql.innerHTML =
       `<div style="font-size:var(--text-md);color:var(--color-text-tertiary);padding:6px 4px">${emptyLabel}</div>`;
+    ql.removeAttribute("aria-activedescendant"); // plus aucune option : le curseur n'a plus de cible
     return;
   }
   const rowH = measureQueueRowHeight(ql);
@@ -197,12 +247,35 @@ function renderQueueWindow(ql: HTMLElement): void {
   // behavior exactly (a row click always drops back to detail mode first, so a highlighted row
   // while actually IN batch mode never happened before either).
   const highlightId = reviewMode === "batch" ? null : currentOpenId;
+  const cursorId = keyboardCursorId(items);
   const topSpacer = start * rowH;
   const bottomSpacer = (items.length - end) * rowH;
   let html = topSpacer > 0 ? `<div style="height:${topSpacer}px"></div>` : "";
-  for (let i = start; i < end; i++) html += queueRowHtml(items[i], items[i].id === highlightId);
+  // Le curseur clavier est REPEINT à chaque fenêtre, jamais posé sur un nœud : `#ql` étant le seul
+  // élément focusable (les lignes ne le sont pas), aucun re-rendu ne peut faire tomber le focus —
+  // seul l'anneau se redessine, sur la ligne que ce passage vient de marquer.
+  let cursorRendered = false;
+  for (let i = start; i < end; i++) {
+    const it = items[i];
+    const onCursor = it.id === cursorId;
+    if (onCursor) cursorRendered = true;
+    html += queueRowHtml(it, it.id === highlightId, onCursor);
+  }
   if (bottomSpacer > 0) html += `<div style="height:${bottomSpacer}px"></div>`;
   ql.innerHTML = html;
+  // `aria-activedescendant` doit nommer un élément RÉELLEMENT monté : la virtualisation ne monte que
+  // la fenêtre visible, donc un curseur resté hors fenêtre (l'utilisateur a scrollé loin) laisserait
+  // l'attribut pointer sur un id absent du document. On le retire alors plutôt que de mentir.
+  if (cursorRendered) ql.setAttribute("aria-activedescendant", `qi-${cursorId}`);
+  else ql.removeAttribute("aria-activedescendant");
+  // Même fait, versant visible. Un curseur hors fenêtre n'a AUCUN nœud à cercler, et `#ql` peut
+  // pourtant garder le focus : Tab dans la file puis Fin/PagePrec la fait défiler nativement sans
+  // le lâcher. Sans ce repli, le focus clavier deviendrait invisible — le trou WCAG 2.4.7 que le
+  // `tabindex` de `#ql` a créé. La classe reporte alors l'anneau sur la colonne elle-même
+  // (`#ql:focus-visible.ql-cursor-off`), et la première flèche le rend à sa ligne :
+  // `stepQueueSelection` ramène la cible dans la fenêtre avant de repeindre.
+  // Gratuit sur le chemin chaud — le booléen est déjà calculé par la boucle ci-dessus.
+  ql.classList.toggle("ql-cursor-off", !cursorRendered);
 }
 
 /** One-time (guarded) scroll listener on #ql, rAF-throttled: re-renders the visible window on
@@ -300,7 +373,15 @@ export function installQueueNavKeys(): void {
   queueNavKeysWired = true;
   const blurShortcutFocus = () => {
     const active = document.activeElement;
-    if (active instanceof HTMLElement && active !== document.body) active.blur();
+    if (!(active instanceof HTMLElement) || active === document.body) return;
+    // `#ql` EXEMPTÉ. Ce blur existe pour décrocher le focus d'un BOUTON avant qu'un raccourci agisse
+    // (spec § Clavier : sinon Espace active le bouton focalisé EN PLUS de la lecture). La file, elle,
+    // est la cible même de ↑/↓ : la flouter ici éteindrait l'anneau du curseur au premier appui,
+    // c'est-à-dire exactement au moment où le clavier prend la main. Un `#ql` focalisé n'a d'ailleurs
+    // aucune action par défaut à voler — son défilement natif est déjà coupé par le `preventDefault`
+    // ci-dessous.
+    if (active.id === "ql") return;
+    active.blur();
   };
   document.addEventListener("keydown", (e) => {
     const t = e.target as HTMLElement | null;
@@ -374,8 +455,17 @@ function verdictWord(it: Pick<QueueItem, "verdict" | "analysis_attempts">): [str
 
 /** One queue row's markup. `active` stamps the `.cur` highlight at creation time — required so
  * the highlight survives virtualization (Task 2): once #ql only mounts the visible window, a
- * row for the open track may not exist in the DOM to be found and classed after the fact. */
-function queueRowHtml(it: QueueItem, active: boolean): string {
+ * row for the open track may not exist in the DOM to be found and classed after the fact.
+ *
+ * `onCursor` marque de même le CURSEUR CLAVIER (`.kbd`, cf. `keyboardCursorId`) : même contrainte,
+ * même remède — une classe posée à la construction, jamais cherchée après coup sur un nœud qui peut
+ * ne pas exister. La ligne reste NON focusable (`role="option"` + `aria-activedescendant` sur `#ql`,
+ * patron listbox de l'APG) : donner un `tabindex` aux lignes ferait perdre le focus au premier
+ * repeint qui démonte la ligne focalisée — soit toutes les 300 ms pendant une analyse.
+ * ⚠️ Le bouton Réanalyser plus bas est un descendant interactif d'un `role="option"`, ce que l'APG
+ * interdit ; conflit connu, signalé au rapport de Q-5, non résolu ici (le sortir de la ligne est un
+ * changement de markup qui ne tient pas dans cette tâche). */
+function queueRowHtml(it: QueueItem, active: boolean, onCursor: boolean): string {
   const [word, wordColor] = verdictWord(it);
   // A conversion that failed in the background (P5/D5) outranks the analysis verdict on the row:
   // it is the one thing about this track the user must see, and it has to survive navigation — it
@@ -384,14 +474,11 @@ function queueRowHtml(it: QueueItem, active: boolean): string {
   const title = esc(it.filename || it.path);
   const artist = it.artist ? esc(it.artist) : "";
   return (
-    `<div class="qi${active ? " cur" : ""}" data-id="${it.id}" data-path="${esc(it.path)}" title="Écouter et convertir" style="cursor:pointer">` +
+    `<div class="qi${active ? " cur" : ""}${onCursor ? " kbd" : ""}" id="qi-${it.id}" role="option" aria-selected="${active}" data-id="${it.id}" data-path="${esc(it.path)}" title="Écouter et convertir" style="cursor:pointer">` +
     `<div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">` +
     `<div style="display:flex;align-items:center;gap:6px;min-width:0">` +
     verdictDot(it.verdict) +
     `<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;font-weight:500">${title}</span>` +
-    (it.dup
-      ? '<span title="Doublon possible (même nom)" style="flex:none;display:inline-flex;align-items:center;justify-content:center;overflow:visible;font-size:var(--text-base);line-height:normal;color:var(--color-text-warning)">⧉</span>'
-      : "") +
     `</div>` +
     // Always render the second line (never conditionally omit it) — otherwise a
     // not-yet-identified track (no artist) renders one line shorter than an identified
@@ -403,6 +490,19 @@ function queueRowHtml(it: QueueItem, active: boolean): string {
       : word
         ? `<span style="flex:none;font-size:var(--text-xs);color:${wordColor}">${word}</span>`
         : "") +
+    // Pastille DUPLICATE, au BORD DROIT de la ligne (wireframe « Poste de décision » §§ 09-10 ;
+    // spec `docs/ui-specs/revue.md` § Zone B′ : « rendu hors colonne verdict »). Elle a quitté la
+    // première ligne — où elle était collée au nom de fichier sous forme de glyphe nu ⧉ teinté
+    // warning — pour le niveau `.qi`, seul endroit qui a un bord droit ; c'est la place que la durée
+    // occupait avant son retrait du 2026-08-21, retirée précisément parce qu'elle « mangeait la
+    // place du signal doublon ». Elle reste NEUTRE (gris de sélection, encre secondaire) et non
+    // warning : un doublon n'est pas un verdict — il ne sort pas de `tracks.verdict` mais du scan de
+    // dédoublonnage, et `design-system-states.md` (« il n'y a pas de sixième rendu ») en fait le
+    // point explicite. Lui donner l'ambre de « à vérifier » ferait deux faits d'une seule couleur.
+    // Style en RÈGLE CSS (`.qi-dup`) et non en attributs inline : cette ligne est concaténée dans la
+    // boucle de `renderQueueWindow`, donc chaque attribut se paie en octets de chaîne à CHAQUE
+    // fenêtre rendue — poll de 300 ms + scroll rAF-throttlé.
+    (it.dup ? '<span class="qi-dup" title="Doublon possible (même nom)">DUPLICATE</span>' : "") +
     // Only for a not-yet-analysed row — retry a track stuck without a verdict (e.g. a
     // transient decode error on first pass) instead of leaving it silently unreachable.
     // data-reanalyze is checked BEFORE the .qi row-open branch in the delegated click handler
@@ -435,13 +535,8 @@ export async function renderQueue(touchDetail = true) {
   // sift-live.ts) independently of navigation — a genuine change while #ql already has rows still
   // falls through to the full reload below, same as before.
   if (!ql.childElementCount && currentItems.length && !queueCacheStale) {
-    ensureReviewSeg();
     const qcol = document.getElementById("qcol");
-    if (qcol) {
-      ensureQueueDoneToggle(qcol);
-      ensureQueueSearch(qcol);
-      ensureQueueFacet(qcol);
-    }
+    if (qcol) ensureQueueColumnChrome(qcol);
     // Live destination bins. Cet appel vit DANS le bloc de cache et non en tête de fonction :
     // ce chemin `return` plus bas, donc il n'atteint jamais l'appel gardé par `touchDetail`, et
     // les bacs resteraient ceux d'avant la navigation. En tête de fonction en revanche, il
@@ -536,13 +631,8 @@ export async function renderQueue(touchDetail = true) {
   // front takes the queue in — so it is also where the badge is brought back in step with the rail.
   queueCacheStale = false;
   updateRevueBadge(currentItems.length);
-  ensureReviewSeg();
   const qcol = document.getElementById("qcol");
-  if (qcol) {
-    ensureQueueDoneToggle(qcol);
-    ensureQueueSearch(qcol);
-    ensureQueueFacet(qcol);
-  }
+  if (qcol) ensureQueueColumnChrome(qcol);
   // Background-analysis progress moved to the global progress zone (bottom of #nav, persistent
   // across views) — see pushAnalyzeProgress, fed by the analysis:changed event below.
 
@@ -570,51 +660,71 @@ export async function renderQueue(touchDetail = true) {
   ensureQueueScroll(ql);
 }
 
-/** Detail|Batch segmented control (board `topseg`), injected once at the top of the queue
- * column. Owned here (not app.js) so it works inside Tauri where the live wiring renders the
- * Revue. Reflects `reviewMode`; clicks are handled in the #pa delegate. */
-export function ensureReviewSeg() {
-  const qcol = requireEl("#qcol", "ensureReviewSeg");
-  let seg = document.getElementById("sift-revseg");
-  if (!seg) {
-    seg = document.createElement("div");
-    seg.id = "sift-revseg";
-    // .sift-seg is the shared segmented-pill track (2026-07-08: was its own inline-styled
-    // reimplementation — same component as Apparence/Format USB/Dossiers-Genres now). #sift-revseg
-    // adds only its own layout concerns on top: align-self:center (#qcol is a flex column with
-    // align-items:stretch by default, so without a fixed align-self the control stretched to the
-    // column's full width and its tabs grew with it whenever the column was resized — annotation
-    // 2026-07-06: fixed size/position expected, not a stretchy control) and margin-bottom.
-    seg.className = "sift-seg sift-seg-thumbed";
-    const tab = (m: "detail" | "batch", label: string, icon: string) =>
-      `<button class="sift-seg-opt" data-sift="reviewmode" data-m="${m}"><i class="ti ${icon}" style="font-size:var(--text-base)"></i>${label}</button>`;
-    // .sift-seg-thumb is a single element that physically slides via transform between options
-    // (retour utilisateur 2026-07-08 : le crossfade par bouton ne montrait pas clairement le
-    // déplacement d'un état à l'autre) — must be the first child so it paints under the buttons
-    // (z-index aside, DOM order matters for default paint order of siblings at the same z-index
-    // in some engines; kept first to match .sift-seg-opt's own explicit z-index:1 above it).
-    seg.innerHTML =
-      '<div class="sift-seg-thumb"></div>' +
-      tab("detail", "Détail", "ti-layout-list") +
-      tab("batch", "Lot", "ti-table");
-    qcol.insertBefore(seg, qcol.firstChild);
+// ---------------------------------------------------------------------------
+// Ordre de la colonne file — DÉCLARÉ ici, plus déduit de l'ordre d'appel
+// ---------------------------------------------------------------------------
+
+/** Ordre vertical de #qcol, de haut en bas (spec `docs/ui-specs/revue.md` § Zone B′) :
+ *  recherche → rangée de filtre → liste virtualisée → bascules de pied.
+ *
+ *  Jusqu'au 2026-08-25 cet ordre était un EFFET DE BORD de l'ordre d'appel dans `renderQueue` :
+ *  la recherche s'insérait en `firstChild`, les deux autres blocs s'ajoutaient à la fin, et rien
+ *  n'écrivait nulle part que la colonne devait se lire ainsi — permuter deux appels la
+ *  réordonnait en silence. Les blocs se posent désormais PAR RAPPORT À CETTE LISTE
+ *  (`placeInQueueColumn`), donc l'ordre d'appel de `ensureQueueColumnChrome` n'a plus d'effet.
+ *
+ *  Tient à la RECONSTRUCTION : un aller-retour de navigation refait #qcol par `content.innerHTML`
+ *  (`revueShell`, router.ts — et app.js pour la maquette), donc tous ces nœuds disparaissent
+ *  ensemble et sont reposés ensemble au rendu suivant, chacun à son rang.
+ *  Tient au POLL de 300ms : chaque `ensure*` sort en tête sur son nœud déjà monté, aucun ne
+ *  redéplace un nœud existant — déplacer un `<input>` monté lui ferait perdre le focus en pleine
+ *  frappe, et le déplacement lui-même est une écriture DOM que ce poll ne doit pas payer.
+ *
+ *  `.sift-qhead` et `#ql` ne sont pas injectés ici (ils viennent du markup de `revueShell`) : ils
+ *  figurent dans la liste comme ANCRES, c'est-à-dire comme les repères devant lesquels les blocs
+ *  injectés doivent se ranger. */
+const QCOL_ORDER = [
+  "#sift-qsearch", // 1. recherche — en tête de colonne (décision E du 2026-08-24)
+  ".sift-qhead", // 2. ancre : rangée de filtre — pulldown + compte de pistes (revueShell)
+  "#ql", // 3. ancre : liste virtualisée (revueShell)
+  "#sift-qdone-toggle", // 4. pied : « Non analysés uniquement »
+  "#sift-qreanalyze-all", // 5. pied : « Réanalyser (N) »
+  "#sift-qfacet-pop", // hors flux (`position:fixed`) : rangé en dernier, sa place ne se voit pas
+] as const;
+
+/** Une des places déclarées ci-dessus. Union de littéraux : un sélecteur absent de `QCOL_ORDER`
+ *  ne compile pas, plutôt que d'atterrir silencieusement en tête de colonne à l'exécution. */
+type QcolSlot = (typeof QCOL_ORDER)[number];
+
+/** Insère `el` dans #qcol à la place que `QCOL_ORDER` lui donne : devant le premier successeur
+ *  déjà monté, ou à la fin s'il n'y en a aucun (`insertBefore(…, null)` = `appendChild`). Appelé
+ *  au seul MONTAGE d'un bloc — les `ensure*` sortent en tête quand leur nœud existe déjà. */
+function placeInQueueColumn(qcol: HTMLElement, el: HTMLElement, slot: QcolSlot): void {
+  const kids = Array.from(qcol.children);
+  let ref: Element | null = null;
+  for (let i = QCOL_ORDER.indexOf(slot) + 1; i < QCOL_ORDER.length; i++) {
+    const next = kids.find((c) => c.matches(QCOL_ORDER[i]));
+    if (next) {
+      ref = next;
+      break;
+    }
   }
-  // Toggle .on on the existing buttons instead of rebuilding them (retour utilisateur 2026-07-08 :
-  // le changement d'état "swappait" instantanément) — .sift-seg-opt's CSS transition only has
-  // something to animate between if the button persists across calls rather than being torn
-  // down/recreated from a fresh innerHTML string every time.
-  seg.querySelectorAll<HTMLButtonElement>('[data-sift="reviewmode"]').forEach((btn) =>
-    btn.classList.toggle("on", btn.dataset.m === reviewMode),
-  );
-  // Le pouce est relu depuis le `.on` qui vient d'être posé (`seg-thumb.ts`), pas retenu de la
-  // boucle : c'est le DOM tel qu'il est maintenant qui porte la géométrie à mesurer.
-  slideSegThumb(seg);
+  qcol.insertBefore(el, ref);
+}
+
+/** Les trois blocs injectés de la colonne file, montés depuis UN seul point d'appel. L'ordre des
+ *  trois lignes ci-dessous suit `QCOL_ORDER` pour se lire comme la colonne, mais il ne la décide
+ *  plus : c'est `placeInQueueColumn` qui range. */
+function ensureQueueColumnChrome(qcol: HTMLElement): void {
+  ensureQueueSearch(qcol);
+  ensureQueueFacet(qcol);
+  ensureQueueDoneToggle(qcol);
 }
 
 /** "Non analysés uniquement" filter toggle — surfaces tracks still waiting on/stuck in background
  * analysis, without hiding the rest of the pending queue by default (see queueUnanalyzedOnly's
- * doc comment for why the prior default-hide behavior was wrong). Injected once, right after #ql
- * (before the search bar — call order in renderQueue matters here, both are appended to `qcol`).
+ * doc comment for why the prior default-hide behavior was wrong). Injected once, au PIED de la
+ * colonne (sous `#ql`) — sa place vient de `QCOL_ORDER`, plus de l'ordre d'appel.
  * Hidden entirely when there's nothing unanalyzed to filter down to. */
 function ensureQueueDoneToggle(qcol: HTMLElement): void {
   let el = document.getElementById("sift-qdone-toggle");
@@ -631,7 +741,7 @@ function ensureQueueDoneToggle(qcol: HTMLElement): void {
       }
       ensureQueueDoneToggle(qcol); // relabel + re-evaluate hidden state
     });
-    qcol.appendChild(el);
+    placeInQueueColumn(qcol, el, "#sift-qdone-toggle");
   }
   const unanalyzedCount = unanalyzedItems().length;
   // Nothing left to filter down to: hide the toggle AND clear the filter. Leaving it ON while the
@@ -704,7 +814,7 @@ function ensureQueueReanalyzeAllButton(qcol: HTMLElement, unanalyzedCount: numbe
         ensureQueueDoneToggle(qcol); // re-label + re-enable from the settled state
       }
     });
-    qcol.appendChild(el);
+    placeInQueueColumn(qcol, el, "#sift-qreanalyze-all");
   }
   el.hidden = unanalyzedCount === 0;
   // State-driven, not a mid-flight eager re-enable: the button is disabled iff a bulk retry is
@@ -716,39 +826,75 @@ function ensureQueueReanalyzeAllButton(qcol: HTMLElement, unanalyzedCount: numbe
 
 /** Live filter bar for the queue rail (annotation: "on veut une barre de recherche en bas" —
  * remontée en TÊTE de la colonne le 2026-08-25, décision Revue #47 : la recherche coiffe la file,
- * comme le champ de filtre d'un inspecteur macOS). Injected once at the TOP of #qcol (insertBefore
- * firstChild — le col-h « File » et #ql suivent), so it caps the list rather than floating below.
- * Filters currentItems client-side only (title/artist) — see visibleQueueItems(). */
+ * comme le champ de filtre d'un inspecteur macOS). Injected once, à la PREMIÈRE place de
+ * `QCOL_ORDER` : `.sift-qhead` puis `#ql` la suivent, donc elle coiffe la liste au lieu de flotter
+ * dessous. Sa place ne dépend plus de l'ordre d'appel — voir `placeInQueueColumn`.
+ * Filters currentItems client-side only (title/artist) — see visibleQueueItems().
+ *
+ * GABARIT DU KIT depuis le 2026-08-25 (Big Sur, « Search fields » : 45:812 au repos, 45:825 au
+ * focus, 45:899 avec clear), aligné sur le champ JUMEAU de la barre unifiée
+ * (`toolbar.ts::mountBarSearch`, `.sift-bar-search`) plutôt qu'en variante inventée : loupe à
+ * GAUCHE dans le flux, placeholder « Rechercher », bouton clear dès qu'il y a du texte.
+ * Ce que ce geste RETIRE, et qui venait de l'annotation « met juste une icone de loupe sur la
+ * droite qui disparait quand on tape » :
+ *   · la loupe en overlay `position:absolute` à droite, masquée à la première frappe ;
+ *   · les 30px de gouttière droite qu'elle réservait — la gouttière, elle, RESTAIT une fois
+ *     l'icône partie, donc un champ rempli montrait 30px de vide inerte exactement là où le kit
+ *     pose son clear.
+ * L'apparence (hauteur, rayon, trait, focus) vit maintenant dans `.sift-search-wrap`
+ * (`styles.css`, région de la colonne file) : plus aucune valeur en dur ici. */
 function ensureQueueSearch(qcol: HTMLElement): void {
   if (document.getElementById("sift-qsearch")) return;
   const wrap = document.createElement("div");
   wrap.id = "sift-qsearch";
-  // `sift-search-wrap` porte le ring de focus : l'input lui-même est sans bordure, donc le
-  // traitement de focus des champs texte (`styles.css`, border-color) ne peut rien montrer ici.
+  // `sift-search-wrap` porte le trait, le rayon, la hauteur ET le traitement de focus : l'input
+  // lui-même reste sans bordure, donc le traitement de focus des champs texte (`styles.css`,
+  // border-color) ne peut toujours rien montrer sur lui.
   wrap.className = "sift-search-wrap";
-  // margin-BOTTOM (et non -top) : la recherche est désormais en tête, l'espace la sépare de ce qui
-  // la suit. Littéral 8px, à aligner conceptuellement sur --space-8.
-  wrap.style.cssText =
-    "flex:none;position:relative;margin-bottom:8px;background:var(--color-background-secondary);border-radius:var(--border-radius-md)";
-  // No placeholder text — just a search icon overlaid on the right, hidden once there's a query
-  // (annotation: "met juste une icone de loupe sur la droite qui disparait quand on tape").
+  // Aucune donnée d'exécution ici — que des littéraux, rien à passer par `esc()`.
   wrap.innerHTML =
-    '<input id="sift-qsearch-input" type="text" aria-label="Filtrer la file" ' +
-    'style="width:100%;border:none;background:transparent;font:inherit;color:var(--color-text-primary);padding:6px 30px 6px 9px">' +
-    '<i id="sift-qsearch-icon" class="ti ti-search" aria-hidden="true" style="position:absolute;right:9px;top:50%;transform:translateY(-50%);font-size:var(--text-base);color:var(--color-text-tertiary);pointer-events:none"></i>';
-  // En TÊTE de #qcol : avant le col-h « File » (et le segmenté tant qu'il subsiste) et #ql. Guard en
-  // tête de fonction → insertion unique, l'ordre reste stable aux re-rendus/poll.
-  qcol.insertBefore(wrap, qcol.firstChild);
+    '<i class="ti ti-search" aria-hidden="true"></i>' +
+    '<input id="sift-qsearch-input" type="search" placeholder="Rechercher" ' +
+    'aria-label="Filtrer la file">' +
+    '<button type="button" id="sift-qsearch-clear" class="sift-search-clear" hidden ' +
+    'aria-label="Effacer la recherche" title="Effacer la recherche">' +
+    '<i class="ti ti-circle-x" aria-hidden="true"></i></button>';
+  // En TÊTE de #qcol : devant `.sift-qhead` puis `#ql`. Le segmenté Détail / Lot, qui vivait au-
+  // dessus d'elle, a été retiré le 2026-08-25 — plus rien ne la précède. Guard en tête de fonction
+  // → insertion unique : le poll de 300ms ne redéplace pas le champ (il perdrait le focus).
+  placeInQueueColumn(qcol, wrap, "#sift-qsearch");
   const input = wrap.querySelector<HTMLInputElement>("#sift-qsearch-input")!;
-  const icon = wrap.querySelector<HTMLElement>("#sift-qsearch-icon")!;
-  input.addEventListener("input", () => {
+  const clear = wrap.querySelector<HTMLButtonElement>("#sift-qsearch-clear")!;
+  // REMISE EN PHASE AU MONTAGE. Le terme survit à la navigation (`queueSearchTerm`, niveau module)
+  // alors que le champ, lui, est recréé VIDE par `revueShell` (`content.innerHTML`). Sans cette
+  // ligne, un retour sur Revue rendait une file filtrée par un terme que plus rien n'affichait —
+  // et depuis que le clear se cache sur un champ vide, sans plus aucune commande pour en sortir.
+  // Même piège que « Non analysés uniquement », qui porte son propre garde-fou daté plus haut, et
+  // même choix que `queueFacetFilter` : l'état gouverne, le contrôle se relit dessus.
+  input.value = queueSearchTerm;
+  clear.hidden = queueSearchTerm === "";
+  // UN SEUL point qui applique le terme, partagé par la frappe et par le clear : les deux chemins
+  // ne peuvent donc pas diverger. Un clear qui aurait oublié `ql.scrollTop = 0` rendrait la file
+  // ENTIÈRE à la position de défilement d'une liste filtrée bien plus courte.
+  // Coût par frappe : une propriété booléenne sur le bouton, plus le rendu de la fenêtre
+  // virtualisée qui existait déjà. Aucun nœud créé, aucun `innerHTML` — la frappe est l'événement
+  // en rafale par excellence (CLAUDE.md § Front).
+  const applySearch = (): void => {
     queueSearchTerm = input.value.trim();
-    icon.style.display = input.value ? "none" : "";
+    clear.hidden = input.value === "";
     const ql = document.getElementById("ql");
     if (ql) {
       ql.scrollTop = 0; // a shorter filtered list can leave scrollTop referring to nothing
       renderQueueWindow(ql);
     }
+  };
+  input.addEventListener("input", applySearch);
+  clear.addEventListener("click", () => {
+    input.value = "";
+    applySearch(); // terme vide → la file ENTIÈRE revient, et le bouton repasse en `hidden`
+    // La main revient au champ : on efface pour retaper, pas pour partir. Sans ce focus, le clear
+    // garderait le focus clavier sur un bouton qui vient de disparaître.
+    input.focus();
   });
 }
 
@@ -765,7 +911,7 @@ export function focusQueueSearch(): boolean {
 }
 
 // ---------------------------------------------------------------------------
-// Filtre par facettes — bouton dans l'en-tête « File » + popover cochable
+// Filtre par facettes — pulldown de la rangée de filtre + popover cochable
 // ---------------------------------------------------------------------------
 
 /** Re-applique le filtre à la file affichée (après une case cochée / « Tout afficher »). */
@@ -802,7 +948,38 @@ function placeQueueFacet(): void {
   pop.style.left = `${left}px`;
 }
 
-/** Ouvre/ferme le popover. Les cases reflètent queueFacetFilter à chaque ouverture (muter, pas
+/** Compte par facette (wireframe « Poste de décision » § 10 : « Lossless 5 · MP3 3 · Faux 3 ·
+ *  Doublons 2 »), plus le TOTAL de la file sur la rangée « Tout afficher » — ce que cette rangée
+ *  ramènerait à l'écran si on la cliquait.
+ *
+ *  Lus sur `currentItems`, la file SOURCE, et JAMAIS sur `visibleQueueItems()` : sur la liste déjà
+ *  filtrée, cocher « Faux » ferait tomber « Lossless », « MP3 » et « Doublons » à 0, et le menu
+ *  cesserait de dire ce qu'il y a à filtrer pour ne plus dire que ce qui reste après filtrage. Même
+ *  raison, à l'envers, que le compte de la rangée d'en-tête (`paintQueueCount`), qui lui décrit ce
+ *  que la colonne MONTRE et se lit donc sur la liste filtrée.
+ *
+ *  Appelé à l'OUVERTURE du menu seulement (`toggleQueueFacet`), jamais depuis le rendu de la file :
+ *  ce balayage est en O(file × facettes) et la colonne se repeint sur un poll de 300ms — c'est le
+ *  point chaud du frontend. Une file fermée n'a pas de compte à montrer. */
+function paintFacetCounts(pop: HTMLElement): void {
+  const counts = new Map<string, number>(QUEUE_FACETS.map((f) => [f.id, 0]));
+  // Un seul parcours de la file pour les quatre facettes (elles ne s'excluent pas : un même item
+  // peut être compté dans plusieurs, l'union du filtre le dédoublonne ensuite).
+  for (const it of currentItems) {
+    for (const f of QUEUE_FACETS) if (f.match(it)) counts.set(f.id, (counts.get(f.id) ?? 0) + 1);
+  }
+  for (const f of QUEUE_FACETS) {
+    // `f.id` est un littéral de QUEUE_FACETS, pas une donnée : sûr dans un sélecteur.
+    const el = pop.querySelector<HTMLElement>(`[data-facet-count="${f.id}"]`);
+    const s = String(counts.get(f.id) ?? 0);
+    if (el && el.textContent !== s) el.textContent = s;
+  }
+  const totalEl = pop.querySelector<HTMLElement>("[data-facet-total]");
+  const total = String(currentItems.length);
+  if (totalEl && totalEl.textContent !== total) totalEl.textContent = total;
+}
+
+/** Ouvre/ferme le popover. Les cases ET les comptes reflètent l'état à chaque ouverture (muter, pas
  *  rebuild). Placement au SECOND frame — le style n'est pas recalculé au premier dans WebView2
  *  (même leçon que le popover de facettes de Bibliothèque et le placement du popover Destination). */
 function toggleQueueFacet(): void {
@@ -816,18 +993,42 @@ function toggleQueueFacet(): void {
   pop.querySelectorAll<HTMLInputElement>("input[data-facet]").forEach((cb) => {
     cb.checked = queueFacetFilter.has(cb.dataset.facet || "");
   });
+  // AVANT `hidden = false`, comme les cases juste au-dessus : le menu ne doit jamais être peint,
+  // même une frame, avec des cellules de compte vides. Elles le sont au montage (`ensureQueueFacet`
+  // pose le markup sans valeur) et le resteraient jusqu'ici à la première ouverture.
+  paintFacetCounts(pop);
   pop.hidden = false;
   btn.setAttribute("aria-expanded", "true");
   requestAnimationFrame(() => requestAnimationFrame(() => placeQueueFacet()));
 }
 
-/** Reflète le nombre de facettes actives sur le bouton (compte + teinte d'accent). */
+/** Résumé EN TOUTES LETTRES de la combinaison cochée — c'est le libellé du pulldown (wireframe
+ *  « Poste de décision » §§ 09-10 ; spec § Zone B′ : « le bouton résume la combinaison »). Il
+ *  remplace le compte numérique de critères, qui disait « 2 » là où la rangée dit maintenant
+ *  « Faux + Doublons » : le filtre actif se lit sans ouvrir le menu.
+ *
+ *  Ordre de `QUEUE_FACETS`, PAS l'ordre d'insertion du Set — sinon la même combinaison se nommerait
+ *  « Faux + Doublons » ou « Doublons + Faux » selon l'ordre des clics.
+ *
+ *  Rien de coché → « Tout afficher », mot pour mot la commande de remise à zéro du menu : l'état
+ *  sans filtre et la sortie du filtre se disent pareil, donc le bouton ne peut pas laisser croire
+ *  qu'un filtre est posé alors qu'il n'y en a aucun. */
+function facetSummary(): string {
+  const on = QUEUE_FACETS.filter((f) => queueFacetFilter.has(f.id)).map((f) => f.label);
+  return on.length ? on.join(" + ") : "Tout afficher";
+}
+
+/** Repeint le pulldown depuis `queueFacetFilter` : libellé résumé + marque `on` (qui ne pilote plus
+ *  qu'une ENCRE, `styles.css` — filtre posé en encre primaire, « Tout afficher » en tertiaire).
+ *  Plus d'`aria-pressed` : ce bouton n'est pas une bascule mais un *pop-up button* (`aria-haspopup`
+ *  + `aria-expanded`), et son libellé visible dit déjà l'état — le doubler d'un état pressé faisait
+ *  lire deux choses contradictoires à un lecteur d'écran. */
 function paintFacetButton(btn: HTMLElement): void {
-  const n = queueFacetFilter.size;
-  btn.classList.toggle("on", n > 0);
-  btn.setAttribute("aria-pressed", n > 0 ? "true" : "false");
-  const count = btn.querySelector<HTMLElement>(".sift-qfacet-count");
-  if (count) count.textContent = n > 0 ? String(n) : "";
+  btn.classList.toggle("on", queueFacetFilter.size > 0);
+  const label = btn.querySelector<HTMLElement>(".sift-qfacet-label");
+  // `textContent`, pas `innerHTML` : les libellés viennent de `QUEUE_FACETS` (littéraux), et cette
+  // fonction est rappelée à chaque rendu de la file — poll de 300ms compris.
+  if (label) label.textContent = facetSummary();
 }
 
 // Auto-fermeture (scroll / resize / clic extérieur), câblée une fois. Le popover est ancré à un
@@ -853,10 +1054,21 @@ function ensureQueueFacetDismiss(): void {
   );
 }
 
-/** Bouton « Filtrer » (dans l'en-tête .sift-qhead) + son popover cochable, créés UNE fois puis mutés
- *  — appelé au rendu de la file (poll compris), donc JAMAIS innerHTML= en rafale : le markup est posé
- *  au premier montage, les appels suivants ne re-peignent que l'état (compte, teinte). Réutilise la
- *  classe .sift-facet-pop (styles.css) et la géométrie anchoredBelowPosition (popover-position.ts). */
+/** Pulldown de filtre (à GAUCHE de la rangée `.sift-qhead`) + son popover cochable, créés UNE fois
+ *  puis mutés — appelé au rendu de la file (poll compris), donc JAMAIS innerHTML= en rafale : le
+ *  markup est posé au premier montage, les appels suivants ne re-peignent que le libellé. Réutilise
+ *  la classe .sift-facet-pop (styles.css) et la géométrie anchoredBelowPosition (popover-position.ts).
+ *
+ *  GABARIT DU KIT depuis le 2026-08-25 (Big Sur, *pulldown* : 45:152 au repos, 45:169 au survol,
+ *  45:186 pressé) — bouton à LIBELLÉ + chevron, plus le bouton icône-seule qu'il était. Ce que ce
+ *  geste retire, et pourquoi :
+ *    · le glyphe `ti-filter` et le compte numérique de critères (« 2 ») — le libellé les remplace
+ *      en toutes lettres, et un CTA à libellé descriptif se dit en TEXTE SEUL (CLAUDE.md § Front) ;
+ *    · l'`aria-label` « Filtrer la file » — sur un bouton qui a désormais du texte visible, il le
+ *      MASQUERAIT au lecteur d'écran au lieu de l'aider. Le `title` reste : il nomme l'action là où
+ *      le libellé ne nomme que l'état.
+ *  L'apparence (hauteur, rayon, padding, survol, pressé) vit dans `.sift-qfacet-btn`
+ *  (`styles.css`, région de la colonne file) : aucune valeur en dur ici. */
 function ensureQueueFacet(qcol: HTMLElement): void {
   ensureQueueFacetDismiss();
   const head = qcol.querySelector<HTMLElement>(".sift-qhead");
@@ -870,14 +1082,17 @@ function ensureQueueFacet(qcol: HTMLElement): void {
     btn.setAttribute("aria-haspopup", "true");
     btn.setAttribute("aria-expanded", "false");
     btn.setAttribute("title", "Filtrer la file");
-    btn.setAttribute("aria-label", "Filtrer la file");
+    // Aucune donnée d'exécution ici — le libellé est posé par `paintFacetButton` en `textContent`.
     btn.innerHTML =
-      '<i class="ti ti-filter" aria-hidden="true"></i><span class="sift-qfacet-count" aria-hidden="true"></span>';
+      '<span class="sift-qfacet-label"></span><i class="ti ti-chevron-down" aria-hidden="true"></i>';
     btn.addEventListener("click", (e) => {
       e.stopPropagation();
       toggleQueueFacet();
     });
-    head.appendChild(btn);
+    // `prepend`, pas `appendChild` : le compte de pistes est déjà dans la rangée (`revueShell`) et
+    // le pulldown se range à sa GAUCHE. Insertion unique (gardée par `!btn`), donc le poll de 300ms
+    // ne redéplace rien.
+    head.prepend(btn);
   }
   if (!document.getElementById("sift-qfacet-pop")) {
     const pop = document.createElement("div");
@@ -885,12 +1100,31 @@ function ensureQueueFacet(qcol: HTMLElement): void {
     pop.className = "sift-facet-pop";
     pop.hidden = true;
     // Libellés STATIQUES (QUEUE_FACETS), aucune donnée non fiable — esc() par prudence de site neuf.
+    //
+    // GABARIT DU KIT (Menu/Menu-items 58:49) depuis le 2026-08-25 : chaque option est une rangée à
+    // trois cellules — case à cocher, libellé, compte — et « Tout afficher » en est une quatrième,
+    // derrière un séparateur. Deux ajouts que le wireframe § 10 dessine et que ce menu n'avait pas :
+    //   · la CASE au gabarit du kit — la case native reste le contrôle (clavier, `change`, nom
+    //     accessible via le <label>), `.sift-qfacet-box` en est l'habillage peint (`styles.css`) ;
+    //   · le COMPTE par facette, à droite, écrit par `paintFacetCounts` à l'ouverture du menu.
+    // `.sift-menu-label` / `.sift-menu-count` sont RÉUTILISÉS et non redéclarés : ce sont les deux
+    // cellules de la grammaire de menu du dépôt (une seule dans l'app), et `.sift-menu-count` porte
+    // déjà les chiffres tabulaires que le wireframe demande.
     pop.innerHTML =
       QUEUE_FACETS.map(
         (f) =>
-          `<label class="sift-qfacet-opt"><input type="checkbox" data-facet="${esc(f.id)}"> ${esc(f.label)}</label>`,
+          `<label class="sift-qfacet-opt">` +
+          `<input type="checkbox" class="sift-qfacet-ck" data-facet="${esc(f.id)}">` +
+          `<span class="sift-qfacet-box" aria-hidden="true"><i class="ti ti-check"></i></span>` +
+          `<span class="sift-menu-label">${esc(f.label)}</span>` +
+          `<span class="sift-menu-count" data-facet-count="${esc(f.id)}"></span>` +
+          `</label>`,
       ).join("") +
-      '<button type="button" class="sift-qfacet-reset" data-facet-reset>Tout afficher</button>';
+      '<div class="sift-qfacet-sep" role="separator"></div>' +
+      '<button type="button" class="sift-qfacet-reset" data-facet-reset>' +
+      '<span class="sift-menu-label">Tout afficher</span>' +
+      '<span class="sift-menu-count" data-facet-total></span>' +
+      "</button>";
     pop.querySelectorAll<HTMLInputElement>("input[data-facet]").forEach((cb) =>
       cb.addEventListener("change", () => {
         const id = cb.dataset.facet || "";
@@ -909,7 +1143,11 @@ function ensureQueueFacet(qcol: HTMLElement): void {
       applyFacetFilter();
       closeQueueFacet();
     });
-    qcol.appendChild(pop);
+    // Rangé en dernier dans #qcol : il est `position:fixed` (`.sift-facet-pop`), donc hors flux —
+    // sa place dans le DOM ne se voit pas, mais elle est déclarée comme les autres pour que
+    // l'ordre de la colonne se lise en un seul endroit. Enfant de #qcol pour disparaître avec lui
+    // quand la navigation reconstruit la colonne.
+    placeInQueueColumn(qcol, pop, "#sift-qfacet-pop");
   }
   if (btn) paintFacetButton(btn);
 }
@@ -971,7 +1209,8 @@ export function enterDetailMode(): void {
   // was the only one that needed #fldz's value).
   requireEl("#fldz", "enterDetailMode");
   setReviewModeRaw("detail");
-  ensureReviewSeg();
+  // Plus de segmenté à repeindre ici depuis le 2026-08-25 : c'est l'icône de sélection de la barre
+  // unifiée qui porte l'état armé/désarmé du mode Lot (spec `docs/ui-specs/revue.md` § Zone A).
   // Leave batch pick mode: tree reverts to detail's state.binRel. No manual opacity/checkbox
   // cleanup needed — renderBins (filing.ts) always re-derives .sift-fldz-tree's opacity from
   // the current binPick (null in detail) and renders the one shared in-place checkbox itself.
