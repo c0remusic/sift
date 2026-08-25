@@ -74,8 +74,6 @@ import {
 } from "./queue-panel";
 import {
   renderBatch,
-  batchGroupCap,
-  BATCH_GROUP_PAGE,
   batchBin,
   batchInPlace,
   onBatchBinPick,
@@ -157,10 +155,9 @@ async function runNavExport(): Promise<void> {
 /** Switch between detail and batch review. On entering batch the #fldz tree becomes the destination
  * explorer (batch pick mode); on leaving we restore the per-track filing pane. Its "detail" branch
  * lives in queue-panel.ts as enterDetailMode() (queue-owned code only) — this function keeps the
- * "batch" branch, which touches batch-owned state (batchGroupCap, renderBatch) that queue-panel.ts
- * must never import (see the tranche 1b plan's Architecture section: a static import cycle would
- * otherwise result). batchGroupCap/BATCH_GROUP_PAGE/renderBatch/batchBin/onBatchBinPick now come
- * from batch-panel.ts (Phase 1, tranche 1c) instead of being local references.
+ * "batch" branch, which touches batch-owned state (renderBatch) that queue-panel.ts must never
+ * import (a static import cycle would otherwise result). renderBatch/batchBin/onBatchBinPick now
+ * come from batch-panel.ts (Phase 1, tranche 1c) instead of being local references.
  *
  * Plus de `ensureReviewSeg()` ici depuis le 2026-08-25 : le segmenté Détail / Lot de la colonne
  * file a été retiré (`docs/ui-specs/revue.md` §§ Zone A / Zone B′), et c'est l'icône de sélection
@@ -169,14 +166,8 @@ function setReviewMode(m: "detail" | "batch") {
   if (m === "batch") {
     setReviewModeRaw("batch");
     const fldz = requireEl("#fldz", "setReviewMode");
-    // Fresh entry into batch mode starts each group at one page (Task 3b) — a prior session's
-    // expanded caps shouldn't silently carry over and re-mount thousands of rows on re-entry.
-    batchGroupCap.file = BATCH_GROUP_PAGE;
-    batchGroupCap.fake = BATCH_GROUP_PAGE;
-    batchGroupCap.readonly = BATCH_GROUP_PAGE;
     initQueueBatchSel(currentItems);
     renderBatch();
-    // Drive the #fldz tree in batch pick mode (loads bins, clicks set batchBin via onBatchBinPick).
     void refreshBinsForBatch(fldz, batchBin, onBatchBinPick, batchInPlace);
   } else {
     enterDetailMode();
@@ -638,10 +629,10 @@ export function installLiveWiring() {
       setReviewMode(el.dataset.m === "batch" ? "batch" : "detail");
     } else if (act === "batchqueuefile") {
       e.stopPropagation();
-      handleBatchQueueAction("file");
+      void handleBatchQueueAction("file");
     } else if (act === "batchqueuediscard") {
       e.stopPropagation();
-      handleBatchQueueAction("discard");
+      void handleBatchQueueAction("discard");
     } else if (handleBatchAction(el, act ?? "", e)) {
       // handled — see batch-panel.ts
     } else if (handleRekordboxAction(el, act ?? "", e, () => void runNavExport())) {
