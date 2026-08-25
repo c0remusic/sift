@@ -407,7 +407,7 @@ function renderBins(fldz: HTMLElement): void {
   // Sur place, puis le pied. Seuls la case ET le pied restent HORS du wrapper : cocher Sur place ne
   // doit jamais rendre sa propre case ni les actions natives non cliquables (régression connue).
   fldz.innerHTML =
-    `<div class="sift-fldz-tree">${filterRow}${rootCaption}${body}${autresGroup}</div>` +
+    `<div class="sift-fldz-tree"><div class="sift-fldz-group-label">Bibliothèque</div>${filterRow}${rootCaption}${body}${autresGroup}</div>` +
     `<div class="sift-fldz-sep"></div>` +
     inPlaceRow +
     footRow;

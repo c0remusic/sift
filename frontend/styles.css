@@ -2226,7 +2226,12 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .sift-fldz-rootpath{display:flex;align-items:center;gap:var(--space-4);font-family:var(--font-mono);font-size:var(--text-xs);color:var(--color-text-tertiary);white-space:nowrap;overflow:hidden;padding:var(--space-8) 0;margin-bottom:4px;border-bottom:0.5px solid var(--color-border-tertiary)}
 .sift-fldz-rootpath i{flex:none}
 .sift-fldz-rootpath span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
-.sift-fldz-group-label{font-size:var(--text-xs);color:var(--color-text-tertiary);text-transform:uppercase;letter-spacing:0.04em;margin:var(--space-8) 0 var(--space-4);padding-left:var(--space-8)}
+/* En-tête de section (« Bibliothèque »/« Autres ») = composant kit Sidebars/Sidebar-section
+   (61:1678, relevé via le pont Figma) : SF 10px / poids 600 / tracking 0.12 / casse normale. Le
+   fill noir du kit est le placeholder de label système → mappé sur le token gris, jamais le noir
+   brut (« Don't hard code system color values », references/figma-bridge.md). */
+.sift-fldz-group-label{font-size:var(--text-xs);font-weight:600;letter-spacing:0.12px;color:var(--color-text-tertiary);margin:var(--space-8) 0 var(--space-4);padding-left:var(--space-8)}
+.sift-fldz-group-label:first-child{margin-top:0}
 .sift-custom-path{color:var(--color-text-tertiary);font-size:var(--text-xs)}
 .sift-fldz-sep{height:0;border-top:0.5px solid var(--color-border-tertiary);margin:var(--space-8) 0}
 .sift-fldz-foot{margin-top:var(--space-8);padding-top:var(--space-8);border-top:0.5px solid var(--color-border-tertiary)}
