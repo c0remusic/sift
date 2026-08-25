@@ -689,9 +689,11 @@ function ensureQueueReanalyzeAllButton(qcol: HTMLElement, unanalyzedCount: numbe
   el.textContent = bulkReanalyzing ? "Relance…" : `Réanalyser (${unanalyzedCount})`;
 }
 
-/** Live filter bar for the queue rail (annotation: "on veut une barre de recherche en bas"),
- * injected once at the BOTTOM of #qcol (sibling after #ql, so #ql's flex:1 keeps it pinned below
- * the list). Filters currentItems client-side only (title/artist) — see visibleQueueItems(). */
+/** Live filter bar for the queue rail (annotation: "on veut une barre de recherche en bas" —
+ * remontée en TÊTE de la colonne le 2026-08-25, décision Revue #47 : la recherche coiffe la file,
+ * comme le champ de filtre d'un inspecteur macOS). Injected once at the TOP of #qcol (insertBefore
+ * firstChild — le col-h « File » et #ql suivent), so it caps the list rather than floating below.
+ * Filters currentItems client-side only (title/artist) — see visibleQueueItems(). */
 function ensureQueueSearch(qcol: HTMLElement): void {
   if (document.getElementById("sift-qsearch")) return;
   const wrap = document.createElement("div");
@@ -699,15 +701,19 @@ function ensureQueueSearch(qcol: HTMLElement): void {
   // `sift-search-wrap` porte le ring de focus : l'input lui-même est sans bordure, donc le
   // traitement de focus des champs texte (`styles.css`, border-color) ne peut rien montrer ici.
   wrap.className = "sift-search-wrap";
+  // margin-BOTTOM (et non -top) : la recherche est désormais en tête, l'espace la sépare de ce qui
+  // la suit. Littéral 8px, à aligner conceptuellement sur --space-8.
   wrap.style.cssText =
-    "flex:none;position:relative;margin-top:8px;background:var(--color-background-secondary);border-radius:var(--border-radius-md)";
+    "flex:none;position:relative;margin-bottom:8px;background:var(--color-background-secondary);border-radius:var(--border-radius-md)";
   // No placeholder text — just a search icon overlaid on the right, hidden once there's a query
   // (annotation: "met juste une icone de loupe sur la droite qui disparait quand on tape").
   wrap.innerHTML =
     '<input id="sift-qsearch-input" type="text" aria-label="Filtrer la file" ' +
     'style="width:100%;border:none;background:transparent;font:inherit;color:var(--color-text-primary);padding:6px 30px 6px 9px">' +
     '<i id="sift-qsearch-icon" class="ti ti-search" aria-hidden="true" style="position:absolute;right:9px;top:50%;transform:translateY(-50%);font-size:var(--text-base);color:var(--color-text-tertiary);pointer-events:none"></i>';
-  qcol.appendChild(wrap);
+  // En TÊTE de #qcol : avant le col-h « File » (et le segmenté tant qu'il subsiste) et #ql. Guard en
+  // tête de fonction → insertion unique, l'ordre reste stable aux re-rendus/poll.
+  qcol.insertBefore(wrap, qcol.firstChild);
   const input = wrap.querySelector<HTMLInputElement>("#sift-qsearch-input")!;
   const icon = wrap.querySelector<HTMLElement>("#sift-qsearch-icon")!;
   input.addEventListener("input", () => {
