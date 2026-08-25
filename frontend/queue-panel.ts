@@ -18,6 +18,7 @@ import { requireEl, esc } from "./dom";
 import { toast } from "./filing-toast";
 import { humanizeError } from "./errors";
 import { filingFailure, isFilingInFlight, onFilingOutcome } from "./filing-state";
+import { isBatchSheetOpen } from "./batch-sheet";
 import { anchoredBelowPosition } from "./popover-position";
 
 /** A pending track still worth (re)analysing: no current verdict AND not yet terminally broken.
@@ -1229,7 +1230,9 @@ let queueSelectTimer: ReturnType<typeof setTimeout> | undefined;
 export function handleQueueItemClick(qi: HTMLElement, e: MouseEvent): void {
   e.stopPropagation();
   // In batch mode a row-click means "inspect this one" → drop back to the detail pane.
-  if (reviewMode === "batch") enterDetailMode();
+  // But NOT while a batch filing is running (sheet open) — the queue stays interactive for
+  // selecting the next batch (wireframe § 17: "non-modale, la file reste utilisable").
+  if (reviewMode === "batch" && !isBatchSheetOpen()) enterDetailMode();
   const id = Number(qi.dataset.id);
   const item = currentItems.find((it) => it.id === id);
   const mid = requireEl("#mid", "qi-click");

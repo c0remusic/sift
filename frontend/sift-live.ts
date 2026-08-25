@@ -311,6 +311,8 @@ export function installLiveWiring() {
       if (id) void reanalyzeTrack(id);
       return;
     }
+    // Batch checkbox — handled by queue-panel.ts's own document listener; skip .qi dispatch
+    if ((e.target as HTMLElement).dataset.sift === "queuepick") return;
     // queue item → open the live filing pane (report + editor + actions) in #mid
     const qi = (e.target as HTMLElement).closest<HTMLElement>(".qi[data-id]");
     if (qi?.dataset.id) {

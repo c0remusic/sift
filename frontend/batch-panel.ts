@@ -110,6 +110,7 @@ function formatBlocksHtml(): string {
 let fileClearTimer: ReturnType<typeof setTimeout> | undefined;
 let fileStopping = false;
 let batchRunning = false;
+export function isBatchRunning(): boolean { return batchRunning; }
 let lastFileProgress: FileProgress | null = null;
 
 export function pushFileProgress(p: FileProgress) {
@@ -262,6 +263,8 @@ async function runBatchFile(ids: number[]) {
   fileStopping = false;
   lastFileProgress = null;
   batchRunning = true;
+  const mid = document.getElementById("mid");
+  if (mid) mid.innerHTML = "";
   renderBatchRail();
   batchTrackIds = ids;
   startBatchTracklist(ensureBatchTracklistHost(), ids.map(batchTrackItem));
@@ -336,6 +339,10 @@ export function registerRefreshHook(fn: () => Promise<void>): void {
 export async function onFileBatchDone(res: BatchResult) {
   fileStopping = false;
   batchRunning = false;
+  if (reviewMode === "batch") {
+    const mid = document.getElementById("mid");
+    if (mid) mid.innerHTML = selectionSummaryHtml(currentItems.filter((it) => queueBatchSel.has(it.id)));
+  }
   const processed = res.cancelled ? batchTrackIds.slice(0, lastFileProgress?.done ?? 0) : batchTrackIds;
   const failed = new Set(res.needs_validation);
   finishBatchTracklist(processed.filter((id) => !failed.has(id)), res.needs_validation);
