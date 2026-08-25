@@ -154,13 +154,25 @@ color-scheme:light;
    pixels d'image, jamais par-dessus une surface de l'app, donc le thème n'entre pas dans le calcul.
    C'est l'ENCRE qui devait cesser de basculer — voir --color-text-on-scrim. */
 --overlay-scrim-caption:oklch(0% 0 0 / .66);
-/* Radius scale (2026-07-08, structure adapted from tweakcn "ZFlow" — a single base derived via
-   calc() instead of 4 independent literals, so the whole scale moves together from one number.
-   Base raised 10px→14px (rounder, per user request) but the internal deltas (sm=base-6,
-   md=base-4) are Sift's own from the 2026-07-03 audit, not ZFlow's numbers — pill unaffected,
-   already semantically "infinite". */
+/* Radius scale — RE-RACINÉE le 2026-08-25 (#47) sur le kit macOS Big Sur, relevé au pont Figma
+   REST (fileKey k3ek2XpmIKjqiFUsyn5kCi). L'audit des composants de Revue a montré que chaque
+   contrôle était décalé d'un cran vers le rond, et que la cause était l'échelle, pas les règles :
+   l'ancienne dérivation (base 14 avec sm=base-6, md=base-4) donnait 8 et 10 là où le kit demande
+   5 et 7 — aucun cran ne tombait sur une valeur du kit.
+   Les trois crans de contrôle sont donc des LITTÉRAUX relevés, chacun avec le node qui le porte,
+   et non plus des deltas d'une base : Apple donne une valeur PAR composant, pas une échelle.
+     --xs 4  → case à cocher (Buttons/Checkbox, node 44:314)
+     --sm 5  → item de menu (Menu/Menu-items 58:49), champ texte (Text-fields 45:1008),
+               segmenté (Pickers/Segmented 47:23 et son item 47:9)
+     --md 7  → bouton push (43:43), champ de recherche (45:812), pulldown (45:152),
+               bouton icône de barre (45:88)
+   `base`/`lg` (14) ne vient PAS du kit — les grandes surfaces (cartes, popovers, sheets) n'ont
+   pas été relevées ; il reste tel quel, à confronter au kit quand la Lane 3 mesurera sheets et
+   alertes. Décision d'Antoine (2026-08-25) : re-raciner plutôt qu'ajouter des crans, « on va de
+   toute façon changer tous les écrans » — donc les ~107 usages de l'app bougent avec, et ce
+   n'est pas un effet de bord, c'est l'intention. `pill` reste inchangé (sémantiquement infini). */
 --border-radius-base:14px;
---border-radius-sm:calc(var(--border-radius-base) - 6px);--border-radius-md:calc(var(--border-radius-base) - 4px);--border-radius-lg:var(--border-radius-base);--border-radius-pill:999px;
+--border-radius-xs:4px;--border-radius-sm:5px;--border-radius-md:7px;--border-radius-lg:var(--border-radius-base);--border-radius-pill:999px;
 /* Mesure « donnée » de l'issue #9 : une surface qui porte de la donnée mesurée se borne ici.
    ⚠️ Ce nombre est DUPLIQUÉ côté Rust — `analysis::spectrum::MAX_COLS` plafonne le spectrogramme
    au même chiffre. Le désaccord serait SILENCIEUX : un CSS plus large étirerait la donnée
