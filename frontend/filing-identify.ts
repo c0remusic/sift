@@ -71,7 +71,10 @@ function tagFieldDiffs(): { artist: boolean; title: boolean; label: boolean; yea
   const versionW = norm(c.version);
   const titleW = norm(versionW ? `${c.title} (${versionW})` : c.title);
   const title = titleW !== "" && titleW !== norm(f.title);
-  const labelW = norm(state.label);
+  // Label rides on Canonical now (editable) — compare the EDITED value against the file, like
+  // artist/title. Same non-empty guard: a blank label never counts as a discrepancy (write_tags_full
+  // won't clear the file's existing one either).
+  const labelW = norm(c.label);
   const label = labelW !== "" && labelW !== norm(f.label);
   const yearW = state.year ?? 0;
   const year = yearW > 0 && yearW !== (f.year ?? 0);
@@ -126,13 +129,18 @@ function onIdentityApplied(
   state.canonical.title = baseTitle;
   state.canonical.version = version;
 
-  // Update the editable inputs directly.
+  // Update the editable inputs directly. Label included now that it's editable (it rides on
+  // Canonical) — set the edited value here where state.canonical is freshly narrowed non-null,
+  // alongside artist/title/version; its input is patched in place below with the others.
+  state.canonical.label = applied.label;
   const aInp = editor.querySelector<HTMLInputElement>('[data-fil="artist"]');
   const tInp = editor.querySelector<HTMLInputElement>('[data-fil="title"]');
   const vInp = editor.querySelector<HTMLInputElement>('[data-fil="version"]');
+  const lInp = editor.querySelector<HTMLInputElement>('[data-fil="label"]');
   if (aInp) aInp.value = applied.canonical.artist;
   if (tInp) tInp.value = baseTitle;
   if (vInp) vInp.value = version ?? "";
+  if (lInp) lInp.value = applied.label ?? "";
 
   // Refresh the filename preview using the same logic as the input handler.
   refreshPreview();
@@ -178,10 +186,6 @@ function onIdentityApplied(
   // feeds the file-vs-display discrepancy check (joined form), so it must live in state, not only DOM.
   state.genres = applied.styles;
   renderGenres();
-  // Label est lecture seule (rendu par renderEditor) mais onIdentityApplied ne re-render pas
-  // l'éditeur — patcher sa valeur en place, comme les inputs artiste/titre/version plus haut.
-  const labelRo = editor.querySelector<HTMLElement>('[data-fil="label-ro"]');
-  if (labelRo) labelRo.textContent = state.label ?? "—";
 
   // A Discogs match now exists → if the file is a fake/transcode, offer the rebuy search link.
   state.identified = true;
@@ -376,11 +380,12 @@ export function renderEditor(host: HTMLElement, mid: HTMLElement, rail: string, 
     `<div class="sift-attr"><span class="sift-attr-k">Artiste</span><input data-fil="artist" placeholder="—" value="${esc(c.artist)}" class="sift-attr-input" aria-label="Artiste"></div>` +
     `<div class="sift-attr"><span class="sift-attr-k">Titre</span><input data-fil="title" placeholder="—" value="${esc(c.title)}" class="sift-attr-input" aria-label="Titre"></div>` +
     `<div class="sift-attr"><span class="sift-attr-k">Version</span><input data-fil="version" placeholder="—" value="${esc(c.version ?? "")}" class="sift-attr-input" aria-label="Version"></div>` +
-    // Label — fait de release Discogs, LECTURE SEULE : apply_tags reçoit un Canonical (artiste/titre/
-    // version) et écrit le label depuis la métadonnée stockée, pas depuis une saisie ; l'éditer
-    // demanderait d'élargir le contrat IPC (backend, hors #47). Mis à jour en place par
-    // onIdentityApplied quand une release est choisie. "—" quand aucun label connu.
-    `<div class="sift-attr"><span class="sift-attr-k">Label</span><span class="sift-attr-ro" data-fil="label-ro">${esc(state.label ?? "—")}</span></div>` +
+    // Label — fait de release Discogs, ÉDITABLE EN PLACE (retour vérif visuelle 2026-08-25 :
+    // l'utilisateur veut corriger le label). La valeur EST un input `data-fil="label"`, câblé comme
+    // Artiste/Titre/Version : `upd` le lit vers state.canonical.label (label voyage désormais DANS
+    // Canonical), et il se grave au fichier (blur/Entrée) via doApplyTags → write_tags_full (+
+    // persiste metadata.label). Rempli en place par onIdentityApplied. Placeholder "—" quand vide.
+    `<div class="sift-attr"><span class="sift-attr-k">Label</span><input data-fil="label" placeholder="—" value="${esc(c.label ?? "")}" class="sift-attr-input" aria-label="Label"></div>` +
     `<div class="sift-attr"><span class="sift-attr-k">Genres</span><span class="sift-genres"></span></div>` +
     `</div>` +
     // Plus de bouton « Appliquer » (retour Antoine 2026-08-25) : les tags ID3 se gravent
@@ -418,10 +423,13 @@ export function renderEditor(host: HTMLElement, mid: HTMLElement, rail: string, 
     const a = host.querySelector<HTMLInputElement>('[data-fil="artist"]');
     const t = host.querySelector<HTMLInputElement>('[data-fil="title"]');
     const v = host.querySelector<HTMLInputElement>('[data-fil="version"]');
+    const l = host.querySelector<HTMLInputElement>('[data-fil="label"]');
     if (!state.canonical) return;
     state.canonical.artist = a?.value ?? "";
     state.canonical.title = t?.value ?? "";
     state.canonical.version = v?.value.trim() ? v.value.trim() : null;
+    // Label rides on Canonical now (empty → null, same discipline as version). Graved by doApplyTags.
+    state.canonical.label = l?.value.trim() ? l.value.trim() : null;
     refreshPreview();
     refreshDiscrepancy(); // editing a field may make the display diverge from the file (or re-converge)
   };
@@ -444,7 +452,7 @@ export function renderEditor(host: HTMLElement, mid: HTMLElement, rail: string, 
     (e.currentTarget as HTMLInputElement).blur();
   };
   host
-    .querySelectorAll<HTMLInputElement>('[data-fil="artist"],[data-fil="title"],[data-fil="version"]')
+    .querySelectorAll<HTMLInputElement>('[data-fil="artist"],[data-fil="title"],[data-fil="version"],[data-fil="label"]')
     .forEach((el) => {
       let focusVal = el.value;
       el.addEventListener("focusin", () => {

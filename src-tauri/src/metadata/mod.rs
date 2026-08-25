@@ -130,6 +130,24 @@ pub fn update_metadata_db(
     Ok(())
 }
 
+/// Persist ONLY the `label` column for a track, upserting a metadata row if none exists yet.
+/// Used by `apply_tags` when the user edits the Label field in the Revue pane: the edit is written
+/// to the file's ID3 tag (via `write_tags_full`) AND here, so a close+reopen reads back the edited
+/// label from the DB (`track_release`) instead of the stale Discogs one — otherwise the reopened
+/// pane would show the old label while the file holds the new one, tripping the discrepancy banner.
+/// Deliberately label-only: it must NOT touch artist/title/version (those come from the file via
+/// `reconcile` on reopen) nor `discogs_release_id`/`source` (an edit never wipes a release link).
+/// `artist`/`title` stay NULL on a first INSERT (both are nullable) — a label-only row keeps
+/// `identified` false, exactly like no row at all.
+pub fn set_metadata_label(conn: &Connection, track_id: i64, label: &str) -> rusqlite::Result<()> {
+    conn.execute(
+        "INSERT INTO metadata(track_id, label) VALUES(?1, ?2)
+         ON CONFLICT(track_id) DO UPDATE SET label=excluded.label",
+        params![track_id, label],
+    )?;
+    Ok(())
+}
+
 /// What we search for: the track's current best-guess artist/title, plus the version
 /// (remix/dub) used to pick the matching release among a release's tracklist.
 ///
@@ -237,6 +255,7 @@ pub fn apply_identity(
             artist: c.artist.clone(),
             title: c.title.clone(),
             version: None,
+            label: c.label.clone(),
             confidence: Confidence::Green, // a Discogs match is a high-confidence rename
         },
         label: c.label.clone(),
@@ -362,6 +381,56 @@ mod tests {
             crate::genres::get_genres(&conn, 1).unwrap(),
             vec!["Techno".to_string()]
         );
+    }
+
+    #[test]
+    fn set_metadata_label_inserts_then_updates_label_only() {
+        let conn = db();
+
+        // INSERT path (no prior metadata row): a label-only row is created — artist/title stay NULL
+        // (so `identified` reads false, same as no row) and no release link is invented.
+        set_metadata_label(&conn, 1, "Trax").unwrap();
+        type Row = (
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+        );
+        let (artist, title, label, rel): Row = conn
+            .query_row(
+                "SELECT artist, title, label, discogs_release_id FROM metadata WHERE track_id=1",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )
+            .unwrap();
+        assert_eq!(label.as_deref(), Some("Trax"));
+        assert!(
+            artist.is_none() && title.is_none(),
+            "a label-only upsert must not fabricate an identity"
+        );
+        assert!(
+            rel.is_none(),
+            "a label edit must never invent a release link"
+        );
+
+        // UPDATE path over an identified row: only the label column changes — the identity and the
+        // Discogs release link are preserved (mutating this to INSERT OR REPLACE would wipe them).
+        apply_identity(&conn, 1, &sample(), None).unwrap();
+        set_metadata_label(&conn, 1, "Alleviated Records").unwrap();
+        let (artist, label, rel): (Option<String>, Option<String>, Option<String>) = conn
+            .query_row(
+                "SELECT artist, label, discogs_release_id FROM metadata WHERE track_id=1",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            label.as_deref(),
+            Some("Alleviated Records"),
+            "label updated in place"
+        );
+        assert_eq!(artist.as_deref(), Some("Larry Heard"), "identity untouched");
+        assert_eq!(rel.as_deref(), Some("12345"), "release link preserved");
     }
 
     #[test]

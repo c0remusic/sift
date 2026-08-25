@@ -225,10 +225,10 @@ export async function renderReglagesLive() {
   // piste n'en a pas.
   const TPL_SAMPLES: ReadonlyArray<{ c: Canonical; ext: string }> = [
     {
-      c: { artist: "Chez Damier", title: "Can You Feel It", version: "Fluent Remix", confidence: "green" },
+      c: { artist: "Chez Damier", title: "Can You Feel It", version: "Fluent Remix", label: null, confidence: "green" },
       ext: "aiff",
     },
-    { c: { artist: "Mr Fingers", title: "Mystery of Love", version: null, confidence: "green" }, ext: "mp3" },
+    { c: { artist: "Mr Fingers", title: "Mystery of Love", version: null, label: null, confidence: "green" }, ext: "mp3" },
   ];
 
   const tplBlock = document.createElement("div");

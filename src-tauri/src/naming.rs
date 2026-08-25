@@ -16,11 +16,18 @@ pub enum Confidence {
 
 /// The reconciled, canonical metadata for one track. Both the output filename and the
 /// embedded tags are derived from this — they can never diverge.
+///
+/// `label` rides along ONLY for the tag write (the Discogs release label, editable in the Revue
+/// pane): it is NOT name-driving — `render_filename`/`tag_title` ignore it (there is no `{label}`
+/// placeholder), so widening this struct never changes a filename. `reconcile` sets it to `None`
+/// (tags/filename carry no label); the front seeds it from the persisted release facts and lets the
+/// user edit it, and `apply_tags` writes it via `write_tags_full`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct Canonical {
     pub artist: String,
     pub title: String,
     pub version: Option<String>,
+    pub label: Option<String>,
     pub confidence: Confidence,
 }
 
@@ -105,6 +112,7 @@ pub fn reconcile(tag_artist: &str, tag_title: &str, stem: &str) -> Canonical {
                 artist: tag_artist.trim().to_string(),
                 title: tag_title.trim().to_string(),
                 version: name_version,
+                label: None,
                 confidence: if agree {
                     Confidence::Green
                 } else {
@@ -119,6 +127,7 @@ pub fn reconcile(tag_artist: &str, tag_title: &str, stem: &str) -> Canonical {
             artist: tag_artist.trim().to_string(),
             title: tag_title.trim().to_string(),
             version: extract_version_hint(stem),
+            label: None,
             confidence: Confidence::Green,
         },
         // name clean only -> green from name
@@ -126,6 +135,7 @@ pub fn reconcile(tag_artist: &str, tag_title: &str, stem: &str) -> Canonical {
             artist: pa.clone(),
             title: pt.clone(),
             version: v.clone(),
+            label: None,
             confidence: Confidence::Green,
         },
         // neither clean -> yellow, best guess = a *cleaned* stem as title for the user to edit
@@ -133,6 +143,7 @@ pub fn reconcile(tag_artist: &str, tag_title: &str, stem: &str) -> Canonical {
             artist: String::new(),
             title: clean_stem(stem),
             version: None,
+            label: None,
             confidence: Confidence::Yellow,
         },
     }
@@ -289,15 +300,17 @@ mod tests {
             artist: String::new(),
             title: String::new(),
             version: None,
+            label: None,
             confidence: Confidence::Green,
         };
         let Canonical {
             artist,
             title,
             version,
+            label,
             confidence,
         } = v;
-        let _ = (artist, title, version, confidence);
+        let _ = (artist, title, version, label, confidence);
     }
 
     #[test]
@@ -459,6 +472,7 @@ mod tests {
             artist: "Larry Heard".into(),
             title: "Mystery of Love".into(),
             version: Some("Original Mix".into()),
+            label: None,
             confidence: Confidence::Green,
         };
         assert_eq!(
@@ -473,6 +487,7 @@ mod tests {
             artist: "Chez Damier".into(),
             title: "Can You Feel It".into(),
             version: None,
+            label: None,
             confidence: Confidence::Green,
         };
         assert_eq!(

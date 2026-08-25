@@ -213,8 +213,11 @@ pub fn track_file_tags(
 fn metadata_sync_values_for_apply_tags(
     edited: &Canonical,
     extras: &filing::TagExtras,
+    // The label actually written to the file (edited value, or the stored one as fallback) — the
+    // Rekordbox sync candidate must record what the tag write decided, not the raw stored label.
+    label: Option<&str>,
 ) -> actions::MetadataSyncValues {
-    let (genre, label) = actions::sanitize_genre_label(&extras.genres, extras.label.as_deref());
+    let (genre, label) = actions::sanitize_genre_label(&extras.genres, label);
     actions::MetadataSyncValues {
         artist: Some(edited.artist.clone()),
         title: Some(crate::naming::tag_title(edited)),
@@ -254,7 +257,19 @@ pub fn apply_tags(
     // file can't be read: nothing has changed yet.
     let snapshot = crate::tagging::read_tags_full(&path)?;
 
-    // (3) Write the NEW tags: artist/title from the edit, label/year/genres/cover from the DB — the
+    // Label is now editable in the Revue pane (it rides on the Canonical): prefer the edited value,
+    // falling back to the stored release label when the user left it blank/untouched. Trim so a lone
+    // space never counts as an edit, and apply the same non-empty discipline as write_tags_full.
+    // `edited_label` (the real edit only) is what gets persisted to the DB below; `label` (edit or
+    // fallback) is what gets written to the file and recorded as the Rekordbox sync candidate.
+    let edited_label = edited
+        .label
+        .as_deref()
+        .map(str::trim)
+        .filter(|s| !s.is_empty());
+    let label = edited_label.or(extras.label.as_deref());
+
+    // (3) Write the NEW tags: artist/title/label from the edit, year/genres/cover from the DB — the
     // SAME set filing writes. On failure we stop; nothing is journaled. Title includes the version
     // suffix via naming::tag_title (same as filing.rs, same as the rendered filename) — previously
     // this passed &edited.title alone, silently dropping version from the actual ID3 tag.
@@ -262,7 +277,7 @@ pub fn apply_tags(
         &path,
         &edited.artist,
         &crate::naming::tag_title(&edited),
-        extras.label.as_deref(),
+        label,
         extras.year,
         &extras.genres,
         extras.cover_path.as_deref(),
@@ -274,6 +289,15 @@ pub fn apply_tags(
     let batch_id = filing::new_batch_id(track_id);
     {
         let conn = db::lock_conn(&conn)?;
+        // Persist an edited label to the `metadata` table so a close+reopen reads it back (the file
+        // now holds it, but `track_release` reads the DB) — label-only upsert, artist/title/version
+        // and any release link untouched. Only a real edit writes; leaving the field as the stored
+        // label is a no-op here. The revert of this tag_edit rewrites the file's OLD tags but not
+        // this DB row (same as every other apply_tags field), so a reverted label reads as a normal
+        // file-vs-display discrepancy, which the banner is meant to surface.
+        if let Some(l) = edited_label {
+            crate::metadata::set_metadata_label(&conn, track_id, l).map_err(|e| e.to_string())?;
+        }
         let action_id = actions::record_with_meta(
             &conn,
             &batch_id,
@@ -290,7 +314,7 @@ pub fn apply_tags(
         // the same decrypted `master.db` index — resolve it ONCE here (mirrors filing.rs's
         // post-commit loop) rather than have each detector independently decrypt the file.
         if let Some(index) = actions::resolve_masterdb_index_if_linked(&conn) {
-            let values = metadata_sync_values_for_apply_tags(&edited, &extras);
+            let values = metadata_sync_values_for_apply_tags(&edited, &extras, label);
             actions::detect_masterdb_metadata_sync_with_index(
                 &conn, &index, &path, track_id, &values, action_id,
             );
@@ -1398,6 +1422,7 @@ mod tests {
             artist: "Larry Heard".to_string(),
             title: "Mystery of Love".to_string(),
             version: None,
+            label: Some("Alleviated Records".to_string()),
             confidence: crate::naming::Confidence::Green,
         };
         let extras = filing::TagExtras {
@@ -1407,11 +1432,14 @@ mod tests {
             cover_path: None,
         };
 
-        let values = metadata_sync_values_for_apply_tags(&edited, &extras);
+        // The sync candidate records the label ACTUALLY written (the resolved one passed in), not the
+        // raw stored `extras.label` — pass the edited value to prove the param, not extras, decides.
+        let values =
+            metadata_sync_values_for_apply_tags(&edited, &extras, Some("Alleviated Records"));
 
         assert_eq!(values.artist.as_deref(), Some("Larry Heard"));
         assert_eq!(values.title.as_deref(), Some("Mystery of Love"));
-        assert_eq!(values.label.as_deref(), Some("Alleviated"));
+        assert_eq!(values.label.as_deref(), Some("Alleviated Records"));
         assert_eq!(values.year, Some(1985));
         assert_eq!(values.genre.as_deref(), Some("House; Deep House"));
     }
@@ -1422,10 +1450,11 @@ mod tests {
             artist: "A".to_string(),
             title: "B".to_string(),
             version: None,
+            label: None,
             confidence: crate::naming::Confidence::Green,
         };
         let extras = filing::TagExtras::default();
-        let values = metadata_sync_values_for_apply_tags(&edited, &extras);
+        let values = metadata_sync_values_for_apply_tags(&edited, &extras, None);
         assert_eq!(values.genre, None);
     }
 

@@ -326,7 +326,7 @@ export interface Candidate {
 }
 
 export interface AppliedIdentity {
-  canonical: { artist: string; title: string; version: string | null; confidence: string };
+  canonical: { artist: string; title: string; version: string | null; label: string | null; confidence: string };
   label: string | null;
   year: number | null;
   styles: string[];
