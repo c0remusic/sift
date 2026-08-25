@@ -70,6 +70,7 @@ import {
   installQueueNavKeys,
   beginReanalyze,
   endReanalyze,
+  initQueueBatchSel,
 } from "./queue-panel";
 import {
   renderBatch,
@@ -79,6 +80,7 @@ import {
   batchInPlace,
   onBatchBinPick,
   handleBatchAction,
+  handleBatchQueueAction,
   pushFileProgress,
   onFileStop,
   onFileBatchDone,
@@ -172,6 +174,7 @@ function setReviewMode(m: "detail" | "batch") {
     batchGroupCap.file = BATCH_GROUP_PAGE;
     batchGroupCap.fake = BATCH_GROUP_PAGE;
     batchGroupCap.readonly = BATCH_GROUP_PAGE;
+    initQueueBatchSel(currentItems);
     renderBatch();
     // Drive the #fldz tree in batch pick mode (loads bins, clicks set batchBin via onBatchBinPick).
     void refreshBinsForBatch(fldz, batchBin, onBatchBinPick, batchInPlace);
@@ -633,6 +636,12 @@ export function installLiveWiring() {
     if (act === "reviewmode") {
       e.stopPropagation();
       setReviewMode(el.dataset.m === "batch" ? "batch" : "detail");
+    } else if (act === "batchqueuefile") {
+      e.stopPropagation();
+      handleBatchQueueAction("file");
+    } else if (act === "batchqueuediscard") {
+      e.stopPropagation();
+      handleBatchQueueAction("discard");
     } else if (handleBatchAction(el, act ?? "", e)) {
       // handled — see batch-panel.ts
     } else if (handleRekordboxAction(el, act ?? "", e, () => void runNavExport())) {

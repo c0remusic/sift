@@ -52,6 +52,12 @@ pub struct QueueItem {
     /// (MAX_ANALYSIS_ATTEMPTS in shared/contracts.ts): still individually retryable, but excluded
     /// from the count/bulk-retry so a genuinely unrepairable file stops inflating "Non analysés (N)".
     pub analysis_attempts: i64,
+    /// Duration in seconds, NULL until analysed.
+    pub duration: Option<f64>,
+    /// Bitrate in kbps, NULL until analysed.
+    pub bitrate: Option<i64>,
+    /// Declared format ("mp3" | "aac" | "flac" | …), NULL until analysed.
+    pub declared_fmt: Option<String>,
 }
 
 /// All pending tracks, oldest first.
@@ -70,7 +76,8 @@ pub fn list_pending(conn: &Connection) -> rusqlite::Result<Vec<QueueItem>> {
         "SELECT t.id, t.path, t.filename, t.source_id, t.verdict, t.real_quality, m.artist, m.title,
                 (t.verdict IS NULL OR t.analyzed_at IS NULL OR typeof(t.report_json)='null'
                  OR (t.verdict IS NOT NULL AND t.verdict_ver IS NOT ?1)),
-                t.analysis_attempts, t.verdict_ver
+                t.analysis_attempts, t.verdict_ver,
+                t.duration, t.bitrate, t.declared_fmt
          FROM tracks t LEFT JOIN metadata m ON m.track_id = t.id
          WHERE t.status='pending' ORDER BY t.id",
     )?;
@@ -89,6 +96,9 @@ pub fn list_pending(conn: &Connection) -> rusqlite::Result<Vec<QueueItem>> {
                 dup: false,
                 needs_analysis: r.get(8)?,
                 analysis_attempts: r.get(9)?,
+                duration: r.get(11)?,
+                bitrate: r.get(12)?,
+                declared_fmt: r.get(13)?,
             })
         },
     )?;
@@ -177,6 +187,9 @@ mod tests {
             dup: false,
             needs_analysis: true,
             analysis_attempts: 0,
+            duration: None,
+            bitrate: None,
+            declared_fmt: None,
         };
         let QueueItem {
             id,
@@ -190,6 +203,9 @@ mod tests {
             dup,
             needs_analysis,
             analysis_attempts,
+            duration,
+            bitrate,
+            declared_fmt,
         } = v;
         let _ = (
             id,
@@ -203,6 +219,9 @@ mod tests {
             dup,
             needs_analysis,
             analysis_attempts,
+            duration,
+            bitrate,
+            declared_fmt,
         );
     }
 

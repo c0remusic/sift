@@ -28,7 +28,8 @@ import {
   finishBatchTracklist,
   clearBatchTracklist,
 } from "./batch-tracklist";
-import { currentItems, reviewMode, verdictDot, prefetchNextAfter, enterDetailMode } from "./queue-panel";
+import { currentItems, reviewMode, verdictDot, prefetchNextAfter, enterDetailMode, queueBatchSel } from "./queue-panel";
+import { selectionSummaryHtml } from "./selection-summary";
 import { BATCH_CONFIRM_THRESHOLD } from "./confirm-modal";
 
 /** Human label for the batch destination (resolves the in-place sentinel to its prose). */
@@ -486,10 +487,15 @@ export function renderBatch() {
     return html;
   };
 
+  // Résumé de sélection (zone C, en-tête du board) — calculé depuis queueBatchSel AVANT le rendu.
+  const selectedItems = currentItems.filter((it) => queueBatchSel.has(it.id));
+  const summaryHtml = selectionSummaryHtml(selectedItems);
+
   // No center action bar: the destination + adaptive File/Discard/Stop button now live solely in the
   // right rail (renderBatchRail), mirroring the Detail screen's CTA-in-the-rail grammar.
   mid.innerHTML =
     `<div style="display:flex;flex-direction:column;height:100%;min-height:0">` +
+    summaryHtml +
     `<div style="flex:1;min-height:0;overflow-y:auto;padding-right:2px">` +
     (ready.length
       ? `<div style="margin:2px 0 16px">` +
@@ -1027,4 +1033,18 @@ export function onBatchInPlaceChange(checked: boolean): void {
   const fldz = document.getElementById("fldz");
   if (fldz) renderBinsForBatch(fldz, batchBin, onBatchBinPick, batchInPlace);
   renderBatchRail(currentItems.filter((it) => it.verdict !== "ok").length);
+}
+
+/** File ou écarte la sélection de la colonne de file (queueBatchSel).
+ *  Déclenché par les boutons du résumé de sélection (zone C) ou le menu contextuel.
+ *  Aucun format imposé : le backend dérive la cible depuis le rail source de chaque piste
+ *  (`encode::target_for`), ce qui empêche l'upscale par construction. */
+export function handleBatchQueueAction(action: "file" | "discard"): void {
+  const ids = [...queueBatchSel];
+  if (ids.length === 0) return;
+  if (action === "file") {
+    void fileBatch(ids, batchInPlace ? FILE_IN_PLACE : batchBin);
+  } else {
+    void rejectBatch(ids);
+  }
 }

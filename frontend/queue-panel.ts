@@ -405,12 +405,64 @@ export function installQueueNavKeys(): void {
     blurShortcutFocus();
     stepQueueSelection(e.key === "ArrowDown" ? 1 : -1);
   });
+
+  // Clic sur case de lot — intercepte avant le handler .qi générique (case dans une .qi).
+  // Sur `document` : #qcol est reconstruit à chaque navigation, un listener posé dessus
+  // disparaîtrait. Même motif que le keydown ci-dessus.
+  document.addEventListener("click", (e) => {
+    if ((e.target as HTMLElement).dataset.sift !== "queuepick") return;
+    e.stopPropagation();
+    const id = Number((e.target as HTMLElement).dataset.id);
+    if (queueBatchSel.has(id)) queueBatchSel.delete(id);
+    else queueBatchSel.add(id);
+    const ql = document.getElementById("ql");
+    if (ql) renderQueueWindow(ql);
+  });
+
+  // Clic droit sur une ligne de file en mode Lot — menu contextuel d'action de lot.
+  // Sur `document` (pas sur #qcol) : #qcol est reconstruit à chaque navigation, un listener
+  // posé dessus disparaîtrait ; `document` est la racine stable de tous les gestionnaires
+  // délégataires de cette colonne (même motif que le keydown ci-dessus).
+  document.addEventListener("contextmenu", (e) => {
+    if (reviewMode !== "batch") return;
+    const qi = (e.target as HTMLElement).closest<HTMLElement>(".qi");
+    if (!qi) return;
+    e.preventDefault();
+    const id = Number(qi.dataset.id);
+    // Assure que la piste cliquée est dans la sélection
+    if (!queueBatchSel.has(id)) { queueBatchSel.add(id); }
+    const n = queueBatchSel.size;
+    void import("./context-menu").then(({ openContextMenu }) => {
+      void import("./batch-panel").then(({ handleBatchQueueAction }) => {
+        openContextMenu(e.clientX, e.clientY, [
+          { label: `Ranger ${n} piste${n > 1 ? "s" : ""}`, onPick: () => handleBatchQueueAction("file") },
+          { label: `Écarter ${n} piste${n > 1 ? "s" : ""}`, danger: true, onPick: () => handleBatchQueueAction("discard") },
+        ]);
+      });
+    });
+    const ql = document.getElementById("ql");
+    if (ql) renderQueueWindow(ql);
+  });
 }
 
 // Review mode: "detail" = one track at a time (filing pane), "batch" = triage many at once
 // (board's Detail|Batch segmented control). `batchSel` holds the ticked track ids; it is
 // pruned to the currently-ready set on every batch render so a filed/removed id can't linger.
 export let reviewMode: "detail" | "batch" = "detail";
+
+/** Tracks sélectionnés dans la colonne de file pour le mode Lot.
+ *  Distinct de batchSel (batch-panel.ts) — source de vérité pour la sélection de file.
+ *  Exporté pour être lu par batch-panel et selection-summary. */
+export const queueBatchSel = new Set<number>();
+
+/** Pré-sélectionne tous les items avec verdict != null au passage en mode Lot.
+ *  Appelé par sift-live.ts au moment d'armer le mode. */
+export function initQueueBatchSel(items: QueueItem[]): void {
+  queueBatchSel.clear();
+  for (const it of items) {
+    if (it.verdict !== null) queueBatchSel.add(it.id);
+  }
+}
 
 // Verdict = sens seul, et la teinte vient de la table verdict de `DESIGN.md` § 16 — la même que la
 // colonne Verdict de la Bibliothèque (`library-views.ts`), pour que le même fait n'ait pas deux
@@ -475,6 +527,9 @@ function queueRowHtml(it: QueueItem, active: boolean, onCursor: boolean): string
   const artist = it.artist ? esc(it.artist) : "";
   return (
     `<div class="qi${active ? " cur" : ""}${onCursor ? " kbd" : ""}" id="qi-${it.id}" role="option" aria-selected="${active}" data-id="${it.id}" data-path="${esc(it.path)}" title="Écouter et convertir" style="cursor:pointer">` +
+    (reviewMode === "batch"
+      ? `<input type="checkbox" class="qi-ck" data-sift="queuepick" data-id="${it.id}" tabindex="-1"${queueBatchSel.has(it.id) ? " checked" : ""}>`
+      : "") +
     `<div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">` +
     `<div style="display:flex;align-items:center;gap:6px;min-width:0">` +
     verdictDot(it.verdict) +
@@ -1197,6 +1252,8 @@ export function handleQueueItemClick(qi: HTMLElement, e: MouseEvent): void {
  *  section). Only enterDetailMode() below calls this internally for the "detail" case. */
 export function setReviewModeRaw(m: "detail" | "batch"): void {
   reviewMode = m;
+  queueRowHeightCache = null; // hauteur change entre détail et lot (case ajoutée)
+  if (m === "detail") queueBatchSel.clear();
 }
 
 /** The "detail" branch of the old setReviewMode, extracted verbatim — it never touched batch

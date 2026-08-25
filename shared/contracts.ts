@@ -93,6 +93,12 @@ export interface QueueItem {
    *  individually retryable (a per-row retry resets it to 0), but excluded from the count and the
    *  bulk "Réanalyser (N)" so a genuinely unrepairable file stops inflating "Non analysés (N)". */
   analysis_attempts: number;
+  /** Duration in seconds, NULL until analysed. */
+  duration: number | null;
+  /** Bitrate in kbps, NULL until analysed. */
+  bitrate: number | null;
+  /** Declared format ("mp3" | "aac" | "flac" | …), NULL until analysed. */
+  declared_fmt: string | null;
 }
 
 /** Mirror of queue.rs::MAX_ANALYSIS_ATTEMPTS. After this many failures a stuck track drops out of
