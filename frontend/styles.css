@@ -1613,7 +1613,6 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    famille. min-height réservée pour ne rien déplacer (empty box quand pas de genres). */
 .sift-genres{display:inline-flex;align-items:center;gap:var(--space-4);color:var(--color-text-secondary)}
 .sift-genres-tagicon{color:var(--color-text-tertiary);flex:none}
-.sift-applytags-row{display:flex;justify-content:flex-end;margin-top:var(--space-8)}
 /* "Tags not written to the file" banner, shown just below Apply. Look only — visibility is driven
    solely by inline display (none ↔ flex) in refreshDiscrepancy, never the `hidden` attribute. Amber
    (warning) tokens — the SAME "attention / to handle" language as the duplicate marker. */
