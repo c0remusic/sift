@@ -99,23 +99,6 @@ export function refreshDiscrepancy(): void {
   mark('[data-fil="artist"]', d.artist);
   mark('[data-fil="title"]', d.title);
   mark(".sift-genres", d.genres);
-
-  // Grey out "Appliquer" when there's nothing to write — a write with no discrepancy is a no-op
-  // click that gives the user nothing to do.
-  const applyBtn = editor.querySelector<HTMLButtonElement>('[data-fil="applytags"]');
-  if (applyBtn) {
-    applyBtn.disabled = !d.any;
-    applyBtn.title = d.any
-      ? "Applique les tags ID3 au fichier"
-      : "Rien à appliquer — les tags du fichier correspondent déjà à l'affichage";
-    // setApplyIdle() sets this color inline — an inline style always wins over any CSS class rule
-    // regardless of specificity, so a CSS-only .sift-applytags-btn:disabled{color:...} rule can
-    // never actually apply here (confirmed live via CDP: computed color stayed --color-text-
-    // secondary, the idle inline value, even after adding that CSS rule). Toggle the SAME inline
-    // property instead of fighting it. Kept opacity:1 on the disabled state (styles.css) so the
-    // box itself stays fully visible — only the label mutes.
-    applyBtn.style.color = d.any ? "var(--color-text-secondary)" : "var(--color-text-tertiary)";
-  }
 }
 
 /** Apply an identity result to the editing fields + filename preview. Liste ouverte (fork F) :
@@ -203,6 +186,7 @@ function onIdentityApplied(
   // feeds the file-vs-display discrepancy check (joined form), so it must live in state, not only DOM.
   state.genres = applied.styles;
   renderGenres();
+
   // A Discogs match now exists → if the file is a fake/transcode, offer the rebuy search link.
   state.identified = true;
   refreshRebuyLink();
@@ -230,21 +214,13 @@ function onIdentityApplied(
   // [C1] Relabel Identifier → Ré-identifier once an identity has been applied.
   idBtn.innerHTML = '<i class="ti ti-refresh sift-icon-inline-sm"></i> Ré-identifier';
 
-  // The button starts `hidden` in the markup when the track opens unidentified (nothing to apply
-  // yet) — a fresh identity just landed, so reveal it now rather than waiting for a full re-render.
-  const applyBtn = editor.querySelector<HTMLButtonElement>('[data-fil="applytags"]');
-  if (applyBtn) applyBtn.hidden = false;
-
-  // The displayed identity just changed while the FILE keeps its old tags → surface the gap, and
-  // reset the Apply button (a prior "Appliqué ✓" no longer reflects this new identity).
-  resetApplyButton(editor);
+  // The displayed identity just changed while the FILE keeps its old tags → surface the gap.
   refreshDiscrepancy();
 
-  // Choisir un match (clic) grave l'ID3 tout de suite (décision F.2, auto-grave) via le MÊME
-  // doApplyTags() qu'un clic manuel sur Appliquer (spinner → « Appliqué ✓ » → toast+Rétablir sur
-  // le résultat). L'auto-apply du meilleur match (write=false) PRÉ-REMPLIT sans graver : les champs
-  // sont prêts, mais rien n'est écrit tant que l'utilisateur n'a pas confirmé un match.
-  if (write && applyBtn) void doApplyTags(applyBtn);
+  // Choisir un match (clic) grave l'ID3 tout de suite (décision F.2) — plus de bouton Appliquer,
+  // l'écriture est automatique. `write` reste par sécurité (défaut true ; il n'y a plus d'appelant
+  // à false depuis le retrait de l'auto-apply).
+  if (write) void doApplyTags();
 }
 
 /** On reopen of an already-identified track, restore the hero cover (mid `.sift-report-cover`) from
@@ -407,26 +383,14 @@ export function renderEditor(host: HTMLElement, mid: HTMLElement, rail: string, 
     // Label — fait de release Discogs, ÉDITABLE EN PLACE (retour vérif visuelle 2026-08-25 :
     // l'utilisateur veut corriger le label). La valeur EST un input `data-fil="label"`, câblé comme
     // Artiste/Titre/Version : `upd` le lit vers state.canonical.label (label voyage désormais DANS
-    // Canonical), et apply_tags le grave au fichier via write_tags_full (+ persiste metadata.label).
-    // Rempli en place par onIdentityApplied quand une release est choisie. Placeholder "—" quand vide.
+    // Canonical), et il se grave au fichier (blur/Entrée) via doApplyTags → write_tags_full (+
+    // persiste metadata.label). Rempli en place par onIdentityApplied. Placeholder "—" quand vide.
     `<div class="sift-attr"><span class="sift-attr-k">Label</span><input data-fil="label" placeholder="—" value="${esc(c.label ?? "")}" class="sift-attr-input" aria-label="Label"></div>` +
     `<div class="sift-attr"><span class="sift-attr-k">Genres</span><span class="sift-genres"></span></div>` +
     `</div>` +
-    // Apply ID3 tags: write these fields onto the file in place (no move, no encode, no 'filed'
-    // change), revertable. Distinct from File (rail) — a neutral secondary button in the editor.
-    // Moved into the Genres header row (annotation: "à côté de genres") — short label + explanatory
-    // tooltip (réf. shadcn Button) now that it's compact, not a full-width bar at the bottom.
-    // `hidden` (not omitted) when there's no identity yet (c.artist/title empty) — an unidentified
-    // track can never produce a real discrepancy (tagFieldDiffs() already requires non-empty
-    // artist/title before d.any can be true), so showing it there was a dead artifact with nothing
-    // to do (annotation: "sur des tracks non identifiées on a encore cet artifact qui ne devrait pas
-    // être là"). Kept in the DOM rather than omitted from the markup string: onIdentityApplied()
-    // patches this exact element in place (unhides it + triggers the auto-apply) without a full
-    // renderEditor() re-render — omitting it entirely would leave onIdentityApplied's querySelector
-    // finding nothing on a track that was unidentified when this markup was first built.
-    `<div class="sift-applytags-row">` +
-    `<button data-fil="applytags" class="sift-applytags-btn" title="Applique les tags ID3 au fichier (ou Entrée après avoir édité un champ)"${c.artist && c.title ? "" : " hidden"}><i class="ti ti-tag sift-icon-inline-md"></i> Appliquer</button>` +
-    `</div>` +
+    // Plus de bouton « Appliquer » (retour Antoine 2026-08-25) : les tags ID3 se gravent
+    // AUTOMATIQUEMENT quand on finit d'éditer un champ (blur/Entrée) ou qu'on choisit un match
+    // Discogs — voir doApplyTags, déclenché depuis le wiring des inputs et onIdentityApplied.
     // Rebuy link slot — filled by refreshRebuyLink() only for a fake track that also has a Discogs
     // match (empty, no gap, otherwise). Placed after genres so the identity block reads whole first.
     `<div class="sift-rebuy"></div>` +
@@ -464,7 +428,7 @@ export function renderEditor(host: HTMLElement, mid: HTMLElement, rail: string, 
     state.canonical.artist = a?.value ?? "";
     state.canonical.title = t?.value ?? "";
     state.canonical.version = v?.value.trim() ? v.value.trim() : null;
-    // Label rides on Canonical now (empty → null, same discipline as version). apply_tags writes it.
+    // Label rides on Canonical now (empty → null, same discipline as version). Graved by doApplyTags.
     state.canonical.label = l?.value.trim() ? l.value.trim() : null;
     refreshPreview();
     refreshDiscrepancy(); // editing a field may make the display diverge from the file (or re-converge)
@@ -484,8 +448,7 @@ export function renderEditor(host: HTMLElement, mid: HTMLElement, rail: string, 
     e.preventDefault();
     upd();
     commitTitle();
-    const applyBtn = host.querySelector<HTMLButtonElement>('[data-fil="applytags"]');
-    if (applyBtn && tagFieldDiffs().any) void doApplyTags(applyBtn);
+    if (tagFieldDiffs().any) void doApplyTags();
     (e.currentTarget as HTMLInputElement).blur();
   };
   host
@@ -509,7 +472,12 @@ export function renderEditor(host: HTMLElement, mid: HTMLElement, rail: string, 
           el.blur();
         }
       });
-      el.addEventListener("blur", commitTitle);
+      el.addEventListener("blur", () => {
+        // Graver EN FINISSANT l'édition (retour Antoine : plus de bouton Appliquer) — si un champ a
+        // divergé du fichier. doApplyTags se garde contre le double-fire avec l'Entrée (applyingTags).
+        commitTitle();
+        if (tagFieldDiffs().any) void doApplyTags();
+      });
     });
 
   const idBtn = host.querySelector<HTMLButtonElement>('[data-fil="identifier"]');
@@ -517,9 +485,6 @@ export function renderEditor(host: HTMLElement, mid: HTMLElement, rail: string, 
   if (idBtn && candsHost) {
     idBtn.addEventListener("click", () => void doIdentify(idBtn, candsHost, host, mid));
   }
-
-  const applyBtn = host.querySelector<HTMLButtonElement>('[data-fil="applytags"]');
-  if (applyBtn) setApplyIdle(applyBtn); // idle on every fresh render; doApplyTags flips it to "applied"
 
 
   refreshRebuyLink(); // rebuy-on-Beatport link when the open track is fake AND already identified
@@ -558,55 +523,35 @@ function refreshRebuyLink(): void {
 // Apply button — une seule action « Appliquer » (grave les tags ID3 en place). Plus de bascule inline
 // vers « Annuler » (Antoine 2026-08-21) : l'apply est journalisé (tag_edit, actions.rs), donc l'undo
 // vit dans Ctrl+Z (undoLast) et l'écran Journal — le bouton inline faisait doublon.
-const APPLY_IDLE_HTML =
-  '<i class="ti ti-tag sift-icon-inline-md"></i> Appliquer';
-
-/** Put the Apply button in its idle "write" state. Left ENABLED here — refreshDiscrepancy() is
- *  what actually gates .disabled against tagFieldDiffs().any right after (called on every path
- *  that can call this: open, edit, apply), so this only sets the label + handler. */
-function setApplyIdle(btn: HTMLButtonElement): void {
-  btn.disabled = false;
-  btn.style.color = "var(--color-text-secondary)";
-  btn.innerHTML = APPLY_IDLE_HTML;
-  btn.onclick = () => void doApplyTags(btn);
-}
-
-/** Reset a possibly-"applied" Apply button back to idle (e.g. when the identity changes under it). */
-function resetApplyButton(scope: HTMLElement): void {
-  const btn = scope.querySelector<HTMLButtonElement>('[data-fil="applytags"]');
-  if (btn) setApplyIdle(btn);
-}
-
-/** Write the current edited tags onto the file in place (apply_tags). On success the file matches
- *  the display, so re-snapshot to clear the marker and flip the button to "Appliqué ✓ — Annuler".
- *  No move/encode/status change — works on any file. openState.openSeq-guarded: a later open never repaints
- *  this track's state/UI. */
-async function doApplyTags(btn: HTMLButtonElement): Promise<void> {
-  if (!state.track || !state.canonical) return;
+/** Write the current edited tags onto the file in place (apply_tags). Déclenché AUTOMATIQUEMENT quand
+ *  on finit d'éditer un champ (blur/Entrée) ou qu'on choisit un match Discogs — plus de bouton
+ *  « Appliquer » (retour Antoine 2026-08-25 : les métadonnées se gravent quand on a fini de les
+ *  éditer). Sur succès le fichier == l'affichage → re-snapshot pour effacer le marqueur. Gardé contre
+ *  le double-fire (l'Entrée appelle blur() → deux déclenchements) par `applyingTags`.
+ *  openState.openSeq-guarded : un open ultérieur ne repeint jamais l'état/UI de cette piste. */
+let applyingTags = false;
+async function doApplyTags(): Promise<void> {
+  if (applyingTags || !state.track || !state.canonical) return;
+  applyingTags = true;
   const trackId = state.track.id;
   const edited = state.canonical;
   const myseq = openState.openSeq;
-  btn.disabled = true;
-  btn.innerHTML =
-    '<i class="ti ti-loader-2 sift-spin sift-icon-inline-md"></i> Applying…';
   try {
     const batchId = await applyTags(trackId, edited);
     const snap = await trackFileTags(trackId); // file changed → refresh the in-memory snapshot
     if (myseq !== openState.openSeq) return; // another track opened meanwhile — leave its state/UI alone
     state.fileTags = snap;
     refreshDiscrepancy(); // file == display now → marker clears
-    // Pas de bouton « Annuler » INLINE (Antoine 2026-08-21, doublon du Journal) — mais un filet
-    // « Rétablir » en TOAST (décision F.2, 2026-08-24, qui prime) : graver est un geste auto, on met
-    // l'undo ciblé à portée immédiate. revertBatch(CE tag_edit) ; le Journal / Ctrl+Z restent le
-    // filet durable. Le bouton d'undo du toast porte le mot « Annuler » (constant dans l'app).
+    // Filet « Rétablir » en TOAST (décision F.2) : graver est un geste auto, on met l'undo ciblé à
+    // portée immédiate. revertBatch(CE tag_edit) ; le Journal / Ctrl+Z restent le filet durable.
     toast("Tags gravés dans le fichier", true, () =>
       void revertBatch(batchId).catch((e) => console.error("revertBatch (tag_edit) failed", e)),
     );
-    setApplyIdle(btn);
   } catch (e) {
     console.error("apply_tags failed", e);
     toast("Échec de l'écriture des tags", false);
-    if (myseq === openState.openSeq) setApplyIdle(btn);
+  } finally {
+    applyingTags = false;
   }
 }
 
