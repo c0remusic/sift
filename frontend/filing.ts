@@ -377,7 +377,7 @@ export async function openFilingInto(
     reconcile(item.id).catch((e): Canonical => {
       console.error("reconcile failed", e);
       readError = true;
-      return { artist: "", title: "", version: null, confidence: "yellow" };
+      return { artist: "", title: "", version: null, label: null, confidence: "yellow" };
     }),
     trackRelease(item.id).catch((e): TrackRelease => {
       console.error("track_release failed", e);
@@ -453,9 +453,12 @@ export async function openFilingInto(
           // filename-parsed version (metadata has none for that track, e.g. a Discogs title with
           // no parenthetical but a "(Dub)" filename).
           version: release.version ?? canonical.version,
+          // Label rides on Canonical now (editable): seed it from the persisted release fact so the
+          // Label input shows the current label; reconcile itself never carries a label (null).
+          label: release.label,
           confidence: "green",
         }
-      : canonical;
+      : { ...canonical, label: release.label };
   // The persisted `metadata` table is the source of truth for label/year (the session cache above
   // was only a flash-avoiding seed). Cold start: this is where an identified-not-filed track gets
   // its identity + label/year back. Keep the cache in sync so later re-opens stay synchronous.

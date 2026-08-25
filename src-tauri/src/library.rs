@@ -43,6 +43,7 @@ fn full_title(title: Option<String>, version: Option<String>) -> Option<String> 
         artist: String::new(), // unused by `tag_title`
         title,
         version,
+        label: None, // unused by `tag_title`
         confidence: crate::naming::Confidence::Green,
     }))
 }

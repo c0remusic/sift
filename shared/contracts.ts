@@ -209,11 +209,16 @@ export type Target = "mp3_320" | "aiff_16_44" | "wav_16_44";
 /** How sure reconciliation is about the metadata — green files in one click. */
 export type Confidence = "green" | "yellow";
 
-/** Canonical {artist,title,version} that drives BOTH the output filename and the tags. */
+/** Canonical {artist,title,version} that drives BOTH the output filename and the tags. `label` is a
+ *  tag-only member (the editable Discogs release label): it does NOT affect the filename — Rust's
+ *  `render_filename`/`tag_title` ignore it — and rides here so the Revue pane edits it in place and
+ *  `apply_tags` writes it. Mirror of Rust `naming::Canonical`; pinned field-for-field by
+ *  `naming.rs::canonical_shape_matches_contracts_ts` (exhaustive destructure). */
 export interface Canonical {
   artist: string;
   title: string;
   version: string | null;
+  label: string | null;
   confidence: Confidence;
 }
 
