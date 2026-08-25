@@ -283,8 +283,10 @@ valeurs chiffrées restent des tokens `styles.css`, jamais extraites au pixel.
   pilule pleine hauteur, **haut-parleur intégré à gauche** (clic = mute), gros pouce rond,
   remplissage à gauche du pouce. Le repli-au-survol (ex-décision D) est **abandonné** —
   « le design n'est pas bon du tout » (Antoine 2026-08-25), on tient le composant du PDF.
-  Remplissage = accent Sift (le kit peint la capsule en blanc neutre ; l'accent reste lisible
-  dans les deux thèmes et sous l'icône), pouce quasi-blanc (`--color-knob`).
+  Remplissage = **blanc** (`--color-knob`, fidèle au kit — Antoine préfère le blanc, 2026-08-25) ;
+  piste grise (`--color-slider-capsule`, sinon blanc sur blanc en thème clair), icône foncée
+  (`--color-knob-glyph`, sinon blanc sur blanc en sombre) toujours posée sur le blanc, pouce blanc
+  détaché par son ombre. Pouce et remplissage bornés à gauche (24px) pour tenir l'icône sur le blanc.
 - **Badge « Prêt CDJ »** = *label* d'état (coche + mot) dans l'en-tête Métadonnées ; variante
   **warning + raison** quand la piste n'est pas prête.
 - **Popover** (Destination) = carte arrondie + **bec** vers l'ancre + ombre ; arbre +

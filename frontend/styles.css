@@ -90,6 +90,11 @@ color-scheme:light;
    piste sombre, et defini par son ombre sur la capsule blanche du theme clair (patron macOS, ou le
    pouce blanc flotte sur une piste claire). Une seule definition, pas d'override sombre. */
 --color-knob:oklch(99% 0 286.3);
+/* Volume capsule blanche (choix Antoine 2026-08-25, fidele au kit) : remplissage = --color-knob
+   (blanc), donc la PISTE doit etre grise (sinon blanc sur blanc en theme clair) et l'ICONE foncee
+   (sinon blanc sur blanc en theme sombre). --color-slider-capsule = piste (gris clair clair / gris
+   moyen sombre, cf. bloc sombre) ; --color-knob-glyph = encre du haut-parleur, foncee invariante. */
+--color-knob-glyph:oklch(37% 0.006 286.3);--color-slider-capsule:oklch(89.06% 0.0067 286.3);
 /* Icon/glyph color drawn on top of a solid accent fill (ex: watch-toggle checkmark on
    --color-text-success). Was a hardcoded #fff fallback on an undefined token — worked by
    accident in light (accent fills are mid-dark here) but would go invisible in dark, where the
@@ -396,7 +401,7 @@ color-scheme:light;
     --color-border-tertiary:oklch(100.0% 0.0 89.88 / 0.09);--color-border-secondary:oklch(100.0% 0.0 89.88 / 0.22);
     --color-border-info:oklch(79.21% 0.0789 242.05 / .30);--color-border-danger:oklch(78.05% 0.0992 32.54 / .40);
     --color-hue-indigo-text:oklch(74.16% 0.1143 286.69);--color-hue-indigo-bg:oklch(34.15% 0.045 278.34);--color-hue-purple-text:oklch(77.58% 0.0892 311.64);--color-hue-purple-bg:oklch(37.40% 0.05 312.41);--color-hue-pink-text:oklch(80.76% 0.0905 355.95);--color-hue-pink-bg:oklch(39.91% 0.045 2.52);--color-hue-teal-text:oklch(84.24% 0.0961 185.53);--color-hue-teal-bg:oklch(43.48% 0.035 186.37);--color-hue-yellow-text:oklch(88.36% 0.129 93.67);
-    --color-hue-blue-solid:oklch(62.43% 0.2056 255.49);--color-hue-indigo-solid:oklch(55.64% 0.2032 278.15);--color-hue-teal-solid:oklch(77.06% 0.1181 211.98);--color-hue-green-solid:oklch(75.56% 0.2082 146.98);--color-hue-orange-solid:oklch(78.24% 0.1711 67.22);--color-hue-yellow-solid:oklch(88.49% 0.1805 94.78);--color-hue-purple-solid:oklch(65.60% 0.2274 312.42);--color-hue-pink-solid:oklch(65.77% 0.2317 16.02);--color-hue-gray-solid:oklch(68.12% 0.0073 286.21);
+    --color-hue-blue-solid:oklch(62.43% 0.2056 255.49);--color-hue-indigo-solid:oklch(55.64% 0.2032 278.15);--color-hue-teal-solid:oklch(77.06% 0.1181 211.98);--color-hue-green-solid:oklch(75.56% 0.2082 146.98);--color-hue-orange-solid:oklch(78.24% 0.1711 67.22);--color-hue-yellow-solid:oklch(88.49% 0.1805 94.78);--color-hue-purple-solid:oklch(65.60% 0.2274 312.42);--color-hue-pink-solid:oklch(65.77% 0.2317 16.02);--color-hue-gray-solid:oklch(68.12% 0.0073 286.21);--color-slider-capsule:oklch(40.24% 0.0033 286.3);
     --overlay-hover:oklch(100.0% 0.0 89.88 / .03);--overlay-selected:oklch(100.0% 0.0 89.88 / .06);
     --overlay-badge:oklch(100.0% 0.0 89.88 / .06);--overlay-drop:oklch(35.51% 0.0051 106.66 / .93);
     /* Hover-scrub fill on the waveform (see .sift-wave-hover) — replaces a hardcoded
@@ -437,7 +442,7 @@ color-scheme:light;
   --color-border-tertiary:oklch(100.0% 0.0 89.88 / 0.09);--color-border-secondary:oklch(100.0% 0.0 89.88 / 0.22);
   --color-border-info:oklch(79.21% 0.0789 242.05 / .30);--color-border-danger:oklch(78.05% 0.0992 32.54 / .40);
   --color-hue-indigo-text:oklch(74.16% 0.1143 286.69);--color-hue-indigo-bg:oklch(34.15% 0.045 278.34);--color-hue-purple-text:oklch(77.58% 0.0892 311.64);--color-hue-purple-bg:oklch(37.40% 0.05 312.41);--color-hue-pink-text:oklch(80.76% 0.0905 355.95);--color-hue-pink-bg:oklch(39.91% 0.045 2.52);--color-hue-teal-text:oklch(84.24% 0.0961 185.53);--color-hue-teal-bg:oklch(43.48% 0.035 186.37);--color-hue-yellow-text:oklch(88.36% 0.129 93.67);
-  --color-hue-blue-solid:oklch(62.43% 0.2056 255.49);--color-hue-indigo-solid:oklch(55.64% 0.2032 278.15);--color-hue-teal-solid:oklch(77.06% 0.1181 211.98);--color-hue-green-solid:oklch(75.56% 0.2082 146.98);--color-hue-orange-solid:oklch(78.24% 0.1711 67.22);--color-hue-yellow-solid:oklch(88.49% 0.1805 94.78);--color-hue-purple-solid:oklch(65.60% 0.2274 312.42);--color-hue-pink-solid:oklch(65.77% 0.2317 16.02);--color-hue-gray-solid:oklch(68.12% 0.0073 286.21);
+  --color-hue-blue-solid:oklch(62.43% 0.2056 255.49);--color-hue-indigo-solid:oklch(55.64% 0.2032 278.15);--color-hue-teal-solid:oklch(77.06% 0.1181 211.98);--color-hue-green-solid:oklch(75.56% 0.2082 146.98);--color-hue-orange-solid:oklch(78.24% 0.1711 67.22);--color-hue-yellow-solid:oklch(88.49% 0.1805 94.78);--color-hue-purple-solid:oklch(65.60% 0.2274 312.42);--color-hue-pink-solid:oklch(65.77% 0.2317 16.02);--color-hue-gray-solid:oklch(68.12% 0.0073 286.21);--color-slider-capsule:oklch(40.24% 0.0033 286.3);
   --overlay-hover:oklch(100.0% 0.0 89.88 / .03);--overlay-selected:oklch(100.0% 0.0 89.88 / .06);
   --overlay-badge:oklch(100.0% 0.0 89.88 / .06);--overlay-drop:oklch(35.51% 0.0051 106.66 / .93);
   --overlay-wave-hover:oklch(100% 0 0 / .14);
@@ -1917,20 +1922,22 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    largeur du remplissage sont pilotées par la custom-prop --vol (0..1) posée par renderVolume :
    aucune lecture de rect au rendu, et le pouce reste borné [9px … largeur-9px] via calc(), donc
    jamais tronqué aux extrêmes (le bug du repli où la boule sortait de la capsule).
-   Remplissage = --color-accent-fill : la convention slider de Sift (le kit peint cette capsule en
-   blanc neutre, mais l'accent bleu est lisible dans les deux thèmes et sous l'icône). Piste =
-   --color-surface-raised ; pouce = --color-knob (rond quasi-blanc, cf. sa définition en tête). */
-.sift-volume-track{position:relative;flex:none;width:112px;height:22px;border-radius:var(--border-radius-pill);background:var(--color-surface-raised);border:1px solid var(--color-border-secondary);box-shadow:var(--shadow-panel-subtle);cursor:pointer;touch-action:none;user-select:none;--vol:1}
+   Remplissage = --color-knob (BLANC, fidèle au kit — choix Antoine 2026-08-25) ; piste =
+   --color-slider-capsule (GRISE, pour que le blanc ressorte, sinon blanc sur blanc en clair) ;
+   icône = --color-knob-glyph (FONCÉE, sur le blanc, sinon blanc sur blanc en sombre). Le pouce ET
+   le remplissage sont bornés à gauche à 24px : l'icône reste TOUJOURS sur le blanc (le kit garde un
+   cap blanc à gauche), et le pouce se détache du remplissage par son ombre, pas sa couleur. */
+.sift-volume-track{position:relative;flex:none;width:112px;height:22px;border-radius:var(--border-radius-pill);background:var(--color-slider-capsule);border:1px solid var(--color-border-secondary);box-shadow:var(--shadow-panel-subtle);cursor:pointer;touch-action:none;user-select:none;--vol:1}
 /* Remplissage sous l'icône (part du bord gauche), coins arrondis pour épouser la capsule ; le bord
    droit rond est couvert par le pouce. */
-.sift-volume-fill{position:absolute;left:0;top:0;bottom:0;width:calc(var(--vol) * 100%);background:var(--color-accent-fill);border-radius:var(--border-radius-pill);pointer-events:none}
+.sift-volume-fill{position:absolute;left:0;top:0;bottom:0;width:calc(24px + var(--vol) * (100% - 33px));background:var(--color-knob);border-radius:var(--border-radius-pill);pointer-events:none}
 /* Haut-parleur intégré à gauche, cliquable (mute) ; encre = text-primary, lisible sur l'accent
    (rempli) comme sur la piste (volume bas). Glyphe barré à 0 via renderVolume. */
 /* Empilement par l'ORDRE DOM (fill → icône → pouce, cf. markup), pas de z-index : entre siblings
    tous position:absolute, le plus tardif peint au-dessus — l'icône couvre le remplissage, le pouce
    couvre l'icône. */
-.sift-volume-icon{position:absolute;left:7px;top:50%;transform:translateY(-50%);font-size:14px;line-height:1;color:var(--color-text-primary);cursor:pointer}
-.sift-volume-thumb{position:absolute;top:50%;left:calc(9px + var(--vol) * (100% - 18px));transform:translate(-50%,-50%);width:18px;height:18px;border-radius:var(--border-radius-pill);background:var(--color-knob);box-shadow:var(--shadow-panel-subtle);pointer-events:none}
+.sift-volume-icon{position:absolute;left:7px;top:50%;transform:translateY(-50%);font-size:14px;line-height:1;color:var(--color-knob-glyph);cursor:pointer}
+.sift-volume-thumb{position:absolute;top:50%;left:calc(24px + var(--vol) * (100% - 33px));transform:translate(-50%,-50%);width:18px;height:18px;border-radius:var(--border-radius-pill);background:var(--color-knob);box-shadow:var(--shadow-panel-subtle);pointer-events:none}
 .sift-volume-track:focus{outline:none}
 .sift-volume-track:focus-visible{outline:2px solid var(--color-accent-fill);outline-offset:2px}
 .sift-player-spacer{flex:1}
