@@ -7,7 +7,7 @@
 // toggle) so filing.ts can refresh the rail's Destination/Ranger labels; registerOpenTrackPathGetter
 // lets binLabel() read the currently open track's path for the "sur place" label without owning
 // RevueState itself.
-import { getSetting, setSetting, listBins, createBin } from "./ipc";
+import { getSetting, setSetting, listBins } from "./ipc";
 import type { Bin } from "../shared/contracts";
 import { EXTERNAL_DEST_PREFIX } from "../shared/contracts";
 import { open } from "@tauri-apps/plugin-dialog";
@@ -17,13 +17,19 @@ import { humanizeError } from "./errors";
 import { destPopoverPosition } from "./popover-position";
 
 const LIBRARY_ROOT = "library_root";
+// Groupe « Autres » : dossiers externes déjà choisis, mémorisés en settings JSON (valeur = tableau
+// de chemins absolus sérialisé). Première clé settings à porter du JSON — `settings.rs` stocke une
+// String opaque, donc zéro migration (décision B, revue.md:161-168).
+const CUSTOM_DESTS_KEY = "revue_custom_dests";
 
 interface DestState {
   rootSet: boolean;
   rootPath: string | null; // absolute library root (for the root tree node label)
   bins: Bin[];
   binRel: string | null; // selected destination ("" = root, relative to root otherwise)
-  creating: boolean; // "+ nouveau" inline input open
+  // Dossiers externes (hors bibliothèque) choisis via le picker natif, mémorisés pour re-sélection
+  // sans re-parcourir — groupe « Autres ». Chemins absolus, dédupliqués, persistés (CUSTOM_DESTS_KEY).
+  customDests: string[];
   binFilter: string; // folder search text (empty = show the full tree)
   /** Impasse A8 (issue #15) : pourquoi `rootSet` est faux. Le `catch` de `loadBins` posait
    *  `rootSet = false` sur un ÉCHEC DE LECTURE, ce qui rendait la porte « Choisis ta racine de
@@ -38,7 +44,7 @@ const destState: DestState = {
   rootPath: null,
   bins: [],
   binRel: null,
-  creating: false,
+  customDests: [],
   binFilter: "",
   loadError: null,
 };
@@ -92,6 +98,7 @@ async function loadBins(): Promise<void> {
     destState.rootPath = root ?? null;
     destState.rootSet = !!(root && root.trim());
     destState.bins = destState.rootSet ? await listBins() : [];
+    destState.customDests = parseCustomDests(await getSetting(CUSTOM_DESTS_KEY));
     // Root starts COLLAPSED (no forced expanded.add("") here) — this used to re-force it open on
     // every loadBins() call (incl. background refreshes unrelated to the tree), so a user who
     // collapsed it would see it silently reopen. `expanded` persists the user's own toggles now.
@@ -135,15 +142,44 @@ async function pickRoot(fldz: HTMLElement): Promise<void> {
   }
 }
 
-/** "Parcourir un autre dossier…" — native OS directory picker, result becomes an
- *  EXTERNAL_DEST_PREFIX-prefixed destination (see plan_file's handling in filing.rs). Same
- *  post-pick behavior as clicking a tree bin: batch routes through binPick.onPick, detail sets
- *  destState.binRel directly and closes the popover. The dialog only ever returns a real, existing
- *  directory the user navigated to — never free-typed text — which is the trust boundary
- *  EXTERNAL_DEST_PREFIX's doc comment (filing.rs) relies on. */
+/** Lecture défensive de la liste « Autres » depuis le settings JSON : tout ce qui n'est pas un
+ *  tableau de chaînes non vides retombe sur une liste vide, jamais une exception — une valeur
+ *  corrompue ne doit pas casser le rendu de la destination. */
+function parseCustomDests(raw: string | null | undefined): string[] {
+  if (!raw) return [];
+  try {
+    const v: unknown = JSON.parse(raw);
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === "string" && x.length > 0) : [];
+  } catch {
+    return [];
+  }
+}
+
+/** Mémorise un dossier externe dans le groupe « Autres » (dédup par chemin, plus récent en tête) et
+ *  persiste la liste. Best-effort : un échec d'écriture n'empêche PAS la sélection en cours — le
+ *  dossier reste dans l'état de session, il ne survivra simplement pas au reload. Fail-soft assumé :
+ *  perdre une entrée d'historique de destination est moins grave que bloquer un rangement. */
+async function addCustomDest(path: string): Promise<void> {
+  if (destState.customDests.includes(path)) return;
+  destState.customDests.unshift(path);
+  try {
+    await setSetting(CUSTOM_DESTS_KEY, JSON.stringify(destState.customDests));
+  } catch (e) {
+    console.error("setSetting(custom_dests) failed", e);
+  }
+}
+
+/** Pied du popover ("Nouveau dossier…" comme "Choisir un dossier…") — native OS directory picker,
+ *  result becomes an EXTERNAL_DEST_PREFIX-prefixed destination (see plan_file's handling in
+ *  filing.rs) AND is remembered in the « Autres » group. Same post-pick behavior as clicking a tree
+ *  bin: batch routes through binPick.onPick, detail sets destState.binRel directly and closes the
+ *  popover. The dialog only ever returns a real, existing directory the user navigated to — never
+ *  free-typed text — which is the trust boundary EXTERNAL_DEST_PREFIX's doc comment (filing.rs)
+ *  relies on. */
 async function browseExternalDest(fldz: HTMLElement): Promise<void> {
   const dir = await open({ directory: true, multiple: false });
   if (typeof dir !== "string") return;
+  await addCustomDest(dir); // entre dans « Autres » (dédup + persiste) avant d'être sélectionné
   const prefixed = `${EXTERNAL_DEST_PREFIX}${dir}`;
   if (binPick) {
     binPick.onPick(prefixed);
@@ -152,26 +188,6 @@ async function browseExternalDest(fldz: HTMLElement): Promise<void> {
     renderBins(fldz);
     onDestChanged?.();
     fldz.hidden = true;
-  }
-}
-
-/** Create a new bin under the current selection (or root when nothing is selected) and select
- * it. Nested creation: the parent is the folder currently highlighted, so "+ nouveau" while
- * "House" is selected makes "House/<name>". */
-async function makeBin(fldz: HTMLElement, name: string): Promise<void> {
-  const parent = destState.binRel ?? ""; // "" = root; otherwise nest under the selected folder
-  try {
-    const bin = await createBin(parent, name);
-    await loadBins();
-    if (parent) expanded.add(parent); // reveal the freshly-created child
-    destState.binRel = bin.rel;
-    destState.creating = false;
-    renderBins(fldz);
-  } catch (e) {
-    console.error("createBin failed", e);
-    destState.creating = false;
-    renderBins(fldz);
-    toast("Création du bac impossible — réessaie");
   }
 }
 
@@ -275,6 +291,32 @@ function flatBinHtml(b: Bin): string {
   )}</span></div>`;
 }
 
+/** Une entrée du groupe « Autres » : un dossier externe mémorisé, « nom · chemin » (nom = dernier
+ *  segment mis en avant, chemin complet en légende + tooltip). Sélectionnable comme un bac de
+ *  l'arbre via le même data-fil="bin" (rel préfixé EXTERNAL_DEST_PREFIX) — aucun nouveau wiring, le
+ *  dispatch de clic et selRl() existants le gèrent. esc() sur le nom ET le chemin : données FS non
+ *  fiables (dialog natif). */
+function customDestHtml(path: string): string {
+  const rel = `${EXTERNAL_DEST_PREFIX}${path}`;
+  const on = rel === selRel() ? " on" : "";
+  const color = on ? "var(--color-text-info)" : "var(--color-text-tertiary)";
+  const name = path.split(/[\\/]/).filter(Boolean).pop() || path;
+  return `<div class="fld${on} sift-fld-flat-row" data-fil="bin" data-rel="${esc(rel)}" tabindex="0" role="button" title="${esc(
+    path,
+  )}"><i class="ti ti-folder-open sift-fld-icon" style="font-size:var(--text-base);color:${color}"></i><span class="sift-fld-label"><span class="sift-custom-name">${esc(
+    name,
+  )}</span> <span class="sift-custom-path">${esc(path)}</span></span></div>`;
+}
+
+/** Le groupe « Autres » entier (libellé + entrées), vide tant qu'aucun dossier externe n'a été
+ *  mémorisé — rendu dans le wrapper grisable, sous l'arbre biblio. */
+function customDestsGroupHtml(): string {
+  if (destState.customDests.length === 0) return "";
+  return (
+    `<div class="sift-fldz-group-label">Autres</div>` + destState.customDests.map(customDestHtml).join("")
+  );
+}
+
 /** Render the destination column (#fldz): root picker when unset, else a folder filter + either
  * the collapsible tree (no filter) or a flat list of matching folders (filter active). */
 function renderBins(fldz: HTMLElement): void {
@@ -329,23 +371,9 @@ function renderBins(fldz: HTMLElement): void {
     body = tree + emptyNote;
   }
 
-  // "+ nouveau" creates under the selected folder (nested) via the library-root-relative bin
-  // IPC (create_bin -> safe_join) — meaningless (and unsafe to sanitize) for an external
-  // destination, which lives entirely outside that model. Hidden while filtering OR while an
-  // external folder is selected (selRel() is mode-aware: batch pick context or detail's own
-  // destState.binRel — the external check must match whichever one is actually current, not
-  // always detail's).
-  const inExternalDest = !!selRel()?.startsWith(EXTERNAL_DEST_PREFIX);
-  const nestLabel = destState.binRel && !inExternalDest ? ` dans ${binLabel()}` : "";
-  const newRow = filtering || inExternalDest
-    ? ""
-    : destState.creating
-      ? `<input data-fil="newin" placeholder="${esc(
-          destState.binRel ? `dossier dans ${binLabel()}…` : "nom du dossier…",
-        )}" class="sift-newin">`
-      : `<div class="fld sift-newbin-row" data-fil="newbin"><i class="ti ti-plus sift-icon-inline-lg"></i> nouveau${esc(
-          nestLabel,
-        )}</div>`;
+  // Groupe « Autres » : dossiers externes mémorisés, sous l'arbre, dans le wrapper grisable. Masqué
+  // pendant le filtre (qui ne cherche que dans la bibliothèque), comme l'arbre lui-même.
+  const autresGroup = filtering ? "" : customDestsGroupHtml();
 
   // "Sur place" lives INSIDE the popover now (maquette: filter → in-place row → tree), instead of
   // a separate persistent element outside #fldz — same attribute per mode so the existing wiring
@@ -363,22 +391,26 @@ function renderBins(fldz: HTMLElement): void {
   const rootCaption = destState.rootPath
     ? `<div class="sift-fldz-rootpath" title="${esc(destState.rootPath)}"><i class="ti ti-folder"></i><span>${esc(destState.rootPath)}\\</span></div>`
     : "";
-  // "Parcourir un autre dossier…" — opens the native OS directory picker and sets the result as
-  // an EXTERNAL_DEST_PREFIX-prefixed destination (see plan_file's handling in filing.rs). Kept
-  // OUTSIDE .sift-fldz-tree, same as the in-place checkbox: always clickable even while the tree
-  // is greyed (batch in-place checked) — picking a folder here behaves exactly like picking one
-  // from the tree (wired below), it just came from the OS dialog instead of the loaded bin list.
-  const browseRow = destState.rootSet
-    ? `<div class="fld sift-fldz-browse" data-fil="browsecustom"><i class="ti ti-folder-open sift-icon-inline-lg"></i> Parcourir un autre dossier…</div>`
-    : "";
+  // Pied : deux actions natives — « Nouveau dossier… » (l'explorateur natif permet d'en créer un)
+  // et « Choisir un dossier… » (en sélectionner un existant). Les deux ouvrent le MÊME picker, le
+  // résultat entre dans « Autres » puis est sélectionné (browseExternalDest). Hors .sift-fldz-tree,
+  // comme la case Sur place : toujours cliquables même quand l'arbre est grisé (in-place coché) —
+  // ce sont des actions du système de fichiers, sans concept de bibliothèque.
+  const footRow =
+    `<div class="sift-fldz-foot">` +
+    `<div class="fld" data-fil="newfolder"><i class="ti ti-folder-plus sift-icon-inline-lg"></i> Nouveau dossier…</div>` +
+    `<div class="fld" data-fil="browsecustom"><i class="ti ti-folder-open sift-icon-inline-lg"></i> Choisir un dossier…</div>` +
+    `</div>`;
 
-  // filterRow/rootCaption are library-picker chrome, same as the tree itself — all three grey
-  // out together under "Sur place" (only the checkbox and "Parcourir un autre dossier…", a plain
-  // filesystem action with no library concept, stay outside the greyed wrapper).
+  // Ordre (décision B, revue.md:161-168) : arbre biblio + « Autres » dans le wrapper grisable
+  // (filterRow/rootCaption = chrome de bibliothèque, grisés avec), puis un séparateur, puis la case
+  // Sur place, puis le pied. Seuls la case ET le pied restent HORS du wrapper : cocher Sur place ne
+  // doit jamais rendre sa propre case ni les actions natives non cliquables (régression connue).
   fldz.innerHTML =
+    `<div class="sift-fldz-tree">${filterRow}${rootCaption}${body}${autresGroup}</div>` +
+    `<div class="sift-fldz-sep"></div>` +
     inPlaceRow +
-    `<div class="sift-fldz-tree">${filterRow}${rootCaption}${body}${newRow}</div>` +
-    browseRow;
+    footRow;
 
   if (!binPick) {
     fldz.querySelector<HTMLInputElement>('[data-fil="inplace"]')?.addEventListener("change", (e) => {
@@ -435,24 +467,13 @@ function renderBins(fldz: HTMLElement): void {
       }
     }),
   );
-  fldz.querySelector('[data-fil="newbin"]')?.addEventListener("click", () => {
-    destState.creating = true;
-    renderBins(fldz);
-  });
+  // Les deux boutons du pied ouvrent le même picker natif (browseExternalDest) : « Nouveau dossier »
+  // invite à en créer un dans l'explorateur, « Choisir un dossier » à en sélectionner un existant —
+  // même geste technique, le résultat entre dans « Autres ».
+  fldz
+    .querySelector('[data-fil="newfolder"]')
+    ?.addEventListener("click", () => void browseExternalDest(fldz));
   fldz.querySelector('[data-fil="browsecustom"]')?.addEventListener("click", () => void browseExternalDest(fldz));
-  const input = fldz.querySelector<HTMLInputElement>('[data-fil="newin"]');
-  if (input) {
-    input.focus();
-    input.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") {
-        const v = input.value.trim();
-        if (v) void makeBin(fldz, v);
-      } else if (e.key === "Escape") {
-        destState.creating = false;
-        renderBins(fldz);
-      }
-    });
-  }
   repositionDestPopoverIfOpen();
 }
 
