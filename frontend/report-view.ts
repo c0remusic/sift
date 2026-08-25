@@ -431,16 +431,15 @@ function playerRowHtml(name: string, path: string, closeBtn = false, headerOpts:
     // séparé. Tempo & key-lock (l'« Écoute avancée ») retirés : le pitch DJ n'est pas voulu sur cet
     // écran de décision (Antoine 2026-08-21), et la HIG ne justifie un contrôle audio custom que pour
     // une commande absente du système. L'icône de volume reste (contrôle standard, cohérent).
-    `<div class="sift-slider-block sift-volume-block">` +
-    `<i class="ti ti-volume sift-volume-icon" role="img" title="Volume" aria-label="Volume"></i>` +
-    // Audit-ref R1 (Revue, 2026-07-08, réf. shadcn Slider/Radix) : role="slider" + aria-valuenow,
-    // tenu à jour dans renderVolume (mountPlayer). Slider custom (pas de <input type=range>), drag +
-    // clavier flèches/Home/End.
-    `<div class="sift-slider-track sift-volume-track" tabindex="0" role="slider" aria-label="Volume" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100">` +
-    `<div class="sift-slider-rail"></div>` +
-    `<div class="sift-slider-fill sift-volume-fill"></div>` +
-    `<div class="sift-slider-thumb sift-volume-thumb"></div>` +
-    `</div></div>` +
+    // Volume = capsule macOS Big Sur (kit § 07-Slider Pickers, rangée 1) : la capsule EST le slider
+    // (role="slider", drag + clavier flèches/Home/End, audit-ref R1 2026-07-08). Haut-parleur intégré
+    // à gauche (clic = mute), remplissage + pouce pilotés par --vol (voir renderVolume). Toujours
+    // visible — remplace le repli-au-survol rejeté (« le design n'est pas bon du tout », Antoine 2026-08-25).
+    `<div class="sift-volume-track" tabindex="0" role="slider" aria-label="Volume" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100">` +
+    `<div class="sift-volume-fill"></div>` +
+    `<i class="ti ti-volume sift-volume-icon" role="img" title="Volume — cliquer pour couper" aria-label="Volume"></i>` +
+    `<div class="sift-volume-thumb"></div>` +
+    `</div>` +
     `</div>` +
     `<div class="sift-player-error" hidden></div>`
   );
@@ -781,8 +780,6 @@ async function mountPlayer(root: HTMLElement, path: string, peaks?: number[], du
   const container = requireEl<HTMLElement>(".sift-wave", "mountPlayer", root);
   const playBtn = root.querySelector<HTMLButtonElement>(".sift-play");
   const volumeTrack = root.querySelector<HTMLElement>(".sift-volume-track");
-  const volumeFill = root.querySelector<HTMLElement>(".sift-volume-fill");
-  const volumeThumb = root.querySelector<HTMLElement>(".sift-volume-thumb");
   const volumeIcon = root.querySelector<HTMLElement>(".sift-volume-icon");
   const errorEl = root.querySelector<HTMLElement>(".sift-player-error");
 
@@ -844,6 +841,9 @@ async function mountPlayer(root: HTMLElement, path: string, peaks?: number[], du
     };
     track.addEventListener("pointerdown", (e) => {
       if (e.button !== 0) return;
+      // Le haut-parleur vit DANS la capsule (mute au clic) : un pointerdown dessus ne doit pas armer
+      // un drag de volume ni sauter la valeur — son propre handler de clic gère le mute.
+      if ((e.target as HTMLElement).closest?.(".sift-volume-icon")) return;
       e.preventDefault();
       track.classList.add("dragging");
       track.setPointerCapture(e.pointerId);
@@ -863,11 +863,12 @@ async function mountPlayer(root: HTMLElement, path: string, peaks?: number[], du
   };
 
   const renderVolume = (pct: number) => {
-    if (volumeFill) volumeFill.style.width = `${pct * 100}%`;
-    if (volumeThumb) volumeThumb.style.left = `${pct * 100}%`;
+    // Capsule : le remplissage (largeur) ET le pouce (position) dérivent de --vol en CSS via calc()
+    // — le pouce reste borné dans la capsule, jamais tronqué. On ne pose plus width/left à la main.
+    volumeTrack?.style.setProperty("--vol", String(pct));
     volumeTrack?.setAttribute("aria-valuenow", String(Math.round(pct * 100))); // audit-ref R1
-    // L'icône reflète l'état muet : glyphe barré à 0 (kit § 14). Elle reste visible et cliquable à
-    // gauche du slider déplié — clic = mute (voir plus bas).
+    // L'icône reflète l'état muet : glyphe barré à 0 (kit § 14). Intégrée à gauche de la capsule,
+    // cliquable — clic = mute (voir plus bas).
     if (volumeIcon)
       volumeIcon.className = pct <= 0 ? "ti ti-volume-off sift-volume-icon" : "ti ti-volume sift-volume-icon";
   };

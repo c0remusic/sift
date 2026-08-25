@@ -277,9 +277,14 @@ valeurs chiffrées restent des tokens `styles.css`, jamais extraites au pixel.
   option, « Tout afficher » remet à zéro).
 - **Genres** = **texte + icône tag** (glyphe *tag* du kit, § 01 Icons) ; pas de chips.
 - **Champs Métadonnées** = *text field inline* : texte au repos, champ + anneau au focus.
-- **Slider** (volume, waveform-overview) = piste fine + **pastille ronde blanche** (bord +
-  ombre) ; portion active en accent. Le **volume** est **replié en icône au repos, déplié
-  au survol** (décision D) : cône haut-parleur seul au repos, pilule complète au survol.
+- **Slider** (waveform-overview) = piste fine + **pastille ronde** (bord + ombre) ; portion
+  active en accent.
+- **Volume** = **capsule macOS Big Sur toujours visible** (kit § 07-Slider Pickers, rangée 1) :
+  pilule pleine hauteur, **haut-parleur intégré à gauche** (clic = mute), gros pouce rond,
+  remplissage à gauche du pouce. Le repli-au-survol (ex-décision D) est **abandonné** —
+  « le design n'est pas bon du tout » (Antoine 2026-08-25), on tient le composant du PDF.
+  Remplissage = accent Sift (le kit peint la capsule en blanc neutre ; l'accent reste lisible
+  dans les deux thèmes et sous l'icône), pouce quasi-blanc (`--color-knob`).
 - **Badge « Prêt CDJ »** = *label* d'état (coche + mot) dans l'en-tête Métadonnées ; variante
   **warning + raison** quand la piste n'est pas prête.
 - **Popover** (Destination) = carte arrondie + **bec** vers l'ancre + ombre ; arbre +
@@ -299,13 +304,16 @@ valeurs chiffrées restent des tokens `styles.css`, jamais extraites au pixel.
 Relevés par le brainstorm Phase 1 (2026-08-24), **chacun vérifié sur le code**. Le code
 contredit une décision figée ; c'est le **code** qui bouge, pas la décision.
 
-1. **Volume — déjà replié (finding Phase 1 périmé, corrigé Phase 2)** — vérifié :
-   `styles.css:1912-1936` replie `.sift-volume-block` à 20 px au repos et le déplie à 130 px
-   sur `:hover`/`:focus-within`, et `DESIGN.md` § 17 note que le débordement de
-   `.sift-volume-track` **n'est pas un défaut**. La décision D est **déjà implémentée** ; le
-   finding Phase 1 (« slider toujours visible ») lisait mal le code — ne pas l'arracher. Reste
-   seulement à **câbler le mute** (`report-view.ts:432` : icône cliquable → `setVolume(0)` ↔
-   dernier volume, glyphe muet à 0), absent aujourd'hui.
+1. **Volume — capsule Big Sur, repli abandonné (résolu 2026-08-25)** — le repli-au-survol
+   (ex-décision D) a été **retiré** : Antoine l'a rejeté (« le design n'est pas bon du tout »)
+   au profit du **composant capsule du kit** (§ 07-Slider Pickers, rangée 1, relevé sur les PDF
+   `docs/design-refs/`). `.sift-volume-block` et la base partagée `.sift-slider-*` (seul autre
+   consommateur, le slider tempo, déjà retiré) sont supprimés ; `.sift-volume-track` **est**
+   désormais la capsule — position du pouce et largeur du remplissage pilotées par `--vol`,
+   pouce borné dans la capsule (jamais tronqué). Mute câblé (icône intégrée à gauche, clic →
+   `setVolume(0)` ↔ dernier volume, glyphe barré à 0). Géométrie mesurée dans les deux thèmes
+   avant livraison. ⚠️ `DESIGN.md` § 17 (« le débordement de `.sift-volume-track` n'est pas un
+   défaut ») décrit le mécanisme retiré — périmé, ne pas s'y fier pour restaurer le repli.
 2. **Deux temps au lecteur** — `report-view.ts:898-908` affiche écoulé **et** restant (façon
    SoundCloud) ; la spec (Zone C, lecture) veut **un seul temps cliquable**. → un seul.
 3. **Bandeau « Rangé » vert permanent** — `styles.css:2438`

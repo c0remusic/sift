@@ -86,6 +86,10 @@ color-scheme:light;
    volontairement plus basse ; -solid est la variante saturée, à n'employer QUE comme aplat de
    donnée, jamais derrière du texte. blue/green/orange/gray n'existent qu'en -solid. */
 --color-hue-blue-solid:oklch(60.28% 0.2177 257.42);--color-hue-indigo-solid:oklch(52.95% 0.1910 278.34);--color-hue-teal-solid:oklch(69.98% 0.1109 212.72);--color-hue-green-solid:oklch(73.03% 0.1944 147.44);--color-hue-orange-solid:oklch(76.52% 0.1752 62.57);--color-hue-yellow-solid:oklch(86.52% 0.1768 90.38);--color-hue-purple-solid:oklch(61.49% 0.2129 312.41);--color-hue-pink-solid:oklch(64.97% 0.2383 17.90);--color-hue-gray-solid:oklch(64.83% 0.0073 286.19);
+/* Pouce des sliders capsule (volume) : rond quasi-blanc, INVARIANT de theme — eclatant sur la
+   piste sombre, et defini par son ombre sur la capsule blanche du theme clair (patron macOS, ou le
+   pouce blanc flotte sur une piste claire). Une seule definition, pas d'override sombre. */
+--color-knob:oklch(99% 0 286.3);
 /* Icon/glyph color drawn on top of a solid accent fill (ex: watch-toggle checkmark on
    --color-text-success). Was a hardcoded #fff fallback on an undefined token — worked by
    accident in light (accent fills are mid-dark here) but would go invisible in dark, where the
@@ -1905,77 +1909,30 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    comment) — the volume icon is this row's first item, so it now lines up with the wave's left
    edge instead of sitting flush at the row's own left edge. */
 .sift-player-controls{display:flex;align-items:center;gap:var(--space-16);margin-left:82px}
-.sift-slider-block{flex:none;width:130px;display:flex;flex-direction:column;gap:var(--space-8)}
-/* Collapsed to just an icon at rest (annotation: "le bouton de volume qui collapse et qui s'ouvre
-   seulement en hover") — width transition + overflow:hidden clips the track, which stays in normal
-   flow (not removed), so re-expanding needs no re-render. The speaker icon is the LEADING flex item
-   (kit volume pill, §14) : it stays visible when expanded and is clickable to toggle mute ; the
-   track fades in to its right. (Was an inset:0 overlay that faded out — replaced 2026-08-24.) */
-/* EXEMPTION VOLONTAIRE à DESIGN.md § 6 (`width` ne s'anime pas), confirmée au sweep du 2026-08-19 —
-   la seule du fichier sur `width`. Ici la transition n'est pas une décoration posée sur un contrôle :
-   elle EST le contrôle. Le repli à 20 px et l'ouverture au survol sont le mécanisme demandé
-   (annotation « le bouton de volume qui collapse et qui s'ouvre seulement en hover »), et DESIGN.md
-   § 17 le note nommément : « `.sift-volume-track` déborde et ce n'est PAS un défaut… le corriger
-   casserait le contrôle. » Portée bornée : un seul nœud, jamais peint en rafale. */
-.sift-volume-block{position:relative;display:flex;flex-direction:row;align-items:center;gap:0;width:20px;overflow:hidden;transition:width var(--duration-slow) ease}
-/* :has(.dragging) added (bug report: "il est tout buggé ton volume") — pure :hover meant the
-   block collapsed the instant the cursor left its 20px hit-box, which happens constantly mid-drag
-   (dragging the thumb across the full 130px track moves the cursor well outside that 20px zone) —
-   the slider visually vanished while still being actively dragged. Forcing it open whenever the
-   track itself is mid-drag (report-view.ts's dragSlider already toggles this class on
-   mousedown/mouseup) keeps it open for the whole gesture regardless of cursor position. */
-.sift-volume-block:hover,.sift-volume-block:focus-within,.sift-volume-block:has(.sift-slider-track.dragging){width:130px}
-/* Bigger now that it's the control's only identity, no label alongside it (annotation: "enlever
-   le texte Volume et grossir l'icone"). */
-.sift-volume-icon{flex:none;width:20px;height:20px;display:flex;align-items:center;justify-content:center;font-size:18px;color:var(--color-text-tertiary);cursor:pointer}
-/* Track explicitly hidden at rest (bug report: "la barre devrait totalement disparaitre à part en
-   survol, type youtube") — the icon has no opaque background, so it only visually OVERLAPPED the
-   rail without hiding it; the narrow 20px sliver of rail/fill still showed through around the
-   glyph. Opacity:0 (on top of the width clip) fully removes it, YouTube-style. */
-/* margin (not padding — dragSlider's math reads the track's OWN rect, so this shrinks that rect
-   instead of just visually offsetting it) leaves room for the thumb at each end. Needed now that
-   .sift-volume-block clips with overflow:hidden — at 100% volume the thumb (13px, centered via
-   translateX(-50%)) used to have its right half clipped off (bug report: "la boule de sélection
-   est tronquée quand le volume est à fond"). */
-.sift-volume-block .sift-volume-track{flex:1;opacity:0;transition:opacity var(--duration-fast) ease;margin:0 var(--space-8)}
-.sift-volume-block:hover .sift-volume-track,
-.sift-volume-block:focus-within .sift-volume-track,
-.sift-volume-block:has(.sift-slider-track.dragging) .sift-volume-track{opacity:1}
-.sift-slider-label{font-size:var(--text-xs);letter-spacing:.1em;text-transform:uppercase;color:var(--color-text-tertiary);display:flex;align-items:center;justify-content:space-between}
-.sift-tempo-out{font-family:var(--font-mono);color:var(--color-text-secondary);text-transform:none;letter-spacing:0}
-.sift-slider-track{position:relative;height:16px;display:flex;align-items:center;cursor:pointer;touch-action:none;user-select:none}
-/* --color-border-secondary → --color-track (annotation: "devraient avoir la meme couleur" —
-   measured via CDP pixel sampling: the volume and tempo rails render at visibly different RGB
-   values despite sharing this exact CSS rule, because --color-border-secondary is a TRANSLUCENT
-   white/black overlay tint, designed to blend with whatever sits behind it — the two sliders don't
-   sit over an identical backdrop, so the same translucent value alpha-blends to two different
-   final colors. --color-track is an opaque, dedicated "slider track" token (already exists,
-   unused until now) — same value in both places regardless of backdrop. */
-.sift-slider-rail{position:absolute;left:0;right:0;height:3px;border-radius:var(--border-radius-pill);background:var(--color-track)}
-/* --color-text-info → --color-surface-raised (annotation: "trop blanc" — same fix as the play
-   button, same reasoning: text-info resolves to the same bright off-white as text-primary in dark
-   mode, sized for a card surface that no longer exists here). */
-/* REMPLISSAGE = accent, forme du kit (§ 04-Pickers / 07-Slider Pickers) : la portion parcourue
-   est bleue, la portion restante grise. C'est le seul endroit du slider qui porte la VALEUR, et
-   la peindre en gris la rendait indiscernable de la piste — il fallait chercher le pouce pour
-   lire le réglage.
-   L'annotation d'origine (« trop blanc ») visait `--color-text-info`, qui résout vers un
-   blanc cassé en thème sombre. L'aplat d'accent n'a pas ce défaut : il est bleu dans les deux
-   thèmes, puisque theme-invariant. */
-.sift-slider-fill{position:absolute;height:3px;border-radius:var(--border-radius-pill);background:var(--color-accent-fill);pointer-events:none}
-/* POUCE = rond GRIS PLEIN, comme le kit. C'était un anneau : fond sombre + bordure claire, donc
-   un trou dans la piste plutôt qu'une prise posée dessus. */
-/* `box-shadow` retiré de la transition le 2026-08-19 (DESIGN.md § 6 : transform/opacity seuls) —
-   le glow du drag apparaît sec, le grossissement du pouce reste animé par transform. */
-.sift-slider-thumb{position:absolute;top:50%;transform:translate(-50%,-50%) scale(1);width:13px;height:13px;border-radius:var(--border-radius-pill);background:var(--color-hue-gray-solid);border:0;box-shadow:var(--shadow-panel-subtle);pointer-events:none;transition:transform var(--duration-fast)}
-.sift-slider-track:hover .sift-slider-thumb{transform:translate(-50%,-50%) scale(1.15)}
-.sift-slider-track.dragging .sift-slider-thumb{transform:translate(-50%,-50%) scale(1.3);box-shadow:0 0 0 4px var(--overlay-selected)}
-/* Volume opts out of the scale+glow click feedback (bug report: "bizarre le feedback sur la boule
-   quand on clique dessus") — on this track the reveal itself (width expanding, opacity fading in)
-   is already two animations firing at click time; adding a 3rd (thumb scale+glow) on top read as
-   noisy rather than a single clear response to the click. */
-.sift-volume-track:hover .sift-slider-thumb,
-.sift-volume-track.dragging .sift-slider-thumb{transform:translate(-50%,-50%) scale(1);box-shadow:none}
+/* Volume — composant capsule macOS Big Sur (kit § 07-Slider Pickers, rangée 1, relevé sur les PDF
+   docs/design-refs/ le 2026-08-25). Remplace le repli-au-survol précédent, rejeté par Antoine
+   (« le design n'est pas bon du tout ») : la capsule reste TOUJOURS visible — haut-parleur intégré
+   à gauche, gros pouce rond, piste pleine à gauche du pouce. La base partagée .sift-slider-* et le
+   slider tempo, seuls autres consommateurs, ont disparu avec elle. La position du pouce et la
+   largeur du remplissage sont pilotées par la custom-prop --vol (0..1) posée par renderVolume :
+   aucune lecture de rect au rendu, et le pouce reste borné [9px … largeur-9px] via calc(), donc
+   jamais tronqué aux extrêmes (le bug du repli où la boule sortait de la capsule).
+   Remplissage = --color-accent-fill : la convention slider de Sift (le kit peint cette capsule en
+   blanc neutre, mais l'accent bleu est lisible dans les deux thèmes et sous l'icône). Piste =
+   --color-surface-raised ; pouce = --color-knob (rond quasi-blanc, cf. sa définition en tête). */
+.sift-volume-track{position:relative;flex:none;width:112px;height:22px;border-radius:var(--border-radius-pill);background:var(--color-surface-raised);border:1px solid var(--color-border-secondary);box-shadow:var(--shadow-panel-subtle);cursor:pointer;touch-action:none;user-select:none;--vol:1}
+/* Remplissage sous l'icône (part du bord gauche), coins arrondis pour épouser la capsule ; le bord
+   droit rond est couvert par le pouce. */
+.sift-volume-fill{position:absolute;left:0;top:0;bottom:0;width:calc(var(--vol) * 100%);background:var(--color-accent-fill);border-radius:var(--border-radius-pill);pointer-events:none}
+/* Haut-parleur intégré à gauche, cliquable (mute) ; encre = text-primary, lisible sur l'accent
+   (rempli) comme sur la piste (volume bas). Glyphe barré à 0 via renderVolume. */
+/* Empilement par l'ORDRE DOM (fill → icône → pouce, cf. markup), pas de z-index : entre siblings
+   tous position:absolute, le plus tardif peint au-dessus — l'icône couvre le remplissage, le pouce
+   couvre l'icône. */
+.sift-volume-icon{position:absolute;left:7px;top:50%;transform:translateY(-50%);font-size:14px;line-height:1;color:var(--color-text-primary);cursor:pointer}
+.sift-volume-thumb{position:absolute;top:50%;left:calc(9px + var(--vol) * (100% - 18px));transform:translate(-50%,-50%);width:18px;height:18px;border-radius:var(--border-radius-pill);background:var(--color-knob);box-shadow:var(--shadow-panel-subtle);pointer-events:none}
+.sift-volume-track:focus{outline:none}
+.sift-volume-track:focus-visible{outline:2px solid var(--color-accent-fill);outline-offset:2px}
 .sift-player-spacer{flex:1}
 /* Tempo/key-lock disclosure (audit 2026-07-10, finding #6) — same suppressed-marker/caret
    convention as .sift-spectro-tech. flex:none so it doesn't stretch to fill .sift-player-spacer's
