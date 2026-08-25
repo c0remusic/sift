@@ -16,6 +16,7 @@
 // une couche globale qui prendrait une lettre nue les écraserait sur tous les écrans.
 import { goTo, type ViewId } from "./router";
 import { focusBarSearch } from "./toolbar";
+import { focusQueueSearch } from "./queue-panel";
 import { toggleRail } from "./chrome";
 import {
   selectAllVisible,
@@ -115,7 +116,11 @@ export function installWindowShortcuts(): void {
         // Ne prend la frappe que si la vue courante monte une recherche. Sinon on laisse passer :
         // avaler ⌘F sur un écran sans recherche donnerait un raccourci qui « ne marche pas », ce
         // qui se retient plus mal qu'un raccourci qui n'existe pas.
-        if (focusBarSearch()) e.preventDefault();
+        //
+        // View-aware : en Revue, la recherche vit dans la colonne file (queue-panel), pas dans la
+        // barre unifiée. focusQueueSearch teste la présence de #sift-qsearch-input (aucun import
+        // routeur) ; focusBarSearch reste le fallback des autres écrans.
+        if (focusQueueSearch() || focusBarSearch()) e.preventDefault();
         return;
       case ",":
         e.preventDefault();

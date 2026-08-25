@@ -345,7 +345,7 @@ function verdictWord(it: Pick<QueueItem, "verdict" | "analysis_attempts">): [str
       : v === "ok"
         ? ["", "var(--color-text-success)"]
         : it.analysis_attempts >= MAX_ANALYSIS_ATTEMPTS
-          ? ["échec", "var(--color-text-warning)"]
+          ? ["échec", "var(--color-text-danger)"]
           : ["analyse…", "var(--color-text-tertiary)"];
 }
 
@@ -719,6 +719,18 @@ function ensureQueueSearch(qcol: HTMLElement): void {
       renderQueueWindow(ql);
     }
   });
+}
+
+/** Focus + sélectionne le champ de recherche de la file (Revue). Rend false si le champ n'est pas
+ *  monté (autre vue, ou colonne file absente) — l'appelant (⌘F, shortcuts.ts) se rabat alors sur la
+ *  recherche de la barre unifiée. Testé par présence DOM, pas par un état de vue exporté : aucun
+ *  import routeur ici. */
+export function focusQueueSearch(): boolean {
+  const input = document.getElementById("sift-qsearch-input") as HTMLInputElement | null;
+  if (!input) return false;
+  input.focus();
+  input.select();
+  return true;
 }
 
 /** Fill the Review nav badge with the pending count (board's "Revue [18]"). Runs from refresh()
