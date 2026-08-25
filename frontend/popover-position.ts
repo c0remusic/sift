@@ -19,10 +19,15 @@ export interface AnchorRect {
   left: number;
 }
 
-/** Résultat d'un placement : coordonnées `position:fixed` + le côté réellement retenu. L'appelant
- *  a besoin de `placement` pour poser le bec du popover du bon côté (Lane 4 Destination, #47) — le
- *  côté ne doit PAS être recalculé côté JS, sinon bec et carte se contredisent au flip. Champ ajouté
- *  sans casser les appelants existants, qui ne déstructurent que `{ top, left }`. */
+/** Résultat d'un placement : coordonnées `position:fixed` + le côté réellement retenu
+ *  (`above`/`below`). Le côté est décidé UNE fois, ici, avec la position — un consommateur qui doit
+ *  s'orienter selon le placement (bec, ombre directionnelle, origine d'animation) le lit plutôt que
+ *  de recalculer le flip à côté, ce qui divergerait au moindre écart.
+ *
+ *  ⚠️ Aucun consommateur de production à ce jour : le bec du popover Destination, qui devait le lire,
+ *  a été retiré le 2026-08-25 (un pulldown macOS n'a pas de bec — cf. revue.md). Le champ reste :
+ *  extension non-cassante (les appelants ne déstructurent que `{ top, left }`), gelée par
+ *  `test/popover-position.test.ts`, prête pour un futur consommateur directionnel. */
 export interface PopoverPosition {
   top: number;
   left: number;
