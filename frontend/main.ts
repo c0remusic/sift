@@ -1,11 +1,16 @@
-// Self-hosted UI fonts — Outfit (UI: 400 body, 500 medium, 600 titles/labels) + JetBrains Mono
-// (numbers). Bundled via @fontsource so the desktop app needs no network. See system.md
-// (Typographie).
+// Self-hosted UI fonts — Inter (UI: 400 body, 500 medium, 600 titles/labels) + JetBrains Mono
+// (numbers). Bundled via @fontsource so the desktop app needs no network.
+// Inter remplace Outfit depuis le 2026-08-26 (décision d'Antoine, « je préfère inter comme
+// police ») — cela renverse l'issue #34, qui avait conclu « Outfit reste » le 2026-08-16, et
+// rejoint O-1 de la skill `sift-macos-ui`. Trois graisses, comme avant.
+// ⚠️ Ce que la bascule PÉRIME : toute largeur du dépôt dérivée d'une mesure faite sous Outfit.
+// Deux étaient nommées, toutes deux re-mesurées le 2026-08-26 sous Inter (voir `styles.css`,
+// `--rail-w` et la colonne verdict).
 // La 500 n'était PAS importée jusqu'au 2026-08-14, alors que styles.css la déclare 24 fois. Sans
 // face correspondante, l'algorithme de matching de CSS Fonts 4 essaie les graisses INFÉRIEURES
 // avant les supérieures : les 24 sites peignaient donc du 400, silencieusement. Mesuré dans la
 // vraie fenêtre (issue #33) : même libellé à 242,109 px en 400 ET en 500, contre 247,109 en 600.
-// Piège associé — `document.fonts.check('500 13px Outfit')` répond `true` même sans la face, car
+// Piège associé — `document.fonts.check('500 13px Inter')` répond `true` même sans la face, car
 // il dit qu'un texte peut être rendu, pas qu'il le sera à la bonne graisse. Seule la largeur
 // discrimine. Trois graisses et pas deux : décision d'Antoine, alignée sur la table de styles
 // macOS d'Apple, où Medium est une graisse de première classe (Caption 2) et où Headline et Body
@@ -15,9 +20,9 @@
 // `.sift-key-btn` (1224), `.sift-usage-tip-ext` (1814) — et seule la 400 était importée.
 // Même silence, même synthèse approximative. Trouvé en écrivant `test/font-weights.test.ts`,
 // qui confronte désormais les deux fichiers à chaque `npm run test`.
-import "@fontsource/outfit/400.css";
-import "@fontsource/outfit/500.css";
-import "@fontsource/outfit/600.css";
+import "@fontsource/inter/400.css";
+import "@fontsource/inter/500.css";
+import "@fontsource/inter/600.css";
 import "@fontsource/jetbrains-mono/400.css";
 import "@fontsource/jetbrains-mono/500.css";
 import "@fontsource/jetbrains-mono/600.css";

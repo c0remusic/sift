@@ -5,7 +5,7 @@
 //
 // Le correctif de #33 a ajouté les imports manquants dans `frontend/main.ts`. Il n'a rien posé
 // qui retienne la divergence : ajouter `font-weight:700` au CSS sans son
-// `@fontsource/outfit/700.css` rejoue le ticket, en silence.
+// `@fontsource/inter/700.css` rejoue le ticket, en silence.
 //
 // Le test lit les DEUX vrais fichiers et les confronte, sur le modèle de
 // `analysis::spectrum::tests::css_data_measure_matches_max_cols` (issue #30), dont le
@@ -25,7 +25,7 @@ const MAIN = "frontend/main.ts";
 
 /** Paquet @fontsource porteur de chaque token de famille. */
 const PAQUET: Record<string, string> = {
-  "--font-ui": "outfit",
+  "--font-ui": "inter",
   "--font-mono": "jetbrains-mono",
 };
 

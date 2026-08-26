@@ -211,8 +211,8 @@ color-scheme:light;
    signal ("this track is good") rather than a playback indicator. Blue matches the "active/
    interactive" convention already used for Identifier/focus/chips. */
 --color-waveform-elapsed:var(--color-text-info);
-/* Typo (self-hosted via @fontsource, see main.ts) — Outfit UI, JetBrains Mono for numbers. */
---font-ui:"Outfit",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+/* Typo (self-hosted via @fontsource, see main.ts) — Inter UI, JetBrains Mono for numbers. */
+--font-ui:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
 --font-mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
 /* Type scale (audit P-1): the allowed font sizes. Values match what the UI already used so
    migrating inline font-size:Npx → var(--text-*) is a visual no-op. Use these, not literals. */
@@ -296,13 +296,24 @@ color-scheme:light;
    suit ici dans le même geste, sinon le bandeau chevauche la barre de 14px.
 
    --rail-w : le rail vaut son libellé le plus long plus l'icône, le gap, le padding et un badge
-   de compte. MESURÉ dans la vraie fenêtre le 2026-08-19 (CDP, Range.getBoundingClientRect sur le
-   texte lui-même, pas sur le span qui s'étire) : « Bibliothèque » = 73,7px d'encre, le badge de
-   Revue rempli (« 2710 ») = 36,9px. Reste : padding du rail 2×12, padding de l'item 2×8, icône
-   17, gap 12. À 152px il restait 83px pour le libellé — le libellé seul passait (73,7), le
-   libellé AVEC son badge non, ce qui explique qu'un seul item du rail en portait un. À 200px il
-   reste 131px, soit 57px de marge après le libellé le plus long : le badge y tient. La valeur
-   tombe aussi dans la bande 200-260px des apps système, mais c'est la mesure qui la fixe.
+   de compte. MESURÉ dans la vraie fenêtre (CDP, Range.getBoundingClientRect sur le texte lui-même,
+   pas sur le span qui s'étire). Chrome fixe : padding du rail 2×12, padding de l'item 2×8, icône
+   17, gap 12 = 69px, donc 131px disponibles à 200. À 152px il n'en restait que 83 — le libellé seul
+   passait, le libellé AVEC son badge non, ce qui expliquait qu'un seul item du rail en portât un.
+
+   RE-MESURÉ le 2026-08-26 après la bascule Outfit → Inter, et la valeur TIENT sans changement :
+   item réel le plus long « Rekordbox » = 66,77px, badge le plus large « 2524 » = 25,09px (chiffre
+   nu depuis ce jour, contre 36,9px quand il était une pilule), soit 91,86px pour 131 disponibles —
+   39px de marge. Même avec « Bibliothèque », la référence de 2026-08-19, on reste à 35px de marge.
+
+   ⚠️ Et cette re-mesure dit quelque chose qu'une règle de trois aurait manqué : Inter n'est pas
+   « plus large » qu'Outfit, il est plus large en CAPITALES et plus étroit en minuscules.
+   « Bibliothèque » RÉTRÉCIT (73,7 → 70,57) pendant que « MUSIQUE A TRIER » s'élargit de 14,6 %
+   (98,98 → 113,39) et « AUTHENTIQUE » de 2,3 % (81,67 → 83,56, voir la colonne verdict). Une
+   largeur dérivée d'une mesure ne se convertit donc pas par un facteur : elle se re-mesure, libellé
+   par libellé, sur le texte que l'écran porte vraiment.
+
+   La valeur tombe aussi dans la bande 200-260px des apps système, mais c'est la mesure qui la fixe.
 
    --pane-w : largeur canonique d'une zone fixe latérale — file de Revue, rail de sources
    d'Accueil, inspecteur. Écrite trois fois avant d'être un token (deux fois dans app.js, une
@@ -1541,16 +1552,25 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
    rattrape pour un lecteur daltonien. Donc jamais d'opacité ici, et jamais sous --text-xs.
    Taille retenue --text-sm (11px), pas le plancher --text-xs : le § 16 pose un PLANCHER, et 11px
    est déjà la taille de l'autre marque catégorielle de la ligne (.pill, la pastille de qualité).
-   Largeur MESURÉE le 2026-08-19 dans la vraie fenêtre (police Outfit, 11px, 600, .03em) : le plus
-   long libellé atteignable est AUTHENTIQUE à 81,67px — DUPLICATE (62,5) ne l'est pas, aucun champ
-   ne le produit (voir library-views.ts). 81,67 + pastille 6 + gap 4 = 91,67, arrondi au multiple de
-   4 supérieur = 92. Fixe : une colonne de verdict qui respire ferait bouger tout ce qui la suit à
+   Largeur MESURÉE le 2026-08-26 dans la vraie fenêtre, police INTER (11px, 600, .03em — tracking
+   relu à 0,33px sur la cellule) : le plus long libellé atteignable est AUTHENTIQUE à 83,56px, sur
+   un `Range` du nœud texte réel et non au canvas. Les autres atteignables, mesurés en même temps :
+   À VÉRIFIER 62,31 · LOSSLESS 58,5 · le tiret 11,34. DUPLICATE ne l'est toujours pas, aucun champ
+   ne le produit (voir library-views.ts). 83,56 + pastille 6 + gap 4 = 93,56, arrondi au multiple de
+   4 supérieur = 96. Fixe : une colonne de verdict qui respire ferait bouger tout ce qui la suit à
    chaque filtre.
+   Elle valait 92 sous Outfit (81,67 + 6 + 4 = 91,67), et c'est la bascule vers Inter du 2026-08-26
+   qui l'a périmée : Inter a la chasse plus large — +2,3 % sur ce libellé, jusqu'à +17 % sur les
+   libellés du rail. Une largeur dérivée d'une mesure ne survit pas à un changement de famille ; si
+   la police rebouge, cette valeur se re-mesure, elle ne se convertit pas.
+   ⚠️ 96 est le DÉFAUT, pas ce qui est peint : les largeurs de colonnes sont persistées par
+   utilisateur (`library-columns.ts`), donc une session existante garde la sienne — mesuré à 141px
+   sur ce poste. Le défaut ne vaut que pour une colonne jamais redimensionnée.
    La GÉOMÉTRIE (largeur, gap) est partagée avec l'en-tête — c'est elle qui tient l'alignement des
    deux lignes — mais la TYPOGRAPHIE du libellé ne vaut que dans la ligne : l'en-tête a la sienne,
    --text-xs en capitales espacées, et un « VERDICT » plus gros que « ARTISTE » à côté se lirait
    comme une erreur. */
-.sift-lib-col-verdict{flex:none;width:92px;display:flex;align-items:center;gap:var(--space-4)}
+.sift-lib-col-verdict{flex:none;width:96px;display:flex;align-items:center;gap:var(--space-4)}
 .lr .sift-lib-col-verdict{font-size:var(--text-sm);font-weight:600;letter-spacing:.03em}
 /* La pastille prend currentColor : une seule classe de teinte par verdict suffit alors pour le
    point ET le libellé, et il devient impossible de les désaccorder. 6px = le diamètre le plus petit
