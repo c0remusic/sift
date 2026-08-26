@@ -40,8 +40,7 @@ import {
 } from "./bibliotheque-view";
 import { sortTracks } from "./library-views";
 import { consumeSortSuppression } from "./library-columns";
-import { renderRootGate, dismissRootGateBanner, mountBarBatchToggle } from "./toolbar";
-import { activeView } from "./router";
+import { renderRootGate, dismissRootGateBanner } from "./toolbar";
 import { onSettingsCategoryPick } from "./reglages-view";
 import { onRekordboxSectionPick } from "./rekordbox-view";
 import { installWindowShortcuts } from "./shortcuts";
@@ -60,7 +59,6 @@ import {
 import { renderRekordboxLive, handleRekordboxAction } from "./rekordbox-view";
 import {
   currentItems,
-  reviewMode,
   enterDetailMode,
   enterBatchMode,
   registerBatchRenderer,
@@ -178,62 +176,17 @@ function setReviewMode(m: "detail" | "batch") {
   } else {
     enterDetailMode();
   }
-  // L'icône de la barre EST le commutateur : elle doit dire le nouvel état tout de suite, sans
-  // attendre un rendu de vue. Après le branchement et non dedans — les deux branches changent le
-  // mode, et `enterDetailMode()` en est un chemin d'entrée à part entière.
-  syncBarBatchToggle();
+  // Plus de repeinture du commutateur ici : les deux portes appellent `syncQueueSelectButton`
+  // elles-mêmes, donc TOUS les chemins de changement de mode le repeignent — y compris ceux qui
+  // ne passent pas par cette fonction.
 }
 
-// ---------------------------------------------------------------------------
-// Icône de sélection de la barre (Revue) — montage, repeinture, remontage
-// ---------------------------------------------------------------------------
-
-/** Peint l'icône de sélection de la barre depuis `reviewMode`. Revue seulement : `mountBarActions`
- *  réécrit l'emplacement d'actions en entier, donc y poser cette icône depuis un autre écran
- *  effacerait ce que cet écran y monte (les chips de Bibliothèque, le segmenté de Journal).
- *
- *  `reviewMode` est importé de `queue-panel.ts` en LECTURE seule — le mode ne se mute que par
- *  `setReviewMode` / `enterDetailMode`, jamais depuis ici (un binding d'import ES est de toute
- *  façon en lecture seule hors de son module). */
-function syncBarBatchToggle(): void {
-  if (activeView() !== "revue") return;
-  mountBarBatchToggle(reviewMode === "batch");
-}
-
-/** Remonte l'icône de sélection après chaque rendu de vue.
- *
- *  `router.ts::render()` vide les deux emplacements de la barre (`clearBarSlots`) avant de rendre
- *  l'écran : sans remontage, l'icône disparaît au premier aller-retour de navigation. Or Revue n'a
- *  pas de renderer dans ce fichier — sa coquille vit dans `router.ts`, sa file dans
- *  `queue-panel.ts` — donc il n'y a ici aucun point d'accroche direct sur son rendu.
- *
- *  Le signal de rendu observable depuis ce fichier est le TITRE de la barre : `router.ts::syncNav`
- *  y réécrit le libellé de la vue à chaque `render()`, et personne d'autre n'y ÉCRIT (`grep -rn
- *  "sift-tb-title" frontend/`, 2026-08-25 : `chrome.ts` le crée, `router.ts:183` l'écrit, et ce
- *  fichier ne fait que le lire). Un troisième écrivain casserait ce raisonnement en silence.
- *  Fréquence de l'événement : un enregistrement par navigation. Ce n'est PAS un événement en
- *  rafale — contrairement au poll de 300 ms de `renderQueueWindow`, qu'il ne faut surtout pas
- *  prendre comme signal.
- *
- *  Le rappel d'un `MutationObserver` est livré en micro-tâche, donc après que `render()` a fini,
- *  `clearBarSlots()` compris : l'icône est remontée sur un emplacement déjà vidé, jamais avant.
- *  C'est aussi ce qui couvre le tout premier rendu, déclenché par `installRouter()` APRÈS
- *  `installLiveWiring()` (`main.ts`) — l'observateur est déjà posé quand il arrive.
- *
- *  Le point de montage propre serait un appel dans le cas `revue` de `render()` ; ce fichier ne
- *  possède pas `router.ts`, édité en parallèle par une autre lane de l'issue #47. */
-function installBarBatchRemount(): void {
-  const title = document.getElementById("sift-tb-title");
-  if (!title) {
-    // Bruyant plutôt que muet, mais sans jeter : `installLiveWiring` câble tout le reste de l'app
-    // après cet appel, et une barre absente ne doit pas emporter l'écran entier avec elle.
-    console.error(
-      "installBarBatchRemount: #sift-tb-title absent — l'icône de sélection ne sera pas remontée après une navigation",
-    );
-    return;
-  }
-  new MutationObserver(() => syncBarBatchToggle()).observe(title, { childList: true });
-}
+// L'icône de sélection de la barre vivait ici — `syncBarBatchToggle` et `installBarBatchRemount`,
+// retirées le 2026-08-26 avec l'emplacement `#sift-tb-actions-right` qu'elles servaient. Le
+// commutateur du mode Lot est descendu dans la tête de la colonne de file, en bouton texte
+// (`syncQueueSelectButton`, queue-panel.ts) : il vit désormais dans le même rendu que la file,
+// donc le `MutationObserver` sur le titre de la barre — qui existait faute de point d'accroche sur
+// le rendu de Revue depuis ce fichier — n'a plus d'objet. Retrait, pas mise en commentaire.
 
 /** Relit `library_root` et peint la porte. Le réglage est la source de vérité, jamais un état
  *  local : Réglages peut en poser une à tout moment, et la porte doit tomber tout de suite. */
@@ -263,11 +216,6 @@ export function installLiveWiring() {
   // appelant, et elle ne tourne plus dans Tauri.
   injectLeanStyle();
   void injectTitlebar();
-  // APRÈS `injectTitlebar` et sans attendre sa promesse : elle insère la barre (donc
-  // `#sift-tb-title`) de façon SYNCHRONE, avant son premier `await` (`chrome.ts:258`, l'await est
-  // en 287). L'observateur trouve donc son nœud, et il est posé avant que `installRouter()`
-  // (`main.ts`) ne déclenche le premier rendu.
-  installBarBatchRemount();
   void initTheme();
   installUndoShortcut();
   installFilingKeys();
@@ -325,11 +273,9 @@ export function installLiveWiring() {
       handleQueueItemClick(qi, e);
       // Cliquer une ligne pendant que le mode Lot est armé veut dire « inspecter celle-ci » :
       // `handleQueueItemClick` retombe alors en Détail par `enterDetailMode()`, sans passer par
-      // `setReviewMode`. C'est le seul chemin de désarmement qui contourne le commutateur, donc
-      // le seul endroit où l'icône devrait rester armée à tort — d'où cette repeinture.
-      // (L'autre appelant d'`enterDetailMode`, `stepQueueSelection` sur ↑/↓, est hors d'atteinte
-      // en mode Lot : son garde exige `.sift-fil` dans `#mid`, or `#mid` y porte le panneau de lot.)
-      syncBarBatchToggle();
+      // `setReviewMode`. Ce chemin contournait le commutateur et laissait l'icône de barre armée à
+      // tort — d'où une repeinture explicite ici jusqu'au 2026-08-26. Elle n'a plus lieu d'être :
+      // `enterDetailMode` repeint le bouton lui-même, donc le contournement n'en est plus un.
       return;
     }
     // Porte de racine manquante : masquer pour la session.

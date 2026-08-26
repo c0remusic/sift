@@ -137,10 +137,11 @@ function blockShell(content: HTMLElement): void {
  *  la barre unifiée, pas par un onglet de la file.
  *
  *  `.sift-qhead` n'est plus un TITRE mais la RANGÉE DE FILTRE (wireframe « Poste de décision »
- *  §§ 09-10, 2026-08-25) : le libellé « File » est retiré — la barre unifiée nomme déjà l'écran —
- *  et la rangée porte le pulldown de filtre à gauche (injecté par `queue-panel.ts`, qui possède son
- *  état) et le compte de pistes VISIBLES à droite. Seul le nœud du compte est posé ici, VIDE : son
- *  texte vient de `renderQueueWindow`, qui seul connaît la liste réellement affichée.
+ *  §§ 09-10, 2026-08-25) : le libellé « File » est retiré — la barre unifiée nomme déjà l'écran.
+ *  Elle est posée VIDE : `queue-panel.ts` y injecte le pulldown de filtre à gauche et le bouton de
+ *  sélection à droite, tous deux avec leur état. Le compte de pistes visibles qui occupait la
+ *  droite est retiré le 2026-08-26, et le compte de la FILE vit désormais dans la barre unifiée,
+ *  contre le titre (`paintBarCount`, queue-panel.ts) — voir son commentaire pour le motif Mail.
  *
  *  `#ql` est une LISTBOX (`role` + `tabindex="0"`), et c'est le SEUL point d'entrée du clavier dans
  *  la file : les lignes restent non focusables, la ligne courante se nomme par
@@ -158,7 +159,7 @@ function revueShell(content: HTMLElement): void {
   content.innerHTML =
     `<div class="sift-revue-row">` +
     `<div class="queue" id="qcol" style="width:${qcolWidth()}px">` +
-    `<div class="sift-qhead"><span class="sift-qhead-count" id="sift-qcount"></span></div>` +
+    `<div class="sift-qhead"></div>` +
     `<div id="ql" role="listbox" tabindex="0" aria-label="File de revue"></div>` +
     `</div>` +
     `<div class="sift-qresize" title="Redimensionner la file"></div>` +
@@ -180,13 +181,17 @@ function revueShell(content: HTMLElement): void {
  *  une action ou une recherche la laisserait sinon sur l'écran suivant. */
 function clearBarSlots(): void {
   const actions = document.getElementById("sift-tb-actions");
-  const actionsRight = document.getElementById("sift-tb-actions-right");
   const search = document.getElementById("sift-tb-search");
+  const count = document.getElementById("sift-tb-count");
   if (actions) actions.textContent = "";
-  // L'emplacement de bord droit se vide comme les deux autres : l'icône de sélection de Revue y
-  // vit, et sans ce nettoyage elle resterait affichée sur Bibliothèque ou Réglages, où le mode Lot
-  // n'existe pas. C'est `syncBarBatchToggle` (sift-live.ts) qui la remonte au rendu de Revue.
-  if (actionsRight) actionsRight.textContent = "";
+  // Le compte de file se vide comme les emplacements : il est propre à Revue, et le laisser
+  // afficherait « 3 124 pistes » à côté du titre « Réglages ». `:empty{display:none}` fait
+  // disparaître le nœud avec son texte. La classe de mode Lot part avec — sinon un retour sur
+  // Revue en mode Détail repeindrait un compte de file à l'encre d'accent.
+  if (count) {
+    count.textContent = "";
+    count.classList.remove("sift-tb-count-lot");
+  }
   if (search) search.textContent = "";
 }
 

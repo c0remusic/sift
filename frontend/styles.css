@@ -905,7 +905,7 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
 /* Bouton clear — n'existe QUE quand il y a du texte (`hidden` piloté par queue-panel.ts). Le
    `:not([hidden])` n'est pas décoratif : toute règle auteur qui pose `display` bat le
    `[hidden]{display:none}` du navigateur, et le bouton resterait affiché sur un champ vide —
-   même piège que `.sift-qdone-toggle[hidden]` plus bas, qui l'a vécu (bug 2026-07-20).
+   même piège que `.sift-qfoot-btn[hidden]` plus bas, qui l'a vécu (bug 2026-07-20).
    `filter:none` au survol : le générique `button:hover` repeint un fond ET applique un
    `brightness(.95)` qui, en thème sombre, ASSOMBRIT le glyphe — l'inverse du signal voulu, alors
    que l'encre passe justement de tertiary à secondary (plus contrastée dans les DEUX thèmes).
@@ -920,7 +920,7 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
    it, so a selected row's highlighted background butted directly against the track/thumb. */
 #ql{flex:1;min-height:0;overflow-y:scroll;scrollbar-gutter:stable;padding-right:var(--space-8)}
 /* "+N traités" toggle (2026-07-08, real port of the app.js mockup — see ensureQueueDoneToggle) */
-.sift-qdone-toggle{display:block;flex:none;font-size:var(--text-xs);color:var(--color-text-tertiary);cursor:pointer;text-decoration:underline;padding:var(--space-4) var(--space-4) 0;background:transparent;border:none;border-radius:0;font-family:inherit}
+.sift-qfoot-btn{display:block;flex:none;font-size:var(--text-xs);color:var(--color-text-tertiary);cursor:pointer;text-decoration:underline;padding:var(--space-4) var(--space-4) 0;background:transparent;border:none;border-radius:0;font-family:inherit}
 /* RANGÉE DE FILTRE de la colonne file (ex-en-tête « File », Lane 2 #47). Depuis le 2026-08-25
    (wireframe « Poste de décision » §§ 09-10, spec `docs/ui-specs/revue.md` § Zone B′) elle ne porte
    plus de TITRE : le libellé « File » est retiré — la barre unifiée nomme déjà l'écran — et la
@@ -960,6 +960,22 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
    correctif, et pour la même raison, que `.sift-search-clear:hover` plus haut. */
 .sift-qfacet-btn{box-sizing:border-box;display:inline-flex;align-items:center;min-width:0;height:var(--h-control);gap:var(--space-4);padding:var(--space-6) var(--space-8);border:0;border-radius:var(--border-radius-md);background:transparent;color:var(--color-text-primary);font-size:var(--text-base);cursor:pointer}
 .sift-qfacet-btn:hover{background:var(--overlay-hover);filter:none}
+/* Commutateur du mode Lot — « Sélectionner » / « Terminé », à droite de la même rangée que le
+   pulldown ci-dessus (2026-08-26 ; il était au bord droit de la barre unifiée avant).
+
+   Même GABARIT que le pulldown, délibérément : deux contrôles de la même rangée qui ne partagent
+   ni hauteur ni padding se lisent comme deux rangées. Seules l'encre et l'absence de chevron les
+   séparent. Encre d'ACCENT parce que c'est le traitement de « Sélectionner » dans Photos, et parce
+   qu'elle est ce qui rattache le bouton au compte de barre, qui passe à la même encre une fois le
+   mode armé (`#sift-tb-count.sift-tb-count-lot`, chrome.ts).
+
+   `filter:none` au survol pour la même raison que le pulldown : le générique `button:hover`
+   applique un `brightness(.95)` qui ASSOMBRIT le libellé en thème sombre. Et `background` est
+   réaffirmé dans `:hover` — un bouton qui redéfinit son fond le perd sinon face au `button:hover`
+   générique (CLAUDE.md § Front). */
+.sift-qselect-btn{box-sizing:border-box;display:inline-flex;align-items:center;min-width:0;height:var(--h-control);padding:var(--space-6) var(--space-8);border:0;border-radius:var(--border-radius-md);background:transparent;color:var(--color-text-info);font-size:var(--text-base);cursor:pointer;white-space:nowrap;flex:none}
+.sift-qselect-btn:hover{background:var(--overlay-hover);filter:none}
+.sift-qselect-btn[aria-pressed="true"]{font-weight:500}
 /* Pressé — et MAINTENU pressé tant que son menu est ouvert (`aria-expanded`), patron macOS : un
    pulldown relâché sous son propre popover se lit comme un menu orphelin. Déclaré APRÈS le survol,
    même spécificité (0,2,0) : survoler un pulldown ouvert garde donc l'état pressé. */
@@ -1029,9 +1045,9 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
 /* The class's own `display:block` above out-specifies the UA [hidden]{display:none} rule, so
    the `.hidden = true` toggling in queue-panel.ts silently did nothing visually — bug report
    2026-07-20, "Non analysés uniquement (0)" stayed visible with the count at zero. */
-.sift-qdone-toggle[hidden]{display:none}
-.sift-qdone-toggle:hover{background:transparent}
-.sift-qdone-toggle:hover{color:var(--color-text-secondary)}
+.sift-qfoot-btn[hidden]{display:none}
+.sift-qfoot-btn:hover{background:transparent}
+.sift-qfoot-btn:hover{color:var(--color-text-secondary)}
 /* Drag handle between #qcol and .sift-inspector (Revue) — resizes the queue column so long
    track names stay readable (audit 2026-07-05, annotation #8). Sits INSIDE .sift-revue-row's own
    gap as a real flex child spanning it, rather than a 5px hit-zone stitched to its neighbours via

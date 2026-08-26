@@ -143,7 +143,7 @@ export async function installDragDrop() {
  *   `index.html`, `app.js` ni `frontend/*.ts`. Règle morte, sans doute depuis une réécriture
  *   d'`index.html` qui a emporté le bloc marketing sans emporter sa règle ;
  * - `[data-act="revmode"], [data-act="togglequeue"]` masquait les bascules de la maquette, que le
- *   rendu live doublait sous un autre DOM (`data-sift="reviewmode"`, `#sift-qdone-toggle`).
+ *   rendu live doublait sous un autre DOM (`data-sift="reviewmode"`, le pied de la colonne de file).
  *   `app.js` ne tourne plus dans Tauri, donc ces attributs n'y existent plus du tout.
  *
  * Injectée une fois ; la démo navigateur ne l'exécute jamais. */
@@ -172,10 +172,21 @@ export function injectLeanStyle() {
     // et une barre qui répète le nom du logiciel à la place du nom de l'écran ne renseigne rien.
     "#sift-tb-title{font-size:var(--text-base);font-weight:500;color:var(--color-text-primary);" +
     "overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:none}" +
+    // Compte de la file, contre le titre. Subordonné au titre par la TAILLE et l'ENCRE, jamais par
+    // un séparateur : c'est le traitement de « 34 messages » sous « Inbox » dans Mail, transposé à
+    // l'horizontale. `margin-left` et non un `gap` du parent — la barre n'aligne pas ses enfants
+    // par un gap unique, et le titre doit rester collé à son compte quand les autres bougent.
+    "#sift-tb-count{font-size:var(--text-sm);color:var(--color-text-tertiary);white-space:nowrap;" +
+    "flex:none;margin-left:var(--space-8)}" +
+    "#sift-tb-count:empty{display:none}" +
+    // Mode Lot : le compte devient celui de la sélection et prend l'encre d'accent — le seul état
+    // permanent du mode, et la couleur est ce qui le distingue au premier coup d'œil du compte de
+    // file qu'il remplace au même endroit.
+    "#sift-tb-count.sift-tb-count-lot{color:var(--color-text-info)}" +
     // Deux emplacements que les vues remplissent : actions contextuelles (2 à 3 au maximum) et
     // recherche. Vides, ils n'occupent rien. L'espaceur entre eux pousse la recherche à droite,
     // où elle est sur toutes les apps système — et l'y garde quelle que soit la vue.
-    "#sift-tb-actions,#sift-tb-actions-right{display:flex;align-items:center;gap:var(--space-8);min-width:0}" +
+    "#sift-tb-actions{display:flex;align-items:center;gap:var(--space-8);min-width:0}" +
     "#sift-tb-spacer{flex:1;min-width:var(--space-8)}" +
     "#sift-tb-search{display:flex;align-items:center;gap:var(--space-8);flex:none}" +
     "#sift-tb-controls{display:flex;height:100%}" +
@@ -239,14 +250,18 @@ export async function injectTitlebar(): Promise<void> {
   // restent tant qu'une vue n'y monte rien.
   const title =
     '<span id="sift-tb-title" data-tauri-drag-region>Sift</span>' +
+    // Compte de la file, contre le titre (2026-08-26). Vide hors Revue — c'est `paintBarCount`
+    // (queue-panel.ts) qui l'écrit, et `clearBarSlots` qui le vide en quittant l'écran. Motif de
+    // Mail : le compte suit le TITRE de ce qu'il compte, et dans Sift ce titre vit dans la barre.
+    // `data-tauri-drag-region` comme le titre : c'est du texte inerte, il ne doit pas créer un trou
+    // dans la zone de déplacement de la fenêtre.
+    '<span id="sift-tb-count" data-tauri-drag-region></span>' +
     '<div id="sift-tb-actions"></div>' +
     '<div id="sift-tb-spacer" data-tauri-drag-region></div>' +
-    // Emplacement d'action de BORD DROIT, distinct de #sift-tb-actions qui suit le titre. Il existe
-    // parce que la spec de Revue (docs/ui-specs/revue.md § Zone A) place l'icône de sélection « au
-    // bord droit, avant les contrôles de fenêtre » — patron toolbar de Photos macOS, où l'action de
-    // sélection est à l'opposé du titre. Monté à gauche, le même bouton se lisait comme un ornement
-    // du titre (mesuré le 2026-08-25 : x=263 sur une barre de 2620px).
-    '<div id="sift-tb-actions-right"></div>' +
+    // `#sift-tb-actions-right` occupait cette place — emplacement de bord droit créé pour la seule
+    // icône de sélection de Revue, retiré le 2026-08-26 quand ce commutateur est descendu dans la
+    // tête de la colonne de file (`syncQueueSelectButton`, queue-panel.ts). Aucun autre écran n'y
+    // montait quoi que ce soit.
     '<div id="sift-tb-search"></div>';
   const controls =
     '<div id="sift-tb-controls">' +

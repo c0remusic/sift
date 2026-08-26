@@ -91,20 +91,17 @@ let queueRowHeightCache: number | null = null;
 // this filtered view too, so arrow-key nav only steps through what's actually visible.
 let queueSearchTerm = "";
 
-// Optional "Non analysés uniquement" filter — surfaces tracks stuck in/awaiting background
-// analysis (QueueItem.needs_analysis, mirroring worker::select_pending's own condition exactly —
-// see the field's doc comment in shared/contracts.ts for why this is NOT the same as
-// `verdict === null`, a review-flagged bug caught after this filter first shipped) so a problem
-// file doesn't get lost in a large pending list. OFF by default: the default view is the FULL
-// pending queue (everything not yet filed/écarté — "pending" is a single backend lifecycle
-// status, `actions.rs` inserts a scanned file as `status='pending'` before analysis even runs,
-// and it stays `pending` regardless of whether analysis has resolved). Corrected 2026-07-20 (live
-// bug report): this used to be an ON-by-default "+N traités" toggle keyed on `verdict !== null`,
-// which confused "the background analyzer already produced a verdict for this file" with "the
-// user already reviewed/filed it" — on a library where analysis runs quickly, that hid
-// essentially the ENTIRE pending queue by default, showing "Tous les morceaux ont été traités."
-// while thousands of genuinely not-yet-reviewed tracks sat hidden behind the toggle.
-let queueUnanalyzedOnly = false;
+// Le filtre « Non analysés uniquement » vivait ici — bascule de pied de colonne, retirée le
+// 2026-08-26 (décision d'Antoine, maquette « Maquette — Revue »). Retrait de l'état AVEC son
+// bouton : un drapeau que plus rien ne bascule est du code mort, et le laisser à `false` aurait
+// gardé trois branches mortes dans `visibleQueueItems` et l'état vide.
+//
+// ⚠️ Ce que le retrait EMPORTE, et qui n'est pas remplacé : la seule façon d'isoler les pistes
+// bloquées en attente d'analyse (`QueueItem.needs_analysis`, qui n'est PAS `verdict === null` —
+// voir son commentaire dans `shared/contracts.ts`) dans une longue file. C'est un des trois fils
+// notés ouverts dans `docs/ui-specs/revue.md`, pas un oubli — et si le besoin revient, relire
+// d'abord le bug du 2026-07-20 : la version ON-par-défaut de ce filtre cachait la file entière.
+// `unanalyzedItems()` reste, elle : le bouton « Réanalyser (N) » du pied s'en sert toujours.
 
 // Filtre par facettes (UNION multi-critères) — cases cochées dans le popover « Filtrer ». Set au
 // niveau module : survit aux re-rendus (poll 300ms, queue:changed), ne tombe que sur une action
@@ -126,15 +123,12 @@ function matchesFacet(it: QueueItem): boolean {
 }
 
 function visibleQueueItems(): QueueItem[] {
-  // Search deliberately searches ALL items regardless of the analysis filter — limiting search
-  // results to whatever's currently shown would silently return 0 hits for an analyzed track
-  // while unanalyzed-only is on, which reads as a bug ("I searched but it's not there") rather
-  // than the filter doing its job.
-  const base = queueSearchTerm
-    ? currentItems
-    : queueUnanalyzedOnly
-      ? unanalyzedItems()
-      : currentItems;
+  // Plus de filtre d'analyse ici depuis le 2026-08-26 : la bascule « Non analysés uniquement » du
+  // pied de colonne est retirée (décision d'Antoine, maquette « Maquette — Revue »). La liste part
+  // donc toujours de `currentItems`, et seules la recherche et les facettes la restreignent.
+  // ⚠️ La capacité d'ISOLER les pistes bloquées en analyse part avec elle — c'est un des trois fils
+  // laissés ouverts dans `docs/ui-specs/revue.md`, pas un oubli.
+  const base = currentItems;
   const q = queueSearchTerm.toLowerCase();
   // Recherche (si présente) ET facettes (union) se composent : la recherche cherche dans tout
   // (ci-dessus), les facettes restreignent ; Set de facettes vide → matchesFacet rend true.
@@ -170,24 +164,37 @@ function measureQueueRowHeight(ql: HTMLElement): number {
   return queueRowHeightCache;
 }
 
-/** Compte de la rangée de filtre — « 5 pistes », à DROITE de l'en-tête (wireframe « Poste de
- *  décision » §§ 09-10). Il dit ce que la colonne MONTRE, donc il se lit sur `visibleQueueItems()`
- *  (recherche + facettes appliquées) et jamais sur `currentItems` : le total de la file, lui, est
- *  déjà porté par le badge du rail (`updateRevueBadge`) et par le titre de la barre unifiée.
+/** Compte de la file — dans la BARRE UNIFIÉE, contre le titre « Revue », depuis le 2026-08-26.
  *
- *  Appelé depuis `renderQueueWindow`, donc sur le CHEMIN CHAUD de la colonne (poll de 300ms +
+ *  Il vivait à droite de la rangée de filtre et disait alors les pistes VISIBLES après filtre. Ce
+ *  compte-là est retiré ; celui-ci est un autre objet : le compte de la FILE, que `revue.md`
+ *  § Zone A demandait déjà (« Titre "Revue" + compte de la file, à gauche ») et que le montage de
+ *  la barre avait omis.
+ *
+ *  Le motif vient de Mail (`docs/design-refs/03-mail.png`), qui pose « Inbox » puis « 34 messages »
+ *  en tête de colonne — parce que c'est là qu'est le titre de la colonne. Dans Sift le titre de
+ *  l'écran vit dans la barre : le couple titre + compte y va donc entier. Même couple, autre
+ *  emplacement, parce que le titre a déménagé.
+ *
+ *  En mode Lot il devient le compte de la SÉLECTION, en teinte d'accent (spec § Zone A) : c'est le
+ *  seul état que le mode Lot donne à voir en permanence, et il remplace le total plutôt que de s'y
+ *  ajouter — deux nombres côte à côte dans la barre se liraient comme une fraction.
+ *
+ *  Appelé depuis `renderQueueWindow`, donc sur le CHEMIN CHAUD de la colonne (poll de 300 ms +
  *  scroll rAF-throttlé) : d'où la comparaison avant écriture — une affectation `textContent`
- *  identique reste une écriture DOM, et ce rendu est le point chaud du frontend. La comparaison
- *  interroge le NŒUD et non un cache au niveau module : la navigation recrée l'en-tête vide
- *  (`revueShell`, `content.innerHTML`), et un cache mémoire répondrait alors « déjà peint » sur une
- *  rangée qui n'affiche plus rien. */
-function paintQueueCount(n: number): void {
-  const el = document.getElementById("sift-qcount");
+ *  identique reste une écriture DOM. La comparaison interroge le NŒUD et non un cache au niveau
+ *  module : la barre est vidée et remontée par la navigation (`clearBarSlots`), et un cache mémoire
+ *  répondrait alors « déjà peint » sur une barre qui n'affiche plus rien. */
+function paintBarCount(): void {
+  const el = document.getElementById("sift-tb-count");
   if (!el) return;
+  const lot = reviewMode === "batch";
+  const n = lot ? queueBatchSel.size : currentItems.length;
   // Accord : 0 et 1 prennent le singulier en français, 2 et au-delà le pluriel. Même règle que le
   // compte jumeau de la Bibliothèque (`bibliotheque-view.ts`, `.sift-bib-count`).
-  const label = `${n} piste${n > 1 ? "s" : ""}`;
+  const label = lot ? `${n} sélectionnée${n > 1 ? "s" : ""}` : `${n} piste${n > 1 ? "s" : ""}`;
   if (el.textContent !== label) el.textContent = label;
+  el.classList.toggle("sift-tb-count-lot", lot);
 }
 
 /** Ligne portant le CURSEUR CLAVIER de la file — celle d'où `stepQueueSelection` partirait, donc
@@ -219,9 +226,10 @@ function keyboardCursorId(items: QueueItem[]): number {
  * the actual cost, not just paint. */
 function renderQueueWindow(ql: HTMLElement): void {
   const items = visibleQueueItems();
-  // Le compte de la rangée de filtre se lit sur CETTE liste, pas sur `currentItems` — d'où sa
-  // peinture ici et pas ailleurs : c'est le seul point qui tient la liste réellement affichée.
-  paintQueueCount(items.length);
+  // Le compte de la barre se peint ici parce que c'est le point qui repasse à CHAQUE changement de
+  // la file — ajout, rangement, armement du mode Lot, coche d'une ligne. Il ne lit pas `items` : il
+  // dit la file entière (ou la sélection en mode Lot), pas la fenêtre filtrée.
+  paintBarCount();
   if (!items.length) {
     // "File vide." reads as "nothing was ever here" — misleading when a track is still
     // shown in Detail (currentOpenId set) because it's the last one just treated and the
@@ -229,11 +237,9 @@ function renderQueueWindow(ql: HTMLElement): void {
     const emptyLabel =
       currentItems.length && queueSearchTerm
         ? "Aucun morceau ne correspond."
-        : currentItems.length && queueUnanalyzedOnly
-          ? "Tous les morceaux en file sont déjà analysés."
-          : currentOpenId != null
-            ? "Tous les morceaux ont été traités."
-            : "File vide.";
+        : currentOpenId != null
+          ? "Tous les morceaux ont été traités."
+          : "File vide.";
     ql.innerHTML =
       `<div style="font-size:var(--text-md);color:var(--color-text-tertiary);padding:6px 4px">${emptyLabel}</div>`;
     ql.removeAttribute("aria-activedescendant"); // plus aucune option : le curseur n'a plus de cible
@@ -756,8 +762,9 @@ const QCOL_ORDER = [
   ".sift-qhead", // 1. ancre : rangée de filtre — pulldown (revueShell)
   "#sift-qsearch", // 2. recherche — contre la liste
   "#ql", // 3. ancre : liste virtualisée (revueShell)
-  "#sift-qdone-toggle", // 4. pied : « Non analysés uniquement »
-  "#sift-qreanalyze-all", // 5. pied : « Réanalyser (N) »
+  // La bascule « Non analysés uniquement » occupait la position 4 — retirée le 2026-08-26, le pied
+  // ne porte plus qu'un contrôle.
+  "#sift-qreanalyze-all", // 4. pied : « Réanalyser (N) »
   "#sift-qfacet-pop", // hors flux (`position:fixed`) : rangé en dernier, sa place ne se voit pas
 ] as const;
 
@@ -787,44 +794,62 @@ function placeInQueueColumn(qcol: HTMLElement, el: HTMLElement, slot: QcolSlot):
 function ensureQueueColumnChrome(qcol: HTMLElement): void {
   ensureQueueSearch(qcol);
   ensureQueueFacet(qcol);
-  ensureQueueDoneToggle(qcol);
+  syncQueueSelectButton();
+  syncQueueFoot(qcol);
 }
 
-/** "Non analysés uniquement" filter toggle — surfaces tracks still waiting on/stuck in background
- * analysis, without hiding the rest of the pending queue by default (see queueUnanalyzedOnly's
- * doc comment for why the prior default-hide behavior was wrong). Injected once, au PIED de la
- * colonne (sous `#ql`) — sa place vient de `QCOL_ORDER`, plus de l'ordre d'appel.
- * Hidden entirely when there's nothing unanalyzed to filter down to. */
-function ensureQueueDoneToggle(qcol: HTMLElement): void {
-  let el = document.getElementById("sift-qdone-toggle");
-  if (!el) {
-    el = document.createElement("button");
-    el.id = "sift-qdone-toggle";
-    el.className = "sift-qdone-toggle";
-    el.addEventListener("click", () => {
-      queueUnanalyzedOnly = !queueUnanalyzedOnly;
-      const ql = document.getElementById("ql");
-      if (ql) {
-        ql.scrollTop = 0;
-        renderQueueWindow(ql);
-      }
-      ensureQueueDoneToggle(qcol); // relabel + re-evaluate hidden state
-    });
-    placeInQueueColumn(qcol, el, "#sift-qdone-toggle");
+/** Pied de colonne. Il ne porte plus qu'un contrôle depuis le 2026-08-26 — « Réanalyser (N) ».
+ *
+ *  La bascule « Non analysés uniquement » qui l'accompagnait est retirée (décision d'Antoine). Ce
+ *  point d'entrée reste parce que le compte de pistes non analysées se relit à chaque fois, et
+ *  qu'il était déjà le passage obligé de ses trois rappels — après un clic, après une relance, et
+ *  après que la relance s'est réglée. */
+function syncQueueFoot(qcol: HTMLElement): void {
+  ensureQueueReanalyzeAllButton(qcol, unanalyzedItems().length);
+}
+
+/** Commutateur du mode Lot — à DROITE de la rangée de filtre, en TEXTE, depuis le 2026-08-26.
+ *
+ *  Il vivait au bord droit de la barre unifiée (patron toolbar de Photos, `2d2c6d4`). Antoine : « le
+ *  bouton batch devrait être dans le panneau de la file ». Ce qui tranche : le patron Photos place
+ *  « Sélectionner » dans la toolbar parce que la grille de photos EST l'écran — la toolbar y
+ *  commande la seule chose visible. Dans Revue la file n'est qu'une colonne sur trois, et la barre
+ *  commande déjà l'écran entier ; le même geste n'a plus la même portée. Ici, l'action rejoint le
+ *  pulldown de filtre, l'autre contrôle qui ne pilote que cette liste. L'ancien emplacement était à
+ *  ~1 150 px de la file qu'il commande, et traversait la frontière barre/contenu.
+ *
+ *  TEXTE et non icône : `CLAUDE.md` § Front, un CTA à libellé descriptif se dit en texte seul. Le
+ *  libellé dit l'ACTION du clic et non l'état affiché — « Sélectionner » puis « Terminé », comme
+ *  Photos ; `aria-pressed` dit l'état, et les deux ne se recopient pas.
+ *
+ *  Le clic n'est PAS câblé ici : `data-sift="reviewmode"` est l'action que le dispatch de
+ *  `sift-live.ts` sert déjà, et `data-m` porte le mode CIBLE — l'inverse de l'état courant. C'est ce
+ *  qui fait d'un commutateur à deux positions un simple bouton d'action pour le dispatch, qui n'a
+ *  alors rien à savoir de l'état. Même contrat que l'icône de barre qu'il remplace.
+ *
+ *  Créé une fois puis muté : `ensureQueueColumnChrome` repasse ici au rendu de la file, poll de
+ *  300 ms compris. Les deux portes de mode l'appellent aussi — c'est ce qui repeint le libellé au
+ *  moment du basculement, sans attendre le prochain rendu. */
+function syncQueueSelectButton(): void {
+  const head = document.querySelector<HTMLElement>(".sift-qhead");
+  if (!head) return;
+  let btn = document.getElementById("sift-qselect") as HTMLButtonElement | null;
+  if (!btn) {
+    btn = document.createElement("button");
+    btn.id = "sift-qselect";
+    btn.className = "sift-qselect-btn";
+    btn.type = "button";
+    btn.dataset.sift = "reviewmode";
+    // `appendChild` : le pulldown de filtre se `prepend` à gauche, ce bouton se pose à droite, et
+    // c'est le `justify-content:space-between` de la rangée qui les écarte.
+    head.appendChild(btn);
   }
-  const unanalyzedCount = unanalyzedItems().length;
-  // Nothing left to filter down to: hide the toggle AND clear the filter. Leaving it ON while the
-  // control that turns it off is hidden would strand the user in an empty filtered view over a full
-  // pending queue with no way back (module state survives navigation) — review-caught regression.
-  if (unanalyzedCount === 0 && queueUnanalyzedOnly) {
-    queueUnanalyzedOnly = false;
-    rerenderQueueWindow();
-  }
-  el.hidden = unanalyzedCount === 0;
-  el.textContent = queueUnanalyzedOnly
-    ? "Tout afficher"
-    : `Non analysés uniquement (${unanalyzedCount})`;
-  ensureQueueReanalyzeAllButton(qcol, unanalyzedCount);
+  const armed = reviewMode === "batch";
+  const label = armed ? "Terminé" : "Sélectionner";
+  if (btn.textContent !== label) btn.textContent = label;
+  btn.dataset.m = armed ? "detail" : "batch";
+  btn.setAttribute("aria-pressed", armed ? "true" : "false");
+  btn.title = armed ? "Quitter le mode Lot" : "Sélectionner plusieurs pistes";
 }
 
 /** Confirmation threshold for the bulk retry — a few stuck tracks retry on one click, but a mass
@@ -851,7 +876,7 @@ function ensureQueueReanalyzeAllButton(qcol: HTMLElement, unanalyzedCount: numbe
   if (!el) {
     el = document.createElement("button");
     el.id = "sift-qreanalyze-all";
-    el.className = "sift-qdone-toggle";
+    el.className = "sift-qfoot-btn";
     el.addEventListener("click", async () => {
       if (bulkReanalyzing) return; // already running — ignore re-clicks
       const ids = unanalyzedItems().map((it) => it.id);
@@ -867,7 +892,7 @@ function ensureQueueReanalyzeAllButton(qcol: HTMLElement, unanalyzedCount: numbe
       }
       bulkReanalyzing = true;
       beginReanalyze(ids);
-      ensureQueueDoneToggle(qcol); // reflect "Relance…" + disabled
+      syncQueueFoot(qcol); // reflète « Relance… » + désactivé
       try {
         await reanalyzeTracks(ids);
         // queue:changed (emitted unconditionally by the backend) drives the queue re-render.
@@ -880,7 +905,7 @@ function ensureQueueReanalyzeAllButton(qcol: HTMLElement, unanalyzedCount: numbe
       } finally {
         bulkReanalyzing = false;
         endReanalyze(ids);
-        ensureQueueDoneToggle(qcol); // re-label + re-enable from the settled state
+        syncQueueFoot(qcol); // re-libelle + réactive depuis l état réglé
       }
     });
     placeInQueueColumn(qcol, el, "#sift-qreanalyze-all");
@@ -1158,9 +1183,9 @@ function ensureQueueFacet(qcol: HTMLElement): void {
       e.stopPropagation();
       toggleQueueFacet();
     });
-    // `prepend`, pas `appendChild` : le compte de pistes est déjà dans la rangée (`revueShell`) et
-    // le pulldown se range à sa GAUCHE. Insertion unique (gardée par `!btn`), donc le poll de 300ms
-    // ne redéplace rien.
+    // `prepend`, pas `appendChild` : le pulldown tient la GAUCHE de la rangée, le bouton de
+    // sélection la droite (`syncQueueSelectButton`, qui `appendChild`). Insertion unique (gardée
+    // par `!btn`), donc le poll de 300 ms ne redéplace rien.
     head.prepend(btn);
   }
   if (!document.getElementById("sift-qfacet-pop")) {
@@ -1290,6 +1315,7 @@ export function enterDetailMode(): void {
   clearBinPick();
   // Return the progress zone to its left-sidebar home (it was relocated into the batch rail).
   homeProgressZone();
+  syncQueueSelectButton();
   void renderQueue(true);
 }
 
@@ -1323,6 +1349,7 @@ export function enterBatchMode(): void {
   // rendrait la zone C muette en silence — le fallback silencieux que la méthode du dépôt refuse.
   if (!batchRenderer) throw new Error("enterBatchMode: batchRenderer non enregistré");
   batchRenderer();
+  syncQueueSelectButton();
   const ql = document.getElementById("ql");
   if (ql) renderQueueWindow(ql);
 }
