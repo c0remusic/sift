@@ -123,6 +123,36 @@ Deux gardiens, à connaître avant de dire « terminé » :
 `build.yml` (installeurs non signés Win+Mac) et `release.yml` ne se déclenchent que sur
 `main` / tags — ils ne sont pas un filet de branche.
 
+### Un raté attrapé se convertit en gate, il ne se réécrit pas en prose
+
+Quand une erreur est attrapée — par Antoine, par une relecture, par une mesure —, la corriger
+ne suffit pas : **la gate qui aurait dû l'attraper se durcit dans le même geste**, avant de
+passer à la suite.
+
+Barème, du plus fort au plus faible. Ne descendre d'un cran que si celui du dessus est
+réellement impossible, et écrire pourquoi :
+
+1. **Test** — Vitest ou `cargo test`. Un raté qui porte sur une valeur ou une forme se fige en
+   vecteur. Il ne compte comme gate qu'une fois **mesuré en mutant le code qu'il garde**
+   (§ Méthode) : vert ne veut pas dire tenant.
+2. **Lint** — `lint:tokens`, ESLint, clippy. Un raté de MOTIF (un littéral qui contourne un
+   token, un `innerHTML` sans `esc()`) se compte, avec baseline à ratchet — jamais un
+   avertissement qu'on lit et qu'on oublie.
+3. **Hook** — `.claude/settings.json`. Un raté de SÉQUENCE — étape sautée, vérification omise,
+   source consultée dans le mauvais ordre — s'intercepte là, pas ailleurs.
+4. **Prose ici** — dernier recours, et il faut alors dire pourquoi les trois crans du dessus
+   échouent.
+
+⚠️ **Le test qui décide du cran.** Si la règle était **déjà écrite** quand le raté est survenu,
+la réécrire ne sert à rien : ce n'est pas la règle qui manquait, c'est le cran 1, 2 ou 3.
+Mesuré le 2026-08-26 sur une session de design — six ratés d'affilée, dont cinq contredisaient
+une règle déjà présente (§ Front « CTA à label descriptif : texte seul », `patterns.md:54`
+« une surface de contenu ne peint rien », `revue.md` § Zone A pour le compte de la file). Ajouter
+un paragraphe à chacun aurait allongé ce fichier sans rien empêcher.
+
+Corollaire : **ce fichier ne grossit pas d'un raté**. Il grossit d'une décision d'architecture,
+d'un piège d'environnement non détectable, ou d'un fait que rien d'exécutable ne peut porter.
+
 ## Architecture — ce qui ne se voit pas dans un seul fichier
 
 ### La frontière IPC est un miroir manuel, pinné par des tests
