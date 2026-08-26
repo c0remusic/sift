@@ -195,7 +195,8 @@ détecte du faux.
 Ordre vertical, et il est le parcours de décision :
 
 1. **Path bar** — le chemin d'origine en **fil d'Ariane de tête**, pleine largeur, en
-   **segments** (`Dossier › Dossier › fichier`), en **police système** (Outfit), **pas en
+   **segments** (`Dossier › Dossier › fichier`), en **police d'interface** (Inter depuis le
+   2026-08-26, Outfit avant), **pas en
    monospace**. Patron *path control* (HIG « Path controls » / `NSPathControl`, la barre
    de chemin du Finder) : segments, troncature **par le milieu** si trop long (garder le
    premier et le dernier). Le mono est un réflexe Terminal, écarté ici.
@@ -203,7 +204,8 @@ Ordre vertical, et il est le parcours de décision :
    **format** (petite ligne : `FLAC · 44,1 kHz`). Cette hauteur se **mesure en JS**
    (`sizeCoverToBody` + un `ResizeObserver`) : le pur CSS (`aspect-ratio:1` +
    `align-self:stretch`) rend une largeur **nulle** dans ce contexte flex, mesuré au CDP, et
-   une mesure ponctuelle raterait le reflow tardif (chargement d'Outfit, pose du verdict).
+   une mesure ponctuelle raterait le reflow tardif (chargement de la police d'interface, pose du
+   verdict).
    **Conservée le 2026-08-25** contre le *fix 6* du wireframe, qui voulait une taille fixe —
    décision d'Antoine. Le **verdict** est une **pastille
    discrète en haut à droite**, au niveau du titre : **point coloré + mot** (`LOSSLESS`,

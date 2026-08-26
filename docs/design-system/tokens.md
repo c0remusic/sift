@@ -273,7 +273,9 @@ Les deux autres mesures ne sont **pas** déclarées : un token sans consommateur
 mort (voir `--h-40` plus haut). Elles se déclarent au moment où on les applique.
 
 **Réserve héritée de #9, non tranchée** : 560 px porte 99 à 107 caractères par ligne
-(Outfit 400, 12–13 px), bien au-dessus de la fourchette confortable. La mesure bornant la
+(mesuré en **Outfit** 400, 12–13 px — ⚠️ chiffre à refaire, `--font-ui` est passé à **Inter** le
+2026-08-26 et sa chasse diffère par casse : plus large en capitales, plus étroite en minuscules),
+bien au-dessus de la fourchette confortable. La mesure bornant la
 surface et non le contenu, une carte à 560 qui porterait de la prose n'est pas protégée.
 
 ## Ombres
