@@ -112,12 +112,12 @@ async function cmdScreenshot(outPath) {
   });
 }
 
-// Le selecteur est echappe par JSON.stringify aux DEUX endroits ou il entre dans l'expression.
-// Le message d'echec l'interpolait autrefois brut : un selecteur a guillemets doubles (c'est-a-dire
-// tous ceux de Sift, du type data-view="revue") fermait la chaine JS et produisait un SyntaxError
-// cote page, donc l'eval entier echouait et le clic n'avait jamais lieu. Audit 2026-07-28, SIMP-4.
-// Attention en editant cette fonction : elle est ecrite dans un template literal, un backtick dans
-// un commentaire a l'interieur fermerait la chaine et casserait tout le script.
+// Le sélecteur est échappé par JSON.stringify aux DEUX endroits où il entre dans l'expression.
+// Le message d'échec l'interpolait autrefois brut : un sélecteur à guillemets doubles (c'est-à-dire
+// tous ceux de Sift, du type data-view="revue") fermait la chaîne JS et produisait un SyntaxError
+// côté page, donc l'eval entier échouait et le clic n'avait jamais lieu. Audit 2026-07-28, SIMP-4.
+// Attention en éditant cette fonction : elle est écrite dans un template literal, un backtick dans
+// un commentaire à l'intérieur fermerait la chaîne et casserait tout le script.
 async function cmdClick(selector) {
   const expr = `(() => {
     const el = document.querySelector(${JSON.stringify(selector)});

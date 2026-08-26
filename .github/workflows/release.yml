@@ -5,8 +5,8 @@ on:
     tags:
       - "v*.*.*"
 
-# Jeton en LECTURE SEULE par defaut. Un job qui doit ecrire (publication)
-# redeclare ses propres permissions a son niveau, ou il herite de celles-ci.
+# Jeton en LECTURE SEULE par défaut. Un job qui doit écrire (publication)
+# redéclare ses propres permissions à son niveau, ou il hérite de celles-ci.
 permissions:
   contents: read
 
@@ -29,10 +29,10 @@ jobs:
       - uses: actions/checkout@v4
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable, epingle 2026-07-30
+        uses: dtolnay/rust-toolchain@4cda84d5c5c54efe2404f9d843567869ab1699d4 # stable, épinglé 2026-07-30
 
       - name: Cache cargo
-        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2, epingle 2026-07-30
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2, épinglé 2026-07-30
         with:
           workspaces: "src-tauri -> target"
 
@@ -45,12 +45,12 @@ jobs:
       - name: Install npm deps
         run: npm ci
 
-      # Meme cache que build.yml, meme cle : une release qui suit un build sur le meme script
-      # reutilise le binaire deja construit au lieu de refaire quinze minutes de compilation.
+      # Même cache que build.yml, même clé : une release qui suit un build sur le même script
+      # réutilise le binaire déjà construit au lieu de refaire quinze minutes de compilation.
       - name: Cache du ffmpeg macOS construit
         if: runner.os == 'macOS'
         id: ffmpeg-cache
-        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4, epingle 2026-08-02
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4, épinglé 2026-08-02
         with:
           path: src-tauri/binaries
           key: ffmpeg-${{ matrix.triple }}-${{ hashFiles('scripts/build-ffmpeg-macos.sh') }}
@@ -59,13 +59,13 @@ jobs:
         if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
         run: npm run fetch-ffmpeg
 
-      # `shell: bash` explicitement : la matrice tourne sur windows-latest, ou le shell par
-      # defaut est PowerShell et la syntaxe heredoc ci-dessous n'existe pas.
+      # `shell: bash` explicitement : la matrice tourne sur windows-latest, où le shell par
+      # défaut est PowerShell et la syntaxe heredoc ci-dessous n'existe pas.
       #
       # Le script sort en code 1 si CHANGELOG.md n'a pas de section pour ce tag, ce qui fait
-      # echouer la release. C'est voulu : `releaseBody` part aussi dans le champ `notes` de
-      # `latest.json`, que chaque installation existante telecharge — publier vide serait un
-      # echec silencieux chez des utilisateurs, pas ici.
+      # échouer la release. C'est voulu : `releaseBody` part aussi dans le champ `notes` de
+      # `latest.json`, que chaque installation existante télécharge — publier vide serait un
+      # échec silencieux chez des utilisateurs, pas ici.
       - name: Extraire les notes de version depuis CHANGELOG.md
         id: changelog
         shell: bash
@@ -77,7 +77,7 @@ jobs:
           } >> "$GITHUB_OUTPUT"
 
       - name: Build, sign and publish release
-        uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # action-v1.0.0, epingle 2026-07-30
+        uses: tauri-apps/tauri-action@1deb371b0cd8bd54025b384f1cd735e725c4060f # action-v1.0.0, épinglé 2026-07-30
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}

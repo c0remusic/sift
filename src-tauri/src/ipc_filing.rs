@@ -899,7 +899,7 @@ fn run_file_batch(
                 };
                 let Some(job) = job else { break };
                 // catch_unwind, comme `run_file_track` (phase 2 du chemin UNITAIRE, plus haut dans
-                // ce fichier) qui l'a depuis un audit precedent. `execute_file` decode et reencode
+                // ce fichier) qui l'a depuis un audit précédent. `execute_file` décode et réencode
                 // un fichier utilisateur arbitraire via le sidecar ffmpeg puis écrit des tags avec
                 // lofty: surface d'entrée non maîtrisée, sur un thread que personne ne join.
                 //

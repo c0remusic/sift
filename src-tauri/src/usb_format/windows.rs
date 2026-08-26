@@ -1148,7 +1148,7 @@ mod tests {
         assert_eq!(sanitize_label_for_command("Cle DJ"), "CLE_DJ");
         assert_eq!(sanitize_label_for_command("djermusique"), "DJERMUSIQUE");
         // Le guillemet, le point-virgule, les espaces et la barre oblique tombent tous sur `_` ;
-        // seul le tiret survit. Rien de ce qui sort d'ici ne peut refermer une chaine PowerShell.
+        // seul le tiret survit. Rien de ce qui sort d'ici ne peut refermer une chaîne PowerShell.
         assert_eq!(sanitize_label_for_command("a'; rm -r /"), "A___RM_-R__");
         assert_eq!(sanitize_label_for_command(""), DEFAULT_VOLUME_LABEL);
         assert_eq!(sanitize_label_for_command("!!!"), "___");

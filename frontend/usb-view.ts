@@ -89,7 +89,7 @@ export function renderUsbLive(): void {
           ["Fichiers", String(report.file_count)],
           ["Périphérique", d.id.replace(/^\\\\\.\\/, "")],
           ["Taille totale", `${sizeGb} Go`],
-          // Non OK = mis en alerte. C'est la seule information de cet encadre qui appelle une
+          // Non OK = mis en alerte. C'est la seule information de cet encadré qui appelle une
           // action de la part d'Antoine, elle ne doit pas se fondre dans les autres.
           ["Santé", d.health || "Inconnue", d.health === "OK" ? undefined : "warn"],
         ],

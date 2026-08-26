@@ -153,7 +153,7 @@ impl std::fmt::Display for UsbFormatError {
 /// `macos::MacBackend`), never a mixed `cfg!` branch inside one function.
 pub trait RemovableDriveBackend {
     fn list(&self) -> Result<Vec<RemovableDrive>, UsbFormatError>;
-    /// `label` est le nom donne au volume. Il est assaini par le backend (`fat32::volume_label`),
+    /// `label` est le nom donné au volume. Il est assaini par le backend (`fat32::volume_label`),
     /// jamais pris tel quel : FAT32 n'accepte que 11 octets majuscules.
     fn format(
         &self,

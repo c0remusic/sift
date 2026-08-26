@@ -1,12 +1,12 @@
 # Sift UI Design Governance Skill
 
-> Contenu canonique cote repo. Ce fichier etait la source suivie par Git de la
+> Contenu canonique côté repo. Ce fichier était la source suivie par Git de la
 > skill locale `.agents/skills/sift-ui-design-governance/SKILL.md`.
-> ⚠️ Ce miroir **n'existe plus** (verifie le 2026-08-05 : `.agents/skills/` ne
+> ⚠️ Ce miroir **n'existe plus** (vérifié le 2026-08-05 : `.agents/skills/` ne
 > contient plus qu'`impeccable`), et le harnais Claude Code ne liste pas cette
-> skill. Aucun agent ne charge donc ce fichier automatiquement : les regles qui
+> skill. Aucun agent ne charge donc ce fichier automatiquement : les règles qui
 > doivent agir vivent dans `CLAUDE.md`, celui-ci porte leur rationale et leurs
-> sources. Le lire a la demande sur toute tache UI.
+> sources. Le lire à la demande sur toute tâche UI.
 
 ```yaml
 name: sift-ui-design-governance

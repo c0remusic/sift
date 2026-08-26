@@ -217,7 +217,7 @@ mod tests {
 
     /// Accents ET espaces deviennent `_`. L'espace est autorisé par la spécification, mais un nom
     /// de volume a espaces se retape mal sur un CDJ et complique toute commande qui le manipule.
-    /// La regle est donc sans exception a retenir : alphanumerique ASCII, `_` et `-` passent, tout
+    /// La règle est donc sans exception à retenir : alphanumérique ASCII, `_` et `-` passent, tout
     /// le reste devient `_`.
     #[test]
     fn label_is_uppercased_padded_and_stripped_of_accents() {

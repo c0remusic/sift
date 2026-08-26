@@ -1,20 +1,20 @@
 name: test
 
-# Workflow SEPARE de `build.yml` a cause d'une contrainte GitHub Actions : les declencheurs `on:`
-# sont au niveau du WORKFLOW, jamais du job. Un job `test` place dans `build.yml` (qui ne se
-# declenche que sur `push` vers `main`) ne tournerait donc jamais sur une branche de travail —
-# c'est-a-dire jamais AVANT un merge, ce qui lui retire toute valeur de garde-fou. A l'inverse,
-# ajouter `pull_request` a `build.yml` ferait tourner les deux `tauri build` (Windows + macOS) sur
+# Workflow SÉPARÉ de `build.yml` à cause d'une contrainte GitHub Actions : les déclencheurs `on:`
+# sont au niveau du WORKFLOW, jamais du job. Un job `test` placé dans `build.yml` (qui ne se
+# déclenche que sur `push` vers `main`) ne tournerait donc jamais sur une branche de travail —
+# c'est-à-dire jamais AVANT un merge, ce qui lui retire toute valeur de garde-fou. À l'inverse,
+# ajouter `pull_request` à `build.yml` ferait tourner les deux `tauri build` (Windows + macOS) sur
 # chaque PR pour rien.
 #
-# POURQUOI CE FICHIER EXISTE. La definition de fini du projet (CLAUDE.md, § « Avant de dire fini »)
-# exige tsc + clippy + fmt + cargo test. Jusqu'au 2026-07-28, RIEN ne les executait en integration
-# continue : `build.yml` ne lancait que `lint:tokens` et `tauri build`, `release.yml` que `npm ci`
-# et `fetch-ffmpeg`. Le seul gardien etait le hook pre-commit `verify-gate`, qui vit dans
+# POURQUOI CE FICHIER EXISTE. La définition de fini du projet (CLAUDE.md, § « Avant de dire fini »)
+# exige tsc + clippy + fmt + cargo test. Jusqu'au 2026-07-28, RIEN ne les exécutait en intégration
+# continue : `build.yml` ne lançait que `lint:tokens` et `tauri build`, `release.yml` que `npm ci`
+# et `fetch-ffmpeg`. Le seul gardien était le hook pre-commit `verify-gate`, qui vit dans
 # `.git/hooks/` — donc absent de tout clone frais, de toute PR, et de toute machine autre que celle
-# d'Antoine. Audit multi-passes du 2026-07-28, finding SYS-4 : c'est la cause racine dont decoulait
-# le reste du rapport (les bons patrons sont ecrits et testes, puis pas appliques au site suivant,
-# parce que rien ne le verifie).
+# d'Antoine. Audit multi-passes du 2026-07-28, finding SYS-4 : c'est la cause racine dont découlait
+# le reste du rapport (les bons patrons sont écrits et testés, puis pas appliqués au site suivant,
+# parce que rien ne le vérifie).
 
 on:
   push:
@@ -22,30 +22,30 @@ on:
   pull_request:
   workflow_dispatch:
 
-# Jeton en LECTURE SEULE par defaut. Un job qui doit ecrire (publication)
-# redeclare ses propres permissions a son niveau, ou il herite de celles-ci.
+# Jeton en LECTURE SEULE par défaut. Un job qui doit écrire (publication)
+# redéclare ses propres permissions à son niveau, ou il hérite de celles-ci.
 permissions:
   contents: read
 
 jobs:
   test:
-    # Windows uniquement, delibere : c'est la plateforme de developpement reelle, celle qui a
-    # produit les incidents de cache incremental et de chemins UNC documentes dans
-    # .claude/rules/rust.md. Une matrice macOS doublerait le temps pour un risque non observe.
+    # Windows uniquement, délibéré : c'est la plateforme de développement réelle, celle qui a
+    # produit les incidents de cache incrémental et de chemins UNC documentés dans
+    # .claude/rules/rust.md. Une matrice macOS doublerait le temps pour un risque non observé.
     runs-on: windows-latest
-    # Sans plafond, un job bloque consomme jusqu'a la limite du fournisseur (6 h).
+    # Sans plafond, un job bloqué consomme jusqu'à la limite du fournisseur (6 h).
     timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
 
-      # Le canal vient de rust-toolchain.toml, jamais d'une valeur recopiee ici. Sinon deux
-      # sources de verite divergent en silence.
+      # Le canal vient de rust-toolchain.toml, jamais d'une valeur recopiée ici. Sinon deux
+      # sources de vérité divergent en silence.
       #
-      # Pourquoi ce n'est pas `@stable` : rust-toolchain.toml SURCHARGE le toolchain actif des que
-      # cargo tourne dans le depot. Avec `@stable`, l'action installe la derniere stable AVEC
-      # clippy et rustfmt, puis cargo honore le fichier et rustup installe le canal epingle a la
-      # volee — SANS ces composants. Tant que stable coincide avec le pin, rien ne se voit; le jour
-      # ou stable avance, `cargo clippy` echoue sur « clippy is not installed for the toolchain ».
+      # Pourquoi ce n'est pas `@stable` : rust-toolchain.toml SURCHARGE le toolchain actif dès que
+      # cargo tourne dans le dépôt. Avec `@stable`, l'action installe la dernière stable AVEC
+      # clippy et rustfmt, puis cargo honore le fichier et rustup installe le canal épinglé à la
+      # volée — SANS ces composants. Tant que stable coïncide avec le pin, rien ne se voit; le jour
+      # où stable avance, `cargo clippy` échoue sur « clippy is not installed for the toolchain ».
       - name: Read pinned toolchain
         id: rust
         shell: bash
@@ -56,13 +56,13 @@ jobs:
           echo "toolchain epingle: $channel"
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master, epingle 2026-07-30
+        uses: dtolnay/rust-toolchain@2c7215f132e9ebf062739d9130488b56d53c060c # master, épinglé 2026-07-30
         with:
           toolchain: ${{ steps.rust.outputs.channel }}
           components: clippy, rustfmt
 
       - name: Cache cargo
-        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2, epingle 2026-07-30
+        uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2, épinglé 2026-07-30
         with:
           workspaces: "src-tauri -> target"
 
@@ -75,11 +75,11 @@ jobs:
       - name: Install npm deps
         run: npm ci
 
-      # Ces deux etapes ne sont pas optionnelles. `src-tauri/fixtures/*` est gitignore
-      # (.gitignore:14) : sans elles, les tests de `analysis::decode` echouent en "file not found"
+      # Ces deux étapes ne sont pas optionnelles. `src-tauri/fixtures/*` est gitignoré
+      # (.gitignore:14) : sans elles, les tests de `analysis::decode` échouent en "file not found"
       # sur tout checkout frais. Ce serait un rouge qui ne signale AUCUN bug — le genre de faux
-      # negatif qui fait desactiver un job de CI la premiere semaine. Les anchors authentiques
-      # optionnelles (src-tauri/fixtures/README.md) restent absentes : le test de caracterisation
+      # négatif qui fait désactiver un job de CI la première semaine. Les anchors authentiques
+      # optionnelles (src-tauri/fixtures/README.md) restent absentes : le test de caractérisation
       # les saute quand elles n'y sont pas.
       - name: Fetch ffmpeg sidecar
         run: npm run fetch-ffmpeg
@@ -87,20 +87,20 @@ jobs:
       - name: Generate audio fixtures
         run: node scripts/make-fixtures.mjs
 
-      # Ordre delibere : du moins cher au plus cher, pour que l'echec le plus rapide sorte en
+      # Ordre délibéré : du moins cher au plus cher, pour que l'échec le plus rapide sorte en
       # premier. tsc ne compile pas Rust, fmt ne compile rien, clippy compile mais ne lie pas.
-      # La lecture de config passe avant tout le reste : elle coute une lecture de fichier, et
-      # aucune des autres etapes ne regarde tauri.conf.json.
+      # La lecture de config passe avant tout le reste : elle coûte une lecture de fichier, et
+      # aucune des autres étapes ne regarde tauri.conf.json.
       - name: Config Tauri (scope asset, CSP)
         run: node scripts/check-tauri-security.mjs
 
       - name: Type-check frontend
         run: npx tsc --noEmit
 
-      # Ajoutes le 2026-08-05, en meme temps que le harnais lui-meme. Les mettre ici et pas
-      # seulement en local suit la raison d'etre de ce fichier, ecrite en tete : une gate qui
-      # ne vit que sur la machine d'Antoine n'existe pas pour une PR, et cesse d'etre lancee
-      # des qu'elle devient penible. Elles restent avant les etapes Rust car elles ne
+      # Ajoutés le 2026-08-05, en même temps que le harnais lui-même. Les mettre ici et pas
+      # seulement en local suit la raison d'être de ce fichier, écrite en tête : une gate qui
+      # ne vit que sur la machine d'Antoine n'existe pas pour une PR, et cesse d'être lancée
+      # dès qu'elle devient pénible. Elles restent avant les étapes Rust car elles ne
       # compilent rien.
       - name: Tests frontend
         run: npm run test
