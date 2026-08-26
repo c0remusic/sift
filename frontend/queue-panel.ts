@@ -481,30 +481,37 @@ const VERDICT_DOT: Record<string, [string, string]> = {
   fake: ["var(--color-text-danger)", "faux / sur-encodé"],
   grey: ["var(--color-text-warning)", "zone grise"],
 };
-export function verdictDot(v: string | null): string {
+/** La pastille porte le verdict À ELLE SEULE depuis le 2026-08-26 : le mot qui la doublait dans la
+ *  ligne est retiré (« la pastille est là pour ça », Antoine), ce qui rend la file à `revue.md`
+ *  § Zone B′, qui n'a jamais listé ce mot.
+ *
+ *  Conséquence directe, et c'est elle qui impose la signature élargie : `verdictWord` ne rendait pas
+ *  que des verdicts, il rendait aussi les états de PIPELINE (« échec », « analyse… ») que la
+ *  pastille ne portait pas — un `verdict` nul sortait en cercle vide, identique pour une analyse en
+ *  cours et pour une analyse abandonnée. Couper le mot sans élargir la pastille aurait rendu les
+ *  deux indistinguables, contre `revue.md` § États (« la ligne se voit MIEUX que les autres »).
+ *
+ *  Quatre rendus, donc, et non plus deux : les trois verdicts, l'échec terminal en pastille pleine
+ *  danger, et l'attente en anneau. L'échec partage sa teinte avec `fake` — la distinction est portée
+ *  par le bouton Réanalyser, qui n'existe que sur une ligne non analysée (voir `queueRowHtml`). */
+export function verdictDot(it: Pick<QueueItem, "verdict" | "analysis_attempts">): string {
+  const base = "flex:none;width:9px;height:9px;border-radius:50%";
+  const v = it.verdict;
   if (v && VERDICT_DOT[v]) {
     const [c, title] = VERDICT_DOT[v];
-    return `<span title="${title}" style="flex:none;width:9px;height:9px;border-radius:50%;background:${c}"></span>`;
+    return `<span title="${title}" style="${base};background:${c}"></span>`;
+  }
+  if (it.analysis_attempts >= MAX_ANALYSIS_ATTEMPTS) {
+    return `<span title="analyse abandonnée" style="${base};background:var(--color-text-danger)"></span>`;
   }
   // not analysed yet
-  return `<span title="en attente d'analyse" style="flex:none;width:9px;height:9px;border-radius:50%;border:1.5px solid var(--color-text-tertiary);box-sizing:border-box"></span>`;
+  return `<span title="en attente d'analyse" style="${base};border:1.5px solid var(--color-text-tertiary);box-sizing:border-box"></span>`;
 }
 
-// `it` needs analysis_attempts to distinguish "still in the pipeline" from "terminally failed"
-// (>= MAX_ANALYSIS_ATTEMPTS) — same distinction batch-panel's pendingRow() already makes; before
-// this fix Detail mode showed "analyse…" for both, mislabelling a give-up as forever-in-progress.
-function verdictWord(it: Pick<QueueItem, "verdict" | "analysis_attempts">): [string, string] {
-  const v = it.verdict;
-  return v === "fake"
-    ? ["faux", "var(--color-text-danger)"]
-    : v === "grey"
-      ? ["à vérifier", "var(--color-text-warning)"]
-      : v === "ok"
-        ? ["", "var(--color-text-success)"]
-        : it.analysis_attempts >= MAX_ANALYSIS_ATTEMPTS
-          ? ["échec", "var(--color-text-danger)"]
-          : ["analyse…", "var(--color-text-tertiary)"];
-}
+// `verdictWord` vivait ici — retiré le 2026-08-26 avec le mot de verdict de la ligne. Ses deux
+// derniers rendus qui n'étaient PAS des verdicts (« échec », « analyse… ») sont passés dans
+// `verdictDot`, qui distingue désormais l'abandon de l'attente. Retrait, pas mise en commentaire :
+// même règle que `ipc_filing::create_bin` (`9451577`), un code sans appelant se supprime.
 
 /** One queue row's markup. `active` stamps the `.cur` highlight at creation time — required so
  * the highlight survives virtualization (Task 2): once #ql only mounts the visible window, a
@@ -519,7 +526,6 @@ function verdictWord(it: Pick<QueueItem, "verdict" | "analysis_attempts">): [str
  * interdit ; conflit connu, signalé au rapport de Q-5, non résolu ici (le sortir de la ligne est un
  * changement de markup qui ne tient pas dans cette tâche). */
 function queueRowHtml(it: QueueItem, active: boolean, onCursor: boolean): string {
-  const [word, wordColor] = verdictWord(it);
   // A conversion that failed in the background (P5/D5) outranks the analysis verdict on the row:
   // it is the one thing about this track the user must see, and it has to survive navigation — it
   // is re-read from filing-state on every paint, so leaving Revue and coming back keeps it.
@@ -533,7 +539,7 @@ function queueRowHtml(it: QueueItem, active: boolean, onCursor: boolean): string
       : "") +
     `<div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">` +
     `<div style="display:flex;align-items:center;gap:6px;min-width:0">` +
-    verdictDot(it.verdict) +
+    verdictDot(it) +
     `<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;font-weight:500">${title}</span>` +
     `</div>` +
     // Always render the second line (never conditionally omit it) — otherwise a
@@ -541,11 +547,12 @@ function queueRowHtml(it: QueueItem, active: boolean, onCursor: boolean): string
     // one, making queue rows visibly uneven heights next to each other.
     `<div style="padding-left:15px;font-size:var(--text-xs);color:var(--color-text-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${artist || "&nbsp;"}</div>` +
     `</div>` +
+    // L'échec de CONVERSION garde son libellé, et il est le seul : ce n'est pas un verdict, la
+    // pastille ne le porte pas, et c'est un fait de fond que l'utilisateur doit voir sans survoler.
+    // Le mot de VERDICT, lui, est parti le 2026-08-26 — il doublait la pastille (voir `verdictDot`).
     (failure
       ? `<span title="${esc(failure)}" style="flex:none;display:inline-flex;align-items:center;gap:4px;font-size:var(--text-xs);color:var(--color-text-warning)"><i class="ti ti-alert-triangle"></i>conversion échouée</span>`
-      : word
-        ? `<span style="flex:none;font-size:var(--text-xs);color:${wordColor}">${word}</span>`
-        : "") +
+      : "") +
     // Pastille DUPLICATE, au BORD DROIT de la ligne (wireframe « Poste de décision » §§ 09-10 ;
     // spec `docs/ui-specs/revue.md` § Zone B′ : « rendu hors colonne verdict »). Elle a quitté la
     // première ligne — où elle était collée au nom de fichier sous forme de glyphe nu ⧉ teinté
@@ -740,8 +747,13 @@ export async function renderQueue(touchDetail = true) {
  *  figurent dans la liste comme ANCRES, c'est-à-dire comme les repères devant lesquels les blocs
  *  injectés doivent se ranger. */
 const QCOL_ORDER = [
-  "#sift-qsearch", // 1. recherche — en tête de colonne (décision E du 2026-08-24)
-  ".sift-qhead", // 2. ancre : rangée de filtre — pulldown + compte de pistes (revueShell)
+  // La rangée de filtre coiffe la colonne, la recherche se pose CONTRE la liste qu'elle
+  // interroge. C'est le retour au wireframe § 15 (décision d'Antoine, 2026-08-26) : la décision E
+  // du 2026-08-24 avait remonté la recherche en tête, elle s'y lisait détachée de sa liste.
+  // Le motif est celui du volet de lecture de Mail (`docs/design-refs/03-mail.png`) : ce qui
+  // qualifie la liste est en tête, ce qui la filtre reste collé à elle.
+  ".sift-qhead", // 1. ancre : rangée de filtre — pulldown (revueShell)
+  "#sift-qsearch", // 2. recherche — contre la liste
   "#ql", // 3. ancre : liste virtualisée (revueShell)
   "#sift-qdone-toggle", // 4. pied : « Non analysés uniquement »
   "#sift-qreanalyze-all", // 5. pied : « Réanalyser (N) »
