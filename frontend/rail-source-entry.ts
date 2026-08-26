@@ -55,9 +55,12 @@ export interface RailRowState {
   /** Nom affiché — dernier segment du chemin. */
   label: string;
   /** Texte du badge, VIDE (et non absent) quand rien n'est en attente : `.nav-badge:empty`
-   *  (`styles.css`) replie la pastille, exactement comme pour le badge de Revue
-   *  (`updateRevueBadge`, `queue-panel.ts`). Un span toujours présent se met à jour par
-   *  `textContent`, sans jamais créer ni détruire de nœud — c'est ce qui rend la ligne mutable. */
+   *  (`styles.css`) replie le compte. Un span toujours présent se met à jour par `textContent`,
+   *  sans jamais créer ni détruire de nœud — c'est ce qui rend la ligne mutable.
+   *
+   *  Les SOURCES sont les seules entrées de rail à porter un compte depuis le 2026-08-26 : celui
+   *  de Revue est retiré, son nombre étant déjà écrit dans la barre à côté du titre. La règle et
+   *  les refs qui la donnent : `docs/ui-specs/rail.md` § Item de navigation. */
   badge: string;
   /** Classe complète de la pastille, teinte comprise. */
   dotClass: string;

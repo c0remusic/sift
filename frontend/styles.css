@@ -928,7 +928,9 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
    scrollbar-gutter:stable reserves exactly the scrollbar's own 6px width, no breathing room beyond
    it, so a selected row's highlighted background butted directly against the track/thumb. */
 #ql{flex:1;min-height:0;overflow-y:scroll;scrollbar-gutter:stable;padding-right:var(--space-8)}
-/* "+N traités" toggle (2026-07-08, real port of the app.js mockup — see ensureQueueDoneToggle) */
+/* Bouton de PIED de la colonne file. Il s'appelait `.sift-qdone-toggle` et servait la bascule
+   « Non analysés uniquement » ; celle-ci est retirée le 2026-08-26 et le pied ne porte plus que
+   « Réanalyser (N) », d'où le nom neutre — voir `ensureQueueReanalyzeAllButton`. */
 .sift-qfoot-btn{display:block;flex:none;font-size:var(--text-xs);color:var(--color-text-tertiary);cursor:pointer;text-decoration:underline;padding:var(--space-4) var(--space-4) 0;background:transparent;border:none;border-radius:0;font-family:inherit}
 /* RANGÉE DE FILTRE de la colonne file (ex-en-tête « File », Lane 2 #47). Depuis le 2026-08-25
    (wireframe « Poste de décision » §§ 09-10, spec `docs/ui-specs/revue.md` § Zone B′) elle ne porte

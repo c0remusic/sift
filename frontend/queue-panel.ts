@@ -1132,8 +1132,9 @@ function placeQueueFacet(): void {
  *  Lus sur `currentItems`, la file SOURCE, et JAMAIS sur `visibleQueueItems()` : sur la liste déjà
  *  filtrée, cocher « Faux » ferait tomber « Lossless », « MP3 » et « Doublons » à 0, et le menu
  *  cesserait de dire ce qu'il y a à filtrer pour ne plus dire que ce qui reste après filtrage. Même
- *  raison, à l'envers, que le compte de la rangée d'en-tête (`paintQueueCount`), qui lui décrit ce
- *  que la colonne MONTRE et se lit donc sur la liste filtrée.
+ *  raison, à l'envers, que le compte de pistes VISIBLES qui vivait dans la rangée d'en-tête : lui
+ *  décrivait ce que la colonne montre, donc se lisait sur la liste filtrée. Il est retiré depuis le
+ *  2026-08-26 — le compte de la barre (`paintBarCount`) dit la file entière, pas la fenêtre.
  *
  *  Appelé à l'OUVERTURE du menu seulement (`toggleQueueFacet`), jamais depuis le rendu de la file :
  *  ce balayage est en O(file × facettes) et la colonne se repeint sur un poll de 300ms — c'est le

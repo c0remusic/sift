@@ -239,7 +239,7 @@ Les **12 qui restent** ne doublonnent rien, et c'est pour ça qu'elles restent :
 
 | Littéral | Sites | Pourquoi il reste |
 |---|---|---|
-| `0` | `.sift-qdone-toggle`, `.jrnl-group-hd`, `.sift-usage-seg` | remise à zéro explicite ; `0` n'est pas un cran de l'échelle. Le troisième est une correction datée (2026-08-19) avec sa justification en place |
+| `0` | `.sift-qfoot-btn`, `.jrnl-group-hd`, `.sift-usage-seg` | remise à zéro explicite ; `0` n'est pas un cran de l'échelle. Le troisième est une correction datée (2026-08-19) avec sa justification en place |
 | `3px` | `.sift-pz-cancel` (15×15), `.kbd`, `.sift-identified-cover`/`-noart` (28×28), `.sift-usage-swatch` (12×12), `.sift-usage-lg:focus-visible` | boîtes trop petites pour `sm` : à 8 px, un carré de 12 à 15 px devient une pastille. L'anneau de focus, lui, n'a pas de boîte à lui — son rayon est propre au site, comme son offset |
 | `1px` / `1px 1px 0 0` | `.bars span`, `.spec span` | barres d'égaliseur : adoucissement d'un pixel, aucun cran à moins de 7 px — et la seconde a **quatre** valeurs, qu'aucun token n'exprime |
 | `6px` | `.cov` (40×40) | à 2 px de `sm`. Écart réel, pas nul : l'aligner unifierait la vignette avec `.sift-cover-frame` (68×68, `sm`), mais c'est une décision de surface, pas une exécution |
