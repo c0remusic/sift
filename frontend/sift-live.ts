@@ -61,8 +61,8 @@ import { renderRekordboxLive, handleRekordboxAction } from "./rekordbox-view";
 import {
   currentItems,
   reviewMode,
-  setReviewModeRaw,
   enterDetailMode,
+  enterBatchMode,
   registerBatchRenderer,
   renderQueue,
   updateRevueBadge,
@@ -70,7 +70,6 @@ import {
   installQueueNavKeys,
   beginReanalyze,
   endReanalyze,
-  initQueueBatchSel,
 } from "./queue-panel";
 import {
   renderBatch,
@@ -153,21 +152,28 @@ async function runNavExport(): Promise<void> {
 }
 
 /** Switch between detail and batch review. On entering batch the #fldz tree becomes the destination
- * explorer (batch pick mode); on leaving we restore the per-track filing pane. Its "detail" branch
- * lives in queue-panel.ts as enterDetailMode() (queue-owned code only) — this function keeps the
- * "batch" branch, which touches batch-owned state (renderBatch) that queue-panel.ts must never
- * import (a static import cycle would otherwise result). renderBatch/batchBin/onBatchBinPick now
- * come from batch-panel.ts (Phase 1, tranche 1c) instead of being local references.
+ * explorer (batch pick mode); on leaving we restore the per-track filing pane.
+ *
+ * Les DEUX branches sont maintenant des portes de `queue-panel.ts` — `enterDetailMode()` et
+ * `enterBatchMode()` (2026-08-26) —, et chacune finit par sa propre repeinture de la file. Cette
+ * symétrie est délibérée : c'est son absence qui avait laissé la branche batch repeindre `#mid` et
+ * `#fldz` en oubliant la colonne, bug invisible aux gates (voir `enterBatchMode`).
+ *
+ * Ce qui RESTE ici est ce que `queue-panel.ts` ne peut pas atteindre sans cycle d'import :
+ * `refreshBinsForBatch` lit `batchBin`/`batchInPlace`, propriété de `batch-panel.ts` — le renderer,
+ * lui, franchit la frontière par `registerBatchRenderer` (Phase 1, tranche 1c).
  *
  * Plus de `ensureReviewSeg()` ici depuis le 2026-08-25 : le segmenté Détail / Lot de la colonne
  * file a été retiré (`docs/ui-specs/revue.md` §§ Zone A / Zone B′), et c'est l'icône de sélection
  * de la barre unifiée qui porte l'état armé — repeinte en fin de fonction, sur les DEUX branches. */
 function setReviewMode(m: "detail" | "batch") {
   if (m === "batch") {
-    setReviewModeRaw("batch");
+    // La séquence d'armement vit dans `enterBatchMode` (queue-panel.ts) depuis le 2026-08-26, en
+    // face d'`enterDetailMode` : c'est là qu'est la repeinture de la file, qui manquait ici et
+    // rendait les cases de ligne invisibles jusqu'au prochain repaint fortuit. Ne rien remettre de
+    // cette séquence ici — la symétrie des deux portes EST la garde.
     const fldz = requireEl("#fldz", "setReviewMode");
-    initQueueBatchSel(currentItems);
-    renderBatch();
+    enterBatchMode();
     void refreshBinsForBatch(fldz, batchBin, onBatchBinPick, batchInPlace);
   } else {
     enterDetailMode();

@@ -191,7 +191,7 @@ function paintQueueCount(n: number): void {
 }
 
 /** Ligne portant le CURSEUR CLAVIER de la file — celle d'où `stepQueueSelection` partirait, donc
- *  celle qui doit montrer l'anneau de focus (`.qi.kbd`, peint seulement sous `#ql:focus-visible`).
+ *  celle qui doit montrer l'anneau de focus (`.qi.qi-kbd`, peint sous `#ql:focus-visible` seulement).
  *
  *  Ce n'est PAS `.cur` : `.cur` dit « cette piste est ouverte en zone C » (aplat + encre + graisse),
  *  le curseur dit « le clavier est ici » (anneau). Les deux coïncident après une flèche, mais se
@@ -457,8 +457,9 @@ export let reviewMode: "detail" | "batch" = "detail";
 export const queueBatchSel = new Set<number>();
 
 /** Pré-sélectionne tous les items avec verdict != null au passage en mode Lot.
- *  Appelé par sift-live.ts au moment d'armer le mode. */
-export function initQueueBatchSel(items: QueueItem[]): void {
+ *  Appelé par `enterBatchMode` (ce module) — plus exporté depuis le 2026-08-26, même raison que
+ *  `setReviewModeRaw` : armer le mode est une séquence, pas une suite d'appels à composer dehors. */
+function initQueueBatchSel(items: QueueItem[]): void {
   queueBatchSel.clear();
   for (const it of items) {
     if (it.verdict !== null) queueBatchSel.add(it.id);
@@ -517,7 +518,7 @@ export function verdictDot(it: Pick<QueueItem, "verdict" | "analysis_attempts">)
  * the highlight survives virtualization (Task 2): once #ql only mounts the visible window, a
  * row for the open track may not exist in the DOM to be found and classed after the fact.
  *
- * `onCursor` marque de même le CURSEUR CLAVIER (`.kbd`, cf. `keyboardCursorId`) : même contrainte,
+ * `onCursor` marque de même le CURSEUR CLAVIER (`.qi-kbd`, cf. `keyboardCursorId`) : même contrainte,
  * même remède — une classe posée à la construction, jamais cherchée après coup sur un nœud qui peut
  * ne pas exister. La ligne reste NON focusable (`role="option"` + `aria-activedescendant` sur `#ql`,
  * patron listbox de l'APG) : donner un `tabindex` aux lignes ferait perdre le focus au premier
@@ -533,7 +534,7 @@ function queueRowHtml(it: QueueItem, active: boolean, onCursor: boolean): string
   const title = esc(it.filename || it.path);
   const artist = it.artist ? esc(it.artist) : "";
   return (
-    `<div class="qi${active ? " cur" : ""}${onCursor ? " kbd" : ""}" id="qi-${it.id}" role="option" aria-selected="${active}" data-id="${it.id}" data-path="${esc(it.path)}" title="Écouter et convertir" style="cursor:pointer">` +
+    `<div class="qi${active ? " cur" : ""}${onCursor ? " qi-kbd" : ""}" id="qi-${it.id}" role="option" aria-selected="${active}" data-id="${it.id}" data-path="${esc(it.path)}" title="Écouter et convertir" style="cursor:pointer">` +
     (reviewMode === "batch"
       ? `<input type="checkbox" class="qi-ck" data-sift="queuepick" data-id="${it.id}" tabindex="-1"${queueBatchSel.has(it.id) ? " checked" : ""}>`
       : "") +
@@ -1261,11 +1262,11 @@ export function handleQueueItemClick(qi: HTMLElement, e: MouseEvent): void {
   }, 150);
 }
 
-/** Raw reviewMode mutator, no side effects — used by sift-live.ts's setReviewMode for the
- *  "batch" branch, which needs batch-owned code (renderBatch, batchGroupCap) this module must
- *  never import (Phase 1, tranche 1b: see the coupling analysis in the plan's Architecture
- *  section). Only enterDetailMode() below calls this internally for the "detail" case. */
-export function setReviewModeRaw(m: "detail" | "batch"): void {
+/** Raw reviewMode mutator, no side effects. Plus exporté depuis le 2026-08-26 : ses deux seuls
+ *  appelants sont désormais les deux portes de ce module, `enterDetailMode` et `enterBatchMode`.
+ *  Le garder hors de la surface publique EST la garde — muter le mode sans repeindre la file était
+ *  le bug que la porte batch a corrigé, et un appelant extérieur pourrait le refaire. */
+function setReviewModeRaw(m: "detail" | "batch"): void {
   reviewMode = m;
   queueRowHeightCache = null; // hauteur change entre détail et lot (case ajoutée)
   if (m === "detail") queueBatchSel.clear();
@@ -1290,6 +1291,40 @@ export function enterDetailMode(): void {
   // Return the progress zone to its left-sidebar home (it was relocated into the batch rail).
   homeProgressZone();
   void renderQueue(true);
+}
+
+/** La porte du mode Lot, symétrique d'`enterDetailMode` — et la raison de son existence est le bug
+ *  que sa dissymétrie avait laissé passer (mesuré dans la vraie fenêtre le 2026-08-26).
+ *
+ *  La branche « batch » de `setReviewMode` (sift-live.ts) vivait éparpillée chez son appelant, et
+ *  elle repeignait `#mid` (`renderBatch`) et `#fldz` (`refreshBinsForBatch`) sans jamais repeindre
+ *  LA FILE. Tant que le mode Lot n'avait pas de markup par ligne c'était sans conséquence ; depuis
+ *  que la ligne porte une case (`0edbff2`, voir `queueRowHtml`), armer le mode ne changeait plus
+ *  rien de visible dans la colonne : zéro case, et la surbrillance `.cur` que le mode Lot interdit
+ *  (voir `highlightId`) restait peinte jusqu'au prochain repaint fortuit. Aucune erreur, aucune
+ *  gate rouge — `queue-panel.ts` ne tourne que sous Tauri, et Vitest est en env Node.
+ *
+ *  Les deux modes ont donc désormais UNE porte chacun, et chaque porte finit par sa repeinture.
+ *
+ *  Repeinture des LIGNES seules (`renderQueueWindow`) et non `renderQueue()` : le mode a changé,
+ *  les données non. `renderQueue` re-tomberait dans son chemin de rechargement complet (son bloc de
+ *  cache exige un `#ql` VIDE, or il est plein ici), donc un aller-retour `listQueue()` sur toute la
+ *  file — et il REMPLACE `currentItems`, ce qui courrait après l'`initQueueBatchSel` ci-dessus.
+ *
+ *  `refreshBinsForBatch` reste chez l'appelant : il a besoin de `batchBin`/`batchInPlace`, qui
+ *  vivent dans `batch-panel.ts` — un import statique retour d'ici serait le cycle que
+ *  `registerBatchRenderer` existe précisément pour casser. */
+export function enterBatchMode(): void {
+  requireEl("#fldz", "enterBatchMode");
+  setReviewModeRaw("batch");
+  initQueueBatchSel(currentItems);
+  // Pas d'appel optionnel `batchRenderer?.()` ici : à ce point du programme un renderer absent
+  // n'est pas un état de repos possible, c'est `installLiveWiring` qui n'a pas tourné. Le taire
+  // rendrait la zone C muette en silence — le fallback silencieux que la méthode du dépôt refuse.
+  if (!batchRenderer) throw new Error("enterBatchMode: batchRenderer non enregistré");
+  batchRenderer();
+  const ql = document.getElementById("ql");
+  if (ql) renderQueueWindow(ql);
 }
 
 // A background conversion just settled (P5). On FAILURE the track is still `pending` and must
