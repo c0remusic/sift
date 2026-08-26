@@ -328,10 +328,17 @@ Garde-fous issus d'incidents réels :
   padding 126, 84, 85 ou 127 ; la couverture du chemin de reste n'aurait tenu aucune des
   valeurs que son propre commentaire interdit. La tenir a demandé des entrées hors image
   de l'encodeur (`test/b85.test.ts`, `RUST_PADDING_PROBES`).
-- **Texte français écrit dans un fichier : accents vérifiés avant commit.** Un strip
-  silencieux a désaccentué ~20 commits (2026-07-28 → 08-19) — commentaires, titres de
-  commits et d'issues. `styles.css` purgé en entier (a2dd5d6) ; périmètre restant et
-  méthode : issue #43. En corrigeant, ne toucher ni l'anglais ni les citations verbatim
+- **Prose française : par FICHIER, jamais par argument de ligne de commande.**
+  `git commit -F -` et `gh issue create --body-file`, pas `-m "…"` ni `--title "…"` pour
+  du texte long. Cause du strip d'accents **mesurée le 2026-08-26** (issue #43) : ce n'est
+  ni une session ni un bug d'encodage, mais le texte destiné à un argument, rédigé en ASCII
+  par prudence de quoting — l'évitement déborde sur la prose. Discriminant : sur 47 corps
+  d'issue (canal `--body-file`), **zéro** désaccentué, alors que des titres (canal
+  `--title`) l'étaient ; côté git, 147 messages intacts en `-F` contre 43 tombés en `-m`.
+  Le canal transporte pourtant l'UTF-8 sans perte — vérifié en repassant douze titres
+  accentués par `--title`. Deux gates tiennent la place : `npm run lint:accents` (blocs de
+  commentaire, dans `verify.sh` et en CI) et `scripts/lint-commit-msg.mjs` (contrat d'un
+  hook `commit-msg`). En corrigeant, ne toucher ni l'anglais ni les citations verbatim
   (annotations d'Antoine) — l'excès inverse est documenté (learning-log, 2026-08-19).
 - **Debug UI** : après deux correctifs visuels infructueux, mesurer la vraie fenêtre
   `tauri dev` (CDP, ci-dessous) avant un troisième essai.
