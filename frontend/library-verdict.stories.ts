@@ -116,7 +116,8 @@ export const Fake: Story = {
 };
 
 /** Zone grise : ambre = « doute, décision attendue ». Le mot reprend le vocabulaire déjà employé
- *  en Revue (`verdictWord()`, « à vérifier »), aucun terme n'est neuf. */
+ *  en Revue (`report-view.ts::verdictWordTone`, « à vérifier » — l'ex-`verdictWord()` de la ligne
+ *  de file a été retiré le 2026-08-26, la pastille porte le verdict seule), aucun terme n'est neuf. */
 export const AVerifier: Story = {
   args: {
     verdict: "grey",

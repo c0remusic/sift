@@ -53,7 +53,7 @@
 > lire.
 
 - L117 — Ligne de queue `.qi` — RAS, 4 états déclarés.
-- L128 — Mot de verdict Détail `verdictWord()` — nouvel état "échec" (07-24).
+- L128 — Mot de verdict Détail `verdictWord()` — ⚠️ COMPOSANT RETIRÉ le 2026-08-26 (c4f65eb).
 - L151 — Item de navigation `.nv` — RAS.
 - L162 — Bouton d'action principal `.sift-ranger-btn` — hover désormais déclaré explicitement (07-24), disabled/focus restent génériques.
 - L181 — Chip/tag `.chip` — hover corrigé 07-03.
@@ -125,7 +125,7 @@
 
 RAS — 4 états déclarés explicitement, cohérents.
 
-## Mot de verdict (mode Détail) — `verdictWord()` (`queue-panel.ts:290-301`)
+## ⚠️ PÉRIMÉ — Mot de verdict Détail, `verdictWord()` retiré le 2026-08-26 (c4f65eb)
 
 | État | Condition | Rendu |
 |---|---|---|

@@ -28,7 +28,8 @@ function qualPill(t: LibraryTrack): string {
  *     pour elle plutôt qu'inventer une donnée.
  *  2. **`grey` n'a pas de ligne dans le § 16**, et `ok` sur un fichier LOSSY non plus. Le § 4 donne
  *     pourtant la teinte du premier (ambre = « doute, décision attendue »), et le vocabulaire des
- *     deux existe déjà dans l'app : « à vérifier » (`queue-panel.ts::verdictWord`,
+ *     deux existe déjà dans l'app : « à vérifier » (`report-view.ts::verdictWordTone` — c'était
+ *     aussi `queue-panel.ts::verdictWord`, retiré le 2026-08-26 avec le mot de la ligne de file,
  *     `report-view.ts:94`) et « authentique » (`queue-panel.ts` VERDICT_DOT, `report-view.ts:85`
  *     « qualité authentique »). Ce sont ces mots-là qui sont repris, aucun n'est neuf.
  *
