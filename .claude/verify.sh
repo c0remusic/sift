@@ -44,6 +44,10 @@ run() {
 
 run "typecheck (tsc --noEmit)" npx tsc --noEmit
 run "tokens (lint:tokens)" npm run -s lint:tokens
+# 0,164 s mesurées — il lit des fichiers et ne compile rien. Il garde le seul défaut que la
+# relecture humaine ne voit pas : un commentaire français désaccentué se lit sans qu'on le
+# remarque (issues #43/#44). Ratchet à baseline, comme lint:tokens.
+run "accents (lint:accents)" npm run -s lint:accents
 
 # `cargo fmt --check` : ajouté le 2026-08-26 après un raté qu'aucune gate locale
 # ne pouvait voir. `34e7f12` a livré trois emplacements de `ipc_filing.rs` non

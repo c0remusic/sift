@@ -94,6 +94,13 @@ jobs:
       - name: Config Tauri (scope asset, CSP)
         run: node scripts/check-tauri-security.mjs
 
+      # Ajoutée le 2026-08-26 (issues #43/#44). Elle vit ICI et pas dans `build.yml` avec
+      # `lint:tokens` parce qu'elle garde un texte que la revue humaine ne voit pas : un
+      # commentaire désaccentué se lit sans qu'on le remarque, et il faut donc l'attraper AVANT
+      # le merge, pas après. Zéro compilation, comme les trois gates frontend voisines.
+      - name: Lint accents (ratchet — bloque un bloc de commentaire français neuf écrit sans accent)
+        run: npm run lint:accents
+
       - name: Type-check frontend
         run: npx tsc --noEmit
 

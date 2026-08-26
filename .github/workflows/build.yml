@@ -28,7 +28,7 @@ jobs:
           cache: npm
       - name: Install npm deps
         run: npm ci
-      - name: Lint design tokens (ratchet — bloque sur toute nouvelle derive, pas sur la dette existante)
+      - name: Lint design tokens (ratchet — bloque sur toute nouvelle dérive, pas sur la dette existante)
         run: npm run lint:tokens
 
   build:

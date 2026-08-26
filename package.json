@@ -17,6 +17,7 @@
     "test:watch": "vitest",
     "lint": "eslint .",
     "lint:tokens": "node scripts/lint-tokens.mjs",
+    "lint:accents": "node scripts/lint-accents.mjs",
     "check:security": "node scripts/check-tauri-security.mjs",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build"
