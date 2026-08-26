@@ -739,8 +739,27 @@ body:has(#sift-titlebar){border-radius:var(--border-radius-sm);overflow:hidden}
 .nv-export-dot{width:5px;height:5px;border-radius:var(--border-radius-pill);background:var(--color-hue-teal-text);flex:none}
 /* `10px` était la valeur déclarée depuis toujours et jamais peinte (voir `.nv span` ci-dessus) :
    elle vaut exactement `--text-xs`, donc la porter sur le token est un rattrapage textuel qui ne
-   déplace rien — le mouvement visible vient du sélecteur voisin, pas d'ici. */
-.nav-badge{font-size:var(--text-xs);line-height:1;font-weight:600;color:var(--color-text-tertiary);background:var(--overlay-badge);border-radius:var(--border-radius-pill);padding:var(--space-4) var(--space-8);flex:none}
+   déplace rien — le mouvement visible vient du sélecteur voisin, pas d'ici.
+
+   CHIFFRE NU depuis le 2026-08-26 (décision d'Antoine). La pilule — fond `--overlay-badge`, rayon
+   plein, padding — n'était ancrée nulle part : le kit Big Sur n'a AUCUN badge de sidebar, et la
+   seule ref locale qui en montre est Notes (`docs/design-refs/08-notes.png`), où le compteur est un
+   chiffre gris aligné à droite, sans fond. Le retrait enlève aussi une surface peinte, ce qui suit
+   la décision du 2026-08-14 : avoir une surface est la marque de la charpente, pas d'un compteur.
+   `line-height:1` reste, et n'est pas un ornement : c'est la contrepartie du `:not(.nav-badge)`
+   du sélecteur voisin (voir son commentaire).
+
+   Le bras `body.sift-rail-collapsed .nav-badge` plus bas garde SA pilule : rail replié, le badge
+   n'est plus un chiffre mais une pastille de 6px qui ne dit que « il y a quelque chose ici ». Il
+   redéclare fond, rayon et padding en entier — il ne dépend donc pas de ce qui est retiré ici.
+
+   ⚠️ `--overlay-badge` n'a plus AUCUN consommateur depuis ce retrait (déclaré trois fois : bloc
+   clair, bloc sombre système, bloc `[data-theme="dark"]` ; documenté `docs/design-system/tokens.md`).
+   Gardé délibérément plutôt que supprimé : le doublon compte-de-barre / badge-de-rail est encore
+   « à arbitrer » (dossier de chantier du 2026-08-26), donc ce badge peut encore bouger. Si
+   l'arbitrage confirme le chiffre nu, retirer le token ET son entrée de `tokens.md` dans le même
+   geste — la règle du dépôt dit qu'un code sans appelant se retire. */
+.nav-badge{font-size:var(--text-xs);line-height:1;font-weight:600;color:var(--color-text-tertiary);flex:none}
 .nav-badge:empty{display:none}
 /* Bottom group of the rail: holds the margin-top:auto (so Settings stays pinned to the very bottom)
    and stacks the progress zone ABOVE Settings. The zone grows UPWARD into the free space, so neither
@@ -910,7 +929,20 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
    portent le même) — il n'a pas de token. `padding-bottom` décolle le filet du bouton,
    `margin-bottom` décolle la liste du filet ; la marge basse remplace celle que `.col-h` portait
    avec le titre disparu. */
-.sift-qhead{display:flex;align-items:center;justify-content:space-between;gap:var(--space-8);padding-bottom:var(--space-4);margin-bottom:var(--space-8);border-bottom:0.5px solid var(--color-border-tertiary)}
+/* Filet BORD À BORD depuis le 2026-08-26, et c'est une règle de motif, pas un goût. Mail porte DEUX
+   séparateurs traités différemment (`docs/design-refs/03-mail.png`, mesurés sur le crop) : celui
+   sous l'en-tête de COLONNE court 0→1189 sur 1190px, bord à bord ; celui sous l'en-tête de MESSAGE
+   est en retrait, aligné sur le contenu. L'écart donne la règle — le premier BORNE une zone, le
+   second sépare À L'INTÉRIEUR d'une zone. Cette rangée borne la colonne de file : elle prend le
+   premier traitement. Un audit antérieur avait conclu « en retrait, c'est normal » : vrai vis-à-vis
+   du code d'alors, faux vis-à-vis de la ref.
+
+   `margin-inline` négatif + `padding-inline` de même valeur plutôt que retirer le padding de
+   `.queue` : cette voie-là le rendrait à chacun de ses enfants (`#sift-qsearch`, `#ql`, les deux
+   pieds), quatre sélecteurs touchés pour un filet. Les 8px ne sont pas devinés — `.queue` porte
+   `padding:var(--space-12) var(--space-8)` (mesuré dans la vraie fenêtre : 8px à gauche comme à
+   droite). Les deux valeurs doivent rester ÉGALES et suivre ce padding s'il change. */
+.sift-qhead{display:flex;align-items:center;justify-content:space-between;gap:var(--space-8);padding-bottom:var(--space-4);margin-bottom:var(--space-8);margin-inline:calc(-1 * var(--space-8));padding-inline:var(--space-8);border-bottom:0.5px solid var(--color-border-tertiary)}
 /* Compte de pistes — jumeau de `.sift-bib-count` (Bibliothèque : même rangée pulldown + compte),
    même taille et même encre, pour que le même fait ne se dise pas de deux façons selon l'écran. */
 .sift-qhead-count{flex:none;font-size:var(--text-sm);color:var(--color-text-tertiary)}
