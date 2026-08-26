@@ -283,11 +283,11 @@ mod tests {
         let q = list_pending(&conn).unwrap();
         assert_eq!(
             q[0].verdict, None,
-            "un badge FAKE produit par un autre moteur resterait affiche"
+            "un badge FAKE produit par un autre moteur resterait affiché"
         );
         assert!(
             q[0].needs_analysis,
-            "sans ca la ligne n'affiche plus rien ET ne propose aucun geste"
+            "sans ça la ligne n'affiche plus rien ET ne propose aucun geste"
         );
     }
 

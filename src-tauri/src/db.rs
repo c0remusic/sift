@@ -767,7 +767,7 @@ mod tests {
         assert_eq!(
             vers(3).1,
             None,
-            "verdict au rapport perime : rien n'atteste qu'il sort du moteur courant"
+            "verdict au rapport périmé : rien n'atteste qu'il sort du moteur courant"
         );
         assert_eq!(
             vers(4),

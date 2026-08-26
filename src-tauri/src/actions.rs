@@ -875,7 +875,7 @@ pub fn revert_batch(conn: &Connection, batch_id: &str) -> Result<(), RevertError
                         Ok(m) => (Some(m.len() as i64), Some(crate::scanner::mtime_secs(&m))),
                         Err(e) => {
                             log::error!(
-                                "revert_batch {batch_id}: metadata({src}) illisible ({e}), size_bytes/mtime laisses inchanges pour la piste {tid}"
+                                "revert_batch {batch_id}: metadata({src}) illisible ({e}), size_bytes/mtime laissés inchangés pour la piste {tid}"
                             );
                             (None, None)
                         }

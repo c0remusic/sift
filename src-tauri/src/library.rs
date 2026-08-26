@@ -1276,7 +1276,7 @@ mod tests {
         assert_eq!(
             list_filed(&conn, &LibraryFilter::default()).unwrap()[0].verdict,
             None,
-            "un badge FAKE perime restait affiche"
+            "un badge FAKE périmé restait affiché"
         );
     }
 

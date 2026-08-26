@@ -140,7 +140,7 @@ fn handle_events(app: &AppHandle, source_id: i64, res: DebounceEventResult) {
         Ok(c) => c,
         Err(e) => {
             log::error!(
-                "watch batch: verrou DB empoisonne, lot de la source {source_id} perdu: {e}"
+                "watch batch: verrou DB empoisonné, lot de la source {source_id} perdu: {e}"
             );
             return;
         }

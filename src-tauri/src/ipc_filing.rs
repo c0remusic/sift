@@ -832,13 +832,13 @@ fn run_file_batch(
                 // variante de `FilingError` est la SEULE information qui dit pourquoi, et elle
                 // était jetée ici.
                 Err(e) => {
-                    log::error!("file_batch: plan_file a echoue pour la piste {id}: {e:?}");
+                    log::error!("file_batch: plan_file a échoué pour la piste {id}: {e:?}");
                     needs_validation.push(id);
                     continue;
                 }
             },
             None => {
-                log::warn!("file_batch: piste {id} sans identite canonique, mise en validation");
+                log::warn!("file_batch: piste {id} sans identité canonique, mise en validation");
                 needs_validation.push(id);
                 continue;
             }

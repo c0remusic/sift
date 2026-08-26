@@ -298,7 +298,7 @@ mod sonde {
                 max / median
             );
         }
-        assert!(vus > 0, "aucun fichier sonde — mesure vide");
+        assert!(vus > 0, "aucun fichier sondé — mesure vide");
     }
 
     fn nom(path: &str) -> &str {

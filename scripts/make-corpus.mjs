@@ -160,6 +160,6 @@ for (const [i, f] of sources.entries()) {
 
 writeFileSync(join(OUT, "labels.json"), JSON.stringify(label, null, 2));
 console.error(
-  `\n${sources.length} sources, ${made} faux fabriques, ${failed} echecs, ` +
-    `${label.length} lignes etiquetees -> ${join(OUT, "labels.json")}`,
+  `\n${sources.length} sources, ${made} faux fabriqués, ${failed} échecs, ` +
+    `${label.length} lignes étiquetées -> ${join(OUT, "labels.json")}`,
 );

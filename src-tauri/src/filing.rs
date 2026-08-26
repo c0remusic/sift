@@ -746,7 +746,7 @@ pub fn commit_file(
         Ok(m) => Some((m.len() as i64, crate::scanner::mtime_secs(&m))),
         Err(e) => {
             log::error!(
-                "commit_file: metadata({}) illisible ({e}): size_bytes/mtime laisses inchanges, un rescan du watcher pourra repasser la piste {} en pending",
+                "commit_file: metadata({}) illisible ({e}): size_bytes/mtime laissés inchangés, un rescan du watcher pourra repasser la piste {} en pending",
                 plan.dest,
                 plan.track_id
             );

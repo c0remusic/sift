@@ -176,7 +176,7 @@ fn bench_analysis_and_encode_cpu_budget() {
     std::fs::create_dir_all(&out_dir).expect("création du dossier de sortie");
     let enc = |p: &Path, seq: usize| encode_work(&out_dir, p, seq);
 
-    println!("\n=== Ligne 6 · budget CPU partage analyse <-> encodage ===");
+    println!("\n=== Ligne 6 · budget CPU partagé analyse <-> encodage ===");
     println!("  cœurs disponibles   : {cores}");
     println!("  pool analyse (prod)  : {n_analysis} threads  [worker::analysis_pool_size]");
     println!("  pool encodage (prod) : {n_encode} process   [ipc_filing::phase2_worker_count]");

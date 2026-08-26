@@ -244,7 +244,7 @@ pub fn refill(app: &AppHandle) {
     let mut q = match m.lock() {
         Ok(q) => q,
         Err(e) => {
-            log::error!("worker refill: verrou de file empoisonne, aucun id enfile: {e}");
+            log::error!("worker refill: verrou de file empoisonné, aucun id enfilé: {e}");
             return;
         }
     };
@@ -269,7 +269,7 @@ fn pop(inner: &Arc<(Mutex<Queue>, Condvar)>) -> Option<i64> {
     let mut q = match m.lock() {
         Ok(q) => q,
         Err(e) => {
-            log::error!("worker pop: verrou de file empoisonne, ce thread s'arrete: {e}");
+            log::error!("worker pop: verrou de file empoisonné, ce thread s'arrête: {e}");
             return None;
         }
     };
@@ -284,7 +284,7 @@ fn pop(inner: &Arc<(Mutex<Queue>, Condvar)>) -> Option<i64> {
         q = match cv.wait(q) {
             Ok(q) => q,
             Err(e) => {
-                log::error!("worker pop: attente sur condvar empoisonnee, ce thread s'arrete: {e}");
+                log::error!("worker pop: attente sur condvar empoisonnée, ce thread s'arrête: {e}");
                 return None;
             }
         };
@@ -303,7 +303,7 @@ fn finish(inner: &Arc<(Mutex<Queue>, Condvar)>, id: i64) {
         // `running` reste alors compté à vie et l'id ne peut plus jamais être ré-enfilé : la piste
         // devient invisible à toute nouvelle analyse.
         Err(e) => log::error!(
-            "worker finish({id}): verrou de file empoisonne, l'id reste marque en cours: {e}"
+            "worker finish({id}): verrou de file empoisonné, l'id reste marqué en cours: {e}"
         ),
     }
 }
@@ -549,7 +549,7 @@ pub(crate) mod tests {
         );
         assert!(
             !selected.contains(&casse),
-            "un fichier illisible serait repris en boucle et brulerait ses analysis_attempts"
+            "un fichier illisible serait repris en boucle et brûlerait ses analysis_attempts"
         );
     }
 

@@ -305,7 +305,7 @@ mod tests {
         assert_eq!(items.len(), 2, "le statut n'a pas bouge, la ligne reste");
         assert_eq!(
             items[0].verdict, None,
-            "un rejet justifie par un verdict d'un autre moteur restait affiche"
+            "un rejet justifié par un verdict d'un autre moteur restait affiché"
         );
     }
 
