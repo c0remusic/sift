@@ -926,10 +926,7 @@ fn run_file_batch(
                     }
                     Err(payload) => {
                         let msg = format!("{payload:?}");
-                        log::error!(
-                            "file_batch: execute panicked for track {}: {msg}",
-                            job.id
-                        );
+                        log::error!("file_batch: execute panicked for track {}: {msg}", job.id);
                         (None, Some(msg))
                     }
                 };
@@ -1014,7 +1011,10 @@ fn run_file_batch(
                         let msg = format!("DB lock poisoned: {e}");
                         log::error!("file_batch: DB lock poisoned committing file {}: {e}", o.id);
                         needs_validation.push(o.id);
-                        errors.push(filing::BatchError { track_id: o.id, message: msg });
+                        errors.push(filing::BatchError {
+                            track_id: o.id,
+                            message: msg,
+                        });
                         app.emit(
                             "file:progress",
                             &FileProgress {
@@ -1049,7 +1049,10 @@ fn run_file_batch(
             None => {
                 needs_validation.push(o.id);
                 if let Some(msg) = o.error {
-                    errors.push(filing::BatchError { track_id: o.id, message: msg });
+                    errors.push(filing::BatchError {
+                        track_id: o.id,
+                        message: msg,
+                    });
                 }
             }
         }
