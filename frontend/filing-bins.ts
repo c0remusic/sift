@@ -19,7 +19,7 @@ import { destPopoverPosition } from "./popover-position";
 const LIBRARY_ROOT = "library_root";
 // Groupe « Autres » : dossiers externes déjà choisis, mémorisés en settings JSON (valeur = tableau
 // de chemins absolus sérialisé). Première clé settings à porter du JSON — `settings.rs` stocke une
-// String opaque, donc zéro migration (décision B, revue.md:161-168).
+// String opaque, donc zéro migration (décision B, `docs/ui-specs/revue.md` § Popover Destination).
 const CUSTOM_DESTS_KEY = "revue_custom_dests";
 
 interface DestState {
@@ -426,7 +426,8 @@ function renderBins(fldz: HTMLElement): void {
     `<button type="button" class="fld" data-fil="browsecustom"><i class="ti ti-folder-open sift-fld-icon" style="font-size:var(--text-base)"></i> Choisir un dossier…</button>` +
     `</div>`;
 
-  // Ordre (décision B, revue.md:161-168) : arbre biblio + « Autres » dans le wrapper grisable
+  // Ordre (décision B, `docs/ui-specs/revue.md` § Popover Destination) : arbre biblio + « Autres »
+  // dans le wrapper grisable
   // (filterRow/rootCaption = chrome de bibliothèque, grisés avec), puis un séparateur, puis la case
   // Sur place, puis le pied. Seuls la case ET le pied restent HORS du wrapper : cocher Sur place ne
   // doit jamais rendre sa propre case ni les actions natives non cliquables (régression connue).

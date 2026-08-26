@@ -30,10 +30,10 @@ En-têtes en petites capitales discrètes (`--text-xs`, `--tracking-wider`,
 SOURCES
   ● ~/Downloads/incoming          8
   ● ~/Downloads/promos            1
-  + Ajouter un dossier
+  Ajouter un dossier
 
 TRAITER
-  Revue                          24
+  Revue
   Journal
 
 BIBLIOTHÈQUE
@@ -60,15 +60,24 @@ Compte à droite : **chiffre nu**, aligné à droite, sans fond ni pilule — tr
 La pilule qui le portait (`--overlay-badge` + `--border-radius-pill`) n'était ancrée nulle
 part : le kit Big Sur n'a **aucun** badge de sidebar. Le retrait enlève aussi une surface
 peinte, cohérent avec « avoir une surface est la marque de la charpente »
-(`docs/design-system/patterns.md`). Site : `.nav-badge` (`styles.css`).
+(`docs/design-system/patterns.md`). Site : `.nav-badge` (`styles.css`). Le token
+`--overlay-badge` est **supprimé** avec la pilule — il n'avait plus d'autre porteur.
+
+⚠️ **Quelles entrées portent un compte, tranché le 2026-08-26** (`a927377`) : celles dont le
+compte n'est écrit **nulle part ailleurs**. Les **sources** en portent un ; **Revue n'en porte
+plus**, parce que la barre unifiée affiche déjà « N pistes » à côté du titre « Revue » — le même
+nombre à deux endroits. La règle vient des refs, pas d'un arbitrage : Mail écrit « Inbox » dans sa
+sidebar ET en tête de colonne mais ne met son compte qu'à **un** endroit, celui de la colonne ;
+Notes met le sien dans la sidebar parce que sa colonne n'a **aucun** en-tête ; Photos n'en met nulle
+part. Le compte va contre le nom de la liste, à un seul endroit.
 
 État actif : **fond plein arrondi** (`--color-background-secondary`), jamais de bordure
 ni de barre latérale colorée. Survol : `--overlay-hover`. Focus clavier : anneau
 `--color-border-info`.
 
-Le compte est un badge neutre. Il prend un ton sémantique dans un seul cas : « À
-re-sourcer » passe en `warning` quand il est supérieur à zéro, parce que c'est une file
-d'attente d'action, pas un inventaire.
+Le compte est neutre. Il prend un ton sémantique dans un seul cas : « À re-sourcer » passe en
+`warning` quand il est supérieur à zéro, parce que c'est une file d'attente d'action, pas un
+inventaire.
 
 ### Section Sources — ce qui vient d'Accueil
 
@@ -81,8 +90,11 @@ elle identifie la source dans les autres écrans, elle ne porte aucun état.
 Cliquer une source **filtre Revue** sur ses fichiers. Le rail devient ainsi le sélecteur
 de provenance, exactement comme la sidebar de Finder.
 
-Au pied de la section : « Ajouter un dossier », qui ouvre le sélecteur natif de
-répertoire.
+Au pied de la section : « Ajouter un dossier », **en texte seul**, qui ouvre le sélecteur natif
+de répertoire. Le glyphe `+` qui le précédait est retiré le 2026-08-26 (`CLAUDE.md` § Front, un CTA
+à label descriptif se dit en texte seul) : « + » devant « Ajouter » ne faisait que redire
+« Ajouter ». Le `+` de sidebar macOS est un bouton **icône seule** au pied du volet, jamais un
+glyphe accolé à un libellé — ce n'était pas ce patron.
 
 ## États
 

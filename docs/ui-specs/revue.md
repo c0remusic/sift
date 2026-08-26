@@ -1,8 +1,9 @@
 # Spec — Revue
 
 > **Réconciliée le 2026-08-21**, **complétée le 2026-08-24** avec les six décisions A–F du
-> wireframe (§ 08, tranchées sur visuel) : Batch armé par une **icône de sélection dans la
-> barre** (§ 11 option 4), **filtre** en pop-up cochable, **popover Destination**, **états**,
+> wireframe (§ 08, tranchées sur visuel) : ~~Batch armé par une **icône de sélection dans la
+> barre** (§ 11 option 4)~~ → **bouton texte en tête de file** depuis le 2026-08-26, **filtre** en
+> pop-up cochable, **popover Destination**, **états**,
 > ~~**volume replié**~~, **recherche en tête** de la file, **genres** en texte + tag et
 > ~~badge **« Prêt CDJ »**~~ (les deux barrées ont été retranchées le 2026-08-25, ci-dessous).
 > Wireframe aux tokens réels
@@ -57,22 +58,35 @@ var(--space-8))` + `padding-inline: var(--space-8)` sur `.sift-qhead`, une seule
 de démonter le padding de `.queue`. Le corps de la zone C reste **sans aucun filet** (conforme à
 l'éditeur de Notes et au corps de Mail, et à `patterns.md:54`).
 
-**État d'implémentation.** Livrés par `c4f65eb` : place de la recherche, retrait du mot de verdict,
-pastille à quatre états. ⚠️ **Non vérifiés dans la vraie fenêtre.** Restent à implémenter :
-déclencheur Lot en tête de file, retrait du compte de colonne et de « Non analysés uniquement »,
-badges en chiffre nu, filet d'en-tête bord à bord.
+**État d'implémentation — les sept décisions sont LIVRÉES et vérifiées dans la vraie fenêtre**
+(2026-08-26, CDP) : `c4f65eb` place de la recherche, retrait du mot de verdict, pastille à quatre
+états · `dd4ed1c` badges en chiffre nu, filet d'en-tête bord à bord · `3c1e05e` déclencheur Lot en
+tête de file, compte de colonne retiré et remonté dans la barre, « Non analysés uniquement »
+retirée · `114325e` police Inter.
 
 ⚠️ **Deux pertes de fonction assumées, à réintroduire ailleurs ou à accepter :**
 
 1. Le retrait de « Non analysés uniquement » supprime le seul moyen d'**isoler les pistes bloquées
-   en analyse** (`queue-panel.ts::ensureQueueDoneToggle`). Le critère devrait rejoindre le filtre
-   cochable, sinon la fonction disparaît.
+   en analyse**. **Confirmé par la mesure** le 2026-08-26 : le popover de filtre n'offre que
+   Lossless · MP3 · Faux · Doublons, aucune facette d'analyse — il n'existe donc plus AUCUN chemin
+   d'UI vers ces pistes. Le critère devrait rejoindre le filtre cochable, sinon la fonction
+   disparaît pour de bon.
 2. Le retrait du compte de colonne supprime le seul **retour chiffré du filtre** : le pulldown
    résume la combinaison, pas le nombre de pistes qu'elle laisse voir.
 
-⚠️ **Doublon ouvert** : le compte de la file s'affiche maintenant dans la barre ET en badge de rail.
-Aucune des deux refs ne montre les deux ensemble — Mail a le compte de colonne mais pas de
-compteurs de sidebar, Notes l'inverse. À arbitrer.
+✅ **Doublon compte-de-barre / badge-de-rail — TRANCHÉ le 2026-08-26** (`a927377`), par les refs et
+non par un choix. Trois apps relevées : **Mail** = compte en tête de colonne, zéro compteur de
+sidebar · **Notes** = compteurs de sidebar (chiffre nu), zéro en-tête de colonne · **Photos** = ni
+l'un ni l'autre. Aucune ne montre les deux, et **Mail est le cas identique à Sift** : « Inbox » est
+écrit AUX DEUX endroits, sidebar et tête de colonne, mais son compte n'est qu'à UN seul, celui de la
+colonne. Notes fait l'inverse pour la raison inverse — sa colonne n'a aucun en-tête, donc le compte
+remonte sur l'entrée qui nomme la liste.
+
+Règle commune, et c'est elle qui tranche : **le compte va contre le nom de la liste, à un seul
+endroit**. Sift écrit « Revue » dans le rail ET dans la barre ⇒ cas Mail ⇒ le **badge de rail de
+Revue est retiré**, le compte reste dans la barre. Les badges de **sources** restent : leur compte
+n'est écrit nulle part ailleurs, c'est le cas de Notes. `--overlay-badge` est supprimé avec le
+dernier porteur de la pilule.
 
 ## Contexte dans le shell
 
@@ -98,18 +112,26 @@ format et quel nom ?**
 
 ### Zone A — barre unifiée
 
-Titre « Revue » + compte de la file, à gauche. Au bord droit, avant les contrôles de
-fenêtre : **icône de sélection** (Batch, § 11 option 4) — icône seule + infobulle, patron
-*toolbar* Photos macOS. Elle arme le mode Batch (Zone C — mode Batch) ; active, elle prend
-la teinte d'accent et le compte devient « N sélectionnées ». Contrôles de fenêtre à droite
-(convention hôte Windows).
+Titre « Revue » + **compte de la file**, à gauche, contre le titre. Le compte est le SEUL de
+l'écran depuis le 2026-08-26 : le badge de rail de Revue est retiré, et le compte de pistes
+visibles a quitté la tête de colonne (voir § Décisions postérieures). En mode Lot il devient
+« N sélectionnées » à la teinte d'accent — il REMPLACE le total plutôt que de s'y ajouter, deux
+nombres côte à côte se liraient comme une fraction. Contrôles de fenêtre à droite (convention hôte
+Windows).
+
+~~Au bord droit, avant les contrôles de fenêtre : **icône de sélection** (Batch, § 11 option 4),
+icône seule + infobulle, patron *toolbar* Photos macOS.~~ **Retirée le 2026-08-26** avec son
+emplacement `#sift-tb-actions-right` : le commutateur du mode Lot est un **bouton texte en tête de
+file**. Ce qui a tranché : Photos place « Sélectionner » dans sa toolbar parce que la grille de
+photos EST l'écran — la toolbar y commande la seule chose visible. Dans Revue la file n'est qu'une
+colonne sur trois et la barre commande déjà l'écran entier ; le même geste n'a plus la même portée.
 
 **La recherche NE monte PAS dans la barre** — décision du 2026-08-21 : elle reste dans la
 colonne file (Zone B′). ~~en **tête** de colonne (décision E, 2026-08-24)~~ → **SOUS la rangée
 de filtre** depuis le 2026-08-26, voir § Décisions postérieures. Le
-segmenté **Détail / Lot est retiré** (« plus besoin du picker Lot ») : le mode Batch est
-armé par l'icône de la barre, pas par un onglet. Écart assumé à `DESIGN.md` § 15, noté
-là-bas.
+segmenté **Détail / Lot est retiré** (« plus besoin du picker Lot ») : le mode Batch est armé par
+le bouton texte de la tête de file, pas par un onglet ni par la barre. Écart assumé à `DESIGN.md`
+§ 15, noté là-bas.
 
 ### Zone B′ — file
 
@@ -119,16 +141,24 @@ là-bas.
 field* du kit, § 03-02). ~~Passée **en tête** le 2026-08-24 (décision E)~~ — elle est **sous la
 rangée de filtre** depuis le 2026-08-26 (retour au wireframe § 15) ; elle était en pied avant le
 2026-08-24.
-Sous elle : **« File » + compte** et un **bouton de filtre** en pop-up cochable (ci-dessous).
-Puis la liste virtualisée. Il n'y a **plus** de segmenté Détail / Lot (retiré ; le mode
-Batch s'arme par l'icône de la barre, Zone A).
+L'ordre réel de la colonne, depuis le 2026-08-26 : **rangée de filtre** en tête (le
+**bouton de filtre** en pop-up cochable à gauche, le bouton **« Sélectionner »** à droite), puis le
+**champ de recherche** contre la liste qu'il interroge, puis la liste virtualisée. Le libellé
+« File » et le **compte des pistes visibles** ont quitté cette rangée : le titre de l'écran est
+dans la barre, et le compte l'y a suivi (§ Zone A). Il n'y a **plus** de segmenté Détail / Lot, ni
+d'icône de barre — le mode Batch s'arme par le bouton texte de cette rangée.
+
+Au **pied** de la colonne il ne reste qu'un contrôle, **« Réanalyser (N) »** ; la bascule
+« Non analysés uniquement » qui l'accompagnait est retirée (voir § Décisions postérieures et la
+perte de fonction qu'elle emporte).
 
 Une ligne de file porte, dans cet ordre : **pastille de verdict** (`DESIGN.md` § 16,
 même rendu qu'en Bibliothèque) · nom de fichier · artiste — titre · **pastille
 `DUPLICATE`** au bord droit si la piste est un doublon (rendu hors colonne verdict, cf.
 § 16). **La durée est retirée de la file** (2026-08-21) : inutile ici, et elle mangeait la
-place du signal doublon. Hauteur `--row-h`. **Quand le mode Batch est armé** (Zone A), une
-**case à cocher** apparaît en tête de chaque ligne ; on coche track par track.
+place du signal doublon. Hauteur `--row-h`. **Quand le mode Batch est armé** (bouton
+« Sélectionner » de cette rangée), une **case à cocher** apparaît en tête de chaque ligne ; on coche
+track par track.
 
 **Filtre — pop-up à options cochables** (décision du 2026-08-24). Un bouton en tête de file
 (« Faux », « Faux + Doublons »…) ouvre un menu à **cases à cocher** : `Lossless`, `MP3`,
@@ -259,8 +289,9 @@ distinction entre les deux issues, comme macOS.
 
 ### Zone C — mode Batch
 
-Armé par l'**icône de sélection** de la barre (Zone A ; § 11 option 4, patron
-« Sélectionner » iOS / Photos), **pas** par une bascule de vue. Off → file normale, pas de
+Armé par le **bouton texte « Sélectionner »** de la tête de file (Zone B′), qui devient
+« Terminé » une fois armé — patron « Sélectionner » de Photos, mais posé dans la colonne et non
+dans la barre (voir § Zone A pour ce qui a tranché). **Pas** par une bascule de vue. Off → file normale, pas de
 cases. On → une **case** apparaît par ligne dans la file (Zone B′) et on **coche track par
 track** ; il n'y a **pas** de seconde table. La file et le rail restent en place.
 
@@ -304,10 +335,15 @@ et le plancher horodaté de 250 ms reste le garde. In-app, **jamais** `window.co
 ### Souris
 
 - **Clic** ligne de file : ouvre la piste dans la zone C.
-- **Clic** sur l'**icône de sélection** (barre) : arme / désarme le mode Batch (cases par
-  ligne). **Clic** sur le **bouton de filtre** (tête de file) : ouvre le menu cochable.
+- **Clic** sur **« Sélectionner »** (tête de file) : arme le mode Batch (cases par ligne) ; le
+  bouton devient « Terminé » et désarme. **Clic** sur le **bouton de filtre** (même rangée, à
+  gauche) : ouvre le menu cochable.
 - **Clic droit** ligne : Ouvrir l'emplacement · Réanalyser · Écarter · Changer la
-  destination. En mode Batch, agit sur la sélection.
+  destination. En mode Batch, agit sur la sélection : Ranger N · Changer la destination ·
+  Écarter N. **Livré et vérifié le 2026-08-26** (`a31ebf2`) — le menu ne servait que le mode
+  Batch jusque-là. En mode Détail le clic droit OUVRE d'abord la ligne, comme dans Finder ou
+  Mail : « Écarter » et « Changer la destination » agissent sur la zone C, donc sur la piste
+  ouverte, et non sur un identifiant.
 - **Clic** sur la waveform : déplace la lecture. **Survol** : ghost fill jusqu'au curseur + ligne fine + bulle mm:ss (teinte **transitoire**, distincte du fill de lecture) — patron QuickTime + réticule spectro.
 - **Clic** sur le temps : **bascule écoulé / restant** (une seule valeur affichée).
 - **Glisser** la poignée : largeur de la file, persistée.
