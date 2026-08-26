@@ -55,6 +55,13 @@ Réglages est ancré au pied, séparé du reste par l'espace et non par un trait
 
 Icône · libellé · compte à droite quand il y en a un.
 
+Compte à droite : **chiffre nu**, aligné à droite, sans fond ni pilule — tranché le
+2026-08-26 sur le motif de Notes (`docs/design-refs/08-notes.png`, compteurs de dossiers).
+La pilule qui le portait (`--overlay-badge` + `--border-radius-pill`) n'était ancrée nulle
+part : le kit Big Sur n'a **aucun** badge de sidebar. Le retrait enlève aussi une surface
+peinte, cohérent avec « avoir une surface est la marque de la charpente »
+(`docs/design-system/patterns.md`). Site : `.nav-badge` (`styles.css`).
+
 État actif : **fond plein arrondi** (`--color-background-secondary`), jamais de bordure
 ni de barre latérale colorée. Survol : `--overlay-hover`. Focus clavier : anneau
 `--color-border-info`.

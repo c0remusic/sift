@@ -32,6 +32,48 @@ gardent la décision postérieure, **pas** le wireframe — tranchés par Antoin
 | **Badge « Prêt CDJ »** | **retenu**, dans l'en-tête Métadonnées (§ 16) | **Retiré** : le helper `paintCdjBadge` est supprimé du code |
 | **Taille de la pochette** | **taille fixe**, jamais étirée (*fix 6*) | **Mesure JS conservée** : la pochette carrée prend la hauteur du bloc texte de l'en-tête (`sizeCoverToBody`) |
 
+## Décisions postérieures — tranchées le 2026-08-26
+
+Session de design sur maquette Figma (page « Maquette — Revue », fichier
+`ujwh18pjb9ZKSY8XqlvDh0`). Sept points, tous tranchés par Antoine sur visuel. Les décisions
+renversées ne disparaissent pas : elles sont nommées ici avec ce qui les remplace.
+
+| Point | Avant | Retenu le 2026-08-26 |
+|---|---|---|
+| **Place de la recherche** | en **tête** de colonne (décision E, 2026-08-24, livrée `3d73aab`) | **sous la rangée de filtre**, collée à la liste — retour au wireframe § 15. « Trop haut, détaché de la liste » |
+| **Mot de verdict dans la ligne** | `faux` / `à vérifier` rendus à droite de la ligne | **retiré** — « la pastille est là pour ça ». Rend la file à § Zone B′, qui ne l'a jamais listé |
+| **Échec d'analyse** | cercle vide, identique à « en attente » | **pastille pleine danger + bouton Réanalyser**. Sans ça, couper le mot rendait les deux états indistinguables |
+| **Déclencheur du mode Lot** | icône au bord droit de la **barre** (§ 11 option 4, livré `2d2c6d4`) | **bouton texte en tête de file** — « Sélectionner », qui devient « Terminé » une fois armé. Règle `CLAUDE.md` § Front : CTA à label descriptif = texte seul |
+| **Compte de la file** | compte des pistes **visibles** en tête de colonne | **retiré de la colonne** ; le compte de file reste dans la **barre**, à côté du titre, comme § Zone A le prévoyait déjà |
+| **« Non analysés uniquement »** | bascule en pied de colonne | **retirée** — doublon du pulldown de filtre |
+| **Badges du rail** | pilule grise (`--overlay-badge`, rayon pill) | **chiffre nu**, aligné à droite, sans fond — motif Notes (`docs/design-refs/08-notes.png`) |
+
+**Séparateurs — la règle, mesurée sur `03-mail.png`.** Mail en porte deux, traités différemment :
+sous l'en-tête de **colonne**, **bord à bord** (0 → 1189 sur 1190 px de crop) ; sous l'en-tête de
+**message**, **en retrait** aligné sur le contenu (volet 2253→3549, filet 2340→3491). Le premier
+borne une zone, le second sépare à l'intérieur d'une zone. Conséquence pour Revue : le filet de
+`.sift-qhead` passe **bord à bord de la colonne**. Voie CSS retenue — `margin-inline: calc(-1 *
+var(--space-8))` + `padding-inline: var(--space-8)` sur `.sift-qhead`, une seule règle, plutôt que
+de démonter le padding de `.queue`. Le corps de la zone C reste **sans aucun filet** (conforme à
+l'éditeur de Notes et au corps de Mail, et à `patterns.md:54`).
+
+**État d'implémentation.** Livrés par `c4f65eb` : place de la recherche, retrait du mot de verdict,
+pastille à quatre états. ⚠️ **Non vérifiés dans la vraie fenêtre.** Restent à implémenter :
+déclencheur Lot en tête de file, retrait du compte de colonne et de « Non analysés uniquement »,
+badges en chiffre nu, filet d'en-tête bord à bord.
+
+⚠️ **Deux pertes de fonction assumées, à réintroduire ailleurs ou à accepter :**
+
+1. Le retrait de « Non analysés uniquement » supprime le seul moyen d'**isoler les pistes bloquées
+   en analyse** (`queue-panel.ts::ensureQueueDoneToggle`). Le critère devrait rejoindre le filtre
+   cochable, sinon la fonction disparaît.
+2. Le retrait du compte de colonne supprime le seul **retour chiffré du filtre** : le pulldown
+   résume la combinaison, pas le nombre de pistes qu'elle laisse voir.
+
+⚠️ **Doublon ouvert** : le compte de la file s'affiche maintenant dans la barre ET en badge de rail.
+Aucune des deux refs ne montre les deux ensemble — Mail a le compte de colonne mais pas de
+compteurs de sidebar, Notes l'inverse. À arbitrer.
+
 ## Contexte dans le shell
 
 Patron macOS : **Finder** pour la file et la sélection · **Utilitaire de disque** pour
@@ -63,7 +105,8 @@ la teinte d'accent et le compte devient « N sélectionnées ». Contrôles de f
 (convention hôte Windows).
 
 **La recherche NE monte PAS dans la barre** — décision du 2026-08-21 : elle reste dans la
-colonne file (Zone B′), désormais en **tête** de colonne (décision E, 2026-08-24). Le
+colonne file (Zone B′). ~~en **tête** de colonne (décision E, 2026-08-24)~~ → **SOUS la rangée
+de filtre** depuis le 2026-08-26, voir § Décisions postérieures. Le
 segmenté **Détail / Lot est retiré** (« plus besoin du picker Lot ») : le mode Batch est
 armé par l'icône de la barre, pas par un onglet. Écart assumé à `DESIGN.md` § 15, noté
 là-bas.
@@ -73,7 +116,9 @@ là-bas.
 **En tête de la colonne** (patron HIG d'une liste : Notes, Mail compact, Music) : le
 **champ de recherche** — loupe (SVG monochrome, jamais un emoji) + placeholder
 « Rechercher » + bouton clear `×` quand du texte + anneau d'accent au focus (patron *search
-field* du kit, § 03-02). Passée **en tête** le 2026-08-24 (décision E) ; elle était en pied.
+field* du kit, § 03-02). ~~Passée **en tête** le 2026-08-24 (décision E)~~ — elle est **sous la
+rangée de filtre** depuis le 2026-08-26 (retour au wireframe § 15) ; elle était en pied avant le
+2026-08-24.
 Sous elle : **« File » + compte** et un **bouton de filtre** en pop-up cochable (ci-dessous).
 Puis la liste virtualisée. Il n'y a **plus** de segmenté Détail / Lot (retiré ; le mode
 Batch s'arme par l'icône de la barre, Zone A).
@@ -309,7 +354,7 @@ rayons (ci-dessous).
 - **Écarter** = *push button* **secondaire = gris rempli** (fond `--overlay-selected`, texte
   encre). Le kit **ne connaît pas** le ghost à bordure — à ne pas réintroduire.
 - **Recherche** = *search field* : loupe + placeholder + clear `×` + anneau d'accent au
-  focus. **En tête** de la colonne file (décision E).
+  focus. ~~**En tête** de la colonne file (décision E)~~ → **sous la rangée de filtre**, 2026-08-26.
 - **Segmented** (**Format** seul ; le Détail/Lot est **retiré**) = pill blanc **surélevé**
   (ombre) dans un conteneur gris.
 - **Icône de sélection** (Batch, barre unifiée) = icône seule + infobulle ; teinte d'accent
