@@ -36,9 +36,19 @@ const CLASSES_NUES_ADMISES = new Set([RACINE, "cur"]);
  *  Le markup est un template littéral — `class="qi${a ? " cur" : ""}${b ? " qi-kbd" : ""}"` — donc
  *  les classes conditionnelles vivent dans des chaînes À L'INTÉRIEUR de l'attribut. On isole
  *  l'attribut par son voisin de droite (`" id=`), qui est stable et ne peut pas apparaître dans un
- *  ternaire de classe, puis on prend le littéral de tête et chaque chaîne entre guillemets. */
+ *  ternaire de classe, puis on prend le littéral de tête et chaque chaîne entre guillemets.
+ *
+ *  ⚠️ La recherche part de `function queueRowHtml` et non du début du fichier. Elle partait du
+ *  début jusqu'au 2026-08-26, et le premier `class="qi…` du fichier a cessé d'être le bon le jour
+ *  où `measureQueueRowHeight` — déclarée PLUS HAUT — a reçu `class="qi-sub"` (issue #45) : la
+ *  capture non-greedy s'étendait alors de la sonde jusqu'à l'attribut de `queueRowHtml`, et
+ *  rendait 5010 « classes ». Le test tombait, à raison sur sa propre extraction et à tort sur le
+ *  markup. Ancrer sur la fonction rend la lecture indifférente à ce qui vit ailleurs. */
 function classesDeLaLigne(): string[] {
-  const src = readFileSync(QUEUE, "utf8");
+  const fichier = readFileSync(QUEUE, "utf8");
+  const debut = fichier.indexOf("function queueRowHtml");
+  if (debut < 0) throw new Error(`${QUEUE} : fonction queueRowHtml introuvable`);
+  const src = fichier.slice(debut);
   const m = /class="(qi.*?)" id="qi-\$\{/s.exec(src);
   if (!m) throw new Error(`${QUEUE} : attribut class du <div> racine de queueRowHtml introuvable`);
   const blob = m[1];

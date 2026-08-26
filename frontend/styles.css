@@ -1108,7 +1108,30 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
    from the row edge, a shared structural concern), gap reflects this row's own content density
    (verdict icon + filename + artist packed tighter here than Lot's checkbox+name+2 pills) and
    isn't a hierarchy the two rows are meant to share. */
-.qi{display:flex;align-items:center;gap:var(--space-8);padding:var(--space-8);border-radius:var(--border-radius-md);font-size:12px;color:var(--color-text-secondary);white-space:nowrap;overflow:hidden;cursor:pointer}
+/* INTERLIGNES EXPLICITES, et c'est la correction de l'issue #45. Sans elles, `line-height:normal`
+   laisse le moteur dériver la hauteur des glyphes RÉELLEMENT présents dans le titre : mesuré dans
+   la vraie fenêtre le 2026-08-26, la ligne de titre valait 15px sur 46 rangées et 16px sur une
+   47e, à `font-size:12px` identique. Ce n'est pas qu'un défaut d'alternance — `measureQueueRowHeight`
+   ne mesure QU'UNE hauteur et la met en cache pour toute la file (voir `.qi-dup` plus bas), donc une
+   rangée qui diffère d'un pixel décale le calcul de fenêtre de la virtualisation sur 3 000 lignes.
+
+   Les deux valeurs viennent du kit macOS Big Sur (`docs/design-refs/Styleguide.pdf`, § 05
+   Typography), pas d'un arbitrage : le titre est à 12px = **Callout, 12pt/15pt** ; le sous-texte
+   d'artiste à `--text-xs` = 10px = **Caption 1, 10pt/13pt**. En px absolus et non en ratio, pour la
+   même raison que le reste : une hauteur de rangée qui dépend d'un arrondi de ratio n'est pas
+   déterministe. Hauteur qui en découle : 15 + 2 (gap) + 13 + 2×--space-8 = 46px, constante.
+
+   ⚠️ Les deux issues que l'issue #45 proposait — retirer la seconde ligne, ou doubler la rangée —
+   répondaient à un diagnostic de DENSITÉ. La mesure dit que la cause est typographique : la
+   correction ne coûte donc ni information ni densité, et aucune des deux n'a lieu d'être. */
+.qi{display:flex;align-items:center;gap:var(--space-8);padding:var(--space-8);border-radius:var(--border-radius-md);font-size:12px;line-height:15px;color:var(--color-text-secondary);white-space:nowrap;overflow:hidden;cursor:pointer}
+/* Seconde ligne de la rangée (artiste). En RÈGLE et non en attributs inline, même raison que
+   `.qi-dup` plus bas — et une raison de plus ici : `measureQueueRowHeight` reconstruit ce markup
+   pour sa sonde, donc tout style qui ne vit que dans `queueRowHtml` rend la sonde fausse en
+   silence. `test/queue-row-height.test.ts` épingle les deux côtés.
+   Le retrait de 15px aligne l'artiste sur le titre, qui est décalé par la pastille de verdict
+   (9px) et le gap de 6px de sa ligne. */
+.qi-sub{padding-left:15px;font-size:var(--text-xs);line-height:13px;color:var(--color-text-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .qi span{overflow:hidden;text-overflow:ellipsis}.qi.done{color:var(--color-text-tertiary)}
 /* Selection is neutral (white @.045 + a non-blue left bar), per interaction-model.md: blue is
    reserved for focus/accent, never for "this row is selected". */

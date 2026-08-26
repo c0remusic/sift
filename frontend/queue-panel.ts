@@ -168,7 +168,10 @@ function measureQueueRowHeight(ql: HTMLElement): number {
   probe.innerHTML =
     `<div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">` +
     `<div style="display:flex;align-items:center;gap:6px;min-width:0"><span style="flex:1">probe</span></div>` +
-    `<div style="padding-left:15px;font-size:var(--text-xs)">&nbsp;</div></div>`;
+    // MÊME classe que la vraie seconde ligne de `queueRowHtml` — et non une copie de ses styles.
+    // Une sonde qui n'hérite pas exactement des mêmes interlignes mesure une autre rangée que
+    // celle qui sera peinte, et la virtualisation se décale sans que rien ne le dise (issue #45).
+    `<div class="qi-sub">&nbsp;</div></div>`;
   ql.appendChild(probe);
   const h = probe.getBoundingClientRect().height;
   probe.remove();
@@ -665,7 +668,7 @@ function queueRowHtml(it: QueueItem, active: boolean, onCursor: boolean): string
     // Always render the second line (never conditionally omit it) — otherwise a
     // not-yet-identified track (no artist) renders one line shorter than an identified
     // one, making queue rows visibly uneven heights next to each other.
-    `<div style="padding-left:15px;font-size:var(--text-xs);color:var(--color-text-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${artist || "&nbsp;"}</div>` +
+    `<div class="qi-sub">${artist || "&nbsp;"}</div>` +
     `</div>` +
     // L'échec de CONVERSION garde son libellé, et il est le seul : ce n'est pas un verdict, la
     // pastille ne le porte pas, et c'est un fait de fond que l'utilisateur doit voir sans survoler.

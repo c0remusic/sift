@@ -174,7 +174,20 @@ Une ligne de file porte, dans cet ordre : **pastille de verdict** (`DESIGN.md` �
 même rendu qu'en Bibliothèque) · nom de fichier · artiste — titre · **pastille
 `DUPLICATE`** au bord droit si la piste est un doublon (rendu hors colonne verdict, cf.
 § 16). **La durée est retirée de la file** (2026-08-21) : inutile ici, et elle mangeait la
-place du signal doublon. Hauteur `--row-h`. **Quand le mode Batch est armé** (bouton
+place du signal doublon.
+
+**Hauteur : 46 px, constante** — et non `--row-h` (32 px), qui vaut pour une ligne simple. La
+rangée de file en porte **deux** (nom de fichier, puis artiste — titre), donc sa hauteur se dérive
+des deux interlignes du kit macOS Big Sur (`docs/design-refs/Styleguide.pdf`, § 05 Typography) :
+**Callout 12/15** pour le nom, **Caption 1 10/13** pour le sous-texte, plus le gap de 2 et
+`2 × --space-8` — soit 15 + 2 + 13 + 16 = 46. Ces interlignes sont **explicites en px** dans
+`styles.css` (`.qi`, `.qi-sub`), jamais `normal` : issue #45, mesurée le 2026-08-26 dans la vraie
+fenêtre, 46 rangées à 45 px et une à 46 px parce que `line-height:normal` dérive la hauteur des
+glyphes réellement présents dans le titre. Ce n'était pas qu'une alternance irrégulière —
+`measureQueueRowHeight` met UNE hauteur en cache pour toute la file, donc l'écart d'un pixel
+décalait la fenêtre de virtualisation sur 3 000 lignes. Gelé par `test/queue-row-height.test.ts`.
+
+**Quand le mode Batch est armé** (bouton
 « Sélectionner » de cette rangée), une **case à cocher** apparaît en tête de chaque ligne ; on coche
 track par track.
 
