@@ -57,7 +57,7 @@ interface consumer colorée, empilement de cartes sans hiérarchie.
 
 | Rôle | Token | Valeur |
 |---|---|---|
-| Interface | `--font-ui` | `"Outfit", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif` |
+| Interface | `--font-ui` | `"Inter", -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif` |
 | Nombres, chemins, mesures | `--font-mono` | `"JetBrains Mono", ui-monospace, SFMono-Regular, Menlo, monospace` |
 
 Les deux familles sont auto-hébergées via `@fontsource` (`frontend/main.ts`) : l'app
@@ -551,17 +551,37 @@ Sans lui, la migration des 37 sites est impossible sans écraser une intention.
 
 Quatre points que ce socle ne tranche pas seul.
 
-### O‑1 · Outfit ou une famille plus proche de SF — RÉSOLU le 2026-08-16 (#34)
+### O‑1 · Outfit ou une famille plus proche de SF — RENVERSÉ le 2026-08-26, **Inter est retenu** (#34)
 
-**Outfit reste.** Décision d'Antoine sur #34, après mesure dans la vraie fenêtre : le
-défaut n'était pas la famille, c'était le bundle — `main.ts` n'importait que trois des
-neuf faces livrées, et le contraste manquant vivait dans la face 700 jamais chargée
-(400→700 = +3,67 % de largeur, plus que le 400→600 de Segoe UI). La table de styles
-macOS d'Apple est adoptée verbatim (#31), avec le saut Regular→Bold d'Apple. La skill
-`sift-macos-ui` § « Décisions d'identité » dit encore « Inter remplace Outfit »
-(2026-08-19) : **écart nommé, le tracker prime** — voir la chronologie sur #34.
-Reste d'exécution, porté par le chantier des rôles (#31) : importer la face 700, et le
-test `test/font-weights.test.ts` suit dans le même geste.
+**Inter remplace Outfit**, livré par `114325e`. Décision d'Antoine en session : « je préfère
+inter comme police ». Elle renverse la conclusion du 2026-08-16 et rejoint O‑1 de la skill
+`sift-macos-ui`, qui disait « Inter remplace Outfit » depuis le 2026-08-19 : la skill avait
+donc raison, mais pour une raison qu'elle n'avait pas — le choix, pas la mesure de contraste.
+Sites touchés : `package.json` + lock, les trois imports de `frontend/main.ts`, `--font-ui`
+ci-dessus, et la table `PAQUET` de `test/font-weights.test.ts`, qui vérifie que les trois
+faces existent.
+
+**Ce que disait la décision de 2026-08-16, conservé parce que la mesure reste vraie** : le
+défaut relevé alors n'était pas la famille mais le bundle — `main.ts` n'importait que trois des
+neuf faces livrées, et le contraste manquant vivait dans la face 700 jamais chargée (400→700 =
++3,67 % de largeur, plus que le 400→600 de Segoe UI). La table de styles macOS d'Apple reste
+adoptée verbatim (#31). Ce diagnostic n'est pas infirmé ; il a cessé d'être le critère.
+
+⚠️ **Ce que la bascule périme, et qui a été re-mesuré le 2026-08-26** — toute largeur du dépôt
+dérivée d'une mesure faite sous Outfit :
+
+| Largeur | Sous Outfit | Sous Inter | Suite |
+|---|---|---|---|
+| Colonne verdict (`AUTHENTIQUE` + pastille 6 + gap 4) | 81,67 → **92** | 83,56 → **93,56** | **96** (multiple de 4 supérieur) |
+| `--rail-w` (item le plus long + badge) | — | 66,77 + 25,09 = 91,86 pour 131 dispo | **200 inchangé**, 39 px de marge |
+
+Et le résultat qui vaut règle : **Inter n'est pas « plus large » qu'Outfit**, il est plus large
+en CAPITALES et plus étroit en minuscules — « Bibliothèque » RÉTRÉCIT (73,7 → 70,57) pendant que
+« MUSIQUE A TRIER » gagne 14,6 % (98,98 → 113,39). Une largeur dérivée d'une mesure **ne se
+convertit pas par un facteur** : elle se re-mesure libellé par libellé, sur le texte que l'écran
+porte vraiment. Les deux commentaires concernés de `styles.css` le portent.
+
+Chronologie complète sur #34.
 
 ### O‑2 · L'encre reste chaude sur des fonds devenus froids — RÉSOLU le 2026-08-19 (#37)
 
