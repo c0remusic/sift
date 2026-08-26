@@ -1899,7 +1899,7 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 /* ── Batch sheet (wireframe § 17) — non-modal progress + terminal report ──
    Slides from the top of .sift-inspector (position:relative host). Below popovers
    (--z-sheet < --z-popover) so the destination popover stays reachable. */
-.sift-batch-sheet{position:absolute;top:0;left:0;right:0;z-index:var(--z-sheet);background:var(--color-surface-raised);border-bottom:0.5px solid var(--color-border-secondary);border-radius:0 0 var(--border-radius-lg) var(--border-radius-lg);box-shadow:var(--shadow-toast);padding:var(--space-16);display:flex;flex-direction:column;gap:var(--space-12);transform:translateY(-100%);transition:transform var(--duration-normal) ease-out;overflow:hidden}
+.sift-batch-sheet{position:absolute;top:0;left:0;right:0;z-index:var(--z-sheet);background:var(--color-surface-raised);border-bottom:0.5px solid var(--color-border-secondary);border-radius:0 0 var(--border-radius-lg) var(--border-radius-lg);box-shadow:var(--shadow-toast);padding:var(--space-16);display:flex;flex-direction:column;gap:var(--space-12);transform:translateY(-100%);transition:transform var(--duration-slow) ease-out;overflow:hidden}
 .sift-batch-sheet--open{transform:translateY(0)}
 .sift-bs-head{display:flex;align-items:center;justify-content:space-between;gap:var(--space-8)}
 .sift-bs-title{font-size:var(--text-md);font-weight:600;color:var(--color-text-primary)}
