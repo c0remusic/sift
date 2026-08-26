@@ -520,10 +520,12 @@ l'en-tête de `frontend/b85.ts`).
 ## `docs/` — liste blanche depuis le 2026-07-31 (issue #5)
 
 `.gitignore` ignore le **contenu** de `docs/` et ne ré-autorise que ce qui fait
-autorité : `install-non-signe.md`, `design-system-states.md`, `ressources-externes.md`,
-`design-system/`, `skills/`, `agents/`, et **chaque dossier de chantier** de `superpowers/changes/`
-pris un par un. Plans de jalons, specs, revues et comptes rendus restent
-**sur cette machine** mais hors suivi git.
+autorité : `install-non-signe.md`, `manuel.md`, `design-system-states.md`,
+`ressources-externes.md`, `cdj-metadata-formats.md`, `design-system/`, **`ui-specs/`**,
+**`design-refs/`**, `skills/`, `agents/`, et **chaque dossier de chantier** de
+`superpowers/changes/` pris un par un. ⚠️ Les **specs d'écran sont SUIVIES**
+(`docs/ui-specs/`, 7 fichiers) : une décision de design s'y consigne et se pousse. Restent
+hors suivi : plans de jalons, revues et comptes rendus de chantier.
 
 - Un nouveau document sous `docs/` est ignoré **par défaut** ; le publier demande
   d'ajouter sa négation au `.gitignore` dans le même geste. C'est voulu — la liste noire
