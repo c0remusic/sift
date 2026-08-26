@@ -713,11 +713,10 @@ export async function renderQueue(touchDetail = true) {
     }
     renderQueueWindow(ql);
     ensureQueueScroll(ql);
-    // The rail and the Revue nav badge must never disagree: this repaint is a delivery of the
-    // queue too (from cache), and refresh() — the only other caller of updateRevueBadge — does
-    // not run on a plain navigation. Without this the badge keeps the count from the last
-    // refresh() while the rail already shows one row less (a track converting in the background).
-    updateRevueBadge(currentItems.length);
+    // Le badge de rail que ce point tenait d'accord avec la file est retiré (2026-08-26, voir
+    // l'emplacement d'`updateRevueBadge` plus bas). Le compte vit maintenant dans la barre, et
+    // `renderQueueWindow` ci-dessus le repeint par `paintBarCount` — même repaint, même instant,
+    // donc l'accord qui demandait un appel séparé est devenu structurel.
     return;
   }
 
@@ -785,7 +784,6 @@ export async function renderQueue(touchDetail = true) {
   // This IS the fresh delivery the stale flag was waiting for, and the single point where the
   // front takes the queue in — so it is also where the badge is brought back in step with the rail.
   queueCacheStale = false;
-  updateRevueBadge(currentItems.length);
   const qcol = document.getElementById("qcol");
   if (qcol) ensureQueueColumnChrome(qcol);
   // Background-analysis progress moved to the global progress zone (bottom of #nav, persistent
@@ -1331,14 +1329,15 @@ function ensureQueueFacet(qcol: HTMLElement): void {
   if (btn) paintFacetButton(btn);
 }
 
-/** Fill the Review nav badge with the pending count (board's "Revue [18]"). Runs from refresh()
- * — i.e. on every queue change, on any screen — so it's correct even off the Revue view. Empty
- * text collapses the pill via the `.nav-badge:empty` CSS rule. `count` is the queue length
- * `renderQueue` just fetched — no redundant `listQueue()` re-fetch here. */
-export function updateRevueBadge(count: number) {
-  const badge = requireEl<HTMLElement>('.nav-badge[data-badge="revue"]', "updateRevueBadge");
-  badge.textContent = count ? String(count) : "";
-}
+// `updateRevueBadge` vivait ici — retirée le 2026-08-26 avec le badge de rail de Revue.
+// Motif Mail, relevé sur `docs/design-refs/03-mail.png` : « Inbox » est écrit AUX DEUX endroits,
+// sidebar et tête de colonne, mais son compte n'est qu'à UN seul — celui de la colonne, jamais la
+// sidebar. Notes fait l'inverse pour la raison inverse : sa colonne n'a AUCUN en-tête, donc le
+// compte remonte sur l'entrée de sidebar qui nomme la liste. La règle commune est la même — le
+// compte va contre le nom de la liste, à un seul endroit — et Sift est le cas de Mail : « Revue »
+// est écrit dans le rail ET dans la barre, donc le compte reste dans la barre (`paintBarCount`).
+// Les badges des SOURCES restent, eux : leur compte n'est écrit nulle part ailleurs, c'est le cas
+// de Notes.
 
 // Debounces the heavy report/audio-decode load triggered by a queue-row selection (click or
 // ↑/↓, which dispatches a real .click() — see installFilingKeys). Flicking through several

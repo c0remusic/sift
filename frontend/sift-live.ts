@@ -57,12 +57,10 @@ import {
 } from "./bibliotheque-view";
 import { renderRekordboxLive, handleRekordboxAction } from "./rekordbox-view";
 import {
-  currentItems,
   enterDetailMode,
   enterBatchMode,
   registerBatchRenderer,
   renderQueue,
-  updateRevueBadge,
   handleQueueItemClick,
   installQueueNavKeys,
   reanalyzeTrack,
@@ -203,7 +201,6 @@ async function refresh() {
   // de fichiers en attente, donc elle se rafraîchit exactement où l'écran Accueil le faisait.
   await renderRailSources();
   await renderQueue();
-  updateRevueBadge(currentItems.length);
 }
 
 export function installLiveWiring() {

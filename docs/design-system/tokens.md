@@ -68,12 +68,11 @@ Tokens principaux :
 - `--color-border-danger`
 - `--overlay-hover`
 - `--overlay-selected`
-- `--overlay-badge`
 - `--overlay-drop`
 - `--overlay-wave-hover`
 
 Les overlays sont préférables aux aplats colorés pour les états subtils :
-sélection, survol, badge neutre, hover de waveform.
+sélection, survol, hover de waveform.
 
 ### Contraste
 

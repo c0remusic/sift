@@ -132,7 +132,7 @@ color-scheme:light;
    Alpha volontairement plus fort que --overlay-wave-hover (.16) : le survol se peint PAR-DESSUS
    les barres, il doit rester lisible sur elles. */
 --overlay-bar:oklch(25.67% 0.0142 67.12 / .32);
---overlay-badge:oklch(25.67% 0.0142 67.12 / .06);
+
 /* Voile de zone de dépôt (drag OS) : surface quasi-opaque teintée info, même langage que le
    bouton Destination du rail (base + tint info), thème-aware. Remplace l'ancien rgba sombre
    codé en dur qui ignorait le thème clair. Voir chrome.ts ensureDropStyle. */
@@ -427,7 +427,7 @@ color-scheme:light;
     --color-hue-indigo-text:oklch(74.16% 0.1143 286.69);--color-hue-indigo-bg:oklch(34.15% 0.045 278.34);--color-hue-purple-text:oklch(77.58% 0.0892 311.64);--color-hue-purple-bg:oklch(37.40% 0.05 312.41);--color-hue-pink-text:oklch(80.76% 0.0905 355.95);--color-hue-pink-bg:oklch(39.91% 0.045 2.52);--color-hue-teal-text:oklch(84.24% 0.0961 185.53);--color-hue-teal-bg:oklch(43.48% 0.035 186.37);--color-hue-yellow-text:oklch(88.36% 0.129 93.67);
     --color-hue-blue-solid:oklch(62.43% 0.2056 255.49);--color-hue-indigo-solid:oklch(55.64% 0.2032 278.15);--color-hue-teal-solid:oklch(77.06% 0.1181 211.98);--color-hue-green-solid:oklch(75.56% 0.2082 146.98);--color-hue-orange-solid:oklch(78.24% 0.1711 67.22);--color-hue-yellow-solid:oklch(88.49% 0.1805 94.78);--color-hue-purple-solid:oklch(65.60% 0.2274 312.42);--color-hue-pink-solid:oklch(65.77% 0.2317 16.02);--color-hue-gray-solid:oklch(68.12% 0.0073 286.21);
     --overlay-hover:oklch(100.0% 0.0 89.88 / .03);--overlay-selected:oklch(100.0% 0.0 89.88 / .06);
-    --overlay-badge:oklch(100.0% 0.0 89.88 / .06);--overlay-drop:oklch(35.51% 0.0051 106.66 / .93);
+    --overlay-drop:oklch(35.51% 0.0051 106.66 / .93);
     /* Hover-scrub fill on the waveform (see .sift-wave-hover) — replaces a hardcoded
        rgba(255,255,255,.6) that ignored the theme, same overlay-tint convention as --overlay-hover. */
     --overlay-wave-hover:oklch(100% 0 0 / .14);
@@ -468,7 +468,7 @@ color-scheme:light;
   --color-hue-indigo-text:oklch(74.16% 0.1143 286.69);--color-hue-indigo-bg:oklch(34.15% 0.045 278.34);--color-hue-purple-text:oklch(77.58% 0.0892 311.64);--color-hue-purple-bg:oklch(37.40% 0.05 312.41);--color-hue-pink-text:oklch(80.76% 0.0905 355.95);--color-hue-pink-bg:oklch(39.91% 0.045 2.52);--color-hue-teal-text:oklch(84.24% 0.0961 185.53);--color-hue-teal-bg:oklch(43.48% 0.035 186.37);--color-hue-yellow-text:oklch(88.36% 0.129 93.67);
   --color-hue-blue-solid:oklch(62.43% 0.2056 255.49);--color-hue-indigo-solid:oklch(55.64% 0.2032 278.15);--color-hue-teal-solid:oklch(77.06% 0.1181 211.98);--color-hue-green-solid:oklch(75.56% 0.2082 146.98);--color-hue-orange-solid:oklch(78.24% 0.1711 67.22);--color-hue-yellow-solid:oklch(88.49% 0.1805 94.78);--color-hue-purple-solid:oklch(65.60% 0.2274 312.42);--color-hue-pink-solid:oklch(65.77% 0.2317 16.02);--color-hue-gray-solid:oklch(68.12% 0.0073 286.21);
   --overlay-hover:oklch(100.0% 0.0 89.88 / .03);--overlay-selected:oklch(100.0% 0.0 89.88 / .06);
-  --overlay-badge:oklch(100.0% 0.0 89.88 / .06);--overlay-drop:oklch(35.51% 0.0051 106.66 / .93);
+  --overlay-drop:oklch(35.51% 0.0051 106.66 / .93);
   --overlay-wave-hover:oklch(100% 0 0 / .14);
   --overlay-bar:oklch(100% 0 0 / .32);
   --color-text-on-accent:var(--color-background-primary);
@@ -764,12 +764,10 @@ body:has(#sift-titlebar){border-radius:var(--border-radius-sm);overflow:hidden}
    n'est plus un chiffre mais une pastille de 6px qui ne dit que « il y a quelque chose ici ». Il
    redéclare fond, rayon et padding en entier — il ne dépend donc pas de ce qui est retiré ici.
 
-   ⚠️ `--overlay-badge` n'a plus AUCUN consommateur depuis ce retrait (déclaré trois fois : bloc
-   clair, bloc sombre système, bloc `[data-theme="dark"]` ; documenté `docs/design-system/tokens.md`).
-   Gardé délibérément plutôt que supprimé : le doublon compte-de-barre / badge-de-rail est encore
-   « à arbitrer » (dossier de chantier du 2026-08-26), donc ce badge peut encore bouger. Si
-   l'arbitrage confirme le chiffre nu, retirer le token ET son entrée de `tokens.md` dans le même
-   geste — la règle du dépôt dit qu'un code sans appelant se retire. */
+   `--overlay-badge`, qui peignait cette pilule, est SUPPRIMÉ dans le même geste (ses trois
+   déclarations et son entrée de `docs/design-system/tokens.md`) : l'arbitrage du 2026-08-26 a
+   confirmé le chiffre nu, il n'avait plus aucun consommateur. Règle du dépôt — un code sans
+   appelant se retire. */
 .nav-badge{font-size:var(--text-xs);line-height:1;font-weight:600;color:var(--color-text-tertiary);flex:none}
 .nav-badge:empty{display:none}
 /* Bottom group of the rail: holds the margin-top:auto (so Settings stays pinned to the very bottom)
