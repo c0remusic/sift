@@ -3179,7 +3179,11 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .sift-ident-search-btn{flex:none;font-size:var(--text-md);font-weight:500;color:var(--color-text-primary);cursor:pointer;padding:var(--space-8) var(--space-12);border-radius:var(--border-radius-md);border:0;font-family:inherit}
 .sift-icon-inline-base{font-size:var(--text-base);vertical-align:-2px}
 .sift-icon-inline-lg{font-size:var(--text-lg)}
-.sift-icon-inline-sm{font-size:var(--text-sm);vertical-align:-1px}
+/* `.sift-icon-inline-sm` vivait ici — retirée le 2026-08-26 avec ses deux derniers porteurs, les
+   icônes du bouton « Identifier » / « Ré-identifier » (`filing-identify.ts`, ses DEUX chemins de
+   rendu). Un CTA à label descriptif se dit en texte seul (`CLAUDE.md` § Front), et cette classe
+   n'existait que pour caler une icône contre un libellé. Retrait, pas mise en commentaire : plus
+   aucun appelant, même règle que `verdictWord` et `ipc_filing::create_bin`. */
 .sift-icon-inline-md{font-size:var(--text-md);vertical-align:-2px}
 .sift-cand-change-btn{font-size:var(--text-sm);padding:var(--space-4) var(--space-8);flex:none}
 .sift-icon-flex-none{flex:none}

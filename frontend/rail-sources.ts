@@ -127,8 +127,14 @@ export async function renderRailSources(): Promise<void> {
     (sources.length
       ? sources.map((s) => sourceEntryHtml(s, sources, s.id === active, scanFailures.get(s.id))).join("")
       : `<div class="sift-rail-src-msg">Aucun dossier surveillé</div>`) +
+    // TEXTE SEUL. Le `ti-plus` qui précédait le libellé est retiré le 2026-08-26 : `CLAUDE.md`
+    // § Front — un CTA à label descriptif se dit en texte seul, l'icône est réservée à ce qui n'a
+    // pas d'équivalent textuel. « + » DEVANT « Ajouter » ne fait que redire « Ajouter ». Le « + »
+    // de sidebar macOS, lui, est un bouton icône SEULE au pied du volet, jamais un glyphe accolé à
+    // un libellé — ce n'était donc pas ce patron-là. `docs/ui-specs/rail.md` § Sources ne demande
+    // pas d'icône non plus, il nomme un bouton « Ajouter un dossier ».
     `<button class="nv sift-rail-src-add" data-src-add="1" type="button">` +
-    `<i class="ti ti-plus" aria-hidden="true"></i><span>Ajouter un dossier</span></button>`;
+    `<span>Ajouter un dossier</span></button>`;
   mountedShape = sources.length ? shape : null;
 }
 

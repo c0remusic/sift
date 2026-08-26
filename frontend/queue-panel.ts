@@ -8,7 +8,7 @@
 // Détail / Lot a été retiré le 2026-08-25 (spec `docs/ui-specs/revue.md` §§ Zone A / Zone B′,
 // décision du wireframe « Poste de décision »). Le mode Lot s'arme désormais par l'icône de
 // sélection de la barre unifiée. Ne pas réintroduire d'onglet de mode dans #qcol.
-import { listQueue, reanalyzeTracks } from "./ipc";
+import { listQueue, reanalyzeTracks, revealTrack } from "./ipc";
 import { openFilingInto, syncDetail } from "./filing";
 import { refreshBins, clearBinPick } from "./filing-bins";
 import { homeProgressZone } from "./progress-zone";
@@ -426,30 +426,115 @@ export function installQueueNavKeys(): void {
     if (ql) renderQueueWindow(ql);
   });
 
-  // Clic droit sur une ligne de file en mode Lot — menu contextuel d'action de lot.
+  // Clic droit sur une ligne de file — menu contextuel, dans LES DEUX modes depuis le 2026-08-26.
+  // Il ne servait que le mode Lot (`if (reviewMode !== "batch") return`), alors que `revue.md`
+  // § Interactions le veut sur la ligne : « Ouvrir l'emplacement · Réanalyser · Écarter · Changer
+  // la destination. En mode Batch, agit sur la sélection. »
+  //
   // Sur `document` (pas sur #qcol) : #qcol est reconstruit à chaque navigation, un listener
   // posé dessus disparaîtrait ; `document` est la racine stable de tous les gestionnaires
   // délégataires de cette colonne (même motif que le keydown ci-dessus).
   document.addEventListener("contextmenu", (e) => {
-    if (reviewMode !== "batch") return;
     const qi = (e.target as HTMLElement).closest<HTMLElement>(".qi");
     if (!qi) return;
     e.preventDefault();
     const id = Number(qi.dataset.id);
-    // Assure que la piste cliquée est dans la sélection
-    if (!queueBatchSel.has(id)) { queueBatchSel.add(id); }
-    const n = queueBatchSel.size;
-    void import("./context-menu").then(({ openContextMenu }) => {
-      void import("./batch-panel").then(({ handleBatchQueueAction }) => {
-        openContextMenu(e.clientX, e.clientY, [
-          { label: `Ranger ${n} piste${n > 1 ? "s" : ""}`, onPick: () => handleBatchQueueAction("file") },
-          { label: `Écarter ${n} piste${n > 1 ? "s" : ""}`, danger: true, onPick: () => handleBatchQueueAction("discard") },
-        ]);
+
+    // « Changer la destination » OUVRE le vrai bouton de la zone C au lieu de refaire son travail.
+    // Même geste que le raccourci ⌫ de `filing.ts`, qui clique `[data-fil="trash"]` plutôt que de
+    // rappeler `doSecondary` : le popover de destination porte de l'état (bac courant, sur-place,
+    // arbre chargé), et un second chemin d'ouverture serait un second endroit où le désaccorder.
+    // Le sélecteur vaut dans les deux modes — `filing.ts` et `batch-panel.ts` rendent tous deux
+    // leur bouton avec `data-fil="destbtn"`.
+    const changerDestination = {
+      label: "Changer la destination",
+      onPick: () => document.querySelector<HTMLElement>('[data-fil="destbtn"]')?.click(),
+    };
+
+    if (reviewMode === "batch") {
+      // Assure que la piste cliquée est dans la sélection
+      if (!queueBatchSel.has(id)) {
+        queueBatchSel.add(id);
+      }
+      const n = queueBatchSel.size;
+      void import("./context-menu").then(({ openContextMenu }) => {
+        void import("./batch-panel").then(({ handleBatchQueueAction }) => {
+          openContextMenu(e.clientX, e.clientY, [
+            { label: `Ranger ${n} piste${n > 1 ? "s" : ""}`, onPick: () => handleBatchQueueAction("file") },
+            changerDestination,
+            {
+              label: `Écarter ${n} piste${n > 1 ? "s" : ""}`,
+              danger: true,
+              separated: true,
+              onPick: () => handleBatchQueueAction("discard"),
+            },
+          ]);
+        });
       });
+      const ql = document.getElementById("ql");
+      if (ql) renderQueueWindow(ql);
+      return;
+    }
+
+    // Mode Détail. La ligne devient d'abord la piste OUVERTE — c'est ce que fait tout clic droit
+    // dans Finder ou Mail, et c'est ce qui rend les deux dernières entrées adressables : « Changer
+    // la destination » et « Écarter » agissent sur la zone C, donc sur la piste ouverte, pas sur un
+    // identifiant. Le menu s'affiche par-dessus pendant que l'ouverture (débouncée à 150 ms) se
+    // fait ; le temps de lire quatre entrées et d'en choisir une couvre largement ce délai, et
+    // `openTrackGuard` refuse quand même d'agir si la piste ouverte n'est pas celle du menu.
+    handleQueueItemClick(qi, e);
+    const surLaPisteDuMenu = () => currentOpenId === id;
+    void import("./context-menu").then(({ openContextMenu }) => {
+      openContextMenu(e.clientX, e.clientY, [
+        {
+          label: "Ouvrir l'emplacement",
+          onPick: () => {
+            void revealTrack(id).catch((err) => {
+              toast(humanizeError(err, "Impossible d'ouvrir l'emplacement", "reveal_track"));
+            });
+          },
+        },
+        { label: "Réanalyser", onPick: () => void reanalyzeTrack(id) },
+        changerDestination,
+        {
+          label: "Écarter",
+          danger: true,
+          separated: true,
+          onPick: () => {
+            // Garde plutôt que fallback silencieux : si l'ouverture n'a pas abouti, écarter
+            // cliquerait le bouton d'une AUTRE piste — exactement le genre d'action qu'on ne
+            // rattrape pas. On le dit au lieu de le faire au hasard.
+            if (!surLaPisteDuMenu()) {
+              toast("Piste pas encore ouverte — réessaie");
+              return;
+            }
+            document.querySelector<HTMLElement>('[data-fil="trash"]')?.click();
+          },
+        },
+      ]);
     });
-    const ql = document.getElementById("ql");
-    if (ql) renderQueueWindow(ql);
   });
+}
+
+/** Relance l'analyse d'UNE piste bloquée. Vivait en closure dans `installLiveWiring`
+ *  (sift-live.ts) jusqu'au 2026-08-26 ; remontée ici avec le menu contextuel, qui en avait besoin —
+ *  et c'est de toute façon sa place : ses deux moitiés d'état, `beginReanalyze` / `endReanalyze`,
+ *  sont déclarées dans ce module et n'en sortaient que pour elle.
+ *
+ *  Le spinner en vol passe par cet état partagé, JAMAIS par une mutation du nœud du bouton : le
+ *  rail de file est reconstruit en `innerHTML` au `queue:changed` du backend, donc un spinner écrit
+ *  sur le nœud resterait échoué sur un élément détaché pendant que la ligne fraîche aurait l'air au
+ *  repos (attrapé en revue). Rendre depuis l'état survit à la reconstruction. */
+export async function reanalyzeTrack(id: number): Promise<void> {
+  beginReanalyze([id]);
+  try {
+    await reanalyzeTracks([id]);
+    toast("Réanalyse relancée");
+  } catch (e) {
+    toast(humanizeError(e, "Échec de la réanalyse — réessaie", "reanalyze_tracks"));
+  } finally {
+    endReanalyze([id]);
+  }
 }
 
 // Review mode: "detail" = one track at a time (filing pane), "batch" = triage many at once

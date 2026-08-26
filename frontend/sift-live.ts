@@ -15,7 +15,6 @@ import {
   exportRekordboxXml,
   linkRekordboxXml,
   rekordboxStatus,
-  reanalyzeTracks,
   revealTrack,
   getSetting,
 } from "./ipc";
@@ -66,8 +65,7 @@ import {
   updateRevueBadge,
   handleQueueItemClick,
   installQueueNavKeys,
-  beginReanalyze,
-  endReanalyze,
+  reanalyzeTrack,
 } from "./queue-panel";
 import {
   renderBatch,
@@ -234,22 +232,9 @@ export function installLiveWiring() {
   // item lit up "Réglages" and landed on a page about something else. Both the interception and the
   // card moved out on 2026-07-31 (`usb-view.ts`).
 
-  /** Retry analysis for a single stuck-unanalysed track. The in-flight spinner is driven through
-   *  queue-panel's shared reanalyzingIds state (begin/endReanalyze), NOT by mutating the clicked
-   *  button node — the queue rail is rebuilt via innerHTML on the backend's queue:changed, so a
-   *  spinner written onto the node would strand on a detached element while the fresh row looked
-   *  idle (review-caught). Rendering from state survives the rebuild. */
-  async function reanalyzeTrack(id: number): Promise<void> {
-    beginReanalyze([id]);
-    try {
-      await reanalyzeTracks([id]);
-      toast("Réanalyse relancée");
-    } catch (e) {
-      toast(humanizeError(e, "Échec de la réanalyse — réessaie", "reanalyze_tracks"));
-    } finally {
-      endReanalyze([id]);
-    }
-  }
+  // `reanalyzeTrack` vivait ici en closure — remontée dans `queue-panel.ts` le 2026-08-26, où
+  // vivent déjà ses deux moitiés d'état (`beginReanalyze` / `endReanalyze`) et d'où le menu
+  // contextuel de la file l'appelle aussi. Importée depuis ce module, plus redéfinie.
 
   // Racine de dispatch : `document`, plus `#pa`. La barre unifiée (`#sift-titlebar`) est le
   // premier enfant de `<body>`, donc HORS de `#pa` — un écouteur enraciné sur `#pa` ne voit aucun

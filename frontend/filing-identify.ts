@@ -210,7 +210,11 @@ function onIdentityApplied(
   editor.querySelector(".sift-ident-idle-note")?.remove();
 
   // [C1] Relabel Identifier → Ré-identifier once an identity has been applied.
-  idBtn.innerHTML = '<i class="ti ti-refresh sift-icon-inline-sm"></i> Ré-identifier';
+  // TEXTE SEUL, comme le premier rendu de ce bouton plus bas dans ce fichier : c'est le MÊME
+  // bouton dans un autre état, et n'en corriger qu'un chemin ferait revenir l'icône dès qu'une
+  // identité est appliquée. `textContent` et non `innerHTML` — il n'y a plus de balise à poser,
+  // et le badge de raccourci `I` n'a jamais été rendu par ce chemin-ci.
+  idBtn.textContent = "Ré-identifier";
 
   // The displayed identity just changed while the FILE keeps its old tags → surface the gap.
   refreshDiscrepancy();
@@ -363,7 +367,12 @@ export function renderEditor(host: HTMLElement, mid: HTMLElement, rail: string):
     `<div class="sift-meta-header">` +
     `<span class="sift-meta-title">Métadonnées</span>` +
     `<span class="sift-meta-header-right">` +
-    `<button data-fil="identifier" class="sift-meta-ident-btn" title="Rechercher les métadonnées sur Discogs (pochette, label, année, genres)"><i class="ti ti-search sift-icon-inline-sm"></i> ${c.artist && c.title ? "Ré-identifier" : "Identifier"} <span class="kbd sift-kbd-hint-id">I</span></button>` +
+    // Loupe retirée le 2026-08-26 : `CLAUDE.md` § Front — un CTA à label descriptif se dit en
+    // TEXTE SEUL, et « Identifier » dit déjà ce que la loupe redisait. `docs/ui-specs/revue.md`
+    // § Métadonnées ne demande pas d'icône non plus, il nomme « le seul bouton "Identifier" ».
+    // Le badge `I` RESTE, et ce n'est pas un ornement : il porte le raccourci clavier, une
+    // information que le libellé ne donne pas — exactement le cas que la règle réserve.
+    `<button data-fil="identifier" class="sift-meta-ident-btn" title="Rechercher les métadonnées sur Discogs (pochette, label, année, genres)">${c.artist && c.title ? "Ré-identifier" : "Identifier"} <span class="kbd sift-kbd-hint-id">I</span></button>` +
     `</span></div>` +
     `<div class="sift-meta-body">` +
     // Résultats Discogs — vide au repos, rempli le temps d'une recherche (doIdentify), au-dessus des
