@@ -64,15 +64,25 @@ l'éditeur de Notes et au corps de Mail, et à `patterns.md:54`).
 tête de file, compte de colonne retiré et remonté dans la barre, « Non analysés uniquement »
 retirée · `114325e` police Inter.
 
-⚠️ **Deux pertes de fonction assumées, à réintroduire ailleurs ou à accepter :**
+✅ **Les deux pertes de fonction sont RENDUES le 2026-08-26** (issues #48 et #49), chacune par le
+mécanisme que la spec désignait déjà plutôt que par le retour du contrôle retiré :
 
-1. Le retrait de « Non analysés uniquement » supprime le seul moyen d'**isoler les pistes bloquées
-   en analyse**. **Confirmé par la mesure** le 2026-08-26 : le popover de filtre n'offre que
-   Lossless · MP3 · Faux · Doublons, aucune facette d'analyse — il n'existe donc plus AUCUN chemin
-   d'UI vers ces pistes. Le critère devrait rejoindre le filtre cochable, sinon la fonction
-   disparaît pour de bon.
-2. Le retrait du compte de colonne supprime le seul **retour chiffré du filtre** : le pulldown
-   résume la combinaison, pas le nombre de pistes qu'elle laisse voir.
+1. Le retrait de « Non analysés uniquement » avait supprimé le seul moyen d'**isoler les pistes
+   bloquées en analyse** — mesuré le 2026-08-26 : le popover n'offrait que Lossless · MP3 · Faux ·
+   Doublons, et les 3 pistes `needs_analysis` d'une file de 3 124 n'étaient atteignables que par le
+   hasard du défilement. Le critère **rejoint le filtre cochable** en facette `Non analysés` (voir
+   § Zone B′), et non en bascule séparée : le popover est déjà le lieu où l'on compose des critères.
+   Le critère est `needs_analysis`, **jamais** `verdict === null` — c'est cette confusion qui avait
+   causé le bug du 2026-07-20 (file entière cachée), aggravée par un défaut ON que le popover n'a
+   pas : rien n'y est coché au montage.
+2. Le retrait du compte de colonne avait supprimé le seul **retour chiffré du filtre**. Le compte
+   de la barre **devient contextuel** (« N pistes filtrées », § Zone A) au lieu de faire revenir un
+   second compte dans la colonne — la direction 1 du ticket rouvrait ce que le doublon
+   compte/badge venait de fermer trois lignes plus bas. Ce qui tranche, encore une fois par les
+   refs : sur `03-mail.png`, l'en-tête de colonne de Mail porte le compte (« 34 messages ») **et**
+   le bouton de filtre sur la même rangée, et ce compte décrit ce que la colonne contient. Un
+   compte de file qui ignore le filtre posé était donc l'écart au motif ; le rendre contextuel
+   ramène Sift dessus.
 
 ✅ **Doublon compte-de-barre / badge-de-rail — TRANCHÉ le 2026-08-26** (`a927377`), par les refs et
 non par un choix. Trois apps relevées : **Mail** = compte en tête de colonne, zéro compteur de
@@ -119,6 +129,14 @@ visibles a quitté la tête de colonne (voir § Décisions postérieures). En mo
 nombres côte à côte se liraient comme une fraction. Contrôles de fenêtre à droite (convention hôte
 Windows).
 
+**Trois états, pas deux** (issue #49, 2026-08-26) : au repos « N pistes » = la file entière ; dès
+qu'une facette est cochée ou qu'une recherche est saisie, « **N pistes filtrées** » = ce que la
+colonne montre ; en mode Lot, « N sélectionnées ». C'est le retour chiffré du filtre — le pulldown
+dit la combinaison cochée, ce compte dit ce qu'elle laisse voir. Le qualificatif « filtrées » n'est
+pas un ornement : chez Mail le compte touche le bouton de filtre, ici il en est séparé par toute la
+largeur de la barre, et un nombre nu s'y lirait comme la taille de la file. Un seul nombre dans les
+trois cas — jamais « N sur M ». Règle gelée par `test/queue-count-label.test.ts`.
+
 ~~Au bord droit, avant les contrôles de fenêtre : **icône de sélection** (Batch, § 11 option 4),
 icône seule + infobulle, patron *toolbar* Photos macOS.~~ **Retirée le 2026-08-26** avec son
 emplacement `#sift-tb-actions-right` : le commutateur du mode Lot est un **bouton texte en tête de
@@ -162,7 +180,10 @@ track par track.
 
 **Filtre — pop-up à options cochables** (décision du 2026-08-24). Un bouton en tête de file
 (« Faux », « Faux + Doublons »…) ouvre un menu à **cases à cocher** : `Lossless`, `MP3`,
-`Faux`, `Doublons`, chacun avec son compte, un séparateur, puis « Tout afficher ». Plusieurs
+`Faux`, `Doublons`, `Non analysés`, chacun avec son compte, un séparateur, puis « Tout
+afficher ». `Non analysés` est ajoutée le 2026-08-26 (issue #48) et couvre **toutes** les pistes
+sans verdict, y compris celles qui ont épuisé leurs tentatives — périmètre plus large que le
+compte du bouton « Réanalyser (N) » du pied, qui les exclut pour pouvoir tomber à zéro. Plusieurs
 critères cochés = **union** (Faux *ou* Doublons). « Tout afficher » remet à zéro. Le bouton
 résume la combinaison. La recherche (en tête) **gare** le filtre : elle interroge la file
 source **entière**, pas le sous-ensemble filtré (patron Finder — saisir passe en mode

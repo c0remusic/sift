@@ -20,6 +20,7 @@ import { humanizeError } from "./errors";
 import { filingFailure, isFilingInFlight, onFilingOutcome } from "./filing-state";
 import { isBatchSheetOpen } from "./batch-sheet";
 import { anchoredBelowPosition } from "./popover-position";
+import { queueCountLabel } from "./queue-count-label";
 
 /** A pending track still worth (re)analysing: no current verdict AND not yet terminally broken.
  *  Single source of truth for the "Non analysés" count, filter, and bulk-retry set — a track that
@@ -96,12 +97,12 @@ let queueSearchTerm = "";
 // bouton : un drapeau que plus rien ne bascule est du code mort, et le laisser à `false` aurait
 // gardé trois branches mortes dans `visibleQueueItems` et l'état vide.
 //
-// ⚠️ Ce que le retrait EMPORTE, et qui n'est pas remplacé : la seule façon d'isoler les pistes
-// bloquées en attente d'analyse (`QueueItem.needs_analysis`, qui n'est PAS `verdict === null` —
-// voir son commentaire dans `shared/contracts.ts`) dans une longue file. C'est un des trois fils
-// notés ouverts dans `docs/ui-specs/revue.md`, pas un oubli — et si le besoin revient, relire
-// d'abord le bug du 2026-07-20 : la version ON-par-défaut de ce filtre cachait la file entière.
-// `unanalyzedItems()` reste, elle : le bouton « Réanalyser (N) » du pied s'en sert toujours.
+// Ce que le retrait avait emporté — la seule façon d'isoler les pistes bloquées en attente
+// d'analyse — est RENDU depuis le 2026-08-26 (issue #48) par la facette « Non analysés » du
+// pulldown de filtre, et non par le retour d'une bascule séparée : le popover est déjà le lieu où
+// l'on compose des critères, une facette de plus n'ajoute aucune surface. Voir `QUEUE_FACETS`.
+// `unanalyzedItems()` reste, elle : le bouton « Réanalyser (N) » du pied s'en sert toujours, sur un
+// périmètre plus étroit que la facette (voir le commentaire de celle-ci).
 
 // Filtre par facettes (UNION multi-critères) — cases cochées dans le popover « Filtrer ». Set au
 // niveau module : survit aux re-rendus (poll 300ms, queue:changed), ne tombe que sur une action
@@ -114,6 +115,17 @@ const QUEUE_FACETS: readonly { id: string; label: string; match: (it: QueueItem)
   { id: "mp3", label: "MP3", match: (it) => it.rail === "lossy" },
   { id: "fake", label: "Faux", match: (it) => it.verdict === "fake" },
   { id: "dup", label: "Doublons", match: (it) => it.dup },
+  // Ajoutée le 2026-08-26 (issue #48) : elle rend le chemin d'UI vers les pistes sans verdict, que
+  // le retrait de la bascule « Non analysés uniquement » avait supprimé. Le critère est
+  // `needs_analysis` et JAMAIS `verdict === null` — voir son commentaire dans `shared/contracts.ts`
+  // ; le bug du 2026-07-20 (file entière cachée) venait de cette confusion, plus le fait que la
+  // bascule était ON par défaut. Ici le Set part vide, donc aucun filtre n'est posé au montage.
+  //
+  // ⚠️ Périmètre VOLONTAIREMENT plus large qu'`unanalyzedItems()`, qui exclut les pistes ayant
+  // épuisé `MAX_ANALYSIS_ATTEMPTS` pour que son compte puisse tomber à zéro. Cette facette-ci les
+  // INCLUT : ce sont précisément celles qu'aucune relance ne fera partir, donc celles qu'isoler
+  // sert le plus. Deux populations, deux mots — « Non analysés » ici, « Réanalyser (N) » au pied.
+  { id: "unanalyzed", label: "Non analysés", match: (it) => it.needs_analysis },
 ];
 
 /** UNION : un item passe s'il satisfait AU MOINS une facette active. Set vide = aucun filtre. */
@@ -123,11 +135,11 @@ function matchesFacet(it: QueueItem): boolean {
 }
 
 function visibleQueueItems(): QueueItem[] {
-  // Plus de filtre d'analyse ici depuis le 2026-08-26 : la bascule « Non analysés uniquement » du
-  // pied de colonne est retirée (décision d'Antoine, maquette « Maquette — Revue »). La liste part
-  // donc toujours de `currentItems`, et seules la recherche et les facettes la restreignent.
-  // ⚠️ La capacité d'ISOLER les pistes bloquées en analyse part avec elle — c'est un des trois fils
-  // laissés ouverts dans `docs/ui-specs/revue.md`, pas un oubli.
+  // Plus de filtre d'analyse EN DUR ici depuis le 2026-08-26 : la bascule « Non analysés
+  // uniquement » du pied de colonne est retirée (décision d'Antoine, maquette « Maquette — Revue »).
+  // La liste part donc toujours de `currentItems`, et seules la recherche et les facettes la
+  // restreignent — le critère d'analyse est devenu l'une de ces facettes (issue #48), donc il passe
+  // par le même chemin que les autres au lieu d'avoir sa branche.
   const base = currentItems;
   const q = queueSearchTerm.toLowerCase();
   // Recherche (si présente) ET facettes (union) se composent : la recherche cherche dans tout
@@ -180,19 +192,34 @@ function measureQueueRowHeight(ql: HTMLElement): number {
  *  seul état que le mode Lot donne à voir en permanence, et il remplace le total plutôt que de s'y
  *  ajouter — deux nombres côte à côte dans la barre se liraient comme une fraction.
  *
+ *  ⚠️ Il dit la file ENTIÈRE au repos, et ce qui est VISIBLE dès qu'un filtre ou une recherche est
+ *  posé (issue #49, 2026-08-26) — pas « toujours le total ». Sans ça, cocher une facette sur 3 124
+ *  pistes ne rendait aucun retour chiffré : le pulldown nommait la combinaison, rien ne disait ce
+ *  qu'elle laissait voir. La règle exacte des trois états vit dans `queue-count-label.ts`, module
+ *  sans DOM gelé par Vitest ; cette fonction ne fait plus qu'écrire.
+ *
  *  Appelé depuis `renderQueueWindow`, donc sur le CHEMIN CHAUD de la colonne (poll de 300 ms +
  *  scroll rAF-throttlé) : d'où la comparaison avant écriture — une affectation `textContent`
  *  identique reste une écriture DOM. La comparaison interroge le NŒUD et non un cache au niveau
  *  module : la barre est vidée et remontée par la navigation (`clearBarSlots`), et un cache mémoire
- *  répondrait alors « déjà peint » sur une barre qui n'affiche plus rien. */
-function paintBarCount(): void {
+ *  répondrait alors « déjà peint » sur une barre qui n'affiche plus rien.
+ *
+ *  `visible` est PASSÉ par l'appelant et jamais recalculé ici : `renderQueueWindow` vient de faire
+ *  ce filtrage pour peindre ses lignes, et le refaire doublerait un parcours de la file sur le
+ *  chemin le plus chaud du frontend. */
+function paintBarCount(visible: number): void {
   const el = document.getElementById("sift-tb-count");
   if (!el) return;
   const lot = reviewMode === "batch";
-  const n = lot ? queueBatchSel.size : currentItems.length;
-  // Accord : 0 et 1 prennent le singulier en français, 2 et au-delà le pluriel. Même règle que le
-  // compte jumeau de la Bibliothèque (`bibliotheque-view.ts`, `.sift-bib-count`).
-  const label = lot ? `${n} sélectionnée${n > 1 ? "s" : ""}` : `${n} piste${n > 1 ? "s" : ""}`;
+  const label = queueCountLabel({
+    mode: lot ? "batch" : "detail",
+    selected: queueBatchSel.size,
+    total: currentItems.length,
+    visible,
+    // Recherche ET facettes restreignent la même liste (`visibleQueueItems`) : l'une ou l'autre
+    // suffit à faire de ce compte un retour de filtre plutôt qu'un total.
+    filtered: queueFacetFilter.size > 0 || queueSearchTerm !== "",
+  });
   if (el.textContent !== label) el.textContent = label;
   el.classList.toggle("sift-tb-count-lot", lot);
 }
@@ -227,9 +254,10 @@ function keyboardCursorId(items: QueueItem[]): number {
 function renderQueueWindow(ql: HTMLElement): void {
   const items = visibleQueueItems();
   // Le compte de la barre se peint ici parce que c'est le point qui repasse à CHAQUE changement de
-  // la file — ajout, rangement, armement du mode Lot, coche d'une ligne. Il ne lit pas `items` : il
-  // dit la file entière (ou la sélection en mode Lot), pas la fenêtre filtrée.
-  paintBarCount();
+  // la file — ajout, rangement, armement du mode Lot, coche d'une ligne, case de facette. `items`
+  // lui est passé : c'est ce que la colonne montre, et c'est ce que le compte dit dès qu'un filtre
+  // ou une recherche est posé (issue #49). Sans filtre il retombe sur la file entière.
+  paintBarCount(items.length);
   if (!items.length) {
     // "File vide." reads as "nothing was ever here" — misleading when a track is still
     // shown in Detail (currentOpenId set) because it's the last one just treated and the
@@ -1131,17 +1159,19 @@ function placeQueueFacet(): void {
  *
  *  Lus sur `currentItems`, la file SOURCE, et JAMAIS sur `visibleQueueItems()` : sur la liste déjà
  *  filtrée, cocher « Faux » ferait tomber « Lossless », « MP3 » et « Doublons » à 0, et le menu
- *  cesserait de dire ce qu'il y a à filtrer pour ne plus dire que ce qui reste après filtrage. Même
- *  raison, à l'envers, que le compte de pistes VISIBLES qui vivait dans la rangée d'en-tête : lui
- *  décrivait ce que la colonne montre, donc se lisait sur la liste filtrée. Il est retiré depuis le
- *  2026-08-26 — le compte de la barre (`paintBarCount`) dit la file entière, pas la fenêtre.
+ *  cesserait de dire ce qu'il y a à filtrer pour ne plus dire que ce qui reste après filtrage.
+ *
+ *  ⚠️ C'est l'exacte symétrique du compte de la BARRE, qui lui se lit sur la liste filtrée
+ *  (`paintBarCount`, issue #49) : celui-ci dit ce qu'il y a À filtrer, celui-là ce que le filtre
+ *  LAISSE VOIR. Les deux nombres divergent dès qu'une case est cochée, et c'est voulu — les
+ *  intervertir rendrait chacun muet sur sa propre question.
  *
  *  Appelé à l'OUVERTURE du menu seulement (`toggleQueueFacet`), jamais depuis le rendu de la file :
  *  ce balayage est en O(file × facettes) et la colonne se repeint sur un poll de 300ms — c'est le
  *  point chaud du frontend. Une file fermée n'a pas de compte à montrer. */
 function paintFacetCounts(pop: HTMLElement): void {
   const counts = new Map<string, number>(QUEUE_FACETS.map((f) => [f.id, 0]));
-  // Un seul parcours de la file pour les quatre facettes (elles ne s'excluent pas : un même item
+  // Un seul parcours de la file pour toutes les facettes (elles ne s'excluent pas : un même item
   // peut être compté dans plusieurs, l'union du filtre le dédoublonne ensuite).
   for (const it of currentItems) {
     for (const f of QUEUE_FACETS) if (f.match(it)) counts.set(f.id, (counts.get(f.id) ?? 0) + 1);
