@@ -45,7 +45,7 @@ function coverHtml(st: EditState): string {
     ? `<img src="${esc(src)}" alt="" style="width:100%;height:100%;object-fit:cover">`
     : `<i class="ti ti-vinyl" style="font-size:var(--text-2xl);color:var(--color-text-tertiary)"></i>`;
   return (
-    `<button data-lib="cover" title="Changer la pochette" aria-label="Changer la pochette" style="position:relative;width:72px;height:72px;flex:none;border-radius:var(--border-radius-md);overflow:hidden;background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);display:flex;align-items:center;justify-content:center;padding:0;cursor:pointer">` +
+    `<button data-lib="cover" title="Changer la pochette" aria-label="Changer la pochette" style="position:relative;width:72px;height:72px;flex:none;border-radius:var(--border-radius-md);overflow:hidden;background:var(--color-background-secondary);border:1px solid var(--color-border-tertiary);display:flex;align-items:center;justify-content:center;padding:0;cursor:pointer">` +
     inner +
     // Encre + scrim theme-INVARIANTS : ce bandeau est posé sur la pochette de l'utilisateur, pas
     // sur une surface de l'app, donc son ratio dépend de l'image et non des tokens. Utilisait

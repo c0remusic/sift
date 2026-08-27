@@ -59,6 +59,14 @@ charpente.** Le rail de navigation, la colonne file et la barre d'action gardent
 le milieu de Revue n'en a plus aucune. La distinction cesse d'être un dégradé de gris qu'il
 faut comparer pour lire, et devient binaire.
 
+**Amendé le 2026-08-27** (portage maquette, #50, comparatif A/B tranché par Antoine) : le
+**rail** quitte sa surface pour le **fond de fenêtre** — trois plans de lecture : rail (le plus
+en retrait), milieu (le sol, même fond), file (la seule zone élevée). Motif : la sidebar de
+Mail est la zone la plus en retrait de la fenêtre, jamais un plan égal à la liste. La règle
+« surface = charpente » tient pour ce qui doit se DÉTACHER (file, barre d'action) ; le rail,
+lui, se détache par sa colonne et son filet, pas par un aplat. La zone gauche de la barre
+unifiée (`#sift-tb-left`, continuation du rail) suit dans le même geste.
+
 Trois sélecteurs vidés : `.sift-player-row`, `.sift-spectro-box`,
 `.sift-fil-editor.sift-fil-editor-margin`. Vérifié dans la vraie fenêtre par un compte
 positif — **zéro** élément de `#mid` peint la valeur de la charpente, et les trois surfaces

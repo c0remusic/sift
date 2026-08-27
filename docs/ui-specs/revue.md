@@ -98,6 +98,28 @@ Revue est retiré**, le compte reste dans la barre. Les badges de **sources** re
 n'est écrit nulle part ailleurs, c'est le cas de Notes. `--overlay-badge` est supprimé avec le
 dernier porteur de la pilule.
 
+## Décisions — tranchées le 2026-08-27, portées le même jour (#50)
+
+Tranchées sur la maquette Figma (comparatifs A/B construits côte à côte, verdicts d'Antoine),
+puis portées dans le code dans la même session. La maquette reste la référence visuelle.
+
+| Point | Avant | Retenu le 2026-08-27 |
+|---|---|---|
+| **Teintes de pastille** | encres de texte (`--color-text-success/danger/warning`) | **teintes système vives** : Authentique `hue-green-solid`, Faux `hue-red-solid` (token AJOUTÉ — systemRed du kit, 255,59,48 clair · 255,69,58 sombre), Zone grise `hue-yellow-solid`. Motif : un indicateur d'état est une teinte système pleine, jamais une encre (point non-lu de Mail = systemBlue). L'échec terminal suit Faux ; l'attente reste un anneau neutre ; les MOTS (badge LOSSLESS) restent en encre |
+| **Place de la pastille dans la ligne** | ouvre la ligne, avant le titre | **collée à la fin du titre** — décision produit, assumée CONTRE le motif Mail (indicateurs au bord droit). Le sous-titre s'aligne au titre (indent de 15px retirée) |
+| **Respiration de la zone C** | pas uniforme 16 entre les 4 sections | **groupes** (« serré dedans, aéré entre », motif Réglages Système / en-tête Mail) : bloc écoute (en-tête + lecteur, gap 12) · écart 32 · bloc fiche (métadonnées gap 8 — pitch ≈ 30, rangées de Réglages —, puis Diagnostic à 16). Les filets par rangée de `.sift-attr` tombent : l'espace sépare |
+| **Plan du rail** | `.sb` peint `background-tertiary`, même plan que la file | **fond de fenêtre** — trois plans : rail (le plus en retrait), milieu (le sol), file (seule zone élevée). Motif sidebar Mail ; `#sift-tb-left` suit. `patterns.md` § plans amendé |
+| **File** | carte flottante (bordure + rayon 14, insetée par le padding de `#content`) | **bord à bord** — collée au rail, à la barre, au bas de fenêtre ; filets sur ses seuls flancs. Séparateurs **entre rangées**, 1 px, en retrait (`--space-8`), effacés autour de la rangée survolée/ouverte (comportement des Mail récents) ; hauteur de rangée 46 inchangée (`::before` absolu) |
+| **Filet sous la barre** | aucun | **1 px bord à bord** sous `#sift-titlebar` — le séparateur qui borne la zone (motif Mail, en-tête de colonne) |
+| **Barre** | `--toolbar-h: 44` (dérivation locale) | **48** — la toolbar du kit App Window (72:165). L'ancienne dérivation reste un plancher |
+| **Entrée de rail** | `.nv` 34, padding 8/8 | **28**, padding 7/8 — l'item sidebar du kit (61:1606) |
+| **Titre de piste** | 32/600 (`--text-2xl`) | **26/32** — Large Title du styleguide kit. Littéral sourcé, à rationaliser avec #31 |
+| **Épaisseur des filets** | 0,5 px hairline partout | **1 px partout** (le kit dessine à 1 ; 0,5 rend inégal selon DPI). Sweep complet styles.css + vues TS, `app.js` (maquette héritée) exclu |
+
+⚠️ Deux amendements au § du 2026-08-26 : « le corps de la zone C reste sans aucun filet »
+s'étend aux rangées de la fiche (leurs `border-bottom` tombent) ; et la file, elle, GAGNE ses
+séparateurs de rangées — ils étaient déjà la décision maquette du 26, portés ce jour.
+
 ## Contexte dans le shell
 
 Patron macOS : **Finder** pour la file et la sélection · **Utilitaire de disque** pour

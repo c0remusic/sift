@@ -503,7 +503,7 @@ function dupMemberHtml(m: DupGroup["members"][number]): string {
 function dupGroupHtml(g: DupGroup, idx: number): string {
   const loserCount = g.members.filter((m) => !m.recommend_keep).length;
   return (
-    `<div class="sift-dup-group" style="border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:10px 12px;margin-bottom:8px">` +
+    `<div class="sift-dup-group" style="border:1px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:10px 12px;margin-bottom:8px">` +
     g.members.map((m) => dupMemberHtml(m)).join("") +
     `<div style="margin-top:6px"><button data-bib="dupresolve" data-idx="${idx}">Envoyer ${loserCount} doublon${loserCount > 1 ? "s" : ""} à la corbeille</button></div>` +
     `</div>`

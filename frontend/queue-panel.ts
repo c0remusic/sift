@@ -599,10 +599,14 @@ function initQueueBatchSel(items: QueueItem[]): void {
 //
 // La règle qui, elle, ne bouge pas : JAMAIS un hex en dur ici (l'ancien `#e2685e` rouge la
 // cassait) — lire les tokens CSS, pas une 3ᵉ teinte inventée à côté.
+// Teintes SYSTÈME vives, pas des encres de texte (décision 2026-08-27, maquette Figma « Maquette —
+// Revue », composant Pastille de verdict) : un indicateur d'état est systemGreen/Red/Yellow plein —
+// le point non-lu de Mail est systemBlue plein, jamais une couleur de label. Les encres text-*
+// restent aux MOTS (badge LOSSLESS de zone C, libellés) ; la pastille seule porte le vif.
 const VERDICT_DOT: Record<string, [string, string]> = {
-  ok: ["var(--color-text-success)", "authentique"],
-  fake: ["var(--color-text-danger)", "faux / sur-encodé"],
-  grey: ["var(--color-text-warning)", "zone grise"],
+  ok: ["var(--color-hue-green-solid)", "authentique"],
+  fake: ["var(--color-hue-red-solid)", "faux / sur-encodé"],
+  grey: ["var(--color-hue-yellow-solid)", "zone grise"],
 };
 /** La pastille porte le verdict À ELLE SEULE depuis le 2026-08-26 : le mot qui la doublait dans la
  *  ligne est retiré (« la pastille est là pour ça », Antoine), ce qui rend la file à `revue.md`
@@ -625,7 +629,7 @@ export function verdictDot(it: Pick<QueueItem, "verdict" | "analysis_attempts">)
     return `<span title="${title}" style="${base};background:${c}"></span>`;
   }
   if (it.analysis_attempts >= MAX_ANALYSIS_ATTEMPTS) {
-    return `<span title="analyse abandonnée" style="${base};background:var(--color-text-danger)"></span>`;
+    return `<span title="analyse abandonnée" style="${base};background:var(--color-hue-red-solid)"></span>`;
   }
   // not analysed yet
   return `<span title="en attente d'analyse" style="${base};border:1.5px solid var(--color-text-tertiary);box-sizing:border-box"></span>`;
@@ -661,9 +665,13 @@ function queueRowHtml(it: QueueItem, active: boolean, onCursor: boolean): string
       ? `<input type="checkbox" class="qi-ck" data-sift="queuepick" data-id="${it.id}" tabindex="-1"${queueBatchSel.has(it.id) ? " checked" : ""}>`
       : "") +
     `<div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">` +
+    // Pastille COLLÉE À LA FIN DU TITRE, pas en tête de ligne (décision produit d'Antoine,
+    // 2026-08-27, assumée CONTRE le motif Mail des indicateurs au bord droit — maquette Figma,
+    // composant Ligne de file). Le titre ne pousse plus (`flex:0 1 auto`) : il s'ellipse si long
+    // et la pastille reste visible, accolée à son dernier caractère.
     `<div style="display:flex;align-items:center;gap:6px;min-width:0">` +
+    `<span style="flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;font-weight:500">${title}</span>` +
     verdictDot(it) +
-    `<span style="flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;font-weight:500">${title}</span>` +
     `</div>` +
     // Always render the second line (never conditionally omit it) — otherwise a
     // not-yet-identified track (no artist) renders one line shorter than an identified

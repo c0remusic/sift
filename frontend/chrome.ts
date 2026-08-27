@@ -154,18 +154,22 @@ export function injectLeanStyle() {
   st.textContent =
     // Barre UNIFIÉE (decorations:false — Tauri seulement) : barre de titre et toolbar fusionnées,
     // une seule barre, jamais deux empilées. Deux VRAIES zones DOM (pas un dégradé de fond, qui
-    // laisse une couture sous-pixel) : la gauche prend la largeur et le ton du rail (--rail-w,
-    // --color-background-tertiary) pour que la barre se lise comme sa continuation, la droite
-    // prend le ton du contenu. La bordure verticale entre les deux est le même border-right que
-    // le rail, donc la ligne court sans interruption de la barre jusque dans .sb — et AUCUNE
-    // ligne horizontale n'est ajoutée ici.
-    // Hauteur : var(--toolbar-h), dérivée du contrôle le plus haut que la barre porte (voir le
-    // bloc de géométrie de styles.css). Elle était codée en dur à 30px ici ET dans le calc de #pa
-    // plus bas, pendant que --titlebar-h vivait dans styles.css avec un seul autre consommateur.
+    // laisse une couture sous-pixel) : la gauche prend la largeur du rail (--rail-w) pour que la
+    // barre se lise comme sa continuation — et son TON aussi, qui est depuis le 2026-08-27 le fond
+    // de fenêtre (le rail est passé au plan le plus en retrait, motif sidebar Mail — voir .sb).
+    // La bordure verticale entre les deux est le même border-right que le rail, donc la ligne
+    // court sans interruption de la barre jusque dans .sb.
+    // FILET SOUS LA BARRE, bord à bord (décision maquette 2026-08-26, portage #50) : c'est le
+    // séparateur qui BORNE la zone barre — motif Mail, filet pleine largeur sous l'en-tête de
+    // colonne. 1px (le kit dessine ses séparateurs à 1), inclus dans les 48 (border-box global).
+    // Hauteur : var(--toolbar-h), dérivée du kit App Window (voir le bloc de géométrie de
+    // styles.css). Elle était codée en dur à 30px ici ET dans le calc de #pa plus bas, pendant
+    // que --titlebar-h vivait dans styles.css avec un seul autre consommateur.
     "#sift-titlebar{height:var(--toolbar-h);flex:none;display:flex;align-items:stretch;" +
-    "background:var(--color-background-primary);-webkit-user-select:none;user-select:none}" +
+    "background:var(--color-background-primary);border-bottom:1px solid var(--color-border-tertiary);" +
+    "-webkit-user-select:none;user-select:none}" +
     "#sift-tb-left{width:var(--rail-w);flex:none;display:flex;align-items:center;" +
-    "background:var(--color-background-tertiary);border-right:0.5px solid var(--color-border-tertiary)}" +
+    "background:var(--color-background-primary);border-right:1px solid var(--color-border-tertiary)}" +
     "#sift-tb-right{flex:1;min-width:0;display:flex;align-items:center;gap:var(--space-12);" +
     "padding:0 var(--space-8) 0 var(--space-16)}" +
     // Titre de la VUE courante, plus le littéral « Sift » : le nom de l'app est déjà dans le rail,

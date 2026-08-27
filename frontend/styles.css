@@ -84,8 +84,13 @@ color-scheme:light;
    valeurs claires sur fond sombre les ferait plonger.
    Les cinq teintes déjà présentes (-bg/-text) gardent leurs angles Apple d'origine et une chroma
    volontairement plus basse ; -solid est la variante saturée, à n'employer QUE comme aplat de
-   donnée, jamais derrière du texte. blue/green/orange/gray n'existent qu'en -solid. */
---color-hue-blue-solid:oklch(60.28% 0.2177 257.42);--color-hue-indigo-solid:oklch(52.95% 0.1910 278.34);--color-hue-teal-solid:oklch(69.98% 0.1109 212.72);--color-hue-green-solid:oklch(73.03% 0.1944 147.44);--color-hue-orange-solid:oklch(76.52% 0.1752 62.57);--color-hue-yellow-solid:oklch(86.52% 0.1768 90.38);--color-hue-purple-solid:oklch(61.49% 0.2129 312.41);--color-hue-pink-solid:oklch(64.97% 0.2383 17.90);--color-hue-gray-solid:oklch(64.83% 0.0073 286.19);
+   donnée ou comme INDICATEUR D'ÉTAT (pastille de verdict, décision 2026-08-27 — un indicateur
+   est une teinte système vive, jamais une encre : le point non-lu de Mail est systemBlue plein),
+   jamais derrière du texte. blue/green/orange/gray/red n'existent qu'en -solid.
+   red ajouté le 2026-08-27 pour la pastille Faux : systemRed du kit Apple (styles nommés
+   « Light/System/Red » 255,59,48 · « Dark/System/Red » 255,69,58), converti en oklch par
+   round-trip vérifié — la palette hue-* a la même provenance. */
+--color-hue-blue-solid:oklch(60.28% 0.2177 257.42);--color-hue-indigo-solid:oklch(52.95% 0.1910 278.34);--color-hue-teal-solid:oklch(69.98% 0.1109 212.72);--color-hue-green-solid:oklch(73.03% 0.1944 147.44);--color-hue-orange-solid:oklch(76.52% 0.1752 62.57);--color-hue-yellow-solid:oklch(86.52% 0.1768 90.38);--color-hue-purple-solid:oklch(61.49% 0.2129 312.41);--color-hue-pink-solid:oklch(64.97% 0.2383 17.90);--color-hue-red-solid:oklch(65.42% 0.2321 28.66);--color-hue-gray-solid:oklch(64.83% 0.0073 286.19);
 /* Icon/glyph color drawn on top of a solid accent fill (ex: watch-toggle checkmark on
    --color-text-success). Was a hardcoded #fff fallback on an undefined token — worked by
    accident in light (accent fills are mid-dark here) but would go invisible in dark, where the
@@ -287,11 +292,13 @@ color-scheme:light;
 /* GÉOMÉTRIE DU SHELL (DESIGN.md §§ 10 et 14). Trois mesures, chacune DÉRIVÉE de ce qu'elle
    porte, jamais choisie — et chacune écrite plusieurs fois dans l'arbre avant d'être un token.
 
-   --toolbar-h : la barre unifiée vaut le contrôle le plus haut qu'elle porte plus un cran
-   d'espacement au-dessus et au-dessous. Le plus haut est le champ de recherche : --text-md sur
-   une ligne plus 6px de padding vertical, ~29px, d'où 29 + 8 + 8 = 45, ramené à 44 (multiple de
-   4, l'échelle d'espacement). Remplace --titlebar-h:30px, qui n'était la hauteur de rien : la
-   barre ne portait aucun contrôle, seulement un titre inerte et les boutons de fenêtre.
+   --toolbar-h : 48, la hauteur de la toolbar du kit App Window (macOS Big Sur, nœud 72:165) —
+   décision maquette du 2026-08-26, portée le 2026-08-27 (#50). L'ancienne dérivation locale
+   (contrôle le plus haut + un cran dessus/dessous = 29 + 8 + 8 ≈ 44) reste vraie comme PLANCHER :
+   48 la satisfait avec un cran plus généreux, et c'est la valeur que le kit publie pour cette
+   barre — on suit le composant, pas une reconstruction. Remplace --titlebar-h:30px, qui n'était
+   la hauteur de rien : la barre ne portait aucun contrôle, seulement un titre inerte et les
+   boutons de fenêtre.
    ⚠️ Son consommateur au-delà de chrome.ts est .sift-update-banner, qui s'y positionne — il
    suit ici dans le même geste, sinon le bandeau chevauche la barre de 14px.
 
@@ -336,7 +343,7 @@ color-scheme:light;
    le plus petit format où une pochette reste reconnaissable, plus --space-4 au-dessus et
    au-dessous. C'est au-DESSUS de la bande 24-28px d'une liste Finder, et la raison est nommée :
    la ligne de Sift porte une pochette, celle de Finder n'en porte pas. */
---toolbar-h:44px;--rail-w:200px;--rail-w-collapsed:56px;--pane-w:272px;--aside-w:320px;--row-h:32px;
+--toolbar-h:48px;--rail-w:200px;--rail-w-collapsed:56px;--pane-w:272px;--aside-w:320px;--row-h:32px;
 /* Motion (P6, 2026-07-27). Only the two durations that actually have a consumer are declared —
    same audit rule as the height scale above (--h-32/--h-44 were dropped for having none). They
    match values already recurring in the transitions further down (.1s / .15s), so this is token
@@ -425,7 +432,7 @@ color-scheme:light;
     --color-border-tertiary:oklch(100.0% 0.0 89.88 / 0.09);--color-border-secondary:oklch(100.0% 0.0 89.88 / 0.22);
     --color-border-info:oklch(79.21% 0.0789 242.05 / .30);--color-border-danger:oklch(78.05% 0.0992 32.54 / .40);
     --color-hue-indigo-text:oklch(74.16% 0.1143 286.69);--color-hue-indigo-bg:oklch(34.15% 0.045 278.34);--color-hue-purple-text:oklch(77.58% 0.0892 311.64);--color-hue-purple-bg:oklch(37.40% 0.05 312.41);--color-hue-pink-text:oklch(80.76% 0.0905 355.95);--color-hue-pink-bg:oklch(39.91% 0.045 2.52);--color-hue-teal-text:oklch(84.24% 0.0961 185.53);--color-hue-teal-bg:oklch(43.48% 0.035 186.37);--color-hue-yellow-text:oklch(88.36% 0.129 93.67);
-    --color-hue-blue-solid:oklch(62.43% 0.2056 255.49);--color-hue-indigo-solid:oklch(55.64% 0.2032 278.15);--color-hue-teal-solid:oklch(77.06% 0.1181 211.98);--color-hue-green-solid:oklch(75.56% 0.2082 146.98);--color-hue-orange-solid:oklch(78.24% 0.1711 67.22);--color-hue-yellow-solid:oklch(88.49% 0.1805 94.78);--color-hue-purple-solid:oklch(65.60% 0.2274 312.42);--color-hue-pink-solid:oklch(65.77% 0.2317 16.02);--color-hue-gray-solid:oklch(68.12% 0.0073 286.21);
+    --color-hue-blue-solid:oklch(62.43% 0.2056 255.49);--color-hue-indigo-solid:oklch(55.64% 0.2032 278.15);--color-hue-teal-solid:oklch(77.06% 0.1181 211.98);--color-hue-green-solid:oklch(75.56% 0.2082 146.98);--color-hue-orange-solid:oklch(78.24% 0.1711 67.22);--color-hue-yellow-solid:oklch(88.49% 0.1805 94.78);--color-hue-purple-solid:oklch(65.60% 0.2274 312.42);--color-hue-pink-solid:oklch(65.77% 0.2317 16.02);--color-hue-red-solid:oklch(66.33% 0.2236 28.29);--color-hue-gray-solid:oklch(68.12% 0.0073 286.21);
     --overlay-hover:oklch(100.0% 0.0 89.88 / .03);--overlay-selected:oklch(100.0% 0.0 89.88 / .06);
     --overlay-drop:oklch(35.51% 0.0051 106.66 / .93);
     /* Hover-scrub fill on the waveform (see .sift-wave-hover) — replaces a hardcoded
@@ -466,7 +473,7 @@ color-scheme:light;
   --color-border-tertiary:oklch(100.0% 0.0 89.88 / 0.09);--color-border-secondary:oklch(100.0% 0.0 89.88 / 0.22);
   --color-border-info:oklch(79.21% 0.0789 242.05 / .30);--color-border-danger:oklch(78.05% 0.0992 32.54 / .40);
   --color-hue-indigo-text:oklch(74.16% 0.1143 286.69);--color-hue-indigo-bg:oklch(34.15% 0.045 278.34);--color-hue-purple-text:oklch(77.58% 0.0892 311.64);--color-hue-purple-bg:oklch(37.40% 0.05 312.41);--color-hue-pink-text:oklch(80.76% 0.0905 355.95);--color-hue-pink-bg:oklch(39.91% 0.045 2.52);--color-hue-teal-text:oklch(84.24% 0.0961 185.53);--color-hue-teal-bg:oklch(43.48% 0.035 186.37);--color-hue-yellow-text:oklch(88.36% 0.129 93.67);
-  --color-hue-blue-solid:oklch(62.43% 0.2056 255.49);--color-hue-indigo-solid:oklch(55.64% 0.2032 278.15);--color-hue-teal-solid:oklch(77.06% 0.1181 211.98);--color-hue-green-solid:oklch(75.56% 0.2082 146.98);--color-hue-orange-solid:oklch(78.24% 0.1711 67.22);--color-hue-yellow-solid:oklch(88.49% 0.1805 94.78);--color-hue-purple-solid:oklch(65.60% 0.2274 312.42);--color-hue-pink-solid:oklch(65.77% 0.2317 16.02);--color-hue-gray-solid:oklch(68.12% 0.0073 286.21);
+  --color-hue-blue-solid:oklch(62.43% 0.2056 255.49);--color-hue-indigo-solid:oklch(55.64% 0.2032 278.15);--color-hue-teal-solid:oklch(77.06% 0.1181 211.98);--color-hue-green-solid:oklch(75.56% 0.2082 146.98);--color-hue-orange-solid:oklch(78.24% 0.1711 67.22);--color-hue-yellow-solid:oklch(88.49% 0.1805 94.78);--color-hue-purple-solid:oklch(65.60% 0.2274 312.42);--color-hue-pink-solid:oklch(65.77% 0.2317 16.02);--color-hue-red-solid:oklch(66.33% 0.2236 28.29);--color-hue-gray-solid:oklch(68.12% 0.0073 286.21);
   --overlay-hover:oklch(100.0% 0.0 89.88 / .03);--overlay-selected:oklch(100.0% 0.0 89.88 / .06);
   --overlay-drop:oklch(35.51% 0.0051 106.66 / .93);
   --overlay-wave-hover:oklch(100% 0 0 / .14);
@@ -542,7 +549,7 @@ body:has(#sift-titlebar){border-radius:var(--border-radius-sm);overflow:hidden}
 #sift-gate[hidden]{display:none}
 #sift-gate .sift-gate-cta{margin-left:auto;flex:none;background:transparent;color:var(--color-text-warning);border-color:currentColor}
 #sift-gate .sift-gate-cta:hover{background:transparent;color:var(--color-text-warning)}
-#sift-aside{width:var(--aside-w);flex:none;overflow-y:auto;padding:var(--space-24) var(--space-16);border-left:0.5px solid var(--color-border-tertiary)}
+#sift-aside{width:var(--aside-w);flex:none;overflow-y:auto;padding:var(--space-24) var(--space-16);border-left:1px solid var(--color-border-tertiary)}
 /* Règle d'auteur qui pose `display` : elle bat [hidden], donc :not([hidden]) est obligatoire ici —
    sans lui l'inspecteur reste visible une fois masqué (piège déjà rencontré dans ce fichier). */
 #sift-aside:not([hidden]){display:block}
@@ -674,7 +681,14 @@ body:has(#sift-titlebar){border-radius:var(--border-radius-sm);overflow:hidden}
    passer aussi. */
 .sift-bar-icon.on{background:var(--color-accent-fill);color:var(--color-accent-ink)}
 .sift-bar-icon.on:hover{background:var(--color-accent-fill);color:var(--color-accent-ink)}
-.sb{width:var(--rail-w);flex:none;display:flex;flex-direction:column;gap:var(--space-4);padding:var(--space-16) var(--space-12);background:var(--color-background-tertiary);border-right:0.5px solid var(--color-border-tertiary);align-items:stretch}
+/* RAIL EN RETRAIT (décision Antoine 2026-08-27, comparatif A/B sur maquette — motif sidebar
+   Mail) : le rail quitte la surface tertiary pour le FOND DE FENÊTRE. Trois plans de lecture :
+   rail (le plus loin, fond de fenêtre) · milieu (le sol, même fond — la décision du 2026-08-14
+   « une surface de contenu ne peint rien » tient) · file (la seule zone élevée, queue). La
+   charpente garde une surface là où elle doit se DÉTACHER (file, barre d'action) ; le rail,
+   lui, se détache par le filet et par sa colonne — pas par un aplat. patterns.md § plans amendé
+   dans le même geste. */
+.sb{width:var(--rail-w);flex:none;display:flex;flex-direction:column;gap:var(--space-4);padding:var(--space-16) var(--space-12);background:var(--color-background-primary);border-right:1px solid var(--color-border-tertiary);align-items:stretch}
 /* DEUX LITTÉRAUX DE TAILLE RENTRÉS DANS L'ÉCHELLE — 2026-08-11, suite de l'axe « taille » de
    l'accord L2 (chantier identité visuelle). C'étaient les deux derniers hors barreau, et ils
    avaient survécu au chantier précédent pour une raison instrumentale : ses mesures CDP ne
@@ -718,7 +732,9 @@ body:has(#sift-titlebar){border-radius:var(--border-radius-sm);overflow:hidden}
 .nav-brand{display:flex;align-items:center;gap:var(--space-8);padding:var(--space-4) var(--space-8) var(--space-12);font-size:var(--text-lg);font-weight:600;color:var(--color-text-primary);letter-spacing:var(--tracking-normal)}
 .nav-brand i{font-size:16px;color:var(--color-text-info)}
 .nv-grp{font-size:var(--text-xs);font-weight:400;letter-spacing:.08em;text-transform:uppercase;color:var(--color-text-tertiary);padding:var(--space-12) var(--space-8) var(--space-4)}
-.nv{min-height:34px;border-radius:var(--border-radius-md);display:flex;flex-direction:row;align-items:center;gap:var(--space-12);padding:var(--space-8) var(--space-8);color:var(--color-text-tertiary);cursor:pointer}
+/* 28 et 7/8 : l'item de sidebar du kit (61:1606, pad 8h/7v) — décision maquette 2026-08-26,
+   portage #50. Le 34 précédent était un dérivé local sans source composant. */
+.nv{min-height:28px;border-radius:var(--border-radius-md);display:flex;flex-direction:row;align-items:center;gap:var(--space-12);padding:7px var(--space-8);color:var(--color-text-tertiary);cursor:pointer}
 /* `:not(.nav-badge)` N'EST PAS UN ORNEMENT — sans lui ce sélecteur écrase silencieusement DEUX
    déclarations de `.nav-badge`, qui est lui aussi un `<span>` dans `.nv`. `.nv span` pèse 0-1-1,
    `.nav-badge` 0-1-0 : l'ordre dans le fichier n'y change rien, le badge perdait quoi qu'il
@@ -850,7 +866,7 @@ body.sift-rail-collapsed .sift-rail-src--suspended .sift-rail-src-dot{box-shadow
 /* Les en-têtes de section tombent à 0 de hauteur une fois repliés, donc les quatre groupes se
    fondaient en une seule colonne d'icônes indifférenciée — le rail perdait justement ce que la
    mise en sections lui avait donné. Un filet le rend sans prendre de place. */
-body.sift-rail-collapsed .nv-grp{display:block;height:0;margin:var(--space-8) auto;padding:0;width:20px;border-top:0.5px solid var(--color-border-tertiary);overflow:hidden}
+body.sift-rail-collapsed .nv-grp{display:block;height:0;margin:var(--space-8) auto;padding:0;width:20px;border-top:1px solid var(--color-border-tertiary);overflow:hidden}
 body.sift-rail-collapsed .nv-grp:first-of-type{border-top:0}
 /* La bascule reste VISIBLE une fois repliée — la masquer enfermerait l'utilisateur dans l'état
    replié, sans autre issue que le raccourci clavier. Elle prend seulement la place de la marque. */
@@ -860,7 +876,7 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
 /* Séparateur de Réglages (annotation Antoine, 2026-07-09) : la ligne vit au-dessus du bouton
    Réglages, pas au-dessus de la zone de progression — les lignes de tâche (.sift-pz-row) doivent
    apparaître AU-DESSUS du séparateur, Réglages toujours en dessous, zone active ou non. */
-.nav-foot>.nv{margin-top:var(--space-8);padding-top:var(--space-8);border-top:0.5px solid var(--color-border-tertiary)}
+.nav-foot>.nv{margin-top:var(--space-8);padding-top:var(--space-8);border-top:1px solid var(--color-border-tertiary)}
 /* Global background-task progress (bottom of #nav, persistent across views). One row per active
    task: icon + name + tabular done/total + a thin accent bar. Hidden when idle (via JS display). */
 .sift-progress-zone{display:flex;flex-direction:column;gap:var(--space-8);margin-top:var(--space-8)}
@@ -894,7 +910,7 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
    Hauteur `--h-control` (28) et rayon `--border-radius-md` (7) : les deux crans que le kit donne à
    ce composant (voir le bloc des tokens de hauteur dans :root, qui nomme 45:812). Le padding
    vertical `--space-6` est celui du kit ; à hauteur fixe il ne fait plus que centrer, il est écrit
-   pour que le gabarit se lise. Le trait de repos est le filet 0.5px du dépôt (#qcol, .sb,
+   pour que le gabarit se lise. Le trait de repos est le filet 1px du dépôt (#qcol, .sb,
    .sift-facet-pop portent le même) — il n'a pas de token.
    CONSOMMATEUR UNIQUE : `#sift-qsearch`. C'est ce qui autorise `flex:none` et la marge basse à
    vivre ici alors qu'ils relèvent du PLACEMENT dans la colonne et non du composant ; un second
@@ -902,7 +918,7 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
    la sépare de ce qui la suit.
    Le traitement de FOCUS n'est pas ici : il vit avec les autres traitements de focus de champ,
    `.sift-search-wrap:focus-within`, à chercher par ce sélecteur. */
-.sift-search-wrap{flex:none;display:flex;align-items:center;gap:var(--space-8);height:var(--h-control);margin-bottom:var(--space-8);padding:var(--space-6) var(--space-8);background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md)}
+.sift-search-wrap{flex:none;display:flex;align-items:center;gap:var(--space-8);height:var(--h-control);margin-bottom:var(--space-8);padding:var(--space-6) var(--space-8);background:var(--color-background-secondary);border:1px solid var(--color-border-tertiary);border-radius:var(--border-radius-md)}
 /* Loupe : `--text-base` (13) contre `--text-md` (12) pour le texte du champ, soit un barreau
    au-dessus de son voisin — l'icône s'exprime relativement au texte, jamais en pixels (issue #10). */
 .sift-search-wrap>i{flex:none;font-size:var(--text-base);color:var(--color-text-tertiary)}
@@ -936,7 +952,7 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
    (wireframe « Poste de décision » §§ 09-10, spec `docs/ui-specs/revue.md` § Zone B′) elle ne porte
    plus de TITRE : le libellé « File » est retiré — la barre unifiée nomme déjà l'écran — et la
    rangée porte le PULLDOWN de filtre à gauche, le COMPTE DE PISTES VISIBLES à droite.
-   Le filet qui la sépare de la liste est le filet 0.5px du dépôt (#qcol, .sb, .sift-facet-pop
+   Le filet qui la sépare de la liste est le filet 1px du dépôt (#qcol, .sb, .sift-facet-pop
    portent le même) — il n'a pas de token. `padding-bottom` décolle le filet du bouton,
    `margin-bottom` décolle la liste du filet ; la marge basse remplace celle que `.col-h` portait
    avec le titre disparu. */
@@ -953,7 +969,7 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
    pieds), quatre sélecteurs touchés pour un filet. Les 8px ne sont pas devinés — `.queue` porte
    `padding:var(--space-12) var(--space-8)` (mesuré dans la vraie fenêtre : 8px à gauche comme à
    droite). Les deux valeurs doivent rester ÉGALES et suivre ce padding s'il change. */
-.sift-qhead{display:flex;align-items:center;justify-content:space-between;gap:var(--space-8);padding-bottom:var(--space-4);margin-bottom:var(--space-8);margin-inline:calc(-1 * var(--space-8));padding-inline:var(--space-8);border-bottom:0.5px solid var(--color-border-tertiary)}
+.sift-qhead{display:flex;align-items:center;justify-content:space-between;gap:var(--space-8);padding-bottom:var(--space-4);margin-bottom:var(--space-8);margin-inline:calc(-1 * var(--space-8));padding-inline:var(--space-8);border-bottom:1px solid var(--color-border-tertiary)}
 /* Compte de pistes — jumeau de `.sift-bib-count` (Bibliothèque : même rangée pulldown + compte),
    même taille et même encre, pour que le même fait ne se dise pas de deux façons selon l'écran. */
 .sift-qhead-count{flex:none;font-size:var(--text-sm);color:var(--color-text-tertiary)}
@@ -1040,10 +1056,10 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
    `opacity:0`. Mêmes valeurs que lui, pour que la case du menu et les cases natives de l'app
    montrent le même anneau. */
 .sift-qfacet-ck:focus-visible+.sift-qfacet-box{outline:1.5px solid var(--color-border-info);outline-offset:1px}
-/* Séparateur de 0,5 avant « Tout afficher » (wireframe § 10) — le filet 0.5px du dépôt, sans marge
+/* Séparateur de 1 avant « Tout afficher » (wireframe § 10) — le filet 1px du dépôt, sans marge
    propre : les 3px de gouttière des deux rangées qui l'encadrent le centrent déjà. Il traverse
    toute la largeur du popover là où les rangées s'arrêtent 2px avant, comme un menu macOS. */
-.sift-qfacet-sep{flex:none;height:0;margin:0;border-top:0.5px solid var(--color-border-tertiary)}
+.sift-qfacet-sep{flex:none;height:0;margin:0;border-top:1px solid var(--color-border-tertiary)}
 /* « Tout afficher » = un item de menu comme les autres depuis le 2026-08-25 (même gouttière, même
    rayon, même taille), et non plus une rangée à part en `display:block`, à padding asymétrique,
    qui portait elle-même le filet de séparation — celui-ci est passé sur `.sift-qfacet-sep`.
@@ -1099,7 +1115,7 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
 #ql::-webkit-scrollbar-thumb{background:transparent;border-radius:var(--border-radius-pill);border:1px solid transparent;background-clip:padding-box}
 #ql:hover::-webkit-scrollbar-thumb{background:var(--color-border-secondary);background-clip:padding-box}
 #ql::-webkit-scrollbar-thumb:hover{background:var(--color-text-tertiary);background-clip:padding-box}
-.qdrag{width:7px;flex:none;cursor:col-resize;background:transparent;border-left:0.5px solid var(--color-border-tertiary);display:flex;align-items:center;justify-content:center}
+.qdrag{width:7px;flex:none;cursor:col-resize;background:transparent;border-left:1px solid var(--color-border-tertiary);display:flex;align-items:center;justify-content:center}
 .qdrag::after{content:"";width:2px;height:26px;border-radius:var(--border-radius-pill);background:var(--color-border-secondary)}
 .qdrag:hover::after{background:var(--color-text-info)}
 /* Padding on the token scale (was a literal 5px/7px, drifted off .bx-row — Lot's row of the same
@@ -1124,14 +1140,30 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
    ⚠️ Les deux issues que l'issue #45 proposait — retirer la seconde ligne, ou doubler la rangée —
    répondaient à un diagnostic de DENSITÉ. La mesure dit que la cause est typographique : la
    correction ne coûte donc ni information ni densité, et aucune des deux n'a lieu d'être. */
-.qi{display:flex;align-items:center;gap:var(--space-8);padding:var(--space-8);border-radius:var(--border-radius-md);font-size:12px;line-height:15px;color:var(--color-text-secondary);white-space:nowrap;overflow:hidden;cursor:pointer}
+.qi{position:relative;display:flex;align-items:center;gap:var(--space-8);padding:var(--space-8);border-radius:var(--border-radius-md);font-size:12px;line-height:15px;color:var(--color-text-secondary);white-space:nowrap;overflow:hidden;cursor:pointer}
+/* Séparateurs de rangées (décision maquette 2026-08-26, motif Mail « à l'intérieur d'une zone ») :
+   1px en RETRAIT gauche (aligné au contenu, --space-8 = le padding de la rangée), peints en
+   ::before ABSOLU pour trois raisons qui tiennent ensemble : la hauteur de rangée reste 46
+   (test/queue-row-height.test.ts la gèle, et la virtualisation dérive scrollHeight de cette
+   sonde) ; aucun nœud DOM ajouté dans la boucle chaude de renderQueueWindow ; et `.qi + .qi`
+   ne peint jamais de filet au-dessus de la première rangée (le filet borne ENTRE, jamais la
+   zone — c'est le rôle du filet de .sift-qhead).
+   FRÉQUENCE : sélecteur pur CSS, zéro coût dans le repaint de 300 ms.
+   Le filet TOUCHANT la rangée survolée ou ouverte s'efface (comportement des Mail récents —
+   l'aplat arrondi de sélection remplace la borne) : celui de la rangée elle-même, et celui de
+   la suivante (son ::before est le filet du bas de la rangée visée). */
+.qi + .qi::before{content:"";position:absolute;top:0;left:var(--space-8);right:0;height:1px;background:var(--color-border-tertiary)}
+.qi:hover::before,.qi.cur::before,.qi:hover + .qi::before,.qi.cur + .qi::before{background:transparent}
 /* Seconde ligne de la rangée (artiste). En RÈGLE et non en attributs inline, même raison que
    `.qi-dup` plus bas — et une raison de plus ici : `measureQueueRowHeight` reconstruit ce markup
    pour sa sonde, donc tout style qui ne vit que dans `queueRowHtml` rend la sonde fausse en
    silence. `test/queue-row-height.test.ts` épingle les deux côtés.
    Le retrait de 15px aligne l'artiste sur le titre, qui est décalé par la pastille de verdict
    (9px) et le gap de 6px de sa ligne. */
-.qi-sub{padding-left:15px;font-size:var(--text-xs);line-height:13px;color:var(--color-text-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+/* padding-left:15px alignait le sous-titre APRÈS la pastille (9px + gap 6) quand elle ouvrait la
+   ligne ; la pastille est passée EN FIN de titre le 2026-08-27 (maquette, décision produit), donc
+   le sous-titre s'aligne au titre lui-même : plus d'indentation. */
+.qi-sub{font-size:var(--text-xs);line-height:13px;color:var(--color-text-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .qi span{overflow:hidden;text-overflow:ellipsis}.qi.done{color:var(--color-text-tertiary)}
 /* Selection is neutral (white @.045 + a non-blue left bar), per interaction-model.md: blue is
    reserved for focus/accent, never for "this row is selected". */
@@ -1230,7 +1262,11 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
    dropped its border in an earlier pass, #homequeue kept its own separate declaration — see HIG
    "Boxes" card-family pass in design-system-states.md). Both belong to the "queue" card family
    (spectro-box/player-row/action-rail/fil-editor-margin) which is now bordered consistently. */
-#qcol,#homequeue{border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg)}
+/* #qcol a quitté la famille carte le 2026-08-27 (portage maquette, #50) : la colonne file est
+   BORD À BORD — collée au rail, à la barre et au bas de fenêtre, seuls ses flancs portent un
+   filet (motif Mail : la liste est une ZONE, bornée, pas une carte flottante). #homequeue
+   (Accueil) garde la carte : il vit au milieu d'une page, pas en colonne de shell. */
+#homequeue{border:1px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg)}
 /* .sift-revue-row wraps #qcol + .sift-qresize + #rvinspector (Revue Detail's 3-column row) —
    replaces individually hand-tuned margins on each of the three (own top/bottom margin to float
    below the window chrome, asymmetric left/right margins to fake a shared gap, a bottom margin
@@ -1243,8 +1279,13 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
    them 35px off in the live app — the 45px bottom-margin tuning had already drifted out of sync
    with #rvinspector's real content). #qcol keeps its own resizable `width` (inline style, user-
    dragged) — only the OUTER spacing concerns move up to the row. */
-.sift-revue-row{display:flex;flex:1;min-height:0;overflow:hidden;gap:0}
-#qcol{border:0.5px solid var(--color-border-tertiary)}
+/* Marges NÉGATIVES = l'annulation ciblée du padding de #content (--space-24, la règle unique
+   d'inset de fenêtre) pour CE layout seul : la rangée Revue va bord à bord — file collée au rail
+   (le filet est le border-right du rail), à la barre (filet sous #sift-titlebar) et au bas de
+   fenêtre. La zone C garde son air par les paddings internes de .mid et #filfoot (16/12), qui
+   sont ceux de la maquette. Même mécanique que .sift-qhead (margin-inline négative locale). */
+.sift-revue-row{display:flex;flex:1;min-height:0;overflow:hidden;gap:0;margin:calc(-1 * var(--space-24))}
+#qcol{border:0;border-right:1px solid var(--color-border-tertiary);border-radius:0}
 #homeinspector{overflow:hidden}
 .mid{flex:1;min-width:0;display:flex;flex-direction:column;padding:0 var(--space-16) var(--space-12);overflow:hidden}
 .mid-scroll{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column}
@@ -1273,7 +1314,7 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
    garde parce qu'elle est de la CHARPENTE, au même titre que le rail de navigation et la colonne
    file. C'est précisément ce que la décision rend lisible : avoir une surface = être la charpente.
    Ne pas « rétablir la cohérence des 4 » en repeignant les trois autres. */
-.sift-action-rail{flex:none;display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-12);padding:var(--space-12) var(--space-16);overflow:visible;background:var(--color-background-queue);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg)}
+.sift-action-rail{flex:none;display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-12);padding:var(--space-12) var(--space-16);overflow:visible;background:var(--color-background-queue);border:1px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg)}
 /* POP-UP BUTTON, forme du kit (§ 02-Buttons / 09-Pop Up Buttons) : un aplat gris SANS bordure.
    Ni fond ni bordure ne sont plus écrits ici — un pop-up button EST un bouton secondaire, et le
    reset `button{}` (plus haut) donne déjà exactement ça (`--color-surface-raised`, `border:0`).
@@ -1327,7 +1368,7 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
    hiérarchie vient des labels de section, des filets verticaux entre réglages, et d'une ligne
    d'actions séparée par un filet. */
 .sift-action-rail--flat{background:transparent;border:0;border-radius:0;
-  border-top:0.5px solid var(--color-border-tertiary);flex-direction:column;flex-wrap:nowrap;
+  border-top:1px solid var(--color-border-tertiary);flex-direction:column;flex-wrap:nowrap;
   align-items:stretch;gap:var(--space-12)}
 .sift-rail-settings{display:flex;align-items:flex-end;gap:var(--space-12);flex-wrap:wrap}
 .sift-rail-field{display:flex;flex-direction:column;gap:var(--space-4);min-width:0}
@@ -1336,7 +1377,7 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
   text-transform:uppercase;color:var(--color-text-tertiary)}
 .sift-rail-vsep{width:1px;align-self:stretch;background:var(--color-border-tertiary);margin:var(--space-8) 0 var(--space-4)}
 .sift-rail-actions-row{display:flex;align-items:center;justify-content:space-between;gap:var(--space-12);
-  padding-top:var(--space-12);border-top:0.5px solid var(--color-border-tertiary)}
+  padding-top:var(--space-12);border-top:1px solid var(--color-border-tertiary)}
 .sift-rail-kbd{min-width:0;overflow:hidden}
 .sift-rail-abtns{display:flex;align-items:center;gap:var(--space-12);flex:none}
 /* ── GABARIT PUSH DU KIT, un seul pour tout le rail ───────────────────────────────────────────
@@ -1422,7 +1463,7 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
 /* Destination popover: replaces the persistent tree column, anchored above its trigger button.
    Hidden by default ([hidden] attribute, toggled in filing.ts); #fldz keeps its id so renderBins'
    existing document.getElementById("fldz") callers need no change. */
-.sift-dest-popover{position:fixed;width:288px;max-height:340px;display:flex;flex-direction:column;padding:var(--space-4);background:var(--color-surface-raised);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);box-shadow:var(--shadow-toast);overflow-y:auto;z-index:var(--z-popover)}
+.sift-dest-popover{position:fixed;width:288px;max-height:340px;display:flex;flex-direction:column;padding:var(--space-4);background:var(--color-surface-raised);border:1px solid var(--color-border-secondary);border-radius:var(--border-radius-md);box-shadow:var(--shadow-toast);overflow-y:auto;z-index:var(--z-popover)}
 /* An author `display:flex` rule beats the browser's own `[hidden]{display:none}` in the cascade
    (author origin always wins over user-agent origin, regardless of specificity) — so setting
    `.hidden = true` on this element via JS never actually hid it, it just kept getting
@@ -1478,11 +1519,11 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
    déclencher. Sans cette ligne, `--overlay-hover` s'ajouterait par-dessus `--color-surface-raised`
    et l'item actif deviendrait le plus clair de la liste au passage de la souris. */
 .fld.on:hover{background:var(--color-surface-raised)}
-.kbd{font-family:var(--font-mono);font-size:10px;border:0.5px solid var(--color-border-secondary);border-radius:3px;padding:0 var(--space-4);color:var(--color-text-tertiary)}
+.kbd{font-family:var(--font-mono);font-size:10px;border:1px solid var(--color-border-secondary);border-radius:3px;padding:0 var(--space-4);color:var(--color-text-tertiary)}
 .bars{display:flex;align-items:center;gap:var(--space-4);height:42px;cursor:pointer}.bars span{flex:1;border-radius:1px}
 .spec{display:flex;align-items:flex-end;gap:var(--space-4);height:22px}.spec span{flex:1;border-radius:1px 1px 0 0}
 .mc{background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:var(--space-12) var(--space-12)}.mc .l{font-size:11px;color:var(--color-text-secondary)}.mc .n{font-size:20px;font-weight:500;margin-top:var(--space-4)}
-.srow{display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:0.5px solid var(--color-border-tertiary);font-size:12px}.srow .v{color:var(--color-text-secondary);display:flex;align-items:center;gap:var(--space-8)}
+.srow{display:flex;align-items:center;justify-content:space-between;padding:8px 0;border-bottom:1px solid var(--color-border-tertiary);font-size:12px}.srow .v{color:var(--color-text-secondary);display:flex;align-items:center;gap:var(--space-8)}
 .h1{font-size:16px;font-weight:500;margin-bottom:12px}
 /* CHIPS = les Scope Buttons du kit (§ 02-Buttons / 05-Scope Buttons), et le kit en donne les
    quatre états nommés : Selected/Not Selected × Normal/Hover. Ce qu'il montre : AUCUNE bordure,
@@ -1510,7 +1551,7 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
    de fond sur une ligne recyclée fait traîner la couleur de la ligne PRÉCÉDENTE pendant 150 ms sur
    la nouvelle donnée. `transform` reste, seul : c'est l'enfoncement de `:active`, un retour sous le
    doigt et non un état de donnée. */
-.lr{display:flex;align-items:center;gap:var(--space-8);padding:var(--space-4) var(--space-8);border-bottom:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);font-size:12px;cursor:pointer;transition:transform var(--duration-fast) ease}
+.lr{display:flex;align-items:center;gap:var(--space-8);padding:var(--space-4) var(--space-8);border-bottom:1px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);font-size:12px;cursor:pointer;transition:transform var(--duration-fast) ease}
 .lr:hover{background:var(--color-row-active)}
 /* Explicit rather than relying on source order (both selectors have equal specificity) — same
    hardening as .sift-seg-opt.on:hover. */
@@ -1558,7 +1599,7 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
    translucide et les deux textes se superposent. Il reprend le ton de la surface qui le porte.
    Ni shadcn ni ui-thing n'exposent de composant d'en-tête figé (recherché le 2026-08-19, zéro
    résultat des deux côtés) — la référence ici est le mécanisme CSS, pas un composant. */
-.sift-lib-thead{position:sticky;top:0;z-index:1;background:var(--color-background-secondary);display:flex;align-items:center;gap:var(--space-8);padding:var(--space-4) var(--space-8);font-size:var(--text-xs);text-transform:uppercase;letter-spacing:.06em;color:var(--color-text-tertiary);border-bottom:0.5px solid var(--color-border-tertiary)}
+.sift-lib-thead{position:sticky;top:0;z-index:1;background:var(--color-background-secondary);display:flex;align-items:center;gap:var(--space-8);padding:var(--space-4) var(--space-8);font-size:var(--text-xs);text-transform:uppercase;letter-spacing:.06em;color:var(--color-text-tertiary);border-bottom:1px solid var(--color-border-tertiary)}
 /* COLONNES DE LA TABLE (DESIGN.md § 16). Les largeurs vivent ici et non en style inline sur
    chaque cellule : l'en-tête et la ligne doivent s'aligner, et deux listes de flex inline écrites
    à deux endroits divergent au premier ajout de colonne — ce qui est arrivé, l'en-tête ayant
@@ -1695,9 +1736,9 @@ body.sift-col-resizing,body.sift-col-resizing *{cursor:col-resize!important;user
 .sift-lib-tile-cov-fallback{width:100%;aspect-ratio:1;border-radius:var(--border-radius-md);background:var(--color-background-secondary);display:flex;align-items:center;justify-content:center;color:var(--color-text-tertiary);font-size:var(--text-2xl);margin-bottom:var(--space-8)}
 .sift-lib-tile-title{font-size:var(--text-sm);font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sift-lib-tile-sub{font-size:var(--text-xs);color:var(--color-text-tertiary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.br{display:flex;align-items:center;gap:var(--space-8);padding:var(--space-8) var(--space-4);border-bottom:0.5px solid var(--color-border-tertiary);font-size:12px;cursor:pointer}
-.mf{margin-bottom:var(--space-8)}.mf .lab{font-size:10px;color:var(--color-text-tertiary);margin-bottom:var(--space-4)}.mf .inp{border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:var(--space-4) var(--space-8);font-size:12px}
-.cov{width:40px;height:40px;flex:none;border-radius:6px;background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);display:flex;align-items:center;justify-content:center;color:var(--color-text-tertiary)}
+.br{display:flex;align-items:center;gap:var(--space-8);padding:var(--space-8) var(--space-4);border-bottom:1px solid var(--color-border-tertiary);font-size:12px;cursor:pointer}
+.mf{margin-bottom:var(--space-8)}.mf .lab{font-size:10px;color:var(--color-text-tertiary);margin-bottom:var(--space-4)}.mf .inp{border:1px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:var(--space-4) var(--space-8);font-size:12px}
+.cov{width:40px;height:40px;flex:none;border-radius:6px;background:var(--color-background-secondary);border:1px solid var(--color-border-tertiary);display:flex;align-items:center;justify-content:center;color:var(--color-text-tertiary)}
 /* Glyphe de CADRE, pas icône en ligne : `.cov` est un carré de 40px sans texte dedans, le même
    composant que `.sift-lib-tile-cov-fallback` ci-dessus — qui porte déjà sa taille en token
    (--text-2xl). Le texte le plus proche est celui du bloc voisin dans la maquette (13px de titre,
@@ -1712,7 +1753,7 @@ body.sift-col-resizing,body.sift-col-resizing *{cursor:col-resize!important;user
    même : son Secondary sur carte sombre tourne autour de 2,3:1. La lisibilité d'un bouton
    vient de son TEXTE — ici 8,12:1 — pas du détachement de son fond. Remonter le gris jusqu'à
    3:1 demanderait un L d'environ 58 % en thème sombre, ce qui donne un bouton plus clair que
-   les surfaces qui le portent : le contrôle cesserait de se lire comme posé SUR la carte. Sift posait l'inverse — fond transparent + filet 0.5px — ce qui donne un
+   les surfaces qui le portent : le contrôle cesserait de se lire comme posé SUR la carte. Sift posait l'inverse — fond transparent + filet 1px — ce qui donne un
    bouton qui se lit comme un contour vide plutôt que comme une surface qu'on presse. La bordure
    part, le fond arrive ; la hiérarchie avec le primaire vient alors de la COULEUR du fond, pas
    de la présence d'un cadre. */
@@ -1740,7 +1781,7 @@ input:not([type="checkbox"]):focus-visible{outline:none;border-color:var(--color
    et ça n'a pas changé le 2026-08-25.
    Ce qui a changé ce jour-là, c'est la FORME (kit Big Sur, « Search fields » 45:825) : c'était un
    anneau `outline` DÉTACHÉ, flottant 1px à l'extérieur de la boîte. Le kit ne pose aucun anneau
-   détaché : il ÉPAISSIT le trait du champ. Le filet de repos (0.5px, `.sift-search-wrap` dans la
+   détaché : il ÉPAISSIT le trait du champ. Le filet de repos (1px, `.sift-search-wrap` dans la
    région de la colonne file) passe donc à l'accent et se double vers l'INTÉRIEUR.
    `box-shadow` inset et pas `border-width` : une bordure qui passerait de 0.5 à 2px décalerait le
    texte du champ d'1,5px au moment du focus, sous les doigts de qui vient d'y taper. Inset et non
@@ -1808,7 +1849,7 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    neither carries a shadow. */
 .sift-ui-card{background:var(--color-background-queue);border-radius:var(--border-radius-lg)}
 .sift-ui-card-pad{padding:var(--space-16) var(--space-16)}
-.sift-ui-card-soft{background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg)}
+.sift-ui-card-soft{background:var(--color-background-secondary);border:1px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg)}
 .sift-ui-card-soft-pad{padding:var(--space-16) var(--space-16)}
 /* Outline-only variant (no background fill), smaller radius — extracted from 7 identical inline
    repetitions in rekordbox-view.ts (audit 2026-07-24, "prevent this from drifting again"): each
@@ -1825,7 +1866,7 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    bordure). Une boîte est une décision, pas une décoration. */
 /* La ligne de Rekordbox. Un écart nommé : sa marge basse et sa disposition varient selon la
    section, donc trois modificateurs plutôt que trois styles inline répétés. */
-.rb-row{border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:var(--space-8) var(--space-12);margin-bottom:var(--space-8)}
+.rb-row{border:1px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:var(--space-8) var(--space-12);margin-bottom:var(--space-8)}
 /* « À jour » / « indisponible » : une section qui n'a rien en attente s'atténue par son ENCRE, pas
    par l'opacité (DESIGN.md § 4 — aucune valeur d'opacité ne franchit le seuil de lisibilité avant
    ~0,92, où l'atténuation ne se voit plus). Le fond et le filet de la ligne ne bougent pas : la
@@ -1856,7 +1897,7 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    `git log -- frontend/styles.css` les ramène si l'écran Accueil renaît. */
 .sift-ec-sections{display:flex;flex-direction:column;gap:12px}
 .sift-ec-section{display:flex;flex-direction:column;gap:var(--space-12)}
-.lib-detail-stack{display:flex;flex-direction:column;gap:var(--space-12);margin-top:12px;padding-top:12px;border-top:0.5px solid var(--color-border-tertiary)}
+.lib-detail-stack{display:flex;flex-direction:column;gap:var(--space-12);margin-top:12px;padding-top:12px;border-top:1px solid var(--color-border-tertiary)}
 .lib-detail-head{display:flex;align-items:center;justify-content:space-between;gap:var(--space-12)}
 .lib-detail-head-main{min-width:0;display:flex;flex-direction:column;gap:var(--space-4)}
 .lib-detail-head-title{font-size:var(--text-base);font-weight:500;color:var(--color-text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
@@ -1983,7 +2024,7 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    Destination/Format/Selection (audit 2026-07-05, "tout sur une ligne"). */
 .sift-baction-slot{display:contents}
 /* Résumé de sélection — zone C, en-tête du board Lot */
-.sift-bsel{display:flex;flex-direction:column;gap:var(--space-8);padding:var(--space-16) var(--space-16) var(--space-8);border-bottom:0.5px solid var(--color-border-tertiary)}
+.sift-bsel{display:flex;flex-direction:column;gap:var(--space-8);padding:var(--space-16) var(--space-16) var(--space-8);border-bottom:1px solid var(--color-border-tertiary)}
 .sift-bsel-empty{padding:var(--space-8);color:var(--color-text-secondary);font-size:var(--text-sm);text-align:center}
 .sift-bsel-count{font-size:28px;font-weight:600;line-height:1;color:var(--color-text-primary);display:flex;align-items:baseline;gap:var(--space-8)}
 .sift-bsel-count-label{font-size:var(--text-sm);font-weight:400;color:var(--color-text-secondary)}
@@ -1998,7 +2039,7 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 /* ── Batch sheet (wireframe § 17) — non-modal progress + terminal report ──
    Slides from the top of .sift-inspector (position:relative host). Below popovers
    (--z-sheet < --z-popover) so the destination popover stays reachable. */
-.sift-batch-sheet{position:absolute;top:0;left:0;right:0;z-index:var(--z-sheet);background:var(--color-surface-raised);border-bottom:0.5px solid var(--color-border-secondary);border-radius:0 0 var(--border-radius-lg) var(--border-radius-lg);box-shadow:var(--shadow-toast);padding:var(--space-16);display:flex;flex-direction:column;gap:var(--space-12);transform:translateY(-100%);transition:transform var(--duration-slow) ease-out;overflow:hidden}
+.sift-batch-sheet{position:absolute;top:0;left:0;right:0;z-index:var(--z-sheet);background:var(--color-surface-raised);border-bottom:1px solid var(--color-border-secondary);border-radius:0 0 var(--border-radius-lg) var(--border-radius-lg);box-shadow:var(--shadow-toast);padding:var(--space-16);display:flex;flex-direction:column;gap:var(--space-12);transform:translateY(-100%);transition:transform var(--duration-slow) ease-out;overflow:hidden}
 .sift-batch-sheet--open{transform:translateY(0)}
 .sift-bs-head{display:flex;align-items:center;justify-content:space-between;gap:var(--space-8)}
 .sift-bs-title{font-size:var(--text-md);font-weight:600;color:var(--color-text-primary)}
@@ -2024,7 +2065,7 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .sift-bs-item-err{flex:none;font-size:var(--text-xs);color:var(--color-text-danger);max-width:200px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sift-bs-item-link{flex:none;background:none;border:none;font-size:var(--text-xs);color:var(--color-text-info);cursor:pointer;padding:0}
 .sift-bs-item-link:hover{text-decoration:underline}
-.sift-bs-footer{display:flex;justify-content:flex-end;gap:var(--space-8);padding-top:var(--space-8);border-top:0.5px solid var(--color-border-tertiary)}
+.sift-bs-footer{display:flex;justify-content:flex-end;gap:var(--space-8);padding-top:var(--space-8);border-top:1px solid var(--color-border-tertiary)}
 /* min-height reserved (annotation: "laisser suffisament d'espace... pour ne rien déplacer") — empty
    (no genres yet) collapsed to 1px, so everything below jumped down once chips appeared after
    identify; one chip-row's worth of height now, empty or not. */
@@ -2103,7 +2144,7 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 /* En-tête de colonnes, collant en haut de la zone C. Même matériau que `.sift-lib-thead`, classe
    distincte et non réutilisée : le clic droit sur `.sift-lib-thead` ouvre les réglages de COLONNES
    de la Bibliothèque (`sift-live.ts`), que le Journal n'a pas — ni tri, ni redimensionnement. */
-.jrnl-thead{position:sticky;top:0;z-index:1;background:var(--color-background-secondary);display:flex;align-items:center;gap:var(--space-8);padding:var(--space-4) var(--space-8);font-size:var(--text-xs);text-transform:uppercase;letter-spacing:var(--tracking-widest);color:var(--color-text-tertiary);border-bottom:0.5px solid var(--color-border-tertiary)}
+.jrnl-thead{position:sticky;top:0;z-index:1;background:var(--color-background-secondary);display:flex;align-items:center;gap:var(--space-8);padding:var(--space-4) var(--space-8);font-size:var(--text-xs);text-transform:uppercase;letter-spacing:var(--tracking-widest);color:var(--color-text-tertiary);border-bottom:1px solid var(--color-border-tertiary)}
 /* Colonnes. Aucun zébrage : la séparation vient du filet de `.lr` et de l'espace (DESIGN.md § 16). */
 .jrnl-c{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .jrnl-c-time{flex:none;width:var(--jrnl-col-time)}
@@ -2235,7 +2276,11 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    Padding horizontal passé à 0 : il insérait le contenu de 16px depuis le bord d'une carte qui
    n'existe plus, ce qui le désalignait des blocs frères rendus à ras (voir .sift-report-scroll
    ci-dessus, même raisonnement). Le vertical reste, c'est de la respiration, pas un inset. */
-.sift-player-row{display:flex;flex-direction:column;gap:var(--space-16);margin-bottom:var(--space-16);padding:var(--space-16) 0;max-width:var(--measure-data)}
+/* GROUPE ÉCOUTE (respiration B, verdict Antoine 2026-08-27 sur A/B maquette — « serré dedans,
+   aéré entre », motif des groupes de Réglages Système et de l'en-tête compact de Mail) :
+   en-tête et lecteur se rapprochent (gap 12), et le groupe s'écarte de la fiche de 32
+   (margin-bottom 16 + l'ancien padding-bottom 16, fondus en un seul écart nommé). */
+.sift-player-row{display:flex;flex-direction:column;gap:var(--space-12);margin-bottom:var(--space-32);padding:var(--space-16) 0 0;max-width:var(--measure-data)}
 /* gap sized so the waveform's left edge lines up with the title block's left edge above it
    (annotation: "aligne les deux") — header-body starts at 68px cover + 14px gap = 82px; the play
    button's margin-left was snapped 11px→var(--space-12) in the 2026-07-24 spacing sweep, so the
@@ -2336,7 +2381,11 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    la place libre (donc le verdict se pose bien au bord droit) et c'est lui qui rétrécit, son
    ellipse existante prenant le relais. Sans `min-width:0`, un enfant de flex refuse de passer sous
    la largeur de son contenu et pousserait le verdict hors de l'en-tête. */
-.sift-player-name{font-size:var(--text-2xl);font-weight:600;color:var(--color-text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1 1 auto;min-width:0}
+/* 26/32 : Large Title du kit (styleguide « SF Pro Display - Large Title - 26pt - 32pt »),
+   décision maquette 2026-08-27 (10 frames repassés), portage #50. Pas de token 26 dans
+   l'échelle --text-* actuelle : littéral sourcé, à rationaliser avec #31 (11 rôles Apple).
+   --text-2xl (32) reste aux glyphes qui le consomment (play, vignettes). */
+.sift-player-name{font-size:26px;line-height:32px;font-weight:600;color:var(--color-text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1 1 auto;min-width:0}
 /* Bumped one step each (annotation: "augmente encore le texte pour que ça fit aussi en haut" —
    the block reached the cover's bottom edge once centered but still fell short of the top; more
    overall block height, not just the title, closes that remaining gap). Artist bumped again +
@@ -2395,7 +2444,7 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    pilotent la réaction du pouce. On anime `transform` seul (jamais width/height) : l'élément persiste
    d'une frame à l'autre — updateTime ne mute que `left` — donc la transition a bien un sujet. */
 .sift-wave-playhead{position:absolute;top:50%;width:13px;height:13px;border-radius:var(--border-radius-pill);
-  background:var(--color-accent-ink);border:0.5px solid var(--color-border-secondary);
+  background:var(--color-accent-ink);border:1px solid var(--color-border-secondary);
   box-shadow:var(--shadow-panel-subtle);transform:translate(-50%,-50%);pointer-events:none;z-index:1;
   transition:transform var(--duration-fast) var(--ease-out)}
 .sift-wave-wrap:hover .sift-wave-playhead{transform:translate(-50%,-50%) scale(1.15)}
@@ -2646,7 +2695,7 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    box, unlike every other "case" in the app. border-radius on a <canvas> clips its own painted
    pixels to the rounded box, same as an <img>. */
 .sift-spectro-canvas-wrap{position:relative;margin:var(--space-8) var(--space-16) 0}
-.sift-spectro-canvas{width:100%;display:block;background:#000;border-radius:var(--border-radius-md);border:0.5px solid var(--color-border-tertiary)}
+.sift-spectro-canvas{width:100%;display:block;background:#000;border-radius:var(--border-radius-md);border:1px solid var(--color-border-tertiary)}
 .sift-spectro-overlay{position:absolute;inset:0;width:100%;height:100%;border-radius:var(--border-radius-md);pointer-events:none}
 /* Les DEUX pastilles du Diagnostic ouvert — format · lecture du spectre (spec
    `docs/ui-specs/revue.md` § Zone C, point 5 ; wireframe § 06, fix 5). Elles remplacent la phrase
@@ -2662,7 +2711,7 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .sift-spectro-pills{display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-8);
   padding:var(--space-8) var(--space-16)}
 .sift-spectro-rows{padding:var(--space-8) var(--space-16);display:grid;grid-template-columns:1fr 1fr;gap:0 var(--space-32);font-size:var(--text-md)}
-.sift-row{display:flex;justify-content:space-between;gap:16px;padding:var(--space-4) 0;border-bottom:0.5px solid var(--color-border-tertiary)}
+.sift-row{display:flex;justify-content:space-between;gap:16px;padding:var(--space-4) 0;border-bottom:1px solid var(--color-border-tertiary)}
 /* Une ligne de mesure qui porte sa RÉFÉRENCE en plus de sa valeur ne tient pas dans une demi-
    colonne : mesurée dans la vraie fenêtre, « Densité de l'aigu » y cassait son libellé ET sa
    valeur sur deux lignes chacun, doublant sa hauteur au milieu de lignes courtes. Elle prend donc
@@ -2686,7 +2735,7 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    comprises — le panneau ouvert ne garde que le spectrogramme (la preuve) et les deux pastilles
    `.sift-spectro-pills`. La phrase d'origine disait « verdict/coupure/durée stay always visible
    above » : c'est faux depuis, et le verdict n'est plus dit ici du tout. */
-.sift-spectro-tech{border-top:0.5px solid var(--color-border-tertiary);margin-top:var(--space-4)}
+.sift-spectro-tech{border-top:1px solid var(--color-border-tertiary);margin-top:var(--space-4)}
 .sift-spectro-tech-summary{list-style:none;cursor:pointer;padding:var(--space-8) var(--space-16);font-size:var(--text-sm);color:var(--color-text-tertiary);user-select:none}
 .sift-spectro-tech-summary::-webkit-details-marker{display:none}
 .sift-spectro-tech-summary::before{content:"▸ ";display:inline-block}
@@ -2721,7 +2770,7 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .sift-usbfmt-warning{font-size:var(--text-sm);color:var(--color-text-warning);background:var(--color-background-warning);border-radius:var(--border-radius-md);padding:var(--space-8) var(--space-12)}
 .sift-usbfmt-exfat-warning{font-size:var(--text-sm);color:var(--color-text-warning);background:var(--color-background-warning);border-radius:var(--border-radius-md);padding:var(--space-8) var(--space-12)}
 .sift-usbfmt-typerow{display:flex;flex-direction:column;gap:4px;font-size:var(--text-sm);color:var(--color-text-secondary)}
-.sift-usbfmt-typerow input{font-size:var(--text-md);padding:var(--space-4) var(--space-8);background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);color:var(--color-text-primary);font-family:var(--font-mono)}
+.sift-usbfmt-typerow input{font-size:var(--text-md);padding:var(--space-4) var(--space-8);background:var(--color-background-primary);border:1px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);color:var(--color-text-primary);font-family:var(--font-mono)}
 .sift-usbfmt-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:4px}
 /* DESTRUCTIF = un bouton NORMAL à encre rouge (2026-08-19). HIG : le rôle `destructive` de SwiftUI
    ne peint pas un aplat rouge, il teinte le libellé ; le kit n'a pas non plus de bouton rouge plein.
@@ -2796,7 +2845,7 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    — le libellé d'un dossier « Autres » (nom + chemin complet) passait à la ligne, et une rangée à
    hauteur de gabarit l'aurait rogné au lieu de l'abréger. Une ligne, une rangée de 22. */
 .sift-fld-label{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.sift-binfilter{width:100%;font-size:var(--text-sm);padding:var(--space-4) var(--space-8);margin-bottom:var(--space-8);background:var(--color-background-secondary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);color:var(--color-text-primary);box-sizing:border-box}
+.sift-binfilter{width:100%;font-size:var(--text-sm);padding:var(--space-4) var(--space-8);margin-bottom:var(--space-8);background:var(--color-background-secondary);border:1px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);color:var(--color-text-primary);box-sizing:border-box}
 .sift-fldz-hint{font-size:var(--text-sm);color:var(--color-text-tertiary);margin-bottom:8px}
 /* LES DEUX NOTES SUIVENT LA GOUTTIÈRE DU GABARIT D'ITEM (recalées le 2026-08-25). Ce ne sont pas
    des items — pas de survol, pas de sélection, rien à cliquer — mais leur bord gauche se lit
@@ -2830,14 +2879,14 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .sift-fldz-group-label{font-size:var(--text-xs);font-weight:600;letter-spacing:0.12px;color:var(--color-text-tertiary);margin:var(--space-8) 2px var(--space-4);padding-left:var(--space-8)}
 .sift-fldz-group-label:first-child{margin-top:0}
 .sift-custom-path{color:var(--color-text-tertiary);font-size:var(--text-xs)}
-.sift-fldz-sep{height:0;border-top:0.5px solid var(--color-border-tertiary);margin:var(--space-8) 0}
+.sift-fldz-sep{height:0;border-top:1px solid var(--color-border-tertiary);margin:var(--space-8) 0}
 /* `display:flex;flex-direction:column` sur les deux CONTENEURS d'items, et ce n'est pas décoratif :
    la gouttière verticale du gabarit ci-dessous est une MARGE, et deux marges verticales voisines
    FUSIONNENT en flux normal — le pas serait tombé de 22 à 19px entre deux rangées. Un contexte
    flex ne fusionne pas les marges. (`.sift-dest-popover` est déjà en flex column, donc la case
    « Sur place » et les séparateurs, qui en sont des enfants directs, étaient déjà couverts.) */
 .sift-fldz-tree,.sift-fldz-foot{display:flex;flex-direction:column}
-.sift-fldz-foot{margin-top:var(--space-8);padding-top:var(--space-8);border-top:0.5px solid var(--color-border-tertiary)}
+.sift-fldz-foot{margin-top:var(--space-8);padding-top:var(--space-8);border-top:1px solid var(--color-border-tertiary)}
 /* ── Popover Destination : UN SEUL patron d'item (kit Menu/Menu-items, node 58:49) ────────
    Le popover empilait QUATRE patrons de rangée : l'arbre (`.fld`, padding vertical 8), le groupe
    « Autres » (`.sift-fld-flat-row`, padding 4/8), la case « Sur place » (un <label> nu — ni
@@ -2919,9 +2968,12 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    « anneau d'accent », le kit aussi, et DESIGN.md n'est pas source de décision (CLAUDE.md § Front).
    L'anneau est un box-shadow NON inset et le fond ne porte plus le signal de focus — voir le
    commentaire de `.sift-attr-input:focus` ci-dessous, qui dit pourquoi les deux comptent. */
-.sift-attr-list{margin-bottom:var(--space-12)}
-.sift-attr{display:flex;align-items:center;gap:var(--space-12);
-  padding:var(--space-4) 0;border-bottom:0.5px solid var(--color-border-tertiary)}
+/* FICHE AÉRÉE (respiration B, 2026-08-27) : rangées espacées de --space-8 — pitch ≈ 30, celui
+   des rangées de Réglages Système et de la maquette. Les filets par rangée TOMBENT : l'espace
+   sépare, le trait est l'exception (patterns § 5) — la maquette validée n'en a pas.
+   margin-bottom 16 = l'écart fiche → Diagnostic du groupe-fiche. */
+.sift-attr-list{display:flex;flex-direction:column;gap:var(--space-8);margin-bottom:var(--space-16)}
+.sift-attr{display:flex;align-items:center;gap:var(--space-12)}
 /* Colonne de label à largeur FIXE : les champs (les « barres » d'édition) démarrent tous au même x
    à gauche, quel que soit le label — sans quoi chacun commence après son propre label et ils se
    décalent (Antoine 2026-08-21). Patron inspecteur : colonne label | colonne valeur. */
@@ -2990,7 +3042,7 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    CLAIR que la carte .sift-fil-editor-margin/.sift-ui-card qui l'entoure (--color-background-queue),
    donc l'input "flottait" au lieu d'être renfoncé. --color-background-primary est plus sombre que
    -queue (comme dans .mc/Réglages, seul input jugé "nickel") — même convention partout désormais. */
-.sift-editor-input{font-size:var(--text-md);padding:var(--space-4) var(--space-8);background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);color:var(--color-text-primary);min-width:0}
+.sift-editor-input{font-size:var(--text-md);padding:var(--space-4) var(--space-8);background:var(--color-background-primary);border:1px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);color:var(--color-text-primary);min-width:0}
 .sift-genres-box{margin-bottom:var(--space-12);min-height:1px}
 /* Header row pairing the "Genres" caption with the Apply button (annotation: "à côté de genres" —
    was a full-width bar at the bottom of the card). .col-h's own margin-bottom neutralized here so
@@ -3230,7 +3282,7 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    menu contextuel ne doit jamais passer devant une confirmation destructive.
    Largeur bornée et non fixe : les libellés varient d'un écran à l'autre, et une largeur fixe
    tronquerait le plus long ou ferait flotter le plus court. */
-.sift-ctx-menu{position:fixed;z-index:var(--z-popover);min-width:180px;max-width:280px;padding:var(--space-4);background:var(--color-surface-raised);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);box-shadow:var(--shadow-toast);display:flex;flex-direction:column}
+.sift-ctx-menu{position:fixed;z-index:var(--z-popover);min-width:180px;max-width:280px;padding:var(--space-4);background:var(--color-surface-raised);border:1px solid var(--color-border-secondary);border-radius:var(--border-radius-md);box-shadow:var(--shadow-toast);display:flex;flex-direction:column}
 .sift-ctx-item{display:block;width:100%;text-align:left;padding:var(--space-4) var(--space-8);border:0;background:transparent;color:var(--color-text-primary);font:inherit;font-size:var(--text-md);border-radius:var(--border-radius-sm);cursor:pointer;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .sift-ctx-item:hover{background:var(--overlay-hover)}
 .sift-ctx-item--danger{color:var(--color-text-danger)}
@@ -3239,7 +3291,7 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    ne se voit plus (mesure du 2026-08-05, gravée dans DESIGN.md § 4). */
 .sift-ctx-item--disabled{color:var(--color-text-tertiary);cursor:default}
 .sift-ctx-item--disabled:hover{background:transparent}
-.sift-ctx-item--sep{margin-top:var(--space-4);border-top:0.5px solid var(--color-border-tertiary);padding-top:var(--space-8)}
+.sift-ctx-item--sep{margin-top:var(--space-4);border-top:1px solid var(--color-border-tertiary);padding-top:var(--space-8)}
 /* Rangée de pastilles du menu (couleur de source — patron Finder Tags : les couleurs vivent EN
    RANGÉE dans le menu contextuel même, guide macOS « Utiliser des tags »). La teinte vit sur le
    span intérieur via `.sift-rail-src-dot-<teinte>`, dont le contrat est de ne déclarer QUE le
@@ -3271,7 +3323,7 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .sift-settings-card{max-width:560px}
 .sift-settings-title{font-size:var(--text-xl);font-weight:600;margin-bottom:4px;color:var(--color-text-primary)}
 .sift-settings-desc{font-size:var(--text-md);color:var(--color-text-tertiary);line-height:1.45;margin-bottom:12px}
-.sift-settings-row{display:flex;align-items:center;justify-content:space-between;gap:var(--space-12);padding-top:12px;border-top:0.5px solid var(--color-border-tertiary)}
+.sift-settings-row{display:flex;align-items:center;justify-content:space-between;gap:var(--space-12);padding-top:12px;border-top:1px solid var(--color-border-tertiary)}
 .sift-settings-row-stack{flex-direction:column;align-items:flex-start;gap:8px}
 .sift-settings-row-head{display:flex;align-items:center;justify-content:space-between;gap:var(--space-12);width:100%}
 .sift-settings-label{font-size:var(--text-base);color:var(--color-text-primary)}
@@ -3284,7 +3336,7 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 /* Carte « Modèle de nommage » (Réglages). Les pastilles insèrent un placeholder à la position du
    curseur — pilule pour les distinguer des boutons d'action carrés de la même carte. */
 .sift-tpl-chips{display:flex;gap:var(--space-4)}
-.sift-tpl-chip{font-size:var(--text-sm);font-family:var(--font-mono);color:var(--color-text-secondary);background:var(--color-background-primary);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-pill);padding:2px var(--space-8);cursor:pointer}
+.sift-tpl-chip{font-size:var(--text-sm);font-family:var(--font-mono);color:var(--color-text-secondary);background:var(--color-background-primary);border:1px solid var(--color-border-tertiary);border-radius:var(--border-radius-pill);padding:2px var(--space-8);cursor:pointer}
 .sift-tpl-chip:hover{background:var(--color-background-primary);filter:brightness(0.96)}
 .sift-tpl-input{width:100%;font-family:var(--font-mono)}
 .sift-tpl-preview-label{font-size:var(--text-sm);letter-spacing:var(--tracking-widest);text-transform:uppercase;color:var(--color-text-quaternary)}
@@ -3368,7 +3420,7 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    `translateX(offsetLeft)`, et `offsetLeft` se mesure depuis cette même boîte de padding : le
    retrait de la piste y est déjà compris, quelle que soit sa valeur. C'est pourquoi passer de 2 à 1 ne
    touche pas `seg-thumb.ts` (vérifié le 2026-08-25, voir l'en-tête de ce fichier-là). */
-.sift-seg-thumb{position:absolute;top:var(--seg-pad);bottom:var(--seg-pad);left:0;background:var(--color-surface-raised);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-sm);box-shadow:var(--shadow-panel-subtle);transition:transform var(--duration-slow) var(--ease-out);pointer-events:none;z-index:0}
+.sift-seg-thumb{position:absolute;top:var(--seg-pad);bottom:var(--seg-pad);left:0;background:var(--color-surface-raised);border:1px solid var(--color-border-tertiary);border-radius:var(--border-radius-sm);box-shadow:var(--shadow-panel-subtle);transition:transform var(--duration-slow) var(--ease-out);pointer-events:none;z-index:0}
 /* Hover is text-only (color shift), no background box — retour utilisateur 2026-07-08 ("dans
    Claude il y a simplement le texte qui highlight, pas une case qui se superpose"). */
 /* ⚠️ La transition `background+color` qui vivait ici est RETIRÉE le 2026-08-19 (DESIGN.md § 6 :
@@ -3416,7 +3468,7 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    wins over inheritance, decoupling it from :hover while the un-wrapped label text keeps
    inheriting and animating normally. Only the real selected state (.on) brightens the icon. */
 .sift-seg-opt i{color:var(--color-text-secondary)}
-.sift-seg-opt.on{background:var(--color-surface-raised);border:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-sm);color:var(--color-text-primary)}
+.sift-seg-opt.on{background:var(--color-surface-raised);border:1px solid var(--color-border-tertiary);border-radius:var(--border-radius-sm);color:var(--color-text-primary)}
 .sift-seg-opt.on i{color:var(--color-text-primary)}
 .sift-seg-opt.on:hover{background:var(--color-surface-raised)}
 /* Filet vertical entre deux segments INACTIFS — le kit en met un, et il disparaît de part et
@@ -3506,12 +3558,12 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    pose `display` bat l'attribut `hidden`. Reproduit ici le 2026-08-19 : le menu mesurait
    `hidden: true` ET `display: flex`, donc restait peint en bas de la fenêtre, sans style inline
    (le rebuild l'avait effacé) — un `position:fixed` sans `top` retombe à sa place de flux. */
-.sift-facet-pop:not([hidden]){position:fixed;width:max-content;min-width:180px;max-width:320px;max-height:340px;display:flex;flex-direction:column;padding:var(--space-12);background:var(--color-surface-raised);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-lg);box-shadow:var(--shadow-toast);overflow-y:auto;z-index:var(--z-popover)}
+.sift-facet-pop:not([hidden]){position:fixed;width:max-content;min-width:180px;max-width:320px;max-height:340px;display:flex;flex-direction:column;padding:var(--space-12);background:var(--color-surface-raised);border:1px solid var(--color-border-secondary);border-radius:var(--border-radius-lg);box-shadow:var(--shadow-toast);overflow-y:auto;z-index:var(--z-popover)}
 /* Items de menu, calqués sur `.sift-ctx-item` — une seule grammaire de menu dans l'app. La COCHE
    marque l'item actif, comme dans un menu macOS ; un fond plein serait la grammaire d'une LISTE,
    et ce panneau n'en est plus une depuis qu'il est un pop-up button (HIG « Pop-up buttons »). */
 .sift-menu-section{display:flex;flex-direction:column}
-.sift-menu-section + .sift-menu-section{margin-top:var(--space-4);padding-top:var(--space-4);border-top:0.5px solid var(--color-border-tertiary)}
+.sift-menu-section + .sift-menu-section{margin-top:var(--space-4);padding-top:var(--space-4);border-top:1px solid var(--color-border-tertiary)}
 .sift-menu-item{display:flex;align-items:center;gap:var(--space-8);width:100%;padding:var(--space-4) var(--space-8);border:0;background:none;border-radius:var(--border-radius-sm);cursor:pointer;font-size:var(--text-base);color:var(--color-text-primary);text-align:left}
 .sift-menu-item:hover{background:var(--overlay-hover)}
 /* Coche à l'encre du TEXTE, pas à l'accent : relevé sur `docs/design-refs/macos-big-sur-ui-kit.png`
@@ -3574,8 +3626,8 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .sift-usage-ident{min-width:0;display:flex;flex-direction:column}
 .sift-usage-name{font-size:20px;font-weight:600;letter-spacing:-0.01em;line-height:1.2;color:var(--color-text-primary)}
 .sift-usage-sub{font-size:var(--text-md);color:var(--color-text-secondary)}
-.sift-usage-capacity{margin-left:auto;flex:none;border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:var(--space-12) var(--space-16);font-size:var(--text-lg);font-variant-numeric:tabular-nums;color:var(--color-text-primary)}
-.sift-usage-rule{height:0.5px;background:var(--color-border-tertiary)}
+.sift-usage-capacity{margin-left:auto;flex:none;border:1px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:var(--space-12) var(--space-16);font-size:var(--text-lg);font-variant-numeric:tabular-nums;color:var(--color-text-primary)}
+.sift-usage-rule{height:1px;background:var(--color-border-tertiary)}
 
 .sift-usage-barwrap{position:relative}
 .sift-usage-bar{display:flex;height:26px;border-radius:var(--border-radius-sm);overflow:hidden}
@@ -3621,7 +3673,7 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .sift-usage-lg-top{display:inline-flex;align-items:center;gap:var(--space-8);min-width:0}
 /* Carré arrondi, pas une pastille : forme de Disk Utility, reprise pour toutes les légendes. */
 .sift-usage-swatch{width:var(--space-12);height:var(--space-12);border-radius:3px;flex:none}
-.sift-usage-swatch-free{background:var(--color-background-primary);box-shadow:inset 0 0 0 0.5px var(--color-border-secondary)}
+.sift-usage-swatch-free{background:var(--color-background-primary);box-shadow:inset 0 0 0 1px var(--color-border-secondary)}
 .sift-usage-lg-name{font-family:var(--font-mono);font-size:var(--text-md);color:var(--color-text-primary);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .sift-usage-lg-name-plain{font-family:var(--font-ui)}
 .sift-usage-lg-size{font-size:var(--text-md);color:var(--color-text-secondary);font-variant-numeric:tabular-nums;padding-left:calc(var(--space-12) + var(--space-8))}
@@ -3629,7 +3681,7 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .sift-usage-lg-static:hover .sift-usage-lg-name{text-decoration:none}
 .sift-usage-lg:focus-visible{outline:2px solid var(--color-border-info);outline-offset:3px;border-radius:3px}
 
-.sift-usage-info{margin:0;border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:var(--space-16);display:grid;grid-template-columns:1fr 1fr;gap:var(--space-12) var(--space-32)}
+.sift-usage-info{margin:0;border:1px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:var(--space-16);display:grid;grid-template-columns:1fr 1fr;gap:var(--space-12) var(--space-32)}
 .sift-usage-pair{display:flex;align-items:baseline;gap:var(--space-12);font-size:var(--text-md);min-width:0}
 .sift-usage-pair dt{color:var(--color-text-secondary)}
 .sift-usage-pair dd{margin:0 0 0 auto;color:var(--color-text-primary);font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
@@ -3651,7 +3703,7 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .sift-usage-btn:disabled{opacity:.5;cursor:default}
 .sift-usage-btn:focus-visible{outline:2px solid var(--color-border-info);outline-offset:2px}
 .sift-usage-actions .sift-usage-btn:first-of-type{margin-left:auto}
-.sift-usage-status:not([hidden]){border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:var(--space-12) var(--space-16);background:var(--color-background-tertiary);font-size:var(--text-md);color:var(--color-text-secondary)}
+.sift-usage-status:not([hidden]){border:1px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:var(--space-12) var(--space-16);background:var(--color-background-tertiary);font-size:var(--text-md);color:var(--color-text-secondary)}
 
 /* 0fr -> 1fr anime vers une hauteur inconnue sans la mesurer en JS. Le padding vit sur
    .sift-usage-panel-inner, jamais sur la piste mesurée, sinon elle ne se referme pas
@@ -3665,7 +3717,7 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .sift-usage-grp{display:flex;flex-direction:column}
 .sift-usage-grp-head{display:flex;align-items:baseline;gap:var(--space-8);font-size:var(--text-sm);text-transform:uppercase;letter-spacing:0.06em;font-weight:600;color:var(--color-text-tertiary);padding-bottom:var(--space-4)}
 .sift-usage-grp-total{margin-left:auto;text-transform:none;letter-spacing:0;font-variant-numeric:tabular-nums}
-.sift-usage-prow{display:grid;grid-template-columns:104px 1fr 76px 64px;gap:var(--space-12);align-items:center;padding:var(--space-8);margin:0 calc(var(--space-8) * -1);border-top:0.5px solid var(--color-border-tertiary);border-radius:var(--border-radius-sm);font-size:var(--text-md)}
+.sift-usage-prow{display:grid;grid-template-columns:104px 1fr 76px 64px;gap:var(--space-12);align-items:center;padding:var(--space-8);margin:0 calc(var(--space-8) * -1);border-top:1px solid var(--color-border-tertiary);border-radius:var(--border-radius-sm);font-size:var(--text-md)}
 .sift-usage-prow:first-of-type{border-top:0}
 /* Surlignage TRANSITOIRE seulement : un état confirmé permanent reste neutre, seule sa
    transition se colore. */
@@ -3688,7 +3740,7 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 /* Champ de nom de volume dans la modale de formatage. Même forme que la ligne de confirmation
    juste en dessous, pour que les deux se lisent comme une seule séquence. */
 .sift-usbfmt-namerow{display:flex;flex-direction:column;gap:var(--space-4);font-size:var(--text-md);color:var(--color-text-secondary)}
-.sift-usbfmt-namerow input{font-family:var(--font-mono);font-size:var(--text-md);padding:var(--space-8);background:var(--color-background-primary);border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);color:var(--color-text-primary)}
+.sift-usbfmt-namerow input{font-family:var(--font-mono);font-size:var(--text-md);padding:var(--space-8);background:var(--color-background-primary);border:1px solid var(--color-border-secondary);border-radius:var(--border-radius-md);color:var(--color-text-primary)}
 /* Pas de :focus-visible propre (retiré 2026-08-20) : une SAISIE remplace l'anneau par une bordure
    (DESIGN.md § 8) — le générique `input:not([type=checkbox]):focus-visible` fait exactement ça, et
    la règle d'ici posait un anneau PAR-DESSUS cette bordure, deux indicateurs pour un seul focus. */
