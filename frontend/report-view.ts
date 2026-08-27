@@ -8,6 +8,7 @@ import WaveSurfer from "wavesurfer.js";
 import type { AnalysisReport } from "../shared/contracts";
 import { requireEl, esc } from "./dom";
 import { durationText, hfDensityText, hfTopDensityText } from "./report-figures";
+import { VOL_KNOB, playerAuditionHtml, volumeCentreCss, volumeIconClass } from "./player-audition";
 
 /** Fallback step, only for a report predating `peaks_step` (mirrors analysis::PEAKS_WINDOW and
  *  analysis::default_peaks_step). Never use it when the report carries its own step: the envelope
@@ -473,40 +474,10 @@ function playerRowHtml(name: string, path: string, closeBtn = false, headerOpts:
   return (
     `<div class="sift-player-row">` +
     playerHeaderHtml(name, path, closeBtn, headerOpts) +
-    `<div class="sift-player-audition">` +
-    `<button class="sift-play sift-play-btn" title="Lecture / pause (espace)" aria-label="Lecture / pause (espace)"><i class="ti-fill ti-fill-player-play"></i></button>` +
-    // LECTEUR SIMPLE (décision Antoine 2026-08-27, maquette : composant « Slider de progression »,
-    // COPIE du kit Pickers/Slider-pickers/Linear/Small/No-tick-marks 53:118) : la waveform quitte
-    // Revue — piste 4 px + remplissage accent + pouce blanc 20, la géométrie exacte du kit.
-    // WaveSurfer RESTE le moteur audio (décodage, lecture, seek, volume) : son conteneur
-    // `.sift-wave` est réduit à zéro par CSS (.sift-progress-engine), jamais démonté — le passer
-    // en display:none casserait son ResizeObserver, le réduire ne casse rien.
-    // Survol : bulle mm:ss seule (patron QuickTime) — le ghost et la ligne, nés pour teinter des
-    // BARRES, n'ont pas d'équivalent sur une piste pleine de 4 px.
-    `<div class="sift-progress" role="slider" tabindex="0" aria-label="Position de lecture" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">` +
-    `<div class="sift-wave sift-player-wave sift-progress-engine"></div>` +
-    `<div class="sift-progress-track"></div>` +
-    `<div class="sift-progress-fill"></div>` +
-    `<div class="sift-progress-knob" hidden></div>` +
-    `<div class="sift-wave-hovertime" hidden></div>` +
-    `</div>` +
-    // Temps À CÔTÉ de l'onde (retour Antoine : plus overlay dans la forme d'onde). Un seul, cliquable.
-    `<span class="sift-time" role="button" tabindex="0" title="Temps écoulé / restant — cliquer pour basculer">0:00</span>` +
-    // Volume intégré dans la rangée de transport (façon Apple Music) — plus de bloc « contrôles »
-    // séparé. Tempo & key-lock (l'« Écoute avancée ») retirés : le pitch DJ n'est pas voulu sur cet
-    // écran de décision (Antoine 2026-08-21), et la HIG ne justifie un contrôle audio custom que pour
-    // une commande absente du système.
-    // SLIDER FIN (2026-08-27, remplace la capsule SVG du 25 — « goofy » dans la rangée fine) :
-    // même famille que .sift-progress (patron Music, maquette « Volume (lecteur) ») — haut-parleur
-    // cliquable (mute, bascule ti-volume/ti-volume-off) + piste 4 px, remplissage et pouce BLANCS
-    // theme-invariants (un volume n'est pas une progression : pas d'accent).
-    `<button class="sift-volume-mute" title="Couper / rétablir le son" aria-label="Couper / rétablir le son"><i class="ti ti-volume"></i></button>` +
-    `<div class="sift-volume" role="slider" tabindex="0" aria-label="Volume" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100">` +
-    `<div class="sift-volume-track"></div>` +
-    `<div class="sift-volume-fill"></div>` +
-    `<div class="sift-volume-knob"></div>` +
-    `</div>` +
-    `</div>` +
+    // La rangée d'audition (play · slider kit · temps · volume fin) vit dans `player-audition.ts`
+    // depuis le 2026-08-27 — module pur, la story exécute le même rendu. Ses commentaires de
+    // décision (lecteur simple, retrait tempo/key-lock, slider fin) sont partis avec le markup.
+    playerAuditionHtml() +
     `<div class="sift-player-error" hidden></div>`
   );
 }
@@ -903,8 +874,8 @@ async function mountPlayer(root: HTMLElement, path: string, peaks?: number[], du
   // Slider custom (jamais un <input type=range> natif — voir DESIGN.md). La géométrie viewBox de
   // la capsule est partie avec elle (2026-08-27) : la conversion pointeur → valeur passe par la
   // COURSE DU CENTRE du pouce en pixels rendus — même principe que la leçon du 2026-08-25 (mapper
-  // la largeur entière faisait traîner le pouce derrière le pointeur), même formule que le rendu.
-  const VOL_KNOB = 14; // diamètre du pouce du volume (maquette « Volume (lecteur) », façon Music)
+  // la largeur entière faisait traîner le pouce derrière le pointeur), même formule que le rendu
+  // (`volumeCentreCss`, importée de player-audition.ts avec `VOL_KNOB`).
   const dragSlider = (track: HTMLElement, onMove: (pct: number) => void) => {
     const update = (clientX: number) => {
       const rect = track.getBoundingClientRect();
@@ -935,14 +906,13 @@ async function mountPlayer(root: HTMLElement, path: string, peaks?: number[], du
     // Le POUCE mène, le remplissage s'arrête à son centre (kit) : left du pouce = course du
     // centre en calc CSS, largeur du remplissage = le même point. Deux mutations de style,
     // jamais de rebuild — updateTime a le même contrat côté progression.
-    const centre = `calc(${pct} * (100% - ${VOL_KNOB}px) + ${VOL_KNOB / 2}px)`;
+    const centre = volumeCentreCss(pct);
     if (volumeFill) volumeFill.style.width = centre;
     if (volumeKnob) volumeKnob.style.left = centre;
     volumeTrack?.setAttribute("aria-valuenow", String(Math.round(pct * 100))); // audit-ref R1
-    // L'icône du haut-parleur dit l'état muet (bascule webfont) — la capsule montrait un slash
-    // permanent, le slider fin suit Music : volume coupé = glyphe barré.
+    // L'icône du haut-parleur dit l'état muet — formule partagée avec la story (player-audition.ts).
     const i = volumeMute?.querySelector("i");
-    if (i) i.className = pct > 0 ? "ti ti-volume" : "ti ti-volume-off";
+    if (i) i.className = volumeIconClass(pct);
   };
   renderVolume(1); // WaveSurfer's own default (full volume)
   if (volumeTrack) {

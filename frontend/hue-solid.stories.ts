@@ -1,9 +1,11 @@
 import type { Meta, StoryObj } from "@storybook/html-vite";
 
 // Les neuf teintes `-solid` ajoutées le 2026-08-01 pour les surfaces de donnée (segments de
-// graphique d'occupation disque). Lues DEPUIS les tokens de styles.css, jamais recopiées : une
-// story qui redéclare ses couleurs cesse d'être un miroir dès la première retouche.
-const HUES = ["blue", "indigo", "teal", "green", "orange", "yellow", "purple", "pink", "gray"];
+// graphique d'occupation disque), plus `red` le 2026-08-27 (systemRed du kit, ajouté pour la
+// pastille de verdict Faux de la file — voir `queue-verdict-dot.ts`). Lues DEPUIS les tokens de
+// styles.css, jamais recopiées : une story qui redéclare ses couleurs cesse d'être un miroir dès
+// la première retouche. Ordre = celui du bloc `:root`.
+const HUES = ["blue", "indigo", "teal", "green", "orange", "yellow", "purple", "pink", "red", "gray"];
 
 /** Les cinq teintes historiques ont trois variantes, les quatre nouvelles n'ont que `-solid` —
  * `-bg`/`-text` n'ont de sens que pour une puce, et rien n'en demande pour l'instant. */

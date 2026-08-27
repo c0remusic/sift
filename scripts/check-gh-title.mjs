@@ -1,6 +1,9 @@
-#!/usr/bin/env node
 // check-gh-title.mjs — hook PreToolUse (Bash) : refuse un `gh … --title "…"` (ou `-t`) dont le
 // titre est du français désaccentué, AVANT que la commande parte.
+// PAS de shebang ici : le hook est invoqué `node scripts/check-gh-title.mjs` (settings.json), et
+// la ligne `#!` cassait l'import du module par Vitest — vite-node exécute le transform dans un
+// corps de fonction où un shebang non strippé est un SyntaxError V8 (« Invalid or unexpected
+// token », CI rouge du 2026-08-27, invisible à esbuild seul qui le préserve).
 //
 // Ferme le dernier canal du strip d'accents (issue #43, cause mesurée le 2026-08-26) : le texte
 // destiné à un ARGUMENT de ligne de commande est rédigé en ASCII par prudence de quoting.
