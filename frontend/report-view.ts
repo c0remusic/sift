@@ -14,30 +14,12 @@ import { durationText, hfDensityText, hfTopDensityText } from "./report-figures"
  *  is max-pooled above analysis::MAX_PEAKS points, so the real step is a multiple of this. */
 const PEAKS_WINDOW_FALLBACK = 512;
 
-// Volume = COPIE DIRECTE de l'export SVG du kit macOS Big Sur (Antoine 2026-08-25 : « tu as juste
-// à copier les éléments des svg »). On inline ses éléments TELS QUELS — rect piste (blanc @10% +
-// inner-shadow), rect remplissage, cercle pouce (+ drop-shadow), path haut-parleur barré — dans un
-// viewBox 0 0 112 24 (piste large de 112 au lieu des 256 du kit ; tout le reste identique :
-// hauteur 22, inset 1px, pouce r10, icône ancrée à x≈6). renderVolume ne touche QUE `width` du
-// remplissage et `cx` du pouce. L'icône reste speaker.slash de l'export (le kit l'affiche à tous
-// les niveaux — c'est le glyphe du contrôle, pas un indicateur d'état).
-// SEUL ÉCART À LA COPIE (2026-08-25) : les trois ENCRES — remplissage, pouce, glyphe — ne sont plus
-// des attributs de présentation en dur (blanc / blanc / #464646) mais des tokens, posés par
-// .sift-vol-fill / .sift-vol-knob / .sift-volume-icon dans styles.css. Motif mesuré dans la vraie
-// fenêtre : le remplissage blanc du kit ne vaut que 1,45:1 contre sa piste en thème CLAIR (12,67:1
-// en sombre), sous le 3:1 que WCAG 1.4.11 demande à un composant d'interface — or c'est CE
-// contraste-là qui dit le niveau. Géométrie, rayons et les deux filtres restent la copie exacte.
-// Le rationale complet et le choix des tokens sont au-dessus de .sift-vol-fill (styles.css).
-const SPK_SLASH =
-  "M13.5728 12.0239V6.52393C13.5728 6.1748 13.3203 5.89014 12.9551 5.89014C12.7026 5.89014 12.5361 6.00293 12.2568 6.26074L10.0977 8.26416C10.0708 8.28564 10.0386 8.30713 10.0063 8.30713H9.84521L13.5728 12.0239ZM15.4258 15.9287C15.5869 16.0898 15.8555 16.0898 16.0112 15.9287C16.1724 15.7622 16.1724 15.5044 16.0112 15.3433L6.81592 6.14795C6.65479 5.98682 6.38623 5.98682 6.2251 6.14795C6.06396 6.30371 6.06396 6.57764 6.2251 6.7334L15.4258 15.9287ZM8.27148 12.8081H9.80225C9.85596 12.8081 9.89893 12.8242 9.93652 12.8564L12.2568 15.0264C12.5093 15.2627 12.7134 15.3647 12.9604 15.3647C13.2397 15.3647 13.4492 15.2251 13.5352 14.9189L7.41211 8.80127C7.25635 8.97852 7.17578 9.24707 7.17578 9.60693V11.6641C7.17578 12.4429 7.54102 12.8081 8.27148 12.8081Z";
-// Filtres du kit, copiés depuis 100%.svg : inner-shadow de la piste, drop-shadow du pouce. Seule
-// différence : la région du drop-shadow est élargie à toute la largeur (x0 w112) pour suivre le
-// pouce mobile (le kit la fixait à la position 100%).
-const VOL_DEFS =
-  `<defs>` +
-  `<filter id="sift-vol-inner" x="0" y="0" width="112" height="22" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB"><feFlood flood-opacity="0" result="bg"></feFlood><feBlend mode="normal" in="SourceGraphic" in2="bg" result="shape"></feBlend><feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"></feColorMatrix><feMorphology radius="2" operator="erode" in="SourceAlpha" result="inner"></feMorphology><feOffset></feOffset><feGaussianBlur stdDeviation="2.5"></feGaussianBlur><feComposite in2="hardAlpha" operator="arithmetic" k2="-1" k3="1"></feComposite><feColorMatrix type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.05 0"></feColorMatrix><feBlend mode="normal" in2="shape" result="inner"></feBlend></filter>` +
-  `<filter id="sift-vol-drop" x="0" y="0" width="112" height="24" filterUnits="userSpaceOnUse" color-interpolation-filters="sRGB"><feFlood flood-opacity="0" result="bg"></feFlood><feColorMatrix in="SourceAlpha" type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 127 0" result="hardAlpha"></feColorMatrix><feMorphology radius="1" operator="dilate" in="SourceAlpha" result="drop"></feMorphology><feOffset dy="1"></feOffset><feGaussianBlur stdDeviation="0.5"></feGaussianBlur><feColorMatrix type="matrix" values="0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0 0.1 0"></feColorMatrix><feBlend mode="normal" in2="bg" result="drop"></feBlend><feBlend mode="normal" in="SourceGraphic" in2="drop" result="shape"></feBlend></filter>` +
-  `</defs>`;
+// L'ex-volume capsule (SVG du kit inliné, 2026-08-25) est REMPLACÉ le 2026-08-27 (Antoine :
+// « couleur, taille et style vraiment goofy » dans la rangée du lecteur fin) : le volume est
+// désormais un slider FIN de la même famille que la progression — patron Music, maquette Figma
+// composant « Volume (lecteur) ». SPK_SLASH et VOL_DEFS sont partis avec la capsule ; le
+// haut-parleur est l'icône webfont ti-volume/ti-volume-off (une seule famille d'icônes, Tabler —
+// patterns § 5 : SF Symbols n'est pas licenciable hors Apple).
 
 // Accordion behavior (shadcn Accordion reference, ui.shadcn.com/docs/components/base/accordion):
 // Diagnostic and Métadonnées are exclusive — opening one closes the other. They're wired in two
@@ -493,39 +475,37 @@ function playerRowHtml(name: string, path: string, closeBtn = false, headerOpts:
     playerHeaderHtml(name, path, closeBtn, headerOpts) +
     `<div class="sift-player-audition">` +
     `<button class="sift-play sift-play-btn" title="Lecture / pause (espace)" aria-label="Lecture / pause (espace)"><i class="ti ti-player-play"></i></button>` +
-    `<div class="sift-wave-wrap is-paused">` +
-    `<div class="sift-wave sift-player-wave"></div>` +
-    `<div class="sift-wave-hover"></div>` +
-    // Survol : ligne fine + bulle mm:ss à la cible (patron QuickTime), en plus du ghost fill.
-    `<div class="sift-wave-hoverline" hidden></div>` +
+    // LECTEUR SIMPLE (décision Antoine 2026-08-27, maquette : composant « Slider de progression »,
+    // COPIE du kit Pickers/Slider-pickers/Linear/Small/No-tick-marks 53:118) : la waveform quitte
+    // Revue — piste 4 px + remplissage accent + pouce blanc 20, la géométrie exacte du kit.
+    // WaveSurfer RESTE le moteur audio (décodage, lecture, seek, volume) : son conteneur
+    // `.sift-wave` est réduit à zéro par CSS (.sift-progress-engine), jamais démonté — le passer
+    // en display:none casserait son ResizeObserver, le réduire ne casse rien.
+    // Survol : bulle mm:ss seule (patron QuickTime) — le ghost et la ligne, nés pour teinter des
+    // BARRES, n'ont pas d'équivalent sur une piste pleine de 4 px.
+    `<div class="sift-progress" role="slider" tabindex="0" aria-label="Position de lecture" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">` +
+    `<div class="sift-wave sift-player-wave sift-progress-engine"></div>` +
+    `<div class="sift-progress-track"></div>` +
+    `<div class="sift-progress-fill"></div>` +
+    `<div class="sift-progress-knob" hidden></div>` +
     `<div class="sift-wave-hovertime" hidden></div>` +
-    // Pouce de lecture — le knob du slider Apple (kit § 04 / slider de zoom de Photos : piste fine +
-    // pastille blanche ronde à bordure et ombre légères). La waveform tient lieu de piste ; le pouce
-    // marque la tête de lecture. Caché tant que la durée n'est pas connue (updateTime le positionne).
-    `<div class="sift-wave-playhead" hidden></div>` +
     `</div>` +
     // Temps À CÔTÉ de l'onde (retour Antoine : plus overlay dans la forme d'onde). Un seul, cliquable.
     `<span class="sift-time" role="button" tabindex="0" title="Temps écoulé / restant — cliquer pour basculer">0:00</span>` +
     // Volume intégré dans la rangée de transport (façon Apple Music) — plus de bloc « contrôles »
     // séparé. Tempo & key-lock (l'« Écoute avancée ») retirés : le pitch DJ n'est pas voulu sur cet
     // écran de décision (Antoine 2026-08-21), et la HIG ne justifie un contrôle audio custom que pour
-    // une commande absente du système. L'icône de volume reste (contrôle standard, cohérent).
-    // Volume = SVG du kit inliné tel quel (COPIE, cf. SPK_SLASH/VOL_DEFS). Le <svg> EST le slider
-    // (role="slider", drag + clavier ; audit-ref R1 2026-07-08). Clic sur le haut-parleur = mute.
-    // renderVolume ne pilote que `width` du remplissage et `cx` du pouce ; les trois encres
-    // (remplissage, pouce, glyphe) viennent de styles.css, seul écart assumé à la copie du kit —
-    // voir le commentaire de SPK_SLASH en tête de fichier. La piste, elle, garde le blanc @10 % du
-    // kit dans les deux thèmes : c'est le remplissage qui s'inverse, pas elle.
-    // Les attributs `width`/`cx` de départ valent le plein volume sous la géométrie de renderVolume
-    // (fillW = 110 et cx = 101 à pct = 1) — les changer sans elle désaccorderait la première frame.
-    `<svg class="sift-volume" viewBox="0 0 112 24" role="slider" tabindex="0" aria-label="Volume" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100">` +
-    `<title>Volume — cliquer pour couper</title>` +
-    `<g filter="url(#sift-vol-inner)"><rect width="112" height="22" rx="11" fill="white" fill-opacity="0.1"></rect></g>` +
-    `<rect class="sift-vol-fill" x="1" y="1" width="110" height="20" rx="10"></rect>` +
-    `<g filter="url(#sift-vol-drop)"><circle class="sift-vol-knob" cx="101" cy="11" r="10"></circle></g>` +
-    `<path class="sift-volume-icon" d="${SPK_SLASH}"></path>` +
-    VOL_DEFS +
-    `</svg>` +
+    // une commande absente du système.
+    // SLIDER FIN (2026-08-27, remplace la capsule SVG du 25 — « goofy » dans la rangée fine) :
+    // même famille que .sift-progress (patron Music, maquette « Volume (lecteur) ») — haut-parleur
+    // cliquable (mute, bascule ti-volume/ti-volume-off) + piste 4 px, remplissage et pouce BLANCS
+    // theme-invariants (un volume n'est pas une progression : pas d'accent).
+    `<button class="sift-volume-mute" title="Couper / rétablir le son" aria-label="Couper / rétablir le son"><i class="ti ti-volume"></i></button>` +
+    `<div class="sift-volume" role="slider" tabindex="0" aria-label="Volume" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100">` +
+    `<div class="sift-volume-track"></div>` +
+    `<div class="sift-volume-fill"></div>` +
+    `<div class="sift-volume-knob"></div>` +
+    `</div>` +
     `</div>` +
     `<div class="sift-player-error" hidden></div>`
   );
@@ -888,59 +868,25 @@ export function prefetchTrack(path: string): void {
 async function mountPlayer(root: HTMLElement, path: string, peaks?: number[], duration?: number) {
   const container = requireEl<HTMLElement>(".sift-wave", "mountPlayer", root);
   const playBtn = root.querySelector<HTMLButtonElement>(".sift-play");
-  const volumeTrack = root.querySelector<SVGSVGElement>(".sift-volume");
-  const volumeIcon = root.querySelector<SVGElement>(".sift-volume-icon");
-  const volumeFill = root.querySelector<SVGElement>(".sift-vol-fill");
-  const volumeKnob = root.querySelector<SVGElement>(".sift-vol-knob");
+  const volumeTrack = root.querySelector<HTMLElement>(".sift-volume");
+  const volumeMute = root.querySelector<HTMLButtonElement>(".sift-volume-mute");
+  const volumeFill = root.querySelector<HTMLElement>(".sift-volume-fill");
+  const volumeKnob = root.querySelector<HTMLElement>(".sift-volume-knob");
   const errorEl = root.querySelector<HTMLElement>(".sift-player-error");
 
   ensureStyles();
   destroyPlayer();
-  // WaveSurfer draws to canvas, so it needs resolved color strings, not var(--x) references —
-  // same read-at-mount pattern already used for the spectrogram cutoff line (drawSpectrogram
-  // below). --overlay-bar is the token for the UNPLAYED wave bars.
-  //
-  // La portion JOUÉE prend l'ACCENT DU DÉPÔT (--color-accent-fill → --color-hue-blue-solid), et
-  // plus --color-waveform-elapsed (2026-08-25). Ce dernier n'est pas un accent : il résout en
-  // var(--color-text-info), une ENCRE, qui vaut oklch(79,21 % 0,0789 242) en thème sombre — un bleu
-  // si pâle et si peu chromé qu'il se lit comme du blanc cassé sur les barres, donc un lecteur SANS
-  // accent une fois le thème sombre actif. --color-accent-fill, lui, EST le systemBlue dans les
-  // deux thèmes (60,28 % / 62,43 % de clarté, chroma ≈ 0,21) : l'accent tient des deux côtés.
-  // ⚠️ --color-waveform-elapsed (styles.css) perd ici son DERNIER consommateur — token désormais
-  // mort, à retirer par le geste qui a le droit d'éditer :root (hors périmètre de cette lane).
-  //
-  // Jusqu'au 2026-07-28 (audit SJ-1), --overlay-bar n'était déclaré NULLE PART : getPropertyValue
-  // rendait "" et un repli littéral blanc à 35 % d'opacité prenait la main à chaque montage — sur
-  // un thème dont la base est claire, donc une waveform quasi invisible par défaut. Le commentaire
-  // d'origine affirmait par ailleurs que le token servait à la barre d'accent de .qi.cur, ce qui
-  // était faux (cette règle utilise --color-row-active).
-  //
-  // Le repli silencieux est remplacé par un repli BRUYANT : un token absent est un bug de
-  // feuille de style, il doit se voir en console au lieu de se déguiser en couleur plausible
-  // (CLAUDE.md : fail fast, pas de fallback silencieux).
-  const cs = getComputedStyle(root);
-  const token = (name: string, fallback: string): string => {
-    const v = cs.getPropertyValue(name).trim();
-    if (!v) {
-      console.error(`[report-view] token CSS ${name} introuvable — repli ${fallback}`);
-      return fallback;
-    }
-    return v;
-  };
-  const waveColor = token("--overlay-bar", "rgba(0,0,0,.32)");
-  // Le repli reste cette orange criarde À DESSEIN : elle n'appartient à aucune palette du dépôt,
-  // donc si le token disparaît le lecteur le CRIE à l'écran en plus du console.error ci-dessus.
-  const progressColor = token("--color-accent-fill", "#ff5500");
+  // WaveSurfer n'est plus que le MOTEUR (2026-08-27, lecteur simple) : son rendu part dans un
+  // conteneur réduit à zéro (.sift-progress-engine), donc plus aucune couleur à résoudre ici —
+  // le visuel est le trio .sift-progress-track/-fill/-knob, en tokens CSS ordinaires.
+  // `interact:false` : le clic de seek appartient au slider custom (dragSlider ci-dessous), pas
+  // au canvas invisible. `peaks`+`duration` restent passés : ils épargnent toujours à wavesurfer
+  // son décodage d'affichage, même invisible.
   const ws = WaveSurfer.create({
     container,
-    height: 40, // aminci (58→40) pour lire comme un slider Apple avec texture de waveform, pas un
-                // gros bloc (Antoine 2026-08-21) — la piste porte le pouce rond (.sift-wave-playhead)
-    barWidth: 2,
-    barGap: 1,
-    barRadius: 1,
+    height: 0,
+    interact: false,
     cursorWidth: 0,
-    waveColor,
-    progressColor,
     normalize: true,
     peaks: peaks?.length ? [peaks] : undefined,
     duration: duration || undefined,
@@ -952,41 +898,19 @@ async function mountPlayer(root: HTMLElement, path: string, peaks?: number[], du
     const i = playBtn?.querySelector("i");
     if (i) i.className = `ti ti-${name}`;
   };
-  // Géométrie de la capsule, en unités du viewBox du kit (0 0 112 24). UNE seule source pour le
-  // rendu ET pour le drag : les deux se déduisaient de constantes séparées, et c'est exactement ce
-  // qui les avait désaccordés (voir dragSlider ci-dessous). VOL_TRAVEL est la course RÉELLE du
-  // centre du pouce, pas la largeur de la piste — un pouce de rayon 10 ne peut jamais sortir de la
-  // capsule, donc son centre vit dans [11, 101] et non dans [0, 112].
-  const VOL_VB_W = 112; // largeur du viewBox
-  const VOL_INSET = 1; // marge du remplissage dans la piste (kit)
-  const VOL_KNOB_R = 10; // rayon du pouce (kit)
-  const VOL_CX_MIN = VOL_INSET + VOL_KNOB_R; // 11 — pouce à fond à gauche
-  const VOL_CX_MAX = VOL_VB_W - VOL_INSET - VOL_KNOB_R; // 101 — pouce à fond à droite
-  const VOL_TRAVEL = VOL_CX_MAX - VOL_CX_MIN; // 90
-
-  // Slider custom (jamais un <input type=range> natif — voir DESIGN.md) : on empoigne n'importe où
-  // sur la capsule, pouce et remplissage suivent le pointeur jusqu'au relâchement. Le tempo, qui
-  // remplissait depuis le centre, a été retiré de cet écran (spec Revue, Zone C, point 3) — il ne
-  // reste que le volume, qui remplit depuis la gauche.
-  // ⚠️ La conversion pixels → valeur passe par la COURSE DU POUCE, pas par la largeur de la piste.
-  // Jusqu'au 2026-08-25 elle mappait 0..112 px sur 0..1 alors que le pouce ne parcourt que 11..101 :
-  // le pouce traînait jusqu'à 11 px derrière le pointeur (recalculé : pointeur à x = 101, pouce à
-  // cx = 90,2), et le geste n'atteignait 100 % qu'au tout dernier pixel de la capsule, alors que le
-  // pouce butait déjà à droite onze pixels plus tôt. Avec la course, cx vaut exactement le x du
-  // pointeur partout dans [11, 101] — c'est la définition de « le pouce suit le pointeur ».
-  const dragSlider = (track: SVGSVGElement, onMove: (pct: number) => void) => {
+  // Slider custom (jamais un <input type=range> natif — voir DESIGN.md). La géométrie viewBox de
+  // la capsule est partie avec elle (2026-08-27) : la conversion pointeur → valeur passe par la
+  // COURSE DU CENTRE du pouce en pixels rendus — même principe que la leçon du 2026-08-25 (mapper
+  // la largeur entière faisait traîner le pouce derrière le pointeur), même formule que le rendu.
+  const VOL_KNOB = 14; // diamètre du pouce du volume (maquette « Volume (lecteur) », façon Music)
+  const dragSlider = (track: HTMLElement, onMove: (pct: number) => void) => {
     const update = (clientX: number) => {
       const rect = track.getBoundingClientRect();
-      // Le SVG est rendu 1:1 (112 px pour un viewBox de 112), mais on repasse par la largeur mesurée
-      // pour rester juste si la feuille de style change un jour la taille rendue.
-      const vbX = ((clientX - rect.left) / Math.max(1, rect.width)) * VOL_VB_W;
-      onMove(Math.max(0, Math.min(1, (vbX - VOL_CX_MIN) / VOL_TRAVEL)));
+      const travel = Math.max(1, rect.width - VOL_KNOB);
+      onMove(Math.max(0, Math.min(1, (clientX - rect.left - VOL_KNOB / 2) / travel)));
     };
     track.addEventListener("pointerdown", (e) => {
       if (e.button !== 0) return;
-      // Le haut-parleur vit DANS la capsule (mute au clic) : un pointerdown dessus ne doit pas armer
-      // un drag de volume ni sauter la valeur — son propre handler de clic gère le mute.
-      if ((e.target as Element).closest?.(".sift-volume-icon")) return;
       e.preventDefault();
       track.classList.add("dragging");
       track.setPointerCapture(e.pointerId);
@@ -1006,23 +930,17 @@ async function mountPlayer(root: HTMLElement, path: string, peaks?: number[], du
   };
 
   const renderVolume = (pct: number) => {
-    // On ne pilote QUE les deux éléments SVG qui bougent (kit) : la largeur du rect de remplissage
-    // et le cx du cercle-pouce. Reste identique au kit.
-    // Le POUCE mène, le remplissage suit : dans le kit le pouce EST le bout arrondi du remplissage
-    // (même encre, il n'existe que pour porter l'ombre), donc son bord droit et celui du remplissage
-    // sont le même trait.
-    // ⚠️ Jusqu'au 2026-08-25 c'était l'inverse — `fillW = Math.max(20, pct * 110)` puis
-    // `cx = 1 + fillW - 10`. Le clamp gelait DEUX choses à la fois : le pouce restait à cx = 11 tant
-    // que pct < 0,182, soit 18 % de course sans le moindre mouvement à l'œil, et un mute
-    // visuellement identique à un volume faible. Le plancher de 20 n'a pas disparu, il a changé de
-    // nature : il est maintenant la CONSÉQUENCE de la course (à pct = 0 le remplissage vaut
-    // exactement le diamètre du pouce), donc le glyphe du haut-parleur reste posé sur le
-    // remplissage à tous les niveaux — sa raison d'être — sans plus écraser le bas de course.
-    const cx = VOL_CX_MIN + pct * VOL_TRAVEL;
-    const fillW = cx + VOL_KNOB_R - VOL_INSET; // 20 à pct = 0, 110 à pct = 1
-    volumeFill?.setAttribute("width", String(fillW));
-    volumeKnob?.setAttribute("cx", String(cx));
+    // Le POUCE mène, le remplissage s'arrête à son centre (kit) : left du pouce = course du
+    // centre en calc CSS, largeur du remplissage = le même point. Deux mutations de style,
+    // jamais de rebuild — updateTime a le même contrat côté progression.
+    const centre = `calc(${pct} * (100% - ${VOL_KNOB}px) + ${VOL_KNOB / 2}px)`;
+    if (volumeFill) volumeFill.style.width = centre;
+    if (volumeKnob) volumeKnob.style.left = centre;
     volumeTrack?.setAttribute("aria-valuenow", String(Math.round(pct * 100))); // audit-ref R1
+    // L'icône du haut-parleur dit l'état muet (bascule webfont) — la capsule montrait un slash
+    // permanent, le slider fin suit Music : volume coupé = glyphe barré.
+    const i = volumeMute?.querySelector("i");
+    if (i) i.className = pct > 0 ? "ti ti-volume" : "ti ti-volume-off";
   };
   renderVolume(1); // WaveSurfer's own default (full volume)
   if (volumeTrack) {
@@ -1055,10 +973,10 @@ async function mountPlayer(root: HTMLElement, path: string, peaks?: number[], du
       }
     });
   }
-  if (volumeIcon) {
-    // Clic sur le haut-parleur = mute / démute (kit § 14). Mémorise le dernier volume non nul.
+  if (volumeMute) {
+    // Clic sur le haut-parleur = mute / démute. Mémorise le dernier volume non nul.
     let lastVolume = 1;
-    volumeIcon.addEventListener("click", () => {
+    volumeMute.addEventListener("click", () => {
       const cur = ws.getVolume();
       if (cur > 0) {
         lastVolume = cur;
@@ -1075,16 +993,24 @@ async function mountPlayer(root: HTMLElement, path: string, peaks?: number[], du
   // Un seul temps affiché, cliquable (patron Musique/Podcasts — jamais les deux à la fois). Le clic
   // (ou Entrée/Espace au clavier) bascule écoulé ↔ restant ; le restant décompte (durée - écoulé).
   const timeEl = root.querySelector<HTMLElement>(".sift-time");
-  const playheadEl = root.querySelector<HTMLElement>(".sift-wave-playhead");
+  const progressEl = root.querySelector<HTMLElement>(".sift-progress");
+  const progressFill = root.querySelector<HTMLElement>(".sift-progress-fill");
+  const progressKnob = root.querySelector<HTMLElement>(".sift-progress-knob");
   let showRemaining = false;
   const updateTime = () => {
     const cur = ws.getCurrentTime();
     const dur = ws.getDuration();
     if (timeEl) timeEl.textContent = showRemaining ? `-${mmss(Math.max(0, dur - cur))}` : mmss(cur);
-    // Pouce Apple à la tête de lecture (kit § 04). Révélé dès que la durée est connue.
-    if (playheadEl && dur > 0) {
-      playheadEl.hidden = false;
-      playheadEl.style.left = `${Math.min(100, (cur / dur) * 100)}%`;
+    // Pouce + remplissage du slider kit (composant « Slider de progression » de la maquette).
+    // Le pouce est révélé dès que la durée est connue — même contrat que l'ancien playhead.
+    if (dur > 0) {
+      const pct = Math.min(100, (cur / dur) * 100);
+      if (progressFill) progressFill.style.width = `${pct}%`;
+      if (progressKnob) {
+        progressKnob.hidden = false;
+        progressKnob.style.left = `${pct}%`;
+      }
+      progressEl?.setAttribute("aria-valuenow", String(Math.round(pct)));
     }
   };
   if (timeEl) {
@@ -1112,100 +1038,89 @@ async function mountPlayer(root: HTMLElement, path: string, peaks?: number[], du
   });
   ws.on("timeupdate", updateTime);
 
-  // Waveform dims a touch while paused (and re-lights on hover, so scrubbing/seeking a paused
-  // track still reads clearly) — `.is-paused` starts set in the HTML (nothing is playing yet).
-  const waveWrapEl = root.querySelector<HTMLElement>(".sift-wave-wrap");
-  /** Puts the button and the waveform back in step with what the player is ACTUALLY doing.
+  // Le dim de pause est parti avec la waveform (une piste de slider Apple ne change pas d'état
+  // en pause — Musique non plus) : l'icône play/pause porte seule l'état.
+  /** Puts the button back in step with what the player is ACTUALLY doing.
    *  Used on `ready`, where the two can legitimately have drifted apart (see there). */
   function syncPlayIcon(): void {
-    const playing = ws.isPlaying();
-    setIcon(playing ? "player-pause" : "player-play");
-    waveWrapEl?.classList.toggle("is-paused", !playing);
+    setIcon(ws.isPlaying() ? "player-pause" : "player-play");
   }
-  ws.on("play", () => {
-    setIcon("player-pause");
-    waveWrapEl?.classList.remove("is-paused");
-  });
-  ws.on("pause", () => {
-    setIcon("player-play");
-    waveWrapEl?.classList.add("is-paused");
-  });
+  ws.on("play", () => setIcon("player-pause"));
+  ws.on("pause", () => setIcon("player-play"));
   ws.on("finish", () => {
     setIcon("player-play");
-    waveWrapEl?.classList.add("is-paused");
-    // Fin de piste : stop + playhead ramené à 0, pas d'auto-avance (la zone C ne se recompose pas
+    // Fin de piste : stop + pouce ramené à 0, pas d'auto-avance (la zone C ne se recompose pas
     // sous l'utilisateur, patron Musique piste isolée). Un Espace relit du début.
     ws.setTime(0);
     updateTime();
   });
 
-  // Hover-scrub preview: recolor the waveform's own bars from the start up to the cursor — dimmer
-  // than the actual orange playhead fill — plus a thin cursor line and a mm:ss time bubble at the
-  // cursor (QuickTime pattern, added 2026-08-24). WaveSurfer
-  // renders into a shadow-DOM canvas (bars opaque, gaps transparent); `waveHoverEl` is a plain
-  // absolutely-positioned div, alpha-masked to a live snapshot of that same canvas so only the
-  // bar pixels — not the gaps between them — pick up the tint as its width tracks the cursor.
-  const waveHoverEl = root.querySelector<HTMLElement>(".sift-wave-hover");
-  const findWaveCanvas = (): HTMLCanvasElement | null =>
-    container.querySelector<HTMLElement>(":scope > div")?.shadowRoot?.querySelector("canvas") ?? null;
-  const updateWaveMask = () => {
-    if (!waveHoverEl) return;
-    const canvas = findWaveCanvas();
-    if (!canvas) return;
-    try {
-      // The live bars are drawn translucent (waveColor ~.35 alpha) — used as-is that would mask
-      // the overlay down to a near-invisible tint. Binarize instead: any pixel the bars touch at
-      // all becomes fully opaque in the mask, so the overlay reads at its own full strength on
-      // every bar pixel and stays at zero everywhere in the gaps between them.
-      const maskCanvas = document.createElement("canvas");
-      maskCanvas.width = canvas.width;
-      maskCanvas.height = canvas.height;
-      const mctx = maskCanvas.getContext("2d");
-      if (!mctx) return;
-      mctx.drawImage(canvas, 0, 0);
-      const img = mctx.getImageData(0, 0, maskCanvas.width, maskCanvas.height);
-      const d = img.data;
-      for (let i = 3; i < d.length; i += 4) if (d[i] > 0) d[i] = 255;
-      mctx.putImageData(img, 0, 0);
-      const url = `url(${maskCanvas.toDataURL()})`;
-      const rect = canvas.getBoundingClientRect();
-      const size = `${rect.width}px ${rect.height}px`;
-      for (const prop of ["mask", "-webkit-mask"]) {
-        waveHoverEl.style.setProperty(`${prop}-image`, url);
-        waveHoverEl.style.setProperty(`${prop}-repeat`, "no-repeat");
-        waveHoverEl.style.setProperty(`${prop}-size`, size);
-        waveHoverEl.style.setProperty(`${prop}-position`, "0 0");
+  // Seek au clic/drag sur la piste (le canvas invisible a interact:false — le slider custom est
+  // le SEUL chemin de seek) + bulle mm:ss au survol (patron QuickTime, la ligne et le ghost nés
+  // pour des barres sont partis avec elles). Nœuds créés une fois, mutés ici — mousemove = rafale.
+  if (progressEl) {
+    const pctFromX = (clientX: number): number => {
+      const rect = progressEl.getBoundingClientRect();
+      return Math.max(0, Math.min(1, (clientX - rect.left) / Math.max(1, rect.width)));
+    };
+    const seekTo = (pct: number) => {
+      const dur = ws.getDuration();
+      if (dur > 0) {
+        ws.setTime(pct * dur);
+        updateTime();
       }
-    } catch {
-      // getImageData/toDataURL can throw on a tainted canvas — hover preview just stays unmasked.
-    }
-  };
-  ws.on("redrawcomplete", updateWaveMask);
-  if (waveHoverEl) {
-    const hoverLine = root.querySelector<HTMLElement>(".sift-wave-hoverline");
+    };
+    progressEl.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0) return;
+      e.preventDefault();
+      progressEl.setPointerCapture(e.pointerId);
+      seekTo(pctFromX(e.clientX));
+      const onPointerMove = (ev: PointerEvent) => seekTo(pctFromX(ev.clientX));
+      const stop = (ev: PointerEvent) => {
+        if (progressEl.hasPointerCapture(ev.pointerId)) progressEl.releasePointerCapture(ev.pointerId);
+        progressEl.removeEventListener("pointermove", onPointerMove);
+        progressEl.removeEventListener("pointerup", stop);
+        progressEl.removeEventListener("pointercancel", stop);
+      };
+      progressEl.addEventListener("pointermove", onPointerMove);
+      progressEl.addEventListener("pointerup", stop);
+      progressEl.addEventListener("pointercancel", stop);
+    });
+    // role="slider" sans clavier violerait l'APG : ±5 s aux flèches, bornes à Home/End — la même
+    // granularité perceptible que le drag, aucun pas caché.
+    progressEl.addEventListener("keydown", (e) => {
+      const dur = ws.getDuration();
+      if (dur <= 0) return;
+      if (e.key === "ArrowLeft" || e.key === "ArrowDown") {
+        e.preventDefault();
+        ws.setTime(Math.max(0, ws.getCurrentTime() - 5));
+        updateTime();
+      } else if (e.key === "ArrowRight" || e.key === "ArrowUp") {
+        e.preventDefault();
+        ws.setTime(Math.min(dur, ws.getCurrentTime() + 5));
+        updateTime();
+      } else if (e.key === "Home") {
+        e.preventDefault();
+        ws.setTime(0);
+        updateTime();
+      } else if (e.key === "End") {
+        e.preventDefault();
+        ws.setTime(dur);
+        updateTime();
+      }
+    });
     const hoverTime = root.querySelector<HTMLElement>(".sift-wave-hovertime");
-    container.addEventListener("mousemove", (e) => {
-      const rect = container.getBoundingClientRect();
-      const pct = Math.max(0, Math.min(1, (e.clientX - rect.left) / Math.max(1, rect.width)));
-      waveHoverEl.style.width = `${pct * 100}%`;
-      // Ligne + bulle mm:ss à la cible (patron QuickTime) : le ghost dit la zone, la ligne + l'heure
-      // le point exact. Nœuds créés une fois, mutés ici (mousemove = rafale, jamais innerHTML=).
-      const leftPct = `${pct * 100}%`;
-      if (hoverLine) {
-        hoverLine.hidden = false;
-        hoverLine.style.left = leftPct;
-      }
-      if (hoverTime) {
+    if (hoverTime) {
+      progressEl.addEventListener("mousemove", (e) => {
+        const pct = pctFromX(e.clientX);
         hoverTime.hidden = false;
-        hoverTime.style.left = leftPct;
+        hoverTime.style.left = `${pct * 100}%`;
         hoverTime.textContent = mmss(pct * ws.getDuration());
-      }
-    });
-    container.addEventListener("mouseleave", () => {
-      waveHoverEl.style.width = "0";
-      if (hoverLine) hoverLine.hidden = true;
-      if (hoverTime) hoverTime.hidden = true;
-    });
+      });
+      progressEl.addEventListener("mouseleave", () => {
+        hoverTime.hidden = true;
+      });
+    }
   }
   ws.on("error", (e) => {
     console.error("wavesurfer error", e);

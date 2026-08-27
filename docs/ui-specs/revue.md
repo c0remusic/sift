@@ -120,6 +120,23 @@ puis portées dans le code dans la même session. La maquette reste la référen
 s'étend aux rangées de la fiche (leurs `border-bottom` tombent) ; et la file, elle, GAGNE ses
 séparateurs de rangées — ils étaient déjà la décision maquette du 26, portés ce jour.
 
+### Après-midi du 2026-08-27 — lecteur simple, volume fin, bandeau en boîte
+
+Cinq décisions de plus, chacune tranchée sur comparatif maquette (ou correction directe
+d'Antoine), portées le jour même :
+
+| Point | Avant | Retenu |
+|---|---|---|
+| **Lecteur** | waveform wavesurfer (40 px, barres) | **slider fin du kit** (Pickers/Linear/Small 53:118, COPIE SVG) : piste 4 px, remplissage accent, pouce blanc 20. WaveSurfer reste le MOTEUR, rendu dans un conteneur réduit à zéro (`.sift-progress-engine`). Seek au drag/clic sur la piste, flèches ±5 s, bulle mm:ss au survol (ghost et ligne partis avec les barres) |
+| **Play** | 46 px, glyphe 32 | **28 px, glyphe 22**, aligné au bord de conduite (marge gauche retirée). Le glyphe reste Tabler — SF Symbols n'est pas licenciable (patterns § 5) : ce qui se copie du kit, c'est la géométrie, jamais ses glyphes |
+| **Volume** | capsule SVG kit 112×24 (inlinée le 25) | **slider fin 90 px assorti au lecteur** (patron Music, maquette « Volume (lecteur) ») : haut-parleur cliquable (mute, bascule ti-volume/ti-volume-off), remplissage et pouce BLANCS (`--color-accent-ink` — un volume ne porte pas l'accent), pouce 14. « Couleur, taille et style vraiment goofy » dans la rangée fine — renverse la copie capsule du 25 |
+| **Piste des sliders** | `--color-track` | **`--overlay-bar`** — color-track vaut le fond de fenêtre en sombre (token du segmenté) : piste invisible, « on ne voit pas la longueur de la barre ». overlay-bar est l'overlay themed des barres de lecture, qui venait de perdre la waveform |
+| **Bandeau de lecture** | sections nues | **BOÎTE pleine largeur** (fond queue, rayon md, padding 16) — verdict X filets / Y cadre : Y, sourcé HIG § Boxes. Filet interne en-tête\|lecteur (12/12), filet de section avant la fiche (16\|filet\|16, border-top de `.sift-meta-header`). Exception à « une surface de contenu ne peint rien », consignée dans patterns.md. Pleine largeur : le `max-width:--measure-data` datait du bloc sans boîte |
+| **Pied de Détail** | à plat + filet (wireframe v2, 2026-08-21) | **surface pleine largeur** (fond queue, sans filet ni marges latérales) — une zone de boutons se distingue par surface ou espace, jamais par un trait (Big Sur). Le rail de Lot garde sa carte |
+
+L'état « analyse en cours » (squelette) ne prend PAS la boîte : sans lecteur, le bandeau
+n'existe pas encore — le squelette couvre l'emplacement, gap 32 simple.
+
 ## Contexte dans le shell
 
 Patron macOS : **Finder** pour la file et la sélection · **Utilitaire de disque** pour

@@ -1319,7 +1319,11 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
    garde parce qu'elle est de la CHARPENTE, au même titre que le rail de navigation et la colonne
    file. C'est précisément ce que la décision rend lisible : avoir une surface = être la charpente.
    Ne pas « rétablir la cohérence des 4 » en repeignant les trois autres. */
-.sift-action-rail{flex:none;display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-12);padding:var(--space-12) var(--space-16);overflow:visible;background:var(--color-background-queue);border:1px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg)}
+/* La carte (bordure + rayon) saute le 2026-08-27 : le pied est une SURFACE pleine largeur qui
+   borne la zone d'action par son seul fond (verdict Antoine sur A/B/C maquette ; Apple Big Sur
+   ne borde jamais un pied d'un filet — espace ou surface). Le fond queue reste : « avoir une
+   surface est la marque de la charpente », et le pied en est. */
+.sift-action-rail{flex:none;display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-12);padding:var(--space-12) var(--space-16);overflow:visible;background:var(--color-background-queue)}
 /* POP-UP BUTTON, forme du kit (§ 02-Buttons / 09-Pop Up Buttons) : un aplat gris SANS bordure.
    Ni fond ni bordure ne sont plus écrits ici — un pop-up button EST un bouton secondaire, et le
    reset `button{}` (plus haut) donne déjà exactement ça (`--color-surface-raised`, `border:0`).
@@ -1368,12 +1372,13 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
    du bouton par défaut au bord trailing). */
 .sift-rail-row{flex:1 0 100%;display:flex;align-items:center;gap:var(--space-8);flex-wrap:wrap;min-width:0}
 .sift-rail-row-actions{justify-content:flex-end;gap:var(--space-12)}
-/* Rail d'action de Détail — à plat et structuré (wireframe v2 option 3, 2026-08-21). Retire la carte
-   de .sift-action-rail (fond/bordure/rayon), passe en colonne ; le rail de Lot garde sa carte. La
-   hiérarchie vient des labels de section, des filets verticaux entre réglages, et d'une ligne
-   d'actions séparée par un filet. */
-.sift-action-rail--flat{background:transparent;border:0;border-radius:0;
-  border-top:1px solid var(--color-border-tertiary);flex-direction:column;flex-wrap:nowrap;
+/* Rail d'action de Détail — colonne structurée (wireframe v2 option 3, 2026-08-21), mais plus
+   « à plat » depuis le 2026-08-27 : verdict Antoine sur A/B/C maquette, le pied est une SURFACE
+   pleine largeur (fond queue) qui borne la zone d'action par son seul fond — motif Apple, une
+   zone de boutons se distingue par surface ou par l'espace, jamais par un filet. Le border-top
+   du flat part avec : la surface EST la borne. Le rail de Lot garde sa carte. */
+.sift-action-rail--flat{background:var(--color-background-queue);border:0;border-radius:0;
+  flex-direction:column;flex-wrap:nowrap;
   align-items:stretch;gap:var(--space-12)}
 .sift-rail-settings{display:flex;align-items:flex-end;gap:var(--space-12);flex-wrap:wrap}
 .sift-rail-field{display:flex;flex-direction:column;gap:var(--space-4);min-width:0}
@@ -1478,7 +1483,9 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
 /* margin:0 15px reproduces .mid's own left/right inset (styles.css `.mid{padding:0 15px 10px}`)
    directly on the card, so #filfoot's card sits at the same x as .sift-player-row's card instead
    of flush with #rvinspector — see .sift-action-rail's padding comment above for the full story. */
-#filfoot{flex:none;margin:0 var(--space-16)}
+/* margin latérale retirée le 2026-08-27 : le pied devient une SURFACE PLEINE LARGEUR (verdict
+   Antoine — zone de boutons distinguée par surface, motif Apple ; la carte flottante saute). */
+#filfoot{flex:none;margin:0}
 /* Batch per-track list: cap it so a long run can't push the récap + action button out of the rail.
    36vh ≈ a third of the viewport: enough rows to be useful while the récap above and the action
    button below stay on-screen; the list scrolls past that. */
@@ -2281,11 +2288,19 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    Padding horizontal passé à 0 : il insérait le contenu de 16px depuis le bord d'une carte qui
    n'existe plus, ce qui le désalignait des blocs frères rendus à ras (voir .sift-report-scroll
    ci-dessus, même raisonnement). Le vertical reste, c'est de la respiration, pas un inset. */
-/* GROUPE ÉCOUTE (respiration B, verdict Antoine 2026-08-27 sur A/B maquette — « serré dedans,
-   aéré entre », motif des groupes de Réglages Système et de l'en-tête compact de Mail) :
-   en-tête et lecteur se rapprochent (gap 12), et le groupe s'écarte de la fiche de 32
-   (margin-bottom 16 + l'ancien padding-bottom 16, fondus en un seul écart nommé). */
-.sift-player-row{display:flex;flex-direction:column;gap:var(--space-12);margin-bottom:var(--space-32);padding:var(--space-16) 0 0;max-width:var(--measure-data)}
+/* BANDEAU DE LECTURE EN BOÎTE (verdict Antoine 2026-08-27, comparatif X filets / Y cadre sur
+   maquette — HIG § Boxes : « a box creates a visually distinct group of logically related
+   information », légitime tant que la boîte reste petite vs son conteneur, ce qui est le cas).
+   EXCEPTION CONSIGNÉE à la règle du 2026-08-14 (« une surface de contenu ne peint rien »,
+   patterns.md) : le bandeau de lecture est LA seule surface du milieu — l'objet piste, groupé
+   en boîte façon Réglages Système. Fond queue (la surface de charpente), rayon md, padding 16.
+   À l'intérieur : filet en retrait entre l'en-tête et le lecteur (border-top de
+   .sift-player-audition, motif rangées de boîte de Réglages) ; en dessous : filet de section
+   avant la fiche (border-top de .sift-meta-header, motif Mail). */
+/* PLEINE LARGEUR (retour Antoine sur écran large, 2026-08-27) : le max-width --measure-data
+   datait du bloc SANS boîte — une mesure de lecture pour du texte nu. Une BOÎTE est une zone :
+   elle se tend d'un bord à l'autre du panneau ; c'est son contenu qui respire dedans. */
+.sift-player-row{display:flex;flex-direction:column;gap:var(--space-12);margin-bottom:var(--space-16);padding:var(--space-16);background:var(--color-background-queue);border-radius:var(--border-radius-md)}
 /* gap sized so the waveform's left edge lines up with the title block's left edge above it
    (annotation: "aligne les deux") — header-body starts at 68px cover + 14px gap = 82px; the play
    button's margin-left was snapped 11px→var(--space-12) in the 2026-07-24 spacing sweep, so the
@@ -2296,7 +2311,7 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    lignes à 3 : la pochette rétrécit d'autant et l'alignement à 82px dérive. Aucun gap fixe ne peut
    suivre une largeur calculée en JS — À MESURER dans la vraie fenêtre avant de retoucher ce 24,
    et si l'écart compte, c'est un padding-left calé sur la même mesure qu'il faudra, pas un gap. */
-.sift-player-audition{display:flex;align-items:center;gap:var(--space-24)}
+.sift-player-audition{display:flex;align-items:center;gap:var(--space-24);border-top:1px solid var(--color-border-tertiary);padding-top:var(--space-12)}
 /* margin-left: computed centering (68px cover - 46px button) / 2 = 11px exactly, snapped to
    var(--space-12) in the 2026-07-24 spacing sweep (1px off perfect center — accepted per the
    strict-snap decision, docs/superpowers/changes/2026-07-19-spacing-scale-sweep/). */
@@ -2319,7 +2334,11 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    voudrait rendre une pastille repart de là, pas du blanc. (b) `filter` n'est PAS animable ici
    (DESIGN.md § 6 : transform et opacity seulement) — sa transition avait été retirée le
    2026-08-19, et la déclaration entière part maintenant que le survol ne l'utilise plus. */
-.sift-play-btn{flex:none;width:46px;height:46px;margin-left:var(--space-12);border-radius:var(--border-radius-md);display:inline-flex;align-items:center;justify-content:center;padding:0;border:none;background:none}
+/* 28 et glyphe 22 (2026-08-27, « taille Apple pour le lecteur ») : le contrôle s'aligne sur la
+   rangée du slider kit (pouce 20 + 2 de marge d'ombre) au lieu de dominer la zone en 46/32. La
+   marge gauche de 12 saute : le play s'aligne au bord de conduite du panneau, comme la pochette
+   (maquette, patterns § 7 « un bord de conduite par panneau »). */
+.sift-play-btn{flex:none;width:28px;height:28px;border-radius:var(--border-radius-md);display:inline-flex;align-items:center;justify-content:center;padding:0;border:none;background:none}
 /* Même cas que `.cov i` : un contrôle icône-seule n'a AUCUN texte voisin, donc rien à quoi
    rapporter la taille du glyphe. Le fichier a déjà tranché la question deux fois pour des boutons
    de ce genre — `.lib-detail-close i` (--text-base) et `.sift-filed-banner-close i` (--text-md) —
@@ -2329,7 +2348,7 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    :disabled). Le glyphe est déjà en encre primaire au repos, il n'a pas de cran d'encre au-dessus :
    le seul levier sobre restant est l'échelle. La transformation porte sur le GLYPHE, pas sur le
    bouton — la cible de clic et l'anneau de focus ne bougent pas d'un pixel. */
-.sift-play-btn i{font-size:var(--text-2xl);color:var(--color-text-primary);transition:transform var(--duration-fast) ease}
+.sift-play-btn i{font-size:22px;color:var(--color-text-primary);transition:transform var(--duration-fast) ease}
 /* background ET filter réaffirmés ici : le générique `button:hover`
    {background:var(--color-surface-raised);filter:brightness(0.95)} est à (0,1,1) et bat la règle
    de base de ce bouton (0,1,0) — sans ça la pastille qu'on vient de retirer REVIENDRAIT au survol,
@@ -2418,42 +2437,31 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 /* Le segment élidé (« … ») ne se rétrécit pas : c'est lui qui DIT la troncature. */
 .sift-player-path-seg.is-elided{flex:none}
 .sift-player-path-sep{font-size:var(--text-xs);color:var(--color-text-tertiary);flex:none}
-.sift-wave-wrap{position:relative;flex:1;min-width:0}
-.sift-player-wave{cursor:pointer;transition:opacity var(--duration-base) ease}
-.sift-wave-wrap.is-paused .sift-player-wave{opacity:.55}
-.sift-wave-wrap.is-paused:hover .sift-player-wave{opacity:1}
-/* Alpha-masked to a snapshot of the wave canvas (see mountPlayer's updateWaveMask) so only the
-   bar pixels tint, not the transparent gaps between them — no rectangle/line ever shows. */
-.sift-wave-hover{position:absolute;top:0;left:0;bottom:0;width:0;background:var(--overlay-wave-hover);pointer-events:none}
-/* Survol : ligne fine + bulle mm:ss à la cible (patron QuickTime), en plus du ghost fill ci-dessus. */
-.sift-wave-hoverline{position:absolute;top:0;bottom:0;width:2px;background:var(--color-text-primary);transform:translateX(-50%);pointer-events:none}
-.sift-wave-hovertime{position:absolute;top:var(--space-4);transform:translateX(-50%);font-family:var(--font-mono);font-size:var(--text-xs);font-weight:500;padding:var(--space-4) var(--space-8);border-radius:var(--border-radius-sm);background:var(--overlay-scrim);color:var(--color-text-on-scrim);pointer-events:none;white-space:nowrap}
-/* Pouce de lecture — le knob du slider Apple (kit § 04 / slider de zoom de Photos) : pastille blanche
-   ronde, bordure et ombre légères, centrée verticalement sur la waveform, posée à la tête de lecture
-   par updateTime (left en %). La waveform tient lieu de piste.
-   ⚠️ Le fond était --color-surface-raised : pastille bien BLANCHE en thème clair (le token y vaut
-   oklch(100 % 0 0)) mais gris moyen (40,24 %) en sombre — donc pas la pastille du kit dans les deux
-   thèmes, ce que la spec demande (revue.md § Composants — Slider). Corrigé le 2026-08-25 sur
-   --color-accent-ink. Le dépôt a DEUX blancs theme-invariants et le choix se joue entre eux :
-   --color-text-on-scrim est de l'encre posée sur des pixels d'IMAGE (sa déclaration le dit), tandis
-   que --color-accent-ink « EST sa propre surface » — c'est exactement la nature d'un pouce. Écart
-   assumé : ce dernier reste nommé pour l'encre d'un bouton primaire, donc il bougerait si l'accent
-   changeait de couple ; le token juste serait --color-knob, qui n'existe pas (voir rapport de lane).
-   La BORDURE, elle, garde --color-border-secondary et ce n'est pas un oubli : sombre @16 % en thème
-   clair (le liseré qui détache la pastille de la carte blanche), blanc @22 % en sombre (invisible sur
-   la pastille — mais inutile là, où la pastille tranche déjà sur la carte sombre). Le token fait donc
-   son travail exactement là où il est nécessaire.
-   Survol / pressé : le pouce reste pointer-events:none — le lui retirer intercepterait le clic de
-   déplacement de lecture et le survol-fantôme, tous deux servis par .sift-wave-wrap. Ce sont donc les
-   états du WRAP (la surface de scrub, qui porte déjà la convention de survol juste au-dessus) qui
-   pilotent la réaction du pouce. On anime `transform` seul (jamais width/height) : l'élément persiste
-   d'une frame à l'autre — updateTime ne mute que `left` — donc la transition a bien un sujet. */
-.sift-wave-playhead{position:absolute;top:50%;width:13px;height:13px;border-radius:var(--border-radius-pill);
-  background:var(--color-accent-ink);border:1px solid var(--color-border-secondary);
-  box-shadow:var(--shadow-panel-subtle);transform:translate(-50%,-50%);pointer-events:none;z-index:1;
-  transition:transform var(--duration-fast) var(--ease-out)}
-.sift-wave-wrap:hover .sift-wave-playhead{transform:translate(-50%,-50%) scale(1.15)}
-.sift-wave-wrap:active .sift-wave-playhead{transform:translate(-50%,-50%) scale(.92)}
+/* LECTEUR SIMPLE (2026-08-27, décision Antoine — la waveform quitte Revue). COPIE du slider du
+   kit Pickers/Slider-pickers/Linear/Small/No-tick-marks (53:118), géométrie et ombres exactes du
+   SVG exporté : piste 4 px rayon 2, inner-shadow noir@5 % (erode 2 / blur 2,5) ; remplissage
+   accent 4 px ; pouce 20 px + drop-shadow noir@10 % 0/1 r1 s1. La piste est --color-track (le
+   gris de piste du dépôt), le remplissage --color-accent-fill (l'accent de l'app prime le
+   controlAccent du kit), le pouce --color-accent-ink — le blanc theme-invariant retenu pour le
+   pouce depuis le 2026-08-25 (--color-knob a disparu avec l'inline du volume, dd91942).
+   Les ombres restent des littéraux : copie du kit, même statut que celles du SVG volume.
+   WaveSurfer vit dans .sift-progress-engine, réduit à zéro — jamais display:none (son
+   ResizeObserver doit survivre), jamais démonté (c'est le moteur audio). */
+.sift-progress{position:relative;flex:1;min-width:0;height:24px;cursor:default}
+.sift-progress-engine{position:absolute;width:0;height:0;overflow:hidden}
+/* Piste sur --overlay-bar et non --color-track : ce dernier vaut le FOND DE FENÊTRE en sombre
+   (token du segmenté, posé sur carte claire) — piste invisible, « on ne voit pas la longueur de
+   la barre » (Antoine, 2026-08-27). --overlay-bar est l'overlay themed né pour les barres de
+   lecture, qui venait de perdre son dernier consommateur avec la waveform. */
+.sift-progress-track{position:absolute;left:0;right:0;top:10px;height:4px;border-radius:2px;background:var(--overlay-bar);box-shadow:inset 0 0 2.5px rgba(0,0,0,.05)}
+.sift-progress-fill{position:absolute;left:0;top:10px;width:0;height:4px;border-radius:2px;background:var(--color-accent-fill)}
+/* pointer-events:none : le seek et le survol appartiennent à la surface .sift-progress entière.
+   `left` seul est muté par updateTime — pas de scale au survol : le pouce du kit n'en a pas. */
+.sift-progress-knob{position:absolute;top:2px;left:0;width:20px;height:20px;border-radius:var(--border-radius-pill);background:var(--color-accent-ink);box-shadow:0 1px 1px 1px rgba(0,0,0,.1);transform:translateX(-50%);pointer-events:none}
+.sift-progress:focus-visible{outline:2px solid var(--color-border-info);outline-offset:2px}
+/* Bulle mm:ss au survol (patron QuickTime) — seule survivante du survol de l'ex-waveform : le
+   ghost et la ligne teintaient des BARRES, une piste pleine de 4 px n'en a pas l'usage. */
+.sift-wave-hovertime{position:absolute;top:calc(-1 * var(--space-16));transform:translateX(-50%);font-family:var(--font-mono);font-size:var(--text-xs);font-weight:500;padding:var(--space-4) var(--space-8);border-radius:var(--border-radius-sm);background:var(--overlay-scrim);color:var(--color-text-on-scrim);pointer-events:none;white-space:nowrap}
 /* Un seul temps, cliquable (bascule écoulé ↔ restant) — patron Musique/Podcasts. À CÔTÉ de l'onde
    (élément de flux dans .sift-player-audition, plus un overlay scrim sur la forme d'onde — retour
    Antoine). :hover dans ensureStyles (report-view.ts). */
@@ -2463,52 +2471,22 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    comment) — the volume icon is this row's first item, so it now lines up with the wave's left
    edge instead of sitting flush at the row's own left edge. */
 .sift-player-controls{display:flex;align-items:center;gap:var(--space-16);margin-left:82px}
-/* Volume — SVG du kit macOS Big Sur inliné TEL QUEL (copie directe ; cf. SPK_SLASH / VOL_DEFS et le
-   markup dans report-view.ts). Géométrie, rayons, inner-shadow de la piste et drop-shadow du pouce
-   viennent du markup SVG ; renderVolume ne pilote que `width` du remplissage et `cx` du pouce. Le CSS
-   dimensionne le <svg> (viewBox 0 0 112 24, rendu 112×24, 1:1), le rend interactif (le <svg> EST le
-   slider) et — SEUL écart à la copie — porte les trois ENCRES, ci-dessous. */
-.sift-volume{flex:none;width:112px;height:24px;cursor:pointer;touch-action:none;user-select:none}
+/* VOLUME FIN (2026-08-27 — remplace la capsule SVG du 25, « goofy » dans la rangée du lecteur
+   fin ; maquette composant « Volume (lecteur) », patron Music) : haut-parleur cliquable + la même
+   grammaire de piste que .sift-progress, en 90 px avec pouce 14. Remplissage et pouce BLANCS
+   theme-invariants (--color-accent-ink — un volume n'est pas une progression, pas d'accent ;
+   c'est le blanc du kit capsule, et la piste --overlay-bar garde 3:1 dans les deux thèmes là où
+   l'ancienne piste blanc@10 % le perdait en clair). L'état muet se dit par l'ICÔNE
+   (ti-volume ↔ ti-volume-off, renderVolume), plus par un slash permanent. */
+.sift-volume-mute{flex:none;width:22px;height:22px;display:inline-flex;align-items:center;justify-content:center;padding:0;border:none;background:none;color:var(--color-text-secondary)}
+.sift-volume-mute:hover{background:none;color:var(--color-text-primary)}
+.sift-volume-mute i{font-size:16px}
+.sift-volume{position:relative;flex:none;width:90px;height:24px;cursor:default;touch-action:none;user-select:none}
 .sift-volume:focus{outline:none}
-.sift-volume:focus-visible{outline:2px solid var(--color-accent-fill);outline-offset:2px}
-/* LES TROIS ENCRES — inversion en thème clair, tranchée par Antoine le 2026-08-25 (revue.md
-   § Composants — Volume). Le kit ne peint qu'un trio blanc / blanc / #464646, fidèle en SOMBRE et
-   cassé en CLAIR : mesuré dans la vraie fenêtre le 2026-08-25, le contraste remplissage / piste vaut
-   12,67:1 en sombre mais 1,45:1 en clair (piste rgb(214,214,218) sur surface rgb(209,209,214)), sous
-   le 3:1 que WCAG 1.4.11 exige d'un composant d'interface. Ce n'est pas une préférence de teinte :
-   c'est CE contraste qui dit le niveau, et en clair il ne se voyait pas. En clair on inverse donc —
-   remplissage foncé sur piste claire, comme macOS en clair ; en sombre rien ne change de forme.
-   Les deux tokens choisis basculent d'eux-mêmes, donc AUCUN bloc de thème n'est nécessaire ici :
-     --color-text-primary   rgb(241,241,246) en sombre / rgb(48,48,52) en clair → le remplissage.
-                            Ratios RECALCULÉS sur les pistes mesurées ci-dessus (oklch → sRGB puis
-                            WCAG) : 11,20:1 en sombre, 9,07:1 en clair. Le sombre perd 1,4 point
-                            contre le blanc pur du kit et reste à 3,7× le plancher de 3:1.
-     --color-text-on-accent l'encre d'un glyphe posé sur un APLAT plein (c'est sa définition) :
-                            rgb(28,28,30) en sombre, blanc en clair → toujours lisible SUR le
-                            remplissage, dans les deux sens (15,11:1 et 13,14:1).
-   ⚠️ Le POUCE prend la même encre que le remplissage, et ce n'est pas un raccourci : dans le kit le
-   pouce EST le bout arrondi du remplissage — même blanc, il n'existe que pour porter l'ombre. Lui
-   donner une encre propre (un pouce blanc sur remplissage foncé, par exemple) rendrait le glyphe
-   INSOLUBLE : il est posé sur le pouce à volume 0 et sur le remplissage au-delà, donc il lui faudrait
-   deux encres opposées, et aucune encre unique ne tient 3:1 contre les deux extrêmes à la fois.
-   ⚠️ La PISTE, elle, garde le blanc @10 % du markup dans les deux thèmes : c'est le remplissage qui
-   s'inverse, pas elle (« remplissage foncé sur piste claire »).
-   Tokens que la spec nomme et que le dépôt n'a PAS : --color-knob, --color-slider-capsule,
-   --color-knob-glyph. Les deux ci-dessus sont les plus proches existants — voir rapport de lane. */
-.sift-vol-fill,.sift-vol-knob{fill:var(--color-text-primary)}
-.sift-volume-icon{fill:var(--color-text-on-accent);cursor:pointer}
-/* Survol et pressé — le kit les donne, la première version ne portait que le repos ; mesure du
-   2026-08-25 dans la vraie fenêtre : le survol était bien reçu par le moteur et ne changeait RIEN au
-   rendu. Patron slider macOS : c'est le POUCE qui réagit, pas la capsule. On anime `transform` seul
-   (règle du dépôt) ; `transform-box:fill-box` parce que l'origine par défaut d'un élément SVG est
-   celle du viewBox, pas celle de la forme — sans lui le scale déplacerait le pouce au lieu de le
-   grossir, et d'autant plus qu'il est loin de l'origine (cx bouge de 11 à 101).
-   `.dragging` double `:active` : la classe est posée par dragSlider (report-view.ts) pendant toute la
-   capture du pointeur, donc l'état pressé tient même quand le pointeur sort de la capsule en cours de
-   glissement. Aucune règle ici ne touche l'outline de focus ci-dessus. */
-.sift-vol-knob{transform-box:fill-box;transform-origin:center;transition:transform var(--duration-fast) var(--ease-out)}
-.sift-volume:hover .sift-vol-knob{transform:scale(1.06)}
-.sift-volume:active .sift-vol-knob,.sift-volume.dragging .sift-vol-knob{transform:scale(.94)}
+.sift-volume:focus-visible{outline:2px solid var(--color-border-info);outline-offset:2px}
+.sift-volume-track{position:absolute;left:0;right:0;top:10px;height:4px;border-radius:2px;background:var(--overlay-bar);box-shadow:inset 0 0 2.5px rgba(0,0,0,.05)}
+.sift-volume-fill{position:absolute;left:0;top:10px;width:100%;height:4px;border-radius:2px;background:var(--color-accent-ink)}
+.sift-volume-knob{position:absolute;top:5px;left:100%;width:14px;height:14px;border-radius:var(--border-radius-pill);background:var(--color-accent-ink);box-shadow:0 1px 1px 1px rgba(0,0,0,.1);transform:translateX(-50%);pointer-events:none}
 .sift-player-spacer{flex:1}
 /* Tempo/key-lock disclosure (audit 2026-07-10, finding #6) — same suppressed-marker/caret
    convention as .sift-spectro-tech. flex:none so it doesn't stretch to fill .sift-player-spacer's
@@ -2953,7 +2931,9 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 /* Métadonnées : header statique (spec revue.md § Zone C), plus un accordéon. Label à gauche, badge
    CDJ + bouton d'entrée/sortie d'édition à droite. Le bouton est un aplat gris compact — grammaire
    secondaire du dépôt (§ Scope Buttons : aucun bouton bordé), pas le ghost bordé du wireframe. */
-.sift-meta-header{display:flex;align-items:center;justify-content:space-between;gap:var(--space-8);margin-bottom:var(--space-8)}
+/* border-top : le filet de section écoute → fiche (2026-08-27, motif Mail « séparer à
+   l'intérieur d'une zone ») — 16 sous la boîte, filet, 16 avant le label. */
+.sift-meta-header{display:flex;align-items:center;justify-content:space-between;gap:var(--space-8);margin-bottom:var(--space-8);border-top:1px solid var(--color-border-tertiary);padding-top:var(--space-16)}
 .sift-meta-title{font-size:var(--text-md);color:var(--color-text-secondary)}
 .sift-meta-header-right{display:flex;align-items:center;gap:var(--space-8);flex:none}
 .sift-meta-ident-btn{flex:none;white-space:nowrap;background:var(--color-surface-raised);color:var(--color-text-secondary);border:0;padding:var(--space-4) var(--space-12);font-size:var(--text-sm);border-radius:var(--border-radius-sm)}

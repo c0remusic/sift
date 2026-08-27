@@ -67,6 +67,16 @@ Mail est la zone la plus en retrait de la fenêtre, jamais un plan égal à la l
 lui, se détache par sa colonne et son filet, pas par un aplat. La zone gauche de la barre
 unifiée (`#sift-tb-left`, continuation du rail) suit dans le même geste.
 
+**Exception consignée le 2026-08-27 (après-midi)** : le **bandeau de lecture** de Revue
+(`.sift-player-row` — en-tête + lecteur) redevient une surface : boîte groupée pleine largeur
+(fond queue, rayon md), tranchée par Antoine sur comparatif X filets / Y cadre, avec HIG
+§ Boxes pour source (« a box creates a visually distinct group of logically related
+information » — légitime tant que la boîte reste petite vs son conteneur). C'est LA seule
+surface du milieu ; les autres blocs de contenu ne peignent toujours rien. Dans le même
+geste, le **pied d'action de Détail** (`.sift-action-rail--flat`) troque son « à plat +
+filet » du 2026-08-21 contre la **surface pleine largeur** (fond queue, sans filet — une zone
+de boutons Apple se distingue par surface ou espace, jamais par un trait).
+
 Trois sélecteurs vidés : `.sift-player-row`, `.sift-spectro-box`,
 `.sift-fil-editor.sift-fil-editor-margin`. Vérifié dans la vraie fenêtre par un compte
 positif — **zéro** élément de `#mid` peint la valeur de la charpente, et les trois surfaces
