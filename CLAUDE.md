@@ -61,6 +61,8 @@ npm run lint                     # ESLint (binaire local, pas `npx eslint`)
 npm run lint:tokens              # couleurs/z-index/spacing en dur qui contournent un token —
                                  # ratchet à baseline versionnée (scripts/lint-tokens-baseline.json) :
                                  # un +N délibéré se grave par `node scripts/lint-tokens.mjs --write-baseline`
+npm run lint:accents             # blocs de commentaire FR écrits sans accent (bug #43) —
+                                 # ratchet à baseline (scripts/lint-accents-baseline.json)
 npm run check:security           # scope asset et CSP — refuse le retour du wildcard (aussi en CI)
 npm run storybook                # doc visuelle des états UI (port 6006), stories = frontend/*.stories.ts
 
@@ -103,8 +105,9 @@ de `rekordbox_masterdb.rs`, dépend de PyCryptodome).
 
 Deux gardiens, à connaître avant de dire « terminé » :
 
-- **`.claude/verify.sh`** — `tsc --noEmit` + `lint:tokens` + `cargo check`. Seul
-  `cargo check` est borné, à 25 s (`verify.sh:44`, abandonné **sans échec** au-delà :
+- **`.claude/verify.sh`** — `tsc --noEmit` + `lint:tokens` + `lint:accents` +
+  `cargo fmt --check` + `cargo check`. Seul `cargo check` est borné, à 25 s (le
+  retrouver par `grep -n "timeout 25" .claude/verify.sh`, abandonné **sans échec** au-delà :
   une gate de fin de tour doit être rapide ou muette). **Déclenchée automatiquement**
   par un hook `Stop` déclaré dans `.claude/settings.json`, versionné, timeout 90 s.
   Elle avait cessé de l'être entre le reset vanilla de `~/.claude` du 2026-07-31
@@ -116,9 +119,10 @@ Deux gardiens, à connaître avant de dire « terminé » :
   `tsc --noEmit` → `npm run test` → `npm run lint` → `cargo fmt --check` →
   `clippy -D warnings` → `cargo test`. Ordre délibéré, du moins cher au plus cher : les
   trois gates frontend ne compilent rien. Le job régénère fixtures + ffmpeg d'abord.
-  ⚠️ `.claude/verify.sh` n'a **pas** été étendu aux deux nouvelles gates — il reste
-  `tsc --noEmit` + `lint:tokens` + `cargo check`. Une fin de tour verte ne dit donc
-  rien de `npm run test` ni de `clippy` : ces deux-là ne tombent qu'en CI.
+  ⚠️ Restent hors `.claude/verify.sh` : `npm run test`, `npm run lint` (ESLint) et
+  `clippy` — une fin de tour verte ne dit rien d'eux, ils ne tombent qu'en CI.
+  (`cargo fmt --check` y est depuis le 2026-08-26 — quatre commits de CI rouge
+  invisible en local, `7b4089b`.)
 
 `build.yml` (installeurs non signés Win+Mac) et `release.yml` ne se déclenchent que sur
 `main` / tags — ils ne sont pas un filet de branche.
