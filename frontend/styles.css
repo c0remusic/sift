@@ -1088,7 +1088,14 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
    arithmetic each time — audit 2026-07-24). Height/vertical position now come for free from
    .sift-revue-row's default align-items:stretch (the handle fills the row's height, matching
    whichever sibling ends up taller), so no top/bottom margin bookkeeping is needed here either. */
-.sift-qresize{flex:none;width:var(--space-16);cursor:col-resize;position:relative;z-index:1}
+/* EMPRISE NULLE (2026-08-27, retour Antoine « collé au panneau, ce n'est plus le cas ») : depuis
+   le bord à bord, cette colonne de 16 px transparents laissait voir le fond de fenêtre en
+   TRANCHÉE pleine hauteur entre la file et la zone C — flagrant en bas, entre deux surfaces
+   queue (file et pied). La poignée redevient un chevauchement : largeur de saisie 16 conservée,
+   marges négatives symétriques → zéro emprise, à cheval sur le filet de la file. Le piège
+   historique des marges compensées (2026-07-24 : les marges des VOISINS glissaient) est éteint :
+   qcol et l'inspecteur sont bord à bord, sans aucune marge à compenser. */
+.sift-qresize{flex:none;width:var(--space-16);margin-inline:calc(-1 * var(--space-8));cursor:col-resize;position:relative;z-index:1}
 /* top/bottom inset by the cards' own corner radius (annotation: "le cadre est une courbe donc elle
    dépasse toujours") — matching the container's full height (previous fix) wasn't enough: a
    straight line ending exactly at the card's top/bottom edge still visually overshoots past where
