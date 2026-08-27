@@ -2937,8 +2937,11 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 /* Le filet de section écoute → fiche a VÉCU trois heures (matin du 2026-08-27, motif Mail) puis
    est parti avec la boîte du bandeau : une frontière ne se dit qu'UNE fois (HIG § Boxes — les
    cinq moyens de grouper ne se cumulent pas ; Réglages : boîte puis espace seul, jamais filet en
-   plus). L'écart de section reste : 16 sous la boîte + 16 ici = 32, le pas inter-sections. */
-.sift-meta-header{display:flex;align-items:center;justify-content:space-between;gap:var(--space-8);margin-bottom:var(--space-8);padding-top:var(--space-16)}
+   plus). Son padding-top est parti avec lui : l'écart boîte → label vaut DÉJÀ 32 par la pile
+   existante (margin-bottom 16 de la boîte + les marges héritées de .sift-fil-editor-margin et du
+   scroll de rapport, 8 + 8, qui ne collapsent pas en flex) — MESURÉ 32 dans la vraie fenêtre,
+   le pas inter-sections de la maquette. Un padding ici referait 48. */
+.sift-meta-header{display:flex;align-items:center;justify-content:space-between;gap:var(--space-8);margin-bottom:var(--space-8)}
 .sift-meta-title{font-size:var(--text-md);color:var(--color-text-secondary)}
 .sift-meta-header-right{display:flex;align-items:center;gap:var(--space-8);flex:none}
 .sift-meta-ident-btn{flex:none;white-space:nowrap;background:var(--color-surface-raised);color:var(--color-text-secondary);border:0;padding:var(--space-4) var(--space-12);font-size:var(--text-sm);border-radius:var(--border-radius-sm)}
