@@ -2300,10 +2300,13 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    À l'intérieur : filet en retrait entre l'en-tête et le lecteur (border-top de
    .sift-player-audition, motif rangées de boîte de Réglages) ; en dessous : filet de section
    avant la fiche (border-top de .sift-meta-header, motif Mail). */
-/* PLEINE LARGEUR (retour Antoine sur écran large, 2026-08-27) : le max-width --measure-data
-   datait du bloc SANS boîte — une mesure de lecture pour du texte nu. Une BOÎTE est une zone :
-   elle se tend d'un bord à l'autre du panneau ; c'est son contenu qui respire dedans. */
-.sift-player-row{display:flex;flex-direction:column;gap:var(--space-12);margin-bottom:var(--space-16);padding:var(--space-16);background:var(--color-background-queue);border-radius:var(--border-radius-md)}
+/* BANDE BORD À BORD (retour Antoine 2026-08-27, deuxième passe) : la boîte s'étend jusqu'aux
+   bords du panneau — marges latérales négatives qui annulent l'inset de .mid, même mécanique
+   que .sift-qhead — et perd son rayon : une bande full-bleed n'a pas de coins (le pied et la
+   file font pareil). Elle reste séparée de la barre par l'inset haut (sa demande précédente) ;
+   le padding interne 16 garde le contenu sur le bord de conduite du panneau. Le max-width
+   --measure-data est parti à la passe précédente (une zone se tend, son contenu respire). */
+.sift-player-row{display:flex;flex-direction:column;gap:var(--space-12);margin-inline:calc(-1 * var(--space-16));margin-bottom:var(--space-16);padding:var(--space-16);background:var(--color-background-queue);border-radius:0}
 /* gap sized so the waveform's left edge lines up with the title block's left edge above it
    (annotation: "aligne les deux") — header-body starts at 68px cover + 14px gap = 82px; the play
    button's margin-left was snapped 11px→var(--space-12) in the 2026-07-24 spacing sweep, so the
