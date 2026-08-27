@@ -2934,9 +2934,11 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 /* Métadonnées : header statique (spec revue.md § Zone C), plus un accordéon. Label à gauche, badge
    CDJ + bouton d'entrée/sortie d'édition à droite. Le bouton est un aplat gris compact — grammaire
    secondaire du dépôt (§ Scope Buttons : aucun bouton bordé), pas le ghost bordé du wireframe. */
-/* border-top : le filet de section écoute → fiche (2026-08-27, motif Mail « séparer à
-   l'intérieur d'une zone ») — 16 sous la boîte, filet, 16 avant le label. */
-.sift-meta-header{display:flex;align-items:center;justify-content:space-between;gap:var(--space-8);margin-bottom:var(--space-8);border-top:1px solid var(--color-border-tertiary);padding-top:var(--space-16)}
+/* Le filet de section écoute → fiche a VÉCU trois heures (matin du 2026-08-27, motif Mail) puis
+   est parti avec la boîte du bandeau : une frontière ne se dit qu'UNE fois (HIG § Boxes — les
+   cinq moyens de grouper ne se cumulent pas ; Réglages : boîte puis espace seul, jamais filet en
+   plus). L'écart de section reste : 16 sous la boîte + 16 ici = 32, le pas inter-sections. */
+.sift-meta-header{display:flex;align-items:center;justify-content:space-between;gap:var(--space-8);margin-bottom:var(--space-8);padding-top:var(--space-16)}
 .sift-meta-title{font-size:var(--text-md);color:var(--color-text-secondary)}
 .sift-meta-header-right{display:flex;align-items:center;gap:var(--space-8);flex:none}
 .sift-meta-ident-btn{flex:none;white-space:nowrap;background:var(--color-surface-raised);color:var(--color-text-secondary);border:0;padding:var(--space-4) var(--space-12);font-size:var(--text-sm);border-radius:var(--border-radius-sm)}
