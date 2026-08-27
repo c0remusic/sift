@@ -1292,7 +1292,10 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
 .sift-revue-row{display:flex;flex:1;min-height:0;overflow:hidden;gap:0;margin:calc(-1 * var(--space-24))}
 #qcol{border:0;border-right:1px solid var(--color-border-tertiary);border-radius:0}
 #homeinspector{overflow:hidden}
-.mid{flex:1;min-width:0;display:flex;flex-direction:column;padding:0 var(--space-16) var(--space-12);overflow:hidden}
+/* padding-top 16 (2026-08-27, retour Antoine « il faut séparer de la barre du haut ») : le
+   bord à bord de .sift-revue-row a retiré l'inset global, et la boîte du bandeau collait au
+   filet de la barre — l'inset haut du panneau vit ICI, comme dans la maquette (mid 16/16/12). */
+.mid{flex:1;min-width:0;display:flex;flex-direction:column;padding:var(--space-16) var(--space-16) var(--space-12);overflow:hidden}
 .mid-scroll{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column}
 /* Action rail (was the persistent .dest column — now a slim horizontal bar anchored to
    the bottom of the inspector, matching the maquette's single-row ACTION RAIL: Destination
