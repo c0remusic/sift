@@ -44,6 +44,17 @@
 > `frontend/library-verdict.stories.ts` — Storybook étant le miroir vivant de ce
 > fichier. Sommaire renuméroté dans le même geste, écarts sommaire → titre
 > vérifiés inchangés entrée par entrée.
+>
+> **Repasse du 2026-08-27 — le lecteur simple et les surfaces de Revue portés ici** :
+> la waveform a quitté Revue (lecteur = slider du kit + volume fin, `31c5d1a`), la
+> pastille de verdict de file est passée aux teintes système pleines, et quatre
+> surfaces ont bougé (cadre de lecture, pied en surface, rail en retrait, file bord
+> à bord + séparateurs). Trois sections nouvelles en fin de fichier, chacune avec sa
+> story (`player-audition.stories.ts`, `queue-verdict-dot.stories.ts` — rendus
+> extraits en modules purs pour que les stories exécutent le vrai code) ; la section
+> Sliders est marquée périmée (`.sift-slider-*` n'existe plus) ; « Autres couleurs
+> non tokenisées » et « Grammaire de carte » portent un ⚠️ daté. Sommaire renuméroté,
+> même vérification que le 2026-08-19.
 
 ## Sommaire
 
@@ -52,67 +63,70 @@
 > 2026-07-09) : ouvrir la section visée via son numéro de ligne plutôt que tout
 > lire.
 
-- L117 — Ligne de queue `.qi` — réécrit 08-27 : tokens (hex chauds morts), liseré de sélection retiré, curseur clavier `.qi-kbd`, interlignes #45 (46 px constante).
-- L148 — Mot de verdict Détail `verdictWord()` — ⚠️ COMPOSANT RETIRÉ le 2026-08-26 (c4f65eb).
-- L171 — Item de navigation `.nv` — RAS.
-- L182 — Bouton d'action principal `.sift-ranger-btn` — hover désormais déclaré explicitement (07-24), disabled/focus restent génériques.
-- L201 — Chip/tag `.chip` — hover corrigé 07-03.
-- L213 — Case à cocher `.cbx` — supprimée (code mort).
-- L220 — Segmented control `.sift-seg-opt` (ancien, voir aussi pastille unifiée L836) — RAS.
-- L230 — Ligne de journal `.lr.jrnl-row` — refonte 08-19 : table, colonnes, groupes, états, inspecteur zone D (`.jrnl-qrow` et toutes les classes de l'ancien Journal ont disparu).
-- L298 — Toggle switch `.tog` — perf `transform` corrigée 07-03.
-- L311 — Slots verdict `.sift-fil-verdict` / `.sift-verdict-stub` — renommés/scindés depuis `.sift-verdict-card` (le composant carte a été supprimé au redesign 07-06, `verdictCardHtml()` est un no-op), resynchronisé 07-24.
-- L345 — Ligne candidat `.sift-cand` — hover discret volontaire (bordure seule).
-- L359 — Bouton Destination `.sift-dest-btn` — hérite générique.
-- L364 — Sliders volume/tempo `.sift-slider-*` — hover/drag ajoutés 07-03.
-- L377 — Pochette/cover `.sift-cover-frame` — `alt` fixé 07-03, bug `[hidden]` réellement cassé fixé 07-05.
-- L402 — Boutons icon-only — vérifiés, titlebar corrigée 07-03.
-- L411 — Barre de progression `.pbar`/`.sift-pz-fill` — perf `transform` 07-03.
-- L420 — Popover Destination `.sift-dest-popover` — CSS minimal, placement en JS : flip + recadrage viewport 08-13.
-- L445 — Bouton Identifier `.sift-id-btn` — tokenisé+dark 07-03, exception 3ᵉ teinte levée 07-06.
-- L462 — Bordure latérale `.sift-filed-banner` — anti-pattern side-stripe retiré 07-03.
-- L471 — Ombres portées `.sift-toast`/`.sift-report-overlay-card` — tokenisées 07-03.
-- L478 — Échelles hauteur/radius — audit 07-03, `--h-36` retiré 07-09 (0 lecteur).
-- L526 — Token `disabled` de `Sift.dc.html` — vérifié non manquant.
-- L545 — Autres couleurs non tokenisées — restant, pas classées bug.
-- L557 — `--text-hero` → `--text-2xl`.
-- L569 — Cartes Réglages `.sift-settings-list` — refonte 4→1 carte 07-08.
-- L613 — Zone de dépôt drag OS `.sift-dz-on` — token `--overlay-drop` 07-05.
-- L637 — Lien rebuy Beatport `.sift-rebuy-btn` — créé 07-05.
-- L653 — CTA « Revoir N morceaux → » Accueil — créé 07-05.
-- L667 — Page Rekordbox `renderRekordboxLive()` — écran dédié + sections Tier 1/Tier 2 master.db.
-- L750 — Écran Revue — zones repliables Diagnostic/Métadonnées, refonte 07-05.
-- L786 — `.sift-applytags-btn` — déplacé header Genres 07-09.
-- L807 — `.sift-zone-toggle` — accordéon exclusif + animation 07-09.
-- L822 — Spectrogramme — légende incrustée + réticule interactif 07-09.
-- L845 — `.lk` / `.lk-icon` — bug de réutilisation corrigé 07-07.
-- L861 — Pastille segmentée `.sift-seg`/`.sift-seg-opt` unifiée — 6 sites, thumb glissant 07-08.
-- L968 — Grammaire de carte — 2 rôles (Groupée/Flottante), jamais 3 — 07-08.
-- L1024 — Tokens globaux — adaptation tweakcn "ZFlow" (ombres/tracking/radius/OKLCH) 07-08.
-- L1052 — Écran Accueil — audit référence canonique 07-08.
-- L1072 — Écran Revue — audit référence canonique 07-08/09.
-- L1096 — Écran Écartés — audit référence canonique 07-09.
-- L1114 — Écran Journal — audit référence canonique 07-09, conforme (rien corrigé).
-- L1136 — Écran Bibliothèque — audit référence canonique 07-09.
-- L1155 — Écrans Réglages+Rekordbox+Clé USB — audit référence canonique 07-09.
-- L1175 — Pattern d'erreur/échec (`.sift-*-error`/`-fail`/`-warn`, 9 sites) — déjà cohérent, documenté ici (gap = défaut de doc, pas de code, audit 2026-07-19).
-- L1233 — Écran Écartés — chargement + bouton "Réessayer" (07-24).
-- L1244 — Écran Bibliothèque — chargement, tri en vue Grille, "Réinitialiser les filtres" corrigé (07-24).
-- L1267 — Table Bibliothèque, colonne Verdict — les 5 rendus de `verdictView()`, pastille + libellé, `verdictBadge` retiré (08-19).
-- L1341 — Bibliothèque éditeur — suppression confirmée, borne Année, autocomplétion Genres (07-24).
-- L1349 — Page Rekordbox — état d'erreur visible sur les 4 sections M8, boutons "en cours", CTA en `.sift-ranger-btn` (07-24).
-- L1364 — Accueil — confirmation "Retirer", swatches `aria-pressed` (07-24).
-- L1371 — Journal — titres de section datés lisibles (07-24).
-- L1386 — Revue — bannières `role="status" aria-live="polite"`, légende "écarter" (07-24).
-- L1394 — Lot — lignes de sélection accessibles au clavier, bouton "Annuler" sur confirmation armée (07-24).
-- L1402 — `styles.css` — tokens `--color-text-warning`/`-success` clair recalibrés, hover réaffirmé (07-24).
-- L1415 — Historique des corrections (chronologique, par date de session).
-- L1597 — Conventions de cohérence (sémantique couleur, hiérarchie de poids, discipline classe partagée) — à consulter AVANT tout nouveau composant (07-24).
-- L1667 — Ligne disque amovible (écran Clé USB) — trois états, rendu `usbRowHtml()` (07-31).
-- L1702 — Teintes pleines `-solid` — neuf tokens pour les surfaces de donnée (graphique d'occupation) (08-01).
-- L1734 — Modale de formatage USB — états, trois corrections d'usage réel (08-02).
-- L1768 — Menu contextuel `.sift-ctx-menu` — états catalogués + rangée de pastilles couleur de source (08-20).
-- L1794 — Ligne de source du rail `.sift-rail-src` — teintes du cycle, `--error`, suspendue (pastille vidée) ; story + module pur `rail-source-entry.ts` (08-20).
+- L131 — Ligne de queue `.qi` — réécrit 08-27 : tokens (hex chauds morts), liseré de sélection retiré, curseur clavier `.qi-kbd`, interlignes #45 (46 px constante), séparateurs de rangées `::before` + pastille en fin de titre (08-27).
+- L173 — Mot de verdict Détail `verdictWord()` — ⚠️ COMPOSANT RETIRÉ le 2026-08-26 (c4f65eb) ; pipeline repris par `verdictDot()` (L1934).
+- L199 — Item de navigation `.nv` — RAS.
+- L210 — Bouton d'action principal `.sift-ranger-btn` — hover désormais déclaré explicitement (07-24), disabled/focus restent génériques.
+- L229 — Chip/tag `.chip` — hover corrigé 07-03.
+- L241 — Case à cocher `.cbx` — supprimée (code mort).
+- L248 — Segmented control `.sift-seg-opt` (ancien, voir aussi pastille unifiée L907) — RAS.
+- L258 — Ligne de journal `.lr.jrnl-row` — refonte 08-19 : table, colonnes, groupes, états, inspecteur zone D (`.jrnl-qrow` et toutes les classes de l'ancien Journal ont disparu).
+- L326 — Toggle switch `.tog` — perf `transform` corrigée 07-03.
+- L339 — Slots verdict `.sift-fil-verdict` / `.sift-verdict-stub` — renommés/scindés depuis `.sift-verdict-card` (le composant carte a été supprimé au redesign 07-06, `verdictCardHtml()` est un no-op), resynchronisé 07-24.
+- L373 — Ligne candidat `.sift-cand` — hover discret volontaire (bordure seule).
+- L387 — Bouton Destination `.sift-dest-btn` — hérite générique.
+- L392 — Sliders volume/tempo `.sift-slider-*` — ⚠️ PÉRIMÉ : classes supprimées (08-21 puis 08-25) ; le volume vit dans « Lecteur simple » (L1883).
+- L414 — Pochette/cover `.sift-cover-frame` — `alt` fixé 07-03, bug `[hidden]` réellement cassé fixé 07-05.
+- L439 — Boutons icon-only — vérifiés, titlebar corrigée 07-03.
+- L448 — Barre de progression `.pbar`/`.sift-pz-fill` — perf `transform` 07-03.
+- L457 — Popover Destination `.sift-dest-popover` — CSS minimal, placement en JS : flip + recadrage viewport 08-13.
+- L482 — Bouton Identifier `.sift-id-btn` — tokenisé+dark 07-03, exception 3ᵉ teinte levée 07-06.
+- L499 — Bordure latérale `.sift-filed-banner` — anti-pattern side-stripe retiré 07-03.
+- L508 — Ombres portées `.sift-toast`/`.sift-report-overlay-card` — tokenisées 07-03.
+- L515 — Échelles hauteur/radius — audit 07-03, `--h-36` retiré 07-09 (0 lecteur).
+- L563 — Token `disabled` de `Sift.dc.html` — vérifié non manquant.
+- L582 — Autres couleurs non tokenisées — restant, pas classées bug ; ⚠️ 08-27 : deux lignes éteintes avec la waveform.
+- L603 — `--text-hero` → `--text-2xl`.
+- L615 — Cartes Réglages `.sift-settings-list` — refonte 4→1 carte 07-08.
+- L659 — Zone de dépôt drag OS `.sift-dz-on` — token `--overlay-drop` 07-05.
+- L683 — Lien rebuy Beatport `.sift-rebuy-btn` — créé 07-05.
+- L699 — CTA « Revoir N morceaux → » Accueil — créé 07-05.
+- L713 — Page Rekordbox `renderRekordboxLive()` — écran dédié + sections Tier 1/Tier 2 master.db.
+- L796 — Écran Revue — zones repliables Diagnostic/Métadonnées, refonte 07-05.
+- L832 — `.sift-applytags-btn` — déplacé header Genres 07-09.
+- L853 — `.sift-zone-toggle` — accordéon exclusif + animation 07-09.
+- L868 — Spectrogramme — légende incrustée + réticule interactif 07-09.
+- L891 — `.lk` / `.lk-icon` — bug de réutilisation corrigé 07-07.
+- L907 — Pastille segmentée `.sift-seg`/`.sift-seg-opt` unifiée — 6 sites, thumb glissant 07-08.
+- L1014 — Grammaire de carte — 2 rôles (Groupée/Flottante), jamais 3 — 07-08 ; ⚠️ troisième décalage 08-27 (surfaces de Revue).
+- L1077 — Tokens globaux — adaptation tweakcn "ZFlow" (ombres/tracking/radius/OKLCH) 07-08.
+- L1105 — Écran Accueil — audit référence canonique 07-08.
+- L1125 — Écran Revue — audit référence canonique 07-08/09.
+- L1149 — Écran Écartés — audit référence canonique 07-09.
+- L1167 — Écran Journal — audit référence canonique 07-09, conforme (rien corrigé).
+- L1189 — Écran Bibliothèque — audit référence canonique 07-09.
+- L1208 — Écrans Réglages+Rekordbox+Clé USB — audit référence canonique 07-09.
+- L1228 — Pattern d'erreur/échec (`.sift-*-error`/`-fail`/`-warn`, 9 sites) — déjà cohérent, documenté ici (gap = défaut de doc, pas de code, audit 2026-07-19).
+- L1286 — Écran Écartés — chargement + bouton "Réessayer" (07-24).
+- L1297 — Écran Bibliothèque — chargement, tri en vue Grille, "Réinitialiser les filtres" corrigé (07-24).
+- L1320 — Table Bibliothèque, colonne Verdict — les 5 rendus de `verdictView()`, pastille + libellé, `verdictBadge` retiré (08-19).
+- L1394 — Bibliothèque éditeur — suppression confirmée, borne Année, autocomplétion Genres (07-24).
+- L1402 — Page Rekordbox — état d'erreur visible sur les 4 sections M8, boutons "en cours", CTA en `.sift-ranger-btn` (07-24).
+- L1417 — Accueil — confirmation "Retirer", swatches `aria-pressed` (07-24).
+- L1424 — Journal — titres de section datés lisibles (07-24).
+- L1439 — Revue — bannières `role="status" aria-live="polite"`, légende "écarter" (07-24).
+- L1447 — Lot — lignes de sélection accessibles au clavier, bouton "Annuler" sur confirmation armée (07-24).
+- L1455 — `styles.css` — tokens `--color-text-warning`/`-success` clair recalibrés, hover réaffirmé (07-24).
+- L1468 — Historique des corrections (chronologique, par date de session).
+- L1650 — Conventions de cohérence (sémantique couleur, hiérarchie de poids, discipline classe partagée) — à consulter AVANT tout nouveau composant (07-24).
+- L1720 — Ligne disque amovible (écran Clé USB) — trois états, rendu `usbRowHtml()` (07-31).
+- L1755 — Teintes pleines `-solid` — neuf tokens pour les surfaces de donnée (08-01), dix depuis 08-27 (`red`, pastille de verdict).
+- L1791 — Modale de formatage USB — états, trois corrections d'usage réel (08-02).
+- L1825 — Menu contextuel `.sift-ctx-menu` — états catalogués + rangée de pastilles couleur de source (08-20).
+- L1851 — Ligne de source du rail `.sift-rail-src` — teintes du cycle, `--error`, suspendue (pastille vidée) ; story + module pur `rail-source-entry.ts` (08-20).
+- L1883 — Lecteur simple de Revue — rangée d'audition : slider kit, play 28, temps unique, volume fin ; module pur + story (08-27).
+- L1934 — Pastille de verdict de file `verdictDot()` — teintes système pleines, 5 cas / 4 rendus ; module pur + story (08-27).
+- L1959 — Surfaces de Revue — trois plans : rail en retrait, file bord à bord, cadre de lecture, pied en surface (08-27).
 
 ## Ligne de queue — `.qi` (`styles.css:1127-1214`, revérifié au grep le 2026-08-27)
 
@@ -127,10 +141,16 @@ Rangée de la file de Revue, deux lignes de texte — titre, puis artiste en
 | Sélectionnée (piste ouverte en zone C) | `.qi.cur` | `background: var(--color-row-active)` + `color: var(--color-text-primary)` + `font-weight: 500` — aplat seul : le liseré gauche `box-shadow: inset 2px` a été retiré (commentaire « Left-edge inset shadow removed » vers `styles.css:1139`, annotation « la case est highlighted ça suffit » — même anti-pattern side-stripe que la bordure latérale L462) |
 | Curseur clavier (08-26) | `#ql:focus-visible .qi.qi-kbd` | `outline: 2px solid var(--color-border-info)`, `outline-offset: -2px` — ANNEAU, distinct de l'aplat de `.cur` (sélection ≠ focus) ; le focus vit sur `#ql`, jamais sur la ligne (virtualisation) ; repli `#ql:focus-visible.ql-cursor-off` quand la ligne du curseur est hors fenêtre |
 | Terminée | `.qi.done` | `color: var(--color-text-tertiary)` |
+| Séparateur de rangées (08-27) | `.qi + .qi::before` | filet 1 px `--color-border-tertiary`, en retrait gauche (`--space-8`, aligné au contenu), peint en `::before` ABSOLU — hauteur 46 intacte (gelée par `test/queue-row-height.test.ts`), aucun nœud ajouté dans la boucle chaude de `renderQueueWindow`, et jamais de filet au-dessus de la première rangée (le filet borne ENTRE — le haut de zone est le rôle du filet de `.sift-qhead`) |
+| Séparateur effacé (08-27) | `.qi:hover::before`, `.qi.cur::before`, `.qi:hover + .qi::before`, `.qi.cur + .qi::before` | `background:transparent` — le filet TOUCHANT la rangée survolée/ouverte s'efface (Mail récents : l'aplat arrondi remplace la borne) ; celui de la rangée elle-même ET celui de la suivante (son `::before` est le filet du bas de la rangée visée) |
 
 Réécrite le 2026-08-27 : la table de 2026-07 citait des hex résolus de la
 palette chaude (#5C554E, #F3EFE9, #C9C2B7…), absents de `styles.css` depuis
 les gris froids système, et un liseré de sélection qui n'existe plus.
+Séparateurs ajoutés le même jour (décision maquette du 26, portage #50). La
+pastille de verdict est passée EN FIN DE TITRE (décision produit, assumée
+contre le motif Mail des indicateurs au bord droit) : le sous-titre `.qi-sub`
+s'aligne au titre, son indentation de 15px est partie.
 
 **Interlignes explicites, hauteur constante (issue #45, 2026-08-26)** : titre
 `12px/15px` (Callout du kit Big Sur), artiste `.qi-sub` en `--text-xs`/`13px`
@@ -140,12 +160,20 @@ les gris froids système, et un liseré de sélection qui n'existe plus.
 la file. Épinglé des deux côtés (règle CSS et sonde) par
 `test/queue-row-height.test.ts`.
 
-Sous-éléments : `.qi i` (icône verdict, `--text-base`) · `.qi .qi-dup`
-(pastille DUPLICATE neutre, `--overlay-selected` — un doublon n'est pas un
-verdict, pas d'ambre) · `.qi-ck` (case du mode Lot). Pas de story Storybook
-pour cette rangée (constaté 2026-08-27).
+Sous-éléments : la pastille de verdict `verdictDot()` (voir sa section dédiée
+en fin de fichier — teintes système pleines, story
+`queue-verdict-dot.stories.ts`) · `.qi i` (`--text-base` — dimensionne les
+icônes restantes de la rangée : alerte de conversion échouée, bouton
+Réanalyser ; l'icône de verdict qu'il visait à l'origine n'existe plus) ·
+`.qi .qi-dup` (pastille DUPLICATE neutre, `--overlay-selected` — un doublon
+n'est pas un verdict, pas d'ambre) · `.qi-ck` (case du mode Lot). La rangée
+entière n'a toujours pas de story (`queueRowHtml` vit dans `queue-panel.ts`,
+qui importe `./ipc`) ; sa pastille en a une depuis le 2026-08-27.
 
 ## ⚠️ PÉRIMÉ — Mot de verdict Détail, `verdictWord()` retiré le 2026-08-26 (c4f65eb)
+
+> Ses deux rendus de PIPELINE (« échec », « analyse… ») vivent depuis dans la
+> pastille `verdictDot()` — section dédiée en fin de fichier.
 
 | État | Condition | Rendu |
 |---|---|---|
@@ -361,9 +389,18 @@ pas "corriger" par erreur vers l'uniformité lors d'un futur portage.
 Même famille que `.sift-ranger-btn` — vrai `<button>`, hérite hover/disabled/focus
 du sélecteur générique. RAS.
 
-## Sliders (volume, tempo) — `.sift-slider-*` (`styles.css:377-382`, drag wiring `report-view.ts` `dragSlider()`)
+## ⚠️ PÉRIMÉ — Sliders (volume, tempo) `.sift-slider-*`, disparus en deux temps (08-21 puis 08-25)
 
-| État | Sélecteur | Valeur |
+Tempo & key-lock (l'« Écoute avancée ») ont quitté l'écran le 2026-08-21
+(`f0ea751` — le pitch DJ n'est pas voulu sur un écran de décision) ; le volume
+est passé par la capsule SVG du kit (2026-08-25, `e478623`, qui a supprimé les
+règles `.sift-slider-*`) avant de devenir le slider fin `.sift-volume-*` du
+2026-08-27 — voir la section « Lecteur simple » en fin de fichier. Seul
+`dragSlider()` (report-view.ts) a survécu, réécrit sur la course du centre du
+pouce ; sa classe `.dragging` est toujours posée mais n'a PLUS de règle CSS —
+pas un oubli, le pouce du kit n'a ni scale de survol ni halo de drag.
+
+| État (historique) | Sélecteur | Valeur |
 |---|---|---|
 | Normal | `.sift-slider-thumb` | `transform:translate(-50%,-50%) scale(1)` |
 | Hover (survol de la track) | `.sift-slider-track:hover .sift-slider-thumb` | `scale(1.15)` |
@@ -553,6 +590,15 @@ basse.
   manque de token, ne pas "corriger" à tort.
 - `.tog::after{background:#fff}` — blanc en dur sur pastille colorée, mineur,
   pattern courant (curseur blanc sur fond coloré), pas de token nécessaire.
+
+⚠️ **Deux des trois lignes sont éteintes depuis le 2026-08-27** (la waveform a
+quitté Revue, `31c5d1a`) : `.sift-time-elapsed` n'existe plus (le temps unique
+`.sift-time` est en tokens), et les overlays de WAVEFORM sont partis avec le
+canvas — la bulle de survol survivante (`.sift-wave-hovertime`) est tokenisée
+(`--overlay-scrim`/`--color-text-on-scrim`). Ce qui reste vrai : les overlays
+du SPECTROGRAMME (canvas toujours sombre, `report-view.ts` peint en
+`rgba(255,255,255,…)` — volontaire, inchangé). `.tog::after` est passé à
+`--color-accent-ink` entre-temps : plus un blanc en dur.
 
 ## `--text-hero` → `--text-2xl` (échelle typo, 2026-07-03)
 
@@ -993,6 +1039,13 @@ une carte — ni fond, ni bordure complète, ni rayon, seulement un filet gauche
 (`border-left:0.5px solid var(--color-border-tertiary)`). Le rôle **Groupée** du Journal se lit
 donc désormais sur la charpente de la fenêtre, pas sur une carte à lui. La ligne du tableau reste
 telle quelle, elle documente l'état d'avant, daté.
+
+⚠️ **Troisième décalage, du 2026-08-27 (portage maquette, #50)** : quatre surfaces de Revue ont
+bougé — le cadre de lecture `.sift-player-row` a RETROUVÉ une surface (exception consignée,
+`patterns.md`), le pied de Détail est passé en surface sans carte (`.sift-action-rail--flat`),
+la colonne file `#qcol` a quitté la famille carte (bord à bord), et le rail `.sb` est passé au
+plan le plus en retrait. Détail : section « Surfaces de Revue — trois plans » en fin de fichier.
+`#homequeue` (Accueil) garde sa carte, seul survivant bordé de la famille queue.
 
 Les deux **rôles** ne changent pas — retirer une surface n'en crée pas un troisième, et la
 grammaire à 2 rôles du 2026-07-08 tient. C'est la liste des sites qui a bougé, et cette ligne
@@ -1699,20 +1752,23 @@ le module et le texte de l'écran affirmaient tous les deux.
 
 ---
 
-## Teintes pleines `-solid` — neuf tokens (2026-08-01)
+## Teintes pleines `-solid` — neuf tokens (2026-08-01), dix depuis le 2026-08-27
 
 Story : `frontend/hue-solid.stories.ts`. Ajoutées pour les **surfaces de donnée** : les segments
 du graphique d'occupation disque de l'écran Clé USB, où `-bg` (fond de puce, chroma 0,035–0,05)
-rend délavé et `-text` est une couleur d'encre.
+rend délavé et `-text` est une couleur d'encre. Le dixième, `red` (systemRed du kit), est arrivé
+le 2026-08-27 pour un second rôle : l'**indicateur d'état plein** — la pastille de verdict Faux
+de la file (voir § « Pastille de verdict de file »), où un indicateur est une teinte système
+vive, jamais une encre de texte.
 
 | Variante | Rôle | Teintes disponibles |
 |---|---|---|
 | `-bg` | fond de puce, texte par-dessus | indigo, teal, purple, pink |
 | `-text` | encre sur ce fond | indigo, teal, purple, pink, yellow |
-| `-solid` | aplat de donnée | **les neuf** : blue, indigo, teal, green, orange, yellow, purple, pink, gray |
+| `-solid` | aplat de donnée, indicateur d'état plein | **les dix** : blue, indigo, teal, green, orange, yellow, purple, pink, red, gray |
 
-`blue`, `green`, `orange` et `gray` n'existent **qu'en `-solid`** — `-bg`/`-text` n'auraient de
-sens que pour une puce, et rien n'en demande.
+`blue`, `green`, `orange`, `red` et `gray` n'existent **qu'en `-solid`** — `-bg`/`-text`
+n'auraient de sens que pour une puce, et rien n'en demande.
 
 **Ne jamais poser de texte sur un `-solid`** : ces valeurs sont calibrées comme aplats, pas comme
 fonds lisibles. Pour une puce, `-bg` + `-text` restent le couple.
@@ -1727,7 +1783,8 @@ ferait plonger. Ce n'est pas une palette étrangère plaquée : les cinq teintes
 Les trois blocs de thème (`:root`, `@media (prefers-color-scheme:dark)`,
 `:root[data-theme="dark"]`) portent les neuf tokens. Vérifié sur les valeurs **résolues** dans
 l'app réelle : aucune manquante, et aucune identique entre les deux thèmes — le piège du bloc
-sombre resté avec les valeurs claires.
+sombre resté avec les valeurs claires. `red` (08-27) est présent dans les trois blocs avec des
+valeurs clair/sombre distinctes — vérifié au grep dans `styles.css`, pas re-mesuré en fenêtre.
 
 ---
 
@@ -1822,3 +1879,122 @@ une copie ne peut que diverger). États réels :
 Stories : `frontend/rail-sources.stories.ts` (TeintesDuCycle · ScanEchoue ·
 SurveillanceSuspendue — le rail replié n'y est pas représentable, la classe vit sur
 `<body>`). Spec : `docs/ui-specs/rail.md` § États.
+
+## Lecteur simple de Revue — rangée d'audition (2026-08-27)
+
+La waveform a quitté Revue (`31c5d1a`, décision Antoine sur comparatif maquette) :
+le lecteur est le slider fin du kit (Pickers/Linear/Small 53:118, copie SVG).
+WaveSurfer RESTE le moteur audio — son conteneur est réduit à zéro
+(`.sift-progress-engine`, jamais `display:none` : son ResizeObserver doit
+survivre). Markup : `player-audition.ts` (module pur, extrait de `report-view.ts`
+pour que la story exécute le vrai rendu) ; wiring : `report-view.ts::mountPlayer`.
+Story : `frontend/player-audition.stories.ts`.
+
+**Progression** (`.sift-progress`, `role="slider"`) :
+
+| État | Sélecteur / condition | Rendu |
+|---|---|---|
+| Piste | `.sift-progress-track` | 4 px rayon 2, `--overlay-bar` — PAS `--color-track`, qui vaut le fond de fenêtre en sombre (piste invisible, « on ne voit pas la longueur de la barre ») ; inner-shadow littérale (copie du kit) |
+| Remplissage | `.sift-progress-fill` | `--color-accent-fill`, `width` en % posé par `updateTime` — mutation seule, jamais de rebuild |
+| Pouce | `.sift-progress-knob` | 20 px, `--color-accent-ink` (blanc theme-invariant), drop-shadow littérale kit ; `hidden` tant que la durée est inconnue ; `pointer-events:none`, AUCUN scale au survol (le pouce du kit n'en a pas — voir § Sliders périmé : `.dragging` n'a plus de règle) |
+| Survol | `.sift-wave-hovertime` | bulle mm:ss (`--overlay-scrim`/`--color-text-on-scrim`), patron QuickTime — seule survivante du survol d'onde, le ghost et la ligne sont partis avec les barres |
+| Focus | `.sift-progress:focus-visible` | anneau 2 px `--color-border-info`, offset 2 |
+| Clavier | flèches ±5 s, Home/End | APG `role="slider"` ; `aria-valuenow` tenu par `updateTime` |
+| Seek | pointerdown/drag sur toute la surface | le canvas moteur a `interact:false` — le slider custom est le SEUL chemin de seek |
+| Fin de piste | `finish` | stop + pouce ramené à 0, pas d'auto-avance (patron Musique, piste isolée) ; l'icône play/pause porte seule l'état — le dim de pause est parti avec la waveform |
+
+**Play** `.sift-play-btn` : 28×28 (était 46), glyphe Tabler 22 — du kit on copie la
+géométrie, jamais ses glyphes (SF Symbols non licenciable, patterns § 5). Hover :
+glyphe `scale(1.08)` ; enfoncé : `scale(.92)` ; `background:none` réaffirmé aux
+deux. Aligné au bord de conduite (marge gauche retirée).
+
+**Temps** `.sift-time` : un seul, mono `--text-xs` 500, cliquable (et
+Entrée/Espace) — bascule écoulé ↔ restant (préfixe `-`), patron Musique/Podcasts.
+Son `:hover` est injecté au runtime (`ensureStyles`, report-view.ts), pas dans
+`styles.css`.
+
+**Volume fin** (`.sift-volume`, 90 px — remplace la capsule SVG du 25, « couleur,
+taille et style vraiment goofy » dans la rangée fine) :
+
+| État | Sélecteur / condition | Rendu |
+|---|---|---|
+| Piste | `.sift-volume-track` | 4 px, `--overlay-bar` — garde 3:1 dans les deux thèmes là où le blanc@10 % de la capsule le perdait en clair |
+| Remplissage + pouce | `.sift-volume-fill` / `.sift-volume-knob` | `--color-accent-ink` BLANC theme-invariant (un volume n'est pas une progression : pas d'accent) ; pouce 14 ; `width`/`left` = course du CENTRE du pouce (`volumeCentreCss`, partagée markup ↔ story) |
+| Muet | icône de `.sift-volume-mute` | bascule `ti-volume` ↔ `ti-volume-off` (`volumeIconClass`) — l'état se dit par l'ICÔNE, plus par un slash permanent ; clic = mute/démute, dernier volume non nul mémorisé |
+| Hover haut-parleur | `.sift-volume-mute:hover` | encre secondary → primary, fond none |
+| Focus | `.sift-volume:focus-visible` | anneau info ; `:focus` seul : `outline:none` |
+| Clavier | flèches ±5 %, Home/End | audit-ref R1 (réf. shadcn Slider), `aria-valuenow` tenu |
+
+Retirés de l'écran : tempo & key-lock (« Écoute avancée », 2026-08-21 — le pitch
+DJ n'est pas voulu sur un écran de décision). ⚠️ Leurs règles CSS
+(`.sift-listen-advanced*`, `.sift-key-*`) et `.sift-player-controls` restent dans
+`styles.css` SANS markup vivant — constaté au grep le 2026-08-27, candidates à un
+nettoyage séparé, ne pas les documenter comme états réels.
+
+## Pastille de verdict de file — `verdictDot()` (2026-08-27)
+
+Module pur `queue-verdict-dot.ts` (extrait de `queue-panel.ts` le 2026-08-27,
+même motif que `rail-source-entry.ts`) ; rendue par `queueRowHtml` en FIN de
+titre (décision produit, assumée CONTRE le motif Mail des indicateurs au bord
+droit). Styles INLINE (la ligne est concaténée dans la boucle virtualisée), 9 px.
+Story : `frontend/queue-verdict-dot.stories.ts`.
+
+Teintes SYSTÈME pleines depuis le 2026-08-27 (avant : encres
+`--color-text-success/danger/warning`) : un indicateur d'état est une teinte
+système vive, jamais une encre — le point non-lu de Mail est systemBlue plein.
+Les encres `text-*` restent aux MOTS (badge LOSSLESS de zone C, libellés).
+
+| Cas | Condition | Rendu |
+|---|---|---|
+| Authentique | `verdict === "ok"` | pastille pleine `--color-hue-green-solid`, `title="authentique"` |
+| Faux / sur-encodé | `verdict === "fake"` | pleine `--color-hue-red-solid` (token AJOUTÉ ce jour — systemRed du kit) |
+| Zone grise | `verdict === "grey"` | pleine `--color-hue-yellow-solid` |
+| Échec terminal | verdict nul **et** `analysis_attempts >= MAX_ANALYSIS_ATTEMPTS` | pleine `--color-hue-red-solid` — PARTAGE la teinte de Faux ; la distinction est le bouton Réanalyser, propre à la ligne non analysée |
+| En attente | verdict nul, tentatives restantes | ANNEAU `1.5px solid var(--color-text-tertiary)` — l'attente reste neutre |
+
+Cinq cas pour quatre rendus. Généalogie : `verdictWord()` (retiré 2026-08-26,
+section ⚠️ plus haut) rendait les états de pipeline que la pastille porte seule
+désormais.
+
+## Surfaces de Revue — trois plans (2026-08-27, #50)
+
+Le portage maquette a redistribué les surfaces du shell de Revue en TROIS plans
+(motif sidebar Mail) — c'est le troisième décalage de la « Grammaire de carte »
+(voir son ⚠️ daté) :
+
+- **Rail `.sb`** — le plan le plus EN RETRAIT : `--color-background-primary`
+  (avant : `--color-background-tertiary`), `border-right` 1 px
+  (`styles.css`, règle `.sb`). `#sift-tb-left` ET `#sift-titlebar` suivent
+  (`chrome.ts::injectLeanStyle`) ; filet 1 px bord à bord sous la barre (motif
+  Mail, en-tête de colonne).
+- **Milieu (zone C)** — le sol : fond du `body` (`--color-background-tertiary`),
+  aucune surface propre. Deux exceptions, la charpente de la zone : le cadre de
+  lecture et le pied (ci-dessous).
+- **File `#qcol`/`.queue`** — `--color-background-queue`, BORD À BORD : collée au
+  rail, à la barre et au bas de fenêtre (`.sift-revue-row`, marges négatives qui
+  annulent le padding de `#content`), `border:0` sauf le filet de flanc droit ;
+  la carte flottante (bordure + rayon 14) est partie. Séparateurs de rangées :
+  § `.qi`. La tranchée de `.sift-qresize` est refermée (emprise nulle, zone de
+  saisie 16 conservée). `#homequeue` (Accueil) garde sa carte — il vit au milieu
+  d'une page, pas en colonne de shell.
+
+**Cadre de lecture `.sift-player-row`** : fond queue + rayon `--border-radius-md`,
+inseté de 16 par `.mid` (padding 16/16/12), `max-width` retiré — le « cadre Y »
+validé sur comparatif. EXCEPTION CONSIGNÉE à « une surface de contenu ne peint
+rien » (2026-08-14) : le bandeau de lecture est LA seule surface du milieu,
+consignée dans `patterns.md`. Filet interne en retrait entre en-tête et lecteur
+(`border-top` de `.sift-player-audition`) ; le filet de section avant la fiche a
+été posé puis RETIRÉ le soir même (la boîte borne déjà — une frontière ne se dit
+qu'une fois). ⚠️ Une variante « bande full-bleed sans rayon » a été livrée puis
+RETIRÉE le même soir (« ce n'est pas un cadre », `861911f`) — fausse route
+consignée ici et dans `revue.md` § Après-midi.
+
+**Pied `.sift-action-rail--flat`** (Détail) : surface pleine largeur, fond queue,
+`border:0`, `border-radius:0` — une zone de boutons se distingue par surface ou
+par l'espace, jamais par un filet (Big Sur). Emplacement re-questionné puis
+CONFIRMÉ (comparatif P1/P2/P3 — verdict : P1, bas de panneau, motif bas
+d'inspecteur des pro apps). ⚠️ La carte (bordure + rayon lg) a sauté de la règle
+de BASE `.sift-action-rail` (`31c5d1a`), que le rail de Lot partage : le rail de
+Lot n'a donc PLUS de carte en code, alors que `revue.md` § Après-midi dit « le
+rail de Lot garde sa carte » — divergence spec ↔ code constatée le 2026-08-27 à
+la rédaction de cette section, non tranchée ici.

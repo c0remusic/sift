@@ -8,8 +8,10 @@ import { sourceEntryHtml } from "./rail-source-entry";
 // d'en recopier le markup — modèle `journal-table.stories.ts` : une copie ne peut que diverger.
 //
 // Le conteneur reprend la vraie charpente du rail (`.sb`, `index.html:16`) : les pastilles se
-// jugent sur la teinte de chrome (`--color-background-tertiary`) qui les porte en prod, pas sur
-// le fond du canvas. Largeur `--rail-w` comprise — c'est elle qui donne leur mesure aux libellés.
+// jugent sur la teinte qui les porte en prod — `--color-background-primary` depuis le 2026-08-27
+// (rail EN RETRAIT, plan le plus bas des trois : rail < milieu < file, motif sidebar Mail ; le
+// chrome `--color-background-tertiary` d'avant a suivi la décision) — pas sur le fond du canvas.
+// Largeur `--rail-w` comprise — c'est elle qui donne leur mesure aux libellés.
 //
 // ÉTAT NON REPRÉSENTABLE ICI : le rail replié (`body.sift-rail-collapsed`, pastille 14px, contour
 // suspendu 1.5px) — la classe vit sur <body>, hors de portée d'une story statique.
