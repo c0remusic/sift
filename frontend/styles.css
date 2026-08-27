@@ -1300,9 +1300,13 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
 #qcol{border:0;border-right:1px solid var(--color-border-tertiary);border-radius:0}
 #homeinspector{overflow:hidden}
 /* padding-top 16 (2026-08-27, retour Antoine « il faut séparer de la barre du haut ») : le
-   bord à bord de .sift-revue-row a retiré l'inset global, et la boîte du bandeau collait au
-   filet de la barre — l'inset haut du panneau vit ICI, comme dans la maquette (mid 16/16/12). */
-.mid{flex:1;min-width:0;display:flex;flex-direction:column;padding:var(--space-16) var(--space-16) var(--space-12);overflow:hidden}
+   bord à bord de .sift-revue-row a retiré l'inset global — l'inset HAUT du panneau vit ici.
+   Le padding LATÉRAL est descendu d'un cran le même jour (deuxième passe bande) : la bande de
+   lecture doit toucher les flancs du panneau, or elle vit à quatre conteneurs sous .mid — une
+   marge négative qui remonte quatre niveaux déborde en overflow-x (mesuré : 2734 pour 2718,
+   temps et volume poussés au clip). L'inset latéral appartient donc aux blocs qui en veulent
+   (.sift-fil-editor-margin), pas au conteneur commun. */
+.mid{flex:1;min-width:0;display:flex;flex-direction:column;padding:var(--space-16) 0 var(--space-12);overflow:hidden}
 .mid-scroll{flex:1;min-height:0;overflow-y:auto;display:flex;flex-direction:column}
 /* Action rail (was the persistent .dest column — now a slim horizontal bar anchored to
    the bottom of the inspector, matching the maquette's single-row ACTION RAIL: Destination
@@ -2313,7 +2317,7 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    file font pareil). Elle reste séparée de la barre par l'inset haut (sa demande précédente) ;
    le padding interne 16 garde le contenu sur le bord de conduite du panneau. Le max-width
    --measure-data est parti à la passe précédente (une zone se tend, son contenu respire). */
-.sift-player-row{display:flex;flex-direction:column;gap:var(--space-12);margin-inline:calc(-1 * var(--space-16));margin-bottom:var(--space-16);padding:var(--space-16);background:var(--color-background-queue);border-radius:0}
+.sift-player-row{display:flex;flex-direction:column;gap:var(--space-12);margin-bottom:var(--space-16);padding:var(--space-16);background:var(--color-background-queue);border-radius:0}
 /* gap sized so the waveform's left edge lines up with the title block's left edge above it
    (annotation: "aligne les deux") — header-body starts at 68px cover + 14px gap = 82px; the play
    button's margin-left was snapped 11px→var(--space-12) in the 2026-07-24 spacing sweep, so the
@@ -3215,7 +3219,9 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 /* Continuous-surface redesign (2026-07-06): no layout-separator border here anymore — spacing
    alone (margin) separates the blocks stacked on the inspector's own surface. Was a border-top
    hairline before this pass; removed along with the compound .sift-fil-editor card look below. */
-.sift-fil-editor-margin{margin-top:8px}
+/* margin-inline 16 (2026-08-27) : l'inset latéral du panneau, descendu de .mid — la bande de
+   lecture court bord à bord, ces trois blocs (fiche, diagnostic, verdict) gardent leur retrait. */
+.sift-fil-editor-margin{margin-top:8px;margin-inline:var(--space-16)}
 /* Card background+shadow restored 2026-07-07 (annotation: "je préferais en plein je crois, mais de
    la meme couleur") — the "plain, sits on the continuous surface" 2026-07-06 treatment is reversed;
    matches .sift-spectro-box exactly (same token/shadow/radius, same zero own padding so the toggle
