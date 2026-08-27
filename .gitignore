@@ -48,6 +48,10 @@ Thumbs.db
 .claude/skills/*
 !.claude/skills/run-sift/
 !.claude/skills/run-sift/**
+# mutation-check porte le protocole du barème cran 1 (CLAUDE.md § Méthode) : il vaut pour
+# tout agent sur tout clone, comme run-sift.
+!.claude/skills/mutation-check/
+!.claude/skills/mutation-check/**
 !.claude/verify.sh
 !.claude/learning-log.md
 # `verify.sh` était versionné mais PAS ce qui le déclenche : le hook Stop vivait
