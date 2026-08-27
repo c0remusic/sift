@@ -146,22 +146,21 @@ P1). L'adresse de #26 tient : réglages et engagement au bas du panneau, motif b
 des pro apps (Compressor). P2 aurait rompu l'adresse et rendu la portée du bouton ambiguë en
 mode Lot ; P3 reste la variante de repli si le bandeau du pied redevient trop lourd.
 
-Trois retouches de fin de soirée, sur retours dans la vraie fenêtre :
+Retouches de fin de soirée, sur retours dans la vraie fenêtre :
 
-- **La bande de lecture est FULL-BLEED** : elle touche les flancs du panneau comme le pied
-  (il ne restait à droite que la gouttière de scrollbar), et perd son rayon — une bande
-  bord à bord n'a pas de coins. Mécanique : l'inset latéral quitte `.mid` (padding latéral 0)
-  et descend aux blocs qui en veulent (`.sift-fil-editor-margin` : fiche, diagnostic,
-  verdict). ⚠️ Une marge négative qui remonte plusieurs conteneurs sans padding a été essayée
-  et RETIRÉE : 16 px d'overflow-x, temps et volume clippés — l'inset se pose au niveau qui le
-  possède, il ne se rembourse pas à distance.
 - **La tranchée entre file et zone C est refermée** : `.sift-qresize` occupait une colonne
   flex de 16 px transparents (fond de fenêtre au travers, flagrant entre les deux surfaces
   queue du bas). La poignée passe en emprise nulle — marges négatives symétriques, à cheval
   sur le filet de la file, zone de saisie 16 conservée. Le piège historique des marges
   compensées (2026-07-24) est éteint : les voisins sont bord à bord, plus rien à compenser.
-- L'inset HAUT du panneau (16 sous la barre) reste dans `.mid` — la bande ne colle pas à la
-  barre (demande explicite du même jour).
+  C'était l'« espace » des retours « collé au panneau ».
+- **Le CADRE de lecture reste le cadre Y validé** : boîte arrondie (rayon md), insetée de 16
+  par `.mid`, pleine largeur du panneau MOINS les insets (le `max-width:--measure-data` reste
+  retiré — il faisait flotter le cadre à gauche sur écran large). ⚠️ Une variante « bande
+  full-bleed sans rayon » a été livrée par erreur d'interprétation puis RETIRÉE le soir même
+  (« ce n'est pas un cadre ») ; en chemin, la marge négative multi-conteneurs a produit 16 px
+  d'overflow-x (temps et volume clippés) — deux fausses routes consignées pour ne pas y
+  retourner. L'inset HAUT (16 sous la barre) tient.
 
 ## Contexte dans le shell
 
