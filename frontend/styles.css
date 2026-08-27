@@ -756,7 +756,12 @@ body:has(#sift-titlebar){border-radius:var(--border-radius-sm);overflow:hidden}
    sources est un <span> elle aussi, donc EXCLUE ici : sans cette exclusion elle héritait de
    `flex:1` et se peignait à 49px de large au lieu de 8 (mesure du 2026-08-19, elle rendait un
    ovale blanc). */
-.nv span:not(.nav-badge):not(.sift-rail-src-dot){font-size:var(--text-base);letter-spacing:var(--tracking-normal);text-align:left;line-height:1.1;flex:1;min-width:0}
+/* UNE LIGNE, ellipsis — jamais de wrap (2026-08-27) : une sidebar Apple tronque, elle ne replie
+   pas (comportement AppKit par défaut ; composant « Entrée de rail » de la maquette, variante
+   Source : textTruncation ENDING, maxLines 1). Vécu : « MUSIQUE A TRIER » (capitales, +14,6 %
+   sous Inter) wrappait sur deux lignes. Le title de la ligne porte déjà le chemin complet, donc
+   rien ne se perd. Ne pas « régler » en élargissant --rail-w : sa valeur est une MESURE. */
+.nv span:not(.nav-badge):not(.sift-rail-src-dot){font-size:var(--text-base);letter-spacing:var(--tracking-normal);text-align:left;line-height:1.1;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
 .nv i{font-size:17px;flex:none}
 .nv:hover{background:var(--color-nav-active)}
 .nv.on{background:var(--color-nav-active);color:var(--color-text-primary);font-weight:500}
