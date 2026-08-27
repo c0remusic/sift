@@ -474,7 +474,7 @@ function playerRowHtml(name: string, path: string, closeBtn = false, headerOpts:
     `<div class="sift-player-row">` +
     playerHeaderHtml(name, path, closeBtn, headerOpts) +
     `<div class="sift-player-audition">` +
-    `<button class="sift-play sift-play-btn" title="Lecture / pause (espace)" aria-label="Lecture / pause (espace)"><i class="ti ti-player-play"></i></button>` +
+    `<button class="sift-play sift-play-btn" title="Lecture / pause (espace)" aria-label="Lecture / pause (espace)"><i class="ti-fill ti-fill-player-play"></i></button>` +
     // LECTEUR SIMPLE (décision Antoine 2026-08-27, maquette : composant « Slider de progression »,
     // COPIE du kit Pickers/Slider-pickers/Linear/Small/No-tick-marks 53:118) : la waveform quitte
     // Revue — piste 4 px + remplissage accent + pouce blanc 20, la géométrie exacte du kit.
@@ -895,8 +895,10 @@ async function mountPlayer(root: HTMLElement, path: string, peaks?: number[], du
   void loadAudio(ws, path, peaks, duration);
 
   const setIcon = (name: string) => {
+    // Glyphes de transport PLEINS (police tabler-icons-filled, classe .ti-fill du dépôt —
+    // jamais la feuille vendeur, voir l'avertissement de main.ts).
     const i = playBtn?.querySelector("i");
-    if (i) i.className = `ti ti-${name}`;
+    if (i) i.className = `ti-fill ti-fill-${name}`;
   };
   // Slider custom (jamais un <input type=range> natif — voir DESIGN.md). La géométrie viewBox de
   // la capsule est partie avec elle (2026-08-27) : la conversion pointeur → valeur passe par la

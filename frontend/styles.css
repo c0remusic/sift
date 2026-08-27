@@ -3624,6 +3624,10 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 @font-face{font-family:"tabler-icons-filled";font-style:normal;font-weight:400;src:url("../node_modules/@tabler/icons-webfont/dist/fonts/tabler-icons-filled.woff2") format("woff2")}
 .ti-fill{font-family:"tabler-icons-filled";font-style:normal;speak:none;font-weight:normal;font-variant:normal;text-transform:none;line-height:1;-webkit-font-smoothing:antialiased;-moz-osx-font-smoothing:grayscale}
 .ti-fill-trash:before{content:"\f783"}
+/* Play/pause PLEINS (Antoine 2026-08-27 — motif Music : les glyphes de transport sont filled).
+   Codepoints lus dans tabler-icons-filled.min.css du paquet (v3.46.0), jamais importé. */
+.ti-fill-player-play:before{content:"\f691"}
+.ti-fill-player-pause:before{content:"\f690"}
 
 /* ---- Graphique d'occupation par format (écran Clé USB + Bibliothèque) ----
    Layout inspiré de Disk Utility : en-tête icône + identité + capacité encadrée, filet, barre
