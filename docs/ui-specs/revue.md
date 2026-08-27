@@ -137,6 +137,15 @@ d'Antoine), portées le jour même :
 L'état « analyse en cours » (squelette) ne prend PAS la boîte : sans lecteur, le bandeau
 n'existe pas encore — le squelette couvre l'emplacement, gap 32 simple.
 
+Deux corrections du soir, mêmes principes : le **filet de section** avant la fiche (posé le
+matin, motif Mail) est **retiré** — la boîte borne déjà, une frontière ne se dit qu'une fois
+(HIG § Boxes, Réglages : boîte puis espace seul) ; l'écart inter-sections de 32 reste. Et
+l'**emplacement du pied re-questionné puis CONFIRMÉ** (comparatif P1 bas-de-panneau actuel /
+P2 réglages en fiche + actions en barre / P3 réglages en fiche + pied mince — verdict Antoine :
+P1). L'adresse de #26 tient : réglages et engagement au bas du panneau, motif bas d'inspecteur
+des pro apps (Compressor). P2 aurait rompu l'adresse et rendu la portée du bouton ambiguë en
+mode Lot ; P3 reste la variante de repli si le bandeau du pied redevient trop lourd.
+
 ## Contexte dans le shell
 
 Patron macOS : **Finder** pour la file et la sélection · **Utilitaire de disque** pour
