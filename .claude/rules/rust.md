@@ -46,9 +46,10 @@ Pas un projet de systems-programming, pas une lib publiée, pas un service async
 - **Pas de FFI au sens C/`bindgen`/`cbindgen`.** La seule frontière qui y
   ressemble est le sidecar FFmpeg (`ffmpeg-sidecar` spawne un binaire bundlé en
   sous-process) — c'est de l'I/O de process, pas un passage d'ABI. Le codebase a
-  **4** blocs `unsafe`, comptés le 2026-08-05 : un dans `lib.rs`
-  (`DwmExtendFrameIntoClientArea`, API Win32 de titlebar), avec son commentaire
-  `// SAFETY:` depuis 2026-07-17 (commit `c94685c`), et **trois dans
+  **5** blocs `unsafe`, recomptés le 2026-08-29 : deux dans `lib.rs`
+  (`DwmExtendFrameIntoClientArea`, API Win32 de titlebar, commentaire `// SAFETY:`
+  depuis 2026-07-17, commit `c94685c` ; `DwmSetWindowAttribute`, coins arrondis
+  Win11, issue #41), et **trois dans
   `usb_format/raw_volume.rs`** (handles Win32 sur volume brut), également commentés.
   Ce fichier a longtemps annoncé « exactement un » sous un titre « vérifiée, pas
   supposée » — c'était faux. Un bloc touché préserve ou met à jour son commentaire,

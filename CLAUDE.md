@@ -267,10 +267,10 @@ envoyée par `save_annotation` qui append `docs/annotations.jsonl`.
   la frontière IPC. Le projet n'utilise **pas** `thiserror`/`anyhow` — c'est un choix,
   pas un défaut ; ne pas les introduire sans le signaler.
 - **`unwrap()`/`expect()` hors `#[cfg(test)]` = interdit dur.**
-- **4 blocs `unsafe`**, tous avec leur `// SAFETY:` (comptés le 2026-08-05) : un dans
-  `lib.rs` (`DwmExtendFrameIntoClientArea`, titlebar Win32) et **trois dans
-  `usb_format/raw_volume.rs`** (handles Win32 sur volume brut). Un bloc touché garde ou
-  met à jour son commentaire, jamais le supprimer.
+- **5 blocs `unsafe`**, tous avec leur `// SAFETY:` (recomptés le 2026-08-29) : deux dans
+  `lib.rs` (`DwmExtendFrameIntoClientArea`, titlebar Win32 ; `DwmSetWindowAttribute`,
+  coins arrondis #41) et **trois dans `usb_format/raw_volume.rs`** (handles Win32 sur
+  volume brut). Un bloc touché garde ou met à jour son commentaire, jamais le supprimer.
 
 Détails et overrides d'audit Rust : **`.claude/rules/rust.md`** (chargé pour
 `src-tauri/**`).

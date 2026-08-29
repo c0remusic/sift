@@ -74,6 +74,50 @@ fn extend_frame_into_client_area(window: &tauri::WebviewWindow) {
     }
 }
 
+/// Demande à DWM d'arrondir les coins de la fenêtre (issue #41).
+///
+/// La coque est dessinée de bout en bout par l'application — `tauri.conf.json` déclare
+/// `"decorations": false` et `"transparent": true` — donc aucun organe système ne pose de rayon à
+/// sa place, et les coins restaient carrés pendant qu'une soixantaine de surfaces internes sont
+/// arrondies. Le rayon d'une fenêtre est un organe DWM, pas une peinture de l'application : il se
+/// demande par `DWMWA_WINDOW_CORNER_PREFERENCE`, jamais par un `border-radius` CSS — sur une
+/// fenêtre transparente, un rayon CSS découperait le contenu en laissant des coins réellement
+/// transparents, sans rien dire ni à l'ombre portée ni à la marge de redimensionnement, toutes deux
+/// tenues par le système.
+///
+/// L'appel ÉCHOUE sur Windows 10 : l'attribut (33) n'existe qu'à partir du build 22000, et DWM rend
+/// `E_INVALIDARG` en dessous. C'est le comportement attendu de la plateforme, pas une erreur à
+/// remonter — Windows 10 n'arrondit aucune fenêtre, celles du système comprises, donc une fenêtre
+/// carrée y est le rendu juste. D'où le `let _ =` sans journalisation : cet échec est une propriété
+/// de la version de l'OS, connue une fois pour toutes au lancement, et rien ni personne n'agirait
+/// sur la ligne de log qu'il produirait.
+#[cfg(windows)]
+fn round_window_corners(window: &tauri::WebviewWindow) {
+    use windows::Win32::Graphics::Dwm::{
+        DwmSetWindowAttribute, DWMWA_WINDOW_CORNER_PREFERENCE, DWMWCP_ROUND,
+    };
+    let Ok(hwnd) = window.hwnd() else { return };
+    let preference = DWMWCP_ROUND;
+    // SAFETY: `hwnd` vient de `window.hwnd()` sur une WebviewWindow vivante possédée par ce
+    // processus (le `let Ok(hwnd) = ... else { return }` ci-dessus écarte le cas d'échec), c'est
+    // donc une poignée de fenêtre de haut niveau valide et actuellement ouverte. `preference` est
+    // une variable locale entièrement initialisée, vivante pendant toute la durée de l'appel et
+    // pendant elle seule : DWM lit le tampon et ne conserve pas le pointeur au retour. La paire
+    // (attribut, taille) est la vraie précondition de `DwmSetWindowAttribute`, qui lit exactement
+    // `cbattribute` octets derrière `pvattribute` — ici la taille est calculée sur la valeur
+    // passée elle-même (`size_of_val`), donc elle ne peut pas mentir sur ce que le pointeur
+    // désigne. `DWM_WINDOW_CORNER_PREFERENCE` est `#[repr(transparent)]` sur `i32`, la
+    // représentation attendue par l'attribut.
+    unsafe {
+        let _ = DwmSetWindowAttribute(
+            hwnd,
+            DWMWA_WINDOW_CORNER_PREFERENCE,
+            std::ptr::from_ref(&preference).cast::<std::ffi::c_void>(),
+            std::mem::size_of_val(&preference) as u32,
+        );
+    }
+}
+
 /// True only for the one specific, expected updater-plugin init failure: the WHOLE
 /// `plugins.updater` key absent from the merged config, so serde tries to deserialize `null` as
 /// the entire `Config` struct — the normal case for `tauri dev` and the unsigned CI build
@@ -262,6 +306,7 @@ pub fn run() {
             #[cfg(windows)]
             if let Some(w) = app.get_webview_window("main") {
                 extend_frame_into_client_area(&w);
+                round_window_corners(&w);
             }
             Ok(())
         })
