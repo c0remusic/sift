@@ -1926,10 +1926,10 @@ taille et style vraiment goofy » dans la rangée fine) :
 | Clavier | flèches ±5 %, Home/End | audit-ref R1 (réf. shadcn Slider), `aria-valuenow` tenu |
 
 Retirés de l'écran : tempo & key-lock (« Écoute avancée », 2026-08-21 — le pitch
-DJ n'est pas voulu sur un écran de décision). ⚠️ Leurs règles CSS
-(`.sift-listen-advanced*`, `.sift-key-*`) et `.sift-player-controls` restent dans
-`styles.css` SANS markup vivant — constaté au grep le 2026-08-27, candidates à un
-nettoyage séparé, ne pas les documenter comme états réels.
+DJ n'est pas voulu sur un écran de décision). Leurs règles CSS
+(`.sift-listen-advanced*`, `.sift-key-*`), `.sift-player-controls` et le token
+`--color-waveform-elapsed` sont retirés de `styles.css` le 2026-08-27 — zéro
+consommateur au grep, déclinaisons `#sift-aside` comprises.
 
 ## Pastille de verdict de file — `verdictDot()` (2026-08-27)
 
