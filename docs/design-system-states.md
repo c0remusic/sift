@@ -1993,8 +1993,8 @@ consignée ici et dans `revue.md` § Après-midi.
 `border:0`, `border-radius:0` — une zone de boutons se distingue par surface ou
 par l'espace, jamais par un filet (Big Sur). Emplacement re-questionné puis
 CONFIRMÉ (comparatif P1/P2/P3 — verdict : P1, bas de panneau, motif bas
-d'inspecteur des pro apps). ⚠️ La carte (bordure + rayon lg) a sauté de la règle
-de BASE `.sift-action-rail` (`31c5d1a`), que le rail de Lot partage : le rail de
-Lot n'a donc PLUS de carte en code, alors que `revue.md` § Après-midi dit « le
-rail de Lot garde sa carte » — divergence spec ↔ code constatée le 2026-08-27 à
-la rédaction de cette section, non tranchée ici.
+d'inspecteur des pro apps). La carte (bordure + rayon lg) avait sauté de la règle
+de BASE `.sift-action-rail` (`31c5d1a`, qui ne visait que le pied), règle que le
+rail de Lot partage — divergence spec ↔ code constatée le 2026-08-27, SOLDÉE le
+2026-08-29 : carte restaurée sur la base (rail de Lot conforme à « garde sa
+carte », `revue.md` § Après-midi), `--flat` continue de la retirer pour Détail.

@@ -1330,11 +1330,11 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
    garde parce qu'elle est de la CHARPENTE, au même titre que le rail de navigation et la colonne
    file. C'est précisément ce que la décision rend lisible : avoir une surface = être la charpente.
    Ne pas « rétablir la cohérence des 4 » en repeignant les trois autres. */
-/* La carte (bordure + rayon) saute le 2026-08-27 : le pied est une SURFACE pleine largeur qui
-   borne la zone d'action par son seul fond (verdict Antoine sur A/B/C maquette ; Apple Big Sur
-   ne borde jamais un pied d'un filet — espace ou surface). Le fond queue reste : « avoir une
-   surface est la marque de la charpente », et le pied en est. */
-.sift-action-rail{flex:none;display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-12);padding:var(--space-12) var(--space-16);overflow:visible;background:var(--color-background-queue)}
+/* La BASE porte la carte (bordure + rayon lg) : c'est le rail de LOT, qui la garde (spec
+   revue.md § Après-midi 2026-08-27). Le pied de DÉTAIL la retire via --flat ci-dessous —
+   verdict Antoine sur A/B/C maquette : une surface pleine largeur, sans filet. La carte avait
+   sauté d'ICI par erreur le 2026-08-27 (31c5d1a visait le pied seul) — restaurée le 2026-08-29. */
+.sift-action-rail{flex:none;display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-12);padding:var(--space-12) var(--space-16);overflow:visible;background:var(--color-background-queue);border:1px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg)}
 /* POP-UP BUTTON, forme du kit (§ 02-Buttons / 09-Pop Up Buttons) : un aplat gris SANS bordure.
    Ni fond ni bordure ne sont plus écrits ici — un pop-up button EST un bouton secondaire, et le
    reset `button{}` (plus haut) donne déjà exactement ça (`--color-surface-raised`, `border:0`).
