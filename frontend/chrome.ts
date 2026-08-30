@@ -22,11 +22,15 @@ function ensureDropStyle() {
 }
 
 // Existing boxes that double as drop targets, with the hint each shows while dragging.
-// "#filfoot" is the action rail carrying the Destination button (the tree itself is a popover,
-// hidden by default, so it can't be a reliable drop target) — a folder dropped on the rail
-// registers as the new destination.
+// Le bouton Destination porte la zone de dépôt « destination » (l'arbre lui-même est un popover,
+// masqué par défaut, donc pas une cible fiable) — un dossier lâché là devient la destination.
+// Il a DEUX hôtes depuis la décision V2b (2026-08-30) : la rangée réglages de la boîte de lecture
+// en mode Détail, le pied de panneau en mode Lot. Le pied est filtré sur `:not([hidden])` parce
+// qu'en Détail il existe encore dans le DOM, vidé et masqué (filing.ts `hidePanelFoot`) : sans ce
+// filtre il serait balisé comme zone de dépôt tout en étant invisible.
 const DROP_ZONES: [string, string][] = [
-  ["#filfoot", "Dépose un dossier ici — nouvelle destination"],
+  ["#filbox-settings", "Dépose un dossier ici — nouvelle destination"],
+  ["#filfoot:not([hidden])", "Dépose un dossier ici — nouvelle destination"],
   ["#ql", "Dépose des fichiers audio ici"],
   ["#sift-sources", "Dépose un dossier à surveiller"],
 ];
@@ -67,12 +71,15 @@ function setDropActive(on: boolean) {
   }
 }
 
-/** "dest" when the cursor is over the bins column (#fldz), else "source". Tauri 2 emits the
+/** « dest » quand le curseur est au-dessus de l'un des deux hôtes du bouton Destination (la rangée
+ * réglages de la boîte en Détail, le pied de panneau en Lot), « source » sinon. La mention de
+ * `#fldz` ici décrivait l'arbre persistant d'avant le popover — le code testait déjà `#filfoot`.
+ * Tauri 2 emits the
  * drop position already in logical (CSS) pixels — exactly what elementFromPoint expects, so
  * no devicePixelRatio correction (dividing here double-corrected on HiDPI/scaled displays). */
 function dropModeAt(pos: { x: number; y: number }): "source" | "dest" {
   const el = document.elementFromPoint(pos.x, pos.y);
-  return el && el.closest("#filfoot") ? "dest" : "source";
+  return el && el.closest("#filfoot,#filbox-settings") ? "dest" : "source";
 }
 
 /** Acknowledge a drop with what the backend ACTUALLY took in — never p.paths.length, which

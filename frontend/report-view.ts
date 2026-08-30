@@ -377,8 +377,9 @@ export function row(label: string, value: string, mono = true): string {
 
 // ── HTML helpers ────────────────────────────────────────────────────────────
 
-/** Keyboard-hint row for the bottom action rail (filing.ts), matching the board's `kbd` line —
- *  the maquette anchors these to the rail, not the scrollable detail content. */
+/** Rangée de légende clavier, rendue par `filing.ts` dans le PIED DE BOÎTE depuis le 2026-08-30
+ *  (décision V2b) — elle vivait au bas du panneau tant que le pied y était. L'ancrage voulu n'a
+ *  pas changé : la légende suit les boutons qu'elle nomme, jamais le contenu qui défile. */
 export function keyboardHintsHtml(): string {
   const k = (key: string, what: string) => `<span><b>${key}</b> ${what}</span>`;
   return (
@@ -470,7 +471,26 @@ function playerHeaderHtml(name: string, path: string, closeBtn: boolean, opts: P
   );
 }
 
-function playerRowHtml(name: string, path: string, closeBtn = false, headerOpts: PlayerHeaderOptions = {}): string {
+/** Les deux hôtes que la boîte de lecture réserve au rangement, décision « V2b — pied de boîte »
+ *  (`docs/ui-specs/revue.md` § Décision 2026-08-30) : la boîte devient le poste de décision
+ *  complet, réglages puis engagement.
+ *
+ *  Ce sont des SLOTS VIDES, pas un reparentage : `#mid` est réécrit par `innerHTML` à chaque
+ *  ouverture de piste, donc déplacer le nœud `#filfoot` ici le détruirait au rendu suivant (et
+ *  `requireEl("#filfoot")` lèverait ensuite). `filing.ts` (`renderFoot`) les remplit APRÈS que
+ *  `openReportInto` a peint la boîte — l'ordre est garanti par `openFilingInto`, qui attend le
+ *  rapport avant d'appeler `renderFoot`.
+ *
+ *  Réservé au mode Détail de Revue : seul l'appelant qui fournit un `diagContainer` (filing.ts)
+ *  les demande. La modale de debug et Bibliothèque n'ont pas de rangement, et une bande de pied
+ *  vide y peindrait une surface pour rien. */
+function playerRowHtml(
+  name: string,
+  path: string,
+  closeBtn = false,
+  headerOpts: PlayerHeaderOptions = {},
+  filingSlots = false,
+): string {
   return (
     `<div class="sift-player-row">` +
     playerHeaderHtml(name, path, closeBtn, headerOpts) +
@@ -478,7 +498,11 @@ function playerRowHtml(name: string, path: string, closeBtn = false, headerOpts:
     // depuis le 2026-08-27 — module pur, la story exécute le même rendu. Ses commentaires de
     // décision (lecteur simple, retrait tempo/key-lock, slider fin) sont partis avec le markup.
     playerAuditionHtml() +
-    `<div class="sift-player-error" hidden></div>`
+    `<div class="sift-player-error" hidden></div>` +
+    (filingSlots
+      ? `<div class="sift-filbox-settings" id="filbox-settings"></div>` +
+        `<div class="sift-filbox-foot" id="filbox-foot"></div>`
+      : "")
   );
 }
 
@@ -1181,7 +1205,9 @@ export function renderReportInto(
   const name = headerOpts.title ?? (r.path.split(/[\\/]/).pop() || r.path);
   container.innerHTML =
     `<div class="sift-report-scroll">` +
-    (diagContainer ? playerRowHtml(name, r.path, false, headerOpts) : reportHtml(r, false, headerOpts)) +
+    (diagContainer
+      ? playerRowHtml(name, r.path, false, headerOpts, true)
+      : reportHtml(r, false, headerOpts)) +
     `</div>`;
   // Même enveloppe `.sift-analysis-body` que le chemin asynchrone d'openReportInto : sans elle, le
   // Diagnostic n'aurait pas la même structure selon qu'on ouvre une piste pour la première fois
@@ -1262,7 +1288,7 @@ export async function openReportInto(
   const bodyHost = diagContainer ?? container;
   container.innerHTML =
     `<div class="sift-report-scroll">` +
-    playerRowHtml(name, path, false, headerOpts) +
+    playerRowHtml(name, path, false, headerOpts, !!diagContainer) +
     (diagContainer ? "" : `<div class="sift-analysis-body" hidden></div>`) +
     (verdictContainer ? "" : `<div class="sift-verdict-stub"></div>`) +
     `</div>`;

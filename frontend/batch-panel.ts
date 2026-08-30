@@ -219,7 +219,10 @@ function positionBatchFmtThumb(): void {
 
 function renderBatchRail() {
   const foot = requireEl("#filfoot", "renderBatchRail");
-  foot.classList.remove("sift-action-rail--flat");
+  // Le mode Détail masque ce pied depuis la décision V2b (filing.ts `hidePanelFoot`, 2026-08-30) :
+  // le mode Lot, lui, le garde — carte et emplacement bas inchangés. Le démasquer ici est la seule
+  // touche de ce chantier sur le Lot, et elle ne change rien à ce qui s'y peint.
+  foot.hidden = false;
   requireEl("#fldz", "renderBatchRail");
   ensureBatchDestUI();
   const keepTracks = batchRunning ? foot.querySelector("#sift-batch-tracks") : null;

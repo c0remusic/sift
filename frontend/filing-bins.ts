@@ -547,11 +547,14 @@ export function repositionDestPopoverIfOpen(): void {
  *  the position purely from two getBoundingClientRect() calls (button + popover), both in the
  *  same coordinate space by construction, sidesteps that mismatch entirely. */
 function positionDestPopover(pop: HTMLElement): void {
-  // Document-wide query, and it MUST stay one: there is exactly one Destination button at a time,
-  // because the Detail rail (`filing.ts` renderFoot) and the Batch rail (`batch-panel.ts`
-  // renderBatchRail) both write `innerHTML` into the SAME host, `#filfoot` — each render destroys
-  // the other's button. Invariant measured on 2026-08-13 (issue #28): querySelectorAll length 1 in
-  // both modes, in the real window.
+  // Document-wide query, and it MUST stay one: there is exactly one Destination button at a time.
+  // Invariant mesuré le 2026-08-13 (issue #28) : querySelectorAll de longueur 1 dans les deux modes,
+  // dans la vraie fenêtre. Il tenait alors parce que les deux rails écrivaient dans le MÊME hôte
+  // `#filfoot`. Depuis la décision V2b (2026-08-30) ils ont deux hôtes distincts — Détail dans la
+  // boîte de lecture (`#filbox-settings`), Lot dans `#filfoot` — et l'invariant tient par les DEUX
+  // portes de mode : passer en Lot réécrit `#mid` (renderBatch), ce qui détruit la boîte et son
+  // bouton ; revenir en Détail vide et masque `#filfoot` (filing.ts `hidePanelFoot`). NON REVÉRIFIÉ
+  // dans la vraie fenêtre depuis ce déplacement — le garde-fou DEV ci-dessous reste la mesure.
   //
   // Do NOT "improve" this into a stored anchor passed at open time: those same innerHTML rewrites
   // replace the button node on every rail rebuild, so a held reference goes stale and would
@@ -563,7 +566,7 @@ function positionDestPopover(pop: HTMLElement): void {
     // it anchors to whichever comes first in the DOM, which is the "position aléatoire" symptom
     // the comment on repositionDestPopoverIfOpen describes having already chased once.
     console.error(
-      `positionDestPopover: ${buttons.length} boutons Destination dans le document, l'invariant "un seul #filfoot" est rompu — le popover s'ancre au premier`,
+      `positionDestPopover: ${buttons.length} boutons Destination dans le document, l'invariant « un seul hôte de rail à la fois » est rompu — le popover s'ancre au premier`,
     );
   }
   const btn = buttons[0];

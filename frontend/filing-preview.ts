@@ -82,13 +82,14 @@ function updateHeaderName(mid: HTMLElement): void {
 let previewSeq = 0;
 let previewTimer: ReturnType<typeof setTimeout> | undefined;
 
-/** Re-sync the filename preview from the current canonical + target. The preview lives in the rail
- *  (#filfoot), in its own compact group right after the format chips (renderFoot's
- *  `.sift-rail-final-group`) — moved out of the verdict conclusion (2026-07-06 redesign; that card
- *  is the CONCLUSION now, not the place to also show the final name). A format change or a field
- *  edit must refresh this node (the extension follows state.target). Probe non-throw: the rail may
- *  be gone. Renders via naming::render_filename (real template + sanitize()) in Rust — not a TS
- *  reimplementation. */
+/** Re-sync the filename preview from the current canonical + target. The preview lives in the
+ *  rangée réglages de la BOÎTE de lecture (`#filbox-settings`, renderFoot) depuis la décision V2b
+ *  du 2026-08-30 — elle était dans le pied de panneau (#filfoot) avant. Elle avait quitté la
+ *  conclusion de verdict au redesign du 2026-07-06 (cette carte est la CONCLUSION, pas le lieu du
+ *  nom final). A format change or a field edit must refresh this node (the extension follows
+ *  state.target). La sonde reste document-wide et non-throw : le nœud peut avoir disparu, et sa
+ *  position dans le DOM ne concerne pas cette fonction. Renders via naming::render_filename (real
+ *  template + sanitize()) in Rust — not a TS reimplementation. */
 function refreshPreview(): void {
   const c = state.canonical;
   const prev = document.querySelector<HTMLElement>(".sift-fil-prev");

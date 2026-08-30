@@ -162,6 +162,35 @@ Retouches de fin de soirée, sur retours dans la vraie fenêtre :
   d'overflow-x (temps et volume clippés) — deux fausses routes consignées pour ne pas y
   retourner. L'inset HAUT (16 sous la barre) tient.
 
+## Décision — 2026-08-30 : la boîte de lecture absorbe la conversion (V2b)
+
+Tranchée sur wireframes comparatifs (artefact « Fusion lecture × conversion », V0–V4 puis
+raffinement V2a/V2b/V3a/V3b) — verdict Antoine : **V2b, « pied de boîte »**. Elle **renverse,
+pour le mode Détail seulement, le verdict P1 du 2026-08-27** (réglages + engagement au bas du
+panneau) — direction jamais testée par P1/P2/P3, qui mettaient les réglages dans la fiche,
+pas dans la boîte.
+
+La boîte de lecture (`.sift-player-row`) devient le poste de décision complet, quatre étages :
+
+1. **En-tête piste** (inchangé) ;
+2. filet en retrait, **lecteur** (inchangé) ;
+3. filet en retrait, **rangée réglages** : Destination (pulldown) · Format (segmenté) ·
+   Nom final — le contenu de l'ex-rangée du haut du pied, tel quel ;
+4. **pied de boîte** : bande distincte par surface (`--color-background-secondary`,
+   filet haut `--color-border-tertiary`), **bord à bord de la boîte** (marges négatives),
+   coins bas au rayon de la boîte — légende clavier à gauche, **Écarter** puis **Convertir**
+   au trailing. Motif : l'alerte du kit (§ 06-02), carte + rangée de boutons en bas.
+
+Le **pied de panneau disparaît en Détail** : `#filfoot` n'y reçoit plus de contenu (le
+bandeau « Rangé » suit les contrôles dans la boîte). Bas de panneau = espace (volet de
+lecture Mail). **Le mode Lot ne bouge pas** : son rail garde carte et emplacement bas ;
+l'adoption éventuelle de la carte-console par le Lot est notée comme suite possible, pas
+décidée. L'état « analyse en cours » (squelette) continue de ne pas prendre la boîte.
+
+⚠️ Le § « Zone C, pied — rail d'action » plus bas décrit l'état d'AVANT cette décision pour
+le mode Détail — il reste exact pour le contenu des contrôles (pulldown Destination, formats,
+nom final, boutons), seul leur EMPLACEMENT change.
+
 ## Contexte dans le shell
 
 Patron macOS : **Finder** pour la file et la sélection · **Utilitaire de disque** pour

@@ -20,8 +20,22 @@ import { humanizeError } from "./errors";
 /** Banner label when a track was filed in place (its own source folder, not a tree bin). */
 const IN_PLACE_BIN_LABEL = "source folder";
 
+/** Hôte du bandeau « Rangé » : la rangée réglages de la BOÎTE de lecture en mode Détail
+ *  (`#filbox-settings`, décision V2b du 2026-08-30), avec repli sur le pied de panneau `#filfoot`
+ *  — le seul hôte qui existe en mode Lot, et le seul qui existait avant cette décision.
+ *  Le bandeau se pose en TÊTE de cet hôte, au-dessus des contrôles qu'il commente. */
+function filedBannerHost(): HTMLElement | null {
+  return document.getElementById("filbox-settings") ?? document.getElementById("filfoot");
+}
+
+/** Le bandeau lui-même, où qu'il vive. Requête document-wide : il n'y en a qu'un à la fois
+ *  (showFiledConfirm retire le précédent avant d'en poser un neuf). */
+function filedBannerEl(): HTMLElement | null {
+  return document.querySelector<HTMLElement>(".sift-filed-banner");
+}
+
 /** Disable/enable the rail action buttons (visible feedback while an action runs). The buttons
- *  live in #filfoot now, so query the document rather than the #mid pane. */
+ *  live outside the #mid pane's report subtree, so query the document rather than that pane. */
 function setActionsDisabled(disabled: boolean): void {
   document
     .querySelectorAll<HTMLButtonElement>('[data-fil="ranger"],[data-fil="resource"],[data-fil="trash"]')
@@ -148,8 +162,8 @@ export async function doRanger(
   }
 }
 
-/** Show the filing confirmation as a BANNER at the TOP of the right rail (#filfoot), above the
- *  next track's controls — the center has already auto-advanced to the next pending track (doRanger).
+/** Show the filing confirmation as a BANNER at the TOP of the filing controls (`filedBannerHost`),
+ *  above the next track's controls — the center has already auto-advanced to the next pending track (doRanger).
  *  This is the "after" proof for the file just filed: name + destination path + a targeted Revert.
  *  ONE banner at a time (replaces any prior). Revert is targeted on this file's `batchId`
  *  (revert_batch), available indefinitely via the journal; the ✕ dismisses the banner without
@@ -167,10 +181,10 @@ function showFiledConfirm(
   filedPath: string,
 ): void {
   state.filedConfirm = { batchId, bin };
-  const foot = document.getElementById("filfoot");
+  const foot = filedBannerHost();
   if (!foot) return;
   const filename = filedPath.split(/[\\/]/).pop() || filedPath;
-  foot.querySelector(".sift-filed-banner")?.remove();
+  filedBannerEl()?.remove();
   const banner = document.createElement("div");
   banner.className = "sift-filed-banner";
   banner.dataset.batchId = batchId;
@@ -266,9 +280,7 @@ function paintFiledBanner(banner: HTMLElement, s: FiledBannerState): void {
  *  carrier of the information either: the durable signal is the queue-row marker driven by
  *  filing-state (D5 — the user is already elsewhere when a late failure lands). */
 function settleFilingBanner(o: TrackFileOutcome, started: InFlightFiling | null): void {
-  const banner = document
-    .getElementById("filfoot")
-    ?.querySelector<HTMLElement>(".sift-filed-banner");
+  const banner = filedBannerEl();
   const mine = banner && banner.dataset.batchId === o.batch_id ? banner : null;
   if (o.error) {
     console.error("file_track background conversion failed", o.track_id, o.error);
@@ -306,7 +318,7 @@ onFilingOutcome(settleFilingBanner);
 async function doRevert(batchId: string): Promise<void> {
   try {
     await revertBatch(batchId);
-    document.getElementById("filfoot")?.querySelector(".sift-filed-banner")?.remove();
+    filedBannerEl()?.remove();
     state.filedConfirm = null;
     toast("Annulé — retour dans la file", false);
   } catch (e) {

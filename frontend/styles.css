@@ -1312,6 +1312,14 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
    verdict Antoine sur A/B/C maquette : une surface pleine largeur, sans filet. La carte avait
    sauté d'ICI par erreur le 2026-08-27 (31c5d1a visait le pied seul) — restaurée le 2026-08-29. */
 .sift-action-rail{flex:none;display:flex;flex-wrap:wrap;align-items:center;gap:var(--space-12);padding:var(--space-12) var(--space-16);overflow:visible;background:var(--color-background-queue);border:1px solid var(--color-border-tertiary);border-radius:var(--border-radius-lg)}
+/* Le pied de PANNEAU disparaît en mode Détail depuis la décision V2b (2026-08-30) : la boîte de
+   lecture absorbe réglages et engagement, et le bas de panneau redevient de l'espace. Vider
+   `#filfoot` ne suffit pas — la règle ci-dessus lui donne fond, filet et padding, donc un hôte
+   vide mais affiché peint quand même une bande. Et `hidden` seul ne suffit pas non plus : le
+   `display:flex` ci-dessus est une règle AUTEUR, qui bat le `[hidden]{display:none}` de l'UA
+   (CLAUDE.md § Front). Même correctif que `.sift-dest-popover[hidden]` plus bas. Le mode Lot
+   redémasque son rail lui-même (`renderBatchRail`, batch-panel.ts). */
+.sift-action-rail[hidden]{display:none}
 /* POP-UP BUTTON, forme du kit (§ 02-Buttons / 09-Pop Up Buttons) : un aplat gris SANS bordure.
    Ni fond ni bordure ne sont plus écrits ici — un pop-up button EST un bouton secondaire, et le
    reset `button{}` (plus haut) donne déjà exactement ça (`--color-surface-raised`, `border:0`).
@@ -1360,22 +1368,20 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
    du bouton par défaut au bord trailing). */
 .sift-rail-row{flex:1 0 100%;display:flex;align-items:center;gap:var(--space-8);flex-wrap:wrap;min-width:0}
 .sift-rail-row-actions{justify-content:flex-end;gap:var(--space-12)}
-/* Rail d'action de Détail — colonne structurée (wireframe v2 option 3, 2026-08-21), mais plus
-   « à plat » depuis le 2026-08-27 : verdict Antoine sur A/B/C maquette, le pied est une SURFACE
-   pleine largeur (fond queue) qui borne la zone d'action par son seul fond — motif Apple, une
-   zone de boutons se distingue par surface ou par l'espace, jamais par un filet. Le border-top
-   du flat part avec : la surface EST la borne. Le rail de Lot garde sa carte. */
-.sift-action-rail--flat{background:var(--color-background-queue);border:0;border-radius:0;
-  flex-direction:column;flex-wrap:nowrap;
-  align-items:stretch;gap:var(--space-12)}
+/* `.sift-action-rail--flat` (le pied de Détail à plat, 2026-08-21 puis 2026-08-27) est RETIRÉ le
+   2026-08-30 avec la décision V2b : le pied de Détail n'existe plus au bas du panneau, donc plus
+   rien n'ajoutait cette classe (`filing.ts` en était le seul poseur, `batch-panel.ts` le seul
+   retireur — les deux lignes partent dans le même geste). Les réglages descendent dans la boîte,
+   l'engagement dans le pied de boîte — voir `.sift-filbox-settings` / `.sift-filbox-foot`. */
 .sift-rail-settings{display:flex;align-items:flex-end;gap:var(--space-12);flex-wrap:wrap}
 .sift-rail-field{display:flex;flex-direction:column;gap:var(--space-4);min-width:0}
 .sift-rail-field-grow{flex:1;min-width:0}
 .sift-rail-flabel{font-size:var(--text-xs);font-weight:600;letter-spacing:var(--tracking-wider);
   text-transform:uppercase;color:var(--color-text-tertiary)}
 .sift-rail-vsep{width:1px;align-self:stretch;background:var(--color-border-tertiary);margin:var(--space-8) 0 var(--space-4)}
-.sift-rail-actions-row{display:flex;align-items:center;justify-content:space-between;gap:var(--space-12);
-  padding-top:var(--space-12);border-top:1px solid var(--color-border-tertiary)}
+/* `.sift-rail-actions-row` est retirée le 2026-08-30 : son filet haut et son padding sont
+   maintenant portés par `.sift-filbox-foot`, la bande de pied de la boîte. `filing.ts` en était
+   le seul consommateur. */
 .sift-rail-kbd{min-width:0;overflow:hidden}
 .sift-rail-abtns{display:flex;align-items:center;gap:var(--space-12);flex:none}
 /* ── GABARIT PUSH DU KIT, un seul pour tout le rail ───────────────────────────────────────────
@@ -1398,11 +1404,19 @@ body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
    `library-detail.ts` (Bibliothèque), hors périmètre : l'ancrage sur .sift-action-rail évite de
    redimensionner par effet de bord un bouton d'un autre écran. `.sift-dest-btn` du rail de Lot
    (batch-panel.ts) est en revanche pris volontairement — c'est le même composant, dans la même
-   barre, et il portait exactement le même écart. */
+   barre, et il portait exactement le même écart.
+   ⚠️ La PORTÉE gagne les deux slots de la boîte de lecture le 2026-08-30 (décision V2b) : les
+   quatre boutons de Détail y ont déménagé et perdaient sinon ce gabarit d'un coup, sans qu'aucune
+   gate ne le dise. Même liste, deux ancres de plus — et toujours pas d'ancrage global, pour la
+   raison écrite juste au-dessus (`library-detail.ts` réutilise `.sift-secondary-trash`). */
 .sift-action-rail .sift-dest-btn,
 .sift-action-rail .sift-ranger-btn,
 .sift-action-rail .sift-secondary-resource,
-.sift-action-rail .sift-secondary-trash{height:var(--h-control);padding:var(--space-6) var(--space-8)}
+.sift-action-rail .sift-secondary-trash,
+.sift-filbox-settings .sift-dest-btn,
+.sift-filbox-foot .sift-ranger-btn,
+.sift-filbox-foot .sift-secondary-resource,
+.sift-filbox-foot .sift-secondary-trash{height:var(--h-control);padding:var(--space-6) var(--space-8)}
 /* Filled pill restored (annotation 2026-07-07: ".sift-key-btn / .chip.on / .sift-ranger-btn
    devraient avoir le même style", same message asking .sift-secondary-trash to gain "une case
    colorée avec contour") — the "bulle" removed in the PRIOR round is back, but this time as one
@@ -2298,6 +2312,33 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    du panneau MOINS les insets (le max-width --measure-data reste retiré — il le faisait
    flotter à gauche sur écran large). */
 .sift-player-row{display:flex;flex-direction:column;gap:var(--space-12);margin-bottom:var(--space-16);padding:var(--space-16);background:var(--color-background-queue);border-radius:var(--border-radius-md)}
+/* V2b — LA BOÎTE ABSORBE LA CONVERSION (verdict Antoine 2026-08-30, wireframes « Fusion lecture ×
+   conversion » ; `docs/ui-specs/revue.md` § Décision 2026-08-30). La boîte devient le poste de
+   décision complet à quatre étages : en-tête · lecteur · RÉGLAGES · PIED DE BOÎTE. Elle renverse,
+   pour le mode Détail seul, le verdict P1 du 2026-08-27 (réglages et engagement au bas du panneau).
+   3e étage — filet en retrait au-dessus, exactement le motif déjà posé entre l'en-tête et le
+   lecteur (border-top de `.sift-player-audition`, rangées de boîte de Réglages Système). */
+.sift-filbox-settings{border-top:1px solid var(--color-border-tertiary);padding-top:var(--space-12)}
+/* 4e étage — bande distincte PAR SURFACE, bord à bord de la boîte, coins bas au rayon de la boîte
+   (motif alerte du kit, § 06-02 : carte puis rangée de boutons en bas).
+   ⚠️ UN SEUL conteneur porte les marges négatives, et ça n'est pas une coquetterie : la fausse
+   route du 2026-08-27 (bande full-bleed) avait réparti des marges négatives sur PLUSIEURS
+   conteneurs imbriqués et produit 16px d'overflow-x, temps et volume clippés. Ici les marges
+   annulent exactement le padding 16 de `.sift-player-row` — latéral et bas — donc la bande atteint
+   les bords de la boîte sans jamais les dépasser.
+   L'écart au-dessus vient du `gap` de la boîte, pas d'une marge propre. */
+.sift-filbox-foot{display:flex;align-items:center;justify-content:space-between;gap:var(--space-12);
+  margin:0 calc(-1 * var(--space-16)) calc(-1 * var(--space-16));
+  padding:var(--space-12) var(--space-16);
+  background:var(--color-background-secondary);
+  border-top:1px solid var(--color-border-tertiary);
+  border-radius:0 0 var(--border-radius-md) var(--border-radius-md)}
+/* Les deux slots sont RENDUS VIDES par la coque du lecteur (report-view.ts `playerRowHtml`) et
+   remplis ensuite par `filing.ts` — ils passent donc par un état vide à chaque ouverture de piste,
+   et pendant l'état « analyse en cours » d'une piste sans identité. `display:none` plutôt qu'un
+   fond transparent : un conteneur vide mais affiché garderait son filet, son padding ET le `gap`
+   de la boîte au-dessus de lui. */
+.sift-filbox-settings:empty,.sift-filbox-foot:empty{display:none}
 /* gap sized so the waveform's left edge lines up with the title block's left edge above it
    (annotation: "aligne les deux") — header-body starts at 68px cover + 14px gap = 82px; the play
    button's margin-left was snapped 11px→var(--space-12) in the 2026-07-24 spacing sweep, so the
@@ -3096,7 +3137,11 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .sift-update-banner-later:hover{background:transparent;color:var(--color-text-secondary)}
 /* flex:1 0 100% forces its own line in the #filfoot flex-wrap row regardless of prepend/append order
    — without it the banner just squeezed in next to the compact action buttons (2026-07-06 annotation:
-   read as inert/easy to miss, on top of sitting last in DOM order — see showFiledConfirm). */
+   read as inert/easy to miss, on top of sitting last in DOM order — see showFiledConfirm).
+   ⚠️ Le bandeau a changé d'hôte le 2026-08-30 (décision V2b) : il se pose maintenant en tête de
+   `.sift-filbox-settings`, un conteneur de BLOC — `flex:1 0 100%` y est donc inerte. La déclaration
+   est gardée parce que `filedBannerHost` (filing-actions.ts) retombe encore sur `#filfoot` quand la
+   boîte n'est pas là, et c'est ce cas-là qu'elle sert. Non mesurée depuis le déplacement. */
 .sift-filed-banner{flex:1 0 100%;margin-bottom:12px;padding:var(--space-8) var(--space-12);background:var(--color-background-secondary);border-radius:var(--border-radius-md);font-size:var(--text-sm)}
 .sift-filed-banner-head{display:flex;align-items:center;gap:var(--space-8);margin-bottom:var(--space-4)}
 .sift-filed-banner-head i{font-size:var(--text-md);color:var(--color-text-success)}

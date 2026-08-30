@@ -1,8 +1,10 @@
 // Live Revue filing controller (Tauri only). Augments the mockup's Revue shell: renders the
-// son-first analysis detail into the #mid pane, and the validation rail into the right .dest
-// column — destination tree into #fldz (with a NoLibraryRoot picker gate) and the filing footer
-// (editable canonical fields, format override, Identify, File / Re-source / Discard) into
-// #filfoot below it. Drives the M4 backend via the IPC bindings; the plain-browser demo never
+// son-first analysis detail into the #mid pane, the destination tree into the #fldz popover (with
+// a NoLibraryRoot picker gate), and — depuis la décision « V2b, pied de boîte » du 2026-08-30
+// (`docs/ui-specs/revue.md`) — les contrôles de rangement (Destination · Format · Nom final, puis
+// Écarter / Convertir) dans les deux slots que la boîte de lecture réserve, `#filbox-settings` et
+// `#filbox-foot`. Le pied de PANNEAU `#filfoot` ne reçoit plus rien en Détail : il reste l'hôte du
+// rail de LOT seul. Drives the M4 backend via the IPC bindings; the plain-browser demo never
 // loads this (see main.ts guard).
 import {
   reconcile,
@@ -112,22 +114,52 @@ function refreshFootButton(): void {
  *  every chip is disabled, e.g. a lossy source with only MP3 clickable — .on never gets set on a
  *  disabled span, so onEl is null and the thumb just stays wherever it last was, invisible behind
  *  the disabled chips since none of them carry z-index:1). Placement partagé par les six segmentés
- *  de l'app (`seg-thumb.ts`) ; la portée reste #sift-fmt-seg, pas `foot` — un `[data-fil="fmt"].on`
- *  ailleurs dans le rail déplacerait ce pouce-ci. */
-function positionFmtThumb(foot: HTMLElement): void {
-  const seg = foot.querySelector<HTMLElement>("#sift-fmt-seg");
+ *  de l'app (`seg-thumb.ts`) ; la portée reste #sift-fmt-seg, pas `host` — un `[data-fil="fmt"].on`
+ *  ailleurs déplacerait ce pouce-ci. */
+function positionFmtThumb(host: HTMLElement): void {
+  const seg = host.querySelector<HTMLElement>("#sift-fmt-seg");
   if (seg) slideSegThumb(seg, '[data-fil="fmt"].on');
 }
 
-/** Render the filing rail (format + actions) into `foot`. The metadata editor (Identify + editable
- *  fields + final-name preview + genres) lives in the center now — see `renderEditor`. */
-function renderFoot(foot: HTMLElement, mid: HTMLElement, rail: string): void {
-  // Preserve the "Filed" banner across re-renders: it is prepended at the TOP of #filfoot (étape 2)
-  // and must survive renderFoot's innerHTML rewrite (e.g. a format-chip click) until the next filing or ✕.
-  const filedBanner = foot.querySelector(".sift-filed-banner");
+/** Masque réellement le pied de PANNEAU en mode Détail — il ne reçoit plus rien depuis la décision
+ *  V2b (2026-08-30) et un `#filfoot` vide mais affiché peindrait quand même une bande : sa base
+ *  `.sift-action-rail` porte fond, filet et padding. Il faut donc le vider ET le cacher.
+ *
+ *  `hidden` seul ne suffirait pas non plus : `.sift-action-rail` pose `display:flex`, une règle
+ *  auteur qui bat le `[hidden]{display:none}` de l'UA (CLAUDE.md § Front). La règle qui referme
+ *  ça est `.sift-action-rail[hidden]{display:none}` dans `styles.css`, à côté du même correctif
+ *  déjà posé sur `.sift-dest-popover[hidden]`.
+ *
+ *  Le VIDER importe autant que le cacher : au retour du mode Lot, le rail de Lot est encore dans
+ *  `#filfoot` (`renderBatchRail`), et Détail ne le réécrit plus. Deux boutons Destination
+ *  coexisteraient alors dans le document — exactement l'invariant que `positionDestPopover`
+ *  (filing-bins.ts) surveille. */
+function hidePanelFoot(): void {
+  const foot = document.getElementById("filfoot");
+  if (!foot) return;
+  foot.innerHTML = "";
+  foot.hidden = true;
+}
+
+/** Render the filing controls into the two slots the reading box reserves (`#filbox-settings`,
+ *  `#filbox-foot` — voir `playerRowHtml`, report-view.ts) : rangée réglages puis pied de boîte.
+ *  The metadata editor (Identify + editable fields + final-name preview + genres) lives in the
+ *  center now — see `renderEditor`.
+ *
+ *  Les slots sont recréés à CHAQUE ouverture de piste (réécriture d'`innerHTML` de `#mid`), donc
+ *  cette fonction est appelée après chaque rendu du rapport, jamais une seule fois. */
+function renderFoot(mid: HTMLElement, rail: string): void {
+  hidePanelFoot();
+  const settings = requireEl<HTMLElement>("#filbox-settings", "renderFoot", mid);
+  const foot = requireEl<HTMLElement>("#filbox-foot", "renderFoot", mid);
+  // Preserve the "Filed" banner across re-renders: it is prepended at the TOP of the settings slot
+  // (étape 2) and must survive this innerHTML rewrite (e.g. a format-chip click) until the next
+  // filing or ✕.
+  const filedBanner = settings.querySelector(".sift-filed-banner");
   if (!state.canonical) {
+    settings.innerHTML = "";
     foot.innerHTML = "";
-    if (filedBanner) foot.prepend(filedBanner);
+    if (filedBanner) settings.prepend(filedBanner);
     return;
   }
 
@@ -154,15 +186,11 @@ function renderFoot(foot: HTMLElement, mid: HTMLElement, rail: string): void {
     ? '<button data-fil="resource" class="sift-secondary-resource" title="Fichier faux — va dans Écartés (⌫)">Re-source</button>'
     : '<button data-fil="trash" class="sift-secondary-trash" title="Écarter — va dans Écartés (⌫)">Écarter</button>';
 
-  // Rail à plat et structuré (wireframe v2 option 3, choisi 2026-08-21) : réglages en haut, chacun
-  // sous son petit label (Destination · Format · Nom final) séparés par des filets verticaux ; ligne
-  // d'actions en bas, séparée par un filet, légende clavier à gauche et Convertir dominant au bord
-  // trailing. Plus de carte grise — .sift-action-rail--flat retire fond/bordure (le rail de Lot garde
-  // la carte). La légende clavier vit maintenant DANS la ligne d'actions, plus dans un strip séparé.
-  // #fldz (popover Destination) vit hors de foot, son état hidden est intact par ce rewrite.
-  foot.classList.add("sift-action-rail--flat");
-  document.getElementById("sift-kbd-legend")?.remove();
-  foot.innerHTML =
+  // Réglages structurés (wireframe v2 option 3, choisi 2026-08-21) : chacun sous son petit label
+  // (Destination · Format · Nom final) séparés par des filets verticaux. Ils vivent DANS la boîte
+  // de lecture depuis la décision V2b (2026-08-30), en 3e étage, sous un filet en retrait.
+  // #fldz (popover Destination) vit hors de la boîte, son état hidden est intact par ce rewrite.
+  settings.innerHTML =
     `<div class="sift-rail-settings">` +
     `<div class="sift-rail-field">` +
     `<span class="sift-rail-flabel">Destination</span>` +
@@ -180,18 +208,20 @@ function renderFoot(foot: HTMLElement, mid: HTMLElement, rail: string): void {
     `<span class="sift-rail-flabel">Nom final</span>` +
     `<span class="sift-fil-prev"></span>` +
     `</div>` +
-    `</div>` +
-    `<div class="sift-rail-actions-row">` +
+    `</div>`;
+  // Pied de boîte : bande bord à bord au bas de la boîte (motif alerte du kit, § 06-02) — légende
+  // clavier à gauche, Écarter puis Convertir au bord trailing. Le filet haut et la surface sont
+  // portés par `.sift-filbox-foot` lui-même, plus par une rangée intérieure.
+  foot.innerHTML =
     `<span class="sift-rail-kbd">${keyboardHintsHtml()}</span>` +
     `<div class="sift-rail-abtns">` + secondary +
-    `<button data-fil="ranger" class="sift-ranger-btn"></button></div>` +
-    `</div>`;
-  if (filedBanner) foot.prepend(filedBanner); // restore the banner above the freshly-rendered controls
+    `<button data-fil="ranger" class="sift-ranger-btn"></button></div>`;
+  if (filedBanner) settings.prepend(filedBanner); // restore the banner above the freshly-rendered controls
   refreshRangerButton(); // single source of truth for the button's label/disabled state
   refreshPreview(); // repaint .sift-fil-prev just added above — it was empty until now
-  positionFmtThumb(foot);
+  positionFmtThumb(settings);
 
-  foot.querySelector('[data-fil="destbtn"]')?.addEventListener("click", (e) => {
+  settings.querySelector('[data-fil="destbtn"]')?.addEventListener("click", (e) => {
     e.stopPropagation();
     toggleDestPopover();
   });
@@ -203,13 +233,13 @@ function renderFoot(foot: HTMLElement, mid: HTMLElement, rail: string): void {
   // sift-live.ts for the same fix applied there first). Nothing else in the rail depends on
   // state.target besides the preview extension and the Ranger button's enabled state, both
   // already refreshed below without needing the surrounding markup rebuilt.
-  foot.querySelectorAll<HTMLElement>('[data-fil="fmt"]').forEach((el) =>
+  settings.querySelectorAll<HTMLElement>('[data-fil="fmt"]').forEach((el) =>
     el.addEventListener("click", () => {
       state.target = (el.dataset.t as Target) || null;
-      foot
+      settings
         .querySelectorAll<HTMLElement>('[data-fil="fmt"]')
         .forEach((c) => c.classList.toggle("on", c.dataset.t === state.target));
-      positionFmtThumb(foot);
+      positionFmtThumb(settings);
       refreshRangerButton();
       refreshPreview(); // the chosen format sets the filename extension shown in the rail preview
     }),
@@ -275,10 +305,13 @@ function clearPane(mid: HTMLElement, emptyQueue = false): void {
             '<button type="button" data-view="home" class="sift-empty-link">Ajouter un dossier depuis Accueil</button>',
         })
     : '<div class="sift-clear-pane">Sélectionne un morceau dans la file pour l\'écouter et le convertir.</div>';
-  // The validation footer lives in the rail (#filfoot); clear it too so no stale controls linger
-  // (non-throw: clearPane runs from async revert/undo/secondary callbacks that may fire off Review).
-  const ff = document.getElementById("filfoot");
-  if (ff) ff.innerHTML = "";
+  // Les contrôles de validation vivaient dans le pied de panneau (#filfoot) ; depuis la décision
+  // V2b ils vivent dans la boîte de lecture, que le `mid.innerHTML` ci-dessus vient d'effacer avec
+  // ses slots. Reste à s'assurer que le pied de panneau ne réapparaît pas : il peut encore porter
+  // le rail de LOT (renderBatchRail) si l'on quitte le mode Lot sans repasser par renderFoot.
+  // Non-throw : clearPane tourne depuis des callbacks async (revert/undo/secondary) qui peuvent
+  // partir alors qu'on a quitté Revue.
+  hidePanelFoot();
 }
 
 /** Banner HTML for a duplicate match (filed = already in library, pending = dupe in queue;
@@ -342,9 +375,9 @@ export async function openFilingInto(
   const verdictEl = requireEl<HTMLElement>(".sift-fil-verdict", "openFilingInto", mid);
   // Hôte du Diagnostic, entre les Métadonnées et le verdict (voir le markup ci-dessus).
   const diagEl = requireEl<HTMLElement>(".sift-fil-diag", "openFilingInto", mid);
-  // The validation footer now lives in the right rail (#filfoot in the .dest column), below the
-  // destination tree — so #mid is a pure son-first detail and the rail holds the filing stack.
-  const footEl = requireEl("#filfoot", "openFilingInto");
+  // Plus de résolution du pied ici : depuis la décision V2b (2026-08-30) les contrôles de rangement
+  // vivent dans la boîte de lecture, dont les slots n'existent qu'une fois le rapport peint. Ils se
+  // résolvent donc dans `renderFoot`, appelé plus bas — après le `await` du rapport.
 
   // Duplicate check (by name, sound-confirmed when available) — drives both the banner slot and
   // the verdict-panel UNIQUE/DUPLICATE chip (appended once the panel exists, see end of fn).
@@ -522,7 +555,7 @@ export async function openFilingInto(
   const rail = report?.declared_rail ?? item.rail ?? railFromExtension(item.path);
   state.rail = rail; // so refreshPreview defaults the extension like the lit chip does
 
-  renderFoot(footEl, mid, rail);
+  renderFoot(mid, rail);
   const editorEl = requireEl<HTMLElement>(".sift-fil-editor", "openFilingInto", mid);
   // Plus de `report` passé ici : l'éditeur n'en tirait que la ligne « Tags ID3 », supprimée
   // (spec docs/ui-specs/revue.md § Zone C, point 4). `report` reste lu juste au-dessus, pour le rail.
@@ -650,7 +683,8 @@ export function installUndoShortcut(): void {
  * click, and after filing one the next opens automatically. Empty queue → neutral prompt.
  * Returns the id now shown (for the caller to highlight its row), or null. */
 export function syncDetail(mid: HTMLElement, items: QueueItem[]): number | null {
-  // The "Filed ✓ ↩" confirmation now lives as a banner in the right rail (#filfoot), not in #mid, so
+  // The "Filed ✓ ↩" confirmation lives as a banner above the filing controls (`filedBannerHost`,
+  // filing-actions.ts — la rangée réglages de la boîte depuis la décision V2b), not in #mid, so
   // it no longer blocks auto-advance — after filing, doRanger explicitly advances #mid to the next
   // pending. syncDetail's job here is unchanged: keep the open track stable, else load the first pending.
   // Is our filing pane still in #mid? On navigation back to Revue, app.js re-draws its mock
