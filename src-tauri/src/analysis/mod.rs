@@ -270,6 +270,12 @@ pub fn analyze(path: &str, with_spectrogram: bool) -> Result<AnalysisReport, Str
     // content_rail is now sniffed unconditionally in tags::read() (no longer gated on
     // declared_rail here) — both sides of this comparison are load-bearing.
     let container_mismatch = tag.declared_rail == Rail::Lossless && content_rail == Rail::Lossy;
+    // `verdict()` peut refuser de trancher : coupure jamais mesurée, ou rail déclaré indéterminé
+    // (2026-09-01, issue #51). Ce n'est pas un verdict prudent, c'est une analyse qui n'a pas
+    // abouti — donc elle emprunte le chemin d'échec DÉJÀ en place plutôt qu'un état nouveau :
+    // `analyze()` rend `Err`, `worker::persist_result` appelle `persist_failure`, qui laisse
+    // `verdict` NULL, pose la sentinelle `report_json=''` et incrémente `analysis_attempts` vers
+    // `MAX_ANALYSIS_ATTEMPTS`. Aucun champ sérialisé ne change : le rapport n'est pas produit.
     let verdict = verdict::verdict(
         cutoff_hz,
         tag.declared_rail,
@@ -279,7 +285,8 @@ pub fn analyze(path: &str, with_spectrogram: bool) -> Result<AnalysisReport, Str
             fixed_db: spec_res.hf_flatness_db,
             top_db: spec_res.hf_flatness_top_db,
         },
-    );
+    )
+    .map_err(|e| e.to_string())?;
     let est_kbps = verdict::estimate_kbps(cutoff_hz);
     let (capped_peaks, peaks_factor) = peaks::cap(pk.finish(), MAX_PEAKS);
 

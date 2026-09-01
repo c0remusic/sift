@@ -34,6 +34,15 @@ use crate::analysis::{Rail, Verdict};
 /// rapport, que lisent la Bibliothèque, les Écartés et le compte « à re-sourcer ». Le dépôt le
 /// note déjà noir sur blanc dans le commentaire de la migration v21 (`db.rs`) : « `verdict` et
 /// `cutoff_hz` ne sont couverts par AUCUNE version de cache ».
+///
+/// ⚠️ **Non incrémentée le 2026-09-01, délibérément** (issue #51, lane « durcissement de
+/// domaine »). La règle ci-dessus vise les entrées dont le verdict CHANGE ; la sortie des cas
+/// « pas mesurable » n'en change aucun sur la base réelle. Compté ce jour-là sur les 3 386 pistes
+/// de la base de production (277 Douteux) : cas 1 (lossless, coupure sentinelle) = **0**, cas 4
+/// (lossy, coupure sentinelle) = **0**, cas 5 (`Rail::Unknown` déclaré) = **0**. Un bump aurait
+/// donc déclenché 3 386 recalculs pour zéro verdict différent. Il redeviendra dû le jour où un
+/// SEUIL bouge (resserrage de la bande douteuse, planchers de platitude) — ces deux chantiers sont
+/// hors de cette lane, bloqués sur corpus.
 pub const VERDICT_CACHE_VERSION: i64 = 1;
 
 /// Lit le cache `(tracks.verdict, tracks.verdict_ver)`. Version absente (NULL — ligne d'avant la
@@ -160,7 +169,47 @@ fn below_master_range(f: HfFlatness) -> bool {
         || f.top_db.is_some_and(|v| v < HF_TOP_FLOOR_DB)
 }
 
-/// Maps cutoff + declared rail + declared bitrate to a verdict.
+/// Pourquoi la décision n'a **pas pu être rendue**. Ce n'est pas un verdict, et c'est tout
+/// l'intérêt du type : une absence de mesure n'est ni un doute, ni un blanchiment, ni une
+/// accusation — c'est un échec d'analyse, que l'appelant route vers le chemin d'échec existant
+/// (`persist_failure`, `analysis_attempts`, facette « Non analysés »).
+///
+/// **Décision du 2026-09-01 (issue #51, lane « durcissement de domaine »).** Trois bras de
+/// `verdict()` rendaient `Verdict::Grey` pour « rien mesuré » : coupure sentinelle sous Lossless,
+/// la même sous Lossy, et `Rail::Unknown` déclaré. `Grey` agrégeait donc du vrai doute spectral et
+/// de l'absence de mesure, et la pastille ambre ne signalait plus rien.
+///
+/// Forme retenue — un `Result` rendu par `verdict()` plutôt qu'une garde chez l'appelant : la
+/// condition « pas mesurable » n'est pas indépendante de la décision, elle s'articule avec elle
+/// (le court-circuit fraude passe AVANT, le bras de coupure passe avant celui du débit). Une garde
+/// chez l'appelant aurait dupliqué cet ordre hors du seul endroit qui le teste, et le seam de test
+/// convenu par la spec est `verdict()`. Enum à la main + `Display` + `impl Error`, comme
+/// `MasterDbError` — le dépôt n'utilise ni `thiserror` ni `anyhow`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NotMeasured {
+    /// `spectrum::detect_cutoff` n'avait rien à mesurer — aucune trame décodée. Voir
+    /// `NO_MEASUREMENT_HZ`.
+    Cutoff,
+    /// Le rail DÉCLARÉ est `Rail::Unknown` : ni l'extension ni le conteneur n'ont conclu, donc
+    /// aucune des deux grilles de décision (lossless / lossy) ne s'applique.
+    Rail,
+}
+
+impl std::fmt::Display for NotMeasured {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            NotMeasured::Cutoff => {
+                write!(f, "aucune coupure spectrale mesurée (aucune trame décodée)")
+            }
+            NotMeasured::Rail => write!(f, "rail indéterminé : conteneur non reconnu"),
+        }
+    }
+}
+
+impl std::error::Error for NotMeasured {}
+
+/// Maps cutoff + declared rail + declared bitrate to a verdict, ou dit pourquoi il n'y a pas de
+/// verdict à rendre (`NotMeasured`).
 ///
 /// `content_rail` is the rail sniffed from the actual container/codec (independent of the
 /// declared extension/tag) — when it disagrees with `declared` on the lossless side (declared
@@ -175,40 +224,44 @@ pub fn verdict(
     declared_bitrate: Option<u32>,
     content_rail: Rail,
     flatness: HfFlatness,
-) -> Verdict {
+) -> Result<Verdict, NotMeasured> {
     match declared {
         Rail::Lossless => {
             if content_rail == Rail::Lossy {
                 // Le désaccord de conteneur reste EN PREMIER : c'est une fraude établie sans le
                 // spectre, donc l'absence de mesure ne doit pas l'effacer.
-                Verdict::Fake
+                Ok(Verdict::Fake)
             } else if cutoff_hz <= NO_MEASUREMENT_HZ {
-                Verdict::Grey
+                // Rien mesuré → hors domaine (2026-09-01). Rendait `Grey` jusque-là.
+                Err(NotMeasured::Cutoff)
             } else if cutoff_hz >= LOSSLESS_OK_HZ {
                 // Bande pleine : la coupure n'a plus rien à dire. C'est ici, et seulement ici, que
                 // la platitude de l'aigu tranche — elle ne DÉGRADE jamais un verdict déjà négatif,
                 // elle rattrape ce que la falaise ne peut pas voir.
                 if below_master_range(flatness) {
-                    Verdict::Grey
+                    Ok(Verdict::Grey)
                 } else {
-                    Verdict::Ok
+                    Ok(Verdict::Ok)
                 }
             } else if cutoff_hz <= LOSSY_CLIFF_HZ {
-                Verdict::Fake
+                Ok(Verdict::Fake)
             } else {
-                Verdict::Grey
+                Ok(Verdict::Grey)
             }
         }
         Rail::Lossy => match declared_bitrate {
-            // Rien mesuré → on ne sait pas. Ce bras passe AVANT celui du débit : sans lui, un
-            // cutoff de 0 est inférieur à tous les planchers de `min_cutoff_hz_for_bitrate` et
-            // accuse le fichier de sur-encodage sur la foi d'un décodage qui n'a pas eu lieu.
-            _ if cutoff_hz <= NO_MEASUREMENT_HZ => Verdict::Grey,
+            // Rien mesuré → hors domaine (2026-09-01 ; rendait `Grey` jusque-là). Ce bras passe
+            // AVANT celui du débit : sans lui, un cutoff de 0 est inférieur à tous les planchers de
+            // `min_cutoff_hz_for_bitrate` et accuse le fichier de sur-encodage sur la foi d'un
+            // décodage qui n'a pas eu lieu.
+            _ if cutoff_hz <= NO_MEASUREMENT_HZ => Err(NotMeasured::Cutoff),
             // declared bitrate the real spectrum can't support → over-encoded fraud
-            Some(b) if cutoff_hz < min_cutoff_hz_for_bitrate(b) => Verdict::Fake,
-            _ => Verdict::Ok,
+            Some(b) if cutoff_hz < min_cutoff_hz_for_bitrate(b) => Ok(Verdict::Fake),
+            _ => Ok(Verdict::Ok),
         },
-        Rail::Unknown => Verdict::Grey,
+        // Sniffing non conclusif : aucune des deux grilles ne s'applique, donc rien à juger — hors
+        // domaine (2026-09-01 ; rendait `Grey` jusque-là).
+        Rail::Unknown => Err(NotMeasured::Rail),
     }
 }
 
@@ -248,7 +301,7 @@ mod tests {
                 Rail::Lossless,
                 HfFlatness::default()
             ),
-            Verdict::Ok
+            Ok(Verdict::Ok)
         );
     }
 
@@ -262,7 +315,7 @@ mod tests {
                 Rail::Lossless,
                 HfFlatness::default()
             ),
-            Verdict::Fake
+            Ok(Verdict::Fake)
         );
         assert_eq!(
             verdict(
@@ -272,7 +325,7 @@ mod tests {
                 Rail::Lossless,
                 HfFlatness::default()
             ),
-            Verdict::Fake
+            Ok(Verdict::Fake)
         );
     }
 
@@ -286,7 +339,7 @@ mod tests {
                 Rail::Lossless,
                 HfFlatness::default()
             ),
-            Verdict::Grey
+            Ok(Verdict::Grey)
         );
     }
 
@@ -315,7 +368,7 @@ mod tests {
                     top_db: Some(-4.0),
                 },
             ),
-            Verdict::Grey
+            Ok(Verdict::Grey)
         );
     }
 
@@ -340,7 +393,7 @@ mod tests {
                     top_db: Some(-30.0),
                 },
             ),
-            Verdict::Grey
+            Ok(Verdict::Grey)
         );
     }
 
@@ -362,7 +415,7 @@ mod tests {
                     top_db: Some(HF_TOP_FLOOR_DB),
                 },
             ),
-            Verdict::Ok
+            Ok(Verdict::Ok)
         );
     }
 
@@ -385,7 +438,7 @@ mod tests {
                     top_db: None,
                 },
             ),
-            Verdict::Ok
+            Ok(Verdict::Ok)
         );
     }
 
@@ -400,7 +453,7 @@ mod tests {
                 Rail::Lossy,
                 HfFlatness::default()
             ),
-            Verdict::Ok
+            Ok(Verdict::Ok)
         );
         assert_eq!(
             verdict(
@@ -410,7 +463,7 @@ mod tests {
                 Rail::Lossy,
                 HfFlatness::default()
             ),
-            Verdict::Ok
+            Ok(Verdict::Ok)
         );
     }
 
@@ -425,7 +478,7 @@ mod tests {
                 Rail::Lossy,
                 HfFlatness::default()
             ),
-            Verdict::Fake
+            Ok(Verdict::Fake)
         );
         // declared 256 but cuts at 15k
         assert_eq!(
@@ -436,7 +489,7 @@ mod tests {
                 Rail::Lossy,
                 HfFlatness::default()
             ),
-            Verdict::Fake
+            Ok(Verdict::Fake)
         );
     }
 
@@ -452,7 +505,7 @@ mod tests {
                 Rail::Lossy,
                 HfFlatness::default()
             ),
-            Verdict::Ok
+            Ok(Verdict::Ok)
         );
         assert_eq!(
             verdict(
@@ -462,7 +515,7 @@ mod tests {
                 Rail::Lossy,
                 HfFlatness::default()
             ),
-            Verdict::Ok
+            Ok(Verdict::Ok)
         );
     }
 
@@ -477,7 +530,7 @@ mod tests {
                 Rail::Lossy,
                 HfFlatness::default()
             ),
-            Verdict::Fake
+            Ok(Verdict::Fake)
         );
         // declared 160 but cuts at 14k (below the 15500Hz floor for 160) → fraud
         assert_eq!(
@@ -488,7 +541,7 @@ mod tests {
                 Rail::Lossy,
                 HfFlatness::default()
             ),
-            Verdict::Fake
+            Ok(Verdict::Fake)
         );
     }
 
@@ -503,21 +556,23 @@ mod tests {
                 Rail::Lossy,
                 HfFlatness::default()
             ),
-            Verdict::Ok
+            Ok(Verdict::Ok)
         );
     }
 
-    /// Un décodage qui n'a produit aucune trame ne doit accuser personne.
+    /// Un décodage qui n'a produit aucune trame ne doit accuser personne — et depuis le
+    /// 2026-09-01, ne doit pas non plus **douter** : il sort du domaine de la décision.
     ///
     /// Mesuré sur la bibliothèque réelle le 2026-08-17 : deux MP3 320 kbps de plus de six minutes,
     /// sans `codec_error`, portaient `cutoff_hz = 0` et sortaient FAKE. Sur les deux rails, parce
-    /// que le défaut est le même des deux côtés — un zéro qui se fait lire comme une mesure.
+    /// que le défaut est le même des deux côtés — un zéro qui se fait lire comme une mesure. Le
+    /// premier correctif en avait fait un Douteux ; celui-ci en fait un échec d'analyse.
     ///
     /// Le contrôle positif est dans le même corps : la MÊME entrée avec un cutoff réellement bas
     /// doit toujours sortir Fake. Sans lui, on ne saurait pas si le correctif distingue l'absence
     /// de mesure ou s'il a simplement désarmé la détection de sur-encodage.
     #[test]
-    fn no_measurement_is_grey_not_fake() {
+    fn une_mesure_absente_sort_du_domaine() {
         assert_eq!(
             verdict(
                 NO_MEASUREMENT_HZ,
@@ -526,7 +581,7 @@ mod tests {
                 Rail::Lossy,
                 HfFlatness::default()
             ),
-            Verdict::Grey
+            Err(NotMeasured::Cutoff)
         );
         assert_eq!(
             verdict(
@@ -536,7 +591,7 @@ mod tests {
                 Rail::Lossless,
                 HfFlatness::default()
             ),
-            Verdict::Grey
+            Err(NotMeasured::Cutoff)
         );
         // Contrôle positif : une vraie mesure basse reste une fraude.
         assert_eq!(
@@ -547,7 +602,7 @@ mod tests {
                 Rail::Lossy,
                 HfFlatness::default()
             ),
-            Verdict::Fake
+            Ok(Verdict::Fake)
         );
         assert_eq!(
             verdict(
@@ -557,7 +612,7 @@ mod tests {
                 Rail::Lossless,
                 HfFlatness::default()
             ),
-            Verdict::Fake
+            Ok(Verdict::Fake)
         );
     }
 
@@ -573,12 +628,113 @@ mod tests {
                 Rail::Lossy,
                 HfFlatness::default()
             ),
-            Verdict::Fake
+            Ok(Verdict::Fake)
         );
     }
 
+    /// La borne du sentinel, par le HAUT : la plus petite coupure strictement positive est une
+    /// MESURE, donc elle reste dans le domaine et se fait juger normalement.
+    ///
+    /// Ce que ça garde, sur les deux rails : le bras « pas mesuré » teste `<= NO_MEASUREMENT_HZ`,
+    /// pas `<` un plancher quelconque. Élargir ce bras d'un cheveu ferait sortir du domaine des
+    /// fichiers réellement mesurés — c'est-à-dire transformerait une fraude prouvée en échec
+    /// d'analyse, exactement l'erreur symétrique de celle que cette lane corrige.
     #[test]
-    fn unknown_rail_is_grey() {
+    fn la_plus_petite_coupure_positive_reste_dans_le_domaine() {
+        let epsilon = f32::MIN_POSITIVE;
+        assert_eq!(
+            verdict(
+                epsilon,
+                Rail::Lossless,
+                None,
+                Rail::Lossless,
+                HfFlatness::default()
+            ),
+            Ok(Verdict::Fake),
+            "lossless mesuré au ras de zéro : falaise lossy, donc Faux"
+        );
+        assert_eq!(
+            verdict(
+                epsilon,
+                Rail::Lossy,
+                Some(320),
+                Rail::Lossy,
+                HfFlatness::default()
+            ),
+            Ok(Verdict::Fake),
+            "320 kbps mesuré au ras de zéro : sur-encodage, donc Faux"
+        );
+    }
+
+    /// **Cas 2 — figé, cette lane n'y touche pas.** Les deux bornes de la bande douteuse de
+    /// coupure, à la valeur exacte, dans les deux sens.
+    ///
+    /// La spec du 2026-09-01 sort du domaine les cas « pas mesurable » (1, 4, 5) et laisse le
+    /// resserrage de cette bande à un chantier de corpus séparé. Ce test est la preuve exécutable
+    /// que le resserrage n'a pas eu lieu ici : `LOSSY_CLIFF_HZ` inclus = Faux, juste au-dessus =
+    /// Douteux, juste en dessous de `LOSSLESS_OK_HZ` = Douteux, `LOSSLESS_OK_HZ` inclus = Vrai.
+    #[test]
+    fn les_bornes_de_la_bande_douteuse_ne_bougent_pas() {
+        let at = |hz: f32| {
+            verdict(
+                hz,
+                Rail::Lossless,
+                None,
+                Rail::Lossless,
+                HfFlatness::default(),
+            )
+        };
+        assert_eq!(at(LOSSY_CLIFF_HZ), Ok(Verdict::Fake), "19 500 Hz inclus");
+        assert_eq!(at(19500.1), Ok(Verdict::Grey), "juste au-dessus de 19 500");
+        assert_eq!(at(19999.9), Ok(Verdict::Grey), "juste sous 20 000");
+        assert_eq!(at(LOSSLESS_OK_HZ), Ok(Verdict::Ok), "20 000 Hz inclus");
+    }
+
+    /// **Cas 3 — figé, cette lane n'y touche pas.** Les deux planchers de platitude, juste EN
+    /// DESSOUS de leur valeur, chacun seul (l'autre bande normale).
+    ///
+    /// Complète `un_authentique_pile_sur_le_plancher_reste_vrai_lossless`, qui pinne la borne par
+    /// le haut : les deux ensemble encadrent chaque plancher au dixième de dB près, donc tout
+    /// déplacement d'une des deux valeurs fait tomber l'un des deux tests.
+    #[test]
+    fn juste_sous_un_plancher_de_platitude_reste_douteux() {
+        assert_eq!(
+            verdict(
+                21000.0,
+                Rail::Lossless,
+                None,
+                Rail::Lossless,
+                HfFlatness {
+                    fixed_db: Some(HF_FIXED_FLOOR_DB - 0.1),
+                    top_db: Some(HF_TOP_FLOOR_DB),
+                },
+            ),
+            Ok(Verdict::Grey),
+            "bande fixe sous son plancher, bande relative pile dessus"
+        );
+        assert_eq!(
+            verdict(
+                21000.0,
+                Rail::Lossless,
+                None,
+                Rail::Lossless,
+                HfFlatness {
+                    fixed_db: Some(HF_FIXED_FLOOR_DB),
+                    top_db: Some(HF_TOP_FLOOR_DB - 0.1),
+                },
+            ),
+            Ok(Verdict::Grey),
+            "bande relative sous son plancher, bande fixe pile dessus"
+        );
+    }
+
+    /// Un rail déclaré indéterminé n'est pas un doute sur le fichier : c'est un sniffing qui n'a
+    /// pas conclu, donc rien à juger. Il sort du domaine (2026-09-01), là où il rendait Douteux.
+    ///
+    /// Le contrôle est dans le même corps : une coupure parfaitement mesurée ne rachète PAS un rail
+    /// inconnu — sans elle, on ne saurait pas si le bras sort du domaine pour la bonne raison.
+    #[test]
+    fn un_rail_declare_inconnu_sort_du_domaine() {
         assert_eq!(
             verdict(
                 16000.0,
@@ -587,7 +743,17 @@ mod tests {
                 Rail::Unknown,
                 HfFlatness::default()
             ),
-            Verdict::Grey
+            Err(NotMeasured::Rail)
+        );
+        assert_eq!(
+            verdict(
+                21000.0,
+                Rail::Unknown,
+                Some(320),
+                Rail::Lossless,
+                HfFlatness::default()
+            ),
+            Err(NotMeasured::Rail)
         );
     }
 
@@ -604,7 +770,7 @@ mod tests {
                 Rail::Lossy,
                 HfFlatness::default()
             ),
-            Verdict::Fake
+            Ok(Verdict::Fake)
         );
     }
 
@@ -620,7 +786,7 @@ mod tests {
                 Rail::Unknown,
                 HfFlatness::default()
             ),
-            Verdict::Ok
+            Ok(Verdict::Ok)
         );
     }
 
@@ -636,7 +802,7 @@ mod tests {
                 Rail::Lossy,
                 HfFlatness::default()
             ),
-            Verdict::Ok
+            Ok(Verdict::Ok)
         );
         assert_eq!(
             verdict(
@@ -646,7 +812,7 @@ mod tests {
                 Rail::Lossy,
                 HfFlatness::default()
             ),
-            Verdict::Fake
+            Ok(Verdict::Fake)
         );
     }
 }
