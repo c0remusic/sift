@@ -24,25 +24,33 @@ use crate::analysis::{Rail, Verdict};
 ///
 /// - `worker::persist_report` écrit `verdict` et `report_cache_ver` dans le MÊME `UPDATE`, donc
 ///   les deux sont d'accord à l'écriture ;
-/// - mais `ipc::analyze_path` répare le cache sur désaccord de version en réécrivant
-///   `report_json` + `report_cache_ver` **sans jamais toucher `verdict`** ;
-/// - et `worker::select_pending` ne re-sélectionne que sur `report_json` absent, jamais sur une
-///   version périmée (constaté et payé par la migration v16).
+/// - `worker::select_pending` re-sélectionne sur une version de verdict périmée, mais SEULEMENT en
+///   `status='pending'` : la bibliothèque rangée n'y passe jamais (constaté et payé par la
+///   migration v16, borne délibérée, voir son commentaire).
 ///
-/// Après un bump de `REPORT_CACHE_VERSION`, une piste rangée retrouve donc un rapport courant en
-/// gardant dans sa colonne le verdict calculé par l'ANCIEN moteur — et c'est cette colonne, pas le
-/// rapport, que lisent la Bibliothèque, les Écartés et le compte « à re-sourcer ». Le dépôt le
-/// note déjà noir sur blanc dans le commentaire de la migration v21 (`db.rs`) : « `verdict` et
-/// `cutoff_hz` ne sont couverts par AUCUNE version de cache ».
+/// **Le troisième trou est fermé depuis le 2026-09-01.** `ipc::analyze_path` réparait le cache sur
+/// désaccord de version en réécrivant `report_json` + `report_cache_ver` **sans toucher
+/// `verdict`** : une piste rangée retrouvait un rapport courant en gardant dans sa colonne le
+/// verdict calculé par l'ANCIEN moteur — et c'est cette colonne, pas le rapport, que lisent la
+/// Bibliothèque, les Écartés et le compte « à re-sourcer ». La réparation passe désormais par
+/// `ipc::heal_cache`, qui écrit les quatre colonnes ensemble depuis le rapport frais qu'elle a déjà
+/// en main (`heal_cache_repare_aussi_le_verdict_pas_seulement_le_rapport`). Reste vrai, et c'est
+/// pourquoi les deux constantes restent distinctes : le commentaire de la migration v21 (`db.rs`)
+/// note que « `verdict` et `cutoff_hz` ne sont couverts par AUCUNE version de cache » — les deux
+/// versions bougent pour des raisons différentes, un bump de forme de rapport n'est pas un
+/// changement d'arbitrage.
+///
+/// La bibliothèque rangée que personne n'ouvre est rattrapée, elle, par `reverdict::run` au
+/// démarrage : re-verdict depuis les mesures déjà stockées, sans ré-analyse.
 ///
 /// Historique : la lane « durcissement de domaine » du 2026-09-01 (matin) n'avait PAS incrémenté —
 /// la sortie des cas « pas mesurable » ne changeait aucun verdict réel (cas 1/4/5 comptés 0/0/0
 /// sur les 3 386 pistes de la base). La condition de bump qu'elle posait — « le jour où un SEUIL
 /// bouge » — est arrivée le jour même : falaise 19 500 → 20 000 et plancher fixe -5,8 → -12
 /// (référence assainie, voir leurs commentaires). D'où **2**. Coût : `cached()` efface les 3 386
-/// verdicts au prochain lancement et le pool ré-analyse tout — de l'ordre de 15-30 min de CPU en
-/// fond (le chemin « re-verdict depuis le cutoff stocké, sans ré-analyse » que promettent les
-/// constantes reconfigurables n'existe pas encore).
+/// verdicts au prochain lancement — mais le chemin « re-verdict depuis les mesures stockées, sans
+/// ré-analyse » existe désormais (`reverdict::run`, écrit le jour même) et les rejuge au démarrage,
+/// au lieu des 15-30 min de CPU en fond qu'aurait coûté une ré-analyse complète par le pool.
 pub const VERDICT_CACHE_VERSION: i64 = 2;
 
 /// Lit le cache `(tracks.verdict, tracks.verdict_ver)`. Version absente (NULL — ligne d'avant la

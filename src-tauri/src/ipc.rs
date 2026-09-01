@@ -394,16 +394,45 @@ pub fn analyze_path(
     let mut report = report;
     match conn.lock() {
         Ok(conn) => {
-            if let Some(json) = cache_json(&mut report) {
-                let _ = conn.execute(
-                    "UPDATE tracks SET report_json=?2, report_cache_ver=?3 WHERE path=?1",
-                    rusqlite::params![path, json, crate::analysis::REPORT_CACHE_VERSION],
-                );
-            }
+            let _ = heal_cache(&conn, &path, &mut report);
         }
         Err(_) => log::error!("analyze_path: DB mutex poisoned, skipping report cache write"),
     }
     Ok(report)
+}
+
+/// Réécrit la ligne depuis le rapport FRAIS qu'`analyze_path` vient de calculer : rapport, version
+/// de rapport, **et verdict + version de verdict**.
+///
+/// Le verdict était absent de cet UPDATE, et c'est le trou que documentait `VERDICT_CACHE_VERSION`
+/// (verdict.rs) : la réparation rendait la ligne courante côté RAPPORT tout en lui laissant dans sa
+/// colonne `verdict` la valeur produite par un moteur qui n'existe plus — or c'est cette colonne,
+/// pas le rapport, que lisent la Bibliothèque, les Écartés et le compte « à re-sourcer ». Rien ne
+/// justifiait l'écart : `report` porte déjà `verdict`, calculé par le moteur COURANT dans l'appel
+/// qui précède. Les quatre colonnes partent donc dans le même `UPDATE`, comme dans
+/// `worker::persist_report`, et ne peuvent plus diverger à l'écriture.
+///
+/// La forme stockée passe par `worker::verdict_str`, jamais par un littéral recopié : c'est la même
+/// fonction que le pool, donc les deux producteurs de la colonne écrivent le même alphabet.
+fn heal_cache(
+    conn: &Connection,
+    path: &str,
+    report: &mut crate::analysis::AnalysisReport,
+) -> rusqlite::Result<usize> {
+    let Some(json) = cache_json(report) else {
+        return Ok(0);
+    };
+    conn.execute(
+        "UPDATE tracks SET report_json=?2, report_cache_ver=?3, verdict=?4, verdict_ver=?5
+         WHERE path=?1",
+        rusqlite::params![
+            path,
+            json,
+            crate::analysis::REPORT_CACHE_VERSION,
+            crate::worker::verdict_str(report.verdict),
+            crate::analysis::verdict::VERDICT_CACHE_VERSION,
+        ],
+    )
 }
 
 /// Force a re-analysis of the given tracks (still-pending only): clears their cached verdict
@@ -654,5 +683,48 @@ mod tests {
         // Et le rapport de l'appelant est rendu intact.
         assert_eq!(r.spectrogram.mag_db, vec![9, 8, 7, 6, 5, 4]);
         assert_eq!(r.spectrogram.frames, 2);
+    }
+
+    /// La réparation de cache écrit les QUATRE colonnes, pas deux. Aucun test ne figeait l'ancien
+    /// comportement (réparation sans verdict) — c'était un trou, pas une décision : la doc de
+    /// `VERDICT_CACHE_VERSION` le nommait noir sur blanc comme le chemin par lequel `verdict` et
+    /// `report_cache_ver` divergeaient.
+    ///
+    /// La ligne part d'un verdict PÉRIMÉ et faux (`"ok"` en version 1) : c'est l'état réel d'une
+    /// piste rangée après un bump, celui que `verdict::cached` efface à la lecture.
+    #[test]
+    fn heal_cache_repare_aussi_le_verdict_pas_seulement_le_rapport() {
+        let conn = Connection::open_in_memory().expect("base memoire");
+        crate::db::run_migrations(&conn).expect("migrations");
+        conn.execute(
+            "INSERT INTO tracks (path, filename, status, verdict, verdict_ver, report_json,
+                                 report_cache_ver, analyzed_at)
+             VALUES ('x.flac', 'x.flac', 'filed', 'ok', 1, '{}', 1, datetime('now'))",
+            [],
+        )
+        .expect("seed");
+
+        let mut r = crate::worker::tests::fake_report(); // verdict = Fake
+        let n = heal_cache(&conn, "x.flac", &mut r).expect("update");
+
+        assert_eq!(n, 1);
+        let (verdict, ver, rapport_ver): (Option<String>, Option<i64>, Option<i64>) = conn
+            .query_row(
+                "SELECT verdict, verdict_ver, report_cache_ver FROM tracks WHERE path='x.flac'",
+                [],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .expect("relecture");
+        assert_eq!(
+            verdict.as_deref(),
+            Some("fake"),
+            "le verdict frais est en base : sans lui la Bibliotheque garde le badge de l'ancien moteur"
+        );
+        assert_eq!(
+            ver,
+            Some(crate::analysis::verdict::VERDICT_CACHE_VERSION),
+            "stampe a la version courante, sinon verdict::cached l'efface a la lecture"
+        );
+        assert_eq!(rapport_ver, Some(crate::analysis::REPORT_CACHE_VERSION));
     }
 }

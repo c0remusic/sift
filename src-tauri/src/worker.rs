@@ -27,7 +27,7 @@ fn rail_str(r: Rail) -> &'static str {
     }
 }
 
-fn verdict_str(v: Verdict) -> &'static str {
+pub(crate) fn verdict_str(v: Verdict) -> &'static str {
     match v {
         Verdict::Ok => "ok",
         Verdict::Fake => "fake",

@@ -32,6 +32,7 @@ mod queue;
 mod rekordbox_masterdb;
 mod rekordbox_repairs;
 mod rekordbox_xml;
+mod reverdict;
 mod scanner;
 #[cfg(test)]
 mod search_corpus;
@@ -264,8 +265,22 @@ pub fn run() {
             std::fs::create_dir_all(&dir)
                 .map_err(|e| format!("création du dossier de données {} impossible: {e}", dir.display()))?;
             let db_path = dir.join("sift.db");
-            let conn = db::open(&db_path)
+            let mut conn = db::open(&db_path)
                 .map_err(|e| format!("ouverture de la base {} impossible: {e}", db_path.display()))?;
+            // Re-verdict depuis les mesures DÉJÀ stockées, sans ré-analyse (2026-09-01, bump
+            // `VERDICT_CACHE_VERSION` 1 → 2). Ici et pas ailleurs : la connexion est ouverte,
+            // migrée, et encore exclusive — aucun thread du pool n'existe. Idempotente : quand tout
+            // est déjà à la version courante elle ne lit aucune ligne et ne journalise rien. Coût du
+            // pire cas MESURÉ (`cout_de_la_passe_sur_3386_lignes`, `--release`, 2026-09-01) :
+            // 420 / 433 / 434 ms pour 3 386 lignes toutes à re-juger — un bump de version, donc.
+            //
+            // L'échec ne fait PAS tomber le démarrage, contrairement aux trois étapes ci-dessus :
+            // une base lisible dont le re-verdict échoue reste une app utilisable — les lignes
+            // concernées gardent l'état « pas de verdict courant » que toute l'UI sait afficher, et
+            // la passe se rejouera au lancement suivant.
+            if let Err(e) = reverdict::run_and_log(&mut conn) {
+                log::warn!("passe de re-verdict au démarrage échouée (rejouée au prochain lancement): {e}");
+            }
             let session_id = format!(
                 "{}-{}",
                 std::time::SystemTime::now()

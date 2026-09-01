@@ -285,6 +285,8 @@ qui ignore le plafond de 32 Go, donc le binaire macOS ne lie plus `fatfs` ; le b
 garde leurs tests exécutables sur n'importe quelle machine) ·
 `volume_usage.rs` (occupation par format) ·
 `scanner.rs` / `watcher.rs` / `sources.rs` / `worker.rs` / `queue.rs` (ingestion) ·
+`reverdict.rs` (passe de re-verdict au démarrage : rejoue le verdict sur les mesures déjà stockées,
+sans ré-analyse, pour toute ligne à `verdict_ver` périmée) ·
 `filing.rs` / `actions.rs` / `encode.rs` / `naming.rs` / `tagging.rs` (rangement) ·
 `dedup.rs` / `fingerprint.rs` · `library.rs` / `ecartes.rs` / `genres.rs` ·
 `rekordbox_xml.rs` / `rekordbox_masterdb.rs` / `rekordbox_repairs.rs` (M8 Tier 1/2/3) ·
