@@ -1,9 +1,14 @@
 # Formats de métadonnées lus par les platines Pioneer / AlphaTheta
 
-> Établi le 2026-08-21 par recherche sourcée (issue #46). Définit le critère que le badge
-> « CDJ compatible » de Sift devrait vérifier — et que le code ne vérifie **pas** encore
-> (`analysis/tags.rs::tags_cdj_ok` teste la seule présence d'Artiste+Titre, quel que soit le
-> format du tag).
+> Établi le 2026-08-21 par recherche sourcée (issue #46). **Ce document est la source de la
+> matrice appliquée par le code.** Le critère `tags_cdj_ok` a été recâblé dessus le 2026-09-01 :
+> `analysis/tags.rs::tag_type_readable_on_cdj` porte la table de vérité couple par couple, et
+> `cdj_readable_matrix_matches_the_doc` (même fichier) la fige contre la matrice ci-dessous. Un
+> changement ici se répercute là, dans le même geste. Avant cette date le code testait la seule
+> présence d'Artiste+Titre, quel que soit le format du tag.
+>
+> Le badge « CDJ compatible » de Revue, lui, a été retiré de l'UI le 2026-08-25 : le champ existe
+> et est juste, aucune surface ne l'affiche à ce jour.
 >
 > Périmètre : affichage d'Artiste / Titre en **navigation directe sur clé USB, sans base
 > rekordbox**. Le cas « exporté via rekordbox » est différent (l'affichage vient alors de la
@@ -101,23 +106,25 @@ problèmes s'empilent :
 | `AiffText` | AIFF natif | **PAS OK par prudence** (non établi) | fail-fast |
 | `Ape` | APE / WavPack | N/A | non jouable sur CDJ |
 
-**Correctif minimal, honnête** de `tags_cdj_ok` (`analysis/tags.rs:85-88`) :
+**Correctif appliqué le 2026-09-01** dans `analysis/tags.rs::tag_type_readable_on_cdj` — ce qui
+était proposé ici, et ce qu'il en reste :
 
-1. **Gater sur le conteneur** : si `file_type() == Wav`, badge = non-OK (ou « nom-de-fichier-seul »)
-   **quel que soit** le porteur du tag — la fiabilité d'affichage WAV est douteuse dans tous les
-   cas. `tags.rs` a déjà `content_rail` ; récupérer aussi `tagged.file_type()`. Exclure
-   `TagType::RiffInfo` (et `AiffText` par prudence) suffit déjà à corriger le cas signalé.
-2. Optionnel : intégrer la contrainte codec / génération si le badge doit refléter une platine
-   cible (FLAC / ALAC = OK seulement 2016+).
-3. Optionnel : à l'encodage WAV, produire du PCM standard, jamais `WAVE_FORMAT_EXTENSIBLE`.
+1. **Gater sur le conteneur : FAIT.** Le prédicat prend le couple `(file_type, tag_type)` et non le
+   seul type de tag, et `file_type` vient de `tagged.file_type()` — donc des octets, jamais de
+   l'extension. Le WAV ne compte sous aucun porteur, `RiffInfo` comme ID3-en-chunk. Le défaut de la
+   table est `false` : tout couple que ce document n'établit pas ne compte pas.
+2. Contrainte codec / génération (FLAC, ALAC = 2016+) : **hors périmètre du prédicat**, qui ne juge
+   que le porteur — son doc-comment le dit. Pas de décision prise ici.
+3. PCM standard à l'encodage WAV : **non traité**, ça appartient à `encode.rs`, pas à ce critère.
 
 **Piège d'API à connaître** : `TagType::Id3v2` **n'expose pas** la sous-version — `lofty`
 upgrade tout en v2.4 en interne (« *This covers all ID3v2 versions since they all get upgraded
 to ID3v2.4* »). Pour lire la version d'origine il faut le tag concret `Id3v2Tag` +
 `original_version()`. **Mais** puisque Pioneer supporte v2.2/2.3/2.4, distinguer la sous-version
-**n'est pas nécessaire** pour le badge. Le champ `id3_version` actuel (`Some("ID3")` en dur,
-`tags.rs:80-84`) est cosmétique. Le vrai risque v2.4 (encodage) n'est pas lisible depuis le type
-de tag.
+**n'est pas nécessaire** pour le badge. Le champ `id3_version` ne porte donc toujours aucune
+sous-version — mais il n'est plus le stub `Some("ID3")` posé sur l'extension : depuis le
+2026-09-01 il nomme le ou les TYPES réels du porteur (`tags.rs::tag_type_name`), triés et joints
+par `+`. Le vrai risque v2.4 (encodage) n'est pas lisible depuis le type de tag.
 
 ## Sources
 

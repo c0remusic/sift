@@ -333,30 +333,25 @@ pub fn analyze_path(
         // spectrogram too (worker.rs analyzes with_spectrogram=true), so a spectrogram request
         // can also be served from cache — unless this row predates that fix (empty grid), in
         // which case fall through to a fresh decode below.
-        let cached: Option<(String, Option<i64>)> = conn
+        let cached: Option<(Option<String>, Option<i64>)> = conn
             .query_row(
                 "SELECT report_json, report_cache_ver FROM tracks WHERE path=?1",
                 rusqlite::params![path],
-                |r| {
-                    Ok((
-                        r.get::<_, Option<String>>(0)?.unwrap_or_default(),
-                        r.get(1)?,
-                    ))
-                },
+                |r| Ok((r.get::<_, Option<String>>(0)?, r.get(1)?)),
             )
             .ok();
-        if let Some((json, cache_ver)) = cached {
-            // report_cache_ver guards against content-only changes to analyze() (e.g. spectrogram
-            // resolution) that don't touch AnalysisReport's JSON shape — see its doc comment.
-            if !json.is_empty() && cache_ver == Some(crate::analysis::REPORT_CACHE_VERSION) {
-                // report_json can also predate an AnalysisReport field being added (e.g. FIX-11's
-                // est_kbps) and fail to deserialize even at the right cache version. Treat that
-                // the same as a cache miss — fall through to a fresh decode, which self-heals the
-                // row below — instead of hard-failing analyze_path for every pre-existing track.
-                if let Ok(report) = serde_json::from_str::<crate::analysis::AnalysisReport>(&json) {
-                    if !with_spectrogram || !report.spectrogram.mag_db.is_empty() {
-                        return Ok(report);
-                    }
+        // report_cache_ver guards against content-only changes to analyze() (e.g. spectrogram
+        // resolution, or v9's re-meaning of tags_cdj_ok) that don't touch AnalysisReport's JSON
+        // shape — see REPORT_CACHE_VERSION's doc comment. The rule itself lives in
+        // `analysis::cached_report`, frozen by its own test.
+        if let Some(json) = cached.and_then(|(j, ver)| crate::analysis::cached_report(j, ver)) {
+            // report_json can also predate an AnalysisReport field being added (e.g. FIX-11's
+            // est_kbps) and fail to deserialize even at the right cache version. Treat that
+            // the same as a cache miss — fall through to a fresh decode, which self-heals the
+            // row below — instead of hard-failing analyze_path for every pre-existing track.
+            if let Ok(report) = serde_json::from_str::<crate::analysis::AnalysisReport>(&json) {
+                if !with_spectrogram || !report.spectrogram.mag_db.is_empty() {
+                    return Ok(report);
                 }
             }
         }

@@ -168,7 +168,35 @@ pub struct AnalysisReport {
 /// Le coût est celui de v16, mesuré à l'époque : la bibliothèque se re-analyse (~30 min sur le
 /// pool pour 297 h d'audio). Il se paie en arrière-plan pour les pistes en file, et à l'ouverture
 /// pour les pistes rangées (`ipc::analyze_path` se répare tout seul).
-pub const REPORT_CACHE_VERSION: i64 = 8;
+/// **v9, 2026-09-01 (issue #46) — changement de SÉMANTIQUE, pas de forme.** Deux champs du rapport
+/// veulent dire autre chose qu'en v8, à JSON strictement identique :
+/// - `tags_cdj_ok` ne teste plus la seule PRÉSENCE d'Artiste+Titre mais le couple conteneur × type
+///   de tag contre la matrice de `docs/cdj-metadata-formats.md` (`tags.rs::tag_type_readable_on_cdj`)
+///   — un WAV taggé RIFF INFO valait `true`, il vaut `false` ;
+/// - `id3_version` portait le stub `Some("ID3")` posé à l'aveugle sur l'extension `.mp3` ; il porte
+///   maintenant le ou les TYPES réels du porteur, triés et joints par `+`.
+///
+/// Le bump n'est pas cosmétique, et c'est là qu'il se gagne : `worker::select_pending` ne reprend
+/// JAMAIS une piste RANGÉE (`status='pending'` dans sa clause, `worker.rs`, et le commentaire y
+/// dit pourquoi). Pour toute la bibliothèque rangée, le SEUL chemin qui rafraîchit un rapport est
+/// la réparation à l'ouverture (`ipc::analyze_path`), et elle ne se déclenche que sur désaccord de
+/// version. Sans ce bump, une piste rangée resservirait indéfiniment un `tags_cdj_ok` calculé par
+/// l'ancien critère.
+pub const REPORT_CACHE_VERSION: i64 = 9;
+
+/// Lit le cache `(tracks.report_json, tracks.report_cache_ver)`. Version absente, version distancée
+/// ou JSON vide (sentinelle d'échec de `persist_failure`) = **pas de rapport courant**, rendu comme
+/// `None` : l'appelant re-décode et se répare. Jamais une erreur.
+///
+/// Même raison qu'`verdict::cached` et `fingerprint::cached` de passer par une fonction plutôt que
+/// par un littéral au site d'appel : la constante reste déclarée une seule fois, et la règle
+/// devient testable sans passer par une commande Tauri.
+pub fn cached_report(json: Option<String>, ver: Option<i64>) -> Option<String> {
+    match ver {
+        Some(v) if v == REPORT_CACHE_VERSION => json.filter(|j| !j.is_empty()),
+        _ => None,
+    }
+}
 
 use dynamics::{ClipAccumulator, DcAccumulator, TruePeakAccumulator};
 use peaks::PeaksAccumulator;
@@ -433,6 +461,40 @@ mod corpus {
 
 #[cfg(test)]
 mod tests {
+
+    /// Les quatre états que `cached_report` doit distinguer. Ce que ce test garde est le bump lui-
+    /// même : `REPORT_CACHE_VERSION` ne sert à rien si un rapport stampé à l'ANCIENNE version se
+    /// fait quand même servir comme courant — la bibliothèque rangée reservirait alors pour
+    /// toujours un `tags_cdj_ok` calculé par le critère d'avant (voir la doc de la constante).
+    ///
+    /// La mutation se porte sur la ligne, pas sur la `const` : `REPORT_CACHE_VERSION - 1` est
+    /// l'état d'une ligne écrite avant le bump, quelle que soit la valeur courante de la
+    /// constante — écrire un littéral ici périmerait le test au bump suivant.
+    #[test]
+    fn cached_report_ne_sert_que_la_version_courante() {
+        use super::{cached_report, REPORT_CACHE_VERSION};
+        let j = || Some("{\"tags_cdj_ok\":true}".to_string());
+        assert_eq!(
+            cached_report(j(), Some(REPORT_CACHE_VERSION)),
+            j(),
+            "version courante : le rapport en cache doit être servi tel quel"
+        );
+        assert_eq!(
+            cached_report(j(), Some(REPORT_CACHE_VERSION - 1)),
+            None,
+            "version distancée (ligne d'avant le bump) : pas de rapport courant"
+        );
+        assert_eq!(
+            cached_report(j(), None),
+            None,
+            "version absente (colonne jamais stampée) : pas de rapport courant"
+        );
+        assert_eq!(
+            cached_report(Some(String::new()), Some(REPORT_CACHE_VERSION)),
+            None,
+            "sentinelle d'échec (`report_json=''`) : pas un rapport, même à la bonne version"
+        );
+    }
 
     /// La durée décodée doit être MESURÉE, pas recopiée de l'en-tête.
     ///

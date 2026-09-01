@@ -463,7 +463,9 @@ pub(crate) mod tests {
             truncated: false,
             silence_head_ms: 10,
             silence_tail_ms: 20,
-            id3_version: Some("ID3".into()),
+            // Valeur que la PRODUCTION émet depuis le 2026-09-01 (`tags.rs::read` : nom de type
+            // `lofty`). Le seed portait « ID3 », le stub que ce chantier a justement supprimé.
+            id3_version: Some("Id3v2".into()),
             tags_cdj_ok: true,
             has_cover: true,
         }

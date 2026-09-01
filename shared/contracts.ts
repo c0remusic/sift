@@ -202,7 +202,27 @@ export interface AnalysisReport {
   decoded_duration_sec: number;
   silence_head_ms: number;
   silence_tail_ms: number;
+  /** TYPE(S) de tag présents dans le fichier, noms `lofty` triés par ordre alphabétique puis
+   *  joints par `+` — « Id3v2 », « RiffInfo », « VorbisComments », « Id3v1+Id3v2 »… `null` si le
+   *  fichier ne porte aucun tag. Le tri est fait par `analysis/tags.rs::read` : l'ordre de parcours
+   *  du conteneur n'est garanti par rien, et cette chaîne est persistée en base.
+   *
+   *  Le nom est historique (colonne SQLite, issue #46) : il ne porte AUCUNE sous-version ID3.
+   *  `lofty` ne l'expose pas sur un tag générique (il remonte tout en v2.4), et Pioneer déclare
+   *  v1/v1.1/v2.2/v2.3/v2.4 indifféremment — la sous-version ne change donc aucun verdict.
+   *  Jusqu'au 2026-09-01 ce champ valait la chaîne littérale « ID3 » pour toute extension `.mp3`
+   *  et `null` sinon : un rapport en cache d'avant peut encore porter cette valeur. */
   id3_version: string | null;
+  /** Artiste ET Titre vivent dans un tag d'un TYPE qu'une platine lit en navigation directe sur
+   *  clé USB, sans base rekordbox — pas la seule PRÉSENCE d'Artiste+Titre (issue #46).
+   *
+   *  Matrice de `docs/cdj-metadata-formats.md`, appliquée par `analysis/tags.rs`
+   *  (`tag_type_readable_on_cdj`) : MP3+Id3v2/Id3v1, AIFF+Id3v2, FLAC+VorbisComments. Tout le
+   *  reste vaut `false` par prudence — WAV en tête, quel que soit le porteur (RIFF INFO ou ID3
+   *  en chunk), parce que la platine y retombe sur le nom de fichier.
+   *
+   *  Ne juge QUE le porteur des tags : ni le codec, ni l'encodage du texte, ni le système de
+   *  fichiers. */
   tags_cdj_ok: boolean;
   has_cover: boolean;
 }

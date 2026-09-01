@@ -64,18 +64,18 @@
 > lire.
 
 - L131 — Ligne de queue `.qi` — réécrit 08-27 : tokens (hex chauds morts), liseré de sélection retiré, curseur clavier `.qi-kbd`, interlignes #45 (46 px constante), séparateurs de rangées `::before` + pastille en fin de titre (08-27).
-- L173 — Mot de verdict Détail `verdictWord()` — ⚠️ COMPOSANT RETIRÉ le 2026-08-26 (c4f65eb) ; pipeline repris par `verdictDot()` (L1934).
+- L173 — Mot de verdict Détail `verdictWord()` — ⚠️ COMPOSANT RETIRÉ le 2026-08-26 (c4f65eb) ; pipeline repris par `verdictDot()` (L1957).
 - L199 — Item de navigation `.nv` — RAS.
 - L210 — Bouton d'action principal `.sift-ranger-btn` — hover désormais déclaré explicitement (07-24), disabled/focus restent génériques.
 - L229 — Chip/tag `.chip` — hover corrigé 07-03.
 - L241 — Case à cocher `.cbx` — supprimée (code mort).
-- L248 — Segmented control `.sift-seg-opt` (ancien, voir aussi pastille unifiée L907) — RAS.
+- L248 — Segmented control `.sift-seg-opt` (ancien, voir aussi pastille unifiée L930) — RAS.
 - L258 — Ligne de journal `.lr.jrnl-row` — refonte 08-19 : table, colonnes, groupes, états, inspecteur zone D (`.jrnl-qrow` et toutes les classes de l'ancien Journal ont disparu).
 - L326 — Toggle switch `.tog` — perf `transform` corrigée 07-03.
 - L339 — Slots verdict `.sift-fil-verdict` / `.sift-verdict-stub` — renommés/scindés depuis `.sift-verdict-card` (le composant carte a été supprimé au redesign 07-06, `verdictCardHtml()` est un no-op), resynchronisé 07-24.
 - L373 — Ligne candidat `.sift-cand` — hover discret volontaire (bordure seule).
 - L387 — Bouton Destination `.sift-dest-btn` — hérite générique.
-- L392 — Sliders volume/tempo `.sift-slider-*` — ⚠️ PÉRIMÉ : classes supprimées (08-21 puis 08-25) ; le volume vit dans « Lecteur simple » (L1883).
+- L392 — Sliders volume/tempo `.sift-slider-*` — ⚠️ PÉRIMÉ : classes supprimées (08-21 puis 08-25) ; le volume vit dans « Lecteur simple » (L1906).
 - L414 — Pochette/cover `.sift-cover-frame` — `alt` fixé 07-03, bug `[hidden]` réellement cassé fixé 07-05.
 - L439 — Boutons icon-only — vérifiés, titlebar corrigée 07-03.
 - L448 — Barre de progression `.pbar`/`.sift-pz-fill` — perf `transform` 07-03.
@@ -93,40 +93,40 @@
 - L699 — CTA « Revoir N morceaux → » Accueil — créé 07-05.
 - L713 — Page Rekordbox `renderRekordboxLive()` — écran dédié + sections Tier 1/Tier 2 master.db.
 - L796 — Écran Revue — zones repliables Diagnostic/Métadonnées, refonte 07-05.
-- L832 — `.sift-applytags-btn` — déplacé header Genres 07-09.
-- L853 — `.sift-zone-toggle` — accordéon exclusif + animation 07-09.
-- L868 — Spectrogramme — légende incrustée + réticule interactif 07-09.
-- L891 — `.lk` / `.lk-icon` — bug de réutilisation corrigé 07-07.
-- L907 — Pastille segmentée `.sift-seg`/`.sift-seg-opt` unifiée — 6 sites, thumb glissant 07-08.
-- L1014 — Grammaire de carte — 2 rôles (Groupée/Flottante), jamais 3 — 07-08 ; ⚠️ troisième décalage 08-27 (surfaces de Revue).
-- L1077 — Tokens globaux — adaptation tweakcn "ZFlow" (ombres/tracking/radius/OKLCH) 07-08.
-- L1105 — Écran Accueil — audit référence canonique 07-08.
-- L1125 — Écran Revue — audit référence canonique 07-08/09.
-- L1149 — Écran Écartés — audit référence canonique 07-09.
-- L1167 — Écran Journal — audit référence canonique 07-09, conforme (rien corrigé).
-- L1189 — Écran Bibliothèque — audit référence canonique 07-09.
-- L1208 — Écrans Réglages+Rekordbox+Clé USB — audit référence canonique 07-09.
-- L1228 — Pattern d'erreur/échec (`.sift-*-error`/`-fail`/`-warn`, 9 sites) — déjà cohérent, documenté ici (gap = défaut de doc, pas de code, audit 2026-07-19).
-- L1286 — Écran Écartés — chargement + bouton "Réessayer" (07-24).
-- L1297 — Écran Bibliothèque — chargement, tri en vue Grille, "Réinitialiser les filtres" corrigé (07-24).
-- L1320 — Table Bibliothèque, colonne Verdict — les 5 rendus de `verdictView()`, pastille + libellé, `verdictBadge` retiré (08-19).
-- L1394 — Bibliothèque éditeur — suppression confirmée, borne Année, autocomplétion Genres (07-24).
-- L1402 — Page Rekordbox — état d'erreur visible sur les 4 sections M8, boutons "en cours", CTA en `.sift-ranger-btn` (07-24).
-- L1417 — Accueil — confirmation "Retirer", swatches `aria-pressed` (07-24).
-- L1424 — Journal — titres de section datés lisibles (07-24).
-- L1439 — Revue — bannières `role="status" aria-live="polite"`, légende "écarter" (07-24).
-- L1447 — Lot — lignes de sélection accessibles au clavier, bouton "Annuler" sur confirmation armée (07-24).
-- L1455 — `styles.css` — tokens `--color-text-warning`/`-success` clair recalibrés, hover réaffirmé (07-24).
-- L1468 — Historique des corrections (chronologique, par date de session).
-- L1650 — Conventions de cohérence (sémantique couleur, hiérarchie de poids, discipline classe partagée) — à consulter AVANT tout nouveau composant (07-24).
-- L1720 — Ligne disque amovible (écran Clé USB) — trois états, rendu `usbRowHtml()` (07-31).
-- L1755 — Teintes pleines `-solid` — neuf tokens pour les surfaces de donnée (08-01), dix depuis 08-27 (`red`, pastille de verdict).
-- L1791 — Modale de formatage USB — états, trois corrections d'usage réel (08-02).
-- L1825 — Menu contextuel `.sift-ctx-menu` — états catalogués + rangée de pastilles couleur de source (08-20).
-- L1851 — Ligne de source du rail `.sift-rail-src` — teintes du cycle, `--error`, suspendue (pastille vidée) ; story + module pur `rail-source-entry.ts` (08-20).
-- L1883 — Lecteur simple de Revue — rangée d'audition : slider kit, play 28, temps unique, volume fin ; module pur + story (08-27).
-- L1934 — Pastille de verdict de file `verdictDot()` — teintes système pleines, 5 cas / 4 rendus ; module pur + story (08-27).
-- L1959 — Surfaces de Revue — trois plans : rail en retrait, file bord à bord, cadre de lecture, pied en surface (08-27).
+- L855 — `.sift-applytags-btn` — déplacé header Genres 07-09.
+- L876 — `.sift-zone-toggle` — accordéon exclusif + animation 07-09.
+- L891 — Spectrogramme — légende incrustée + réticule interactif 07-09.
+- L914 — `.lk` / `.lk-icon` — bug de réutilisation corrigé 07-07.
+- L930 — Pastille segmentée `.sift-seg`/`.sift-seg-opt` unifiée — 6 sites, thumb glissant 07-08.
+- L1037 — Grammaire de carte — 2 rôles (Groupée/Flottante), jamais 3 — 07-08 ; ⚠️ troisième décalage 08-27 (surfaces de Revue).
+- L1100 — Tokens globaux — adaptation tweakcn "ZFlow" (ombres/tracking/radius/OKLCH) 07-08.
+- L1128 — Écran Accueil — audit référence canonique 07-08.
+- L1148 — Écran Revue — audit référence canonique 07-08/09.
+- L1172 — Écran Écartés — audit référence canonique 07-09.
+- L1190 — Écran Journal — audit référence canonique 07-09, conforme (rien corrigé).
+- L1212 — Écran Bibliothèque — audit référence canonique 07-09.
+- L1231 — Écrans Réglages+Rekordbox+Clé USB — audit référence canonique 07-09.
+- L1251 — Pattern d'erreur/échec (`.sift-*-error`/`-fail`/`-warn`, 9 sites) — déjà cohérent, documenté ici (gap = défaut de doc, pas de code, audit 2026-07-19).
+- L1309 — Écran Écartés — chargement + bouton "Réessayer" (07-24).
+- L1320 — Écran Bibliothèque — chargement, tri en vue Grille, "Réinitialiser les filtres" corrigé (07-24).
+- L1343 — Table Bibliothèque, colonne Verdict — les 5 rendus de `verdictView()`, pastille + libellé, `verdictBadge` retiré (08-19).
+- L1417 — Bibliothèque éditeur — suppression confirmée, borne Année, autocomplétion Genres (07-24).
+- L1425 — Page Rekordbox — état d'erreur visible sur les 4 sections M8, boutons "en cours", CTA en `.sift-ranger-btn` (07-24).
+- L1440 — Accueil — confirmation "Retirer", swatches `aria-pressed` (07-24).
+- L1447 — Journal — titres de section datés lisibles (07-24).
+- L1462 — Revue — bannières `role="status" aria-live="polite"`, légende "écarter" (07-24).
+- L1470 — Lot — lignes de sélection accessibles au clavier, bouton "Annuler" sur confirmation armée (07-24).
+- L1478 — `styles.css` — tokens `--color-text-warning`/`-success` clair recalibrés, hover réaffirmé (07-24).
+- L1491 — Historique des corrections (chronologique, par date de session).
+- L1673 — Conventions de cohérence (sémantique couleur, hiérarchie de poids, discipline classe partagée) — à consulter AVANT tout nouveau composant (07-24).
+- L1743 — Ligne disque amovible (écran Clé USB) — trois états, rendu `usbRowHtml()` (07-31).
+- L1778 — Teintes pleines `-solid` — neuf tokens pour les surfaces de donnée (08-01), dix depuis 08-27 (`red`, pastille de verdict).
+- L1814 — Modale de formatage USB — états, trois corrections d'usage réel (08-02).
+- L1848 — Menu contextuel `.sift-ctx-menu` — états catalogués + rangée de pastilles couleur de source (08-20).
+- L1874 — Ligne de source du rail `.sift-rail-src` — teintes du cycle, `--error`, suspendue (pastille vidée) ; story + module pur `rail-source-entry.ts` (08-20).
+- L1906 — Lecteur simple de Revue — rangée d'audition : slider kit, play 28, temps unique, volume fin ; module pur + story (08-27).
+- L1957 — Pastille de verdict de file `verdictDot()` — teintes système pleines, 5 cas / 4 rendus ; module pur + story (08-27).
+- L1982 — Surfaces de Revue — trois plans : rail en retrait, file bord à bord, cadre de lecture, pied en surface (08-27).
 
 ## Ligne de queue — `.qi` (`styles.css:1127-1214`, revérifié au grep le 2026-08-27)
 
@@ -803,9 +803,9 @@ par défaut, badge de statut visible dans l'en-tête replié, caché déplié.
 | État | Condition | Rendu |
 |---|---|---|
 | Badge qualité (Diagnostic) | zone repliée | `LOSSLESS` / `MP3 ≈ X kbps` dans l'en-tête, ton success/danger/warning selon `qualityChipTone(r)` |
-| Badge CDJ (Métadonnées) | zone repliée | `CDJ compatible`/`CDJ incompatible`, calculé depuis `report.tags_cdj_ok` |
+| ~~Badge CDJ (Métadonnées)~~ | ⚠️ RETIRÉ 2026-08-25 | plus aucun badge sur ce header — voir le ⚠️ sous la table |
 | Zone dépliée | clic sur l'en-tête | badge caché, corps affiché (`.sift-zone-toggle-body-open`) |
-| Tag-warn | `!tags_cdj_ok` | bandeau explicite nommant Artiste+Titre (pas un « tags non écrits » générique) + bouton Appliquer les tags |
+| Tag-warn (`.sift-tag-warn`) | ⚠️ PAS `!tags_cdj_ok` — écart aux tags saisis (`refreshDiscrepancy`) | bandeau nommant Artiste+Titre, `role="status"` ; le bouton Appliquer est parti le 2026-08-25 (gravure automatique au blur) |
 | CTA Discogs | `c.artist && c.title` | `.sift-id-btn-neutral` (« Rechercher à nouveau ») au lieu du gold plein — le gold reste réservé à « rien identifié » |
 | Sélection candidat | choix appliqué | flash bref sur `.sift-identified-line` (`.sift-identified-flash`), PAS un état permanent — la liste de candidats est remplacée par cette ligne, aucun `.sift-cand` ne survit à la sélection |
 
@@ -818,6 +818,29 @@ FIX-4 de `report-view.ts` (qui l'avait sorti vers les chips Preuves comme
 différenciateur produit). En creusant `Sift.dc.html` pour la reconciliation
 maquette, la maquette Claude Design portait déjà CDJ+ID3 dans Identification
 depuis le début — FIX-4 avait donc dévié du design original, pas l'inverse.
+
+> ⚠️ **Deux décisions datées ont dépassé ce texte — il garde sa forme d'origine,
+> elles le corrigent :**
+>
+> **Badge CDJ retiré de l'UI le 2026-08-25.** Le passage de Métadonnées à un
+> header STATIQUE (spec `docs/ui-specs/revue.md` § Zone C, direction B) a supprimé
+> l'accordéon, et le badge qui n'existait que replié est parti avec. `tags_cdj_ok`
+> n'a donc **aucun consommateur dans l'UI réelle** à ce jour — le seul rendu
+> « CDJ compatible » qui subsiste est celui de `app.js`, la maquette, qui ne fait
+> pas autorité (voir l'en-tête de ce fichier).
+>
+> **Critère backend recâblé le 2026-09-01** (issue #46). `tags_cdj_ok` ne teste
+> plus la seule présence d'Artiste+Titre : il exige que ceux-ci vivent dans un
+> tag d'un TYPE que la platine lit, jugé sur le couple conteneur × type contre
+> `docs/cdj-metadata-formats.md` (`analysis/tags.rs::tag_type_readable_on_cdj`).
+> Un WAV taggé RIFF INFO valait `true`, il vaut `false`. Le champ est donc juste
+> aujourd'hui, et invisible — l'ordre inverse de ce qu'il était.
+>
+> **Le tag-warn n'a jamais été le badge.** La ligne « Tag-warn » de la table
+> ci-dessus disait `!tags_cdj_ok` : c'est faux et ça l'était déjà. `.sift-tag-warn`
+> est piloté par `refreshDiscrepancy` (`filing-identify.ts`), qui compare les
+> champs AFFICHÉS au snapshot des tags du fichier — il ne lit pas le rapport
+> d'analyse du tout.
 
 Design/plan : `docs/superpowers/specs/2026-07-05-revue-screen-redesign-design.md`,
 `docs/superpowers/plans/2026-07-05-revue-screen-redesign.md`. Prototype HTML
@@ -1441,7 +1464,7 @@ compteur « N actions » est passé sur `.jrnl-group-count`.
 | Élément | État | Détail |
 |---|---|---|
 | Bannière "Converti" (`showFiledConfirm`, `filing-actions.ts:105-124`) | affichée après un rangement | `role="status"` + `aria-live="polite"` (`filing-actions.ts:113-114`) |
-| Bandeau avertissement tags non gravés (`.sift-tag-warn`, `filing-identify.ts:508`) | `!tags_cdj_ok` | `role="status"` + `aria-live="polite"` déjà sur l'élément |
+| Bandeau avertissement tags non gravés (`.sift-tag-warn`, `filing-identify.ts`) | ⚠️ PAS `!tags_cdj_ok` : écart entre les champs affichés et le snapshot des tags du fichier, calculé par `refreshDiscrepancy` — il ne lit pas le rapport d'analyse (corrigé 2026-09-01) | `role="status"` + `aria-live="polite"` déjà sur l'élément ; visibilité par `style.display` seul |
 | Légende clavier (`report-view.ts:355`) | permanent | dit désormais **"écarter"** (`BKSP`), plus "jeter" — cohérent avec le renommage de terminologie du 2026-07-10 (voir Historique) |
 
 ## Lot — lignes accessibles au clavier + Annuler (2026-07-24) — `batch-panel.ts`

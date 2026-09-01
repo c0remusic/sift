@@ -363,7 +363,10 @@ export function renderEditor(host: HTMLElement, mid: HTMLElement, rail: string):
     // chaque ligne d'attribut porte son input, stylé comme du texte au repos, révélé au survol et au
     // focus. Un seul rendu quel que soit l'état : c'est tout le point de la direction B. Le bouton
     // "Identifier" ne bascule plus un mode, il lance la recherche Discogs qui remplit ces mêmes
-    // champs. Le badge CDJ (critère code recâblé par #46, hors périmètre) vit sur ce header.
+    // champs. Ce header ne porte PLUS de badge CDJ : il a été retiré avec le passage au header
+    // statique (2026-08-25), et `report.tags_cdj_ok` n'a aujourd'hui aucun consommateur dans
+    // l'UI réelle — le seul rendu qui reste est celui de la maquette `app.js`, qui ne fait pas
+    // autorité. Le critère backend, lui, est bien recâblé (#46, 2026-09-01).
     `<div class="sift-meta-header">` +
     `<span class="sift-meta-title">Métadonnées</span>` +
     `<span class="sift-meta-header-right">` +
@@ -402,14 +405,19 @@ export function renderEditor(host: HTMLElement, mid: HTMLElement, rail: string):
     // match (empty, no gap, otherwise). Placed after genres so the identity block reads whole first.
     `<div class="sift-rebuy"></div>` +
     // Plus de ligne « Tags ID3 » ici (spec docs/ui-specs/revue.md § Zone C, point 4, annotation
-    // d'Antoine « supprimé ») : `report.id3_version` est un drapeau de PRÉSENCE de tag conteneur —
-    // le backend ne le renseigne que pour .mp3, et il y vaut la chaîne « ID3 » (analysis/tags.rs) —
-    // si bien que la ligne rendue disait « Tags ID3 : ID3 ». Tautologique. Elle avait déjà été
+    // d'Antoine « supprimé ») : `report.id3_version` était un drapeau de PRÉSENCE de tag conteneur
+    // — le backend ne le renseignait que pour .mp3, et il y valait la chaîne « ID3 »
+    // (analysis/tags.rs) — si bien que la ligne rendue disait « Tags ID3 : ID3 ». Tautologique.
+    // Depuis le 2026-09-01 (issue #46) le champ porte le TYPE réel du porteur (« Id3v2 »,
+    // « RiffInfo »…), donc la ligne ne serait plus tautologique — la décision de la retirer, elle,
+    // n'a pas été rouverte. Elle avait déjà été
     // renommée une fois (« Version ID3 », annotation 2026-07-06) parce que le mot « version »
     // partagé avec le champ Version de Discogs juste au-dessus laissait croire qu'appliquer une
     // identité la remplissait, ce qu'elle n'a jamais fait : le renommage n'a pas suffi, la ligne
-    // part. Ne pas la restaurer sans rouvrir la décision. Ce que la piste vaut pour un CDJ se dit
-    // par le badge « Prêt CDJ » de l'en-tête Métadonnées (critère à recâbler, #46), pas ici.
+    // part. Ne pas la restaurer sans rouvrir la décision. Ce que la piste vaut pour un CDJ ne se
+    // dit nulle part dans cette vue : le badge de l'en-tête Métadonnées est parti le 2026-08-25 et
+    // rien ne l'a remplacé. Le bandeau `.sift-tag-warn` ci-dessous n'en tient pas lieu — il compare
+    // l'affichage aux tags du fichier (`refreshDiscrepancy`), il ne lit pas `tags_cdj_ok`.
     // Elle était le SEUL usage du rapport d'analyse dans cet éditeur : le paramètre `report` de
     // renderEditor et l'import de `row` (report-view) sont partis avec elle.
     // Discrepancy banner — sits JUST BELOW Apply. Hidden by default via inline display:none; the LONE
