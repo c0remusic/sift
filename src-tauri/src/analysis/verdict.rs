@@ -35,15 +35,15 @@ use crate::analysis::{Rail, Verdict};
 /// note déjà noir sur blanc dans le commentaire de la migration v21 (`db.rs`) : « `verdict` et
 /// `cutoff_hz` ne sont couverts par AUCUNE version de cache ».
 ///
-/// ⚠️ **Non incrémentée le 2026-09-01, délibérément** (issue #51, lane « durcissement de
-/// domaine »). La règle ci-dessus vise les entrées dont le verdict CHANGE ; la sortie des cas
-/// « pas mesurable » n'en change aucun sur la base réelle. Compté ce jour-là sur les 3 386 pistes
-/// de la base de production (277 Douteux) : cas 1 (lossless, coupure sentinelle) = **0**, cas 4
-/// (lossy, coupure sentinelle) = **0**, cas 5 (`Rail::Unknown` déclaré) = **0**. Un bump aurait
-/// donc déclenché 3 386 recalculs pour zéro verdict différent. Il redeviendra dû le jour où un
-/// SEUIL bouge (resserrage de la bande douteuse, planchers de platitude) — ces deux chantiers sont
-/// hors de cette lane, bloqués sur corpus.
-pub const VERDICT_CACHE_VERSION: i64 = 1;
+/// Historique : la lane « durcissement de domaine » du 2026-09-01 (matin) n'avait PAS incrémenté —
+/// la sortie des cas « pas mesurable » ne changeait aucun verdict réel (cas 1/4/5 comptés 0/0/0
+/// sur les 3 386 pistes de la base). La condition de bump qu'elle posait — « le jour où un SEUIL
+/// bouge » — est arrivée le jour même : falaise 19 500 → 20 000 et plancher fixe -5,8 → -12
+/// (référence assainie, voir leurs commentaires). D'où **2**. Coût : `cached()` efface les 3 386
+/// verdicts au prochain lancement et le pool ré-analyse tout — de l'ordre de 15-30 min de CPU en
+/// fond (le chemin « re-verdict depuis le cutoff stocké, sans ré-analyse » que promettent les
+/// constantes reconfigurables n'existe pas encore).
+pub const VERDICT_CACHE_VERSION: i64 = 2;
 
 /// Lit le cache `(tracks.verdict, tracks.verdict_ver)`. Version absente (NULL — ligne d'avant la
 /// v22 que son backfill n'a pas stampée) ou différente = **pas de verdict courant**, rendu comme
@@ -63,8 +63,12 @@ pub fn cached(raw: Option<String>, ver: Option<i64>) -> Option<String> {
 /// Decision bands (Hz) for a file DECLARED lossless. `cutoff_hz` is stored raw upstream so
 /// these thresholds stay reconfigurable without re-analysis (Réglages, M2b+).
 pub const LOSSLESS_OK_HZ: f32 = 20000.0; // ≥ → authentic lossless
-pub const LOSSY_CLIFF_HZ: f32 = 19500.0; // ≤ → lossy lowpass cliff → fake
-                                         // (LOSSY_CLIFF_HZ, LOSSLESS_OK_HZ) → grey zone
+/// **Fenêtre douteuse MORTE depuis le 2026-09-01** : la falaise rejoint `LOSSLESS_OK_HZ`. Mesuré
+/// au corpus (issue #51) : l'intervalle (19 500, 20 000) contenait 23 faux — la plage lame256,
+/// coupures 19 488-19 907 — et zéro authentique (minimum vérifié à l'œil : mur écarté à 19 692,
+/// premier vrai roll-off bien au-dessus). Un doute que la mesure ne peuple que de faux n'est pas
+/// un doute. Les deux constantes restent distinctes : la spec M2b+ les veut reconfigurables.
+pub const LOSSY_CLIFF_HZ: f32 = 20000.0; // ≤ → lossy lowpass cliff → fake
 
 /// Ce que rend `spectrum::detect_cutoff` quand il n'avait **rien à mesurer** — aucune trame
 /// décodée. Ce n'est pas une coupure à 0 Hz : c'est l'absence de mesure.
@@ -144,17 +148,27 @@ pub struct HfFlatness {
 /// troisième chiffre. Coût mesuré : 98/150 au lieu de 105/150, contre 0/10 faux positifs au lieu
 /// de 1/10.
 ///
-/// ⚠️ **Provisoire, et sur DIX fichiers.** C'est le défaut que ce chantier a déjà corrigé une fois
-/// (un seuil posé au plancher de 10 fichiers d'une famille musicale est une propriété de
-/// l'échantillon). Ce qui le lèverait : re-mesurer les 44 authentiques de la référence élargie par
-/// ce chemin-ci, pas par la sonde. Tant que ce n'est pas fait, ce plancher se lit comme une borne
-/// prudente, pas comme la frontière des masters.
-const HF_FIXED_FLOOR_DB: f32 = -5.8;
+/// ⚠️ L'avertissement « provisoire, sur DIX fichiers » de -5,8 a été LEVÉ le 2026-09-01 par la
+/// re-dérivation qu'il demandait : 137 lossless d'un dossier de provenance déclarée sûre
+/// (D:\MUSIQUE\ACID), mesurés par CE chemin (`corpus_scan`), et — leçon nouvelle — **assainis au
+/// spectrogramme** : le dossier contenait des transcodes avérés (coupures 16-18 kHz, murs nets à
+/// 19,4-20,4 kHz dont un EP entier), donc le min brut du dossier (-11,75… sur fichier au MUR)
+/// n'était pas prenable tel quel. Sont restés dans la référence les fichiers au roll-off naturel,
+/// vérifiés un par un (18 spectrogrammes lus) ; leur minimum : **-11,75 dB** (Ege Bam Yasi 1993,
+/// roll-off doux confirmé). Plancher posé à -12, arrondi sous ce minimum.
+///
+/// Coût assumé, mesuré sur la matrice de 345 faux : détection par l'union 69,3 % → 47 % —
+/// les transcodes haut débit réemballés passent, ce que TOUTE méthode spectrale rate (littérature,
+/// issue #51) ; le rattrapage propre est la détection par traces MDCT, ticket dédié. En échange :
+/// zéro master sombre ambré, là où -5,8 ambrait ~20 % du dossier réel (23/114) — dont des achats.
+/// Un mur près de Nyquist (≥ ~20,5 kHz) reste ambigu : un anti-aliasing DAT d'époque en fait un
+/// vrai, seul un mur FRANC sous ~20 kHz est damnant.
+const HF_FIXED_FLOOR_DB: f32 = -12.0;
 
-/// Bande relative. Toujours la valeur issue de la sonde, et gardée telle quelle parce qu'elle est
-/// CONSERVATRICE ici : les 10 authentiques du corpus descendent à -10,77 par le chemin Rust, très
-/// au-dessus de ce plancher, donc aucun d'eux n'en dépend. Elle vaut le même avertissement — elle
-/// n'a pas non plus été mesurée par le code qui juge.
+/// Bande relative. Valeur issue de la sonde, CONFIRMÉE le 2026-09-01 par le chemin qui juge :
+/// sur les 137 lossless de la référence élargie, minimum mesuré -19,36 — aucun authentique n'en
+/// dépend, et elle seule attrape 85/345 faux (Opus et lame192-256 notamment) à zéro coût.
+/// Inchangée, désormais mesurée.
 const HF_TOP_FLOOR_DB: f32 = -23.8;
 
 /// Vrai quand au moins une des deux bandes sort par le bas de la plage des masters.
@@ -329,18 +343,18 @@ mod tests {
         );
     }
 
+    // `lossless_in_grey_band_is_grey` (19 800 → Douteux) est parti le 2026-09-01 avec la fenêtre
+    // qu'il gardait — son sujet n'existe plus. Le comportement de l'ex-fenêtre est désormais figé
+    // par `la_fenetre_douteuse_est_morte_la_falaise_rejoint_20000`.
+
+    /// Les VALEURS des planchers, gelées en littéral — les tests d'encadrement sont symboliques
+    /// (`FLOOR - 0.1`) et suivraient n'importe quelle dérive sans tomber. Ces deux chiffres sont
+    /// des mesures (référence assainie du 2026-09-01, min authentique vérifié -11,75 / -19,36) :
+    /// les changer exige de rejouer `score-corpus.mjs`, pas d'éditer ce test.
     #[test]
-    fn lossless_in_grey_band_is_grey() {
-        assert_eq!(
-            verdict(
-                19800.0,
-                Rail::Lossless,
-                None,
-                Rail::Lossless,
-                HfFlatness::default()
-            ),
-            Ok(Verdict::Grey)
-        );
+    fn les_planchers_sont_ceux_de_la_reference_assainie() {
+        assert_eq!(HF_FIXED_FLOOR_DB, -12.0);
+        assert_eq!(HF_TOP_FLOOR_DB, -23.8);
     }
 
     /// Un lossless à bande PLEINE dont l'aigu est creux devient **Douteux**, pas Vrai lossless.
@@ -666,15 +680,14 @@ mod tests {
         );
     }
 
-    /// **Cas 2 — figé, cette lane n'y touche pas.** Les deux bornes de la bande douteuse de
-    /// coupure, à la valeur exacte, dans les deux sens.
-    ///
-    /// La spec du 2026-09-01 sort du domaine les cas « pas mesurable » (1, 4, 5) et laisse le
-    /// resserrage de cette bande à un chantier de corpus séparé. Ce test est la preuve exécutable
-    /// que le resserrage n'a pas eu lieu ici : `LOSSY_CLIFF_HZ` inclus = Faux, juste au-dessus =
-    /// Douteux, juste en dessous de `LOSSLESS_OK_HZ` = Douteux, `LOSSLESS_OK_HZ` inclus = Vrai.
+    /// **Cas 2 — la fenêtre douteuse est morte (2026-09-01).** La falaise rejoint
+    /// `LOSSLESS_OK_HZ` : sous 20 000 Hz une déclaration lossless est Fausse, à 20 000 et
+    /// au-dessus la platitude tranche. Corpus à l'appui (issue #51) : l'ex-fenêtre
+    /// (19 500, 20 000) ne contenait que des faux — 23 lame256 — et zéro authentique vérifié.
+    /// L'ancienne version de ce test figeait la fenêtre pour prouver que la lane 1 n'y touchait
+    /// pas ; celle-ci fige sa mort, aux mêmes bornes, dans les deux sens.
     #[test]
-    fn les_bornes_de_la_bande_douteuse_ne_bougent_pas() {
+    fn la_fenetre_douteuse_est_morte_la_falaise_rejoint_20000() {
         let at = |hz: f32| {
             verdict(
                 hz,
@@ -684,14 +697,31 @@ mod tests {
                 HfFlatness::default(),
             )
         };
-        assert_eq!(at(LOSSY_CLIFF_HZ), Ok(Verdict::Fake), "19 500 Hz inclus");
-        assert_eq!(at(19500.1), Ok(Verdict::Grey), "juste au-dessus de 19 500");
-        assert_eq!(at(19999.9), Ok(Verdict::Grey), "juste sous 20 000");
-        assert_eq!(at(LOSSLESS_OK_HZ), Ok(Verdict::Ok), "20 000 Hz inclus");
+        assert_eq!(
+            at(LOSSY_CLIFF_HZ - 0.1),
+            Ok(Verdict::Fake),
+            "juste sous la falaise : Faux"
+        );
+        assert_eq!(
+            at(19750.0),
+            Ok(Verdict::Fake),
+            "cœur de l'ex-fenêtre : Faux"
+        );
+        assert_eq!(at(19999.9), Ok(Verdict::Fake), "juste sous 20 000 : Faux");
+        assert_eq!(
+            at(LOSSLESS_OK_HZ),
+            Ok(Verdict::Ok),
+            "20 000 Hz inclus : Vrai"
+        );
+        assert_eq!(
+            LOSSY_CLIFF_HZ, LOSSLESS_OK_HZ,
+            "les deux constantes coïncident — l'écart rouvrirait une fenêtre qu'aucune mesure ne peuple"
+        );
     }
 
-    /// **Cas 3 — figé, cette lane n'y touche pas.** Les deux planchers de platitude, juste EN
-    /// DESSOUS de leur valeur, chacun seul (l'autre bande normale).
+    /// **Cas 3 — les planchers encadrés au dixième de dB.** Les deux planchers de platitude,
+    /// juste EN DESSOUS de leur valeur, chacun seul (l'autre bande normale). Symbolique, donc
+    /// il a suivi sans édition la re-dérivation du 2026-09-01 (fixe -5,8 → -12).
     ///
     /// Complète `un_authentique_pile_sur_le_plancher_reste_vrai_lossless`, qui pinne la borne par
     /// le haut : les deux ensemble encadrent chaque plancher au dixième de dB près, donc tout
