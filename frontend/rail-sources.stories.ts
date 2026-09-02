@@ -21,7 +21,7 @@ interface RailSrcArgs {
 }
 
 function src(id: number, path: string, over: Partial<Source> = {}): Source {
-  return { id, path, pending_count: 0, accessible: true, watched: true, color_key: null, ...over };
+  return { id, path, pending_count: 0, track_count: 12, accessible: true, watched: true, color_key: null, ...over };
 }
 
 function railHost(inner: string): HTMLElement {
@@ -73,6 +73,20 @@ export const SurveillanceSuspendue: StoryObj<RailSrcArgs> = {
       src(1, "C:\\music\\incoming"),
       src(2, "C:\\music\\promos", { watched: false }),
       src(3, "C:\\music\\bandcamp", { watched: false, color_key: "yellow" }),
+    ];
+    return railHost(all.map((s) => sourceEntryHtml(s, all, false, undefined)).join(""));
+  },
+};
+
+/** Aucun fichier audio reconnu (`track_count === 0`, issue #55, décision B2) : badge « 0 audio »
+ *  en encre warning, pastille éteinte (opacité réduite, teinte conservée). Précédence :
+ *  échec > vide > suspension — la 3e ligne, suspendue ET vide, rend le badge quand même. */
+export const AucunFichierReconnu: StoryObj<RailSrcArgs> = {
+  render: () => {
+    const all = [
+      src(1, "C:\\music\\incoming"),
+      src(2, "C:\\music\\pochettes", { track_count: 0 }),
+      src(3, "C:\\music\\cuesheets", { track_count: 0, watched: false }),
     ];
     return railHost(all.map((s) => sourceEntryHtml(s, all, false, undefined)).join(""));
   },

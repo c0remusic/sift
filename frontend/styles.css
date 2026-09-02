@@ -794,6 +794,14 @@ body:has(#sift-titlebar){border-radius:var(--border-radius-sm);overflow:hidden}
    1/9 du diamètre) : 8px → 1px ; 14px replié → 1.5px, règle au bloc replié plus bas. L'échec
    prime (« jamais atténuée ») : rail-source-entry.ts ne pose --suspended que sans --error. */
 .sift-rail-src--suspended .sift-rail-src-dot{background:transparent;box-shadow:inset 0 0 0 1px var(--src-hue,var(--color-text-tertiary))}
+/* AUCUN FICHIER AUDIO RECONNU (issue #55, décision B2 du 2026-09-02) : un dossier surveillé sans
+   aucun fichier reconnu portait un badge vide — indiscernable d'un dossier entièrement traité.
+   Badge textuel « 0 audio » en encre warning, pastille ÉTEINTE : teinte conservée, opacité
+   réduite (wireframe B2 : opacity .45) — ni pleine (rien à identifier ici de vivant) ni vidée
+   (le creux dit déjà « suspendue »). Précédence : échec > vide > suspension
+   (rail-source-entry.ts). */
+.sift-rail-src--empty .sift-rail-src-dot{opacity:.45}
+.sift-rail-src--empty .nav-badge{color:var(--color-text-warning)}
 .sift-rail-src-msg{padding:var(--space-4) var(--space-8);font-size:var(--text-sm);color:var(--color-text-tertiary)}
 /* Le bouton d'ajout prend la grammaire d'une entrée de rail plutôt que celle d'un bouton : il vit
    dans la colonne de navigation, pas dans un panneau, et un bouton plein y crierait plus fort que
@@ -857,6 +865,9 @@ body.sift-rail-collapsed .sift-rail-src-dot{width:14px;height:14px}
 /* Le contour de l'état suspendu suit la pastille qui grandit : même ratio 1/9 que la règle
    déclarée en section Sources (14px → 1.5px). */
 body.sift-rail-collapsed .sift-rail-src--suspended .sift-rail-src-dot{box-shadow:inset 0 0 0 1.5px var(--src-hue,var(--color-text-tertiary))}
+/* Replié, le badge « 0 audio » devient une pastille de présence comme les comptes — mais en
+   warning, pas en info : la présence signalée est un problème, pas du travail en attente (#55). */
+body.sift-rail-collapsed .sift-rail-src--empty .nav-badge{background:var(--color-text-warning)}
 /* Les en-têtes de section tombent à 0 de hauteur une fois repliés, donc les quatre groupes se
    fondaient en une seule colonne d'icônes indifférenciée — le rail perdait justement ce que la
    mise en sections lui avait donné. Un filet le rend sans prendre de place. */

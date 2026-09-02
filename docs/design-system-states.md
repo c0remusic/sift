@@ -64,7 +64,7 @@
 > lire.
 
 - L132 — Ligne de queue `.qi` — réécrit 08-27 : tokens (hex chauds morts), liseré de sélection retiré, curseur clavier `.qi-kbd`, interlignes #45 (46 px constante), séparateurs de rangées `::before` + pastille en fin de titre (08-27).
-- L174 — Mot de verdict Détail `verdictWord()` — ⚠️ COMPOSANT RETIRÉ le 2026-08-26 (c4f65eb) ; pipeline repris par `verdictDot()` (L1957).
+- L174 — Mot de verdict Détail `verdictWord()` — ⚠️ COMPOSANT RETIRÉ le 2026-08-26 (c4f65eb) ; pipeline repris par `verdictDot()` (L1967).
 - L200 — Item de navigation `.nv` — RAS.
 - L211 — Bouton d'action principal `.sift-ranger-btn` — hover désormais déclaré explicitement (07-24), disabled/focus restent génériques.
 - L230 — Chip/tag `.chip` — hover corrigé 07-03.
@@ -123,11 +123,11 @@
 - L1780 — Teintes pleines `-solid` — neuf tokens pour les surfaces de donnée (08-01), dix depuis 08-27 (`red`, pastille de verdict).
 - L1816 — Modale de formatage USB — états, trois corrections d'usage réel (08-02).
 - L1850 — Menu contextuel `.sift-ctx-menu` — états catalogués + rangée de pastilles couleur de source (08-20).
-- L1876 — Ligne de source du rail `.sift-rail-src` — teintes du cycle, `--error`, suspendue (pastille vidée) ; story + module pur `rail-source-entry.ts` (08-20).
-- L1908 — Lecteur simple de Revue — rangée d'audition : slider kit, play 28, temps unique, volume fin ; module pur + story (08-27).
-- L1959 — Pastille de verdict de file `verdictDot()` — teintes système pleines, 5 cas / 4 rendus ; module pur + story (08-27).
-- L1984 — Surfaces de Revue — trois plans : rail en retrait, file bord à bord, cadre de lecture, pied en surface (08-27).
-- L2027 — Carte de racine manquante du rail `.sift-railwarn` — remplace le bandeau `#sift-gate` supprimé ; états, survol en voile par-dessus l'ambre, rail replié ; module pur + story + vecteurs (09-02).
+- L1876 — Ligne de source du rail `.sift-rail-src` — teintes du cycle, `--error`, suspendue (pastille vidée), « 0 audio » (`--empty`, #55) ; story + module pur `rail-source-entry.ts` (08-20, 09-02).
+- L1918 — Lecteur simple de Revue — rangée d'audition : slider kit, play 28, temps unique, volume fin ; module pur + story (08-27).
+- L1969 — Pastille de verdict de file `verdictDot()` — teintes système pleines, 5 cas / 4 rendus ; module pur + story (08-27).
+- L1994 — Surfaces de Revue — trois plans : rail en retrait, file bord à bord, cadre de lecture, pied en surface (08-27).
+- L2037 — Carte de racine manquante du rail `.sift-railwarn` — remplace le bandeau `#sift-gate` supprimé ; états, survol en voile par-dessus l'ambre, rail replié ; module pur + story + vecteurs (09-02).
 
 ## Ligne de queue — `.qi` (`styles.css:1127-1214`, revérifié au grep le 2026-08-27)
 
@@ -1898,12 +1898,22 @@ une copie ne peut que diverger). États réels :
   repos de `.nv` est déjà `--color-text-tertiary`, la valeur que la spec prescrit —
   état permanent donc neutre. L'état est porté par la forme pleine/creuse, jamais
   par la couleur seule ; le `title` porte le motif (« surveillance suspendue »).
+- **Aucun fichier audio reconnu** `.sift-rail-src--empty` (2026-09-02, issue #55,
+  décision B2) : `track_count === 0` — un dossier surveillé où le scan n'a reconnu
+  AUCUN fichier portait un badge vide, indiscernable d'un dossier entièrement
+  traité. Badge textuel « 0 audio » en `--color-text-warning`, pastille ÉTEINTE :
+  teinte conservée, `opacity:.45` (wireframe B2) — ni pleine ni vidée, le creux
+  disant déjà « suspendue ». Précédence : échec > vide > suspension — le vide est
+  une information corrective (mauvais dossier probable), la suspension un choix ;
+  gelée par `test/rail-source-entry.test.ts`. Le `title` porte le motif.
 - **Replié** (`body.sift-rail-collapsed`) : pastille 14 px — seule identité visible
-  d'une source —, badge de compte clippé en point de 6 px.
+  d'une source —, badge de compte clippé en point de 6 px (en `--color-text-warning`
+  au lieu d'info quand la source est `--empty` : la présence signalée est un
+  problème, pas du travail en attente).
 
 Stories : `frontend/rail-sources.stories.ts` (TeintesDuCycle · ScanEchoue ·
-SurveillanceSuspendue — le rail replié n'y est pas représentable, la classe vit sur
-`<body>`). Spec : `docs/ui-specs/rail.md` § États.
+SurveillanceSuspendue · AucunFichierReconnu — le rail replié n'y est pas
+représentable, la classe vit sur `<body>`). Spec : `docs/ui-specs/rail.md` § États.
 
 ## Lecteur simple de Revue — rangée d'audition (2026-08-27)
 

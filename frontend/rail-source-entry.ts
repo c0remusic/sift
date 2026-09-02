@@ -71,7 +71,11 @@ export interface RailRowState {
 }
 
 /** États (rail.md § États) : l'échec PRIME sur la suspension — « jamais atténuée » — donc
- *  `--suspended` ne se pose que sans `--error`. */
+ *  `--suspended` ne se pose que sans `--error`. Le VIDE (`track_count === 0`, issue #55,
+ *  décision B2 du 2026-09-02) s'intercale : échec > vide > suspension. Le vide est une
+ *  information corrective — l'utilisateur a probablement pointé le mauvais dossier — quand la
+ *  suspension n'est qu'un choix ; le badge « 0 audio » (encre warning, pastille éteinte par CSS)
+ *  doit se lire même sur une source suspendue. */
 export function railRowState(
   s: Source,
   all: Source[],
@@ -79,21 +83,30 @@ export function railRowState(
   failure: string | undefined,
 ): RailRowState {
   const broken = !s.accessible || failure != null;
-  const suspended = !s.watched && !broken;
-  const state = broken ? " sift-rail-src--error" : suspended ? " sift-rail-src--suspended" : "";
+  const empty = !broken && s.track_count === 0;
+  const suspended = !s.watched && !broken && !empty;
+  const state = broken
+    ? " sift-rail-src--error"
+    : empty
+      ? " sift-rail-src--empty"
+      : suspended
+        ? " sift-rail-src--suspended"
+        : "";
   return {
     id: s.id,
     label: baseName(s.path),
-    badge: s.pending_count > 0 ? String(s.pending_count) : "",
+    badge: empty ? "0 audio" : s.pending_count > 0 ? String(s.pending_count) : "",
     dotClass: `sift-rail-src-dot sift-rail-src-dot-${resolveSourceColorKey(all, s)}`,
     rowClass: `nv sift-rail-src${active ? " on" : ""}${state}`,
     title: !s.accessible
       ? `${s.path} — dossier inaccessible`
       : failure
         ? `${s.path} — scan en échec : ${failure}`
-        : suspended
-          ? `${s.path} — surveillance suspendue`
-          : s.path,
+        : empty
+          ? `${s.path} — aucun fichier audio reconnu`
+          : suspended
+            ? `${s.path} — surveillance suspendue`
+            : s.path,
   };
 }
 

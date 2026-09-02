@@ -22,6 +22,10 @@ pub struct Source {
     pub id: i64,
     pub path: String,
     pub pending_count: i64,
+    /// Total de fichiers reconnus par le scan, TOUS statuts confondus — 0 signifie « aucun
+    /// fichier audio reconnu ici » (issue #55, badge « 0 audio » du rail), un état qu'un
+    /// `pending_count` à 0 ne sait pas distinguer d'un dossier entièrement traité.
+    pub track_count: i64,
     pub accessible: bool,
     pub watched: bool,
     pub color_key: Option<String>,
@@ -75,6 +79,7 @@ pub fn list(conn: &Connection) -> rusqlite::Result<Vec<Source>> {
     let mut stmt = conn.prepare(
         "SELECT s.id, s.path,
                 (SELECT count(*) FROM tracks t WHERE t.source_id=s.id AND t.status='pending'),
+                (SELECT count(*) FROM tracks t WHERE t.source_id=s.id),
                 s.watched, s.color_key
          FROM sources s ORDER BY s.id",
     )?;
@@ -85,9 +90,10 @@ pub fn list(conn: &Connection) -> rusqlite::Result<Vec<Source>> {
             id: r.get(0)?,
             path,
             pending_count: r.get(2)?,
+            track_count: r.get(3)?,
             accessible,
-            watched: r.get::<_, i64>(3)? != 0,
-            color_key: r.get(4)?,
+            watched: r.get::<_, i64>(4)? != 0,
+            color_key: r.get(5)?,
         })
     })?;
     rows.collect()
@@ -162,6 +168,27 @@ mod tests {
         .unwrap();
         let sources = list(&conn).unwrap();
         assert_eq!(sources[0].pending_count, 1); // only the pending one
+        assert_eq!(sources[0].track_count, 2); // both, whatever their status
+    }
+
+    /// Issue #55 : un dossier surveillé sans AUCUN fichier reconnu doit être distinguable d'un
+    /// dossier entièrement traité — les deux ont `pending_count = 0`, seul `track_count` les
+    /// sépare (0 contre > 0).
+    #[test]
+    fn track_count_zero_distinguishes_unrecognized_folder_from_processed_one() {
+        let conn = db();
+        let empty = add(&conn, ".").unwrap();
+        let processed = add(&conn, "..").unwrap();
+        conn.execute(
+            "INSERT INTO tracks (path, source_id, status) VALUES ('p/x.mp3', ?1, 'filed')",
+            rusqlite::params![processed],
+        )
+        .unwrap();
+        let sources = list(&conn).unwrap();
+        let e = sources.iter().find(|s| s.id == empty).unwrap();
+        let p = sources.iter().find(|s| s.id == processed).unwrap();
+        assert_eq!((e.pending_count, e.track_count), (0, 0));
+        assert_eq!((p.pending_count, p.track_count), (0, 1));
     }
 
     #[test]

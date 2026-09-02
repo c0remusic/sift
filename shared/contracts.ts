@@ -65,6 +65,10 @@ export interface Source {
   id: number;
   path: string;
   pending_count: number;
+  /** Total de fichiers reconnus par le scan, tous statuts — 0 = « aucun fichier audio reconnu »
+   *  (issue #55, badge « 0 audio » du rail). Un `pending_count` à 0 ne distingue pas ce cas
+   *  d'un dossier entièrement traité. */
+  track_count: number;
   accessible: boolean;
   watched: boolean;
   color_key: string | null;

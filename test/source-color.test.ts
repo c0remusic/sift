@@ -11,7 +11,7 @@ import { resolveSourceColorKey, SOURCE_HUE_CYCLE } from "../frontend/source-colo
 import type { Source } from "../shared/contracts";
 
 function src(id: number, color_key: string | null = null): Source {
-  return { id, path: `C:\\music\\${id}`, pending_count: 0, accessible: true, watched: true, color_key };
+  return { id, path: `C:\\music\\${id}`, pending_count: 0, track_count: 12, accessible: true, watched: true, color_key };
 }
 
 describe("SOURCE_HUE_CYCLE", () => {

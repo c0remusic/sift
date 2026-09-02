@@ -12,6 +12,7 @@ function src(over: Partial<Source> = {}): Source {
     id: 1,
     path: "C:\\music\\incoming",
     pending_count: 0,
+    track_count: 12,
     accessible: true,
     watched: true,
     color_key: null,
@@ -53,6 +54,40 @@ describe("sourceEntryHtml — états", () => {
     const s = src({ watched: false });
     const html = sourceEntryHtml(s, [s], false, undefined);
     expect(html).toMatch(/sift-rail-src-dot-(indigo|purple|pink|teal|yellow)/);
+  });
+
+  // Issue #55, décision B2 (2026-09-02) : `track_count === 0` = « aucun fichier audio reconnu »,
+  // badge textuel « 0 audio ». Précédence : échec > vide > suspension — le vide est une
+  // information corrective (mauvais dossier probable), la suspension un choix.
+  it("aucun fichier reconnu : classe --empty, badge « 0 audio », motif dans le title", () => {
+    const s = src({ track_count: 0 });
+    const r = railRowState(s, [s], false, undefined);
+    expect(r.rowClass).toContain("sift-rail-src--empty");
+    expect(r.badge).toBe("0 audio");
+    expect(r.title).toContain("aucun fichier audio reconnu");
+  });
+
+  it("l'échec PRIME sur le vide : un dossier inaccessible n'affiche pas « 0 audio »", () => {
+    const s = src({ track_count: 0, accessible: false });
+    const r = railRowState(s, [s], false, undefined);
+    expect(r.rowClass).toContain("sift-rail-src--error");
+    expect(r.rowClass).not.toContain("sift-rail-src--empty");
+    expect(r.badge).toBe("");
+  });
+
+  it("le vide PRIME sur la suspension : le badge « 0 audio » se lit même suspendue", () => {
+    const s = src({ track_count: 0, watched: false });
+    const r = railRowState(s, [s], false, undefined);
+    expect(r.rowClass).toContain("sift-rail-src--empty");
+    expect(r.rowClass).not.toContain("sift-rail-src--suspended");
+    expect(r.badge).toBe("0 audio");
+  });
+
+  it("un dossier traité (track_count > 0, pending 0) reste neutre : badge vide, pas --empty", () => {
+    const s = src({ track_count: 5, pending_count: 0 });
+    const r = railRowState(s, [s], false, undefined);
+    expect(r.rowClass).not.toContain("sift-rail-src--empty");
+    expect(r.badge).toBe("");
   });
 
   it("échappe un color_key adverse : la base ne contraint PAS les 5 valeurs (audit 2026-08-20)", () => {
@@ -151,6 +186,7 @@ describe("railShapeKey — ce qu'une mise à jour en place ne rattrape PAS", () 
     // par seconde — le bug d'origine, réintroduit par la porte de derrière.
     const base = railShapeKey([a, b]);
     expect(railShapeKey([{ ...a, pending_count: 999 }, b])).toBe(base);
+    expect(railShapeKey([{ ...a, track_count: 0 }, b])).toBe(base);
     expect(railShapeKey([{ ...a, watched: false }, b])).toBe(base);
     expect(railShapeKey([{ ...a, accessible: false }, b])).toBe(base);
     expect(railShapeKey([{ ...a, color_key: "teal" }, b])).toBe(base);
