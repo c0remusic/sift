@@ -7,11 +7,11 @@
 <link rel="stylesheet" href="/frontend/styles.css">
 </head>
 <body>
-<!-- Porte de premier réglage : racine de bibliothèque non définie. Elle vivait sur Accueil
-     (fusion 1) — donc sur l'écran qu'on quitte. Remontée au niveau fenêtre, elle est visible
-     depuis TOUS les écrans, ce qui est précisément ce que la fusion fait gagner. Bandeau et non
-     entrée de barre : le message est une phrase, pas un contrôle. -->
-<div id="sift-gate" hidden></div>
+<!-- Le bandeau `#sift-gate` (racine de bibliothèque non définie) vivait ici, au-dessus de la
+     charpente entière. Retiré le 2026-09-02 (issue #54) : la racine n'est plus un prérequis de la
+     conversion — on convertit en place ou vers un dossier externe sans en avoir aucune — donc un
+     bandeau permanent criait un prérequis qui ne mord qu'à une destination de l'arbre. Le rappel
+     est descendu dans le rail, sous les sources (`rail-root-warning.ts`, direction A2). -->
 <div class="pa" id="pa" tabindex="0">
   <div class="sb" id="nav">
     <div class="nav-brand"><i class="ti ti-filter" aria-hidden="true"></i><span>Sift</span>

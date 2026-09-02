@@ -15,6 +15,7 @@ import { esc } from "./dom";
 import { toast } from "./filing-toast";
 import { humanizeError } from "./errors";
 import { destPopoverPosition } from "./popover-position";
+import { refreshRootWarning } from "./rail-root-warning";
 
 const LIBRARY_ROOT = "library_root";
 // Groupe « Autres » : dossiers externes déjà choisis, mémorisés en settings JSON (valeur = tableau
@@ -134,6 +135,9 @@ async function pickRoot(fldz: HTMLElement): Promise<void> {
   if (typeof dir !== "string") return;
   try {
     await setSetting(LIBRARY_ROOT, dir);
+    // Second point qui POSE une racine (le premier est Réglages) : le rappel logé au rail (#54)
+    // se relit ici aussi, sinon il resterait à l'écran après un réglage réussi.
+    void refreshRootWarning();
     await loadBins();
     renderBins(fldz);
   } catch (e) {
@@ -341,27 +345,33 @@ function renderBins(fldz: HTMLElement): void {
     });
     return;
   }
-  if (!destState.rootSet) {
-    fldz.innerHTML =
-      '<div class="sift-fldz-hint">Choisis ta racine de bibliothèque pour commencer à convertir.</div>' +
-      '<button data-fil="pickroot"><i class="ti ti-folder sift-icon-inline-base"></i> Choisir…</button>';
-    fldz
-      .querySelector('[data-fil="pickroot"]')
-      ?.addEventListener("click", () => void pickRoot(fldz));
-    return;
-  }
+  // ⚠️ PAS d'early-return sur « racine absente » depuis le 2026-09-02 (issue #54). Il en existait un
+  // ici : il remplaçait le popover ENTIER par une porte « choisis ta racine », donc il cachait aussi
+  // « Sur place », le groupe « Autres » et « Choisir un dossier… » — les trois destinations qui
+  // n'ont JAMAIS eu besoin d'une racine (`filing::needs_library_root` côté Rust). Résultat :
+  // `binRel` restait null, `hasDestination()` faux, et Convertir désactivé alors que le backend
+  // aurait rangé. La racine ne conditionne QUE la section arbre, et c'est tout ce qu'elle remplace
+  // maintenant.
+  const filtering = destState.rootSet && destState.binFilter.trim().length > 0;
 
-  const filtering = destState.binFilter.trim().length > 0;
-
-  // Folder filter (only worth showing once there are sub-folders to sift through).
-  const filterRow = destState.bins.length
-    ? `<input data-fil="binfilter" placeholder="Filtrer les dossiers…" value="${esc(
-        destState.binFilter,
-      )}" class="sift-binfilter">`
-    : "";
+  // Folder filter (only worth showing once there are sub-folders to sift through). Sans racine il
+  // n'y a pas d'arbre à filtrer : le champ disparaît avec lui.
+  const filterRow =
+    destState.rootSet && destState.bins.length
+      ? `<input data-fil="binfilter" placeholder="Filtrer les dossiers…" value="${esc(
+          destState.binFilter,
+        )}" class="sift-binfilter">`
+      : "";
 
   let body: string;
-  if (filtering) {
+  if (!destState.rootSet) {
+    // Seule la section ARBRE devient la porte. Le libellé ne dit plus « pour commencer à
+    // convertir » — c'était vrai avant #54 et c'est faux depuis : on convertit sur place ou vers un
+    // dossier externe sans aucune racine.
+    body =
+      '<div class="sift-fldz-hint">Aucune racine de bibliothèque — cet arbre reste vide. Ranger sur place ou dans un autre dossier fonctionne sans elle.</div>' +
+      '<button data-fil="pickroot"><i class="ti ti-folder sift-icon-inline-base"></i> Choisir la racine…</button>';
+  } else if (filtering) {
     // Flat list of matches (path or name contains the query), case-insensitive.
     const q = destState.binFilter.trim().toLowerCase();
     const matches = destState.bins.filter(
@@ -444,6 +454,10 @@ function renderBins(fldz: HTMLElement): void {
     `<div class="sift-fldz-sep"></div>` +
     inPlaceRow +
     footRow;
+
+  // Bouton de la porte d'arbre (rendu SEULEMENT sans racine, dans `body`). Il vivait dans
+  // l'early-return retiré ci-dessus ; son écouteur descend ici avec lui.
+  fldz.querySelector('[data-fil="pickroot"]')?.addEventListener("click", () => void pickRoot(fldz));
 
   if (!binPick) {
     fldz.querySelector<HTMLInputElement>('[data-fil="inplace"]')?.addEventListener("change", (e) => {

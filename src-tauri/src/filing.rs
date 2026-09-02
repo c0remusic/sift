@@ -30,6 +30,17 @@ pub const FILE_IN_PLACE: &str = "__SOURCE__";
 /// deleted or unmounted between the moment it was picked and the moment a file lands there).
 pub const EXTERNAL_DEST_PREFIX: &str = "__EXTERNAL__::";
 
+/// Vrai quand `bin_rel` désigne un bac de l'ARBRE de bibliothèque — le SEUL cas où la racine est
+/// nécessaire (décision #54, 2026-09-02 : « on doit pouvoir convertir où on veut sans racine »).
+///
+/// Les deux sentinelles de destination résolvent leur dossier sans racine : `FILE_IN_PLACE` prend
+/// le parent de la source, `EXTERNAL_DEST_PREFIX` porte un chemin absolu. La racine n'est donc pas
+/// une exigence du rangement, mais de l'arbre — et c'est cette fonction qui porte la distinction,
+/// au même endroit que `plan_file` décide `dest_dir`.
+pub fn needs_library_root(bin_rel: &str) -> bool {
+    bin_rel != FILE_IN_PLACE && !bin_rel.starts_with(EXTERNAL_DEST_PREFIX)
+}
+
 /// Why filing could not complete (nothing is left half-filed on these — see ordering).
 #[derive(Debug, Clone, PartialEq)]
 pub enum FilingError {
@@ -43,6 +54,11 @@ pub enum FilingError {
     /// existing `"NoLibraryRoot"` convention) so the front can pattern-match it distinctly from
     /// other filing errors.
     RailMismatch,
+    /// La destination visée est un bac de l'ARBRE de bibliothèque, et aucune racine n'est réglée.
+    /// Chaîne sentinelle stable (`"NoLibraryRoot"`, littéral inchangé depuis `ipc_filing`) : le
+    /// front la reconnaît pour router vers Réglages. Depuis #54 elle ne sort plus d'un rangement
+    /// EN PLACE ni vers un dossier externe — voir `needs_library_root`.
+    NoLibraryRoot,
     /// Une piste DÉJÀ RANGÉE occupe le chemin de destination (`tracks.path` est `UNIQUE`). Distinct
     /// de la ligne `pending` que le watcher vient de créer pour le fichier qu'on est en train de
     /// ranger — celle-là est évincée dans la transaction, sans erreur. Ici c'est un vrai conflit
@@ -60,6 +76,7 @@ impl std::fmt::Display for FilingError {
             FilingError::NotFound => write!(f, "track not found"),
             FilingError::Upscale => write!(f, "refused: cannot upscale lossy to lossless"),
             FilingError::RailMismatch => write!(f, "RAIL_MISMATCH"),
+            FilingError::NoLibraryRoot => write!(f, "NoLibraryRoot"),
             FilingError::DestOccupied(p) => write!(
                 f,
                 "destination déjà occupée par une autre piste rangée: {p}"
@@ -434,7 +451,10 @@ fn ensure_unique_reserved(
                                      // struct here would just move the same 8 fields one level up without reducing real complexity.
 pub fn plan_file(
     conn: &Connection,
-    root: &Path,
+    // `None` = aucune racine réglée. Ce n'est un refus QUE si `bin_rel` vise l'arbre : les deux
+    // sentinelles de destination (en place, dossier externe) n'ont jamais lu cette valeur, et
+    // depuis #54 elles ne l'exigent donc plus. Voir `needs_library_root`.
+    root: Option<&Path>,
     template: &str,
     track_id: i64,
     bin_rel: &str,
@@ -497,6 +517,23 @@ pub fn plan_file(
         // taken on faith: fail loudly if it's gone rather than silently recreating it elsewhere
         // (create_dir_all below would otherwise happily conjure a new, wrong directory).
         let p = PathBuf::from(abs);
+        // Le doc-comment d'`EXTERNAL_DEST_PREFIX` promet un chemin ABSOLU (issu du dialog natif).
+        // Rendu exécutable le 2026-09-02 : depuis #54 cette branche est LE chemin de rangement sans
+        // racine, donc la seule chose qui la sépare encore de `safe_join`. Un relatif y résoudrait
+        // contre le répertoire courant du process — ni la bibliothèque, ni un dossier que
+        // l'utilisateur a désigné. Refus AVANT `is_dir()` : un relatif qui existe par hasard sous
+        // le cwd passerait le test d'existence tout en violant le contrat.
+        if !p.is_absolute() {
+            return Err(FilingError::Io(format!(
+                "external destination must be an absolute path: {abs}"
+            )));
+        }
+        // Le doc-comment d'`EXTERNAL_DEST_PREFIX` promet un chemin ABSOLU (issu du dialog natif).
+        // Rendu exécutable le 2026-09-02 : depuis #54 cette branche est LE chemin de rangement sans
+        // racine, donc la seule chose qui la sépare encore de `safe_join`. Un relatif y résoudrait
+        // contre le répertoire courant du process — ni la bibliothèque, ni un dossier que
+        // l'utilisateur a désigné. Refus AVANT `is_dir()` : un relatif qui existe par hasard sous
+        // le cwd passerait le test d'existence tout en violant le contrat.
         if !p.is_dir() {
             return Err(FilingError::Io(format!(
                 "external destination no longer exists: {abs}"
@@ -504,6 +541,10 @@ pub fn plan_file(
         }
         p
     } else {
+        // Seul point du plan qui LIT la racine — donc le seul qui peut la manquer. Le refus naît
+        // ici et nulle part ailleurs : c'est ce qui rend la sentinelle proportionnée à la
+        // destination visée plutôt qu'au geste de rangement (#54).
+        let root = root.ok_or(FilingError::NoLibraryRoot)?;
         library::safe_join(root, bin_rel).map_err(FilingError::Io)?
     };
     std::fs::create_dir_all(&dest_dir).map_err(|e| FilingError::Io(e.to_string()))?;
@@ -943,7 +984,7 @@ pub fn file_track(
 ) -> Result<FileResult, FilingError> {
     let plan = plan_file(
         conn,
-        root,
+        Some(root),
         template,
         track_id,
         bin_rel,
@@ -1453,7 +1494,7 @@ mod tests {
 
         let plan = plan_file(
             &conn,
-            &root,
+            Some(&root),
             "{artist} - {title}",
             id,
             "House",
@@ -1519,7 +1560,7 @@ mod tests {
         };
         let plan = plan_file(
             &conn,
-            &root,
+            Some(&root),
             "{artist} - {title}",
             id,
             "House",
@@ -1747,7 +1788,7 @@ mod tests {
         let bin_rel = format!("{EXTERNAL_DEST_PREFIX}{}", external.to_str().unwrap());
         let plan = plan_file(
             &conn,
-            &root,
+            Some(&root),
             "{artist} - {title}",
             id,
             &bin_rel,
@@ -1788,7 +1829,7 @@ mod tests {
         let bin_rel = format!("{EXTERNAL_DEST_PREFIX}{}", missing.to_str().unwrap());
         let err = plan_file(
             &conn,
-            &root,
+            Some(&root),
             "{artist} - {title}",
             id,
             &bin_rel,
@@ -1810,6 +1851,181 @@ mod tests {
                 missing.to_str().unwrap()
             )))
         );
+    }
+
+    /// #54 — la racine est une exigence de l'ARBRE. Table de vérité de la fonction qui porte la
+    /// distinction : elle décide, à elle seule, quelles destinations réclament encore une racine.
+    #[test]
+    fn needs_library_root_only_for_tree_destinations() {
+        assert!(needs_library_root(""), "la racine elle-même est un bac");
+        assert!(needs_library_root("House/Deep"));
+        assert!(!needs_library_root(FILE_IN_PLACE));
+        assert!(!needs_library_root(&format!(
+            "{EXTERNAL_DEST_PREFIX}/tmp/x"
+        )));
+        // Un bac qui NOMME la sentinelle sans l'être reste un bac de l'arbre.
+        assert!(needs_library_root("__SOURCE__ bis"));
+        // TRAVERSÉES — le point qui compte pour la sécurité : une tentative de sortie de la racine
+        // doit rester un chemin d'ARBRE, donc passer par `safe_join`, qui les rejette (ses propres
+        // tests l'épinglent). Si `needs_library_root` les classait « sans racine », elles
+        // contourneraient `safe_join` en entier et le trou anti-traversal serait total.
+        assert!(needs_library_root("../evil"));
+        assert!(needs_library_root("House/../../x"));
+        assert!(needs_library_root("..\\evil"));
+        assert!(needs_library_root("/etc"));
+        assert!(needs_library_root("C:\\Windows"));
+    }
+
+    /// La branche externe est LE chemin de rangement sans racine depuis #54 : son contrat
+    /// « chemin absolu venu du dialog natif » devient exécutable. Un relatif résoudrait contre le
+    /// répertoire courant du process — ni la bibliothèque, ni un dossier désigné par l'utilisateur.
+    #[test]
+    fn plan_file_external_dest_refuses_a_relative_path() {
+        let conn = db();
+        let dir = tempfile::tempdir().unwrap();
+        let Some((id, _)) = seed_track(&conn, dir.path(), "real_320.mp3", "src.mp3") else {
+            eprintln!("skip: no fixture");
+            return;
+        };
+        // Un relatif qui EXISTE réellement sous le cwd (`src/`, depuis src-tauri) : le refus doit
+        // venir du caractère relatif, pas d'une absence de dossier — sinon le garde ne prouve rien.
+        assert!(
+            std::path::Path::new("src").is_dir(),
+            "témoin: le test suppose un cwd = src-tauri, où `src/` existe"
+        );
+        let err = plan_file(
+            &conn,
+            None,
+            "{artist} - {title}",
+            id,
+            &format!("{EXTERNAL_DEST_PREFIX}src"),
+            None,
+            Some(Canonical {
+                artist: "X".into(),
+                title: "Y".into(),
+                version: None,
+                label: None,
+                confidence: crate::naming::Confidence::Green,
+            }),
+            false,
+            &HashSet::new(),
+        );
+        assert_eq!(
+            err.err(),
+            Some(FilingError::Io(
+                "external destination must be an absolute path: src".to_string()
+            ))
+        );
+    }
+
+    /// La chaîne de la sentinelle est le contrat lu par le front (`filing-actions.ts`,
+    /// `batch-panel.ts`) : elle est épinglée ici, pas seulement produite.
+    #[test]
+    fn no_library_root_displays_the_contract_sentinel() {
+        assert_eq!(FilingError::NoLibraryRoot.to_string(), "NoLibraryRoot");
+    }
+
+    /// #54, cœur du volet backend : SANS racine, un rangement EN PLACE planifie normalement.
+    /// Avant, la racine était réclamée à l'entrée de la commande et ce plan n'existait pas.
+    #[test]
+    fn plan_file_in_place_needs_no_library_root() {
+        let conn = db();
+        let dir = tempfile::tempdir().unwrap();
+        let Some((id, src)) = seed_track(&conn, dir.path(), "real_320.mp3", "src.mp3") else {
+            eprintln!("skip: no fixture");
+            return;
+        };
+        let plan = plan_file(
+            &conn,
+            None,
+            "{artist} - {title}",
+            id,
+            FILE_IN_PLACE,
+            None,
+            Some(Canonical {
+                artist: "X".into(),
+                title: "Y".into(),
+                version: None,
+                label: None,
+                confidence: crate::naming::Confidence::Green,
+            }),
+            false,
+            &HashSet::new(),
+        )
+        .expect("un rangement en place ne dépend pas de la racine");
+        assert_eq!(
+            Path::new(&plan.dest).parent(),
+            Path::new(&src).parent(),
+            "en place = le dossier de la source"
+        );
+    }
+
+    /// Même absence de racine, destination externe : planifie aussi.
+    #[test]
+    fn plan_file_external_dest_needs_no_library_root() {
+        let conn = db();
+        let dir = tempfile::tempdir().unwrap();
+        let external = dir.path().join("elsewhere");
+        std::fs::create_dir_all(&external).unwrap();
+        let Some((id, _)) = seed_track(&conn, dir.path(), "real_320.mp3", "src.mp3") else {
+            eprintln!("skip: no fixture");
+            return;
+        };
+        let bin_rel = format!("{EXTERNAL_DEST_PREFIX}{}", external.to_str().unwrap());
+        let plan = plan_file(
+            &conn,
+            None,
+            "{artist} - {title}",
+            id,
+            &bin_rel,
+            None,
+            Some(Canonical {
+                artist: "X".into(),
+                title: "Y".into(),
+                version: None,
+                label: None,
+                confidence: crate::naming::Confidence::Green,
+            }),
+            false,
+            &HashSet::new(),
+        )
+        .expect("un dossier externe ne dépend pas de la racine");
+        assert!(Path::new(&plan.dest).starts_with(&external));
+    }
+
+    /// L'autre moitié du contrat : viser l'ARBRE sans racine reste refusé, et par la sentinelle.
+    #[test]
+    fn plan_file_into_tree_without_root_is_refused() {
+        let conn = db();
+        let dir = tempfile::tempdir().unwrap();
+        let Some((id, _)) = seed_track(&conn, dir.path(), "real_320.mp3", "src.mp3") else {
+            eprintln!("skip: no fixture");
+            return;
+        };
+        for bin_rel in ["", "House/Deep"] {
+            let err = plan_file(
+                &conn,
+                None,
+                "{artist} - {title}",
+                id,
+                bin_rel,
+                None,
+                Some(Canonical {
+                    artist: "X".into(),
+                    title: "Y".into(),
+                    version: None,
+                    label: None,
+                    confidence: crate::naming::Confidence::Green,
+                }),
+                false,
+                &HashSet::new(),
+            );
+            assert_eq!(
+                err.err(),
+                Some(FilingError::NoLibraryRoot),
+                "bac {bin_rel:?}"
+            );
+        }
     }
 
     #[test]
@@ -2035,7 +2251,7 @@ mod tests {
         // Default (allow_rail_mismatch=false): refused, nothing touched.
         let blocked = plan_file(
             &conn,
-            &root,
+            Some(&root),
             "{artist} - {title}",
             id,
             "House",
@@ -2054,7 +2270,7 @@ mod tests {
         crate::ffmpeg::init_ffmpeg_path();
         let allowed = plan_file(
             &conn,
-            &root,
+            Some(&root),
             "{artist} - {title}",
             id,
             "House",
@@ -2085,7 +2301,7 @@ mod tests {
         crate::ffmpeg::init_ffmpeg_path();
         let res = plan_file(
             &conn,
-            &root,
+            Some(&root),
             "{artist} - {title}",
             id,
             "House",

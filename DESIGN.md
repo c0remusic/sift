@@ -819,6 +819,16 @@ définie) perd son emplacement. Elle remonte dans la barre unifiée, comme bande
 persistant tant que la racine manque — ce qui la rend d'ailleurs visible depuis tous
 les écrans, pas seulement depuis celui qu'on quitte.
 
+> ⚠️ **ÉCART NOMMÉ — ce paragraphe est périmé depuis le 2026-09-02 (issue #54).** Le
+> bandeau de la barre unifiée (`#sift-gate`) est **supprimé**, code et feuille compris.
+> Cause : la racine a cessé d'être un prérequis de la conversion — on convertit en place
+> ou vers un dossier externe sans elle — donc le bandeau criait sur tous les écrans un
+> prérequis qui ne mord qu'à une destination de l'arbre. Le rappel est descendu dans le
+> **rail**, sous la section Sources (carte ambre `.sift-railwarn`, direction A2 du
+> ticket). Le tracker prime sur ce fichier (`CLAUDE.md` § Front) : la décision vivante
+> est l'issue #54, et l'écart est nommé des deux côtés — voir `docs/ui-specs/rail.md`
+> § États et `docs/ui-specs/reglages.md` § États.
+
 ### Fusion 2 — RÉFUTÉE PAR LA MESURE, le 2026-08-19
 
 Ce qui suit était la proposition. Elle repose sur « Écartés est une vue filtrée de la même

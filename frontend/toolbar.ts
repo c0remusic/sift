@@ -233,40 +233,7 @@ export function closeAside(): void {
   aside.textContent = "";
 }
 
-// ---------------------------------------------------------------------------
-// Porte de premier réglage — racine de bibliothèque
-// ---------------------------------------------------------------------------
-
-/** Masquée pour la session, jamais persistée : la porte doit revenir au prochain démarrage tant
- *  que la racine manque. Un « ne plus afficher » durable cacherait un blocage réel. */
-let gateDismissed = false;
-
-/** Ferme la porte pour cette session. */
-export function dismissRootGateBanner(): void {
-  gateDismissed = true;
-  const el = document.getElementById("sift-gate");
-  if (el) el.hidden = true;
-}
-
-/** Peint (ou retire) le bandeau de racine manquante.
- *
- *  `root` vient du magasin de réglages ; une valeur vide vaut absente. L'appelant relit le réglage
- *  plutôt que le module, pour que la porte se ferme dès que Réglages en pose une, sans attendre un
- *  changement d'écran. */
-export function renderRootGate(root: string | null): void {
-  const el = document.getElementById("sift-gate");
-  if (!el) return;
-  if (root || gateDismissed) {
-    el.hidden = true;
-    el.textContent = "";
-    return;
-  }
-  el.hidden = false;
-  el.innerHTML =
-    `<i class="ti ti-alert-triangle" aria-hidden="true"></i>` +
-    `<span><strong>Racine de bibliothèque non définie</strong> — les dossiers surveillés restent ` +
-    `scannés, mais la conversion sera bloquée tant qu'aucune racine n'est choisie.</span>` +
-    `<button data-view="reglages" class="sift-gate-cta" type="button">Ouvrir Réglages</button>` +
-    `<button data-gate="dismiss" class="lk-icon" type="button" title="Masquer pour cette session" ` +
-    `aria-label="Masquer ce message pour cette session"><i class="ti ti-x"></i></button>`;
-}
+// La porte de premier réglage (`renderRootGate` / `dismissRootGateBanner`, bandeau `#sift-gate`)
+// vivait ici. Retirée le 2026-09-02 avec sa plomberie (issue #54) : la racine n'est plus un
+// prérequis de la conversion, donc le rappel n'a plus à occuper toute la largeur de la fenêtre sur
+// tous les écrans. Il est descendu dans le rail — `rail-root-warning.ts`, direction A2.

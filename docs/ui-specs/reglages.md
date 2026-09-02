@@ -59,7 +59,7 @@ porte aucune action sur un périphérique.
 | **Réglage appliqué** | Retour immédiat et **bref** — la valeur affichée change, un indicateur discret confirme, puis s'efface. L'état permanent reste neutre : seule la transition se colore |
 | **Écriture en cours** | Le contrôle reste utilisable, un indicateur discret en marge |
 | **Écriture échouée** | Le contrôle revient à sa valeur réelle, le motif s'affiche sous lui, en encre `danger`. Jamais un échec silencieux qui laisse voir la valeur souhaitée |
-| **Racine non définie** | Bandeau `warning` en tête de la catégorie Général, et **aussi** dans la barre unifiée tant que la racine manque — cette porte a quitté Accueil (`DESIGN.md` § 15, fusion 1) |
+| **Racine non définie** | Bandeau `warning` en tête de la catégorie Général. **Depuis le 2026-09-02 (issue #54), plus rien dans la barre unifiée** : le bandeau pleine largeur `#sift-gate` est supprimé — la racine ne conditionne plus la conversion, seulement les destinations de l'arbre. Le rappel hors Réglages vit désormais au **rail**, sous les sources (`docs/ui-specs/rail.md` § États). Poser **ou oublier** la racine ici relit ce rappel dans le même geste |
 | **Discogs non connecté** | Champ de jeton, lien vers la page d'obtention, et l'état de la dernière vérification |
 | **Discogs en limite de débit** | Message propre à ce cas, avec le délai. Pas un message d'erreur générique |
 | **Aperçu de nommage** | Recalculé à chaque frappe via `previewFilename`. **Jamais** réimplémenté en TS |

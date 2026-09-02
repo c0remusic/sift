@@ -25,8 +25,19 @@ const TOAST_EXIT_MS = 75;
  *  false: callers that only need a plain message call `toast("…")`.
  *  A single toast exists at a time, by construction: when OUR `#sift-toast` is already on screen its
  *  content is MUTATED and the dismiss timer restarted, instead of removing then recreating the
- *  node. */
-export function toast(message: string, undo = false, onUndo?: () => void): void {
+ *  node.
+ *
+ *  `actionLabel` renomme ce bouton quand l'action n'est pas une annulation — ajouté le 2026-09-02
+ *  pour le toast de blocage « aucune racine de bibliothèque » (issue #54), qui doit proposer
+ *  « Choisir la racine ». Le MÉCANISME existait déjà en entier (bouton + callback) : seul son
+ *  libellé était figé sur « Annuler ». Il reste le défaut, donc aucun appelant existant ne bouge,
+ *  et la classe/`data-fil` du bouton ne changent pas (la feuille les vise). */
+export function toast(
+  message: string,
+  undo = false,
+  onUndo?: () => void,
+  actionLabel = "Annuler",
+): void {
   // Ce module est le SEUL à construire `#sift-toast`. Le garde `dataset.owner` qui vivait ici
   // n'existait que pour se protéger du toast privé de `library-detail.ts`, une copie de cette
   // fonction avec son propre timer de 6 s dont l'id n'était jamais mémorisé — donc impossible à
@@ -43,7 +54,7 @@ export function toast(message: string, undo = false, onUndo?: () => void): void 
   el.innerHTML =
     `<span>${esc(message)}</span>` +
     (undo
-      ? '<button data-fil="undo" class="sift-toast-undo">Annuler</button>'
+      ? `<button data-fil="undo" class="sift-toast-undo">${esc(actionLabel)}</button>`
       : "");
   if (!existing) {
     document.body.appendChild(el);

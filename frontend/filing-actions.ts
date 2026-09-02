@@ -20,6 +20,30 @@ import { humanizeError } from "./errors";
 /** Banner label when a track was filed in place (its own source folder, not a tree bin). */
 const IN_PLACE_BIN_LABEL = "source folder";
 
+/** Ouvre l'écran Réglages — injecté par `sift-live.ts` (`registerOpenSettingsAction`), jamais
+ *  importé : ce module ne peut pas importer `router.ts` sans refermer un cycle statique
+ *  (router → queue-panel → filing → filing-actions). Même motif que `registerAddSourceAction`.
+ *  Sert au toast actionnable du refus `NoLibraryRoot` (issue #54). */
+let openSettings: (() => void) | null = null;
+export function registerOpenSettingsAction(fn: () => void): void {
+  openSettings = fn;
+}
+
+/** Va à Réglages, ou DIT que le câblage manque. Un bouton d'action qui ne fait rien est le pire
+ *  des deux mondes : l'utilisateur croit avoir agi. Si l'injection n'a pas eu lieu (le wiring live
+ *  n'a pas tourné — hors Tauri, ou un ordre de câblage cassé), la chaîne brute part en console
+ *  plutôt qu'en silence, conformément au contrat d'`errors.ts`. Exportée parce que le mode Lot
+ *  (`batch-panel.ts`) sert le MÊME refus et doit y mener par le même chemin. */
+export function openSettingsScreen(): void {
+  if (!openSettings) {
+    console.error(
+      "openSettingsScreen: aucune navigation vers Réglages injectée (registerOpenSettingsAction) — le bouton « Choisir la racine » ne mène nulle part",
+    );
+    return;
+  }
+  openSettings();
+}
+
 /** Hôte du bandeau « Rangé » : la rangée réglages de la BOÎTE de lecture en mode Détail
  *  (`#filbox-settings`, décision V2b du 2026-08-30), avec repli sur le pied de panneau `#filfoot`
  *  — le seul hôte qui existe en mode Lot, et le seul qui existait avant cette décision.
@@ -129,7 +153,17 @@ export async function doRanger(
     }
   } catch (e) {
     const msg = String(e);
-    if (msg.includes("NoLibraryRoot")) toast("Aucune racine de bibliothèque configurée.", false);
+    // Toast ACTIONNABLE depuis le 2026-09-02 (issue #54, direction A1 pour ce point) : le refus
+    // nommait un réglage manquant sans y mener, et c'est exactement le manque que #16 relevait.
+    // Depuis le volet backend du même ticket, ce refus ne peut plus venir que d'une destination
+    // qui vise l'ARBRE — d'où la formulation, qui ne prétend plus que toute conversion est bloquée.
+    if (msg.includes("NoLibraryRoot"))
+      toast(
+        "Conversion bloquée — aucune racine de bibliothèque.",
+        true,
+        openSettingsScreen,
+        "Choisir la racine",
+      );
     // The backend refuses a second filing of a track whose conversion is still running (P5). The
     // front normally hides such a track from the queue, so reaching this means it came back through
     // a path that doesn't go through the queue rail — say the gone-file recovery chain in filing.ts.

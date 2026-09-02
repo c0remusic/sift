@@ -15,6 +15,7 @@ import type { ThemeChoice } from "./theme";
 import { toast } from "./filing-toast";
 import { humanizeError } from "./errors";
 import { open as openFolderDialog } from "@tauri-apps/plugin-dialog";
+import { refreshRootWarning } from "./rail-root-warning";
 
 /** Live Réglages view: a single scrolling page of real cards (Discogs, Bibliothèque, Apparence),
  * replacing the mockup's static placeholder rows (Dossiers source, Format lossless…), which have
@@ -201,6 +202,9 @@ export async function renderReglagesLive() {
       if (typeof dir !== "string") return;
       try {
         await setSetting("library_root", dir);
+        // Le rappel du rail (#54) est peint depuis le RÉGLAGE, pas depuis un état de vue : le
+        // relire ici est ce qui le fait tomber tout de suite, sans attendre un redémarrage.
+        void refreshRootWarning();
         void renderReglagesLive();
       } catch (e) {
         if (libStatus) libStatus.textContent = "Erreur d'enregistrement.";
@@ -212,6 +216,8 @@ export async function renderReglagesLive() {
     void (async () => {
       try {
         await setSetting("library_root", "");
+        // Symétrique : oublier la racine doit REMETTRE le rappel, sur le même chemin.
+        void refreshRootWarning();
         void renderReglagesLive();
       } catch (e) {
         if (libStatus) libStatus.textContent = "Erreur d'enregistrement.";

@@ -16,7 +16,6 @@ import {
   linkRekordboxXml,
   rekordboxStatus,
   revealTrack,
-  getSetting,
 } from "./ipc";
 import { installUndoShortcut, installFilingKeys, registerAddSourceAction } from "./filing";
 import { refreshBinsForBatch } from "./filing-bins";
@@ -39,7 +38,9 @@ import {
 } from "./bibliotheque-view";
 import { sortTracks } from "./library-views";
 import { consumeSortSuppression } from "./library-columns";
-import { renderRootGate, dismissRootGateBanner } from "./toolbar";
+import { refreshRootWarning } from "./rail-root-warning";
+import { registerOpenSettingsAction } from "./filing-actions";
+import { goTo } from "./router";
 import { onSettingsCategoryPick } from "./reglages-view";
 import { onRekordboxSectionPick } from "./rekordbox-view";
 import { installWindowShortcuts } from "./shortcuts";
@@ -184,17 +185,11 @@ function setReviewMode(m: "detail" | "batch") {
 // donc le `MutationObserver` sur le titre de la barre — qui existait faute de point d'accroche sur
 // le rendu de Revue depuis ce fichier — n'a plus d'objet. Retrait, pas mise en commentaire.
 
-/** Relit `library_root` et peint la porte. Le réglage est la source de vérité, jamais un état
- *  local : Réglages peut en poser une à tout moment, et la porte doit tomber tout de suite. */
-export async function refreshRootGate(): Promise<void> {
-  try {
-    renderRootGate(await getSetting("library_root"));
-  } catch (e) {
-    // Échec de lecture : ne PAS peindre la porte. Elle affirmerait « aucune racine », ce qui est
-    // un fait non mesuré — l'erreur de lecture se dit ailleurs, elle ne se déguise pas en gate.
-    console.error("getSetting(library_root) failed", e);
-  }
-}
+// `refreshRootGate` vivait ici (lecture de `library_root` + peinture du bandeau `#sift-gate`).
+// Retirée le 2026-09-02 avec la porte elle-même (issue #54) ; sa lecture et sa décision sont
+// passées dans `rail-root-warning.ts::refreshRootWarning`, appelée au même endroit du câblage et
+// aussi par les deux points qui POSENT une racine (Réglages, popover de destination) — ce que
+// l'ancienne, relue au seul démarrage, ne faisait pas.
 
 async function refresh() {
   // La section Sources du rail remplace l'écran Accueil (fusion 1) : elle porte les mêmes comptes
@@ -228,7 +223,11 @@ export function installLiveWiring() {
       void renderQueue(false);
     });
   });
-  void refreshRootGate();
+  // Le toast de blocage « aucune racine » doit MENER à Réglages (issue #54). `filing-actions.ts`
+  // ne peut pas importer `router.ts` (cycle statique router → queue-panel → filing →
+  // filing-actions) : la navigation est injectée d'ici, comme le CTA d'ajout de source ci-dessus.
+  registerOpenSettingsAction(() => goTo("reglages"));
+  void refreshRootWarning();
   installWindowShortcuts();
   void installDragDrop();
 
@@ -269,12 +268,9 @@ export function installLiveWiring() {
       // `enterDetailMode` repeint le bouton lui-même, donc le contournement n'en est plus un.
       return;
     }
-    // Porte de racine manquante : masquer pour la session.
-    if ((e.target as HTMLElement).closest('[data-gate="dismiss"]')) {
-      e.stopPropagation();
-      dismissRootGateBanner();
-      return;
-    }
+    // Le « masquer pour la session » de la porte de racine manquante (`[data-gate="dismiss"]`) a
+    // été retiré avec la porte, le 2026-09-02 (issue #54). Le rappel du rail n'a rien à masquer :
+    // il est déjà logé et tient sur deux lignes.
     // Rekordbox : choix d'une section dans la colonne de gauche (étape 10).
     const rkbSec = (e.target as HTMLElement).closest<HTMLElement>('[data-rkb="section"]');
     if (rkbSec?.dataset.sec) {

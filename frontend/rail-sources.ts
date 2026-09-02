@@ -19,6 +19,7 @@ import { openContextMenu } from "./context-menu";
 import { confirmAction } from "./confirm-modal";
 import { toast } from "./filing-toast";
 import { humanizeError } from "./errors";
+import { paintRootWarning } from "./rail-root-warning";
 
 const SECTION_ID = "sift-rail-sources";
 
@@ -89,6 +90,9 @@ export async function renderRailSources(): Promise<void> {
       `<div class="nv-grp">Sources</div>` +
       `<div class="sift-rail-src-msg sift-rail-src--error">Liste indisponible</div>`;
     mountedShape = null;
+    // Même raison qu'au rendu nominal : cet `innerHTML` emporte la carte de racine manquante, qui
+    // ne dépend pas de la liste des sources et doit survivre à son échec.
+    paintRootWarning();
     return;
   }
   const active = activeQueueSource();
@@ -98,6 +102,18 @@ export async function renderRailSources(): Promise<void> {
   // Le compte de `[data-src]` est revérifié et non supposé — une autre main a pu toucher au rail
   // entre-temps, et une mutation sur un DOM qui ne correspond plus laisserait des lignes fausses
   // en silence. Toute discordance retombe sur la reconstruction, jamais sur un rendu partiel.
+  // Zéro source : le contenu monté est ENTIÈREMENT statique (le message « Aucun dossier surveillé »
+  // et le bouton d'ajout), donc il n'y a rien à muter — sortir tôt est la mise à jour en place de
+  // ce cas-là. `mountedShape` valait `null` ici jusqu'au 2026-09-02, ce qui forçait un `innerHTML`
+  // à CHAQUE `queue:changed` (~150 ms pendant un scan) : sans source, il ne détruisait qu'un
+  // message, mais depuis #54 il détruit aussi la carte de racine manquante, qui est FOCUSABLE — et
+  // détruire un nœud focusable en rafale est exactement le mode d'échec que le chemin rapide
+  // existe pour éviter. `railShapeKey([])` rend `""`, distinct du `null` initial et du `null` que
+  // pose l'échec de lecture : une première peinture et une reprise après erreur reconstruisent
+  // toujours. Le DOM est revérifié, jamais supposé, comme sur le chemin des lignes.
+  if (!sources.length && shape === mountedShape) {
+    if (host.querySelector(".sift-rail-src-msg") && !host.querySelector("[data-src]")) return;
+  }
   if (sources.length && shape === mountedShape) {
     const rows = host.querySelectorAll<HTMLElement>("[data-src]");
     if (rows.length === sources.length) {
@@ -135,7 +151,11 @@ export async function renderRailSources(): Promise<void> {
     // pas d'icône non plus, il nomme un bouton « Ajouter un dossier ».
     `<button class="nv sift-rail-src-add" data-src-add="1" type="button">` +
     `<span>Ajouter un dossier</span></button>`;
-  mountedShape = sources.length ? shape : null;
+  mountedShape = shape;
+  // Le rappel de racine manquante (#54, direction A2) vit SOUS cette section et vient d'être
+  // emporté par l'`innerHTML` ci-dessus. Il se repose depuis l'état déjà mesuré — aucun aller
+  // IPC ici : ce rendu est appelé toutes les ~150 ms pendant un scan (voir la note de fréquence).
+  paintRootWarning();
 }
 
 /** Clic sur une source : filtre Revue et y va. Re-cliquer la source active lève le filtre —

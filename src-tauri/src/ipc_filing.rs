@@ -4,7 +4,9 @@
 //! (naming/encode/tagging/library/actions/filing/settings), and emit `queue:changed` after
 //! any mutation so the front refreshes. Errors are flattened to strings (Tauri convention);
 //! a missing library root surfaces as the sentinel `"NoLibraryRoot"` so the front can route
-//! the user to the settings panel rather than show a raw message.
+//! the user to the settings panel rather than show a raw message. Depuis #54 (2026-09-02), ce
+//! refus est devenu une exigence de l'ARBRE et non du rangement : une destination EN PLACE ou un
+//! dossier externe se règle sans racine, et n'a jamais lu la sienne (`library_root_for`).
 //!
 //! Note: the slow ffmpeg encode runs OUTSIDE the DB lock. `file_track` splits plan/execute/commit
 //! so the lock is released around the encode; `file_batch` runs detached on a background thread and
@@ -40,11 +42,28 @@ use tauri::{AppHandle, Emitter, Manager, State};
 pub struct FilingCancel(pub AtomicBool);
 
 /// Resolve the configured library root, or the `"NoLibraryRoot"` sentinel error when unset
-/// or blank. All filing/bin commands need this.
+/// or blank. Réservée aux commandes qui parlent de l'ARBRE lui-même (`list_bins`) : depuis #54,
+/// un rangement ne passe plus par ici sans avoir demandé si sa destination vise l'arbre — voir
+/// `library_root_for`.
 fn library_root(conn: &Connection) -> Result<PathBuf, String> {
     match settings::get(conn, settings::LIBRARY_ROOT).map_err(|e| e.to_string())? {
         Some(p) if !p.trim().is_empty() => Ok(PathBuf::from(p)),
         _ => Err("NoLibraryRoot".into()),
+    }
+}
+
+/// La racine dont CETTE destination a besoin — `None` quand elle n'en a pas besoin du tout.
+///
+/// Décision #54 (2026-09-02) : « on doit pouvoir convertir où on veut sans racine de bibliothèque ».
+/// Un rangement EN PLACE (`FILE_IN_PLACE`) ou vers un dossier externe (`EXTERNAL_DEST_PREFIX`)
+/// n'a jamais LU la racine dans `plan_file` — il la réclamait pourtant, parce que la lecture était
+/// posée à l'entrée de la commande plutôt qu'au point qui s'en sert. Le refus `"NoLibraryRoot"`
+/// n'existe donc plus que pour une destination de l'arbre.
+fn library_root_for(conn: &Connection, bin_rel: &str) -> Result<Option<PathBuf>, String> {
+    if filing::needs_library_root(bin_rel) {
+        Ok(Some(library_root(conn)?))
+    } else {
+        Ok(None)
     }
 }
 
@@ -568,11 +587,11 @@ pub fn file_track(
     // Phase 1 under the lock: decide the plan (fast DB reads + guard + dest).
     let plan = {
         let conn = db::lock_conn(&conn)?;
-        let root = library_root(&conn)?;
+        let root = library_root_for(&conn, &bin_rel)?;
         let tmpl = template(&conn);
         filing::plan_file(
             &conn,
-            &root,
+            root.as_deref(),
             &tmpl,
             track_id,
             &bin_rel,
@@ -608,8 +627,9 @@ pub fn file_track(
 /// actual work (per-file convert/tag/move + journal) runs on a dedicated thread via
 /// `run_file_batch`, taking and releasing the DB lock PER FILE — so a long batch never freezes
 /// the UI nor blocks the analysis worker (a sync command holding the lock across the whole batch
-/// would do both). The library root is resolved synchronously so a missing one fails the invoke
-/// right away (front routes to Settings via the `"NoLibraryRoot"` sentinel). When the run finishes
+/// would do both). La racine est résolue synchroniquement — et seulement si `bin_rel` vise l'arbre
+/// (#54) — pour qu'une racine manquante fasse échouer l'invoke tout de suite plutôt qu'en plein lot
+/// (front routes to Settings via the `"NoLibraryRoot"` sentinel). When the run finishes
 /// it emits `file:done` with the `BatchResult` summary. Filing logic (plan/execute/commit) and the
 /// `actions` journal are unchanged — only the execution site and the lock scope move.
 #[tauri::command]
@@ -624,7 +644,7 @@ pub fn file_batch(
 ) -> Result<(), String> {
     let (root, tmpl) = {
         let conn = db::lock_conn(&conn)?;
-        (library_root(&conn)?, template(&conn))
+        (library_root_for(&conn, &bin_rel)?, template(&conn))
     };
     // Reset the cancel flag for THIS batch so a past cancel can't abort it instantly.
     app.state::<FilingCancel>().0.store(false, Ordering::SeqCst);
@@ -763,7 +783,9 @@ struct Phase2Outcome {
 /// as before — only the execution shape (serial → pooled phase 2) changed.
 fn run_file_batch(
     app: &AppHandle,
-    root: PathBuf,
+    // `None` quand la destination du lot n'a pas besoin de racine (en place, dossier externe) —
+    // résolu une fois par `library_root_for` avant le détachement. Voir `plan_file`.
+    root: Option<PathBuf>,
     tmpl: String,
     track_ids: Vec<i64>,
     bin_rel: String,
@@ -816,7 +838,7 @@ fn run_file_batch(
         let plan = match filing::batch_canonical(&conn, id) {
             Some(c) => match filing::plan_file(
                 &conn,
-                &root,
+                root.as_deref(),
                 &tmpl,
                 id,
                 &bin_rel,
@@ -1383,6 +1405,63 @@ pub fn set_setting(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn mem_db() -> Connection {
+        let conn = Connection::open_in_memory().expect("open_in_memory");
+        crate::db::run_migrations(&conn).expect("run_migrations");
+        conn
+    }
+
+    /// LE seam de production de #54 : c'est cette fonction, et elle seule, qui décide si une
+    /// commande de rangement va lire la racine. Les trois cas qu'elle doit distinguer.
+    ///
+    /// Elle est testée ICI et pas seulement à travers `plan_file` parce que c'est elle qui court en
+    /// prod AVANT le plan : une régression qui remettrait `library_root(&conn)?` inconditionnel
+    /// ferait échouer l'invoke sans jamais atteindre `plan_file`, donc sans faire tomber un seul
+    /// test de `filing.rs`.
+    #[test]
+    fn library_root_for_only_reads_the_root_for_tree_destinations() {
+        let conn = mem_db();
+
+        // (1) Sans racine réglée, une destination de l'arbre refuse — sentinelle inchangée.
+        assert_eq!(
+            library_root_for(&conn, "House/Deep"),
+            Err("NoLibraryRoot".to_string())
+        );
+
+        // (2) Sans racine réglée, les deux destinations sans-racine ne la réclament PAS.
+        assert_eq!(
+            library_root_for(&conn, crate::filing::FILE_IN_PLACE),
+            Ok(None)
+        );
+        assert_eq!(
+            library_root_for(
+                &conn,
+                &format!("{}/tmp/ailleurs", crate::filing::EXTERNAL_DEST_PREFIX)
+            ),
+            Ok(None)
+        );
+
+        // (3) Avec une racine réglée, la destination d'arbre la reçoit telle quelle.
+        settings::set(&conn, settings::LIBRARY_ROOT, "/music/dj").expect("seed library_root");
+        assert_eq!(
+            library_root_for(&conn, "House/Deep"),
+            Ok(Some(PathBuf::from("/music/dj")))
+        );
+        // …et les sans-racine continuent de ne rien lire, racine ou pas.
+        assert_eq!(
+            library_root_for(&conn, crate::filing::FILE_IN_PLACE),
+            Ok(None)
+        );
+
+        // (4) Une racine BLANCHE vaut absente (garde historique de `library_root`).
+        settings::set(&conn, settings::LIBRARY_ROOT, "   ").expect("seed blank root");
+        assert_eq!(
+            library_root_for(&conn, ""),
+            Err("NoLibraryRoot".to_string()),
+            "la racine elle-même est un bac de l'arbre"
+        );
+    }
 
     /// Le plafond global tient sous charge : on lance quatre fois plus de prétendants qu'il n'y a
     /// de places et on mesure le pic de porteurs simultanés.

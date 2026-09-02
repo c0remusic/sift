@@ -536,14 +536,10 @@ body:has(#sift-titlebar){border-radius:var(--border-radius-sm);overflow:hidden}
 /* ZONE D — l'inspecteur. Largeur fixe --pane-w, défilement propre, et un filet à gauche plutôt
    qu'un fond distinct : la séparation vient du trait le plus discret possible, pas d'une surface
    de plus (DESIGN.md § 5, deux niveaux de boîte et pas cinq). */
-/* Bandeau de porte de premier réglage. Sous la barre, pleine largeur, avant #pa : il pousse le
-   shell vers le bas au lieu de le recouvrir — un bandeau qui flotte au-dessus masque une ligne de
-   contenu et n'est jamais tout à fait au bon endroit. Ton `warning`, pas `danger` : rien n'est
-   cassé, une décision manque. */
-#sift-gate{display:flex;align-items:center;gap:var(--space-8);padding:var(--space-8) var(--space-16);background:var(--color-background-warning);color:var(--color-text-warning);font-size:var(--text-md);flex:none}
-#sift-gate[hidden]{display:none}
-#sift-gate .sift-gate-cta{margin-left:auto;flex:none;background:transparent;color:var(--color-text-warning);border-color:currentColor}
-#sift-gate .sift-gate-cta:hover{background:transparent;color:var(--color-text-warning)}
+/* Le bandeau de porte de premier réglage (#sift-gate, pleine largeur avant #pa) vivait ici. Retiré
+   le 2026-09-02 (issue #54) avec sa plomberie JS : la racine n'est plus un prérequis de la
+   conversion, donc le rappel n'occupe plus toute la fenêtre. Il est descendu au rail —
+   .sift-railwarn, plus bas, section Rail. */
 #sift-aside{width:var(--aside-w);flex:none;overflow-y:auto;padding:var(--space-24) var(--space-16);border-left:1px solid var(--color-border-tertiary)}
 /* Règle d'auteur qui pose `display` : elle bat [hidden], donc :not([hidden]) est obligatoire ici —
    sans lui l'inspecteur reste visible une fois masqué (piège déjà rencontré dans ce fichier). */
@@ -805,6 +801,22 @@ body:has(#sift-titlebar){border-radius:var(--border-radius-sm);overflow:hidden}
 .sift-rail-src-add{border:0;background:transparent;color:var(--color-text-tertiary);cursor:pointer;font:inherit;font-size:var(--text-md);text-align:left}
 .sift-rail-src-add:hover{background:var(--overlay-hover);color:var(--color-text-primary)}
 body.sift-rail-collapsed .sift-rail-src-msg,body.sift-rail-collapsed .sift-rail-src-add span{display:none}
+/* Rappel « racine non définie », logé sous les sources (issue #54, direction A2). Il remplace le
+   bandeau pleine largeur #sift-gate. Carte et non entrée de rail : elle ne navigue pas vers un
+   écran de plus, elle dit un fait et propose UNE suite. Ton `warning` et non `danger` — rien n'est
+   cassé, une décision manque ; mêmes tokens que .sift-tag-warn, l'autre carte d'attente de l'app.
+   Deux lignes empilées : le fait, puis l'action — la largeur du rail n'en tient pas plus. */
+.sift-railwarn{display:flex;flex-direction:column;gap:var(--space-4);width:100%;margin-top:var(--space-4);padding:var(--space-8);border:0;border-radius:var(--border-radius-md);background:var(--color-background-warning);color:var(--color-text-warning);font:inherit;font-size:var(--text-sm);line-height:1.35;text-align:left;cursor:pointer}
+/* Un bouton qui redéfinit `background` doit le réaffirmer dans son :hover, sinon il perd face au
+   `button:hover` générique (règle CLAUDE.md § Front).
+   `--overlay-hover` est un voile ALPHA (le reste du rail l'applique sur un fond transparent) : il
+   se pose donc PAR-DESSUS l'ambre en `background-image`, jamais en `background` — un remplacement
+   ferait disparaître le fond warning au survol, c'est-à-dire l'information elle-même. */
+.sift-railwarn:hover{background-color:var(--color-background-warning);background-image:linear-gradient(var(--overlay-hover),var(--overlay-hover));color:var(--color-text-warning)}
+.sift-railwarn strong{font-weight:500}
+/* Rail replié : la carte disparaît entière. Ses deux lignes sont du texte de bout en bout — il n'y
+   a rien à garder en icône, contrairement aux entrées de source qui gardent leur pastille. */
+body.sift-rail-collapsed .sift-railwarn{display:none}
 .nav-foot{margin-top:auto;display:flex;flex-direction:column;gap:var(--space-4)}
 /* RAIL REPLIÉ (étape 4). --rail-w est redéfinie sur <body>, donc le rail ET la zone gauche de la
    barre unifiée suivent d'un seul geste — c'est ce qui garde la bordure verticale continue entre

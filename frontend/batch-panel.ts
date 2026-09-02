@@ -19,6 +19,8 @@ import {
 } from "./filing-bins";
 import { fileBatch, fileCancel, rejectBatch } from "./ipc";
 import { requireEl, esc } from "./dom";
+import { toast } from "./filing-toast";
+import { openSettingsScreen } from "./filing-actions";
 import { slideSegThumb } from "./seg-thumb";
 import type { BatchResult, FileProgress, Target } from "../shared/contracts";
 import { FILE_IN_PLACE, EXTERNAL_DEST_PREFIX } from "../shared/contracts";
@@ -286,12 +288,24 @@ async function runBatchFile(ids: number[]) {
     await fileBatch(ids, batchDest(), targets);
   } catch (err) {
     const code = String(err);
-    fileNote(
-      code.includes("NoLibraryRoot")
-        ? "Aucune racine de bibliothèque configurée — à définir dans Réglages."
-        : "Échec du lancement de la conversion — réessaie",
-      "var(--color-text-danger)",
-    );
+    // Le Lot rend son refus dans `fileNote` — une ligne de texte SOUS le rail, pas un toast : il n'a
+    // donc pas de bouton d'action où loger « Choisir la racine ». Plutôt qu'inventer un contrôle
+    // dans cette ligne, on double la note par le MÊME toast actionnable que le Détail (issue #54) :
+    // un seul mot d'UI pour un seul refus, et l'action existe des deux côtés.
+    if (code.includes("NoLibraryRoot")) {
+      fileNote(
+        "Conversion bloquée — aucune racine de bibliothèque.",
+        "var(--color-text-danger)",
+      );
+      toast(
+        "Conversion bloquée — aucune racine de bibliothèque.",
+        true,
+        openSettingsScreen,
+        "Choisir la racine",
+      );
+    } else {
+      fileNote("Échec du lancement de la conversion — réessaie", "var(--color-text-danger)");
+    }
     console.error("file_batch launch failed", err);
   }
 }

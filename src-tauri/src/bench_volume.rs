@@ -989,7 +989,7 @@ fn clear_fingerprints(conn: &Connection, ids: &[i64]) {
 /// off the click's critical path.
 ///
 /// Phase 1's timer starts BEFORE the two settings reads `file_track` does under the same lock
-/// (`ipc_filing.rs:304-305`: `library_root` then `template`) — they are small but systematic, and
+/// (`ipc_filing.rs`: `library_root_for` then `template`) — they are small but systematic, and
 /// leaving them out would understate exactly the quantity P4 has to bring down.
 fn measure_filing(ds: &FilingDataset, bin_rel: &str) {
     use crate::encode::Target;
@@ -1010,8 +1010,10 @@ fn measure_filing(ds: &FilingDataset, bin_rel: &str) {
         );
         let canonical = crate::filing::reconcile_track(&ds.conn, *id).expect("reconcile");
         let t0 = Instant::now();
-        // Reproduces `library_root(&conn)` + `template(&conn)` (ipc_filing.rs:38-53), called
-        // under the lock just before `plan_file`.
+        // Reproduces `library_root_for(&conn, bin_rel)` + `template(&conn)` (ipc_filing.rs), called
+        // under the lock just before `plan_file`. Depuis #54 la prod ne lit la racine que si
+        // `bin_rel` vise l'arbre ; ce banc mesure justement ce cas-là (un bac de l'arbre), donc la
+        // lecture reste dans la fenêtre chronométrée — c'est bien le coût réel du chemin mesuré.
         let root = match crate::settings::get(&ds.conn, crate::settings::LIBRARY_ROOT) {
             Ok(Some(p)) if !p.trim().is_empty() => PathBuf::from(p),
             other => panic!("library_root setting not seeded: {other:?}"),
@@ -1024,7 +1026,7 @@ fn measure_filing(ds: &FilingDataset, bin_rel: &str) {
         .unwrap_or_else(|_| crate::settings::DEFAULT_TEMPLATE.to_string());
         let plan = crate::filing::plan_file(
             &ds.conn,
-            &root,
+            Some(&root),
             &tmpl,
             *id,
             bin_rel,
