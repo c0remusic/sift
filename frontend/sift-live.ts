@@ -18,14 +18,14 @@ import {
   revealTrack,
   getSetting,
 } from "./ipc";
-import { installUndoShortcut, installFilingKeys } from "./filing";
+import { installUndoShortcut, installFilingKeys, registerAddSourceAction } from "./filing";
 import { refreshBinsForBatch } from "./filing-bins";
 import { confirmAction } from "./confirm-modal";
 // Views/chrome extracted from this god-module (audit P-3) — kept stateless, wired here.
 import { renderEcartes } from "./ecartes-view";
 import { installDragDrop, injectLeanStyle, injectTitlebar, installScrollAutohide, installNavKeyboard, installRailToggle } from "./chrome";
 import { initTheme } from "./theme";
-import { installRailSources, renderRailSources, noteScanFailure } from "./rail-sources";
+import { installRailSources, renderRailSources, noteScanFailure, pickAndAddFolder } from "./rail-sources";
 import {
   applyRowClick,
   renderSelectionSummary,
@@ -219,6 +219,15 @@ export function installLiveWiring() {
   installNavKeyboard();
   installRailToggle();
   installRailSources();
+  // CTA « Ajouter un dossier à surveiller » de l'état vide de Revue (issue #53) : même geste que
+  // le bouton du rail, même onChange — injecté ici parce que filing.ts ne peut pas importer
+  // rail-sources sans refermer le cycle rail-sources → queue-panel → filing.
+  registerAddSourceAction(() => {
+    void pickAndAddFolder(async () => {
+      await renderRailSources();
+      void renderQueue(false);
+    });
+  });
   void refreshRootGate();
   installWindowShortcuts();
   void installDragDrop();

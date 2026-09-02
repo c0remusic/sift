@@ -66,6 +66,16 @@ export { TARGET_LABEL } from "./filing-preview";
 // path and trigger a rail refresh without importing this module back (would be a static cycle).
 registerOpenTrackPathGetter(() => state.track?.path ?? null);
 registerDestChangeHook(() => refreshFootButton());
+
+/** Action du CTA « Ajouter un dossier à surveiller » de l'état vide (issue #53) — injectée par
+ *  sift-live avec le `pickAndAddFolder` du rail : l'importer ici refermerait le cycle
+ *  rail-sources → queue-panel → filing (motif d'injection registerX/callback du dépôt). Null tant
+ *  que le wiring live n'a pas tourné — et l'état vide n'est peint QUE par ce wiring, donc un clic
+ *  sans action enregistrée n'est pas un état atteignable, pas un repli silencieux. */
+let addSourceAction: (() => void) | null = null;
+export function registerAddSourceAction(fn: () => void): void {
+  addSourceAction = fn;
+}
 registerClearPaneHook(clearPane);
 
 
@@ -289,22 +299,22 @@ function clearPane(mid: HTMLElement, emptyQueue = false): void {
         })
       : emptyStateHtml({
           title: "Rien à revoir",
-          note: "Les morceaux à traiter apparaissent ici une fois ajoutés depuis Accueil ou déposés dans la file.",
-          // Impasse A6 (issue #15) : Revue vide était le SEUL cul-de-sac sans action de l'app. Pas
-          // de `backToRevue` — on y est déjà, c'est bien l'écran d'entrée — mais Bibliothèque,
-          // Écartés et Journal renvoient tous VERS Revue, si bien qu'un nouvel utilisateur faisait
-          // deux clics pour atterrir sur le seul écran qui lui dit d'aller ailleurs à la main. La
-          // note nommait Accueil sans y mener.
-          // `data-view="home"` est routé par le délégué de clic d'`app.js` posé sur `#pa`
-          // (`e.target.closest('[data-view]')`, app.js:392-393), et `#mid` vit sous `#content`, donc
-          // sous `#pa` : le bouton n'a besoin d'aucun câblage ici — c'est le contrat d'`actionHtml`.
-          // La clé est `home` et NON `accueil` : c'est le libellé humain qui est « Accueil », le
-          // `data-view` du rail vaut `home` (index.html:13). Vérifié dans le markup avant d'écrire
-          // cette ligne, pas déduit du nom affiché.
+          note: "Les morceaux à traiter apparaissent ici dès qu'un dossier est surveillé — ou dépose des fichiers directement dans la file.",
+          // Impasse A6 (issue #15) : Revue vide était le SEUL cul-de-sac sans action de l'app.
+          // L'action a longtemps été `data-view="home"` (« depuis Accueil ») — un écran FANTÔME
+          // depuis la fusion d'Accueil dans le rail (router.ts:38, 6d1cc85) : le routeur n'a plus
+          // de cas `home`, le clic ne menait nulle part (issue #53, vu sur profil vierge le
+          // 2026-09-02). Le CTA déclenche maintenant le VRAI geste — le sélecteur de dossier du
+          // rail — injecté par sift-live (registerAddSourceAction) : un import statique de
+          // rail-sources ICI refermerait le cycle rail-sources → queue-panel → filing (motif
+          // register*/callback du dépôt, jamais d'import retour). Le délégué du rail n'attrape
+          // pas ce bouton (`installRailSources` écoute #nav seulement), d'où le câblage direct
+          // juste après le innerHTML.
           actionHtml:
-            '<button type="button" data-view="home" class="sift-empty-link">Ajouter un dossier depuis Accueil</button>',
+            '<button type="button" data-fil="addsource" class="sift-empty-link">Ajouter un dossier à surveiller</button>',
         })
     : '<div class="sift-clear-pane">Sélectionne un morceau dans la file pour l\'écouter et le convertir.</div>';
+  mid.querySelector('[data-fil="addsource"]')?.addEventListener("click", () => addSourceAction?.());
   // Les contrôles de validation vivaient dans le pied de panneau (#filfoot) ; depuis la décision
   // V2b ils vivent dans la boîte de lecture, que le `mid.innerHTML` ci-dessus vient d'effacer avec
   // ses slots. Reste à s'assurer que le pied de panneau ne réapparaît pas : il peut encore porter
