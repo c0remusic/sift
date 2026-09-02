@@ -140,6 +140,25 @@ pub struct AnalysisReport {
     /// faisions pas du tout, alors que le fichier est déjà décodé entièrement.
     #[serde(default)]
     pub decoded_duration_sec: f32,
+    /// Vraisemblance que le signal soit DÉJÀ passé par la grille de quantification d'un codec AAC
+    /// — le troisième signal du verdict (issue #52, méthode d'Olivier Derrien). `None` = **pas
+    /// mesurée**, et c'est le cas de l'immense majorité des fichiers.
+    ///
+    /// Elle n'est calculée que là où elle peut trancher — lossless déclaré, conteneur non démenti,
+    /// **bande pleine** (`verdict::needs_quant_probe`), soit ~tout lossless sain, à +0,3 s par
+    /// fichier. Sous la falaise ou sur une fraude de conteneur elle vaut `None` parce qu'elle n'a
+    /// pas été demandée — pas parce qu'elle serait basse. Elle vaut aussi `None` quand la mesure
+    /// n'existe pas : taux d'échantillonnage hors
+    /// des tables de bandes AAC, fichier trop court pour un groupe de trames, ou signal trop long
+    /// pour être retenu en mémoire (`QUANT_MAX_PCM_SAMPLES`).
+    ///
+    /// Un FAIT, pas un verdict : c'est `verdict::QUANT_LAMBDA` qui le seuille, et lui seul. Le
+    /// champ voyage pour que la Revue puisse un jour l'afficher dans le collapse Détails.
+    ///
+    /// ⚠️ Ancien rapport en cache : `null`. À lire comme « pas mesuré », jamais comme 0 — 0 est une
+    /// vraie valeur, celle d'un signal dont aucune cellule ne porte la grille.
+    #[serde(default)]
+    pub quant_likelihood: Option<f32>,
     pub silence_head_ms: u32,
     pub silence_tail_ms: u32,
     pub id3_version: Option<String>,
@@ -184,7 +203,14 @@ pub struct AnalysisReport {
 /// la réparation à l'ouverture (`ipc::analyze_path`), et elle ne se déclenche que sur désaccord de
 /// version. Sans ce bump, une piste rangée resservirait indéfiniment un `tags_cdj_ok` calculé par
 /// l'ancien critère.
-pub const REPORT_CACHE_VERSION: i64 = 9;
+///
+/// **v10, 2026-09-02 (issue #52) — champ neuf, et il porte `#[serde(default)]`.**
+/// `quant_likelihood` arrive avec un `default`, donc les rapports v9 se relisent SANS erreur et
+/// rendent `None` : le piège exact nommé par le ⚠️ ci-dessus, et payé en v7 (la ligne « Densité de
+/// l'aigu » invisible sur toute la bibliothèque). Sans ce bump, une piste rangée resservirait pour
+/// toujours un rapport dépourvu du troisième signal, et le verdict Douteux qu'il aurait pu
+/// trancher.
+pub const REPORT_CACHE_VERSION: i64 = 10;
 
 /// Lit le cache `(tracks.report_json, tracks.report_cache_ver)`. Version absente, version distancée
 /// ou JSON vide (sentinelle d'échec de `persist_failure`) = **pas de rapport courant**, rendu comme
@@ -218,6 +244,71 @@ const MAX_PEAKS: usize = 4_000;
 fn default_peaks_step() -> usize {
     PEAKS_WINDOW
 }
+/// Plafond du PCM retenu en mémoire pour la sonde de quantification (issue #52), en échantillons
+/// ENTRELACÉS `f32`.
+///
+/// **Pourquoi une rétention existe.** `quant_trace::likelihood` a besoin du signal décodé, et
+/// `analyze()` ne garde rien : il pousse chaque bloc dans des accumulateurs en ligne. Or la
+/// décision de sonder ne se prend qu'APRÈS le décodage — elle dépend de la coupure et de la
+/// platitude, qui sortent du même passage. Re-décoder serait un second passage complet sur le
+/// fichier ; on retient donc le PCM, mais seulement quand la seule condition connue AVANT le
+/// décodage est réunie (rail déclaré lossless, conteneur non démenti).
+///
+/// **Pourquoi un plafond, et l'arithmétique du pic en entier.** Un `f32` pèse 4 octets, le PCM est
+/// entrelacé sur au plus 2 canaux :
+///
+/// ```text
+/// par piste  = durée × taux × canaux × 4 o
+///   6 min stéréo 44,1 kHz = 360 × 44 100 × 2 × 4 =  127 Mo   (la piste DJ typique)
+///   plafond 48 000 000 f32                       =  192 Mo   = 9,07 min stéréo 44,1 kHz
+///                                                            = 8,33 min stéréo 48 kHz
+/// pic pool   = plafond × worker::analysis_pool_size (≤ 8)
+///            = 192 Mo × 8                          = 1,5 Go   (pire cas ABSOLU)
+///   cas réaliste, huit pistes de 6 min             = 1,0 Go
+/// ```
+///
+/// Le pire cas suppose les huit threads simultanément sur des fichiers AU plafond, chacun au
+/// milieu de son décodage. Sans plafond, un seul mix d'une heure coûterait 1,2 Go à lui seul et
+/// rien ne bornerait le pic.
+///
+/// **Le tampon ne survit pas à son usage** : `analyze()` le libère (`drop`) juste après la
+/// décision de sonde, avant `verdict()` et avant la construction du rapport — sur TOUS les
+/// chemins, y compris quand la sonde n'a pas été demandée. Le pic ci-dessus est donc borné à la
+/// fenêtre décodage → sonde, pas à la durée de l'analyse.
+///
+/// **Ce que le dépassement coûte, et il est borné** : la rétention est abandonnée, le tampon
+/// libéré, `quant_likelihood` vaut `None` — et `None` ne dégrade jamais un verdict (`verdict()`).
+/// Un lossless de plus de neuf minutes tombant dans le bras ambigu reste donc **Douteux**, ce
+/// qu'il était avant #52. Aucune régression, seulement une portée.
+const QUANT_MAX_PCM_SAMPLES: usize = 48_000_000;
+
+/// Les deux résolutions balayées par la sonde, dans l'ordre du prototype.
+///
+/// Les DEUX, et ce n'est pas de la prudence : la calibration du 2026-09-02 (λ = 0,18) a été
+/// mesurée avec ce réglage exact, et le tableau de détection qu'elle produit dépend des blocs
+/// longs autant que des courts — les familles `aac_mf` gagnent souvent en blocs LONGS, avec les
+/// plus fortes vraisemblances du corpus. N'en retirer un reviendrait à appliquer un seuil calibré
+/// sur une autre mesure.
+const QUANT_RESOLUTIONS: [aac_sfb::BlockKind; 2] =
+    [aac_sfb::BlockKind::Long, aac_sfb::BlockKind::Short];
+
+/// Fils de balayage accordés à la sonde, **par analyse**.
+///
+/// `analyze()` tourne DANS un thread du pool d'analyse, dimensionné à
+/// `available_parallelism().clamp(1, 8)` (`worker::analysis_pool_size`). La parallélisation interne
+/// de `quant_trace::balaye_decalages` s'y multiplie : à son défaut historique (16 fils), une
+/// machine à 16 cœurs ouvrirait **8 × 16 = 128 fils** pour 16 cœurs — une sur-souscription d'un
+/// facteur 8, qui se paie en changements de contexte.
+///
+/// 2 plutôt que 1 : le pool ne sature que quand la file est pleine, et une analyse isolée
+/// (ouverture d'une piste en Revue) profite du second fil. Dans le pire cas, 8 × 2 = 16, soit
+/// exactement le parallélisme d'une machine à 16 cœurs.
+///
+/// Le résultat ne dépend PAS de ce nombre — `balaye_decalages` partitionne les décalages et prend
+/// un `max`, opération associative et commutative. Figé par
+/// `quant_trace::tests::le_nombre_de_fils_ne_change_ni_le_l_ni_le_decalage`.
+const QUANT_PROBE_THREADS: usize = 2;
+
 const CLIP_THRESHOLD: f32 = 0.99;
 const CLIP_MIN_RUN: usize = 3;
 const SILENCE_THRESHOLD: f32 = 0.001; // ~ -60 dBFS
@@ -248,8 +339,30 @@ pub fn analyze(path: &str, with_spectrogram: bool) -> Result<AnalysisReport, Str
     // fichier contient vraiment, par opposition a ce que son en-tete annonce. Compte ici et pas
     // dans un accumulateur existant pour que la mesure ne dépende d'aucun de leurs seuils.
     let mut decoded_mono_samples: u64 = 0;
+
+    // Rétention du PCM pour la sonde de quantification (#52). Le pré-filtre est la seule partie de
+    // `verdict::needs_quant_probe` connaissable AVANT le décodage : rail déclaré lossless et
+    // conteneur qui ne le dément pas. Les deux autres clauses (bande pleine, aigu creux) sortent du
+    // décodage lui-même, donc on ne peut pas les anticiper — c'est ce qui force la rétention plutôt
+    // qu'un décodage à la demande.
+    let quant_pregate = tag.declared_rail == Rail::Lossless && tag.content_rail != Rail::Lossy;
+    let mut quant_pcm: Vec<f32> = Vec::new();
+    let mut quant_pcm_over_cap = false;
+
     let info = decode::decode_pcm(path, target_ch, |block| {
         decoded_mono_samples += (block.len() / target_ch as usize) as u64;
+        if quant_pregate && !quant_pcm_over_cap {
+            if quant_pcm.len() + block.len() > QUANT_MAX_PCM_SAMPLES {
+                // Au-delà du plafond on ABANDONNE, on ne tronque pas : un signal tronqué ferait
+                // porter les huit groupes de trames sur le seul début du fichier, donc une mesure
+                // qui n'est plus celle sur laquelle λ a été calibré. Mieux vaut pas de mesure
+                // qu'une mesure d'autre chose.
+                quant_pcm_over_cap = true;
+                quant_pcm = Vec::new();
+            } else {
+                quant_pcm.extend_from_slice(block);
+            }
+        }
         if target_ch == 2 {
             ph.push(block); // interleaved L,R
             let mono: Vec<f32> = block
@@ -306,15 +419,66 @@ pub fn analyze(path: &str, with_spectrogram: bool) -> Result<AnalysisReport, Str
     // `analyze()` rend `Err`, `worker::persist_result` appelle `persist_failure`, qui laisse
     // `verdict` NULL, pose la sentinelle `report_json=''` et incrémente `analysis_attempts` vers
     // `MAX_ANALYSIS_ATTEMPTS`. Aucun champ sérialisé ne change : le rapport n'est pas produit.
+    let flatness = verdict::HfFlatness {
+        fixed_db: spec_res.hf_flatness_db,
+        top_db: spec_res.hf_flatness_top_db,
+    };
+
+    // TROISIÈME SIGNAL, à la demande (#52). La condition de déclenchement n'est pas réécrite ici :
+    // elle est demandée à `verdict::needs_quant_probe`, seul endroit qui la teste, pour que la
+    // dépense et le bras qu'elle sert ne dérivent pas l'un de l'autre.
+    let quant_likelihood = if verdict::needs_quant_probe(cutoff_hz, tag.declared_rail, content_rail)
+    {
+        if quant_pcm.is_empty() {
+            // Le pré-filtre du décodage a laissé passer, mais rien n'a été retenu : fichier
+            // au-dessus du plafond, ou décodage vide. Pas de mesure, et on le DIT.
+            log::info!(
+                "quant_trace {} : non mesuré (PCM non retenu, au-delà du plafond = {})",
+                path,
+                quant_pcm_over_cap
+            );
+            None
+        } else {
+            let t0 = std::time::Instant::now();
+            let trace = quant_trace::likelihood(
+                &quant_pcm,
+                info.channels,
+                info.sample_rate,
+                &QUANT_RESOLUTIONS,
+                Some(QUANT_PROBE_THREADS),
+            );
+            match trace {
+                Some(t) => {
+                    log::info!(
+                        "quant_trace {} : L={:.5} décalage={} canal={} résolution={} en {} ms",
+                        path,
+                        t.l,
+                        t.decalage,
+                        t.canal.label(),
+                        t.resolution.label(),
+                        t0.elapsed().as_millis()
+                    );
+                    Some(t.l as f32)
+                }
+                None => {
+                    log::info!("quant_trace {path} : non mesuré (taux non tabulé ou signal court)");
+                    None
+                }
+            }
+        }
+    } else {
+        None
+    };
+    // Le tampon peut peser jusqu'à `QUANT_MAX_PCM_SAMPLES` : il ne survit pas à son seul usage.
+    drop(quant_pcm);
+
     let verdict = verdict::verdict(
         cutoff_hz,
         tag.declared_rail,
         tag.declared_bitrate,
         content_rail,
-        verdict::HfFlatness {
-            fixed_db: spec_res.hf_flatness_db,
-            top_db: spec_res.hf_flatness_top_db,
-        },
+        flatness,
+        quant_likelihood,
     )
     .map_err(|e| e.to_string())?;
     let est_kbps = verdict::estimate_kbps(cutoff_hz);
@@ -356,6 +520,7 @@ pub fn analyze(path: &str, with_spectrogram: bool) -> Result<AnalysisReport, Str
         hf_flatness_db: spec_res.hf_flatness_db,
         hf_flatness_top_db: spec_res.hf_flatness_top_db,
         decoded_duration_sec: decoded_mono_samples as f32 / sr as f32,
+        quant_likelihood,
         silence_head_ms,
         silence_tail_ms,
         id3_version: tag.id3_version,
@@ -401,7 +566,13 @@ mod corpus {
         // sur ces bandes (77 % puis 68 %) venaient de scripts ad-hoc perdus avec leur session :
         // impossible de les rejouer, donc impossible de les corriger. Elles sortent du MÊME
         // `analyze()` que le verdict, qui, lui, ne les lit pas encore.
-        println!("rail;debit_declare;cutoff_hz;verdict;est_kbps;hf_flat_db;hf_flat_top_db;fichier");
+        // `quant_l` depuis le 2026-09-02 (#52) : la vraisemblance de quantification, telle que le
+        // verdict l'a vue — « - » quand elle n'a pas été demandée (le cas de l'immense majorité).
+        // Elle s'insère AVANT le nom, donc `score-corpus.mjs` la prend sans rien changer : ce
+        // script déduit le nombre de colonnes de l'en-tête et lit le nom comme « tout ce qui reste ».
+        println!(
+            "rail;debit_declare;cutoff_hz;verdict;est_kbps;hf_flat_db;hf_flat_top_db;quant_l;fichier"
+        );
         for e in walkdir::WalkDir::new(&dir).into_iter().flatten() {
             if !e.file_type().is_file() {
                 continue;
@@ -425,7 +596,7 @@ mod corpus {
             seen += 1;
             match super::analyze(&path.to_string_lossy(), false) {
                 Ok(r) => println!(
-                    "{:?};{};{:.0};{:?};{};{};{};{name}",
+                    "{:?};{};{:.0};{:?};{};{};{};{};{name}",
                     r.declared_rail,
                     r.declared_bitrate
                         .map(|b| b.to_string())
@@ -441,6 +612,12 @@ mod corpus {
                     r.hf_flatness_top_db
                         .map(|v| format!("{v:.2}"))
                         .unwrap_or_else(|| "-".into()),
+                    // « - » et pas 0 : `None` ici veut dire « la sonde n'a pas été demandée »
+                    // (le bras ambigu n'a pas été atteint) ou « pas mesurable ». 0 est une vraie
+                    // valeur, celle d'un signal dont aucune cellule ne porte la grille.
+                    r.quant_likelihood
+                        .map(|v| format!("{v:.5}"))
+                        .unwrap_or_else(|| "-".into()),
                 ),
                 Err(err) => {
                     failed += 1;
@@ -452,7 +629,7 @@ mod corpus {
                     // le lecteur prend le nom en position fixe. Une ligne d'erreur plus courte
                     // ferait tomber le nom ailleurs, donc hors jointure — un fichier en échec
                     // compterait alors comme « non mesuré » au lieu de « en erreur ».
-                    println!("ERREUR;-;-;-;{err};-;-;{name}");
+                    println!("ERREUR;-;-;-;{err};-;-;-;{name}");
                 }
             }
         }
@@ -631,6 +808,7 @@ mod tests {
             hf_flatness_db: None,
             hf_flatness_top_db: None,
             decoded_duration_sec: 0.0,
+            quant_likelihood: None,
             silence_head_ms: 0,
             silence_tail_ms: 0,
             id3_version: None,
@@ -664,6 +842,7 @@ mod tests {
             hf_flatness_db,
             hf_flatness_top_db,
             decoded_duration_sec,
+            quant_likelihood,
             silence_head_ms,
             silence_tail_ms,
             id3_version,
@@ -697,6 +876,7 @@ mod tests {
             hf_flatness_db,
             hf_flatness_top_db,
             decoded_duration_sec,
+            quant_likelihood,
             silence_head_ms,
             silence_tail_ms,
             id3_version,
@@ -740,6 +920,7 @@ mod tests {
             hf_flatness_db: None,
             hf_flatness_top_db: None,
             decoded_duration_sec: 0.0,
+            quant_likelihood: None,
             silence_head_ms: 0,
             silence_tail_ms: 0,
             id3_version: None,

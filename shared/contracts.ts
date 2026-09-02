@@ -200,6 +200,22 @@ export interface AnalysisReport {
    *  en secondes. Ancien rapport en cache : `0` (le `#[serde(default)]` côté Rust), donc traiter
    *  zéro comme « pas mesuré » et non comme « durée nulle ». */
   decoded_duration_sec: number;
+  /** Vraisemblance que le signal soit DÉJÀ passé par la grille de quantification d'un codec AAC —
+   *  le troisième signal du verdict (issue #52, méthode d'Olivier Derrien, JAES 67(3), 2019).
+   *
+   *  `null` = **pas mesurée**. Elle n'est calculée que là où elle peut trancher — lossless
+   *  déclaré, conteneur non démenti, **bande pleine** (la falaise n'a alors plus rien à dire) —
+   *  donc sur ~tout lossless sain, jamais sur un lossy ni sur un fichier déjà Faux par la falaise
+   *  ou par le conteneur. Ailleurs elle n'est pas basse, elle n'a pas été demandée. Ne JAMAIS
+   *  lire `null` comme 0 : 0 est une vraie valeur, celle d'un signal dont aucune cellule ne porte
+   *  la grille.
+   *
+   *  Un FAIT, pas un verdict. Le seuil qui le juge est `verdict::QUANT_LAMBDA` (0,18 au
+   *  2026-09-02, PROVISOIRE — calibré sur 10 authentiques seulement) et il n'a pas de miroir ici :
+   *  le front n'a pas à re-seuiller une mesure, il affiche le verdict que Rust a rendu.
+   *
+   *  Ancien rapport en cache (`REPORT_CACHE_VERSION` ≤ 9) : `null`. */
+  quant_likelihood: number | null;
   silence_head_ms: number;
   silence_tail_ms: number;
   /** TYPE(S) de tag présents dans le fichier, noms `lofty` triés par ordre alphabétique puis

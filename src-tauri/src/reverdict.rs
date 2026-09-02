@@ -74,6 +74,24 @@ enum Outcome {
 /// `container_mismatch` est vrai et `Rail::Unknown` sinon reproduit donc ce test à l'identique :
 /// `Unknown` « never triggers this short-circuit » (doc de `verdict()`), et aucun autre bras ne
 /// regarde `content_rail`. Reconstruction exacte, pas approchée.
+///
+/// ⚠️ **Le troisième signal, lui, ne se reconstruit PAS — et c'est délibéré (issue #52,
+/// 2026-09-02).** `quant_likelihood` se calcule sur le PCM DÉCODÉ, que cette passe n'a pas : elle
+/// rejoue le verdict depuis `report_json`, sans ouvrir un seul fichier. Deux options auraient
+/// existé — lire la valeur stockée dans le rapport, ou passer `None`. C'est `None` :
+///
+/// - un rapport écrit AVANT #52 (`REPORT_CACHE_VERSION` 9) n'a pas le champ, donc il vaudrait
+///   `None` de toute façon — et le filtre `report_cache_ver = ?2` de [`run`] écarte déjà ces
+///   lignes ;
+/// - un rapport écrit APRÈS porte une valeur qui a DÉJÀ produit son verdict à l'analyse, à la même
+///   version de λ : la rejouer ne changerait rien tant que λ ne bouge pas, et le jour où λ bouge
+///   c'est le seuil qu'il faut re-mesurer, pas une valeur en cache qu'il faut re-seuiller.
+///
+/// Conséquence assumée, écrite aussi sur `VERDICT_CACHE_VERSION` : **une piste rangée garde le
+/// verdict que la platitude et la falaise lui donnent, jusqu'à une ré-analyse RÉELLE**. La passe la
+/// re-stampe à la version courante ; le troisième signal ne l'atteindra qu'à l'ouverture en Revue
+/// (`ipc::analyze_path`) ou par une reprise du pool. L'alternative serait de re-décoder toute la
+/// bibliothèque au démarrage — plusieurs dizaines de minutes de CPU.
 fn replay(r: &AnalysisReport) -> Result<crate::analysis::Verdict, NotMeasured> {
     let content_rail = if r.container_mismatch {
         Rail::Lossy
@@ -89,6 +107,8 @@ fn replay(r: &AnalysisReport) -> Result<crate::analysis::Verdict, NotMeasured> {
             fixed_db: r.hf_flatness_db,
             top_db: r.hf_flatness_top_db,
         },
+        // Pas de PCM ici : voir le ⚠️ ci-dessus. `None` ne dégrade jamais un verdict.
+        None,
     )
 }
 
@@ -531,6 +551,60 @@ mod tests {
             "meme verdict, version neuve : sans le restamp la ligne n'a toujours pas de verdict courant"
         );
         assert_eq!(stats.restamped, 1);
+    }
+
+    /// (l) **Le troisième signal ne repasse PAS par ici, et le comportement est figé (#52).**
+    ///
+    /// Un rapport ambigu — bande pleine, aigu sous la plage des masters — portant une
+    /// vraisemblance de quantification ÉCRASANTE en cache doit quand même ressortir `grey` de
+    /// cette passe : `replay` passe `None`. Ce n'est pas une omission, c'est la décision écrite
+    /// sur `replay` et sur `VERDICT_CACHE_VERSION` — une ligne rangée attend une ré-analyse
+    /// réelle.
+    ///
+    /// Sans ce test, le jour où quelqu'un « complète » `replay` avec `r.quant_likelihood`, rien
+    /// ne tomberait : la passe se mettrait à prononcer Faux sur des lignes rangées, depuis un
+    /// champ que le filtre de version ne garantit qu'à la version courante. Le contrôle est dans
+    /// le même corps — la MÊME entrée passée directement à `verdict()` avec la mesure rend Fake,
+    /// donc le test mesure bien le chemin et pas une entrée inerte.
+    #[test]
+    fn la_vraisemblance_en_cache_ne_rejuge_rien_dans_cette_passe() {
+        let mut conn = db();
+        let mut r = fake_report();
+        r.cutoff_hz = 21_000.0; // bande pleine
+        r.hf_flatness_db = Some(-40.0); // aigu sous la plage des masters → Douteux
+        r.hf_flatness_top_db = Some(-4.0);
+        r.quant_likelihood = Some(0.45); // très au-dessus de QUANT_LAMBDA
+        let json = serde_json::to_string(&r).unwrap();
+        let id = seed(&conn, "filed", Some("ok"), Some(1), &json);
+
+        let stats = run(&mut conn).unwrap();
+
+        assert_eq!(
+            read(&conn, id),
+            (
+                Some("grey".to_string()),
+                Some(verdict::VERDICT_CACHE_VERSION)
+            ),
+            "la passe n'a pas de PCM : elle re-stampe le doute, elle ne prononce pas Faux"
+        );
+        assert_eq!(stats.restamped, 1);
+
+        // Contrôle : la MÊME mesure, passée au juge, tranche bien. Sans lui on ne saurait pas si
+        // l'entrée était simplement inerte.
+        assert_eq!(
+            verdict::verdict(
+                r.cutoff_hz,
+                r.declared_rail,
+                r.declared_bitrate,
+                Rail::Unknown,
+                HfFlatness {
+                    fixed_db: r.hf_flatness_db,
+                    top_db: r.hf_flatness_top_db,
+                },
+                r.quant_likelihood,
+            ),
+            Ok(crate::analysis::Verdict::Fake)
+        );
     }
 
     /// Coût de la passe à l'échelle de la base réelle (3 386 pistes au 2026-09-01). `#[ignore]`

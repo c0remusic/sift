@@ -51,7 +51,20 @@ use crate::analysis::{Rail, Verdict};
 /// verdicts au prochain lancement — mais le chemin « re-verdict depuis les mesures stockées, sans
 /// ré-analyse » existe désormais (`reverdict::run`, écrit le jour même) et les rejuge au démarrage,
 /// au lieu des 15-30 min de CPU en fond qu'aurait coûté une ré-analyse complète par le pool.
-pub const VERDICT_CACHE_VERSION: i64 = 2;
+///
+/// **3, le 2026-09-02 (issue #52) : la vraisemblance de quantification entre dans l'arbitrage.**
+/// `verdict()` prend un sixième paramètre, `quant_likelihood`, et **tout le bras de la bande
+/// pleine** — ses deux issues, `Ok` comme `Grey` — peut désormais rendre `Fake` (voir
+/// [`QUANT_LAMBDA`]). C'est exactement la condition de bump écrite ci-dessus, « l'arrivée d'une
+/// entrée nouvelle dans l'arbitrage ».
+///
+/// ⚠️ **Ce bump ne fait PAS basculer la bibliothèque rangée.** `reverdict::run` rejoue le verdict
+/// depuis les mesures STOCKÉES et n'a aucun PCM sous la main : il passe `None`, et `None` ne
+/// dégrade jamais un verdict. Une piste rangée est donc re-stampée avec le verdict qu'elle
+/// portait, et le gardera jusqu'à une ré-analyse RÉELLE (ouverture en Revue via
+/// `ipc::analyze_path`, ou reprise par le pool). C'est voulu : la seule alternative serait de
+/// stocker le signal, ou de re-décoder toute la bibliothèque au démarrage.
+pub const VERDICT_CACHE_VERSION: i64 = 3;
 
 /// Lit le cache `(tracks.verdict, tracks.verdict_ver)`. Version absente (NULL — ligne d'avant la
 /// v22 que son backfill n'a pas stampée) ou différente = **pas de verdict courant**, rendu comme
@@ -179,6 +192,37 @@ const HF_FIXED_FLOOR_DB: f32 = -12.0;
 /// Inchangée, désormais mesurée.
 const HF_TOP_FLOOR_DB: f32 = -23.8;
 
+/// Seuil de décision de la vraisemblance de quantification — le `λ` du mémo de l'issue #52
+/// (méthode d'Olivier Derrien, JAES 67(3), 2019). Au-dessus, un lossless à bande pleine dont
+/// l'aigu est creux n'est plus Douteux mais **Faux** : la grille du codec a été retrouvée dans son
+/// signal, et un transcodage établi par la grille n'est pas un doute.
+///
+/// ⚠️ **PROVISOIRE, et la valeur le dit.** Elle vient de la calibration du 2026-09-02 sur
+/// `C:\sift-corpus` (le corpus du 2026-08-17 : 10 sources × 15 encodeurs = 150 faux, **10
+/// authentiques**), harnais `quant_trace::corpus::quant_scan`, réglage 8×8, saut 17. Le critère est
+/// celui du mémo — la plus petite valeur à **zéro faux positif** sur NOS authentiques, jamais reprise
+/// du papier, dont les encodeurs (iTunes) ne sont pas les nôtres (ffmpeg `aac` / `aac_mf`) :
+///
+/// - maximum authentique mesuré **0,172** (`src10`, blocs longs, décalage 1009) — spectrogramme
+///   relu à l'œil le jour même : roll-off naturel, vrai master, le 0,172 est du bruit de blocs
+///   longs et pas un transcodage caché ;
+/// - les neuf autres authentiques ≤ 0,094 ;
+/// - d'où **0,18**, juste au-dessus du maximum authentique.
+///
+/// **Dix authentiques ne calibrent pas sérieusement un seuil à zéro faux positif.** À re-dériver
+/// sur le corpus régénéré de #52 (≥ 23 authentiques vettés au spectrogramme, `make-corpus.mjs`),
+/// par le code qui l'applique. Autres fragilités consignées le même jour : une seule famille
+/// musicale, encodeurs ffmpeg seulement, et un taux de faux positifs PAR CELLULE mesuré à
+/// 0,42-0,61 % (`k_eff` 7..15) et non les 1 % nominaux — voir le Monte-Carlo de `quant_trace`.
+///
+/// Détection observée à cette valeur, ventilée : aacmf128+aacmf256 **20/20**, aac256 **8/10**,
+/// aac128 **7/10**, MP3 2/60 (attendu — banc hybride PQMF+MDCT absent, phase 2), divers 12/50.
+///
+/// `f32` et non `f64` : la comparaison se fait contre la valeur telle qu'elle voyage dans
+/// `AnalysisReport::quant_likelihood`. Aucun `L` atteignable n'est ambigu à cette précision — les
+/// `L` sont des multiples de 1/64, et les deux plus proches de 0,18 sont 0,171875 et 0,1875.
+pub const QUANT_LAMBDA: f32 = 0.18;
+
 /// Vrai quand au moins une des deux bandes sort par le bas de la plage des masters.
 ///
 /// L'UNION et pas l'intersection : mesuré sur le corpus étiqueté, les deux bandes sont aveugles à
@@ -230,8 +274,68 @@ impl std::fmt::Display for NotMeasured {
 
 impl std::error::Error for NotMeasured {}
 
+/// Vrai quand — et seulement quand — la sonde de quantification a quelque chose à trancher.
+///
+/// **BANDE PLEINE, un point c'est tout** : rail lossless déclaré, conteneur non démenti, coupure
+/// réellement mesurée et à `LOSSLESS_OK_HZ` ou au-dessus. Sous la falaise, le verdict est déjà
+/// Faux ; sur un désaccord de conteneur, il l'est aussi et le court-circuit passe avant tout.
+/// Ailleurs, la sonde ne changerait rien.
+///
+/// ⚠️ **Elle ne teste PAS la platitude, et cette clause a été retirée le 2026-09-02 après
+/// mesure.** La première intégration ne sondait que le bras `Grey` — bande pleine ET aigu SOUS la
+/// plage des masters. Or la cible même de l'issue #52 — les transcodes AAC haut débit,
+/// invisibles au spectre — a une platitude DANS la plage depuis la re-dérivation du plancher à
+/// -12 (#51) : elle sort en `Ok`, pas en `Grey`. Mesuré sur les 160 fichiers de `C:\sift-corpus` :
+/// avec la clause, les 40 fichiers `aac256`/`aacmf128`/`aacmf256`/`aac128` haut débit n'étaient
+/// **jamais** sondés (`quant_l = "-"`), et l'intégration entière valait +2 détections sur des
+/// familles hors cible (un `opus128`, un `wma192`). La condition qui vise la cible est donc la
+/// bande pleine seule.
+///
+/// **Coût, dit et non minimisé.** La sonde tourne désormais sur ~tout lossless SAIN à l'analyse,
+/// pas sur une poignée d'ambigus : +0,3 s de balayage sur une analyse de 2-4 s, soit ~10 %.
+/// Mesuré le 2026-09-02 sur les 160 fichiers étiquetés de `C:\sift-corpus` (`corpus_scan`,
+/// `--release`) :
+///
+/// | | fichiers | part |
+/// |---|---|---|
+/// | sonde DEMANDÉE (lossless + bande pleine) | 111 | **69,4 %** |
+/// | mesure effectivement RENDUE | 98 | 61,3 % |
+/// | demandée mais sans mesure (plafond PCM) | 13 | 8,1 % |
+///
+/// ⚠️ Ces 69 % sont la part d'un corpus **saturé de faux à bande pleine** (150 transcodes pour 10
+/// authentiques), pas celle d'une bibliothèque réelle — sur laquelle le chiffre n'a pas été
+/// mesuré. Les 13 sans mesure sont les 13 variantes d'un seul morceau de 10 min 53 s, au-delà de
+/// `analysis::QUANT_MAX_PCM_SAMPLES` : `None`, donc verdict inchangé.
+///
+/// Ce n'est plus « à la demande » au sens de « rare » — c'est « à la demande » au sens de
+/// « seulement là où elle peut trancher ».
+///
+/// **Elle vit ici, pas chez l'appelant, pour une raison de couplage** : c'est la seule façon que
+/// la condition de déclenchement et le bras qu'elle sert ne dérivent pas l'un de l'autre. Un
+/// `analyze()` qui déciderait tout seul quand sonder aurait une copie de l'arbitrage hors du seul
+/// endroit qui le teste — et une copie qui dérive dépense 0,3 s pour rien, ou pire, ne les dépense
+/// pas là où le verdict attendait la mesure.
+///
+/// `verdict()` reste PUR : cette fonction ne mesure rien non plus, elle ne fait que nommer la
+/// condition. Le calcul MDCT vit dans `analysis::analyze`, qui a le PCM.
+pub fn needs_quant_probe(cutoff_hz: f32, declared: Rail, content_rail: Rail) -> bool {
+    declared == Rail::Lossless
+        && content_rail != Rail::Lossy
+        && cutoff_hz > NO_MEASUREMENT_HZ
+        && cutoff_hz >= LOSSLESS_OK_HZ
+}
+
 /// Maps cutoff + declared rail + declared bitrate to a verdict, ou dit pourquoi il n'y a pas de
 /// verdict à rendre (`NotMeasured`).
+///
+/// `quant_likelihood` est le troisième signal (issue #52) : la vraisemblance que le signal soit
+/// déjà passé par la grille de quantification d'un codec AAC, mesurée par
+/// `analysis::quant_trace::likelihood` sur le PCM décodé. **`None` = pas mesurée**, et c'est un
+/// état réel et fréquent — chemin de re-verdict depuis les mesures stockées (`reverdict.rs`), taux
+/// d'échantillonnage hors des tables AAC, signal trop court, ou tout simplement un fichier que
+/// [`needs_quant_probe`] n'a pas désigné. **`None` ne dégrade JAMAIS un verdict** : c'est la même
+/// règle que pour les bandes de platitude non mesurées, et pour la même raison — accuser un
+/// fichier de n'avoir pas pu être mesuré est l'erreur que ce module passe son temps à corriger.
 ///
 /// `content_rail` is the rail sniffed from the actual container/codec (independent of the
 /// declared extension/tag) — when it disagrees with `declared` on the lossless side (declared
@@ -246,6 +350,7 @@ pub fn verdict(
     declared_bitrate: Option<u32>,
     content_rail: Rail,
     flatness: HfFlatness,
+    quant_likelihood: Option<f32>,
 ) -> Result<Verdict, NotMeasured> {
     match declared {
         Rail::Lossless => {
@@ -260,7 +365,21 @@ pub fn verdict(
                 // Bande pleine : la coupure n'a plus rien à dire. C'est ici, et seulement ici, que
                 // la platitude de l'aigu tranche — elle ne DÉGRADE jamais un verdict déjà négatif,
                 // elle rattrape ce que la falaise ne peut pas voir.
-                if below_master_range(flatness) {
+                // Le TROISIÈME signal (issue #52), et il se lit AVANT la platitude — sur les deux
+                // issues du bras, `Ok` comme `Grey`. La cible de #52 est précisément le fichier
+                // dont la platitude est NORMALE et qui sortait donc `Ok` : le brancher sous le
+                // seul `Grey` le rendait muet là où il compte (mesuré sur corpus, voir
+                // `needs_quant_probe`).
+                //
+                // Une grille de codec retrouvée dans le signal n'est pas un doute — c'est un
+                // transcodage établi, donc Faux. Quand elle n'est pas retrouvée (ou pas mesurée),
+                // le verdict de platitude s'applique tel quel, inchangé depuis #51.
+                //
+                // `is_some_and` et pas un `unwrap_or(0.0)` : la mesure absente doit sortir de la
+                // comparaison, pas y entrer avec une valeur basse plausible.
+                if quant_likelihood.is_some_and(|l| l > QUANT_LAMBDA) {
+                    Ok(Verdict::Fake)
+                } else if below_master_range(flatness) {
                     Ok(Verdict::Grey)
                 } else {
                     Ok(Verdict::Ok)
@@ -321,7 +440,8 @@ mod tests {
                 Rail::Lossless,
                 None,
                 Rail::Lossless,
-                HfFlatness::default()
+                HfFlatness::default(),
+                None
             ),
             Ok(Verdict::Ok)
         );
@@ -335,7 +455,8 @@ mod tests {
                 Rail::Lossless,
                 None,
                 Rail::Lossless,
-                HfFlatness::default()
+                HfFlatness::default(),
+                None
             ),
             Ok(Verdict::Fake)
         );
@@ -345,7 +466,8 @@ mod tests {
                 Rail::Lossless,
                 None,
                 Rail::Lossless,
-                HfFlatness::default()
+                HfFlatness::default(),
+                None
             ),
             Ok(Verdict::Fake)
         );
@@ -389,6 +511,7 @@ mod tests {
                     fixed_db: Some(-40.0),
                     top_db: Some(-4.0),
                 },
+                None
             ),
             Ok(Verdict::Grey)
         );
@@ -414,6 +537,7 @@ mod tests {
                     fixed_db: Some(-3.0),
                     top_db: Some(-30.0),
                 },
+                None
             ),
             Ok(Verdict::Grey)
         );
@@ -436,6 +560,7 @@ mod tests {
                     fixed_db: Some(HF_FIXED_FLOOR_DB),
                     top_db: Some(HF_TOP_FLOOR_DB),
                 },
+                None
             ),
             Ok(Verdict::Ok)
         );
@@ -459,6 +584,7 @@ mod tests {
                     fixed_db: None,
                     top_db: None,
                 },
+                None
             ),
             Ok(Verdict::Ok)
         );
@@ -473,7 +599,8 @@ mod tests {
                 Rail::Lossy,
                 Some(320),
                 Rail::Lossy,
-                HfFlatness::default()
+                HfFlatness::default(),
+                None
             ),
             Ok(Verdict::Ok)
         );
@@ -483,7 +610,8 @@ mod tests {
                 Rail::Lossy,
                 Some(128),
                 Rail::Lossy,
-                HfFlatness::default()
+                HfFlatness::default(),
+                None
             ),
             Ok(Verdict::Ok)
         );
@@ -498,7 +626,8 @@ mod tests {
                 Rail::Lossy,
                 Some(320),
                 Rail::Lossy,
-                HfFlatness::default()
+                HfFlatness::default(),
+                None
             ),
             Ok(Verdict::Fake)
         );
@@ -509,7 +638,8 @@ mod tests {
                 Rail::Lossy,
                 Some(256),
                 Rail::Lossy,
-                HfFlatness::default()
+                HfFlatness::default(),
+                None
             ),
             Ok(Verdict::Fake)
         );
@@ -525,7 +655,8 @@ mod tests {
                 Rail::Lossy,
                 Some(192),
                 Rail::Lossy,
-                HfFlatness::default()
+                HfFlatness::default(),
+                None
             ),
             Ok(Verdict::Ok)
         );
@@ -535,7 +666,8 @@ mod tests {
                 Rail::Lossy,
                 Some(160),
                 Rail::Lossy,
-                HfFlatness::default()
+                HfFlatness::default(),
+                None
             ),
             Ok(Verdict::Ok)
         );
@@ -550,7 +682,8 @@ mod tests {
                 Rail::Lossy,
                 Some(192),
                 Rail::Lossy,
-                HfFlatness::default()
+                HfFlatness::default(),
+                None
             ),
             Ok(Verdict::Fake)
         );
@@ -561,7 +694,8 @@ mod tests {
                 Rail::Lossy,
                 Some(160),
                 Rail::Lossy,
-                HfFlatness::default()
+                HfFlatness::default(),
+                None
             ),
             Ok(Verdict::Fake)
         );
@@ -576,7 +710,8 @@ mod tests {
                 Rail::Lossy,
                 None,
                 Rail::Lossy,
-                HfFlatness::default()
+                HfFlatness::default(),
+                None
             ),
             Ok(Verdict::Ok)
         );
@@ -601,7 +736,8 @@ mod tests {
                 Rail::Lossy,
                 Some(320),
                 Rail::Lossy,
-                HfFlatness::default()
+                HfFlatness::default(),
+                None
             ),
             Err(NotMeasured::Cutoff)
         );
@@ -611,7 +747,8 @@ mod tests {
                 Rail::Lossless,
                 None,
                 Rail::Lossless,
-                HfFlatness::default()
+                HfFlatness::default(),
+                None
             ),
             Err(NotMeasured::Cutoff)
         );
@@ -622,7 +759,8 @@ mod tests {
                 Rail::Lossy,
                 Some(320),
                 Rail::Lossy,
-                HfFlatness::default()
+                HfFlatness::default(),
+                None
             ),
             Ok(Verdict::Fake)
         );
@@ -632,7 +770,8 @@ mod tests {
                 Rail::Lossless,
                 None,
                 Rail::Lossless,
-                HfFlatness::default()
+                HfFlatness::default(),
+                None
             ),
             Ok(Verdict::Fake)
         );
@@ -648,7 +787,8 @@ mod tests {
                 Rail::Lossless,
                 None,
                 Rail::Lossy,
-                HfFlatness::default()
+                HfFlatness::default(),
+                None
             ),
             Ok(Verdict::Fake)
         );
@@ -670,7 +810,8 @@ mod tests {
                 Rail::Lossless,
                 None,
                 Rail::Lossless,
-                HfFlatness::default()
+                HfFlatness::default(),
+                None
             ),
             Ok(Verdict::Fake),
             "lossless mesuré au ras de zéro : falaise lossy, donc Faux"
@@ -681,7 +822,8 @@ mod tests {
                 Rail::Lossy,
                 Some(320),
                 Rail::Lossy,
-                HfFlatness::default()
+                HfFlatness::default(),
+                None
             ),
             Ok(Verdict::Fake),
             "320 kbps mesuré au ras de zéro : sur-encodage, donc Faux"
@@ -703,6 +845,7 @@ mod tests {
                 None,
                 Rail::Lossless,
                 HfFlatness::default(),
+                None,
             )
         };
         assert_eq!(
@@ -746,6 +889,7 @@ mod tests {
                     fixed_db: Some(HF_FIXED_FLOOR_DB - 0.1),
                     top_db: Some(HF_TOP_FLOOR_DB),
                 },
+                None
             ),
             Ok(Verdict::Grey),
             "bande fixe sous son plancher, bande relative pile dessus"
@@ -760,6 +904,7 @@ mod tests {
                     fixed_db: Some(HF_FIXED_FLOOR_DB),
                     top_db: Some(HF_TOP_FLOOR_DB - 0.1),
                 },
+                None
             ),
             Ok(Verdict::Grey),
             "bande relative sous son plancher, bande fixe pile dessus"
@@ -779,7 +924,8 @@ mod tests {
                 Rail::Unknown,
                 None,
                 Rail::Unknown,
-                HfFlatness::default()
+                HfFlatness::default(),
+                None
             ),
             Err(NotMeasured::Rail)
         );
@@ -789,7 +935,8 @@ mod tests {
                 Rail::Unknown,
                 Some(320),
                 Rail::Lossless,
-                HfFlatness::default()
+                HfFlatness::default(),
+                None
             ),
             Err(NotMeasured::Rail)
         );
@@ -806,7 +953,8 @@ mod tests {
                 Rail::Lossless,
                 None,
                 Rail::Lossy,
-                HfFlatness::default()
+                HfFlatness::default(),
+                None
             ),
             Ok(Verdict::Fake)
         );
@@ -822,7 +970,8 @@ mod tests {
                 Rail::Lossless,
                 None,
                 Rail::Unknown,
-                HfFlatness::default()
+                HfFlatness::default(),
+                None
             ),
             Ok(Verdict::Ok)
         );
@@ -838,7 +987,8 @@ mod tests {
                 Rail::Lossy,
                 Some(320),
                 Rail::Lossy,
-                HfFlatness::default()
+                HfFlatness::default(),
+                None
             ),
             Ok(Verdict::Ok)
         );
@@ -848,9 +998,247 @@ mod tests {
                 Rail::Lossy,
                 Some(320),
                 Rail::Lossy,
-                HfFlatness::default()
+                HfFlatness::default(),
+                None
             ),
             Ok(Verdict::Fake)
         );
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // Troisième signal — vraisemblance de quantification (issue #52, 2026-09-02).
+    // -----------------------------------------------------------------------------------------
+
+    /// L'entrée AMBIGUË, celle et seulement celle que la sonde vise : bande pleine (la falaise n'a
+    /// rien à dire) + aigu sous la plage des masters (la platitude doute). Les trois tests qui
+    /// suivent ne changent QUE `quant_likelihood` sur cette entrée-là.
+    fn ambigu(quant: Option<f32>) -> Result<Verdict, NotMeasured> {
+        verdict(
+            21000.0,
+            Rail::Lossless,
+            None,
+            Rail::Lossless,
+            HfFlatness {
+                fixed_db: Some(-40.0),
+                top_db: Some(-4.0),
+            },
+            quant,
+        )
+    }
+
+    /// **Le comportement vendu par #52** : sur le seul bras où falaise et platitude ne tranchent
+    /// pas, une grille de codec retrouvée dans le signal fait passer le Douteux en **Faux**.
+    ///
+    /// Les trois états de la mesure sont dans le même corps, et c'est ce qui rend le test
+    /// couvrant : au-dessus de λ → Faux, en dessous → Douteux (le comportement d'avant #52),
+    /// et NON MESURÉE → Douteux aussi. Sans les deux derniers, un `Ok(Fake)` constant passerait.
+    #[test]
+    fn la_grille_du_codec_retrouvee_transforme_le_doute_en_faux() {
+        assert_eq!(
+            ambigu(Some(0.45)),
+            Ok(Verdict::Fake),
+            "L bien au-dessus de lambda : transcodage etabli par la grille, donc Faux"
+        );
+        assert_eq!(
+            ambigu(Some(0.094)),
+            Ok(Verdict::Grey),
+            "L au niveau des authentiques : le doute reste un doute"
+        );
+        assert_eq!(
+            ambigu(None),
+            Ok(Verdict::Grey),
+            "mesure absente : verdict INCHANGE, jamais degrade"
+        );
+    }
+
+    /// La VALEUR de λ, gelée en littéral, et sa borne encadrée au plus près de la calibration.
+    ///
+    /// Même raison que `les_planchers_sont_ceux_de_la_reference_assainie` : les tests symboliques
+    /// (`QUANT_LAMBDA + ε`) suivraient n'importe quelle dérive sans tomber. 0,18 est une mesure —
+    /// le maximum des 10 authentiques du 2026-09-02 vaut 0,172, vetted au spectrogramme — et la
+    /// changer exige de rejouer la calibration, pas d'éditer ce test.
+    ///
+    /// La comparaison est **stricte** (`> λ`), et le test le fige des deux côtés : à la valeur
+    /// exacte on est encore dans le doute, un cheveu au-dessus on ne l'est plus.
+    #[test]
+    fn lambda_est_la_valeur_calibree_et_sa_borne_est_stricte() {
+        assert_eq!(QUANT_LAMBDA, 0.18);
+        assert_eq!(
+            ambigu(Some(0.172)),
+            Ok(Verdict::Grey),
+            "le MAXIMUM authentique mesure (src10) doit rester Douteux — c'est le critere zero faux positif"
+        );
+        assert_eq!(
+            ambigu(Some(QUANT_LAMBDA)),
+            Ok(Verdict::Grey),
+            "pile sur lambda : borne INCLUSE du cote du doute"
+        );
+        assert_eq!(
+            ambigu(Some(QUANT_LAMBDA + 0.001)),
+            Ok(Verdict::Fake),
+            "juste au-dessus : Faux"
+        );
+    }
+
+    /// Le troisième signal **ne se lit que dans le bras de la bande pleine**. Une vraisemblance
+    /// écrasante ne doit rien changer là où la falaise, le conteneur ou le rail ont déjà tranché.
+    ///
+    /// ⚠️ Le cas « bande pleine + aigu NORMAL » n'est PAS ici : depuis la correction du
+    /// 2026-09-02 il appartient au bras, et c'est même la cible de #52 — il est figé par
+    /// `la_sonde_se_declenche_sur_la_bande_pleine_et_nulle_part_ailleurs`. Ce test garde les
+    /// frontières qui restent fermées.
+    #[test]
+    fn la_vraisemblance_ne_deborde_pas_de_son_bras() {
+        // Sous la falaise : Faux par la coupure, la sonde n'a pas voix au chapitre. Le sens du
+        // test est inversé par rapport aux suivants — ici une mesure ÉLEVÉE ne doit rien ajouter,
+        // et une mesure BASSE ne doit surtout rien retirer.
+        assert_eq!(
+            verdict(
+                16000.0,
+                Rail::Lossless,
+                None,
+                Rail::Lossless,
+                HfFlatness::default(),
+                Some(0.0),
+            ),
+            Ok(Verdict::Fake),
+            "falaise lossy : une vraisemblance NULLE ne blanchit pas"
+        );
+        // Fraude de conteneur : le court-circuit passe avant tout, y compris avant la sonde.
+        assert_eq!(
+            verdict(
+                21000.0,
+                Rail::Lossless,
+                None,
+                Rail::Lossy,
+                HfFlatness::default(),
+                Some(0.0),
+            ),
+            Ok(Verdict::Fake),
+            "MP3 renomme .flac : Faux sans le spectre, la sonde ne le rachete pas"
+        );
+        // Rail lossy : l'autre grille de décision, qui ne connaît pas ce signal.
+        assert_eq!(
+            verdict(
+                20500.0,
+                Rail::Lossy,
+                Some(320),
+                Rail::Lossy,
+                HfFlatness::default(),
+                Some(1.0),
+            ),
+            Ok(Verdict::Ok)
+        );
+        // Hors domaine : une vraisemblance ne rachète pas une mesure qui n'existe pas.
+        assert_eq!(
+            verdict(
+                NO_MEASUREMENT_HZ,
+                Rail::Lossless,
+                None,
+                Rail::Lossless,
+                HfFlatness::default(),
+                Some(1.0),
+            ),
+            Err(NotMeasured::Cutoff)
+        );
+        assert_eq!(
+            verdict(
+                21000.0,
+                Rail::Unknown,
+                None,
+                Rail::Unknown,
+                HfFlatness::default(),
+                Some(1.0),
+            ),
+            Err(NotMeasured::Rail)
+        );
+    }
+
+    /// **La CONDITION de déclenchement, figée cas par cas** — la sonde tourne sur la bande pleine
+    /// et nulle part ailleurs.
+    ///
+    /// `analysis::analyze` décide de dépenser 0,3 s de MDCT sur la foi de [`needs_quant_probe`],
+    /// pas de `verdict()`. Si les deux divergent, soit on calcule pour rien, soit — bien pire —
+    /// on ne calcule pas là où le verdict attendait la mesure, et le troisième signal devient muet
+    /// en silence. C'est exactement ce qui est arrivé à la première intégration (clause de
+    /// platitude, 2026-09-02) : cible jamais sondée, +2 détections hors cible.
+    ///
+    /// Les quatre faits figés, dans l'ordre où ils comptent :
+    ///
+    /// 1. **bande pleine → sondé**, que la platitude soit dans la plage des masters ou non — les
+    ///    DEUX issues, `Ok` et `Grey`. C'est le cas 3 qui manquait ;
+    /// 2. **bande coupée → pas sondé** : le verdict est déjà Faux par la falaise ;
+    /// 3. **fraude de conteneur → pas sondé** : le court-circuit passe avant, le verdict est Faux
+    ///    sans le spectre ;
+    /// 4. **hors domaine → pas sondé** : coupure sentinelle, rail non lossless, rail indéterminé.
+    ///
+    /// Le contrôle est l'implication : partout où la sonde est VRAIE, une vraisemblance au-dessus
+    /// de λ doit réellement produire `Fake`. Sans lui, un `needs_quant_probe` qui rendrait `true`
+    /// partout passerait les quatre points ci-dessus tout en dépensant du CPU pour rien.
+    #[test]
+    fn la_sonde_se_declenche_sur_la_bande_pleine_et_nulle_part_ailleurs() {
+        let plate = HfFlatness {
+            fixed_db: Some(-3.0),
+            top_db: Some(-4.0),
+        }; // dans la plage des masters → bras Ok
+        let creuse = HfFlatness {
+            fixed_db: Some(-40.0),
+            top_db: Some(-4.0),
+        }; // sous la plage → bras Grey
+
+        // 1. Bande pleine, les DEUX platitudes, et la borne inclusive de LOSSLESS_OK_HZ.
+        for c in [LOSSLESS_OK_HZ, 21000.0, 22050.0] {
+            assert!(
+                needs_quant_probe(c, Rail::Lossless, Rail::Lossless),
+                "bande pleine a {c} Hz : la sonde doit tourner"
+            );
+            assert!(
+                needs_quant_probe(c, Rail::Lossless, Rail::Unknown),
+                "conteneur non conclusif : ne desarme pas la sonde"
+            );
+            // Et sur les deux bras : la mesure tranche, quelle que soit la platitude.
+            for f in [plate, creuse] {
+                assert_eq!(
+                    verdict(c, Rail::Lossless, None, Rail::Lossless, f, Some(0.45)),
+                    Ok(Verdict::Fake),
+                    "grille retrouvee a {c} Hz, platitude {f:?} : Faux"
+                );
+            }
+            // Sans mesure, le verdict de platitude s'applique tel quel — inchangé depuis #51.
+            assert_eq!(
+                verdict(c, Rail::Lossless, None, Rail::Lossless, plate, None),
+                Ok(Verdict::Ok)
+            );
+            assert_eq!(
+                verdict(c, Rail::Lossless, None, Rail::Lossless, creuse, None),
+                Ok(Verdict::Grey)
+            );
+        }
+
+        // 2. Bande coupée : la falaise a déjà tranché.
+        for c in [LOSSY_CLIFF_HZ - 0.1, 19750.0, 16000.0] {
+            assert!(
+                !needs_quant_probe(c, Rail::Lossless, Rail::Lossless),
+                "coupure a {c} Hz : Faux par la falaise, rien a sonder"
+            );
+        }
+
+        // 3. Fraude de conteneur : le court-circuit passe avant, y compris à bande pleine.
+        assert!(
+            !needs_quant_probe(21000.0, Rail::Lossless, Rail::Lossy),
+            "MP3 renomme .flac : Faux sans le spectre, rien a sonder"
+        );
+
+        // 4. Hors domaine.
+        assert!(
+            !needs_quant_probe(NO_MEASUREMENT_HZ, Rail::Lossless, Rail::Lossless),
+            "aucune trame decodee : pas de mesure, donc pas de sonde"
+        );
+        for d in [Rail::Lossy, Rail::Unknown] {
+            assert!(
+                !needs_quant_probe(21000.0, d, Rail::Lossless),
+                "rail declare {d:?} : l'autre grille de decision, ou aucune"
+            );
+        }
     }
 }
