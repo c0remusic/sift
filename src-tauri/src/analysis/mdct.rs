@@ -15,10 +15,12 @@
 //! la structure de quantification survive au décodage puis se retrouve depuis un FLAC, c'est
 //! l'hypothèse qu'il sert à tester — pas un acquis. Rien ici n'est branché sur `verdict()`.
 //!
-//! Coût : implémentation DIRECTE en O(N²), sans passer par `rustfft`. C'est un choix de sonde —
-//! une MDCT rapide se factorise par une FFT complexe de N/2 points avec pré/post-rotation, et
-//! l'écrire d'abord reviendrait à optimiser un chemin dont on ignore encore s'il mesure quelque
-//! chose. À refaire si une sonde aboutit et doit tourner sur une bibliothèque.
+//! Coût : [`mdct`] et [`MdctPlan`] restent en O(N²), et c'était un choix de sonde assumé — écrire
+//! une MDCT rapide d'abord reviendrait à optimiser un chemin dont on ignorait s'il mesure quelque
+//! chose. **Levé le 2026-09-01** (mémo #52) : la vraisemblance de quantification de Derrien a
+//! besoin de 1024 décalages × trames × canaux × résolutions par fichier, donc [`MdctFast`] existe
+//! désormais à côté. `MdctPlan` reste l'ORACLE — c'est lui que les tests de reconstruction tiennent,
+//! et c'est contre lui que le chemin rapide est vérifié par équivalence.
 
 /// Fenêtre sinus, celle des blocs longs AAC et MP3.
 ///
@@ -106,6 +108,149 @@ impl MdctPlan {
                 let row = &self.basis[k * 2 * self.n..(k + 1) * 2 * self.n];
                 row.iter().zip(frame).map(|(b, x)| b * x).sum()
             })
+            .collect()
+    }
+}
+
+/// MDCT rapide — même transformée que [`MdctPlan`], en `O(N log N)` au lieu de `O(N²)`.
+///
+/// **Pourquoi maintenant (2026-09-01, mémo #52).** La sonde d'alignement se contentait du plan
+/// `O(N²)` parce qu'elle ne mesurait qu'une poignée de fichiers. La vraisemblance de quantification
+/// de Derrien, elle, balaie 1024 décalages × N_f trames × 4 canaux × 2 résolutions par fichier : au
+/// budget `MdctPlan`, c'est des heures par piste. C'est le bloqueur d'implémentation nommé par le
+/// mémo, et rien d'autre.
+///
+/// **`MdctPlan` reste l'ORACLE.** Il est tenu par le test de reconstruction (repliement temporel
+/// annulé sur la moitié commune), qui est la seule propriété qui distingue une vraie MDCT d'une
+/// somme de cosinus au terme de phase faux. Ce chemin-ci est vérifié PAR ÉQUIVALENCE contre lui, et
+/// le test de reconstruction est rejoué dessus.
+///
+/// **Le chemin, en trois étages** (dérivation refaite à la main, pas recopiée) :
+///
+/// 1. *Repliement* `2N → N`. Le noyau `cos(π/N·(m+½)(k+½))`, où `m = n + N/2`, est antisymétrique
+///    autour de `m = N − ½` et antipériodique de période `2N`. Replier les indices hors `[0, N)`
+///    avec ces deux signes ramène la MDCT à une DCT-IV de taille `N` sur le signal replié `u`.
+/// 2. *DCT-IV par FFT complexe de `N/2` points*. Avec `M = N/2` et
+///    `w[p] = (u[2p] + i·u[N−1−2p])·exp(−iπ(8p+1)/(8N))`, `Z = FFT_M(w)`,
+///    `r[q] = Z[q]·exp(−iπ(8q+1)/(8N))`, on a `C[2q] = Re r[q]` et `C[N−1−2q] = −Im r[q]`.
+///    Les deux demi-tournants `+½` ne sont pas décoratifs : ils compensent le terme croisé
+///    `(4p+1)(4q+1)` que la FFT seule ne produit pas. Une répartition naïve
+///    `exp(−iπ(4p+1)/(4N))` des deux côtés laisse une phase constante `e^{−iπ/(4N)}` — mesurable,
+///    et c'est exactement ce que le test d'équivalence attrape.
+/// 3. *Rangement* des sorties paires/impaires depuis parties réelle et imaginaire.
+///
+/// **Accumulation en `f64`.** L'oracle somme `2N` termes en `f32` ; ce chemin-ci est donc plus
+/// PRÉCIS que sa propre référence, et la tolérance du test d'équivalence est dominée par l'erreur
+/// de l'oracle, pas par la sienne. Ce n'est pas de la coquetterie : la vraisemblance de
+/// quantification teste si `|X|^{3/4}/Δ` tombe près d'un entier, avec des quotients qui montent à
+/// plusieurs milliers dans les bandes graves — `f32` y perdrait le chiffre qui décide.
+pub struct MdctFast {
+    n: usize,
+    fft: std::sync::Arc<dyn rustfft::Fft<f64>>,
+    /// `exp(−iπ(8j+1)/(8N))` pour `j = 0..N/2` — le même facteur sert avant et après la FFT.
+    twiddle: Vec<rustfft::num_complex::Complex<f64>>,
+    /// Signal replié `u`, réutilisé d'un appel à l'autre pour ne pas réallouer par trame.
+    scratch: std::cell::RefCell<(Vec<f64>, Vec<rustfft::num_complex::Complex<f64>>)>,
+}
+
+impl MdctFast {
+    /// Panique si `n` n'est pas pair : le repliement coupe la trame en quarts de `N/2`, et un `N`
+    /// impair n'est pas un cas dégradé à rattraper — c'est un appelant qui s'est trompé de taille.
+    pub fn new(n: usize) -> Self {
+        assert!(n % 2 == 0, "MDCT rapide : N doit être pair, reçu {n}");
+        let m = n / 2;
+        let fft = rustfft::FftPlanner::<f64>::new().plan_fft_forward(m);
+        let nf = n as f64;
+        let twiddle = (0..m)
+            .map(|j| {
+                let a = -std::f64::consts::PI * (8.0 * j as f64 + 1.0) / (8.0 * nf);
+                rustfft::num_complex::Complex::new(a.cos(), a.sin())
+            })
+            .collect();
+        Self {
+            n,
+            fft,
+            twiddle,
+            scratch: std::cell::RefCell::new((
+                vec![0.0; n],
+                vec![rustfft::num_complex::Complex::new(0.0, 0.0); m],
+            )),
+        }
+    }
+
+    /// Coefficients en `f64` — la précision dont [`super::quant_trace`] a besoin pour décider si
+    /// `|X|^{3/4}/Δ` tombe près d'un entier.
+    ///
+    /// **Alloue son `Vec` de sortie à chaque appel**, et c'est pourquoi le balayage de
+    /// [`super::quant_trace`] appelle [`MdctFast::transform_f64_into`] à la place : dans une boucle
+    /// de 1024 décalages × 8 trames × 8 groupes, cette allocation-là est la seule qui reste par
+    /// trame, ce que la doc du champ `scratch` (« pour ne pas réallouer par trame ») promettait
+    /// déjà de ne pas faire. Cette forme-ci existe pour les appelants ponctuels — tests, oracle.
+    ///
+    /// Panique si la trame ne fait pas `2N`, exactement comme [`MdctPlan::transform`].
+    pub fn transform_f64(&self, frame: &[f32]) -> Vec<f64> {
+        let mut out = vec![0.0f64; self.n];
+        self.transform_f64_into(frame, &mut out);
+        out
+    }
+
+    /// Même transformée que [`MdctFast::transform_f64`], écrite dans un tampon fourni.
+    ///
+    /// `out` doit faire exactement `N` : le chemin écrit chacune de ses cases, il n'a donc rien à
+    /// remettre à zéro, mais une taille différente est un appelant qui s'est trompé de plan — même
+    /// contrat que la trame.
+    pub fn transform_f64_into(&self, frame: &[f32], out: &mut [f64]) {
+        let n = self.n;
+        assert_eq!(
+            frame.len(),
+            2 * n,
+            "trame de {} pour un plan a {}",
+            frame.len(),
+            2 * n
+        );
+        assert_eq!(out.len(), n, "sortie de {} pour un plan a {n}", out.len());
+        let m = n / 2;
+        let mut borrow = self.scratch.borrow_mut();
+        let (u, buf) = &mut *borrow;
+
+        // ÉTAGE 1 — repliement 2N → N. Les trois plages viennent des trois cas du noyau :
+        // dans la fenêtre (signe +), replié par antisymétrie autour de N − ½ (signe −), replié par
+        // antipériodicité 2N (signe −).
+        u[..n].fill(0.0);
+        let h = n / 2;
+        for (i, &x) in frame.iter().enumerate() {
+            let x = x as f64;
+            if i < h {
+                u[i + h] += x;
+            } else if i < n + h {
+                u[n + h - 1 - i] -= x;
+            } else {
+                u[i - n - h] -= x;
+            }
+        }
+
+        // ÉTAGE 2 — DCT-IV par FFT complexe de M points.
+        for p in 0..m {
+            let z = rustfft::num_complex::Complex::new(u[2 * p], u[n - 1 - 2 * p]);
+            buf[p] = z * self.twiddle[p];
+        }
+        self.fft.process(buf);
+
+        // ÉTAGE 3 — rangement. Les indices `2q` et `n−1−2q` parcourent tout `0..n` sans trou ni
+        // doublon (pairs croissants, impairs décroissants), donc `out` est entièrement réécrit et
+        // un tampon réutilisé ne peut pas porter de reste de la trame précédente.
+        for q in 0..m {
+            let r = buf[q] * self.twiddle[q];
+            out[2 * q] = r.re;
+            out[n - 1 - 2 * q] = -r.im;
+        }
+    }
+
+    /// Même sortie que [`MdctPlan::transform`], au format de l'oracle.
+    pub fn transform(&self, frame: &[f32]) -> Vec<f32> {
+        self.transform_f64(frame)
+            .into_iter()
+            .map(|v| v as f32)
             .collect()
     }
 }
@@ -386,6 +531,146 @@ mod tests {
             assert!(
                 (a - b).abs() < 1e-4 * echelle,
                 "coefficient {k} : {b} contre {a}"
+            );
+        }
+    }
+
+    /// Générateur congruentiel — même recette que les autres tests du module : un test qui
+    /// échouerait une fois sur mille selon le tirage ne serait pas un test.
+    fn bruit(graine: u32, n: usize) -> Vec<f32> {
+        let mut g = graine;
+        (0..n)
+            .map(|_| {
+                g = g.wrapping_mul(1664525).wrapping_add(1013904223);
+                (g >> 16) as f32 / 32768.0 - 1.0
+            })
+            .collect()
+    }
+
+    /// **Équivalence MDCT rapide ↔ oracle** (2026-09-01, mémo #52 — livrable 1).
+    ///
+    /// La vérité de référence est [`MdctPlan`], lui-même tenu par le test de reconstruction : la
+    /// question posée ici est exactement « ces deux chemins sont-ils la même transformée », donc
+    /// recalculer la même chose est légitime, comme pour la base précalculée.
+    ///
+    /// **Tolérance justifiée.** L'oracle somme `2N` produits en `f32` ; l'erreur d'arrondi d'une
+    /// telle somme croît en `√(2N)·ε_f32`, soit `√512 · 1,19e-7 ≈ 2,7e-6` d'écart TYPE relatif à
+    /// l'amplitude des coefficients, et le pire des `N = 256` coefficients tire la queue de cette
+    /// loi. **Mesuré le 2026-09-02 : 5,50e-5** — la trace imprimée plus bas donne le chiffre à
+    /// chaque exécution, et c'est LUI qu'un rapport cite, pas la borne. Le chemin rapide accumule
+    /// en `f64` : sa propre erreur est quatre ordres de grandeur plus bas, donc ce qu'on mesure ici
+    /// est l'erreur de l'ORACLE et rien d'autre. La borne `2e-4 · max|X|` lui laisse un facteur
+    /// 3,6 — assez pour qu'un autre jeu d'arrondis ne la fasse pas tomber, et **quinze fois** sous
+    /// l'erreur qu'un terme de phase faux produirait (~3e-3, mesuré en mutant le tournant : 3e-3 /
+    /// 2e-4 = 15, soit un ordre de grandeur, pas deux — le chiffre affiché ici disait « deux ordres »
+    /// et ne suivait pas de sa propre division). Elle est relative et non
+    /// absolue pour la même raison que le test de la base précalculée : un seuil absolu serait trop
+    /// lâche sur les petits coefficients et trop serré sur les grands.
+    ///
+    /// N = 256 et non 1024 : `MdctPlan::new(1024)` alloue 8 Mo et coûte 2 M cosinus, ce qui n'a pas
+    /// sa place dans la suite normale. Le repliement et les tournants ne dépendent pas de N.
+    #[test]
+    fn la_mdct_rapide_rend_la_meme_chose_que_loracle() {
+        const N: usize = 256;
+
+        let frame = bruit(4242, 2 * N);
+        let attendu = MdctPlan::new(N).transform(&frame);
+        let obtenu = MdctFast::new(N).transform(&frame);
+        let echelle = attendu.iter().fold(0.0f32, |m, v| m.max(v.abs()));
+        assert!(echelle > 0.0, "trame de test dégénérée");
+
+        let mut pire = 0.0f32;
+        for (k, (a, b)) in attendu.iter().zip(&obtenu).enumerate() {
+            let ecart = (a - b).abs() / echelle;
+            pire = pire.max(ecart);
+            assert!(
+                ecart < 2e-4,
+                "coefficient {k} : {b} contre {a} (écart relatif {ecart:e})"
+            );
+        }
+        // Trace lisible : c'est le chiffre qu'un rapport doit citer, pas la borne.
+        println!("écart relatif maximal MdctFast ↔ MdctPlan (N={N}) : {pire:e}");
+    }
+
+    /// Équivalence rapide ↔ oracle à un SECOND `N`, choisi pour que `M = N/2` soit IMPAIR.
+    ///
+    /// Le test ci-dessus prend `N = 256`, donc `M = 128`, donc une FFT en radix-2 pur. C'est le cas
+    /// le plus favorable et le seul couvert : ni le repliement (qui coupe en quarts de `N/2`), ni le
+    /// rangement pair/impair, ni le planificateur de `rustfft` ne sont exercés hors puissance de
+    /// deux. `N = 510` donne `M = 255 = 3 × 5 × 17` — trois facteurs impairs, aucune puissance de
+    /// deux, et `N ≡ 2 (mod 4)`, donc `N/2` impair : c'est le régime où une erreur d'indice dans
+    /// l'étage 3 (`out[n − 1 − 2q]` parcourt les impairs à rebours) ou un algorithme de FFT mixte
+    /// se verrait, et où le test précédent est aveugle.
+    ///
+    /// Seconde graine aussi (7 au lieu de 4242) : deux entrées différentes, sinon l'équivalence
+    /// n'est établie que sur un vecteur.
+    ///
+    /// **Tolérance `4e-4`, et le doublement est dérivé, pas concédé.** L'erreur mesurée ici est
+    /// celle de l'ORACLE, dont l'accumulation `f32` croît en `√(2N)` : 1020 termes contre 512 font
+    /// un facteur 1,4, et la queue de la loi est tirée par `N = 510` coefficients contre 256.
+    /// **Mesuré le 2026-09-02 : 1,05e-4**, contre 5,50e-5 à `N = 256` — soit exactement le facteur
+    /// 1,9 attendu. Garder `2e-4` ici ne laisserait qu'une marge de 1,9 quand le test à `N = 256`
+    /// s'en donne 3,6 ; `4e-4` rétablit la même marge (3,8) sur la même justification. Reste très
+    /// en dessous de ce qu'un terme de phase faux produit (~3e-3). La trace imprimée donne le
+    /// chiffre réellement mesuré, et c'est LUI qu'un rapport cite.
+    #[test]
+    fn la_mdct_rapide_rend_la_meme_chose_que_loracle_a_m_impair() {
+        const N: usize = 510;
+        assert_eq!(
+            N % 4,
+            2,
+            "N doit valoir 2 mod 4 pour que M = N/2 soit impair"
+        );
+        assert_eq!((N / 2) % 2, 1, "M = N/2 doit être impair");
+
+        let frame = bruit(7, 2 * N);
+        let attendu = MdctPlan::new(N).transform(&frame);
+        let obtenu = MdctFast::new(N).transform(&frame);
+        let echelle = attendu.iter().fold(0.0f32, |m, v| m.max(v.abs()));
+        assert!(echelle > 0.0, "trame de test dégénérée");
+
+        let mut pire = 0.0f32;
+        for (k, (a, b)) in attendu.iter().zip(&obtenu).enumerate() {
+            let ecart = (a - b).abs() / echelle;
+            pire = pire.max(ecart);
+            assert!(
+                ecart < 4e-4,
+                "coefficient {k} : {b} contre {a} (écart relatif {ecart:e})"
+            );
+        }
+        println!("écart relatif maximal MdctFast ↔ MdctPlan (N={N}, M impair) : {pire:e}");
+    }
+
+    /// Le test de reconstruction, rejoué sur le chemin rapide.
+    ///
+    /// L'équivalence ci-dessus le rendrait redondant SI l'oracle était infaillible ; il ne l'est
+    /// pas, et surtout un futur changement de `MdctFast` qui casserait le terme de phase pourrait
+    /// être « équivalent » à un oracle cassé au même endroit. La reconstruction, elle, a pour
+    /// vérité de référence le SIGNAL D'ENTRÉE — rien de recalculé.
+    #[test]
+    fn deux_trames_voisines_reconstruisent_le_signal_chemin_rapide() {
+        const N: usize = 64;
+
+        let signal = bruit(12345, 3 * N);
+        let w = sine_window(2 * N);
+        let plan = MdctFast::new(N);
+        let analyse = |offset: usize| {
+            let trame: Vec<f32> = (0..2 * N).map(|i| signal[offset + i] * w[i]).collect();
+            let y = imdct(&plan.transform(&trame));
+            y.iter()
+                .zip(w.iter())
+                .map(|(v, wi)| v * wi)
+                .collect::<Vec<f32>>()
+        };
+
+        let a = analyse(0);
+        let b = analyse(N);
+        for i in 0..N {
+            let reconstruit = a[N + i] + b[i];
+            assert!(
+                (reconstruit - signal[N + i]).abs() < 1e-3,
+                "échantillon {i} : {reconstruit} contre {} attendu",
+                signal[N + i]
             );
         }
     }

@@ -2,11 +2,13 @@
 //! Pure: no DB writes, no UI. See docs/superpowers/specs/2026-06-12-m2a-analysis-engine-design.md
 use serde::{Deserialize, Serialize};
 
+pub mod aac_sfb;
 pub mod decode;
 pub mod dynamics;
 pub mod mdct;
 pub mod peaks;
 pub mod phase;
+pub mod quant_trace;
 pub mod spectrum;
 pub mod structure;
 pub mod tags;

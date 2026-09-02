@@ -153,6 +153,11 @@ docs/superpowers/changes/*
 # faux negatifs mesure a 68 % sur 150 transcodages de provenance connue. Ouvert.
 !docs/superpowers/changes/2026-08-17-detecteur-corpus/
 
+# Prototype de vraisemblance de transcodage (issue #52, methode Derrien) : sanity.md porte les
+# mesures brutes des deux sauts et la commande exacte pour les rejouer, la preuve ne vivant plus
+# en prose dans l'en-tete du module. Ouvert.
+!docs/superpowers/changes/2026-09-01-quant-trace/
+
 # scratch/test copies (may contain real Rekordbox master.db, never committed)
 scratchpad/
 scratchpad-verif/
