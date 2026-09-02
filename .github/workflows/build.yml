@@ -40,6 +40,15 @@ jobs:
             triple: x86_64-pc-windows-msvc
           - os: macos-latest
             triple: aarch64-apple-darwin
+          # Cible Mac Intel, décidée le 2026-09-02 (issue #14, « ok » d'Antoine — un binaire
+          # arm64 ne démarre pas du tout sur un Mac Intel, et le parc des DJ cibles est mixte,
+          # #13). Runner natif x86_64 : `macos-15-intel`, disponible jusqu'en août 2027, DERNIER
+          # Intel de GitHub Actions (macOS Tahoe 26 = dernier macOS Intel côté Apple). Le build
+          # natif évite tout cross-compile : ffmpeg se construit à l'architecture de l'hôte et
+          # les clés de cache portent déjà le triple. À l'échéance 2027, la cible tombe ou passe
+          # en cross — décision à reprendre sur #14.
+          - os: macos-15-intel
+            triple: x86_64-apple-darwin
     runs-on: ${{ matrix.os }}
     # Sans plafond, un job bloque consomme jusqu'a la limite du fournisseur (6 h).
     timeout-minutes: 60
