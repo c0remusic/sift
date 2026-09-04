@@ -1912,10 +1912,11 @@ une copie ne peut que diverger). États réels :
   problème, pas du travail en attente).
 
 - **Cadran de dépôt** `.sift-rail-drop` (2026-09-03, issue #56, décision A « puits
-  calme ») : la section entière vit en BAS du rail, au-dessus de Réglages, dans un
-  cadre hairline permanent — `--color-border-secondary` 1 px, rayon
-  `--border-radius-md`, padding `--space-4`, fond transparent, `margin-top:auto`
-  (c'est lui qui pousse le pied, plus `.nav-foot`). Patron HIG § Image wells : seul
+  calme », amendée le même jour : le cadran suit le FLUX des sections, sous
+  Exporter — le vide flexible du rail vit entre lui et Réglages) : cadre hairline
+  permanent — `--color-border-secondary` 1 px, rayon `--border-radius-md`, padding
+  `--space-4`, fond transparent, `margin-top:var(--space-8)` ; `.nav-foot` garde
+  son `margin-top:auto`. Patron HIG § Image wells : seul
   puits de dépôt permanent qu'Apple dessine, cadre calme jamais pointillé — le
   pointillé info (`.sift-dz-on`) reste le langage du drag, posé par-dessus. Pas de
   hint texte (retiré sur demande, même décision). Replié : cadre et padding à 0,

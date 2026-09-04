@@ -46,13 +46,18 @@ EXPORTER
 │  ● promos                    1 │
 │  Ajouter un dossier            │
 └────────────────────────────────┘
+
+          (vide flexible)
+
 ──────────────────────────────────
   Réglages
 ```
 
-**Sources en BAS, dans un cadran de dépôt — tranché le 2026-09-03 (issue #56, décision A
-« puits calme »).** La section quitte la tête du rail pour le pied, juste au-dessus de
-Réglages, dans un **cadre hairline permanent** (`.sift-rail-drop` :
+**Sources en dernière section, dans un cadran de dépôt — tranché le 2026-09-03 (issue #56,
+décision A « puits calme » ; amendé le même jour : le cadran suit le FLUX des sections, sous
+Exporter — le vide du rail vit entre lui et Réglages, pas au-dessus de lui).** La section
+quitte la tête du rail pour la fin du flux, dans un **cadre hairline permanent**
+(`.sift-rail-drop` :
 `--color-border-secondary` 1 px, rayon `--border-radius-md`, fond transparent — le rail
 reste le plan le plus bas). Le cadre dit qu'on peut y déposer des dossiers ; **pas de hint
 texte** (retiré sur demande, même décision) — l'affordance est le cadre + la ligne

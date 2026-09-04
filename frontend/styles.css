@@ -831,9 +831,7 @@ body.sift-rail-collapsed .sift-rail-src-msg,body.sift-rail-collapsed .sift-rail-
 /* Rail replié : la carte disparaît entière. Ses deux lignes sont du texte de bout en bout — il n'y
    a rien à garder en icône, contrairement aux entrées de source qui gardent leur pastille. */
 body.sift-rail-collapsed .sift-railwarn{display:none}
-/* Le `margin-top:auto` qui poussait ce pied vit désormais sur le cadran de sources
-   (`.sift-rail-drop`, issue #56) : le pied suit le cadran, collé sous lui. */
-.nav-foot{display:flex;flex-direction:column;gap:var(--space-4)}
+.nav-foot{margin-top:auto;display:flex;flex-direction:column;gap:var(--space-4)}
 /* CADRAN DE DÉPÔT (issue #56, décision A « puits calme » du 2026-09-03). La section Sources vit
    en BAS du rail, au-dessus de Réglages, dans un cadre hairline PERMANENT — patron HIG § Image
    wells, seul puits de dépôt permanent qu'Apple dessine (cadre calme, jamais pointillé : le
@@ -841,8 +839,11 @@ body.sift-rail-collapsed .sift-railwarn{display:none}
    Affordance de CHARPENTE (patterns.md « avoir une surface = charpente », précédent
    `.sift-railwarn`), pas une carte de contenu : fond transparent, le rail reste le plan le plus
    bas. Pas de hint texte — retiré sur demande d'Antoine (2026-09-03), le cadre + la ligne
-   « Ajouter un dossier » suffisent. */
-.sift-rail-drop{margin-top:auto;display:flex;flex-direction:column;gap:var(--space-4);border:1px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:var(--space-4)}
+   « Ajouter un dossier » suffisent.
+   Amendé le 2026-09-03 (Antoine, même jour) : le cadran suit le FLUX des sections, sous
+   Exporter — plus poussé contre le pied. Le `margin-top:auto` est rendu à `.nav-foot` :
+   le vide du rail vit entre le cadran et Réglages, pas entre Clé USB et le cadran. */
+.sift-rail-drop{margin-top:var(--space-8);display:flex;flex-direction:column;gap:var(--space-4);border:1px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:var(--space-4)}
 /* L'en-tête SOURCES est le premier enfant du cadran : son padding-top de groupe (12px) s'ajoutait
    aux 4 du cadre — ramené au pas du cadre. */
 .sift-rail-drop>.nv-grp{padding-top:var(--space-4)}
