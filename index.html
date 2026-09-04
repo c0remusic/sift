@@ -41,6 +41,12 @@
          DESIGN.md § 15). La classe `sift-rail-drop` porte le cadran (partagée avec la story). -->
     <div id="sift-rail-sources" class="sift-rail-drop"></div>
     <div class="nav-foot">
+      <!-- Séparateur de Réglages en ÉLÉMENT dédié (demande d'Antoine, 2026-09-03) : porté par
+           l'entrée (.nav-foot>.nv, border-top + padding-top), il gonflait sa boîte de 9px et son
+           fond de survol montait jusqu'au trait — Réglages était la seule entrée du rail à la
+           géométrie différente. La zone de progression se `prepend()` dans .nav-foot, donc elle
+           passe AU-DESSUS de ce trait, Réglages toujours dessous (annotation du 2026-07-09). -->
+      <div class="nav-sep" aria-hidden="true"></div>
       <div class="nv" tabindex="0" role="button" data-view="reglages" title="Réglages"><i class="ti ti-settings" aria-hidden="true"></i><span>Réglages</span></div>
     </div>
   </div>

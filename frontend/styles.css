@@ -736,7 +736,12 @@ body:has(#sift-titlebar){border-radius:var(--border-radius-sm);overflow:hidden}
    sous Inter) wrappait sur deux lignes. Le title de la ligne porte déjà le chemin complet, donc
    rien ne se perd. Ne pas « régler » en élargissant --rail-w : sa valeur est une MESURE. */
 .nv span:not(.nav-badge):not(.sift-rail-src-dot){font-size:var(--text-base);letter-spacing:var(--tracking-normal);text-align:left;line-height:1.1;flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
-.nv i{font-size:17px;flex:none}
+/* GLYPHES EN ACCENT (décision A d'Antoine, 2026-09-03, comparatif versé au grilling #11) :
+   patron Finder/Mail depuis Big Sur — les glyphes de sidebar portent la couleur d'accent, teinte
+   UNIFORME (une couleur par section serait le patron Réglages Système, un autre). La teinte tient
+   sur TOUS les états, sélection comprise : Finder garde ses glyphes bleus sur la rangée active —
+   c'est le fond qui dit la sélection, pas l'icône. Refs : 01-finder.png, 03-mail.png. */
+.nv i{font-size:17px;flex:none;color:var(--color-text-info)}
 .nv:hover{background:var(--color-nav-active)}
 .nv.on{background:var(--color-nav-active);color:var(--color-text-primary);font-weight:500}
 /* Clé USB: dot instead of icon (no dedicated screen yet, unlike Rekordbox), but full opacity —
@@ -895,10 +900,16 @@ body.sift-rail-collapsed .nv-grp:first-of-type{border-top:0}
    unifiée depuis le 2026-09-03 (issue #56, avec la marque) ; son placement replié est porté par
    `chrome.ts::injectLeanStyle`. `flex:none` reste ici : le bouton ne doit jamais se comprimer. */
 #sift-rail-toggle{flex:none}
-/* Séparateur de Réglages (annotation Antoine, 2026-07-09) : la ligne vit au-dessus du bouton
-   Réglages, pas au-dessus de la zone de progression — les lignes de tâche (.sift-pz-row) doivent
-   apparaître AU-DESSUS du séparateur, Réglages toujours en dessous, zone active ou non. */
-.nav-foot>.nv{margin-top:var(--space-8);padding-top:var(--space-8);border-top:1px solid var(--color-border-tertiary)}
+/* Séparateur de Réglages (annotation Antoine 2026-07-09, refait le 2026-09-03) : la ligne vit
+   au-dessus du bouton Réglages, pas au-dessus de la zone de progression — les lignes de tâche
+   (.sift-pz-row) apparaissent AU-DESSUS du séparateur, Réglages toujours en dessous. Élément
+   dédié `.nav-sep` (index.html) et non plus border-top+padding-top sur l'entrée : portée par
+   l'entrée, la bordure gonflait sa boîte de 9px et le fond de survol montait jusqu'au trait —
+   Réglages était la seule entrée du rail à la géométrie différente. Désormais entrée .nv
+   ordinaire, survol identique aux autres. */
+.nav-sep{height:1px;flex:none;background:var(--color-border-tertiary);margin:var(--space-4) 0}
+/* Replié : même forme que les traits de groupe (.nv-grp repliés) — 20px centrés. */
+body.sift-rail-collapsed .nav-sep{width:20px;margin-left:auto;margin-right:auto}
 /* Global background-task progress (bottom of #nav, persistent across views). One row per active
    task: icon + name + tabular done/total + a thin accent bar. Hidden when idle (via JS display). */
 .sift-progress-zone{display:flex;flex-direction:column;gap:var(--space-8);margin-top:var(--space-8)}

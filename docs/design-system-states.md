@@ -65,7 +65,7 @@
 
 - L132 — Ligne de queue `.qi` — réécrit 08-27 : tokens (hex chauds morts), liseré de sélection retiré, curseur clavier `.qi-kbd`, interlignes #45 (46 px constante), séparateurs de rangées `::before` + pastille en fin de titre (08-27).
 - L174 — Mot de verdict Détail `verdictWord()` — ⚠️ COMPOSANT RETIRÉ le 2026-08-26 (c4f65eb) ; pipeline repris par `verdictDot()` (L1980).
-- L200 — Item de navigation `.nv` — RAS.
+- L200 — Item de navigation `.nv` — glyphes en accent info uniforme, décision A du 09-03 (grilling #11).
 - L211 — Bouton d'action principal `.sift-ranger-btn` — hover désormais déclaré explicitement (07-24), disabled/focus restent génériques.
 - L230 — Chip/tag `.chip` — hover corrigé 07-03.
 - L242 — Case à cocher `.cbx` — supprimée (code mort).

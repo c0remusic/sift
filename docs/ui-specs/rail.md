@@ -75,6 +75,14 @@ porte pas de logo). Le rail commence donc à TRAITER.
 
 Icône · libellé · compte à droite quand il y en a un.
 
+**Glyphes en accent — tranché le 2026-09-03 (décision A, comparatif A/B/C versé au grilling
+#11).** Les icônes des destinations portent `--color-text-info`, teinte **uniforme** sur les
+huit entrées, Réglages compris — patron Finder/Mail depuis Big Sur (`01-finder.png`,
+`03-mail.png` ; une couleur PAR SECTION serait le patron Réglages Système, écarté). La teinte
+tient sur tous les états, sélection comprise : c'est le fond qui dit la sélection, jamais
+l'icône. Les pastilles de sources gardent leurs 5 teintes catégorielles — deux systèmes de
+couleur voisins, assumé au comparatif.
+
 Compte à droite : **chiffre nu**, aligné à droite, sans fond ni pilule — tranché le
 2026-08-26 sur le motif de Notes (`docs/design-refs/08-notes.png`, compteurs de dossiers).
 La pilule qui le portait (`--overlay-badge` + `--border-radius-pill`) n'était ancrée nulle
