@@ -702,8 +702,9 @@ body:has(#sift-titlebar){border-radius:var(--border-radius-sm);overflow:hidden}
    RÉOUVERTURE : le jour où un déplacement de rendu est autorisé sur le rail, la question à
    trancher n'est pas « quel calc » mais « quel barreau » — 15 pour la marque, 15 ou 13 pour
    l'entrée. C'est une décision de design, elle se prend sur le ticket, pas ici. */
-.nav-brand{display:flex;align-items:center;gap:var(--space-8);padding:var(--space-4) var(--space-8) var(--space-12);font-size:var(--text-lg);font-weight:600;color:var(--color-text-primary);letter-spacing:var(--tracking-normal)}
-.nav-brand i{font-size:16px;color:var(--color-text-info)}
+/* `.nav-brand` n'existe plus : la marque a quitté le rail pour le segment gauche de la barre
+   unifiée le 2026-09-03 (issue #56) — ses valeurs vivent dans `chrome.ts::injectLeanStyle`
+   (#sift-tb-brand, mêmes tokens). Le débat d'échelle d'icône ci-dessus la suit là-bas. */
 .nv-grp{font-size:var(--text-xs);font-weight:400;letter-spacing:.08em;text-transform:uppercase;color:var(--color-text-tertiary);padding:var(--space-12) var(--space-8) var(--space-4)}
 /* 28 et 7/8 : l'item de sidebar du kit (61:1606, pad 8h/7v) — décision maquette 2026-08-26,
    portage #50. Le 34 précédent était un dérivé local sans source composant. */
@@ -825,7 +826,24 @@ body.sift-rail-collapsed .sift-rail-src-msg,body.sift-rail-collapsed .sift-rail-
 /* Rail replié : la carte disparaît entière. Ses deux lignes sont du texte de bout en bout — il n'y
    a rien à garder en icône, contrairement aux entrées de source qui gardent leur pastille. */
 body.sift-rail-collapsed .sift-railwarn{display:none}
-.nav-foot{margin-top:auto;display:flex;flex-direction:column;gap:var(--space-4)}
+/* Le `margin-top:auto` qui poussait ce pied vit désormais sur le cadran de sources
+   (`.sift-rail-drop`, issue #56) : le pied suit le cadran, collé sous lui. */
+.nav-foot{display:flex;flex-direction:column;gap:var(--space-4)}
+/* CADRAN DE DÉPÔT (issue #56, décision A « puits calme » du 2026-09-03). La section Sources vit
+   en BAS du rail, au-dessus de Réglages, dans un cadre hairline PERMANENT — patron HIG § Image
+   wells, seul puits de dépôt permanent qu'Apple dessine (cadre calme, jamais pointillé : le
+   pointillé info reste le langage du drag, `.sift-dz-on` se pose par-dessus pendant un drag OS).
+   Affordance de CHARPENTE (patterns.md « avoir une surface = charpente », précédent
+   `.sift-railwarn`), pas une carte de contenu : fond transparent, le rail reste le plan le plus
+   bas. Pas de hint texte — retiré sur demande d'Antoine (2026-09-03), le cadre + la ligne
+   « Ajouter un dossier » suffisent. */
+.sift-rail-drop{margin-top:auto;display:flex;flex-direction:column;gap:var(--space-4);border:1px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:var(--space-4)}
+/* L'en-tête SOURCES est le premier enfant du cadran : son padding-top de groupe (12px) s'ajoutait
+   aux 4 du cadre — ramené au pas du cadre. */
+.sift-rail-drop>.nv-grp{padding-top:var(--space-4)}
+/* Replié : le cadre disparaît — 56px n'ont pas la place d'un puits, les pastilles restent la
+   seule identité de la section (même règle de survie que `.sift-railwarn`). */
+body.sift-rail-collapsed .sift-rail-drop{border:0;padding:0}
 /* RAIL REPLIÉ (étape 4). --rail-w est redéfinie sur <body>, donc le rail ET la zone gauche de la
    barre unifiée suivent d'un seul geste — c'est ce qui garde la bordure verticale continue entre
    les deux, l'invariant que le token existait pour tenir.
@@ -839,10 +857,9 @@ body.sift-rail-collapsed{--rail-w:var(--rail-w-collapsed)}
    qu'il était le premier <span> d'une entrée ; depuis la section Sources, le premier <span> d'une
    entrée de source est sa pastille de couleur — la règle aurait masqué l'identité de la source et
    gardé son nom, exactement l'inverse. Cibler par ce que l'élément EST, pas par sa position. */
-body.sift-rail-collapsed .nav-brand span,body.sift-rail-collapsed .nv>span:not(.nav-badge):not(.sift-rail-src-dot){display:none}
+body.sift-rail-collapsed .nv>span:not(.nav-badge):not(.sift-rail-src-dot){display:none}
 body.sift-rail-collapsed .sb{padding-left:var(--space-8);padding-right:var(--space-8)}
 body.sift-rail-collapsed .nv{justify-content:center;gap:0}
-body.sift-rail-collapsed .nav-brand{justify-content:center}
 /* LE BADGE NE SURVIT PAS AU REPLI, et c'est une correction du 2026-08-19 : ce fichier disait
    l'inverse et la mesure l'a réfuté. Un compte réel de cette app fait quatre chiffres (2710 pistes
    en file, mesuré dans la vraie fenêtre) ; en pastille superposée sur un item de 39px dans un rail
@@ -874,10 +891,10 @@ body.sift-rail-collapsed .sift-rail-src--empty .nav-badge{background:var(--color
 body.sift-rail-collapsed .nv-grp{display:block;height:0;margin:var(--space-8) auto;padding:0;width:20px;border-top:1px solid var(--color-border-tertiary);overflow:hidden}
 body.sift-rail-collapsed .nv-grp:first-of-type{border-top:0}
 /* La bascule reste VISIBLE une fois repliée — la masquer enfermerait l'utilisateur dans l'état
-   replié, sans autre issue que le raccourci clavier. Elle prend seulement la place de la marque. */
-#sift-rail-toggle{margin-left:auto;flex:none}
-body.sift-rail-collapsed .nav-brand>i{display:none}
-body.sift-rail-collapsed #sift-rail-toggle{margin-left:0}
+   replié, sans autre issue que le raccourci clavier. Elle vit dans le segment gauche de la barre
+   unifiée depuis le 2026-09-03 (issue #56, avec la marque) ; son placement replié est porté par
+   `chrome.ts::injectLeanStyle`. `flex:none` reste ici : le bouton ne doit jamais se comprimer. */
+#sift-rail-toggle{flex:none}
 /* Séparateur de Réglages (annotation Antoine, 2026-07-09) : la ligne vit au-dessus du bouton
    Réglages, pas au-dessus de la zone de progression — les lignes de tâche (.sift-pz-row) doivent
    apparaître AU-DESSUS du séparateur, Réglages toujours en dessous, zone active ou non. */

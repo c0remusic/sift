@@ -27,11 +27,6 @@ En-têtes en petites capitales discrètes (`--text-xs`, `--tracking-wider`,
 `--color-text-tertiary`).
 
 ```
-SOURCES
-  ● ~/Downloads/incoming          8
-  ● ~/Downloads/promos            1
-  Ajouter un dossier
-
 TRAITER
   Revue
   Journal
@@ -45,11 +40,36 @@ EXPORTER
   Rekordbox                       6
   Clé USB
 
+┌────────────────────────────────┐
+│ SOURCES                        │
+│  ● incoming                  8 │
+│  ● promos                    1 │
+│  Ajouter un dossier            │
+└────────────────────────────────┘
 ──────────────────────────────────
   Réglages
 ```
 
-Réglages est ancré au pied, séparé du reste par l'espace et non par un trait.
+**Sources en BAS, dans un cadran de dépôt — tranché le 2026-09-03 (issue #56, décision A
+« puits calme »).** La section quitte la tête du rail pour le pied, juste au-dessus de
+Réglages, dans un **cadre hairline permanent** (`.sift-rail-drop` :
+`--color-border-secondary` 1 px, rayon `--border-radius-md`, fond transparent — le rail
+reste le plan le plus bas). Le cadre dit qu'on peut y déposer des dossiers ; **pas de hint
+texte** (retiré sur demande, même décision) — l'affordance est le cadre + la ligne
+d'ajout, et le pointillé info (`.sift-dz-on`) reste réservé au drag, posé par-dessus.
+Sourcing : HIG § Image wells (seul puits de dépôt permanent qu'Apple dessine, cadre calme,
+jamais pointillé) ; HIG § Drag and drop (le feedback prescrit vit pendant le drag).
+`patterns.md` « avoir une surface = charpente » : le cadran est un organe du rail,
+précédent `.sift-railwarn` — qui vit d'ailleurs DANS le cadran (#54, avec le badge
+« 0 audio » de #55).
+
+Réglages reste ancré au pied, sous le cadran, séparé par son trait existant
+(`.nav-foot>.nv`).
+
+**La marque a quitté le rail — même décision.** Logo + « Sift » + bouton de repli vivent
+dans le **segment gauche de la barre unifiée** (`#sift-tb-brand`, `chrome.ts`) :
+convention Windows de l'icône d'app en titlebar, écart macOS assumé (la toolbar Apple ne
+porte pas de logo). Le rail commence donc à TRAITER.
 
 ### Item de navigation
 

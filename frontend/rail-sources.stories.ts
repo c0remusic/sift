@@ -27,7 +27,10 @@ function src(id: number, path: string, over: Partial<Source> = {}): Source {
 function railHost(inner: string): HTMLElement {
   const host = document.createElement("div");
   host.className = "sb";
-  host.innerHTML = `<div class="nv-grp">Sources</div>${inner}`;
+  // Cadran de dépôt (issue #56, décision A) : la section vit dans un cadre hairline permanent en
+  // bas du rail — la story reprend la classe réelle (`.sift-rail-drop`, aussi posée sur
+  // `#sift-rail-sources` dans index.html) pour montrer le cadre.
+  host.innerHTML = `<div class="sift-rail-drop"><div class="nv-grp">Sources</div>${inner}</div>`;
   return host;
 }
 

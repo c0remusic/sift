@@ -32,7 +32,10 @@ const DROP_ZONES: [string, string][] = [
   ["#filbox-settings", "Dépose un dossier ici — nouvelle destination"],
   ["#filfoot:not([hidden])", "Dépose un dossier ici — nouvelle destination"],
   ["#ql", "Dépose des fichiers audio ici"],
-  ["#sift-sources", "Dépose un dossier à surveiller"],
+  // `#sift-rail-sources` : le cadran de dépôt du rail (issue #56). Le sélecteur disait
+  // `#sift-sources` — un id qui n'existait plus nulle part dans le DOM, donc cette zone n'était
+  // JAMAIS balisée pendant un drag (le repli sur #content masquait le trou). Corrigé le 2026-09-03.
+  ["#sift-rail-sources", "Dépose un dossier à surveiller"],
 ];
 
 /** Toggle the drag hint/outline on the relevant existing boxes. Falls back to #content
@@ -177,10 +180,24 @@ export function injectLeanStyle() {
     "-webkit-user-select:none;user-select:none}" +
     "#sift-tb-left{width:var(--rail-w);flex:none;display:flex;align-items:center;" +
     "background:var(--color-background-primary);border-right:1px solid var(--color-border-tertiary)}" +
+    // Marque de l'app, déplacée du rail vers ce segment le 2026-09-03 (issue #56) : convention
+    // Windows de l'icône d'app en titlebar (écart macOS assumé — la toolbar Apple ne porte pas de
+    // logo), et le rail y gagne une rangée. Mêmes valeurs que l'ex-`.nav-brand` de styles.css.
+    "#sift-tb-brand{display:flex;align-items:center;gap:var(--space-8);padding-left:var(--space-12);" +
+    "font-size:var(--text-lg);font-weight:600;color:var(--color-text-primary);letter-spacing:var(--tracking-normal)}" +
+    "#sift-tb-brand i{font-size:16px;color:var(--color-text-info)}" +
+    "#sift-tb-lspacer{flex:1}" +
+    "#sift-rail-toggle{margin-right:var(--space-8)}" +
+    // Rail replié : la zone gauche fait 56px (--rail-w redéfinie sur <body>) — seul le bouton de
+    // repli survit, centré ; même règle de survie que l'ex-`.nav-brand` replié.
+    "body.sift-rail-collapsed #sift-tb-brand{display:none}" +
+    "body.sift-rail-collapsed #sift-tb-left{justify-content:center}" +
+    "body.sift-rail-collapsed #sift-rail-toggle{margin-right:0}" +
     "#sift-tb-right{flex:1;min-width:0;display:flex;align-items:center;gap:var(--space-12);" +
     "padding:0 var(--space-8) 0 var(--space-16)}" +
-    // Titre de la VUE courante, plus le littéral « Sift » : le nom de l'app est déjà dans le rail,
-    // et une barre qui répète le nom du logiciel à la place du nom de l'écran ne renseigne rien.
+    // Titre de la VUE courante, plus le littéral « Sift » : le nom de l'app est déjà dans le
+    // segment gauche de la barre (#sift-tb-brand), et une barre qui répète le nom du logiciel à
+    // la place du nom de l'écran ne renseigne rien.
     "#sift-tb-title{font-size:var(--text-base);font-weight:500;color:var(--color-text-primary);" +
     "overflow:hidden;text-overflow:ellipsis;white-space:nowrap;flex:none}" +
     // Compte de la file, contre le titre. Subordonné au titre par la TAILLE et l'ENCRE, jamais par
@@ -284,7 +301,15 @@ export async function injectTitlebar(): Promise<void> {
   // comment for why this is DOM, not a gradient). Windows: title + controls both live in the
   // right zone (space-between keeps today's layout, just shifted right by 152px). macOS: the
   // traffic-light controls move into the left zone, the title stays alone in the right zone.
-  const left = `<div id="sift-tb-left" data-tauri-drag-region>${isMac ? controls : ""}</div>`;
+  // Marque + bouton de repli du rail (ex-`.nav-brand` d'index.html, déplacés ici le 2026-09-03,
+  // issue #56). Le bouton garde son id : `installRailToggle` le retrouve tel quel — cette barre
+  // est injectée AVANT lui dans `installLiveWiring`, et de façon synchrone (le premier `await`
+  // de cette fonction vient après l'insertBefore).
+  const brand =
+    '<span id="sift-tb-brand" data-tauri-drag-region><i class="ti ti-filter" aria-hidden="true"></i>Sift</span>' +
+    '<span id="sift-tb-lspacer" data-tauri-drag-region></span>' +
+    '<button id="sift-rail-toggle" class="lk-icon" title="Replier le rail" aria-label="Replier le rail" aria-expanded="true"><i class="ti ti-layout-sidebar-left-collapse" aria-hidden="true"></i></button>';
+  const left = `<div id="sift-tb-left" data-tauri-drag-region>${isMac ? controls : ""}${brand}</div>`;
   const right = `<div id="sift-tb-right" data-tauri-drag-region>${title}${isMac ? "" : controls}</div>`;
   bar.innerHTML = left + right;
   document.body.insertBefore(bar, document.body.firstChild);
@@ -432,7 +457,9 @@ export function installRailToggle(): void {
   }
   applyRailCollapsed(collapsed);
   document.getElementById("sift-rail-toggle")?.addEventListener("click", (e) => {
-    e.stopPropagation(); // le bouton vit dans #nav, où un clic délégué chercherait un [data-view]
+    // Le bouton vit dans la barre unifiée depuis le 2026-09-03 (issue #56) ; stopPropagation
+    // reste par prudence — un clic qui bulle jusqu'à un délégué ne doit rien déclencher d'autre.
+    e.stopPropagation();
     toggleRail();
   });
 }

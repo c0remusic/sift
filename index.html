@@ -14,19 +14,16 @@
      est descendu dans le rail, sous les sources (`rail-root-warning.ts`, direction A2). -->
 <div class="pa" id="pa" tabindex="0">
   <div class="sb" id="nav">
-    <div class="nav-brand"><i class="ti ti-filter" aria-hidden="true"></i><span>Sift</span>
-      <button id="sift-rail-toggle" class="lk-icon" title="Replier le rail" aria-label="Replier le rail" aria-expanded="true"><i class="ti ti-layout-sidebar-left-collapse" aria-hidden="true"></i></button>
-    </div>
+    <!-- La marque (`.nav-brand`, logo + bouton de repli) a quitté le rail pour le segment gauche
+         de la barre unifiée le 2026-09-03 (issue #56, demande d'Antoine) : convention Windows de
+         l'icône d'app en titlebar, et le rail y gagne une rangée. Le markup vit dans
+         `chrome.ts::injectTitlebar` — la démo navigateur (sans Tauri) n'a donc plus ni logo ni
+         bouton de repli, ce qui est accepté : la maquette ne fait pas autorité. -->
     <!-- Rail en SECTIONS depuis 2026-08-19 (étape 4, DESIGN.md § 15). Huit entrées à plat ne
          disaient pas dans quel ordre on traverse l'app ; groupées, elles disent le parcours :
          on traite, puis on range, puis on exporte. Un seul niveau d'indentation, en-têtes en
          petites capitales discrètes (.nv-grp, qui existait dans la feuille SANS aucun
          consommateur depuis sa création — il en a un maintenant). -->
-    <!-- Section Sources : remplie par rail-sources.ts depuis listSources(). L'écran Accueil a
-         disparu ici (fusion 1, DESIGN.md § 15) — il ne listait que des dossiers surveillés, et
-         dans Finder une source est une entrée de sidebar, pas un écran. Cliquer une source filtre
-         Revue sur ses fichiers. -->
-    <div id="sift-rail-sources"></div>
     <div class="nv-grp">Traiter</div>
     <div class="nv" tabindex="0" role="button" data-view="revue" title="Revue"><i class="ti ti-headphones" aria-hidden="true"></i><span>Revue</span></div>
     <div class="nv" tabindex="0" role="button" data-view="journal" title="Journal des actions"><i class="ti ti-history" aria-hidden="true"></i><span>Journal</span></div>
@@ -36,6 +33,13 @@
     <div class="nv-grp">Exporter</div>
     <div class="nv" tabindex="0" role="button" data-view="rkb" title="Rekordbox"><i class="ti ti-disc" aria-hidden="true"></i><span>Rekordbox</span></div>
     <div class="nv" tabindex="0" role="button" data-view="cle" title="Formater une clé USB"><i class="ti ti-usb" aria-hidden="true"></i><span>Clé USB</span></div>
+    <!-- Section Sources : remplie par rail-sources.ts depuis listSources(). Descendue en BAS du
+         rail dans un CADRAN de dépôt le 2026-09-03 (issue #56, décision A « puits calme ») : cadre
+         hairline permanent — patron HIG § Image wells, seul puits de dépôt permanent qu'Apple
+         dessine — qui dit qu'on peut y déposer des dossiers. Le pointillé info reste réservé au
+         drag (`.sift-dz-on`). Cliquer une source filtre Revue sur ses fichiers (fusion 1,
+         DESIGN.md § 15). La classe `sift-rail-drop` porte le cadran (partagée avec la story). -->
+    <div id="sift-rail-sources" class="sift-rail-drop"></div>
     <div class="nav-foot">
       <div class="nv" tabindex="0" role="button" data-view="reglages" title="Réglages"><i class="ti ti-settings" aria-hidden="true"></i><span>Réglages</span></div>
     </div>
