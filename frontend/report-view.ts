@@ -377,17 +377,11 @@ export function row(label: string, value: string, mono = true): string {
 
 // ── HTML helpers ────────────────────────────────────────────────────────────
 
-/** Rangée de légende clavier, rendue par `filing.ts` dans le PIED DE BOÎTE depuis le 2026-08-30
- *  (décision V2b) — elle vivait au bas du panneau tant que le pied y était. L'ancrage voulu n'a
- *  pas changé : la légende suit les boutons qu'elle nomme, jamais le contenu qui défile. */
-export function keyboardHintsHtml(): string {
-  const k = (key: string, what: string) => `<span><b>${key}</b> ${what}</span>`;
-  return (
-    `<div class="sift-kbd-hints">` +
-    k("SPACE", "écouter") + k("ENTER", "convertir") + k("BKSP", "écarter") + k("HAUT/BAS", "naviguer") +
-    `</div>`
-  );
-}
+// La rangée de légende clavier (`keyboardHintsHtml` — « SPACE écouter · ENTER convertir… ») est
+// RETIRÉE le 2026-09-03 (audit œil-Apple, décision d'Antoine) : Apple n'écrit jamais les
+// raccourcis en dur dans une fenêtre. Chaque raccourci vit dans le tooltip du bouton qu'il
+// déclenche — Convertir « (Entrée) » (filing.ts::refreshRangerButton), Écarter « (⌫) »
+// (filing-actions.ts), lecture « (espace) » (player-audition.ts) ; HAUT/BAS reste implicite.
 
 /** Chemin d'origine en PATH CONTROL (wireframe fix 10 ; HIG « Path controls » / `NSPathControl`,
  *  la barre de chemin du Finder) : des SEGMENTS séparés par un chevron, plus une chaîne collée.

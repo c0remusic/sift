@@ -20,7 +20,6 @@ import {
   openReportInto,
   togglePlay,
   vchipHtml,
-  keyboardHintsHtml,
 } from "./report-view";
 import type { Canonical, Target, QueueItem } from "../shared/contracts";
 import { requireEl, esc } from "./dom";
@@ -100,10 +99,12 @@ function refreshRangerButton(): void {
   if (!btn) return;
   const ok = hasDestination();
   btn.disabled = !ok;
-  btn.title = ok ? "" : "Choisis une destination avant de convertir";
+  // Le raccourci vit dans le tooltip depuis le retrait de la légende clavier (2026-09-03) —
+  // même motif que « Écarter — va dans Écartés (⌫) » et « Lecture / pause (espace) ».
+  btn.title = ok ? "Convertir (Entrée)" : "Choisis une destination avant de convertir";
   // Juste « Convertir » : la destination est déjà affichée dans son champ du rail (Antoine
   // 2026-08-21), la répéter dans le bouton faisait doublon. L'état désactivé + le champ Destination
-  // en ambre (« Choisir… ») disent qu'il manque une destination ; le raccourci vit dans la légende.
+  // en ambre (« Choisir… ») disent qu'il manque une destination.
   btn.textContent = "Convertir";
 }
 
@@ -186,8 +187,8 @@ function renderFoot(mid: HTMLElement, rail: string): void {
     .join("");
 
   const fake = state.track?.verdict === "fake";
-  // Text only (annotation: "supprime les icones") — the shortcut is still named in the tooltip
-  // and the standalone kbd-hints legend, not repeated as a glyph inside the button itself.
+  // Text only (annotation: "supprime les icones") — the shortcut is named in the tooltip alone
+  // (the standalone kbd-hints legend is gone, 2026-09-03), never as a glyph inside the button.
   // "Jeter" relabelled "Écarter" (annotation: "jeter devrait etre écarté, et finir dans écarter")
   // — it now routes to Écartés (reject_track) like the fake branch, not a permanent delete;
   // real deletion is still available from the Écartés screen itself (ecartes-view.ts's own
@@ -219,11 +220,14 @@ function renderFoot(mid: HTMLElement, rail: string): void {
     `<span class="sift-fil-prev"></span>` +
     `</div>` +
     `</div>`;
-  // Pied de boîte : bande bord à bord au bas de la boîte (motif alerte du kit, § 06-02) — légende
-  // clavier à gauche, Écarter puis Convertir au bord trailing. Le filet haut et la surface sont
-  // portés par `.sift-filbox-foot` lui-même, plus par une rangée intérieure.
+  // Pied de boîte : bande bord à bord au bas de la boîte (motif alerte du kit, § 06-02) — Écarter
+  // puis Convertir au bord trailing. Le filet haut et la surface sont portés par
+  // `.sift-filbox-foot` lui-même, plus par une rangée intérieure. La légende clavier qui occupait
+  // la gauche est RETIRÉE le 2026-09-03 (audit œil-Apple, décision d'Antoine) : Apple n'écrit
+  // jamais les raccourcis en dur dans une fenêtre — ils vivent dans les tooltips des boutons
+  // qu'ils déclenchent (Convertir/Écarter/lecture, chacun porte le sien) ; HAUT/BAS reste
+  // implicite, comme la navigation par flèches partout ailleurs.
   foot.innerHTML =
-    `<span class="sift-rail-kbd">${keyboardHintsHtml()}</span>` +
     `<div class="sift-rail-abtns">` + secondary +
     `<button data-fil="ranger" class="sift-ranger-btn"></button></div>`;
   if (filedBanner) settings.prepend(filedBanner); // restore the banner above the freshly-rendered controls
