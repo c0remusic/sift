@@ -237,7 +237,10 @@ file**. Ce qui a tranché : Photos place « Sélectionner » dans sa toolbar par
 photos EST l'écran — la toolbar y commande la seule chose visible. Dans Revue la file n'est qu'une
 colonne sur trois et la barre commande déjà l'écran entier ; le même geste n'a plus la même portée.
 
-**La recherche NE monte PAS dans la barre** — décision du 2026-08-21 : elle reste dans la
+**La recherche NE monte PAS dans la barre** — décision du 2026-08-21, **re-challengée et
+re-confirmée le 2026-09-03 (issue #57, choix B d'Antoine sur wireframe A/B)** : le champ dans la
+colonne dit ce qu'il filtre — « on sait vraiment ce qu'on cherche ». Bibliothèque et Journal
+gardent leur recherche en barre ; l'asymétrie est un choix, pas un oubli. Elle reste dans la
 colonne file (Zone B′). ~~en **tête** de colonne (décision E, 2026-08-24)~~ → **SOUS la rangée
 de filtre** depuis le 2026-08-26, voir § Décisions postérieures. Le
 segmenté **Détail / Lot est retiré** (« plus besoin du picker Lot ») : le mode Batch est armé par
