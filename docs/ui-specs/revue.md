@@ -178,11 +178,13 @@ La boîte de lecture (`.sift-player-row`) devient le poste de décision complet,
    Nom final — le contenu de l'ex-rangée du haut du pied, tel quel ;
 4. **pied de boîte** : bande distincte par surface (`--color-background-secondary`,
    filet haut `--color-border-tertiary`), **bord à bord de la boîte** (marges négatives),
-   coins bas au rayon de la boîte — **Écarter** puis **Convertir** au trailing. Motif :
-   l'alerte du kit (§ 06-02), carte + rangée de boutons en bas. ~~légende clavier à gauche~~
-   **retirée le 2026-09-03** (audit œil-Apple, décision d'Antoine) : Apple n'écrit jamais les
-   raccourcis en dur dans une fenêtre — chacun vit dans le tooltip du bouton qu'il déclenche
-   (Convertir « Entrée », Écarter « ⌫ », lecture « espace ») ; HAUT/BAS reste implicite.
+   coins bas au rayon de la boîte — **légende clavier à gauche**, **Écarter** puis
+   **Convertir** au trailing. Motif : l'alerte du kit (§ 06-02), carte + rangée de boutons en
+   bas. La légende a été retirée le 2026-09-03 (audit œil-Apple : Apple n'écrit jamais les
+   raccourcis en dur dans une fenêtre) puis **restaurée le 2026-09-05 sur retour d'Antoine**
+   (« je préférais avec la légende ») — préférence produit assumée contre le patron Apple, à
+   ne pas re-retirer sur le seul argument HIG. Les tooltips posés au retrait restent
+   (Convertir « Entrée », Écarter « ⌫ », lecture « espace ») : deux canaux.
 
 Le **pied de panneau disparaît en Détail** : `#filfoot` n'y reçoit plus de contenu (le
 bandeau « Rangé » suit les contrôles dans la boîte). Bas de panneau = espace (volet de
@@ -415,8 +417,8 @@ l'**explorateur natif** pour choisir où le créer — et **« Choisir un dossie
 sélecteur natif pour un dossier custom existant. Dans les deux cas, **le dossier choisi
 entre dans la liste** (groupe « Autres »), disponible ensuite sans re-parcourir l'arbre.
 
-Rangée du bas : ~~légende clavier à gauche~~ (retirée le 2026-09-03, voir § pied de boîte) ·
-**actions groupées au bord droit (trailing)** : **Écarter** (secondaire — **gris rempli**, *pas* un ghost à bordure : le kit
+Rangée du bas : **légende clavier** à gauche (retirée le 2026-09-03 puis restaurée le
+2026-09-05, voir § pied de boîte) · **actions groupées au bord droit (trailing)** : **Écarter** (secondaire — **gris rempli**, *pas* un ghost à bordure : le kit
 ne connaît pas le ghost, le *secondary push button* est un fond gris ; ou **Re-source** si
 le verdict est `fake`) puis **Convertir** (primaire, **aplat d'accent bleu + texte blanc**,
 la plus à droite, action `Entrée`). Le contraste primaire / secondaire porte seul la

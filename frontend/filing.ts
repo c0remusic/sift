@@ -19,6 +19,7 @@ import type { DupMatch, TrackRelease, FileTags } from "../shared/contracts";
 import {
   openReportInto,
   togglePlay,
+  keyboardHintsHtml,
   vchipHtml,
 } from "./report-view";
 import type { Canonical, Target, QueueItem } from "../shared/contracts";
@@ -187,8 +188,8 @@ function renderFoot(mid: HTMLElement, rail: string): void {
     .join("");
 
   const fake = state.track?.verdict === "fake";
-  // Text only (annotation: "supprime les icones") — the shortcut is named in the tooltip alone
-  // (the standalone kbd-hints legend is gone, 2026-09-03), never as a glyph inside the button.
+  // Text only (annotation: "supprime les icones") — the shortcut is still named in the tooltip
+  // and the standalone kbd-hints legend, not repeated as a glyph inside the button itself.
   // "Jeter" relabelled "Écarter" (annotation: "jeter devrait etre écarté, et finir dans écarter")
   // — it now routes to Écartés (reject_track) like the fake branch, not a permanent delete;
   // real deletion is still available from the Écartés screen itself (ecartes-view.ts's own
@@ -220,14 +221,13 @@ function renderFoot(mid: HTMLElement, rail: string): void {
     `<span class="sift-fil-prev"></span>` +
     `</div>` +
     `</div>`;
-  // Pied de boîte : bande bord à bord au bas de la boîte (motif alerte du kit, § 06-02) — Écarter
-  // puis Convertir au bord trailing. Le filet haut et la surface sont portés par
-  // `.sift-filbox-foot` lui-même, plus par une rangée intérieure. La légende clavier qui occupait
-  // la gauche est RETIRÉE le 2026-09-03 (audit œil-Apple, décision d'Antoine) : Apple n'écrit
-  // jamais les raccourcis en dur dans une fenêtre — ils vivent dans les tooltips des boutons
-  // qu'ils déclenchent (Convertir/Écarter/lecture, chacun porte le sien) ; HAUT/BAS reste
-  // implicite, comme la navigation par flèches partout ailleurs.
+  // Pied de boîte : bande bord à bord au bas de la boîte (motif alerte du kit, § 06-02) — légende
+  // clavier à gauche, Écarter puis Convertir au bord trailing. Le filet haut et la surface sont
+  // portés par `.sift-filbox-foot` lui-même, plus par une rangée intérieure. La légende, retirée
+  // le 2026-09-03 (audit œil-Apple), est RESTAURÉE le 2026-09-05 sur retour d'Antoine — voir
+  // `keyboardHintsHtml` (report-view.ts) pour la décision datée.
   foot.innerHTML =
+    `<span class="sift-rail-kbd">${keyboardHintsHtml()}</span>` +
     `<div class="sift-rail-abtns">` + secondary +
     `<button data-fil="ranger" class="sift-ranger-btn"></button></div>`;
   if (filedBanner) settings.prepend(filedBanner); // restore the banner above the freshly-rendered controls
