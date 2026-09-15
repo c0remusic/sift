@@ -372,6 +372,17 @@ export const scanLibraryDuplicates = (): Promise<DupGroup[]> =>
   invoke("scan_library_duplicates");
 
 /** Dashboard aggregate stats for the Bibliothèque. */
+/**
+ * ⚠️ AUCUN CONSOMMATEUR au 2026-09-15, et la chaîne est complète en dessous :
+ * `lib.rs:384` l'enregistre, `ipc_library::library_stats` l'implémente hors du verrou global,
+ * `library::library_stats` fait le comptage, et `DashboardStats` est miroité dans
+ * `contracts.ts`. Rien n'appelle cette porte, et aucun écran n'affiche ces statistiques —
+ * `rail-sources.ts`, qui tient l'Accueil, ne lit aucune stat.
+ *
+ * Conservée délibérément : ce n'est pas un passe-plat mais une fonctionnalité backend sans
+ * écran, et la retirer serait une décision de produit, pas de ménage. Le lint
+ * `lint:orphans` la compte, ce qui l'empêche de se perdre à nouveau.
+ */
 export const libraryStats = (): Promise<DashboardStats> => invoke("library_stats");
 
 // ---- M7 Rekordbox XML export + playlist path repair ----

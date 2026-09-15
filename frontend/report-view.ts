@@ -544,50 +544,6 @@ export function vchipHtml(label: string, tone: ChipTone): string {
   return `<span class="sift-vchip" style="${toneCss(tone)}">${esc(label)}</span>`;
 }
 
-/** Shared zone-toggle header (Métadonnées in filing.ts, Preuve/spectre below) — one markup shape
- *  so the two disclosures can't quietly drift again. Audit 2026-07-05 found the Preuve toggle's
- *  own label wrapper (flex gap + a literal leading space) added spacing on top of
- *  `.sift-zone-toggle-car`'s margin that the Métadonnées toggle didn't have, and its badge reused
- *  `.sift-vchip` (inline-flex + letter-spacing) instead of the plain `.sift-chip-badge` box the
- *  CDJ badge uses — same class name, different box model. */
-export function zoneToggleHtml(opts: {
-  label: string;
-  badgeId: string;
-  toggleId?: string;
-  toggleExtraClass?: string;
-  caretExtraClass?: string;
-  hintExtraClass?: string;
-  badgeLabel?: string;
-  badgeTone?: ChipTone;
-  badgeHidden?: boolean;
-}): string {
-  const toggleCls = opts.toggleExtraClass
-    ? `sift-zone-toggle ${opts.toggleExtraClass}`
-    : "sift-zone-toggle";
-  const carCls = opts.caretExtraClass
-    ? `sift-zone-toggle-car ${opts.caretExtraClass}`
-    : "sift-zone-toggle-car";
-  const hintCls = opts.hintExtraClass
-    ? `sift-zone-toggle-hint ${opts.hintExtraClass}`
-    : "sift-zone-toggle-hint";
-  const badgeHidden = opts.badgeHidden ?? true;
-  const badgeStyle = opts.badgeTone ? ` style="${toneCss(opts.badgeTone)}"` : "";
-  // No "afficher"/"masquer" text: the caret already rotates on toggle and the button carries
-  // aria-expanded, so that was pure redundancy (user feedback 2026-07-06). The hint span itself
-  // stays, empty by default — Preuve's version still needs it for transient "calcul…"/"échec —
-  // réessayer" text while the spectrogram is being computed (wireSpectrogram in this file), which
-  // has no other UI feedback path. Métadonnées never sets it, so it just stays empty there.
-  return (
-    `<button class="${toggleCls}"${opts.toggleId ? ` id="${opts.toggleId}"` : ""} aria-expanded="false">` +
-    `<span><span class="${carCls}">▸</span><span class="sift-zone-toggle-label">${opts.label}</span></span>` +
-    `<span class="sift-zone-toggle-right">` +
-    `<span class="sift-chip-badge" id="${opts.badgeId}"${badgeStyle}${badgeHidden ? " hidden" : ""}>${esc(opts.badgeLabel ?? "")}</span>` +
-    `<span class="${hintCls}"></span>` +
-    `</span>` +
-    `</button>`
-  );
-}
-
 /** ACTUAL verdict panel: the CONCLUSION, a single status "bulle" (pill) — sitting on the
  *  inspector's own continuous surface, no full-bleed tinted panel anymore (2026-07-06 redesign;
  *  superseded the tinted-panel treatment). Nom final moved OUT of here entirely, into the rail
@@ -755,16 +711,28 @@ function spectroAndTagsHtml(r: AnalysisReport): string {
     `<span class="pill" title="${spectroCaption(r.verdict, r.container_mismatch)}">` +
     `${spectroBandReading(r.verdict, r.container_mismatch)} · ${fmt(r.cutoff_hz / 1000, 0)} kHz</span>` +
     `</div>` +
-    zoneToggleHtml({
-      // Le toggle ne porte plus la fiche, seulement sa pièce coûteuse. Le badge span reste
-      // (masqué) pour que le markup partagé de zoneToggle soit inchangé ; le hint sert toujours
-      // au « calcul… »/« échec » transitoire de wireSpectrogram.
-      label: "Spectrogramme",
-      badgeId: "sift-quality-badge",
-      toggleExtraClass: "sift-sg-toggle sift-spectro-toggle",
-      caretExtraClass: "sift-sg-caret sift-spectro-caret",
-      hintExtraClass: "sift-sg-hint sift-spectro-hint",
-    }) +
+    // Ex-`zoneToggleHtml`, replié ici le 2026-09-15. Elle existait pour tenir « one markup shape
+    // so the two disclosures can't quietly drift again » — Métadonnées et Spectrogramme —, et
+    // cette contrainte est morte depuis que `aac5bde` (#47) a remplacé l'en-tête Métadonnées par
+    // un `.sift-meta-header` statique : `sift-cdj-badge` n'a plus AUCUNE occurrence dans le
+    // dépôt, et il ne restait qu'un appelant. Une forme partagée par un seul consommateur ne
+    // partage rien.
+    //
+    // Quatre des neuf champs de son interface étaient morts avec lui (`toggleId`, `badgeLabel`,
+    // `badgeTone`, `badgeHidden`), donc `badgeStyle` valait toujours `""` et le badge était
+    // toujours `hidden`. Le span `#sift-quality-badge` part avec eux : il était le seul usage de
+    // `.sift-chip-badge` dans tout le TypeScript, toujours vide, toujours masqué, et aucune règle
+    // CSS ne le cible par son id.
+    //
+    // Le hint, lui, RESTE et n'est pas décoratif : `wireSpectrogram` y écrit le « calcul… » et le
+    // « échec — réessayer » transitoires, qui n'ont aucun autre chemin de retour visuel.
+    `<button class="sift-zone-toggle sift-sg-toggle sift-spectro-toggle" aria-expanded="false">` +
+    `<span><span class="sift-zone-toggle-car sift-sg-caret sift-spectro-caret">▸</span>` +
+    `<span class="sift-zone-toggle-label">Spectrogramme</span></span>` +
+    `<span class="sift-zone-toggle-right">` +
+    `<span class="sift-zone-toggle-hint sift-sg-hint sift-spectro-hint"></span>` +
+    `</span>` +
+    `</button>` +
     `<div class="sift-sg-body sift-spectro-body">` +
     `<div class="sift-spectro-body-inner">` +
     `<div class="sift-spectro-canvas-wrap">` +

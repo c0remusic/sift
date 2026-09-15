@@ -1,5 +1,5 @@
 {
-  "count": 32,
+  "count": 31,
   "items": [
     "frontend/bibliotheque-view.ts: clearBibSelection",
     "frontend/confirm-modal.ts: BatchAlertResult",
@@ -23,7 +23,6 @@
     "frontend/report-view.ts: grpRow",
     "frontend/report-view.ts: renderReportInto",
     "frontend/report-view.ts: rowRef",
-    "frontend/report-view.ts: zoneToggleHtml",
     "frontend/toolbar.ts: BAR_SEARCH_ID",
     "frontend/toolbar.ts: BarSearchOptions",
     "frontend/toolbar.ts: BarSegOption",
