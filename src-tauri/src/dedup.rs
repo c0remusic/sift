@@ -1099,7 +1099,6 @@ mod tests {
             eprintln!("skip: no fixtures");
             return;
         };
-        crate::ffmpeg::init_ffmpeg_path();
         let conn = db();
         let dir = tempfile::tempdir().unwrap();
         let a = dir.path().join("Sweep Test - Tone.mp3");
@@ -1140,7 +1139,6 @@ mod tests {
             eprintln!("skip: no fixtures");
             return;
         };
-        crate::ffmpeg::init_ffmpeg_path();
         let conn = db();
         let dir = tempfile::tempdir().unwrap();
         let a = dir.path().join("a.mp3");

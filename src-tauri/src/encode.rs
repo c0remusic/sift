@@ -145,7 +145,10 @@ pub fn encode(src: &str, dst: &str, target: Target) -> Result<(), EncodeError> {
         Target::Wav1644 => &["-vn", "-c:a", "pcm_s16le", "-ar", "44100"],
     };
 
-    let mut child = FfmpegCommand::new()
+    // `new_with_path` et pas `new()` : `new()` résout par adjacence à `current_exe()`, ce qui
+    // est correct en release mais retombe sur le PATH système sous `cargo test`, où l'exécutable
+    // courant vit dans `deps/`. Voir le doc de tête de `crate::ffmpeg`.
+    let mut child = FfmpegCommand::new_with_path(crate::ffmpeg::chemin())
         .input(src)
         .args(codec_args)
         .arg("-y")
@@ -259,7 +262,6 @@ mod tests {
             skip_if_no_fixture("real_lossless.flac");
             return;
         };
-        crate::ffmpeg::init_ffmpeg_path();
         let dir = tempfile::tempdir().unwrap();
         let dst = dir.path().join("out.wav");
         let dst = dst.to_str().unwrap();
@@ -306,7 +308,6 @@ mod tests {
             skip_if_no_fixture("real_lossless.flac");
             return;
         };
-        crate::ffmpeg::init_ffmpeg_path(); // point ffmpeg-sidecar at the bundled dev binary
         let dir = tempfile::tempdir().unwrap();
         let dst = dir.path().join("out.aiff");
         let dst = dst.to_str().unwrap();
@@ -324,7 +325,6 @@ mod tests {
             skip_if_no_fixture("real_lossless.flac");
             return;
         };
-        crate::ffmpeg::init_ffmpeg_path(); // point ffmpeg-sidecar at the bundled dev binary
         let dir = tempfile::tempdir().unwrap();
         let dst = dir.path().join("out.mp3");
         let dst = dst.to_str().unwrap();

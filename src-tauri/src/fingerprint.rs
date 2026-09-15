@@ -131,7 +131,6 @@ mod tests {
             eprintln!("skip: no fixture");
             return;
         };
-        crate::ffmpeg::init_ffmpeg_path();
         let a = compute_for_path(&p).expect("fingerprint");
         let b = compute_for_path(&p).expect("fingerprint");
         assert_eq!(a, b, "same file → same fingerprint");
@@ -146,7 +145,6 @@ mod tests {
             eprintln!("skip: no fixtures");
             return;
         };
-        crate::ffmpeg::init_ffmpeg_path();
         let a = compute_for_path(&p1).expect("fp1");
         let b = compute_for_path(&p2).expect("fp2");
         let sim = similarity(&a, &b);
@@ -163,7 +161,6 @@ mod tests {
             eprintln!("skip: no fixtures");
             return;
         };
-        crate::ffmpeg::init_ffmpeg_path();
         let a = compute_for_path(&p1).expect("fp1");
         let b = compute_for_path(&p2).expect("fp2");
         let sim = similarity(&a, &b);

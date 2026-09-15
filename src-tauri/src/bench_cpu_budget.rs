@@ -164,7 +164,6 @@ fn encode_work(out_dir: &Path, p: &Path, seq: usize) -> bool {
 #[ignore]
 fn bench_analysis_and_encode_cpu_budget() {
     let Some(files) = bench_files() else { return };
-    crate::ffmpeg::init_ffmpeg_path();
 
     let n_analysis = crate::worker::analysis_pool_size();
     let n_encode = crate::ipc_filing::phase2_worker_count();
@@ -307,7 +306,6 @@ fn latences_sequentielles(files: &[PathBuf], n: usize) -> Vec<Duration> {
 #[ignore]
 fn bench_interactive_latency_under_load() {
     let Some(files) = bench_files() else { return };
-    crate::ffmpeg::init_ffmpeg_path();
 
     let n_analysis = crate::worker::analysis_pool_size();
     let n_encode = crate::ipc_filing::phase2_worker_count();

@@ -1294,7 +1294,6 @@ mod tests {
             eprintln!("skip: no fixture");
             return;
         };
-        crate::ffmpeg::init_ffmpeg_path();
 
         let pioneer_dir = dir.path().join("pioneer");
         let xml_path = seed_pioneer_dir_with_fixture(&pioneer_dir);
@@ -1610,7 +1609,6 @@ mod tests {
             eprintln!("skip: no fixture");
             return;
         };
-        crate::ffmpeg::init_ffmpeg_path();
 
         let res = file_track(
             &conn,
@@ -1671,7 +1669,6 @@ mod tests {
             eprintln!("skip: no fixture");
             return;
         };
-        crate::ffmpeg::init_ffmpeg_path();
 
         // A conformant source whose extension is the 3-letter `.aif` (the case formerly forced to `.aiff`).
         let aif_src = dir.path().join("src.aif");
@@ -2267,7 +2264,6 @@ mod tests {
         );
 
         // Explicit confirmation (allow_rail_mismatch=true): proceeds normally.
-        crate::ffmpeg::init_ffmpeg_path();
         let allowed = plan_file(
             &conn,
             Some(&root),
@@ -2298,7 +2294,6 @@ mod tests {
             eprintln!("skip: no fixture");
             return;
         };
-        crate::ffmpeg::init_ffmpeg_path();
         let res = plan_file(
             &conn,
             Some(&root),

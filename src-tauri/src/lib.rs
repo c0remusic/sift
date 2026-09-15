@@ -252,7 +252,6 @@ pub fn run() {
                     return Err(e.into());
                 }
             }
-            ffmpeg::init_ffmpeg_path();
             // Ces trois étapes conditionnent toute l'application : sans dossier de données, sans
             // base ouverte ou sans identifiant de session, rien de ce qui suit n'a de sens. Elles
             // doivent donc arrêter le démarrage — mais par le `?` de `setup`, qui remonte un
