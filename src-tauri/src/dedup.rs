@@ -703,14 +703,6 @@ pub(crate) fn refresh_incremental(conn: &mut Connection) -> rusqlite::Result<Vec
     Ok(groups_from_edges(&rows, &all_edges))
 }
 
-/// Reconstruit les groupes depuis les arêtes persistées.
-///
-/// Passe par `link` et `assemble_groups`, les mêmes que le scan complet : c'est ce qui garantit
-/// que les deux chemins produisent des groupes identiques, y compris le `similarity` du groupe
-/// (le minimum des arêtes, dont le calcul avait déjà été faux une fois).
-///
-/// Une arête dont l'une des extrémités n'est pas dans `rows` est ignorée — `rows` est le jeu
-/// `filed` courant, et `prune_unfiled` doit avoir tourné avant.
 /// Toutes les arêtes d'une passe incrémentale : les nouvelles pistes contre les déjà comparées,
 /// et les nouvelles entre elles.
 ///
@@ -763,6 +755,14 @@ pub(crate) fn compute_edges(
     edges
 }
 
+/// Reconstruit les groupes depuis les arêtes persistées.
+///
+/// Passe par `link` et `assemble_groups`, les mêmes que le scan complet : c'est ce qui garantit
+/// que les deux chemins produisent des groupes identiques, y compris le `similarity` du groupe
+/// (le minimum des arêtes, dont le calcul avait déjà été faux une fois).
+///
+/// Une arête dont l'une des extrémités n'est pas dans `rows` est ignorée — `rows` est le jeu
+/// `filed` courant, et `prune_unfiled` doit avoir tourné avant.
 pub(crate) fn groups_from_edges(rows: &[DupScanRow], edges: &[DupEdge]) -> Vec<DupGroup> {
     let index: HashMap<i64, usize> = rows.iter().enumerate().map(|(i, r)| (r.id, i)).collect();
     let mut parent: Vec<usize> = (0..rows.len()).collect();

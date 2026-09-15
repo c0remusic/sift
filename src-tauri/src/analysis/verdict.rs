@@ -351,7 +351,7 @@ impl std::error::Error for NotMeasured {}
 /// `analysis::quant_trace::likelihood` sur le PCM décodé. **`None` = pas mesurée**, et c'est un
 /// état réel et fréquent — chemin de re-verdict depuis les mesures stockées (`reverdict.rs`), taux
 /// d'échantillonnage hors des tables AAC, signal trop court, ou tout simplement un fichier que
-/// [`needs_quant_probe`] n'a pas désigné. **`None` ne dégrade JAMAIS un verdict** : c'est la même
+/// `bancs::peut_trancher` n'a pas désigné. **`None` ne dégrade JAMAIS un verdict** : c'est la même
 /// règle que pour les bandes de platitude non mesurées, et pour la même raison — accuser un
 /// fichier de n'avoir pas pu être mesuré est l'erreur que ce module passe son temps à corriger.
 ///

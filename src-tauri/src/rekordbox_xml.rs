@@ -877,6 +877,49 @@ mod tests {
         assert!(!err.is_empty());
     }
 
+    /// **Un nom contenant `%` ne se réajoute pas à la collection à chaque export.**
+    ///
+    /// C'est le CÂBLAGE que ce test garde, et c'est ce qui manquait. Le correctif du 2026-09-15 a
+    /// fait deux gestes — créer `normalize_disk_path`, et basculer trois sites d'appel dessus — et
+    /// la gate écrite alors n'appelait que les deux fonctions en direct : elle figeait leur CORPS,
+    /// jamais le câblage. Rendre le site de `merge_filed_tracks` à `normalize_path` ne faisait
+    /// tomber aucun test, parce qu'aucun chemin de fixture ne contient de `%` et qu'un merge joué
+    /// deux fois sur le MÊME arbre en mémoire reste d'accord avec lui-même.
+    ///
+    /// Le défaut expédié vivait au site d'appel, pas dans les fonctions : `normalize_path` n'a
+    /// jamais été fausse pour une `Location`.
+    ///
+    /// Le cycle complet est nécessaire — merger, ÉCRIRE, relire, re-merger : c'est l'écriture qui
+    /// encode `%` en `%25` (`LOCATION_PATH_ENCODE_SET`), et la relecture qui doit retrouver la
+    /// même clé que le chemin disque. Sans le passage par le XML, les deux clés viennent de la
+    /// même source et coïncident quoi qu'il arrive.
+    ///
+    /// MUTATION : rendre `merge_filed_tracks` à `normalize_path` — le second merge rend 1 au lieu
+    /// de 0, et la collection gagne un doublon à chaque export.
+    #[test]
+    fn un_nom_avec_pourcent_ne_se_reajoute_pas_a_chaque_export() {
+        let mut parsed = parse(&fixture()).expect("fixture valide");
+        let filed = vec![lib_track(
+            "C:/Music/Disco/100%aerien.mp3",
+            "Disco",
+            "A",
+            "B",
+        )];
+        assert_eq!(
+            merge_filed_tracks(&mut parsed, &filed),
+            1,
+            "premier export : la piste entre dans la collection"
+        );
+
+        let ecrit = write(&parsed);
+        let mut relu = parse(ecrit.as_bytes()).expect("ce que nous venons d'écrire doit se relire");
+        assert_eq!(
+            merge_filed_tracks(&mut relu, &filed),
+            0,
+            "second export : un nom contenant % ne doit pas se réajouter"
+        );
+    }
+
     fn lib_track(
         path: &str,
         folder: &str,

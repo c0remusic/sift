@@ -540,7 +540,7 @@ mod tests {
         );
     }
 
-    /// La réduction en mono moyenne bien les canaux, et laisse un mono intact.
+    /// Une trace factice, pour exercer la DÉCISION sans faire tourner un balayage.
     fn trace(alignement: f64, blocs_retenus: usize, score: f64) -> Trace {
         Trace {
             jeu: JEUX[0],
@@ -585,6 +585,7 @@ mod tests {
         );
     }
 
+    /// La réduction en mono moyenne bien les canaux, et laisse un mono intact.
     #[test]
     fn le_mono_moyenne_les_canaux() {
         assert_eq!(mono(&[1.0, 3.0, -2.0, 0.0], 2), vec![2.0, -1.0]);

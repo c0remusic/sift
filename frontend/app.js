@@ -38,7 +38,7 @@ function openLink(u){window.open(u,'_blank','noopener');}
   // 2026-07-05, annotation #8: "la barre devrait pouvoir être redimensionnable").
   var QCOL_MIN=220,QCOL_MAX=480,QCOL_DEFAULT=272;
   function qcolWidth(){
-    try{var v=parseInt(localStorage.getItem('sift-qcol-w'),10);if(v>=QCOL_MIN&&v<=QCOL_MAX)return v;}catch{/* largeur illisible : on garde le defaut */}
+    try{var v=parseInt(localStorage.getItem('sift-qcol-w'),10);if(v>=QCOL_MIN&&v<=QCOL_MAX)return v;}catch{/* largeur illisible : on garde la valeur par défaut */}
     return QCOL_DEFAULT;
   }
   function installQueueResize(qcolEl,handleEl){
@@ -54,7 +54,7 @@ function openLink(u){window.open(u,'_blank','noopener');}
         document.removeEventListener('mousemove',onMove);
         document.removeEventListener('mouseup',onUp);
         handleEl.classList.remove('sift-qresize--active');
-        try{localStorage.setItem('sift-qcol-w',parseInt(qcolEl.style.width,10));}catch{/* largeur illisible : on garde le defaut */}
+        try{localStorage.setItem('sift-qcol-w',parseInt(qcolEl.style.width,10));}catch{/* largeur illisible : on garde la valeur par défaut */}
       }
       document.addEventListener('mousemove',onMove);
       document.addEventListener('mouseup',onUp);
