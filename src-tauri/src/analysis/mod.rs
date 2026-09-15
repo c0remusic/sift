@@ -237,7 +237,14 @@ pub struct AnalysisReport {
 /// comparerait un `L` de 0,5 à un seuil de 1 et blanchirait un transcodage : bump de RAPPORT, pas
 /// de verdict (le re-verdict rejoue les mesures stockées, il ne les normalise pas). Même jour, la
 /// fenêtre KBD et la fenêtre de 28 bandes des blocs longs — aac128 passe de 1/10 à 10/10.
-pub const REPORT_CACHE_VERSION: i64 = 13;
+///
+/// **14 (2026-09-15)** : la table des bancs gagne sa ligne `cadrage`, qui voit Vorbis et WMA —
+/// deux codecs auxquels les bancs de grille AAC et MP3 sont aveugles. Un transcodage Vorbis ou
+/// WMA porte donc `quant_likelihood = None` ou une valeur basse dans tous les rapports v13, et un
+/// `None` stocké NE SE RÉPARE PAS par le re-verdict, qui rejoue les mesures sans les recalculer.
+/// Le bump est ce qui fait re-décoder la file puis la bibliothèque rangée en fond (#59), au prix
+/// de ~2 900 ms par fichier authentique — la dépense de la nouvelle ligne.
+pub const REPORT_CACHE_VERSION: i64 = 14;
 
 /// Lit le cache `(tracks.report_json, tracks.report_cache_ver)`. Version absente, version distancée
 /// ou JSON vide (sentinelle d'échec de `persist_failure`) = **pas de rapport courant**, rendu comme

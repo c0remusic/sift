@@ -39,6 +39,7 @@
 use std::time::Instant;
 
 use crate::analysis::aac_sfb::BlockKind;
+use crate::analysis::framing::{self, Jeu};
 use crate::analysis::mp3_bank;
 use crate::analysis::quant_trace;
 use crate::analysis::verdict;
@@ -316,13 +317,11 @@ pub struct Banc {
 /// un bénéfice direct du choix « valeur plutôt qu'objet », et il écarte d'emblée la question de
 /// MSRV que `LazyLock` (1.80) a déjà posée à ce dépôt le 2026-09-12.
 ///
-/// ⚠️ **Le banc de CADRAGE n'y est pas encore**, et son absence est un fait mesuré, pas un oubli.
-/// Il coûte ~4 500 ms par fichier dans le seul réglage où sa séparation a été mesurée (30 blocs),
-/// soit quinze fois les deux lignes ci-dessous réunies, sur une population où l'écrasante majorité
-/// des fichiers est authentique. Le plus petit réglage qui tienne encore la séparation se dérive
-/// par `framing_scan` avec `SIFT_FRAMING_BLOCS` : c'est la mesure qui manque pour l'ajouter, et
-/// son entrée forcera un bump de `REPORT_CACHE_VERSION`.
-pub static BANCS_PRODUCTION: [Banc; 2] = [
+/// Le banc de CADRAGE y est entré le 2026-09-15, une fois son coût dérivé : il est le SEUL à voir
+/// Vorbis et WMA, aveugles aux deux autres lignes, et le seul à coûter des secondes — voir
+/// [`CADRAGE_BLOCS`] pour le balayage qui a ramené sa dépense de ~4 500 ms à ~2 900 ms par
+/// fichier sans perdre la séparation.
+pub static BANCS_PRODUCTION: [Banc; 3] = [
     Banc {
         nom: "mp3",
         voit: "MPEG-1 couche III (8 bandes × 8 trames)",
@@ -338,6 +337,14 @@ pub static BANCS_PRODUCTION: [Banc; 2] = [
         avant: amont_lossless_non_dementi,
         apres: aval_au_dessus_de_la_falaise,
         mesurer: mesure_aac,
+    },
+    Banc {
+        nom: "cadrage",
+        voit: "tout codec MDCT — dont Vorbis et WMA, aveugles aux deux lignes ci-dessus",
+        cout_ms: 2_900,
+        avant: amont_lossless_non_dementi,
+        apres: aval_au_dessus_de_la_falaise,
+        mesurer: mesure_cadrage,
     },
 ];
 
@@ -486,6 +493,90 @@ fn mesure_mp3(signal: &Signal<'_>, reglage: &Reglage) -> Vec<Mesure> {
             statistique: t.l,
             lambda: verdict::QUANT_LAMBDA_MP3,
             detail: format!("décalage={} canal={}", t.decalage, t.canal.label()),
+        })
+        .into_iter()
+        .collect()
+}
+
+/// Les deux jeux de production du banc de cadrage : `vorbis` et `wma`.
+///
+/// DEUX et pas cinq. Les trois autres de `framing::JEUX` (`aac`, `aac-sinus`, `mp3`) visent des
+/// familles que les deux lignes moins chères de cette table mesurent mieux, et par la grille de
+/// quantification plutôt que par le cadrage. Le harnais `framing_scan` balaie les cinq
+/// (`SIFT_FRAMING_JEUX`) : ce sont deux questions différentes, et la table ne répond qu'à celle de
+/// la production.
+const CADRAGE_JEUX: [Jeu; 2] = [framing::JEUX[1], framing::JEUX[4]];
+
+/// Demi-seconde à 44,1 kHz, seize blocs.
+///
+/// **MESURÉ le 2026-09-15**, et c'est la mesure qui a autorisé l'entrée de cette ligne en table.
+/// La séparation avait d'abord été établie à 30 blocs (~4 500 ms par fichier, quinze fois les deux
+/// autres lignes réunies) ; le balayage cherchait le plus petit réglage qui la tienne encore, sur
+/// les 20 vrais transcodages et 10 authentiques du corpus étiqueté :
+///
+/// | blocs | vrais, min | authentiques, max | marge | coût |
+/// |---|---|---|---|---|
+/// | 10 | 0,333 | 0,111 | +0,222 | 2,2 s |
+/// | 12 | 0,833 | 0,125 | +0,708 | 2,3 s |
+/// | **16** | **0,938** | **0,091** | **+0,847** | **2,9 s** |
+/// | 20 | 0,950 | 0,125 | +0,825 | 3,4 s |
+///
+/// 10 ne tient pas : un vrai descend à 0,333, sous [`framing::ALIGNEMENT_MIN`].
+///
+/// **16 plutôt que 12, et c'est une SECONDE marge qui tranche.** Les deux tiennent le seuil, et 12
+/// coûte 26 % de moins. Mais [`framing::BLOCS_ALIGNEMENT_MIN`] exige huit blocs RETENUS pour que
+/// la mesure existe, et la distribution des blocs retenus dit ceci :
+///
+/// | | minimum retenu | seuil d'existence |
+/// |---|---|---|
+/// | 12 blocs analysés | **8** | 8 |
+/// | 16 blocs analysés | **11** | 8 |
+///
+/// À 12, un vrai transcodage du corpus retient huit blocs PILE : un bloc rejeté de plus et il
+/// cesse d'être mesurable — une détection perdue en silence, ce que ce détecteur refuse autant
+/// qu'un faux positif. À 16, le minimum observé est 11. Le surcoût achète de la marge des DEUX
+/// côtés : +0,14 d'alignement, +3 blocs de mesurabilité.
+///
+/// ⚠️ Ce tableau a d'abord été lu comme « 10 non, 12 oui, 16 oui, 20 NON, 30 oui », donc comme une
+/// méthode instable qu'il fallait écarter. C'était le harnais qui retenait le jeu par SCORE quand
+/// la décision le retient par ALIGNEMENT : un seul fichier basculait sur l'autre jeu et publiait
+/// son alignement. Corrigé, le tableau est monotone.
+const CADRAGE_BLOC: usize = framing::BLOC / 2;
+const CADRAGE_BLOCS: usize = 16;
+
+/// Le seul banc qui demande un signal MONO — il le dérive lui-même, une fois, et seulement s'il
+/// tourne. Les deux autres lisent le PCM entrelacé tel que `decode_pcm` le rend.
+fn mesure_cadrage(signal: &Signal<'_>, reglage: &Reglage) -> Vec<Mesure> {
+    let mono = framing::mono(signal.pcm, signal.canaux);
+    let traces = framing::balayer(
+        &mono,
+        &CADRAGE_JEUX,
+        CADRAGE_BLOC,
+        CADRAGE_BLOCS,
+        reglage.fils_max,
+    );
+    // `mieux_aligne` et pas `cadrage_etabli` : le banc garde sa condition d'EXISTENCE de la mesure
+    // (`BLOCS_ALIGNEMENT_MIN`, qui produit une absence) et rend son SEUIL DE DÉCISION à la table,
+    // où il devient le dénominateur du rapport que `verdict()` compare à 1 — exactement comme les
+    // λ des deux autres lignes. La distinction n'est pas cosmétique : le doc de
+    // `BLOCS_CONCORDANTS_MIN` la nomme déjà, « une condition d'existence de la mesure, pas un
+    // réglage de sensibilité ».
+    framing::mieux_aligne(&traces)
+        .map(|t| Mesure {
+            bras: t.jeu.vise,
+            statistique: t.alignement,
+            // 0,5 est exact en f32 : la conversion ne perd rien, et le rapport garde
+            // l'arithmétique des deux autres bancs.
+            lambda: framing::ALIGNEMENT_MIN as f32,
+            detail: format!(
+                "index={} reste={}×{} blocs={} concordance={:.3} score={:.1}",
+                t.index,
+                t.reste_modal,
+                t.reste_modal_compte,
+                t.blocs_retenus,
+                t.concordance,
+                t.score
+            ),
         })
         .into_iter()
         .collect()
@@ -852,8 +943,18 @@ mod tests {
         assert_eq!(verdict::QUANT_LAMBDA_MP3, 0.18);
         assert_eq!(
             BANCS_PRODUCTION.iter().map(|b| b.nom).collect::<Vec<_>>(),
-            vec!["mp3", "aac"],
-            "la table de production, et le cadrage qui n'y est pas encore"
+            vec!["mp3", "aac", "cadrage"],
+            "la table de production, du moins cher au plus cher"
+        );
+        assert_eq!(
+            framing::ALIGNEMENT_MIN,
+            0.5,
+            "le λ du cadrage est une valeur calibrée, pas un symbole"
+        );
+        assert_eq!(
+            CADRAGE_JEUX.iter().map(|j| j.vise).collect::<Vec<_>>(),
+            vec!["vorbis", "wma"],
+            "les deux jeux que les bancs de grille ne voient pas"
         );
     }
 }
