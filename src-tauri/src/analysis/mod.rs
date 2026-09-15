@@ -3,6 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 pub mod aac_sfb;
+pub mod bancs;
 pub mod decode;
 pub mod dynamics;
 pub mod framing;
@@ -335,16 +336,6 @@ fn retenir_pour_sonde(tampon: &mut Vec<f32>, bloc: &[f32], plafond: usize, canau
     true
 }
 
-/// Les deux résolutions balayées par la sonde, dans l'ordre du prototype.
-///
-/// Les DEUX, et ce n'est pas de la prudence : la calibration du 2026-09-02 (λ = 0,18) a été
-/// mesurée avec ce réglage exact, et le tableau de détection qu'elle produit dépend des blocs
-/// longs autant que des courts — les familles `aac_mf` gagnent souvent en blocs LONGS, avec les
-/// plus fortes vraisemblances du corpus. N'en retirer un reviendrait à appliquer un seuil calibré
-/// sur une autre mesure.
-const QUANT_RESOLUTIONS: [aac_sfb::BlockKind; 2] =
-    [aac_sfb::BlockKind::Long, aac_sfb::BlockKind::Short];
-
 /// Fils de balayage accordés à la sonde, **par analyse**.
 ///
 /// `analyze()` tourne DANS un thread du pool d'analyse, dimensionné à
@@ -393,12 +384,18 @@ pub fn analyze(path: &str, with_spectrogram: bool) -> Result<AnalysisReport, Str
     // dans un accumulateur existant pour que la mesure ne dépende d'aucun de leurs seuils.
     let mut decoded_mono_samples: u64 = 0;
 
-    // Rétention du PCM pour la sonde de quantification (#52). Le pré-filtre est la seule partie de
-    // `verdict::needs_quant_probe` connaissable AVANT le décodage : rail déclaré lossless et
-    // conteneur qui ne le dément pas. Les deux autres clauses (bande pleine, aigu creux) sortent du
-    // décodage lui-même, donc on ne peut pas les anticiper — c'est ce qui force la rétention plutôt
-    // qu'un décodage à la demande.
-    let quant_pregate = tag.declared_rail == Rail::Lossless && tag.content_rail != Rail::Lossy;
+    // Rétention du PCM pour les bancs (#52). Le pré-filtre ne recopie plus une condition : il la
+    // DÉRIVE de la table des bancs, en demandant si au moins une ligne peut encore servir sur ce
+    // qu'on sait avant le décodage. Les clauses aval (coupure) sortent du décodage lui-même, donc
+    // on ne peut pas les anticiper — c'est ce qui force la rétention plutôt qu'un décodage à la
+    // demande. Jusqu'au 2026-09-15 ces deux clauses étaient écrites ici à la main, jumelles non
+    // testées de `verdict::needs_quant_probe` : élargir l'une sans l'autre demandait une sonde sur
+    // un tampon vide.
+    let amont = bancs::Amont {
+        declare: tag.declared_rail,
+        conteneur: tag.content_rail,
+    };
+    let quant_pregate = bancs::retention_utile(&bancs::BANCS_PRODUCTION, amont);
     let mut quant_pcm: Vec<f32> = Vec::new();
     let mut quant_pcm_tronque = false;
 
@@ -475,87 +472,42 @@ pub fn analyze(path: &str, with_spectrogram: bool) -> Result<AnalysisReport, Str
         top_db: spec_res.hf_flatness_top_db,
     };
 
-    // TROISIÈME SIGNAL, à la demande (#52). La condition de déclenchement n'est pas réécrite ici :
-    // elle est demandée à `verdict::needs_quant_probe`, seul endroit qui la teste, pour que la
-    // dépense et le bras qu'elle sert ne dérivent pas l'un de l'autre.
-    let quant_likelihood = if verdict::needs_quant_probe(cutoff_hz, tag.declared_rail, content_rail)
-    {
-        if quant_pcm.is_empty() {
-            // Le pré-filtre du décodage a laissé passer, mais rien n'a été retenu : décodage
-            // vide. Pas de mesure, et on le DIT.
-            log::info!("quant_trace {path} : non mesuré (aucun PCM retenu)");
-            None
-        } else {
-            if quant_pcm_tronque {
-                log::info!(
-                    "quant_trace {} : fichier au-delà du plafond, sondé sur ses {:.0} premières secondes",
-                    path,
-                    quant_pcm.len() as f32 / (info.sample_rate as f32 * target_ch as f32)
-                );
-            }
-            // Deux bancs, trois mesures, UN rapport : la grille d'un codec est cherchée par le
-            // banc AAC (#52, blocs courts et longs, chacun sur sa fenêtre de bandes) puis par le
-            // banc MP3 (#63). Chaque mesure se rapporte à SON seuil (`verdict::quant_lambda_aac`,
-            // `verdict::QUANT_LAMBDA_MP3`) et `quant_likelihood` est le MAXIMUM des rapports. Un
-            // transcodage n'est passé que par un codec, donc un seul banc peut le voir ; un master
-            // ne porte aucune grille, et le max de trois rapports nuls reste sous 1. Les échelles
-            // sont différentes (64, 224 et 64 cellules), d'où le rapport et pas un max de `L`.
-            let t0 = std::time::Instant::now();
-            let aac = quant_trace::likelihood(
-                &quant_pcm,
-                info.channels,
-                info.sample_rate,
-                &QUANT_RESOLUTIONS,
-                Some(QUANT_PROBE_THREADS),
+    // TROISIÈME SIGNAL, à la demande (#52), devenu le parcours de la table des bancs le
+    // 2026-09-15. Ce qui vivait ici — un appel par banc, un format de journal par banc, une
+    // division par un seuil lu chez `verdict`, un maximum plié à la main — vit désormais dans
+    // `analysis::bancs`, où il est exerçable sans fichier sur le disque. Ajouter un banc ne touche
+    // plus cette fonction.
+    //
+    // La condition de dépense N'EST PAS réécrite ici : `bancs::peut_trancher` est la même
+    // disjonction que `bancs::retention_utile` avec une conjonction de plus, donc elle l'implique
+    // par construction. Aucun décalage entre ce qu'on retient et ce qu'on dépense n'est
+    // représentable.
+    let aval = bancs::Aval {
+        coupure_hz: cutoff_hz,
+    };
+    let quant_likelihood = if bancs::peut_trancher(&bancs::BANCS_PRODUCTION, amont, aval) {
+        if quant_pcm_tronque {
+            log::info!(
+                "sonde {} : fichier au-delà du plafond, sondé sur ses {:.0} premières secondes",
+                path,
+                quant_pcm.len() as f32 / (info.sample_rate as f32 * target_ch as f32)
             );
-            if aac.is_empty() {
-                log::info!(
-                    "quant_trace {path} : banc AAC non mesuré (taux non tabulé ou signal court)"
-                );
-            }
-            let mut rapport: Option<f32> = None;
-            for t in &aac {
-                let r = t.l as f32 / verdict::quant_lambda_aac(t.resolution);
-                log::info!(
-                    "quant_trace {} : banc AAC {} L={:.5} rapport={:.2} décalage={} canal={} fenêtre={} en {} ms",
-                    path,
-                    t.resolution.label(),
-                    t.l,
-                    r,
-                    t.decalage,
-                    t.canal.label(),
-                    t.fenetre.label(),
-                    t0.elapsed().as_millis()
-                );
-                rapport = Some(rapport.map_or(r, |m| m.max(r)));
-            }
-            let t1 = std::time::Instant::now();
-            let mp3 = crate::analysis::mp3_bank::likelihood(
-                &quant_pcm,
-                info.channels,
-                info.sample_rate,
-                Some(QUANT_PROBE_THREADS),
-            );
-            match &mp3 {
-                Some(t) => {
-                    let r = t.l as f32 / verdict::QUANT_LAMBDA_MP3;
-                    log::info!(
-                        "quant_trace {} : banc MP3 L={:.5} rapport={:.2} décalage={} canal={} en {} ms",
-                        path,
-                        t.l,
-                        r,
-                        t.decalage,
-                        t.canal.label(),
-                        t1.elapsed().as_millis()
-                    );
-                    rapport = Some(rapport.map_or(r, |m| m.max(r)));
-                }
-                None => log::info!(
-                    "quant_trace {path} : banc MP3 non mesuré (taux non tabulé ou signal court)"
-                ),
-            }
-            rapport
         }
+        let sondage = bancs::sonder(
+            &bancs::BANCS_PRODUCTION,
+            &bancs::Signal {
+                pcm: &quant_pcm,
+                canaux: info.channels,
+                taux: info.sample_rate,
+            },
+            amont,
+            aval,
+            &bancs::Reglage {
+                fils_max: Some(QUANT_PROBE_THREADS),
+            },
+        );
+        sondage.journaliser(path);
+        sondage.rapport()
     } else {
         None
     };

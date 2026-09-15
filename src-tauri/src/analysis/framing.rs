@@ -27,9 +27,10 @@
 //! paramètres. Sift demande seulement s'il y en a eu UN : le maximum des scores suffit, et une
 //! erreur d'attribution entre codecs est sans conséquence.
 //!
-//! ⚠️ Ce module MESURE, il ne décide rien. Aucun seuil n'y vit, aucun verdict ne le lit encore :
-//! il est branché sur le seul harnais `corpus::framing_scan` tant que la mesure sur le corpus
-//! n'a pas dit ce qu'il vaut.
+//! ⚠️ CE MODULE MESURE, IL NE JUGE PAS. Le seuil de décision ([`ALIGNEMENT_MIN`]) vit ici avec sa
+//! calibration du 2026-09-15, mais c'est `analysis::bancs` qui l'applique et `verdict()` qui
+//! tranche. La phrase d'origine — « aucun seuil n'y vit » — est devenue fausse le jour où
+//! `ALIGNEMENT_MIN` a été posé, et l'a été un moment sans que rien ne le dise.
 
 use crate::analysis::mdct::MdctFast;
 use crate::analysis::quant_trace::Fenetre;
@@ -407,12 +408,35 @@ pub const ALIGNEMENT_MIN: f64 = 0.5;
 /// `X ~ B(8, 1/64)`, soit environ `4·10⁻⁶`.
 pub const BLOCS_ALIGNEMENT_MIN: usize = 8;
 
+/// Le jeu le mieux ALIGNÉ parmi ceux qui reposent sur assez de blocs — **sans appliquer le seuil
+/// de décision**.
+///
+/// Sépare deux choses que [`cadrage_etabli`] confondait. [`BLOCS_ALIGNEMENT_MIN`] est une
+/// condition d'EXISTENCE de la mesure : une fraction calculée sur moins de huit blocs n'est pas un
+/// alignement faible, c'est une absence — exactement ce que le doc de [`BLOCS_CONCORDANTS_MIN`]
+/// dit déjà de son propre compte. [`ALIGNEMENT_MIN`] est un seuil de DÉCISION, et il a vocation à
+/// devenir le dénominateur d'un rapport, comme les `λ` des deux autres bancs.
+///
+/// Le SCORE n'entre pas dans le classement : il varie de 26 à 953 chez les vrais transcodages et
+/// monte à 41 chez les authentiques, il ne classe rien.
+pub fn mieux_aligne(traces: &[Trace]) -> Option<Trace> {
+    traces
+        .iter()
+        .filter(|t| t.blocs_retenus >= BLOCS_ALIGNEMENT_MIN)
+        .max_by(|a, b| a.alignement.total_cmp(&b.alignement))
+        .copied()
+}
+
 /// Le cadrage d'un encodeur MDCT, s'il est établi.
 ///
 /// Rend le jeu dont l'alignement est le plus fort, à condition qu'il dépasse [`ALIGNEMENT_MIN`]
 /// sur au moins [`BLOCS_ALIGNEMENT_MIN`] blocs. **Le score n'entre pas dans la décision** — il
 /// varie de 26 à 953 chez les vrais et monte à 41 chez les authentiques, donc il ne sépare pas ;
 /// il reste dans la trace pour le journal.
+///
+/// Réécrite le 2026-09-15 par-dessus [`mieux_aligne`], à comportement identique : le maximum par
+/// alignement de l'ensemble filtré par le nombre de blocs est ≥ tout autre élément de ce même
+/// ensemble, donc appliquer le seuil avant ou après le maximum ne peut pas changer le résultat.
 ///
 /// Le RESTE MODAL n'entre pas non plus dans la décision, et c'est délibéré : `wma192` rend 0 et
 /// `vorbisq5` rend 64, mais ces deux valeurs sortent d'UN encodeur chacune (ffmpeg `wmav2`,
@@ -421,11 +445,7 @@ pub const BLOCS_ALIGNEMENT_MIN: usize = 8;
 /// l'endroit exact ne l'est pas. Le reste est rendu à l'appelant pour le journal, où il nomme le
 /// codec probable sans engager la décision.
 pub fn cadrage_etabli(traces: &[Trace]) -> Option<Trace> {
-    traces
-        .iter()
-        .filter(|t| t.blocs_retenus >= BLOCS_ALIGNEMENT_MIN && t.alignement >= ALIGNEMENT_MIN)
-        .max_by(|a, b| a.alignement.total_cmp(&b.alignement))
-        .copied()
+    mieux_aligne(traces).filter(|t| t.alignement >= ALIGNEMENT_MIN)
 }
 
 /// Le meilleur jeu pour un signal déjà réduit en mono, et tous les scores pour inspection.

@@ -343,60 +343,6 @@ impl std::fmt::Display for NotMeasured {
 
 impl std::error::Error for NotMeasured {}
 
-/// Vrai quand — et seulement quand — la sonde de quantification a quelque chose à trancher.
-///
-/// **BANDE PLEINE, un point c'est tout** : rail lossless déclaré, conteneur non démenti, coupure
-/// réellement mesurée et à `LOSSLESS_OK_HZ` ou au-dessus. Sous la falaise, le verdict est déjà
-/// Faux ; sur un désaccord de conteneur, il l'est aussi et le court-circuit passe avant tout.
-/// Ailleurs, la sonde ne changerait rien.
-///
-/// ⚠️ **Elle ne teste PAS la platitude, et cette clause a été retirée le 2026-09-02 après
-/// mesure.** La première intégration ne sondait que le bras `Grey` — bande pleine ET aigu SOUS la
-/// plage des masters. Or la cible même de l'issue #52 — les transcodes AAC haut débit,
-/// invisibles au spectre — a une platitude DANS la plage depuis la re-dérivation du plancher à
-/// -12 (#51) : elle sort en `Ok`, pas en `Grey`. Mesuré sur les 160 fichiers de `C:\sift-corpus` :
-/// avec la clause, les 40 fichiers `aac256`/`aacmf128`/`aacmf256`/`aac128` haut débit n'étaient
-/// **jamais** sondés (`quant_l = "-"`), et l'intégration entière valait +2 détections sur des
-/// familles hors cible (un `opus128`, un `wma192`). La condition qui vise la cible est donc la
-/// bande pleine seule.
-///
-/// **Coût, dit et non minimisé.** La sonde tourne désormais sur ~tout lossless SAIN à l'analyse,
-/// pas sur une poignée d'ambigus : +0,3 s de balayage sur une analyse de 2-4 s, soit ~10 %.
-/// Mesuré le 2026-09-02 sur les 160 fichiers étiquetés de `C:\sift-corpus` (`corpus_scan`,
-/// `--release`) :
-///
-/// | | fichiers | part |
-/// |---|---|---|
-/// | sonde DEMANDÉE (lossless + bande pleine) | 111 | **69,4 %** |
-/// | mesure effectivement RENDUE | 98 | 61,3 % |
-/// | demandée mais sans mesure (plafond PCM) | 13 | 8,1 % |
-///
-/// ⚠️ Ces 69 % sont la part d'un corpus **saturé de faux à bande pleine** (150 transcodes pour 10
-/// authentiques), pas celle d'une bibliothèque réelle — sur laquelle le chiffre n'a pas été
-/// mesuré. Les 13 sans mesure sont les 13 variantes d'un seul morceau de 10 min 53 s, au-delà de
-/// `analysis::QUANT_MAX_PCM_SAMPLES` : `None`, donc verdict inchangé.
-///
-/// Ce n'est plus « à la demande » au sens de « rare » — c'est « à la demande » au sens de
-/// « seulement là où elle peut trancher ».
-///
-/// **Elle vit ici, pas chez l'appelant, pour une raison de couplage** : c'est la seule façon que
-/// la condition de déclenchement et le bras qu'elle sert ne dérivent pas l'un de l'autre. Un
-/// `analyze()` qui déciderait tout seul quand sonder aurait une copie de l'arbitrage hors du seul
-/// endroit qui le teste — et une copie qui dérive dépense 0,3 s pour rien, ou pire, ne les dépense
-/// pas là où le verdict attendait la mesure.
-///
-/// `verdict()` reste PUR : cette fonction ne mesure rien non plus, elle ne fait que nommer la
-/// condition. Le calcul MDCT vit dans `analysis::analyze`, qui a le PCM.
-pub fn needs_quant_probe(cutoff_hz: f32, declared: Rail, content_rail: Rail) -> bool {
-    declared == Rail::Lossless
-        && content_rail != Rail::Lossy
-        && cutoff_hz > NO_MEASUREMENT_HZ
-        // Depuis le 2026-09-11 la sonde couvre aussi la fenêtre (20 000, 20 750) : un fichier
-        // qui y tombe est `Grey` par la coupure, et la grille d'un codec retrouvée le rend
-        // `Fake` — le doute ne doit pas désarmer la mesure qui pourrait le lever.
-        && cutoff_hz > LOSSY_CLIFF_HZ
-}
-
 /// Maps cutoff + declared rail + declared bitrate to a verdict, ou dit pourquoi il n'y a pas de
 /// verdict à rendre (`NotMeasured`).
 ///
@@ -1277,7 +1223,26 @@ mod tests {
     /// **La CONDITION de déclenchement, figée cas par cas** — la sonde tourne sur la bande pleine
     /// et nulle part ailleurs.
     ///
-    /// `analysis::analyze` décide de dépenser 0,3 s de MDCT sur la foi de [`needs_quant_probe`],
+    /// Relais de lecture : les huit appels de ce test s'écrivaient contre `needs_quant_probe`,
+    /// supprimée le 2026-09-15 au profit de `bancs::peut_trancher`, qui dérive la même condition
+    /// de la table des bancs. Le relais laisse le test INTACT — ses quatre faits numérotés, ses
+    /// deux bras de platitude, ses bornes `LOSSY_CLIFF_HZ ± 0.1` et ses assertions
+    /// `quant_likelihood: None` — tout en lui faisant exercer la nouvelle implémentation. Un test
+    /// de cette valeur se repointe, il ne se réécrit pas.
+    fn needs_quant_probe(cutoff_hz: f32, declared: Rail, content_rail: Rail) -> bool {
+        crate::analysis::bancs::peut_trancher(
+            &crate::analysis::bancs::BANCS_PRODUCTION,
+            crate::analysis::bancs::Amont {
+                declare: declared,
+                conteneur: content_rail,
+            },
+            crate::analysis::bancs::Aval {
+                coupure_hz: cutoff_hz,
+            },
+        )
+    }
+
+    /// `analysis::analyze` décide de dépenser 0,3 s de MDCT sur la foi de `bancs::peut_trancher`,
     /// pas de `verdict()`. Si les deux divergent, soit on calcule pour rien, soit — bien pire —
     /// on ne calcule pas là où le verdict attendait la mesure, et le troisième signal devient muet
     /// en silence. C'est exactement ce qui est arrivé à la première intégration (clause de
@@ -1293,7 +1258,7 @@ mod tests {
     /// 4. **hors domaine → pas sondé** : coupure sentinelle, rail non lossless, rail indéterminé.
     ///
     /// Le contrôle est l'implication : partout où la sonde est VRAIE, une vraisemblance au-dessus
-    /// de λ doit réellement produire `Fake`. Sans lui, un `needs_quant_probe` qui rendrait `true`
+    /// de λ doit réellement produire `Fake`. Sans lui, une condition de sonde qui rendrait `true`
     /// partout passerait les quatre points ci-dessus tout en dépensant du CPU pour rien.
     #[test]
     fn la_sonde_se_declenche_sur_la_bande_pleine_et_nulle_part_ailleurs() {
