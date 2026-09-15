@@ -6,7 +6,11 @@ use std::path::Path;
 /// Strips Windows verbatim/extended-length prefixes (`\\?\C:\…`, `\\?\UNC\…`) that
 /// `std::fs::canonicalize` emits — keeps stored paths consistent with what `notify`
 /// reports for live events (it can't watch verbatim paths).
-fn strip_verbatim(p: &str) -> String {
+///
+/// `pub(crate)` depuis le 2026-09-15 : `watcher::start` normalise le MÊME chemin avant de l'armer,
+/// et en portait jusque-là une copie mot pour mot. Deux copies d'une normalisation de chemin ne se
+/// voient pas diverger — elles se voient le jour où un dossier cesse d'être surveillé.
+pub(crate) fn strip_verbatim(p: &str) -> String {
     if let Some(rest) = p.strip_prefix(r"\\?\UNC\") {
         format!(r"\\{rest}")
     } else if let Some(rest) = p.strip_prefix(r"\\?\") {
@@ -74,29 +78,51 @@ pub fn add(conn: &Connection, path: &str) -> rusqlite::Result<i64> {
     )
 }
 
-/// All sources with their live pending count and whether the folder still exists on disk.
-pub fn list(conn: &Connection) -> rusqlite::Result<Vec<Source>> {
-    let mut stmt = conn.prepare(
-        "SELECT s.id, s.path,
+/// Les colonnes d'une source, dans l'ordre que [`ligne`] décode.
+///
+/// Une seule écriture pour [`list`] et [`get`] : `ipc::add_source` en portait une copie mot pour
+/// mot jusqu'au 2026-09-15, avouée par son propre commentaire (« Mirrors the shape of
+/// `sources::list` »). Deux projections jumelées à la main sur six colonnes, dont deux
+/// sous-requêtes de comptage, ne se voient pas diverger : elles se voient quand le rail affiche
+/// deux nombres différents pour le même dossier.
+const PROJECTION: &str = "SELECT s.id, s.path,
                 (SELECT count(*) FROM tracks t WHERE t.source_id=s.id AND t.status='pending'),
                 (SELECT count(*) FROM tracks t WHERE t.source_id=s.id),
                 s.watched, s.color_key
-         FROM sources s ORDER BY s.id",
-    )?;
-    let rows = stmt.query_map([], |r| {
-        let path: String = r.get(1)?;
-        let accessible = Path::new(&path).is_dir();
-        Ok(Source {
-            id: r.get(0)?,
-            path,
-            pending_count: r.get(2)?,
-            track_count: r.get(3)?,
-            accessible,
-            watched: r.get::<_, i64>(4)? != 0,
-            color_key: r.get(5)?,
-        })
-    })?;
+         FROM sources s";
+
+/// Décode une ligne de [`PROJECTION`]. `accessible` se mesure sur le disque, pas en base.
+fn ligne(r: &rusqlite::Row<'_>) -> rusqlite::Result<Source> {
+    let path: String = r.get(1)?;
+    let accessible = Path::new(&path).is_dir();
+    Ok(Source {
+        id: r.get(0)?,
+        path,
+        pending_count: r.get(2)?,
+        track_count: r.get(3)?,
+        accessible,
+        watched: r.get::<_, i64>(4)? != 0,
+        color_key: r.get(5)?,
+    })
+}
+
+/// All sources with their live pending count and whether the folder still exists on disk.
+pub fn list(conn: &Connection) -> rusqlite::Result<Vec<Source>> {
+    let mut stmt = conn.prepare(&format!("{PROJECTION} ORDER BY s.id"))?;
+    let rows = stmt.query_map([], ligne)?;
     rows.collect()
+}
+
+/// UNE source, sous la même forme que [`list`] la rend.
+///
+/// Existe pour que `ipc::add_source` puisse rendre la ligne qu'il vient d'insérer sans re-lister
+/// toutes les sources ni recopier la projection.
+pub fn get(conn: &Connection, id: i64) -> rusqlite::Result<Source> {
+    conn.query_row(
+        &format!("{PROJECTION} WHERE s.id=?1"),
+        rusqlite::params![id],
+        ligne,
+    )
 }
 
 /// Removes a source. Its tracks cascade-delete (FK ON DELETE CASCADE); in M1 those are all
@@ -133,6 +159,74 @@ pub fn set_color(conn: &Connection, id: i64, color_key: Option<String>) -> rusql
 
 #[cfg(test)]
 mod tests {
+    /// `get` et `list` rendent la même source, champ pour champ.
+    ///
+    /// Gate de la projection unique : elle tombe si quelqu'un réécrit l'une des deux requêtes à la
+    /// main — la divergence que `ipc::add_source` portait jusqu'au 2026-09-15.
+    ///
+    /// **Les trois pistes ne sont pas décoratives, elles sont ce qui rend le test tenant.** Première
+    /// écriture avec une source vide : `pending_count` et `track_count` valaient 0 des deux côtés,
+    /// donc réécrire `get` avec un `SELECT … 0, 0, …` codé en dur le laissait VERT. Mesuré en
+    /// mutant, pas supposé. Avec deux `pending` sur trois pistes, les deux compteurs prennent des
+    /// valeurs distinctes l'une de l'autre ET de zéro, et la même mutation tombe.
+    #[test]
+    fn get_rend_la_meme_source_que_list() {
+        let conn = rusqlite::Connection::open_in_memory().expect("base mémoire");
+        crate::db::run_migrations(&conn).expect("migrations");
+        let dossier = std::env::temp_dir();
+        let id = super::add(&conn, &dossier.to_string_lossy()).expect("source ajoutée");
+        for (nom, statut) in [
+            ("a.flac", "pending"),
+            ("b.flac", "pending"),
+            ("c.flac", "filed"),
+        ] {
+            conn.execute(
+                "INSERT INTO tracks (path, filename, size_bytes, mtime, source_id, status, created_at)
+                 VALUES (?1, ?2, 1, 1, ?3, ?4, datetime('now'))",
+                rusqlite::params![format!("{}/{nom}", dossier.to_string_lossy()), nom, id, statut],
+            )
+            .expect("piste insérée");
+        }
+
+        let depuis_list = super::list(&conn)
+            .expect("list")
+            .into_iter()
+            .find(|s| s.id == id)
+            .expect("la source ajoutée doit être dans list");
+        let depuis_get = super::get(&conn, id).expect("get");
+
+        assert_eq!(
+            (depuis_list.pending_count, depuis_list.track_count),
+            (2, 3),
+            "le montage doit produire deux compteurs distincts, sinon la comparaison ne tient rien"
+        );
+        assert_eq!(
+            depuis_get, depuis_list,
+            "get et list doivent décoder la même projection"
+        );
+    }
+
+    #[test]
+    fn strip_verbatim_unc_prefix_becomes_double_backslash_share() {
+        assert_eq!(
+            super::strip_verbatim(r"\\?\UNC\server\share\folder"),
+            r"\\server\share\folder"
+        );
+    }
+
+    #[test]
+    fn strip_verbatim_local_prefix_is_dropped() {
+        assert_eq!(
+            super::strip_verbatim(r"\\?\D:\Music\Sift"),
+            r"D:\Music\Sift"
+        );
+    }
+
+    #[test]
+    fn strip_verbatim_plain_path_is_unchanged() {
+        assert_eq!(super::strip_verbatim(r"D:\Music\Sift"), r"D:\Music\Sift");
+    }
+
     use super::*;
     use rusqlite::Connection;
 

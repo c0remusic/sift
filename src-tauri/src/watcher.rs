@@ -3,6 +3,7 @@
 //! stability polling — see the M1 design doc). On audio create/modify → upsert pending;
 //! on delete → forget the pending row. Each batch emits `queue:changed`.
 use crate::scanner;
+use crate::sources::strip_verbatim;
 use notify_debouncer_full::notify::RecommendedWatcher;
 use notify_debouncer_full::{
     new_debouncer,
@@ -59,18 +60,6 @@ pub fn start_all(app: &AppHandle) {
     };
     for (id, path) in rows {
         start(app, id, &path);
-    }
-}
-
-/// Strips Windows verbatim/extended-length prefixes (`\\?\C:\…`, `\\?\UNC\…`). `notify`
-/// (ReadDirectoryChangesW) silently fails to watch verbatim paths, so we normalise here.
-fn strip_verbatim(p: &str) -> String {
-    if let Some(rest) = p.strip_prefix(r"\\?\UNC\") {
-        format!(r"\\{rest}")
-    } else if let Some(rest) = p.strip_prefix(r"\\?\") {
-        rest.to_string()
-    } else {
-        p.to_string()
     }
 }
 
@@ -161,12 +150,12 @@ fn handle_events(app: &AppHandle, source_id: i64, res: DebounceEventResult) {
                                     .map(|n| n.to_string_lossy().into_owned())
                                     .unwrap_or_default(),
                                 size_bytes: meta.len() as i64,
-                                mtime: meta
-                                    .modified()
-                                    .ok()
-                                    .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
-                                    .map(|d| d.as_secs() as i64)
-                                    .unwrap_or(0),
+                                // `scanner::mtime_secs` et pas une conversion locale : son propre
+                                // commentaire interdit un second convertisseur, parce qu'il
+                                // dériverait en silence et rouvrirait le bug « une piste rangée se
+                                // dé-range toute seule ». Une copie mot pour mot vivait pourtant
+                                // ici jusqu'au 2026-09-15.
+                                mtime: scanner::mtime_secs(&meta),
                             };
                             if scanner::upsert_file(&conn, source_id, &f).is_ok() {
                                 touched = true;
@@ -190,28 +179,5 @@ fn handle_events(app: &AppHandle, source_id: i64, res: DebounceEventResult) {
     if touched {
         app.emit("queue:changed", ()).ok();
         crate::worker::refill(app);
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn strip_verbatim_unc_prefix_becomes_double_backslash_share() {
-        assert_eq!(
-            strip_verbatim(r"\\?\UNC\server\share\folder"),
-            r"\\server\share\folder"
-        );
-    }
-
-    #[test]
-    fn strip_verbatim_local_prefix_is_dropped() {
-        assert_eq!(strip_verbatim(r"\\?\D:\Music\Sift"), r"D:\Music\Sift");
-    }
-
-    #[test]
-    fn strip_verbatim_plain_path_is_unchanged() {
-        assert_eq!(strip_verbatim(r"D:\Music\Sift"), r"D:\Music\Sift");
     }
 }

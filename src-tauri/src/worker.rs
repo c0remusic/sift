@@ -10,8 +10,6 @@ use tauri::{AppHandle, Emitter, Manager};
 struct Queue {
     deque: VecDeque<i64>,
     queued: HashSet<i64>, // ids in the deque OR in-flight (prevents double-enqueue)
-    running: usize,
-    shutdown: bool,
 }
 
 /// Managed state: the shared work queue + a condvar the worker threads park on.
@@ -263,8 +261,6 @@ pub fn init(app: &AppHandle) {
             Mutex::new(Queue {
                 deque: VecDeque::new(),
                 queued: HashSet::new(),
-                running: 0,
-                shutdown: false,
             }),
             Condvar::new(),
         )),
@@ -322,7 +318,16 @@ pub fn refill(app: &AppHandle) {
     }
 }
 
-/// Blocks until an id is available (or shutdown). Increments `running` for the popped id.
+/// Bloque jusqu'à ce qu'un id soit disponible.
+///
+/// **Ne rend `None` que sur un verrou empoisonné**, et c'est le SEUL arrêt qui existe. Deux champs
+/// promettaient autre chose jusqu'au 2026-09-15 : `shutdown`, posé à `false`, lu ici, et jamais mis
+/// à `true` nulle part dans le crate ; `running`, incrémenté ici, décrémenté dans `finish`, et
+/// jamais lu pour décider quoi que ce soit. Une interface qui annonce un arrêt propre et un compte
+/// d'analyses en cours, sans qu'aucun des deux n'existe, coûte plus qu'elle ne rend : le lecteur
+/// cherche le mécanisme, et l'avancement se lit de toute façon en SQL (`progress`). Le jour où un
+/// arrêt propre est demandé, il s'écrit avec son appelant et son test, pas en rallumant un drapeau
+/// mort.
 fn pop(inner: &Arc<(Mutex<Queue>, Condvar)>) -> Option<i64> {
     let (m, cv) = &**inner;
     // `None` fait sortir le thread de sa boucle DÉFINITIVEMENT — il n'est jamais relancé. C'est le
@@ -336,11 +341,7 @@ fn pop(inner: &Arc<(Mutex<Queue>, Condvar)>) -> Option<i64> {
         }
     };
     loop {
-        if q.shutdown {
-            return None;
-        }
         if let Some(id) = q.deque.pop_front() {
-            q.running += 1;
             return Some(id);
         }
         q = match cv.wait(q) {
@@ -353,16 +354,14 @@ fn pop(inner: &Arc<(Mutex<Queue>, Condvar)>) -> Option<i64> {
     }
 }
 
-/// Marks an id done: drops it from `queued` (so a later content-change can re-enqueue it)
-/// and decrements `running`.
+/// Marks an id done: drops it from `queued`, so a later content-change can re-enqueue it.
 fn finish(inner: &Arc<(Mutex<Queue>, Condvar)>, id: i64) {
     let (m, _) = &**inner;
     match m.lock() {
         Ok(mut q) => {
             q.queued.remove(&id);
-            q.running = q.running.saturating_sub(1);
         }
-        // `running` reste alors compté à vie et l'id ne peut plus jamais être ré-enfilé : la piste
+        // L'id reste alors marqué en cours à vie et ne peut plus jamais être ré-enfilé : la piste
         // devient invisible à toute nouvelle analyse.
         Err(e) => log::error!(
             "worker finish({id}): verrou de file empoisonné, l'id reste marqué en cours: {e}"
