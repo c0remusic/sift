@@ -1986,6 +1986,43 @@ mod tests {
         assert_eq!(status, "ambiguous", "must not have been touched");
     }
 
+    /// **Le nom de fichier écrit dans `master.db` est un NOM, jamais un chemin.**
+    ///
+    /// `basename` remplit `PathRepair::new_file_name_l` et `new_file_name_s` — les deux colonnes
+    /// que Rekordbox AFFICHE. Son `unwrap_or(path)` rend le chemin ENTIER quand `file_name()`
+    /// échoue, et ce repli est délibéré (mieux vaut un nom trop long qu'une chaîne vide dans une
+    /// base tierce), mais il n'était gardé par aucun test : rien ne distinguait un repli correct
+    /// d'un `basename` qui rendrait le chemin complet à chaque appel.
+    ///
+    /// MUTATION : remplacer le corps par `path.to_string()` — les trois premières assertions
+    /// tombent, la quatrième (le repli) reste verte. C'est exactement ce qui rend le test utile :
+    /// il sépare le cas nominal du repli, là où la fonction les confond.
+    #[test]
+    fn le_nom_ecrit_dans_masterdb_est_un_nom_pas_un_chemin() {
+        assert_eq!(super::basename("C:/Music/House/a.aiff"), "a.aiff");
+        assert_eq!(super::basename("/Users/x/Music/House/a.aiff"), "a.aiff");
+        assert_eq!(
+            super::basename("C:/Music/100%aerien.mp3"),
+            "100%aerien.mp3",
+            "le nom part tel quel : c'est  qui encode, pas cette couche"
+        );
+        // Un séparateur final est IGNORÉ, pas traité comme un repli — mesuré, pas supposé :
+        // `Path::new("C:/Music/House/").file_name()` rend `Some("House")`. Un chemin de dossier
+        // donnerait donc le nom du DOSSIER comme nom de fichier, et non le chemin entier. Sans
+        // conséquence ici (l'appelant ne passe que des chemins de fichier), mais c'est le genre
+        // de fait qu'on croit connaître.
+        assert_eq!(super::basename("C:/Music/House/"), "House");
+        // Le repli proprement dit : `file_name()` rend `None` sur la chaîne vide et sur `..`.
+        // On rend alors l'entrée, jamais une chaîne vide.
+        for degenere in ["", ".."] {
+            assert_eq!(
+                super::basename(degenere),
+                degenere,
+                "repli sur l'entrée pour un chemin sans nom de fichier"
+            );
+        }
+    }
+
     #[test]
     fn humanize_masterdb_error_covers_artwork_variants() {
         use crate::rekordbox_masterdb::MasterDbError;
