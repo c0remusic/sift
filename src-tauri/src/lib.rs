@@ -321,7 +321,6 @@ pub fn run() {
             app.asset_protocol_scope()
                 .allow_directory(&covers, false)
                 .map_err(|e| format!("autorisation du cache de pochettes impossible: {e}"))?;
-            watcher::init_state(app.handle());
             watcher::start_all(app.handle());
             worker::init(app.handle());
             worker::refill(app.handle());

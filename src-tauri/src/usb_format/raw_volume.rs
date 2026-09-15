@@ -19,7 +19,7 @@
 use std::fs::File;
 use std::os::windows::io::FromRawHandle;
 use windows::core::PCWSTR;
-use windows::Win32::Foundation::{CloseHandle, HANDLE};
+use windows::Win32::Foundation::HANDLE;
 use windows::Win32::Storage::FileSystem::{
     CreateFileW, FILE_FLAGS_AND_ATTRIBUTES, FILE_GENERIC_READ, FILE_GENERIC_WRITE, FILE_SHARE_READ,
     FILE_SHARE_WRITE, OPEN_EXISTING,
@@ -110,8 +110,18 @@ impl RawVolume {
 
         // SAFETY: `handle` vient d'être rendu valide par `CreateFileW` (l'erreur est propagée
         // ci-dessus) et n'est possédé par personne d'autre. `from_raw_handle` en prend la
-        // propriété ; `handle` n'est plus refermé que par le `Drop` de ce type, qui ne ferme pas
-        // le fichier lui-même.
+        // propriété, et c'est le drop glue de ce `File` qui le referme — exactement une fois,
+        // quand le `RawVolume` qui le contient tombe. Le verrou de volume tombe avec la
+        // fermeture. **Surtout pas de `CloseHandle` ailleurs** : fermer deux fois est un
+        // comportement indéfini.
+        //
+        // Le champ `handle` conservé à côté n'est PAS un second propriétaire : il ne sert qu'à
+        // `DeviceIoControl` dans `control`, et il est valide aussi longtemps que le `File`.
+        //
+        // Un `impl Drop` vivait ici jusqu'au 2026-09-15 pour porter cette explication. Son corps
+        // était `let _ = CloseHandle;` — une référence à la fonction, jamais appelée, donc sans
+        // aucun effet. Un commentaire qui se déguise en code finit par être lu comme du code : la
+        // phrase est mieux ici, où elle est vraie.
         let file = unsafe { File::from_raw_handle(handle.0) };
 
         let vol = RawVolume { file, handle };
@@ -145,15 +155,6 @@ impl RawVolume {
     /// Le support à passer à `fatfs::format_volume`.
     pub fn as_file_mut(&mut self) -> &mut File {
         &mut self.file
-    }
-}
-
-impl Drop for RawVolume {
-    fn drop(&mut self) {
-        // Le verrou tombe de lui-même à la fermeture du handle, que le `Drop` de `File` effectue —
-        // `File` possède le handle depuis `from_raw_handle`. Pas de `CloseHandle` ici : le fermer
-        // deux fois est un comportement indéfini.
-        let _ = CloseHandle; // référence gardée pour documenter le choix, jamais appelée.
     }
 }
 

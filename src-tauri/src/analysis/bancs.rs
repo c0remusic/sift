@@ -22,9 +22,14 @@
 //!
 //! **Ce que la table ne prend PAS.** Elle est un site d'appel de production, jamais un passage
 //! obligé. Chaque banc garde ses entrées publiques entièrement paramétrées
-//! (`quant_trace::likelihood_fenetres`, `mp3_bank::likelihood`, `framing::balayer`), que les cinq
+//! (`quant_trace::likelihood_reglee`, `mp3_bank::likelihood`, `framing::balayer`), que les
 //! harnais `#[ignore]` appellent en direct : la table n'a aucun pouvoir de leur retirer un
 //! réglage. La profondeur est du côté de la production, pas du côté de la mesure.
+//!
+//! ⚠️ Cette phrase nommait `likelihood_fenetres` et « cinq harnais » le jour où elle a été
+//! écrite, et les deux étaient faux : aucun harnais n'appelait cette entrée — c'était un étage de
+//! passe-plat, retiré depuis — et `quant_trace` en porte quatre. Un doc d'architecture se vérifie
+//! par `grep`, comme le reste.
 //!
 //! **Modes d'absence : jamais un zéro.** Un banc qui n'a rien mesuré le DIT ([`Issue`]). Accuser
 //! un fichier de n'avoir pas pu être mesuré est l'erreur que ce module passe son temps à
@@ -78,12 +83,6 @@ pub struct Signal<'a> {
     pub pcm: &'a [f32],
     pub canaux: u16,
     pub taux: u32,
-}
-
-impl Signal<'_> {
-    pub fn est_vide(&self) -> bool {
-        self.pcm.is_empty()
-    }
 }
 
 /// Ce que l'appelant règle pour TOUS les bancs d'un sondage.
@@ -558,7 +557,10 @@ pub fn sonder<'b>(
             });
             continue;
         }
-        if signal.est_vide() {
+        // `pcm.is_empty()` en direct : `Signal::est_vide` était le seul membre de son bloc
+        // `impl`, appelé ici et nulle part ailleurs. C'est le `if` qui porte le sens — il tient
+        // la distinction entre « rien à mesurer » et « le banc n'a rien trouvé ».
+        if signal.pcm.is_empty() {
             passages.push(Passage {
                 banc,
                 issue: Issue::SignalVide,

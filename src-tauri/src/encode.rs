@@ -40,13 +40,29 @@ impl Target {
         }
     }
 
-    /// Chaque variante avec la chaîne que `tracks.target_format` stocke (voir
-    /// `filing::target_str`). Sert aux appelants qui doivent relire cette colonne — et aux tests
-    /// qui interdisent aux listes SQL ci-dessous de diverger de l'enum.
+    /// La chaîne que `tracks.target_format` stocke pour cette cible.
+    ///
+    /// `match` EXHAUSTIF, et c'est tout l'intérêt : une variante neuve ne compile pas tant
+    /// qu'elle n'a pas sa valeur de colonne. Une recherche dans une table de constantes rendrait
+    /// un `Option` au site d'écriture et perdrait cette garantie. Vivait dans `filing` sous le
+    /// nom `target_str` jusqu'au 2026-09-15 — une fonction libre, un seul appelant, loin du type
+    /// qu'elle décrit.
+    pub const fn db_value(self) -> &'static str {
+        match self {
+            Target::Mp3320 => "mp3_320",
+            Target::Aiff1644 => "aiff_16_44",
+            Target::Wav1644 => "wav_16_44",
+        }
+    }
+
+    /// Chaque variante avec la chaîne que `tracks.target_format` stocke. Dérivée de
+    /// [`Target::db_value`] plutôt que réécrite : les deux ne peuvent plus diverger. Sert aux
+    /// appelants qui doivent relire cette colonne — et aux tests qui interdisent aux listes SQL
+    /// ci-dessous de diverger de l'enum.
     pub const ALL_WITH_DB_VALUE: &'static [(Target, &'static str)] = &[
-        (Target::Mp3320, "mp3_320"),
-        (Target::Aiff1644, "aiff_16_44"),
-        (Target::Wav1644, "wav_16_44"),
+        (Target::Mp3320, Target::Mp3320.db_value()),
+        (Target::Aiff1644, Target::Aiff1644.db_value()),
+        (Target::Wav1644, Target::Wav1644.db_value()),
     ];
 
     /// Le `Target` derrière une valeur de `tracks.target_format`. `None` sur une ligne rangée

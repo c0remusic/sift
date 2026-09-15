@@ -19,16 +19,20 @@ use tauri::{AppHandle, Emitter, Manager};
 type Handle = Debouncer<RecommendedWatcher, RecommendedCache>;
 
 /// Map of source_id → live debouncer. Stored in Tauri managed state so handles stay alive.
+///
+/// PRIVÉ depuis le 2026-09-15 : plus rien hors de ce module ne le construit ni ne le `manage`,
+/// et c'est le compilateur qui le garantit désormais, là où un doc-comment le demandait.
 #[derive(Default)]
-pub struct Watchers(pub Mutex<HashMap<i64, Handle>>);
-
-/// Registers the empty watcher state. Call once in setup, before `start_all`.
-pub fn init_state(app: &AppHandle) {
-    app.manage(Watchers::default());
-}
+struct Watchers(Mutex<HashMap<i64, Handle>>);
 
 /// Starts (or restarts) watchers for every source currently in the DB.
+///
+/// Pose l'état vide elle-même. Un `init_state` public le faisait jusqu'au 2026-09-15, avec pour
+/// interface la phrase « Call once in setup, before `start_all` » — un ordre d'appel à la charge
+/// de l'appelant, que rien ne vérifiait. Le replier ici rend la séquence irreprésentable dans le
+/// mauvais ordre : il n'y a plus qu'un geste.
 pub fn start_all(app: &AppHandle) {
+    app.manage(Watchers::default());
     let rows: Vec<(i64, String)> = {
         let state = app.state::<Mutex<Connection>>();
         // Un retour muet ici, c'est l'application qui démarre sans AUCUNE surveillance de dossier :

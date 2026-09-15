@@ -83,13 +83,6 @@ fn find_root(parent: &mut [usize], x: usize) -> usize {
     parent[x]
 }
 
-fn union(parent: &mut [usize], a: usize, b: usize) {
-    let (ra, rb) = (find_root(parent, a), find_root(parent, b));
-    if ra != rb {
-        parent[ra] = rb;
-    }
-}
-
 /// Two `filed` tracks whose durations differ by more than this can't be the same recording,
 /// so we skip the (expensive) fingerprint comparison. Only applied when BOTH durations are
 /// known — a missing duration falls through to the full comparison (fail-open, no false skip).
@@ -345,7 +338,14 @@ fn link(parent: &mut [usize], min_sim: &mut HashMap<usize, f32>, i: usize, j: us
     } else {
         let prev_a = min_sim.remove(&ra);
         let prev_b = min_sim.remove(&rb);
-        union(parent, i, j);
+        // Ex-`union(parent, i, j)`, replié ici le 2026-09-15. Cette fonction avait un seul
+        // appelant — celui-ci — et recalculait `find_root` sur `i` et `j` alors que `ra` et `rb`
+        // viennent d'être calculés deux lignes plus haut et que `parent` n'a pas bougé entre les
+        // deux (seul `min_sim` a été touché). Sa garde `if ra != rb` était morte : ce bras est le
+        // `else` de `ra == rb`.
+        parent[ra] = rb;
+        // La racine se RELIT, elle ne se suppose pas : ne pas dépendre du sens de la fusion est
+        // ce que le doc ci-dessus appelle la correction.
         let root = find_root(parent, i);
         let merged = prev_a
             .into_iter()
@@ -690,24 +690,7 @@ pub(crate) fn refresh_incremental(conn: &mut Connection) -> rusqlite::Result<Vec
     }
 
     let built = build_fingerprints(&unscanned);
-    let mut edges = Vec::new();
-    for (i, row) in unscanned.iter().enumerate() {
-        let Some(fp) = built.fps[i].as_deref() else {
-            continue;
-        };
-        edges.extend(edges_against(row, fp, &candidates[i]));
-    }
-    // Les nouvelles pistes entre elles, par fenêtre de durée (#38). Miroir exact de
-    // `ipc_library::refresh_duplicate_groups` — les deux doivent rester d'accord.
-    let new_durations: Vec<Option<f64>> = unscanned.iter().map(|r| r.duration).collect();
-    for_each_candidate_pair(&new_durations, |i, j| {
-        let (Some(fi), Some(fj)) = (built.fps[i].as_deref(), built.fps[j].as_deref()) else {
-            return;
-        };
-        if let Some(e) = edge_between(&unscanned[i], fi, &unscanned[j], fj) {
-            edges.push(e);
-        }
-    });
+    let edges = compute_edges(&unscanned, &candidates, &built);
 
     if !built.to_persist.is_empty() {
         persist_fingerprints(conn, &built.to_persist);
@@ -728,6 +711,58 @@ pub(crate) fn refresh_incremental(conn: &mut Connection) -> rusqlite::Result<Vec
 ///
 /// Une arête dont l'une des extrémités n'est pas dans `rows` est ignorée — `rows` est le jeu
 /// `filed` courant, et `prune_unfiled` doit avoir tourné avant.
+/// Toutes les arêtes d'une passe incrémentale : les nouvelles pistes contre les déjà comparées,
+/// et les nouvelles entre elles.
+///
+/// **Extraite le 2026-09-15 parce qu'elle existait en DEUX exemplaires**, dont un seul était
+/// testé. `ipc_library::refresh_duplicate_groups` portait la version de PRODUCTION et
+/// `dedup::refresh_incremental` son jumeau `#[cfg(test)]` — 17 lignes chacune, identiques une
+/// fois les préfixes de chemin retirés, et tenues d'accord par un commentaire qui le demandait
+/// (« les deux doivent rester d'accord »). Les dix tests de l'incrémental traversaient le jumeau ;
+/// le corps que l'application exécute n'était atteint par aucun.
+///
+/// **Pure et sans connexion** : c'est ce qui permet à la phase 2 de la séquence — celle qui
+/// tourne VERROU RELÂCHÉ, parce qu'elle décode des fichiers — de s'exercer sans `State` Tauri.
+///
+/// `build_fingerprints` reste chez l'appelant, et ce n'est pas un oubli : les sections suivantes
+/// de la séquence relisent `built.to_persist` pour l'écriture et `unscanned` pour le marquage.
+/// Rendre `(BuiltFingerprints, Vec<DupEdge>)` élargirait l'interface sans rien apporter.
+///
+/// `candidates` est aligné 1:1 avec `unscanned`, comme `built.fps`.
+pub(crate) fn compute_edges(
+    unscanned: &[DupScanRow],
+    candidates: &[Vec<DupScanRow>],
+    built: &BuiltFingerprints,
+) -> Vec<DupEdge> {
+    let mut edges = Vec::new();
+    for (i, row) in unscanned.iter().enumerate() {
+        let Some(fp) = built.fps[i].as_deref() else {
+            // Empreinte impossible à calculer (fichier illisible). La piste est quand même
+            // marquée comparée : la reprendre à chaque passage rejouerait le même échec de
+            // décodage indéfiniment.
+            continue;
+        };
+        edges.extend(edges_against(row, fp, &candidates[i]));
+    }
+    // Les nouvelles pistes entre elles. `load_dup_candidates` ne rend que `dup_scanned`, donc sans
+    // ceci deux doublons rangés dans la même fournée ne se verraient jamais.
+    //
+    // `for_each_candidate_pair` remplace la double boucle `i+1..` depuis #38 : elle rendait chaque
+    // paire une seule fois, mais les rendait TOUTES — et le premier passage sur une base existante
+    // a `unscanned == toute la bibliothèque`, donc `n²/2` (3,22 s de balayage nu à 100 000 pistes,
+    // mesuré). Les paires qui atteignent `edge_between` sont exactement les mêmes.
+    let new_durations: Vec<Option<f64>> = unscanned.iter().map(|r| r.duration).collect();
+    for_each_candidate_pair(&new_durations, |i, j| {
+        let (Some(fi), Some(fj)) = (built.fps[i].as_deref(), built.fps[j].as_deref()) else {
+            return;
+        };
+        if let Some(e) = edge_between(&unscanned[i], fi, &unscanned[j], fj) {
+            edges.push(e);
+        }
+    });
+    edges
+}
+
 pub(crate) fn groups_from_edges(rows: &[DupScanRow], edges: &[DupEdge]) -> Vec<DupGroup> {
     let index: HashMap<i64, usize> = rows.iter().enumerate().map(|(i, r)| (r.id, i)).collect();
     let mut parent: Vec<usize> = (0..rows.len()).collect();
@@ -1821,6 +1856,121 @@ mod tests {
             }
         }
         assemble_groups(rows, &mut parent, &min_sim)
+    }
+
+    /// **La similarité publiée d'un groupe est son lien le plus FAIBLE, même quand c'est le
+    /// premier trouvé.**
+    ///
+    /// Le doc-comment de [`link`] décrit cette correction depuis longtemps — « sur un groupe de 3
+    /// dont le lien le plus faible est la PREMIÈRE arête trouvée, `similarity` sur-rapportait, un
+    /// champ publié qui mentait sur la seule chose qu'il prétend dire » — et jusqu'au 2026-09-15
+    /// aucun test ne la gardait. Elle vivait au cran 4 du barème (la prose) alors que le cran 1
+    /// était à portée : `groups_from_edges` prend des lignes et des arêtes, sans connexion.
+    ///
+    /// Le scénario est exactement celui du doc : trois pistes, l'arête FAIBLE en premier, et une
+    /// fusion entre les deux arêtes qui déplace la racine. Si le minimum enregistré sous
+    /// l'ancienne racine devient orphelin, c'est 0,95 qui est publié au lieu de 0,80.
+    ///
+    /// Le TROISIÈME scénario n'est pas une redite, et il a été ajouté après coup : la mutation
+    /// « retirer `prev_b` de la chaîne du `fold` » NE FAISAIT PAS tomber les deux premiers, parce
+    /// qu'ils fusionnent toujours un groupe avec un SINGLETON — `prev_b` y vaut `None`, donc le
+    /// retirer ne change rien. Il faut deux groupes portant chacun déjà un minimum pour que la
+    /// fusion des deux côtés soit réellement exercée. Une mutation qui ne tombe pas ne dit pas que
+    /// le code est bon : elle dit que le test ne le regarde pas.
+    ///
+    /// MUTATIONS qui le font tomber :
+    /// - dans [`link`], remplacer `min_sim.insert(root, merged)` par `min_sim.insert(ra, merged)`
+    ///   — le minimum se range sous une racine que `assemble_groups` ne relira pas (scénarios 1
+    ///   et 2) ;
+    /// - retirer `prev_a` ou `prev_b` de la chaîne du `fold` — le minimum de l'un des deux groupes
+    ///   fusionnés est perdu (scénario 3 seulement).
+    #[test]
+    fn la_similarite_dun_groupe_est_son_lien_le_plus_faible() {
+        let rows = vec![
+            row_at(1, Some(200.0)),
+            row_at(2, Some(200.0)),
+            row_at(3, Some(200.0)),
+        ];
+        // L'arête FAIBLE en premier : c'est elle qui était perdue par la fusion suivante.
+        let edges = vec![
+            DupEdge {
+                a_id: 1,
+                b_id: 2,
+                similarity: 0.80,
+            },
+            DupEdge {
+                a_id: 2,
+                b_id: 3,
+                similarity: 0.95,
+            },
+        ];
+        let groupes = groups_from_edges(&rows, &edges);
+        assert_eq!(groupes.len(), 1, "les trois pistes forment un seul groupe");
+        assert!(
+            (groupes[0].similarity - 0.80).abs() < 1e-6,
+            "le lien le plus faible (0,80) doit être publié, pas le plus fort : {}",
+            groupes[0].similarity
+        );
+
+        // Et dans l'autre ordre, pour que le test ne tienne pas par accident d'ordonnancement.
+        let edges_inverses = vec![
+            DupEdge {
+                a_id: 2,
+                b_id: 3,
+                similarity: 0.95,
+            },
+            DupEdge {
+                a_id: 1,
+                b_id: 2,
+                similarity: 0.80,
+            },
+        ];
+        let groupes = groups_from_edges(&rows, &edges_inverses);
+        assert_eq!(groupes.len(), 1);
+        assert!(
+            (groupes[0].similarity - 0.80).abs() < 1e-6,
+            "l'ordre des arêtes ne doit pas changer le minimum publié : {}",
+            groupes[0].similarity
+        );
+
+        // 3. DEUX groupes déjà formés, chacun portant son propre minimum, puis une fusion. C'est
+        //    le seul scénario où `prev_a` ET `prev_b` valent `Some` — les deux premiers fusionnent
+        //    toujours contre un singleton.
+        let rows4 = vec![
+            row_at(1, Some(200.0)),
+            row_at(2, Some(200.0)),
+            row_at(3, Some(200.0)),
+            row_at(4, Some(200.0)),
+        ];
+        let edges = vec![
+            DupEdge {
+                a_id: 1,
+                b_id: 2,
+                similarity: 0.82,
+            },
+            DupEdge {
+                a_id: 3,
+                b_id: 4,
+                similarity: 0.71,
+            },
+            DupEdge {
+                a_id: 2,
+                b_id: 3,
+                similarity: 0.99,
+            },
+        ];
+        let groupes = groups_from_edges(&rows4, &edges);
+        assert_eq!(
+            groupes.len(),
+            1,
+            "les deux paires fusionnent en un groupe de quatre"
+        );
+        assert_eq!(groupes[0].members.len(), 4);
+        assert!(
+            (groupes[0].similarity - 0.71).abs() < 1e-6,
+            "le minimum des DEUX groupes fusionnés doit survivre : attendu 0,71, obtenu {}",
+            groupes[0].similarity
+        );
     }
 
     fn row_at(id: i64, duration: Option<f64>) -> DupScanRow {

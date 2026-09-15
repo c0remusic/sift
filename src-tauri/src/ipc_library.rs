@@ -207,32 +207,10 @@ fn refresh_duplicate_groups(
 
     // ── 2. Calcul non verrouillé ─────────────────────────────────────────────
     let built = crate::dedup::build_fingerprints(&unscanned);
-    let mut edges = Vec::new();
-    for (i, row) in unscanned.iter().enumerate() {
-        let Some(fp) = built.fps[i].as_deref() else {
-            // Empreinte impossible à calculer (fichier illisible). La piste est quand même
-            // marquée comparée : la reprendre à chaque passage rejouerait le même échec de
-            // décodage indéfiniment.
-            continue;
-        };
-        edges.extend(crate::dedup::edges_against(row, fp, &candidates[i]));
-    }
-    // Les nouvelles pistes entre elles. `load_dup_candidates` ne rend que `dup_scanned`, donc sans
-    // ceci deux doublons rangés dans la même fournée ne se verraient jamais.
-    //
-    // `for_each_candidate_pair` remplace la double boucle `i+1..` depuis #38 : elle rendait chaque
-    // paire une seule fois, mais les rendait TOUTES — et le premier passage sur une base existante
-    // a `unscanned == toute la bibliothèque`, donc `n²/2` (3,22 s de balayage nu à 100 000 pistes,
-    // mesuré). Les paires qui atteignent `edge_between` sont exactement les mêmes.
-    let new_durations: Vec<Option<f64>> = unscanned.iter().map(|r| r.duration).collect();
-    crate::dedup::for_each_candidate_pair(&new_durations, |i, j| {
-        let (Some(fi), Some(fj)) = (built.fps[i].as_deref(), built.fps[j].as_deref()) else {
-            return;
-        };
-        if let Some(e) = crate::dedup::edge_between(&unscanned[i], fi, &unscanned[j], fj) {
-            edges.push(e);
-        }
-    });
+    // Le MÊME corps que `dedup::refresh_incremental`, et non plus son sosie : ces 17 lignes
+    // vivaient en double, dont cette copie-ci — celle que l'application exécute — qu'aucun test
+    // n'atteignait. Voir `dedup::compute_edges`.
+    let edges = crate::dedup::compute_edges(&unscanned, &candidates, &built);
 
     // ── 3. Écriture brève ────────────────────────────────────────────────────
     {

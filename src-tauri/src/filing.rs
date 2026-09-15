@@ -396,15 +396,6 @@ pub struct FsLog {
     meta: Option<String>,
 }
 
-/// The string value persisted in `tracks.target_format`.
-fn target_str(target: Target) -> &'static str {
-    match target {
-        Target::Mp3320 => "mp3_320",
-        Target::Aiff1644 => "aiff_16_44",
-        Target::Wav1644 => "wav_16_44",
-    }
-}
-
 /// Phase 1 (under the DB lock): resolve metadata + the collision-free destination and apply
 /// the no-upscale guard. No slow work — only fast DB reads and a `create_dir_all`.
 /// `allow_rail_mismatch`: when false (the default from IPC), a source whose extension claims
@@ -869,7 +860,7 @@ pub fn commit_file(
             params![
                 plan.track_id,
                 plan.bin_rel,
-                target_str(plan.target),
+                plan.target.db_value(),
                 conf,
                 plan.dest,
                 dest_name,

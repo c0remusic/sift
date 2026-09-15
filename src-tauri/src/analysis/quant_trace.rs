@@ -694,32 +694,18 @@ pub fn likelihood(
     resolutions: &[BlockKind],
     fils_max: Option<usize>,
 ) -> Vec<Trace> {
-    likelihood_fenetres(pcm, channels, sample_rate, resolutions, &FENETRES, fils_max)
-}
-
-/// [`likelihood`] avec le choix des formes de fenêtre laissé à l'appelant — pour le harnais de
-/// mesure, qui doit pouvoir isoler une forme et comparer. La production passe par [`likelihood`],
-/// qui essaie toujours [`FENETRES`] en entier.
-pub fn likelihood_fenetres(
-    pcm: &[f32],
-    channels: u16,
-    sample_rate: u32,
-    resolutions: &[BlockKind],
-    fenetres: &[Fenetre],
-    fils_max: Option<usize>,
-) -> Vec<Trace> {
     likelihood_reglee(
         pcm,
         channels,
         sample_rate,
         resolutions,
-        fenetres,
+        &FENETRES,
         (BANDE_DEBUT_LONG, N_SF_LONG),
         fils_max,
     )
 }
 
-/// [`likelihood_fenetres`] avec la fenêtre de bandes des blocs LONGS `(première bande, nombre de
+/// [`likelihood`] avec la fenêtre de bandes des blocs LONGS `(première bande, nombre de
 /// bandes)` laissée à l'appelant — harnais de mesure uniquement (`SIFT_QUANT_BANDES`). Le
 /// dénominateur de `L` suit le nombre de bandes.
 pub fn likelihood_reglee(

@@ -264,12 +264,6 @@ impl MdctFast {
     /// déjà de ne pas faire. Cette forme-ci existe pour les appelants ponctuels — tests, oracle.
     ///
     /// Panique si la trame ne fait pas `2N`, exactement comme [`MdctPlan::transform`].
-    pub fn transform_f64(&self, frame: &[f32]) -> Vec<f64> {
-        let mut out = vec![0.0f64; self.n];
-        self.transform_f64_into(frame, &mut out);
-        out
-    }
-
     /// Même transformée que [`MdctFast::transform_f64`], écrite dans un tampon fourni.
     ///
     /// `out` doit faire exactement `N` : le chemin écrit chacune de ses cases, il n'a donc rien à
@@ -324,10 +318,12 @@ impl MdctFast {
 
     /// Même sortie que [`MdctPlan::transform`], au format de l'oracle.
     pub fn transform(&self, frame: &[f32]) -> Vec<f32> {
-        self.transform_f64(frame)
-            .into_iter()
-            .map(|v| v as f32)
-            .collect()
+        // Ex-`transform_f64`, replié ici : il allouait le tampon puis déléguait, et n'avait que
+        // cet appelant. `transform_f64_into` reste l'entrée de qui fournit son tampon — le
+        // balayage de `quant_trace` réutilise le sien d'une trame à l'autre.
+        let mut out = vec![0.0f64; self.n];
+        self.transform_f64_into(frame, &mut out);
+        out.into_iter().map(|v| v as f32).collect()
     }
 }
 

@@ -1,6 +1,6 @@
 //! The destination bins: every subdirectory (recursive) under the configured library
-//! root. Walks the tree with `walkdir`, skipping hidden dirs (e.g. the `.sift-trash`
-//! corbeille). Also creates new bins and resolves collision-free destination paths. Pure
+//! root. Walks the tree with `walkdir`, skipping hidden dirs. Also creates new bins and
+//! resolves collision-free destination paths. Pure
 //! filesystem work; the root path comes from `settings::LIBRARY_ROOT`.
 //!
 //! Also exposes `list_filed` / `folder_facets` for the M6b library browser (read-only
@@ -520,11 +520,6 @@ pub struct Bin {
     pub depth: usize,
 }
 
-/// Whether a directory name is hidden (leading dot) — excluded from bins.
-fn is_hidden(name: &str) -> bool {
-    name.starts_with('.')
-}
-
 /// List all bins (recursive subdirectories) under `root`, sorted by relative path. Returns
 /// an empty list if root doesn't exist. Hidden directories and their subtrees are skipped.
 pub fn list_bins(root: &Path) -> Vec<Bin> {
@@ -533,8 +528,17 @@ pub fn list_bins(root: &Path) -> Vec<Bin> {
         .min_depth(1)
         .into_iter()
         .filter_entry(|e| {
-            // skip hidden dirs entirely (prunes their subtree too)
-            !e.file_name().to_str().map(is_hidden).unwrap_or(false)
+            // Les dossiers cachés sont écartés avec leur sous-arbre entier.
+            //
+            // Ex-`is_hidden`, replié ici : un prédicat d'une ligne, un appelant. Son doc et celui
+            // du module justifiaient la règle par « la corbeille `.sift-trash` » — mais la
+            // corbeille a quitté la racine de bibliothèque à FIX-6, elle vit sous
+            // `{Documents}/Sift/Trash` (voir `filing::sift_trash_dir`). La règle survit pour les
+            // dossiers cachés de l'utilisateur ; l'exemple qui la nommait était mort.
+            !e.file_name()
+                .to_str()
+                .map(|n| n.starts_with('.'))
+                .unwrap_or(false)
         });
     for entry in walker.flatten() {
         if !entry.file_type().is_dir() {
