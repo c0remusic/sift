@@ -105,6 +105,12 @@ jobs:
       - name: Lint accents (ratchet — bloque un bloc de commentaire français neuf écrit sans accent)
         run: npm run lint:accents
 
+      - name: Exports orphelins
+        # Un `export` sans importeur survit à `noUnusedLocals` (qui ne voit que les imports) et à
+        # `no-unused-vars` (qui s'arrête au fichier). Trouvé sur `isBatchRunning` le 2026-09-15 :
+        # une ligne exportée, zéro appelant, mort-née dans le commit qui l'écrit.
+        run: npm run lint:orphans
+
       # Ajoutée le 2026-09-07 après le MÊME raté payé deux fois en deux jours : un `*/` orphelin
       # laisse du texte de commentaire hors /* */, que le navigateur lit comme un sélecteur
       # invalide — la règle suivante meurt en silence, et le CSS reste syntaxiquement parsable

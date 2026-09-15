@@ -48,6 +48,11 @@ run "tokens (lint:tokens)" npm run -s lint:tokens
 # relecture humaine ne voit pas : un commentaire français désaccentué se lit sans qu'on le
 # remarque (issues #43/#44). Ratchet à baseline, comme lint:tokens.
 run "accents (lint:accents)" npm run -s lint:accents
+
+# Exports de `frontend/` et `shared/` que personne n'importe. Ni `noUnusedLocals` ni ESLint ne
+# voient cette classe : le premier s'arrête aux imports, le second au fichier. Ratchet à baseline,
+# même contrat que les deux au-dessus.
+run "exports orphelins (lint:orphans)" npm run -s lint:orphans
 # `*/` orphelin dans styles.css : payé DEUX FOIS les 2026-09-06/07 — le navigateur lit le texte
 # hors /* */ comme un sélecteur invalide et ignore EN SILENCE la règle suivante ; aucune autre
 # gate ne le voit (le CSS reste syntaxiquement parsable). Attrapé les deux fois par une mesure

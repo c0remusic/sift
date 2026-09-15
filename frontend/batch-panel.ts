@@ -112,7 +112,6 @@ function formatBlocksHtml(): string {
 let fileClearTimer: ReturnType<typeof setTimeout> | undefined;
 let fileStopping = false;
 let batchRunning = false;
-export function isBatchRunning(): boolean { return batchRunning; }
 let lastFileProgress: FileProgress | null = null;
 
 export function pushFileProgress(p: FileProgress) {

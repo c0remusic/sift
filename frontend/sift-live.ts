@@ -41,7 +41,7 @@ import { consumeSortSuppression } from "./library-columns";
 import { refreshRootWarning } from "./rail-root-warning";
 import { registerOpenSettingsAction } from "./filing-actions";
 import { goTo } from "./router";
-import { onSettingsCategoryPick } from "./reglages-view";
+import { selectSettingsCategory } from "./reglages-view";
 import { onRekordboxSectionPick } from "./rekordbox-view";
 import { installWindowShortcuts } from "./shortcuts";
 import { requireEl } from "./dom";
@@ -287,7 +287,7 @@ export function installLiveWiring() {
     const cat = (e.target as HTMLElement).closest<HTMLElement>('[data-reglages="cat"]');
     if (cat?.dataset.cat) {
       e.stopPropagation();
-      onSettingsCategoryPick(cat.dataset.cat);
+      selectSettingsCategory(cat.dataset.cat);
       return;
     }
     // Écartés actions (copy query / send-to-bin / restore / empty bin)

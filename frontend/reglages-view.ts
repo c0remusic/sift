@@ -57,7 +57,8 @@ let activeSection = "bibliotheque";
 
 /** Montre une seule section et marque son entrée. Les autres sont retirées du flux par `hidden`,
  *  pas seulement masquées : un champ dans une section cachée resterait tabulable. */
-function selectSettingsCategory(key: string): void {
+/** Appelée par le dispatch délégué de `sift-live.ts` au clic sur une catégorie. */
+export function selectSettingsCategory(key: string): void {
   activeSection = key;
   document.querySelectorAll<HTMLElement>("#sift-reglages-list > [data-section]").forEach((el) => {
     el.hidden = el.dataset.section !== key;
@@ -85,11 +86,6 @@ function positionThemeThumb(): void {
   const card = document.getElementById("sift-reglages-apparence");
   if (!card) return;
   slideSegThumb(card, "[data-theme-choice].on");
-}
-
-/** Appelée par le dispatch délégué de `sift-live.ts` au clic sur une catégorie. */
-export function onSettingsCategoryPick(key: string): void {
-  selectSettingsCategory(key);
 }
 
 /** Une rangée de la grille commune : libellé (et sa phrase, optionnelle) à gauche, contrôle à
