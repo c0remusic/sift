@@ -111,7 +111,7 @@ export function decodedShortfallText(
  *
  *  Détail : `docs/superpowers/changes/2026-08-17-detecteur-corpus/review.md`. */
 export const HF_TOP_REF_LO = -23.8;
-export const HF_TOP_REF_HI = -2.5;
+const HF_TOP_REF_HI = -2.5;
 
 /** La densité du tout-haut du spectre, telle qu'elle s'affiche.
  *

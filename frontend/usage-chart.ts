@@ -27,7 +27,7 @@ const FORMAT_TOKEN: Record<string, string> = {
 
 /** Un format inconnu retombe sur le gris neutre plutôt que d'emprunter la couleur d'un autre :
  * deux formats de la même couleur mentiraient sur la lecture de la barre. */
-export function colorFor(ext: string): string {
+function colorFor(ext: string): string {
   return `var(${FORMAT_TOKEN[ext.toLowerCase()] ?? FORMAT_TOKEN[ext] ?? "--color-hue-gray-solid"})`;
 }
 
@@ -46,7 +46,7 @@ export const formatGo = (bytes: number): string =>
 
 /** Répartit les seaux dans les groupes du détail, et rassemble le reste sous « Autres fichiers ».
  * Exportée pour être testable : c'est la seule logique non triviale de ce fichier. */
-export function groupBuckets(
+function groupBuckets(
   buckets: readonly ExtUsage[],
 ): Array<{ label: string; rows: ExtUsage[] }> {
   const claimed = new Set<string>();

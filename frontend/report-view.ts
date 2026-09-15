@@ -368,7 +368,7 @@ function rowRef(label: string, value: string, ref: string): string {
  *  2026-09-07, patron Informations système : « serré dedans, aéré entre »). Les rangées de son
  *  groupe coulent dessous — une colonne depuis H1 (même jour) : la grammaire de la fiche
  *  Métadonnées voisine. */
-export function grpRow(label: string): string {
+function grpRow(label: string): string {
   return `<div class="sift-row-grp">${label}</div>`;
 }
 
@@ -1227,7 +1227,7 @@ function wireReport(root: HTMLElement, r: AnalysisReport) {
  *  when given, gets the verdict conclusion card instead of `container` — see `openReportInto`.
  *  `diagContainer`, when given, gets the Diagnostic (spectrogramme + mesures) instead of leaving
  *  it right under the player — see `openReportInto` for why. */
-export function renderReportInto(
+function renderReportInto(
   container: HTMLElement,
   r: AnalysisReport,
   verdictContainer?: HTMLElement,

@@ -13,14 +13,14 @@
 import { esc } from "./dom";
 import { slideSegThumb } from "./seg-thumb";
 
-export const BAR_SEARCH_ID = "sift-bar-search-input";
+const BAR_SEARCH_ID = "sift-bar-search-input";
 
 function slot(id: string): HTMLElement | null {
   return document.getElementById(id);
 }
 
 /** Emplacement des actions contextuelles de la vue (2 à 3 au maximum). */
-export function barActions(): HTMLElement | null {
+function barActions(): HTMLElement | null {
   return slot("sift-tb-actions");
 }
 
@@ -30,7 +30,7 @@ export function barActions(): HTMLElement | null {
 // jamais eu d'autre occupant. Le markup `#sift-tb-actions-right` part avec, dans `chrome.ts`.
 
 /** Emplacement de la recherche, toujours à droite. */
-export function barSearch(): HTMLElement | null {
+function barSearch(): HTMLElement | null {
   return slot("sift-tb-search");
 }
 

@@ -1,10 +1,9 @@
 {
-  "count": 26,
+  "count": 17,
   "items": [
     "frontend/confirm-modal.ts: BatchAlertResult",
     "frontend/context-menu.ts: MenuItem",
     "frontend/context-menu.ts: SwatchRow",
-    "frontend/context-menu.ts: closeContextMenu",
     "frontend/dev-annotate.ts: Annotation",
     "frontend/ecartes-view.ts: EcartesKind",
     "frontend/empty-state.ts: EmptyStateOpts",
@@ -15,17 +14,9 @@
     "frontend/progress-zone.ts: TaskKind",
     "frontend/progress-zone.ts: TaskProgress",
     "frontend/rail-source-entry.ts: RailRowState",
-    "frontend/report-figures.ts: HF_TOP_REF_HI",
-    "frontend/report-view.ts: grpRow",
-    "frontend/report-view.ts: renderReportInto",
-    "frontend/toolbar.ts: BAR_SEARCH_ID",
     "frontend/toolbar.ts: BarSearchOptions",
     "frontend/toolbar.ts: BarSegOption",
     "frontend/toolbar.ts: BarSegmentedOptions",
-    "frontend/toolbar.ts: barActions",
-    "frontend/toolbar.ts: barSearch",
-    "frontend/usage-chart.ts: UsageChartOptions",
-    "frontend/usage-chart.ts: colorFor",
-    "frontend/usage-chart.ts: groupBuckets"
+    "frontend/usage-chart.ts: UsageChartOptions"
   ]
 }

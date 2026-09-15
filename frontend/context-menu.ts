@@ -40,7 +40,7 @@ export interface SwatchRow {
 const MENU_ID = "sift-context-menu";
 
 /** Ferme le menu s'il est ouvert. Idempotent. */
-export function closeContextMenu(): void {
+function closeContextMenu(): void {
   document.getElementById(MENU_ID)?.remove();
 }
 
