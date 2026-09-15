@@ -1328,6 +1328,72 @@ transcodages au-dessus, 0/83 des authentiques (10 du corpus + 73 de la biblioth�
 est de 0,43 au-dessus du plus bas vrai et de 0,36 au-dessous du plus haut authentique — la
 mesure ne tient pas à la troisième décimale.
 
+### Combien de blocs coûter : le balayage qui a autorisé la mise en table (2026-09-15)
+
+La séparation du cadrage avait été établie à **30 blocs** d'une demi-seconde, soit ~4 500 ms par
+fichier — quinze fois les deux bancs de grille réunis (0,3 s pour l'AAC et le MP3 ensemble), sur une
+population où l'écrasante majorité des fichiers est authentique. Ce coût était le seul obstacle à
+l'entrée de la ligne dans `bancs::BANCS_PRODUCTION`.
+
+Balayage de `blocs_max` sur les 20 vrais transcodages (`vorbisq5`, `wma192`) et 10 authentiques du
+corpus étiqueté, jeux `vorbis` et `wma`, blocs d'une demi-seconde :
+
+| blocs | vrais, min | authentiques, max | marge | coût/fichier |
+|---|---|---|---|---|
+| 10 | 0,333 | 0,111 | +0,222 | 2,2 s |
+| **12** | **0,833** | **0,125** | **+0,708** | **2,3 s** |
+| 16 | 0,938 | 0,091 | +0,847 | 2,9 s |
+| 20 | 0,950 | 0,125 | +0,825 | 3,9 s |
+
+**10 ne tient pas** : un vrai descend à 0,333, sous `ALIGNEMENT_MIN = 0,5`. **12 tient**, avec une
+marge de 0,708 sur une échelle bornée à 1 — la décision ne se joue pas à la troisième décimale.
+Au-delà, la marge ne gagne plus que 0,14 pour 26 % de temps en plus. Retenu : **12 blocs**, ~2,3 s.
+
+#### Le faux effondrement à 20 blocs, et ce qu'il apprend
+
+Le premier balayage a rendu une courbe NON MONOTONE : 10 non, 12 oui, 16 oui, **20 NON**, 30 oui.
+Une méthode qui s'effondre puis remarche n'est pas une méthode, et la conclusion allait être
+« le cadrage n'est pas assez stable pour être branché ».
+
+Elle était fausse, et elle tenait à un seul fichier. À 20 blocs, `src09_vorbisq5.flac` sortait à
+`align 0,105 · wma · reste 111` ; à 16 blocs, le même fichier sortait à `align 1,000 · vorbis ·
+reste 64`. Les colonnes par jeu de la ligne complète donnent la réponse :
+
+```
+24.50;0.344;0.105;111;2;1.22;wma;1956;19;4.6;20.06;24.50;src09_vorbisq5.flac
+                                                  ^^^^^ ^^^^^
+                                                 vorbis  wma   ← en SCORE
+```
+
+`vorbis` marque 20,06 et `wma` 24,50 **en score**. Le harnais retenait le jeu par
+`max_by(score)` ; la décision le retient par `max_by(alignement)` (`framing::mieux_aligne`). Le
+harnais publiait donc l'alignement de `wma` pendant que le jeu qui voyait réellement le cadrage
+était juste à côté, à 1,000.
+
+Or le score ne classe RIEN, et c'est mesuré depuis le matin même : il va de 26 à 953 chez les vrais
+transcodages et monte à 41 chez les authentiques. Le harnais n'avait pas suivi la mesure qui l'a
+établi. Corrigé — sélection par alignement, colonnes par jeu en alignement —, le tableau est
+monotone et c'est celui ci-dessus.
+
+C'est le quatrième **label qui ne couvre pas sa portée** de la journée, après
+`finds_bundled_ffmpeg_in_dev` (annonçait valider un wiring, ne vérifiait qu'un fichier),
+`normalize_path` (annonçait normaliser un chemin, décodait une `Location`) et la première gate du
+percent-décodage (figeait le corps de deux fonctions, pas le câblage qui portait le bug). Les trois
+premiers CACHAIENT un défaut ; celui-ci a failli en INVENTER un et faire écarter une méthode qui
+marche.
+
+#### Un défaut d'équivalence trouvé par la revue adverse
+
+`cadrage_etabli` a été réécrite par-dessus `mieux_aligne` avec une équivalence revendiquée « à
+comportement identique ». Elle est fausse sur un cas : `total_cmp` classe `NaN` au-dessus de tout,
+donc `[NaN, 0,9]` rend `Some(0,9)` sous l'ancienne forme (où `NaN >= 0,5` est faux, donc filtré) et
+`None` sous la nouvelle (où `NaN` gagne le maximum, puis tombe au seuil). Une seule trace non finie
+masquait un jeu parfaitement aligné du même fichier.
+
+`score_fichier` ne peut pas produire un tel alignement — c'est `alignes / retenus` avec
+`retenus >= 1` — mais `bancs::mesure_cadrage` assemble des traces à la main, et c'est précisément
+son bénéficiaire. `mieux_aligne` écarte désormais les valeurs non finies.
+
 ## Un MP3 peut se prétendre 320 en étant 192 — et rien ne l'attrape (2026-09-15)
 
 Question posée par Antoine, mesurée plutôt que raisonnée.
