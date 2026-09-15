@@ -751,9 +751,23 @@ mod corpus {
             let traces = balayer(&signal, &jeux, bloc_len, blocs, None);
             let secondes = t0.elapsed().as_secs_f64();
 
+            // Le jeu retenu se choisit par ALIGNEMENT, comme [`mieux_aligne`] — et donc comme
+            // la décision que ce harnais est censé préfigurer.
+            //
+            // ⚠️ Il choisissait par SCORE jusqu'au 2026-09-15, et cet écart a produit une
+            // conclusion FAUSSE : le balayage de `blocs_max` donnait 10 non, 12 oui, 16 oui,
+            // 20 NON, 30 oui, ce qui se lisait comme une méthode instable. La non-monotonie
+            // tenait à un seul fichier — `src09_vorbisq5` à 20 blocs, où le jeu `wma` marque
+            // 24,50 contre 20,06 pour `vorbis`, donc le harnais retenait `wma` et publiait SON
+            // alignement (0,105) pendant que `vorbis` était à 1,000. Le score ne classe rien : il
+            // va de 26 à 953 chez les vrais et monte à 41 chez les authentiques.
+            //
+            // `mieux_aligne` n'est pas appelée ici : elle filtre sur `BLOCS_ALIGNEMENT_MIN`, et un
+            // harnais doit voir AUSSI ce qui est sous le seuil d'existence — c'est son travail de
+            // montrer où la mesure cesse d'exister.
             let Some(best) = traces
                 .iter()
-                .max_by(|a, b| a.score.total_cmp(&b.score))
+                .max_by(|a, b| a.alignement.total_cmp(&b.alignement))
                 .copied()
             else {
                 println!(
@@ -789,13 +803,16 @@ mod corpus {
                 best.index,
                 best.blocs_retenus
             );
+            // Une colonne par jeu, en ALIGNEMENT : c'est la statistique qui décide. Le score du
+            // jeu retenu reste en première colonne, pour le journal et pour l'historique des
+            // mesures antérieures au 2026-09-15 — mais il ne classe rien.
             for j in jeux.iter() {
-                let s = traces
+                let a = traces
                     .iter()
                     .find(|t| t.jeu.n == j.n && t.jeu.fenetre == j.fenetre)
-                    .map(|t| t.score)
+                    .map(|t| t.alignement)
                     .unwrap_or(0.0);
-                print!(";{s:.2}");
+                print!(";{a:.3}");
             }
             println!(";{name}");
         }
