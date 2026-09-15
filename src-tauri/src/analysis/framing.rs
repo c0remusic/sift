@@ -132,7 +132,37 @@ pub struct Trace {
     pub concordance: f64,
     /// Position du cadrage la plus fréquente, modulo le saut — informative seulement.
     pub index: usize,
+    /// Fraction des blocs retenus dont le cadrage tombe sur la GRILLE COURTE du codec.
+    ///
+    /// MESURÉ le 2026-09-15, et c'est la statistique qui décide, pas le score. Un encodeur MDCT
+    /// pose ses trames sur les multiples de son bloc COURT — 128 coefficients pour Vorbis comme
+    /// pour l'AAC — et le flux démarre sur un demi-bloc, d'où un reste constant de 64. Sur le
+    /// corpus étiqueté, `index % 64 == 0` vaut pour 20/20 des vrais transcodages (10 `wma192`,
+    /// 10 `vorbisq5`) et 0/10 des authentiques.
+    ///
+    /// Pourquoi une FRACTION et pas le seul index gagnant : Vorbis alterne blocs longs et courts,
+    /// donc son cadrage absolu saute de 128 en cours de fichier. Les angles tournent, la somme
+    /// circulaire s'annule — `vorbisq5` mesure 0,05 à 0,78 de concordance — mais chaque bloc reste
+    /// sur la sous-grille. La somme circulaire est le mauvais agrégateur pour ce codec ; compter
+    /// les blocs alignés est le bon.
+    ///
+    /// Au hasard, cette fraction vaut `1/64 ≈ 0,016`.
+    pub alignement: f64,
+    /// Reste MODAL de l'index modulo 128 sur les blocs retenus, et son compte.
+    ///
+    /// Distingue les deux signatures mesurées : `wma192` rend 0, `vorbisq5` rend 64. Le compte
+    /// permet de dire à l'appelant sur combien de blocs le mode repose.
+    pub reste_modal: usize,
+    pub reste_modal_compte: usize,
 }
+
+/// La grille courte d'un encodeur MDCT, en échantillons : un demi-bloc court.
+///
+/// 64 pour les trois codecs visés — Vorbis et AAC ont un bloc court de 128 coefficients, et les
+/// index WMA mesurés tombent aussi sur cette grille. Ce n'est PAS une constante de norme : c'est
+/// la valeur qui sépare 20/20 des vrais de 10/10 des authentiques sur le corpus étiqueté, et elle
+/// se re-mesure si un autre encodeur entre dans le périmètre.
+pub const GRILLE_COURTE: usize = 64;
 
 /// Le SAUT entre deux trames, pour `n` coefficients.
 ///
@@ -294,6 +324,9 @@ pub fn score_fichier(
     let mut index_gagnant = 0usize;
     let mut meilleur_r = 0.0f64;
     let mut somme_r = 0.0f64;
+    let mut alignes = 0usize;
+    // Le reste modulo 128 de chaque bloc retenu : 128 cases, comptées sans allocation.
+    let mut restes = [0usize; 128];
 
     for b in 0..n_blocs {
         let debut = b * pas * bloc_len;
@@ -317,6 +350,10 @@ pub fn score_fichier(
         y += r * theta.sin();
         somme_r += r;
         retenus += 1;
+        if absolu % GRILLE_COURTE == 0 {
+            alignes += 1;
+        }
+        restes[absolu % 128] += 1;
         if r > meilleur_r {
             meilleur_r = r;
             index_gagnant = absolu;
@@ -327,15 +364,68 @@ pub fn score_fichier(
     // mesure. C'est la même règle que partout ailleurs dans le détecteur : une absence ne se
     // déguise jamais en valeur basse.
     let resultante = (x * x + y * y).sqrt();
+    let (reste_modal, reste_modal_compte) = restes
+        .iter()
+        .enumerate()
+        .max_by_key(|&(_, c)| *c)
+        .map(|(i, &c)| (i, c))
+        .unwrap_or((0, 0));
     (retenus >= BLOCS_CONCORDANTS_MIN.min(n_blocs)).then(|| Trace {
         jeu,
         score: resultante,
         blocs_retenus: retenus,
+        alignement: alignes as f64 / retenus as f64,
+        reste_modal,
+        reste_modal_compte,
         // `somme_r` est une somme de `r` tous ≥ REJET_Z > 0, et `retenus > 0` ici : le
         // dénominateur ne peut pas être nul sur ce chemin.
         concordance: resultante / somme_r,
         index: index_gagnant,
     })
+}
+
+/// Fraction de blocs alignés au-delà de laquelle un cadrage d'encodeur est ÉTABLI.
+///
+/// MESURÉ le 2026-09-15 sur le corpus étiqueté, 30 blocs d'une demi-seconde, jeux `vorbis` et
+/// `wma` :
+///
+/// | famille | alignement min .. méd .. max | reste modal |
+/// |---|---|---|
+/// | `wma192` (10) | 0,966 .. 1,000 .. 1,000 | 0 pour 10/10 |
+/// | `vorbisq5` (10) | 0,933 .. 1,000 .. 1,000 | 64 pour 10/10 |
+/// | `genuine` (10) | 0,000 .. 0,000 .. 0,050 | dix valeurs différentes |
+///
+/// Au hasard la fraction vaut `1/64 ≈ 0,016`. Le seuil est posé à mi-chemin sur l'échelle, très
+/// loin des deux groupes : les vrais sont 19 fois au-dessus des authentiques, et aucun seuil de
+/// SCORE ne sépare aussi bien — `vorbisq5` descend à 26 quand un authentique monte à 41.
+pub const ALIGNEMENT_MIN: f64 = 0.5;
+
+/// Blocs retenus en deçà desquels l'alignement n'est pas une mesure.
+///
+/// Une fraction sur deux blocs vaut 0, 0,5 ou 1 : elle franchirait [`ALIGNEMENT_MIN`] sur un seul
+/// coup de chance à `1/64`. Huit blocs mettent le hasard d'un franchissement à `P(X ≥ 4)` pour
+/// `X ~ B(8, 1/64)`, soit environ `4·10⁻⁶`.
+pub const BLOCS_ALIGNEMENT_MIN: usize = 8;
+
+/// Le cadrage d'un encodeur MDCT, s'il est établi.
+///
+/// Rend le jeu dont l'alignement est le plus fort, à condition qu'il dépasse [`ALIGNEMENT_MIN`]
+/// sur au moins [`BLOCS_ALIGNEMENT_MIN`] blocs. **Le score n'entre pas dans la décision** — il
+/// varie de 26 à 953 chez les vrais et monte à 41 chez les authentiques, donc il ne sépare pas ;
+/// il reste dans la trace pour le journal.
+///
+/// Le RESTE MODAL n'entre pas non plus dans la décision, et c'est délibéré : `wma192` rend 0 et
+/// `vorbisq5` rend 64, mais ces deux valeurs sortent d'UN encodeur chacune (ffmpeg `wmav2`,
+/// ffmpeg `libvorbis`). Exiger un reste précis ferait dépendre le verdict d'une phase de départ
+/// qui n'est mesurée que sur ces deux-là. Tomber SUR la grille est la propriété générale ;
+/// l'endroit exact ne l'est pas. Le reste est rendu à l'appelant pour le journal, où il nomme le
+/// codec probable sans engager la décision.
+pub fn cadrage_etabli(traces: &[Trace]) -> Option<Trace> {
+    traces
+        .iter()
+        .filter(|t| t.blocs_retenus >= BLOCS_ALIGNEMENT_MIN && t.alignement >= ALIGNEMENT_MIN)
+        .max_by(|a, b| a.alignement.total_cmp(&b.alignement))
+        .copied()
 }
 
 /// Le meilleur jeu pour un signal déjà réduit en mono, et tous les scores pour inspection.
@@ -431,6 +521,50 @@ mod tests {
     }
 
     /// La réduction en mono moyenne bien les canaux, et laisse un mono intact.
+    fn trace(alignement: f64, blocs_retenus: usize, score: f64) -> Trace {
+        Trace {
+            jeu: JEUX[0],
+            score,
+            blocs_retenus,
+            concordance: alignement,
+            alignement,
+            reste_modal: 0,
+            reste_modal_compte: blocs_retenus,
+            index: 0,
+        }
+    }
+
+    /// Les trois refus et l'acceptation de [`cadrage_etabli`], aux bornes mesurées.
+    ///
+    /// Les valeurs ne sont pas inventées : 0,933 est le plus BAS des vingt vrais transcodages du
+    /// corpus et 0,136 le plus HAUT des 83 authentiques mesurés. Un test qui passerait sur
+    /// 0,9 contre 0,1 ne dirait rien de la marge réelle.
+    #[test]
+    fn le_cadrage_ne_setablit_quau_dessus_du_seuil_et_sur_assez_de_blocs() {
+        let vrai = trace(0.933, 30, 25.97);
+        let faux = trace(0.136, 22, 66.79);
+        assert!(
+            cadrage_etabli(&[vrai]).is_some(),
+            "le plus bas vrai transcodage mesuré doit passer"
+        );
+        assert!(
+            cadrage_etabli(&[faux]).is_none(),
+            "le plus haut authentique mesuré ne doit pas passer, malgré un score bien plus élevé"
+        );
+        assert!(
+            cadrage_etabli(&[trace(1.0, BLOCS_ALIGNEMENT_MIN - 1, 900.0)]).is_none(),
+            "un alignement parfait sur trop peu de blocs n'est pas une mesure"
+        );
+        // Entre deux jeux qui passent, c'est l'ALIGNEMENT qui départage, pas le score : le score
+        // varie de 26 à 953 chez les vrais, il ne classe rien.
+        let gagnant = cadrage_etabli(&[trace(0.6, 30, 900.0), trace(0.95, 30, 30.0)])
+            .expect("deux jeux au-dessus du seuil : un gagnant");
+        assert_eq!(
+            gagnant.alignement, 0.95,
+            "le mieux aligné gagne, même avec un score 30 fois plus faible"
+        );
+    }
+
     #[test]
     fn le_mono_moyenne_les_canaux() {
         assert_eq!(mono(&[1.0, 3.0, -2.0, 0.0], 2), vec![2.0, -1.0]);
@@ -506,7 +640,7 @@ mod corpus {
         // comme la racine du logarithme de `s`, et `s` vaut ici 576, 1024 ou 2048 selon le jeu.
         // Le grand `N` serait donc favorisé partout, et on lirait ce biais comme une détection.
         // Le rapport aux autres jeux du MÊME fichier annule ce biais.
-        print!("meilleur;concorde;contraste;vise;index;blocs;secondes");
+        print!("meilleur;concorde;aligne;reste;restec;contraste;vise;index;blocs;secondes");
         for j in jeux.iter() {
             print!(";{}", j.vise);
         }
@@ -539,7 +673,7 @@ mod corpus {
                 Ok(v) => v,
                 Err(err) => {
                     println!(
-                        "ERREUR;-;-;-;-;-;-{};{name} ({err})",
+                        "ERREUR;-;-;-;-;-;-;-;-;-{};{name} ({err})",
                         ";-".repeat(jeux.len())
                     );
                     continue;
@@ -556,7 +690,7 @@ mod corpus {
                 .copied()
             else {
                 println!(
-                    "NON-MESURE;-;-;-;-;-;{secondes:.1}{};{name}",
+                    "NON-MESURE;-;-;-;-;-;-;-;-;{secondes:.1}{};{name}",
                     ";-".repeat(jeux.len())
                 );
                 continue;
@@ -578,8 +712,15 @@ mod corpus {
                 f64::INFINITY
             };
             print!(
-                "{:.2};{:.3};{contraste:.2};{};{};{};{secondes:.1}",
-                best.score, best.concordance, best.jeu.vise, best.index, best.blocs_retenus
+                "{:.2};{:.3};{:.3};{};{};{contraste:.2};{};{};{};{secondes:.1}",
+                best.score,
+                best.concordance,
+                best.alignement,
+                best.reste_modal,
+                best.reste_modal_compte,
+                best.jeu.vise,
+                best.index,
+                best.blocs_retenus
             );
             for j in jeux.iter() {
                 let s = traces

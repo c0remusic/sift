@@ -1295,6 +1295,39 @@ Le contrôle négatif est de 10 authentiques du corpus (même provenance ACID) p
 la bibliothèque réelle non alignés : aucun faux positif observé, sur un échantillon qui ne
 permet pas d'annoncer un taux.
 
+### Correction : l'index gagnant mentait, la FRACTION de blocs alignés ne ment pas (2026-09-15)
+
+La section ci-dessus concluait que trois morceaux de la bibliothèque « portent la signature
+Vorbis » parce que leur index gagnant tombait sur la grille de 64. **C'est faux, et la mesure
+suivante l'infirme.**
+
+`Trace::index` est l'index du bloc au plus fort `z`, un seul bloc sur vingt ou trente. Qu'il
+tombe sur une grille de 64 arrive une fois sur 64 par fichier — et sur 73 fichiers, quatre tels
+alignements sont exactement ce que le hasard produit. L'instrumentation bloc par bloc
+(`Trace::alignement`, fraction des blocs retenus dont le cadrage tombe sur la grille) tranche
+sans ambiguïté :
+
+| Lot | n | alignement min .. méd .. max |
+|---|---|---|
+| `wma192` | 10 | 0,966 .. 1,000 .. 1,000 |
+| `vorbisq5` | 10 | 0,933 .. 1,000 .. 1,000 |
+| `genuine` (corpus) | 10 | 0,000 .. 0,000 .. 0,050 |
+| bibliothèque réelle (les 73 étalonnés) | 73 | 0,000 .. 0,000 .. **0,136** |
+
+Les trois morceaux accusés à tort : `Dav — Set me up` 0,136 (3 blocs alignés sur 22),
+`Chris Lum — Oh Yeah` 0,103 (2 sur 29), `Julian & Fernando — She Fancies` plus bas encore. Le
+hasard vaut 1/64 ≈ 0,016 ; trois blocs sur vingt-deux n'en sont pas loin. **Aucun transcodage
+Vorbis ou WMA dans les 73.**
+
+Ce que cela apprend, au-delà du résultat : une statistique calculée sur UN bloc extrême ne se
+transporte pas, même quand elle tombe sur la bonne grille. Il fallait compter, pas regarder le
+maximum.
+
+**Le seuil praticable, lui, est très large.** À `ALIGNEMENT_MIN = 0,5` : 20/20 des vrais
+transcodages au-dessus, 0/83 des authentiques (10 du corpus + 73 de la bibliothèque). La marge
+est de 0,43 au-dessus du plus bas vrai et de 0,36 au-dessous du plus haut authentique — la
+mesure ne tient pas à la troisième décimale.
+
 ## Un MP3 peut se prétendre 320 en étant 192 — et rien ne l'attrape (2026-09-15)
 
 Question posée par Antoine, mesurée plutôt que raisonnée.
