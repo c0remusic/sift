@@ -253,7 +253,7 @@ export function stepBibSelection(key: string, shift: boolean): boolean {
   return true;
 }
 
-export function clearBibSelection(): void {
+function clearBibSelection(): void {
   bibSelection.clear();
   bibAnchor = null;
 }

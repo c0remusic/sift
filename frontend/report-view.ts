@@ -360,7 +360,7 @@ function drawSpectrogram(canvas: HTMLCanvasElement, r: AnalysisReport) {
  *  « -3.5 dB (dans la plage des masters …) »). Remplace `rowWide` (synthèse du 2026-09-07) : la
  *  rangée pleine largeur cassait la grille et répétait sa phrase — la référence tient désormais
  *  sur la ligne, dans la grammaire commune. */
-export function rowRef(label: string, value: string, ref: string): string {
+function rowRef(label: string, value: string, ref: string): string {
   return `<div class="sift-row"><span class="sift-row-label">${label}</span><span class="sift-row-value">${value} <span class="sift-row-ref">${ref}</span></span></div>`;
 }
 

@@ -21,7 +21,7 @@ const LOSSY_EXT = new Set(["mp3", "aac", "m4a", "ogg", "opus"]);
 
 /** Rail d'une EXTENSION nue (« aiff », « MP3 ») — la forme que porte `LibraryTrack.format`, écrite
  *  par Sift au rangement (`library.rs`, `target_format` → `Target::ext()`), donc sans point. */
-export function railFromExt(ext: string): Rail {
+function railFromExt(ext: string): Rail {
   const e = ext.toLowerCase();
   if (LOSSLESS_EXT.has(e)) return "lossless";
   if (LOSSY_EXT.has(e)) return "lossy";
