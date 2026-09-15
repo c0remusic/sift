@@ -1103,6 +1103,34 @@ mod tests {
         );
     }
 
+    /// **Un `%` dans le chemin de DESTINATION : la clé d'index reste littérale.**
+    ///
+    /// Le pendant de `un_nom_avec_pourcent_ne_se_reajoute_pas_a_chaque_export` pour l'autre site
+    /// qui reçoit un chemin de disque. `patch_location` réinsère `to_path` dans `path_index`
+    /// après le déplacement ; si cette insertion passait par `normalize_path`, la clé serait
+    /// percent-DÉCODÉE (`%ae` devenant l'octet 0xAE) et la piste deviendrait introuvable au
+    /// prochain `track_id_for_path`, alors même que le XML écrit, lui, est correct.
+    ///
+    /// La revue adverse du 2026-09-15 a signalé ce site comme non couvert : la gate d'alors ne
+    /// visait que `merge_filed_tracks`.
+    ///
+    /// MUTATION : rendre l'insertion de `patch_location` à `normalize_path` — `track_id_for_path`
+    /// ne retrouve plus la piste et l'assertion tombe.
+    #[test]
+    fn patch_location_garde_une_cle_litterale_pour_un_chemin_avec_pourcent() {
+        let mut parsed = parse(&fixture()).unwrap();
+        let destination = "C:/Music/House/100%aerien/strings.aiff";
+        assert_eq!(
+            patch_location(&mut parsed, "C:/Music/House/deep/strings.aiff", destination),
+            PatchLocationResult::Patched
+        );
+        assert_eq!(
+            parsed.track_id_for_path(Path::new(destination)),
+            Some(2),
+            "la clé d'index doit rester le chemin littéral, sans percent-décodage"
+        );
+    }
+
     #[test]
     fn patch_location_updates_only_that_tracks_location_byte_identical_elsewhere() {
         let mut parsed = parse(&fixture()).unwrap();
