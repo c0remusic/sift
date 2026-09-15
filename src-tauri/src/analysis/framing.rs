@@ -422,7 +422,12 @@ pub const BLOCS_ALIGNEMENT_MIN: usize = 8;
 pub fn mieux_aligne(traces: &[Trace]) -> Option<Trace> {
     traces
         .iter()
-        .filter(|t| t.blocs_retenus >= BLOCS_ALIGNEMENT_MIN)
+        // `is_finite` et pas seulement le compte de blocs : `total_cmp` classe `NaN` AU-DESSUS de
+        // tout, donc une trace d'alignement non fini gagnerait le maximum et ferait rendre `None`
+        // à [`cadrage_etabli`] — masquant un jeu parfaitement aligné juste à côté. Une valeur non
+        // finie n'est pas un alignement faible, c'est une absence de mesure, et ce module ne
+        // déguise jamais l'une en l'autre.
+        .filter(|t| t.blocs_retenus >= BLOCS_ALIGNEMENT_MIN && t.alignement.is_finite())
         .max_by(|a, b| a.alignement.total_cmp(&b.alignement))
         .copied()
 }
@@ -437,6 +442,13 @@ pub fn mieux_aligne(traces: &[Trace]) -> Option<Trace> {
 /// Réécrite le 2026-09-15 par-dessus [`mieux_aligne`], à comportement identique : le maximum par
 /// alignement de l'ensemble filtré par le nombre de blocs est ≥ tout autre élément de ce même
 /// ensemble, donc appliquer le seuil avant ou après le maximum ne peut pas changer le résultat.
+///
+/// ⚠️ Cette équivalence a été revendiquée SANS le cas `NaN`, et elle y était fausse : `total_cmp`
+/// classe `NaN` au-dessus de tout, donc `[NaN, 0,9]` rendait `Some(0,9)` sous l'ancienne forme
+/// (où `NaN >= ALIGNEMENT_MIN` est faux, donc filtré) et `None` sous la nouvelle (où `NaN` gagne
+/// le maximum, puis tombe au seuil). Mesuré. [`mieux_aligne`] écarte désormais les valeurs non
+/// finies, ce qui rétablit l'équivalence sur TOUTES les entrées, pas seulement sur celles que
+/// [`score_fichier`] sait produire.
 ///
 /// Le RESTE MODAL n'entre pas non plus dans la décision, et c'est délibéré : `wma192` rend 0 et
 /// `vorbisq5` rend 64, mais ces deux valeurs sortent d'UN encodeur chacune (ffmpeg `wmav2`,
@@ -552,6 +564,40 @@ mod tests {
             reste_modal_compte: blocs_retenus,
             index: 0,
         }
+    }
+
+    /// **Un alignement non fini est une absence, pas un maximum.**
+    ///
+    /// `total_cmp` classe `NaN` au-dessus de tout — c'est son contrat, et c'est ce qui rend
+    /// `max_by` total sur les flottants. La conséquence est piégeuse ici : sans le filtre
+    /// `is_finite` de [`mieux_aligne`], une seule trace non finie masquerait un jeu parfaitement
+    /// aligné du même fichier, et `cadrage_etabli` rendrait `None` là où l'ancienne forme rendait
+    /// le bon jeu.
+    ///
+    /// `score_fichier` ne peut pas produire un tel alignement — c'est `alignes / retenus` avec
+    /// `retenus >= 1`. Ce test passe donc par le constructeur de traces, comme le fera n'importe
+    /// quel appelant futur qui assemble des traces autrement.
+    ///
+    /// MUTATION : retirer `&& t.alignement.is_finite()` de [`mieux_aligne`] — la première
+    /// assertion tombe, `None` au lieu du jeu à 0,95.
+    #[test]
+    fn un_alignement_non_fini_ne_masque_pas_un_jeu_bien_aligne() {
+        let bon = trace(0.95, 30, 40.0);
+        let mut casse = trace(0.0, 30, 1.0);
+        casse.alignement = f64::NAN;
+
+        let gagnant = cadrage_etabli(&[casse, bon])
+            .expect("le jeu à 0,95 doit gagner malgré la trace non finie");
+        assert_eq!(gagnant.alignement, 0.95);
+
+        assert!(
+            cadrage_etabli(&[casse]).is_none(),
+            "une trace non finie seule ne rend aucun cadrage"
+        );
+        assert!(
+            mieux_aligne(&[casse]).is_none(),
+            "elle ne rend pas non plus un maximum : ce n'est pas une mesure"
+        );
     }
 
     /// Les trois refus et l'acceptation de [`cadrage_etabli`], aux bornes mesurées.
