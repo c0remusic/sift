@@ -1223,3 +1223,138 @@ Trois leviers, dans l'ordre de rendement : ne garder que les jeux utiles (Vorbis
 à couvrir l'angle mort, les autres familles étant déjà tenues), réduire les blocs à deux, et ne
 lancer la mesure que sur les fichiers que les autres signaux n'ont pas tranchés. Rien de tout
 cela n'est mesuré à ce jour.
+
+### L'étalonnage sur la bibliothèque réelle : le score ne décide pas, la GRILLE décide (2026-09-15)
+
+Le seuil de 12 posé sur le score s'est révélé sans fondement, et la façon dont il est tombé
+vaut d'être écrite.
+
+**Le score n'est pas normalisé.** `Trace::score` est le module d'une somme circulaire non
+divisée : il grandit avec le nombre de blocs retenus. Un seuil calibré à 2 blocs ne veut donc
+plus rien dire à 6, et encore moins à 30. Mesuré sur 24 témoins de la bibliothèque réelle :
+passer de 2 à 6 blocs en a fait monter 6 au-dessus de 12 sans qu'aucun ne garde son index.
+D'où l'ajout de `Trace::concordance` = `|Σ r·e^{iθ}| / Σ r`, dans `[0, 1]`, qui ne dépend pas
+du compte.
+
+**Mais la concordance seule ne sépare pas non plus.** À 30 blocs, sur les 73 fichiers
+étalonnés : suspects médiane 0,312, témoins médiane 0,203, hasard attendu `1/√n` = 0,194. Les
+suspects restent au-dessus du hasard mais plafonnent à 0,470, et les authentiques du corpus
+montent à 0,512 — au-dessus du meilleur suspect.
+
+**L'ancre manquait.** Aucune des mesures ci-dessus ne dit où tombe un VRAI transcodage.
+30 fichiers du corpus étiqueté passés au même balayage (30 blocs, blocs d'une demi-seconde,
+jeux `vorbis` et `wma`) :
+
+| Famille | n | concordance min .. méd .. max | score min .. méd .. max | jeu retenu |
+|---|---|---|---|---|
+| `wma192` | 10 | 0,998 .. 1,000 .. 1,000 | 844 .. 936 .. 953 | wma 10/10 |
+| `vorbisq5` | 10 | 0,050 .. 0,194 .. 0,781 | 26 .. 112 .. 419 | vorbis 10/10 |
+| `genuine` | 10 | 0,152 .. 0,297 .. 0,512 | 14 .. 29 .. 41 | vorbis 7, wma 3 |
+| suspects (biblio) | 73 | — | 6 .. 27 .. **67** | — |
+
+Un vrai WMA marque 936 ; le plus haut « suspect » de la bibliothèque marque 67. Le seuil de 12
+ne séparait rien : il découpait le bruit.
+
+**Ce qui décide vraiment : l'index tombe sur la grille du codec.**
+
+| Famille | `index % 64 == 0` |
+|---|---|
+| `wma192` | **10/10** (index 0 partout) |
+| `vorbisq5` | **10/10**, et tous à `index % 128 == 64` |
+| `genuine` | **0/10** (restes 2, 3, 6, 8, 24, 28, 33, 48, 49, 63) |
+
+Un encodeur MDCT pose ses trames sur les multiples de sa taille de bloc COURT — 128
+coefficients pour Vorbis comme pour l'AAC — et le flux démarre sur un demi-bloc court, d'où le
+reste constant de 64. Un fichier authentique n'a aucune raison d'y tomber : une chance sur 64.
+
+Appliqué aux 73 fichiers de la bibliothèque : **8 alignés**, contre 1,1 attendus au hasard
+(Poisson, λ = 1,14, P(X ≥ 8) ≈ 1·10⁻⁵). Dédupliqués, ce sont **quatre morceaux** — les copies
+`.aif`/`.aiff`/`.wav` d'un même titre donnent un score et un index IDENTIQUES, ce qui est en
+soi un contrôle de reproductibilité que la méthode passe :
+
+| Morceau | conc | score | jeu | index | `%128` | lecture |
+|---|---|---|---|---|---|---|
+| Chris Lum — Oh Yeah | 0,420 | 58,5 | wma | 1344 | **64** | signature Vorbis |
+| Julian & Fernando — She Fancies | 0,290 | 47,2 | vorbis | 832 | **64** | signature Vorbis |
+| Dav — Set me up | 0,293 | 23,1 | vorbis | 192 | **64** | signature Vorbis |
+| SWAG — Take a chance | 0,128 | 12,7 | wma | 384 | 0 | score 74× sous un vrai WMA — coïncidence |
+
+Les trois premiers tombent dans la plage de score et de concordance des `vorbisq5` mesurés
+(26–419 ; 0,05–0,78) ET sur leur reste caractéristique. Les 69 autres fichiers ne sont sur
+aucune grille : artefacts, quel que soit leur score.
+
+**Conséquence pour le branchement au verdict.** Le critère n'est pas un seuil de score — c'est
+un couple (grille, force) : `index % 128` égal au reste du codec visé, puis un plancher de
+score propre à ce codec, car WMA se détecte à 1000× le bruit de fond et Vorbis à 3–10× lui
+seulement.
+
+**Ce que la mesure NE couvre pas.** Dix fichiers par codec, un seul encodeur à chaque bout
+(ffmpeg `libvorbis`, ffmpeg `wmav2`). Un autre encodeur Vorbis — aoTuV, une libvorbis d'un
+autre âge — pourrait poser une autre phase de départ ; le reste de 64 est mesuré, pas démontré.
+Le contrôle négatif est de 10 authentiques du corpus (même provenance ACID) plus 22 témoins de
+la bibliothèque réelle non alignés : aucun faux positif observé, sur un échantillon qui ne
+permet pas d'annoncer un taux.
+
+## Un MP3 peut se prétendre 320 en étant 192 — et rien ne l'attrape (2026-09-15)
+
+Question posée par Antoine, mesurée plutôt que raisonnée.
+
+### Le protocole
+
+30 MP3 fabriqués avec le sidecar ffmpeg depuis le corpus étiqueté, trois familles de dix :
+
+| Famille | Source | Encodage | En-tête |
+|---|---|---|---|
+| menteur | `fake/src*_lame192.flac` (contenu déjà passé par LAME 192) | `libmp3lame -b:a 320k` | **320** |
+| honnête 320 | `genuine/src*_genuine.flac` | `libmp3lame -b:a 320k` | 320 |
+| honnête 192 | `fake/src*_lame192.flac` | `libmp3lame -b:a 192k` | 192 |
+
+Puis `corpus_scan` sur le dossier, donc le vrai `analyze()` et le vrai `verdict()`.
+Le débit déclaré lu par `analyze()` vaut bien 320 pour les dix menteurs.
+
+### Le résultat : 10/10 menteurs rendus `Ok`
+
+| Famille | coupure (Hz) | `hf_flat_db` | verdicts |
+|---|---|---|---|
+| menteur 320 (vrai 192) | 19 035 .. 20 230 | −27,0 .. −22,6 | **10 Ok** |
+| honnête 320 | 20 510 .. 20 704 | −9,0 .. −2,6 | 10 Ok |
+| honnête 192 | 19 121 .. 19 391 | −27,3 .. −22,7 | 10 Ok |
+
+Cause immédiate : le bras `Rail::Lossy` de `verdict()` ne juge qu'une chose, la coupure
+contre `min_cutoff_hz_for_bitrate(320) = 19000`. Les dix menteurs coupent au-dessus de ce
+plancher, donc aucun n'est accusé.
+
+### Deux mesures déjà calculées les séparent
+
+**La coupure sépare, mais le plancher est calibré 1 500 Hz trop bas.** Menteurs ≤ 20 230,
+honnêtes 320 ≥ 20 510. Le même fichier sait pourtant déjà que LAME 320 pose son passe-bas à
+20,2–20,7 kHz : c'est la mesure qui a fait monter `LOSSLESS_OK_HZ` à 20 750 le 2026-09-11.
+`min_cutoff_hz_for_bitrate` est resté à 19 000. Deux constantes du même fichier, calibrées
+sur le même corpus, en désaccord. Un plancher à 20 000 attraperait 8 menteurs sur 10 sans
+toucher aucun des 20 `lame320` du corpus (minimum mesuré 20 177) — mais la marge tombe à
+177 Hz, et deux menteurs (20 198, 20 230) entrent dans la fenêtre des vrais.
+
+**La platitude de l'aigu sépare mieux, et son plancher existe déjà.** 13 dB d'écart, zéro
+chevauchement, et `HF_FIXED_FLOOR_DB = −12` tombe pile entre les deux groupes. Elle est
+calculée à chaque analyse et remontée dans le rapport ; le rail lossy ne la lit jamais.
+
+**Mais elle ne se branche pas telle quelle.** Les 192 *honnêtes* portent exactement la même
+platitude que les menteurs (−27,3 .. −22,7) — même contenu, forcément. Un
+`below_master_range` appliqué au rail lossy les condamnerait tous. Ce qu'il faut est un
+plancher de platitude **par débit déclaré**, jumeau de `min_cutoff_hz_for_bitrate`, pas un
+seuil absolu.
+
+### Ce que le banc de quantification n'apporte pas ici
+
+Le ré-encodage en 320 repose sa propre grille MDCT par-dessus celle du 192 : les
+coefficients finaux sont quantifiés par le 320. Le banc dirait « c'est du MP3 », ce que
+l'extension dit déjà. Ce qui trahit le menteur n'est pas une grille, c'est du contenu
+absent — et c'est la coupure et la platitude qui le mesurent.
+
+### Ce que la mesure NE couvre pas
+
+Un seul chemin : LAME 192 → LAME 320, un seul encodeur aux deux bouts, 10 sources. Non
+testé : les transcodages depuis AAC ou Vorbis, les sauts plus longs (128 → 320), les débits
+intermédiaires (192 → 256), et Media Foundation, dont les MP3 320 ne posent aucun passe-bas
+(22 050 sur le corpus) — donc dont la platitude de l'aigu n'a pas été mesurée ici et
+pourrait ne pas obéir au même plancher.

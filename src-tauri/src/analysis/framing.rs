@@ -89,6 +89,17 @@ pub const BLOC: usize = 44_100;
 /// à voir si la méthode sépare, et le harnais peut en demander plus.
 pub const BLOCS: usize = 8;
 
+/// Blocs CONCORDANTS exigés pour qu'un score existe.
+///
+/// MESURÉ le 2026-09-15, et c'est la correction la plus importante du réglage. Avec deux blocs
+/// analysés, la moitié des scores élevés d'une bibliothèque réelle ne reposaient que sur UN bloc
+/// retenu — or avec un seul bloc la somme circulaire dégénère en score isolé, et tout ce qui
+/// fait la valeur de la méthode disparaît : la concordance des index entre blocs. Un pic fortuit
+/// passait alors pour un cadrage. Sur 134 lossless réels, exiger un seul bloc laissait 17
+/// fichiers au-dessus de 12 ; l'exigence de concordance est donc une condition d'existence de la
+/// mesure, pas un réglage de sensibilité.
+pub const BLOCS_CONCORDANTS_MIN: usize = 3;
+
 /// Plancher du logarithme, en amplitude.
 ///
 /// NON SPÉCIFIÉ PAR LE PAPIER, et c'est le réglage le plus délicat : un coefficient exactement
@@ -108,6 +119,17 @@ pub struct Trace {
     pub score: f64,
     /// Blocs retenus sur les blocs analysés.
     pub blocs_retenus: usize,
+    /// CONCORDANCE des angles, dans `[0, 1]` : `|Σ r·e^{iθ}| / Σ r`.
+    ///
+    /// MESURÉ le 2026-09-15, et c'est ce qui sépare réellement. [`Trace::score`] est le module
+    /// d'une somme NON normalisée : il grandit avec le nombre de blocs retenus, donc un seuil
+    /// posé à 2 blocs ne veut plus rien dire à 6 — sur 24 témoins réels, passer de 2 à 6 blocs a
+    /// fait monter 6 d'entre eux au-dessus de 12 sans qu'aucun ne garde son index. La
+    /// concordance, elle, ne dépend pas du compte : elle vaut 1 quand tous les blocs désignent le
+    /// même cadrage et tombe vers `1/√retenus` quand ils pointent au hasard. Sur les mêmes
+    /// fichiers, les 43 suspects qui ont tenu ont gardé index ET jeu à l'identique entre les deux
+    /// balayages, les 6 témoins montés en score n'en ont gardé aucun.
+    pub concordance: f64,
     /// Position du cadrage la plus fréquente, modulo le saut — informative seulement.
     pub index: usize,
 }
@@ -141,7 +163,18 @@ fn saut(n: usize) -> usize {
 /// déterministe se lirait comme un cadrage, et pire, la somme circulaire la récompenserait PLUS
 /// qu'une vraie détection, puisqu'elle ne tourne pas d'un bloc à l'autre. Toutes les positions
 /// utilisent donc le même nombre de trames, celui que le décalage le plus tardif peut tenir.
-fn energies_par_decalage(bloc: &[f32], n: usize, w: &[f32]) -> Option<Vec<f64>> {
+/// **Réparti sur les cœurs.** Les `s+1` décalages sont indépendants — chacun lit le bloc et
+/// n'écrit que sa case — donc la boucle se tranche en bandes contiguës. Motif du dépôt :
+/// `std::thread::scope`, comme `quant_trace::balaye_decalages` ; pas de rayon, pas d'async.
+/// Chaque fil construit SON plan MDCT, dont le tampon de travail n'est pas partageable, et cela
+/// ne coûte qu'une FFT planifiée par fil. Le résultat ne dépend pas du découpage : chaque case
+/// est écrite par un seul fil, à partir des mêmes entrées.
+fn energies_par_decalage(
+    bloc: &[f32],
+    n: usize,
+    w: &[f32],
+    fils_max: Option<usize>,
+) -> Option<Vec<f64>> {
     let s = saut(n);
     let deux_n = 2 * n;
     // Le décalage `s` est le plus contraint : c'est lui qui fixe le compte commun.
@@ -149,29 +182,47 @@ fn energies_par_decalage(bloc: &[f32], n: usize, w: &[f32]) -> Option<Vec<f64>> 
         return None;
     }
     let trames = (bloc.len() - s - deux_n) / s + 1;
-    let plan = MdctFast::new(n);
-    let mut trame = vec![0.0f32; deux_n];
-    let mut coeffs = vec![0.0f64; n];
     let mut e = vec![0.0f64; s + 1];
 
-    for (i, ei) in e.iter_mut().enumerate() {
-        let mut acc_bloc = 0.0f64;
-        for k in 0..trames {
-            let p = i + k * s;
-            for (t, (x, wi)) in bloc[p..p + deux_n].iter().zip(w.iter()).enumerate() {
-                trame[t] = x * wi;
-            }
-            plan.transform_f64_into(&trame, &mut coeffs);
-            // Moyenne des coefficients EN dB, pas le dB de la moyenne : c'est la première qui
-            // laisse un coefficient annulé peser, et c'est tout l'intérêt de la mesure.
-            let mut acc = 0.0f64;
-            for &c in coeffs.iter() {
-                acc += 20.0 * c.abs().max(PLANCHER).log10();
-            }
-            acc_bloc += acc / n as f64;
+    let dispo = std::thread::available_parallelism()
+        .map(|v| v.get())
+        .unwrap_or(1);
+    let fils = match fils_max {
+        Some(m) => dispo.min(m).max(1),
+        None => dispo.clamp(1, 16),
+    };
+    let par_fil = e.len().div_ceil(fils);
+
+    std::thread::scope(|scope| {
+        for (bande, tranche) in e.chunks_mut(par_fil).enumerate() {
+            let depart = bande * par_fil;
+            scope.spawn(move || {
+                let plan = MdctFast::new(n);
+                let mut trame = vec![0.0f32; deux_n];
+                let mut coeffs = vec![0.0f64; n];
+                for (j, ei) in tranche.iter_mut().enumerate() {
+                    let i = depart + j;
+                    let mut acc_bloc = 0.0f64;
+                    for k in 0..trames {
+                        let p = i + k * s;
+                        for (t, (x, wi)) in bloc[p..p + deux_n].iter().zip(w.iter()).enumerate() {
+                            trame[t] = x * wi;
+                        }
+                        plan.transform_f64_into(&trame, &mut coeffs);
+                        // Moyenne des coefficients EN dB, pas le dB de la moyenne : c'est la
+                        // première qui laisse un coefficient annulé peser, et c'est tout
+                        // l'intérêt de la mesure.
+                        let mut acc = 0.0f64;
+                        for &c in coeffs.iter() {
+                            acc += 20.0 * c.abs().max(PLANCHER).log10();
+                        }
+                        acc_bloc += acc / n as f64;
+                    }
+                    *ei = acc_bloc / trames as f64;
+                }
+            });
         }
-        *ei = acc_bloc / trames as f64;
-    }
+    });
     Some(e)
 }
 
@@ -181,8 +232,8 @@ fn energies_par_decalage(bloc: &[f32], n: usize, w: &[f32]) -> Option<Vec<f64>> 
 /// différences toutes identiques (silence numérique), cas où l'écart-type est nul et le score
 /// standard indéfini. Jamais une valeur par défaut : c'est la règle du dépôt sur l'absence de
 /// mesure, la même que pour `verdict()`.
-fn score_bloc(bloc: &[f32], n: usize, w: &[f32]) -> Option<(f64, usize)> {
-    let e = energies_par_decalage(bloc, n, w)?;
+fn score_bloc(bloc: &[f32], n: usize, w: &[f32], fils_max: Option<usize>) -> Option<(f64, usize)> {
+    let e = energies_par_decalage(bloc, n, w, fils_max)?;
     if e.len() < 3 {
         return None;
     }
@@ -211,7 +262,13 @@ fn score_bloc(bloc: &[f32], n: usize, w: &[f32]) -> Option<(f64, usize)> {
 /// fortuit tombe n'importe où. En polaire — rayon le score, angle l'index modulo le saut — les
 /// premiers s'additionnent et les seconds s'annulent. Le papier prend la somme et non la
 /// moyenne (§ IV.B, correctif), ce qui récompense aussi le nombre de blocs concordants.
-pub fn score_fichier(signal: &[f32], jeu: Jeu, bloc_len: usize, blocs_max: usize) -> Option<Trace> {
+pub fn score_fichier(
+    signal: &[f32],
+    jeu: Jeu,
+    bloc_len: usize,
+    blocs_max: usize,
+    fils_max: Option<usize>,
+) -> Option<Trace> {
     let s = saut(jeu.n);
     let w = jeu.fenetre.echantillons_n(jeu.n);
     if signal.len() < bloc_len {
@@ -236,6 +293,7 @@ pub fn score_fichier(signal: &[f32], jeu: Jeu, bloc_len: usize, blocs_max: usize
     const REJET_Z: f64 = 3.0;
     let mut index_gagnant = 0usize;
     let mut meilleur_r = 0.0f64;
+    let mut somme_r = 0.0f64;
 
     for b in 0..n_blocs {
         let debut = b * pas * bloc_len;
@@ -243,7 +301,7 @@ pub fn score_fichier(signal: &[f32], jeu: Jeu, bloc_len: usize, blocs_max: usize
         if fin <= debut + 2 * jeu.n {
             continue;
         }
-        let Some((r, idx)) = score_bloc(&signal[debut..fin], jeu.n, &w) else {
+        let Some((r, idx)) = score_bloc(&signal[debut..fin], jeu.n, &w, fils_max) else {
             continue;
         };
         if r < REJET_Z {
@@ -257,6 +315,7 @@ pub fn score_fichier(signal: &[f32], jeu: Jeu, bloc_len: usize, blocs_max: usize
         let theta = 2.0 * std::f64::consts::PI * absolu as f64 / s as f64;
         x += r * theta.cos();
         y += r * theta.sin();
+        somme_r += r;
         retenus += 1;
         if r > meilleur_r {
             meilleur_r = r;
@@ -264,18 +323,31 @@ pub fn score_fichier(signal: &[f32], jeu: Jeu, bloc_len: usize, blocs_max: usize
         }
     }
 
-    (retenus > 0).then(|| Trace {
+    // Sans plusieurs blocs concordants, il n'y a pas de mesure — pas un score faible, PAS de
+    // mesure. C'est la même règle que partout ailleurs dans le détecteur : une absence ne se
+    // déguise jamais en valeur basse.
+    let resultante = (x * x + y * y).sqrt();
+    (retenus >= BLOCS_CONCORDANTS_MIN.min(n_blocs)).then(|| Trace {
         jeu,
-        score: (x * x + y * y).sqrt(),
+        score: resultante,
         blocs_retenus: retenus,
+        // `somme_r` est une somme de `r` tous ≥ REJET_Z > 0, et `retenus > 0` ici : le
+        // dénominateur ne peut pas être nul sur ce chemin.
+        concordance: resultante / somme_r,
         index: index_gagnant,
     })
 }
 
 /// Le meilleur jeu pour un signal déjà réduit en mono, et tous les scores pour inspection.
-pub fn balayer(signal: &[f32], jeux: &[Jeu], bloc_len: usize, blocs_max: usize) -> Vec<Trace> {
+pub fn balayer(
+    signal: &[f32],
+    jeux: &[Jeu],
+    bloc_len: usize,
+    blocs_max: usize,
+    fils_max: Option<usize>,
+) -> Vec<Trace> {
     jeux.iter()
-        .filter_map(|&j| score_fichier(signal, j, bloc_len, blocs_max))
+        .filter_map(|&j| score_fichier(signal, j, bloc_len, blocs_max, fils_max))
         .collect()
 }
 
@@ -312,7 +384,8 @@ mod tests {
                 (x as f32 / u32::MAX as f32) - 0.5
             })
             .collect();
-        let t = score_fichier(&signal, JEUX[0], BLOC, 3).expect("assez long pour être mesuré");
+        let t =
+            score_fichier(&signal, JEUX[0], BLOC, 3, None).expect("assez long pour être mesuré");
         eprintln!(
             "bruit blanc : score {:.2} sur {} blocs",
             t.score, t.blocs_retenus
@@ -349,7 +422,7 @@ mod tests {
             .collect();
         let n = 1024;
         let w = Fenetre::Kbd.echantillons_n(n);
-        let (z, idx) = score_bloc(&bloc, n, &w).expect("bloc assez long");
+        let (z, idx) = score_bloc(&bloc, n, &w, None).expect("bloc assez long");
         eprintln!("bruit blanc : z max {z:.2} à l'index {idx}");
         assert!(
             z < 6.0,
@@ -368,13 +441,13 @@ mod tests {
     #[test]
     fn un_signal_trop_court_ou_muet_ne_rend_aucune_mesure() {
         assert!(
-            score_fichier(&[0.0; 100], JEUX[0], BLOC, 4).is_none(),
+            score_fichier(&[0.0; 100], JEUX[0], BLOC, 4, None).is_none(),
             "trop court"
         );
         // Silence numérique exact : toutes les énergies valent le plancher, donc l'écart-type
         // des différences est nul et le score standard n'existe pas.
         assert!(
-            score_fichier(&vec![0.0f32; 4 * BLOC], JEUX[0], BLOC, 3).is_none(),
+            score_fichier(&vec![0.0f32; 4 * BLOC], JEUX[0], BLOC, 3, None).is_none(),
             "le silence n'a pas de cadrage"
         );
     }
@@ -404,6 +477,27 @@ mod corpus {
             .ok()
             .and_then(|v| v.parse().ok())
             .unwrap_or(BLOCS);
+        // `SIFT_FRAMING_BLOC` : durée d'un bloc en échantillons. `SIFT_FRAMING_JEUX` : les
+        // `vise` à garder, séparés par une virgule. Les deux servent à mesurer ce que coûte,
+        // en détection, chaque réduction du coût de calcul.
+        let bloc_len: usize = std::env::var("SIFT_FRAMING_BLOC")
+            .ok()
+            .and_then(|v| v.parse().ok())
+            .filter(|&v: &usize| v > 0)
+            .unwrap_or(BLOC);
+        let choisis = std::env::var("SIFT_FRAMING_JEUX").ok();
+        let jeux: Vec<Jeu> = match &choisis {
+            Some(liste) => JEUX
+                .iter()
+                .filter(|j| liste.split(',').any(|v| v.trim() == j.vise))
+                .copied()
+                .collect(),
+            None => JEUX.to_vec(),
+        };
+        if jeux.is_empty() {
+            eprintln!("SIFT_FRAMING_JEUX ne désigne aucun jeu connu");
+            return;
+        }
 
         // Le nom de fichier EN DERNIER : un « ; » dans un titre décalerait toutes les colonnes
         // suivantes (piège mesuré le 2026-08-18 sur une vraie clé USB).
@@ -412,8 +506,8 @@ mod corpus {
         // comme la racine du logarithme de `s`, et `s` vaut ici 576, 1024 ou 2048 selon le jeu.
         // Le grand `N` serait donc favorisé partout, et on lirait ce biais comme une détection.
         // Le rapport aux autres jeux du MÊME fichier annule ce biais.
-        print!("meilleur;contraste;vise;index;blocs;secondes");
-        for j in JEUX.iter() {
+        print!("meilleur;concorde;contraste;vise;index;blocs;secondes");
+        for j in jeux.iter() {
             print!(";{}", j.vise);
         }
         println!(";fichier");
@@ -444,13 +538,16 @@ mod corpus {
             }) {
                 Ok(v) => v,
                 Err(err) => {
-                    println!("ERREUR;-;-;-;-;-{};{name} ({err})", ";-".repeat(JEUX.len()));
+                    println!(
+                        "ERREUR;-;-;-;-;-;-{};{name} ({err})",
+                        ";-".repeat(jeux.len())
+                    );
                     continue;
                 }
             };
             let signal = mono(&pcm, info.channels);
             let t0 = std::time::Instant::now();
-            let traces = balayer(&signal, &JEUX, BLOC, blocs);
+            let traces = balayer(&signal, &jeux, bloc_len, blocs, None);
             let secondes = t0.elapsed().as_secs_f64();
 
             let Some(best) = traces
@@ -459,8 +556,8 @@ mod corpus {
                 .copied()
             else {
                 println!(
-                    "NON-MESURE;-;-;-;-;{secondes:.1}{};{name}",
-                    ";-".repeat(JEUX.len())
+                    "NON-MESURE;-;-;-;-;-;{secondes:.1}{};{name}",
+                    ";-".repeat(jeux.len())
                 );
                 continue;
             };
@@ -481,10 +578,10 @@ mod corpus {
                 f64::INFINITY
             };
             print!(
-                "{:.2};{contraste:.2};{};{};{};{secondes:.1}",
-                best.score, best.jeu.vise, best.index, best.blocs_retenus
+                "{:.2};{:.3};{contraste:.2};{};{};{};{secondes:.1}",
+                best.score, best.concordance, best.jeu.vise, best.index, best.blocs_retenus
             );
-            for j in JEUX.iter() {
+            for j in jeux.iter() {
                 let s = traces
                     .iter()
                     .find(|t| t.jeu.n == j.n && t.jeu.fenetre == j.fenetre)
@@ -494,7 +591,10 @@ mod corpus {
             }
             println!(";{name}");
         }
-        println!("-- {vus} fichiers parcourus, {blocs} blocs par fichier");
+        println!(
+            "-- {vus} fichiers, {blocs} blocs de {bloc_len}, jeux {:?}",
+            jeux.iter().map(|j| j.vise).collect::<Vec<_>>()
+        );
         assert!(vus > 0, "aucun fichier audio dans {dir} — mesure vide");
     }
 }
