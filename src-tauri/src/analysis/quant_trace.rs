@@ -409,6 +409,10 @@ pub struct Trace {
 pub enum Fenetre {
     Sinus,
     Kbd,
+    /// Vorbis — `sin(π/2·sin²(π/2·(n+½)/N))`, spec Vorbis I § 4.3.1. Ajoutée le 2026-09-15
+    /// pour la sonde Vorbis : les tailles de bloc de libvorbis (256 et 2048, donc N = 128 et
+    /// 1024) sont celles de l'AAC, seule la fenêtre diffère.
+    Vorbis,
 }
 
 impl Fenetre {
@@ -416,6 +420,7 @@ impl Fenetre {
         match self {
             Fenetre::Sinus => "sinus",
             Fenetre::Kbd => "kbd",
+            Fenetre::Vorbis => "vorbis",
         }
     }
 
@@ -432,6 +437,7 @@ impl Fenetre {
                     BlockKind::Short => 6.0,
                 },
             ),
+            Fenetre::Vorbis => crate::analysis::mdct::vorbis_window(two_n),
         }
     }
 }
@@ -535,9 +541,34 @@ pub enum Jugement {
     },
 }
 
+/// L'échelle sur laquelle la grille du codec est cherchée.
+///
+/// MP3 et AAC quantifient en `|X|^{3/4}` — c'est dans leurs normes, et c'est l'échelle
+/// historique de ce module. Vorbis code `floor · residue` avec un résidu sur une grille
+/// LINÉAIRE (voir `diagnostic::sonde_vorbis`), donc la même statistique s'y applique sans
+/// exposant. Le choix ne se devine pas par codec : il se mesure.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Exposant {
+    /// `v = |X|^{3/4}` — MP3, AAC.
+    TroisQuarts,
+    /// `v = |X|` — Vorbis.
+    Lineaire,
+}
+
 /// Le jugement d'UNE bande `[lo, hi)` d'une trame — le corps historique de [`frame_likelihood`],
 /// sorti tel quel le 2026-09-11 pour que `diagnostic::quant_bandes` le rejoue bande par bande.
 pub fn juge_bande(coeffs: &[f64], lo: usize, hi: usize, taus: &[f64]) -> Jugement {
+    juge_bande_exposant(coeffs, lo, hi, taus, Exposant::TroisQuarts)
+}
+
+/// [`juge_bande`] avec l'échelle choisie — voir [`Exposant`].
+pub fn juge_bande_exposant(
+    coeffs: &[f64],
+    lo: usize,
+    hi: usize,
+    taus: &[f64],
+    exposant: Exposant,
+) -> Jugement {
     if hi > coeffs.len() {
         return Jugement::HorsTrame;
     }
@@ -550,8 +581,13 @@ pub fn juge_bande(coeffs: &[f64], lo: usize, hi: usize, taus: &[f64]) -> Jugemen
     }
     let mut vmax = 0.0f64;
     for (i, &x) in bande.iter().enumerate() {
-        let r = x.abs().sqrt().sqrt();
-        let vi = r * r * r;
+        let vi = match exposant {
+            Exposant::TroisQuarts => {
+                let r = x.abs().sqrt().sqrt();
+                r * r * r
+            }
+            Exposant::Lineaire => x.abs(),
+        };
         v[i] = vi;
         if vi > vmax {
             vmax = vi;
@@ -1445,6 +1481,160 @@ mod tests {
 #[cfg(test)]
 mod diagnostic {
     use super::*;
+
+    /// SONDE VORBIS — la grille d'un transcodage Vorbis est-elle visible après décodage, et
+    /// sous quelle échelle ? Mesure, ne juge rien, ne touche à aucun verdict.
+    ///
+    /// **La question, et pourquoi elle se pose.** MP3 et AAC quantifient un coefficient MDCT
+    /// sur une grille en `|X|^{3/4}` ; c'est pour ça que [`juge_bande`] élève à la puissance
+    /// 3/4. Vorbis ne fait pas ça : il code `X[k] = floor[k] · residue[k]`, où le résidu sort
+    /// d'un codebook dont les valeurs valent `multiplicande × delta + minimum`
+    /// (`symphonia-codec-vorbis`, `codebook.rs::unpack_vq_lookup_type1`) — donc une grille
+    /// LINÉAIRE en `X`, à un facteur `floor` près qui varie lentement avec la fréquence. Sur
+    /// une bande étroite, ce facteur est quasi constant : la grille doit s'y voir directement,
+    /// sans exposant. La sonde mesure les deux échelles pour trancher, plutôt que de le
+    /// supposer.
+    ///
+    /// ```text
+    /// SIFT_VORBIS_DIR=<dossier> cargo test --release --lib sonde_vorbis -- --ignored --nocapture
+    /// ```
+    ///
+    /// Elle imprime, par fichier et par forme de fenêtre, le meilleur `L` sur les décalages,
+    /// en 3/4 et en linéaire. Un transcodage Vorbis doit se détacher des authentiques sur au
+    /// moins une des deux colonnes, et de préférence en fenêtre Vorbis.
+    #[test]
+    #[ignore]
+    fn sonde_vorbis() {
+        let Ok(dir) = std::env::var("SIFT_VORBIS_DIR") else {
+            eprintln!("SIFT_VORBIS_DIR non défini — rien à mesurer");
+            return;
+        };
+        println!("fichier;fenetre;L_34;L_lin;decalage_34;decalage_lin");
+        let mut fichiers: Vec<_> = walkdir::WalkDir::new(&dir)
+            .into_iter()
+            .flatten()
+            .filter(|e| e.file_type().is_file())
+            .map(|e| e.path().to_path_buf())
+            .filter(|p| {
+                matches!(
+                    p.extension()
+                        .and_then(|x| x.to_str())
+                        .unwrap_or("")
+                        .to_lowercase()
+                        .as_str(),
+                    "flac" | "wav" | "aif" | "aiff" | "ogg"
+                )
+            })
+            .collect();
+        fichiers.sort();
+
+        for path in fichiers {
+            let name = path
+                .file_name()
+                .and_then(|x| x.to_str())
+                .unwrap_or("?")
+                .to_string();
+            let mut pcm: Vec<f32> = Vec::new();
+            let Ok(info) = crate::analysis::decode::decode_pcm(&path.to_string_lossy(), 2, |b| {
+                pcm.extend_from_slice(b)
+            }) else {
+                println!("{name};ERREUR;-;-;-;-");
+                continue;
+            };
+            let ch = info.channels.max(1) as usize;
+            let n_trames = pcm.len() / ch;
+            // Canal M seul : la sonde cherche la présence d'une grille, pas son meilleur canal.
+            let signal: Vec<f32> = (0..n_trames)
+                .map(|i| {
+                    if ch >= 2 {
+                        0.5 * (pcm[i * ch] + pcm[i * ch + 1])
+                    } else {
+                        pcm[i * ch]
+                    }
+                })
+                .collect();
+
+            for fenetre in [Fenetre::Vorbis, Fenetre::Sinus] {
+                let kind = BlockKind::Long;
+                let n = kind.coeffs();
+                let Some(offsets) = swb_offsets(info.sample_rate, kind) else {
+                    continue;
+                };
+                let largeurs: Vec<usize> = (0..=n).collect();
+                let taus = thresholds(P_CENTILE, &largeurs);
+                let w = fenetre.echantillons(kind);
+                let plan = MdctFast::new(n);
+                let mut trame = vec![0.0f32; 2 * n];
+                let mut coeffs = vec![0.0f64; n];
+                let mut best = [(0.0f64, 0usize); 2];
+                // `SIFT_VORBIS_BANDES=lo..hi` : le `floor` de Vorbis varie DANS une bande large,
+                // ce qui déforme la grille. Des bandes étroites (les basses de la table SWB en
+                // comptent 4 à 12 coefficients) le laissent quasi constant. Hypothèse à mesurer.
+                let (b_debut, b_nb) = std::env::var("SIFT_VORBIS_BANDES")
+                    .ok()
+                    .and_then(|v| {
+                        let (a, b) = v.split_once("..")?;
+                        let (a, b): (usize, usize) = (a.parse().ok()?, b.parse().ok()?);
+                        (b > a).then_some((a, b - a))
+                    })
+                    .unwrap_or((BANDE_DEBUT_LONG, N_SF_LONG));
+
+                // `SIFT_VORBIS_PAS` : 8 pour dégrossir, 1 pour un balayage complet — l'alignement
+                // exact avait été décisif pour le banc MP3, il faut pouvoir le chercher.
+                let pas: usize = std::env::var("SIFT_VORBIS_PAS")
+                    .ok()
+                    .and_then(|v| v.parse().ok())
+                    .filter(|&v: &usize| v > 0)
+                    .unwrap_or(8);
+                for d in (0..n).step_by(pas) {
+                    let mut compte = [0usize; 2];
+                    let mut trames = 0usize;
+                    for t in 0..N_F {
+                        let base = d + t * n;
+                        if base + 2 * n > signal.len() {
+                            break;
+                        }
+                        trames += 1;
+                        for i in 0..2 * n {
+                            trame[i] = signal[base + i] * w[i];
+                        }
+                        plan.transform_f64_into(&trame, &mut coeffs);
+                        for (e, exposant) in [Exposant::TroisQuarts, Exposant::Lineaire]
+                            .iter()
+                            .enumerate()
+                        {
+                            for s in b_debut..(b_debut + b_nb).min(offsets.len() - 1) {
+                                let (lo, hi) = (offsets[s] as usize, offsets[s + 1] as usize);
+                                if let Jugement::Jugee { sous_tau: true, .. } =
+                                    juge_bande_exposant(&coeffs, lo, hi, &taus, *exposant)
+                                {
+                                    compte[e] += 1;
+                                }
+                            }
+                        }
+                    }
+                    if trames == 0 {
+                        break;
+                    }
+                    let den = (trames * b_nb) as f64;
+                    for e in 0..2 {
+                        let l = compte[e] as f64 / den;
+                        if l > best[e].0 {
+                            best[e] = (l, d);
+                        }
+                    }
+                }
+                println!(
+                    "{name};{};{:.4};{:.4};{};{}",
+                    fenetre.label(),
+                    best[0].0,
+                    best[1].0,
+                    best[0].1,
+                    best[1].1
+                );
+            }
+        }
+    }
 
     /// Diagnostic PAR BANDE, à décalage forcé — pour voir OÙ la grille est visible et pourquoi
     /// les autres bandes sont écartées, sur toute la table et pas seulement la fenêtre jugée.

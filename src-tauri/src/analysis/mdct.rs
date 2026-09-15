@@ -86,6 +86,29 @@ pub fn kbd_window(two_n: usize, alpha: f64) -> Vec<f32> {
     w
 }
 
+/// Fenêtre de Vorbis — spécification Vorbis I, § 4.3.1, et `symphonia-codec-vorbis`
+/// (`window.rs::generate_win_curve`, même formule) :
+///
+/// ```text
+/// w[n] = sin( π/2 · sin²( π/2 · (n + ½)/N ) )
+/// ```
+///
+/// Calculée, jamais tabulée : contrairement à la table B.3 de MPEG, la spec donne ici une
+/// formule fermée, donc rien à re-sourcer. Elle satisfait Princen-Bradley (tenu par test), ce
+/// que la MDCT exige, et elle est PLUS PLATE au centre qu'un sinus : c'est ce qui la distingue
+/// à l'analyse, et pourquoi un flux Vorbis ne se relit pas correctement avec la fenêtre sinus.
+pub fn vorbis_window(two_n: usize) -> Vec<f32> {
+    let n = two_n / 2;
+    (0..two_n)
+        .map(|i| {
+            // Symétrie : la seconde moitié est le miroir de la première.
+            let p = if i < n { i } else { two_n - 1 - i };
+            let frac = std::f64::consts::FRAC_PI_2 * ((p as f64 + 0.5) / n as f64);
+            (std::f64::consts::FRAC_PI_2 * frac.sin().powi(2)).sin() as f32
+        })
+        .collect()
+}
+
 /// MDCT d'une trame de `2N` échantillons vers `N` coefficients.
 ///
 /// `X[k] = Σ x[n] · cos(π/N · (n + 1/2 + N/2) · (k + 1/2))`
@@ -506,6 +529,39 @@ mod sonde {
 
 #[cfg(test)]
 mod tests {
+    /// La fenêtre de Vorbis satisfait Princen-Bradley, et se distingue des deux autres.
+    ///
+    /// Le premier point est ce que la MDCT exige. Le second est ce qui rend le banc possible :
+    /// si la fenêtre Vorbis était numériquement proche du sinus, la distinguer à l'analyse
+    /// n'aurait aucun sens. Mesuré ici — elle est plus PLATE au centre, et l'écart au sinus
+    /// dépasse 0,1 en valeur absolue.
+    #[test]
+    fn la_fenetre_vorbis_satisfait_princen_bradley_et_se_distingue_du_sinus() {
+        for two_n in [2048usize, 256] {
+            let w = super::vorbis_window(two_n);
+            let s = super::sine_window(two_n);
+            let n = two_n / 2;
+            for i in 0..n {
+                let pb = w[i] * w[i] + w[i + n] * w[i + n];
+                assert!((pb - 1.0).abs() < 1e-5, "PB en {i} : {pb}");
+                assert_eq!(w[i], w[two_n - 1 - i], "symétrie en {i}");
+                if i > 0 {
+                    assert!(w[i] >= w[i - 1], "non croissante en {i}");
+                }
+            }
+            assert!(
+                w[0] < 0.01 && w[n - 1] > 0.99,
+                "bords {} {}",
+                w[0],
+                w[n - 1]
+            );
+            let ecart = (0..two_n)
+                .map(|i| (w[i] - s[i]).abs())
+                .fold(0.0f32, f32::max);
+            assert!(ecart > 0.1, "trop proche du sinus : écart max {ecart}");
+        }
+    }
+
     /// La KBD est une fenêtre MDCT au sens de Princen-Bradley, symétrique, croissante sur sa
     /// première moitié — sinon rien de ce que [`kbd_window`] promet ne tient.
     #[test]

@@ -1045,3 +1045,106 @@ Vorbis et WMA restent les trois codecs sans banc (0 Fake, Grey par la platitude 
 Référence magasin (411), détecteur intégré : **382 Ok, 19 Fake, 10 Grey — identique à v4**. Les
 10 Fake par grille sont les mêmes dix fichiers, tous par le banc MP3 (rapports 3,1 à 5,6) ; le banc
 AAC long n'en ajoute aucun, ni ne retire rien. Zéro faux positif nouveau sur 411 + 546 lossless réels.
+
+## Vorbis : la méthode de la grille ne transpose pas (2026-09-15)
+
+Chantier ouvert après #63, fermé le jour même sur un résultat NÉGATIF. Ce qui suit est la
+mesure qui l'établit, pour qu'on ne recommence pas sans raison neuve.
+
+### La théorie disait oui
+
+Vorbis code `X[k] = floor[k] · residue[k]`. Le résidu sort d'un codebook dont les valeurs
+valent `multiplicande × delta_value + minimum_value` (`symphonia-codec-vorbis`,
+`codebook.rs::unpack_vq_lookup_type1`) : les multiplicandes sont des ENTIERS, donc le résidu
+vit sur une grille uniforme. Sur une bande étroite le `floor` est quasi constant, donc la
+grille devrait s'y voir — en LINÉAIRE, pas en `|X|^{3/4}` : Vorbis ne compresse pas en
+puissance 3/4 comme MP3 et AAC. Et libvorbis q5 utilise des blocs de 256 et 2048, soit
+N = 128 et 1024 : exactement les tailles AAC, donc toute la MDCT existante se réutilise.
+
+### La mesure dit non
+
+`diagnostic::sonde_vorbis`, fenêtre Vorbis, canal M, 8 trames, balayage des 1024 décalages
+(`SIFT_VORBIS_PAS=1`), les deux échelles :
+
+| fichier | L en 3/4 | L linéaire |
+|---|---|---|
+| src01_vorbisq5 | 0,036 | **0,107** |
+| src04_vorbisq5 | 0,027 | 0,054 |
+| src02, src03, src05_vorbisq5 | ≤ 0,027 | 0,022-0,027 |
+| 5 authentiques | ≤ 0,031 | 0,018-0,027 |
+| **src01_aac256 (témoin)** | 0,031 | **0,071** |
+| src01, src02_lame320 (témoins) | ≤ 0,031 | ≤ 0,027 |
+
+Deux Vorbis sur cinq se détachent, et un AAC monte aussi haut qu'eux. Le meilleur rapport au
+bruit de fond est de 4, là où le banc MP3 donnait 12 (0,95 contre 0,08). Trois contrôles :
+
+- **L'alignement n'est pas en cause.** Le balayage complet des 1024 décalages rend les mêmes
+  maxima que le balayage au pas de 8, à la décimale près.
+- **La largeur des bandes non plus.** En bandes étroites (0-20, 4 à 12 coefficients, là où le
+  `floor` bouge le moins), tout monte ensemble : Vorbis 0,150, AAC 0,100, authentique 0,031.
+  Le rapport passe de 4,0 à 4,8, donc rien.
+- **L'échelle linéaire est bien la bonne** : elle domine partout le `|X|^{3/4}`, ce qui
+  confirme la théorie du codebook — mais ne suffit pas.
+
+### Pourquoi, et ce qui resterait à tenter
+
+Quatre obstacles structurels, dont aucun n'existait pour MP3 :
+
+1. Le `floor` multiplie le résidu et varie continûment ; l'estimateur local `Δ̂ = min v` ne le
+   récupère pas.
+2. Les blocs alternent entre 256 et 2048 selon le contenu, donc la grille TEMPORELLE n'est pas
+   périodique — un décalage global n'aligne qu'un morceau du fichier.
+3. Chaque partition de résidu peut tirer sur un codebook différent, avec son propre
+   `delta_value` : le pas n'est pas constant à l'intérieur d'une bande.
+4. Le couplage stéréo transforme les canaux avant quantification.
+
+### La bonne méthode existe, elle est publiée, et elle ne cherche pas la grille
+
+Cherchée en ligne après l'échec, et elle change la conclusion : **ce n'est pas Vorbis qui
+résiste, c'est la méthode de la grille qui ne s'y applique pas.**
+
+Kim & Rafii, *Lossy Audio Compression Identification*, EUSIPCO 2018
+(<https://new.eurasip.org/Proceedings/Eusipco/Eusipco2018/papers/1570436395.pdf>) cherchent
+non pas une grille de quantification, mais les coefficients **mis à ZÉRO** — ce que tout
+codec perceptuel fait, Vorbis compris, et qui ne demande ni floor, ni pas de quantification,
+ni exposant. L'algorithme tient en cinq lignes :
+
+1. Pour un jeu de paramètres (fenêtre, longueur `N`, saut `N/2`), calculer le spectrogramme en
+   dB de segments successifs décalés d'UN échantillon.
+2. Prendre l'énergie moyenne de chaque spectrogramme.
+3. Prendre la différence entre énergies successives. Le contenu ne bouge presque pas d'un
+   décalage à l'autre, donc ces différences restent nulles — SAUF quand le cadrage tombe sur
+   celui de l'encodeur, où les coefficients nuls réapparaissent d'un coup.
+4. Normaliser en score standard, garder le maximum positif : c'est le score, et son indice
+   donne la position du cadrage.
+5. Combiner les blocs d'une seconde par moyenne circulaire, un vrai cadrage produisant des
+   pics périodiques de période `N/2`.
+
+Leurs taux, sur des fichiers encodés puis reconvertis en WAV — notre cas exactement :
+
+| codec | 96k | 128k | 192k | 256k | 320k |
+|---|---|---|---|---|---|
+| Vorbis | 1,0 | 1,0 | 1,0 | 1,0 | **1,0** |
+| WMA | 1,0 | 1,0 | 1,0 | 1,0 | 1,0 |
+| AAC | 1,0 | 1,0 | 1,0 | 1,0 | 1,0 |
+| AC-3 | 1,0 | 1,0 | 1,0 | 1,0 | 1,0 |
+| MP3 | 1,0 | 1,0 | 1,0 | 1,0 | 0,9 |
+
+Le papier confirme au passage deux de nos choix : la fenêtre Vorbis est bien la « slope
+window » que nous venons d'implémenter, au caractère près, et l'AAC long est bien en KBD
+α = 4, ce que la fenêtre KBD du 2026-09-11 avait établi par la mesure.
+
+Ce que ça vaut pour Sift : une seule mécanique, paramétrée par (fenêtre, `N`), couvrirait les
+trois codecs aveugles — Vorbis, WMA, Opus — là où chaque banc de grille demande une session et
+ne couvre qu'un codec. Et notre question est plus facile que la leur : ils identifient QUEL
+codec, nous demandons seulement s'il y en a eu un.
+
+À noter avant de s'y mettre : leur jeu de test est fait d'extraits d'une minute, et le score
+dépend du débit — plus il est haut, plus les traces sont rares. La piste du `floor` Vorbis,
+envisagée ci-dessus, devient secondaire.
+
+### Ce que le chantier laisse au dépôt
+
+`mdct::vorbis_window` (calculée, pas tabulée, Princen-Bradley tenu par test),
+`Fenetre::Vorbis`, `quant_trace::Exposant` qui rend l'échelle explicite au lieu de câbler le
+3/4, et la sonde elle-même, rejouable. Aucun verdict ne change.
