@@ -102,6 +102,32 @@ fn normalize_path(location: &str) -> PathBuf {
     PathBuf::from(decoded)
 }
 
+/// La même clé, pour un chemin qui vient du DISQUE et non d'une `Location`.
+///
+/// ⚠️ **Ne percent-décode PAS, et c'est la correction du 2026-09-15.** Un chemin de disque n'est
+/// pas encodé : le `%` d'un nom de fichier est un `%`. Le faire passer par [`normalize_path`],
+/// comme trois sites le faisaient, corrompt tout nom contenant `%` suivi de deux chiffres
+/// hexadécimaux — et `a`, `b`, `c`, `d`, `e`, `f` en sont.
+///
+/// Mesuré sur `100%aerien.aiff`, un titre plausible :
+///
+/// | | avant | après |
+/// |---|---|---|
+/// | `Location` XML `…/100%25aerien.aiff` | `100%aerien.aiff` | `100%aerien.aiff` |
+/// | chemin disque `…/100%aerien.aiff` | `100<U+FFFD>rien.aiff` | `100%aerien.aiff` |
+///
+/// Les deux clés divergeaient, donc le `contains_key` de [`merge_filed_tracks`] échouait
+/// TOUJOURS, donc le morceau était réajouté à la collection **à chaque export**. Le préfixe
+/// `file://` reste retiré : il ne peut pas apparaître dans un chemin de disque, et le retirer
+/// coûte un `strip_prefix` qui échoue.
+fn normalize_disk_path(path: &str) -> PathBuf {
+    let stripped = path
+        .strip_prefix("file://localhost/")
+        .or_else(|| path.strip_prefix("file://"))
+        .unwrap_or(path);
+    PathBuf::from(stripped)
+}
+
 /// FIX-6: the `path_index` HashMap key, additionally lowercased on top of `normalize_path`'s
 /// separator/percent-decoding. A plain `PathBuf` equality (what the index used before this fix)
 /// is case-SENSITIVE, so a drive-letter or segment casing difference between the XML's `Location`
@@ -116,24 +142,21 @@ fn path_index_key(path: &Path) -> PathBuf {
     PathBuf::from(path.to_string_lossy().to_lowercase())
 }
 
-/// Minimal percent-decoder for the subset Rekordbox actually emits (`%20`, `%23`, etc.) — no
-/// external dependency needed for this one narrow job.
+/// Décode les séquences `%XX` d'une `Location`, par le crate qui les écrit.
+///
+/// ⚠️ **Remplace un décodeur maison qui PANIQUAIT**, mesuré le 2026-09-15. Il gardait son entrée
+/// par `i + 2 < bytes.len()` — un compte d'OCTETS — puis découpait la chaîne par
+/// `&s[i + 1..i + 3]`, un découpage qui exige des frontières de CARACTÈRE. Sur `100%aérien`,
+/// l'index 6 tombe au milieu du `é` : *« end byte index 6 is not a char boundary; it is inside
+/// 'é' (bytes 5..7 of string) »*. Le panic traversait la commande Tauri d'export.
+///
+/// L'asymétrie était le signe : `percent-encoding` est déclaré (`Cargo.toml:55`) et appelé six
+/// cents lignes plus bas pour l'ENCODAGE (`location_from_path`). On encodait avec le crate et on
+/// décodait à la main.
 fn percent_decode(s: &str) -> String {
-    let bytes = s.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'%' && i + 2 < bytes.len() {
-            if let Ok(byte) = u8::from_str_radix(&s[i + 1..i + 3], 16) {
-                out.push(byte);
-                i += 3;
-                continue;
-            }
-        }
-        out.push(bytes[i]);
-        i += 1;
-    }
-    String::from_utf8_lossy(&out).into_owned()
+    percent_encoding::percent_decode_str(s)
+        .decode_utf8_lossy()
+        .into_owned()
 }
 
 /// Parse raw Rekordbox XML bytes into a `RekordboxXml`. Fails fast on malformed XML or a
@@ -338,7 +361,9 @@ pub fn merge_filed_tracks(xml: &mut RekordboxXml, filed: &[crate::library::Libra
     let mut added = 0usize;
 
     for track in filed {
-        let norm = normalize_path(&track.path);
+        // `track.path` vient de la bibliothèque, c'est un chemin de DISQUE — pas une
+        // `Location`. Voir `normalize_disk_path` pour ce que le percent-décodage y cassait.
+        let norm = normalize_disk_path(&track.path);
         let key = path_index_key(&norm);
         if xml.path_index.contains_key(&key) {
             continue; // already tracked — merge is idempotent by design
@@ -646,7 +671,8 @@ pub fn patch_location(
     from_path: &str,
     to_path: &str,
 ) -> PatchLocationResult {
-    let from_norm = normalize_path(from_path);
+    // Chemins de DISQUE des deux côtés : `actions.from_path` / `to_path`.
+    let from_norm = normalize_disk_path(from_path);
     let Some(track_id) = xml.track_id_for_path(&from_norm) else {
         return PatchLocationResult::NotTracked;
     };
@@ -675,12 +701,13 @@ pub fn patch_location(
 
     xml.path_index.remove(&path_index_key(&from_norm));
     xml.path_index
-        .insert(path_index_key(&normalize_path(to_path)), track_id);
+        .insert(path_index_key(&normalize_disk_path(to_path)), track_id);
     track.location = new_location_value;
     PatchLocationResult::Patched
 }
 
 /// FIX-3: the characters `normalize_path`/`percent_decode` above already know how to reverse,
+/// `percent_decode` s'appuyant depuis le 2026-09-15 sur `percent_encoding::percent_decode_str`,
 /// plus the other RFC 3986 reserved characters that show up in real DJ filenames often enough to
 /// matter (space above all — virtually every real track name has one). Deliberately does NOT
 /// include `/` (path separator, must survive) or `:` (the Windows drive-letter colon, e.g.
@@ -730,6 +757,65 @@ pub fn write(xml: &RekordboxXml) -> String {
 
 #[cfg(test)]
 mod tests {
+    /// **Un nom de fichier contenant `%` ne fait plus paniquer, et ne se corrompt plus.**
+    ///
+    /// Les deux défauts que ce test fige ont été mesurés le 2026-09-15 sur l'ancien décodeur
+    /// maison, et ils venaient tous deux de la même confusion entre octets et caractères.
+    ///
+    /// 1. **Panique.** L'entrée était gardée par `i + 2 < bytes.len()`, un compte d'OCTETS, puis
+    ///    découpée par `&s[i + 1..i + 3]`, qui exige des frontières de CARACTÈRE. Sur
+    ///    `100%aérien`, l'index 6 tombe au milieu du `é` — *« end byte index 6 is not a char
+    ///    boundary »*. Le panic traversait la commande Tauri d'export.
+    /// 2. **Corruption silencieuse.** `%ae` est une séquence percent parfaitement valide, donc
+    ///    `100%aerien` se décodait en l'octet 0xAE suivi de `rien` — trois caractères mangés,
+    ///    aucune erreur. Le crate fait la même chose, et c'est correct POUR UNE `Location` ; ce
+    ///    qui était faux, c'est d'appliquer ce décodage à un chemin de DISQUE, qui n'est pas
+    ///    encodé.
+    ///
+    /// C'est le second qui faisait le vrai dégât : les deux clés d'un même morceau divergeaient,
+    /// donc le `contains_key` de `merge_filed_tracks` échouait toujours, donc la collection
+    /// gagnait un doublon à CHAQUE export.
+    ///
+    /// MUTATIONS qui le font tomber :
+    /// - rendre `normalize_disk_path` à `normalize_path` → l'égalité des deux clés tombe ;
+    /// - remettre l'ancien décodeur maison → le premier bloc panique au lieu d'assertir.
+    #[test]
+    fn un_pourcent_dans_un_nom_de_fichier_ne_panique_ni_ne_corrompt() {
+        // 1. Ce qui paniquait. On n'assertit pas une valeur : on assertit que ça RÉPOND.
+        for accentue in [
+            "C:/Music/100%aérien.aiff",
+            "C:/Music/50%été.flac",
+            "C:/Music/%é.wav",
+            "C:/Music/fin%",
+            "C:/Music/%",
+        ] {
+            let _ = super::normalize_disk_path(accentue);
+            let _ = super::normalize_path(accentue);
+        }
+
+        // 2. Les deux natures d'entrée pour LE MÊME fichier doivent donner la MÊME clé.
+        //    C'est l'invariant dont dépend l'idempotence de `merge_filed_tracks`.
+        let sur_le_disque = "C:/Music/100%aerien.aiff";
+        let dans_le_xml = "file://localhost/C:/Music/100%25aerien.aiff";
+        assert_eq!(
+            super::normalize_disk_path(sur_le_disque),
+            super::normalize_path(dans_le_xml),
+            "un fichier dont le nom contient un % doit avoir la même clé vu du disque et vu du XML"
+        );
+        assert_eq!(
+            super::normalize_disk_path(sur_le_disque),
+            std::path::PathBuf::from(sur_le_disque),
+            "un chemin de disque ne se décode pas : le % d'un nom de fichier est un %"
+        );
+
+        // 3. Une `Location` ordinaire continue de se décoder — la raison d'être du décodage.
+        assert_eq!(
+            super::normalize_path("file://localhost/C:/Music/Mix%20Final.aiff"),
+            std::path::PathBuf::from("C:/Music/Mix Final.aiff"),
+            "l'espace encodé d'une Location doit toujours se décoder"
+        );
+    }
+
     use super::*;
 
     fn fixture() -> Vec<u8> {
