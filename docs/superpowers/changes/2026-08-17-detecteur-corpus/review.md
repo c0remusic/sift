@@ -1394,6 +1394,37 @@ masquait un jeu parfaitement aligné du même fichier.
 `retenus >= 1` — mais `bancs::mesure_cadrage` assemble des traces à la main, et c'est précisément
 son bénéficiaire. `mieux_aligne` écarte désormais les valeurs non finies.
 
+### Matrice v6 — le banc de cadrage en production (2026-09-15, `corpus-scan-v6.csv`)
+
+Le banc entre en table à 16 blocs d'une demi-seconde, jeux `vorbis` et `wma`, ~2 900 ms par
+fichier lossless sain. `REPORT_CACHE_VERSION` 13 → 14.
+
+| famille | Fake v5 | Fake v6 | delta |
+|---|---|---|---|
+| `vorbisq5` | 0/10 | **10/10** | +10 |
+| `wma192` | 0/10 | **10/10** | +10 |
+| `aacmf128` | 8/10 | **10/10** | +2 |
+| `genuine` | 0/8 | 0/8 | 0 |
+| les 28 autres familles | — | — | **0** |
+| **TOTAL** | 119 | **141** | **+22** sur 308 |
+
+Les deux codecs que les bancs de grille ne voyaient pas passent de zéro à 10/10. Le gain sur
+`aacmf128` n'était pas prévu : les deux fichiers Media Foundation qui échappaient au banc AAC
+portent un cadrage que celui-ci voit — le cadrage et la grille ne ratent pas les mêmes fichiers.
+
+**Zéro régression, et c'est le point dur.** Sur les huit authentiques, `quant_likelihood` est
+identique à la v5 au chiffre près — 0,47269 pour cinq, 0,52521 pour deux, 0,52083 pour le
+dernier. Leur alignement de cadrage plafonne à 0,083, soit un rapport de 0,17 : très en dessous
+de ce que les bancs de grille produisent déjà sur eux, donc le cadrage n'entre pas dans leur
+maximum. C'est le comportement attendu du pli de `Sondage::rapport`, qui est un maximum : une
+ligne faible ne peut pas dégrader un verdict.
+
+**Ce que la ligne coûte, et il faut le dire** : ~2 900 ms par fichier lossless SAIN,
+c'est-à-dire la majorité d'une bibliothèque, dix fois les deux autres lignes réunies. C'est le
+vrai prix de ce chantier, et il est dans le banc, pas dans l'interface — la table a absorbé la
+ligne sans qu'`analyze()` change d'un caractère.
+
+
 ## Un MP3 peut se prétendre 320 en étant 192 — et rien ne l'attrape (2026-09-15)
 
 Question posée par Antoine, mesurée plutôt que raisonnée.
