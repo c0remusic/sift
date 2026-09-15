@@ -204,10 +204,21 @@ Le rapport en cache est passé de 829 ko à 39 ko, la base de 4,11 Go à 119 Mo.
 
 ### Le frontend a deux vies : `app.js` et les modules live
 
-`frontend/main.ts` importe **`app.js` inconditionnellement** (maquette d'origine, qui
-tourne donc réellement en prod — c'est elle qui route les clics nav via
-`e.target.closest('[data-view]')`), puis n'installe le wiring live **que si Tauri est
-présent** (`"__TAURI_INTERNALS__" in window` → `installLiveWiring()`).
+⚠️ **Corrigé le 2026-09-15.** Ce paragraphe affirmait que `main.ts` importe `app.js`
+**inconditionnellement** et qu'elle « tourne donc réellement en prod ». C'est faux :
+`frontend/main.ts:61` lit `if (!inTauri) void import("./app.js")`. Les deux vies ne
+cohabitent pas dans le même processus — elles s'excluent.
+
+`frontend/main.ts` charge **`app.js` seulement HORS Tauri** (`main.ts:61`), où elle est une
+démo navigateur et rien d'autre ; sous Tauri c'est `router.ts` qui route les clics nav via
+`e.target.closest('[data-view]')`, et `installLiveWiring()` qui pose le reste
+(`"__TAURI_INTERNALS__" in window`).
+
+Le pont `window.__sift*` par lequel la maquette appelait les vues live, et les sept gardes
+`!('__TAURI_INTERNALS__' in window)` qui neutralisaient ses renderers, ont été RETIRÉS du
+fichier le 2026-09-15 : ils y survivaient à valeur constante depuis que `773bb6a` (2026-08-19)
+avait emporté leur dernier écrivain. `app.js` est lintée depuis (`eslint.config.js`), ce qui lui
+donne son premier filet automatique — elle n'a ni test ni story.
 
 Conséquence à ne jamais oublier : `sift-live.ts`, `filing*.ts`, `report-view.ts`,
 `*-view.ts` — tout ce qui touche l'IPC — **ne s'exécutent jamais dans un navigateur
@@ -399,8 +410,10 @@ ni extraire une valeur d'une capture d'écran. ⚠️ `.interface-design/system.
 encore sur le disque avec une **palette et une typo périmées** : ne jamais y puiser une
 valeur. ⚠️ `docs/wireframes/<feature>.html`, cité ici jusqu'au 2026-08-05 comme lieu de
 vie des wireframes de feature, **n'existe pas** — aucun `.html` nulle part sous `docs/`.
-La seule maquette réelle est `frontend/app.js`, chargée inconditionnellement par
-`frontend/main.ts` (§ Architecture) : elle tourne en prod, et ne fait pas autorité.
+La seule maquette réelle est `frontend/app.js`, chargée **seulement hors Tauri** par
+`frontend/main.ts:61` (§ Architecture) : c'est une démo navigateur, elle ne tourne pas en prod,
+et elle ne fait pas autorité. Ce passage a dit « chargée inconditionnellement … elle tourne en
+prod » jusqu'au 2026-09-15.
 
 **Jamais de style ou de comportement UI sorti de la mémoire d'entraînement.** Avant tout
 élément neuf sans exemple fourni, consulter une référence réelle et **citer laquelle** a

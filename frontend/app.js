@@ -19,7 +19,7 @@ function openLink(u){window.open(u,'_blank','noopener');}
     x.wave=[];for(var k=0;k<32;k++){var h=18+Math.round(Math.abs(Math.sin((k+i*3)*0.7))*60+((k*7+i*13)%15));x.wave.push(h>96?96:h);}
     x.spec=[];for(var m=0;m<32;m++){var b=56+((m*5+i*11)%40);if(x.fake&&m>22)b=10+((m*3)%14);x.spec.push(b);}});
   var LIB=[["Mr. Fingers — Can You Feel It","AIFF","120","7:48","30521"],["Chez Damier — Can You Feel It","AIFF","122","7:02","41822"],["Marshall Jefferson — Move Your Body","MP3","118","6:30","18743"],["Lil Louis — French Kiss","WAV","120","9:55","9210"],["Robert Owens — Bring Down the Walls","AIFF","121","7:30","55190"],["Fingers Inc. — Distant Planet","AIFF","119","8:10","73004"]];
-  var view="home",cur=0,playing=false,tempo=0,selFolder=0,playPos=0,bibPlaying=-1,bibPos=0.3,creating=false,rkbSynced=false,outFmt=null,revMode="detail",midTab="ecoute",sel={},queueShowAll=false,dupScanDone=false,dupDismissed={},timeMode="elapsed",qw=180,bibHL=-1,diagOpen=false,metaOpen=false;
+  var view="home",cur=0,playing=false,tempo=0,selFolder=0,playPos=0,bibPlaying=-1,bibPos=0.3,creating=false,rkbSynced=false,outFmt=null,revMode="detail",midTab="ecoute",sel={},queueShowAll=false,dupScanDone=false,dupDismissed={},timeMode="elapsed",bibHL=-1,diagOpen=false,metaOpen=false;
   var content=document.getElementById('content'),nav=document.getElementById('nav');
   function extOf(f){return f==="MP3 320"?"mp3":(f==="WAV"?"wav":"aiff");}
   function defFmt(i){if(i<0)return "AIFF";return /AIFF|WAV/.test(T[i].fmt)?"AIFF":"MP3 320";}
@@ -38,7 +38,7 @@ function openLink(u){window.open(u,'_blank','noopener');}
   // 2026-07-05, annotation #8: "la barre devrait pouvoir être redimensionnable").
   var QCOL_MIN=220,QCOL_MAX=480,QCOL_DEFAULT=272;
   function qcolWidth(){
-    try{var v=parseInt(localStorage.getItem('sift-qcol-w'),10);if(v>=QCOL_MIN&&v<=QCOL_MAX)return v;}catch(e){}
+    try{var v=parseInt(localStorage.getItem('sift-qcol-w'),10);if(v>=QCOL_MIN&&v<=QCOL_MAX)return v;}catch{/* largeur illisible : on garde le defaut */}
     return QCOL_DEFAULT;
   }
   function installQueueResize(qcolEl,handleEl){
@@ -54,7 +54,7 @@ function openLink(u){window.open(u,'_blank','noopener');}
         document.removeEventListener('mousemove',onMove);
         document.removeEventListener('mouseup',onUp);
         handleEl.classList.remove('sift-qresize--active');
-        try{localStorage.setItem('sift-qcol-w',parseInt(qcolEl.style.width,10));}catch(e){}
+        try{localStorage.setItem('sift-qcol-w',parseInt(qcolEl.style.width,10));}catch{/* largeur illisible : on garde le defaut */}
       }
       document.addEventListener('mousemove',onMove);
       document.addEventListener('mouseup',onUp);
@@ -72,10 +72,6 @@ function openLink(u){window.open(u,'_blank','noopener');}
 
   function renderHome(){
     content.style.display="flex";content.style.overflowY="auto";content.style.flexDirection="column";
-    // Live (Tauri): window.__siftHome() below replaces everything except the ".h1" title with
-    // real watched-source data (home-sources.ts) — this whole block would be a wasted mock render
-    // (fake stat cards, fake folders) immediately clobbered. Same guard as renderRevue.
-    if(!('__TAURI_INTERNALS__' in window)){
     var filed=cnt("filed"),res=cnt("resource"),tr=cnt("trash"),pend=cnt("pending");
     var fakes=T.filter(function(x){return x.status==="resource"&&x.ecartReason==="fake";}).length;
     var noMeta=T.filter(function(x){return x.status==="filed"&&!x.lbl;}).length;
@@ -105,13 +101,6 @@ function openLink(u){window.open(u,'_blank','noopener');}
       +dossiers
       +(filed?'<div class="col-h" style="margin-top:12px">Répartition par dossier</div>'+bars:'');
     content.innerHTML='<div class="home-body"><div class="home-left">'+leftHtml+'</div></div>';
-    } else {
-      // Live (Tauri): shell only — list rail (col 2) + inspector (col 3), matching the
-      // Revue queue/sift-inspector grammar. renderHomeSources() (home-sources.ts) owns
-      // everything inside both columns; this bare shell is never itself visible.
-      content.innerHTML='<div class="home-body"><div class="queue" id="homequeue" style="width:272px"></div><div class="sift-inspector" id="homeinspector"></div></div>';
-    }
-    if(window.__siftHome)window.__siftHome();
   }
 
   function renderRevue(){
@@ -120,18 +109,15 @@ function openLink(u){window.open(u,'_blank','noopener');}
     // pbar/pfill is a queue-completion bar the mock demo animates below (line ~121); the real
     // Tauri app never writes #pf's width (no live consumer), so it rendered as a permanently
     // frozen empty track — dead decoration, not a real feature. Demo-only now.
-    var inT='__TAURI_INTERNALS__' in window;
-    var pbarHtml=inT?'':'<div class="pbar"><div class="pfill" id="pf" style="width:0%"></div></div>';
+    // Ex-`var inT='__TAURI_INTERNALS__' in window`, toujours faux depuis que `main.ts` ne charge
+    // ce fichier que sous `!inTauri` : la barre de progression appartient à la démo, et à elle
+    // seule.
+    var pbarHtml='<div class="pbar"><div class="pfill" id="pf" style="width:0%"></div></div>';
     // .sift-revue-row: shared row wrapper (padding lives on #content itself now, same rule for
     // every screen — see styles.css) so #qcol/.sift-qresize/#rvinspector no longer each carry
     // their own hand-tuned margin to fake the window-edge inset and the inter-panel gap.
     content.innerHTML='<div class="sift-revue-row"><div class="queue" id="qcol" style="width:'+qcolWidth()+'px"><div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:3px"><span class="col-h" style="margin:0">File</span><span style="display:flex;gap:3px"><span data-act="revmode" data-m="detail" title="Vue détail" style="cursor:pointer;color:var(--color-text-info)"><i class="ti ti-layout-list" style="font-size:14px"></i></span><span data-act="revmode" data-m="batch" title="Mode batch" style="cursor:pointer;color:var(--color-text-tertiary)"><i class="ti ti-table" style="font-size:14px"></i></span></span></div>'+pbarHtml+'<div id="ql"></div>'+(doneCount?'<div style="padding:5px 4px 0"><span data-act="togglequeue" style="font-size:10px;color:var(--color-text-tertiary);cursor:pointer;text-decoration:underline">'+(queueShowAll?'Masquer les traités':'+ '+doneCount+' traités')+'</span></div>':'')+'</div><div class="sift-qresize" title="Redimensionner la file"></div><div class="sift-inspector" id="rvinspector"><div class="mid" id="mid"></div><div class="sift-action-rail" id="filfoot"></div><div class="sift-dest-popover" id="fldz" hidden></div></div></div>';
     installQueueResize(document.getElementById('qcol'),content.querySelector('.sift-qresize'));
-    // Live (Tauri): window.__siftQueue() below overwrites #ql/#fldz/#mid with the real data —
-    // this whole block would just be a wasted mock render (fake queue rows, fake destination
-    // folders, and renderMid()'s canvas spectrogram draw, ~18k pixels) immediately clobbered.
-    // Same inTauri test as the keyboard handler below. Hors Tauri (démo web Vercel) reste actif.
-    if(!('__TAURI_INTERNALS__' in window)){
       var done2=T.length-pendingCount;document.getElementById('pf').style.width=Math.round(done2/T.length*100)+"%";
       var h="";T.forEach(function(x,i){
         var isPending=x.status==="pending";
@@ -149,8 +135,6 @@ function openLink(u){window.open(u,'_blank','noopener');}
       fh+= creating ? '<input id="newin" placeholder="nom du dossier…" style="width:100%;font-size:12px;padding:5px 7px;margin-top:2px">' : '<div class="fld" data-act="newfld" style="color:var(--color-text-tertiary)"><i class="ti ti-plus" style="font-size:14px"></i> nouveau</div>';
       document.getElementById('fldz').innerHTML=fh;renderMid();
       if(creating){var ni=document.getElementById('newin');if(ni)ni.focus();}
-    }
-    if(window.__siftQueue)window.__siftQueue();
   }
 
   function renderMid(){var mid=document.getElementById('mid');if(!mid)return;
@@ -247,22 +231,12 @@ function openLink(u){window.open(u,'_blank','noopener');}
   }
 
   function renderRkb(){block();var filed=cnt("filed"),byF=byFolder();
-    // Live (Tauri): window.__siftRkb() below (renderRekordboxLive) sets #content.innerHTML fully
-    // from real Rekordbox status — this whole block (fake sync state, fake XML/master.db chips)
-    // is a wasted mock render immediately clobbered. Same guard as renderRevue/renderBiblio.
-    if(!('__TAURI_INTERNALS__' in window)){
     var pls=FOLDERS.map(function(f,i){var n=byF[i]||0;return '<div class="srow"><span class="v"><i class="ti ti-playlist"></i> '+f+'</span><span style="font-size:11px;color:'+(n?'var(--color-text-info)':'var(--color-text-tertiary)')+'">'+(n?'+ '+n:'à jour')+'</span></div>';}).join('');
     var action= rkbSynced?'<div style="display:flex;align-items:center;gap:8px;background:var(--color-background-success);border-radius:var(--border-radius-md);padding:12px 15px;margin-bottom:15px;color:var(--color-text-success)"><i class="ti ti-circle-check" style="font-size:18px"></i><span style="font-size:13px;font-weight:500">Rekordbox à jour — '+filed+' synchronisés</span></div>':'<div style="display:flex;align-items:center;justify-content:space-between;background:var(--color-background-info);border-radius:var(--border-radius-md);padding:12px 15px;margin-bottom:15px"><div><div style="font-size:14px;font-weight:500;color:var(--color-text-info)">'+filed+' rangés à pousser</div><div style="font-size:11px;color:var(--color-text-info);opacity:.8">dernière sync : il y a 2 j</div></div><button data-act="rksync">Mettre à jour <i class="ti ti-refresh" style="font-size:12px;vertical-align:-2px"></i></button></div>';
     content.innerHTML='<div class="h1">Rekordbox</div>'+action+'<div class="col-h">Playlists générées</div>'+pls+'<div class="col-h" style="margin-top:14px">Mode</div><div style="display:flex;gap:8px;margin-bottom:12px"><span class="chip on">XML — sûr</span><span class="chip">master.db — natif ⚠️</span></div><div style="display:flex;gap:8px;align-items:flex-start;font-size:11px;color:var(--color-text-warning);background:var(--color-background-warning);border-radius:var(--border-radius-md);padding:9px 12px"><i class="ti ti-alert-triangle" style="font-size:14px;flex:none"></i><span>Ferme Rekordbox avant de synchroniser. En master.db : backup auto.</span></div>';
-    }
-    if(window.__siftRkb)window.__siftRkb();
   }
 
   function renderBiblio(){block();
-    // Live (Tauri): window.__siftBiblio() below (renderBiblioLive) sets #content.innerHTML fully
-    // from real library data — this whole block (fake rows, fake dup scanner) is a wasted mock
-    // render immediately clobbered. Same guard as renderRevue/renderHome.
-    if(!('__TAURI_INTERNALS__' in window)){
     var rows=LIB.map(function(r,i){var on=i===bibPlaying;var hl=i===bibHL;return '<div class="lr"'+(on?' style="background:var(--color-background-info);border-radius:var(--border-radius-md);border-bottom:none"':hl?' style="background:var(--color-background-warning);border-radius:var(--border-radius-md);outline:1px solid var(--color-text-warning)"':'')+'><button class="pb" data-act="bplay" data-i="'+i+'" aria-label="Écouter"'+(on?' style="color:var(--color-text-info)"':'')+'><i class="ti '+(on?'ti-player-pause':'ti-player-play')+'" style="font-size:12px"></i></button><span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis'+(on?';color:var(--color-text-info);font-weight:500':'')+'">'+r[0]+'</span><span class="pill" style="flex:none">'+r[1]+'</span><span style="flex:none;width:28px;text-align:right;font-family:var(--font-mono);color:var(--color-text-tertiary)">'+r[2]+'</span><span style="flex:none;width:34px;text-align:right;font-family:var(--font-mono);color:var(--color-text-tertiary)">'+r[3]+'</span><button class="lk" data-act="link" data-i="'+i+'" aria-label="Fiche Discogs"><i class="ti ti-external-link" style="font-size:13px;color:var(--color-text-tertiary)"></i></button></div>';}).join('');
     var player="";if(bibPlaying>=0){var r=LIB[bibPlaying];var tot=pT(r[3]);var w="";for(var k=0;k<40;k++){var hh=18+Math.round(Math.abs(Math.sin((k+bibPlaying*3)*0.7))*60+((k*7)%15));if(hh>96)hh=96;w+='<span style="height:'+hh+'%;background:'+(k/40<=bibPos?'var(--color-text-info)':'var(--color-text-tertiary)')+'"></span>';}player='<div style="margin-top:10px;background:var(--color-background-secondary);border-radius:var(--border-radius-md);padding:9px 11px;display:flex;align-items:center;gap:10px"><button class="pb" data-act="bplay" data-i="'+bibPlaying+'" aria-label="Pause" style="color:var(--color-text-info)"><i class="ti ti-player-pause" style="font-size:13px"></i></button><span style="flex:none;width:116px;min-width:0;font-size:11px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+r[0]+'</span><div class="bars" data-act="bseek" style="flex:1;height:30px">'+w+'</div><span style="flex:none;font-family:var(--font-mono);font-size:10px;color:var(--color-text-tertiary)">'+fT(tot*bibPos)+' / '+r[3]+'</span></div>';}
 
@@ -302,8 +276,6 @@ function openLink(u){window.open(u,'_blank','noopener');}
       +scanSection
       +'<div style="display:flex;gap:14px"><div style="width:130px;flex:none"><div class="col-h">Dossiers</div>'+['House 412','Techno 318','Disco/Edits 196','Ambient 142','Breakbeat 98'].map(function(s,i){var p=s.split(' '),n=p.pop();return '<div class="fld'+(i===0?' on':'')+'" style="justify-content:space-between"><span>'+p.join(' ')+'</span><span style="font-size:11px;opacity:.7">'+n+'</span></div>';}).join('')+'</div>'
       +'<div style="flex:1;min-width:0"><div style="display:flex;justify-content:space-between;margin-bottom:5px"><span style="font-size:13px;font-weight:500">House</span><span style="font-size:11px;color:var(--color-text-tertiary)">412 morceaux</span></div>'+rows+player+'</div></div>';
-    }
-    if(window.__siftBiblio)window.__siftBiblio();
   }
 
   var STORES=[
@@ -315,13 +287,9 @@ function openLink(u){window.open(u,'_blank','noopener');}
     {id:'apple',label:'Apple Music',url:function(q){return 'https://music.apple.com/fr/search?term='+q;}}
   ];
 
-  function renderJournal(){block();content.innerHTML='';if(window.__siftJournal)window.__siftJournal();}
+  function renderJournal(){block();content.innerHTML='';}
 
   function renderEcarts(){block();
-    // Live (Tauri): window.__siftEcarts() below (ecartes-view.ts's renderEcartes) sets
-    // #content.innerHTML fully from real rejected/trashed tracks — this whole block is a wasted
-    // mock render immediately clobbered. Same guard as renderRevue/renderHome/renderBiblio.
-    if(!('__TAURI_INTERNALS__' in window)){
     var ecarts=T.filter(function(x){return x.status==="resource"||x.status==="trash";});
     var filterR=ecarts.filter(function(x){return x.status==="resource";});
     var filterT=ecarts.filter(function(x){return x.status==="trash";});
@@ -356,36 +324,15 @@ function openLink(u){window.open(u,'_blank','noopener');}
       +'</div>'
       +(rows||'<div style="font-size:12px;color:var(--color-text-tertiary)">Aucun fichier écarté.</div>')
       ;
-    }
-    if(window.__siftEcarts)window.__siftEcarts();
   }
 
   function renderCle(){block();
-    // Live (Tauri): window.__siftCle() below (renderUsbLive) hides every child except ".h1" and
-    // injects the real removable-disk list — the mock volumes (USB DJ, SSD Samsung T7) and its
-    // fake confirm field are a wasted render immediately hidden. Same guard as the other render*
-    // functions above. Title is the nav label ("Clé USB"), not "Formater la clé": the screen now
-    // owns everything USB, not just the format action.
-    if(!('__TAURI_INTERNALS__' in window)){
     content.innerHTML='<div class="h1">Formater la clé</div><div style="display:flex;gap:8px;align-items:flex-start;background:var(--color-background-warning);border-radius:var(--border-radius-md);padding:9px 12px;margin-bottom:14px;font-size:11px;color:var(--color-text-warning)"><i class="ti ti-alert-triangle" style="font-size:15px;flex:none"></i><span>Volumes <strong>amovibles uniquement</strong> — le formatage <strong>efface tout</strong>.</span></div><div class="col-h">Volume</div><div class="srow"><span class="v"><i class="ti ti-usb"></i> USB DJ — 28 Go <span style="color:var(--color-text-tertiary)">(FAT32)</span></span><i class="ti ti-circle-check" style="color:var(--color-text-info);font-size:16px"></i></div><div class="srow"><span class="v"><i class="ti ti-usb"></i> SSD Samsung T7 — 500 Go <span style="color:var(--color-text-tertiary)">(exFAT)</span></span><i class="ti ti-circle" style="color:var(--color-text-tertiary);font-size:16px"></i></div><div class="col-h" style="margin-top:14px">Format</div><div style="display:flex;gap:8px;margin-bottom:14px"><span class="chip on">FAT32 — compat tous CDJ</span><span class="chip">exFAT — CDJ récents</span></div><div style="display:flex;align-items:center;gap:9px"><div style="flex:1;border:0.5px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:6px 10px;font-size:12px;color:var(--color-text-tertiary)">tape « USB DJ » pour confirmer</div><button style="color:var(--color-text-danger);border-color:var(--color-border-danger)">Formater</button></div>';
-    } else {
-      content.innerHTML='<div class="h1">Clé USB</div>';
-    }
-    if(window.__siftCle)window.__siftCle();
   }
 
   function renderReglages(){block();
-    // Live (Tauri): window.__siftReglages() below (renderReglagesLive) hides every child except
-    // ".h1" and injects real cards (Discogs/Bibliothèque/Apparence) — the placeholder rows here
-    // (Dossiers source, Format lossless…) are a wasted mock render immediately hidden. Same guard
-    // as the other render* functions above.
-    if(!('__TAURI_INTERNALS__' in window)){
     var rows=[['Dossiers source','2 dossiers'],['Dossiers destination','6 genres'],['Format lossless','AIFF · 16-bit / 44,1 kHz'],['Format lossy','MP3 320 (pas d\'upscale)'],['Modèle de nommage','Artiste - Titre (Mix) [Label]'],['Sensibilité anti-fake','standard'],['Identification','tags → Discogs → manuel'],['Discogs','connecté'],['Intégration Rekordbox','XML (master.db désactivé)'],['Normalisation','désactivée']];
     content.innerHTML='<div class="h1">Réglages</div>'+rows.map(function(r){return '<div class="srow"><span>'+r[0]+'</span><span class="v">'+r[1]+' <i class="ti ti-chevron-right" style="font-size:14px;color:var(--color-text-tertiary)"></i></span></div>';}).join('');
-    } else {
-      content.innerHTML='<div class="h1">Réglages</div>';
-    }
-    if(window.__siftReglages)window.__siftReglages();
   }
 
   var pa=document.getElementById('pa');
@@ -425,11 +372,6 @@ function openLink(u){window.open(u,'_blank','noopener');}
   });
   pa.addEventListener('input',function(e){if(e.target.dataset.act==='tempo'){tempo=parseInt(e.target.value,10);var o=document.getElementById('tout');if(o)o.textContent=(tempo>0?'+':'')+tempo+'%';}});
   pa.addEventListener('keydown',function(e){
-    // Live (Tauri): the real keyboard layer (installFilingKeys) owns SPACE/Enter/X/1-9. This
-    // mockup handler is a web-demo vestige — if it ran here, its renderMid() would repaint the
-    // demo data (Mr. Fingers) over the real track. Same inTauri test as main.ts. Hors Tauri
-    // (démo web Vercel) il reste actif.
-    if('__TAURI_INTERNALS__' in window)return;
     if(e.target.id==='newin'){if(e.key==='Enter'){var val=e.target.value.trim();if(val){FOLDERS.push(val);creating=false;fileTo(FOLDERS.length-1);}}else if(e.key==='Escape'){creating=false;render();}return;}
     if(e.target.tagName==='INPUT')return;if(view!=="revue"||revMode!=="detail")return;
     var nk=parseInt(e.key,10);

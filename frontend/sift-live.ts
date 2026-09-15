@@ -236,8 +236,10 @@ export function installLiveWiring() {
   installWindowShortcuts();
   void installDragDrop();
 
-  // Nav "Clé USB" (`data-view="cle"`) needs no special handling: app.js's own router renders the
-  // screen and `window.__siftCle` above swaps in the live content. It used to be intercepted here
+  // Nav "Clé USB" (`data-view="cle"`) needs no special handling: `router.ts` renders the screen
+  // directly. Ce commentaire disait « `window.__siftCle` above swaps in the live content », au
+  // présent, à trente lignes du bloc qui dit l'inverse — le fichier se contredisait depuis que le
+  // pont a disparu. It used to be intercepted here
   // in the capture phase and redirected to Réglages, where the format card then lived — the nav
   // item lit up "Réglages" and landed on a page about something else. Both the interception and the
   // card moved out on 2026-07-31 (`usb-view.ts`).

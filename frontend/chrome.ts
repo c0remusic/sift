@@ -352,9 +352,14 @@ export async function injectTitlebar(): Promise<void> {
 }
 
 /** Audit-ref C3 (Accueil, 2026-07-08, réf. shadcn Sidebar) : `.nv`/`[data-view]` sont des `<div>`
- * cliquables sans équivalent clavier — `app.js` (importé sans garde `inTauri`, main.ts:6) gère déjà
- * le clic réel (`e.target.closest('[data-view]')`) mais n'écoute que "click". Complète en Enter/
- * Espace sans toucher app.js (figé) : redispatche un clic synthétique sur l'élément focus. Couvre
+ * cliquables sans équivalent clavier — `router.ts` gère le clic réel
+ * (`e.target.closest('[data-view]')`) mais n'écoute que "click". Complète en Enter/Espace :
+ * redispatche un clic synthétique sur l'élément focus.
+ *
+ * ⚠️ Cette justification a nommé `app.js` « importé sans garde `inTauri`, main.ts:6 » jusqu'au
+ * 2026-09-15, alors que `main.ts:61` ne la charge que sous `!inTauri` et que `chrome.ts:153`
+ * l'écrivait déjà correctement dans le même fichier. Le besoin d'un équivalent clavier, lui, ne
+ * dépendait pas de cette prémisse : il reste entier. Couvre
  * aussi les lignes `.qi[data-sift="homerow"]` (rail de sources, supprime le 2026-08-19), l'arbre de destination
  * `[data-fil="bin"]` (audit-ref R4, Revue, filing.ts) et les facettes/lignes Bibliothèque
  * `[data-bib="pick"]`/`[data-bib="row"]` (audit-ref B1) et la ligne de sélection réparations

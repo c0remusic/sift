@@ -3,19 +3,20 @@
 // Jusqu'ici c'était `frontend/app.js`, la maquette d'origine, qui routait l'app RÉELLE :
 // `main.ts` l'importait sans condition, elle tenait l'état de vue, le clic sur `[data-view]`,
 // le titre accessible, les deux coquilles (Revue, Accueil) et le redimensionnement de la file —
-// et appelait les vues live par huit globales `window.__sift*`. Six de ses sept renderers de
-// démo étaient neutralisés par un garde `!('__TAURI_INTERNALS__' in window)` répété six fois,
-// et le septième (`renderBatch`) était mort, masqué par une règle CSS de `chrome.ts`.
+// et appelait les vues live par huit globales `window.__sift*`. SEPT de ses renderers de démo
+// étaient neutralisés par un garde `!('__TAURI_INTERNALS__' in window)` — ce texte disait « six »,
+// le compte réel est sept —, et `renderBatch` était mort, masqué par une règle CSS de `chrome.ts`.
 //
 // Ce module reprend EXACTEMENT ce que la maquette fournissait au chemin de production, et rien
 // d'autre : mêmes coquilles, mêmes identifiants, mêmes bornes de redimensionnement, même clé de
 // stockage. Aucun changement visible — c'est un préalable, pas une refonte. Les étapes 2 et 3
 // (barre unifiée, shell à trois zones) construisent dessus.
 //
-// `app.js` n'est plus chargée que hors Tauri (`main.ts`), où elle redevient ce qu'elle est : une
-// démo navigateur. Ses gardes `inTauri` y sont désormais toujours faux, donc elle rend enfin sa
-// maquette complète au lieu de coquilles vides, et ses appels `window.__sift*` ne trouvent rien —
-// ce qui est correct : le wiring live n'existe pas dans un navigateur.
+// `app.js` n'est plus chargée que hors Tauri (`main.ts:61`), où elle est ce qu'elle est : une
+// démo navigateur. Les gardes et le pont ont été RETIRÉS du fichier le 2026-09-15 — ils y
+// survivaient à valeur constante, sept gardes toujours fausses et huit appels à un pont dont
+// `773bb6a` avait emporté le dernier écrivain le 2026-08-19. La démo rend sa maquette complète
+// parce que c'est le seul code qui reste, et non plus parce qu'une condition tombe du bon côté.
 import { requireEl } from "./dom";
 import { closeAside } from "./toolbar";
 import { renderQueue } from "./queue-panel";
