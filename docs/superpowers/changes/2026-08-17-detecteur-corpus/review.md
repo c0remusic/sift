@@ -1148,3 +1148,78 @@ envisagée ci-dessus, devient secondaire.
 `mdct::vorbis_window` (calculée, pas tabulée, Princen-Bradley tenu par test),
 `Fenetre::Vorbis`, `quant_trace::Exposant` qui rend l'échelle explicite au lieu de câbler le
 3/4, et la sonde elle-même, rejouable. Aucun verdict ne change.
+
+## Le cadrage de l'encodeur : la méthode marche, et elle voit Vorbis et WMA (2026-09-15)
+
+Implémentation de Kim & Rafii (EUSIPCO 2018) dans `analysis/framing.rs`. Elle ne cherche pas la
+grille de quantification mais la POSITION de cadrage : le signal décodé est ré-analysé en MDCT à
+chaque départ possible, et quand le cadrage retombe sur celui de l'encodeur, les coefficients
+annulés se réalignent et l'énergie moyenne en dB fait une marche. C'est cette marche que la
+mesure lit, par différence entre positions voisines, puis somme circulaire sur les blocs.
+
+### Trois défauts corrigés AVANT de mesurer
+
+Une revue adversariale du premier jet les a trouvés, et chacun aurait rendu la mesure
+ininterprétable :
+
+1. **Saut faux d'un facteur deux.** Une fenêtre de `2n` à demi-recouvrement avance de `n`, pas de
+   `n/2` — le papier appelle `N` la longueur de fenêtre, notre code appelle `n` le nombre de
+   coefficients. On testait 513 cadrages au lieu de 1025, et deux cadrages distincts se
+   repliaient sur le même angle.
+2. **Un faux pic parfait.** Borner chaque décalage par la fin du bloc faisait varier le nombre de
+   trames avec la position : une marche déterministe au même index dans chaque bloc, quel que
+   soit le fichier. Pire qu'un artefact ordinaire — il ne TOURNE pas d'un bloc à l'autre, donc la
+   somme circulaire l'aurait récompensé plus qu'une vraie détection. C'est aujourd'hui la gate du
+   module (`toutes_les_positions_moyennent_le_meme_nombre_de_trames`), mesurée par mutation.
+3. **Angle local au lieu d'absolu.** Les blocs ne commencent pas à des multiples du saut
+   (`44100 mod 1024 = 68`), donc l'index d'un vrai transcodage tournait d'un bloc à l'autre et la
+   somme circulaire annulait ce qu'elle devait additionner.
+
+### La mesure
+
+30 fichiers, 4 blocs d'une seconde chacun, 5 jeux (AAC en KBD, Vorbis, AAC en sinus, MP3 à 576,
+WMA à 2048). Score = module de la somme circulaire.
+
+| famille | scores | jeu gagnant | index du cadrage |
+|---|---|---|---|
+| authentiques (6) | 6,6 à **11,7** | varie | dispersé |
+| wma192 | 95,2 · 95,2 · 122,6 | wma | 0 · 0 · 0 |
+| aac128 | 69,9 · 64,3 · 89,4 | aac | 0 · 0 · 0 |
+| aac256 | 66,9 · 42,3 · 53,7 | aac | 0 · 0 · 0 |
+| vorbisq5 | 33,0 · 51,0 · 42,8 | vorbis | 320 · 320 · 832 |
+| lameV0 | 29,8 · 22,1 · 31,6 | mp3 | 287 · 286 · 286 |
+| mfmp3_320 | 14,0 · 9,0 · 24,0 | mp3 | 287 · 287 · 287 |
+| lame320 | 15,3 · 8,4 · 11,9 | mp3 | 286 · 204 · 286 |
+| opus128 | 6,2 · 9,0 · 10,0 | — | dispersé |
+
+**Seuil 12 : 18 transcodages sur 24, zéro faux positif sur 6 authentiques.**
+
+Deux choses valident la mesure au-delà du score. D'abord **Vorbis 3/3 et WMA 3/3** : les deux
+codecs qu'aucun banc de grille ne voyait, et WMA avec dix fois la marge. Ensuite **l'index**, qui
+est la vraie signature : tous les MP3 tombent sur 286 ou 287, tous les AAC et tous les WMA sur 0.
+Un cadrage d'encodeur est constant ; du bruit ne l'est pas. Les authentiques, eux, se dispersent.
+
+### Ce qui échappe, et pourquoi
+
+**Opus, 0 sur 3, pour une raison structurelle vérifiée** : Opus n'encode qu'à 48 kHz. Sur une
+source à 44,1, ffmpeg rééchantillonne à l'aller et au retour, et un cadrage périodique de 480
+échantillons à 48 kHz devient 441 échantillons non entiers à 44,1. La grille temporelle est
+détruite avant même qu'on la cherche. Aucun réglage de cette méthode n'y changera rien ; il
+faudrait analyser à 48 kHz, ou détecter le rééchantillonnage lui-même.
+
+**MP3 reste modeste** (5 sur 6 au-dessus du seuil, scores de 8 à 32) : le banc hybride de la
+couche III n'est qu'approché par une MDCT de 576. Sans importance — `mp3_bank` fait déjà 10/10
+sur cette famille.
+
+### Complémentarité, et le coût
+
+Les deux approches ne se recouvrent pas : la grille gagne sur MP3 et AAC, le cadrage gagne sur
+Vorbis et WMA. Ensemble elles couvriraient tout sauf Opus.
+
+⚠️ **Le coût interdit le branchement en l'état** : 13 secondes par fichier pour 4 blocs et 5
+jeux, contre 0,6 s pour le banc MP3 et un budget d'analyse du même ordre. Le coût est d'une MDCT
+par échantillon analysé, par jeu — linéaire en durée et en nombre de jeux, indifférent à `N`.
+Trois leviers, dans l'ordre de rendement : ne garder que les jeux utiles (Vorbis et WMA suffisent
+à couvrir l'angle mort, les autres familles étant déjà tenues), réduire les blocs à deux, et ne
+lancer la mesure que sur les fichiers que les autres signaux n'ont pas tranchés. Rien de tout
+cela n'est mesuré à ce jour.

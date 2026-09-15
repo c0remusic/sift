@@ -424,6 +424,20 @@ impl Fenetre {
         }
     }
 
+    /// La fenêtre de `2n` échantillons pour une taille LIBRE, hors des deux résolutions AAC.
+    ///
+    /// `analysis::framing` balaye des tailles que `BlockKind` ne nomme pas — 576 pour la MDCT
+    /// longue de MP3, 2048 pour WMA. Le `α` de la KBD suit la même règle que la norme AAC : 4
+    /// pour une fenêtre longue, 6 pour une courte, la bascule étant prise à 512 coefficients.
+    pub fn echantillons_n(self, n: usize) -> Vec<f32> {
+        let two_n = 2 * n;
+        match self {
+            Fenetre::Sinus => sine_window(two_n),
+            Fenetre::Kbd => kbd_window(two_n, if n >= 512 { 4.0 } else { 6.0 }),
+            Fenetre::Vorbis => crate::analysis::mdct::vorbis_window(two_n),
+        }
+    }
+
     /// La fenêtre de `2N` échantillons pour cette forme et cette résolution. Les `α` sont ceux
     /// de la norme : 4 pour les blocs longs, 6 pour les courts.
     pub fn echantillons(self, kind: BlockKind) -> Vec<f32> {

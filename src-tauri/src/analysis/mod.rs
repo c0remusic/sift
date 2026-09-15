@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 pub mod aac_sfb;
 pub mod decode;
 pub mod dynamics;
+pub mod framing;
 pub mod mdct;
 pub mod mp3_bank;
 pub mod peaks;
