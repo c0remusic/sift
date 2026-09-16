@@ -282,10 +282,36 @@ pub fn analysis_progress(conn: State<'_, Mutex<Connection>>) -> Result<AnalysisP
 /// Run the analysis engine on a track and return the full report. Constrained to paths Sift
 /// already knows (present in `tracks`) so the webview can't turn this into an arbitrary
 /// file-read / decode oracle on any path on disk.
+/// Ouvre le rapport d'une piste. **Hors du fil de la fenêtre**, et c'est la raison d'être de sa
+/// forme.
+///
+/// LE DÉFAUT QU'ELLE CORRIGE, mesuré le 2026-09-16 sur l'app en fonctionnement. Une commande
+/// Tauri synchrone s'exécute EN LIGNE sur le fil de la fenêtre : `wry` installe le gestionnaire
+/// par `add_WebMessageReceived` (rappel WebView2), `tauri::protocol` l'appelle sans `spawn`, et
+/// `tauri-macros` choisit `Blocking` par défaut. Sur un cache périmé, le corps appelle
+/// `analysis::analyze`, chiffré de 33 à 60 s dans le journal de production. Pendant ce temps la
+/// boucle de messages ne pompe plus : `(Get-Process sift).Responding` mesuré à **False**, CPU de
+/// l'hôte passant de 547 % à 1162 %, renderer WebView2 à 0 % — il attend. À l'écran : clics
+/// morts, rien qui bouge, et le cadre blanc que Windows peint pour une fenêtre qui ne répond pas.
+///
+/// `spawn_blocking` et pas `(async)` nu : `(async)` sur une fonction synchrone poserait le corps
+/// bloquant sur un worker ASYNC du runtime de Tauri — celui de sa propre plomberie.
+/// `tauri::async_runtime::spawn_blocking` vise l'exécuteur « dedicated to blocking operations »,
+/// qui existe pour ça. Même entorse, meilleure place.
+///
+/// ⚠️ ENTORSE ASSUMÉE à « Aucun runtime async » (`CLAUDE.md` § Backend). Elle est étroite et se
+/// lit ici en entier : le corps d'analyse reste du Rust SYNCHRONE (`analyze_path_bloquant`
+/// ci-dessous), le pool, le `Mutex<Connection>` et `analysis::analyze` ne bougent pas. Seul
+/// l'aiguillage IPC devient `async`. tokio est déjà dans l'arbre par transitivité de `tauri`, et
+/// son runtime tourne déjà — cette fonction n'en ajoute aucun. La page perf de WebView2 recommande
+/// d'ailleurs explicitement l'asynchrone pour la communication hôte/web.
+///
+/// Rien ne change côté frontend, et ce n'est pas de la chance : `report-view.ts` tire déjà la
+/// promesse SANS l'attendre, peint la coque, puis court contre un délai de 300 ms avant
+/// d'afficher son squelette. Il était construit pour une analyse lente.
 #[tauri::command]
-pub fn analyze_path(
+pub async fn analyze_path(
     app: AppHandle,
-    conn: State<'_, Mutex<Connection>>,
     path: String,
     with_spectrogram: bool,
     // Only the genuine user-driven open of a track (openReportInto) passes true: on a confirmed
@@ -295,6 +321,26 @@ pub fn analyze_path(
     // (review: a 400ms prefetch or a self-test over moved files was a hidden bulk row-deleter).
     allow_forget: bool,
 ) -> Result<crate::analysis::AnalysisReport, String> {
+    tauri::async_runtime::spawn_blocking(move || {
+        analyze_path_bloquant(app, path, with_spectrogram, allow_forget)
+    })
+    .await
+    // Le fil a paniqué ou été annulé. Pas de `unwrap` : l'interdiction du dépôt vaut ici comme
+    // ailleurs, et un panic dans `analyze` sur un fichier utilisateur corrompu est précisément ce
+    // que `worker_loop` attrape déjà par `catch_unwind`.
+    .map_err(|e| format!("analyze_path: le fil d'analyse n'a pas rendu : {e}"))?
+}
+
+/// Le corps d'`analyze_path`, inchangé et SYNCHRONE. Séparé pour que `spawn_blocking` ait quelque
+/// chose de `'static + Send` à porter : `State<'_, _>` ne traverse pas une frontière de fil, donc
+/// la connexion se reprend ici depuis l'`AppHandle`, qui, lui, est `Clone + Send + 'static`.
+fn analyze_path_bloquant(
+    app: AppHandle,
+    path: String,
+    with_spectrogram: bool,
+    allow_forget: bool,
+) -> Result<crate::analysis::AnalysisReport, String> {
+    let conn = app.state::<Mutex<Connection>>();
     {
         let conn = db::lock_conn(&conn)?;
         // ALWAYS require a known track first (security: not an arbitrary-file decode oracle),
@@ -655,6 +701,57 @@ fn spawn_scan(app: AppHandle, source_id: i64) {
 mod tests {
     use super::*;
     use crate::analysis::Spectrogram;
+
+    /// `analyze_path` ne doit JAMAIS redevenir une commande synchrone.
+    ///
+    /// Mesuré le 2026-09-16 sur l'app en fonctionnement : sous cette forme-là, ouvrir une piste au
+    /// cache périmé bloquait la boucle de messages de la fenêtre pendant toute l'analyse —
+    /// `Responding` à False, 33 à 60 s selon le fichier. Le retour à `pub fn` serait invisible :
+    /// tout compilerait, tous les tests passeraient, et seule une session de plusieurs heures
+    /// ferait réapparaître le gel.
+    ///
+    /// Test de SOURCE, comme `worker::tests::init_abaisse_la_priorite_dans_la_closure_du_fil` et
+    /// pour la même raison : exercer le vrai chemin demanderait `tauri::test::mock_app()`, donc la
+    /// feature Cargo `test` sur `tauri` — une décision de dépendance, à remonter, pas à prendre au
+    /// passage. C'est le cran 1 par un autre chemin, pas une descente au cran 4.
+    ///
+    /// Solidaire de `cargo fmt --check`, qui est une gate : la forme des lignes cherchées est donc
+    /// stable. Si ce test casse après un reformatage volontaire, ajuster les aiguilles — jamais le
+    /// supprimer.
+    #[test]
+    fn analyze_path_reste_hors_du_fil_de_la_fenetre() {
+        let source = include_str!("ipc.rs");
+
+        assert!(
+            source.contains("pub async fn analyze_path("),
+            "`analyze_path` n'est plus `async` : son corps redeviendrait synchrone sur le fil de \
+             la fenetre, et ouvrir une piste au cache perime regelerait l'interface 30 a 60 s"
+        );
+
+        let debut = source
+            .find("pub async fn analyze_path(")
+            .expect("signature deja verifiee presente");
+        let corps = &source[debut..];
+        let fin = corps
+            .find("fn analyze_path_bloquant(")
+            .expect("le corps synchrone doit suivre la commande");
+        let commande = &corps[..fin];
+
+        assert!(
+            commande.contains("tauri::async_runtime::spawn_blocking("),
+            "la commande ne delegue plus a `spawn_blocking` : un corps bloquant pose sur un worker \
+             ASYNC du runtime de Tauri peut affamer sa propre plomberie"
+        );
+        assert!(
+            commande.contains("analyze_path_bloquant("),
+            "la commande n'appelle plus le corps synchrone extrait"
+        );
+        assert!(
+            !commande.contains(".unwrap()") && !commande.contains(".expect("),
+            "interdiction dure du depot hors #[cfg(test)] : le fil peut paniquer ou etre annule, \
+             son echec se rend en Err"
+        );
+    }
 
     /// L'invariant qui tient la Phase 5 : ce qui part en base ne contient JAMAIS la grille, et le
     /// rapport rendu à l'appelant la garde intacte. Les deux moitiés comptent — n'écrire que la

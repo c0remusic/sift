@@ -299,9 +299,19 @@ envoyée par `save_annotation` qui append `docs/annotations.jsonl`.
 
 ### Backend : synchrone, un Mutex, des migrations append-only
 
-- **Aucun runtime async.** Ni `tokio` ni `async-std` dans l'arbre. La concurrence est un
-  pool `std::thread::spawn` dimensionné sur `available_parallelism()`, coordonné par
-  `Arc<(Mutex<Queue>, Condvar)>` (`worker.rs`). Ne pas proposer de patterns async.
+- **Backend synchrone.** La concurrence est un pool `std::thread::spawn` dimensionné sur
+  `available_parallelism()`, coordonné par `Arc<(Mutex<Queue>, Condvar)>` (`worker.rs`). Ne pas
+  proposer de patterns async : aucune logique métier n'est écrite en `async`.
+  ⚠️ Cette ligne a dit « Aucun runtime async. Ni `tokio` ni `async-std` dans l'arbre » jusqu'au
+  2026-09-16, et les deux moitiés étaient fausses : **tokio est dans `Cargo.lock` par
+  transitivité de `tauri`**, et son runtime (`tauri::async_runtime`) tourne déjà pour la
+  plomberie de Tauri. **Une seule** commande y touche — `ipc::analyze_path`, `async` depuis le
+  2026-09-16, dont le corps part sur `tauri::async_runtime::spawn_blocking`. Elle porte sa
+  justification en doc-comment : synchrone, elle s'exécutait sur le fil de la fenêtre
+  (`wry` → `add_WebMessageReceived`, `tauri::protocol` en ligne, `tauri-macros` `Blocking` par
+  défaut) et y bloquait 33 à 60 s sur un cache périmé — `Responding=False` mesuré sur l'app en
+  fonctionnement. Gardée par `ipc::tests::analyze_path_reste_hors_du_fil_de_la_fenetre`.
+  Étendre cette exception à une deuxième commande est une décision, pas un suivi de motif.
 - **SQLite = `Mutex<Connection>` derrière un Tauri `State`.** Utiliser
   `db::lock_conn(&conn)`, jamais `.lock().map_err(...)` à la main.
 - **`db.rs::MIGRATIONS`** : index + 1 == version de schéma (`PRAGMA user_version`).
