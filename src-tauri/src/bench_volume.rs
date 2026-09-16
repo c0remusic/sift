@@ -16,11 +16,15 @@
 //! Run with: `cargo test --release -- --ignored --nocapture bench_volume`
 //! (release build matters: these numbers are meaningless in an unoptimised debug build).
 //!
-//! Add `--test-threads=1` as soon as more than one bench is selected: since P1 there are TWO
-//! `#[ignore]`d benchmarks in this file, and the default harness runs them on parallel threads —
-//! their output interleaves AND they contend for CPU/disk, inflating both by a measurable margin
-//! (list_pending 16 ms → 19 ms, find_duplicate 56 ms → 59 ms, observed 2026-07-27). Every number
-//! quoted from this file must say which of the two modes produced it.
+//! Add `--test-threads=1` as soon as more than one bench is selected: this file holds SEVERAL
+//! `#[ignore]`d benchmarks, and the default harness runs them on parallel threads — their output
+//! interleaves AND they contend for CPU/disk, inflating both by a measurable margin (list_pending
+//! 16 ms → 19 ms, find_duplicate 56 ms → 59 ms, observed 2026-07-27). Every number quoted from
+//! this file must say which of the two modes produced it.
+//!
+//! ⚠️ This line said « there are TWO » until 2026-09-16, when there were already four — a frozen
+//! count goes stale silently, the same trap `.claude/verify.sh`'s own header records. The count
+//! of the day is read, never remembered: `grep -c '#\[ignore\]' src-tauri/src/bench_volume.rs`.
 //! Note also that `-- --ignored` selects the OTHER ignored tests of the crate too, including the
 //! `*_on_real_masterdb_copy` ones, which fail unless `SIFT_M8_REAL_COPY_DIR` points at a manual
 //! copy of a real Rekordbox master.db — unrelated to these benchmarks.
@@ -447,6 +451,114 @@ fn bench_volume_list_filed_and_list_pending() {
     }
 
     reproduce_sqlite_variable_limit_crash();
+}
+
+/// Coût COMPLET d'un `list_queue`, décomposé — le chiffre qui manque pour trancher le gel.
+///
+/// Pourquoi ce banc existe. Deux sources du dépôt se contredisent sur ce que coûte cette
+/// commande : l'en-tête de ce fichier donne `list_pending` à 16 ms pour 15 000 lignes, tandis que
+/// `frontend/queue-panel.ts:797` écrit que `listQueue()` peut prendre « a couple of seconds » sur
+/// une grosse bibliothèque. Deux ordres de grandeur d'écart, et la réponse décide d'un diagnostic :
+/// `list_queue` est une commande Tauri SYNCHRONE, donc son corps s'exécute sur le fil de la
+/// fenêtre (`tauri-macros` pose `Blocking` par défaut, `tauri/src/protocol.rs` appelle
+/// `webview.on_message` en ligne, `wry` installe le handler par `add_WebMessageReceived`). Pendant
+/// une ré-analyse de masse, elle repart à chaque piste terminée. Si elle coûte deux secondes, la
+/// fenêtre est figée une bonne part du temps et c'est LÀ qu'est le gel ; si elle coûte vingt
+/// millisecondes, le gel n'est que la famine CPU du pool d'analyse, et ce chemin est innocent.
+///
+/// Ce que ce banc NE couvre PAS, et c'est sa limite : il rejoue la COMPOSITION du corps de
+/// `list_queue` (`ipc.rs`) — les trois fonctions appelées sont les vraies, mais leur enchaînement
+/// est recopié ici. Une quatrième étape ajoutée un jour à `list_queue` ne serait pas vue par ce
+/// banc, qui sous-estimerait alors en silence. Le découpage verrou/hors-verrou est reproduit tel
+/// quel parce qu'il porte une décision datée (`dedup.rs` : `group_name_dups` tourne verrou
+/// relâché) : le mesurer autrement mesurerait un code que la production n'exécute pas.
+///
+/// Volumes : 3 397 lignes = la bibliothèque réelle qui a produit le symptôme ; 15 000 = le point
+/// déjà mesuré en 2026-07-27, gardé pour que les deux chiffres soient comparables.
+/// `filed_fraction = 0.0` : pendant une ré-analyse forcée tout est `pending`, ce qui est le pire
+/// cas pour `list_pending` et le cas réel du symptôme.
+fn measure_list_queue(conn: &Connection, volume: usize) {
+    println!("\n=== corps de list_queue @ {volume} lignes (toutes pending) ===");
+
+    summarize(
+        "queue::list_pending (sous verrou)",
+        measure(
+            || {
+                let v = queue::list_pending(conn).expect("list_pending");
+                std::hint::black_box(v);
+            },
+            ITERS,
+        ),
+    );
+
+    summarize(
+        "dedup::load_name_dup_rows (sous verrou)",
+        measure(
+            || {
+                let v = crate::dedup::load_name_dup_rows(conn).expect("load_name_dup_rows");
+                std::hint::black_box(v);
+            },
+            ITERS,
+        ),
+    );
+
+    let rows = crate::dedup::load_name_dup_rows(conn).expect("load_name_dup_rows");
+    summarize(
+        "dedup::group_name_dups (verrou RELACHE)",
+        measure(
+            || {
+                let v = crate::dedup::group_name_dups(&rows);
+                std::hint::black_box(v);
+            },
+            ITERS,
+        ),
+    );
+
+    summarize(
+        "serde_json de la reponse (cout IPC)",
+        measure(
+            || {
+                let items = queue::list_pending(conn).expect("list_pending");
+                let s = serde_json::to_string(&items).expect("serialize");
+                std::hint::black_box(s);
+            },
+            ITERS,
+        ),
+    );
+
+    // Le total tel que le fil de la fenetre le subit : les deux lectures, le regroupement,
+    // l'annotation, et la serialisation de la reponse.
+    summarize(
+        "TOTAL, tel que le fil de la fenetre le paie",
+        measure(
+            || {
+                let (mut items, dup_rows) = {
+                    let items = queue::list_pending(conn).expect("list_pending");
+                    let rows = crate::dedup::load_name_dup_rows(conn).expect("load_name_dup_rows");
+                    (items, rows)
+                };
+                let dups = crate::dedup::group_name_dups(&dup_rows);
+                for it in &mut items {
+                    it.dup = dups.contains(&it.id);
+                }
+                let s = serde_json::to_string(&items).expect("serialize");
+                std::hint::black_box(s);
+            },
+            ITERS,
+        ),
+    );
+}
+
+/// Banc dédié au corps de `list_queue` (voir `measure_list_queue`). Séparé de
+/// `bench_volume_list_filed_and_list_pending` pour pouvoir être lancé seul :
+/// `cargo test --release -- --ignored --nocapture --test-threads=1 bench_list_queue`
+#[test]
+#[ignore]
+fn bench_list_queue_body() {
+    for &volume in &[3_397usize, 15_000usize] {
+        let (_tmp, conn) = build_dataset(volume, 0.0);
+        measure_list_queue(&conn, volume);
+    }
 }
 
 /// Regression guard for a crash this benchmark originally discovered (and that is now fixed,

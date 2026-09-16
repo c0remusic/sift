@@ -793,10 +793,24 @@ export async function renderQueue(touchDetail = true) {
     return;
   }
 
-  // First paint has nothing to show yet (the mockup skeleton leaves #ql empty) — on a large
-  // library listQueue() can take a couple of seconds, otherwise that's a blank screen the whole
-  // time (audit UI/UX 2026-07-03, fix 4). Gated on "no rows yet" so later polls (queue:changed,
-  // the 300ms debounce) never flash this over the still-valid existing rows.
+  // Premier rendu : rien à montrer encore (le squelette de la maquette laisse #ql vide), donc
+  // sans ce placeholder l'écran reste blanc tout du long (audit UI/UX 2026-07-03, fix 4).
+  //
+  // ⚠️ Ce commentaire a justifié le placeholder par « on a large library listQueue() can take a
+  // couple of seconds » jusqu'au 2026-09-16. MESURÉ ce jour-là, et c'est faux d'un facteur ~200 :
+  // le corps de `list_queue` — les deux lectures, `group_name_dups`, l'annotation et le
+  // `serde_json` de la réponse — rend une médiane de 10,9 ms à 3 397 lignes et 57,7 ms à 15 000
+  // (banc `bench_volume::bench_list_queue_body`, release, `--test-threads=1`). Les secondes
+  // annoncées étaient plausibles À L'ÉPOQUE : `group_name_dups` tournait alors SOUS le verrou
+  // global, donc l'appel attendait le pool d'analyse — voir le commentaire de
+  // `dedup::group_name_dups`, qui en parle au passé. Le découpage verrou/hors-verrou les a
+  // supprimées ; ce commentaire ne l'avait pas suivi.
+  //
+  // Le placeholder RESTE quand même : à 11 ms de calcul s'ajoutent l'aller-retour IPC et l'attente
+  // du verrou pendant qu'une analyse écrit. Ce n'est plus « des secondes », c'est « pas
+  // instantané », et un écran blanc reste le pire des deux. Gardé sur « aucune ligne encore »
+  // pour que les rafraîchissements suivants (queue:changed, debounce 300 ms) ne le fassent jamais
+  // clignoter par-dessus des lignes encore valides.
   if (!ql.childElementCount) {
     // `data-sift="qloading"` n'est pas décoratif : c'est ce qui permet au `catch` de `listQueue`
     // plus bas de savoir s'il regarde CE placeholder (à remplacer par une erreur) ou de vraies
