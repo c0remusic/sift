@@ -84,12 +84,64 @@ const css = readFileSync(FEUILLE, 'utf8')
 
 const declarees = new Set((css.match(/\.[a-zA-Z][\w-]*/g) || []).map((s) => s.slice(1)));
 
+/**
+ * Le texte d'un fichier source, SANS ses lignes de commentaire.
+ *
+ * Trouvé le 2026-09-16, quelques heures après la mise en service de cette gate, par l'audit
+ * Karpathy : `.sift-bib-count` n'est posée par aucun markup, et pourtant cette gate la déclarait
+ * vivante — sa seule mention hors CSS est le doc-comment de `queue-count-label.ts:35`, qui
+ * renvoie à elle comme au « compte jumeau de la Bibliothèque ». Ce jumeau a déménagé dans
+ * `#sift-tb-count` le 2026-09-08 ; le commentaire ne l'a pas suivi. Un commentaire périmé
+ * maintenait donc une règle morte en vie, et les deux défauts se protégeaient.
+ *
+ * Même correctif que côté CSS, où les tombstones ressuscitaient les noms qu'elles enterrent.
+ *
+ * On ne retire QUE les lignes entièrement commentaires : un `//` en fin de ligne de code est
+ * laissé tel quel, et une classe posée par du vrai code n'est jamais seule sur une ligne de
+ * commentaire. Le risque d'un strip plus ambitieux — avaler une chaîne contenant `//`, ou un
+ * littéral d'expression régulière — serait un FAUX POSITIF, c'est-à-dire crier sur une classe
+ * vivante. Bien pire que le faux négatif qu'on corrige.
+ */
+function sansCommentaires(texte) {
+  return texte
+    .split('\n')
+    .filter((l) => {
+      const t = l.trim();
+      return !(t.startsWith('//') || t.startsWith('/*') || t.startsWith('*') || t.startsWith('#'));
+    })
+    .join('\n');
+}
+
 let blob = '';
-for (const f of ecrivains()) blob += `\n${readFileSync(f, 'utf8')}`;
+for (const f of ecrivains()) blob += `\n${sansCommentaires(readFileSync(f, 'utf8'))}`;
+
+/**
+ * Le nom apparaît-il comme un NOM ENTIER dans le code, et non comme un fragment ?
+ *
+ * `blob.includes(c)` suffisait tant qu'aucune classe n'était courte. `.mf` a montré la limite le
+ * 2026-09-16 : elle n'est posée par aucun markup, et pourtant elle passait — le fragment `mf` vit
+ * dans `aacmf256`, un nom de famille du corpus de détection cité dans les commentaires de
+ * `analysis/mdct.rs`. Un nom court est donc tenu vivant par n'importe quel mot qui le contient.
+ *
+ * Pas de `\b` : un nom de classe contient des tirets, que JavaScript ne compte pas comme des
+ * caractères de mot, donc `\b` couperait au mauvais endroit. On vérifie les deux voisins à la
+ * main.
+ */
+function nommeeEntierement(texte, nom) {
+  const bord = /[A-Za-z0-9_-]/;
+  let i = texte.indexOf(nom);
+  while (i !== -1) {
+    const avant = i === 0 ? '' : texte[i - 1];
+    const apres = texte[i + nom.length] ?? '';
+    if (!bord.test(avant) && !bord.test(apres)) return true;
+    i = texte.indexOf(nom, i + 1);
+  }
+  return false;
+}
 
 const orphelines = [];
 for (const c of [...declarees].sort()) {
-  if (blob.includes(c)) continue;
+  if (nommeeEntierement(blob, c)) continue;
   if (FAMILLES_CONSTRUITES.some(([p]) => c.startsWith(p))) continue;
   orphelines.push(c);
 }
