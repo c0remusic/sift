@@ -71,6 +71,13 @@ npm run lint:tokens              # couleurs/z-index/spacing en dur qui contourne
                                  # un +N délibéré se grave par `node scripts/lint-tokens.mjs --write-baseline`
 npm run lint:accents             # blocs de commentaire FR écrits sans accent (bug #43) —
                                  # ratchet à baseline (scripts/lint-accents-baseline.json)
+npm run lint:orphans             # `export` de frontend/ et shared/ que personne n'importe — ni
+                                 # noUnusedLocals (qui ne voit que les imports) ni ESLint (qui
+                                 # s'arrête au fichier) ne voient cette classe. Ratchet à baseline
+npm run lint:orphan-css          # classes de styles.css que plus aucun markup ne pose. Ratchet à
+                                 # baseline. Ne compte PAS un poseur une ligne de commentaire ni un
+                                 # fragment de mot : les deux ont produit un faux négatif le
+                                 # 2026-09-16, le jour de sa mise en service
 npm run lint:css-comments        # `*/` orphelin dans styles.css : texte hors /* */ = sélecteur
                                  # invalide, la règle suivante meurt en silence (payé 2x, 09-06/07)
 npm run check:security           # scope asset et CSP — refuse le retour du wildcard (aussi en CI)
@@ -122,8 +129,12 @@ de `rekordbox_masterdb.rs`, dépend de PyCryptodome).
 
 Deux gardiens, à connaître avant de dire « terminé » :
 
-- **`.claude/verify.sh`** — `tsc --noEmit` + `lint:tokens` + `lint:accents` +
-  `cargo fmt --check` + `cargo check`. Seul `cargo check` est borné, à 25 s (le
+- **`.claude/verify.sh`** — `tsc --noEmit` + `lint:tokens` + `lint:accents` + `lint:orphans` +
+  `lint:orphan-css` + `lint:css-comments` + `cargo fmt --check` + `cargo check`. ⚠️ Cette liste
+  n'a nommé que cinq des huit jusqu'au 2026-09-16 : les trois lints ajoutés en septembre —
+  `lint:orphans`, `lint:orphan-css`, `lint:css-comments` — tournaient sans être écrits ici, et la
+  vérifier se fait par `grep -oE '^ *run "' .claude/verify.sh`, jamais de mémoire.
+  Seul `cargo check` est borné, à 25 s (le
   retrouver par `grep -n "timeout 25" .claude/verify.sh`, abandonné **sans échec** au-delà :
   une gate de fin de tour doit être rapide ou muette). **Déclenchée automatiquement**
   par un hook `Stop` déclaré dans `.claude/settings.json`, versionné, timeout 90 s.
@@ -132,10 +143,14 @@ Deux gardiens, à connaître avant de dire « terminé » :
   `f9fa086` le 2026-08-11 — ne pas rejouer ce lancement à la main. **Deux** hooks sont
   actifs sur ce dépôt : celui-ci, et celui d'`impeccable` en `PostToolUse`
   (`.claude/settings.local.json`, non versionné).
-- **`.github/workflows/test.yml`** — sur **toute** branche et toute PR (Windows) :
-  `tsc --noEmit` → `npm run test` → `npm run lint` → `cargo fmt --check` →
-  `clippy -D warnings` → `cargo test`. Ordre délibéré, du moins cher au plus cher : les
-  trois gates frontend ne compilent rien. Le job régénère fixtures + ffmpeg d'abord.
+- **`.github/workflows/test.yml`** — sur **toute** branche et toute PR (Windows), dans cet ordre
+  réel : `check:security` → `lint:accents` → `lint:orphans` → `lint:orphan-css` →
+  `lint:css-comments` → `tsc --noEmit` → `npm run test` → `npm run lint` → `cargo fmt --check` →
+  `clippy -D warnings` → `cargo test`. Ordre délibéré, du moins cher au plus cher : les gates
+  frontend ne compilent rien, et les cinq premières ne lisent même pas TypeScript. Le job régénère
+  fixtures + ffmpeg d'abord. ⚠️ `lint:tokens` n'est PAS ici — il vit dans un job à part de
+  `build.yml`, qui ne se déclenche plus que manuellement depuis le 2026-09-12 : il ne garde donc
+  plus rien avant un merge. Relevé par l'audit du 2026-09-16, non tranché.
   ⚠️ Restent hors `.claude/verify.sh` : `npm run test`, `npm run lint` (ESLint) et
   `clippy` — une fin de tour verte ne dit rien d'eux, ils ne tombent qu'en CI.
   (`cargo fmt --check` y est depuis le 2026-08-26 — quatre commits de CI rouge
@@ -613,6 +628,25 @@ et ne pas recréer le fichier sans décision explicite. Il n'a jamais été vers
 `docs/superpowers/changes/<date>-<slug>/` correspondant.
 
 ## Release
+
+**Le bundle macOS est signé AD-HOC depuis le 2026-09-16** (`bundle.macOS` dans
+`src-tauri/tauri.conf.json`, issue #36). Deux clés, et la seconde n'est pas décorative :
+`signingIdentity: "-"` scelle le bundle, `hardenedRuntime: false` éteint le runtime durci que
+Tauri allumerait **par défaut** dès qu'une identité existe (`MacConfig.hardenedRuntime` vaut `true`
+dans le schéma du CLI). Le durci ne sert qu'à la notarisation, hors de portée sans compte Apple, et
+il change le contrat d'exécution du process — JIT, validation de bibliothèque, DYLD — sur une app
+qui lance un sidecar. Ne pas le rallumer sans un lancement vérifié sur un vrai Mac.
+
+⚠️ **Piège pour le jour où un vrai certificat arrive** : `APPLE_SIGNING_IDENTITY` ÉCRASE la clé de
+config, et fournir `APPLE_CERTIFICATE` sans identité alignée fait **échouer le build en dur** (le
+bundler compare les deux). Poser les deux ensemble, ou retirer `signingIdentity` du fichier. Même
+famille : `APPLE_ID` sans `APPLE_TEAM_ID` casse le build — c'est la seule branche de la
+notarisation qui ne se contente pas d'un avertissement.
+
+`build.yml` porte une gate qui SORT EN ÉCHEC si le bundle n'est pas scellé (`codesign --verify
+--deep --strict`). ⚠️ **`release.yml` ne l'a pas** : un tag peut encore publier sans passer par
+elle. Ce que la CI ne peut PAS mesurer, et qui demande un vrai Mac avec quarantaine : le message
+que Gatekeeper affiche réellement.
 
 **Écrire la section `## vX.Y.Z` de `CHANGELOG.md` d'abord.** `release.yml` l'extrait via
 `scripts/changelog-section.mjs` et la passe en `releaseBody` ; le script sort en code 1 si
