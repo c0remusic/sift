@@ -46,8 +46,13 @@ const GO = 1_000_000_000;
 export const formatGo = (bytes: number): string =>
   `${(bytes / GO).toFixed(1).replace(".", ",")} Go`;
 
-/** Répartit les seaux dans les groupes du détail, et rassemble le reste sous « Autres fichiers ».
- * Exportée pour être testable : c'est la seule logique non triviale de ce fichier. */
+/** Répartit les seaux dans les groupes du détail, et rassemble le reste sous « Autres fichiers » —
+ * la seule logique non triviale de ce fichier, et elle n'a aujourd'hui aucun test.
+ *
+ * Cette phrase a dit « Exportée pour être testable » jusqu'au 2026-09-16 : l'`export` est parti
+ * avec `4b771c8` (« neuf `export` dont l'unique appelant est dans leur propre fichier »), qui a
+ * laissé la justification derrière lui. La rendre testable redemande son `export` ET un test — un
+ * geste à décider, pas à supposer fait. */
 function groupBuckets(
   buckets: readonly ExtUsage[],
 ): Array<{ label: string; rows: ExtUsage[] }> {

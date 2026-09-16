@@ -9,8 +9,13 @@ import {
   HF_TOP_REF_LO,
 } from "../frontend/report-figures";
 
-// `fmt` est injecté par report-view (virgule décimale française). Ici on en passe une version
-// minimale : ce qui est testé est CE QUI EST DIT, pas le formatage des nombres.
+// `fmt` est injecté par report-view (`const fmt`, report-view.ts) et PARTAGÉ par les rangées du
+// Diagnostic qui portent une décimale — les densités ici, mais aussi True-peak, Écrêtage,
+// Corrélation de phase, DC offset. Les entiers du même panneau (runs d'écrêtage, ms de silence,
+// canaux, Hz) s'écrivent nus, sans passer par lui. Il rend un POINT décimal (`toFixed`), pas une
+// virgule : ce commentaire a dit « virgule décimale française » jusqu'au 2026-09-16, et c'était
+// faux. Ici on en passe une version minimale : ce qui est testé est CE QUI EST DIT, pas le
+// formatage des nombres.
 const fmt = (v: number, d: number) => v.toFixed(d);
 
 // Depuis la synthèse du 2026-09-07, chaque densité rend une PAIRE {value, ref} — la valeur en

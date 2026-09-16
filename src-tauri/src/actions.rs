@@ -784,12 +784,10 @@ pub fn revert_batch(conn: &Connection, batch_id: &str) -> Result<(), RevertError
             ))
         })?
         .collect::<rusqlite::Result<_>>()?;
-    if rows.is_empty() {
-        return Err(RevertError::Blocked(format!(
-            "no live actions for batch {batch_id}"
-        )));
-    }
 
+    // `rows` vide et `max()` à None sont le même cas : un lot sans ligne vivante. Un seul garde
+    // les couvre donc, avec le même message. Il reste un `else { return Err(...) }` : c'est
+    // l'`unwrap()` d'ici que `bc48143` a retiré, il ne revient pas.
     let Some(max_id) = rows.iter().map(|r| r.0).max() else {
         return Err(RevertError::Blocked(format!(
             "no live actions for batch {batch_id}"

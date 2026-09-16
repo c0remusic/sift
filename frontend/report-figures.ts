@@ -1,4 +1,7 @@
-// Mise en forme des deux mesures spectrales du Diagnostic, sans DOM.
+// Mise en forme de trois mesures du Diagnostic, sans DOM. Deux sont spectrales — `hfDensityParts`
+// (« Densité de l'aigu », bande fixe) et `hfTopDensityParts` (« Densité du haut », bande relative
+// au Nyquist) ; la troisième ne l'est pas : `decodedShortfallText` confronte deux DURÉES, celle
+// annoncée par l'en-tête et celle réellement décodée.
 //
 // Module séparé de `report-view.ts` pour une raison de test, pas d'esthétique — même motif que
 // `popover-position.ts` : `report-view.ts` importe `./ipc`, `@tauri-apps/api/core` et

@@ -32,7 +32,9 @@ export type QueueCountInput = {
 };
 
 /** Accord français du dépôt : 0 et 1 prennent le singulier, 2 et au-delà le pluriel. Même règle que
- *  le compte jumeau de la Bibliothèque (`bibliotheque-view.ts`, `.sift-bib-count`). */
+ *  le compte jumeau de la Bibliothèque, écrit à la main dans `bibliotheque-view.ts` — et depuis le
+ *  2026-09-08 dans le MÊME slot `#sift-tb-count` que celui-ci, partagé par Revue, Bibliothèque,
+ *  Écartés, Journal et Clé USB : un seul nœud de compte dans la barre. */
 function s(n: number): string {
   return n > 1 ? "s" : "";
 }

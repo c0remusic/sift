@@ -14,6 +14,10 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 DEFAULT_TARGET_DIR="${LOCALAPPDATA:-$HOME/AppData/Local}/Temp/claude/sift-cargo-isolated-target"
+# `SIFT_ISOLATED_TARGET_DIR` is the ONLY override point, and it has no caller in the repo (grep,
+# 2026-09-16): a hand-typed escape hatch, documented in the Usage block above — kept deliberately,
+# not dead configuration. The export below is UNCONDITIONAL, so a `CARGO_TARGET_DIR` the caller
+# sets under THAT name is discarded here.
 export CARGO_TARGET_DIR="${SIFT_ISOLATED_TARGET_DIR:-$DEFAULT_TARGET_DIR}"
 mkdir -p "$CARGO_TARGET_DIR"
 

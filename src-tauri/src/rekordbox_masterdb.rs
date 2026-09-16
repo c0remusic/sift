@@ -682,20 +682,17 @@ fn decrypt_masterdb(raw: &[u8]) -> Result<Vec<u8>, MasterDbError> {
             // Offsets below are relative to `plain`, which excludes the
             // 16-byte magic prefix (added separately just below) — so file
             // offset 18 is `plain[2]`, file offset 20 is `plain[4]`.
-            // Guarded rather than bare indexing: `plain` is HMAC-verified
+            // Length-checked rather than trusted: `plain` is HMAC-verified
             // but its length still depends on AES decrypting to the
-            // expected size — a checked write turns any future geometry
-            // mismatch into a clear error instead of a panic on malformed
-            // input.
+            // expected size — the explicit `len() < 5` check below turns
+            // any future geometry mismatch into a clear error instead of a
+            // panic on malformed input.
             if plain.len() < 5 {
                 return Err(MasterDbError::Decrypt { page: page_no });
             }
             plain[2] = 1; // file offset 18: write_version
             plain[3] = 1; // file offset 19: read_version
-            match plain.get_mut(4) {
-                Some(b) => *b = RESERVE as u8,
-                None => return Err(MasterDbError::Decrypt { page: page_no }),
-            }
+            plain[4] = RESERVE as u8; // file offset 20: reserved space per page
             out.extend_from_slice(b"SQLite format 3\0");
         }
         out.extend_from_slice(&plain);

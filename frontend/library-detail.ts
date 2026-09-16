@@ -35,7 +35,7 @@ interface EditState {
 
 /** La fiche ouverte, pour les actions qui viennent d'AILLEURS que la fiche (le clic droit de la
  *  ligne : « Changer la pochette… »). `null` quand rien n'est ouvert. */
-let openEdit: { edit: HTMLElement; host: HTMLElement; st: EditState } | null = null;
+let openEdit: { edit: HTMLElement; st: EditState } | null = null;
 
 /** Une rangée d'attribut dans la grammaire de Revue : libellé tertiaire sur rail fixe, valeur =
  *  un input stylé comme du texte au repos (`.sift-attr-input`), révélé au survol et au focus. */
@@ -452,5 +452,5 @@ export function openLibraryDetailInto(
   // du rapport est posée synchroniquement par `openReportInto`, l'image y est déjà, masquée.
   if (track.cover_path) paintHeaderCover(editEl, track.cover_path);
   renderEdit(editEl, st);
-  openEdit = { edit: editEl, host: editEl, st };
+  openEdit = { edit: editEl, st };
 }

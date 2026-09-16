@@ -519,12 +519,6 @@ pub fn plan_file(
                 "external destination must be an absolute path: {abs}"
             )));
         }
-        // Le doc-comment d'`EXTERNAL_DEST_PREFIX` promet un chemin ABSOLU (issu du dialog natif).
-        // Rendu exécutable le 2026-09-02 : depuis #54 cette branche est LE chemin de rangement sans
-        // racine, donc la seule chose qui la sépare encore de `safe_join`. Un relatif y résoudrait
-        // contre le répertoire courant du process — ni la bibliothèque, ni un dossier que
-        // l'utilisateur a désigné. Refus AVANT `is_dir()` : un relatif qui existe par hasard sous
-        // le cwd passerait le test d'existence tout en violant le contrat.
         if !p.is_dir() {
             return Err(FilingError::Io(format!(
                 "external destination no longer exists: {abs}"

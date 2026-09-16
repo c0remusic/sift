@@ -33,12 +33,6 @@ export function esc(s: string): string {
   );
 }
 
-/** « 1 piste » / « 3 pistes » — le COMPTE avec son nom accordé, jamais le nom seul : l'utilisateur
- *  lit un résultat, pas le libellé de ce qu'il a cliqué.
- *
- *  Le pluriel s'accorde à partir de 2, comme en français courant — `n > 1`, donc « 0 piste » et non
- *  « 0 pistes ». `many` est déduit en ajoutant un « s » ; le passer explicitement sert aux mots qui
- *  ne se pluralisent pas comme ça (« un dossier surveillé » → « des dossiers surveillés »). */
 /** Une durée de `styles.css` (`--duration-fast|base|slow`, écrites en `ms`) lue en millisecondes,
  *  pour différer un re-rendu jusqu'à la fin de la transition qu'il tuerait (un nœud reconstruit
  *  par `innerHTML` n'anime rien — CLAUDE.md § Front). Repli 150 ms hors DOM ou token absent :
@@ -51,6 +45,12 @@ export function durationMs(token: "--duration-fast" | "--duration-base" | "--dur
   return Number.isFinite(ms) ? ms : 150;
 }
 
+/** « 1 piste » / « 3 pistes » — le COMPTE avec son nom accordé, jamais le nom seul : l'utilisateur
+ *  lit un résultat, pas le libellé de ce qu'il a cliqué.
+ *
+ *  Le pluriel s'accorde à partir de 2, comme en français courant — `n > 1`, donc « 0 piste » et non
+ *  « 0 pistes ». `many` est déduit en ajoutant un « s » ; le passer explicitement sert aux mots qui
+ *  ne se pluralisent pas comme ça (« un dossier surveillé » → « des dossiers surveillés »). */
 export function plural(n: number, one: string, many = `${one}s`): string {
   return `${n} ${n > 1 ? many : one}`;
 }

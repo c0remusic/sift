@@ -196,8 +196,7 @@ export const LIBRARY_TABLE_PROBE_HTML =
  * 7000+-track freeze this codebase already hit once with an unvirtualized queue). */
 export const LIBRARY_GRID_TILES_PER_ROW = 4;
 
-function libraryGridTileHtml(t: LibraryTrack, curId: number | null): string {
-  const cur = t.id === curId ? " cur" : "";
+function libraryGridTileHtml(t: LibraryTrack): string {
   const cov = t.cover_path
     ? `<img src="${esc(convertFileSrc(t.cover_path))}" alt="" class="sift-lib-tile-cov">`
     : `<i class="ti ti-vinyl sift-lib-tile-cov-fallback"></i>`;
@@ -211,7 +210,7 @@ function libraryGridTileHtml(t: LibraryTrack, curId: number | null): string {
   // untitled track is named by what's actually painted rather than by "Titre inconnu".
   const tileLabel = t.artist ? `${t.artist} — ${t.title || bibName(t)}` : t.title || bibName(t);
   return (
-    `<div class="sift-lib-tile${cur}" data-bib="tile" data-id="${t.id}" tabindex="0" role="button" aria-label="${esc(tileLabel)}">` +
+    `<div class="sift-lib-tile" data-bib="tile" data-id="${t.id}" tabindex="0" role="button" aria-label="${esc(tileLabel)}">` +
     cov +
     `<div class="sift-lib-tile-title">${esc(t.title || bibName(t))}</div>` +
     `<div class="sift-lib-tile-sub">${esc(t.artist || "")}</div>` +
@@ -221,7 +220,7 @@ function libraryGridTileHtml(t: LibraryTrack, curId: number | null): string {
 
 /** One virtualized grid "row" = up to LIBRARY_GRID_TILES_PER_ROW tiles side by side. */
 export function libraryGridRowHtml(rowTracks: readonly LibraryTrack[]): string {
-  return `<div class="sift-lib-grid-row">${rowTracks.map((t) => libraryGridTileHtml(t, null)).join("")}</div>`;
+  return `<div class="sift-lib-grid-row">${rowTracks.map((t) => libraryGridTileHtml(t)).join("")}</div>`;
 }
 
 export const LIBRARY_GRID_PROBE_HTML =
