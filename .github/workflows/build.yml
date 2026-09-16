@@ -15,34 +15,21 @@ permissions:
   contents: read
 
 jobs:
-  # Job séparé et indépendant du build des installeurs (pas de `needs:`) : un ratchet de style
-  # qui casse ne doit jamais empêcher la production/upload des binaires. Raison d'origine, trouvée
-  # par verify-gate le 2026-07-24 : le job `build` était alors séquentiel, et un échec de lint
-  # aurait bloqué `tauri build` puis l'upload des artefacts — à l'époque à CHAQUE push sur `main`.
+  # LE JOB `lint-tokens` A QUITTÉ CE FICHIER le 2026-09-16 — il vit désormais dans `test.yml`,
+  # comme une étape parmi les autres gates frontend.
   #
-  # ⚠️ Ce déclencheur n'existe plus depuis le 2026-09-12 (voir le bloc `on:` ci-dessus) : ce
-  # workflow ne part plus qu'à la main. Conséquence à ne pas lire entre les lignes — `lint:tokens`
-  # ne tourne dans AUCUN workflow déclenché par un push ou une PR : `test.yml` ne le lance pas, il
-  # n'y est que cité en commentaire. Le seul filet automatique qui reste est `.claude/verify.sh`,
-  # en fin de tour d'agent, sur la machine du dev. Déplacer ce job vers `test.yml` serait une
-  # décision, pas un nettoyage : relevée par l'audit du 2026-09-16, NON TRANCHÉE (`CLAUDE.md`
-  # § Définition de fini).
-  lint-tokens:
-    runs-on: ubuntu-latest
-    # Sans plafond, un job bloque consomme jusqu'a la limite du fournisseur (6 h).
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@v4
-      - name: Setup Node
-        uses: actions/setup-node@v4
-        with:
-          node-version: 24
-          cache: npm
-      - name: Install npm deps
-        run: npm ci
-      - name: Lint design tokens (ratchet — bloque sur toute nouvelle dérive, pas sur la dette existante)
-        run: npm run lint:tokens
-
+  # Il était ici en job SÉPARÉ, sans `needs:`, pour une raison qui tenait : trouvée par verify-gate
+  # le 2026-07-24, le job `build` était alors séquentiel, et un échec de ratchet de style aurait
+  # bloqué `tauri build` puis l'upload des artefacts. Le découplage était le bon geste — à l'époque
+  # où ce workflow partait à CHAQUE push sur `main`.
+  #
+  # Ce déclencheur a disparu le 2026-09-12 (voir le bloc `on:`), et la conséquence est passée
+  # inaperçue trois jours : `lint:tokens` ne gardait plus rien avant un merge, puisqu'il ne partait
+  # plus qu'à la main. Il payait en plus un runner entier — checkout, setup-node, `npm ci` — pour
+  # un lint de 0,7 s. Relevé par l'audit du 2026-09-16, tranché par Antoine.
+  #
+  # ⚠️ La leçon vaut pour le prochain job de ce fichier : ici, un job ne s'exécute QUE sur
+  # `workflow_dispatch`. Une gate posée dans `build.yml` ne garde aucune branche et aucune PR.
   build:
     strategy:
       fail-fast: false

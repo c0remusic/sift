@@ -98,10 +98,20 @@ jobs:
       - name: Config Tauri (scope asset, CSP)
         run: node scripts/check-tauri-security.mjs
 
-      # Ajoutée le 2026-08-26 (issues #43/#44). Elle vit ICI et pas dans `build.yml` avec
-      # `lint:tokens` parce qu'elle garde un texte que la revue humaine ne voit pas : un
-      # commentaire désaccentué se lit sans qu'on le remarque, et il faut donc l'attraper AVANT
-      # le merge, pas après. Zéro compilation, comme les trois gates frontend voisines.
+      # Déplacée ICI depuis `build.yml` le 2026-09-16, et c'est une correction de portée, pas un
+      # rangement. Elle y vivait dans un job à part, avec son propre runner — checkout, setup-node,
+      # `npm ci` — pour un lint de 0,7 s. Tant que `build.yml` partait à chaque push sur `main`, ce
+      # coût achetait une gate de branche. Depuis le 2026-09-12 il ne se déclenche plus qu'à la
+      # main : `lint:tokens` ne gardait donc plus RIEN avant un merge, et le seul filet restant
+      # était `.claude/verify.sh`, en fin de tour d'agent, sur la machine du dev. Relevé par
+      # l'audit du 2026-09-16, tranché par Antoine.
+      - name: Lint design tokens (ratchet — bloque une nouvelle dérive, pas la dette existante)
+        run: npm run lint:tokens
+
+      # Ajoutée le 2026-08-26 (issues #43/#44). Elle vit ICI et pas dans `build.yml` parce qu'elle
+      # garde un texte que la revue humaine ne voit pas : un commentaire désaccentué se lit sans
+      # qu'on le remarque, et il faut donc l'attraper AVANT le merge, pas après. Zéro compilation,
+      # comme les gates frontend voisines.
       - name: Lint accents (ratchet — bloque un bloc de commentaire français neuf écrit sans accent)
         run: npm run lint:accents
 

@@ -144,13 +144,15 @@ Deux gardiens, à connaître avant de dire « terminé » :
   actifs sur ce dépôt : celui-ci, et celui d'`impeccable` en `PostToolUse`
   (`.claude/settings.local.json`, non versionné).
 - **`.github/workflows/test.yml`** — sur **toute** branche et toute PR (Windows), dans cet ordre
-  réel : `check:security` → `lint:accents` → `lint:orphans` → `lint:orphan-css` →
+  réel : `check:security` → `lint:tokens` → `lint:accents` → `lint:orphans` → `lint:orphan-css` →
   `lint:css-comments` → `tsc --noEmit` → `npm run test` → `npm run lint` → `cargo fmt --check` →
   `clippy -D warnings` → `cargo test`. Ordre délibéré, du moins cher au plus cher : les gates
-  frontend ne compilent rien, et les cinq premières ne lisent même pas TypeScript. Le job régénère
-  fixtures + ffmpeg d'abord. ⚠️ `lint:tokens` n'est PAS ici — il vit dans un job à part de
-  `build.yml`, qui ne se déclenche plus que manuellement depuis le 2026-09-12 : il ne garde donc
-  plus rien avant un merge. Relevé par l'audit du 2026-09-16, non tranché.
+  frontend ne compilent rien, et les six premières ne lisent même pas TypeScript. Le job régénère
+  fixtures + ffmpeg d'abord. `lint:tokens` a rejoint cette liste le 2026-09-16 : il vivait dans un
+  job à part de `build.yml`, qui ne se déclenche plus que manuellement depuis le 2026-09-12 — il ne
+  gardait donc plus rien avant un merge, et payait un runner entier pour un lint de 0,7 s.
+  ⚠️ **Corollaire pour toute gate future : `build.yml` ne garde aucune branche.** Il ne part qu'à
+  la main. Une gate qu'on y pose est un filet qui ne se tend jamais.
   ⚠️ Restent hors `.claude/verify.sh` : `npm run test`, `npm run lint` (ESLint) et
   `clippy` — une fin de tour verte ne dit rien d'eux, ils ne tombent qu'en CI.
   (`cargo fmt --check` y est depuis le 2026-08-26 — quatre commits de CI rouge
