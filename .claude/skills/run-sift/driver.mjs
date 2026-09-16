@@ -9,7 +9,7 @@
 // for the evaluation itself.
 //
 //   node .claude/skills/run-sift/driver.mjs status
-//   node .claude/skills/run-sift/driver.mjs launch [--port N]
+//   node .claude/skills/run-sift/driver.mjs launch [--port N] [--exe <chemin>]
 //   node .claude/skills/run-sift/driver.mjs eval "expr" [--port N]
 //   node .claude/skills/run-sift/driver.mjs open-track [--port N]
 //   node .claude/skills/run-sift/driver.mjs floor [--port N]
@@ -35,8 +35,18 @@ const LOG = resolve(REPO, "tauri-dev.log");        // ignored by the repo's `*.l
 const raw = process.argv.slice(2);
 const args = [];
 let portArg = null;
+// `--exe <chemin>` : lancer un binaire dev DEJA construit, au lieu de passer par `tauri dev`.
+//
+// Chemin de secours du ticket #62, vecu le 2026-09-09. `tauri dev` IGNORE `CARGO_TARGET_DIR` et
+// lie toujours dans `src-tauri/target` : quand ce cache est corrompu (LNK2019 `anon.*.llvm.*`,
+// resistant a `cargo clean -p sift`), le driver n'avait aucun repli et la seule issue etait
+// manuelle. Celle qui a marche : construire ailleurs par `scripts/cargo-isolated.sh build
+// --no-default-features`, puis lancer le binaire isole tel quel — il se branche sur n'importe
+// quel Vite servant l'arbre sur 5173, HMR compris, sans watcher Rust.
+let exeArg = null;
 for (let i = 0; i < raw.length; i++) {
   if (raw[i] === "--port") portArg = Number(raw[++i]);
+  else if (raw[i] === "--exe") exeArg = raw[++i];
   else args.push(raw[i]);
 }
 const [cmd, ...rest] = args;
@@ -163,13 +173,22 @@ async function cmdLaunch() {
   // NEVER pipe a dev server through `tail`: tail buffers until EOF, which never comes, so the
   // log stays empty and a running build looks like a dead one. Redirect to a file instead.
   const fd = openSync(LOG, "w");
-  const child = spawn("npm", ["run", "tauri", "dev"], {
-    cwd: REPO,
-    env: { ...process.env, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}` },
-    stdio: ["ignore", fd, fd],
-    detached: true,
-    shell: true,
-  });
+  // Avec `--exe`, le binaire se lance depuis `src-tauri` : c'est son repertoire de travail qui lui
+  // fait trouver ses ressources, et Vite doit deja servir sur 5173.
+  const child = exeArg
+    ? spawn(exeArg, [], {
+        cwd: resolve(REPO, "src-tauri"),
+        env: { ...process.env, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}` },
+        stdio: ["ignore", fd, fd],
+        detached: true,
+      })
+    : spawn("npm", ["run", "tauri", "dev"], {
+        cwd: REPO,
+        env: { ...process.env, WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS: `--remote-debugging-port=${port}` },
+        stdio: ["ignore", fd, fd],
+        detached: true,
+        shell: true,
+      });
   child.unref();
   writeState({ port, pid: child.pid, log: LOG });
   console.log(`launching on debug port ${port} (pid ${child.pid}), log → ${LOG}`);
@@ -190,10 +209,19 @@ async function cmdLaunch() {
     const log = existsSync(LOG) ? readFileSync(LOG, "utf8") : "";
     if (FAIL.test(log)) {
       console.error("BUILD FAILED — tail of log:");
+      console.error(
+        "Un LNK2019 `anon.*.llvm.*` dans src-tauri/target est le cache incremental corrompu, pas " +
+          "le code :\n`tauri dev` ignore CARGO_TARGET_DIR et lie toujours la. Repli :\n" +
+          "  bash scripts/cargo-isolated.sh build --no-default-features\n" +
+          "  node .claude/skills/run-sift/driver.mjs launch --exe <cible-isolee>/debug/sift.exe\n" +
+          "(Vite doit tourner sur 5173.)",
+      );
       console.error(log.split("\n").slice(-15).join("\n"));
       process.exit(1);
     }
-    if (!buildAlive()) {
+    if (!exeArg && !buildAlive()) {
+      // Garde inapplicable avec `--exe` : il n'y a aucun build a surveiller, seulement un binaire
+      // qui demarre. La laisser produirait un faux « died silently » immediat.
       console.error("no build process left and no window — the launch died silently.");
       console.error(log ? log.split("\n").slice(-15).join("\n") : `(log empty — normal here: ${LOG})`);
       process.exit(1);
@@ -326,7 +354,7 @@ const main = async () => {
     return void process.exit(r.status ?? 1);
   }
   console.error(
-    "usage: status | launch | stop | eval <expr> | shot <file> | open-track | floor | hover <sel> [idx] [outDir] | focus <sel> [outDir]",
+    "usage: status | launch [--port N] [--exe <chemin>] | stop | eval <expr> | shot <file> | open-track | floor | hover <sel> [idx] [outDir] | focus <sel> [outDir]",
   );
   process.exit(1);
 };
