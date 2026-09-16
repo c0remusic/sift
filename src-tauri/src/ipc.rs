@@ -310,10 +310,15 @@ pub fn analyze_path(
         if !known {
             return Err("unknown track path".into());
         }
-        // Serve the cached report instantly (no re-decode). FIX-3: the cache now carries the
-        // spectrogram too (worker.rs analyzes with_spectrogram=true), so a spectrogram request
-        // can also be served from cache — unless this row predates that fix (empty grid), in
-        // which case fall through to a fresh decode below.
+        // Sert le rapport en cache sans re-décoder.
+        //
+        // ⚠️ Ce commentaire a dit « FIX-3: the cache now carries the spectrogram too (worker.rs
+        // analyzes with_spectrogram=true) » jusqu'au 2026-09-16. C'était FAUX des deux côtés :
+        // `worker.rs` appelle `analysis::analyze(&path, false)`, et `cache_json` retire la grille
+        // avant l'écriture depuis le 2026-08-03. Mesuré sur la base de production le 2026-09-16 :
+        // 300 rapports en cache sur 300 portent `frames=0, bins=0, mag_db` vide. AUCUNE grille
+        // n'est stockée, et aucune demande de spectrogramme n'a jamais pu être servie d'ici.
+        // La grille manquante se comble maintenant plus bas, sans refaire l'analyse.
         let cached: Option<(Option<String>, Option<i64>)> = conn
             .query_row(
                 "SELECT report_json, report_cache_ver FROM tracks WHERE path=?1",
@@ -333,6 +338,25 @@ pub fn analyze_path(
             if let Ok(report) = serde_json::from_str::<crate::analysis::AnalysisReport>(&json) {
                 if !with_spectrogram || !report.spectrogram.mag_db.is_empty() {
                     return Ok(report);
+                }
+                // Le rapport est bon, seule la grille manque — et c'est le cas de TOUTES les
+                // lignes en cache. Recalculer la grille seule plutôt que relancer `analyze` :
+                // 0,4 s contre 13,2 s mesurées le 2026-09-16 (`spectrogram_only`, qui porte les
+                // chiffres et leur réserve). L'écart n'est pas la FFT, c'est `bancs::sonder` —
+                // les sondes de quantification, dont le résultat est DÉJÀ dans ce `report`.
+                //
+                // Un échec ici n'est pas fatal : on retombe sur l'analyse complète plus bas, qui
+                // reste correcte. Fail-fast ne s'applique pas à une optimisation dont le repli
+                // donne le même résultat — mais il se trace, sinon la régression serait muette.
+                match crate::analysis::spectrogram_only(&path) {
+                    Ok(grille) => {
+                        let mut report = report;
+                        report.spectrogram = grille;
+                        return Ok(report);
+                    }
+                    Err(e) => log::warn!(
+                        "spectrogram_only a echoue sur {path} ({e}) : repli sur l'analyse complete"
+                    ),
                 }
             }
         }

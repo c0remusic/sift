@@ -220,6 +220,137 @@ fn bench_sqlite_lock_wait_under_analysis_load() {
 }
 
 /// (4bis) Ce que coûte UNE analyse, sur de vrais fichiers. Aucun chemin n'est écrit en dur : le
+/// Ce que coûterait un chemin GRILLE-SEULE, comparé à l'analyse complète.
+///
+/// POURQUOI CE BANC. `analyze_path(path, with_spectrogram = true)` — l'ouverture du collapse
+/// Diagnostic — a déjà lu le rapport en cache : il ne lui manque QUE la grille de spectrogramme,
+/// que le cache ne stocke pas depuis le 2026-08-03. Or il rappelle `analysis::analyze`, qui refait
+/// TOUT : le décodage, les accumulateurs, ET `bancs::sonder` — les sondes de quantification dont
+/// les résultats sont pourtant déjà dans le rapport qu'il vient de lire.
+///
+/// `bench_analysis_cost_on_real_tracks` (juste au-dessus) a mesuré 19,3 s sans grille contre
+/// 19,2 s avec, le 2026-09-16 : la grille elle-même est GRATUITE, elle se remplit pendant l'unique
+/// passe de décodage (`analysis/mod.rs`, `SpectrumAccumulator::push` dans le rappel de
+/// `decode_pcm`). Les 19 s sont donc le tronc commun — décodage plus bancs — et le collapse les
+/// repaie pour rien. `CLAUDE.md` annonce « 631 ms mesurées » pour ce recalcul ; ce banc mesure
+/// l'écart réel entre ce que l'app fait et ce qu'elle pourrait faire.
+///
+/// CE QUE CE BANC MESURE, et sa limite : il REPRODUIT la boucle de décodage d'`analyze` réduite au
+/// seul `SpectrumAccumulator`. Ce n'est pas du code de production — aucun chemin grille-seule
+/// n'existe encore, c'est précisément la question. Si le gain est mince, il ne faut pas l'écrire.
+/// La boucle recopiée peut dériver de l'originale : la relire avant de citer ce chiffre.
+#[test]
+#[ignore]
+fn bench_grille_seule_contre_analyse_complete() {
+    let Ok(dir) = std::env::var("SIFT_BENCH_TRACKS_DIR") else {
+        println!("\n=== grille seule : IGNORÉ ===");
+        println!(
+            "  définir SIFT_BENCH_TRACKS_DIR sur un dossier contenant de vrais fichiers audio"
+        );
+        return;
+    };
+    const EXTS: [&str; 5] = ["mp3", "flac", "wav", "aif", "aiff"];
+    const MAX_FILES: usize = 6;
+
+    let mut files: Vec<std::path::PathBuf> = std::fs::read_dir(&dir)
+        .expect("lecture du dossier")
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| {
+            p.extension()
+                .and_then(|e| e.to_str())
+                .map(|e| EXTS.contains(&e.to_ascii_lowercase().as_str()))
+                .unwrap_or(false)
+        })
+        .collect();
+    files.sort();
+    files.truncate(MAX_FILES);
+
+    println!("\n=== grille seule contre analyse complète ===");
+    if files.is_empty() {
+        println!("  aucun fichier audio dans {dir}");
+        return;
+    }
+
+    let mut cum_plein = Duration::ZERO;
+    let mut cum_grille = Duration::ZERO;
+    for f in &files {
+        let p = f.to_string_lossy().to_string();
+        let name = f.file_name().and_then(|n| n.to_str()).unwrap_or("?");
+
+        let t0 = Instant::now();
+        let plein = crate::analysis::analyze(&p, true);
+        let d_plein = t0.elapsed();
+
+        // Boucle grille-seule : même décodage, même accumulateur de spectre, RIEN d'autre.
+        // Copiée du rappel de `decode_pcm` dans `analysis::analyze`, branche `target_ch == 2`
+        // et branche mono, sans les six autres accumulateurs ni la rétention pour les sondes.
+        let t1 = Instant::now();
+        let tag = crate::analysis::tags::read(&p);
+        let target_ch: u16 = if tag.channels >= 2 { 2 } else { 1 };
+        let grille = crate::analysis::decode::probe(&p).and_then(|fmt| {
+            let mut spec =
+                crate::analysis::spectrum::SpectrumAccumulator::new(fmt.sample_rate, true);
+            crate::analysis::decode::decode_pcm(&p, target_ch, |block| {
+                if target_ch == 2 {
+                    let mono: Vec<f32> = block
+                        .chunks_exact(2)
+                        .map(|lr| 0.5 * (lr[0] + lr[1]))
+                        .collect();
+                    spec.push(&mono);
+                } else {
+                    spec.push(block);
+                }
+            })
+            .map(|_| spec.finish())
+        });
+        let d_grille = t1.elapsed();
+
+        match (plein, grille) {
+            (Ok(r), Ok(g)) => {
+                cum_plein += d_plein;
+                cum_grille += d_grille;
+                let gain = if d_grille.as_secs_f64() > 0.0 {
+                    d_plein.as_secs_f64() / d_grille.as_secs_f64()
+                } else {
+                    0.0
+                };
+                // Garde de fidelite : la grille reduite doit avoir la MEME forme que celle du
+                // chemin complet, sinon on compare deux travaux differents et le gain est faux.
+                let meme_forme = g.spectrogram.frames == r.spectrogram.frames
+                    && g.spectrogram.bins == r.spectrogram.bins;
+                println!(
+                    "  {:>7.1} s d'audio · complet {:>8.2?} · grille seule {:>8.2?}                       (x{gain:.1})  forme identique: {meme_forme}  {}",
+                    r.duration_sec,
+                    d_plein,
+                    d_grille,
+                    &name[..name.len().min(38)],
+                );
+                if !meme_forme {
+                    println!(
+                        "     ⚠ formes differentes — complet {}x{}, reduit {}x{} : le gain ci-dessus ne compare PAS le meme travail",
+                        r.spectrogram.frames, r.spectrogram.bins, g.spectrogram.frames, g.spectrogram.bins
+                    );
+                }
+            }
+            (Err(e), _) | (_, Err(e)) => println!("  échec sur {name} : {e}"),
+        }
+    }
+
+    if cum_grille.as_secs_f64() > 0.0 {
+        println!(
+            "\n  cumul : complet {:.1}s · grille seule {:.1}s · gain x{:.1}",
+            cum_plein.as_secs_f64(),
+            cum_grille.as_secs_f64(),
+            cum_plein.as_secs_f64() / cum_grille.as_secs_f64()
+        );
+        println!(
+            "  par piste : {:.1}s d'attente aujourd'hui, {:.1}s avec un chemin grille-seule",
+            cum_plein.as_secs_f64() / files.len() as f64,
+            cum_grille.as_secs_f64() / files.len() as f64
+        );
+    }
+}
+
 /// banc lit `SIFT_BENCH_TRACKS_DIR`, un dossier de la machine de développement. Sans lui le test
 /// s'annonce et sort — la bibliothèque d'un utilisateur n'a rien à faire dans le dépôt.
 ///

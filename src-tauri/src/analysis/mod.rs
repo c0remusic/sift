@@ -363,6 +363,45 @@ const CLIP_THRESHOLD: f32 = 0.99;
 const CLIP_MIN_RUN: usize = 3;
 const SILENCE_THRESHOLD: f32 = 0.001; // ~ -60 dBFS
 
+/// Recalcule la SEULE grille de spectrogramme, sans rien d'autre.
+///
+/// POURQUOI ELLE EXISTE. Depuis le 2026-08-03 la grille n'est plus stockée dans
+/// `tracks.report_json` (450 ko par piste, 4,11 Go → 119 Mo sur la base de production). Elle se
+/// recalcule à l'ouverture du collapse Diagnostic. Jusqu'au 2026-09-16, ce recalcul passait par
+/// [`analyze`], qui refait AUSSI les sondes de quantification (`bancs::sonder`) — alors que leur
+/// résultat est déjà dans le rapport en cache que l'appelant vient de lire.
+///
+/// MESURE (2026-09-16, release, `bench_sqlite::bench_grille_seule_contre_analyse_complete`, six
+/// vraies pistes) : **13,2 s d'attente par piste contre 0,4 s**, soit un facteur 32 en moyenne, et
+/// jusqu'à 53 sur une piste où les trois bancs tournent. Les grilles produites sont identiques en
+/// `frames` et `bins` — c'est le même produit, pas une version dégradée.
+///
+/// ⚠️ Le gain n'est PAS uniforme, et la moyenne le cache : sur une piste où `bancs::peut_trancher`
+/// écarte les sondes, l'écart tombe à 1,8 (727 ms contre 394 ms) — il ne reste que le décodage,
+/// qui est commun aux deux chemins. Ne pas citer « x32 » comme un gain garanti.
+///
+/// Elle reproduit la branche spectrogramme du rappel de décodage d'[`analyze`] — même
+/// `target_ch`, même repli mono, même accumulateur. Les deux boucles doivent rester d'accord :
+/// `spectrogramme_seul_donne_la_meme_grille_que_analyze` les compare sur une fixture.
+pub fn spectrogram_only(path: &str) -> Result<Spectrogram, String> {
+    let tag = tags::read(path);
+    let target_ch: u16 = if tag.channels >= 2 { 2 } else { 1 };
+    let sr = decode::probe(path)?.sample_rate;
+    let mut spec = SpectrumAccumulator::new(sr, true);
+    decode::decode_pcm(path, target_ch, |block| {
+        if target_ch == 2 {
+            let mono: Vec<f32> = block
+                .chunks_exact(2)
+                .map(|lr| 0.5 * (lr[0] + lr[1]))
+                .collect();
+            spec.push(&mono);
+        } else {
+            spec.push(block);
+        }
+    })?;
+    Ok(spec.finish().spectrogram)
+}
+
 /// Runs the full analysis: one decode, all analyzers in a single streaming pass.
 /// `with_spectrogram`: build the (heavy) display spectrogram grid. The verdict and all
 /// scalar signals are identical either way — only the display grid is gated. Batch (M2b)
@@ -1021,6 +1060,82 @@ mod tests {
         let back: AnalysisReport = serde_json::from_str(&j).unwrap();
         assert_eq!(back.spectrogram.mag_db, vec![0u8, 127, 255]);
         assert_eq!(back, r);
+    }
+
+    /// `spectrogram_only` rend EXACTEMENT la grille qu'`analyze(path, true)` produit.
+    ///
+    /// C'est le contrat de fidélité de l'optimisation : `spectrogram_only` recopie la branche
+    /// spectrogramme du rappel de décodage d'`analyze` (même `target_ch`, même repli mono, même
+    /// accumulateur) pour éviter les 13,2 s de `bancs::sonder` dont `ipc::analyze_path` a déjà le
+    /// résultat en cache. Deux boucles séparées qui doivent rester d'accord : si l'une dérive, le
+    /// collapse Diagnostic afficherait une grille FAUSSE, et rien ne le dirait — une dérive de
+    /// spectrogramme ne se voit pas à l'œil.
+    ///
+    /// LA FIXTURE EST FABRIQUÉE ICI, et c'est la leçon d'une première version ratée. Elle prenait
+    /// `fixtures/real_320.mp3`, qui est bien stéréo — mais dont les deux canaux portent le même
+    /// signal. Mesuré par mutation le 2026-09-16 : casser le repli mono (`lr[0]` au lieu de
+    /// `(L+R)/2`) et forcer `target_ch = 1` laissaient TOUS DEUX le test au vert, parce que sur un
+    /// contenu quasi dual-mono ces trois expressions donnent la même valeur après quantification
+    /// en `u8`. Le test ne gardait donc rien de la seule branche qui peut dériver.
+    ///
+    /// Ce qu'il faut est un stéréo où L et R DIFFÈRENT franchement : ici 440 Hz à gauche, 6 600 Hz
+    /// à droite. Le repli mono les mélange, `lr[0]` seul perd la composante haute, et la grille
+    /// change de façon détectable. Même famille que la fixture fabriquée de
+    /// `decoded_duration_is_measured_not_copied_from_the_header` juste au-dessus.
+    ///
+    /// ⚠️ CE QUE CE TEST NE GARDE PAS, mesuré et non supposé : forcer `target_ch = 1` dans
+    /// `spectrogram_only` le laisse au VERT. Ce n'est pas une faiblesse du test, c'est que la
+    /// mutation est sans effet ici — `decode::decode_pcm` avec `target == 1` calcule
+    /// `frame.iter().sum() / sc`, soit exactement `(L+R)/2` sur du stéréo. Les deux chemins ne
+    /// divergent que sur une source de PLUS de deux canaux : `analyze` prend alors le front L/R
+    /// puis replie, quand `target = 1` moyennerait tous les canaux. C'est la raison de garder le
+    /// repli manuel plutôt que de simplifier — et la couverture manquante demanderait une fixture
+    /// multicanale, disproportionnée pour un outil dont l'entrée est du stéréo.
+    #[test]
+    fn spectrogramme_seul_donne_la_meme_grille_que_analyze() {
+        const SR: u32 = 44100;
+        const SECONDES: u32 = 3;
+        const N: u32 = SR * SECONDES;
+        let data_bytes = N * 2 * 2; // stéréo, 16 bits
+
+        let mut w = Vec::new();
+        w.extend_from_slice(b"RIFF");
+        w.extend_from_slice(&(36 + data_bytes).to_le_bytes());
+        w.extend_from_slice(b"WAVEfmt ");
+        w.extend_from_slice(&16u32.to_le_bytes());
+        w.extend_from_slice(&1u16.to_le_bytes()); // PCM
+        w.extend_from_slice(&2u16.to_le_bytes()); // STÉRÉO — la branche qui porte le repli
+        w.extend_from_slice(&SR.to_le_bytes());
+        w.extend_from_slice(&(SR * 4).to_le_bytes()); // byte rate
+        w.extend_from_slice(&4u16.to_le_bytes()); // block align
+        w.extend_from_slice(&16u16.to_le_bytes()); // bits
+        w.extend_from_slice(b"data");
+        w.extend_from_slice(&data_bytes.to_le_bytes());
+        for n in 0..N {
+            let t = n as f32 / SR as f32;
+            let g = ((t * 440.0 * std::f32::consts::TAU).sin() * 11000.0) as i16;
+            let d = ((t * 6600.0 * std::f32::consts::TAU).sin() * 11000.0) as i16;
+            w.extend_from_slice(&g.to_le_bytes());
+            w.extend_from_slice(&d.to_le_bytes());
+        }
+
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("stereo_l_ne_r.wav");
+        std::fs::write(&p, &w).unwrap();
+        let path = p.to_str().unwrap();
+
+        let complet = analyze(path, true).expect("analyze complet");
+        assert!(
+            complet.spectrogram.frames > 0 && !complet.spectrogram.mag_db.is_empty(),
+            "la fixture doit produire une VRAIE grille, sinon le test compare deux vides"
+        );
+
+        let seul = spectrogram_only(path).expect("spectrogram_only");
+        assert_eq!(
+            seul, complet.spectrogram,
+            "les deux boucles ont divergé : le collapse Diagnostic afficherait une grille qui \
+             n'est pas celle de l'analyse"
+        );
     }
 
     /// BUG-1 end-to-end: an MP3 renamed with a `.flac` extension must be caught by
