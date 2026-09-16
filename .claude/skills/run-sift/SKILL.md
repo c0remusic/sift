@@ -200,10 +200,19 @@ npm run check:security
   while the report loads. Poll `childElementCount`, never trust the click returning.
 - **`cdp.cjs open-track` fails on the live DOM** — it returns
   `{"firstTrackFound":false}`. Use `driver.mjs open-track`, which reloads first and polls.
-- **`frontend/app.js` is a mockup that runs in production.** It is imported
-  unconditionally. Clicking *its* mode toggle repaints the mockup **over** the live view,
-  with demo tracks (Mr. Fingers, Chez Damier…). If you see those names, you are driving the
-  mockup. Reload and use the real path.
+- **`frontend/app.js` never loads in the window this skill drives.** `frontend/main.ts`
+  imports it behind a guard — `if (!inTauri) void import("./app.js")` — where `inTauri` is
+  true when `"__TAURI_INTERNALS__" in window`: true in the WebView2 window, false in any
+  plain browser (`npm run dev`, or a built `dist/` served on the web). The guard landed with
+  `773bb6a` (2026-08-19, *take the
+  mockup out of production*); under Tauri it is `installLiveWiring()` + `installRouter()`
+  that own the DOM. So whatever you are looking at here, it is the live app.
+- **Corollary: demo-looking track names prove nothing.** They used to mean "you are driving
+  the mockup"; they no longer can. `TPL_SAMPLES` in `frontend/reglages-view.ts` paints
+  "Chez Damier" and "Mr Fingers" as the **live** filename-template preview on Réglages —
+  seeing them means you are on Réglages, not on a mockup. Identify the screen the way the
+  gotcha above says (`document.querySelector(".nv.on").textContent`, matched with
+  `startsWith`), never by the artist names on screen.
 - **Git Bash mangles `tasklist /FI`** into a path via MSYS conversion. Use the PowerShell
   tool for Windows process queries.
 - **`src-tauri/fixtures/*` is gitignored.** On a fresh clone the `analysis::decode` tests

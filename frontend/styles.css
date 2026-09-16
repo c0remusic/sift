@@ -3884,8 +3884,12 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    taille-en-dessous, encadré d'informations. Les aplats utilisent les tokens `-solid`, calibrés
    comme surfaces de donnée et qui ne portent jamais de texte. */
 .sift-usage-card{display:flex;flex-direction:column;gap:var(--space-16);padding:var(--space-24)}
+/* `.sift-usage-glyph`, `.sift-usage-info` et `.sift-usage-pair` (avec ses `dt`/`dd`) RETIRÉES
+   le 2026-09-16 : elles peignaient l'en-tête et l'encadré d'informations de `usage-chart.ts`,
+   dont les options `title` / `subtitle` / `info` n'avaient plus aucun appelant. Le composant
+   déclarait six options, ses deux consommateurs n'en passaient que deux — le markup qui les
+   lisait était donc inatteignable. Voir l'audit Karpathy du même jour. */
 .sift-usage-head{display:flex;align-items:center;gap:var(--space-16)}
-.sift-usage-glyph{width:56px;height:56px;flex:none}
 .sift-usage-ident{min-width:0;display:flex;flex-direction:column}
 .sift-usage-name{font-size:20px;font-weight:600;letter-spacing:-0.01em;line-height:1.2;color:var(--color-text-primary)}
 .sift-usage-sub{font-size:var(--text-md);color:var(--color-text-secondary)}
@@ -3948,11 +3952,6 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .sift-usage-lg-static:hover .sift-usage-lg-name{text-decoration:none}
 .sift-usage-lg:focus-visible{outline:2px solid var(--color-border-info);outline-offset:3px;border-radius:3px}
 
-.sift-usage-info{margin:0;border:1px solid var(--color-border-secondary);border-radius:var(--border-radius-md);padding:var(--space-16);display:grid;grid-template-columns:1fr 1fr;gap:var(--space-12) var(--space-32)}
-.sift-usage-pair{display:flex;align-items:baseline;gap:var(--space-12);font-size:var(--text-md);min-width:0}
-.sift-usage-pair dt{color:var(--color-text-secondary)}
-.sift-usage-pair dd{margin:0 0 0 auto;color:var(--color-text-primary);font-variant-numeric:tabular-nums;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-.sift-usage-pair dd.warn{color:var(--color-text-warning)}
 
 .sift-usage-actions{display:flex;align-items:center;gap:var(--space-8);flex-wrap:wrap}
 /* Les deux contrôles de la carte d'occupation (ce disclosure et `.sift-usage-btn` plus bas) sont

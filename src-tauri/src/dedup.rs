@@ -777,24 +777,33 @@ pub(crate) fn groups_from_edges(rows: &[DupScanRow], edges: &[DupEdge]) -> Vec<D
 }
 
 /// Group every `filed` track into duplicate clusters by acoustic fingerprint similarity
-/// (reuses the same cache + threshold as `find_duplicate`). Still O(n²) in the worst case,
-/// but the initial SELECT now also reads the cached `fingerprint` (no per-track N+1 SELECT)
-/// and a cheap duration pre-filter skips comparisons that can't possibly match — enough for
-/// a full 15k-track library dashboard scan.
+/// (reuses the same cache + threshold as `find_duplicate` — `fingerprint::cached` et
+/// `fingerprint::MATCH_THRESHOLD`). Enchaîne lecture + calcul + persistance sous un `conn` tenu
+/// du début à la fin, et le SELECT initial ramène l'empreinte en cache (pas de N+1 par piste).
 ///
-/// Enchaîne lecture + calcul + persistance sous un `conn` tenu du début à la fin.
+/// C'est le scan COMPLET : il recompare toute la bibliothèque à chaque appel. Sa comparaison
+/// n'est plus `O(n²)` depuis #38 — `group_duplicates` passe par `for_each_candidate_pair`, une
+/// fenêtre sur les durées triées — mais l'ensemble comparé, lui, repart bien de zéro.
 ///
-/// **Réservé aux tests depuis le 2026-07-28 (audit SYS-1).** Son dernier appelant de production,
-/// `library::library_stats`, tenait le verrou global pendant tout l'appel — donc pendant le
-/// décodage disque de `build_fingerprints`. Les deux commandes IPC concernées
-/// (`ipc_library::scan_library_duplicates` et `ipc_library::library_stats`) enchaînent désormais
-/// `load_dup_scan_rows` / `build_fingerprints` / `group_duplicates` / `persist_fingerprints`
-/// elles-mêmes, de façon à ne tenir le verrou que sur la brève lecture et la brève écriture.
+/// **Réservé aux tests depuis le 2026-07-28 (audit SYS-1)** : un appelant de production tiendrait
+/// le verrou global pendant `build_fingerprints`, qui décode de l'audio depuis le disque. Les deux
+/// maillons qu'elle enchaîne et que la production n'emprunte plus sont `#[cfg(test)]` eux aussi —
+/// `load_dup_scan_rows` et `group_duplicates` ; `build_fingerprints` et `persist_fingerprints`,
+/// eux, restent sur le chemin de production.
 ///
-/// Garder ce raccourci hors production est délibéré : il rend les tests de `dedup` lisibles
-/// (un appel au lieu de quatre) sans laisser un chemin qui reprendrait la mauvaise habitude.
-/// `#[cfg(test)]` fait échouer la compilation de tout futur appelant de production, au lieu de le
-/// laisser passer.
+/// **Le chemin de production, c'est `ipc_library::refresh_duplicate_groups`**, corps unique de la
+/// commande IPC `ipc_library::scan_library_duplicates`. Incrémental depuis la v19 : il ne compare
+/// que les pistes jamais comparées (`load_unscanned_rows` / `load_dup_candidates` /
+/// `compute_edges` / `record_scanned`) et assemble par `groups_from_edges`, en trois sections de
+/// verrou courtes qui excluent le décodage.
+///
+/// Ce qu'elle sert encore : de raccourci lisible dans les tests de `dedup` (un appel au lieu de
+/// quatre), et d'ORACLE. `refresh_incremental` — qui rejoue la séquence de production
+/// sous une seule connexion, `#[cfg(test)]` lui aussi — lui est comparé sur le même jeu de données
+/// (`incremental_scan_matches_full_scan`,
+/// `duplicate_scan_matches_full_scan_when_duration_is_null`) : les deux doivent rendre exactement
+/// les mêmes groupes. `#[cfg(test)]` fait échouer la compilation de tout futur appelant de
+/// production, au lieu de le laisser passer.
 #[cfg(test)]
 pub fn scan_library_duplicates(conn: &Connection) -> rusqlite::Result<Vec<DupGroup>> {
     let rows = load_dup_scan_rows(conn)?;

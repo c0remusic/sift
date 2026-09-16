@@ -153,8 +153,26 @@ impl std::fmt::Display for UsbFormatError {
 /// `macos::MacBackend`), never a mixed `cfg!` branch inside one function.
 pub trait RemovableDriveBackend {
     fn list(&self) -> Result<Vec<RemovableDrive>, UsbFormatError>;
-    /// `label` est le nom donné au volume. Il est assaini par le backend (`fat32::volume_label`),
-    /// jamais pris tel quel : FAT32 n'accepte que 11 octets majuscules.
+    /// `label` est le nom DEMANDÉ pour le volume. Les trois chemins de formatage n'en font pas la
+    /// même chose, et rien ne le transforme côté Rust en amont : `ipc_usb::format_drive` repasse
+    /// la chaîne reçue telle quelle (le champ `#sift-usbfmt-name` du modal borne la saisie à
+    /// 11 caractères, sans filtrer un seul caractère). Ce contrat ne promet donc rien de commun :
+    ///
+    /// - **FAT32 au-delà de `fat32::WINDOWS_FAT32_CREATE_CEILING`** (`windows.rs`,
+    ///   `format_large_fat32`) : assaini. `fat32::write_fat32` le réduit par `fat32::volume_label`
+    ///   (11 octets, majuscules, tout le reste en `_`) ; le bras privilégié le fait d'abord passer
+    ///   par `windows::sanitize_label_for_command` — même filtre, plus un repli sur
+    ///   `windows::DEFAULT_VOLUME_LABEL` quand le nom est vide — pour traverser la ligne de
+    ///   commande PowerShell de l'élévation.
+    /// - **`diskpart`** (tout le reste de `windows::WindowsBackend::format` : exFAT, ou FAT32 sous
+    ///   le plafond) : **JETÉ**. `windows::diskpart_script` ne prend que l'index de disque et le
+    ///   système de fichiers, et son `format fs=… quick` ne porte aucun `label=` — le nom demandé
+    ///   n'atteint jamais `diskpart`.
+    /// - **macOS** (`macos::MacBackend::format`) : pris **tel quel**, passé en argument de process
+    ///   à `diskutil eraseDisk`, sans assainissement côté Sift.
+    ///
+    /// Ce doc a garanti « assaini par le backend (`fat32::volume_label`), jamais pris tel quel »
+    /// jusqu'au 2026-09-16 : vrai du seul premier chemin.
     fn format(
         &self,
         drive: &RemovableDrive,

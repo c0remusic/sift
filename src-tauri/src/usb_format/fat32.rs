@@ -13,17 +13,38 @@
 //! quel `Read + Write + Seek` : un fichier d'image et un handle de volume brut passent exactement
 //! par le même chemin. Valider sur image ne teste donc pas une variante, mais la chose elle-même.
 
-//! ⚠️ **Rien n'appelle encore ce module en production**, et c'est délibéré plutôt qu'oublié.
-//! Écrire ces structures sur une vraie clé demande d'ouvrir le volume brut (`\\.\X:`) en écriture,
-//! ce que Windows réserve à l'administrateur — comme `diskpart`. Le shim d'élévation existe déjà
-//! (`elevation_powershell`, commit 163720e) mais il élève `diskpart`, pas notre propre code. Il
-//! manque donc une étape : que Sift se relance élevé sur un drapeau dédié pour ce seul écrit, puis
-//! rende la main. Câbler `format()` dessus avant d'avoir ça livrerait un chemin qui échoue
-//! systématiquement en « accès refusé », ce qui serait pire que le refus explicite d'aujourd'hui.
+//! **Deux chemins de production écrivent ici, tous deux sur Windows** — `mod.rs` compile ce module
+//! sous `cfg(any(target_os = "windows", test))`, macOS formatant par `diskutil`, qui ne connaît pas
+//! le plafond. Entrée commune : la commande IPC `ipc_usb::format_drive`, qui délègue à
+//! `WindowsBackend::format` ; celle-ci route vers `format_large_fat32` dès que la cible est FAT32
+//! au-delà de `WINDOWS_FAT32_CREATE_CEILING`. De là :
 //!
-//! Ce qui EST acquis : les structures sont écrites correctement au-delà de 32 Go, vérifié sur
-//! image de 40 Go — type FAT32, clusters de 32 Kio, signature de secteur, et un volume qui accepte
-//! puis rend des fichiers.
+//! - `WindowsBackend::try_format_in_place`, **sans aucune relance élevée** : la partition déjà
+//!   montée couvre le disque et porte un type MBR FAT32, donc on ouvre son volume par lettre
+//!   (`RawVolume::open`) et `write_fat32` écrit depuis le processus ordinaire ;
+//! - sinon `privileged::run`, dans un Sift relancé en administrateur sur `PRIVILEGED_FLAG`
+//!   (intercepté par `run_privileged_if_asked`, avant que Tauri ne démarre) : `diskpart`
+//!   partitionne sans formater, puis `write_fat32` écrit depuis ce même processus élevé.
+//!
+//! Les deux passent par `SectorIo` : un handle de volume brut refuse les E/S qui ne tombent pas sur
+//! des multiples entiers de secteur, là où `fatfs` écrit comme dans un fichier.
+//!
+//! Ce bloc a dit « Rien n'appelle encore ce module en production », et a décrit comme manquante
+//! l'étape « que Sift se relance élevé sur un drapeau dédié ». Elle est livrée depuis le
+//! 2026-08-01, commit `a643d2b`, celui qui a créé `privileged.rs`.
+//!
+//! Ce que les tests de ce fichier tiennent, sur image de 40 Go : type FAT32 au-delà du plafond
+//! (`formats_beyond_the_windows_ceiling`), clusters de 32 Kio
+//! (`picks_a_cdj_compatible_cluster_size`),
+//! signature de secteur (`boot_sector_carries_the_signature`), et un volume qui accepte puis rend
+//! des fichiers (`the_formatted_volume_actually_holds_files`).
+
+// Hors `#[cfg(test)]`, les seuls items de ce module référencés ailleurs sont
+// `WINDOWS_FAT32_CREATE_CEILING`, `BYTES_PER_SECTOR` et `write_fat32` (`windows.rs`,
+// `privileged.rs`) ; `FAT32_MAX_BYTES` n'apparaît que dans `mod tests`, et `usb_format` est un
+// module privé de la crate. Cet `allow` n'est donc pas vide de sens aujourd'hui : le retirer, ou le
+// rétrécir en `#[allow]` posé sur ce seul const, se mesure en relançant
+// `cargo clippy --manifest-path src-tauri/Cargo.toml --all-targets -- -D warnings`.
 #![allow(dead_code)]
 
 use fatfs::{FatType, FormatVolumeOptions};

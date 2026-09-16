@@ -281,15 +281,23 @@ pub fn quant_lambda_aac(kind: crate::analysis::aac_sfb::BlockKind) -> f32 {
     }
 }
 
-/// Ce que `verdict()` compare à `quant_likelihood`, qui est depuis le 2026-09-11 un **rapport au
-/// seuil de son banc** : `max(L_banc / λ_banc)` sur les trois mesures (AAC court, AAC long, MP3),
-/// calculé par `analysis::analyze`. `1` = pile sur le seuil de la mesure la plus forte, `> 1` =
-/// grille retrouvée. La borne reste STRICTE (`>`), comme avant.
+/// Ce que `verdict()` compare à `quant_likelihood`, qui est depuis le 2026-09-11 un **rapport à
+/// son seuil** et plus un `L` : `1` = pile sur le seuil du bras le plus fort, `> 1` = grille
+/// retrouvée. La borne reste STRICTE (`>`), comme avant.
 ///
-/// Pourquoi un rapport et plus un `L` : trois bancs, trois échelles (64, 224 et 64 cellules), et
-/// un `max` de `L` bruts aurait été dominé par l'échelle la plus bruyante. Les trois `λ` restent
-/// ici, dans le code qui juge, avec leur calibration ; ce qui voyage dans le rapport est déjà
-/// normalisé.
+/// **Ce rapport ne se calcule plus dans `analysis::analyze`** : c'est `bancs::Sondage::rapport`,
+/// le maximum de `bancs::Mesure::rapport()` (`statistique / lambda`) sur toutes les mesures
+/// rendues par les bancs de `bancs::BANCS_PRODUCTION`, et `None` quand aucun n'a mesuré ;
+/// `analyze` appelle `bancs::sonder` et lit ce rapport. Combien de bras et lesquels ne s'écrit
+/// pas ici : la table est la liste, elle se lit là-bas, et une de ses lignes peut rendre
+/// plusieurs mesures (le banc AAC en rend une par résolution mesurable).
+///
+/// Pourquoi un rapport et plus un `L` : les échelles des bras ne sont pas homogènes —
+/// vraisemblance sur la grille de quantification pour les bancs de grille, fraction de blocs
+/// alignés pour le cadrage — et un `max` de statistiques brutes aurait été dominé par la plus
+/// bruyante. Chaque bras nomme son `λ` dans `bancs::Mesure::lambda`, et **ils ne vivent plus
+/// tous ici** : les trois seuils de grille ci-dessus, oui ; celui du cadrage est
+/// `framing::ALIGNEMENT_MIN`, avec sa calibration, dans le module qui le mesure.
 pub const QUANT_LAMBDA: f32 = 1.0;
 
 /// Vrai quand au moins une des deux bandes sort par le bas de la plage des masters.

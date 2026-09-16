@@ -11,9 +11,21 @@
 //! trame inconnu ; une FFT d'une autre base, d'une autre fenêtre et d'un autre alignement étale
 //! cette structure jusqu'à l'effacer.
 //!
-//! ⚠️ **Ce module ne détecte rien pour l'instant.** Il porte la transformée, et rien de plus. Que
-//! la structure de quantification survive au décodage puis se retrouve depuis un FLAC, c'est
-//! l'hypothèse qu'il sert à tester — pas un acquis. Rien ici n'est branché sur `verdict()`.
+//! ⚠️ **Ce module est BRANCHÉ sur `verdict()`, par deux des trois lignes de
+//! `bancs::BANCS_PRODUCTION`.** `bancs::mesure_aac` appelle `quant_trace::likelihood`, et
+//! `bancs::mesure_cadrage` appelle `framing::balayer` → `score_fichier` →
+//! `energies_par_decalage` : chacun construit un [`MdctFast`] par fil, hors `#[cfg(test)]`. Leurs
+//! fenêtres sortent d'ici aussi — `quant_trace::Fenetre::echantillons` et `echantillons_n`
+//! appellent [`sine_window`], [`kbd_window`] et [`vorbis_window`]. `bancs::sonder` rend un
+//! `Sondage`, dont `Sondage::rapport` est le maximum des `statistique / lambda` ;
+//! `analysis::analyze` l'appelle, stocke le résultat dans `AnalysisReport::quant_likelihood` et le
+//! passe à `verdict::verdict`, où `quant_likelihood.is_some_and(|l| l > QUANT_LAMBDA)` —
+//! `QUANT_LAMBDA` vaut 1,0 — rend `Verdict::Fake`. La troisième ligne, `bancs::mesure_mp3`, ne
+//! passe PAS par ici : `mp3_bank` porte sa propre `mdct36_table`.
+//!
+//! Ce qui ne tourne QUE dans les tests : [`mdct`], [`MdctPlan`] et [`imdct`] — tous leurs
+//! appelants sont sous `#[cfg(test)]`, ici comme dans `quant_trace`. Ce sont l'oracle et sa
+//! réciproque, pas le chemin de production.
 //!
 //! Coût : [`mdct`] et [`MdctPlan`] restent en O(N²), et c'était un choix de sonde assumé — écrire
 //! une MDCT rapide d'abord reviendrait à optimiser un chemin dont on ignorait s'il mesure quelque

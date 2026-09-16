@@ -1,7 +1,9 @@
 // Graphique d'occupation par format — un segment par extension, trié du plus gros au plus petit.
-// Un seul composant pour deux écrans : Clé USB (en-tête, informations disque, éjection) et
-// Bibliothèque (barre et détail seuls, sans volume donc sans espace libre). Les options décident,
-// pas deux copies qui divergeront.
+// Un seul composant pour deux écrans, et il ne rend QUE la barre, la légende et le détail
+// dépliable : `usb-view.ts` l'appelle en `{ report, plain: true }` et pose lui-même sa tête, ses
+// faits et ses boutons (`headHtml` / `factsHtml` / `actionsHtml`) ; `bibliotheque-view.ts`
+// l'appelle en `{ report }` et garde la carte. Une bibliothèque n'étant pas un volume,
+// `free_bytes` y vaut 0 et aucun segment libre n'y est dessiné.
 //
 // Tout ce qui vient du disque passe par `esc()` : un nom de volume et une extension sont des
 // données utilisateur.
@@ -63,15 +65,6 @@ function groupBuckets(
 
 export interface UsageChartOptions {
   report: UsageReport;
-  /** Titre de l'en-tête. Absent = pas d'en-tête du tout (cas Bibliothèque). */
-  title?: string;
-  subtitle?: string;
-  /** Paires de l'encadré d'informations. Le troisième élément met la valeur en alerte. */
-  info?: ReadonlyArray<readonly [string, string, ("warn" | undefined)?]>;
-  /** Fourni = un bouton Éjecter apparaît. Doit rejeter pour signaler un échec. */
-  onEject?: () => Promise<void>;
-  /** Fourni = un bouton Actualiser apparaît, à côté de l'âge de la mesure. */
-  onRefresh?: () => Promise<void>;
   /** Sans carte ni inset : le graphique posé au sol d'une zone C qui ne peint rien (Clé USB depuis
    * le 2026-09-09). L'inspecteur de Rangés garde la carte. */
   plain?: boolean;
@@ -89,22 +82,6 @@ export function renderUsageChart(opts: UsageChartOptions): HTMLElement {
   // à dessiner. Le total affiché est alors la somme des formats, pas une capacité.
   const isVolume = report.free_bytes > 0;
   const total = isVolume ? report.total_bytes : used;
-
-  if (opts.title) {
-    const head = document.createElement("div");
-    head.className = "sift-usage-head";
-    head.innerHTML =
-      DRIVE_GLYPH +
-      '<div class="sift-usage-ident">' +
-      `<span class="sift-usage-name">${esc(opts.title)}</span>` +
-      (opts.subtitle ? `<span class="sift-usage-sub">${esc(opts.subtitle)}</span>` : "") +
-      "</div>" +
-      `<div class="sift-usage-capacity">${formatGo(total)}</div>`;
-    card.appendChild(head);
-    const rule = document.createElement("div");
-    rule.className = "sift-usage-rule";
-    card.appendChild(rule);
-  }
 
   // ---- Barre + infobulle ----
   const barwrap = document.createElement("div");
@@ -188,20 +165,6 @@ export function renderUsageChart(opts: UsageChartOptions): HTMLElement {
   }
   card.appendChild(legend);
 
-  // ---- Encadré d'informations ----
-  if (opts.info?.length) {
-    const info = document.createElement("dl");
-    info.className = "sift-usage-info";
-    info.innerHTML = opts.info
-      .map(
-        ([k, v, cls]) =>
-          `<div class="sift-usage-pair"><dt>${esc(k)}</dt>` +
-          `<dd${cls === "warn" ? ' class="warn"' : ""}>${esc(v)}</dd></div>`,
-      )
-      .join("");
-    card.appendChild(info);
-  }
-
   // ---- Actions ----
   const actions = document.createElement("div");
   actions.className = "sift-usage-actions";
@@ -214,52 +177,7 @@ export function renderUsageChart(opts: UsageChartOptions): HTMLElement {
     '<span class="sift-usage-chev">▶</span><span class="sift-usage-disclose-label">Voir le détail complet</span>';
   actions.appendChild(toggle);
 
-  const status = document.createElement("div");
-  status.className = "sift-usage-status";
-  status.setAttribute("role", "status");
-  status.hidden = true;
-
-  if (opts.onRefresh) {
-    const refresh = document.createElement("button");
-    refresh.type = "button";
-    refresh.className = "sift-usage-btn";
-    refresh.textContent = "Relire le disque";
-    refresh.addEventListener("click", () => {
-      refresh.disabled = true;
-      refresh.textContent = "Lecture…";
-      void opts.onRefresh?.().catch((e: unknown) => {
-        refresh.disabled = false;
-        refresh.textContent = "Relire le disque";
-        console.error("usage refresh failed", e);
-        status.textContent = "Impossible de relire ce disque.";
-        status.hidden = false;
-      });
-    });
-    actions.appendChild(refresh);
-  }
-
-  if (opts.onEject) {
-    const eject = document.createElement("button");
-    eject.type = "button";
-    eject.className = "sift-usage-btn";
-    eject.textContent = "Éjecter";
-    eject.addEventListener("click", () => {
-      eject.disabled = true;
-      eject.textContent = "Éjection…";
-      status.hidden = true;
-      status.textContent = "";
-      void opts.onEject?.().catch((e: unknown) => {
-        eject.disabled = false;
-        eject.textContent = "Éjecter";
-        console.error("ejectDrive failed", e);
-        status.textContent = humanizeEject(String(e));
-        status.hidden = false;
-      });
-    });
-    actions.appendChild(eject);
-  }
-
-  card.append(actions, status);
+  card.appendChild(actions);
 
   // ---- Détail dépliable ----
   const panel = document.createElement("div");
@@ -337,14 +255,3 @@ export function humanizeEject(raw: string): string {
   if (raw.includes("DRIVE_VANISHED")) return "Ce disque n'est déjà plus branché.";
   return "Éjection impossible.";
 }
-
-/** Icône de disque externe, dessinée en ligne : la CSP interdit toute ressource distante et une
- * icône de police ne se colore pas par zone. */
-const DRIVE_GLYPH = `
-<svg class="sift-usage-glyph" viewBox="0 0 56 56" aria-hidden="true">
-  <rect x="6" y="12" width="44" height="32" rx="5" fill="var(--color-text-tertiary)" opacity="0.18"/>
-  <rect x="6" y="12" width="44" height="32" rx="5" fill="none" stroke="var(--color-text-tertiary)" stroke-width="1.25" opacity="0.55"/>
-  <rect x="12" y="18" width="32" height="9" rx="2.5" fill="var(--color-text-tertiary)" opacity="0.35"/>
-  <circle cx="16" cy="37" r="2.4" fill="var(--color-hue-green-solid)"/>
-  <rect x="23" y="35.2" width="21" height="3.6" rx="1.8" fill="var(--color-text-tertiary)" opacity="0.3"/>
-</svg>`;

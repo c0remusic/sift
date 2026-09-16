@@ -233,9 +233,12 @@ async function cmdLaunch() {
 }
 
 /** Reach a state where the detail pane is actually painted.
- *  Two traps, both hit for real:
- *   - clicking app.js's own mode toggle repaints the MOCKUP over the live view (demo tracks);
- *     reload first so the live wiring owns the DOM.
+ *  One dead trap, and one still live:
+ *   - the reload below was written on 2026-08-05, before the guard: back then app.js could
+ *     repaint its mockup over the live view. `frontend/main.ts` has imported it under
+ *     `if (!inTauri)` since 773bb6a (2026-08-19), so it never loads in this window and demo
+ *     track names diagnose nothing. The reload stays — it re-boots the page, and the boot is
+ *     what runs installLiveWiring().
  *   - the click returning does not mean the track opened. #mid stays empty for seconds while
  *     the report loads. Poll childElementCount, never trust the click. */
 async function cmdOpenTrack(port) {

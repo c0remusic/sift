@@ -1,7 +1,11 @@
 //! Acoustic fingerprint (Chromaprint) — the "sound" confirmation behind the name pre-filter.
 //! `compute_for_path` decodes the file (reusing the analysis decoder) and produces a compact
-//! fingerprint; `similarity` compares two fingerprints by bit-agreement with a small offset
-//! search (no dependency on the crate's segment matcher). Reused later by the library scan.
+//! fingerprint; `similarity` defers alignment to the crate's segment matcher
+//! (`match_fingerprints`, with the same `Configuration` as `compute_for_path`) and returns the
+//! fraction of the shorter fingerprint's items covered by segments scoring under
+//! `SEGMENT_SCORE_MAX` — 0.0 when either fingerprint is empty or the matcher errors.
+//! `MATCH_THRESHOLD` is not applied here: it is the callers' decision on that fraction
+//! (`dedup.rs`). Reused later by the library scan.
 
 use rusty_chromaprint::{match_fingerprints, Configuration, Fingerprinter};
 
