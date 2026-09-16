@@ -2458,7 +2458,6 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    outside this element, see filing.ts's .sift-fil-editor/.sift-fil-verdict) sit flush at 0.
    Dropped to 0 so every card in the stack aligns on the same left/right edge. */
 .sift-report-scroll{flex:1;overflow:auto;padding:0 0 8px}
-.sift-report-close{flex:none;font-size:var(--text-base);padding:var(--space-4) var(--space-12)}
 /* No margin-top: this now sits inline among the rail's buttons (#filfoot, a horizontal flex row
    with align-items:center) — the 18px top margin was a leftover from when it sat under the hero
    in a vertical stack (moved into the rail 2026-07-0x, see filing.ts renderFoot) and was pushing
@@ -2963,8 +2962,6 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    montre rien du système, ça montre une version délavée de nous-mêmes, et ça coûte une couche de
    composition sur la surface la plus haute de l'app. La carte retombe sur l'aplat opaque
    ci-dessus, dont l'ombre porte seule le décollement. Un seul matériau de surface flottante. */
-.sift-report-overlay-loading{padding:var(--space-24) var(--space-24);font-size:var(--text-base);display:flex;align-items:center;gap:8px}
-.sift-report-overlay-error{padding:var(--space-24) var(--space-24);font-size:var(--text-base);color:var(--color-text-danger)}
 .sift-usbfmt-card{padding:var(--space-24);width:380px;display:flex;flex-direction:column;gap:var(--space-12)}
 .sift-usbfmt-title{font-size:var(--text-lg);font-weight:600;color:var(--color-text-primary)}
 .sift-usbfmt-desc{font-size:var(--text-sm);color:var(--color-text-secondary)}
@@ -3023,7 +3020,6 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .sift-confirm-btn:disabled{opacity:.4;cursor:not-allowed}
 .sift-confirm-btn:disabled:hover{background:var(--color-accent-fill);filter:none}
 .sift-usbfmt-error{font-size:var(--text-sm);color:var(--color-text-danger)}
-.sift-report-overlay-modal{max-width:760px;width:100%;max-height:90vh;overflow:auto;padding:var(--space-24)}
 
 /* ── Revue filing rail (filing.ts) — extracted inline styles, byte-identical values ───── */
 /* Même règle « le caret prend le cran de son corps » que `.sift-zone-toggle-car`, appliquée dans

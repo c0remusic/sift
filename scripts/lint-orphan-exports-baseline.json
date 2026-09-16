@@ -1,5 +1,5 @@
 {
-  "count": 17,
+  "count": 16,
   "items": [
     "frontend/confirm-modal.ts: BatchAlertResult",
     "frontend/context-menu.ts: MenuItem",
@@ -8,7 +8,6 @@
     "frontend/ecartes-view.ts: EcartesKind",
     "frontend/empty-state.ts: EmptyStateOpts",
     "frontend/filing-state.ts: FilingOutcomeListener",
-    "frontend/ipc.ts: libraryStats",
     "frontend/popover-position.ts: AnchorRect",
     "frontend/popover-position.ts: PopoverPosition",
     "frontend/progress-zone.ts: TaskKind",

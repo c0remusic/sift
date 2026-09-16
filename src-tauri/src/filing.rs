@@ -888,8 +888,6 @@ pub fn commit_file(
 
     // A track just became 'filed' — invalidate the dashboard duplicate-count cache. The cache key
     // (COUNT, MAX(id) of filed) misses an in-place re-filing that leaves both unchanged, so we
-    // invalidate explicitly rather than rely on the key changing (coordination with R1's cache).
-    crate::library::invalidate_duplicate_count_cache();
 
     // Committed — now (and only now) patch a linked Rekordbox XML for the move/convert rows, and
     // detect (read-only) any master.db repair candidates for the same rows (M8 Tier 1 IPC wiring),

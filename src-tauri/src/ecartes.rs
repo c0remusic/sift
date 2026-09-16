@@ -66,7 +66,6 @@ pub fn requeue_track(conn: &Connection, track_id: i64) -> Result<(), String> {
         params![track_id],
     )
     .map_err(|e| e.to_string())?;
-    crate::library::invalidate_duplicate_count_cache();
     Ok(())
 }
 
@@ -167,7 +166,6 @@ pub fn restore_track(conn: &Connection, track_id: i64) -> Result<(), String> {
         params![track_id],
     )
     .map_err(|e| e.to_string())?;
-    crate::library::invalidate_duplicate_count_cache();
     Ok(())
 }
 
@@ -244,7 +242,6 @@ pub fn purge_trash(conn: &Connection) -> Result<PurgeResult, String> {
     tx.commit().map_err(|e| e.to_string())?;
     // The filed set can shift around trash lifecycle changes — drop the dashboard duplicate-count
     // cache so it recomputes (coordination with R1's cache; cheap, a purge is a rare action).
-    crate::library::invalidate_duplicate_count_cache();
     Ok(PurgeResult { purged: n, failed })
 }
 

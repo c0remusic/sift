@@ -1510,8 +1510,11 @@ export function handleQueueItemClick(qi: HTMLElement, e: MouseEvent): void {
     if (item && mid) {
       void openFilingInto(mid, item);
       prefetchNextAfter(item.id);
-    } else if (qi.dataset.path)
-      void import("./report-view").then((m) => m.openReportModal(qi.dataset.path!));
+    }
+    // Ex-branche `openReportModal` : un overlay de rapport s'ouvrait quand la file n'avait pas de
+    // panneau de revue monté. Retirée le 2026-09-16 — troisième chemin de rendu du rapport à côté
+    // de `renderReportInto` et `openReportInto`, pour un cas que l'app n'atteint pas : la Revue
+    // monte toujours son `#mid`.
   }, 150);
 }
 

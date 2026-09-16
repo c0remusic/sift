@@ -80,232 +80,6 @@ pub struct LibraryFacets {
     pub artists: Vec<LibraryFolder>,
 }
 
-/// One genre with its `filed`-track count, ordered by count desc then name.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct GenreCount {
-    pub genre: String,
-    pub count: i64,
-}
-
-/// Aggregate stats for the Bibliothèque dashboard.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct DashboardStats {
-    pub total: i64,
-    pub lossless: i64,
-    pub mp3: i64,
-    /// Nombre de groupes de doublons non résolus. Rempli par `ipc_library::library_stats`, HORS
-    /// du verrou global — `library::library_stats` le laisse à 0 (SYS-1, 2026-07-28).
-    pub duplicates: i64,
-    /// Tracks with verdict = 'fake', i.e. to re-source.
-    pub fake: i64,
-    pub genres: Vec<GenreCount>,
-}
-
-/// Cheap signature of the `filed` set: (count, max id). Any filing commit, revert, or purge
-/// changes the filed count and/or the max id, so a mismatch means the cached duplicate scan is
-/// stale. Fingerprint recomputes don't change grouping outcomes, so they're intentionally not
-/// part of the key. Cheap enough to recheck on every dashboard load.
-pub fn filed_signature(conn: &rusqlite::Connection) -> rusqlite::Result<(i64, i64)> {
-    conn.query_row(
-        "SELECT COUNT(*), COALESCE(MAX(id), 0) FROM tracks WHERE status='filed'",
-        [],
-        |r| Ok((r.get(0)?, r.get(1)?)),
-    )
-}
-
-/// Comptage mémoïsé des groupes de doublons, indexé sur `filed_signature`. Le scan complet
-/// (chargement des lignes, empreintes, comparaison O(n²)) est le coût dominant du tableau de bord ;
-/// celui-ci est rechargé à chaque visite alors que le jeu `filed` bouge rarement entre deux, d'où
-/// le recalcul sur changement de signature seulement. `invalidate_duplicate_count_cache()` force
-/// un recalcul pour les appelants qui mutent le jeu `filed` par un chemin que la signature ne voit
-/// pas.
-///
-/// Le calcul lui-même ne vit plus ici : il est fourni par l'appelant et exécuté hors du verrou
-/// global (SYS-1, 2026-07-28). Ce module n'expose qu'UNE porte d'entrée,
-/// `duplicate_count_or_compute`, plus `filed_signature` et `invalidate_duplicate_count_cache`.
-///
-/// `(filed_signature, duplicate-group count)` — the cache slot's single entry.
-type DupCountEntry = ((i64, i64), i64);
-
-static DUP_COUNT_CACHE: std::sync::OnceLock<std::sync::Mutex<Option<DupCountEntry>>> =
-    std::sync::OnceLock::new();
-
-fn dup_count_cache() -> &'static std::sync::Mutex<Option<DupCountEntry>> {
-    DUP_COUNT_CACHE.get_or_init(|| std::sync::Mutex::new(None))
-}
-
-/// Compteur de génération du cache, incrémenté par `invalidate_duplicate_count_cache`.
-///
-/// Nécessaire depuis que le calcul se fait HORS du verrou global (SYS-1) : entre le moment où on
-/// constate un cache miss et celui où on mémorise le résultat, une invalidation concurrente peut
-/// survenir. Sans ce compteur, `store_duplicate_count` l'écraserait et réinstallerait un comptage
-/// périmé sous une signature INCHANGÉE — donc durablement, puisque c'est justement le cas que la
-/// signature ne sait pas voir et que `invalidate_duplicate_count_cache` existe pour couvrir.
-/// Trouvé par le crosscheck de la gate pre-commit sur la première version de ce correctif.
-static DUP_COUNT_GEN: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
-
-/// Comptage en cache pour cette signature, ou `None` s'il faut recalculer.
-/// Mutex empoisonné → traité comme une absence de cache : on ne sert jamais une valeur
-/// potentiellement périmée.
-fn cached_duplicate_count(sig: (i64, i64)) -> Option<i64> {
-    let guard = dup_count_cache().lock().ok()?;
-    match *guard {
-        Some((cached_sig, count)) if cached_sig == sig => Some(count),
-        _ => None,
-    }
-}
-
-/// Sérialise les calculs de comptage entre eux. NE protège aucune donnée — c'est un jeton de
-/// « un seul en vol à la fois ».
-static DUP_COMPUTE_FLIGHT: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
-
-fn dup_compute_flight() -> &'static std::sync::Mutex<()> {
-    DUP_COMPUTE_FLIGHT.get_or_init(|| std::sync::Mutex::new(()))
-}
-
-/// Rend le comptage de groupes de doublons pour `sig` : depuis le cache s'il est valide, sinon en
-/// appelant `compute` — **au plus un calcul en vol à la fois**.
-///
-/// Interface unique de ce cache, délibérément. Une version antérieure exposait quatre primitives
-/// (signature, génération, lecture, écriture) et laissait l'appelant les enchaîner correctement :
-/// il ne l'a pas fait, et deux défauts sont passés (voir plus bas). Ici l'appelant ne fournit QUE
-/// le calcul coûteux ; l'ordre des étapes n'est plus son affaire.
-///
-/// Trois propriétés, chacune payée par un défaut réel trouvé au crosscheck de la gate :
-///
-/// 1. **Single-flight.** Avant SYS-1, le verrou global `Mutex<Connection>` sérialisait de fait ces
-///    calculs : deux rendus concurrents du tableau de bord ne pouvaient pas décoder la
-///    bibliothèque en même temps. Sortir le calcul du verrou a supprimé cette garantie sans la
-///    remplacer — N appels concurrents auraient refait N décodages disque complets en parallèle.
-///    Le jeton ci-dessous la rétablit, et le second arrivant trouve le résultat en cache plutôt
-///    que de recalculer.
-/// 2. **Pas de réinstallation d'un comptage périmé.** Une invalidation survenue PENDANT le calcul
-///    non verrouillé ne doit pas être écrasée par le résultat en vol : c'est justement le cas que
-///    la signature ne sait pas voir et que `invalidate_duplicate_count_cache` existe pour couvrir.
-///    D'où le compteur de génération, lu avant le calcul et revérifié sous le verrou du cache.
-/// 3. **Rien n'est calculé sur un cache hit.** Le hit est le cas NORMAL — le tableau de bord est
-///    rechargé à chaque visite alors que le jeu `filed` bouge rarement.
-///
-/// **Invariant d'appel** : ne jamais appeler en tenant le `Mutex<Connection>` global. `compute` le
-/// prend brièvement ; le tenir déjà inverserait l'ordre des verrous entre ce jeton et celui de la
-/// connexion, donc interblocage. Le seul appelant, `ipc_library::library_stats`, le relâche avant.
-pub fn duplicate_count_or_compute<F, E>(sig: (i64, i64), compute: F) -> Result<i64, E>
-where
-    F: FnOnce() -> Result<i64, E>,
-{
-    if let Some(count) = cached_duplicate_count(sig) {
-        return Ok(count);
-    }
-    // Un mutex empoisonné ici n'a rien corrompu : il ne garde aucune donnée, seulement le droit de
-    // calculer. On reprend le jeton plutôt que de refuser le service.
-    let _flight = match dup_compute_flight().lock() {
-        Ok(g) => g,
-        Err(poisoned) => poisoned.into_inner(),
-    };
-    // Deuxième lecture, après l'attente : celui qui nous précédait vient peut-être de remplir le
-    // cache pour cette même signature. C'est ce qui rend le single-flight utile plutôt que
-    // seulement sérialisant.
-    if let Some(count) = cached_duplicate_count(sig) {
-        return Ok(count);
-    }
-
-    let generation = DUP_COUNT_GEN.load(std::sync::atomic::Ordering::SeqCst);
-    let count = compute()?;
-
-    if DUP_COUNT_GEN.load(std::sync::atomic::Ordering::SeqCst) == generation {
-        if let Ok(mut guard) = dup_count_cache().lock() {
-            // Revérifié SOUS le verrou du cache : sans cela, une invalidation glissée entre le
-            // test ci-dessus et la prise du verrou passerait encore.
-            if DUP_COUNT_GEN.load(std::sync::atomic::Ordering::SeqCst) == generation {
-                *guard = Some((sig, count));
-            }
-        }
-    }
-    // Le comptage reste correct pour CE rendu même s'il n'a pas été archivé : seule la prochaine
-    // visite paiera un recalcul.
-    Ok(count)
-}
-
-/// Drops the cached duplicate-group count so the next `library_stats` recomputes it. Call after
-/// any change to the `filed` set that `filed_signature` might not observe (e.g. an in-place
-/// re-filing that leaves the filed count and max id unchanged). Safe to call from any thread.
-pub fn invalidate_duplicate_count_cache() {
-    // La génération est incrémentée AVANT de vider, pour qu'un calcul non verrouillé déjà en vol
-    // voie forcément un écart et refuse de mémoriser son résultat.
-    DUP_COUNT_GEN.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
-    if let Ok(mut guard) = dup_count_cache().lock() {
-        *guard = None;
-    }
-}
-
-/// Aggregate counts for the Bibliothèque dashboard. Read-only.
-///
-/// Ne calcule PAS le nombre de doublons : `duplicates` est renvoyé à 0 et l'appelant doit le
-/// remplir. C'est délibéré — sur un cache miss ce comptage décode de l'audio depuis le disque, et
-/// il tenait le verrou global pendant tout ce temps (audit 2026-07-28, SYS-1). Le seul appelant,
-/// `ipc_library::library_stats`, le calcule maintenant HORS verrou. Les six requêtes ci-dessous
-/// sont, elles, des agrégats SQL brefs qui restent sous le verrou sans dommage.
-pub fn library_stats(conn: &rusqlite::Connection) -> rusqlite::Result<DashboardStats> {
-    let total: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM tracks WHERE status='filed'",
-        [],
-        |r| r.get(0),
-    )?;
-    // `target_format`, PAS `format` : `tracks.format` n'est écrit par aucun code de production
-    // (voir le commentaire de `list_filed`). Ces deux compteurs rendaient donc 0 quelle que soit la
-    // bibliothèque, sur un écran qui affiche « Lossless » et « MP3 » en gros.
-    let lossless: i64 = conn.query_row(
-        &format!(
-            "SELECT COUNT(*) FROM tracks WHERE status='filed' AND target_format IN {}",
-            crate::encode::TARGET_LOSSLESS_SQL_IN
-        ),
-        [],
-        |r| r.get(0),
-    )?;
-    let mp3: i64 = conn.query_row(
-        &format!(
-            "SELECT COUNT(*) FROM tracks WHERE status='filed' AND target_format IN {}",
-            crate::encode::TARGET_LOSSY_SQL_IN
-        ),
-        [],
-        |r| r.get(0),
-    )?;
-    // `verdict_ver` en plus de `verdict` : la carte « À re-sourcer » propose une action sur des
-    // fichiers achetés, elle ne doit compter que des verdicts que le moteur COURANT produirait
-    // (issue #39). Un FAKE d'une génération précédente sort du compte au lieu d'y rester
-    // indéfiniment — la piste réapparaîtra dès qu'un verdict courant sera écrit.
-    let fake: i64 = conn.query_row(
-        "SELECT COUNT(*) FROM tracks WHERE status='filed' AND verdict='fake' AND verdict_ver=?1",
-        rusqlite::params![crate::analysis::verdict::VERDICT_CACHE_VERSION],
-        |r| r.get(0),
-    )?;
-    // Rempli par l'appelant, hors verrou — voir la doc de cette fonction.
-    let duplicates = 0i64;
-
-    let mut stmt = conn.prepare(
-        "SELECT g.genre, COUNT(*) FROM track_genres g \
-         JOIN tracks t ON t.id = g.track_id AND t.status='filed' \
-         GROUP BY g.genre ORDER BY COUNT(*) DESC, g.genre",
-    )?;
-    let genres = stmt
-        .query_map([], |r| {
-            Ok(GenreCount {
-                genre: r.get(0)?,
-                count: r.get(1)?,
-            })
-        })?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
-
-    Ok(DashboardStats {
-        total,
-        lossless,
-        mp3,
-        duplicates,
-        fake,
-        genres,
-    })
-}
-
 /// All `filed` tracks joined to their metadata + genres, filtered. Read-only.
 pub fn list_filed(
     conn: &rusqlite::Connection,
@@ -646,133 +420,6 @@ pub fn ensure_unique(path: &Path, ignore: Option<&Path>) -> PathBuf {
     }
     // pathological fallback: timestamped name
     parent.join(format!("{stem} ({}).bak", std::process::id()))
-}
-
-#[cfg(test)]
-mod dup_count_cache_tests {
-    use super::*;
-    use std::sync::atomic::Ordering;
-
-    /// Le cache est un `static` de processus : deux tests qui le manipulent en parallèle se
-    /// marcheraient dessus (`cargo test` est multi-thread par défaut). Ce verrou les sérialise.
-    static TEST_SERIAL: std::sync::Mutex<()> = std::sync::Mutex::new(());
-
-    fn fresh() -> std::sync::MutexGuard<'static, ()> {
-        let g = match TEST_SERIAL.lock() {
-            Ok(g) => g,
-            Err(p) => p.into_inner(),
-        };
-        invalidate_duplicate_count_cache();
-        g
-    }
-
-    /// Le premier appel calcule, le second sert le cache — c'est la raison d'être du memo.
-    #[test]
-    fn second_call_with_same_signature_does_not_recompute() {
-        let _serial = fresh();
-        let calls = std::sync::atomic::AtomicUsize::new(0);
-        let compute = || {
-            calls.fetch_add(1, Ordering::SeqCst);
-            Ok::<i64, String>(7)
-        };
-
-        assert_eq!(duplicate_count_or_compute((3, 42), compute).unwrap(), 7);
-        assert_eq!(calls.load(Ordering::SeqCst), 1);
-        assert_eq!(duplicate_count_or_compute((3, 42), compute).unwrap(), 7);
-        assert_eq!(
-            calls.load(Ordering::SeqCst),
-            1,
-            "le second appel doit venir du cache"
-        );
-    }
-
-    /// Une signature différente est un jeu `filed` différent : le cache ne doit pas répondre.
-    #[test]
-    fn a_different_signature_recomputes() {
-        let _serial = fresh();
-        let calls = std::sync::atomic::AtomicUsize::new(0);
-        let compute = || {
-            calls.fetch_add(1, Ordering::SeqCst);
-            Ok::<i64, String>(1)
-        };
-
-        let _ = duplicate_count_or_compute((3, 42), compute).unwrap();
-        let _ = duplicate_count_or_compute((4, 42), compute).unwrap();
-        assert_eq!(calls.load(Ordering::SeqCst), 2);
-    }
-
-    /// LE cas trouvé par le crosscheck de la gate. Une invalidation qui tombe PENDANT le calcul
-    /// non verrouillé ne doit pas être écrasée par le résultat en vol : sans le compteur de
-    /// génération, l'appel suivant servirait un comptage périmé sous une signature INCHANGÉE —
-    /// donc durablement, puisque c'est exactement ce que la signature ne sait pas voir.
-    #[test]
-    fn an_invalidation_during_the_compute_is_not_overwritten() {
-        let _serial = fresh();
-        let sig = (3, 42);
-
-        // Le calcul invalide pendant qu'il tourne — c'est ce que fait une écriture concurrente.
-        let first = duplicate_count_or_compute(sig, || {
-            invalidate_duplicate_count_cache();
-            Ok::<i64, String>(7)
-        })
-        .unwrap();
-        assert_eq!(first, 7, "le comptage reste correct pour CE rendu");
-
-        // Le résultat ne doit PAS avoir été archivé : l'appel suivant recalcule.
-        let recomputed = std::sync::atomic::AtomicUsize::new(0);
-        let second = duplicate_count_or_compute(sig, || {
-            recomputed.fetch_add(1, Ordering::SeqCst);
-            Ok::<i64, String>(9)
-        })
-        .unwrap();
-        assert_eq!(
-            recomputed.load(Ordering::SeqCst),
-            1,
-            "un comptage calculé par-dessus une invalidation ne doit jamais être mémorisé"
-        );
-        assert_eq!(second, 9);
-    }
-
-    /// Sans invalidation concurrente, le résultat DOIT être archivé — sinon le garde de génération
-    /// serait trop strict et le cache ne servirait jamais. Témoin symétrique du test précédent.
-    #[test]
-    fn without_concurrent_invalidation_the_result_is_stored() {
-        let _serial = fresh();
-        let sig = (5, 99);
-        assert_eq!(
-            duplicate_count_or_compute(sig, || Ok::<i64, String>(4)).unwrap(),
-            4
-        );
-        let recomputed = std::sync::atomic::AtomicUsize::new(0);
-        let again = duplicate_count_or_compute(sig, || {
-            recomputed.fetch_add(1, Ordering::SeqCst);
-            Ok::<i64, String>(999)
-        })
-        .unwrap();
-        assert_eq!(recomputed.load(Ordering::SeqCst), 0);
-        assert_eq!(again, 4);
-    }
-
-    /// Une erreur du calcul remonte telle quelle et ne pollue pas le cache.
-    #[test]
-    fn a_failed_compute_caches_nothing() {
-        let _serial = fresh();
-        let sig = (1, 1);
-        let err = duplicate_count_or_compute(sig, || Err::<i64, String>("boom".into()));
-        assert_eq!(err, Err("boom".to_string()));
-
-        let calls = std::sync::atomic::AtomicUsize::new(0);
-        let _ = duplicate_count_or_compute(sig, || {
-            calls.fetch_add(1, Ordering::SeqCst);
-            Ok::<i64, String>(2)
-        })
-        .unwrap();
-        assert_eq!(
-            calls.load(Ordering::SeqCst),
-            1,
-            "un échec ne doit rien mémoriser"
-        );
-    }
 }
 
 #[cfg(test)]
@@ -1189,7 +836,7 @@ mod tests {
     /// précédents semaient `format` à la main : ils passaient sans jamais toucher le chemin réel,
     /// ce qui est précisément pourquoi le trou a survécu.
     #[test]
-    fn stats_filter_and_format_column_read_what_filing_actually_writes() {
+    fn le_filtre_et_la_colonne_format_lisent_ce_que_le_rangement_ecrit() {
         let conn = db();
         conn.execute(
             "INSERT INTO tracks(id, path, status, target_format, verdict, verdict_ver) \
@@ -1203,10 +850,6 @@ mod tests {
             rusqlite::params![VER],
         )
         .unwrap();
-
-        let s = library_stats(&conn).unwrap();
-        assert_eq!(s.lossless, 1);
-        assert_eq!(s.mp3, 1);
 
         let lossless = LibraryFilter {
             quality: Some("lossless".into()),
@@ -1239,7 +882,7 @@ mod tests {
     /// Mutation portée par la ligne, pas par la `const` : `VER + 1` place la ligne dans l'état
     /// qu'elle aurait le lendemain d'un bump, donc le test reste vrai après.
     #[test]
-    fn un_verdict_perime_disparait_du_compte_du_filtre_et_de_la_colonne() {
+    fn un_verdict_perime_disparait_du_filtre_et_de_la_colonne() {
         let conn = db();
         conn.execute(
             "INSERT INTO tracks(id, path, status, target_format, verdict, verdict_ver) \
@@ -1252,7 +895,6 @@ mod tests {
             ..Default::default()
         };
 
-        assert_eq!(library_stats(&conn).unwrap().fake, 1);
         assert_eq!(list_filed(&conn, &seul_fake).unwrap().len(), 1);
         assert_eq!(
             list_filed(&conn, &LibraryFilter::default()).unwrap()[0]
@@ -1268,11 +910,6 @@ mod tests {
         .unwrap();
 
         assert_eq!(
-            library_stats(&conn).unwrap().fake,
-            0,
-            "la carte « A re-sourcer » proposait une action sur un verdict d'un autre moteur"
-        );
-        assert_eq!(
             list_filed(&conn, &seul_fake).unwrap().len(),
             0,
             "le filtre trouvait une ligne que la colonne Verdict affiche vide"
@@ -1282,57 +919,5 @@ mod tests {
             None,
             "un badge FAKE périmé restait affiché"
         );
-    }
-
-    #[test]
-    fn library_stats_aggregates_counts() {
-        let conn = db();
-        conn.execute(
-            "INSERT INTO tracks(id, path, status, target_format, verdict, verdict_ver) \
-             VALUES(1, '/lib/a.wav', 'filed', 'wav_16_44', 'ok', ?1)",
-            rusqlite::params![VER],
-        )
-        .unwrap();
-        conn.execute(
-            "INSERT INTO tracks(id, path, status, target_format, verdict, verdict_ver) \
-             VALUES(2, '/lib/b.mp3', 'filed', 'mp3_320', 'ok', ?1)",
-            rusqlite::params![VER],
-        )
-        .unwrap();
-        conn.execute(
-            "INSERT INTO tracks(id, path, status, target_format, verdict, verdict_ver) \
-             VALUES(3, '/lib/c.mp3', 'filed', 'mp3_320', 'fake', ?1)",
-            rusqlite::params![VER],
-        )
-        .unwrap();
-        // Une piste en attente n'a pas encore de `target_format` — c'est l'état réel, et elle ne
-        // doit compter dans aucun des trois chiffres.
-        conn.execute(
-            "INSERT INTO tracks(id, path, status) VALUES(9, '/in/p.mp3', 'pending')",
-            [],
-        )
-        .unwrap();
-        crate::genres::set_genres(&conn, 1, &["House".into()]).unwrap();
-        crate::genres::set_genres(&conn, 2, &["House".into()]).unwrap();
-        crate::genres::set_genres(&conn, 3, &["Techno".into()]).unwrap();
-
-        let stats = library_stats(&conn).unwrap();
-
-        assert_eq!(stats.total, 3, "only filed tracks count");
-        assert_eq!(stats.lossless, 1);
-        assert_eq!(stats.mp3, 2);
-        assert_eq!(stats.fake, 1);
-        // Tautologique DEPUIS SYS-1 (2026-07-28), et dit comme tel plutôt que laissé en place à
-        // faire croire qu'il vérifie quelque chose : `library_stats` ne calcule plus le comptage
-        // et renvoie `duplicates: 0` en dur, c'est `ipc_library::library_stats` qui le remplit
-        // hors verrou. Conservé comme garde de CONTRAT — si un jour cette fonction se remet à
-        // calculer le comptage elle-même, l'assertion casse et signale le retour en arrière.
-        assert_eq!(
-            stats.duplicates, 0,
-            "library_stats ne doit PAS calculer le comptage de doublons: il décode du disque et \
-             son appelant le fait hors du verrou global (SYS-1)"
-        );
-        let house = stats.genres.iter().find(|g| g.genre == "House").unwrap();
-        assert_eq!(house.count, 2);
     }
 }

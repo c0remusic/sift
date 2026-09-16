@@ -468,16 +468,6 @@ export interface DupGroup {
 
 // ---- M6b Lot 4: dashboard (mirror of src-tauri/src/library.rs) ----
 
-export interface GenreCount { genre: string; count: number; }
-
-export interface DashboardStats {
-  total: number;
-  lossless: number;
-  mp3: number;
-  duplicates: number;
-  fake: number;
-  genres: GenreCount[];
-}
 
 // ---- M7 Rekordbox XML export + playlist path repair (mirror of src-tauri/src/ipc_library.rs) ----
 

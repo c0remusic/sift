@@ -462,7 +462,7 @@ interface PlayerHeaderOptions {
  *  that filing.ts writes into (cover src on identify, clean displayName on reconcile).
  *  (Ce bloc décrivait déjà cette fonction ; il était posé au-dessus de l'ex-`shortPath`, deux
  *  définitions plus haut — remis sur son sujet le 2026-08-25.) */
-function playerHeaderHtml(name: string, path: string, closeBtn: boolean, opts: PlayerHeaderOptions = {}): string {
+function playerHeaderHtml(name: string, path: string, opts: PlayerHeaderOptions = {}): string {
   const pendingCls = opts.deferText ? " sift-report-text-pending" : "";
   return (
     `<div class="sift-player-header">` +
@@ -487,7 +487,6 @@ function playerHeaderHtml(name: string, path: string, closeBtn: boolean, opts: P
     `<div class="sift-report-sub sift-player-sub${pendingCls}">${esc(opts.subtitle ?? "")}</div>` +
     pathControlHtml(path) +
     `</div>` +
-    (closeBtn ? `<button class="sift-close sift-report-close">fermer</button>` : "") +
     `</div>`
   );
 }
@@ -508,13 +507,12 @@ function playerHeaderHtml(name: string, path: string, closeBtn: boolean, opts: P
 function playerRowHtml(
   name: string,
   path: string,
-  closeBtn = false,
   headerOpts: PlayerHeaderOptions = {},
   filingSlots = false,
 ): string {
   return (
     `<div class="sift-player-row">` +
-    playerHeaderHtml(name, path, closeBtn, headerOpts) +
+    playerHeaderHtml(name, path, headerOpts) +
     // La rangée d'audition (play · slider kit · temps · volume fin) vit dans `player-audition.ts`
     // depuis le 2026-08-27 — module pur, la story exécute le même rendu. Ses commentaires de
     // décision (lecteur simple, retrait tempo/key-lock, slider fin) sont partis avec le markup.
@@ -791,10 +789,10 @@ function spectroAndTagsHtml(r: AnalysisReport): string {
  *  `openReportInto`/`renderReportInto`) — it's the CONCLUSION and must come last, right above
  *  the action rail, matching the maquette. `openReportModal` (no Identification card) appends
  *  `verdictCardHtml` itself, right after this. */
-function reportHtml(r: AnalysisReport, closeBtn: boolean, headerOpts: PlayerHeaderOptions = {}): string {
+function reportHtml(r: AnalysisReport, headerOpts: PlayerHeaderOptions = {}): string {
   const name = headerOpts.title ?? (r.path.split(/[\\/]/).pop() || r.path);
   return (
-    playerRowHtml(name, r.path, closeBtn, headerOpts) +
+    playerRowHtml(name, r.path, headerOpts) +
     spectroAndTagsHtml(r)
   );
 }
@@ -1217,11 +1215,6 @@ function wireSpectrogram(root: HTMLElement, r: AnalysisReport) {
   });
 }
 
-/** Wires the player + spectrogram toggle inside `root` (scoped — no global ids). */
-function wireReport(root: HTMLElement, r: AnalysisReport) {
-  mountPlayer(root, r.path, r.peaks, r.duration_sec);
-  wireSpectrogram(root, r);
-}
 
 /** Renders the report INLINE into `container` (e.g. the Revue #mid pane). `verdictContainer`,
  *  when given, gets the verdict conclusion card instead of `container` — see `openReportInto`.
@@ -1238,8 +1231,8 @@ function renderReportInto(
   container.innerHTML =
     `<div class="sift-report-scroll">` +
     (diagContainer
-      ? playerRowHtml(name, r.path, false, headerOpts, true)
-      : reportHtml(r, false, headerOpts)) +
+      ? playerRowHtml(name, r.path, headerOpts, true)
+      : reportHtml(r, headerOpts)) +
     `</div>`;
   // Même enveloppe `.sift-analysis-body` que le chemin asynchrone d'openReportInto : sans elle, le
   // Diagnostic n'aurait pas la même structure selon qu'on ouvre une piste pour la première fois
@@ -1321,7 +1314,7 @@ export async function openReportInto(
   const bodyHost = diagContainer ?? container;
   container.innerHTML =
     `<div class="sift-report-scroll">` +
-    playerRowHtml(name, path, false, headerOpts, !!diagContainer) +
+    playerRowHtml(name, path, headerOpts, !!diagContainer) +
     (diagContainer ? "" : `<div class="sift-analysis-body" hidden></div>`) +
     (verdictContainer ? "" : `<div class="sift-verdict-stub"></div>`) +
     `</div>`;
@@ -1398,41 +1391,3 @@ export async function openReportInto(
   }
 }
 
-const OVERLAY_ID = "sift-report-overlay";
-
-/** Modal version, for the debug button (a file not in the queue). */
-export async function openReportModal(path: string) {
-  destroyPlayer();
-  ensureStyles();
-  document.getElementById(OVERLAY_ID)?.remove();
-  const ov = document.createElement("div");
-  ov.id = OVERLAY_ID;
-  ov.className = "sift-report-overlay";
-  ov.addEventListener("click", (e) => {
-    if (e.target === ov) {
-      destroyPlayer();
-      ov.remove();
-    }
-  });
-  document.body.appendChild(ov);
-  const name = path.split(/[\\/]/).pop() || path;
-  ov.innerHTML = `<div class="sift-report-overlay-card sift-report-overlay-loading"><i class="ti ti-loader-2 sift-spin"></i>Analyse de <strong>${esc(name)}</strong>…</div>`;
-  try {
-    const r = await analyzePath(path, false);
-    const card = document.createElement("div");
-    card.className = "sift-report-overlay-card sift-report-overlay-modal";
-    card.innerHTML = reportHtml(r, true);
-    fillVerdictLanding(card, r);
-    ov.innerHTML = "";
-    ov.appendChild(card);
-    card.querySelector(".sift-close")?.addEventListener("click", () => {
-      destroyPlayer();
-      ov.remove();
-    });
-    wireReport(card, r);
-  } catch (e) {
-    console.error("analyze_path failed", e);
-    // Same fix as openReportInto above: show the backend's (often already-humanized) message.
-    ov.innerHTML = `<div class="sift-report-overlay-card sift-report-overlay-error">${esc(String(e))}</div>`;
-  }
-}

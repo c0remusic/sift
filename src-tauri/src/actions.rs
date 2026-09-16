@@ -902,8 +902,6 @@ pub fn revert_batch(conn: &Connection, batch_id: &str) -> Result<(), RevertError
                 }
             }
             // A filed track went back to pending — the dashboard duplicate-count cache's
-            // (COUNT, MAX(id)) key can miss this, so invalidate explicitly (R1 coordination).
-            crate::library::invalidate_duplicate_count_cache();
         }
     }
     Ok(())

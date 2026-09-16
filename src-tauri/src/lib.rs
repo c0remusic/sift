@@ -381,7 +381,6 @@ pub fn run() {
             ipc_library::library_folders,
             ipc_library::update_metadata,
             ipc_library::scan_library_duplicates,
-            ipc_library::library_stats,
             ipc_library::link_rekordbox_xml,
             ipc_library::rekordbox_status,
             ipc_library::export_rekordbox_xml,
