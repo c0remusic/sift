@@ -8,6 +8,26 @@
    vrai bleu (focus/sélection/liens/interactif), plus le neutre du CTA primaire.
    --color-text-danger a sa propre teinte rouge, séparée de --color-text-warning (ambre) — les
    deux ne pointent plus vers la même valeur. */
+/* PURGE DU 2026-09-16 — VINGT-SIX classes retirées de ce fichier d'un coup, avec les doc-comments
+   qui ne documentaient plus qu'elles. Aucune n'avait d'écrivain : ni `.ts`, ni `.js`, ni `.html`,
+   ni un `class=` de Rust. Elles sont listées ici, et non chacune à sa place, parce qu'aucune n'a
+   sa propre histoire — toutes ont la MÊME : un commit a retiré le markup, la règle est restée.
+   `.home-right` `.nv-export-dot` `.sift-bar-icon` `.sift-col-h-tight` `.sift-editor-field`
+   `.sift-editor-field-label` `.sift-editor-fields` `.sift-genres-box` `.sift-genres-header`
+   `.sift-id-btn-full` `.sift-ident-display` `.sift-list-empty-hint` `.sift-player-spacer`
+   `.sift-qhead-count` `.sift-rail-row` `.sift-rail-row-actions` `.sift-screen-stack`
+   `.sift-tags-box` `.sift-tags-title` `.sift-ui-card-actions` `.sift-ui-card-actions-main`
+   `.sift-ui-card-toolbar` `.sift-ui-kicker` `.sift-usage-cache-note` `.sift-usbfmt-typerow`
+   `.sift-vchips-row` — `git log -S '<nom>' -- frontend/` rend leur règle et son doc.
+   CE QUE LA PURGE A APPRIS, et qui vaut plus que la liste : une règle morte ment DEUX fois.
+   `.sift-bar-icon` portait douze lignes de doc affirmant « Aujourd'hui un seul porteur : l'icône
+   de sélection de Revue … `toolbar.ts` » — or `3c1e05e` avait retiré ce porteur en descendant
+   l'armement du mode Lot dans la file. Le doc d'une règle sans porteur décrit un écran qui
+   n'existe plus, et il se lit comme une source.
+   La gate qui les empêche de revenir est `npm run lint:orphan-css` (ratchet à baseline). DIX
+   classes mortes y restent inscrites : elles sont NOMMÉES dans un commentaire ailleurs dans ce
+   fichier, donc les retirer laisserait une référence vers rien — c'est une seconde passe, pas un
+   oubli. */
 :root{
 color-scheme:light;
 /* ÉLÉVATION ÉLARGIE — chantier identité visuelle, 2026-08-05, axe « clarté » de l'accord L2.
@@ -600,7 +620,6 @@ body:has(#sift-titlebar){border-radius:var(--border-radius-sm);overflow:hidden}
    Le rail est une MESURE du plus long libellé (« Canaux · échantillonnage », 144 px), il ne se
    rogne pas ; c'est la valeur qui accepte de plier. */
 #sift-aside .sift-analysis-body .sift-row-value{min-width:0;overflow-wrap:anywhere}
-#sift-aside .sift-editor-fields{grid-template-columns:1fr}
 /* Deux débordements survivaient au premier tour (mesure du 2026-08-19, après passage à 320px :
    9 éléments → 3). Un enfant de flex ne rétrécit pas sous son contenu sans min-width:0, et un
    champ d'édition dans une colonne prend toute la colonne — il n'a rien à partager avec un voisin.
@@ -712,32 +731,6 @@ body:has(#sift-titlebar){border-radius:var(--border-radius-sm);overflow:hidden}
    seulement plus compactes — la barre est haute de --toolbar-h et rien n'y respire. */
 #sift-tb-actions .chip{font-size:var(--text-sm)}
 #sift-tb-actions .sift-seg{flex:none}
-/* BOUTON ICÔNE RECTANGULAIRE de la barre unifiée — kit Buttons/Icon/Rectangular (nœuds 45:88 au
-   repos, 45:112 au survol), gabarit 36x28. Aujourd'hui un seul porteur : l'icône de sélection de
-   Revue, qui arme le mode Lot (`docs/ui-specs/revue.md` § Zone A, `toolbar.ts`).
-   LA LARGEUR N'EST PAS ÉCRITE, elle se dérive — l'icône vaut --text-xl (20) et le padding
-   horizontal --space-8 de chaque côté, soit 36 pile. Un gabarit du kit se DÉRIVE de ses tokens ;
-   36 n'est pas un barreau de l'échelle et n'a donc rien à faire ici en dur. La hauteur, elle, EST
-   un barreau : --h-control, la hauteur de contrôle du kit.
-   Le RAYON n'est pas redéclaré : le reset `button{}` donne déjà --border-radius-md, qui est le
-   rayon « bouton / bouton icône » du kit — même raisonnement qu'en ligne 1052.
-   Repos sans aplat, aplat au survol : la grammaire de bouton icône du kit (§ 07-Icon Buttons),
-   celle de `.lk-icon`. Aucune atténuation à l'opacité — DESIGN.md § 4 pose le levier sur le token
-   d'encre, et c'est --color-text-tertiary qui le porte. */
-.sift-bar-icon{box-sizing:border-box;height:var(--h-control);padding:var(--space-6) var(--space-8);display:inline-flex;align-items:center;justify-content:center;flex:none;background:none;color:var(--color-text-tertiary)}
-.sift-bar-icon i{font-size:var(--text-xl);line-height:1}
-.sift-bar-icon:hover{background:var(--overlay-hover);color:var(--color-text-primary)}
-/* ARMÉ : aplat d'accent + encre d'accent (§ Zone A — « active, elle prend la teinte d'accent »).
-   Son survol RÉAFFIRME les deux. `.on` et `:hover` ci-dessus ont la MÊME spécificité (0,2,0) : au
-   survol d'un bouton armé, seul l'ordre de déclaration les départage aujourd'hui, et un état
-   visible ne doit pas dépendre de quelle ligne vient en premier — une insertion au-dessus
-   suffirait à repeindre l'accent en gris. La règle (0,3,0) tranche pour de bon, et c'est aussi ce
-   qu'exige CLAUDE.md § Front : un bouton qui redéfinit `background` le réaffirme dans son `:hover`.
-   Le `filter:brightness(.95)` du `button:hover` générique n'est PAS neutralisé : sur un aplat
-   plein il donne exactement le retour de survol attendu d'un bouton armé, et `.lk-icon` le laisse
-   passer aussi. */
-.sift-bar-icon.on{background:var(--color-accent-fill);color:var(--color-accent-ink)}
-.sift-bar-icon.on:hover{background:var(--color-accent-fill);color:var(--color-accent-ink)}
 /* RAIL EN RETRAIT (décision Antoine 2026-08-27, comparatif A/B sur maquette — motif sidebar
    Mail) : le rail quitte la surface tertiary pour le FOND DE FENÊTRE. Trois plans de lecture :
    rail (le plus loin, fond de fenêtre) · milieu (le sol, même fond — la décision du 2026-08-14
@@ -828,10 +821,6 @@ body:has(#sift-titlebar){border-radius:var(--border-radius-sm);overflow:hidden}
 .nv i{font-size:17px;flex:none;color:var(--color-text-info)}
 .nv:hover{background:var(--overlay-hover)}
 .nv.on{background:var(--color-nav-active);color:var(--color-text-primary);font-weight:500}
-/* Clé USB: dot instead of icon (no dedicated screen yet, unlike Rekordbox), but full opacity —
-   dimming it read as inconsistent next to Rekordbox/Réglages (annotation: "homogénise avec le
-   reste des titres du menu"). */
-.nv-export-dot{width:5px;height:5px;border-radius:var(--border-radius-pill);background:var(--color-hue-teal-text);flex:none}
 /* `10px` était la valeur déclarée depuis toujours et jamais peinte (voir `.nv span` ci-dessus) :
    elle vaut exactement `--text-xs`, donc la porter sur le token est un rattrapage textuel qui ne
    déplace rien — le mouvement visible vient du sélecteur voisin, pas d'ici.
@@ -1126,9 +1115,6 @@ body[data-view="revue"] .sift-pz-row.sift-pz-analyze{display:none}
    `padding:var(--space-12) var(--space-8)` (mesuré dans la vraie fenêtre : 8px à gauche comme à
    droite). Les deux valeurs doivent rester ÉGALES et suivre ce padding s'il change. */
 .sift-qhead{display:flex;align-items:center;justify-content:space-between;gap:var(--space-8);padding-bottom:var(--space-4);margin-bottom:var(--space-8);margin-inline:calc(-1 * var(--space-8));padding-inline:var(--space-8);border-bottom:1px solid var(--color-border-tertiary)}
-/* Compte de pistes — jumeau de `.sift-bib-count` (Bibliothèque : même rangée pulldown + compte),
-   même taille et même encre, pour que le même fait ne se dise pas de deux façons selon l'écran. */
-.sift-qhead-count{flex:none;font-size:var(--text-sm);color:var(--color-text-tertiary)}
 /* PULLDOWN de filtre — gabarit *pulldown* du kit Big Sur (relevé au pont Figma : 45:152 au repos,
    45:169 au survol, 45:186 pressé) : hauteur `--h-control` (28), rayon `--border-radius-md` (7),
    padding `--space-6` / `--space-8`, gap `--space-4` (4) entre le libellé et le chevron. À hauteur
@@ -1542,13 +1528,6 @@ body[data-view="revue"] .sift-pz-row.sift-pz-analyze{display:none}
 /* Pushes secondary/primary to the right edge of the rail. Still used by the Lot rail
    (batch-panel.ts); the Détail rail below moved to two explicit rows instead. */
 .sift-rail-spacer{flex:1;min-width:8px}
-/* Détail rail, deux rangées (spec revue.md § Zone C pied) : chaque rangée occupe sa propre ligne
-   dans le flex-wrap de .sift-action-rail — le motif flex:1 0 100% déjà employé par la bannière
-   « Rangé » et la légende clavier pour forcer leur propre ligne. La rangée d'engagement pousse ses
-   deux boutons au bord trailing (Convertir, le primaire, finit le plus à droite : convention macOS
-   du bouton par défaut au bord trailing). */
-.sift-rail-row{flex:1 0 100%;display:flex;align-items:center;gap:var(--space-8);flex-wrap:wrap;min-width:0}
-.sift-rail-row-actions{justify-content:flex-end;gap:var(--space-12)}
 /* `.sift-action-rail--flat` (le pied de Détail à plat, 2026-08-21 puis 2026-08-27) est RETIRÉ le
    2026-08-30 avec la décision V2b : le pied de Détail n'existe plus au bas du panneau, donc plus
    rien n'ajoutait cette classe (`filing.ts` en était le seul poseur, `batch-panel.ts` le seul
@@ -2085,8 +2064,6 @@ button:disabled{opacity:.4;cursor:default}
 input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill)}
 .home-body{display:flex;gap:var(--space-16);flex:1;min-height:0;overflow:hidden}
 .home-left{flex:1;min-width:0;overflow-y:auto;padding-right:4px}
-.home-right{width:200px;flex:none;overflow-y:auto}
-.sift-screen-stack{display:flex;flex-direction:column;gap:12px}
 /* Grouped-content role (HIG "Boxes": a box uses a border or a tinted background, never a
    shadow — shadow signals real z-axis elevation, e.g. the floating overlay role below, not
    inline content). .sift-ui-card and .sift-ui-card-soft only differ by background/border,
@@ -2110,10 +2087,6 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    Photos › Importer, voir `.sift-rkb-*`), sans cadre. Il reste DEUX niveaux :
    `.sift-ui-card` (contenu, fond sans bordure) et `.sift-ui-card-soft` (chrome doux, fond +
    bordure). Une boîte est une décision, pas une décoration. */
-.sift-ui-kicker{font-size:var(--text-xs);letter-spacing:.09em;text-transform:uppercase;color:var(--color-text-tertiary);margin-bottom:var(--space-8)}
-.sift-ui-card-toolbar{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
-.sift-ui-card-actions{display:flex;gap:8px;margin-top:var(--space-12)}
-.sift-ui-card-actions-main{flex:1}
 /* LES 16 RÈGLES `.sift-home-*` ONT ÉTÉ RETIRÉES ICI le 2026-08-19 — écran Accueil, cartes source,
    bascule « Surveiller ce dossier », badges de statut et les deux CTA. Leur unique consommateur,
    `home-sources.ts`, a été supprimé par 6d1cc85 (« Accueil merged into the rail ») : ces règles
@@ -2715,11 +2688,7 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .sift-volume-track{position:absolute;left:0;right:0;top:10px;height:4px;border-radius:2px;background:var(--overlay-bar);box-shadow:inset 0 0 2.5px rgba(0,0,0,.05)}
 .sift-volume-fill{position:absolute;left:0;top:10px;width:100%;height:4px;border-radius:2px;background:var(--color-accent-ink)}
 .sift-volume-knob{position:absolute;top:5px;left:100%;width:14px;height:14px;border-radius:var(--border-radius-pill);background:var(--color-accent-ink);box-shadow:0 1px 1px 1px rgba(0,0,0,.1);transform:translateX(-50%);pointer-events:none}
-.sift-player-spacer{flex:1}
 .sift-vchip{display:inline-flex;align-items:center;padding:var(--space-4) var(--space-8);border-radius:var(--border-radius-pill);font-size:var(--text-xs);font-weight:600;letter-spacing:var(--tracking-wide)}
-/* Verdict conclusion pill removed entirely (annotation: "supprime ça en fait") — duplicated the
-   tone-coded quality badge already in the Diagnostic audio disclosure header. */
-.sift-vchips-row{display:flex;align-items:center;gap:var(--space-8);flex-wrap:wrap}
 /* Background added (annotation 2026-07-07: "je préferais en plein je crois, mais de la meme
    couleur") — matches .sift-player-row/.sift-action-rail's own tinted-background treatment, so
    the Diagnostic disclosure reads as the same family of card as the hero/rail instead of sitting
@@ -2940,8 +2909,6 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    l'ouverture recalcule le spectrogramme ~631 ms, ces rangées sont déjà dans le rapport). Les
    mesures suivent directement les pastilles ; le filet haut (porté par .sift-spectro-rows,
    déclaré à sa région) borne la zone comme avant. */
-.sift-tags-box{margin-bottom:4px}
-.sift-tags-title{font-size:var(--text-xs);letter-spacing:var(--tracking-wider);text-transform:uppercase;color:var(--color-text-tertiary);margin-bottom:var(--space-4)}
 .sift-codec-error{margin-top:12px;font-size:var(--text-sm);color:var(--color-text-warning)}
 .sift-verdict-stub{display:flex;align-items:center;gap:var(--space-8);margin:var(--space-4) 0 var(--space-12);font-size:var(--text-sm);color:var(--color-text-tertiary)}
 .sift-analysis-fail{margin-bottom:12px;font-size:var(--text-sm);color:var(--color-text-warning)}
@@ -2967,8 +2934,6 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .sift-usbfmt-desc{font-size:var(--text-sm);color:var(--color-text-secondary)}
 .sift-usbfmt-warning{font-size:var(--text-sm);color:var(--color-text-warning);background:var(--color-background-warning);border-radius:var(--border-radius-md);padding:var(--space-8) var(--space-12)}
 .sift-usbfmt-exfat-warning{font-size:var(--text-sm);color:var(--color-text-warning);background:var(--color-background-warning);border-radius:var(--border-radius-md);padding:var(--space-8) var(--space-12)}
-.sift-usbfmt-typerow{display:flex;flex-direction:column;gap:4px;font-size:var(--text-sm);color:var(--color-text-secondary)}
-.sift-usbfmt-typerow input{font-size:var(--text-md);padding:var(--space-4) var(--space-8);background:var(--color-background-primary);border:1px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);color:var(--color-text-primary);font-family:var(--font-mono)}
 .sift-usbfmt-actions{display:flex;justify-content:flex-end;gap:8px;margin-top:4px}
 /* DESTRUCTIF = un bouton NORMAL à encre rouge (2026-08-19). HIG : le rôle `destructive` de SwiftUI
    ne peint pas un aplat rouge, il teinte le libellé ; le kit n'a pas non plus de bouton rouge plein.
@@ -3135,8 +3100,6 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    secondary → tertiary ne vaut pas un cran ici (45,4 % contre 46,15 % de clarté en thème clair).
    quaternary est le seul pas réellement visible sous le repos, dans les deux thèmes. */
 .sift-seg-opt.sift-chip-disabled,.sift-seg-opt.sift-chip-disabled:hover{color:var(--color-text-quaternary);cursor:not-allowed}
-.sift-col-h-tight{margin-bottom:4px}
-.sift-ident-display{font-size:var(--text-lg);font-weight:500;margin-bottom:var(--space-12)}
 /* Métadonnées : header statique (spec revue.md § Zone C), plus un accordéon. Label à gauche, badge
    CDJ + bouton d'entrée/sortie d'édition à droite. Le bouton est un aplat gris compact — grammaire
    secondaire du dépôt (§ Scope Buttons : aucun bouton bordé), pas le ghost bordé du wireframe. */
@@ -3243,29 +3206,12 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
   box-shadow:0 0 0 3px var(--color-accent-fill),var(--shadow-panel-subtle)}
 /* No longer full-width (annotation: "les boutons n'ont pas besoin d'etre aussi larges") — sizes
    to its own content now, like every other button in this section. */
-.sift-id-btn-full{margin-bottom:8px}
 .sift-cands-host{margin-bottom:8px}
-/* 3 columns, one row when there's room (annotation: "les cases Artiste Titre Version sont
-   toujours bien trop longues") — these are short strings, not paragraphs; stretching each across
-   the full editor width read as excessive. auto-fit/minmax (not a fixed 1fr 1fr 1fr) added after a
-   follow-up annotation ("pas assez grand pour afficher tout proprement") — #qcol's own resize
-   handle lets the user shrink the inspector's width a lot, and a rigid 3-equal-column grid kept
-   squeezing all three fields even when there wasn't room for a real artist/title to be readable;
-   this drops to 2 then 1 column automatically once each column would go under 140px. */
-.sift-editor-fields{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:8px;margin-bottom:8px}
-.sift-editor-field{display:flex;flex-direction:column;gap:var(--space-4)}
-.sift-editor-field-label{font-size:10px;letter-spacing:var(--tracking-wider);color:var(--color-text-tertiary);text-transform:uppercase}
 /* background:--color-background-primary (2026-07-10, retour utilisateur) — était -secondary, plus
    CLAIR que la carte .sift-fil-editor-margin/.sift-ui-card qui l'entoure (--color-background-queue),
    donc l'input "flottait" au lieu d'être renfoncé. --color-background-primary est plus sombre que
    -queue (comme dans .mc/Réglages, seul input jugé "nickel") — même convention partout désormais. */
 .sift-editor-input{font-size:var(--text-md);padding:var(--space-4) var(--space-8);background:var(--color-background-primary);border:1px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);color:var(--color-text-primary);min-width:0}
-.sift-genres-box{margin-bottom:var(--space-12);min-height:1px}
-/* Header row pairing the "Genres" caption with the Apply button (annotation: "à côté de genres" —
-   was a full-width bar at the bottom of the card). .col-h's own margin-bottom neutralized here so
-   it doesn't throw off vertical centering against the button in the flex row. */
-.sift-genres-header{display:flex;align-items:center;justify-content:space-between;margin-bottom:var(--space-8)}
-.sift-genres-header .col-h{margin-bottom:0}
 /* Bg+border toujours visibles (pas 2 tons au repos, l'un plein l'autre transparent jusqu'au
    hover) — boutons de confirmation "neutres" de la carte Identification. Border sur
    --color-border-tertiary (pas -secondary, ~2x plus opaque) pour matcher exactement les autres
@@ -3910,7 +3856,6 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 /* Compact inline hint (2026-07-08) — deliberately NOT .sift-empty-state: that component is scaled
    for a whole dead-end screen, this is a single line inside a list whose header/actions stay
    functional around it (e.g. Accueil's source list with 0 sources). */
-.sift-list-empty-hint{font-size:var(--text-md);color:var(--color-text-tertiary);padding:var(--space-4) var(--space-4)}
 /* Tabler's own "filled" webfont CSS redefines the shared `.ti` selector (with !important), so
    loading it as a second stylesheet would silently flip every outline icon in the app to filled —
    never do that. This is a scoped equivalent: same font file, own family name, own class, so only
@@ -4020,7 +3965,6 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .sift-usage-disclose:focus-visible{outline:2px solid var(--color-border-info);outline-offset:2px}
 .sift-usage-chev{display:inline-block;transition:transform var(--duration-slow) ease;font-size:var(--text-xs);opacity:.7}
 .sift-usage-disclose[aria-expanded="true"] .sift-usage-chev{transform:rotate(90deg)}
-.sift-usage-cache-note{font-size:var(--text-sm);color:var(--color-text-tertiary)}
 .sift-usage-btn{font-family:inherit;font-size:var(--text-base);height:var(--h-control);padding:0 var(--space-12);border:0;border-radius:var(--border-radius-md);color:var(--color-text-primary);cursor:pointer}
 .sift-usage-btn:disabled{opacity:.5;cursor:default}
 .sift-usage-btn:focus-visible{outline:2px solid var(--color-border-info);outline-offset:2px}

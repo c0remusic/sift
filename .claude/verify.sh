@@ -53,6 +53,13 @@ run "accents (lint:accents)" npm run -s lint:accents
 # voient cette classe : le premier s'arrête aux imports, le second au fichier. Ratchet à baseline,
 # même contrat que les deux au-dessus.
 run "exports orphelins (lint:orphans)" npm run -s lint:orphans
+
+# Classes de `styles.css` que plus aucun markup ne pose. Jumelle de la précédente, côté CSS :
+# `lint:tokens` lit les VALEURS d'une règle et jamais son nombre de porteurs, et aucun test ne
+# peut voir le markup qui n'est PAS écrit. Relevé fondateur du 2026-09-16 : 36 classes mortes,
+# dont `.sift-bar-icon` et ses douze lignes de doc qui nommaient encore un porteur retiré six
+# jours plus tôt. Ratchet à baseline.
+run "css orphelin (lint:orphan-css)" npm run -s lint:orphan-css
 # `*/` orphelin dans styles.css : payé DEUX FOIS les 2026-09-06/07 — le navigateur lit le texte
 # hors /* */ comme un sélecteur invalide et ignore EN SILENCE la règle suivante ; aucune autre
 # gate ne le voit (le CSS reste syntaxiquement parsable). Attrapé les deux fois par une mesure
