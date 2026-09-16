@@ -37,7 +37,7 @@ import {
   clearBatchTracklist,
 } from "./batch-tracklist";
 import { currentItems, reviewMode, prefetchNextAfter, enterDetailMode, queueBatchSel } from "./queue-panel";
-import { selectionSummaryHtml } from "./selection-summary";
+import { selectionSummaryHtml, estRangeableEnLot } from "./selection-summary";
 import { confirmBatchAlert, BATCH_CONFIRM_THRESHOLD } from "./confirm-modal";
 import type { BatchAlertData } from "./confirm-modal";
 import { showBatchSheet, updateBatchSheet, transformToReport, closeBatchSheet } from "./batch-sheet";
@@ -481,7 +481,7 @@ export async function handleBatchQueueAction(action: "file" | "discard"): Promis
   if (selected.length === 0) return;
 
   if (action === "file") {
-    const fileIds = selected.filter((it) => it.verdict !== "fake").map((it) => it.id);
+    const fileIds = selected.filter(estRangeableEnLot).map((it) => it.id);
     if (fileIds.length === 0) return;
     if (fileIds.length > BATCH_CONFIRM_THRESHOLD && !skipBatchConfirm) {
       const fakeN = selected.filter((it) => it.verdict === "fake").length;

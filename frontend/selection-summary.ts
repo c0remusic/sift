@@ -3,6 +3,27 @@
 import type { QueueItem } from "../shared/contracts";
 import { esc } from "./dom";
 
+/** Une piste part-elle au rangement de lot ? **Seul discriminant, partagé avec l'action.**
+ *
+ *  ⚠️ Cette fonction existe parce que le compte et l'action avaient DIVERGÉ. Le bouton comptait
+ *  `ok + grey` pendant que `handleBatchQueueAction("file")` rangeait `verdict !== "fake"` — donc
+ *  aussi les pistes au verdict NUL, pas encore analysées (`contracts.ts:82`). Trois conséquences,
+ *  mesurées le 2026-09-16 : une sélection de pistes non analysées désactivait le bouton alors que
+ *  l'action les aurait rangées ; la modale de confirmation annonçait un autre nombre que le
+ *  bouton ; et le clic droit de la file, lui, proposait « Ranger N » sur la sélection entière.
+ *
+ *  Ranger une piste non analysée est VOULU — `batch-panel.ts` l'écrit au-dessus de `runBatchFile` :
+ *  « lossy, `unknown`, pas encore analysées … le backend dérive la cible depuis le rail ». C'était
+ *  donc le compte qui mentait, pas l'action.
+ *
+ *  Deux sites appellent ceci, et c'est la seule protection contre une nouvelle divergence :
+ *  le compte du bouton ci-dessous, et `fileIds` dans `batch-panel.ts`. Le côté Écarter est son
+ *  miroir exact (`verdict === "fake"`), et n'a jamais dérivé — c'est ce qui prouve que l'écart
+ *  était un oubli et non un arbitrage. Gelé par `test/selection-summary.test.ts`. */
+export function estRangeableEnLot(it: QueueItem): boolean {
+  return it.verdict !== "fake";
+}
+
 /** Construit le HTML du panneau de résumé de sélection.
  *  Rendu EN TÊTE du batch board quand la sélection est non vide.
  *  Les boutons portent data-sift="batchqueuefile" / "batchqueuediscard"
@@ -53,7 +74,7 @@ export function selectionSummaryHtml(selected: QueueItem[]): string {
     .filter(Boolean)
     .join("");
 
-  const fileN    = ok + grey; // fileables (ok + grey, backend décide)
+  const fileN    = selected.filter(estRangeableEnLot).length;
   const discardN = fake;
 
   return (
