@@ -253,6 +253,66 @@ pub(crate) fn analysis_pool_size() -> usize {
         .clamp(1, 8)
 }
 
+/// Abaisse le fil COURANT d'un cran sous la priorité normale. No-op hors Windows.
+///
+/// POURQUOI. Les fils du pool d'analyse vivent dans le processus `sift.exe`, donc en concurrence
+/// directe avec sa propre boucle de messages — les processus renderer de WebView2, eux, sont
+/// séparés. Sur une machine à 16 cœurs le pool en occupe autant (8 fils × 2 fils de sonde, budget
+/// raisonné en `analysis/mod.rs`), et rien ne réservait de marge pour la fenêtre. Le pendant côté
+/// encodage (`ipc_filing::phase2_worker_count`) sous-souscrit délibérément ; ce pool-ci ne le
+/// faisait pas, et n'avait pas non plus de rang.
+///
+/// La doc WebView2 le dit sans donner de levier : « If the app has a heavy native workload, assign
+/// thread priorities carefully, to avoid starving WebView2 threads. » Il n'existe AUCUNE API
+/// WebView2 de priorité — la demande `MicrosoftEdge/WebView2Feedback#4610` est ouverte depuis le
+/// 2024-06-04. C'est donc du Win32 sur NOS fils, pas un réglage de la webview.
+///
+/// `BELOW_NORMAL` et pas `LOWEST` ni `IDLE` : un seul cran suffit à rendre ces fils préemptibles
+/// par tout fil de rang normal, et descendre plus bas allongerait la fenêtre d'inversion de
+/// priorité sur le `Mutex<Connection>` sans rien gagner. L'analyse est le travail que
+/// l'utilisateur REGARDE progresser, pas une tâche de fond : la reléguer trop bas se paierait en
+/// débit visible.
+///
+/// ⚠️ Jamais `SetPriorityClass` : la classe est par PROCESSUS, elle emporterait le fil de la
+/// fenêtre avec le pool — l'inverse exact du but.
+///
+/// ⚠️ PORTÉE, mesurée et non supposée. Une priorité ne s'hérite PAS sous Windows : « All threads
+/// are created using THREAD_PRIORITY_NORMAL ». Les fils internes de sondage, ouverts par
+/// `std::thread::scope` depuis `analysis::analyze`, naissent donc à NORMAL et cet appel ne les
+/// touche pas. Il les couvre quand même en pratique, parce que le fil parent est PARQUÉ au `join`
+/// pendant toute la durée du scope : il n'y a jamais 8 fils de pool ET 8 fils de sonde ensemble.
+/// Reste que pendant une fenêtre de sondage — annoncée à ~3,2 s par fichier contre ~35 s de
+/// temps-fil, et seulement pour une piste déclarée lossless non démentie — le calcul tourne à
+/// NORMAL. Poser l'appel aussi dans les trois `thread::scope` d'`analysis/` demanderait d'y
+/// introduire le premier `unsafe` et le premier gate de plateforme de ce sous-arbre, pour ~9 % du
+/// temps : pas fait, délibérément.
+#[cfg(windows)]
+pub(crate) fn abaisse_priorite_du_fil_courant() {
+    use windows::Win32::System::Threading::{
+        GetCurrentThread, SetThreadPriority, THREAD_PRIORITY_BELOW_NORMAL,
+    };
+    // SAFETY: `GetCurrentThread` rend une pseudo-poignée constante, toujours valide, qui ne se
+    // ferme pas et ne désigne jamais un autre fil que l'appelant. `SetThreadPriority` ne lit ni
+    // n'écrit de mémoire du processus : il ne fait que changer le rang d'ordonnancement de ce
+    // fil. Aucun invariant du programme n'en dépend — un échec (renvoyé en `Err`) laisse le fil à
+    // sa priorité normale, ce qui est exactement le comportement d'avant cet appel.
+    let r = unsafe { SetThreadPriority(GetCurrentThread(), THREAD_PRIORITY_BELOW_NORMAL) };
+    if let Err(e) = r {
+        // Pas de `fail fast` ici, et c'est un choix : la priorité est un CONFORT d'interface, pas
+        // une condition de correction. Un pool qui refuse de démarrer parce qu'il n'a pas pu se
+        // déclasser serait une régression bien pire que le gel qu'on cherche à réduire. On le
+        // trace, l'analyse continue.
+        log::warn!("SetThreadPriority(BELOW_NORMAL) a echoue sur un fil du pool d'analyse : {e}");
+    }
+}
+
+/// Voir la version Windows. Ailleurs, rien : macOS n'expose pas d'équivalent dont le
+/// comportement soit assez proche pour être improvisé ici, et Sift ne cible que ces deux
+/// plateformes. Un `setpriority`/`pthread_setschedparam` posé au jugé serait une affirmation non
+/// vérifiée, pas un portage.
+#[cfg(not(windows))]
+pub(crate) fn abaisse_priorite_du_fil_courant() {}
+
 /// Starts the worker pool and registers its managed state. Call once in setup, after the DB.
 pub fn init(app: &AppHandle) {
     let n = analysis_pool_size();
@@ -270,7 +330,14 @@ pub fn init(app: &AppHandle) {
     for _ in 0..n {
         let app2 = app.clone();
         let inner2 = inner.clone();
-        std::thread::spawn(move || worker_loop(app2, inner2));
+        std::thread::spawn(move || {
+            // DANS la closure, jamais dans le corps d'`init` : `SetThreadPriority` agit sur le
+            // fil APPELANT, et `init` tourne sur le fil principal depuis le `.setup()` de Tauri.
+            // L'appeler plus haut dégraderait la boucle de messages de la fenêtre — l'inverse du
+            // but.
+            abaisse_priorite_du_fil_courant();
+            worker_loop(app2, inner2)
+        });
     }
     log::info!("analysis worker pool started ({n} threads)");
 }
@@ -469,6 +536,104 @@ fn worker_loop(app: AppHandle, inner: Arc<(Mutex<Queue>, Condvar)>) {
 // `AnalysisReport` à la main coûte 25 champs, et deux copies divergeraient au premier champ ajouté.
 pub(crate) mod tests {
     use super::*;
+
+    /// La priorité abaissée prend RÉELLEMENT, et seulement sur le fil qui appelle.
+    ///
+    /// Sans ce test, `abaisse_priorite_du_fil_courant` pourrait devenir un no-op — feature Cargo
+    /// retirée, appel déplacé hors de la closure, erreur avalée par le `log::warn!` — sans qu'une
+    /// seule gate ne tombe : le pool continuerait de tourner, simplement à plein rang. C'est
+    /// exactement la classe de panne que le dépôt appelle « un label qui ne couvre pas sa portée ».
+    ///
+    /// MUTATION MESURÉE (2026-09-16), et elle a démenti la première rédaction de ce commentaire.
+    /// `BELOW_NORMAL` remplacé par `NORMAL` : le test TOMBE, il garde donc bien la valeur. Appel
+    /// retiré de la closure d'`init` : le test PASSE — il lance son propre fil et n'emprunte
+    /// jamais le site de `init`, donc il ne garde PAS le câblage. Ce commentaire affirmait le
+    /// contraire. Le câblage est gardé par le test suivant, qui existe pour cette raison.
+    /// `init` appelle bien l'abaissement de priorité, et l'appelle DANS la closure du fil.
+    ///
+    /// Test de SOURCE, et c'est assumé : le test voisin mesure le comportement de l'aide, mais
+    /// lance son propre fil — il ne traverse jamais `init`, donc retirer la ligne d'appel ne le
+    /// fait pas tomber (mutation mesurée le 2026-09-16). Le câblage serait alors mort en silence :
+    /// le pool continuerait de tourner, simplement à plein rang, et aucune gate ne broncherait.
+    ///
+    /// Pourquoi pas un vrai test d'exécution de `init` : il prend un `AppHandle`, qui demanderait
+    /// `tauri::test::mock_app()`, donc la feature Cargo `test` sur `tauri` — une décision de
+    /// dépendance, à remonter, pas à prendre au passage (règle du dépôt sur les dépendances).
+    /// C'est le cran 1 par un autre chemin, pas une descente au cran 4.
+    ///
+    /// Ce test est solidaire de `cargo fmt --check`, qui est une gate : la forme exacte des deux
+    /// lignes cherchées est donc stable. S'il casse après un reformatage volontaire, ajuster les
+    /// aiguilles — jamais supprimer le test.
+    #[test]
+    fn init_abaisse_la_priorite_dans_la_closure_du_fil() {
+        let source = include_str!("worker.rs");
+        let debut = source
+            .find("pub fn init(app: &AppHandle)")
+            .expect("`init` doit exister dans worker.rs");
+        let corps = &source[debut..];
+        let fin = corps
+            .find("\n/// Enqueues every track")
+            .expect("la fin d'`init` doit se reperer au doc-comment suivant");
+        let init = &corps[..fin];
+
+        assert!(
+            init.contains("abaisse_priorite_du_fil_courant();"),
+            "`init` n'appelle plus l'abaissement de priorite : le pool tournerait a plein rang, \
+             en concurrence avec la boucle de messages de la fenetre, sans qu'aucune gate ne tombe"
+        );
+
+        let appel = init
+            .find("abaisse_priorite_du_fil_courant();")
+            .expect("appel deja verifie present");
+        let spawn = init
+            .find("std::thread::spawn(move || {")
+            .expect("`init` doit spawner ses fils par une closure a bloc");
+        assert!(
+            spawn < appel,
+            "l'appel doit etre DANS la closure de `std::thread::spawn`, apres elle dans le source. \
+             Pose avant, il s'executerait sur le fil principal — `SetThreadPriority` agit sur le \
+             fil APPELANT, et `init` tourne depuis le `.setup()` de Tauri : ca degraderait la \
+             boucle de messages de la fenetre, l'inverse exact du but"
+        );
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn le_fil_du_pool_descend_sous_la_priorite_normale_et_lui_seul() {
+        use windows::Win32::System::Threading::{
+            GetCurrentThread, GetThreadPriority, THREAD_PRIORITY_BELOW_NORMAL,
+            THREAD_PRIORITY_NORMAL,
+        };
+
+        // SAFETY: pseudo-poignée constante du fil courant, lecture seule du rang. Voir le
+        // commentaire de `abaisse_priorite_du_fil_courant`.
+        let avant = unsafe { GetThreadPriority(GetCurrentThread()) };
+        assert_eq!(
+            avant, THREAD_PRIORITY_NORMAL.0,
+            "le fil de test doit partir a la priorite normale, sinon la mesure ne veut rien dire"
+        );
+
+        let dans_le_fil = std::thread::spawn(|| {
+            abaisse_priorite_du_fil_courant();
+            // SAFETY: idem, sur le fil qui vient d'appeler.
+            unsafe { GetThreadPriority(GetCurrentThread()) }
+        })
+        .join()
+        .expect("le fil de mesure ne doit pas paniquer");
+
+        assert_eq!(
+            dans_le_fil, THREAD_PRIORITY_BELOW_NORMAL.0,
+            "le fil qui a appele doit etre descendu d'un cran"
+        );
+
+        // SAFETY: idem.
+        let apres = unsafe { GetThreadPriority(GetCurrentThread()) };
+        assert_eq!(
+            apres, THREAD_PRIORITY_NORMAL.0,
+            "l'appel ne doit toucher QUE son propre fil — s'il descendait le fil appelant, pose \
+             dans `init` il degraderait la boucle de messages de la fenetre"
+        );
+    }
     use crate::analysis::{AnalysisReport, Rail, Spectrogram, Verdict};
 
     fn db() -> Connection {

@@ -71,6 +71,12 @@ windows = { version = "0.61", features = [
     "Win32_Storage_FileSystem",
     "Win32_System_IO",
     "Win32_System_Ioctl",
+    # `SetThreadPriority` / `GetCurrentThread`, pour abaisser les fils du pool d'analyse sous la
+    # boucle de messages de la fenêtre (`worker::abaisse_priorite_du_fil_courant`). Sans cette
+    # feature les deux symboles n'existent pas dans l'arbre : `windows` les gate derrière
+    # `Win32_System_Threading` (son propre Cargo.toml), et le module `Win32::System::mod.rs`
+    # porte le `#[cfg(feature = ...)]` correspondant.
+    "Win32_System_Threading",
 ] }
 
 # Écriture FAT32 au-delà du plafond de 32 Go de Windows. Dépendance de PRODUCTION sur Windows

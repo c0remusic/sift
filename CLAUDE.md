@@ -312,10 +312,15 @@ envoyée par `save_annotation` qui append `docs/annotations.jsonl`.
   la frontière IPC. Le projet n'utilise **pas** `thiserror`/`anyhow` — c'est un choix,
   pas un défaut ; ne pas les introduire sans le signaler.
 - **`unwrap()`/`expect()` hors `#[cfg(test)]` = interdit dur.**
-- **5 blocs `unsafe`**, tous avec leur `// SAFETY:` (recomptés le 2026-08-29) : deux dans
-  `lib.rs` (`DwmExtendFrameIntoClientArea`, titlebar Win32 ; `DwmSetWindowAttribute`,
-  coins arrondis #41) et **trois dans `usb_format/raw_volume.rs`** (handles Win32 sur
-  volume brut). Un bloc touché garde ou met à jour son commentaire, jamais le supprimer.
+- **6 blocs `unsafe` en production**, tous avec leur `// SAFETY:` (recomptés le 2026-09-16) :
+  deux dans `lib.rs` (`DwmExtendFrameIntoClientArea`, titlebar Win32 ; `DwmSetWindowAttribute`,
+  coins arrondis #41), **trois dans `usb_format/raw_volume.rs`** (handles Win32 sur volume
+  brut), et **un dans `worker.rs`** (`SetThreadPriority`, abaissement des fils du pool
+  d'analyse sous la boucle de messages de la fenêtre). Trois autres vivent dans le `mod tests`
+  de `worker.rs` (`GetThreadPriority`, lecture seule). Un bloc touché garde ou met à jour son
+  commentaire, jamais le supprimer. ⚠️ Le chiffre a dit « 5 » du 2026-08-29 au 2026-09-16, et
+  avant lui « exactement un » : il ne se retient pas, il se recompte —
+  `grep -rn 'unsafe {' src-tauri/src/`.
 
 Détails et overrides d'audit Rust : **`.claude/rules/rust.md`** (chargé pour
 `src-tauri/**`).
