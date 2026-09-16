@@ -84,10 +84,19 @@ fatfs = "0.3.6"
 # une machine non-Windows — c'était la raison pour laquelle le module n'avait pas de gate du tout.
 fatfs = "0.3.6"
 
-# Audio DSP is unusably slow in an unoptimised debug build (rustfft + per-sample loops).
-# Optimise dependencies fully, and our own code lightly, while keeping dev compile fast.
+# Le DSP audio (rustfft + boucles par échantillon) est inutilisable dans un build dev non
+# optimisé. `opt-level = 3` PARTOUT — notre code comme les dépendances. Le commentaire d'origine
+# disait « our own code lightly, while keeping dev compile fast » et gardait donc `opt-level = 1`
+# sur `sift_lib` : la mesure réfute la prémisse. Sur `cargo test --test characterization`, cible
+# isolée, trois passes, le 2026-09-16 — exécution 15,97 s à `opt-level = 1` contre 12,58 s à 3
+# (-21 %), et la compilation incrémentale ne le paie PAS (14,83 s contre 12,99 s).
+#
+# Les deux filets du profil dev restent ALLUMÉS, et c'est une mesure aussi, pas une prudence :
+# les couper (`debug-assertions = false` + `overflow-checks = false`) donne 13,26 s, soit RIEN —
+# le chemin chaud est du flottant, où `overflow-checks` n'a aucune prise. Ne pas rejouer cet
+# essai sans un profil qui montre de l'arithmétique entière dans le point chaud.
 [profile.dev]
-opt-level = 1
+opt-level = 3
 
 [profile.dev.package."*"]
 opt-level = 3

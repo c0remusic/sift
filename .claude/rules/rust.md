@@ -69,8 +69,12 @@ Pas un projet de systems-programming, pas une lib publiée, pas un service async
 - **Perf : pas de `criterion`.** Les quatre benchmarks (`bench_volume.rs`,
   `bench_dedup.rs`, `bench_sqlite.rs`, `bench_cpu_budget.rs`) sont des
   `#[cfg(test)] mod` lancés via `cargo test --release -- --ignored --nocapture` —
-  suivre ce pattern plutôt que d'introduire criterion. `profile.dev` met déjà les
-  dépendances à `opt-level = 3` pour les hot paths DSP ; bencher en `--release`.
+  suivre ce pattern plutôt que d'introduire criterion. `profile.dev` met tout
+  l'arbre à `opt-level = 3` depuis le 2026-09-16 — les dépendances ET `sift_lib`,
+  qui était resté à 1 ; bencher en `--release` malgré tout, parce que le profil dev
+  garde `debug-assertions` et `overflow-checks`. Les deux mesures qui fixent ces
+  valeurs sont écrites dans `src-tauri/Cargo.toml` au-dessus du profil : ne pas
+  rejouer l'essai des filets sans un profil qui contredise.
 - **Tests : `#[cfg(test)] mod tests` inline par module.** Pas de `proptest`,
   `mockall`, ni `cargo-fuzz` dans l'arbre — ne pas les introduire pour une seule
   tâche sans le signaler (décision de dépendance, pas un ajout au passage).
