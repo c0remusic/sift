@@ -92,8 +92,33 @@ jobs:
         if: steps.ffmpeg-cache.outputs.cache-hit != 'true'
         run: npm run fetch-ffmpeg
 
-      - name: Build Tauri app (unsigned)
+      # Le « (unsigned) » de ce libellé a tenu jusqu'au 2026-09-16. Il est devenu faux le jour où
+      # `bundle.macOS.signingIdentity` est entré dans tauri.conf.json : le bundle macOS est
+      # désormais signé ad-hoc. Windows reste non signé.
+      - name: Build Tauri app (macOS signé ad-hoc, Windows non signé)
         run: npm run tauri build
+
+      # GATE, pas ligne de journal. `codesign --verify` sort non nul si `Contents/_CodeSignature`
+      # manque ou si le sceau ne couvre pas le contenu du bundle.
+      #
+      # Pourquoi elle existe : de la v0.0.3 à la v0.1.3, chaque release a publié un `.app` dont
+      # les deux exécutables portaient une signature ad-hoc POSÉE PAR LE LIEUR (flags 0x20002)
+      # sans qu'aucun `_CodeSignature` ne scelle `Info.plist`, l'icône ni le sidecar — la forme
+      # exacte qui produit un verdict d'INTÉGRITÉ (« endommagée », sans porte) au lieu d'un
+      # verdict d'ORIGINE (« développeur non identifié », avec la porte Réglages Système). Rien
+      # dans la chaîne ne le disait, et personne ne l'a vu pendant quatre versions. Issue #36.
+      #
+      # Le runner EST un Mac : la mesure ne demande pas une machine de plus. Ce qu'elle ne
+      # couvre PAS, et qui demande toujours un vrai Mac avec quarantaine : le message que
+      # Gatekeeper affiche réellement à l'utilisateur.
+      - name: Vérifier le sceau du bundle macOS (#36)
+        if: runner.os == 'macOS'
+        run: |
+          app="$(ls -d src-tauri/target/release/bundle/macos/*.app)"
+          echo "bundle : $app"
+          codesign --verify --deep --strict --verbose=4 "$app"
+          codesign -dvvv "$app"
+          codesign -dvvv "$app/Contents/MacOS/ffmpeg"
 
       - name: Upload installers
         uses: actions/upload-artifact@v4
