@@ -1,6 +1,6 @@
 // Résumé de sélection pour la zone C en mode Lot.
 // Module pur — aucun accès DOM. Importé par batch-panel.ts.
-import type { QueueItem } from "../shared/contracts";
+import { MAX_ANALYSIS_ATTEMPTS, type QueueItem } from "../shared/contracts";
 import { esc } from "./dom";
 
 /** Une piste part-elle au rangement de lot ? **Seul discriminant, partagé avec l'action.**
@@ -37,7 +37,13 @@ export function selectionSummaryHtml(selected: QueueItem[]): string {
   const ok    = selected.filter((it) => it.verdict === "ok").length;
   const fake  = selected.filter((it) => it.verdict === "fake").length;
   const grey  = selected.filter((it) => it.verdict === "grey").length;
-  const other = n - ok - fake - grey;
+  // Le verdict NUL recouvre deux populations, et c'est `analysis_attempts` qui les sépare — jamais
+  // le verdict seul. Même discriminant que `queue-verdict-dot.ts::verdictDot`, qui peint la
+  // seconde en pastille rouge titrée « analyse abandonnée » sur la ligne de file : les deux
+  // surfaces du même écran doivent compter pareil.
+  const sansVerdict = selected.filter((it) => it.verdict === null);
+  const abandonnees = sansVerdict.filter((it) => it.analysis_attempts >= MAX_ANALYSIS_ATTEMPTS).length;
+  const other = sansVerdict.length - abandonnees;
 
   // Durée totale (si champs disponibles grâce au contrat S1)
   const withDur = selected.filter((it) => it.duration != null);
@@ -72,22 +78,31 @@ export function selectionSummaryHtml(selected: QueueItem[]): string {
   // en anneau neutre pour la première, en pastille rouge « analyse abandonnée » pour la seconde.
   // Aucune des deux n'est en cours.
   //
-  // Le mot change, le COMPTE NON : scinder en deux pilules reste possible (`analysis_attempts` est
-  // sur `QueueItem`) mais remplacerait un compte par deux, hors de ce correctif. Et la distinction
-  // ne se redérive JAMAIS du seul `verdict` — le doc-comment de `needs_analysis`
-  // (`shared/contracts.ts`) l'écrit : « never re-derive this from `verdict` alone ».
+  // Scindé le 2026-09-16, sur décision d'Antoine : un compte est devenu deux. Une analyse
+  // abandonnée est un travail TERMINÉ en échec, pas un travail qui progresse, et la file le dit
+  // déjà en rouge à deux pixels de là. La distinction ne se redérive JAMAIS du seul `verdict` — le
+  // doc-comment de `needs_analysis` (`shared/contracts.ts`) l'écrit : « never re-derive this from
+  // `verdict` alone ».
+  //
+  // Les deux pilules gardent la MÊME classe neutre `.other`. Peindre l'abandon en rouge serait
+  // cohérent avec la pastille de la file, mais la couleur est une décision de surface et ce
+  // fichier n'en prend pas : à trancher avec la skill `sift-macos-ui` si l'écart gêne.
   //
   // « N pistes non analysées », jamais « N non analysées » : l'accord porterait sur un nom absent
   // (retour d'Antoine 2026-09-06, même formulation que
   // `queue-panel.ts::ensureQueueReanalyzeAllButton`). Les trois autres pilules s'en passent parce
   // que leur mot est invariable.
   const sOther = other > 1 ? "s" : "";
+  const sAband = abandonnees > 1 ? "s" : "";
   const verdictPills = [
     ok    > 0 ? `<span class="sift-bsel-pill ok">${ok} ok</span>` : "",
     fake  > 0 ? `<span class="sift-bsel-pill fake">${fake} faux</span>` : "",
     grey  > 0 ? `<span class="sift-bsel-pill grey">${grey} à vérifier</span>` : "",
     other > 0
       ? `<span class="sift-bsel-pill other">${other} piste${sOther} non analysée${sOther}</span>`
+      : "",
+    abandonnees > 0
+      ? `<span class="sift-bsel-pill other">${abandonnees} analyse${sAband} abandonnée${sAband}</span>`
       : "",
   ]
     .filter(Boolean)

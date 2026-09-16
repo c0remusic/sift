@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import type { QueueItem } from "../shared/contracts";
+import { MAX_ANALYSIS_ATTEMPTS, type QueueItem } from "../shared/contracts";
 import { estRangeableEnLot, selectionSummaryHtml } from "../frontend/selection-summary";
 
 // Le résumé de sélection est le seul endroit où l'utilisateur lit COMBIEN de pistes une action de
 // lot va toucher. Il a menti jusqu'au 2026-09-16 : le bouton comptait `ok + grey`, l'action
 // rangeait `verdict !== "fake"`. Ces tests gèlent l'accord entre les deux.
 
-function piste(id: number, verdict: QueueItem["verdict"]): QueueItem {
+function piste(id: number, verdict: QueueItem["verdict"], analysis_attempts = 0): QueueItem {
   return {
     id,
     path: `/musique/${id}.flac`,
@@ -18,11 +18,17 @@ function piste(id: number, verdict: QueueItem["verdict"]): QueueItem {
     title: null,
     dup: false,
     needs_analysis: verdict === null,
-    analysis_attempts: 0,
+    analysis_attempts,
     duration: null,
     bitrate: null,
     declared_fmt: null,
   };
+}
+
+/** Une piste dont le décodage a échoué autant de fois que le backend l'autorise : terminalement
+ *  cassée, ce que `queue-verdict-dot.ts` peint en rouge « analyse abandonnée » sur sa ligne. */
+function abandonnee(id: number): QueueItem {
+  return piste(id, null, MAX_ANALYSIS_ATTEMPTS);
 }
 
 /** Le nombre que le bouton Ranger affiche, lu dans le HTML rendu. `null` s'il est désactivé. */
@@ -71,6 +77,27 @@ describe("le compte du bouton Ranger est celui de l'action", () => {
   it("Écarter ne compte que les faux, jamais un verdict nul", () => {
     const html = selectionSummaryHtml([piste(1, "fake"), piste(2, null), piste(3, "ok")]);
     expect(html).toContain('data-sift="batchqueuediscard">Écarter 1 faux');
+  });
+
+  // Le verdict nul recouvrait DEUX populations sous une seule pilule « en cours » : l'analyse en
+  // attente et l'analyse abandonnée. La file les distingue depuis toujours — anneau neutre contre
+  // pastille rouge titrée « analyse abandonnée » (`queue-verdict-dot.ts`). Scindé le 2026-09-16.
+  it("une analyse abandonnée ne se compte pas comme une piste non analysée", () => {
+    const html = selectionSummaryHtml([piste(1, null), abandonnee(2), abandonnee(3)]);
+    expect(html).toContain("1 piste non analysée");
+    expect(html).toContain("2 analyses abandonnées");
+  });
+
+  it("sans aucune abandonnée, la seconde pilule ne paraît pas", () => {
+    const html = selectionSummaryHtml([piste(1, null), piste(2, null)]);
+    expect(html).toContain("2 pistes non analysées");
+    expect(html).not.toContain("abandonnée");
+  });
+
+  it("une abandonnée reste RANGEABLE — son verdict n'est pas « faux »", () => {
+    const html = selectionSummaryHtml([abandonnee(1), abandonnee(2)]);
+    expect(compteAffiche(html)).toBe(2);
+    expect(html).toContain("2 analyses abandonnées");
   });
 
   it("une sélection sans aucun faux désactive Écarter, pas Ranger", () => {
