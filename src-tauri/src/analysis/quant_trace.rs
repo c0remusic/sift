@@ -98,17 +98,23 @@
 //!
 //! ## Branché sur le verdict depuis le 2026-09-02 (intégration de #52)
 //!
-//! Ce module **mesure**, il ne décide toujours rien : le seuil `λ` vit dans `verdict::QUANT_LAMBDA`
-//! avec sa calibration, et c'est `verdict()` qui le compare. `analysis::analyze` appelle
-//! [`likelihood`] sur le PCM déjà décodé, et **seulement** là où elle peut trancher —
-//! `verdict::needs_quant_probe` : rail lossless déclaré, conteneur non démenti, **bande pleine**.
-//! Sous la falaise ou sur une fraude de conteneur, le verdict est déjà Faux et les 0,3 s de
-//! balayage seraient dépensées pour rien.
+//! Ce module **mesure**, il ne décide toujours rien : ses seuils vivent chez `verdict`
+//! (`verdict::quant_lambda_aac`, soit `QUANT_LAMBDA_AAC_LONG` soit `QUANT_LAMBDA_AAC_COURT` selon
+//! la résolution), et ce que `verdict()` compare est le RAPPORT au seuil, contre
+//! `verdict::QUANT_LAMBDA`. Depuis le 2026-09-15 l'appel ne part plus directement de
+//! `analysis::analyze` : elle appelle `bancs::sonder`, qui parcourt `bancs::BANCS_PRODUCTION` ;
+//! c'est la ligne `"aac"` de cette table — `bancs::mesure_aac` — qui appelle [`likelihood`] sur
+//! le PCM déjà décodé. La dépense reste gardée, par les deux clauses de la ligne réunies dans
+//! `bancs::peut_trancher` : `bancs::amont_lossless_non_dementi` (rail lossless déclaré, conteneur
+//! non démenti) et `bancs::aval_au_dessus_de_la_falaise` (coupure mesurée au-dessus de
+//! `verdict::LOSSY_CLIFF_HZ`). Sous la falaise ou sur une fraude de conteneur, le verdict est déjà
+//! Faux et les 0,3 s de balayage seraient dépensées pour rien.
 //!
 //! ⚠️ La platitude ne fait PAS partie de la condition, et l'avoir cru a coûté une intégration
 //! muette (2026-09-02, corrigée le jour même) : la cible de #52 — les transcodes AAC haut débit —
 //! a une platitude DANS la plage des masters, donc sortait `Ok` et n'était jamais sondée. Détail
-//! et chiffres sur `verdict::needs_quant_probe`.
+//! et chiffres : le bloc de commentaire déplacé verbatim le 2026-09-15 au-dessus de
+//! `bancs::amont_lossless_non_dementi`, qui porte la mesure de corpus des deux clauses.
 //!
 //! ⚠️ **Phase 1 = AAC seul.** MP3 a un banc hybride PQMF+MDCT à 576 coefficients par granule —
 //! même étage de quantification, autre transformée : 2/60 de détection sur les familles `lame*`

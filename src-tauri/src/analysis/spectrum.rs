@@ -115,15 +115,16 @@ fn median_of(v: &[f32]) -> Option<f32> {
     Some(s[s.len() / 2])
 }
 
-fn shared_fft(fft_size: usize) -> Arc<dyn Fft<f32>> {
-    // The shared plan is only valid for the canonical size; any other size (tests) plans ad hoc.
-    if fft_size == FFT_SIZE {
-        FFT_PLAN
-            .get_or_init(|| FftPlanner::<f32>::new().plan_fft_forward(FFT_SIZE))
-            .clone()
-    } else {
-        FftPlanner::<f32>::new().plan_fft_forward(fft_size)
-    }
+/// Le plan forward partagé, planifié une fois pour la seule taille qui existe ici : `FFT_SIZE`.
+///
+/// Il y avait un repli « toute autre taille se planifie à la volée (tests) ». Il nommait un
+/// appelant inexistant : les neuf appels de `SpectrumAccumulator::new` — production, harnais
+/// `#[ignore]` et tests — passaient tous 4096, et depuis que `new` ne prend plus de taille, aucun
+/// appelant ne PEUT en demander une autre.
+fn shared_fft() -> Arc<dyn Fft<f32>> {
+    FFT_PLAN
+        .get_or_init(|| FftPlanner::<f32>::new().plan_fft_forward(FFT_SIZE))
+        .clone()
 }
 
 /// Result of the spectral pass.
@@ -174,24 +175,28 @@ impl SpectrumAccumulator {
     /// `collect_display`: when false, skips storing spectrogram columns entirely (the FFT
     /// still runs for the LTAS/cutoff, so the verdict is unchanged — only the heavy display
     /// grid is not built). The batch worker (M2b) passes false; the UI passes true.
-    pub fn new(sr: u32, fft_size: usize, collect_display: bool) -> Self {
-        let fft = shared_fft(fft_size);
-        let window: Vec<f32> = (0..fft_size)
-            .map(|i| 0.5 - 0.5 * (2.0 * PI * i as f32 / (fft_size as f32 - 1.0)).cos())
+    ///
+    /// La taille de trame n'est pas un paramètre : c'est `FFT_SIZE`, fixe pour toute l'app et
+    /// seule taille pour laquelle un plan FFT est partagé. Elle a été un argument jusqu'ici, mais
+    /// les neuf appels — production, harnais `#[ignore]` et tests — passaient tous 4096.
+    pub fn new(sr: u32, collect_display: bool) -> Self {
+        let fft = shared_fft();
+        let window: Vec<f32> = (0..FFT_SIZE)
+            .map(|i| 0.5 - 0.5 * (2.0 * PI * i as f32 / (FFT_SIZE as f32 - 1.0)).cos())
             .collect();
-        let bins = fft_size / 2;
+        let bins = FFT_SIZE / 2;
         // Coherent gain = mean window value; a full-scale sine's FFT peak magnitude is
-        // `coherent_gain * fft_size / 2` (the /2 from splitting energy across +/- frequency).
-        let coherent_gain = window.iter().sum::<f32>() / fft_size as f32;
-        let ref_mag = coherent_gain * fft_size as f32 / 2.0;
+        // `coherent_gain * FFT_SIZE / 2` (the /2 from splitting energy across +/- frequency).
+        let coherent_gain = window.iter().sum::<f32>() / FFT_SIZE as f32;
+        let ref_mag = coherent_gain * FFT_SIZE as f32 / 2.0;
         Self {
             sr,
-            fft_size,
-            hop: fft_size / 2,
+            fft_size: FFT_SIZE,
+            hop: FFT_SIZE / 2,
             fft,
             window,
-            buf: Vec::with_capacity(fft_size * 2),
-            scratch: vec![Complex { re: 0.0, im: 0.0 }; fft_size],
+            buf: Vec::with_capacity(FFT_SIZE * 2),
+            scratch: vec![Complex { re: 0.0, im: 0.0 }; FFT_SIZE],
             mags: vec![0.0f32; bins],
             ltas: vec![0.0; bins],
             frames_total: 0,
@@ -537,7 +542,7 @@ mod tests {
         let mut blocks: Vec<f32> = Vec::new();
         let info = crate::analysis::decode::decode_pcm(&path, 1, |b| blocks.extend_from_slice(b))
             .expect("décodage");
-        let mut acc = SpectrumAccumulator::new(info.sample_rate, FFT_SIZE, false);
+        let mut acc = SpectrumAccumulator::new(info.sample_rate, false);
         acc.push(&blocks);
 
         let hz_per_bin = acc.sr as f32 / acc.fft_size as f32;
@@ -651,7 +656,7 @@ mod tests {
     #[test]
     fn cutoff_detected_near_hard_band_edge() {
         let sig = band_limited_tones(SR, 2.0, 6000.0);
-        let mut a = SpectrumAccumulator::new(SR, 4096, true);
+        let mut a = SpectrumAccumulator::new(SR, true);
         a.push(&sig);
         let report = a.finish();
         assert!(
@@ -672,7 +677,7 @@ mod tests {
             seed = seed.wrapping_mul(1664525).wrapping_add(1013904223);
             sig.push((seed >> 8) as f32 / (1u32 << 24) as f32 * 2.0 - 1.0);
         }
-        let mut a = SpectrumAccumulator::new(SR, 4096, true);
+        let mut a = SpectrumAccumulator::new(SR, true);
         a.push(&sig);
         let report = a.finish();
         assert!(
@@ -735,7 +740,7 @@ mod tests {
             POINTS.last().unwrap().1
         }
 
-        let mut a = SpectrumAccumulator::new(SR, 4096, false);
+        let mut a = SpectrumAccumulator::new(SR, false);
         let hz_per_bin = a.sr as f32 / a.fft_size as f32;
         a.frames_total = 1;
         for k in 0..a.bins {
@@ -777,7 +782,7 @@ mod tests {
             .map(|i| (raw[i] + raw[i + 1] + raw[i + 2]) / 3.0 * 0.3)
             .collect();
 
-        let mut a = SpectrumAccumulator::new(SR, 4096, false);
+        let mut a = SpectrumAccumulator::new(SR, false);
         a.push(&sig);
         let r = a.finish();
         let fixe = r.hf_flatness_db.expect("bande fixe mesurable a 44,1 kHz");
@@ -810,7 +815,7 @@ mod tests {
     #[test]
     fn hf_flatness_separates_a_sparse_treble_from_a_continuous_one() {
         fn measure(sig: &[f32]) -> f32 {
-            let mut a = SpectrumAccumulator::new(SR, 4096, false);
+            let mut a = SpectrumAccumulator::new(SR, false);
             a.push(sig);
             a.finish()
                 .hf_flatness_db
@@ -909,7 +914,7 @@ mod tests {
             POINTS.last().expect("POINTS non vide").1
         }
 
-        let mut a = SpectrumAccumulator::new(SR, 4096, false);
+        let mut a = SpectrumAccumulator::new(SR, false);
         let hz_per_bin = a.sr as f32 / a.fft_size as f32;
         a.frames_total = 1;
         for k in 0..a.bins {
@@ -955,7 +960,7 @@ mod tests {
             POINTS.last().unwrap().1
         }
 
-        let mut a = SpectrumAccumulator::new(SR, 4096, false);
+        let mut a = SpectrumAccumulator::new(SR, false);
         let hz_per_bin = a.sr as f32 / a.fft_size as f32;
         a.frames_total = 1;
         for k in 0..a.bins {

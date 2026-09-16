@@ -17,7 +17,7 @@
 // les API boutiques ont été essayées et écartées (« une galère », Antoine, 2026-09-08). Elles
 // vivent dans l'inspecteur, fiche « Racheter », une rangée par boutique — c'est là qu'on voit
 // « dans quelles boutiques » aller, le point de l'écran.
-import { listEcartes, revealTrack } from "./ipc";
+import { listEcartes, requeueTrack, restoreTrack, revealTrack, trashTrack } from "./ipc";
 import type { EcarteItem } from "../shared/contracts";
 import { requireEl, esc } from "./dom";
 import { emptyStateHtml, wireEmptyState } from "./empty-state";
@@ -224,27 +224,34 @@ function openMenu(x: number, y: number, it: EcarteItem): void {
     // Pas de sous-menu — HIG Context menus : « aim for a small number of menu items ».
     { label: "Racheter…", onPick: () => openDetail(it.id) },
     ...(kind === "trash"
-      ? [{ label: "Restaurer", separated: true, onPick: () => clickAction("restore", it.id) }]
+      ? [{ label: "Restaurer", separated: true, onPick: () => runEcarteAction("restore", it.id) }]
       : [
-          { label: "Remettre en file", separated: true, onPick: () => clickAction("requeue", it.id) },
-          { label: "Envoyer à la corbeille", onPick: () => clickAction("trash", it.id) },
+          { label: "Remettre en file", separated: true, onPick: () => runEcarteAction("requeue", it.id) },
+          { label: "Envoyer à la corbeille", onPick: () => runEcarteAction("trash", it.id) },
         ]),
   ]);
 }
 
-/** Les actions passent par le délégué `[data-ec]` de sift-live.ts (qui porte les IPC et leurs
- *  erreurs, une seule fois) : on lui envoie un clic sur un bouton fantôme plutôt que dupliquer
- *  ses trois `catch`. */
-function clickAction(act: "requeue" | "trash" | "restore", id: number): void {
-  const pa = document.getElementById("pa");
-  if (!pa) return;
-  const b = document.createElement("button");
-  b.hidden = true;
-  b.dataset.ec = act;
-  b.dataset.id = String(id);
-  pa.appendChild(b);
-  b.click();
-  b.remove();
+/** Les trois actions d'une piste écartée — appelées par le menu contextuel de cet écran comme
+ *  par le délégué `[data-ec]` de sift-live.ts. UN seul site pour l'IPC, la repeinture de la
+ *  destination courante et le `catch` : c'était déjà l'intention, mais elle passait par le DOM —
+ *  un bouton fantôme fabriqué dans `#pa`, cliqué, retiré, pour rejoindre un délégué enraciné sur
+ *  `document`, pas sur `#pa` (`installLiveWiring`, sift-live.ts) — et qui se taisait donc quand
+ *  `#pa` manquait. */
+export function runEcarteAction(act: "requeue" | "trash" | "restore", id: number): void {
+  const call = act === "trash" ? trashTrack : act === "restore" ? restoreTrack : requeueTrack;
+  const echec =
+    act === "trash"
+      ? "Échec : impossible d'envoyer à la corbeille"
+      : act === "restore"
+        ? "Échec : restauration impossible"
+        : "Échec : remise en file impossible";
+  void call(id)
+    .then(() => renderEcartes())
+    .catch((err: unknown) => {
+      console.error(`${act} failed`, err);
+      toast(echec);
+    });
 }
 
 // ---------------------------------------------------------------------------

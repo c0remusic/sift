@@ -588,7 +588,7 @@ export async function openFilingInto(
   const editorEl = requireEl<HTMLElement>(".sift-fil-editor", "openFilingInto", mid);
   // Plus de `report` passé ici : l'éditeur n'en tirait que la ligne « Tags ID3 », supprimée
   // (spec docs/ui-specs/revue.md § Zone C, point 4). `report` reste lu juste au-dessus, pour le rail.
-  renderEditor(editorEl, mid, rail);
+  renderEditor(editorEl, mid);
   // Already-identified track → restore the hero cover from metadata (no network). The identity
   // itself is shown by the always-visible attribute inputs (direction B), so only the cover needs
   // re-applying. Runs inside the openState.openSeq-guarded section above, so a superseded open never
@@ -716,17 +716,21 @@ export function syncDetail(mid: HTMLElement, items: QueueItem[]): number | null 
   // filing-actions.ts — la rangée réglages de la boîte depuis la décision V2b), not in #mid, so
   // it no longer blocks auto-advance — after filing, doRanger explicitly advances #mid to the next
   // pending. syncDetail's job here is unchanged: keep the open track stable, else load the first pending.
-  // Is our filing pane still in #mid? On navigation back to Revue, app.js re-draws its mock
-  // detail into #mid, so the pane is no longer ours and must be re-rendered — but on a mere
-  // queue/analysis refresh it's intact and we must NOT disrupt it (would restart playback).
+  // Is our filing pane still in #mid? `.sift-fil` is written in exactly ONE place —
+  // `openFilingInto`, above — so its absence means another renderer owns the node. Two of them
+  // really take it: `revueShell` (router.ts) rebuilds `#content` on every navigation to Revue and
+  // recreates `#mid` EMPTY, and `renderBatch` (batch-panel.ts) overwrites it with the batch
+  // selection summary. Not app.js: `main.ts` imports it only under `if (!inTauri)`, i.e. never
+  // where syncDetail runs. On a mere queue/analysis refresh the pane is intact and we must NOT
+  // disrupt it (would restart playback).
   const paneIsOurs = !!mid.querySelector(".sift-fil");
   // If a track is open and our pane is intact, NEVER switch away from it — not even if it has
   // left the pending list (e.g. just analysed). Switching would destroy the player mid-load and
   // abort its audio (waveform shows from peaks, but no sound). This is the rule that keeps the
   // user's selection stable while the background worker churns through the queue.
   if (state.track && paneIsOurs) return state.track.id;
-  // Pane was wiped (e.g. nav back to Revue re-draws app.js's mock) but we still have a track →
-  // restore the real pane for it.
+  // Pane was wiped (navigation back to Revue recreated #mid empty, or the Lot view overwrote it)
+  // but we still have a track → restore the real pane for it.
   if (state.track) {
     void openFilingInto(mid, state.track);
     return state.track.id;

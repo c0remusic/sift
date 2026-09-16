@@ -68,18 +68,19 @@ enum Outcome {
 
 /// Rejoue le verdict pour une ligne, à partir de son seul rapport.
 ///
-/// ⚠️ **Sémantique reproduite de `analysis::analyze` (analysis/mod.rs:311-320), pas réinventée.**
-/// Là-bas, les cinq arguments sont `cutoff_hz`, `tag.declared_rail`, `tag.declared_bitrate`,
-/// `content_rail`, et `HfFlatness { fixed_db: spec_res.hf_flatness_db, top_db:
-/// spec_res.hf_flatness_top_db }` — tous présents à l'identique dans `AnalysisReport`, à une
-/// exception : `content_rail`.
+/// ⚠️ **Sémantique reproduite de l'appel à `verdict::verdict` que porte `analysis::analyze`, pas
+/// réinventée.** Là-bas, les cinq premiers arguments sont `cutoff_hz`, `tag.declared_rail`,
+/// `tag.declared_bitrate`, `content_rail`, et `HfFlatness { fixed_db: spec_res.hf_flatness_db,
+/// top_db: spec_res.hf_flatness_top_db }` — tous présents à l'identique dans `AnalysisReport`, à
+/// une exception : `content_rail`. Le sixième, `quant_likelihood`, fait l'objet du ⚠️ suivant.
 ///
 /// `content_rail` n'est pas sérialisé. Ce qui l'est, c'est `container_mismatch`, dont `analyze`
-/// pose la définition exacte (mod.rs:305) : `tag.declared_rail == Rail::Lossless && content_rail ==
-/// Rail::Lossy`. Or `verdict()` ne lit `content_rail` que par le test `content_rail == Rail::Lossy`
-/// SOUS le bras `Rail::Lossless` (verdict.rs:243-247) — le seul court-circuit, et il passe bien
-/// AVANT tout le reste, y compris avant l'absence de mesure. Rendre `Rail::Lossy` quand
-/// `container_mismatch` est vrai et `Rail::Unknown` sinon reproduit donc ce test à l'identique :
+/// pose la définition exacte (`let container_mismatch = …`) : `tag.declared_rail ==
+/// Rail::Lossless && content_rail == Rail::Lossy`. Or `verdict()` ne lit `content_rail` que par
+/// le test `content_rail == Rail::Lossy` SOUS son bras `Rail::Lossless` — le seul court-circuit,
+/// et il passe bien AVANT tout le reste, y compris avant l'absence de mesure. Rendre `Rail::Lossy`
+/// quand `container_mismatch` est vrai et `Rail::Unknown` sinon reproduit donc ce test à
+/// l'identique :
 /// `Unknown` « never triggers this short-circuit » (doc de `verdict()`), et aucun autre bras ne
 /// regarde `content_rail`. Reconstruction exacte, pas approchée.
 ///
@@ -133,19 +134,20 @@ pub fn run(conn: &mut Connection) -> rusqlite::Result<Stats> {
     // (voir `worker::select_needing_analysis`) : ne pas charger la valeur pour découvrir qu'elle est absente.
     //
     // `verdict IS NOT NULL` : la MÊME borne que `worker::select_needing_analysis`, et pour le même
-    // invariant (`worker.rs:161-163`) — « `verdict` est non-NULL si et seulement s'il reflète
-    // l'analyse réussie la plus récente du fichier COURANT ». Une ligne sans verdict n'est pas
-    // périmée, elle est non analysée : lui en poser un depuis un rapport qu'aucune analyse réussie
-    // n'a validé casserait l'invariant, et c'est exactement l'état que `persist_failure` laisse
-    // derrière lui. Effet second, et il est ce qui rend la passe idempotente : une ligne que la
-    // passe précédente a remise à NULL (`Outcome::Clear`) sort du filtre au lancement suivant.
+    // invariant — celui que restaure `worker::persist_failure` : « `verdict` est non-NULL si et
+    // seulement s'il reflète l'analyse réussie la plus récente du fichier COURANT ». Une ligne sans
+    // verdict n'est pas périmée, elle est non analysée : lui en poser un depuis un rapport
+    // qu'aucune analyse réussie n'a validé casserait l'invariant, et c'est exactement l'état que
+    // `persist_failure` laisse derrière lui. Effet second, et il est ce qui rend la passe
+    // idempotente : une ligne que la passe précédente a remise à NULL (`Outcome::Clear`) sort du
+    // filtre au lancement suivant.
     //
     // `report_cache_ver = ?2` : un rapport d'une forme ANTÉRIEURE se désérialise quand même — les
-    // champs neufs portent `#[serde(default)]` (`default_peaks_step`, mod.rs:216) — et rendrait
-    // donc un verdict calculé sur des valeurs par défaut, stampé à la version courante. Le
-    // désaccord de version est précisément ce qui dit « ces mesures ne sont plus celles du moteur
-    // courant » ; la ligne se répare par les chemins existants (`ipc::analyze_path`, le pool), qui
-    // eux ont le fichier sous la main.
+    // champs neufs portent `#[serde(default)]`, tel `default_peaks_step` sur
+    // `AnalysisReport::peaks_step` — et rendrait donc un verdict calculé sur des valeurs par
+    // défaut, stampé à la version courante. Le désaccord de version est précisément ce qui dit
+    // « ces mesures ne sont plus celles du moteur courant » ; la ligne se répare par les chemins
+    // existants (`ipc::analyze_path`, le pool), qui eux ont le fichier sous la main.
     let mut stmt = conn.prepare(
         "SELECT id, report_json FROM tracks \
          WHERE report_json IS NOT NULL AND report_json != '' AND typeof(report_json) != 'null' \
@@ -396,12 +398,12 @@ mod tests {
         assert_eq!(stats.restamped, 1);
     }
 
-    /// (f) L'invariant de `worker.rs:161-163` : `verdict` non-NULL SI ET SEULEMENT SI il reflète la
-    /// dernière analyse RÉUSSIE du fichier courant. Une ligne sans verdict n'est pas périmée, elle
-    /// est non analysée — c'est très exactement l'état que `persist_failure` laisse derrière lui
-    /// (verdict NULL, `verdict_ver` NULL, mais un `report_json` d'une analyse ANTÉRIEURE peut
-    /// subsister sur d'autres chemins). Lui poser un verdict depuis ce seul rapport reviendrait à
-    /// annoncer FAKE sur un fichier dont aucune analyse réussie ne dit rien.
+    /// (f) L'invariant que restaure `worker::persist_failure` : `verdict` non-NULL SI ET SEULEMENT
+    /// SI il reflète la dernière analyse RÉUSSIE du fichier courant. Une ligne sans verdict n'est
+    /// pas périmée, elle est non analysée — c'est très exactement l'état que `persist_failure`
+    /// laisse derrière lui (verdict NULL, `verdict_ver` NULL, mais un `report_json` d'une analyse
+    /// ANTÉRIEURE peut subsister sur d'autres chemins). Lui poser un verdict depuis ce seul
+    /// rapport reviendrait à annoncer FAKE sur un fichier dont aucune analyse réussie ne dit rien.
     #[test]
     fn ligne_sans_verdict_n_en_recoit_jamais_un() {
         let mut conn = db();
@@ -523,8 +525,9 @@ mod tests {
     }
 
     /// (j) Le second bras de `NotMeasured`, `Rail` : conteneur non reconnu (`Rail::Unknown`). Il
-    /// tombe par un chemin tout autre que `Cutoff` (verdict.rs:278 contre :250/:271) et doit sortir
-    /// au même endroit — verdict et version à NULL, compté hors domaine.
+    /// tombe par un chemin tout autre que `Cutoff` — le bras `Rail::Unknown` de `verdict::verdict`
+    /// contre ses deux `Err(NotMeasured::Cutoff)` — et doit sortir au même endroit : verdict et
+    /// version à NULL, compté hors domaine.
     #[test]
     fn rail_indetermine_sort_du_domaine() {
         let mut conn = db();

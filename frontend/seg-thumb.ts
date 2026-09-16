@@ -2,11 +2,16 @@
 // (même précédent que `popover-position.ts`, qui est sorti de `filing-bins.ts` pour la même raison :
 // un calcul de position n'a besoin de rien d'autre que du nœud qu'il déplace).
 //
-// Six écrans montent un `.sift-seg-thumbed` — la barre unifiée, la file Revue, le format de la
-// Revue, le format du mode Lot, le mode de vue Bibliothèque et le thème des Réglages — et chacun
-// portait sa propre copie de ces quatre lignes. Elles ne divergeaient pas encore ; c'est justement
-// le moment de n'en garder qu'une, parce que ce qui est mesuré ici (`offsetWidth`/`offsetLeft`, donc
-// un reflow forcé) est aussi le genre de détail qu'on n'optimise qu'une fois.
+// Cinq écrans montent un `.sift-seg-thumbed` — la barre unifiée (`toolbar.ts`), le format de la
+// Revue (`filing.ts`), le format du mode Lot (`batch-panel.ts`), le mode de vue de la Bibliothèque
+// (`bibliotheque-view.ts`) et le thème des Réglages (`reglages-view.ts`) — et chacun portait sa
+// propre copie de ces quatre lignes. Ils étaient SIX quand ce fichier est né le 2026-08-20 : le
+// segmenté Détail / Lot de la colonne de file (`queue-panel.ts::ensureReviewSeg`) est parti le
+// 2026-08-25 avec le segmenté lui-même — retrait daté dans les doc-comments de
+// `toolbar.ts::mountBarSegmented` et de `sift-live.ts::setReviewMode`. Elles ne divergeaient pas
+// encore ; c'était justement le moment de n'en garder qu'une, parce que ce qui est mesuré ici
+// (`offsetWidth`/`offsetLeft`, donc un reflow forcé) est aussi le genre de détail qu'on n'optimise
+// qu'une fois.
 //
 // CE QUI EST MESURÉ ICI EST INDIFFÉRENT AU RETRAIT DE LA PISTE, et il faut le savoir avant de
 // « corriger » un décalage supposé. `offsetLeft` se mesure depuis la boîte de PADDING de

@@ -77,6 +77,33 @@ const EST_STORY = (f) => f.endsWith('.stories.ts');
 // faux, ce qui est exactement le défaut que les tests Rust de contrat existent pour empêcher.
 const EST_MIROIR = (f) => f.replace(/\\/g, '/').endsWith('shared/contracts.ts');
 
+/**
+ * Le corpus de REPLI — `test/`, `scripts/` et `src-tauri/src` — concaténé UNE fois, à la première
+ * demande. Jusqu'au 2026-09-16 ces trois dossiers étaient re-marchés pour CHAQUE candidat
+ * orphelin, et relus jusqu'à la première mention — soit entièrement pour les 16 qui n'en ont
+ * aucune.
+ *
+ * Le verdict est identique, et c'est la seule chose qui compte pour une gate : le nom cherché est
+ * un identifiant TypeScript (voir `DECLARATION`), il ne contient donc pas de saut de ligne et ne
+ * peut pas enjamber la jointure `\n` de deux fichiers collés. Mesuré avant/après sur l'arbre du
+ * 2026-09-16 : mêmes 16 orphelins, même ordre, même baseline.
+ *
+ * ⚠️ `fichiers()` ne retient que les `.ts` : aujourd'hui `scripts/` et `src-tauri/src` n'en
+ * contiennent AUCUN, donc seul `test/` pèse réellement (22 fichiers). Les trois restent listés
+ * pour couvrir l'arrivée d'un `.ts` ailleurs sans qu'on y repense — pas parce que les deux autres
+ * rendent quelque chose aujourd'hui.
+ */
+let corpusExterne = null;
+const externe = () => {
+  if (corpusExterne === null) {
+    corpusExterne = ['test', 'scripts', 'src-tauri/src']
+      .flatMap(fichiers)
+      .map((f) => readFileSync(f, 'utf8'))
+      .join('\n');
+  }
+  return corpusExterne;
+};
+
 const orphelins = [];
 for (const [fichier, texte] of source) {
   if (EST_STORY(fichier) || EST_MIROIR(fichier)) continue;
@@ -93,18 +120,11 @@ for (const [fichier, texte] of source) {
       }
     }
     if (!vu) {
-      // Un export peut aussi être consommé depuis le même fichier par du code qui le réexporte,
-      // ou depuis `test/` et `scripts/`. On regarde ces deux-là avant de conclure.
-      for (const d of ['test', 'scripts', 'src-tauri/src']) {
-        for (const f of fichiers(d)) {
-          if (new RegExp(`\\b${nom}\\b`).test(readFileSync(f, 'utf8'))) {
-            vu = true;
-            break;
-          }
-        }
-        if (vu) break;
-      }
+      // Un export peut aussi être consommé HORS de frontend/ et shared/ : par un test, un script,
+      // ou du Rust. Une seule mention dans ce corpus suffit à le déclarer vivant.
+      vu = new RegExp(`\\b${nom}\\b`).test(externe());
     }
+
     if (!vu) orphelins.push(`${relative(REPO_ROOT, fichier).replace(/\\/g, '/')}: ${nom}`);
   }
 }

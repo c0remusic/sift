@@ -258,6 +258,40 @@ fn normalize_masterdb_path(path: &str) -> String {
     path.trim().replace('\\', "/").to_lowercase()
 }
 
+/// Les `djmdContent.ID` dont le `FolderPath` désigne le même fichier que `lookup_path`, au sens
+/// de `normalize_masterdb_path`. Les trois détecteurs master.db (réparation, métadonnées,
+/// pochette) en portaient la copie, au nom du paramètre d'entrée près : c'est LA comparaison de
+/// chemins de M8, elle ne doit jamais diverger d'un détecteur à l'autre.
+fn masterdb_matching_track_ids<'a>(
+    index: &'a crate::rekordbox_masterdb::RekordboxIndex,
+    lookup_path: &str,
+) -> Vec<&'a str> {
+    let lookup = normalize_masterdb_path(lookup_path);
+    index
+        .tracks
+        .iter()
+        .filter(|t| normalize_masterdb_path(&t.folder_path) == lookup)
+        .map(|t| t.track_id.as_str())
+        .collect()
+}
+
+/// Les trois colonnes que les détecteurs de SYNCHRONISATION (métadonnées, pochette) écrivent
+/// selon le nombre de correspondances : `(rekordbox_track_id, candidate_track_ids, status)`.
+/// `None` pour zéro correspondance — l'appelant n'insère alors rien, exactement comme son ancien
+/// bras `0 => return`.
+///
+/// Le détecteur de réparation ne passe PAS par ici : ses deux branches n'écrivent pas les mêmes
+/// colonnes, donc pas le même INSERT, et son `match` reste le sien.
+fn masterdb_sync_match_columns<'a>(
+    matches: &[&'a str],
+) -> Option<(Option<&'a str>, Option<String>, &'static str)> {
+    match matches.len() {
+        0 => None,
+        1 => Some((Some(matches[0]), None, "pending")),
+        _ => Some((None, Some(matches.join(",")), "ambiguous")),
+    }
+}
+
 /// Read-only detection: if a Rekordbox XML is linked, look up the sibling `master.db` for
 /// `djmdContent` rows whose `FolderPath` equals `from_path`, and record a candidate repair row —
 /// `pending` (exactly one match) or `ambiguous` (2+ matches, the real duplicate-path scenario the
@@ -290,13 +324,7 @@ pub fn detect_masterdb_repair_with_index(
     to_path: &str,
     action_id: i64,
 ) {
-    let lookup = normalize_masterdb_path(from_path);
-    let matches: Vec<&str> = index
-        .tracks
-        .iter()
-        .filter(|t| normalize_masterdb_path(&t.folder_path) == lookup)
-        .map(|t| t.track_id.as_str())
-        .collect();
+    let matches = masterdb_matching_track_ids(index, from_path);
 
     let result = match matches.len() {
         0 => return,
@@ -414,20 +442,12 @@ pub fn detect_masterdb_metadata_sync_with_index(
     values: &MetadataSyncValues,
     action_id: i64,
 ) {
-    let lookup = normalize_masterdb_path(lookup_path);
-    let matches: Vec<&str> = index
-        .tracks
-        .iter()
-        .filter(|t| normalize_masterdb_path(&t.folder_path) == lookup)
-        .map(|t| t.track_id.as_str())
-        .collect();
-
-    let (rekordbox_track_id, candidate_track_ids, status): (Option<&str>, Option<String>, &str) =
-        match matches.len() {
-            0 => return,
-            1 => (Some(matches[0]), None, "pending"),
-            _ => (None, Some(matches.join(",")), "ambiguous"),
-        };
+    let matches = masterdb_matching_track_ids(index, lookup_path);
+    let Some((rekordbox_track_id, candidate_track_ids, status)) =
+        masterdb_sync_match_columns(&matches)
+    else {
+        return;
+    };
 
     let result = conn.execute(
         "INSERT INTO rekordbox_masterdb_metadata_syncs
@@ -491,20 +511,12 @@ pub fn detect_masterdb_artwork_sync_with_index(
     cover_path: &str,
     action_id: i64,
 ) {
-    let lookup = normalize_masterdb_path(lookup_path);
-    let matches: Vec<&str> = index
-        .tracks
-        .iter()
-        .filter(|t| normalize_masterdb_path(&t.folder_path) == lookup)
-        .map(|t| t.track_id.as_str())
-        .collect();
-
-    let (rekordbox_track_id, candidate_track_ids, status): (Option<&str>, Option<String>, &str) =
-        match matches.len() {
-            0 => return,
-            1 => (Some(matches[0]), None, "pending"),
-            _ => (None, Some(matches.join(",")), "ambiguous"),
-        };
+    let matches = masterdb_matching_track_ids(index, lookup_path);
+    let Some((rekordbox_track_id, candidate_track_ids, status)) =
+        masterdb_sync_match_columns(&matches)
+    else {
+        return;
+    };
 
     let result = conn.execute(
         "INSERT INTO rekordbox_masterdb_artwork_syncs
@@ -901,7 +913,6 @@ pub fn revert_batch(conn: &Connection, batch_id: &str) -> Result<(), RevertError
                     )?;
                 }
             }
-            // A filed track went back to pending — the dashboard duplicate-count cache's
         }
     }
     Ok(())

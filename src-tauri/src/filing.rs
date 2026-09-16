@@ -886,9 +886,6 @@ pub fn commit_file(
         }
     };
 
-    // A track just became 'filed' — invalidate the dashboard duplicate-count cache. The cache key
-    // (COUNT, MAX(id) of filed) misses an in-place re-filing that leaves both unchanged, so we
-
     // Committed — now (and only now) patch a linked Rekordbox XML for the move/convert rows, and
     // detect (read-only) any master.db repair candidates for the same rows (M8 Tier 1 IPC wiring),
     // plus (M8 Tier 3) any metadata sync candidate for the tags this commit just wrote. Both

@@ -354,10 +354,9 @@ impl Discogs {
         Ok(())
     }
 
-    /// Fetch a release's tracklist titles. Best-effort: the caller treats Err as "no tracklist"
-    /// and simply doesn't refine that candidate (so a rate-limit on a detail call is non-fatal).
-    /// One Discogs full-text release search for `q_str`, mapped to ranked Candidates. The
-    /// HTTP call is factored out so `search` can issue a primary query and a title-only retry.
+    /// One Discogs full-text release search for `q_str`, mapped to ranked Candidates. The HTTP
+    /// call is factored out so `search` can issue one query per rung of the `attempts_for`
+    /// ladder, each scored the same way.
     fn search_query(&self, q_str: &str) -> Result<Vec<Candidate>, ProviderError> {
         let mut resp = ureq::get("https://api.discogs.com/database/search")
             .config()
@@ -379,12 +378,6 @@ impl Discogs {
         Ok(parse_search(&v))
     }
 
-    /// Fetch tracklists for the top `TRACKLIST_PROBE` candidates and score how well each
-    /// contains the exact mix (title + version) we want, mutating each candidate's `.title` to
-    /// the actual matching track title when found. Detail calls are best-effort — a failed or
-    /// rate-limited one just leaves that candidate unscored (falls back to format relevance).
-    /// Factored out of `search` so both the primary and the title-only fallback query can be
-    /// scored the same way and compared.
     /// Construit la liste des requêtes à tenter, plafonnée à `LADDER_MAX_ATTEMPTS`.
     ///
     /// Rétro-compatible : un `Query` sans cascade (tests, appelants historiques) retombe sur
@@ -410,6 +403,13 @@ impl Discogs {
         out
     }
 
+    /// Fetch tracklists for the top `max_probe` candidates and score how well each contains the
+    /// exact mix (title + version) we want, mutating each candidate's `.title` to the actual
+    /// matching track title when found. `search` passes `TRACKLIST_PROBE` on the first rung of the
+    /// ladder and `TRACKLIST_PROBE_DEGRADED` on the later ones. Detail calls are best-effort — a
+    /// failed or rate-limited one just leaves that candidate unscored (falls back to format
+    /// relevance). Factored out of `search` so every rung is scored the same way and the rungs
+    /// stay comparable.
     fn probe_and_score(&self, cands: &mut [Candidate], q: &Query, max_probe: usize) -> Vec<i32> {
         let mut scores = vec![0i32; cands.len()];
         let probe = cands.len().min(max_probe);
@@ -439,6 +439,8 @@ impl Discogs {
         scores
     }
 
+    /// Fetch a release's tracklist titles. Best-effort: the caller treats Err as "no tracklist"
+    /// and simply doesn't refine that candidate (so a rate-limit on a detail call is non-fatal).
     fn fetch_tracklist(&self, release_id: &str) -> Result<Vec<String>, ProviderError> {
         let url = format!("https://api.discogs.com/releases/{release_id}");
         let mut resp = ureq::get(&url)

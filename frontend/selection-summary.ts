@@ -65,11 +65,30 @@ export function selectionSummaryHtml(selected: QueueItem[]): string {
       .map(([f, c]) => `${c > 1 ? c + " " : ""}${esc(f.toUpperCase())}`)
       .join(" · ") || null;
 
+  // « en cours » annonçait une PROGRESSION que rien ici ne mesure. `other` est le complément des
+  // trois verdicts, donc exactement `verdict === null` — un nul qui recouvre DEUX populations que
+  // l'écran distingue partout ailleurs : l'analyse EN ATTENTE et l'analyse ABANDONNÉE
+  // (`analysis_attempts >= MAX_ANALYSIS_ATTEMPTS`), que `queue-verdict-dot.ts::verdictDot` peint
+  // en anneau neutre pour la première, en pastille rouge « analyse abandonnée » pour la seconde.
+  // Aucune des deux n'est en cours.
+  //
+  // Le mot change, le COMPTE NON : scinder en deux pilules reste possible (`analysis_attempts` est
+  // sur `QueueItem`) mais remplacerait un compte par deux, hors de ce correctif. Et la distinction
+  // ne se redérive JAMAIS du seul `verdict` — le doc-comment de `needs_analysis`
+  // (`shared/contracts.ts`) l'écrit : « never re-derive this from `verdict` alone ».
+  //
+  // « N pistes non analysées », jamais « N non analysées » : l'accord porterait sur un nom absent
+  // (retour d'Antoine 2026-09-06, même formulation que
+  // `queue-panel.ts::ensureQueueReanalyzeAllButton`). Les trois autres pilules s'en passent parce
+  // que leur mot est invariable.
+  const sOther = other > 1 ? "s" : "";
   const verdictPills = [
     ok    > 0 ? `<span class="sift-bsel-pill ok">${ok} ok</span>` : "",
     fake  > 0 ? `<span class="sift-bsel-pill fake">${fake} faux</span>` : "",
     grey  > 0 ? `<span class="sift-bsel-pill grey">${grey} à vérifier</span>` : "",
-    other > 0 ? `<span class="sift-bsel-pill other">${other} en cours</span>` : "",
+    other > 0
+      ? `<span class="sift-bsel-pill other">${other} piste${sOther} non analysée${sOther}</span>`
+      : "",
   ]
     .filter(Boolean)
     .join("");

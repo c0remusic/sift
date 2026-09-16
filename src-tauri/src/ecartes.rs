@@ -240,8 +240,6 @@ pub fn purge_trash(conn: &Connection) -> Result<PurgeResult, String> {
     )
     .map_err(|e| e.to_string())?;
     tx.commit().map_err(|e| e.to_string())?;
-    // The filed set can shift around trash lifecycle changes — drop the dashboard duplicate-count
-    // cache so it recomputes (coordination with R1's cache; cheap, a purge is a rare action).
     Ok(PurgeResult { purged: n, failed })
 }
 

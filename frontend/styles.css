@@ -2133,11 +2133,11 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .sift-cand img,.sift-cand-noart{width:36px;height:36px;border-radius:var(--border-radius-sm);object-fit:cover;display:grid;place-items:center;background:var(--color-background-secondary);flex:none}
 .sift-cand-meta{display:flex;flex-direction:column;min-width:0}
 .sift-cand-meta small{color:var(--color-text-tertiary)}
-/* [I4] "autres" summary: looks like a clickable link, not a footnote */
-.sift-cand-more{margin-top:var(--space-4)}
-.sift-cand-more-summary{font-size:12px;color:var(--color-text-info);cursor:pointer;padding:var(--space-4);list-style:none;display:inline-flex;align-items:center;gap:var(--space-4)}
-.sift-cand-more-summary::-webkit-details-marker{display:none}
-.sift-cand-more[open] .sift-cand-more-summary{color:var(--color-text-secondary)}
+/* LES QUATRE RÈGLES `.sift-cand-more*` ONT ÉTÉ RETIRÉES ICI (2026-09-16). Leur unique poseur était
+   la disposition repliée « premier résultat + N autres » d'`identify-shared.ts`, devenue
+   inatteignable le 2026-09-08 (`ded5c9a`) quand la Bibliothèque est passée elle aussi à la liste
+   ouverte. Retirer le markup SANS ces règles aurait fait monter `npm run lint:orphan-css`, qui
+   n'échoue que sur une hausse — d'où le même geste pour les deux. */
 /* [C1] Identifier primary button: info/blue fill, same role as .sift-ranger-btn/.chip.on */
 /* Identifier / Ré-identifier : action secondaire, donc grammaire secondaire. Elle portait un fond
    bleu pâle qui la mettait au même rang visuel qu'« Enregistrer », alors qu'elle ouvre une
@@ -2910,7 +2910,11 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    mesures suivent directement les pastilles ; le filet haut (porté par .sift-spectro-rows,
    déclaré à sa région) borne la zone comme avant. */
 .sift-codec-error{margin-top:12px;font-size:var(--text-sm);color:var(--color-text-warning)}
-.sift-verdict-stub{display:flex;align-items:center;gap:var(--space-8);margin:var(--space-4) 0 var(--space-12);font-size:var(--text-sm);color:var(--color-text-tertiary)}
+/* `.sift-verdict-stub` RETIRÉE le 2026-09-16 : c'était le repli de `renderReportInto` quand
+   aucun `verdictContainer` n'était fourni — une souche posée dans le scroll du rapport faute
+   d'hôte. Les deux hôtes sont obligatoires depuis que Bibliothèque a son propre `.lib-diag`
+   (2026-09-08, ded5c9a) ; le paramètre optionnel qui la déclenchait est parti avec l'audit
+   Karpathy du 2026-09-16, et le markup avec lui. */
 .sift-analysis-fail{margin-bottom:12px;font-size:var(--text-sm);color:var(--color-text-warning)}
 .sift-player-error{margin:var(--space-8) 0 0;font-size:var(--text-sm);color:var(--color-text-warning)}
 .sift-report-overlay{position:fixed;inset:0;z-index:var(--z-modal);background:var(--overlay-scrim);display:flex;align-items:center;justify-content:center;padding:24px}
@@ -3653,13 +3657,15 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 /* Sliding thumb (2026-07-08, retour utilisateur : le crossfade par bouton ne montre pas
    clairement le déplacement d'un état à l'autre) — a single element physically moves via
    transform instead of each button fading its own background independently. Only viable where
-   the option buttons persist across state changes (see ensureReviewSeg()) — the other 5
-   .sift-seg sites rebuild their content on every change and keep the plain per-button .on style,
-   they never get a thumb. */
+   the option buttons persist across state changes (the discipline is spelled out in
+   `toolbar.ts::mountBarSegmented`; ensureReviewSeg(), its original example, was removed on
+   2026-08-25) — the ONE other .sift-seg site, the USB format modal (usb-format-modal.ts),
+   rebuilds its whole content on every change and keeps the plain per-button .on style, it never
+   gets a thumb. */
 .sift-seg-thumbed{position:relative}
 .sift-seg-thumbed .sift-seg-opt{position:relative;z-index:1}
 /* Also cancels :hover explicitly (not just the base .on) — the generic .sift-seg-opt.on:hover
-   rule further down (for the 5 non-thumbed sites, which still need their own background on
+   rule further down (for the one non-thumbed site, which still needs its own background on
    hover) has the SAME specificity as a plain ".sift-seg-thumbed .sift-seg-opt.on", so whichever
    was declared last in the file would win; that repainted a borderless background straight over
    the thumb when hovering the selected pill, hiding its border (retour utilisateur 2026-07-08).

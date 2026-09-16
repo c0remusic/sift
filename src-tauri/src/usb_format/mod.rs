@@ -200,16 +200,23 @@ pub fn backend_for_this_os() -> impl RemovableDriveBackend {
     macos::MacBackend
 }
 
-/// Anti-race guard: re-resolve `drive` by identity from a **fresh** listing (`fresh`, passed in
-/// by the caller right before formatting) and fail explicitly if it's gone or its identity
-/// changed — never fall back to "the id still matches, must be the same drive".
+/// Anti-race guard: re-resolve `drive_id` in a **fresh** listing (`fresh`, passed in by the
+/// caller right before formatting) and fail explicitly if it's gone, or if what answers to that
+/// id no longer carries `identity` — never fall back to "the id still matches, must be the same
+/// drive".
+///
+/// Prend les deux chaînes qu'elle compare, et pas un `RemovableDrive` : ce sont les deux seuls
+/// champs qu'elle a jamais lus, et l'appelant n'a que ça — l'id et l'identité que le frontend a
+/// vus. Exiger la structure entière l'obligeait à fabriquer huit champs vides dont aucun n'était
+/// lu ici.
 pub fn verify_identity_unchanged(
-    drive: &RemovableDrive,
+    drive_id: &str,
+    identity: &str,
     fresh: &[RemovableDrive],
 ) -> Result<(), UsbFormatError> {
-    match fresh.iter().find(|d| d.id == drive.id) {
+    match fresh.iter().find(|d| d.id == drive_id) {
         None => Err(UsbFormatError::DriveVanished),
-        Some(d) if d.identity != drive.identity => Err(UsbFormatError::IdentityMismatch),
+        Some(d) if d.identity != identity => Err(UsbFormatError::IdentityMismatch),
         Some(_) => Ok(()),
     }
 }
@@ -274,27 +281,24 @@ mod tests {
 
     #[test]
     fn verify_identity_unchanged_ok_when_serial_matches() {
-        let d = drive("E:", "AAAA-1111");
         let fresh = vec![drive("E:", "AAAA-1111")];
-        assert_eq!(verify_identity_unchanged(&d, &fresh), Ok(()));
+        assert_eq!(verify_identity_unchanged("E:", "AAAA-1111", &fresh), Ok(()));
     }
 
     #[test]
     fn verify_identity_unchanged_fails_when_serial_changed() {
-        let d = drive("E:", "AAAA-1111");
         let fresh = vec![drive("E:", "BBBB-2222")]; // same letter, different key was plugged in
         assert_eq!(
-            verify_identity_unchanged(&d, &fresh),
+            verify_identity_unchanged("E:", "AAAA-1111", &fresh),
             Err(UsbFormatError::IdentityMismatch)
         );
     }
 
     #[test]
     fn verify_identity_unchanged_fails_when_drive_vanished() {
-        let d = drive("E:", "AAAA-1111");
         let fresh: Vec<RemovableDrive> = vec![];
         assert_eq!(
-            verify_identity_unchanged(&d, &fresh),
+            verify_identity_unchanged("E:", "AAAA-1111", &fresh),
             Err(UsbFormatError::DriveVanished)
         );
     }

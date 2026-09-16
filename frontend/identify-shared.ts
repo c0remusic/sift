@@ -1,6 +1,6 @@
 // Shared, stateless rendering of Discogs candidate rows — used by both the Revue filing
 // footer (filing.ts) and the Bibliothèque detail panel (library-detail.ts). Pure HTML
-// builders + the "first result + N others" list layout; the stateful apply/changer wiring
+// builders + the open-listbox layout; the stateful apply/changer wiring
 // lives in each caller (it differs: filing edits canonical fields, the library edits a
 // filed track's metadata). Keeps the candidate markup in one place (spec: zero duplication).
 import type { Candidate } from "./ipc";
@@ -15,14 +15,15 @@ function candCoverHtml(c: Candidate): string {
   return '<span class="sift-cand-noart"><i class="ti ti-vinyl" style="font-size:var(--text-xl);color:var(--color-text-tertiary)"></i></span>';
 }
 
-/** One candidate button row (sub-line: label · year · country · format). In an open listbox (Revue,
- *  fork F) it carries role=option + aria-selected via `opt`; the collapsed variant (Bibliothèque)
- *  omits it. */
-function candRowHtml(c: Candidate, idx: number, opt?: { selected: boolean }): string {
+/** One candidate button row (sub-line: label · year · country · format). Toujours rendue DANS une
+ *  listbox depuis que la variante repliée a disparu (voir `renderCandidates`) : la ligne porte donc
+ *  role=option + aria-selected sans condition, et `opt` n'est plus optionnel — le laisser optionnel
+ *  recréerait, dans ce fichier même, l'option sans variateur que ce correctif retire. */
+function candRowHtml(c: Candidate, idx: number, opt: { selected: boolean }): string {
   const sub = [c.label, c.year != null ? String(c.year) : null, c.country, c.format]
     .filter(Boolean)
     .join(" · ");
-  const roleAttr = opt ? ` role="option" aria-selected="${opt.selected}"` : "";
+  const roleAttr = ` role="option" aria-selected="${opt.selected}"`;
   return (
     `<button class="sift-cand" data-cand="${idx}"${roleAttr}>` +
     candCoverHtml(c) +
@@ -56,34 +57,30 @@ export function chosenRowHtml(r: {
   );
 }
 
-/** Render candidates into `host`. Two layouts :
- *  - Revue (fork F, `opts.open`) : une LISTE OUVERTE (listbox) — tous les candidats visibles, le
- *    meilleur (`opts.selectedIdx`, défaut 0) pré-sélectionné (aria-selected). La décision centrale
- *    ne coûte pas un clic d'ouverture, et se navigue au clavier.
- *  - Bibliothèque (défaut) : premier résultat inline, le reste derrière un « N autres résultats ».
+/** Render candidates into `host` : une LISTE OUVERTE (listbox) — tous les candidats visibles, le
+ *  meilleur (indice 0) pré-sélectionné (aria-selected). La décision centrale ne coûte pas un clic
+ *  d'ouverture, et se navigue au clavier (`filing-identify.ts::wireListboxArrows`).
+ *
+ *  DISPOSITION UNIQUE depuis le 2026-09-08 (`ded5c9a`), et c'est ce qui a rendu le paramètre
+ *  `opts` mort : la Bibliothèque, dernier appelant de la variante repliée « premier résultat +
+ *  N autres », est passée elle aussi à la liste ouverte en reprenant la fiche de Revue. Les deux
+ *  appelants passaient dès lors `open: true`, donc la branche repliée était INATTEIGNABLE et le
+ *  doc-comment continuait de l'annoncer comme le rendu de la Bibliothèque. `selectedIdx` ne
+ *  variait pas davantage : la navigation clavier déplace le FOCUS, elle ne re-rend rien.
+ *  Retirée ici avec ses quatre règles `.sift-cand-more*` de `styles.css` — sans elles, la gate
+ *  `npm run lint:orphan-css` serait montée de 16 à 18 : ces quatre règles ne portent que deux
+ *  NOMS de classe, et c'est des noms que la gate compte.
+ *
  *  Empty list → a neutral "no results" message (no warning styling). */
-export function renderCandidates(
-  host: HTMLElement,
-  list: Candidate[],
-  opts?: { open?: boolean; selectedIdx?: number },
-): void {
+export function renderCandidates(host: HTMLElement, list: Candidate[]): void {
   if (list.length === 0) {
     host.innerHTML = '<div class="sift-cands-msg">Rien sur Discogs.</div>';
     return;
   }
-  if (opts?.open) {
-    const sel = opts.selectedIdx ?? 0;
-    host.innerHTML =
-      `<div class="sift-cands-list" role="listbox" aria-label="Éditions Discogs">` +
-      list.map((c, i) => candRowHtml(c, i, { selected: i === sel })).join("") +
-      `</div>`;
-    return;
-  }
-  const [first, ...rest] = list;
-  const moreHtml = rest.length
-    ? `<details class="sift-cand-more"><summary class="sift-cand-more-summary">▸ ${rest.length} autre${rest.length > 1 ? "s" : ""} résultat${rest.length > 1 ? "s" : ""}</summary>${rest.map((c, i) => candRowHtml(c, i + 1)).join("")}</details>`
-    : "";
-  host.innerHTML = candRowHtml(first, 0) + moreHtml;
+  host.innerHTML =
+    `<div class="sift-cands-list" role="listbox" aria-label="Éditions Discogs">` +
+    list.map((c, i) => candRowHtml(c, i, { selected: i === 0 })).join("") +
+    `</div>`;
 }
 
 /** Ce qu'un échec d'identification Discogs dit à l'utilisateur, en un seul endroit.

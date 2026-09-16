@@ -63,22 +63,11 @@ pub fn format_drive(
 ) -> Result<(), String> {
     let b = backend();
     let fresh = b.list().map_err(|e| e.to_string())?;
-    let candidate = RemovableDrive {
-        id: drive_id,
-        label: String::new(),
-        mount: String::new(),
-        size_bytes: 0,
-        free_bytes: 0,
-        current_fs: String::new(),
-        volume_name: String::new(),
-        health: String::new(),
-        has_media: false,
-        identity,
-    };
-    usb_format::verify_identity_unchanged(&candidate, &fresh).map_err(|e| e.to_string())?;
+    usb_format::verify_identity_unchanged(&drive_id, &identity, &fresh)
+        .map_err(|e| e.to_string())?;
     let confirmed = fresh
         .into_iter()
-        .find(|d| d.id == candidate.id)
+        .find(|d| d.id == drive_id)
         .ok_or_else(|| usb_format::UsbFormatError::DriveVanished.to_string())?;
     // An enumerated-but-empty card reader is listable (so the UI can say why it is useless) but
     // never formattable — `diskpart` would fail on it anyway, and failing here says why.

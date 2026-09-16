@@ -260,7 +260,7 @@ async function doIdentify(
   host.innerHTML = '<div class="sift-cands-msg">Recherche…</div>';
   try {
     const candidates = await identify(st.track.id);
-    renderCandidates(host, candidates, { open: true });
+    renderCandidates(host, candidates);
     wireCandidateClicks(host, candidates, edit, st);
   } catch (err) {
     // Même cascade que `filing-identify.ts`, et c'est le problème qu'on retire : elle était

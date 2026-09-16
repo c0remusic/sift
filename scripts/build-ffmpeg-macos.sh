@@ -155,7 +155,16 @@ for enc in libmp3lame pcm_s16be pcm_s16le; do
 done
 
 echo "==> Verification : les decodeurs des formats d'entree"
-for dec in mp3 flac alac aac vorbis pcm_s16le pcm_s16be; do
+# La liste de référence est `scanner.rs::AUDIO_EXTS`, les extensions que Sift met en file : mp3,
+# flac, wav, aif, aiff, m4a, aac, ogg, opus. `opus` a manqué ici jusqu'au 2026-09-16, et le trou
+# était réel : un `.opus` n'est conformant pour aucune cible d'`encode.rs::is_conformant`, donc il
+# part au transcodage et `encode()` passe le chemin source tel quel au sidecar (`.input(src)`).
+# Si la CI sort « decodeur opus absent », c'est le NOM du décodeur qu'il faut relire dans la sortie
+# de `ffmpeg -decoders` (natif `opus` contre externe `libopus`), pas la couverture du format.
+# CE QUE CETTE LISTE NE COUVRE PAS : ce sont des DÉCODEURS, pas des démultiplexeurs — le conteneur
+# (ogg, mp4/m4a) n'est pas vérifié ; et les seuls profils PCM cités sont s16le et s16be, donc un
+# WAV 24 bits, qui passe par `pcm_s24le`, sort de la gate sans être contrôlé.
+for dec in mp3 flac alac aac vorbis opus pcm_s16le pcm_s16be; do
   grep -qE "^ [A-Z.]+ $dec " <<<"$DECODERS" || {
     echo "ERREUR: decodeur $dec absent du binaire construit." >&2
     exit 1

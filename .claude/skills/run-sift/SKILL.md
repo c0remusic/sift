@@ -36,10 +36,15 @@ node .claude/skills/run-sift/driver.mjs status
 node .claude/skills/run-sift/driver.mjs launch
 ```
 
-`launch` picks a free debug port (9333+), starts `tauri dev`, and waits until a CDP target
-**whose title is Sift** answers. It reuses an already-running window instead of starting a
-second one. A cold or interrupted Rust rebuild genuinely takes 10–25 minutes; an
-incremental one is far quicker.
+`launch` picks a free debug port (9333+), starts `tauri dev`, and waits until a CDP target on that
+port passes the driver's own identity test. That test is `isSift()` in `driver.mjs`, and it is NOT
+title-only: it accepts a target whose **title matches `Sift`** OR whose **url is on
+`localhost:5173`**. The url arm is deliberate — a title-only check rejects a window whose title is
+not painted yet, and reads that refusal as "not Sift" (the comment above `siftPageWs` records the
+case). Its limit: any other project's page served on 5173 passes it too, so a green `launch` or
+`status` is not proof of identity — `eval 'document.title'` is. `launch` reuses an already-running
+window instead of starting a second one. A cold or interrupted Rust rebuild genuinely takes 10–25
+minutes; an incremental one is far quicker.
 
 Reach a state where the detail pane is actually painted — this is the prerequisite for
 almost any UI measurement:
@@ -126,9 +131,19 @@ npm run check:security
 
 - **Verify the debug port belongs to Sift.** On this machine ports **9222 and 9223 were
   both held by a different Tauri project** whose CDP answers normally. Measuring it and
-  reporting the result as Sift's is a silent, total failure. `driver.mjs` only accepts a
-  target whose title matches Sift; if you use `cdp.cjs` directly, check
-  `curl http://127.0.0.1:<port>/json/list` first.
+  reporting the result as Sift's is a silent, total failure. Two guards sit on that question and
+  they are NOT the same rule. `driver.mjs` picks and keeps a port with `isSift()`, which accepts a
+  target whose **title matches `Sift` OR whose url is on `localhost:5173`** — the url arm passes a
+  not-yet-titled window, and any other project's page on 5173 along with it. `cdp.cjs` is the
+  strict one: `pageWsUrl()` refuses a page whose title is not Sift at **every** call
+  (`--any-title` to override deliberately), so `eval`, `shot`, `open-track` and `floor` — which all
+  shell out to it — are title-checked. `hover` and `focus` are not: `driver.mjs` resolves the
+  target itself with the loose rule and hands `probe.mjs` a `--ws` url WHEN IT FINDS ONE (with no
+  match, `probe.mjs` discovers the target and does apply the strict title check), and `probe.mjs`
+  skips its own title check whenever it is handed one. That skip is deliberate, and `probe.mjs`
+  has no `--any-title` of its own. So on those two paths the loose rule is the only rule — run
+  `eval 'document.title'` first. Using `cdp.cjs` directly, check
+  `curl http://127.0.0.1:<port>/json/list`.
 - **Never set the debug port in `tauri.conf.json`.** It would ship in distributed builds
   and overrides wry's own arguments. It goes in the environment at launch only:
   `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=9333`.
@@ -236,7 +251,7 @@ npm run check:security
 | You need to read the app's **boot log** | A detached `npm` writes nothing into the inherited descriptor, so `tauri-dev.log` stays at 0 bytes and `driver.mjs launch` cannot show you the boot. Launch it in the foreground (command above) with the output captured — that is the only path where `SMOKE OK`, panics and unhandled rejections are actually readable. |
 | `launch` hangs ~25 min with a FOREIGN project building | Measured 2026-09-09: `buildAlive()` counted any `cargo`/`rustc` on the machine, and shaderlab's build kept the wait alive. Fixed the next day — it now matches only processes whose command line names THIS repo (WMI on Windows). If a wait still looks wrong, check what is actually building before blaming the driver. |
 | A link error `LNK2019 anon.*.llvm.*` in `src-tauri/target`, surviving `cargo clean -p sift` | The incremental cache is corrupt, not the code — and `tauri dev` **ignores `CARGO_TARGET_DIR`**, so it always links there and you cannot sidestep it with an env var. Build elsewhere and launch the binary directly: `bash scripts/cargo-isolated.sh build --no-default-features`, then `driver.mjs launch --exe <isolated>/debug/sift.exe`. It attaches to whatever Vite serves the tree on 5173 — HMR included, no Rust watcher. Ticket #62. |
-| Measurements suddenly describe ANOTHER app | The CDP port changes hands the moment Sift restarts: edit a `.rs`, the app does not come back, and a neighbouring Tauri project takes 9333. Eight measurements labelled « Sift » measured shaderlab on 2026-09-09 before anyone noticed. Both `cdp.cjs` and `probe.mjs` now refuse a target whose title is not Sift (`--any-title` to override deliberately), and `driver.mjs eval` shells out to `cdp.cjs`, so it inherits the guard. **Re-check the title after EVERY Rust edit**, not once per session. Early symptom: an `eval` that returns `{}`. |
+| Measurements suddenly describe ANOTHER app | The CDP port changes hands the moment Sift restarts: edit a `.rs`, the app does not come back, and a neighbouring Tauri project takes 9333. Eight measurements labelled « Sift » measured shaderlab on 2026-09-09 before anyone noticed. `cdp.cjs` refuses a target whose title is not Sift at every call (`--any-title` to override deliberately), and `eval`, `shot`, `open-track` and `floor` shell out to it, so they inherit that guard. `probe.mjs` carries the same check but runs it ONLY when it discovers the target itself — `driver.mjs hover|focus` hands it a `--ws` url resolved by the looser `isSift()` (title **or** `localhost:5173`), which skips it, and `probe.mjs` has no `--any-title`. **Re-check the title after EVERY Rust edit**, not once per session. Early symptom: an `eval` that returns `{}`. |
 | An `eval` returns `error: timeout` and nothing else | `cdp.cjs` closes its socket after **15 s** (`.claude/scripts/cdp.cjs:39`). An `(async …)` IIFE that walks all 8 rail views with a 3 s settle needs 24 s and dies with no partial result. Split into batches of ≤ 4 views. Found 2026-08-05 while measuring painted font sizes. |
 
 ## Known limitation

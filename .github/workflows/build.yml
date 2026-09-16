@@ -16,9 +16,17 @@ permissions:
 
 jobs:
   # Job séparé et indépendant du build des installeurs (pas de `needs:`) : un ratchet de style
-  # qui casse ne doit jamais empêcher la production/upload des binaires — trouvé par verify-gate
-  # (2026-07-24), le job `build` était séquentiel et un échec de lint aurait bloqué tauri build +
-  # l'upload des artefacts sur main.
+  # qui casse ne doit jamais empêcher la production/upload des binaires. Raison d'origine, trouvée
+  # par verify-gate le 2026-07-24 : le job `build` était alors séquentiel, et un échec de lint
+  # aurait bloqué `tauri build` puis l'upload des artefacts — à l'époque à CHAQUE push sur `main`.
+  #
+  # ⚠️ Ce déclencheur n'existe plus depuis le 2026-09-12 (voir le bloc `on:` ci-dessus) : ce
+  # workflow ne part plus qu'à la main. Conséquence à ne pas lire entre les lignes — `lint:tokens`
+  # ne tourne dans AUCUN workflow déclenché par un push ou une PR : `test.yml` ne le lance pas, il
+  # n'y est que cité en commentaire. Le seul filet automatique qui reste est `.claude/verify.sh`,
+  # en fin de tour d'agent, sur la machine du dev. Déplacer ce job vers `test.yml` serait une
+  # décision, pas un nettoyage : relevée par l'audit du 2026-09-16, NON TRANCHÉE (`CLAUDE.md`
+  # § Définition de fini).
   lint-tokens:
     runs-on: ubuntu-latest
     # Sans plafond, un job bloque consomme jusqu'a la limite du fournisseur (6 h).

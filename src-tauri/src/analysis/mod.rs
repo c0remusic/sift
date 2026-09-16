@@ -266,7 +266,6 @@ use phase::PhaseAccumulator;
 use spectrum::SpectrumAccumulator;
 use structure::{SilenceAccumulator, TruncationAccumulator};
 
-const FFT_SIZE: usize = 4096;
 const PEAKS_WINDOW: usize = 512; // ~11.6 ms @ 44.1k
 /// Ceiling on the number of envelope points kept in the report. At PEAKS_WINDOW a 6.5-minute track
 /// produced ~33 500 of them — 21% of report_json — to draw a waveform a few hundred pixels wide.
@@ -383,7 +382,7 @@ pub fn analyze(path: &str, with_spectrogram: bool) -> Result<AnalysisReport, Str
     let mut sil = SilenceAccumulator::new(sr, SILENCE_THRESHOLD);
     let mut trunc = TruncationAccumulator::new(sr);
     let mut pk = PeaksAccumulator::new(PEAKS_WINDOW);
-    let mut spec = SpectrumAccumulator::new(sr, FFT_SIZE, with_spectrogram);
+    let mut spec = SpectrumAccumulator::new(sr, with_spectrogram);
     let mut ph = PhaseAccumulator::new();
 
     // Nombre d'échantillons MONO réellement décodés — la seule façon de savoir combien de son le

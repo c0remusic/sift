@@ -315,7 +315,7 @@ async function doIdentify(
   try {
     candidates = await identify(trackId);
     if (myseq !== openState.openSeq) return; // a newer open started while we awaited — drop this result
-    renderCandidates(host, candidates, { open: true, selectedIdx: 0 });
+    renderCandidates(host, candidates);
     wireCandidateClicks(host, candidates, editor, mid, btn);
     wireListboxArrows(host); // ↑/↓ déplace le focus entre candidats (le gate de queue-panel laisse passer)
     // PAS d'auto-apply (retour Antoine : un match auto appliqué à tort abîmerait le fichier). La
@@ -346,8 +346,7 @@ async function doIdentify(
   }
 }
 
-export function renderEditor(host: HTMLElement, mid: HTMLElement, rail: string): void {
-  void rail;
+export function renderEditor(host: HTMLElement, mid: HTMLElement): void {
   const c = state.canonical;
   if (!c) {
     host.innerHTML = "";

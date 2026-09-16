@@ -1,7 +1,9 @@
 // Shared analysis-report view (Tauri only): verdict, signals, waveform, on-demand
-// spectrogram. Can render inline into a container (Revue #mid pane) or as a modal
-// (debug button on an arbitrary picked file). Queries are scoped to a root element so
-// inline + modal can't clash on ids.
+// spectrogram. Rendu INLINE dans un conteneur, et rien d'autre : chaque appelant fournit ses
+// deux hôtes — le slot de verdict et le slot de Diagnostic —, Revue par `filing.ts` et
+// Bibliothèque par `library-detail.ts`. La variante modale (`openReportModal`) a été retirée le
+// 2026-09-16 (c5f64d1) ; le repli « tout dans le scroll du rapport », lui, servait Bibliothèque
+// jusqu'à son propre slot `.lib-diag` (2026-09-08) et part ici.
 import { analyzePath } from "./ipc";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import WaveSurfer from "wavesurfer.js";
@@ -501,15 +503,13 @@ function playerHeaderHtml(name: string, path: string, opts: PlayerHeaderOptions 
  *  `openReportInto` a peint la boîte — l'ordre est garanti par `openFilingInto`, qui attend le
  *  rapport avant d'appeler `renderFoot`.
  *
- *  Réservé au mode Détail de Revue : seul l'appelant qui fournit un `diagContainer` (filing.ts)
- *  les demande. La modale de debug et Bibliothèque n'ont pas de rangement, et une bande de pied
- *  vide y peindrait une surface pour rien. */
-function playerRowHtml(
-  name: string,
-  path: string,
-  headerOpts: PlayerHeaderOptions = {},
-  filingSlots = false,
-): string {
+ *  Posés pour les DEUX appelants depuis que Bibliothèque a son propre slot de Diagnostic
+ *  (2026-09-08, ded5c9a). Le paramètre qui les conditionnait n'avait plus qu'une valeur depuis
+ *  le retrait d'`openReportModal` (2026-09-16, c5f64d1), seul chemin qui atteignait encore
+ *  cette fonction sans slots. Revue les remplit (`filing.ts::renderFoot`), Bibliothèque les
+ *  laisse vides — et une bande vide ne peint rien, la feuille les masque :
+ *  `.sift-filbox-settings:empty, .sift-filbox-foot:empty { display:none }`. */
+function playerRowHtml(name: string, path: string, headerOpts: PlayerHeaderOptions = {}): string {
   return (
     `<div class="sift-player-row">` +
     playerHeaderHtml(name, path, headerOpts) +
@@ -518,10 +518,8 @@ function playerRowHtml(
     // décision (lecteur simple, retrait tempo/key-lock, slider fin) sont partis avec le markup.
     playerAuditionHtml() +
     `<div class="sift-player-error" hidden></div>` +
-    (filingSlots
-      ? `<div class="sift-filbox-settings" id="filbox-settings"></div>` +
-        `<div class="sift-filbox-foot" id="filbox-foot"></div>`
-      : "")
+    `<div class="sift-filbox-settings" id="filbox-settings"></div>` +
+    `<div class="sift-filbox-foot" id="filbox-foot"></div>`
   );
 }
 
@@ -781,19 +779,6 @@ function spectroAndTagsHtml(r: AnalysisReport): string {
     // hero). Nothing meaningful was left in the old "Tags" box, so it's gone too; codec_error is
     // its own standalone diagnostic, not tied to those three fields.
     (r.codec_error ? `<div class="sift-codec-error">erreur codec : ${esc(r.codec_error)}</div>` : "")
-  );
-}
-
-/** Report HTML minus the verdict conclusion (name + player row + spectrogram/tags). The verdict
- *  is rendered separately, after Identification, by the caller (see `verdictContainer` on
- *  `openReportInto`/`renderReportInto`) — it's the CONCLUSION and must come last, right above
- *  the action rail, matching the maquette. `openReportModal` (no Identification card) appends
- *  `verdictCardHtml` itself, right after this. */
-function reportHtml(r: AnalysisReport, headerOpts: PlayerHeaderOptions = {}): string {
-  const name = headerOpts.title ?? (r.path.split(/[\\/]/).pop() || r.path);
-  return (
-    playerRowHtml(name, r.path, headerOpts) +
-    spectroAndTagsHtml(r)
   );
 }
 
@@ -1216,38 +1201,34 @@ function wireSpectrogram(root: HTMLElement, r: AnalysisReport) {
 }
 
 
-/** Renders the report INLINE into `container` (e.g. the Revue #mid pane). `verdictContainer`,
- *  when given, gets the verdict conclusion card instead of `container` — see `openReportInto`.
- *  `diagContainer`, when given, gets the Diagnostic (spectrogramme + mesures) instead of leaving
- *  it right under the player — see `openReportInto` for why. */
+/** Renders the report INLINE into `container` (e.g. the Revue #mid pane). `verdictContainer`
+ *  reçoit les états transitoires du verdict, `diagContainer` le Diagnostic (spectrogramme +
+ *  mesures) : les deux sont OBLIGATOIRES, et les deux appelants les fournissent — voir
+ *  `openReportInto`. */
 function renderReportInto(
   container: HTMLElement,
   r: AnalysisReport,
-  verdictContainer?: HTMLElement,
+  verdictContainer: HTMLElement,
   headerOpts: PlayerHeaderOptions = {},
-  diagContainer?: HTMLElement,
+  diagContainer: HTMLElement,
 ) {
   const name = headerOpts.title ?? (r.path.split(/[\\/]/).pop() || r.path);
   container.innerHTML =
-    `<div class="sift-report-scroll">` +
-    (diagContainer
-      ? playerRowHtml(name, r.path, headerOpts, true)
-      : reportHtml(r, headerOpts)) +
-    `</div>`;
+    `<div class="sift-report-scroll">` + playerRowHtml(name, r.path, headerOpts) + `</div>`;
   // Même enveloppe `.sift-analysis-body` que le chemin asynchrone d'openReportInto : sans elle, le
   // Diagnostic n'aurait pas la même structure selon qu'on ouvre une piste pour la première fois
   // (analyse) ou qu'on y revient (cache de session) — et la première règle CSS posée sur ce slot
   // ne s'appliquerait qu'à un cas sur deux, en silence.
-  if (diagContainer) diagContainer.innerHTML = `<div class="sift-analysis-body">${spectroAndTagsHtml(r)}</div>`;
+  diagContainer.innerHTML = `<div class="sift-analysis-body">${spectroAndTagsHtml(r)}</div>`;
   fillVerdictLanding(container, r);
   // verdictContainer (the low .sift-fil-verdict slot, after Identification) now only carries the
   // transient "Analyse en cours…"/error states — clear it on the success path.
-  if (verdictContainer) verdictContainer.innerHTML = "";
+  verdictContainer.innerHTML = "";
   mountPlayer(container, r.path, r.peaks, r.duration_sec);
   // Le spectrogramme se câble sur SON hôte : ses nœuds sont partis avec lui quand le Diagnostic
   // vit sous les Métadonnées (wireSpectrogram ne lit que des `.sift-spectro-*`/`.sift-sg-*`,
   // aucune dépendance au lecteur — vérifié à la scission, 2026-08-25).
-  wireSpectrogram(diagContainer ?? container, r);
+  wireSpectrogram(diagContainer, r);
 }
 
 // In-session report cache (path → report). Backend already caches in the DB; this skips even
@@ -1278,9 +1259,9 @@ let openSeq = 0;
 export async function openReportInto(
   container: HTMLElement,
   path: string,
-  verdictContainer?: HTMLElement,
+  verdictContainer: HTMLElement,
   headerOpts: PlayerHeaderOptions = {},
-  diagContainer?: HTMLElement,
+  diagContainer: HTMLElement,
 ): Promise<AnalysisReport | null> {
   destroyPlayer();
   ensureStyles();
@@ -1299,26 +1280,21 @@ export async function openReportInto(
   // recovery via onAnalysisError below), the one place a confirmed-gone row may be dropped.
   const analysisPromise = analyzePath(path, false, true);
 
-  // Render the player shell. Son-first order: player (header+audition) → proof (Preuves). The
-  // verdict conclusion goes LAST, above the action rail — in `verdictContainer` when the caller
-  // supplies one (filing.ts/library-detail.ts, both of which insert Identification between here
-  // and their own verdict slot), else in a `.sift-verdict-stub` kept inside this same scroll
-  // (openReportModal, which has no Identification card of its own). Filled in later (seq-guarded).
-  const verdictHost = () => verdictContainer ?? container.querySelector<HTMLElement>(".sift-verdict-stub");
-  // Le Diagnostic part chez l'appelant quand il fournit `diagContainer` : d'abord SOUS les
-  // Métadonnées (2026-08-25, wireframe § 06 fix 4 : « on identifie plus souvent qu'on n'inspecte »),
-  // puis en ZONE D — l'inspecteur `#sift-aside` — depuis le 2026-09-07 (« ok pour l'inspecteur »,
-  // filing.ts `openFilingInto`). Le corps d'analyse est déjà un slot rempli plus tard — il change
-  // seulement d'hôte, aucun autre chemin ne bouge. Sans `diagContainer` (openReportModal,
-  // library-detail) il reste dans le scroll du rapport, comme avant.
-  const bodyHost = diagContainer ?? container;
+  // Render the player shell. Son-first order: player (header+audition) → proof (Preuves). Le mot
+  // de verdict vient EN DERNIER, au-dessus du rail d'actions, dans le `verdictContainer` de
+  // l'appelant : les deux (filing.ts, library-detail.ts) insèrent l'Identification entre cette
+  // coque et leur propre slot. Rempli plus tard (seq-guarded).
+  // Le Diagnostic part lui aussi chez l'appelant, dans `diagContainer` : d'abord SOUS les
+  // Métadonnées (2026-08-25, wireframe § 06 fix 4 : « on identifie plus souvent qu'on
+  // n'inspecte »), puis en ZONE D — l'inspecteur `#sift-aside` — depuis le 2026-09-07 (« ok pour
+  // l'inspecteur », filing.ts `openFilingInto`) ; Bibliothèque a le sien, `.lib-diag`
+  // (library-detail.ts). Le corps d'analyse reste un slot rempli plus tard, il change seulement
+  // d'hôte. Les deux hôtes sont OBLIGATOIRES : le dernier appelant qui omettait `diagContainer`
+  // était Bibliothèque, jusqu'à ce qu'elle gagne son propre slot `.lib-diag` le 2026-09-08
+  // (ded5c9a).
   container.innerHTML =
-    `<div class="sift-report-scroll">` +
-    playerRowHtml(name, path, headerOpts, !!diagContainer) +
-    (diagContainer ? "" : `<div class="sift-analysis-body" hidden></div>`) +
-    (verdictContainer ? "" : `<div class="sift-verdict-stub"></div>`) +
-    `</div>`;
-  if (diagContainer) diagContainer.innerHTML = `<div class="sift-analysis-body" hidden></div>`;
+    `<div class="sift-report-scroll">` + playerRowHtml(name, path, headerOpts) + `</div>`;
+  diagContainer.innerHTML = `<div class="sift-analysis-body" hidden></div>`;
 
   // Race the analysis against a short timeout. For already-analyzed tracks (DB cache hit)
   // we win the race and can pass peaks to WaveSurfer.create() — which renders the waveform
@@ -1339,53 +1315,48 @@ export async function openReportInto(
     reportCache.set(path, earlyResult);
     // Pass peaks to the constructor — the only path that renders the waveform immediately.
     void mountPlayer(container, path, earlyResult.peaks, earlyResult.duration_sec || undefined);
-    const verdictEl = verdictHost();
-    const bodyEl = bodyHost.querySelector<HTMLElement>(".sift-analysis-body");
-    if (verdictEl) verdictEl.innerHTML = "";
+    const bodyEl = diagContainer.querySelector<HTMLElement>(".sift-analysis-body");
+    verdictContainer.innerHTML = "";
     fillVerdictLanding(container, earlyResult);
     if (bodyEl) {
       bodyEl.innerHTML = spectroAndTagsHtml(earlyResult);
       bodyEl.hidden = false;
-      wireSpectrogram(bodyHost, earlyResult);
+      wireSpectrogram(diagContainer, earlyResult);
     }
     return earlyResult;
   }
 
   // Timeout fired — this is a genuinely fresh track (no DB cache to hit), so the wait is
   // real. Only now does the loader text get shown.
-  const pendingEl = verdictHost();
-  if (pendingEl) {
-    // Squelette STATIQUE (DESIGN §6 : la donnée ne s'anime jamais ; jamais un spinner nu) : une barre
-    // placeholder à la place du verdict, le temps que l'analyse résolve. Pas de .sift-spin ici.
-    pendingEl.innerHTML = `<span class="sift-skel" style="width:6em;height:var(--space-16)"></span>`;
-  }
+  // Squelette STATIQUE (DESIGN §6 : la donnée ne s'anime jamais ; jamais un spinner nu) : une
+  // barre placeholder à la place du verdict, le temps que l'analyse résolve. Pas de .sift-spin.
+  verdictContainer.innerHTML =
+    `<span class="sift-skel" style="width:6em;height:var(--space-16)"></span>`;
   void mountPlayer(container, path);
 
   try {
     const r = await analysisPromise;
     reportCache.set(path, r);
     if (seq !== openSeq) return null;
-    const verdictEl = verdictHost();
-    const bodyEl = bodyHost.querySelector<HTMLElement>(".sift-analysis-body");
-    if (verdictEl) verdictEl.innerHTML = "";
+    const bodyEl = diagContainer.querySelector<HTMLElement>(".sift-analysis-body");
+    verdictContainer.innerHTML = "";
     fillVerdictLanding(container, r);
     if (bodyEl) {
       bodyEl.innerHTML = spectroAndTagsHtml(r);
       bodyEl.hidden = false;
-      wireSpectrogram(bodyHost, r);
+      wireSpectrogram(diagContainer, r);
     }
     return r;
   } catch (e) {
     console.error("analyze_path failed", e);
     if (seq !== openSeq) return null;
     headerOpts.onAnalysisError?.(String(e));
-    const verdictEl = verdictHost();
-    if (verdictEl && headerOpts.showAnalysisFailure !== false) {
+    if (headerOpts.showAnalysisFailure !== false) {
       // decode.rs's open_format already humanizes the common failure (file moved/deleted) into
       // French prose meant for display (see analysis/decode.rs) — the generic "Réessaie" this
       // replaced (audit UX/accessibilité 2026-07-24) silently dropped that message. Show the
       // backend text directly, same pattern as filing-identify.ts/library-detail.ts's error cards.
-      verdictEl.innerHTML = `<div class="sift-analysis-fail">${esc(String(e))}</div>`;
+      verdictContainer.innerHTML = `<div class="sift-analysis-fail">${esc(String(e))}</div>`;
     }
     return null;
   }

@@ -1,11 +1,13 @@
-//! Pure-Rust reader **and** Tier 1 write engine for Rekordbox's SQLCipher-encrypted
+//! Pure-Rust reader **and** write engine (M8 Tier 1/2/3) for Rekordbox's SQLCipher-encrypted
 //! `master.db` (see `docs/superpowers/specs/2026-07-03-rekordbox-masterdb-sqlcipher-reader-design.md`
 //! for the reader, `docs/superpowers/specs/2026-07-06-m8-tier1-write-path-rust-design-v2.md`
-//! for the write engine). Reads (`read_rekordbox_masterdb`) are always safe; the write
-//! path (`repair_track_path`) is only ever reached through an explicit, user-confirmed
-//! IPC call (`ipc_library::rekordbox_masterdb_apply_repairs`) and owns its own
-//! guard/backup/verify/rollback safety chain — nothing here writes `master.db` as a side
-//! effect of a read.
+//! for the write engine). Reads (`read_rekordbox_masterdb`) are always safe; every `master.db`
+//! write goes through `with_masterdb_write`, which owns the guard/backup/verify/rollback safety
+//! chain and has exactly three callers — `repair_track_path` (Tier 1), `dedup_playlist_group`
+//! (Tier 2) and `sync_track_metadata` (Tier 3). (`sync_track_artwork`, Tier 3 pochette, writes
+//! only the cached artwork files and never `master.db` — it owns its own backup/rollback.)
+//! Each is reached only through an explicit IPC command (see # Status): nothing here writes
+//! `master.db` as a side effect of a read.
 //!
 //! # Approach
 //!
@@ -42,13 +44,30 @@
 //!
 //! # Status
 //!
-//! Wired to IPC: `read_rekordbox_masterdb` (via `actions::detect_masterdb_repair_if_linked`,
-//! read-only), `repair_track_path` (Tier 1, via `ipc_library::rekordbox_masterdb_apply_repairs`),
-//! `dedup_playlist_group` (Tier 2). `sync_track_metadata` (Tier 3, metadata
-//! find-or-create) is proven on fixture + a real `master.db` copy
-//! (`docs/superpowers/plans/2026-07-09-m8-tier3-metadata-sync-rust.md`) but
-//! **not yet wired to IPC or a filing-time hook** — same "engine first"
-//! precedent as Tier 1/2, follow-up plan pending.
+//! Les trois tiers sont branchés sur l'IPC, chacun derrière une commande Tauri enregistrée dans
+//! le `tauri::generate_handler!` de `lib.rs` :
+//!
+//! - lecture — `read_rekordbox_masterdb`, appelée par `actions::read_masterdb_index` (détection
+//!   read-only au moment du rangement) et par `rekordbox_repairs` ;
+//! - Tier 1 — `repair_track_path`, via `ipc_library::rekordbox_masterdb_apply_repairs` →
+//!   `rekordbox_repairs::apply_repairs_inner` ;
+//! - Tier 2 — `dedup_playlist_group`, via `ipc_library::rekordbox_masterdb_dedup_playlist_group`
+//!   → `rekordbox_repairs::dedup_playlist_group_inner` ;
+//! - Tier 3 — `sync_track_metadata`, via `ipc_library::rekordbox_masterdb_apply_metadata_syncs`
+//!   → `rekordbox_repairs::apply_metadata_syncs_inner` → `apply_one_metadata_sync`. Sa DÉTECTION
+//!   tourne bien à l'heure du rangement, en lecture seule : `filing::commit_file` appelle
+//!   `actions::detect_masterdb_metadata_sync_with_index` ;
+//! - Tier 3 pochette — `sync_track_artwork`, via
+//!   `ipc_library::rekordbox_masterdb_apply_artwork_syncs` →
+//!   `rekordbox_repairs::rekordbox_masterdb_apply_artwork_syncs_inner` → `apply_one_artwork_sync`.
+//!   Elle n'écrit PAS `master.db` : seulement les 3 fichiers de pochette que Rekordbox garde en
+//!   cache.
+//!
+//! ⚠️ Cette section a dit de Tier 3 « not yet wired to IPC or a filing-time hook » jusqu'au
+//! 2026-09-16, alors que les deux l'étaient. Trois `#[allow(dead_code)]` datent de cette
+//! époque-là — sur `dedup_playlist_group`, `sync_track_artwork` et `sync_track_metadata` — et les
+//! trois fonctions ont désormais un appelant de production dans `rekordbox_repairs` : les
+//! attributs sont probablement inutiles, mais c'est clippy qui tranche, pas ce paragraphe.
 //!
 //! # Real-copy tests run one at a time
 //!
@@ -758,10 +777,12 @@ pub(crate) fn encrypt_masterdb_for_test(plaintext: &[u8]) -> Vec<u8> {
 
 /// Reads a Rekordbox `master.db` file and returns its path→TrackID index.
 ///
-/// Read-only: no write path exists here (and none is planned — see M8,
-/// frozen). The decrypted database is only ever held in memory
-/// (`Connection::deserialize_read_exact`, read-only flag set); nothing is
-/// written to disk.
+/// Read-only : cette fonction n'écrit rien. La base déchiffrée ne vit qu'en mémoire
+/// (`Connection::deserialize_read_exact`, drapeau read-only posé) ; rien n'est écrit sur le
+/// disque. Le MODULE, lui, porte bien un chemin d'écriture — `with_masterdb_write` et ses trois
+/// appelants (`repair_track_path`, `dedup_playlist_group`, `sync_track_metadata`) — mais aucune
+/// lecture ne l'emprunte. Ce doc-comment a dit « no write path exists here (and none is
+/// planned — see M8, frozen) » jusqu'au 2026-09-16.
 ///
 /// # Errors
 ///

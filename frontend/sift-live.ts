@@ -8,8 +8,6 @@ import {
   onAnalysisChanged,
   analysisProgress,
   trashTrack,
-  restoreTrack,
-  requeueTrack,
   purgeTrash,
   openUrl,
   exportRekordboxXml,
@@ -21,7 +19,7 @@ import { installUndoShortcut, installFilingKeys, registerAddSourceAction } from 
 import { refreshBinsForBatch } from "./filing-bins";
 import { confirmAction } from "./confirm-modal";
 // Views/chrome extracted from this god-module (audit P-3) — kept stateless, wired here.
-import { renderEcartes } from "./ecartes-view";
+import { renderEcartes, runEcarteAction } from "./ecartes-view";
 import { installDragDrop, injectLeanStyle, injectTitlebar, installScrollAutohide, installNavKeyboard, installRailToggle } from "./chrome";
 import { initTheme } from "./theme";
 import { installRailSources, renderRailSources, noteScanFailure, pickAndAddFolder } from "./rail-sources";
@@ -306,27 +304,11 @@ export function installLiveWiring() {
         // ce site tient toujours et vit maintenant dans l'aide partagée : rien n'est peint AVANT que
         // l'écriture ait réussi, et un refus du presse-papier se dit.
         copyToClipboard(ec.dataset.q || "", "Recherche copiée");
-      } else if (act === "trash") {
-        void trashTrack(id)
-          .then(() => renderEcartes())
-          .catch((err) => {
-            console.error("trash failed", err);
-            toast("Échec : impossible d'envoyer à la corbeille");
-          });
-      } else if (act === "restore") {
-        void restoreTrack(id)
-          .then(() => renderEcartes())
-          .catch((err) => {
-            console.error("restore failed", err);
-            toast("Échec : restauration impossible");
-          });
-      } else if (act === "requeue") {
-        void requeueTrack(id)
-          .then(() => renderEcartes())
-          .catch((err) => {
-            console.error("requeue failed", err);
-            toast("Échec : remise en file impossible");
-          });
+      } else if (act === "trash" || act === "restore" || act === "requeue") {
+        // Les trois actions vivent dans `ecartes-view.ts` (`runEcarteAction`) : IPC, repeinture
+        // de la destination et `catch` au même endroit, appelé aussi par le menu contextuel de
+        // l'écran.
+        runEcarteAction(act, id);
       } else if (act === "purge") {
         void confirmAction(
           "Purger définitivement la corbeille ? Cette action est irréversible.",
