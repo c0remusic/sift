@@ -112,7 +112,24 @@ fn rail_from_file_type(file_type: FileType) -> Rail {
         FileType::Flac | FileType::Wav | FileType::Aiff | FileType::Ape | FileType::WavPack => {
             Rail::Lossless
         }
-        FileType::Mpeg | FileType::Vorbis | FileType::Opus | FileType::Speex => Rail::Lossy,
+        // `Aac` (ADTS), `Mp4` (M4A/M4B) et `Mpc` (Musepack) manquaient jusqu'au 2026-09-17, et
+        // tombaient donc dans `Rail::Unknown`. Ce n'est pas un détail de classement : c'est le
+        // trou du garde anti-upscale. `filing.rs::plan_file` refuse un rangement quand
+        // l'EXTENSION dit lossless et que le CONTENU dit lossy — un AAC renommé `.flac` rendait
+        // `Unknown`, la condition était fausse, et Sift convertissait le fichier en AIFF. Soit
+        // exactement le faux lossless que ce garde existe pour empêcher, fabriqué par l'app.
+        //
+        // Un `.m4a` honnête n'était PAS concerné : son extension le déclare lossy, le garde est
+        // sauté exprès (voir le commentaire de `plan_file`), et `target_for(Lossy)` vise le mp3.
+        // Le trou ne s'ouvrait que sur le déguisement, c'est-à-dire sur le cas que Sift existe
+        // pour attraper.
+        FileType::Mpeg
+        | FileType::Vorbis
+        | FileType::Opus
+        | FileType::Speex
+        | FileType::Aac
+        | FileType::Mp4
+        | FileType::Mpc => Rail::Lossy,
         _ => Rail::Unknown,
     }
 }
@@ -211,6 +228,62 @@ pub fn read(path: &str) -> TagInfo {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Un AAC déguisé en `.flac` doit être vu LOSSY par son contenu.
+    ///
+    /// C'EST LE GARDE ANTI-UPSCALE QUI EN DÉPEND, pas un classement cosmétique.
+    /// `filing.rs::plan_file` refuse un rangement quand l'EXTENSION dit lossless et que le
+    /// CONTENU dit lossy — c'est ce qui empêche Sift de « convertir » un faux lossless en AIFF et
+    /// de fabriquer lui-même le vrai-faux qu'il existe pour détecter.
+    ///
+    /// Jusqu'au 2026-09-17, `rail_from_file_type` ne listait ni `Aac`, ni `Mp4`, ni `Mpc` : les
+    /// trois tombaient dans `Rail::Unknown`, la condition du garde était fausse, et le fichier
+    /// passait. Le fichier CONNAISSAIT pourtant ces variantes — `tag_type_readable_on_cdj` les
+    /// nomme à quinze lignes d'ici. Seule la table des rails les oubliait.
+    ///
+    /// La fixture est un VRAI MP4/AAC portant l'extension `.flac` (`make-fixtures.mjs`,
+    /// `-f mp4` forçant le conteneur malgré le nom). Pas une simulation du sniffing : le chemin
+    /// complet, lofty compris.
+    #[test]
+    fn un_aac_deguise_en_flac_est_vu_lossy_par_le_contenu() {
+        let p = concat!(env!("CARGO_MANIFEST_DIR"), "/fixtures/aac_disguised.flac");
+        if !std::path::Path::new(p).exists() {
+            eprintln!("skip: no fixture (node scripts/make-fixtures.mjs)");
+            return;
+        }
+
+        // Le couple qui fait le piège : l'extension promet du lossless…
+        assert_eq!(
+            rail_from_ext("flac"),
+            Rail::Lossless,
+            "la fixture doit bien porter une extension LOSSLESS, sinon elle ne teste rien"
+        );
+        // …et le contenu doit démentir.
+        assert_eq!(
+            rail_from_content(p),
+            Rail::Lossy,
+            "un AAC renomme .flac doit etre vu lossy : sinon `plan_file` le convertit en AIFF et \
+             Sift fabrique le faux lossless qu'il est cense detecter"
+        );
+    }
+
+    /// Les trois variantes lossy que la table des rails a ignorées jusqu'au 2026-09-17.
+    ///
+    /// Séparé du test de bout en bout : celui-ci ne demande aucune fixture, donc il tient même
+    /// sur un checkout frais où `src-tauri/fixtures/` est vide (il est gitignoré).
+    #[test]
+    fn aac_mp4_et_musepack_sont_lossy() {
+        for ft in [FileType::Aac, FileType::Mp4, FileType::Mpc] {
+            assert_eq!(
+                rail_from_file_type(ft),
+                Rail::Lossy,
+                "{ft:?} est un format avec perte : le classer Unknown ouvre le garde anti-upscale"
+            );
+        }
+        // Contrôle : le lossless reste lossless, la table n'a pas été élargie au hasard.
+        assert_eq!(rail_from_file_type(FileType::Flac), Rail::Lossless);
+        assert_eq!(rail_from_file_type(FileType::Aiff), Rail::Lossless);
+    }
 
     #[test]
     fn rail_from_ext_classifies_known_formats() {

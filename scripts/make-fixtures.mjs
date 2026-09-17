@@ -33,4 +33,14 @@ run(["-y",
 // 6) dual-mono fake stereo: mono tone duplicated to 2 ch
 run(["-y", "-f", "lavfi", "-i", "aevalsrc=0.3*sin(2*PI*1000*t):d=3:s=44100", "-ac", "2", join(OUT, "dual_mono.wav")]);
 
+// AAC-dans-MP4 portant une extension LOSSLESS : le déguisement que le garde anti-upscale de
+// `filing.rs::plan_file` doit attraper. `-f mp4` force le conteneur malgré le nom `.flac`, donc
+// le fichier est un vrai MP4/AAC que lofty sniffe en `FileType::Mp4` — pas un flac.
+// Sert `tags::tests::un_aac_deguise_en_flac_est_vu_lossy_par_le_contenu`, qui garde le trou
+// mesuré le 2026-09-17 : `Aac`, `Mp4` et `Mpc` tombaient dans `Rail::Unknown`, la condition du
+// garde était fausse, et Sift convertissait le fichier en AIFF — fabriquant le faux lossless
+// qu'il est censé détecter.
+run(["-y", "-i", join(OUT, "real_lossless.flac"), "-c:a", "aac", "-b:a", "192k", "-f", "mp4",
+  join(OUT, "aac_disguised.flac")]);
+
 console.log("fixtures generated in", OUT);
