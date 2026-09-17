@@ -61,7 +61,8 @@ pub(crate) fn verdict_str(v: Verdict) -> &'static str {
 /// `'trash'` n'y est pas : une piste en corbeille est en train de partir.
 const STATUSES_TO_ANALYSE: &str = "('pending','filed','resourcing')";
 
-/// La clause « pas de verdict courant ». Paramètre `?1` = `VERDICT_CACHE_VERSION`.
+/// La clause « pas de verdict courant NI de rapport courant ». Paramètres : `?1` =
+/// `VERDICT_CACHE_VERSION`, `?2` = `REPORT_CACHE_VERSION`.
 ///
 /// `typeof(report_json)='null'` rather than `report_json IS NULL`: identical result, but `IS NULL`
 /// forces SQLite to load an ~800 KB value per row just to find out it is absent (see queue.rs
@@ -80,8 +81,25 @@ const STATUSES_TO_ANALYSE: &str = "('pending','filed','resourcing')";
 /// redeviendrait éligible à chaque passage, échouerait à chaque fois, et `analysis_attempts`
 /// grimperait tout seul jusqu'au seuil terminal. C'est le piège que la sentinelle `''` existe
 /// pour éviter.
+/// Quatrième clause depuis le 2026-09-17 : **un RAPPORT présent mais périmé** vaut aussi
+/// « à re-analyser ». Sans elle, deux critères se contredisaient en silence.
+///
+/// MESURE QUI L'A OUVERTE. Sur la base de production, 1 384 pistes sur 3 397 — 41 % — portaient
+/// `verdict_ver = 4` (courant) et `report_cache_ver = 13` (périmé). Le pool les voyait FAITES,
+/// puisqu'il ne regardait que `verdict_ver` ; `analysis::cached_report` refusait leur cache,
+/// puisqu'il exige `report_cache_ver == REPORT_CACHE_VERSION` en égalité stricte. Résultat :
+/// chaque ouverture de ces pistes relançait une analyse complète de 15 à 40 s, et le pool ne
+/// réparait jamais rien. `select_needing_analysis` rendait 0 alors que 41 % de la bibliothèque
+/// était inutilisable au cache.
+///
+/// `verdict IS NOT NULL` est repris tel quel de la troisième clause, et pour exactement la même
+/// raison : `persist_failure` laisse `verdict NULL, verdict_ver NULL, report_json=''`. Une clause
+/// nue sur `report_cache_ver` ferait boucler un fichier illisible à chaque passage jusqu'au seuil
+/// terminal d'`analysis_attempts` — le piège que la sentinelle `''` existe pour éviter. Les deux
+/// périmages partagent donc le même garde et le même `OR` interne.
 const NEEDS_ANALYSIS: &str = "(analyzed_at IS NULL OR typeof(report_json)='null' \
-                              OR (verdict IS NOT NULL AND verdict_ver IS NOT ?1))";
+                              OR (verdict IS NOT NULL \
+                                  AND (verdict_ver IS NOT ?1 OR report_cache_ver IS NOT ?2)))";
 
 /// Ids of tracks that still need analysis — never analysed, analysed before the report cache
 /// existed (report_json NULL), or carrying a verdict from another engine version — so every track
@@ -97,7 +115,10 @@ pub fn select_needing_analysis(conn: &Connection) -> rusqlite::Result<Vec<i64>> 
          ORDER BY (status='pending') DESC, id"
     ))?;
     let rows = stmt.query_map(
-        rusqlite::params![analysis::verdict::VERDICT_CACHE_VERSION],
+        rusqlite::params![
+            analysis::verdict::VERDICT_CACHE_VERSION,
+            analysis::REPORT_CACHE_VERSION
+        ],
         |r| r.get::<_, i64>(0),
     )?;
     rows.collect()
@@ -112,7 +133,10 @@ pub fn count_filed_needing_analysis(conn: &Connection) -> rusqlite::Result<i64> 
             "SELECT count(*) FROM tracks \
              WHERE status IN {STATUSES_TO_ANALYSE} AND status != 'pending' AND {NEEDS_ANALYSIS}"
         ),
-        rusqlite::params![analysis::verdict::VERDICT_CACHE_VERSION],
+        rusqlite::params![
+            analysis::verdict::VERDICT_CACHE_VERSION,
+            analysis::REPORT_CACHE_VERSION
+        ],
         |r| r.get(0),
     )
 }
@@ -144,7 +168,10 @@ pub fn progress(conn: &Connection) -> rusqlite::Result<(i64, i64)> {
             "SELECT count(*) FROM tracks \
              WHERE status IN {STATUSES_TO_ANALYSE} AND NOT {NEEDS_ANALYSIS}"
         ),
-        rusqlite::params![crate::analysis::verdict::VERDICT_CACHE_VERSION],
+        rusqlite::params![
+            crate::analysis::verdict::VERDICT_CACHE_VERSION,
+            crate::analysis::REPORT_CACHE_VERSION
+        ],
         |r| r.get(0),
     )?;
     Ok((done, total))
@@ -936,11 +963,12 @@ pub(crate) mod tests {
         let cassee = add_pending(&conn, "cassee.mp3");
         let corbeille = add_pending(&conn, "corbeille.flac");
         let resourcing = add_pending(&conn, "resourcing.flac");
+        // Voir la note de `stampe` du test precedent : `report_cache_ver` va avec `verdict_ver`.
         let stampe = |id: i64, status: &str, ver: i64| {
             conn.execute(
                 "UPDATE tracks SET status=?2, analyzed_at=datetime('now'), report_json='{}', \
-                 verdict='ok', verdict_ver=?3 WHERE id=?1",
-                rusqlite::params![id, status, ver],
+                 verdict='ok', verdict_ver=?3, report_cache_ver=?4 WHERE id=?1",
+                rusqlite::params![id, status, ver, analysis::REPORT_CACHE_VERSION],
             )
             .unwrap();
         };
@@ -966,6 +994,49 @@ pub(crate) mod tests {
         assert_eq!(count_filed_needing_analysis(&conn).unwrap(), 2);
     }
 
+    /// Un RAPPORT périmé vaut besoin d'analyse, même quand le verdict est courant.
+    ///
+    /// LE DÉFAUT QU'IL GARDE, mesuré sur la base de production le 2026-09-17 : **1 384 pistes sur
+    /// 3 397** portaient `verdict_ver = 4` et `report_cache_ver = 13`. Deux critères qui ne se
+    /// parlaient pas — `select_needing_analysis` ne regardait que `verdict_ver`, donc le pool les
+    /// tenait pour faites et ne les reprenait jamais ; `analysis::cached_report` exige
+    /// `report_cache_ver == REPORT_CACHE_VERSION` en égalité STRICTE, donc refusait leur cache à
+    /// chaque ouverture. Résultat : 41 % de la bibliothèque relançait une analyse complète de 15 à
+    /// 40 s à chaque ouverture de piste, pour toujours, pendant que le pool annonçait 0 à faire.
+    ///
+    /// Le symptôme était invisible aux deux bouts : le pool n'avait rien à signaler, et l'ouverture
+    /// « marchait », juste lentement. Seul le croisement des deux colonnes le montre.
+    #[test]
+    fn un_rapport_perime_vaut_besoin_d_analyse_meme_avec_un_verdict_courant() {
+        let conn = db();
+        let tout_courant = add_pending(&conn, "tout-courant.flac");
+        let rapport_perime = add_pending(&conn, "rapport-perime.flac");
+
+        let stampe = |id: i64, rapport_ver: i64| {
+            conn.execute(
+                "UPDATE tracks SET analyzed_at=datetime('now'), report_json='{}', \
+                 verdict='ok', verdict_ver=?2, report_cache_ver=?3 WHERE id=?1",
+                rusqlite::params![id, analysis::verdict::VERDICT_CACHE_VERSION, rapport_ver],
+            )
+            .unwrap();
+        };
+        stampe(tout_courant, analysis::REPORT_CACHE_VERSION);
+        // Mutation portée par la LIGNE, pas par la `const` : c'est l'état qu'aurait cette ligne
+        // le lendemain d'un bump de `REPORT_CACHE_VERSION`, exactement comme les 1 384 mesurées.
+        stampe(rapport_perime, analysis::REPORT_CACHE_VERSION - 1);
+
+        let selected = select_needing_analysis(&conn).unwrap();
+        assert!(
+            selected.contains(&rapport_perime),
+            "une piste au rapport perime doit etre reprise : sinon le pool la tient pour faite \
+             alors que `cached_report` refuse son cache, et chaque ouverture la re-analyse"
+        );
+        assert!(
+            !selected.contains(&tout_courant),
+            "une piste courante sur les DEUX versions n'a aucune raison d'etre recalculee"
+        );
+    }
+
     /// La lecture qui répare le verdict : un verdict PRÉSENT dont la version a été distancée
     /// redevient éligible à l'analyse (issue #39) — et un échec de décodage, lui, ne l'est
     /// TOUJOURS pas.
@@ -989,11 +1060,15 @@ pub(crate) mod tests {
         let casse = add_pending(&conn, "casse.mp3");
 
         // Trois pistes analysées avec succès : rapport en cache, verdict écrit.
+        // `report_cache_ver` est posee ICI parce que `persist_report` l'ecrit dans le MEME
+        // UPDATE que `verdict_ver` : une piste reellement analysee porte les deux. La fixture ne
+        // posait que la seconde jusqu'au 2026-09-17, et decrivait donc un etat que la production
+        // ne produit jamais — c'est ce qui a masque le desaccord des deux criteres.
         let stampe = |id: i64, ver: Option<i64>| {
             conn.execute(
                 "UPDATE tracks SET analyzed_at=datetime('now'), report_json='{}', \
-                 verdict='ok', verdict_ver=?2 WHERE id=?1",
-                rusqlite::params![id, ver],
+                 verdict='ok', verdict_ver=?2, report_cache_ver=?3 WHERE id=?1",
+                rusqlite::params![id, ver, analysis::REPORT_CACHE_VERSION],
             )
             .unwrap();
         };

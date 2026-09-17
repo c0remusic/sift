@@ -295,9 +295,12 @@ mod tests {
     fn reset_analysis_only_touches_pending_rows() {
         let conn = db();
         conn.execute(
-            "INSERT INTO tracks (path, filename, status, verdict, verdict_ver, report_json, analyzed_at)
-             VALUES ('a.mp3','a.mp3','pending','ok',?1,'{}','2026-01-01')",
-            rusqlite::params![VER],
+            // `report_cache_ver` autant que `verdict_ver` : `select_needing_analysis` reprend
+            // une piste dont l'UNE des deux versions est périmée, et `persist_report` les écrit
+            // ensemble. Sans elle, cette ligne décrit une piste que la production ne crée jamais.
+            "INSERT INTO tracks (path, filename, status, verdict, verdict_ver, report_cache_ver, report_json, analyzed_at)
+             VALUES ('a.mp3','a.mp3','pending','ok',?1,?2,'{}','2026-01-01')",
+            rusqlite::params![VER, crate::analysis::REPORT_CACHE_VERSION],
         )
         .unwrap();
         let pending_id = conn.last_insert_rowid();
@@ -354,9 +357,13 @@ mod tests {
     fn reset_analysis_makes_the_track_selectable_again() {
         let conn = db();
         conn.execute(
-            "INSERT INTO tracks (path, filename, status, verdict, verdict_ver, report_json, analyzed_at)
-             VALUES ('a.mp3','a.mp3','pending','ok',?1,'{}','2026-01-01')",
-            rusqlite::params![VER],
+            // Les DEUX versions, comme `persist_report` les écrit : ce test affirme d'abord qu'une
+            // piste analysée N'EST PAS reprise, ce qui n'a de sens que si elle est courante sur
+            // les deux critères. Avec `report_cache_ver` NULL elle est périmée à raison, et
+            // l'assertion tombait — pour la bonne raison, sur une fixture irréaliste.
+            "INSERT INTO tracks (path, filename, status, verdict, verdict_ver, report_cache_ver, report_json, analyzed_at)
+             VALUES ('a.mp3','a.mp3','pending','ok',?1,?2,'{}','2026-01-01')",
+            rusqlite::params![VER, crate::analysis::REPORT_CACHE_VERSION],
         )
         .unwrap();
         let id = conn.last_insert_rowid();
