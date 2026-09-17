@@ -421,6 +421,139 @@ fn pop(inner: &Arc<(Mutex<Queue>, Condvar)>) -> Option<i64> {
     }
 }
 
+/// Les analyses en cours, par CHEMIN. Un seul décodage+DSP par fichier à la fois, quel que soit
+/// le producteur.
+///
+/// POURQUOI PAR CHEMIN ET PAS PAR ID. Le `HashSet<i64> queued` de la file ne garde que le POOL :
+/// il empêche d'enfiler deux fois le même id, et ne voit rien de ce que fait `ipc::analyze_path`.
+/// Or trois producteurs appellent `analysis::analyze` sans se connaître — le pool
+/// (`worker_loop`), l'ouverture d'une piste (`report-view.ts`) et le prefetch de la suivante
+/// (`report-view.ts::prefetchTrack`). Mesuré dans le journal de production le 2026-09-17 :
+/// `01. Duplex 100 - Fashcam` analysée TROIS fois en six secondes (15037, 15060 et 13615 ms),
+/// avec des résultats identiques au bit près. Le pool dépensait ses huit fils à refaire les mêmes
+/// pistes : compteur de rattrapage figé à 2008/3397 sur deux minutes pendant que le journal
+/// défilait.
+///
+/// ATTENDRE, PAS REFUSER. `ipc_filing::reserve_filing` refuse par `ALREADY_FILING` parce qu'un
+/// rangement double est une faute. Ici le second appelant veut la MÊME donnée : le faire échouer
+/// casserait l'ouverture de piste. Il attend donc que le premier finisse, puis relit le cache,
+/// que le premier vient d'écrire. Le cache est le canal de résultat — rien à plomber de plus.
+///
+/// Le délai de garde n'est pas décoratif : si le fil propriétaire meurt sans libérer (panic hors
+/// `catch_unwind`, processus en cours d'arrêt), l'attente doit rendre la main et recalculer
+/// plutôt que bloquer l'interface pour toujours. Un faux négatif coûte une analyse ; un blocage
+/// définitif coûte l'app.
+fn analyses_en_cours() -> &'static (Mutex<HashSet<String>>, Condvar) {
+    static REG: std::sync::OnceLock<(Mutex<HashSet<String>>, Condvar)> = std::sync::OnceLock::new();
+    REG.get_or_init(|| (Mutex::new(HashSet::new()), Condvar::new()))
+}
+
+/// Plafond d'attente d'un appelant derrière une analyse déjà en cours. Au-delà, il recalcule.
+///
+/// 90 s : l'analyse la plus lente observée en production sur cette bibliothèque est de 109 s à
+/// huit fils sous contention, et de ~16 s à froid machine libre. Le plafond n'est donc PAS
+/// dimensionné pour couvrir le pire cas — il est là pour qu'un propriétaire disparu ne fige rien,
+/// et le dépassement se trace.
+const ATTENTE_ANALYSE_MAX: std::time::Duration = std::time::Duration::from_secs(90);
+
+/// Jeton d'analyse d'un chemin. **Libéré à la destruction**, jamais à la main.
+///
+/// RAII et pas une paire prendre/rendre : `ipc::analyze_path` a cinq chemins de sortie anticipée
+/// (piste inconnue, cache servi, grille seule recalculée, `?` sur le verrou, erreur d'analyse).
+/// Une libération explicite en aurait manqué au moins un, et un jeton fuité fige toute ouverture
+/// ultérieure de cette piste pendant `ATTENTE_ANALYSE_MAX`. Le compilateur garde l'invariant à ma
+/// place.
+///
+/// ⚠️ Corollaire à respecter chez l'appelant : le jeton doit vivre JUSQU'APRÈS l'écriture en
+/// cache. Celui qui attend relit le cache dès son réveil ; libéré trop tôt, il le trouve vide et
+/// recalcule — le doublon qu'on vient de supprimer.
+pub(crate) struct Jeton {
+    /// `Some` quand CE fil possède le jeton et doit le rendre. `None` quand il a seulement
+    /// attendu le propriétaire, ou que le registre était empoisonné.
+    path: Option<String>,
+    attendu: bool,
+}
+
+impl Jeton {
+    /// `true` quand un autre fil venait d'analyser ce chemin. L'appelant doit alors RELIRE LE
+    /// CACHE avant de recalculer : le résultat y est déjà.
+    pub(crate) fn a_attendu(&self) -> bool {
+        self.attendu
+    }
+}
+
+impl Drop for Jeton {
+    fn drop(&mut self) {
+        let Some(path) = self.path.take() else {
+            return;
+        };
+        let (m, cv) = analyses_en_cours();
+        match m.lock() {
+            Ok(mut g) => {
+                g.remove(&path);
+            }
+            Err(e) => log::error!("Jeton::drop({path}): registre empoisonne: {e}"),
+        }
+        cv.notify_all();
+    }
+}
+
+/// Prend le jeton d'analyse de `path`, ou attend que son propriétaire actuel ait fini.
+pub(crate) fn jeton_analyse(path: &str) -> Jeton {
+    let possede = |attendu: bool| Jeton {
+        path: Some(path.to_string()),
+        attendu,
+    };
+    let (m, cv) = analyses_en_cours();
+    let mut g = match m.lock() {
+        Ok(g) => g,
+        // Pas de fail-fast : le registre est une OPTIMISATION. Empoisonné, on analyse comme
+        // avant — en double au pire, ce qui est exactement l'état d'avant ce garde. Le jeton
+        // rendu ne possède rien, sa destruction ne touchera pas un registre déjà cassé.
+        Err(e) => {
+            log::error!("jeton_analyse({path}): registre empoisonne, analyse sans garde: {e}");
+            return Jeton {
+                path: None,
+                attendu: false,
+            };
+        }
+    };
+    if !g.contains(path) {
+        g.insert(path.to_string());
+        return possede(false);
+    }
+    let debut = std::time::Instant::now();
+    while g.contains(path) {
+        let reste = ATTENTE_ANALYSE_MAX.saturating_sub(debut.elapsed());
+        if reste.is_zero() {
+            log::warn!(
+                "jeton_analyse({path}): proprietaire toujours en cours apres {} s, on recalcule",
+                ATTENTE_ANALYSE_MAX.as_secs()
+            );
+            // On NE prend PAS le jeton : son propriétaire le tient toujours et le rendra. Se
+            // l'attribuer ici le lui ferait retirer sous les pieds.
+            return Jeton {
+                path: None,
+                attendu: false,
+            };
+        }
+        g = match cv.wait_timeout(g, reste) {
+            Ok((g, _)) => g,
+            Err(e) => {
+                log::error!("jeton_analyse({path}): attente sur registre empoisonne: {e}");
+                return Jeton {
+                    path: None,
+                    attendu: false,
+                };
+            }
+        };
+    }
+    // Le propriétaire a fini ET écrit son cache. On prend le jeton à notre tour — on pourrait
+    // encore avoir à recalculer si le cache ne suffit pas — mais en signalant l'attente.
+    g.insert(path.to_string());
+    possede(true)
+}
+
 /// Marks an id done: drops it from `queued`, so a later content-change can re-enqueue it.
 fn finish(inner: &Arc<(Mutex<Queue>, Condvar)>, id: i64) {
     let (m, _) = &**inner;
@@ -512,6 +645,9 @@ fn worker_loop(app: AppHandle, inner: Arc<(Mutex<Queue>, Condvar)>) {
             //
             // analyze() decodes arbitrary user-supplied audio files (Symphonia/FFT); catch a
             // panic here so one corrupt file doesn't silently kill this pool thread forever.
+            // Le jeton couvre l'analyse ET l'ecriture : celui qui attend relit le cache des
+            // son reveil, donc il doit etre rendu apres `persist_result`, pas avant.
+            let jeton = jeton_analyse(&path);
             let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
                 analysis::analyze(&path, false)
             }))
@@ -525,6 +661,7 @@ fn worker_loop(app: AppHandle, inner: Arc<(Mutex<Queue>, Condvar)>) {
                 Err(format!("analysis panicked: {msg}"))
             });
             persist_result(&app, id, &path, result);
+            drop(jeton);
         }
         finish(&inner, id);
         app.emit("analysis:changed", ()).ok();
@@ -536,6 +673,69 @@ fn worker_loop(app: AppHandle, inner: Arc<(Mutex<Queue>, Condvar)>) {
 // `AnalysisReport` à la main coûte 25 champs, et deux copies divergeraient au premier champ ajouté.
 pub(crate) mod tests {
     use super::*;
+    /// Un seul fil analyse un chemin donné ; le second attend et se voit dire de relire le cache.
+    ///
+    /// C'est l'invariant qui supprime les doublons mesurés le 2026-09-17 en production — la même
+    /// piste analysée trois fois en six secondes par trois producteurs qui s'ignoraient (pool,
+    /// ouverture de piste, prefetch). Sans lui, huit fils de pool se dépensent à refaire le même
+    /// travail et le rattrapage n'avance plus.
+    ///
+    /// Le test couvre les trois propriétés dont dépend cette suppression :
+    ///   1. le premier demandeur n'attend pas,
+    ///   2. le second ATTEND que le premier ait rendu son jeton, et le sait (`a_attendu`),
+    ///   3. deux chemins DIFFÉRENTS ne se bloquent pas — sinon le garde sérialiserait tout le
+    ///      pool sur un seul fil, ce qui serait pire que le défaut qu'il corrige.
+    #[test]
+    fn un_seul_fil_analyse_un_chemin_a_la_fois() {
+        use std::sync::mpsc;
+
+        let chemin = "C:/jeton/piste-a.flac";
+
+        // 1. Personne ne l'analyse : pris tout de suite, sans attente.
+        let premier = jeton_analyse(chemin);
+        assert!(
+            !premier.a_attendu(),
+            "le premier demandeur ne doit rien attendre"
+        );
+
+        // 3. Un AUTRE chemin passe sans etre bloque par le premier. Mesure avant de lancer le
+        //    second demandeur du meme chemin, pour que l'assertion ne depende d'aucun ordre.
+        let autre = jeton_analyse("C:/jeton/piste-b.flac");
+        assert!(
+            !autre.a_attendu(),
+            "un chemin different ne doit jamais attendre : le garde est PAR FICHIER, pas global"
+        );
+        drop(autre);
+
+        // 2. Le second demandeur du MEME chemin doit rester bloque tant que le premier tient.
+        let (tx, rx) = mpsc::channel();
+        let fil = std::thread::spawn(move || {
+            let second = jeton_analyse(chemin);
+            tx.send(second.a_attendu()).ok();
+        });
+
+        // Il ne doit RIEN envoyer tant que le jeton est tenu. 300 ms : assez long pour qu'un
+        // garde absent laisse passer le second (il rendrait immédiatement), assez court pour ne
+        // pas allonger la suite.
+        assert!(
+            rx.recv_timeout(std::time::Duration::from_millis(300))
+                .is_err(),
+            "le second demandeur a obtenu le jeton alors que le premier le tenait : les deux \
+             analyseraient le meme fichier en parallele, ce que ce garde existe pour empecher"
+        );
+
+        drop(premier);
+
+        let a_attendu = rx
+            .recv_timeout(std::time::Duration::from_secs(5))
+            .expect("le second doit etre libere des que le premier rend son jeton");
+        assert!(
+            a_attendu,
+            "le second doit SAVOIR qu'il a attendu : c'est ce qui lui dit de relire le cache \
+             plutot que de relancer une analyse complete"
+        );
+        fil.join().expect("le fil de mesure ne doit pas paniquer");
+    }
 
     /// La priorité abaissée prend RÉELLEMENT, et seulement sur le fil qui appelle.
     ///

@@ -341,7 +341,12 @@ fn analyze_path_bloquant(
     allow_forget: bool,
 ) -> Result<crate::analysis::AnalysisReport, String> {
     let conn = app.state::<Mutex<Connection>>();
-    {
+
+    // Extrait en fermeture pour pouvoir être REJOUÉ : quand un autre fil analysait déjà ce
+    // chemin, on attend puis on relit le cache qu'il vient d'écrire, au lieu de refaire son
+    // travail. Porte aussi la garde de sécurité (piste connue), volontairement rejouée : c'est
+    // une requête indexée, et la dupliquer coûte moins qu'un chemin où elle pourrait être sautée.
+    let servir_du_cache = || -> Result<Option<crate::analysis::AnalysisReport>, String> {
         let conn = db::lock_conn(&conn)?;
         // ALWAYS require a known track first (security: not an arbitrary-file decode oracle),
         // for every path that can reach analyse() — incl. spectrogram requests and tracks
@@ -383,7 +388,7 @@ fn analyze_path_bloquant(
             // row below — instead of hard-failing analyze_path for every pre-existing track.
             if let Ok(report) = serde_json::from_str::<crate::analysis::AnalysisReport>(&json) {
                 if !with_spectrogram || !report.spectrogram.mag_db.is_empty() {
-                    return Ok(report);
+                    return Ok(Some(report));
                 }
                 // Le rapport est bon, seule la grille manque — et c'est le cas de TOUTES les
                 // lignes en cache. Recalculer la grille seule plutôt que relancer `analyze` :
@@ -398,7 +403,7 @@ fn analyze_path_bloquant(
                     Ok(grille) => {
                         let mut report = report;
                         report.spectrogram = grille;
-                        return Ok(report);
+                        return Ok(Some(report));
                     }
                     Err(e) => log::warn!(
                         "spectrogram_only a echoue sur {path} ({e}) : repli sur l'analyse complete"
@@ -406,7 +411,28 @@ fn analyze_path_bloquant(
                 }
             }
         }
+
+        Ok(None)
+    };
+
+    if let Some(report) = servir_du_cache()? {
+        return Ok(report);
     }
+
+    // Un seul décodage+DSP par fichier, quel que soit le producteur — pool, ouverture de piste,
+    // prefetch de la suivante. Mesuré le 2026-09-17 avant ce garde : la même piste analysée
+    // TROIS fois en six secondes, résultats identiques au bit près, pendant que le compteur de
+    // rattrapage restait figé. Le jeton se libère à sa destruction, donc APRÈS `heal_cache` en
+    // bas de fonction : celui qui attend relit le cache dès son réveil.
+    let jeton = crate::worker::jeton_analyse(&path);
+    if jeton.a_attendu() {
+        if let Some(report) = servir_du_cache()? {
+            return Ok(report);
+        }
+        // Le cache ne suffit toujours pas — l'autre a échoué, ou il ne demandait pas la grille
+        // qu'on veut. On analyse, en tenant le jeton pour que le suivant nous attende à son tour.
+    }
+
     let report = match crate::analysis::analyze(&path, with_spectrogram) {
         Ok(r) => r,
         Err(e) => {
