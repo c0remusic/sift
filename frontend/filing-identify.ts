@@ -431,7 +431,13 @@ export function renderEditor(host: HTMLElement, mid: HTMLElement): void {
     // Discrepancy banner — sits JUST BELOW Apply. Hidden by default via inline display:none; the LONE
     // visibility mechanism is refreshDiscrepancy toggling style.display (no `hidden`+display conflict).
     // Look lives in .sift-tag-warn (styles.css). Shown only when the display diverges from the file.
-    `<div class="sift-tag-warn" role="status" aria-live="polite" style="display:none"><i class="ti ti-alert-triangle sift-icon-inline-md sift-icon-flex-none"></i><span>Artiste et Titre pas encore gravés dans le fichier (seulement identifiés ci-dessus) — un CDJ ne peut pas les lire tant que ce n'est pas fait. <strong>Convertir</strong> ou <strong>Appliquer les tags</strong> pour corriger.</span></div>` +
+    // ⚠️ Ce message a nommé « Appliquer les tags » jusqu'au 2026-09-17 — un bouton SUPPRIMÉ le
+    // 2026-08-25 (retour Antoine : les tags se gravent quand on finit d'éditer un champ ou qu'on
+    // choisit un match, voir `doApplyTags`). Il donnait donc une instruction impossible à suivre.
+    // Règle appliquée : `docs/design-system/content.md` — « un état doit dire ce que l'utilisateur
+    // peut faire MAINTENANT ». Les deux gestes nommés existent : choisir un match déclenche
+    // `onIdentityApplied`, et Convertir est le libellé de l'action principale (content.md § Actions).
+    `<div class="sift-tag-warn" role="status" aria-live="polite" style="display:none"><i class="ti ti-alert-triangle sift-icon-inline-md sift-icon-flex-none"></i><span>Artiste et Titre pas encore gravés dans le fichier (seulement identifiés ci-dessus) — un CDJ ne peut pas les lire tant que ce n'est pas fait. <strong>Choisir un match</strong> ci-dessus, ou <strong>Convertir</strong>, pour les graver.</span></div>` +
     `</div>`; // ferme .sift-meta-body
 
   // Métadonnées ne se replie plus (spec revue.md § Zone C) : rien à fermer quand Diagnostic s'ouvre,
