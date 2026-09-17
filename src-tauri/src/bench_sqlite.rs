@@ -220,6 +220,100 @@ fn bench_sqlite_lock_wait_under_analysis_load() {
 }
 
 /// (4bis) Ce que coûte UNE analyse, sur de vrais fichiers. Aucun chemin n'est écrit en dur : le
+/// Distribution de la PENTE SPECTRALE sur de vraies pistes — la calibration de sa plage de
+/// référence.
+///
+/// POURQUOI PAR CE BANC ET PAS PAR UN SCRIPT. La règle du dépôt : un seuil se mesure par le code
+/// qui l'applique. Une première mesure, faite en Python le 2026-09-17, moyennait des MAGNITUDES
+/// quand `SpectrumAccumulator` accumule des PUISSANCES — les deux chiffres ne sont pas
+/// comparables, et s'en servir comme plage aurait posé une référence que la production ne peut
+/// pas reproduire. Ce banc appelle `analysis::analyze`, donc exactement ce que Revue affichera.
+///
+/// Ce qu'il rend : la médiane, les quartiles et les extrêmes de `tilt_db_per_oct` sur
+/// l'échantillon. La plage à écrire dans l'interface se lit là, jamais de mémoire.
+///
+/// ⚠️ L'échantillon est un DOSSIER, pas la bibliothèque : `SIFT_BENCH_TRACKS_DIR`, trié par nom,
+/// tronqué. Une plage tirée d'un seul genre ou d'une seule décennie ne vaut que pour eux — le
+/// dire en citant le chiffre, pas après coup.
+#[test]
+#[ignore]
+fn bench_distribution_de_la_pente_spectrale() {
+    let Ok(dir) = std::env::var("SIFT_BENCH_TRACKS_DIR") else {
+        println!("\n=== pente spectrale : IGNORÉ ===");
+        println!(
+            "  définir SIFT_BENCH_TRACKS_DIR sur un dossier contenant de vrais fichiers audio"
+        );
+        return;
+    };
+    const EXTS: [&str; 5] = ["mp3", "flac", "wav", "aif", "aiff"];
+    let max_files: usize = std::env::var("SIFT_BENCH_MAX")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(40);
+
+    let mut files: Vec<std::path::PathBuf> = std::fs::read_dir(&dir)
+        .expect("lecture du dossier")
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| {
+            p.extension()
+                .and_then(|e| e.to_str())
+                .map(|e| EXTS.contains(&e.to_ascii_lowercase().as_str()))
+                .unwrap_or(false)
+        })
+        .collect();
+    files.sort();
+    files.truncate(max_files);
+
+    println!(
+        "\n=== distribution de la pente spectrale ({} fichiers) ===",
+        files.len()
+    );
+    let mut pentes: Vec<(f32, String)> = Vec::new();
+    for f in &files {
+        let p = f.to_string_lossy().to_string();
+        let nom = f
+            .file_name()
+            .and_then(|n| n.to_str())
+            .unwrap_or("?")
+            .to_string();
+        match crate::analysis::analyze(&p, false) {
+            Ok(r) => match r.tilt_db_per_oct {
+                Some(v) => {
+                    println!("  {v:>7.2} dB/oct   {}", &nom[..nom.len().min(52)]);
+                    pentes.push((v, nom));
+                }
+                None => println!(
+                    "  {:>7}   {} (bande absente)",
+                    "--",
+                    &nom[..nom.len().min(52)]
+                ),
+            },
+            Err(e) => println!("  échec sur {nom} : {e}"),
+        }
+    }
+
+    if pentes.len() < 4 {
+        println!("\n  moins de 4 mesures : pas de distribution exploitable.");
+        return;
+    }
+    pentes.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(std::cmp::Ordering::Equal));
+    let q = |f: f64| pentes[((pentes.len() - 1) as f64 * f).round() as usize].0;
+    println!("\n  n={}", pentes.len());
+    println!("  min    {:>7.2}   {}", pentes[0].0, pentes[0].1);
+    println!("  q1     {:>7.2}", q(0.25));
+    println!("  médiane{:>7.2}", q(0.50));
+    println!("  q3     {:>7.2}", q(0.75));
+    println!(
+        "  max    {:>7.2}   {}",
+        pentes[pentes.len() - 1].0,
+        pentes[pentes.len() - 1].1
+    );
+    println!("\n  LES 5 PLUS SOURDS (pente la plus négative) :");
+    for (v, n) in pentes.iter().take(5) {
+        println!("    {v:>7.2}   {}", &n[..n.len().min(56)]);
+    }
+}
+
 /// Ce que coûterait un chemin GRILLE-SEULE, comparé à l'analyse complète.
 ///
 /// POURQUOI CE BANC. `analyze_path(path, with_spectrogram = true)` — l'ouverture du collapse

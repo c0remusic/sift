@@ -128,6 +128,35 @@ pub struct AnalysisReport {
     /// sur de l'ambient. Voir `spectrum::HF_FLATNESS_REL_LO`.
     #[serde(default)]
     pub hf_flatness_top_db: Option<f32>,
+    /// Pente spectrale en dB par octave, 1 kHz → 7 kHz (bandes 500-2000 et 5000-10000 Hz).
+    ///
+    /// Négative sur toute musique ; c'est son ampleur qui parle. `None` si une bande manque.
+    ///
+    /// ⚠️ **NON AFFICHÉE, et ce n'est pas un oubli.** La calibration du 2026-09-17 a échoué, au
+    /// sens où elle a rendu un résultat clair et négatif : cette mesure NE SÉPARE PAS un bon
+    /// fichier d'un mauvais.
+    ///
+    /// Protocole et chiffres — `bench_sqlite::bench_distribution_de_la_pente_spectrale` :
+    ///
+    /// | population | n | min | q1 | médiane | q3 | max |
+    /// |---|---|---|---|---|---|---|
+    /// | achats Beatport (champ `encoded_by`) | 44 | -6,03 | -4,17 | -3,49 | -2,56 | -0,35 |
+    /// | bibliothèque, dossier `complete` | 45 | -6,89 | -4,70 | -3,82 | -2,83 | -1,55 |
+    ///
+    /// Les deux distributions se recouvrent presque entièrement, et AUCUN amas ne se forme à une
+    /// borne. C'est ce qui disqualifie une plage de référence : celle de `hf_flatness`
+    /// (`report-figures.ts`, HF_REF_LO/HI) n'est utilisable que parce que sa distribution est
+    /// bimodale, avec un vide de 1,1 dB et trois fichiers convergeant sur la borne basse.
+    ///
+    /// Le cas qui tranche : `Cherry-Bomb - Elastic (Original Mix).aiff`, ACHAT Beatport, mesure
+    /// **-6,03** — plus sourd que le fichier qui avait motivé tout ce travail (-5,69, jugé
+    /// « muffled » à l'oreille). Afficher une échelle aurait accusé un fichier qu'un achat bat.
+    ///
+    /// La pente mesure donc un CHOIX DE MASTERING, pas un défaut. Elle reste calculée et exposée
+    /// dans le rapport — elle sert le banc, et elle permettra de comparer deux versions d'un même
+    /// titre. Ne pas la remonter dans l'interface sans une nouvelle calibration qui montrerait,
+    /// elle, une séparation.
+    pub tilt_db_per_oct: Option<f32>,
     /// Durée RÉELLEMENT décodée, en secondes — à comparer à `duration_sec`, qui vient de l'en-tête.
     ///
     /// Les deux étaient jusqu'ici une seule valeur, celle DÉCLARÉE, et personne ne vérifiait
@@ -606,6 +635,7 @@ pub fn analyze(path: &str, with_spectrogram: bool) -> Result<AnalysisReport, Str
         truncated,
         hf_flatness_db: spec_res.hf_flatness_db,
         hf_flatness_top_db: spec_res.hf_flatness_top_db,
+        tilt_db_per_oct: spec_res.tilt_db_per_oct,
         decoded_duration_sec: decoded_mono_samples as f32 / sr as f32,
         quant_likelihood,
         silence_head_ms,
@@ -926,6 +956,7 @@ mod tests {
             truncated: false,
             hf_flatness_db: None,
             hf_flatness_top_db: None,
+            tilt_db_per_oct: None,
             decoded_duration_sec: 0.0,
             quant_likelihood: None,
             silence_head_ms: 0,
@@ -960,6 +991,7 @@ mod tests {
             truncated,
             hf_flatness_db,
             hf_flatness_top_db,
+            tilt_db_per_oct,
             decoded_duration_sec,
             quant_likelihood,
             silence_head_ms,
@@ -994,6 +1026,7 @@ mod tests {
             truncated,
             hf_flatness_db,
             hf_flatness_top_db,
+            tilt_db_per_oct,
             decoded_duration_sec,
             quant_likelihood,
             silence_head_ms,
@@ -1038,6 +1071,7 @@ mod tests {
             truncated: false,
             hf_flatness_db: None,
             hf_flatness_top_db: None,
+            tilt_db_per_oct: None,
             decoded_duration_sec: 0.0,
             quant_likelihood: None,
             silence_head_ms: 0,

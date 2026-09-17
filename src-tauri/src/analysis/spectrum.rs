@@ -73,6 +73,26 @@ pub(crate) const MAX_COLS: usize = 1200;
 const HF_FLATNESS_LO_HZ: f32 = 16000.0;
 const HF_FLATNESS_HI_HZ: f32 = 20000.0;
 
+/// Les deux bandes de la PENTE spectrale, et pourquoi celles-ci.
+///
+/// La pente répond à une question que rien d'autre dans le rapport ne pose : « ce morceau
+/// sonne-t-il sourd ? » — distincte de « est-ce un faux lossless ? », à laquelle tout le reste
+/// répond. Mesuré le 2026-09-17 : un fichier authentiquement lossless (verdict VRAI correct,
+/// plancher plat jusqu'à Nyquist) pouvait être nettement plus terne que ses voisins sans qu'aucun
+/// champ ne le dise.
+///
+/// Bande basse 500-2000 Hz, bande haute 5000-10000 Hz. Elles encadrent la zone qui porte la
+/// présence et la brillance — cymbales, attaques, « air » d'un mix. On reste SOUS 10 kHz
+/// délibérément : au-dessus, le contenu se confond avec le plancher de bruit et avec les
+/// questions d'authenticité que `hf_flatness` traite déjà.
+///
+/// Écart entre les centres géométriques : log2(√(5000·10000) / √(500·2000)) = log2(7071/1000).
+const TILT_LO_HZ: f32 = 500.0;
+const TILT_LO_HI_HZ: f32 = 2000.0;
+const TILT_HI_LO_HZ: f32 = 5000.0;
+const TILT_HI_HZ: f32 = 10000.0;
+const TILT_OCTAVES: f32 = 2.8219;
+
 /// SECONDE bande de platitude, exprimée en fraction du Nyquist et non en Hz — et les deux sont
 /// nécessaires, chacune étant aveugle là où l'autre voit.
 ///
@@ -130,6 +150,10 @@ fn shared_fft() -> Arc<dyn Fft<f32>> {
 /// Result of the spectral pass.
 pub struct SpectrumResult {
     pub cutoff_hz: f32,
+    /// Pente spectrale en dB par octave entre les bandes [`TILT_LO_HZ`] et [`TILT_HI_HZ`].
+    /// Négative sur toute musique — c'est son AMPLEUR qui parle. `None` quand une des deux bandes
+    /// n'existe pas à ce taux d'échantillonnage.
+    pub tilt_db_per_oct: Option<f32>,
     /// Platitude spectrale de la bande 16-20 kHz, médiane sur les trames, en dB. `None` quand la
     /// bande n'existe pas à ce taux d'échantillonnage. Voir [`HF_FLATNESS_LO_HZ`].
     pub hf_flatness_db: Option<f32>,
@@ -314,6 +338,33 @@ impl SpectrumAccumulator {
 
     /// Médiane des platitudes par trame. `None` si aucune trame n'a pu être mesurée — bande
     /// absente à ce taux d'échantillonnage, ou fichier trop court.
+    /// Pente spectrale, calculée sur le LTAS entier — pas par trame.
+    ///
+    /// Par trame n'aurait aucun sens ici : le timbre d'un morceau est une propriété de sa durée,
+    /// pas d'une fenêtre de 4096 échantillons. C'est l'inverse de `hf_flatness`, qui doit rester
+    /// par trame pour attraper un aigu intermittent (voir `record_hf_flatness`).
+    ///
+    /// `ltas` accumule des magnitudes AU CARRÉ, donc de la puissance : le rapport se prend en
+    /// `10·log10`, pas `20`. Une moyenne de puissance par bin — pas une moyenne de magnitudes —
+    /// ce qui rend les deux bandes comparables malgré leurs largeurs différentes.
+    fn tilt_db_per_oct(&self) -> Option<f32> {
+        let hz_per_bin = self.sr as f32 / self.fft_size as f32;
+        let moyenne = |lo_hz: f32, hi_hz: f32| -> Option<f64> {
+            let lo = (lo_hz / hz_per_bin).ceil() as usize;
+            let hi = (hi_hz / hz_per_bin).floor() as usize;
+            if hi <= lo || hi > self.bins {
+                return None;
+            }
+            let somme: f64 = self.ltas[lo..hi].iter().sum();
+            let m = somme / (hi - lo) as f64;
+            // Une bande VIDE (silence numérique) rendrait -inf et empoisonnerait la pente.
+            (m > 0.0).then_some(m)
+        };
+        let bas = moyenne(TILT_LO_HZ, TILT_LO_HI_HZ)?;
+        let haut = moyenne(TILT_HI_LO_HZ, TILT_HI_HZ)?;
+        Some((10.0 * (haut / bas).log10()) as f32 / TILT_OCTAVES)
+    }
+
     fn hf_flatness_db(&self) -> Option<f32> {
         median_of(&self.hf_flatness_per_frame)
     }
@@ -446,8 +497,10 @@ impl SpectrumAccumulator {
         let cutoff_hz = self.detect_cutoff();
         let hf_flatness_db = self.hf_flatness_db();
         let hf_flatness_top_db = self.hf_flatness_top_db();
+        let tilt_db_per_oct = self.tilt_db_per_oct();
         SpectrumResult {
             cutoff_hz,
+            tilt_db_per_oct,
             hf_flatness_db,
             hf_flatness_top_db,
             spectrogram: self.build_spectrogram(),
@@ -517,6 +570,85 @@ mod tests {
     use std::f32::consts::PI;
 
     const SR: u32 = 44100;
+
+    /// La pente : nulle sur un spectre plat, exacte sur deux tons, négative sans aigu.
+    ///
+    /// TROIS CAS, et le troisième a été ajouté après une mesure par mutation qui a montré les
+    /// deux premiers insuffisants : remplacer `10*log10` par `20*log10`, ou retirer la division
+    /// par l'octave, les laissait AU VERT. Une inégalité (« franchement négative ») garde le
+    /// signe et l'affectation des bandes, jamais l'ÉCHELLE. Il faut une valeur attendue.
+    ///
+    /// Le cas des deux tons la donne exactement. Chaque ton dépose sa puissance dans quelques
+    /// bins ; la moyenne d'une bande vaut donc « puissance du ton / nombre de bins de la bande ».
+    /// À amplitudes ÉGALES, le rapport des bandes se réduit au rapport de leurs largeurs en bins,
+    /// et la pente attendue est `10·log10(n_bas / n_haut) / TILT_OCTAVES` — calculée ici depuis
+    /// les constantes, jamais recopiée en dur, pour qu'un déplacement de bande fasse bouger
+    /// l'attendu avec le code plutôt que casser le test pour une mauvaise raison.
+    ///
+    /// Le bruit blanc reste utile malgré son insensibilité à l'échelle : il garde la propriété
+    /// « densité plate ⇒ 0 », que les deux autres cas ne peuvent pas vérifier.
+    ///
+    /// Générateur congruentiel inline plutôt que le crate `rand` : le test doit être
+    /// reproductible bit pour bit, et `rand` ne garantit pas sa suite entre versions.
+    #[test]
+    fn la_pente_est_nulle_a_plat_exacte_sur_deux_tons_et_negative_sans_aigu() {
+        fn accumule(mut echantillon: impl FnMut(usize) -> f32, n: usize) -> Option<f32> {
+            let mut acc = SpectrumAccumulator::new(SR, false);
+            let bloc: Vec<f32> = (0..n).map(&mut echantillon).collect();
+            acc.push(&bloc);
+            acc.finish().tilt_db_per_oct
+        }
+        fn ton(hz: f32, ampl: f32, i: usize) -> f32 {
+            (i as f32 * hz * 2.0 * PI / SR as f32).sin() * ampl
+        }
+        const N: usize = SR as usize * 4;
+
+        // 1. Densité plate ⇒ pente nulle, quelle que soit la largeur des bandes.
+        let mut etat: u32 = 0x1234_5678;
+        let blanc = accumule(
+            |_| {
+                // LCG de Numerical Recipes — suite figée, indépendante de toute dépendance.
+                etat = etat.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                (etat >> 8) as f32 / (1 << 23) as f32 - 1.0
+            },
+            N,
+        )
+        .expect("le bruit blanc remplit les deux bandes");
+        assert!(
+            blanc.abs() < 0.5,
+            "bruit blanc : densité plate, pente attendue ~0, mesurée {blanc:.2} dB/oct"
+        );
+
+        // 2. Deux tons d'égale amplitude, un par bande : l'attendu est exact et scale-sensible.
+        let hz_par_bin = SR as f32 / FFT_SIZE as f32;
+        let bins =
+            |lo: f32, hi: f32| (hi / hz_par_bin).floor() as i32 - (lo / hz_par_bin).ceil() as i32;
+        let n_bas = bins(TILT_LO_HZ, TILT_LO_HI_HZ) as f32;
+        let n_haut = bins(TILT_HI_LO_HZ, TILT_HI_HZ) as f32;
+        let attendu = 10.0 * (n_bas / n_haut).log10() / TILT_OCTAVES;
+
+        // 1 kHz et 7071 Hz : les centres géométriques des deux bandes, donc loin de leurs bords.
+        let deux_tons =
+            accumule(|i| ton(1000.0, 0.4, i) + ton(7071.0, 0.4, i), N).expect("deux tons");
+        assert!(
+            (deux_tons - attendu).abs() < 0.25,
+            "deux tons d'égale amplitude : attendu {attendu:.2} dB/oct (largeurs {n_bas} vs \
+             {n_haut} bins), mesuré {deux_tons:.2}"
+        );
+
+        // 3. Signal sans aigu. 1 kHz et pas 400 : une première version prenait 400 Hz, SOUS
+        //    `TILT_LO_HZ` (500), les DEUX bandes ne voyaient que de la fuite spectrale et le
+        //    rapport tombait à -3,69 dB/oct — le test échouait pour la bonne raison.
+        let sourd = accumule(|i| ton(1000.0, 0.5, i), N).expect("le sinus remplit la bande basse");
+        assert!(
+            sourd < -10.0,
+            "un signal sans aigu doit rendre une pente franchement négative, mesurée {sourd:.2}"
+        );
+        assert!(
+            sourd < blanc,
+            "le signal sans aigu doit être PLUS négatif que le bruit blanc ({sourd:.2} vs {blanc:.2})"
+        );
+    }
 
     /// Sonde de diagnostic — imprime le LTAS lissé d'un fichier RÉEL et ce que `detect_cutoff`
     /// en tire. Ne teste rien : elle existe pour établir un mécanisme au lieu de le déduire du

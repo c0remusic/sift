@@ -193,6 +193,10 @@ export interface AnalysisReport {
    *  17 %, union 68 %. Opus 0/10 → 6/10. Sa plage de référence est très large (−23,8 à −2,5) parce
    *  que le haut du spectre d'un master ambient est légitimement clairsemé. */
   hf_flatness_top_db: number | null;
+  /** Pente spectrale en dB/octave entre 500-2000 Hz et 5000-10000 Hz. Négative sur toute
+   *  musique — c'est son ampleur qui parle. `null` si une des deux bandes manque au taux
+   *  d'échantillonnage. Miroir de `AnalysisReport::tilt_db_per_oct` (`analysis/mod.rs`). */
+  tilt_db_per_oct: number | null;
   /** Durée RÉELLEMENT décodée, à comparer à `duration_sec` qui vient de l'en-tête.
    *
    *  Les deux étaient une seule valeur — la déclarée — et rien ne vérifiait qu'elle correspondait

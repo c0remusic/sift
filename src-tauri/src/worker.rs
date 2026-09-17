@@ -888,6 +888,7 @@ pub(crate) mod tests {
             duration_sec: 123.0,
             hf_flatness_db: Some(-3.0),
             hf_flatness_top_db: Some(-3.0),
+            tilt_db_per_oct: None,
             decoded_duration_sec: 123.0,
             quant_likelihood: None,
             declared_format: "flac".into(),
