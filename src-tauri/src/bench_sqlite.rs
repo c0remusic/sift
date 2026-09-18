@@ -547,3 +547,217 @@ fn bench_analysis_cost_on_real_tracks() {
         );
     }
 }
+
+/// OÙ PART LE TEMPS d'une analyse : décodage, accumulateurs, bancs.
+///
+/// POURQUOI ce banc existe. Deux chiffres du 2026-09-18 ne se rejoignent pas. Une analyse en
+/// release prend 18 s sur un fichier de 1648 s (90× le temps réel), ce qui projetterait
+/// ~1,8 fichier/s à 8 fils ; le débit mesuré pendant le rattrapage était de 0,339 f/s. Les
+/// conditions diffèrent — application vivante, priorité de fil abaissée, écritures SQLite,
+/// spectrogramme — donc l'écart n'est PAS une anomalie prouvée. C'est une question, et ce
+/// banc la pose à l'endroit le moins cher : dans l'analyse elle-même, avant d'accuser la
+/// plomberie.
+///
+/// LE DÉCOUPAGE NE RÉIMPLÉMENTE RIEN, et c'est la condition pour qu'il dise quelque chose :
+/// `T_decode` appelle le vrai `decode::decode_pcm` avec un rappel qui ne fait que compter,
+/// `T_total` appelle le vrai `analyze`, et les durées par banc sont LUES dans le journal que
+/// `Sondage::journaliser` émet déjà en production. « Reste » est une soustraction, et il est
+/// annoncé comme telle : accumulateurs, verdict, sérialisation, et toute erreur des deux
+/// autres mesures.
+///
+/// ⚠️ `T_decode` tourne AVANT `T_total` exprès : il paie le cache de page, et `T_total` le
+/// trouve chaud. L'inverse attribuerait la lecture disque au décodage seul.
+///
+/// `SIFT_BENCH_TRACKS_DIR` = dossier de vrais fichiers, `SIFT_BENCH_MAX` = combien (8 par
+/// défaut). Sans le dossier, le banc s'annonce et sort.
+#[test]
+#[ignore]
+fn bench_ou_part_le_temps() {
+    let Ok(dir) = std::env::var("SIFT_BENCH_TRACKS_DIR") else {
+        println!("\n=== où part le temps : IGNORÉ ===");
+        println!("  définir SIFT_BENCH_TRACKS_DIR sur un dossier de vrais fichiers audio");
+        return;
+    };
+    let max_files: usize = std::env::var("SIFT_BENCH_MAX")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(8);
+
+    static JOURNAL: Mutex<Vec<String>> = Mutex::new(Vec::new());
+    struct Collecteur;
+    impl log::Log for Collecteur {
+        fn enabled(&self, _: &log::Metadata<'_>) -> bool {
+            true
+        }
+        fn log(&self, record: &log::Record<'_>) {
+            if let Ok(mut v) = JOURNAL.lock() {
+                v.push(record.args().to_string());
+            }
+        }
+        fn flush(&self) {}
+    }
+    static COLLECTEUR: Collecteur = Collecteur;
+    // Un logger déjà posé par un autre test rendrait `Err` : le banc reste utile (total et
+    // décodage), il perdra seulement le détail par banc, et le dit plus bas.
+    let journal_ok = log::set_logger(&COLLECTEUR).is_ok();
+    log::set_max_level(log::LevelFilter::Info);
+
+    const EXTS: [&str; 6] = ["mp3", "flac", "wav", "aif", "aiff", "m4a"];
+    let mut files: Vec<std::path::PathBuf> = std::fs::read_dir(&dir)
+        .expect("lecture du dossier")
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| {
+            p.extension()
+                .and_then(|e| e.to_str())
+                .map(|e| EXTS.contains(&e.to_ascii_lowercase().as_str()))
+                .unwrap_or(false)
+        })
+        .collect();
+    files.sort();
+    files.truncate(max_files);
+
+    println!("\n=== où part le temps d'une analyse ===");
+    if files.is_empty() {
+        println!("  aucun fichier audio dans {dir}");
+        return;
+    }
+    if !journal_ok {
+        println!("  ⚠️ logger déjà posé : le détail par banc sera vide");
+    }
+    println!(
+        "  {:>7}  {:>8}  {:>8}  {:>8}  {:>8}   fichier",
+        "audio", "total", "décodage", "bancs", "reste"
+    );
+
+    let (mut s_audio, mut s_total, mut s_dec, mut s_banc) = (0.0f64, 0u128, 0u128, 0u128);
+    let mut par_banc: Vec<(String, u128, usize)> = Vec::new();
+
+    for f in &files {
+        let p = f.to_string_lossy().to_string();
+        let name = f.file_name().and_then(|n| n.to_str()).unwrap_or("?");
+
+        let tag = crate::analysis::tags::read(&p);
+        let target_ch: u16 = if tag.channels >= 2 { 2 } else { 1 };
+        let mut ech: u64 = 0;
+        let t = Instant::now();
+        if crate::analysis::decode::decode_pcm(&p, target_ch, |b| ech += b.len() as u64).is_err() {
+            println!("  décodage impossible : {name}");
+            continue;
+        }
+        let t_decode = t.elapsed();
+
+        if let Ok(mut v) = JOURNAL.lock() {
+            v.clear();
+        }
+        let t = Instant::now();
+        let rapport = match crate::analysis::analyze(&p, false) {
+            Ok(r) => r,
+            Err(e) => {
+                println!("  échec d'analyse sur {name} : {e}");
+                continue;
+            }
+        };
+        let t_total = t.elapsed();
+
+        // Une ligne PAR MESURE porte la même `duree_ms` que son banc : ne compter qu'une
+        // fois par nom de banc, sinon un banc à deux bras compterait double.
+        let mut bancs: Vec<(String, u128)> = Vec::new();
+        if let Ok(v) = JOURNAL.lock() {
+            for l in v.iter() {
+                let Some(apres) = l.split("banc=").nth(1) else {
+                    continue;
+                };
+                let nom = apres.split(' ').next().unwrap_or("?").to_string();
+                let Some((_, queue)) = l.rsplit_once(" en ") else {
+                    continue;
+                };
+                let Some(ms) = queue
+                    .strip_suffix(" ms")
+                    .and_then(|n| n.parse::<u128>().ok())
+                else {
+                    continue;
+                };
+                if !bancs.iter().any(|(n, _)| *n == nom) {
+                    bancs.push((nom, ms));
+                }
+            }
+        }
+        let t_bancs: u128 = bancs.iter().map(|(_, ms)| *ms).sum();
+        let reste = t_total
+            .as_millis()
+            .saturating_sub(t_decode.as_millis())
+            .saturating_sub(t_bancs);
+
+        println!(
+            "  {:>6.0}s  {:>7.2}s  {:>7.2}s  {:>7.2}s  {:>7.2}s   {}",
+            rapport.duration_sec,
+            t_total.as_secs_f64(),
+            t_decode.as_secs_f64(),
+            t_bancs as f64 / 1000.0,
+            reste as f64 / 1000.0,
+            &name[..name.len().min(46)],
+        );
+        if !bancs.is_empty() {
+            let detail: Vec<String> = bancs
+                .iter()
+                .map(|(n, ms)| format!("{n} {:.2}s", *ms as f64 / 1000.0))
+                .collect();
+            println!("            bancs : {}", detail.join(" · "));
+        }
+
+        s_audio += rapport.duration_sec as f64;
+        s_total += t_total.as_millis();
+        s_dec += t_decode.as_millis();
+        s_banc += t_bancs;
+        for (n, ms) in bancs {
+            match par_banc.iter_mut().find(|(x, _, _)| *x == n) {
+                Some(e) => {
+                    e.1 += ms;
+                    e.2 += 1;
+                }
+                None => par_banc.push((n, ms, 1)),
+            }
+        }
+    }
+
+    if s_total == 0 {
+        println!("  aucune analyse aboutie");
+        return;
+    }
+    let pc = |x: u128| 100.0 * x as f64 / s_total as f64;
+    let s_reste = s_total.saturating_sub(s_dec).saturating_sub(s_banc);
+    println!();
+    println!(
+        "  TOTAL {:.0} s d'audio en {:.1} s",
+        s_audio,
+        s_total as f64 / 1000.0
+    );
+    println!(
+        "    décodage seul      {:>7.1}s  {:>5.1} %",
+        s_dec as f64 / 1000.0,
+        pc(s_dec)
+    );
+    println!(
+        "    bancs              {:>7.1}s  {:>5.1} %",
+        s_banc as f64 / 1000.0,
+        pc(s_banc)
+    );
+    println!(
+        "    reste (soustrait)  {:>7.1}s  {:>5.1} %   accumulateurs + verdict + erreur",
+        s_reste as f64 / 1000.0,
+        pc(s_reste)
+    );
+    par_banc.sort_by_key(|(_, ms, _)| std::cmp::Reverse(*ms));
+    for (n, ms, k) in &par_banc {
+        println!(
+            "      banc {n:<9} {:>7.1}s  {:>5.1} %  sur {k} fichier(s)",
+            *ms as f64 / 1000.0,
+            pc(*ms)
+        );
+    }
+    println!(
+        "  débit 1 fil : {:.3} fichier/s · {:.0}x le temps réel",
+        files.len() as f64 / (s_total as f64 / 1000.0),
+        s_audio / (s_total as f64 / 1000.0)
+    );
+}
