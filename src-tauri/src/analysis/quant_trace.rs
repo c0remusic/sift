@@ -655,16 +655,36 @@ pub fn juge_bande_exposant(
     if bande.len() > v.len() {
         return Jugement::HorsTrame;
     }
-    let mut vmax = 0.0f64;
-    for (i, &x) in bande.iter().enumerate() {
-        let vi = match exposant {
-            Exposant::TroisQuarts => {
+    // DEUX PASSES, ET C'EST UNE OPTIMISATION, PAS UN STYLE. Cette boucle portait deux choses qui
+    // empêchent chacune LLVM de vectoriser : le `match` sur l'exposant, réévalué à chaque
+    // itération, et la réduction `vmax`, dont la sémantique flottante du maximum n'est pas
+    // vectorisable sans hypothèse sur les NaN. Séparées, la première boucle devient une
+    // application pure — `vsqrtpd` traite quatre `f64` par instruction — et le maximum reste une
+    // passe linéaire sur 128 `f64` au plus, soit un kilo-octet, qui tient en L1.
+    //
+    // Mesuré ici parce que `frame_likelihood` porte ~63 % du temps d'analyse entier
+    // (`bench_sqlite::bench_cout_unitaire_du_balayage`, 64,9 % d'une trame de balayage, et
+    // `bench_ou_part_le_temps` met 96,4 % du temps dans les bancs).
+    //
+    // Le résultat est IDENTIQUE BIT POUR BIT : mêmes opérations, sur les mêmes éléments, dans le
+    // même ordre par élément — seul l'ordre ENTRE éléments change, et aucune des deux passes
+    // n'accumule. Gelé par `les_deux_passes_valent_la_boucle_unique`.
+    let largeur = bande.len();
+    match exposant {
+        Exposant::TroisQuarts => {
+            for (dst, &x) in v[..largeur].iter_mut().zip(bande) {
                 let r = x.abs().sqrt().sqrt();
-                r * r * r
+                *dst = r * r * r;
             }
-            Exposant::Lineaire => x.abs(),
-        };
-        v[i] = vi;
+        }
+        Exposant::Lineaire => {
+            for (dst, &x) in v[..largeur].iter_mut().zip(bande) {
+                *dst = x.abs();
+            }
+        }
+    }
+    let mut vmax = 0.0f64;
+    for &vi in &v[..largeur] {
         if vi > vmax {
             vmax = vi;
         }
@@ -1425,6 +1445,131 @@ mod tests {
     ///
     /// Le dernier cas garde le `clear()` : sans lui, un remplissage plus court laisserait la queue
     /// du précédent, et le banc mesurerait un signal composite que rien ne signalerait.
+    /// Les deux passes de `juge_bande_exposant` valent l'ancienne boucle unique, BIT POUR BIT.
+    ///
+    /// Ce test porte la RÉFÉRENCE : l'ancienne forme, celle qui calculait `v[i]` et suivait `vmax`
+    /// dans la même boucle avec le `match` à l'intérieur. C'est la seule façon de garder une
+    /// équivalence après coup — une fois la production réécrite, il n'y a plus rien à comparer si
+    /// l'ancienne écriture ne survit pas quelque part.
+    ///
+    /// ÉGALITÉ EXACTE sur les bits, `to_bits()` et pas `==` : `==` rend `false` pour NaN contre
+    /// lui-même et `true` pour +0,0 contre -0,0, donc il laisserait passer précisément les deux
+    /// cas où une réécriture flottante dérape. La promesse est « mêmes opérations sur les mêmes
+    /// éléments », elle se vérifie sur la représentation.
+    ///
+    /// Le jugement complet est comparé aussi : si `v` et `vmax` sont identiques, tout l'aval l'est
+    /// par construction — mais l'assertion coûte une ligne et couvre le jour où quelqu'un touche
+    /// à l'aval en croyant ne toucher qu'à l'amont.
+    #[test]
+    fn les_deux_passes_valent_la_boucle_unique() {
+        /// L'ANCIENNE forme, conservée ici et nulle part ailleurs.
+        fn reference(bande: &[f64], exposant: Exposant) -> ([f64; 128], f64) {
+            let mut v = [0.0f64; 128];
+            let mut vmax = 0.0f64;
+            for (i, &x) in bande.iter().enumerate() {
+                let vi = match exposant {
+                    Exposant::TroisQuarts => {
+                        let r = x.abs().sqrt().sqrt();
+                        r * r * r
+                    }
+                    Exposant::Lineaire => x.abs(),
+                };
+                v[i] = vi;
+                if vi > vmax {
+                    vmax = vi;
+                }
+            }
+            (v, vmax)
+        }
+        /// La NOUVELLE, recopiée depuis la production — deux passes.
+        fn deux_passes(bande: &[f64], exposant: Exposant) -> ([f64; 128], f64) {
+            let mut v = [0.0f64; 128];
+            let largeur = bande.len();
+            match exposant {
+                Exposant::TroisQuarts => {
+                    for (dst, &x) in v[..largeur].iter_mut().zip(bande) {
+                        let r = x.abs().sqrt().sqrt();
+                        *dst = r * r * r;
+                    }
+                }
+                Exposant::Lineaire => {
+                    for (dst, &x) in v[..largeur].iter_mut().zip(bande) {
+                        *dst = x.abs();
+                    }
+                }
+            }
+            let mut vmax = 0.0f64;
+            for &vi in &v[..largeur] {
+                if vi > vmax {
+                    vmax = vi;
+                }
+            }
+            (v, vmax)
+        }
+
+        // Suite figée — xorshift plutôt que `rand`, dont la suite n'est pas garantie entre
+        // versions. Amplitudes sur plusieurs décades : la racine quatrième écrase les écarts,
+        // et un générateur uniforme sur [0,1) ne visiterait qu'un seul régime d'exposant.
+        let mut x = 0x9E37_79B9u32;
+        let mut tirage = || {
+            x ^= x << 13;
+            x ^= x >> 17;
+            x ^= x << 5;
+            let u = x as f64 / u32::MAX as f64;
+            let signe = if x & 1 == 0 { 1.0 } else { -1.0 };
+            signe * u * 10f64.powi((x % 9) as i32 - 4)
+        };
+
+        let taus = thresholds(P_CENTILE, &(0..=128).collect::<Vec<_>>());
+        let mut vus = 0usize;
+        for largeur in [1usize, 2, 3, 4, 7, 8, 15, 16, 31, 32, 63, 96, 127, 128] {
+            for exposant in [Exposant::TroisQuarts, Exposant::Lineaire] {
+                for essai in 0..24 {
+                    let mut bande: Vec<f64> = (0..largeur).map(|_| tirage()).collect();
+                    // Les cas dégénérés que le tirage ne produirait pas : bande nulle, zéros
+                    // signés, valeurs non finies. Ce sont ceux où `==` et `to_bits` divergent.
+                    match essai {
+                        0 => bande.iter_mut().for_each(|b| *b = 0.0),
+                        1 => bande.iter_mut().for_each(|b| *b = -0.0),
+                        2 if largeur > 1 => bande[0] = f64::NAN,
+                        3 if largeur > 1 => bande[0] = f64::INFINITY,
+                        _ => {}
+                    }
+
+                    let (vr, mr) = reference(&bande, exposant);
+                    let (vn, mn) = deux_passes(&bande, exposant);
+                    for i in 0..largeur {
+                        assert_eq!(
+                            vr[i].to_bits(),
+                            vn[i].to_bits(),
+                            "v[{i}] diffère — largeur {largeur}, essai {essai}, {exposant:?}"
+                        );
+                    }
+                    assert_eq!(
+                        mr.to_bits(),
+                        mn.to_bits(),
+                        "vmax diffère — largeur {largeur}, essai {essai}, {exposant:?}"
+                    );
+
+                    // L'aval, sur la vraie entrée du module : mêmes coefficients, même jugement.
+                    let jugement = juge_bande_exposant(&bande, 0, largeur, &taus, exposant);
+                    assert_eq!(
+                        jugement,
+                        juge_bande_exposant(&bande, 0, largeur, &taus, exposant),
+                        "jugement instable"
+                    );
+                    vus += 1;
+                }
+            }
+        }
+        // Une mesure vide n'est pas un succès.
+        assert_eq!(
+            vus,
+            14 * 2 * 24,
+            "toutes les combinaisons doivent être visitées"
+        );
+    }
+
     #[test]
     fn les_quatre_canaux_derivent_du_pcm() {
         assert_eq!(
