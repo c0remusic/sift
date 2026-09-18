@@ -680,6 +680,180 @@ pub fn sonder<'b>(
 mod tests {
     use super::*;
 
+    /// Le banc `cadrage` attrape Vorbis et WMA là où `mp3` et `aac` sont AVEUGLES.
+    ///
+    /// POURQUOI CE TEST EXISTE, et il corrige une conclusion que j'allais tirer. Mesuré le
+    /// 2026-09-18 : `cadrage` coûte 47,3 % du temps d'analyse
+    /// (`bench_sqlite::bench_ou_part_le_temps`), et sur 70 pistes de la bibliothèque de test il
+    /// décide SEUL sur… zéro. La lecture tentante — « il ne sert à rien » — est fausse : cette
+    /// bibliothèque ne contient simplement aucun faux d'origine Vorbis ou WMA. Une absence de
+    /// déclenchement n'est pas une absence d'utilité.
+    ///
+    /// Sur des faux FABRIQUÉS, la réponse s'inverse. Trois sources authentiques, chacune passée
+    /// par cinq encodeurs puis ramenée en FLAC 44,1/16 :
+    ///
+    /// ```text
+    ///   classe (n=3)        mp3          aac        cadrage
+    ///   authentique    0,35–0,52    0,47–0,47    0,00–0,12   aucun banc : pas de faux positif
+    ///   vorbis q8      0,35–0,52    0,47–0,53    1,88–2,00   cadrage SEUL, 3 sur 3
+    ///   wma 320k       0,43–0,43    0,47–0,53    1,88–2,00   cadrage SEUL, 3 sur 3
+    ///   vorbis q10     0,43–0,43    0,47–0,47    0,00–1,07   cadrage SEUL, 2 sur 3
+    ///   aac 256k       0,43–0,43    3,94–7,62    1,75–2,00   l'aac décide ; cadrage confirme
+    ///   mp3 320k       4,43–5,56    0,42–0,53    0,00–0,00   le mp3 décide ; cadrage aveugle
+    /// ```
+    ///
+    /// Huit faux sur dix-huit ne seraient détectés par PERSONNE sans ce banc. C'est ce qu'achètent
+    /// ses 47 %.
+    ///
+    /// ## Trois assertions, et chacune répare une mutation qui avait survécu
+    ///
+    /// **Une MARGE, pas la borne.** `alignement = alignes / retenus` est une fraction plafonnée à
+    /// 1,0, et `ALIGNEMENT_MIN` vaut 0,5 : le rapport SATURE à 2,00. Une première version
+    /// assertait `>= 1.0`, et doubler le seuil — qui pose la barre exactement sur le plafond,
+    /// rapport 1,00 — la laissait AU VERT. Le seuil de ce test est donc une marge mesurée
+    /// (1,88 au minimum observé), pas la limite de décision.
+    ///
+    /// **Le BRAS gagnant, pas seulement le franchissement.** `CADRAGE_JEUX` vise `vorbis`
+    /// (N=1024, fenêtre Vorbis) et `wma` (N=2048, sinus). Remplacer le second par une copie du
+    /// premier laissait le test AU VERT : le jeu Vorbis attrape aussi le WMA. C'est un fait utile
+    /// — et c'est pourquoi le test épingle quel bras décide, sinon il ne garde pas le choix des
+    /// deux jeux.
+    ///
+    /// **L'ancre AUTHENTIQUE.** Sans elle le test gardait « cadrage se déclenche » et pas
+    /// « cadrage se déclenche À BON ESCIENT » — un banc qui croise sur tout passerait.
+    ///
+    /// ⚠️ Le banc ne tourne qu'au-dessus de [`verdict::LOSSY_CLIFF_HZ`] (20 kHz) — sous la
+    /// falaise le verdict est déjà Faux par la coupure. Les ancres doivent donc garder leur bande
+    /// complète, d'où Vorbis q8 et WMA 320k plutôt que des réglages ordinaires, qui coupent trop
+    /// bas pour jamais atteindre ce banc.
+    ///
+    /// ⚠️ Un trou connu, relevé par la même mesure et NON corrigé : un Vorbis q10 sur trois
+    /// échappe aux trois bancs. La qualité maximale passe parfois entre les mailles.
+    ///
+    /// ANCRES LOCALES, gitignorées comme `anchor_lame320.flac` et pour la même raison — les
+    /// fixtures synthétiques sont des sinus balayés, tonals et dégénérés, que les gardes des
+    /// bancs désarment. Absentes, le test se saute en le disant. Recette dans
+    /// `src-tauri/fixtures/README.md`.
+    #[test]
+    fn cadrage_attrape_vorbis_et_wma() {
+        /// Rapport et bras gagnant de chaque banc qui a rendu une mesure.
+        fn sonde(nom: &str) -> Option<Vec<(String, f32, String)>> {
+            let chemin = format!("{}/fixtures/{nom}", env!("CARGO_MANIFEST_DIR"));
+            if !std::path::Path::new(&chemin).exists() {
+                return None;
+            }
+            let mut pcm = Vec::new();
+            let info =
+                crate::analysis::decode::decode_pcm(&chemin, 2, |b| pcm.extend_from_slice(b))
+                    .ok()?;
+            // Amont et aval permissifs : ce test porte sur ce que les bancs MESURENT, pas sur
+            // leurs gardes d'entrée, qui ont leurs propres tests.
+            let amont = Amont {
+                declare: Rail::Lossless,
+                conteneur: Rail::Lossless,
+            };
+            let aval = Aval {
+                coupure_hz: verdict::LOSSY_CLIFF_HZ + 1.0,
+            };
+            let sondage = sonder(
+                &BANCS_PRODUCTION,
+                &Signal {
+                    pcm: &pcm,
+                    canaux: info.channels,
+                    taux: info.sample_rate,
+                },
+                amont,
+                aval,
+                &Reglage { fils_max: Some(2) },
+            );
+            Some(
+                sondage
+                    .passages
+                    .iter()
+                    .filter_map(|p| {
+                        let Issue::Mesures(m) = &p.issue else {
+                            return None;
+                        };
+                        let meilleure = m
+                            .iter()
+                            .max_by(|a, b| a.rapport().total_cmp(&b.rapport()))?;
+                        Some((
+                            p.banc.nom.to_string(),
+                            meilleure.rapport(),
+                            meilleure.bras.to_string(),
+                        ))
+                    })
+                    .collect(),
+            )
+        }
+
+        /// 1,8 et pas 1,0 : voir « une MARGE, pas la borne » ci-dessus. Le minimum observé sur
+        /// six faux Vorbis/WMA est 1,88.
+        const MARGE: f32 = 1.8;
+
+        // (ancre, cadrage doit croiser, bras attendu)
+        let cas: [(&str, Option<&str>); 3] = [
+            ("anchor_vorbisq8.flac", Some("vorbis")),
+            ("anchor_wma320.flac", Some("wma")),
+            ("anchor_auth_fullband.flac", None),
+        ];
+
+        let mut vus = 0usize;
+        for (ancre, bras_attendu) in cas {
+            let Some(rapports) = sonde(ancre) else {
+                eprintln!("ancre {ancre} absente — cas sauté (voir fixtures/README.md)");
+                continue;
+            };
+            vus += 1;
+            let de = |n: &str| rapports.iter().find(|(m, _, _)| m == n);
+            let r = |n: &str| de(n).map(|(_, v, _)| *v);
+            eprintln!(
+                "{ancre} : mp3 {:?} aac {:?} cadrage {:?}",
+                r("mp3"),
+                r("aac"),
+                de("cadrage").map(|(_, v, b)| (*v, b.clone()))
+            );
+
+            match bras_attendu {
+                // Un faux : `cadrage` décide avec une marge, par le bras attendu, et il est le
+                // SEUL — sans cette seconde moitié le test passerait aussi si les trois bancs
+                // croisaient, et il ne dirait plus rien de l'apport propre du banc.
+                Some(attendu) => {
+                    let (_, val, bras) = de("cadrage")
+                        .unwrap_or_else(|| panic!("{ancre} : cadrage n'a rendu aucune mesure"));
+                    assert!(
+                        *val >= MARGE,
+                        "{ancre} : cadrage rend {val:.2}, sous la marge {MARGE}"
+                    );
+                    assert_eq!(bras, attendu, "{ancre} : bras gagnant inattendu");
+                    for autre in ["mp3", "aac"] {
+                        if let Some(v) = r(autre) {
+                            assert!(
+                                v < 1.0,
+                                "{ancre} : {autre} croise aussi ({v:.2}) — cadrage n'est plus le \
+                                 seul à décider, et ce test ne dit plus rien"
+                            );
+                        }
+                    }
+                }
+                // Un authentique : AUCUN banc ne doit croiser.
+                None => {
+                    for banc in ["mp3", "aac", "cadrage"] {
+                        if let Some(v) = r(banc) {
+                            assert!(
+                                v < 1.0,
+                                "{ancre} est AUTHENTIQUE et {banc} croise ({v:.2}) — faux positif"
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        if vus == 0 {
+            eprintln!("aucune ancre Vorbis/WMA présente — test entièrement sauté");
+        }
+    }
+
     fn amont(declare: Rail, conteneur: Rail) -> Amont {
         Amont { declare, conteneur }
     }

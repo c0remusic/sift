@@ -875,3 +875,231 @@ fn bench_cout_unitaire_du_balayage() {
     );
     assert!(uc > 0.0, "une mesure nulle n'est pas un résultat");
 }
+
+/// Ce que le banc `cadrage` APPORTE au verdict, pour les 47,3 % du temps d'analyse qu'il coûte.
+///
+/// POURQUOI. `bench_ou_part_le_temps` met 96,4 % du temps dans les bancs, et `cadrage` en prend
+/// 47,3 % — le plus gros poste unique du détecteur. La question n'est pas de l'optimiser mais de
+/// savoir ce qu'il décide que les deux autres ne décident pas. Sans ce chiffre, tout arbitrage
+/// sur lui serait une préférence.
+///
+/// COMMENT, SANS TOUCHER LA PRODUCTION. `Sondage::journaliser` émet déjà une ligne par banc et
+/// par mesure, avec `rapport = statistique / lambda` — un banc « croise » à partir de 1. Ce banc
+/// pose un collecteur de journal, appelle le VRAI `analyze`, et lit ces lignes. Aucune logique
+/// n'est réécrite : ni la rétention du PCM, ni les gardes `peut_trancher`, ni les seuils.
+///
+/// ⚠️ **Si le collecteur ne s'installe pas, le banc ÉCHOUE au lieu de rendre des zéros.**
+/// `log::set_logger` ne réussit qu'une fois par processus, et un autre `#[ignore]` de ce fichier
+/// en pose un aussi. Un journal vide produirait « aucun banc ne croise jamais » — une absence
+/// déguisée en résultat, exactement ce que le reste du module refuse.
+///
+/// Le verdict de la base voyage dans le NOM du fichier (`NNN_<verdict>.<ext>`, voir
+/// `scratchpad/echantillon_cadrage.py`) : le banc croise sans accès SQLite.
+#[test]
+#[ignore]
+fn bench_ce_que_cadrage_apporte() {
+    let Ok(dir) = std::env::var("SIFT_BENCH_TRACKS_DIR") else {
+        println!("\n=== apport de `cadrage` : IGNORÉ ===");
+        println!("  définir SIFT_BENCH_TRACKS_DIR sur un dossier de vrais fichiers audio");
+        return;
+    };
+    let max_files: usize = std::env::var("SIFT_BENCH_MAX")
+        .ok()
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(70);
+
+    static JOURNAL: Mutex<Vec<String>> = Mutex::new(Vec::new());
+    struct Collecteur;
+    impl log::Log for Collecteur {
+        fn enabled(&self, _: &log::Metadata<'_>) -> bool {
+            true
+        }
+        fn log(&self, record: &log::Record<'_>) {
+            if let Ok(mut v) = JOURNAL.lock() {
+                v.push(record.args().to_string());
+            }
+        }
+        fn flush(&self) {}
+    }
+    static COLLECTEUR: Collecteur = Collecteur;
+    assert!(
+        log::set_logger(&COLLECTEUR).is_ok(),
+        "collecteur de journal non installé — un autre banc en a posé un. Lancer celui-ci SEUL."
+    );
+    log::set_max_level(log::LevelFilter::Info);
+
+    const EXTS: [&str; 5] = ["flac", "wav", "aif", "aiff", "m4a"];
+    let mut files: Vec<std::path::PathBuf> = std::fs::read_dir(&dir)
+        .expect("lecture du dossier")
+        .filter_map(|e| e.ok().map(|e| e.path()))
+        .filter(|p| {
+            p.extension()
+                .and_then(|e| e.to_str())
+                .map(|e| EXTS.contains(&e.to_ascii_lowercase().as_str()))
+                .unwrap_or(false)
+        })
+        .collect();
+    files.sort();
+    files.truncate(max_files);
+    if files.is_empty() {
+        println!("  aucun fichier audio dans {dir}");
+        return;
+    }
+
+    // Comptes par verdict de base : [cadrage SEUL, redondant, cadrage muet mais un autre croise,
+    // aucun banc ne croise, cadrage jamais mesuré]
+    let mut par_verdict: Vec<(String, [usize; 4], usize)> = Vec::new();
+    let mut analysees = 0usize;
+    let mut sans_ligne = 0usize;
+    let mut cadrage_max: Vec<f32> = Vec::new();
+
+    println!("\n=== ce que `cadrage` apporte au verdict ===");
+    for f in &files {
+        let p = f.to_string_lossy().to_string();
+        let nom = f.file_name().and_then(|n| n.to_str()).unwrap_or("?");
+        // `NNN_<verdict>.<ext>`
+        let verdict_base = nom
+            .split('_')
+            .nth(1)
+            .and_then(|s| s.split('.').next())
+            .unwrap_or("?")
+            .to_string();
+
+        if let Ok(mut v) = JOURNAL.lock() {
+            v.clear();
+        }
+        let rapport = match crate::analysis::analyze(&p, false) {
+            Ok(r) => r,
+            Err(e) => {
+                println!("  {nom:<22} ÉCHEC : {e}");
+                continue;
+            }
+        };
+        analysees += 1;
+
+        // Meilleur rapport par banc. Une ligne « non mesuré » n'a pas de `rapport=` : le banc
+        // reste absent de la table, ce qui est DIFFÉRENT d'un rapport de 0.
+        let mut meilleur: Vec<(String, f32)> = Vec::new();
+        let mut lignes_banc = 0usize;
+        if let Ok(v) = JOURNAL.lock() {
+            for l in v.iter() {
+                let Some(apres) = l.split("banc=").nth(1) else {
+                    continue;
+                };
+                lignes_banc += 1;
+                let banc = apres.split(' ').next().unwrap_or("?").to_string();
+                let Some(r) = l
+                    .split("rapport=")
+                    .nth(1)
+                    .and_then(|s| s.split(' ').next())
+                    .and_then(|s| s.parse::<f32>().ok())
+                else {
+                    continue;
+                };
+                match meilleur.iter_mut().find(|(n, _)| *n == banc) {
+                    Some(e) if r > e.1 => e.1 = r,
+                    Some(_) => {}
+                    None => meilleur.push((banc, r)),
+                }
+            }
+        }
+        if lignes_banc == 0 {
+            sans_ligne += 1;
+        }
+
+        let rapport_de = |n: &str| meilleur.iter().find(|(m, _)| m == n).map(|(_, r)| *r);
+        let croise = |n: &str| rapport_de(n).map(|r| r >= 1.0).unwrap_or(false);
+        let cad = croise("cadrage");
+        let autre = croise("mp3") || croise("aac");
+        if let Some(r) = rapport_de("cadrage") {
+            cadrage_max.push(r);
+        }
+
+        // Ligne par fichier : un banc de 25 minutes qui ne dit rien pendant qu'il tourne est
+        // indiscernable d'un banc planté. Et la COUPURE est indispensable à la lecture —
+        // `cadrage` ne tourne qu'au-dessus de `LOSSY_CLIFF_HZ`, donc « rien rendu » et « jamais
+        // tourné » ne se distinguent que par elle.
+        let affiche = |n: &str| match rapport_de(n) {
+            Some(r) => format!("{r:>6.2}"),
+            None => "     -".to_string(),
+        };
+        println!(
+            "  {:<22} coupure {:>6.0} Hz   mp3 {}  aac {}  cadrage {}   verdict base {}",
+            &nom[..nom.len().min(22)],
+            rapport.cutoff_hz,
+            affiche("mp3"),
+            affiche("aac"),
+            affiche("cadrage"),
+            verdict_base,
+        );
+
+        let classe = match (cad, autre) {
+            (true, false) => 0,  // cadrage SEUL décide
+            (true, true) => 1,   // redondant
+            (false, true) => 2,  // cadrage n'apporte rien ici
+            (false, false) => 3, // aucun banc ne croise
+        };
+        let mesure_cadrage = usize::from(rapport_de("cadrage").is_none());
+        match par_verdict.iter_mut().find(|(v, _, _)| *v == verdict_base) {
+            Some(e) => {
+                e.1[classe] += 1;
+                e.2 += mesure_cadrage;
+            }
+            None => {
+                let mut c = [0usize; 4];
+                c[classe] = 1;
+                par_verdict.push((verdict_base, c, mesure_cadrage));
+            }
+        }
+    }
+
+    assert!(
+        analysees > 0,
+        "aucune analyse aboutie — une mesure vide n'est pas un résultat"
+    );
+    assert!(
+        sans_ligne < analysees,
+        "aucune ligne `banc=` capturée sur {analysees} analyses : le journal n'a rien vu"
+    );
+
+    println!(
+        "  {:<7} {:>6} {:>9} {:>10} {:>9} {:>10}",
+        "verdict", "n", "cad SEUL", "redondant", "cad nul", "aucun banc"
+    );
+    let mut tot = [0usize; 4];
+    for (v, c, _) in &par_verdict {
+        let n: usize = c.iter().sum();
+        println!(
+            "  {v:<7} {n:>6} {:>9} {:>10} {:>9} {:>10}",
+            c[0], c[1], c[2], c[3]
+        );
+        for i in 0..4 {
+            tot[i] += c[i];
+        }
+    }
+    let n: usize = tot.iter().sum();
+    println!(
+        "  {:<7} {n:>6} {:>9} {:>10} {:>9} {:>10}",
+        "TOTAL", tot[0], tot[1], tot[2], tot[3]
+    );
+    println!();
+    println!(
+        "  `cadrage` est le SEUL à décider sur {} fichier(s) sur {n}",
+        tot[0]
+    );
+    println!(
+        "  jamais mesuré (hors domaine) : {} fichier(s)",
+        par_verdict.iter().map(|(_, _, m)| m).sum::<usize>()
+    );
+    if !cadrage_max.is_empty() {
+        let mut v = cadrage_max.clone();
+        v.sort_by(f32::total_cmp);
+        println!(
+            "  rapport de `cadrage` mesuré sur {} fichiers : min {:.2} · médiane {:.2} · max {:.2}",
+            v.len(),
+            v[0],
+            v[v.len() / 2],
+            v[v.len() - 1]
+        );
+    }
+}
