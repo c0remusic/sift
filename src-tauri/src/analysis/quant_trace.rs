@@ -383,6 +383,62 @@ impl Canal {
             Canal::Cote => "S",
         }
     }
+
+    /// Les canaux à sonder pour un fichier à `ch` canaux, dans l'ordre du balayage.
+    ///
+    /// En mono, G seul : M et S seraient G et zéro, donc trois mesures pour une.
+    pub fn a_sonder(ch: usize) -> &'static [Canal] {
+        if ch >= 2 {
+            &[Canal::Gauche, Canal::Droite, Canal::Milieu, Canal::Cote]
+        } else {
+            &[Canal::Gauche]
+        }
+    }
+}
+
+/// Écrit un canal dérivé du PCM entrelacé dans `dst`, en RÉUTILISANT sa capacité.
+///
+/// POURQUOI UN TAMPON PASSÉ ET PAS UN `Vec` RENDU. Les deux bancs matérialisaient les quatre
+/// canaux d'un coup (`g`, `d`, `m`, `s`) puis les parcouraient par `for (canal, signal) in
+/// &canaux` — une boucle STRICTEMENT séquentielle, un seul canal lu à la fois. Les quatre
+/// restaient donc résidents pour rien. Au plafond de rétention
+/// (`analysis::QUANT_MAX_PCM_SAMPLES`, stéréo 44,1 kHz) ça pesait 4 × 24 M × 4 o = **384 Mo par
+/// analyse**, par-dessus les 192 Mo du PCM retenu — soit un pic de 576 Mo par fil, et 4,6 Go sur
+/// les 8 fils de `worker::analysis_pool_size`. Un seul tampon réutilisé ramène ces 384 Mo à
+/// 96 Mo, donc le pic à 288 Mo par fil.
+///
+/// Les quatre se dérivent de `pcm` DIRECTEMENT, aucun n'a besoin d'un autre : rien n'oblige à
+/// garder G et D vivants pour calculer M et S. C'est ce qui permet de n'en garder qu'un.
+///
+/// MESURÉ sur un fichier de 1648 s (donc au plafond), pic de mémoire de travail du processus,
+/// deux passes alternées : **563 Mo → 310 Mo, soit −253 Mo, −45 %**. La prédiction analytique
+/// était −288 Mo ; l'écart tient aux autres allocations du processus et à ce que l'allocateur
+/// retient après libération.
+///
+/// LE COÛT EN CALCUL N'EST PAS NUL PAR CONSTRUCTION : `likelihood` remplit le tampon douze fois
+/// (résolutions × fenêtres × canaux) là où il collectait quatre vecteurs une seule fois. Il est
+/// resté SOUS le bruit — trois passes alternées donnent +4,1 % sans spectrogramme et −2,3 % avec,
+/// donc de signes opposés, pour des étendues de 0,6 à 2,7 s contre des écarts de 0,4 à 0,7 s. Ce
+/// n'est pas « gratuit prouvé », c'est « trop petit pour être vu à cette précision ». Un
+/// remplissage est un balayage linéaire ; ce qui suit est en millions de MDCT.
+///
+/// Les opérations flottantes sont inchangées (`0.5 * (a + b)`, pas une autre associativité), donc
+/// les `L` mesurés sont identiques bit pour bit. Gelé par `les_quatre_canaux_derivent_du_pcm`.
+pub fn remplir_canal(dst: &mut Vec<f32>, pcm: &[f32], ch: usize, canal: Canal) {
+    let ch = ch.max(1);
+    let n = pcm.len() / ch;
+    dst.clear();
+    dst.reserve(n);
+    if ch < 2 {
+        dst.extend_from_slice(&pcm[..n]);
+        return;
+    }
+    match canal {
+        Canal::Gauche => dst.extend((0..n).map(|i| pcm[i * ch])),
+        Canal::Droite => dst.extend((0..n).map(|i| pcm[i * ch + 1])),
+        Canal::Milieu => dst.extend((0..n).map(|i| 0.5 * (pcm[i * ch] + pcm[i * ch + 1]))),
+        Canal::Cote => dst.extend((0..n).map(|i| 0.5 * (pcm[i * ch] - pcm[i * ch + 1]))),
+    }
 }
 
 /// Résultat du balayage : la vraisemblance et l'endroit où elle a été atteinte.
@@ -729,21 +785,10 @@ pub fn likelihood_reglee(
         return Vec::new();
     }
 
-    // Canaux dérivés. En mono, G seul : M et S seraient G et zéro, donc trois mesures pour une.
-    let canaux: Vec<(Canal, Vec<f32>)> = if ch >= 2 {
-        let g: Vec<f32> = (0..n_trames).map(|i| pcm[i * ch]).collect();
-        let d: Vec<f32> = (0..n_trames).map(|i| pcm[i * ch + 1]).collect();
-        let m: Vec<f32> = g.iter().zip(&d).map(|(a, b)| 0.5 * (a + b)).collect();
-        let s: Vec<f32> = g.iter().zip(&d).map(|(a, b)| 0.5 * (a - b)).collect();
-        vec![
-            (Canal::Gauche, g),
-            (Canal::Droite, d),
-            (Canal::Milieu, m),
-            (Canal::Cote, s),
-        ]
-    } else {
-        vec![(Canal::Gauche, pcm.to_vec())]
-    };
+    // Un seul tampon pour les quatre canaux : la boucle qui suit les lit un par un, jamais
+    // ensemble. Déclaré ici, hors des boucles de résolution et de fenêtre, pour n'allouer qu'une
+    // fois malgré les remplissages répétés. Le POURQUOI et le chiffre sont sur `remplir_canal`.
+    let mut tampon: Vec<f32> = Vec::new();
 
     let mut traces: Vec<Trace> = Vec::with_capacity(resolutions.len());
     for &kind in resolutions {
@@ -802,13 +847,14 @@ pub fn likelihood_reglee(
                 departs: &departs,
                 fils_max,
             };
-            for (canal, signal) in &canaux {
-                let (l, decalage) = balaye_decalages(signal, &reglage);
+            for &canal in Canal::a_sonder(ch) {
+                remplir_canal(&mut tampon, pcm, ch, canal);
+                let (l, decalage) = balaye_decalages(&tampon, &reglage);
                 if best.map(|b| l > b.l).unwrap_or(true) {
                     best = Some(Trace {
                         l,
                         decalage,
-                        canal: *canal,
+                        canal,
                         resolution: kind,
                         fenetre,
                     });
@@ -1368,6 +1414,52 @@ mod tests {
     /// Le signal est celui, quantifié à une grille connue, du test de bout en bout : il rend un
     /// `L` élevé à un décalage précis, donc un désaccord entre deux découpages se voit. Sur du
     /// bruit plat, plusieurs décalages ex aequo pourraient masquer un vrai bug de partition.
+    /// Les quatre canaux sortent du PCM entrelacé, exactement, et le tampon se réutilise.
+    ///
+    /// ÉGALITÉ EXACTE et pas une tolérance, délibérément : c'est la promesse du remplacement des
+    /// quatre `Vec` matérialisés par un tampon unique (`remplir_canal`). Si les `L` doivent rester
+    /// identiques bit pour bit, alors les échantillons doivent l'être, et une tolérance laisserait
+    /// passer un changement d'associativité. Les six valeurs sont choisies pour que les quatre
+    /// suites soient deux à deux DIFFÉRENTES — un échange de voies, un signe inversé ou un `0.5`
+    /// perdu change au moins une suite — et pour que chaque moitié tombe sur un flottant exact.
+    ///
+    /// Le dernier cas garde le `clear()` : sans lui, un remplissage plus court laisserait la queue
+    /// du précédent, et le banc mesurerait un signal composite que rien ne signalerait.
+    #[test]
+    fn les_quatre_canaux_derivent_du_pcm() {
+        assert_eq!(
+            Canal::a_sonder(2),
+            &[Canal::Gauche, Canal::Droite, Canal::Milieu, Canal::Cote]
+        );
+        assert_eq!(Canal::a_sonder(1), &[Canal::Gauche]);
+        assert_eq!(Canal::a_sonder(0), &[Canal::Gauche]);
+
+        let pcm = [1.0f32, 2.0, 3.0, 7.0, 5.0, 20.0];
+        let mut dst: Vec<f32> = Vec::new();
+        for (canal, attendu) in [
+            (Canal::Gauche, vec![1.0f32, 3.0, 5.0]),
+            (Canal::Droite, vec![2.0, 7.0, 20.0]),
+            (Canal::Milieu, vec![1.5, 5.0, 12.5]),
+            (Canal::Cote, vec![-0.5, -2.0, -7.5]),
+        ] {
+            remplir_canal(&mut dst, &pcm, 2, canal);
+            assert_eq!(dst, attendu, "canal {}", canal.label());
+        }
+
+        // Mono : le PCM tel quel, et jamais M ni S.
+        remplir_canal(&mut dst, &pcm, 1, Canal::Gauche);
+        assert_eq!(dst, pcm.to_vec());
+
+        // Trame incomplète en queue : elle se jette, sinon G et D se décalent d'un échantillon.
+        remplir_canal(&mut dst, &pcm[..5], 2, Canal::Droite);
+        assert_eq!(dst, vec![2.0, 7.0]);
+
+        // Réutilisation : le tampon long doit être ENTIÈREMENT remplacé par le court.
+        remplir_canal(&mut dst, &pcm, 2, Canal::Gauche);
+        remplir_canal(&mut dst, &pcm[..2], 2, Canal::Gauche);
+        assert_eq!(dst, vec![1.0]);
+    }
+
     #[test]
     fn le_nombre_de_fils_ne_change_ni_le_l_ni_le_decalage() {
         use crate::analysis::mdct::{imdct, sine_window};
@@ -1841,16 +1933,10 @@ mod diagnostic {
         );
 
         // Rejoue EXACTEMENT le groupe gagnant, trame par trame, pour ventiler le compte.
-        let signal: Vec<f32> = match t.canal {
-            Canal::Gauche => (0..n_trames).map(|i| pcm[i * ch]).collect(),
-            Canal::Droite => (0..n_trames).map(|i| pcm[i * ch + 1]).collect(),
-            Canal::Milieu => (0..n_trames)
-                .map(|i| 0.5 * (pcm[i * ch] + pcm[i * ch + 1]))
-                .collect(),
-            Canal::Cote => (0..n_trames)
-                .map(|i| 0.5 * (pcm[i * ch] - pcm[i * ch + 1]))
-                .collect(),
-        };
+        // Par l'aide, et pas une copie des quatre formules : le diagnostic doit rejouer EXACTEMENT
+        // ce que le balayage a mesuré. Deux écritures divergeraient en silence.
+        let mut signal: Vec<f32> = Vec::new();
+        remplir_canal(&mut signal, &pcm, ch, t.canal);
         let offsets = swb_offsets(info.sample_rate, t.resolution).expect("taux tabulé");
         let n = t.resolution.coeffs();
         let (bande_debut, n_sf) = match t.resolution {

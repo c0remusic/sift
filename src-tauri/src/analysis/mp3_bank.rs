@@ -45,7 +45,7 @@
 //! public. Aucune table n'est reprise d'une implémentation sous copyleft.
 
 use crate::analysis::quant_trace::{
-    frame_likelihood, thresholds, Canal, GROUPES, N_F, N_SF, P_CENTILE,
+    frame_likelihood, remplir_canal, thresholds, Canal, GROUPES, N_F, N_SF, P_CENTILE,
 };
 
 /// Bandes de facteur d'échelle, blocs longs, 44,1 kHz — ISO/IEC 11172-3 table B.8. Vingt-deux
@@ -368,20 +368,6 @@ pub fn likelihood(
     if n == 0 {
         return None;
     }
-    let canaux: Vec<(Canal, Vec<f32>)> = if ch >= 2 {
-        let g: Vec<f32> = (0..n).map(|i| pcm[i * ch]).collect();
-        let d: Vec<f32> = (0..n).map(|i| pcm[i * ch + 1]).collect();
-        let m: Vec<f32> = g.iter().zip(&d).map(|(a, b)| 0.5 * (a + b)).collect();
-        let s: Vec<f32> = g.iter().zip(&d).map(|(a, b)| 0.5 * (a - b)).collect();
-        vec![
-            (Canal::Gauche, g),
-            (Canal::Droite, d),
-            (Canal::Milieu, m),
-            (Canal::Cote, s),
-        ]
-    } else {
-        vec![(Canal::Gauche, pcm.to_vec())]
-    };
 
     // Pas de sous-bande par groupe : 16 de transitoire du filtre, 18 de granule précédente, 18 de
     // phase de granule, puis N_F granules.
@@ -417,8 +403,12 @@ pub fn likelihood(
     let par_fil = SB.div_ceil(fils);
     let denominateur = (N_F * N_SF) as f64;
 
+    // Un tampon unique pour les quatre canaux, lus un par un — voir `quant_trace::remplir_canal`.
+    let mut tampon: Vec<f32> = Vec::new();
     let mut best: Option<TraceMp3> = None;
-    for (canal, signal) in &canaux {
+    for &canal in Canal::a_sonder(ch) {
+        remplir_canal(&mut tampon, pcm, ch, canal);
+        let signal: &[f32] = &tampon;
         let resultats: Vec<(f64, usize)> = std::thread::scope(|scope| {
             let mut handles = Vec::with_capacity(fils);
             for f in 0..fils {
@@ -473,7 +463,7 @@ pub fn likelihood(
             best = Some(TraceMp3 {
                 l,
                 decalage: d,
-                canal: *canal,
+                canal,
             });
         }
     }
