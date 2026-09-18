@@ -761,3 +761,117 @@ fn bench_ou_part_le_temps() {
         s_audio / (s_total as f64 / 1000.0)
     );
 }
+
+/// Le coût unitaire d'une trame du balayage : fenêtrage, MDCT, statistiques de bande.
+///
+/// POURQUOI. `bench_ou_part_le_temps` situe 96,4 % du temps dans les bancs, et la dérivation
+/// donne ~1,16 million de trames par fichier à ~15 µs pièce. Mais « 15 µs par trame » est un
+/// quotient, pas une décomposition : il mélange trois travaux de natures différentes, et on ne
+/// sait pas lequel porte le coût. Optimiser sans ce découpage reviendrait à deviner.
+///
+/// CE QUE LE DÉCOUPAGE NE PEUT PAS FAIRE, et il faut le savoir en lisant les chiffres : les trois
+/// étages sont mesurés par DIFFÉRENCE de boucles cumulatives (A = fenêtrage, B = A + MDCT,
+/// C = B + statistiques). Le processeur ne les exécute pas isolément — préchargement et
+/// exécution dans le désordre recouvrent une partie du coût — donc chaque différence est une
+/// borne, pas une mesure exacte de l'étage seul. Elle suffit pour classer, pas pour budgéter.
+///
+/// `std::hint::black_box` sur chaque résultat : sans lui, l'optimiseur supprime une boucle dont
+/// la sortie n'est pas lue, et l'étage mesure zéro — une absence déguisée en gain.
+///
+/// Paramètres RÉELS du balayage long (`N = 1024`, fenêtre sinus, table 44,1 kHz,
+/// `BANDE_DEBUT_LONG`, `N_SF_LONG`, `P_CENTILE`) pour que les chiffres se reportent sur la
+/// production sans conversion.
+#[test]
+#[ignore]
+fn bench_cout_unitaire_du_balayage() {
+    use crate::analysis::aac_sfb::{swb_offsets, BlockKind};
+    use crate::analysis::mdct::MdctFast;
+    use crate::analysis::quant_trace::{
+        frame_likelihood, thresholds, Fenetre, BANDE_DEBUT_LONG, N_SF_LONG, P_CENTILE,
+    };
+
+    const N: usize = 1024;
+    const TRAMES: usize = 20_000;
+    /// Trames par fichier, dérivées dans `bench_ou_part_le_temps` : ~640 k pour `cadrage` et
+    /// ~524 k pour `aac` long. Sert uniquement à reporter le coût unitaire à l'échelle d'un
+    /// fichier, jamais à remplacer la mesure de bout en bout.
+    const TRAMES_PAR_FICHIER: f64 = 1_164_000.0;
+
+    let Some(offsets) = swb_offsets(44_100, BlockKind::Long) else {
+        println!("table 44,1 kHz absente — banc sauté");
+        return;
+    };
+    let w = Fenetre::Sinus.echantillons(BlockKind::Long);
+    assert_eq!(w.len(), 2 * N, "fenêtre de {} pour N = {N}", w.len());
+    let largeurs: Vec<usize> = (0..=N).collect();
+    let taus = thresholds(P_CENTILE, &largeurs);
+
+    // Signal pseudo-aléatoire reproductible — xorshift, pas `rand` : la suite doit être la même
+    // d'une exécution à l'autre pour que deux mesures se comparent.
+    let mut x = 0x1234_5678u32;
+    let signal: Vec<f32> = (0..2 * N + TRAMES)
+        .map(|_| {
+            x ^= x << 13;
+            x ^= x >> 17;
+            x ^= x << 5;
+            (x as f32 / u32::MAX as f32) - 0.5
+        })
+        .collect();
+
+    let plan = MdctFast::new(N);
+    let mut trame = vec![0.0f32; 2 * N];
+    let mut coeffs = vec![0.0f64; N];
+
+    let fenetrer = |trame: &mut Vec<f32>, t: usize| {
+        for i in 0..2 * N {
+            trame[i] = signal[t + i] * w[i];
+        }
+    };
+
+    let t0 = Instant::now();
+    for t in 0..TRAMES {
+        fenetrer(&mut trame, t);
+        std::hint::black_box(&trame);
+    }
+    let a = t0.elapsed();
+
+    let t0 = Instant::now();
+    for t in 0..TRAMES {
+        fenetrer(&mut trame, t);
+        plan.transform_f64_into(&trame, &mut coeffs);
+        std::hint::black_box(&coeffs);
+    }
+    let b = t0.elapsed();
+
+    let t0 = Instant::now();
+    for t in 0..TRAMES {
+        fenetrer(&mut trame, t);
+        plan.transform_f64_into(&trame, &mut coeffs);
+        let fc = frame_likelihood(&coeffs, offsets, BANDE_DEBUT_LONG, N_SF_LONG, &taus);
+        std::hint::black_box(fc.sous_tau);
+    }
+    let c = t0.elapsed();
+
+    let par = |d: Duration| d.as_secs_f64() * 1e6 / TRAMES as f64;
+    let (ua, ub, uc) = (par(a), par(b), par(c));
+    let pc = |v: f64| 100.0 * v / uc;
+
+    println!("\n=== coût unitaire d'une trame du balayage (N = {N}, {TRAMES} trames) ===");
+    println!("  fenêtrage seul          {ua:>7.2} µs  {:>5.1} %", pc(ua));
+    println!(
+        "  + MDCT                  {:>7.2} µs  {:>5.1} %",
+        ub - ua,
+        pc(ub - ua)
+    );
+    println!(
+        "  + statistiques de bande {:>7.2} µs  {:>5.1} %",
+        uc - ub,
+        pc(uc - ub)
+    );
+    println!("  TOTAL                   {uc:>7.2} µs");
+    println!(
+        "  report à {TRAMES_PAR_FICHIER:.0} trames : {:.1} s par fichier",
+        uc * TRAMES_PAR_FICHIER / 1e6
+    );
+    assert!(uc > 0.0, "une mesure nulle n'est pas un résultat");
+}
