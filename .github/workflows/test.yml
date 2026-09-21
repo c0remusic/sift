@@ -134,6 +134,13 @@ jobs:
       # pour tout le reste de la chaîne. Zéro compilation, comme ses voisines.
       - name: Lint css-comments (un */ orphelin éteint en silence la règle CSS suivante)
         run: npm run lint:css-comments
+      # Ajoutée le 2026-09-21 après un défaut signalé par Antoine avec capture : la bulle mm:ss
+      # du lecteur ne suivait pas le pouce pendant un glissement. Le slider pilotait le pouce par
+      # `pointermove` et la bulle par `mousemove`, et son `pointerdown` appelle `preventDefault()`
+      # — ce qui pose le drapeau PREVENT MOUSE EVENT (Pointer Events L3 § 11) et supprime tout
+      # `mousemove` du glissement. Échec SILENCIEUX : la bulle gèle, rien ne le signale.
+      - name: Lint pointer-capture (un élément qui capture le pointeur ne doit pas écouter la souris)
+        run: npm run lint:pointer-capture
 
       - name: Type-check frontend
         run: npx tsc --noEmit

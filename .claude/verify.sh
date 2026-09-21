@@ -65,6 +65,7 @@ run "css orphelin (lint:orphan-css)" npm run -s lint:orphan-css
 # gate ne le voit (le CSS reste syntaxiquement parsable). Attrapé les deux fois par une mesure
 # CDP qui contredisait la feuille — d'où cette gate, mesurée en mutation à sa création.
 run "css-comments (lint:css-comments)" npm run -s lint:css-comments
+run "pointer-capture (lint:pointer-capture)" npm run -s lint:pointer-capture
 
 # `cargo fmt --check` : ajouté le 2026-08-26 après un raté qu'aucune gate locale
 # ne pouvait voir. `34e7f12` a livré trois emplacements de `ipc_filing.rs` non

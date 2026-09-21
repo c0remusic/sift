@@ -23,6 +23,7 @@
     "lint:orphans": "node scripts/lint-orphan-exports.mjs",
     "lint:orphan-css": "node scripts/lint-orphan-css.mjs",
     "lint:css-comments": "node scripts/lint-css-comments.mjs",
+    "lint:pointer-capture": "node scripts/lint-pointer-capture.mjs",
     "check:security": "node scripts/check-tauri-security.mjs",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build"

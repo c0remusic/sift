@@ -1122,13 +1122,33 @@ async function mountPlayer(root: HTMLElement, path: string, peaks?: number[], du
     });
     const hoverTime = root.querySelector<HTMLElement>(".sift-wave-hovertime");
     if (hoverTime) {
-      progressEl.addEventListener("mousemove", (e) => {
+      // POINTEUR ET PAS SOURIS, et c'est un correctif, pas un goût. Signalé par Antoine avec
+      // capture le 2026-09-17 : la bulle ne suivait pas le pouce pendant un glissement. Le
+      // `pointerdown` ci-dessus appelle `preventDefault()`, ce qui pose le drapeau PREVENT MOUSE
+      // EVENT — Pointer Events niveau 3, § 11 : « If the pointer event dispatched was pointerdown
+      // and the event was canceled, then set the PREVENT MOUSE EVENT flag for this pointerType. »
+      // La spec compare les deux séquences : `pointerdown` normal = « zero or more pointermove AND
+      // mousemove events », `pointerdown` annulé = « zero or more pointermove events ». Aucun
+      // `mousemove` de tout le glissement, donc la bulle gelait à sa dernière position de survol
+      // pendant que le pouce avançait.
+      //
+      // `pointermove` règle les deux cas d'un coup : il porte le survol (une souris en émet sans
+      // bouton enfoncé) ET le glissement, où la capture le retarge vers `progressEl` même hors de
+      // ses bords — donc la bulle suit la position CLAMPÉE, exactement comme le pouce.
+      //
+      // `pointerleave` et pas `mouseleave` pour la même raison, plus une propriété utile : la
+      // capture suspend les événements de frontière jusqu'à sa libération, donc la bulle ne
+      // disparaît plus si le curseur sort pendant le glissement.
+      //
+      // Gardé par `npm run lint:pointer-capture` : un élément qui capture le pointeur ne doit pas
+      // écouter la souris. Le slider de VOLUME, plus haut dans ce fichier, est déjà tout-pointeur.
+      progressEl.addEventListener("pointermove", (e) => {
         const pct = pctFromX(e.clientX);
         hoverTime.hidden = false;
         hoverTime.style.left = `${pct * 100}%`;
         hoverTime.textContent = mmss(pct * ws.getDuration());
       });
-      progressEl.addEventListener("mouseleave", () => {
+      progressEl.addEventListener("pointerleave", () => {
         hoverTime.hidden = true;
       });
     }

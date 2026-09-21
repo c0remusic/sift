@@ -80,6 +80,12 @@ npm run lint:orphan-css          # classes de styles.css que plus aucun markup n
                                  # 2026-09-16, le jour de sa mise en service
 npm run lint:css-comments        # `*/` orphelin dans styles.css : texte hors /* */ = sélecteur
                                  # invalide, la règle suivante meurt en silence (payé 2x, 09-06/07)
+npm run lint:pointer-capture     # un élément qui appelle `setPointerCapture` ne doit pas AUSSI
+                                 # écouter la souris : un `pointerdown` annulé pose le drapeau
+                                 # PREVENT MOUSE EVENT (Pointer Events L3 § 11) et supprime tout
+                                 # `mousemove` du glissement. Ratchet à baseline. Payé le
+                                 # 2026-09-17 sur la bulle mm:ss du lecteur, gelée pendant qu'on
+                                 # déplaçait le pouce
 npm run check:security           # scope asset et CSP — refuse le retour du wildcard (aussi en CI)
 npm run storybook                # doc visuelle des états UI (port 6006), stories = frontend/*.stories.ts
 
@@ -130,7 +136,8 @@ de `rekordbox_masterdb.rs`, dépend de PyCryptodome).
 Deux gardiens, à connaître avant de dire « terminé » :
 
 - **`.claude/verify.sh`** — `tsc --noEmit` + `lint:tokens` + `lint:accents` + `lint:orphans` +
-  `lint:orphan-css` + `lint:css-comments` + `cargo fmt --check` + `cargo check`. ⚠️ Cette liste
+  `lint:orphan-css` + `lint:css-comments` + `lint:pointer-capture` + `cargo fmt --check` +
+  `cargo check`. ⚠️ Cette liste
   n'a nommé que cinq des huit jusqu'au 2026-09-16 : les trois lints ajoutés en septembre —
   `lint:orphans`, `lint:orphan-css`, `lint:css-comments` — tournaient sans être écrits ici, et la
   vérifier se fait par `grep -oE '^ *run "' .claude/verify.sh`, jamais de mémoire.
@@ -145,7 +152,8 @@ Deux gardiens, à connaître avant de dire « terminé » :
   (`.claude/settings.local.json`, non versionné).
 - **`.github/workflows/test.yml`** — sur **toute** branche et toute PR (Windows), dans cet ordre
   réel : `check:security` → `lint:tokens` → `lint:accents` → `lint:orphans` → `lint:orphan-css` →
-  `lint:css-comments` → `tsc --noEmit` → `npm run test` → `npm run lint` → `cargo fmt --check` →
+  `lint:css-comments` → `lint:pointer-capture` → `tsc --noEmit` → `npm run test` →
+  `npm run lint` → `cargo fmt --check` →
   `clippy -D warnings` → `cargo test`. Ordre délibéré, du moins cher au plus cher : les gates
   frontend ne compilent rien, et les six premières ne lisent même pas TypeScript. Le job régénère
   fixtures + ffmpeg d'abord. `lint:tokens` a rejoint cette liste le 2026-09-16 : il vivait dans un
