@@ -397,8 +397,49 @@ pub fn score_fichier(
 /// | `genuine` (10) | 0,000 .. 0,000 .. 0,050 | dix valeurs différentes |
 ///
 /// Au hasard la fraction vaut `1/64 ≈ 0,016`. Le seuil est posé à mi-chemin sur l'échelle, très
-/// loin des deux groupes : les vrais sont 19 fois au-dessus des authentiques, et aucun seuil de
-/// SCORE ne sépare aussi bien — `vorbisq5` descend à 26 quand un authentique monte à 41.
+/// loin des deux groupes, et aucun seuil de SCORE ne sépare aussi bien — `vorbisq5` descend à 26
+/// quand un authentique monte à 41.
+///
+/// ## Étendu le 2026-09-19 : la POPULATION AUTHENTIQUE ENTIÈRE, et ce qu'elle corrige
+///
+/// L'étalonnage ci-dessus tenait sur DIX authentiques. Sur les **2186 pistes authentiques** de la
+/// bibliothèque de test au-dessus de [`super::verdict::LOSSY_CLIFF_HZ`] — la population complète,
+/// pas un échantillon :
+///
+/// | population | n | alignement méd .. p99 .. MAX |
+/// |---|---|---|
+/// | authentiques, bibliothèque entière | 2186 | 0,000 .. 0,155 .. **0,275** |
+/// | vorbis q6 / q8 / q9 | 18 | 0,535 .. 1,000 .. 1,000 |
+/// | vorbis q10 | 6 | 0,000 · 0,265 · 0,465 · 0,465 · 0,500 · 0,535 |
+///
+/// ⚠️ **Le maximum authentique est 0,275, pas 0,050.** Dix fichiers ne montraient pas cette
+/// queue. L'écart entre les groupes n'est donc pas de 19 fois mais de **3,4** (0,933 / 0,275) —
+/// le seuil reste bien placé, mais sa marge réelle est cinq fois plus mince que ce que la ligne
+/// ci-dessus laissait croire.
+///
+/// ⚠️ **Les deux populations SE CHEVAUCHENT.** Une piste authentique mesure 0,275, au-dessus du
+/// plus bas faux q10 non nul (0,265). Aucun seuil ne les sépare proprement : ce n'est plus un
+/// réglage à optimiser, c'est une limite de la mesure.
+///
+/// ## Pourquoi le seuil N'A PAS été abaissé, alors que les chiffres le suggéraient
+///
+/// q6 à q9 sont attrapés 18 fois sur 18. Seul q10 (~500 kbps) échappe, 4 fois sur 6. Descendre à
+/// 0,35 en attraperait 4 sur 6 sans accuser un seul des 2186 authentiques — tentant, et écarté
+/// pour trois raisons, dans l'ordre de leur poids :
+///
+/// 1. **Le rapport est FIGÉ DANS LE CACHE.** `quant_likelihood` stocké est déjà
+///    `statistique / lambda` (voir `verdict::QUANT_LAMBDA_*`), donc changer ce seuil n'atteint
+///    aucun des rapports en base. Sans bump de `REPORT_CACHE_VERSION` la bibliothèque serait
+///    jugée à DEUX seuils selon la date d'analyse de chaque piste ; avec, c'est une ré-analyse
+///    complète — ~2 h 47 sur 3397 pistes au débit mesuré.
+/// 2. **La marge tomberait de 82 % à 27 %** au-dessus du maximum authentique observé, sur une
+///    mesure dont on vient de découvrir que sa queue était cinq fois plus longue que documenté.
+/// 3. **Le gain porte sur une menace absente.** Aucun faux Vorbis ni WMA dans cette
+///    bibliothèque — ni dans l'échantillon stratifié par verdict, ni dans les 2186 authentiques.
+///
+/// Rouvrir si des faux Vorbis apparaissent, ou si le rapport cesse d'être figé au cache (stocker
+/// la statistique BRUTE à côté rendrait le re-verdict capable de renormaliser, et ce seuil
+/// deviendrait modifiable sans ré-analyse — c'est le correctif durable, plus gros que ce seuil).
 pub const ALIGNEMENT_MIN: f64 = 0.5;
 
 /// Blocs retenus en deçà desquels l'alignement n'est pas une mesure.
