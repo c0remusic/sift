@@ -151,6 +151,15 @@ jobs:
       - name: Lint libellé mort (un verbe retiré de content.md ne doit plus paraître dans l'UI)
         run: npm run lint:dead-label
 
+      # Ajoutée le 2026-09-22, et c'est le seul lint du dépôt qui garde la DOCUMENTATION plutôt
+      # que le code. CLAUDE.md porte trois inventaires — la table des commandes, la liste de ce
+      # que `.claude/verify.sh` lance, et l'ordre réel des étapes ci-dessous — et un inventaire
+      # périmé échoue en silence : le fichier reste lisible, rien ne compile moins bien, et un
+      # agent qui s'y fie saute une gate sans le savoir. CLAUDE.md écrit lui-même que sa liste
+      # « n'a nommé que cinq des huit jusqu'au 2026-09-16 ». Mesurée à `2624f65^` : sortie 1.
+      - name: Lint inventaires CLAUDE.md (la doc doit nommer les gates qui tournent vraiment)
+        run: npm run lint:claude-md
+
       - name: Type-check frontend
         run: npx tsc --noEmit
 
