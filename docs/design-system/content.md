@@ -15,22 +15,27 @@ Ton :
 
 ## Vocabulaire Canonique
 
-| Concept | Libellé recommandé |
-|---|---|
-| Écran de décision | Revue |
-| Liste de traitement | File |
-| Analyse audio | Diagnostic audio |
-| Identification/tags | Métadonnées |
-| Choix de dossier | Destination |
-| Format de sortie | Format |
-| Nom calculé | Nom final |
-| Action principale | Convertir |
-| Rejet | Écarter |
-| État prêt | Prêt à ranger |
-| État incomplet | À finaliser |
-| Revérification | Rechercher à nouveau |
-| Tags écrits | Appliquer les tags |
-| Résultat Discogs | Match |
+| Concept | Libellé recommandé | Anglais (locale `en`) |
+|---|---|---|
+| Écran de décision | Revue | Review |
+| Liste de traitement | File | Queue |
+| Analyse audio | Diagnostic audio | Audio diagnostics |
+| Identification/tags | Métadonnées | Metadata |
+| Choix de dossier | Destination | Destination |
+| Format de sortie | Format | Format |
+| Nom calculé | Nom final | Final name |
+| Action principale | Convertir | Convert |
+| Rejet | Écarter | Set aside |
+| État prêt | Prêt à ranger | Ready to file |
+| État incomplet | À finaliser | Needs finishing |
+| Revérification | Rechercher à nouveau | Search again |
+| Tags écrits | Appliquer les tags | Apply tags |
+| Résultat Discogs | Match | Match |
+
+⚠️ **« Écarter » ne devient PAS « Discard ».** Le verbe français a été choisi contre « Jeter »
+parce que rien n'est supprimé — la piste part dans Écartés et reste là. « Discard » porte la
+finalité que « Jeter » portait, donc il rejouerait en anglais l'erreur corrigée en français.
+« Set aside » garde le geste et son innocuité.
 
 ## États
 
@@ -134,7 +139,61 @@ externes gardent leur casse et leur langue d'origine.
 "Discogs", "CDJ", "ID3", "AIFF", "WAV", "MP3" tels quels.
 
 Liste complète du jargon conservé, alignée sur `CLAUDE.md` : LOSSLESS, DUPLICATE, MATCH,
-CHECK MATCH, FAKE, kbps, kHz, MP3, AIFF, WAV. Ne pas le "corriger".
+FAKE, XML, kbps, kHz, MP3, AIFF, WAV. Ne pas le "corriger".
+
+⚠️ **Deux corrections à cette liste, le 2026-09-23.** `CHECK MATCH` en sort : il est RETIRÉ du
+produit (`frontend/filing.ts:624`, « CHECK MATCH removed entirely — annotation confirmed
+intentional »), donc la liste promettait une étiquette que personne ne peut voir. `XML` y entre :
+il est AFFICHÉ (`frontend/rekordbox-view.ts:371`, « XML Rekordbox illisible — relie un fichier »)
+et manquait. Les deux défauts vivaient aussi dans `docs/manuel.html`, en ligne, corrigé dans le
+même geste. ⚠️ `CLAUDE.md` porte la même liste et le même `CHECK MATCH` mort — son retrait là-bas
+demande la validation d'Antoine.
+
+### Locale `en` — ce qui change, et ce qui ne se traduit pas
+
+**L'app reste en français** ; cette locale existe pour le SITE (`docs/accueil.html`,
+`docs/manuel.html`). Traduire l'interface demanderait une couche i18n qui n'existe pas —
+1 100 chaînes candidates réparties sur 67 des 73 fichiers de `frontend/`, mesuré le 2026-09-23.
+C'est une décision d'architecture, pas un suivi de ce tableau.
+
+⚠️ **La section « Les mots anglais gardés tels quels » du manuel DISPARAÎT en anglais, elle ne se
+traduit pas.** Elle explique au lecteur français pourquoi LOSSLESS, DUPLICATE, MATCH, kbps
+restent en anglais ; pour un lecteur anglophone ces mots ne sont pas gardés, ils sont ordinaires,
+et la section n'explique plus rien. La remplacer par une note sur les VERDICTS, qui eux ont un
+libellé propre.
+
+**Verdicts.** Le français dit VRAI / FAUX / À VÉRIFIER depuis le 2026-09-10.
+
+| FR | EN | pourquoi |
+|---|---|---|
+| FAUX | FAKE | déjà dans la liste de jargon ci-dessus, donc déjà le mot du métier |
+| VRAI | GENUINE | « TRUE » se lit comme un booléen ; « genuine » est le mot du domaine face à un faux |
+| À VÉRIFIER | TO CHECK | pas « CHECK » seul, qui se lit comme un bouton d'action et non comme un état |
+
+**Écrans du rail**, dans l'ordre : Review · Log · Filed · To re-source · Trash · Rekordbox ·
+USB drive · Settings. Accueil → Home.
+
+**Verbes préférés** : Convert · Set aside · Search · Apply · Choose · Open · Cancel.
+
+**Le tutoiement n'a pas d'équivalent**, et ce n'est pas une perte de règle : l'anglais n'a pas
+l'opposition tu/vous, donc ce que le tutoiement encodait — registre direct, jamais cérémonieux —
+se rend par la deuxième personne nue et l'impératif. Interdits correspondants : pas de
+« please », pas de « kindly », pas de tournure passive pour adoucir une erreur.
+
+⚠️ **RÈGLE DE GLOSE, et c'est elle qui décide de la forme d'une doc anglaise.** Tant que l'app
+expédie des libellés FRANÇAIS, une page anglaise **glose** ces libellés, elle ne les remplace
+pas : le lecteur a l'écran sous les yeux, et une doc qui nomme autrement ce qu'il voit est
+fausse. On écrit donc « the Review screen (**Revue**) » et « the FAUX verdict (fake) », jamais
+« the GENUINE verdict » — ce dernier décrit une app qui n'existe pas. La colonne anglaise
+ci-dessus est le vocabulaire CIBLE, celui d'une interface traduite ; elle ne devient le
+vocabulaire des docs qu'au jour où l'interface l'expédie.
+Mesuré le 2026-09-23 : `ecartes-view.ts` pose `label: "FAUX"` et `label: "À VÉRIFIER"`, et
+`report-view.ts` le mot de verdict de Revue. Une première traduction du manuel, faite sans cette
+règle, annonçait les trois verdicts en anglais — inutilisable.
+
+⚠️ **`CHECK MATCH` est MORT dans le produit** (`frontend/filing.ts:624`). Retiré de la liste de
+jargon ci-dessus et de `docs/manuel.html` le 2026-09-23 ; il survit dans `CLAUDE.md`, dont le
+retrait demande la validation d'Antoine.
 
 **Divergence assumée vis-à-vis des HIG.** HIG Writing demande une langue simple et
 prescrit d'éviter le jargon. Sift le garde parce que ce n'en est pas au sens visé : ce
