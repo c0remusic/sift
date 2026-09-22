@@ -178,7 +178,7 @@ function openLink(u){window.open(u,'_blank','noopener');}
     // juste pour la démo).
     var cdjOk=!x.fake;
     var cdjBadge=cdjOk?'<span class="sift-chip-badge" style="background:var(--color-background-success);color:var(--color-text-success)">CDJ compatible</span>':'<span class="sift-chip-badge" style="background:var(--color-background-warning);color:var(--color-text-warning)">CDJ incompatible</span>';
-    var tagWarn=cdjOk?'':'<div style="display:flex;gap:7px;margin-top:8px;padding:8px 10px;font-size:10px;border-radius:var(--border-radius-sm);background:var(--color-background-warning);color:var(--color-text-warning)"><i class="ti ti-alert-triangle" style="font-size:12px;flex:none;margin-top:1px"></i><span>Artiste et Titre pas encore gravés dans le fichier — un CDJ ne peut pas les lire tant que ce n\'est pas fait. <strong>Ranger</strong> pour corriger.</span></div>';
+    var tagWarn=cdjOk?'':'<div style="display:flex;gap:7px;margin-top:8px;padding:8px 10px;font-size:10px;border-radius:var(--border-radius-sm);background:var(--color-background-warning);color:var(--color-text-warning)"><i class="ti ti-alert-triangle" style="font-size:12px;flex:none;margin-top:1px"></i><span>Artiste et Titre pas encore gravés dans le fichier — un CDJ ne peut pas les lire tant que ce n\'est pas fait. <strong>Convertir</strong> pour corriger.</span></div>';
     var metaBody='<div style="display:flex;align-items:center;gap:5px;margin-bottom:6px"><span class="pill" style="background:var(--color-background-info);color:var(--color-text-info);font-size:9px;padding:1px 6px"><i class="ti ti-download" style="font-size:9px"></i> pullé de Discogs</span></div>'
       +'<div style="display:grid;grid-template-columns:auto 1fr auto 1fr;gap:3px 8px;font-size:11px;align-items:center">'
       +'<span style="color:var(--color-text-tertiary)">Label</span><span>'+x.lbl+'</span><span style="color:var(--color-text-tertiary)">Année</span><span>'+x.yr+'</span>'
@@ -194,7 +194,7 @@ function openLink(u){window.open(u,'_blank','noopener');}
     var concIcon=x.fake?'ti-alert-triangle':x.duplicate?'ti-copy':'ti-circle-check';
     var concLabel=x.fake?'Sur-encodé, à re-sourcer':x.duplicate?'Déjà en bibliothèque':'Prêt à ranger';
     var conclusion='<div class="sift-verdict-card" style="background:'+vb+'"><div class="sift-verdict-head"><i class="ti '+concIcon+'" style="color:'+(x.fake?'var(--color-text-danger)':x.duplicate?'var(--color-text-secondary)':'var(--color-text-success)')+'"></i><span class="sift-verdict-label" style="color:'+(x.fake?'var(--color-text-danger)':x.duplicate?'var(--color-text-secondary)':'var(--color-text-success)')+'">'+concLabel+'</span></div><div class="sift-verdict-finalname-col"><div class="sift-verdict-finalname-label">Nom final</div><div class="sift-verdict-finalname" style="color:'+(x.fake?'var(--color-text-danger)':x.duplicate?'var(--color-text-secondary)':'var(--color-text-success)')+'">'+nm+'</div></div></div>';
-    // RAIL (Destination/Format/Ranger/Écarter) — hors périmètre de la refonte Diagnostic/
+    // RAIL (Destination/Format/Convertir/Écarter) — hors périmètre de la refonte Diagnostic/
     // Métadonnées, reste tel quel dans la barre fixe du bas.
     var sortir='<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:8px"><span style="font-size:10px;color:var(--color-text-tertiary)">Sortir en</span>'+chips+'</div>';
     var jBtn=x.fake
@@ -204,7 +204,7 @@ function openLink(u){window.open(u,'_blank','noopener');}
       :'<button data-act="jeter" style="color:var(--color-text-danger)" title="Envoyer dans Écartés"><span class="kbd">X</span> Écarter</button>';
     mid.innerHTML='<div class="mid-scroll">'+head+dupBanner+player+diagZone+metaZone+conclusion+'</div>'
       +'<div style="flex:none;padding-top:10px;border-top:0.5px solid var(--color-border-tertiary)">'+sortir
-      +'<div style="display:flex;gap:8px"><button data-act="commit" style="flex:1;background:var(--color-background-info);color:var(--color-text-info);border:none;font-weight:500"><span class="kbd">&crarr;</span> Ranger &rarr; '+FOLDERS[selFolder]+'</button>'+jBtn+'</div></div>';
+      +'<div style="display:flex;gap:8px"><button data-act="commit" style="flex:1;background:var(--color-background-info);color:var(--color-text-info);border:none;font-weight:500"><span class="kbd">&crarr;</span> Convertir &rarr; '+FOLDERS[selFolder]+'</button>'+jBtn+'</div></div>';
     if(midTab==="ecoute"&&cur>=0)drawSpec(x);
   }
 
@@ -226,8 +226,8 @@ function openLink(u){window.open(u,'_blank','noopener');}
     var dchips=FOLDERS.map(function(f,i){return '<span class="chip'+(i===selFolder?' on':'')+'" data-act="file2" data-i="'+i+'">'+f+'</span>';}).join(' ');
     content.innerHTML='<div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:10px"><span class="h1" style="margin:0">À traiter — mode batch</span><button data-act="revmode" data-m="detail"><i class="ti ti-layout-list" style="font-size:13px;vertical-align:-2px"></i> vue détail</button></div>'
       +(rows||'<div style="font-size:12px;color:var(--color-text-tertiary)">File vide.</div>')
-      +'<div style="margin-top:14px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-top:11px;border-top:0.5px solid var(--color-border-secondary)"><span style="font-size:11px;color:var(--color-text-tertiary)">Ranger dans :</span>'+dchips+'</div>'
-      +'<div style="margin-top:11px;display:flex;gap:8px"><button data-act="brange"'+(n?'':' disabled')+'>Ranger la sélection ('+n+')</button><button data-act="bjeter" style="color:var(--color-text-danger)"'+(n?'':' disabled')+'>Écarter ('+n+')</button></div>';
+      +'<div style="margin-top:14px;display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding-top:11px;border-top:0.5px solid var(--color-border-secondary)"><span style="font-size:11px;color:var(--color-text-tertiary)">Destination :</span>'+dchips+'</div>'
+      +'<div style="margin-top:11px;display:flex;gap:8px"><button data-act="brange"'+(n?'':' disabled')+'>Convertir la sélection ('+n+')</button><button data-act="bjeter" style="color:var(--color-text-danger)"'+(n?'':' disabled')+'>Écarter ('+n+')</button></div>';
   }
 
   function renderRkb(){block();var filed=cnt("filed"),byF=byFolder();

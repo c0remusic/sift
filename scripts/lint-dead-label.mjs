@@ -32,11 +32,14 @@
 // capitalisée ISOLÉE : les identifiants la portent collée (`doRanger`, `estRangeableEnLot`,
 // `refreshRangerButton`), l'attribut est en minuscules (`data-fil="ranger"`), et l'état aussi.
 //
+// `frontend/app.js` EST dans le périmètre depuis le 2026-09-22, après arbitrage d'Antoine. Elle
+// ne tourne pas en production — `main.ts:61` ne la charge que HORS Tauri — et `CLAUDE.md` écrit
+// qu'elle « ne fait pas autorité ». Mais elle reste la seule maquette du dépôt, donc ce qu'on y
+// lit sert de modèle au site suivant : elle portait cinq « Ranger », dont un dans un commentaire
+// nommant les boutons du rail. Un libellé mort qu'on recopie depuis une maquette est exactement
+// la façon dont les sept sites de production sont nés.
+//
 // CE QU'IL NE VOIT PAS, assumé :
-//   - `frontend/app.js` est HORS PÉRIMÈTRE. C'est la maquette navigateur, chargée seulement hors
-//     Tauri (`main.ts:61`), et `CLAUDE.md` écrit qu'elle « ne fait pas autorité ». Elle porte
-//     quatre libellés « Ranger » ; les réécrire serait une décision de design sur une surface qui
-//     n'est pas livrée, donc ça se propose, ça ne s'exécute pas.
 //   - un libellé assemblé par concaténation de variables, que rien ne lit comme une chaîne.
 //   - les autres verbes retirés. La table MORTS ci-dessous s'étend d'une ligne quand `content.md`
 //     en retire un de plus.
@@ -51,7 +54,7 @@ const BASELINE_FILE = resolve(REPO_ROOT, 'scripts', 'lint-dead-label-baseline.js
 const WRITE_BASELINE = process.argv.includes('--write-baseline');
 
 const EXCLUDE_DIRS = new Set(['node_modules', 'dist', '.git', 'target', '.claude']);
-const SCAN_EXTS = new Set(['.ts', '.tsx']);
+const SCAN_EXTS = new Set(['.ts', '.tsx', '.js']);
 const SCAN_ROOTS = ['frontend'];
 
 // Verbe retiré -> ce qui le remplace, et la ligne de content.md qui le déclare.
