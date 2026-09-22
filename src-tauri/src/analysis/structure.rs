@@ -86,6 +86,32 @@ impl TruncationAccumulator {
         if self.n == 0 || self.filled == 0 {
             return false;
         }
+        // ⚠️ CETTE RMS EST LE SEUL NIVEAU MOYEN GLOBAL DE TOUTE L'ANALYSE, et elle ne sert qu'à
+        // la comparaison de queue ci-dessous. La tentation évidente — « le facteur de crête est
+        // gratuit, `true_peak_dbtp` est calculé sur le MÊME downmix mono (`mod.rs:490-498`), il
+        // ne manque qu'un getter et un `sqrt` » — a été MESURÉE le 2026-09-22, et elle ne tient
+        // pas.
+        //
+        // 239 faux et 239 authentiques de la vraie bibliothèque, appariés conteneur pour
+        // conteneur (aif 92 / mp3 85 / wav 30 / aiff 21 / flac 11 des deux côtés), une seule
+        // passe de décodage. Facteur de crête global : AUC 0,501, IC95 [0,450 ; 0,557]. Les cinq
+        // autres candidats de dynamique tombent entre 0,504 et 0,516, et l'IC95 de chacun
+        // contient 0,5. À n=239/239, l'espérance de l'AUC orientée SOUS L'HYPOTHÈSE NULLE vaut
+        // 0,521 : les six observés sont donc SOUS le nul — « entre 0,50 et 0,55 » n'est pas un
+        // plafond constaté, c'est la bande nulle elle-même.
+        //
+        // Le chiffre qui décide ne dépend pas de l'effectif : l'écart des MÉDIANES de crête entre
+        // les deux groupes est de 0,30 dB, quand l'étendue p10-p90 À L'INTÉRIEUR de chaque groupe
+        // fait 6,4 dB. Le signal inter-groupe vaut 5 % de la dispersion intra-groupe, d de Cohen
+        // 0,003. La crête varie vingt fois plus d'un master à l'autre qu'entre vrai et faux :
+        // c'est une signature de MASTERING, pas de codec. Sift mesure l'authenticité.
+        //
+        // Et cette RMS-ci ne serait même pas la bonne : les sommes ci-dessus ne sont pas
+        // segmentées, donc elle inclut le silence de tête et de queue.
+        //
+        // Ce qui rouvrirait le sujet, et rien d'autre : une VÉRITÉ TERRAIN indépendante du
+        // spectre (des achats appariés à leur master). Détail, limites et données :
+        // `docs/ressources-externes.md` § Écarté.
         let global_rms = (self.global_sq / self.n as f64).sqrt();
         let tail_sq: f64 = self
             .tail

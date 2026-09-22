@@ -19,44 +19,44 @@
 > le 2026-07-09) : ouvrir la section visée via son numéro de ligne plutôt que
 > tout lire.
 
-- L14 — M2 — Analyseur / détection de faux lossless : Audio Fake Detector PRO (algo à lire), auCDtect, rustfft déjà en deps.
-- L33 — M3 — Décodage / waveform / analyse : Symphonia adopté, bpm-finder à évaluer, key hors scope.
-- L42 — M5 — Empreinte / dédoublonnage / identification : rusty-chromaprint (déjà en dep) vs chromaprint-next vs Chromaprint/AcoustID.
-- L51 — Export Rekordbox : rbox candidat n°1, rekordcrate (heavy dev), pyrekordbox (doc vivante), rekordbox-repair (3 idées récupérables).
-- L78 — Renommage Discogs : API Discogs (rate limits, flux de matching).
-- L92 — Évaluation 1 — Symphonia vs FFmpeg (2026-06-24) : archi hybride adoptée (FFmpeg encode, Symphonia decode pour l'analyse).
-- L144 — Évaluation 2 — chromaprint-next vs rusty-chromaprint (2026-06-24) : pas de migration maintenant, dépend du scope online/local.
-- L179 — Évaluation 3 — workflow d'itération UI en direct (2026-07-03) : root cause 3 implémentations UI parallèles ; tauri dev+HMR retenu.
-- L265 — Évaluation 4 — `/design-sync` et Open Design (2026-07-03) : les deux écartés, `design-system-states.md` reste la source de vérité.
-- L316 — Évaluation 5 — spike lecture native `master.db` Rekordbox (2026-07-03) : lecture seule validée et sûre.
-- L373 — Évaluation 6 — re-vérification `/design-sync` vs Open Design (2026-07-04) : statu quo confirmé, drift réel minime.
-- L423 — Évaluation 7 — spike d'écriture `master.db` (2026-07-04) : écriture possible et sûre en principe, portage Rust restant.
-- L493 — Évaluation 8 — outil de sync de tokens design↔code, construit (2026-07-04) : token-sync/ livré (générateurs, editor.html, dev-inspector).
-- L556 — Évaluation 9 — token-sync tool v2 (2026-07-04) : format DTCG retenu sans module Resolver, Figma écarté.
-- L610 — Évaluation 10 — token-sync tool v2 exécuté (2026-07-04) : migration DTCG livrée, gap rgba trouvé et corrigé.
-- L692 — Évaluation 11 — chantier triple : token-sync v3 + spike CDP + spike M8 n°2 (2026-07-05) : `styles.css` canonique unique, CDP WebView2 validé.
-- L777 — Évaluation 12 — pointeur visuel d'annotation, construit (2026-07-05) : `dev-inspector.ts`/`dev_locate.rs`/`dev_annotate.rs` livrés.
-- L830 — Évaluation 13 — prompt externe « Figma local » (2026-07-05) : rejeté (faits faux sur le repo, esquive le mapping inverse).
-- L888 — Évaluation 14 — spike M8 sur le fichier live Rekordbox (2026-07-05) : incident (backup déjà contaminé), 2 garde-fous actés.
-- L945 — Veille concurrente — MediaMonkey (2026-06-24) : 3 enseignements (dédup Chromaprint, DSL masks, MusicBrainz vs Discogs).
-- L979 — Veille UX — design d'interface (2026-06-24) : checklist UX (icon-only, microcopy, a11y, cohérence).
-- L998 — Titlebar custom (2026-07-03) : 3/3 briques faites, macOS non vérifié visuellement.
-- L1047 — Design system Sift — audit tokens hauteur/radius/typo (2026-07-03) : `--h-32`/`-44` supprimés, `--border-radius-sm`/`pill` ajoutés, `--text-hero` renommé.
-- L1079 — Infra / Release — décisions en attente : tauri-plugin-updater et tauri-specta reportés post-RC.
-- L1086 — Outillage Claude Code — purge plugins/skills cross-projet (2026-07-03) : désinstalls/désactivations, propagé au registre skills.
-- L1139 — Dette technique — audit Project Cleaner (2026-07-09) : 10 tokens CSS orphelins, version désync, refs mortes.
-- L1194 — Dette technique — double décryptage master.db (M8 Tier 1+3, 2026-07-09) : fix, index chargé une fois par `commit_file`.
-- L1223 — Dette technique — nettoyage clippy `m7-rekordbox-xml` (2026-07-04) : `TRASH_PURGE_DAYS` mort supprimé, `needless_range_loop` fixé.
-- L1247 — Écarté : vykee.co, SoundTouch.js, Qdrant, Graphify.
-- L1290 — Évaluation 15 — spectrogramme trop clair (2026-07-06) : 2 bugs empilés (dB non normalisé + cache `report_json` obsolète).
-- L1346 — Évaluation 16 — délégation Claude→Codex CLI (2026-07-06) : coût en tokens, override anti-routage dans le prompt de mission.
-- L1436 — Évaluation 17 — corruption d'encodage mojibake (2026-07-07) : 2 fichiers réparés, pas d'outillage ajouté.
-- L1481 — Évaluation 18 — test M8 Tier 1 contre copie réelle (2026-07-08) : bug WAL trouvé et corrigé.
-- L1578 — Évaluation 19 — spike stack UI écarté (2026-07-08) : racine = absence de référence canonique, pool shadcn/uithing/coss/HIG adopté.
-- L1700 — Évaluation 20 — M8 Tier 3 Test 1 infirmé (2026-07-08) : flag `TrackInfoUpdated` seul ne déclenche pas de reload auto.
-- L1777 — Évaluation 21 — M8 Tier 3 diff exact « Relire le tag » (2026-07-09) : find-or-create documenté (chemin création).
-- L1849 — Évaluation 22 — M8 Tier 3 reuse vs duplicate (2026-07-09) : REUSE confirmé pour un artiste déjà connu.
-- L1880 — Évaluation 23 — M8 Tier 3 moteur Rust livré (2026-07-09) : `sync_track_metadata` + spike 8 pochette.
+- L63 — M2 — Analyseur / détection de faux lossless : Audio Fake Detector PRO (algo à lire), auCDtect, rustfft déjà en deps.
+- L82 — M3 — Décodage / waveform / analyse : Symphonia adopté, bpm-finder à évaluer, key hors scope.
+- L91 — M5 — Empreinte / dédoublonnage / identification : rusty-chromaprint (déjà en dep) vs chromaprint-next vs Chromaprint/AcoustID.
+- L100 — Export Rekordbox : rbox candidat n°1, rekordcrate (heavy dev), pyrekordbox (doc vivante), rekordbox-repair (3 idées récupérables).
+- L127 — Renommage Discogs : API Discogs (rate limits, flux de matching).
+- L141 — Évaluation 1 — Symphonia vs FFmpeg (2026-06-24) : archi hybride adoptée (FFmpeg encode, Symphonia decode pour l'analyse).
+- L193 — Évaluation 2 — chromaprint-next vs rusty-chromaprint (2026-06-24) : pas de migration maintenant, dépend du scope online/local.
+- L228 — Évaluation 3 — workflow d'itération UI en direct (2026-07-03) : root cause 3 implémentations UI parallèles ; tauri dev+HMR retenu.
+- L314 — Évaluation 4 — `/design-sync` et Open Design (2026-07-03) : les deux écartés, `design-system-states.md` reste la source de vérité.
+- L365 — Évaluation 5 — spike lecture native `master.db` Rekordbox (2026-07-03) : lecture seule validée et sûre.
+- L422 — Évaluation 6 — re-vérification `/design-sync` vs Open Design (2026-07-04) : statu quo confirmé, drift réel minime.
+- L472 — Évaluation 7 — spike d'écriture `master.db` (2026-07-04) : écriture possible et sûre en principe, portage Rust restant.
+- L542 — Évaluation 8 — outil de sync de tokens design↔code, construit (2026-07-04) : token-sync/ livré (générateurs, editor.html, dev-inspector).
+- L605 — Évaluation 9 — token-sync tool v2 (2026-07-04) : format DTCG retenu sans module Resolver, Figma écarté.
+- L659 — Évaluation 10 — token-sync tool v2 exécuté (2026-07-04) : migration DTCG livrée, gap rgba trouvé et corrigé.
+- L741 — Évaluation 11 — chantier triple : token-sync v3 + spike CDP + spike M8 n°2 (2026-07-05) : `styles.css` canonique unique, CDP WebView2 validé.
+- L826 — Évaluation 12 — pointeur visuel d'annotation, construit (2026-07-05) : `dev-inspector.ts`/`dev_locate.rs`/`dev_annotate.rs` livrés.
+- L879 — Évaluation 13 — prompt externe « Figma local » (2026-07-05) : rejeté (faits faux sur le repo, esquive le mapping inverse).
+- L937 — Évaluation 14 — spike M8 sur le fichier live Rekordbox (2026-07-05) : incident (backup déjà contaminé), 2 garde-fous actés.
+- L994 — Veille concurrente — MediaMonkey (2026-06-24) : 3 enseignements (dédup Chromaprint, DSL masks, MusicBrainz vs Discogs).
+- L1028 — Veille UX — design d'interface (2026-06-24) : checklist UX (icon-only, microcopy, a11y, cohérence).
+- L1047 — Titlebar custom (2026-07-03) : 3/3 briques faites, macOS non vérifié visuellement.
+- L1096 — Design system Sift — audit tokens hauteur/radius/typo (2026-07-03) : `--h-32`/`-44` supprimés, `--border-radius-sm`/`pill` ajoutés, `--text-hero` renommé.
+- L1128 — Infra / Release — décisions en attente : tauri-plugin-updater et tauri-specta reportés post-RC.
+- L1135 — Outillage Claude Code — purge plugins/skills cross-projet (2026-07-03) : désinstalls/désactivations, propagé au registre skills.
+- L1188 — Dette technique — audit Project Cleaner (2026-07-09) : 10 tokens CSS orphelins, version désync, refs mortes.
+- L1243 — Dette technique — double décryptage master.db (M8 Tier 1+3, 2026-07-09) : fix, index chargé une fois par `commit_file`.
+- L1272 — Dette technique — nettoyage clippy `m7-rekordbox-xml` (2026-07-04) : `TRASH_PURGE_DAYS` mort supprimé, `needless_range_loop` fixé.
+- L1319 — Écarté : vykee.co, SoundTouch.js, Qdrant, Graphify, facteur de crête/DR (mesuré nul sur 239+239).
+- L1402 — Évaluation 15 — spectrogramme trop clair (2026-07-06) : 2 bugs empilés (dB non normalisé + cache `report_json` obsolète).
+- L1458 — Évaluation 16 — délégation Claude→Codex CLI (2026-07-06) : coût en tokens, override anti-routage dans le prompt de mission.
+- L1548 — Évaluation 17 — corruption d'encodage mojibake (2026-07-07) : 2 fichiers réparés, pas d'outillage ajouté.
+- L1593 — Évaluation 18 — test M8 Tier 1 contre copie réelle (2026-07-08) : bug WAL trouvé et corrigé.
+- L1690 — Évaluation 19 — spike stack UI écarté (2026-07-08) : racine = absence de référence canonique, pool shadcn/uithing/coss/HIG adopté.
+- L1812 — Évaluation 20 — M8 Tier 3 Test 1 infirmé (2026-07-08) : flag `TrackInfoUpdated` seul ne déclenche pas de reload auto.
+- L1889 — Évaluation 21 — M8 Tier 3 diff exact « Relire le tag » (2026-07-09) : find-or-create documenté (chemin création).
+- L1961 — Évaluation 22 — M8 Tier 3 reuse vs duplicate (2026-07-09) : REUSE confirmé pour un artiste déjà connu.
+- L1992 — Évaluation 23 — M8 Tier 3 moteur Rust livré (2026-07-09) : `sync_track_metadata` + spike 8 pochette.
 
 ---
 
@@ -1356,6 +1356,46 @@ insérés par `filing.ts`).
   d'entretien (`.graphifyignore`, hooks git, rebuild à chaque changement de
   structure) pas justifié pour un repo de la taille de Sift tant que
   l'attribution sémantique n'est pas fiable.
+- **Facteur de crête / plage dynamique (DR) comme signal d'authenticité** — écarté le
+  2026-09-22, après mesure sur la population. **239 faux et 239 authentiques** de la
+  bibliothèque réelle, appariés conteneur pour conteneur (aif 92 / mp3 85 / wav 30 / aiff 21 /
+  flac 11 des deux côtés, pour que le conteneur ne puisse pas se faire passer pour le signal),
+  une seule passe de décodage, tirage à pas fixe sur le tri par chemin — aucun aléatoire.
+  **Six candidats, six nuls** : facteur de crête global AUC 0,501 [0,450 ; 0,557], plage
+  dynamique à la DR 0,511, crête court terme 0,504, RMS global 0,516, pic d'échantillon 0,512,
+  dépassement inter-échantillons 0,506. À n=239/239 l'espérance de l'AUC orientée sous le nul
+  vaut 0,521 : les six sont **sous** le nul.
+  **Le chiffre qui tranche ne dépend pas de l'effectif** : 0,30 dB d'écart entre les médianes de
+  crête, contre 6,4 dB d'étendue p10-p90 à l'intérieur de chaque groupe — 5 % de rapport
+  signal/bruit, d de Cohen 0,003. La crête varie vingt fois plus d'un master à l'autre qu'entre
+  vrai et faux : **signature de mastering, pas de codec**.
+  La piste inverse, plus prometteuse sur le papier — les dépassements inter-échantillons que
+  produisent les codecs — tombe aussi : un vrai pic 4× BS.1770 construit pour l'occasion donne
+  AUC 0,506, et **113 des 239 authentiques dépassent 0 dBTP**, le plus gros dépassement de
+  l'échantillon (+4,317 dB) étant un authentique. Dépasser le plein échelle au vrai pic n'est
+  pas une signature de faux.
+  Coût écarté de la décision, mais il enlève l'argument inverse : la RMS globale est **déjà**
+  accumulée puis jetée (`analysis/structure.rs`, `global_sq` → `global_rms`), sur le même
+  downmix que `true_peak_dbtp`. Un getter et un `sqrt`. **Gratuit n'est pas une raison** — c'est
+  exactement l'argument qui avait failli faire afficher la pente spectrale.
+  ⚠️ **Ce que la mesure ne couvre pas, et c'est la limite honnête.** Les étiquettes ne sont pas
+  indépendantes : `analysis/verdict.rs` fait de la coupure spectrale une condition nécessaire
+  d'« Ok » en conteneur lossless, et le verdict MP3 se reconstruit depuis coupure + débit seuls
+  (167/167 vérifiés). Les 239 « authentiques » ne sont donc pas vérifiés authentiques : ce sont
+  les fichiers que les détecteurs spectraux n'ont pas attrapés (biais d'incorporation). Le plan
+  est structurellement aveugle à un signal **complémentaire** du spectre. Dans la seule tranche
+  non circulaire (39 faux lossless à coupure ≥ 20750 contre 154 authentiques lossless),
+  `clip_pct` sort à 0,673 [0,584 ; 0,762] et le pic d'échantillon à 0,692 — **non tranché**, et
+  à qualifier : n=39, 13 dossiers, post-hoc, appariement de conteneur rompu, et une explication
+  alternative non levée (la sonde de quantification pourrait se déclencher préférentiellement
+  sur du matériau fort et limité). Ce n'est de toute façon pas du niveau moyen : c'est de
+  l'écrêtage, déjà mesuré et déjà en base. Plancher de détection non atteint déclaré : la
+  conclusion juste est « aucune statistique de dynamique **au-dessus de ~0,60** », pas
+  « aucune ». Les 37 pistes `grey` — les seules où une mesure d'appoint servirait — sont
+  exclues des deux groupes.
+  **Trigger de réouverture** : une vérité terrain **indépendante du spectre** (achats appariés à
+  leur master), pas un nouveau candidat statistique. `real_quality` n'en est pas une — sur les
+  3397 lignes elle vaut exactement le conteneur, sans exception.
 
 ---
 
