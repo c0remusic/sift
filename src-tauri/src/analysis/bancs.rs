@@ -279,13 +279,37 @@ pub struct Banc {
     pub nom: &'static str,
     /// Ce que ce banc voit, pour le lecteur de la table. Jamais lu par le code.
     pub voit: &'static str,
-    /// Coût ANNONCÉ d'un passage sur un fichier de longueur typique, en millisecondes.
+    /// Coût MESURÉ d'un passage sur un fichier, en millisecondes. **Pas « par minute d'audio » :
+    /// par FICHIER.**
     ///
     /// ⚠️ **Il ne DÉCIDE rien.** Il n'y a ni cascade ni budget ici — voir [`sonder`]. Il sert à
     /// ORDONNER la table (du moins cher au plus cher, figé par
-    /// `la_table_est_triee_par_cout_croissant`) et à chiffrer au journal. Les valeurs des lignes
-    /// `aac` et `mp3` sont une RÉPARTITION d'une mesure jointe — les 0,3 s publiées portent sur
-    /// les trois mesures ensemble à `fils_max = Some(2)` —, donc ordinales et à re-mesurer.
+    /// `la_table_est_triee_par_cout_croissant`) et à chiffrer au journal.
+    ///
+    /// RECALIBRÉ le 2026-09-22, et les valeurs d'avant étaient des ordres de grandeur faux :
+    /// `mp3` annonçait 100 ms pour 1 090 mesurées, `aac` 200 pour 4 900, `cadrage` 2 900 pour
+    /// 5 750. Les deux premières étaient une RÉPARTITION d'une mesure jointe, jamais reprise
+    /// depuis. La dérive avait été relevée par `ec45c18` sans être corrigée — ce commit-là
+    /// mesurait, il ne recalibrait pas.
+    ///
+    /// CONDITIONS, parce qu'un nombre sans ses conditions n'est pas une calibration : 8 pistes
+    /// authentiques pleine bande (coupure 22 050 Hz, donc les trois bancs ouverts sur les huit),
+    /// 2 708 s d'audio, `--release`, un fil, `bench_sqlite::bench_ou_part_le_temps`. Dispersion
+    /// serrée — `aac` tient dans 4,65-5,03 s sur les huit.
+    ///
+    /// **La durée du fichier n'y change rien**, et cette mesure-ci le montre mieux qu'aucune
+    /// autre : 411 s d'audio coûtent 11,68 s de bancs, 244 s en coûtent 11,51. 68 % d'audio en
+    /// plus pour 1,5 % de coût en plus. Les bancs balaient un nombre FIXE de groupes × décalages,
+    /// ~1,16 million de MDCT de 2048 par fichier.
+    ///
+    /// ⚠️ **L'ABSOLU DÉRIVE D'UN TIERS ENTRE SESSIONS SUR CETTE MACHINE, LES RATIOS NON.** La
+    /// même mesure donnait 19,7 s de bancs par fichier le 2026-09-18 contre 11,7 aujourd'hui,
+    /// −41 %, dont ~5,7 % seulement s'expliquent par du code (`18eb3db`). Or la répartition est
+    /// inchangée : cadrage 47,3 % les deux fois, aac 40,7 → 40,3, mp3 8,4 → 9,0. Un facteur
+    /// uniforme, donc l'état de la machine. **Ne pas « corriger » un écart d'un tiers sur ces
+    /// valeurs : c'est du bruit de mesure.** Ce qui doit rester vrai, c'est le RANG et l'ordre de
+    /// grandeur. Même piège que l'étage MDCT non touché qui avait bougé de 7,2 % pendant qu'on
+    /// mesurait autre chose.
     pub cout_ms: u32,
     /// Vrai quand ce banc peut servir sur ce qu'on sait AVANT le décodage.
     ///
@@ -318,14 +342,15 @@ pub struct Banc {
 /// MSRV que `LazyLock` (1.80) a déjà posée à ce dépôt le 2026-09-12.
 ///
 /// Le banc de CADRAGE y est entré le 2026-09-15, une fois son coût dérivé : il est le SEUL à voir
-/// Vorbis et WMA, aveugles aux deux autres lignes, et le seul à coûter des secondes — voir
-/// [`CADRAGE_BLOCS`] pour le balayage qui a ramené sa dépense de ~4 500 ms à ~2 900 ms par
-/// fichier sans perdre la séparation.
+/// Vorbis et WMA, aveugles aux deux autres lignes — voir [`CADRAGE_BLOCS`] pour le balayage qui a
+/// ramené sa dépense sans perdre la séparation. ⚠️ Il n'est PLUS « le seul à coûter des
+/// secondes » : la recalibration du 2026-09-22 montre que `aac` coûte 4,9 s et `mp3` 1,1 s, donc
+/// les trois se comptent en secondes et l'écart cadrage/aac n'est que de 1,17.
 pub static BANCS_PRODUCTION: [Banc; 3] = [
     Banc {
         nom: "mp3",
         voit: "MPEG-1 couche III (8 bandes × 8 trames)",
-        cout_ms: 100,
+        cout_ms: 1_090,
         avant: amont_lossless_non_dementi,
         apres: aval_au_dessus_de_la_falaise,
         mesurer: mesure_mp3,
@@ -333,7 +358,7 @@ pub static BANCS_PRODUCTION: [Banc; 3] = [
     Banc {
         nom: "aac",
         voit: "AAC, deux résolutions MDCT — blocs longs (224 cellules) et courts (64)",
-        cout_ms: 200,
+        cout_ms: 4_900,
         avant: amont_lossless_non_dementi,
         apres: aval_au_dessus_de_la_falaise,
         mesurer: mesure_aac,
@@ -341,7 +366,7 @@ pub static BANCS_PRODUCTION: [Banc; 3] = [
     Banc {
         nom: "cadrage",
         voit: "tout codec MDCT — dont Vorbis et WMA, aveugles aux deux lignes ci-dessus",
-        cout_ms: 2_900,
+        cout_ms: 5_750,
         avant: amont_lossless_non_dementi,
         apres: aval_au_dessus_de_la_falaise,
         mesurer: mesure_cadrage,
@@ -510,9 +535,9 @@ const CADRAGE_JEUX: [Jeu; 2] = [framing::JEUX[1], framing::JEUX[4]];
 /// Demi-seconde à 44,1 kHz, seize blocs.
 ///
 /// **MESURÉ le 2026-09-15**, et c'est la mesure qui a autorisé l'entrée de cette ligne en table.
-/// La séparation avait d'abord été établie à 30 blocs (~4 500 ms par fichier, quinze fois les deux
-/// autres lignes réunies) ; le balayage cherchait le plus petit réglage qui la tienne encore, sur
-/// les 20 vrais transcodages et 10 authentiques du corpus étiqueté :
+/// La séparation avait d'abord été établie à 30 blocs (~4 500 ms par fichier) ; le balayage
+/// cherchait le plus petit réglage qui la tienne encore, sur les 20 vrais transcodages et
+/// 10 authentiques du corpus étiqueté :
 ///
 /// | blocs | vrais, min | authentiques, max | marge | coût |
 /// |---|---|---|---|---|
@@ -520,6 +545,20 @@ const CADRAGE_JEUX: [Jeu; 2] = [framing::JEUX[1], framing::JEUX[4]];
 /// | 12 | 0,833 | 0,125 | +0,708 | 2,3 s |
 /// | **16** | **0,938** | **0,091** | **+0,847** | **2,9 s** |
 /// | 20 | 0,950 | 0,125 | +0,825 | 3,4 s |
+///
+/// ⚠️ **Une clause a été RETIRÉE de ce paragraphe le 2026-09-22 : « quinze fois les deux autres
+/// lignes réunies ».** Elle était fausse, et d'une façon instructive — elle divisait les 4 500 ms
+/// par les 300 ms ANNONCÉS pour `mp3` + `aac` (100 + 200), or ces deux annonces étaient elles-
+/// mêmes fausses d'un facteur ~20. Un nombre DÉRIVÉ hérite de l'erreur de son entrée et lui
+/// survit, parce qu'il ne cite plus le champ dont il vient. Mesuré : à la date de ce balayage,
+/// `aac` + `mp3` coûtaient ensemble ~10 s par fichier, donc 4 500 ms en valait 0,43 fois — pas
+/// quinze. Le choix de 16 blocs, lui, ne repose pas dessus : il repose sur la MARGE de la
+/// colonne du milieu, qui est mesurée.
+///
+/// ⚠️ La colonne « coût » de cette table est datée du 2026-09-15 et n'a pas été reprise : le
+/// même réglage à 16 blocs mesure 5,75 s le 2026-09-22 sur la même machine. Ce sont les RAPPORTS
+/// entre lignes qui ont choisi le réglage, et eux tiennent — voir l'avertissement de dérive sur
+/// [`Banc::cout_ms`].
 ///
 /// 10 ne tient pas : un vrai descend à 0,333, sous [`framing::ALIGNEMENT_MIN`].
 ///
@@ -1090,18 +1129,27 @@ mod tests {
         );
     }
 
-    /// La table est triée par coût croissant — la seule chose que `cout_ms` décide aujourd'hui.
+    /// La table est triée par coût STRICTEMENT croissant — la seule chose que `cout_ms` décide.
     ///
-    /// MUTATION : échanger les lignes `mp3` et `aac` dans `BANCS_PRODUCTION`.
+    /// ⚠️ La version d'avant le 2026-09-22 comparait la liste à sa copie triée, donc elle
+    /// acceptait des valeurs ÉGALES : trois bancs à `1` passaient, et `cout_ms` aurait cessé
+    /// d'ordonner quoi que ce soit sans que rien ne tombe. Un ordre total est ce que le champ
+    /// promet ; c'est donc lui qu'il faut épingler, pas un tri.
+    ///
+    /// MUTATIONS : échanger les lignes `mp3` et `aac` dans `BANCS_PRODUCTION` ; donner le même
+    /// coût à deux lignes.
     #[test]
-    fn la_table_est_triee_par_cout_croissant() {
+    fn la_table_est_triee_par_cout_strictement_croissant() {
         let couts: Vec<u32> = BANCS_PRODUCTION.iter().map(|b| b.cout_ms).collect();
-        let mut trie = couts.clone();
-        trie.sort_unstable();
-        assert_eq!(
-            couts, trie,
-            "la table doit se lire du moins cher au plus cher"
-        );
+        for paire in couts.windows(2) {
+            assert!(
+                paire[0] < paire[1],
+                "la table doit se lire du moins cher au plus STRICTEMENT cher, \
+                 or {} n'est pas < {} — coûts lus : {couts:?}",
+                paire[0],
+                paire[1]
+            );
+        }
     }
 
     /// Les lignes nomment les λ CALIBRÉS, en littéral.

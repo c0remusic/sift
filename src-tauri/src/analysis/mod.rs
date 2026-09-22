@@ -272,7 +272,11 @@ pub struct AnalysisReport {
 /// WMA porte donc `quant_likelihood = None` ou une valeur basse dans tous les rapports v13, et un
 /// `None` stocké NE SE RÉPARE PAS par le re-verdict, qui rejoue les mesures sans les recalculer.
 /// Le bump est ce qui fait re-décoder la file puis la bibliothèque rangée en fond (#59), au prix
-/// de ~2 900 ms par fichier authentique — la dépense de la nouvelle ligne.
+/// de ~2 900 ms par fichier authentique — la dépense de la nouvelle ligne, telle que mesurée ce
+/// jour-là. ⚠️ Re-mesurée à **5 750 ms** le 2026-09-22 sur la même machine, sans que le code du
+/// banc ait changé : l'absolu dérive d'un tiers entre sessions ici, pas le rang. Les deux
+/// chiffres sont vrais à leur date ; ne pas lire l'écart comme une régression. Voir
+/// [`bancs::Banc::cout_ms`].
 pub const REPORT_CACHE_VERSION: i64 = 14;
 
 /// Lit le cache `(tracks.report_json, tracks.report_cache_ver)`. Version absente, version distancée
