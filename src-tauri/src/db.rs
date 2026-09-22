@@ -452,6 +452,63 @@ const MIGRATIONS: &[&str] = &[
     UPDATE tracks SET verdict_ver = 1
     WHERE verdict IS NOT NULL AND report_cache_ver = 8;
     "#,
+    // v23 — QUATRIÈME migration de contenu, même famille que v16, v20 et v21 : le format est bon,
+    // la donnée est fausse, et la bonne valeur est déjà en base sans que personne la lise.
+    //
+    // `tracks.duration` recevait `AnalysisReport::duration_sec`, qui vient de `lofty`
+    // (`analysis/tags.rs:208`, `props.duration()`) — donc d'un EN-TÊTE. À côté,
+    // `decoded_duration_sec` compte les échantillons réellement décodés
+    // (`analysis/mod.rs:639`) et dort dans `report_json` depuis la v7 sans aucun consommateur.
+    //
+    // MESURÉ sur la base de production le 2026-09-22 : 15 lignes sur 3393 divergent de plus de
+    // 2 secondes, DANS LES DEUX SENS.
+    //
+    // - **12 MP3 en VBR sans en-tête Xing/Info/VBRI.** Sans cet en-tête, un parseur d'en-tête lit
+    //   le débit de la PREMIÈRE trame — 320, le maximum MP3 — et en déduit taille/320. Vérifié
+    //   fichier par fichier : `AGFA Theme 2006.mp3` porte des trames à 256 ET 320, aucun
+    //   `Xing`/`Info`/`VBRI` (le `LAME` présent est à l'offset 180762, en plein flux, et ne
+    //   compte pas). Base 285,39 s, décodé 351,95 s, ffmpeg d'accord à 0,05 s près. Jusqu'à
+    //   +73,43 s d'écart sur ce lot.
+    // - **Le sens inverse existe aussi** : `Metro - Here For The Love` (deux copies) annonce
+    //   497,57 s pour 273,42 s décodées — 224 s de TROP. C'est exactement le cas de troncature
+    //   que le doc-comment de `decoded_duration_sec` décrit, et que rien ne lisait.
+    // - **Et le plus gros lot n'est ni l'un ni l'autre : 34 lignes portaient `duration = 0`.**
+    //   `lofty` n'a pas lu leur en-tête du tout, et rien ne le signalait — l'écran affiche
+    //   « 0:00 » sur un fichier qui contient bel et bien du son. Leur durée décodée existe et
+    //   monte jusqu'à 509 s.
+    //
+    // ESSAI À BLANC sur une COPIE de la base de production, avant d'écrire cette migration :
+    // 3393 lignes visées par l'UPDATE, 687 valeurs réellement modifiées — 34 zéros réparés,
+    // 15 écarts de plus de 2 s, 31 entre 0,1 et 2 s, et 607 sous 0,1 s (l'en-tête arrondit, le
+    // comptage d'échantillons non). ZÉRO durée devenue nulle ou négative : c'est le garde `> 0`
+    // qui le tient, et le test le mute.
+    //
+    // CE QUE ÇA NE CORRIGE PAS, et il faut le dire parce que la première version de ce
+    // commentaire l'affirmait à tort. `dedup::DURATION_MATCH_TOL_SEC` vaut 2,0 : deux pistes dont
+    // les durées diffèrent de plus de 2 s ne sont PAS comparées à l'empreinte, et le fail-open
+    // promis par son doc-comment ne couvre que la durée ABSENTE (`None`) — un `0.0` est une durée
+    // « connue », donc le pré-filtre s'applique et écarte toutes ses paires. ⚠️ Mais la
+    // conséquence est NULLE aujourd'hui : `dedup::scan` lit `WHERE status='filed'`, les 34 lignes
+    // à zéro sont TOUTES `pending`, et cette base ne compte que 14 pistes rangées. Le risque est
+    // latent — il mord le jour où l'une d'elles est rangée. Le verdict, lui, ne bouge sur aucune
+    // des 15 : vérifié en rejouant `verdict::min_cutoff_hz_for_bitrate` avec le débit corrigé,
+    // la coupure de ce lot (~15 800 Hz) reste sous le plancher jusqu'à 160 kbps.
+    //
+    // PAS de bump de REPORT_CACHE_VERSION, pour la même raison qu'en v20 : le FORMAT n'a pas
+    // changé, et le rapport contient DÉJÀ la bonne valeur. Une ré-analyse coûterait ~2 h 47 sur
+    // 3397 pistes pour recalculer un nombre qui est déjà écrit.
+    //
+    // `14` est un LITTÉRAL et pas `REPORT_CACHE_VERSION`, même règle qu'en v22 : une migration
+    // est gelée dans le temps, et un futur bump ne doit pas réécrire rétroactivement le sens de
+    // celle-ci. Le garde `> 0` est le vrai discriminant — `decoded_duration_sec` porte
+    // `#[serde(default)]`, donc un rapport antérieur à la v7 le rendrait à 0, et écrire 0 dans
+    // `duration` serait pire que l'en-tête.
+    r#"
+    UPDATE tracks SET duration = json_extract(report_json, '$.decoded_duration_sec')
+    WHERE report_json IS NOT NULL AND report_json <> ''
+      AND report_cache_ver = 14
+      AND json_extract(report_json, '$.decoded_duration_sec') > 0;
+    "#,
 ];
 
 /// Applies ONE migration and its `user_version` bump in a SINGLE transaction, so a batch that
@@ -614,6 +671,81 @@ mod tests {
             })
             .unwrap();
         assert_eq!(ver, None, "report_cache_ver doit tomber avec le rapport");
+    }
+
+    /// v23 doit corriger EXACTEMENT les lignes dont le rapport porte une durée décodée utilisable,
+    /// et ne toucher à rien d'autre. Quatre populations dans le même test, parce que chacune porte
+    /// un risque distinct — et celui de la population 2 est le pire : `decoded_duration_sec` a un
+    /// `#[serde(default)]`, donc un rapport antérieur à la v7 le rend à 0, et écrire 0 dans
+    /// `duration` serait bien pire que de garder l'en-tête.
+    #[test]
+    fn migration_v23_ne_corrige_que_les_durees_reellement_mesurees() {
+        let conn = Connection::open_in_memory().unwrap();
+        for sql in MIGRATIONS.iter().take(22) {
+            conn.execute_batch(sql).unwrap();
+        }
+        conn.execute_batch("PRAGMA user_version = 22").unwrap();
+
+        // 1 — le cas réel : en-tête menteur, durée décodée présente. À corriger.
+        conn.execute(
+            "INSERT INTO tracks (id, path, status, duration, report_json, report_cache_ver)
+             VALUES (1, '/vbr.mp3', 'pending', 285.39, '{\"decoded_duration_sec\":351.95}', 14)",
+            [],
+        )
+        .unwrap();
+        // 2 — rapport d'avant la v7 : le champ tombe au `default`, donc 0. À NE PAS écrire.
+        conn.execute(
+            "INSERT INTO tracks (id, path, status, duration, report_json, report_cache_ver)
+             VALUES (2, '/vieux.mp3', 'pending', 200.0, '{\"decoded_duration_sec\":0}', 14)",
+            [],
+        )
+        .unwrap();
+        // 3 — sentinelle de persist_failure. Strictement intacte, comme en v20.
+        conn.execute(
+            "INSERT INTO tracks (id, path, status, duration, report_json)
+             VALUES (3, '/casse.mp3', 'pending', 42.0, '')",
+            [],
+        )
+        .unwrap();
+        // 4 — rapport à une autre version de cache : hors du périmètre gelé de cette migration.
+        conn.execute(
+            "INSERT INTO tracks (id, path, status, duration, report_json, report_cache_ver)
+             VALUES (4, '/autre.mp3', 'pending', 100.0, '{\"decoded_duration_sec\":999.0}', 8)",
+            [],
+        )
+        .unwrap();
+
+        run_migrations(&conn).unwrap();
+
+        let dur = |id: i64| -> Option<f64> {
+            conn.query_row(
+                "SELECT duration FROM tracks WHERE id=?1",
+                rusqlite::params![id],
+                |r| r.get(0),
+            )
+            .unwrap()
+        };
+        assert!(
+            dur(1).is_some_and(|d| (d - 351.95).abs() < 0.01),
+            "la durée mesurée n'a pas remplacé celle de l'en-tête : {:?}",
+            dur(1)
+        );
+        assert!(
+            dur(2).is_some_and(|d| (d - 200.0).abs() < 0.01),
+            "un `decoded_duration_sec` à 0 vient du `serde(default)`, pas d'une mesure — \
+             l'écrire effacerait une durée correcte : {:?}",
+            dur(2)
+        );
+        assert!(
+            dur(3).is_some_and(|d| (d - 42.0).abs() < 0.01),
+            "la ligne à la sentinelle `''` a été touchée : {:?}",
+            dur(3)
+        );
+        assert!(
+            dur(4).is_some_and(|d| (d - 100.0).abs() < 0.01),
+            "une autre version de cache est hors du périmètre gelé de v23 : {:?}",
+            dur(4)
+        );
     }
 
     /// v21 ne doit reprendre QUE les lignes produites par les deux chemins cassés du détecteur de

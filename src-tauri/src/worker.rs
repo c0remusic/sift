@@ -204,7 +204,22 @@ pub fn persist_report(
             r.declared_bitrate,
             r.declared_format,
             rail_str(r.declared_rail),
-            r.duration_sec,
+            // La durée MESURÉE, pas celle de l'en-tête. `duration_sec` vient de `lofty`
+            // (`tags.rs:208`), qui lit un en-tête ; `decoded_duration_sec` compte les
+            // échantillons réellement décodés (`analysis/mod.rs:639`). Les deux divergent sur
+            // 49 lignes de la base de production, mesurées le 2026-09-22, et de trois façons :
+            // 34 lignes à `0` (en-tête illisible, l'écran affiche « 0:00 » sur un vrai son) ;
+            // un MP3 VBR sans en-tête Xing/Info/VBRI fait lire à lofty le débit de la première
+            // trame — 320, le maximum MP3 — et déduire taille/320, soit 12 fichiers jusqu'à
+            // +73 s ; et à l'inverse un en-tête de 497,57 s sur un fichier tronqué à 273,42 s en
+            // annonce 224 de trop. C'est le désaccord que `decoded_duration_sec` a été créé pour
+            // voir — son doc-comment le décrit — et que personne ne lisait.
+            //
+            // Sans danger malgré le `#[serde(default)]` du champ : `persist_report` n'a qu'un
+            // seul appelant de production (`worker.rs`, la fin d'une analyse), donc `r` est
+            // toujours un rapport FRAIS, jamais un rapport relu depuis le cache. Les lignes déjà
+            // en base sont rattrapées par la migration v23, qui lit leur `report_json`.
+            r.decoded_duration_sec,
             r.clip_runs,
             r.clip_pct,
             r.true_peak_dbtp,
@@ -1101,6 +1116,40 @@ pub(crate) mod tests {
         assert!(
             !selected.contains(&casse),
             "un fichier illisible serait repris en boucle et brûlerait ses analysis_attempts"
+        );
+    }
+
+    /// `tracks.duration` doit porter la durée MESURÉE, jamais celle de l'en-tête.
+    ///
+    /// Les deux vivent côte à côte dans le rapport et ne se distinguent par rien à la lecture :
+    /// `duration_sec` vient de `lofty` (`analysis/tags.rs:208`, un en-tête), `decoded_duration_sec`
+    /// compte les échantillons réellement décodés (`analysis/mod.rs:639`). Persister la première
+    /// est ce que faisait ce code, et `fake_report()` les avait toutes deux à 123.0 — donc aucun
+    /// test existant ne pouvait voir la différence.
+    ///
+    /// ⚠️ Les deux divergent DANS LES DEUX SENS sur la base de production, mesuré le 2026-09-22 :
+    /// 12 MP3 en VBR sans en-tête Xing/Info/VBRI annoncent jusqu'à 73 s de MOINS que leur contenu
+    /// (l'en-tête donne le débit de la première trame, 320, et la durée s'en déduit), tandis qu'un
+    /// fichier tronqué annonce 497,57 s pour 273,42 s décodées — 224 s de TROP. Les deux valeurs
+    /// du vecteur ci-dessous sont donc volontairement de part et d'autre.
+    #[test]
+    fn persist_report_ecrit_la_duree_decodee_pas_celle_de_l_entete() {
+        let conn = db();
+        let id = add_pending(&conn, "vbr-sans-entete.mp3");
+        let mut r = fake_report();
+        r.duration_sec = 285.39; // ce que l'en-tête annonce
+        r.decoded_duration_sec = 351.95; // ce que le décodage a compté
+
+        persist_report(&conn, id, &r, &serde_json::to_string(&r).unwrap()).unwrap();
+
+        let lu: f64 = conn
+            .query_row("SELECT duration FROM tracks WHERE id=?1", [id], |x| {
+                x.get(0)
+            })
+            .unwrap();
+        assert!(
+            (lu - 351.95).abs() < 0.01,
+            "duration doit valoir la durée décodée 351.95, a reçu {lu} —              285.39 serait la valeur de l'en-tête, celle qui ment"
         );
     }
 
