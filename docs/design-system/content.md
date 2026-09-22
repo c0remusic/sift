@@ -110,7 +110,7 @@ Exemples :
 
 - `44 100 Hz`
 - `22.1 kHz`
-- `0.00 dBTP`
+- `0.00 dBFS`
 - `AIFF`
 - `lossless`
 

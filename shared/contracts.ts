@@ -162,6 +162,11 @@ export interface AnalysisReport {
   spectrogram: Spectrogram;
   clip_runs: number;
   clip_pct: number;
+  /** Pic d'échantillon en dBFS, malgré son nom. L'accumulateur Rust interpole LINÉAIREMENT, ce
+   *  qui ne peut jamais dépasser `max |s|` — ce n'est pas un vrai-pic et il ne voit aucun
+   *  dépassement inter-échantillons. Le nom reste pour ne pas payer une migration de schéma ;
+   *  l'affichage dit « Pic d'échantillon … dBFS ». Démonstration et mesure :
+   *  `src-tauri/src/analysis/dynamics.rs`. */
   true_peak_dbtp: number;
   dc_offset: number;
   phase_correlation: number;

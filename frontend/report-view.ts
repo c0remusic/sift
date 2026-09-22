@@ -760,7 +760,10 @@ function spectroAndTagsHtml(r: AnalysisReport): string {
       ? rowRefParts("Densité du haut", hfTopDensityParts(r.hf_flatness_top_db, fmt))
       : "") +
     grpRow("Signal") +
-    row("True-peak", fmt(r.true_peak_dbtp, 2) + " dBTP") +
+    // « Pic d'échantillon », pas « True-peak » : malgré son nom, `true_peak_dbtp` EST le pic
+    // d'échantillon — son sur-échantillonnage linéaire ne peut pas dépasser `max |s|`, démontré et
+    // épinglé dans `analysis/dynamics.rs`. L'unité suit : dBFS, pas dBTP.
+    row("Pic d'échantillon", fmt(r.true_peak_dbtp, 2) + " dBFS") +
     row("Écrêtage", r.clip_runs + " runs · " + fmt(r.clip_pct, 2) + "%") +
     row("Corrélation de phase", fmt(r.phase_correlation, 3)) +
     row("DC offset", fmt(r.dc_offset, 5)) +
