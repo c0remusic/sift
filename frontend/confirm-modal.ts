@@ -68,11 +68,11 @@ export function confirmBatchAlert(data: BatchAlertData): Promise<BatchAlertResul
     card.className = "sift-report-overlay-card sift-confirm-card sift-batch-alert";
     card.setAttribute("role", "alertdialog");
     card.setAttribute("aria-modal", "true");
-    card.setAttribute("aria-label", "Ranger la sélection ?");
+    card.setAttribute("aria-label", "Convertir la sélection ?");
 
     const title = document.createElement("div");
     title.className = "sift-batch-alert-title";
-    title.textContent = "Ranger la sélection ?";
+    title.textContent = "Convertir la sélection ?";
 
     const recap = document.createElement("div");
     recap.className = "sift-batch-alert-recap";
@@ -106,7 +106,7 @@ export function confirmBatchAlert(data: BatchAlertData): Promise<BatchAlertResul
     const confirmBtn = document.createElement("button");
     confirmBtn.type = "button";
     confirmBtn.className = "sift-confirm-btn";
-    confirmBtn.textContent = `Ranger ${data.fileCount}`;
+    confirmBtn.textContent = `Convertir ${data.fileCount}`;
     confirmBtn.disabled = true;
     const armTimer = window.setTimeout(() => {
       confirmBtn.disabled = false;

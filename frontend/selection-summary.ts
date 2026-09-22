@@ -120,8 +120,8 @@ export function selectionSummaryHtml(selected: QueueItem[]): string {
       : "") +
     `<div class="sift-bsel-actions">` +
     (fileN > 0
-      ? `<button class="sift-baction sift-baction--primary" data-sift="batchqueuefile">Ranger ${fileN} piste${fileN > 1 ? "s" : ""}</button>`
-      : `<button class="sift-baction sift-baction--primary" disabled>Ranger</button>`) +
+      ? `<button class="sift-baction sift-baction--primary" data-sift="batchqueuefile">Convertir ${fileN} piste${fileN > 1 ? "s" : ""}</button>`
+      : `<button class="sift-baction sift-baction--primary" disabled>Convertir</button>`) +
     (discardN > 0
       ? `<button class="sift-baction sift-baction--quiet" data-sift="batchqueuediscard">Écarter ${discardN} faux</button>`
       : `<button class="sift-baction sift-baction--quiet" disabled>Écarter</button>`) +

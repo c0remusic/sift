@@ -63,7 +63,8 @@ Verbes préférés :
 - Annuler
 
 Note : "Convertir" est le libellé du bouton d'action principale (remplace
-"Ranger" le 2026-07-10, retour utilisateur — rendu à `frontend/filing.ts:95`). Le concept
+"Ranger" le 2026-07-10, retour utilisateur — rendu à `frontend/filing.ts:113`, décision en
+doc-comment à `filing.ts:97`). Le concept
 produit reste "déplacer = encoder + ranger" (CLAUDE.md) ; ce n'est plus le
 libellé affiché. "Écarter" remplace "Jeter" (même date — commentaire d'origine
 `filing.ts:169`, markup `filing.ts:175`).

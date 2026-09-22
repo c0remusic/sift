@@ -369,7 +369,7 @@ function renderBins(fldz: HTMLElement): void {
     // convertir » — c'était vrai avant #54 et c'est faux depuis : on convertit sur place ou vers un
     // dossier externe sans aucune racine.
     body =
-      '<div class="sift-fldz-hint">Aucune racine de bibliothèque — cet arbre reste vide. Ranger sur place ou dans un autre dossier fonctionne sans elle.</div>' +
+      '<div class="sift-fldz-hint">Aucune racine de bibliothèque — cet arbre reste vide. Convertir sur place ou dans un autre dossier fonctionne sans elle.</div>' +
       '<button data-fil="pickroot"><i class="ti ti-folder sift-icon-inline-base"></i> Choisir la racine…</button>';
   } else if (filtering) {
     // Flat list of matches (path or name contains the query), case-insensitive.

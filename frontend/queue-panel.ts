@@ -493,7 +493,7 @@ export function installQueueNavKeys(): void {
       void import("./context-menu").then(({ openContextMenu }) => {
         void import("./batch-panel").then(({ handleBatchQueueAction }) => {
           openContextMenu(e.clientX, e.clientY, [
-            { label: `Ranger ${n} piste${n > 1 ? "s" : ""}`, onPick: () => handleBatchQueueAction("file") },
+            { label: `Convertir ${n} piste${n > 1 ? "s" : ""}`, onPick: () => handleBatchQueueAction("file") },
             changerDestination,
             {
               label: `Écarter ${n} piste${n > 1 ? "s" : ""}`,

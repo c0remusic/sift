@@ -31,14 +31,48 @@ function abandonnee(id: number): QueueItem {
   return piste(id, null, MAX_ANALYSIS_ATTEMPTS);
 }
 
-/** Le nombre que le bouton Ranger affiche, lu dans le HTML rendu. `null` s'il est désactivé. */
+/** Le nombre que le bouton d'action principale affiche, lu dans le HTML rendu. `null` s'il
+ *  est désactivé. Le VERBE est épinglé séparément ci-dessous : cette aide le consommait sans le
+ *  garder, donc elle a suivi « Ranger » jusqu'au 2026-09-22 sans que rien ne tombe. */
 function compteAffiche(html: string): number | null {
   if (/<button class="sift-baction sift-baction--primary" disabled>/.test(html)) return null;
-  const m = html.match(/data-sift="batchqueuefile">Ranger (\d+) piste/);
+  const m = html.match(/data-sift="batchqueuefile">Convertir (\d+) piste/);
   return m ? Number(m[1]) : null;
 }
 
-describe("le compte du bouton Ranger est celui de l'action", () => {
+describe("le verbe d'action principale est celui que content.md déclare", () => {
+  // `docs/design-system/content.md:27` : « Action principale | Convertir », et « Ranger » a
+  // quitté ses « verbes préférés » le 2026-07-10. Le bouton d'UNE piste a suivi (`filing.ts`),
+  // sept sites non — dont ce bouton primaire du mode Lot, et la modale de confirmation, qui
+  // demandait « Ranger la sélection ? » tout en affichant « → Convertir » dans son propre récap.
+  //
+  // Pourquoi ce test n'existait pas : l'aide `compteAffiche` LISAIT déjà le libellé, sans le
+  // garder. Un test qui CONSOMME une chaîne ne l'épingle pas — il la suit, et reste vert.
+  //
+  // Les deux bras comptent, l'actif et le désactivé : le libellé vit en double dans le markup.
+  it("le bouton actif dit Convertir, jamais Ranger", () => {
+    const html = selectionSummaryHtml([piste(1, "ok"), piste(2, "ok")]);
+    expect(html).toContain(">Convertir 2 pistes</button>");
+    expect(html).not.toMatch(/>Ranger/);
+  });
+
+  it("le bouton désactivé dit Convertir, jamais Ranger", () => {
+    const html = selectionSummaryHtml([piste(1, "fake")]);
+    expect(html).toContain(' disabled>Convertir</button>');
+    expect(html).not.toMatch(/>Ranger/);
+  });
+
+  // « ranger » reste canonique comme ÉTAT (`content.md:28`, « État prêt | Prêt à ranger ») et
+  // comme concept produit (« déplacer = encoder + ranger », CLAUDE.md). Ce test BORNE la règle au
+  // verbe : il tomberait si quelqu'un élargissait la correction en interdiction du mot, ce qui
+  // casserait l'état.
+  it("seul le verbe est visé — l'identifiant partagé ne bouge pas", () => {
+    expect(estRangeableEnLot(piste(1, "ok"))).toBe(true);
+    expect(estRangeableEnLot(piste(2, "fake"))).toBe(false);
+  });
+});
+
+describe("le compte du bouton d'action principale est celui de l'action", () => {
   // LE VECTEUR DE LA RÉGRESSION. Avec `ok + grey`, cette sélection donnait 0, donc un bouton
   // DÉSACTIVÉ — alors que `handleBatchQueueAction("file")` l'aurait rangée en entier, et que le
   // clic droit de la file proposait « Ranger 2 » sur la même sélection.

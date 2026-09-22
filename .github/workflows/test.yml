@@ -142,6 +142,15 @@ jobs:
       - name: Lint pointer-capture (un élément qui capture le pointeur ne doit pas écouter la souris)
         run: npm run lint:pointer-capture
 
+      # Ajoutée le 2026-09-22. « Ranger » a quitté les verbes préférés de
+      # `docs/design-system/content.md` le 2026-07-10 au profit de « Convertir ». Le bouton d'UNE
+      # piste a suivi ; SEPT sites vivants ne l'ont pas su pendant deux mois, dont le bouton
+      # primaire du mode Lot et la modale de confirmation — qui demandait « Ranger la sélection ? »
+      # tout en affichant « → Convertir » dans son propre récap. Échec SILENCIEUX : rien ne
+      # compile moins bien, et le test qui lisait le libellé le SUIVAIT au lieu de le garder.
+      - name: Lint libellé mort (un verbe retiré de content.md ne doit plus paraître dans l'UI)
+        run: npm run lint:dead-label
+
       - name: Type-check frontend
         run: npx tsc --noEmit
 
