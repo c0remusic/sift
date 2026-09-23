@@ -43,24 +43,33 @@ const PAGES = [
     src: "accueil.html",
     out: "accueil.html",
     lang: "fr",
+    // ⚠️ `/` et pas `/accueil.html` : `finish()` renomme la page en `index.html` sur Vercel.
+    url: "/",
+    groupe: "accueil",
     description: "Sift, app desktop gratuite pour DJ : faux lossless détectés au spectrogramme, doublons, rangement au format CDJ, export Rekordbox, clé USB. Windows et macOS.",
   },
   {
     src: "manuel.html",
     out: "manuel.html",
     lang: "fr",
+    url: "/manuel.html",
+    groupe: "manuel",
     description: "Manuel de Sift : installer, trois mots, les huit écrans, le clavier, ce que la détection laisse passer.",
   },
   {
     src: "accueil.en.html",
     out: "en/accueil.html",
     lang: "en",
+    url: "/en/",
+    groupe: "accueil",
     description: "Sift, a free desktop app for DJs: fake lossless caught on the spectrogram, duplicates, filing in CDJ format, Rekordbox export, USB drive. Windows and macOS. French interface.",
   },
   {
     src: "manuel.en.html",
     out: "en/manuel.html",
     lang: "en",
+    url: "/en/manuel.html",
+    groupe: "manuel",
     description: "Sift manual: installing, the three words, the eight screens, the keyboard, what detection lets through. The application's interface is in French.",
   },
 ];
@@ -71,6 +80,22 @@ async function wrap(page) {
     console.error(`build-site: docs/${page.src} porte déjà un squelette HTML — l'artefact et ce script attendent un fragment.`);
     process.exit(1);
   }
+  // Les alternates se DÉRIVENT de `PAGES` : une page traduite ajoutée à la table déclare ses
+  // alternates toute seule, et aucune liste parallèle ne peut dériver de celle-ci.
+  //
+  // ⚠️ Pourquoi ça compte, mesuré sur le site EN LIGNE le 2026-09-23 : les quatre pages ne
+  // portaient AUCUN lien entre versions linguistiques. Le site anglais était donc inatteignable
+  // sauf à deviner son URL. Un lien visible a été ajouté dans chaque page pour un LECTEUR ; ces
+  // `hreflang` sont le même signal pour une MACHINE, et l'un ne remplace pas l'autre.
+  //
+  // `x-default` désigne le français : c'est la langue d'origine du produit et celle de son
+  // interface (`content.md` § Langue).
+  const alternates = PAGES.filter((p) => p.groupe === page.groupe && p.url)
+    .map((p) => `<link rel="alternate" hreflang="${p.lang}" href="${p.url}">\n`)
+    .join('');
+  const defaut = PAGES.find((p) => p.groupe === page.groupe && p.lang === 'fr');
+  const xDefault = defaut ? `<link rel="alternate" hreflang="x-default" href="${defaut.url}">\n` : '';
+
   const html =
     `<!doctype html>\n<html lang="${page.lang ?? "fr"}">\n<head>\n<meta charset="utf-8">\n` +
     '<meta name="viewport" content="width=device-width,initial-scale=1">\n' +
@@ -80,6 +105,8 @@ async function wrap(page) {
     // (2026-07-03) le réserve aux 16 px, favicon compris.
     '<link rel="icon" href="/favicon.svg" type="image/svg+xml">\n' +
     `<meta name="description" content="${page.description}">\n` +
+    alternates +
+    xDefault +
     "</head>\n<body>\n" +
     body +
     "\n</body>\n</html>\n";

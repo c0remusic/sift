@@ -62,6 +62,8 @@ a:hover{text-decoration:underline}
 .bar .title{font-weight:600;font-size:13px}
 .bar .count{font-size:11px;color:var(--ink-3);letter-spacing:.02em}
 .bar .spacer{flex:1}
+.bar .lang{color:var(--ink-3);font-size:11px;text-decoration:none;margin-right:10px}
+.bar .lang:hover{color:var(--ink);text-decoration:underline}
 .bar .ver{font:500 11px var(--mono);color:var(--ink-3);border:1px solid var(--line);border-radius:var(--r-sm);padding:2px 8px}
 .frame{display:grid;grid-template-columns:200px 1fr;min-height:70vh}
 /* La colonne s'étire sur toute la hauteur et porte le fond ; la nav dedans est collante et défile
@@ -157,6 +159,7 @@ td:first-child{white-space:nowrap}
     <span class="title">Manuel</span>
     <span class="count">8 écrans</span>
     <span class="spacer"></span>
+    <a class="lang" href="/en/manuel.html" hreflang="en" lang="en">English</a>
     <span class="ver">v0.1.1</span>
   </div>
   <div class="frame">
