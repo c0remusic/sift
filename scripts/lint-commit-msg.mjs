@@ -27,7 +27,7 @@ import { readFileSync } from 'node:fs';
 // dessein : mesurés le 2026-08-26, ils produisaient à eux seuls 681 des 1932 faux positifs du scan
 // par mots sur le dépôt.
 const FAUTIFS =
-  /\b(deja|regle|regles|echec|echecs|echoue|echouee|defaut|defauts|fenetre|fenetres|depot|echelle|systeme|systemes|litteral|duree|durees|ecart|ecarts|tres|apres|plutot|cout|couts|probleme|problemes|premiere|derniere|entiere|reponse|precedent|precedente|necessaire|numero|perime|perimee|interet|controle|desormais|reel|reelle|resultat|resultats|separateur|verifie|verifiee|verifier|verification|verifications|verite|securite|priorite|identite|densite|opacite|reussi|arrete|arretee|carre|carree|modele|modeles|critere|criteres|parametre|parametres|caractere|caracteres|requete|requetes|maniere|memoire|prealable|unite|unites|qualite|integrite|epingle|epinglee|delibere|deliberee|developpement|integration|definition|execution|telecharge|telechargee|publie|publiee|separe|separee|independant|sequentiel|recopiee|negatif|desactiver|hierarchie|dedoublonnage|enumere|declarations|chargee|ecrit|ecrite|creee|generique|numerote|amelioration|derive|derivee|mesuree|documentee|repere|detecte|declare|retiree|livree|corrigee|supprimee|affichee|appelee|poussee|tranchee)\b/i;
+  /\b(deja|regle|regles|echec|echecs|echoue|echouee|defaut|defauts|fenetre|fenetres|depot|echelle|systeme|systemes|litteral|duree|durees|ecart|ecarts|tres|apres|plutot|cout|couts|probleme|problemes|premiere|derniere|entiere|reponse|precedent|precedente|necessaire|numero|perime|perimee|interet|controle|desormais|reel|reelle|resultat|resultats|separateur|verifie|verifiee|verifier|verification|verifications|verite|securite|priorite|identite|densite|opacite|reussi|arrete|arretee|carre|carree|modele|modeles|critere|criteres|parametre|parametres|caractere|caracteres|requete|requetes|maniere|memoire|prealable|unite|unites|qualite|integrite|epingle|epinglee|delibere|deliberee|developpement|integration|execution|telecharge|telechargee|publiee|separe|separee|independant|sequentiel|recopiee|negatif|desactiver|hierarchie|dedoublonnage|enumere|declarations|chargee|ecrit|ecrite|creee|generique|numerote|amelioration|derivee|mesuree|documentee|repere|detecte|retiree|livree|corrigee|supprimee|affichee|appelee|poussee|tranchee)\b/i;
 // Contexte français : sans lui, un sujet anglais contenant par hasard une de ces formes déclencherait.
 const OUTILS =
   /\b(le|la|les|une|des|du|qui|que|dont|pour|dans|sous|avec|sans|pas|ne|est|sont|cette|ces|leur|elle|ils|donc|mais|car|tous|toute|meme|deja|encore|jamais|quand|comme|alors|ainsi|puis|entre|vers|apres|avant|depuis|selon|faut|fait|faire|etre|avoir|peut|doit|aucun|aucune|chaque|plutot|parce|lorsque|afin|rien|tout|au|aux|sur|par|ce|il|un)\b/gi;
@@ -56,7 +56,23 @@ const lignes = brut.split(/\r?\n/).filter((l) => !l.startsWith('#'));
  *    lui-même, pas son sens. Deux mots au plus : au-delà, c'est une citation de prose, qui doit
  *    rester soumise à la règle. */
 function prose(l) {
-  return l.replace(/`[^`]*`/g, ' ').replace(/«\s*\S+(?:\s+\S+)?\s*»/g, ' ');
+  return (
+    l
+      .replace(/`[^`]*`/g, ' ')
+      // La borne à DEUX mots est délibérée et testée (`lint-commit-msg.test.ts` : « compte une
+      // CITATION DE PROSE de plus de deux mots, elle ») : la citation courte DÉSIGNE le mot,
+      // au-delà c'est de la prose citée, qui doit rester accentuée. Ne pas l'élargir.
+      // ⚠️ Coût connu, une occurrence sur 1509 messages : une sortie de programme citée —
+      // « ### format (cargo fmt --check) : ECHEC » — déclenche sur `echec`. Un faux positif par
+      // an contre une règle qui tient : le compromis reste du bon côté.
+      .replace(/«\s*\S+(?:\s+\S+)?\s*»/g, ' ')
+      // Un CHEMIN n'a pas d'accent par construction, et il n'en prendra jamais : le corriger
+      // casserait la référence. Deux cas mesurés sur l'historique — `docs/developpement.md` cité
+      // hors backticks, et l'énumération de vues `(home/biblio/ecarts/reglages)`. Le motif exige
+      // une barre ou une extension connue, donc un mot français isolé n'est pas touché.
+      .replace(/\b[\w.-]*\/[\w./-]+/g, ' ')
+      .replace(/\b[\w-]+\.(?:md|ts|tsx|js|mjs|rs|json|toml|html|css|yml|yaml|sh|py|ps1)\b/g, ' ')
+  );
 }
 
 const fautives = [];
