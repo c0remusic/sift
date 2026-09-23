@@ -131,20 +131,102 @@ pub fn update_metadata_db(
 }
 
 /// Persist ONLY the `label` column for a track, upserting a metadata row if none exists yet.
-/// Used by `apply_tags` when the user edits the Label field in the Revue pane: the edit is written
-/// to the file's ID3 tag (via `write_tags_full`) AND here, so a close+reopen reads back the edited
-/// label from the DB (`track_release`) instead of the stale Discogs one — otherwise the reopened
-/// pane would show the old label while the file holds the new one, tripping the discrepancy banner.
-/// Deliberately label-only: it must NOT touch artist/title/version (those come from the file via
-/// `reconcile` on reopen) nor `discogs_release_id`/`source` (an edit never wipes a release link).
-/// `artist`/`title` stay NULL on a first INSERT (both are nullable) — a label-only row keeps
-/// `identified` false, exactly like no row at all.
+/// Called by `persist_tag_edit` when the user edits the Label field in the Revue pane: the edit is
+/// written to the file's ID3 tag (via `write_tags_full`) AND here, so a close+reopen reads back the
+/// edited label from the DB (`track_release`) instead of the stale Discogs one. Label-only by
+/// construction — artist/title/version are `persist_tag_edit`'s job — and it never touches
+/// `discogs_release_id`/`source` (an edit never wipes a release link). `artist`/`title` stay NULL
+/// on a first INSERT (both are nullable) — a label-only row keeps `identified` false, exactly like
+/// no row at all.
 pub fn set_metadata_label(conn: &Connection, track_id: i64, label: &str) -> rusqlite::Result<()> {
     conn.execute(
         "INSERT INTO metadata(track_id, label) VALUES(?1, ?2)
          ON CONFLICT(track_id) DO UPDATE SET label=excluded.label",
         params![track_id, label],
     )?;
+    Ok(())
+}
+
+/// After « Rétablir » on a tag edit (`actions::revert_batch`, a `tag_edit`-only batch), make the
+/// `metadata` row follow the RESTORED file — the mirror of `persist_tag_edit`. Without it the file
+/// went back while the row kept the undone edit: the reopened editor showed it again, and a batch
+/// filing (`filing::canonical_from_metadata`) filed under it (relecture #65). UPDATE only; a
+/// snapshot without artist AND title (the file had no tags) leaves the row alone.
+pub fn follow_restored_tags(
+    conn: &Connection,
+    track_id: i64,
+    snap: &crate::tagging::TagsSnapshot,
+) -> rusqlite::Result<()> {
+    let (Some(artist), Some(title)) = (snap.artist.as_deref(), snap.title.as_deref()) else {
+        return Ok(());
+    };
+    let (base, version) = crate::naming::split_tag_title(title);
+    conn.execute(
+        "UPDATE metadata SET artist=?2, title=?3, version=?4 WHERE track_id=?1",
+        params![track_id, artist.trim(), base, version.unwrap_or_default()],
+    )?;
+    if let Some(l) = snap
+        .label
+        .as_deref()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+    {
+        conn.execute(
+            "UPDATE metadata SET label=?2 WHERE track_id=?1",
+            params![track_id, l],
+        )?;
+    }
+    Ok(())
+}
+
+/// Persist a Revue tag edit (`apply_tags`) to the `metadata` row, so a close+reopen reads back what
+/// was just graved into the file.
+///
+/// WHY, 2026-09-23 (issue #65). On reopen, an IDENTIFIED track takes its artist/title/version from
+/// `metadata` (`filing.ts`, `release.identified`), not from the file. `apply_tags` used to persist
+/// the label alone, on the premise that artist/title/version "come from the file via `reconcile`
+/// on reopen" — false for an identified track. The editor then reopened on the Discogs values, the
+/// discrepancy banner lit up, and the next focus/blur regraved the Discogs values over the edit.
+/// The Bibliothèque path (`update_metadata_db`, `ReleaseLink::Preserve`) already kept the DB in
+/// step: Revue now does the same.
+///
+/// UPDATE only, never INSERT: a track with no row is read back through `reconcile`, and inventing
+/// a row here would fabricate an identity. The release link, year, cover and genres are untouched —
+/// an edit corrects the name, it does not detach the track from its release.
+///
+/// Stored in the SAME split shape `apply_identity` uses (base title + version column):
+///   - Version field filled: the title is kept as typed, the version stored beside it ;
+///   - Version field EMPTY: a trailing paren typed into the title is split off
+///     (`naming::split_tag_title`), as the Bibliothèque does. Stored whole, « Elastic (Original
+///     Mix) » came back on reopen with the version read AGAIN from the file tag — doubled ;
+///   - no version at all: stored as `""`, not NULL. On reopen `filing.ts` reads NULL as « unknown,
+///     fall back on reconcile », which re-reads the version from the FILENAME — the version the
+///     user had just cleared came back (relecture #65). `""` means « none, on purpose ».
+pub fn persist_tag_edit(
+    conn: &Connection,
+    track_id: i64,
+    edited: &Canonical,
+    edited_label: Option<&str>,
+) -> rusqlite::Result<()> {
+    let typed = edited
+        .version
+        .as_deref()
+        .map(str::trim)
+        .filter(|v| !v.is_empty());
+    let (title, version) = match typed {
+        Some(v) => (edited.title.trim().to_string(), v.to_string()),
+        None => {
+            let (base, v) = crate::naming::split_tag_title(&edited.title);
+            (base, v.unwrap_or_default())
+        }
+    };
+    conn.execute(
+        "UPDATE metadata SET artist=?2, title=?3, version=?4 WHERE track_id=?1",
+        params![track_id, edited.artist.trim(), title, version],
+    )?;
+    if let Some(l) = edited_label {
+        set_metadata_label(conn, track_id, l)?;
+    }
     Ok(())
 }
 
@@ -431,6 +513,154 @@ mod tests {
         );
         assert_eq!(artist.as_deref(), Some("Larry Heard"), "identity untouched");
         assert_eq!(rel.as_deref(), Some("12345"), "release link preserved");
+    }
+
+    /// Issue #65 : l'édition de Revue survit à la réouverture d'une piste identifiée. Le lien de
+    /// release, l'année et le label d'origine restent ; artiste/titre/version suivent l'édition.
+    #[test]
+    fn une_edition_revue_survit_a_la_reouverture_d_une_piste_identifiee() {
+        let conn = db();
+        apply_identity(&conn, 1, &sample(), None).unwrap();
+        let edited = Canonical {
+            artist: "Mr. Fingers".into(),
+            title: "Mystery of Love".into(),
+            version: Some("Dub".into()),
+            label: None,
+            confidence: Confidence::Green,
+        };
+        persist_tag_edit(&conn, 1, &edited, None).unwrap();
+        type Row = (
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            Option<i64>,
+            Option<String>,
+        );
+        let row: Row = conn
+            .query_row(
+                "SELECT artist, title, version, label, year, discogs_release_id
+                 FROM metadata WHERE track_id=1",
+                [],
+                |r| {
+                    Ok((
+                        r.get(0)?,
+                        r.get(1)?,
+                        r.get(2)?,
+                        r.get(3)?,
+                        r.get(4)?,
+                        r.get(5)?,
+                    ))
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            row,
+            (
+                Some("Mr. Fingers".into()),
+                Some("Mystery of Love".into()),
+                Some("Dub".into()),
+                Some("Alleviated".into()),
+                Some(1986),
+                Some("12345".into()),
+            )
+        );
+
+        // Un label édité suit aussi ; une version VIDÉE est stockée "" (« aucune, exprès »), pas
+        // NULL (« inconnue ») que la réouverture comblerait avec la version du nom de fichier.
+        let cleared = Canonical {
+            version: Some("  ".into()),
+            ..edited.clone()
+        };
+        persist_tag_edit(&conn, 1, &cleared, Some("Trax")).unwrap();
+        let read = |conn: &Connection| -> (Option<String>, Option<String>, Option<String>) {
+            conn.query_row(
+                "SELECT title, version, label FROM metadata WHERE track_id=1",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap()
+        };
+        assert_eq!(
+            read(&conn),
+            (
+                Some("Mystery of Love".into()),
+                Some(String::new()),
+                Some("Trax".into())
+            )
+        );
+
+        // Version vide mais parenthèse tapée dans le titre : elle se détache, comme en
+        // Bibliothèque — sinon la réouverture la relirait aussi dans le tag, et la doublerait.
+        let typed_in_title = Canonical {
+            title: "Mystery of Love (Original Mix)".into(),
+            version: None,
+            ..edited
+        };
+        persist_tag_edit(&conn, 1, &typed_in_title, None).unwrap();
+        assert_eq!(
+            read(&conn),
+            (
+                Some("Mystery of Love".into()),
+                Some("Original Mix".into()),
+                Some("Trax".into())
+            )
+        );
+    }
+
+    /// « Rétablir » après une édition : la ligne suit le fichier RESTAURÉ (relecture #65).
+    #[test]
+    fn la_ligne_suit_les_tags_restaures() {
+        let conn = db();
+        apply_identity(&conn, 1, &sample(), None).unwrap();
+        let snap = crate::tagging::TagsSnapshot {
+            artist: Some("Larry Heard".into()),
+            title: Some("Mystery of Love (Dub)".into()),
+            label: Some("Alleviated".into()),
+            year: None,
+            genre_joined: None,
+            cover: None,
+        };
+        follow_restored_tags(&conn, 1, &snap).unwrap();
+        let row: (
+            Option<String>,
+            Option<String>,
+            Option<String>,
+            Option<String>,
+        ) = conn
+            .query_row(
+                "SELECT artist, title, version, discogs_release_id FROM metadata WHERE track_id=1",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            row,
+            (
+                Some("Larry Heard".into()),
+                Some("Mystery of Love".into()),
+                Some("Dub".into()),
+                Some("12345".into())
+            )
+        );
+    }
+
+    /// Sans ligne `metadata`, rien n'est inventé : la piste se relit par `reconcile`.
+    #[test]
+    fn une_edition_sans_ligne_metadata_n_invente_pas_d_identite() {
+        let conn = db();
+        let edited = Canonical {
+            artist: "Mr. Fingers".into(),
+            title: "Mystery of Love".into(),
+            version: None,
+            label: None,
+            confidence: Confidence::Green,
+        };
+        persist_tag_edit(&conn, 1, &edited, None).unwrap();
+        let n: i64 = conn
+            .query_row("SELECT COUNT(*) FROM metadata", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(n, 0);
     }
 
     #[test]

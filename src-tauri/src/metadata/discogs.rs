@@ -91,25 +91,65 @@ fn clean_artist(s: &str) -> String {
     result.split_whitespace().collect::<Vec<_>>().join(" ")
 }
 
-/// Neutralize characters/keywords the Discogs `q=` search may parse as query syntax instead of
-/// literal text. Undocumented, but Discogs indexes via Solr/Lucene and community reports (see
-/// F5 audit, docs/superpowers 2026-07-12) confirm field prefixes (`title:`) and boolean keywords
-/// work in practice on the general search endpoint — an artist/title that happens to contain a
-/// colon, quote, or the word "and"/"or"/"not" could silently be reinterpreted rather than
-/// searched for literally. Replaces with a space (not a strip) so word boundaries stay correct.
-/// Deliberately conservative: parens are core to how we express a mix name ("(Extended Mix)")
-/// and stay untouched, as do hyphens/apostrophes — too common in real titles to risk stripping
-/// on an unconfirmed API behavior.
+/// Turn one search attempt into the words Discogs should receive: every punctuation character
+/// becomes a space. Kept: letters, digits, the dot and the apostrophe. Dropped: a word left with
+/// no letter or digit, and the boolean keywords AND / OR / NOT (whole words only).
+///
+/// MEASURED on the public API, 2026-09-23 (issue #66) — this replaced a deliberately conservative
+/// version that only neutralized `:`, `"` and the booleans, and kept hyphens and parens "on an
+/// unconfirmed API behavior". The behavior is now confirmed:
+///   - a word PREFIXED with `-` is IGNORED by Discogs, neither required nor excluded. A query that
+///     finds release 31838 still finds it with `-Eclipse` (a word it contains) and with
+///     `-Zzyzxqq` (a word nothing contains); `-Elastic` alone returns the whole database. That is
+///     how « Cherry-Bomb---Elastic-(Original-Mix) » lost its only distinctive word ;
+///   - flattening costs nothing: `Cherry-Bomb Elastic` and `Cherry Bomb Elastic` return the same
+///     3 results; `AC/DC Back In Black` 2 954 against `AC DC Back In Black` 4 556, same #1;
+///     parens, `&`, a comma: identical counts ;
+///   - the DOT is the exception, and why it stays: `D.J. Koze Amygdala` → 15 results, right #1;
+///     `D J Koze Amygdala` → 1 result, wrong #1. An acronym split into letters is lost ;
+///   - the apostrophe stays for the same reason (`Eric's` is one word, not `Eric` + `s`).
+///
+/// Outside ASCII, only KNOWN punctuation flattens (`is_query_punctuation`): a first version
+/// flattened every non-alphanumeric character, and a combining mark is not alphanumeric — an NFD
+/// « Kölsch » (filename from a Mac volume) became « Ko lsch », a Hindi virama or a Thai tone mark
+/// split the word (relecture #66). A non-ASCII character is kept unless it is listed.
 fn sanitize_discogs_query(s: &str) -> String {
-    let no_syntax_chars: String = s
+    let flat: String = s
         .chars()
-        .map(|c| if matches!(c, ':' | '"') { ' ' } else { c })
+        .map(|c| if is_query_punctuation(c) { ' ' } else { c })
         .collect();
-    no_syntax_chars
-        .split_whitespace()
+    flat.split_whitespace()
+        .filter(|w| w.chars().any(char::is_alphanumeric))
         .filter(|w| !matches!(w.to_uppercase().as_str(), "AND" | "OR" | "NOT"))
         .collect::<Vec<_>>()
         .join(" ")
+}
+
+/// Punctuation for `sanitize_discogs_query`. ASCII: anything but a letter, a digit, whitespace, the
+/// dot and the apostrophe. Beyond: Latin-1 punctuation and symbols (not `ª` `µ` `º`), `×` `÷`, the
+/// General Punctuation block except `’` (U+2019, an apostrophe), CJK and full-width punctuation.
+fn is_query_punctuation(c: char) -> bool {
+    if c.is_ascii() {
+        return !(c.is_ascii_alphanumeric() || c.is_ascii_whitespace() || matches!(c, '.' | '\''));
+    }
+    matches!(
+        c,
+        '\u{00A0}'..='\u{00A9}'
+            | '\u{00AB}'..='\u{00B4}'
+            | '\u{00B6}'..='\u{00B9}'
+            | '\u{00BB}'..='\u{00BF}'
+            | '\u{00D7}'
+            | '\u{00F7}'
+            | '\u{2000}'..='\u{2018}'
+            | '\u{201A}'..='\u{206F}'
+            | '\u{3000}'..='\u{3004}'
+            | '\u{3008}'..='\u{3011}'
+            | '\u{3014}'..='\u{301F}'
+            | '\u{FF01}'..='\u{FF0F}'
+            | '\u{FF1A}'..='\u{FF20}'
+            | '\u{FF3B}'..='\u{FF40}'
+            | '\u{FF5B}'..='\u{FF65}'
+    )
 }
 
 fn first_string(v: &Value, key: &str) -> Option<String> {
@@ -228,9 +268,32 @@ fn track_match_score(track_title: &str, target_title: &str, target_version: Opti
         requested.extend(norm_tokens(v));
     }
 
+    // A tracklist entry must share at least one DISTINCTIVE title word — one that is not also a
+    // version word — before its version words count. Without this, a search for « Elastic
+    // (Original Mix) » scored « Cherry Bomb (Original Mix) » at 8 on « original » + « mix » alone,
+    // stopped the cascade, and offered the wrong track (issue #66, measured on the live API).
+    let version_tokens: HashSet<String> = target_version
+        .map(norm_tokens)
+        .unwrap_or_default()
+        .into_iter()
+        .collect();
+    let title_tokens = norm_tokens(target_title);
+    let distinctive: Vec<&String> = title_tokens
+        .iter()
+        .filter(|t| !version_tokens.contains(*t))
+        .collect();
+    let distinctive = if distinctive.is_empty() {
+        title_tokens.iter().collect()
+    } else {
+        distinctive
+    };
+    if !distinctive.iter().any(|t| track.contains(*t)) {
+        return 0;
+    }
+
     let mut score = 0;
-    for t in norm_tokens(target_title) {
-        if track.contains(&t) {
+    for t in &title_tokens {
+        if track.contains(t) {
             score += 1;
         }
     }
@@ -383,16 +446,24 @@ impl Discogs {
     /// Rétro-compatible : un `Query` sans cascade (tests, appelants historiques) retombe sur
     /// l'unique `"{artist} {title}"` d'origine, de sorte que brancher la cascade ne change rien
     /// pour qui ne la fournit pas.
-    fn attempts_for(&self, q: &Query) -> Vec<String> {
+    pub(crate) fn attempts_for(&self, q: &Query) -> Vec<String> {
         let source: Vec<String> = if q.attempts.is_empty() {
             vec![format!("{} {}", q.artist, q.title)]
         } else {
             q.attempts.clone()
         };
+        // Two attempts carrying the same WORDS are the same search, whatever their punctuation or
+        // order: « Cherry Bomb Elastic » and « Cherry-Bomb Elastic » used to take two of the three
+        // places (issue #66). Compare the sorted word lists, not the strings.
+        let words = |s: &str| {
+            let mut w = norm_tokens(s);
+            w.sort();
+            w
+        };
         let mut out: Vec<String> = Vec::new();
         for a in source {
             let s = sanitize_discogs_query(a.trim());
-            if s.trim().is_empty() || out.iter().any(|p| p.eq_ignore_ascii_case(&s)) {
+            if s.trim().is_empty() || out.iter().any(|p| words(p) == words(&s)) {
                 continue;
             }
             out.push(s);
@@ -649,23 +720,94 @@ mod tests {
         );
     }
 
+    /// Issue #66, mesures sur l'API publique du 2026-09-23 (voir le doc-comment de la fonction).
+    /// Jusque-là ce test gelait l'inverse — tirets et parenthèses gardés « faute de comportement
+    /// d'API confirmé ». Le tiret de tête faisait IGNORER le mot par Discogs.
     #[test]
-    fn sanitize_discogs_query_keeps_legitimate_punctuation_and_lookalike_words() {
-        // Parens carry real mix-name meaning (just wired up in F1-F3) — must survive.
+    fn sanitize_discogs_query_flattens_punctuation_but_keeps_dots_and_apostrophes() {
+        assert_eq!(
+            sanitize_discogs_query("Cherry-Bomb -Elastic Original-Mix"),
+            "Cherry Bomb Elastic Original Mix"
+        );
+        assert_eq!(sanitize_discogs_query("-ism"), "ism");
         assert_eq!(
             sanitize_discogs_query("Falling Up (Club Mix)"),
-            "Falling Up (Club Mix)"
+            "Falling Up Club Mix"
         );
-        // Hyphens and apostrophes are too common in real titles to risk stripping blind.
+        assert_eq!(
+            sanitize_discogs_query("AC/DC Back In Black"),
+            "AC DC Back In Black"
+        );
+        assert_eq!(
+            sanitize_discogs_query("Simon & Garfunkel + [Live] {x} *"),
+            "Simon Garfunkel Live x"
+        );
+        // Le point d'un acronyme et l'apostrophe restent : les aplatir perd la bonne release.
+        assert_eq!(
+            sanitize_discogs_query("D.J. Koze Amygdala"),
+            "D.J. Koze Amygdala"
+        );
         assert_eq!(
             sanitize_discogs_query("Can't Stop - Reprise"),
-            "Can't Stop - Reprise"
+            "Can't Stop Reprise"
+        );
+        assert_eq!(
+            sanitize_discogs_query("Eric\u{2019}s Dub"),
+            "Eric\u{2019}s Dub"
+        );
+        // Relecture #66 : une marque combinante n'est pas de la ponctuation. NFD (nom venu d'un
+        // Mac), virama hindi, marque de ton thaïe : le mot reste entier.
+        assert_eq!(
+            sanitize_discogs_query("Ko\u{0308}lsch Grey"),
+            "Ko\u{0308}lsch Grey"
+        );
+        let hindi = "\u{092A}\u{094D}\u{092F}\u{093E}\u{0930}";
+        assert_eq!(sanitize_discogs_query(hindi), hindi);
+        let thai = "\u{0E44}\u{0E21}\u{0E48}";
+        assert_eq!(sanitize_discogs_query(thai), thai);
+        // …mais la ponctuation Unicode connue s'aplatit, et « µ » reste une lettre.
+        assert_eq!(
+            sanitize_discogs_query("\u{00B5}-Ziq \u{00AB}Hasty\u{00BB} \u{2010}x\u{2014}y"),
+            "\u{00B5} Ziq Hasty x y"
         );
         // "AND"/"OR"/"NOT" are only stripped as whole words, not substrings.
         assert_eq!(
             sanitize_discogs_query("Andromeda Organism"),
             "Andromeda Organism"
         );
+    }
+
+    /// Deux marches qui portent les MÊMES mots sont la même recherche : une seule part.
+    #[test]
+    fn attempts_with_the_same_words_are_sent_once() {
+        let a = provider().attempts_for(&q(
+            "A",
+            "B",
+            &[
+                "Cherry Bomb Elastic",
+                "Cherry-Bomb Elastic",
+                "Elastic Cherry Bomb",
+                "Elastic",
+            ],
+        ));
+        assert_eq!(a, vec!["Cherry Bomb Elastic", "Elastic"]);
+    }
+
+    /// Issue #66 : les mots de version seuls ne font pas un match. « Cherry Bomb (Original Mix) »
+    /// marquait 8 pour une recherche « Elastic » + version « Original-Mix », arrêtait la cascade et
+    /// proposait la mauvaise piste.
+    #[test]
+    fn version_words_alone_never_make_a_match() {
+        let (score, title) = best_track_match(
+            &["Cherry Bomb (Original Mix)".into()],
+            "Elastic",
+            Some("Original-Mix"),
+        );
+        assert!(score <= 0, "score {score}");
+        assert_eq!(title, None);
+        let (score, title) = best_track_match(&["Elastic".into()], "Elastic", Some("Original-Mix"));
+        assert!(score > 0);
+        assert_eq!(title.as_deref(), Some("Elastic"));
     }
 
     const FIXTURE: &str = r#"{

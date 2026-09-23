@@ -4,9 +4,19 @@
 // lives in each caller (it differs: filing edits canonical fields, the library edits a
 // filed track's metadata). Keeps the candidate markup in one place (spec: zero duplication).
 import type { Candidate } from "./ipc";
+import type { Canonical, IdentifyHint } from "../shared/contracts";
 import { esc } from "./dom";
 import { humanizeError } from "./errors";
 import { T } from "./i18n/identify-shared";
+
+/** L'indice que Revue envoie à `identify` : ce que l'écran affiche, mais SEULEMENT une valeur
+ *  confirmée (verte : tags propres, nom propre, release choisie) ou tapée depuis l'ouverture.
+ *  La supposition jaune de `reconcile` sur un nom sale passait sinon devant la cascade
+ *  `search_terms` construite pour ces noms-là, et lui volait la première marche (relecture #67). */
+export function identifyHint(c: Canonical | null, typedSinceOpen: boolean): IdentifyHint | null {
+  if (!c || !(c.confidence === "green" || typedSinceOpen)) return null;
+  return { artist: c.artist, title: c.title, version: c.version };
+}
 
 /** Cover thumbnail (or vinyl placeholder) for a candidate row. */
 function candCoverHtml(c: Candidate): string {

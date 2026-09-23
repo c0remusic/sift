@@ -309,6 +309,17 @@ export interface Canonical {
   confidence: Confidence;
 }
 
+/** Ce que l'écran affiche au clic sur Identifier, envoyé avec `identify` (issue #67). Revue passe
+ *  titre et version séparés ; la Bibliothèque passe son titre complet et `version: null` — la
+ *  version s'en détache côté Rust. Un titre vide laisse les tags puis le nom de fichier décider.
+ *  Miroir de Rust `ipc_identify::IdentifyHint` ; épinglé champ par champ par
+ *  `ipc_identify.rs::identify_hint_shape_matches_contracts_ts` (déstructuration exhaustive). */
+export interface IdentifyHint {
+  artist: string;
+  title: string;
+  version: string | null;
+}
+
 /** A destination folder under the library root (recursive). */
 export interface Bin {
   rel: string; // forward-slash path relative to root, e.g. "House/Deep"

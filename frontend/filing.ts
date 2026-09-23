@@ -517,11 +517,12 @@ export async function openFilingInto(
     return;
   }
 
-  // When a Discogs identity was applied earlier but not yet filed, the file tags still hold the OLD
-  // name, so reconcile (which reads those tags) would wipe the chosen identity on reopen. Trust the
-  // persisted metadata instead: artist/title from `metadata`, confidence green (a validated Discogs
-  // match), and version kept from reconcile (the filename — metadata has no version column and
-  // Discogs has no version field). Not identified → reconcile stays the source, as before.
+  // An identified track reopens from the persisted `metadata` row, not from reconcile: artist/title/
+  // version from the DB, confidence green (a validated Discogs match). That row must therefore follow
+  // every Revue edit — `apply_tags` persists it through `metadata::persist_tag_edit` since 2026-09-23
+  // (issue #65). Until then it stored the label alone, on the premise that "the file tags still hold
+  // the OLD name" — false since 11b5193 graves the tags when a match is chosen — and the editor
+  // reopened on the Discogs values. Not identified → reconcile stays the source, as before.
   state.canonical =
     release.identified && release.artist && release.title
       ? {

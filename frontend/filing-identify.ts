@@ -1,13 +1,15 @@
 import { identify, applyIdentity, applyTags, trackFileTags, openUrl, revertBatch } from "./ipc";
 import type { Candidate, AppliedIdentity } from "./ipc";
+import type { Canonical } from "../shared/contracts";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { chosenRowHtml, identifyErrorHtml, renderCandidates } from "./identify-shared";
+import { chosenRowHtml, identifyErrorHtml, identifyHint, renderCandidates } from "./identify-shared";
 import { requireEl, esc } from "./dom";
 import { state, openState } from "./filing-state";
 import { toast } from "./filing-toast";
 import { refreshPreview, updateHeaderName, titleCase } from "./filing-preview";
 import { humanizeError } from "./errors";
 import { T } from "./i18n/filing-identify";
+import { coalesceLatest } from "./coalesce-latest";
 
 // Exclusive accordion (shadcn Accordion reference, ui.shadcn.com/docs/components/base/accordion):
 // opening Métadonnées closes Diagnostic and vice versa. Coordinated with report-view.ts (no
@@ -294,6 +296,10 @@ function wireListboxArrows(host: HTMLElement): void {
 }
 
 /** Run the Discogs identify flow for the current track. */
+/** Vrai dès que l'utilisateur a tapé dans un champ depuis l'ouverture de la piste (`upd`), remis à
+ *  faux à chaque rendu de l'éditeur. Décide si `doIdentify` envoie l'écran comme indice. */
+let typedSinceOpen = false;
+
 async function doIdentify(
   btn: HTMLButtonElement,
   host: HTMLElement,
@@ -315,7 +321,10 @@ async function doIdentify(
 
   let candidates: Candidate[] = [];
   try {
-    candidates = await identify(trackId);
+    // Cherche ce que l'écran affiche, gravé ou non (issue #67) — si c'est confirmé ou tapé
+    // (`identifyHint`) : avant, seuls les tags SUR DISQUE comptaient, filtrés par le portail
+    // « junk » et avec la version du nom de fichier.
+    candidates = await identify(trackId, identifyHint(state.canonical, typedSinceOpen));
     if (myseq !== openState.openSeq) return; // a newer open started while we awaited — drop this result
     renderCandidates(host, candidates);
     wireCandidateClicks(host, candidates, editor, mid, btn);
@@ -350,6 +359,7 @@ async function doIdentify(
 
 export function renderEditor(host: HTMLElement, mid: HTMLElement): void {
   const c = state.canonical;
+  typedSinceOpen = false;
   if (!c) {
     host.innerHTML = "";
     return;
@@ -454,6 +464,7 @@ export function renderEditor(host: HTMLElement, mid: HTMLElement): void {
     const v = host.querySelector<HTMLInputElement>('[data-fil="version"]');
     const l = host.querySelector<HTMLInputElement>('[data-fil="label"]');
     if (!state.canonical) return;
+    typedSinceOpen = true;
     state.canonical.artist = a?.value ?? "";
     state.canonical.title = t?.value ?? "";
     state.canonical.version = v?.value.trim() ? v.value.trim() : null;
@@ -493,8 +504,8 @@ export function renderEditor(host: HTMLElement, mid: HTMLElement): void {
       // Drapeau plutôt que retrait/repose du listener : `blur()` est dispatché SYNCHRONEMENT, donc
       // la durée de vie du drapeau est exactement celle de l'appel et il ne peut pas fuir sur un blur
       // ultérieur ; un retrait/repose, lui, laisserait le champ définitivement sans écriture si un
-      // throw traversait entre les deux. Ne touche pas `applyingTags` (garde anti-double-fire de
-      // l'Entrée, doApplyTags), qui répond à une autre question.
+      // throw traversait entre les deux. Ne touche pas la coalescence de doApplyTags (double
+      // déclenchement de l'Entrée), qui répond à une autre question.
       let escapeCancel = false;
       el.addEventListener("focusin", () => {
         focusVal = el.value;
@@ -523,7 +534,7 @@ export function renderEditor(host: HTMLElement, mid: HTMLElement): void {
       });
       el.addEventListener("blur", () => {
         // Graver EN FINISSANT l'édition (retour Antoine : plus de bouton Appliquer) — si un champ a
-        // divergé du fichier. doApplyTags se garde contre le double-fire avec l'Entrée (applyingTags).
+        // divergé du fichier. doApplyTags absorbe le double déclenchement avec l'Entrée (coalesceLatest).
         // `commitTitle` reste appelé même sur Échap : le titre du hero doit afficher la valeur
         // RESTAURÉE, pas celle que l'annulation vient de jeter.
         commitTitle();
@@ -599,16 +610,29 @@ function refreshRebuyLink(): void {
 /** Write the current edited tags onto the file in place (apply_tags). Déclenché AUTOMATIQUEMENT quand
  *  on finit d'éditer un champ (blur/Entrée) ou qu'on choisit un match Discogs — plus de bouton
  *  « Appliquer » (retour Antoine 2026-08-25 : les métadonnées se gravent quand on a fini de les
- *  éditer). Sur succès le fichier == l'affichage → re-snapshot pour effacer le marqueur. Gardé contre
- *  le double-fire (l'Entrée appelle blur() → deux déclenchements) par `applyingTags`.
+ *  éditer). Sur succès le fichier == l'affichage → re-snapshot pour effacer le marqueur.
+ *
+ *  Une écriture à la fois, par `coalesceLatest` : une demande arrivée pendant une écriture est
+ *  REJOUÉE après, avec la dernière saisie, et le double déclenchement de l'Entrée (qui appelle
+ *  blur()) se résorbe parce que la valeur est identique. Jusqu'au 2026-09-23, une garde
+ *  `if (applyingTags) return` jetait la seconde demande — un titre validé pendant la gravure de
+ *  l'artiste n'était jamais écrit. La valeur est COPIÉE à la demande : `upd` mute `state.canonical`
+ *  en place, et c'est la piste de la demande qui est gravée, même si une autre s'est ouverte depuis.
  *  openState.openSeq-guarded : un open ultérieur ne repeint jamais l'état/UI de cette piste. */
-let applyingTags = false;
+interface TagJob {
+  trackId: number;
+  edited: Canonical;
+  seq: number;
+}
+const applyTagsLatest = coalesceLatest<TagJob>(
+  runApplyTags,
+  (a, b) => a.trackId === b.trackId && JSON.stringify(a.edited) === JSON.stringify(b.edited),
+);
 async function doApplyTags(): Promise<void> {
-  if (applyingTags || !state.track || !state.canonical) return;
-  applyingTags = true;
-  const trackId = state.track.id;
-  const edited = state.canonical;
-  const myseq = openState.openSeq;
+  if (!state.track || !state.canonical) return;
+  await applyTagsLatest({ trackId: state.track.id, edited: { ...state.canonical }, seq: openState.openSeq });
+}
+async function runApplyTags({ trackId, edited, seq: myseq }: TagJob): Promise<void> {
   try {
     const batchId = await applyTags(trackId, edited);
     const snap = await trackFileTags(trackId); // file changed → refresh the in-memory snapshot
@@ -620,11 +644,17 @@ async function doApplyTags(): Promise<void> {
     toast(T().tagsWritten, true, () =>
       void revertBatch(batchId).catch((e) => console.error("revertBatch (tag_edit) failed", e)),
     );
+    // L'écran a pu bouger PENDANT l'écriture sans émettre de demande : le blur ne grave que si
+    // l'affichage diffère de `fileTags`, et cet instantané datait d'AVANT l'écriture. Taper « B »,
+    // Tab, puis remettre « A » (la valeur d'origine) avant la fin : aucune demande, et le fichier
+    // gardait « B » (relecture #65). Maintenant que `fileTags` est frais, si l'écran diffère encore
+    // de ce qui vient d'être gravé ET du fichier, on regrave.
+    if (state.canonical && JSON.stringify(state.canonical) !== JSON.stringify(edited) && tagFieldDiffs().any) {
+      void doApplyTags();
+    }
   } catch (e) {
     console.error("apply_tags failed", e);
     toast(T().tagsFailed, false);
-  } finally {
-    applyingTags = false;
   }
 }
 

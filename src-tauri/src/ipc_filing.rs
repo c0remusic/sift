@@ -308,15 +308,15 @@ pub fn apply_tags(
     let batch_id = filing::new_batch_id(track_id);
     {
         let conn = db::lock_conn(&conn)?;
-        // Persist an edited label to the `metadata` table so a close+reopen reads it back (the file
-        // now holds it, but `track_release` reads the DB) — label-only upsert, artist/title/version
-        // and any release link untouched. Only a real edit writes; leaving the field as the stored
-        // label is a no-op here. The revert of this tag_edit rewrites the file's OLD tags but not
-        // this DB row (same as every other apply_tags field), so a reverted label reads as a normal
-        // file-vs-display discrepancy, which the banner is meant to surface.
-        if let Some(l) = edited_label {
-            crate::metadata::set_metadata_label(&conn, track_id, l).map_err(|e| e.to_string())?;
-        }
+        // Persist the edit to the `metadata` table so a close+reopen reads it back: an identified
+        // track reopens from the DB (`track_release`), not from the file. Artist/title/version on an
+        // existing row, the label only when really edited; the release link, year, cover and genres
+        // untouched (`metadata::persist_tag_edit`, issue #65 — it used to be label-only, and the
+        // reopened editor showed the Discogs values again). The revert of this tag_edit rewrites the
+        // file's OLD tags but not this DB row, so a reverted edit reads as a normal file-vs-display
+        // discrepancy, which the banner is meant to surface.
+        crate::metadata::persist_tag_edit(&conn, track_id, &edited, edited_label)
+            .map_err(|e| e.to_string())?;
         let action_id = actions::record_with_meta(
             &conn,
             &batch_id,
@@ -469,6 +469,35 @@ pub struct TrackFileOutcome {
 
 /// Background body of `file_track` (off the invoke thread): phase 2 (the multi-second ffmpeg
 /// encode and file moves, NO lock) then phase 3 (journal + mark filed, lock taken and released).
+/// Phase 2 d'une piste du LOT, rendue en (journal de fichiers, message d'erreur affiché).
+///
+/// Le message part à l'écran — la ligne d'échec du rapport de lot (`batch-sheet.ts`) — donc
+/// `Display`, comme le chemin unitaire, jamais `Debug`. Jusqu'au 2026-09-23 il était formaté en
+/// `{e:?}` et l'utilisateur lisait `Encode(Ffmpeg("spawn failed: …"))` ; un panic donnait
+/// `Any { .. }`. Le `Debug` complet reste au journal.
+fn batch_phase2_outcome(
+    track_id: i64,
+    executed: std::thread::Result<Result<Vec<filing::FsLog>, filing::FilingError>>,
+) -> (Option<Vec<filing::FsLog>>, Option<String>) {
+    match executed {
+        Ok(Ok(log)) => (Some(log), None),
+        Ok(Err(e)) => {
+            log::error!("file_batch: execute failed for track {track_id}: {e:?}");
+            (None, Some(e.to_string()))
+        }
+        Err(payload) => {
+            log::error!("file_batch: execute panicked for track {track_id}: {payload:?}");
+            (
+                None,
+                Some(crate::tr!(
+                    "conversion interrompue (panic)",
+                    "conversion interrupted (panic)"
+                )),
+            )
+        }
+    }
+}
+
 /// Emits `file:track:done` in EVERY outcome — success, encode failure, poisoned lock, or a panic —
 /// so the front is never left waiting on an event that will not come (a track it believes is still
 /// converting is hidden from the queue). `queue:changed` is emitted only when something actually
@@ -943,19 +972,7 @@ fn run_file_batch(
                         filing::execute_file(&job.plan)
                     }))
                 };
-                let (log, error) = match executed {
-                    Ok(Ok(log)) => (Some(log), None),
-                    Ok(Err(e)) => {
-                        let msg = format!("{e:?}");
-                        log::error!("file_batch: execute failed for track {}: {msg}", job.id);
-                        (None, Some(msg))
-                    }
-                    Err(payload) => {
-                        let msg = format!("{payload:?}");
-                        log::error!("file_batch: execute panicked for track {}: {msg}", job.id);
-                        (None, Some(msg))
-                    }
-                };
+                let (log, error) = batch_phase2_outcome(job.id, executed);
                 if tx
                     .send(Phase2Outcome {
                         idx: job.idx,
@@ -1414,6 +1431,28 @@ mod tests {
         let conn = Connection::open_in_memory().expect("open_in_memory");
         crate::db::run_migrations(&conn).expect("run_migrations");
         conn
+    }
+
+    /// Le rapport de lot affiche ce message : `Display`, jamais `Debug`. Avant le 2026-09-23 il
+    /// montrait `Encode("ffmpeg: spawn failed: …")`, et `Any { .. }` pour un panic. La chaîne
+    /// « spawn failed » doit survivre : `conversion-error.ts` la reconnaît pour nommer FFmpeg.
+    #[test]
+    fn l_echec_d_une_piste_du_lot_s_affiche_en_display() {
+        let e = filing::FilingError::Encode("ffmpeg: spawn failed: introuvable".into());
+        let (log, msg) = batch_phase2_outcome(7, Ok(Err(e)));
+        assert!(log.is_none());
+        assert_eq!(
+            msg.as_deref(),
+            Some("encode: ffmpeg: spawn failed: introuvable")
+        );
+
+        let panic: Box<dyn std::any::Any + Send> = Box::new("boom");
+        let (log, msg) = batch_phase2_outcome(7, Err(panic));
+        assert!(log.is_none());
+        assert_eq!(msg.as_deref(), Some("conversion interrompue (panic)"));
+
+        let (log, msg) = batch_phase2_outcome(7, Ok(Ok(Vec::new())));
+        assert_eq!((log.map(|l| l.len()), msg), (Some(0), None));
     }
 
     /// LE seam de production de #54 : c'est cette fonction, et elle seule, qui décide si une

@@ -87,6 +87,54 @@ fn extract_version_hint(stem: &str) -> Option<String> {
     extract_trailing_version(rest.trim()).1
 }
 
+/// A "(feat. X)" paren names a guest, not a mix: it stays in the title. Word boundary required —
+/// a bare `starts_with("feat")` took « (Featurecast Remix) » for a guest (relecture #65).
+fn is_featuring(v: &str) -> bool {
+    let l = v.trim().to_lowercase();
+    ["feat.", "feat ", "featuring ", "ft.", "ft "]
+        .iter()
+        .any(|p| l.starts_with(p))
+}
+
+/// Two spellings of the same version ("Original Mix" / "original-mix"): lowercase, `-` and `_`
+/// read as spaces, whitespace collapsed.
+fn same_version(a: &str, b: &str) -> bool {
+    let n = |s: &str| {
+        s.to_lowercase()
+            .replace(['-', '_'], " ")
+            .split_whitespace()
+            .collect::<Vec<_>>()
+            .join(" ")
+    };
+    n(a) == n(b)
+}
+
+/// Split a TAG title into (title, version) — the inverse of `tag_title`, which graves
+/// "Title (Version)" into the file.
+///
+/// WHY, 2026-09-23 (issue #65). `reconcile` used to keep the tag title whole AND take the version
+/// from the filename, so every edit that went through `apply_tags` came back with its version
+/// twice: the real file of the report read « Elastic (Original Mix) (Original-Mix) » after a few
+/// round trips. The loop below also heals that doubling on files it already damaged: trailing
+/// parens that repeat the extracted version are dropped. A "(feat. X)" paren is never a version.
+pub(crate) fn split_tag_title(tag_title: &str) -> (String, Option<String>) {
+    let whole = tag_title.trim();
+    let (mut base, version) = extract_trailing_version(whole);
+    let Some(v) = version.filter(|v| !v.is_empty() && !is_featuring(v)) else {
+        return (whole.to_string(), None);
+    };
+    while let (shorter, Some(again)) = extract_trailing_version(&base) {
+        if !same_version(&again, &v) {
+            break;
+        }
+        base = shorter;
+    }
+    if base.is_empty() {
+        return (whole.to_string(), None);
+    }
+    (base, Some(v))
+}
+
 /// Normalize for the "do tags and filename agree?" comparison: lowercase, collapse
 /// whitespace. Internal to reconcile.
 fn norm(s: &str) -> String {
@@ -97,21 +145,33 @@ fn norm(s: &str) -> String {
 }
 
 /// Reconcile embedded tags and the filename stem into one canonical record + confidence.
-/// See the M4 spec's four-case matrix. Tags are preferred when clean; the version always
-/// comes from the filename when present (tags rarely carry it cleanly at this stage).
+/// See the M4 spec's four-case matrix. Tags are preferred when clean. The version comes from the
+/// tag title's trailing paren when it has one — that is where `tag_title` graves it — and from
+/// the filename otherwise (see `split_tag_title`, issue #65).
 pub fn reconcile(tag_artist: &str, tag_title: &str, stem: &str) -> Canonical {
     let tags_clean = is_clean(tag_artist, tag_title);
     let parsed = parse_filename(stem); // Some only if the name is clean
     let name_version = parsed.as_ref().and_then(|(_, _, v)| v.clone());
+    let (tag_base, tag_version) = split_tag_title(tag_title);
 
     match (tags_clean, &parsed) {
         // both clean: agree -> green; disagree -> yellow (tags shown as default)
         (true, Some((pa, pt, _))) => {
-            let agree = norm(tag_artist) == norm(pa) && norm(tag_title) == norm(pt);
+            // Une parenthèse que le NOM porte aussi DANS son titre fait partie du titre : tag
+            // « Bar A Thym (Part 2) », nom « … - Bar A Thym (Part 2) (Original Mix) ». La couper en
+            // aurait fait la version, jeté « Original Mix » et fait tomber la piste en jaune
+            // (relecture #65). Sinon la parenthèse du tag est sa version, celle que `tag_title` y a
+            // gravée.
+            let (title, version) = if norm(tag_title) == norm(pt) {
+                (tag_title.trim().to_string(), name_version)
+            } else {
+                (tag_base, tag_version.or(name_version))
+            };
+            let agree = norm(tag_artist) == norm(pa) && norm(&title) == norm(pt);
             Canonical {
                 artist: tag_artist.trim().to_string(),
-                title: tag_title.trim().to_string(),
-                version: name_version,
+                title,
+                version,
                 label: None,
                 confidence: if agree {
                     Confidence::Green
@@ -125,8 +185,8 @@ pub fn reconcile(tag_artist: &str, tag_title: &str, stem: &str) -> Canonical {
         // see extract_version_hint.
         (true, None) => Canonical {
             artist: tag_artist.trim().to_string(),
-            title: tag_title.trim().to_string(),
-            version: extract_version_hint(stem),
+            title: tag_base,
+            version: tag_version.or_else(|| extract_version_hint(stem)),
             label: None,
             confidence: Confidence::Green,
         },
@@ -442,6 +502,93 @@ mod tests {
         assert_eq!(c.artist, "Theo Parrish");
         assert_eq!(c.title, "Falling Up");
         assert_eq!(c.version.as_deref(), Some("Extended Mix"));
+        assert_eq!(c.confidence, Confidence::Green);
+    }
+
+    /// Issue #65 : ce que `apply_tags` grave (`tag_title`), `reconcile` le relit à l'identique —
+    /// quel que soit le nom du fichier. Une version vide ne se vérifie que contre un nom sans
+    /// version : le nom de fichier reste une source quand le tag n'en porte pas.
+    #[test]
+    fn reconcile_est_l_inverse_de_tag_title() {
+        let stems_avec = [
+            "Larry Heard - Mystery of Love (Original Mix)",
+            "01_audio_320",
+        ];
+        let stems_sans = ["Larry Heard - Mystery of Love", "01_audio_320"];
+        for (version, stems) in [
+            (Some("Extended Mix"), &stems_avec),
+            (Some("Original Mix"), &stems_avec),
+            (Some("Dub"), &stems_sans),
+            (None, &stems_sans),
+        ] {
+            for stem in stems.iter() {
+                let c = Canonical {
+                    artist: "Larry Heard".into(),
+                    title: "Mystery of Love".into(),
+                    version: version.map(Into::into),
+                    label: None,
+                    confidence: Confidence::Green,
+                };
+                let back = reconcile(&c.artist, &tag_title(&c), stem);
+                assert_eq!(
+                    (back.title.as_str(), back.version.as_deref()),
+                    (c.title.as_str(), version),
+                    "version {version:?}, nom {stem:?}"
+                );
+            }
+        }
+    }
+
+    /// Le fichier réel du rapport d'Antoine, abîmé par l'aller-retour d'avant le correctif : la
+    /// parenthèse qui répète la version est retirée à la relecture.
+    #[test]
+    fn reconcile_repare_une_version_deja_doublee() {
+        let c = reconcile(
+            "Cherry Bomb",
+            "Elastic (Original Mix) (Original-Mix)",
+            "Cherry-Bomb---Elastic-(Original-Mix)",
+        );
+        assert_eq!(c.title, "Elastic");
+        assert_eq!(c.version.as_deref(), Some("Original-Mix"));
+    }
+
+    /// Relecture #65 : une parenthèse que le nom porte aussi dans son titre n'est pas une version.
+    #[test]
+    fn reconcile_garde_une_parenthese_de_titre_que_le_nom_porte_aussi() {
+        let c = reconcile(
+            "Kerri Chandler",
+            "Bar A Thym (Part 2)",
+            "Kerri Chandler - Bar A Thym (Part 2) (Original Mix)",
+        );
+        assert_eq!(c.title, "Bar A Thym (Part 2)");
+        assert_eq!(c.version.as_deref(), Some("Original Mix"));
+        assert_eq!(c.confidence, Confidence::Green);
+    }
+
+    /// Relecture #65 : un remixeur dont le nom commence par « Feat » n'est pas un invité.
+    #[test]
+    fn un_remix_featurecast_est_une_version() {
+        let c = reconcile(
+            "Stereo MC's",
+            "Connected (Featurecast Remix)",
+            "Stereo MC's - Connected (Featurecast Remix)",
+        );
+        assert_eq!(c.title, "Connected");
+        assert_eq!(c.version.as_deref(), Some("Featurecast Remix"));
+        assert_eq!(c.confidence, Confidence::Green);
+    }
+
+    /// « (feat. X) » nomme un invité, pas un mix : il reste dans le titre, et la version vient
+    /// toujours du nom de fichier.
+    #[test]
+    fn reconcile_laisse_le_feat_dans_le_titre() {
+        let c = reconcile(
+            "Kerri Chandler",
+            "Rain (feat. Arnold Jarvis)",
+            "Kerri Chandler - Rain (feat. Arnold Jarvis) (Original Mix)",
+        );
+        assert_eq!(c.title, "Rain (feat. Arnold Jarvis)");
+        assert_eq!(c.version.as_deref(), Some("Original Mix"));
         assert_eq!(c.confidence, Confidence::Green);
     }
 

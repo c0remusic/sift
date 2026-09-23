@@ -178,6 +178,18 @@ fn normalise(s: &str) -> String {
             c => out.push(c),
         }
     }
+    // Convention Beatport / Soulseek : un nom SANS espace ni souligné, où « --- » sépare les champs
+    // et où chaque « - » isolé remplace un espace (`Cherry-Bomb---Elastic-(Original-Mix)`, issue
+    // #66). Seul le « --- » en fait la preuve : un nom tout en tirets qui ne le porte pas
+    // (`2-Gunne-What-I-Like--Fi-LOPZUP`, au corpus) garde ses tirets, faute de savoir lesquels
+    // sont des espaces. Le séparateur passe par un caractère de contrôle le temps de convertir
+    // les tirets simples, sinon il y passerait aussi.
+    if !out.contains(' ') && !out.contains('_') && out.contains("---") {
+        out = out
+            .replace("---", "\u{1}")
+            .replace('-', " ")
+            .replace('\u{1}', " - ");
+    }
     // `_-_` est un séparateur de CHAMP là où `_` isolé est un séparateur de MOT : le traiter
     // d'abord évite que la conversion en espaces ne les confonde.
     out = out.replace("_-_", " - ");
@@ -537,8 +549,13 @@ fn strip_leading_track_no(s: &str) -> Option<&str> {
 fn split_fields(s: &str) -> Vec<String> {
     for sep in [" - ", " -", "- ", "--", ".-"] {
         if s.contains(sep) {
+            // `--` : une COURSE de tirets est un seul séparateur. `a---b` coupé sur `--` laissait
+            // `-b`, et un mot préfixé de « - » est IGNORÉ par Discogs (issue #66, mesuré) — le
+            // titre disparaissait de toutes les requêtes. Ne vaut que pour ce séparateur : ailleurs
+            // un tiret de tête peut être le titre lui-même (`-ism`, au corpus).
             let parts: Vec<String> = s
                 .split(sep)
+                .map(|p| if sep == "--" { p.trim_matches('-') } else { p })
                 .map(|p| p.trim().to_string())
                 .filter(|p| !p.is_empty())
                 .collect();
@@ -923,6 +940,36 @@ fn mine_folder_album(folder: &str) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Issue #66. Une course de tirets est UN séparateur : le titre ne garde aucun « - » de tête,
+    /// qui ferait ignorer le mot par Discogs. Le nom porte un espace, donc la règle Beatport de
+    /// `normalise` ne s'applique pas : c'est `split_fields` seul qui est tenu ici.
+    #[test]
+    fn a_run_of_dashes_is_one_separator() {
+        let t = build("Cherry Bomb---Elastic", "complete");
+        assert_eq!(t.artist, "Cherry Bomb");
+        assert_eq!(t.title, "Elastic");
+        let t = build("Cherry Bomb----Elastic", "complete");
+        assert_eq!(t.title, "Elastic");
+    }
+
+    /// Le nom réel du rapport d'Antoine : aucune marche envoyée ne porte un mot préfixé de « - ».
+    #[test]
+    fn no_rung_carries_a_dash_prefixed_word() {
+        let t = build("Cherry-Bomb---Elastic-(Original-Mix)", "complete");
+        assert_eq!(
+            (t.artist.as_str(), t.title.as_str(), t.version.as_deref()),
+            ("Cherry Bomb", "Elastic", Some("Original Mix"))
+        );
+        for a in &t.ladder {
+            assert!(
+                a.q.split_whitespace().all(|w| !w.starts_with('-')),
+                "marche {:?} : {:?}",
+                a.label,
+                a.q
+            );
+        }
+    }
 
     #[test]
     fn keeps_a_clean_name_intact() {

@@ -654,6 +654,14 @@ pub const CASES: &[Case] = &[
         note: "SANS ESPOIR: face vinyle seule",
     },
     Case {
+        folder: "complete",
+        stem: "Cherry-Bomb---Elastic-(Original-Mix)",
+        artist: "Cherry Bomb",
+        title: "Elastic",
+        version: Some("Original Mix"),
+        note: "convention Beatport/Soulseek : '---' sépare les champs, '-' remplace l'espace (issue #66)",
+    },
+    Case {
         folder: "Cherry Bomb 1995 Electronics For Dogs (Freedag Nuveux, FDAG CD1)",
         stem: "10. -ism",
         artist: "",
@@ -796,10 +804,13 @@ mod tests {
     ///
     /// Ils restent au corpus : un corpus qui ne garderait que ce qu'on sait résoudre mentirait sur
     /// la difficulté réelle.
-    const TERMS_EXACT: usize = 75;
-    const TERMS_ARTIST: usize = 75;
-    const TERMS_TITLE: usize = 75;
-    const TERMS_VERSION: usize = 77;
+    ///
+    /// 76/78 au 2026-09-23 : le cas `Cherry-Bomb---Elastic-(Original-Mix)` ajouté et résolu
+    /// (issue #66). Les deux manqués sont les mêmes.
+    const TERMS_EXACT: usize = 76;
+    const TERMS_ARTIST: usize = 76;
+    const TERMS_TITLE: usize = 76;
+    const TERMS_VERSION: usize = 78;
 
     #[test]
     fn corpus_against_search_terms() {

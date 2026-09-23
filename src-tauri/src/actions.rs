@@ -859,6 +859,20 @@ pub fn revert_batch(conn: &Connection, batch_id: &str) -> Result<(), RevertError
     let tag_only = rows
         .iter()
         .all(|(_, _, kind, _, _, _)| kind.as_str() == "tag_edit");
+    // …but since 2026-09-23 a tag edit ALSO moves the `metadata` row an identified track reopens
+    // from (`metadata::persist_tag_edit`, #65). Reverting the file alone left the row on the undone
+    // edit: shown again on reopen, and filed by a batch. The row follows the restored file — the
+    // snapshot of the OLDEST row of the batch, which is what the file holds now.
+    if tag_only {
+        if let (Some(tid), Some(meta)) = (track_id, rows.iter().rev().find_map(|r| r.5.clone())) {
+            match serde_json::from_str::<crate::tagging::TagsSnapshot>(&meta) {
+                Ok(snap) => crate::metadata::follow_restored_tags(conn, tid, &snap)?,
+                Err(e) => log::error!(
+                    "revert_batch {batch_id}: instantané de tags illisible ({e}), ligne metadata de la piste {tid} laissée en l'état"
+                ),
+            }
+        }
+    }
     if let Some(tid) = track_id {
         if !tag_only {
             match &source_path {
@@ -1451,8 +1465,9 @@ mod tests {
     }
 
     /// The judge of the whole feature: applying then reverting a `tag_edit` must restore the file's
-    /// original tags EXACTLY, while leaving the track's status and metadata row untouched (a tag edit
-    /// is not a filing — it never moved the file nor set 'filed').
+    /// original tags EXACTLY, while leaving the track's status untouched and its metadata row in
+    /// place (a tag edit is not a filing — it never moved the file nor set 'filed'). Since
+    /// 2026-09-23 the row's identity FOLLOWS the restored tags (`metadata::follow_restored_tags`).
     #[test]
     fn revert_tag_edit_restores_tags_without_touching_status_or_metadata() {
         let Some(src) = fixture("real_320.mp3") else {
@@ -1524,6 +1539,18 @@ mod tests {
             )
             .unwrap();
         assert_eq!(meta_rows, 1, "a tag_edit revert must not drop metadata");
+        // La ligne suit le fichier restauré, pas l'édition annulée (relecture #65).
+        if let (Some(a), Some(t)) = (before.artist.as_deref(), before.title.as_deref()) {
+            let (artist, title): (String, String) = conn
+                .query_row(
+                    "SELECT artist, title FROM metadata WHERE track_id=?1",
+                    params![tid],
+                    |r| Ok((r.get(0)?, r.get(1)?)),
+                )
+                .unwrap();
+            assert_eq!(artist, a.trim());
+            assert_eq!(title, crate::naming::split_tag_title(t).0);
+        }
         // Row marked undone.
         let live: i64 = conn
             .query_row(
@@ -1533,6 +1560,87 @@ mod tests {
             )
             .unwrap();
         assert_eq!(live, 0);
+    }
+
+    /// Relecture #65 : « Rétablir » une édition de Revue ramène AUSSI la ligne `metadata` d'une piste
+    /// identifiée sur le fichier restauré. Sans ça, la réouverture montrait l'édition annulée, et un
+    /// lot rangeait sous elle (`canonical_from_metadata`). Tags connus écrits d'abord, pour que le
+    /// test ne dépende pas de ceux de la fixture.
+    #[test]
+    fn revert_tag_edit_brings_the_metadata_row_back_to_the_restored_file() {
+        let Some(src) = fixture("real_320.mp3") else {
+            eprintln!("skip: no fixture");
+            return;
+        };
+        let conn = db();
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("track.mp3");
+        std::fs::copy(&src, &file).unwrap();
+        let path = file.to_str().unwrap();
+        crate::tagging::write_tags_full(
+            path,
+            "Larry Heard",
+            "Mystery of Love (Dub)",
+            None,
+            None,
+            &[],
+            None,
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO tracks(path, status) VALUES(?1, 'pending')",
+            params![path],
+        )
+        .unwrap();
+        let tid = conn.last_insert_rowid();
+        // La ligne telle que `persist_tag_edit` l'a laissée après l'édition.
+        conn.execute(
+            "INSERT INTO metadata(track_id, artist, title, version, discogs_release_id)
+             VALUES(?1, 'Mr. Fingers', 'Edited', 'Club', '12345')",
+            params![tid],
+        )
+        .unwrap();
+        let before = crate::tagging::read_tags_full(path).unwrap();
+        crate::tagging::write_tags_full(
+            path,
+            "Mr. Fingers",
+            "Edited (Club)",
+            None,
+            None,
+            &[],
+            None,
+        )
+        .unwrap();
+        let meta = serde_json::to_string(&before).unwrap();
+        record_with_meta(
+            &conn,
+            "tg2",
+            Some(tid),
+            "tag_edit",
+            Some(path),
+            None,
+            Some(&meta),
+        )
+        .unwrap();
+
+        revert_batch(&conn, "tg2").unwrap();
+
+        let row: (String, String, String, String) = conn
+            .query_row(
+                "SELECT artist, title, version, discogs_release_id FROM metadata WHERE track_id=?1",
+                params![tid],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            row,
+            (
+                "Larry Heard".into(),
+                "Mystery of Love".into(),
+                "Dub".into(),
+                "12345".into()
+            )
+        );
     }
 
     #[test]

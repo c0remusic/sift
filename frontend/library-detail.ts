@@ -261,7 +261,10 @@ async function doIdentify(
   host.hidden = false;
   host.innerHTML = '<div class="sift-cands-msg">' + T().searching + "</div>";
   try {
-    const candidates = await identify(st.track.id);
+    // Ce que le formulaire affiche, pas les tags du fichier (issue #67). Le titre y est COMPLET,
+    // version comprise : `version: null`, la version s'en détache côté Rust.
+    const field = (k: string): string => edit.querySelector<HTMLInputElement>(`[data-lib="${k}"]`)?.value ?? "";
+    const candidates = await identify(st.track.id, { artist: field("artist"), title: field("title"), version: null });
     renderCandidates(host, candidates);
     wireCandidateClicks(host, candidates, edit, st);
   } catch (err) {

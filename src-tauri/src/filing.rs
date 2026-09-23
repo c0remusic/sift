@@ -989,27 +989,30 @@ pub fn file_track(
 /// if present and usable. A Discogs/manual match is a high-confidence name, so it's returned
 /// Green — this is what lets a per-track identity applied in Review feed `file_batch` (whose
 /// tag-based reconcile would otherwise ignore the applied identity). `None` = no usable row,
-/// fall back to reconcile.
+/// fall back to reconcile. The stored version rides along: it was forced to `None` until
+/// 2026-09-23, so a batch filing dropped the "(Dub)" that the same track would have kept filed
+/// one by one (issue #65).
 fn canonical_from_metadata(
     conn: &Connection,
     track_id: i64,
 ) -> rusqlite::Result<Option<Canonical>> {
     let row = conn.query_row(
-        "SELECT artist, title FROM metadata WHERE track_id=?1",
+        "SELECT artist, title, version FROM metadata WHERE track_id=?1",
         params![track_id],
         |r| {
             Ok((
                 r.get::<_, Option<String>>(0)?,
                 r.get::<_, Option<String>>(1)?,
+                r.get::<_, Option<String>>(2)?,
             ))
         },
     );
     match row {
-        Ok((Some(a), Some(t))) if !a.trim().is_empty() && !t.trim().is_empty() => {
+        Ok((Some(a), Some(t), v)) if !a.trim().is_empty() && !t.trim().is_empty() => {
             Ok(Some(Canonical {
                 artist: a,
                 title: t,
-                version: None,
+                version: v.filter(|v| !v.trim().is_empty()),
                 label: None,
                 confidence: naming::Confidence::Green,
             }))
@@ -1143,7 +1146,14 @@ mod tests {
             .expect("metadata present");
         assert_eq!(c.artist, "Larry Heard");
         assert_eq!(c.title, "Can You Feel It");
+        assert_eq!(c.version, None);
         assert_eq!(c.confidence, crate::naming::Confidence::Green);
+
+        // La version stockée suit (issue #65) : un lot ne perd plus le « (Dub) ».
+        conn.execute("UPDATE metadata SET version='Dub' WHERE track_id=1", [])
+            .unwrap();
+        let c = canonical_from_metadata(&conn, 1).unwrap().unwrap();
+        assert_eq!(c.version.as_deref(), Some("Dub"));
 
         // A blank-name row must be treated as absent (never file on an empty name).
         conn.execute(

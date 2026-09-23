@@ -8,6 +8,7 @@ import type {
   AnalysisReport,
   AnalysisProgress,
   Canonical,
+  IdentifyHint,
   Bin,
   FileResult,
   BatchResult,
@@ -341,10 +342,11 @@ export interface AppliedIdentity {
   cover_path: string | null;
 }
 
-/** Search Discogs for candidates matching the track. May reject with error codes:
+/** Search Discogs for candidates matching the track. `hint` is what the screen shows (issue #67):
+ * it wins over the file's tags and name when its title is non-empty. May reject with error codes:
  * "NO_TOKEN", "RATE_LIMITED:<seconds>", "NETWORK:<msg>", "PARSE:<msg>". */
-export const identify = (trackId: number): Promise<Candidate[]> =>
-  invoke("identify", { trackId });
+export const identify = (trackId: number, hint: IdentifyHint | null): Promise<Candidate[]> =>
+  invoke("identify", { trackId, hint });
 
 /** Apply a chosen candidate: writes tags + downloads cover. Returns the applied identity. */
 export const applyIdentity = (trackId: number, candidate: Candidate): Promise<AppliedIdentity> =>
