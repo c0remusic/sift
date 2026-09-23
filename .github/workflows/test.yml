@@ -160,6 +160,15 @@ jobs:
       - name: Lint inventaires CLAUDE.md (la doc doit nommer les gates qui tournent vraiment)
         run: npm run lint:claude-md
 
+      # Ajoutée le 2026-09-23. La liste de jargon anglais vit dans TROIS fichiers — CLAUDE.md,
+      # docs/design-system/content.md et docs/manuel.html, ce dernier PUBLIÉ sur le site — et les
+      # trois portaient les mêmes deux défauts : `CHECK MATCH` listé alors qu'il est retiré du
+      # produit (frontend/filing.ts:624), `XML` absent alors qu'il est affiché
+      # (frontend/rekordbox-view.ts:371). Échec SILENCIEUX : le manuel en ligne promettait une
+      # étiquette que personne ne peut voir. Mesurée par mutation, 2 branches sur 2.
+      - name: Lint liste de jargon (les termes listés doivent exister dans l'UI, et les 3 copies s'accorder)
+        run: npm run lint:jargon
+
       - name: Type-check frontend
         run: npx tsc --noEmit
 

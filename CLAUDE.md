@@ -98,6 +98,12 @@ npm run lint:claude-md           # les TROIS inventaires de ce fichier contre la
                                  # le défaut visé. Une ancre introuvable ÉCHOUE. Mesuré à
                                  # `2624f65^`, l'arbre où trois lints tournaient sans être
                                  # écrits ici
+npm run lint:jargon              # la liste de jargon anglais, dans ses TROIS copies (ce fichier,
+                                 # `content.md`, `docs/manuel.html` publié) : chaque terme listé
+                                 # doit exister dans une chaîne de `frontend/`, et les trois
+                                 # copies doivent s'accorder. Égalité exacte, pas de baseline.
+                                 # Payé le 2026-09-23 — `CHECK MATCH` listé alors qu'il est
+                                 # retiré du produit, `XML` et `FAKE` affichés mais absents
 npm run check:security           # scope asset et CSP — refuse le retour du wildcard (aussi en CI)
 npm run storybook                # doc visuelle des états UI (port 6006), stories = frontend/*.stories.ts
 
@@ -149,7 +155,7 @@ Deux gardiens, à connaître avant de dire « terminé » :
 
 - **`.claude/verify.sh`** — `tsc --noEmit` + `lint:tokens` + `lint:accents` + `lint:orphans` +
   `lint:orphan-css` + `lint:css-comments` + `lint:pointer-capture` + `lint:dead-label` +
-  `lint:claude-md` + `cargo fmt --check` + `cargo check`. ⚠️ Cette liste
+  `lint:claude-md` + `lint:jargon` + `cargo fmt --check` + `cargo check`. ⚠️ Cette liste
   n'a nommé que cinq des huit jusqu'au 2026-09-16 : les trois lints ajoutés en septembre —
   `lint:orphans`, `lint:orphan-css`, `lint:css-comments` — tournaient sans être écrits ici, et la
   vérifier se fait par `grep -oE '^ *run "' .claude/verify.sh`, jamais de mémoire.
@@ -165,7 +171,7 @@ Deux gardiens, à connaître avant de dire « terminé » :
 - **`.github/workflows/test.yml`** — sur **toute** branche et toute PR (Windows), dans cet ordre
   réel : `check:security` → `lint:tokens` → `lint:accents` → `lint:orphans` → `lint:orphan-css` →
   `lint:css-comments` → `lint:pointer-capture` → `lint:dead-label` → `lint:claude-md` →
-  `tsc --noEmit` → `npm run test` → `npm run lint` → `cargo fmt --check` →
+  `lint:jargon` → `tsc --noEmit` → `npm run test` → `npm run lint` → `cargo fmt --check` →
   `clippy -D warnings` → `cargo test`. Ordre délibéré, du moins cher au plus cher : les gates
   frontend ne compilent rien, et les six premières ne lisent même pas TypeScript. Le job régénère
   fixtures + ffmpeg d'abord. `lint:tokens` a rejoint cette liste le 2026-09-16 : il vivait dans un
@@ -553,7 +559,14 @@ publie jamais. Nommer la racine depuis une mesure du dépôt quand elle existe.
 
 Jargon anglais volontairement conservé dans l'UI (ne pas « corriger ») : LOSSLESS (le rail,
 les facettes, les chips — jamais le mot de verdict, qui dit VRAI / FAUX / À VÉRIFIER depuis le
-2026-09-10), DUPLICATE, MATCH, CHECK MATCH, kbps, kHz, MP3, AIFF, WAV.
+2026-09-10), DUPLICATE, MATCH, FAKE, XML, kbps, kHz, MP3, AIFF, WAV.
+⚠️ Cette liste a nommé `CHECK MATCH` jusqu'au 2026-09-23, alors que le terme était RETIRÉ du
+produit — `frontend/filing.ts:624` : « CHECK MATCH removed entirely — annotation confirmed
+intentional ». Elle oubliait à l'inverse `XML`, qui est AFFICHÉ (`frontend/rekordbox-view.ts:371`,
+« XML Rekordbox illisible — relie un fichier »). Les deux mêmes défauts vivaient dans
+`docs/design-system/content.md` et dans `docs/manuel.html`, en ligne : trois copies de la même
+liste, trois fois faux. Une liste de libellés recopiée dans trois fichiers ne se maintient pas —
+si elle dérive à nouveau, le remède est une gate, pas une quatrième relecture.
 
 ## Vérification UI — l'app réelle, pas la maquette
 

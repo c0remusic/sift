@@ -68,6 +68,7 @@ run "css-comments (lint:css-comments)" npm run -s lint:css-comments
 run "pointer-capture (lint:pointer-capture)" npm run -s lint:pointer-capture
 run "libelle mort (lint:dead-label)" npm run -s lint:dead-label
 run "inventaires CLAUDE.md (lint:claude-md)" npm run -s lint:claude-md
+run "liste de jargon (lint:jargon)" npm run -s lint:jargon
 
 # `cargo fmt --check` : ajouté le 2026-08-26 après un raté qu'aucune gate locale
 # ne pouvait voir. `34e7f12` a livré trois emplacements de `ipc_filing.rs` non

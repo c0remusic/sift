@@ -26,6 +26,7 @@
     "lint:pointer-capture": "node scripts/lint-pointer-capture.mjs",
     "lint:dead-label": "node scripts/lint-dead-label.mjs",
     "lint:claude-md": "node scripts/lint-claude-md-inventories.mjs",
+    "lint:jargon": "node scripts/lint-jargon-allowlist.mjs",
     "check:security": "node scripts/check-tauri-security.mjs",
     "storybook": "storybook dev -p 6006",
     "build-storybook": "storybook build"
