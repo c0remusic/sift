@@ -82,8 +82,12 @@ fn resolve_pioneer_dir(conn: &Connection) -> Result<std::path::PathBuf, String> 
     crate::settings::get(conn, crate::settings::REKORDBOX_XML_PATH)
         .map_err(|e| e.to_string())?
         .ok_or(NO_LINKED_XML)?;
-    let dir = crate::actions::rekordbox_pioneer_dir()
-        .ok_or_else(|| "impossible de déterminer le dossier Pioneer sur ce système".to_string())?;
+    let dir = crate::actions::rekordbox_pioneer_dir().ok_or_else(|| {
+        crate::tr!(
+            "impossible de déterminer le dossier Pioneer sur ce système",
+            "couldn't determine the Pioneer folder on this system"
+        )
+    })?;
     // Impasse A12 ([issue #15](https://github.com/c0remusic/sift/issues/15)) : `rekordbox_pioneer_dir`
     // rend `Some(<chemin codé en dur>)` SANS `exists()`, donc sur une machine sans Rekordbox elle
     // rend un chemin qui n'existe pas et le `ok_or_else` ci-dessus ne tire jamais — il ne se
@@ -95,8 +99,9 @@ fn resolve_pioneer_dir(conn: &Connection) -> Result<std::path::PathBuf, String> 
     // doivent rien interrompre), alors que ce chemin-ci ne s'atteint que par un clic explicite sur
     // « Appliquer ». Là, échouer en nommant la cause est exactement ce qu'il faut.
     if !dir.is_dir() {
-        return Err(format!(
+        return Err(crate::tr!(
             "dossier Pioneer introuvable ({}) — Rekordbox ne semble pas installé sur cette machine",
+            "Pioneer folder not found ({}) — Rekordbox doesn't seem to be installed on this machine",
             dir.display()
         ));
     }
@@ -114,8 +119,9 @@ fn new_batch_stamp() -> String {
 /// written successfully at the point this is called; the row staying 'pending' means a later
 /// retry would re-run the write for no reason, so this is loud and explicit rather than reading
 /// as a plain sync failure. `kind` is the log-line noun ("repair"/"metadata sync"/"artwork
-/// sync"); `action_phrase` is the full French clause already agreeing in gender/verb for that row
-/// kind (e.g. "la réparation a bien été appliquée").
+/// sync"); `action_phrase` is the full clause, already in the UI language and already agreeing in
+/// gender/verb for that row kind (e.g. `tr!("la réparation a bien été appliquée", "the repair
+/// was applied")`).
 fn desync_error_message(
     kind: &str,
     action_phrase: &str,
@@ -123,7 +129,19 @@ fn desync_error_message(
     e: impl std::fmt::Display,
 ) -> String {
     log::error!("rekordbox {kind} {id}: master.db écrit avec succès mais l'état local n'a pas pu être mis à jour (désync) : {e}");
-    format!("{action_phrase} dans master.db, mais Sift n'a pas pu l'enregistrer localement — ne pas réappliquer sans vérifier Rekordbox d'abord ({e})")
+    crate::tr!(
+        "{action_phrase} dans master.db, mais Sift n'a pas pu l'enregistrer localement — ne pas réappliquer sans vérifier Rekordbox d'abord ({e})",
+        "{action_phrase} in master.db, but Sift couldn't record it locally — don't reapply without checking Rekordbox first ({e})"
+    )
+}
+
+/// The row is no longer `pending` or has no resolved Rekordbox track — shared by the 3
+/// apply_one_* paths. Shown as-is in the row's error, hence translated.
+fn ambiguous_or_handled() -> String {
+    crate::tr!(
+        "piste ambiguë ou déjà traitée — résolution manuelle requise",
+        "track ambiguous or already handled — manual resolution required"
+    )
 }
 
 /// Logs + humanizes a master.db WRITE failure shared by all 3 apply_one_* write branches
@@ -153,34 +171,49 @@ fn basename(path: &str) -> String {
 pub(crate) fn humanize_masterdb_error(e: &crate::rekordbox_masterdb::MasterDbError) -> String {
     use crate::rekordbox_masterdb::MasterDbError;
     match e {
-        MasterDbError::RekordboxRunning => "Rekordbox est ouvert — ferme-le avant de synchroniser".to_string(),
-        MasterDbError::RegistryRowMissing => "structure de master.db inattendue — synchronisation impossible".to_string(),
-        MasterDbError::TrackNotFound { track_id } => format!(
-            "piste {track_id} introuvable dans master.db — la bibliothèque Rekordbox a peut-être changé depuis la détection"
+        MasterDbError::RekordboxRunning => crate::tr!(
+            "Rekordbox est ouvert — ferme-le avant de synchroniser",
+            "Rekordbox is open — close it before syncing"
         ),
-        MasterDbError::WriteVerificationFailedRolledBack(m) => {
-            format!("l'écriture a échoué à la vérification, la sauvegarde a été restaurée automatiquement : {m}")
-        }
-        MasterDbError::WriteVerificationFailedRollbackFailed(m) => format!(
-            "l'écriture ET la restauration de la sauvegarde ont échoué — intervention manuelle nécessaire : {m}"
+        MasterDbError::RegistryRowMissing => crate::tr!(
+            "structure de master.db inattendue — synchronisation impossible",
+            "unexpected master.db structure — can't sync"
         ),
-        MasterDbError::NoDuplicatesToRemove => {
-            "aucun doublon à supprimer dans ce groupe — la bibliothèque a peut-être changé depuis le scan".to_string()
-        }
-        MasterDbError::SongPlaylistEntryNotFound { song_playlist_id } => format!(
-            "entrée de playlist {song_playlist_id} introuvable — la bibliothèque Rekordbox a peut-être changé depuis le scan"
+        MasterDbError::TrackNotFound { track_id } => crate::tr!(
+            "piste {track_id} introuvable dans master.db — la bibliothèque Rekordbox a peut-être changé depuis la détection",
+            "track {track_id} not found in master.db — the Rekordbox library may have changed since detection"
         ),
-        MasterDbError::NoArtworkPath { track_id } => format!(
-            "la piste {track_id} n'a pas de pochette dans master.db — aucune synchro possible"
+        MasterDbError::WriteVerificationFailedRolledBack(m) => crate::tr!(
+            "l'écriture a échoué à la vérification, la sauvegarde a été restaurée automatiquement : {m}",
+            "the write failed verification, the backup was restored automatically: {m}"
         ),
-        MasterDbError::ArtworkVariantMissing { path } => format!(
-            "fichier pochette manquant côté Rekordbox ({path}) — bibliothèque peut-être corrompue ou jamais scannée"
+        MasterDbError::WriteVerificationFailedRollbackFailed(m) => crate::tr!(
+            "l'écriture ET la restauration de la sauvegarde ont échoué — intervention manuelle nécessaire : {m}",
+            "the write AND the backup restore failed — manual intervention needed: {m}"
         ),
-        MasterDbError::ArtworkWriteVerificationFailedRolledBack(m) => format!(
-            "l'écriture de la pochette a échoué à la vérification, la sauvegarde a été restaurée automatiquement : {m}"
+        MasterDbError::NoDuplicatesToRemove => crate::tr!(
+            "aucun doublon à supprimer dans ce groupe — la bibliothèque a peut-être changé depuis le scan",
+            "no duplicates to remove in this group — the library may have changed since the scan"
         ),
-        MasterDbError::ArtworkWriteVerificationFailedRollbackFailed(m) => format!(
-            "l'écriture ET la restauration de la pochette ont échoué — intervention manuelle nécessaire : {m}"
+        MasterDbError::SongPlaylistEntryNotFound { song_playlist_id } => crate::tr!(
+            "entrée de playlist {song_playlist_id} introuvable — la bibliothèque Rekordbox a peut-être changé depuis le scan",
+            "playlist entry {song_playlist_id} not found — the Rekordbox library may have changed since the scan"
+        ),
+        MasterDbError::NoArtworkPath { track_id } => crate::tr!(
+            "la piste {track_id} n'a pas de pochette dans master.db — aucune synchro possible",
+            "track {track_id} has no cover in master.db — nothing to sync"
+        ),
+        MasterDbError::ArtworkVariantMissing { path } => crate::tr!(
+            "fichier pochette manquant côté Rekordbox ({path}) — bibliothèque peut-être corrompue ou jamais scannée",
+            "cover file missing on the Rekordbox side ({path}) — the library may be corrupted or never scanned"
+        ),
+        MasterDbError::ArtworkWriteVerificationFailedRolledBack(m) => crate::tr!(
+            "l'écriture de la pochette a échoué à la vérification, la sauvegarde a été restaurée automatiquement : {m}",
+            "the cover write failed verification, the backup was restored automatically: {m}"
+        ),
+        MasterDbError::ArtworkWriteVerificationFailedRollbackFailed(m) => crate::tr!(
+            "l'écriture ET la restauration de la pochette ont échoué — intervention manuelle nécessaire : {m}",
+            "the cover write AND its restore failed — manual intervention needed: {m}"
         ),
         other => other.to_string(),
     }
@@ -334,7 +367,7 @@ fn apply_one_repair(
         return ApplyRepairOutcome {
             id,
             ok: false,
-            error: Some("piste ambiguë ou déjà traitée — résolution manuelle requise".to_string()),
+            error: Some(ambiguous_or_handled()),
         };
     };
 
@@ -342,10 +375,10 @@ fn apply_one_repair(
         return ApplyRepairOutcome {
             id,
             ok: false,
-            error: Some(
-                "le fichier n'existe plus à l'emplacement attendu — la piste a peut-être été déplacée ou annulée depuis"
-                    .to_string(),
-            ),
+            error: Some(crate::tr!(
+                "le fichier n'existe plus à l'emplacement attendu — la piste a peut-être été déplacée ou annulée depuis",
+                "the file is no longer at the expected location — the track may have been moved or undone since"
+            )),
         };
     }
 
@@ -367,7 +400,12 @@ fn apply_one_repair(
                 return ApplyRepairOutcome {
                     id,
                     ok: false,
-                    error: Some(desync_error_message("repair", "la réparation a bien été appliquée", id, e)),
+                    error: Some(desync_error_message(
+                        "repair",
+                        &crate::tr!("la réparation a bien été appliquée", "the repair was applied"),
+                        id,
+                        e,
+                    )),
                 };
             }
             ApplyRepairOutcome {
@@ -585,7 +623,7 @@ fn apply_one_metadata_sync(
         return ApplyMetadataSyncOutcome {
             id,
             ok: false,
-            error: Some("piste ambiguë ou déjà traitée — résolution manuelle requise".to_string()),
+            error: Some(ambiguous_or_handled()),
         };
     };
 
@@ -608,7 +646,12 @@ fn apply_one_metadata_sync(
                 return ApplyMetadataSyncOutcome {
                     id,
                     ok: false,
-                    error: Some(desync_error_message("metadata sync", "la synchro a bien été appliquée", id, e)),
+                    error: Some(desync_error_message(
+                        "metadata sync",
+                        &crate::tr!("la synchro a bien été appliquée", "the sync was applied"),
+                        id,
+                        e,
+                    )),
                 };
             }
             ApplyMetadataSyncOutcome {
@@ -807,7 +850,7 @@ fn apply_one_artwork_sync(
         return ApplyArtworkSyncOutcome {
             id,
             ok: false,
-            error: Some("piste ambiguë ou déjà traitée — résolution manuelle requise".to_string()),
+            error: Some(ambiguous_or_handled()),
         };
     };
 
@@ -817,8 +860,9 @@ fn apply_one_artwork_sync(
             return ApplyArtworkSyncOutcome {
                 id,
                 ok: false,
-                error: Some(format!(
-                    "le fichier de pochette source n'existe plus — {cover_path}"
+                error: Some(crate::tr!(
+                    "le fichier de pochette source n'existe plus — {cover_path}",
+                    "the source cover file no longer exists — {cover_path}"
                 )),
             };
         }
@@ -839,7 +883,12 @@ fn apply_one_artwork_sync(
                 return ApplyArtworkSyncOutcome {
                     id,
                     ok: false,
-                    error: Some(desync_error_message("artwork sync", "la pochette a bien été synchronisée", id, e)),
+                    error: Some(desync_error_message(
+                        "artwork sync",
+                        &crate::tr!("la pochette a bien été synchronisée", "the cover was synced"),
+                        id,
+                        e,
+                    )),
                 };
             }
             ApplyArtworkSyncOutcome {
@@ -1011,6 +1060,44 @@ pub(crate) fn dedup_playlist_group_inner(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Les motifs d'échec d'une synchro s'affichent tels quels sur la ligne de l'écran Rekordbox :
+    /// ils suivent la langue. Un motif qui dit « introuvable » garde « not found » en anglais.
+    #[test]
+    fn masterdb_failures_are_worded_in_english() {
+        use crate::rekordbox_masterdb::MasterDbError;
+        let en = crate::i18n::with_lang(crate::i18n::Lang::En, || {
+            [
+                humanize_masterdb_error(&MasterDbError::RekordboxRunning),
+                humanize_masterdb_error(&MasterDbError::TrackNotFound {
+                    track_id: "42".into(),
+                }),
+                desync_error_message(
+                    "repair",
+                    &crate::tr!(
+                        "la réparation a bien été appliquée",
+                        "the repair was applied"
+                    ),
+                    7,
+                    "busy",
+                ),
+            ]
+        });
+        assert_eq!(en[0], "Rekordbox is open — close it before syncing");
+        assert_eq!(
+            en[1],
+            "track 42 not found in master.db — the Rekordbox library may have changed since detection"
+        );
+        assert_eq!(
+            en[2],
+            "the repair was applied in master.db, but Sift couldn't record it locally — \
+             don't reapply without checking Rekordbox first (busy)"
+        );
+        assert_eq!(
+            humanize_masterdb_error(&MasterDbError::RekordboxRunning),
+            "Rekordbox est ouvert — ferme-le avant de synchroniser"
+        );
+    }
 
     /// Les trois sentinelles traversent l'IPC et le frontend les reconnaît (`sift-live.ts`,
     /// `rekordbox-view.ts`) : chaque valeur doit figurer dans `shared/contracts.ts` SOUS SON NOM.
@@ -1996,6 +2083,17 @@ mod tests {
         assert_eq!(outcomes.len(), 1);
         assert!(!outcomes[0].ok);
         assert!(outcomes[0].error.as_deref().unwrap().contains("ambigu"));
+
+        // Le même rejet sous l'interface anglaise, par le VRAI chemin d'application : le texte vient
+        // du site d'appel, pas d'une copie écrite dans le test. La ligne reste ambiguë après un rejet
+        // (vérifié juste en dessous), donc le second passage rejoue exactement le même cas.
+        let en = crate::i18n::with_lang(crate::i18n::Lang::En, || {
+            apply_metadata_syncs_inner(&conn, &backup_root, &[id]).unwrap()
+        });
+        assert_eq!(
+            en[0].error.as_deref(),
+            Some("track ambiguous or already handled — manual resolution required")
+        );
 
         let status: String = conn
             .query_row(

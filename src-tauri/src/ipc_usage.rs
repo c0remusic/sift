@@ -136,7 +136,11 @@ pub fn drive_usage(
 
     let roots = scan_roots(&drive.mount);
     if roots.is_empty() {
-        return Err("Ce disque n'a aucun volume monté — rien à parcourir.".to_string());
+        // Affiché quand le volume se démonte entre la liste et ce parcours (`usb-view.ts`).
+        return Err(crate::tr!(
+            "Ce disque n'a aucun volume monté — rien à parcourir.",
+            "This drive has no mounted volume — nothing to scan."
+        ));
     }
 
     if !force_rescan {

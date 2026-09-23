@@ -70,13 +70,15 @@ pub enum Fat32Error {
 
 impl std::fmt::Display for Fat32Error {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            Fat32Error::TooLarge(bytes) => write!(
-                f,
-                "volume de {bytes} octets : au-delà de ce que FAT32 peut adresser"
+        // Affiché à l'écran de formatage, derrière « Échec de l'écriture : » (`privileged.rs`).
+        let s = match self {
+            Fat32Error::TooLarge(bytes) => crate::tr!(
+                "volume de {bytes} octets : au-delà de ce que FAT32 peut adresser",
+                "{bytes}-byte volume: beyond what FAT32 can address"
             ),
-            Fat32Error::Write(m) => write!(f, "écriture FAT32: {m}"),
-        }
+            Fat32Error::Write(m) => crate::tr!("écriture FAT32: {m}", "FAT32 write: {m}"),
+        };
+        f.write_str(&s)
     }
 }
 
@@ -256,5 +258,25 @@ mod tests {
     #[test]
     fn two_tebibytes_is_still_addressable() {
         assert!(total_sectors_for(FAT32_MAX_BYTES).is_some());
+    }
+
+    /// Le refus arrive à l'écran de formatage : il suit la langue. Refusé AVANT toute écriture,
+    /// donc un tampon vide suffit.
+    #[test]
+    fn a_too_large_volume_is_refused_in_english() {
+        let too_big = FAT32_MAX_BYTES + u64::from(BYTES_PER_SECTOR);
+        let err = crate::i18n::with_lang(crate::i18n::Lang::En, || {
+            write_fat32(std::io::Cursor::new(Vec::new()), too_big, "X")
+                .expect_err("beyond 2 TiB must be refused")
+                .to_string()
+        });
+        assert_eq!(
+            err,
+            "2199023255552-byte volume: beyond what FAT32 can address"
+        );
+        assert_eq!(
+            Fat32Error::TooLarge(too_big).to_string(),
+            "volume de 2199023255552 octets : au-delà de ce que FAT32 peut adresser"
+        );
     }
 }

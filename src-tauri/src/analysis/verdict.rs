@@ -341,10 +341,16 @@ pub enum NotMeasured {
 impl std::fmt::Display for NotMeasured {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            NotMeasured::Cutoff => {
-                write!(f, "aucune coupure spectrale mesurée (aucune trame décodée)")
-            }
-            NotMeasured::Rail => write!(f, "rail indéterminé : conteneur non reconnu"),
+            // Affiché tel quel par l'écran de Revue (`analysis::analyze` rend `e.to_string()`).
+            NotMeasured::Cutoff => f.write_str(&crate::tr!(
+                "aucune coupure spectrale mesurée (aucune trame décodée)",
+                "no spectral cutoff measured (no frame decoded)"
+            )),
+            NotMeasured::Rail => f.write_str(&crate::tr!(
+                "rail indéterminé : conteneur non reconnu",
+                // Pas « rail » : dans l'interface anglaise, le mot désigne la barre latérale.
+                "can't tell lossless from lossy: unrecognized container"
+            )),
         }
     }
 }
@@ -1351,5 +1357,25 @@ mod tests {
                 "rail declare {d:?} : l'autre grille de decision, ou aucune"
             );
         }
+    }
+
+    /// Le motif d'absence de verdict s'affiche tel quel en Revue : il suit la langue.
+    #[test]
+    fn le_motif_sans_verdict_suit_la_langue() {
+        let en = crate::i18n::with_lang(crate::i18n::Lang::En, || {
+            (
+                NotMeasured::Cutoff.to_string(),
+                NotMeasured::Rail.to_string(),
+            )
+        });
+        assert_eq!(en.0, "no spectral cutoff measured (no frame decoded)");
+        assert_eq!(
+            en.1,
+            "can't tell lossless from lossy: unrecognized container"
+        );
+        assert_eq!(
+            NotMeasured::Rail.to_string(),
+            "rail indéterminé : conteneur non reconnu"
+        );
     }
 }

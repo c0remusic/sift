@@ -189,6 +189,16 @@ pub struct ImportResult {
     pub blocked_by: Option<String>,
 }
 
+/// Le `blocked_by` d'un dossier déposé sur « Où on va » sans racine de bibliothèque réglée —
+/// affiché tel quel par `chrome.ts`. Séparé d'`import_paths` pour que son texte se teste sans
+/// `AppHandle`.
+fn no_library_root_for_drop() -> String {
+    crate::tr!(
+        "Aucune racine de bibliothèque n'est réglée — un dossier déposé ici ne peut pas devenir une destination. Choisis-la dans Réglages.",
+        "No library root is set — a folder dropped here can't become a destination. Choose one in Settings."
+    )
+}
+
 /// Import OS-dropped paths. Audio files always become pending queue items (deduped by
 /// path). Directories depend on `mode`: `"dest"` registers each as a destination bin under
 /// the library root (used when dropping onto "Où on va"); anything else (`"source"`,
@@ -235,8 +245,9 @@ pub fn import_paths(
                                 match crate::library::create_bin(root, "", name) {
                                     Ok(_) => folders_added += 1,
                                     Err(e) => {
-                                        blocked_by.get_or_insert(format!(
-                                            "Impossible de créer le bac « {name} » : {e}"
+                                        blocked_by.get_or_insert(crate::tr!(
+                                            "Impossible de créer le bac « {name} » : {e}",
+                                            "Couldn't create the folder “{name}”: {e}"
                                         ));
                                     }
                                 }
@@ -246,10 +257,7 @@ pub fn import_paths(
                         // de bibliothèque réglée. Rien ne peut aboutir, et ce n'est pas la faute
                         // de ce qui a été déposé.
                         None => {
-                            blocked_by.get_or_insert(
-                                "Aucune racine de bibliothèque n'est réglée — un dossier déposé ici ne peut pas devenir une destination. Choisis-la dans Réglages."
-                                    .to_string(),
-                            );
+                            blocked_by.get_or_insert(no_library_root_for_drop());
                         }
                     }
                 } else if let Ok(id) = sources::add(&conn, p) {
@@ -342,7 +350,12 @@ pub async fn analyze_path(
     // Le fil a paniqué ou été annulé. Pas de `unwrap` : l'interdiction du dépôt vaut ici comme
     // ailleurs, et un panic dans `analyze` sur un fichier utilisateur corrompu est précisément ce
     // que `worker_loop` attrape déjà par `catch_unwind`.
-    .map_err(|e| format!("analyze_path: le fil d'analyse n'a pas rendu : {e}"))?
+    .map_err(|e| {
+        crate::tr!(
+            "analyze_path: le fil d'analyse n'a pas rendu : {e}",
+            "analyze_path: the analysis thread didn't return: {e}"
+        )
+    })?
 }
 
 /// Le corps d'`analyze_path`, inchangé et SYNCHRONE. Séparé pour que `spawn_blocking` ait quelque
@@ -681,7 +694,10 @@ fn spawn_scan(app: AppHandle, source_id: i64) {
                 emit_scan_failed(
                     &app,
                     source_id,
-                    format!("dossier de données de l'application introuvable : {e}"),
+                    crate::tr!(
+                        "dossier de données de l'application introuvable : {e}",
+                        "app data folder not found: {e}"
+                    ),
                 );
                 return;
             }
@@ -692,7 +708,10 @@ fn spawn_scan(app: AppHandle, source_id: i64) {
                 emit_scan_failed(
                     &app,
                     source_id,
-                    format!("ouverture de la base échouée : {e}"),
+                    crate::tr!(
+                        "ouverture de la base échouée : {e}",
+                        "couldn't open the database: {e}"
+                    ),
                 );
                 return;
             }
@@ -712,7 +731,10 @@ fn spawn_scan(app: AppHandle, source_id: i64) {
             emit_scan_failed(
                 &app,
                 source_id,
-                "ce dossier surveillé n'existe plus en base".to_string(),
+                crate::tr!(
+                    "ce dossier surveillé n'existe plus en base",
+                    "this watched folder is no longer in the database"
+                ),
             );
             return;
         };
@@ -868,5 +890,16 @@ mod tests {
             "stampe a la version courante, sinon verdict::cached l'efface a la lecture"
         );
         assert_eq!(rapport_ver, Some(crate::analysis::REPORT_CACHE_VERSION));
+    }
+
+    /// La raison d'un dépôt refusé s'affiche telle quelle (`chrome.ts`, toast) : elle suit la langue.
+    #[test]
+    fn le_depot_sans_racine_se_dit_en_anglais() {
+        assert_eq!(
+            crate::i18n::with_lang(crate::i18n::Lang::En, no_library_root_for_drop),
+            "No library root is set — a folder dropped here can't become a destination. \
+             Choose one in Settings."
+        );
+        assert!(no_library_root_for_drop().starts_with("Aucune racine de bibliothèque"));
     }
 }

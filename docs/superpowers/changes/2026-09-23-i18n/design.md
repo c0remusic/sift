@@ -79,8 +79,10 @@ aucun français — pas de rapport en cache à invalider.
 1. Socle (front + Rust + gates) — `i18n.ts`, `lang-boot.ts`, `shell.ts`, `i18n.rs`, Réglages.
 2. Vague front : ~40 modules, 10 lots disjoints, un agent par lot, relecture par lot.
 3. Phase Rust : les couplages ci-dessus, puis les messages affichés, fichier par fichier.
-4. Docs : `content.md` § Locale `en` (la règle de glose tombe — l'app expédie l'anglais),
-   `manuel.en.html` et son PDF décrivent l'interface anglaise.
+4. Docs. `content.md` § Locale `en` est à jour depuis le 2026-09-23. **Le site public attend la
+   release** : Vercel déploie depuis `main`, donc réécrire `manuel.en.html` au commit l'aurait
+   publié avant l'app qu'il décrit — le site décrit ce qu'on télécharge (v0.1.3, français seul).
+   Liste de la bascule, à faire dans le même geste que la release : `content.md` § Règle de glose.
 5. Vérification dans la vraie fenêtre, en anglais : chaque écran, débordements de libellés.
 
 ## Hors périmètre

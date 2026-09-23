@@ -40,6 +40,16 @@ pub struct DecodeInfo {
 /// (`filing.rs`, `file_gone_constant_matches_contracts_ts`).
 pub const FILE_GONE: &str = "n'existe plus";
 
+/// Le message d'un fichier PRÉSENT qui ne s'ouvre pas (droits, verrou) — affiché tel quel par
+/// l'écran de Revue, donc traduit. Séparé d'`open_format` pour se tester sans fabriquer un fichier
+/// illisible, ce que chaque OS fait à sa façon.
+fn open_failed_message(e: &std::io::Error) -> String {
+    crate::tr!(
+        "impossible d'ouvrir le fichier : {e}",
+        "couldn't open the file: {e}"
+    )
+}
+
 /// Opens the file and returns a probed format reader.
 fn open_format(path: &str) -> Result<Box<dyn FormatReader>, String> {
     let file = File::open(path).map_err(|e| {
@@ -48,7 +58,7 @@ fn open_format(path: &str) -> Result<Box<dyn FormatReader>, String> {
             // Le front la traduit à l'affichage (`report-view.ts`, `analysisFileGone`).
             format!("le fichier {FILE_GONE} à cet emplacement — a-t-il été déplacé ou supprimé ?")
         } else {
-            format!("impossible d'ouvrir le fichier : {e}")
+            open_failed_message(&e)
         }
     })?;
     let mss = MediaSourceStream::new(Box::new(file), Default::default());
@@ -247,5 +257,30 @@ mod tests {
             probe("definitely/does/not/exist_ever.flac").unwrap_err()
         });
         assert!(err.contains(FILE_GONE), "{err}");
+    }
+
+    /// Le site d'appel lui-même, pas seulement l'helper : sous Windows, ouvrir un DOSSIER comme un
+    /// fichier échoue en accès refusé, ce qui emprunte la branche `open_failed_message`.
+    #[cfg(windows)]
+    #[test]
+    fn ouvrir_un_dossier_echoue_en_anglais_par_le_vrai_chemin() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let path = dir.path().to_string_lossy().to_string();
+        let err = crate::i18n::with_lang(crate::i18n::Lang::En, || probe(&path).unwrap_err());
+        assert!(err.starts_with("couldn't open the file: "), "{err}");
+    }
+
+    /// Le fichier présent mais illisible, lui, se traduit : aucun code ne reconnaît sa phrase.
+    #[test]
+    fn un_fichier_qui_ne_s_ouvre_pas_se_dit_en_anglais() {
+        let e = std::io::Error::new(std::io::ErrorKind::PermissionDenied, "Access is denied.");
+        assert_eq!(
+            crate::i18n::with_lang(crate::i18n::Lang::En, || open_failed_message(&e)),
+            "couldn't open the file: Access is denied."
+        );
+        assert_eq!(
+            open_failed_message(&e),
+            "impossible d'ouvrir le fichier : Access is denied."
+        );
     }
 }

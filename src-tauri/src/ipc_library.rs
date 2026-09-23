@@ -279,15 +279,20 @@ fn masterdb_error(linked: bool) -> Option<String> {
         return None;
     }
     let Some(dir) = crate::actions::rekordbox_pioneer_dir() else {
-        return Some(
-            "dossier de configuration introuvable — impossible de localiser master.db".into(),
-        );
+        return Some(crate::tr!(
+            "dossier de configuration introuvable — impossible de localiser master.db",
+            "configuration folder not found — can't locate master.db"
+        ));
     };
     let path = dir.join("master.db");
     if path.exists() {
         None
     } else {
-        Some(format!("master.db introuvable ({})", path.display()))
+        Some(crate::tr!(
+            "master.db introuvable ({})",
+            "master.db not found ({})",
+            path.display()
+        ))
     }
 }
 
@@ -317,7 +322,8 @@ fn count_playlists(nodes: &[crate::rekordbox_xml::PlaylistNode]) -> usize {
 /// `path` as a Rekordbox XML and, on success, persist it as the linked file via `conn`. Fails
 /// fast (nothing persisted) if the file can't be read or parsed.
 fn link_rekordbox_xml_inner(conn: &Connection, path: &str) -> Result<RekordboxLinkStatus, String> {
-    let bytes = std::fs::read(path).map_err(|e| format!("lecture impossible: {e}"))?;
+    let bytes = std::fs::read(path)
+        .map_err(|e| crate::tr!("lecture impossible: {e}", "couldn't read: {e}"))?;
     let parsed = crate::rekordbox_xml::parse(&bytes)?;
     crate::settings::set(conn, crate::settings::REKORDBOX_XML_PATH, path)
         .map_err(|e| e.to_string())?;
@@ -429,11 +435,17 @@ fn export_rekordbox_xml_inner(conn: &Connection) -> Result<RekordboxLinkStatus, 
         .ok_or(crate::rekordbox_repairs::NO_LINKED_XML)?;
     let filed = library::list_filed(conn, &LibraryFilter::default()).map_err(|e| e.to_string())?;
 
-    let bytes = std::fs::read(&path).map_err(|e| format!("XML Rekordbox illisible: {e}"))?;
+    let bytes = std::fs::read(&path).map_err(|e| {
+        crate::tr!(
+            "XML Rekordbox illisible: {e}",
+            "unreadable Rekordbox XML: {e}"
+        )
+    })?;
     let mut parsed = crate::rekordbox_xml::parse(&bytes)?;
     crate::rekordbox_xml::merge_filed_tracks(&mut parsed, &filed);
     let out = crate::rekordbox_xml::write(&parsed);
-    std::fs::write(&path, &out).map_err(|e| format!("écriture impossible: {e}"))?;
+    std::fs::write(&path, &out)
+        .map_err(|e| crate::tr!("écriture impossible: {e}", "couldn't write: {e}"))?;
     Ok(RekordboxLinkStatus {
         path: Some(path),
         linked: true,
@@ -1096,6 +1108,22 @@ mod rekordbox_tests {
             masterdb_error(true),
             None,
             "fichier présent : ce champ ne parle QUE de présence, pas de lisibilité"
+        );
+    }
+
+    /// `masterdb_error` s'affiche tel quel sur l'écran Rekordbox (`rekordbox-view.ts`) : il suit
+    /// la langue.
+    #[test]
+    fn masterdb_error_is_worded_in_english() {
+        let dir = tempfile::tempdir().unwrap();
+        crate::actions::set_pioneer_dir_override_for_test(dir.path().to_path_buf());
+        let expected = format!(
+            "master.db not found ({})",
+            dir.path().join("master.db").display()
+        );
+        assert_eq!(
+            crate::i18n::with_lang(crate::i18n::Lang::En, || masterdb_error(true)),
+            Some(expected)
         );
     }
 }

@@ -40,14 +40,24 @@ pub enum RawVolumeError {
 
 impl std::fmt::Display for RawVolumeError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        match self {
-            RawVolumeError::RefusedSystemVolume(l) => {
-                write!(f, "{l} porte le système : écriture brute refusée")
+        // Affiché à l'écran de formatage, derrière « Volume inaccessible : » (`privileged.rs`).
+        let s = match self {
+            RawVolumeError::RefusedSystemVolume(l) => crate::tr!(
+                "{l} porte le système : écriture brute refusée",
+                "{l} is the system drive: raw write refused"
+            ),
+            RawVolumeError::Open(m) => {
+                crate::tr!("ouverture du volume: {m}", "couldn't open the volume: {m}")
             }
-            RawVolumeError::Open(m) => write!(f, "ouverture du volume: {m}"),
-            RawVolumeError::Locked(m) => write!(f, "volume verrouillé par un autre programme: {m}"),
-            RawVolumeError::Dismount(m) => write!(f, "démontage impossible: {m}"),
-        }
+            RawVolumeError::Locked(m) => crate::tr!(
+                "volume verrouillé par un autre programme: {m}",
+                "volume locked by another program: {m}"
+            ),
+            RawVolumeError::Dismount(m) => {
+                crate::tr!("démontage impossible: {m}", "couldn't dismount: {m}")
+            }
+        };
+        f.write_str(&s)
     }
 }
 
@@ -190,5 +200,23 @@ mod tests {
     fn the_system_letter_is_read_not_assumed() {
         assert!(is_system_volume("D:", "D:"));
         assert!(!is_system_volume("C:", "D:"));
+    }
+
+    /// Ces motifs s'affichent à l'écran de formatage : ils suivent la langue, celle que le
+    /// processus élevé reçoit par `--sift-lang`.
+    #[test]
+    fn raw_volume_errors_are_worded_in_english() {
+        let en = crate::i18n::with_lang(crate::i18n::Lang::En, || {
+            [
+                RawVolumeError::RefusedSystemVolume("C:".into()).to_string(),
+                RawVolumeError::Locked("x".into()).to_string(),
+            ]
+        });
+        assert_eq!(en[0], "C: is the system drive: raw write refused");
+        assert_eq!(en[1], "volume locked by another program: x");
+        assert_eq!(
+            RawVolumeError::Locked("x".into()).to_string(),
+            "volume verrouillé par un autre programme: x"
+        );
     }
 }

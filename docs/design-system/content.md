@@ -68,8 +68,9 @@ Verbes préférés :
 - Annuler
 
 Note : "Convertir" est le libellé du bouton d'action principale (remplace
-"Ranger" le 2026-07-10, retour utilisateur — rendu à `frontend/filing.ts:113`, décision en
-doc-comment à `filing.ts:97`). Le concept
+"Ranger" le 2026-07-10, retour utilisateur — rendu par `frontend/filing.ts`, texte dans
+`frontend/i18n/filing.ts` (clé `convert`) depuis la migration i18n du 2026-09-23, décision en
+doc-comment à `filing.ts:98`). Le concept
 produit reste "déplacer = encoder + ranger" (CLAUDE.md) ; ce n'est plus le
 libellé affiché. "Écarter" remplace "Jeter" (même date — commentaire d'origine
 `filing.ts:169`, markup `filing.ts:175`).
@@ -142,7 +143,7 @@ Liste complète du jargon conservé, alignée sur `CLAUDE.md` : LOSSLESS, DUPLIC
 FAKE, XML, kbps, kHz, MP3, AIFF, WAV. Ne pas le "corriger".
 
 ✅ **`FAKE` dans la modale de lot : TRANCHÉ, gardé tel quel (Antoine, 2026-09-23).**
-`frontend/confirm-modal.ts:82` rend `${data.fakeCount} FAKE → Écarter`, alors que Revue dit
+`frontend/confirm-modal.ts:82` rendait `${data.fakeCount} FAKE → Écarter` (depuis la migration i18n : `frontend/i18n/confirm-modal.ts`, clé `batchFake`), alors que Revue dit
 « FAUX » depuis le 2026-09-10 et que `CLAUDE.md` réserve le jargon anglais au rail, aux facettes
 et aux chips — « jamais le mot de verdict ». La question s'est posée : compter des pistes fausses
 dans une modale, est-ce un mot de verdict ? **Non** — c'est un décompte de catégorie, du même
@@ -150,19 +151,23 @@ registre que les chips, et il reste en anglais. Ne pas rouvrir : `lint:jargon` e
 que `FAKE` figure dans les trois listes, puisqu'il est bel et bien affiché.
 
 ⚠️ **Deux corrections à cette liste, le 2026-09-23.** `CHECK MATCH` en sort : il est RETIRÉ du
-produit (`frontend/filing.ts:624`, « CHECK MATCH removed entirely — annotation confirmed
+produit (`frontend/filing.ts:627`, « CHECK MATCH removed entirely — annotation confirmed
 intentional »), donc la liste promettait une étiquette que personne ne peut voir. `XML` y entre :
-il est AFFICHÉ (`frontend/rekordbox-view.ts:371`, « XML Rekordbox illisible — relie un fichier »)
+il est AFFICHÉ (« XML Rekordbox illisible — relie un fichier », `frontend/i18n/rekordbox-view.ts`, clé `xmlUnreadable` — `rekordbox-view.ts:371` avant la migration i18n)
 et manquait. Les deux défauts vivaient aussi dans `docs/manuel.html`, en ligne, corrigé dans le
 même geste. ⚠️ `CLAUDE.md` porte la même liste et le même `CHECK MATCH` mort — son retrait là-bas
 demande la validation d'Antoine.
 
 ### Locale `en` — ce qui change, et ce qui ne se traduit pas
 
-**L'app reste en français** ; cette locale existe pour le SITE (`docs/accueil.html`,
-`docs/manuel.html`). Traduire l'interface demanderait une couche i18n qui n'existe pas —
-1 100 chaînes candidates réparties sur 67 des 73 fichiers de `frontend/`, mesuré le 2026-09-23.
-C'est une décision d'architecture, pas un suivi de ce tableau.
+✅ **L'interface existe en anglais depuis le 2026-09-23** (décision d'Antoine : les deux langues,
+au choix — Réglages › Apparence › Langue, `auto` suivant le système). Chaque texte vient d'un
+dictionnaire de `frontend/i18n/`, et CE TABLEAU est la source de sa colonne anglaise.
+Architecture et pièges : `docs/superpowers/changes/2026-09-23-i18n/design.md`.
+
+Jusqu'à ce jour, ce paragraphe disait « l'app reste en français » : la locale n'existait que pour
+le site. Elle vaut désormais pour l'interface d'abord, et pour le site ensuite — voir la règle de
+glose plus bas, qui se rattache maintenant à la RELEASE et non plus à l'architecture.
 
 ⚠️ **La section « Les mots anglais gardés tels quels » du manuel DISPARAÎT en anglais, elle ne se
 traduit pas.** Elle explique au lecteur français pourquoi LOSSLESS, DUPLICATE, MATCH, kbps
@@ -188,18 +193,24 @@ l'opposition tu/vous, donc ce que le tutoiement encodait — registre direct, ja
 se rend par la deuxième personne nue et l'impératif. Interdits correspondants : pas de
 « please », pas de « kindly », pas de tournure passive pour adoucir une erreur.
 
-⚠️ **RÈGLE DE GLOSE, et c'est elle qui décide de la forme d'une doc anglaise.** Tant que l'app
-expédie des libellés FRANÇAIS, une page anglaise **glose** ces libellés, elle ne les remplace
-pas : le lecteur a l'écran sous les yeux, et une doc qui nomme autrement ce qu'il voit est
-fausse. On écrit donc « the Review screen (**Revue**) » et « the FAUX verdict (fake) », jamais
-« the GENUINE verdict » — ce dernier décrit une app qui n'existe pas. La colonne anglaise
-ci-dessus est le vocabulaire CIBLE, celui d'une interface traduite ; elle ne devient le
-vocabulaire des docs qu'au jour où l'interface l'expédie.
-Mesuré le 2026-09-23 : `ecartes-view.ts` pose `label: "FAUX"` et `label: "À VÉRIFIER"`, et
-`report-view.ts` le mot de verdict de Revue. Une première traduction du manuel, faite sans cette
-règle, annonçait les trois verdicts en anglais — inutilisable.
+⚠️ **RÈGLE DE GLOSE, et c'est elle qui décide de la forme d'une doc anglaise.** Une doc publique
+décrit l'app qu'on TÉLÉCHARGE, pas celle de `main`. Tant que la dernière RELEASE expédie des
+libellés français, une page anglaise **glose** ces libellés, elle ne les remplace pas : le lecteur
+a l'écran sous les yeux, et une doc qui nomme autrement ce qu'il voit est fausse. On écrit donc
+« the Review screen (**Revue**) » et « the FAUX verdict (fake) », jamais « the GENUINE verdict »
+— ce dernier décrirait une app qu'on ne peut pas encore télécharger.
+Mesuré le 2026-09-23 : une première traduction du manuel, faite sans cette règle, annonçait les
+trois verdicts en anglais alors que l'app les affichait en français — inutilisable.
 
-⚠️ **`CHECK MATCH` est MORT dans le produit** (`frontend/filing.ts:624`). Retiré de la liste de
+**La règle s'éteint à la release qui livre l'interface anglaise**, et pas avant : le site se
+déploie depuis `main` (Vercel), donc réécrire le manuel au commit l'aurait publié des semaines
+avant l'app qu'il décrit. Ce jour-là, dans le même geste : `docs/manuel.en.html` cesse de gloser
+(58 `lang="fr"` au 2026-09-23) et nomme les libellés anglais des dictionnaires ; la section de
+jargon y devient une note sur le réglage Langue et les verdicts ; `docs/accueil.en.html` retire
+« The app's interface is in French » ; les deux PDF se réimpriment (procédé dans
+`scripts/build-site.mjs`) ; et la section `## vX.Y.Z` de `CHANGELOG.md` annonce le réglage.
+
+⚠️ **`CHECK MATCH` est MORT dans le produit** (`frontend/filing.ts:627`, ligne 624 au 2026-09-23 avant la migration i18n). Retiré de la liste de
 jargon ci-dessus et de `docs/manuel.html` le 2026-09-23 ; il survit dans `CLAUDE.md`, dont le
 retrait demande la validation d'Antoine.
 

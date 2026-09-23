@@ -50,7 +50,11 @@ pub enum UsageError {
 impl std::fmt::Display for UsageError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
-            UsageError::Unreadable(m) => write!(f, "volume illisible: {m}"),
+            // Affiché tel quel par l'écran Clé USB (`usb-view.ts`, sous « occupation indisponible »).
+            UsageError::Unreadable(m) => f.write_str(&crate::tr!(
+                "volume illisible: {m}",
+                "unreadable volume: {m}"
+            )),
         }
     }
 }
@@ -348,6 +352,17 @@ mod tests {
     fn missing_root_is_an_error_not_an_empty_result() {
         let res = scan_volume(&PathBuf::from("Z:/ce-volume-n-existe-pas-42"));
         assert!(matches!(res, Err(UsageError::Unreadable(_))), "{res:?}");
+    }
+
+    /// Le motif s'affiche tel quel sur l'écran Clé USB : il suit la langue.
+    #[test]
+    fn unreadable_volume_is_worded_in_english() {
+        let e = UsageError::Unreadable("x".into());
+        assert_eq!(
+            crate::i18n::with_lang(crate::i18n::Lang::En, || e.to_string()),
+            "unreadable volume: x"
+        );
+        assert_eq!(e.to_string(), "volume illisible: x");
     }
 
     /// Parcours réel sur une arborescence temporaire : c'est le seul test qui exerce la pile

@@ -77,10 +77,12 @@ impl std::fmt::Display for FilingError {
             FilingError::Upscale => write!(f, "refused: cannot upscale lossy to lossless"),
             FilingError::RailMismatch => write!(f, "RAIL_MISMATCH"),
             FilingError::NoLibraryRoot => write!(f, "NoLibraryRoot"),
-            FilingError::DestOccupied(p) => write!(
-                f,
-                "destination déjà occupée par une autre piste rangée: {p}"
-            ),
+            // Affiché tel quel dans le compte rendu du mode Lot (`batch-sheet.ts`), donc traduit.
+            // L'anglais évite « not found » / « access » : `filing-actions.ts` les reconnaît.
+            FilingError::DestOccupied(p) => f.write_str(&crate::tr!(
+                "destination déjà occupée par une autre piste rangée: {p}",
+                "destination already taken by another filed track: {p}"
+            )),
             FilingError::Encode(m) => write!(f, "encode: {m}"),
             FilingError::Tag(m) => write!(f, "tag: {m}"),
             FilingError::Io(m) => write!(f, "io: {m}"),
@@ -2745,6 +2747,33 @@ mod tests {
             )
             .unwrap();
         assert_eq!(occupant, "filed", "l'occupant ne doit pas être supprimé");
+    }
+
+    /// Le conflit s'affiche tel quel dans le compte rendu du mode Lot : il suit la langue. Son
+    /// anglais ne doit porter aucun des mots que `filing-actions.ts` reconnaît (« not found »,
+    /// « access »…), sinon le toast accuserait un fichier disparu ou un droit manquant.
+    #[test]
+    fn dest_occupied_is_worded_in_english_without_a_recognized_marker() {
+        let e = FilingError::DestOccupied("D:/Lib/a.aiff".into());
+        let en = crate::i18n::with_lang(crate::i18n::Lang::En, || e.to_string());
+        assert_eq!(
+            en,
+            "destination already taken by another filed track: D:/Lib/a.aiff"
+        );
+        let lower = en.to_lowercase();
+        for marker in [
+            "no such file",
+            "not found",
+            "permission",
+            "access",
+            "denied",
+        ] {
+            assert!(!lower.contains(marker), "{marker} dans {en}");
+        }
+        assert_eq!(
+            e.to_string(),
+            "destination déjà occupée par une autre piste rangée: D:/Lib/a.aiff"
+        );
     }
 
     #[test]

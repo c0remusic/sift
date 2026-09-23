@@ -7,11 +7,11 @@
 // `docs/manuel.html`, ce dernier publié sur le site — et les trois portaient les deux mêmes
 // défauts :
 //
-//   - `CHECK MATCH` était listé alors qu'il est RETIRÉ du produit (`frontend/filing.ts:624` :
-//     « CHECK MATCH removed entirely — annotation confirmed intentional »). Le manuel en ligne
-//     promettait donc au lecteur une étiquette que personne ne peut voir.
-//   - `XML` manquait alors qu'il est AFFICHÉ (`frontend/rekordbox-view.ts:371` rend « XML
-//     Rekordbox illisible — relie un fichier »).
+//   - `CHECK MATCH` était listé alors qu'il est RETIRÉ du produit (`frontend/filing.ts:627`,
+//     ligne 624 à l'époque : « CHECK MATCH removed entirely — annotation confirmed intentional »).
+//     Le manuel en ligne promettait donc au lecteur une étiquette que personne ne peut voir.
+//   - `XML` manquait alors qu'il est AFFICHÉ (« XML Rekordbox illisible — relie un fichier »,
+//     `rekordbox-view.ts:371` à l'époque, `frontend/i18n/rekordbox-view.ts` depuis la migration i18n).
 //
 // DEUX CONTRÔLES, et il faut les deux — chacun laisse passer ce que l'autre attrape :
 //
@@ -143,9 +143,28 @@ function sansCommentaires(texte) {
   return hors;
 }
 
+/** Un dictionnaire (`frontend/i18n/<module>.ts`) porte les deux langues, et seule sa moitié
+ *  FRANÇAISE parle de ce que la liste décrit : du jargon anglais « conservé dans l'interface »
+ *  française. Dans la moitié anglaise, FAKE ou MATCH sont des mots ordinaires. Les compter là
+ *  rendait la règle aveugle depuis la migration i18n du 2026-09-23 : un terme retiré de l'interface
+ *  française restait « vivant » grâce à sa traduction anglaise. La forme d'un dictionnaire est fixe
+ *  (`frontend/i18n.ts`) — `const fr = {…}` puis `const en: typeof fr = {…}` — donc la coupe se fait
+ *  à `const en`. Un dictionnaire sans cette ligne n'a pas la forme attendue : échec, pas repli. */
+function moitieFrancaise(fichier, texte) {
+  if (!/[\\/]i18n[\\/][^\\/]+\.ts$/.test(fichier)) return texte;
+  const i = texte.search(/^const en\b/m);
+  if (i < 0) {
+    echecs.push(`${fichier} : dictionnaire sans \`const en\` — forme de frontend/i18n.ts non respectée.`);
+    return texte;
+  }
+  return texte.slice(0, i);
+}
+
 const racine = resolve(REPO_ROOT, 'frontend');
 const corpus = existsSync(racine)
-  ? fichiersFrontend(racine).map((f) => sansCommentaires(readFileSync(f, 'utf8'))).join('\n')
+  ? fichiersFrontend(racine)
+      .map((f) => sansCommentaires(moitieFrancaise(f, readFileSync(f, 'utf8'))))
+      .join('\n')
   : '';
 
 if (listes.length > 0 && corpus) {

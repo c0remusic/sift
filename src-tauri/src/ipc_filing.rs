@@ -498,7 +498,11 @@ fn run_file_track(app: &AppHandle, plan: filing::FilePlan) {
             }),
             Err(payload) => {
                 log::error!("file_track: execute panicked for track {track_id}: {payload:?}");
-                Err("conversion interrompue (panic)".to_string())
+                // Affiché : infobulle du marqueur d'échec de la rangée de file (`queue-panel.ts`).
+                Err(crate::tr!(
+                    "conversion interrompue (panic)",
+                    "conversion interrupted (panic)"
+                ))
             }
         }
     };
