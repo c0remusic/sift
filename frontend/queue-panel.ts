@@ -169,7 +169,7 @@ function measureQueueRowHeight(ql: HTMLElement): number {
   probe.style.width = "100%";
   probe.innerHTML =
     `<div style="flex:1;min-width:0;display:flex;flex-direction:column;gap:2px">` +
-    `<div style="display:flex;align-items:center;gap:6px;min-width:0"><span style="flex:1">probe</span></div>` +
+    `<div style="display:flex;align-items:center;gap:var(--space-6);min-width:0"><span style="flex:1">probe</span></div>` +
     // MÊME classe que la vraie seconde ligne de `queueRowHtml` — et non une copie de ses styles.
     // Une sonde qui n'hérite pas exactement des mêmes interlignes mesure une autre rangée que
     // celle qui sera peinte, et la virtualisation se décale sans que rien ne le dise (issue #45).
@@ -274,7 +274,7 @@ function renderQueueWindow(ql: HTMLElement): void {
           ? "Tous les morceaux ont été traités."
           : "File vide.";
     ql.innerHTML =
-      `<div style="font-size:var(--text-md);color:var(--color-text-tertiary);padding:6px 4px">${emptyLabel}</div>`;
+      `<div style="font-size:var(--text-md);color:var(--color-text-tertiary);padding:var(--space-6) var(--space-4)">${emptyLabel}</div>`;
     ql.removeAttribute("aria-activedescendant"); // plus aucune option : le curseur n'a plus de cible
     return;
   }
@@ -703,7 +703,7 @@ function queueRowHtml(it: QueueItem, active: boolean, onCursor: boolean): string
     // 2026-08-27, assumée CONTRE le motif Mail des indicateurs au bord droit — maquette Figma,
     // composant Ligne de file). Le titre ne pousse plus (`flex:0 1 auto`) : il s'ellipse si long
     // et la pastille reste visible, accolée à son dernier caractère.
-    `<div style="display:flex;align-items:center;gap:6px;min-width:0">` +
+    `<div style="display:flex;align-items:center;gap:var(--space-6);min-width:0">` +
     `<span style="flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;font-weight:500">${title}</span>` +
     verdictDot(it) +
     `</div>` +
@@ -716,7 +716,7 @@ function queueRowHtml(it: QueueItem, active: boolean, onCursor: boolean): string
     // pastille ne le porte pas, et c'est un fait de fond que l'utilisateur doit voir sans survoler.
     // Le mot de VERDICT, lui, est parti le 2026-08-26 — il doublait la pastille (voir `verdictDot`).
     (failure
-      ? `<span title="${esc(failure)}" style="flex:none;display:inline-flex;align-items:center;gap:4px;font-size:var(--text-xs);color:var(--color-text-warning)"><i class="ti ti-alert-triangle"></i>conversion échouée</span>`
+      ? `<span title="${esc(failure)}" style="flex:none;display:inline-flex;align-items:center;gap:var(--space-4);font-size:var(--text-xs);color:var(--color-text-warning)"><i class="ti ti-alert-triangle"></i>conversion échouée</span>`
       : "") +
     // Pastille DUPLICATE, au BORD DROIT de la ligne (wireframe « Poste de décision » §§ 09-10 ;
     // spec `docs/ui-specs/revue.md` § Zone B′ : « rendu hors colonne verdict »). Elle a quitté la
@@ -816,7 +816,7 @@ export async function renderQueue(touchDetail = true) {
     // plus bas de savoir s'il regarde CE placeholder (à remplacer par une erreur) ou de vraies
     // lignes déjà peintes (à ne pas détruire). Sans marque, il faudrait deviner.
     ql.innerHTML =
-      '<div data-sift="qloading" style="display:flex;align-items:center;gap:8px;padding:8px 7px;color:var(--color-text-tertiary);font-size:var(--text-md)">' +
+      '<div data-sift="qloading" style="display:flex;align-items:center;gap:var(--space-8);padding:var(--space-8) 7px;color:var(--color-text-tertiary);font-size:var(--text-md)">' +
       '<i class="ti ti-loader sift-spin" style="font-size:var(--text-md)"></i> Chargement…</div>';
   }
   let items: QueueItem[] = [];

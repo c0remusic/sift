@@ -134,14 +134,14 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
       (busy || fatal ? " disabled" : "") +
       ">" +
       (busy
-        ? '<span class="sift-bt-spin" style="margin-right:6px;vertical-align:-2px"></span>' +
+        ? '<span class="sift-bt-spin" style="margin-right:var(--space-6);vertical-align:-2px"></span>' +
           esc(step || "Formatage en cours…")
         : armedAt
           ? "Confirmer — tout sera effacé"
           : "Formater…") +
       "</button>" +
       (busy
-        ? '<div class="sift-usbfmt-progress-note" style="margin-top:8px;font-size:var(--text-sm);color:var(--color-text-tertiary)">Une autorisation Windows va apparaître — accepte-la. Ne débranche pas le disque.</div>'
+        ? '<div class="sift-usbfmt-progress-note" style="margin-top:var(--space-8);font-size:var(--text-sm);color:var(--color-text-tertiary)">Une autorisation Windows va apparaître — accepte-la. Ne débranche pas le disque.</div>'
         : "") +
       "</div>";
 

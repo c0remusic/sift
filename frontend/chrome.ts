@@ -225,7 +225,7 @@ export function injectLeanStyle() {
     // macOS: 3 small round traffic lights on the left instead of square right-aligned buttons.
     // Reuses the same buttons/click-wiring; only placement (markup order) and this styling differ.
     // The controls move into the left (nav-tone) zone, the title stays alone in the right zone.
-    ".sift-tb-mac #sift-tb-left{justify-content:flex-start;gap:8px;padding-left:12px}" +
+    ".sift-tb-mac #sift-tb-left{justify-content:flex-start;gap:var(--space-8);padding-left:var(--space-12)}" +
     // Ni `justify-content` ni `padding-left` à re-déclarer ici depuis la barre unifiée : la zone
     // droite porte son propre padding et son propre espaceur, identiques sur les deux cibles.
     // Seul le PLACEMENT des boutons de fenêtre diffère entre macOS et le reste, et il est déjà

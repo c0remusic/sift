@@ -278,10 +278,12 @@ function binNodeHtml(node: { rel: string; name: string; depth: number }): string
   // installNavKeyboard() (chrome.ts, sélecteur étendu pour [data-fil="bin"]).
   // `padding-left` reste EN LIGNE : c'est l'indentation par profondeur, la seule dimension de la
   // rangée qui dépend de la donnée. Sa base vaut le padding horizontal du gabarit d'item
-  // (--space-8), pour que la racine parte du même bord que les rangées à plat et le pied.
+  // (--space-8), pour que la racine parte du même bord que les rangées à plat et le pied — écrite
+  // par le token lui-même depuis le 2026-09-23 : la base était un `8 +` en dur que le lint ne
+  // pouvait pas voir, pris dans l'arithmétique du gabarit.
   let html = `<div class="fld${on}" data-fil="bin" data-rel="${esc(node.rel)}" tabindex="0" role="button" title="${esc(
     absPath(node.rel),
-  )}" style="padding-left:${8 + indent}px">${caret}<i class="ti ${icon} sift-fld-icon" style="font-size:var(--text-base);color:${iconColor}"></i><span class="sift-fld-label">${esc(
+  )}" style="padding-left:calc(var(--space-8) + ${indent}px)">${caret}<i class="ti ${icon} sift-fld-icon" style="font-size:var(--text-base);color:${iconColor}"></i><span class="sift-fld-label">${esc(
     node.name,
   )}</span></div>`;
   if (kids.length && isOpen) html += kids.map(binNodeHtml).join("");

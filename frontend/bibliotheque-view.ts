@@ -497,7 +497,7 @@ function dupMemberHtml(m: DupGroup["members"][number]): string {
   const fmt = (m.format || "?").toUpperCase();
   const br = m.bitrate ? `${m.bitrate} kbps` : "";
   return (
-    `<div style="display:flex;align-items:center;gap:8px;padding:4px 0${m.recommend_keep ? "" : ";opacity:.6"}">` +
+    `<div style="display:flex;align-items:center;gap:var(--space-8);padding:var(--space-4) 0${m.recommend_keep ? "" : ";opacity:.6"}">` +
     `<span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${name}</span>` +
     `<span class="pill" style="flex:none">${esc(fmt)}</span>` +
     `<span style="flex:none;width:80px;text-align:right;font-size:var(--text-sm);color:var(--color-text-tertiary)">${esc(br)}</span>` +
@@ -511,9 +511,9 @@ function dupMemberHtml(m: DupGroup["members"][number]): string {
 function dupGroupHtml(g: DupGroup, idx: number): string {
   const loserCount = g.members.filter((m) => !m.recommend_keep).length;
   return (
-    `<div class="sift-dup-group" style="border:1px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:10px 12px;margin-bottom:8px">` +
+    `<div class="sift-dup-group" style="border:1px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:10px var(--space-12);margin-bottom:var(--space-8)">` +
     g.members.map((m) => dupMemberHtml(m)).join("") +
-    `<div style="margin-top:6px"><button data-bib="dupresolve" data-idx="${idx}">Envoyer ${loserCount} doublon${loserCount > 1 ? "s" : ""} à la corbeille</button></div>` +
+    `<div style="margin-top:var(--space-6)"><button data-bib="dupresolve" data-idx="${idx}">Envoyer ${loserCount} doublon${loserCount > 1 ? "s" : ""} à la corbeille</button></div>` +
     `</div>`
   );
 }
@@ -704,7 +704,7 @@ export async function renderBiblioLive() {
   const alreadyRendered = !!content.querySelector(".sift-bib-headline");
   if (!alreadyRendered) {
     content.innerHTML =
-      '<div style="display:flex;align-items:center;gap:8px;padding:8px 7px;color:var(--color-text-tertiary);font-size:var(--text-md)">' +
+      '<div style="display:flex;align-items:center;gap:var(--space-8);padding:var(--space-8) 7px;color:var(--color-text-tertiary);font-size:var(--text-md)">' +
       '<i class="ti ti-loader sift-spin" style="font-size:var(--text-md)"></i> Chargement…</div>';
   }
   let facets: LibraryFacets = { folders: [], genres: [], artists: [] };
@@ -847,13 +847,13 @@ export async function renderBiblioLive() {
           // écrans échouent de la même façon.
           `<div class="sift-ui-card-soft sift-ui-card-soft-pad" style="margin-top:10px;color:var(--color-text-danger)">` +
           `Le scan de doublons n'a pas abouti. ${esc(bibDup.error)}` +
-          `<div style="margin-top:8px"><button data-bib="dupretry" style="font-size:var(--text-xs);padding:4px 10px;color:var(--color-text-info)">Réessayer</button></div>` +
+          `<div style="margin-top:var(--space-8)"><button data-bib="dupretry" style="font-size:var(--text-xs);padding:var(--space-4) 10px;color:var(--color-text-info)">Réessayer</button></div>` +
           `</div>`
         : bibDup.groups === null
           ? ""
           : bibDup.groups.length === 0
             ? `<div style="margin-top:10px;font-size:var(--text-md);color:var(--color-text-tertiary)">Aucun doublon dans toute la bibliothèque.</div>`
-            : `<div style="margin-top:10px"><div style="font-size:var(--text-xs);color:var(--color-text-tertiary);margin-bottom:4px">Doublons détectés dans toute la bibliothèque (pas seulement la vue filtrée actuelle)</div>${bibDup.groups.map((g, i) => dupGroupHtml(g, i)).join("")}</div>`;
+            : `<div style="margin-top:10px"><div style="font-size:var(--text-xs);color:var(--color-text-tertiary);margin-bottom:var(--space-4)">Doublons détectés dans toute la bibliothèque (pas seulement la vue filtrée actuelle)</div>${bibDup.groups.map((g, i) => dupGroupHtml(g, i)).join("")}</div>`;
 
   // Export (Rekordbox/Clé USB) lives in the nav rail now, not here — matches the maquette's
   // persistent Export section (index.html nav-export items, wired in installLiveWiring below).

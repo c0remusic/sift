@@ -51,7 +51,7 @@ export const LesCinqCas: Story = {
     host(
       CAS.map(
         (c) =>
-          `<div style="display:flex;align-items:center;gap:6px;padding:var(--space-4) 0">` +
+          `<div style="display:flex;align-items:center;gap:var(--space-6);padding:var(--space-4) 0">` +
           `<span>${c.label}</span>` +
           verdictDot({ verdict: c.verdict, analysis_attempts: c.attempts }) +
           `</div>`,

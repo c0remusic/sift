@@ -74,7 +74,7 @@ export function installDevInspector() {
     }
     selection.forEach((s, i) => {
       const row = document.createElement("div");
-      row.style.cssText = "display:flex;align-items:center;gap:6px;margin:2px 0;color:#9fe0af";
+      row.style.cssText = "display:flex;align-items:center;gap:var(--space-6);margin:2px 0;color:#9fe0af";
       const label = document.createElement("span");
       label.textContent = `${i + 1}. ${describe(s.el)}`;
       label.style.cssText = "flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap";
@@ -123,7 +123,7 @@ export function installDevInspector() {
   async function showMatches(zone: HTMLElement, identifier: string) {
     const heading = document.createElement("div");
     heading.textContent = `→ ${identifier}`;
-    heading.style.cssText = "margin-top:8px;color:#9fe0af;font-weight:bold";
+    heading.style.cssText = "margin-top:var(--space-8);color:#9fe0af;font-weight:bold";
     zone.appendChild(heading);
     try {
       const matches = await invoke<SourceMatch[]>("locate_source", { identifier });
@@ -135,7 +135,7 @@ export function installDevInspector() {
       }
       for (const m of matches.slice(0, 8)) {
         const row = document.createElement("div");
-        row.style.cssText = "margin:4px 0;white-space:pre-wrap;color:#ccc";
+        row.style.cssText = "margin:var(--space-4) 0;white-space:pre-wrap;color:#ccc";
         row.textContent = `${m.file}:${m.line}\n${m.excerpt}`;
         zone.appendChild(row);
       }
@@ -164,22 +164,22 @@ export function installDevInspector() {
 
     const closeBtn = document.createElement("button");
     closeBtn.textContent = "× fermer";
-    closeBtn.style.cssText = "float:right;cursor:pointer;margin-bottom:6px";
+    closeBtn.style.cssText = "float:right;cursor:pointer;margin-bottom:var(--space-6)";
     closeBtn.onclick = teardown;
     p.appendChild(closeBtn);
 
     const header = document.createElement("div");
-    header.style.cssText = "color:#9fe0af;font-weight:bold;margin-bottom:6px";
+    header.style.cssText = "color:#9fe0af;font-weight:bold;margin-bottom:var(--space-6)";
     header.textContent = "Sélection (Alt+Clic pour ajouter/retirer)";
     p.appendChild(header);
 
     selListZone = document.createElement("div");
-    selListZone.style.cssText = "margin-bottom:8px";
+    selListZone.style.cssText = "margin-bottom:var(--space-8)";
     p.appendChild(selListZone);
 
     const parentBtn = document.createElement("button");
     parentBtn.textContent = "⬆ bloc parent (dernier ajouté)";
-    parentBtn.style.cssText = "cursor:pointer;margin-bottom:6px";
+    parentBtn.style.cssText = "cursor:pointer;margin-bottom:var(--space-6)";
     parentBtn.onclick = () => {
       const last = selection[selection.length - 1];
       if (!last) return;
@@ -195,13 +195,13 @@ export function installDevInspector() {
     note = document.createElement("textarea");
     note.placeholder = "Remarque libre (« trop tassé », « pas cohérent avec la Bibliothèque »...)";
     note.style.cssText =
-      "width:100%;min-height:56px;box-sizing:border-box;margin-bottom:4px;" +
-      "background:#2a2a2a;color:#eee;border:1px solid #555;border-radius:4px;padding:6px;font:inherit";
+      "width:100%;min-height:56px;box-sizing:border-box;margin-bottom:var(--space-4);" +
+      "background:#2a2a2a;color:#eee;border:1px solid #555;border-radius:4px;padding:var(--space-6);font:inherit";
     p.appendChild(note);
 
     sendBtn = document.createElement("button");
     sendBtn.textContent = "Envoyer";
-    sendBtn.style.cssText = "cursor:pointer;margin-bottom:8px";
+    sendBtn.style.cssText = "cursor:pointer;margin-bottom:var(--space-8)";
     sendBtn.onclick = () => {
       const text = note.value.trim();
       if (selection.length === 0) { status.textContent = "sélectionne au moins un élément (Alt+Clic)"; return; }
@@ -224,7 +224,7 @@ export function installDevInspector() {
     p.appendChild(sendBtn);
 
     status = document.createElement("div");
-    status.style.cssText = "margin-bottom:8px;color:#847E75";
+    status.style.cssText = "margin-bottom:var(--space-8);color:#847E75";
     p.appendChild(status);
 
     locateZone = document.createElement("div");

@@ -9,9 +9,23 @@
 // --text-*:Npx, --h-40:40px, --border-radius-*). We do NOT convert rem->px here because
 // styles.css does not use a rem-based spacing scale — every relevant numeric token is
 // already a literal px value. If that changes, add a REM_BASE constant and convert.
+//
+// Le classement d'un px d'espacement ou de taille vit dans `lint-tokens-spacing.mjs`, avec ses
+// vecteurs Vitest — et sa raison : jusqu'au 2026-09-23, tout px égal à la valeur de N'IMPORTE
+// QUEL token passait, y compris sur `gap`/`padding`/`margin`.
 
 import { readFileSync, readdirSync, statSync, writeFileSync, existsSync } from 'node:fs';
 import { join, resolve, relative, extname } from 'node:path';
+import {
+  blank,
+  classifyPx,
+  CSS_COMMENT_RE,
+  fullProp,
+  parseTokens,
+  PX_VALUE_RE,
+  SPACING_PROP_RE,
+  TOKEN_BLOCK_RE,
+} from './lint-tokens-spacing.mjs';
 
 const REPO_ROOT = resolve(new URL('.', import.meta.url).pathname.replace(/^\/([A-Za-z]:)/, '$1'), '..');
 const TOKEN_FILE = resolve(REPO_ROOT, 'frontend', 'styles.css');
@@ -36,6 +50,10 @@ const WRITE_BASELINE = process.argv.includes('--write-baseline');
 const EXCLUDE_DIRS = new Set(['node_modules', 'dist', '.git', 'target', '.claude', 'docs', 'public']);
 // src-tauri\target — matched by checking the relative path contains src-tauri/target.
 const SCAN_EXTS = new Set(['.css', '.ts', '.tsx']);
+// Les vecteurs du lint lui-même : ils SONT les motifs qu'il détecte, écrits exprès. Les compter
+// ferait monter le cliquet à chaque vecteur ajouté — c'est-à-dire punir le durcissement du lint.
+// Exclus par leur nom exact, pas par un motif : un autre fichier de test reste scanné.
+const SELF_VECTORS = new Set(['test/lint-tokens-spacing.test.ts']);
 
 function shouldSkipDir(absDir) {
   const rel = relative(REPO_ROOT, absDir).split(/[\\/]/);
@@ -67,30 +85,10 @@ function walk(dir, out) {
 
 const tokenSrc = readFileSync(TOKEN_FILE, 'utf8');
 
-// Matches `--name: value;` (value = anything up to the next `;`).
-const TOKEN_DECL_RE = /--([a-zA-Z0-9-]+)\s*:\s*([^;]+);/g;
-
-const colorTokens = new Map(); // name -> value (for reporting nearest match, best-effort)
-const spacingPxValues = new Map(); // px number -> token name (first one wins)
-
-let m;
-while ((m = TOKEN_DECL_RE.exec(tokenSrc))) {
-  const name = m[1];
-  const value = m[2].trim();
-
-  if (/^(color|overlay)-/.test(name) || /^oklch\(|^rgba?\(|^#/.test(value)) {
-    colorTokens.set(name, value);
-  }
-
-  // Pull every literal `Npx` out of the value (covers --space-*, --text-*, --h-*,
-  // --border-radius-base, and calc() expressions that reference literal px numbers).
-  const pxRe = /(-?\d+(?:\.\d+)?)px/g;
-  let pm;
-  while ((pm = pxRe.exec(value))) {
-    const px = parseFloat(pm[1]);
-    if (!spacingPxValues.has(px)) spacingPxValues.set(px, `--${name}`);
-  }
-}
+// Lues dans les seuls blocs `:root`, commentaires neutralisés — voir `parseTokens`, et ce qu'elle
+// ramassait avant le 2026-09-23 quand elle lisait la feuille brute. Une map `colorTokens`, remplie
+// ici et jamais lue, est partie dans le même geste.
+const { spaceScale, tokenPx: spacingPxValues } = parseTokens(tokenSrc);
 
 // ---- Step 2: scan files ----------------------------------------------------------------
 
@@ -101,19 +99,8 @@ while ((m = TOKEN_DECL_RE.exec(tokenSrc))) {
 // rest of the file still gets scanned. Fixes a codex-crosscheck HAUTE finding
 // (2026-07-19): the previous version excluded the whole file, missing the majority of
 // off-scale spacing/color/z-index sites — the file most in need of this lint.
-// `:root` suivi d'un nombre quelconque de qualificatifs : attribut (`[data-theme="dark"]`) ET
-// pseudo-classe fonctionnelle (`:not([data-theme="light"])`). L'ancien motif n'acceptait que
-// l'attribut, donc le bloc `@media (prefers-color-scheme:dark) { :root:not(...) }` n'était pas
-// reconnu et toutes ses déclarations de tokens étaient comptées comme des couleurs en dur.
-const ROOT_SEL = String.raw`:root(?:(?::not\([^)]*\))|(?:\[[^\]]*\]))*`;
-const TOKEN_BLOCK_RE = new RegExp(
-  `(@media[^{]*\\{\\s*${ROOT_SEL}\\s*\\{[^{}]*\\}\\s*\\})|(${ROOT_SEL}\\s*\\{[^{}]*\\})`,
-  'g',
-);
-const CSS_COMMENT_RE = /\/\*[\s\S]*?\*\//g;
-
-// Blanking keeps length AND newlines, so every later offset and line number stays exact.
-const blank = (s) => s.replace(/[^\n]/g, ' ');
+// TOKEN_BLOCK_RE, CSS_COMMENT_RE et `blank` vivent dans `lint-tokens-spacing.mjs` : la lecture des
+// tokens et la neutralisation de leurs blocs doivent reconnaître les MÊMES blocs, donc un seul motif.
 
 // Les commentaires sont neutralisés AVANT la recherche des blocs de tokens, pour deux raisons
 // distinctes — la première est un bug, la seconde une nuisance :
@@ -153,29 +140,14 @@ const ZINDEX_RE = /z-index\s*:\s*(-?\d+(?:\.\d+)?)/g;
 // dur, jamais examinées. Silencieusement — elles n'étaient pas ignorées, elles n'existaient pas
 // pour le linter, et la baseline avait été gravée sur ce compte tronqué. C'est la forme la plus
 // courante d'une règle mono-propriété, donc précisément celle qu'un `max-width` prend : les trois
-// `max-width:560px` de la feuille passaient tous les trois (issue #29).
-const SPACING_PROP_RE = /\b(padding|margin|width|height|gap)(-(?:top|right|bottom|left|inline|block)(?:-(?:start|end))?)?\s*:\s*([^;{}]+)(?=[;}])/g;
-const PX_VALUE_RE = /(-?\d+(?:\.\d+)?)px/g;
+// `max-width:560px` de la feuille passaient tous les trois (issue #29). Le motif vit désormais
+// dans `lint-tokens-spacing.mjs`, où il s'arrête AUSSI au guillemet d'un attribut `style="…"`.
 
 const findings = []; // { file, line, category, value, suggestion }
 // Compte POSITIF de ce qui a été examiné, pas seulement de ce qui a été trouvé. Une liste de
 // findings vide et un motif qui ne matche plus rien se ressemblent exactement — c'est ce qui a
 // laissé passer #29 pendant toute la vie du script. Ce nombre est le témoin qui les sépare.
 let spacingDeclsSeen = 0;
-
-function nearestSpacingToken(px) {
-  if (spacingPxValues.has(px)) return spacingPxValues.get(px);
-  let best = null;
-  let bestDist = Infinity;
-  for (const [val, name] of spacingPxValues) {
-    const d = Math.abs(val - px);
-    if (d < bestDist) {
-      bestDist = d;
-      best = name;
-    }
-  }
-  return best && bestDist <= 2 ? `${best} (off by ${bestDist}px)` : 'no matching token — new value';
-}
 
 function lineAt(text, index) {
   let line = 1;
@@ -210,6 +182,7 @@ for (const file of files) {
     text = blankOutTokenBlocks(text);
   }
   const rel = relative(REPO_ROOT, file).split('\\').join('/');
+  if (SELF_VECTORS.has(rel)) continue;
 
   // --- colors ---
   let cm;
@@ -253,14 +226,15 @@ for (const file of files) {
     PX_VALUE_RE.lastIndex = 0;
     while ((pxm = PX_VALUE_RE.exec(declValue))) {
       const px = parseFloat(pxm[1]);
-      if (!spacingPxValues.has(px)) {
+      const verdict = classifyPx(sm2[1], px, spaceScale, spacingPxValues);
+      if (verdict) {
         const offset = sm2.index + sm2[0].indexOf(declValue);
         findings.push({
           file: rel,
           line: lineAt(text, offset),
-          category: 'px-spacing',
-          value: `${px}px`,
-          suggestion: nearestSpacingToken(px),
+          category: verdict.category,
+          value: `${fullProp(text, sm2)}: ${px}px`,
+          suggestion: verdict.suggestion,
         });
       }
     }
@@ -275,7 +249,7 @@ for (const f of findings) {
   byFile.get(f.file).push(f);
 }
 
-const counts = { color: 0, 'z-index': 0, 'px-spacing': 0 };
+const counts = { color: 0, 'z-index': 0, 'px-spacing': 0, 'space-literal': 0 };
 for (const f of findings) counts[f.category]++;
 
 // Le témoin part dans la baseline AVEC les counts, mais il ne vit pas dans `counts` : le
@@ -311,6 +285,7 @@ console.log('Summary:');
 console.log(`  colors:      ${counts.color}`);
 console.log(`  z-index:     ${counts['z-index']}`);
 console.log(`  px-spacing:  ${counts['px-spacing']} (sur ${spacingDeclsSeen} déclarations examinées)`);
+console.log(`  space-literal: ${counts['space-literal']} (littéral sur l'échelle --space-* : var(--space-N))`);
 
 // ---- Step 4: ratchet against baseline ---------------------------------------------------
 
