@@ -141,6 +141,14 @@ externes gardent leur casse et leur langue d'origine.
 Liste complète du jargon conservé, alignée sur `CLAUDE.md` : LOSSLESS, DUPLICATE, MATCH,
 FAKE, XML, kbps, kHz, MP3, AIFF, WAV. Ne pas le "corriger".
 
+✅ **`FAKE` dans la modale de lot : TRANCHÉ, gardé tel quel (Antoine, 2026-09-23).**
+`frontend/confirm-modal.ts:82` rend `${data.fakeCount} FAKE → Écarter`, alors que Revue dit
+« FAUX » depuis le 2026-09-10 et que `CLAUDE.md` réserve le jargon anglais au rail, aux facettes
+et aux chips — « jamais le mot de verdict ». La question s'est posée : compter des pistes fausses
+dans une modale, est-ce un mot de verdict ? **Non** — c'est un décompte de catégorie, du même
+registre que les chips, et il reste en anglais. Ne pas rouvrir : `lint:jargon` exige d'ailleurs
+que `FAKE` figure dans les trois listes, puisqu'il est bel et bien affiché.
+
 ⚠️ **Deux corrections à cette liste, le 2026-09-23.** `CHECK MATCH` en sort : il est RETIRÉ du
 produit (`frontend/filing.ts:624`, « CHECK MATCH removed entirely — annotation confirmed
 intentional »), donc la liste promettait une étiquette que personne ne peut voir. `XML` y entre :
