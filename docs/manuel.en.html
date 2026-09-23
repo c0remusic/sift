@@ -1,0 +1,393 @@
+<title>Sift Manual</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=JetBrains+Mono:wght@400;500&display=swap">
+<style>
+/* Tokens : copie des valeurs résolues de frontend/styles.css (:root et bloc sombre), pas une
+   nouvelle palette. Le manuel porte le design de l'app, il ne le réinvente pas. */
+:root{
+  --bg:oklch(86.22% 0.0068 286.3);--bg-2:oklch(96.26% 0.0066 286.3);--bg-3:oklch(92.33% 0.0067 286.3);
+  --ink:oklch(31.16% 0.0067 286.3);--ink-2:oklch(41.0% 0.0067 286.3);--ink-3:oklch(46.15% 0.0067 286.3);
+  --line:oklch(25.67% 0.0060 286.3 / 0.16);--line-2:oklch(25.67% 0.0060 286.3 / 0.09);
+  --accent:oklch(60.28% 0.2177 257.42);--on-accent:oklch(100% 0 0);
+  --alt:oklch(25.67% 0.0142 67.12 / .045);--hover:oklch(25.67% 0.0142 67.12 / .035);
+  --info-bg:oklch(87.46% 0.035 246.74);--info-ink:oklch(45.37% 0.0835 246.66);
+  --ok-bg:oklch(93.42% 0.035 150.63);--ok-ink:oklch(44% 0.0735 151.97);
+  --danger-bg:oklch(90.45% 0.045 30.17);--danger-ink:oklch(48.88% 0.1399 30.93);
+  --warn-bg:oklch(99.00% 0.045 73.21);--warn-ink:oklch(48% 0.103 75.31);
+  --font:"Inter",-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;
+  --mono:"JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
+  --r-xs:4px;--r-sm:5px;--r-md:7px;--r-base:14px;
+  color-scheme:light;
+}
+@media (prefers-color-scheme: dark){
+  :root:not([data-theme="light"]){
+    --bg:oklch(22.73% 0.0038 286.1);--bg-2:oklch(34.92% 0.0034 286.2);--bg-3:oklch(29.39% 0.0036 286.2);
+    --ink:oklch(95.9% 0.0067 286.3);--ink-2:oklch(83.5% 0.0067 286.3);--ink-3:oklch(79.0% 0.0067 286.3);
+    --line:oklch(100% 0 89.88 / 0.22);--line-2:oklch(100% 0 89.88 / 0.09);
+    --accent:oklch(62.43% 0.2056 255.49);
+    --alt:oklch(100% 0 89.88 / .05);--hover:oklch(100% 0 89.88 / .03);
+    --info-bg:oklch(39.16% 0.035 246.74);--info-ink:oklch(79.21% 0.0789 242.05);
+    --ok-bg:oklch(44.00% 0.035 150.63);--ok-ink:oklch(84.99% 0.0947 151.66);
+    --danger-bg:oklch(37.65% 0.045 30.17);--danger-ink:oklch(78.05% 0.0992 32.54);
+    --warn-bg:oklch(42.79% 0.045 73.21);--warn-ink:oklch(84.04% 0.1108 78.51);
+    color-scheme:dark;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:oklch(22.73% 0.0038 286.1);--bg-2:oklch(34.92% 0.0034 286.2);--bg-3:oklch(29.39% 0.0036 286.2);
+  --ink:oklch(95.9% 0.0067 286.3);--ink-2:oklch(83.5% 0.0067 286.3);--ink-3:oklch(79.0% 0.0067 286.3);
+  --line:oklch(100% 0 89.88 / 0.22);--line-2:oklch(100% 0 89.88 / 0.09);
+  --accent:oklch(62.43% 0.2056 255.49);
+  --alt:oklch(100% 0 89.88 / .05);--hover:oklch(100% 0 89.88 / .03);
+  --info-bg:oklch(39.16% 0.035 246.74);--info-ink:oklch(79.21% 0.0789 242.05);
+  --ok-bg:oklch(44.00% 0.035 150.63);--ok-ink:oklch(84.99% 0.0947 151.66);
+  --danger-bg:oklch(37.65% 0.045 30.17);--danger-ink:oklch(78.05% 0.0992 32.54);
+  --warn-bg:oklch(42.79% 0.045 73.21);--warn-ink:oklch(84.04% 0.1108 78.51);
+  color-scheme:dark;
+}
+*{box-sizing:border-box}
+html{-webkit-font-smoothing:antialiased;scroll-behavior:smooth}
+@media (prefers-reduced-motion: reduce){ html{scroll-behavior:auto} }
+body{margin:0;background:var(--bg);color:var(--ink);font:400 13px/1.5 var(--font);min-height:100vh}
+a{color:var(--accent);text-decoration:none}
+a:hover{text-decoration:underline}
+:focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:var(--r-xs)}
+
+/* La fenêtre : une barre unifiée, un rail, un contenu. La charpente de Sift, posée comme cadre
+   du manuel. Le rail est la table des matières, dans l'ordre réel des destinations. */
+.win{max-width:1120px;margin:24px auto;background:var(--bg-2);border:1px solid var(--line);border-radius:var(--r-base);overflow:clip;
+     box-shadow:0 1px 3px rgba(0,0,0,.10),0 12px 48px -6px rgba(0,0,0,.25)}
+.bar{display:flex;align-items:center;gap:12px;height:44px;padding:0 16px;background:var(--bg-3);border-bottom:1px solid var(--line-2)}
+.lights{display:flex;gap:8px}
+.lights i{width:12px;height:12px;border-radius:50%;background:var(--line);display:block}
+.bar .title{font-weight:600;font-size:13px}
+.bar .count{font-size:11px;color:var(--ink-3);letter-spacing:.02em}
+.bar .spacer{flex:1}
+.bar .ver{font:500 11px var(--mono);color:var(--ink-3);border:1px solid var(--line);border-radius:var(--r-sm);padding:2px 8px}
+.frame{display:grid;grid-template-columns:200px 1fr;min-height:70vh}
+/* La colonne s'étire sur toute la hauteur et porte le fond ; la nav dedans est collante et défile
+   en interne si elle dépasse. (`overflow:hidden` sur .win tuerait le sticky.) */
+.railcol{background:var(--bg-3);border-right:1px solid var(--line-2)}
+.rail{padding:12px 8px;position:sticky;top:0;max-height:100vh;overflow-y:auto;scrollbar-width:thin}
+.rail h4{margin:10px 8px 4px;font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;color:var(--ink-3)}
+.rail a{display:flex;align-items:center;gap:8px;height:28px;padding:0 8px;border-radius:var(--r-md);color:var(--ink);font-size:13px;transition:background-color .15s ease,color .15s ease}
+.rail a:hover{background:var(--hover);text-decoration:none}
+.rail a.on{background:var(--accent);color:var(--on-accent)}
+.rail a .k{margin-left:auto;font:500 10px var(--mono);color:var(--ink-3)}
+.rail a.on .k{color:var(--on-accent);opacity:.8}
+.main{padding:32px 40px 56px;max-width:760px}
+
+h1{font-size:32px;line-height:1.15;font-weight:600;letter-spacing:-.01em;margin:0 0 8px;text-wrap:balance}
+.lede{font-size:15px;color:var(--ink-2);margin:0 0 8px;max-width:60ch}
+h2{font-size:20px;font-weight:600;letter-spacing:-.005em;margin:44px 0 12px;padding-top:20px;border-top:1px solid var(--line-2);text-wrap:balance;scroll-margin-top:16px}
+h3{font-size:13px;font-weight:600;margin:20px 0 6px}
+p{margin:0 0 10px;max-width:68ch}
+ul{margin:0 0 10px;padding-left:20px;max-width:68ch}
+li{margin:3px 0}
+b,strong{font-weight:600}
+code{font:400 11.5px var(--mono);background:var(--alt);border-radius:var(--r-xs);padding:1px 5px}
+pre{font:400 11.5px/1.5 var(--mono);background:var(--bg-3);border:1px solid var(--line-2);border-radius:var(--r-md);padding:10px 12px;overflow-x:auto;max-width:68ch}
+pre code{background:none;padding:0}
+kbd{font:500 10px var(--mono);border:1px solid var(--line);border-radius:3px;padding:0 4px;color:var(--ink-3);background:var(--bg-2)}
+
+/* Rangées à fonds alternés, comme la table Rangés. */
+table{border-collapse:collapse;width:100%;max-width:68ch;margin:6px 0 14px;font-size:12px}
+th{text-align:left;font-weight:500;font-size:11px;color:var(--ink-3);padding:6px 10px;border-bottom:1px solid var(--line)}
+td{padding:6px 10px;vertical-align:top;border-bottom:1px solid var(--line-2)}
+tbody tr:nth-child(odd) td{background:var(--alt)}
+td:first-child{white-space:nowrap}
+.tbl{overflow-x:auto}
+
+/* Le mot de verdict : capsule, une par valeur, même grammaire que l'écran Revue. */
+.verdict{display:inline-block;font-size:10px;font-weight:600;letter-spacing:.06em;border-radius:var(--r-xs);padding:2px 6px;white-space:nowrap}
+.v-ok{background:var(--ok-bg);color:var(--ok-ink)}
+.v-fake{background:var(--danger-bg);color:var(--danger-ink)}
+.v-grey{background:var(--warn-bg);color:var(--warn-ink)}
+
+.note{background:var(--info-bg);color:var(--info-ink);border-radius:var(--r-md);padding:10px 14px;margin:12px 0;max-width:68ch}
+.note.danger{background:var(--danger-bg);color:var(--danger-ink)}
+.note p{color:inherit;margin:0}
+.note p + p{margin-top:6px}
+
+/* Légende clavier, reprise de la Revue : touches en gras, verbe après. */
+.hints{display:flex;flex-wrap:wrap;gap:6px 16px;font-size:10px;letter-spacing:.04em;color:var(--ink-3);margin:4px 0 12px}
+.hints b{font-weight:600;color:var(--ink-2)}
+
+.screens{display:grid;grid-template-columns:repeat(2,1fr);gap:12px;margin:12px 0 4px}
+.screen{border:1px solid var(--line-2);border-radius:var(--r-md);padding:12px 14px;background:var(--bg-2)}
+.screen h3{margin:0 0 4px;display:flex;align-items:baseline;gap:8px}
+.screen h3 .k{font:500 10px var(--mono);color:var(--ink-3)}
+.screen p{font-size:12px;color:var(--ink-2);margin:0}
+
+.foot{margin-top:48px;padding-top:16px;border-top:1px solid var(--line-2);font-size:11px;color:var(--ink-3)}
+@media (max-width:820px){
+  .win{margin:0;border-radius:0;border:0}
+  .frame{grid-template-columns:1fr}
+  .railcol{border-right:0;border-bottom:1px solid var(--line-2)}
+  .rail{position:static}
+  .main{padding:24px 20px 40px}
+  .screens{grid-template-columns:1fr}
+}
+/* Impression / PDF : la même fenêtre que l'écran, page après page. La barre et le rail sont
+   `position:fixed` (Chromium les répète sur chaque page imprimée), le contenu coule dans la
+   colonne de droite. Fonds et thème conservés (`print-color-adjust:exact`). */
+@page{size:A4;margin:22px 18px}
+@media print{
+  html{print-color-adjust:exact;-webkit-print-color-adjust:exact}
+  body{background:var(--bg)}
+  .win{max-width:none;margin:0;border:0;border-radius:0;box-shadow:none;overflow:visible;background:var(--bg-2)}
+  .bar{position:relative;z-index:2}
+  .frame{display:block;min-height:0}
+  .railcol{position:fixed;top:0;bottom:0;left:0;width:180px;z-index:1}
+  .rail{position:static;max-height:none;overflow:visible;padding:56px 8px 12px}
+  .rail a{height:26px;font-size:12px}
+  .rail a.on{background:var(--accent);color:var(--on-accent)}
+  .main{margin-left:180px;padding:20px 28px 24px 28px;max-width:none}
+  h1{font-size:28px}
+  h2{margin-top:30px;padding-top:14px;page-break-after:avoid;break-after:avoid}
+  h3{page-break-after:avoid;break-after:avoid}
+  p,li{orphans:3;widows:3}
+  table,.note,pre,.screen,.hints{page-break-inside:avoid;break-inside:avoid}
+  .screens{grid-template-columns:repeat(2,1fr)}
+}
+</style>
+
+<div class="win">
+  <div class="bar">
+    <div class="lights" aria-hidden="true"><i></i><i></i><i></i></div>
+    <span class="title">Manual</span>
+    <span class="count">8 screens</span>
+    <span class="spacer"></span>
+    <span class="ver">v0.1.1</span>
+  </div>
+  <div class="frame">
+    <div class="railcol"><nav class="rail" aria-label="Contents">
+      <a href="#debut">What Sift does</a>
+      <a href="#installer">Install</a>
+      <a href="#mots">Three words</a>
+      <a href="#rail">The rail</a>
+      <h4>Screens</h4>
+      <a href="#revue">Review (<span lang="fr">Revue</span>)<span class="k">1</span></a>
+      <a href="#journal">Log (<span lang="fr">Journal</span>)<span class="k">2</span></a>
+      <a href="#ranges">Filed (<span lang="fr">Rangés</span>)<span class="k">3</span></a>
+      <a href="#resourcer">To re-source (<span lang="fr">À re-sourcer</span>)<span class="k">4</span></a>
+      <a href="#corbeille">Trash (<span lang="fr">Corbeille</span>)<span class="k">5</span></a>
+      <a href="#rekordbox">Rekordbox<span class="k">6</span></a>
+      <a href="#usb">USB drive (<span lang="fr">Clé USB</span>)<span class="k">7</span></a>
+      <a href="#reglages">Settings (<span lang="fr">Réglages</span>)<span class="k">8</span></a>
+      <h4>Next</h4>
+      <a href="#clavier">The keyboard</a>
+      <a href="#jamais">Your guarantees</a>
+      <a href="#detection">The limits</a>
+      <a href="#nouveautes">What's new</a>
+      <a href="#aide">If something goes wrong</a>
+    </nav></div>
+
+    <main class="main">
+      <h1 id="debut">Sift prepares a DJ library.</h1>
+      <p class="lede">It spots fake lossless files, finds duplicates, files every track in the right format and the right place, then sends the library to Rekordbox and onto a USB drive.</p>
+      <p>One rule governs everything else: <b>moving a track means converting it and filing it in the same gesture</b>. Sift deletes nothing unless you ask for it, and it never modifies a folder it watches.</p>
+      <p>This manual follows the order of a working session: install, learn three words, then walk the left rail from top to bottom.</p>
+
+      <h2 id="installer">Install</h2>
+      <p>One file to download, depending on your machine. Everything else on the release page serves the automatic updater and does not install: <code>.app.tar.gz</code>, <code>.msi</code>, the <code>.sig</code> files, <code>latest.json</code>. The <code>.app.tar.gz</code> is the classic trap: it weighs more than the <code>.dmg</code>, so it looks like the right one.</p>
+      <div class="tbl"><table>
+        <thead><tr><th>Your machine</th><th>The file to take</th></tr></thead>
+        <tbody>
+          <tr><td>Windows</td><td><a href="https://github.com/c0remusic/sift/releases/download/v0.1.1/Sift_0.1.1_x64-setup.exe"><code>Sift_0.1.1_x64-setup.exe</code></a></td></tr>
+          <tr><td>Mac with Apple silicon (M1 and later)</td><td><a href="https://github.com/c0remusic/sift/releases/download/v0.1.1/Sift_0.1.1_aarch64.dmg"><code>Sift_0.1.1_aarch64.dmg</code></a></td></tr>
+          <tr><td>Intel Mac</td><td><a href="https://github.com/c0remusic/sift/releases/download/v0.1.1/Sift_0.1.1_x64.dmg"><code>Sift_0.1.1_x64.dmg</code></a></td></tr>
+        </tbody>
+      </table></div>
+      <p>Every version is on <a href="https://github.com/c0remusic/sift/releases">the releases page</a>. The installers are not signed, for want of an Apple or Microsoft certificate: your system shows a warning on first launch, once.</p>
+      <h3>On Windows</h3>
+      <p>SmartScreen announces “Windows protected your PC”. Click <b>More info</b>, then <b>Run anyway</b>.</p>
+      <h3>On Mac</h3>
+      <p>Open the <code>.dmg</code>, drag Sift into Applications, then depending on the message:</p>
+      <ul>
+        <li>“unidentified developer”: open <b>System Settings › Privacy &amp; Security</b>, scroll down to the message about Sift and click <b>Open Anyway</b>;</li>
+        <li>“Sift is damaged and can't be opened”: this message offers no button. Open Terminal and type the command below. The <code>-r</code> is required — a Mac application is a folder.</li>
+      </ul>
+      <pre><code>xattr -dr com.apple.quarantine /Applications/Sift.app</code></pre>
+      <p>If the message persists: <code>codesign --force --deep --sign - /Applications/Sift.app</code></p>
+      <p>Later versions install themselves, from inside the application.</p>
+
+      <h2 id="mots">Three words to know</h2>
+      <p><b>Fake lossless.</b> A FLAC, WAV or AIFF file built from an MP3, an AAC or an Opus. The label says lossless, but the sound has already been compressed, and that quality is not coming back. These files are sold, they circulate, and the difference is not always audible. This is what Sift looks for.</p>
+      <p><b>Verdict.</b> What Sift concludes about a file, in one word:</p>
+      <div class="tbl"><table>
+        <thead><tr><th>Verdict</th><th>What it means</th></tr></thead>
+        <tbody>
+          <tr><td><span class="verdict v-ok">VRAI</span> — genuine</td><td>Nothing in the signal contradicts a real lossless file.</td></tr>
+          <tr><td><span class="verdict v-fake">FAUX</span> — fake</td><td>The compression is measurable. The file is set aside to be bought again elsewhere, it is not deleted.</td></tr>
+          <tr><td><span class="verdict v-grey">À VÉRIFIER</span> — to check</td><td>Something unusual, without proof. Sift flags it and leaves you to decide, spectrogram in hand.</td></tr>
+        </tbody>
+      </table></div>
+      <p><b lang="fr">Écarter</b> — set aside. Taking a file out of the flow without deleting it. Two destinations: <b lang="fr">À re-sourcer</b>, to re-source, for a fake or a truncated file to buy again elsewhere, and <b lang="fr">Corbeille</b>, the trash, for a duplicate or a mistake. Nothing is erased until you empty the trash yourself.</p>
+      <h3>The English words kept as they are</h3>
+      <p><code>LOSSLESS</code>, <code>DUPLICATE</code>, <code>MATCH</code>, <code>XML</code>, <code>kbps</code>, <code>kHz</code>, <code>MP3</code>, <code>AIFF</code>, <code>WAV</code> stay in English in the filters, the labels and the badges, because that is the form they take everywhere else: in Rekordbox, in the stores, on the forums. The verdict, on the other hand, is in French.</p>
+
+      <h2 id="rail">The rail, top to bottom</h2>
+      <p>The left column has two parts. At the top, your <b>sources</b>: the folders Sift watches, each with its color, its number of pending files and its state. Clicking a source narrows the list on the Review screen (<span lang="fr">Revue</span>) to its files. A folder with no recognized audio file is marked “0 audio”.</p>
+      <p>Below, eight <b>screens</b>, in the order of a working session. <kbd>Ctrl</kbd>+<kbd>1</kbd> through <kbd>Ctrl</kbd>+<kbd>8</kbd> go straight to them (<kbd>⌘</kbd> on Mac), and <kbd>Ctrl</kbd>+<kbd>B</kbd> collapses the column.</p>
+
+      <div class="screens">
+        <div class="screen"><h3>Review (<span lang="fr">Revue</span>) <span class="k">Ctrl+1</span></h3><p>Decide, one track at a time. This is where the work happens.</p></div>
+        <div class="screen"><h3>Log (<span lang="fr">Journal</span>) <span class="k">Ctrl+2</span></h3><p>Everything Sift has done, and the way to undo it.</p></div>
+        <div class="screen"><h3>Filed (<span lang="fr">Rangés</span>) <span class="k">Ctrl+3</span></h3><p>Your library, what is in its place.</p></div>
+        <div class="screen"><h3>To re-source (<span lang="fr">À re-sourcer</span>) <span class="k">Ctrl+4</span></h3><p>The fakes and the truncated files: a shopping list.</p></div>
+        <div class="screen"><h3>Trash (<span lang="fr">Corbeille</span>) <span class="k">Ctrl+5</span></h3><p>Duplicates and mistakes. Nothing is erased on its own.</p></div>
+        <div class="screen"><h3>Rekordbox <span class="k">Ctrl+6</span></h3><p>Sync the filed library with Rekordbox.</p></div>
+        <div class="screen"><h3>USB drive (<span lang="fr">Clé USB</span>) <span class="k">Ctrl+7</span></h3><p>Format and eject a drive for the players.</p></div>
+        <div class="screen"><h3>Settings (<span lang="fr">Réglages</span>) <span class="k">Ctrl+8</span></h3><p>Root folder, naming, Discogs, appearance.</p></div>
+      </div>
+
+      <h2 id="revue">Review (<span lang="fr">Revue</span>)</h2>
+      <p>The main screen: one track at a time, you listen, then you decide. The file list is on the left, the open track in the center, the diagnostics on the right. The list filters by category (Lossless, MP3, <span lang="fr">Faux</span> — the fakes, <span lang="fr">Doublons</span> — the duplicates…) and by search, <kbd>Ctrl</kbd>+<kbd>F</kbd> goes straight there.</p>
+      <p>For each track you get the player, the verdict, a metadata sheet you can edit in place, Discogs identification and the full audio diagnostics. Sound comes before the verdict: you listen, then you call it.</p>
+      <div class="hints"><span><b>SPACE</b> <span lang="fr">écouter</span>, play</span><span><b>ENTER</b> <span lang="fr">convertir</span>, convert</span><span><b>BKSP</b> <span lang="fr">écarter</span>, set aside</span><span><b>HAUT/BAS</b> <span lang="fr">naviguer</span>, navigate</span><span><b>I</b> <span lang="fr">identifier</span>, identify</span><span><b>CTRL+Z</b> <span lang="fr">annuler</span>, undo</span></div>
+      <ul>
+        <li><b lang="fr">Convertir</b> — convert. The file leaves for its destination, converted to MP3, WAV or AIFF as you choose, with a filename built from the tags. The Destination menu offers the tree of your library and your other folders.</li>
+        <li><b lang="fr">Écarter</b> — set aside. To À re-sourcer if the verdict is FAUX or if the file is truncated, to Corbeille otherwise. A duplicate is flagged as such, with the original track.</li>
+        <li><b lang="fr">Identifier</b> — identify. Sift queries Discogs, offers matches and writes the tags you keep into the file: artist, title, label, year, genres, cover art.</li>
+      </ul>
+      <h3>Batch mode (<span lang="fr">mode Lot</span>)</h3>
+      <p>Tick tracks in the list: the center area sums up the selection (verdicts, formats, total length) and a single button files all of it. The <b lang="fr">Sélection</b> menu takes everything, takes nothing, takes one category only, or everything but the fakes; <kbd>Ctrl</kbd>+<kbd>A</kbd> and <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>A</kbd> do the same. Past a certain number of files, Sift recaps before it starts, then shows progress and a report.</p>
+
+      <h2 id="journal">Log (<span lang="fr">Journal</span>)</h2>
+      <p>The full history of what Sift has done, grouped by session and by day: conversions, files set aside, identifications, syncs. Every line undoes in one click. A bulk filing that went to the wrong place comes back from here, even after restarting the application.</p>
+
+      <h2 id="ranges">Filed (<span lang="fr">Rangés</span>)</h2>
+      <p>Your library as it sits on disk, in a Finder-style table: columns you customize and that are remembered, sorting, search, multiple selection with a summary panel. The cover art doubles as a play button. Right-click opens the file's location, re-runs the analysis, moves or sets aside. A bar shows the space each format takes.</p>
+
+      <h2 id="resourcer">To re-source (<span lang="fr">À re-sourcer</span>)</h2>
+      <p>The fake or truncated files, each with its reason. Treat this list as a shopping list: these tracks are waiting to be bought again or found elsewhere. The <b lang="fr">Restaurer</b> button — restore — puts a track back into the Review list (<span lang="fr">Revue</span>) if the verdict strikes you as too cautious.</p>
+
+      <h2 id="corbeille">Trash (<span lang="fr">Corbeille</span>)</h2>
+      <p>The duplicates and the mistakes. Nothing is erased from the disk until you empty the trash, and Sift asks for confirmation before doing it. A track is restored the same way as from À re-sourcer.</p>
+
+      <h2 id="rekordbox">Rekordbox</h2>
+      <p>A single action syncs everything: <b lang="fr">Synchroniser la sélection</b>, sync the selection, or <b lang="fr">Tout synchroniser</b>, sync everything. Sift compares your filed library with the Rekordbox one, groups what it proposes by type (new tracks, metadata, cover art, linked files to repair) and names each item “Artist, Title”. Two ways to write: an XML file you import into Rekordbox, or writing straight into its database.</p>
+      <div class="note danger"><p><b>Rekordbox must be closed during a direct write.</b> Sift backs up the database before touching it, verifies the backup, and refuses to act if the software is open.</p></div>
+
+      <h2 id="usb">USB drive (<span lang="fr">Clé USB</span>)</h2>
+      <p>The left column lists the removable drives. For the drive you pick, you see the space taken by each format, its characteristics (mount point, format, capacity, free space, file count, model, health) and three actions: <b lang="fr">Formater…</b> to format, <b lang="fr">Éjecter</b> to eject, <b lang="fr">Relire le disque</b> to re-read the drive.</p>
+      <p>Formatting writes FAT32, the format the players read, even past the 32 GB Windows refuses. It proceeds in blocks and shows the megabytes written.</p>
+      <div class="note danger"><p><b>Formatting erases everything on the drive.</b> Sift asks twice, naming the volume, and refuses if the drive has changed in the meantime.</p></div>
+
+      <h2 id="reglages">Settings (<span lang="fr">Réglages</span>)</h2>
+      <p>The categories on the left, the panel on the right. Every setting applies immediately, there is no <b lang="fr">Enregistrer</b> (Save) button.</p>
+      <ul>
+        <li><b lang="fr">Général</b>, general: the root folder of your library. It defines the filing tree, not the conversion.</li>
+        <li><b lang="fr">Nommage</b>, naming: the filename template, built from the tags, with a live preview.</li>
+        <li><b lang="fr">Identification</b>, identification: your Discogs token.</li>
+        <li><b lang="fr">Apparence</b>, appearance: the theme — automatic, light or dark.</li>
+      </ul>
+      <p><kbd>Ctrl</kbd>+<kbd>,</kbd> opens Settings (<span lang="fr">Réglages</span>) from any screen.</p>
+
+      <h2 id="clavier">The keyboard</h2>
+      <div class="tbl"><table>
+        <thead><tr><th>Key</th><th>Where</th><th>Effect</th></tr></thead>
+        <tbody>
+          <tr><td><kbd>Space</kbd></td><td>Revue</td><td>play, pause</td></tr>
+          <tr><td><kbd>Enter</kbd></td><td>Revue</td><td>convert the open track</td></tr>
+          <tr><td><kbd>Backspace</kbd> or <kbd>X</kbd></td><td>Revue</td><td>set aside</td></tr>
+          <tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>Revue, tables</td><td>previous track, next track</td></tr>
+          <tr><td><kbd>I</kbd></td><td>Revue</td><td>identify on Discogs</td></tr>
+          <tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd></td><td>anywhere</td><td>undo the last action</td></tr>
+          <tr><td><kbd>Ctrl</kbd>+<kbd>A</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>A</kbd></td><td>Revue in batch mode, tables</td><td>select everything, select nothing</td></tr>
+          <tr><td><kbd>Ctrl</kbd>+<kbd>F</kbd></td><td>screens with a search</td><td>go to the search</td></tr>
+          <tr><td><kbd>Ctrl</kbd>+<kbd>1</kbd> to <kbd>8</kbd></td><td>anywhere</td><td>the matching screen, in rail order</td></tr>
+          <tr><td><kbd>Ctrl</kbd>+<kbd>B</kbd></td><td>anywhere</td><td>collapse or expand the rail</td></tr>
+          <tr><td><kbd>Ctrl</kbd>+<kbd>,</kbd></td><td>anywhere</td><td>Réglages</td></tr>
+          <tr><td><kbd>Esc</kbd></td><td>anywhere</td><td>close the open menu or window</td></tr>
+        </tbody>
+      </table></div>
+      <p>On Mac, <kbd>⌘</kbd> replaces <kbd>Ctrl</kbd>.</p>
+
+      <h2 id="jamais">What Sift will never do without you</h2>
+      <ul>
+        <li><b>Delete a file.</b> Setting a track aside — <b lang="fr">Écarter</b> — moves it. Only emptying the Trash (<b lang="fr">Corbeille</b>) erases, and it asks for confirmation.</li>
+        <li><b>Modify your download folders.</b> Sift reads them, it never writes them back.</li>
+        <li><b>Write into Rekordbox</b> without having first backed up and verified its database.</li>
+        <li><b>Make an action final.</b> Everything Sift does can be undone from the Log (<span lang="fr">Journal</span>). On a large batch, the confirmation arms for a few moments so a double click cannot go through it.</li>
+      </ul>
+
+      <h2 id="detection">What the detection does not see</h2>
+      <p>No detector is perfect. Sift measures three things in the signal: the frequency where the spectrum stops, the density of the highs, and the grid the encoder leaves in the samples, replayed for MP3 and for AAC. On its test set (8 verified purchases, 150 transcodes built from those purchases), it accused no authentic file: that is the rule that comes first, better to let a fake through than to make you buy a good file again. Since v0.1.2, every MP3 in the test set is caught, whatever its bitrate, 320 and V0 included, and almost every AAC. What still gets through: some of the Opus, Vorbis and WMA transcodes, rated <span class="verdict v-grey">À VÉRIFIER</span> at best, and a few AAC 128.</p>
+      <p>In plain terms: a <span class="verdict v-fake">FAUX</span> verdict — fake — is reliable. A <span class="verdict v-ok">VRAI</span> verdict — genuine — means that nothing measurable contradicts the file, not that it is guaranteed authentic.</p>
+
+      <h2 id="nouveautes">What's new</h2>
+      <p><b>v0.1.2</b> — the detection no longer lets bitrate fool it:</p>
+      <ul>
+        <li><b>MP3s disguised as lossless are recognized whatever their bitrate</b>, 320 and V0 included: the probe replays the MP3 encoder and finds its grid in the samples. A lossless that cuts off between 20,000 and 20,750 Hz, the signature of a 320 MP3, turns À VÉRIFIER instead of VRAI.</li>
+        <li><b>AACs too</b>, including at 128 kbps: the probe looks at the long blocks with the window the encoder uses, and on the right bands.</li>
+        <li>A track longer than 9 minutes is probed on its first 9 minutes instead of being skipped.</li>
+      </ul>
+      <p><a href="https://github.com/c0remusic/sift/releases/tag/v0.1.2">The v0.1.2 release notes</a>.</p>
+      <p><b>v0.1.1</b> — first version published since 0.0.3. The essentials:</p>
+      <ul>
+        <li><b>An interface redone screen by screen</b>, read against Finder, Music, Mail, Photos, Disk Utility and System Settings, then adapted to Windows habits. One bar, a sectioned rail carrying the sources (the Home screen, <span lang="fr">Accueil</span>, is gone), a one-word verdict, batch mode and the Sélection menu, Rangés Finder-style, Journal as a table, Rekordbox in a single sync, Clé USB and Réglages redrawn.</li>
+        <li><b>More reliable detection</b>: two more signals (density of the highs, the codec's trace in the samples), the verdict replayed at startup when the engine changes, without a new analysis.</li>
+        <li><b lang="fr">Clé USB</b>: FAT32 written in blocks, progress shown in megabytes, external SSDs ejected.</li>
+        <li><b>Speed</b>: analysis reports twenty times smaller, incremental deduplication.</li>
+        <li><b>Intel Mac</b>: an installer, alongside Apple silicon and Windows.</li>
+      </ul>
+      <p>The detail is in <a href="https://github.com/c0remusic/sift/releases/tag/v0.1.1">the release notes</a>.</p>
+
+      <h2 id="aide">If something goes wrong</h2>
+      <p>Errors appear in the application with their cause. If a file refuses to analyze, its message stays visible on its row. An available update offers itself at startup.</p>
+      <p>To report a problem: <a href="https://github.com/c0remusic/sift/issues">github.com/c0remusic/sift/issues</a>. Give the version, your machine, and what you expected.</p>
+
+      <div class="foot">Sift v0.1.1, Windows and macOS.</div>
+    </main>
+  </div>
+</div>
+
+<script>
+// Le rail suit la lecture (scroll-spy) et le clic défile en douceur, comme le rail de l'app : un
+// seul lien « on », celui de la section sous le haut de la fenêtre.
+(function () {
+  var links = Array.prototype.slice.call(document.querySelectorAll(".rail a[href^='#']"));
+  var targets = links.map(function (a) { return document.getElementById(a.getAttribute("href").slice(1)); });
+  var reduce = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+  var OFFSET = 72;
+  var current = null;
+  function setOn(i) {
+    if (i === current) return;
+    current = i;
+    links.forEach(function (a, j) { a.classList.toggle("on", j === i); });
+    var a = links[i];
+    if (a && a.scrollIntoView) a.scrollIntoView({ block: "nearest" });
+  }
+  function spy() {
+    var best = 0;
+    var bottom = window.innerHeight + window.scrollY >= document.documentElement.scrollHeight - 2;
+    if (bottom) { best = targets.length - 1; }
+    else {
+      for (var i = 0; i < targets.length; i++) {
+        var t = targets[i];
+        if (t && t.getBoundingClientRect().top <= OFFSET) best = i;
+      }
+    }
+    setOn(best);
+  }
+  var ticking = false;
+  window.addEventListener("scroll", function () {
+    if (ticking) return;
+    ticking = true;
+    requestAnimationFrame(function () { ticking = false; spy(); });
+  }, { passive: true });
+  window.addEventListener("resize", spy);
+  links.forEach(function (a, i) {
+    a.addEventListener("click", function (e) {
+      var t = targets[i];
+      if (!t) return;
+      e.preventDefault();
+      t.scrollIntoView({ behavior: reduce ? "auto" : "smooth", block: "start" });
+      history.replaceState(null, "", a.getAttribute("href"));
+      setOn(i);
+    });
+  });
+  spy();
+})();
+</script>

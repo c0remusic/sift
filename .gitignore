@@ -96,6 +96,8 @@ docs/*
 !docs/manuel.md
 !docs/manuel.html
 !docs/accueil.html
+!docs/manuel.en.html
+!docs/accueil.en.html
 !docs/manuel.pdf
 !docs/favicon.svg
 !docs/developpement.md
