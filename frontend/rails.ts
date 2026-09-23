@@ -4,8 +4,8 @@
 // d'être lu par `filing.ts`, chaîné à `./ipc` et donc jamais chargeable en environnement Node,
 // aussi bien que par `library-views.ts`, sans rapprocher deux modules qui n'ont rien à se dire.
 //
-// Recopie volontaire, et bornée, de `analysis::tags::rail_from_ext` (src-tauri/src/analysis/tags.rs
-// lignes 24-30). Elle a divergé DEUX fois, toujours de la même façon — une table écrite de mémoire
+// Recopie volontaire, et bornée, de `analysis::tags::rail_from_ext` (src-tauri/src/analysis/tags.rs ;
+// cité par son nom, pas par ses lignes, qui ont bougé). Elle a divergé DEUX fois, toujours de la même façon — une table écrite de mémoire
 // à côté d'une autre :
 //   · la version qui vivait dans `filing.ts` ignorait `opus` ;
 //   · `library-views.ts` portait sa PROPRE table (`LOSSLESS_EXT`) qui ignorait `aif`, si bien qu'un

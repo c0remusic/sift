@@ -784,6 +784,18 @@ pub fn commit_file(
     let dest_size = dest_meta.map(|(size, _)| size);
     let dest_mtime = dest_meta.map(|(_, mtime)| mtime);
     let dest_name = file_name_of(&plan.dest);
+    // Après une CONVERSION, le débit est celui du fichier PRODUIT, pas de la source : un FLAC
+    // converti en MP3 gardait ~900 kbps, et `dedup::pick_keep` classe les doublons sur ce chiffre
+    // (issue #70, préalable à tout affichage du débit). Lecture d'en-tête seule, hors transaction
+    // comme la taille ci-dessus. Un déplacement tel quel garde le débit de la source, qui est juste.
+    // Illisible = colonne inchangée (`COALESCE`), comme la taille.
+    let dest_bitrate: Option<i64> = if plan.conformant {
+        None
+    } else {
+        crate::analysis::tags::read(&plan.dest)
+            .declared_bitrate
+            .map(i64::from)
+    };
 
     // One transaction for every DB write of this track. Dropping it without `commit()` (the `?`
     // early-returns below) rolls back all inserts/updates automatically — no manual DELETE needed.
@@ -851,7 +863,8 @@ pub fn commit_file(
         tx.execute(
             "UPDATE tracks SET status='filed', folder=?2, target_format=?3, confidence=?4,
                     path=?5, filename=?6,
-                    size_bytes=COALESCE(?7, size_bytes), mtime=COALESCE(?8, mtime)
+                    size_bytes=COALESCE(?7, size_bytes), mtime=COALESCE(?8, mtime),
+                    bitrate=COALESCE(?9, bitrate)
              WHERE id=?1",
             params![
                 plan.track_id,
@@ -861,7 +874,8 @@ pub fn commit_file(
                 plan.dest,
                 dest_name,
                 dest_size,
-                dest_mtime
+                dest_mtime,
+                dest_bitrate
             ],
         )?;
         save_metadata(&tx, plan.track_id, &plan.canonical)?;
@@ -1644,6 +1658,53 @@ mod tests {
             .unwrap();
         assert_eq!(convert_rows, 1);
         assert_eq!(trash_rows, 1);
+    }
+
+    /// Issue #70 : après une CONVERSION, `tracks.bitrate` est celui du fichier produit. La ligne part
+    /// avec le débit d'un FLAC (≈ 900 kbps) ; rangée en MP3, elle doit dire 320.
+    #[test]
+    fn une_conversion_ecrit_le_debit_du_fichier_produit() {
+        let conn = db();
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("lib");
+        std::fs::create_dir_all(root.join("House")).unwrap();
+        let Some(flac) = fixture("real_lossless.flac") else {
+            eprintln!("skip: no fixture");
+            return;
+        };
+        let src = dir.path().join("src.flac");
+        std::fs::copy(&flac, &src).unwrap();
+        conn.execute(
+            "INSERT INTO tracks(path, status, bitrate) VALUES(?1, 'pending', 912)",
+            params![src.to_str().unwrap()],
+        )
+        .unwrap();
+        let id = conn.last_insert_rowid();
+
+        file_track(
+            &conn,
+            &root,
+            "{artist} - {title}",
+            id,
+            "House",
+            Some(Target::Mp3320),
+            Some(Canonical {
+                artist: "Larry Heard".into(),
+                title: "Can You Feel It".into(),
+                version: None,
+                label: None,
+                confidence: crate::naming::Confidence::Green,
+            }),
+            false,
+        )
+        .unwrap();
+
+        let bitrate: Option<i64> = conn
+            .query_row("SELECT bitrate FROM tracks WHERE id=?1", params![id], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(bitrate, Some(320));
     }
 
     /// Root fix for the `.aif`/`.aiff` revert-duplicate: a CONFORMANT AIFF is moved (no transcode),

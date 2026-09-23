@@ -112,8 +112,9 @@ let queueSearchTerm = "";
 // Filtre par facettes (UNION multi-critères) — cases cochées dans le popover « Filtrer ». Set au
 // niveau module : survit aux re-rendus (poll 300ms, queue:changed), ne tombe que sur une action
 // explicite (case décochée, « Tout afficher »). Vide = tout montrer. Critères dérivés de QueueItem,
-// zéro Rust (verdict/rail/dup, shared/contracts.ts). « MP3 » = approximation `rail==="lossy"` :
-// QueueItem n'a pas de champ format/extension, un MP3-vs-AAC exact exigerait un champ de contrat.
+// zéro Rust (verdict/rail/dup, shared/contracts.ts). « MP3 » = approximation `rail==="lossy"`.
+// QueueItem porte `declared_fmt` et `bitrate` depuis 0edbff2 : un filtre MP3-vs-AAC exact, ou une
+// facette « sous 320 », ne demande plus de champ de contrat (issue #69).
 const queueFacetFilter = new Set<string>();
 //
 // `label` est une FONCTION depuis le 2026-09-23 : ce tableau s'évalue à l'import, avant que la

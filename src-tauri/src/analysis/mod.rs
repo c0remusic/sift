@@ -205,9 +205,11 @@ pub struct AnalysisReport {
 }
 
 /// Bump whenever a change alters what `analyze()` produces WITHOUT changing `AnalysisReport`'s
-/// JSON shape — e.g. spectrogram resolution constants (spectrum.rs), cutoff-detection tuning,
-/// the kbps table — so rows cached under the old behavior (structurally still valid JSON) are
-/// treated as stale and recomputed, instead of silently serving outdated data forever. Struct
+/// JSON shape — e.g. cutoff-detection tuning, the kbps table — so rows cached under the old
+/// behavior (structurally still valid JSON) are treated as stale and recomputed, instead of
+/// silently serving outdated data forever. NOT for spectrogram resolution: the grid is no longer
+/// cached (recomputed when Diagnostic opens), so a bump for it would re-analyze the whole library
+/// for nothing — this line cited « spectrogram resolution constants » until 2026-09-23 (#72). Struct
 /// field additions/removals are already caught by `serde_json::from_str` failing outright; this
 /// constant is for the content changes that a schema check can't see.
 ///

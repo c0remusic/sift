@@ -12,9 +12,12 @@ use std::sync::{Arc, OnceLock};
 const FFT_SIZE: usize = 4096;
 static FFT_PLAN: OnceLock<Arc<dyn Fft<f32>>> = OnceLock::new();
 
-/// Plafond de colonnes temporelles du spectrogramme d'affichage. Au-delà, les colonnes sources
-/// sont poolées (voir `build_spectrogram`) : la charge utile reste bornée quelle que soit la
-/// durée du morceau.
+/// Plafond de colonnes temporelles du spectrogramme d'affichage. Au-delà, UNE colonne source sur
+/// `col_stride` est gardée (voir `build_spectrogram`) : la charge utile reste bornée quelle que
+/// soit la durée du morceau. ⚠️ Sous-échantillonnage, pas un pooling — seule la fréquence est
+/// max-poolée. Un événement bref peut donc tomber entre deux colonnes gardées ; ce commentaire a
+/// dit « poolées » jusqu'au 2026-09-23 (issue #72, où le max-pool temporel est une question
+/// ouverte, puisqu'il changerait l'aspect du spectrogramme de Revue).
 ///
 /// ⚠️ **Ce nombre est dupliqué dans `frontend/styles.css`**, où il est déclaré comme
 /// `--measure-data` — la mesure « donnée » tranchée par l'issue #9 borne à cette même largeur
