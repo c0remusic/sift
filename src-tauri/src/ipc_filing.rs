@@ -315,6 +315,10 @@ pub fn apply_tags(
         // reopened editor showed the Discogs values again). The revert of this tag_edit rewrites the
         // file's OLD tags but not this DB row, so a reverted edit reads as a normal file-vs-display
         // discrepancy, which the banner is meant to surface.
+        // EN PREMIER sous le verrou : le watcher décante ~500 ms après l'écriture, et une ligne
+        // restée sur l'ancienne taille relancerait une analyse complète (issue #73).
+        crate::scanner::restamp_after_own_write(&conn, track_id, &path)
+            .map_err(|e| e.to_string())?;
         crate::metadata::persist_tag_edit(&conn, track_id, &edited, edited_label)
             .map_err(|e| e.to_string())?;
         let action_id = actions::record_with_meta(

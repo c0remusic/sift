@@ -872,6 +872,11 @@ pub fn revert_batch(conn: &Connection, batch_id: &str) -> Result<(), RevertError
                 ),
             }
         }
+        // Restaurer des tags réécrit le fichier : même remise à jour que l'écriture elle-même,
+        // sinon le watcher relance une analyse complète (issue #73).
+        if let (Some(tid), Some(path)) = (track_id, rows.iter().find_map(|r| r.3.clone())) {
+            crate::scanner::restamp_after_own_write(conn, tid, &path)?;
+        }
     }
     if let Some(tid) = track_id {
         if !tag_only {
@@ -1640,6 +1645,20 @@ mod tests {
                 "Dub".into(),
                 "12345".into()
             )
+        );
+        // Issue #73 : restaurer les tags réécrit le fichier, la ligne en reprend la taille et la
+        // date (elles partaient NULL ici), sinon le watcher relance une analyse complète.
+        let (size, mtime): (Option<i64>, Option<i64>) = conn
+            .query_row(
+                "SELECT size_bytes, mtime FROM tracks WHERE id=?1",
+                params![tid],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        let m = std::fs::metadata(path).unwrap();
+        assert_eq!(
+            (size, mtime),
+            (Some(m.len() as i64), Some(crate::scanner::mtime_secs(&m)))
         );
     }
 

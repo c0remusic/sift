@@ -37,6 +37,37 @@ pub struct ReconcileStats {
 /// `filing::commit_file` and `actions::revert_batch` must write `tracks.mtime` with EXACTLY the
 /// same convention the watcher compares against in `upsert_file` — a second conversion helper
 /// would silently drift and re-open the "a filed track un-files itself" bug.
+/// Après une écriture de TAGS faite par Sift lui-même (Revue, Bibliothèque, « Rétablir »), remet
+/// `size_bytes`/`mtime` de la ligne sur ceux du fichier écrit.
+///
+/// POURQUOI, issue #73, mesuré le 2026-09-23 sur la vraie base : les 12 dernières pistes gravées
+/// ont TOUTES été ré-analysées 14 à 56 s après leur dernière gravure. Graver des tags change la
+/// taille et la date du fichier ; dans une source surveillée, le watcher (~500 ms de décantation)
+/// passe par `upsert_file`, qui lit un fichier « modifié » et remet `report_json`, `analyzed_at` et
+/// l'empreinte à NULL — une analyse complète relancée pour des octets de tags, l'audio intact. Et
+/// il repasse le statut à `pending` : une piste RANGÉE dont on édite les tags en Bibliothèque se
+/// dé-rangeait. La ligne à jour, le watcher ne voit plus rien.
+///
+/// Fichier illisible : on journalise et on laisse la ligne — au pire le comportement d'avant.
+pub(crate) fn restamp_after_own_write(
+    conn: &Connection,
+    track_id: i64,
+    path: &str,
+) -> rusqlite::Result<()> {
+    match std::fs::metadata(path) {
+        Ok(meta) => {
+            conn.execute(
+                "UPDATE tracks SET size_bytes=?2, mtime=?3 WHERE id=?1",
+                rusqlite::params![track_id, meta.len() as i64, mtime_secs(&meta)],
+            )?;
+        }
+        Err(e) => log::warn!(
+            "restamp_after_own_write: metadata({path}) illisible ({e}), piste {track_id} laissée en l'état"
+        ),
+    }
+    Ok(())
+}
+
 pub(crate) fn mtime_secs(meta: &std::fs::Metadata) -> i64 {
     meta.modified()
         .ok()
@@ -220,6 +251,54 @@ mod tests {
             .unwrap();
         let sid = conn.last_insert_rowid();
         (conn, sid)
+    }
+
+    /// Issue #73 : après une écriture de tags faite par Sift, le passage du watcher (`upsert_file`
+    /// avec la taille et la date du fichier réécrit) ne touche plus rien — ni l'analyse en cache,
+    /// ni le statut d'une piste rangée. Sans la remise à jour, le même passage efface les deux.
+    #[test]
+    fn a_tag_write_by_sift_is_not_seen_as_a_modification() {
+        let (conn, sid) = db_with_source();
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("track.mp3");
+        fs::write(&file, b"avant").unwrap();
+        let p = file.to_str().unwrap().to_string();
+        let m = fs::metadata(&file).unwrap();
+        conn.execute(
+            "INSERT INTO tracks (path, filename, size_bytes, mtime, source_id, status, analyzed_at, report_json)
+             VALUES (?1, 'track.mp3', ?2, ?3, ?4, 'filed', '2026-09-23 11:00:00', '{}')",
+            rusqlite::params![p, m.len() as i64, mtime_secs(&m), sid],
+        )
+        .unwrap();
+        let tid = conn.last_insert_rowid();
+
+        // L'écriture des tags : plus longue, et plus récente d'au moins une seconde.
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        fs::write(&file, b"apres, avec des tags plus longs").unwrap();
+        restamp_after_own_write(&conn, tid, &p).unwrap();
+
+        // Le watcher passe, avec ce que le disque dit maintenant.
+        let m = fs::metadata(&file).unwrap();
+        let seen = DiskFile {
+            path: p.clone(),
+            filename: "track.mp3".into(),
+            size_bytes: m.len() as i64,
+            mtime: mtime_secs(&m),
+        };
+        upsert_file(&conn, sid, &seen).unwrap();
+
+        let (status, report, analyzed): (String, Option<String>, Option<String>) = conn
+            .query_row(
+                "SELECT status, report_json, analyzed_at FROM tracks WHERE id=?1",
+                [tid],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(status, "filed", "une piste rangée ne se dé-range pas");
+        assert!(
+            report.is_some() && analyzed.is_some(),
+            "l'analyse en cache survit"
+        );
     }
 
     fn pending_count(conn: &Connection, source_id: i64) -> i64 {

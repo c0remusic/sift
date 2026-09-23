@@ -71,6 +71,10 @@ fn update_metadata_commit(
     path: &str,
     snapshot: &crate::tagging::TagsSnapshot,
 ) -> Result<String, String> {
+    // Le fichier vient d'être réécrit : la ligne reprend sa taille et sa date, sinon le watcher y
+    // lirait une modification, relancerait l'analyse ET repasserait cette piste RANGÉE en
+    // `pending` (issue #73).
+    crate::scanner::restamp_after_own_write(conn, track_id, path).map_err(|e| e.to_string())?;
     metadata::update_metadata_db(conn, track_id, edit).map_err(|e| e.to_string())?;
 
     // (5) Journal a revertable tag_edit — this is the fix for a pre-existing gap: before this,
@@ -750,6 +754,22 @@ mod rekordbox_tests {
         let after = crate::tagging::read_tags_full(path.to_str().unwrap()).unwrap();
         assert_eq!(after.artist.as_deref(), Some("NEW Artist"));
 
+        // Issue #73 : la ligne suit le fichier réécrit, sinon le watcher relance l'analyse et
+        // dé-range la piste.
+        let stamp = |conn: &Connection| -> (i64, i64) {
+            conn.query_row(
+                "SELECT size_bytes, mtime FROM tracks WHERE id=?1",
+                rusqlite::params![track_id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap()
+        };
+        let on_disk = |p: &std::path::Path| {
+            let m = std::fs::metadata(p).unwrap();
+            (m.len() as i64, crate::scanner::mtime_secs(&m))
+        };
+        assert_eq!(stamp(&conn), on_disk(&path), "après l'édition");
+
         crate::actions::revert_batch(&conn, &batch_id).unwrap();
         let reverted = crate::tagging::read_tags_full(path.to_str().unwrap()).unwrap();
         assert_eq!(
@@ -757,6 +777,7 @@ mod rekordbox_tests {
             Some("OLD Artist"),
             "revert_batch must restore the pre-edit tags"
         );
+        assert_eq!(stamp(&conn), on_disk(&path), "après « Rétablir »");
     }
 
     #[test]
