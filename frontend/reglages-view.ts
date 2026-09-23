@@ -30,6 +30,8 @@ import { requireEl, esc } from "./dom";
 import { isStaleViewRender, viewEpoch } from "./view-epoch";
 import { slideSegThumb } from "./seg-thumb";
 import { setTheme } from "./theme";
+import { LANG_SETTING, parseLangChoice, type LangChoice } from "./i18n";
+import { setLang } from "./lang-boot";
 import type { ThemeChoice } from "./theme";
 import { toast } from "./filing-toast";
 import { humanizeError } from "./errors";
@@ -83,9 +85,13 @@ export function selectSettingsCategory(key: string): void {
 function positionThemeThumb(): void {
   // Fusion du 2026-08-20 : le REPLAY au changement de catégorie vient d'une session parallèle
   // (eed4b26), le calcul partagé de la passe simplify (`seg-thumb.ts`, 6 copies fondues en une).
-  const card = document.getElementById("sift-reglages-apparence");
-  if (!card) return;
-  slideSegThumb(card, "[data-theme-choice].on");
+  // La carte porte DEUX segmentés depuis le 2026-09-23 (Thème, Langue) : `slideSegThumb` prend le
+  // premier pouce de l'hôte qu'on lui passe, donc chacun reçoit son propre `.sift-seg`, jamais la
+  // carte — passée entière, elle poserait les deux options actives sur le pouce du Thème.
+  const theme = document.getElementById("sift-seg-theme");
+  if (theme) slideSegThumb(theme, "[data-theme-choice].on");
+  const lng = document.getElementById("sift-seg-lang");
+  if (lng) slideSegThumb(lng, "[data-lang-choice].on");
 }
 
 /** Une rangée de la grille commune : libellé (et sa phrase, optionnelle) à gauche, contrôle à
@@ -126,6 +132,12 @@ export async function renderReglagesLive() {
     if (v === "light" || v === "dark") theme = v;
   } catch (e) {
     console.error("getSetting(ui_theme) failed", e);
+  }
+  let langChoice: LangChoice = "auto";
+  try {
+    langChoice = parseLangChoice(await getSetting(LANG_SETTING));
+  } catch (e) {
+    console.error(`getSetting(${LANG_SETTING}) failed`, e);
   }
   let root: string | null = null;
   try {
@@ -397,6 +409,8 @@ export async function renderReglagesLive() {
   // Audit-ref G1 (Réglages, 2026-07-09) : <span> → <button>, incohérent avec le reste de l'app.
   const themeBtn = (v: ThemeChoice, label: string) =>
     `<button class="sift-seg-opt${theme === v ? " on" : ""}" data-theme-choice="${v}">${label}</button>`;
+  const langBtn = (v: LangChoice, label: string) =>
+    `<button class="sift-seg-opt${langChoice === v ? " on" : ""}" data-lang-choice="${v}"${v === "auto" ? "" : ` lang="${v}"`}>${label}</button>`;
   // Audit-ref (Réglages, 2026-07-09, retour Antoine "on n'a pas l'animation pour toutes les
   // pastilles") : thumb glissant ajouté ici — son DOM persiste déjà entre les clics (classList
   // toggle en place, pas de re-render), donc éligible sans restructuration (contrairement à
@@ -407,12 +421,25 @@ export async function renderReglagesLive() {
     '<div class="sift-settings-desc">Auto suit le réglage clair/sombre de ton système. Clair et Sombre forcent un mode fixe, quel que soit le système.</div>' +
     rowHtml(
       "Thème",
-      '<div class="sift-seg sift-seg-thumbed">' +
+      '<div class="sift-seg sift-seg-thumbed" id="sift-seg-theme">' +
         '<div class="sift-seg-thumb"></div>' +
         themeBtn("auto", "Auto") +
         themeBtn("light", "Clair") +
         themeBtn("dark", "Sombre") +
         "</div>",
+    ) +
+    // Les noms de langue s'écrivent dans LEUR langue, jamais traduits : quelqu'un qui cherche à
+    // sortir d'une interface qu'il ne lit pas reconnaît « English » ou « Français », pas leur
+    // traduction. Seul « Auto » suit la langue de l'interface.
+    rowHtml(
+      "Langue",
+      '<div class="sift-seg sift-seg-thumbed" id="sift-seg-lang">' +
+        '<div class="sift-seg-thumb"></div>' +
+        langBtn("auto", "Auto") +
+        langBtn("fr", "Français") +
+        langBtn("en", "English") +
+        "</div>",
+      { note: "Auto suit la langue du système. Changer de langue recharge la fenêtre." },
     );
   themeBlock.querySelectorAll<HTMLElement>("[data-theme-choice]").forEach((el) =>
     el.addEventListener("click", () => {
@@ -434,6 +461,19 @@ export async function renderReglagesLive() {
       themeBlock.querySelectorAll("[data-theme-choice]").forEach((c) => c.classList.remove("on"));
       el.classList.add("on");
       positionThemeThumb();
+    }),
+  );
+
+  themeBlock.querySelectorAll<HTMLElement>("[data-lang-choice]").forEach((el) =>
+    el.addEventListener("click", () => {
+      const choice = parseLangChoice(el.dataset.langChoice);
+      if (choice === langChoice) return;
+      // Pas de `.on` posé ici : la fenêtre se recharge sur Réglages dans la nouvelle langue, et
+      // c'est ce rendu-là qui allumera le bouton. En cas d'échec d'enregistrement, rien n'a changé
+      // — le bouton précédent reste allumé, ce qui est l'état vrai.
+      void setLang(choice, "reglages").then((r) =>
+        toast(humanizeError(r.error, "Langue non enregistrée — l'interface reste inchangée.", "setLang")),
+      );
     }),
   );
 

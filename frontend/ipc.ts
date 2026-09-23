@@ -36,6 +36,7 @@ import type {
   Spectrogram,
 } from "../shared/contracts";
 import { decodeB85 } from "./b85";
+import type { Lang } from "./i18n";
 
 export const appInfo = (): Promise<AppInfo> => invoke("app_info");
 export const dbHealth = (): Promise<DbHealth> => invoke("db_health");
@@ -279,6 +280,11 @@ export const getSetting = (key: string): Promise<string | null> =>
 /** Write one app setting (e.g. the library root). */
 export const setSetting = (key: string, value: string): Promise<void> =>
   invoke("set_setting", { key, value });
+
+/** Tell the backend which language its user-facing messages must use (`i18n.rs`). Pushed by
+ *  `lang-boot.ts` at boot: the backend cannot resolve `auto` itself, it has no view of the OS
+ *  language that `navigator.language` gives the webview. */
+export const setUiLang = (lang: Lang): Promise<void> => invoke("set_ui_lang", { lang });
 
 /** Rejected/trashed tracks for the Écartés view. */
 export const listEcartes = (): Promise<EcarteItem[]> => invoke("list_ecartes");

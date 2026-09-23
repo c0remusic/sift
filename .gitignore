@@ -169,6 +169,10 @@ docs/superpowers/changes/*
 # en prose dans l'en-tete du module. Ouvert.
 !docs/superpowers/changes/2026-09-01-quant-trace/
 
+# Interface FR / EN (decisions d'Antoine du 2026-09-23) : architecture, couplages de protocole a
+# ne pas traduire, phases. Ouvert.
+!docs/superpowers/changes/2026-09-23-i18n/
+
 # scratch/test copies (may contain real Rekordbox master.db, never committed)
 scratchpad/
 scratchpad-verif/

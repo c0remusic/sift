@@ -45,6 +45,7 @@ import { installLiveWiring } from "./sift-live";
 import { installRouter } from "./router";
 import { installUpdateBanner } from "./updater";
 import { installAsideResize } from "./toolbar";
+import { initLang } from "./lang-boot";
 
 // Only exercise the IPC layer inside the Tauri app. In a plain browser (e.g. the
 // Vercel web demo) there is no Tauri runtime — skip it so the UI renders cleanly.
@@ -60,7 +61,12 @@ const inTauri =
 // Import dynamique : Vite l'élimine ainsi du chemin de démarrage de l'app de bureau.
 if (!inTauri) void import("./app.js");
 
-if (inTauri) {
+if (inTauri) void boot();
+
+async function boot(): Promise<void> {
+  // La langue se tranche AVANT le câblage : chaque écran lit ses textes à l'appel (`i18n.ts`), et
+  // tout ce qui rendrait plus tôt le ferait en français. `initLang` ne rejette jamais.
+  await initLang();
   installLiveWiring();
   installRouter();
   // Poignée de la zone D : un nœud du shell (index.html), câblé une fois — 2026-09-08.

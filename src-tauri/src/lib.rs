@@ -19,6 +19,7 @@ mod ffmpeg;
 mod filing;
 mod fingerprint;
 mod genres;
+mod i18n;
 mod ipc;
 mod ipc_filing;
 mod ipc_identify;
@@ -334,6 +335,7 @@ pub fn run() {
         })
         .invoke_handler(tauri::generate_handler![
             ipc::app_info,
+            ipc::set_ui_lang,
             ipc::db_health,
             ipc::ffmpeg_version,
             ipc::report_smoke,

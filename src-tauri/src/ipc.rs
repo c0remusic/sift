@@ -24,6 +24,20 @@ pub fn app_info() -> AppInfo {
     }
 }
 
+/// Langue des messages que le backend envoie à l'écran (`i18n.rs`). Poussée par le front au
+/// démarrage, une fois la langue tranchée — le backend ne sait pas résoudre `auto` lui-même.
+#[tauri::command]
+pub fn set_ui_lang(lang: String) -> Result<(), String> {
+    let l = crate::i18n::parse(&lang).ok_or_else(|| {
+        crate::tr!(
+            "set_ui_lang : langue inconnue « {lang} » (attendu fr ou en)",
+            "set_ui_lang: unknown language \"{lang}\" (expected fr or en)"
+        )
+    })?;
+    crate::i18n::set_lang(l);
+    Ok(())
+}
+
 #[tauri::command]
 pub fn db_health(conn: State<'_, Mutex<Connection>>) -> Result<DbHealth, String> {
     let conn = db::lock_conn(&conn)?;

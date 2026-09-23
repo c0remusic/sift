@@ -27,6 +27,7 @@ import { paintJournal } from "./journal";
 import { renderRekordboxLive } from "./rekordbox-view";
 import { renderUsbLive } from "./usb-view";
 import { bumpViewEpoch } from "./view-epoch";
+import { takeViewAfterReload } from "./lang-boot";
 
 // `ecarts` est devenu `resourcing` + `trash` le 2026-09-08 : deux destinations du rail (index.html),
 // une corbeille chez Apple étant toujours un item de sidebar, jamais un filtre.
@@ -302,5 +303,9 @@ export function installRouter(): void {
     if (!isViewId(v) || v === currentView) return;
     goTo(v);
   });
+  // Un changement de langue recharge la fenêtre depuis Réglages (`lang-boot.ts::setLang`) : y
+  // revenir, plutôt que sur la vue par défaut.
+  const back = takeViewAfterReload() ?? undefined;
+  if (isViewId(back)) currentView = back;
   render();
 }
