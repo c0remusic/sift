@@ -168,22 +168,24 @@ pub(crate) const OP_STATUS_FULL_REPAIR_NEEDED: u16 = 53263;
 /// une santé disque inventée est pire qu'une santé disque brute.
 pub(crate) fn describe_health(health_status: Option<u16>, operational: &[u16]) -> String {
     if operational.contains(&OP_STATUS_FULL_REPAIR_NEEDED) {
-        return "Réparation complète nécessaire".to_string();
+        return crate::tr!("Réparation complète nécessaire", "Full repair needed");
     }
+    // « OK » s'écrit pareil dans les deux langues, et ce n'est pas un détail : le frontend compare
+    // `health !== "OK"` pour décider de l'alerte (`usb-view.ts`). Il ne passe donc PAS par `tr!`.
     match health_status {
         Some(0) => "OK".to_string(),
         Some(1) | Some(2) => {
             let level = if health_status == Some(1) {
-                "Avertissement"
+                crate::tr!("Avertissement", "Warning")
             } else {
-                "Défaillant"
+                crate::tr!("Défaillant", "Failing")
             };
             match operational.iter().find(|c| **c != 2) {
                 Some(code) => format!("{level} (code {code})"),
-                None => level.to_string(),
+                None => level,
             }
         }
-        _ => "Inconnue".to_string(),
+        _ => crate::tr!("Inconnue", "Unknown"),
     }
 }
 
@@ -191,7 +193,7 @@ pub(crate) fn describe_health(health_status: Option<u16>, operational: &[u16]) -
 /// state of a new key, so it gets a plain French label rather than the old `"unknown"`.
 pub(crate) fn describe_filesystem(facts: &VolumeFacts) -> String {
     if facts.filesystems.is_empty() {
-        "non formaté".to_string()
+        crate::tr!("non formaté", "unformatted")
     } else {
         facts.filesystems.join(", ")
     }
@@ -387,6 +389,7 @@ pub(crate) fn privileged_elevation_powershell(
     disk_index: u32,
     fs_name: &str,
     label: &str,
+    lang: crate::i18n::Lang,
 ) -> Option<String> {
     if [exe, fs_name, label]
         .iter()
@@ -395,10 +398,13 @@ pub(crate) fn privileged_elevation_powershell(
         return None;
     }
     let flag = super::privileged::PRIVILEGED_FLAG;
+    // La langue de l'interface, pour que le processus élevé écrive ses étapes dans la même.
+    let lang_flag = super::privileged::LANG_FLAG;
+    let lang = crate::i18n::code(lang);
     Some(format!(
         "$ErrorActionPreference='Stop'; \
          try {{ $p = Start-Process -FilePath '{exe}' \
-         -ArgumentList '{flag}','{disk_index}','{fs_name}','{label}' \
+         -ArgumentList '{flag}','{disk_index}','{fs_name}','{label}','{lang_flag}','{lang}' \
          -Verb RunAs -Wait -PassThru -WindowStyle Hidden; exit $p.ExitCode }} \
          catch {{ exit {UAC_DECLINED_EXIT} }}"
     ))
@@ -541,21 +547,28 @@ impl WindowsBackend {
             drive.size_bytes
         );
 
-        super::privileged::write_step("Verrouillage du volume…");
+        super::privileged::write_step(&crate::tr!(
+            "Verrouillage du volume…",
+            "Locking the volume…"
+        ));
         let mut volume = match super::raw_volume::RawVolume::open(&letter) {
             Ok(v) => v,
             // Le verrou refusé n'est PAS un échec silencieux : l'étape s'affiche, et l'appelant
             // enchaîne sur le chemin élevé, dont le `clean` sait forcer un volume récalcitrant.
             Err(e) => {
                 log::info!("format {}: verrou refusé sur {letter}: {e}", drive.id);
-                super::privileged::write_step(&format!(
-                    "Volume {letter} non verrouillable ({e}) — passage par l'élévation…"
+                super::privileged::write_step(&crate::tr!(
+                    "Volume {letter} non verrouillable ({e}) — passage par l'élévation…",
+                    "Volume {letter} can't be locked ({e}) — switching to elevation…"
                 ));
                 return None;
             }
         };
 
-        super::privileged::write_step("Écriture du système de fichiers FAT32…");
+        super::privileged::write_step(&crate::tr!(
+            "Écriture du système de fichiers FAT32…",
+            "Writing the FAT32 file system…"
+        ));
         // L'étape dit combien est parti, pas seulement qu'on écrit : sur ce SSD de 500 Go le
         // zéro-remplissage des FAT (~122 Mo) a laissé l'étape figée plusieurs minutes le
         // 2026-09-09 — « l'impression que l'écran est bloqué ». Un mot tous les 16 Mio, pas plus :
@@ -568,9 +581,10 @@ impl WindowsBackend {
         .with_progress(Box::new(move |written| {
             if written - last_reported >= 16 << 20 {
                 last_reported = written;
-                super::privileged::write_step(&format!(
-                    "Écriture du système de fichiers FAT32… {} Mo écrits",
-                    written / 1_000_000
+                let mo = written / 1_000_000;
+                super::privileged::write_step(&crate::tr!(
+                    "Écriture du système de fichiers FAT32… {mo} Mo écrits",
+                    "Writing the FAT32 file system… {mo} MB written"
                 ));
             }
         }));
@@ -591,25 +605,35 @@ impl WindowsBackend {
             return res;
         }
         let disk_index = disk_index_from_id(&drive.id).ok_or_else(|| {
-            UsbFormatError::Format(format!(
+            UsbFormatError::Format(crate::tr!(
                 "identifiant de disque non reconnu: {} — formatage refusé",
+                "unrecognized disk id: {} — format refused",
                 drive.id
             ))
         })?;
-        let exe = std::env::current_exe()
-            .map_err(|e| UsbFormatError::Format(format!("chemin de l'exécutable: {e}")))?;
+        let exe = std::env::current_exe().map_err(|e| {
+            UsbFormatError::Format(crate::tr!(
+                "chemin de l'exécutable: {e}",
+                "executable path: {e}"
+            ))
+        })?;
         let exe = exe.to_string_lossy().to_string();
 
         // Repart d'un fichier propre : une étape restée d'un formatage précédent s'afficherait
         // comme la progression de celui-ci.
-        super::privileged::write_step("Autorisation Windows demandée…");
+        super::privileged::write_step(&crate::tr!(
+            "Autorisation Windows demandée…",
+            "Asking Windows for permission…"
+        ));
         let safe = sanitize_label_for_command(label);
         let ps =
-            privileged_elevation_powershell(&exe, disk_index, "fat32", &safe).ok_or_else(|| {
-                UsbFormatError::Format(
-                    "chemin d'exécutable contenant un guillemet — formatage refusé".to_string(),
-                )
-            })?;
+            privileged_elevation_powershell(&exe, disk_index, "fat32", &safe, crate::i18n::lang())
+                .ok_or_else(|| {
+                    UsbFormatError::Format(crate::tr!(
+                        "chemin d'exécutable contenant un guillemet — formatage refusé",
+                        "executable path contains a quote — format refused"
+                    ))
+                })?;
 
         let output = Command::new("powershell")
             .args(["-NoProfile", "-Command", &ps])
@@ -626,19 +650,26 @@ impl WindowsBackend {
         // Chaque code dit ce qui a échoué : un « échec du formatage » générique n'aiderait
         // personne à savoir s'il faut fermer un programme ou rebrancher la clé.
         Err(UsbFormatError::Format(match code {
-            c if c == super::privileged::EXIT_PARTITION_FAILED => {
-                "le partitionnement a échoué — le disque est-il protégé en écriture ?".to_string()
-            }
-            c if c == super::privileged::EXIT_NO_LETTER => {
-                "Windows n'a monté aucune lettre après le partitionnement".to_string()
-            }
-            c if c == super::privileged::EXIT_VOLUME_LOCKED => {
-                "un programme tient encore ce disque ouvert — ferme-les et réessaie".to_string()
-            }
-            c if c == super::privileged::EXIT_WRITE_FAILED => {
-                "l'écriture du système de fichiers a échoué".to_string()
-            }
-            other => format!("le formatage privilégié est sorti avec le code {other}"),
+            c if c == super::privileged::EXIT_PARTITION_FAILED => crate::tr!(
+                "le partitionnement a échoué — le disque est-il protégé en écriture ?",
+                "partitioning failed — is the disk write-protected?"
+            ),
+            c if c == super::privileged::EXIT_NO_LETTER => crate::tr!(
+                "Windows n'a monté aucune lettre après le partitionnement",
+                "Windows mounted no drive letter after partitioning"
+            ),
+            c if c == super::privileged::EXIT_VOLUME_LOCKED => crate::tr!(
+                "un programme tient encore ce disque ouvert — ferme-les et réessaie",
+                "a program still has this disk open — close it and try again"
+            ),
+            c if c == super::privileged::EXIT_WRITE_FAILED => crate::tr!(
+                "l'écriture du système de fichiers a échoué",
+                "writing the file system failed"
+            ),
+            other => crate::tr!(
+                "le formatage privilégié est sorti avec le code {other}",
+                "the privileged format exited with code {other}"
+            ),
         }))
     }
 
@@ -887,8 +918,9 @@ impl RemovableDriveBackend for WindowsBackend {
 
         // Hard failure, never a fallback: the script below runs `clean` on this number.
         let disk_index = disk_index_from_id(&drive.id).ok_or_else(|| {
-            UsbFormatError::Format(format!(
+            UsbFormatError::Format(crate::tr!(
                 "identifiant de disque non reconnu: {} — formatage refusé",
+                "unrecognized disk id: {} — format refused",
                 drive.id
             ))
         })?;
@@ -911,9 +943,10 @@ impl RemovableDriveBackend for WindowsBackend {
 
         let ps = elevation_powershell(&script_path.to_string_lossy(), &log_path.to_string_lossy())
             .ok_or_else(|| {
-                UsbFormatError::Format(
-                    "chemin temporaire contenant un guillemet — formatage refusé".to_string(),
-                )
+                UsbFormatError::Format(crate::tr!(
+                    "chemin temporaire contenant un guillemet — formatage refusé",
+                    "temporary path contains a quote — format refused"
+                ))
             })?;
 
         let output = Command::new("powershell")

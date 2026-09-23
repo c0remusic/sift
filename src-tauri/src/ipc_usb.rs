@@ -72,7 +72,10 @@ pub fn format_drive(
     // An enumerated-but-empty card reader is listable (so the UI can say why it is useless) but
     // never formattable — `diskpart` would fail on it anyway, and failing here says why.
     if !confirmed.has_media {
-        return Err("Aucun média dans ce lecteur — rien à formater.".to_string());
+        return Err(crate::tr!(
+            "Aucun média dans ce lecteur — rien à formater.",
+            "No media in this drive — nothing to format."
+        ));
     }
 
     // Tout ce qui précède est instantané et doit échouer AVANT qu'on parte : garde anti-course,
@@ -85,17 +88,17 @@ pub fn format_drive(
     // construction — c'est le gel constaté au premier formatage réel, pas une lenteur.
     #[cfg(target_os = "windows")]
     {
-        usb_format::privileged::write_step("Autorisation Windows demandée…");
+        usb_format::privileged::write_step(&crate::tr!(
+            "Autorisation Windows demandée…",
+            "Asking Windows for permission…"
+        ));
         std::thread::spawn(move || {
             let outcome = backend().format(&confirmed, fs, &label);
             // L'état terminal passe par le fichier d'étape, seul canal que le frontend interroge :
             // ce fil n'a personne à qui répondre, la commande a déjà rendu la main.
             match outcome {
                 Ok(()) => usb_format::privileged::write_step(usb_format::privileged::STEP_DONE),
-                Err(e) => usb_format::privileged::write_step(&format!(
-                    "{} : {e}",
-                    usb_format::privileged::STEP_FAILED_PREFIX
-                )),
+                Err(e) => usb_format::privileged::write_failed(&e.to_string()),
             }
         });
         Ok(())

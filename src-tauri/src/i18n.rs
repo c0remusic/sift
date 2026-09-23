@@ -57,6 +57,14 @@ pub fn set_lang(l: Lang) {
     );
 }
 
+/// Le code de langue, réciproque de `parse` — pour la ligne de commande du processus élevé.
+pub fn code(l: Lang) -> &'static str {
+    match l {
+        Lang::Fr => "fr",
+        Lang::En => "en",
+    }
+}
+
 /// `"fr"` / `"en"`, et rien d'autre : `auto` se résout côté front, jamais ici.
 pub fn parse(s: &str) -> Option<Lang> {
     match s {

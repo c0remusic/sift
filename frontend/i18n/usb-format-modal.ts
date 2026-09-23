@@ -2,10 +2,11 @@
 // choix du système de fichiers, nom du volume, bouton armé/confirmé, note de progression et
 // messages d'échec écrits par le front.
 //
-// ⚠️ Les étapes affichées pendant le formatage (`formatStep`) et leurs marqueurs de fin
-// (« Terminé », « Échec… », « Volume inaccessible… ») viennent du BACKEND et sont reconnus par
-// comparaison dans le module : ce sont un protocole, ils ne vivent pas ici. Seule l'étape posée
-// par le front avant le premier sondage (`etapeAutorisation`) est traduite.
+// ⚠️ Les étapes affichées pendant le formatage (`formatStep`) viennent du BACKEND, déjà dans la
+// langue de l'interface (`crate::tr!`) ; leurs marqueurs de fin sont `STEP_DONE` et
+// `STEP_FAILED_PREFIX` de `shared/contracts.ts`, neutres depuis le 2026-09-23 (ils valaient
+// « Terminé » et « Échec »). Seule l'étape posée par le front avant le premier sondage
+// (`etapeAutorisation`) vit ici.
 // Vocabulaire : `docs/design-system/content.md` § Locale `en`.
 import { dict } from "../i18n";
 
@@ -33,9 +34,8 @@ const fr = {
   noteProgression: "Une autorisation Windows va apparaître — accepte-la. Ne débranche pas le disque.",
   /** ⚠️ Couplé au backend : le module garde l'étape tant que `formatStep()` rend la MÊME chaîne
    * (`if (s === step) return;`). Le premier `write_step` du backend (`ipc_usb.rs`,
-   * `usb_format/windows.rs`) écrit ce texte-là ; quand il sera traduit, sa valeur anglaise devra
-   * être identique à `en.etapeAutorisation`, sinon le libellé bascule une seconde fois au premier
-   * sondage. */
+   * `usb_format/windows.rs`) écrit ce texte-là, dans les deux langues : ses deux valeurs doivent
+   * rester identiques à celles-ci, sinon le libellé bascule une seconde fois au premier sondage. */
   etapeAutorisation: "Autorisation Windows demandée…",
   errIdentite: (nom: string) =>
     "Ce n'est plus le même disque : un autre volume répond maintenant à " +

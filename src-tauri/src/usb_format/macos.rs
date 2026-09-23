@@ -191,7 +191,7 @@ impl RemovableDriveBackend for MacBackend {
             let volume_uuid =
                 extract_plist_string_value(&info_xml, "VolumeUUID").unwrap_or_default();
             let fs = extract_plist_string_value(&info_xml, "FilesystemType")
-                .unwrap_or_else(|| "non formaté".to_string());
+                .unwrap_or_else(|| crate::tr!("non formaté", "unformatted"));
             let mount = extract_plist_string_value(&info_xml, "MountPoint").unwrap_or_default();
             drives.push(RemovableDrive {
                 id: disk.id.clone(),

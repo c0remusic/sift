@@ -8,6 +8,7 @@ import { analyzePath } from "./ipc";
 import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import WaveSurfer from "wavesurfer.js";
 import type { AnalysisReport } from "../shared/contracts";
+import { FILE_GONE } from "../shared/contracts";
 import { requireEl, esc } from "./dom";
 import { decodedShortfallText, hfDensityParts, hfTopDensityParts } from "./report-figures";
 import { railFromExtension } from "./rails";
@@ -1392,7 +1393,14 @@ export async function openReportInto(
       // French prose meant for display (see analysis/decode.rs) — the generic "Réessaie" this
       // replaced (audit UX/accessibilité 2026-07-24) silently dropped that message. Show the
       // backend text directly, same pattern as filing-identify.ts/library-detail.ts's error cards.
-      verdictContainer.innerHTML = `<div class="sift-analysis-fail">${esc(String(e))}</div>`;
+      //
+      // SAUF le fichier disparu. Sa phrase porte la sentinelle `FILE_GONE` (« n'existe plus »), que
+      // Rust reconnaît lui-même avant de SUPPRIMER la ligne en base : `decode.rs` la garde donc en
+      // français quelle que soit la langue, et la traduction se fait ICI, à l'affichage — jamais
+      // dans le message, où elle casserait la reconnaissance en anglais seulement.
+      const raw = String(e);
+      const shown = raw.includes(FILE_GONE) ? T().analysisFileGone : raw;
+      verdictContainer.innerHTML = `<div class="sift-analysis-fail">${esc(shown)}</div>`;
     }
     return null;
   }

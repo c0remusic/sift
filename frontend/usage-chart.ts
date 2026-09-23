@@ -10,6 +10,7 @@
 import type { UsageReport, ExtUsage } from "./ipc";
 import { esc } from "./dom";
 import { T } from "./i18n/usage-chart";
+import { NO_EXT_BUCKET } from "../shared/contracts";
 
 /** Un format, une couleur système Apple. Ces tokens `-solid` n'ont qu'un emploi — l'aplat de
  * donnée — et ne doivent jamais porter de texte (voir docs/design-system-states.md). */
@@ -30,6 +31,15 @@ const FORMAT_TOKEN: Record<string, string> = {
 
 /** Un format inconnu retombe sur le gris neutre plutôt que d'emprunter la couleur d'un autre :
  * deux formats de la même couleur mentiraient sur la lecture de la barre. */
+/** Ce que la légende AFFICHE pour un seau. Le seau des fichiers sans extension porte une CLÉ
+ *  (`NO_EXT_BUCKET`, française pour une raison d'histoire) qui est aussi stockée dans le cache
+ *  d'occupation (`volume_usage.buckets_json`) : la traduire côté Rust aurait laissé les disques déjà
+ *  parcourus en français, ou demandé de vider le cache. La clé reste, le libellé se traduit ici.
+ *  Les clés — couleur, ancre `data-ext`, `revealRow` — gardent la valeur brute. */
+function extLabel(ext: string): string {
+  return ext === NO_EXT_BUCKET ? T().noExtension : ext;
+}
+
 function colorFor(ext: string): string {
   return `var(${FORMAT_TOKEN[ext.toLowerCase()] ?? FORMAT_TOKEN[ext] ?? "--color-hue-gray-solid"})`;
 }
@@ -110,13 +120,13 @@ export function renderUsageChart(opts: UsageChartOptions): HTMLElement {
     seg.className = "sift-usage-seg";
     seg.style.flex = `0 0 ${pct.toFixed(2)}%`;
     seg.style.background = colorFor(b.ext);
-    seg.setAttribute("aria-label", T().segAria(b.ext, formatGo(b.bytes), b.file_count, pct.toFixed(1)));
+    seg.setAttribute("aria-label", T().segAria(extLabel(b.ext), formatGo(b.bytes), b.file_count, pct.toFixed(1)));
     const show = () => {
       bar.classList.add("dim");
       segs.forEach((s) => s.classList.remove("on"));
       seg.classList.add("on");
       tip.innerHTML =
-        `<span class="sift-usage-tip-ext">${esc(b.ext)}</span> — ${formatGo(b.bytes)}` +
+        `<span class="sift-usage-tip-ext">${esc(extLabel(b.ext))}</span> — ${formatGo(b.bytes)}` +
         `<br><span class="sift-usage-tip-meta">${T().tipMeta(b.file_count, pct.toFixed(1))}</span>`;
       tip.classList.add("on");
       // Borné aux bords de la barre, sinon l'infobulle d'un segment d'extrémité déborde.
@@ -157,7 +167,7 @@ export function renderUsageChart(opts: UsageChartOptions): HTMLElement {
     item.className = "sift-usage-lg";
     item.innerHTML =
       `<span class="sift-usage-lg-top"><span class="sift-usage-swatch" style="background:${colorFor(b.ext)}"></span>` +
-      `<span class="sift-usage-lg-name">${esc(b.ext)}</span></span>` +
+      `<span class="sift-usage-lg-name">${esc(extLabel(b.ext))}</span></span>` +
       `<span class="sift-usage-lg-size">${formatGo(b.bytes)}</span>`;
     item.addEventListener("click", () => revealRow(b.ext));
     legend.appendChild(item);
@@ -206,7 +216,7 @@ export function renderUsageChart(opts: UsageChartOptions): HTMLElement {
         .map(
           (r) =>
             `<div class="sift-usage-prow" data-ext="${esc(slug(r.ext))}">` +
-            `<span class="sift-usage-pext"><span class="sift-usage-swatch" style="background:${colorFor(r.ext)}"></span>${esc(r.ext)}</span>` +
+            `<span class="sift-usage-pext"><span class="sift-usage-swatch" style="background:${colorFor(r.ext)}"></span>${esc(extLabel(r.ext))}</span>` +
             `<span class="sift-usage-ptrack"><span class="sift-usage-pfill" style="width:${((r.bytes / biggest) * 100).toFixed(1)}%;background:${colorFor(r.ext)}"></span></span>` +
             `<span class="sift-usage-pcount">${r.file_count}</span>` +
             `<span class="sift-usage-psize">${formatGo(r.bytes)}</span>` +

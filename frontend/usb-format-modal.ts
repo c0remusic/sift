@@ -11,7 +11,13 @@
 // (I:) » est increcopiable, et le bouton restait grisé sans que rien ne dise pourquoi — on se
 // croyait bloqué par l'application. CLAUDE.md exige une confirmation in-app armée et horodatée,
 // pas une dictée ; c'est ce qui reste.
-import { DRIVE_VANISHED, ELEVATION_DECLINED, IDENTITY_MISMATCH } from "../shared/contracts";
+import {
+  DRIVE_VANISHED,
+  ELEVATION_DECLINED,
+  IDENTITY_MISMATCH,
+  STEP_DONE,
+  STEP_FAILED_PREFIX,
+} from "../shared/contracts";
 import { esc } from "./dom";
 import { formatDrive, formatStep, type RemovableDrive, type TargetFs } from "./ipc";
 import { driveDisplayName } from "./usb-row";
@@ -195,19 +201,27 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
       stepTimer = window.setInterval(() => {
         void formatStep().then((s) => {
           if (!busy || !s) return;
-          if (s === "Terminé") {
+          // Deux marqueurs NEUTRES (`shared/contracts.ts`), pas des mots : ils valaient « Terminé » et
+          // « Échec » jusqu'au 2026-09-23, et traduire l'étape aurait laissé ce sondage tourner pour
+          // toujours sous une interface anglaise, bouton Annuler grisé.
+          if (s === STEP_DONE) {
             stopPolling();
             busy = false;
             close();
             window.dispatchEvent(new CustomEvent("sift:usb-format-done", { detail: { ok: true } }));
             return;
           }
-          if (s.startsWith("Échec") || s.startsWith("Volume inaccessible")) {
+          if (s.startsWith(STEP_FAILED_PREFIX)) {
             stopPolling();
             busy = false;
             step = "";
             armedAt = null;
-            lastError = s;
+            const cause = s.slice(STEP_FAILED_PREFIX.length);
+            // Sous Windows, l'invite UAC refusée arrive PAR CE CHEMIN — le fil du backend dépose
+            // l'erreur dans le fichier d'étape, la promesse de `formatDrive` a déjà résolu. Le
+            // message humain n'existait que dans le `.catch` ci-dessous, que ce cas n'atteint jamais :
+            // l'écran affichait la sentinelle brute, « Échec : ELEVATION_DECLINED ».
+            lastError = cause.includes(ELEVATION_DECLINED) ? T().errElevation : cause;
             render();
             return;
           }

@@ -82,6 +82,7 @@ import { open as openFolderDialog } from "@tauri-apps/plugin-dialog";
 import { dirname } from "@tauri-apps/api/path";
 import { setTask, clearTask, setCancelHandler } from "./progress-zone";
 import { T } from "./i18n/sift-live";
+import { NO_LINKED_XML } from "../shared/contracts";
 
 // Global progress zone — feed the "analyze" row from the EXISTING analysis poll/events (no engine
 // rewrite). `analysis_progress` returns (done, total) over every track the pool can pick up —
@@ -135,7 +136,9 @@ async function runNavExport(): Promise<void> {
     setTask("export", { done: 0, total: 1, state: "error" });
     const msg = e instanceof Error ? e.message : String(e);
     toast(
-      msg.includes("aucun XML")
+      // Sentinelle (`shared/contracts.ts`) depuis le 2026-09-23 : la phrase française que ce test
+      // reconnaissait (« aucun XML ») aurait cessé de correspondre sous une interface anglaise.
+      msg.includes(NO_LINKED_XML)
         ? // La commande de liaison (`rkblink`) vit sur l'écran Rekordbox, pas dans la
           // Bibliothèque : le message renvoyait vers un écran où elle n'est pas. Le libellé est
           // celui de l'item de navigation (`index.html`, `<span>Rekordbox</span>`) — pas

@@ -43,6 +43,36 @@ export const ELEVATION_DECLINED = "ELEVATION_DECLINED";
  * fermer plutôt que d'inviter à réessayer. */
 export const EJECT_BUSY = "EJECT_BUSY";
 
+/** Usage-chart bucket of files without any extension. A KEY, not a label: it is also stored in the
+ * usage cache (`volume_usage.buckets_json`), so it stays as it is in every language and the chart
+ * displays a translated label for it (`usage-chart.ts::extLabel`). Mirror of Rust
+ * `volume_usage::NO_EXT_BUCKET`, held by `volume_usage.rs::no_ext_bucket_matches_contracts_ts`. */
+export const NO_EXT_BUCKET = "(sans extension)";
+
+/** No Rekordbox XML is linked (export, sync). Mirror of Rust `rekordbox_repairs::NO_LINKED_XML`,
+ * held by `rekordbox_repairs.rs::rekordbox_sentinels_match_contracts_ts`. Replaced on 2026-09-23 a
+ * French sentence the frontend recognized with `includes("aucun XML")` — translated, it would have
+ * stopped matching under the English interface. The displayed text lives in the dictionaries. */
+export const NO_LINKED_XML = "NO_LINKED_XML";
+
+/** Resolving a Rekordbox ambiguity: the row is no longer ambiguous (reload needed). Same mirror and
+ * test as `NO_LINKED_XML`. */
+export const AMBIGUITY_STALE = "AMBIGUITY_STALE";
+
+/** Resolving a Rekordbox ambiguity: the chosen track is not one of the candidates. Same mirror. */
+export const AMBIGUITY_BAD_CHOICE = "AMBIGUITY_BAD_CHOICE";
+
+/** Terminal SUCCESS marker of the USB format step file, polled through `format_step`. Mirror of
+ * Rust `usb_format::privileged::STEP_DONE`, held by `privileged.rs::step_markers_match_contracts_ts`.
+ * A marker, not a word: it was « Terminé » until 2026-09-23 and was compared with `===`, so
+ * translating the step would have left the format modal polling forever, in English only. */
+export const STEP_DONE = "DONE";
+
+/** Terminal FAILURE prefix of the USB format step file, immediately followed by the message (in the
+ * interface language). Mirror of Rust `usb_format::privileged::STEP_FAILED_PREFIX`, same test. The
+ * message may itself be a sentinel — `ELEVATION_DECLINED` when the UAC prompt was dismissed. */
+export const STEP_FAILED_PREFIX = "FAILED:";
+
 /** Default filename template — the value `filename_template` holds until the user changes it.
  * Mirror of Rust `settings::DEFAULT_TEMPLATE`; the two literals MUST stay identical, held by
  * `filing.rs::default_template_matches_contracts_ts`. Placeholders, and there are only these

@@ -62,6 +62,10 @@ const fr = {
   complete: "complète",
   decodedDuration: "Durée décodée",
   codecError: (msg: string) => `erreur codec : ${msg}`,
+  /** Le fichier a disparu. Le backend envoie cette phrase en français dans TOUTES les langues —
+   *  elle porte la sentinelle `FILE_GONE`, que Rust reconnaît avant de supprimer la ligne — et
+   *  `report-view.ts` la remplace à l'affichage par cette entrée. Même texte que `decode.rs`. */
+  analysisFileGone: "le fichier n'existe plus à cet emplacement — a-t-il été déplacé ou supprimé ?",
 };
 
 const en: typeof fr = {
@@ -111,6 +115,7 @@ const en: typeof fr = {
   complete: "complete",
   decodedDuration: "Decoded duration",
   codecError: (msg) => `codec error: ${msg}`,
+  analysisFileGone: "The file is no longer at this location — was it moved or deleted?",
 };
 
 export const D = { fr, en };

@@ -59,6 +59,21 @@ pub struct ApplyRepairOutcome {
     pub error: Option<String>,
 }
 
+/// Aucun XML Rekordbox n'est lié. Sentinelle traversant l'IPC — miroir de `shared/contracts.ts`,
+/// tenu par `rekordbox_sentinels_match_contracts_ts`. Elle remplace la phrase « aucun XML
+/// Rekordbox lié — relie un fichier… », que le frontend reconnaissait par `includes("aucun XML")` :
+/// traduite, elle aurait cessé de correspondre sous une interface anglaise, et l'export aurait
+/// affiché une erreur brute au lieu de renvoyer vers l'écran Rekordbox. Le texte vit désormais
+/// côté front, dans les deux langues.
+pub const NO_LINKED_XML: &str = "NO_LINKED_XML";
+
+/// La ligne n'est plus ambiguë (un rechargement a changé l'état). Même contrat de miroir, même
+/// raison : le frontend reconnaissait la phrase française « …n'est plus ambiguë… ».
+pub const AMBIGUITY_STALE: &str = "AMBIGUITY_STALE";
+
+/// La piste choisie n'est pas un des candidats de l'ambiguïté. Même contrat de miroir.
+pub const AMBIGUITY_BAD_CHOICE: &str = "AMBIGUITY_BAD_CHOICE";
+
 /// Resolves `master.db`'s real OS-standard folder (`actions::rekordbox_pioneer_dir`), gated on
 /// an XML actually being linked (the user's opt-in signal for Rekordbox integration) — shared by
 /// every M8 apply/scan path that needs a `pioneer_dir`, so the "no XML linked" error stays
@@ -66,7 +81,7 @@ pub struct ApplyRepairOutcome {
 fn resolve_pioneer_dir(conn: &Connection) -> Result<std::path::PathBuf, String> {
     crate::settings::get(conn, crate::settings::REKORDBOX_XML_PATH)
         .map_err(|e| e.to_string())?
-        .ok_or("aucun XML Rekordbox lié — relie un fichier avant de synchroniser")?;
+        .ok_or(NO_LINKED_XML)?;
     let dir = crate::actions::rekordbox_pioneer_dir()
         .ok_or_else(|| "impossible de déterminer le dossier Pioneer sur ce système".to_string())?;
     // Impasse A12 ([issue #15](https://github.com/c0remusic/sift/issues/15)) : `rekordbox_pioneer_dir`
@@ -269,11 +284,11 @@ pub(crate) fn resolve_ambiguous_inner(
         .map_err(|e| e.to_string())?;
 
     if status != "ambiguous" {
-        return Err("cette ligne n'est plus ambiguë — rechargement nécessaire".to_string());
+        return Err(AMBIGUITY_STALE.to_string());
     }
     let candidates = candidate_track_ids.unwrap_or_default();
     if !candidates.split(',').any(|c| c == chosen_track_id) {
-        return Err("piste choisie invalide pour cette ambiguïté".to_string());
+        return Err(AMBIGUITY_BAD_CHOICE.to_string());
     }
 
     conn.execute(
@@ -506,11 +521,11 @@ pub(crate) fn resolve_ambiguous_metadata_sync_inner(
         .map_err(|e| e.to_string())?;
 
     if status != "ambiguous" {
-        return Err("cette ligne n'est plus ambiguë — rechargement nécessaire".to_string());
+        return Err(AMBIGUITY_STALE.to_string());
     }
     let candidates = candidate_track_ids.unwrap_or_default();
     if !candidates.split(',').any(|c| c == chosen_track_id) {
-        return Err("piste choisie invalide pour cette ambiguïté".to_string());
+        return Err(AMBIGUITY_BAD_CHOICE.to_string());
     }
 
     conn.execute(
@@ -739,11 +754,11 @@ pub(crate) fn rekordbox_masterdb_resolve_ambiguous_artwork_sync_inner(
         .map_err(|e| e.to_string())?;
 
     if status != "ambiguous" {
-        return Err("cette ligne n'est plus ambiguë — rechargement nécessaire".to_string());
+        return Err(AMBIGUITY_STALE.to_string());
     }
     let candidates = candidate_track_ids.unwrap_or_default();
     if !candidates.split(',').any(|c| c == chosen_track_id) {
-        return Err("piste choisie invalide pour cette ambiguïté".to_string());
+        return Err(AMBIGUITY_BAD_CHOICE.to_string());
     }
 
     conn.execute(
@@ -996,6 +1011,24 @@ pub(crate) fn dedup_playlist_group_inner(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Les trois sentinelles traversent l'IPC et le frontend les reconnaît (`sift-live.ts`,
+    /// `rekordbox-view.ts`) : chaque valeur doit figurer dans `shared/contracts.ts` SOUS SON NOM.
+    #[test]
+    fn rekordbox_sentinels_match_contracts_ts() {
+        const CONTRACTS_TS: &str = include_str!("../../shared/contracts.ts");
+        for (name, value) in [
+            ("NO_LINKED_XML", NO_LINKED_XML),
+            ("AMBIGUITY_STALE", AMBIGUITY_STALE),
+            ("AMBIGUITY_BAD_CHOICE", AMBIGUITY_BAD_CHOICE),
+        ] {
+            let expected = format!("export const {name} = \"{value}\";");
+            assert!(
+                CONTRACTS_TS.contains(&expected),
+                "shared/contracts.ts must contain {expected}"
+            );
+        }
+    }
 
     fn db() -> Connection {
         let c = Connection::open_in_memory().unwrap();
@@ -1335,10 +1368,7 @@ mod tests {
         let id = seed_repair_row(&conn, "a", "a2", Some("1"), "pending");
         let backup_root = tempfile::tempdir().unwrap().path().join("backups");
         let err = apply_repairs_inner(&conn, &backup_root, &[id]).unwrap_err();
-        assert_eq!(
-            err,
-            "aucun XML Rekordbox lié — relie un fichier avant de synchroniser"
-        );
+        assert_eq!(err, NO_LINKED_XML);
     }
 
     #[test]
@@ -1499,7 +1529,7 @@ mod tests {
         .unwrap();
 
         let err = resolve_ambiguous_inner(&conn, id, "99999999").unwrap_err();
-        assert_eq!(err, "piste choisie invalide pour cette ambiguïté");
+        assert_eq!(err, AMBIGUITY_BAD_CHOICE);
 
         let status: String = conn
             .query_row(
@@ -1517,10 +1547,7 @@ mod tests {
         let id = seed_repair_row(&conn, "a", "a2", Some("40000001"), "pending");
 
         let err = resolve_ambiguous_inner(&conn, id, "40000001").unwrap_err();
-        assert_eq!(
-            err,
-            "cette ligne n'est plus ambiguë — rechargement nécessaire"
-        );
+        assert_eq!(err, AMBIGUITY_STALE);
     }
 
     #[test]
@@ -1551,10 +1578,7 @@ mod tests {
     fn scan_playlist_duplicates_fails_fast_when_no_xml_linked() {
         let conn = db();
         let err = scan_playlist_duplicates_inner(&conn).unwrap_err();
-        assert_eq!(
-            err,
-            "aucun XML Rekordbox lié — relie un fichier avant de synchroniser"
-        );
+        assert_eq!(err, NO_LINKED_XML);
     }
 
     #[test]
@@ -1626,10 +1650,7 @@ mod tests {
         };
         let backup_root = tempfile::tempdir().unwrap().path().join("backups");
         let err = dedup_playlist_group_inner(&conn, &backup_root, group).unwrap_err();
-        assert_eq!(
-            err,
-            "aucun XML Rekordbox lié — relie un fichier avant de synchroniser"
-        );
+        assert_eq!(err, NO_LINKED_XML);
     }
 
     #[test]
@@ -1791,7 +1812,7 @@ mod tests {
         );
 
         let err = resolve_ambiguous_metadata_sync_inner(&conn, id, "99999999").unwrap_err();
-        assert!(err.contains("invalide"));
+        assert_eq!(err, AMBIGUITY_BAD_CHOICE);
     }
 
     #[test]
@@ -1806,7 +1827,7 @@ mod tests {
         let id = seed_metadata_sync_row(&conn, track_id, "pending", Some("40000001"), None);
 
         let err = resolve_ambiguous_metadata_sync_inner(&conn, id, "40000001").unwrap_err();
-        assert!(err.contains("ambigu"));
+        assert_eq!(err, AMBIGUITY_STALE);
     }
 
     #[test]
@@ -2532,7 +2553,7 @@ mod tests {
 
         let err = rekordbox_masterdb_resolve_ambiguous_artwork_sync_inner(&conn, id, "99999999")
             .unwrap_err();
-        assert!(err.contains("invalide"));
+        assert_eq!(err, AMBIGUITY_BAD_CHOICE);
     }
 
     #[test]
@@ -2555,6 +2576,6 @@ mod tests {
 
         let err = rekordbox_masterdb_resolve_ambiguous_artwork_sync_inner(&conn, id, "40000001")
             .unwrap_err();
-        assert!(err.contains("ambigu"));
+        assert_eq!(err, AMBIGUITY_STALE);
     }
 }

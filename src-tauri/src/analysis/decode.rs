@@ -44,6 +44,8 @@ pub const FILE_GONE: &str = "n'existe plus";
 fn open_format(path: &str) -> Result<Box<dyn FormatReader>, String> {
     let file = File::open(path).map_err(|e| {
         if e.kind() == std::io::ErrorKind::NotFound {
+            // Français dans TOUTES les langues, et c'est voulu : cette phrase porte `FILE_GONE`.
+            // Le front la traduit à l'affichage (`report-view.ts`, `analysisFileGone`).
             format!("le fichier {FILE_GONE} à cet emplacement — a-t-il été déplacé ou supprimé ?")
         } else {
             format!("impossible d'ouvrir le fichier : {e}")
@@ -233,5 +235,17 @@ mod tests {
             err.contains(FILE_GONE) || err.contains("introuvable"),
             "error should explain the file is missing in plain French: {err}"
         );
+    }
+
+    /// La phrase du fichier disparu porte `FILE_GONE`, que `ipc::analyze_path` reconnaît avant de
+    /// SUPPRIMER la ligne en base. Elle reste donc française sous une interface anglaise — la
+    /// traduction se fait à l'affichage (`frontend/report-view.ts`). La passer dans `crate::tr!`
+    /// sans garder la sentinelle casserait la suppression en anglais seulement : ce test tomberait.
+    #[test]
+    fn la_sentinelle_du_fichier_disparu_survit_a_l_interface_anglaise() {
+        let err = crate::i18n::with_lang(crate::i18n::Lang::En, || {
+            probe("definitely/does/not/exist_ever.flac").unwrap_err()
+        });
+        assert!(err.contains(FILE_GONE), "{err}");
     }
 }

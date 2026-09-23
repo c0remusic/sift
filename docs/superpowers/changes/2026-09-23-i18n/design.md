@@ -55,6 +55,25 @@ Règle : un message reconnu par du code devient un **code stable** (sentinelle d
 front. `FILE_GONE` reste tel quel — changer sa valeur est un changement de protocole — et son
 affichage se traduit côté front.
 
+**Soldé le 2026-09-23**, chaque ligne avec sa garde mesurée par mutation :
+
+| Couplage | Traitement | Garde |
+|---|---|---|
+| `FILE_GONE` | phrase gardée en français dans `decode.rs`, traduite à l'affichage (`report-view.ts`, `analysisFileGone`) | `decode.rs::la_sentinelle_du_fichier_disparu_survit_a_l_interface_anglaise` |
+| « aucun XML » | sentinelle `NO_LINKED_XML` | `rekordbox_sentinels_match_contracts_ts` |
+| ambiguïtés Rekordbox | sentinelles `AMBIGUITY_STALE`, `AMBIGUITY_BAD_CHOICE`, textes au dictionnaire | idem |
+| étapes USB | marqueurs neutres `STEP_DONE` = `DONE`, `STEP_FAILED_PREFIX` = `FAILED:` + message ; langue passée au processus élevé (`--sift-lang`) | `privileged.rs::step_markers_match_contracts_ts`, `test/usb-step-coupling.test.ts` |
+| `(sans extension)` — STOCKÉ en cache | reste une clé (`NO_EXT_BUCKET`), libellé traduit par `usage-chart.ts::extLabel` | `volume_usage.rs::no_ext_bucket_matches_contracts_ts` |
+| santé USB `OK` | `OK` identique dans les deux langues (le front compare `!== "OK"`), le reste par `tr!` | — |
+
+Bug antérieur corrigé au passage : sous Windows, l'invite UAC refusée arrivait par le fichier
+d'étape et s'affichait brute, « Échec : ELEVATION_DECLINED » — le message humain ne vivait que dans
+un `.catch` que ce chemin n'atteint jamais.
+
+Inventaire complet des chaînes Rust (affichées / stockées / protocole / journal) : fait par agent
+le 2026-09-23. Seule chaîne stockée puis affichée : `(sans extension)`. `AnalysisReport` ne porte
+aucun français — pas de rapport en cache à invalider.
+
 ## Phases
 
 1. Socle (front + Rust + gates) — `i18n.ts`, `lang-boot.ts`, `shell.ts`, `i18n.rs`, Réglages.

@@ -426,7 +426,7 @@ pub fn rekordbox_status(conn: State<'_, Mutex<Connection>>) -> Result<RekordboxL
 fn export_rekordbox_xml_inner(conn: &Connection) -> Result<RekordboxLinkStatus, String> {
     let path = crate::settings::get(conn, crate::settings::REKORDBOX_XML_PATH)
         .map_err(|e| e.to_string())?
-        .ok_or("aucun XML Rekordbox lié — relie un fichier avant d'exporter")?;
+        .ok_or(crate::rekordbox_repairs::NO_LINKED_XML)?;
     let filed = library::list_filed(conn, &LibraryFilter::default()).map_err(|e| e.to_string())?;
 
     let bytes = std::fs::read(&path).map_err(|e| format!("XML Rekordbox illisible: {e}"))?;

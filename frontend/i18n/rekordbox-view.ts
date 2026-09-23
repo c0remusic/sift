@@ -3,10 +3,11 @@
 // la barre (« Synchroniser la sélection » · « Tout synchroniser »), la confirmation, l'état « en
 // cours », le rapport de synchronisation, le menu contextuel et l'état vide.
 //
-// ⚠️ PROTOCOLE — ne se traduit pas ici. `rekordbox-view.ts` reconnaît deux messages du backend
-// (`rekordbox_repairs.rs`) par `includes("plus ambiguë")` et `includes("piste choisie invalide")` :
-// ces littéraux restent au site, seul le repli affiché (`choiceFailed`) vit dans ce dictionnaire. Les
-// messages du backend (`masterdb_error`, erreur par rangée) arrivent tels quels, traduits côté Rust.
+// ⚠️ PROTOCOLE. `rekordbox-view.ts` reconnaît deux sentinelles du backend, `AMBIGUITY_STALE` et
+// `AMBIGUITY_BAD_CHOICE` (`shared/contracts.ts`) ; leurs textes affichés vivent ici. Jusqu'au
+// 2026-09-23 c'étaient deux phrases françaises reconnues par `includes`, qui auraient cessé de
+// correspondre une fois traduites. Les autres messages du backend (`masterdb_error`, erreur par
+// rangée) arrivent tels quels, traduits côté Rust.
 //
 // Vocabulaire : `docs/design-system/content.md` § Locale `en`. « Synchroniser » devient « Sync »,
 // comme le manuel anglais (`docs/manuel.en.html` : « sync the selection », « sync everything »).
@@ -77,6 +78,10 @@ const fr = {
   ignore: "Ignorer",
   actionFailed: "Action impossible — réessaie",
   choiceFailed: "Choix impossible — réessaie",
+  /** Sentinelle `AMBIGUITY_STALE` du backend. Même texte que la phrase qu'elle remplace. */
+  ambiguityStale: "cette ligne n'est plus ambiguë — rechargement nécessaire",
+  /** Sentinelle `AMBIGUITY_BAD_CHOICE` du backend. Même texte que la phrase qu'elle remplace. */
+  ambiguityBadChoice: "piste choisie invalide pour cette ambiguïté",
   // Synchronisation.
   confirmSync: (n: number) => `Synchroniser ${plFr(n, "entrée")} avec Rekordbox ? Ferme Rekordbox avant de continuer.`,
   confirmSyncButton: "Synchroniser",
@@ -139,6 +144,8 @@ const en: typeof fr = {
   ignore: "Ignore",
   actionFailed: "Action failed — try again",
   choiceFailed: "Choice failed — try again",
+  ambiguityStale: "This row is no longer ambiguous — reload needed",
+  ambiguityBadChoice: "The chosen track isn't one of this ambiguity's candidates",
   confirmSync: (n) => `Sync ${plEn(n, "entry", "entries")} with Rekordbox? Close Rekordbox before you continue.`,
   confirmSyncButton: "Sync",
   syncing: (n) => `Syncing ${plEn(n, "entry", "entries")}…`,

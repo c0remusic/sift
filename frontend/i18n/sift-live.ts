@@ -2,9 +2,9 @@
 // lui-même — export et liaison du XML Rekordbox, purge de la corbeille, doublons envoyés à la
 // corbeille depuis Rangés, ouverture d'un emplacement, échec de scan d'un dossier surveillé.
 //
-// ⚠️ Le `includes("aucun XML")` de `runNavExport` n'est PAS ici : il reconnaît un message du
-// backend, c'est un protocole (design.md § Le piège). Seul le texte AFFICHÉ quand il répond oui
-// (`noXmlLinked`) se traduit.
+// ⚠️ `runNavExport` reconnaît la sentinelle `NO_LINKED_XML` du backend (`shared/contracts.ts`) — une
+// phrase française reconnue par `includes("aucun XML")` jusqu'au 2026-09-23 (design.md § Le
+// piège). Le texte AFFICHÉ quand elle répond (`noXmlLinked`) vit ici.
 import { dict } from "../i18n";
 
 /** Pluriel anglais : 1 seul est singulier, 0 compris est pluriel (« 0 tracks »). */

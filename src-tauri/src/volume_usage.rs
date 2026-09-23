@@ -23,6 +23,11 @@ pub const REKORDBOX_BUCKET: &str = "PIONEER/";
 
 /// Un fichier sans extension du tout. Nommé plutôt que vide : une entrée sans libellé dans une
 /// légende ressemble à un bug.
+///
+/// ⚠️ UNE CLÉ, PAS UN LIBELLÉ, depuis le 2026-09-23 : elle est STOCKÉE dans le cache d'occupation
+/// (`buckets_json`). La traduire ici aurait laissé en français les disques déjà parcourus. Elle
+/// reste donc identique dans toutes les langues ; le frontend affiche son libellé traduit
+/// (`usage-chart.ts::extLabel`). Miroir de `shared/contracts.ts`.
 pub const NO_EXT_BUCKET: &str = "(sans extension)";
 
 /// Une ligne du graphique : un format, ce qu'il pèse, combien de fichiers.
@@ -199,6 +204,18 @@ pub fn scan_volume(root: &Path) -> Result<Vec<ExtUsage>, UsageError> {
 mod tests {
     use super::*;
     use std::path::PathBuf;
+
+    /// Le frontend reconnaît ce seau pour lui donner un libellé traduit (`usage-chart.ts`) : la
+    /// valeur doit figurer dans `shared/contracts.ts` sous son nom.
+    #[test]
+    fn no_ext_bucket_matches_contracts_ts() {
+        const CONTRACTS_TS: &str = include_str!("../../shared/contracts.ts");
+        let expected = format!("export const NO_EXT_BUCKET = \"{NO_EXT_BUCKET}\";");
+        assert!(
+            CONTRACTS_TS.contains(&expected),
+            "shared/contracts.ts must contain {expected}"
+        );
+    }
 
     #[test]
     fn extension_is_lowercased_and_dotted() {

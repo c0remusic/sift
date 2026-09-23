@@ -42,6 +42,7 @@ import type {
   PendingMetadataSync,
   PendingArtworkSync,
 } from "../shared/contracts";
+import { AMBIGUITY_BAD_CHOICE, AMBIGUITY_STALE } from "../shared/contracts";
 import { requireEl, esc } from "./dom";
 import { isStaleViewRender, viewEpoch } from "./view-epoch";
 import { toast } from "./filing-toast";
@@ -668,8 +669,16 @@ export function handleRekordboxAction(
       } catch (err) {
         console.error(`${what} failed`, err);
         const raw = String(err);
-        // Ces deux messages viennent tels quels du backend (rekordbox_repairs.rs) — déjà humains.
-        toast(raw.includes("plus ambiguë") || raw.includes("piste choisie invalide") ? raw : T().choiceFailed);
+        // Deux sentinelles du backend (`rekordbox_repairs.rs`, miroir dans `shared/contracts.ts`),
+        // qui remplacent depuis le 2026-09-23 les phrases françaises reconnues par `includes` et
+        // affichées telles quelles — traduites, elles auraient cessé de correspondre.
+        toast(
+          raw.includes(AMBIGUITY_STALE)
+            ? T().ambiguityStale
+            : raw.includes(AMBIGUITY_BAD_CHOICE)
+              ? T().ambiguityBadChoice
+              : T().choiceFailed,
+        );
       }
       void renderRekordboxLive();
     })();
