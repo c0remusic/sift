@@ -20,7 +20,7 @@ import type { RemovableDrive, UsageReport } from "./ipc";
 import { requireEl, esc } from "./dom";
 import { openUsbFormatModal } from "./usb-format-modal";
 import { usbEntryHtml, driveDisplayName } from "./usb-row";
-import { renderUsageChart, formatGo, humanizeEject } from "./usage-chart";
+import { renderUsageChart, formatGo, humanizeEject, humanizeUsageError } from "./usage-chart";
 import { mountBarActions } from "./toolbar";
 import { emptyStateHtml } from "./empty-state";
 import { openContextMenu } from "./context-menu";
@@ -197,7 +197,7 @@ async function mountDisk(body: HTMLElement, d: RemovableDrive, force: boolean): 
     // Un disque non formaté n'a rien à parcourir : le dire, sans la chaîne brute qui reste au
     // journal. Une clé formatée dont la lecture échoue, elle, montre la cause.
     body.innerHTML = d.mount
-      ? `<div class="sift-usb-empty sift-usb-danger">${T().occupationIndisponible}<br>${esc(usageError ?? "")}</div>`
+      ? `<div class="sift-usb-empty sift-usb-danger">${T().occupationIndisponible}<br>${esc(humanizeUsageError(usageError ?? ""))}</div>`
       : `<div class="sift-usb-empty">${T().aucunVolume}</div>`;
   }
   body.insertAdjacentHTML("beforeend", `<div class="sift-usage-rule sift-usb-rule"></div>` + factsHtml(d, report) + actionsHtml(d));

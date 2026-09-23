@@ -125,7 +125,7 @@ const en: typeof fr = {
   clair: "Light",
   sombre: "Dark",
   langue: "Language",
-  langueNote: "Auto follows the system language. Changing the language reloads the window.",
+  langueNote: "Auto follows your system. Changing it reloads the window.",
   themeNonEnregistre: "Theme applied, but not saved: it will go back to its previous value at next launch.",
   langueNonEnregistree: "Language not saved — the interface stays as it was.",
 };

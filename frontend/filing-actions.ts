@@ -16,6 +16,7 @@ import {
 } from "./filing-state";
 import { toast } from "./filing-toast";
 import { humanizeError } from "./errors";
+import { ffmpegMissingText } from "./conversion-error";
 import { T } from "./i18n/filing-actions";
 import { T as ToastT } from "./i18n/filing-toast";
 
@@ -163,17 +164,8 @@ export async function doRanger(
     else if (msg.includes("ALREADY_FILING"))
       toast(T().alreadyFiling, false);
     else if (msg.toLowerCase().includes("upscale")) toast(T().upscaleRefused, false);
-    // Impasse A2 (issue #15). Cette branche passe AVANT le test de fichier introuvable, et l'ordre
-    // est le correctif : `encode.rs` rend « ffmpeg: spawn failed: <erreur d'E/S> », et sur Windows
-    // le message d'E/S est traduit par le système — « ... introuvable » en français. La branche
-    // générique juste en dessous le matchait donc, et accusait le MORCEAU d'avoir été déplacé,
-    // alors que c'est le binaire d'encodage qui manque. Le générique, lui, disait « Réessaie » à
-    // une condition qui ne peut jamais aboutir : sans FFmpeg, aucun essai ne convertira jamais
-    // rien. L'analyse passe par Symphonia in-process, donc l'utilisateur peut ajouter, scanner,
-    // analyser et écouter avant de le découvrir — au premier « Ranger », c'est-à-dire ici.
-    // Le littéral testé vient de notre propre code (`encode.rs`, EncodeError::Ffmpeg), pas d'un
-    // message système : c'est ce qui le rend stable.
-    else if (msg.includes("spawn failed")) toast(T().ffmpegMissing, false);
+    // FFmpeg manquant (impasse A2, issue #15) n'arrive PAS ici : l'encodage tourne en arrière-plan
+    // et son échec revient par `file:track:done` — voir `conversion-error.ts`, qui le reconnaît.
     else if (/permission|access|denied/i.test(msg)) toast(T().accessDenied, false);
     else if (/no such file|not found|introuvable/i.test(msg)) toast(T().fileNotFound, false);
     else toast(T().convertFailed, false);
@@ -310,7 +302,9 @@ function settleFilingBanner(o: TrackFileOutcome, started: InFlightFiling | null)
       state.filedConfirm = null;
     }
     const name = started?.name ?? `#${o.track_id}`;
-    toast(T().failedBackInQueue(name), false);
+    // Sans FFmpeg, « de retour dans la file » invitait à réessayer une conversion qui ne peut
+    // jamais aboutir : nommer la cause (`conversion-error.ts`).
+    toast(ffmpegMissingText(o.error) ?? T().failedBackInQueue(name), false);
     return;
   }
   // Rangé avec succès : compté pour le fork empty-state (Tout est trié vs Rien à revoir). Compte les

@@ -7,7 +7,7 @@ import { requireEl, esc } from "./dom";
 import { T } from "./i18n/empty-state";
 
 export interface EmptyStateOpts {
-  /** Short heading, e.g. "Rien dans Écartés". */
+  /** Short heading, e.g. "Rien à re-sourcer". */
   title: string;
   /** One line of explanatory copy. */
   note: string;

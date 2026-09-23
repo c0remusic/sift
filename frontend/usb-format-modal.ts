@@ -11,16 +11,11 @@
 // (I:) » est increcopiable, et le bouton restait grisé sans que rien ne dise pourquoi — on se
 // croyait bloqué par l'application. CLAUDE.md exige une confirmation in-app armée et horodatée,
 // pas une dictée ; c'est ce qui reste.
-import {
-  DRIVE_VANISHED,
-  ELEVATION_DECLINED,
-  IDENTITY_MISMATCH,
-  STEP_DONE,
-  STEP_FAILED_PREFIX,
-} from "../shared/contracts";
+import { ELEVATION_DECLINED, STEP_DONE, STEP_FAILED_PREFIX } from "../shared/contracts";
 import { esc } from "./dom";
 import { formatDrive, formatStep, type RemovableDrive, type TargetFs } from "./ipc";
 import { driveDisplayName } from "./usb-row";
+import { humanizeFormatError } from "./usb-format-error";
 import { T } from "./i18n/usb-format-modal";
 
 const CONFIRM_REARM_MS = 400; // mirrors sift-live.ts's batch-confirm floor (see BATCH_CONFIRM_THRESHOLD)
@@ -245,30 +240,15 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
           step = "";
           armedAt = null;
           console.error("formatDrive failed", e);
-          const raw = String(e);
-          // Les deux sentinelles du garde anti-course passent EN PREMIER, et coupent le chemin de
-          // reprise (`fatal`). Elles tombaient jusqu'ici dans le message générique, qui finit par
-          // « réessaie » : inviter à relancer un formatage irréversible sur un disque que le
-          // backend vient de déclarer différent de celui qui a été confirmé est le pire message
-          // possible pour cette condition précise. La seule sortie sûre est de refermer et de
-          // repartir d'une liste fraîche.
-          fatal = raw.includes(IDENTITY_MISMATCH) || raw.includes(DRIVE_VANISHED);
-          const t = T();
-          const humanized = raw.includes(IDENTITY_MISMATCH)
-            ? t.errIdentite(esc(displayName))
-            : raw.includes(DRIVE_VANISHED)
-              ? t.errDebranche
-              : raw.includes(ELEVATION_DECLINED)
-                ? t.errElevation
-                : /access|denied|permission/i.test(raw)
-                  ? t.errAcces
-                : /not found|no such|introuvable/i.test(raw)
-                  ? t.errIntrouvable
-                  : t.errEchec;
+          // Les deux sentinelles du garde anti-course passent EN PREMIER et coupent le chemin de
+          // reprise (`fatal`) — voir `usb-format-error.ts`. Le texte rendu est BRUT : render()
+          // l'échappe, une seule fois.
+          const humanized = humanizeFormatError(String(e), displayName);
+          fatal = humanized.fatal;
           // render() below does card.innerHTML = ... (full replacement) — insertAdjacentHTML'ing
           // the error directly into the current DOM would just get wiped out immediately, with no
           // paint in between to make it visible. Store it and let render() include it.
-          lastError = humanized;
+          lastError = humanized.text;
           render();
         });
     });

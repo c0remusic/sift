@@ -24,6 +24,7 @@ import { anchoredBelowPosition } from "./popover-position";
 import { queueCountLabel } from "./queue-count-label";
 import { verdictDot } from "./queue-verdict-dot";
 import { numLocale } from "./i18n";
+import { ffmpegMissingText } from "./conversion-error";
 import { T } from "./i18n/queue-panel";
 
 /** A pending track still worth (re)analysing: no current verdict AND not yet terminally broken.
@@ -725,7 +726,7 @@ function queueRowHtml(it: QueueItem, active: boolean, onCursor: boolean): string
     // pastille ne le porte pas, et c'est un fait de fond que l'utilisateur doit voir sans survoler.
     // Le mot de VERDICT, lui, est parti le 2026-08-26 — il doublait la pastille (voir `verdictDot`).
     (failure
-      ? `<span title="${esc(failure)}" style="flex:none;display:inline-flex;align-items:center;gap:var(--space-4);font-size:var(--text-xs);color:var(--color-text-warning)"><i class="ti ti-alert-triangle"></i>${L.conversionFailed}</span>`
+      ? `<span title="${esc(ffmpegMissingText(failure) ?? failure)}" style="flex:none;display:inline-flex;align-items:center;gap:var(--space-4);font-size:var(--text-xs);color:var(--color-text-warning)"><i class="ti ti-alert-triangle"></i>${L.conversionFailed}</span>`
       : "") +
     // Pastille DUPLICATE, au BORD DROIT de la ligne (wireframe « Poste de décision » §§ 09-10 ;
     // spec `docs/ui-specs/revue.md` § Zone B′ : « rendu hors colonne verdict »). Elle a quitté la

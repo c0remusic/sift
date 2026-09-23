@@ -10,7 +10,7 @@
 import type { UsageReport, ExtUsage } from "./ipc";
 import { esc } from "./dom";
 import { T } from "./i18n/usage-chart";
-import { NO_EXT_BUCKET } from "../shared/contracts";
+import { DRIVE_VANISHED, EJECT_BUSY, NO_EXT_BUCKET } from "../shared/contracts";
 
 /** Un format, une couleur système Apple. Ces tokens `-solid` n'ont qu'un emploi — l'aplat de
  * donnée — et ne doivent jamais porter de texte (voir docs/design-system-states.md). */
@@ -263,7 +263,15 @@ const slug = (s: string): string => s.replace(/[^a-z0-9]/gi, "");
  * « nommer ce qui tient le volume »). Exportée pour `usb-view.ts`, qui porte ses propres boutons
  * depuis le 2026-09-09. */
 export function humanizeEject(raw: string): string {
-  if (raw.includes("EJECT_BUSY")) return T().ejectBusy;
-  if (raw.includes("DRIVE_VANISHED")) return T().ejectGone;
+  if (raw.includes(EJECT_BUSY)) return T().ejectBusy;
+  if (raw.includes(DRIVE_VANISHED)) return T().ejectGone;
   return T().ejectFailed;
+}
+
+/** La cause d'une occupation illisible, pour `usb-view.ts`. Un disque débranché entre la liste et le
+ * parcours revient en sentinelle `DRIVE_VANISHED` (`ipc_usage.rs::drive_usage`), qui s'affichait
+ * telle quelle sous « Occupation indisponible. » : la dire en mots. Toute autre cause est un message
+ * du backend, déjà dans la langue de l'interface (`tr!`), montré tel quel. */
+export function humanizeUsageError(raw: string): string {
+  return raw.includes(DRIVE_VANISHED) ? T().usageGone : raw;
 }

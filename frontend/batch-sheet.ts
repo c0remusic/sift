@@ -2,6 +2,7 @@
 // Inserted inside .sift-inspector, slides from top. The queue column stays interactive.
 import type { BatchResult } from "../shared/contracts";
 import { esc } from "./dom";
+import { ffmpegMissingText } from "./conversion-error";
 import { T } from "./i18n/batch-sheet";
 
 let sheetEl: HTMLElement | null = null;
@@ -106,7 +107,7 @@ export function transformToReport(res: BatchResult): void {
       L.sectionFailed,
       res.errors.map((e) => e.track_id),
       "error",
-      new Map(res.errors.map((e) => [e.track_id, e.message])),
+      new Map(res.errors.map((e) => [e.track_id, ffmpegMissingText(e.message) ?? e.message])),
     );
   }
 

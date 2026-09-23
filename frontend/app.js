@@ -198,10 +198,10 @@ function openLink(u){window.open(u,'_blank','noopener');}
     // Métadonnées, reste tel quel dans la barre fixe du bas.
     var sortir='<div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap;margin-bottom:8px"><span style="font-size:10px;color:var(--color-text-tertiary)">Sortir en</span>'+chips+'</div>';
     var jBtn=x.fake
-      ?'<button data-act="jeter" style="color:var(--color-text-warning)" title="Fichier faux — ira dans Écartés pour re-sourcer"><span class="kbd">X</span> ⚠ Re-sourcer</button>'
+      ?'<button data-act="jeter" style="color:var(--color-text-warning)" title="Fichier faux — ira dans À re-sourcer"><span class="kbd">X</span> ⚠ Re-sourcer</button>'
       :x.duplicate
-      ?'<button data-act="jeter" style="color:var(--color-text-danger)" title="Envoyer dans Écartés"><span class="kbd">X</span> Écarter (doublon)</button>'
-      :'<button data-act="jeter" style="color:var(--color-text-danger)" title="Envoyer dans Écartés"><span class="kbd">X</span> Écarter</button>';
+      ?'<button data-act="jeter" style="color:var(--color-text-danger)" title="Envoyer dans À re-sourcer"><span class="kbd">X</span> Écarter (doublon)</button>'
+      :'<button data-act="jeter" style="color:var(--color-text-danger)" title="Envoyer dans À re-sourcer"><span class="kbd">X</span> Écarter</button>';
     mid.innerHTML='<div class="mid-scroll">'+head+dupBanner+player+diagZone+metaZone+conclusion+'</div>'
       +'<div style="flex:none;padding-top:10px;border-top:0.5px solid var(--color-border-tertiary)">'+sortir
       +'<div style="display:flex;gap:8px"><button data-act="commit" style="flex:1;background:var(--color-background-info);color:var(--color-text-info);border:none;font-weight:500"><span class="kbd">&crarr;</span> Convertir &rarr; '+FOLDERS[selFolder]+'</button>'+jBtn+'</div></div>';
@@ -316,7 +316,7 @@ function openLink(u){window.open(u,'_blank','noopener');}
         +(isRes?'<div style="margin-top:5px;display:flex;flex-wrap:wrap;align-items:center;gap:4px"><button data-act="ecopyquery" data-txt="'+queryTxt+'" style="font-size:10px;padding:2px 7px;color:var(--color-text-secondary)"><i class="ti ti-copy" style="font-size:10px;vertical-align:-1px"></i> Copié</button>'+(storeLinks?'<span style="color:var(--color-border-secondary)">·</span>'+storeLinks:'')+'</div>':'')
         +'</div>';
     }).join('');
-    content.innerHTML='<div class="h1">Écartés</div>'
+    content.innerHTML='<div class="h1">À re-sourcer · Corbeille</div>'
       +'<div style="display:flex;gap:7px;margin-bottom:12px;flex-wrap:wrap">'
       +'<span class="pill" style="background:var(--color-background-danger);color:var(--color-text-danger)"><i class="ti ti-alert-circle" style="font-size:10px"></i> '+filterR.length+' à re-sourcer</span>'
       +'<span class="pill"><i class="ti ti-trash" style="font-size:10px"></i> '+filterT.length+' en attente corbeille</span>'

@@ -25,7 +25,7 @@ type Story = StoryObj;
 
 export const Base: Story = {
   args: {
-    title: "Rien dans Écartés",
+    title: "Rien à re-sourcer",
     note: "Les morceaux écartés pendant la Revue apparaîtront ici.",
     backToRevue: false,
   },

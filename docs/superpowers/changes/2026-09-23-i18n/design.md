@@ -95,8 +95,22 @@ aucun français — pas de rapport en cache à invalider.
    - le VRAI bouton « Français » de Réglages : réglage écrit, fenêtre rechargée, retour sur
      Réglages, interface française.
    Le réglage d'Antoine valait `null` (jamais choisi) ; il a été remis à `""`, qui vaut aussi
-   `auto`. Non vérifié : modales (formatage, confirmations de lot) et états vides, qu'aucun écran
-   n'affichait à ce moment-là.
+   `auto`. Non vérifié ce jour-là : modales et états vides, qu'aucun écran n'affichait.
+   **Vérifiés le même jour, en second passage**, dans la fenêtre qu'Antoine avait lui-même passée
+   en anglais (`ui_lang = "en"`), sans rien y changer :
+   - les trois modales — confirmation simple, confirmation de lot, formatage USB — ouvertes par leur
+     module, mesurées, refermées par Annuler : 0 texte français, 0 débordement ;
+   - les neuf états vides (Bibliothèque, Corbeille, À re-sourcer, Revue ×2, Journal ×2, Rekordbox,
+     Clé USB), rendus par le vrai `emptyStateHtml` dans un calque posé sur `#content` puis retiré :
+     0 texte français, 0 débordement.
+
+   Trouvés au passage, et corrigés :
+   - « Fichier faux — va dans Écartés » : l'écran « Écartés » n'existe plus depuis le 2026-09-08.
+     `lint:dead-label` porte désormais les noms d'écran retirés ;
+   - `DRIVE_VANISHED` affiché brut sous « Occupation indisponible. » (`usb-view.ts`) ;
+   - le nom du disque échappé deux fois dans le motif d'identité du formatage (`usb-format-error.ts`) ;
+   - FFmpeg manquant jamais nommé : la reconnaissance vivait dans un `catch` que l'échec d'un
+     encodage d'arrière-plan n'atteint pas (`conversion-error.ts`).
 
 ## Hors périmètre
 

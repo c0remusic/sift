@@ -36,6 +36,7 @@ const fr = {
     "ne le débranche pas en l'état.",
   ejectGone: "Ce disque n'est déjà plus branché.",
   ejectFailed: "Éjection impossible.",
+  usageGone: "Ce disque n'est plus branché.",
   noExtension: "(sans extension)",
 };
 
@@ -58,6 +59,7 @@ const en: typeof fr = {
     "don't unplug it yet.",
   ejectGone: "This drive is already unplugged.",
   ejectFailed: "Eject failed.",
+  usageGone: "This drive is no longer plugged in.",
   noExtension: "(no extension)",
 };
 

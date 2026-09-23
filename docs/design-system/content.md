@@ -33,7 +33,7 @@ Ton :
 | Résultat Discogs | Match | Match |
 
 ⚠️ **« Écarter » ne devient PAS « Discard ».** Le verbe français a été choisi contre « Jeter »
-parce que rien n'est supprimé — la piste part dans Écartés et reste là. « Discard » porte la
+parce que rien n'est supprimé — la piste part dans « À re-sourcer » et reste là. « Discard » porte la
 finalité que « Jeter » portait, donc il rejouerait en anglais l'erreur corrigée en français.
 « Set aside » garde le geste et son innocuité.
 

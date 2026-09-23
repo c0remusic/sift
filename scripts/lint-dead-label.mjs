@@ -39,10 +39,18 @@
 // nommant les boutons du rail. Un libellé mort qu'on recopie depuis une maquette est exactement
 // la façon dont les sept sites de production sont nés.
 //
+// DEUXIÈME ENTRÉE, 2026-09-23 : un NOM D'ÉCRAN retiré. L'entrée unique « Écartés » du rail a
+// disparu le 2026-09-08 au profit de « À re-sourcer » et « Corbeille » (`docs/ui-specs/ecartes.md`).
+// Quinze jours plus tard, les deux infobulles du pied de Revue disaient encore « va dans
+// Écartés » — un écran que l'utilisateur ne trouve plus nulle part. Attrapé à la relecture de la
+// traduction : l'anglais, écrit après, disait juste (« goes to To re-source »). Même mécanique que
+// « Ranger » : un libellé mort ne casse rien, il ment. « Écartés » reste un terme de DOMAINE
+// (`CONTEXT.md`, la branche de rejet) : seul le libellé de chaîne est visé, les commentaires non.
+//
 // CE QU'IL NE VOIT PAS, assumé :
 //   - un libellé assemblé par concaténation de variables, que rien ne lit comme une chaîne.
-//   - les autres verbes retirés. La table MORTS ci-dessous s'étend d'une ligne quand `content.md`
-//     en retire un de plus.
+//   - les autres libellés retirés. La table MORTS ci-dessous s'étend d'une ligne quand
+//     `content.md` retire un verbe ou qu'un écran change de nom.
 //
 // Ratchet à baseline versionnée, même contrat que ses voisines : seule une HAUSSE échoue.
 
@@ -57,8 +65,24 @@ const EXCLUDE_DIRS = new Set(['node_modules', 'dist', '.git', 'target', '.claude
 const SCAN_EXTS = new Set(['.ts', '.tsx', '.js']);
 const SCAN_ROOTS = ['frontend'];
 
-// Verbe retiré -> ce qui le remplace, et la ligne de content.md qui le déclare.
-const MORTS = [{ mort: 'Ranger', vivant: 'Convertir', source: 'content.md:27 et § Actions, 2026-07-10' }];
+// Libellé retiré -> ce qui le remplace, et la source qui le déclare. `note` précise ce que la règle
+// ne vise PAS, quand le mot survit ailleurs sous une forme légitime.
+const MORTS = [
+  {
+    mort: 'Ranger',
+    nature: "verbe d'action",
+    vivant: 'Convertir',
+    source: 'content.md:27 et § Actions, 2026-07-10',
+    note: "L'état « Prêt à ranger » et le concept produit ne sont pas visés : seule la forme capitalisée isolée l'est.",
+  },
+  {
+    mort: 'Écartés',
+    nature: "nom d'écran",
+    vivant: 'À re-sourcer (ou Corbeille)',
+    source: 'docs/ui-specs/ecartes.md, 2026-09-08',
+    note: 'Le terme de domaine (CONTEXT.md) reste libre dans les commentaires.',
+  },
+];
 
 function fichiers(dir, out = []) {
   for (const e of readdirSync(dir, { withFileTypes: true })) {
@@ -112,7 +136,7 @@ for (const racine of SCAN_ROOTS) {
   for (const chemin of fichiers(abs)) {
     const lignes = sansCommentaires(readFileSync(chemin, 'utf8')).split('\n');
     for (const [i, ligne] of lignes.entries()) {
-      for (const { mort, vivant, source } of MORTS) {
+      for (const { mort, nature, vivant, source, note } of MORTS) {
         // Forme capitalisée ISOLÉE : ni collée à un identifiant devant, ni suivie d'une lettre.
         // `doRanger` et `estRangeableEnLot` sortent par là, « Prêt à ranger » par la casse.
         const re = new RegExp(`(^|[^\\w$])${mort}(?![\\w$])`, 'g');
@@ -121,8 +145,10 @@ for (const racine of SCAN_ROOTS) {
           fichier: relative(REPO_ROOT, chemin).replace(/\\/g, '/'),
           ligne: i + 1,
           mort,
+          nature,
           vivant,
           source,
+          note,
         });
       }
     }
@@ -145,17 +171,16 @@ const baseline = existsSync(BASELINE_FILE)
 
 for (const t of trouves) {
   console.log(
-    `${t.fichier}:${t.ligne}: « ${t.mort} » est un verbe d'action RETIRÉ (${t.source}) — ` +
-      `le libellé vivant est « ${t.vivant} ». L'état « Prêt à ranger » et le concept produit ne ` +
-      `sont pas visés : seule la forme capitalisée isolée l'est.`,
+    `${t.fichier}:${t.ligne}: « ${t.mort} » est un ${t.nature} RETIRÉ (${t.source}) — ` +
+      `le libellé vivant est « ${t.vivant} ». ${t.note}`,
   );
 }
 
 console.log(`lint-dead-label: ${total} occurrence(s) (baseline ${baseline.total}).`);
 if (total > baseline.total) {
   console.error(
-    `lint-dead-label: HAUSSE de ${total - baseline.total} — un verbe que content.md a retiré est ` +
-      `revenu dans un libellé. Baisser la baseline se grave par --write-baseline.`,
+    `lint-dead-label: HAUSSE de ${total - baseline.total} — un libellé retiré est revenu dans ` +
+      `une chaîne du frontend. Baisser la baseline se grave par --write-baseline.`,
   );
   process.exit(1);
 }
