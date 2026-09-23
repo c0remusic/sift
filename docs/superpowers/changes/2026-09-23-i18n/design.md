@@ -84,6 +84,19 @@ aucun français — pas de rapport en cache à invalider.
    publié avant l'app qu'il décrit — le site décrit ce qu'on télécharge (v0.1.3, français seul).
    Liste de la bascule, à faire dans le même geste que la release : `content.md` § Règle de glose.
 5. Vérification dans la vraie fenêtre, en anglais : chaque écran, débordements de libellés.
+   **Faite le 2026-09-23** (CDP, `driver.mjs`, identité Sift vérifiée — un `tauri dev` de shaderlab
+   tournait en même temps) :
+   - balayage des textes et attributs visibles des 8 écrans : **0 texte d'interface français**. Les
+     4 suspects relevés étaient des données (l'artiste « Olsvangèr ») ;
+   - Revue avec une piste ouverte : verdict, pied, légende clavier, métadonnées et diagnostic
+     entier en anglais ;
+   - captures de Revue, Rangés, Rekordbox, Clé USB, Journal, Réglages : aucun libellé tronqué ni
+     débordant ;
+   - le VRAI bouton « Français » de Réglages : réglage écrit, fenêtre rechargée, retour sur
+     Réglages, interface française.
+   Le réglage d'Antoine valait `null` (jamais choisi) ; il a été remis à `""`, qui vaut aussi
+   `auto`. Non vérifié : modales (formatage, confirmations de lot) et états vides, qu'aucun écran
+   n'affichait à ce moment-là.
 
 ## Hors périmètre
 
