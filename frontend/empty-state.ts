@@ -4,6 +4,7 @@
 // source of markup so the three callers (filing.ts, ecartes-view.ts, sift-live.ts) render the
 // exact same structure instead of three ad hoc variants.
 import { requireEl, esc } from "./dom";
+import { T } from "./i18n/empty-state";
 
 export interface EmptyStateOpts {
   /** Short heading, e.g. "Rien dans Écartés". */
@@ -25,7 +26,7 @@ export interface EmptyStateOpts {
  *  handler. */
 export function emptyStateHtml(opts: EmptyStateOpts): string {
   const link = opts.backToRevue
-    ? `<button type="button" data-empty="revue" class="sift-empty-link">Ouvrir Revue</button>`
+    ? `<button type="button" data-empty="revue" class="sift-empty-link">${T().openReview}</button>`
     : "";
   return (
     `<div class="sift-empty-state">` +

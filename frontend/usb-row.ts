@@ -12,6 +12,7 @@
 import type { RemovableDrive } from "./ipc";
 import { esc } from "./dom";
 import { formatGo } from "./usage-chart";
+import { T } from "./i18n/usb-row";
 
 /** Ce que l'utilisateur appelle ce disque. `drive.id` est devenu un chemin de disque physique
  * (`\\.\PHYSICALDRIVE2`, `/dev/disk4`) le 2026-07-31 pour que les clés non formatées puissent
@@ -21,7 +22,7 @@ import { formatGo } from "./usage-chart";
 export function driveDisplayName(drive: RemovableDrive): string {
   if (drive.mount) return drive.mount;
   const n = /(?:PHYSICALDRIVE|disk)(\d+)/i.exec(drive.id)?.[1];
-  return n ? `Disque ${n}` : drive.id;
+  return n ? T().disque(n) : drive.id;
 }
 
 /** Une entrée de la colonne des disques. Un lecteur énuméré mais vide (`has_media: false`) garde
@@ -37,7 +38,7 @@ export function usbEntryHtml(drive: RemovableDrive, on: boolean): string {
     `<div class="fld${on ? " on" : ""}" data-usb-id="${esc(drive.id)}" tabindex="0" role="button" aria-pressed="${on}">` +
     '<i class="ti ti-usb" aria-hidden="true"></i>' +
     `<span class="sift-usb-entry-name">${esc(driveDisplayName(drive))}</span>` +
-    `<span class="rkb-entry-count">${drive.has_media ? formatGo(drive.size_bytes) : "vide"}</span>` +
+    `<span class="rkb-entry-count">${drive.has_media ? formatGo(drive.size_bytes) : T().vide}</span>` +
     "</div>"
   );
 }

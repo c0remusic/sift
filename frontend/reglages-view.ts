@@ -37,6 +37,7 @@ import { toast } from "./filing-toast";
 import { humanizeError } from "./errors";
 import { open as openFolderDialog } from "@tauri-apps/plugin-dialog";
 import { refreshRootWarning } from "./rail-root-warning";
+import { T } from "./i18n/reglages-view";
 
 /** Libellés des catégories, indexés par la clé `dataset.section` que chaque bloc porte déjà.
  *  Une clé sans libellé retombe sur la clé elle-même : une section neuve apparaît donc dans la
@@ -45,12 +46,9 @@ import { refreshRootWarning } from "./rail-root-warning";
  *  Noms de la spec (§ Zone B′) : « Général » porte la racine de bibliothèque ; « Conversion »
  *  n'existe PAS — aucun réglage de conversion n'est stocké aujourd'hui, et une catégorie vide
  *  serait un mensonge. Elle arrivera avec son premier réglage. */
-const SECTION_LABELS: Record<string, string> = {
-  bibliotheque: "Général",
-  nommage: "Nommage",
-  discogs: "Identification",
-  apparence: "Apparence",
-};
+function sectionLabels(): Record<string, string> {
+  return T().categories;
+}
 
 /** Catégorie affichée. Au niveau module : l'écran se re-rend à chaque réglage appliqué (pas de
  *  bouton Enregistrer, application immédiate), et un état local retomberait sur la première
@@ -163,6 +161,7 @@ export async function renderReglagesLive() {
   // `#sift-reglages-live`) n'a PAS besoin du garde : aucun `await` ne le précède, il s'exécute donc
   // toujours dans le tour où l'écran est encore le sien.
   if (isStaleViewRender(viewToken)) return;
+  const txt = T();
 
   // Divergence assumée : le jeton reste un input à sauvegarde auto (fonctionnel) au lieu du
   // "•••• 4471 + Modifier" de la maquette, dont le bouton est un onNotImpl de démo.
@@ -171,15 +170,15 @@ export async function renderReglagesLive() {
   block.dataset.section = "discogs";
   block.className = "sift-settings-section";
   block.innerHTML =
-    '<div class="sift-settings-title">Identification</div>' +
+    `<div class="sift-settings-title">${txt.categories.discogs}</div>` +
     // Impasse A9 (issue #15) : la phrase précédente — « Sans jeton, les recherches sont limitées
     // et plus lentes » — décrivait une désactivation TOTALE comme une dégradation. La réalité est
     // dans le code : `ipc_identify.rs` rend `NO_TOKEN` AVANT tout appel réseau, et `settings.rs`
     // le dit en toutes lettres, « Empty/unset = identification disabled ». Aucune recherche n'est
     // ni limitée ni ralentie : il n'y en a aucune.
-    '<div class="sift-settings-desc">Le jeton permet à Sift d\'interroger l\'API Discogs pour identifier tes morceaux (label, année, genre). Sans jeton, Sift n\'interroge pas Discogs du tout : le bouton Identifier renvoie ici. Le jeton est gratuit et se génère depuis un compte Discogs.</div>' +
+    `<div class="sift-settings-desc">${txt.descDiscogs}</div>` +
     rowHtml(
-      "Jeton d'accès",
+      txt.jetonAcces,
       // Masked like any credential (audit UI/UX 2026-07-03, fix 8) — a screenshot/share of Réglages
       // must not leak the token in clear text. Eye toggle to check it without retyping.
       '<div class="sift-settings-field">' +
@@ -187,8 +186,8 @@ export async function renderReglagesLive() {
         // fix for a specificity bug this duplication caused: an inline `style="border:..."` always
         // beats a stylesheet rule, even :focus-visible, so this field's border silently didn't
         // shift color on focus while every other input using the shared class did).
-        `<input id="sift-discogs-token" type="password" placeholder="Jeton Discogs…" value="${esc(token ?? "")}" class="sift-editor-input sift-settings-input sift-settings-input-secret">` +
-        '<button type="button" id="sift-discogs-token-toggle" class="sift-settings-eye" title="Afficher le jeton" aria-label="Afficher le jeton"><i class="ti ti-eye" aria-hidden="true"></i></button>' +
+        `<input id="sift-discogs-token" type="password" placeholder="${txt.jetonPlaceholder}" value="${esc(token ?? "")}" class="sift-editor-input sift-settings-input sift-settings-input-secret">` +
+        `<button type="button" id="sift-discogs-token-toggle" class="sift-settings-eye" title="${txt.afficherJeton}" aria-label="${txt.afficherJeton}"><i class="ti ti-eye" aria-hidden="true"></i></button>` +
         "</div>" +
         // « Vérifier » : impasse A11 de l'issue #15. Enregistrer un jeton ne dit que l'écriture ; sa
         // validité ne se découvrait qu'au premier Identifier, plus tard et dans un autre écran.
@@ -196,12 +195,12 @@ export async function renderReglagesLive() {
         // pas d'équivalent textuel). Le bouton ne redéfinit aucun `background`, donc il garde le
         // `:hover` générique sans avoir à le réaffirmer.
         '<div class="sift-settings-subactions">' +
-        '<button type="button" id="sift-discogs-verify">Vérifier</button>' +
+        `<button type="button" id="sift-discogs-verify">${txt.verifier}</button>` +
         '<div id="sift-discogs-status" class="sift-settings-status"></div>' +
         "</div>",
       {
         forId: "sift-discogs-token",
-        note: '<a id="sift-discogs-link" class="sift-settings-link">obtenir un jeton</a>',
+        note: `<a id="sift-discogs-link" class="sift-settings-link">${txt.obtenirJeton}</a>`,
       },
     );
 
@@ -210,16 +209,16 @@ export async function renderReglagesLive() {
   libBlock.dataset.section = "bibliotheque";
   libBlock.className = "sift-settings-section";
   libBlock.innerHTML =
-    '<div class="sift-settings-title">Général</div>' +
-    '<div class="sift-settings-desc">Le dossier racine est l\'endroit réel sur ton disque où Sift convertit les morceaux filés. L\'arborescence de destination (House/Deep, Techno…) vit à l\'intérieur. Les dossiers surveillés se gèrent depuis le rail, section Sources.</div>' +
+    `<div class="sift-settings-title">${txt.categories.bibliotheque}</div>` +
+    `<div class="sift-settings-desc">${txt.descGeneral}</div>` +
     rowHtml(
-      "Dossier racine",
+      txt.dossierRacine,
       '<div class="sift-settings-field">' +
-        `<span class="sift-settings-path${root ? "" : " sift-settings-path-empty"}">${esc(root || "Aucun dossier sélectionné")}</span>` +
-        '<button id="sift-lib-root-change" type="button" class="sift-settings-btn">Changer…</button>' +
+        `<span class="sift-settings-path${root ? "" : " sift-settings-path-empty"}">${esc(root || txt.aucunDossier)}</span>` +
+        `<button id="sift-lib-root-change" type="button" class="sift-settings-btn">${txt.changer}</button>` +
         "</div>" +
         (root
-          ? '<div class="sift-settings-subactions"><button id="sift-lib-root-forget" type="button" class="sift-settings-btn sift-settings-btn-quiet">Oublier le dossier racine</button></div>'
+          ? `<div class="sift-settings-subactions"><button id="sift-lib-root-forget" type="button" class="sift-settings-btn sift-settings-btn-quiet">${txt.oublierRacine}</button></div>`
           : "") +
         '<div id="sift-lib-root-status" class="sift-settings-status"></div>',
     );
@@ -235,7 +234,7 @@ export async function renderReglagesLive() {
         void refreshRootWarning();
         void renderReglagesLive();
       } catch (e) {
-        if (libStatus) libStatus.textContent = "Erreur d'enregistrement.";
+        if (libStatus) libStatus.textContent = txt.erreurEnregistrement;
         console.error("setSetting(library_root) failed", e);
       }
     })();
@@ -248,7 +247,7 @@ export async function renderReglagesLive() {
         void refreshRootWarning();
         void renderReglagesLive();
       } catch (e) {
-        if (libStatus) libStatus.textContent = "Erreur d'enregistrement.";
+        if (libStatus) libStatus.textContent = txt.erreurEnregistrement;
         console.error("setSetting(library_root) failed", e);
       }
     })();
@@ -270,11 +269,11 @@ export async function renderReglagesLive() {
   tplBlock.dataset.section = "nommage";
   tplBlock.className = "sift-settings-section";
   tplBlock.innerHTML =
-    '<div class="sift-settings-title">Nommage</div>' +
-    '<div class="sift-settings-desc">Le nom que Sift donne aux fichiers qu\'il range. Trois champs disponibles, à insérer d\'un clic. <code>{version}</code> se rend en «&nbsp;(Remix)&nbsp;» quand la piste en a une, et disparaît sinon — pas de parenthèses vides. Le modèle s\'enregistre à la frappe.</div>' +
+    `<div class="sift-settings-title">${txt.categories.nommage}</div>` +
+    `<div class="sift-settings-desc">${txt.descNommage}</div>` +
     rowHtml(
-      "Modèle",
-      `<input id="sift-tpl-input" class="sift-editor-input sift-settings-input sift-tpl-input" spellcheck="false" aria-label="Modèle de nommage" value="${esc(tmpl)}">` +
+      txt.modele,
+      `<input id="sift-tpl-input" class="sift-editor-input sift-settings-input sift-tpl-input" spellcheck="false" aria-label="${txt.modeleAria}" value="${esc(tmpl)}">` +
         '<div class="sift-tpl-chips">' +
         ["{artist}", "{title}", "{version}"]
           .map((p) => `<button type="button" class="sift-tpl-chip" data-tpl-ph="${esc(p)}">${esc(p)}</button>`)
@@ -284,10 +283,10 @@ export async function renderReglagesLive() {
       { forId: "sift-tpl-input" },
     ) +
     rowHtml(
-      "Aperçu",
+      txt.apercu,
       '<div id="sift-tpl-preview" class="sift-tpl-preview"></div>' +
         '<div class="sift-settings-subactions">' +
-        '<button type="button" id="sift-tpl-reset" class="sift-settings-btn sift-settings-btn-quiet">Revenir au modèle par défaut</button>' +
+        `<button type="button" id="sift-tpl-reset" class="sift-settings-btn sift-settings-btn-quiet">${txt.revenirDefaut}</button>` +
         '<div id="sift-tpl-status" class="sift-settings-status"></div>' +
         "</div>",
     );
@@ -310,11 +309,9 @@ export async function renderReglagesLive() {
   /** Avertissement, jamais un blocage : retirer un champ est légitime si on sait ce qu'on fait —
    *  l'aperçu montre déjà la conséquence, et `ensure_unique` gère la collision côté rangement. */
   function tplWarning(t: string): string {
-    if (!t.trim()) return "Un modèle vide n'est pas utilisable.";
-    if (!t.includes("{title}"))
-      return "Sans {title}, deux morceaux du même artiste produisent le même nom — Sift ajoutera un suffixe numérique pour éviter l'écrasement.";
-    if (!t.includes("{artist}"))
-      return "Sans {artist}, les reprises et remixes d'un même titre se retrouvent côte à côte sans distinction.";
+    if (!t.trim()) return txt.avertVide;
+    if (!t.includes("{title}")) return txt.avertSansTitle;
+    if (!t.includes("{artist}")) return txt.avertSansArtist;
     return "";
   }
 
@@ -344,7 +341,7 @@ export async function renderReglagesLive() {
           if (mine !== tplSeq) return;
           console.error("[preview_filename] aperçu du modèle", e);
           tplLines.forEach((l) => {
-            l.textContent = "→ aperçu indisponible";
+            l.textContent = txt.apercuIndisponible;
           });
         });
     }, 120);
@@ -363,14 +360,14 @@ export async function renderReglagesLive() {
       await setSetting("filename_template", t);
       tplLastSaved = t;
       if (tplStatus) {
-        tplStatus.textContent = "Modèle enregistré.";
+        tplStatus.textContent = txt.modeleEnregistre;
         setTimeout(() => {
-          if (tplStatus && tplStatus.textContent === "Modèle enregistré.") tplStatus.textContent = "";
+          if (tplStatus && tplStatus.textContent === txt.modeleEnregistre) tplStatus.textContent = "";
         }, 2000);
       }
     } catch (e) {
       console.error("[setSetting(filename_template)] enregistrement", e);
-      if (tplStatus) tplStatus.textContent = "Échec de l'enregistrement — réessaie.";
+      if (tplStatus) tplStatus.textContent = txt.echecEnregistrement;
     }
   }
 
@@ -417,29 +414,29 @@ export async function renderReglagesLive() {
   // Dossiers/Genres et Session/Historique, qui reconstruisent tout via innerHTML à chaque clic —
   // voir css-transition-requires-persisting-dom en mémoire). Même pattern que positionFmtThumb().
   themeBlock.innerHTML =
-    '<div class="sift-settings-title">Apparence</div>' +
-    '<div class="sift-settings-desc">Auto suit le réglage clair/sombre de ton système. Clair et Sombre forcent un mode fixe, quel que soit le système.</div>' +
+    `<div class="sift-settings-title">${txt.categories.apparence}</div>` +
+    `<div class="sift-settings-desc">${txt.descApparence}</div>` +
     rowHtml(
-      "Thème",
+      txt.theme,
       '<div class="sift-seg sift-seg-thumbed" id="sift-seg-theme">' +
         '<div class="sift-seg-thumb"></div>' +
-        themeBtn("auto", "Auto") +
-        themeBtn("light", "Clair") +
-        themeBtn("dark", "Sombre") +
+        themeBtn("auto", txt.auto) +
+        themeBtn("light", txt.clair) +
+        themeBtn("dark", txt.sombre) +
         "</div>",
     ) +
     // Les noms de langue s'écrivent dans LEUR langue, jamais traduits : quelqu'un qui cherche à
     // sortir d'une interface qu'il ne lit pas reconnaît « English » ou « Français », pas leur
     // traduction. Seul « Auto » suit la langue de l'interface.
     rowHtml(
-      "Langue",
+      txt.langue,
       '<div class="sift-seg sift-seg-thumbed" id="sift-seg-lang">' +
         '<div class="sift-seg-thumb"></div>' +
-        langBtn("auto", "Auto") +
+        langBtn("auto", txt.auto) +
         langBtn("fr", "Français") +
         langBtn("en", "English") +
         "</div>",
-      { note: "Auto suit la langue du système. Changer de langue recharge la fenêtre." },
+      { note: txt.langueNote },
     );
   themeBlock.querySelectorAll<HTMLElement>("[data-theme-choice]").forEach((el) =>
     el.addEventListener("click", () => {
@@ -450,13 +447,7 @@ export async function renderReglagesLive() {
       // suivant, quand le thème revenait tout seul.
       void setTheme(choice).then((r) => {
         if (r.persisted) return;
-        toast(
-          humanizeError(
-            r.error,
-            "Thème appliqué, mais pas enregistré : il reviendra à sa valeur précédente au prochain lancement.",
-            "setTheme",
-          ),
-        );
+        toast(humanizeError(r.error, txt.themeNonEnregistre, "setTheme"));
       });
       themeBlock.querySelectorAll("[data-theme-choice]").forEach((c) => c.classList.remove("on"));
       el.classList.add("on");
@@ -472,7 +463,7 @@ export async function renderReglagesLive() {
       // c'est ce rendu-là qui allumera le bouton. En cas d'échec d'enregistrement, rien n'a changé
       // — le bouton précédent reste allumé, ce qui est l'état vrai.
       void setLang(choice, "reglages").then((r) =>
-        toast(humanizeError(r.error, "Langue non enregistrée — l'interface reste inchangée.", "setLang")),
+        toast(humanizeError(r.error, txt.langueNonEnregistree, "setLang")),
       );
     }),
   );
@@ -513,11 +504,12 @@ export async function renderReglagesLive() {
   layout.className = "sift-settings-layout";
   const side = document.createElement("nav");
   side.className = "sift-settings-side";
-  side.setAttribute("aria-label", "Catégories de réglages");
-  side.innerHTML = `<div class="col-h">Réglages</div>`;
+  side.setAttribute("aria-label", txt.categoriesAria);
+  side.innerHTML = `<div class="col-h">${txt.colonneTitre}</div>`;
+  const labels = sectionLabels();
   for (const el of sections) {
     const key = el.dataset.section ?? "";
-    const label = SECTION_LABELS[key] ?? key;
+    const label = labels[key] ?? key;
     side.insertAdjacentHTML(
       "beforeend",
       `<div class="fld" data-reglages="cat" data-cat="${esc(key)}" tabindex="0" role="button" aria-pressed="false">${esc(label)}</div>`,
@@ -564,11 +556,11 @@ export async function renderReglagesLive() {
       // le champ. Le débounce de 600 ms rend ce cas parfaitement atteignable.
       await saveToken();
       verify.disabled = true;
-      status.textContent = "Vérification…";
+      status.textContent = txt.verification;
       status.style.color = "var(--color-text-tertiary)";
       try {
         await verifyDiscogsToken();
-        status.textContent = "Jeton accepté par Discogs.";
+        status.textContent = txt.jetonAccepte;
         status.style.color = "var(--color-text-success)";
       } catch (e) {
         const { texte, grave } = identifyErrorText(e);
@@ -586,7 +578,7 @@ export async function renderReglagesLive() {
     if (!inp) return;
     const shown = inp.type === "text";
     inp.type = shown ? "password" : "text";
-    toggle.title = shown ? "Afficher le jeton" : "Masquer le jeton";
+    toggle.title = shown ? txt.afficherJeton : txt.masquerJeton;
     toggle.setAttribute("aria-label", toggle.title);
     toggle.innerHTML = `<i class="ti ${shown ? "ti-eye" : "ti-eye-off"}" aria-hidden="true"></i>`;
   });
@@ -611,13 +603,13 @@ export async function renderReglagesLive() {
         // Ce libellé ne dit QUE ce qui s'est passé : l'écriture. Il ne dit pas que le jeton est
         // valide — rien ici ne l'a testé. Ce qu'il vaut se découvre au premier Identifier, qui
         // sait maintenant distinguer un jeton refusé d'une panne réseau (impasse A10, issue #15).
-        status.textContent = val ? "Jeton enregistré." : "Jeton effacé.";
+        status.textContent = val ? txt.jetonEnregistre : txt.jetonEfface;
         setTimeout(() => {
           if (status) status.textContent = "";
         }, 2000);
       }
     } catch (e) {
-      if (status) status.textContent = "Erreur d'enregistrement.";
+      if (status) status.textContent = txt.erreurEnregistrement;
       console.error("setSetting(discogs_token) failed", e);
     }
   }

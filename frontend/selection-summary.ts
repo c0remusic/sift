@@ -2,6 +2,7 @@
 // Module pur — aucun accès DOM. Importé par batch-panel.ts.
 import { MAX_ANALYSIS_ATTEMPTS, type QueueItem } from "../shared/contracts";
 import { esc } from "./dom";
+import { T } from "./i18n/selection-summary";
 
 /** Une piste part-elle au rangement de lot ? **Seul discriminant, partagé avec l'action.**
  *
@@ -30,9 +31,10 @@ export function estRangeableEnLot(it: QueueItem): boolean {
  *  pour le routing délégué de sift-live.ts.
  *  Classes de bouton : .sift-baction .sift-baction--primary / --quiet (grammaire batch existante). */
 export function selectionSummaryHtml(selected: QueueItem[]): string {
+  const L = T();
   const n = selected.length;
   if (n === 0) {
-    return `<div class="sift-bsel-empty">Sélectionne des pistes dans la file</div>`;
+    return `<div class="sift-bsel-empty">${L.empty}</div>`;
   }
   const ok    = selected.filter((it) => it.verdict === "ok").length;
   const fake  = selected.filter((it) => it.verdict === "fake").length;
@@ -92,17 +94,15 @@ export function selectionSummaryHtml(selected: QueueItem[]): string {
   // (retour d'Antoine 2026-09-06, même formulation que
   // `queue-panel.ts::ensureQueueReanalyzeAllButton`). Les trois autres pilules s'en passent parce
   // que leur mot est invariable.
-  const sOther = other > 1 ? "s" : "";
-  const sAband = abandonnees > 1 ? "s" : "";
   const verdictPills = [
-    ok    > 0 ? `<span class="sift-bsel-pill ok">${ok} ok</span>` : "",
-    fake  > 0 ? `<span class="sift-bsel-pill fake">${fake} faux</span>` : "",
-    grey  > 0 ? `<span class="sift-bsel-pill grey">${grey} à vérifier</span>` : "",
+    ok    > 0 ? `<span class="sift-bsel-pill ok">${L.ok(ok)}</span>` : "",
+    fake  > 0 ? `<span class="sift-bsel-pill fake">${L.fake(fake)}</span>` : "",
+    grey  > 0 ? `<span class="sift-bsel-pill grey">${L.grey(grey)}</span>` : "",
     other > 0
-      ? `<span class="sift-bsel-pill other">${other} piste${sOther} non analysée${sOther}</span>`
+      ? `<span class="sift-bsel-pill other">${L.notAnalysed(other)}</span>`
       : "",
     abandonnees > 0
-      ? `<span class="sift-bsel-pill other">${abandonnees} analyse${sAband} abandonnée${sAband}</span>`
+      ? `<span class="sift-bsel-pill other">${L.abandoned(abandonnees)}</span>`
       : "",
   ]
     .filter(Boolean)
@@ -113,18 +113,18 @@ export function selectionSummaryHtml(selected: QueueItem[]): string {
 
   return (
     `<div class="sift-bsel">` +
-    `<div class="sift-bsel-count">${n}<span class="sift-bsel-count-label">piste${n > 1 ? "s" : ""} sélectionnée${n > 1 ? "s" : ""}</span></div>` +
+    `<div class="sift-bsel-count">${n}<span class="sift-bsel-count-label">${L.selectedLabel(n)}</span></div>` +
     (verdictPills ? `<div class="sift-bsel-pills">${verdictPills}</div>` : "") +
     (durStr || fmtStr
       ? `<div class="sift-bsel-meta">${[durStr, fmtStr].filter(Boolean).join(" · ")}</div>`
       : "") +
     `<div class="sift-bsel-actions">` +
     (fileN > 0
-      ? `<button class="sift-baction sift-baction--primary" data-sift="batchqueuefile">Convertir ${fileN} piste${fileN > 1 ? "s" : ""}</button>`
-      : `<button class="sift-baction sift-baction--primary" disabled>Convertir</button>`) +
+      ? `<button class="sift-baction sift-baction--primary" data-sift="batchqueuefile">${L.convertN(fileN)}</button>`
+      : `<button class="sift-baction sift-baction--primary" disabled>${L.convert}</button>`) +
     (discardN > 0
-      ? `<button class="sift-baction sift-baction--quiet" data-sift="batchqueuediscard">Écarter ${discardN} faux</button>`
-      : `<button class="sift-baction sift-baction--quiet" disabled>Écarter</button>`) +
+      ? `<button class="sift-baction sift-baction--quiet" data-sift="batchqueuediscard">${L.setAsideN(discardN)}</button>`
+      : `<button class="sift-baction sift-baction--quiet" disabled>${L.setAside}</button>`) +
     `</div>` +
     `</div>`
   );

@@ -7,6 +7,7 @@ import { getCurrentWindow } from "@tauri-apps/api/window";
 import { platform } from "@tauri-apps/plugin-os";
 import { importPaths } from "./ipc";
 import { toast } from "./filing-toast";
+import { T } from "./i18n/chrome";
 
 // One-time style: while dragging, an existing zone gets an outline + an overlaid hint
 // (::after with the zone's data-dz text). No permanent dashed box — the hint shows only
@@ -28,15 +29,20 @@ function ensureDropStyle() {
 // en mode Détail, le pied de panneau en mode Lot. Le pied est filtré sur `:not([hidden])` parce
 // qu'en Détail il existe encore dans le DOM, vidé et masqué (filing.ts `hidePanelFoot`) : sans ce
 // filtre il serait balisé comme zone de dépôt tout en étant invisible.
-const DROP_ZONES: [string, string][] = [
-  ["#filbox-settings", "Dépose un dossier ici — nouvelle destination"],
-  ["#filfoot:not([hidden])", "Dépose un dossier ici — nouvelle destination"],
-  ["#ql", "Dépose des fichiers audio ici"],
-  // `#sift-rail-sources` : le cadran de dépôt du rail (issue #56). Le sélecteur disait
-  // `#sift-sources` — un id qui n'existait plus nulle part dans le DOM, donc cette zone n'était
-  // JAMAIS balisée pendant un drag (le repli sur #content masquait le trou). Corrigé le 2026-09-03.
-  ["#sift-rail-sources", "Dépose un dossier à surveiller"],
-];
+// Fonction et non constante de module : les libellés se lisent dans la langue courante, à l'appel
+// (`i18n.ts` § le texte se lit à l'appel).
+function dropZones(): [string, string][] {
+  const t = T();
+  return [
+    ["#filbox-settings", t.dropDest],
+    ["#filfoot:not([hidden])", t.dropDest],
+    ["#ql", t.dropAudio],
+    // `#sift-rail-sources` : le cadran de dépôt du rail (issue #56). Le sélecteur disait
+    // `#sift-sources` — un id qui n'existait plus nulle part dans le DOM, donc cette zone n'était
+    // JAMAIS balisée pendant un drag (le repli sur #content masquait le trou). Corrigé le 2026-09-03.
+    ["#sift-rail-sources", t.dropWatch],
+  ];
+}
 
 /** Toggle the drag hint/outline on the relevant existing boxes. Falls back to #content
  * (e.g. Bibliothèque) when none of the named zones are on screen.
@@ -49,10 +55,8 @@ function setDropActive(on: boolean) {
   ensureDropStyle();
   const wanted: [HTMLElement, string][] = [];
   if (on) {
-    const present = DROP_ZONES.filter(([sel]) => document.querySelector(sel));
-    const targets: [string, string][] = present.length
-      ? present
-      : [["#content", "Dépose des fichiers (→ file d'attente) ou des dossiers (→ surveillés)"]];
+    const present = dropZones().filter(([sel]) => document.querySelector(sel));
+    const targets: [string, string][] = present.length ? present : [["#content", T().dropAny]];
     for (const [sel, label] of targets) {
       const el = document.querySelector<HTMLElement>(sel);
       if (el) wanted.push([el, label]);
@@ -107,14 +111,10 @@ function reportImport(res: {
     return;
   }
   if (!files_added && !folders_added) {
-    toast("Rien d'importable dans ce dépôt");
+    toast(T().nothingImportable);
     return;
   }
-  const parts: string[] = [];
-  if (files_added) parts.push(`${files_added} morceau${files_added > 1 ? "x" : ""}`);
-  if (folders_added) parts.push(`${folders_added} dossier${folders_added > 1 ? "s" : ""}`);
-  const plural = files_added + folders_added > 1 ? "s" : "";
-  toast(`${parts.join(" et ")} ajouté${plural}`);
+  toast(T().imported(files_added, folders_added));
 }
 
 /** OS drag-drop: audio files → queue; folders → watched source, or a destination bin when
@@ -130,7 +130,7 @@ export async function installDragDrop() {
             .then(reportImport)
             .catch((e) => {
               console.error("import_paths failed", e);
-              toast("Échec de l'import");
+              toast(T().importFailed);
             });
       } else if (p.type === "enter" || p.type === "over") {
         setDropActive(true);
@@ -250,7 +250,7 @@ export function injectLeanStyle() {
 /** Bascule le title/aria-label du bouton "Agrandir" selon l'état maximisé courant — l'icône
  * reste volontairement identique (ti-square) dans les deux états. */
 function syncMaxButton(btn: HTMLElement, maximized: boolean): void {
-  const label = maximized ? "Restaurer" : "Agrandir";
+  const label = maximized ? T().restore : T().maximize;
   btn.title = label;
   btn.setAttribute("aria-label", label);
 }
@@ -291,11 +291,12 @@ export async function injectTitlebar(): Promise<void> {
     // tête de la colonne de file (`syncQueueSelectButton`, queue-panel.ts). Aucun autre écran n'y
     // montait quoi que ce soit.
     '<div id="sift-tb-search"></div>';
+  const t = T();
   const controls =
     '<div id="sift-tb-controls">' +
-    '<button class="sift-win" data-win="min" title="Réduire" aria-label="Réduire"><i class="ti ti-minus"></i></button>' +
-    '<button class="sift-win" data-win="max" title="Agrandir" aria-label="Agrandir"><i class="ti ti-square"></i></button>' +
-    '<button class="sift-win sift-win-close" data-win="close" title="Fermer" aria-label="Fermer"><i class="ti ti-x"></i></button>' +
+    `<button class="sift-win" data-win="min" title="${t.minimize}" aria-label="${t.minimize}"><i class="ti ti-minus"></i></button>` +
+    `<button class="sift-win" data-win="max" title="${t.maximize}" aria-label="${t.maximize}"><i class="ti ti-square"></i></button>` +
+    `<button class="sift-win sift-win-close" data-win="close" title="${t.close}" aria-label="${t.close}"><i class="ti ti-x"></i></button>` +
     "</div>";
   // Two real zones (left = nav width/tone, right = content tone — see injectLeanStyle's CSS
   // comment for why this is DOM, not a gradient). Windows: title + controls both live in the
@@ -308,7 +309,7 @@ export async function injectTitlebar(): Promise<void> {
   const brand =
     '<span id="sift-tb-brand" data-tauri-drag-region><i class="ti ti-filter" aria-hidden="true"></i>Sift</span>' +
     '<span id="sift-tb-lspacer" data-tauri-drag-region></span>' +
-    '<button id="sift-rail-toggle" class="lk-icon" title="Replier le rail" aria-label="Replier le rail" aria-expanded="true"><i class="ti ti-layout-sidebar-left-collapse" aria-hidden="true"></i></button>';
+    `<button id="sift-rail-toggle" class="lk-icon" title="${t.railCollapse}" aria-label="${t.railCollapse}" aria-expanded="true"><i class="ti ti-layout-sidebar-left-collapse" aria-hidden="true"></i></button>`;
   const left = `<div id="sift-tb-left" data-tauri-drag-region>${isMac ? controls : ""}${brand}</div>`;
   const right = `<div id="sift-tb-right" data-tauri-drag-region>${title}${isMac ? "" : controls}</div>`;
   bar.innerHTML = left + right;
@@ -431,7 +432,7 @@ function applyRailCollapsed(collapsed: boolean): void {
   document.body.classList.toggle("sift-rail-collapsed", collapsed);
   const btn = document.getElementById("sift-rail-toggle");
   if (!btn) return;
-  const label = collapsed ? "Déplier le rail" : "Replier le rail";
+  const label = collapsed ? T().railExpand : T().railCollapse;
   btn.title = label;
   btn.setAttribute("aria-label", label);
   btn.setAttribute("aria-expanded", collapsed ? "false" : "true");

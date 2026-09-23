@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { setCurrentLang } from "../frontend/i18n";
 import {
   DURATION_MISMATCH_SEC,
   HF_REF_HI,
@@ -106,5 +107,35 @@ describe("densité du haut du spectre", () => {
     expect(HF_TOP_REF_LO).not.toBe(HF_REF_LO);
     expect(hfTopDensityParts(-8.0, fmt).ref).toContain("dans la plage");
     expect(hfDensityParts(-8.0, fmt).ref).toContain("sous la plage");
+  });
+});
+
+// Interface anglaise : le texte se lit À L'APPEL, donc changer de langue entre deux appels suffit.
+// Mêmes garanties qu'en français — situer sans juger, dire les deux durées quand elles divergent.
+describe("en anglais", () => {
+  afterEach(() => setCurrentLang("fr"));
+
+  it("situe « within / below » la plage, avec ses deux bornes", () => {
+    setCurrentLang("en");
+    expect(hfDensityParts(-3.2, fmt).ref).toBe(`within the master range (${HF_REF_LO} to ${HF_REF_HI})`);
+    expect(hfDensityParts(-12.4, fmt).ref).toContain("below the master range");
+    expect(hfTopDensityParts(-3.0, fmt).ref).toContain("within the master range");
+    expect(hfTopDensityParts(-25.0, fmt).ref).toContain("below the master range");
+    // La valeur reste un chiffre nu, quelle que soit la langue.
+    expect(hfDensityParts(-12.4, fmt).value).toBe("-12.4 dB");
+  });
+
+  it("n'accuse jamais, même très en dessous de la plage", () => {
+    setCurrentLang("en");
+    const t = `${joined(hfDensityParts(-43.8, fmt))} ${joined(hfTopDensityParts(-31.7, fmt))}`.toLowerCase();
+    for (const mot of ["fake", "suspect", "transcod", "mp3", "opus", "lossy"]) {
+      expect(t).not.toContain(mot);
+    }
+  });
+
+  it("dit les deux durées quand elles divergent", () => {
+    setCurrentLang("en");
+    expect(decodedShortfallText(400.0, 40.0, fmt)).toBe("40.0 s of 400.0 s declared");
+    expect(decodedShortfallText(212.4, 212.4, fmt)).toBeNull();
   });
 });

@@ -26,6 +26,7 @@ import { convertFileSrc } from "@tauri-apps/api/core";
 import { requireEl, esc } from "./dom";
 import { toast } from "./filing-toast";
 import { humanizeError } from "./errors";
+import { T } from "./i18n/library-detail";
 
 /** État de la fiche ouverte (une seule à la fois). */
 interface EditState {
@@ -61,9 +62,10 @@ function chosenHtml(t: LibraryTrack): string {
 function renderEdit(edit: HTMLElement, st: EditState): void {
   const t = st.track;
   const identified = !!t.discogs_release_id;
+  const L = T();
   edit.innerHTML =
     `<div class="sift-meta-header">` +
-    `<span class="sift-meta-title">Métadonnées</span>` +
+    `<span class="sift-meta-title">${L.metadata}</span>` +
     `</div>` +
     `<div class="sift-meta-body">` +
     // Release choisie au repos (ligne inerte), candidats le temps d'une recherche, vide et masqué
@@ -71,18 +73,18 @@ function renderEdit(edit: HTMLElement, st: EditState): void {
     `<div class="sift-cands sift-cands-host"${identified ? "" : " hidden"}>${identified ? chosenHtml(t) : ""}</div>` +
     // Pas de badge « I » : le raccourci est celui de Revue (`shortcuts.ts`), il n'existe pas ici.
     `<div class="sift-meta-actions">` +
-    `<button data-lib="identifier" class="sift-meta-ident-btn" title="Rechercher les métadonnées sur Discogs (pochette, label, année, genres)">${t.artist && t.title ? "Ré-identifier" : "Identifier"}</button>` +
+    `<button data-lib="identifier" class="sift-meta-ident-btn" title="${L.identifyTitle}">${t.artist && t.title ? L.reidentify : L.identify}</button>` +
     `</div>` +
     `<div class="sift-attr-list">` +
-    attrRow("Artiste", `<input data-lib="artist" class="sift-attr-input" placeholder="—" aria-label="Artiste" value="${esc(t.artist ?? "")}">`) +
-    attrRow("Titre", `<input data-lib="title" class="sift-attr-input" placeholder="—" aria-label="Titre" value="${esc(t.title ?? "")}">`) +
-    attrRow("Label", `<input data-lib="label" class="sift-attr-input" placeholder="—" aria-label="Label" value="${esc(t.label ?? "")}">`) +
+    attrRow(L.artist, `<input data-lib="artist" class="sift-attr-input" placeholder="—" aria-label="${L.artist}" value="${esc(t.artist ?? "")}">`) +
+    attrRow(L.title, `<input data-lib="title" class="sift-attr-input" placeholder="—" aria-label="${L.title}" value="${esc(t.title ?? "")}">`) +
+    attrRow(L.label, `<input data-lib="label" class="sift-attr-input" placeholder="—" aria-label="${L.label}" value="${esc(t.label ?? "")}">`) +
     // Année : borne native 1900-2100 (audit B4, 2026-07-24), re-vérifiée dans `doSave` — la borne
     // native ne tient pas une valeur tapée puis quittée.
-    attrRow("Année", `<input data-lib="year" type="number" min="1900" max="2100" class="sift-attr-input" placeholder="—" aria-label="Année" value="${t.year ?? ""}">`) +
+    attrRow(L.year, `<input data-lib="year" type="number" min="1900" max="2100" class="sift-attr-input" placeholder="—" aria-label="${L.year}" value="${t.year ?? ""}">`) +
     // Genres : ÉDITABLES ici (Revue les montre en texte + icône tag, lecture seule — spec Revue
     // § Zone C, décision F). Un input dans la même rangée, autocomplété sur les genres déjà connus.
-    attrRow("Genres", `<input data-lib="genres" list="sift-genre-list" class="sift-attr-input" placeholder="—" aria-label="Genres, séparés par une virgule" value="${esc(t.genres.join(", "))}">`) +
+    attrRow(L.genres, `<input data-lib="genres" list="sift-genre-list" class="sift-attr-input" placeholder="—" aria-label="${L.genresAria}" value="${esc(t.genres.join(", "))}">`) +
     `<datalist id="sift-genre-list"></datalist>` +
     `</div>` +
     `</div>`;
@@ -210,12 +212,12 @@ export async function changeCoverForOpenTrack(): Promise<void> {
   const file = await open({
     multiple: false,
     directory: false,
-    filters: [{ name: "Image", extensions: ["jpg", "jpeg", "png"] }],
+    filters: [{ name: T().imageFilter, extensions: ["jpg", "jpeg", "png"] }],
   });
   if (typeof file !== "string") return;
   const e = { ...collectEdit(edit), cover_path: file };
   if (!e.title) {
-    toast("Le titre ne peut pas être vide.");
+    toast(T().titleEmpty);
     return;
   }
   try {
@@ -224,9 +226,9 @@ export async function changeCoverForOpenTrack(): Promise<void> {
     st.track.has_cover = true;
     paintHeaderCover(edit, file);
     notifyChanged(st.track);
-    toast("Pochette changée");
+    toast(T().coverChanged);
   } catch (err) {
-    toast(humanizeError(err, "Impossible de changer la pochette — réessaie", "update_metadata"));
+    toast(humanizeError(err, T().coverFailed, "update_metadata"));
   }
 }
 
@@ -255,9 +257,9 @@ async function doIdentify(
 ): Promise<void> {
   const orig = btn.textContent;
   btn.disabled = true;
-  btn.textContent = "Recherche…";
+  btn.textContent = T().searching;
   host.hidden = false;
-  host.innerHTML = '<div class="sift-cands-msg">Recherche…</div>';
+  host.innerHTML = '<div class="sift-cands-msg">' + T().searching + "</div>";
   try {
     const candidates = await identify(st.track.id);
     renderCandidates(host, candidates);
@@ -270,7 +272,7 @@ async function doIdentify(
     host.innerHTML =
       html +
       (gotoReglages
-        ? `<button class="sift-cand-jump sift-goto-reglages" data-lib="goto-reglages"><i class="ti ti-arrow-right"></i> Ouvrir Réglages</button>`
+        ? `<button class="sift-cand-jump sift-goto-reglages" data-lib="goto-reglages"><i class="ti ti-arrow-right"></i> ${T().openSettings}</button>`
         : "");
     host.querySelector('[data-lib="goto-reglages"]')?.addEventListener("click", () => {
       requireEl('[data-view="reglages"]', "library-detail goto-reglages").dispatchEvent(
@@ -302,7 +304,7 @@ function wireCandidateClicks(
         .catch((e) => {
           el.style.opacity = "";
           el.style.pointerEvents = "";
-          host.innerHTML = `<div class="sift-cands-msg sift-cands-error"><i class="ti ti-alert-triangle" style="font-size:var(--text-md);vertical-align:-2px;margin-right:var(--space-4)"></i>${esc(humanizeError(e, "Impossible d'appliquer cette release — réessaie", "apply_identity"))}</div>`;
+          host.innerHTML = `<div class="sift-cands-msg sift-cands-error"><i class="ti ti-alert-triangle" style="font-size:var(--text-md);vertical-align:-2px;margin-right:var(--space-4)"></i>${esc(humanizeError(e, T().applyFailed, "apply_identity"))}</div>`;
         });
     });
   });
@@ -340,14 +342,14 @@ function onIdentityApplied(
   set("year", st.track.year != null ? String(st.track.year) : "");
   set("genres", st.track.genres.join(", "));
   const idBtn = edit.querySelector<HTMLButtonElement>('[data-lib="identifier"]');
-  if (idBtn) idBtn.textContent = "Ré-identifier";
+  if (idBtn) idBtn.textContent = T().reidentify;
   host.hidden = false;
   host.innerHTML = chosenHtml(st.track);
   // Same reasoning as doSave(): applied.styles can introduce brand-new genres, so drop the
   // cache here too or the datalist only picks them up after a full app restart.
   genreListCache = null;
   notifyChanged(st.track);
-  toast("Identifié — métadonnées appliquées");
+  toast(T().identified);
 }
 
 /** Grave les champs (tags du fichier d'abord, puis base) — au blur / Entrée d'un champ modifié.
@@ -356,11 +358,11 @@ async function doSave(edit: HTMLElement, st: EditState): Promise<void> {
   if (st.saving) return;
   const e = collectEdit(edit);
   if (!e.title) {
-    toast("Le titre ne peut pas être vide.");
+    toast(T().titleEmpty);
     return;
   }
   if (e.year != null && (e.year < 1900 || e.year > 2100)) {
-    toast("Année hors limites (1900-2100).");
+    toast(T().yearOutOfRange);
     return;
   }
   st.saving = true;
@@ -377,14 +379,14 @@ async function doSave(edit: HTMLElement, st: EditState): Promise<void> {
     // within the same session).
     genreListCache = null;
     notifyChanged(st.track);
-    toast("Enregistré", true, () => {
+    toast(T().saved, true, () => {
       void revertBatch(batchId).catch((err: unknown) => {
         console.error("revert_batch failed", err);
-        toast("Annulation impossible — réessaie");
+        toast(T().undoFailed);
       });
     });
   } catch (err) {
-    toast(humanizeError(err, "Échec de l'enregistrement — réessaie", "update_metadata"));
+    toast(humanizeError(err, T().saveFailed, "update_metadata"));
   } finally {
     st.saving = false;
   }

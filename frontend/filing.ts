@@ -57,6 +57,7 @@ import {
   releaseCache,
 } from "./filing-identify";
 import { doRanger, doSecondary } from "./filing-actions";
+import { T } from "./i18n/filing";
 
 export { TARGET_LABEL } from "./filing-preview";
 
@@ -87,7 +88,7 @@ registerClearPaneHook(clearPane);
 /** Destination button's value text: the real bin label once one is chosen, else an explicit call
  *  to action — never the bare "—" the button used to show for "nothing chosen yet". */
 function destValueLabel(): string {
-  return hasDestination() ? binLabel() : "Choisir…";
+  return hasDestination() ? binLabel() : T().choose;
 }
 
 /** Single source of truth for the Ranger button's label + real disabled state. A disabled native
@@ -106,11 +107,12 @@ function refreshRangerButton(): void {
   btn.disabled = !ok;
   // Le raccourci vit dans le tooltip depuis le retrait de la légende clavier (2026-09-03) —
   // même motif que « Écarter — va dans Écartés (⌫) » et « Lecture / pause (espace) ».
-  btn.title = ok ? "Convertir (Entrée)" : "Choisis une destination avant de convertir";
+  const t = T();
+  btn.title = ok ? t.convertTitle : t.convertNeedsDest;
   // Juste « Convertir » : la destination est déjà affichée dans son champ du rail (Antoine
   // 2026-08-21), la répéter dans le bouton faisait doublon. L'état désactivé + le champ Destination
   // en ambre (« Choisir… ») disent qu'il manque une destination.
-  btn.textContent = "Convertir";
+  btn.textContent = t.convert;
 }
 
 /** Re-render everything a destination change touches: the Destination button's own label/ambre
@@ -179,13 +181,14 @@ function renderFoot(mid: HTMLElement, rail: string): void {
     return;
   }
 
+  const tx = T();
   const lossy = rail === "lossy";
   const chips = (["mp3_320", "aiff_16_44", "wav_16_44"] as Target[])
     .map((t) => {
       // a lossy source can't be upscaled to lossless — disable AIFF/WAV (the backend refuses
       // it anyway; greying it out prevents the dead-end click).
       if (lossy && t !== "mp3_320")
-        return `<span class="sift-seg-opt sift-chip-disabled" title="Pas de surqualité depuis un fichier lossy">${TARGET_LABEL[t]}</span>`;
+        return `<span class="sift-seg-opt sift-chip-disabled" title="${tx.fmtNoUpscale}">${TARGET_LABEL[t]}</span>`;
       const on = (state.target ?? defaultTarget(rail)) === t ? " on" : "";
       return `<span class="sift-seg-opt${on}" data-fil="fmt" data-t="${t}">${TARGET_LABEL[t]}</span>`;
     })
@@ -199,8 +202,8 @@ function renderFoot(mid: HTMLElement, rail: string): void {
   // real deletion is still available from the Écartés screen itself (ecartes-view.ts's own
   // trash action), so this button is no longer the only path to "gone for good".
   const secondary = fake
-    ? '<button data-fil="resource" class="sift-secondary-resource" title="Fichier faux — va dans Écartés (⌫)">Re-source</button>'
-    : '<button data-fil="trash" class="sift-secondary-trash" title="Écarter — va dans Écartés (⌫)">Écarter</button>';
+    ? `<button data-fil="resource" class="sift-secondary-resource" title="${tx.resourceTitle}">${tx.resource}</button>`
+    : `<button data-fil="trash" class="sift-secondary-trash" title="${tx.setAsideTitle}">${tx.setAside}</button>`;
 
   // Réglages structurés (wireframe v2 option 3, choisi 2026-08-21) : chacun sous son petit label
   // (Destination · Format · Nom final) séparés par des filets verticaux. Ils vivent DANS la boîte
@@ -209,19 +212,19 @@ function renderFoot(mid: HTMLElement, rail: string): void {
   settings.innerHTML =
     `<div class="sift-rail-settings">` +
     `<div class="sift-rail-field">` +
-    `<span class="sift-rail-flabel">Destination</span>` +
+    `<span class="sift-rail-flabel">${tx.destination}</span>` +
     `<button data-fil="destbtn" class="sift-dest-btn${hasDestination() ? "" : " sift-dest-btn-empty"}">` +
     `<span class="sift-fil-bin">${esc(destValueLabel())}</span>` +
     `<i class="ti ti-chevron-down sift-dest-btn-caret"></i></button>` +
     `</div>` +
     `<span class="sift-rail-vsep"></span>` +
     `<div class="sift-rail-field">` +
-    `<span class="sift-rail-flabel">Format</span>` +
+    `<span class="sift-rail-flabel">${tx.format}</span>` +
     `<div class="sift-seg sift-seg-thumbed" id="sift-fmt-seg"><div class="sift-seg-thumb"></div>${chips}</div>` +
     `</div>` +
     `<span class="sift-rail-vsep"></span>` +
     `<div class="sift-rail-field sift-rail-field-grow">` +
-    `<span class="sift-rail-flabel">Nom final</span>` +
+    `<span class="sift-rail-flabel">${tx.finalName}</span>` +
     `<span class="sift-fil-prev"></span>` +
     `</div>` +
     `</div>`;
@@ -292,22 +295,21 @@ function clearPane(mid: HTMLElement, emptyQueue = false): void {
   state.fileTags = null;
   state.filedConfirm = null;
   state.identified = false;
+  const t = T();
   mid.innerHTML = emptyQueue
     ? state.filedThisSession > 0
       ? // Vidée APRÈS avoir rangé quelque chose cette session : « Tout est trié » → Bibliothèque, où
         // ces rangés vivent maintenant (data-view="biblio", index.html:34, vérifié dans le markup ;
         // même délégué de clic #pa que "home", aucun câblage ici — contrat d'actionHtml).
         emptyStateHtml({
-          title: "Tout est trié",
-          note: `${state.filedThisSession} morceau${
-            state.filedThisSession > 1 ? "x rangés" : " rangé"
-          } cette session. Ta file est vide.`,
+          title: t.allSortedTitle,
+          note: t.allSortedNote(state.filedThisSession),
           actionHtml:
-            '<button type="button" data-view="biblio" class="sift-empty-link">Voir la Bibliothèque</button>',
+            `<button type="button" data-view="biblio" class="sift-empty-link">${t.viewLibrary}</button>`,
         })
       : emptyStateHtml({
-          title: "Rien à revoir",
-          note: "Les morceaux à traiter apparaissent ici dès qu'un dossier est surveillé — ou dépose des fichiers directement dans la file.",
+          title: t.nothingTitle,
+          note: t.nothingNote,
           // Impasse A6 (issue #15) : Revue vide était le SEUL cul-de-sac sans action de l'app.
           // L'action a longtemps été `data-view="home"` (« depuis Accueil ») — un écran FANTÔME
           // depuis la fusion d'Accueil dans le rail (router.ts:38, 6d1cc85) : le routeur n'a plus
@@ -319,9 +321,9 @@ function clearPane(mid: HTMLElement, emptyQueue = false): void {
           // pas ce bouton (`installRailSources` écoute #nav seulement), d'où le câblage direct
           // juste après le innerHTML.
           actionHtml:
-            '<button type="button" data-fil="addsource" class="sift-empty-link">Ajouter un dossier à surveiller</button>',
+            `<button type="button" data-fil="addsource" class="sift-empty-link">${t.addWatchedFolder}</button>`,
         })
-    : '<div class="sift-clear-pane">Sélectionne un morceau dans la file pour l\'écouter et le convertir.</div>';
+    : `<div class="sift-clear-pane">${t.clearPane}</div>`;
   mid.querySelector('[data-fil="addsource"]')?.addEventListener("click", () => addSourceAction?.());
   // Les contrôles de validation vivaient dans le pied de panneau (#filfoot) ; depuis la décision
   // V2b ils vivent dans la boîte de lecture, que le `mid.innerHTML` ci-dessus vient d'effacer avec
@@ -338,14 +340,15 @@ function clearPane(mid: HTMLElement, emptyQueue = false): void {
 /** Banner HTML for a duplicate match (filed = already in library, pending = dupe in queue;
  * `both` = sound-confirmed, `name` = same name only → cautious wording). */
 function dupBanner(m: DupMatch): string {
+  const t = T();
   const where =
     m.status === "filed"
-      ? `Déjà converti : ${esc((m.folder ? m.folder + "/" : "") + (m.filename || ""))}`
-      : `Doublon d'un fichier en file : ${esc(m.filename || "")}`;
+      ? t.dupFiled(esc((m.folder ? m.folder + "/" : "") + (m.filename || "")))
+      : t.dupPending(esc(m.filename || ""));
   const sure = m.kind === "both";
   const fg = sure ? "var(--color-text-warning)" : "var(--color-text-tertiary)";
   const bg = sure ? "var(--color-background-warning)" : "var(--color-background-secondary)";
-  const head = sure ? "Doublon" : "Doublon possible (même nom — à vérifier)";
+  const head = sure ? t.dupSure : t.dupMaybe;
   return `<div class="sift-dup-banner" style="background:${bg}"><i class="ti ti-copy" style="color:${fg}"></i><div class="sift-dup-banner-body"><div class="sift-dup-banner-head" style="color:${fg}">${head}</div><div class="sift-dup-banner-where">${where}</div></div></div>`;
 }
 
@@ -500,7 +503,7 @@ export async function openFilingInto(
       // Real queue state is unknown (IPC/DB error) — don't assert "nothing to review" (fail-fast:
       // never guess a fact we couldn't verify). Surface it AND leave a neutral prompt, not the
       // formal empty state and not a silent swallow.
-      toast("La file n'a pas pu être relue — réessaie.", false);
+      toast(T().queueReloadFailed, false);
       clearPane(mid);
     } else if (items.length === 0) {
       // The queue really is empty — the only case that warrants the formal "Rien à revoir".
@@ -610,7 +613,7 @@ export async function openFilingInto(
     if (chips && !chips.querySelector('[data-chip="read-error"]')) {
       chips.insertAdjacentHTML(
         "beforeend",
-        vchipHtml("LECTURE INCOMPLÈTE", "danger").replace("<span ", '<span data-chip="read-error" '),
+        vchipHtml(T().readIncomplete, "danger").replace("<span ", '<span data-chip="read-error" '),
       );
     }
   }
@@ -701,7 +704,7 @@ export function installUndoShortcut(): void {
     }
     void undoLast()
       .then((b) => {
-        if (b) toast("Action annulée", false);
+        if (b) toast(T().undone, false);
       })
       .catch((err) => console.error("undo failed", err));
   });

@@ -7,6 +7,7 @@ import { state, openState } from "./filing-state";
 import { toast } from "./filing-toast";
 import { refreshPreview, updateHeaderName, titleCase } from "./filing-preview";
 import { humanizeError } from "./errors";
+import { T } from "./i18n/filing-identify";
 
 // Exclusive accordion (shadcn Accordion reference, ui.shadcn.com/docs/components/base/accordion):
 // opening Métadonnées closes Diagnostic and vice versa. Coordinated with report-view.ts (no
@@ -210,7 +211,7 @@ function onIdentityApplied(
   // bouton dans un autre état, et n'en corriger qu'un chemin ferait revenir l'icône dès qu'une
   // identité est appliquée. `textContent` et non `innerHTML` — il n'y a plus de balise à poser,
   // et le badge de raccourci `I` n'a jamais été rendu par ce chemin-ci.
-  idBtn.textContent = "Ré-identifier";
+  idBtn.textContent = T().reidentify;
 
   // The displayed identity just changed while the FILE keeps its old tags → surface the gap.
   refreshDiscrepancy();
@@ -268,7 +269,7 @@ function wireCandidateClicks(
           el.style.opacity = "";
           el.style.pointerEvents = "";
           // [m10] errors get a warning icon to distinguish from "no results"
-          host.innerHTML = `<div class="sift-cands-msg sift-cands-error"><i class="ti ti-alert-triangle sift-cand-error-icon"></i>${esc(humanizeError(e, "Impossible d'appliquer cette release — réessaie", "apply_identity"))}</div>`;
+          host.innerHTML = `<div class="sift-cands-msg sift-cands-error"><i class="ti ti-alert-triangle sift-cand-error-icon"></i>${esc(humanizeError(e, T().applyFailed, "apply_identity"))}</div>`;
         });
     });
   });
@@ -306,10 +307,11 @@ async function doIdentify(
   // painted candidates/errors from THIS track's search into a pane now showing a different one.
   const myseq = openState.openSeq;
   const origLabel = btn.innerHTML;
+  const L = T();
   btn.disabled = true;
-  btn.innerHTML = '<i class="ti ti-loader-2 sift-spin sift-searching-icon"></i> Recherche…';
+  btn.innerHTML = `<i class="ti ti-loader-2 sift-spin sift-searching-icon"></i> ${L.searching}`;
   host.hidden = false;
-  host.innerHTML = '<div class="sift-cands-msg">Recherche…</div>';
+  host.innerHTML = `<div class="sift-cands-msg">${L.searching}</div>`;
 
   let candidates: Candidate[] = [];
   try {
@@ -332,7 +334,7 @@ async function doIdentify(
     host.innerHTML =
       html +
       (gotoReglages
-        ? `<button class="sift-cand-jump sift-goto-reglages" data-fil="goto-reglages"><i class="ti ti-arrow-right"></i> Ouvrir Réglages</button>`
+        ? `<button class="sift-cand-jump sift-goto-reglages" data-fil="goto-reglages"><i class="ti ti-arrow-right"></i> ${L.openSettings}</button>`
         : "");
     host.querySelector<HTMLElement>('[data-fil="goto-reglages"]')?.addEventListener("click", () => {
       // Navigate to the Réglages view via the existing nav click handler in app.js
@@ -352,6 +354,7 @@ export function renderEditor(host: HTMLElement, mid: HTMLElement): void {
     host.innerHTML = "";
     return;
   }
+  const L = T();
   host.innerHTML =
     // Header statique (spec revue.md § Zone C, direction B validée 2026-08-21) : Métadonnées est
     // TOUJOURS visible, sans accordéon NI bascule read-only/édition. Les valeurs s'éditent EN PLACE —
@@ -363,7 +366,7 @@ export function renderEditor(host: HTMLElement, mid: HTMLElement): void {
     // l'UI réelle — le seul rendu qui reste est celui de la maquette `app.js`, qui ne fait pas
     // autorité. Le critère backend, lui, est bien recâblé (#46, 2026-09-01).
     `<div class="sift-meta-header">` +
-    `<span class="sift-meta-title">Métadonnées</span>` +
+    `<span class="sift-meta-title">${L.metadata}</span>` +
     `</div>` +
     `<div class="sift-meta-body">` +
     // L'IDENTIFICATION DISCOGS EN TÊTE de fiche — « je voudrais mettre l'identification Discogs
@@ -383,23 +386,23 @@ export function renderEditor(host: HTMLElement, mid: HTMLElement): void {
     // label descriptif = texte seul) ; le badge `I` RESTE — il porte le raccourci clavier, une
     // information que le libellé ne donne pas.
     `<div class="sift-meta-actions">` +
-    `<button data-fil="identifier" class="sift-meta-ident-btn" title="Rechercher les métadonnées sur Discogs (pochette, label, année, genres)">${c.artist && c.title ? "Ré-identifier" : "Identifier"} <span class="kbd sift-kbd-hint-id">I</span></button>` +
+    `<button data-fil="identifier" class="sift-meta-ident-btn" title="${L.identifyTitle}">${c.artist && c.title ? L.reidentify : L.identify} <span class="kbd sift-kbd-hint-id">I</span></button>` +
     `</div>` +
     // Liste d'attributs éditable en place : la valeur EST un input (data-fil écouté par `upd` à la
     // saisie et par onIdentityApplied au remplissage), stylé comme du texte tant qu'on ne le touche
     // pas. Labels persistants — annotation "on ne sait pas à quoi correspondent les champs".
     // Placeholder "—" quand vide, jamais une ligne vide.
     `<div class="sift-attr-list">` +
-    `<div class="sift-attr"><span class="sift-attr-k">Artiste</span><input data-fil="artist" placeholder="—" value="${esc(c.artist)}" class="sift-attr-input" aria-label="Artiste"></div>` +
-    `<div class="sift-attr"><span class="sift-attr-k">Titre</span><input data-fil="title" placeholder="—" value="${esc(c.title)}" class="sift-attr-input" aria-label="Titre"></div>` +
-    `<div class="sift-attr"><span class="sift-attr-k">Version</span><input data-fil="version" placeholder="—" value="${esc(c.version ?? "")}" class="sift-attr-input" aria-label="Version"></div>` +
+    `<div class="sift-attr"><span class="sift-attr-k">${L.artist}</span><input data-fil="artist" placeholder="—" value="${esc(c.artist)}" class="sift-attr-input" aria-label="${L.artist}"></div>` +
+    `<div class="sift-attr"><span class="sift-attr-k">${L.title}</span><input data-fil="title" placeholder="—" value="${esc(c.title)}" class="sift-attr-input" aria-label="${L.title}"></div>` +
+    `<div class="sift-attr"><span class="sift-attr-k">${L.version}</span><input data-fil="version" placeholder="—" value="${esc(c.version ?? "")}" class="sift-attr-input" aria-label="${L.version}"></div>` +
     // Label — fait de release Discogs, ÉDITABLE EN PLACE (retour vérif visuelle 2026-08-25 :
     // l'utilisateur veut corriger le label). La valeur EST un input `data-fil="label"`, câblé comme
     // Artiste/Titre/Version : `upd` le lit vers state.canonical.label (label voyage désormais DANS
     // Canonical), et il se grave au fichier (blur/Entrée) via doApplyTags → write_tags_full (+
     // persiste metadata.label). Rempli en place par onIdentityApplied. Placeholder "—" quand vide.
-    `<div class="sift-attr"><span class="sift-attr-k">Label</span><input data-fil="label" placeholder="—" value="${esc(c.label ?? "")}" class="sift-attr-input" aria-label="Label"></div>` +
-    `<div class="sift-attr"><span class="sift-attr-k">Genres</span><span class="sift-genres"></span></div>` +
+    `<div class="sift-attr"><span class="sift-attr-k">${L.label}</span><input data-fil="label" placeholder="—" value="${esc(c.label ?? "")}" class="sift-attr-input" aria-label="${L.label}"></div>` +
+    `<div class="sift-attr"><span class="sift-attr-k">${L.genres}</span><span class="sift-genres"></span></div>` +
     `</div>` +
     // Historique de l'emplacement des résultats et du bouton (tous deux en tête de fiche
     // aujourd'hui, voir plus haut) : bouton au bord droit de l'en-tête jusqu'au 2026-09-06 (à
@@ -437,7 +440,7 @@ export function renderEditor(host: HTMLElement, mid: HTMLElement): void {
     // Règle appliquée : `docs/design-system/content.md` — « un état doit dire ce que l'utilisateur
     // peut faire MAINTENANT ». Les deux gestes nommés existent : choisir un match déclenche
     // `onIdentityApplied`, et Convertir est le libellé de l'action principale (content.md § Actions).
-    `<div class="sift-tag-warn" role="status" aria-live="polite" style="display:none"><i class="ti ti-alert-triangle sift-icon-inline-md sift-icon-flex-none"></i><span>Artiste et Titre pas encore gravés dans le fichier (seulement identifiés ci-dessus) — un CDJ ne peut pas les lire tant que ce n'est pas fait. <strong>Choisir un match</strong> ci-dessus, ou <strong>Convertir</strong>, pour les graver.</span></div>` +
+    `<div class="sift-tag-warn" role="status" aria-live="polite" style="display:none"><i class="ti ti-alert-triangle sift-icon-inline-md sift-icon-flex-none"></i><span>${L.tagWarn}</span></div>` +
     `</div>`; // ferme .sift-meta-body
 
   // Métadonnées ne se replie plus (spec revue.md § Zone C) : rien à fermer quand Diagnostic s'ouvre,
@@ -581,9 +584,10 @@ function refreshRebuyLink(): void {
     el.innerHTML = "";
     return;
   }
+  const L = T();
   el.innerHTML =
-    `<button class="sift-rebuy-btn" data-fil="rebuy" title="Ce fichier est un faux — chercher une version authentique sur Beatport">` +
-    `<i class="ti ti-shopping-cart sift-icon-inline-md"></i> Chercher sur Beatport</button>`;
+    `<button class="sift-rebuy-btn" data-fil="rebuy" title="${L.rebuyTitle}">` +
+    `<i class="ti ti-shopping-cart sift-icon-inline-md"></i> ${L.rebuy}</button>`;
   el.querySelector('[data-fil="rebuy"]')?.addEventListener("click", () => {
     void openUrl(url).catch((e) => console.error("openUrl (rebuy) failed", e));
   });
@@ -613,12 +617,12 @@ async function doApplyTags(): Promise<void> {
     refreshDiscrepancy(); // file == display now → marker clears
     // Filet « Rétablir » en TOAST (décision F.2) : graver est un geste auto, on met l'undo ciblé à
     // portée immédiate. revertBatch(CE tag_edit) ; le Journal / Ctrl+Z restent le filet durable.
-    toast("Tags gravés dans le fichier", true, () =>
+    toast(T().tagsWritten, true, () =>
       void revertBatch(batchId).catch((e) => console.error("revertBatch (tag_edit) failed", e)),
     );
   } catch (e) {
     console.error("apply_tags failed", e);
-    toast("Échec de l'écriture des tags", false);
+    toast(T().tagsFailed, false);
   } finally {
     applyingTags = false;
   }

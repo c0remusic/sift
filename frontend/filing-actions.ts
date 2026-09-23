@@ -16,9 +16,8 @@ import {
 } from "./filing-state";
 import { toast } from "./filing-toast";
 import { humanizeError } from "./errors";
-
-/** Banner label when a track was filed in place (its own source folder, not a tree bin). */
-const IN_PLACE_BIN_LABEL = "source folder";
+import { T } from "./i18n/filing-actions";
+import { T as ToastT } from "./i18n/filing-toast";
 
 /** Ouvre l'écran Réglages — injecté par `sift-live.ts` (`registerOpenSettingsAction`), jamais
  *  importé : ce module ne peut pas importer `router.ts` sans refermer un cycle statique
@@ -91,7 +90,7 @@ export async function doRanger(
   const inPlace = fileInPlaceChecked();
   const dest = inPlace ? FILE_IN_PLACE : getBinRel();
   if (dest === null) {
-    toast("Choisis un dossier de destination.", false);
+    toast(T().chooseDestination, false);
     return;
   }
   const ranger = document.querySelector<HTMLElement>('[data-fil="ranger"]');
@@ -104,7 +103,7 @@ export async function doRanger(
   setActionsDisabled(true);
   if (ranger)
     ranger.innerHTML =
-      '<i class="ti ti-loader-2 sift-spin sift-icon-inline-md"></i> Conversion en cours…';
+      '<i class="ti ti-loader-2 sift-spin sift-icon-inline-md"></i> ' + T().converting;
   let allowRailMismatch = false;
   try {
     for (;;) {
@@ -112,7 +111,9 @@ export async function doRanger(
         const res = await fileTrack(track.id, dest, state.target, canonical, allowRailMismatch);
         const filedPath = res.path;
         const batchId = res.batch_id;
-        const bin = inPlace ? IN_PLACE_BIN_LABEL : binLabel();
+        // Banner label when a track was filed in place (its own source folder, not a tree bin),
+        // read here at call time so the banner follows the language chosen in Réglages.
+        const bin = inPlace ? T().inPlaceBin : binLabel();
         // The conversion is now running behind us. Registering it here is what takes the track out
         // of the loop: it is still `pending` in the DB, so listQueue below (and every later render)
         // would otherwise hand it straight back and let it be converted a second time.
@@ -136,10 +137,7 @@ export async function doRanger(
         const msg = String(e);
         if (!allowRailMismatch && msg.includes("RAIL_MISMATCH")) {
           const ext = (track.path.split(".").pop() || "").toUpperCase();
-          const proceed = await confirmAction(
-            `Ce fichier est déclaré ${ext} mais son contenu réel est compressé (lossy) — ` +
-              `le convertir créerait un faux fichier lossless.\n\nConvertir quand même ?`,
-          );
+          const proceed = await confirmAction(T().railMismatch(ext));
           if (proceed) {
             allowRailMismatch = true;
             continue;
@@ -158,18 +156,13 @@ export async function doRanger(
     // Depuis le volet backend du même ticket, ce refus ne peut plus venir que d'une destination
     // qui vise l'ARBRE — d'où la formulation, qui ne prétend plus que toute conversion est bloquée.
     if (msg.includes("NoLibraryRoot"))
-      toast(
-        "Conversion bloquée — aucune racine de bibliothèque.",
-        true,
-        openSettingsScreen,
-        "Choisir la racine",
-      );
+      toast(T().noLibraryRoot, true, openSettingsScreen, T().chooseRoot);
     // The backend refuses a second filing of a track whose conversion is still running (P5). The
     // front normally hides such a track from the queue, so reaching this means it came back through
     // a path that doesn't go through the queue rail — say the gone-file recovery chain in filing.ts.
     else if (msg.includes("ALREADY_FILING"))
-      toast("Ce morceau est déjà en cours de conversion.", false);
-    else if (msg.toLowerCase().includes("upscale")) toast("Refusé : pas de surqualité lossy → lossless.", false);
+      toast(T().alreadyFiling, false);
+    else if (msg.toLowerCase().includes("upscale")) toast(T().upscaleRefused, false);
     // Impasse A2 (issue #15). Cette branche passe AVANT le test de fichier introuvable, et l'ordre
     // est le correctif : `encode.rs` rend « ffmpeg: spawn failed: <erreur d'E/S> », et sur Windows
     // le message d'E/S est traduit par le système — « ... introuvable » en français. La branche
@@ -180,14 +173,10 @@ export async function doRanger(
     // analyser et écouter avant de le découvrir — au premier « Ranger », c'est-à-dire ici.
     // Le littéral testé vient de notre propre code (`encode.rs`, EncodeError::Ffmpeg), pas d'un
     // message système : c'est ce qui le rend stable.
-    else if (msg.includes("spawn failed"))
-      toast(
-        "FFmpeg est introuvable — Sift ne peut convertir aucun fichier tant qu'il manque. Réinstaller l'app le rétablit.",
-        false,
-      );
-    else if (/permission|access|denied/i.test(msg)) toast("Refusé : accès au fichier/dossier refusé.", false);
-    else if (/no such file|not found|introuvable/i.test(msg)) toast("Fichier introuvable — a-t-il été déplacé ?", false);
-    else toast("La conversion a échoué. Le détail exact est dans la console.", false);
+    else if (msg.includes("spawn failed")) toast(T().ffmpegMissing, false);
+    else if (/permission|access|denied/i.test(msg)) toast(T().accessDenied, false);
+    else if (/no such file|not found|introuvable/i.test(msg)) toast(T().fileNotFound, false);
+    else toast(T().convertFailed, false);
     console.error("file_track failed", e);
     setActionsDisabled(false);
     if (ranger && orig != null) ranger.innerHTML = orig;
@@ -231,12 +220,13 @@ function showFiledConfirm(
   // never) announced by some ATs. filing-toast.ts's toast() has the same fill-then-append order —
   // left alone here since it's a separate, pre-existing site and not one of the confirmed findings.
   foot.prepend(banner);
+  const t = T();
   banner.innerHTML =
     `<div class="sift-filed-banner-head">` +
     `<i class="ti ti-loader-2 sift-spin" data-fil="filed-icon"></i>` +
-    `<span class="sift-filed-banner-label" data-fil="filed-label">Conversion en cours…</span>` +
+    `<span class="sift-filed-banner-label" data-fil="filed-label">${t.converting}</span>` +
     `<span class="sift-filed-banner-bin">→ ${esc(bin)}</span>` +
-    `<button data-fil="filed-close" title="Fermer" aria-label="Fermer" class="sift-filed-banner-close"><i class="ti ti-x"></i></button>` +
+    `<button data-fil="filed-close" title="${t.close}" aria-label="${t.close}" class="sift-filed-banner-close"><i class="ti ti-x"></i></button>` +
     `</div>` +
     `<div class="sift-filed-banner-name">${esc(filename)}</div>` +
     `<div class="sift-filed-banner-path">${esc(filedPath)}</div>` +
@@ -244,7 +234,7 @@ function showFiledConfirm(
     // could only fail. Revealed by paintFiledBanner on success. Hidden by an INLINE display, not by
     // the `hidden` attribute: `.sift-filed-banner-revert` declares `display:inline-flex`, which
     // beats the UA stylesheet's `[hidden]{display:none}` and would leave the button visible.
-    `<button data-fil="revert" class="sift-filed-banner-revert" style="display:none" hidden><i class="ti ti-arrow-back-up"></i> Annuler</button>`;
+    `<button data-fil="revert" class="sift-filed-banner-revert" style="display:none" hidden><i class="ti ti-arrow-back-up"></i> ${ToastT().undo}</button>`;
   banner.querySelector('[data-fil="revert"]')?.addEventListener("click", () => void doRevert(batchId));
   banner.querySelector('[data-fil="filed-close"]')?.addEventListener("click", () => {
     banner.remove();
@@ -291,11 +281,8 @@ function paintFiledBanner(banner: HTMLElement, s: FiledBannerState): void {
   }
   const label = banner.querySelector<HTMLElement>('[data-fil="filed-label"]');
   if (label) {
-    label.textContent = running
-      ? "Conversion en cours…"
-      : s === "done"
-        ? "Converti"
-        : "Conversion échouée";
+    const t = T();
+    label.textContent = running ? t.converting : s === "done" ? t.converted : t.conversionFailed;
     label.style.color = neutral;
   }
   const revert = banner.querySelector<HTMLElement>('[data-fil="revert"]');
@@ -323,7 +310,7 @@ function settleFilingBanner(o: TrackFileOutcome, started: InFlightFiling | null)
       state.filedConfirm = null;
     }
     const name = started?.name ?? `#${o.track_id}`;
-    toast(`Conversion échouée — ${name} est revenu dans la file`, false);
+    toast(T().failedBackInQueue(name), false);
     return;
   }
   // Rangé avec succès : compté pour le fork empty-state (Tout est trié vs Rien à revoir). Compte les
@@ -354,7 +341,7 @@ async function doRevert(batchId: string): Promise<void> {
     await revertBatch(batchId);
     filedBannerEl()?.remove();
     state.filedConfirm = null;
-    toast("Annulé — retour dans la file", false);
+    toast(ToastT().undone, false);
   } catch (e) {
     // Le message de domaine passe en `display` : les DEUX branches traversent donc
     // `humanizeError`, et aucune ne reste sans trace. Une version antérieure de ce correctif
@@ -364,9 +351,7 @@ async function doRevert(batchId: string): Promise<void> {
     toast(
       humanizeError(
         e,
-        msg.includes("source gone")
-          ? "Annulation impossible : un fichier nécessaire a disparu — l'original a peut-être été purgé de la corbeille."
-          : "Échec de l'annulation — réessaie",
+        msg.includes("source gone") ? ToastT().undoSourceGone : ToastT().undoFailed,
         "revert",
       ),
       false,
@@ -388,9 +373,9 @@ export async function doSecondary(
   setActionsDisabled(true);
   try {
     await rejectTrack(trackId);
-    toast(kind === "resource" ? "Marqué à re-sourcer" : "Écarté", true, () => {
+    toast(kind === "resource" ? T().markedResource : T().setAside, true, () => {
       void requeueTrack(trackId).catch((e) => {
-        toast(humanizeError(e, "Échec de l'annulation — réessaie", `${kind} undo`), false);
+        toast(humanizeError(e, ToastT().undoFailed, `${kind} undo`), false);
       });
     });
     clearPane(mid);
@@ -398,9 +383,7 @@ export async function doSecondary(
     toast(
       humanizeError(
         e,
-        kind === "resource"
-          ? "Impossible de marquer à re-sourcer — réessaie"
-          : "Impossible d'écarter la piste — réessaie",
+        kind === "resource" ? T().markResourceFailed : T().setAsideFailed,
         kind,
       ),
       false,

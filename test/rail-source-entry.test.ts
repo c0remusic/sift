@@ -3,8 +3,9 @@
 // 1. la PRÉCÉDENCE des états (rail.md § États) : l'échec prime sur la suspension — « jamais
 //    atténuée » — et la suspension ne se rend que sans échec ;
 // 2. l'échappement : chemin et motif d'échec traversent `esc()` avant l'attribut `title`.
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { baseName, railRowState, railShapeKey, sourceEntryHtml } from "../frontend/rail-source-entry";
+import { setCurrentLang } from "../frontend/i18n";
 import type { Source } from "../shared/contracts";
 
 function src(over: Partial<Source> = {}): Source {
@@ -202,6 +203,54 @@ describe("railShapeKey — ce qu'une mise à jour en place ne rattrape PAS", () 
   it("une liste vide a sa propre clé : la section montre alors un message, pas des lignes", () => {
     expect(railShapeKey([])).toBe("");
     expect(railShapeKey([])).not.toBe(railShapeKey([a]));
+  });
+});
+
+// Interface anglaise : mêmes états, mêmes précédences, textes du dictionnaire `i18n/rail-source-entry.ts`
+// lus À L'APPEL — basculer la langue entre deux rendus change le texte sans recharger le module.
+describe("railRowState — interface anglaise", () => {
+  afterEach(() => setCurrentLang("fr"));
+
+  it("suspendue : motif anglais dans le title", () => {
+    setCurrentLang("en");
+    const s = src({ watched: false });
+    expect(railRowState(s, [s], false, undefined).title).toBe("C:\\music\\incoming — watching paused");
+  });
+
+  it("échec de scan : motif anglais, raison du backend intacte", () => {
+    setCurrentLang("en");
+    const s = src();
+    expect(railRowState(s, [s], false, "verrou").title).toBe("C:\\music\\incoming — scan failed: verrou");
+  });
+
+  it("inaccessible : motif anglais", () => {
+    setCurrentLang("en");
+    const s = src({ accessible: false });
+    expect(railRowState(s, [s], false, undefined).title).toBe("C:\\music\\incoming — folder inaccessible");
+  });
+
+  it("vide : badge « 0 audio » et motif anglais", () => {
+    setCurrentLang("en");
+    const s = src({ track_count: 0 });
+    const r = railRowState(s, [s], false, undefined);
+    expect(r.badge).toBe("0 audio");
+    expect(r.title).toBe("C:\\music\\incoming — no recognized audio file");
+  });
+
+  it("le texte se lit à l'appel : même source, deux langues, deux titres", () => {
+    const s = src({ watched: false });
+    setCurrentLang("en");
+    expect(railRowState(s, [s], false, undefined).title).toContain("watching paused");
+    setCurrentLang("fr");
+    expect(railRowState(s, [s], false, undefined).title).toContain("surveillance suspendue");
+  });
+
+  it("l'échappement reste au site en anglais : motif d'échec échappé dans le title", () => {
+    setCurrentLang("en");
+    const s = src();
+    const html = sourceEntryHtml(s, [s], false, `<img src=x onerror=alert(1)>`);
+    expect(html).not.toContain("<img");
+    expect(html).toContain("scan failed: &lt;img");
   });
 });
 

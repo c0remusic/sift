@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { queueCountLabel, type QueueCountInput } from "../frontend/queue-count-label";
+import { setCurrentLang } from "../frontend/i18n";
 
 // Gate de cran 1 pour le compte de la barre unifiée de Revue (issue #49). Ce que ces vecteurs
 // tiennent, et qu'aucune autre gate ne tient : le compte change de POPULATION selon l'état — file
@@ -42,5 +43,28 @@ describe("queueCountLabel", () => {
   it("laisse le mode Lot passer AVANT le filtre — la sélection est ce que le lot traitera", () => {
     const out = queueCountLabel({ ...base, mode: "batch", selected: 5, visible: 139, filtered: true });
     expect(out).toBe("5 sélectionnées");
+  });
+});
+
+// Même compte, interface anglaise. La langue est posée APRÈS l'import du module : si un libellé
+// était lu au chargement, ces vecteurs rendraient encore le français. L'accord anglais diffère du
+// français sur un point, et c'est celui que ces vecteurs tiennent : 0 prend le pluriel.
+describe("queueCountLabel — anglais", () => {
+  afterEach(() => setCurrentLang("fr"));
+
+  it("dit la file, la liste filtrée et la sélection en anglais", () => {
+    setCurrentLang("en");
+    expect(queueCountLabel(base)).toBe("3124 tracks");
+    expect(queueCountLabel({ ...base, visible: 139, filtered: true })).toBe("139 filtered tracks");
+    expect(queueCountLabel({ ...base, mode: "batch", selected: 5 })).toBe("5 selected");
+  });
+
+  it("met 1 seul au singulier, 0 au pluriel", () => {
+    setCurrentLang("en");
+    expect(queueCountLabel({ ...base, total: 0, visible: 0 })).toBe("0 tracks");
+    expect(queueCountLabel({ ...base, total: 1, visible: 1 })).toBe("1 track");
+    expect(queueCountLabel({ ...base, visible: 0, filtered: true })).toBe("0 filtered tracks");
+    expect(queueCountLabel({ ...base, visible: 1, filtered: true })).toBe("1 filtered track");
+    expect(queueCountLabel({ ...base, mode: "batch", selected: 1 })).toBe("1 selected");
   });
 });

@@ -29,7 +29,9 @@
 // et `libraryTableRowHtml`). L'état entre en un seul point, `liveGroupHtml`.
 import type { JournalEntry } from "../shared/contracts";
 import { listJournal, getSessionId, revertBatch, revealTrack, getSetting } from "./ipc";
-import { requireEl, esc, plural, durationMs } from "./dom";
+import { requireEl, esc, durationMs } from "./dom";
+import { numLocale } from "./i18n";
+import { T } from "./i18n/journal";
 import { isStaleViewRender, viewEpoch } from "./view-epoch";
 import { humanizeError } from "./errors";
 import { confirmAction, BATCH_CONFIRM_THRESHOLD } from "./confirm-modal";
@@ -140,30 +142,52 @@ function parseTs(ts: string): Date | null {
 // jour. Les options sont exactement celles des trois `toLocale*` remplacées (hour+minute ;
 // dateStyle+timeStyle ; weekday+day+month+year), et aucune n'entre dans le jeu « requis » qui
 // déclencherait des valeurs par défaut différentes entre les deux formes : même sortie.
-const TIME_FMT = new Intl.DateTimeFormat("fr-FR", { hour: "2-digit", minute: "2-digit" });
-const STAMP_FMT = new Intl.DateTimeFormat("fr-FR", { dateStyle: "long", timeStyle: "medium" });
-const DAY_FMT = new Intl.DateTimeFormat("fr-FR", {
-  weekday: "long",
-  day: "numeric",
-  month: "long",
-  year: "numeric",
-});
+//
+// Depuis l'interface bilingue (2026-09-23), « une fois » veut dire une fois PAR LOCALE, à la première
+// demande : construits au chargement, ils figeraient `fr-FR`, puisque les imports s'évaluent avant
+// que `initLang()` ait tranché (`i18n.ts`, en-tête). Le coût par ligne reste celui d'un test de
+// chaîne.
+//
+// `hourCycle: "h23"` sur l'heure et l'horodatage : `en-US` rendrait « 01:24 PM » sous un en-tête de
+// session « Session at 13:24 » (`i18n/session-label.ts`, heure composée à la main sur 24 h). Une
+// seule horloge par écran. En `fr-FR`, déjà sur 24 h, la sortie reste identique à l'octet (mesuré).
+type JrnlFormatters = { time: Intl.DateTimeFormat; stamp: Intl.DateTimeFormat; day: Intl.DateTimeFormat };
+let fmtLocale: string | null = null;
+let fmts: JrnlFormatters | null = null;
+
+function formatters(): JrnlFormatters {
+  const loc = numLocale();
+  if (!fmts || fmtLocale !== loc) {
+    fmtLocale = loc;
+    fmts = {
+      time: new Intl.DateTimeFormat(loc, { hour: "2-digit", minute: "2-digit", hourCycle: "h23" }),
+      stamp: new Intl.DateTimeFormat(loc, { dateStyle: "long", timeStyle: "medium", hourCycle: "h23" }),
+      day: new Intl.DateTimeFormat(loc, {
+        weekday: "long",
+        day: "numeric",
+        month: "long",
+        year: "numeric",
+      }),
+    };
+  }
+  return fmts;
+}
 
 function fmtTime(ts: string): string {
   const d = parseTs(ts);
-  return d ? TIME_FMT.format(d) : ts;
+  return d ? formatters().time.format(d) : ts;
 }
 
 /** `jj/mm` — la date courte qui accompagne une heure quand la plage traverse des jours. */
 function fmtDay(ts: string): string {
   const d = parseTs(ts);
   if (!d) return "";
-  return `${String(d.getDate()).padStart(2, "0")}/${String(d.getMonth() + 1).padStart(2, "0")}`;
+  return T().dayShort(String(d.getDate()).padStart(2, "0"), String(d.getMonth() + 1).padStart(2, "0"));
 }
 
 function fmtStamp(ts: string): string {
   const d = parseTs(ts);
-  return d ? STAMP_FMT.format(d) : ts;
+  return d ? formatters().stamp.format(d) : ts;
 }
 
 /** Clé de jour LOCALE (et non la date de `ts`, qui est en UTC) : un rangement de 01 h 30 le
@@ -176,8 +200,8 @@ function dayKey(ts: string): string {
 
 function dayLabel(ts: string): string {
   const d = parseTs(ts);
-  if (!d) return "Date inconnue";
-  return DAY_FMT.format(d);
+  if (!d) return T().unknownDate;
+  return formatters().day.format(d);
 }
 
 // `sessionStart` / `sessionLabel` vivaient ici — partagés avec Rekordbox depuis le 2026-09-08
@@ -195,11 +219,11 @@ function actionLabel(kind: JournalEntry["kind"]): string {
   switch (kind) {
     case "convert":
     case "move":
-      return "Rangé";
+      return T().action.filed;
     case "trash":
-      return "Purgé";
+      return T().action.purged;
     case "reject":
-      return "Écarté";
+      return T().action.setAside;
   }
 }
 
@@ -212,10 +236,10 @@ function actionLabel(kind: JournalEntry["kind"]): string {
  *
  *  « Appliqué » n'y figure pas et n'a pas de classe : c'est l'ABSENCE de statut (`statusOf` → null),
  *  l'état de toute entrée que le backend vient de rendre. */
-const ROW_STATE: Record<JrnlStatus, { label: string; cls: string }> = {
-  pending: { label: "Annulation…", cls: "jrnl-row--pending" },
-  reverted: { label: "Annulé", cls: "jrnl-row--reverted" },
-  failed: { label: "Échec", cls: "jrnl-row--failed" },
+const ROW_STATE: Record<JrnlStatus, { label: () => string; cls: string }> = {
+  pending: { label: () => T().status.pending, cls: "jrnl-row--pending" },
+  reverted: { label: () => T().status.reverted, cls: "jrnl-row--reverted" },
+  failed: { label: () => T().status.failed, cls: "jrnl-row--failed" },
 };
 
 /** L'état d'une entrée, en UN point. Deux sources et l'ordre compte : la carte locale d'abord — elle
@@ -235,7 +259,7 @@ function statusOf(e: JournalEntry): JrnlStatus | null {
 /** Prend le STATUT et non l'entrée : `rowHtml` le tient de son argument (c'est ce qui le rend
  *  exécutable hors de la vue), les autres appelants le tirent de `statusOf(e)`. */
 function statusLabel(s: JrnlStatus | null): string {
-  return s ? ROW_STATE[s].label : "Appliqué";
+  return s ? ROW_STATE[s].label() : T().status.applied;
 }
 
 /** Une entrée déjà annulée (ou en cours) ne se ré-annule pas. Tout ce qui décide d'un désarmement
@@ -379,12 +403,13 @@ function entryById(id: string): JournalEntry | undefined {
 // Markup
 // ---------------------------------------------------------------------------
 
-const COLS: readonly { cls: string; label: string }[] = [
-  { cls: "jrnl-c-time", label: "Heure" },
-  { cls: "jrnl-c-act", label: "Action" },
-  { cls: "jrnl-c-track", label: "Piste" },
-  { cls: "jrnl-c-dest", label: "Destination" },
-  { cls: "jrnl-c-state", label: "État" },
+// Libellés lus au RENDU (`label()`), jamais au chargement : voir `i18n.ts`, en-tête.
+const COLS: readonly { cls: string; label: () => string }[] = [
+  { cls: "jrnl-c-time", label: () => T().col.time },
+  { cls: "jrnl-c-act", label: () => T().col.action },
+  { cls: "jrnl-c-track", label: () => T().col.track },
+  { cls: "jrnl-c-dest", label: () => T().col.dest },
+  { cls: "jrnl-c-state", label: () => T().col.state },
 ];
 
 /** Ligne d'en-tête, collante en haut de la zone C — même grammaire que `.sift-lib-thead` de
@@ -393,7 +418,7 @@ const COLS: readonly { cls: string; label: string }[] = [
 export function theadHtml(): string {
   return (
     `<div class="jrnl-thead" role="row">` +
-    COLS.map((c) => `<span class="jrnl-c ${c.cls}" role="columnheader">${c.label}</span>`).join("") +
+    COLS.map((c) => `<span class="jrnl-c ${c.cls}" role="columnheader">${c.label()}</span>`).join("") +
     `</div>`
   );
 }
@@ -418,8 +443,8 @@ export function rowHtml(e: JournalEntry, view: JrnlRowView): string {
   const state = statusLabel(view.status);
   const cls =
     "lr jrnl-row" + (view.selected ? " sel" : "") + (view.status ? ` ${ROW_STATE[view.status].cls}` : "");
-  const count = e.track_count > 1 ? ` (${e.track_count} morceaux)` : "";
-  const label = `${time}, ${act}${count}, ${name}, ${dest || "sans destination"}, ${state}`;
+  const count = e.track_count > 1 ? T().batchCount(e.track_count) : "";
+  const label = `${time}, ${act}${count}, ${name}, ${dest || T().noDest}, ${state}`;
   return (
     `<div class="${cls}" data-jrow="${id}" tabindex="0" role="option" aria-selected="${view.selected}" ` +
     `aria-label="${esc(label)}">` +
@@ -447,7 +472,7 @@ export function groupHtml(g: JrnlGroup, level: 1 | 2, open: boolean, body: strin
     `<button type="button" class="jrnl-group-hd" data-jgroup="${esc(g.key)}" aria-expanded="${open}">` +
     `<i class="ti ti-chevron-right jrnl-group-chev" aria-hidden="true"></i>` +
     `<span class="jrnl-group-label">${esc(g.label)}</span>` +
-    `<span class="jrnl-group-count">${esc(plural(g.entries.length, "action"))}</span>` +
+    `<span class="jrnl-group-count">${esc(T().actions(g.entries.length))}</span>` +
     `</button>` +
     `<div class="jrnl-group-body">${body}</div>` +
     `</div>`
@@ -506,11 +531,7 @@ export function paintJournal(reset = false): void {
   const token = viewEpoch();
   void (reset ? renderJournal() : loadAndPaint()).catch((e: unknown) => {
     if (isStaleViewRender(token)) return;
-    const display = humanizeError(
-      e,
-      "Impossible de lire le journal. Vérifie la connexion à la base et réessaie.",
-      `renderJournal(${jrnlState.mode})`,
-    );
+    const display = humanizeError(e, T().readError, `renderJournal(${jrnlState.mode})`);
     // `requireEl` lèverait à son tour si `#content` manquait — dans un `catch`, on ne peut pas se
     // permettre un second échec.
     const content = document.getElementById("content");
@@ -519,7 +540,7 @@ export function paintJournal(reset = false): void {
       `<div class="jrnl-wrap">` +
       `<div class="sift-ui-card-soft sift-ui-card-soft-pad jrnl-error">` +
       esc(display) +
-      `<div class="jrnl-error-actions"><button type="button" data-jact="retry">Réessayer</button></div>` +
+      `<div class="jrnl-error-actions"><button type="button" data-jact="retry">${T().retry}</button></div>` +
       `</div></div>`;
     content
       .querySelector<HTMLButtonElement>('[data-jact="retry"]')
@@ -600,7 +621,7 @@ async function loadAndPaint(): Promise<void> {
   if (countEl) {
     const q = jrnlState.q.trim().toLowerCase();
     const n = jrnlState.entries.filter((e) => matchesQuery(e, q)).length;
-    countEl.textContent = n ? plural(n, "action") : "";
+    countEl.textContent = n ? T().actions(n) : "";
   }
   // Rien du tout : l'écran est une impasse assumée, et un inspecteur qui annonce « 0 action » à
   // côté n'ajoute rien. Même geste que `renderBiblioLive`, qui ne monte pas sa zone D sur une
@@ -616,16 +637,7 @@ function paintTable(content: HTMLElement): void {
 
   if (jrnlState.entries.length === 0) {
     // Impasse assumée : rien à filtrer, donc pas d'en-tête de colonnes à garder à l'écran.
-    const empty =
-      jrnlState.mode === "all"
-        ? {
-            title: "Aucune action enregistrée",
-            note: "L'historique complet des rangements, écarts et purges apparaîtra ici, prêt à être annulé.",
-          }
-        : {
-            title: "Rien dans cette session",
-            note: "Les actions de cette session apparaissent ici au fur et à mesure. L'historique complet reste accessible depuis la barre.",
-          };
+    const empty = jrnlState.mode === "all" ? T().emptyAll : T().emptySession;
     content.innerHTML = `<div class="jrnl-wrap">${emptyStateHtml({ ...empty, backToRevue: true })}</div>`;
     wireEmptyState(content);
     return;
@@ -642,7 +654,7 @@ function paintTable(content: HTMLElement): void {
  *  pas les commandes qui permettent de défaire le filtre (même règle que la table Bibliothèque). */
 function bodyHtml(groups: JrnlGroup[]): string {
   if (!groups.length) {
-    return `<div class="jrnl-body"><div class="jrnl-noresult">Aucune action ne correspond à « ${esc(jrnlState.q)} ».</div></div>`;
+    return `<div class="jrnl-body"><div class="jrnl-noresult">${T().noResult(esc(jrnlState.q))}</div></div>`;
   }
   return `<div class="jrnl-body">${groups.map((g) => liveGroupHtml(g, 1)).join("")}</div>`;
 }
@@ -665,17 +677,17 @@ function repaintBody(): void {
 function mountBar(): void {
   mountBarSegmented({
     id: "sift-jrnl-seg",
-    ariaLabel: "Portée du journal",
+    ariaLabel: T().scopeAria,
     options: [
-      { id: "session", label: "Session" },
-      { id: "all", label: "Tout l'historique" },
+      { id: "session", label: T().session },
+      { id: "all", label: T().allHistory },
     ],
     active: jrnlState.mode,
     onPick: (id) => switchMode(id === "all" ? "all" : "session"),
   });
   mountBarSearch({
-    placeholder: "Rechercher…",
-    ariaLabel: "Filtrer le journal par nom de fichier ou destination",
+    placeholder: T().searchPlaceholder,
+    ariaLabel: T().searchAria,
     value: jrnlState.q,
     onInput: (value) => {
       jrnlState.q = value;
@@ -864,7 +876,7 @@ function asideSummaryHtml(): string {
   // Un compteur à zéro en permanence occupe la place d'une information sans en porter : les échecs
   // ne s'affichent que s'il y en a. Ils ne s'atténuent jamais pour autant (DESIGN.md § 4).
   const failed = shown.filter((e) => statusOf(e) === "failed").length;
-  if (failed) pairs.push(["Échecs", String(failed)]);
+  if (failed) pairs.push([T().failures, String(failed)]);
   // Le backend rend du plus récent au plus ancien : les bornes de la plage sont les deux BOUTS de
   // la liste, pas une accumulation.
   const first = shown.length ? shown[0].ts : null;
@@ -874,16 +886,14 @@ function asideSummaryHtml(): string {
     // dirait « 19:32 → 21:23 » pour trois semaines d'écart. La date rejoint donc l'heure là, et
     // seulement là — dans une session, tout est du même jour et la répéter serait du bruit.
     const at = (ts: string) => (jrnlState.mode === "all" ? `${fmtDay(ts)} ${fmtTime(ts)}` : fmtTime(ts));
-    pairs.push(["Plage horaire", first === last ? at(first) : `${at(last)} → ${at(first)}`]);
+    pairs.push([T().timeRange, first === last ? at(first) : `${at(last)} → ${at(first)}`]);
   }
-  const title = jrnlState.mode === "all" ? "Tout l'historique" : "Session courante";
+  const title = jrnlState.mode === "all" ? T().allHistory : T().currentSession;
   return (
     `<div class="col-h">${esc(title)}</div>` +
-    `<div class="sift-sel-count">${esc(plural(shown.length, "action"))}</div>` +
+    `<div class="sift-sel-count">${esc(T().actions(shown.length))}</div>` +
     rowsHtml(pairs) +
-    (failed
-      ? `<div class="jrnl-insp-note">Sélectionne une ligne en échec pour lire son motif.</div>`
-      : "")
+    (failed ? `<div class="jrnl-insp-note">${T().failNote}</div>` : "")
   );
 }
 
@@ -891,10 +901,10 @@ function asideOneHtml(e: JournalEntry): string {
   const fmt = extOf(e.to_path);
   // Pas de ligne « Piste » : le titre de l'inspecteur porte déjà le nom, et le répéter en paire
   // libellé/valeur le donnait deux fois à la suite.
-  const pairs: [string, string][] = [["Horodatage", fmtStamp(e.ts)]];
-  if (e.track_count > 1) pairs.push(["Morceaux du lot", String(e.track_count)]);
-  if (fmt) pairs.push(["Format produit", fmt]);
-  pairs.push(["État", statusLabel(statusOf(e))]);
+  const pairs: [string, string][] = [[T().timestamp, fmtStamp(e.ts)]];
+  if (e.track_count > 1) pairs.push([T().batchTracks, String(e.track_count)]);
+  if (fmt) pairs.push([T().outputFormat, fmt]);
+  pairs.push([T().col.state, statusLabel(statusOf(e))]);
   const reason = jrnlState.failReason.get(e.batch_id);
   const applicable = revertible(e);
   return (
@@ -902,10 +912,10 @@ function asideOneHtml(e: JournalEntry): string {
     `<div class="sift-sel-count jrnl-insp-title">${esc(trackName(e))}</div>` +
     rowsHtml(pairs) +
     (reason ? `<div class="jrnl-insp-fail">${esc(reason)}</div>` : "") +
-    pathBlock("Source", e.from_path) +
-    pathBlock("Destination", e.to_path) +
+    pathBlock(T().source, e.from_path) +
+    pathBlock(T().col.dest, e.to_path) +
     `<div class="jrnl-insp-actions">` +
-    `<button type="button" data-jact="revert-sel"${applicable ? "" : " disabled"}>Annuler cette action</button>` +
+    `<button type="button" data-jact="revert-sel"${applicable ? "" : " disabled"}>${T().revertOne}</button>` +
     `</div>`
   );
 }
@@ -919,17 +929,17 @@ function asideManyHtml(ids: string[]): string {
   const picked = ids.map(entryById).filter((e): e is JournalEntry => !!e);
   const applicable = picked.filter(revertible);
   const pairs = countByAction(picked);
-  pairs.push(["Morceaux concernés", String(picked.reduce((s, e) => s + e.track_count, 0))]);
+  pairs.push([T().tracksAffected, String(picked.reduce((s, e) => s + e.track_count, 0))]);
   if (applicable.length !== picked.length) {
-    pairs.push(["Déjà annulées", String(picked.length - applicable.length)]);
+    pairs.push([T().alreadyUndone, String(picked.length - applicable.length)]);
   }
   return (
-    `<div class="col-h">Sélection</div>` +
-    `<div class="sift-sel-count">${esc(plural(picked.length, "action"))}</div>` +
+    `<div class="col-h">${T().selection}</div>` +
+    `<div class="sift-sel-count">${esc(T().actions(picked.length))}</div>` +
     rowsHtml(pairs) +
     `<div class="jrnl-insp-actions">` +
     `<button type="button" data-jact="revert-sel"${applicable.length ? "" : " disabled"}>` +
-    `Annuler la sélection (${applicable.length})</button>` +
+    `${T().revertSelection(applicable.length)}</button>` +
     `</div>`
   );
 }
@@ -951,12 +961,13 @@ function wireAside(host: HTMLElement): void {
  *  d'erreur, donc la STACK repart en console au lieu du seul `message` que ce site en tirait. */
 function humanRevertError(err: unknown): string {
   const raw = err instanceof Error ? err.message : String(err);
-  let display = "Annulation impossible — réessaie.";
-  if (raw.includes("destination occupied"))
-    display = "Fichier déjà à l'emplacement d'origine — doublon probable (sync cloud ?).";
-  else if (raw.includes("source gone"))
-    display = "Fichier introuvable à destination — déplacé ou supprimé manuellement ?";
-  else if (raw.includes("newer action")) display = "Action plus récente à annuler d'abord.";
+  // Les trois `includes` lisent des codes du backend (`actions.rs`, anglais interne) : PROTOCOLE,
+  // à ne pas traduire. Seul le texte affiché vient du dictionnaire.
+  const L = T().revertError;
+  let display = L.generic;
+  if (raw.includes("destination occupied")) display = L.occupied;
+  else if (raw.includes("source gone")) display = L.gone;
+  else if (raw.includes("newer action")) display = L.newer;
   return humanizeError(err, display, "revert_batch");
 }
 
@@ -991,10 +1002,7 @@ async function revertSelection(): Promise<void> {
   // exact dans le libellé. Jamais `window.confirm()` : un clic synthétique en a déjà traversé un.
   if (
     tracks > BATCH_CONFIRM_THRESHOLD &&
-    !(await confirmAction(
-      `Annuler ${plural(picked.length, "action")} du journal (${plural(tracks, "morceau", "morceaux")}) ?`,
-      "Annuler ces actions",
-    ))
+    !(await confirmAction(T().confirmRevert(picked.length, tracks), T().confirmRevertBtn))
   )
     return;
 
@@ -1030,10 +1038,9 @@ async function revertSelection(): Promise<void> {
   }
 
   paintAside();
-  const done = `${plural(ok, "action")} annulée${ok > 1 ? "s" : ""}`;
-  if (failures.length === 0) toast(done);
+  if (failures.length === 0) toast(T().reverted(ok));
   else if (ok === 0) toast(failures[0]);
-  else toast(`${done}, ${failures.length} en échec`);
+  else toast(T().revertedPartial(ok, failures.length));
 }
 
 // ---------------------------------------------------------------------------
@@ -1042,13 +1049,13 @@ async function revertSelection(): Promise<void> {
 
 async function openLocation(e: JournalEntry): Promise<void> {
   if (e.track_id == null) {
-    toast("Emplacement inconnu — cette entrée n'est plus liée à une piste en base.");
+    toast(T().noLocation);
     return;
   }
   try {
     await revealTrack(e.track_id);
   } catch (err: unknown) {
-    toast(humanizeError(err, "Impossible d'ouvrir l'emplacement", "reveal_track"));
+    toast(humanizeError(err, T().openLocationError, "reveal_track"));
   }
 }
 
@@ -1080,19 +1087,20 @@ function openJournalContextMenu(x: number, y: number, id: string): void {
   const path = one ? (one.to_path ?? one.from_path) : null;
   // Une entrée sans action est DÉSACTIVÉE, pas retirée (`context-menu.ts`) : un menu dont les
   // entrées vont et viennent se relit à chaque ouverture.
+  const M = T().menu;
   openContextMenu(x, y, [
     {
-      label: `Annuler cette action${suffix}`,
+      label: M.revert(suffix),
       onPick: applicable ? () => void revertSelection() : undefined,
     },
     {
-      label: "Ouvrir l'emplacement",
+      label: M.openLocation,
       separated: true,
       onPick: one && one.track_id != null ? () => void openLocation(one) : undefined,
     },
-    { label: "Copier le chemin", onPick: path ? () => copyToClipboard(path, "Chemin copié") : undefined },
+    { label: M.copyPath, onPick: path ? () => copyToClipboard(path, M.pathCopied) : undefined },
     {
-      label: "Voir la piste dans Bibliothèque",
+      label: M.showInLibrary,
       onPick: one ? () => showInLibrary(one) : undefined,
     },
   ]);

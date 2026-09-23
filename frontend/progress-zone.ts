@@ -6,6 +6,7 @@
 // small encapsulated store + renderer. It subscribes to NOTHING itself — callers push state via
 // `setTask`/`clearTask` (analyse is wired in sift-live; identify/file are kept ready, not wired).
 import { requireEl } from "./dom";
+import { T } from "./i18n/progress-zone";
 
 /** Which long task a row represents. Doubles as the Map key (one active run per kind). */
 export type TaskKind = "analyze" | "identify" | "file" | "export";
@@ -30,13 +31,11 @@ const ICONS: Record<TaskKind, string> = {
   export: "ti-usb",
 };
 
-/** Human label shown next to the icon. */
-const LABELS: Record<TaskKind, string> = {
-  analyze: "Analyse",
-  identify: "Identification",
-  file: "Conversion",
-  export: "Export",
-};
+/** Human label shown next to the icon. Read from the dictionary at call time, never frozen at
+ *  module load (`i18n.ts` header). */
+function labelOf(kind: TaskKind): string {
+  return T().tasks[kind];
+}
 
 // Encapsulated state: at most one active run per kind. Insertion order = display order.
 const tasks = new Map<TaskKind, TaskProgress>();
@@ -98,7 +97,7 @@ export function homeProgressZone(): void {
  * sig ⇒ update in place; changed sig ⇒ rebuild this row only. */
 function rowSig(kind: TaskKind, p: TaskProgress): string {
   const showStop = p.state === "running" && !p.stopping && cancelHandlers.has(kind);
-  const label = p.stopping ? "Arrêt…" : LABELS[kind];
+  const label = p.stopping ? T().stopping : labelOf(kind);
   return `${p.state}|${p.stopping ? 1 : 0}|${showStop ? 1 : 0}|${label}`;
 }
 
@@ -115,11 +114,12 @@ function rowClassOf(kind: TaskKind, p: TaskProgress): string {
  * reads "Stopping…" and the Stop button is omitted. */
 function rowInner(kind: TaskKind, p: TaskProgress): string {
   const pct = p.total > 0 ? Math.min(100, Math.round((p.done / p.total) * 100)) : 0;
-  const label = p.stopping ? "Arrêt…" : LABELS[kind];
+  const t = T();
+  const label = p.stopping ? t.stopping : labelOf(kind);
   // Stop button only while actively running, not already stopping, and a cancel action exists.
   const showStop = p.state === "running" && !p.stopping && cancelHandlers.has(kind);
   const stop = showStop
-    ? `<button class="sift-pz-cancel" type="button" data-pz-cancel="${kind}" title="Stop" aria-label="Arrêter — ${LABELS[kind]}"><i class="ti ti-x" aria-hidden="true"></i></button>`
+    ? `<button class="sift-pz-cancel" type="button" data-pz-cancel="${kind}" title="${t.stopTitle}" aria-label="${t.stopAria(labelOf(kind))}"><i class="ti ti-x" aria-hidden="true"></i></button>`
     : "";
   return (
     `<div class="sift-pz-head">` +

@@ -12,6 +12,8 @@ import { requireEl, esc } from "./dom";
 import { decodedShortfallText, hfDensityParts, hfTopDensityParts } from "./report-figures";
 import { railFromExtension } from "./rails";
 import { VOL_KNOB, playerAuditionHtml, volumeCentreCss, volumeIconClass } from "./player-audition";
+import { numLocale } from "./i18n";
+import { T } from "./i18n/report-view";
 
 /** Fallback step, only for a report predating `peaks_step` (mirrors analysis::PEAKS_WINDOW and
  *  analysis::default_peaks_step). Never use it when the report carries its own step: the envelope
@@ -73,10 +75,11 @@ const mmss = (s: number) => {
 const fmt = (n: number, d = 1) => (Number.isFinite(n) ? n.toFixed(d) : String(n));
 
 function spectroCaption(v: AnalysisReport["verdict"], containerMismatch: boolean): string {
-  if (v === "fake" && containerMismatch) return "conteneur .flac mais contenu MP3 détecté — extension falsifiée";
-  if (v === "fake") return "coupure nette = transcodage probable";
-  if (v === "grey") return "à vérifier visuellement";
-  return "énergie pleine bande = encodage conforme";
+  const t = T();
+  if (v === "fake" && containerMismatch) return t.captionMismatch;
+  if (v === "fake") return t.captionFake;
+  if (v === "grey") return t.captionGrey;
+  return t.captionOk;
 }
 
 /** La LECTURE de l'image, en deux mots, pour la pastille de spectre du Diagnostic ouvert
@@ -92,10 +95,11 @@ function spectroCaption(v: AnalysisReport["verdict"], containerMismatch: boolean
  *  retirer la ligne « Verdict » du Diagnostic le 2026-08-25. Ce qui est dit ici est ce que
  *  l'image MONTRE, la preuve à côté de laquelle elle est affichée. */
 function spectroBandReading(v: AnalysisReport["verdict"], containerMismatch: boolean): string {
-  if (v === "fake" && containerMismatch) return "Extension falsifiée";
-  if (v === "fake") return "Coupure nette";
-  if (v === "grey") return "À vérifier visuellement";
-  return "Pleine bande";
+  const t = T();
+  if (v === "fake" && containerMismatch) return t.readingMismatch;
+  if (v === "fake") return t.readingFake;
+  if (v === "grey") return t.readingGrey;
+  return t.readingOk;
 }
 
 /** Audacity's own spectrogram convention (manual.audacityteam.org/man/spectrogram_view.html,
@@ -404,10 +408,11 @@ export function row(label: string, value: string, mono = true): string {
  *  HIG. Les tooltips posés au retrait restent (Convertir « (Entrée) » etc.) : deux canaux, un
  *  survolable, un permanent. */
 export function keyboardHintsHtml(): string {
+  const t = T();
   const k = (key: string, what: string) => `<span><b>${key}</b> ${what}</span>`;
   return (
     `<div class="sift-kbd-hints">` +
-    k("SPACE", "écouter") + k("ENTER", "convertir") + k("BKSP", "écarter") + k("HAUT/BAS", "naviguer") +
+    k("SPACE", t.kbdListen) + k("ENTER", t.kbdConvert) + k("BKSP", t.kbdSetAside) + k(t.kbdUpDown, t.kbdNavigate) +
     `</div>`
   );
 }
@@ -473,7 +478,7 @@ function playerHeaderHtml(name: string, path: string, opts: PlayerHeaderOptions 
     // bouton play... un délire plus minimaliste vectoriel"). Two adjacent circular shapes (the
     // play button + a drawn vinyl disc) read as duplicated; a plain icon sidesteps that entirely.
     `<i class="ti ti-music-note sift-cover-fallback" aria-hidden="true"></i>` +
-    `<img class="sift-report-cover sift-player-cover" hidden alt="Pochette — ${esc(name)}">` +
+    `<img class="sift-report-cover sift-player-cover" hidden alt="${T().coverAlt(esc(name))}">` +
     `</div>` +
     `<div class="sift-player-header-body">` +
     // Le verdict est AU NIVEAU DU TITRE, à droite (wireframe « Poste de décision » § 05, patron
@@ -566,10 +571,11 @@ function verdictWordTone(r: AnalysisReport): { word: string; cls: string } {
   // son mot dit la réponse, pas le rail : LOSSLESS nommait le format, AUTHENTIQUE variait selon le
   // rail pour le même fait. Le rail reste dit à côté, par la ligne de format (`formatSummary`).
   // L'entrée « LOSSLESS » de l'allowlist de jargon (CLAUDE.md § Front) ne couvre plus ce mot.
-  if (r.verdict === "fake") return { word: "FAUX", cls: "sift-lib-v-fake" };
-  if (r.verdict === "grey") return { word: "À VÉRIFIER", cls: "sift-lib-v-check" };
+  const t = T();
+  if (r.verdict === "fake") return { word: t.verdictFake, cls: "sift-lib-v-fake" };
+  if (r.verdict === "grey") return { word: t.verdictCheck, cls: "sift-lib-v-check" };
   if (r.verdict !== "ok") return { word: "—", cls: "sift-lib-v-none" };
-  return { word: "VRAI", cls: "sift-lib-v-ok" };
+  return { word: t.verdictOk, cls: "sift-lib-v-ok" };
 }
 
 /** Résumé de format pour la ligne d'état du verdict : format déclaré + la mesure la plus parlante —
@@ -579,7 +585,13 @@ function verdictWordTone(r: AnalysisReport): { word: string; cls: string } {
 function formatSummary(r: AnalysisReport): string {
   const parts: string[] = [];
   if (r.declared_format) parts.push(r.declared_format.toUpperCase());
-  const khz = r.sample_rate ? `${(r.sample_rate / 1000).toFixed(1).replace(".", ",")} kHz` : "";
+  // Séparateur décimal de la langue courante : « 44,1 kHz » en français, « 44.1 kHz » en anglais.
+  // L'arrondi reste celui de `toFixed(1)` (valeur binaire exacte) : Intl arrondit la décimale la plus
+  // courte, et divergeait sur les fréquences en …50 Hz (0,15 → « 0,2 » au lieu de « 0,1 »).
+  // `useGrouping: false` : pas de séparateur de milliers au-delà de 1000 kHz, comme avant.
+  const khz = r.sample_rate
+    ? `${Number((r.sample_rate / 1000).toFixed(1)).toLocaleString(numLocale(), { minimumFractionDigits: 1, maximumFractionDigits: 1, useGrouping: false })} kHz`
+    : "";
   // Lossless : la fréquence d'échantillonnage définit la qualité (le « débit » PCM est trompeur —
   // 1411 kbps pour un simple 16/44). Lossy : c'est le débit qui compte.
   if (r.declared_rail === "lossless") {
@@ -688,6 +700,7 @@ function sizeCoverToBody(root: HTMLElement): void {
 }
 
 function spectroAndTagsHtml(r: AnalysisReport): string {
+  const t = T();
   return (
     `<div class="sift-spectro-box">` +
     // « Ben non, tu l'as laissé collapsable » (Antoine, 2026-09-07) : la règle « pas besoin
@@ -697,7 +710,7 @@ function spectroAndTagsHtml(r: AnalysisReport): string {
     // SPECTROGRAMME reste repliable, parce que lui seul charge (recalcul ~631 ms à l'ouverture,
     // wireSpectrogram). L'audit finding #5 (le jargon derrière un étage) est porté par la
     // position (fin de fiche) et les groupes, plus par un pli.
-    `<div class="sift-diag-title">Diagnostic audio</div>` +
+    `<div class="sift-diag-title">${t.diagTitle}</div>` +
     // DEUX pastilles compactes, et deux seulement : le format, et la lecture du spectre. La
     // pastille de spectre porte la coupure ARRONDIE au kHz — la lecture, pas la mesure ; le hertz
     // exact reste une ligne là-dessous. `.pill` est la pastille générique du dépôt. Format
@@ -724,7 +737,7 @@ function spectroAndTagsHtml(r: AnalysisReport): string {
     // « échec — réessayer » transitoires, qui n'ont aucun autre chemin de retour visuel.
     `<button class="sift-zone-toggle sift-sg-toggle sift-spectro-toggle" aria-expanded="false">` +
     `<span><span class="sift-zone-toggle-car sift-sg-caret sift-spectro-caret">▸</span>` +
-    `<span class="sift-zone-toggle-label">Spectrogramme</span></span>` +
+    `<span class="sift-zone-toggle-label">${t.spectrogram}</span></span>` +
     `<span class="sift-zone-toggle-right">` +
     `<span class="sift-zone-toggle-hint sift-sg-hint sift-spectro-hint"></span>` +
     `</span>` +
@@ -732,7 +745,7 @@ function spectroAndTagsHtml(r: AnalysisReport): string {
     `<div class="sift-sg-body sift-spectro-body">` +
     `<div class="sift-spectro-body-inner">` +
     `<div class="sift-spectro-canvas-wrap">` +
-    `<canvas class="sift-sg sift-spectro-canvas" width="720" height="180" role="img" aria-label="Spectrogramme audio"></canvas>` +
+    `<canvas class="sift-sg sift-spectro-canvas" width="720" height="180" role="img" aria-label="${t.spectrogramAria}"></canvas>` +
     // Canvas transparent superposé — ne dessine QUE le réticule au survol (wireSpectroHover),
     // jamais l'image du spectrogramme elle-même. Séparé du canvas de base pour la perf :
     // un mousemove ne doit jamais redéclencher la boucle pixel-par-pixel de drawSpectrogram.
@@ -749,39 +762,39 @@ function spectroAndTagsHtml(r: AnalysisReport): string {
     // sous Intégrité) et « Pics (couverture) » (couverture interne de l'analyse, pas une mesure
     // du fichier). Densités : `null` veut dire « pas mesuré », jamais zéro — la ligne ne se rend
     // pas du tout.
-    grpRow("Spectre") +
-    row("Déclaré", declaredText(r)) +
-    row("Mesuré", `${spectroBandReading(r.verdict, r.container_mismatch)} · coupure ${fmt(r.cutoff_hz, 0)} Hz`) +
-    (r.hf_flatness_db != null ? rowRefParts("Densité de l'aigu", hfDensityParts(r.hf_flatness_db, fmt)) : "") +
+    grpRow(t.grpSpectrum) +
+    row(t.declared, declaredText(r)) +
+    row(t.measured, t.measuredValue(spectroBandReading(r.verdict, r.container_mismatch), fmt(r.cutoff_hz, 0))) +
+    (r.hf_flatness_db != null ? rowRefParts(t.hfDensity, hfDensityParts(r.hf_flatness_db, fmt)) : "") +
     // Seconde bande de platitude, APRÈS celle du dessus et jamais avant : sa référence ne s'appuie
     // que sur 20 fichiers contre 44, et la faire lire en premier noierait celle qui porte la mesure
     // la mieux étayée. Elle reste indispensable : c'est la SEULE qui voit Opus.
     (r.hf_flatness_top_db != null
-      ? rowRefParts("Densité du haut", hfTopDensityParts(r.hf_flatness_top_db, fmt))
+      ? rowRefParts(t.hfTopDensity, hfTopDensityParts(r.hf_flatness_top_db, fmt))
       : "") +
-    grpRow("Signal") +
+    grpRow(t.grpSignal) +
     // « Pic d'échantillon », pas « True-peak » : malgré son nom, `true_peak_dbtp` EST le pic
     // d'échantillon — son sur-échantillonnage linéaire ne peut pas dépasser `max |s|`, démontré et
     // épinglé dans `analysis/dynamics.rs`. L'unité suit : dBFS, pas dBTP.
-    row("Pic d'échantillon", fmt(r.true_peak_dbtp, 2) + " dBFS") +
-    row("Écrêtage", r.clip_runs + " runs · " + fmt(r.clip_pct, 2) + "%") +
-    row("Corrélation de phase", fmt(r.phase_correlation, 3)) +
-    row("DC offset", fmt(r.dc_offset, 5)) +
-    grpRow("Forme") +
-    row("Silence début / fin", r.silence_head_ms + " ms · " + r.silence_tail_ms + " ms") +
-    row("Canaux · échantillonnage", String(r.channels) + (r.dual_mono ? " (dual-mono)" : "") + " · " + r.sample_rate + " Hz") +
-    grpRow("Intégrité") +
-    row("Conteneur", r.container_ok ? "conforme" : "non conforme") +
-    row("Fin de fichier", r.truncated ? "tronquée" : "complète") +
+    row(t.samplePeak, fmt(r.true_peak_dbtp, 2) + " dBFS") +
+    row(t.clipping, r.clip_runs + " runs · " + fmt(r.clip_pct, 2) + "%") +
+    row(t.phaseCorrelation, fmt(r.phase_correlation, 3)) +
+    row(t.dcOffset, fmt(r.dc_offset, 5)) +
+    grpRow(t.grpShape) +
+    row(t.silence, r.silence_head_ms + " ms · " + r.silence_tail_ms + " ms") +
+    row(t.channels, String(r.channels) + (r.dual_mono ? " (dual-mono)" : "") + " · " + r.sample_rate + " Hz") +
+    grpRow(t.grpIntegrity) +
+    row(t.container, r.container_ok ? t.containerOk : t.containerBad) +
+    row(t.endOfFile, r.truncated ? t.truncated : t.complete) +
     (decodedShortfallText(r.duration_sec, r.decoded_duration_sec, fmt) != null
-      ? row("Durée décodée", decodedShortfallText(r.duration_sec, r.decoded_duration_sec, fmt) as string)
+      ? row(t.decodedDuration, decodedShortfallText(r.duration_sec, r.decoded_duration_sec, fmt) as string)
       : "") +
     `</div></div>` +
     // Tags CDJ OK / Version ID3 moved to the Identification card (filing.ts, alongside Label/
     // Année/Genre) — Pochette dropped entirely (redondant avec la pochette déjà visible dans le
     // hero). Nothing meaningful was left in the old "Tags" box, so it's gone too; codec_error is
     // its own standalone diagnostic, not tied to those three fields.
-    (r.codec_error ? `<div class="sift-codec-error">erreur codec : ${esc(r.codec_error)}</div>` : "")
+    (r.codec_error ? `<div class="sift-codec-error">${t.codecError(esc(r.codec_error))}</div>` : "")
   );
 }
 
@@ -1163,7 +1176,7 @@ async function mountPlayer(root: HTMLElement, path: string, peaks?: number[], du
     // Audio loads via loadAudio (native media element, AIFF pre-transcoded backend-side),
     // so there's nothing further to retry here — just surface the error.
     if (errorEl) {
-      errorEl.textContent = "Lecture impossible — fichier illisible.";
+      errorEl.textContent = T().playbackFailed;
       errorEl.hidden = false;
     }
   });
@@ -1199,7 +1212,7 @@ function wireSpectrogram(root: HTMLElement, r: AnalysisReport) {
     }
     if (!loaded) {
       busy = true;
-      hint.textContent = "calcul…";
+      hint.textContent = T().computing;
       try {
         const full = r.spectrogram.frames > 0 ? r : await analyzePath(r.path, true);
         drawSpectrogram(sg, full);
@@ -1207,7 +1220,7 @@ function wireSpectrogram(root: HTMLElement, r: AnalysisReport) {
         loaded = true;
       } catch (e) {
         console.error("spectrogram analyze failed", e);
-        hint.textContent = "échec — réessayer";
+        hint.textContent = T().computeFailed;
         busy = false;
         return;
       }

@@ -2,6 +2,7 @@
 // Inserted inside .sift-inspector, slides from top. The queue column stays interactive.
 import type { BatchResult } from "../shared/contracts";
 import { esc } from "./dom";
+import { T } from "./i18n/batch-sheet";
 
 let sheetEl: HTMLElement | null = null;
 let orderedIds: number[] = [];
@@ -22,15 +23,16 @@ export function showBatchSheet(
   sheet.className = "sift-batch-sheet";
   sheet.dataset.state = "progress";
   const total = ids.length;
+  const L = T();
   sheet.innerHTML =
     `<div class="sift-bs-head">` +
-    `<div class="sift-bs-title">Rangement de ${total} piste${total > 1 ? "s" : ""}</div>` +
-    `<button class="sift-baction sift-baction--quiet sift-bs-stop" data-sift="batchstop">Arrêter</button>` +
+    `<div class="sift-bs-title">${L.title(total)}</div>` +
+    `<button class="sift-baction sift-baction--quiet sift-bs-stop" data-sift="batchstop">${L.stop}</button>` +
     `</div>` +
     `<progress class="sift-bs-bar" value="0" max="${total}"></progress>` +
     `<div class="sift-bs-step"></div>` +
     `<details class="sift-bs-details">` +
-    `<summary>Afficher les détails</summary>` +
+    `<summary>${L.showDetails}</summary>` +
     `<div class="sift-bs-tracks"></div>` +
     `</details>`;
 
@@ -64,8 +66,8 @@ export function updateBatchSheet(done: number, total: number): void {
     const name = currentId != null ? nameFn(currentId) : "";
     step.textContent =
       done < total
-        ? `Conversion ${done + 1} sur ${total}` + (name ? ` · ${name}` : "")
-        : `${total} sur ${total}`;
+        ? T().step(done + 1, total) + (name ? ` · ${name}` : "")
+        : T().stepDone(total);
   }
 
   for (let i = 0; i < orderedIds.length; i++) {
@@ -85,22 +87,23 @@ export function transformToReport(res: BatchResult): void {
   const nTotal = res.filed + res.needs_validation.length;
   const nKo = res.needs_validation.length;
 
+  const L = T();
   const parts: string[] = [];
-  parts.push(`${nTotal} traitée${nTotal > 1 ? "s" : ""}`);
-  if (res.filed > 0) parts.push(`${res.filed} rangée${res.filed > 1 ? "s" : ""}`);
-  if (nKo > 0) parts.push(`${nKo} à vérifier`);
+  parts.push(L.processed(nTotal));
+  if (res.filed > 0) parts.push(L.filed(res.filed));
+  if (nKo > 0) parts.push(L.toCheck(nKo));
 
   let html = `<div class="sift-bs-title sift-bs-title--report">${parts.join(" · ")}</div>`;
 
   if (res.filed_ids.length > 0) {
-    html += sectionHtml("Rangées", res.filed_ids, "ok");
+    html += sectionHtml(L.sectionFiled, res.filed_ids, "ok");
   }
   if (validationOnly.length > 0) {
-    html += sectionHtml("À valider", validationOnly, "warning");
+    html += sectionHtml(L.sectionToValidate, validationOnly, "warning");
   }
   if (res.errors.length > 0) {
     html += sectionHtml(
-      "Échecs",
+      L.sectionFailed,
       res.errors.map((e) => e.track_id),
       "error",
       new Map(res.errors.map((e) => [e.track_id, e.message])),
@@ -109,7 +112,7 @@ export function transformToReport(res: BatchResult): void {
 
   html +=
     `<div class="sift-bs-footer">` +
-    `<button class="sift-baction sift-baction--quiet" data-sift="batchsheetclose">Fermer</button>` +
+    `<button class="sift-baction sift-baction--quiet" data-sift="batchsheetclose">${L.close}</button>` +
     `</div>`;
 
   sheetEl.innerHTML = html;
@@ -121,6 +124,7 @@ function sectionHtml(
   tone: "ok" | "warning" | "error",
   errorMsgs?: Map<number, string>,
 ): string {
+  const detail = T().detail;
   const items = ids
     .map((id) => {
       const name = esc(nameFn(id));
@@ -129,7 +133,7 @@ function sectionHtml(
         `<div class="sift-bs-item">` +
         `<span class="sift-bs-item-name">${name}</span>` +
         (err ? `<span class="sift-bs-item-err">${esc(err)}</span>` : "") +
-        `<button class="sift-bs-item-link" data-sift="batchsheetdetail" data-id="${id}">Détail</button>` +
+        `<button class="sift-bs-item-link" data-sift="batchsheetdetail" data-id="${id}">${detail}</button>` +
         `</div>`
       );
     })

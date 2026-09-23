@@ -20,6 +20,7 @@ import { confirmAction } from "./confirm-modal";
 import { toast } from "./filing-toast";
 import { humanizeError } from "./errors";
 import { paintRootWarning } from "./rail-root-warning";
+import { T } from "./i18n/rail-sources";
 
 const SECTION_ID = "sift-rail-sources";
 
@@ -50,7 +51,7 @@ export async function pickAndAddFolder(onChange: () => void | Promise<void>): Pr
     await addSource(dir);
     await onChange();
   } catch (e) {
-    toast(humanizeError(e, `« ${baseName(dir)} » n'a pas pu être ajouté.`, "addSource"));
+    toast(humanizeError(e, T().addFailed(baseName(dir)), "addSource"));
   }
 }
 
@@ -87,8 +88,8 @@ export async function renderRailSources(): Promise<void> {
     // Échec de lecture : on le DIT plutôt que de rendre une section vide, qui se lirait « aucun
     // dossier surveillé » — une absence de réponse n'est pas un zéro.
     host.innerHTML =
-      `<div class="nv-grp">Sources</div>` +
-      `<div class="sift-rail-src-msg sift-rail-src--error">Liste indisponible</div>`;
+      `<div class="nv-grp">${T().sources}</div>` +
+      `<div class="sift-rail-src-msg sift-rail-src--error">${T().listUnavailable}</div>`;
     mountedShape = null;
     // Même raison qu'au rendu nominal : cet `innerHTML` emporte la carte de racine manquante, qui
     // ne dépend pas de la liste des sources et doit survivre à son échec.
@@ -138,11 +139,12 @@ export async function renderRailSources(): Promise<void> {
     }
   }
 
+  const t = T();
   host.innerHTML =
-    `<div class="nv-grp">Sources</div>` +
+    `<div class="nv-grp">${t.sources}</div>` +
     (sources.length
       ? sources.map((s) => sourceEntryHtml(s, sources, s.id === active, scanFailures.get(s.id))).join("")
-      : `<div class="sift-rail-src-msg">Aucun dossier surveillé</div>`) +
+      : `<div class="sift-rail-src-msg">${t.noSources}</div>`) +
     // TEXTE SEUL. Le `ti-plus` qui précédait le libellé est retiré le 2026-08-26 : `CLAUDE.md`
     // § Front — un CTA à label descriptif se dit en texte seul, l'icône est réservée à ce qui n'a
     // pas d'équivalent textuel. « + » DEVANT « Ajouter » ne fait que redire « Ajouter ». Le « + »
@@ -150,7 +152,7 @@ export async function renderRailSources(): Promise<void> {
     // un libellé — ce n'était donc pas ce patron-là. `docs/ui-specs/rail.md` § Sources ne demande
     // pas d'icône non plus, il nomme un bouton « Ajouter un dossier ».
     `<button class="nv sift-rail-src-add" data-src-add="1" type="button">` +
-    `<span>Ajouter un dossier</span></button>`;
+    `<span>${t.addFolder}</span></button>`;
   mountedShape = shape;
   // Le rappel de racine manquante (#54, direction A2) vit SOUS cette section et vient d'être
   // emporté par l'`innerHTML` ci-dessus. Il se repose depuis l'état déjà mesuré — aucun aller
@@ -167,16 +169,11 @@ function pickSource(id: number): void {
   void renderRailSources();
 }
 
-/** Infobulles des pastilles du menu — les clés techniques du cycle ne sont pas des mots d'UI. */
-const SOURCE_HUE_LABELS: Record<string, string> = {
-  indigo: "Indigo",
-  purple: "Violet",
-  pink: "Rose",
-  teal: "Turquoise",
-  yellow: "Jaune",
-};
-
 function sourceMenu(s: Source, x: number, y: number): void {
+  const t = T();
+  // Infobulles des pastilles du menu — les clés techniques du cycle ne sont pas des mots d'UI. Lues
+  // dans le dictionnaire à l'ouverture du menu, pas figées au chargement du module.
+  const hueLabels: Record<string, string> = t.hues;
   // `ok` vide = succès silencieux : quand l'effet est déjà visible à l'écran (la pastille du rail
   // change sous le clic), un toast par-dessus est du bruit. L'échec, lui, se dit toujours.
   const after = async (p: Promise<unknown>, ok: string, ko: string, cmd: string) => {
@@ -191,67 +188,57 @@ function sourceMenu(s: Source, x: number, y: number): void {
   };
   openContextMenu(x, y, [
     {
-      label: s.watched ? "Suspendre la surveillance" : "Reprendre la surveillance",
+      label: s.watched ? t.pauseWatch : t.resumeWatch,
       onPick: () =>
         void after(
           setSourceWatched(s.id, !s.watched),
-          s.watched ? "Surveillance suspendue" : "Surveillance reprise",
-          "Impossible de changer la surveillance",
+          s.watched ? t.watchPaused : t.watchResumed,
+          t.watchFailed,
           "set_source_watched",
         ),
     },
     {
-      label: "Rescanner",
-      onPick: () => void after(rescanSource(s.id), "Rescan lancé", "Rescan impossible", "rescan_source"),
+      label: t.rescan,
+      onPick: () => void after(rescanSource(s.id), t.rescanStarted, t.rescanFailed, "rescan_source"),
     },
     {
       // Rangée de pastilles (patron Finder Tags), anneau sur la teinte RÉSOLUE — l'override si
       // posé, sinon la teinte du cycle. Poser l'override = `set_source_color(id, teinte)`.
-      label: "Couleur",
+      label: t.color,
       separated: true,
       swatches: {
-        hues: SOURCE_HUE_CYCLE.map((k) => ({ key: k, label: SOURCE_HUE_LABELS[k] ?? k })),
+        hues: SOURCE_HUE_CYCLE.map((k) => ({ key: k, label: hueLabels[k] ?? k })),
         active: resolveSourceColorKey(sources, s),
-        onPick: (key) =>
-          void after(setSourceColor(s.id, key), "", "Impossible de changer la couleur", "set_source_color"),
+        onPick: (key) => void after(setSourceColor(s.id, key), "", t.colorFailed, "set_source_color"),
       },
     },
     {
       // Retour au cycle : `set_source_color(id, null)`. Désactivée — pas retirée — quand aucun
       // override n'est posé : le menu garde les mêmes entrées aux mêmes positions (doctrine
       // du menu stable, patterns-macos.md § 8).
-      label: "Couleur automatique",
+      label: t.colorAuto,
       onPick: s.color_key
-        ? () =>
-            void after(
-              setSourceColor(s.id, null),
-              "",
-              "Impossible de rétablir la couleur automatique",
-              "set_source_color",
-            )
+        ? () => void after(setSourceColor(s.id, null), "", t.colorAutoFailed, "set_source_color")
         : undefined,
     },
     {
       // Désactivée, PAS omise. `openUrl` refuse côté Rust tout schéma autre que `http(s)://`, donc
       // aucun chemin local n'y passe : l'entrée demande une commande IPC qui n'existe pas encore.
       // Grisée, elle dit qu'elle n'existe pas ; omise, elle aurait laissé croire qu'on l'a oubliée.
-      label: "Ouvrir l'emplacement",
+      label: t.openLocation,
       separated: true,
       onPick: undefined,
     },
     {
-      label: "Retirer de la surveillance",
+      label: t.unwatch,
       danger: true,
       separated: true,
       onPick: () => {
         void (async () => {
-          const ok = await confirmAction(
-            `Retirer « ${baseName(s.path)} » des dossiers surveillés ? Les fichiers ne sont pas touchés.`,
-            "Retirer",
-          );
+          const ok = await confirmAction(t.unwatchConfirm(baseName(s.path)), t.unwatchBtn);
           if (!ok) return;
           if (activeQueueSource() === s.id) setQueueSourceFilter(null);
-          await after(removeSource(s.id), "Dossier retiré", "Retrait impossible", "remove_source");
+          await after(removeSource(s.id), t.unwatched, t.unwatchFailed, "remove_source");
         })();
       },
     },

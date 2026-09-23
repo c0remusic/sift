@@ -22,7 +22,8 @@ import { installColumnGestures, resetColumns, columnsAreCustomized } from "./lib
 import { confirmAction, BATCH_CONFIRM_THRESHOLD } from "./confirm-modal";
 import { toast } from "./filing-toast";
 import type { LibraryTrack, LibraryFacets, LibraryFilter, DupGroup } from "../shared/contracts";
-import { requireEl, esc, plural } from "./dom";
+import { requireEl, esc } from "./dom";
+import { T } from "./i18n/bibliotheque-view";
 import { slideSegThumb } from "./seg-thumb";
 import { mountBarActions, mountBarSearch, openAside, closeAside } from "./toolbar";
 import { humanizeError } from "./errors";
@@ -132,18 +133,19 @@ export function renderSelectionSummary(): void {
     if (t.duration != null && Number.isFinite(t.duration)) total += t.duration;
     else unknown++;
   }
+  const L = T();
   const h = Math.floor(total / 3600);
   const m = Math.floor((total % 3600) / 60);
-  const dur = h > 0 ? `${h} h ${String(m).padStart(2, "0")}` : `${m} min`;
+  const dur = h > 0 ? L.durHours(h, String(m).padStart(2, "0")) : L.durMinutes(m);
   host.innerHTML =
-    `<div class="col-h">Sélection</div>` +
-    `<div class="sift-sel-count">${picked.length} pistes</div>` +
+    `<div class="col-h">${L.selection}</div>` +
+    `<div class="sift-sel-count">${L.selectedTracks(picked.length)}</div>` +
     `<dl class="sift-sel-rows">` +
     [...fmts.entries()]
       .sort((a, b) => b[1] - a[1])
       .map(([f, n]) => `<dt>${esc(f)}</dt><dd>${n}</dd>`)
       .join("") +
-    `<dt>Durée totale</dt><dd>${dur}${unknown ? ` <span class="sift-sel-partial">+ ${unknown} sans durée</span>` : ""}</dd>` +
+    `<dt>${L.totalDuration}</dt><dd>${dur}${unknown ? ` <span class="sift-sel-partial">${L.withoutDuration(unknown)}</span>` : ""}</dd>` +
     `</dl>`;
 }
 
@@ -160,8 +162,9 @@ export function renderSelectionSummary(): void {
 function renderBibInspectorIdle(): void {
   const host = openAside();
   if (!host) return;
+  const L = T();
   const f = bibState.filter;
-  const source = f.folder ?? f.genre ?? f.artist ?? "Tous";
+  const source = f.folder ?? f.genre ?? f.artist ?? L.all;
   const n = bibState.tracks.length;
   // Répartition calculée sur CE QUE LA TABLE MONTRE, jamais sur `library_stats`.
   //
@@ -179,7 +182,7 @@ function renderBibInspectorIdle(): void {
   }
   host.innerHTML =
     `<div class="col-h">${esc(source)}</div>` +
-    `<div class="sift-sel-count">${n} piste${n > 1 ? "s" : ""}</div>` +
+    `<div class="sift-sel-count">${L.tracks(n)}</div>` +
     `<dl class="sift-sel-rows">` +
     [...fmts.entries()]
       .sort((a, b) => b[1] - a[1])
@@ -188,7 +191,7 @@ function renderBibInspectorIdle(): void {
     // « À re-sourcer » n'apparaît que s'il y en a. Une ligne à zéro en permanence occupe la place
     // d'une information et n'en porte aucune — et § 4 interdit d'estomper un échec, pas de le taire
     // quand il n'existe pas.
-    (fake ? `<dt>À re-sourcer</dt><dd>${fake}</dd>` : "") +
+    (fake ? `<dt>${L.resourcing}</dt><dd>${fake}</dd>` : "") +
     `</dl>` +
     `<div id="sift-bib-usage" class="sift-bib-usage"></div>`;
   mountBibUsage(host);
@@ -288,16 +291,16 @@ async function bulkReanalyze(ids: number[]): Promise<void> {
     // `reanalyze_tracks` rend le nombre réellement remis en file — il peut différer de ce qui a été
     // demandé (une piste déjà en analyse n'est pas réempilée). C'est ce nombre-là qui est annoncé.
     const n = await reanalyzeTracks(ids);
-    toast(n === 0 ? "Rien à réanalyser — déjà en file" : `${plural(n, "piste")} remise${n > 1 ? "s" : ""} en analyse`);
+    toast(n === 0 ? T().nothingToReanalyze : T().requeued(n));
   } catch (err: unknown) {
-    toast(humanizeError(err, "Échec de la réanalyse — réessaie", "reanalyze_tracks"));
+    toast(humanizeError(err, T().reanalyzeFailed, "reanalyze_tracks"));
   }
 }
 
 async function bulkReject(ids: number[]): Promise<void> {
   if (
     ids.length > BATCH_CONFIRM_THRESHOLD &&
-    !(await confirmAction(`Écarter ${plural(ids.length, "piste")} de la bibliothèque ?`, "Écarter"))
+    !(await confirmAction(T().rejectConfirm(ids.length), T().setAside))
   )
     return;
   try {
@@ -306,11 +309,11 @@ async function bulkReject(ids: number[]): Promise<void> {
     // l'utilisateur croirait avoir écarté ce qui est resté. Voir `docs/ui-specs/bibliotheque.md`.
     toast(
       r.failed.length
-        ? `${plural(r.rejected, "piste")} écartée${r.rejected > 1 ? "s" : ""}, ${r.failed.length} en échec`
-        : `${plural(r.rejected, "piste")} écartée${r.rejected > 1 ? "s" : ""}`,
+        ? T().rejectedPartial(r.rejected, r.failed.length)
+        : T().rejected(r.rejected),
     );
   } catch (err: unknown) {
-    toast(humanizeError(err, "Impossible d'écarter", "reject_batch"));
+    toast(humanizeError(err, T().rejectFailed(ids.length), "reject_batch"));
     return;
   }
   await afterBulkRemoval();
@@ -319,7 +322,7 @@ async function bulkReject(ids: number[]): Promise<void> {
 async function bulkTrash(ids: number[]): Promise<void> {
   if (
     ids.length > BATCH_CONFIRM_THRESHOLD &&
-    !(await confirmAction(`Envoyer ${plural(ids.length, "piste")} à la corbeille ?`, "Envoyer à la corbeille"))
+    !(await confirmAction(T().trashConfirm(ids.length), T().moveToTrash))
   )
     return;
   // SÉQUENTIEL, et ce n'est pas un oubli : `trash_track` est unitaire côté IPC, et le backend est
@@ -338,9 +341,7 @@ async function bulkTrash(ids: number[]): Promise<void> {
     }
   }
   toast(
-    failed.length
-      ? `${plural(done, "piste")} à la corbeille, ${failed.length} en échec`
-      : `${plural(done, "piste")} à la corbeille`,
+    failed.length ? T().trashedPartial(done, failed.length) : T().trashed(done),
   );
   await afterBulkRemoval();
 }
@@ -355,7 +356,7 @@ async function bulkTrash(ids: number[]): Promise<void> {
 export function openColumnHeaderMenu(x: number, y: number): void {
   openContextMenu(x, y, [
     {
-      label: "Réinitialiser les colonnes",
+      label: T().resetColumns,
       onPick: columnsAreCustomized()
         ? () => {
             resetColumns();
@@ -396,23 +397,24 @@ export function openBiblioContextMenu(x: number, y: number, id: number): void {
   // `openBiblioDetail` BASCULE. Le libellé suit donc l'état réel : sur une piste déjà ouverte,
   // l'entrée referme le panneau, et annoncer « Ouvrir » y était faux.
   const detailOpen = one && bibOpenId === ids[0];
+  const L = T();
   openContextMenu(x, y, [
     {
-      label: "Ouvrir l'emplacement",
+      label: L.reveal,
       // Une piste à la fois : révéler N fichiers ouvrirait N fenêtres d'explorateur.
       onPick: one
         ? () =>
             void revealTrack(ids[0]).catch((err: unknown) =>
-              toast(humanizeError(err, "Impossible d'ouvrir l'emplacement", "reveal_track")),
+              toast(humanizeError(err, T().revealFailed, "reveal_track")),
             )
         : undefined,
     },
     {
-      label: detailOpen ? "Masquer le détail" : "Ouvrir le détail",
+      label: detailOpen ? L.hideDetail : L.showDetail,
       onPick: one ? () => openBiblioDetail(ids[0]) : undefined,
     },
     {
-      label: "Fiche Discogs",
+      label: L.discogsPage,
       onPick: one && rid ? () => void openUrl(`https://www.discogs.com/release/${rid}`) : undefined,
     },
     // Depuis le 2026-09-08 la fiche de la zone D est celle de Revue et n'a plus de bouton « changer »
@@ -420,17 +422,17 @@ export function openBiblioContextMenu(x: number, y: number, id: number): void {
     // sait dans quel en-tête poser l'image) — sinon l'entrée est présente et désactivée, comme les
     // autres entrées à une piste.
     {
-      label: "Changer la pochette…",
+      label: L.changeCover,
       onPick: detailOpen ? () => void changeCoverForOpenTrack() : undefined,
     },
-    { label: `Réanalyser${suffix}`, separated: true, onPick: () => void bulkReanalyze(ids) },
+    { label: `${L.reanalyze}${suffix}`, separated: true, onPick: () => void bulkReanalyze(ids) },
     // « Écarter » n'est PAS `danger`, et ce n'est pas un oubli : `DESIGN.md` § 4 réserve le rouge au
     // « risque réel, destructif », pas à un simple avertissement. Écarter range la piste dans
     // Écartés, d'où elle se restaure — le geste est réversible et ne touche pas au fichier. Le
     // rouge y perdait son sens pour l'entrée d'en dessous, la seule des deux qui sorte quelque
     // chose de la bibliothèque. Deux rouges côte à côte n'en font qu'un.
-    { label: `Écarter${suffix}`, separated: true, onPick: () => void bulkReject(ids) },
-    { label: `Envoyer à la corbeille${suffix}`, danger: true, onPick: () => void bulkTrash(ids) },
+    { label: `${L.setAside}${suffix}`, separated: true, onPick: () => void bulkReject(ids) },
+    { label: `${L.moveToTrash}${suffix}`, danger: true, onPick: () => void bulkTrash(ids) },
   ]);
 }
 
@@ -478,9 +480,9 @@ export function loadDuplicates(): void {
 function humanizeScanError(e: unknown): string {
   const raw = String(e);
   if (raw.includes("db lock") || raw.includes("poisoned")) {
-    return "La base est occupée. Réessaie dans un instant.";
+    return T().dbBusy;
   }
-  return "Vérifie que la bibliothèque est accessible, puis réessaie.";
+  return T().libraryUnreachable;
 }
 
 // Virtualized library list controller. Torn down and recreated on each full renderBiblioLive
@@ -502,7 +504,7 @@ function dupMemberHtml(m: DupGroup["members"][number]): string {
     `<span class="pill" style="flex:none">${esc(fmt)}</span>` +
     `<span style="flex:none;width:80px;text-align:right;font-size:var(--text-sm);color:var(--color-text-tertiary)">${esc(br)}</span>` +
     (m.recommend_keep
-      ? `<span class="pill" style="flex:none;background:var(--color-background-success);color:var(--color-text-success)" title="${esc(m.reason || "")}">Recommandé</span>`
+      ? `<span class="pill" style="flex:none;background:var(--color-background-success);color:var(--color-text-success)" title="${esc(m.reason || "")}">${T().recommended}</span>`
       : "") +
     `</div>`
   );
@@ -513,7 +515,7 @@ function dupGroupHtml(g: DupGroup, idx: number): string {
   return (
     `<div class="sift-dup-group" style="border:1px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:10px var(--space-12);margin-bottom:var(--space-8)">` +
     g.members.map((m) => dupMemberHtml(m)).join("") +
-    `<div style="margin-top:var(--space-6)"><button data-bib="dupresolve" data-idx="${idx}">Envoyer ${loserCount} doublon${loserCount > 1 ? "s" : ""} à la corbeille</button></div>` +
+    `<div style="margin-top:var(--space-6)"><button data-bib="dupresolve" data-idx="${idx}">${T().trashDuplicates(loserCount)}</button></div>` +
     `</div>`
   );
 }
@@ -642,7 +644,7 @@ function mountBibUsage(host: HTMLElement): void {
   if (!slot) return;
 
   const draw = (report: UsageReport) => {
-    slot.innerHTML = '<div class="col-h">Occupation</div>';
+    slot.innerHTML = '<div class="col-h">' + T().usage + "</div>";
     slot.appendChild(renderUsageChart({ report }));
   };
 
@@ -651,8 +653,8 @@ function mountBibUsage(host: HTMLElement): void {
     return;
   }
   slot.innerHTML =
-    '<div class="col-h">Occupation</div>' +
-    '<div class="sift-usb-empty">Lecture…</div>';
+    '<div class="col-h">' + T().usage + "</div>" +
+    '<div class="sift-usb-empty">' + T().reading + "</div>";
   void libraryUsage()
     .then((r) => {
       bibUsage = r;
@@ -664,13 +666,15 @@ function mountBibUsage(host: HTMLElement): void {
       // signaler. Le cas jumeau de Clé USB (`usb-view.ts::mountUsage`) garde son slot et affiche
       // la chaîne brute ; c'est ce modèle qu'on porte ici, plus une porte de sortie.
       slot.innerHTML =
-        '<div class="col-h">Occupation</div>' +
+        '<div class="col-h">' + T().usage + "</div>" +
         '<div class="sift-usb-empty">' +
-        esc(humanizeError(e, "Occupation indisponible.", "libraryUsage")) +
+        esc(humanizeError(e, T().usageUnavailable, "libraryUsage")) +
         "<br>" +
         esc(String(e)) +
         "</div>" +
-        '<div class="sift-settings-subactions"><button data-bib="retryusage" class="sift-settings-btn sift-settings-btn-quiet">Réessayer</button></div>';
+        '<div class="sift-settings-subactions"><button data-bib="retryusage" class="sift-settings-btn sift-settings-btn-quiet">' +
+        T().retry +
+        "</button></div>";
       slot
         .querySelector<HTMLButtonElement>('[data-bib="retryusage"]')
         ?.addEventListener("click", () => {
@@ -702,10 +706,13 @@ export async function renderBiblioLive() {
   // Le repère du « déjà rendu » suit la ligne d'en-tête depuis que le contrôle segmenté de
   // facette a disparu (2026-08-19) : viser un nœud supprimé aurait blanchi l'écran à chaque frappe.
   const alreadyRendered = !!content.querySelector(".sift-bib-headline");
+  const L = T();
   if (!alreadyRendered) {
     content.innerHTML =
       '<div style="display:flex;align-items:center;gap:var(--space-8);padding:var(--space-8) 7px;color:var(--color-text-tertiary);font-size:var(--text-md)">' +
-      '<i class="ti ti-loader sift-spin" style="font-size:var(--text-md)"></i> Chargement…</div>';
+      '<i class="ti ti-loader sift-spin" style="font-size:var(--text-md)"></i> ' +
+      L.loading +
+      "</div>";
   }
   let facets: LibraryFacets = { folders: [], genres: [], artists: [] };
   try {
@@ -721,14 +728,10 @@ export async function renderBiblioLive() {
     if (isStaleViewRender(token)) return;
     content.innerHTML =
       '<div class="sift-ui-card-soft sift-ui-card-soft-pad" style="color:var(--color-text-danger)">' +
-      esc(
-        humanizeError(
-          e,
-          "Impossible de charger la Bibliothèque. Vérifie la connexion à la base et réessaie.",
-          "library load",
-        ),
-      ) +
-      '<div style="margin-top:var(--space-8)"><button data-bib="retryload" style="font-size:var(--text-xs);color:var(--color-text-info)">Réessayer</button></div>' +
+      esc(humanizeError(e, L.loadFailed, "library load")) +
+      '<div style="margin-top:var(--space-8)"><button data-bib="retryload" style="font-size:var(--text-xs);color:var(--color-text-info)">' +
+      L.retry +
+      "</button></div>" +
       "</div>";
     content
       .querySelector<HTMLButtonElement>('[data-bib="retryload"]')
@@ -742,11 +745,11 @@ export async function renderBiblioLive() {
     (["all", "lossless", "mp3"] as const)
       .map((q) => {
         const on = (bibState.filter.quality ?? "all") === q;
-        const label = q === "all" ? "Tous" : q === "lossless" ? "Lossless" : "MP3";
+        const label = q === "all" ? L.all : q === "lossless" ? "Lossless" : "MP3";
         return `<button class="chip${on ? " on" : ""}" data-bib="qual" data-q="${q}">${label}</button>`;
       })
       .join("") +
-    `<button class="chip${bibDup.shown ? " on" : ""}" data-bib="dupscan">Doublons</button>`;
+    `<button class="chip${bibDup.shown ? " on" : ""}" data-bib="dupscan">${L.duplicates}</button>`;
 
   const facetList =
     bibState.facet === "folder" ? facets.folders : bibState.facet === "genre" ? facets.genres : facets.artists;
@@ -758,7 +761,7 @@ export async function renderBiblioLive() {
         ? bibState.filter.genre
         : bibState.filter.artist;
   const facetLabel =
-    bibState.facet === "folder" ? "Dossiers" : bibState.facet === "genre" ? "Genres" : "Artistes";
+    bibState.facet === "folder" ? L.folders : bibState.facet === "genre" ? L.genres : L.artists;
   // MENU, pas carte flottante — refonte du 2026-08-19 sur la remarque d'Antoine (« le panneau est
   // placé bizarrement, regarde comment fait Apple Music »).
   //
@@ -773,9 +776,9 @@ export async function renderBiblioLive() {
   // colonne qu'on a supprimée, items compacts, et la valeur active portée par une COCHE — la
   // marque d'un item choisi dans un menu macOS, pas un fond plein comme dans une liste.
   const facetTypes: [typeof bibState.facet, string][] = [
-    ["folder", "Dossiers"],
-    ["genre", "Genres"],
-    ["artist", "Artistes"],
+    ["folder", L.folders],
+    ["genre", L.genres],
+    ["artist", L.artists],
   ];
   const check = (on: boolean) =>
     `<span class="sift-menu-check" aria-hidden="true">${on ? "✓" : ""}</span>`;
@@ -792,7 +795,7 @@ export async function renderBiblioLive() {
     // marchent sans passer par `installNavKeyboard`.
     `<div class="sift-menu-section">` +
     (facetList.length
-      ? `<button type="button" class="sift-menu-item" data-bib="pick" data-key="${sideKey}" data-val="" role="menuitemradio" aria-checked="${!activeFacetVal}">${check(!activeFacetVal)}<span class="sift-menu-label">Tous</span></button>` +
+      ? `<button type="button" class="sift-menu-item" data-bib="pick" data-key="${sideKey}" data-val="" role="menuitemradio" aria-checked="${!activeFacetVal}">${check(!activeFacetVal)}<span class="sift-menu-label">${L.all}</span></button>` +
         facetList
           .map(
             (b) =>
@@ -803,7 +806,7 @@ export async function renderBiblioLive() {
         // facette Dossiers ne rend rien tant qu'aucune piste n'est rangée dans un sous-dossier, et
         // le menu s'ouvrait alors sur ses trois types et du vide, ce qui se lit comme un défaut de
         // chargement plutôt que comme une absence.
-        `<div class="sift-facet-empty">Aucun ${bibState.facet === "folder" ? "dossier" : bibState.facet === "genre" ? "genre" : "artiste"} pour l'instant.</div>`) +
+        `<div class="sift-facet-empty">${bibState.facet === "folder" ? L.noFolder : bibState.facet === "genre" ? L.noGenre : L.noArtist}</div>`) +
     `</div>`;
 
   // The list is virtualized (createVirtualList below) — this placeholder is the mount host, filled
@@ -840,20 +843,20 @@ export async function renderBiblioLive() {
   const dupSection = !bibDup.shown
     ? ""
     : bibDup.loading
-      ? `<div style="margin-top:10px;font-size:var(--text-md);color:var(--color-text-tertiary)">Scan en cours (toute la bibliothèque)…</div>`
+      ? `<div style="margin-top:10px;font-size:var(--text-md);color:var(--color-text-tertiary)">${L.scanRunning}</div>`
       : bibDup.error
         ? // Même forme que l'état d'erreur d'Écartés (ecartes-view.ts) : carte douce, texte
           // danger, bouton Réessayer discret. Réutilisé plutôt que réinventé, pour que les deux
           // écrans échouent de la même façon.
           `<div class="sift-ui-card-soft sift-ui-card-soft-pad" style="margin-top:10px;color:var(--color-text-danger)">` +
-          `Le scan de doublons n'a pas abouti. ${esc(bibDup.error)}` +
-          `<div style="margin-top:var(--space-8)"><button data-bib="dupretry" style="font-size:var(--text-xs);padding:var(--space-4) 10px;color:var(--color-text-info)">Réessayer</button></div>` +
+          L.scanFailed(esc(bibDup.error)) +
+          `<div style="margin-top:var(--space-8)"><button data-bib="dupretry" style="font-size:var(--text-xs);padding:var(--space-4) 10px;color:var(--color-text-info)">${L.retry}</button></div>` +
           `</div>`
         : bibDup.groups === null
           ? ""
           : bibDup.groups.length === 0
-            ? `<div style="margin-top:10px;font-size:var(--text-md);color:var(--color-text-tertiary)">Aucun doublon dans toute la bibliothèque.</div>`
-            : `<div style="margin-top:10px"><div style="font-size:var(--text-xs);color:var(--color-text-tertiary);margin-bottom:var(--space-4)">Doublons détectés dans toute la bibliothèque (pas seulement la vue filtrée actuelle)</div>${bibDup.groups.map((g, i) => dupGroupHtml(g, i)).join("")}</div>`;
+            ? `<div style="margin-top:10px;font-size:var(--text-md);color:var(--color-text-tertiary)">${L.noDuplicates}</div>`
+            : `<div style="margin-top:10px"><div style="font-size:var(--text-xs);color:var(--color-text-tertiary);margin-bottom:var(--space-4)">${L.duplicatesFound}</div>${bibDup.groups.map((g, i) => dupGroupHtml(g, i)).join("")}</div>`;
 
   // Export (Rekordbox/Clé USB) lives in the nav rail now, not here — matches the maquette's
   // persistent Export section (index.html nav-export items, wired in installLiveWiring below).
@@ -874,18 +877,18 @@ export async function renderBiblioLive() {
   // donc son placement (`showFacetPopover`) n'a pas bougé. En mode doublons, la porte de sortie
   // nommée prend SA place : ce qui pilote la zone C reste au même endroit d'un mode à l'autre.
   const pilot = bibDup.shown
-    ? `<button data-bib="dupscan" class="sift-bib-back"><i class="ti ti-chevron-left" aria-hidden="true"></i> Retour à la table</button>`
+    ? `<button data-bib="dupscan" class="sift-bib-back"><i class="ti ti-chevron-left" aria-hidden="true"></i> ${L.backToTable}</button>`
     : `<button data-bib="facetpop" class="sift-bib-facet-btn" aria-haspopup="true" aria-expanded="false">` +
       `<span class="sift-bib-facet-kind">${esc(facetLabel)}</span>` +
-      `<span class="sift-bib-facet-val">${esc(activeFacetVal || "Tous")}</span>` +
+      `<span class="sift-bib-facet-val">${esc(activeFacetVal || L.all)}</span>` +
       `<i class="ti ti-chevron-down" aria-hidden="true"></i></button>`;
   const barActionsHtml =
     pilot +
     chips +
     `<div class="sift-seg sift-seg-thumbed" id="sift-bib-viewmode-seg">` +
     `<div class="sift-seg-thumb"></div>` +
-    `<button class="sift-seg-opt${bibState.viewMode === "table" ? " on" : ""}" data-bib="viewmode" data-mode="table" aria-label="Vue tableau"><i class="ti ti-list"></i></button>` +
-    `<button class="sift-seg-opt${bibState.viewMode === "grid" ? " on" : ""}" data-bib="viewmode" data-mode="grid" aria-label="Vue grille"><i class="ti ti-layout-grid"></i></button></div>`;
+    `<button class="sift-seg-opt${bibState.viewMode === "table" ? " on" : ""}" data-bib="viewmode" data-mode="table" aria-label="${L.tableView}"><i class="ti ti-list"></i></button>` +
+    `<button class="sift-seg-opt${bibState.viewMode === "grid" ? " on" : ""}" data-bib="viewmode" data-mode="grid" aria-label="${L.gridView}"><i class="ti ti-layout-grid"></i></button></div>`;
 
   // Zone C = la table, et rien d'autre (`docs/ui-specs/bibliotheque.md`). Trois blocs l'ont quittée
   // le 2026-08-19 : les cartes de statistiques et le graphique d'occupation sont montés dans la
@@ -894,8 +897,8 @@ export async function renderBiblioLive() {
   // Ce qui reste au-dessus de la table est une seule ligne : facette · valeur · compte.
   content.innerHTML = trulyEmpty
     ? emptyStateHtml({
-        title: "Bibliothèque vide",
-        note: "Les pistes que tu convertis depuis Revue apparaissent ici, prêtes à exporter vers Rekordbox ou une clé USB.",
+        title: L.emptyTitle,
+        note: L.emptyNote,
         backToRevue: true,
       })
     : // Plus de carte ni de rangée de tête depuis le 2026-09-08 (audit Rangés, #24, « F avec la barre
@@ -918,7 +921,7 @@ export async function renderBiblioLive() {
           // au-delà du style : remplacer la table emporte les en-têtes, donc les contrôles de
           // tri — on retire à l'utilisateur les commandes qui pourraient défaire son filtre.
           (rows ||
-            `<div class="sift-bib-noresult">Aucun résultat pour ce filtre. <button data-bib="stat" data-stat="all">Réinitialiser les filtres</button></div>`)) +
+            `<div class="sift-bib-noresult">${L.noResult} <button data-bib="stat" data-stat="all">${L.resetFilters}</button></div>`)) +
       `</div>` +
       // Le popover de facette vit DANS `#content` mais en `position:fixed` : il est peint par le
       // même rendu que son bouton, donc il ne peut pas survivre à un changement d'écran — un
@@ -976,9 +979,7 @@ export async function renderBiblioLive() {
   // MONTRE (filtre compris), jamais un total global ; en mode doublons il nomme la portée du scan.
   const countEl = document.getElementById("sift-tb-count");
   if (countEl) {
-    countEl.textContent = bibDup.shown
-      ? "Doublons — toute la bibliothèque"
-      : `${bibState.tracks.length} piste${bibState.tracks.length > 1 ? "s" : ""}`;
+    countEl.textContent = bibDup.shown ? L.duplicatesScope : L.tracks(bibState.tracks.length);
   }
 
   // La recherche est le seul contrôle frappé pendant que son écran se re-rend : `mountBarSearch`
@@ -987,8 +988,8 @@ export async function renderBiblioLive() {
   // que par un nœud ajouté-retiré : un nœud créé à chaque frappe est exactement ce que la règle
   // « créer une fois, muter ensuite » interdit.
   const searchInput = mountBarSearch({
-    placeholder: "Rechercher…",
-    ariaLabel: "Rechercher dans la bibliothèque",
+    placeholder: L.searchPlaceholder,
+    ariaLabel: L.searchAria,
     value: bibState.filter.q ?? "",
     onInput: (value) => {
       bibState.filter.q = value || undefined;

@@ -9,6 +9,7 @@
 // (voir `vitest.config.ts`). Ici il n'y a que des nombres et des chaînes, donc la logique qui
 // décide CE QUI EST DIT à l'utilisateur est couverte par un test — alors qu'elle porte
 // précisément le risque : une mesure mal formulée devient un jugement.
+import { T } from "./i18n/report-figures";
 
 /** Bornes des masters authentiques mesurés, en dB de platitude spectrale 16–20 kHz.
  *
@@ -68,10 +69,9 @@ export function hfDensityParts(
   db: number,
   fmt: (v: number, d: number) => string,
 ): { value: string; ref: string } {
-  const situe = db >= HF_REF_LO ? "dans" : "sous";
   return {
     value: `${fmt(db, 1)} dB`,
-    ref: `${situe} la plage des masters (${fmt(HF_REF_LO, 1)} à ${fmt(HF_REF_HI, 1)})`,
+    ref: T().refRange(db >= HF_REF_LO, fmt(HF_REF_LO, 1), fmt(HF_REF_HI, 1)),
   };
 }
 
@@ -93,7 +93,7 @@ export function decodedShortfallText(
   if (!(decodedSec > 0) || Math.abs(declaredSec - decodedSec) <= DURATION_MISMATCH_SEC) {
     return null;
   }
-  return `${fmt(decodedSec, 1)} s sur ${fmt(declaredSec, 1)} s annoncées`;
+  return T().decodedShortfall(fmt(decodedSec, 1), fmt(declaredSec, 1));
 }
 
 /** Bornes des masters authentiques sur la bande RELATIVE au Nyquist, en dB.
@@ -129,9 +129,8 @@ export function hfTopDensityParts(
   db: number,
   fmt: (v: number, d: number) => string,
 ): { value: string; ref: string } {
-  const situe = db >= HF_TOP_REF_LO ? "dans" : "sous";
   return {
     value: `${fmt(db, 1)} dB`,
-    ref: `${situe} la plage des masters (${fmt(HF_TOP_REF_LO, 1)} à ${fmt(HF_TOP_REF_HI, 1)})`,
+    ref: T().refRange(db >= HF_TOP_REF_LO, fmt(HF_TOP_REF_LO, 1), fmt(HF_TOP_REF_HI, 1)),
   };
 }

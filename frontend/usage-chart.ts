@@ -9,6 +9,7 @@
 // données utilisateur.
 import type { UsageReport, ExtUsage } from "./ipc";
 import { esc } from "./dom";
+import { T } from "./i18n/usage-chart";
 
 /** Un format, une couleur système Apple. Ces tokens `-solid` n'ont qu'un emploi — l'aplat de
  * donnée — et ne doivent jamais porter de texte (voir docs/design-system-states.md). */
@@ -36,15 +37,19 @@ function colorFor(ext: string): string {
 /** Les groupes du détail. De la structure de format, jamais un verdict d'analyse : un fichier
  * n'est FAKE que si Sift l'a analysé, et une clé jamais passée en Revue rendrait la catégorie
  * vide sans explication — ou pire, fausse si elle ne l'est qu'à moitié. */
-const GROUPS: ReadonlyArray<{ label: string; exts: readonly string[] }> = [
-  { label: "Audio sans perte", exts: [".wav", ".aiff", ".aif", ".flac", ".alac"] },
-  { label: "Audio compressé", exts: [".mp3", ".m4a", ".aac"] },
-  { label: "Données Rekordbox", exts: ["PIONEER/"] },
+// Le libellé d'un groupe est une CLÉ du dictionnaire, lue à l'appel par `groupBuckets` : ce
+// tableau s'évalue à l'import, avant que la langue soit tranchée.
+const GROUPS: ReadonlyArray<{ label: "groupLossless" | "groupCompressed" | "groupRekordbox"; exts: readonly string[] }> = [
+  { label: "groupLossless", exts: [".wav", ".aiff", ".aif", ".flac", ".alac"] },
+  { label: "groupCompressed", exts: [".mp3", ".m4a", ".aac"] },
+  { label: "groupRekordbox", exts: ["PIONEER/"] },
 ];
 
 const GO = 1_000_000_000;
-export const formatGo = (bytes: number): string =>
-  `${(bytes / GO).toFixed(1).replace(".", ",")} Go`;
+export const formatGo = (bytes: number): string => {
+  const L = T();
+  return `${(bytes / GO).toFixed(1).replace(".", L.decimalSep)} ${L.unitGo}`;
+};
 
 /** Répartit les seaux dans les groupes du détail, et rassemble le reste sous « Autres fichiers » —
  * la seule logique non triviale de ce fichier, et elle n'a aujourd'hui aucun test.
@@ -56,15 +61,16 @@ export const formatGo = (bytes: number): string =>
 function groupBuckets(
   buckets: readonly ExtUsage[],
 ): Array<{ label: string; rows: ExtUsage[] }> {
+  const L = T();
   const claimed = new Set<string>();
   const out: Array<{ label: string; rows: ExtUsage[] }> = [];
   for (const g of GROUPS) {
     const rows = buckets.filter((b) => g.exts.includes(b.ext.toLowerCase()) || g.exts.includes(b.ext));
     rows.forEach((r) => claimed.add(r.ext));
-    if (rows.length) out.push({ label: g.label, rows });
+    if (rows.length) out.push({ label: L[g.label], rows });
   }
   const rest = buckets.filter((b) => !claimed.has(b.ext));
-  if (rest.length) out.push({ label: "Autres fichiers", rows: rest });
+  if (rest.length) out.push({ label: L.groupOther, rows: rest });
   return out;
 }
 
@@ -104,17 +110,14 @@ export function renderUsageChart(opts: UsageChartOptions): HTMLElement {
     seg.className = "sift-usage-seg";
     seg.style.flex = `0 0 ${pct.toFixed(2)}%`;
     seg.style.background = colorFor(b.ext);
-    seg.setAttribute(
-      "aria-label",
-      `${b.ext}, ${formatGo(b.bytes)}, ${b.file_count} fichiers, ${pct.toFixed(1)} % du disque`,
-    );
+    seg.setAttribute("aria-label", T().segAria(b.ext, formatGo(b.bytes), b.file_count, pct.toFixed(1)));
     const show = () => {
       bar.classList.add("dim");
       segs.forEach((s) => s.classList.remove("on"));
       seg.classList.add("on");
       tip.innerHTML =
         `<span class="sift-usage-tip-ext">${esc(b.ext)}</span> — ${formatGo(b.bytes)}` +
-        `<br><span class="sift-usage-tip-meta">${b.file_count} fichiers · ${pct.toFixed(1)} %</span>`;
+        `<br><span class="sift-usage-tip-meta">${T().tipMeta(b.file_count, pct.toFixed(1))}</span>`;
       tip.classList.add("on");
       // Borné aux bords de la barre, sinon l'infobulle d'un segment d'extrémité déborde.
       const bw = bar.getBoundingClientRect();
@@ -139,7 +142,7 @@ export function renderUsageChart(opts: UsageChartOptions): HTMLElement {
   if (isVolume) {
     const free = document.createElement("div");
     free.className = "sift-usage-seg sift-usage-seg-free";
-    free.setAttribute("aria-label", `Libre, ${formatGo(report.free_bytes)}`);
+    free.setAttribute("aria-label", T().freeAria(formatGo(report.free_bytes)));
     bar.appendChild(free);
   }
   barwrap.append(tip, bar);
@@ -164,7 +167,7 @@ export function renderUsageChart(opts: UsageChartOptions): HTMLElement {
     free.className = "sift-usage-lg sift-usage-lg-static";
     free.innerHTML =
       '<span class="sift-usage-lg-top"><span class="sift-usage-swatch sift-usage-swatch-free"></span>' +
-      '<span class="sift-usage-lg-name sift-usage-lg-name-plain">Libre</span></span>' +
+      `<span class="sift-usage-lg-name sift-usage-lg-name-plain">${T().free}</span></span>` +
       `<span class="sift-usage-lg-size">${formatGo(report.free_bytes)}</span>`;
     legend.appendChild(free);
   }
@@ -179,7 +182,7 @@ export function renderUsageChart(opts: UsageChartOptions): HTMLElement {
   toggle.className = "sift-usage-disclose";
   toggle.setAttribute("aria-expanded", "false");
   toggle.innerHTML =
-    '<span class="sift-usage-chev">▶</span><span class="sift-usage-disclose-label">Voir le détail complet</span>';
+    `<span class="sift-usage-chev">▶</span><span class="sift-usage-disclose-label">${T().showDetail}</span>`;
   actions.appendChild(toggle);
 
   card.appendChild(actions);
@@ -222,7 +225,7 @@ export function renderUsageChart(opts: UsageChartOptions): HTMLElement {
     panel.classList.toggle("on", v);
     toggle.setAttribute("aria-expanded", String(v));
     const label = toggle.querySelector(".sift-usage-disclose-label");
-    if (label) label.textContent = v ? "Masquer le détail" : "Voir le détail complet";
+    if (label) label.textContent = v ? T().hideDetail : T().showDetail;
     // Replié, le contenu sort de l'ordre de tabulation : sinon le focus part dans des lignes de
     // hauteur nulle.
     inner.inert = !v;
@@ -250,13 +253,7 @@ const slug = (s: string): string => s.replace(/[^a-z0-9]/gi, "");
  * « nommer ce qui tient le volume »). Exportée pour `usb-view.ts`, qui porte ses propres boutons
  * depuis le 2026-09-09. */
 export function humanizeEject(raw: string): string {
-  if (raw.includes("EJECT_BUSY")) {
-    return (
-      "Windows refuse de démonter ce disque : un programme le tient encore ouvert. " +
-      "Ferme Rekordbox et les fenêtres de l'explorateur, puis réessaie. Rien n'a été démonté — " +
-      "ne le débranche pas en l'état."
-    );
-  }
-  if (raw.includes("DRIVE_VANISHED")) return "Ce disque n'est déjà plus branché.";
-  return "Éjection impossible.";
+  if (raw.includes("EJECT_BUSY")) return T().ejectBusy;
+  if (raw.includes("DRIVE_VANISHED")) return T().ejectGone;
+  return T().ejectFailed;
 }

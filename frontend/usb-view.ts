@@ -25,6 +25,7 @@ import { mountBarActions } from "./toolbar";
 import { emptyStateHtml } from "./empty-state";
 import { openContextMenu } from "./context-menu";
 import { viewEpoch, isStaleViewRender } from "./view-epoch";
+import { T } from "./i18n/usb-view";
 
 /** Holds the currently-attached `sift:usb-format-done` window listener, if any, so `renderUsbLive()`
  * can remove it before attaching a new one. Without this, every re-render of the screen (each nav
@@ -37,17 +38,20 @@ let usbFormatDoneHandler: (() => void) | null = null;
 let drives: RemovableDrive[] = [];
 let activeId: string | null = null;
 
-const SKELETON =
-  `<div class="sift-usb-layout"><nav class="sift-usb-side"><div class="col-h">Disques amovibles</div>` +
-  `<span class="sift-skel sift-skel-line"></span></nav>` +
-  `<div class="sift-usb-main"><span class="sift-skel sift-skel-line"></span></div></div>`;
+function skeleton(): string {
+  return (
+    `<div class="sift-usb-layout"><nav class="sift-usb-side"><div class="col-h">${T().disquesAmovibles}</div>` +
+    `<span class="sift-skel sift-skel-line"></span></nav>` +
+    `<div class="sift-usb-main"><span class="sift-skel sift-skel-line"></span></div></div>`
+  );
+}
 
 /** Live Clé USB view. Renders the whole page fresh each call, same pattern as
  *  renderRekordboxLive — no mock DOM survives. */
 export function renderUsbLive(): void {
   const content = requireEl("#content", "renderUsbLive");
   // Squelette statique au premier passage (DESIGN.md § 6). Un re-rendu garde l'écran précédent.
-  if (!content.querySelector(".sift-usb-layout, .sift-empty-state")) content.innerHTML = SKELETON;
+  if (!content.querySelector(".sift-usb-layout, .sift-empty-state")) content.innerHTML = skeleton();
   mountBar();
   if (usbFormatDoneHandler) window.removeEventListener("sift:usb-format-done", usbFormatDoneHandler);
   usbFormatDoneHandler = () => void reload();
@@ -59,7 +63,7 @@ export function renderUsbLive(): void {
  * apparaissent d'eux-mêmes — mais l'énumération WMI de Sift se fait à la demande, et un lecteur de
  * cartes qu'on vient de remplir ne se signale pas tout seul. */
 function mountBar(): void {
-  mountBarActions(`<button id="sift-usb-refresh" class="sift-bar-btn" type="button">Actualiser</button>`);
+  mountBarActions(`<button id="sift-usb-refresh" class="sift-bar-btn" type="button">${T().actualiser}</button>`);
   document.getElementById("sift-usb-refresh")?.addEventListener("click", () => void reload());
 }
 
@@ -85,7 +89,7 @@ async function reload(): Promise<void> {
     // hiding it is what let a broken WMI query look like "no drive plugged in" for months
     // (CLAUDE.md § Méthode — pas de fallback silencieux).
     content.innerHTML =
-      `<div class="sift-usb-empty sift-usb-danger">Impossible de lister les disques amovibles.<br>${esc(String(e))}</div>`;
+      `<div class="sift-usb-empty sift-usb-danger">${T().listeImpossible}<br>${esc(String(e))}</div>`;
     return;
   }
   if (isStaleViewRender(token)) return;
@@ -96,18 +100,15 @@ async function reload(): Promise<void> {
     // the Explorer sidebar forever, so "je vois E: dans l'explorateur" is not evidence that
     // anything is plugged in.
     content.innerHTML = emptyStateHtml({
-      title: "Aucun disque amovible détecté",
-      note:
-        "Un lecteur de cartes vide garde sa lettre dans l'explorateur Windows sans qu'aucune clé ne " +
-        "soit branchée — vérifie que la clé est bien enfoncée, puis Actualiser. Seuls les disques " +
-        "amovibles sont proposés : aucun disque interne n'apparaît ici.",
-      actionHtml: `<button type="button" id="sift-usb-refresh-empty">Actualiser</button>`,
+      title: T().aucunDisqueTitre,
+      note: T().aucunDisqueNote,
+      actionHtml: `<button type="button" id="sift-usb-refresh-empty">${T().actualiser}</button>`,
     });
     content.querySelector("#sift-usb-refresh-empty")?.addEventListener("click", () => void reload());
     return;
   }
   if (!drives.some((d) => d.id === activeId)) activeId = drives[0].id;
-  setCount(`${drives.length} disque${drives.length > 1 ? "s" : ""}`);
+  setCount(T().compte(drives.length));
   paint(content);
 }
 
@@ -116,7 +117,7 @@ async function reload(): Promise<void> {
 function paint(content: HTMLElement): void {
   const cur = drives.find((d) => d.id === activeId) ?? drives[0];
   const side =
-    `<nav class="sift-usb-side" aria-label="Disques amovibles"><div class="col-h">Disques amovibles</div>` +
+    `<nav class="sift-usb-side" aria-label="${T().disquesAmovibles}"><div class="col-h">${T().disquesAmovibles}</div>` +
     drives.map((d) => usbEntryHtml(d, d.id === cur.id)).join("") +
     `</nav>`;
   content.innerHTML =
@@ -148,9 +149,7 @@ function paint(content: HTMLElement): void {
   });
   const body = requireEl("#sift-usb-body", "renderUsbLive");
   if (!cur.has_media) {
-    body.innerHTML =
-      `<div class="sift-usb-empty">Aucun média inséré. Ce lecteur garde sa lettre dans l'explorateur ` +
-      `Windows même vide — insère une carte ou une clé, puis Actualiser.</div>`;
+    body.innerHTML = `<div class="sift-usb-empty">${T().aucunMedia}</div>`;
     return;
   }
   void mountDisk(body, cur, false);
@@ -160,9 +159,10 @@ function paint(content: HTMLElement): void {
  * capacité encadrée). Le nom est celui du VOLUME quand il existe — c'est ce que l'utilisateur lit
  * dans l'explorateur et ce qu'il retape pour armer le formatage. */
 function headHtml(d: RemovableDrive): string {
+  const t = T();
   const sub = d.has_media
-    ? `Disque USB externe · ${esc(d.current_fs || "non formaté")}${d.mount ? ` · ${esc(d.mount)}` : ""} · ${esc(d.label || "Disque amovible")}`
-    : `Lecteur amovible · aucun média inséré · ${esc(d.label || "Lecteur amovible")}`;
+    ? `${t.disqueUsbExterne} · ${esc(d.current_fs || t.nonFormate)}${d.mount ? ` · ${esc(d.mount)}` : ""} · ${esc(d.label || t.disqueAmovible)}`
+    : `${t.lecteurAmovible} · ${t.aucunMediaInsere} · ${esc(d.label || t.lecteurAmovible)}`;
   return (
     `<div class="sift-usage-head sift-usb-head">` +
     `<span class="sift-usb-glyph" aria-hidden="true"><i class="ti ti-usb"></i></span>` +
@@ -179,7 +179,7 @@ function headHtml(d: RemovableDrive): string {
  * (ensuite le backend sert son cache), donc le corps annonce l'attente au lieu de rester vide —
  * un blanc se lit comme une panne. */
 async function mountDisk(body: HTMLElement, d: RemovableDrive, force: boolean): Promise<void> {
-  body.innerHTML = `<div class="sift-usb-empty">Analyse de l'occupation…</div>`;
+  body.innerHTML = `<div class="sift-usb-empty">${T().occupationEnCours}</div>`;
   const token = viewEpoch();
   let report: UsageReport | null = null;
   let usageError: string | null = null;
@@ -197,8 +197,8 @@ async function mountDisk(body: HTMLElement, d: RemovableDrive, force: boolean): 
     // Un disque non formaté n'a rien à parcourir : le dire, sans la chaîne brute qui reste au
     // journal. Une clé formatée dont la lecture échoue, elle, montre la cause.
     body.innerHTML = d.mount
-      ? `<div class="sift-usb-empty sift-usb-danger">Occupation indisponible.<br>${esc(usageError ?? "")}</div>`
-      : `<div class="sift-usb-empty">Aucun volume monté — rien à parcourir tant que le disque n'est pas formaté.</div>`;
+      ? `<div class="sift-usb-empty sift-usb-danger">${T().occupationIndisponible}<br>${esc(usageError ?? "")}</div>`
+      : `<div class="sift-usb-empty">${T().aucunVolume}</div>`;
   }
   body.insertAdjacentHTML("beforeend", `<div class="sift-usage-rule sift-usb-rule"></div>` + factsHtml(d, report) + actionsHtml(d));
   wireActions(body, d);
@@ -212,18 +212,19 @@ function factsHtml(d: RemovableDrive, r: UsageReport | null): string {
   const cell = (k: string, v: string, cls?: "warn" | "mono"): string =>
     `<div class="sift-usb-fact"><dt>${k}</dt><dd${cls ? ` class="${cls}"` : ""}>${v}</dd></div>`;
   const healthWarn = d.health !== "" && d.health !== "OK";
+  const t = T();
   return (
     `<dl class="sift-usb-facts">` +
-    cell("Point de montage", d.mount ? esc(d.mount) : "—") +
-    cell("Format", esc(d.current_fs || "non formaté")) +
-    cell("Capacité", formatGo(d.size_bytes)) +
-    cell("Libre", d.mount ? formatGo(d.free_bytes) : "—") +
-    cell("Fichiers", r ? String(r.file_count) : "—") +
-    cell("Modèle", esc(d.label || "—")) +
-    cell("Périphérique", esc(d.id.replace(/^\\\\\.\\/, "")), "mono") +
+    cell(t.faits.montage, d.mount ? esc(d.mount) : "—") +
+    cell(t.faits.format, esc(d.current_fs || t.nonFormate)) +
+    cell(t.faits.capacite, formatGo(d.size_bytes)) +
+    cell(t.faits.libre, d.mount ? formatGo(d.free_bytes) : "—") +
+    cell(t.faits.fichiers, r ? String(r.file_count) : "—") +
+    cell(t.faits.modele, esc(d.label || "—")) +
+    cell(t.faits.peripherique, esc(d.id.replace(/^\\\\\.\\/, "")), "mono") +
     // Non OK = mis en alerte. C'est le seul fait de la grille qui appelle une action de la part
     // d'Antoine, il ne doit pas se fondre dans les autres.
-    cell("Santé", esc(d.health || "—"), healthWarn ? "warn" : undefined) +
+    cell(t.faits.sante, esc(d.health || "—"), healthWarn ? "warn" : undefined) +
     `</dl>`
   );
 }
@@ -231,11 +232,12 @@ function factsHtml(d: RemovableDrive, r: UsageReport | null): string {
 /** Les actions du disque, sous les faits (Finder › appareil : les actions secondaires dans la
  * section). Formater… ouvre la sheet ; Éjecter agit tout de suite et dit son échec sur place. */
 function actionsHtml(d: RemovableDrive): string {
+  const t = T();
   return (
     `<div class="sift-usb-actions">` +
-    `<button type="button" class="sift-usage-btn" data-usb-act="format">Formater…</button>` +
-    (d.mount ? `<button type="button" class="sift-usage-btn" data-usb-act="eject">Éjecter</button>` : "") +
-    (d.mount ? `<button type="button" class="sift-usage-btn" data-usb-act="reread">Relire le disque</button>` : "") +
+    `<button type="button" class="sift-usage-btn" data-usb-act="format">${t.formater}</button>` +
+    (d.mount ? `<button type="button" class="sift-usage-btn" data-usb-act="eject">${t.ejecter}</button>` : "") +
+    (d.mount ? `<button type="button" class="sift-usage-btn" data-usb-act="reread">${t.relire}</button>` : "") +
     `</div><div class="sift-usage-status" role="status" hidden></div>`
   );
 }
@@ -255,10 +257,10 @@ function wireActions(body: HTMLElement, d: RemovableDrive): void {
   body.querySelector<HTMLButtonElement>("[data-usb-act=eject]")?.addEventListener("click", (e) => {
     const btn = e.currentTarget as HTMLButtonElement;
     btn.disabled = true;
-    btn.textContent = "Éjection…";
+    btn.textContent = T().ejection;
     void doEject(d).catch((err: unknown) => {
       btn.disabled = false;
-      btn.textContent = "Éjecter";
+      btn.textContent = T().ejecter;
       say(humanizeEject(String(err)));
     });
   });
@@ -279,10 +281,11 @@ async function doEject(d: RemovableDrive): Promise<void> {
 /** Clic droit sur une entrée ou sur la zone C (spec § Interactions). « Ouvrir dans l'explorateur »
  * attend une commande IPC qui n'existe pas encore — omis plutôt qu'inventé. */
 function openDriveMenu(x: number, y: number, d: RemovableDrive, content: HTMLElement): void {
+  const t = T();
   openContextMenu(x, y, [
-    { label: "Formater…", onPick: d.has_media ? () => openUsbFormatModal(d) : undefined, danger: true },
+    { label: t.formater, onPick: d.has_media ? () => openUsbFormatModal(d) : undefined, danger: true },
     {
-      label: "Éjecter",
+      label: t.ejecter,
       onPick: d.mount
         ? () => {
             void doEject(d).catch((err: unknown) => {
@@ -295,6 +298,6 @@ function openDriveMenu(x: number, y: number, d: RemovableDrive, content: HTMLEle
           }
         : undefined,
     },
-    { label: "Actualiser", onPick: () => void reload(), separated: true },
+    { label: t.actualiser, onPick: () => void reload(), separated: true },
   ]);
 }

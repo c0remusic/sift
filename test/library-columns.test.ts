@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // `library-columns.ts` est de la LOGIQUE PURE au sens de `CLAUDE.md` § Architecture : ordre,
 // largeurs, validation de ce qui revient du stockage. Ses deux gestes (glisser un séparateur,
@@ -178,6 +178,26 @@ describe("library-columns — déplacement", () => {
     expect(mod.libraryColumns().map((c) => c.field)).toEqual(FIELDS);
     expect(store.dump()["sift-libcols-v1"]).toBeUndefined();
     expect(mod.columnsAreCustomized()).toBe(false);
+  });
+});
+
+describe("library-columns — libellés", () => {
+  // `i18n` est importé APRÈS `load()` : `vi.resetModules()` vient d'en jeter l'instance, et c'est
+  // celle que `library-columns` a chargée qu'il faut basculer, pas une copie d'avant.
+  afterEach(async () => {
+    (await import("../frontend/i18n")).setCurrentLang("fr");
+  });
+
+  // Le piège de `i18n.ts` : un libellé rangé dans `DEFAULT_COLUMNS`, tableau construit à l'import,
+  // resterait français après le passage à l'anglais. Le module est chargé en français ici, puis la
+  // langue change — seul un libellé lu à l'appel suit.
+  it("rend le libellé de la langue courante, lu à l'appel et non au chargement", async () => {
+    const { mod } = await load();
+    const i18n = await import("../frontend/i18n");
+    const labels = () => mod.libraryColumns().map((c) => mod.columnLabel(c.field));
+    expect(labels()).toEqual(["Artiste", "Titre", "Durée", "Genre", "Année"]);
+    i18n.setCurrentLang("en");
+    expect(labels()).toEqual(["Artist", "Title", "Duration", "Genre", "Year"]);
   });
 });
 

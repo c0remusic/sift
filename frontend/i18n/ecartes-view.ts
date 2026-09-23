@@ -1,0 +1,110 @@
+// Écartés — les deux destinations du rail « À re-sourcer » et « Corbeille » (`ecartes-view.ts`) :
+// en-têtes de la table, raisons et leur phrase d'inspecteur, fiches et boutons de l'inspecteur,
+// menu contextuel, toasts d'échec des trois actions, échec de chargement, barre, états vides.
+//
+// Vocabulaire : `docs/design-system/content.md` § Locale `en`. Les verdicts suivent la table des
+// verdicts (FAUX → FAKE, À VÉRIFIER → TO CHECK) et « Écarter » devient « Set aside », jamais
+// « Discard » : rien n'est supprimé, la piste attend ici.
+//
+// Le tiret « — » des lignes sans verdict n'est PAS ici : `renderIdle` le compare pour le renommer
+// « Sans verdict », et un signe typographique n'a pas de langue.
+import { dict } from "../i18n";
+
+const fr = {
+  titleTrash: "Corbeille",
+  titleResourcing: "À re-sourcer",
+  reasonTruncated: "TRONQUÉ",
+  reasonFake: "FAUX",
+  reasonCheck: "À VÉRIFIER",
+  sentenceTruncated: "Fin de fichier tronquée : le fichier est incomplet.",
+  sentenceFake: "Déclaré lossless, mesuré compressé — un faux lossless, écarté depuis Revue.",
+  sentenceCheck: "Douteux à l'analyse — à vérifier avant de le garder.",
+  sentenceTrashed: "Envoyé à la corbeille depuis Revue.",
+  sentenceSetAside: "Écarté depuis Revue, sans verdict.",
+  reason: "Raison",
+  colArtist: "Artiste",
+  colTitle: "Titre",
+  colFile: "Fichier",
+  colFormat: "Format",
+  unknownArtist: "Artiste inconnu",
+  unknownTitle: "Titre inconnu",
+  tracks: (n: number) => `${n} piste${n > 1 ? "s" : ""}`,
+  noVerdict: "Sans verdict",
+  ruleTrash: "Les fichiers restent sur le disque jusqu'au vidage de la corbeille.",
+  ruleResourcing: "Des pistes à racheter : le fichier est faux, tronqué ou douteux.",
+  rebuy: "Racheter",
+  openSearch: "Ouvrir la recherche",
+  copyName: "Copier le nom",
+  actions: "Actions",
+  restore: "Restaurer",
+  requeue: "Remettre en file",
+  moveToTrash: "Envoyer à la corbeille",
+  reveal: "Ouvrir l'emplacement",
+  revealFailed: "Impossible d'ouvrir l'emplacement",
+  hideDetail: "Masquer le détail",
+  showDetail: "Ouvrir le détail",
+  searchCopied: "Recherche copiée",
+  rebuyMenu: "Racheter…",
+  failTrash: "Échec : impossible d'envoyer à la corbeille",
+  failRestore: "Échec : restauration impossible",
+  failRequeue: "Échec : remise en file impossible",
+  loadFailed: "Impossible de charger cette liste. Vérifie la connexion à la base et réessaie.",
+  retry: "Réessayer",
+  emptyTrash: "Vider la corbeille",
+  emptyTrashTitle: "La corbeille est vide",
+  emptyTrashNote: "Les pistes envoyées à la corbeille depuis Revue ou À re-sourcer attendent ici avant le vidage.",
+  emptyResourcingTitle: "Rien à re-sourcer",
+  emptyResourcingNote:
+    "Les pistes écartées depuis Revue — fausses, tronquées, douteuses — apparaissent ici, à racheter ou à remettre en file.",
+};
+
+const en: typeof fr = {
+  titleTrash: "Trash",
+  titleResourcing: "To re-source",
+  reasonTruncated: "TRUNCATED",
+  reasonFake: "FAKE",
+  reasonCheck: "TO CHECK",
+  sentenceTruncated: "End of file cut off: the file is incomplete.",
+  sentenceFake: "Declared lossless, measured compressed — a fake lossless, set aside from Review.",
+  sentenceCheck: "Flagged as doubtful by analysis — check it before you keep it.",
+  sentenceTrashed: "Moved to Trash from Review.",
+  sentenceSetAside: "Set aside from Review, no verdict.",
+  reason: "Reason",
+  colArtist: "Artist",
+  colTitle: "Title",
+  colFile: "File",
+  colFormat: "Format",
+  unknownArtist: "Unknown artist",
+  unknownTitle: "Unknown title",
+  tracks: (n) => `${n} track${n === 1 ? "" : "s"}`,
+  noVerdict: "No verdict",
+  ruleTrash: "Files stay on disk until you empty Trash.",
+  ruleResourcing: "Tracks to buy again: the file is fake, truncated or doubtful.",
+  rebuy: "Buy again",
+  openSearch: "Open search",
+  copyName: "Copy name",
+  actions: "Actions",
+  restore: "Restore",
+  requeue: "Return to queue",
+  moveToTrash: "Move to Trash",
+  reveal: "Open location",
+  revealFailed: "Couldn't open the location",
+  hideDetail: "Hide details",
+  showDetail: "Show details",
+  searchCopied: "Search copied",
+  rebuyMenu: "Buy again…",
+  failTrash: "Failed: couldn't move to Trash",
+  failRestore: "Failed: couldn't restore",
+  failRequeue: "Failed: couldn't return to queue",
+  loadFailed: "Couldn't load this list. Check the database connection and try again.",
+  retry: "Try again",
+  emptyTrash: "Empty Trash",
+  emptyTrashTitle: "Trash is empty",
+  emptyTrashNote: "Tracks moved to Trash from Review or To re-source wait here until you empty it.",
+  emptyResourcingTitle: "Nothing to re-source",
+  emptyResourcingNote:
+    "Tracks set aside from Review — fake, truncated, doubtful — show up here, to buy again or return to the queue.",
+};
+
+export const D = { fr, en };
+export const T = dict(D);

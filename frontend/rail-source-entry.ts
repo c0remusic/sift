@@ -5,6 +5,7 @@
 import type { Source } from "../shared/contracts";
 import { esc } from "./dom";
 import { resolveSourceColorKey } from "./source-color";
+import { T } from "./i18n/rail-source-entry";
 
 /** Dernier segment d'un chemin, séparateurs Windows et POSIX confondus. */
 export function baseName(p: string): string {
@@ -92,20 +93,21 @@ export function railRowState(
       : suspended
         ? " sift-rail-src--suspended"
         : "";
+  const t = T();
   return {
     id: s.id,
     label: baseName(s.path),
-    badge: empty ? "0 audio" : s.pending_count > 0 ? String(s.pending_count) : "",
+    badge: empty ? t.badgeEmpty : s.pending_count > 0 ? String(s.pending_count) : "",
     dotClass: `sift-rail-src-dot sift-rail-src-dot-${resolveSourceColorKey(all, s)}`,
     rowClass: `nv sift-rail-src${active ? " on" : ""}${state}`,
     title: !s.accessible
-      ? `${s.path} — dossier inaccessible`
+      ? t.inaccessible(s.path)
       : failure
-        ? `${s.path} — scan en échec : ${failure}`
+        ? t.scanFailed(s.path, failure)
         : empty
-          ? `${s.path} — aucun fichier audio reconnu`
+          ? t.noAudio(s.path)
           : suspended
-            ? `${s.path} — surveillance suspendue`
+            ? t.suspended(s.path)
             : s.path,
   };
 }

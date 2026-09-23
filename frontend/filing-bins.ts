@@ -16,6 +16,7 @@ import { toast } from "./filing-toast";
 import { humanizeError } from "./errors";
 import { destPopoverPosition } from "./popover-position";
 import { refreshRootWarning } from "./rail-root-warning";
+import { T } from "./i18n/filing-bins";
 
 const LIBRARY_ROOT = "library_root";
 // Groupe « Autres » : dossiers externes déjà choisis, mémorisés en settings JSON (valeur = tableau
@@ -120,11 +121,7 @@ async function loadBins(): Promise<void> {
     // `rootSet` reste tel quel : ce `catch` ne sait RIEN de la racine, il sait que la lecture a
     // échoué. Le remettre à false était le mensonge d'A8 (issue #15). `loadError` porte la cause,
     // et `renderBins` s'en sert pour montrer l'échec au lieu de la porte de premier réglage.
-    destState.loadError = humanizeError(
-      e,
-      "L'arbre de destination n'a pas pu être lu.",
-      "loadBins",
-    );
+    destState.loadError = humanizeError(e, T().loadFailed, "loadBins");
     destState.bins = [];
   }
 }
@@ -142,7 +139,7 @@ async function pickRoot(fldz: HTMLElement): Promise<void> {
     renderBins(fldz);
   } catch (e) {
     console.error("setSetting(library_root) failed", e);
-    toast("Échec d'enregistrement de la racine — réessaie");
+    toast(T().saveRootFailed);
   }
 }
 
@@ -200,7 +197,7 @@ const expanded = new Set<string>();
 
 /** Display name of the library root (last path segment), for the root tree node. */
 function rootName(): string {
-  if (!destState.rootPath) return "Library";
+  if (!destState.rootPath) return T().library;
   return destState.rootPath.split(/[\\/]/).filter(Boolean).pop() || destState.rootPath;
 }
 
@@ -264,7 +261,7 @@ function binNodeHtml(node: { rel: string; name: string; depth: number }): string
   const on = node.rel === selRel() ? " on" : "";
   const indent = node.depth * 13;
   const caret = kids.length
-    ? `<span data-fil="caret" data-rel="${esc(node.rel)}" title="${isOpen ? "Collapse" : "Expand"}" class="sift-fld-caret" style="${
+    ? `<span data-fil="caret" data-rel="${esc(node.rel)}" title="${isOpen ? T().collapse : T().expand}" class="sift-fld-caret" style="${
         isOpen ? "transform:rotate(90deg)" : ""
       }">▸</span>`
     : '<span class="sift-fld-caret-spacer"></span>';
@@ -327,13 +324,14 @@ function customDestHtml(path: string): string {
 function customDestsGroupHtml(): string {
   if (destState.customDests.length === 0) return "";
   return (
-    `<div class="sift-fldz-group-label">Autres</div>` + destState.customDests.map(customDestHtml).join("")
+    `<div class="sift-fldz-group-label">${T().others}</div>` + destState.customDests.map(customDestHtml).join("")
   );
 }
 
 /** Render the destination column (#fldz): root picker when unset, else a folder filter + either
  * the collapsible tree (no filter) or a flat list of matching folders (filter active). */
 function renderBins(fldz: HTMLElement): void {
+  const L = T();
   // Ordre délibéré : l'échec de lecture se dit AVANT la porte de premier réglage. Les deux
   // pouvaient se produire ensemble (première lecture, qui échoue), et dans ce cas c'est l'échec
   // qui est actionnable — proposer de choisir une racine qu'on ne saura pas relire ensuite ne mène
@@ -341,7 +339,7 @@ function renderBins(fldz: HTMLElement): void {
   if (destState.loadError) {
     fldz.innerHTML =
       `<div class="sift-fldz-hint" style="color:var(--color-text-danger)">${esc(destState.loadError)}</div>` +
-      '<button data-fil="retrybins">Réessayer</button>';
+      `<button data-fil="retrybins">${L.retry}</button>`;
     fldz.querySelector('[data-fil="retrybins"]')?.addEventListener("click", () => {
       void loadBins().then(() => renderBins(fldz));
     });
@@ -360,7 +358,7 @@ function renderBins(fldz: HTMLElement): void {
   // n'y a pas d'arbre à filtrer : le champ disparaît avec lui.
   const filterRow =
     destState.rootSet && destState.bins.length
-      ? `<input data-fil="binfilter" placeholder="Filtrer les dossiers…" value="${esc(
+      ? `<input data-fil="binfilter" placeholder="${L.filterPlaceholder}" value="${esc(
           destState.binFilter,
         )}" class="sift-binfilter">`
       : "";
@@ -371,8 +369,8 @@ function renderBins(fldz: HTMLElement): void {
     // convertir » — c'était vrai avant #54 et c'est faux depuis : on convertit sur place ou vers un
     // dossier externe sans aucune racine.
     body =
-      '<div class="sift-fldz-hint">Aucune racine de bibliothèque — cet arbre reste vide. Convertir sur place ou dans un autre dossier fonctionne sans elle.</div>' +
-      '<button data-fil="pickroot"><i class="ti ti-folder sift-icon-inline-base"></i> Choisir la racine…</button>';
+      `<div class="sift-fldz-hint">${L.noRoot}</div>` +
+      `<button data-fil="pickroot"><i class="ti ti-folder sift-icon-inline-base"></i> ${L.chooseRoot}</button>`;
   } else if (filtering) {
     // Flat list of matches (path or name contains the query), case-insensitive.
     const q = destState.binFilter.trim().toLowerCase();
@@ -381,12 +379,12 @@ function renderBins(fldz: HTMLElement): void {
     );
     body = matches.length
       ? matches.map(flatBinHtml).join("")
-      : '<div class="sift-fldz-no-match">Aucun dossier correspondant.</div>';
+      : `<div class="sift-fldz-no-match">${L.noMatch}</div>`;
   } else {
     const tree = binNodeHtml({ rel: "", name: rootName(), depth: 0 });
     const emptyNote =
       destState.bins.length === 0 && expanded.has("")
-        ? '<div class="sift-fldz-empty-note">vide — crée un dossier</div>'
+        ? `<div class="sift-fldz-empty-note">${L.emptyNote}</div>`
         : "";
     body = tree + emptyNote;
   }
@@ -409,7 +407,7 @@ function renderBins(fldz: HTMLElement): void {
   // ne réimplémente pas les cases, il les teinte par `accent-color` — styles.css, bloc des cases).
   const inPlaceRow = `<label class="fld sift-inplace-toggle"><input type="checkbox" ${inPlaceAttr}${
     inPlaceChecked ? " checked" : ""
-  }><span>Sur place <span class="sift-inplace-note">(dossier du fichier)</span></span></label>`;
+  }><span>${L.inPlace} <span class="sift-inplace-note">${L.inPlaceNote}</span></span></label>`;
   // Real disk path caption (maquette: "📁 {rootPath}\"), title= carries the full path for a
   // narrow popover where the text itself gets ellipsis-truncated.
   const rootCaption = destState.rootPath
@@ -434,8 +432,8 @@ function renderBins(fldz: HTMLElement): void {
   // patron d'item veut aussi une seule colonne d'icône (kit Menu/Menu-items, node 58:49).
   const footRow =
     `<div class="sift-fldz-foot">` +
-    `<button type="button" class="fld" data-fil="newfolder"><i class="ti ti-folder-plus sift-fld-icon" style="font-size:var(--text-base)"></i> Nouveau dossier…</button>` +
-    `<button type="button" class="fld" data-fil="browsecustom"><i class="ti ti-folder-open sift-fld-icon" style="font-size:var(--text-base)"></i> Choisir un dossier…</button>` +
+    `<button type="button" class="fld" data-fil="newfolder"><i class="ti ti-folder-plus sift-fld-icon" style="font-size:var(--text-base)"></i> ${L.newFolder}</button>` +
+    `<button type="button" class="fld" data-fil="browsecustom"><i class="ti ti-folder-open sift-fld-icon" style="font-size:var(--text-base)"></i> ${L.chooseFolder}</button>` +
     `</div>`;
 
   // Ordre (décision B, `docs/ui-specs/revue.md` § Popover Destination) : arbre biblio + « Autres »
@@ -452,7 +450,7 @@ function renderBins(fldz: HTMLElement): void {
   // on lirait le chemin d'un arbre rendu inerte par « Sur place ». Ordre retenu :
   // légende (quelle bibliothèque) → filtre (le contrôle) → « Bibliothèque » → arbre → « Autres ».
   fldz.innerHTML =
-    `<div class="sift-fldz-tree">${rootCaption}${filterRow}<div class="sift-fldz-group-label">Bibliothèque</div>${body}${autresGroup}</div>` +
+    `<div class="sift-fldz-tree">${rootCaption}${filterRow}<div class="sift-fldz-group-label">${L.libraryGroup}</div>${body}${autresGroup}</div>` +
     `<div class="sift-fldz-sep"></div>` +
     inPlaceRow +
     footRow;

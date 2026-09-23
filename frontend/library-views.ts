@@ -5,7 +5,8 @@
 import type { LibraryTrack } from "../shared/contracts";
 import { convertFileSrc } from "@tauri-apps/api/core";
 import { esc } from "./dom";
-import { libraryColumns, columnStyle, type LibraryColumn, type LibraryColumnField } from "./library-columns";
+import { libraryColumns, columnStyle, columnLabel, type LibraryColumn, type LibraryColumnField } from "./library-columns";
+import { T } from "./i18n/library-views";
 
 /** Colonne Format : du texte, dans sa colonne — le Finder rend le type ainsi. C'était une pastille
  * `.pill` à fond secondaire jusqu'au 2026-09-10 (quinze surfaces dans une table de quinze lignes). */
@@ -117,7 +118,7 @@ function cellHtml(col: LibraryColumn, t: LibraryTrack): string {
  * Les deux cohabitent avec le clic de tri par un seuil de déplacement — voir `DRAG_THRESHOLD`. */
 export function libraryTableHeaderHtml(sort: LibrarySortState): string {
   const cells = libraryColumns().map((col) => {
-    const { field, label, cls } = col;
+    const { field, cls } = col;
     const active = sort.field === field;
     const ariaSort = active ? (sort.dir === "asc" ? "ascending" : "descending") : "none";
     const arrow = active ? (sort.dir === "asc" ? " ▴" : " ▾") : "";
@@ -131,7 +132,7 @@ export function libraryTableHeaderHtml(sort: LibrarySortState): string {
     return (
       `<span class="${cls} sift-lib-colhead" role="columnheader" aria-sort="${ariaSort}"` +
       ` data-colhead="${field}" data-col="${field}"${columnStyle(col)}>` +
-      `<button data-bib="sort" data-field="${field}">${esc(label)}${arrow}</button>` +
+      `<button data-bib="sort" data-field="${field}">${esc(columnLabel(field))}${arrow}</button>` +
       // Le séparateur est un enfant de l'en-tête, pas un frère : il doit rester collé au bord droit
       // de SA colonne quand celle-ci change de largeur ou de place, et un frère se serait décalé.
       `<span class="sift-lib-colsep" data-for="${field}" aria-hidden="true"></span>` +
@@ -146,7 +147,7 @@ export function libraryTableHeaderHtml(sort: LibrarySortState): string {
   // l'en-tête flotte décalé au-dessus des colonnes qu'il nomme. Mesuré : 62px devant, 69 derrière.
   return (
     `<div class="sift-lib-thead" role="row"><span class="sift-lib-thead-cov"></span>${cells}` +
-    `<span class="sift-lib-thead-tail" role="columnheader">Format</span></div>`
+    `<span class="sift-lib-thead-tail" role="columnheader">${T().colFormat}</span></div>`
   );
 }
 
@@ -173,13 +174,14 @@ export function libraryTableRowHtml(t: LibraryTrack, curId: number | null, selec
   // just "button" — role="button" alone loses the artist/title/genre/year association a table
   // reading mode would otherwise give. Le verdict n'ouvre plus la phrase depuis le 2026-09-08 : il
   // n'est plus à l'écran, et annoncer ce qu'on ne montre pas serait un second écran pour l'oreille.
-  const rowLabel = `${t.artist || "Artiste inconnu"} — ${t.title || "Titre inconnu"}, ${fmtDuration(t.duration)}, ${t.genres[0] || "genre inconnu"}, ${t.year != null ? t.year : "année inconnue"}`;
+  const L = T();
+  const rowLabel = `${t.artist || L.unknownArtist} — ${t.title || L.unknownTitle}, ${fmtDuration(t.duration)}, ${t.genres[0] || L.unknownGenre}, ${t.year != null ? t.year : L.unknownYear}`;
   return (
     `<div class="lr${cur}" data-bib="row" data-id="${t.id}" tabindex="0" role="option" aria-selected="${selected}" aria-label="${esc(rowLabel)}">` +
     // La POCHETTE est le bouton de lecture (patron Musique, 2026-09-08) : au repos la ligne ne montre
     // que la donnée, le triangle apparaît au survol de la ligne, par-dessus la vignette. Un objet de
     // moins en tête de ligne (22 px + gap), et le geste reste là où l'œil cherche « écouter ».
-    `<button class="pb" data-bib="play" data-id="${t.id}" aria-label="Écouter">${cov}<i class="ti ti-player-play sift-lib-play" aria-hidden="true"></i></button>` +
+    `<button class="pb" data-bib="play" data-id="${t.id}" aria-label="${L.play}">${cov}<i class="ti ti-player-play sift-lib-play" aria-hidden="true"></i></button>` +
     libraryColumns().map((col) => cellHtml(col, t)).join("") +
     fmtCell(t) +
     `</div>`

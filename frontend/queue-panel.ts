@@ -23,6 +23,8 @@ import { isBatchSheetOpen } from "./batch-sheet";
 import { anchoredBelowPosition } from "./popover-position";
 import { queueCountLabel } from "./queue-count-label";
 import { verdictDot } from "./queue-verdict-dot";
+import { numLocale } from "./i18n";
+import { T } from "./i18n/queue-panel";
 
 /** A pending track still worth (re)analysing: no current verdict AND not yet terminally broken.
  *  Single source of truth for the "Non analysés" count, filter, and bulk-retry set — a track that
@@ -112,11 +114,14 @@ let queueSearchTerm = "";
 // zéro Rust (verdict/rail/dup, shared/contracts.ts). « MP3 » = approximation `rail==="lossy"` :
 // QueueItem n'a pas de champ format/extension, un MP3-vs-AAC exact exigerait un champ de contrat.
 const queueFacetFilter = new Set<string>();
-const QUEUE_FACETS: readonly { id: string; label: string; match: (it: QueueItem) => boolean }[] = [
-  { id: "lossless", label: "Lossless", match: (it) => it.rail === "lossless" },
-  { id: "mp3", label: "MP3", match: (it) => it.rail === "lossy" },
-  { id: "fake", label: "Faux", match: (it) => it.verdict === "fake" },
-  { id: "dup", label: "Doublons", match: (it) => it.dup },
+//
+// `label` est une FONCTION depuis le 2026-09-23 : ce tableau s'évalue à l'import, avant que la
+// langue soit tranchée, donc un libellé écrit ici en dur resterait français (`i18n.ts`, en-tête).
+const QUEUE_FACETS: readonly { id: string; label: () => string; match: (it: QueueItem) => boolean }[] = [
+  { id: "lossless", label: () => T().facet.lossless, match: (it) => it.rail === "lossless" },
+  { id: "mp3", label: () => T().facet.mp3, match: (it) => it.rail === "lossy" },
+  { id: "fake", label: () => T().facet.fake, match: (it) => it.verdict === "fake" },
+  { id: "dup", label: () => T().facet.dup, match: (it) => it.dup },
   // Ajoutée le 2026-08-26 (issue #48) : elle rend le chemin d'UI vers les pistes sans verdict, que
   // le retrait de la bascule « Non analysés uniquement » avait supprimé. Le critère est
   // `needs_analysis` et JAMAIS `verdict === null` — voir son commentaire dans `shared/contracts.ts`
@@ -127,7 +132,7 @@ const QUEUE_FACETS: readonly { id: string; label: string; match: (it: QueueItem)
   // épuisé `MAX_ANALYSIS_ATTEMPTS` pour que son compte puisse tomber à zéro. Cette facette-ci les
   // INCLUT : ce sont précisément celles qu'aucune relance ne fera partir, donc celles qu'isoler
   // sert le plus. Deux populations, deux mots — « Non analysés » ici, « Réanalyser (N) » au pied.
-  { id: "unanalyzed", label: "Non analysés", match: (it) => it.needs_analysis },
+  { id: "unanalyzed", label: () => T().facet.unanalyzed, match: (it) => it.needs_analysis },
 ];
 
 /** UNION : un item passe s'il satisfait AU MOINS une facette active. Set vide = aucun filtre. */
@@ -267,12 +272,13 @@ function renderQueueWindow(ql: HTMLElement): void {
     // "File vide." reads as "nothing was ever here" — misleading when a track is still
     // shown in Detail (currentOpenId set) because it's the last one just treated and the
     // pane hasn't advanced away from it yet. Finding F4, audit-heuristique-visuel.md.
+    const L = T();
     const emptyLabel =
       currentItems.length && queueSearchTerm
-        ? "Aucun morceau ne correspond."
+        ? L.emptyNoMatch
         : currentOpenId != null
-          ? "Tous les morceaux ont été traités."
-          : "File vide.";
+          ? L.emptyAllDone
+          : L.emptyQueue;
     ql.innerHTML =
       `<div style="font-size:var(--text-md);color:var(--color-text-tertiary);padding:var(--space-6) var(--space-4)">${emptyLabel}</div>`;
     ql.removeAttribute("aria-activedescendant"); // plus aucune option : le curseur n'a plus de cible
@@ -479,8 +485,9 @@ export function installQueueNavKeys(): void {
     // arbre chargé), et un second chemin d'ouverture serait un second endroit où le désaccorder.
     // Le sélecteur vaut dans les deux modes — `filing.ts` et `batch-panel.ts` rendent tous deux
     // leur bouton avec `data-fil="destbtn"`.
+    const L = T();
     const changerDestination = {
-      label: "Changer la destination",
+      label: L.changeDestination,
       onPick: () => document.querySelector<HTMLElement>('[data-fil="destbtn"]')?.click(),
     };
 
@@ -493,10 +500,10 @@ export function installQueueNavKeys(): void {
       void import("./context-menu").then(({ openContextMenu }) => {
         void import("./batch-panel").then(({ handleBatchQueueAction }) => {
           openContextMenu(e.clientX, e.clientY, [
-            { label: `Convertir ${n} piste${n > 1 ? "s" : ""}`, onPick: () => handleBatchQueueAction("file") },
+            { label: L.convertN(n), onPick: () => handleBatchQueueAction("file") },
             changerDestination,
             {
-              label: `Écarter ${n} piste${n > 1 ? "s" : ""}`,
+              label: L.setAsideN(n),
               danger: true,
               separated: true,
               onPick: () => handleBatchQueueAction("discard"),
@@ -520,17 +527,17 @@ export function installQueueNavKeys(): void {
     void import("./context-menu").then(({ openContextMenu }) => {
       openContextMenu(e.clientX, e.clientY, [
         {
-          label: "Ouvrir l'emplacement",
+          label: L.openLocation,
           onPick: () => {
             void revealTrack(id).catch((err) => {
-              toast(humanizeError(err, "Impossible d'ouvrir l'emplacement", "reveal_track"));
+              toast(humanizeError(err, T().openLocationFailed, "reveal_track"));
             });
           },
         },
-        { label: "Réanalyser", onPick: () => void reanalyzeTrack(id) },
+        { label: L.reanalyze, onPick: () => void reanalyzeTrack(id) },
         changerDestination,
         {
-          label: "Écarter",
+          label: L.setAside,
           danger: true,
           separated: true,
           onPick: () => {
@@ -538,7 +545,7 @@ export function installQueueNavKeys(): void {
             // cliquerait le bouton d'une AUTRE piste — exactement le genre d'action qu'on ne
             // rattrape pas. On le dit au lieu de le faire au hasard.
             if (!surLaPisteDuMenu()) {
-              toast("Piste pas encore ouverte — réessaie");
+              toast(T().trackNotOpenYet);
               return;
             }
             document.querySelector<HTMLElement>('[data-fil="trash"]')?.click();
@@ -562,9 +569,9 @@ export async function reanalyzeTrack(id: number): Promise<void> {
   beginReanalyze([id]);
   try {
     await reanalyzeTracks([id]);
-    toast("Réanalyse relancée");
+    toast(T().reanalysisStarted);
   } catch (e) {
-    toast(humanizeError(e, "Échec de la réanalyse — réessaie", "reanalyze_tracks"));
+    toast(humanizeError(e, T().reanalysisFailed, "reanalyze_tracks"));
   } finally {
     endReanalyze([id]);
   }
@@ -633,10 +640,11 @@ function openQueueSelectionMenu(anchor: HTMLElement): void {
   const eligible = batchEligible();
   const r = anchor.getBoundingClientRect();
   void import("./context-menu").then(({ openContextMenu }) => {
+    const L = T();
     const perFacet = QUEUE_FACETS.filter((f) => f.id !== "unanalyzed").map((f) => {
       const ids = eligible.filter(f.match).map((it) => it.id);
       return {
-        label: `Seulement ${f.label} (${ids.length.toLocaleString("fr-FR")})`,
+        label: L.selOnly(f.label(), ids.length.toLocaleString(numLocale())),
         onPick: ids.length ? () => setQueueBatchSelection(ids) : undefined,
       };
     });
@@ -645,15 +653,15 @@ function openQueueSelectionMenu(anchor: HTMLElement): void {
     // remplace. Le compte est celui des faux actuellement cochés ; zéro = entrée désactivée.
     const selectedFake = eligible.filter((it) => queueBatchSel.has(it.id) && it.verdict === "fake");
     const sansFaux = {
-      label: `Sans Faux (${selectedFake.length.toLocaleString("fr-FR")})`,
+      label: L.selWithoutFake(selectedFake.length.toLocaleString(numLocale())),
       onPick: selectedFake.length
         ? () => setQueueBatchSelection([...queueBatchSel].filter((id) => !selectedFake.some((it) => it.id === id)))
         : undefined,
       separated: true,
     };
     openContextMenu(r.left, r.bottom + 4, [
-      { label: `Tout (${eligible.length.toLocaleString("fr-FR")})`, onPick: selectAllQueueBatch },
-      { label: "Aucune", onPick: queueBatchSel.size ? clearQueueBatchSelection : undefined },
+      { label: L.selAll(eligible.length.toLocaleString(numLocale())), onPick: selectAllQueueBatch },
+      { label: L.selNone, onPick: queueBatchSel.size ? clearQueueBatchSelection : undefined },
       ...perFacet.map((m, i) => (i === 0 ? { ...m, separated: true } : m)),
       sansFaux,
     ]);
@@ -693,8 +701,9 @@ function queueRowHtml(it: QueueItem, active: boolean, onCursor: boolean): string
   const failure = filingFailure(it.id);
   const title = esc(it.filename || it.path);
   const artist = it.artist ? esc(it.artist) : "";
+  const L = T();
   return (
-    `<div class="qi${active ? " cur" : ""}${onCursor ? " qi-kbd" : ""}" id="qi-${it.id}" role="option" aria-selected="${active}" data-id="${it.id}" data-path="${esc(it.path)}" title="Écouter et convertir" style="cursor:pointer">` +
+    `<div class="qi${active ? " cur" : ""}${onCursor ? " qi-kbd" : ""}" id="qi-${it.id}" role="option" aria-selected="${active}" data-id="${it.id}" data-path="${esc(it.path)}" title="${L.rowTitle}" style="cursor:pointer">` +
     (reviewMode === "batch"
       ? `<input type="checkbox" class="qi-ck" data-sift="queuepick" data-id="${it.id}" tabindex="-1"${queueBatchSel.has(it.id) ? " checked" : ""}>`
       : "") +
@@ -716,7 +725,7 @@ function queueRowHtml(it: QueueItem, active: boolean, onCursor: boolean): string
     // pastille ne le porte pas, et c'est un fait de fond que l'utilisateur doit voir sans survoler.
     // Le mot de VERDICT, lui, est parti le 2026-08-26 — il doublait la pastille (voir `verdictDot`).
     (failure
-      ? `<span title="${esc(failure)}" style="flex:none;display:inline-flex;align-items:center;gap:var(--space-4);font-size:var(--text-xs);color:var(--color-text-warning)"><i class="ti ti-alert-triangle"></i>conversion échouée</span>`
+      ? `<span title="${esc(failure)}" style="flex:none;display:inline-flex;align-items:center;gap:var(--space-4);font-size:var(--text-xs);color:var(--color-text-warning)"><i class="ti ti-alert-triangle"></i>${L.conversionFailed}</span>`
       : "") +
     // Pastille DUPLICATE, au BORD DROIT de la ligne (wireframe « Poste de décision » §§ 09-10 ;
     // spec `docs/ui-specs/revue.md` § Zone B′ : « rendu hors colonne verdict »). Elle a quitté la
@@ -730,7 +739,7 @@ function queueRowHtml(it: QueueItem, active: boolean, onCursor: boolean): string
     // Style en RÈGLE CSS (`.qi-dup`) et non en attributs inline : cette ligne est concaténée dans la
     // boucle de `renderQueueWindow`, donc chaque attribut se paie en octets de chaîne à CHAQUE
     // fenêtre rendue — poll de 300 ms + scroll rAF-throttlé.
-    (it.dup ? '<span class="qi-dup" title="Doublon possible (même nom)">DUPLICATE</span>' : "") +
+    (it.dup ? `<span class="qi-dup" title="${L.dupTitle}">DUPLICATE</span>` : "") +
     // Only for a not-yet-analysed row — retry a track stuck without a verdict (e.g. a
     // transient decode error on first pass) instead of leaving it silently unreachable.
     // data-reanalyze is checked BEFORE the .qi row-open branch in the delegated click handler
@@ -741,8 +750,8 @@ function queueRowHtml(it: QueueItem, active: boolean, onCursor: boolean): string
     // detached element.
     (it.needs_analysis
       ? reanalyzingIds.has(it.id)
-        ? `<button data-reanalyze="${it.id}" class="lk-icon" title="Réanalyse en cours" disabled aria-label="Réanalyse en cours"><i class="ti ti-loader-2 sift-spin"></i></button>`
-        : `<button data-reanalyze="${it.id}" class="lk-icon" title="Réanalyser ce morceau" aria-label="Réanalyser ce morceau"><i class="ti ti-refresh"></i></button>`
+        ? `<button data-reanalyze="${it.id}" class="lk-icon" title="${L.reanalysisRunning}" disabled aria-label="${L.reanalysisRunning}"><i class="ti ti-loader-2 sift-spin"></i></button>`
+        : `<button data-reanalyze="${it.id}" class="lk-icon" title="${L.reanalyzeThisTrack}" aria-label="${L.reanalyzeThisTrack}"><i class="ti ti-refresh"></i></button>`
       : "") +
     `</div>`
   );
@@ -817,7 +826,7 @@ export async function renderQueue(touchDetail = true) {
     // lignes déjà peintes (à ne pas détruire). Sans marque, il faudrait deviner.
     ql.innerHTML =
       '<div data-sift="qloading" style="display:flex;align-items:center;gap:var(--space-8);padding:var(--space-8) 7px;color:var(--color-text-tertiary);font-size:var(--text-md)">' +
-      '<i class="ti ti-loader sift-spin" style="font-size:var(--text-md)"></i> Chargement…</div>';
+      `<i class="ti ti-loader sift-spin" style="font-size:var(--text-md)"></i> ${T().loading}</div>`;
   }
   let items: QueueItem[] = [];
   try {
@@ -827,11 +836,7 @@ export async function renderQueue(touchDetail = true) {
     // « Chargement… » peint juste au-dessus tournait pour toujours. Un spinner permanent est un
     // échec silencieux — le rail de sources (`rail-sources.ts`) le dit et le
     // corrige déjà, la correction n'avait pas été portée ici.
-    const display = humanizeError(
-      e,
-      "Impossible de charger la file. Vérifie la connexion à la base et réessaie.",
-      "listQueue",
-    );
+    const display = humanizeError(e, T().loadFailed, "listQueue");
     // Deux cas, pas un. Rail encore vide (premier chargement) : c'est LE spinner qu'il faut
     // remplacer, par une carte d'erreur avec sa porte de sortie. Rail déjà peuplé (un poll de
     // `queue:changed` qui échoue) : les lignes affichées restent valides, les écraser perdrait
@@ -840,7 +845,7 @@ export async function renderQueue(touchDetail = true) {
       ql.innerHTML =
         '<div class="sift-ui-card-soft sift-ui-card-soft-pad" style="color:var(--color-text-danger)">' +
         esc(display) +
-        '<div style="margin-top:var(--space-8)"><button data-sift="retryqueue" style="font-size:var(--text-xs);color:var(--color-text-info)">Réessayer</button></div>' +
+        `<div style="margin-top:var(--space-8)"><button data-sift="retryqueue" style="font-size:var(--text-xs);color:var(--color-text-info)">${T().retry}</button></div>` +
         "</div>";
       ql.querySelector<HTMLButtonElement>('[data-sift="retryqueue"]')?.addEventListener(
         "click",
@@ -1015,11 +1020,12 @@ function syncQueueSelectButton(): void {
     head.appendChild(btn);
   }
   const armed = reviewMode === "batch";
-  const label = armed ? "Terminé" : "Sélectionner";
+  const L = T();
+  const label = armed ? L.selectDone : L.select;
   if (btn.textContent !== label) btn.textContent = label;
   btn.dataset.m = armed ? "detail" : "batch";
   btn.setAttribute("aria-pressed", armed ? "true" : "false");
-  btn.title = armed ? "Quitter le mode Lot" : "Sélectionner plusieurs pistes";
+  btn.title = armed ? L.selectDoneTitle : L.selectTitle;
 
   // Pulldown « Sélection » (issue #60) : créé une fois, montré en mode Lot seulement, posé juste
   // avant « Terminé ». Même gabarit de kit que le pulldown de filtre à gauche.
@@ -1030,9 +1036,9 @@ function syncQueueSelectButton(): void {
     menu.className = "sift-qfacet-btn sift-qselmenu-btn";
     menu.type = "button";
     menu.setAttribute("aria-haspopup", "menu");
-    menu.title = "Tout, aucune, ou seulement une catégorie";
+    menu.title = L.selMenuTitle;
     menu.innerHTML =
-      '<span class="sift-qfacet-label">Sélection</span><i class="ti ti-chevron-down" aria-hidden="true"></i>';
+      `<span class="sift-qfacet-label">${L.selMenuLabel}</span><i class="ti ti-chevron-down" aria-hidden="true"></i>`;
     menu.addEventListener("click", (e) => {
       e.stopPropagation();
       openQueueSelectionMenu(menu as HTMLElement);
@@ -1088,10 +1094,7 @@ function ensureQueueReanalyzeAllButton(qcol: HTMLElement, unanalyzedCount: numbe
       if (!ids.length) return;
       if (
         ids.length >= BULK_REANALYZE_CONFIRM_THRESHOLD &&
-        !(await confirmAction(
-          `Réanalyser ${ids.length} morceaux ? Leur analyse en cache est effacée et recalculée.`,
-          "Réanalyser",
-        ))
+        !(await confirmAction(T().bulkConfirm(ids.length), T().reanalyze))
       ) {
         return;
       }
@@ -1101,12 +1104,12 @@ function ensureQueueReanalyzeAllButton(qcol: HTMLElement, unanalyzedCount: numbe
       try {
         await reanalyzeTracks(ids);
         // queue:changed (emitted unconditionally by the backend) drives the queue re-render.
-        toast(`${ids.length} morceau${ids.length > 1 ? "x" : ""} réanalysé${ids.length > 1 ? "s" : ""}`);
+        toast(T().bulkDone(ids.length));
       } catch (e) {
         console.error("reanalyze_tracks failed", e);
         // Humanized fallback (audit UX/accessibilité 2026-07-24) — raw error kept in console.error
         // above only; same pattern as filing-identify.ts's doApplyTags/doUndoApply.
-        toast("Échec de la réanalyse — réessaie");
+        toast(T().reanalysisFailed);
       } finally {
         bulkReanalyzing = false;
         endReanalyze(ids);
@@ -1125,8 +1128,9 @@ function ensureQueueReanalyzeAllButton(qcol: HTMLElement, unanalyzedCount: numbe
   el.hidden = unanalyzedCount === 0 && !analyzing;
   // `textContent`/`transform` sur des nœuds persistants — jamais d'innerHTML ici, ce chemin
   // tourne en rafale (poll 300 ms, queue:changed, task:progress relayé par sift-live).
+  const L = T();
   if (analyzing) {
-    count.textContent = `Analyse — ${an.done.toLocaleString("fr-FR")}/${an.total.toLocaleString("fr-FR")}`;
+    count.textContent = L.analysisProgress(an.done.toLocaleString(numLocale()), an.total.toLocaleString(numLocale()));
     fill.style.transform = `scaleX(${an.done / an.total})`;
     track.hidden = false;
     go.hidden = true;
@@ -1135,15 +1139,14 @@ function ensureQueueReanalyzeAllButton(qcol: HTMLElement, unanalyzedCount: numbe
   // « N pistes non analysées », jamais « N non analysées » — l'accord portait sur un nom absent
   // (retour d'Antoine, 2026-09-06). « pistes » = le mot de la barre (« 3372 pistes ») et de la
   // spec ; la confirmation du lot dit encore « morceaux », écart préexistant non traité ici.
-  const s = unanalyzedCount > 1 ? "s" : "";
-  count.textContent = `${unanalyzedCount.toLocaleString("fr-FR")} piste${s} non analysée${s}`;
+  count.textContent = L.unanalyzedCount(unanalyzedCount, unanalyzedCount.toLocaleString(numLocale()));
   track.hidden = true;
   go.hidden = false;
   // State-driven, not a mid-flight eager re-enable: the button is disabled iff a bulk retry is
   // actually running (bulkReanalyzing), so a queue:changed re-render during the retry can't flip it
   // back to enabled under the in-flight handler (review-caught double-submit race).
   go.disabled = bulkReanalyzing;
-  go.textContent = bulkReanalyzing ? "Relance…" : "Réanalyser";
+  go.textContent = bulkReanalyzing ? L.restarting : L.reanalyze;
 }
 
 /** Resynchronise la rangée de statut du pied depuis l'état de tâche COURANT — appelée par
@@ -1184,12 +1187,13 @@ function ensureQueueSearch(qcol: HTMLElement): void {
   // border-color) ne peut toujours rien montrer sur lui.
   wrap.className = "sift-search-wrap";
   // Aucune donnée d'exécution ici — que des littéraux, rien à passer par `esc()`.
+  const L = T();
   wrap.innerHTML =
     '<i class="ti ti-search" aria-hidden="true"></i>' +
-    '<input id="sift-qsearch-input" type="search" placeholder="Rechercher" ' +
-    'aria-label="Filtrer la file">' +
+    `<input id="sift-qsearch-input" type="search" placeholder="${L.searchPlaceholder}" ` +
+    `aria-label="${L.filterQueue}">` +
     '<button type="button" id="sift-qsearch-clear" class="sift-search-clear" hidden ' +
-    'aria-label="Effacer la recherche" title="Effacer la recherche">' +
+    `aria-label="${L.clearSearch}" title="${L.clearSearch}">` +
     '<i class="ti ti-circle-x" aria-hidden="true"></i></button>';
   // En TÊTE de #qcol : devant `.sift-qhead` puis `#ql`. Le segmenté Détail / Lot, qui vivait au-
   // dessus d'elle, a été retiré le 2026-08-25 — plus rien ne la précède. Guard en tête de fonction
@@ -1349,8 +1353,8 @@ function toggleQueueFacet(): void {
  *  sans filtre et la sortie du filtre se disent pareil, donc le bouton ne peut pas laisser croire
  *  qu'un filtre est posé alors qu'il n'y en a aucun. */
 function facetSummary(): string {
-  const on = QUEUE_FACETS.filter((f) => queueFacetFilter.has(f.id)).map((f) => f.label);
-  return on.length ? on.join(" + ") : "Tout afficher";
+  const on = QUEUE_FACETS.filter((f) => queueFacetFilter.has(f.id)).map((f) => f.label());
+  return on.length ? on.join(" + ") : T().showAll;
 }
 
 /** Repeint le pulldown depuis `queueFacetFilter` : libellé résumé + marque `on` (qui ne pilote plus
@@ -1416,7 +1420,7 @@ function ensureQueueFacet(qcol: HTMLElement): void {
     btn.setAttribute("data-fil", "qfacet");
     btn.setAttribute("aria-haspopup", "true");
     btn.setAttribute("aria-expanded", "false");
-    btn.setAttribute("title", "Filtrer la file");
+    btn.setAttribute("title", T().filterQueue);
     // Aucune donnée d'exécution ici — le libellé est posé par `paintFacetButton` en `textContent`.
     btn.innerHTML =
       '<span class="sift-qfacet-label"></span><i class="ti ti-chevron-down" aria-hidden="true"></i>';
@@ -1451,13 +1455,13 @@ function ensureQueueFacet(qcol: HTMLElement): void {
           `<label class="sift-qfacet-opt">` +
           `<input type="checkbox" class="sift-qfacet-ck" data-facet="${esc(f.id)}">` +
           `<span class="sift-qfacet-box" aria-hidden="true"><i class="ti ti-check"></i></span>` +
-          `<span class="sift-menu-label">${esc(f.label)}</span>` +
+          `<span class="sift-menu-label">${esc(f.label())}</span>` +
           `<span class="sift-menu-count" data-facet-count="${esc(f.id)}"></span>` +
           `</label>`,
       ).join("") +
       '<div class="sift-qfacet-sep" role="separator"></div>' +
       '<button type="button" class="sift-qfacet-reset" data-facet-reset>' +
-      '<span class="sift-menu-label">Tout afficher</span>' +
+      `<span class="sift-menu-label">${T().showAll}</span>` +
       '<span class="sift-menu-count" data-facet-total></span>' +
       "</button>";
     pop.querySelectorAll<HTMLInputElement>("input[data-facet]").forEach((cb) =>

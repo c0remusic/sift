@@ -6,6 +6,7 @@
 import type { Candidate } from "./ipc";
 import { esc } from "./dom";
 import { humanizeError } from "./errors";
+import { T } from "./i18n/identify-shared";
 
 /** Cover thumbnail (or vinyl placeholder) for a candidate row. */
 function candCoverHtml(c: Candidate): string {
@@ -73,12 +74,13 @@ export function chosenRowHtml(r: {
  *
  *  Empty list → a neutral "no results" message (no warning styling). */
 export function renderCandidates(host: HTMLElement, list: Candidate[]): void {
+  const L = T();
   if (list.length === 0) {
-    host.innerHTML = '<div class="sift-cands-msg">Rien sur Discogs.</div>';
+    host.innerHTML = `<div class="sift-cands-msg">${L.nothing}</div>`;
     return;
   }
   host.innerHTML =
-    `<div class="sift-cands-list" role="listbox" aria-label="Éditions Discogs">` +
+    `<div class="sift-cands-list" role="listbox" aria-label="${L.releases}">` +
     list.map((c, i) => candRowHtml(c, i, { selected: i === 0 })).join("") +
     `</div>`;
 }
@@ -128,18 +130,17 @@ export function identifyErrorText(err: unknown): {
 } {
   const msg = String(err);
   humanizeError(err, msg, "identify");
+  const L = T();
   if (msg.includes("NO_TOKEN")) {
     return {
-      texte:
-        "L'identification Discogs demande un jeton — sans lui, Sift n'interroge pas Discogs du tout. Il est gratuit et se colle dans Réglages.",
+      texte: L.noToken,
       grave: false,
       gotoReglages: true,
     };
   }
   if (msg.includes("BAD_TOKEN")) {
     return {
-      texte:
-        "Discogs a refusé le jeton — il est invalide, expiré ou révoqué. Ce n'est pas la connexion : réessayer ne changera rien.",
+      texte: L.badToken,
       grave: true,
       gotoReglages: true,
     };
@@ -147,10 +148,10 @@ export function identifyErrorText(err: unknown): {
   const rl = msg.match(/RATE_LIMITED:(\d+)/);
   if (rl) {
     return {
-      texte: `Discogs limite le débit — réessaie dans ${rl[1]}s.`,
+      texte: L.rateLimited(rl[1]),
       grave: false,
       gotoReglages: false,
     };
   }
-  return { texte: "Discogs injoignable.", grave: true, gotoReglages: false };
+  return { texte: L.unreachable, grave: true, gotoReglages: false };
 }

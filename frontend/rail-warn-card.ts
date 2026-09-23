@@ -1,10 +1,12 @@
 // Markup SEUL de la carte « racine de bibliothèque non définie » du rail (issue #54 du
-// 2026-09-02, direction A2). Aucun import, aucun `document`, aucun état.
+// 2026-09-02, direction A2). Aucun import hors du dictionnaire `./i18n/rail-warn-card` (feuille
+// sans DOM ni IPC), aucun `document`, aucun état.
 //
 // Séparé de `rail-root-warning.ts` (qui lit le réglage et monte le nœud) pour la même raison que
 // `popover-position.ts` l'est de `filing-bins.ts` : la suite Vitest tourne en env Node, qui ne peut
 // pas charger un module important `./ipc`. C'est ce fichier-ci que le test et la story exécutent —
 // jamais une copie de son markup, qui ne pourrait que diverger.
+import { T } from "./i18n/rail-warn-card";
 
 /** Id du nœud monté. Exporté parce que le montage (`rail-root-warning.ts`) l'interroge pour rester
  *  idempotent, et que le test le vérifie : un id instable ferait empiler les cartes. */
@@ -21,11 +23,12 @@ export const ROOT_WARN_ID = "sift-railwarn";
  *  `aria-label` explicite parce que le contenu visible est en deux nœuds et que le nom accessible
  *  concaténé se terminerait par un chevron typographique. */
 export function rootWarningHtml(): string {
+  const t = T();
   return (
     `<button id="${ROOT_WARN_ID}" class="sift-railwarn" type="button" data-view="reglages" ` +
-    `aria-label="Racine de bibliothèque non définie — ouvrir les Réglages pour la choisir">` +
-    `<strong>Racine non définie</strong>` +
-    `<span>Choisir dans Réglages ›</span>` +
+    `aria-label="${t.aria}">` +
+    `<strong>${t.titre}</strong>` +
+    `<span>${t.action}</span>` +
     `</button>`
   );
 }

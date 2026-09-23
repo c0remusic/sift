@@ -1,5 +1,6 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 import { MAX_ANALYSIS_ATTEMPTS, type QueueItem } from "../shared/contracts";
+import { setCurrentLang } from "../frontend/i18n";
 import { estRangeableEnLot, selectionSummaryHtml } from "../frontend/selection-summary";
 
 // Le résumé de sélection est le seul endroit où l'utilisateur lit COMBIEN de pistes une action de
@@ -138,5 +139,63 @@ describe("le compte du bouton d'action principale est celui de l'action", () => 
     const html = selectionSummaryHtml([piste(1, null), piste(2, "ok")]);
     expect(compteAffiche(html)).toBe(2);
     expect(html).toContain('class="sift-baction sift-baction--quiet" disabled>Écarter</button>');
+  });
+});
+
+// Les mêmes libellés dans l'interface anglaise, au vocabulaire de `docs/design-system/content.md`
+// § Vocabulaire Canonique : « Convertir » → Convert, « Écarter » → Set aside, JAMAIS « Discard »
+// (le verbe français a été choisi parce que rien n'est supprimé). Le pluriel anglais s'accorde dès
+// que n ≠ 1 — une piste seule est au singulier dans les deux langues.
+describe("en anglais, le vocabulaire canonique et ses accords", () => {
+  afterEach(() => setCurrentLang("fr"));
+
+  it("le bouton actif dit Convert et compte les pistes", () => {
+    setCurrentLang("en");
+    expect(selectionSummaryHtml([piste(1, "ok"), piste(2, "ok")])).toContain(
+      'data-sift="batchqueuefile">Convert 2 tracks</button>',
+    );
+    expect(selectionSummaryHtml([piste(1, "ok")])).toContain('data-sift="batchqueuefile">Convert 1 track</button>');
+  });
+
+  it("Écarter devient Set aside, jamais Discard — actif comme désactivé", () => {
+    setCurrentLang("en");
+    const avecFaux = selectionSummaryHtml([piste(1, "fake"), piste(2, "ok")]);
+    expect(avecFaux).toContain('data-sift="batchqueuediscard">Set aside 1 fake</button>');
+    // Le français « faux » est invariable, le nom anglais non : sans ce cas, « Set aside 2 fake »
+    // passait (relevé en revue le 2026-09-23).
+    const deuxFaux = selectionSummaryHtml([piste(1, "fake"), piste(2, "fake")]);
+    expect(deuxFaux).toContain('data-sift="batchqueuediscard">Set aside 2 fakes</button>');
+    const sansFaux = selectionSummaryHtml([piste(1, "ok")]);
+    expect(sansFaux).toContain('class="sift-baction sift-baction--quiet" disabled>Set aside</button>');
+    // Borné au TEXTE affiché : l'identifiant `data-sift="batchqueuediscard"` est du protocole et
+    // porte le mot, légitimement.
+    expect(avecFaux + sansFaux).not.toMatch(/>\s*Discard/i);
+  });
+
+  it("le bouton désactivé dit Convert", () => {
+    setCurrentLang("en");
+    expect(selectionSummaryHtml([piste(1, "fake")])).toContain(" disabled>Convert</button>");
+  });
+
+  it("pilules et compte accordés en anglais", () => {
+    setCurrentLang("en");
+    const html = selectionSummaryHtml([piste(1, null), abandonnee(2), abandonnee(3), piste(4, "grey")]);
+    expect(html).toContain("1 track not analyzed");
+    expect(html).toContain("2 abandoned analyses");
+    expect(html).toContain("1 to check");
+    expect(html).toContain(">tracks selected</span>");
+    expect(selectionSummaryHtml([abandonnee(1)])).toContain("1 abandoned analysis");
+  });
+
+  it("l'invite de sélection vide", () => {
+    setCurrentLang("en");
+    expect(selectionSummaryHtml([])).toContain(">Select tracks in the queue</div>");
+  });
+
+  it("la langue se lit À L'APPEL : revenue au français, la même fonction rend le français", () => {
+    setCurrentLang("en");
+    selectionSummaryHtml([piste(1, "ok")]);
+    setCurrentLang("fr");
+    expect(selectionSummaryHtml([piste(1, "ok")])).toContain(">Convertir 1 piste</button>");
   });
 });

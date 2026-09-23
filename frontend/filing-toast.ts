@@ -1,6 +1,7 @@
 import { undoLast } from "./ipc";
 import { esc } from "./dom";
 import { humanizeError } from "./errors";
+import { T } from "./i18n/filing-toast";
 
 let clearPaneHook: ((mid: HTMLElement) => void) | null = null;
 
@@ -36,7 +37,7 @@ export function toast(
   message: string,
   undo = false,
   onUndo?: () => void,
-  actionLabel = "Annuler",
+  actionLabel = T().undo,
 ): void {
   // Ce module est le SEUL à construire `#sift-toast`. Le garde `dataset.owner` qui vivait ici
   // n'existait que pour se protéger du toast privé de `library-detail.ts`, une copie de cette
@@ -84,7 +85,7 @@ export function toast(
         // document, so it just creates a fresh one (or mutates whatever toast is on screen by then).
         // `undoLast` resolves null when the journal had nothing live to revert: say so rather than
         // claim an undo that did not happen.
-        toast(batchId ? "Annulé — retour dans la file" : "Rien à annuler.", false);
+        toast(batchId ? T().undone : T().nothingToUndo, false);
       })
       .catch((e) => {
         // Même raison qu'à `filing-actions.ts::doRevert` : le message de domaine devient le
@@ -93,9 +94,7 @@ export function toast(
         toast(
           humanizeError(
             e,
-            msg.includes("source gone")
-              ? "Annulation impossible : un fichier nécessaire a disparu — l'original a peut-être été purgé de la corbeille."
-              : "Échec de l'annulation — réessaie",
+            msg.includes("source gone") ? T().undoSourceGone : T().undoFailed,
             "undoLast",
           ),
           false,
@@ -138,6 +137,6 @@ export function copyToClipboard(text: string, okToast: string): void {
     .then(() => toast(okToast))
     .catch((err: unknown) => {
       console.error("clipboard writeText failed", err);
-      toast("Copie impossible — le presse-papier a refusé");
+      toast(T().copyFailed);
     });
 }

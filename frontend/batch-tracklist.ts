@@ -4,6 +4,7 @@
 // BURST event, so rows are created ONCE in startBatchTracklist and only MUTATED afterwards — never
 // re-innerHTML'd in the update path (the front-events rule in CLAUDE.md).
 import { esc } from "./dom";
+import { T } from "./i18n/batch-tracklist";
 
 type BtState = "wait" | "run" | "done" | "fail";
 
@@ -17,11 +18,14 @@ interface BtRow {
 let rows: BtRow[] = [];
 let host: HTMLElement | null = null;
 
-const PILL: Record<BtState, { cls: string; html: string }> = {
-  wait: { cls: "sift-bt-wait", html: '<i class="ti ti-clock"></i> <span class="sift-bt-pill-label">attend</span>' },
-  run: { cls: "sift-bt-run", html: '<span class="sift-bt-spin"></span> <span class="sift-bt-pill-label">en cours</span>' },
-  done: { cls: "sift-bt-done", html: '<i class="ti ti-check"></i> <span class="sift-bt-pill-label">fait</span>' },
-  fail: { cls: "sift-bt-fail", html: '<i class="ti ti-alert-triangle"></i> <span class="sift-bt-pill-label">échec</span>' },
+// `html` est une FONCTION : la table s'évalue à l'import, avant que la langue soit tranchée, et un
+// libellé écrit ici en dur resterait français (`i18n.ts`, en-tête). Libellés du dictionnaire, sans
+// donnée d'exécution : rien à passer par `esc()`.
+const PILL: Record<BtState, { cls: string; html: () => string }> = {
+  wait: { cls: "sift-bt-wait", html: () => `<i class="ti ti-clock"></i> <span class="sift-bt-pill-label">${T().wait}</span>` },
+  run: { cls: "sift-bt-run", html: () => `<span class="sift-bt-spin"></span> <span class="sift-bt-pill-label">${T().run}</span>` },
+  done: { cls: "sift-bt-done", html: () => `<i class="ti ti-check"></i> <span class="sift-bt-pill-label">${T().done}</span>` },
+  fail: { cls: "sift-bt-fail", html: () => `<i class="ti ti-alert-triangle"></i> <span class="sift-bt-pill-label">${T().fail}</span>` },
 };
 
 /** One row's inner markup: pill + (ellipsised) name + an optional non-truncating right suffix
@@ -41,7 +45,7 @@ export function startBatchTracklist(
   items: { id: number; name: string; suffix?: string }[],
 ): void {
   host = container;
-  host.innerHTML = '<div class="sift-bt-head">Batch</div><div class="sift-bt-list"></div>';
+  host.innerHTML = `<div class="sift-bt-head">${T().head}</div><div class="sift-bt-list"></div>`;
   const list = host.querySelector<HTMLElement>(".sift-bt-list")!;
   rows = items.map(({ id, name, suffix }) => {
     const el = document.createElement("div");
@@ -59,7 +63,7 @@ function paint(row: BtRow, s: BtState): void {
   if (row.state === s) return;
   row.state = s;
   row.pill.className = `sift-bt-pill ${PILL[s].cls}`;
-  row.pill.innerHTML = PILL[s].html;
+  row.pill.innerHTML = PILL[s].html();
 }
 
 /** file:progress.done = number of files processed → first `done` are done, the (done)-th is running,

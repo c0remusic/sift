@@ -12,8 +12,9 @@
 // partie). Aucun import de `router` ni de `rail-sources` — c'est ce qui permet à Réglages ET au
 // popover de destination de le rafraîchir sans refermer un cycle d'import.
 //
-// Le markup vit dans `rail-warn-card.ts`, sans aucun import : c'est ce qui le rend exécutable par
-// la story ET par la suite Vitest en env Node, qui ne peut pas charger un module important `./ipc`.
+// Le markup vit dans `rail-warn-card.ts`, sans aucun import hors de son dictionnaire
+// `./i18n/rail-warn-card` (feuille sans DOM ni IPC) : c'est ce qui le rend exécutable par la story
+// ET par la suite Vitest en env Node, qui ne peut pas charger un module important `./ipc`.
 import { getSetting } from "./ipc";
 import { ROOT_WARN_ID, rootWarningHtml } from "./rail-warn-card";
 

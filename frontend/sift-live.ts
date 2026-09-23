@@ -81,6 +81,7 @@ import {
 import { open as openFolderDialog } from "@tauri-apps/plugin-dialog";
 import { dirname } from "@tauri-apps/api/path";
 import { setTask, clearTask, setCancelHandler } from "./progress-zone";
+import { T } from "./i18n/sift-live";
 
 // Global progress zone — feed the "analyze" row from the EXISTING analysis poll/events (no engine
 // rewrite). `analysis_progress` returns (done, total) over every track the pool can pick up —
@@ -128,9 +129,7 @@ async function runNavExport(): Promise<void> {
     const status = await exportRekordboxXml();
     setTask("export", { done: 1, total: 1, state: "done" });
     setTimeout(() => clearTask("export"), 1200);
-    toast(
-      `${status.track_count} pistes dans ${status.playlist_count} playlists Rekordbox — réimporte le XML dans Rekordbox pour resynchroniser.`,
-    );
+    toast(T().exportDone(status.track_count, status.playlist_count));
   } catch (e) {
     console.error("export_rekordbox_xml failed", e);
     setTask("export", { done: 0, total: 1, state: "error" });
@@ -141,8 +140,8 @@ async function runNavExport(): Promise<void> {
           // Bibliothèque : le message renvoyait vers un écran où elle n'est pas. Le libellé est
           // celui de l'item de navigation (`index.html`, `<span>Rekordbox</span>`) — pas
           // « Mettre à jour Rekordbox », qui n'est qu'un bouton de la carte de stats d'Accueil.
-          "Aucun XML Rekordbox lié — relie un fichier depuis l'écran Rekordbox"
-        : `Export Rekordbox échoué : ${msg}`,
+          T().noXmlLinked
+        : T().exportFailed(msg),
     );
   } finally {
     exportRunning = false;
@@ -303,17 +302,14 @@ export function installLiveWiring() {
         // `innerHTML` —, et le succès partait alors dans le vide en silence. La règle qui a motivé
         // ce site tient toujours et vit maintenant dans l'aide partagée : rien n'est peint AVANT que
         // l'écriture ait réussi, et un refus du presse-papier se dit.
-        copyToClipboard(ec.dataset.q || "", "Recherche copiée");
+        copyToClipboard(ec.dataset.q || "", T().searchCopied);
       } else if (act === "trash" || act === "restore" || act === "requeue") {
         // Les trois actions vivent dans `ecartes-view.ts` (`runEcarteAction`) : IPC, repeinture
         // de la destination et `catch` au même endroit, appelé aussi par le menu contextuel de
         // l'écran.
         runEcarteAction(act, id);
       } else if (act === "purge") {
-        void confirmAction(
-          "Purger définitivement la corbeille ? Cette action est irréversible.",
-          "Purger",
-        ).then((ok) => {
+        void confirmAction(T().purgeConfirm, T().purgeConfirmBtn).then((ok) => {
           if (!ok) return;
           void purgeTrash()
             .then((res) => {
@@ -321,16 +317,13 @@ export function installLiveWiring() {
               // their track in the bin. Staying silent would read as "the purge worked and
               // some tracks came back" — the one reading the user cannot act on.
               if (res.failed.length) {
-                const s = res.failed.length > 1 ? "s" : "";
-                toast(
-                  `${res.purged} supprimé${res.purged > 1 ? "s" : ""} — ${res.failed.length} fichier${s} impossible${s} à supprimer (ouvert dans un autre programme ?)`,
-                );
+                toast(T().purgePartial(res.purged, res.failed.length));
               }
               return renderEcartes();
             })
             .catch((err) => {
               console.error("purge failed", err);
-              toast("Échec : purge de la corbeille impossible");
+              toast(T().purgeFailed);
             });
         });
       } else if (act === "store") {
@@ -393,9 +386,7 @@ export function installLiveWiring() {
             // renvoyer quoi que ce soit. Elle était donc inatteignable, et la seule chose qu'elle
             // pouvait dire vivait déjà dans le `catch`. Retirée plutôt que réparée : un succès qui
             // porterait une erreur n'existe pas dans ce contrat.
-            toast(
-              `XML Rekordbox lié : ${status.track_count} pistes, ${status.playlist_count} playlists`,
-            );
+            toast(T().xmlLinked(status.track_count, status.playlist_count));
             void renderRekordboxLive();
           } catch (e) {
             // Seconde moitié d'A16 : trois erreurs backend distinctes — fichier illisible
@@ -404,7 +395,7 @@ export function installLiveWiring() {
             // l'utilisateur ni ce qui n'allait pas, ni s'il devait choisir un autre fichier. Les
             // messages backend sont déjà en français et déjà précis : les afficher suffit, sans
             // table de correspondance.
-            toast(humanizeError(e, `Liaison du XML Rekordbox échouée : ${String(e)}`, "link_rekordbox_xml"));
+            toast(humanizeError(e, T().linkFailed(String(e)), "link_rekordbox_xml"));
           }
         })();
         return;
@@ -501,10 +492,7 @@ export function installLiveWiring() {
         const group = bibDup.groups?.[idx];
         if (!group) return;
         const losers = group.members.filter((m) => !m.recommend_keep).map((m) => m.id);
-        void confirmAction(
-          `Envoyer ${losers.length} doublon${losers.length > 1 ? "s" : ""} à la corbeille ? Le morceau recommandé est conservé.`,
-          "Envoyer à la corbeille",
-        ).then((ok) => {
+        void confirmAction(T().dupConfirm(losers.length), T().dupConfirmBtn).then((ok) => {
           if (!ok) return;
           // `Promise.all` rejette au PREMIER échec : sur 5 doublons dont un seul refuse, les 4
           // autres partaient bien à la corbeille et l'écran annonçait « impossible d'envoyer les
@@ -536,16 +524,12 @@ export function installLiveWiring() {
                 if (g.members.length < 2) bibDup.groups = groups.filter((_, i) => i !== idx);
               }
               const done = losers.length - failedIds.size;
-              toast(
-                done === 0
-                  ? "Aucun doublon n'a pu être envoyé à la corbeille"
-                  : `${done} doublon${done > 1 ? "s" : ""} envoyé${done > 1 ? "s" : ""} à la corbeille, ${failedIds.size} en échec`,
-              );
+              toast(done === 0 ? T().dupNoneTrashed : T().dupPartial(done, failedIds.size));
               return renderBiblioLive();
             })
             .catch((e: unknown) => {
               console.error("dupresolve: refresh failed", e);
-              toast("Échec : impossible de rafraîchir la liste");
+              toast(T().refreshFailed);
             });
         });
       }
@@ -586,7 +570,7 @@ export function installLiveWiring() {
     // Le premier clic du double a déjà ouvert le détail (dispatch de `click`) — c'est voulu, les
     // deux gestes se complètent : on regarde la piste, puis on va voir son fichier.
     void revealTrack(Number(row.dataset.id)).catch((err: unknown) =>
-      toast(humanizeError(err, "Impossible d'ouvrir l'emplacement", "reveal_track")),
+      toast(humanizeError(err, T().revealFailed, "reveal_track")),
     );
   });
 
@@ -636,7 +620,7 @@ export function installLiveWiring() {
   // `queue:changed` juste au-dessus, qui est debouncé pour cette raison.
   void onScanFailed((sourceId, reason) => {
     noteScanFailure(sourceId, reason);
-    toast(`Le scan du dossier surveillé a échoué : ${reason}`);
+    toast(T().scanFailed(reason));
   });
   void onFileDone(onFileBatchDone);
   void onFileProgress(pushFileProgress);

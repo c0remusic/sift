@@ -4,6 +4,7 @@
 // et `popover-position.ts` (l'env Node de Vitest ne peut pas charger un module important `./ipc`).
 // `queue-panel.ts` (queueRowHtml) reste l'unique appelant de prod.
 import { MAX_ANALYSIS_ATTEMPTS, type QueueItem } from "../shared/contracts";
+import { T } from "./i18n/queue-verdict-dot";
 
 // Le « vert/ambre uniquement » du brief de refonte 2026-07 est PÉRIMÉ depuis la révision du
 // 2026-08-19 : `fake` passe à `danger`. C'était le seul écran où un faux lossless se disait en
@@ -16,10 +17,12 @@ import { MAX_ANALYSIS_ATTEMPTS, type QueueItem } from "../shared/contracts";
 // Revue », composant Pastille de verdict) : un indicateur d'état est systemGreen/Red/Yellow plein —
 // le point non-lu de Mail est systemBlue plein, jamais une couleur de label. Les encres text-*
 // restent aux MOTS (badge LOSSLESS de zone C, libellés) ; la pastille seule porte le vif.
-const VERDICT_DOT: Record<string, [string, string]> = {
-  ok: ["var(--color-hue-green-solid)", "authentique"],
-  fake: ["var(--color-hue-red-solid)", "faux / sur-encodé"],
-  grey: ["var(--color-hue-yellow-solid)", "zone grise"],
+// L'infobulle est une FONCTION et non une chaîne : cette table s'évalue à l'import, avant que la
+// langue soit tranchée, donc un texte écrit ici en dur resterait français (`i18n.ts`, en-tête).
+const VERDICT_DOT: Record<string, [string, () => string]> = {
+  ok: ["var(--color-hue-green-solid)", () => T().ok],
+  fake: ["var(--color-hue-red-solid)", () => T().fake],
+  grey: ["var(--color-hue-yellow-solid)", () => T().grey],
 };
 /** La pastille porte le verdict À ELLE SEULE depuis le 2026-08-26 : le mot qui la doublait dans la
  *  ligne est retiré (« la pastille est là pour ça », Antoine), ce qui rend la file à `revue.md`
@@ -39,11 +42,11 @@ export function verdictDot(it: Pick<QueueItem, "verdict" | "analysis_attempts">)
   const v = it.verdict;
   if (v && VERDICT_DOT[v]) {
     const [c, title] = VERDICT_DOT[v];
-    return `<span title="${title}" style="${base};background:${c}"></span>`;
+    return `<span title="${title()}" style="${base};background:${c}"></span>`;
   }
   if (it.analysis_attempts >= MAX_ANALYSIS_ATTEMPTS) {
-    return `<span title="analyse abandonnée" style="${base};background:var(--color-hue-red-solid)"></span>`;
+    return `<span title="${T().abandoned}" style="${base};background:var(--color-hue-red-solid)"></span>`;
   }
   // not analysed yet
-  return `<span title="en attente d'analyse" style="${base};border:1.5px solid var(--color-text-tertiary);box-sizing:border-box"></span>`;
+  return `<span title="${T().pending}" style="${base};border:1.5px solid var(--color-text-tertiary);box-sizing:border-box"></span>`;
 }

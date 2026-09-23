@@ -1,5 +1,8 @@
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
+import { setCurrentLang } from "../frontend/i18n";
 import { ROOT_WARN_ID, rootWarningHtml } from "../frontend/rail-warn-card";
+
+afterEach(() => setCurrentLang("fr"));
 
 // Carte « racine non définie » du rail (issue #54 du 2026-09-02, direction A2). Elle remplace le
 // bandeau `#sift-gate` supprimé le même jour.
@@ -37,5 +40,29 @@ describe("carte de racine manquante du rail", () => {
     expect(html.startsWith("<button ")).toBe(true);
     expect(html).toContain('type="button"');
     expect(/aria-label="[^"]{20,}"/.test(html)).toBe(true);
+  });
+
+  // Le texte vient du dictionnaire `frontend/i18n/rail-warn-card.ts`, lu À L'APPEL : la même
+  // fonction rend le français par défaut et l'anglais une fois la langue posée. Épinglé dans les deux
+  // langues, avec les mêmes contraintes de forme — un `"` dans la valeur anglaise fermerait
+  // l'attribut `aria-label` en plein milieu.
+  it("rend le libellé français par défaut", () => {
+    const html = rootWarningHtml();
+    expect(html).toContain(
+      'aria-label="Racine de bibliothèque non définie — ouvrir les Réglages pour la choisir"',
+    );
+    expect(html).toContain("<strong>Racine non définie</strong>");
+    expect(html).toContain("<span>Choisir dans Réglages ›</span>");
+  });
+
+  it("rend le libellé anglais quand la langue est en, sans changer la structure", () => {
+    setCurrentLang("en");
+    const html = rootWarningHtml();
+    expect(html).toContain('aria-label="Library root not set — open Settings to choose one"');
+    expect(html).toContain("<strong>Root not set</strong>");
+    expect(html).toContain("<span>Choose in Settings ›</span>");
+    expect(html).toContain('data-view="reglages"');
+    expect(html).toContain(`id="${ROOT_WARN_ID}"`);
+    expect(/aria-label="[^"<>]{20,}"/.test(html)).toBe(true);
   });
 });

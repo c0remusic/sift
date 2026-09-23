@@ -5,6 +5,7 @@
 // (déclinaison #24, cinquième écran) : les groupes de candidats de Rekordbox affichaient
 // l'identifiant brut « 1788016612965-23936 » là où le Journal disait « Session de 01h24 ». Une
 // session porte UN nom dans toute l'app — c'est le point du partage.
+import { T } from "./i18n/session-label";
 
 export function sessionStart(sessionId: string): Date | null {
   const millis = Number(sessionId.split("-")[0]);
@@ -16,12 +17,13 @@ export function sessionStart(sessionId: string): Date | null {
 /** `withDate` : « Session du 08/09/2026 01h24 » (liste sans regroupement par jour — Rekordbox,
  *  premier niveau du Journal) ; sinon « Session de 01h24 » (sous un groupe de jour). */
 export function sessionLabel(sessionId: string | null, withDate: boolean): string {
-  if (sessionId == null) return "Hors session";
+  if (sessionId == null) return T().noSession;
   const d = sessionStart(sessionId);
   if (!d) return sessionId;
-  const hh = `${String(d.getHours()).padStart(2, "0")}h${String(d.getMinutes()).padStart(2, "0")}`;
-  if (!withDate) return `Session de ${hh}`;
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mi = String(d.getMinutes()).padStart(2, "0");
+  if (!withDate) return T().atTime(hh, mi);
   const dd = String(d.getDate()).padStart(2, "0");
   const mm = String(d.getMonth() + 1).padStart(2, "0");
-  return `Session du ${dd}/${mm}/${d.getFullYear()} ${hh}`;
+  return T().withDate(dd, mm, d.getFullYear(), hh, mi);
 }

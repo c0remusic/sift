@@ -8,7 +8,7 @@
 import { describe, expect, it } from "vitest";
 import { frenchLiterals, scanFrontend } from "../scripts/i18n-coverage.mjs";
 
-const PLAFOND = 526;
+const PLAFOND = 18;
 
 describe("couverture de la traduction", () => {
   it("le détecteur voit un littéral français, et ignore commentaire, console et anglais", () => {

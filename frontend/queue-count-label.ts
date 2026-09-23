@@ -18,6 +18,8 @@
 // colonne, à ~1 000 px : un « 139 pistes » nu se lirait comme la taille de la file. Le qualificatif
 // rétablit ce que la distance a coûté, SANS ajouter un second nombre — la spec (§ Zone A) interdit
 // deux nombres côte à côte dans ce nœud, qui se liraient comme une fraction.
+import { T } from "./i18n/queue-count-label";
+
 export type QueueCountInput = {
   /** Mode de revue courant. En Lot le compte dit la SÉLECTION et remplace le total (spec § Zone A). */
   mode: "detail" | "batch";
@@ -31,13 +33,12 @@ export type QueueCountInput = {
   filtered: boolean;
 };
 
-/** Accord français du dépôt : 0 et 1 prennent le singulier, 2 et au-delà le pluriel. Même règle que
- *  le compte jumeau de la Bibliothèque, écrit à la main dans `bibliotheque-view.ts` — et depuis le
- *  2026-09-08 dans le MÊME slot `#sift-tb-count` que celui-ci, partagé par Revue, Bibliothèque,
- *  Écartés, Journal et Clé USB : un seul nœud de compte dans la barre. */
-function s(n: number): string {
-  return n > 1 ? "s" : "";
-}
+// Accord français du dépôt : 0 et 1 prennent le singulier, 2 et au-delà le pluriel. Même règle que
+// le compte jumeau de la Bibliothèque, écrit à la main dans `bibliotheque-view.ts` — et depuis le
+// 2026-09-08 dans le MÊME slot `#sift-tb-count` que celui-ci, partagé par Revue, Bibliothèque,
+// Écartés, Journal et Clé USB : un seul nœud de compte dans la barre.
+// Depuis le 2026-09-23 l'accord vit dans les gabarits du dictionnaire (`i18n/queue-count-label.ts`),
+// une règle par langue : l'anglais ne met au singulier que 1.
 
 /** Le texte exact de `#sift-tb-count`. Trois états, dans cet ordre de priorité :
  *
@@ -49,7 +50,8 @@ function s(n: number): string {
  *  L'état 2 est le retour chiffré du filtre (issue #49) : le pulldown résume la COMBINAISON cochée
  *  en toutes lettres, ce compte dit ce qu'elle LAISSE VOIR. */
 export function queueCountLabel(i: QueueCountInput): string {
-  if (i.mode === "batch") return `${i.selected} sélectionnée${s(i.selected)}`;
-  if (i.filtered) return `${i.visible} piste${s(i.visible)} filtrée${s(i.visible)}`;
-  return `${i.total} piste${s(i.total)}`;
+  const L = T();
+  if (i.mode === "batch") return L.selected(i.selected);
+  if (i.filtered) return L.filtered(i.visible);
+  return L.total(i.total);
 }

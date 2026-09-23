@@ -28,6 +28,7 @@ import { renderRekordboxLive } from "./rekordbox-view";
 import { renderUsbLive } from "./usb-view";
 import { bumpViewEpoch } from "./view-epoch";
 import { takeViewAfterReload } from "./lang-boot";
+import { T } from "./i18n/router";
 
 // `ecarts` est devenu `resourcing` + `trash` le 2026-09-08 : deux destinations du rail (index.html),
 // une corbeille chez Apple étant toujours un item de sidebar, jamais un filtre.
@@ -160,13 +161,14 @@ function revueShell(content: HTMLElement): void {
   content.style.display = "flex";
   content.style.flexDirection = "";
   content.style.overflowY = "hidden";
+  const t = T();
   content.innerHTML =
     `<div class="sift-revue-row">` +
     `<div class="queue" id="qcol" style="width:${qcolWidth()}px">` +
     `<div class="sift-qhead"></div>` +
-    `<div id="ql" role="listbox" tabindex="0" aria-label="File de revue"></div>` +
+    `<div id="ql" role="listbox" tabindex="0" aria-label="${t.queueAria}"></div>` +
     `</div>` +
-    `<div class="sift-qresize" title="Redimensionner la file"></div>` +
+    `<div class="sift-qresize" title="${t.queueResize}"></div>` +
     `<div class="sift-inspector" id="rvinspector">` +
     `<div class="mid" id="mid"></div>` +
     `<div class="sift-action-rail" id="filfoot"></div>` +

@@ -1,6 +1,7 @@
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { esc } from "./dom";
+import { T } from "./i18n/updater";
 
 const BANNER_ID = "sift-update-banner";
 
@@ -50,12 +51,13 @@ function renderBanner(update: Update): void {
   // Tronqué : la bannière est une barre, pas un écran de notes. Le changelog complet vit sur la
   // page de la release, et le lire n'est pas ce qu'on demande à quelqu'un avant d'installer.
   const notes = summariseNotes(update.body);
+  const t = T();
   el.innerHTML =
-    `<span>Mise à jour ${esc(update.version)} disponible.` +
+    `<span>${t.disponible(esc(update.version))}` +
     (notes ? ` <span class="sift-update-banner-notes">${esc(notes)}</span>` : "") +
     "</span>" +
-    '<button data-upd="install" class="sift-update-banner-install">Installer et redémarrer</button>' +
-    '<button data-upd="later" class="sift-update-banner-later">Plus tard</button>';
+    `<button data-upd="install" class="sift-update-banner-install">${t.installer}</button>` +
+    `<button data-upd="later" class="sift-update-banner-later">${t.plusTard}</button>`;
   document.body.appendChild(el);
 
   el.querySelector('[data-upd="later"]')?.addEventListener("click", () => {
@@ -73,17 +75,17 @@ async function installAndRelaunch(update: Update, banner: HTMLElement): Promise<
 
   if (installBtn) {
     installBtn.disabled = true;
-    if (span) span.textContent = "Téléchargement…";
+    if (span) span.textContent = T().telechargement;
   }
 
   try {
     await update.downloadAndInstall();
-    if (span) span.textContent = "Installation terminée, redémarrage...";
+    if (span) span.textContent = T().redemarrage;
     await relaunch();
   } catch (e) {
     // .textContent, not .innerHTML — the browser escapes it on assignment, so esc() here
     // would double-encode entities (literal "&amp;" shown to the user instead of "&").
-    if (span) span.textContent = `Échec de la mise à jour : ${String(e)}`;
+    if (span) span.textContent = T().echec(String(e));
     if (installBtn) installBtn.disabled = false;
     console.error("update install failed", e);
   }

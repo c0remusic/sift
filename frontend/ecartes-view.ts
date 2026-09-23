@@ -27,6 +27,7 @@ import { openAside, closeAside, mountBarActions } from "./toolbar";
 import { openContextMenu } from "./context-menu";
 import { copyToClipboard, toast } from "./filing-toast";
 import { humanizeError } from "./errors";
+import { T } from "./i18n/ecartes-view";
 
 export type EcartesKind = "resourcing" | "trash";
 
@@ -71,17 +72,18 @@ interface ReasonView {
 }
 
 function reasonView(it: EcarteItem): ReasonView {
+  const t = T();
   if (it.truncated)
-    return { cls: "sift-lib-v-check", label: "TRONQUÉ", sentence: "Fin de fichier tronquée : le fichier est incomplet." };
+    return { cls: "sift-lib-v-check", label: t.reasonTruncated, sentence: t.sentenceTruncated };
   if (it.verdict === "fake")
     // FAUX depuis le 2026-09-10, le même mot que Revue (`report-view.ts::verdictWordTone`).
-    return { cls: "sift-lib-v-fake", label: "FAUX", sentence: "Déclaré lossless, mesuré compressé — un faux lossless, écarté depuis Revue." };
+    return { cls: "sift-lib-v-fake", label: t.reasonFake, sentence: t.sentenceFake };
   if (it.verdict === "grey")
-    return { cls: "sift-lib-v-check", label: "À VÉRIFIER", sentence: "Douteux à l'analyse — à vérifier avant de le garder." };
+    return { cls: "sift-lib-v-check", label: t.reasonCheck, sentence: t.sentenceCheck };
   return {
     cls: "sift-lib-v-none",
     label: "—",
-    sentence: it.status === "trash" ? "Envoyé à la corbeille depuis Revue." : "Écarté depuis Revue, sans verdict.",
+    sentence: it.status === "trash" ? t.sentenceTrashed : t.sentenceSetAside,
   };
 }
 
@@ -99,6 +101,7 @@ function sortItems(items: EcarteItem[]): EcarteItem[] {
 }
 
 function headHtml(): string {
+  const t = T();
   const col = (field: SortField, label: string, cls: string) => {
     const active = sort.field === field;
     const arrow = active ? (sort.dir === "asc" ? " ▴" : " ▾") : "";
@@ -109,11 +112,11 @@ function headHtml(): string {
     `<div class="sift-lib-thead" role="row">` +
     // Raison n'est pas triable : catégorielle, quatre valeurs — le tri d'une liste courte par
     // artiste ou fichier est ce qu'on cherche ici.
-    `<span class="sift-lib-col-verdict sift-lib-colhead" role="columnheader">Raison</span>` +
-    col("artist", "Artiste", "sift-lib-col-artist") +
-    col("title", "Titre", "sift-lib-col-title") +
-    col("file", "Fichier", "sift-lib-col-genre") +
-    `<span class="sift-lib-thead-tail" role="columnheader">Format</span></div>`
+    `<span class="sift-lib-col-verdict sift-lib-colhead" role="columnheader">${t.reason}</span>` +
+    col("artist", t.colArtist, "sift-lib-col-artist") +
+    col("title", t.colTitle, "sift-lib-col-title") +
+    col("file", t.colFile, "sift-lib-col-genre") +
+    `<span class="sift-lib-thead-tail" role="columnheader">${t.colFormat}</span></div>`
   );
 }
 
@@ -121,7 +124,8 @@ function headHtml(): string {
 function rowHtml(it: EcarteItem, index = 0): string {
   const r = reasonView(it);
   const cur = (it.id === openId ? " cur" : "") + (index % 2 === 1 ? " alt" : "");
-  const label = `${r.label}, ${it.artist || "Artiste inconnu"} — ${it.title || "Titre inconnu"}, ${ecFile(it)}`;
+  const t = T();
+  const label = `${r.label}, ${it.artist || t.unknownArtist} — ${it.title || t.unknownTitle}, ${ecFile(it)}`;
   return (
     `<div class="lr${cur}" data-ecrow="${it.id}" tabindex="0" role="option" aria-label="${esc(label)}">` +
     `<span class="sift-lib-col sift-lib-col-verdict ${r.cls}"><span class="sift-lib-verdict-dot" aria-hidden="true"></span>${r.label}</span>` +
@@ -146,20 +150,17 @@ function renderIdle(items: EcarteItem[]): void {
     const l = reasonView(it).label;
     counts.set(l, (counts.get(l) ?? 0) + 1);
   }
+  const t = T();
   host.innerHTML =
-    `<div class="col-h">${kind === "trash" ? "Corbeille" : "À re-sourcer"}</div>` +
-    `<div class="sift-sel-count">${n} piste${n > 1 ? "s" : ""}</div>` +
+    `<div class="col-h">${kind === "trash" ? t.titleTrash : t.titleResourcing}</div>` +
+    `<div class="sift-sel-count">${t.tracks(n)}</div>` +
     `<dl class="sift-sel-rows">` +
     [...counts.entries()]
       .sort((a, b) => b[1] - a[1])
-      .map(([k, c]) => `<dt>${esc(k === "—" ? "Sans verdict" : k)}</dt><dd>${c}</dd>`)
+      .map(([k, c]) => `<dt>${esc(k === "—" ? t.noVerdict : k)}</dt><dd>${c}</dd>`)
       .join("") +
     `</dl>` +
-    `<div class="sift-ec-rule">${
-      kind === "trash"
-        ? "Les fichiers restent sur le disque jusqu'au vidage de la corbeille."
-        : "Des pistes à racheter : le fichier est faux, tronqué ou douteux."
-    }</div>`;
+    `<div class="sift-ec-rule">${kind === "trash" ? t.ruleTrash : t.ruleResourcing}</div>`;
 }
 
 function renderDetail(it: EcarteItem): void {
@@ -167,6 +168,7 @@ function renderDetail(it: EcarteItem): void {
   if (!host) return;
   const r = reasonView(it);
   const q = encodeURIComponent(ecQuery(it));
+  const t = T();
   host.innerHTML =
     // En-tête de Revue, sans pochette ni lecteur : un fichier écarté ne s'écoute pas ici, et
     // `EcarteItem` n'a pas de pochette.
@@ -179,9 +181,9 @@ function renderDetail(it: EcarteItem): void {
     `<div class="sift-ec-file sift-ec-detail-file">${esc(ecFile(it))}</div>` +
     `</div></div>` +
     // Trois fiches au gabarit de « Métadonnées » (`.sift-meta-title`, direction T).
-    `<div class="sift-meta-header sift-ec-fiche"><span class="sift-meta-title">Raison</span></div>` +
+    `<div class="sift-meta-header sift-ec-fiche"><span class="sift-meta-title">${t.reason}</span></div>` +
     `<div class="sift-ec-sentence">${esc(r.sentence)}</div>` +
-    `<div class="sift-meta-header sift-ec-fiche"><span class="sift-meta-title">Racheter</span></div>` +
+    `<div class="sift-meta-header sift-ec-fiche"><span class="sift-meta-title">${t.rebuy}</span></div>` +
     // Une rangée par boutique — grammaire des rangées du Diagnostic en colonne (libellé, puis la
     // valeur) : le libellé est la boutique, la valeur est le geste. « Dans quelles boutiques »
     // se lit en une colonne, c'est le point de l'écran.
@@ -189,16 +191,16 @@ function renderDetail(it: EcarteItem): void {
     EC_STORES.map(
       ([label, fn]) =>
         `<div class="sift-row"><span class="sift-row-label">${esc(label)}</span>` +
-        `<button class="sift-meta-ident-btn" data-ec="store" data-url="${encodeURIComponent(fn(q))}">Ouvrir la recherche</button></div>`,
+        `<button class="sift-meta-ident-btn" data-ec="store" data-url="${encodeURIComponent(fn(q))}">${t.openSearch}</button></div>`,
     ).join("") +
     `</div>` +
-    `<div class="sift-meta-actions"><button class="sift-meta-ident-btn" data-ec="copy-query" data-q="${esc(ecQuery(it))}">Copier le nom</button></div>` +
-    `<div class="sift-meta-header sift-ec-fiche"><span class="sift-meta-title">Actions</span></div>` +
+    `<div class="sift-meta-actions"><button class="sift-meta-ident-btn" data-ec="copy-query" data-q="${esc(ecQuery(it))}">${t.copyName}</button></div>` +
+    `<div class="sift-meta-header sift-ec-fiche"><span class="sift-meta-title">${t.actions}</span></div>` +
     `<div class="sift-ec-actions">` +
     (kind === "trash"
-      ? `<button class="sift-meta-ident-btn" data-ec="restore" data-id="${it.id}">Restaurer</button>`
-      : `<button class="sift-meta-ident-btn" data-ec="requeue" data-id="${it.id}">Remettre en file</button>` +
-        `<button class="sift-meta-ident-btn" data-ec="trash" data-id="${it.id}">Envoyer à la corbeille</button>`) +
+      ? `<button class="sift-meta-ident-btn" data-ec="restore" data-id="${it.id}">${t.restore}</button>`
+      : `<button class="sift-meta-ident-btn" data-ec="requeue" data-id="${it.id}">${t.requeue}</button>` +
+        `<button class="sift-meta-ident-btn" data-ec="trash" data-id="${it.id}">${t.moveToTrash}</button>`) +
     `</div>`;
 }
 
@@ -212,22 +214,23 @@ function openDetail(id: number | null): void {
 
 function openMenu(x: number, y: number, it: EcarteItem): void {
   const detailOpen = openId === it.id;
+  const t = T();
   openContextMenu(x, y, [
     {
-      label: "Ouvrir l'emplacement",
+      label: t.reveal,
       onPick: () =>
-        void revealTrack(it.id).catch((err: unknown) => toast(humanizeError(err, "Impossible d'ouvrir l'emplacement", "reveal_track"))),
+        void revealTrack(it.id).catch((err: unknown) => toast(humanizeError(err, T().revealFailed, "reveal_track"))),
     },
-    { label: detailOpen ? "Masquer le détail" : "Ouvrir le détail", onPick: () => openDetail(detailOpen ? null : it.id) },
-    { label: "Copier le nom", separated: true, onPick: () => copyToClipboard(ecQuery(it), "Recherche copiée") },
+    { label: detailOpen ? t.hideDetail : t.showDetail, onPick: () => openDetail(detailOpen ? null : it.id) },
+    { label: t.copyName, separated: true, onPick: () => copyToClipboard(ecQuery(it), T().searchCopied) },
     // Les six boutiques vivent dans l'inspecteur (une rangée chacune) : « Racheter… » y mène.
     // Pas de sous-menu — HIG Context menus : « aim for a small number of menu items ».
-    { label: "Racheter…", onPick: () => openDetail(it.id) },
+    { label: t.rebuyMenu, onPick: () => openDetail(it.id) },
     ...(kind === "trash"
-      ? [{ label: "Restaurer", separated: true, onPick: () => runEcarteAction("restore", it.id) }]
+      ? [{ label: t.restore, separated: true, onPick: () => runEcarteAction("restore", it.id) }]
       : [
-          { label: "Remettre en file", separated: true, onPick: () => runEcarteAction("requeue", it.id) },
-          { label: "Envoyer à la corbeille", onPick: () => runEcarteAction("trash", it.id) },
+          { label: t.requeue, separated: true, onPick: () => runEcarteAction("requeue", it.id) },
+          { label: t.moveToTrash, onPick: () => runEcarteAction("trash", it.id) },
         ]),
   ]);
 }
@@ -240,12 +243,8 @@ function openMenu(x: number, y: number, it: EcarteItem): void {
  *  `#pa` manquait. */
 export function runEcarteAction(act: "requeue" | "trash" | "restore", id: number): void {
   const call = act === "trash" ? trashTrack : act === "restore" ? restoreTrack : requeueTrack;
-  const echec =
-    act === "trash"
-      ? "Échec : impossible d'envoyer à la corbeille"
-      : act === "restore"
-        ? "Échec : restauration impossible"
-        : "Échec : remise en file impossible";
+  const t = T();
+  const echec = act === "trash" ? t.failTrash : act === "restore" ? t.failRestore : t.failRequeue;
   void call(id)
     .then(() => renderEcartes())
     .catch((err: unknown) => {
@@ -284,8 +283,8 @@ export async function renderEcartes(k?: EcartesKind): Promise<void> {
     console.error("listEcartes failed", e);
     if (isStaleViewRender(token)) return;
     content.innerHTML =
-      '<div class="sift-library-main"><div class="sift-ec-fail">Impossible de charger cette liste. Vérifie la connexion à la base et réessaie. ' +
-      '<button data-ec="retry" class="sift-meta-ident-btn">Réessayer</button></div></div>';
+      `<div class="sift-library-main"><div class="sift-ec-fail">${T().loadFailed} ` +
+      `<button data-ec="retry" class="sift-meta-ident-btn">${T().retry}</button></div></div>`;
     content.querySelector<HTMLButtonElement>('[data-ec="retry"]')?.addEventListener("click", () => void renderEcartes());
     mountBarActions("");
     return;
@@ -296,26 +295,27 @@ export async function renderEcartes(k?: EcartesKind): Promise<void> {
   // Barre : compte à côté du titre (le titre vient du rail, `router.ts::syncNav`) ; sur la
   // Corbeille, « Vider la corbeille » — la seule action de l'écran, en secondaire danger, avec la
   // confirmation in-app que le délégué de sift-live.ts porte déjà.
+  const t = T();
   const countEl = document.getElementById("sift-tb-count");
-  if (countEl) countEl.textContent = `${currentItems.length} piste${currentItems.length > 1 ? "s" : ""}`;
+  if (countEl) countEl.textContent = t.tracks(currentItems.length);
   mountBarActions(
     kind === "trash" && currentItems.length
-      ? `<button data-ec="purge" class="sift-secondary-trash sift-bar-btn">Vider la corbeille</button>`
+      ? `<button data-ec="purge" class="sift-secondary-trash sift-bar-btn">${t.emptyTrash}</button>`
       : "",
   );
 
   if (currentItems.length === 0) {
     content.innerHTML = emptyStateHtml(
       kind === "trash"
-        ? { title: "La corbeille est vide", note: "Les pistes envoyées à la corbeille depuis Revue ou À re-sourcer attendent ici avant le vidage.", backToRevue: true }
-        : { title: "Rien à re-sourcer", note: "Les pistes écartées depuis Revue — fausses, tronquées, douteuses — apparaissent ici, à racheter ou à remettre en file.", backToRevue: true },
+        ? { title: t.emptyTrashTitle, note: t.emptyTrashNote, backToRevue: true }
+        : { title: t.emptyResourcingTitle, note: t.emptyResourcingNote, backToRevue: true },
     );
     wireEmptyState(content);
     closeAside();
     return;
   }
 
-  content.innerHTML = `<div class="sift-library-main">${headHtml()}<div id="sift-ec-list" role="listbox" aria-label="${kind === "trash" ? "Corbeille" : "À re-sourcer"}"></div></div>`;
+  content.innerHTML = `<div class="sift-library-main">${headHtml()}<div id="sift-ec-list" role="listbox" aria-label="${kind === "trash" ? t.titleTrash : t.titleResourcing}"></div></div>`;
   const listHost = requireEl<HTMLElement>("#sift-ec-list", "renderEcartes", content);
   virtual = createVirtualList<EcarteItem>({
     host: listHost,

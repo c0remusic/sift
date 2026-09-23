@@ -41,9 +41,7 @@ import { selectionSummaryHtml, estRangeableEnLot } from "./selection-summary";
 import { confirmBatchAlert, BATCH_CONFIRM_THRESHOLD } from "./confirm-modal";
 import type { BatchAlertData } from "./confirm-modal";
 import { showBatchSheet, updateBatchSheet, transformToReport, closeBatchSheet } from "./batch-sheet";
-
-/** Human label for the batch destination (resolves the in-place sentinel to its prose). */
-const IN_PLACE_LABEL = "Dossier source de chaque morceau";
+import { T } from "./i18n/batch-panel";
 
 // Batch "file in place" toggle (FILE_IN_PLACE). Kept apart from batchBin so the picked folder is
 // remembered while in-place is on. Effective destination = batchInPlace ? FILE_IN_PLACE : batchBin.
@@ -99,7 +97,7 @@ function formatBlocksHtml(): string {
     : "";
   const lossyBlock = nLossy
     ? `<div class="sift-rail-fmt-group"><span class="col-h">Lossy · ${nLossy}</span>` +
-      `<span style="font-size:var(--text-md);color:var(--color-text-secondary);white-space:nowrap;padding:var(--space-4) 0">${TARGET_LABEL["mp3_320"]} 320 <span style="color:var(--color-text-tertiary)">— seul format possible</span></span>` +
+      `<span style="font-size:var(--text-md);color:var(--color-text-secondary);white-space:nowrap;padding:var(--space-4) 0">${TARGET_LABEL["mp3_320"]} 320 <span style="color:var(--color-text-tertiary)">${T().lossyOnly}</span></span>` +
       `</div>`
     : "";
   return losslessBlock + lossyBlock;
@@ -148,7 +146,7 @@ export function onFileStop() {
     });
   }
   fileNote(
-    '<i class="ti ti-loader sift-spin" style="font-size:var(--text-md);vertical-align:-1px"></i> Stop requested — finishing the current file…',
+    `<i class="ti ti-loader sift-spin" style="font-size:var(--text-md);vertical-align:-1px"></i> ${T().stopRequested}`,
   );
   void fileCancel();
 }
@@ -175,13 +173,14 @@ function batchDest(): string {
   return batchInPlace ? FILE_IN_PLACE : batchBin;
 }
 
+/** Human label for the batch destination (resolves the in-place sentinel to its prose). */
 function batchDestLabel(): string {
-  if (batchInPlace) return IN_PLACE_LABEL;
+  if (batchInPlace) return T().inPlace;
   if (batchBin.startsWith(EXTERNAL_DEST_PREFIX)) {
     const abs = batchBin.slice(EXTERNAL_DEST_PREFIX.length);
     return abs.split(/[\\/]/).filter(Boolean).pop() || abs;
   }
-  return batchBin || "Racine de bibliothèque";
+  return batchBin || T().libraryRoot;
 }
 
 /** A folder click in the #fldz tree (batch pick mode) -> set batchBin, drop in-place, re-render. */
@@ -230,12 +229,13 @@ function renderBatchRail() {
   const keepNote = foot.querySelector("[data-file-note]");
   if (foot.querySelector("#sift-progress-zone")) homeProgressZone();
 
-  const destBlock = `<button data-fil="destbtn" class="sift-dest-btn"><span class="sift-dest-btn-label">Destination</span><span class="sift-fil-bin">${esc(
+  const L = T();
+  const destBlock = `<button data-fil="destbtn" class="sift-dest-btn"><span class="sift-dest-btn-label">${L.destination}</span><span class="sift-fil-bin">${esc(
     batchDestLabel(),
   )}</span><i class="ti ti-chevron-down sift-dest-btn-caret"></i></button>`;
   const formatBlock = `<div id="sift-batch-fmt" style="display:contents">${formatBlocksHtml()}</div>`;
   const stopSlot = batchRunning
-    ? `<div class="sift-baction-slot"><button data-sift="batchstop" class="sift-baction sift-baction--quiet">Stop</button></div>`
+    ? `<div class="sift-baction-slot"><button data-sift="batchstop" class="sift-baction sift-baction--quiet">${L.stop}</button></div>`
     : "";
 
   foot.innerHTML =
@@ -291,19 +291,12 @@ async function runBatchFile(ids: number[]) {
     // donc pas de bouton d'action où loger « Choisir la racine ». Plutôt qu'inventer un contrôle
     // dans cette ligne, on double la note par le MÊME toast actionnable que le Détail (issue #54) :
     // un seul mot d'UI pour un seul refus, et l'action existe des deux côtés.
+    const L = T();
     if (code.includes("NoLibraryRoot")) {
-      fileNote(
-        "Conversion bloquée — aucune racine de bibliothèque.",
-        "var(--color-text-danger)",
-      );
-      toast(
-        "Conversion bloquée — aucune racine de bibliothèque.",
-        true,
-        openSettingsScreen,
-        "Choisir la racine",
-      );
+      fileNote(L.noRoot, "var(--color-text-danger)");
+      toast(L.noRoot, true, openSettingsScreen, L.chooseRoot);
     } else {
-      fileNote("Échec du lancement de la conversion — réessaie", "var(--color-text-danger)");
+      fileNote(L.launchFailed, "var(--color-text-danger)");
     }
     console.error("file_batch launch failed", err);
   }
@@ -379,10 +372,8 @@ export async function onFileBatchDone(res: BatchResult) {
     }
   }
   const nKo = res.needs_validation.length;
-  const plural = (n: number, s: string, p: string) => (n > 1 ? p : s);
-  const base = nKo
-    ? `${res.filed} ${plural(res.filed, "rangée", "rangées")} · ${nKo} ${plural(nKo, "à vérifier", "à vérifier")}`
-    : `${res.filed} ${plural(res.filed, "piste rangée", "pistes rangées")}`;
+  const L = T();
+  const base = nKo ? L.doneWithKo(res.filed, nKo) : L.doneAll(res.filed);
   const tone =
     res.filed === 0 && nKo
       ? { icon: "ti-alert-triangle", color: "var(--color-text-danger)" }
@@ -392,7 +383,7 @@ export async function onFileBatchDone(res: BatchResult) {
   await refreshHook?.();
   fileNote(
     `<i class="ti ${tone.icon}" style="font-size:var(--text-md);vertical-align:-1px"></i> ${
-      res.cancelled ? `Conversion interrompue · ${base}` : base
+      res.cancelled ? L.interrupted(base) : base
     }`,
     tone.color,
   );
@@ -407,7 +398,7 @@ async function runBatchDiscard(ids: number[]) {
     await rejectBatch(ids);
   } catch (err) {
     console.error("reject_batch failed", err);
-    fileNote("Échec de l'écartement — réessaie", "var(--color-text-danger)");
+    fileNote(T().discardFailed, "var(--color-text-danger)");
   } finally {
     batchRunning = false;
     await refreshHook?.();

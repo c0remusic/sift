@@ -6,6 +6,7 @@
 // par `mountPlayer` (`report-view.ts`), qui reste l'unique appelant de prod via `playerRowHtml`.
 // Les deux formules partagées ci-dessous sont exportées pour la même raison : le rendu de la story
 // et celui de la prod ne peuvent pas diverger s'ils appellent le même code.
+import { T } from "./i18n/player-audition";
 
 /** Diamètre du pouce du volume (maquette « Volume (lecteur) », façon Music). Le pouce de la
  *  progression fait 20 (kit Pickers/Linear/Small) — lui n'entre dans aucune formule JS, le pouce
@@ -28,11 +29,12 @@ export function volumeIconClass(pct: number): string {
 
 /** Le markup de la rangée, tel que `playerRowHtml` l'insère dans `.sift-player-row`. */
 export function playerAuditionHtml(): string {
+  const t = T();
   return (
     `<div class="sift-player-audition">` +
     // Glyphe PLEIN (2026-08-27, motif Music) : classe .ti-fill du dépôt, police
     // tabler-icons-filled — setIcon (report-view.ts) bascule play/pause dans la même famille.
-    `<button class="sift-play sift-play-btn" title="Lecture / pause (espace)" aria-label="Lecture / pause (espace)"><i class="ti-fill ti-fill-player-play"></i></button>` +
+    `<button class="sift-play sift-play-btn" title="${t.playPause}" aria-label="${t.playPause}"><i class="ti-fill ti-fill-player-play"></i></button>` +
     // LECTEUR SIMPLE (décision Antoine 2026-08-27, maquette : composant « Slider de progression »,
     // COPIE du kit Pickers/Slider-pickers/Linear/Small/No-tick-marks 53:118) : la waveform quitte
     // Revue — piste 4 px + remplissage accent + pouce blanc 20, la géométrie exacte du kit.
@@ -41,7 +43,7 @@ export function playerAuditionHtml(): string {
     // en display:none casserait son ResizeObserver, le réduire ne casse rien.
     // Survol : bulle mm:ss seule (patron QuickTime) — le ghost et la ligne, nés pour teinter des
     // BARRES, n'ont pas d'équivalent sur une piste pleine de 4 px.
-    `<div class="sift-progress" role="slider" tabindex="0" aria-label="Position de lecture" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">` +
+    `<div class="sift-progress" role="slider" tabindex="0" aria-label="${t.position}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">` +
     `<div class="sift-wave sift-player-wave sift-progress-engine"></div>` +
     `<div class="sift-progress-track"></div>` +
     `<div class="sift-progress-fill"></div>` +
@@ -49,7 +51,7 @@ export function playerAuditionHtml(): string {
     `<div class="sift-wave-hovertime" hidden></div>` +
     `</div>` +
     // Temps À CÔTÉ de l'onde (retour Antoine : plus overlay dans la forme d'onde). Un seul, cliquable.
-    `<span class="sift-time" role="button" tabindex="0" title="Temps écoulé / restant — cliquer pour basculer">0:00</span>` +
+    `<span class="sift-time" role="button" tabindex="0" title="${t.timeToggle}">0:00</span>` +
     // Volume intégré dans la rangée de transport (façon Apple Music) — plus de bloc « contrôles »
     // séparé. Tempo & key-lock (l'« Écoute avancée ») retirés : le pitch DJ n'est pas voulu sur cet
     // écran de décision (Antoine 2026-08-21), et la HIG ne justifie un contrôle audio custom que pour
@@ -58,8 +60,8 @@ export function playerAuditionHtml(): string {
     // même famille que .sift-progress (patron Music, maquette « Volume (lecteur) ») — haut-parleur
     // cliquable (mute, bascule ti-volume/ti-volume-off) + piste 4 px, remplissage et pouce BLANCS
     // theme-invariants (un volume n'est pas une progression : pas d'accent).
-    `<button class="sift-volume-mute" title="Couper / rétablir le son" aria-label="Couper / rétablir le son"><i class="ti ti-volume"></i></button>` +
-    `<div class="sift-volume" role="slider" tabindex="0" aria-label="Volume" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100">` +
+    `<button class="sift-volume-mute" title="${t.mute}" aria-label="${t.mute}"><i class="ti ti-volume"></i></button>` +
+    `<div class="sift-volume" role="slider" tabindex="0" aria-label="${t.volume}" aria-valuemin="0" aria-valuemax="100" aria-valuenow="100">` +
     `<div class="sift-volume-track"></div>` +
     `<div class="sift-volume-fill"></div>` +
     `<div class="sift-volume-knob"></div>` +

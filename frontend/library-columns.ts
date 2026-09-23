@@ -22,6 +22,8 @@
 // le repli du rail. L'argument « `settings` survit à un changement de machine » qui avait ouvert la
 // question était faux : la base vit dans `app_data_dir()` (`src-tauri/src/lib.rs:222`).
 
+import { T } from "./i18n/library-columns";
+
 // `verdict` et `bpm` sont SORTIS de la liste le 2026-09-08 (audit Rangés, #24, décision d'Antoine :
 // « pas besoin de mettre le verdict ») — le verdict se lit dans l'inspecteur à l'ouverture, et BPM
 // n'a aucun écrivain côté Rust (colonne `metadata.bpm` lue, jamais remplie : « aucune colonne
@@ -30,7 +32,6 @@ export type LibraryColumnField = "artist" | "title" | "duration" | "genre" | "ye
 
 export interface LibraryColumn {
   field: LibraryColumnField;
-  label: string;
   /** Classe de largeur par défaut, celle que `styles.css` porte encore quand rien n'est mémorisé. */
   cls: string;
   /** Largeur mémorisée, en px. `undefined` = la colonne suit encore sa règle CSS. */
@@ -43,12 +44,19 @@ const DEFAULT_COLUMNS: readonly LibraryColumn[] = [
   // La colonne Verdict (colonne 1 de `DESIGN.md` § 16, entrée le 2026-08-19 dans le système de
   // colonnes pour être triable et déplaçable comme les autres) est retirée le 2026-09-08 — voir
   // le commentaire de `LibraryColumnField`. BPM part le même jour, pour n'avoir jamais été écrit.
-  { field: "artist", label: "Artiste", cls: "sift-lib-col-artist" },
-  { field: "title", label: "Titre", cls: "sift-lib-col-title" },
-  { field: "duration", label: "Durée", cls: "sift-lib-col-num" },
-  { field: "genre", label: "Genre", cls: "sift-lib-col-genre" },
-  { field: "year", label: "Année", cls: "sift-lib-col-year" },
+  { field: "artist", cls: "sift-lib-col-artist" },
+  { field: "title", cls: "sift-lib-col-title" },
+  { field: "duration", cls: "sift-lib-col-num" },
+  { field: "genre", cls: "sift-lib-col-genre" },
+  { field: "year", cls: "sift-lib-col-year" },
 ];
+
+/** Libellé d'en-tête d'une colonne, dans la langue courante (`i18n/library-columns.ts`). Lu à
+ *  l'appel et non rangé dans `DEFAULT_COLUMNS` : ce tableau se construit au chargement du module,
+ *  avant `initLang()`, et y porter le libellé figerait le français quelle que soit la langue. */
+export function columnLabel(field: LibraryColumnField): string {
+  return T().cols[field];
+}
 
 /** Bornes du redimensionnement. Le plancher n'est pas cosmétique : sous 48px un en-tête de colonne
  *  n'affiche plus son libellé ni sa flèche de tri, et la colonne devient impossible à réélargir

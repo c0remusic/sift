@@ -6,6 +6,8 @@
 // Lighter than usb-format-modal.ts's typed+armed cycle: that extra friction is reserved for the
 // one truly irreversible action (disk format) — everything else stays at today's single-confirm
 // friction level, just delivered reliably.
+import { T } from "./i18n/confirm-modal";
+
 const OVERLAY_ID = "sift-confirm-overlay";
 
 /** Above how many tracks a destructive mass action asks a second time.
@@ -58,6 +60,7 @@ export function confirmBatchAlert(data: BatchAlertData): Promise<BatchAlertResul
   document.getElementById(OVERLAY_ID)?.remove();
   const previouslyFocused = document.activeElement as HTMLElement | null;
   return new Promise((resolve) => {
+    const L = T();
     let skipChecked = false;
 
     const overlay = document.createElement("div");
@@ -68,24 +71,24 @@ export function confirmBatchAlert(data: BatchAlertData): Promise<BatchAlertResul
     card.className = "sift-report-overlay-card sift-confirm-card sift-batch-alert";
     card.setAttribute("role", "alertdialog");
     card.setAttribute("aria-modal", "true");
-    card.setAttribute("aria-label", "Convertir la sélection ?");
+    card.setAttribute("aria-label", L.batchTitle);
 
     const title = document.createElement("div");
     title.className = "sift-batch-alert-title";
-    title.textContent = "Convertir la sélection ?";
+    title.textContent = L.batchTitle;
 
     const recap = document.createElement("div");
     recap.className = "sift-batch-alert-recap";
     const parts: string[] = [];
-    parts.push(`${data.fileCount} prête${data.fileCount > 1 ? "s" : ""} → Convertir`);
+    parts.push(L.batchReady(data.fileCount));
     if (data.fakeCount > 0) {
-      parts.push(`${data.fakeCount} FAKE → Écarter`);
+      parts.push(L.batchFake(data.fakeCount));
     }
     recap.textContent = parts.join(" · ");
 
     const destLine = document.createElement("div");
     destLine.className = "sift-batch-alert-dest";
-    destLine.textContent = `Destination · ${data.destLabel} · ${data.formatSummary}`;
+    destLine.textContent = L.batchDest(data.destLabel, data.formatSummary);
 
     const checkLabel = document.createElement("label");
     checkLabel.className = "sift-batch-alert-skip";
@@ -94,7 +97,7 @@ export function confirmBatchAlert(data: BatchAlertData): Promise<BatchAlertResul
     checkInput.addEventListener("change", () => {
       skipChecked = checkInput.checked;
     });
-    const checkText = document.createTextNode(" Ne plus me demander (cette session)");
+    const checkText = document.createTextNode(L.skipFuture);
     checkLabel.append(checkInput, checkText);
 
     const actions = document.createElement("div");
@@ -102,11 +105,11 @@ export function confirmBatchAlert(data: BatchAlertData): Promise<BatchAlertResul
     const cancelBtn = document.createElement("button");
     cancelBtn.type = "button";
     cancelBtn.className = "sift-settings-btn";
-    cancelBtn.textContent = "Annuler";
+    cancelBtn.textContent = L.cancel;
     const confirmBtn = document.createElement("button");
     confirmBtn.type = "button";
     confirmBtn.className = "sift-confirm-btn";
-    confirmBtn.textContent = `Convertir ${data.fileCount}`;
+    confirmBtn.textContent = L.convertN(data.fileCount);
     confirmBtn.disabled = true;
     const armTimer = window.setTimeout(() => {
       confirmBtn.disabled = false;
@@ -158,7 +161,7 @@ export function confirmBatchAlert(data: BatchAlertData): Promise<BatchAlertResul
   });
 }
 
-export function confirmAction(message: string, confirmLabel = "Confirmer"): Promise<boolean> {
+export function confirmAction(message: string, confirmLabel = T().confirm): Promise<boolean> {
   // Settle any still-open prior call first — removes its keydown listener and resolves its
   // promise, instead of leaking both when this new call replaces its overlay below.
   activeFinish?.(false);
@@ -190,7 +193,7 @@ export function confirmAction(message: string, confirmLabel = "Confirmer"): Prom
     const cancelBtn = document.createElement("button");
     cancelBtn.type = "button";
     cancelBtn.className = "sift-settings-btn";
-    cancelBtn.textContent = "Annuler";
+    cancelBtn.textContent = T().cancel;
     const confirmBtn = document.createElement("button");
     confirmBtn.type = "button";
     confirmBtn.className = "sift-confirm-btn";
