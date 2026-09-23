@@ -1,6 +1,18 @@
 // Le site Vercel (https://sift-music.vercel.app) est le build Vite de l'app plus des pages posées
 // à côté : accueil et manuel en FRANÇAIS à la racine, les mêmes en ANGLAIS sous `/en/`, et le
-// manuel en PDF. Le PDF n'existe qu'en français, et la page anglaise le dit dans son lien.
+// manuel en PDF, un par langue.
+//
+// ⚠️ LES PDF NE SE CONSTRUISENT PAS ICI, et aucun script ne les fabrique. Ils sont produits
+// a la main par IMPRESSION NAVIGATEUR de la page servie, avec son CSS `@media print` :
+//
+//   msedge --headless --disable-gpu --no-pdf-header-footer
+//          --run-all-compositor-stages-before-draw --virtual-time-budget=20000
+//          --print-to-pdf=<cible> http://localhost:5173/<page>
+//
+// Le procede n'etait ecrit nulle part avant le 2026-09-23. Il a ete retrouve en REJOUANT le
+// PDF francais avec cette commande : 7 pages des deux cotes, taille a 0,6 % pres du fichier
+// commite — donc c'est bien le procede d'origine (commit a142ac8, « 6 pages, verifiees page
+// par page »). Refaire un PDF apres avoir edite un manuel, sinon il ment.
 //
 // Deux phases, branchées dans package.json :
 //   `prebuild`  → `node scripts/build-site.mjs prepare`
@@ -119,13 +131,16 @@ async function wrap(page) {
 async function prepare() {
   await mkdir(join(pub, "screenshots"), { recursive: true });
   for (const page of PAGES) await wrap(page);
+  // Un PDF par langue. Ils vivent a la RACINE du site et pas sous `/en/` : ce sont des
+  // fichiers, pas des pages, et le lien de chaque accueil les nomme explicitement.
   await copyFile(join(root, "docs", "manuel.pdf"), join(pub, "manuel.pdf"));
+  await copyFile(join(root, "docs", "manuel.en.pdf"), join(pub, "manuel.en.pdf"));
   await copyFile(join(root, "docs", "favicon.svg"), join(pub, "favicon.svg"));
   // Toutes les variantes (PNG d'origine, AVIF/WebP bureau 1x/2x, recadrage mobile) : le <picture>
   // de l'accueil les nomme une par une.
   await cp(join(root, "docs", "screenshots"), join(pub, "screenshots"), { recursive: true });
   console.log(
-    `build-site: public/{${PAGES.map((p) => p.out).join(", ")}, manuel.pdf, screenshots/*}`,
+    `build-site: public/{${PAGES.map((p) => p.out).join(", ")}, manuel.pdf, manuel.en.pdf, screenshots/*}`,
   );
 }
 

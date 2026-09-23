@@ -99,6 +99,7 @@ docs/*
 !docs/manuel.en.html
 !docs/accueil.en.html
 !docs/manuel.pdf
+!docs/manuel.en.pdf
 !docs/favicon.svg
 !docs/developpement.md
 !docs/screenshots/
