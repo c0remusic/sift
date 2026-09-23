@@ -277,6 +277,20 @@ par la vraie fenêtre (skill `run-sift`, CDP), les états visuels par Storybook.
 `import.meta.env.DEV` (éliminés du build de prod). Côté Rust, `dev_locate.rs` /
 `dev_annotate.rs` sont gardés par `cfg!(debug_assertions)`.
 
+### Les textes affichés passent par `frontend/i18n/` (FR / EN, 2026-09-23)
+
+Tout texte affiché vient d'un dictionnaire `frontend/i18n/<module>.ts`
+(`const en: typeof fr` : tsc tient la parité), lu À L'APPEL — `T().cle`,
+jamais au chargement du module. `lang-boot.ts::initLang` tranche la langue
+avant le câblage ; changer de langue recharge la fenêtre. Côté Rust, tout
+message affiché passe par `crate::tr!(fr, en)`.
+
+⚠️ Un texte que du CODE reconnaît est un protocole, pas de la prose :
+sentinelle neutre dans `shared/contracts.ts` + test de contrat, jamais
+`tr!`. `FILE_GONE` reste français (sa reconnaissance supprime une ligne).
+Cliquet : `test/i18n-coverage.test.ts`. Détail et pièges :
+`docs/superpowers/changes/2026-09-23-i18n/design.md`.
+
 ### Modules frontend, par écran
 
 `main.ts` (boot) · `router.ts` (routage réel — `app.js` ne tourne plus sous Tauri) ·
@@ -302,7 +316,9 @@ dépendance** (`register*`/callback, ex. `registerOpenTrackPathGetter`,
 `registerDestChangeHook`) pour casser les cycles d'import — jamais un import statique
 retour.
 
-Transverses : `ipc.ts` (wrappers IPC typés) · `errors.ts` (garantit le `console.error`
+Transverses : `i18n.ts` (langue courante et `dict()`, sans DOM ni IPC — testable env Node) ·
+`lang-boot.ts` (réglage `ui_lang`, coquille d'`index.html`, rechargement au changement) ·
+`ipc.ts` (wrappers IPC typés) · `errors.ts` (garantit le `console.error`
 de la chaîne brute — pas de table code→message, délibérément) · `dom.ts` ·
 `confirm-modal.ts` · `list-virtual.ts` · `queue-panel.ts` / `batch-panel.ts` /
 `batch-tracklist.ts` (file Revue, mode Lot) · `journal.ts` (journal d'actions + revert) ·
@@ -378,7 +394,7 @@ sans ré-analyse, pour toute ligne à `verdict_ver` périmée) ·
 `rekordbox_xml.rs` / `rekordbox_masterdb.rs` / `rekordbox_repairs.rs` (M8 Tier 1/2/3) ·
 `ipc.rs` + `ipc_filing.rs` / `ipc_identify.rs` / `ipc_library.rs` / `ipc_usb.rs` /
 `ipc_usage.rs` ·
-`db.rs` / `settings.rs` / `ffmpeg.rs`.
+`db.rs` / `settings.rs` / `ffmpeg.rs` · `i18n.rs` (langue des messages affichés, macro `tr!`).
 
 Test-only : `bench_dedup.rs` (coût unitaire de `fingerprint::similarity`, taux de survie du
 pré-filtre de durée, `group_duplicates` bout à bout, empreinte RAM) ·
@@ -561,8 +577,8 @@ Jargon anglais volontairement conservé dans l'UI (ne pas « corriger ») : LOSS
 les facettes, les chips — jamais le mot de verdict, qui dit VRAI / FAUX / À VÉRIFIER depuis le
 2026-09-10), DUPLICATE, MATCH, FAKE, XML, kbps, kHz, MP3, AIFF, WAV.
 ⚠️ Cette liste a nommé `CHECK MATCH` jusqu'au 2026-09-23, alors que le terme était RETIRÉ du
-produit — `frontend/filing.ts:624` : « CHECK MATCH removed entirely — annotation confirmed
-intentional ». Elle oubliait à l'inverse `XML`, qui est AFFICHÉ (`frontend/rekordbox-view.ts:371`,
+produit — `frontend/filing.ts:627` : « CHECK MATCH removed entirely — annotation confirmed
+intentional ». Elle oubliait à l'inverse `XML`, qui est AFFICHÉ (`frontend/i18n/rekordbox-view.ts`,
 « XML Rekordbox illisible — relie un fichier »). Les deux mêmes défauts vivaient dans
 `docs/design-system/content.md` et dans `docs/manuel.html`, en ligne : trois copies de la même
 liste, trois fois faux. Une liste de libellés recopiée dans trois fichiers ne se maintient pas —
