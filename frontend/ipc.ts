@@ -35,6 +35,7 @@ import type {
   ApplyArtworkSyncOutcome,
   PlaylistDuplicateGroupDto,
   Spectrogram,
+  EncodeProfile,
 } from "../shared/contracts";
 import { decodeB85 } from "./b85";
 import type { Lang } from "./i18n";
@@ -281,6 +282,17 @@ export const getSetting = (key: string): Promise<string | null> =>
 /** Write one app setting (e.g. the library root). */
 export const setSetting = (key: string, value: string): Promise<void> =>
   invoke("set_setting", { key, value });
+
+/** Profil d'encodage de Réglages › Conversion (issue #71). Le backend rend les défauts (les valeurs
+ *  d'avant le réglage) tant que rien n'a été réglé, et le relit UNE fois par rangement. */
+export const getEncodeProfile = (): Promise<EncodeProfile> => invoke("get_encode_profile");
+/** Remet le profil à ses défauts et rend le profil relu — la sortie d'une valeur stockée hors liste. */
+export const resetEncodeProfile = (): Promise<EncodeProfile> => invoke("reset_encode_profile");
+
+/** Écrit le profil ENTIER, jamais un champ seul. Une valeur hors liste est refusée
+ *  (`ENCODE_PROFILE_INVALID: champ=valeur`) — le backend ne la corrige pas en silence. */
+export const setEncodeProfile = (profile: EncodeProfile): Promise<void> =>
+  invoke("set_encode_profile", { profile });
 
 /** Tell the backend which language its user-facing messages must use (`i18n.rs`). Pushed by
  *  `lang-boot.ts` at boot: the backend cannot resolve `auto` itself, it has no view of the OS

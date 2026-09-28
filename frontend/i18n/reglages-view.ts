@@ -1,6 +1,7 @@
 // L'écran Réglages (`reglages-view.ts`) : colonne des catégories, titres et phrases de chaque
-// section, libellés des rangées, messages d'état (jeton Discogs, dossier racine, modèle de nommage)
-// et toasts d'échec d'enregistrement du thème et de la langue.
+// section, libellés des rangées, messages d'état (jeton Discogs, dossier racine, modèle de nommage,
+// profil de conversion) et toasts d'échec d'enregistrement du thème et de la langue. Les rangées de
+// Conversion sont lues par `encode-profile.ts`, module pur que Vitest charge.
 //
 // Les noms de langue de la rangée Langue (« Français », « English ») n'y sont PAS : ils s'écrivent
 // dans leur propre langue, quelle que soit celle de l'interface, et restent des littéraux au site.
@@ -12,6 +13,7 @@ const fr = {
   /** Libellés des catégories, indexés par `dataset.section` ; ce sont aussi les titres des sections. */
   categories: {
     bibliotheque: "Général",
+    conversion: "Conversion",
     nommage: "Nommage",
     discogs: "Identification",
     apparence: "Apparence",
@@ -19,6 +21,26 @@ const fr = {
   categoriesAria: "Catégories de réglages",
   colonneTitre: "Réglages",
   erreurEnregistrement: "Erreur d'enregistrement.",
+
+  // Conversion (issue #71). Les libellés d'option (« 320 kbps », « 44,1 kHz ») sont composés par
+  // `encode-profile.ts` : le nombre suit la locale, seule l'unité de profondeur se traduit ici.
+  descConversion:
+    "Chaque conversion vise ces valeurs, même au-dessus de la source. Un MP3 source est déplacé tel quel, jamais réencodé ; un AAC, OGG ou Opus devient un MP3 à ces valeurs. Les pistes déjà rangées ne sont pas reconverties.",
+  encRows: {
+    mp3_kbps: "MP3 · Débit",
+    mp3_rate: "MP3 · Fréquence",
+    aiff_bits: "AIFF · Profondeur",
+    aiff_rate: "AIFF · Fréquence",
+    wav_bits: "WAV · Profondeur",
+    wav_rate: "WAV · Fréquence",
+  },
+  encBits: (n: number) => `${n} bits`,
+  encNoteHiRes: "96 kHz reste injouable sur les CDJ d'avant 2016.",
+  encIllisible: "Réglages de conversion illisibles : aucune valeur n'est affichée.",
+  encReessayer: "Réessayer",
+  encRetablir: "Rétablir les valeurs par défaut",
+  mp3AsIs: "MP3 tel quel",
+  encNonEnregistre: "Non enregistré — la valeur précédente reste en vigueur.",
 
   // Identification (Discogs)
   descDiscogs:
@@ -75,6 +97,7 @@ const fr = {
 const en: typeof fr = {
   categories: {
     bibliotheque: "General",
+    conversion: "Conversion",
     nommage: "Naming",
     discogs: "Identification",
     apparence: "Appearance",
@@ -82,6 +105,24 @@ const en: typeof fr = {
   categoriesAria: "Settings categories",
   colonneTitre: "Settings",
   erreurEnregistrement: "Save failed.",
+
+  descConversion:
+    "Every conversion targets these values, even above the source. An MP3 source is moved as is, never re-encoded; an AAC, OGG or Opus file becomes an MP3 at these values. Tracks already filed are not converted again.",
+  encRows: {
+    mp3_kbps: "MP3 · Bitrate",
+    mp3_rate: "MP3 · Sample rate",
+    aiff_bits: "AIFF · Bit depth",
+    aiff_rate: "AIFF · Sample rate",
+    wav_bits: "WAV · Bit depth",
+    wav_rate: "WAV · Sample rate",
+  },
+  encBits: (n) => `${n}-bit`,
+  encNoteHiRes: "96 kHz won't play on CDJs made before 2016.",
+  encIllisible: "Conversion settings unreadable: no value is shown.",
+  encReessayer: "Try again",
+  encRetablir: "Restore the defaults",
+  mp3AsIs: "MP3 as is",
+  encNonEnregistre: "Not saved — the previous value still applies.",
 
   descDiscogs:
     "The token lets Sift query the Discogs API to identify your tracks (label, year, genre). Without a token, Sift doesn't query Discogs at all: the Identify button sends you here. The token is free — generate it from a Discogs account.",

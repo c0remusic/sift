@@ -22,7 +22,7 @@ use crate::actions::{self, JournalEntry};
 use crate::db;
 use crate::dedup::{self, DupMatch};
 use crate::ecartes::{self, EcarteItem};
-use crate::encode::Target;
+use crate::encode::{EncodeProfile, Target};
 use crate::filing::{self, BatchResult, FileResult, RejectBatchResult};
 use crate::library::{self, Bin};
 use crate::naming::Canonical;
@@ -75,6 +75,29 @@ fn template(conn: &Connection) -> String {
         settings::DEFAULT_TEMPLATE,
     )
     .unwrap_or_else(|_| settings::DEFAULT_TEMPLATE.to_string())
+}
+
+/// Ce qu'un rangement lit dans les réglages avant de planifier — UNE fois par rangement, sous le
+/// verrou de la phase 1 pour `file_track`, avant le détachement pour `file_batch`.
+struct FilingSettings {
+    /// `None` quand la destination n'a pas besoin de racine (#54, `library_root_for`).
+    root: Option<PathBuf>,
+    template: String,
+    /// Le profil d'encodage (#71). Lu ici et porté par chaque plan : un réglage changé pendant un
+    /// lot ne mélange pas deux profils. Une valeur stockée illisible ou hors liste refuse le
+    /// rangement (`ENCODE_PROFILE_INVALID: …`) au lieu de convertir à une valeur corrigée.
+    profile: EncodeProfile,
+}
+
+/// Le seul point où un rangement lit ses réglages. Les deux commandes le déstructurent sans `..` :
+/// un champ lu puis laissé de côté (le profil remplacé par un défaut, par exemple) est une variable
+/// inutilisée, que `clippy -D warnings` refuse.
+fn filing_settings(conn: &Connection, bin_rel: &str) -> Result<FilingSettings, String> {
+    Ok(FilingSettings {
+        root: library_root_for(conn, bin_rel)?,
+        template: template(conn),
+        profile: settings::encode_profile(conn)?,
+    })
 }
 
 /// Reconcile a track's tags + filename into the canonical record + confidence (drives the
@@ -624,8 +647,11 @@ pub fn file_track(
     // Phase 1 under the lock: decide the plan (fast DB reads + guard + dest).
     let plan = {
         let conn = db::lock_conn(&conn)?;
-        let root = library_root_for(&conn, &bin_rel)?;
-        let tmpl = template(&conn);
+        let FilingSettings {
+            root,
+            template: tmpl,
+            profile,
+        } = filing_settings(&conn, &bin_rel)?;
         filing::plan_file(
             &conn,
             root.as_deref(),
@@ -636,6 +662,7 @@ pub fn file_track(
             edited,
             allow_rail_mismatch.unwrap_or(false),
             &reserved,
+            &profile,
         )
         .map_err(|e| e.to_string())?
     };
@@ -679,9 +706,15 @@ pub fn file_batch(
     // derived from the source rail (encode::target_for) — exactly the pre-chips behaviour.
     targets: Option<HashMap<i64, Target>>,
 ) -> Result<(), String> {
-    let (root, tmpl) = {
+    // Réglages lus UNE fois pour tout le lot, avant le détachement : chaque piste est planifiée au
+    // même profil d'encodage même si Réglages change pendant que le lot tourne (#71).
+    let FilingSettings {
+        root,
+        template: tmpl,
+        profile,
+    } = {
         let conn = db::lock_conn(&conn)?;
-        (library_root_for(&conn, &bin_rel)?, template(&conn))
+        filing_settings(&conn, &bin_rel)?
     };
     // Reset the cancel flag for THIS batch so a past cancel can't abort it instantly.
     app.state::<FilingCancel>().0.store(false, Ordering::SeqCst);
@@ -690,7 +723,7 @@ pub fn file_batch(
     let app_bg = app.clone();
     std::thread::Builder::new()
         .name("file-batch".into())
-        .spawn(move || run_file_batch(&app_bg, root, tmpl, track_ids, bin_rel, targets))
+        .spawn(move || run_file_batch(&app_bg, root, tmpl, profile, track_ids, bin_rel, targets))
         .map_err(|e| format!("file_batch: failed to start background task: {e}"))?;
     Ok(())
 }
@@ -824,6 +857,9 @@ fn run_file_batch(
     // résolu une fois par `library_root_for` avant le détachement. Voir `plan_file`.
     root: Option<PathBuf>,
     tmpl: String,
+    // Lu une fois par `file_batch` avant le détachement, jamais relu ici : tout le lot au même
+    // profil (#71).
+    profile: EncodeProfile,
     track_ids: Vec<i64>,
     bin_rel: String,
     targets: Option<HashMap<i64, Target>>,
@@ -885,6 +921,7 @@ fn run_file_batch(
                 // disguised source lands in needs_validation like any other filing error.
                 false,
                 &reserved,
+                &profile,
             ) {
                 Ok(p) => p,
                 // Sans cette trace, un lot qui rebondit N pistes n'affiche qu'un compte : la
@@ -1417,14 +1454,54 @@ pub fn get_setting(
 }
 
 /// Write one app setting (e.g. the library root chosen in the settings panel).
+///
+/// Refuse les six clés du profil d'encodage (#71) : écrites une à une ici, elles passeraient sans
+/// validation, et une valeur hors liste ne se verrait qu'au rangement suivant. Elles s'écrivent par
+/// `set_encode_profile`, qui valide le profil entier et l'écrit d'un bloc.
 #[tauri::command]
 pub fn set_setting(
     conn: State<'_, Mutex<Connection>>,
     key: String,
     value: String,
 ) -> Result<(), String> {
+    if settings::is_encode_profile_key(&key) {
+        return Err(format!(
+            "set_setting: {key} s'écrit par set_encode_profile, qui valide le profil entier"
+        ));
+    }
     let conn = db::lock_conn(&conn)?;
     settings::set(&conn, &key, &value).map_err(|e| e.to_string())
+}
+
+/// Le profil d'encodage réglé (catégorie Conversion de Réglages, #71). Clé absente = défaut du
+/// champ ; une valeur stockée illisible ou hors liste rend `ENCODE_PROFILE_INVALID: <champ>=<valeur>`
+/// plutôt qu'un profil corrigé en silence.
+#[tauri::command]
+pub fn get_encode_profile(conn: State<'_, Mutex<Connection>>) -> Result<EncodeProfile, String> {
+    let conn = db::lock_conn(&conn)?;
+    settings::encode_profile(&conn)
+}
+
+/// Enregistre le profil d'encodage, appliqué dès le rangement suivant (pas de bouton Enregistrer,
+/// patron Réglages Système). Un champ hors liste rend `ENCODE_PROFILE_INVALID: <champ>=<valeur>` et
+/// rien n'est écrit. Un rangement déjà lancé garde le profil qu'il a lu à son départ ; les pistes
+/// déjà rangées ne sont pas reconverties.
+#[tauri::command]
+pub fn set_encode_profile(
+    conn: State<'_, Mutex<Connection>>,
+    profile: EncodeProfile,
+) -> Result<(), String> {
+    let conn = db::lock_conn(&conn)?;
+    settings::set_encode_profile(&conn, &profile)
+}
+
+/// Remet le profil d'encodage à ses défauts (`settings::reset_encode_profile`) : la sortie, depuis
+/// Réglages, d'une valeur stockée hors liste. Rend le profil relu, pour que l'écran le repeigne.
+#[tauri::command]
+pub fn reset_encode_profile(conn: State<'_, Mutex<Connection>>) -> Result<EncodeProfile, String> {
+    let conn = db::lock_conn(&conn)?;
+    settings::reset_encode_profile(&conn)?;
+    settings::encode_profile(&conn)
 }
 
 #[cfg(test)]
@@ -1507,6 +1584,38 @@ mod tests {
             library_root_for(&conn, ""),
             Err("NoLibraryRoot".to_string()),
             "la racine elle-même est un bac de l'arbre"
+        );
+    }
+
+    /// Le profil qu'un rangement lit est celui des réglages — ni un défaut à sa place quand un
+    /// profil est réglé, ni un défaut à la place d'une valeur stockée invalide (qui refuse alors
+    /// le rangement avant qu'il ne commence).
+    #[test]
+    fn filing_settings_lit_le_profil_regle_et_refuse_un_profil_invalide() {
+        let conn = mem_db();
+        let en_place = crate::filing::FILE_IN_PLACE;
+        let lu = filing_settings(&conn, en_place).expect("base neuve");
+        assert_eq!(lu.profile, EncodeProfile::default());
+        assert_eq!(lu.root, None);
+        assert_eq!(lu.template, settings::DEFAULT_TEMPLATE);
+
+        let p = EncodeProfile {
+            mp3_kbps: 256,
+            aiff_bits: 24,
+            aiff_rate: 48_000,
+            ..EncodeProfile::default()
+        };
+        settings::set_encode_profile(&conn, &p).expect("profil valide");
+        assert_eq!(
+            filing_settings(&conn, en_place).map(|s| s.profile),
+            Ok(p),
+            "le profil réglé, pas le défaut"
+        );
+
+        settings::set(&conn, settings::ENCODE_WAV_BITS, "20").expect("valeur corrompue");
+        assert_eq!(
+            filing_settings(&conn, en_place).map(|s| s.profile),
+            Err("ENCODE_PROFILE_INVALID: wav_bits=20".to_string())
         );
     }
 

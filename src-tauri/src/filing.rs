@@ -4,7 +4,7 @@
 //! land in the bin and the original goes to `.sift-trash` (restorable via undo). Composes
 //! naming/encode/tagging/library/actions/settings.
 
-use crate::encode::{self, EncodeError, Target};
+use crate::encode::{self, EncodeError, EncodeProfile, Target};
 use crate::naming::{self, Canonical};
 use crate::{actions, library, tagging};
 use rusqlite::{params, Connection};
@@ -361,6 +361,10 @@ pub struct FilePlan {
     dest: String,
     conformant: bool,
     target: Target,
+    /// Le profil d'encodage lu UNE fois par rangement (#71) — par `ipc_filing` avant le plan, pas
+    /// relu en phase 2 : un réglage changé pendant un lot ne mélange pas deux profils. Décide la
+    /// conformité au plan ET les valeurs de l'encode en phase 2, qui voient donc le même profil.
+    profile: EncodeProfile,
     canonical: Canonical,
     bin_rel: String,
     extras: TagExtras,
@@ -441,7 +445,7 @@ fn ensure_unique_reserved(
 
 #[allow(clippy::too_many_arguments)] // each param is an independent, orthogonal input to the
                                      // plan (DB handle, library context, track identity, user overrides) — bundling them into a
-                                     // struct here would just move the same 8 fields one level up without reducing real complexity.
+                                     // struct here would just move the same fields one level up without reducing real complexity.
 pub fn plan_file(
     conn: &Connection,
     // `None` = aucune racine réglée. Ce n'est un refus QUE si `bin_rel` vise l'arbre : les deux
@@ -459,6 +463,10 @@ pub fn plan_file(
     // detached, so its phase 2 has not run by the time the next plan is computed (see
     // `ipc_filing::InFlightFilings`). See `ensure_unique_reserved`.
     reserved: &HashSet<String>,
+    // Le profil d'encodage réglé (#71), lu une fois par rangement par l'appelant — jamais relu
+    // ici, pour qu'un lot entier voie le même. Décide la conformité (un AIFF 16/44,1 n'est pas
+    // conforme à un profil AIFF 24/48) et part dans le plan pour l'encode de phase 2.
+    profile: &EncodeProfile,
 ) -> Result<FilePlan, FilingError> {
     let source = track_path(conn, track_id)?;
     let canonical = match edited {
@@ -490,7 +498,7 @@ pub fn plan_file(
     // `.aiff`: with a single possible output name, a blocked revert (external lock, os error 32 —
     // proved in the revert-duplicate relevé) can no longer strand a `.aif` beside a `.aiff`. The
     // conversion path produces a genuinely new file, which keeps the canonical target extension.
-    let conformant = encode::is_conformant(&source, target);
+    let conformant = encode::is_conformant(&source, target, profile);
     let out_ext = if conformant {
         ext_of(&source)
     } else {
@@ -554,6 +562,7 @@ pub fn plan_file(
         source,
         dest: dest.to_string_lossy().to_string(),
         target,
+        profile: *profile,
         canonical,
         bin_rel: bin_rel.to_string(),
         batch_id: new_batch_id(track_id),
@@ -618,10 +627,16 @@ pub fn execute_file(plan: &FilePlan) -> Result<Vec<FsLog>, FilingError> {
             meta: None,
         });
     } else {
-        // transcode into the bin, tag the result, then trash the original (mono-location)
-        encode::encode(&plan.source, &plan.dest, plan.target).map_err(|e| match e {
-            EncodeError::Upscale => FilingError::Upscale,
-            EncodeError::Ffmpeg(m) => FilingError::Encode(m),
+        // transcode into the bin at the profile settled at plan time, tag the result, then trash
+        // the original (mono-location)
+        encode::encode_with(&plan.source, &plan.dest, plan.target, &plan.profile).map_err(|e| {
+            match e {
+                EncodeError::Upscale => FilingError::Upscale,
+                EncodeError::Ffmpeg(m) => FilingError::Encode(m),
+                other @ (EncodeError::InvalidProfile(_) | EncodeError::WavHeader(_)) => {
+                    FilingError::Encode(other.to_string())
+                }
+            }
         })?;
         if let Err(e) = tagging::write_tags_full(
             &plan.dest,
@@ -988,6 +1003,7 @@ pub fn file_track(
         edited,
         allow_rail_mismatch,
         &HashSet::new(),
+        &EncodeProfile::default(),
     )?;
     let log = execute_file(&plan)?;
     commit_file(
@@ -1513,6 +1529,7 @@ mod tests {
             }),
             false,
             &HashSet::new(),
+            &EncodeProfile::default(),
         )
         .unwrap();
         assert!(
@@ -1579,6 +1596,7 @@ mod tests {
             }),
             false,
             &HashSet::new(),
+            &EncodeProfile::default(),
         )
         .unwrap();
         let log = execute_file(&plan).unwrap();
@@ -1638,7 +1656,8 @@ mod tests {
         assert!(res.path.ends_with("Theo Parrish - Falling Up.aiff"));
         assert!(crate::encode::is_conformant(
             &res.path,
-            crate::encode::Target::Aiff1644
+            crate::encode::Target::Aiff1644,
+            &EncodeProfile::default()
         ));
         // original is in .sift-trash, not at its source location (mono-location)
         assert!(!src.exists());
@@ -1707,6 +1726,150 @@ mod tests {
         assert_eq!(bitrate, Some(320));
     }
 
+    /// Les trois phases de production (plan → exécution → commit) au profil donné — ce que
+    /// `ipc_filing::file_track` fait, verrou compris, avec le profil lu dans les réglages.
+    fn file_with_profile(
+        conn: &Connection,
+        root: &Path,
+        track_id: i64,
+        target: Option<Target>,
+        profile: &EncodeProfile,
+    ) -> (bool, FileResult) {
+        let plan = plan_file(
+            conn,
+            Some(root),
+            "{artist} - {title}",
+            track_id,
+            "House",
+            target,
+            Some(Canonical {
+                artist: "Larry Heard".into(),
+                title: "Can You Feel It".into(),
+                version: None,
+                label: None,
+                confidence: crate::naming::Confidence::Green,
+            }),
+            false,
+            &HashSet::new(),
+            profile,
+        )
+        .expect("plan_file");
+        let conformant = plan.conformant;
+        let log = execute_file(&plan).expect("execute_file");
+        let res = commit_file(conn, &plan, log, None, None).expect("commit_file");
+        (conformant, res)
+    }
+
+    /// #71 : un rangement AIFF au profil 24 bits / 48 kHz produit un AIFF 24/48 (relu par lofty),
+    /// en `AIFF` et pas en `AIFC`. La colonne `target_format` garde l'identifiant opaque de famille.
+    #[test]
+    fn un_rangement_aiff_24_48_produit_un_aiff_24_48() {
+        let conn = db();
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("lib");
+        std::fs::create_dir_all(root.join("House")).unwrap();
+        let Some((id, _)) = seed_track(&conn, dir.path(), "real_lossless.flac", "src.flac") else {
+            eprintln!("skip: no fixture");
+            return;
+        };
+        let p = EncodeProfile {
+            aiff_bits: 24,
+            aiff_rate: 48_000,
+            ..EncodeProfile::default()
+        };
+        let (conformant, res) = file_with_profile(&conn, &root, id, None, &p);
+        assert!(!conformant);
+        assert!(res.path.ends_with(".aiff"), "{}", res.path);
+
+        use lofty::file::AudioFile;
+        let t = lofty::probe::Probe::open(&res.path)
+            .and_then(|p| p.read())
+            .expect("lofty aiff");
+        assert_eq!(t.properties().bit_depth(), Some(24));
+        assert_eq!(t.properties().sample_rate(), Some(48_000));
+        let head = std::fs::read(&res.path).unwrap();
+        assert_eq!(&head[8..12], b"AIFF", "AIFF et pas AIFC");
+
+        let fmt: String = conn
+            .query_row(
+                "SELECT target_format FROM tracks WHERE id=?1",
+                params![id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            fmt, "aiff_16_44",
+            "identifiant opaque de famille, pas une promesse"
+        );
+    }
+
+    /// Un AIFF 16/44,1 déjà conforme au profil par défaut ne l'est plus face à un profil 24/48 : il
+    /// est CONVERTI (conversion exacte, même au-dessus de la source), pas déplacé tel quel.
+    #[test]
+    fn un_aiff_16_44_est_converti_quand_le_profil_demande_24_48() {
+        let conn = db();
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("lib");
+        std::fs::create_dir_all(root.join("House")).unwrap();
+        let Some(flac) = fixture("real_lossless.flac") else {
+            eprintln!("skip: no fixture");
+            return;
+        };
+        let src = dir.path().join("src.aiff");
+        crate::encode::encode(&flac, src.to_str().unwrap(), Target::Aiff1644).unwrap();
+        conn.execute(
+            "INSERT INTO tracks(path, status) VALUES(?1, 'pending')",
+            params![src.to_str().unwrap()],
+        )
+        .unwrap();
+        let id = conn.last_insert_rowid();
+        let p = EncodeProfile {
+            aiff_bits: 24,
+            aiff_rate: 48_000,
+            ..EncodeProfile::default()
+        };
+        let (conformant, res) = file_with_profile(&conn, &root, id, None, &p);
+        assert!(!conformant, "16/44,1 face à un profil 24/48 : conversion");
+        assert!(crate::encode::is_conformant(
+            &res.path,
+            Target::Aiff1644,
+            &p
+        ));
+        let convert_rows: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM actions WHERE type='convert'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(convert_rows, 1);
+    }
+
+    /// Le WAV 24 bits réécrit en WAVE_FORMAT_PCM le reste APRÈS l'écriture des tags du rangement
+    /// (lofty réécrit les chunks du RIFF) : c'est le fichier rangé que la platine lit, pas celui
+    /// qui sort d'ffmpeg.
+    #[test]
+    fn un_wav_24_bits_range_reste_en_wave_format_pcm_apres_les_tags() {
+        let conn = db();
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().join("lib");
+        std::fs::create_dir_all(root.join("House")).unwrap();
+        let Some((id, _)) = seed_track(&conn, dir.path(), "real_lossless.flac", "src.flac") else {
+            eprintln!("skip: no fixture");
+            return;
+        };
+        let p = EncodeProfile {
+            wav_bits: 24,
+            ..EncodeProfile::default()
+        };
+        let (_, res) = file_with_profile(&conn, &root, id, Some(Target::Wav1644), &p);
+        let b = std::fs::read(&res.path).unwrap();
+        assert_eq!(&b[12..16], b"fmt ");
+        assert_eq!([b[20], b[21]], [0x01, 0x00]);
+        assert_eq!(tagging::read_artist_title(&res.path).0, "Larry Heard");
+        assert!(crate::encode::is_conformant(&res.path, Target::Wav1644, &p));
+    }
+
     /// Root fix for the `.aif`/`.aiff` revert-duplicate: a CONFORMANT AIFF is moved (no transcode),
     /// so it must keep its own extension instead of being forced to the canonical `.aiff`. We build a
     /// conformant 3-letter `.aif` by encoding the lossless fixture to AIFF 16/44.1, then file it and
@@ -1734,7 +1897,8 @@ mod tests {
         assert!(
             crate::encode::is_conformant(
                 aif_src.to_str().unwrap(),
-                crate::encode::Target::Aiff1644
+                crate::encode::Target::Aiff1644,
+                &EncodeProfile::default()
             ),
             "the built .aif is conformant"
         );
@@ -1852,6 +2016,7 @@ mod tests {
             }),
             false,
             &HashSet::new(),
+            &EncodeProfile::default(),
         )
         .unwrap();
         let dest = Path::new(&plan.dest);
@@ -1893,6 +2058,7 @@ mod tests {
             }),
             false,
             &HashSet::new(),
+            &EncodeProfile::default(),
         );
         assert_eq!(
             err.err(),
@@ -1959,6 +2125,7 @@ mod tests {
             }),
             false,
             &HashSet::new(),
+            &EncodeProfile::default(),
         );
         assert_eq!(
             err.err(),
@@ -2001,6 +2168,7 @@ mod tests {
             }),
             false,
             &HashSet::new(),
+            &EncodeProfile::default(),
         )
         .expect("un rangement en place ne dépend pas de la racine");
         assert_eq!(
@@ -2038,6 +2206,7 @@ mod tests {
             }),
             false,
             &HashSet::new(),
+            &EncodeProfile::default(),
         )
         .expect("un dossier externe ne dépend pas de la racine");
         assert!(Path::new(&plan.dest).starts_with(&external));
@@ -2069,6 +2238,7 @@ mod tests {
                 }),
                 false,
                 &HashSet::new(),
+                &EncodeProfile::default(),
             );
             assert_eq!(
                 err.err(),
@@ -2309,6 +2479,7 @@ mod tests {
             canonical.clone(),
             false,
             &HashSet::new(),
+            &EncodeProfile::default(),
         );
         assert_eq!(blocked.err(), Some(FilingError::RailMismatch));
         assert!(
@@ -2327,6 +2498,7 @@ mod tests {
             canonical,
             true,
             &HashSet::new(),
+            &EncodeProfile::default(),
         );
         assert!(
             allowed.is_ok(),
@@ -2363,6 +2535,7 @@ mod tests {
             }),
             false,
             &HashSet::new(),
+            &EncodeProfile::default(),
         );
         assert!(
             res.is_ok(),
@@ -2427,6 +2600,7 @@ mod tests {
             dest: "D:/KEPT/Artiste - Titre (Club Mix).aif".to_string(),
             conformant: true,
             target: Target::Aiff1644,
+            profile: EncodeProfile::default(),
             canonical: Canonical {
                 artist: "Artiste".to_string(),
                 title: "Titre".to_string(),
@@ -2475,6 +2649,7 @@ mod tests {
             dest: dest.to_string(),
             conformant: true,
             target: Target::Aiff1644,
+            profile: EncodeProfile::default(),
             canonical: Canonical {
                 artist: "Artiste".to_string(),
                 title: "Titre".to_string(),
@@ -2886,6 +3061,7 @@ mod tests {
             dest: "irrelevant-dest".to_string(),
             conformant: false,
             target: Target::Mp3320,
+            profile: EncodeProfile::default(),
             canonical: Canonical {
                 artist: "A".to_string(),
                 title: "T".to_string(),

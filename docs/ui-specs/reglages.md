@@ -64,8 +64,8 @@ libellé posé au-dessus du champ, bouton Enregistrer sur Nommage).
   défilement propre. Entrées `.fld` dérivées des sections rendues, dans l'ordre de la § Zone B′ :
   **Général** (dossier racine ; les dossiers surveillés vivent au rail) · **Nommage** ·
   **Identification** · **Apparence**. `↑` `↓` déplacent la sélection, `Entrée`/`Espace` choisit.
-  **Conversion n'existe pas** : aucun réglage de conversion n'est stocké, une catégorie vide
-  mentirait — elle arrivera avec son premier réglage.
+  ~~**Conversion n'existe pas**~~ — elle arrive le 2026-09-28 avec ses premiers réglages (#71,
+  § Décision du même jour), entre Général et Nommage, dans l'ordre de la § Zone B′.
 - **Zone C** (`.sift-settings-panel`, bornée à **`--measure-form`**, token posé le même jour à
   560 px) : sans carte. Titre de la catégorie, phrase, puis des rangées `.sift-settings-row` sur une
   **grille commune** — libellé à gauche sur 150 px (la colonne de libellés de Rekordbox), phrase du
@@ -83,6 +83,39 @@ libellé posé au-dessus du champ, bouton Enregistrer sur Nommage).
 - **Recherche de réglages** : deuxième temps, inchangé (§ Recherche).
 - **Indicateur bref « appliqué »** (§ États) : les statuts texte existent (« Modèle enregistré. »,
   « Jeton enregistré. », 2 s) ; pas d'indicateur sur Thème ni sur la racine au-delà du re-rendu.
+
+## Décision — 2026-09-28 : la catégorie Conversion (#71)
+
+Retour d'Antoine : « pouvoir changer le bitrate et le sample rate par type de fichier des tracks
+qu'on convertit ». Choisi sur capture de la vraie fenêtre (maquette greffée au patron de la carte
+Apparence), avec les valeurs tranchées le même jour :
+
+- **Exact, pas plafond.** Chaque conversion vise ces valeurs, même au-dessus de la source : un
+  16/44,1 converti en AIFF 24/48 est suréchantillonné. Seul le lossy → lossless reste refusé
+  (`guard_no_upscale`).
+- **Un MP3 source est déplacé tel quel**, jamais réencodé. Le réencoder vers 320 fabriquerait un
+  fichier que le verdict de Sift classe FAUX, et #69 propose déjà les sous-320 à l'écart. Un AAC /
+  OGG / Opus est converti en MP3 aux valeurs réglées.
+- **Rangées** (segmentés à pouce, comme Thème et Langue) :
+
+  | Rangée | Valeurs | Défaut |
+  |---|---|---|
+  | MP3 · Débit | 256 kbps · 320 kbps | 320 |
+  | MP3 · Fréquence | 44,1 kHz · 48 kHz (l'encodeur MP3 refuse 96 kHz, mesuré) | 44,1 |
+  | AIFF · Profondeur | 16 bits · 24 bits | 16 |
+  | AIFF · Fréquence | 44,1 · 48 · 96 kHz | 44,1 |
+  | WAV · Profondeur | 16 bits · 24 bits | 16 |
+  | WAV · Fréquence | 44,1 · 48 · 96 kHz | 44,1 |
+
+  Les défauts sont les valeurs d'aujourd'hui : rien ne change tant qu'on ne règle rien.
+- **WAV 24 bits.** Le ffmpeg embarqué écrit un en-tête WAVE_FORMAT_EXTENSIBLE, que les anciennes
+  CDJ refusent (`docs/cdj-metadata-formats.md`). Sift le réécrit en WAVE_FORMAT_PCM après
+  l'encodage (décision d'Antoine, contre « AIFF seulement »). **À valider sur une vraie platine.**
+- **Application immédiate**, pas de bouton Enregistrer (patron Réglages Système). Valeur hors liste
+  refusée par le backend, jamais corrigée en silence. Le profil est lu une fois par rangement : un
+  réglage changé pendant un lot ne mélange pas deux profils. Les pistes déjà rangées ne sont pas
+  reconverties.
+- 96 kHz reste injouable sur les CDJ d'avant 2016 : la phrase de la rangée le dit.
 
 ## États
 

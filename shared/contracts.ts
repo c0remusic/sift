@@ -293,6 +293,24 @@ export interface AnalysisReport {
 /** Output rail shapes. Serde-renamed on the Rust side (see encode.rs Target). */
 export type Target = "mp3_320" | "aiff_16_44" | "wav_16_44";
 
+/** Profil d'encodage de Réglages › Conversion (issue #71, `docs/ui-specs/reglages.md` § Décision
+ *  2026-09-28). Miroir manuel de `encode::EncodeProfile` (Rust, serde aux noms tels quels) — le
+ *  contrat IPC de `get_encode_profile` / `set_encode_profile`.
+ *
+ *  Depuis ce profil, les `Target` ci-dessus sont des FAMILLES et des identifiants opaques :
+ *  « mp3_320 » ne garantit plus 320 kbps, ni « aiff_16_44 » du 16/44,1. Les valeurs admises par
+ *  champ vivent côté frontend dans `frontend/encode-profile.ts` (`ENCODE_OPTIONS`) ; le backend les
+ *  valide de son côté et refuse une valeur hors liste (`ENCODE_PROFILE_INVALID: champ=valeur`), il
+ *  ne la corrige jamais. */
+export interface EncodeProfile {
+  mp3_kbps: number;
+  mp3_rate: number;
+  aiff_bits: number;
+  aiff_rate: number;
+  wav_bits: number;
+  wav_rate: number;
+}
+
 /** How sure reconciliation is about the metadata — green files in one click. */
 export type Confidence = "green" | "yellow";
 

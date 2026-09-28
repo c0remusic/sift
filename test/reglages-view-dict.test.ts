@@ -4,12 +4,13 @@
 // dialogue) ; ce qui se tient ici, c'est ce qu'une valeur de dictionnaire peut casser SANS erreur de
 // compilation : quatre valeurs partent dans un attribut HTML entre guillemets doubles (`placeholder`,
 // `title`, `aria-label`), et un `"`, `<` ou `>` y fermerait l'attribut en plein milieu. Et les
-// catégories de la colonne doivent couvrir les quatre sections rendues, dans les deux langues —
+// catégories de la colonne doivent couvrir les cinq sections rendues (Conversion depuis le
+// 2026-09-28, issue #71), dans les deux langues —
 // une clé manquante retomberait sur la clé brute (`bibliotheque`) à l'écran.
 import { describe, expect, it } from "vitest";
 import { D } from "../frontend/i18n/reglages-view";
 
-const SECTIONS = ["bibliotheque", "nommage", "discogs", "apparence"];
+const SECTIONS = ["bibliotheque", "conversion", "nommage", "discogs", "apparence"];
 
 describe("dictionnaire de Réglages", () => {
   for (const l of ["fr", "en"] as const) {

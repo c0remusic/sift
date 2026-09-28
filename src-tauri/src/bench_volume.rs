@@ -1100,8 +1100,9 @@ fn clear_fingerprints(conn: &Connection, ids: &[i64]) {
 /// are reported separately for that reason: P4 targets the two lock-held ones, P5 moves phase 2
 /// off the click's critical path.
 ///
-/// Phase 1's timer starts BEFORE the two settings reads `file_track` does under the same lock
-/// (`ipc_filing.rs`: `library_root_for` then `template`) — they are small but systematic, and
+/// Phase 1's timer starts BEFORE the settings reads `file_track` does under the same lock
+/// (`ipc_filing.rs::filing_settings`: `library_root_for`, `template`, puis le profil d'encodage
+/// depuis #71) — they are small but systematic, and
 /// leaving them out would understate exactly the quantity P4 has to bring down.
 fn measure_filing(ds: &FilingDataset, bin_rel: &str) {
     use crate::encode::Target;
@@ -1117,7 +1118,11 @@ fn measure_filing(ds: &FilingDataset, bin_rel: &str) {
         // Fail loudly rather than silently benchmarking an ffmpeg encode: a non-conformant source
         // would send execute_file down the transcode path and make this number meaningless.
         assert!(
-            crate::encode::is_conformant(path, Target::Wav1644),
+            crate::encode::is_conformant(
+                path,
+                Target::Wav1644,
+                &crate::encode::EncodeProfile::default()
+            ),
             "source {path} is not conformant for Wav1644 — execute_file would spawn ffmpeg"
         );
         let canonical = crate::filing::reconcile_track(&ds.conn, *id).expect("reconcile");
@@ -1136,6 +1141,8 @@ fn measure_filing(ds: &FilingDataset, bin_rel: &str) {
             crate::settings::DEFAULT_TEMPLATE,
         )
         .unwrap_or_else(|_| crate::settings::DEFAULT_TEMPLATE.to_string());
+        // Et le profil d'encodage (#71), troisième lecture de `ipc_filing::filing_settings`.
+        let profile = crate::settings::encode_profile(&ds.conn).expect("encode_profile");
         let plan = crate::filing::plan_file(
             &ds.conn,
             Some(&root),
@@ -1146,6 +1153,7 @@ fn measure_filing(ds: &FilingDataset, bin_rel: &str) {
             Some(canonical),
             false,
             &reserved,
+            &profile,
         )
         .expect("plan_file");
         let t1 = Instant::now();

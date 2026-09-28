@@ -22,10 +22,20 @@
 // Ce que cette lecture RETIRE : les deux cartes `.sift-ui-card-soft` (colonne et panneau — le
 // panneau était la dernière carte de contenu de l'app), `.sift-settings-stack`, le libellé posé
 // AU-DESSUS du champ (Discogs, Nommage), le bouton Enregistrer.
-import { getSetting, setSetting, openUrl, previewFilename, verifyDiscogsToken } from "./ipc";
+import {
+  getSetting,
+  setSetting,
+  openUrl,
+  previewFilename,
+  verifyDiscogsToken,
+  getEncodeProfile,
+  resetEncodeProfile,
+  setEncodeProfile,
+} from "./ipc";
 import { identifyErrorText } from "./identify-shared";
 import { DEFAULT_FILENAME_TEMPLATE } from "../shared/contracts";
-import type { Canonical } from "../shared/contracts";
+import type { Canonical, EncodeProfile } from "../shared/contracts";
+import { encodeRows, parseEncodeOption, withEncodeValue, type EncodeField, type EncodeRow } from "./encode-profile";
 import { requireEl, esc } from "./dom";
 import { isStaleViewRender, viewEpoch } from "./view-epoch";
 import { slideSegThumb } from "./seg-thumb";
@@ -43,9 +53,9 @@ import { T } from "./i18n/reglages-view";
  *  Une clé sans libellé retombe sur la clé elle-même : une section neuve apparaît donc dans la
  *  colonne, mal nommée mais VISIBLE — un oubli qui se voit vaut mieux qu'une section introuvable.
  *
- *  Noms de la spec (§ Zone B′) : « Général » porte la racine de bibliothèque ; « Conversion »
- *  n'existe PAS — aucun réglage de conversion n'est stocké aujourd'hui, et une catégorie vide
- *  serait un mensonge. Elle arrivera avec son premier réglage. */
+ *  Noms de la spec (§ Zone B′) : « Général » porte la racine de bibliothèque ; « Conversion » est
+ *  arrivée le 2026-09-28 avec ses premiers réglages (issue #71) — jusque-là elle n'existait pas,
+ *  parce qu'une catégorie vide aurait été un mensonge. */
 function sectionLabels(): Record<string, string> {
   return T().categories;
 }
@@ -74,6 +84,95 @@ export function selectSettingsCategory(key: string): void {
   // rien ne le rejouait au changement de catégorie (seul un clic sur un bouton de thème le
   // réparait). Ici la carte vient de rentrer dans le flux, la mesure est enfin non nulle.
   if (key === "apparence") positionThemeThumb();
+  // Même piège pour les six segmentés de Conversion (issue #71) : placés au render pendant qu'une
+  // autre catégorie était active, leurs pouces seraient restés à 0px.
+  if (key === "conversion") positionConversionThumbs();
+}
+
+/** Place les pouces des six segmentés de Conversion. Même contrat que `positionThemeThumb` : ne
+ *  s'appelle que lorsque la catégorie est dans le flux, et chaque segmenté est passé seul à
+ *  `slideSegThumb` (un hôte qui en contiendrait plusieurs ne placerait que le premier pouce). */
+function positionConversionThumbs(): void {
+  document
+    .querySelectorAll<HTMLElement>("#sift-reglages-conversion .sift-seg-thumbed")
+    .forEach((seg) => slideSegThumb(seg));
+}
+
+/** Le segmenté d'une rangée de Conversion, au patron du Thème : piste `.sift-seg-thumbed`, pouce,
+ *  une option `<button>` par valeur. Sous lui, la ligne d'état de la rangée — cachée tant qu'aucune
+ *  écriture n'a échoué (une ligne vide réserverait sa hauteur minimale sous chacune des six). */
+function encodeSegHtml(row: EncodeRow): string {
+  return (
+    `<div class="sift-seg sift-seg-thumbed" id="sift-seg-enc-${row.field}">` +
+    '<div class="sift-seg-thumb"></div>' +
+    row.options
+      .map(
+        (o) =>
+          `<button class="sift-seg-opt${o.on ? " on" : ""}" data-enc-field="${row.field}" data-enc-value="${o.value}">${o.label}</button>`,
+      )
+      .join("") +
+    "</div>" +
+    `<div class="sift-settings-status" data-enc-status="${row.field}" style="color:var(--color-text-danger)" hidden></div>`
+  );
+}
+
+/** Branche les clics des segmentés de Conversion. Application immédiate (spec § Zone C), profil
+ *  ENTIER écrit à chaque clic.
+ *
+ *  Les écritures passent en FILE, et chacune part du dernier profil CONFIRMÉ (`applied`), pas de ce
+ *  que l'écran montre : deux clics rapprochés sur deux rangées n'envoient donc jamais un profil où
+ *  l'échec du premier survivrait dans le second. Un échec ramène la rangée à sa valeur réelle et
+ *  dit le motif sous elle, en encre danger (spec § États, « Écriture échouée ») — sauf si un clic
+ *  plus récent sur la MÊME rangée est en route : c'est lui qui décidera de ce qu'elle montre. */
+function wireConversion(block: HTMLElement, initial: EncodeProfile): void {
+  const txt = T();
+  let applied = initial;
+  let queue: Promise<void> = Promise.resolve();
+  const clicks: Partial<Record<EncodeField, number>> = {};
+
+  const paint = (field: EncodeField, value: number): void => {
+    const seg = block.querySelector<HTMLElement>(`#sift-seg-enc-${field}`);
+    if (!seg) return;
+    seg
+      .querySelectorAll<HTMLElement>("[data-enc-value]")
+      .forEach((b) => b.classList.toggle("on", b.dataset.encValue === String(value)));
+    slideSegThumb(seg);
+  };
+  const say = (field: EncodeField, msg: string): void => {
+    const el = block.querySelector<HTMLElement>(`[data-enc-status="${field}"]`);
+    if (!el) return;
+    el.textContent = msg;
+    el.hidden = !msg;
+  };
+
+  block.querySelectorAll<HTMLElement>("[data-enc-value]").forEach((btn) =>
+    btn.addEventListener("click", () => {
+      if (btn.classList.contains("on")) return;
+      const pick = parseEncodeOption(btn.dataset.encField, btn.dataset.encValue);
+      if (!pick) {
+        console.error("[reglages] option de conversion illisible", btn.dataset.encField, btn.dataset.encValue);
+        return;
+      }
+      const { field, value } = pick;
+      const mine = (clicks[field] ?? 0) + 1;
+      clicks[field] = mine;
+      paint(field, value);
+      say(field, "");
+      queue = queue.then(async () => {
+        let failure: string | null = null;
+        try {
+          const next = withEncodeValue(applied, field, value);
+          await setEncodeProfile(next);
+          applied = next;
+        } catch (e) {
+          failure = humanizeError(e, txt.encNonEnregistre, "setEncodeProfile");
+        }
+        if (clicks[field] !== mine) return;
+        paint(field, applied[field]);
+        if (failure) say(field, failure);
+      });
+    }),
+  );
 }
 
 /** Place le pouce `.sift-seg-thumb` du segmenté Thème sur l'option active. Au niveau module (et non
@@ -153,10 +252,21 @@ export async function renderReglagesLive() {
   } catch (e) {
     console.error("getSetting(filename_template) failed", e);
   }
+  // Profil de conversion (issue #71). Pas de repli : un échec de lecture rend la catégorie en état
+  // d'erreur, jamais des segmentés allumés sur des valeurs que ce module aurait supposées.
+  let encProfile: EncodeProfile | null = null;
+  let encError = "";
+  try {
+    encProfile = await getEncodeProfile();
+  } catch (e) {
+    console.error("[get_encode_profile] lecture du profil de conversion", e);
+    encError = String(e);
+  }
 
   // Dernier point d'attente avant que quoi que ce soit soit construit puis attaché à `#content`
-  // (issue #42) : quatre `getSetting` séquentiels viennent de passer, et sous scan chacun attend le
-  // `Mutex<Connection>`. Sans ce garde, la pile de sections de Réglages s'ajoutait au `#content` de
+  // (issue #42) : cinq `getSetting` séquentiels et la lecture du profil de conversion viennent de
+  // passer (le compte disait « quatre » — `ui_lang` s'était ajouté sans lui), et sous scan chacun
+  // attend le `Mutex<Connection>`. Sans ce garde, la pile de sections de Réglages s'ajoutait au `#content` de
   // l'écran qu'on venait d'ouvrir. Le bloc synchrone en tête de fonction (retrait de
   // `#sift-reglages-live`) n'a PAS besoin du garde : aucun `await` ne le précède, il s'exécute donc
   // toujours dans le tour où l'écran est encore le sien.
@@ -252,6 +362,45 @@ export async function renderReglagesLive() {
       }
     })();
   });
+
+  // Conversion (issue #71, spec § Décision 2026-09-28) : six rangées au patron EXACT de la carte
+  // Apparence — `rowHtml`, segmenté à pouce, application immédiate. Ce que chaque rangée propose et
+  // comment elle l'écrit vient d'`encode-profile.ts`, module pur tenu par Vitest.
+  const convBlock = document.createElement("div");
+  convBlock.id = "sift-reglages-conversion";
+  convBlock.dataset.section = "conversion";
+  convBlock.className = "sift-settings-section";
+  const convHead =
+    `<div class="sift-settings-title">${txt.categories.conversion}</div>` +
+    `<div class="sift-settings-desc">${txt.descConversion}</div>`;
+  if (encProfile) {
+    convBlock.innerHTML =
+      convHead +
+      encodeRows(encProfile)
+        .map((r) => rowHtml(r.label, encodeSegHtml(r), r.note ? { note: r.note } : undefined))
+        .join("");
+    wireConversion(convBlock, encProfile);
+  } else {
+    // Lecture échouée : la catégorie reste dans la colonne (introuvable, elle cacherait l'échec),
+    // elle dit qu'elle ne sait pas, et « Réessayer » relance le rendu — qui relit le profil. Une
+    // valeur stockée hors liste se relirait à l'identique : « Rétablir les valeurs par défaut » en
+    // est la seule sortie depuis l'app (relecture de #71), et la cause exacte est montrée — le champ
+    // et la valeur fautifs sont dans le message du backend.
+    convBlock.innerHTML =
+      convHead +
+      '<div class="sift-settings-subactions">' +
+      `<span class="sift-settings-status" style="color:var(--color-text-danger)">${txt.encIllisible}</span>` +
+      (encError ? `<span class="sift-settings-note">${esc(encError)}</span>` : "") +
+      `<button type="button" id="sift-enc-retry" class="sift-settings-btn">${txt.encReessayer}</button>` +
+      `<button type="button" id="sift-enc-reset" class="sift-settings-btn sift-settings-btn-quiet">${txt.encRetablir}</button>` +
+      "</div>";
+    convBlock.querySelector("#sift-enc-retry")?.addEventListener("click", () => void renderReglagesLive());
+    convBlock.querySelector("#sift-enc-reset")?.addEventListener("click", () => {
+      void resetEncodeProfile()
+        .then(() => renderReglagesLive())
+        .catch((e: unknown) => console.error("[reset_encode_profile]", e));
+    });
+  }
 
   // Deux pistes d'exemple : l'une AVEC version, l'autre sans. C'est le seul moyen de voir ce que
   // `{version}` fait réellement — y compris qu'il ne laisse pas de parenthèses vides quand la
@@ -483,8 +632,8 @@ export async function renderReglagesLive() {
   const list = document.createElement("div");
   list.id = "sift-reglages-list";
   list.className = "sift-settings-list";
-  // Ordre de la spec (§ Zone B′) : Général · Nommage · Identification · Apparence.
-  const sections = [libBlock, tplBlock, block, themeBlock];
+  // Ordre de la spec (§ Zone B′) : Général · Conversion · Nommage · Identification · Apparence.
+  const sections = [libBlock, convBlock, tplBlock, block, themeBlock];
   for (const el of sections) list.appendChild(el);
   wrap.appendChild(list);
 
@@ -537,9 +686,13 @@ export async function renderReglagesLive() {
   main.appendChild(wrap);
   layout.appendChild(side);
   layout.appendChild(main);
+  // Un re-rendu sur place (« Réessayer », « Rétablir », « Changer », « Oublier » n'appellent pas le
+  // routeur, qui vide `#content`) ajoutait une SECONDE mise en page sous la première, dont la colonne
+  // et le panneau vidé restaient visibles (relecture de #71). L'ancienne sort juste avant.
+  content.querySelector(".sift-settings-layout")?.remove();
   content.appendChild(layout);
-  // Montre la catégorie active ET, si c'est « apparence », place le pouce du segmenté Thème
-  // maintenant qu'il est dans le flux (selectSettingsCategory s'en charge).
+  // Montre la catégorie active ET, si c'est « apparence » ou « conversion », place les pouces de ses
+  // segmentés maintenant qu'ils sont dans le flux (selectSettingsCategory s'en charge).
   selectSettingsCategory(activeSection);
 
   const inp = block.querySelector<HTMLInputElement>("#sift-discogs-token");

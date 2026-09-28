@@ -17,7 +17,8 @@ import {
   toggleDestPopover,
   repositionDestPopoverIfOpen,
 } from "./filing-bins";
-import { fileBatch, fileCancel, rejectBatch } from "./ipc";
+import { fileBatch, fileCancel, rejectBatch, getEncodeProfile } from "./ipc";
+import { lossyFormatLabel } from "./encode-profile";
 import { requireEl, esc } from "./dom";
 import { toast } from "./filing-toast";
 import { openSettingsScreen } from "./filing-actions";
@@ -50,6 +51,36 @@ export let batchInPlace = false;
 // WAV serait de l'upscale, que le backend refuse (`filing.rs`, `guard_no_upscale`).
 let batchLosslessFormat: Target = "aiff_16_44";
 let skipBatchConfirm = false;
+
+/** Débit MP3 du profil de conversion (Réglages › Conversion, issue #71), tel qu'il a été lu en
+ *  dernier. `null` = pas encore lu, ou lecture échouée : le rail et la confirmation disent alors
+ *  « MP3 » sans débit (`mp3FormatLabel`), jamais un 320 supposé. Relu à chaque `renderBatch` — le
+ *  réglage peut avoir changé pendant qu'on était dans Réglages. */
+let batchMp3Kbps: number | null = null;
+let mp3KbpsReading: Promise<number | null> | null = null;
+
+/** Relit le débit MP3 du profil. Une lecture à la fois : `renderBatch` tourne à chaque changement
+ *  de sélection, et des lectures concurrentes rendraient toutes la même valeur. Un échec remet
+ *  `null` — la valeur d'avant n'est plus garantie — et journalise la cause. */
+function readBatchMp3Kbps(): Promise<number | null> {
+  if (mp3KbpsReading) return mp3KbpsReading;
+  mp3KbpsReading = getEncodeProfile()
+    .then((p) => p.mp3_kbps)
+    .catch((e: unknown) => {
+      console.error("[get_encode_profile] débit MP3 du mode Lot", e);
+      return null;
+    })
+    .then((kbps) => {
+      batchMp3Kbps = kbps;
+      mp3KbpsReading = null;
+      // Mutation en place du seul libellé : un re-rendu du rail remettrait le pouce du segmenté
+      // lossless à `left:0` et le ferait reglisser (piège noté dans `handleBatchAction`).
+      const el = document.getElementById("sift-batch-lossy-fmt");
+      if (el) el.textContent = lossyFormatLabel(batchLossyPaths(), kbps);
+      return kbps;
+    });
+  return mp3KbpsReading;
+}
 // The ordered ids submitted to the currently-running batch — drives the per-track tracklist (the
 // nth `file:progress.done` maps to batchTrackIds[n]). Set at submit, used at file:done.
 let batchTrackIds: number[] = [];
@@ -63,6 +94,14 @@ export let batchBin = "";
  *  `unknown` et `null` (piste pas encore analysée) comptent avec le lossy à l'affichage — c'est le
  *  groupe « pas de choix » — mais au moment de filer, aucune cible ne leur est envoyée : le backend
  *  la dérive lui-même du rail réel (`encode::target_for`). */
+/** Les chemins des pistes lossy de la sélection qui partent au rangement (hors FAUX) : c'est
+ *  l'extension qui dit si elles sont déplacées telles quelles ou converties (`lossyFormatLabel`). */
+function batchLossyPaths(): string[] {
+  return currentItems
+    .filter((it) => queueBatchSel.has(it.id) && it.verdict !== "fake" && it.rail !== "lossless")
+    .map((it) => it.path);
+}
+
 function batchSelectionByRail(): { lossless: number; lossy: number } {
   let lossless = 0;
   let lossy = 0;
@@ -97,7 +136,8 @@ function formatBlocksHtml(): string {
     : "";
   const lossyBlock = nLossy
     ? `<div class="sift-rail-fmt-group"><span class="col-h">Lossy · ${nLossy}</span>` +
-      `<span style="font-size:var(--text-md);color:var(--color-text-secondary);white-space:nowrap;padding:var(--space-4) 0">${TARGET_LABEL["mp3_320"]} 320 <span style="color:var(--color-text-tertiary)">${T().lossyOnly}</span></span>` +
+      // Le débit est celui du profil de conversion (issue #71), plus un « 320 » écrit en dur.
+      `<span style="font-size:var(--text-md);color:var(--color-text-secondary);white-space:nowrap;padding:var(--space-4) 0"><span id="sift-batch-lossy-fmt">${lossyFormatLabel(batchLossyPaths(), batchMp3Kbps)}</span> <span style="color:var(--color-text-tertiary)">${T().lossyOnly}</span></span>` +
       `</div>`
     : "";
   return losslessBlock + lossyBlock;
@@ -163,6 +203,7 @@ export function renderBatch() {
   const selectedItems = currentItems.filter((it) => queueBatchSel.has(it.id));
   mid.innerHTML = selectionSummaryHtml(selectedItems);
   renderBatchRail();
+  void readBatchMp3Kbps();
 }
 
 // ---------------------------------------------------------------------------
@@ -484,18 +525,22 @@ export async function handleBatchQueueAction(action: "file" | "discard"): Promis
     if (plan.mustAsk) {
       const fakeN = selected.filter((it) => it.verdict === "fake").length;
       const aside = new Set(plan.belowClubIds);
+      // Relu au moment de demander (ou lecture en cours rejointe), pas repris du rail : la
+      // confirmation annonce ce que le rangement va produire, et le backend relit le profil au
+      // lancement.
+      const mp3Kbps = await readBatchMp3Kbps();
       // Le format annoncé ne compte que ce qui sera converti : case cochée, les sous-320 n'y sont pas.
       const fmtOf = (skip: Set<number>): string => {
         let lossless = 0;
-        let lossy = 0;
+        const lossyPaths: string[] = [];
         for (const it of selected) {
           if (it.verdict === "fake" || skip.has(it.id)) continue;
           if (it.rail === "lossless") lossless += 1;
-          else lossy += 1;
+          else lossyPaths.push(it.path);
         }
         const parts: string[] = [];
         if (lossless > 0) parts.push(TARGET_LABEL[batchLosslessFormat]);
-        if (lossy > 0) parts.push("MP3 320");
+        if (lossyPaths.length > 0) parts.push(lossyFormatLabel(lossyPaths, mp3Kbps));
         return parts.join(" + ");
       };
       const alertData: BatchAlertData = {
