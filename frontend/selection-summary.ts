@@ -2,6 +2,7 @@
 // Module pur — aucun accès DOM. Importé par batch-panel.ts.
 import { MAX_ANALYSIS_ATTEMPTS, type QueueItem } from "../shared/contracts";
 import { esc } from "./dom";
+import { belowClubBitrate } from "./rails";
 import { T } from "./i18n/selection-summary";
 
 /** Une piste part-elle au rangement de lot ? **Seul discriminant, partagé avec l'action.**
@@ -18,11 +19,54 @@ import { T } from "./i18n/selection-summary";
  *  donc le compte qui mentait, pas l'action.
  *
  *  Deux sites appellent ceci, et c'est la seule protection contre une nouvelle divergence :
- *  le compte du bouton ci-dessous, et `fileIds` dans `batch-panel.ts`. Le côté Écarter est son
+ *  le compte du bouton ci-dessous, et `planBatchFile` plus bas, qui fait les `fileIds` de
+ *  `batch-panel.ts` depuis le 2026-09-28 (#69). Le côté Écarter est son
  *  miroir exact (`verdict === "fake"`), et n'a jamais dérivé — c'est ce qui prouve que l'écart
  *  était un oubli et non un arbitrage. Gelé par `test/selection-summary.test.ts`. */
 export function estRangeableEnLot(it: QueueItem): boolean {
   return it.verdict !== "fake";
+}
+
+/** Ce que « Convertir » fait d'une sélection du mode Lot, AVANT la décision de l'utilisateur.
+ *  Pur, pour que la règle se teste en env Node (`batch-panel.ts` importe `./ipc`).
+ *
+ *  Issue #69, piste a (Antoine, 2026-09-28) : la confirmation s'ouvre dès qu'un fichier sous 320 est
+ *  sélectionné, en plus du seuil. Sans ça, une sélection de moins de `threshold` pistes ne verrait
+ *  jamais la proposition de les écarter.
+ *
+ *  La proposition se pose TOUJOURS : « Ne plus demander » n'éteint que la confirmation de seuil. Une
+ *  première version gardait « le dernier choix de la session » ; la relecture adverse a montré
+ *  qu'elle écartait des pistes en silence derrière un bouton « Convertir N », que la case « Ne plus
+ *  demander » s'affichait décochée alors que le réglage était actif, et qu'elle écartait sans
+ *  message. Un choix qui retire des pistes de la conversion se voit à chaque fois. */
+interface BatchFilePlan {
+  /** Tout ce qui part à la conversion si l'utilisateur garde les sous-320. */
+  fileIds: number[];
+  /** Les sous-320 parmi eux — la proposition porte sur ceux-là. */
+  belowClubIds: number[];
+  /** La confirmation doit-elle s'ouvrir ? */
+  mustAsk: boolean;
+}
+
+export function planBatchFile(
+  selected: QueueItem[],
+  opts: { threshold: number; skipConfirm: boolean },
+): BatchFilePlan {
+  const fileable = selected.filter(estRangeableEnLot);
+  const fileIds = fileable.map((it) => it.id);
+  const belowClubIds = fileable.filter((it) => belowClubBitrate(it.rail, it.bitrate)).map((it) => it.id);
+  const overThreshold = fileIds.length > opts.threshold && !opts.skipConfirm;
+  return { fileIds, belowClubIds, mustAsk: overThreshold || belowClubIds.length > 0 };
+}
+
+/** Applique la réponse à la proposition : les sous-320 écartés sortent de la conversion. */
+export function splitBatchFile(
+  plan: BatchFilePlan,
+  setAsideBelowClub: boolean,
+): { fileIds: number[]; setAsideIds: number[] } {
+  if (!setAsideBelowClub || plan.belowClubIds.length === 0) return { fileIds: plan.fileIds, setAsideIds: [] };
+  const aside = new Set(plan.belowClubIds);
+  return { fileIds: plan.fileIds.filter((id) => !aside.has(id)), setAsideIds: plan.belowClubIds };
 }
 
 /** Construit le HTML du panneau de résumé de sélection.

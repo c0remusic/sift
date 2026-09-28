@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { MAX_ANALYSIS_ATTEMPTS, type QueueItem } from "../shared/contracts";
 import { setCurrentLang } from "../frontend/i18n";
-import { estRangeableEnLot, selectionSummaryHtml } from "../frontend/selection-summary";
+import { estRangeableEnLot, planBatchFile, selectionSummaryHtml, splitBatchFile } from "../frontend/selection-summary";
 
 // Le résumé de sélection est le seul endroit où l'utilisateur lit COMBIEN de pistes une action de
 // lot va toucher. Il a menti jusqu'au 2026-09-16 : le bouton comptait `ok + grey`, l'action
@@ -197,5 +197,44 @@ describe("en anglais, le vocabulaire canonique et ses accords", () => {
     selectionSummaryHtml([piste(1, "ok")]);
     setCurrentLang("fr");
     expect(selectionSummaryHtml([piste(1, "ok")])).toContain(">Convertir 1 piste</button>");
+  });
+});
+
+// Issue #69, piste a (Antoine, 2026-09-28) : les sous-320 du Lot sont PROPOSÉS à l'écart.
+describe("planBatchFile / splitBatchFile — la proposition des sous-320", () => {
+  const mp3 = (id: number, kbps: number | null): QueueItem => ({
+    ...piste(id, "ok"),
+    path: `/musique/${id}.mp3`,
+    filename: `${id}.mp3`,
+    rail: "lossy",
+    bitrate: kbps,
+  });
+  const opts = { threshold: 10, skipConfirm: false };
+
+  it("un seul sous-320 ouvre la confirmation, même sous le seuil", () => {
+    const plan = planBatchFile([mp3(1, 128), mp3(2, 320)], opts);
+    expect(plan).toEqual({ fileIds: [1, 2], belowClubIds: [1], mustAsk: true });
+  });
+
+  it("sans sous-320 ni seuil franchi, pas de confirmation", () => {
+    expect(planBatchFile([mp3(1, 320), piste(2, "ok")], opts).mustAsk).toBe(false);
+  });
+
+  it("un faux n'est ni converti ni proposé", () => {
+    const fake = { ...mp3(3, 128), verdict: "fake" as const };
+    expect(planBatchFile([fake], opts)).toEqual({ fileIds: [], belowClubIds: [], mustAsk: false });
+  });
+
+  it("« Ne plus demander » n'éteint jamais la proposition des sous-320, seulement le seuil", () => {
+    expect(planBatchFile([mp3(1, 128)], { ...opts, skipConfirm: true }).mustAsk).toBe(true);
+    const douze = Array.from({ length: 12 }, (_, i) => mp3(i + 1, 320));
+    expect(planBatchFile(douze, { ...opts, skipConfirm: true }).mustAsk).toBe(false);
+    expect(planBatchFile(douze, opts).mustAsk).toBe(true);
+  });
+
+  it("case cochée : les sous-320 sortent de la conversion et partent à l'écart", () => {
+    const plan = planBatchFile([mp3(1, 128), mp3(2, 320), mp3(3, 192)], opts);
+    expect(splitBatchFile(plan, true)).toEqual({ fileIds: [2], setAsideIds: [1, 3] });
+    expect(splitBatchFile(plan, false)).toEqual({ fileIds: [1, 2, 3], setAsideIds: [] });
   });
 });

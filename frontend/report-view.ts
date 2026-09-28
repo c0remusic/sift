@@ -10,7 +10,7 @@ import WaveSurfer from "wavesurfer.js";
 import type { AnalysisReport } from "../shared/contracts";
 import { FILE_GONE } from "../shared/contracts";
 import { requireEl, esc } from "./dom";
-import { decodedShortfallText, formatSummary, hfDensityParts, hfTopDensityParts } from "./report-figures";
+import { decodedShortfallText, formatSummaryParts, hfDensityParts, hfTopDensityParts } from "./report-figures";
 import { railFromExtension } from "./rails";
 import { VOL_KNOB, playerAuditionHtml, volumeCentreCss, volumeIconClass } from "./player-audition";
 import { T } from "./i18n/report-view";
@@ -587,12 +587,20 @@ function fillVerdictLanding(root: HTMLElement, r: AnalysisReport): void {
   const slot = root.querySelector<HTMLElement>(".sift-player-verdict");
   if (!slot) return;
   const { word, cls } = verdictWordTone(r);
-  const fmtInfo = formatSummary(r);
+  // Le débit d'un lossy sous 320 kbps est teinté, avec son infobulle (issue #69) ; le reste de la
+  // ligne est inchangé. Chaque segment est échappé ; le séparateur et le span sont du markup à nous.
+  const fmtHtml = formatSummaryParts(r)
+    .map((p) =>
+      p.low
+        ? `<span class="sift-player-verdict-low" title="${esc(T().belowClubTitle)}">${esc(p.text)}</span>`
+        : esc(p.text),
+    )
+    .join(" · ");
   slot.className = `sift-player-verdict ${cls}`;
   slot.innerHTML =
     `<span class="sift-player-verdict-dot" aria-hidden="true"></span>` +
     `<span class="sift-player-verdict-word">${esc(word)}</span>` +
-    (fmtInfo ? `<span class="sift-player-verdict-fmt">· ${esc(fmtInfo)}</span>` : "");
+    (fmtHtml ? `<span class="sift-player-verdict-fmt">· ${fmtHtml}</span>` : "");
   // La pochette prend la hauteur du bloc texte (en-tête B, Antoine 2026-08-21 ; mesure JS
   // CONFIRMÉE le 2026-08-25 contre la piste « pochette fixe 56px » de la spec). Le pur CSS
   // (aspect-ratio:1 + align-self:stretch) rendait une largeur nulle dans ce contexte flex, mesuré

@@ -25,6 +25,7 @@ import { queueCountLabel } from "./queue-count-label";
 import { verdictDot } from "./queue-verdict-dot";
 import { numLocale } from "./i18n";
 import { ffmpegMissingText } from "./conversion-error";
+import { belowClubBitrate } from "./rails";
 import { T } from "./i18n/queue-panel";
 
 /** A pending track still worth (re)analysing: no current verdict AND not yet terminally broken.
@@ -135,6 +136,9 @@ const QUEUE_FACETS: readonly { id: string; label: () => string; match: (it: Queu
   // INCLUT : ce sont précisément celles qu'aucune relance ne fera partir, donc celles qu'isoler
   // sert le plus. Deux populations, deux mots — « Non analysés » ici, « Réanalyser (N) » au pied.
   { id: "unanalyzed", label: () => T().facet.unanalyzed, match: (it) => it.needs_analysis },
+  // Issue #69 (2026-09-28) : les lossy sous 320 kbps, par la MÊME fonction que le verdict, le
+  // bandeau de Revue et la proposition du Lot (`rails.ts::belowClubBitrate`).
+  { id: "belowclub", label: () => T().facet.belowClub, match: (it) => belowClubBitrate(it.rail, it.bitrate) },
 ];
 
 /** UNION : un item passe s'il satisfait AU MOINS une facette active. Set vide = aucun filtre. */

@@ -6,6 +6,7 @@ import {
   HF_REF_LO,
   decodedShortfallText,
   formatSummary,
+  formatSummaryParts,
   hfDensityParts,
   hfTopDensityParts,
   HF_TOP_REF_LO,
@@ -147,28 +148,47 @@ describe("formatSummary — le débit d'origine dans le verdict", () => {
   afterEach(() => setCurrentLang("fr"));
 
   it("lossless : format, débit PCM, fréquence", () => {
-    expect(formatSummary({ declared_format: "aiff", declared_bitrate: 1411, sample_rate: 44100 })).toBe(
+    expect(formatSummary({ declared_format: "aiff", declared_bitrate: 1411, sample_rate: 44100, declared_rail: "lossless" })).toBe(
       "AIFF · 1411 kbps · 44,1 kHz",
     );
   });
 
   it("lossy : format, débit, fréquence", () => {
-    expect(formatSummary({ declared_format: "mp3", declared_bitrate: 128, sample_rate: 44100 })).toBe(
+    expect(formatSummary({ declared_format: "mp3", declared_bitrate: 128, sample_rate: 44100, declared_rail: "lossy" })).toBe(
       "MP3 · 128 kbps · 44,1 kHz",
     );
   });
 
   it("un champ absent est omis, jamais inventé", () => {
-    expect(formatSummary({ declared_format: "flac", declared_bitrate: null, sample_rate: 96000 })).toBe(
+    expect(formatSummary({ declared_format: "flac", declared_bitrate: null, sample_rate: 96000, declared_rail: "lossless" })).toBe(
       "FLAC · 96,0 kHz",
     );
-    expect(formatSummary({ declared_format: "", declared_bitrate: null, sample_rate: 0 })).toBe("");
+    expect(formatSummary({ declared_format: "", declared_bitrate: null, sample_rate: 0, declared_rail: "unknown" })).toBe("");
   });
 
   it("anglais : point décimal", () => {
     setCurrentLang("en");
-    expect(formatSummary({ declared_format: "wav", declared_bitrate: 2117, sample_rate: 44100 })).toBe(
+    expect(formatSummary({ declared_format: "wav", declared_bitrate: 2117, sample_rate: 44100, declared_rail: "lossless" })).toBe(
       "WAV · 2117 kbps · 44.1 kHz",
+    );
+  });
+});
+
+// Issue #69 : SEUL le segment de débit d'un lossy sous 320 est marqué, pour être teinté.
+describe("formatSummaryParts — le débit sous 320 est marqué", () => {
+  const low = (r: Parameters<typeof formatSummaryParts>[0]) =>
+    formatSummaryParts(r).filter((p) => p.low).map((p) => p.text);
+
+  it("MP3 128 : le segment « 128 kbps », et lui seul", () => {
+    expect(low({ declared_format: "mp3", declared_bitrate: 128, sample_rate: 44100, declared_rail: "lossy" })).toEqual([
+      "128 kbps",
+    ]);
+  });
+
+  it("MP3 320 et lossless bas débit : rien de marqué", () => {
+    expect(low({ declared_format: "mp3", declared_bitrate: 320, sample_rate: 44100, declared_rail: "lossy" })).toEqual([]);
+    expect(low({ declared_format: "aiff", declared_bitrate: 128, sample_rate: 8000, declared_rail: "lossless" })).toEqual(
+      [],
     );
   });
 });

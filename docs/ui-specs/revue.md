@@ -240,6 +240,41 @@ technique a sa colonne permanente, étroite, verticale — patron **Finder** (co
 Le § Zone C point 5 plus bas garde le contenu de la fiche (pastilles, groupes, grammaire H1),
 son **emplacement** est celui-ci.
 
+## Décision — 2026-09-28 : les fichiers lossy sous 320 kbps (#69)
+
+Retour d'Antoine : « on ne trie pas les fichiers en dessous de mp3 320, alors qu'ils sont
+normalement "mauvais" pour une utilisation en club », puis « proposer de les mettre de côté ».
+Choisi sur captures de la VRAIE fenêtre, trois pistes en Revue, trois en Lot : **A** et **a**.
+
+Le verdict ne bouge PAS : un MP3 128 honnête reste VRAI. Sift mesure l'authenticité, et « sous
+320 » est une politique d'usage, pas un fait du signal. C'est un axe à part, porté par une seule
+fonction pure, `rails.ts::belowClubBitrate` : lossy ET débit déclaré sous 320. Un débit inconnu ne
+déclenche rien.
+
+- **Verdict** : dans la ligne de format, le segment `128 kbps` passe en encre d'avertissement, avec
+  une infobulle.
+- **Bandeau (piste A)** : sous la surface de travail, un emplacement `.sift-fil-club` voisin de
+  celui du doublon, sur la MÊME recette (`.sift-dup-banner`, fond `--color-background-warning`,
+  icône d'alerte). Titre : « Sous 320 kbps — trop bas pour le club ». Ligne : « Écarter (⌫) le met
+  dans À re-sourcer, pour le racheter ». La proposition est dite en mots ; l'action reste le bouton
+  Écarter existant, rien de neuf à cliquer. Deux règles, venues de la relecture adverse :
+  - **pas de bandeau sur un FAUX**, dont le pied propose déjà « Re-sourcer » : le bandeau
+    nommerait un bouton absent ;
+  - **décidé sur le rapport d'analyse**, la ligne de file en repli, comme le choix du rail. Une
+    ligne pas encore analysée n'a ni rail ni débit.
+- **Filtre** : une facette « Sous 320 » rejoint la liste du pop-up (§ Zone B′).
+- **Lot (piste a)** : la confirmation s'ouvre dès qu'un fichier sous 320 est sélectionné, en plus
+  du seuil `BATCH_CONFIRM_THRESHOLD`. Sans cette règle, une sélection de moins de 10 pistes ne
+  verrait jamais la proposition. Elle porte une case « Écarter aussi les N fichiers sous 320 kbps
+  », **cochée par défaut** et décochable. Le récapitulatif, le bouton, le titre et la ligne de
+  format suivent la case : `Convertir 19` coché, `Convertir 24` décoché. Si TOUT est écarté, le
+  titre devient « Écarter les fichiers sous 320 kbps ? », la ligne de destination disparaît, et le
+  bouton dit `Écarter N`. La proposition se pose **à chaque fois** : « Ne plus demander (cette
+  session) » n'éteint que la confirmation de seuil. Sa case s'ouvre cochée quand le réglage est
+  actif, et la décocher le coupe. Une première version gardait « le dernier choix de la session »
+  ; la relecture a montré qu'elle écartait des pistes en silence derrière un bouton « Convertir
+  N ». Un choix qui retire des pistes de la conversion se voit à chaque fois.
+
 ## Contexte dans le shell
 
 Patron macOS : **Finder** pour la file et la sélection · **Utilitaire de disque** pour
@@ -346,8 +381,9 @@ track par track.
 
 **Filtre — pop-up à options cochables** (décision du 2026-08-24). Un bouton en tête de file
 (« Faux », « Faux + Doublons »…) ouvre un menu à **cases à cocher** : `Lossless`, `MP3`,
-`Faux`, `Doublons`, `Non analysés`, chacun avec son compte, un séparateur, puis « Tout
-afficher ». `Non analysés` est ajoutée le 2026-08-26 (issue #48) et couvre **toutes** les pistes
+`Faux`, `Doublons`, `Non analysés`, `Sous 320`, chacun avec son compte, un séparateur, puis « Tout
+afficher ». `Sous 320` est ajoutée le 2026-09-28 (#69, § Décision du même jour). `Non analysés`
+est ajoutée le 2026-08-26 (issue #48) et couvre **toutes** les pistes
 sans verdict, y compris celles qui ont épuisé leurs tentatives — périmètre plus large que le
 compte du bouton « Réanalyser (N) » du pied, qui les exclut pour pouvoir tomber à zéro. Plusieurs
 critères cochés = **union** (Faux *ou* Doublons). « Tout afficher » remet à zéro. Le bouton

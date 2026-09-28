@@ -63,74 +63,75 @@
 > 2026-07-09) : ouvrir la section visée via son numéro de ligne plutôt que tout
 > lire.
 
-- L134 — Ligne de queue `.qi` — réécrit 08-27 : tokens (hex chauds morts), liseré de sélection retiré, curseur clavier `.qi-kbd`, interlignes #45 (46 px constante), séparateurs de rangées `::before` + pastille en fin de titre (08-27).
-- L176 — Mot de verdict Détail `verdictWord()` — ⚠️ COMPOSANT RETIRÉ le 2026-08-26 (c4f65eb) ; pipeline repris par `verdictDot()` (L1980).
-- L202 — Item de navigation `.nv` — glyphes en accent info uniforme, décision A du 09-03 (grilling #11).
-- L213 — Bouton d'action principal `.sift-ranger-btn` — hover désormais déclaré explicitement (07-24), disabled/focus restent génériques.
-- L232 — Chip/tag `.chip` — hover corrigé 07-03.
-- L244 — Case à cocher `.cbx` — supprimée (code mort).
-- L251 — Segmented control `.sift-seg-opt` (ancien, voir aussi pastille unifiée L930) — RAS.
-- L261 — Ligne de journal `.lr.jrnl-row` — refonte 08-19 : table, colonnes, groupes, états, inspecteur zone D (`.jrnl-qrow` et toutes les classes de l'ancien Journal ont disparu).
-- L329 — Toggle switch `.tog` — perf `transform` corrigée 07-03.
-- L342 — Slots verdict `.sift-fil-verdict` / `.sift-verdict-stub` — renommés/scindés depuis `.sift-verdict-card` (le composant carte a été supprimé au redesign 07-06, `verdictCardHtml()` est un no-op), resynchronisé 07-24.
-- L376 — Ligne candidat `.sift-cand` — hover discret volontaire (bordure seule).
-- L390 — Bouton Destination `.sift-dest-btn` — hérite générique.
-- L395 — Sliders volume/tempo `.sift-slider-*` — ⚠️ PÉRIMÉ : classes supprimées (08-21 puis 08-25) ; le volume vit dans « Lecteur simple » (L1906).
-- L417 — Pochette/cover `.sift-cover-frame` — `alt` fixé 07-03, bug `[hidden]` réellement cassé fixé 07-05.
-- L442 — Boutons icon-only — vérifiés, titlebar corrigée 07-03.
-- L451 — Barre de progression `.pbar`/`.sift-pz-fill` — perf `transform` 07-03.
-- L460 — Popover Destination `.sift-dest-popover` — CSS minimal, placement en JS : flip + recadrage viewport 08-13.
-- L485 — Bouton Identifier `.sift-id-btn` — tokenisé+dark 07-03, exception 3ᵉ teinte levée 07-06.
-- L502 — Bordure latérale `.sift-filed-banner` — anti-pattern side-stripe retiré 07-03.
-- L511 — Ombres portées `.sift-toast`/`.sift-report-overlay-card` — tokenisées 07-03.
-- L518 — Échelles hauteur/radius — audit 07-03, `--h-36` retiré 07-09 (0 lecteur).
-- L566 — Token `disabled` de `Sift.dc.html` — vérifié non manquant.
-- L585 — Autres couleurs non tokenisées — restant, pas classées bug ; ⚠️ 08-27 : deux lignes éteintes avec la waveform.
-- L606 — `--text-hero` → `--text-2xl`.
-- L618 — Cartes Réglages `.sift-settings-list` — refonte 4→1 carte 07-08.
-- L669 — Zone de dépôt drag OS `.sift-dz-on` — token `--overlay-drop` 07-05.
-- L693 — Lien rebuy Beatport `.sift-rebuy-btn` — créé 07-05.
-- L709 — CTA « Revoir N morceaux → » Accueil — créé 07-05.
-- L723 — Page Rekordbox `renderRekordboxLive()` — écran dédié + sections Tier 1/Tier 2 master.db.
-- L806 — Écran Revue — zones repliables Diagnostic/Métadonnées, refonte 07-05.
-- L865 — `.sift-applytags-btn` — déplacé header Genres 07-09.
-- L886 — `.sift-zone-toggle` — accordéon exclusif + animation 07-09.
-- L901 — Spectrogramme — légende incrustée + réticule interactif 07-09.
-- L924 — `.lk` / `.lk-icon` — bug de réutilisation corrigé 07-07.
-- L940 — Pastille segmentée `.sift-seg`/`.sift-seg-opt` unifiée — 6 sites, thumb glissant 07-08.
-- L1047 — Grammaire de carte — 2 rôles (Groupée/Flottante), jamais 3 — 07-08 ; ⚠️ troisième décalage 08-27 (surfaces de Revue).
-- L1110 — Tokens globaux — adaptation tweakcn "ZFlow" (ombres/tracking/radius/OKLCH) 07-08.
-- L1138 — Écran Accueil — audit référence canonique 07-08.
-- L1158 — Écran Revue — audit référence canonique 07-08/09.
-- L1182 — Écran Écartés — audit référence canonique 07-09.
-- L1200 — Écran Journal — audit référence canonique 07-09, conforme (rien corrigé).
-- L1222 — Écran Bibliothèque — audit référence canonique 07-09.
-- L1241 — Écrans Réglages+Rekordbox+Clé USB — audit référence canonique 07-09.
-- L1261 — Pattern d'erreur/échec (`.sift-*-error`/`-fail`/`-warn`, 9 sites) — déjà cohérent, documenté ici (gap = défaut de doc, pas de code, audit 2026-07-19).
-- L1320 — Écran Écartés — chargement + bouton "Réessayer" (07-24).
-- L1331 — Écran Bibliothèque — chargement, tri en vue Grille, "Réinitialiser les filtres" corrigé (07-24).
-- L1354 — Table Bibliothèque, colonne Verdict — RETIRÉE 09-08 (verdict dans l'inspecteur) ; 5 rendus de `verdictView()` 08-19.
-- L1370 — Bibliothèque éditeur — suppression confirmée, borne Année, autocomplétion Genres (07-24).
-- L1378 — Page Rekordbox — état d'erreur visible sur les 4 sections M8, boutons "en cours", CTA en `.sift-ranger-btn` (07-24).
-- L1393 — Accueil — confirmation "Retirer", swatches `aria-pressed` (07-24).
-- L1400 — Journal — titres de section datés lisibles (07-24).
-- L1415 — Revue — bannières `role="status" aria-live="polite"`, légende "écarter" (07-24).
-- L1423 — Lot — lignes de sélection accessibles au clavier, bouton "Annuler" sur confirmation armée (07-24).
-- L1431 — `styles.css` — tokens `--color-text-warning`/`-success` clair recalibrés, hover réaffirmé (07-24).
-- L1444 — Historique des corrections (chronologique, par date de session).
-- L1626 — Conventions de cohérence (sémantique couleur, hiérarchie de poids, discipline classe partagée) — à consulter AVANT tout nouveau composant (07-24).
-- L1696 — Entrée disque amovible (écran Clé USB) — trois états, rendu `usbEntryHtml()` (07-31 ; entrée de colonne 09-09).
-- L1733 — Teintes pleines `-solid` — neuf tokens pour les surfaces de donnée (08-01), dix depuis 08-27 (`red`, pastille de verdict).
-- L1769 — Modale de formatage USB — états, trois corrections d'usage réel (08-02).
-- L1803 — Menu contextuel `.sift-ctx-menu` — états catalogués + rangée de pastilles couleur de source (08-20).
-- L1829 — Ligne de source du rail `.sift-rail-src` — teintes du cycle, `--error`, suspendue, « 0 audio » (#55), cadran de dépôt `.sift-rail-drop` (#56) ; story + module pur `rail-source-entry.ts` (08-20, 09-03).
-- L1885 — Lecteur simple de Revue — rangée d'audition : slider kit, play 28, temps unique, volume fin ; module pur + story (08-27).
-- L1936 — Pastille de verdict de file `verdictDot()` — teintes système pleines, 5 cas / 4 rendus ; module pur + story (08-27).
-- L1961 — Surfaces de Revue — trois plans : rail en retrait, file bord à bord, cadre de lecture, pied en surface (08-27).
-- L2004 — Carte de racine manquante du rail `.sift-railwarn` — remplace le bandeau `#sift-gate` supprimé ; états, survol en voile par-dessus l'ambre, rail replié ; module pur + story + vecteurs (09-02).
-- L2034 — À re-sourcer · Corbeille — ex-Écartés, deux destinations du rail, table de Rangés, inspecteur Racheter (09-08).
-- L2055 — Rekordbox — lu contre Finder › appareil et Photos › Importer : une seule synchronisation (Tout / sélection), faits à libellé aligné à droite, candidats en groupes nommés, colonne au plan de la file (09-08).
-- L2085 — Rangée de table `.lr` — grammaire Finder : fonds alternés par index, ni filet ni arrondi ni survol, colonne Format (09-10).
+- L135 — Ligne de queue `.qi` — réécrit 08-27 : tokens (hex chauds morts), liseré de sélection retiré, curseur clavier `.qi-kbd`, interlignes #45 (46 px constante), séparateurs de rangées `::before` + pastille en fin de titre (08-27).
+- L177 — Mot de verdict Détail `verdictWord()` — ⚠️ COMPOSANT RETIRÉ le 2026-08-26 (c4f65eb) ; pipeline repris par `verdictDot()` (L1980).
+- L203 — Item de navigation `.nv` — glyphes en accent info uniforme, décision A du 09-03 (grilling #11).
+- L214 — Bouton d'action principal `.sift-ranger-btn` — hover désormais déclaré explicitement (07-24), disabled/focus restent génériques.
+- L233 — Chip/tag `.chip` — hover corrigé 07-03.
+- L245 — Case à cocher `.cbx` — supprimée (code mort).
+- L252 — Segmented control `.sift-seg-opt` (ancien, voir aussi pastille unifiée L930) — RAS.
+- L262 — Ligne de journal `.lr.jrnl-row` — refonte 08-19 : table, colonnes, groupes, états, inspecteur zone D (`.jrnl-qrow` et toutes les classes de l'ancien Journal ont disparu).
+- L330 — Toggle switch `.tog` — perf `transform` corrigée 07-03.
+- L343 — Slots verdict `.sift-fil-verdict` / `.sift-verdict-stub` — renommés/scindés depuis `.sift-verdict-card` (le composant carte a été supprimé au redesign 07-06, `verdictCardHtml()` est un no-op), resynchronisé 07-24.
+- L377 — Ligne candidat `.sift-cand` — hover discret volontaire (bordure seule).
+- L391 — Bouton Destination `.sift-dest-btn` — hérite générique.
+- L396 — Sliders volume/tempo `.sift-slider-*` — ⚠️ PÉRIMÉ : classes supprimées (08-21 puis 08-25) ; le volume vit dans « Lecteur simple » (L1906).
+- L418 — Pochette/cover `.sift-cover-frame` — `alt` fixé 07-03, bug `[hidden]` réellement cassé fixé 07-05.
+- L443 — Boutons icon-only — vérifiés, titlebar corrigée 07-03.
+- L452 — Barre de progression `.pbar`/`.sift-pz-fill` — perf `transform` 07-03.
+- L461 — Popover Destination `.sift-dest-popover` — CSS minimal, placement en JS : flip + recadrage viewport 08-13.
+- L486 — Bouton Identifier `.sift-id-btn` — tokenisé+dark 07-03, exception 3ᵉ teinte levée 07-06.
+- L503 — Bordure latérale `.sift-filed-banner` — anti-pattern side-stripe retiré 07-03.
+- L512 — Ombres portées `.sift-toast`/`.sift-report-overlay-card` — tokenisées 07-03.
+- L519 — Échelles hauteur/radius — audit 07-03, `--h-36` retiré 07-09 (0 lecteur).
+- L567 — Token `disabled` de `Sift.dc.html` — vérifié non manquant.
+- L586 — Autres couleurs non tokenisées — restant, pas classées bug ; ⚠️ 08-27 : deux lignes éteintes avec la waveform.
+- L607 — `--text-hero` → `--text-2xl`.
+- L619 — Cartes Réglages `.sift-settings-list` — refonte 4→1 carte 07-08.
+- L670 — Zone de dépôt drag OS `.sift-dz-on` — token `--overlay-drop` 07-05.
+- L694 — Lien rebuy Beatport `.sift-rebuy-btn` — créé 07-05.
+- L710 — CTA « Revoir N morceaux → » Accueil — créé 07-05.
+- L724 — Page Rekordbox `renderRekordboxLive()` — écran dédié + sections Tier 1/Tier 2 master.db.
+- L807 — Écran Revue — zones repliables Diagnostic/Métadonnées, refonte 07-05.
+- L866 — `.sift-applytags-btn` — déplacé header Genres 07-09.
+- L887 — `.sift-zone-toggle` — accordéon exclusif + animation 07-09.
+- L902 — Spectrogramme — légende incrustée + réticule interactif 07-09.
+- L925 — `.lk` / `.lk-icon` — bug de réutilisation corrigé 07-07.
+- L941 — Pastille segmentée `.sift-seg`/`.sift-seg-opt` unifiée — 6 sites, thumb glissant 07-08.
+- L1048 — Grammaire de carte — 2 rôles (Groupée/Flottante), jamais 3 — 07-08 ; ⚠️ troisième décalage 08-27 (surfaces de Revue).
+- L1111 — Tokens globaux — adaptation tweakcn "ZFlow" (ombres/tracking/radius/OKLCH) 07-08.
+- L1139 — Écran Accueil — audit référence canonique 07-08.
+- L1159 — Écran Revue — audit référence canonique 07-08/09.
+- L1183 — Écran Écartés — audit référence canonique 07-09.
+- L1201 — Écran Journal — audit référence canonique 07-09, conforme (rien corrigé).
+- L1223 — Écran Bibliothèque — audit référence canonique 07-09.
+- L1242 — Écrans Réglages+Rekordbox+Clé USB — audit référence canonique 07-09.
+- L1262 — Pattern d'erreur/échec (`.sift-*-error`/`-fail`/`-warn`, 9 sites) — déjà cohérent, documenté ici (gap = défaut de doc, pas de code, audit 2026-07-19).
+- L1321 — Écran Écartés — chargement + bouton "Réessayer" (07-24).
+- L1332 — Écran Bibliothèque — chargement, tri en vue Grille, "Réinitialiser les filtres" corrigé (07-24).
+- L1355 — Table Bibliothèque, colonne Verdict — RETIRÉE 09-08 (verdict dans l'inspecteur) ; 5 rendus de `verdictView()` 08-19.
+- L1371 — Bibliothèque éditeur — suppression confirmée, borne Année, autocomplétion Genres (07-24).
+- L1379 — Page Rekordbox — état d'erreur visible sur les 4 sections M8, boutons "en cours", CTA en `.sift-ranger-btn` (07-24).
+- L1394 — Accueil — confirmation "Retirer", swatches `aria-pressed` (07-24).
+- L1401 — Journal — titres de section datés lisibles (07-24).
+- L1416 — Revue — bannières `role="status" aria-live="polite"`, légende "écarter" (07-24).
+- L1424 — Lot — lignes de sélection accessibles au clavier, bouton "Annuler" sur confirmation armée (07-24).
+- L1432 — `styles.css` — tokens `--color-text-warning`/`-success` clair recalibrés, hover réaffirmé (07-24).
+- L1445 — Historique des corrections (chronologique, par date de session).
+- L1627 — Conventions de cohérence (sémantique couleur, hiérarchie de poids, discipline classe partagée) — à consulter AVANT tout nouveau composant (07-24).
+- L1697 — Entrée disque amovible (écran Clé USB) — trois états, rendu `usbEntryHtml()` (07-31 ; entrée de colonne 09-09).
+- L1734 — Teintes pleines `-solid` — neuf tokens pour les surfaces de donnée (08-01), dix depuis 08-27 (`red`, pastille de verdict).
+- L1770 — Modale de formatage USB — états, trois corrections d'usage réel (08-02).
+- L1804 — Menu contextuel `.sift-ctx-menu` — états catalogués + rangée de pastilles couleur de source (08-20).
+- L1830 — Ligne de source du rail `.sift-rail-src` — teintes du cycle, `--error`, suspendue, « 0 audio » (#55), cadran de dépôt `.sift-rail-drop` (#56) ; story + module pur `rail-source-entry.ts` (08-20, 09-03).
+- L1886 — Lecteur simple de Revue — rangée d'audition : slider kit, play 28, temps unique, volume fin ; module pur + story (08-27).
+- L1937 — Pastille de verdict de file `verdictDot()` — teintes système pleines, 5 cas / 4 rendus ; module pur + story (08-27).
+- L1962 — Surfaces de Revue — trois plans : rail en retrait, file bord à bord, cadre de lecture, pied en surface (08-27).
+- L2005 — Carte de racine manquante du rail `.sift-railwarn` — remplace le bandeau `#sift-gate` supprimé ; états, survol en voile par-dessus l'ambre, rail replié ; module pur + story + vecteurs (09-02).
+- L2035 — À re-sourcer · Corbeille — ex-Écartés, deux destinations du rail, table de Rangés, inspecteur Racheter (09-08).
+- L2056 — Rekordbox — lu contre Finder › appareil et Photos › Importer : une seule synchronisation (Tout / sélection), faits à libellé aligné à droite, candidats en groupes nommés, colonne au plan de la file (09-08).
+- L2086 — Rangée de table `.lr` — grammaire Finder : fonds alternés par index, ni filet ni arrondi ni survol, colonne Format (09-10).
+- L2107 — Bandeaux de Revue `noticeBannerHtml()` — doublon, sous 320 kbps (#69) ; débit teinté du verdict, case de la confirmation du Lot ; module pur + story (09-28).
 
 ## Ligne de queue — `.qi` (`styles.css:1127-1214`, revérifié au grep le 2026-08-27)
 
@@ -2103,3 +2104,30 @@ sélection, `.lr:active{translateY(1px)}`, `.lr:focus-within` de fond, `.sift-ec
 monospace. Vérifié dans la vraie fenêtre (CDP 9334) : motif `alt` 010101 sur 15 rangées, fond
 alterné `oklch(1 0 89.88 / 0.05)`, survol réel de la rangée sans changement, triangle 0 → 1 au
 survol de la pochette. `DESIGN.md` § 16 « pas d'alternance » renversé, daté.
+
+## Bandeaux de Revue — `noticeBannerHtml()` : doublon, sous 320 kbps (2026-09-28, #69)
+
+Module pur `notice-banner.ts`, extrait de `filing.ts::dupBanner` quand un second bandeau l'a
+rejoint. Story `notice-banner.stories.ts` (« Revue/Bandeaux ») : elle EXÉCUTE le vrai rendu et les
+vrais textes du dictionnaire. Test `test/notice-banner.test.ts`.
+
+| Bandeau | Condition | Rendu |
+|---|---|---|
+| Doublon confirmé au son | `DupMatch.kind === "both"` | ton `warning` : fond `--color-background-warning`, icône `ti-copy` et titre en `--color-text-warning` |
+| Doublon possible | même nom seulement | ton `neutral` : fond `--color-background-secondary`, encre `--color-text-tertiary` |
+| Sous 320 kbps | `rails.ts::offerBelowClubSetAside(verdict, rail, bitrate)` : lossy ET débit déclaré sous 320, et PAS un FAUX (son pied dit « Re-sourcer ») | ton `warning`, icône `ti-alert-triangle`, « Sous 320 kbps — trop bas pour le club » · « Écarter (⌫) le met dans À re-sourcer, pour le racheter ». Slot `.sift-fil-club`, voisin de `.sift-fil-dup`, posé à l'ouverture depuis la ligne de file puis RE-POSÉ sur le rapport d'analyse, qui fait foi |
+
+Même axe, deux autres rendus :
+
+- **Débit du verdict** : le segment `128 kbps` de la ligne de format porte
+  `.sift-player-verdict-low` — encre `--color-text-warning`, graisse 500 — et une infobulle. Le mot
+  du verdict ne change pas de teinte : un MP3 128 honnête reste VRAI.
+- **Confirmation du Lot** : une case « Écarter aussi les N fichiers sous 320 kbps », cochée par
+  défaut, posée à chaque fois. Récapitulatif, bouton, titre et format suivent la case.
+
+Vérifié dans la vraie fenêtre le 2026-09-28 :
+- la piste 1755 (MP3 128) porte le bandeau, et la couleur calculée du débit égale le token
+  d'avertissement ;
+- une piste AIFF n'a ni bandeau ni teinte ;
+- la facette « Under 320 » compte 164, le compte attendu ;
+- la modale : cochée, elle dit `Convert 5` ; décochée, `Convert 7`.

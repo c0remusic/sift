@@ -37,7 +37,7 @@ import {
   clearBatchTracklist,
 } from "./batch-tracklist";
 import { currentItems, reviewMode, prefetchNextAfter, enterDetailMode, queueBatchSel } from "./queue-panel";
-import { selectionSummaryHtml, estRangeableEnLot } from "./selection-summary";
+import { selectionSummaryHtml, planBatchFile, splitBatchFile } from "./selection-summary";
 import { confirmBatchAlert, BATCH_CONFIRM_THRESHOLD } from "./confirm-modal";
 import type { BatchAlertData } from "./confirm-modal";
 import { showBatchSheet, updateBatchSheet, transformToReport, closeBatchSheet } from "./batch-sheet";
@@ -468,29 +468,60 @@ export function handleBatchAction(el: HTMLElement, act: string, e: MouseEvent): 
  *  Format lossless : la cible du segmenté du rail est appliquée ; le reste dérive du rail source
  *  côté backend (`encode::target_for`), ce qui empêche l'upscale par construction. */
 export async function handleBatchQueueAction(action: "file" | "discard"): Promise<void> {
+  // Un seul lot à la fois. L'écart des sous-320 émet `queue:changed`, dont le rafraîchissement
+  // retardé repeint le résumé de sélection — et son « Convertir N » actif — PENDANT la conversion
+  // qui suit ; un clic y lançait un second `file_batch` sur les mêmes pistes (relecture de #69).
+  if (batchRunning) return;
   const selected = currentItems.filter((it) => queueBatchSel.has(it.id));
   if (selected.length === 0) return;
 
   if (action === "file") {
-    const fileIds = selected.filter(estRangeableEnLot).map((it) => it.id);
-    if (fileIds.length === 0) return;
-    if (fileIds.length > BATCH_CONFIRM_THRESHOLD && !skipBatchConfirm) {
+    // La règle vit dans `selection-summary.ts::planBatchFile` (pure, testée) : seuil franchi, OU un
+    // fichier sous 320 dans la sélection — cette proposition-là se pose toujours (issue #69).
+    const plan = planBatchFile(selected, { threshold: BATCH_CONFIRM_THRESHOLD, skipConfirm: skipBatchConfirm });
+    if (plan.fileIds.length === 0) return;
+    let setAside = false;
+    if (plan.mustAsk) {
       const fakeN = selected.filter((it) => it.verdict === "fake").length;
-      const { lossless, lossy } = batchSelectionByRail();
-      const fmtParts: string[] = [];
-      if (lossless > 0) fmtParts.push(TARGET_LABEL[batchLosslessFormat]);
-      if (lossy > 0) fmtParts.push("MP3 320");
+      const aside = new Set(plan.belowClubIds);
+      // Le format annoncé ne compte que ce qui sera converti : case cochée, les sous-320 n'y sont pas.
+      const fmtOf = (skip: Set<number>): string => {
+        let lossless = 0;
+        let lossy = 0;
+        for (const it of selected) {
+          if (it.verdict === "fake" || skip.has(it.id)) continue;
+          if (it.rail === "lossless") lossless += 1;
+          else lossy += 1;
+        }
+        const parts: string[] = [];
+        if (lossless > 0) parts.push(TARGET_LABEL[batchLosslessFormat]);
+        if (lossy > 0) parts.push("MP3 320");
+        return parts.join(" + ");
+      };
       const alertData: BatchAlertData = {
-        fileCount: fileIds.length,
+        fileCount: plan.fileIds.length,
         fakeCount: fakeN,
+        belowClubCount: plan.belowClubIds.length,
         destLabel: batchDestLabel(),
-        formatSummary: fmtParts.join(" + "),
+        formatSummary: fmtOf(new Set()),
+        formatSummaryIfAside: fmtOf(aside),
+        skipAlreadyOn: skipBatchConfirm,
       };
       const result = await confirmBatchAlert(alertData);
       if (!result.confirmed) return;
-      if (result.skipFuture) skipBatchConfirm = true;
+      // La case reflète le réglage en cours : la décocher le coupe.
+      skipBatchConfirm = result.skipFuture;
+      setAside = result.setAsideBelowClub;
     }
-    void runBatchFile(fileIds);
+    const { fileIds, setAsideIds } = splitBatchFile(plan, setAside);
+    // L'écart d'abord (une écriture en base, rapide), la conversion ensuite : les deux passent par
+    // `batchRunning`, et la conversion occupe le rail jusqu'à sa fin.
+    if (setAsideIds.length > 0) await runBatchDiscard(setAsideIds);
+    // Rien à convertir : pas de note de fin de lot pour dire ce qui s'est passé, on la pose ici.
+    if (fileIds.length === 0 && setAsideIds.length > 0) {
+      fileNote(T().setAsideDone(setAsideIds.length), "var(--color-text-secondary)");
+    }
+    if (fileIds.length > 0) void runBatchFile(fileIds);
   } else {
     const fakeIds = selected.filter((it) => it.verdict === "fake").map((it) => it.id);
     void runBatchDiscard(fakeIds);

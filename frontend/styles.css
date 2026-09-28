@@ -1869,6 +1869,10 @@ body[data-view="revue"] .sift-pz-row.sift-pz-analyze{display:none}
 .sift-player-verdict{display:flex;align-items:center;gap:var(--space-8);font-size:var(--text-md);min-width:0;flex:0 1 auto}
 .sift-player-verdict:empty{display:none}
 .sift-player-verdict-dot{width:9px;height:9px;border-radius:var(--border-radius-pill);background:currentColor;flex:none}
+/* Le débit d'un lossy sous 320 kbps, dans la ligne de format du verdict (#69, 2026-09-28) : encre
+   d'avertissement, graisse 500 — ce qu'Antoine a vu et choisi sur capture de la vraie fenêtre. Le
+   verdict lui-même ne change pas de teinte : un MP3 128 honnête reste VRAI. */
+.sift-player-verdict-low{color:var(--color-text-warning);font-weight:500}
 .sift-player-verdict-word{font-weight:600;letter-spacing:var(--tracking-normal);white-space:nowrap;flex:none}
 .sift-player-verdict-fmt{color:var(--color-text-secondary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
 .sift-lib-col-artist{flex:1.4;min-width:var(--col-min-w)}
@@ -3412,7 +3416,7 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .sift-fil-root{display:flex;flex-direction:column;height:100%;min-height:0}
 /* Duplicate warning slot sits after the scrollable report/editor stack, so the banner appears just
    above #filfoot instead of at the top of the detail pane. */
-.sift-fil-dup{flex:none}
+.sift-fil-dup,.sift-fil-club{flex:none}
 /* Identification — flux non identifié en lecture seule (Sift.dc.html:357-362) : note + bouton
    "Rechercher sur Discogs", sans passer par le mode édition. */
 /* Le mot « bordé » a quitté la note ci-dessus avec la bordure elle-même, le 2026-08-19 : le kit

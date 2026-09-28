@@ -22,6 +22,8 @@ const fr = {
   doneAll: (filed: number) => `${filed} ${filed > 1 ? "pistes rangées" : "piste rangée"}`,
   interrupted: (base: string) => `Conversion interrompue · ${base}`,
   discardFailed: "Échec de l'écartement — réessaie",
+  setAsideDone: (n: number) =>
+    n > 1 ? `${n} pistes sous 320 kbps écartées → À re-sourcer` : "1 piste sous 320 kbps écartée → À re-sourcer",
 };
 
 const en: typeof fr = {
@@ -38,6 +40,8 @@ const en: typeof fr = {
   doneAll: (filed) => `${filed} track${filed === 1 ? "" : "s"} filed`,
   interrupted: (base) => `Conversion stopped · ${base}`,
   discardFailed: "Couldn't set the tracks aside — try again",
+  setAsideDone: (n) =>
+    n > 1 ? `${n} tracks under 320 kbps set aside → To re-source` : "1 track under 320 kbps set aside → To re-source",
 };
 
 export const D = { fr, en };

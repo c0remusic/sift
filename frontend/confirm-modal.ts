@@ -44,15 +44,24 @@ function playFadeIn(el: HTMLElement): void {
 let activeFinish: ((result: boolean) => void) | null = null;
 
 export interface BatchAlertData {
+  /** Tout ce qui part à la conversion si la case des sous-320 est décochée. */
   fileCount: number;
   fakeCount: number;
+  /** Les lossy sous 320 kbps parmi `fileCount` (issue #69). 0 = pas de case. */
+  belowClubCount: number;
   destLabel: string;
   formatSummary: string;
+  /** Le format de ce qui reste à convertir quand la case des sous-320 est cochée. */
+  formatSummaryIfAside: string;
+  /** « Ne plus demander » est déjà actif pour la session : la case s'ouvre cochée. */
+  skipAlreadyOn: boolean;
 }
 
 export interface BatchAlertResult {
   confirmed: boolean;
   skipFuture: boolean;
+  /** La case « Écarter aussi les N sous 320 » à la validation. Faux quand il n'y en a pas. */
+  setAsideBelowClub: boolean;
 }
 
 export function confirmBatchAlert(data: BatchAlertData): Promise<BatchAlertResult> {
@@ -61,7 +70,10 @@ export function confirmBatchAlert(data: BatchAlertData): Promise<BatchAlertResul
   const previouslyFocused = document.activeElement as HTMLElement | null;
   return new Promise((resolve) => {
     const L = T();
-    let skipChecked = false;
+    let skipChecked = data.skipAlreadyOn;
+    // Issue #69, piste a (Antoine, 2026-09-28) : la proposition est COCHÉE par défaut, décochable.
+    let asideChecked = data.belowClubCount > 0;
+    const converted = () => data.fileCount - (asideChecked ? data.belowClubCount : 0);
 
     const overlay = document.createElement("div");
     overlay.id = OVERLAY_ID;
@@ -79,12 +91,17 @@ export function confirmBatchAlert(data: BatchAlertData): Promise<BatchAlertResul
 
     const recap = document.createElement("div");
     recap.className = "sift-batch-alert-recap";
-    const parts: string[] = [];
-    parts.push(L.batchReady(data.fileCount));
-    if (data.fakeCount > 0) {
-      parts.push(L.batchFake(data.fakeCount));
-    }
-    recap.textContent = parts.join(" · ");
+    // Le récapitulatif et le bouton SUIVENT la case : ils disent ce que le clic va faire.
+    const paintRecap = () => {
+      const parts: string[] = [];
+      if (converted() > 0) parts.push(L.batchReady(converted()));
+      if (data.fakeCount > 0) parts.push(L.batchFake(data.fakeCount));
+      if (data.belowClubCount > 0) {
+        parts.push(asideChecked ? L.batchBelowClubAside(data.belowClubCount) : L.batchBelowClubKept(data.belowClubCount));
+      }
+      recap.textContent = parts.join(" · ");
+    };
+    paintRecap();
 
     const destLine = document.createElement("div");
     destLine.className = "sift-batch-alert-dest";
@@ -94,11 +111,22 @@ export function confirmBatchAlert(data: BatchAlertData): Promise<BatchAlertResul
     checkLabel.className = "sift-batch-alert-skip";
     const checkInput = document.createElement("input");
     checkInput.type = "checkbox";
+    // La case REFLÈTE le réglage : ouverte décochée alors qu'il était actif, elle mentait, et la
+    // laisser ainsi ne changeait rien (relecture de #69).
+    checkInput.checked = data.skipAlreadyOn;
     checkInput.addEventListener("change", () => {
       skipChecked = checkInput.checked;
     });
     const checkText = document.createTextNode(L.skipFuture);
     checkLabel.append(checkInput, checkText);
+
+    // La proposition des sous-320 : même rangée que « Ne plus demander », au-dessus d'elle.
+    const asideLabel = document.createElement("label");
+    asideLabel.className = "sift-batch-alert-skip";
+    const asideInput = document.createElement("input");
+    asideInput.type = "checkbox";
+    asideInput.checked = asideChecked;
+    asideLabel.append(asideInput, document.createTextNode(L.setAsideBelowClub(data.belowClubCount)));
 
     const actions = document.createElement("div");
     actions.className = "sift-confirm-actions";
@@ -109,7 +137,30 @@ export function confirmBatchAlert(data: BatchAlertData): Promise<BatchAlertResul
     const confirmBtn = document.createElement("button");
     confirmBtn.type = "button";
     confirmBtn.className = "sift-confirm-btn";
-    confirmBtn.textContent = L.convertN(data.fileCount);
+    // Tout sous 320 et case cochée : rien ne se convertit, le bouton dit ce qu'il fait vraiment.
+    const paintConfirm = () => {
+      confirmBtn.textContent = converted() > 0 ? L.convertN(converted()) : L.setAsideN(data.belowClubCount);
+    };
+    paintConfirm();
+    // Le titre et la ligne de destination suivent la case eux aussi : tout écarté, la modale ne
+    // parle plus d'une conversion ni d'un format qui n'auront pas lieu (relecture de #69).
+    const paintHead = () => {
+      const none = converted() === 0;
+      title.textContent = none ? L.batchTitleAside : L.batchTitle;
+      card.setAttribute("aria-label", title.textContent);
+      destLine.style.display = none ? "none" : "";
+      destLine.textContent = L.batchDest(
+        data.destLabel,
+        asideChecked ? data.formatSummaryIfAside : data.formatSummary,
+      );
+    };
+    paintHead();
+    asideInput.addEventListener("change", () => {
+      asideChecked = asideInput.checked;
+      paintRecap();
+      paintConfirm();
+      paintHead();
+    });
     confirmBtn.disabled = true;
     const armTimer = window.setTimeout(() => {
       confirmBtn.disabled = false;
@@ -117,7 +168,9 @@ export function confirmBatchAlert(data: BatchAlertData): Promise<BatchAlertResul
     const openedAt = Date.now();
     actions.append(cancelBtn, confirmBtn);
 
-    card.append(title, recap, destLine, checkLabel, actions);
+    card.append(title, recap, destLine);
+    if (data.belowClubCount > 0) card.append(asideLabel);
+    card.append(checkLabel, actions);
     overlay.appendChild(card);
     document.body.appendChild(overlay);
     playFadeIn(overlay);
@@ -129,7 +182,11 @@ export function confirmBatchAlert(data: BatchAlertData): Promise<BatchAlertResul
       overlay.remove();
       previouslyFocused?.focus();
       activeFinish = null;
-      resolve({ confirmed, skipFuture: confirmed && skipChecked });
+      resolve({
+        confirmed,
+        skipFuture: confirmed && skipChecked,
+        setAsideBelowClub: confirmed && data.belowClubCount > 0 && asideChecked,
+      });
     };
     activeFinish = (result: boolean) => finish(result);
     const onKeydown = (e: KeyboardEvent) => {
@@ -139,7 +196,8 @@ export function confirmBatchAlert(data: BatchAlertData): Promise<BatchAlertResul
       }
       if (e.key === "Tab") {
         e.preventDefault();
-        const focusable: HTMLElement[] = [cancelBtn, checkInput, confirmBtn];
+        const focusable: HTMLElement[] =
+          data.belowClubCount > 0 ? [cancelBtn, asideInput, checkInput, confirmBtn] : [cancelBtn, checkInput, confirmBtn];
         const idx = focusable.indexOf(document.activeElement as HTMLElement);
         const next = e.shiftKey
           ? (idx <= 0 ? focusable.length - 1 : idx - 1)

@@ -25,6 +25,7 @@ const fr = {
   verdictFake: "FAUX",
   verdictCheck: "À VÉRIFIER",
   verdictOk: "VRAI",
+  belowClubTitle: "Sous 320 kbps — trop bas pour un système club",
   // Légende clavier du pied de boîte.
   kbdListen: "écouter",
   kbdConvert: "convertir",
@@ -80,6 +81,7 @@ const en: typeof fr = {
   verdictFake: "FAKE",
   verdictCheck: "TO CHECK",
   verdictOk: "GENUINE",
+  belowClubTitle: "Under 320 kbps — too low for a club system",
   kbdListen: "listen",
   kbdConvert: "convert",
   kbdSetAside: "set aside",

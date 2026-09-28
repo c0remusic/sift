@@ -24,7 +24,8 @@ import {
 } from "./report-view";
 import type { Canonical, Target, QueueItem } from "../shared/contracts";
 import { requireEl, esc } from "./dom";
-import { railFromExtension } from "./rails";
+import { offerBelowClubSetAside, railFromExtension } from "./rails";
+import { noticeBannerHtml } from "./notice-banner";
 import { slideSegThumb } from "./seg-thumb";
 import { emptyStateHtml } from "./empty-state";
 import {
@@ -346,10 +347,28 @@ function dupBanner(m: DupMatch): string {
       ? t.dupFiled(esc((m.folder ? m.folder + "/" : "") + (m.filename || "")))
       : t.dupPending(esc(m.filename || ""));
   const sure = m.kind === "both";
-  const fg = sure ? "var(--color-text-warning)" : "var(--color-text-tertiary)";
-  const bg = sure ? "var(--color-background-warning)" : "var(--color-background-secondary)";
-  const head = sure ? t.dupSure : t.dupMaybe;
-  return `<div class="sift-dup-banner" style="background:${bg}"><i class="ti ti-copy" style="color:${fg}"></i><div class="sift-dup-banner-body"><div class="sift-dup-banner-head" style="color:${fg}">${head}</div><div class="sift-dup-banner-where">${where}</div></div></div>`;
+  return noticeBannerHtml({
+    tone: sure ? "warning" : "neutral",
+    icon: "ti-copy",
+    head: sure ? t.dupSure : t.dupMaybe,
+    body: where,
+  });
+}
+
+/** Bandeau « Sous 320 kbps — trop bas pour le club » (issue #69, piste A, Antoine 2026-09-28) :
+ *  même recette et même zone que le doublon. Il PROPOSE — l'action reste le bouton Écarter du pied,
+ *  rien de neuf à cliquer. Le verdict ne bouge pas : un MP3 128 honnête reste VRAI.
+ *
+ *  Posé DEUX fois : à l'ouverture depuis la ligne de file, puis après le rapport, qui fait foi. Une
+ *  ligne pas encore analysée n'a ni rail ni débit, alors que le rapport les a — sans la seconde
+ *  pose, le verdict teintait « 128 kbps » et le bandeau manquait (relecture de #69). */
+function paintClubBanner(mid: HTMLElement, verdict: string | null, rail: string | null, kbps: number | null): void {
+  const slot = mid.querySelector<HTMLElement>(".sift-fil-club");
+  if (!slot) return;
+  const t = T();
+  slot.innerHTML = offerBelowClubSetAside(verdict, rail, kbps)
+    ? noticeBannerHtml({ tone: "warning", icon: "ti-alert-triangle", head: t.clubHead, body: t.clubBody })
+    : "";
 }
 
 /** Render the analysis report + filing footer for `item` into the #mid pane. `openState.openSeq`
@@ -387,7 +406,9 @@ export async function openFilingInto(
     '<div class="sift-fil-verdict sift-fil-editor-margin"></div>' +
     '</div>' +
     '<div class="sift-fil-dup"></div>' +
+    '<div class="sift-fil-club"></div>' +
     "</div>";
+  paintClubBanner(mid, item.verdict, item.rail, item.bitrate);
   const reportEl = requireEl<HTMLElement>(".sift-fil-report", "openFilingInto", mid);
   // Verdict is the CONCLUSION — rendered last, after Identification, matching the maquette
   // (see docs/superpowers/plans/2026-07-02-refonte-ui-plan.md, décision du 2026-07-02). Passed to openReportInto below.
@@ -587,6 +608,13 @@ export async function openFilingInto(
   // backend, qui dérive la cible lui-même (`encode::target_for`).
   const rail = report?.declared_rail ?? item.rail ?? railFromExtension(item.path);
   state.rail = rail; // so refreshPreview defaults the extension like the lit chip does
+  // Le rapport fait foi pour le bandeau aussi, la ligne de file en repli (voir `paintClubBanner`).
+  paintClubBanner(
+    mid,
+    report?.verdict ?? item.verdict,
+    report?.declared_rail ?? item.rail,
+    report?.declared_bitrate ?? item.bitrate,
+  );
 
   renderFoot(mid, rail);
   const editorEl = requireEl<HTMLElement>(".sift-fil-editor", "openFilingInto", mid);

@@ -28,6 +28,26 @@ function railFromExt(ext: string): Rail {
   return "unknown";
 }
 
+/** Le débit sous lequel un fichier lossy est « trop bas pour le club » (issue #69, décision
+ *  d'Antoine du 2026-09-28). Déclaré une seule fois : le verdict, le bandeau de Revue, la facette de
+ *  la file et la proposition du mode Lot passent tous par `belowClubBitrate`. */
+const CLUB_MIN_KBPS = 320;
+
+/** Un fichier lossy dont le débit DÉCLARÉ est sous `CLUB_MIN_KBPS`. Axe SÉPARÉ du verdict : un MP3
+ *  128 honnête reste VRAI, puisque Sift mesure l'authenticité, et « sous 320 » est une politique
+ *  d'usage. Un débit inconnu ne déclenche rien (« non mesuré » n'est pas un grief), et un lossless
+ *  n'est jamais visé, quel que soit son débit. */
+export function belowClubBitrate(rail: string | null, kbps: number | null): boolean {
+  return rail === "lossy" && kbps != null && kbps > 0 && kbps < CLUB_MIN_KBPS;
+}
+
+/** Revue propose-t-elle d'écarter cette piste parce qu'elle est sous 320 ? Pas pour un FAUX : son
+ *  pied propose déjà « Re-sourcer », et le bandeau nommerait « Écarter », un bouton absent de
+ *  l'écran (relecture de #69, 2026-09-28). Le débit reste teinté dans le verdict : c'est un fait. */
+export function offerBelowClubSetAside(verdict: string | null, rail: string | null, kbps: number | null): boolean {
+  return verdict !== "fake" && belowClubBitrate(rail, kbps);
+}
+
 /** Rail d'un CHEMIN — enveloppe `railFromExt` sur ce qui suit le dernier point. Un chemin sans
  *  point rend `unknown` par le même chemin qu'une extension inconnue. */
 export function railFromExtension(path: string): Rail {

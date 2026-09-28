@@ -11,6 +11,7 @@
 // précisément le risque : une mesure mal formulée devient un jugement.
 import type { AnalysisReport } from "../shared/contracts";
 import { numLocale } from "./i18n";
+import { belowClubBitrate } from "./rails";
 import { T } from "./i18n/report-figures";
 
 /** Ligne de format du verdict de Revue : format déclaré · débit d'origine · fréquence
@@ -25,11 +26,22 @@ import { T } from "./i18n/report-figures";
  *  porte la même décision. Sortie de `report-view.ts` (qui importe `./ipc`) pour être tenue par un
  *  test en env Node. */
 export function formatSummary(
-  r: Pick<AnalysisReport, "declared_format" | "declared_bitrate" | "sample_rate">,
+  r: Pick<AnalysisReport, "declared_format" | "declared_bitrate" | "sample_rate" | "declared_rail">,
 ): string {
-  const parts: string[] = [];
-  if (r.declared_format) parts.push(r.declared_format.toUpperCase());
-  if (r.declared_bitrate) parts.push(`${r.declared_bitrate} kbps`);
+  return formatSummaryParts(r)
+    .map((p) => p.text)
+    .join(" · ");
+}
+
+/** Les segments de `formatSummary`, avec `low` vrai sur le SEUL segment de débit d'un lossy sous
+ *  320 kbps (`rails.ts::belowClubBitrate`, issue #69) : `report-view.ts` le teinte. */
+export function formatSummaryParts(
+  r: Pick<AnalysisReport, "declared_format" | "declared_bitrate" | "sample_rate" | "declared_rail">,
+): { text: string; low: boolean }[] {
+  const parts: { text: string; low: boolean }[] = [];
+  const push = (text: string, low = false) => parts.push({ text, low });
+  if (r.declared_format) push(r.declared_format.toUpperCase());
+  if (r.declared_bitrate) push(`${r.declared_bitrate} kbps`, belowClubBitrate(r.declared_rail, r.declared_bitrate));
   // Séparateur décimal de la langue courante : « 44,1 kHz » en français, « 44.1 kHz » en anglais.
   // L'arrondi reste celui de `toFixed(1)` (valeur binaire exacte) : Intl arrondit la décimale la plus
   // courte, et divergeait sur les fréquences en …50 Hz (0,15 → « 0,2 » au lieu de « 0,1 »).
@@ -40,9 +52,9 @@ export function formatSummary(
       maximumFractionDigits: 1,
       useGrouping: false,
     });
-    parts.push(`${khz} kHz`);
+    push(`${khz} kHz`);
   }
-  return parts.join(" · ");
+  return parts;
 }
 
 /** Bornes des masters authentiques mesurés, en dB de platitude spectrale 16–20 kHz.
