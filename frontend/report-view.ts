@@ -10,10 +10,9 @@ import WaveSurfer from "wavesurfer.js";
 import type { AnalysisReport } from "../shared/contracts";
 import { FILE_GONE } from "../shared/contracts";
 import { requireEl, esc } from "./dom";
-import { decodedShortfallText, hfDensityParts, hfTopDensityParts } from "./report-figures";
+import { decodedShortfallText, formatSummary, hfDensityParts, hfTopDensityParts } from "./report-figures";
 import { railFromExtension } from "./rails";
 import { VOL_KNOB, playerAuditionHtml, volumeCentreCss, volumeIconClass } from "./player-audition";
-import { numLocale } from "./i18n";
 import { T } from "./i18n/report-view";
 
 /** Fallback step, only for a report predating `peaks_step` (mirrors analysis::PEAKS_WINDOW and
@@ -577,32 +576,6 @@ function verdictWordTone(r: AnalysisReport): { word: string; cls: string } {
   if (r.verdict === "grey") return { word: t.verdictCheck, cls: "sift-lib-v-check" };
   if (r.verdict !== "ok") return { word: "—", cls: "sift-lib-v-none" };
   return { word: t.verdictOk, cls: "sift-lib-v-ok" };
-}
-
-/** Résumé de format pour la ligne d'état du verdict : format déclaré + la mesure la plus parlante —
- *  kbps pour un fichier lossy (c'est ce qui définit sa qualité), sinon la fréquence d'échantillonnage
- *  en kHz. Uniquement des données réelles (declared_format / declared_bitrate / sample_rate), pas de
- *  profondeur de bits inventée. */
-function formatSummary(r: AnalysisReport): string {
-  const parts: string[] = [];
-  if (r.declared_format) parts.push(r.declared_format.toUpperCase());
-  // Séparateur décimal de la langue courante : « 44,1 kHz » en français, « 44.1 kHz » en anglais.
-  // L'arrondi reste celui de `toFixed(1)` (valeur binaire exacte) : Intl arrondit la décimale la plus
-  // courte, et divergeait sur les fréquences en …50 Hz (0,15 → « 0,2 » au lieu de « 0,1 »).
-  // `useGrouping: false` : pas de séparateur de milliers au-delà de 1000 kHz, comme avant.
-  const khz = r.sample_rate
-    ? `${Number((r.sample_rate / 1000).toFixed(1)).toLocaleString(numLocale(), { minimumFractionDigits: 1, maximumFractionDigits: 1, useGrouping: false })} kHz`
-    : "";
-  // Lossless : la fréquence d'échantillonnage définit la qualité (le « débit » PCM est trompeur —
-  // 1411 kbps pour un simple 16/44). Lossy : c'est le débit qui compte.
-  if (r.declared_rail === "lossless") {
-    if (khz) parts.push(khz);
-  } else if (r.declared_bitrate) {
-    parts.push(`${r.declared_bitrate} kbps`);
-  } else if (khz) {
-    parts.push(khz);
-  }
-  return parts.join(" · ");
 }
 
 /** Fill the verdict slot (`.sift-player-verdict`, rendered empty by playerHeaderHtml dans la rangée

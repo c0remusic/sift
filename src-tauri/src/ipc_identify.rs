@@ -29,12 +29,38 @@ pub struct IdentifyHint {
 
 /// Query Discogs for `track_id`'s best-guess artist/title; ranked candidates, best first. `hint`
 /// is what the screen shows — it wins over the file's tags and name when its title is non-empty.
+///
+/// `async`, et c'est la DEUXIÈME exception au backend synchrone (`CLAUDE.md` § Backend), décidée
+/// par Antoine le 2026-09-28 sur mesure (issue #74). Synchrone, la commande s'exécutait sur le fil
+/// de la fenêtre et y gardait TOUT l'IPC pendant la recherche Discogs : un `get_setting` qui prend
+/// 3 à 9 ms au repos a pris 1 334 ms lancé pendant une identification de 1 396 ms. Au pire,
+/// 13 requêtes à 15 s de délai chacune (`discogs::HTTP_TIMEOUT`). Même forme qu'`analyze_path` :
+/// le corps synchrone part sur `spawn_blocking`, la connexion se reprend depuis l'`AppHandle`.
+/// Gardé par `identify_reste_hors_du_fil_de_la_fenetre`.
 #[tauri::command]
-pub fn identify(
-    conn: State<'_, Mutex<Connection>>,
+pub async fn identify(
+    app: AppHandle,
     track_id: i64,
     hint: Option<IdentifyHint>,
 ) -> Result<Vec<Candidate>, String> {
+    tauri::async_runtime::spawn_blocking(move || identify_bloquant(app, track_id, hint))
+        .await
+        // Le fil a paniqué ou été annulé : l'échec se rend en Err, jamais un `unwrap`.
+        .map_err(|e| {
+            crate::tr!(
+                "identify : le fil de recherche n'a pas rendu : {e}",
+                "identify: the search thread didn't return: {e}"
+            )
+        })?
+}
+
+/// Le corps d'`identify`, SYNCHRONE : lectures sous le verrou, puis la cascade réseau.
+fn identify_bloquant(
+    app: AppHandle,
+    track_id: i64,
+    hint: Option<IdentifyHint>,
+) -> Result<Vec<Candidate>, String> {
+    let conn = app.state::<Mutex<Connection>>();
     // Chemin sous le verrou, lecture des tags APRÈS l'avoir relâché : une lecture disque ne doit
     // pas geler les autres utilisateurs de la base (même découpage que `ipc_filing::reconcile`).
     let (token, path) = {
@@ -215,6 +241,40 @@ mod tests {
             title: title.into(),
             version: version.map(Into::into),
         }
+    }
+
+    /// Issue #74 : `identify` ne doit plus jamais s'exécuter sur le fil de la fenêtre. Test de
+    /// SOURCE, pour la raison écrite au-dessus d'`ipc::tests::analyze_path_reste_hors_du_fil_de_la_fenetre`
+    /// (exercer le vrai chemin demanderait la feature Cargo `test` de `tauri`, une décision de
+    /// dépendance). Solidaire de `cargo fmt --check`, qui fige la forme des lignes cherchées.
+    #[test]
+    fn identify_reste_hors_du_fil_de_la_fenetre() {
+        let source = include_str!("ipc_identify.rs");
+        assert!(
+            source.contains("pub async fn identify("),
+            "`identify` n'est plus `async` : toute la recherche Discogs regèlerait l'IPC de la \
+             fenêtre (mesuré : 1,3 s ; jusqu'à 13 × 15 s au pire)"
+        );
+        let debut = source
+            .find("pub async fn identify(")
+            .expect("signature déjà vérifiée présente");
+        let corps = &source[debut..];
+        let fin = corps
+            .find("fn identify_bloquant(")
+            .expect("le corps synchrone doit suivre la commande");
+        let commande = &corps[..fin];
+        assert!(
+            commande.contains("tauri::async_runtime::spawn_blocking("),
+            "la commande ne délègue plus à `spawn_blocking`"
+        );
+        assert!(
+            commande.contains("identify_bloquant("),
+            "la commande n'appelle plus le corps synchrone extrait"
+        );
+        assert!(
+            !commande.contains(".unwrap()") && !commande.contains(".expect("),
+            "interdiction dure du dépôt hors #[cfg(test)]"
+        );
     }
 
     #[test]

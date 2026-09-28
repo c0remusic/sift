@@ -1,4 +1,4 @@
-// Mise en forme de trois mesures du Diagnostic, sans DOM. Deux sont spectrales — `hfDensityParts`
+// Mise en forme de trois mesures du Diagnostic, et de la ligne de format du verdict, sans DOM. Deux sont spectrales — `hfDensityParts`
 // (« Densité de l'aigu », bande fixe) et `hfTopDensityParts` (« Densité du haut », bande relative
 // au Nyquist) ; la troisième ne l'est pas : `decodedShortfallText` confronte deux DURÉES, celle
 // annoncée par l'en-tête et celle réellement décodée.
@@ -9,7 +9,41 @@
 // (voir `vitest.config.ts`). Ici il n'y a que des nombres et des chaînes, donc la logique qui
 // décide CE QUI EST DIT à l'utilisateur est couverte par un test — alors qu'elle porte
 // précisément le risque : une mesure mal formulée devient un jugement.
+import type { AnalysisReport } from "../shared/contracts";
+import { numLocale } from "./i18n";
 import { T } from "./i18n/report-figures";
+
+/** Ligne de format du verdict de Revue : format déclaré · débit d'origine · fréquence
+ *  d'échantillonnage — `AIFF · 1411 kbps · 44,1 kHz`, `MP3 · 320 kbps · 44,1 kHz`. Uniquement des
+ *  données réelles de l'en-tête (`declared_format`, `declared_bitrate`, `sample_rate`) : un champ
+ *  absent est omis, jamais inventé ni remplacé par une estimation.
+ *
+ *  DÉCISION D'ANTOINE, 2026-09-28 (issue #70) : « je veux le débit d'origine du fichier dans le
+ *  verdict ». Elle renverse le choix exclusif d'avant — lossless → fréquence seule, lossy → débit
+ *  seul —, qui écartait le débit PCM comme « trompeur (1411 kbps pour un simple 16/44) ». Le débit
+ *  est désormais dit pour tous les formats, la fréquence à côté. `docs/ui-specs/revue.md` § en-tête
+ *  porte la même décision. Sortie de `report-view.ts` (qui importe `./ipc`) pour être tenue par un
+ *  test en env Node. */
+export function formatSummary(
+  r: Pick<AnalysisReport, "declared_format" | "declared_bitrate" | "sample_rate">,
+): string {
+  const parts: string[] = [];
+  if (r.declared_format) parts.push(r.declared_format.toUpperCase());
+  if (r.declared_bitrate) parts.push(`${r.declared_bitrate} kbps`);
+  // Séparateur décimal de la langue courante : « 44,1 kHz » en français, « 44.1 kHz » en anglais.
+  // L'arrondi reste celui de `toFixed(1)` (valeur binaire exacte) : Intl arrondit la décimale la plus
+  // courte, et divergeait sur les fréquences en …50 Hz (0,15 → « 0,2 » au lieu de « 0,1 »).
+  // `useGrouping: false` : pas de séparateur de milliers au-delà de 1000 kHz, comme avant.
+  if (r.sample_rate) {
+    const khz = Number((r.sample_rate / 1000).toFixed(1)).toLocaleString(numLocale(), {
+      minimumFractionDigits: 1,
+      maximumFractionDigits: 1,
+      useGrouping: false,
+    });
+    parts.push(`${khz} kHz`);
+  }
+  return parts.join(" · ");
+}
 
 /** Bornes des masters authentiques mesurés, en dB de platitude spectrale 16–20 kHz.
  *

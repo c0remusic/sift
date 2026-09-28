@@ -5,6 +5,7 @@ import {
   HF_REF_HI,
   HF_REF_LO,
   decodedShortfallText,
+  formatSummary,
   hfDensityParts,
   hfTopDensityParts,
   HF_TOP_REF_LO,
@@ -137,5 +138,37 @@ describe("en anglais", () => {
     setCurrentLang("en");
     expect(decodedShortfallText(400.0, 40.0, fmt)).toBe("40.0 s of 400.0 s declared");
     expect(decodedShortfallText(212.4, 212.4, fmt)).toBeNull();
+  });
+});
+
+// Ligne de format du verdict (issue #70, décision d'Antoine du 2026-09-28) : le débit d'origine est
+// dit pour TOUS les formats, la fréquence à côté. Jusque-là un lossless n'affichait que sa fréquence.
+describe("formatSummary — le débit d'origine dans le verdict", () => {
+  afterEach(() => setCurrentLang("fr"));
+
+  it("lossless : format, débit PCM, fréquence", () => {
+    expect(formatSummary({ declared_format: "aiff", declared_bitrate: 1411, sample_rate: 44100 })).toBe(
+      "AIFF · 1411 kbps · 44,1 kHz",
+    );
+  });
+
+  it("lossy : format, débit, fréquence", () => {
+    expect(formatSummary({ declared_format: "mp3", declared_bitrate: 128, sample_rate: 44100 })).toBe(
+      "MP3 · 128 kbps · 44,1 kHz",
+    );
+  });
+
+  it("un champ absent est omis, jamais inventé", () => {
+    expect(formatSummary({ declared_format: "flac", declared_bitrate: null, sample_rate: 96000 })).toBe(
+      "FLAC · 96,0 kHz",
+    );
+    expect(formatSummary({ declared_format: "", declared_bitrate: null, sample_rate: 0 })).toBe("");
+  });
+
+  it("anglais : point décimal", () => {
+    setCurrentLang("en");
+    expect(formatSummary({ declared_format: "wav", declared_bitrate: 2117, sample_rate: 44100 })).toBe(
+      "WAV · 2117 kbps · 44.1 kHz",
+    );
   });
 });

@@ -388,7 +388,11 @@ Ordre vertical, et il est le parcours de décision :
    de chemin du Finder) : segments, troncature **par le milieu** si trop long (garder le
    premier et le dernier). Le mono est un réflexe Terminal, écarté ici.
 2. **En-tête piste** — **pochette carrée, à la hauteur du bloc texte** + titre + artiste +
-   **format** (petite ligne : `FLAC · 44,1 kHz`). Cette hauteur se **mesure en JS**
+   **format** (petite ligne : `AIFF · 1411 kbps · 44,1 kHz` — format · **débit d'origine** ·
+   fréquence, pour TOUS les formats. Décision d'Antoine du 2026-09-28, issue #70 : « je veux le
+   débit d'origine du fichier dans le verdict ». Jusque-là un lossless ne montrait que sa
+   fréquence, `FLAC · 44,1 kHz`, le débit PCM étant jugé trompeur ; `report-figures.ts::
+   formatSummary`, tenu par `test/report-figures.test.ts`). Cette hauteur se **mesure en JS**
    (`sizeCoverToBody` + un `ResizeObserver`) : le pur CSS (`aspect-ratio:1` +
    `align-self:stretch`) rend une largeur **nulle** dans ce contexte flex, mesuré au CDP, et
    une mesure ponctuelle raterait le reflow tardif (chargement de la police d'interface, pose du
