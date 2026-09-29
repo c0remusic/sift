@@ -642,8 +642,8 @@ export interface PendingMetadataSync {
   new_label: string | null;
   new_year: number | null;
   new_genre: string | null;
-  /** Ce que Sift a retiré du fichier et que Rekordbox porte encore (#81). La synchro ne le vide pas
-   *  encore : l'écran le dit en tête de la rangée. */
+  /** Ce que Sift a retiré du fichier et que Rekordbox porte encore (#81). La synchro le VIDE dans
+   *  master.db, et l'écran le dit en tête de la rangée. */
   cleared: SyncClearedField[];
   status: "pending" | "ambiguous";
   detected_at: string;

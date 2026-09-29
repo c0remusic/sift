@@ -33,7 +33,7 @@ export const EnAttente: Story = {
 };
 
 export const ChampsVides: Story = {
-  name: "Champs vidés que Rekordbox garde (#81)",
+  name: "Champs à vider dans Rekordbox (#81)",
   render: () =>
     host(
       candidateRowHtml(

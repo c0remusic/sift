@@ -9,7 +9,7 @@
 //! `ipc_library.rs` keeps only the thin `#[tauri::command]` wrappers that lock
 //! the DB `State` and delegate to the `_inner` functions here.
 
-use rusqlite::Connection;
+use rusqlite::{Connection, OptionalExtension};
 use std::path::Path;
 
 /// One candidate `master.db` path repair (Tier 1), keyed by the Sift `actions.id`
@@ -470,8 +470,8 @@ pub struct PendingMetadataSync {
     pub new_year: Option<i64>,
     pub new_genre: Option<String>,
     /// Les champs que Sift a retirés du fichier et que Rekordbox PORTE, lu dans `master.db` à la
-    /// détection (#81) — valeurs de `actions::SyncField::as_str`. La synchro ne les vide pas
-    /// (encore) : l'écran le dit.
+    /// détection (#81) — valeurs de `actions::SyncField::as_str`. La synchro les VIDE
+    /// (`MetadataClear`), et l'écran le dit en tête de la rangée.
     pub cleared: Vec<String>,
     /// "pending" | "ambiguous".
     pub status: String,
@@ -488,7 +488,7 @@ pub(crate) fn pending_metadata_syncs_inner(
         .prepare(
             "SELECT s.id, s.track_id, t.path, s.rekordbox_track_id, s.candidate_track_ids,
                     s.new_artist, s.new_title, s.new_label, s.new_year, s.new_genre, s.status, s.detected_at, a.session_id,
-                    s.cleared_fields
+                    s.cleared_fields, t.rekordbox_cleared
              FROM rekordbox_masterdb_metadata_syncs s
              JOIN tracks t ON t.id = s.track_id
              LEFT JOIN actions a ON a.id = s.action_id
@@ -510,8 +510,13 @@ pub(crate) fn pending_metadata_syncs_inner(
                 new_label: r.get(7)?,
                 new_year: r.get(8)?,
                 new_genre: r.get(9)?,
-                cleared: crate::actions::parse_cleared_fields(
+                // Même règle que l'application : l'annonce, moins ce que le fichier a reposé
+                // depuis.
+                cleared: still_to_clear(
                     r.get::<_, Option<String>>(13)?.as_deref(),
+                    &crate::actions::parse_cleared_fields(
+                        r.get::<_, Option<String>>(14)?.as_deref(),
+                    ),
                 )
                 .into_iter()
                 .map(|f| f.as_str().to_string())
@@ -561,11 +566,12 @@ pub(crate) fn resolve_ambiguous_metadata_sync_inner(
     id: i64,
     chosen_track_id: &str,
 ) -> Result<(), String> {
-    let (candidate_track_ids, status): (Option<String>, String) = conn
-        .query_row(
-            "SELECT candidate_track_ids, status FROM rekordbox_masterdb_metadata_syncs WHERE id=?1",
+    let (candidate_track_ids, status, cleared_fields): (Option<String>, String, Option<String>) =
+        conn.query_row(
+            "SELECT candidate_track_ids, status, cleared_fields
+             FROM rekordbox_masterdb_metadata_syncs WHERE id=?1",
             rusqlite::params![id],
-            |r| Ok((r.get(0)?, r.get(1)?)),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
         )
         .map_err(|e| e.to_string())?;
 
@@ -577,9 +583,28 @@ pub(crate) fn resolve_ambiguous_metadata_sync_inner(
         return Err(AMBIGUITY_BAD_CHOICE.to_string());
     }
 
+    // #81 : l'annonce d'une rangée ambiguë réunit ce que porte AU MOINS UNE candidate ; résolue,
+    // elle ne vaut plus que pour la piste choisie (revue de la phase B). `master.db` illisible :
+    // l'annonce reste l'union, et la synchro ne réécrit de toute façon pas un champ déjà vide.
+    let cleared_fields =
+        match crate::actions::resolve_masterdb_index_if_linked(conn).and_then(|index| {
+            index
+                .tracks
+                .into_iter()
+                .find(|t| t.track_id == chosen_track_id)
+        }) {
+            Some(chosen) => crate::actions::join_cleared_fields(&crate::actions::carried_debt(
+                &crate::actions::parse_cleared_fields(cleared_fields.as_deref()),
+                chosen.carries,
+            )),
+            None => cleared_fields,
+        };
+
     conn.execute(
-        "UPDATE rekordbox_masterdb_metadata_syncs SET rekordbox_track_id=?1, candidate_track_ids=NULL, status='pending' WHERE id=?2",
-        rusqlite::params![chosen_track_id, id],
+        "UPDATE rekordbox_masterdb_metadata_syncs
+         SET rekordbox_track_id=?1, candidate_track_ids=NULL, status='pending', cleared_fields=?3
+         WHERE id=?2",
+        rusqlite::params![chosen_track_id, id, cleared_fields],
     )
     .map_err(|e| e.to_string())?;
     Ok(())
@@ -593,6 +618,60 @@ pub struct ApplyMetadataSyncOutcome {
     pub error: Option<String>,
 }
 
+/// Ce qu'une rangée vide MAINTENANT (#81) : son annonce (`cleared_fields`), restreinte à la
+/// mémoire vivante de la piste (`tracks.rekordbox_cleared`). Un champ que le fichier a reposé
+/// depuis la détection a quitté la mémoire (`record_sync_debt`), il ne se vide donc plus.
+/// L'écran (`pending_metadata_syncs_inner`) et l'application lisent cette même règle.
+fn still_to_clear(
+    cleared_fields: Option<&str>,
+    memory: &[crate::actions::SyncField],
+) -> Vec<crate::actions::SyncField> {
+    crate::actions::parse_cleared_fields(cleared_fields)
+        .into_iter()
+        .filter(|f| memory.contains(f))
+        .collect()
+}
+
+fn cleared_now(
+    conn: &Connection,
+    sift_track_id: i64,
+    cleared_fields: Option<&str>,
+) -> Vec<crate::actions::SyncField> {
+    still_to_clear(
+        cleared_fields,
+        &crate::actions::read_sync_debt(conn, sift_track_id),
+    )
+}
+
+/// Retient l'`ImagePath` qu'une synchro vient de vider (table v25) : `sync_track_artwork` le
+/// repose avant la pochette suivante. Un second vidage de la même piste remplace le premier.
+fn remember_cleared_artwork(
+    conn: &Connection,
+    rekordbox_track_id: &str,
+    image_path: &str,
+) -> rusqlite::Result<()> {
+    conn.execute(
+        "INSERT INTO rekordbox_cleared_artwork (rekordbox_track_id, image_path) VALUES (?1, ?2)
+         ON CONFLICT(rekordbox_track_id) DO UPDATE SET
+             image_path=excluded.image_path, cleared_at=datetime('now')",
+        rusqlite::params![rekordbox_track_id, image_path],
+    )
+    .map(|_| ())
+}
+
+fn cleared_artwork_path(conn: &Connection, rekordbox_track_id: &str) -> Option<String> {
+    conn.query_row(
+        "SELECT image_path FROM rekordbox_cleared_artwork WHERE rekordbox_track_id=?1",
+        rusqlite::params![rekordbox_track_id],
+        |r| r.get(0),
+    )
+    .optional()
+    .unwrap_or_else(|e| {
+        log::error!("rekordbox_cleared_artwork illisible pour la piste {rekordbox_track_id} ({e})");
+        None
+    })
+}
+
 /// Attempts one metadata sync row. Never calls `sync_track_metadata` for a row that isn't
 /// `pending` with a known `rekordbox_track_id`.
 fn apply_one_metadata_sync(
@@ -603,32 +682,40 @@ fn apply_one_metadata_sync(
     id: i64,
 ) -> ApplyMetadataSyncOutcome {
     let row = conn.query_row(
-        "SELECT rekordbox_track_id, new_artist, new_title, new_label, new_year, new_genre, status
+        "SELECT rekordbox_track_id, new_artist, new_title, new_label, new_year, new_genre, status,
+                track_id, cleared_fields
          FROM rekordbox_masterdb_metadata_syncs WHERE id=?1",
         rusqlite::params![id],
         |r| {
             Ok((
-                r.get::<_, Option<String>>(0)?,
-                r.get::<_, Option<String>>(1)?,
-                r.get::<_, Option<String>>(2)?,
-                r.get::<_, Option<String>>(3)?,
-                r.get::<_, Option<i64>>(4)?,
-                r.get::<_, Option<String>>(5)?,
-                r.get::<_, String>(6)?,
+                (
+                    r.get::<_, Option<String>>(0)?,
+                    r.get::<_, Option<String>>(1)?,
+                    r.get::<_, Option<String>>(2)?,
+                    r.get::<_, Option<String>>(3)?,
+                    r.get::<_, Option<i64>>(4)?,
+                    r.get::<_, Option<String>>(5)?,
+                    r.get::<_, String>(6)?,
+                ),
+                r.get::<_, i64>(7)?,
+                r.get::<_, Option<String>>(8)?,
             ))
         },
     );
-    let (rekordbox_track_id, new_artist, new_title, new_label, new_year, new_genre, status) =
-        match row {
-            Ok(v) => v,
-            Err(e) => {
-                return ApplyMetadataSyncOutcome {
-                    id,
-                    ok: false,
-                    error: Some(e.to_string()),
-                }
+    let (
+        (rekordbox_track_id, new_artist, new_title, new_label, new_year, new_genre, status),
+        sift_track_id,
+        cleared_fields,
+    ) = match row {
+        Ok(v) => v,
+        Err(e) => {
+            return ApplyMetadataSyncOutcome {
+                id,
+                ok: false,
+                error: Some(e.to_string()),
             }
-        };
+        }
+    };
 
     let Some(rekordbox_track_id) = rekordbox_track_id.filter(|_| status == "pending") else {
         return ApplyMetadataSyncOutcome {
@@ -638,6 +725,12 @@ fn apply_one_metadata_sync(
         };
     };
 
+    // #81 : ce que la rangée annonce « à vider » (la mémoire restreinte, à la détection, à ce que
+    // Rekordbox portait), MOINS ce que le fichier a reposé depuis : la mémoire vivante l'a oublié,
+    // alors que la rangée ne se rafraîchit que si Rekordbox connaît le chemin écrit — un rangement
+    // en attente de réparation, et la rangée aurait vidé un label revenu (revue de la phase B).
+    let cleared = cleared_now(conn, sift_track_id, cleared_fields.as_deref());
+    let has = |f: crate::actions::SyncField| cleared.contains(&f);
     let sync = crate::rekordbox_masterdb::MetadataSync {
         track_id: rekordbox_track_id,
         artist: new_artist,
@@ -645,11 +738,40 @@ fn apply_one_metadata_sync(
         year: new_year,
         genre: new_genre,
         label: new_label,
+        clear: crate::rekordbox_masterdb::MetadataClear {
+            label: has(crate::actions::SyncField::Label),
+            genre: has(crate::actions::SyncField::Genre),
+            year: has(crate::actions::SyncField::Year),
+            artwork: has(crate::actions::SyncField::Cover),
+        },
     };
     let backup_dir = backup_root.join(batch_stamp).join(id.to_string());
+    let rekordbox_track_id = sync.track_id.clone();
 
     match crate::rekordbox_masterdb::sync_track_metadata(pioneer_dir, &backup_dir, &sync) {
-        Ok(()) => {
+        Ok(written) => {
+            // Vidés dans Rekordbox : la mémoire de la piste les oublie (#81).
+            crate::actions::forget_sync_debt(conn, sift_track_id, &cleared);
+            if let Some(image_path) = written.cleared_image_path {
+                if let Err(e) = remember_cleared_artwork(conn, &rekordbox_track_id, &image_path) {
+                    // Le chemin part au journal : c'est la seule trace qui permette encore de
+                    // reposer une pochette sur la piste.
+                    log::error!(
+                        "rekordbox metadata sync {id}: ImagePath {image_path:?} de la piste \
+                         {rekordbox_track_id} vidé mais non retenu ({e})"
+                    );
+                    return ApplyMetadataSyncOutcome {
+                        id,
+                        ok: false,
+                        error: Some(desync_error_message(
+                            "metadata sync",
+                            &crate::tr!("la pochette a bien été vidée", "the cover was cleared"),
+                            id,
+                            e,
+                        )),
+                    };
+                }
+            }
             if let Err(e) = conn.execute(
                 "UPDATE rekordbox_masterdb_metadata_syncs SET status='applied', applied_at=datetime('now') WHERE id=?1",
                 rusqlite::params![id],
@@ -880,13 +1002,31 @@ fn apply_one_artwork_sync(
     };
 
     let backup_dir = backup_root.join(batch_stamp).join(id.to_string());
+    // #81 : l'`ImagePath` qu'une synchro de Sift a vidé, s'il y en a un — reposé seulement si la
+    // piste n'en a plus.
+    let emptied = cleared_artwork_path(conn, &rekordbox_track_id);
     match crate::rekordbox_masterdb::sync_track_artwork(
         pioneer_dir,
         &backup_dir,
         &rekordbox_track_id,
         &cover_bytes,
+        emptied.as_deref(),
     ) {
         Ok(()) => {
+            // La piste a maintenant un `ImagePath` (reposé, ou déjà là) : le chemin retenu ne sert
+            // plus. Une ligne restée par erreur est sans effet — elle n'est lue que si la piste
+            // n'en a pas.
+            if emptied.is_some() {
+                if let Err(e) = conn.execute(
+                    "DELETE FROM rekordbox_cleared_artwork WHERE rekordbox_track_id=?1",
+                    rusqlite::params![rekordbox_track_id],
+                ) {
+                    log::error!(
+                        "rekordbox_cleared_artwork : oubli impossible pour la piste \
+                         {rekordbox_track_id} ({e})"
+                    );
+                }
+            }
             if let Err(e) = conn.execute(
                 "UPDATE rekordbox_masterdb_artwork_syncs SET status='applied', applied_at=datetime('now') WHERE id=?1",
                 rusqlite::params![id],
@@ -1849,13 +1989,14 @@ mod tests {
         assert_eq!(rows[0].status, "pending");
     }
 
-    /// #81 : les champs que Rekordbox garde arrivent à l'écran, dans l'ordre canonique, et une
+    /// #81 : les champs à vider arrivent à l'écran, dans l'ordre canonique, et une
     /// valeur inconnue (base écrite par une version plus récente) ne fait pas échouer la liste.
     #[test]
     fn pending_metadata_sync_carries_the_cleared_fields() {
         let conn = db();
+        // La mémoire porte les quatre : l'écran n'annonce que ce qu'elle retient encore.
         conn.execute(
-            "INSERT INTO tracks(path, status) VALUES('D:/a.mp3', 'filed')",
+            "INSERT INTO tracks(path, status, rekordbox_cleared) VALUES('D:/a.mp3', 'filed', 'label,year,genre,cover')",
             [],
         )
         .unwrap();
@@ -1998,6 +2139,250 @@ mod tests {
             )
             .unwrap();
         assert_eq!(status, "applied");
+    }
+
+    /// #81, bout en bout : une rangée qui annonce « à vider : label, pochette » les vide dans
+    /// `master.db`, et la mémoire de la piste les oublie ; ce qui n'était pas annoncé reste.
+    #[test]
+    fn apply_metadata_sync_clears_what_the_row_announces() {
+        let conn = db();
+        let tmp = tempfile::tempdir().unwrap();
+        let pioneer_dir = tmp.path().join("pioneer");
+        std::fs::create_dir_all(&pioneer_dir).unwrap();
+        std::fs::copy(
+            concat!(
+                env!("CARGO_MANIFEST_DIR"),
+                "/tests/fixtures/rekordbox_master.db"
+            ),
+            pioneer_dir.join("master.db"),
+        )
+        .unwrap();
+        crate::actions::set_pioneer_dir_override_for_test(pioneer_dir.clone());
+        let xml_path = pioneer_dir.join("masterPlaylists6.xml");
+        std::fs::write(&xml_path, b"<DJ_PLAYLISTS/>").unwrap();
+        crate::settings::set(
+            &conn,
+            crate::settings::REKORDBOX_XML_PATH,
+            xml_path.to_str().unwrap(),
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO tracks(path, status, rekordbox_cleared) VALUES('D:/FIXTURE/track1.mp3', 'filed', 'label,year,cover')",
+            [],
+        )
+        .unwrap();
+        let track_id = conn.last_insert_rowid();
+        let id = seed_metadata_sync_row(&conn, track_id, "pending", Some("40000001"), None);
+        conn.execute(
+            "UPDATE rekordbox_masterdb_metadata_syncs SET cleared_fields='label,cover' WHERE id=?1",
+            [id],
+        )
+        .unwrap();
+
+        let backup_root = tmp.path().join("backups");
+        let outcomes = apply_metadata_syncs_inner(&conn, &backup_root, &[id]).unwrap();
+        assert!(outcomes[0].ok, "{:?}", outcomes[0].error);
+
+        let raw = std::fs::read(pioneer_dir.join("master.db")).unwrap();
+        let plain = crate::rekordbox_masterdb::decrypt_masterdb_for_test(&raw);
+        let mut rb = Connection::open_in_memory().unwrap();
+        let len = plain.len();
+        rb.deserialize_read_exact(rusqlite::MAIN_DB, std::io::Cursor::new(plain), len, false)
+            .unwrap();
+        let (label, year, image): (Option<String>, i64, String) = rb
+            .query_row(
+                "SELECT LabelID, ReleaseYear, ImagePath FROM djmdContent WHERE ID = '40000001'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            (label, image.as_str()),
+            (None, ""),
+            "label et pochette vidés"
+        );
+        assert!(year > 0, "l'année n'était pas annoncée : elle reste");
+        let memory: Option<String> = conn
+            .query_row(
+                "SELECT rekordbox_cleared FROM tracks WHERE id=?1",
+                [track_id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(
+            memory.as_deref(),
+            Some("year"),
+            "la mémoire oublie ce qui a été vidé"
+        );
+    }
+
+    /// Le dossier Pioneer de la fixture, lié comme le ferait l'utilisateur.
+    fn linked_fixture(conn: &Connection, tmp: &tempfile::TempDir) -> std::path::PathBuf {
+        let pioneer_dir = tmp.path().join("pioneer");
+        let xml_path = seed_pioneer_dir(&pioneer_dir);
+        crate::settings::set(
+            conn,
+            crate::settings::REKORDBOX_XML_PATH,
+            xml_path.to_str().unwrap(),
+        )
+        .unwrap();
+        pioneer_dir
+    }
+
+    /// Relit une piste de la copie de `master.db` : (LabelID, ImagePath).
+    fn rb_label_and_image(pioneer_dir: &Path, id: &str) -> (Option<String>, String) {
+        let raw = std::fs::read(pioneer_dir.join("master.db")).unwrap();
+        let plain = crate::rekordbox_masterdb::decrypt_masterdb_for_test(&raw);
+        let mut rb = Connection::open_in_memory().unwrap();
+        let len = plain.len();
+        rb.deserialize_read_exact(rusqlite::MAIN_DB, std::io::Cursor::new(plain), len, false)
+            .unwrap();
+        rb.query_row(
+            "SELECT CAST(LabelID AS TEXT), COALESCE(ImagePath, '') FROM djmdContent WHERE ID = ?1",
+            [id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap()
+    }
+
+    /// Revue de la phase B de #81 : une rangée restée sur une annonce périmée ne vide pas ce que le
+    /// fichier a reposé depuis. La mémoire vivante l'a oublié, alors que la rangée ne se rafraîchit
+    /// que si Rekordbox connaît le chemin écrit (un rangement en attente de réparation). L'écran ne
+    /// l'annonce plus non plus.
+    #[test]
+    fn apply_metadata_sync_does_not_clear_what_the_file_set_again() {
+        let conn = db();
+        let tmp = tempfile::tempdir().unwrap();
+        let pioneer_dir = linked_fixture(&conn, &tmp);
+        let before = rb_label_and_image(&pioneer_dir, "40000001");
+        assert!(
+            before.0.is_some() && !before.1.is_empty(),
+            "la fixture porte les deux"
+        );
+        conn.execute(
+            "INSERT INTO tracks(path, status) VALUES('D:/FIXTURE/track1.mp3', 'filed')",
+            [],
+        )
+        .unwrap();
+        let track_id = conn.last_insert_rowid();
+        let id = seed_metadata_sync_row(&conn, track_id, "pending", Some("40000001"), None);
+        conn.execute(
+            "UPDATE rekordbox_masterdb_metadata_syncs SET cleared_fields='label,cover' WHERE id=?1",
+            [id],
+        )
+        .unwrap();
+
+        let rows = pending_metadata_syncs_inner(&conn).unwrap();
+        assert!(rows[0].cleared.is_empty(), "rien n'est plus à vider");
+
+        let outcomes =
+            apply_metadata_syncs_inner(&conn, &tmp.path().join("backups"), &[id]).unwrap();
+        assert!(outcomes[0].ok, "{:?}", outcomes[0].error);
+        assert_eq!(rb_label_and_image(&pioneer_dir, "40000001"), before);
+    }
+
+    /// Revue de la phase B de #81 : vider la pochette, puis synchroniser une nouvelle pochette sur
+    /// la même piste. La seconde synchro repose l'`ImagePath` que la première a retenu, au lieu de
+    /// refuser pour toujours en « pas de pochette dans master.db ».
+    #[test]
+    fn a_cover_synced_after_a_cleared_one_points_the_track_back_at_its_files() {
+        let conn = db();
+        let tmp = tempfile::tempdir().unwrap();
+        let pioneer_dir = linked_fixture(&conn, &tmp);
+        let (_, image) = rb_label_and_image(&pioneer_dir, "40000001");
+        assert_eq!(image, "/PIONEER/Artwork/aaaa/artwork.jpg");
+        let share_dir = pioneer_dir.join("share/PIONEER/Artwork/aaaa");
+        std::fs::create_dir_all(&share_dir).unwrap();
+        for (name, side) in [
+            ("artwork.jpg", 100),
+            ("artwork_m.jpg", 50),
+            ("artwork_s.jpg", 20),
+        ] {
+            std::fs::write(share_dir.join(name), tiny_jpeg(side, side)).unwrap();
+        }
+        conn.execute(
+            "INSERT INTO tracks(path, status, rekordbox_cleared) VALUES('D:/FIXTURE/track1.mp3', 'filed', 'cover')",
+            [],
+        )
+        .unwrap();
+        let track_id = conn.last_insert_rowid();
+        let meta = seed_metadata_sync_row(&conn, track_id, "pending", Some("40000001"), None);
+        conn.execute(
+            "UPDATE rekordbox_masterdb_metadata_syncs SET cleared_fields='cover' WHERE id=?1",
+            [meta],
+        )
+        .unwrap();
+        let out = apply_metadata_syncs_inner(&conn, &tmp.path().join("b-meta"), &[meta]).unwrap();
+        assert!(out[0].ok, "{:?}", out[0].error);
+        assert_eq!(
+            rb_label_and_image(&pioneer_dir, "40000001").1,
+            "",
+            "pochette vidée"
+        );
+
+        let cover_path = tmp.path().join("new_cover.jpg");
+        std::fs::write(&cover_path, tiny_jpeg(300, 300)).unwrap();
+        let art = seed_artwork_sync_row(
+            &conn,
+            track_id,
+            "pending",
+            Some("40000001"),
+            None,
+            cover_path.to_str().unwrap(),
+        );
+        let out =
+            rekordbox_masterdb_apply_artwork_syncs_inner(&conn, &tmp.path().join("b-art"), &[art])
+                .unwrap();
+        assert!(out[0].ok, "{:?}", out[0].error);
+        assert_eq!(
+            rb_label_and_image(&pioneer_dir, "40000001").1,
+            image,
+            "la piste désigne à nouveau ses fichiers"
+        );
+        let remembered: i64 = conn
+            .query_row("SELECT count(*) FROM rekordbox_cleared_artwork", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(remembered, 0, "le chemin retenu ne sert plus");
+    }
+
+    /// Revue de la phase B de #81 : l'annonce d'une rangée ambiguë réunit les candidates ; résolue,
+    /// elle ne vaut plus que pour la piste choisie. Dans la fixture, 40000002 n'a pas de pochette.
+    #[test]
+    fn resolving_an_ambiguous_row_keeps_only_what_the_chosen_track_carries() {
+        let conn = db();
+        let tmp = tempfile::tempdir().unwrap();
+        linked_fixture(&conn, &tmp);
+        let mut ids = Vec::new();
+        for path in ["D:/a.mp3", "D:/b.mp3"] {
+            conn.execute(
+                "INSERT INTO tracks(path, status, rekordbox_cleared) VALUES(?1, 'filed', 'cover')",
+                [path],
+            )
+            .unwrap();
+            let track_id = conn.last_insert_rowid();
+            ids.push(seed_metadata_sync_row(
+                &conn,
+                track_id,
+                "ambiguous",
+                None,
+                Some("40000001,40000002"),
+            ));
+        }
+        conn.execute(
+            "UPDATE rekordbox_masterdb_metadata_syncs SET cleared_fields='cover'",
+            [],
+        )
+        .unwrap();
+
+        resolve_ambiguous_metadata_sync_inner(&conn, ids[0], "40000002").unwrap();
+        resolve_ambiguous_metadata_sync_inner(&conn, ids[1], "40000001").unwrap();
+
+        let rows = pending_metadata_syncs_inner(&conn).unwrap();
+        let cleared = |id: i64| rows.iter().find(|r| r.id == id).unwrap().cleared.clone();
+        assert!(cleared(ids[0]).is_empty(), "40000002 n'a rien à vider");
+        assert_eq!(cleared(ids[1]), vec!["cover".to_string()]);
     }
 
     #[test]

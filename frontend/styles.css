@@ -3558,7 +3558,7 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .rkb-cand--amb{cursor:default}
 .rkb-cand-piste{flex:1 1 40%;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .rkb-cand-ecart{flex:1 1 55%;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--color-text-secondary)}
-/* #81 : ce que la synchro ne vide pas — en tête de l'écart (la fin est tronquée la première), en
+/* #81 : ce que la synchro vide — en tête de l'écart (la fin est tronquée la première), en
    encre d'avertissement, le même signal que les autres « à surveiller » de l'app (.sift-cands-error). */
 .rkb-cand-cleared{color:var(--color-text-warning)}
 .rkb-cand-choices{flex-basis:100%;display:flex;flex-wrap:wrap;gap:var(--space-8);padding-left:calc(var(--space-16) + var(--space-8))}

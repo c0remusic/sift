@@ -527,6 +527,20 @@ const MIGRATIONS: &[&str] = &[
     ALTER TABLE tracks ADD COLUMN rekordbox_cleared TEXT;
     ALTER TABLE rekordbox_masterdb_metadata_syncs ADD COLUMN cleared_fields TEXT;
     "#,
+    // v25 — l'`ImagePath` qu'une synchro de Sift a vidé dans Rekordbox (#81, revue de la phase B).
+    //
+    // Une pochette se synchronise en RÉÉCRIVANT les trois fichiers vers lesquels `ImagePath` pointe
+    // (`sync_track_artwork`, qui n'en crée jamais). Vider `ImagePath` sans retenir sa valeur rendait
+    // donc la piste définitivement inaccessible à toute pochette future, alors que ses fichiers
+    // restent dans le cache. Clé : l'ID Rekordbox (`djmdContent.ID`), pas la piste Sift — c'est
+    // cette ligne-là que la synchro a vidée, et une piste Sift peut en désigner plusieurs.
+    r#"
+    CREATE TABLE rekordbox_cleared_artwork (
+        rekordbox_track_id TEXT PRIMARY KEY,
+        image_path TEXT NOT NULL,
+        cleared_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+    "#,
 ];
 
 /// Applies ONE migration and its `user_version` bump in a SINGLE transaction, so a batch that
@@ -600,8 +614,9 @@ mod tests {
         run_migrations(&conn).unwrap();
         // v4 adds `settings`, v6 adds `track_genres`, v11 adds `rekordbox_masterdb_repairs`,
         // v13 adds `rekordbox_masterdb_metadata_syncs`, v14 adds `rekordbox_masterdb_artwork_syncs`,
-        // v17 adds `volume_usage`, v19 adds `dup_edges` and `dup_scanned`
-        assert_eq!(table_count(&conn).unwrap(), 13);
+        // v17 adds `volume_usage`, v19 adds `dup_edges` and `dup_scanned`, v25 adds
+        // `rekordbox_cleared_artwork`
+        assert_eq!(table_count(&conn).unwrap(), 14);
     }
 
     /// Une migration qui casse à mi-parcours ne doit laisser NI la table déjà créée, NI la
@@ -940,7 +955,7 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         run_migrations(&conn).unwrap();
         run_migrations(&conn).unwrap(); // second run must not error or duplicate
-        assert_eq!(table_count(&conn).unwrap(), 13);
+        assert_eq!(table_count(&conn).unwrap(), 14);
     }
 
     /// v16 must actually WIPE the inflated report cache, not merely be declared. Applies v1..v15

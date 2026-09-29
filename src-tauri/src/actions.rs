@@ -353,9 +353,9 @@ pub fn detect_masterdb_repair_with_index(
 /// sans pochette, ou le « Rétablir » qui revient sur une release qui n'en avait pas.
 ///
 /// Hors périmètre, délibérément : l'artiste et le titre. Une release les pose toujours ; seul un
-/// Rétablir vers un fichier sans tags peut les retirer, et Rekordbox garde de toute façon un titre
-/// (tiré du nom de fichier à l'import) — « Rekordbox garde : titre » y serait toujours vrai et ne
-/// dirait rien.
+/// Rétablir vers un fichier sans tags peut les retirer, et Rekordbox porte de toute façon un titre
+/// (tiré du nom de fichier à l'import) — le vider laisserait une piste sans nom, ce que Rekordbox
+/// ne fait jamais lui-même.
 ///
 /// Protocole, pas prose : `as_str` est stocké dans `rekordbox_masterdb_metadata_syncs.cleared_fields`
 /// et lu par l'écran Rekordbox. Miroir de `SYNC_CLEARED_FIELDS` dans `shared/contracts.ts`, épinglé
@@ -410,7 +410,7 @@ pub(crate) fn parse_cleared_fields(raw: Option<&str>) -> Vec<SyncField> {
     out
 }
 
-fn join_cleared_fields(fields: &[SyncField]) -> Option<String> {
+pub(crate) fn join_cleared_fields(fields: &[SyncField]) -> Option<String> {
     (!fields.is_empty()).then(|| {
         fields
             .iter()
@@ -424,7 +424,7 @@ fn join_cleared_fields(fields: &[SyncField]) -> Option<String> {
 /// porter : `tracks.rekordbox_cleared` (v24). Par PISTE et hors du journal — une ligne de synchro
 /// meurt avec la purge à 30 jours (`ON DELETE CASCADE`) et n'existe pas quand Rekordbox ne connaît
 /// pas le chemin : la mémoire, elle, reste (revue de #81).
-fn read_sync_debt(conn: &Connection, track_id: i64) -> Vec<SyncField> {
+pub(crate) fn read_sync_debt(conn: &Connection, track_id: i64) -> Vec<SyncField> {
     let raw: Option<String> = conn
         .query_row(
             "SELECT rekordbox_cleared FROM tracks WHERE id=?1",
@@ -468,11 +468,19 @@ pub fn record_sync_debt(conn: &Connection, track_id: i64, values: &MetadataSyncV
     write_sync_debt(conn, track_id, &debt);
 }
 
-/// Ce que Rekordbox PORTE parmi la mémoire : seul un champ que Rekordbox a vraiment se dit
-/// « Rekordbox garde ». Une valeur que Sift a posée puis retirée sans qu'elle ait jamais été
+/// Une synchro vient de VIDER ces champs dans Rekordbox (#81, phase B) : la mémoire n'a plus à
+/// s'en souvenir.
+pub fn forget_sync_debt(conn: &Connection, track_id: i64, fields: &[SyncField]) {
+    let mut debt = read_sync_debt(conn, track_id);
+    debt.retain(|f| !fields.contains(f));
+    write_sync_debt(conn, track_id, &debt);
+}
+
+/// Ce que Rekordbox PORTE parmi la mémoire : seul un champ que Rekordbox a vraiment s'annonce
+/// « à vider ». Une valeur que Sift a posée puis retirée sans qu'elle ait jamais été
 /// synchronisée n'a rien à vider (revue de #81 : c'était l'annonce du flux principal — une
 /// première release fausse, puis la bonne).
-fn carried_debt(
+pub(crate) fn carried_debt(
     debt: &[SyncField],
     carries: crate::rekordbox_masterdb::RekordboxCarries,
 ) -> Vec<SyncField> {

@@ -36,9 +36,9 @@ const fr = {
   year: "Année",
   label: "Label",
   tags: "Tags",
-  // #81 : ce que la release a retiré du fichier et que la synchro ne vide pas dans Rekordbox.
+  // #81 : ce que Sift a retiré du fichier, que Rekordbox porte encore, et que la synchro VIDE.
   clearedField: { label: "label", year: "année", genre: "genre", cover: "pochette" },
-  clearedNotice: (fields: string) => `Rekordbox garde : ${fields}`,
+  clearedNotice: (fields: string) => `À vider : ${fields}`,
   playlistN: (id: string) => `Playlist ${id}`,
   trackN: (id: string) => `Piste ${id}`,
   duplicatesToRemove: (n: number) => `${plFr(n, "doublon")} à retirer`,
@@ -86,7 +86,11 @@ const fr = {
   /** Sentinelle `AMBIGUITY_BAD_CHOICE` du backend. Même texte que la phrase qu'elle remplace. */
   ambiguityBadChoice: "piste choisie invalide pour cette ambiguïté",
   // Synchronisation.
-  confirmSync: (n: number) => `Synchroniser ${plFr(n, "entrée")} avec Rekordbox ? Ferme Rekordbox avant de continuer.`,
+  // #81 : un vidage efface une valeur dans Rekordbox — la confirmation le nomme, compte à l'appui.
+  confirmSync: (n: number, cleared = 0) =>
+    `Synchroniser ${plFr(n, "entrée")} avec Rekordbox ?` +
+    (cleared ? ` ${plFr(cleared, "champ")} y ${cleared > 1 ? "seront vidés" : "sera vidé"}.` : "") +
+    " Ferme Rekordbox avant de continuer.",
   confirmSyncButton: "Synchroniser",
   syncing: (n: number) => `Synchronisation de ${plFr(n, "entrée")}…`,
   unknownFailure: "échec inconnu",
@@ -113,7 +117,7 @@ const en: typeof fr = {
   label: "Label",
   tags: "Tags",
   clearedField: { label: "label", year: "year", genre: "genre", cover: "cover" },
-  clearedNotice: (fields) => `Rekordbox keeps: ${fields}`,
+  clearedNotice: (fields) => `To clear: ${fields}`,
   playlistN: (id) => `Playlist ${id}`,
   trackN: (id) => `Track ${id}`,
   duplicatesToRemove: (n) => `${plEn(n, "duplicate")} to remove`,
@@ -151,7 +155,10 @@ const en: typeof fr = {
   choiceFailed: "Choice failed — try again",
   ambiguityStale: "This row is no longer ambiguous — reload needed",
   ambiguityBadChoice: "The chosen track isn't one of this ambiguity's candidates",
-  confirmSync: (n) => `Sync ${plEn(n, "entry", "entries")} with Rekordbox? Close Rekordbox before you continue.`,
+  confirmSync: (n, cleared = 0) =>
+    `Sync ${plEn(n, "entry", "entries")} with Rekordbox?` +
+    (cleared ? ` ${plEn(cleared, "field")} will be cleared there.` : "") +
+    " Close Rekordbox before you continue.",
   confirmSyncButton: "Sync",
   syncing: (n) => `Syncing ${plEn(n, "entry", "entries")}…`,
   unknownFailure: "unknown failure",

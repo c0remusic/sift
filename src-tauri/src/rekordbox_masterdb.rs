@@ -60,8 +60,8 @@
 //! - Tier 3 pochette — `sync_track_artwork`, via
 //!   `ipc_library::rekordbox_masterdb_apply_artwork_syncs` →
 //!   `rekordbox_repairs::rekordbox_masterdb_apply_artwork_syncs_inner` → `apply_one_artwork_sync`.
-//!   Elle n'écrit PAS `master.db` : seulement les 3 fichiers de pochette que Rekordbox garde en
-//!   cache.
+//!   Elle n'écrit `master.db` que pour reposer un `ImagePath` que Sift a vidé (#81) ; sinon,
+//!   seulement les 3 fichiers de pochette que Rekordbox garde en cache.
 //!
 //! ⚠️ Cette section a dit de Tier 3 « not yet wired to IPC or a filing-time hook » jusqu'au
 //! 2026-09-16, alors que les deux l'étaient. Trois `#[allow(dead_code)]` datent de cette
@@ -344,11 +344,21 @@ pub struct RekordboxTrack {
     pub track_id: String,
     /// Rekordbox `djmdContent.FolderPath` (full file path as Rekordbox knows it).
     pub folder_path: String,
-    /// Ce que la piste porte dans Rekordbox, pour dire « Rekordbox garde : label » en vérité et pas
-    /// d'après ce que le FICHIER a perdu (#81, revue). Forme du vide mesurée sur la vraie
+    /// Ce que la piste porte dans Rekordbox, pour n'annoncer « À vider : label » que si c'est vrai,
+    /// et pas d'après ce que le FICHIER a perdu (#81, revue). Forme du vide mesurée sur la vraie
     /// bibliothèque (Évaluation 24) : FK absent = NULL, année absente = 0, pochette absente = ''.
     pub carries: RekordboxCarries,
 }
+
+/// Les quatre colonnes de `RekordboxCarries`, dans cet ordre (label, genre, année, pochette) : la
+/// présence calculée par SQLite dans la forme mesurée du vide (Évaluation 24) — un FK vaut NULL
+/// quand il manque (et, par prudence, ni '' ni '0'), l'année vaut 0, la pochette ''. Une seule
+/// définition pour la lecture de l'index ET pour la synchro, qui ne vide que ce que la piste porte
+/// encore (revue de #81, phase B).
+const CARRIES_COLUMNS: &str = "COALESCE(CAST(LabelID AS TEXT), '') NOT IN ('', '0'),
+     COALESCE(CAST(GenreID AS TEXT), '') NOT IN ('', '0'),
+     COALESCE(ReleaseYear, 0) > 0,
+     TRIM(COALESCE(ImagePath, '')) <> ''";
 
 /// Les champs qu'une piste Rekordbox porte non vides — voir `RekordboxTrack::carries`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -381,12 +391,42 @@ pub struct PathRepair {
     pub new_file_name_s: String,
 }
 
+/// Les champs qu'une synchro VIDE dans Rekordbox (#81) : Sift les a retirés du fichier en changeant
+/// de release, et Rekordbox les porte encore. Écrits dans la forme que Rekordbox donne lui-même à un
+/// tag absent, mesurée sur une vraie bibliothèque (Évaluation 24 de `docs/ressources-externes.md`,
+/// 2 828 pistes) : `LabelID` / `GenreID` à NULL, `ReleaseYear` à 0, `ImagePath` vide — les valeurs
+/// que portent déjà des milliers de pistes que Rekordbox affiche normalement. Rien n'est supprimé :
+/// ni la ligne `djmdLabel`/`djmdGenre` d'avant (orpheline), ni les fichiers de pochette du cache —
+/// ceux-là, Sift les retrouve : `sync_track_metadata` rend l'`ImagePath` qu'il vide, et
+/// `sync_track_artwork` le repose avant la pochette suivante.
+///
+/// Un champ que la piste ne porte déjà plus n'est pas réécrit : pas de marque de modification
+/// pour rien (cas d'une rangée ambiguë, où l'annonce réunit les candidates).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct MetadataClear {
+    pub label: bool,
+    pub genre: bool,
+    pub year: bool,
+    pub artwork: bool,
+}
+
+/// Ce qu'une synchro de métadonnées a fait et que l'appelant doit retenir.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct MetadataSyncWritten {
+    /// L'`ImagePath` que la synchro vient de vider (#81). Ses trois fichiers restent dans le cache
+    /// de Rekordbox : sans ce chemin, plus aucune pochette ne pourrait être posée sur la piste —
+    /// `sync_track_artwork` ne crée jamais de fichier, il réécrit ceux vers lesquels `ImagePath`
+    /// pointe (revue de la phase B).
+    pub cleared_image_path: Option<String>,
+}
+
 /// One M8 Tier 3 metadata sync operation: mirrors exactly the fields
 /// `tagging::write_tags_full` writes to the audio file (artist/title/
 /// label/year/genre) — cover and album are deliberately absent, neither is
 /// ever written by Sift's own tagging path. Fields left `None` are not
 /// touched, same "None = leave alone" convention as `write_tags_full`
-/// itself.
+/// itself. `clear` VIDE, lui, ce qu'il nomme (#81) — et une valeur posée
+/// l'emporte toujours sur un vidage du même champ.
 #[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct MetadataSync {
@@ -404,6 +444,20 @@ pub struct MetadataSync {
     /// New label (Sift's ID3 Publisher/TPUB field) — find-or-create on
     /// `djmdLabel`, repoints `LabelID`.
     pub label: Option<String>,
+    /// Ce que la synchro vide (#81).
+    pub clear: MetadataClear,
+}
+
+impl MetadataSync {
+    /// Les vidages effectifs : un champ posé ne se vide pas.
+    fn effective_clear(&self) -> MetadataClear {
+        MetadataClear {
+            label: self.clear.label && self.label.is_none(),
+            genre: self.clear.genre && self.genre.is_none(),
+            year: self.clear.year && self.year.is_none(),
+            artwork: self.clear.artwork,
+        }
+    }
 }
 
 /// One `djmdSongPlaylist` row involved in a duplicate group — either the
@@ -807,17 +861,10 @@ pub fn read_rekordbox_masterdb(path: &Path) -> Result<RekordboxIndex, MasterDbEr
     conn.deserialize_read_exact(rusqlite::MAIN_DB, Cursor::new(plaintext), len, true)
         .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
 
-    // Présence calculée par SQLite, dans la forme mesurée du vide (Évaluation 24) : un FK vaut NULL
-    // quand il manque (et, par prudence, ni '' ni '0'), l'année vaut 0, la pochette ''.
     let mut stmt = conn
-        .prepare(
-            "SELECT ID, FolderPath,
-                    COALESCE(CAST(LabelID AS TEXT), '') NOT IN ('', '0'),
-                    COALESCE(CAST(GenreID AS TEXT), '') NOT IN ('', '0'),
-                    COALESCE(ReleaseYear, 0) > 0,
-                    TRIM(COALESCE(ImagePath, '')) <> ''
-             FROM djmdContent",
-        )
+        .prepare(&format!(
+            "SELECT ID, FolderPath, {CARRIES_COLUMNS} FROM djmdContent"
+        ))
         .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
     let rows = stmt
         .query_map([], |row| {
@@ -1344,21 +1391,26 @@ fn resolve_artwork_variants(
 /// M8 Tier 3 — pochette. Overwrites the 3 cached artwork files Rekordbox
 /// keeps for a track (`pioneer_dir/share/<ImagePath>` and its `_m`/`_s`
 /// siblings) in place, resizing `cover_bytes` to match each existing
-/// variant's exact dimensions. Never touches `master.db` — `ImagePath`
-/// itself never changes (confirmed by spike 8), this only replaces file
-/// bytes on disk.
+/// variant's exact dimensions. `ImagePath` itself never changes (confirmed by
+/// spike 8), this only replaces file bytes on disk — with ONE exception (#81) :
+/// `restore_image_path`, the path a Sift sync emptied earlier. When the track's
+/// `ImagePath` is empty and that path is given, its 3 files (orphaned, still in
+/// the cache) are rewritten FIRST, then `ImagePath` is pointed back at them
+/// through `with_masterdb_write`. Files first: until the repoint, nothing in
+/// Rekordbox shows them, so a failure at any step leaves Rekordbox as it was.
 ///
 /// Refuses (no silent fallback) when: Rekordbox is running, the track has
-/// no `ImagePath` (`NoArtworkPath`), or any of the 3 variant files is
-/// missing on disk (`ArtworkVariantMissing`) — the "no existing artwork at
-/// all" case was never observed at spike 8, so this never guesses a
-/// find-or-create-style behavior for it.
+/// no `ImagePath` and no `restore_image_path` (`NoArtworkPath`), or any of
+/// the 3 variant files is missing on disk (`ArtworkVariantMissing`) — the
+/// "no existing artwork at all" case was never observed at spike 8, so this
+/// never guesses a find-or-create-style behavior for it.
 #[allow(dead_code)]
 pub fn sync_track_artwork(
     pioneer_dir: &Path,
     backup_dir: &Path,
     track_id: &str,
     cover_bytes: &[u8],
+    restore_image_path: Option<&str>,
 ) -> Result<(), MasterDbError> {
     if is_rekordbox_running() {
         return Err(MasterDbError::RekordboxRunning);
@@ -1384,11 +1436,18 @@ pub fn sync_track_artwork(
         .ok_or_else(|| MasterDbError::TrackNotFound {
             track_id: track_id.to_string(),
         })?;
-    let image_path = image_path.filter(|p| !p.trim().is_empty()).ok_or_else(|| {
-        MasterDbError::NoArtworkPath {
-            track_id: track_id.to_string(),
-        }
-    })?;
+    let (image_path, repoint) = match image_path.filter(|p| !p.trim().is_empty()) {
+        Some(p) => (p, false),
+        None => match restore_image_path.filter(|p| !p.trim().is_empty()) {
+            Some(p) => (p.to_string(), true),
+            None => {
+                return Err(MasterDbError::NoArtworkPath {
+                    track_id: track_id.to_string(),
+                })
+            }
+        },
+    };
+    drop(conn);
 
     let (full, medium, small) = resolve_artwork_variants(pioneer_dir, &image_path)?;
     for target in [&full, &medium, &small] {
@@ -1487,6 +1546,10 @@ pub fn sync_track_artwork(
     };
 
     match verify() {
+        // Files written and verified — only now does the track point back at them. A failed
+        // repoint leaves the files orphaned as they were before this call (with the new bytes),
+        // so nothing to roll back: the next attempt rewrites them the same way.
+        Ok(()) if repoint => repoint_track_artwork(pioneer_dir, backup_dir, track_id, &image_path),
         Ok(()) => Ok(()),
         Err(verify_err) => {
             log::error!(
@@ -1510,6 +1573,59 @@ pub fn sync_track_artwork(
     }
 }
 
+/// #81 — points a track's emptied `ImagePath` back at `image_path`, whose 3 files
+/// `sync_track_artwork` has just rewritten. Same marks of a track-info change as
+/// `sync_track_metadata` (USN, `TrackInfoUpdated`), same safety sequence.
+fn repoint_track_artwork(
+    pioneer_dir: &Path,
+    backup_dir: &Path,
+    track_id: &str,
+    image_path: &str,
+) -> Result<(), MasterDbError> {
+    with_masterdb_write(
+        pioneer_dir,
+        backup_dir,
+        |tx, now| {
+            let content_usn = bump_global_usn(tx, now)?;
+            let changed = tx
+                .execute(
+                    "UPDATE djmdContent SET ImagePath = ?1, rb_local_usn = ?2, updated_at = ?3, \
+                     TrackInfoUpdated = CAST(CAST(TrackInfoUpdated AS INTEGER) + 1 AS TEXT) \
+                     WHERE ID = ?4",
+                    rusqlite::params![image_path, content_usn, now, track_id],
+                )
+                .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+            if changed == 0 {
+                return Err(MasterDbError::TrackNotFound {
+                    track_id: track_id.to_string(),
+                });
+            }
+            Ok(())
+        },
+        |db_path| {
+            let raw = std::fs::read(db_path).map_err(|e| e.to_string())?;
+            let plaintext = decrypt_masterdb(&raw).map_err(|e| e.to_string())?;
+            let mut conn = Connection::open_in_memory().map_err(|e| e.to_string())?;
+            let len = plaintext.len();
+            conn.deserialize_read_exact(rusqlite::MAIN_DB, Cursor::new(plaintext), len, false)
+                .map_err(|e| e.to_string())?;
+            let got: Option<String> = conn
+                .query_row(
+                    "SELECT ImagePath FROM djmdContent WHERE ID = ?1",
+                    rusqlite::params![track_id],
+                    |row| row.get(0),
+                )
+                .map_err(|e| e.to_string())?;
+            if got.as_deref() != Some(image_path) {
+                return Err(format!(
+                    "ImagePath not repointed: expected {image_path:?}, got {got:?}"
+                ));
+            }
+            Ok(())
+        },
+    )
+}
+
 /// M8 Tier 3 — writes Sift's own tagging output directly into `master.db`,
 /// so Rekordbox reflects it without the user having to manually
 /// right-click → "Reload Tag" per track. Scope is exactly the fields
@@ -1528,7 +1644,11 @@ pub fn sync_track_metadata(
     pioneer_dir: &Path,
     backup_dir: &Path,
     sync: &MetadataSync,
-) -> Result<(), MasterDbError> {
+) -> Result<MetadataSyncWritten, MasterDbError> {
+    // Ce que la transaction a réellement vidé, et l'`ImagePath` d'avant : la vérification relit
+    // la forme exacte de ce qui a été écrit, l'appelant retient le chemin.
+    let written = std::cell::Cell::new(MetadataClear::default());
+    let cleared_image_path = std::cell::RefCell::new(None::<String>);
     with_masterdb_write(
         pioneer_dir,
         backup_dir,
@@ -1536,20 +1656,28 @@ pub fn sync_track_metadata(
             // Confirm the track exists before touching any FK table — a
             // find_or_create for a non-existent track would still create
             // orphaned rows even though the final djmdContent UPDATE fails.
-            let track_exists: bool = tx
+            // Read in the same query: what the track still carries, and its ImagePath.
+            let (carries, image_path) = tx
                 .query_row(
-                    "SELECT 1 FROM djmdContent WHERE ID = ?1",
+                    &format!("SELECT {CARRIES_COLUMNS}, ImagePath FROM djmdContent WHERE ID = ?1"),
                     rusqlite::params![sync.track_id],
-                    |_| Ok(true),
+                    |row| {
+                        Ok((
+                            RekordboxCarries {
+                                label: row.get(0)?,
+                                genre: row.get(1)?,
+                                year: row.get(2)?,
+                                artwork: row.get(3)?,
+                            },
+                            row.get::<_, Option<String>>(4)?,
+                        ))
+                    },
                 )
                 .optional()
                 .map_err(|e| MasterDbError::Sqlite(e.to_string()))?
-                .unwrap_or(false);
-            if !track_exists {
-                return Err(MasterDbError::TrackNotFound {
+                .ok_or_else(|| MasterDbError::TrackNotFound {
                     track_id: sync.track_id.clone(),
-                });
-            }
+                })?;
 
             let mut any_field_set = false;
 
@@ -1595,6 +1723,43 @@ pub fn sync_track_metadata(
                 )
                 .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
                 any_field_set = true;
+            }
+            // #81 : les vidages, dans la forme mesurée du vide (voir `MetadataClear`) — seulement
+            // ce que la piste porte encore.
+            let wanted = sync.effective_clear();
+            let clear = MetadataClear {
+                label: wanted.label && carries.label,
+                genre: wanted.genre && carries.genre,
+                year: wanted.year && carries.year,
+                artwork: wanted.artwork && carries.artwork,
+            };
+            written.set(clear);
+            if clear.artwork {
+                *cleared_image_path.borrow_mut() = image_path;
+            }
+            for (on, sql) in [
+                (
+                    clear.label,
+                    "UPDATE djmdContent SET LabelID = NULL WHERE ID = ?1",
+                ),
+                (
+                    clear.genre,
+                    "UPDATE djmdContent SET GenreID = NULL WHERE ID = ?1",
+                ),
+                (
+                    clear.year,
+                    "UPDATE djmdContent SET ReleaseYear = 0 WHERE ID = ?1",
+                ),
+                (
+                    clear.artwork,
+                    "UPDATE djmdContent SET ImagePath = '' WHERE ID = ?1",
+                ),
+            ] {
+                if on {
+                    tx.execute(sql, rusqlite::params![sync.track_id])
+                        .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+                    any_field_set = true;
+                }
             }
 
             if any_field_set {
@@ -1655,9 +1820,72 @@ pub fn sync_track_metadata(
                     ));
                 }
             }
+            // #81 : label, genre, année et pochette n'étaient jamais relus — un vidage (ou une
+            // pose) sans effet passait vert. Relus ici, posés comme vidés.
+            let (label_id, genre_id, year, image): (
+                Option<String>,
+                Option<String>,
+                Option<i64>,
+                Option<String>,
+            ) = conn3
+                .query_row(
+                    "SELECT CAST(LabelID AS TEXT), CAST(GenreID AS TEXT), ReleaseYear, ImagePath
+                     FROM djmdContent WHERE ID = ?1",
+                    rusqlite::params![sync.track_id],
+                    |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?, row.get(3)?)),
+                )
+                .map_err(|e| e.to_string())?;
+            let clear = written.get();
+            if clear.label && label_id.is_some() {
+                return Err(format!("LabelID not cleared: {label_id:?}"));
+            }
+            if clear.genre && genre_id.is_some() {
+                return Err(format!("GenreID not cleared: {genre_id:?}"));
+            }
+            if clear.year && year != Some(0) {
+                return Err(format!("ReleaseYear not cleared: {year:?}"));
+            }
+            if clear.artwork && image.as_deref() != Some("") {
+                return Err(format!("ImagePath not cleared: {image:?}"));
+            }
+            if let Some(y) = sync.year {
+                if year != Some(y) {
+                    return Err(format!(
+                        "ReleaseYear mismatch after write: expected {y}, got {year:?}"
+                    ));
+                }
+            }
+            for (want, table, id) in [
+                (&sync.label, "djmdLabel", &label_id),
+                (&sync.genre, "djmdGenre", &genre_id),
+            ] {
+                let Some(want) = want else { continue };
+                let got: Option<String> = match id {
+                    Some(id) => conn3
+                        .query_row(
+                            &format!("SELECT Name FROM {table} WHERE ID = ?1"),
+                            rusqlite::params![id],
+                            |row| row.get(0),
+                        )
+                        .optional()
+                        .map_err(|e| e.to_string())?,
+                    None => None,
+                };
+                if !got
+                    .as_deref()
+                    .is_some_and(|g| g.trim().eq_ignore_ascii_case(want.trim()))
+                {
+                    return Err(format!(
+                        "{table} mismatch after write: expected {want:?}, got {got:?}"
+                    ));
+                }
+            }
             Ok(())
         },
-    )
+    )?;
+    Ok(MetadataSyncWritten {
+        cleared_image_path: cleared_image_path.into_inner(),
+    })
 }
 
 // Fixture provenance: `tests/fixtures/rekordbox_master.db` is a synthetic
@@ -2536,6 +2764,269 @@ mod tests {
     // ("Existing Artist", ID 70000001) — mirroir direct du verdict spike 7
     // (REUSE) : ArtistID repointe vers la ligne existante, aucune nouvelle
     // ligne djmdArtist créée.
+    /// #81 : un vidage écrit la forme du vide mesurée dans une vraie bibliothèque — `LabelID` et
+    /// `GenreID` à NULL, `ReleaseYear` à 0, `ImagePath` vide — sur la piste 1 de la fixture, qui
+    /// porte les quatre. Les lignes FK d'avant restent (orphelines), et la piste est bien marquée
+    /// modifiée pour Rekordbox.
+    #[test]
+    fn sync_track_metadata_clears_to_the_measured_empty_shape() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let (pioneer_dir, backup_dir) = setup_fixture_copy(&tmp);
+        let db_path = pioneer_dir.join("master.db");
+        let before = open_plain(&db_path);
+        let (labels_before, usn_before): (i64, String) = (
+            count_rows(&before, "djmdLabel"),
+            before
+                .query_row(
+                    "SELECT CAST(rb_local_usn AS TEXT) FROM djmdContent WHERE ID = '40000001'",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap(),
+        );
+        drop(before);
+
+        // Vidage SEUL : aucun champ posé, pour que la marque de modification ne tienne qu'au vidage
+        // (un titre posé la masquait — mesuré en mutant).
+        let sync = MetadataSync {
+            track_id: "40000001".to_string(),
+            clear: MetadataClear {
+                label: true,
+                genre: true,
+                year: true,
+                artwork: true,
+            },
+            ..Default::default()
+        };
+        sync_track_metadata(&pioneer_dir, &backup_dir, &sync).expect("clear");
+
+        let after = open_plain(&db_path);
+        let row: (Option<String>, Option<String>, i64, String, String) = after
+            .query_row(
+                "SELECT LabelID, GenreID, ReleaseYear, ImagePath, CAST(rb_local_usn AS TEXT)
+                 FROM djmdContent WHERE ID = '40000001'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?, r.get(4)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            (row.0.as_deref(), row.1.as_deref(), row.2, row.3.as_str()),
+            (None, None, 0, "")
+        );
+        assert_ne!(row.4, usn_before, "la piste est marquée modifiée");
+        assert_eq!(
+            count_rows(&after, "djmdLabel"),
+            labels_before,
+            "aucune ligne FK supprimée"
+        );
+    }
+
+    /// #81 : une valeur posée l'emporte sur un vidage du même champ — jamais les deux.
+    #[test]
+    fn sync_track_metadata_a_set_value_wins_over_a_clear() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let (pioneer_dir, backup_dir) = setup_fixture_copy(&tmp);
+        let sync = MetadataSync {
+            track_id: "40000001".to_string(),
+            label: Some("Posé".to_string()),
+            year: Some(1999),
+            clear: MetadataClear {
+                label: true,
+                year: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        sync_track_metadata(&pioneer_dir, &backup_dir, &sync).expect("sync");
+        let after = open_plain(&pioneer_dir.join("master.db"));
+        let (label, year): (Option<String>, i64) = after
+            .query_row(
+                "SELECT l.Name, c.ReleaseYear FROM djmdContent c LEFT JOIN djmdLabel l ON l.ID = c.LabelID
+                 WHERE c.ID = '40000001'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!((label.as_deref(), year), (Some("Posé"), 1999));
+    }
+
+    fn content_usn_and_image(conn: &Connection, id: &str) -> (String, String) {
+        conn.query_row(
+            "SELECT CAST(rb_local_usn AS TEXT), COALESCE(ImagePath, '') FROM djmdContent WHERE ID = ?1",
+            [id],
+            |r| Ok((r.get(0)?, r.get(1)?)),
+        )
+        .unwrap()
+    }
+
+    /// Revue de la phase B de #81 : un vidage rend l'`ImagePath` qu'il efface, et un champ que la
+    /// piste ne porte déjà plus n'est pas réécrit — pas de marque de modification pour rien (la
+    /// rangée ambiguë annonce l'union des candidates).
+    #[test]
+    fn sync_track_metadata_returns_the_emptied_image_path_and_skips_what_is_already_empty() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let (pioneer_dir, backup_dir) = setup_fixture_copy(&tmp);
+        let db_path = pioneer_dir.join("master.db");
+        let (_, image_before) = content_usn_and_image(&open_plain(&db_path), "40000001");
+        assert!(!image_before.is_empty(), "la fixture porte une pochette");
+
+        let sync = MetadataSync {
+            track_id: "40000001".to_string(),
+            clear: MetadataClear {
+                label: true,
+                genre: true,
+                year: true,
+                artwork: true,
+            },
+            ..Default::default()
+        };
+        let first = sync_track_metadata(&pioneer_dir, &backup_dir, &sync).expect("clear");
+        assert_eq!(
+            first.cleared_image_path.as_deref(),
+            Some(image_before.as_str())
+        );
+
+        let (usn_between, _) = content_usn_and_image(&open_plain(&db_path), "40000001");
+        let second = sync_track_metadata(&pioneer_dir, &backup_dir, &sync).expect("clear again");
+        assert_eq!(
+            second.cleared_image_path, None,
+            "rien à vider, rien à rendre"
+        );
+        let (usn_after, _) = content_usn_and_image(&open_plain(&db_path), "40000001");
+        assert_eq!(usn_after, usn_between, "rien vidé, rien marqué modifié");
+    }
+
+    /// Revue de la phase B de #81 : une pochette vidée par Sift ne coupe pas la synchro de pochette
+    /// suivante. Les trois fichiers restés dans le cache sont réécrits d'abord, puis `ImagePath` les
+    /// désigne à nouveau ; sans eux, rien ne bouge dans `master.db`.
+    #[test]
+    fn sync_track_artwork_repoints_an_image_path_sift_emptied() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let (pioneer_dir, backup_dir) = setup_fixture_copy(&tmp);
+        let db_path = pioneer_dir.join("master.db");
+        let clear = MetadataSync {
+            track_id: "40000001".to_string(),
+            clear: MetadataClear {
+                artwork: true,
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let emptied = sync_track_metadata(&pioneer_dir, &backup_dir, &clear)
+            .expect("clear")
+            .cleared_image_path
+            .expect("ImagePath rendu");
+        let cover = synthetic_jpeg(300, 300, [200, 40, 10]);
+
+        let err =
+            sync_track_artwork(&pioneer_dir, &backup_dir, "40000001", &cover, None).unwrap_err();
+        assert!(matches!(err, MasterDbError::NoArtworkPath { .. }));
+
+        // Fichiers absents : refus, et la piste reste sans pochette.
+        let err = sync_track_artwork(
+            &pioneer_dir,
+            &backup_dir,
+            "40000001",
+            &cover,
+            Some(&emptied),
+        )
+        .unwrap_err();
+        assert!(matches!(err, MasterDbError::ArtworkVariantMissing { .. }));
+        let (usn_before, image) = content_usn_and_image(&open_plain(&db_path), "40000001");
+        assert_eq!(image, "");
+
+        seed_artwork_variants(&pioneer_dir, &emptied, [(200, 200), (80, 80), (30, 30)]);
+        let (full, _, _) = resolve_artwork_variants(&pioneer_dir, &emptied).unwrap();
+        let old_bytes = std::fs::read(&full).unwrap();
+        sync_track_artwork(
+            &pioneer_dir,
+            &backup_dir,
+            "40000001",
+            &cover,
+            Some(&emptied),
+        )
+        .expect("repoint");
+
+        let (usn_after, image) = content_usn_and_image(&open_plain(&db_path), "40000001");
+        assert_eq!(image, emptied, "la piste désigne à nouveau ses fichiers");
+        assert_ne!(usn_after, usn_before, "la piste est marquée modifiée");
+        assert_ne!(
+            std::fs::read(&full).unwrap(),
+            old_bytes,
+            "la nouvelle pochette est écrite"
+        );
+        assert_eq!(image::image_dimensions(&full).unwrap(), (200, 200));
+    }
+
+    /// #81, sur une COPIE de la vraie bibliothèque : une piste qui porte label, genre, année et
+    /// pochette est vidée, relue sur une connexion fraîche, et rien d'autre ne bouge (Analysed,
+    /// grille, cues). `#[ignore]` : il lui faut une copie, jamais le fichier vivant. Les mêmes
+    /// règles que les autres tests sur copie réelle (un à la fois, --test-threads=1).
+    #[test]
+    #[ignore]
+    fn sync_track_metadata_clears_on_real_masterdb_copy() {
+        let dir = PathBuf::from(
+            std::env::var("SIFT_M8_REAL_COPY_DIR")
+                .expect("set SIFT_M8_REAL_COPY_DIR to a folder holding a COPY of master.db + masterPlaylists6.xml"),
+        );
+        let db_path = dir.join("master.db");
+        let before = open_plain(&db_path);
+        let (id, analysed, cues): (String, Option<i64>, Option<String>) = before
+            .query_row(
+                "SELECT ID, Analysed, CueUpdated FROM djmdContent
+                 WHERE LabelID IS NOT NULL AND GenreID IS NOT NULL AND ReleaseYear > 0
+                   AND TRIM(COALESCE(ImagePath, '')) <> '' AND rb_local_deleted = 0
+                 ORDER BY ID LIMIT 1",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .expect("une piste qui porte les quatre champs");
+        drop(before);
+        let backup_dir = dir.join("backup-81");
+        let sync = MetadataSync {
+            track_id: id.clone(),
+            clear: MetadataClear {
+                label: true,
+                genre: true,
+                year: true,
+                artwork: true,
+            },
+            ..Default::default()
+        };
+        sync_track_metadata(&dir, &backup_dir, &sync).expect("clear on real copy");
+        let after = open_plain(&db_path);
+        let row: (
+            Option<String>,
+            Option<String>,
+            i64,
+            String,
+            Option<i64>,
+            Option<String>,
+        ) = after
+            .query_row(
+                "SELECT LabelID, GenreID, ReleaseYear, ImagePath, Analysed, CueUpdated
+                 FROM djmdContent WHERE ID = ?1",
+                [&id],
+                |r| {
+                    Ok((
+                        r.get(0)?,
+                        r.get(1)?,
+                        r.get(2)?,
+                        r.get(3)?,
+                        r.get(4)?,
+                        r.get(5)?,
+                    ))
+                },
+            )
+            .unwrap();
+        assert_eq!(
+            (row.0.as_deref(), row.1.as_deref(), row.2, row.3.as_str()),
+            (None, None, 0, "")
+        );
+        assert_eq!((row.4, row.5), (analysed, cues), "analyse et cues intactes");
+        println!("piste {id} vidée et relue");
+    }
+
     #[test]
     fn sync_track_metadata_reuses_existing_artist() {
         let tmp = tempfile::tempdir().expect("tempdir");
@@ -2719,6 +3210,7 @@ mod tests {
             label: Some("Fresh Label".to_string()),
             title: Some("Fresh Title".to_string()),
             year: Some(2020),
+            clear: MetadataClear::default(),
         };
         sync_track_metadata(&pioneer_dir, &backup_dir, &sync).expect("sync metadata");
 
@@ -2984,7 +3476,7 @@ mod tests {
         );
         let new_cover = synthetic_jpeg(800, 800, [255, 0, 220]);
 
-        sync_track_artwork(&pioneer_dir, &backup_dir, "40000001", &new_cover)
+        sync_track_artwork(&pioneer_dir, &backup_dir, "40000001", &new_cover, None)
             .expect("sync should succeed");
 
         let (full, medium, small) =
@@ -3005,6 +3497,7 @@ mod tests {
             &backup_dir,
             "40000002",
             &synthetic_jpeg(10, 10, [0, 0, 0]),
+            None,
         )
         .unwrap_err();
         assert_eq!(
@@ -3027,6 +3520,7 @@ mod tests {
             &backup_dir,
             "40000003",
             &synthetic_jpeg(10, 10, [0, 0, 0]),
+            None,
         )
         .unwrap_err();
         assert!(matches!(err, MasterDbError::ArtworkVariantMissing { .. }));
@@ -3064,6 +3558,7 @@ mod tests {
             &backup_dir,
             "40000001",
             &synthetic_jpeg(50, 50, [1, 2, 3]),
+            None,
         )
         .expect("sync should succeed");
 
@@ -3099,7 +3594,7 @@ mod tests {
         let before_small = std::fs::read(&small).expect("read baseline small artwork");
 
         let test_cover = synthetic_jpeg(600, 600, [12, 200, 90]);
-        sync_track_artwork(pioneer_dir, &backup_dir, canary_id, &test_cover)
+        sync_track_artwork(pioneer_dir, &backup_dir, canary_id, &test_cover, None)
             .expect("sync should succeed on real copy");
 
         let after_full = std::fs::read(&full).unwrap();

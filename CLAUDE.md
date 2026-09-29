@@ -327,7 +327,7 @@ de la chaîne brute — pas de table code→message, délibérément) · `dom.ts
 `empty-state.ts` · `library-views.ts` · `identify-shared.ts` ·
 `identify-candidates.ts` (candidats Discogs gardés le temps de la session, pour changer de release
 sans ré-identifier — #68 ; sans DOM, testable env Node) · `rekordbox-ecart.ts` (rangées de
-candidats de l'écran Rekordbox et écart d'une synchro de métadonnées, dont ce que Rekordbox garde
+candidats de l'écran Rekordbox et écart d'une synchro de métadonnées, dont les champs qu'elle vide
 — #81 ; sans IPC, testable env Node) ·
 `popover-position.ts` (géométrie d'ancrage d'un popover `position:fixed`, **sans DOM** —
 séparée de `filing-bins.ts` pour être testable en env Node, qui ne peut pas charger un

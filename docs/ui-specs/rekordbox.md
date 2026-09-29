@@ -193,18 +193,34 @@ en erreur, ambigus, doublons de playlist, `masterdb_error`, dérive.
 - La § Zone C ci-dessus (table Case · Section · Piste · Écart · État) est **remplacée** par les
   groupes de rangées de Photos : à 200 candidats, la table de Rangés redeviendrait la bonne forme.
 
-## Décision — 2026-09-29 : ce que la synchro ne vide pas (#81)
+## Décision — 2026-09-29 : la synchro vide ce que la release n'a plus (#81)
 
 Depuis #68, choisir une autre release VIDE du fichier et de la base ce qu'elle n'a pas. La synchro
-`master.db` ne sait que poser : Rekordbox garde le label, l'année, le genre et la pochette de
+`master.db` ne savait que poser : Rekordbox gardait le label, l'année, le genre et la pochette de
 l'ancienne. Décisions d'Antoine :
 
-- **Cible** : vider pour de vrai, après deux essais. Le premier est fait (Évaluation 24 de
-  `docs/ressources-externes.md`) : dans la vraie bibliothèque, un FK absent vaut NULL, l'année `0`,
-  la pochette `''`. Le second demande son clic : ce que « Relire le tag » fait d'un tag RETIRÉ.
-- **En attendant** : la rangée Métadonnées annonce EN TÊTE de l'écart, en encre d'avertissement,
-  « Rekordbox garde : label, année » (`.rkb-cand-cleared`) ; la synchro applique le reste. En tête
-  parce que l'écart est une ligne tronquée à droite. N'est annoncé que ce que Rekordbox PORTE,
+- **Vider pour de vrai**, dans la forme que Rekordbox donne lui-même à un tag absent, mesurée sur
+  la vraie bibliothèque (Évaluation 24 de `docs/ressources-externes.md`) : `LabelID` et `GenreID`
+  à NULL, `ReleaseYear` à 0, `ImagePath` vide. Des milliers de pistes portent déjà ces valeurs et
+  Rekordbox les affiche normalement : l'essai « Relire le tag » d'abord prévu n'apprendrait rien
+  de plus, et il a été abandonné (Antoine, même jour). Rien n'est supprimé — les lignes
+  `djmdLabel`/`djmdGenre` d'avant et les fichiers de pochette du cache restent, orphelins. La
+  vérification après écriture relit désormais label, genre, année et pochette, posés comme vidés.
+  Vérifié sur une copie de la vraie bibliothèque.
+- **Pochette vidée, pochette reposable** : une pochette se synchronise en réécrivant les trois
+  fichiers vers lesquels `ImagePath` pointe, et Sift n'en crée jamais. Vider `ImagePath` sans
+  retenir sa valeur coupait donc pour toujours la synchro de pochette de la piste (revue de la
+  phase B). Sift retient l'ancien chemin (`rekordbox_cleared_artwork`, migration v25) ; la
+  pochette suivante réécrit d'abord ces fichiers restés dans le cache, puis y repointe la piste.
+- **Ce qui se vide se recalcule** : un champ que le fichier a reposé depuis la détection ne se
+  vide plus — la rangée ne se rafraîchit que si Rekordbox connaît le chemin écrit, la mémoire de
+  la piste, elle, suit toujours. Une rangée ambiguë annonce ce que porte au moins une candidate ;
+  résolue, elle n'annonce plus que ce que porte la piste choisie. Un champ déjà vide n'est pas
+  réécrit, donc la piste n'est pas marquée modifiée pour rien.
+- **Rangée** : la rangée Métadonnées annonce EN TÊTE de l'écart, en encre d'avertissement,
+  « À vider : label, année » (`.rkb-cand-cleared`). En tête parce que l'écart est une ligne
+  tronquée à droite. La confirmation nomme les vidages : « Synchroniser N entrées avec
+  Rekordbox ? K champs y seront vidés. ». N'est annoncé que ce que Rekordbox PORTE,
   lu dans `master.db` à la détection : une valeur que Sift a posée puis retirée sans qu'elle ait
   été synchronisée n'est pas annoncée (revue du 2026-09-29). La mémoire de ce que Sift a retiré
   vit par piste (`tracks.rekordbox_cleared`), hors du journal que la purge vide à 30 jours.

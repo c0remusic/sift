@@ -52,7 +52,7 @@ import { mountBarActions } from "./toolbar";
 import { openContextMenu } from "./context-menu";
 import { planSync, type RkbSection, type SyncPlan } from "./rekordbox-plan";
 import { T } from "./i18n/rekordbox-view";
-import { candidateRowHtml, metadataEcartHtml } from "./rekordbox-ecart";
+import { candidateRowHtml, clearedCount, metadataEcartHtml } from "./rekordbox-ecart";
 
 // ---------------------------------------------------------------------------
 // État — au niveau module, jamais remis à zéro en bloc : l'écran se re-rend après chaque
@@ -218,7 +218,7 @@ function metadataSyncsSectionHtml(rows: PendingMetadataSync[]): string {
   const piste = (r: PendingMetadataSync) =>
     esc(r.new_artist && r.new_title ? `${r.new_artist} — ${r.new_title}` : fileName(r.sift_path));
   // Rendu dans `rekordbox-ecart.ts` (module pur, gelé par Vitest) : depuis #81 il dit aussi ce
-  // que la synchro ne vide pas.
+  // que la synchro vide.
   const ecart = (r: PendingMetadataSync) => metadataEcartHtml(r);
   return (
     `<div id="sift-rkb-mds-section">` +
@@ -552,7 +552,10 @@ function wireContextMenu(content: HTMLElement): void {
 
 async function runSync(plan: SyncPlan, btn: HTMLButtonElement): Promise<void> {
   if (syncRunning || !plan.total) return;
-  const proceed = await confirmAction(T().confirmSync(plan.total), T().confirmSyncButton);
+  const proceed = await confirmAction(
+    T().confirmSync(plan.total, clearedCount(lastPendingMetadataSyncs, plan.metas)),
+    T().confirmSyncButton,
+  );
   if (!proceed) return;
   syncRunning = true;
   refreshBar();

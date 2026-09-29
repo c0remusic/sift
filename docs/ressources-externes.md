@@ -57,7 +57,7 @@
 - L1890 — Évaluation 21 — M8 Tier 3 diff exact « Relire le tag » (2026-07-09) : find-or-create documenté (chemin création).
 - L1962 — Évaluation 22 — M8 Tier 3 reuse vs duplicate (2026-07-09) : REUSE confirmé pour un artiste déjà connu.
 - L1993 — Évaluation 23 — M8 Tier 3 moteur Rust livré (2026-07-09) : `sync_track_metadata` + spike 8 pochette.
-- L2054 — Évaluation 24 — M8 Tier 3 forme du vide dans le vrai master.db (2026-09-29) : FK absent = NULL, année = 0, pochette = '' ; « Relire le tag » sur un tag retiré reste à observer.
+- L2054 — Évaluation 24 — M8 Tier 3 forme du vide dans le vrai master.db (2026-09-29) : FK absent = NULL, année = 0, pochette = '' ; forme écrite par la synchro pour VIDER (phase B, vérifiée sur copie).
 
 ---
 
@@ -2078,12 +2078,27 @@ ligne `djmdArtist` et une ligne `djmdGenre` portent un nom vide ; une seule pist
 — anomalie isolée, pas une convention.
 
 **Lecture** : la forme DOMINANTE du vide est `NULL` pour un FK, `0` pour l'année, `''` pour la
-pochette — celle que Rekordbox écrit lui-même quand un tag manque à l'import. Ce n'est PAS encore ce
-que fait « Relire le tag » quand un tag est RETIRÉ d'un fichier déjà connu : c'est l'essai 2, qui
-demande le clic d'Antoine (spike « vidage », pendant du spike 6). Un vidage ne s'écrira qu'après lui.
+pochette — celle que Rekordbox écrit lui-même quand un tag manque à l'import. Elle ne dit pas ce
+que fait « Relire le tag » quand un tag est RETIRÉ d'un fichier déjà connu — l'essai 2, qui
+demandait le clic d'Antoine, a été abandonné (voir la décision) : la forme du vide suffit.
 
-**Décision** (Antoine, 2026-09-29) : vider pour de vrai, après l'essai 2. En attendant, Sift garde
-par piste la mémoire de ce qu'il a retiré du fichier (`tracks.rekordbox_cleared`, migration v24),
-et la rangée de synchro annonce en tête ce que Rekordbox en PORTE réellement — l'index `master.db`
-lit désormais, par piste, la présence d'un label, d'un genre, d'une année et d'une pochette, dans la
-forme mesurée ci-dessus. Le reste se synchronise.
+**Décision** (Antoine, 2026-09-29) : vider pour de vrai, dans cette forme-là. L'essai 2 (« Relire
+le tag » sur un tag retiré, un clic d'Antoine) a d'abord été prévu, puis abandonné le même jour :
+la question n'était pas d'imiter le geste de Rekordbox mais de savoir quelle valeur un champ vide
+porte sans rien casser, et des milliers de pistes de la bibliothèque la portent déjà, affichées
+normalement. `rekordbox_masterdb::MetadataClear` écrit NULL / 0 / '' ; la vérification après
+écriture relit label, genre, année et pochette ; le test `#[ignore]`
+`sync_track_metadata_clears_on_real_masterdb_copy` l'a vérifié sur une COPIE (piste relue sur une
+connexion fraîche, `Analysed` et `CueUpdated` intacts, `master.db` vivant inchangé, même SHA256).
+Sift garde par piste la mémoire de ce qu'il a retiré du fichier (`tracks.rekordbox_cleared`,
+migration v24), et la rangée de synchro n'annonce — donc ne vide — que ce que Rekordbox PORTE,
+lu dans l'index `master.db` à la détection.
+
+**Revue adverse de la phase B** (même jour) : vider `ImagePath` coupait pour toujours la synchro de
+pochette de la piste, puisque `sync_track_artwork` réécrit les fichiers désignés par `ImagePath`
+et n'en crée jamais. `sync_track_metadata` rend donc le chemin qu'il vide, Sift le retient
+(`rekordbox_cleared_artwork`, migration v25), et la pochette suivante réécrit les trois fichiers
+restés dans le cache AVANT de repointer la piste — un échec en route laisse Rekordbox tel quel.
+Trois autres écarts corrigés : l'application ne vide que l'annonce restreinte à la mémoire VIVANTE
+(un champ reposé depuis ne se vide plus), une rangée ambiguë résolue n'annonce plus que ce que
+porte la piste choisie, et un champ déjà vide n'est pas réécrit.

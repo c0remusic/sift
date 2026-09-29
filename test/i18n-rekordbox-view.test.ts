@@ -16,6 +16,13 @@ describe("rekordbox-view — français d'origine", () => {
 
   it("confirmation, état en cours, tête", () => {
     expect(fr.confirmSync(2)).toBe("Synchroniser 2 entrées avec Rekordbox ? Ferme Rekordbox avant de continuer.");
+    // #81 : les vidages sont nommés, avec l'accord.
+    expect(fr.confirmSync(2, 1)).toBe(
+      "Synchroniser 2 entrées avec Rekordbox ? 1 champ y sera vidé. Ferme Rekordbox avant de continuer.",
+    );
+    expect(fr.confirmSync(2, 3)).toBe(
+      "Synchroniser 2 entrées avec Rekordbox ? 3 champs y seront vidés. Ferme Rekordbox avant de continuer.",
+    );
     expect(fr.syncing(1)).toBe("Synchronisation de 1 entrée…");
     expect(fr.xmlLinked(1, 2, "à jour")).toBe("XML Rekordbox lié · 1 playlist · 2 pistes · à jour");
     expect(fr.sectionsNoReply(2)).toBe("2 sections sans réponse");
@@ -30,6 +37,9 @@ describe("rekordbox-view — anglais", () => {
     expect(en.syncReportFailed(1, 1)).toBe("1 entry synced, 1 failed");
     expect(en.syncReportOk(0)).toBe("0 entries synced — reimport the XML into Rekordbox if you re-exported.");
     expect(en.confirmSync(1)).toBe("Sync 1 entry with Rekordbox? Close Rekordbox before you continue.");
+    expect(en.confirmSync(1, 2)).toBe(
+      "Sync 1 entry with Rekordbox? 2 fields will be cleared there. Close Rekordbox before you continue.",
+    );
     expect(en.xmlLinked(0, 1, "up to date")).toBe("Rekordbox XML linked · 0 playlists · 1 track · up to date");
     expect(en.duplicatesToRemove(2)).toBe("2 duplicates to remove");
   });

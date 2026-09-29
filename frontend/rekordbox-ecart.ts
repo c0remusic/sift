@@ -1,6 +1,6 @@
 // Les rangées de candidats de l'écran Rekordbox et l'écart d'une rangée Métadonnées — module pur,
 // sans IPC, testable en env Node (modèle `rekordbox-plan.ts`). Sortis de `rekordbox-view.ts` pour
-// #81 : la rangée dit désormais aussi ce que la synchro NE vide PAS, et un rendu que rien ne gèle
+// #81 : la rangée dit désormais aussi ce que la synchro VIDE, et un rendu que rien ne gèle
 // se laisse dériver ; la story exécute ces fonctions au lieu d'en recopier le markup.
 import type { PendingMetadataSync } from "../shared/contracts";
 import { esc } from "./dom";
@@ -13,10 +13,10 @@ type EcartFields = Pick<
 
 /** Les valeurs qui partent vers Rekordbox, dans l'ordre Artiste · Titre · Genre · Année · Label.
  *
- *  #81 : quand la release choisie a retiré du fichier un label, une année, un genre ou une
- *  pochette, la synchro ne les vide pas (encore) dans Rekordbox, qui garde les siens. La rangée le
- *  dit EN TÊTE : l'écart est une seule ligne tronquée à droite, et la fin serait coupée la
- *  première. Rendu HTML — chaque valeur passe par `esc`. */
+ *  #81 : quand Sift a retiré du fichier un label, une année, un genre ou une pochette que Rekordbox
+ *  porte encore, la synchro les VIDE dans Rekordbox. La rangée le dit EN TÊTE (« À vider : … »,
+ *  encre d'avertissement) : l'écart est une seule ligne tronquée à droite, et la fin serait coupée
+ *  la première. Rendu HTML — chaque valeur passe par `esc`. */
 export function metadataEcartHtml(r: EcartFields): string {
   const L = T();
   const parts: string[] = [];
@@ -29,6 +29,13 @@ export function metadataEcartHtml(r: EcartFields): string {
   if (!r.cleared.length) return body;
   const names = r.cleared.map((f) => L.clearedField[f]).join(", ");
   return `<span class="rkb-cand-cleared">${L.clearedNotice(names)}</span> · ${body}`;
+}
+
+/** Combien de champs la synchro de ces rangées videra dans Rekordbox (#81) — la confirmation le
+ *  nomme, parce qu'un vidage efface une valeur dans un système tiers. */
+export function clearedCount(rows: readonly Pick<PendingMetadataSync, "id" | "cleared">[], ids: readonly number[]): number {
+  const wanted = new Set(ids);
+  return rows.filter((r) => wanted.has(r.id)).reduce((n, r) => n + r.cleared.length, 0);
 }
 
 /** Une rangée cochable. `pick` est le `data-sift` du toggle (mdbpick / mdspick / maspick /
