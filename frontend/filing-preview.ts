@@ -1,11 +1,9 @@
 import type { Target } from "../shared/contracts";
 import { previewFilename } from "./ipc";
 import { state } from "./filing-state";
-
-/** Capitalise the first letter of each word ("original mix" → "Original Mix"), leaving the rest
- *  as-is so existing caps/acronyms ("2WFU Dub", "Knee Deep Remix") survive. */
-const titleCase = (s: string): string =>
-  s.replace(/(^|[\s(/-])([\p{L}\p{N}])/gu, (_, sep: string, ch: string) => sep + ch.toUpperCase());
+// Vit dans `identify-candidates.ts` depuis le 2026-09-29 (#68) : `shownTitle` s'en sert, et ce
+// module-là se teste en env Node, ce que celui-ci ne peut pas (il importe `./ipc`).
+import { titleCase } from "./identify-candidates";
 
 export const TARGET_LABEL: Record<Target, string> = {
   mp3_320: "MP3",

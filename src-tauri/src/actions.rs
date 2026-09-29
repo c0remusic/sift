@@ -783,6 +783,13 @@ pub(crate) fn revert_one_fs(
     }
 }
 
+/// Le `meta` d'un `tag_edit` vu seulement pour sa clé `release` — présente quand le lot est un
+/// changement de release (#68). Les autres clés (les tags d'avant) sont ignorées ici.
+#[derive(serde::Deserialize)]
+struct ReleaseEnvelope {
+    release: Option<crate::metadata::ReleaseSnapshot>,
+}
+
 /// Reverse a whole user action (all live rows of `batch_id`), newest-first, then set the
 /// track back to `pending` (folder cleared) and mark the rows `undone`. Blocked if the
 /// batch has no live rows, or if a newer live action on the same track exists outside it.
@@ -885,11 +892,26 @@ pub fn revert_batch(conn: &Connection, batch_id: &str) -> Result<(), RevertError
     // snapshot of the OLDEST row of the batch, which is what the file holds now.
     if tag_only {
         if let (Some(tid), Some(meta)) = (track_id, rows.iter().rev().find_map(|r| r.5.clone())) {
-            match serde_json::from_str::<crate::tagging::TagsSnapshot>(&meta) {
-                Ok(snap) => crate::metadata::follow_restored_tags(conn, tid, &snap)?,
-                Err(e) => log::error!(
-                    "revert_batch {batch_id}: instantané de tags illisible ({e}), ligne metadata de la piste {tid} laissée en l'état"
-                ),
+            // Un changement de release (#68, `ipc_identify::apply_release`) range la release
+            // d'AVANT à côté des tags, sous `release` : elle revient telle quelle, lien Discogs,
+            // pochette et genres compris. Sans elle, la ligne suit seulement le fichier restauré.
+            let release = match serde_json::from_str::<ReleaseEnvelope>(&meta) {
+                Ok(env) => env.release,
+                Err(e) => {
+                    log::error!(
+                        "revert_batch {batch_id}: release d'avant illisible ({e}), la ligne metadata de la piste {tid} suit seulement le fichier"
+                    );
+                    None
+                }
+            };
+            match release {
+                Some(release) => crate::metadata::restore_release(conn, tid, &release)?,
+                None => match serde_json::from_str::<crate::tagging::TagsSnapshot>(&meta) {
+                    Ok(snap) => crate::metadata::follow_restored_tags(conn, tid, &snap)?,
+                    Err(e) => log::error!(
+                        "revert_batch {batch_id}: instantané de tags illisible ({e}), ligne metadata de la piste {tid} laissée en l'état"
+                    ),
+                },
             }
         }
         // Restaurer des tags réécrit le fichier : même remise à jour que l'écriture elle-même,

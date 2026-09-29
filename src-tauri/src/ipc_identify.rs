@@ -1,13 +1,15 @@
 //! IPC surface for M6a identification. `identify` queries Discogs (token from settings) and
-//! returns ranked candidates; `apply_identity_cmd` downloads the cover (best-effort) and
-//! persists the chosen candidate. Errors are flattened to stable sentinel codes the front maps
+//! returns ranked candidates; `apply_release` downloads the cover and applies the chosen
+//! candidate to the file AND the DB, as one revertable batch (#68). Errors are flattened to stable sentinel codes the front maps
 //! to messages: NO_TOKEN, RATE_LIMITED:<s>, NETWORK, PARSE.
 
 use crate::db;
-use crate::metadata::{self, AppliedIdentity, Candidate, MetadataProvider, Query};
+use crate::metadata::{self, Candidate, MetadataProvider, Query};
+use crate::naming::{Canonical, Confidence};
 use crate::settings;
+use crate::tagging::{CoverSnap, TagsSnapshot};
 use rusqlite::Connection;
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 use std::sync::Mutex;
 use tauri::{AppHandle, Emitter, Manager, State};
 
@@ -216,6 +218,373 @@ fn build_query_from(
         version: version.or_else(|| terms.version.clone()),
         attempts,
     }
+}
+
+/// Ce que `apply_release` rend à l'écran (#68). Le titre et la version n'y sont pas : c'est
+/// l'écran qui les a envoyés, et ils ont été gravés tels quels. Miroir d'`AppliedRelease` dans
+/// `shared/contracts.ts`, épinglé par `applied_release_shape_matches_contracts_ts`.
+#[derive(Debug, Clone, Serialize)]
+pub struct AppliedRelease {
+    pub label: Option<String>,
+    pub year: Option<i64>,
+    pub styles: Vec<String>,
+    /// La pochette que la base retient désormais : celle de la release, `None` quand la release
+    /// n'en a pas, et l'ANCIENNE quand le téléchargement a échoué (`cover_failed`).
+    pub cover_path: Option<String>,
+    /// Le téléchargement de la pochette a échoué (réseau, délai, disque) : le fichier et la base
+    /// gardent celle d'avant, et l'écran le dit au lieu de le taire.
+    pub cover_failed: bool,
+    /// Le lot `tag_edit` qui porte ce changement — « Rétablir » l'annule, fichier ET release.
+    pub batch_id: String,
+}
+
+/// Ce que devient la pochette, décidé AVANT la moindre écriture.
+#[derive(Debug, PartialEq)]
+enum CoverChoice {
+    /// La pochette de la release, en cache sur le disque.
+    Set(String),
+    /// La release n'a pas de pochette : on retire celle d'avant (décision « Vider »).
+    Clear,
+    /// Le téléchargement a échoué : on garde celle d'avant plutôt que de l'effacer sur une coupure.
+    Keep,
+}
+
+/// `(choix, échec)` depuis le résultat du téléchargement — l'échec remonte à l'écran.
+fn cover_choice(fetch: metadata::cover::CoverFetch) -> (CoverChoice, bool) {
+    use metadata::cover::CoverFetch;
+    match fetch {
+        CoverFetch::Downloaded(p) => (CoverChoice::Set(p.to_string_lossy().into_owned()), false),
+        CoverFetch::NoImage => (CoverChoice::Clear, false),
+        CoverFetch::Failed(e) => {
+            log::warn!("apply_release : pochette non téléchargée ({e}), celle d'avant est gardée");
+            (CoverChoice::Keep, true)
+        }
+    }
+}
+
+/// Phase 1, sous le verrou : le chemin du fichier et la release d'avant, pour « Rétablir ».
+fn release_prepare(
+    conn: &Connection,
+    track_id: i64,
+) -> Result<(String, metadata::ReleaseSnapshot), String> {
+    let path: String = conn
+        .query_row(
+            "SELECT path FROM tracks WHERE id=?1",
+            rusqlite::params![track_id],
+            |r| r.get(0),
+        )
+        .map_err(|_| "unknown track id".to_string())?;
+    let before = metadata::snapshot_release(conn, track_id).map_err(|e| e.to_string())?;
+    Ok((path, before))
+}
+
+/// Ce que la phase 2 a lu et écrit, pour la phase 3.
+struct ReleaseWrite {
+    /// Les tags d'AVANT, relus sur le fichier : c'est ce que « Rétablir » y remet.
+    old_tags: TagsSnapshot,
+    /// Une image reste-t-elle dans le fichier après l'écriture — la règle de `tracks.has_cover`.
+    has_cover: bool,
+    /// Le candidat tel qu'il a été ÉCRIT : complété des tags du fichier pour une première
+    /// identification (`fill_from_file`), sinon le candidat lui-même. La base le reprend tel quel.
+    effective: Candidate,
+    /// La pochette telle qu'elle a été décidée ÉCRITE (une première identification ne vide pas).
+    cover: CoverChoice,
+}
+
+/// Première identification — la piste n'a encore aucune release liée : ce que Discogs ne fournit
+/// pas (label, année, genres) se reprend des tags du fichier. Revue de #68, 2026-09-29 : la
+/// décision « Vider » vise une AUTRE release (« rien de l'ancienne release ne survit »), et les
+/// tags d'un fichier acheté — sa pochette Beatport, son label — ne sont pas une release. Les vider
+/// au premier choix perdait ce que l'ancien chemin (`write_tags_full`, qui ne fait que poser)
+/// gardait.
+fn fill_from_file(c: &Candidate, old: &TagsSnapshot) -> Candidate {
+    let mut e = c.clone();
+    if e.label
+        .as_deref()
+        .map(str::trim)
+        .filter(|l| !l.is_empty())
+        .is_none()
+    {
+        e.label = old.label.clone();
+    }
+    if e.year.filter(|y| *y > 0).is_none() {
+        e.year = old.year;
+    }
+    if crate::tagging::joined_genres(&e.styles).is_none() {
+        e.styles = old
+            .genre_joined
+            .as_deref()
+            .map(|g| {
+                g.split(';')
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string)
+                    .collect()
+            })
+            .unwrap_or_default();
+    }
+    e
+}
+
+/// Phase 2, verrou relâché : rend au fichier EXACTEMENT la release choisie, chaque champ posé OU
+/// RETIRÉ (`restore_tags`). `write_tags_full` ne fait que poser : il laissait sur le fichier le
+/// label, l'année ou la pochette de la release précédente quand la nouvelle n'en a pas
+/// (décision « Vider », 2026-09-29, #68). `first` : la piste n'avait aucune release liée — rien
+/// n'est alors vidé, ce qui manque se reprend du fichier (`fill_from_file`). Un échec avant
+/// l'enregistrement laisse le fichier intact.
+fn release_write_file(
+    path: &str,
+    c: &Candidate,
+    title_tag: &str,
+    cover: CoverChoice,
+    first: bool,
+) -> Result<ReleaseWrite, String> {
+    let old_tags = crate::tagging::read_tags_full(path)?;
+    let (effective, cover) = if first {
+        let cover = match cover {
+            CoverChoice::Clear => CoverChoice::Keep,
+            other => other,
+        };
+        (fill_from_file(c, &old_tags), cover)
+    } else {
+        (c.clone(), cover)
+    };
+    let c = &effective;
+    let cover_snap = match &cover {
+        CoverChoice::Set(p) => Some(CoverSnap {
+            mime: Some(
+                if p.to_lowercase().ends_with(".png") {
+                    "image/png"
+                } else {
+                    "image/jpeg"
+                }
+                .to_string(),
+            ),
+            bytes: std::fs::read(p).map_err(|e| format!("read cover {p}: {e}"))?,
+        }),
+        CoverChoice::Clear => None,
+        CoverChoice::Keep => old_tags.cover.clone(),
+    };
+    let target = TagsSnapshot {
+        artist: Some(c.artist.clone()),
+        title: Some(title_tag.to_string()),
+        label: c
+            .label
+            .as_deref()
+            .map(str::trim)
+            .filter(|l| !l.is_empty())
+            .map(str::to_string),
+        year: c.year.filter(|y| *y > 0),
+        genre_joined: crate::tagging::joined_genres(&c.styles),
+        cover: cover_snap,
+    };
+    crate::tagging::restore_tags(path, &target)?;
+    // Le fichier est écrit : un échec de relecture ici ne doit pas priver l'écriture de son
+    // journal (donc de son « Rétablir »). `has_cover` n'est qu'un drapeau que la prochaine analyse
+    // recalcule — on prend la valeur attendue, et on le dit dans le journal.
+    let has_cover = crate::tagging::has_any_picture(path).unwrap_or_else(|e| {
+        log::error!("apply_release : relecture des images de {path} impossible ({e})");
+        target.cover.is_some()
+    });
+    Ok(ReleaseWrite {
+        old_tags,
+        has_cover,
+        effective,
+        cover,
+    })
+}
+
+/// Phase 3, sous le verrou : la base suit le fichier, et le tout se journalise en UN `tag_edit`
+/// dont le `meta` porte, à côté des tags d'avant, la release d'avant (`release`). « Rétablir » rend
+/// alors le fichier ET le lien de release (décision du 2026-09-29) — l'ancien chemin,
+/// `apply_identity_cmd` puis `apply_tags`, ne rendait que les tags et gardait la release annulée.
+fn release_commit(
+    conn: &Connection,
+    track_id: i64,
+    path: &str,
+    shown: &Canonical,
+    cover_failed: bool,
+    before: &metadata::ReleaseSnapshot,
+    written: ReleaseWrite,
+) -> Result<AppliedRelease, String> {
+    let c = &written.effective;
+    let cover = written.cover;
+    // EN PREMIER sous le verrou : le watcher décante ~500 ms après l'écriture (issue #73).
+    crate::scanner::restamp_after_own_write(conn, track_id, path).map_err(|e| e.to_string())?;
+    let artwork = match &cover {
+        CoverChoice::Set(p) => Some(p.clone()),
+        _ => None,
+    };
+    let cover_path = match cover {
+        CoverChoice::Set(p) => Some(p),
+        CoverChoice::Clear => None,
+        CoverChoice::Keep => before.row.as_ref().and_then(|r| r.cover_path.clone()),
+    };
+    let applied =
+        metadata::apply_identity(conn, track_id, c, cover_path).map_err(|e| e.to_string())?;
+    // Titre et version tels que l'écran les montre, dans la forme de `persist_tag_edit`.
+    metadata::persist_tag_edit(conn, track_id, shown, None).map_err(|e| e.to_string())?;
+    conn.execute(
+        "UPDATE tracks SET has_cover=?2 WHERE id=?1",
+        rusqlite::params![track_id, written.has_cover],
+    )
+    .map_err(|e| e.to_string())?;
+
+    let mut meta = serde_json::to_value(&written.old_tags).map_err(|e| e.to_string())?;
+    let release = serde_json::to_value(before).map_err(|e| e.to_string())?;
+    meta.as_object_mut()
+        .ok_or_else(|| "tag snapshot is not a JSON object".to_string())?
+        .insert("release".into(), release);
+    let batch_id = crate::filing::new_batch_id(track_id);
+    let action_id = crate::actions::record_with_meta(
+        conn,
+        &batch_id,
+        Some(track_id),
+        "tag_edit",
+        Some(path),
+        None,
+        Some(&meta.to_string()),
+    )
+    .map_err(|e| e.to_string())?;
+
+    // M8 Tier 3 : mêmes détecteurs, en lecture seule, qu'`apply_tags` — un seul déchiffrement.
+    if let Some(index) = crate::actions::resolve_masterdb_index_if_linked(conn) {
+        let (genre, label) = crate::actions::sanitize_genre_label(&c.styles, c.label.as_deref());
+        let values = crate::actions::MetadataSyncValues {
+            artist: Some(c.artist.clone()),
+            title: Some(crate::naming::tag_title(shown)),
+            label,
+            year: c.year,
+            genre,
+        };
+        crate::actions::detect_masterdb_metadata_sync_with_index(
+            conn, &index, path, track_id, &values, action_id,
+        );
+        if let Some(cp) = &artwork {
+            crate::actions::detect_masterdb_artwork_sync_with_index(
+                conn, &index, path, track_id, cp, action_id,
+            );
+        }
+    }
+
+    Ok(AppliedRelease {
+        label: applied.label,
+        year: applied.year,
+        styles: applied.styles,
+        cover_path: applied.cover_path,
+        cover_failed,
+        batch_id,
+    })
+}
+
+/// Aucune release liée avant ce choix : ni ligne `metadata`, ni lien Discogs sur celle qui existe
+/// (une édition de label seule, une fiche Bibliothèque saisie à la main).
+fn is_first_identification(before: &metadata::ReleaseSnapshot) -> bool {
+    before
+        .row
+        .as_ref()
+        .and_then(|r| r.discogs_release_id.as_deref())
+        .is_none()
+}
+
+/// Le titre et la version que l'écran affiche pour la release choisie, en `Canonical`.
+fn shown_canonical(
+    c: &Candidate,
+    title: &str,
+    version: Option<String>,
+) -> Result<Canonical, String> {
+    let title = title.trim();
+    if title.is_empty() {
+        return Err("apply_release: empty title".into());
+    }
+    Ok(Canonical {
+        artist: c.artist.clone(),
+        title: title.to_string(),
+        version: version
+            .map(|v| v.trim().to_string())
+            .filter(|v| !v.is_empty()),
+        label: c.label.clone(),
+        confidence: Confidence::Green,
+    })
+}
+
+/// Applique une release à une piste (#68) : la première identification comme un changement de
+/// release. Fichier ET base, en un seul lot annulable — remplace `apply_identity_cmd` (base seule)
+/// suivi d'`apply_tags` (fichier seul, par-dessus), dont le « Rétablir » rendait les tags mais
+/// gardait la release annulée, et qui laissait sur le fichier le label ou la pochette d'une release
+/// précédente quand la nouvelle n'en avait pas.
+///
+/// `title` et `version` sont ceux que l'écran affiche pour ce candidat : Revue les sépare, la
+/// Bibliothèque envoie son titre complet et `version: null`. Ils sont gravés tels quels, pour que
+/// le fichier, la base et l'écran disent la même chose sans que personne ne recalcule rien.
+///
+/// SYNCHRONE, comme `apply_identity_cmd` avant elle : le téléchargement de la pochette (20 s au
+/// pire) et la réécriture du fichier tiennent le fil de la fenêtre. La passer en `async` serait
+/// une TROISIÈME exception au backend synchrone (`CLAUDE.md` § Backend) — une décision, pas un
+/// suivi de motif ; elle n'a pas été prise ici.
+#[tauri::command]
+pub fn apply_release(
+    app: AppHandle,
+    conn: State<'_, Mutex<Connection>>,
+    track_id: i64,
+    candidate: Candidate,
+    title: String,
+    version: Option<String>,
+) -> Result<AppliedRelease, String> {
+    let shown = shown_canonical(&candidate, &title, version)?;
+    let (path, before) = {
+        let conn = db::lock_conn(&conn)?;
+        release_prepare(&conn, track_id)?
+    };
+    let first = is_first_identification(&before);
+    let (cover, cover_failed) = match app.path().app_cache_dir() {
+        Ok(dir) => cover_choice(metadata::cover::fetch_cover(
+            &dir.join("covers"),
+            &candidate.release_id,
+            candidate.cover_url.as_deref(),
+        )),
+        Err(e) => cover_choice(metadata::cover::CoverFetch::Failed(e.to_string())),
+    };
+    let written = release_write_file(
+        &path,
+        &candidate,
+        &crate::naming::tag_title(&shown),
+        cover,
+        first,
+    )?;
+    let applied = {
+        let conn = db::lock_conn(&conn)?;
+        release_commit(
+            &conn,
+            track_id,
+            &path,
+            &shown,
+            cover_failed,
+            &before,
+            written,
+        )?
+    };
+    app.emit("queue:changed", ()).ok();
+    Ok(applied)
+}
+
+/// Les trois phases d'`apply_release` dans le même ordre, sur une seule connexion et avec une
+/// pochette déjà décidée — les tests n'ont ni `AppHandle` ni réseau. `cfg(test)` : la production
+/// ne doit pas avoir de chemin qui tienne la connexion pendant l'écriture du fichier.
+#[cfg(test)]
+fn apply_release_inner(
+    conn: &Connection,
+    track_id: i64,
+    c: &Candidate,
+    title: &str,
+    version: Option<&str>,
+    cover: CoverChoice,
+) -> Result<AppliedRelease, String> {
+    let shown = shown_canonical(c, title, version.map(str::to_string))?;
+    let (path, before) = release_prepare(conn, track_id)?;
+    let first = is_first_identification(&before);
+    let written = release_write_file(&path, c, &crate::naming::tag_title(&shown), cover, first)?;
+    release_commit(conn, track_id, &path, &shown, false, &before, written)
 }
 
 #[cfg(test)]
@@ -482,43 +851,303 @@ mod tests {
             "le premier essai est celui des tags"
         );
     }
-}
 
-/// Persist a chosen candidate for `track_id`: download its cover (best-effort) then write the
-/// metadata + genres. Emits `queue:changed` so the front refreshes.
-#[tauri::command]
-pub fn apply_identity_cmd(
-    app: AppHandle,
-    conn: State<'_, Mutex<Connection>>,
-    track_id: i64,
-    candidate: Candidate,
-) -> Result<AppliedIdentity, String> {
-    // Gate to a known track before doing any work (network download / DB writes) — mirrors the
-    // implicit gate `identify` gets from reconcile_track, so a bogus id can't drive a fetch.
-    {
-        let conn = db::lock_conn(&conn)?;
-        let known = conn
-            .query_row(
-                "SELECT 1 FROM tracks WHERE id=?1",
-                rusqlite::params![track_id],
-                |_| Ok(()),
-            )
-            .is_ok();
-        if !known {
-            return Err("unknown track id".into());
+    // ---- #68 : apply_release ------------------------------------------------------------------
+
+    fn release(id: &str, label: Option<&str>, year: Option<i64>, styles: &[&str]) -> Candidate {
+        Candidate {
+            artist: "Larry Heard".into(),
+            title: "Mystery of Love".into(),
+            label: label.map(str::to_string),
+            year,
+            styles: styles.iter().map(|s| s.to_string()).collect(),
+            country: None,
+            format: None,
+            cover_url: None,
+            release_id: id.into(),
+            source: "discogs".into(),
         }
     }
-    let cover_path = candidate.cover_url.as_ref().and_then(|url| {
-        let dir = app.path().app_cache_dir().ok()?.join("covers");
-        metadata::cover::download_cover(&dir, &candidate.release_id, url)
-            .ok()
-            .map(|p| p.to_string_lossy().to_string())
-    });
-    let applied = {
-        let conn = db::lock_conn(&conn)?;
-        metadata::apply_identity(&conn, track_id, &candidate, cover_path)
-            .map_err(|e| e.to_string())?
-    };
-    app.emit("queue:changed", ()).ok();
-    Ok(applied)
+
+    /// Une piste en base sur une COPIE de la fixture, et une pochette en cache (octets
+    /// quelconques : lofty l'embarque sans la décoder). `None` sans la fixture, gitignorée.
+    fn release_setup() -> Option<(tempfile::TempDir, rusqlite::Connection, String, String)> {
+        let src = fixture("real_320.mp3")?;
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("t.mp3");
+        std::fs::copy(&src, &file).unwrap();
+        let cover = dir.path().join("A.jpg");
+        std::fs::write(&cover, vec![7u8; 4096]).unwrap();
+        let conn = rusqlite::Connection::open_in_memory().unwrap();
+        crate::db::run_migrations(&conn).unwrap();
+        let path = file.to_str().unwrap().to_string();
+        conn.execute(
+            "INSERT INTO tracks(id, path, status) VALUES(1, ?1, 'pending')",
+            [&path],
+        )
+        .unwrap();
+        Some((dir, conn, path, cover.to_str().unwrap().to_string()))
+    }
+
+    /// Décision « Vider » (2026-09-29) : ce que la nouvelle release n'a pas disparaît du fichier ET
+    /// de la base — l'ancien chemin (`write_tags_full`) ne faisait que poser, et le label, l'année,
+    /// les genres et la pochette de la release précédente restaient sur le fichier.
+    #[test]
+    fn changer_de_release_vide_ce_que_la_nouvelle_n_a_pas() {
+        let Some((_dir, conn, path, cover)) = release_setup() else {
+            eprintln!("skip: fixture real_320.mp3 absente (gitignoree, cf. CLAUDE.md)");
+            return;
+        };
+        let a = release(
+            "A",
+            Some("Alleviated"),
+            Some(1986),
+            &["Deep House", "House"],
+        );
+        apply_release_inner(
+            &conn,
+            1,
+            &a,
+            "Mystery of Love",
+            Some("Original Mix"),
+            CoverChoice::Set(cover),
+        )
+        .unwrap();
+        let tags = crate::tagging::read_tags_full(&path).unwrap();
+        assert_eq!(
+            tags.title.as_deref(),
+            Some("Mystery of Love (Original Mix)")
+        );
+        assert_eq!(tags.label.as_deref(), Some("Alleviated"));
+        assert_eq!(tags.year, Some(1986));
+        assert_eq!(tags.genre_joined.as_deref(), Some("Deep House; House"));
+        assert!(tags.cover.is_some());
+
+        let b = release("B", None, None, &[]);
+        let out =
+            apply_release_inner(&conn, 1, &b, "Mystery of Love", None, CoverChoice::Clear).unwrap();
+        let tags = crate::tagging::read_tags_full(&path).unwrap();
+        assert_eq!(tags.title.as_deref(), Some("Mystery of Love"));
+        assert_eq!(
+            (tags.label, tags.year, tags.genre_joined, tags.cover),
+            (None, None, None, None),
+            "le fichier garde un champ de la release A"
+        );
+        let snap = metadata::snapshot_release(&conn, 1).unwrap();
+        let row = snap.row.unwrap();
+        assert_eq!(row.discogs_release_id.as_deref(), Some("B"));
+        assert_eq!((row.label, row.year, row.cover_path), (None, None, None));
+        assert_eq!(
+            row.version.as_deref(),
+            Some(""),
+            "« aucune version », voulu"
+        );
+        assert!(snap.genres.is_empty());
+        assert_eq!(snap.has_cover, Some(false));
+        assert_eq!(out.cover_path, None);
+        assert!(!out.cover_failed);
+    }
+
+    /// Revue de #68 : une PREMIÈRE identification ne vide rien. Ce que Discogs n'a pas — label,
+    /// année, genres, pochette — reste celui du fichier (un achat Beatport porte sa pochette), et
+    /// la base et l'écran le reprennent. Seul un CHANGEMENT de release vide (test précédent).
+    #[test]
+    fn une_premiere_identification_garde_ce_que_le_fichier_avait() {
+        let Some((dir, conn, path, _cover)) = release_setup() else {
+            eprintln!("skip: fixture real_320.mp3 absente (gitignoree, cf. CLAUDE.md)");
+            return;
+        };
+        let art = dir.path().join("achat.jpg");
+        std::fs::write(&art, vec![9u8; 4096]).unwrap();
+        crate::tagging::write_tags_full(
+            &path,
+            "x",
+            "y",
+            Some("Trax"),
+            Some(2019),
+            &["House".to_string(), "Acid".to_string()],
+            Some(art.to_str().unwrap()),
+        )
+        .unwrap();
+        let before = crate::tagging::read_tags_full(&path).unwrap();
+
+        let a = release("A", None, None, &[]);
+        let out =
+            apply_release_inner(&conn, 1, &a, "Mystery of Love", None, CoverChoice::Clear).unwrap();
+        let tags = crate::tagging::read_tags_full(&path).unwrap();
+        assert_eq!(tags.title.as_deref(), Some("Mystery of Love"));
+        assert_eq!(
+            (tags.label, tags.year, tags.genre_joined, tags.cover),
+            (before.label, before.year, before.genre_joined, before.cover),
+            "une première identification a vidé un champ du fichier"
+        );
+        assert_eq!(out.label.as_deref(), Some("Trax"));
+        assert_eq!(out.year, Some(2019));
+        assert_eq!(out.styles, vec!["House".to_string(), "Acid".to_string()]);
+        let snap = metadata::snapshot_release(&conn, 1).unwrap();
+        let row = snap.row.unwrap();
+        assert_eq!((row.label.as_deref(), row.year), (Some("Trax"), Some(2019)));
+        assert_eq!(snap.genres, vec!["House".to_string(), "Acid".to_string()]);
+        assert_eq!(snap.has_cover, Some(true));
+    }
+
+    /// Une ligne `metadata` SANS lien Discogs — un label saisi à la main en Revue — n'est pas une
+    /// release : le premier choix reste une première identification, et ne vide pas le fichier.
+    #[test]
+    fn une_ligne_sans_lien_discogs_n_est_pas_une_release() {
+        let Some((dir, conn, path, _cover)) = release_setup() else {
+            eprintln!("skip: fixture real_320.mp3 absente (gitignoree, cf. CLAUDE.md)");
+            return;
+        };
+        let art = dir.path().join("achat.jpg");
+        std::fs::write(&art, vec![9u8; 4096]).unwrap();
+        crate::tagging::write_tags_full(
+            &path,
+            "x",
+            "y",
+            None,
+            None,
+            &[],
+            Some(art.to_str().unwrap()),
+        )
+        .unwrap();
+        metadata::set_metadata_label(&conn, 1, "Saisi").unwrap();
+        let cover_before = crate::tagging::read_tags_full(&path).unwrap().cover;
+
+        let a = release("A", None, None, &[]);
+        apply_release_inner(&conn, 1, &a, "Mystery of Love", None, CoverChoice::Clear).unwrap();
+        assert_eq!(
+            crate::tagging::read_tags_full(&path).unwrap().cover,
+            cover_before,
+            "une ligne sans lien a été prise pour une release, et la pochette du fichier vidée"
+        );
+    }
+
+    /// Décision « Fichier et release » (2026-09-29) : « Rétablir » après un changement A → B rend
+    /// le fichier ET la ligne de A — lien Discogs, pochette et genres compris. L'ancien chemin
+    /// rendait les tags et gardait B en base.
+    #[test]
+    fn retablir_rend_le_fichier_et_la_release_d_avant() {
+        let Some((_dir, conn, path, cover)) = release_setup() else {
+            eprintln!("skip: fixture real_320.mp3 absente (gitignoree, cf. CLAUDE.md)");
+            return;
+        };
+        let a = release("A", Some("Alleviated"), Some(1986), &["Deep House"]);
+        apply_release_inner(
+            &conn,
+            1,
+            &a,
+            "Mystery of Love",
+            None,
+            CoverChoice::Set(cover),
+        )
+        .unwrap();
+        let tags_a = crate::tagging::read_tags_full(&path).unwrap();
+        let release_a = metadata::snapshot_release(&conn, 1).unwrap();
+
+        let b = release("B", Some("Trax"), None, &["Acid"]);
+        let out =
+            apply_release_inner(&conn, 1, &b, "Can You Feel It", None, CoverChoice::Clear).unwrap();
+        crate::actions::revert_batch(&conn, &out.batch_id).unwrap();
+
+        assert_eq!(crate::tagging::read_tags_full(&path).unwrap(), tags_a);
+        assert_eq!(metadata::snapshot_release(&conn, 1).unwrap(), release_a);
+    }
+
+    /// Rétablir une PREMIÈRE identification rend une piste sans ligne `metadata` — une ligne vide
+    /// compterait encore comme une identité — et un fichier à ses tags d'origine.
+    #[test]
+    fn retablir_une_premiere_identification_supprime_la_ligne() {
+        let Some((_dir, conn, path, cover)) = release_setup() else {
+            eprintln!("skip: fixture real_320.mp3 absente (gitignoree, cf. CLAUDE.md)");
+            return;
+        };
+        let tags0 = crate::tagging::read_tags_full(&path).unwrap();
+        let a = release("A", Some("Alleviated"), Some(1986), &["Deep House"]);
+        let out = apply_release_inner(
+            &conn,
+            1,
+            &a,
+            "Mystery of Love",
+            None,
+            CoverChoice::Set(cover),
+        )
+        .unwrap();
+        crate::actions::revert_batch(&conn, &out.batch_id).unwrap();
+        assert_eq!(crate::tagging::read_tags_full(&path).unwrap(), tags0);
+        assert_eq!(metadata::snapshot_release(&conn, 1).unwrap().row, None);
+    }
+
+    /// Une PANNE de téléchargement n'efface pas la pochette : le fichier garde ses octets, la base
+    /// garde son chemin. Vider sur une coupure réseau détruirait ce qu'on avait.
+    #[test]
+    fn une_panne_de_pochette_garde_celle_d_avant() {
+        let Some((_dir, conn, path, cover)) = release_setup() else {
+            eprintln!("skip: fixture real_320.mp3 absente (gitignoree, cf. CLAUDE.md)");
+            return;
+        };
+        let a = release("A", Some("Alleviated"), Some(1986), &["Deep House"]);
+        apply_release_inner(
+            &conn,
+            1,
+            &a,
+            "Mystery of Love",
+            None,
+            CoverChoice::Set(cover.clone()),
+        )
+        .unwrap();
+        let cover_a = crate::tagging::read_tags_full(&path).unwrap().cover;
+        let b = release("B", None, None, &[]);
+        let out =
+            apply_release_inner(&conn, 1, &b, "Mystery of Love", None, CoverChoice::Keep).unwrap();
+        assert_eq!(
+            crate::tagging::read_tags_full(&path).unwrap().cover,
+            cover_a
+        );
+        assert_eq!(out.cover_path.as_deref(), Some(cover.as_str()));
+        let snap = metadata::snapshot_release(&conn, 1).unwrap();
+        assert_eq!(snap.has_cover, Some(true));
+    }
+
+    #[test]
+    fn la_pochette_se_decide_sur_le_resultat_du_telechargement() {
+        use metadata::cover::CoverFetch;
+        assert_eq!(
+            cover_choice(CoverFetch::Downloaded("/c/1.jpg".into())),
+            (CoverChoice::Set("/c/1.jpg".into()), false)
+        );
+        assert_eq!(
+            cover_choice(CoverFetch::NoImage),
+            (CoverChoice::Clear, false)
+        );
+        assert_eq!(
+            cover_choice(CoverFetch::Failed("timeout".into())),
+            (CoverChoice::Keep, true)
+        );
+    }
+
+    #[test]
+    fn un_titre_vide_est_refuse_avant_toute_ecriture() {
+        assert!(shown_canonical(&release("A", None, None, &[]), "  ", None).is_err());
+    }
+
+    #[test]
+    fn applied_release_shape_matches_contracts_ts() {
+        let AppliedRelease {
+            label,
+            year,
+            styles,
+            cover_path,
+            cover_failed,
+            batch_id,
+        } = AppliedRelease {
+            label: None,
+            year: None,
+            styles: Vec::new(),
+            cover_path: None,
+            cover_failed: false,
+            batch_id: String::new(),
+        };
+        let _ = (label, year, styles, cover_path, cover_failed, batch_id);
+    }
 }

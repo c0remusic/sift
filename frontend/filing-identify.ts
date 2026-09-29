@@ -1,12 +1,21 @@
-import { identify, applyIdentity, applyTags, trackFileTags, openUrl, revertBatch } from "./ipc";
-import type { Candidate, AppliedIdentity } from "./ipc";
+import { identify, applyRelease, applyTags, trackFileTags, openUrl, revertBatch } from "./ipc";
+import type { Candidate } from "./ipc";
 import type { Canonical } from "../shared/contracts";
 import { convertFileSrc } from "@tauri-apps/api/core";
-import { chosenRowHtml, identifyErrorHtml, identifyHint, renderCandidates } from "./identify-shared";
+import { chosenRowHtml, identifyErrorHtml, identifyHint, renderCandidates, wireCandidateKeys } from "./identify-shared";
+import {
+  appliedIndex,
+  candidatesFor,
+  markApplied,
+  otherCount,
+  rememberCandidates,
+  shownTitle,
+} from "./identify-candidates";
+import { T as TS } from "./i18n/identify-shared";
 import { requireEl, esc } from "./dom";
 import { state, openState } from "./filing-state";
 import { toast } from "./filing-toast";
-import { refreshPreview, updateHeaderName, titleCase } from "./filing-preview";
+import { refreshPreview, updateHeaderName } from "./filing-preview";
 import { humanizeError } from "./errors";
 import { T } from "./i18n/filing-identify";
 import { coalesceLatest } from "./coalesce-latest";
@@ -27,9 +36,12 @@ document.addEventListener("sift:accordion-open", (e) => {
 // empty) — country/format additionally have no persisted backend column at all (unlike label/year,
 // which trackRelease re-populates from the `metadata` table on a real reopen), so those two are
 // session-only regardless of process lifetime.
+// `releaseId` (#68) dit À QUELLE release ces faits appartiennent : un « Rétablir » ou un Ctrl+Z fait
+// ailleurs peut ramener la base sur une autre release, et le pays et le format mis en cache ne
+// valent alors plus rien (`openFilingInto` les écarte quand l'id ne correspond plus).
 export const releaseCache = new Map<
   number,
-  { label: string | null; year: number | null; country: string | null; format: string | null }
+  { label: string | null; year: number | null; country: string | null; format: string | null; releaseId: string | null }
 >();
 
 /** Render the genres into `.sift-genres` from `state.genres` (single source — set on open from
@@ -102,133 +114,262 @@ export function refreshDiscrepancy(): void {
   mark(".sift-genres", d.genres);
 }
 
-/** Apply an identity result to the editing fields + filename preview. `host` sert à REFERMER la
- *  liste de candidats au choix (retour d'Antoine 2026-09-06, remplace le fork F « liste
- *  ouverte ») ; `write` grave l'ID3 tout de suite (clic sur un match, décision F.2). */
-function onIdentityApplied(
-  applied: AppliedIdentity,
-  chosen: Candidate,
-  editor: HTMLElement,
-  mid: HTMLElement,
-  host: HTMLElement,
-  idBtn: HTMLButtonElement,
-  write = true,
-): void {
-  if (!state.canonical) return;
-  state.canonical.artist = applied.canonical.artist;
-  // Split a trailing "(Version)" out of the Discogs title so it's never duplicated: the title
-  // field gets the clean base, the version field gets the mix. Prefer the version Discogs put
-  // in the title; otherwise keep the one parsed from the local name (Discogs search doesn't
-  // always expose a per-track version). Fixes e.g. "Love Foolosophy (Knee Deep Remix) (Knee
-  // Deep Remix)".
-  const m = applied.canonical.title.match(/^(.*?)\s*\(([^()]+)\)\s*$/);
-  const baseTitle = m ? m[1].trim() : applied.canonical.title.trim();
-  const rawVersion = (m ? m[2].trim() : null) ?? state.canonical.version;
-  const version = rawVersion ? titleCase(rawVersion) : null;
-  state.canonical.title = baseTitle;
-  state.canonical.version = version;
+/** Ce que la fiche montre de l'identité d'une piste — de quoi la repeindre après le choix d'une
+ *  release (#68) ET après son « Rétablir ». Une seule peinture pour les deux sens : un « Rétablir »
+ *  qui repeindrait autrement que le choix finirait par ne plus défaire ce que le choix a fait. */
+interface IdentityView {
+  canonical: Canonical;
+  label: string | null;
+  year: number | null;
+  country: string | null;
+  format: string | null;
+  coverPath: string | null;
+  genres: string[];
+  identified: boolean;
+  /** La release que la mémoire de session doit tenir pour appliquée, `null` si inconnue. */
+  releaseId: string | null;
+}
 
-  // Update the editable inputs directly. Label included now that it's editable (it rides on
-  // Canonical) — set the edited value here where state.canonical is freshly narrowed non-null,
-  // alongside artist/title/version; its input is patched in place below with the others.
-  state.canonical.label = applied.label;
-  const aInp = editor.querySelector<HTMLInputElement>('[data-fil="artist"]');
-  const tInp = editor.querySelector<HTMLInputElement>('[data-fil="title"]');
-  const vInp = editor.querySelector<HTMLInputElement>('[data-fil="version"]');
-  const lInp = editor.querySelector<HTMLInputElement>('[data-fil="label"]');
-  if (aInp) aInp.value = applied.canonical.artist;
-  if (tInp) tInp.value = baseTitle;
-  if (vInp) vInp.value = version ?? "";
-  if (lInp) lInp.value = applied.label ?? "";
+/** L'identité affichée MAINTENANT — prise avant un choix, pour que « Rétablir » la rende. */
+function captureIdentity(): IdentityView | null {
+  if (!state.canonical) return null;
+  return {
+    canonical: { ...state.canonical },
+    label: state.label,
+    year: state.year,
+    country: state.releaseCountry,
+    format: state.releaseFormat,
+    coverPath: state.coverPath,
+    genres: [...state.genres],
+    identified: state.identified,
+    releaseId: state.releaseId,
+  };
+}
 
-  // Refresh the filename preview using the same logic as the input handler.
+/** Ce que la session doit retenir d'une identité, que la fiche soit encore ouverte ou non : la
+ *  release appliquée (mémoire des candidats) et les faits de release en cache. Appelé AVANT toute
+ *  garde d'`openSeq` — la revue de #68 a montré qu'un « Rétablir » cliqué après avoir ouvert une
+ *  autre piste laissait sinon la mémoire sur la release annulée. */
+function recordIdentity(trackId: number, v: IdentityView): void {
+  markApplied(trackId, v.releaseId);
+  releaseCache.set(trackId, { label: v.label, year: v.year, country: v.country, format: v.format, releaseId: v.releaseId });
+}
+
+/** La ligne de la release choisie, ou rien : l'hôte se masque tant que la piste n'est pas
+ *  identifiée. Porte « N autres » quand la session connaît d'autres candidats (#68). */
+function paintChosenRow(host: HTMLElement): void {
+  const markup = chosenRowMarkup();
+  host.innerHTML = markup;
+  host.hidden = !markup;
+}
+
+/** Le markup de la ligne choisie, `""` pour une piste pas encore identifiée. Sert aussi SOUS un
+ *  message (recherche vide ou en échec) : la ligne et son « N autres » restent atteignables. */
+function chosenRowMarkup(): string {
+  const c = state.canonical;
+  if (!state.track || !c || !state.identified) return "";
+  return chosenRowHtml(
+    {
+      artist: c.artist,
+      title: c.version ? `${c.title} (${c.version})` : c.title,
+      sub: [state.label, state.year != null ? String(state.year) : null, state.releaseCountry, state.releaseFormat]
+        .filter(Boolean)
+        .join(" · "),
+      coverSrc: state.coverPath ? convertFileSrc(state.coverPath) : null,
+    },
+    otherCount(candidatesFor(state.track.id)),
+  );
+}
+
+/** Repeint la fiche sur `v` : état, champs, nom final, pochette, genres, ligne choisie. */
+function paintIdentity(v: IdentityView, editor: HTMLElement, mid: HTMLElement, host: HTMLElement, idBtn: HTMLButtonElement): void {
+  if (!state.track) return;
+  state.canonical = { ...v.canonical };
+  state.label = v.label;
+  state.year = v.year;
+  state.releaseCountry = v.country;
+  state.releaseFormat = v.format;
+  state.coverPath = v.coverPath;
+  state.genres = [...v.genres];
+  state.identified = v.identified;
+  state.releaseId = v.releaseId;
+
+  const set = (sel: string, val: string) => {
+    const inp = editor.querySelector<HTMLInputElement>(`[data-fil="${sel}"]`);
+    if (inp) inp.value = val;
+  };
+  set("artist", v.canonical.artist);
+  set("title", v.canonical.title);
+  set("version", v.canonical.version ?? "");
+  set("label", v.canonical.label ?? "");
   refreshPreview();
   updateHeaderName(mid);
 
-  // Read-only release facts from the chosen Discogs release. Cache them on the track so a
-  // close+reopen within the session re-shows them (reconcile doesn't carry label/year). Choosing a
-  // different candidate re-enters here with the new release → the line updates in place.
-  state.label = applied.label;
-  state.year = applied.year;
-  // Country/format only ever exist on the search-result candidate (chosen), never on AppliedIdentity
-  // (Rust apply_identity_cmd doesn't return them, and metadata has no column for either) — take them
-  // from the same candidate object the click already had, so they don't vanish once the candidate
-  // list is replaced by the "Identifié :" confirmation line (2026-07-06 annotation).
-  state.releaseCountry = chosen.country;
-  state.releaseFormat = chosen.format;
-  state.coverPath = applied.cover_path;
-  if (state.track) {
-    releaseCache.set(state.track.id, {
+  // La pochette du héros ne vient QUE de la base (`restoreCover`) : sans chemin, elle se masque —
+  // une release sans pochette vient de la retirer du fichier aussi (décision « Vider »).
+  mid.querySelectorAll<HTMLImageElement>(".sift-report-cover").forEach((covEl) => {
+    if (!v.coverPath) {
+      covEl.hidden = true;
+      covEl.removeAttribute("src");
+      return;
+    }
+    // Discogs sometimes returns a placeholder ("no image") that fails to decode — re-hide on error
+    // so the vinyl ::before fallback shows instead of a broken-image glyph on top of it.
+    covEl.onerror = () => { covEl.hidden = true; };
+    covEl.src = convertFileSrc(v.coverPath);
+    covEl.hidden = false;
+  });
+
+  renderGenres();
+  refreshRebuyLink();
+  paintChosenRow(host);
+  // Read-only unidentified card (sift-ident-idle): the idle note ("Aucune correspondance…") is
+  // false once an identity exists — drop it, keeping the search button.
+  if (v.identified) editor.querySelector(".sift-ident-idle-note")?.remove();
+  // TEXTE SEUL, comme le premier rendu de ce bouton : c'est le MÊME bouton dans un autre état.
+  idBtn.textContent = v.identified ? T().reidentify : T().identify;
+  refreshDiscrepancy();
+}
+
+/** Applique la release `c` (#68) : `apply_release` grave le fichier ET la base en un seul lot, puis
+ *  la fiche se repeint sur ce qui a été gravé. Remplace `applyIdentity` + `doApplyTags` : le second
+ *  ne faisait que poser par-dessus, et laissait sur le fichier le label ou la pochette de la
+ *  release d'avant. Le toast porte « Rétablir », qui rend le fichier ET la release d'avant. */
+async function applyChosen(
+  c: Candidate,
+  host: HTMLElement,
+  editor: HTMLElement,
+  mid: HTMLElement,
+  idBtn: HTMLButtonElement,
+): Promise<void> {
+  if (!state.track || !state.canonical) return;
+  const trackId = state.track.id;
+  const session = candidatesFor(trackId);
+  const before = captureIdentity();
+  if (!before) return;
+  // FIX-21: openState.openSeq-guarded — a slow apply resolving after the user opened another track
+  // must not paint the fetched release onto that track's pane.
+  const myseq = openState.openSeq;
+  const shown = shownTitle(c, session ? session.fallbackVersion : state.canonical.version);
+  const list = host.querySelector<HTMLElement>(".sift-cands-list");
+  list?.setAttribute("aria-busy", "true");
+  list?.classList.add("sift-cands-busy");
+  try {
+    const applied = await applyRelease(trackId, c, shown.title, shown.version);
+    const after: IdentityView = {
+      canonical: { ...before.canonical, artist: c.artist, title: shown.title, version: shown.version, label: applied.label },
       label: applied.label,
       year: applied.year,
-      country: chosen.country,
-      format: chosen.format,
+      country: c.country,
+      format: c.format,
+      coverPath: applied.cover_path,
+      genres: applied.styles,
+      identified: true,
+      releaseId: c.release_id,
+    };
+    // La session et le cache suivent l'écriture même si une autre piste s'est ouverte entre-temps ;
+    // seule la repeinture en dépend. Le toast aussi part toujours : son « Rétablir » est le seul
+    // filet de ce lot (le Journal n'affiche pas les `tag_edit`).
+    recordIdentity(trackId, after);
+    if (myseq === openState.openSeq) {
+      paintIdentity(after, editor, mid, host, idBtn);
+      await refreshFileTags(trackId, myseq);
+    }
+    const L = TS();
+    toast(applied.cover_failed ? L.releaseAppliedNoCover : L.releaseApplied, true, () => {
+      void revertBatch(applied.batch_id)
+        .then(async () => {
+          recordIdentity(trackId, before);
+          if (myseq !== openState.openSeq) return;
+          paintIdentity(before, editor, mid, host, idBtn);
+          await refreshFileTags(trackId, myseq);
+        })
+        .catch((e) => {
+          console.error("revertBatch (release) failed", e);
+          toast(TS().undoFailed, false);
+        });
     });
+  } catch (e) {
+    if (myseq !== openState.openSeq) return;
+    list?.removeAttribute("aria-busy");
+    list?.classList.remove("sift-cands-busy");
+    host.querySelector(".sift-cand-pending")?.classList.remove("sift-cand-pending");
+    // [m10] errors get a warning icon to distinguish from "no results" — au-dessus de la liste,
+    // qui reste là : un autre candidat peut encore se choisir.
+    host.querySelector(".sift-cands-error")?.remove();
+    host.insertAdjacentHTML(
+      "afterbegin",
+      `<div class="sift-cands-msg sift-cands-error"><i class="ti ti-alert-triangle sift-cand-error-icon"></i>${esc(humanizeError(e, T().applyFailed, "apply_release"))}</div>`,
+    );
   }
+}
 
-  // Show the cover if we have a local path. Every match, not just the first — the Hero and the
-  // player's mini header both carry this class now. Probe non-throw — the report pane may be
-  // gone after the identify await / a navigation.
-  if (applied.cover_path) {
-    const src = convertFileSrc(applied.cover_path);
-    mid.querySelectorAll<HTMLImageElement>(".sift-report-cover").forEach((covEl) => {
-      // Discogs sometimes returns a placeholder ("no image") instead of real art — the file
-      // downloads fine but fails to decode/display as a photo. Re-hide on error so the vinyl
-      // ::before fallback shows instead of a broken-image glyph on top of it.
-      covEl.onerror = () => { covEl.hidden = true; };
-      covEl.src = src;
-      covEl.hidden = false;
-    });
+/** Le fichier vient de changer : relit ses tags pour que le bandeau d'écart compare au vrai. */
+async function refreshFileTags(trackId: number, myseq: number): Promise<void> {
+  try {
+    const snap = await trackFileTags(trackId);
+    if (myseq !== openState.openSeq) return;
+    state.fileTags = snap;
+    refreshDiscrepancy();
+  } catch (e) {
+    console.error("track_file_tags failed", e);
   }
+}
 
-  // [m11] Genres: store the would-write list (single source) and render the chips. The list also
-  // feeds the file-vs-display discrepancy check (joined form), so it must live in state, not only DOM.
-  state.genres = applied.styles;
-  renderGenres();
-
-  // A Discogs match now exists → if the file is a fake/transcode, offer the rebuy search link.
-  state.identified = true;
-  refreshRebuyLink();
-
-  // La liste SE REFERME SUR LA LIGNE CHOISIE, qui reste seule — retours d'Antoine des
-  // 2026-09-06/07 (remplacent le fork F « liste ouverte » PUIS la fermeture sèche du 06 : une
-  // liste ouverte après le choix se lit comme inachevée, mais une fermeture qui n'affiche plus la
-  // release choisie perd l'information du choix). Ligne inerte ; permuter = re-cliquer
-  // Ré-identifier, juste en dessous depuis la décision 1b.
+/** Ouvre la liste des candidats de la session dans `host`, la release appliquée sélectionnée et
+ *  focalisée — le premier candidat quand aucune ne l'est. Aucune requête : la liste est celle de la
+ *  dernière recherche (#68). */
+function openCandidateList(host: HTMLElement): void {
+  if (!state.track) return;
+  const session = candidatesFor(state.track.id);
+  if (!session) return;
+  const sel = Math.max(appliedIndex(session), 0);
   host.hidden = false;
-  host.innerHTML = chosenRowHtml({
-    artist: applied.canonical.artist,
-    title: applied.canonical.title,
-    sub: [applied.label, applied.year != null ? String(applied.year) : null, chosen.country, chosen.format]
-      .filter(Boolean)
-      .join(" · "),
-    coverSrc: applied.cover_path ? convertFileSrc(applied.cover_path) : chosen.cover_url,
+  renderCandidates(host, session.list, sel);
+  host.querySelectorAll<HTMLElement>("[data-cand]")[sel]?.focus();
+}
+
+/** Referme la liste sur la ligne choisie (ou sur rien, pour une piste pas encore identifiée), le
+ *  focus rendu à la ligne quand elle est un contrôle. Rend `true` si une liste était ouverte. */
+function closeCandidateList(host: HTMLElement): boolean {
+  if (!host.querySelector(".sift-cands-list")) return false;
+  paintChosenRow(host);
+  host.querySelector<HTMLElement>("[data-cand-switch]")?.focus();
+  return true;
+}
+
+/** Le câblage de l'hôte des candidats, posé UNE fois à chaque rendu de l'éditeur : l'hôte survit
+ *  aux rendus de son contenu, les écouteurs délégués aussi — pas d'accumulation d'un choix à
+ *  l'autre. La ligne choisie rouvre la liste ; dans la liste, la release appliquée la referme sans
+ *  rien écrire, une autre s'applique. */
+function wireCandidateHost(host: HTMLElement, editor: HTMLElement, mid: HTMLElement, idBtn: HTMLButtonElement): void {
+  host.addEventListener("click", (e) => {
+    const target = e.target as Element;
+    if (target.closest("[data-cand-switch]")) {
+      openCandidateList(host);
+      return;
+    }
+    const row = target.closest<HTMLElement>("[data-cand]");
+    if (!row || !state.track || host.querySelector(".sift-cands-busy")) return;
+    const session = candidatesFor(state.track.id);
+    const idx = Number(row.dataset.cand);
+    const c = session?.list[idx];
+    if (!session || !c) return;
+    if (idx === appliedIndex(session)) {
+      closeCandidateList(host);
+      return;
+    }
+    row.classList.add("sift-cand-pending");
+    void applyChosen(c, host, editor, mid, idBtn);
   });
-  // Read-only unidentified card (sift-ident-idle): the idle note ("Aucune correspondance…") is now
-  // false — drop it, keeping the search button (relabelled Ré-identifier below).
-  editor.querySelector(".sift-ident-idle-note")?.remove();
-
-  // [C1] Relabel Identifier → Ré-identifier once an identity has been applied.
-  // TEXTE SEUL, comme le premier rendu de ce bouton plus bas dans ce fichier : c'est le MÊME
-  // bouton dans un autre état, et n'en corriger qu'un chemin ferait revenir l'icône dès qu'une
-  // identité est appliquée. `textContent` et non `innerHTML` — il n'y a plus de balise à poser,
-  // et le badge de raccourci `I` n'a jamais été rendu par ce chemin-ci.
-  idBtn.textContent = T().reidentify;
-
-  // The displayed identity just changed while the FILE keeps its old tags → surface the gap.
-  refreshDiscrepancy();
-
-  // Choisir un match (clic) grave l'ID3 tout de suite (décision F.2) — plus de bouton Appliquer,
-  // l'écriture est automatique. `write` reste par sécurité (défaut true ; il n'y a plus d'appelant
-  // à false depuis le retrait de l'auto-apply).
-  if (write) void doApplyTags();
+  wireCandidateKeys(host, () => closeCandidateList(host));
 }
 
 /** On reopen of an already-identified track, restore the hero cover (mid `.sift-report-cover`) from
  *  the Discogs cover path — the identity's cover isn't carried by the analysis report, so without
  *  this the hero/player cover stayed hidden until you re-ran Identify
  *  (docs/superpowers/reviews/2026-07-02-audit-fidelite-ecran-par-ecran.md décision #5). Discogs
- *  placeholder art can fail to decode → re-hide on error, same as onIdentityApplied. In direction B
+ *  placeholder art can fail to decode → re-hide on error, same as paintIdentity. In direction B
  *  the identity itself is shown by the always-visible attribute inputs, so no "Identifié :" line is
  *  drawn on reopen — only the cover needs restoring. */
 export function restoreCover(mid: HTMLElement, coverPath: string | null): void {
@@ -241,71 +382,12 @@ export function restoreCover(mid: HTMLElement, coverPath: string | null): void {
   });
 }
 
-/** Wire clicks on rendered candidate buttons.
- * Extracted so it can be called after initial render AND after "changer" re-shows the list. */
-function wireCandidateClicks(
-  host: HTMLElement,
-  candidates: Candidate[],
-  editor: HTMLElement,
-  mid: HTMLElement,
-  idBtn: HTMLButtonElement,
-): void {
-  host.querySelectorAll<HTMLElement>("[data-cand]").forEach((el) => {
-    const idx = Number(el.dataset.cand);
-    el.addEventListener("click", () => {
-      const c = candidates[idx];
-      if (!c || !state.track) return;
-      el.style.opacity = "0.5";
-      el.style.pointerEvents = "none";
-      // FIX-21: openState.openSeq-guarded, same pattern as openFilingInto/setApplyIdle — without it, a
-      // slow applyIdentity resolving after the user already navigated to a different track would
-      // write the fetched metadata onto the WRONG track's pane (state.canonical, cover, DOM).
-      const myseq = openState.openSeq;
-      void applyIdentity(state.track.id, c)
-        .then((applied) => {
-          if (myseq !== openState.openSeq) return; // a newer open started while we awaited — drop this result
-          onIdentityApplied(applied, c, editor, mid, host, idBtn);
-        })
-        .catch((e) => {
-          if (myseq !== openState.openSeq) return;
-          el.style.opacity = "";
-          el.style.pointerEvents = "";
-          // [m10] errors get a warning icon to distinguish from "no results"
-          host.innerHTML = `<div class="sift-cands-msg sift-cands-error"><i class="ti ti-alert-triangle sift-cand-error-icon"></i>${esc(humanizeError(e, T().applyFailed, "apply_identity"))}</div>`;
-        });
-    });
-  });
-}
-
-/** ↑/↓ dans la liste ouverte : déplace le focus entre les candidats (le gate de queue-panel laisse
- *  passer quand le focus est dans .sift-cands). Attaché à la listbox FRAÎCHE de chaque render, donc
- *  pas d'accumulation de handlers d'un search à l'autre. */
-function wireListboxArrows(host: HTMLElement): void {
-  const listbox = host.querySelector<HTMLElement>(".sift-cands-list");
-  if (!listbox) return;
-  listbox.addEventListener("keydown", (e) => {
-    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
-    const btns = Array.from(listbox.querySelectorAll<HTMLElement>("[data-cand]"));
-    const cur = btns.indexOf(document.activeElement as HTMLElement);
-    const next = e.key === "ArrowDown" ? cur + 1 : cur - 1;
-    if (next >= 0 && next < btns.length) {
-      e.preventDefault();
-      btns[next].focus();
-    }
-  });
-}
-
 /** Run the Discogs identify flow for the current track. */
 /** Vrai dès que l'utilisateur a tapé dans un champ depuis l'ouverture de la piste (`upd`), remis à
  *  faux à chaque rendu de l'éditeur. Décide si `doIdentify` envoie l'écran comme indice. */
 let typedSinceOpen = false;
 
-async function doIdentify(
-  btn: HTMLButtonElement,
-  host: HTMLElement,
-  editor: HTMLElement,
-  mid: HTMLElement,
-): Promise<void> {
+async function doIdentify(btn: HTMLButtonElement, host: HTMLElement): Promise<void> {
   if (!state.track) return;
   const trackId = state.track.id;
   // FIX-21: openState.openSeq-guarded — identify's await can outlive the user navigating to another
@@ -326,13 +408,24 @@ async function doIdentify(
     // « junk » et avec la version du nom de fichier.
     candidates = await identify(trackId, identifyHint(state.canonical, typedSinceOpen));
     if (myseq !== openState.openSeq) return; // a newer open started while we awaited — drop this result
-    renderCandidates(host, candidates);
-    wireCandidateClicks(host, candidates, editor, mid, btn);
-    wireListboxArrows(host); // ↑/↓ déplace le focus entre candidats (le gate de queue-panel laisse passer)
+    if (candidates.length === 0) {
+      // Rien de trouvé : la liste d'une recherche précédente reste celle que la ligne rouvre, et la
+      // ligne reste affichée sous le message.
+      renderCandidates(host, candidates);
+      host.insertAdjacentHTML("beforeend", chosenRowMarkup());
+      return;
+    }
+    // Gardés pour la session (#68) : la ligne choisie rouvrira CETTE liste, sans requête. La version
+    // affichée maintenant sert de repli quand le titre Discogs n'en porte pas. La release appliquée
+    // vient de la base (`state.releaseId`) : sans elle, une piste identifiée hier sélectionnait le
+    // premier candidat, et un clic sur sa propre release la réécrivait.
+    rememberCandidates(trackId, candidates, state.canonical?.version ?? null);
+    markApplied(trackId, state.releaseId);
     // PAS d'auto-apply (retour Antoine : un match auto appliqué à tort abîmerait le fichier). La
     // recherche AFFICHE les candidats, elle ne remplit rien — l'utilisateur clique un match pour
-    // graver. On focus le meilleur (candidat 0) pour que ↑/↓ navigue la liste tout de suite.
-    host.querySelector<HTMLElement>(".sift-cand")?.focus();
+    // graver. Le focus va au candidat sélectionné pour que ↑/↓ navigue la liste tout de suite ; le
+    // clic et le clavier sont câblés une fois sur l'hôte (`wireCandidateHost`).
+    openCandidateList(host);
   } catch (err) {
     if (myseq !== openState.openSeq) return;
     // [C2/m5] expliquer POURQUOI + donner une action directe vers Réglages. La cascade de branches
@@ -351,6 +444,8 @@ async function doIdentify(
         new MouseEvent("click", { bubbles: true }),
       );
     });
+    // La ligne choisie reste sous le message d'échec (#68) : la liste connue s'y rouvre encore.
+    host.insertAdjacentHTML("beforeend", chosenRowMarkup());
   } finally {
     btn.disabled = false;
     btn.innerHTML = origLabel;
@@ -388,7 +483,7 @@ export function renderEditor(host: HTMLElement, mid: HTMLElement): void {
     // cause-effet du 06 (candidats collés au bouton) tient toujours.
     // Résultats Discogs — la release choisie au repos (chosenRowHtml, reconstruite au réopen
     // depuis l'état seedé par filing.ts), la liste ouverte le temps d'une recherche (doIdentify),
-    // vide et masqué sinon. onIdentityApplied remplit les inputs data-fil ci-dessous en place,
+    // vide et masqué sinon. paintIdentity remplit les inputs data-fil ci-dessous en place,
     // sans re-render.
     `<div class="sift-cands sift-cands-host" hidden></div>` +
     // Bouton Identifier — aligné au bord gauche, juste sous ses résultats et AU-DESSUS des
@@ -399,7 +494,7 @@ export function renderEditor(host: HTMLElement, mid: HTMLElement): void {
     `<button data-fil="identifier" class="sift-meta-ident-btn" title="${L.identifyTitle}">${c.artist && c.title ? L.reidentify : L.identify} <span class="kbd sift-kbd-hint-id">I</span></button>` +
     `</div>` +
     // Liste d'attributs éditable en place : la valeur EST un input (data-fil écouté par `upd` à la
-    // saisie et par onIdentityApplied au remplissage), stylé comme du texte tant qu'on ne le touche
+    // saisie et par paintIdentity au remplissage), stylé comme du texte tant qu'on ne le touche
     // pas. Labels persistants — annotation "on ne sait pas à quoi correspondent les champs".
     // Placeholder "—" quand vide, jamais une ligne vide.
     `<div class="sift-attr-list">` +
@@ -410,7 +505,7 @@ export function renderEditor(host: HTMLElement, mid: HTMLElement): void {
     // l'utilisateur veut corriger le label). La valeur EST un input `data-fil="label"`, câblé comme
     // Artiste/Titre/Version : `upd` le lit vers state.canonical.label (label voyage désormais DANS
     // Canonical), et il se grave au fichier (blur/Entrée) via doApplyTags → write_tags_full (+
-    // persiste metadata.label). Rempli en place par onIdentityApplied. Placeholder "—" quand vide.
+    // persiste metadata.label). Rempli en place par paintIdentity. Placeholder "—" quand vide.
     `<div class="sift-attr"><span class="sift-attr-k">${L.label}</span><input data-fil="label" placeholder="—" value="${esc(c.label ?? "")}" class="sift-attr-input" aria-label="${L.label}"></div>` +
     `<div class="sift-attr"><span class="sift-attr-k">${L.genres}</span><span class="sift-genres"></span></div>` +
     `</div>` +
@@ -421,7 +516,7 @@ export function renderEditor(host: HTMLElement, mid: HTMLElement): void {
     // comme une anomalie) → 2026-09-07, les deux remontent ensemble au-dessus des attributs.
     // Plus de bouton « Appliquer » (retour Antoine 2026-08-25) : les tags ID3 se gravent
     // AUTOMATIQUEMENT quand on finit d'éditer un champ (blur/Entrée) ou qu'on choisit un match
-    // Discogs — voir doApplyTags, déclenché depuis le wiring des inputs et onIdentityApplied.
+    // Discogs — voir doApplyTags, déclenché depuis le wiring des inputs (le choix d'un match passe par `apply_release`, #68).
     // Rebuy link slot — filled by refreshRebuyLink() only for a fake track that also has a Discogs
     // match (empty, no gap, otherwise). Placed after genres so the identity block reads whole first.
     `<div class="sift-rebuy"></div>` +
@@ -449,7 +544,7 @@ export function renderEditor(host: HTMLElement, mid: HTMLElement): void {
     // choisit un match, voir `doApplyTags`). Il donnait donc une instruction impossible à suivre.
     // Règle appliquée : `docs/design-system/content.md` — « un état doit dire ce que l'utilisateur
     // peut faire MAINTENANT ». Les deux gestes nommés existent : choisir un match déclenche
-    // `onIdentityApplied`, et Convertir est le libellé de l'action principale (content.md § Actions).
+    // `applyChosen`, et Convertir est le libellé de l'action principale (content.md § Actions).
     `<div class="sift-tag-warn" role="status" aria-live="polite" style="display:none"><i class="ti ti-alert-triangle sift-icon-inline-md sift-icon-flex-none"></i><span>${L.tagWarn}</span></div>` +
     `</div>`; // ferme .sift-meta-body
 
@@ -546,7 +641,8 @@ export function renderEditor(host: HTMLElement, mid: HTMLElement): void {
   const idBtn = host.querySelector<HTMLButtonElement>('[data-fil="identifier"]');
   const candsHost = host.querySelector<HTMLElement>(".sift-cands");
   if (idBtn && candsHost) {
-    idBtn.addEventListener("click", () => void doIdentify(idBtn, candsHost, host, mid));
+    idBtn.addEventListener("click", () => void doIdentify(idBtn, candsHost));
+    wireCandidateHost(candsHost, host, mid, idBtn);
   }
 
 
@@ -556,21 +652,8 @@ export function renderEditor(host: HTMLElement, mid: HTMLElement): void {
   // canonical, label/année depuis la table metadata, pochette locale, pays/format depuis le cache
   // session quand il les a encore. Pas de colonne backend pour pays/format, et pas de migration :
   // « je me fiche de l'édition » (même jour) — la ligne se contente de ce qui est là.
-  const chosenHost = host.querySelector<HTMLElement>(".sift-cands-host");
-  if (chosenHost && state.identified && state.canonical) {
-    const t = state.canonical.version
-      ? `${state.canonical.title} (${state.canonical.version})`
-      : state.canonical.title;
-    chosenHost.innerHTML = chosenRowHtml({
-      artist: state.canonical.artist,
-      title: t,
-      sub: [state.label, state.year != null ? String(state.year) : null, state.releaseCountry, state.releaseFormat]
-        .filter(Boolean)
-        .join(" · "),
-      coverSrc: state.coverPath ? convertFileSrc(state.coverPath) : null,
-    });
-    chosenHost.hidden = false;
-  }
+  // Depuis #68 la ligne rouvre la liste de la session quand il y en a une (`paintChosenRow`).
+  if (candsHost) paintChosenRow(candsHost);
 }
 
 /** Beatport search URL for the open track's identified artist + title. A search page (not an API):
@@ -586,7 +669,7 @@ function beatportSearchUrl(): string | null {
 /** Show a "chercher sur Beatport" link ONLY when the open track is a fake/transcode AND a Discogs
  *  identity exists (state.identified) — searching a raw filename is useless. Fills a create-once
  *  `.sift-rebuy` container; empty (no link, no gap) otherwise. Called on open, on renderEditor, and
- *  after a fresh identify (onIdentityApplied). */
+ *  after a release is applied or restored (paintIdentity). */
 function refreshRebuyLink(): void {
   const el = document.querySelector<HTMLElement>(".sift-rebuy");
   if (!el) return; // editor not mounted

@@ -14,46 +14,84 @@ pub fn cover_path(dir: &Path, release_id: &str) -> PathBuf {
     dir.join(format!("{safe}.jpg"))
 }
 
-/// Download `url` into the cache for `release_id`, returning the path. Idempotent: if the file
-/// already exists it is returned without re-downloading. Best-effort — the caller treats Err
-/// as "no cover" and proceeds.
-pub fn download_cover(dir: &Path, release_id: &str, url: &str) -> Result<PathBuf, String> {
+/// Ce que le téléchargement de la pochette d'une release a donné. Distingué pour un CHANGEMENT de
+/// release (#68) : une release SANS image fait retirer la pochette du fichier, une PANNE (réseau,
+/// délai, disque) la fait garder — vider sur une simple coupure effacerait la pochette qu'on avait.
+#[derive(Debug, PartialEq)]
+pub enum CoverFetch {
+    Downloaded(PathBuf),
+    /// Pas d'URL, ou le « no image » de Discogs (moins de 1 Ko) : la release n'a pas de pochette.
+    NoImage,
+    Failed(String),
+}
+
+/// Download the cover of `release_id` into `dir` (idempotent: an already-cached file is returned
+/// without re-downloading). `url` absent → `NoImage`.
+pub fn fetch_cover(dir: &Path, release_id: &str, url: Option<&str>) -> CoverFetch {
+    let Some(url) = url else {
+        return CoverFetch::NoImage;
+    };
     let out = cover_path(dir, release_id);
     if out.exists() {
-        return Ok(out);
+        return CoverFetch::Downloaded(out);
     }
-    std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
-    let mut resp = ureq::get(url)
+    if let Err(e) = std::fs::create_dir_all(dir) {
+        return CoverFetch::Failed(e.to_string());
+    }
+    let resp = ureq::get(url)
         .config()
         .timeout_global(Some(Duration::from_secs(20)))
         .build()
         .header("User-Agent", concat!("Sift/", env!("CARGO_PKG_VERSION")))
-        .call()
-        .map_err(|e| e.to_string())?;
-    let bytes = resp
+        .call();
+    let mut resp = match resp {
+        Ok(r) => r,
+        Err(e) => return CoverFetch::Failed(e.to_string()),
+    };
+    let bytes = match resp
         .body_mut()
         .with_config()
         .limit(10 * 1024 * 1024) // cap at 10 MB
         .read_to_vec()
-        .map_err(|e| e.to_string())?;
-    // Discogs sometimes serves a tiny "no image available" placeholder (a spacer GIF, a few
-    // dozen bytes) instead of real art on this same cover_url mechanism — caching it verbatim
-    // shows a broken/blank image in the UI forever since the file never gets cleaned up.
-    // Real Discogs cover art is always several KB+; anything under this floor is the placeholder,
-    // not a photo — treat it as "no cover" (best-effort contract: caller proceeds without one).
+    {
+        Ok(b) => b,
+        Err(e) => return CoverFetch::Failed(e.to_string()),
+    };
+    classify_download(&out, bytes)
+}
+
+/// Discogs sometimes serves a tiny "no image available" placeholder (a spacer GIF, a few dozen
+/// bytes) instead of real art on this same cover_url mechanism — caching it verbatim showed a
+/// broken/blank image forever. Real Discogs cover art is always several KB+; anything under this
+/// floor is the placeholder: the release HAS no cover, which is not a failure.
+fn classify_download(out: &Path, bytes: Vec<u8>) -> CoverFetch {
     if bytes.len() < 1024 {
-        return Err(format!(
-            "cover for release {release_id} looks like a placeholder ({} bytes)",
-            bytes.len()
-        ));
+        return CoverFetch::NoImage;
     }
-    std::fs::write(&out, &bytes).map_err(|e| e.to_string())?;
-    Ok(out)
+    match std::fs::write(out, &bytes) {
+        Ok(()) => CoverFetch::Downloaded(out.to_path_buf()),
+        Err(e) => CoverFetch::Failed(e.to_string()),
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// #68 : le « no image » de Discogs dit « pas de pochette » (on la retire du fichier), une image
+    /// réelle se pose, et une URL absente dit la même chose que le « no image ».
+    #[test]
+    fn un_placeholder_est_une_release_sans_pochette_pas_une_panne() {
+        let dir = tempfile::tempdir().unwrap();
+        let out = dir.path().join("r.jpg");
+        assert_eq!(classify_download(&out, vec![0u8; 40]), CoverFetch::NoImage);
+        assert!(!out.exists(), "le placeholder n'est pas mis en cache");
+        assert_eq!(
+            classify_download(&out, vec![0u8; 4096]),
+            CoverFetch::Downloaded(out.clone())
+        );
+        assert_eq!(fetch_cover(dir.path(), "1", None), CoverFetch::NoImage);
+    }
 
     #[test]
     fn path_is_under_dir_and_keyed_by_release_id() {

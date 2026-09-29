@@ -58,6 +58,7 @@ import {
   releaseCache,
 } from "./filing-identify";
 import { doRanger, doSecondary } from "./filing-actions";
+import { markApplied } from "./identify-candidates";
 import { T } from "./i18n/filing";
 
 export { TARGET_LABEL } from "./filing-preview";
@@ -476,7 +477,17 @@ export async function openFilingInto(
     trackRelease(item.id).catch((e): TrackRelease => {
       console.error("track_release failed", e);
       readError = true;
-      return { artist: null, title: null, version: null, label: null, year: null, cover_path: null, genres: [], identified: false };
+      return {
+        artist: null,
+        title: null,
+        version: null,
+        label: null,
+        year: null,
+        cover_path: null,
+        genres: [],
+        identified: false,
+        release_id: null,
+      };
     }),
     // On failure: leave fileTags null (no marker) and log it — never assert a discrepancy we could
     // not measure (no silent false alarm).
@@ -573,12 +584,22 @@ export async function openFilingInto(
   state.fileTags = fileTags;
   state.identified = release.identified; // gates the rebuy link (fake + identified only)
   state.coverPath = release.cover_path;
+  state.releaseId = release.release_id;
+  // Pays et format ne valent que pour la release qui les a mis en cache (#68) : un « Rétablir » ou
+  // un Ctrl+Z fait ailleurs a pu ramener la base sur une autre release.
+  const sameRelease = cachedRelease?.releaseId === release.release_id;
+  state.releaseCountry = sameRelease ? (cachedRelease?.country ?? null) : null;
+  state.releaseFormat = sameRelease ? (cachedRelease?.format ?? null) : null;
   releaseCache.set(item.id, {
     label: release.label,
     year: release.year,
-    country: cachedRelease?.country ?? null,
-    format: cachedRelease?.format ?? null,
+    country: state.releaseCountry,
+    format: state.releaseFormat,
+    releaseId: release.release_id,
   });
+  // La mémoire des candidats suit la base à chaque ouverture (#68) : c'est ce qui la remet d'aplomb
+  // après un Ctrl+Z, qui annule un changement de release sans passer par cette fiche.
+  markApplied(item.id, release.release_id);
   // Tidy the casing of a version parsed from a (often lowercase) filename: "original mix"
   // → "Original Mix". Title/artist are left as reconciled.
   if (state.canonical.version) state.canonical.version = titleCase(state.canonical.version);

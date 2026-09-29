@@ -314,6 +314,43 @@ environ 7 % du temps du morceau, et environ 120 Hz par ligne de pixel.
 - **Hors périmètre, suite possible** : zoom à la molette, préréglage « bande haute » (12 kHz →
   Nyquist, là où se lit une coupure), clic pour déplacer la lecture.
 
+## Décision — 2026-09-29 : changer de release sans ré-identifier (#68)
+
+Retour d'Antoine : « Il faut aussi pouvoir changer de release sans avoir à réidentifier. »
+Choisi sur deux maquettes côte à côte, posées dans la vraie fenêtre sur les six vrais candidats
+Discogs d'une piste : **A**, la ligne de la release choisie devient le contrôle. B ajoutait un
+bouton « Autres releases (N) » à côté de Ré-identifier. Renverse « Permuter = re-cliquer
+Ré-identifier » (2026-09-07, § Zone C point 5), qui relançait jusqu'à 13 requêtes Discogs
+et resélectionnait le premier candidat, pas la release appliquée.
+
+- **Contrôle** : la ligne choisie (`chosenRowHtml`) devient un bouton. Elle porte, à droite,
+  « N autres » en encre tertiaire et un chevron. Son clic rouvre la liste des candidats DÉJÀ
+  connus, la release appliquée en sélection. Aucune requête réseau.
+- **Durée de vie** : les candidats d'une piste sont gardés en mémoire le temps de la session.
+  Après un redémarrage, la ligne reste inerte (pas de liste connue), et changer de release
+  demande de ré-identifier une fois.
+- **Fermer sans choisir** : Échap referme la liste sur la ligne choisie, sans rien écrire.
+- **Écraser proprement** : choisir une autre release remplace l'identité ENTIÈRE. Ce que la
+  nouvelle ne fournit pas (label, année, genres, pochette) est VIDÉ, dans la base comme dans le
+  fichier. Rien de l'ancienne release ne survit.
+  - *Précision de l'implémentation, revue du 2026-09-29* : la **première** identification — aucune
+    release liée avant — ne vide rien. Les tags d'un fichier acheté (pochette Beatport, label) ne
+    sont pas une release : ce que Discogs ne fournit pas se reprend du fichier, et la base comme
+    l'écran le reprennent. Vider au premier choix perdait ce que l'ancien chemin gardait.
+  - Une **panne** de téléchargement de la pochette (réseau, délai) ne vide pas non plus : fichier
+    et base gardent la pochette d'avant, et le toast le dit (« sa pochette n'a pas pu être
+    téléchargée »). Seul le « pas d'image » de Discogs vide.
+- **« Rétablir »** après un changement de release ramène les tags du fichier ET le lien de
+  release en base.
+- **Release appliquée** : celle que la base lie (`TrackRelease.release_id`, `discogs_release_id`
+  en Bibliothèque), relue à chaque ouverture. Elle est sélectionnée quand la liste se rouvre, et
+  la cliquer referme la liste sans rien écrire.
+- **Rekordbox, limite connue** : la synchro `master.db` ne sait pas encore VIDER un champ (label,
+  année, genre, pochette). Après un changement de release, Rekordbox garde ces champs de
+  l'ancienne — [#81](https://github.com/c0remusic/sift/issues/81).
+- **Bibliothèque** : même contrôle et même liste dans la fiche d'une piste rangée. Y choisir une
+  release écrit enfin les tags du fichier : jusqu'ici, seul le lien en base changeait.
+
 ## Contexte dans le shell
 
 Patron macOS : **Finder** pour la file et la sélection · **Utilitaire de disque** pour
@@ -524,8 +561,9 @@ Ordre vertical, et il est le parcours de décision :
    → ligne persistante (2026-09-07), **confirmée le même jour contre le comparatif Apple
    A/B/C** (orthodoxie iTunes « les champs suffisent » et popover HIG montrés et écartés) :
    deux pressages d'une même release remplissent les champs à l'identique — seule la ligne
-   dit lequel est lié, une information DJ qu'aucun champ ne porte. Permuter = re-cliquer
-   Ré-identifier. Le clic sur un match **écrit l'ID3
+   dit lequel est lié, une information DJ qu'aucun champ ne porte. ~~Permuter = re-cliquer
+   Ré-identifier.~~ **Renversé le 2026-09-29 (#68)** : la ligne choisie rouvre la liste sans
+   nouvelle recherche — voir § Décision — 2026-09-29 (#68). Le clic sur un match **écrit l'ID3
    immédiatement** (décision datée 2026-08-21, « Entrée = graver »), avec un filet
    **« Rétablir »** inline (+ `Échap`) pour défaire. **La ligne
    « Tags ID3 » est supprimée** (tautologique : « Tags ID3 : ID3 »). Le critère CDJ reste

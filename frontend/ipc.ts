@@ -9,6 +9,7 @@ import type {
   AnalysisProgress,
   Canonical,
   IdentifyHint,
+  AppliedRelease,
   Bin,
   FileResult,
   BatchResult,
@@ -351,23 +352,22 @@ export interface Candidate {
   source: string;
 }
 
-export interface AppliedIdentity {
-  canonical: { artist: string; title: string; version: string | null; label: string | null; confidence: string };
-  label: string | null;
-  year: number | null;
-  styles: string[];
-  cover_path: string | null;
-}
-
 /** Search Discogs for candidates matching the track. `hint` is what the screen shows (issue #67):
  * it wins over the file's tags and name when its title is non-empty. May reject with error codes:
  * "NO_TOKEN", "RATE_LIMITED:<seconds>", "NETWORK:<msg>", "PARSE:<msg>". */
 export const identify = (trackId: number, hint: IdentifyHint | null): Promise<Candidate[]> =>
   invoke("identify", { trackId, hint });
 
-/** Apply a chosen candidate: writes tags + downloads cover. Returns the applied identity. */
-export const applyIdentity = (trackId: number, candidate: Candidate): Promise<AppliedIdentity> =>
-  invoke("apply_identity_cmd", { trackId, candidate });
+/** Applique une release choisie (#68) : télécharge sa pochette, puis rend au fichier ET à la base
+ *  exactement cette release — ce qu'elle n'a pas (label, année, genres, pochette) est vidé. Un seul
+ *  lot, que `revertBatch(batch_id)` annule entièrement, lien de release compris. `title` et
+ *  `version` sont ceux que l'écran affiche pour ce candidat ; ils sont gravés tels quels. */
+export const applyRelease = (
+  trackId: number,
+  candidate: Candidate,
+  title: string,
+  version: string | null,
+): Promise<AppliedRelease> => invoke("apply_release", { trackId, candidate, title, version });
 
 /** Demande à Discogs si le jeton enregistré est accepté. Résout sur un jeton valide, rejette avec
  *  les MÊMES codes qu'`identify` — `identifyErrorHtml` les traduit déjà.

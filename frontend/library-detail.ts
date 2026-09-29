@@ -16,10 +16,12 @@
 // `LibraryTrack` rangé, gravé par `update_metadata` (tags puis base, annulable). Partager le markup
 // par des classes et non par une fonction commune est un choix : un helper de markup à deux
 // consommateurs qui écrivent des `data-*` différents divergerait à la première option.
-import { updateMetadata, identify, applyIdentity, revertBatch, libraryFolders } from "./ipc";
-import type { Candidate, AppliedIdentity } from "./ipc";
+import { updateMetadata, identify, applyRelease, revertBatch, libraryFolders } from "./ipc";
+import type { Candidate } from "./ipc";
 import type { LibraryTrack, MetadataEdit } from "../shared/contracts";
-import { chosenRowHtml, identifyErrorHtml, renderCandidates } from "./identify-shared";
+import { chosenRowHtml, identifyErrorHtml, renderCandidates, wireCandidateKeys } from "./identify-shared";
+import { appliedIndex, candidatesFor, markApplied, otherCount, rememberCandidates } from "./identify-candidates";
+import { T as TS } from "./i18n/identify-shared";
 import { openReportInto } from "./report-view";
 import { open } from "@tauri-apps/plugin-dialog";
 import { convertFileSrc } from "@tauri-apps/api/core";
@@ -32,6 +34,9 @@ import { T } from "./i18n/library-detail";
 interface EditState {
   track: LibraryTrack;
   saving: boolean;
+  /** L'enregistrement en vol, que le choix d'une release attend avant de prendre son « avant »
+   *  (#68) : sinon « Rétablir » rendait une valeur que le fichier ne portait déjà plus. */
+  pending: Promise<void> | null;
 }
 
 /** La fiche ouverte, pour les actions qui viennent d'AILLEURS que la fiche (le clic droit de la
@@ -44,17 +49,21 @@ function attrRow(label: string, inputHtml: string): string {
   return `<div class="sift-attr"><span class="sift-attr-k">${label}</span>${inputHtml}</div>`;
 }
 
-/** La release CHOISIE, ligne inerte — même fonction que Revue (`chosenRowHtml`), reconstruite
- *  depuis la piste : label et année depuis la base, pochette locale. Pays et format n'existent pas
- *  sur `LibraryTrack` (pas de colonne backend, migration refusée en Revue : « je me fiche de
- *  l'édition ») — la sous-ligne se contente de ce qui est là. */
+/** La release CHOISIE — même fonction que Revue (`chosenRowHtml`), reconstruite depuis la piste :
+ *  label et année depuis la base, pochette locale. Pays et format n'existent pas sur
+ *  `LibraryTrack` (pas de colonne backend, migration refusée en Revue : « je me fiche de
+ *  l'édition ») — la sous-ligne se contente de ce qui est là. Contrôle qui rouvre la liste de la
+ *  session quand il y en a une (#68), ligne inerte sinon. */
 function chosenHtml(t: LibraryTrack): string {
-  return chosenRowHtml({
-    artist: t.artist || "",
-    title: t.title || "",
-    sub: [t.label, t.year != null ? String(t.year) : null].filter(Boolean).join(" · "),
-    coverSrc: t.cover_path ? convertFileSrc(t.cover_path) : null,
-  });
+  return chosenRowHtml(
+    {
+      artist: t.artist || "",
+      title: t.title || "",
+      sub: [t.label, t.year != null ? String(t.year) : null].filter(Boolean).join(" · "),
+      coverSrc: t.cover_path ? convertFileSrc(t.cover_path) : null,
+    },
+    otherCount(candidatesFor(t.id)),
+  );
 }
 
 /** Rend la fiche dans `edit`. Un seul rendu quel que soit l'état (direction B de Revue) :
@@ -199,6 +208,7 @@ function wireEdit(edit: HTMLElement, st: EditState): void {
   const candsHost = edit.querySelector<HTMLElement>(".sift-cands-host");
   if (idBtn && candsHost) {
     idBtn.addEventListener("click", () => void doIdentify(idBtn, candsHost, edit, st));
+    wireLibCandidateHost(candsHost, edit, st);
   }
 }
 
@@ -234,10 +244,18 @@ export async function changeCoverForOpenTrack(): Promise<void> {
 
 /** Pose une pochette dans l'en-tête du rapport de la colonne — même geste que Revue
  *  (`filing-identify.ts`, `.sift-report-cover`) : `onerror` re-masque l'image si le fichier ne
- *  décode pas (Discogs rend parfois un « no image »), et le repli ::before reprend. */
-function paintHeaderCover(edit: HTMLElement, coverPath: string): void {
-  const src = convertFileSrc(coverPath);
+ *  décode pas (Discogs rend parfois un « no image »), et le repli ::before reprend. `null` la
+ *  retire : une release sans pochette vient de la retirer du fichier aussi (#68, « Vider »). */
+function paintHeaderCover(edit: HTMLElement, coverPath: string | null): void {
   const host = edit.closest<HTMLElement>("#sift-aside") ?? document;
+  if (!coverPath) {
+    host.querySelectorAll<HTMLImageElement>(".sift-report-cover").forEach((covEl) => {
+      covEl.hidden = true;
+      covEl.removeAttribute("src");
+    });
+    return;
+  }
+  const src = convertFileSrc(coverPath);
   host.querySelectorAll<HTMLImageElement>(".sift-report-cover").forEach((covEl) => {
     covEl.onerror = () => {
       covEl.hidden = true;
@@ -265,8 +283,20 @@ async function doIdentify(
     // version comprise : `version: null`, la version s'en détache côté Rust.
     const field = (k: string): string => edit.querySelector<HTMLInputElement>(`[data-lib="${k}"]`)?.value ?? "";
     const candidates = await identify(st.track.id, { artist: field("artist"), title: field("title"), version: null });
-    renderCandidates(host, candidates);
-    wireCandidateClicks(host, candidates, edit, st);
+    if (candidates.length === 0) {
+      // Rien de trouvé : la liste d'une recherche précédente reste celle que la ligne rouvre, et la
+      // ligne reste affichée sous le message.
+      renderCandidates(host, candidates);
+      if (st.track.discogs_release_id) host.insertAdjacentHTML("beforeend", chosenHtml(st.track));
+      return;
+    }
+    // Gardés pour la session (#68) : la ligne choisie rouvrira cette liste sans requête. Pas de
+    // version de repli : la fiche montre le titre complet, version comprise. La release appliquée
+    // vient de la piste (`discogs_release_id`) : sans elle, la liste sélectionnait le premier
+    // candidat, et un clic sur la release déjà liée la réécrivait.
+    rememberCandidates(st.track.id, candidates, null);
+    markApplied(st.track.id, st.track.discogs_release_id ?? null);
+    openLibCandidateList(host, st);
   } catch (err) {
     // Même cascade que `filing-identify.ts`, et c'est le problème qu'on retire : elle était
     // recopiée ici, donc les impasses A9 et A10 (issue #15) y vivaient en double. Une seule
@@ -282,77 +312,141 @@ async function doIdentify(
         new MouseEvent("click", { bubbles: true }),
       );
     });
+    // La ligne choisie reste sous le message d'échec (#68) : la liste connue s'y rouvre encore.
+    if (st.track.discogs_release_id) host.insertAdjacentHTML("beforeend", chosenHtml(st.track));
   } finally {
     btn.disabled = false;
     btn.textContent = orig;
   }
 }
 
-/** Wire clicks on rendered candidate rows → apply the chosen identity. */
-function wireCandidateClicks(
-  host: HTMLElement,
-  candidates: Candidate[],
-  edit: HTMLElement,
-  st: EditState,
-): void {
-  host.querySelectorAll<HTMLElement>("[data-cand]").forEach((el) => {
-    const idx = Number(el.dataset.cand);
-    el.addEventListener("click", () => {
-      const c = candidates[idx];
-      if (!c) return;
-      el.style.opacity = "0.5";
-      el.style.pointerEvents = "none";
-      void applyIdentity(st.track.id, c)
-        .then((applied) => onIdentityApplied(applied, c, edit, st, host))
-        .catch((e) => {
-          el.style.opacity = "";
-          el.style.pointerEvents = "";
-          host.innerHTML = `<div class="sift-cands-msg sift-cands-error"><i class="ti ti-alert-triangle" style="font-size:var(--text-md);vertical-align:-2px;margin-right:var(--space-4)"></i>${esc(humanizeError(e, T().applyFailed, "apply_identity"))}</div>`;
-        });
-    });
-  });
-}
-
-/** `apply_identity` a déjà persisté le candidat (tags + base, lien de release compris). Le
- *  refléter EN PLACE, comme Revue : les champs se remplissent, la liste se referme SUR la ligne
- *  choisie (retours d'Antoine des 2026-09-06/07), la pochette monte dans l'en-tête — jamais un
- *  re-render de la fiche. */
-function onIdentityApplied(
-  applied: AppliedIdentity,
-  c: Candidate,
-  edit: HTMLElement,
-  st: EditState,
-  host: HTMLElement,
-): void {
-  st.track.artist = applied.canonical.artist;
-  st.track.title = applied.canonical.title;
-  st.track.label = applied.label;
-  st.track.year = applied.year;
-  st.track.genres = applied.styles;
-  st.track.discogs_release_id = c.release_id;
-  if (applied.cover_path) {
-    st.track.cover_path = applied.cover_path;
-    st.track.has_cover = true;
-    paintHeaderCover(edit, applied.cover_path);
-  }
+/** Repeint la fiche sur `st.track` après le choix d'une release OU son « Rétablir » (#68) — une
+ *  seule peinture pour les deux sens : champs, pochette de l'en-tête, ligne choisie, bouton. */
+function paintLibIdentity(edit: HTMLElement, st: EditState, host: HTMLElement): void {
+  const t = st.track;
   const set = (sel: string, v: string) => {
     const inp = edit.querySelector<HTMLInputElement>(`[data-lib="${sel}"]`);
     if (inp) inp.value = v;
   };
-  set("artist", st.track.artist ?? "");
-  set("title", st.track.title ?? "");
-  set("label", st.track.label ?? "");
-  set("year", st.track.year != null ? String(st.track.year) : "");
-  set("genres", st.track.genres.join(", "));
+  set("artist", t.artist ?? "");
+  set("title", t.title ?? "");
+  set("label", t.label ?? "");
+  set("year", t.year != null ? String(t.year) : "");
+  set("genres", t.genres.join(", "));
+  paintHeaderCover(edit, t.cover_path);
+  const identified = !!t.discogs_release_id;
   const idBtn = edit.querySelector<HTMLButtonElement>('[data-lib="identifier"]');
-  if (idBtn) idBtn.textContent = T().reidentify;
-  host.hidden = false;
-  host.innerHTML = chosenHtml(st.track);
-  // Same reasoning as doSave(): applied.styles can introduce brand-new genres, so drop the
-  // cache here too or the datalist only picks them up after a full app restart.
+  if (idBtn) idBtn.textContent = t.artist && t.title ? T().reidentify : T().identify;
+  host.hidden = !identified;
+  host.innerHTML = identified ? chosenHtml(t) : "";
+}
+
+/** Ce qui suit une release appliquée ou rétablie, fiche ouverte ou non : la ligne de la table
+ *  (`savedCb` patche par id, donc sans risque quelle que soit la fiche ouverte) et le cache des
+ *  genres — une release peut en apporter de nouveaux, même raison que `doSave`. */
+function recordLibIdentity(t: LibraryTrack): void {
+  markApplied(t.id, t.discogs_release_id ?? null);
   genreListCache = null;
-  notifyChanged(st.track);
-  toast(T().identified);
+  notifyChanged(t);
+}
+
+/** Applique la release `c` à la piste rangée (#68) : `apply_release` grave le fichier ET la base —
+ *  jusqu'ici la Bibliothèque ne changeait que le lien en base, et le fichier gardait ses tags.
+ *  Titre COMPLET et `version: null` : la fiche montre le titre entier, la base le coupe elle-même.
+ *  Le toast porte « Rétablir », qui rend le fichier ET la release d'avant. */
+async function applyChosenLib(c: Candidate, host: HTMLElement, edit: HTMLElement, st: EditState): Promise<void> {
+  const trackId = st.track.id;
+  const list = host.querySelector<HTMLElement>(".sift-cands-list");
+  list?.setAttribute("aria-busy", "true");
+  list?.classList.add("sift-cands-busy");
+  // Un champ modifié puis un clic direct sur un candidat : le blur a lancé l'enregistrement, qui
+  // réécrit le fichier AVANT `apply_release`. Prendre l'« avant » ici, pendant qu'il vole, ferait
+  // rendre à « Rétablir » la valeur d'avant la saisie.
+  if (st.pending) await st.pending;
+  const before: LibraryTrack = { ...st.track, genres: [...st.track.genres] };
+  try {
+    const applied = await applyRelease(trackId, c, c.title, null);
+    // Le modèle suit l'écriture même si la fiche s'est fermée ou a changé de piste ; seul le
+    // repeint en dépend. Le toast part toujours : son « Rétablir » est le seul filet de ce lot.
+    st.track.artist = c.artist;
+    st.track.title = c.title;
+    st.track.label = applied.label;
+    st.track.year = applied.year;
+    st.track.genres = applied.styles;
+    st.track.discogs_release_id = c.release_id;
+    st.track.cover_path = applied.cover_path;
+    // Une panne de pochette garde celle d'avant (fichier et base) : le drapeau aussi.
+    st.track.has_cover = applied.cover_failed ? before.has_cover : applied.cover_path != null;
+    recordLibIdentity(st.track);
+    if (openEdit?.st === st) paintLibIdentity(edit, st, host);
+    toast(applied.cover_failed ? TS().releaseAppliedNoCover : TS().releaseApplied, true, () => {
+      void revertBatch(applied.batch_id)
+        .then(() => {
+          st.track = { ...before, genres: [...before.genres] };
+          recordLibIdentity(st.track);
+          if (openEdit?.st === st) paintLibIdentity(edit, st, host);
+        })
+        .catch((err: unknown) => {
+          console.error("revert_batch (release) failed", err);
+          toast(T().undoFailed);
+        });
+    });
+  } catch (e) {
+    if (openEdit?.st !== st) return;
+    list?.removeAttribute("aria-busy");
+    list?.classList.remove("sift-cands-busy");
+    host.querySelector(".sift-cand-pending")?.classList.remove("sift-cand-pending");
+    host.querySelector(".sift-cands-error")?.remove();
+    host.insertAdjacentHTML(
+      "afterbegin",
+      `<div class="sift-cands-msg sift-cands-error"><i class="ti ti-alert-triangle sift-cand-error-icon"></i>${esc(humanizeError(e, T().applyFailed, "apply_release"))}</div>`,
+    );
+  }
+}
+
+/** La liste de la session, la release appliquée sélectionnée — même geste qu'en Revue. */
+function openLibCandidateList(host: HTMLElement, st: EditState): void {
+  const session = candidatesFor(st.track.id);
+  if (!session) return;
+  const sel = Math.max(appliedIndex(session), 0);
+  host.hidden = false;
+  renderCandidates(host, session.list, sel);
+  host.querySelectorAll<HTMLElement>("[data-cand]")[sel]?.focus();
+}
+
+/** Referme la liste sur la ligne choisie, ou sur rien. `true` si une liste était ouverte. */
+function closeLibCandidateList(host: HTMLElement, st: EditState): boolean {
+  if (!host.querySelector(".sift-cands-list")) return false;
+  const identified = !!st.track.discogs_release_id;
+  host.hidden = !identified;
+  host.innerHTML = identified ? chosenHtml(st.track) : "";
+  host.querySelector<HTMLElement>("[data-cand-switch]")?.focus();
+  return true;
+}
+
+/** Câblage délégué de l'hôte des candidats, posé une fois par rendu de la fiche — voir
+ *  `filing-identify.ts::wireCandidateHost`, dont c'est le pendant. */
+function wireLibCandidateHost(host: HTMLElement, edit: HTMLElement, st: EditState): void {
+  host.addEventListener("click", (e) => {
+    const target = e.target as Element;
+    if (target.closest("[data-cand-switch]")) {
+      openLibCandidateList(host, st);
+      return;
+    }
+    const row = target.closest<HTMLElement>("[data-cand]");
+    if (!row || host.querySelector(".sift-cands-busy")) return;
+    const session = candidatesFor(st.track.id);
+    const idx = Number(row.dataset.cand);
+    const c = session?.list[idx];
+    if (!session || !c) return;
+    if (idx === appliedIndex(session)) {
+      closeLibCandidateList(host, st);
+      return;
+    }
+    row.classList.add("sift-cand-pending");
+    void applyChosenLib(c, host, edit, st);
+  });
+  wireCandidateKeys(host, () => closeLibCandidateList(host, st));
 }
 
 /** Grave les champs (tags du fichier d'abord, puis base) — au blur / Entrée d'un champ modifié.
@@ -369,6 +463,15 @@ async function doSave(edit: HTMLElement, st: EditState): Promise<void> {
     return;
   }
   st.saving = true;
+  st.pending = saveNow(st, e).finally(() => {
+    st.saving = false;
+    st.pending = null;
+  });
+  await st.pending;
+}
+
+/** Le corps de `doSave`, une fois la saisie validée. Ne rejette jamais : un échec se dit en toast. */
+async function saveNow(st: EditState, e: MetadataEdit): Promise<void> {
   try {
     const batchId = await updateMetadata(st.track.id, e);
     st.track.artist = e.artist;
@@ -390,8 +493,6 @@ async function doSave(edit: HTMLElement, st: EditState): Promise<void> {
     });
   } catch (err) {
     toast(humanizeError(err, T().saveFailed, "update_metadata"));
-  } finally {
-    st.saving = false;
   }
 }
 
@@ -416,7 +517,10 @@ export function openLibraryDetailInto(
   savedCb = onSaved;
   void onDeleted;
   void onClose;
-  const st: EditState = { track: { ...track, genres: [...track.genres] }, saving: false };
+  const st: EditState = { track: { ...track, genres: [...track.genres] }, saving: false, pending: null };
+  // La mémoire des candidats suit la base à chaque ouverture (#68) : c'est ce qui la remet d'aplomb
+  // après un Ctrl+Z, qui annule un changement de release sans passer par cette fiche.
+  markApplied(track.id, track.discogs_release_id ?? null);
 
   // « Ok pour le proposé » (Antoine, 2026-09-08, wireframe « Rangés — inspecteur ouvert ») : la
   // colonne parle Revue. La carte « Piste ouverte » (titre + chevron) est partie — elle ne disait

@@ -354,6 +354,21 @@ export interface IdentifyHint {
   version: string | null;
 }
 
+/** Ce que `apply_release` rend après avoir appliqué une release, au fichier ET en base, en un seul
+ *  lot annulable (#68). Le titre et la version n'y sont pas : l'écran les a envoyés, ils ont été
+ *  gravés tels quels. `cover_path` est celle que la base retient — `null` quand la release n'a pas
+ *  de pochette, l'ancienne quand le téléchargement a échoué (`cover_failed`). `batch_id` est le
+ *  lot que « Rétablir » annule, fichier et release. Miroir de Rust `ipc_identify::AppliedRelease` ;
+ *  épinglé par `ipc_identify.rs::applied_release_shape_matches_contracts_ts`. */
+export interface AppliedRelease {
+  label: string | null;
+  year: number | null;
+  styles: string[];
+  cover_path: string | null;
+  cover_failed: boolean;
+  batch_id: string;
+}
+
 /** A destination folder under the library root (recursive). */
 export interface Bin {
   rel: string; // forward-slash path relative to root, e.g. "House/Deep"
@@ -492,6 +507,9 @@ export interface TrackRelease {
    * Genre field. Shown on open; the joined form feeds the file-vs-display discrepancy check. */
   genres: string[];
   identified: boolean;
+  /** La release Discogs liée, `null` sinon (`identified` en est le raccourci). Amorce la mémoire de
+   *  session des candidats (#68) : elle dit quelle release est déjà appliquée. */
+  release_id: string | null;
 }
 
 /** The file's REAL tag values (the fields write_tags_full owns), read once on open via

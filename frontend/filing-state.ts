@@ -49,6 +49,9 @@ export interface RevueState {
   // reopen). Gates the "rebuy on Beatport" link: searching a raw filename is useless — only a
   // confirmed artist+title is worth a store search.
   identified: boolean;
+  // La release Discogs liée en base (`TrackRelease.release_id`), `null` sans identification. Amorce
+  // la mémoire de session des candidats (#68) : c'est elle qui dit quelle release est appliquée.
+  releaseId: string | null;
   // Nombre de morceaux RANGÉS dans cette session (filings, jamais un simple écarté). Pilote le fork
   // de l'empty-state : >0 → « Tout est trié » (→ Bibliothèque, il y a quelque chose à voir) ; 0 →
   // « Rien à revoir » (→ Accueil, rien de rangé, en ajouter). Remis à 0 seulement au rechargement.
@@ -69,6 +72,7 @@ export const state: RevueState = {
   fileTags: null,
   filedConfirm: null,
   identified: false,
+  releaseId: null,
   filedThisSession: 0,
 };
 
@@ -172,7 +176,7 @@ function settleFiling(o: TrackFileOutcome): void {
 }
 
 // Bumped on every open; an in-flight open/action bails at its await points if a newer one started
-// (prevents a slow analyze/reconcile/applyIdentity/applyTags/revert from clobbering the pane of a
+// (prevents a slow analyze/reconcile/applyRelease/applyTags/revert from clobbering the pane of a
 // track opened since). `acting` guards against a double-click firing two encodes (one action at a
 // time). Grouped into one object (not two module-level `let`s) — see file header comment above.
 export const openState = { openSeq: 0, acting: false };

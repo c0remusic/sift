@@ -55,13 +55,7 @@ pub fn write_tags_full(
     // Genres are joined into one field ("Deep House; House"): multiple same-key items don't
     // round-trip on ID3, and Rekordbox/CDJ read a single genre field. The structured per-genre
     // list is kept in the DB (track_genres); the embedded tag gets the joined form.
-    let joined: String = genres
-        .iter()
-        .map(|s| s.trim())
-        .filter(|s| !s.is_empty())
-        .collect::<Vec<_>>()
-        .join("; ");
-    if !joined.is_empty() {
+    if let Some(joined) = joined_genres(genres) {
         tag.set_genre(joined);
     }
     if let Some(cp) = cover_path {
@@ -84,6 +78,27 @@ pub fn write_tags_full(
 
     tag.save_to_path(path, WriteOptions::default())
         .map_err(|e| format!("save tags: {e}"))
+}
+
+/// The single Genre field `write_tags_full` graves: trimmed, empties dropped, joined "A; B".
+/// `None` when nothing is left — the field is then not written (or removed, by `restore_tags`).
+pub fn joined_genres(genres: &[String]) -> Option<String> {
+    let joined = genres
+        .iter()
+        .map(|s| s.trim())
+        .filter(|s| !s.is_empty())
+        .collect::<Vec<_>>()
+        .join("; ");
+    (!joined.is_empty()).then_some(joined)
+}
+
+/// Whether the file carries a picture in ANY of its tags — the rule `analysis::tags` uses to fill
+/// `tracks.has_cover`, re-read after a write that may have removed the front cover (#68).
+pub fn has_any_picture(path: &str) -> Result<bool, String> {
+    let tagged = Probe::open(path)
+        .and_then(|p| p.read())
+        .map_err(|e| format!("read tags: {e}"))?;
+    Ok(tagged.tags().iter().any(|t| !t.pictures().is_empty()))
 }
 
 /// Read embedded artist + title (empty strings when absent or unreadable). Used by filing

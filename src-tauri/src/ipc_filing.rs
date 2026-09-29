@@ -163,6 +163,11 @@ pub struct TrackRelease {
     /// to detect when the file's tags diverge from the displayed identity.
     pub genres: Vec<String>,
     pub identified: bool,
+    /// La release Discogs liée, ou `None`. `identified` en est le raccourci. Exposée pour #68 : la
+    /// mémoire de session des candidats sait ainsi quelle release est appliquée — sinon, après un
+    /// redémarrage ou un « Rétablir » fait ailleurs, elle sélectionnait le premier candidat, et un
+    /// clic sur la release déjà appliquée la réécrivait.
+    pub release_id: Option<String>,
 }
 
 #[tauri::command]
@@ -187,6 +192,7 @@ pub fn track_release(
                     cover_path: r.get(5)?,
                     genres: Vec::new(),
                     identified: discogs_release_id.is_some(),
+                    release_id: discogs_release_id,
                 })
             },
         )
@@ -206,6 +212,7 @@ pub fn track_release(
             cover_path: None,
             genres,
             identified: false,
+            release_id: None,
         },
     })
 }
@@ -1883,6 +1890,7 @@ mod tests {
             cover_path: None,
             genres: Vec::new(),
             identified: false,
+            release_id: None,
         };
         let TrackRelease {
             artist,
@@ -1893,9 +1901,10 @@ mod tests {
             cover_path,
             genres,
             identified,
+            release_id,
         } = v;
         let _ = (
-            artist, title, version, label, year, cover_path, genres, identified,
+            artist, title, version, label, year, cover_path, genres, identified, release_id,
         );
     }
 }

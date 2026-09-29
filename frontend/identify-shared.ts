@@ -47,30 +47,45 @@ function candRowHtml(c: Candidate, idx: number, opt: { selected: boolean }): str
 /** La release CHOISIE, rendue SEULE après la fermeture de la liste (retours d'Antoine des
  *  2026-09-06/07 : une liste qui reste ouverte après le choix se lit comme inachevée, mais la
  *  release choisie, elle, doit rester visible). Même anatomie qu'une ligne candidate — pochette,
- *  « artiste — titre », sous-ligne — mais un <div> inerte : cliquer ne fait rien, permuter =
- *  re-cliquer Ré-identifier. `coverSrc` : URL Discogs (choix frais) ou fichier local converti
- *  (réopen). */
-export function chosenRowHtml(r: {
-  artist: string;
-  title: string;
-  sub: string;
-  coverSrc: string | null;
-}): string {
+ *  « artiste — titre », sous-ligne. `coverSrc` : URL Discogs (choix frais) ou fichier local
+ *  converti (réopen).
+ *
+ *  `others` > 0 (#68, décision du 2026-09-29) : la ligne devient le CONTRÔLE qui rouvre la liste
+ *  des candidats déjà connus, sans requête — un <button data-cand-switch> qui porte à droite
+ *  « N autres » et un chevron. Sinon un <div> inerte, comme avant : aucune liste en mémoire
+ *  (redémarrage, piste jamais cherchée cette session), ou aucune autre release à proposer. */
+export function chosenRowHtml(
+  r: {
+    artist: string;
+    title: string;
+    sub: string;
+    coverSrc: string | null;
+  },
+  others = 0,
+): string {
   const cover = r.coverSrc
     ? `<img src="${esc(r.coverSrc)}" alt="" class="sift-cand-noart">`
     : '<span class="sift-cand-noart"><i class="ti ti-vinyl" style="font-size:var(--text-xl);color:var(--color-text-tertiary)"></i></span>';
-  return (
-    `<div class="sift-cand sift-cand-chosen">` +
-    cover +
+  const meta =
     `<span class="sift-cand-meta"><span>${esc(r.artist)} — ${esc(r.title)}</span>` +
     (r.sub ? `<small>${esc(r.sub)}</small>` : "") +
-    `</span></div>`
+    `</span>`;
+  if (others <= 0) return `<div class="sift-cand sift-cand-chosen">` + cover + meta + `</div>`;
+  const L = T();
+  return (
+    `<button type="button" class="sift-cand sift-cand-chosen sift-cand-switch" data-cand-switch` +
+    ` aria-haspopup="listbox" title="${L.switchTitle}">` +
+    cover +
+    meta +
+    `<span class="sift-cand-others">${L.others(others)}<i class="ti ti-chevron-down" aria-hidden="true"></i></span>` +
+    `</button>`
   );
 }
 
-/** Render candidates into `host` : une LISTE OUVERTE (listbox) — tous les candidats visibles, le
- *  meilleur (indice 0) pré-sélectionné (aria-selected). La décision centrale ne coûte pas un clic
- *  d'ouverture, et se navigue au clavier (`filing-identify.ts::wireListboxArrows`).
+/** Render candidates into `host` : une LISTE OUVERTE (listbox) — tous les candidats visibles, un
+ *  seul pré-sélectionné (aria-selected) : le meilleur (indice 0) après une recherche, la release
+ *  APPLIQUÉE quand la ligne choisie rouvre la liste (#68). La décision centrale ne coûte pas un
+ *  clic d'ouverture, et se navigue au clavier (`wireCandidateKeys`).
  *
  *  DISPOSITION UNIQUE depuis le 2026-09-08 (`ded5c9a`), et c'est ce qui a rendu le paramètre
  *  `opts` mort : la Bibliothèque, dernier appelant de la variante repliée « premier résultat +
@@ -82,8 +97,12 @@ export function chosenRowHtml(r: {
  *  `npm run lint:orphan-css` serait montée de 16 à 18 : ces quatre règles ne portent que deux
  *  NOMS de classe, et c'est des noms que la gate compte.
  *
+ *  `selectedIdx` est revenu le 2026-09-29 (#68), et pour une raison qui n'existait pas alors : la
+ *  liste se rouvre depuis la ligne choisie, et c'est la release appliquée qu'elle doit montrer
+ *  sélectionnée, pas la première.
+ *
  *  Empty list → a neutral "no results" message (no warning styling). */
-export function renderCandidates(host: HTMLElement, list: Candidate[]): void {
+export function renderCandidates(host: HTMLElement, list: Candidate[], selectedIdx = 0): void {
   const L = T();
   if (list.length === 0) {
     host.innerHTML = `<div class="sift-cands-msg">${L.nothing}</div>`;
@@ -91,8 +110,48 @@ export function renderCandidates(host: HTMLElement, list: Candidate[]): void {
   }
   host.innerHTML =
     `<div class="sift-cands-list" role="listbox" aria-label="${L.releases}">` +
-    list.map((c, i) => candRowHtml(c, i, { selected: i === 0 })).join("") +
+    list.map((c, i) => candRowHtml(c, i, { selected: i === selectedIdx })).join("") +
     `</div>`;
+}
+
+/** Le clavier de l'hôte des candidats (`.sift-cands-host`), posé UNE fois sur l'hôte, qui survit
+ *  aux rendus de son contenu.
+ *
+ *  Il ARRÊTE la propagation de toute touche sans modificateur, Tab excepté. Les raccourcis de Revue
+ *  écoutent `document` (`filing.ts::installFilingKeys`) et ne s'écartent que devant un champ de
+ *  saisie : Entrée sur un candidat focalisé RANGEAIT la piste en plus d'appliquer la release,
+ *  Espace lançait la lecture, ⌫ l'écartait. Ici Entrée et Espace ne font que ce que fait un bouton
+ *  natif — un clic.
+ *
+ *  ↑/↓ déplacent le focus d'un candidat à l'autre. Échap appelle `onEscape`, qui dit s'il a fermé
+ *  quelque chose : sinon la touche continue son chemin. */
+const NAV_KEYS = new Set(["ArrowUp", "ArrowDown", "Home", "End", "PageUp", "PageDown"]);
+
+export function wireCandidateKeys(host: HTMLElement, onEscape: () => boolean): void {
+  host.addEventListener("keydown", (e) => {
+    if (e.ctrlKey || e.metaKey || e.altKey || e.key === "Tab") return;
+    if (e.key === "Escape") {
+      if (onEscape()) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+      return;
+    }
+    // Hors de la liste — sur la ligne choisie — les touches de navigation continuent vers la table ou
+    // la file : la ligne n'a rien à parcourir, et la Bibliothèque perdait ↑/↓ après un Échap.
+    const inList = (e.target as Element | null)?.closest?.(".sift-cands-list");
+    if (!inList && NAV_KEYS.has(e.key)) return;
+    e.stopPropagation();
+    if (e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+    const btns = Array.from(host.querySelectorAll<HTMLElement>(".sift-cands-list [data-cand]"));
+    const cur = btns.indexOf(document.activeElement as HTMLElement);
+    if (cur < 0) return;
+    const next = e.key === "ArrowDown" ? cur + 1 : cur - 1;
+    if (next >= 0 && next < btns.length) {
+      e.preventDefault();
+      btns[next].focus();
+    }
+  });
 }
 
 /** Ce qu'un échec d'identification Discogs dit à l'utilisateur, en un seul endroit.

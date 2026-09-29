@@ -347,6 +347,116 @@ pub fn apply_identity(
     })
 }
 
+/// La ligne `metadata` d'une piste, COLONNE PAR COLONNE (hors `track_id`). Capturée avant un
+/// changement de release (#68) pour que « Rétablir » remette la release d'avant telle quelle —
+/// lien Discogs, pochette et année compris —, là où `follow_restored_tags` ne sait reprendre que
+/// ce que le fichier porte (artiste, titre, version, label). Une colonne ajoutée à `metadata` sans
+/// passer ici ferait échouer `release_snapshot_covers_every_metadata_column`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct MetadataRowSnap {
+    pub artist: Option<String>,
+    pub title: Option<String>,
+    pub version: Option<String>,
+    pub label: Option<String>,
+    pub year: Option<i64>,
+    pub genre: Option<String>,
+    pub bpm: Option<i64>,
+    pub cover_path: Option<String>,
+    pub discogs_release_id: Option<String>,
+    pub source: Option<String>,
+}
+
+/// Tout ce qu'un changement de release réécrit en base : la ligne `metadata` (`None` = la piste
+/// n'en avait pas — une première identification), ses genres, et `tracks.has_cover`.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct ReleaseSnapshot {
+    pub row: Option<MetadataRowSnap>,
+    pub genres: Vec<String>,
+    pub has_cover: Option<bool>,
+}
+
+pub fn snapshot_release(conn: &Connection, track_id: i64) -> rusqlite::Result<ReleaseSnapshot> {
+    use rusqlite::OptionalExtension;
+    let row = conn
+        .query_row(
+            "SELECT artist, title, version, label, year, genre, bpm, cover_path, discogs_release_id, source
+             FROM metadata WHERE track_id=?1",
+            params![track_id],
+            |r| {
+                Ok(MetadataRowSnap {
+                    artist: r.get(0)?,
+                    title: r.get(1)?,
+                    version: r.get(2)?,
+                    label: r.get(3)?,
+                    year: r.get(4)?,
+                    genre: r.get(5)?,
+                    bpm: r.get(6)?,
+                    cover_path: r.get(7)?,
+                    discogs_release_id: r.get(8)?,
+                    source: r.get(9)?,
+                })
+            },
+        )
+        .optional()?;
+    let genres = crate::genres::get_genres(conn, track_id)?;
+    let has_cover: Option<bool> = conn.query_row(
+        "SELECT has_cover FROM tracks WHERE id=?1",
+        params![track_id],
+        |r| r.get(0),
+    )?;
+    Ok(ReleaseSnapshot {
+        row,
+        genres,
+        has_cover,
+    })
+}
+
+/// Inverse exact de `snapshot_release` : la ligne revient colonne par colonne, ou disparaît si
+/// la piste n'en avait pas. Appelé par le « Rétablir » d'un changement de release
+/// (`actions::revert_batch`), sous la garde LIFO — aucune action plus récente sur la piste ne peut
+/// être écrasée par ce retour en arrière.
+pub fn restore_release(
+    conn: &Connection,
+    track_id: i64,
+    snap: &ReleaseSnapshot,
+) -> rusqlite::Result<()> {
+    match &snap.row {
+        None => {
+            conn.execute("DELETE FROM metadata WHERE track_id=?1", params![track_id])?;
+        }
+        Some(r) => {
+            conn.execute(
+                "INSERT INTO metadata(track_id, artist, title, version, label, year, genre, bpm, cover_path, discogs_release_id, source)
+                 VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11)
+                 ON CONFLICT(track_id) DO UPDATE SET
+                    artist=excluded.artist, title=excluded.title, version=excluded.version,
+                    label=excluded.label, year=excluded.year, genre=excluded.genre, bpm=excluded.bpm,
+                    cover_path=excluded.cover_path, discogs_release_id=excluded.discogs_release_id,
+                    source=excluded.source",
+                params![
+                    track_id,
+                    r.artist,
+                    r.title,
+                    r.version,
+                    r.label,
+                    r.year,
+                    r.genre,
+                    r.bpm,
+                    r.cover_path,
+                    r.discogs_release_id,
+                    r.source
+                ],
+            )?;
+        }
+    }
+    crate::genres::set_genres(conn, track_id, &snap.genres)?;
+    conn.execute(
+        "UPDATE tracks SET has_cover=?2 WHERE id=?1",
+        params![track_id, snap.has_cover],
+    )?;
+    Ok(())
+}
+
 /// Why a provider call failed — mapped to stable IPC error codes by the command layer.
 #[derive(Debug)]
 pub enum ProviderError {
@@ -412,6 +522,127 @@ mod tests {
             release_id: "12345".into(),
             source: "discogs".into(),
         }
+    }
+
+    /// #68 : une colonne ajoutée à `metadata` sans passer par `MetadataRowSnap` survivrait à un
+    /// « Rétablir » avec la valeur de la release annulée. La table et la struct doivent nommer
+    /// exactement les mêmes colonnes — la déstructuration sans `..` casse la compilation si la
+    /// struct gagne un champ, la comparaison casse le test si la table en gagne un.
+    #[test]
+    fn release_snapshot_covers_every_metadata_column() {
+        let conn = db();
+        let mut stmt = conn.prepare("PRAGMA table_info(metadata)").unwrap();
+        let mut table: Vec<String> = stmt
+            .query_map([], |r| r.get::<_, String>(1))
+            .unwrap()
+            .map(|c| c.unwrap())
+            .filter(|c| c != "track_id")
+            .collect();
+        table.sort();
+        let MetadataRowSnap {
+            artist: _,
+            title: _,
+            version: _,
+            label: _,
+            year: _,
+            genre: _,
+            bpm: _,
+            cover_path: _,
+            discogs_release_id: _,
+            source: _,
+        } = MetadataRowSnap {
+            artist: None,
+            title: None,
+            version: None,
+            label: None,
+            year: None,
+            genre: None,
+            bpm: None,
+            cover_path: None,
+            discogs_release_id: None,
+            source: None,
+        };
+        let mut snap = vec![
+            "artist",
+            "title",
+            "version",
+            "label",
+            "year",
+            "genre",
+            "bpm",
+            "cover_path",
+            "discogs_release_id",
+            "source",
+        ];
+        snap.sort();
+        assert_eq!(table, snap);
+    }
+
+    /// #68 : une release A remplacée par B, puis rétablie — la ligne revient colonne par colonne
+    /// (lien, pochette, année et `bpm` compris), les genres et `has_cover` aussi.
+    #[test]
+    fn restore_release_puts_the_previous_release_back_verbatim() {
+        let conn = db();
+        apply_identity(&conn, 1, &sample(), Some("/cache/12345.jpg".into())).unwrap();
+        conn.execute(
+            "UPDATE metadata SET bpm=122, genre='Old' WHERE track_id=1",
+            [],
+        )
+        .unwrap();
+        let before = snapshot_release(&conn, 1).unwrap();
+        assert_eq!(before.has_cover, Some(true));
+
+        let other = Candidate {
+            artist: "Mr Fingers".into(),
+            title: "Can You Feel It (Vocal)".into(),
+            label: None,
+            year: None,
+            styles: vec!["Acid".into()],
+            country: None,
+            format: None,
+            cover_url: None,
+            release_id: "999".into(),
+            source: "discogs".into(),
+        };
+        apply_identity(&conn, 1, &other, None).unwrap();
+        conn.execute("UPDATE tracks SET has_cover=0 WHERE id=1", [])
+            .unwrap();
+        assert_ne!(snapshot_release(&conn, 1).unwrap(), before);
+
+        restore_release(&conn, 1, &before).unwrap();
+        assert_eq!(snapshot_release(&conn, 1).unwrap(), before);
+        // Relu en SQL, pas par `snapshot_release` : comparer deux instantanés pris par le MÊME
+        // lecteur laisse passer une colonne que ce lecteur oublierait des deux côtés (mesuré en
+        // mutant la lecture de `bpm` — le test restait vert).
+        let (bpm, genre, release): (Option<i64>, Option<String>, Option<String>) = conn
+            .query_row(
+                "SELECT bpm, genre, discogs_release_id FROM metadata WHERE track_id=1",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            (bpm, genre.as_deref(), release.as_deref()),
+            (Some(122), Some("Old"), Some("12345"))
+        );
+    }
+
+    /// #68 : rétablir une PREMIÈRE identification rend la piste à son état sans ligne — pas une
+    /// ligne vide, qui compterait encore comme une identité pour `track_release`.
+    #[test]
+    fn restore_release_of_a_first_identification_deletes_the_row() {
+        let conn = db();
+        let before = snapshot_release(&conn, 1).unwrap();
+        assert_eq!(before.row, None);
+        apply_identity(&conn, 1, &sample(), None).unwrap();
+        restore_release(&conn, 1, &before).unwrap();
+        let rows: i64 = conn
+            .query_row("SELECT count(*) FROM metadata WHERE track_id=1", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(rows, 0);
+        assert!(crate::genres::get_genres(&conn, 1).unwrap().is_empty());
     }
 
     #[test]

@@ -325,6 +325,8 @@ de la chaîne brute — pas de table code→message, délibérément) · `dom.ts
 `progress-zone.ts` · `theme.ts` · `updater.ts` · `usb-format-modal.ts` ·
 `usb-row.ts` · `usage-chart.ts` (graphique d'occupation, Clé USB + Bibliothèque) ·
 `empty-state.ts` · `library-views.ts` · `identify-shared.ts` ·
+`identify-candidates.ts` (candidats Discogs gardés le temps de la session, pour changer de release
+sans ré-identifier — #68 ; sans DOM, testable env Node) ·
 `popover-position.ts` (géométrie d'ancrage d'un popover `position:fixed`, **sans DOM** —
 séparée de `filing-bins.ts` pour être testable en env Node, qui ne peut pas charger un
 module important `./ipc`) · `source-color.ts` (teinte d'identité des sources du rail :
