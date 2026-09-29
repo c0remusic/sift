@@ -390,7 +390,9 @@ pub fn create_bin(root: &Path, parent_rel: &str, name: &str) -> Result<Bin, Stri
 /// True when `a` and `b` denote the same on-disk file. Prefers `canonicalize` (resolves
 /// case/`.`/`..`/symlinks — needed on Windows where paths are case-insensitive), and falls
 /// back to a plain `PathBuf` compare when either side can't be canonicalized (doesn't exist).
-fn same_path(a: &Path, b: &Path) -> bool {
+/// `pub(crate)` : `filing::plan_file` s'en sert pour reconnaître un rangement non conforme qui
+/// retombe sur le nom même de sa source (#77).
+pub(crate) fn same_path(a: &Path, b: &Path) -> bool {
     match (a.canonicalize(), b.canonicalize()) {
         (Ok(x), Ok(y)) => x == y,
         _ => a == b,

@@ -399,9 +399,17 @@ const ALREADY_FILING: &str = "ALREADY_FILING";
 ///   would be handed the SAME destination and the second encode would land on the first. Same role
 ///   as `run_file_batch`'s local `reserved` set, which is seeded from this one so a batch cannot
 ///   plan onto an interactive in-flight destination either.
+///
+/// - `sources` (#78) closes a third window, opened by the WATCHER rather than by the front. Phase 2
+///   trashes or moves the source, and in a batch every phase 2 finishes before the first commit.
+///   The watcher, ~500 ms after the `Remove`, ran `forget_path` on a row still `pending` — it
+///   deleted the track (its identification went with it, CASCADE), and the commit then failed on
+///   the actions' foreign key. `is_path_in_flight` lets the watcher skip every event on a source
+///   or a destination a filing holds.
 #[derive(Default)]
 struct InFlightFilings {
     tracks: HashSet<i64>,
+    sources: HashSet<String>,
     dests: HashSet<String>,
 }
 
@@ -438,10 +446,36 @@ fn is_filing_inflight(track_id: i64) -> Result<bool, String> {
     }
 }
 
-/// Claim `track_id` and `dest` until this filing settles. Refuses with `ALREADY_FILING` when that
-/// track is already converting — the point where "a track that left the queue cannot be filed
-/// twice" is actually enforced.
-fn reserve_filing(track_id: i64, dest: &str) -> Result<(), String> {
+/// Whether `path` is the source or the destination of a filing still running (#78). Read by the
+/// watcher for every event it is about to apply. A poisoned registry answers `false` — the watcher
+/// then behaves as it did before this registry was consulted, which is logged.
+pub(crate) fn is_path_in_flight(path: &str) -> bool {
+    match inflight().lock() {
+        Ok(g) => g.sources.contains(path) || g.dests.contains(path),
+        Err(e) => {
+            log::error!("watcher: in-flight filing registry poisoned: {e}");
+            false
+        }
+    }
+}
+
+/// Tient `source` et `dest` le temps de `f`, comme un rangement en vol — pour les tests du watcher,
+/// qui ne peuvent pas lancer de vrai rangement. Rendu même si `f` panique, sinon un test raté
+/// laisserait le chemin tenu pour les autres tests du même binaire.
+#[cfg(test)]
+pub(crate) fn test_hold(track_id: i64, source: &str, dest: &str, f: impl FnOnce()) {
+    reserve_filing(track_id, source, dest).expect("reserve_filing");
+    let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(f));
+    release_filing(track_id, source, dest);
+    if let Err(p) = r {
+        std::panic::resume_unwind(p);
+    }
+}
+
+/// Claim `track_id`, its `source` and `dest` until this filing settles. Refuses with
+/// `ALREADY_FILING` when that track is already converting — the point where "a track that left the
+/// queue cannot be filed twice" is actually enforced.
+fn reserve_filing(track_id: i64, source: &str, dest: &str) -> Result<(), String> {
     match inflight().lock() {
         Ok(mut g) => {
             if !g.tracks.insert(track_id) {
@@ -459,6 +493,7 @@ fn reserve_filing(track_id: i64, dest: &str) -> Result<(), String> {
                 );
                 return Err("destination déjà réservée par une conversion en cours".to_string());
             }
+            g.sources.insert(source.to_string());
             Ok(())
         }
         Err(e) => {
@@ -468,12 +503,21 @@ fn reserve_filing(track_id: i64, dest: &str) -> Result<(), String> {
     }
 }
 
+/// Rend le claim d'UNE piste d'un lot et l'oublie, pour que la libération finale ne la rende pas
+/// deux fois. Sans claim (refusée au plan) : rien à faire.
+fn release_claim(claims: &mut HashMap<i64, (String, String)>, id: i64) {
+    if let Some((source, dest)) = claims.remove(&id) {
+        release_filing(id, &source, &dest);
+    }
+}
+
 /// Drop the claim. Best-effort by construction (it runs at the very end of the background thread,
 /// where there is no caller left to fail), but never silent: a poisoned registry is logged.
-fn release_filing(track_id: i64, dest: &str) {
+fn release_filing(track_id: i64, source: &str, dest: &str) {
     match inflight().lock() {
         Ok(mut g) => {
             g.tracks.remove(&track_id);
+            g.sources.remove(source);
             g.dests.remove(dest);
         }
         Err(e) => log::error!("file_track: in-flight filing registry poisoned: {e}"),
@@ -535,6 +579,7 @@ fn run_file_track(app: &AppHandle, plan: filing::FilePlan) {
     let state = app.state::<Mutex<Connection>>();
     let track_id = plan.track_id();
     let batch_id = plan.batch_id().to_string();
+    let source = plan.source_path().to_string();
     let dest = plan.dest_path().to_string();
 
     // Phase 2. `execute_file` decodes/encodes an arbitrary user file through the ffmpeg sidecar and
@@ -593,7 +638,7 @@ fn run_file_track(app: &AppHandle, plan: filing::FilePlan) {
 
     // Release the claim BEFORE announcing the outcome: the front may re-file this track the moment
     // it sees a failure, and that new plan must be free to take both the track and this name back.
-    release_filing(track_id, &dest);
+    release_filing(track_id, &source, &dest);
 
     let filed = result.is_ok();
     let outcome = match result {
@@ -672,7 +717,8 @@ pub fn file_track(
     };
     // Claim the track and its destination for as long as the conversion runs (see
     // `InFlightFilings`). This is also where a second filing of the SAME track is refused.
-    reserve_filing(track_id, &ack.path)?;
+    let source = plan.source_path().to_string();
+    reserve_filing(track_id, &source, &ack.path)?;
     // Phases 2 and 3 detached. Fail-fast: if the thread can't even start, drop the claim and
     // surface it — the front then knows nothing was launched, instead of waiting on an event
     // that would never be emitted.
@@ -681,7 +727,7 @@ pub fn file_track(
         .name("file-track".into())
         .spawn(move || run_file_track(&app_bg, plan))
     {
-        release_filing(track_id, &ack.path);
+        release_filing(track_id, &source, &ack.path);
         return Err(format!("file_track: failed to start background task: {e}"));
     }
     Ok(ack)
@@ -883,7 +929,10 @@ fn run_file_batch(
     // is over (see the end of this function). Kept as a side list rather than a field on
     // `PlannedJob` so a job cancelled before any worker popped it is released too, and so a claim
     // that could not be taken is never released on someone else's behalf.
-    let mut claims: Vec<(i64, String)> = Vec::new();
+    // Par piste : rendu dès que SON sort est réglé (échec de phase 2, commit ou rollback), pas en
+    // fin de lot. Depuis #78 le watcher saute les chemins tenus, et une piste échouée à la 2ᵉ minute
+    // d'un lot de 20 aurait vu ses événements ignorés pour rien (troisième relecture de #77).
+    let mut claims: HashMap<i64, (String, String)> = HashMap::new();
     for (idx, id) in track_ids.iter().copied().enumerate() {
         // Cancel: stop planning new tracks. Ones not yet planned are simply never started.
         if cancel.0.load(Ordering::SeqCst) {
@@ -944,8 +993,13 @@ fn run_file_batch(
         // interactive `file_track` launched while this batch runs reads that registry (and only
         // that one) to avoid planning onto a destination whose file isn't written yet, and to
         // refuse a track already being converted here.
-        match reserve_filing(id, plan.dest_path()) {
-            Ok(()) => claims.push((id, plan.dest_path().to_string())),
+        match reserve_filing(id, plan.source_path(), plan.dest_path()) {
+            Ok(()) => {
+                claims.insert(
+                    id,
+                    (plan.source_path().to_string(), plan.dest_path().to_string()),
+                );
+            }
             Err(e) => {
                 // Lost the race against a filing started between the check above and here (either
                 // on this track or on this exact destination) — bounce it like any other
@@ -1040,7 +1094,13 @@ fn run_file_batch(
             cancelled = true;
         }
         match result_rx.recv_timeout(std::time::Duration::from_millis(100)) {
-            Ok(o) => outcomes.push(o),
+            Ok(o) => {
+                // Phase 2 ratée : rien ne sera commité, le fichier est resté ou revenu à sa place.
+                if o.log.is_none() {
+                    release_claim(&mut claims, o.id);
+                }
+                outcomes.push(o);
+            }
             Err(mpsc::RecvTimeoutError::Timeout) => {}
             Err(mpsc::RecvTimeoutError::Disconnected) => break,
         }
@@ -1094,6 +1154,7 @@ fn run_file_batch(
                     Err(e) => {
                         let msg = format!("DB lock poisoned: {e}");
                         log::error!("file_batch: DB lock poisoned committing file {}: {e}", o.id);
+                        release_claim(&mut claims, o.id);
                         needs_validation.push(o.id);
                         errors.push(filing::BatchError {
                             track_id: o.id,
@@ -1110,13 +1171,17 @@ fn run_file_batch(
                         continue;
                     }
                 };
-                match filing::commit_file(
+                let committed = filing::commit_file(
                     &conn,
                     &o.plan,
                     log,
                     Some(&mut xml_repair_pairs),
                     masterdb_index.as_ref(),
-                ) {
+                );
+                // Commité, la base pointe la destination ; raté, `rollback_fs` a tout remis. Dans
+                // les deux cas plus rien n'est en vol pour cette piste.
+                release_claim(&mut claims, o.id);
+                match committed {
                     Ok(_) => {
                         filed += 1;
                         filed_ids.push(o.id);
@@ -1164,11 +1229,11 @@ fn run_file_batch(
         }
     }
 
-    // Every claim this batch published, dropped in one place — success, failure and cancellation
-    // alike. Done only now: until phase 3 has committed, the destination files are the ones this
-    // batch is still writing, and an interactive filing must not be allowed to plan onto them.
-    for (id, dest) in claims {
-        release_filing(id, &dest);
+    // What is left: jobs a cancel stopped before any worker popped them. Every other claim was
+    // given back when its own track settled — never earlier: until its phase 3, a destination is a
+    // file this batch is still writing, and an interactive filing must not plan onto it.
+    for (id, (source, dest)) in claims {
+        release_filing(id, &source, &dest);
     }
 
     app.emit(
@@ -1722,16 +1787,25 @@ mod tests {
     #[test]
     fn reserve_filing_refuses_the_same_track_twice_until_released() {
         let (id, dest) = (-4242i64, "C:/nowhere/reserve-filing-test.aiff");
-        assert_eq!(reserve_filing(id, dest), Ok(()));
+        assert_eq!(
+            reserve_filing(id, "C:/nowhere/reserve-filing-test.flac", dest),
+            Ok(())
+        );
         // Same track again while in flight → refused with the sentinel the front words.
-        assert_eq!(reserve_filing(id, dest), Err(ALREADY_FILING.to_string()));
+        assert_eq!(
+            reserve_filing(id, "C:/nowhere/reserve-filing-test.flac", dest),
+            Err(ALREADY_FILING.to_string())
+        );
         // ...and its destination is visible to every other planner (interactive AND batch).
         assert!(reserved_dests().is_ok_and(|d| d.contains(dest)));
-        release_filing(id, dest);
+        release_filing(id, "C:/nowhere/reserve-filing-test.flac", dest);
         assert!(reserved_dests().is_ok_and(|d| !d.contains(dest)));
         // Released → filable again (this is the retry path after a failed conversion).
-        assert_eq!(reserve_filing(id, dest), Ok(()));
-        release_filing(id, dest);
+        assert_eq!(
+            reserve_filing(id, "C:/nowhere/reserve-filing-test.flac", dest),
+            Ok(())
+        );
+        release_filing(id, "C:/nowhere/reserve-filing-test.flac", dest);
     }
 
     /// Two DIFFERENT tracks reconciling to the SAME destination: the second claim must be refused
@@ -1742,14 +1816,36 @@ mod tests {
     fn reserve_filing_refuses_a_destination_another_filing_already_claimed() {
         let (a, b) = (-8801i64, -8802i64);
         let dest = "C:/nowhere/reserve-filing-dest-collision.aiff";
-        assert_eq!(reserve_filing(a, dest), Ok(()));
+        assert_eq!(
+            reserve_filing(a, "C:/nowhere/reserve-filing-dest-collision.flac", dest),
+            Ok(())
+        );
         assert!(is_filing_inflight(a).is_ok_and(|v| v));
-        let err = reserve_filing(b, dest).expect_err("same dest must be refused");
+        let err = reserve_filing(b, "C:/nowhere/reserve-filing-dest-collision.flac", dest)
+            .expect_err("same dest must be refused");
         assert_ne!(err, ALREADY_FILING.to_string(), "b is a different track");
         // The refused track was NOT left claimed — it can be filed elsewhere right away.
         assert!(is_filing_inflight(b).is_ok_and(|v| !v));
-        release_filing(a, dest);
+        release_filing(a, "C:/nowhere/reserve-filing-dest-collision.flac", dest);
         assert!(is_filing_inflight(a).is_ok_and(|v| !v));
+    }
+
+    /// #78 : le watcher lit ce registre pour ne jamais agir sur un fichier en cours de rangement —
+    /// ni sa source (mise à la corbeille, déplacée, remplacée), ni sa destination. Rendu, le chemin
+    /// redevient visible.
+    #[test]
+    fn a_filing_in_flight_hides_its_source_and_destination_from_the_watcher() {
+        let (id, src, dest) = (
+            -7801i64,
+            "C:/nowhere/in-flight-source.flac",
+            "C:/nowhere/in-flight-dest.aiff",
+        );
+        assert!(!is_path_in_flight(src) && !is_path_in_flight(dest));
+        assert_eq!(reserve_filing(id, src, dest), Ok(()));
+        assert!(is_path_in_flight(src), "la source est tenue");
+        assert!(is_path_in_flight(dest), "la destination est tenue");
+        release_filing(id, src, dest);
+        assert!(!is_path_in_flight(src) && !is_path_in_flight(dest));
     }
 
     /// Mirrors shared/contracts.ts's `TrackFileOutcome` (the `file:track:done` payload). Exhaustive

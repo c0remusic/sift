@@ -9,12 +9,26 @@ const AUDIO_EXTS: &[&str] = &[
     "mp3", "flac", "wav", "aif", "aiff", "m4a", "aac", "ogg", "opus",
 ];
 
-/// True if `path` has a recognised audio extension (case-insensitive).
+/// Marque d'un fichier de travail de Sift, posée avant l'extension (« X.sift-part.aiff ») pour que
+/// ffmpeg et lofty lisent encore le format. Un rangement en place sur le nom même de la source
+/// encode vers un tel fichier, dans le dossier de la source — donc un dossier SURVEILLÉ (#77,
+/// `filing::part_path`). Sans cette marque, le watcher en ferait une piste `pending` le temps de
+/// l'encodage, puis un fantôme pointant un fichier renommé.
+pub(crate) const PART_MARK: &str = ".sift-part";
+
+/// True if `path` has a recognised audio extension (case-insensitive) and is not one of Sift's
+/// own work files (`PART_MARK`). The single filter of both the live watcher and the scan walk.
 pub fn is_audio(path: &Path) -> bool {
-    path.extension()
+    let audio_ext = path
+        .extension()
         .and_then(|e| e.to_str())
         .map(|e| AUDIO_EXTS.contains(&e.to_lowercase().as_str()))
-        .unwrap_or(false)
+        .unwrap_or(false);
+    let work_file = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .is_some_and(|n| n.to_lowercase().contains(PART_MARK));
+    audio_ext && !work_file
 }
 
 /// One audio file found on disk. `path` is the absolute path string (the DB identity key).
@@ -150,6 +164,33 @@ pub fn add_loose_file(conn: &Connection, path: &str, filename: &str) -> rusqlite
     )
 }
 
+/// Le fichier existe-t-il sous CE nom, à l'octet près ? `Path::exists` répond vrai pour un nom qui
+/// ne diffère que par la casse (NTFS, APFS par défaut), alors que `tracks.path` est une clé qui se
+/// compare à l'octet : pour décider si une LIGNE a perdu son fichier, seul le nom exact compte.
+/// Lu dans l'entrée du dossier parent. Dossier illisible ou disparu : faux.
+///
+/// Chaque dossier n'est lu qu'UNE fois par instance : le watcher en crée une par lot d'événements.
+/// Relire le dossier à chaque événement coûtait O(N²) verrou DB tenu — mesuré à la troisième
+/// relecture de #77 : ~7 s de verrou pour 3 000 fichiers copiés dans un dossier, contre 0,26 s pour
+/// un simple `stat`.
+#[derive(Default)]
+pub(crate) struct DirListings(HashMap<std::path::PathBuf, HashSet<std::ffi::OsString>>);
+
+impl DirListings {
+    pub(crate) fn exists_exactly(&mut self, path: &Path) -> bool {
+        let (Some(parent), Some(name)) = (path.parent(), path.file_name()) else {
+            return false;
+        };
+        self.0
+            .entry(parent.to_path_buf())
+            .or_insert_with(|| match std::fs::read_dir(parent) {
+                Ok(entries) => entries.flatten().map(|e| e.file_name()).collect(),
+                Err(_) => HashSet::new(),
+            })
+            .contains(name)
+    }
+}
+
 /// Removes a single file from the queue if (and only if) its row is still `pending`.
 /// Returns rows affected. Used by the live watcher on delete events.
 pub fn forget_path(conn: &Connection, path: &str) -> rusqlite::Result<usize> {
@@ -201,6 +242,12 @@ pub fn reconcile_with_progress(
     let mut seen: HashSet<String> = HashSet::new();
     for f in walk_audio_files(root) {
         seen.insert(f.path.clone());
+        // Un fichier qu'un rangement tient (#78) n'est ni relu ni oublié : son commit le repointera.
+        // Le rescan tourne sur sa propre connexion, en parallèle d'un Lot dont toutes les phases 2
+        // passent avant le premier commit.
+        if crate::ipc_filing::is_path_in_flight(&f.path) {
+            continue;
+        }
         match existing.get(&f.path) {
             None => {
                 upsert_file(conn, source_id, &f)?;
@@ -219,7 +266,7 @@ pub fn reconcile_with_progress(
     }
 
     for path in existing.keys() {
-        if !seen.contains(path) {
+        if !seen.contains(path) && !crate::ipc_filing::is_path_in_flight(path) {
             stats.removed += forget_path(conn, path)?;
         }
     }
@@ -243,6 +290,18 @@ mod tests {
         assert!(!is_audio(Path::new("no_extension")));
     }
 
+    /// #77 : le fichier de travail d'un rangement en place n'est jamais une piste, même quand un
+    /// reste de rangement interrompu l'a fait suffixer par `library::ensure_unique`.
+    #[test]
+    fn un_fichier_de_travail_de_sift_n_est_pas_une_piste() {
+        assert!(!is_audio(Path::new(
+            "d/Larry Heard - Can You Feel It.sift-part.aiff"
+        )));
+        assert!(!is_audio(Path::new("d/X.sift-part (2).aiff")));
+        assert!(!is_audio(Path::new("d/X.SIFT-PART.wav")));
+        assert!(is_audio(Path::new("d/Sift Party.aiff")));
+    }
+
     /// In-memory DB with the live schema + one source row to attach tracks to.
     fn db_with_source() -> (Connection, i64) {
         let conn = Connection::open_in_memory().unwrap();
@@ -251,6 +310,47 @@ mod tests {
             .unwrap();
         let sid = conn.last_insert_rowid();
         (conn, sid)
+    }
+
+    /// #77, relecture : l'existence qui décide si une LIGNE a perdu son fichier se lit au nom
+    /// EXACT. Une autre casse ne compte pas, même sur un système de fichiers qui l'ignore.
+    #[test]
+    fn exists_exactly_ne_confond_pas_deux_casses() {
+        let dir = tempfile::tempdir().unwrap();
+        let p = dir.path().join("Larry Heard.aiff");
+        fs::write(&p, b"audio").unwrap();
+        let mut l = DirListings::default();
+        assert!(l.exists_exactly(&p));
+        assert!(!l.exists_exactly(&dir.path().join("larry heard.aiff")));
+        assert!(!l.exists_exactly(&dir.path().join("absent.aiff")));
+        assert!(!l.exists_exactly(&dir.path().join("dossier-absent").join("x.aiff")));
+    }
+
+    /// #78, troisième relecture : un « Rescanner » pendant un Lot ne purge pas une source en vol,
+    /// déjà partie à la corbeille mais pas encore commitée. Rendue, elle s'oublie comme avant.
+    #[test]
+    fn un_rescan_n_oublie_pas_une_source_en_vol() {
+        let (conn, sid) = db_with_source();
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("partie.flac");
+        let s = src.to_str().unwrap();
+        conn.execute(
+            "INSERT INTO tracks(path, status, source_id) VALUES(?1, 'pending', ?2)",
+            rusqlite::params![s, sid],
+        )
+        .unwrap();
+        let count = |c: &Connection| -> i64 {
+            c.query_row("SELECT count(*) FROM tracks WHERE path=?1", [s], |r| {
+                r.get(0)
+            })
+            .unwrap()
+        };
+        crate::ipc_filing::test_hold(-7804, s, "C:/nowhere/partie.aiff", || {
+            reconcile_with_progress(&conn, sid, dir.path(), |_| {}).unwrap();
+            assert_eq!(count(&conn), 1, "tenue : gardée");
+        });
+        reconcile_with_progress(&conn, sid, dir.path(), |_| {}).unwrap();
+        assert_eq!(count(&conn), 0, "rendue et absente : oubliée");
     }
 
     /// Issue #73 : après une écriture de tags faite par Sift, le passage du watcher (`upsert_file`

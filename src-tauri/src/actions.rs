@@ -672,6 +672,17 @@ pub(crate) fn revert_one_fs(
             if !to_exists {
                 return Err(RevertError::Blocked(format!("source gone: {to}")));
             }
+            // `from` and `to` are the SAME file: a conformant track filed in place under its own
+            // name (move(S → S)), or under its own name re-cased (NTFS, APFS). The guard below
+            // read that file as a conflict ("destination occupied"), and the batch stopped before
+            // its `tag_edit` row could restore the old tags (relecture de #77). Renaming back is
+            // right in both cases: it gives the old case back, and a rename onto itself is a
+            // no-op. A plain `Ok` would leave the disk on the new case while `tracks.path`
+            // returns to the old one — two different keys (second relecture de #77).
+            if crate::library::same_path(Path::new(from), Path::new(to)) {
+                return std::fs::rename(to, from)
+                    .map_err(|e| RevertError::Blocked(format!("case rename back: {e}")));
+            }
             if from_exists {
                 // Both from and to exist — genuine conflict, refuse to overwrite.
                 return Err(RevertError::Blocked(format!(
@@ -729,16 +740,25 @@ pub(crate) fn revert_one_fs(
             std::fs::remove_file(to)
                 .map_err(|e| RevertError::Blocked(format!("remove from trash after restore: {e}")))
         }
-        // a converted file was produced at `to` — remove it (idempotent if already gone)
-        "convert" => {
-            if let Some(to) = to_path {
-                if Path::new(to).exists() {
-                    std::fs::remove_file(to)
-                        .map_err(|e| RevertError::Blocked(format!("remove converted: {e}")))?;
-                }
+        // a converted file was produced at `to` — remove it (idempotent if already gone). Unless it
+        // REPLACED its source under the same name (#77, `meta` names the original): then `to` is
+        // the only file left at that name, and undoing means putting the original back over it —
+        // which `restore_replaced_source` does only once the original is copied beside it.
+        "convert" => match crate::filing::replaced_original(meta).map_err(RevertError::Blocked)? {
+            Some(original) => {
+                let to = to_path.ok_or_else(|| RevertError::Blocked("missing to_path".into()))?;
+                crate::filing::restore_replaced_source(to, &original).map_err(RevertError::Blocked)
             }
-            Ok(())
-        }
+            None => {
+                if let Some(to) = to_path {
+                    if Path::new(to).exists() {
+                        std::fs::remove_file(to)
+                            .map_err(|e| RevertError::Blocked(format!("remove converted: {e}")))?;
+                    }
+                }
+                Ok(())
+            }
+        },
         // status-only action — nothing on disk to reverse
         "reject" => Ok(()),
         // the file's tags were rewritten in place (Apply ID3 tags); `from_path` is the file and
@@ -1440,6 +1460,30 @@ mod tests {
         assert!(to.exists()); // nothing moved
     }
 
+    /// Relecture de #77 : un rangement conforme en place qui n'a changé que la casse du nom
+    /// (NTFS, APFS) se défait en rendant la casse d'origine — ni un refus « destination occupied »
+    /// (le fichier lui-même), ni un faux succès qui laisserait le disque sur la nouvelle casse.
+    #[cfg(windows)]
+    #[test]
+    fn revert_move_undoes_a_case_only_rename() {
+        let dir = tempfile::tempdir().unwrap();
+        let from = dir.path().join("larry heard - can you feel it.mp3");
+        let to = dir.path().join("Larry Heard - Can You Feel It.mp3");
+        std::fs::write(&to, b"x").unwrap();
+        revert_one_fs(
+            "move",
+            Some(from.to_str().unwrap()),
+            Some(to.to_str().unwrap()),
+            None,
+        )
+        .unwrap();
+        let noms: Vec<String> = std::fs::read_dir(dir.path())
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        assert_eq!(noms, vec!["larry heard - can you feel it.mp3".to_string()]);
+    }
+
     #[test]
     fn revert_convert_deletes_converted_file() {
         let dir = tempfile::tempdir().unwrap();
@@ -1453,6 +1497,36 @@ mod tests {
         )
         .unwrap();
         assert!(!converted.exists());
+    }
+
+    /// #77 : un `meta` de conversion illisible ne se lit pas comme « conversion ordinaire ». Le
+    /// converti peut être le seul fichier au nom de la source : le supprimer sans savoir où est
+    /// l'original serait une perte. Refus, fichier intact.
+    #[test]
+    fn revert_convert_with_unreadable_meta_is_blocked_and_keeps_the_file() {
+        let dir = tempfile::tempdir().unwrap();
+        let converted = dir.path().join("X.aiff");
+        std::fs::write(&converted, b"x").unwrap();
+        let p = converted.to_str().unwrap();
+        assert!(revert_one_fs("convert", Some(p), Some(p), Some("{pas du json")).is_err());
+        assert!(converted.exists());
+    }
+
+    /// #77 : restaurer l'original d'une conversion qui a remplacé sa source ne touche le converti
+    /// qu'une fois la copie de l'original faite. Ici l'original « existe » mais ne se copie pas
+    /// (un dossier) : refus, et le converti reste le fichier du nom.
+    #[test]
+    fn revert_replaced_source_touches_nothing_when_the_original_cannot_be_copied() {
+        let dir = tempfile::tempdir().unwrap();
+        let converted = dir.path().join("X.aiff");
+        std::fs::write(&converted, b"converti").unwrap();
+        let pas_un_fichier = dir.path().join("original-illisible");
+        std::fs::create_dir(&pas_un_fichier).unwrap();
+        let meta = serde_json::json!({ "original": pas_un_fichier.to_str().unwrap() }).to_string();
+        let p = converted.to_str().unwrap();
+
+        assert!(revert_one_fs("convert", Some(p), Some(p), Some(&meta)).is_err());
+        assert_eq!(std::fs::read(&converted).unwrap(), b"converti");
     }
 
     #[test]

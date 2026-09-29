@@ -208,6 +208,14 @@ fn sift_trash_dir() -> Result<PathBuf, FilingError> {
 /// safe (no rename). On any failure the partial `dest` is cleaned up (best-effort) and `source`
 /// is left untouched.
 fn copy_verify_delete(source: &str, dest: &Path) -> Result<(), FilingError> {
+    copy_verified(source, dest)?;
+    std::fs::remove_file(source)
+        .map_err(|e| FilingError::Io(format!("remove source after copy: {e}")))
+}
+
+/// Copy `source` to `dest` and verify the copy's size matches; `source` is never touched. On any
+/// failure the partial `dest` is cleaned up (best-effort).
+fn copy_verified(source: &str, dest: &Path) -> Result<(), FilingError> {
     let src_len = std::fs::metadata(source)
         .map_err(|e| FilingError::Io(format!("stat source: {e}")))?
         .len();
@@ -228,9 +236,7 @@ fn copy_verify_delete(source: &str, dest: &Path) -> Result<(), FilingError> {
             "copy size mismatch (src {src_len} != dst {dst_len})"
         )));
     }
-
-    std::fs::remove_file(source)
-        .map_err(|e| FilingError::Io(format!("remove source after copy: {e}")))
+    Ok(())
 }
 
 /// FIX-10: move `source` to `dest`, trying `rename` first (fast, same-device) and falling back
@@ -260,14 +266,19 @@ fn move_cross_disk_safe(source: &str, dest: &Path) -> Result<(), FilingError> {
 /// on another disk — so it runs with the DB lock released, exactly like `execute_file`'s encode.
 /// `commit_trash` then journals the result under the lock.
 pub fn trash_file_fs(track_id: i64, source: &str) -> Result<String, FilingError> {
-    let trash_dir = sift_trash_dir()?;
-    std::fs::create_dir_all(&trash_dir).map_err(|e| FilingError::Io(e.to_string()))?;
-    let dest = library::ensure_unique(
-        &trash_dir.join(format!("{track_id}__{}", file_name_of(source))),
-        None,
-    );
+    let dest = trash_dest(track_id, source)?;
     copy_verify_delete(source, &dest)?;
     Ok(dest.to_string_lossy().to_string())
+}
+
+/// `<Documents>/Sift/Trash/<track_id>__<name>`, collision-free, directory created.
+fn trash_dest(track_id: i64, source: &str) -> Result<PathBuf, FilingError> {
+    let trash_dir = sift_trash_dir()?;
+    std::fs::create_dir_all(&trash_dir).map_err(|e| FilingError::Io(e.to_string()))?;
+    Ok(library::ensure_unique(
+        &trash_dir.join(format!("{track_id}__{}", file_name_of(source))),
+        None,
+    ))
 }
 
 /// COMMIT phase of trashing a track (under the DB lock): journal the move as a revertable
@@ -360,6 +371,9 @@ pub struct FilePlan {
     source: String,
     dest: String,
     conformant: bool,
+    /// Rangement NON conforme dont la destination est la source elle-même (#77) : en place, sous
+    /// un gabarit qui rend déjà son nom. Phase 2 passe alors par `execute_replacing_source`.
+    replaces_source: bool,
     target: Target,
     /// Le profil d'encodage lu UNE fois par rangement (#71) — par `ipc_filing` avant le plan, pas
     /// relu en phase 2 : un réglage changé pendant un lot ne mélange pas deux profils. Décide la
@@ -389,6 +403,12 @@ impl FilePlan {
     /// its completion event once the plan itself has been moved onto the background thread.
     pub fn track_id(&self) -> i64 {
         self.track_id
+    }
+
+    /// The file this plan moves, converts or replaces. Claimed with the destination in the
+    /// in-flight registry, which the watcher reads so it never acts on a file mid-filing (#78).
+    pub fn source_path(&self) -> &str {
+        &self.source
     }
 }
 
@@ -544,21 +564,34 @@ pub fn plan_file(
     };
     std::fs::create_dir_all(&dest_dir).map_err(|e| FilingError::Io(e.to_string()))?;
     let filename = naming::render_filename(template, &canonical, &out_ext);
-    // Ignore the source itself as a collision ONLY for the conformant (move) path: filing a
-    // conformant track in place onto its own (already-correct) name must keep that name, not bump
-    // it to " (2)". The non-conformant path ENCODES source → dest, so dest must never equal source
-    // (FFmpeg reading and writing the same file would corrupt it) — keep the normal collision bump.
-    let ignore_self = if conformant {
-        Some(Path::new(&source))
+    // The source itself is never a collision: a track filed onto its own name keeps that name
+    // instead of gaining a parasitic " (2)". For a conformant track that is a plain move. For a
+    // NON-conformant one, FFmpeg cannot read and write the same file, so `replaces_source` sends
+    // phase 2 through a work file and the name is only taken once the source is in the trash.
+    // Until #77 the non-conformant path did not ignore itself, and kept a " (2)" forever although
+    // no namesake was left once the source had gone to the trash.
+    let dest = ensure_unique_reserved(
+        &dest_dir.join(&filename),
+        Some(Path::new(&source)),
+        reserved,
+    );
+    let replaces_source = !conformant && library::same_path(&dest, Path::new(&source));
+    // `same_path` ignore la casse (canonicalize) : sur NTFS et APFS, « larry….aiff » et
+    // « Larry….aiff » sont le même fichier, mais pas la même clé `tracks.path`, qui se compare à
+    // l'octet. Une conversion qui remplace sa source garde donc l'orthographe EXACTE de la source :
+    // le disque et la base disent le même nom à l'aller comme au retour d'une annulation. Relecture
+    // de #77 — la casse du gabarit, sinon, écrivait un nom que l'annulation ne rendait pas.
+    let dest = if replaces_source {
+        PathBuf::from(&source)
     } else {
-        None
+        dest
     };
-    let dest = ensure_unique_reserved(&dest_dir.join(&filename), ignore_self, reserved);
 
     let extras = load_tag_extras(conn, track_id);
 
     Ok(FilePlan {
         conformant,
+        replaces_source,
         source,
         dest: dest.to_string_lossy().to_string(),
         target,
@@ -574,6 +607,9 @@ pub fn plan_file(
 /// Phase 2 (NO DB lock): the slow work — tag + move, or encode + tag + trash. Leaves the
 /// filesystem clean on its own failure (no orphan transcode). Returns the effects to journal.
 pub fn execute_file(plan: &FilePlan) -> Result<Vec<FsLog>, FilingError> {
+    if plan.replaces_source {
+        return execute_replacing_source(plan);
+    }
     let mut log = Vec::new();
     if plan.conformant {
         // A conformant filing tags the file IN PLACE then MOVES it — no trashed original to restore
@@ -590,16 +626,7 @@ pub fn execute_file(plan: &FilePlan) -> Result<Vec<FsLog>, FilingError> {
             to: plan.source.clone(),
             meta: Some(snapshot),
         });
-        tagging::write_tags_full(
-            &plan.source,
-            &plan.canonical.artist,
-            &naming::tag_title(&plan.canonical),
-            plan.extras.label.as_deref(),
-            plan.extras.year,
-            &plan.extras.genres,
-            plan.extras.cover_path.as_deref(),
-        )
-        .map_err(FilingError::Tag)?;
+        write_plan_tags(&plan.source, plan).map_err(FilingError::Tag)?;
         // Le `?` nu manquait ici, et c'était la seule fenêtre du chemin conformant où les tags
         // étaient DÉJÀ écrasés sur le fichier de l'utilisateur sans que rien ne puisse les
         // remettre. Le déplacement échoue (disque plein, destination verrouillée, permission) et
@@ -629,24 +656,9 @@ pub fn execute_file(plan: &FilePlan) -> Result<Vec<FsLog>, FilingError> {
     } else {
         // transcode into the bin at the profile settled at plan time, tag the result, then trash
         // the original (mono-location)
-        encode::encode_with(&plan.source, &plan.dest, plan.target, &plan.profile).map_err(|e| {
-            match e {
-                EncodeError::Upscale => FilingError::Upscale,
-                EncodeError::Ffmpeg(m) => FilingError::Encode(m),
-                other @ (EncodeError::InvalidProfile(_) | EncodeError::WavHeader(_)) => {
-                    FilingError::Encode(other.to_string())
-                }
-            }
-        })?;
-        if let Err(e) = tagging::write_tags_full(
-            &plan.dest,
-            &plan.canonical.artist,
-            &naming::tag_title(&plan.canonical),
-            plan.extras.label.as_deref(),
-            plan.extras.year,
-            &plan.extras.genres,
-            plan.extras.cover_path.as_deref(),
-        ) {
+        encode::encode_with(&plan.source, &plan.dest, plan.target, &plan.profile)
+            .map_err(filing_error_of)?;
+        if let Err(e) = write_plan_tags(&plan.dest, plan) {
             let _ = std::fs::remove_file(&plan.dest); // drop the orphan transcode
             return Err(FilingError::Tag(e));
         }
@@ -672,6 +684,163 @@ pub fn execute_file(plan: &FilePlan) -> Result<Vec<FsLog>, FilingError> {
     Ok(log)
 }
 
+/// The filing's tags (canonical identity + enrichment), written to `path`. One call for the three
+/// places phase 2 tags a file: the conformant source in place, the transcode, the work file.
+fn write_plan_tags(path: &str, plan: &FilePlan) -> Result<(), String> {
+    tagging::write_tags_full(
+        path,
+        &plan.canonical.artist,
+        &naming::tag_title(&plan.canonical),
+        plan.extras.label.as_deref(),
+        plan.extras.year,
+        &plan.extras.genres,
+        plan.extras.cover_path.as_deref(),
+    )
+}
+
+fn filing_error_of(e: EncodeError) -> FilingError {
+    match e {
+        EncodeError::Upscale => FilingError::Upscale,
+        EncodeError::Ffmpeg(m) => FilingError::Encode(m),
+        other @ (EncodeError::InvalidProfile(_) | EncodeError::WavHeader(_)) => {
+            FilingError::Encode(other.to_string())
+        }
+    }
+}
+
+/// Le fichier de travail d'un rangement qui remplace sa source : même dossier, même extension,
+/// marque `scanner::PART_MARK` avant l'extension (« X.sift-part.aiff »). Même dossier pour que le
+/// renommage final reste un `rename` sur le même volume ; la marque pour que ni le watcher ni un
+/// scan n'en fassent une piste. Un reste d'un rangement interrompu n'est jamais écrasé.
+fn part_path(dest: &Path) -> PathBuf {
+    let parent = dest.parent().unwrap_or_else(|| Path::new("."));
+    let stem = dest.file_stem().and_then(|s| s.to_str()).unwrap_or("file");
+    let name = match dest.extension().and_then(|e| e.to_str()) {
+        Some(ext) => format!("{stem}{}.{ext}", crate::scanner::PART_MARK),
+        None => format!("{stem}{}", crate::scanner::PART_MARK),
+    };
+    library::ensure_unique(&parent.join(name), None)
+}
+
+/// Le `meta` d'une ligne `convert` qui a REMPLACÉ sa source sous le même nom (#77) : où vit la
+/// copie de l'original. Sa présence change le sens de la ligne pour qui la défait — le converti
+/// occupe le nom de la source, le défaire veut dire y remettre l'original
+/// (`restore_replaced_source`), jamais le supprimer.
+#[derive(serde::Serialize, serde::Deserialize)]
+struct ReplacedSource {
+    original: String,
+}
+
+/// L'original d'une ligne `convert` qui a remplacé sa source, lu dans son `meta`. `Ok(None)` : une
+/// conversion ordinaire, sans `meta`. Un `meta` illisible est une ERREUR et pas un `None` : le lire
+/// comme une conversion ordinaire ferait supprimer le seul fichier qui reste au nom de la source.
+pub(crate) fn replaced_original(meta: Option<&str>) -> Result<Option<String>, String> {
+    match meta {
+        None => Ok(None),
+        Some(m) => serde_json::from_str::<ReplacedSource>(m)
+            .map(|r| Some(r.original))
+            .map_err(|e| format!("convert meta illisible, original inconnu: {e}")),
+    }
+}
+
+/// Phase 2 d'un rangement NON conforme dont la destination est la source elle-même (#77) : en
+/// place, sous un gabarit qui rend déjà son nom. ffmpeg ne peut pas lire et écrire le même
+/// fichier. Donc : encoder vers le fichier de travail (`part_path`), le taguer, COPIER la source
+/// dans la corbeille (sans la retirer), puis renommer le fichier de travail PAR-DESSUS la source.
+///
+/// La source n'est jamais absente de son nom : jusqu'au renommage elle est intacte, et le renommage
+/// qui remplace est atomique. Un échec à n'importe quelle étape la laisse donc telle quelle — même
+/// sur un volume FAT/exFAT où un nom supprimé reste pris tant qu'un lecteur tient le fichier, ce
+/// qui faisait échouer la première version de ce chemin (supprimer, puis reprendre le nom).
+///
+/// UNE ligne de journal, `convert` S → S, dont le `meta` dit où est l'original
+/// (`ReplacedSource`). Une ligne `trash` en plus imposerait un ordre d'annulation où l'un des deux
+/// fichiers disparaît avant que l'autre soit revenu ; la restauration par remplacement atomique n'en
+/// a pas besoin.
+fn execute_replacing_source(plan: &FilePlan) -> Result<Vec<FsLog>, FilingError> {
+    let part = part_path(Path::new(&plan.dest));
+    let part_s = part.to_string_lossy().to_string();
+    // `encode_with` retire lui-même la sortie d'un encodage raté.
+    encode::encode_with(&plan.source, &part_s, plan.target, &plan.profile)
+        .map_err(filing_error_of)?;
+    if let Err(e) = write_plan_tags(&part_s, plan) {
+        remove_leftover(&part);
+        return Err(FilingError::Tag(e));
+    }
+    let original = match trash_dest(plan.track_id, &plan.source)
+        .and_then(|dest| copy_verified(&plan.source, &dest).map(|()| dest))
+    {
+        Ok(dest) => dest,
+        Err(e) => {
+            remove_leftover(&part);
+            return Err(e);
+        }
+    };
+    let meta = serde_json::to_string(&ReplacedSource {
+        original: original.to_string_lossy().to_string(),
+    })
+    .map_err(|e| FilingError::Io(format!("serialize replaced-source meta: {e}")));
+    let meta = match meta {
+        Ok(m) => m,
+        Err(e) => {
+            remove_leftover(&part);
+            remove_leftover(&original);
+            return Err(e);
+        }
+    };
+    // Même dossier, donc même volume : un `rename` simple, qui remplace la source d'un geste.
+    if let Err(e) = std::fs::rename(&part, &plan.dest) {
+        log::error!(
+            "execute_file: remplacement de {} par {} impossible, la source reste intacte: {e}",
+            plan.dest,
+            part.display()
+        );
+        remove_leftover(&part);
+        remove_leftover(&original);
+        return Err(FilingError::Io(format!("replace source: {e}")));
+    }
+    Ok(vec![FsLog {
+        kind: "convert",
+        from: plan.source.clone(),
+        to: plan.dest.clone(),
+        meta: Some(meta),
+    }])
+}
+
+/// Défait une conversion qui a remplacé sa source (#77) : remet `original` au nom `path`, par
+/// remplacement atomique, puis retire la copie de la corbeille. `path` n'est touché qu'une fois la
+/// copie de l'original complète et vérifiée à côté de lui : un original introuvable, ou une copie
+/// ratée, laisse le converti en place — jamais un nom vide. Partagé par `rollback_fs` (phase 3
+/// avortée) et `actions::revert_one_fs` (annulation depuis le journal).
+pub(crate) fn restore_replaced_source(path: &str, original: &str) -> Result<(), String> {
+    if !Path::new(original).exists() {
+        return Err(format!("original gone: {original}"));
+    }
+    let part = part_path(Path::new(path));
+    copy_verified(original, &part).map_err(|e| e.to_string())?;
+    if let Err(e) = std::fs::rename(&part, path) {
+        remove_leftover(&part);
+        return Err(format!("replace {path}: {e}"));
+    }
+    // Restauration faite : une copie qui ne part pas n'est qu'un doublon dans la corbeille.
+    remove_leftover(Path::new(original));
+    Ok(())
+}
+
+/// Retire un fichier que ce module a posé et qui n'a plus d'usage (fichier de travail, copie de
+/// corbeille d'un rangement avorté). Impossible à retirer = journalisé, jamais une erreur : le geste
+/// principal a déjà réussi ou échoué, et un reste occupe le disque sans rien casser.
+fn remove_leftover(path: &Path) {
+    match std::fs::remove_file(path) {
+        Ok(()) => {}
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+        Err(e) => log::error!(
+            "filing: {} impossible à retirer, il reste sur le disque: {e}",
+            path.display()
+        ),
+    }
+}
+
 /// Reverse phase-2 filesystem effects (newest first) — used when phase 3 cannot commit.
 ///
 /// Chaque étape reste best-effort (on continue le déroulé même si l'une échoue : abandonner à
@@ -694,14 +863,27 @@ fn rollback_fs(log: &[FsLog]) {
                     );
                 }
             }
-            "convert" => {
-                if let Err(e) = std::fs::remove_file(&fs.to) {
-                    log::error!(
-                        "rollback_fs: suppression du fichier converti {} impossible, il reste sur le disque: {e}",
-                        fs.to
-                    );
+            // Une conversion qui a remplacé sa source (#77) occupe le nom de celle-ci : la défaire,
+            // c'est y remettre l'original, surtout pas supprimer le seul fichier du nom.
+            "convert" => match replaced_original(fs.meta.as_deref()) {
+                Ok(Some(original)) => {
+                    if let Err(e) = restore_replaced_source(&fs.to, &original) {
+                        log::error!(
+                            "rollback_fs: original {original} non remis à {}, le converti reste en place: {e}",
+                            fs.to
+                        );
+                    }
                 }
-            }
+                Ok(None) => {
+                    if let Err(e) = std::fs::remove_file(&fs.to) {
+                        log::error!(
+                            "rollback_fs: suppression du fichier converti {} impossible, il reste sur le disque: {e}",
+                            fs.to
+                        );
+                    }
+                }
+                Err(e) => log::error!("rollback_fs: {e} — {} laissé en place", fs.to),
+            },
             // Conformant filing: undo the in-place tag write by restoring the captured old tags at
             // `from` (the file is back there — the move row, newer, was reversed just above). Reuses
             // the B4 restore.
@@ -1845,6 +2027,356 @@ mod tests {
         assert_eq!(convert_rows, 1);
     }
 
+    /// #77 : un AIFF 16/44,1 déjà nommé selon le gabarit, rangé EN PLACE face à un profil 24/48.
+    /// Pose le fichier dans un dossier temporaire et rend (id, source, plan). `None` sans fixture.
+    /// `id` distinct par test : la copie de l'original va dans la VRAIE corbeille, nommée
+    /// `<id>__<nom>`, et deux tests parallèles au même id s'y écraseraient l'un l'autre.
+    fn plan_en_place_non_conforme(
+        conn: &Connection,
+        dir: &Path,
+        p: &EncodeProfile,
+        id: i64,
+    ) -> Option<(i64, PathBuf, FilePlan)> {
+        let flac = fixture("real_lossless.flac")?;
+        let src = dir.join("Larry Heard - Can You Feel It.aiff");
+        crate::encode::encode(&flac, src.to_str().unwrap(), Target::Aiff1644).unwrap();
+        conn.execute(
+            "INSERT INTO tracks(id, path, status) VALUES(?1, ?2, 'pending')",
+            params![id, src.to_str().unwrap()],
+        )
+        .unwrap();
+        let plan = plan_file(
+            conn,
+            None,
+            "{artist} - {title}",
+            id,
+            FILE_IN_PLACE,
+            None,
+            Some(Canonical {
+                artist: "Larry Heard".into(),
+                title: "Can You Feel It".into(),
+                version: None,
+                label: None,
+                confidence: crate::naming::Confidence::Green,
+            }),
+            false,
+            &HashSet::new(),
+            p,
+        )
+        .expect("plan_file");
+        Some((id, src, plan))
+    }
+
+    /// Les fichiers du dossier, par nom — pour dire qu'aucun « (2) » ni fichier de travail ne reste.
+    fn noms_du_dossier(dir: &Path) -> Vec<String> {
+        let mut v: Vec<String> = std::fs::read_dir(dir)
+            .unwrap()
+            .map(|e| e.unwrap().file_name().to_string_lossy().into_owned())
+            .collect();
+        v.sort();
+        v
+    }
+
+    fn profil_24_48() -> EncodeProfile {
+        EncodeProfile {
+            aiff_bits: 24,
+            aiff_rate: 48_000,
+            ..EncodeProfile::default()
+        }
+    }
+
+    /// #77 : le rangement en place d'un fichier NON conforme sous son propre nom garde ce nom. Avant,
+    /// la source encore présente au plan faisait poser « … (2).aiff », définitif alors qu'aucun
+    /// homonyme ne restait. Le fichier converti prend le nom de la source, la source part à la
+    /// corbeille, le journal se présente comme une conversion, et l'annulation rend l'original.
+    #[test]
+    fn un_rangement_en_place_non_conforme_garde_le_nom_de_la_source() {
+        let conn = db();
+        let dir = tempfile::tempdir().unwrap();
+        let p = profil_24_48();
+        let Some((id, src, plan)) = plan_en_place_non_conforme(&conn, dir.path(), &p, 77001) else {
+            eprintln!("skip: no fixture");
+            return;
+        };
+        let src_s = src.to_str().unwrap().to_string();
+        assert!(!plan.conformant);
+        assert_eq!(
+            plan.dest, src_s,
+            "la destination est la source, sans « (2) »"
+        );
+
+        let log = execute_file(&plan).expect("execute_file");
+        let res = commit_file(&conn, &plan, log, None, None).expect("commit_file");
+        assert_eq!(res.path, src_s);
+        assert!(crate::encode::is_conformant(&src_s, Target::Aiff1644, &p));
+        assert_eq!(
+            noms_du_dossier(dir.path()),
+            vec!["Larry Heard - Can You Feel It.aiff".to_string()],
+            "ni « (2) » ni fichier de travail laissé"
+        );
+        let journal = actions::list_journal(&conn, 10, None).unwrap();
+        assert_eq!(journal[0].kind, "convert", "une conversion, pas un écart");
+        assert_eq!(journal[0].to_path.as_deref(), Some(src_s.as_str()));
+        let original = original_du_lot(&conn, &res.batch_id);
+        assert!(
+            Path::new(&original).exists(),
+            "l'original est gardé dans la corbeille"
+        );
+
+        actions::revert_batch(&conn, &res.batch_id).expect("revert_batch");
+        assert!(
+            crate::encode::is_conformant(&src_s, Target::Aiff1644, &EncodeProfile::default()),
+            "l'original 16/44,1 est revenu sous son nom"
+        );
+        assert!(!crate::encode::is_conformant(&src_s, Target::Aiff1644, &p));
+        assert_eq!(
+            noms_du_dossier(dir.path()),
+            vec!["Larry Heard - Can You Feel It.aiff".to_string()]
+        );
+        assert!(
+            !Path::new(&original).exists(),
+            "restauré, il quitte la corbeille"
+        );
+        let status: String = conn
+            .query_row("SELECT status FROM tracks WHERE id=?1", params![id], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(status, "pending");
+    }
+
+    /// #77 : le fichier de travail garde l'extension du format (ffmpeg et lofty la lisent) et reste
+    /// invisible au scanner comme au watcher, qui en feraient sinon une piste fantôme.
+    #[test]
+    fn le_fichier_de_travail_garde_son_format_et_echappe_au_scanner() {
+        let part = part_path(Path::new("d/Larry Heard - Can You Feel It.aiff"));
+        assert_eq!(part.extension().and_then(|e| e.to_str()), Some("aiff"));
+        assert!(!crate::scanner::is_audio(&part), "{}", part.display());
+    }
+
+    /// L'original qu'une conversion qui a remplacé sa source garde dans la corbeille, lu dans le
+    /// `meta` de l'UNIQUE ligne du lot.
+    fn original_du_lot(conn: &Connection, batch_id: &str) -> String {
+        let rows: Vec<(String, Option<String>)> = conn
+            .prepare("SELECT type, meta FROM actions WHERE batch_id=?1")
+            .unwrap()
+            .query_map(params![batch_id], |r| Ok((r.get(0)?, r.get(1)?)))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert_eq!(rows.len(), 1, "une seule ligne : {rows:?}");
+        assert_eq!(rows[0].0, "convert");
+        replaced_original(rows[0].1.as_deref())
+            .unwrap()
+            .expect("meta porte l'original")
+    }
+
+    /// #77, relecture : l'annulation ne détruit JAMAIS le converti avant que l'original soit là.
+    /// Copie de corbeille disparue (dossier vidé à la main, synchro hors ligne) : l'annulation est
+    /// refusée, et le converti reste le fichier du nom — pas un nom vide.
+    #[test]
+    fn annuler_sans_l_original_garde_le_converti() {
+        let conn = db();
+        let dir = tempfile::tempdir().unwrap();
+        let p = profil_24_48();
+        let Some((_, src, plan)) = plan_en_place_non_conforme(&conn, dir.path(), &p, 77002) else {
+            eprintln!("skip: no fixture");
+            return;
+        };
+        let src_s = src.to_str().unwrap().to_string();
+        let log = execute_file(&plan).expect("execute_file");
+        let res = commit_file(&conn, &plan, log, None, None).expect("commit_file");
+        std::fs::remove_file(original_du_lot(&conn, &res.batch_id)).unwrap();
+
+        assert!(actions::revert_batch(&conn, &res.batch_id).is_err());
+        assert!(
+            crate::encode::is_conformant(&src_s, Target::Aiff1644, &p),
+            "le converti est toujours là"
+        );
+        assert_eq!(
+            noms_du_dossier(dir.path()),
+            vec!["Larry Heard - Can You Feel It.aiff".to_string()]
+        );
+    }
+
+    /// #77, relecture : si le remplacement final est refusé (la source tenue ouverte sans partage
+    /// de suppression — un volume FAT où un nom supprimé reste pris se comporte pareil), la source
+    /// reste intacte, et ni fichier de travail ni copie de corbeille ne traînent.
+    #[cfg(windows)]
+    #[test]
+    fn un_remplacement_refuse_laisse_la_source_intacte() {
+        use std::os::windows::fs::OpenOptionsExt;
+        const FILE_SHARE_READ: u32 = 0x1;
+        let conn = db();
+        let dir = tempfile::tempdir().unwrap();
+        let p = profil_24_48();
+        let Some((id, src, plan)) = plan_en_place_non_conforme(&conn, dir.path(), &p, 77003) else {
+            eprintln!("skip: no fixture");
+            return;
+        };
+        let src_s = src.to_str().unwrap().to_string();
+        let copie = trash_dest(id, &src_s).unwrap();
+        let tenu = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(FILE_SHARE_READ)
+            .open(&src)
+            .unwrap();
+
+        assert!(execute_file(&plan).is_err(), "le remplacement doit échouer");
+        drop(tenu);
+        assert!(
+            crate::encode::is_conformant(&src_s, Target::Aiff1644, &EncodeProfile::default()),
+            "la source 16/44,1 est intacte"
+        );
+        assert_eq!(
+            noms_du_dossier(dir.path()),
+            vec!["Larry Heard - Can You Feel It.aiff".to_string()],
+            "aucun fichier de travail"
+        );
+        assert!(!copie.exists(), "aucune copie orpheline dans la corbeille");
+    }
+
+    /// Relecture de #77 : sur un système de fichiers qui ignore la casse, une conversion dont le nom
+    /// rendu ne diffère de la source QUE par la casse la remplace sous l'orthographe exacte de la
+    /// source. Le disque et `tracks.path` (clé comparée à l'octet) disent le même nom, avant comme
+    /// après l'annulation.
+    #[cfg(windows)]
+    #[test]
+    fn une_conversion_en_place_a_casse_differente_garde_l_orthographe_de_la_source() {
+        let conn = db();
+        let dir = tempfile::tempdir().unwrap();
+        let Some(flac) = fixture("real_lossless.flac") else {
+            eprintln!("skip: no fixture");
+            return;
+        };
+        let src = dir.path().join("larry heard - can you feel it.aiff");
+        crate::encode::encode(&flac, src.to_str().unwrap(), Target::Aiff1644).unwrap();
+        let src_s = src.to_str().unwrap().to_string();
+        conn.execute(
+            "INSERT INTO tracks(id, path, status) VALUES(77005, ?1, 'pending')",
+            params![src_s],
+        )
+        .unwrap();
+        let p = profil_24_48();
+        let plan = plan_file(
+            &conn,
+            None,
+            "{artist} - {title}",
+            77005,
+            FILE_IN_PLACE,
+            None,
+            Some(Canonical {
+                artist: "Larry Heard".into(),
+                title: "Can You Feel It".into(),
+                version: None,
+                label: None,
+                confidence: crate::naming::Confidence::Green,
+            }),
+            false,
+            &HashSet::new(),
+            &p,
+        )
+        .unwrap();
+        assert_eq!(plan.dest, src_s, "l'orthographe exacte de la source");
+
+        let log = execute_file(&plan).expect("execute_file");
+        let res = commit_file(&conn, &plan, log, None, None).expect("commit_file");
+        assert_eq!(res.path, src_s);
+        assert_eq!(
+            noms_du_dossier(dir.path()),
+            vec!["larry heard - can you feel it.aiff".to_string()]
+        );
+        actions::revert_batch(&conn, &res.batch_id).expect("revert_batch");
+        assert_eq!(
+            noms_du_dossier(dir.path()),
+            vec!["larry heard - can you feel it.aiff".to_string()]
+        );
+        assert!(crate::encode::is_conformant(
+            &src_s,
+            Target::Aiff1644,
+            &EncodeProfile::default()
+        ));
+    }
+
+    /// Relecture de #77, défaut antérieur : un fichier CONFORME rangé en place sous son propre nom
+    /// journalise move(S → S). Son annulation tombait sur « destination occupied » avant d'avoir
+    /// rendu les anciens tags.
+    #[test]
+    fn annuler_un_rangement_conforme_sur_son_propre_nom() {
+        let conn = db();
+        let dir = tempfile::tempdir().unwrap();
+        let Some((id, src)) = seed_track(
+            &conn,
+            dir.path(),
+            "real_320.mp3",
+            "Larry Heard - Can You Feel It.mp3",
+        ) else {
+            eprintln!("skip: no fixture");
+            return;
+        };
+        let src_s = src.to_str().unwrap().to_string();
+        let avant = tagging::read_artist_title(&src_s);
+        let plan = plan_file(
+            &conn,
+            None,
+            "{artist} - {title}",
+            id,
+            FILE_IN_PLACE,
+            None,
+            Some(Canonical {
+                artist: "Larry Heard".into(),
+                title: "Can You Feel It".into(),
+                version: None,
+                label: None,
+                confidence: crate::naming::Confidence::Green,
+            }),
+            false,
+            &HashSet::new(),
+            &EncodeProfile::default(),
+        )
+        .unwrap();
+        assert!(plan.conformant);
+        assert_eq!(plan.dest, src_s);
+        let log = execute_file(&plan).expect("execute_file");
+        let res = commit_file(&conn, &plan, log, None, None).expect("commit_file");
+
+        actions::revert_batch(&conn, &res.batch_id).expect("revert_batch");
+        assert_eq!(
+            tagging::read_artist_title(&src_s),
+            avant,
+            "anciens tags rendus"
+        );
+    }
+
+    /// #77 : une phase 3 qui échoue après un rangement qui remplace sa source défait tout —
+    /// l'original revient au nom depuis la corbeille, par le même remplacement que l'annulation.
+    #[test]
+    fn un_rangement_qui_remplace_sa_source_se_defait_si_la_phase_3_echoue() {
+        let conn = db();
+        let dir = tempfile::tempdir().unwrap();
+        let p = profil_24_48();
+        let Some((id, src, plan)) = plan_en_place_non_conforme(&conn, dir.path(), &p, 77004) else {
+            eprintln!("skip: no fixture");
+            return;
+        };
+        let src_s = src.to_str().unwrap().to_string();
+        let log = execute_file(&plan).expect("execute_file");
+        assert!(crate::encode::is_conformant(&src_s, Target::Aiff1644, &p));
+
+        conn.execute("DELETE FROM tracks WHERE id=?1", params![id])
+            .unwrap();
+        assert!(commit_file(&conn, &plan, log, None, None).is_err());
+
+        assert!(
+            crate::encode::is_conformant(&src_s, Target::Aiff1644, &EncodeProfile::default()),
+            "l'original doit être revenu à son nom"
+        );
+        assert_eq!(
+            noms_du_dossier(dir.path()),
+            vec!["Larry Heard - Can You Feel It.aiff".to_string()]
+        );
+    }
+
     /// Le WAV 24 bits réécrit en WAVE_FORMAT_PCM le reste APRÈS l'écriture des tags du rangement
     /// (lofty réécrit les chunks du RIFF) : c'est le fichier rangé que la platine lit, pas celui
     /// qui sort d'ffmpeg.
@@ -2599,6 +3131,7 @@ mod tests {
             source: "D:/DL/12 - vieux nom.aif".to_string(),
             dest: "D:/KEPT/Artiste - Titre (Club Mix).aif".to_string(),
             conformant: true,
+            replaces_source: false,
             target: Target::Aiff1644,
             profile: EncodeProfile::default(),
             canonical: Canonical {
@@ -2648,6 +3181,7 @@ mod tests {
             source: source.to_string(),
             dest: dest.to_string(),
             conformant: true,
+            replaces_source: false,
             target: Target::Aiff1644,
             profile: EncodeProfile::default(),
             canonical: Canonical {
@@ -3060,6 +3594,7 @@ mod tests {
             source: "irrelevant-source".to_string(),
             dest: "irrelevant-dest".to_string(),
             conformant: false,
+            replaces_source: false,
             target: Target::Mp3320,
             profile: EncodeProfile::default(),
             canonical: Canonical {
