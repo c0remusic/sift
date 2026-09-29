@@ -9,7 +9,6 @@ use crate::naming::{self, Canonical};
 use crate::{actions, library, tagging};
 use rusqlite::{params, Connection};
 use serde::Serialize;
-use std::collections::HashSet;
 use std::path::{Path, PathBuf};
 
 /// Sentinel destination meaning "file in place": the track's destination is its OWN source
@@ -439,9 +438,11 @@ pub struct FsLog {
 fn ensure_unique_reserved(
     path: &Path,
     ignore: Option<&Path>,
-    reserved: &HashSet<String>,
+    reserved: &library::Reservations,
 ) -> PathBuf {
-    let taken = |p: &Path| reserved.contains(&p.to_string_lossy().to_string());
+    // `Reservations` compare sans la casse (#79) : une réservation « Larry Heard - … » tient
+    // aussi « LARRY HEARD - … », le même fichier sur NTFS et APFS.
+    let taken = |p: &Path| reserved.contains(&p.to_string_lossy());
     // First let ensure_unique settle FS collisions; then bump further past any reserved sibling.
     let mut candidate = library::ensure_unique(path, ignore);
     if !taken(&candidate) {
@@ -482,7 +483,7 @@ pub fn plan_file(
     // deferred/concurrent). Non-empty for the interactive path too since P5: `file_track` is
     // detached, so its phase 2 has not run by the time the next plan is computed (see
     // `ipc_filing::InFlightFilings`). See `ensure_unique_reserved`.
-    reserved: &HashSet<String>,
+    reserved: &library::Reservations,
     // Le profil d'encodage réglé (#71), lu une fois par rangement par l'appelant — jamais relu
     // ici, pour qu'un lot entier voie le même. Décide la conformité (un AIFF 16/44,1 n'est pas
     // conforme à un profil AIFF 24/48) et part dans le plan pour l'encode de phase 2.
@@ -1184,7 +1185,7 @@ pub fn file_track(
         override_target,
         edited,
         allow_rail_mismatch,
-        &HashSet::new(),
+        &library::Reservations::default(),
         &EncodeProfile::default(),
     )?;
     let log = execute_file(&plan)?;
@@ -1710,7 +1711,7 @@ mod tests {
                 confidence: crate::naming::Confidence::Green,
             }),
             false,
-            &HashSet::new(),
+            &library::Reservations::default(),
             &EncodeProfile::default(),
         )
         .unwrap();
@@ -1777,7 +1778,7 @@ mod tests {
                 confidence: crate::naming::Confidence::Green,
             }),
             false,
-            &HashSet::new(),
+            &library::Reservations::default(),
             &EncodeProfile::default(),
         )
         .unwrap();
@@ -1932,7 +1933,7 @@ mod tests {
                 confidence: crate::naming::Confidence::Green,
             }),
             false,
-            &HashSet::new(),
+            &library::Reservations::default(),
             profile,
         )
         .expect("plan_file");
@@ -2060,7 +2061,7 @@ mod tests {
                 confidence: crate::naming::Confidence::Green,
             }),
             false,
-            &HashSet::new(),
+            &library::Reservations::default(),
             p,
         )
         .expect("plan_file");
@@ -2273,7 +2274,7 @@ mod tests {
                 confidence: crate::naming::Confidence::Green,
             }),
             false,
-            &HashSet::new(),
+            &library::Reservations::default(),
             &p,
         )
         .unwrap();
@@ -2331,7 +2332,7 @@ mod tests {
                 confidence: crate::naming::Confidence::Green,
             }),
             false,
-            &HashSet::new(),
+            &library::Reservations::default(),
             &EncodeProfile::default(),
         )
         .unwrap();
@@ -2400,6 +2401,23 @@ mod tests {
         assert_eq!([b[20], b[21]], [0x01, 0x00]);
         assert_eq!(tagging::read_artist_title(&res.path).0, "Larry Heard");
         assert!(crate::encode::is_conformant(&res.path, Target::Wav1644, &p));
+    }
+
+    /// #79 : une destination réservée par une piste du même Lot, qui ne diffère que par la CASSE,
+    /// est le même fichier sur NTFS et APFS — la seconde doit passer à « (2) », pas s'y poser.
+    #[test]
+    fn a_reservation_differing_only_by_case_is_the_same_destination() {
+        let dir = tempfile::tempdir().unwrap();
+        let first = dir.path().join("Larry Heard - Can You Feel It.aiff");
+        let second = dir.path().join("LARRY HEARD - CAN YOU FEEL IT.aiff");
+        let mut reserved = library::Reservations::default();
+        reserved.insert(&first.to_string_lossy());
+        let got = ensure_unique_reserved(&second, None, &reserved);
+        assert_eq!(
+            got,
+            dir.path().join("LARRY HEARD - CAN YOU FEEL IT (2).aiff"),
+            "la seconde piste a reçu la destination déjà réservée par la première"
+        );
     }
 
     /// Root fix for the `.aif`/`.aiff` revert-duplicate: a CONFORMANT AIFF is moved (no transcode),
@@ -2547,7 +2565,7 @@ mod tests {
                 confidence: crate::naming::Confidence::Green,
             }),
             false,
-            &HashSet::new(),
+            &library::Reservations::default(),
             &EncodeProfile::default(),
         )
         .unwrap();
@@ -2589,7 +2607,7 @@ mod tests {
                 confidence: crate::naming::Confidence::Green,
             }),
             false,
-            &HashSet::new(),
+            &library::Reservations::default(),
             &EncodeProfile::default(),
         );
         assert_eq!(
@@ -2656,7 +2674,7 @@ mod tests {
                 confidence: crate::naming::Confidence::Green,
             }),
             false,
-            &HashSet::new(),
+            &library::Reservations::default(),
             &EncodeProfile::default(),
         );
         assert_eq!(
@@ -2699,7 +2717,7 @@ mod tests {
                 confidence: crate::naming::Confidence::Green,
             }),
             false,
-            &HashSet::new(),
+            &library::Reservations::default(),
             &EncodeProfile::default(),
         )
         .expect("un rangement en place ne dépend pas de la racine");
@@ -2737,7 +2755,7 @@ mod tests {
                 confidence: crate::naming::Confidence::Green,
             }),
             false,
-            &HashSet::new(),
+            &library::Reservations::default(),
             &EncodeProfile::default(),
         )
         .expect("un dossier externe ne dépend pas de la racine");
@@ -2769,7 +2787,7 @@ mod tests {
                     confidence: crate::naming::Confidence::Green,
                 }),
                 false,
-                &HashSet::new(),
+                &library::Reservations::default(),
                 &EncodeProfile::default(),
             );
             assert_eq!(
@@ -3010,7 +3028,7 @@ mod tests {
             None,
             canonical.clone(),
             false,
-            &HashSet::new(),
+            &library::Reservations::default(),
             &EncodeProfile::default(),
         );
         assert_eq!(blocked.err(), Some(FilingError::RailMismatch));
@@ -3029,7 +3047,7 @@ mod tests {
             None,
             canonical,
             true,
-            &HashSet::new(),
+            &library::Reservations::default(),
             &EncodeProfile::default(),
         );
         assert!(
@@ -3066,7 +3084,7 @@ mod tests {
                 confidence: crate::naming::Confidence::Green,
             }),
             false,
-            &HashSet::new(),
+            &library::Reservations::default(),
             &EncodeProfile::default(),
         );
         assert!(

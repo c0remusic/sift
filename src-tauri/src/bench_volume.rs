@@ -1107,7 +1107,7 @@ fn clear_fingerprints(conn: &Connection, ids: &[i64]) {
 fn measure_filing(ds: &FilingDataset, bin_rel: &str) {
     use crate::encode::Target;
     println!("\n=== Boucle de rangement: rangement d'une piste (hors encodage) ===");
-    let reserved = std::collections::HashSet::new();
+    let reserved = crate::library::Reservations::default();
     let mut plan_d = Vec::with_capacity(ds.sources.len());
     let mut exec_d = Vec::with_capacity(ds.sources.len());
     let mut commit_d = Vec::with_capacity(ds.sources.len());

@@ -416,8 +416,8 @@ const ALREADY_FILING: &str = "ALREADY_FILING";
 #[derive(Default)]
 struct InFlightFilings {
     tracks: HashSet<i64>,
-    sources: HashSet<String>,
-    dests: HashSet<String>,
+    sources: crate::library::Reservations,
+    dests: crate::library::Reservations,
 }
 
 fn inflight() -> &'static Mutex<InFlightFilings> {
@@ -429,7 +429,7 @@ fn inflight() -> &'static Mutex<InFlightFilings> {
 /// released before the DB lock is taken, so the two are never nested in either order. A poisoned
 /// registry fails the filing loudly instead of silently planning without reservations (which is
 /// exactly how two tracks would end up sharing one destination).
-fn reserved_dests() -> Result<HashSet<String>, String> {
+fn reserved_dests() -> Result<crate::library::Reservations, String> {
     match inflight().lock() {
         Ok(g) => Ok(g.dests.clone()),
         Err(e) => {
@@ -493,14 +493,16 @@ fn reserve_filing(track_id: i64, source: &str, dest: &str) -> Result<(), String>
             // plan (the lock + `plan_file`'s own I/O sit in between), so two concurrent filings of
             // two different tracks reconciling to the same name can both plan onto it. Refuse
             // rather than let two encodes write the same path — and give the track back.
-            if !g.dests.insert(dest.to_string()) {
+            // Clés sans la casse (#79) : deux destinations qui ne diffèrent que par elle sont UN
+            // fichier sur NTFS et APFS.
+            if !g.dests.insert(dest) {
                 g.tracks.remove(&track_id);
                 log::error!(
                     "file_track: destination already claimed by another in-flight filing: {dest}"
                 );
                 return Err("destination déjà réservée par une conversion en cours".to_string());
             }
-            g.sources.insert(source.to_string());
+            g.sources.insert(source);
             Ok(())
         }
         Err(e) => {
@@ -931,7 +933,7 @@ fn run_file_batch(
     // files are not on disk yet either, so a plain empty set would let this batch plan straight
     // onto one of them. A poisoned registry is logged and the batch continues with what it can
     // reserve on its own — bailing out of an already-launched batch would be worse.
-    let mut reserved: HashSet<String> = reserved_dests().unwrap_or_default();
+    let mut reserved: crate::library::Reservations = reserved_dests().unwrap_or_default();
     // The claims THIS batch publishes into the shared registry, released in one place once phase 3
     // is over (see the end of this function). Kept as a side list rather than a field on
     // `PlannedJob` so a job cancelled before any worker popped it is released too, and so a claim
@@ -1018,7 +1020,7 @@ fn run_file_batch(
         }
         // Reserve this dest so a later plan for a same-named track bumps past it (the file isn't
         // written until the concurrent phase 2 below).
-        reserved.insert(plan.dest_path().to_string());
+        reserved.insert(plan.dest_path());
         jobs.push(PlannedJob { idx, id, plan });
     }
 
@@ -1835,6 +1837,31 @@ mod tests {
         assert!(is_filing_inflight(b).is_ok_and(|v| !v));
         release_filing(a, "C:/nowhere/reserve-filing-dest-collision.flac", dest);
         assert!(is_filing_inflight(a).is_ok_and(|v| !v));
+    }
+
+    /// #79 : deux pistes dont les destinations ne diffèrent que par la CASSE visent un seul fichier
+    /// sur NTFS et APFS — la seconde réservation est refusée, et la source se reconnaît aussi dans
+    /// une autre casse (le watcher peut rapporter le chemin autrement).
+    #[test]
+    fn a_destination_differing_only_by_case_is_already_claimed() {
+        let (a, b) = (-7901i64, -7902i64);
+        let src = "C:/nowhere/Case-Collision-Source.flac";
+        assert_eq!(
+            reserve_filing(a, src, "C:/nowhere/Larry Heard - Can You Feel It.aiff"),
+            Ok(())
+        );
+        let err = reserve_filing(
+            b,
+            "C:/nowhere/case-collision-other.flac",
+            "C:/nowhere/LARRY HEARD - CAN YOU FEEL IT.aiff",
+        )
+        .expect_err("une destination qui ne diffère que par la casse doit être refusée");
+        assert_ne!(err, ALREADY_FILING.to_string());
+        assert!(is_path_in_flight("C:/nowhere/case-collision-source.FLAC"));
+        release_filing(a, src, "C:/nowhere/Larry Heard - Can You Feel It.aiff");
+        assert!(!is_path_in_flight(
+            "C:/nowhere/LARRY HEARD - CAN YOU FEEL IT.aiff"
+        ));
     }
 
     /// #78 : le watcher lit ce registre pour ne jamais agir sur un fichier en cours de rangement —

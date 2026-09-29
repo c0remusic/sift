@@ -399,6 +399,51 @@ pub(crate) fn same_path(a: &Path, b: &Path) -> bool {
     }
 }
 
+/// La clé sous laquelle un chemin se RÉSERVE — destinations et sources d'un rangement en vol — et
+/// sous laquelle on demande s'il l'est. Insensible à la casse : NTFS et APFS, les systèmes de
+/// fichiers par défaut des deux cibles de Sift, le sont, et deux destinations qui ne diffèrent que
+/// par la casse y désignent UN seul fichier. Sous Windows, `/` et `\` se valent aussi.
+///
+/// #79 : les réservations se comparaient à l'octet. Deux pistes d'un même Lot, taguées « Larry
+/// Heard - Can You Feel It » et « LARRY HEARD - CAN YOU FEEL IT », recevaient deux destinations
+/// « distinctes » pour un seul fichier : le second `rename` écrasait le premier fichier rangé, sans
+/// corbeille, et deux lignes `filed` pointaient le même contenu.
+///
+/// Compromis assumé, relevé par la revue de #79 : la clé confond PLUS que certains disques. Sur un
+/// volume sensible à la casse (APFS « Case-sensitive », dossier Windows marqué sensible) et pour
+/// quelques paires Unicode que NTFS distingue (ẞ/ß, K Kelvin/k — mesuré), deux fichiers distincts
+/// se voient réservés ensemble : le second reçoit un « (2) » de trop. L'erreur va toujours du côté
+/// sans perte. À l'inverse, la clé ne normalise pas l'Unicode (NFC/NFD), qu'APFS confond : deux
+/// graphies d'un même nom accentué restent deux clés — écart préexistant, hors de #79.
+fn reservation_key(path: &str) -> String {
+    let p = if cfg!(windows) {
+        path.replace('/', "\\")
+    } else {
+        path.to_string()
+    };
+    p.to_lowercase()
+}
+
+/// Les chemins tenus par des rangements en vol : destinations pas encore écrites, sources pas
+/// encore relâchées. Clés `reservation_key`, calculées ICI et nulle part ailleurs : le type ne
+/// prend que des chemins bruts, si bien qu'aucun appelant ne peut réserver ou interroger sans la
+/// normalisation (#79 — une clé à normaliser à la main en chaque site en laissait un l'oublier).
+#[derive(Debug, Clone, Default)]
+pub struct Reservations(std::collections::HashSet<String>);
+
+impl Reservations {
+    /// Réserve `path`. `false` s'il l'était déjà, sous cette casse ou une autre.
+    pub fn insert(&mut self, path: &str) -> bool {
+        self.0.insert(reservation_key(path))
+    }
+    pub fn remove(&mut self, path: &str) -> bool {
+        self.0.remove(&reservation_key(path))
+    }
+    pub fn contains(&self, path: &str) -> bool {
+        self.0.contains(&reservation_key(path))
+    }
+}
+
 /// Return a path that does not already exist, appending " (N)" before the extension when
 /// the given path is taken. Used so filing never overwrites an existing file. `ignore` is an
 /// optional "self" path that does NOT count as a collision — pass the source file when filing
@@ -427,6 +472,23 @@ pub fn ensure_unique(path: &Path, ignore: Option<&Path>) -> PathBuf {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// #79 : une réservation tient le même fichier sous une autre casse — et, sous Windows, sous
+    /// l'autre séparateur (un chemin venu du front peut porter des `/`).
+    #[test]
+    fn a_reservation_holds_the_same_file_under_another_case_or_separator() {
+        let mut r = Reservations::default();
+        assert!(r.insert("C:/Music/House/Larry Heard - Can You Feel It.aiff"));
+        assert!(r.contains("C:/MUSIC/house/LARRY HEARD - CAN YOU FEEL IT.AIFF"));
+        assert!(
+            !r.insert("c:/music/house/larry heard - can you feel it.aiff"),
+            "déjà réservé"
+        );
+        #[cfg(windows)]
+        assert!(r.contains(r"C:\Music\House\Larry Heard - Can You Feel It.aiff"));
+        assert!(r.remove("C:/music/HOUSE/Larry Heard - Can You Feel It.aiff"));
+        assert!(!r.contains("C:/Music/House/Larry Heard - Can You Feel It.aiff"));
+    }
 
     /// Mirrors shared/contracts.ts's `LibraryTrack`. Exhaustive destructure (no `..`): fails to
     /// compile if a field is added/removed/renamed on the Rust struct — the forcing function to
