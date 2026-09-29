@@ -1,41 +1,11 @@
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import { esc } from "./dom";
+import { lang } from "./i18n";
 import { T } from "./i18n/updater";
+import { summariseNotes } from "./update-notes";
 
 const BANNER_ID = "sift-update-banner";
-
-/** Longueur au-delà de laquelle le résumé est coupé. La bannière est une ligne : au-delà elle
- *  pousse les deux boutons hors de la fenêtre sur un écran étroit — le défaut que `fix(updater):
- *  keep the update banner from clipping on narrow windows` a déjà corrigé une fois. */
-const NOTES_MAX_CHARS = 90;
-
-/** Première ligne utile des notes de version, ramenée à une phrase courte.
- *
- *  Les notes sont du Markdown (section de `CHANGELOG.md`) : on ne le rend PAS — la bannière
- *  n'est pas un lecteur de changelog, et rendre du Markdown venu du réseau ouvrirait une surface
- *  d'injection pour économiser une ligne de texte. On prend le premier titre de sous-section, ou
- *  à défaut la première ligne de prose, débarrassée de ses marqueurs.
- *
- *  Retourne `""` quand il n'y a rien de présentable — l'appelant n'affiche alors rien du tout,
- *  plutôt qu'un espace vide ou un tiret orphelin. */
-function summariseNotes(body: string | undefined): string {
-  if (!body) return "";
-  for (const raw of body.split(/\r?\n/)) {
-    const line = raw
-      .trim()
-      .replace(/^#{1,6}\s*/, "") // titre Markdown
-      .replace(/^[-*]\s+/, "") // puce
-      .replace(/\*\*/g, "") // gras
-      .replace(/`/g, "")
-      .trim();
-    // `---` sépare le pied de page d'installation : tout ce qui suit n'est pas un changement.
-    if (line === "---") return "";
-    if (!line) continue;
-    return line.length > NOTES_MAX_CHARS ? `${line.slice(0, NOTES_MAX_CHARS - 1).trimEnd()}…` : line;
-  }
-  return "";
-}
 
 function renderBanner(update: Update): void {
   document.getElementById(BANNER_ID)?.remove();
@@ -50,7 +20,7 @@ function renderBanner(update: Update): void {
   //
   // Tronqué : la bannière est une barre, pas un écran de notes. Le changelog complet vit sur la
   // page de la release, et le lire n'est pas ce qu'on demande à quelqu'un avant d'installer.
-  const notes = summariseNotes(update.body);
+  const notes = summariseNotes(update.body, lang());
   const t = T();
   el.innerHTML =
     `<span>${t.disponible(esc(update.version))}` +

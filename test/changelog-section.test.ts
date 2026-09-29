@@ -13,6 +13,7 @@
 import { describe, expect, it } from "vitest";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { bilingualProblem, sectionOf } from "../scripts/changelog-lib.mjs";
 
 /** Première version réellement présente dans CHANGELOG.md — le test suit le fichier plutôt que
  *  d'épingler un numéro qui périmerait à la release suivante. */
@@ -78,5 +79,51 @@ describe("notes de release", () => {
     // Le fail-fast est le comportement critique : une section manquante doit faire ÉCHOUER la
     // release, sinon chaque installation existante reçoit un `notes` vide sans que rien ne le dise.
     expect(() => notes("v99.99.99")).toThrow();
+  });
+
+  it("donne aussi l'installation en anglais, pour l'interface anglaise (#75)", () => {
+    const sortie = notes(premiereVersion());
+    expect(sortie).toContain("### Installation (English)");
+    expect(sortie).toContain("does not install");
+    expect(sortie).toContain("xattr -dr com.apple.quarantine");
+  });
+});
+
+// #75 : l'interface existe aussi en anglais, et la bannière de mise à jour affiche les notes dans
+// la langue de l'app. Une version publiée après la 0.1.3 sans ses deux moitiés fait ÉCHOUER la
+// release : `latest.json` ne se réédite pas après le build.
+describe("notes bilingues", () => {
+  const section = (corps: string) => sectionOf(`## v0.1.4\n\n${corps}\n\n## v0.1.3\n\nx`, "v0.1.4")!;
+  const BONNE = "### Français\n\n#### Revue\n\n- a\n\n### English\n\n#### Review\n\n- a";
+
+  it("une section bien formée passe, et s'arrête à la version suivante", () => {
+    expect(section(BONNE)).not.toContain("## v0.1.3");
+    expect(bilingualProblem("v0.1.4", section(BONNE))).toBeNull();
+  });
+
+  it("refuse une section en français seul", () => {
+    expect(bilingualProblem("v0.1.4", section("### Revue\n\n- a"))).toMatch(/### English/);
+  });
+
+  it("refuse l'anglais avant le français", () => {
+    const inverse = "### English\n\n- a\n\n### Français\n\n- a";
+    expect(bilingualProblem("v0.1.4", section(inverse))).toMatch(/AVANT/);
+  });
+
+  it("refuse une moitié vide", () => {
+    expect(bilingualProblem("v0.1.4", section("### Français\n\n### English\n\n- a"))).toMatch(/vide/);
+    expect(bilingualProblem("v0.1.4", section("### Français\n\n- a\n\n### English"))).toMatch(/vide/);
+  });
+
+  it("laisse les versions déjà publiées en français seul", () => {
+    expect(bilingualProblem("v0.1.3", "### Apparence\n\n- a")).toBeNull();
+    expect(bilingualProblem("v0.0.9", "- a")).toBeNull();
+  });
+
+  it("compare les versions en nombres, pas en texte", () => {
+    // « v0.1.10 » < « v0.1.3 » en ordre de chaînes : une comparaison textuelle exempterait la
+    // dixième version de la règle.
+    expect(bilingualProblem("v0.1.10", "- a")).not.toBeNull();
+    expect(bilingualProblem("v1.0.0", "- a")).not.toBeNull();
   });
 });

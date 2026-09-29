@@ -81,6 +81,13 @@ export const STEP_FAILED_PREFIX = "FAILED:";
  * also runs `sanitize()`; never re-implement either in TS — call `previewFilename` instead. */
 export const DEFAULT_FILENAME_TEMPLATE = "{artist} - {title}{version}";
 
+/** The headings that open each half of a bilingual `CHANGELOG.md` version section (#75). A
+ * protocol, not prose: `scripts/changelog-lib.mjs` (`HEADING_FR` / `HEADING_EN`) fails a release
+ * whose section lacks them, and the update banner (`frontend/update-notes.ts`) looks for them to
+ * show the half in the interface language. The two sides MUST stay identical, held by
+ * `test/update-notes.test.ts`. */
+export const CHANGELOG_LANG_HEADINGS = { fr: "### Français", en: "### English" } as const;
+
 export interface AppInfo {
   name: string;
   version: string;

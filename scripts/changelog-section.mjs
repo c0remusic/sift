@@ -10,6 +10,7 @@
 import { readFile } from "node:fs/promises";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { bilingualProblem, sectionOf } from "./changelog-lib.mjs";
 
 const tag = process.argv[2];
 if (!tag) {
@@ -20,12 +21,8 @@ if (!tag) {
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const md = await readFile(join(root, "CHANGELOG.md"), "utf8");
 
-// Les sections de version sont les titres de NIVEAU 2 (`## vX.Y.Z`) et rien d'autre : les
-// sous-titres d'une section sont en niveau 3, donc ils ne peuvent pas la terminer par accident.
-const lines = md.split(/\r?\n/);
-const isVersionHeading = (l) => /^## v\d+\.\d+\.\d+\s*$/.test(l);
-const start = lines.findIndex((l) => l.trim() === `## ${tag}`);
-if (start === -1) {
+const body = sectionOf(md, tag);
+if (body === null) {
   console.error(
     `CHANGELOG.md n'a pas de section "## ${tag}". ` +
       `L'ajouter avant de publier ce tag — les notes de version ne s'inventent pas au build.`,
@@ -33,21 +30,16 @@ if (start === -1) {
   process.exit(1);
 }
 
-let end = lines.length;
-for (let i = start + 1; i < lines.length; i++) {
-  if (isVersionHeading(lines[i])) {
-    end = i;
-    break;
-  }
-}
-
-const body = lines
-  .slice(start + 1, end)
-  .join("\n")
-  .trim();
-
 if (!body) {
   console.error(`La section "## ${tag}" de CHANGELOG.md est vide.`);
+  process.exit(1);
+}
+
+// Même fail-fast que pour une section absente : des notes en français seul arriveraient dans la
+// bannière d'une interface anglaise, et `latest.json` ne se réédite pas après le build (#75).
+const bilingual = bilingualProblem(tag, body);
+if (bilingual) {
+  console.error(bilingual);
   process.exit(1);
 }
 
@@ -118,6 +110,36 @@ Le manuel — vocabulaire, les huit écrans, le clavier, et ce que la détection
 - en ligne, dans le design de l'app : https://sift-music.vercel.app/manuel.html
 - en PDF, dans le design de l'app : https://github.com/c0remusic/sift/releases/download/${tag}/manuel.pdf
 - en Markdown : https://github.com/c0remusic/sift/blob/main/docs/manuel.md
+
+### Installation (English)
+
+These builds are not signed: the system warns on first launch. Only once.
+
+**Download a single file, depending on the machine:**
+
+| machine | file |
+|---|---|
+| Windows | \`Sift_<version>_x64-setup.exe\` |
+| Apple Silicon Mac | \`Sift_<version>_aarch64.dmg\` |
+| Intel Mac | \`Sift_<version>_x64.dmg\` |
+
+Everything else in the list is for automatic updates and **does not install**:
+\`.app.tar.gz\`, \`.msi\`, the \`.sig\` files, \`latest.json\`. The \`.app.tar.gz\` is the trap — it
+is LARGER than the \`.dmg\`, so it looks like the right one.
+
+**Windows** — SmartScreen shows "Windows protected your PC": click **More info**, then
+**Run anyway**.
+
+**macOS** — open the \`.dmg\`, drag Sift into Applications, then depending on the message:
+
+- "unidentified developer": **System Settings > Privacy & Security**, scroll down to the message
+  about Sift, click **Open Anyway**.
+- "Sift is damaged and can't be opened": this message offers NO "Open Anyway" button. In
+  Terminal — the \`-r\` is required, an \`.app\` is a folder:
+  \`xattr -dr com.apple.quarantine /Applications/Sift.app\`
+  If the message persists: \`codesign --force --deep --sign - /Applications/Sift.app\`
+
+The manual is in French for now: https://sift-music.vercel.app/manuel.html
 `;
 
 process.stdout.write(body + "\n" + FOOTER);

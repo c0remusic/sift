@@ -9,6 +9,11 @@ détails techniques vivent dans les messages de commit.
 Une section manquante fait **échouer** le build de release plutôt que publier des notes vides.
 Le titre de section doit être exactement `## vX.Y.Z` pour que l'extraction le trouve.
 
+**Toute version après la 0.1.3 est bilingue** (issue #75) : l'interface existe aussi en anglais,
+et la bannière de mise à jour montre les notes dans la langue de l'app. La section porte
+`### Français` puis `### English`, chacun suivi de ses rubriques en `####`. Une moitié manquante
+ou vide fait échouer la release, comme une section absente.
+
 ## v0.1.3
 
 ### Apparence
