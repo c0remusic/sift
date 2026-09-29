@@ -794,23 +794,42 @@ struct ReleaseEnvelope {
 /// track back to `pending` (folder cleared) and mark the rows `undone`. Blocked if the
 /// batch has no live rows, or if a newer live action on the same track exists outside it.
 pub fn revert_batch(conn: &Connection, batch_id: &str) -> Result<(), RevertError> {
-    // Load this batch's live rows, newest first.
+    // TOUTES les lignes du lot, défaites comprises, plus récentes d'abord — et parmi elles les
+    // seules vivantes, qui restent à défaire.
+    //
+    // Deux usages, deux ensembles (#80). Ce que le lot EST — un rangement ou une simple édition de
+    // tags, la piste qu'il touche, le chemin source, l'instantané d'avant — se lit sur le lot
+    // entier. Ce qui reste à DÉFAIRE se lit sur les lignes vivantes. Tout se lisait sur les
+    // vivantes jusqu'au 2026-09-29 : la reprise d'une annulation partielle d'un rangement conforme
+    // (le `move` défait, puis `restore_tags` en échec) ne voyait plus que le `tag_edit`. Elle
+    // prenait le lot pour une édition de tags : l'identification était écrasée par les tags d'avant
+    // le rangement, et la piste restait `filed`, `path` sur une destination vide, pendant que le
+    // watcher recréait une ligne `pending` à la source.
     let mut stmt = conn.prepare(
-        "SELECT id, track_id, type, from_path, to_path, meta FROM actions
-         WHERE batch_id=?1 AND undone=0 ORDER BY id DESC",
+        "SELECT id, track_id, type, from_path, to_path, meta, undone FROM actions
+         WHERE batch_id=?1 ORDER BY id DESC",
     )?;
-    let rows: Vec<ActionRow> = stmt
+    let all: Vec<(ActionRow, bool)> = stmt
         .query_map(params![batch_id], |r| {
             Ok((
-                r.get(0)?,
-                r.get(1)?,
-                r.get(2)?,
-                r.get(3)?,
-                r.get(4)?,
-                r.get(5)?,
+                (
+                    r.get(0)?,
+                    r.get(1)?,
+                    r.get(2)?,
+                    r.get(3)?,
+                    r.get(4)?,
+                    r.get(5)?,
+                ),
+                r.get::<_, i64>(6)? != 0,
             ))
         })?
         .collect::<rusqlite::Result<_>>()?;
+    let batch: Vec<&ActionRow> = all.iter().map(|(row, _)| row).collect();
+    let rows: Vec<&ActionRow> = all
+        .iter()
+        .filter(|(_, undone)| !undone)
+        .map(|(row, _)| row)
+        .collect();
 
     // `rows` vide et `max()` à None sont le même cas : un lot sans ligne vivante. Un seul garde
     // les couvre donc, avec le même message. Il reste un `else { return Err(...) }` : c'est
@@ -820,13 +839,14 @@ pub fn revert_batch(conn: &Connection, batch_id: &str) -> Result<(), RevertError
             "no live actions for batch {batch_id}"
         )));
     };
-    let track_id = rows.iter().find_map(|r| r.1);
+    let track_id = batch.iter().find_map(|r| r.1);
 
     // Chemin SOURCE de la piste, pour la restauration de `tracks.path` plus bas : le `from_path` de
-    // la ligne `move`/`convert` la PLUS ANCIENNE du lot (`rows` est trié id DESC, d'où le `.rev()`).
-    // C'est la seule copie du chemin d'origine une fois que `filing::commit_file` a repointé `path`
-    // sur la destination — le journal, lui, porte toujours les deux bouts.
-    let source_path: Option<String> = rows
+    // la ligne `move`/`convert` la PLUS ANCIENNE du lot (trié id DESC, d'où le `.rev()`). C'est la
+    // seule copie du chemin d'origine une fois que `filing::commit_file` a repointé `path` sur la
+    // destination — le journal, lui, porte toujours les deux bouts. Lu sur le lot ENTIER : cette
+    // ligne est justement la première défaite, et une reprise ne la voit plus parmi les vivantes.
+    let source_path: Option<String> = batch
         .iter()
         .rev()
         .find(|(_, _, kind, _, _, _)| matches!(kind.as_str(), "move" | "convert"))
@@ -846,12 +866,31 @@ pub fn revert_batch(conn: &Connection, batch_id: &str) -> Result<(), RevertError
             ));
         }
     }
+    // …et sur le FICHIER source, quelle que soit la piste qui porte l'action (revue de #80). Entre un
+    // premier essai partiel et sa reprise, le fichier est déjà revenu à la source, et le watcher a
+    // pu y créer une autre ligne — sur laquelle l'utilisateur a pu travailler (une release
+    // appliquée). La reprise évince cette ligne plus bas : sans cette garde, l'identification partait
+    // en cascade et son action restait vivante, orpheline, prête à regraver des tags au prochain
+    // Ctrl+Z. Il faut d'abord défaire ce travail-là, comme pour une action plus récente sur la piste.
+    if let Some(src) = &source_path {
+        let newer: i64 = conn.query_row(
+            "SELECT count(*) FROM actions
+             WHERE undone=0 AND batch_id<>?1 AND id>?2 AND (from_path=?3 OR to_path=?3)",
+            params![batch_id, max_id, src],
+            |r| r.get(0),
+        )?;
+        if newer > 0 {
+            return Err(RevertError::Blocked(
+                "a newer action on this file must be undone first".into(),
+            ));
+        }
+    }
 
     // Reverse each row's filesystem effect (newest first), marking each row undone AS SOON AS its
     // revert succeeds. This keeps a PARTIAL failure (an FS error on a later row) consistent and
     // RE-TRYABLE: the rows already reverted stay marked undone, so a re-run resumes with only the
     // still-live rows instead of blocking on an already-restored file. Fail-fast on the FS error.
-    for (id, _tid, kind, from_path, to_path, meta) in &rows {
+    for (id, _tid, kind, from_path, to_path, meta) in rows.iter().copied() {
         if let Err(e) = revert_one_fs(
             kind,
             from_path.as_deref(),
@@ -883,7 +922,8 @@ pub fn revert_batch(conn: &Connection, batch_id: &str) -> Result<(), RevertError
     // block for such a batch. (A filing batch DOES journal a tag_edit — filing.rs:497 pushes one
     // for every conformant filing — but it also journals a `move`, so `tag_only` is false for it
     // and the guard below still behaves as intended.)
-    let tag_only = rows
+    // Sur le lot ENTIER (#80) : un rangement dont le `move` est déjà défait reste un rangement.
+    let tag_only = batch
         .iter()
         .all(|(_, _, kind, _, _, _)| kind.as_str() == "tag_edit");
     // …but since 2026-09-23 a tag edit ALSO moves the `metadata` row an identified track reopens
@@ -891,7 +931,7 @@ pub fn revert_batch(conn: &Connection, batch_id: &str) -> Result<(), RevertError
     // edit: shown again on reopen, and filed by a batch. The row follows the restored file — the
     // snapshot of the OLDEST row of the batch, which is what the file holds now.
     if tag_only {
-        if let (Some(tid), Some(meta)) = (track_id, rows.iter().rev().find_map(|r| r.5.clone())) {
+        if let (Some(tid), Some(meta)) = (track_id, batch.iter().rev().find_map(|r| r.5.clone())) {
             // Un changement de release (#68, `ipc_identify::apply_release`) range la release
             // d'AVANT à côté des tags, sous `release` : elle revient telle quelle, lien Discogs,
             // pochette et genres compris. Sans elle, la ligne suit seulement le fichier restauré.
@@ -916,7 +956,7 @@ pub fn revert_batch(conn: &Connection, batch_id: &str) -> Result<(), RevertError
         }
         // Restaurer des tags réécrit le fichier : même remise à jour que l'écriture elle-même,
         // sinon le watcher relance une analyse complète (issue #73).
-        if let (Some(tid), Some(path)) = (track_id, rows.iter().find_map(|r| r.3.clone())) {
+        if let (Some(tid), Some(path)) = (track_id, batch.iter().find_map(|r| r.3.clone())) {
             crate::scanner::restamp_after_own_write(conn, tid, &path)?;
         }
     }
@@ -931,9 +971,12 @@ pub fn revert_batch(conn: &Connection, batch_id: &str) -> Result<(), RevertError
                 Some(src) => {
                     // Symétrique de la garde de collision de `commit_file` : le watcher a pu
                     // ré-insérer une ligne `pending` au chemin source dès que `revert_one_fs` y a
-                    // remis le fichier, quelques microsecondes plus tôt. Sans cette éviction,
+                    // remis le fichier — quelques microsecondes plus tôt, ou bien plus tôt quand ce
+                    // passage est la REPRISE d'une annulation partielle (#80). Sans cette éviction,
                     // l'`UPDATE` violerait `UNIQUE(path)` et l'annulation échouerait ALORS QUE les
-                    // effets disque sont déjà défaits — l'état le plus difficile à rattraper.
+                    // effets disque sont déjà défaits — l'état le plus difficile à rattraper. La
+                    // ligne évincée ne porte aucun travail vivant : la garde sur le fichier source,
+                    // plus haut, a refusé la reprise s'il en existait.
                     conn.execute(
                         "DELETE FROM tracks WHERE path=?1 AND id<>?2 AND status='pending'",
                         params![src, tid],
@@ -2068,6 +2111,189 @@ mod tests {
             status, "pending",
             "track reset once the batch is fully reverted"
         );
+    }
+
+    /// #80 : la reprise d'une annulation PARTIELLE d'un rangement conforme. Le journal porte
+    /// `tag_edit` (id bas) puis `move` (id haut) ; le premier essai défait le `move`, puis
+    /// `restore_tags` échoue. La reprise ne voit plus que le `tag_edit` vivant — elle doit pourtant
+    /// finir un RANGEMENT : piste `pending` à la source, identification gardée, ligne fantôme que le
+    /// watcher a recréée à la source évincée.
+    #[test]
+    fn revert_batch_resume_of_a_conformant_filing_stays_a_filing_revert() {
+        let Some(src) = fixture("real_320.mp3") else {
+            eprintln!("skip: no fixture");
+            return;
+        };
+        let conn = db();
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("in/track.mp3");
+        let dest = dir.path().join("House/Disc - Id.mp3");
+        std::fs::create_dir_all(source.parent().unwrap()).unwrap();
+        std::fs::create_dir_all(dest.parent().unwrap()).unwrap();
+        std::fs::copy(&src, &source).unwrap();
+        let (source_s, dest_s) = (source.to_str().unwrap(), dest.to_str().unwrap());
+        crate::tagging::write_tags_full(source_s, "Orig", "Before", None, None, &[], None).unwrap();
+        let before = crate::tagging::read_tags_full(source_s).unwrap();
+
+        // Le rangement tel que `execute_file` + `commit_file` le laissent : tags gravés, fichier
+        // déplacé, piste `filed` sur la destination, identification en base.
+        crate::tagging::write_tags_full(source_s, "Disc", "Id", None, None, &[], None).unwrap();
+        std::fs::rename(&source, &dest).unwrap();
+        conn.execute(
+            "INSERT INTO tracks(path, status, folder, target_format, confidence)
+             VALUES(?1, 'filed', 'House', 'mp3_320', 'green')",
+            params![dest_s],
+        )
+        .unwrap();
+        let tid = conn.last_insert_rowid();
+        conn.execute(
+            "INSERT INTO metadata(track_id, artist, title, discogs_release_id)
+             VALUES(?1, 'Disc', 'Id', 'R1')",
+            params![tid],
+        )
+        .unwrap();
+        // Instantané illisible au premier essai : `restore_tags` échoue APRÈS que le `move` a été
+        // défait — la place d'un fichier tenu en écriture.
+        record_with_meta(
+            &conn,
+            "cf",
+            Some(tid),
+            "tag_edit",
+            Some(source_s),
+            Some(source_s),
+            Some("{"),
+        )
+        .unwrap();
+        record(&conn, "cf", Some(tid), "move", Some(source_s), Some(dest_s)).unwrap();
+
+        assert!(matches!(
+            revert_batch(&conn, "cf"),
+            Err(RevertError::Blocked(_))
+        ));
+        assert!(source.exists(), "le move est défait au premier essai");
+        // Le watcher voit `Create(source)` et recrée une ligne `pending` sans identification.
+        conn.execute(
+            "INSERT INTO tracks(path, status) VALUES(?1, 'pending')",
+            params![source_s],
+        )
+        .unwrap();
+        let ghost = conn.last_insert_rowid();
+
+        // L'obstacle levé, la reprise.
+        conn.execute(
+            "UPDATE actions SET meta=?1 WHERE batch_id='cf' AND type='tag_edit'",
+            params![serde_json::to_string(&before).unwrap()],
+        )
+        .unwrap();
+        revert_batch(&conn, "cf").unwrap();
+
+        let (status, path, folder): (String, String, Option<String>) = conn
+            .query_row(
+                "SELECT status, path, folder FROM tracks WHERE id=?1",
+                params![tid],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            (status.as_str(), path.as_str(), folder),
+            ("pending", source_s, None),
+            "la piste doit revenir en attente à la source, comme après une annulation d'un trait"
+        );
+        let ghosts: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM tracks WHERE id=?1",
+                params![ghost],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(ghosts, 0, "la ligne fantôme du watcher est évincée");
+        let (artist, title, release): (String, String, String) = conn
+            .query_row(
+                "SELECT artist, title, discogs_release_id FROM metadata WHERE track_id=?1",
+                params![tid],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            (artist.as_str(), title.as_str(), release.as_str()),
+            ("Disc", "Id", "R1"),
+            "annuler un rangement GARDE l'identification"
+        );
+        assert_eq!(crate::tagging::read_tags_full(source_s).unwrap(), before);
+    }
+
+    /// Revue de #80 : entre le premier essai partiel et la reprise, l'utilisateur a travaillé sur la
+    /// ligne que le watcher a recréée à la source (une release appliquée : un `tag_edit` vivant sur
+    /// ce fichier, porté par une AUTRE piste). La reprise doit refuser sans rien toucher, au lieu
+    /// d'évincer cette ligne et son identification.
+    #[test]
+    fn revert_batch_resume_refuses_while_the_source_carries_newer_work() {
+        let conn = db();
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("track.mp3");
+        let dest = dir.path().join("House/track.mp3");
+        std::fs::write(&source, b"audio").unwrap();
+        let (source_s, dest_s) = (source.to_str().unwrap(), dest.to_str().unwrap());
+        conn.execute(
+            "INSERT INTO tracks(path, status, folder) VALUES(?1, 'filed', 'House')",
+            params![dest_s],
+        )
+        .unwrap();
+        let tid = conn.last_insert_rowid();
+        record_with_meta(
+            &conn,
+            "cf",
+            Some(tid),
+            "tag_edit",
+            Some(source_s),
+            Some(source_s),
+            Some("{}"),
+        )
+        .unwrap();
+        record(&conn, "cf", Some(tid), "move", Some(source_s), Some(dest_s)).unwrap();
+        // L'état d'un premier essai partiel : le `move` défait, le `tag_edit` encore vivant.
+        conn.execute(
+            "UPDATE actions SET undone=1 WHERE batch_id='cf' AND type='move'",
+            [],
+        )
+        .unwrap();
+        // La ligne recréée par le watcher, identifiée depuis, et son action vivante.
+        conn.execute(
+            "INSERT INTO tracks(path, status) VALUES(?1, 'pending')",
+            params![source_s],
+        )
+        .unwrap();
+        let ghost = conn.last_insert_rowid();
+        conn.execute(
+            "INSERT INTO metadata(track_id, artist, discogs_release_id) VALUES(?1, 'X', 'R2')",
+            params![ghost],
+        )
+        .unwrap();
+        record_with_meta(
+            &conn,
+            "g",
+            Some(ghost),
+            "tag_edit",
+            Some(source_s),
+            None,
+            Some("{}"),
+        )
+        .unwrap();
+
+        match revert_batch(&conn, "cf") {
+            Err(RevertError::Blocked(m)) => assert!(m.contains("file"), "{m}"),
+            other => panic!("la reprise aurait dû refuser : {other:?}"),
+        }
+        let (ghosts, status): (i64, String) = conn
+            .query_row(
+                "SELECT (SELECT count(*) FROM metadata WHERE track_id=?1),
+                        (SELECT status FROM tracks WHERE id=?2)",
+                params![ghost, tid],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(ghosts, 1, "l'identification de la ligne recréée survit");
+        assert_eq!(status, "filed", "rien n'a été touché");
     }
 
     #[test]
