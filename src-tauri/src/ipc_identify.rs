@@ -289,6 +289,8 @@ struct ReleaseWrite {
     effective: Candidate,
     /// La pochette telle qu'elle a été décidée ÉCRITE (une première identification ne vide pas).
     cover: CoverChoice,
+    /// Ce que l'écriture a RETIRÉ du fichier — Rekordbox peut encore le porter (#81).
+    removed: Vec<crate::actions::SyncField>,
 }
 
 /// Première identification — la piste n'a encore aucune release liée : ce que Discogs ne fournit
@@ -379,6 +381,7 @@ fn release_write_file(
         cover: cover_snap,
     };
     crate::tagging::restore_tags(path, &target)?;
+    let removed = removed_fields(&old_tags, &target);
     // Le fichier est écrit : un échec de relecture ici ne doit pas priver l'écriture de son
     // journal (donc de son « Rétablir »). `has_cover` n'est qu'un drapeau que la prochaine analyse
     // recalcule — on prend la valeur attendue, et on le dit dans le journal.
@@ -391,7 +394,31 @@ fn release_write_file(
         has_cover,
         effective,
         cover,
+        removed,
     })
+}
+
+/// Les champs que le fichier portait et que la cible n'a plus : `restore_tags` vient de les
+/// retirer, et Rekordbox, qui les a lus à l'import, les porte peut-être encore (#81).
+fn removed_fields(old: &TagsSnapshot, target: &TagsSnapshot) -> Vec<crate::actions::SyncField> {
+    use crate::actions::SyncField;
+    let had = |v: &Option<String>| v.as_deref().is_some_and(|s| !s.trim().is_empty());
+    let mut out = Vec::new();
+    if had(&old.label) && !had(&target.label) {
+        out.push(SyncField::Label);
+    }
+    if crate::actions::sync_year(old.year).is_some()
+        && crate::actions::sync_year(target.year).is_none()
+    {
+        out.push(SyncField::Year);
+    }
+    if had(&old.genre_joined) && !had(&target.genre_joined) {
+        out.push(SyncField::Genre);
+    }
+    if old.cover.is_some() && target.cover.is_none() {
+        out.push(SyncField::Cover);
+    }
+    out
 }
 
 /// Phase 3, sous le verrou : la base suit le fichier, et le tout se journalise en UN `tag_edit`
@@ -415,6 +442,12 @@ fn release_commit(
         CoverChoice::Set(p) => Some(p.clone()),
         _ => None,
     };
+    // #81 : la release n'a pas d'image, la pochette vient d'être retirée du fichier. Une candidate
+    // pochette de la release d'avant, restée en attente, aurait poussé l'ancienne image dans
+    // Rekordbox — lié ou non, elle n'a plus lieu d'être.
+    if matches!(cover, CoverChoice::Clear) {
+        crate::actions::drop_pending_artwork_sync(conn, track_id);
+    }
     let cover_path = match cover {
         CoverChoice::Set(p) => Some(p),
         CoverChoice::Clear => None,
@@ -448,15 +481,20 @@ fn release_commit(
     .map_err(|e| e.to_string())?;
 
     // M8 Tier 3 : mêmes détecteurs, en lecture seule, qu'`apply_tags` — un seul déchiffrement.
+    let (genre, label) = crate::actions::sanitize_genre_label(&c.styles, c.label.as_deref());
+    let values = crate::actions::MetadataSyncValues {
+        artist: Some(c.artist.clone()),
+        title: Some(crate::naming::tag_title(shown)),
+        label,
+        year: crate::actions::sync_year(c.year),
+        genre,
+        cleared: written.removed.clone(),
+        cover_set: artwork.is_some(),
+    };
+    // #81 : la mémoire de ce que Rekordbox peut garder se tient lié ou non — un lien posé plus
+    // tard doit la trouver.
+    crate::actions::record_sync_debt(conn, track_id, &values);
     if let Some(index) = crate::actions::resolve_masterdb_index_if_linked(conn) {
-        let (genre, label) = crate::actions::sanitize_genre_label(&c.styles, c.label.as_deref());
-        let values = crate::actions::MetadataSyncValues {
-            artist: Some(c.artist.clone()),
-            title: Some(crate::naming::tag_title(shown)),
-            label,
-            year: c.year,
-            genre,
-        };
         crate::actions::detect_masterdb_metadata_sync_with_index(
             conn, &index, path, track_id, &values, action_id,
         );
@@ -946,6 +984,81 @@ mod tests {
         assert_eq!(snap.has_cover, Some(false));
         assert_eq!(out.cover_path, None);
         assert!(!out.cover_failed);
+    }
+
+    /// #81 : ce que l'écriture retire du fichier, nommé pour la synchro Rekordbox — et seulement ça.
+    #[test]
+    fn removed_fields_nomme_ce_que_le_fichier_perd() {
+        use crate::actions::SyncField;
+        let old = TagsSnapshot {
+            artist: Some("A".into()),
+            title: Some("T".into()),
+            label: Some("Trax".into()),
+            year: Some(1987),
+            genre_joined: Some("House".into()),
+            cover: Some(CoverSnap {
+                mime: None,
+                bytes: vec![1],
+            }),
+        };
+        let mut target = old.clone();
+        assert!(removed_fields(&old, &target).is_empty());
+        target.label = None;
+        target.year = Some(0);
+        target.cover = None;
+        assert_eq!(
+            removed_fields(&old, &target),
+            vec![SyncField::Label, SyncField::Year, SyncField::Cover]
+        );
+        target.genre_joined = Some("  ".into());
+        assert_eq!(
+            removed_fields(&old, &target).len(),
+            4,
+            "un genre blanc est un genre vidé"
+        );
+    }
+
+    /// #81 : une release sans image retire la candidate pochette ENCORE EN ATTENTE de la release
+    /// précédente — sinon l'appliquer poussait l'ancienne image vers Rekordbox, déjà périmée.
+    #[test]
+    fn une_release_sans_image_retire_la_pochette_en_attente() {
+        let Some((_dir, conn, _path, cover)) = release_setup() else {
+            eprintln!("skip: fixture real_320.mp3 absente (gitignoree, cf. CLAUDE.md)");
+            return;
+        };
+        let a = release("A", Some("Alleviated"), Some(1986), &["Deep House"]);
+        let out = apply_release_inner(
+            &conn,
+            1,
+            &a,
+            "Mystery of Love",
+            None,
+            CoverChoice::Set(cover),
+        )
+        .unwrap();
+        let aid: i64 = conn
+            .query_row(
+                "SELECT id FROM actions WHERE batch_id=?1",
+                [&out.batch_id],
+                |r| r.get(0),
+            )
+            .unwrap();
+        conn.execute(
+            "INSERT INTO rekordbox_masterdb_artwork_syncs(action_id, track_id, rekordbox_track_id, cover_path, status)
+             VALUES(?1, 1, '1', '/cache/A.jpg', 'pending')",
+            [aid],
+        )
+        .unwrap();
+        let b = release("B", None, None, &[]);
+        apply_release_inner(&conn, 1, &b, "Mystery of Love", None, CoverChoice::Clear).unwrap();
+        let left: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM rekordbox_masterdb_artwork_syncs WHERE track_id=1",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(left, 0);
     }
 
     /// Revue de #68 : une PREMIÈRE identification ne vide rien. Ce que Discogs n'a pas — label,

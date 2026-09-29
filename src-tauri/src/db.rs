@@ -509,6 +509,24 @@ const MIGRATIONS: &[&str] = &[
       AND report_cache_ver = 14
       AND json_extract(report_json, '$.decoded_duration_sec') > 0;
     "#,
+    // v24 — les champs qu'une synchro Rekordbox doit VIDER (issue #81).
+    //
+    // Depuis #68, choisir une autre release vide du fichier et de la base ce qu'elle n'a pas :
+    // label, année, genres, pochette. Les colonnes `new_*` de v13 ne savent dire que « poser » ou
+    // (NULL) « ne pas toucher » : Rekordbox gardait donc les valeurs de l'ancienne release, en
+    // silence. Jamais une réinterprétation de NULL dans `new_*`, qui aurait changé le sens des
+    // lignes en attente existantes : deux colonnes AJOUTÉES, v13 n'est pas éditée.
+    //
+    // - `tracks.rekordbox_cleared` : la MÉMOIRE, par piste, de ce que Sift a retiré du fichier
+    //   (« label,year »). Sur `tracks` et pas sur la ligne de synchro : celle-ci meurt avec la purge
+    //   du journal à 30 jours (ON DELETE CASCADE) et n'existe pas quand Rekordbox ne connaît pas le
+    //   chemin — la revue de #81 a montré les deux pertes.
+    // - `rekordbox_masterdb_metadata_syncs.cleared_fields` : ce que la rangée ANNONCE, c'est-à-dire
+    //   la mémoire restreinte à ce que Rekordbox porte réellement au moment de la détection.
+    r#"
+    ALTER TABLE tracks ADD COLUMN rekordbox_cleared TEXT;
+    ALTER TABLE rekordbox_masterdb_metadata_syncs ADD COLUMN cleared_fields TEXT;
+    "#,
 ];
 
 /// Applies ONE migration and its `user_version` bump in a SINGLE transaction, so a batch that

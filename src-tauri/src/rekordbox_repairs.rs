@@ -469,6 +469,10 @@ pub struct PendingMetadataSync {
     pub new_label: Option<String>,
     pub new_year: Option<i64>,
     pub new_genre: Option<String>,
+    /// Les champs que Sift a retirés du fichier et que Rekordbox PORTE, lu dans `master.db` à la
+    /// détection (#81) — valeurs de `actions::SyncField::as_str`. La synchro ne les vide pas
+    /// (encore) : l'écran le dit.
+    pub cleared: Vec<String>,
     /// "pending" | "ambiguous".
     pub status: String,
     pub detected_at: String,
@@ -483,7 +487,8 @@ pub(crate) fn pending_metadata_syncs_inner(
     let mut stmt = conn
         .prepare(
             "SELECT s.id, s.track_id, t.path, s.rekordbox_track_id, s.candidate_track_ids,
-                    s.new_artist, s.new_title, s.new_label, s.new_year, s.new_genre, s.status, s.detected_at, a.session_id
+                    s.new_artist, s.new_title, s.new_label, s.new_year, s.new_genre, s.status, s.detected_at, a.session_id,
+                    s.cleared_fields
              FROM rekordbox_masterdb_metadata_syncs s
              JOIN tracks t ON t.id = s.track_id
              LEFT JOIN actions a ON a.id = s.action_id
@@ -505,6 +510,12 @@ pub(crate) fn pending_metadata_syncs_inner(
                 new_label: r.get(7)?,
                 new_year: r.get(8)?,
                 new_genre: r.get(9)?,
+                cleared: crate::actions::parse_cleared_fields(
+                    r.get::<_, Option<String>>(13)?.as_deref(),
+                )
+                .into_iter()
+                .map(|f| f.as_str().to_string())
+                .collect(),
                 status: r.get(10)?,
                 detected_at: r.get(11)?,
                 session_id: r.get(12)?,
@@ -1838,6 +1849,27 @@ mod tests {
         assert_eq!(rows[0].status, "pending");
     }
 
+    /// #81 : les champs que Rekordbox garde arrivent à l'écran, dans l'ordre canonique, et une
+    /// valeur inconnue (base écrite par une version plus récente) ne fait pas échouer la liste.
+    #[test]
+    fn pending_metadata_sync_carries_the_cleared_fields() {
+        let conn = db();
+        conn.execute(
+            "INSERT INTO tracks(path, status) VALUES('D:/a.mp3', 'filed')",
+            [],
+        )
+        .unwrap();
+        let track_id = conn.last_insert_rowid();
+        let id = seed_metadata_sync_row(&conn, track_id, "pending", Some("40000001"), None);
+        conn.execute(
+            "UPDATE rekordbox_masterdb_metadata_syncs SET cleared_fields='cover,year,zzz,label' WHERE id=?1",
+            [id],
+        )
+        .unwrap();
+        let rows = pending_metadata_syncs_inner(&conn).unwrap();
+        assert_eq!(rows[0].cleared, vec!["label", "year", "cover"]);
+    }
+
     #[test]
     fn dismiss_metadata_sync_marks_dismissed() {
         let conn = db();
@@ -2534,6 +2566,80 @@ mod tests {
             session_id,
             artist,
             title,
+        );
+    }
+
+    /// Miroir de `PendingMetadataSync` dans `shared/contracts.ts`, épinglé depuis #81, qui lui
+    /// ajoute `cleared`. Les DTO `Apply*Outcome`, `CandidateTrack` et `PlaylistDuplicate*` ne le
+    /// sont toujours pas.
+    #[test]
+    fn pending_metadata_sync_shape_matches_contracts_ts() {
+        let v = PendingMetadataSync {
+            id: 0,
+            track_id: 0,
+            sift_path: String::new(),
+            rekordbox_track_id: None,
+            candidate_track_ids: None,
+            candidate_tracks: None,
+            new_artist: None,
+            new_title: None,
+            new_label: None,
+            new_year: None,
+            new_genre: None,
+            cleared: Vec::new(),
+            status: String::new(),
+            detected_at: String::new(),
+            session_id: None,
+        };
+        let PendingMetadataSync {
+            id,
+            track_id,
+            sift_path,
+            rekordbox_track_id,
+            candidate_track_ids,
+            candidate_tracks,
+            new_artist,
+            new_title,
+            new_label,
+            new_year,
+            new_genre,
+            cleared,
+            status,
+            detected_at,
+            session_id,
+        } = v;
+        let _ = (
+            id,
+            track_id,
+            sift_path,
+            rekordbox_track_id,
+            candidate_track_ids,
+            candidate_tracks,
+            new_artist,
+            new_title,
+            new_label,
+            new_year,
+            new_genre,
+            cleared,
+            status,
+            detected_at,
+            session_id,
+        );
+    }
+
+    /// #81 : les noms de champs vidés sont un protocole que l'écran Rekordbox reconnaît.
+    #[test]
+    fn sync_fields_match_contracts_ts() {
+        const CONTRACTS_TS: &str = include_str!("../../shared/contracts.ts");
+        let list = crate::actions::SyncField::ALL
+            .iter()
+            .map(|f| format!("\"{}\"", f.as_str()))
+            .collect::<Vec<_>>()
+            .join(", ");
+        let expected = format!("export const SYNC_CLEARED_FIELDS = [{list}] as const;");
+        assert!(
+            CONTRACTS_TS.contains(&expected),
+            "shared/contracts.ts must contain {expected}"
         );
     }
 

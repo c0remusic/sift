@@ -130,10 +130,10 @@
 - L2007 — Carte de racine manquante du rail `.sift-railwarn` — remplace le bandeau `#sift-gate` supprimé ; états, survol en voile par-dessus l'ambre, rail replié ; module pur + story + vecteurs (09-02).
 - L2037 — À re-sourcer · Corbeille — ex-Écartés, deux destinations du rail, table de Rangés, inspecteur Racheter (09-08).
 - L2058 — Rekordbox — lu contre Finder › appareil et Photos › Importer : une seule synchronisation (Tout / sélection), faits à libellé aligné à droite, candidats en groupes nommés, colonne au plan de la file (09-08).
-- L2088 — Rangée de table `.lr` — grammaire Finder : fonds alternés par index, ni filet ni arrondi ni survol, colonne Format (09-10).
-- L2109 — Bandeaux de Revue `noticeBannerHtml()` — doublon, sous 320 kbps (#69) ; débit teinté du verdict, case de la confirmation du Lot ; module pur + story (09-28).
-- L2136 — Vue agrandie du spectrogramme `openSpectroEnlarged()` — par-dessus l'app, grille calculée à la taille du canevas (max-pool), trois états ; module + story (09-29, #72).
-- L2160 — Ligne de la release choisie `chosenRowHtml()` — contrôle « N autres » qui rouvre la liste de la session sans requête, release appliquée sélectionnée, Échap sans écrire ; module pur + story (09-29, #68).
+- L2089 — Rangée de table `.lr` — grammaire Finder : fonds alternés par index, ni filet ni arrondi ni survol, colonne Format (09-10).
+- L2110 — Bandeaux de Revue `noticeBannerHtml()` — doublon, sous 320 kbps (#69) ; débit teinté du verdict, case de la confirmation du Lot ; module pur + story (09-28).
+- L2137 — Vue agrandie du spectrogramme `openSpectroEnlarged()` — par-dessus l'app, grille calculée à la taille du canevas (max-pool), trois états ; module + story (09-29, #72).
+- L2161 — Ligne de la release choisie `chosenRowHtml()` — contrôle « N autres » qui rouvre la liste de la session sans requête, release appliquée sélectionnée, Échap sans écrire ; module pur + story (09-29, #68).
 
 ## Ligne de queue — `.qi` (`styles.css:1127-1214`, revérifié au grep le 2026-08-27)
 
@@ -2072,6 +2072,7 @@ périmés pour la forme, exacts pour les `data-sift` de résolution (`mdb/mds/ma
 | master.db : | état, dérive | « Lisible » ou `masterdb_error` en `.rkb-warn` ; « Dérive : aucune » (`.rkb-fact-muted`) ou la phrase entière en `.rkb-warn` — plus de bandeau |
 | En attente : | groupes | `.rkb-group-hd` « Métadonnées (1) », « · N à choisir » ; `.rkb-cand` (`--row-h`, `sel` = `--overlay-hover`, `aria-checked`) : `.sift-batch-ck` · `.rkb-cand-piste` (« Artiste — Titre » via `trackLabel`, repli nom de fichier ; DTO Rust enrichis `artist`/`title` depuis `metadata`) · `.rkb-cand-ecart` (secondaire) · `.rkb-cand-err` ; `data-sift` mdbpick / mdspick / maspick / dedpick (`data-key`) |
 | Ambigu | rangée sans case | `.rkb-cand--amb` (`data-rkbamb`) : écart « — à choisir » (`.rkb-warn`), `.rkb-cand-choices` un `.sift-meta-ident-btn` « Choisir — … » par piste (`mdb/mds/masresolve`) |
+| Champs que Rekordbox garde (#81, 09-29) | signal en tête de l'écart | `.rkb-cand-cleared`, `--color-text-warning` : « Rekordbox garde : label, année » AVANT les valeurs (l'écart est tronqué à droite, la fin part la première). Rendu par `metadataEcartHtml` (`rekordbox-ecart.ts`, module pur, `test/rekordbox-ecart.test.ts`) ; `candidateRowHtml` y vit aussi. Story `rekordbox-ecart.stories.ts` (« Rekordbox/Rangée Métadonnées »). La rangée se coche et s'applique comme les autres : le reste part, les champs vidés restent ceux de Rekordbox. N'est annoncé que ce que Rekordbox PORTE (index `master.db`, `RekordboxCarries`) parmi la mémoire par piste de ce que Sift a retiré (`tracks.rekordbox_cleared`). |
 | Section en erreur | dans son groupe | `.rkb-section-err` : cause connue ou « Impossible de charger — réessaie plus tard. » ; comptée dans « N sections sans réponse » |
 | Rien en attente | phrase | « Rien — le XML lié est à jour. » / « cette section est à jour. » (`.rkb-fact-muted`) |
 | Clic droit | Ignorer | `openContextMenu`, une entrée `danger` (`dismiss_*`) ; aucune sur un doublon de playlist |

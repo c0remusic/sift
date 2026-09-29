@@ -1111,6 +1111,25 @@ pub fn commit_file(
                 actions::maybe_repair_rekordbox_xml(conn, fs.kind, Some(&fs.from), Some(&fs.to))
             }
         }
+        // Les valeurs que le rangement vient de graver — la synchro et la mémoire des champs vidés
+        // (#81) les lisent, et la mémoire se tient même sans Rekordbox lié.
+        let values = matches!(fs.kind, "move" | "convert").then(|| {
+            let (genre, label) =
+                actions::sanitize_genre_label(&plan.extras.genres, plan.extras.label.as_deref());
+            actions::MetadataSyncValues {
+                artist: Some(plan.canonical.artist.clone()),
+                title: Some(naming::tag_title(&plan.canonical)),
+                label,
+                year: actions::sync_year(plan.extras.year),
+                genre,
+                // Le rangement écrit par `write_tags_full`, qui ne fait que poser.
+                cleared: Vec::new(),
+                cover_set: plan.extras.cover_path.is_some(),
+            }
+        });
+        if let Some(v) = &values {
+            actions::record_sync_debt(conn, plan.track_id, v);
+        }
         if let Some(index) = &masterdb_index {
             actions::maybe_detect_masterdb_repair_with_index(
                 conn,
@@ -1120,24 +1139,13 @@ pub fn commit_file(
                 Some(&fs.to),
                 *action_id,
             );
-            if matches!(fs.kind, "move" | "convert") {
-                let (genre, label) = actions::sanitize_genre_label(
-                    &plan.extras.genres,
-                    plan.extras.label.as_deref(),
-                );
-                let values = actions::MetadataSyncValues {
-                    artist: Some(plan.canonical.artist.clone()),
-                    title: Some(naming::tag_title(&plan.canonical)),
-                    label,
-                    year: plan.extras.year,
-                    genre,
-                };
+            if let Some(values) = &values {
                 actions::detect_masterdb_metadata_sync_with_index(
                     conn,
                     index,
                     &fs.from,
                     plan.track_id,
-                    &values,
+                    values,
                     *action_id,
                 );
                 if let Some(cover_path) = &plan.extras.cover_path {

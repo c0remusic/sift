@@ -3,7 +3,7 @@
 //! guarded inversion primitive; `undo_last` (LIFO) and the journal both go through it, so
 //! there is exactly one place that knows how to safely reverse work. Pure DB + filesystem.
 
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
 
 /// A raw action row as loaded for reverting: (id, track_id, type, from_path, to_path, meta).
@@ -348,16 +348,169 @@ pub fn detect_masterdb_repair_with_index(
     }
 }
 
+/// Un champ qu'une écriture a VIDÉ du fichier et de la base, alors que Rekordbox peut encore
+/// porter l'ancienne valeur (#81) : un changement de release sans label, sans année, sans genre ou
+/// sans pochette, ou le « Rétablir » qui revient sur une release qui n'en avait pas.
+///
+/// Hors périmètre, délibérément : l'artiste et le titre. Une release les pose toujours ; seul un
+/// Rétablir vers un fichier sans tags peut les retirer, et Rekordbox garde de toute façon un titre
+/// (tiré du nom de fichier à l'import) — « Rekordbox garde : titre » y serait toujours vrai et ne
+/// dirait rien.
+///
+/// Protocole, pas prose : `as_str` est stocké dans `rekordbox_masterdb_metadata_syncs.cleared_fields`
+/// et lu par l'écran Rekordbox. Miroir de `SYNC_CLEARED_FIELDS` dans `shared/contracts.ts`, épinglé
+/// par `sync_fields_match_contracts_ts`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SyncField {
+    Label,
+    Year,
+    Genre,
+    Cover,
+}
+
+impl SyncField {
+    pub const ALL: [SyncField; 4] = [
+        SyncField::Label,
+        SyncField::Year,
+        SyncField::Genre,
+        SyncField::Cover,
+    ];
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            SyncField::Label => "label",
+            SyncField::Year => "year",
+            SyncField::Genre => "genre",
+            SyncField::Cover => "cover",
+        }
+    }
+
+    fn parse(s: &str) -> Option<SyncField> {
+        SyncField::ALL.into_iter().find(|f| f.as_str() == s.trim())
+    }
+}
+
+/// La colonne `cleared_fields` (« label,year ») en liste, dans l'ordre de `SyncField::ALL`. Une
+/// valeur inconnue est ignorée ET journalisée : une base écrite par une version plus récente ne
+/// doit pas faire échouer l'écran.
+pub(crate) fn parse_cleared_fields(raw: Option<&str>) -> Vec<SyncField> {
+    let mut out = Vec::new();
+    for part in raw
+        .unwrap_or_default()
+        .split(',')
+        .filter(|p| !p.trim().is_empty())
+    {
+        match SyncField::parse(part) {
+            Some(f) if !out.contains(&f) => out.push(f),
+            Some(_) => {}
+            None => log::warn!("cleared_fields : champ inconnu « {part} », ignoré"),
+        }
+    }
+    out.sort_by_key(|f| SyncField::ALL.iter().position(|x| x == f));
+    out
+}
+
+fn join_cleared_fields(fields: &[SyncField]) -> Option<String> {
+    (!fields.is_empty()).then(|| {
+        fields
+            .iter()
+            .map(|f| f.as_str())
+            .collect::<Vec<_>>()
+            .join(",")
+    })
+}
+
+/// La mémoire des champs que Sift a retirés du fichier d'une piste et que Rekordbox peut encore
+/// porter : `tracks.rekordbox_cleared` (v24). Par PISTE et hors du journal — une ligne de synchro
+/// meurt avec la purge à 30 jours (`ON DELETE CASCADE`) et n'existe pas quand Rekordbox ne connaît
+/// pas le chemin : la mémoire, elle, reste (revue de #81).
+fn read_sync_debt(conn: &Connection, track_id: i64) -> Vec<SyncField> {
+    let raw: Option<String> = conn
+        .query_row(
+            "SELECT rekordbox_cleared FROM tracks WHERE id=?1",
+            params![track_id],
+            |r| r.get(0),
+        )
+        .optional()
+        .unwrap_or_else(|e| {
+            log::error!("rekordbox_cleared illisible pour la piste {track_id} ({e})");
+            None
+        })
+        .flatten();
+    parse_cleared_fields(raw.as_deref())
+}
+
+fn write_sync_debt(conn: &Connection, track_id: i64, debt: &[SyncField]) {
+    if let Err(e) = conn.execute(
+        "UPDATE tracks SET rekordbox_cleared=?2 WHERE id=?1",
+        params![track_id, join_cleared_fields(debt)],
+    ) {
+        log::error!("rekordbox_cleared : écriture impossible pour la piste {track_id} ({e})");
+    }
+}
+
+/// Toute écriture de tags passe ici, Rekordbox lié ou non : ce qu'elle a retiré (`cleared`)
+/// s'ajoute à la mémoire, ce qu'elle a posé (un champ `Some`, une pochette) l'en retire.
+pub fn record_sync_debt(conn: &Connection, track_id: i64, values: &MetadataSyncValues) {
+    let mut debt = read_sync_debt(conn, track_id);
+    for f in &values.cleared {
+        if !debt.contains(f) {
+            debt.push(*f);
+        }
+    }
+    debt.retain(|f| match f {
+        SyncField::Label => values.label.is_none(),
+        SyncField::Year => sync_year(values.year).is_none(),
+        SyncField::Genre => values.genre.is_none(),
+        SyncField::Cover => !values.cover_set,
+    });
+    debt.sort_by_key(|f| SyncField::ALL.iter().position(|x| x == f));
+    write_sync_debt(conn, track_id, &debt);
+}
+
+/// Ce que Rekordbox PORTE parmi la mémoire : seul un champ que Rekordbox a vraiment se dit
+/// « Rekordbox garde ». Une valeur que Sift a posée puis retirée sans qu'elle ait jamais été
+/// synchronisée n'a rien à vider (revue de #81 : c'était l'annonce du flux principal — une
+/// première release fausse, puis la bonne).
+fn carried_debt(
+    debt: &[SyncField],
+    carries: crate::rekordbox_masterdb::RekordboxCarries,
+) -> Vec<SyncField> {
+    debt.iter()
+        .copied()
+        .filter(|f| match f {
+            SyncField::Label => carries.label,
+            SyncField::Year => carries.year,
+            SyncField::Genre => carries.genre,
+            SyncField::Cover => carries.artwork,
+        })
+        .collect()
+}
+
+/// L'année telle qu'elle part vers Rekordbox : la même règle que le fichier (`tagging` n'écrit
+/// qu'une année > 0). Sans elle, une année 0 venue de Discogs était retirée du fichier et
+/// écrite `ReleaseYear = 0` dans Rekordbox.
+pub fn sync_year(year: Option<i64>) -> Option<i64> {
+    year.filter(|y| *y > 0)
+}
+
 /// M8 Tier 3: the values a caller just wrote to a file's ID3 tags, not yet resolved against
 /// Rekordbox's own FK tables (that resolution happens at apply time, inside
 /// `rekordbox_masterdb::sync_track_metadata`). `None` fields mean "not changed by this write" —
 /// same convention as `tagging::write_tags_full`.
+///
+/// #81 : « pas changé » ne suffit plus depuis que choisir une autre release VIDE le fichier
+/// (`tagging::restore_tags`). `cleared` nomme ce que l'écriture a retiré ; le détecteur le cumule
+/// avec ce que la synchro devait déjà vider, et `cover_set` / un champ `Some` éteignent la dette.
 pub struct MetadataSyncValues {
     pub artist: Option<String>,
     pub title: Option<String>,
     pub label: Option<String>,
     pub year: Option<i64>,
     pub genre: Option<String>,
+    pub cleared: Vec<SyncField>,
+    /// Cette écriture pose une pochette : une pochette « vidée » plus tôt ne l'est plus.
+    pub cover_set: bool,
 }
 
 /// Applies the exact same trim+blank-filter discipline as `tagging::write_tags_full` before a
@@ -449,22 +602,140 @@ pub fn detect_masterdb_metadata_sync_with_index(
         return;
     };
 
+    // #81 : ce que la rangée annonce, c'est la mémoire de la piste (`record_sync_debt`, tenue par
+    // l'appelant) RESTREINTE à ce que Rekordbox porte vraiment. Plusieurs pistes Rekordbox (cas
+    // ambigu) : l'une d'elles suffit, par prudence. Une seule : ce qu'elle ne porte pas n'a plus
+    // rien à vider, la mémoire l'oublie.
+    let carries = index
+        .tracks
+        .iter()
+        .filter(|t| matches.contains(&t.track_id.as_str()))
+        .fold(
+            crate::rekordbox_masterdb::RekordboxCarries::default(),
+            |acc, t| crate::rekordbox_masterdb::RekordboxCarries {
+                label: acc.label || t.carries.label,
+                genre: acc.genre || t.carries.genre,
+                year: acc.year || t.carries.year,
+                artwork: acc.artwork || t.carries.artwork,
+            },
+        );
+    let shown = carried_debt(&read_sync_debt(conn, track_id), carries);
+    if matches.len() == 1 {
+        write_sync_debt(conn, track_id, &shown);
+    }
+    let cleared_fields = join_cleared_fields(&shown);
+
     let result = conn.execute(
         "INSERT INTO rekordbox_masterdb_metadata_syncs
-             (action_id, track_id, rekordbox_track_id, candidate_track_ids, new_artist, new_title, new_label, new_year, new_genre, status)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+             (action_id, track_id, rekordbox_track_id, candidate_track_ids, new_artist, new_title, new_label, new_year, new_genre, status, cleared_fields)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11)
          ON CONFLICT(track_id) DO UPDATE SET
              action_id=excluded.action_id, rekordbox_track_id=excluded.rekordbox_track_id,
              candidate_track_ids=excluded.candidate_track_ids, new_artist=excluded.new_artist,
              new_title=excluded.new_title, new_label=excluded.new_label, new_year=excluded.new_year,
-             new_genre=excluded.new_genre, status=excluded.status, detected_at=datetime('now')",
+             new_genre=excluded.new_genre, status=excluded.status, detected_at=datetime('now'),
+             cleared_fields=excluded.cleared_fields",
         params![
             action_id, track_id, rekordbox_track_id, candidate_track_ids,
-            values.artist, values.title, values.label, values.year, values.genre, status,
+            values.artist, values.title, values.label, sync_year(values.year), values.genre, status,
+            cleared_fields,
         ],
     );
     if let Err(e) = result {
         log::error!("masterdb metadata sync detection: insert failed: {e}");
+    }
+}
+
+/// Retire la candidate pochette ENCORE EN ATTENTE d'une piste (#81). Une release sans image vient
+/// de vider la pochette du fichier : la candidate de la release d'avant, restée `pending`, aurait
+/// poussé l'ancienne image dans Rekordbox — le détecteur de pochette n'est appelé que pour poser
+/// une image, jamais pour en retirer une. Une candidate déjà appliquée ou ignorée reste : c'est de
+/// l'historique.
+pub fn drop_pending_artwork_sync(conn: &Connection, track_id: i64) {
+    if let Err(e) = conn.execute(
+        "DELETE FROM rekordbox_masterdb_artwork_syncs
+         WHERE track_id=?1 AND status IN ('pending', 'ambiguous')",
+        params![track_id],
+    ) {
+        log::error!(
+            "drop_pending_artwork_sync : suppression impossible pour la piste {track_id} ({e})"
+        );
+    }
+}
+
+/// Les valeurs de synchro de l'état RÉTABLI (#81, décision du 2026-09-29 : « recalculer ») : ce
+/// que le fichier porte maintenant, et, en `cleared`, ce qu'il portait juste avant le Rétablir et
+/// n'a plus. `cover_set` n'est vrai que si une candidate pochette est réellement ré-armée — une
+/// image embarquée sans chemin pour la poser n'éteint aucune dette (revue de #81).
+pub fn sync_values_after_tag_revert(
+    before: Option<&crate::tagging::TagsSnapshot>,
+    restored: &crate::tagging::TagsSnapshot,
+    cover_rearmed: bool,
+) -> MetadataSyncValues {
+    let genres: Vec<String> = restored
+        .genre_joined
+        .as_deref()
+        .map(|g| vec![g.to_string()])
+        .unwrap_or_default();
+    let (genre, label) = sanitize_genre_label(&genres, restored.label.as_deref());
+    let year = sync_year(restored.year);
+    let mut cleared = Vec::new();
+    if let Some(b) = before {
+        let had = |v: &Option<String>| v.as_deref().is_some_and(|s| !s.trim().is_empty());
+        if had(&b.label) && label.is_none() {
+            cleared.push(SyncField::Label);
+        }
+        if sync_year(b.year).is_some() && year.is_none() {
+            cleared.push(SyncField::Year);
+        }
+        if had(&b.genre_joined) && genre.is_none() {
+            cleared.push(SyncField::Genre);
+        }
+        if b.cover.is_some() && restored.cover.is_none() {
+            cleared.push(SyncField::Cover);
+        }
+    }
+    MetadataSyncValues {
+        artist: restored.artist.clone(),
+        title: restored.title.clone(),
+        label,
+        year,
+        genre,
+        cleared,
+        cover_set: cover_rearmed,
+    }
+}
+
+/// Ce que devient la candidate pochette après un Rétablir.
+#[derive(Debug, PartialEq, Eq)]
+pub enum ArtworkAfterRevert {
+    /// La pochette n'a pas changé : la candidate, quelle qu'elle soit, est celle d'une écriture
+    /// antérieure, que ce Rétablir ne concerne pas.
+    Leave,
+    /// La base rétablie porte le chemin de la pochette rétablie : la candidate la repose.
+    Rearm(String),
+    /// La pochette a changé, et rien ne sait la reposer (image embarquée seule, ou plus d'image) :
+    /// la candidate EN ATTENTE de l'écriture annulée est retirée, jamais ré-armée.
+    Drop,
+}
+
+/// La décision pochette d'un Rétablir (revue de #81). `metadata.cover_path` n'est la pochette
+/// RÉTABLIE que pour un changement de release (`restore_release` le remet) ; un Rétablir
+/// d'`apply_tags` ou d'`update_metadata` rend les octets au fichier mais laisse `cover_path` sur
+/// l'écriture annulée — le lire comme vérité ré-armait la pochette que l'utilisateur annulait.
+pub fn artwork_after_revert(
+    before: Option<&crate::tagging::TagsSnapshot>,
+    restored: &crate::tagging::TagsSnapshot,
+    release_restored: bool,
+    cover_path: Option<&str>,
+) -> ArtworkAfterRevert {
+    let before_cover = before.and_then(|b| b.cover.as_ref());
+    if before.is_some() && before_cover == restored.cover.as_ref() {
+        return ArtworkAfterRevert::Leave;
+    }
+    match (release_restored, restored.cover.is_some(), cover_path) {
+        (true, true, Some(cp)) => ArtworkAfterRevert::Rearm(cp.to_string()),
+        _ => ArtworkAfterRevert::Drop,
     }
 }
 
@@ -783,6 +1054,52 @@ pub(crate) fn revert_one_fs(
     }
 }
 
+/// Le câblage du recalcul après Rétablir (#81). La mémoire des champs vidés se met à jour
+/// toujours ; la candidate, seulement quand `master.db` est lié (comme toute détection M8). Jamais
+/// d'échec : une détection manquée ne doit pas faire échouer un Rétablir déjà fait sur le disque.
+fn redetect_sync_after_tag_revert(
+    conn: &Connection,
+    track_id: i64,
+    path: &str,
+    action_id: i64,
+    before: Option<&crate::tagging::TagsSnapshot>,
+    oldest_meta: Option<&str>,
+    release_restored: bool,
+) {
+    let Some(restored) =
+        oldest_meta.and_then(|m| serde_json::from_str::<crate::tagging::TagsSnapshot>(m).ok())
+    else {
+        return;
+    };
+    let cover_path: Option<String> = conn
+        .query_row(
+            "SELECT cover_path FROM metadata WHERE track_id=?1",
+            params![track_id],
+            |r| r.get(0),
+        )
+        .optional()
+        .ok()
+        .flatten()
+        .flatten();
+    let artwork = artwork_after_revert(before, &restored, release_restored, cover_path.as_deref());
+    let values = sync_values_after_tag_revert(
+        before,
+        &restored,
+        matches!(artwork, ArtworkAfterRevert::Rearm(_)),
+    );
+    record_sync_debt(conn, track_id, &values);
+    if matches!(artwork, ArtworkAfterRevert::Drop) {
+        drop_pending_artwork_sync(conn, track_id);
+    }
+    let Some(index) = resolve_masterdb_index_if_linked(conn) else {
+        return;
+    };
+    detect_masterdb_metadata_sync_with_index(conn, &index, path, track_id, &values, action_id);
+    if let ArtworkAfterRevert::Rearm(cp) = &artwork {
+        detect_masterdb_artwork_sync_with_index(conn, &index, path, track_id, cp, action_id);
+    }
+}
+
 /// Le `meta` d'un `tag_edit` vu seulement pour sa clé `release` — présente quand le lot est un
 /// changement de release (#68). Les autres clés (les tags d'avant) sont ignorées ici.
 #[derive(serde::Deserialize)]
@@ -886,6 +1203,20 @@ pub fn revert_batch(conn: &Connection, batch_id: &str) -> Result<(), RevertError
         }
     }
 
+    // Les tags du fichier AVANT ce Rétablir, pour le recalcul de la synchro Rekordbox d'un lot de
+    // tags (#81) : ce qu'ils portent et que l'état rétabli n'a plus est un champ à vider.
+    let tag_only_batch = batch
+        .iter()
+        .all(|(_, _, kind, _, _, _)| kind.as_str() == "tag_edit");
+    let tags_before_revert: Option<crate::tagging::TagsSnapshot> = if tag_only_batch {
+        batch
+            .iter()
+            .find_map(|r| r.3.clone())
+            .and_then(|p| crate::tagging::read_tags_full(&p).ok())
+    } else {
+        None
+    };
+
     // Reverse each row's filesystem effect (newest first), marking each row undone AS SOON AS its
     // revert succeeds. This keeps a PARTIAL failure (an FS error on a later row) consistent and
     // RE-TRYABLE: the rows already reverted stay marked undone, so a re-run resumes with only the
@@ -923,14 +1254,15 @@ pub fn revert_batch(conn: &Connection, batch_id: &str) -> Result<(), RevertError
     // for every conformant filing — but it also journals a `move`, so `tag_only` is false for it
     // and the guard below still behaves as intended.)
     // Sur le lot ENTIER (#80) : un rangement dont le `move` est déjà défait reste un rangement.
-    let tag_only = batch
-        .iter()
-        .all(|(_, _, kind, _, _, _)| kind.as_str() == "tag_edit");
+    let tag_only = tag_only_batch;
     // …but since 2026-09-23 a tag edit ALSO moves the `metadata` row an identified track reopens
     // from (`metadata::persist_tag_edit`, #65). Reverting the file alone left the row on the undone
     // edit: shown again on reopen, and filed by a batch. The row follows the restored file — the
     // snapshot of the OLDEST row of the batch, which is what the file holds now.
     if tag_only {
+        // Vrai quand la ligne `metadata` a été rétablie TELLE QUELLE (changement de release) : sa
+        // `cover_path` est alors celle de l'état rétabli, et la synchro peut reposer la pochette.
+        let mut release_restored = false;
         if let (Some(tid), Some(meta)) = (track_id, batch.iter().rev().find_map(|r| r.5.clone())) {
             // Un changement de release (#68, `ipc_identify::apply_release`) range la release
             // d'AVANT à côté des tags, sous `release` : elle revient telle quelle, lien Discogs,
@@ -945,7 +1277,10 @@ pub fn revert_batch(conn: &Connection, batch_id: &str) -> Result<(), RevertError
                 }
             };
             match release {
-                Some(release) => crate::metadata::restore_release(conn, tid, &release)?,
+                Some(release) => {
+                    crate::metadata::restore_release(conn, tid, &release)?;
+                    release_restored = true;
+                }
                 None => match serde_json::from_str::<crate::tagging::TagsSnapshot>(&meta) {
                     Ok(snap) => crate::metadata::follow_restored_tags(conn, tid, &snap)?,
                     Err(e) => log::error!(
@@ -958,6 +1293,15 @@ pub fn revert_batch(conn: &Connection, batch_id: &str) -> Result<(), RevertError
         // sinon le watcher relance une analyse complète (issue #73).
         if let (Some(tid), Some(path)) = (track_id, batch.iter().find_map(|r| r.3.clone())) {
             crate::scanner::restamp_after_own_write(conn, tid, &path)?;
+            redetect_sync_after_tag_revert(
+                conn,
+                tid,
+                &path,
+                max_id,
+                tags_before_revert.as_ref(),
+                batch.iter().rev().find_map(|r| r.5.clone()).as_deref(),
+                release_restored,
+            );
         }
     }
     if let Some(tid) = track_id {
@@ -2904,7 +3248,377 @@ mod tests {
             label: Some("Alleviated".to_string()),
             year: Some(1985),
             genre: Some("House".to_string()),
+            cleared: Vec::new(),
+            cover_set: false,
         }
+    }
+
+    /// Branche une fixture `master.db` et une piste Sift qui y correspond (`D:/FIXTURE/track1.mp3`).
+    fn linked_fixture_track(conn: &Connection, tmp: &std::path::Path) -> i64 {
+        let xml_path = seed_pioneer_dir_with_fixture(&tmp.join("pioneer"));
+        crate::settings::set(
+            conn,
+            crate::settings::REKORDBOX_XML_PATH,
+            xml_path.to_str().unwrap(),
+        )
+        .unwrap();
+        seed_sift_track(conn, "D:/FIXTURE/track1.mp3")
+    }
+
+    fn cleared_of(conn: &Connection, track_id: i64) -> Option<String> {
+        conn.query_row(
+            "SELECT cleared_fields FROM rekordbox_masterdb_metadata_syncs WHERE track_id=?1",
+            params![track_id],
+            |r| r.get(0),
+        )
+        .unwrap()
+    }
+
+    fn memory_of(conn: &Connection, track_id: i64) -> Option<String> {
+        conn.query_row(
+            "SELECT rekordbox_cleared FROM tracks WHERE id=?1",
+            params![track_id],
+            |r| r.get(0),
+        )
+        .unwrap()
+    }
+
+    fn bare_values() -> MetadataSyncValues {
+        MetadataSyncValues {
+            artist: Some("B".into()),
+            title: Some("T".into()),
+            label: None,
+            year: None,
+            genre: None,
+            cleared: Vec::new(),
+            cover_set: false,
+        }
+    }
+
+    /// #81 : la mémoire de ce que Sift a retiré se CUMULE d'une écriture à l'autre, et une valeur
+    /// posée — ou une pochette — l'éteint. Sans Rekordbox lié : elle se tient quand même.
+    #[test]
+    fn la_memoire_des_champs_vides_se_cumule_et_s_eteint() {
+        let conn = db();
+        let tid = seed_sift_track(&conn, "D:/nowhere/t.mp3");
+        record_sync_debt(
+            &conn,
+            tid,
+            &MetadataSyncValues {
+                cleared: vec![SyncField::Year, SyncField::Label],
+                ..bare_values()
+            },
+        );
+        assert_eq!(
+            memory_of(&conn, tid).as_deref(),
+            Some("label,year"),
+            "ordre canonique"
+        );
+        record_sync_debt(
+            &conn,
+            tid,
+            &MetadataSyncValues {
+                label: Some("X".into()),
+                ..bare_values()
+            },
+        );
+        assert_eq!(memory_of(&conn, tid).as_deref(), Some("year"));
+        record_sync_debt(
+            &conn,
+            tid,
+            &MetadataSyncValues {
+                cleared: vec![SyncField::Cover],
+                ..bare_values()
+            },
+        );
+        assert_eq!(memory_of(&conn, tid).as_deref(), Some("year,cover"));
+        // Une année 0 n'est pas une année posée : elle n'éteint rien.
+        record_sync_debt(
+            &conn,
+            tid,
+            &MetadataSyncValues {
+                year: Some(0),
+                ..bare_values()
+            },
+        );
+        assert_eq!(memory_of(&conn, tid).as_deref(), Some("year,cover"));
+        record_sync_debt(
+            &conn,
+            tid,
+            &MetadataSyncValues {
+                year: Some(1999),
+                cover_set: true,
+                ..bare_values()
+            },
+        );
+        assert_eq!(memory_of(&conn, tid), None);
+    }
+
+    /// Revue de #81 : la rangée n'annonce que ce que Rekordbox PORTE. La piste 1 de la fixture a
+    /// label, genre, année et pochette ; la piste 2 n'a rien. Une valeur que Sift a posée puis
+    /// retirée sans qu'elle ait été synchronisée n'est donc jamais annoncée — c'était le flux
+    /// principal de #68, une première release fausse puis la bonne.
+    #[test]
+    fn l_annonce_ne_dit_que_ce_que_rekordbox_porte() {
+        let conn = db();
+        let tmp = tempfile::tempdir().unwrap();
+        let t1 = linked_fixture_track(&conn, tmp.path());
+        let t2 = seed_sift_track(&conn, "D:/FIXTURE/track2.flac");
+        let index = resolve_masterdb_index_if_linked(&conn).expect("fixture liée");
+        let v = MetadataSyncValues {
+            cleared: vec![SyncField::Label, SyncField::Cover],
+            ..bare_values()
+        };
+
+        let a1 = record_row_only(
+            &conn,
+            "m1",
+            Some(t1),
+            "tag_edit",
+            Some("D:/FIXTURE/track1.mp3"),
+            None,
+            None,
+        )
+        .unwrap();
+        record_sync_debt(&conn, t1, &v);
+        detect_masterdb_metadata_sync_with_index(
+            &conn,
+            &index,
+            "D:/FIXTURE/track1.mp3",
+            t1,
+            &v,
+            a1,
+        );
+        assert_eq!(cleared_of(&conn, t1).as_deref(), Some("label,cover"));
+        assert_eq!(memory_of(&conn, t1).as_deref(), Some("label,cover"));
+
+        let a2 = record_row_only(
+            &conn,
+            "m2",
+            Some(t2),
+            "tag_edit",
+            Some("D:/FIXTURE/track2.flac"),
+            None,
+            None,
+        )
+        .unwrap();
+        record_sync_debt(&conn, t2, &v);
+        detect_masterdb_metadata_sync_with_index(
+            &conn,
+            &index,
+            "D:/FIXTURE/track2.flac",
+            t2,
+            &v,
+            a2,
+        );
+        assert_eq!(
+            cleared_of(&conn, t2),
+            None,
+            "Rekordbox n'a jamais eu ces champs"
+        );
+        assert_eq!(
+            memory_of(&conn, t2),
+            None,
+            "rien à vider : la mémoire oublie"
+        );
+    }
+
+    /// Revue de #81 : Rekordbox ne connaît pas (encore) le chemin — une réparation Tier 1 en
+    /// attente. Aucune ligne de synchro ne s'écrit ; la mémoire, elle, garde ce qui a été retiré.
+    #[test]
+    fn sans_correspondance_la_memoire_reste() {
+        let conn = db();
+        let tmp = tempfile::tempdir().unwrap();
+        let _t1 = linked_fixture_track(&conn, tmp.path());
+        let tq = seed_sift_track(&conn, "D:/ailleurs/q.mp3");
+        let index = resolve_masterdb_index_if_linked(&conn).expect("fixture liée");
+        let a = record_row_only(
+            &conn,
+            "m3",
+            Some(tq),
+            "tag_edit",
+            Some("D:/ailleurs/q.mp3"),
+            None,
+            None,
+        )
+        .unwrap();
+        let v = MetadataSyncValues {
+            cleared: vec![SyncField::Label],
+            ..bare_values()
+        };
+        record_sync_debt(&conn, tq, &v);
+        detect_masterdb_metadata_sync_with_index(&conn, &index, "D:/ailleurs/q.mp3", tq, &v, a);
+        let rows: i64 = conn
+            .query_row(
+                "SELECT count(*) FROM rekordbox_masterdb_metadata_syncs WHERE track_id=?1",
+                params![tq],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(rows, 0);
+        assert_eq!(memory_of(&conn, tq).as_deref(), Some("label"));
+    }
+
+    /// #81 : une année 0 est retirée du fichier ; elle ne part pas non plus vers Rekordbox.
+    #[test]
+    fn une_annee_nulle_ne_part_pas_vers_rekordbox() {
+        let conn = db();
+        let tmp = tempfile::tempdir().unwrap();
+        let tid = linked_fixture_track(&conn, tmp.path());
+        let index = resolve_masterdb_index_if_linked(&conn).expect("fixture liée");
+        let aid = record_row_only(
+            &conn,
+            "d2",
+            Some(tid),
+            "tag_edit",
+            Some("D:/FIXTURE/track1.mp3"),
+            None,
+            None,
+        )
+        .unwrap();
+        detect_masterdb_metadata_sync_with_index(
+            &conn,
+            &index,
+            "D:/FIXTURE/track1.mp3",
+            tid,
+            &MetadataSyncValues {
+                year: Some(0),
+                ..some_values()
+            },
+            aid,
+        );
+        let year: Option<i64> = conn
+            .query_row(
+                "SELECT new_year FROM rekordbox_masterdb_metadata_syncs WHERE track_id=?1",
+                params![tid],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(year, None);
+    }
+
+    /// #81 : la candidate pochette ENCORE EN ATTENTE est retirée ; une candidate déjà appliquée
+    /// reste, c'est de l'historique.
+    #[test]
+    fn drop_pending_artwork_sync_ne_retire_que_l_attente() {
+        let conn = db();
+        let tmp = tempfile::tempdir().unwrap();
+        let tid = linked_fixture_track(&conn, tmp.path());
+        let aid = record_row_only(
+            &conn,
+            "d3",
+            Some(tid),
+            "tag_edit",
+            Some("D:/FIXTURE/track1.mp3"),
+            None,
+            None,
+        )
+        .unwrap();
+        detect_masterdb_artwork_sync_if_linked(
+            &conn,
+            "D:/FIXTURE/track1.mp3",
+            tid,
+            "/cache/A.jpg",
+            aid,
+        );
+        let count = |conn: &Connection| -> i64 {
+            conn.query_row(
+                "SELECT count(*) FROM rekordbox_masterdb_artwork_syncs WHERE track_id=?1",
+                params![tid],
+                |r| r.get(0),
+            )
+            .unwrap()
+        };
+        assert_eq!(count(&conn), 1);
+        drop_pending_artwork_sync(&conn, tid);
+        assert_eq!(
+            count(&conn),
+            0,
+            "la pochette de la release d'avant ne part plus"
+        );
+
+        detect_masterdb_artwork_sync_if_linked(
+            &conn,
+            "D:/FIXTURE/track1.mp3",
+            tid,
+            "/cache/A.jpg",
+            aid,
+        );
+        conn.execute(
+            "UPDATE rekordbox_masterdb_artwork_syncs SET status='applied' WHERE track_id=?1",
+            params![tid],
+        )
+        .unwrap();
+        drop_pending_artwork_sync(&conn, tid);
+        assert_eq!(count(&conn), 1, "une candidate appliquée reste");
+    }
+
+    fn snap(
+        label: Option<&str>,
+        year: Option<i64>,
+        genre: Option<&str>,
+        cover: Option<u8>,
+    ) -> crate::tagging::TagsSnapshot {
+        crate::tagging::TagsSnapshot {
+            artist: Some("A".into()),
+            title: Some("T".into()),
+            label: label.map(str::to_string),
+            year,
+            genre_joined: genre.map(str::to_string),
+            cover: cover.map(|b| crate::tagging::CoverSnap {
+                mime: None,
+                bytes: vec![b],
+            }),
+        }
+    }
+
+    /// #81, « Recalculer » : les valeurs de l'état RÉTABLI, et en `cleared` ce que le fichier
+    /// portait juste avant et n'a plus.
+    #[test]
+    fn un_retablir_rend_les_valeurs_retablies_et_ce_qu_il_retire() {
+        let before = snap(Some("Label B"), Some(2001), Some("Acid"), Some(1));
+        let restored = snap(None, Some(1986), None, None);
+        let v = sync_values_after_tag_revert(Some(&before), &restored, false);
+        assert_eq!((v.label, v.year, v.genre), (None, Some(1986), None));
+        assert_eq!(
+            v.cleared,
+            vec![SyncField::Label, SyncField::Genre, SyncField::Cover]
+        );
+        assert!(!v.cover_set);
+        let v = sync_values_after_tag_revert(None, &restored, true);
+        assert!(
+            v.cleared.is_empty(),
+            "sans instantané d'avant, rien à retirer"
+        );
+        assert!(v.cover_set);
+    }
+
+    /// Revue de #81 : la pochette après un Rétablir. `cover_path` n'est la pochette rétablie que
+    /// pour un changement de release ; ailleurs, la ré-armer reposait l'image annulée.
+    #[test]
+    fn la_pochette_apres_un_retablir() {
+        let with = |b| snap(None, None, None, Some(b));
+        let none = snap(None, None, None, None);
+        // Pochette inchangée : la candidate appartient à une écriture antérieure.
+        assert_eq!(
+            artwork_after_revert(Some(&with(1)), &with(1), true, Some("/c/A.jpg")),
+            ArtworkAfterRevert::Leave
+        );
+        // Changement de release rétabli : la base porte le chemin de la pochette rétablie.
+        assert_eq!(
+            artwork_after_revert(Some(&with(2)), &with(1), true, Some("/c/A.jpg")),
+            ArtworkAfterRevert::Rearm("/c/A.jpg".into())
+        );
+        // Rétablir d'une pochette changée en Bibliothèque : `cover_path` est encore l'annulée.
+        assert_eq!(
+            artwork_after_revert(Some(&with(2)), &with(1), false, Some("/c/U.jpg")),
+            ArtworkAfterRevert::Drop
+        );
+        // Plus d'image après le Rétablir.
+        assert_eq!(
+            artwork_after_revert(Some(&with(2)), &none, true, None),
+            ArtworkAfterRevert::Drop
+        );
     }
 
     #[allow(clippy::type_complexity)]
@@ -3221,6 +3935,8 @@ mod tests {
             label: None,
             year: None,
             genre: None,
+            cleared: Vec::new(),
+            cover_set: false,
         };
         detect_masterdb_metadata_sync_if_linked(
             &conn,

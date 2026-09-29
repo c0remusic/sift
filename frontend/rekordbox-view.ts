@@ -52,6 +52,7 @@ import { mountBarActions } from "./toolbar";
 import { openContextMenu } from "./context-menu";
 import { planSync, type RkbSection, type SyncPlan } from "./rekordbox-plan";
 import { T } from "./i18n/rekordbox-view";
+import { candidateRowHtml, metadataEcartHtml } from "./rekordbox-ecart";
 
 // ---------------------------------------------------------------------------
 // État — au niveau module, jamais remis à zéro en bloc : l'écran se re-rend après chaque
@@ -140,25 +141,6 @@ function busyLabel(text: string): string {
 // pour un candidat ambigu, le choix de la piste Rekordbox.
 // ---------------------------------------------------------------------------
 
-/** Une rangée cochable. `pick` est le `data-sift` du toggle (mdbpick / mdspick / maspick /
- *  dedpick), `ref` l'attribut d'identité (`data-id` numérique, ou `data-key` pour un doublon). */
-function candidateRowHtml(
-  pick: string,
-  ref: string,
-  checked: boolean,
-  piste: string,
-  ecart: string,
-  error: string | undefined,
-): string {
-  return (
-    `<div class="rkb-cand${checked ? " sel" : ""}" data-sift="${pick}" ${ref} tabindex="0" role="checkbox" aria-checked="${checked}">` +
-    `<input type="checkbox" class="sift-batch-ck" ${checked ? "checked" : ""} tabindex="-1">` +
-    `<span class="rkb-cand-piste">${piste}</span>` +
-    `<span class="rkb-cand-ecart">${ecart}</span>` +
-    (error ? `<span class="rkb-cand-err">${esc(error)}</span>` : "") +
-    `</div>`
-  );
-}
 
 /** Une rangée ambiguë : plusieurs pistes Rekordbox possibles, rien ne s'écrit avant le choix. Pas
  *  de case ; l'écart dit « À choisir » et les pistes candidates suivent, un bouton chacune. */
@@ -235,16 +217,9 @@ function metadataSyncsSectionHtml(rows: PendingMetadataSync[]): string {
   if (!pending.length && !ambiguous.length) return `<div id="sift-rkb-mds-section"></div>`;
   const piste = (r: PendingMetadataSync) =>
     esc(r.new_artist && r.new_title ? `${r.new_artist} — ${r.new_title}` : fileName(r.sift_path));
-  const ecart = (r: PendingMetadataSync) => {
-    const L = T();
-    const parts: string[] = [];
-    if (r.new_artist) parts.push(`${L.artist} ${esc(r.new_artist)}`);
-    if (r.new_title) parts.push(`${L.title} ${esc(r.new_title)}`);
-    if (r.new_genre) parts.push(`${L.genre} ${esc(r.new_genre)}`);
-    if (r.new_year != null) parts.push(`${L.year} ${r.new_year}`);
-    if (r.new_label) parts.push(`${L.label} ${esc(r.new_label)}`);
-    return parts.join(" · ") || L.tags;
-  };
+  // Rendu dans `rekordbox-ecart.ts` (module pur, gelé par Vitest) : depuis #81 il dit aussi ce
+  // que la synchro ne vide pas.
+  const ecart = (r: PendingMetadataSync) => metadataEcartHtml(r);
   return (
     `<div id="sift-rkb-mds-section">` +
     groupHeadHtml(T().grpMeta, pending.length, ambiguous.length) +

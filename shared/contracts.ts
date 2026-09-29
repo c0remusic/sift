@@ -623,6 +623,13 @@ export interface ApplyRepairOutcome {
 
 // ---- M8 Tier 3 master.db metadata sync candidates (mirror of src-tauri/src/ipc_library.rs) ----
 
+/** Les champs qu'une synchro Rekordbox doit VIDER (#81) : Sift les a retirés du fichier, et
+ *  Rekordbox les porte encore (lu dans `master.db` à la détection). Protocole — miroir de Rust
+ *  `actions::SyncField::as_str`, dans l'ordre de `SyncField::ALL`, épinglé par
+ *  `rekordbox_repairs.rs::sync_fields_match_contracts_ts`. */
+export const SYNC_CLEARED_FIELDS = ["label", "year", "genre", "cover"] as const;
+export type SyncClearedField = (typeof SYNC_CLEARED_FIELDS)[number];
+
 export interface PendingMetadataSync {
   id: number;
   track_id: number;
@@ -635,6 +642,9 @@ export interface PendingMetadataSync {
   new_label: string | null;
   new_year: number | null;
   new_genre: string | null;
+  /** Ce que Sift a retiré du fichier et que Rekordbox porte encore (#81). La synchro ne le vide pas
+   *  encore : l'écran le dit en tête de la rangée. */
+  cleared: SyncClearedField[];
   status: "pending" | "ambiguous";
   detected_at: string;
   /** The Sift app session that produced this candidate — null for pre-migration rows. */

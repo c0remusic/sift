@@ -99,9 +99,14 @@ fn update_metadata_commit(
         artist: Some(edit.artist.clone()),
         title: Some(edit.title.clone()),
         label,
-        year: edit.year,
+        year: actions::sync_year(edit.year),
         genre,
+        // `write_tags_full` ne fait que poser : rien de vidé ici.
+        cleared: Vec::new(),
+        cover_set: edit.cover_path.is_some(),
     };
+    // #81 : ce que cette écriture pose éteint la mémoire des champs vidés, lié ou non.
+    actions::record_sync_debt(conn, track_id, &values);
     // ONE decrypt for BOTH detectors. The `_if_linked` variants each resolve the index
     // themselves, so calling both meant decrypting a multi-MB SQLCipher `master.db` twice per
     // edit — exactly what `resolve_masterdb_index_if_linked`'s docs forbid (actions.rs:206).

@@ -271,8 +271,11 @@ fn metadata_sync_values_for_apply_tags(
         artist: Some(edited.artist.clone()),
         title: Some(crate::naming::tag_title(edited)),
         label,
-        year: extras.year,
+        year: actions::sync_year(extras.year),
         genre,
+        // `write_tags_full` ne fait que poser : rien de vidé ici.
+        cleared: Vec::new(),
+        cover_set: extras.cover_path.is_some(),
     }
 }
 
@@ -366,8 +369,10 @@ pub fn apply_tags(
         // (if this track has a stored cover) an artwork sync candidate too. Both detectors need
         // the same decrypted `master.db` index — resolve it ONCE here (mirrors filing.rs's
         // post-commit loop) rather than have each detector independently decrypt the file.
+        let values = metadata_sync_values_for_apply_tags(&edited, &extras, label);
+        // #81 : ce que cette écriture pose éteint la mémoire des champs vidés, lié ou non.
+        actions::record_sync_debt(&conn, track_id, &values);
         if let Some(index) = actions::resolve_masterdb_index_if_linked(&conn) {
-            let values = metadata_sync_values_for_apply_tags(&edited, &extras, label);
             actions::detect_masterdb_metadata_sync_with_index(
                 &conn, &index, &path, track_id, &values, action_id,
             );

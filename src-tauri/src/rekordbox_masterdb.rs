@@ -344,6 +344,19 @@ pub struct RekordboxTrack {
     pub track_id: String,
     /// Rekordbox `djmdContent.FolderPath` (full file path as Rekordbox knows it).
     pub folder_path: String,
+    /// Ce que la piste porte dans Rekordbox, pour dire « Rekordbox garde : label » en vérité et pas
+    /// d'après ce que le FICHIER a perdu (#81, revue). Forme du vide mesurée sur la vraie
+    /// bibliothèque (Évaluation 24) : FK absent = NULL, année absente = 0, pochette absente = ''.
+    pub carries: RekordboxCarries,
+}
+
+/// Les champs qu'une piste Rekordbox porte non vides — voir `RekordboxTrack::carries`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct RekordboxCarries {
+    pub label: bool,
+    pub genre: bool,
+    pub year: bool,
+    pub artwork: bool,
 }
 
 /// Path→TrackID index read from a Rekordbox `master.db`.
@@ -794,14 +807,29 @@ pub fn read_rekordbox_masterdb(path: &Path) -> Result<RekordboxIndex, MasterDbEr
     conn.deserialize_read_exact(rusqlite::MAIN_DB, Cursor::new(plaintext), len, true)
         .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
 
+    // Présence calculée par SQLite, dans la forme mesurée du vide (Évaluation 24) : un FK vaut NULL
+    // quand il manque (et, par prudence, ni '' ni '0'), l'année vaut 0, la pochette ''.
     let mut stmt = conn
-        .prepare("SELECT ID, FolderPath FROM djmdContent")
+        .prepare(
+            "SELECT ID, FolderPath,
+                    COALESCE(CAST(LabelID AS TEXT), '') NOT IN ('', '0'),
+                    COALESCE(CAST(GenreID AS TEXT), '') NOT IN ('', '0'),
+                    COALESCE(ReleaseYear, 0) > 0,
+                    TRIM(COALESCE(ImagePath, '')) <> ''
+             FROM djmdContent",
+        )
         .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
     let rows = stmt
         .query_map([], |row| {
             Ok(RekordboxTrack {
                 track_id: row.get(0)?,
                 folder_path: row.get(1)?,
+                carries: RekordboxCarries {
+                    label: row.get(2)?,
+                    genre: row.get(3)?,
+                    year: row.get(4)?,
+                    artwork: row.get(5)?,
+                },
             })
         })
         .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
@@ -2397,6 +2425,111 @@ mod tests {
         conn.deserialize_read_exact(rusqlite::MAIN_DB, Cursor::new(plaintext), len, false)
             .expect("deserialize");
         conn
+    }
+
+    /// #81, essai 1 : comment le VRAI master.db note-t-il un label, un genre, un artiste, une année
+    /// ou une pochette ABSENTS — NULL, chaîne vide, « 0 » ? La fixture synthétique dit NULL par
+    /// choix d'auteur, et aucun essai ne l'avait mesuré. LECTURE SEULE : la copie est déchiffrée
+    /// en mémoire, rien n'est réécrit sur le disque. Ne sort que des COMPTES (aucun nom, aucun
+    /// chemin). `#[ignore]` : il lui faut une copie, jamais le fichier vivant.
+    ///
+    /// `SIFT_M8_REAL_COPY_DIR=<dossier avec une COPIE de master.db> cargo test --manifest-path
+    /// src-tauri/Cargo.toml --lib -- --exact rekordbox_masterdb::tests::forme_du_vide_sur_copie_reelle
+    /// --ignored --nocapture`
+    #[test]
+    #[ignore]
+    fn forme_du_vide_sur_copie_reelle() {
+        let dir = PathBuf::from(
+            std::env::var("SIFT_M8_REAL_COPY_DIR")
+                .expect("set SIFT_M8_REAL_COPY_DIR to a folder holding a COPY of master.db"),
+        );
+        let conn = open_plain(&dir.join("master.db"));
+        let cols: Vec<(String, String)> = conn
+            .prepare("PRAGMA table_info(djmdContent)")
+            .unwrap()
+            .query_map([], |r| Ok((r.get::<_, String>(1)?, r.get::<_, String>(2)?)))
+            .unwrap()
+            .map(|c| c.unwrap())
+            .collect();
+        println!("djmdContent : {} colonnes", cols.len());
+        for (name, ty) in &cols {
+            println!("  {name} {ty}");
+        }
+        let total: i64 = conn
+            .query_row("SELECT count(*) FROM djmdContent", [], |r| r.get(0))
+            .unwrap();
+        println!("pistes : {total}");
+        for col in [
+            "ArtistID",
+            "GenreID",
+            "LabelID",
+            "AlbumID",
+            "ReleaseYear",
+            "ImagePath",
+            "Commnt",
+        ] {
+            if !cols.iter().any(|(n, _)| n == col) {
+                println!("{col} : colonne absente");
+                continue;
+            }
+            let sql = format!(
+                "SELECT typeof({col}) AS t,
+                        CASE WHEN {col} IS NULL THEN 'null'
+                             WHEN CAST({col} AS TEXT) = '' THEN 'vide'
+                             WHEN CAST({col} AS TEXT) = '0' THEN 'zero'
+                             ELSE 'valeur' END AS forme,
+                        count(*)
+                 FROM djmdContent GROUP BY t, forme ORDER BY 3 DESC"
+            );
+            let rows: Vec<(String, String, i64)> = conn
+                .prepare(&sql)
+                .unwrap()
+                .query_map([], |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)))
+                .unwrap()
+                .map(|x| x.unwrap())
+                .collect();
+            println!("{col} : {rows:?}");
+        }
+        // Un FK « valeur » qui ne pointe sur aucune ligne, et une ligne FK au nom vide : deux
+        // autres façons possibles de dire « rien ».
+        for (col, table) in [
+            ("ArtistID", "djmdArtist"),
+            ("GenreID", "djmdGenre"),
+            ("LabelID", "djmdLabel"),
+        ] {
+            let dangling: i64 = conn
+                .query_row(
+                    &format!(
+                        "SELECT count(*) FROM djmdContent c
+                         WHERE c.{col} IS NOT NULL AND CAST(c.{col} AS TEXT) NOT IN ('', '0')
+                           AND NOT EXISTS (SELECT 1 FROM {table} x WHERE x.ID = c.{col})"
+                    ),
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            let blank_named: i64 = conn
+                .query_row(
+                    &format!("SELECT count(*) FROM {table} WHERE TRIM(COALESCE(Name, '')) = ''"),
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            let pointing_blank: i64 = conn
+                .query_row(
+                    &format!(
+                        "SELECT count(*) FROM djmdContent c JOIN {table} x ON x.ID = c.{col}
+                         WHERE TRIM(COALESCE(x.Name, '')) = ''"
+                    ),
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            println!(
+                "{col} sans ligne {table} : {dangling} ; lignes {table} au nom vide : {blank_named}, \
+                 pistes qui y pointent : {pointing_blank}"
+            );
+        }
     }
 
     // Cas 1 (plan Task 4) : nom d'artiste déjà existant dans la fixture

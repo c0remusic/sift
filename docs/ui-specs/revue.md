@@ -345,9 +345,13 @@ et resélectionnait le premier candidat, pas la release appliquée.
 - **Release appliquée** : celle que la base lie (`TrackRelease.release_id`, `discogs_release_id`
   en Bibliothèque), relue à chaque ouverture. Elle est sélectionnée quand la liste se rouvre, et
   la cliquer referme la liste sans rien écrire.
-- **Rekordbox, limite connue** : la synchro `master.db` ne sait pas encore VIDER un champ (label,
-  année, genre, pochette). Après un changement de release, Rekordbox garde ces champs de
-  l'ancienne — [#81](https://github.com/c0remusic/sift/issues/81).
+- **Rekordbox** ([#81](https://github.com/c0remusic/sift/issues/81)) : la synchro `master.db` ne
+  sait pas encore VIDER un champ (label, année, genre, pochette). Décision d'Antoine du
+  2026-09-29 : vider pour de vrai, une fois observé ce que « Relire le tag » fait d'un tag retiré
+  (essai 2, son clic). En attendant, Sift garde par piste la mémoire de ce qu'il a retiré du
+  fichier ; l'écran Rekordbox annonce en tête de la rangée ce que Rekordbox en porte réellement
+  (« Rekordbox garde : label, année »), et le reste se synchronise. « Rétablir » recalcule la synchro sur l'état rétabli. Une release sans image
+  retire la pochette de la release d'avant restée en attente.
 - **Bibliothèque** : même contrôle et même liste dans la fiche d'une piste rangée. Y choisir une
   release écrit enfin les tags du fichier : jusqu'ici, seul le lien en base changeait.
 

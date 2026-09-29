@@ -193,6 +193,30 @@ en erreur, ambigus, doublons de playlist, `masterdb_error`, dérive.
 - La § Zone C ci-dessus (table Case · Section · Piste · Écart · État) est **remplacée** par les
   groupes de rangées de Photos : à 200 candidats, la table de Rangés redeviendrait la bonne forme.
 
+## Décision — 2026-09-29 : ce que la synchro ne vide pas (#81)
+
+Depuis #68, choisir une autre release VIDE du fichier et de la base ce qu'elle n'a pas. La synchro
+`master.db` ne sait que poser : Rekordbox garde le label, l'année, le genre et la pochette de
+l'ancienne. Décisions d'Antoine :
+
+- **Cible** : vider pour de vrai, après deux essais. Le premier est fait (Évaluation 24 de
+  `docs/ressources-externes.md`) : dans la vraie bibliothèque, un FK absent vaut NULL, l'année `0`,
+  la pochette `''`. Le second demande son clic : ce que « Relire le tag » fait d'un tag RETIRÉ.
+- **En attendant** : la rangée Métadonnées annonce EN TÊTE de l'écart, en encre d'avertissement,
+  « Rekordbox garde : label, année » (`.rkb-cand-cleared`) ; la synchro applique le reste. En tête
+  parce que l'écart est une ligne tronquée à droite. N'est annoncé que ce que Rekordbox PORTE,
+  lu dans `master.db` à la détection : une valeur que Sift a posée puis retirée sans qu'elle ait
+  été synchronisée n'est pas annoncée (revue du 2026-09-29). La mémoire de ce que Sift a retiré
+  vit par piste (`tracks.rekordbox_cleared`), hors du journal que la purge vide à 30 jours.
+- **Hors périmètre** : l'artiste et le titre — Rekordbox garde toujours un titre, tiré du nom de
+  fichier à l'import.
+- **Rétablir** : la synchro reprend l'état rétabli (recalcul), au lieu de garder les valeurs de
+  l'écriture annulée. La pochette n'est reposée que pour un changement de release, seul Rétablir
+  qui rend aussi le chemin de l'image en base ; ailleurs, la pochette en attente de l'écriture
+  annulée est retirée, jamais ré-armée.
+- La pochette de l'ancienne release, restée en attente, est retirée quand la nouvelle n'a pas
+  d'image : l'appliquer aurait poussé une image que le fichier n'a plus.
+
 ## Hors périmètre / questions ouvertes
 
 - **Vérification dans le vrai Rekordbox** — manuelle, hors de cette spec.

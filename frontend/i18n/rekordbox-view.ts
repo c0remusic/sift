@@ -36,6 +36,9 @@ const fr = {
   year: "Année",
   label: "Label",
   tags: "Tags",
+  // #81 : ce que la release a retiré du fichier et que la synchro ne vide pas dans Rekordbox.
+  clearedField: { label: "label", year: "année", genre: "genre", cover: "pochette" },
+  clearedNotice: (fields: string) => `Rekordbox garde : ${fields}`,
   playlistN: (id: string) => `Playlist ${id}`,
   trackN: (id: string) => `Piste ${id}`,
   duplicatesToRemove: (n: number) => `${plFr(n, "doublon")} à retirer`,
@@ -109,6 +112,8 @@ const en: typeof fr = {
   year: "Year",
   label: "Label",
   tags: "Tags",
+  clearedField: { label: "label", year: "year", genre: "genre", cover: "cover" },
+  clearedNotice: (fields) => `Rekordbox keeps: ${fields}`,
   playlistN: (id) => `Playlist ${id}`,
   trackN: (id) => `Track ${id}`,
   duplicatesToRemove: (n) => `${plEn(n, "duplicate")} to remove`,
