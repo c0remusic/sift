@@ -275,6 +275,45 @@ déclenche rien.
   ; la relecture a montré qu'elle écartait des pistes en silence derrière un bouton « Convertir
   N ». Un choix qui retire des pistes de la conversion se voit à chaque fois.
 
+## Décision — 2026-09-29 : le spectrogramme agrandi (#72)
+
+Retour d'Antoine : « Il faudrait pouvoir agrandir la fenêtre du spectrogramme en haute résolution
+pour ceux qui veulent voir le diagnostic en grand. » Choisi sur deux maquettes posées dans la VRAIE
+fenêtre et peintes depuis la vraie grille d'une piste (1071 × 342 mesurés) : **A, par-dessus
+l'app**, contre B, sous le lecteur, qui repoussait les Métadonnées. Puis : « Un peu chiant de devoir
+faire esc pour sortir, on peut pas cliquer en dehors du cadre ? », et **« plus fine dès maintenant »**
+plutôt que la même grille agrandie.
+
+Ce que la zone D montrait : 288 colonnes peintes au plus proche voisin d'une grille de ~1 000, soit
+environ 7 % du temps du morceau, et environ 120 Hz par ligne de pixel.
+
+- **Forme** : une vue par-dessus l'application, sur le patron `.sift-report-overlay` (voile puis
+  carte) des confirmations. Elle se ferme de trois façons : Échap, un clic sur le voile hors de la
+  carte (`confirm-modal.ts`, même geste), ou le bouton Fermer. Rien ne bouge en zone C.
+- **Entrée** : un bouton **« Agrandir »** sous le spectrogramme de la zone D, en texte seul (règle
+  des CTA). Un clic sur le spectrogramme lui-même ouvre aussi la vue (curseur loupe). Le bouton
+  porte le chemin clavier, et le focus lui revient à la fermeture.
+- **Finesse** : la vue demande une grille à la taille de SON canevas en pixels physiques (largeur
+  CSS × `devicePixelRatio`), jamais plus que la source. La source compte une colonne toutes les
+  ~93 ms à 44,1 kHz et 2 048 bandes de ~10,8 Hz. Rust construit la grille par **max-pool dans les
+  deux axes** (`spectrum.rs::build_spectrogram`) : un transitoire bref ne tombe plus entre deux
+  colonnes gardées. Il n'y a pas de FFT en plus, les colonnes sont déjà calculées pour la LTAS. La
+  peinture est 1:1, donc nette à 125 et 150 %. Quand la source compte moins de colonnes que le
+  canevas n'a de pixels, c'est le canevas qui rétrécit : jamais une donnée étirée (règle de #30).
+- **Zone D** : la même fonction construit sa grille, qui gagne donc le max-pool temporel. Sa forme
+  passe de ~1 077 × 342 (un pas entier) à 1 200 × 384 au plus (pooling proportionnel). L'aspect
+  peut changer légèrement, dans le sens du plus fidèle.
+- **Contenu** : le titre « Spectrogramme », le nom du fichier, et « N × M mesurés » (colonnes ×
+  bandes). Axes kHz à gauche et mm:ss en bas. Le réticule au survol donne fréquence et dB, comme en
+  zone D.
+- **États** :
+  - chargement : « Calcul du spectrogramme… », environ 0,4 s, la grille seule se recalcule
+    (`analysis::spectrogram_only`) ;
+  - erreur : le message, et « Réessayer » ;
+  - vue.
+- **Hors périmètre, suite possible** : zoom à la molette, préréglage « bande haute » (12 kHz →
+  Nyquist, là où se lit une coupure), clic pour déplacer la lecture.
+
 ## Contexte dans le shell
 
 Patron macOS : **Finder** pour la file et la sélection · **Utilitaire de disque** pour

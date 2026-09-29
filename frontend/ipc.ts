@@ -35,6 +35,7 @@ import type {
   ApplyArtworkSyncOutcome,
   PlaylistDuplicateGroupDto,
   Spectrogram,
+  SpectrogramGrid,
   EncodeProfile,
 } from "../shared/contracts";
 import { decodeB85 } from "./b85";
@@ -125,11 +126,15 @@ export const analyzePath = async (
   // lets the backend drop the stale pending row. Background reads (prefetch, spectrogram re-fetch,
   // self-test) leave it false so an observation never silently deletes a queue row.
   allowForget = false,
+  // The enlarged spectrogram's canvas in physical pixels (#72): the grid is built at that size,
+  // max-pooled, capped by the source. Absent: the Diagnostic's own grid.
+  grid: SpectrogramGrid | null = null,
 ): Promise<AnalysisReport> => {
   const wire = await invoke<WireAnalysisReport>("analyze_path", {
     path,
     withSpectrogram,
     allowForget,
+    grid,
   });
   const spectrogram = { ...wire.spectrogram, mag_db: decodeB85(wire.spectrogram.mag_db) };
   assertSpectrogramLength(spectrogram);

@@ -12,12 +12,12 @@ use std::sync::{Arc, OnceLock};
 const FFT_SIZE: usize = 4096;
 static FFT_PLAN: OnceLock<Arc<dyn Fft<f32>>> = OnceLock::new();
 
-/// Plafond de colonnes temporelles du spectrogramme d'affichage. Au-delà, UNE colonne source sur
-/// `col_stride` est gardée (voir `build_spectrogram`) : la charge utile reste bornée quelle que
-/// soit la durée du morceau. ⚠️ Sous-échantillonnage, pas un pooling — seule la fréquence est
-/// max-poolée. Un événement bref peut donc tomber entre deux colonnes gardées ; ce commentaire a
-/// dit « poolées » jusqu'au 2026-09-23 (issue #72, où le max-pool temporel est une question
-/// ouverte, puisqu'il changerait l'aspect du spectrogramme de Revue).
+/// Plafond de colonnes temporelles du spectrogramme d'affichage de la zone D ([`GridSize::DISPLAY`]).
+/// Au-delà, chaque colonne affichée est le MAX-POOL de la plage de colonnes source qu'elle couvre
+/// (voir `build_spectrogram`) : la charge utile reste bornée quelle que soit la durée du morceau, et
+/// un événement bref ne tombe plus entre deux colonnes gardées. Jusqu'au 2026-09-29 (#72) c'était un
+/// sous-échantillonnage — une colonne sur `col_stride` —, et ce commentaire a dit « poolées » à tort
+/// jusqu'au 2026-09-23.
 ///
 /// ⚠️ **Ce nombre est dupliqué dans `frontend/styles.css`**, où il est déclaré comme
 /// `--measure-data` — la mesure « donnée » tranchée par l'issue #9 borne à cette même largeur
@@ -150,6 +150,40 @@ fn shared_fft() -> Arc<dyn Fft<f32>> {
         .clone()
 }
 
+/// La taille demandée pour la grille d'affichage : AU PLUS `cols` colonnes et `bins` bandes, chacune
+/// max-poolée depuis la source (#72). Jamais plus que la source : une grille plus grande que sa
+/// donnée serait interpolée et se présenterait comme mesurée (règle de #30).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Deserialize)]
+pub struct GridSize {
+    pub cols: usize,
+    pub bins: usize,
+}
+
+impl GridSize {
+    /// La grille du spectrogramme de la zone D : [`MAX_COLS`] colonnes, 384 bandes.
+    pub const DISPLAY: GridSize = GridSize {
+        cols: MAX_COLS,
+        bins: 384,
+    };
+
+    /// Plafonds d'une grille demandée par le front (vue agrandie, `ipc::analyze_path`). La vue
+    /// demande la taille de son canevas en pixels physiques ; ces bornes tiennent la charge utile
+    /// (au plus ~4 Mo avant base85) face à une demande aberrante. 4 096 colonnes couvrent un écran
+    /// 4K à 100 % ; 1 024 bandes, une hauteur de vue de ~680 px à 150 %.
+    pub const FINE_MAX: GridSize = GridSize {
+        cols: 4096,
+        bins: 1024,
+    };
+
+    /// La demande bornée par [`Self::FINE_MAX`] et par 1 dans chaque axe.
+    pub fn clamped(self) -> GridSize {
+        GridSize {
+            cols: self.cols.clamp(1, Self::FINE_MAX.cols),
+            bins: self.bins.clamp(1, Self::FINE_MAX.bins),
+        }
+    }
+}
+
 /// Result of the spectral pass.
 pub struct SpectrumResult {
     pub cutoff_hz: f32,
@@ -184,6 +218,9 @@ pub struct SpectrumAccumulator {
     spec_stride: u64,
     spec_cols: Vec<Vec<u8>>,
     collect_display: bool,
+    /// La taille de la grille d'affichage que `finish` construit. [`GridSize::DISPLAY`] sauf
+    /// demande contraire (`with_grid`).
+    grid: GridSize,
     bins: usize,
     /// Une platitude par trame, agrégée en médiane au `finish()`. Stockée plutôt que moyennée en
     /// ligne : la médiane résiste aux trames de silence, qui donneraient des valeurs aberrantes,
@@ -230,11 +267,19 @@ impl SpectrumAccumulator {
             spec_stride: 2,
             spec_cols: Vec::new(),
             collect_display,
+            grid: GridSize::DISPLAY,
             bins,
             hf_flatness_per_frame: Vec::new(),
             hf_flatness_top_per_frame: Vec::new(),
             ref_mag_sqr: ref_mag * ref_mag,
         }
+    }
+
+    /// La grille d'affichage que `finish` construira (#72). Sans effet si `collect_display` est
+    /// faux : aucune colonne n'est alors gardée.
+    pub fn with_grid(mut self, grid: GridSize) -> Self {
+        self.grid = grid;
+        self
     }
 
     pub fn push(&mut self, mono: &[f32]) {
@@ -510,13 +555,17 @@ impl SpectrumAccumulator {
         }
     }
 
-    /// Builds a display-sized spectrogram: caps time columns to [`MAX_COLS`] and pools the
-    /// frequency bins down to ~`DISPLAY_BINS` (max-pool). Keeps the UI payload small and
-    /// bounded regardless of track length. Cutoff detection is unaffected — it runs on the
-    /// full-resolution LTAS, not on these display columns.
+    /// Builds the display spectrogram at `self.grid`: at most `grid.cols` time columns and
+    /// `grid.bins` frequency bands, never more than the source. Keeps the UI payload bounded
+    /// regardless of track length. Cutoff detection is unaffected — it runs on the full-resolution
+    /// LTAS, not on these display columns.
+    ///
+    /// MAX-POOL dans les deux axes, en plages PROPORTIONNELLES (#72) : la sortie `o` d'un axe de
+    /// `src` entrées couvre les entrées `k` telles que `k * out / src == o`. Aucune plage n'est vide
+    /// (`out ≤ src`), aucune entrée n'est jetée, et la taille de sortie est exactement celle
+    /// demandée. Jusqu'au 2026-09-29, le temps gardait UNE colonne sur `col_stride` (un transitoire
+    /// pouvait disparaître) et la fréquence un pas entier `div_ceil` (342 bandes pour 384 demandées).
     fn build_spectrogram(&self) -> Spectrogram {
-        const DISPLAY_BINS: usize = 384;
-
         let src_cols = self.spec_cols.len();
         if src_cols == 0 || self.bins == 0 {
             return Spectrogram {
@@ -528,37 +577,26 @@ impl SpectrumAccumulator {
             };
         }
 
-        let col_stride = src_cols.div_ceil(MAX_COLS).max(1);
-        let bin_pool = self.bins.div_ceil(DISPLAY_BINS).max(1);
-        let out_bins = self.bins.div_ceil(bin_pool);
+        let out_cols = src_cols.min(self.grid.cols).max(1);
+        let out_bins = self.bins.min(self.grid.bins).max(1);
+        // Nyquist réparti sur les bandes de sortie ; durée couverte répartie sur les colonnes.
+        let hz_per_bin = (self.sr as f32 / 2.0) / out_bins as f32;
+        let sec_per_frame = (self.hop as f32 / self.sr as f32)
+            * self.spec_stride as f32
+            * (src_cols as f32 / out_cols as f32);
 
-        let src_hz_per_bin = self.sr as f32 / self.fft_size as f32;
-        let hz_per_bin = src_hz_per_bin * bin_pool as f32;
-        let sec_per_frame =
-            (self.hop as f32 / self.sr as f32) * self.spec_stride as f32 * col_stride as f32;
-
-        let mut out_cols: Vec<Vec<u8>> = Vec::with_capacity(src_cols.div_ceil(col_stride));
-        let mut ci = 0;
-        while ci < src_cols {
-            let col = &self.spec_cols[ci];
-            let mut pooled = vec![0u8; out_bins];
-            for (b, &v) in col.iter().enumerate().take(self.bins) {
-                let ob = b / bin_pool;
-                if v > pooled[ob] {
-                    pooled[ob] = v;
+        let bin_of: Vec<usize> = (0..self.bins).map(|k| k * out_bins / self.bins).collect();
+        let mut mag_db = vec![0u8; out_cols * out_bins];
+        for (c, col) in self.spec_cols.iter().enumerate() {
+            let row = &mut mag_db[(c * out_cols / src_cols) * out_bins..][..out_bins];
+            for (&v, &ob) in col.iter().zip(&bin_of) {
+                if v > row[ob] {
+                    row[ob] = v;
                 }
             }
-            out_cols.push(pooled);
-            ci += col_stride;
-        }
-
-        let frames = out_cols.len();
-        let mut mag_db = Vec::with_capacity(frames * out_bins);
-        for col in &out_cols {
-            mag_db.extend_from_slice(col);
         }
         Spectrogram {
-            frames,
+            frames: out_cols,
             bins: out_bins,
             hz_per_bin,
             sec_per_frame,
@@ -573,6 +611,91 @@ mod tests {
     use std::f32::consts::PI;
 
     const SR: u32 = 44100;
+
+    /// Un accumulateur dont les colonnes source sont posées à la main : `n` colonnes de silence.
+    fn colonnes(n: usize) -> SpectrumAccumulator {
+        let mut acc = SpectrumAccumulator::new(SR, true);
+        acc.spec_cols = vec![vec![0u8; acc.bins]; n];
+        acc
+    }
+
+    /// #72 : réduire le temps garde un transitoire bref. Colonne 1501 sur 3000, grille de 1000 :
+    /// l'ancien pas entier (une colonne sur trois : 1500, 1503…) la jetait.
+    #[test]
+    fn la_grille_garde_un_transitoire_bref_dans_les_deux_axes() {
+        let mut acc = colonnes(3000);
+        acc.spec_cols[1501][1001] = 200;
+        let g = acc
+            .with_grid(GridSize {
+                cols: 1000,
+                bins: 384,
+            })
+            .build_spectrogram();
+        assert_eq!((g.frames, g.bins), (1000, 384));
+        let (col, bande) = (1501 * 1000 / 3000, 1001 * 384 / 2048);
+        assert_eq!(g.mag_db[col * g.bins + bande], 200, "le transitoire est là");
+        assert_eq!(
+            g.mag_db.iter().filter(|&&v| v > 0).count(),
+            1,
+            "et nulle part ailleurs"
+        );
+    }
+
+    /// #72 : la grille a exactement la taille demandée, jamais plus que la source, et ses unités
+    /// couvrent toujours tout le morceau et tout le spectre — sinon l'axe mm:ss et le réticule
+    /// mentiraient.
+    #[test]
+    fn la_grille_prend_la_taille_demandee_sans_depasser_la_source() {
+        let src = 3000;
+        let duree = (FFT_SIZE / 2) as f32 / SR as f32 * 2.0 * src as f32;
+        for (demande, attendu) in [
+            (
+                GridSize {
+                    cols: 1000,
+                    bins: 384,
+                },
+                (1000, 384),
+            ),
+            (
+                GridSize {
+                    cols: 8000,
+                    bins: 4096,
+                },
+                (3000, 2048),
+            ),
+            (GridSize::DISPLAY, (MAX_COLS, 384)),
+        ] {
+            let g = colonnes(src).with_grid(demande).build_spectrogram();
+            assert_eq!((g.frames, g.bins), attendu, "{demande:?}");
+            assert!((g.hz_per_bin * g.bins as f32 - SR as f32 / 2.0).abs() < 0.5);
+            assert!((g.sec_per_frame * g.frames as f32 - duree).abs() < 0.01);
+        }
+    }
+
+    /// #72 : une demande venue du front est bornée, jamais prise telle quelle.
+    #[test]
+    fn une_demande_de_grille_est_bornee() {
+        let g = GridSize {
+            cols: 1_000_000,
+            bins: 0,
+        }
+        .clamped();
+        assert_eq!(
+            g,
+            GridSize {
+                cols: GridSize::FINE_MAX.cols,
+                bins: 1
+            }
+        );
+    }
+
+    /// Miroir de `SpectrogramGrid` dans `shared/contracts.ts` (#72), que le front envoie à
+    /// `analyze_path`. Déstructuration exhaustive : un champ ajouté ici casse ce test tant que le
+    /// miroir TS n'a pas suivi.
+    #[test]
+    fn grid_size_shape_matches_contracts_ts() {
+        let GridSize { cols: _, bins: _ } = GridSize::DISPLAY;
+    }
 
     /// La pente : nulle sur un spectre plat, exacte sur deux tons, négative sans aigu.
     ///

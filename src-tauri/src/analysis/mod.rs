@@ -298,6 +298,7 @@ pub fn cached_report(json: Option<String>, ver: Option<i64>) -> Option<String> {
 use dynamics::{ClipAccumulator, DcAccumulator, TruePeakAccumulator};
 use peaks::PeaksAccumulator;
 use phase::PhaseAccumulator;
+pub use spectrum::GridSize;
 use spectrum::SpectrumAccumulator;
 use structure::{SilenceAccumulator, TruncationAccumulator};
 
@@ -418,11 +419,14 @@ const SILENCE_THRESHOLD: f32 = 0.001; // ~ -60 dBFS
 /// Elle reproduit la branche spectrogramme du rappel de décodage d'[`analyze`] — même
 /// `target_ch`, même repli mono, même accumulateur. Les deux boucles doivent rester d'accord :
 /// `spectrogramme_seul_donne_la_meme_grille_que_analyze` les compare sur une fixture.
-pub fn spectrogram_only(path: &str) -> Result<Spectrogram, String> {
+///
+/// `grid` : la taille de la grille (#72) — [`GridSize::DISPLAY`] pour la zone D, la taille du
+/// canevas de la vue agrandie sinon.
+pub fn spectrogram_only(path: &str, grid: GridSize) -> Result<Spectrogram, String> {
     let tag = tags::read(path);
     let target_ch: u16 = if tag.channels >= 2 { 2 } else { 1 };
     let sr = decode::probe(path)?.sample_rate;
-    let mut spec = SpectrumAccumulator::new(sr, true);
+    let mut spec = SpectrumAccumulator::new(sr, true).with_grid(grid);
     decode::decode_pcm(path, target_ch, |block| {
         if target_ch == 2 {
             let mono: Vec<f32> = block
@@ -442,6 +446,13 @@ pub fn spectrogram_only(path: &str) -> Result<Spectrogram, String> {
 /// scalar signals are identical either way — only the display grid is gated. Batch (M2b)
 /// passes false; the Revue UI / debug overlay pass true on demand.
 pub fn analyze(path: &str, with_spectrogram: bool) -> Result<AnalysisReport, String> {
+    analyze_with_grid(path, with_spectrogram.then_some(GridSize::DISPLAY))
+}
+
+/// [`analyze`], la grille d'affichage à la taille `grid` (#72) — `None` : pas de grille. Sert
+/// l'IPC quand le rapport en cache manque ET que la vue agrandie demande sa propre taille.
+pub fn analyze_with_grid(path: &str, grid: Option<GridSize>) -> Result<AnalysisReport, String> {
+    let with_spectrogram = grid.is_some();
     let started = std::time::Instant::now();
     // declared properties / tags (no decode)
     let tag = tags::read(path);
@@ -456,7 +467,8 @@ pub fn analyze(path: &str, with_spectrogram: bool) -> Result<AnalysisReport, Str
     let mut sil = SilenceAccumulator::new(sr, SILENCE_THRESHOLD);
     let mut trunc = TruncationAccumulator::new(sr);
     let mut pk = PeaksAccumulator::new(PEAKS_WINDOW);
-    let mut spec = SpectrumAccumulator::new(sr, with_spectrogram);
+    let mut spec =
+        SpectrumAccumulator::new(sr, with_spectrogram).with_grid(grid.unwrap_or(GridSize::DISPLAY));
     let mut ph = PhaseAccumulator::new();
 
     // Nombre d'échantillons MONO réellement décodés — la seule façon de savoir combien de son le
@@ -1170,7 +1182,7 @@ mod tests {
             "la fixture doit produire une VRAIE grille, sinon le test compare deux vides"
         );
 
-        let seul = spectrogram_only(path).expect("spectrogram_only");
+        let seul = spectrogram_only(path, GridSize::DISPLAY).expect("spectrogram_only");
         assert_eq!(
             seul, complet.spectrogram,
             "les deux boucles ont divergé : le collapse Diagnostic afficherait une grille qui \

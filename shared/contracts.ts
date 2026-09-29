@@ -173,6 +173,15 @@ export interface Spectrogram {
   mag_db: Uint8Array;
 }
 
+/** The grid size the enlarged spectrogram asks `analyze_path` for (#72): AT MOST `cols` columns
+ *  and `bins` bands, each max-pooled from the source — its canvas in physical pixels. Mirror of
+ *  Rust `analysis::spectrum::GridSize`, held by `grid_size_shape_matches_contracts_ts`; Rust clamps
+ *  it (`GridSize::clamped`), never trusts it as sent. */
+export interface SpectrogramGrid {
+  cols: number;
+  bins: number;
+}
+
 // Mirror of src-tauri/src/analysis/mod.rs AnalysisReport (M2a).
 export interface AnalysisReport {
   path: string;

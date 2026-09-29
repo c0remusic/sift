@@ -342,9 +342,13 @@ pub async fn analyze_path(
     // pass false, so an observation never silently mutates the queue out from under the user
     // (review: a 400ms prefetch or a self-test over moved files was a hidden bulk row-deleter).
     allow_forget: bool,
+    // Taille de la grille demandée par la vue agrandie du spectrogramme (#72) : son canevas en
+    // pixels physiques. Absente : la grille de la zone D. Bornée par `GridSize::clamped`, jamais
+    // prise telle quelle — une demande aberrante ne doit pas pouvoir allouer des centaines de Mo.
+    grid: Option<crate::analysis::GridSize>,
 ) -> Result<crate::analysis::AnalysisReport, String> {
     tauri::async_runtime::spawn_blocking(move || {
-        analyze_path_bloquant(app, path, with_spectrogram, allow_forget)
+        analyze_path_bloquant(app, path, with_spectrogram, allow_forget, grid)
     })
     .await
     // Le fil a paniqué ou été annulé. Pas de `unwrap` : l'interdiction du dépôt vaut ici comme
@@ -366,8 +370,12 @@ fn analyze_path_bloquant(
     path: String,
     with_spectrogram: bool,
     allow_forget: bool,
+    grid: Option<crate::analysis::GridSize>,
 ) -> Result<crate::analysis::AnalysisReport, String> {
     let conn = app.state::<Mutex<Connection>>();
+    let taille = grid
+        .map(crate::analysis::GridSize::clamped)
+        .unwrap_or(crate::analysis::GridSize::DISPLAY);
 
     // Extrait en fermeture pour pouvoir être REJOUÉ : quand un autre fil analysait déjà ce
     // chemin, on attend puis on relit le cache qu'il vient d'écrire, au lieu de refaire son
@@ -404,6 +412,11 @@ fn analyze_path_bloquant(
                 |r| Ok((r.get::<_, Option<String>>(0)?, r.get(1)?)),
             )
             .ok();
+        // Le verrou global se rend ICI : tout ce qui suit est du JSON et, pour la grille, un
+        // décodage complet du fichier (`spectrogram_only`, secondes sur un long mix). Tenu jusqu'au
+        // bout, il gelait toute commande qui lit la base et le pool d'analyse — et la vue agrandie
+        // du spectrogramme (#72) ajoute un décodage par ouverture (relecture de #72).
+        drop(conn);
         // report_cache_ver guards against content-only changes to analyze() (e.g. spectrogram
         // resolution, or v9's re-meaning of tags_cdj_ok) that don't touch AnalysisReport's JSON
         // shape — see REPORT_CACHE_VERSION's doc comment. The rule itself lives in
@@ -426,7 +439,7 @@ fn analyze_path_bloquant(
                 // Un échec ici n'est pas fatal : on retombe sur l'analyse complète plus bas, qui
                 // reste correcte. Fail-fast ne s'applique pas à une optimisation dont le repli
                 // donne le même résultat — mais il se trace, sinon la régression serait muette.
-                match crate::analysis::spectrogram_only(&path) {
+                match crate::analysis::spectrogram_only(&path, taille) {
                     Ok(grille) => {
                         let mut report = report;
                         report.spectrogram = grille;
@@ -460,7 +473,8 @@ fn analyze_path_bloquant(
         // qu'on veut. On analyse, en tenant le jeton pour que le suivant nous attende à son tour.
     }
 
-    let report = match crate::analysis::analyze(&path, with_spectrogram) {
+    let report = match crate::analysis::analyze_with_grid(&path, with_spectrogram.then_some(taille))
+    {
         Ok(r) => r,
         Err(e) => {
             // The file is confirmed gone (decode.rs's open_format hits NotFound) — unlike the
