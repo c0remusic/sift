@@ -180,6 +180,13 @@ facette cède la place à « ← Retour à la table », au même endroit — ce 
 reste à la même place d'un mode à l'autre. Le retour est une porte **nommée** : sans elle,
 on sort d'un résultat en devinant quel contrôle le referme.
 
+**Amendé le 2026-10-05 — le mode Doublons quitte Rangés** pour l'écran Doublons du rail
+(`docs/ui-specs/doublons.md`). Il ne voyait que les pistes rangées : 4 groupes sur la vraie
+bibliothèque, contre 304 dans la file. Il ne laissait aucun choix (tout ce qui n'était pas
+« Recommandé » partait), et sa recommandation ignorait le verdict. Le chip « Doublons » de la barre
+et le mode de la zone C sont retirés ; leurs groupes vivent dans le nouvel écran, avec ceux de la
+file.
+
 ## États
 
 | État | Rendu |

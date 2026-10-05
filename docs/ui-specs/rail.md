@@ -29,6 +29,7 @@ En-têtes en petites capitales discrètes (`--text-xs`, `--tracking-wider`,
 ```
 TRAITER
   Revue
+  Doublons
   Journal
 
 BIBLIOTHÈQUE
@@ -170,8 +171,14 @@ glyphe accolé à un libellé — ce n'était pas ce patron.
 
 ### Clavier
 
-`⌘/Ctrl + 1…8` atteint la n-ième destination, sources comprises et dans l'ordre
+`⌘/Ctrl + 1…9` atteint la n-ième destination, sources comprises et dans l'ordre
 d'affichage — couche 1 de `DESIGN.md` § 9.
+
+**Amendé le 2026-10-05 — entrée « Doublons »** (`docs/ui-specs/doublons.md`). Une destination de
+plus, sous Revue dans TRAITER, glyphe `ti-copy` : le rail passe de 8 à 9 destinations fixes, et
+chaque raccourci à partir de `Ctrl+2` se décale d'un cran (`Ctrl+2` ouvre Doublons, Journal passe
+à `Ctrl+3`). Doublons ne porte **pas de compte** : la barre unifiée écrit déjà « N groupes » à côté
+de son titre — même règle que Revue (§ Item de navigation, 2026-08-26).
 
 `↑` `↓` déplacent le focus dans le rail quand il l'a. `Entrée` et `Espace` activent
 l'item focalisé.

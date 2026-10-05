@@ -450,6 +450,17 @@ même rendu qu'en Bibliothèque) · nom de fichier · artiste — titre · **pas
 § 16). **La durée est retirée de la file** (2026-08-21) : inutile ici, et elle mangeait la
 place du signal doublon.
 
+**Amendé le 2026-10-05 — le signal doublon mène quelque part** (`docs/ui-specs/doublons.md`).
+Mesuré le 2026-10-04 : 686 pistes de la file portaient `DUPLICATE` sans qu'aucun écran ne montre
+leur groupe. Désormais :
+- la pastille suit la **même clé de groupe** que l'écran Doublons (nom + version, noms sales
+  nettoyés) : une piste badgée a toujours un groupe à montrer ;
+- le menu contextuel d'une ligne badgée gagne « Voir le groupe de doublons », qui ouvre Doublons
+  sur ce groupe ;
+- le bandeau doublon de la piste ouverte (`noticeBannerHtml`) porte en fin de ligne un bouton
+  texte « Voir le groupe », même destination. Texte seul, secondaire : le bandeau informe, il ne
+  décide rien.
+
 **Hauteur : 46 px, constante** — et non `--row-h` (32 px), qui vaut pour une ligne simple. La
 rangée de file en porte **deux** (nom de fichier, puis artiste — titre), donc sa hauteur se dérive
 des deux interlignes du kit macOS Big Sur (`docs/design-refs/Styleguide.pdf`, § 05 Typography) :
