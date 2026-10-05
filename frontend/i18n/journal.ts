@@ -17,7 +17,9 @@ const plFr = (n: number, one: string, many = `${one}s`) => `${n} ${n > 1 ? many 
 const plEn = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 const fr = {
-  action: { filed: "Rangé", purged: "Purgé", setAside: "Écarté" },
+  // `trash` est une mise à la corbeille, RÉVERSIBLE : « Purgé » (son libellé jusqu'au 2026-10-05)
+  // disait un effacement définitif, le vidage de la corbeille, qui n'écrit aucune ligne ici.
+  action: { filed: "Rangé", trashed: "Mis à la corbeille", setAside: "Écarté" },
   status: { pending: "Annulation…", reverted: "Annulé", failed: "Échec", applied: "Appliqué" },
   col: { time: "Heure", action: "Action", track: "Piste", dest: "Destination", state: "État" },
   unknownDate: "Date inconnue",
@@ -31,7 +33,7 @@ const fr = {
   retry: "Réessayer",
   emptyAll: {
     title: "Aucune action enregistrée",
-    note: "L'historique complet des rangements, écarts et purges apparaîtra ici, prêt à être annulé.",
+    note: "L'historique complet des rangements, écarts et mises à la corbeille apparaîtra ici, prêt à être annulé.",
   },
   emptySession: {
     title: "Rien dans cette session",
@@ -82,7 +84,7 @@ const fr = {
 };
 
 const en: typeof fr = {
-  action: { filed: "Filed", purged: "Purged", setAside: "Set aside" },
+  action: { filed: "Filed", trashed: "Moved to Trash", setAside: "Set aside" },
   status: { pending: "Undoing…", reverted: "Undone", failed: "Failed", applied: "Applied" },
   col: { time: "Time", action: "Action", track: "Track", dest: "Destination", state: "Status" },
   unknownDate: "Unknown date",
@@ -94,7 +96,7 @@ const en: typeof fr = {
   retry: "Try again",
   emptyAll: {
     title: "No actions recorded",
-    note: "The full history of filings, set-asides and purges will appear here, ready to undo.",
+    note: "The full history of filings, set-asides and moves to Trash will appear here, ready to undo.",
   },
   emptySession: {
     title: "Nothing in this session",

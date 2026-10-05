@@ -49,8 +49,8 @@ type RowStatus = "applied" | JrnlStatus;
 interface RowArgs {
   /** Horodatage BRUT de la base, UTC. Voir l'en-tête : la cellule montre l'heure locale. */
   ts: string;
-  /** Les QUATRE `kind` du contrat. `actionLabel` en tire « Rangé » (convert/move), « Purgé »
-   *  (trash), « Écarté » (reject) — aucun autre libellé n'est atteignable, voir l'écart spec↔réel
+  /** Les QUATRE `kind` du contrat. `actionLabel` en tire « Rangé » (convert/move), « Mis à la
+   *  corbeille » (trash), « Écarté » (reject) — aucun autre libellé n'est atteignable, voir l'écart spec↔réel
    *  noté sur cette fonction. */
   kind: JournalEntry["kind"];
   /** Morceaux du lot. La marque `×N` n'est peinte qu'au-delà de 1. */

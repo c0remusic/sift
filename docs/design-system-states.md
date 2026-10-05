@@ -300,8 +300,8 @@ dans la section Journal que ce qui lui est propre : colonnes, groupes, états.
 
 **Colonnes** — `.jrnl-c` + `.jrnl-c-time|-act|-track|-dest|-state`. Les trois
 largeurs fixes sont déclarées une seule fois sur `.jrnl-wrap`
-(`--jrnl-col-time:44px`, `--jrnl-col-act:68px`, `--jrnl-col-state:76px`, dérivées
-du plus long contenu MESURÉ dans la vraie fenêtre le 2026-08-19) : hors de ce
+(`--jrnl-col-time:44px`, `--jrnl-col-act:132px`, `--jrnl-col-state:76px`, dérivées
+du plus long contenu MESURÉ dans la vraie fenêtre ; l'action remesurée le 2026-10-05) : hors de ce
 wrapper, ces trois `width:var(…)` ne résolvent rien et la table se disloque.
 `.jrnl-batch` porte la marque `×N` d'un lot. La destination tronque par la
 GAUCHE (`direction:rtl` + `text-align:left`) et son chemin est enveloppé d'un

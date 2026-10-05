@@ -28,7 +28,7 @@ En mode « Tout l'historique », un second niveau de groupe par jour.
 | Colonne | Largeur | Rendu |
 |---|---|---|
 | **Heure** | fixe | `--font-mono`, `tabular-nums` |
-| **Action** | fixe | Rangé · Écarté · Restauré · Purgé · Tags appliqués |
+| **Action** | fixe | Rangé · Écarté · Restauré · Mis à la corbeille · Tags appliqués (« Purgé » jusqu'au 2026-10-05 : le `kind` `trash` est une mise à la corbeille, réversible ; le vidage, seul définitif, n'écrit aucune ligne au Journal) |
 | **Piste** | flex 2 | Artiste — titre, repli sur le nom de fichier |
 | **Destination** | flex 1.5 | Chemin relatif, `--font-mono`, tronqué par la gauche |
 | **État** | fixe | Appliqué · Annulé · Échec |

@@ -210,8 +210,8 @@ function dayLabel(ts: string): string {
 
 /** Vocabulaire d'action de la spec.
  *
- *  ⚠️ ÉCART SPEC ↔ RÉEL. La spec nomme cinq libellés — Rangé · Écarté · Restauré · Purgé · Tags
- *  appliqués — pour QUATRE `kind` au contrat (`shared/contracts.ts`, miroir d'`actions.rs`) :
+ *  ⚠️ ÉCART SPEC ↔ RÉEL. La spec nomme cinq libellés — Rangé · Écarté · Restauré · Mis à la
+ *  corbeille (« Purgé » jusqu'au 2026-10-05) · Tags appliqués — pour QUATRE `kind` au contrat (`shared/contracts.ts`, miroir d'`actions.rs`) :
  *  convert · move · trash · reject. « Tags appliqués » ne peut pas apparaître : `list_journal`
  *  exclut explicitement `type='tag_edit'` côté SQL. « Restauré » non plus : une restauration
  *  n'écrit aucune ligne de journal à elle. Les deux libellés sont donc laissés hors de cette
@@ -222,7 +222,7 @@ function actionLabel(kind: JournalEntry["kind"]): string {
     case "move":
       return T().action.filed;
     case "trash":
-      return T().action.purged;
+      return T().action.trashed;
     case "reject":
       return T().action.setAside;
   }

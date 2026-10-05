@@ -2344,10 +2344,13 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
      2026-08-19 (CDP, une sonde `<span>` posée dans la cellule elle-même, donc sur la police
      réellement résolue — pas un calcul) :
        heure  « 00:00 » en --font-mono/12px = 36,0px   (en-tête « HEURE »  = 34,9px)  → 44px
-       action « Écarté » 35,2 + --space-4 + « ×123 » 19,7 = 58,9px (« ACTION » = 40,6px) → 68px
+       action « Mis à la corbeille » 95,4 + --space-4 + « ×123 » 23,0 = 122,4px             → 132px
+              (remesurée le 2026-10-05, en Inter, par une rangée-sonde `.lr > .jrnl-c-act` :
+              « Purgé » est devenu « Mis à la corbeille ». L'anglais « Moved to Trash » fait
+              88,2px. Avant : « Écarté » 35,2 + 4 + 19,7 = 58,9px en Outfit → 68px)
        état   « Annulation… » = 66,8px                  (en-tête « ÉTAT »   = 25,5px)  → 76px
      Chaque largeur laisse ~9px de respiration et tombe sur le cran de 4 de l'échelle. */
-  --jrnl-col-time:44px;--jrnl-col-act:68px;--jrnl-col-state:76px}
+  --jrnl-col-time:44px;--jrnl-col-act:132px;--jrnl-col-state:76px}
 /* En-tête de colonnes, collant en haut de la zone C. Même matériau que `.sift-lib-thead`, classe
    distincte et non réutilisée : le clic droit sur `.sift-lib-thead` ouvre les réglages de COLONNES
    de la Bibliothèque (`sift-live.ts`), que le Journal n'a pas — ni tri, ni redimensionnement. */

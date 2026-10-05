@@ -19,7 +19,9 @@ const fr = {
   sentenceTruncated: "Fin de fichier tronquée : le fichier est incomplet.",
   sentenceFake: "Déclaré lossless, mesuré compressé — un faux lossless, écarté depuis Revue.",
   sentenceCheck: "Douteux à l'analyse — à vérifier avant de le garder.",
-  sentenceTrashed: "Envoyé à la corbeille depuis Revue.",
+  // Sans provenance : `EcarteItem` ne dit pas d'où vient une piste, et la corbeille se remplit
+  // aussi depuis Rangés (action de masse) — « depuis Revue » y était faux (2026-10-05).
+  sentenceTrashed: "Envoyé à la corbeille.",
   sentenceSetAside: "Écarté depuis Revue, sans verdict.",
   reason: "Raison",
   colArtist: "Artiste",
@@ -52,7 +54,7 @@ const fr = {
   retry: "Réessayer",
   emptyTrash: "Vider la corbeille",
   emptyTrashTitle: "La corbeille est vide",
-  emptyTrashNote: "Les pistes envoyées à la corbeille depuis Revue ou À re-sourcer attendent ici avant le vidage.",
+  emptyTrashNote: "Les pistes envoyées à la corbeille attendent ici avant le vidage.",
   emptyResourcingTitle: "Rien à re-sourcer",
   emptyResourcingNote:
     "Les pistes écartées depuis Revue — fausses, tronquées, douteuses — apparaissent ici, à racheter ou à remettre en file.",
@@ -67,7 +69,7 @@ const en: typeof fr = {
   sentenceTruncated: "End of file cut off: the file is incomplete.",
   sentenceFake: "Declared lossless, measured compressed — a fake lossless, set aside from Review.",
   sentenceCheck: "Flagged as doubtful by analysis — check it before you keep it.",
-  sentenceTrashed: "Moved to Trash from Review.",
+  sentenceTrashed: "Moved to Trash.",
   sentenceSetAside: "Set aside from Review, no verdict.",
   reason: "Reason",
   colArtist: "Artist",
@@ -100,7 +102,7 @@ const en: typeof fr = {
   retry: "Try again",
   emptyTrash: "Empty Trash",
   emptyTrashTitle: "Trash is empty",
-  emptyTrashNote: "Tracks moved to Trash from Review or To re-source wait here until you empty it.",
+  emptyTrashNote: "Tracks moved to Trash wait here until you empty it.",
   emptyResourcingTitle: "Nothing to re-source",
   emptyResourcingNote:
     "Tracks set aside from Review — fake, truncated, doubtful — show up here, to buy again or return to the queue.",
