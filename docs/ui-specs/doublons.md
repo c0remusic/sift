@@ -1,10 +1,9 @@
 # Spec — Doublons
 
 > **Validée par Antoine le 2026-10-05** : direction hybride et six décisions, puis la maquette
-> hybride et trois réponses (ordre des groupes, confirmation destructive, enchaîner). Une question
-> reste ouverte, tranchée sur wireframe : à quoi l'inspecteur compare la copie gardée quand c'est
-> elle qu'on ouvre (§ Questions ouvertes). `rail.md`, `revue.md` et `bibliotheque.md` portent
-> leurs amendements du même jour.
+> hybride et ses réponses : ordre des groupes, confirmation destructive, copie gardée comparée à
+> la meilleure des autres (tranché sur wireframe), débit départageant les seules copies lossy.
+> `rail.md`, `revue.md` et `bibliotheque.md` portent leurs amendements du même jour.
 
 ## Contexte dans le shell
 
@@ -129,6 +128,12 @@ seuls Format et Dossier restent allumés.
   colonnes (verdict, coupure, format, débit, fréquence, durée, taille, dossier, identification,
   Rekordbox), la phrase de la règle (« la règle garde la copie MP3 : VRAI passe avant FAUX »),
   et le spectrogramme à la demande.
+- **La copie ouverte est la gardée** — tranché sur wireframe le 2026-10-05 : elle se compare à
+  **la meilleure des autres copies** selon la règle, et l'en-tête le dit (« Comparée à : FLAC ·
+  Ostgut rips », puis en tertiaire « meilleure des 2 autres »). La zone D garde ainsi la même forme
+  en deux colonnes quelle que soit la copie ouverte. Écartées : la fiche seule (les autres copies
+  perdaient coupure et taille, la zone changeait de forme) et la copie ouverte juste avant
+  (l'historique, invisible, décidait ; au premier clic du groupe, rien à comparer).
 - **« Comparer les spectrogrammes »** ouvre la vue agrandie (`spectro-enlarge.ts`) avec les
   spectrogrammes du groupe **empilés**, un par copie, à la même échelle de temps — jusqu'à 8 copies.
 
@@ -191,8 +196,11 @@ aussi (case cochée). Sift n'écrit rien dans Rekordbox à cette étape.
   identification, présence Rekordbox, existence du fichier sur le disque. Calculés hors du fil de
   la fenêtre.
 - **Copie cochée par défaut** (`pick_keep` v2) : jamais tronquée, puis VRAI avant À VÉRIFIER avant
-  FAUX, puis lossless, débit, fréquence ; à égalité : dossier préféré, puis .aiff plutôt que .aif,
-  puis la plus ancienne. Plus jamais l'ordre de lecture SQL.
+  FAUX, puis lossless avant lossy, puis le débit **entre copies lossy seulement**, puis la
+  fréquence ; à égalité : dossier préféré, puis .aiff plutôt que .aif, puis la plus ancienne. Plus
+  jamais l'ordre de lecture SQL. Le débit ne départage pas deux lossless (tranché le 2026-10-05,
+  défaut révélé par le wireframe) : celui d'un FLAC mesure sa compression, pas sa qualité, et la
+  règle aurait toujours jeté un FLAC au profit d'un WAV du même son.
 - **Appliquer un plan** : une seule commande pour N copies, un seul lot de journal, hors du fil de
   la fenêtre, avec progression et arrêt. Chaque copie part dans une **corbeille sur son propre
   disque** (renommage instantané) : `Documents/Sift/Trash` si elle est sur le même disque, sinon
@@ -219,16 +227,13 @@ commandes de plus dont le corps part hors du fil de la fenêtre
 ## Questions ouvertes
 
 Les six décisions de direction ont été tranchées par Antoine le 2026-10-05. La maquette hybride
-du même jour en a soulevé quatre : l'ordre des groupes (tranché : artiste de A à Z, § Zone C) et
-la confirmation destructive (tranchée : variante destructive, § États) ; restent deux.
+du même jour en a soulevé quatre, tranchées le même jour sauf la dernière : l'ordre des groupes
+(artiste de A à Z, § Zone C), la confirmation destructive (variante destructive, § États), la copie
+gardée ouverte (comparée à la meilleure des autres, § Zone D). Reste :
 
-1. **La copie ouverte est la gardée** : la zone D « comparée à la copie gardée » n'a alors plus
-   d'objet. Contre quoi la comparer ? Trois options — la meilleure des autres copies, la fiche
-   seule, la copie ouverte juste avant — **à trancher sur wireframe** (demande d'Antoine, 2026-10-05).
-   Tout le reste de la zone D en est indépendant.
-2. **Le mot « doublon »** : l'écran Rekordbox écrit déjà « N doublons à retirer »
-   (`i18n/rekordbox-view.ts:44`) pour des entrées de playlist en double. Deux sens du même mot,
-   à départager hors du lot 1.
+- **Le mot « doublon »** : l'écran Rekordbox écrit déjà « N doublons à retirer »
+  (`i18n/rekordbox-view.ts:44`) pour des entrées de playlist en double. Deux sens du même mot,
+  à départager hors du lot 1.
 
 Conséquence de la décision 1, pas une question : la nouvelle entrée du rail décale d'un cran les
 raccourcis `Ctrl+2` à `Ctrl+8` (`shortcuts.ts:128`, ordre du rail). `Ctrl+2` ouvrira Doublons,
