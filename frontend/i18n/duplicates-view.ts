@@ -7,6 +7,7 @@
 // les noms de touches (SPACE, ENTER, BKSP) restent au site, comme dans Revue : ils n'ont pas de
 // langue.
 import { dict } from "../i18n";
+import type { RekordboxDoubt } from "../../shared/contracts";
 
 const plFr = (n: number, one: string, many = `${one}s`): string => `${n} ${n > 1 ? many : one}`;
 const plEn = (n: number, one: string, many = `${one}s`): string => `${n} ${n === 1 ? one : many}`;
@@ -52,7 +53,14 @@ const fr = {
   markTruncated: "tronquée",
   markMissing: "introuvable",
   playlists: (n: number) => plFr(n, "playlist"),
-  rekordboxUnknown: "Rekordbox illisible : présence inconnue",
+  // Confirmation : des copies envoyées que Rekordbox n'a pas pu confirmer absentes (décision
+  // d'Antoine, 2026-10-05 : avertir, ne pas les garder d'office).
+  confirmUnverified: (n: number, reason: RekordboxDoubt) =>
+    (reason === "rekordbox_open"
+      ? "Rekordbox est ouvert : ses derniers imports ne sont pas lus. "
+      : "Rekordbox n'est lu que dans son XML exporté : une piste importée depuis n'y figure pas. ") +
+    (n > 1 ? `${n} copies envoyées n'ont pas pu être vérifiées` : "Une copie envoyée n'a pas pu être vérifiée") +
+    (reason === "rekordbox_open" ? " — ferme Rekordbox et rouvre Doublons pour les vérifier." : "."),
   keepAria: (file: string) => `Garder ${file}`,
   // Inspecteur au repos.
   restTitle: "Toute la collection",
@@ -83,6 +91,7 @@ const fr = {
   notIdentified: "Non identifiée",
   rekordboxAbsent: "absente",
   rekordboxUnknownShort: "inconnue",
+  rekordboxUnverifiedShort: "non vérifiée",
   linkIdentical: "Même contenu que la comparée",
   linkSameSound: (s: string) => `Même son que la comparée · empreinte ${s}`,
   linkSameName: "Même nom que la comparée",
@@ -189,7 +198,12 @@ const en: typeof fr = {
   markTruncated: "truncated",
   markMissing: "missing",
   playlists: (n: number) => plEn(n, "playlist"),
-  rekordboxUnknown: "Rekordbox unreadable: presence unknown",
+  confirmUnverified: (n: number, reason: RekordboxDoubt) =>
+    (reason === "rekordbox_open"
+      ? "Rekordbox is open: its latest imports aren't read. "
+      : "Rekordbox is only read from its exported XML: a track imported since isn't in it. ") +
+    (n > 1 ? `${n} copies being moved couldn't be checked` : "One copy being moved couldn't be checked") +
+    (reason === "rekordbox_open" ? " — quit Rekordbox and reopen Duplicates to check them." : "."),
   keepAria: (file: string) => `Keep ${file}`,
   restTitle: "Whole collection",
   restExtra: "Extra copies",
@@ -218,6 +232,7 @@ const en: typeof fr = {
   notIdentified: "Not identified",
   rekordboxAbsent: "absent",
   rekordboxUnknownShort: "unknown",
+  rekordboxUnverifiedShort: "not checked",
   linkIdentical: "Same content as the compared copy",
   linkSameSound: (s: string) => `Same sound as the compared copy · fingerprint ${s}`,
   linkSameName: "Same name as the compared copy",

@@ -575,11 +575,17 @@ export interface DupGroup {
 /** Ce qui fonde un groupe, du plus faible au plus fort. */
 export type DupProof = "same_name" | "same_sound" | "identical";
 
-/** Ce que Rekordbox sait d'une copie. `unknown` : ni master.db ni le XML lié ne sont lisibles. */
+/** Pourquoi la source lue ne peut pas affirmer qu'une copie est absente de Rekordbox. */
+export type RekordboxDoubt = "rekordbox_open" | "xml_snapshot";
+
+/** Ce que Rekordbox sait d'une copie. `unknown` : aucune source lisible, ou intégration Rekordbox
+ *  inactive. `unverified` : absente de la source lue, mais celle-ci peut taire une piste jouée —
+ *  la copie n'est pas gardée d'office, la confirmation avertit (décision du 2026-10-05). */
 export type RekordboxUse =
   | { state: "unknown" }
   | { state: "absent" }
-  | { state: "present"; playlists: number };
+  | { state: "present"; playlists: number }
+  | { state: "unverified"; reason: RekordboxDoubt };
 
 export interface DupScreenCopy {
   id: number;

@@ -3074,6 +3074,10 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .sift-batch-alert-title{font-weight:600;font-size:var(--text-md)}
 .sift-batch-alert-recap{font-size:var(--text-sm);color:var(--color-text-secondary)}
 .sift-batch-alert-dest{font-size:var(--text-sm);color:var(--color-text-tertiary)}
+/* Avertissement de la confirmation Doublons : copies que Rekordbox n'a pas pu confirmer absentes
+   (Rekordbox ouvert, ou XML d'export seul). Encre d'avertissement, comme « À vérifier » dans la
+   table — une vigilance, pas une erreur. */
+.sift-batch-alert-warn{font-size:var(--text-sm);color:var(--color-text-warning)}
 .sift-batch-alert-skip{display:flex;align-items:center;gap:var(--space-8);font-size:var(--text-sm);color:var(--color-text-secondary);cursor:pointer}
 /* BOUTON PRIMAIRE, forme du kit (§ 02-Buttons / 01-Push Buttons) : aplat d'accent, encre blanche.
    Était un fond pâle avec du texte teinté, ce qui donnait deux boutons de même poids visuel dans

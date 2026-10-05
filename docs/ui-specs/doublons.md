@@ -145,7 +145,7 @@ seuls Format et Dossier restent allumés.
 | Groupes | la table, le plan coché par défaut |
 | Plan modifié | les en-têtes de groupe recalculent leur effet ; le bouton recompte « Envoyer N copies » |
 | Rekordbox décoché | pas de rangée en plus (toutes font 32 px, la liste est virtualisée) : le repère Rekordbox de la rangée passe en encre d'avertissement, et l'effet du groupe dit « Rekordbox la joue (3 playlists) » ; Sift n'écrit rien dans Rekordbox |
-| Confirmation | modale armée sur le patron de `confirmBatchAlert` : titre « Envoyer N copies à la corbeille ? », récapitulatif « N copies · X Go · G groupes », ligne tertiaire « Les K groupes à vérifier restent hors du plan. Un seul Ctrl+Z annule tout. », case cochée « Garder aussi les N copies que Rekordbox joue » ; Annuler a le focus ; bouton d'action désactivé 250 ms (armement), en **secondaire danger, pas le bleu** — **variante destructive** de `confirmBatchAlert`, tranchée le 2026-10-05 (HIG Buttons : « Don't assign the primary role to a button that performs a destructive action ») ; le mode Lot garde sa variante bleue |
+| Confirmation | modale armée sur le patron de `confirmBatchAlert` : titre « Envoyer N copies à la corbeille ? », récapitulatif « N copies · X Go · G groupes », ligne tertiaire « Les K groupes à vérifier restent hors du plan. Un seul Ctrl+Z annule tout. », case cochée « Garder aussi les N copies que Rekordbox joue » ; si des copies envoyées n'ont pas pu être vérifiées dans Rekordbox, une ligne en encre d'avertissement le dit sous le récapitulatif, avec la raison (§ Interactions, « Copie non vérifiée ») ; Annuler a le focus ; bouton d'action désactivé 250 ms (armement), en **secondaire danger, pas le bleu** — **variante destructive** de `confirmBatchAlert`, tranchée le 2026-10-05 (HIG Buttons : « Don't assign the primary role to a button that performs a destructive action ») ; le mode Lot garde sa variante bleue |
 | Application | feuille non modale `.sift-batch-sheet` attachée en haut de la zone C : barre déterminée, « Copie 215 sur 421 · fichier courant », **Arrêter** (l'arrêt tombe entre deux copies : rien n'est défait), « Afficher les détails » ; le bouton de la barre attend, grisé |
 | Fini | la feuille se ferme sur le toast « N copies dans la corbeille · Annuler » ; les groupes réglés quittent la table ; restent les À vérifier et ceux où plusieurs copies sont gardées ; une seule entrée au Journal pour toute l'application |
 | Échec partiel | la feuille devient le rapport : les copies qui ont résisté et pourquoi ; le reste est appliqué et annulable |
@@ -188,6 +188,17 @@ restent dans la table.
 
 **Rekordbox.** Une copie que Rekordbox joue reste cochée par défaut. La confirmation la garde
 aussi (case cochée). Sift n'écrit rien dans Rekordbox à cette étape.
+
+**Copie non vérifiée — tranché par Antoine le 2026-10-05 : avertir, ne pas garder d'office.**
+Quand la source lue peut taire une piste que Rekordbox joue — Rekordbox ouvert (`master.db-wal` non
+vide : ses derniers imports ne sont pas lus), ou `master.db` illisible et seul le XML d'export lu —,
+une copie absente de cette source n'est pas « absente » mais **non vérifiée** (`RekordboxUse`
+`unverified`, avec la raison). Elle n'est pas gardée d'office : la garder aurait vidé le plan à
+chaque ouverture de Rekordbox. La confirmation le dit, sous le récapitulatif, en encre
+d'avertissement : « Rekordbox est ouvert : ses derniers imports ne sont pas lus. N copies envoyées
+n'ont pas pu être vérifiées — ferme Rekordbox et rouvre Doublons pour les vérifier. » (ou, XML seul :
+« Rekordbox n'est lu que dans son XML exporté : une piste importée depuis n'y figure pas. »).
+L'inspecteur écrit « non vérifiée » dans la ligne Rekordbox de la comparaison.
 
 ## Ce que l'écran demande au backend
 

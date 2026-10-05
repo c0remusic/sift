@@ -130,7 +130,9 @@ s'efface ; ouvrir une copie l'écoute et la compare à la copie gardée, fait pa
 Rien ne part avant d'avoir cliqué **Envoyer à la corbeille**, qui récapitule tout le plan. Chaque
 copie va dans une corbeille sur son propre disque, sans recopie, et un seul `Ctrl+Z` remet tout en
 place. Les copies que Rekordbox joue restent gardées, sauf si vous décochez la case de la
-confirmation. Un groupe **À vérifier**, deux copies de même nom mais de durées différentes, reste
+confirmation. Quand Rekordbox est ouvert, Sift ne voit pas ses derniers imports : la confirmation
+dit combien de copies envoyées n'ont pas pu être vérifiées — fermez Rekordbox et rouvrez Doublons
+pour les vérifier. Un groupe **À vérifier**, deux copies de même nom mais de durées différentes, reste
 hors du plan tant que vous ne l'avez pas tranché. Un groupe qui n'en est pas un se retire par un clic
 droit, « Ce ne sont pas des doublons », et ne revient plus.
 

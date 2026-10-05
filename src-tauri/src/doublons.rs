@@ -47,16 +47,29 @@ pub enum DupProof {
     Identical,
 }
 
-/// Ce que Rekordbox sait d'une copie. `Unknown` quand aucune source ne peut AFFIRMER l'absence —
-/// ni master.db ni le XML lié lisibles, ou une source qui peut taire une piste jouée (XML lié,
-/// master.db à journal en attente : `ipc_doublons::usage_rekordbox`). Jamais confondu avec
-/// « absente ».
+/// Ce que Rekordbox sait d'une copie. Jamais « absente » sans l'avoir lu :
+/// - `Unknown` : aucune source lisible, ou l'intégration Rekordbox n'est pas activée ;
+/// - `Unverified` : la source lue ne contient pas la copie, mais elle peut taire une piste jouée
+///   (`ipc_doublons::usage_rekordbox`). La copie n'est pas gardée d'office ; la confirmation
+///   AVERTIT (décision d'Antoine, 2026-10-05).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
 #[serde(tag = "state", rename_all = "snake_case")]
 pub enum RekordboxUse {
     Unknown,
     Absent,
     Present { playlists: u32 },
+    Unverified { reason: RekordboxDoubt },
+}
+
+/// Pourquoi une source ne peut pas affirmer qu'une copie est absente de Rekordbox. Miroir :
+/// `RekordboxDoubt` de `shared/contracts.ts`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum RekordboxDoubt {
+    /// Rekordbox est ouvert (`master.db-wal` non vide) : ses derniers imports ne sont pas lus.
+    RekordboxOpen,
+    /// `master.db` ne se lit pas, le XML lié a servi : un instantané d'export.
+    XmlSnapshot,
 }
 
 /// Une copie, telle que l'écran l'affiche. Miroir : `DupScreenCopy` de `shared/contracts.ts`.
@@ -1396,6 +1409,44 @@ mod tests {
         assert_eq!(
             json(&RekordboxUse::Present { playlists: 3 }),
             "{\"state\":\"present\",\"playlists\":3}"
+        );
+        assert_eq!(
+            json(&RekordboxUse::Unverified {
+                reason: RekordboxDoubt::RekordboxOpen
+            }),
+            "{\"state\":\"unverified\",\"reason\":\"rekordbox_open\"}"
+        );
+        assert_eq!(json(&RekordboxDoubt::XmlSnapshot), "\"xml_snapshot\"");
+    }
+
+    /// Une copie non vérifiée n'est PAS gardée d'office : la confirmation avertit, l'utilisateur
+    /// tranche (décision d'Antoine, 2026-10-05). Seule une copie que Rekordbox joue l'est.
+    #[test]
+    fn une_copie_non_verifiee_n_est_pas_gardee_d_office() {
+        let lignes = [
+            ligne(1, "C:/a/Aldo - Subzero.aiff"),
+            ligne(2, "C:/b/Aldo - Subzero.mp3"),
+        ];
+        let k = cles(&lignes);
+        let faits = Faits {
+            rekordbox: HashMap::from([(
+                2,
+                RekordboxUse::Unverified {
+                    reason: RekordboxDoubt::RekordboxOpen,
+                },
+            )]),
+            rekordbox_connu: true,
+            ..Faits::default()
+        };
+        let brut = &former_groupes(&lignes, &k, &HashMap::new(), &[], &HashSet::new())[0];
+        let g = assembler(&lignes, &k, brut, &faits);
+        let mp3 = g.copies.iter().find(|c| c.id == 2).unwrap();
+        assert!(!mp3.keep);
+        assert_eq!(
+            mp3.rekordbox,
+            RekordboxUse::Unverified {
+                reason: RekordboxDoubt::RekordboxOpen
+            }
         );
     }
 }

@@ -45,6 +45,7 @@ import {
   rekordboxPlaylists,
   restSummary,
   ruleReason,
+  unverifiedRekordbox,
   visibleGroups,
   type DupRow,
   type GroupFilter,
@@ -393,6 +394,7 @@ function compareHtml(g: DupScreenGroup, c: DupScreenCopy, other: DupScreenCopy):
   const rkb = (x: DupScreenCopy) => {
     const p = rekordboxPlaylists(x);
     if (p != null) return t.playlists(p);
+    if (x.rekordbox.state === "unverified") return t.rekordboxUnverifiedShort;
     return x.rekordbox.state === "unknown" ? t.rekordboxUnknownShort : t.rekordboxAbsent;
   };
   const line = (label: string, a: string, b: string) =>
@@ -669,6 +671,13 @@ function openMenu(x: number, y: number, g: DupScreenGroup, c: DupScreenCopy): vo
 // Application
 // ---------------------------------------------------------------------------
 
+/** La ligne d'avertissement de la confirmation : des copies envoyées que Rekordbox n'a pas pu
+ *  confirmer absentes. `undefined` : rien à dire, pas de ligne. */
+function unverifiedLine(copies: readonly DupScreenCopy[]): string | undefined {
+  const u = unverifiedRekordbox(copies);
+  return u ? T().confirmUnverified(u.count, u.reason) : undefined;
+}
+
 async function applyPlan(): Promise<void> {
   if (applying) return;
   const t = T();
@@ -688,6 +697,8 @@ async function applyPlan(): Promise<void> {
     note: t.confirmNote(withRkb.toCheckLeft),
     rekordboxCount: withRkb.rekordboxCopies,
     rekordboxLabel: t.keepRekordbox(withRkb.rekordboxCopies),
+    // Les copies non vérifiées partent avec ou sans la case : la ligne est la même des deux côtés.
+    warning: unverifiedLine(withoutRkb.copies),
   });
   if (!res.confirmed) return;
   const chosen = res.keepRekordbox ? withRkb : withoutRkb;

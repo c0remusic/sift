@@ -228,6 +228,9 @@ interface TrashPlanAlertData {
   /** Copies jouées par Rekordbox que le plan enverrait. 0 : pas de case. */
   rekordboxCount: number;
   rekordboxLabel: string;
+  /** Avertissement, en encre d'avertissement sous le récapitulatif : des copies envoyées que
+   *  Rekordbox n'a pas pu confirmer absentes (décision du 2026-10-05). Absent : pas de ligne. */
+  warning?: string;
 }
 
 interface TrashPlanAlertResult {
@@ -302,7 +305,14 @@ export function confirmTrashPlan(data: TrashPlanAlertData): Promise<TrashPlanAle
     const openedAt = Date.now();
     actions.append(cancelBtn, confirmBtn);
 
-    card.append(title, recap, note);
+    card.append(title, recap);
+    if (data.warning) {
+      const warning = document.createElement("div");
+      warning.className = "sift-batch-alert-warn";
+      warning.textContent = data.warning;
+      card.append(warning);
+    }
+    card.append(note);
     if (data.rekordboxCount > 0) card.append(keepLabel);
     card.append(actions);
     overlay.appendChild(card);

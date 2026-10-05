@@ -14,6 +14,7 @@ import {
   rebasePlan,
   restSummary,
   ruleReason,
+  unverifiedRekordbox,
   visibleGroups,
 } from "../frontend/duplicates-model";
 import type { DupScreenCopy, DupScreenGroup } from "../shared/contracts";
@@ -203,6 +204,34 @@ describe("Préférer ce dossier", () => {
     expect(changed).toEqual([]);
     expect(plan.get(1)).toBe(true);
     expect(plan.get(2)).toBe(false);
+  });
+});
+
+describe("les copies que Rekordbox n'a pas pu vérifier", () => {
+  it("se comptent, avec la raison, pour l'avertissement de la confirmation", () => {
+    const ouvert = { state: "unverified", reason: "rekordbox_open" } as const;
+    const copies = [
+      copy(1, "C:/a/x.mp3", { rekordbox: ouvert }),
+      copy(2, "C:/b/x.wav", { rekordbox: { state: "absent" } }),
+      copy(3, "C:/c/x.flac", { rekordbox: ouvert }),
+      copy(4, "C:/d/x.aiff", { rekordbox: { state: "unknown" } }),
+    ];
+    expect(unverifiedRekordbox(copies)).toEqual({ count: 2, reason: "rekordbox_open" });
+  });
+
+  it("rien à dire sans copie non vérifiée — ni pour « inconnue » (intégration inactive)", () => {
+    expect(unverifiedRekordbox([copy(1, "C:/a/x.mp3", { rekordbox: { state: "unknown" } })])).toBeNull();
+    expect(unverifiedRekordbox([])).toBeNull();
+  });
+
+  it("une copie non vérifiée n'est pas gardée d'office : elle part avec le plan", () => {
+    const g = group(1, [
+      copy(1, "C:/a/x.wav", { keep: true }),
+      copy(2, "C:/b/x.mp3", { rekordbox: { state: "unverified", reason: "xml_snapshot" } }),
+    ]);
+    const t = planTotals([g], initialPlan([g]), none, true);
+    expect(t.copies.map((c) => c.id)).toEqual([2]);
+    expect(t.rekordboxCopies).toBe(0);
   });
 });
 

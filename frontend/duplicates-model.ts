@@ -5,7 +5,7 @@
 // Le plan est l'état de l'écran : pour chaque copie, gardée ou non. Il naît des cases cochées par
 // la règle (`DupScreenCopy.keep`, calculé côté Rust) et ne change que par un geste de
 // l'utilisateur. Rien ne part avant l'application, confirmée.
-import type { DupScreenCopy, DupScreenGroup } from "../shared/contracts";
+import type { DupScreenCopy, DupScreenGroup, RekordboxDoubt } from "../shared/contracts";
 import { railFromExtension } from "./rails";
 
 /** Pour chaque copie, gardée (`true`) ou non. */
@@ -116,6 +116,23 @@ export function planTotals(
     }
   }
   return { copies, bytes, groups: nGroups, rekordboxCopies, toCheckLeft };
+}
+
+/** Les copies envoyées que Rekordbox n'a pas pu confirmer absentes (`unverified`) : la
+ *  confirmation les annonce avec la raison — Rekordbox ouvert, ou XML d'export seul. Elles ne sont
+ *  pas gardées d'office (décision d'Antoine, 2026-10-05) : l'avertissement laisse trancher. Toutes
+ *  les copies d'une lecture partagent la même source, donc la même raison. `null` : rien à dire. */
+export function unverifiedRekordbox(
+  copies: readonly DupScreenCopy[],
+): { count: number; reason: RekordboxDoubt } | null {
+  let count = 0;
+  let reason: RekordboxDoubt | null = null;
+  for (const c of copies) {
+    if (c.rekordbox.state !== "unverified") continue;
+    count += 1;
+    reason ??= c.rekordbox.reason;
+  }
+  return count > 0 && reason ? { count, reason } : null;
 }
 
 /** Le dossier parent d'une copie, séparateurs Windows et POSIX confondus. */
