@@ -27,7 +27,7 @@ import { toggleRail, toggleAside } from "./chrome";
 import { isInspectorToggleChord, selectionChord } from "./key-chords";
 import {
   selectAllVisible,
-  clearBibSelection,
+  deselectAllBib,
   renderBiblioLive,
   renderSelectionSummary,
   stepBibSelection,
@@ -174,7 +174,7 @@ export function installWindowShortcuts(): void {
         // sélection de texte du navigateur reste le comportement attendu partout ailleurs.
         if (!document.querySelector('.lr[data-bib="row"]')) return;
         e.preventDefault();
-        if (sel === "none") clearBibSelection();
+        if (sel === "none") deselectAllBib();
         else selectAllVisible();
         void renderBiblioLive().then(renderSelectionSummary);
         return;

@@ -2893,11 +2893,15 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .sift-spectro-xl-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--color-text-secondary)}
 .sift-spectro-xl-count{font-size:var(--text-sm);color:var(--color-text-tertiary);font-variant-numeric:tabular-nums;white-space:nowrap}
 .sift-spectro-xl-plot{flex:1;min-height:0;padding:var(--space-8) 0 var(--space-24) calc(var(--space-32) + var(--space-16))}
-/* La figure remplit l'aire (`spectro-enlarge.ts::show`, 2026-10-05) ; le centrage absorbe le
-   sous-pixel que l'arrondi de sa taille laisse, des deux côtés plutôt qu'à droite seulement. */
-.sift-spectro-xl-area{position:relative;width:100%;height:100%;display:flex;align-items:center;justify-content:center}
+/* La figure remplit l'aire, ou la source à 1:1 sur l'axe où elle suffit (`spectro-enlarge.ts::show`,
+   2026-10-05) ; le centrage absorbe le reste, des deux côtés plutôt qu'à droite seulement. Par des
+   marges AUTO, pas par align-items/justify-content : pendant un rétrécissement de fenêtre, l'ancienne
+   figure (en px fixes, jusqu'au recalcul 250 ms plus tard) déborde de l'aire, et le centrage flex la
+   poussait au-delà des bords de DÉPART — elle couvrait l'en-tête et son bouton Fermer. Une marge auto
+   négative vaut 0 : le débordement ne va qu'à droite et en bas. */
+.sift-spectro-xl-area{position:relative;width:100%;height:100%;display:flex}
 .sift-spectro-xl-state:not([hidden]){position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:var(--space-8);font-size:var(--text-sm);color:var(--color-text-tertiary)}
-.sift-spectro-xl-figure{position:relative}
+.sift-spectro-xl-figure{position:relative;margin:auto}
 /* Pas de bordure : sur une boîte border-box, elle prendrait 2 px à la zone de dessin, et le
    navigateur rééchantillonnerait une grille calculée pour tomber pile sur les pixels. */
 .sift-spectro-xl-canvas{border:0}

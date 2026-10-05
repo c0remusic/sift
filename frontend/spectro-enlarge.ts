@@ -148,7 +148,7 @@ export function openSpectroEnlarged(
     deps.fetchGrid(path, grid).then(
       (r) => {
         if (!overlay.isConnected || mine !== generation) return; // fermée, ou dépassée
-        show(r);
+        show(r, grid, dpr);
       },
       (e) => {
         if (!overlay.isConnected || mine !== generation) return;
@@ -164,7 +164,7 @@ export function openSpectroEnlarged(
     );
   };
 
-  const show = (r: AnalysisReport) => {
+  const show = (r: AnalysisReport, grid: SpectrogramGrid, dpr: number) => {
     const sg = r.spectrogram;
     // La figure prend TOUT le cadre (décision d'Antoine du 2026-10-05, sur capture plein écran :
     // « en plein écran ça s'affiche bizarrement » — une source de 2475 × 1024 restait collée en
@@ -172,9 +172,15 @@ export function openSpectroEnlarged(
     // à la taille de la source pour ne jamais étirer une donnée (règle de #30). Le compte
     // « N × M mesurés » reste celui de la source : ce qui est étiré se dit, il ne se fait pas passer
     // pour mesuré. Le canevas garde sa résolution réelle, c'est le CSS qui le met à la taille.
+    //
+    // Axe par axe : quand la source a TOUT ce qui a été demandé, la taille CSS est la sienne divisée
+    // par dpr — une colonne par pixel physique, exactement (`revue.md`, « 1:1, nette à 125 et
+    // 150 % »). Prendre la taille de l'aire là aussi ré-échantillonnait d'une fraction de pixel :
+    // 711 px CSS à 125 % demandent 888 bandes pour 888,75 px physiques (revue du 2026-10-05). Seul
+    // l'axe où la source manque s'étire.
     const box = area.getBoundingClientRect();
-    const cssW = Math.max(1, Math.floor(box.width));
-    const cssH = Math.max(1, Math.floor(box.height));
+    const cssW = sg.frames >= grid.cols ? sg.frames / dpr : Math.max(1, Math.floor(box.width));
+    const cssH = sg.bins >= grid.bins ? sg.bins / dpr : Math.max(1, Math.floor(box.height));
     const figure = document.createElement("div");
     figure.className = "sift-spectro-xl-figure";
     figure.style.width = `${cssW}px`;

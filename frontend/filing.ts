@@ -716,7 +716,18 @@ export function installFilingKeys(): void {
     // out here and let installNavKeyboard own Space/Enter for these rows exclusively — mirrors
     // why mdbpick never had this bug: it lives on Rekordbox, a screen state.track is never set on.
     if (t?.closest('[data-sift="batchpick"],[data-sift="batchpickfake"]')) return;
-    if (!state.track) return; // only with a track open (i.e. on Revue)
+    // Revue, et seulement quand son panneau est à l'écran. `state.track` SURVIT à la navigation (seul
+    // `clearPane` le remet à null) : la garde « une piste ouverte » laissait donc Espace et Entrée de
+    // Revue actifs sur TOUS les écrans dès la première piste ouverte — Entrée n'activait plus aucun
+    // bouton du Journal, de Rangés ou de Rekordbox, et Espace relançait le dernier lecteur monté
+    // (revue adverse du 2026-10-05). Même garde que `installQueueNavKeys` (`queue-panel.ts`), pour la
+    // même persistance : `.sift-fil` n'est posé que par `openFilingInto`. Elle rend aussi la couche
+    // inerte en mode Lot, dont `renderBatch` occupe `#mid`.
+    const mid = document.getElementById("mid");
+    if (!state.track || !mid?.querySelector(".sift-fil")) return;
+    // Un menu contextuel ouvert possède ses touches : Entrée sur sa première entrée, focalisée à
+    // l'ouverture (« Ouvrir l'emplacement »), convertissait la piste.
+    if (t?.closest('[role="menu"]')) return;
     // ArrowUp/ArrowDown: handled by sift-live.ts's installQueueNavKeys, not here. The queue is
     // virtualized (renderQueue only mounts the visible window) — walking `#ql .qi` DOM nodes (the
     // old approach) silently stopped at the edge of whatever happened to be rendered.

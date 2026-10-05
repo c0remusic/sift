@@ -32,10 +32,22 @@ function grilleSynthetique(grid: SpectrogramGrid, source = { cols: 3358, bins: 1
 
 function ouvrir(fetchGrid: EnlargeDeps["fetchGrid"]): HTMLElement {
   const host = document.createElement("div");
-  openSpectroEnlarged("C:/Musique/House/Larry Heard - Can You Feel It.flac", "Larry Heard - Can You Feel It.flac", null, {
-    fetchGrid,
-    mount: (overlay) => host.append(overlay),
-  });
+  // La vue MESURE son aire à l'ouverture pour demander sa grille. Storybook n'attache le rendu
+  // qu'APRÈS `render()` : ouverte tout de suite, la vue mesurait un hôte détaché (0 × 0), demandait
+  // une grille 1 × 1 et l'étirait sur tout le cadre — une story « vivante » qui ne montrait rien de
+  // vrai (revue du 2026-10-05). Elle s'ouvre donc à la première image où l'hôte est dans le document.
+  let essais = 0;
+  const ouvrirQuandAttache = () => {
+    if (!host.isConnected) {
+      if (++essais < 120) requestAnimationFrame(ouvrirQuandAttache);
+      return;
+    }
+    openSpectroEnlarged("C:/Musique/House/Larry Heard - Can You Feel It.flac", "Larry Heard - Can You Feel It.flac", null, {
+      fetchGrid,
+      mount: (overlay) => host.append(overlay),
+    });
+  };
+  requestAnimationFrame(ouvrirQuandAttache);
   return host;
 }
 

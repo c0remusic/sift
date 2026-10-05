@@ -39,9 +39,16 @@ export interface SwatchRow {
 
 const MENU_ID = "sift-context-menu";
 
+/** L'écouteur Échap du menu ouvert. Retiré par `closeContextMenu`, pas en `once` : `once` partait à
+ *  la PREMIÈRE frappe, quelle qu'elle soit — un Tab dans le menu le consommait, et Échap ne fermait
+ *  plus rien (revue du 2026-10-05). */
+let onMenuKey: ((e: KeyboardEvent) => void) | null = null;
+
 /** Ferme le menu s'il est ouvert. Idempotent. */
 function closeContextMenu(): void {
   document.getElementById(MENU_ID)?.remove();
+  if (onMenuKey) document.removeEventListener("keydown", onMenuKey, { capture: true });
+  onMenuKey = null;
 }
 
 /** Ouvre un menu contextuel au point donné.
@@ -105,7 +112,8 @@ export function openContextMenu(x: number, y: number, items: MenuItem[]): void {
 
   // Fermeture. `capture` sur le clic pour partir AVANT que le clic n'atteigne ce qu'il vise —
   // sinon un clic hors menu déclencherait l'action de la ligne survolée en plus de fermer.
-  // `once` sur chacun : le menu est jeté à la première fermeture, ses écouteurs avec lui.
+  // `once` sur chacun : le menu est jeté à la première fermeture, ses écouteurs avec lui. Sauf
+  // le clavier : une frappe n'est pas une fermeture, et `onMenuKey` part avec `closeContextMenu`.
   const dismiss = () => closeContextMenu();
   document.addEventListener("click", dismiss, { capture: true, once: true });
   document.addEventListener("contextmenu", dismiss, { capture: true, once: true });
@@ -113,16 +121,13 @@ export function openContextMenu(x: number, y: number, items: MenuItem[]): void {
   // Le défilement ferme aussi : le menu est ancré à un POINT, pas à un élément, donc il resterait
   // sur place pendant que sa ligne s'en va — et pointerait alors une autre piste.
   document.addEventListener("scroll", dismiss, { capture: true, once: true });
-  document.addEventListener(
-    "keydown",
-    (e) => {
-      if (e.key === "Escape") {
-        e.stopPropagation(); // ne pas laisser la couche 1 traiter le même Échap
-        closeContextMenu();
-      }
-    },
-    { capture: true, once: true },
-  );
+  onMenuKey = (e) => {
+    if (e.key === "Escape") {
+      e.stopPropagation(); // ne pas laisser la couche 1 traiter le même Échap
+      closeContextMenu();
+    }
+  };
+  document.addEventListener("keydown", onMenuKey, { capture: true });
 
   menu.querySelector<HTMLElement>(".sift-ctx-item:not(.sift-ctx-item--disabled)")?.focus();
 }

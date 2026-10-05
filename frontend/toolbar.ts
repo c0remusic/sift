@@ -1,8 +1,12 @@
 // Emplacements de la barre unifiée — étape 2 de DESIGN.md § 17.
 //
 // La barre porte, dans cet ordre : titre de la vue · actions contextuelles · espaceur ·
-// recherche · boutons de fenêtre. Les deux emplacements du milieu sont vides par défaut ; une
-// vue y monte ce qui lui appartient, et `router.ts` les vide à chaque changement d'écran.
+// recherche · bouton de l'inspecteur · boutons de fenêtre. Les deux emplacements du milieu sont
+// vides par défaut ; une vue y monte ce qui lui appartient, et `router.ts` les vide à chaque
+// changement d'écran. Le bouton de l'inspecteur (`chrome.ts`) n'existe qu'avec une zone D ouverte
+// (`openAside` / `closeAside`, plus bas) : un écran qui referme sa zone D le fait donc sortir de la
+// barre, et la recherche glisse de sa largeur — d'où la règle de Rangés, qui ne referme jamais la
+// sienne mais revient à l'état de repos (`bibliotheque-view.ts`).
 //
 // Pourquoi un module plutôt qu'un `innerHTML` par vue : la recherche est le SEUL contrôle de
 // l'app dont le contenu est frappé au clavier pendant que son écran se re-rend. Tant qu'elle

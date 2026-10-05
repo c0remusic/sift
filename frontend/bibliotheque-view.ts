@@ -26,6 +26,7 @@ import { requireEl, esc } from "./dom";
 import { T } from "./i18n/bibliotheque-view";
 import { slideSegThumb } from "./seg-thumb";
 import { mountBarActions, mountBarSearch, openAside, closeAside } from "./toolbar";
+import { isAsideHidden, revealAside } from "./chrome";
 import { humanizeError } from "./errors";
 import { libraryUsage, type UsageReport } from "./ipc";
 import { renderUsageChart } from "./usage-chart";
@@ -122,6 +123,11 @@ export function renderSelectionSummary(): void {
   if (bibSelection.size < 2) return;
   const host = openAside();
   if (!host) return;
+  // Le résumé REMPLACE la fiche : plus aucune piste n'est ouverte. Laisser `bibOpenId` posé
+  // empêchait le rendu suivant de revenir au repos (sa règle exige `bibOpenId == null`), et la zone D
+  // gardait « 3 pistes sélectionnées » sur une sélection vidée (revue adverse du 2026-10-05).
+  bibOpenId = null;
+  clearCurMarks();
   const picked = bibState.tracks.filter((t) => bibSelection.has(t.id));
   const fmts = new Map<string, number>();
   let total = 0;
@@ -257,7 +263,7 @@ export function stepBibSelection(key: string, shift: boolean): boolean {
 
 /** Vide la sélection et son ancre — un ⇧+clic suivant repartirait sinon d'une ligne qui n'est plus
  *  choisie. Exportée le 2026-10-05 pour ⇧⌘A (`shortcuts.ts`, « Tout désélectionner »). */
-export function clearBibSelection(): void {
+function clearBibSelection(): void {
   bibSelection.clear();
   bibAnchor = null;
 }
@@ -280,10 +286,13 @@ export function paintBibSelection(): void {
 }
 
 /** Après une action de masse qui retire des pistes de la vue : la sélection ne désigne plus rien,
- *  l'inspecteur montrait ce qui vient de partir. Les deux se vident, puis l'écran se relit. */
+ *  l'inspecteur montrait ce qui vient de partir. Les deux reviennent au repos, puis l'écran se
+ *  relit. La zone D n'est PAS refermée : refermée puis rouverte par le rendu, elle clignotait, et le
+ *  bouton de l'inspecteur avec elle. Le repos peint ici compte encore les pistes parties ; le rendu
+ *  qui suit le recompte. */
 function afterBulkRemoval(): Promise<void> {
-  clearBibSelection();
-  closeAside();
+  deselectAllBib();
+  renderBibInspectorIdle();
   return renderBiblioLive();
 }
 
@@ -396,8 +405,9 @@ export function openBiblioContextMenu(x: number, y: number, id: number): void {
   const track = one ? bibState.tracks.find((t) => t.id === ids[0]) : undefined;
   const rid = track?.discogs_release_id;
   // `openBiblioDetail` BASCULE. Le libellé suit donc l'état réel : sur une piste déjà ouverte,
-  // l'entrée referme le panneau, et annoncer « Ouvrir » y était faux.
-  const detailOpen = one && bibOpenId === ids[0];
+  // l'entrée referme le panneau, et annoncer « Ouvrir » y était faux. Ouverte mais l'inspecteur
+  // MASQUÉ (⌥⌘I), la fiche ne se voit pas : l'entrée l'ouvre, elle ne la referme pas.
+  const detailOpen = one && bibOpenId === ids[0] && !isAsideHidden();
   const L = T();
   openContextMenu(x, y, [
     {
@@ -412,7 +422,7 @@ export function openBiblioContextMenu(x: number, y: number, id: number): void {
     },
     {
       label: detailOpen ? L.hideDetail : L.showDetail,
-      onPick: one ? () => openBiblioDetail(ids[0]) : undefined,
+      onPick: one ? () => openBiblioDetail(ids[0], !detailOpen) : undefined,
     },
     {
       label: L.discogsPage,
@@ -491,13 +501,98 @@ function humanizeScanError(e: unknown): string {
 // on the PERMANENT #content, so it must be explicitly destroyed or it leaks + double-renders).
 // Private to this module — nothing outside renderBiblioLive touches it.
 let bibVirtual: VirtualList | null = null;
+// Les tableaux que `bibVirtual` MONTRE (la liste garde leur référence) : triés pour la table,
+// découpés en rangées pour la grille. `patchBibRow` y remplace une piste éditée sans rendu complet.
+let bibListed: LibraryTrack[] = [];
+let bibGridRows: LibraryTrack[][] = [];
 // Which library row is open in the detail panel — stamped as `.cur` at row-creation time so the
 // highlight survives virtualization. Private — only openBiblioDetail/renderBiblioLive touch it.
 let bibOpenId: number | null = null;
 // L'époque de vue (`view-epoch.ts`) de la dernière peinture RÉUSSIE de Bibliothèque. Égale à
 // l'époque courante : l'écran montre déjà des données valides, un re-rendu ne le blanchit pas.
-// Une carte d'erreur ne compte pas — ce n'est pas une donnée à préserver.
+// Une carte d'erreur ne compte pas — ce n'est pas une donnée à préserver : le `catch` du rendu
+// remet ce repère à -1, pour que « Réessayer » montre « Chargement… » au lieu de ne rien changer.
 let bibPaintedEpoch = -1;
+
+/** Détruit la liste virtuelle JUSTE avant que `#content` soit réécrit. Pas avant l'attente IPC du
+ *  rendu : la table restait alors à l'écran sans son écouteur de défilement, et défiler pendant
+ *  l'attente (des secondes sous scan) montrait des intercalaires vides. Détruire au point
+ *  d'écriture ferme aussi la fuite de deux rendus concurrents, où le second ne détruisait pas la
+ *  liste que le premier venait de créer. */
+function teardownBibList(): void {
+  bibVirtual?.destroy();
+  bibVirtual = null;
+}
+
+/** Une piste éditée dans la fiche : remplacée dans les données que la liste montre, puis la fenêtre
+ *  montée se repeint (`render()`), sans aller-retour IPC ni rendu complet. Le 2026-10-05, un rendu
+ *  complet renvoyait la table en haut à chaque champ enregistré (la sonde de hauteur de
+ *  `createVirtualList` relance la mise en page sur un contenu court) ; et lancé après un changement
+ *  d'écran (enregistrement lent, « Rétablir » du toast), il peignait Rangés par-dessus l'écran
+ *  courant. La place de la piste dans le tri et le filtre se recalcule au prochain rendu complet. */
+function patchBibRow(updated: LibraryTrack): void {
+  const j = bibListed.findIndex((x) => x.id === updated.id);
+  if (j >= 0) bibListed[j] = updated;
+  for (const row of bibGridRows) {
+    const k = row.findIndex((x) => x.id === updated.id);
+    if (k >= 0) {
+      row[k] = updated;
+      break;
+    }
+  }
+  if (j >= 0 && document.body.dataset.view === "biblio") bibVirtual?.render();
+}
+
+/** La zone D de Rangés au repos : le résumé de la sélection multiple, sinon le contexte de la source.
+ *  Jamais une zone D refermée (`docs/ui-specs/bibliotheque.md` § Zone D, « jamais rien ») : la
+ *  refermer faisait aussi sortir le bouton de l'inspecteur de la barre, et la recherche glissait de
+ *  sa largeur (revue adverse du 2026-10-05). */
+function showBibInspectorRest(): void {
+  if (bibSelection.size >= 2) renderSelectionSummary();
+  else renderBibInspectorIdle();
+}
+
+/** La zone D montre-t-elle quelque chose ? `router.ts` la referme ET la vide à chaque changement
+ *  d'écran, alors que `bibOpenId` et la sélection, eux, survivent à la navigation. */
+function bibAsidePainted(): boolean {
+  const aside = document.getElementById("sift-aside");
+  return !!aside && !aside.hidden && aside.childElementCount > 0;
+}
+
+/** La zone D après un rendu de la table. Une piste ouverte dont la fiche n'est plus peinte — retour
+ *  sur l'écran après une navigation — se ROUVRE, comme Écartés (`openDetail(openId)`) et Revue
+ *  (`syncDetail`) : laisser la zone D fermée sur une piste « ouverte » faisait d'« Écouter » sur
+ *  cette piste un geste nul, la zone D s'ouvrant vide (vérifié dans la vraie fenêtre le 2026-10-05).
+ *  Une fiche ou un résumé encore peints ne sont pas touchés : une frappe de recherche ne relance
+ *  ni le lecteur ni le rapport. */
+function syncBibInspectorAfterRender(): void {
+  if (bibOpenId != null) {
+    if (bibAsidePainted()) return;
+    const id = bibOpenId;
+    bibOpenId = null;
+    openBiblioDetail(id);
+    return;
+  }
+  if (bibSelection.size >= 2) {
+    if (!bibAsidePainted()) renderSelectionSummary();
+    return;
+  }
+  renderBibInspectorIdle();
+}
+
+/** Retire la marque `.cur` des rangées montées ; `bibOpenId` couvre celles hors fenêtre. */
+function clearCurMarks(): void {
+  document.querySelectorAll(".lr.cur").forEach((n) => n.classList.remove("cur"));
+}
+
+/** Tout désélectionner (⇧⌘A / Ctrl+Maj+A) : la sélection ET la piste ouverte. Une sélection vide
+ *  qui laisserait une fiche ouverte — ou le résumé « 3 pistes » d'une sélection qui n'existe plus —
+ *  contredirait la table. L'appelant relance le rendu, qui pose la zone D au repos. */
+export function deselectAllBib(): void {
+  clearBibSelection();
+  bibOpenId = null;
+  clearCurMarks();
+}
 
 function dupMemberHtml(m: DupGroup["members"][number]): string {
   const name = esc(m.filename || m.path.split(/[\\/]/).pop() || m.path);
@@ -692,15 +787,19 @@ function mountBibUsage(host: HTMLElement): void {
 /** Live Bibliothèque view: lists filed tracks with search + quality chips + folder/genre
  * facets, wired to real data. Actions go through the #pa delegated handler (data-bib). */
 export async function renderBiblioLive() {
+  // Rien ne se peint hors de Bibliothèque. Un rappel tardif (fiche enregistrée après un changement
+  // d'écran, « Rétablir » d'un toast cliqué depuis Revue, minuterie de recherche, fin du scan de
+  // doublons) appelait ce rendu avec le jeton de l'écran COURANT, que rien ne périmait : il écrivait
+  // la table de Rangés dans le `#content` d'un autre écran, sous le titre de celui-ci (revue adverse
+  // du 2026-10-05). L'époque protège un rendu EN VOL contre une navigation ; elle ne dit pas sur quel
+  // écran le rendu démarre. `syncNav` (router.ts) pose la vue avant d'appeler ce rendu.
+  if (document.body.dataset.view !== "biblio") return;
   const content = requireEl("#content", "renderBiblioLive");
   // Jeton capturé avec `#content` (issue #42) : sous scan, le `Promise.all` ci-dessous attend le
   // `Mutex<Connection>` que le scanner tient, et l'utilisateur a le temps de changer d'écran.
   const token = viewEpoch();
-  // Tear down any previous virtual list first: its scroll listener sits on the permanent #content,
-  // which this render is about to overwrite — leaving it attached would leak the listener and fire
-  // renders against a detached host.
-  bibVirtual?.destroy();
-  bibVirtual = null;
+  // La liste virtuelle en place n'est détruite qu'au point où `#content` est réécrit
+  // (`teardownBibList`) : jusque-là, la table affichée doit rester défilable.
   // The IPC round-trip below (Promise.all) can take a beat on a large library — without a signal
   // the FIRST paint would sit frozen (blank #content, nothing rendered yet). Same "Chargement…"
   // pattern as queue-panel.ts's renderQueue(), gated the same way: only when there's no prior
@@ -717,6 +816,7 @@ export async function renderBiblioLive() {
   const alreadyRendered = bibPaintedEpoch === token;
   const L = T();
   if (!alreadyRendered) {
+    teardownBibList();
     content.innerHTML =
       '<div style="display:flex;align-items:center;gap:var(--space-8);padding:var(--space-8) 7px;color:var(--color-text-tertiary);font-size:var(--text-md)">' +
       '<i class="ti ti-loader sift-spin" style="font-size:var(--text-md)"></i> ' +
@@ -735,6 +835,8 @@ export async function renderBiblioLive() {
     // (`ecartes-view.ts`) et le bloc doublons plus bas en ont une depuis leur audit respectif.
     // « réessaie » sans bouton demande à l'utilisateur de deviner comment.
     if (isStaleViewRender(token)) return;
+    teardownBibList();
+    bibPaintedEpoch = -1;
     content.innerHTML =
       '<div class="sift-ui-card-soft sift-ui-card-soft-pad" style="color:var(--color-text-danger)">' +
       esc(humanizeError(e, L.loadFailed, "library load")) +
@@ -904,6 +1006,7 @@ export async function renderBiblioLive() {
   // zone D (ils décrivent, ils ne se parcourent pas), et le sélecteur de facette est replié en un
   // BOUTON portant la valeur active — il filtrait, et un filtre n'appartient pas au contenu.
   // Ce qui reste au-dessus de la table est une seule ligne : facette · valeur · compte.
+  teardownBibList();
   content.innerHTML = trulyEmpty
     ? emptyStateHtml({
         title: L.emptyTitle,
@@ -940,7 +1043,7 @@ export async function renderBiblioLive() {
 
   // Zone D. Une sélection multiple montre son résumé agrégé, une piste ouverte son détail, et
   // sinon l'inspecteur porte le contexte de la source active — jamais rien.
-  if (!trulyEmpty && bibSelection.size < 2 && bibOpenId == null) renderBibInspectorIdle();
+  if (!trulyEmpty) syncBibInspectorAfterRender();
   wireEmptyState(content);
   // Redimensionnement et réordonnancement des colonnes (`DESIGN.md` § 16, livrés le 2026-08-19).
   // Réinstallés à chaque rendu parce que la ligne d'en-tête est un nœud NEUF à chaque fois : rien
@@ -957,7 +1060,10 @@ export async function renderBiblioLive() {
 
   if (trulyEmpty) {
     // Bibliothèque vide : pas de filtre à offrir, donc rien dans la barre. C'est une impasse
-    // assumée (DESIGN.md § 8) — le rail et le titre restent, les contrôles non.
+    // assumée (DESIGN.md § 8) — le rail et le titre restent, les contrôles non. Ni zone D : il n'y a
+    // rien à décrire. Fermée ICI depuis que les actions de masse ne la referment plus avant de
+    // relire l'écran (`afterBulkRemoval`) — vider la bibliothèque laissait sinon un repos périmé.
+    closeAside();
     mountBarActions("");
     const emptyCount = document.getElementById("sift-tb-count");
     if (emptyCount) emptyCount.textContent = "";
@@ -1014,6 +1120,8 @@ export async function renderBiblioLive() {
   // overflow-y:auto), but the list is only ONE section of it (stats/rekordbox/header/facets sit
   // above) — createVirtualList handles that offset. #biblist exists iff bibState.tracks non-empty.
   const biblist = document.getElementById("biblist");
+  bibListed = sortedTracks;
+  bibGridRows = [];
   if (biblist) {
     if (bibState.viewMode === "table") {
       bibVirtual = createVirtualList<LibraryTrack>({
@@ -1029,6 +1137,7 @@ export async function renderBiblioLive() {
       for (let i = 0; i < sortedTracks.length; i += LIBRARY_GRID_TILES_PER_ROW) {
         gridRows.push(sortedTracks.slice(i, i + LIBRARY_GRID_TILES_PER_ROW));
       }
+      bibGridRows = gridRows;
       bibVirtual = createVirtualList<LibraryTrack[]>({
         host: biblist,
         scrollContainer: content,
@@ -1042,48 +1151,59 @@ export async function renderBiblioLive() {
 }
 
 /** Open the unified detail/edit panel for a filed track into #bibplayer, highlighting its row.
- * On save, patch the row label in place (player stays alive); on delete, re-render the list. */
-export function openBiblioDetail(id: number): void {
+ * On save, patch the row in place (player stays alive); on delete, re-render the list.
+ *
+ * `explicit` : la commande n'a d'effet que dans la zone D — Écouter, Identifier, une tuile de la
+ * grille, « Ouvrir le détail » du menu. Elle révèle l'inspecteur s'il est masqué (sinon elle ne
+ * ferait rien du tout), et sur la piste déjà ouverte elle ne referme rien. Le clic sur une rangée
+ * n'est pas explicite : il sélectionne, ce qui se voit dans la table, et un inspecteur masqué le
+ * reste (Finder, Pages). */
+export function openBiblioDetail(id: number, explicit = false): void {
   const t = bibState.tracks.find((x) => x.id === id);
+  if (explicit) revealAside();
   // Zone D du shell depuis l'étape 3, plus `#bibplayer` en fin de liste. Le détail y était rendu
   // APRÈS la table et après la section doublons : ouvrir une piste au rang 300 poussait son propre
   // détail hors de l'écran, et il fallait faire défiler pour voir ce qu'on venait d'ouvrir.
   const host = openAside();
   if (!host) return;
   if (!t) {
-    closeAside();
+    showBibInspectorRest();
     return;
   }
   if (bibOpenId === id) {
-    bibOpenId = null;
-    document.querySelectorAll(".lr.cur").forEach((n) => n.classList.remove("cur"));
-    closeAside(); // vider sans refermer laisserait une colonne vide occuper --pane-w
-    return;
+    if (explicit) {
+      // Déjà ouverte : la révéler suffisait — sauf si sa fiche n'est plus peinte, alors on la rouvre.
+      if (bibAsidePainted()) return;
+    } else {
+      bibOpenId = null;
+      clearCurMarks();
+      // Re-cliquer la rangée ouverte la referme : la zone D revient au REPOS, elle ne se ferme pas.
+      showBibInspectorRest();
+      return;
+    }
   }
   // Track the open id so the `.cur` highlight is re-stamped by biblioRowHtml when a scrolled-away
   // row re-enters the virtualized window. Clear the class on currently-mounted rows immediately for
   // instant feedback (rows outside the window aren't in the DOM — bibOpenId covers them on mount).
   bibOpenId = id;
-  document.querySelectorAll(".lr.cur").forEach((n) => n.classList.remove("cur"));
+  clearCurMarks();
   document.querySelector(`.lr[data-id="${id}"]`)?.classList.add("cur");
   openLibraryDetailInto(
     host,
     t,
     (updated) => {
-      // La rangée suit l'édition par un re-rendu de la table, qui ne blanchit plus l'écran (garde
-      // par époque, plus haut) et range la piste là où son nouveau titre ou son nouvel artiste la
-      // place dans le tri et le filtre. Jusqu'au 2026-10-05, un patch en place visait `.bib-name`,
-      // une classe que la table ne pose plus : la rangée gardait l'ancien nom jusqu'au rendu suivant.
-      // La zone D n'est pas touchée : `bibOpenId` reste posé, le détail ouvert survit.
+      // La rangée suit l'édition EN PLACE (`patchBibRow`). Jusqu'au 2026-10-05, ce patch visait
+      // `.bib-name`, une classe que la table ne pose plus : la rangée gardait l'ancien nom jusqu'au
+      // rendu suivant. La zone D n'est pas touchée : `bibOpenId` reste posé, le détail ouvert survit.
       const i = bibState.tracks.findIndex((x) => x.id === updated.id);
       if (i >= 0) bibState.tracks[i] = updated;
-      void renderBiblioLive();
+      patchBibRow(updated);
     },
     () => void renderBiblioLive(),
     () => {
       bibOpenId = null;
-      document.querySelectorAll(".lr.cur").forEach((n) => n.classList.remove("cur"));
-      closeAside();
+      clearCurMarks();
+      showBibInspectorRest();
     },
   );
 }

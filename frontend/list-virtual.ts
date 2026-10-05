@@ -110,11 +110,32 @@ export function createVirtualList<T>(opts: {
   };
   scrollContainer.addEventListener("scroll", onScroll, { passive: true });
 
+  // La hauteur de rangée est mesurée UNE fois, mais une rangée de la grille de Rangés grandit avec la
+  // largeur (tuiles carrées sur quatre colonnes). Masquer l'inspecteur (⌥⌘I), replier le rail,
+  // tirer une poignée ou redimensionner la fenêtre changeait cette largeur sans remesure : chaque
+  // avance de la fenêtre montée décalait alors le contenu, le défilement sautait des rangées (revue
+  // du 2026-10-05). Seule la LARGEUR relance : la hauteur de l'hôte, c'est ce rendu qui la fixe.
+  // Fréquence : à chaque image d'un redimensionnement continu — coalescée par le même rAF.
+  // La première observation (émise par `observe` lui-même) fixe la référence : elle décrit la largeur
+  // que le rendu initial vient de mesurer.
+  let lastWidth: number | null = null;
+  const resizeObs = new ResizeObserver((entries) => {
+    const w = entries[0]?.contentRect.width;
+    if (w == null || w === lastWidth) return;
+    const first = lastWidth === null;
+    lastWidth = w;
+    if (first) return;
+    rowH = null;
+    onScroll();
+  });
+  resizeObs.observe(host);
+
   render();
   return {
     render,
     destroy(): void {
       scrollContainer.removeEventListener("scroll", onScroll);
+      resizeObs.disconnect();
     },
   };
 }

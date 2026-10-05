@@ -788,6 +788,10 @@ async function mountPlayer(root: HTMLElement, path: string, peaks?: number[], du
     timeEl.addEventListener("keydown", (e) => {
       if (e.key === "Enter" || e.key === " ") {
         e.preventDefault();
+        // La frappe s'arrête ici : sans quoi les touches nues de Revue (`installFilingKeys`, sur
+        // `document`) la reprenaient, et Entrée basculait le temps ET convertissait la piste. Même
+        // patron que « Agrandir » (#72).
+        e.stopPropagation();
         toggleTime();
       }
     });

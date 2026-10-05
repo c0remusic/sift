@@ -25,6 +25,7 @@ import { createVirtualList, type VirtualList } from "./list-virtual";
 import { viewEpoch, isStaleViewRender } from "./view-epoch";
 import { openAside, closeAside, mountBarActions } from "./toolbar";
 import { openContextMenu } from "./context-menu";
+import { isAsideHidden, revealAside } from "./chrome";
 import { copyToClipboard, toast } from "./filing-toast";
 import { humanizeError } from "./errors";
 import { T } from "./i18n/ecartes-view";
@@ -40,6 +41,11 @@ let sort: { field: SortField; dir: "asc" | "desc" } = { field: "artist", dir: "a
 let openId: number | null = null;
 let virtual: VirtualList | null = null;
 let currentItems: EcarteItem[] = [];
+// Les écouteurs de la table vivent sur `#content`, PERMANENT : posés à chaque rendu, ils
+// s'empilaient — dès la deuxième visite, un clic ou Entrée sur une rangée basculait la fiche deux
+// fois, ouverte puis refermée aussitôt (revue du 2026-10-05). Posés une fois ; ils lisent l'état du
+// module à chaque événement, et ne réagissent qu'aux nœuds `data-ec*` de cet écran.
+let tableWired = false;
 
 // ---------------------------------------------------------------------------
 // Boutiques — des recherches, une par boutique (voir l'en-tête du fichier).
@@ -212,8 +218,17 @@ function openDetail(id: number | null): void {
   else renderIdle(currentItems);
 }
 
+/** « Ouvrir le détail », « Racheter… » : des commandes dont le seul effet est dans l'inspecteur.
+ *  Masqué (⌥⌘I), elles ne feraient rien — elles le révèlent (`chrome.ts::revealAside`). Le clic sur
+ *  une rangée, lui, sélectionne : il se voit dans la table, et l'inspecteur masqué le reste. */
+function openDetailExplicit(id: number): void {
+  revealAside();
+  openDetail(id);
+}
+
 function openMenu(x: number, y: number, it: EcarteItem): void {
-  const detailOpen = openId === it.id;
+  // Ouverte mais l'inspecteur masqué, la fiche ne se voit pas : l'entrée l'ouvre, elle ne la ferme pas.
+  const detailOpen = openId === it.id && !isAsideHidden();
   const t = T();
   openContextMenu(x, y, [
     {
@@ -221,11 +236,11 @@ function openMenu(x: number, y: number, it: EcarteItem): void {
       onPick: () =>
         void revealTrack(it.id).catch((err: unknown) => toast(humanizeError(err, T().revealFailed, "reveal_track"))),
     },
-    { label: detailOpen ? t.hideDetail : t.showDetail, onPick: () => openDetail(detailOpen ? null : it.id) },
+    { label: detailOpen ? t.hideDetail : t.showDetail, onPick: () => (detailOpen ? openDetail(null) : openDetailExplicit(it.id)) },
     { label: t.copyName, separated: true, onPick: () => copyToClipboard(ecQuery(it), T().searchCopied) },
     // Les six boutiques vivent dans l'inspecteur (une rangée chacune) : « Racheter… » y mène.
     // Pas de sous-menu — HIG Context menus : « aim for a small number of menu items ».
-    { label: t.rebuyMenu, onPick: () => openDetail(it.id) },
+    { label: t.rebuyMenu, onPick: () => openDetailExplicit(it.id) },
     ...(kind === "trash"
       ? [{ label: t.restore, separated: true, onPick: () => runEcarteAction("restore", it.id) }]
       : [
@@ -325,7 +340,10 @@ export async function renderEcartes(k?: EcartesKind): Promise<void> {
     probeHtml: rowHtml(currentItems[0]),
     fallbackRowH: 32,
   });
-  wireTable(content);
+  if (!tableWired) {
+    wireTable(content);
+    tableWired = true;
+  }
   openDetail(openId);
 }
 

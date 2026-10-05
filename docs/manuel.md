@@ -193,6 +193,7 @@ pas de bouton Enregistrer.
 | `Ctrl+F` | écrans avec une recherche | aller à la recherche |
 | `Ctrl+1` à `Ctrl+8` | partout | l'écran correspondant, dans l'ordre du rail |
 | `Ctrl+B` | partout | replier ou déplier le rail |
+| `Ctrl+Alt+I` | écrans à inspecteur | masquer ou afficher l'inspecteur, la colonne de droite (`⌥⌘I` sur Mac) |
 | `Ctrl+,` | partout | Réglages |
 | `Échap` | partout | fermer le menu ou la fenêtre ouverte |
 

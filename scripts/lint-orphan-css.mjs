@@ -23,7 +23,19 @@
 //   · une classe qui n'existe QUE dans un commentaire CSS : les commentaires sont retirés avant
 //     l'extraction, sans quoi les tombstones du fichier (« LES 16 RÈGLES `.sift-home-*` ONT ÉTÉ
 //     RETIRÉES ICI ») ressusciteraient les noms qu'elles enterrent. Sans ce retrait le relevé
-//     sortait 86 noms au lieu de 20, dont 66 faux.
+//     sortait 86 noms au lieu de 20, dont 66 faux ;
+//   · un nom tenu « vivant » par un mot qui n'est pas un poseur de markup : une variable homonyme
+//     (`const qi = …`), une chaîne Rust (`temp_dir().join("sift-play")`), `app.js` (démo jamais
+//     chargée sous Tauri) ou une story. Mesuré par la revue du 2026-10-05 (M9, M10, M13, M14) ;
+//   · côté sélecteurs : une chaîne passée par une constante (`querySelector(SEL)`), un
+//     `classList.contains`, `[class~=x]`, `getElementsByClassName` et les id (M2, M3, M6, M7). Ce
+//     sont des faux NÉGATIFS : la gate se tait. Aucun ne masquait de sélecteur mort à la date de la
+//     mesure (95 cibles, toutes avec un vrai poseur de production).
+// Et un faux POSITIF connu, bruyant donc sans danger : un sélecteur cité dans un bloc `/* */` dont
+// les lignes ne commencent pas par « * » (M18) compte comme du code. Le dépôt n'écrit pas ses blocs
+// ainsi ; les reconnaître sans suivre les chaînes avalerait du vrai code après un `"audio/*"`.
+// Le banc de ces mutations est rejoué hors dépôt (copie de l'arbre) : M1, M4 et M12 échouent,
+// M15, M16 et M17 — du code correct — passent.
 //
 // Ratchet à baseline versionnée, même contrat que les trois autres : seule une HAUSSE échoue.
 // Baisser le compte se grave par --write-baseline.
@@ -114,8 +126,21 @@ function sansCommentaires(texte) {
     .join('\n');
 }
 
+/**
+ * Un argument de `classList.remove(…)` ou de `classList.contains(…)` ne POSE rien : il retire ou il
+ * teste. Trouvé le 2026-10-05 par la revue adverse de cette gate (mutation M11) : retirer les deux
+ * `classList.add("sift-cand-pending")` laissait la classe « vivante », tenue par le
+ * `?.classList.remove("sift-cand-pending")` de la ligne du sélecteur — un idiome que le dépôt
+ * emploie cinq fois. Les arguments sont blanchis à longueur égale ; le reste de la ligne compte.
+ */
+function sansLecteursDeClasse(texte) {
+  return texte.replace(/classList\.(?:remove|contains)\(([^)]*)\)/g, (m, args) =>
+    m.replace(args, ' '.repeat(args.length)),
+  );
+}
+
 const sources = ecrivains().map((f) => ({ f, texte: sansCommentaires(readFileSync(f, 'utf8')) }));
-const blob = sources.map((s) => s.texte).join('\n');
+const blob = sources.map((s) => sansLecteursDeClasse(s.texte)).join('\n');
 
 /**
  * Le nom apparaît-il comme un NOM ENTIER dans le code, et non comme un fragment ?
@@ -171,11 +196,35 @@ for (const c of [...declarees].sort()) {
  * (`.sift-pz-${kind}`) laisse un préfixe en tiret, couvert par FAMILLES_CONSTRUITES comme côté CSS.
  */
 const SELECTEUR = /\b(?:querySelector|querySelectorAll|closest|matches)(?:<[^>()]*>)?\(\s*(["'`])((?:(?!\1)[\s\S])*?)\1/g;
+
+/**
+ * Le début de ligne `avant` a-t-il ouvert un commentaire `//`, hors de toute chaîne ? Un sélecteur
+ * cité dans un commentaire de fin de ligne (« // avant : querySelector(".x") ») n'est pas du code :
+ * le compter faisait échouer la gate sur du code correct (revue du 2026-10-05, M17). Les guillemets
+ * sont suivis pour qu'une URL (`"https://…"`) ne passe pas pour un commentaire.
+ */
+function dansCommentaireDeFin(avant) {
+  let q = null;
+  for (let i = 0; i < avant.length; i++) {
+    const ch = avant[i];
+    if (q) {
+      if (ch === '\\') i++;
+      else if (ch === q) q = null;
+    } else if (ch === '"' || ch === "'" || ch === '`') q = ch;
+    else if (ch === '/' && avant[i + 1] === '/') return true;
+  }
+  return false;
+}
+
 const cibles = new Map(); // nom -> ['fichier:ligne', …]
 for (const { f, texte } of sources) {
   if (!/\.(ts|js|mjs)$/.test(f)) continue;
   for (const m of texte.matchAll(SELECTEUR)) {
-    const corps = m[1] === '`' ? m[2].replace(/\$\{[^}]*\}/g, '§') : m[2];
+    if (dansCommentaireDeFin(texte.slice(texte.lastIndexOf('\n', m.index) + 1, m.index))) continue;
+    // Les expressions d'un gabarit, PUIS les sélecteurs d'attribut : la VALEUR d'un attribut n'est
+    // pas un nom de classe — `a[href^="https://www.discogs.com/"]` sortait « .com », et
+    // `[data-path$=".woff2"]` sortait « .woff2 » (revue du 2026-10-05, M15/M16).
+    const corps = (m[1] === '`' ? m[2].replace(/\$\{[^}]*\}/g, '§') : m[2]).replace(/\[[^\]]*\]/g, '§');
     const ligne = texte.slice(0, m.index).split('\n').length;
     for (const c of corps.matchAll(/\.([a-zA-Z][\w-]*)/g)) {
       const nom = c[1];

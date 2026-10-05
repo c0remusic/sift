@@ -583,8 +583,9 @@ async function loadAndPaint(): Promise<void> {
   mountBar();
 
   // Squelette seulement quand rien de valide n'est affiché (DESIGN.md § 8 : ne jamais vider
-  // l'écran pour recharger). Même garde que `renderBiblioLive`, même repère : un nœud que seul le
-  // rendu abouti pose.
+  // l'écran pour recharger). Même intention que `renderBiblioLive`, autre repère : ici un nœud que
+  // seul le rendu abouti pose ; là-bas, depuis le 2026-10-05, l'époque de vue — la classe qu'elle
+  // visait avait quitté le markup sans que rien ne le signale.
   if (!content.querySelector(".jrnl-body")) {
     content.innerHTML = `<div class="jrnl-wrap">${theadHtml()}${skeletonHtml()}</div>`;
   }
@@ -1238,6 +1239,9 @@ function installJournalHandlers(): void {
       // ⇧⌘A : tout désélectionner (HIG Keyboards, `docs/manuel.md`). Il sélectionnait TOUT
       // jusqu'au 2026-10-05, Maj n'étant pas lue (`key-chords.ts`).
       e.preventDefault();
+      // Rien de sélectionné, rien à repeindre : `syncSelectionUi` ouvrirait sinon la zone D sur un
+      // Journal vide (« 0 action »), que le rendu referme exprès (`renderJournal`).
+      if (!jrnlState.selection.size) return;
       jrnlState.selection.clear();
       jrnlState.anchor = null;
       syncSelectionUi();

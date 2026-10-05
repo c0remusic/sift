@@ -467,12 +467,26 @@ export function installRailToggle(): void {
     // Idem : l'absence de stockage vaut « déplié », l'état par défaut.
   }
   applyRailCollapsed(collapsed);
-  document.getElementById("sift-rail-toggle")?.addEventListener("click", (e) => {
-    // Le bouton vit dans la barre unifiée depuis le 2026-09-03 (issue #56) ; stopPropagation
-    // reste par prudence — un clic qui bulle jusqu'à un délégué ne doit rien déclencher d'autre.
+  const btn = document.getElementById("sift-rail-toggle");
+  // Le clic BULLE jusqu'au document (2026-10-05) : il portait un `stopPropagation` « par prudence »
+  // depuis #56, qui empêchait la fermeture « clic dehors » du sélecteur de facette de Rangés
+  // (`sift-live.ts`, écouteur de bulle sur `document`) — son commentaire exige pourtant qu'un clic
+  // dans la barre unifiée le ferme. Les délégués de `document` filtrent tous par `closest()`.
+  btn?.addEventListener("click", toggleRail);
+  btn?.addEventListener("keydown", onBarToggleKey(toggleRail));
+}
+
+/** Entrée et Espace basculent ICI, avant que les touches nues de Revue (`installFilingKeys`, sur
+ *  `document`) ne les prennent : Entrée y range la piste, Espace lance la lecture — le bouton
+ *  focalisé au Tab n'avait aucun chemin clavier en Revue. Même patron que « Agrandir » (#72,
+ *  `report-view.ts::wireEnlarge`). */
+function onBarToggleKey(toggle: () => void): (e: KeyboardEvent) => void {
+  return (e) => {
+    if (e.key !== "Enter" && e.key !== " ") return;
+    e.preventDefault();
     e.stopPropagation();
-    toggleRail();
-  });
+    toggle();
+  };
 }
 
 /** Masquer l'inspecteur (zone D) — le miroir du repli du rail, demandé par Antoine le 2026-10-05.
@@ -496,17 +510,43 @@ function applyAsideHidden(hidden: boolean): void {
     icon.className = hidden ? "ti ti-layout-sidebar-right-expand" : "ti ti-layout-sidebar-right-collapse";
 }
 
-/** Bascule l'inspecteur et persiste. Sans effet quand aucune vue n'a ouvert la zone D : le
- *  raccourci ne doit pas basculer un état invisible qui surprendrait au prochain écran. */
-export function toggleAside(): void {
-  if (document.getElementById("sift-aside")?.hidden !== false) return;
-  const next = !document.body.classList.contains("sift-aside-hidden");
-  applyAsideHidden(next);
+function persistAsideHidden(hidden: boolean): void {
   try {
-    localStorage.setItem(ASIDE_HIDDEN_KEY, next ? "1" : "0");
+    localStorage.setItem(ASIDE_HIDDEN_KEY, hidden ? "1" : "0");
   } catch {
     // Stockage refusé : la bascule marche, elle ne survit pas au redémarrage.
   }
+}
+
+/** L'inspecteur est-il masqué par l'utilisateur ? Une zone D « ouverte » peut l'être : son contenu
+ *  reste peint, seule la mise en page l'écarte. Un libellé qui annonce « Masquer le détail » doit
+ *  donc lire cet état, pas seulement savoir quelle piste est ouverte. */
+export function isAsideHidden(): boolean {
+  return document.body.classList.contains("sift-aside-hidden");
+}
+
+/** Bascule l'inspecteur et persiste. Sans effet quand aucune vue n'a ouvert la zone D : le
+ *  raccourci ne doit pas basculer un état invisible qui surprendrait au prochain écran. */
+export function toggleAside(): void {
+  const aside = document.getElementById("sift-aside");
+  if (aside?.hidden !== false) return;
+  const next = !isAsideHidden();
+  // Le focus ne disparaît pas avec la colonne : masquée, elle le laissait sur `<body>`, sans `blur`
+  // (mesuré dans Chromium 152), et Tab repartait du haut du document. Il passe au bouton qui la rend.
+  const focusInside = next && aside.contains(document.activeElement);
+  applyAsideHidden(next);
+  persistAsideHidden(next);
+  if (focusInside) document.getElementById("sift-aside-toggle")?.focus();
+}
+
+/** Rend l'inspecteur visible s'il est masqué, pour une commande dont le SEUL effet est dans la zone D
+ *  — Écouter, Identifier, Ouvrir le détail, Racheter… : masquée, elle ne ferait rien du tout (revue
+ *  adverse du 2026-10-05). La sélection, elle, ne le révèle pas : un clic sur une rangée se voit dans
+ *  la table, et un inspecteur masqué le reste tant qu'on ne le rouvre pas (Finder, Pages). */
+export function revealAside(): void {
+  if (!isAsideHidden()) return;
+  applyAsideHidden(false);
+  persistAsideHidden(false);
 }
 
 export function installAsideToggle(): void {
@@ -517,8 +557,8 @@ export function installAsideToggle(): void {
     // L'absence de stockage vaut « affiché », l'état par défaut.
   }
   applyAsideHidden(hidden);
-  document.getElementById("sift-aside-toggle")?.addEventListener("click", (e) => {
-    e.stopPropagation();
-    toggleAside();
-  });
+  const btn = document.getElementById("sift-aside-toggle");
+  // Pas de `stopPropagation` : voir `installRailToggle`.
+  btn?.addEventListener("click", toggleAside);
+  btn?.addEventListener("keydown", onBarToggleKey(toggleAside));
 }

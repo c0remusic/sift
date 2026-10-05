@@ -480,7 +480,9 @@ export function installLiveWiring() {
         }
       } else if (act === "play" || act === "identify" || act === "tile") {
         // Open the unified detail/edit panel (report + inline editor + identify + actions).
-        openBiblioDetail(Number(bibEl.dataset.id));
+        // EXPLICITE : écouter, identifier ou ouvrir une tuile n'a d'effet que dans la zone D — un
+        // inspecteur masqué se révèle, et la piste déjà ouverte ne se referme pas.
+        openBiblioDetail(Number(bibEl.dataset.id), true);
       } else if (act === "dupscan") {
         bibDup.shown = !bibDup.shown;
         if (bibDup.shown && (bibDup.groups === null || bibDup.error)) {

@@ -442,6 +442,9 @@ export function installQueueNavKeys(): void {
     // Liste de candidats Discogs ouverte (fork F) : là, ↑/↓ navigue la liste, pas la file. Gate sans
     // importer filing-state (règle d'import unidirectionnelle) ; la listbox gère ses propres flèches.
     if (t && t.closest(".sift-cands")) return;
+    // Un curseur focalisé (position, volume — `player-audition.ts`) prend ↑/↓ lui-même : ils
+    // changeaient AUSSI de piste, et la piste ouverte partait sous le doigt (revue du 2026-10-05).
+    if (t && t.closest('[role="slider"]')) return;
     // Same gate as filing.ts's installFilingKeys (`if (!state.track) return`), but reached without
     // importing filing.ts's internal `state` (would violate the one-directional import rule —
     // filing.ts must never import from sift-live.ts, and sift-live.ts already imports FROM

@@ -158,6 +158,17 @@ défilement, plus `#content`.
 Sections repliables, en-têtes discrets, libellé à gauche en `--color-text-secondary`,
 valeur à droite en `--color-text-primary`.
 
+**Amendement du 2026-10-05 — jamais refermée, et masquable.**
+- Re-cliquer la rangée ouverte, « Masquer le détail » ou une action de masse ramènent la zone D
+  au **repos** (résumé de la source, ou de la sélection multiple) : elles ne la referment plus.
+  Refermée, elle faisait sortir le bouton de l'inspecteur de la barre, et la recherche glissait de
+  sa largeur. Seule une bibliothèque vide n'a pas de zone D (impasse assumée).
+- L'inspecteur se masque (bouton de la barre, ⌥⌘I / Ctrl+Alt+I). Masqué, il le reste : un clic sur
+  une rangée sélectionne, ce qui se voit dans la table (Finder, Pages). Les commandes dont le seul
+  effet est dans la zone D le révèlent : **Écouter**, **Identifier**, une **tuile** de la grille,
+  « **Ouvrir le détail** ». Tant que la fiche ne se voit pas, le menu dit « Ouvrir le détail ».
+- « Tout désélectionner » (⇧⌘A) vide aussi la piste ouverte : zone D au repos.
+
 ### Section doublons
 
 Aujourd'hui rendue dans le flux, sous la table. Elle devient un **mode de la zone C** :

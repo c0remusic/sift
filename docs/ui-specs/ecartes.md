@@ -47,6 +47,10 @@ Au sol (`.sift-library-main`, fond de `.pa`, inset `--space-16`), **aucune carte
 Pas de pochette (le champ n'existe pas), pas de bouton dans la ligne. Clic = ouvre / referme
 l'inspecteur sur la piste (`.cur`). Entrée / Espace pareil au clavier.
 
+**Amendement du 2026-10-05.** Inspecteur masqué (⌥⌘I / Ctrl+Alt+I), le clic et Entrée marquent la
+piste (`.cur`) et l'inspecteur reste masqué. « Ouvrir le détail » et « Racheter… » le révèlent : leur
+seul effet est dans la zone D.
+
 ### Zone D — inspecteur
 
 - **Au repos** : titre de la destination, compte, répartition par raison, la règle en une

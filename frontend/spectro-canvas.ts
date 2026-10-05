@@ -191,9 +191,9 @@ function drawSpectroCrosshair(
 ) {
   ctx.setTransform(1, 0, 0, 1, 0, 0);
   ctx.clearRect(0, 0, w, h);
-  // `k` pixels de stockage par px CSS : 1 en zone D, devicePixelRatio dans la vue agrandie (#72).
-  // Tout se dessine en px CSS, pour que l'étiquette ait la taille du texte de l'app partout — sans
-  // cela elle tombait à 11/dpr px dans la vue agrandie.
+  // `k` pixels de stockage par px CSS : le devicePixelRatio, partout depuis le 2026-10-05 (l'overlay
+  // a sa propre résolution, `wireSpectroHover`). Tout se dessine en px CSS, pour que l'étiquette ait
+  // la taille du texte de l'app partout — sans cela elle tombait à 11/dpr px dans la vue agrandie.
   ctx.setTransform(k, 0, 0, k, 0, 0);
   w /= k;
   h /= k;
@@ -238,8 +238,7 @@ function drawSpectroCrosshair(
 export function wireSpectroHover(base: HTMLCanvasElement, overlay: HTMLCanvasElement, r: AnalysisReport) {
   const octx = overlay.getContext("2d");
   if (!octx) return;
-  overlay.width = base.width;
-  overlay.height = base.height;
+  // L'espace de la RECHERCHE (quelle cellule de la grille sous le pointeur) : le bitmap de base.
   const w = base.width;
   const h = base.height;
   const sg = r.spectrogram;
@@ -257,15 +256,27 @@ export function wireSpectroHover(base: HTMLCanvasElement, overlay: HTMLCanvasEle
 
   base.addEventListener("mousemove", (e) => {
     const rect = base.getBoundingClientRect();
+    if (rect.width <= 0 || rect.height <= 0) return;
     const x = Math.round(((e.clientX - rect.left) / rect.width) * w);
     const y = Math.round(((e.clientY - rect.top) / rect.height) * h);
     if (x < 0 || x >= w || y < 0 || y >= h) return;
     const { freqHz, dbfs, timeSec } = spectroPointAt(sg, w, h, x, y, seconds);
-    // Relu à chaque mouvement : la taille CSS peut changer, le stockage non.
-    const k = rect.width > 0 ? w / rect.width : 1;
-    drawSpectroCrosshair(octx, w, h, x, y, freqHz, dbfs, timeSec, color, scrim, k);
+    // L'espace du DESSIN, lui, est celui de l'overlay : sa boîte CSS × devicePixelRatio, relue à
+    // chaque mouvement (la taille CSS peut changer). Calqué sur le bitmap de base jusqu'au
+    // 2026-10-05, il étirait le réticule dès que la figure agrandie remplit son cadre : une source
+    // courte de 270 × 150 dans un cadre de 760 × 380 rendait l'étiquette illisible, et l'écrasait
+    // quand les échelles horizontale et verticale diffèrent (revue adverse du 2026-10-05).
+    const orect = overlay.getBoundingClientRect();
+    const dpr = window.devicePixelRatio || 1;
+    const ow = Math.max(1, Math.round(orect.width * dpr));
+    const oh = Math.max(1, Math.round(orect.height * dpr));
+    if (overlay.width !== ow) overlay.width = ow;
+    if (overlay.height !== oh) overlay.height = oh;
+    const ox = (e.clientX - orect.left) * dpr;
+    const oy = (e.clientY - orect.top) * dpr;
+    drawSpectroCrosshair(octx, ow, oh, ox, oy, freqHz, dbfs, timeSec, color, scrim, dpr);
   });
-  base.addEventListener("mouseleave", () => octx.clearRect(0, 0, w, h));
+  base.addEventListener("mouseleave", () => octx.clearRect(0, 0, overlay.width, overlay.height));
 }
 
 export function drawSpectrogram(canvas: HTMLCanvasElement, r: AnalysisReport) {
