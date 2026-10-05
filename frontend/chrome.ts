@@ -310,8 +310,13 @@ export async function injectTitlebar(): Promise<void> {
     '<span id="sift-tb-brand" data-tauri-drag-region><i class="ti ti-filter" aria-hidden="true"></i>Sift</span>' +
     '<span id="sift-tb-lspacer" data-tauri-drag-region></span>' +
     `<button id="sift-rail-toggle" class="lk-icon" title="${t.railCollapse}" aria-label="${t.railCollapse}" aria-expanded="true"><i class="ti ti-layout-sidebar-left-collapse" aria-hidden="true"></i></button>`;
+  // Le bouton de l'inspecteur (zone D), miroir du bouton du rail, au bord droit de la barre : le
+  // patron des apps Mac à inspecteur (Pages : « Hide or show sidebars on the right side », ⌥⌘I).
+  // Demandé par Antoine le 2026-10-05 (« comme pour le panneau de gauche »). Caché tant qu'aucune
+  // vue n'ouvre la zone D — `toolbar.ts::openAside` le montre, `closeAside` le recache.
+  const asideToggle = `<button id="sift-aside-toggle" class="lk-icon" title="${t.asideHide}" aria-label="${t.asideHide}" aria-expanded="true" hidden><i class="ti ti-layout-sidebar-right-collapse" aria-hidden="true"></i></button>`;
   const left = `<div id="sift-tb-left" data-tauri-drag-region>${isMac ? controls : ""}${brand}</div>`;
-  const right = `<div id="sift-tb-right" data-tauri-drag-region>${title}${isMac ? "" : controls}</div>`;
+  const right = `<div id="sift-tb-right" data-tauri-drag-region>${title}${asideToggle}${isMac ? "" : controls}</div>`;
   bar.innerHTML = left + right;
   document.body.insertBefore(bar, document.body.firstChild);
 
@@ -467,5 +472,53 @@ export function installRailToggle(): void {
     // reste par prudence — un clic qui bulle jusqu'à un délégué ne doit rien déclencher d'autre.
     e.stopPropagation();
     toggleRail();
+  });
+}
+
+/** Masquer l'inspecteur (zone D) — le miroir du repli du rail, demandé par Antoine le 2026-10-05.
+ *
+ *  À la différence du rail, l'inspecteur DISPARAÎT : replié en icônes, il n'aurait rien à montrer.
+ *  Son contenu reste peint (la classe ne fait que le soustraire à la mise en page) : le réafficher
+ *  le rend tel quel, sans recalcul du Diagnostic. Même persistance que le rail — une préférence de
+ *  poste de travail. Le geste est instantané, pour la même raison (une largeur ne s'anime pas). */
+const ASIDE_HIDDEN_KEY = "sift-aside-hidden";
+
+function applyAsideHidden(hidden: boolean): void {
+  document.body.classList.toggle("sift-aside-hidden", hidden);
+  const btn = document.getElementById("sift-aside-toggle");
+  if (!btn) return;
+  const label = hidden ? T().asideShow : T().asideHide;
+  btn.title = label;
+  btn.setAttribute("aria-label", label);
+  btn.setAttribute("aria-expanded", hidden ? "false" : "true");
+  const icon = btn.querySelector("i");
+  if (icon)
+    icon.className = hidden ? "ti ti-layout-sidebar-right-expand" : "ti ti-layout-sidebar-right-collapse";
+}
+
+/** Bascule l'inspecteur et persiste. Sans effet quand aucune vue n'a ouvert la zone D : le
+ *  raccourci ne doit pas basculer un état invisible qui surprendrait au prochain écran. */
+export function toggleAside(): void {
+  if (document.getElementById("sift-aside")?.hidden !== false) return;
+  const next = !document.body.classList.contains("sift-aside-hidden");
+  applyAsideHidden(next);
+  try {
+    localStorage.setItem(ASIDE_HIDDEN_KEY, next ? "1" : "0");
+  } catch {
+    // Stockage refusé : la bascule marche, elle ne survit pas au redémarrage.
+  }
+}
+
+export function installAsideToggle(): void {
+  let hidden = false;
+  try {
+    hidden = localStorage.getItem(ASIDE_HIDDEN_KEY) === "1";
+  } catch {
+    // L'absence de stockage vaut « affiché », l'état par défaut.
+  }
+  applyAsideHidden(hidden);
+  document.getElementById("sift-aside-toggle")?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    toggleAside();
   });
 }

@@ -300,6 +300,12 @@ environ 7 % du temps du morceau, et environ 120 Hz par ligne de pixel.
   colonnes gardées. Il n'y a pas de FFT en plus, les colonnes sont déjà calculées pour la LTAS. La
   peinture est 1:1, donc nette à 125 et 150 %. Quand la source compte moins de colonnes que le
   canevas n'a de pixels, c'est le canevas qui rétrécit : jamais une donnée étirée (règle de #30).
+  ~~Le canevas rétrécit.~~ **Renversé le 2026-10-05** par Antoine, sur une capture plein écran
+  (« en plein écran ça s'affiche bizarrement » : une source de 2475 × 1024 collée en haut à gauche
+  d'un cadre de ~3390 × 1300) : il a choisi « étirer pour remplir » et « centrer ». La figure
+  remplit désormais le cadre ; une source plus petite que lui est étirée par le navigateur. Le
+  calcul ne change pas — Rust ne rend jamais plus que la source —, et « N × M mesurés » garde le
+  compte de la source : ce qui est étiré se dit, il ne passe pas pour mesuré.
 - **Zone D** : la même fonction construit sa grille, qui gagne donc le max-pool temporel. Sa forme
   passe de ~1 077 × 342 (un pas entier) à 1 200 × 384 au plus (pooling proportionnel). L'aspect
   peut changer légèrement, dans le sens du plus fidèle.

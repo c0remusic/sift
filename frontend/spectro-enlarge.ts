@@ -1,7 +1,8 @@
 // La vue agrandie du spectrogramme (#72) : par-dessus l'app, sur le patron `.sift-report-overlay`
-// des confirmations. La grille est CALCULÉE à la taille du canevas en pixels physiques (Rust,
-// max-pool dans les deux axes) et peinte à 1:1 : rien n'est étiré, rien n'est jeté. Spec :
-// `docs/ui-specs/revue.md` § Décision — 2026-09-29.
+// des confirmations. La grille est CALCULÉE à la taille du cadre en pixels physiques (Rust,
+// max-pool dans les deux axes, jamais plus que la source), puis la figure REMPLIT le cadre : à 1:1
+// quand la source suffit, étirée quand elle compte moins de colonnes ou de bandes que le cadre n'a
+// de pixels. Spec : `docs/ui-specs/revue.md` § Décision — 2026-09-29, amendée le 2026-10-05.
 import type { AnalysisReport, SpectrogramGrid } from "../shared/contracts";
 import { analyzePath } from "./ipc";
 import { T } from "./i18n/spectro-enlarge";
@@ -121,8 +122,8 @@ export function openSpectroEnlarged(
   }
   document.addEventListener("keydown", onKey, true);
   closeBtn.addEventListener("click", close);
-  // Clic HORS DU SPECTROGRAMME : le voile, mais aussi les gouttières d'axes et la place vide autour
-  // d'une figure que la source a limitée. La carte remplit le voile ; fermer seulement sur le voile
+  // Clic HORS DU SPECTROGRAMME : le voile, mais aussi les gouttières d'axes autour de la figure.
+  // La carte remplit le voile ; fermer seulement sur le voile
   // laissait un anneau de 24 px (relecture de #72, demande d'Antoine : « on peut pas cliquer en
   // dehors du cadre ? »). L'en-tête (Fermer) et l'état de calcul (Réessayer) gardent leurs clics.
   overlay.addEventListener("click", (e) => {
@@ -147,7 +148,7 @@ export function openSpectroEnlarged(
     deps.fetchGrid(path, grid).then(
       (r) => {
         if (!overlay.isConnected || mine !== generation) return; // fermée, ou dépassée
-        show(r, dpr);
+        show(r);
       },
       (e) => {
         if (!overlay.isConnected || mine !== generation) return;
@@ -163,10 +164,17 @@ export function openSpectroEnlarged(
     );
   };
 
-  const show = (r: AnalysisReport, dpr: number) => {
+  const show = (r: AnalysisReport) => {
     const sg = r.spectrogram;
-    const cssW = sg.frames / dpr;
-    const cssH = sg.bins / dpr;
+    // La figure prend TOUT le cadre (décision d'Antoine du 2026-10-05, sur capture plein écran :
+    // « en plein écran ça s'affiche bizarrement » — une source de 2475 × 1024 restait collée en
+    // haut à gauche d'un cadre de ~3390 × 1300, le reste vide). Jusque-là, le canevas rétrécissait
+    // à la taille de la source pour ne jamais étirer une donnée (règle de #30). Le compte
+    // « N × M mesurés » reste celui de la source : ce qui est étiré se dit, il ne se fait pas passer
+    // pour mesuré. Le canevas garde sa résolution réelle, c'est le CSS qui le met à la taille.
+    const box = area.getBoundingClientRect();
+    const cssW = Math.max(1, Math.floor(box.width));
+    const cssH = Math.max(1, Math.floor(box.height));
     const figure = document.createElement("div");
     figure.className = "sift-spectro-xl-figure";
     figure.style.width = `${cssW}px`;

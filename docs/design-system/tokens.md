@@ -68,8 +68,11 @@ Tokens principaux :
 - `--color-border-danger`
 - `--overlay-hover`
 - `--overlay-selected`
-- `--overlay-alt` — fonds alternés d'une table (2026-09-10 : un cran au-dessus de
-  `--overlay-hover`, clair .045 / sombre .05), posé par parité d'index, jamais `:nth-child`
+- `--overlay-alt` — fonds alternés d'une table (2026-09-10, clair .045 / sombre .05), posé par
+  parité d'index, jamais `:nth-child`. Le sombre est l'alpha du kit Big Sur
+  (Dark/Alternate/Content/Background) ; le clair rend la paire WebKit #FFFFFF/#F4F5F5 à voile
+  constant (triage de #61, 2026-10-05 — la justification « un cran au-dessus de `--overlay-hover` »
+  n'avait pas de mesure)
 - `--overlay-drop`
 - `--overlay-wave-hover`
 
@@ -115,7 +118,10 @@ comptes) repose sur ces deux crans. Valeurs depuis : sombre 95,9 / 83,5 / **79**
 31,16 / **41** / 46,15 / 50,30. En sombre c'est tertiary qui descend (76 tombait à 4,23:1 sur le
 plan de la file) ; en clair le sol à 86,22 % interdit de descendre tertiary, donc c'est secondary
 qui monte en contraste. AA (4,5:1) tenu sur les cinq écrans peuplés, sauf le bouton primaire
-(blanc sur `--color-accent-fill`, 3,65 sombre / 4,02 clair — antérieur, non tranché).
+(blanc sur `--color-accent-fill`, 3,65 sombre / 4,02 clair). Le DÉFAUT a été tranché le
+2026-08-19 — la fidélité au kit prime sur le plancher, l'accent n'est pas assombri ; la TEINTE de
+l'accent reste ouverte, #64 Décision 1, et c'est elle qui fixe ce contraste (triage de #61,
+2026-10-05).
 
 Règles :
 

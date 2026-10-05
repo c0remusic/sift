@@ -23,9 +23,11 @@ import {
   selectAllQueueBatch,
   clearQueueBatchSelection,
 } from "./queue-panel";
-import { toggleRail } from "./chrome";
+import { toggleRail, toggleAside } from "./chrome";
+import { isInspectorToggleChord, selectionChord } from "./key-chords";
 import {
   selectAllVisible,
+  clearBibSelection,
   renderBiblioLive,
   renderSelectionSummary,
   stepBibSelection,
@@ -109,6 +111,16 @@ export function installWindowShortcuts(): void {
     // lookup a un chemin d'échec (chrome.ts se rabat sur la disposition Windows quand il jette),
     // et un raccourci est le mauvais endroit où en hériter — c'est exactement la raison pour
     // laquelle macOS n'a eu AUCUN Cmd+Z jusqu'au 2026-08-05.
+    // ⌥⌘I / Ctrl+Alt+I — masquer ou afficher l'inspecteur (Pages, « Hide or show sidebars on the
+    // right side »). Le seul accord de cette couche qui prend Alt, d'où sa place AVANT la garde
+    // ci-dessous ; lu sur la touche physique (`key-chords.ts`), ⌥I produisant « ˆ » sur Mac.
+    if (isInspectorToggleChord(e)) {
+      if (inTextField(e.target)) return;
+      e.preventDefault();
+      toggleAside();
+      return;
+    }
+
     const mod = e.ctrlKey || e.metaKey;
     if (!mod || e.altKey) return;
     if (inTextField(e.target) && e.key !== "f" && e.key !== "F") return;
@@ -147,11 +159,14 @@ export function installWindowShortcuts(): void {
         return;
       case "a":
       case "A": {
-        // Mode Lot de Revue (issue #60, 2026-09-10) : Ctrl+A = tout, Ctrl+Maj+A = aucune — les
-        // deux entrées du menu Édition de Photos et Mail, que Sift n'a pas (#58).
+        // Ctrl+A = tout, Ctrl+Maj+A = rien — les deux entrées « Tout sélectionner » et « Tout
+        // désélectionner » du menu Édition de Photos et Mail (HIG Keyboards). Le mode Lot de Revue
+        // les faisait depuis #60 (2026-09-10) ; la table de Bibliothèque ignorait Maj et
+        // sélectionnait TOUT jusqu'au 2026-10-05. La règle vit dans `key-chords.ts`, testée.
+        const sel = selectionChord(e);
         if (reviewMode === "batch" && document.getElementById("sift-qselmenu")) {
           e.preventDefault();
-          if (e.shiftKey) clearQueueBatchSelection();
+          if (sel === "none") clearQueueBatchSelection();
           else selectAllQueueBatch();
           return;
         }
@@ -159,7 +174,8 @@ export function installWindowShortcuts(): void {
         // sélection de texte du navigateur reste le comportement attendu partout ailleurs.
         if (!document.querySelector('.lr[data-bib="row"]')) return;
         e.preventDefault();
-        selectAllVisible();
+        if (sel === "none") clearBibSelection();
+        else selectAllVisible();
         void renderBiblioLive().then(renderSelectionSummary);
         return;
       }

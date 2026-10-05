@@ -22,8 +22,9 @@ function fmtCell(t: LibraryTrack): string {
 // Le mot de verdict se lit dans l'inspecteur à l'ouverture (`report-view.ts::verdictWordTone`,
 // même paire de faits : verdict sain ET rail lossless). Historique : `git log -S verdictView`.
 
-/** Display name for a library row (artist — title, else filename). */
-export function bibName(t: LibraryTrack): string {
+/** Display name for a library row (artist — title, else filename). Privé depuis le 2026-10-05 : son
+ *  seul autre appelant, le patch en place de `bibliotheque-view.ts`, visait une classe disparue. */
+function bibName(t: LibraryTrack): string {
   return t.artist && t.title ? `${t.artist} — ${t.title}` : t.path.split(/[\\/]/).pop() || t.path;
 }
 

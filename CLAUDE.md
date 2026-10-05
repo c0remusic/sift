@@ -77,7 +77,11 @@ npm run lint:orphans             # `export` de frontend/ et shared/ que personne
 npm run lint:orphan-css          # classes de styles.css que plus aucun markup ne pose. Ratchet à
                                  # baseline. Ne compte PAS un poseur une ligne de commentaire ni un
                                  # fragment de mot : les deux ont produit un faux négatif le
-                                 # 2026-09-16, le jour de sa mise en service
+                                 # 2026-09-16, le jour de sa mise en service. Ni un SÉLECTEUR
+                                 # (`.x` lu par querySelector/closest) — et il compte à part, à
+                                 # cliquet 0, les sélecteurs JS qui visent une classe que rien ne
+                                 # pose. Payé le 2026-10-05 : la garde de Bibliothèque visait une
+                                 # classe partie du markup, chaque frappe blanchissait l'écran
 npm run lint:css-comments        # `*/` orphelin dans styles.css : texte hors /* */ = sélecteur
                                  # invalide, la règle suivante meurt en silence (payé 2x, 09-06/07)
 npm run lint:pointer-capture     # un élément qui appelle `setPointerCapture` ne doit pas AUSSI
@@ -249,10 +253,10 @@ Le rapport en cache est passé de 829 ko à 39 ko, la base de 4,11 Go à 119 Mo.
 
 ⚠️ **Corrigé le 2026-09-15.** Ce paragraphe affirmait que `main.ts` importe `app.js`
 **inconditionnellement** et qu'elle « tourne donc réellement en prod ». C'est faux :
-`frontend/main.ts:61` lit `if (!inTauri) void import("./app.js")`. Les deux vies ne
+`frontend/main.ts:62` lit `if (!inTauri) void import("./app.js")`. Les deux vies ne
 cohabitent pas dans le même processus — elles s'excluent.
 
-`frontend/main.ts` charge **`app.js` seulement HORS Tauri** (`main.ts:61`), où elle est une
+`frontend/main.ts` charge **`app.js` seulement HORS Tauri** (`main.ts:62`), où elle est une
 démo navigateur et rien d'autre ; sous Tauri c'est `router.ts` qui route les clics nav via
 `e.target.closest('[data-view]')`, et `installLiveWiring()` qui pose le reste
 (`"__TAURI_INTERNALS__" in window`).
@@ -492,7 +496,7 @@ encore sur le disque avec une **palette et une typo périmées** : ne jamais y p
 valeur. ⚠️ `docs/wireframes/<feature>.html`, cité ici jusqu'au 2026-08-05 comme lieu de
 vie des wireframes de feature, **n'existe pas** — aucun `.html` nulle part sous `docs/`.
 La seule maquette réelle est `frontend/app.js`, chargée **seulement hors Tauri** par
-`frontend/main.ts:61` (§ Architecture) : c'est une démo navigateur, elle ne tourne pas en prod,
+`frontend/main.ts:62` (§ Architecture) : c'est une démo navigateur, elle ne tourne pas en prod,
 et elle ne fait pas autorité. Ce passage a dit « chargée inconditionnellement … elle tourne en
 prod » jusqu'au 2026-09-15.
 

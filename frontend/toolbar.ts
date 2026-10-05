@@ -280,6 +280,11 @@ export function openAside(): HTMLElement | null {
   aside.style.width = `${asideWidth()}px`;
   const handle = document.getElementById("sift-aside-resize");
   if (handle) handle.hidden = false;
+  // Le bouton de la barre (chrome.ts) n'a de sens que zone D ouverte. Masquée par l'utilisateur,
+  // elle reste « ouverte » ici : son contenu est peint, la classe `sift-aside-hidden` du `<body>`
+  // la soustrait seulement à la mise en page.
+  const toggle = document.getElementById("sift-aside-toggle");
+  if (toggle) toggle.hidden = false;
   return aside;
 }
 
@@ -292,6 +297,8 @@ export function closeAside(): void {
   aside.textContent = "";
   const handle = document.getElementById("sift-aside-resize");
   if (handle) handle.hidden = true;
+  const toggle = document.getElementById("sift-aside-toggle");
+  if (toggle) toggle.hidden = true;
 }
 
 // La porte de premier réglage (`renderRootGate` / `dismissRootGateBanner`, bandeau `#sift-gate`)

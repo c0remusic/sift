@@ -103,17 +103,19 @@ const declarees = new Set((css.match(/\.[a-zA-Z][\w-]*/g) || []).map((s) => s.sl
  * vivante. Bien pire que le faux négatif qu'on corrige.
  */
 function sansCommentaires(texte) {
+  // Les lignes de commentaire sont VIDÉES et non retirées : la numérotation reste celle du fichier,
+  // que le relevé des sélecteurs morts (plus bas) cite en `fichier:ligne`.
   return texte
     .split('\n')
-    .filter((l) => {
+    .map((l) => {
       const t = l.trim();
-      return !(t.startsWith('//') || t.startsWith('/*') || t.startsWith('*') || t.startsWith('#'));
+      return t.startsWith('//') || t.startsWith('/*') || t.startsWith('*') || t.startsWith('#') ? '' : l;
     })
     .join('\n');
 }
 
-let blob = '';
-for (const f of ecrivains()) blob += `\n${sansCommentaires(readFileSync(f, 'utf8'))}`;
+const sources = ecrivains().map((f) => ({ f, texte: sansCommentaires(readFileSync(f, 'utf8')) }));
+const blob = sources.map((s) => s.texte).join('\n');
 
 /**
  * Le nom apparaît-il comme un NOM ENTIER dans le code, et non comme un fragment ?
@@ -126,6 +128,13 @@ for (const f of ecrivains()) blob += `\n${sansCommentaires(readFileSync(f, 'utf8
  * Pas de `\b` : un nom de classe contient des tirets, que JavaScript ne compte pas comme des
  * caractères de mot, donc `\b` couperait au mauvais endroit. On vérifie les deux voisins à la
  * main.
+ *
+ * Et un nom précédé d'un POINT ne pose rien : c'est un sélecteur (`querySelector(".x")`,
+ * `closest(".x")`), qui LIT une classe. Trouvé le 2026-10-05 : `.sift-ident-idle-note` n'était posée
+ * par aucun markup, mais un `editor.querySelector(".sift-ident-idle-note")?.remove()` de
+ * `filing-identify.ts` la faisait passer pour vivante — un sélecteur mort tenait une règle morte en
+ * vie, et inversement. Même cas pour `.bib-name`. Les vrais poseurs (`class="… x"`,
+ * `classList.add("x")`, `className = "x"`) n'ont jamais de point devant.
  */
 function nommeeEntierement(texte, nom) {
   const bord = /[A-Za-z0-9_-]/;
@@ -133,7 +142,7 @@ function nommeeEntierement(texte, nom) {
   while (i !== -1) {
     const avant = i === 0 ? '' : texte[i - 1];
     const apres = texte[i + nom.length] ?? '';
-    if (!bord.test(avant) && !bord.test(apres)) return true;
+    if (!bord.test(avant) && !bord.test(apres) && avant !== '.') return true;
     i = texte.indexOf(nom, i + 1);
   }
   return false;
@@ -146,23 +155,70 @@ for (const c of [...declarees].sort()) {
   orphelines.push(c);
 }
 
+/**
+ * SÉLECTEURS MORTS : une classe que du code CHERCHE (`querySelector`, `querySelectorAll`,
+ * `closest`, `matches`) sans que rien ne la POSE. Le sélecteur ne trouve jamais rien, en silence :
+ * `?.remove()` ne retire rien, une garde « déjà rendu ? » répond toujours non.
+ *
+ * Trouvé le 2026-10-05 : la garde de `renderBiblioLive` visait `.sift-bib-headline`, partie du
+ * markup le 2026-09-08 — depuis, chaque frappe de recherche blanchissait l'écran de Bibliothèque,
+ * l'état que sa spec interdit. Aucune gate ne pouvait le voir : la règle CSS avait été retirée
+ * proprement, donc rien n'était « orphelin » côté feuille. Le défaut vivait dans la chaîne du
+ * sélecteur.
+ *
+ * Un gabarit (`` `.lr[data-id="${id}"] .x` ``) compte : ses expressions sont neutralisées avant
+ * l'extraction, les noms de classe qui l'entourent restent littéraux. Un nom CONSTRUIT
+ * (`.sift-pz-${kind}`) laisse un préfixe en tiret, couvert par FAMILLES_CONSTRUITES comme côté CSS.
+ */
+const SELECTEUR = /\b(?:querySelector|querySelectorAll|closest|matches)(?:<[^>()]*>)?\(\s*(["'`])((?:(?!\1)[\s\S])*?)\1/g;
+const cibles = new Map(); // nom -> ['fichier:ligne', …]
+for (const { f, texte } of sources) {
+  if (!/\.(ts|js|mjs)$/.test(f)) continue;
+  for (const m of texte.matchAll(SELECTEUR)) {
+    const corps = m[1] === '`' ? m[2].replace(/\$\{[^}]*\}/g, '§') : m[2];
+    const ligne = texte.slice(0, m.index).split('\n').length;
+    for (const c of corps.matchAll(/\.([a-zA-Z][\w-]*)/g)) {
+      const nom = c[1];
+      if (nom.endsWith('-') && FAMILLES_CONSTRUITES.some(([p]) => nom.startsWith(p) || p.startsWith(nom))) continue;
+      const lieu = `${relative(REPO_ROOT, f).replace(/\\/g, '/')}:${ligne}`;
+      if (!cibles.has(nom)) cibles.set(nom, []);
+      if (!cibles.get(nom).includes(lieu)) cibles.get(nom).push(lieu);
+    }
+  }
+}
+const selecteursMorts = [];
+for (const [nom, lieux] of [...cibles].sort(([a], [b]) => a.localeCompare(b))) {
+  if (nommeeEntierement(blob, nom)) continue;
+  if (FAMILLES_CONSTRUITES.some(([p]) => nom.startsWith(p))) continue;
+  selecteursMorts.push(`${nom} ← ${lieux.join(', ')}`);
+}
+
 const compte = orphelines.length;
+const compteSel = selecteursMorts.length;
 
 if (WRITE_BASELINE) {
-  writeFileSync(BASELINE_FILE, `${JSON.stringify({ count: compte, items: orphelines }, null, 2)}\n`);
-  console.log(`lint-orphan-css: baseline gravée à ${compte}`);
+  writeFileSync(
+    BASELINE_FILE,
+    `${JSON.stringify({ count: compte, items: orphelines, selectors: { count: compteSel, items: selecteursMorts } }, null, 2)}\n`,
+  );
+  console.log(`lint-orphan-css: baseline gravée à ${compte} classe(s), ${compteSel} sélecteur(s) mort(s)`);
   process.exit(0);
 }
 
-const baseline = existsSync(BASELINE_FILE)
-  ? JSON.parse(readFileSync(BASELINE_FILE, 'utf8')).count
-  : 0;
+const baselineJson = existsSync(BASELINE_FILE) ? JSON.parse(readFileSync(BASELINE_FILE, 'utf8')) : {};
+const baseline = baselineJson.count ?? 0;
+const baselineSel = baselineJson.selectors?.count ?? 0;
 
 console.log(
   `lint-orphan-css: ${compte} classe(s) sans écrivain dans ${relative(REPO_ROOT, FEUILLE).replace(/\\/g, '/')} (baseline ${baseline}).`,
 );
 for (const o of orphelines) console.log(`  .${o}`);
+console.log(
+  `lint-orphan-css: ${compteSel} sélecteur(s) JS visant une classe que rien ne pose, sur ${cibles.size} classe(s) visée(s) (baseline ${baselineSel}).`,
+);
+for (const s of selecteursMorts) console.log(`  .${s}`);
 
+let echec = false;
 if (compte > baseline) {
   console.error(
     `lint-orphan-css: ÉCHEC — ${compte - baseline} classe(s) orpheline(s) de plus que la baseline.`,
@@ -173,9 +229,19 @@ if (compte > baseline) {
   console.error(
     "Un nom construit à l'exécution s'inscrit dans FAMILLES_CONSTRUITES avec son site de construction.",
   );
-  process.exit(1);
+  echec = true;
 }
-if (compte < baseline) {
+if (compteSel > baselineSel) {
+  console.error(
+    `lint-orphan-css: ÉCHEC — ${compteSel - baselineSel} sélecteur(s) mort(s) de plus que la baseline.`,
+  );
+  console.error(
+    'Le sélecteur ne trouve jamais rien : viser une classe que le markup pose vraiment, ou retirer le code qui le porte.',
+  );
+  echec = true;
+}
+if (echec) process.exit(1);
+if (compte < baseline || compteSel < baselineSel) {
   console.log('lint-orphan-css: sous la baseline — graver le gain par --write-baseline.');
 }
 console.log('lint-orphan-css: dans la baseline — pass.');

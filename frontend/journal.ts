@@ -41,6 +41,7 @@ import { mountBarSearch, mountBarSegmented, openAside, closeAside } from "./tool
 import { toast, copyToClipboard } from "./filing-toast";
 import { bibState } from "./bibliotheque-view";
 import { sessionLabel } from "./session-label";
+import { selectionChord } from "./key-chords";
 
 // ---------------------------------------------------------------------------
 // État de l'écran
@@ -1232,7 +1233,17 @@ function installJournalHandlers(): void {
       if (stepJrnlSelection(e.key, e.shiftKey)) e.preventDefault();
       return;
     }
-    if ((e.key === "a" || e.key === "A") && (e.ctrlKey || e.metaKey) && !e.altKey) {
+    const sel = selectionChord(e);
+    if (sel === "none") {
+      // ⇧⌘A : tout désélectionner (HIG Keyboards, `docs/manuel.md`). Il sélectionnait TOUT
+      // jusqu'au 2026-10-05, Maj n'étant pas lue (`key-chords.ts`).
+      e.preventDefault();
+      jrnlState.selection.clear();
+      jrnlState.anchor = null;
+      syncSelectionUi();
+      return;
+    }
+    if (sel === "all") {
       const ids = visibleIds();
       if (!ids.length) return;
       e.preventDefault();

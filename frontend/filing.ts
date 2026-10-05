@@ -59,6 +59,7 @@ import {
 } from "./filing-identify";
 import { doRanger, doSecondary } from "./filing-actions";
 import { markApplied } from "./identify-candidates";
+import { isBareKey, isUndoChord } from "./key-chords";
 import { T } from "./i18n/filing";
 
 export { TARGET_LABEL } from "./filing-preview";
@@ -703,6 +704,10 @@ export function installFilingKeys(): void {
   document.addEventListener("keydown", (e) => {
     const t = e.target as HTMLElement | null;
     if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
+    // Touches NUES seulement (2026-10-05) : Ctrl+X, le réflexe « couper », écartait la piste
+    // ouverte, Ctrl+Entrée la rangeait — et Ctrl+Alt+I (l'inspecteur) aurait lancé l'identification.
+    // Les accords appartiennent à la couche 1 (`shortcuts.ts`) ; voir `key-chords.ts::isBareKey`.
+    if (!isBareKey(e)) return;
     // Audit-ref (Lot, 2026-07-24): state.track can still hold the last-opened Detail track after
     // switching to Lot mode (setReviewMode's "batch" branch never clears it, sift-live.ts) — this
     // handler would otherwise fire ALONGSIDE installNavKeyboard's click-dispatch (chrome.ts) on a
@@ -745,7 +750,8 @@ export function installFilingKeys(): void {
  * runs with `decorations: false`. */
 export function installUndoShortcut(): void {
   document.addEventListener("keydown", (e) => {
-    if (!((e.ctrlKey || e.metaKey) && (e.key === "z" || e.key === "Z"))) return;
+    // Maj exclue depuis le 2026-10-05 : ⇧⌘Z annulait une SECONDE action (`key-chords.ts`).
+    if (!isUndoChord(e)) return;
     const t = e.target as HTMLElement;
     if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
     e.preventDefault();

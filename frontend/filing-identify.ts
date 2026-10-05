@@ -223,9 +223,6 @@ function paintIdentity(v: IdentityView, editor: HTMLElement, mid: HTMLElement, h
   renderGenres();
   refreshRebuyLink();
   paintChosenRow(host);
-  // Read-only unidentified card (sift-ident-idle): the idle note ("Aucune correspondance…") is
-  // false once an identity exists — drop it, keeping the search button.
-  if (v.identified) editor.querySelector(".sift-ident-idle-note")?.remove();
   // TEXTE SEUL, comme le premier rendu de ce bouton : c'est le MÊME bouton dans un autre état.
   idBtn.textContent = v.identified ? T().reidentify : T().identify;
   refreshDiscrepancy();

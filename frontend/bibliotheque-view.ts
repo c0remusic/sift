@@ -32,7 +32,6 @@ import { renderUsageChart } from "./usage-chart";
 import { emptyStateHtml, wireEmptyState } from "./empty-state";
 import { createVirtualList, type VirtualList } from "./list-virtual";
 import {
-  bibName,
   sortTracks,
   libraryTableHeaderHtml,
   libraryTableRowHtml,
@@ -256,7 +255,9 @@ export function stepBibSelection(key: string, shift: boolean): boolean {
   return true;
 }
 
-function clearBibSelection(): void {
+/** Vide la sélection et son ancre — un ⇧+clic suivant repartirait sinon d'une ligne qui n'est plus
+ *  choisie. Exportée le 2026-10-05 pour ⇧⌘A (`shortcuts.ts`, « Tout désélectionner »). */
+export function clearBibSelection(): void {
   bibSelection.clear();
   bibAnchor = null;
 }
@@ -493,6 +494,10 @@ let bibVirtual: VirtualList | null = null;
 // Which library row is open in the detail panel — stamped as `.cur` at row-creation time so the
 // highlight survives virtualization. Private — only openBiblioDetail/renderBiblioLive touch it.
 let bibOpenId: number | null = null;
+// L'époque de vue (`view-epoch.ts`) de la dernière peinture RÉUSSIE de Bibliothèque. Égale à
+// l'époque courante : l'écran montre déjà des données valides, un re-rendu ne le blanchit pas.
+// Une carte d'erreur ne compte pas — ce n'est pas une donnée à préserver.
+let bibPaintedEpoch = -1;
 
 function dupMemberHtml(m: DupGroup["members"][number]): string {
   const name = esc(m.filename || m.path.split(/[\\/]/).pop() || m.path);
@@ -703,9 +708,13 @@ export async function renderBiblioLive() {
   // call — search keystroke, facet/quality-chip click, table/grid toggle, sort change, dup scan —
   // would blank the whole panel (stats/facets/toolbar/list) before repainting, even though valid
   // data is already showing.
-  // Le repère du « déjà rendu » suit la ligne d'en-tête depuis que le contrôle segmenté de
-  // facette a disparu (2026-08-19) : viser un nœud supprimé aurait blanchi l'écran à chaque frappe.
-  const alreadyRendered = !!content.querySelector(".sift-bib-headline");
+  // Le repère du « déjà rendu » est l'ÉPOQUE de la dernière peinture réussie, plus un nœud du DOM.
+  // Il a visé `.sift-bib-headline` jusqu'au 2026-10-05, alors que cette ligne avait quitté le markup
+  // le 2026-09-08 : la garde ne trouvait plus rien, et chaque frappe de recherche, clic de facette ou
+  // tri blanchissait l'écran en « Chargement… » — l'état que `docs/ui-specs/bibliotheque.md` interdit
+  // (« Chargement, re-rendu : ne blanchit jamais l'écran »). Une classe se renomme ou disparaît sans
+  // erreur ; l'époque, elle, change exactement quand l'écran change (`view-epoch.ts`).
+  const alreadyRendered = bibPaintedEpoch === token;
   const L = T();
   if (!alreadyRendered) {
     content.innerHTML =
@@ -927,6 +936,7 @@ export async function renderBiblioLive() {
       // même rendu que son bouton, donc il ne peut pas survivre à un changement d'écran — un
       // popover orphelin resterait à l'écran en pointant une facette qui n'existe plus.
       `<div class="sift-facet-pop" id="sift-facet-pop" hidden>${side}</div>`;
+  bibPaintedEpoch = token;
 
   // Zone D. Une sélection multiple montre son résumé agrégé, une piste ouverte son détail, et
   // sinon l'inspecteur porte le contexte de la source active — jamais rien.
@@ -1060,11 +1070,14 @@ export function openBiblioDetail(id: number): void {
     host,
     t,
     (updated) => {
-      // Keep the in-memory list + the visible row label in sync without a full re-render.
+      // La rangée suit l'édition par un re-rendu de la table, qui ne blanchit plus l'écran (garde
+      // par époque, plus haut) et range la piste là où son nouveau titre ou son nouvel artiste la
+      // place dans le tri et le filtre. Jusqu'au 2026-10-05, un patch en place visait `.bib-name`,
+      // une classe que la table ne pose plus : la rangée gardait l'ancien nom jusqu'au rendu suivant.
+      // La zone D n'est pas touchée : `bibOpenId` reste posé, le détail ouvert survit.
       const i = bibState.tracks.findIndex((x) => x.id === updated.id);
       if (i >= 0) bibState.tracks[i] = updated;
-      const span = document.querySelector(`.lr[data-id="${updated.id}"] .bib-name`);
-      if (span) span.textContent = bibName(updated);
+      void renderBiblioLive();
     },
     () => void renderBiblioLive(),
     () => {

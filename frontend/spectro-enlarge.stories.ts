@@ -9,9 +9,9 @@ import { openSpectroEnlarged, type EnlargeDeps } from "./spectro-enlarge";
 
 const DUREE = 312;
 
-function grilleSynthetique(grid: SpectrogramGrid): AnalysisReport {
-  const frames = Math.min(grid.cols, 3358);
-  const bins = Math.min(grid.bins, 1024);
+function grilleSynthetique(grid: SpectrogramGrid, source = { cols: 3358, bins: 1024 }): AnalysisReport {
+  const frames = Math.min(grid.cols, source.cols);
+  const bins = Math.min(grid.bins, source.bins);
   const hzPerBin = 22050 / bins;
   const mag = new Uint8Array(frames * bins);
   for (let f = 0; f < frames; f++) {
@@ -46,6 +46,13 @@ type Story = StoryObj;
 export const Vue: Story = {
   name: "Vue (grille à la taille du canevas)",
   render: () => ouvrir((_path, grid) => Promise.resolve(grilleSynthetique(grid))),
+};
+
+// Une source plus petite que le cadre (un morceau court, ou un écran très grand) : la figure
+// remplit quand même le cadre, étirée — « N × M mesurés » garde le compte de la source (2026-10-05).
+export const SourceEtiree: Story = {
+  name: "Source plus petite que le cadre (étirée)",
+  render: () => ouvrir((_path, grid) => Promise.resolve(grilleSynthetique(grid, { cols: 640, bins: 256 }))),
 };
 
 export const Calcul: Story = {

@@ -123,14 +123,11 @@ color-scheme:light;
    « Light/System/Red » 255,59,48 · « Dark/System/Red » 255,69,58), converti en oklch par
    round-trip vérifié — la palette hue-* a la même provenance. */
 --color-hue-blue-solid:oklch(60.28% 0.2177 257.42);--color-hue-indigo-solid:oklch(52.95% 0.1910 278.34);--color-hue-teal-solid:oklch(69.98% 0.1109 212.72);--color-hue-green-solid:oklch(73.03% 0.1944 147.44);--color-hue-orange-solid:oklch(76.52% 0.1752 62.57);--color-hue-yellow-solid:oklch(86.52% 0.1768 90.38);--color-hue-purple-solid:oklch(61.49% 0.2129 312.41);--color-hue-pink-solid:oklch(64.97% 0.2383 17.90);--color-hue-red-solid:oklch(65.42% 0.2321 28.66);--color-hue-gray-solid:oklch(64.83% 0.0073 286.19);
-/* Icon/glyph color drawn on top of a solid accent fill (ex: watch-toggle checkmark on
-   --color-text-success). Was a hardcoded #fff fallback on an undefined token — worked by
-   accident in light (accent fills are mid-dark here) but would go invisible in dark, where the
-   same accent tokens are light (see palette-coherence audit, 2026-07-10). */
---color-text-on-accent:oklch(100% 0 0);
+/* `--color-text-on-accent` (encre d'un glyphe sur un aplat d'accent, qui basculait en sombre) est
+   parti le 2026-10-05 : plus aucun `var()` ne le lisait, dans aucun des trois blocs. */
 /* Encre posée sur un SCRIM (pas sur un aplat d'accent) : blanche, et theme-invariant — déclarée
-   une seule fois ici, jamais redéfinie dans les deux blocs sombres. C'est la différence avec
-   --color-text-on-accent juste au-dessus, qui doit basculer parce que les tokens d'accent
+   une seule fois ici, jamais redéfinie dans les deux blocs sombres. C'était la différence avec
+   l'ancien --color-text-on-accent, qui basculait parce que les tokens d'accent
    basculent. Un scrim, lui, est noir dans les deux thèmes : une encre qui bascule y devient de
    l'encre sombre sur du noir. Défaut réel corrigé le 2026-08-05 sur le libellé « changer » de la
    pochette (library-detail.ts), qui utilisait --color-text-on-accent : en thème sombre il
@@ -142,14 +139,16 @@ color-scheme:light;
    button primaire macOS est un APLAT d'accent avec du texte blanc, pas un fond pâle avec du texte
    teinté. Sift n'avait aucun token pour ça — `--color-background-info` est un fond pâle
    (informatif), et `--color-hue-blue-solid` interdit explicitement le texte par-dessus.
-   Les deux valeurs sont THEME-INVARIANTES, comme `--color-text-on-scrim` : ce couple ne se pose
-   pas sur une surface de l'app, il EST sa propre surface, et c'est le rapport interne de la paire
-   qu'on veut constant.
+   L'ENCRE est theme-invariante, comme `--color-text-on-scrim`. Le FOND ne l'est pas : il suit
+   `--color-hue-blue-solid`, que les deux blocs sombres redéfinissent (#007AFF en clair, #0A84FF en
+   sombre). Ce commentaire a dit « les deux valeurs sont THEME-INVARIANTES » jusqu'au 2026-10-05,
+   date du triage de #61 qui l'a mesuré.
    La valeur EST le systemBlue d'Apple, identique à `--color-hue-blue-solid`. Elle avait été
    assombrie à L 46 % le 2026-08-19 pour atteindre 7:1 avec du blanc ; rendue à L 60,28 % le même
    jour sur décision d'Antoine — Sift est son outil, pas un produit à auditer, et la fidélité au
-   kit prime ici sur le plancher de contraste. Blanc sur ce bleu mesure ~3,9:1, exactement ce que
-   fait macOS. Voir DESIGN.md § 4, qui porte la portée de cette décision. */
+   kit prime ici sur le plancher de contraste. Blanc sur ce bleu mesure 4,02:1 en clair et 3,65:1
+   en sombre (triage de #61, 2026-10-04 ; ce commentaire disait « ~3,9:1 »). La TEINTE de l'accent
+   reste une décision ouverte, #64 Décision 1 : elle fixe à elle seule le contraste de ce bouton. */
 --color-accent-fill:var(--color-hue-blue-solid);
 --color-accent-ink:oklch(100% 0 0);
 /* Neutral overlay tints (hover/selection/left-bar/badge on neutral surfaces) — dark-tinted here
@@ -470,9 +469,6 @@ color-scheme:light;
        rgba(255,255,255,.6) that ignored the theme, same overlay-tint convention as --overlay-hover. */
     --overlay-wave-hover:oklch(100% 0 0 / .14);
     --overlay-bar:oklch(100% 0 0 / .32);
-    /* Icon drawn on a solid accent fill (see light block) — dark ink, since accent tokens
-       (text-success/danger/info/warning) are all LIGHT in dark mode. */
-    --color-text-on-accent:var(--color-background-primary);
   }
 }
 :root[data-theme="dark"]{
@@ -509,7 +505,6 @@ color-scheme:light;
   --overlay-drop:oklch(35.51% 0.0051 106.66 / .93);
   --overlay-wave-hover:oklch(100% 0 0 / .14);
   --overlay-bar:oklch(100% 0 0 / .32);
-  --color-text-on-accent:var(--color-background-primary);
 }
 *{box-sizing:border-box}
 html,body{margin:0;height:100%;overflow:hidden;background:var(--color-background-tertiary);color:var(--color-text-primary);font-family:var(--font-ui)}
@@ -580,6 +575,10 @@ body:has(#sift-titlebar){border-radius:var(--border-radius-sm);overflow:hidden}
 /* Règle d'auteur qui pose `display` : elle bat [hidden], donc :not([hidden]) est obligatoire ici —
    sans lui l'inspecteur reste visible une fois masqué (piège déjà rencontré dans ce fichier). */
 #sift-aside:not([hidden]){display:block}
+/* Inspecteur MASQUÉ par l'utilisateur (bouton de la barre ou ⌥⌘I, `chrome.ts::toggleAside`,
+   2026-10-05) : la colonne et sa poignée sortent de la mise en page, leur contenu reste peint.
+   Spécificité (1,1,1), au-dessus du `:not([hidden])` (1,1,0) qui l'afficherait sinon. */
+body.sift-aside-hidden #sift-aside,body.sift-aside-hidden #sift-aside-resize{display:none}
 /* La zone D est une COLONNE, pas une page réduite. Ces règles disent ce que ça change, et chacune
    répond à un débordement mesuré le 2026-08-19 dans la vraie fenêtre (9 éléments, du nom de piste
    à 591px pour 155 disponibles aux champs d'édition tombés à 57px).
@@ -1247,6 +1246,15 @@ body[data-view="revue"] .sift-pz-row.sift-pz-analyze{display:none}
 /* Opacity cut another 30% (annotation repeated: "réduis l'opacité de 30%" — .7 still read as too
    strong against the qcol/rvinspector panels' own shadows once those were added). */
 .sift-qresize:hover::after,.sift-qresize--active::after{background:linear-gradient(to bottom,transparent,var(--color-text-tertiary) 35%,var(--color-text-tertiary) 65%,transparent);opacity:.5}
+/* LA PRISE, visible au repos (2026-10-05). Antoine ne trouvait pas la poignée de l'inspecteur :
+   mesurée dans la vraie fenêtre, elle marchait — glisser et survol —, mais rien ne la montrait
+   avant le survol, et le filet de 1 px à 9 % qu'elle chevauche ne se lit pas comme une prise.
+   « Comme pour le panneau de gauche, les deux » : la même prise sur la file et sur l'inspecteur.
+   Forme reprise de l'ancienne `.qdrag` de Sift ; patron Apple : le séparateur épais de
+   NSSplitView porte une marque centrale, la fine n'en a pas. Neutre au repos, encre tertiaire au
+   survol : une transition, jamais une couleur permanente. */
+.sift-qresize::before{content:"";position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:2px;height:var(--space-24);border-radius:var(--border-radius-pill);background:var(--color-border-secondary)}
+.sift-qresize:hover::before,.sift-qresize--active::before{background:var(--color-text-tertiary)}
 /* Queue scrollbar (WebView2/Chromium), hidden until hover (annotation: "devrait disparaitre quand
    on est pas en hover sur la file") — same auto-hide pattern as the rest of the app's global
    `*{scrollbar-color:transparent transparent}`, just re-declared here (not left to the global rule)
@@ -1261,9 +1269,8 @@ body[data-view="revue"] .sift-pz-row.sift-pz-analyze{display:none}
 #ql::-webkit-scrollbar-thumb{background:transparent;border-radius:var(--border-radius-pill);border:1px solid transparent;background-clip:padding-box}
 #ql:hover::-webkit-scrollbar-thumb{background:var(--color-border-secondary);background-clip:padding-box}
 #ql::-webkit-scrollbar-thumb:hover{background:var(--color-text-tertiary);background-clip:padding-box}
-.qdrag{width:7px;flex:none;cursor:col-resize;background:transparent;border-left:1px solid var(--color-border-tertiary);display:flex;align-items:center;justify-content:center}
-.qdrag::after{content:"";width:2px;height:26px;border-radius:var(--border-radius-pill);background:var(--color-border-secondary)}
-.qdrag:hover::after{background:var(--color-text-info)}
+/* `.qdrag` (l'ancienne poignée de file, avec sa prise de 2 × 26 px) est partie le 2026-10-05 :
+   plus aucun markup ne la posait. Sa prise revit sur `.sift-qresize::before`, plus haut. */
 /* Padding on the token scale (was a literal 5px/7px, drifted off .bx-row — Lot's row of the same
    "selectable highlighted row" family, styles.css:255 — which already uses var(--space-8)
    uniformly; audit 2026-07-24). gap stays its own literal 6px: unlike padding (breathing room
@@ -1749,10 +1756,15 @@ body[data-view="revue"] .sift-pz-row.sift-pz-analyze{display:none}
 .lr{display:flex;align-items:center;gap:var(--space-8);padding:var(--space-4) var(--space-8);font-size:12px;cursor:pointer}
 /* Zébrure par PARITÉ D'INDEX (`alt` posé par le rendu virtualisé, `rowHtml(item, index)`), jamais
    par `:nth-child` : la fenêtre de rangées recyclées change de première rangée au défilement, et
-   la parité DOM inverserait la zébrure à chaque cran. Un cran de voile au-dessus de --overlay-hover. */
+   la parité DOM inverserait la zébrure à chaque cran. Valeur : le sombre (.05) EST l'alpha du kit
+   Big Sur (Dark/Alternate/Content/Background, blanc à 5 % sur #1E1E1E) ; le clair (.045) rend la
+   paire WebKit #FFFFFF/#F4F5F5 à voile constant (triage de #61, 2026-10-05). « Un cran au-dessus de
+   --overlay-hover », la justification d'origine, n'avait pas de mesure de référence. */
 .lr.alt:not(.sel):not(.cur){background:var(--overlay-alt)}
 .lr.cur{background:var(--color-background-info);color:var(--color-text-primary)}
-.lr.cur .bib-name{font-weight:500}
+/* `.lr.cur .bib-name{font-weight:500}` est partie le 2026-10-05 : aucune rangée ne pose plus
+   `.bib-name` depuis que la table rend ses cellules par colonne (`library-columns.ts`), et son seul
+   autre lecteur était un patch en place de `bibliotheque-view.ts` qui ne trouvait plus rien. */
 .lr.cur .lk-icon{background:var(--color-surface-raised)}
 .lr.cur .lk-icon{color:var(--color-text-primary)}
 /* La POCHETTE est le bouton de lecture depuis le 2026-09-08 (audit Rangés #24, patron Musique : le
@@ -1783,6 +1795,9 @@ body[data-view="revue"] .sift-pz-row.sift-pz-analyze{display:none}
    retirées — la déclaration entière part plutôt qu'une liste vide. L'aplat de survol apparaît sec,
    ce qui est le rendu d'un bouton icône du kit (§ 07-Icon Buttons) : il n'a pas d'état intermédiaire. */
 .lk-icon{width:22px;height:22px;border-radius:var(--border-radius-md);flex:none;padding:0;display:inline-flex;align-items:center;justify-content:center;background:none;color:var(--color-text-tertiary)}
+/* `display:inline-flex` ci-dessus bat [hidden] : sans cette règle, le bouton de l'inspecteur
+   (`#sift-aside-toggle`, caché tant que la zone D est fermée) resterait affiché. */
+.lk-icon[hidden]{display:none}
 .lk-icon:hover{background:var(--overlay-hover);color:var(--color-text-primary)}
 /* Bibliothèque — vue tableau (2026-07-09) : en-tête triable + colonnes, réutilise .lr pour les
    lignes elles-mêmes (cov/play/pill/link inchangés, juste plus de colonnes qu'avant). */
@@ -2618,8 +2633,10 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    --text-2xl (32) reste aux glyphes qui le consomment (play, vignettes). */
 /* 26 px → --text-xl (20 px) le 2026-09-09 : audit de fin de #24, lot 4, décision d'Antoine. 26 était
    le Large Title du kit, hors de l'échelle de DESIGN.md § 2 (20 ou 32), et faisait de Revue le seul
-   écran à six crans. Le rapport au 12 px de l'artiste reste de 1,67. line-height 1.2 comme la tête
-   d'occupation (.sift-usage-name, même cran). */
+   écran à six crans. Rapport à l'artiste (`.sift-player-sub`, --text-lg 15 px) : 1,33. Ce
+   commentaire disait « 1,67 au 12 px de l'artiste », faux dès sa naissance — l'artiste est à 15 px
+   depuis le 2026-08-05 (triage de #61, 2026-10-05). line-height 1.2 comme la tête d'occupation
+   (.sift-usage-name, même cran). */
 .sift-player-name{font-size:var(--text-xl);line-height:1.2;font-weight:600;color:var(--color-text-primary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;flex:1 1 auto;min-width:0}
 /* Bumped one step each (annotation: "augmente encore le texte pour que ça fit aussi en haut" —
    the block reached the cover's bottom edge once centered but still fell short of the top; more
@@ -2876,7 +2893,9 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .sift-spectro-xl-name{flex:1;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--color-text-secondary)}
 .sift-spectro-xl-count{font-size:var(--text-sm);color:var(--color-text-tertiary);font-variant-numeric:tabular-nums;white-space:nowrap}
 .sift-spectro-xl-plot{flex:1;min-height:0;padding:var(--space-8) 0 var(--space-24) calc(var(--space-32) + var(--space-16))}
-.sift-spectro-xl-area{position:relative;width:100%;height:100%}
+/* La figure remplit l'aire (`spectro-enlarge.ts::show`, 2026-10-05) ; le centrage absorbe le
+   sous-pixel que l'arrondi de sa taille laisse, des deux côtés plutôt qu'à droite seulement. */
+.sift-spectro-xl-area{position:relative;width:100%;height:100%;display:flex;align-items:center;justify-content:center}
 .sift-spectro-xl-state:not([hidden]){position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:var(--space-8);font-size:var(--text-sm);color:var(--color-text-tertiary)}
 .sift-spectro-xl-figure{position:relative}
 /* Pas de bordure : sur une boîte border-box, elle prendrait 2 px à la zone de dessin, et le
@@ -3459,8 +3478,10 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    il ne lui restait qu'un cadre à perdre. Fond et survol viennent maintenant du reset `button{}` :
    sa règle `:hover{filter:brightness(0.95)}` propre est devenue le comportement générique du
    fichier, elle n'a plus à être écrite ici. */
-.sift-ident-idle{display:flex;align-items:center;justify-content:space-between;gap:var(--space-16);margin-bottom:var(--space-8)}
-.sift-ident-idle-note{font-size:var(--text-md);color:var(--color-text-tertiary)}
+/* `.sift-ident-idle` et `.sift-ident-idle-note` (la carte « non identifiée » en lecture seule et sa
+   note « Aucune correspondance… ») sont parties le 2026-10-05 : plus aucun markup ne les posait. La
+   note restait « vivante » pour `lint:orphan-css` à cause d'un seul `.remove()` de
+   `filing-identify.ts` qui la visait — un sélecteur mort tenait une règle morte en vie. */
 .sift-ident-search-btn{flex:none;font-size:var(--text-md);font-weight:500;color:var(--color-text-primary);cursor:pointer;padding:var(--space-8) var(--space-12);border-radius:var(--border-radius-md);border:0;font-family:inherit}
 .sift-icon-inline-base{font-size:var(--text-base);vertical-align:-2px}
 .sift-icon-inline-lg{font-size:var(--text-lg)}
@@ -3740,7 +3761,7 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    et de 20px en réalité — deux nombres pour une seule mesure, précisément ce que la déclaration de
    hauteur vient supprimer (et 3 n'est pas non plus sur l'échelle `--space-*`). Le texte, 12px pour
    une boîte de ligne mesurée à 15px, est centré dans ces 20px par `align-items:center`. */
-.sift-seg-opt{display:inline-flex;align-items:center;gap:5px;border:none;background:none;font-family:inherit;font-size:var(--text-md);padding:0 var(--space-8);border-radius:var(--border-radius-sm);cursor:pointer;font-weight:500;color:var(--color-text-secondary);white-space:nowrap}
+.sift-seg-opt{display:inline-flex;align-items:center;border:none;background:none;font-family:inherit;font-size:var(--text-md);padding:0 var(--space-8);border-radius:var(--border-radius-sm);cursor:pointer;font-weight:500;color:var(--color-text-secondary);white-space:nowrap}
 /* background:none réaffirmé explicitement — sinon le générique button:hover{background:
    var(--color-background-secondary)} (styles.css, reset des boutons) l'emporte quand même sur
    l'état non sélectionné, faisant apparaître une "bulle" de fond en plus du texte qui highlight

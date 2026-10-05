@@ -1,8 +1,7 @@
 {
-  "count": 16,
+  "count": 14,
   "items": [
     "mf",
-    "qdrag",
     "sift-applytags-btn",
     "sift-applytags-flash",
     "sift-bib-count",
@@ -11,11 +10,14 @@
     "sift-icon-inline-lg",
     "sift-id-btn",
     "sift-id-btn-neutral",
-    "sift-ident-idle",
     "sift-ident-search-btn",
     "sift-rail-final-group",
     "sift-ui-card",
     "sift-ui-card-pad",
     "sift-zone-toggle-body-pad"
-  ]
+  ],
+  "selectors": {
+    "count": 0,
+    "items": []
+  }
 }

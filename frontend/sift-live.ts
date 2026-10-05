@@ -20,7 +20,7 @@ import { refreshBinsForBatch } from "./filing-bins";
 import { confirmAction } from "./confirm-modal";
 // Views/chrome extracted from this god-module (audit P-3) — kept stateless, wired here.
 import { renderEcartes, runEcarteAction } from "./ecartes-view";
-import { installDragDrop, injectLeanStyle, injectTitlebar, installScrollAutohide, installNavKeyboard, installRailToggle } from "./chrome";
+import { installDragDrop, injectLeanStyle, injectTitlebar, installScrollAutohide, installNavKeyboard, installRailToggle, installAsideToggle } from "./chrome";
 import { initTheme } from "./theme";
 import { installRailSources, renderRailSources, noteScanFailure, pickAndAddFolder } from "./rail-sources";
 import {
@@ -218,6 +218,7 @@ export function installLiveWiring() {
   installScrollAutohide();
   installNavKeyboard();
   installRailToggle();
+  installAsideToggle();
   installRailSources();
   // CTA « Ajouter un dossier à surveiller » de l'état vide de Revue (issue #53) : même geste que
   // le bouton du rail, même onChange — injecté ici parce que filing.ts ne peut pas importer

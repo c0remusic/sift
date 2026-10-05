@@ -26,6 +26,8 @@ const fr = {
   close: "Fermer",
   railCollapse: "Replier le rail",
   railExpand: "Déplier le rail",
+  asideHide: "Masquer l'inspecteur",
+  asideShow: "Afficher l'inspecteur",
 };
 
 const en: typeof fr = {
@@ -47,6 +49,8 @@ const en: typeof fr = {
   close: "Close",
   railCollapse: "Collapse the rail",
   railExpand: "Expand the rail",
+  asideHide: "Hide the inspector",
+  asideShow: "Show the inspector",
 };
 
 export const D = { fr, en };
