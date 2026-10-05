@@ -34,7 +34,11 @@ pub const MATCH_THRESHOLD: f32 = 0.6;
 /// Sans elle rien ne tombe : le dédoublonnage compare simplement des empreintes anciennes à des
 /// neuves — des choses incomparables — et le taux de doublons change sans raison affichable, sur
 /// une fonction dont l'utilisateur ne peut pas vérifier le résultat à la main.
-pub const FINGERPRINT_CACHE_VERSION: i64 = 1;
+///
+/// **2 depuis le 2026-10-05** : `start` reçoit le taux NATIF du fichier, et non plus 44 100 Hz en
+/// dur (voir `compute_for_path`). Les empreintes de fichiers à 44,1 kHz n'ont pas changé ; la
+/// migration v26 (`db.rs`) les restampe en 2 et efface les autres.
+pub const FINGERPRINT_CACHE_VERSION: i64 = 2;
 
 /// Lit le cache `(tracks.fingerprint, tracks.fingerprint_ver)`. Une version absente (NULL — une
 /// ligne écrite avant la v22 que son backfill n'a pas stampée) ou différente rend `None` : un
@@ -55,22 +59,79 @@ fn config() -> Configuration {
     Configuration::preset_test1()
 }
 
-/// Decode `path` to mono 44.1 kHz and compute its Chromaprint fingerprint. Streams the PCM
-/// through the fingerprinter (no full buffer). Errors on decode/codec failure.
+/// Taux au-dessus duquel le signal est décimé avant le fingerprinter (voir `Decimation`).
+const MAX_FINGERPRINT_RATE: u32 = 48_000;
+
+/// Décimation entière, par moyenne de `facteur` échantillons, AVANT le fingerprinter.
+///
+/// Le rééchantillonneur interne du crate (`rubato::SincFixedIn`, `sinc_len` 16) descend vers
+/// 11 025 Hz. Mesuré le 2026-10-05 sur un balayage qui monte à 20 kHz : depuis 48 kHz (rapport 4,35)
+/// il rend la même empreinte (similarité 0,98) ; depuis 96 kHz (rapport 8,7) non (0,24) — un même
+/// morceau en 96 kHz ne se reconnaissait pas, même au bon taux. Ramené d'abord à 48 kHz par une
+/// décimation par 2, il retombe sur le cas qui marche. La moyenne de deux échantillons suffit : elle
+/// coupe près de 48 kHz, là où se replierait la bande que l'empreinte lit (sous 5,5 kHz).
+///
+/// À 48 kHz ou moins, `facteur` vaut 1 et la conversion est IDENTIQUE à l'ancienne, à l'octet : les
+/// empreintes déjà en base pour ces fichiers restent justes (migration v26).
+struct Decimation {
+    facteur: usize,
+    somme: f32,
+    n: usize,
+}
+
+impl Decimation {
+    /// Le facteur (une puissance de 2) qui ramène `rate` à `MAX_FINGERPRINT_RATE` ou moins, et le
+    /// taux qui en résulte : 96 000 → 48 000, 88 200 → 44 100, 192 000 → 48 000.
+    fn pour(rate: u32) -> (Self, u32) {
+        let mut facteur = 1u32;
+        while rate / facteur > MAX_FINGERPRINT_RATE {
+            facteur *= 2;
+        }
+        let d = Decimation {
+            facteur: facteur as usize,
+            somme: 0.0,
+            n: 0,
+        };
+        (d, rate / facteur)
+    }
+
+    /// Pousse un bloc décodé (mono, f32) et rend ses échantillons i16 décimés. Le reste d'un bloc dont
+    /// la taille n'est pas un multiple du facteur attend le bloc suivant.
+    fn pousser(&mut self, bloc: &[f32], sortie: &mut Vec<i16>) {
+        for &s in bloc {
+            self.somme += s;
+            self.n += 1;
+            if self.n == self.facteur {
+                let m = self.somme / self.facteur as f32;
+                sortie.push((m * 32767.0).clamp(-32768.0, 32767.0) as i16);
+                self.somme = 0.0;
+                self.n = 0;
+            }
+        }
+    }
+}
+
+/// Decode `path` to mono at its NATIVE sample rate (decimated above 48 kHz) and compute its
+/// Chromaprint fingerprint (the fingerprinter resamples internally). Streams the PCM through the
+/// fingerprinter (no full buffer). Errors on decode/codec failure.
 pub fn compute_for_path(path: &str) -> Result<Vec<u32>, String> {
     let cfg = config();
     let mut printer = Fingerprinter::new(&cfg);
+    // Le taux RÉEL du fichier : `decode_pcm` décode au taux natif sans rééchantillonner
+    // (`analysis/decode.rs`), et le rééchantillonneur du crate règle son ratio sur le taux annoncé
+    // ICI. Jusqu'au 2026-10-05 on annonçait 44 100 Hz pour tout : un fichier à 96 kHz donnait une
+    // empreinte 2,18 fois trop longue (mesuré : 6 394 contre 2 926 items), et un même morceau à deux
+    // taux ne se reconnaissait jamais au son — 19 groupes de la vraie bibliothèque, 142 pistes en 48
+    // ou 96 kHz. Sur une mélodie de test, 44,1 contre 48 et 96 kHz : similarité 0 avant, 1,0 après.
+    let natif = crate::analysis::decode::probe(path)?.sample_rate;
+    let (mut decimation, rate) = Decimation::pour(natif);
     printer
-        .start(44100, 1)
+        .start(rate, 1)
         .map_err(|e| format!("fingerprint start: {e}"))?;
     let mut tmp: Vec<i16> = Vec::with_capacity(8192);
     let info = crate::analysis::decode::decode_pcm(path, 1, |block| {
         tmp.clear();
-        tmp.extend(
-            block
-                .iter()
-                .map(|&s| (s * 32767.0).clamp(-32768.0, 32767.0) as i16),
-        );
+        decimation.pousser(block, &mut tmp);
         printer.consume(&tmp);
     })?;
     if let Some(err) = info.codec_error {
@@ -156,6 +217,73 @@ mod tests {
             sim >= MATCH_THRESHOLD,
             "same recording, different encode must match (got {sim})"
         );
+    }
+
+    /// Le même son à un autre taux d'échantillonnage DOIT se reconnaître : 19 groupes de la vraie
+    /// bibliothèque opposent une copie à 44,1 kHz à une à 48 ou 96. Tant que `compute_for_path`
+    /// annonçait 44 100 Hz en dur, l'empreinte sortait étirée dans le temps.
+    ///
+    /// Une MÉLODIE et pas le balayage des autres fixtures, et c'est mesuré : un balayage se ressemble
+    /// assez à lui-même pour que l'étirement de 9 % d'un 48 kHz matche quand même (1,0 sous le bug).
+    /// La mélodie, non périodique, tombe à 0 sous le bug, à 48 comme à 96 kHz.
+    #[test]
+    fn meme_son_a_un_autre_taux_matche() {
+        for autre in ["melodie_48k.flac", "melodie_96k.flac"] {
+            let (Some(p1), Some(p2)) = (fixture("melodie.flac"), fixture(autre)) else {
+                eprintln!("skip: no fixtures");
+                return;
+            };
+            let a = compute_for_path(&p1).expect("fp 44.1");
+            let b = compute_for_path(&p2).expect("fp autre taux");
+            let sim = similarity(&a, &b);
+            assert!(
+                sim >= MATCH_THRESHOLD,
+                "même mélodie, {autre} contre 44,1 kHz : doit matcher (got {sim})"
+            );
+        }
+    }
+
+    /// Au-delà de 48 kHz, le signal est décimé avant le fingerprinter (`Decimation`) : le
+    /// rééchantillonneur du crate, depuis 96 kHz, rendait une autre empreinte pour un son riche en
+    /// aigus — le balayage, qui monte à 20 kHz, tombait à 0,24 au BON taux, et remonte à 1,0 décimé.
+    #[test]
+    fn haut_taux_decime_avant_l_empreinte() {
+        let (Some(p1), Some(p2)) = (
+            fixture("real_lossless.flac"),
+            fixture("real_lossless_96k.flac"),
+        ) else {
+            eprintln!("skip: no fixtures");
+            return;
+        };
+        let a = compute_for_path(&p1).expect("fp 44.1");
+        let b = compute_for_path(&p2).expect("fp 96");
+        let sim = similarity(&a, &b);
+        assert!(
+            sim >= MATCH_THRESHOLD,
+            "même balayage à 44,1 et 96 kHz : doit matcher (got {sim})"
+        );
+    }
+
+    /// Le facteur de décimation et le taux qui en résulte : rien sous 48 kHz (les empreintes en base
+    /// pour ces fichiers restent justes, migration v26), une puissance de 2 au-delà.
+    #[test]
+    fn decimation_ramene_a_48k_ou_moins() {
+        for (natif, facteur, taux) in [
+            (44_100, 1, 44_100),
+            (48_000, 1, 48_000),
+            (88_200, 2, 44_100),
+            (96_000, 2, 48_000),
+            (176_400, 4, 44_100),
+            (192_000, 4, 48_000),
+        ] {
+            let (d, r) = Decimation::pour(natif);
+            assert_eq!((d.facteur, r), (facteur, taux), "taux natif {natif}");
+        }
+        // Facteur 1 : la conversion est celle d'avant, à l'octet.
+        let (mut d, _) = Decimation::pour(44_100);
+        let mut out = Vec::new();
+        d.pousser(&[0.5, -0.25, 1.5], &mut out);
+        assert_eq!(out, vec![16383, -8191, 32767]);
     }
 
     #[test]

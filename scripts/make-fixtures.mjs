@@ -18,6 +18,10 @@ run(["-y", "-i", join(OUT, "real_lossless.flac"), "-b:a", "128k", join(OUT, "_tm
 run(["-y", "-i", join(OUT, "_tmp128.mp3"), "-ac", "2", join(OUT, "fake_lossless.flac")]);
 // 2b) 48 kHz variant of the fake — exercises native-sample-rate analysis (bin→Hz mapping)
 run(["-y", "-i", join(OUT, "fake_lossless.flac"), "-ar", "48000", join(OUT, "fake_lossless_48k.flac")]);
+// 2c) Le balayage authentique à 96 kHz : exerce la décimation avant l'empreinte
+//     (`fingerprint.rs::Decimation`). Le rééchantillonneur du crate, directement depuis 96 kHz,
+//     rendait une autre empreinte pour ce son riche en aigus — 0,24 mesuré le 2026-10-05.
+run(["-y", "-i", join(OUT, "real_lossless.flac"), "-ar", "96000", join(OUT, "real_lossless_96k.flac")]);
 // 3) honest mp3 320
 run(["-y", "-i", join(OUT, "real_lossless.flac"), "-b:a", "320k", join(OUT, "real_320.mp3")]);
 // 3b) OVER-ENCODED 320: the 128k mp3 re-encoded UP to 320 (declared 320, real ~128 cutoff)
@@ -32,6 +36,15 @@ run(["-y",
   "-filter_complex", "[0][1][2]concat=n=3:v=0:a=1", "-c:a", "pcm_s16le", join(OUT, "silence_pad.wav")]);
 // 6) dual-mono fake stereo: mono tone duplicated to 2 ch
 run(["-y", "-f", "lavfi", "-i", "aevalsrc=0.3*sin(2*PI*1000*t):d=3:s=44100", "-ac", "2", join(OUT, "dual_mono.wav")]);
+// 7) Une mélodie NON périodique, le même son à 44,1, 48 et 96 kHz, pour l'empreinte
+//    (`fingerprint.rs::meme_son_a_un_autre_taux_matche`). Pas le balayage : il se ressemble assez à
+//    lui-même pour qu'un étirement de 9 % matche encore (mesuré le 2026-10-05) ; la mélodie, elle,
+//    tombe à 0 dès que le taux annoncé est faux.
+run(["-y", "-f", "lavfi", "-i",
+  "aevalsrc=0.3*sin(2*PI*(220*pow(2\\,floor(24*abs(sin(t*2.7+cos(t*1.3))))/12))*t):d=10:s=44100",
+  "-ac", "2", join(OUT, "melodie.flac")]);
+run(["-y", "-i", join(OUT, "melodie.flac"), "-ar", "48000", join(OUT, "melodie_48k.flac")]);
+run(["-y", "-i", join(OUT, "melodie.flac"), "-ar", "96000", join(OUT, "melodie_96k.flac")]);
 
 // AAC-dans-MP4 portant une extension LOSSLESS : le déguisement que le garde anti-upscale de
 // `filing.rs::plan_file` doit attraper. `-f mp4` force le conteneur malgré le nom `.flac`, donc

@@ -541,6 +541,39 @@ const MIGRATIONS: &[&str] = &[
         cleared_at TEXT NOT NULL DEFAULT (datetime('now'))
     );
     "#,
+    // v26 — les empreintes calculées au mauvais taux (2026-10-05). `fingerprint::compute_for_path`
+    // annonçait 44 100 Hz au fingerprinter pour tout fichier, alors que le décodage garde le taux
+    // natif : une empreinte de fichier à 48 ou 96 kHz est étirée dans le temps, et ne matche jamais
+    // le même son à un autre taux. `FINGERPRINT_CACHE_VERSION` passe à 2.
+    //
+    // Une invalidation COMPLÈTE coûterait un décodage par piste empreintée pour rien : à 44,1 kHz,
+    // l'ancien et le nouvel algorithme donnent la même empreinte. Donc :
+    // - empreinte v1 d'un fichier à 44,1 kHz (taux lu dans le rapport) : RESTAMPÉE en 2 ;
+    // - toute autre empreinte v1 — 48 ou 96 kHz, ou taux inconnu : EFFACÉE, recalculée au prochain
+    //   besoin. Un rapport absent ou illisible tombe ici : dans le doute, on recalcule.
+    // - le graphe des doublons rangés (v19) : une piste dont l'empreinte vient de tomber quitte
+    //   `dup_scanned`, avec ses arêtes. Sans ça, l'invariant « toute paire de `dup_scanned` a été
+    //   évaluée » mentirait : `edges_against` saute un candidat sans empreinte, et les paires de
+    //   cette piste avec ses voisines ne seraient plus jamais comparées.
+    //
+    // `CASE WHEN json_valid(...)` et non `AND json_valid(...)` : SQLite ne promet pas l'ordre
+    // d'évaluation d'un `AND`, et `json_extract` sur un texte invalide lève une erreur — qui ferait
+    // échouer la migration, donc le démarrage. Les `1`, `2` et `44100` sont des LITTÉRAUX : une
+    // migration est gelée dans le temps (même règle qu'en v22).
+    r#"
+    UPDATE tracks SET fingerprint_ver = 2
+    WHERE fingerprint_ver = 1
+      AND CASE WHEN json_valid(report_json)
+               THEN CAST(json_extract(report_json, '$.sample_rate') AS INTEGER)
+          END = 44100;
+    UPDATE tracks SET fingerprint = NULL, fingerprint_ver = NULL
+    WHERE fingerprint_ver = 1;
+    DELETE FROM dup_edges
+    WHERE a_id IN (SELECT id FROM tracks WHERE fingerprint IS NULL)
+       OR b_id IN (SELECT id FROM tracks WHERE fingerprint IS NULL);
+    DELETE FROM dup_scanned
+    WHERE track_id IN (SELECT id FROM tracks WHERE fingerprint IS NULL);
+    "#,
 ];
 
 /// Applies ONE migration and its `user_version` bump in a SINGLE transaction, so a batch that
@@ -781,6 +814,74 @@ mod tests {
         );
     }
 
+    /// v26 garde les empreintes à 44,1 kHz (identiques sous l'algorithme corrigé) et efface les
+    /// autres, SANS échouer sur un rapport illisible — la sentinelle `''` de `persist_failure`
+    /// ferait sinon lever `json_extract` et bloquerait le démarrage. Et une piste dont l'empreinte
+    /// tombe quitte le graphe des doublons rangés, arêtes comprises.
+    #[test]
+    fn migration_v26_restampe_le_44k_et_efface_le_reste() {
+        let conn = Connection::open_in_memory().unwrap();
+        for sql in MIGRATIONS.iter().take(25) {
+            conn.execute_batch(sql).unwrap();
+        }
+        conn.execute_batch("PRAGMA user_version = 25").unwrap();
+        for (id, fp, ver, report) in [
+            (1, Some("1,2"), Some(1), Some(r#"{"sample_rate":44100}"#)),
+            (2, Some("3,4"), Some(1), Some(r#"{"sample_rate":48000}"#)),
+            (3, Some("5,6"), Some(1), Some("")),
+            (4, None, None, Some(r#"{"sample_rate":44100}"#)),
+            (5, Some("7,8"), Some(1), None),
+        ] {
+            conn.execute(
+                "INSERT INTO tracks (id, path, status, fingerprint, fingerprint_ver, report_json)
+                 VALUES (?1, ?2, 'filed', ?3, ?4, ?5)",
+                rusqlite::params![id, format!("/t{id}.flac"), fp, ver, report],
+            )
+            .unwrap();
+        }
+        conn.execute_batch(
+            "INSERT INTO dup_scanned (track_id) VALUES (1), (2);
+             INSERT INTO dup_edges (a_id, b_id, similarity) VALUES (1, 2, 1.0);",
+        )
+        .unwrap();
+
+        run_migrations(&conn).unwrap();
+
+        let fp = |id: i64| -> (Option<String>, Option<i64>) {
+            conn.query_row(
+                "SELECT fingerprint, fingerprint_ver FROM tracks WHERE id=?1",
+                rusqlite::params![id],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap()
+        };
+        assert_eq!(
+            fp(1),
+            (Some("1,2".into()), Some(2)),
+            "44,1 kHz : gardée, restampée en 2"
+        );
+        assert_eq!(fp(2), (None, None), "48 kHz : effacée, à recalculer");
+        assert_eq!(
+            fp(3),
+            (None, None),
+            "rapport illisible : effacée, sans erreur"
+        );
+        assert_eq!(fp(4), (None, None), "jamais empreintée : intacte");
+        assert_eq!(fp(5), (None, None), "rapport absent : effacée");
+        let scanned: Vec<i64> = conn
+            .prepare("SELECT track_id FROM dup_scanned ORDER BY track_id")
+            .unwrap()
+            .query_map([], |r| r.get(0))
+            .unwrap()
+            .collect::<rusqlite::Result<_>>()
+            .unwrap();
+        assert_eq!(scanned, vec![1], "la piste effacée quitte `dup_scanned`");
+        let edges: i64 = conn
+            .query_row("SELECT COUNT(*) FROM dup_edges", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(edges, 0, "et ses arêtes avec elle");
+    }
+
     /// v21 ne doit reprendre QUE les lignes produites par les deux chemins cassés du détecteur de
     /// coupure, et rendre leur verdict à l'indéterminé plutôt que de le laisser à FAKE.
     ///
@@ -908,7 +1009,10 @@ mod tests {
         )
         .unwrap();
 
-        run_migrations(&conn).unwrap();
+        // v22 seule, pas la chaîne entière : v26 efface l'empreinte d'une piste dont le rapport
+        // ne dit pas le taux — la piste 1 n'a pas de rapport. Ce test garde le stampage de v22 ;
+        // ce que v26 fait ensuite d'une empreinte stampée, `migration_v26_…` le garde.
+        apply_migration(&conn, MIGRATIONS[21], 22).unwrap();
 
         let vers = |id: i64| -> (Option<i64>, Option<i64>) {
             conn.query_row(
@@ -947,7 +1051,7 @@ mod tests {
             })
             .unwrap();
         assert_eq!(sentinelle.as_deref(), Some(""));
-        assert_eq!(schema_version(&conn).unwrap(), MIGRATIONS.len() as i64);
+        assert_eq!(schema_version(&conn).unwrap(), 22);
     }
 
     #[test]
