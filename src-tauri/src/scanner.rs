@@ -16,8 +16,9 @@ const AUDIO_EXTS: &[&str] = &[
 /// l'encodage, puis un fantôme pointant un fichier renommé.
 pub(crate) const PART_MARK: &str = ".sift-part";
 
-/// True if `path` has a recognised audio extension (case-insensitive) and is not one of Sift's
-/// own work files (`PART_MARK`). The single filter of both the live watcher and the scan walk.
+/// True if `path` has a recognised audio extension (case-insensitive), is not one of Sift's
+/// own work files (`PART_MARK`), and does not sit in one of Sift's trashes (`in_sift_trash`).
+/// The single filter of both the live watcher and the scan walk.
 pub fn is_audio(path: &Path) -> bool {
     let audio_ext = path
         .extension()
@@ -28,7 +29,39 @@ pub fn is_audio(path: &Path) -> bool {
         .file_name()
         .and_then(|n| n.to_str())
         .is_some_and(|n| n.to_lowercase().contains(PART_MARK));
-    audio_ext && !work_file
+    audio_ext && !work_file && !in_sift_trash(path)
+}
+
+/// Un fichier jeté par Sift ne revient jamais en file : ni depuis la corbeille d'un disque
+/// (`.sift-trash` à sa racine, `filing::ROOT_TRASH_DIR`, depuis la corbeille par disque du
+/// 2026-10-05), ni depuis celle de Documents. Sans ce filtre, une source qui EST la racine d'un
+/// volume (`E:\`, `/Volumes/CLE`) verrait chaque fichier jeté reparaître en `pending` au scan
+/// suivant — et une source qui contient `Documents\Sift\Trash` le faisait déjà avant.
+fn in_sift_trash(path: &Path) -> bool {
+    let root_trash = path.components().any(|c| {
+        c.as_os_str()
+            .to_str()
+            .is_some_and(|s| s.eq_ignore_ascii_case(crate::filing::ROOT_TRASH_DIR))
+    });
+    root_trash || documents_trash().is_some_and(|d| normalized(path).starts_with(&format!("{d}/")))
+}
+
+/// Chemin comparable : séparateurs `/`, casse repliée.
+fn normalized(p: &Path) -> String {
+    p.to_string_lossy().replace('\\', "/").to_lowercase()
+}
+
+/// La corbeille de Documents, normalisée, résolue une fois : `is_audio` tourne par fichier
+/// pendant un scan, il ne relit pas le dossier Documents à chaque appel.
+fn documents_trash() -> Option<&'static str> {
+    static CACHE: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
+    CACHE
+        .get_or_init(|| {
+            crate::filing::sift_trash_dir()
+                .ok()
+                .map(|d| normalized(&d).trim_end_matches('/').to_string())
+        })
+        .as_deref()
 }
 
 /// One audio file found on disk. `path` is the absolute path string (the DB identity key).
@@ -288,6 +321,33 @@ mod tests {
         assert!(!is_audio(Path::new("cover.jpg")));
         assert!(!is_audio(Path::new("notes.txt")));
         assert!(!is_audio(Path::new("no_extension")));
+    }
+
+    /// Corbeille par disque (2026-10-05) : un fichier jeté ne revient jamais en file, même quand la
+    /// source surveillée est la racine du volume qui porte sa `.sift-trash`.
+    #[test]
+    fn un_fichier_jete_n_est_pas_une_piste() {
+        assert!(!is_audio(Path::new(
+            "E:/.sift-trash/12__Aldo - Subzero.mp3"
+        )));
+        assert!(
+            !is_audio(Path::new("E:/.SIFT-Trash/12__Aldo - Subzero.flac")),
+            "casse ignorée : NTFS et APFS ne la distinguent pas"
+        );
+        assert!(!is_audio(Path::new("/Volumes/CLE/.sift-trash/3__x.aiff")));
+        // L'antislash ne sépare les composants que sous Windows : ailleurs, c'est un caractère de nom.
+        if cfg!(windows) {
+            assert!(!is_audio(Path::new(
+                r"E:\.sift-trash\12__Aldo - Subzero.flac"
+            )));
+        }
+        let documents = crate::filing::sift_trash_dir().unwrap();
+        assert!(!is_audio(&documents.join("7__Okami - Tidewater.wav")));
+        assert!(
+            is_audio(Path::new("E:/musique/.sift-trashy/x.mp3")),
+            "seul le dossier exact de la corbeille est écarté"
+        );
+        assert!(is_audio(Path::new("E:/musique/Sift Trash - Live.mp3")));
     }
 
     /// #77 : le fichier de travail d'un rangement en place n'est jamais une piste, même quand un

@@ -1,8 +1,8 @@
 //! Turn a reviewed track into a filed library file: ① convert (only if not conformant)
 //! → ② tag + name → ③ move into the chosen bin, recording every step as one undoable
 //! batch (see actions.rs). Mono-location: conformant files are moved; converted files
-//! land in the bin and the original goes to `.sift-trash` (restorable via undo). Composes
-//! naming/encode/tagging/library/actions/settings.
+//! land in the bin and the original goes to the trash of its own disk (restorable via undo —
+//! see `move_to_trash`). Composes naming/encode/tagging/library/actions/settings.
 
 use crate::encode::{self, EncodeError, EncodeProfile, Target};
 use crate::naming::{self, Canonical};
@@ -194,19 +194,39 @@ pub fn reconcile_path(path: &str) -> Canonical {
     naming::reconcile(&artist, &title, &stem)
 }
 
-/// Centralised trash directory: `{Documents}/Sift/Trash` on all platforms.
+/// The Documents trash: `{Documents}/Sift/Trash` on all platforms. Since the per-disk trash
+/// (2026-10-05) it holds the files that live on Documents' own volume, plus the FALLBACK copies of
+/// files from any other volume whose own trash could not take them (see `move_to_trash`).
 /// Falls back to `{home}/Documents/Sift/Trash` if `dirs::document_dir()` returns None.
-fn sift_trash_dir() -> Result<PathBuf, FilingError> {
+#[cfg(not(test))]
+pub(crate) fn sift_trash_dir() -> Result<PathBuf, FilingError> {
     let base = dirs::document_dir()
         .or_else(|| dirs::home_dir().map(|h| h.join("Documents")))
         .ok_or_else(|| FilingError::Io("cannot locate Documents folder".into()))?;
     Ok(base.join("Sift").join("Trash"))
 }
 
+/// Sous test, la corbeille de Documents est un dossier du répertoire temporaire. Les tests qui
+/// passent par le chemin de production (`trash_file_fs`, `execute_file`, `trash_dest`) déposaient
+/// jusqu'ici leurs fichiers dans la VRAIE corbeille de l'utilisateur, où rien ne les retirait — et
+/// chaque passe de mutation de la corbeille par disque en aurait rajouté. Même volume que les
+/// `tempfile::tempdir()` des tests : leurs sources s'y renomment comme en production.
+#[cfg(test)]
+pub(crate) fn sift_trash_dir() -> Result<PathBuf, FilingError> {
+    Ok(std::env::temp_dir()
+        .join("sift-tests")
+        .join("Documents")
+        .join("Sift")
+        .join("Trash"))
+}
+
 /// Copy `source` to `dest`, verify the copy's size matches, then delete `source`. Cross-disk
-/// safe (no rename). On any failure the partial `dest` is cleaned up (best-effort) and `source`
-/// is left untouched.
-fn copy_verify_delete(source: &str, dest: &Path) -> Result<(), FilingError> {
+/// safe (no rename). On a copy or verify failure the partial `dest` is cleaned up (best-effort)
+/// and `source` is left untouched. A `source` that refuses to be DELETED leaves both files in
+/// place: a rollback (`rollback_fs`) wants exactly that, the copy it just put back at the original
+/// path. The trash's fallback, which wants the copy gone, does its own copy-then-delete
+/// (`copy_into_documents_trash`).
+fn copy_verify_delete(source: &Path, dest: &Path) -> Result<(), FilingError> {
     copy_verified(source, dest)?;
     std::fs::remove_file(source)
         .map_err(|e| FilingError::Io(format!("remove source after copy: {e}")))
@@ -214,7 +234,7 @@ fn copy_verify_delete(source: &str, dest: &Path) -> Result<(), FilingError> {
 
 /// Copy `source` to `dest` and verify the copy's size matches; `source` is never touched. On any
 /// failure the partial `dest` is cleaned up (best-effort).
-fn copy_verified(source: &str, dest: &Path) -> Result<(), FilingError> {
+fn copy_verified(source: &Path, dest: &Path) -> Result<(), FilingError> {
     let src_len = std::fs::metadata(source)
         .map_err(|e| FilingError::Io(format!("stat source: {e}")))?
         .len();
@@ -242,8 +262,23 @@ fn copy_verified(source: &str, dest: &Path) -> Result<(), FilingError> {
 /// to `copy_verify_delete` only on a genuine cross-device error (Windows os error 17
 /// `ERROR_NOT_SAME_DEVICE`, Unix os error 18 `EXDEV`) — a conformant filing or a rollback can
 /// cross from the source's disk to the library's (or back), where a plain rename hard-fails.
-fn move_cross_disk_safe(source: &str, dest: &Path) -> Result<(), FilingError> {
-    match std::fs::rename(source, dest) {
+/// `pub(crate)` since the per-disk trash (2026-10-05): `actions::revert_one_fs` takes a file out
+/// of ANY trash through it — a rename when the trash sits on the original's volume, a copy when
+/// the file had to fall back to the Documents trash of another one.
+pub(crate) fn move_cross_disk_safe(source: &Path, dest: &Path) -> Result<(), FilingError> {
+    move_cross_disk_safe_with(source, dest, rename_file)
+}
+
+/// `move_cross_disk_safe` with its rename injected, so a test can stand a cross-device refusal in
+/// for the second disk it does not have. Any OTHER refusal (sharing violation, permission) is
+/// returned as is: a copy would only meet the same refusal at its delete step, after having
+/// duplicated the file.
+fn move_cross_disk_safe_with(
+    source: &Path,
+    dest: &Path,
+    rename: impl Fn(&Path, &Path) -> std::io::Result<()>,
+) -> Result<(), FilingError> {
+    match rename(source, dest) {
         Ok(()) => Ok(()),
         Err(e) if matches!(e.raw_os_error(), Some(17) | Some(18)) => {
             copy_verify_delete(source, dest)
@@ -252,38 +287,342 @@ fn move_cross_disk_safe(source: &str, dest: &Path) -> Result<(), FilingError> {
     }
 }
 
-/// FS-only: copy `source` into `<Documents>/Sift/Trash/<track_id>__<name>` (collision-free),
-/// verify the copy size, then delete the source. Cross-disk safe (no rename) — the trash dir is
-/// virtually always on a different disk than the library, so skip straight to copy_verify_delete
-/// instead of trying (and failing) rename first every time.
-/// Returns the trash path. No DB — journaling is the caller's job.
-/// FIX-6: no `root` param — the trash dir is centralized under Documents, never under the
-/// library root, so a `root` argument was resolved and threaded through 3 callers for nothing.
-///
-/// This is the EXECUTE phase of trashing a track (`ipc_filing::trash_track`): the copy is
-/// unbounded I/O — a lossless track is tens of megabytes and the trash dir is virtually always
-/// on another disk — so it runs with the DB lock released, exactly like `execute_file`'s encode.
-/// `commit_trash` then journals the result under the lock.
-pub fn trash_file_fs(track_id: i64, source: &str) -> Result<String, FilingError> {
-    let dest = trash_dest(track_id, source)?;
-    copy_verify_delete(source, &dest)?;
-    Ok(dest.to_string_lossy().to_string())
+/// `std::fs::rename` as a plain function item: generic, `std::fs::rename` itself cannot stand in
+/// for the `impl Fn(&Path, &Path)` parameters of the `*_with` functions.
+fn rename_file(from: &Path, to: &Path) -> std::io::Result<()> {
+    std::fs::rename(from, to)
 }
 
-/// `<Documents>/Sift/Trash/<track_id>__<name>`, collision-free, directory created.
+// ---------------------------------------------------------------------------------------------
+// Corbeille par disque (décision d'Antoine, 2026-10-05)
+//
+// La corbeille était UN dossier, `{Documents}/Sift/Trash`, alimenté par copie + vérification +
+// suppression même quand le fichier vivait sur le même disque. Mesuré sur la vraie machine
+// (sources sur C:, bibliothèque sur D:, Documents sur C:) : jeter les 390 copies en trop des
+// doublons aurait recopié 23,3 Go. Désormais chaque fichier part dans une corbeille SUR SON PROPRE
+// VOLUME, par un simple renommage : celle de Documents s'il partage son volume, sinon `.sift-trash`
+// à la racine du sien. Le renommage impossible (volume en lecture seule, racine non créable,
+// partage réseau…) retombe sur l'ancien chemin — copie vérifiée vers la corbeille de Documents —
+// et se journalise. Le chemin réellement atteint est celui que la ligne `trash` du journal porte :
+// Annuler, Restaurer et Vider relisent ce `to_path`, quelle que soit la corbeille.
+// ---------------------------------------------------------------------------------------------
+
+/// Le dossier de corbeille posé à la racine d'un volume autre que celui de Documents.
+pub(crate) const ROOT_TRASH_DIR: &str = ".sift-trash";
+
+/// Ce qui fait l'identité d'un volume pour la corbeille : deux chemins de même identité se
+/// renomment l'un vers l'autre sans copie. Sous Windows, le préfixe du chemin normalisé (lettre de
+/// lecteur en capitale, partage UNC en minuscules, `\\?\` retiré) ; sous Unix, le `st_dev`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct VolumeId(String);
+
+/// Le volume qui porte un chemin : son identité, et sa racine — où vit sa `.sift-trash`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct VolumeInfo {
+    pub(crate) id: VolumeId,
+    pub(crate) root: PathBuf,
+}
+
+/// Pourquoi un fichier n'est pas parti à la corbeille. Quand elle sort, rien n'a bougé : la source
+/// est à sa place, et aucune copie ne traîne dans une corbeille.
+#[derive(Debug, Clone, PartialEq)]
+pub enum TrashError {
+    /// La source n'existe pas (déjà déplacée, supprimée, volume retiré) : rien à jeter, et aucun
+    /// secours n'est tenté.
+    SourceMissing(String),
+    /// Le renommage vers la corbeille de son volume n'a pas abouti, le secours par copie vers la
+    /// corbeille de Documents non plus. Les deux raisons, dans cet ordre.
+    Failed { rename: String, copy: String },
+}
+
+impl std::fmt::Display for TrashError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            // « introuvable » / « not found » : `filing-actions.ts` les reconnaît pour son toast.
+            TrashError::SourceMissing(m) => f.write_str(&crate::tr!(
+                "fichier introuvable, rien n'est parti à la corbeille : {m}",
+                "file not found, nothing was moved to the trash: {m}"
+            )),
+            TrashError::Failed { rename, copy } => f.write_str(&crate::tr!(
+                "mise à la corbeille impossible — renommage : {rename} ; copie : {copy}",
+                "cannot move to the trash — rename: {rename}; copy: {copy}"
+            )),
+        }
+    }
+}
+
+impl std::error::Error for TrashError {}
+
+/// Le dossier où `move_to_trash` RENOMME un fichier : la corbeille de Documents quand le fichier
+/// vit sur le même volume qu'elle, sinon `.sift-trash` à la racine du volume du fichier. Pure :
+/// les identités et la racine viennent de l'appelant (`volume_info` en production), pour qu'un
+/// test décrive un second disque sans en avoir un.
+pub(crate) fn trash_dir_for<V: PartialEq>(
+    src_volume: &V,
+    documents_volume: &V,
+    volume_root: &Path,
+    documents_trash: &Path,
+) -> PathBuf {
+    if src_volume == documents_volume {
+        documents_trash.to_path_buf()
+    } else {
+        volume_root.join(ROOT_TRASH_DIR)
+    }
+}
+
+/// `<id>__<nom>` : le nom d'un fichier dans une corbeille, quelle qu'elle soit. En `OsString`
+/// pour garder le nom à l'octet, même hors UTF-8.
+fn trash_file_name(track_id: i64, src: &Path) -> std::ffi::OsString {
+    let mut name = std::ffi::OsString::from(format!("{track_id}__"));
+    name.push(
+        src.file_name()
+            .unwrap_or_else(|| std::ffi::OsStr::new("file")),
+    );
+    name
+}
+
+/// Le volume qui porte `path`, d'après son préfixe : `C:` et `\\?\C:` sont le même lecteur,
+/// `\\Srv\Share` et `\\?\UNC\srv\share` le même partage. Aucun accès disque. `None` pour un chemin
+/// sans préfixe (relatif) : le volume n'est alors pas connu, et la corbeille retombe sur la copie.
+///
+/// Ce qu'il ne voit pas : un volume monté dans un DOSSIER (`C:\Montage\Disque2`) passe pour `C:`,
+/// et un lecteur `subst` pour un autre volume que son hôte. Les deux se rattrapent sans perte — le
+/// renommage refusé (`ERROR_NOT_SAME_DEVICE`) retombe sur la copie, et un `subst` renomme dans un
+/// dossier qui est bien sur le même disque physique.
+#[cfg(windows)]
+fn volume_by_prefix(path: &Path) -> Option<VolumeInfo> {
+    use std::path::{Component, Prefix};
+    let Some(Component::Prefix(prefix)) = path.components().next() else {
+        return None;
+    };
+    let (id, root) = match prefix.kind() {
+        // std rend déjà la lettre en capitale (`Prefix::Disk(b'C')` pour `c:`) : un
+        // `to_ascii_uppercase()` ici a survécu à sa mutation, il a été retiré. Le test qui compare
+        // `c:/…` et `C:\…` tient la propriété si std venait à changer.
+        Prefix::Disk(letter) | Prefix::VerbatimDisk(letter) => {
+            let letter = char::from(letter);
+            (format!("{letter}:"), format!(r"{letter}:\"))
+        }
+        Prefix::UNC(server, share) | Prefix::VerbatimUNC(server, share) => {
+            let (server, share) = (server.to_string_lossy(), share.to_string_lossy());
+            (
+                format!(r"\\{server}\{share}").to_lowercase(),
+                format!(r"\\{server}\{share}\"),
+            )
+        }
+        // `\\?\Volume{…}`, `\\.\…` : le préfixe tel quel fait l'identité comme la racine.
+        Prefix::Verbatim(_) | Prefix::DeviceNS(_) => {
+            let raw = prefix.as_os_str().to_string_lossy();
+            (raw.to_lowercase(), format!(r"{raw}\"))
+        }
+    };
+    Some(VolumeInfo {
+        id: VolumeId(id),
+        root: PathBuf::from(root),
+    })
+}
+
+/// Le volume qui porte `path` au sens Unix : son `st_dev`, et pour racine le plus HAUT ancêtre qui
+/// partage ce `st_dev`. Un `path` qui n'existe pas encore (la corbeille de Documents avant son
+/// premier usage) se mesure sur son plus proche ancêtre existant. `dev_of` rend le `st_dev` d'un
+/// chemin, `None` s'il est absent ou illisible — injecté, pour que la marche se teste sous Windows.
+///
+/// Sous macOS, `/Users` est un « firmlink » vers le volume de données : un fichier de
+/// `~/Music` et `~/Documents` y ont le même `st_dev`, donc la même corbeille, celle de Documents.
+/// Une clé sous `/Volumes/CLE` a le sien, et sa racine est `/Volumes/CLE`.
+#[cfg(any(unix, test))]
+fn volume_by_dev(path: &Path, dev_of: impl Fn(&Path) -> Option<u64>) -> Option<VolumeInfo> {
+    let mut ancestors = path.ancestors().filter(|a| !a.as_os_str().is_empty());
+    let (dev, mut root) = ancestors
+        .by_ref()
+        .find_map(|a| dev_of(a).map(|dev| (dev, a)))?;
+    for ancestor in ancestors {
+        if dev_of(ancestor) != Some(dev) {
+            break;
+        }
+        root = ancestor;
+    }
+    Some(VolumeInfo {
+        id: VolumeId(format!("dev:{dev}")),
+        root: root.to_path_buf(),
+    })
+}
+
+/// La sonde utilisée en production : le volume de `path` tel que la plateforme le définit. `Err`
+/// dit pourquoi il reste inconnu — la corbeille se rabat alors sur la copie vers Documents, et
+/// journalise la raison.
+#[cfg(windows)]
+fn volume_info(path: &Path) -> Result<VolumeInfo, String> {
+    volume_by_prefix(path).ok_or_else(|| format!("aucun préfixe de volume dans {}", path.display()))
+}
+
+#[cfg(unix)]
+fn volume_info(path: &Path) -> Result<VolumeInfo, String> {
+    use std::os::unix::fs::MetadataExt;
+    volume_by_dev(path, |p| std::fs::metadata(p).ok().map(|m| m.dev()))
+        .ok_or_else(|| format!("aucun ancêtre lisible pour {}", path.display()))
+}
+
+/// Ni Windows ni Unix : aucune plateforme que Sift livre. Le volume reste inconnu, la corbeille
+/// passe par la copie — le comportement d'avant la corbeille par disque.
+#[cfg(not(any(windows, unix)))]
+fn volume_info(path: &Path) -> Result<VolumeInfo, String> {
+    Err(format!(
+        "identité de volume inconnue sur cette plateforme : {}",
+        path.display()
+    ))
+}
+
+/// Envoie `src` à la corbeille et rend le chemin où il a RÉELLEMENT atterri — celui que la ligne
+/// `trash` du journal doit porter (`commit_trash`), puisque c'est lui qu'Annuler, Restaurer et
+/// Vider relisent.
+///
+/// 1. Renommage dans la corbeille de son volume (`trash_dir_for`) : `documents_trash` si `src`
+///    partage son volume, `.sift-trash` à la racine du sien sinon. Instantané, aucun octet copié.
+/// 2. Si ce renommage n'aboutit pas — volume inconnu, dossier non créable, renommage refusé —, la
+///    raison est journalisée (`log::warn!`) et le fichier part par copie + vérification +
+///    suppression vers `documents_trash`, comme avant le 2026-10-05.
+///
+/// Nom dans la corbeille : `<track_id>__<nom>`, suffixé ` (2)`, ` (3)`… s'il est pris
+/// (`library::ensure_unique`) — un renommage remplace la cible sous Windows comme sous Unix, un
+/// nom pris écraserait donc un autre fichier jeté. Pas de DB : journaliser est l'affaire de
+/// l'appelant. `documents_trash` est injecté (`sift_trash_dir()` en production) ; il est créé au
+/// besoin.
+///
+/// `Err(SourceMissing)` quand `src` n'existe pas ; `Err(Failed)` quand les deux voies ont échoué —
+/// dans les deux cas `src` est intact et aucune copie ne reste dans une corbeille.
+pub(crate) fn move_to_trash(
+    src: &Path,
+    track_id: i64,
+    documents_trash: &Path,
+) -> Result<PathBuf, TrashError> {
+    move_to_trash_with(src, track_id, documents_trash, volume_info, rename_file)
+}
+
+/// `move_to_trash` avec la sonde de volumes et le renommage injectés : un test y simule un second
+/// disque, une racine non créable ou un renommage refusé, sans dépendre d'un vrai matériel.
+fn move_to_trash_with(
+    src: &Path,
+    track_id: i64,
+    documents_trash: &Path,
+    probe: impl Fn(&Path) -> Result<VolumeInfo, String>,
+    rename: impl Fn(&Path, &Path) -> std::io::Result<()>,
+) -> Result<PathBuf, TrashError> {
+    // Rien à jeter : le dire tel quel. Le secours par copie échouerait pareil, après avoir créé
+    // des dossiers et écrit un avertissement qui accuserait le renommage. Un autre refus de lecture
+    // (droits) n'est pas une absence : les deux voies le rencontreront et le diront.
+    if let Err(e) = std::fs::symlink_metadata(src) {
+        if e.kind() == std::io::ErrorKind::NotFound {
+            return Err(TrashError::SourceMissing(format!("{}: {e}", src.display())));
+        }
+    }
+    let name = trash_file_name(track_id, src);
+    let rename_failure =
+        match rename_into_own_volume_trash(src, &name, documents_trash, &probe, &rename) {
+            Ok(dest) => return Ok(dest),
+            Err(why) => why,
+        };
+    log::warn!(
+        "corbeille : renommage de {} impossible ({rename_failure}), secours par copie vers {}",
+        src.display(),
+        documents_trash.display()
+    );
+    copy_into_documents_trash(src, &name, documents_trash).map_err(|copy| TrashError::Failed {
+        rename: rename_failure,
+        copy,
+    })
+}
+
+/// La voie directe : `src` renommé dans la corbeille de son volume. `Err` porte la raison pour
+/// laquelle elle n'a pas abouti ; `src` est alors intact (un renommage est atomique).
+fn rename_into_own_volume_trash(
+    src: &Path,
+    name: &std::ffi::OsStr,
+    documents_trash: &Path,
+    probe: &impl Fn(&Path) -> Result<VolumeInfo, String>,
+    rename: &impl Fn(&Path, &Path) -> std::io::Result<()>,
+) -> Result<PathBuf, String> {
+    let src_volume = probe(src)?;
+    let documents_volume = probe(documents_trash)?;
+    let dir = trash_dir_for(
+        &src_volume.id,
+        &documents_volume.id,
+        &src_volume.root,
+        documents_trash,
+    );
+    std::fs::create_dir_all(&dir).map_err(|e| format!("création de {} : {e}", dir.display()))?;
+    let dest = library::ensure_unique(&dir.join(name), None);
+    rename(src, &dest).map_err(|e| format!("{} → {} : {e}", src.display(), dest.display()))?;
+    Ok(dest)
+}
+
+/// Le secours : `src` copié, vérifié puis supprimé vers la corbeille de Documents. Une source qui
+/// refuse de partir (tenue ouverte, volume en lecture seule) reprend sa copie avec l'échec : rien
+/// n'est journalisé, donc une copie restée là serait un doublon qu'aucune ligne ne désigne et
+/// qu'aucun « Vider » ne retirerait.
+fn copy_into_documents_trash(
+    src: &Path,
+    name: &std::ffi::OsStr,
+    documents_trash: &Path,
+) -> Result<PathBuf, String> {
+    std::fs::create_dir_all(documents_trash)
+        .map_err(|e| format!("création de {} : {e}", documents_trash.display()))?;
+    let dest = library::ensure_unique(&documents_trash.join(name), None);
+    copy_verified(src, &dest).map_err(|e| e.to_string())?;
+    if let Err(e) = std::fs::remove_file(src) {
+        remove_leftover(&dest);
+        return Err(format!("suppression de la source après copie : {e}"));
+    }
+    Ok(dest)
+}
+
+/// Vrai quand `trash_file` est rangé dans une corbeille de RACINE (`<racine>/.sift-trash/…`) dont
+/// la racine ne répond pas : clé débranchée, disque démonté, partage hors ligne. Le fichier n'y est
+/// alors ni présent ni absent — il est hors de portée. `purge_trash` ne doit pas lire son absence
+/// comme une suppression faite. Toute autre corbeille — celle de Documents, d'abord — rend `false`,
+/// et son fichier absent reste une suppression déjà faite, comme avant la corbeille par disque.
+pub(crate) fn trash_volume_unreachable(trash_file: &Path) -> bool {
+    let Some(dir) = trash_file.parent() else {
+        return false;
+    };
+    if dir.file_name() != Some(std::ffi::OsStr::new(ROOT_TRASH_DIR)) {
+        return false;
+    }
+    dir.parent().is_some_and(|root| !root.exists())
+}
+
+/// FS-only, the EXECUTE phase of trashing a track (`ipc_filing::trash_track`, and the original of
+/// a non-conformant filing in `execute_file`): `move_to_trash` into the per-disk trash, with the
+/// Documents trash resolved here. Returns the path the file actually landed at — what
+/// `commit_trash` must journal. No DB — journaling is the caller's job.
+///
+/// Runs with the DB lock released, exactly like `execute_file`'s encode: the rename is instant,
+/// but its fallback is a byte-for-byte copy — unbounded I/O on a lossless track.
+pub fn trash_file_fs(track_id: i64, source: &str) -> Result<String, FilingError> {
+    let documents_trash = sift_trash_dir()?;
+    move_to_trash(Path::new(source), track_id, &documents_trash)
+        .map(|dest| dest.to_string_lossy().into_owned())
+        .map_err(|e| FilingError::Io(e.to_string()))
+}
+
+/// `<Documents>/Sift/Trash/<track_id>__<name>`, collision-free, directory created. Only for the
+/// COPY of an original that must keep its own name until it is replaced (`execute_replacing_source`,
+/// #77): a copy costs the same bytes on any volume, and this one is not a move — the per-disk
+/// trash has nothing to rename there.
 fn trash_dest(track_id: i64, source: &str) -> Result<PathBuf, FilingError> {
     let trash_dir = sift_trash_dir()?;
     std::fs::create_dir_all(&trash_dir).map_err(|e| FilingError::Io(e.to_string()))?;
     Ok(library::ensure_unique(
-        &trash_dir.join(format!("{track_id}__{}", file_name_of(source))),
+        &trash_dir.join(trash_file_name(track_id, Path::new(source))),
         None,
     ))
 }
 
 /// COMMIT phase of trashing a track (under the DB lock): journal the move as a revertable
-/// `trash` action and flip the status. `dest` is what `trash_file_fs` returned, so the file is
-/// already moved when this runs — which was ALREADY the ordering inside the pre-split
-/// `move_to_trash` (FS first, journal second), so the split adds no new "moved but unjournaled"
+/// `trash` action and flip the status. `dest` is what `trash_file_fs` returned — the path the file
+/// ACTUALLY landed at, in whichever trash took it (per-disk trash, `move_to_trash`) — so the file
+/// is already moved when this runs. That was ALREADY the ordering inside the pre-split one-shot
+/// trashing function (FS first, journal second), so the split adds no new "moved but unjournaled"
 /// window beyond the lock re-acquisition itself. Both writes here are fast row updates.
 pub fn commit_trash(
     conn: &Connection,
@@ -640,7 +979,7 @@ pub fn execute_file(plan: &FilePlan) -> Result<Vec<FsLog>, FilingError> {
         // au-dessus, AVANT l'écriture, précisément pour ce cas). `rollback_fs` sait la rejouer.
         // C'est le même filet que celui de la phase 3 (commit_file), appliqué à la seule étape qui
         // en était privée. Audit 2026-07-28, CR-3.
-        if let Err(e) = move_cross_disk_safe(&plan.source, Path::new(&plan.dest)) {
+        if let Err(e) = move_cross_disk_safe(Path::new(&plan.source), Path::new(&plan.dest)) {
             log::error!(
                 "execute_file: move a échoué pour {}, restauration des tags d'origine: {e:?}",
                 plan.source
@@ -769,7 +1108,7 @@ fn execute_replacing_source(plan: &FilePlan) -> Result<Vec<FsLog>, FilingError> 
         return Err(FilingError::Tag(e));
     }
     let original = match trash_dest(plan.track_id, &plan.source)
-        .and_then(|dest| copy_verified(&plan.source, &dest).map(|()| dest))
+        .and_then(|dest| copy_verified(Path::new(&plan.source), &dest).map(|()| dest))
     {
         Ok(dest) => dest,
         Err(e) => {
@@ -818,7 +1157,7 @@ pub(crate) fn restore_replaced_source(path: &str, original: &str) -> Result<(), 
         return Err(format!("original gone: {original}"));
     }
     let part = part_path(Path::new(path));
-    copy_verified(original, &part).map_err(|e| e.to_string())?;
+    copy_verified(Path::new(original), &part).map_err(|e| e.to_string())?;
     if let Err(e) = std::fs::rename(&part, path) {
         remove_leftover(&part);
         return Err(format!("replace {path}: {e}"));
@@ -855,7 +1194,7 @@ fn rollback_fs(log: &[FsLog]) {
             // FIX-10: same cross-disk-safe fallback as the forward move — a rollback of the
             // conformant path's rename can cross disks too.
             "move" | "trash" => {
-                if let Err(e) = move_cross_disk_safe(&fs.to, Path::new(&fs.from)) {
+                if let Err(e) = move_cross_disk_safe(Path::new(&fs.to), Path::new(&fs.from)) {
                     log::error!(
                         "rollback_fs: remise en place impossible ({}), le fichier reste en {} au lieu de {}: {e:?}",
                         fs.kind,
@@ -2038,8 +2377,9 @@ mod tests {
 
     /// #77 : un AIFF 16/44,1 déjà nommé selon le gabarit, rangé EN PLACE face à un profil 24/48.
     /// Pose le fichier dans un dossier temporaire et rend (id, source, plan). `None` sans fixture.
-    /// `id` distinct par test : la copie de l'original va dans la VRAIE corbeille, nommée
-    /// `<id>__<nom>`, et deux tests parallèles au même id s'y écraseraient l'un l'autre.
+    /// `id` distinct par test : la copie de l'original va dans la corbeille de Documents — celle des
+    /// tests depuis le 2026-10-05 (`sift_trash_dir`), partagée par tous —, nommée `<id>__<nom>`, et
+    /// deux tests parallèles au même id s'y écraseraient l'un l'autre.
     fn plan_en_place_non_conforme(
         conn: &Connection,
         dir: &Path,
@@ -2905,7 +3245,7 @@ mod tests {
             return;
         };
         // The three phases in the order `ipc_filing::trash_track` runs them (path under the lock,
-        // copy off it, journal + status back under it).
+        // move off it, journal + status back under it).
         let source = track_path(&conn, id).unwrap();
         let dest = trash_file_fs(id, &source).unwrap();
         commit_trash(&conn, id, &source, &dest).unwrap();
@@ -2916,28 +3256,19 @@ mod tests {
             })
             .unwrap();
         assert_eq!(status, "trash");
-        // Trash is centralized to <Documents>/Sift/Trash/ (cross-disk safe), not under `root`.
-        // The moved file is named `<track_id>__<original_name>` there (ensure_unique may suffix it
-        // if a prior run left one behind, so match on the `<id>__` prefix, not an exact name).
-        let trash_dir = sift_trash_dir().unwrap();
-        let prefix = format!("{id}__");
-        let entries: Vec<std::path::PathBuf> = trash_dir
-            .read_dir()
-            .unwrap()
-            .filter_map(|e| e.ok().map(|e| e.path()))
-            .filter(|p| {
-                p.file_name()
-                    .and_then(|n| n.to_str())
-                    .is_some_and(|n| n.starts_with(&prefix))
-            })
-            .collect();
-        assert!(
-            !entries.is_empty(),
-            "trashed file should land in the central Sift trash dir"
-        );
-        for p in entries {
-            std::fs::remove_file(&p).ok();
-        }
+        // Per-disk trash: the test's source and the (test) Documents trash share the temp dir's
+        // volume, so the file is renamed into the Documents trash, named `<track_id>__<name>`
+        // (ensure_unique may suffix it if a prior run left one behind — hence the prefix match).
+        // Asserted on `dest` itself, the path the journal holds: scanning the shared trash dir for
+        // an `<id>__` prefix matched — and then deleted — other tests' files with the same id.
+        let dest = Path::new(&dest);
+        assert_eq!(dest.parent(), Some(sift_trash_dir().unwrap().as_path()));
+        assert!(dest
+            .file_name()
+            .and_then(|n| n.to_str())
+            .is_some_and(|n| n.starts_with(&format!("{id}__"))));
+        assert!(dest.exists(), "the journal points at the trashed file");
+        std::fs::remove_file(dest).ok();
     }
 
     #[test]
@@ -3890,5 +4221,520 @@ mod tests {
             errors,
         } = v;
         let _ = (filed, needs_validation, cancelled, filed_ids, errors);
+    }
+
+    // -----------------------------------------------------------------------------------------
+    // Corbeille par disque (2026-10-05)
+    //
+    // Aucun de ces tests ne touche la corbeille partagée de `sift_trash_dir` : chacun passe sa
+    // propre corbeille de Documents, sous son dossier temporaire — donc sur le même volume que ses
+    // sources. Un second volume se simule par une sonde injectée (`deux_disques`), dans le même
+    // dossier temporaire : le renommage y reste physiquement possible, seule la DÉCISION de
+    // corbeille change. Ce qu'aucun test ne peut faire ici : un vrai second disque.
+    // -----------------------------------------------------------------------------------------
+
+    /// Un contenu reconnaissable, pas de l'audio : la corbeille déplace des octets sans les lire.
+    /// 64 Kio non périodiques, pour qu'une copie tronquée ou un fichier échangé se voient.
+    fn octets_temoins(graine: u8) -> Vec<u8> {
+        (0..64 * 1024u32)
+            .map(|i| ((i.wrapping_mul(2_654_435_761) >> 13) as u8) ^ graine)
+            .collect()
+    }
+
+    /// Un fichier de contenu connu sous `dir/source/`, et la corbeille de Documents de CE test
+    /// (`dir/Documents/Sift/Trash`, pas encore créée).
+    fn fichier_a_jeter(dir: &Path, nom: &str, contenu: &[u8]) -> (PathBuf, PathBuf) {
+        let src = dir.join("source").join(nom);
+        std::fs::create_dir_all(src.parent().unwrap()).unwrap();
+        std::fs::write(&src, contenu).unwrap();
+        (src, dir.join("Documents").join("Sift").join("Trash"))
+    }
+
+    /// `fichier_a_jeter`, plus sa piste `pending` en base. Rend (id, source, corbeille de Documents).
+    fn piste_a_jeter(
+        conn: &Connection,
+        dir: &Path,
+        nom: &str,
+        contenu: &[u8],
+    ) -> (i64, PathBuf, PathBuf) {
+        let (src, documents_trash) = fichier_a_jeter(dir, nom, contenu);
+        conn.execute(
+            "INSERT INTO tracks(path, filename, status) VALUES(?1, ?2, 'pending')",
+            params![src.to_str().unwrap(), nom],
+        )
+        .unwrap();
+        (conn.last_insert_rowid(), src, documents_trash)
+    }
+
+    /// Une sonde de volumes : tout ce qui est sous `documents` sur le disque « A », tout le reste
+    /// sur le disque « B », de racine `racine_b`.
+    fn deux_disques(
+        documents: PathBuf,
+        racine_b: PathBuf,
+    ) -> impl Fn(&Path) -> Result<VolumeInfo, String> {
+        move |p: &Path| {
+            Ok(if p.starts_with(&documents) {
+                VolumeInfo {
+                    id: VolumeId("A".into()),
+                    root: documents.clone(),
+                }
+            } else {
+                VolumeInfo {
+                    id: VolumeId("B".into()),
+                    root: racine_b.clone(),
+                }
+            })
+        }
+    }
+
+    /// (statut de la piste, son `path`, `undone` de sa ligne `trash`) — ce que Jeter, Annuler,
+    /// Restaurer et Vider doivent laisser cohérent.
+    fn etat_corbeille(conn: &Connection, id: i64) -> (String, String, i64) {
+        conn.query_row(
+            "SELECT t.status, t.path, a.undone FROM tracks t
+             JOIN actions a ON a.track_id = t.id AND a.type = 'trash'
+             WHERE t.id = ?1",
+            params![id],
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+        )
+        .unwrap()
+    }
+
+    /// Tient `path` ouvert de sorte qu'une COPIE soit impossible et un RENOMMAGE permis : un handle
+    /// qui partage la suppression mais pas la lecture. `CopyFileExW` doit lire la source, il est
+    /// refusé ; renommer un fichier ouvert ne demande que le partage de suppression. C'est le
+    /// discriminant qui prouve qu'un geste a renommé au lieu de recopier — sans lui, les deux
+    /// laissent le même fichier au même endroit.
+    #[cfg(windows)]
+    fn bloque_la_copie(path: &Path) -> std::fs::File {
+        use std::os::windows::fs::OpenOptionsExt;
+        const FILE_SHARE_DELETE: u32 = 0x0000_0004;
+        std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(FILE_SHARE_DELETE)
+            .open(path)
+            .unwrap()
+    }
+
+    /// La décision pure : la corbeille d'un fichier est sur SON volume. Celle de Documents quand il
+    /// le partage, `.sift-trash` à la racine du sien sinon — jamais Documents pour un autre disque,
+    /// ce qui obligerait à recopier.
+    #[test]
+    fn la_corbeille_d_un_fichier_est_sur_son_propre_volume() {
+        let documents_trash = Path::new("C:/Users/x/Documents/Sift/Trash");
+        assert_eq!(
+            trash_dir_for(&"C:", &"C:", Path::new("C:/"), documents_trash),
+            documents_trash
+        );
+        assert_eq!(
+            trash_dir_for(&"D:", &"C:", Path::new("D:/"), documents_trash),
+            Path::new("D:/").join(".sift-trash")
+        );
+        // Seule l'identité décide, pas la ressemblance des chemins (sous Unix, deux `st_dev`).
+        assert_eq!(
+            trash_dir_for(
+                &7u64,
+                &2u64,
+                Path::new("/Volumes/CLE"),
+                Path::new("/Users/x/Documents/Sift/Trash")
+            ),
+            Path::new("/Volumes/CLE/.sift-trash")
+        );
+    }
+
+    /// Unix : la racine d'un volume est le plus HAUT ancêtre qui partage le `st_dev` du chemin, et
+    /// un chemin pas encore créé (la corbeille de Documents) se mesure sur son plus proche ancêtre.
+    #[test]
+    fn la_racine_unix_est_le_plus_haut_ancetre_du_meme_st_dev() {
+        let devs: std::collections::HashMap<&str, u64> = [
+            ("/", 1),
+            ("/Volumes", 1),
+            ("/Volumes/CLE", 7),
+            ("/Volumes/CLE/Musique", 7),
+            ("/Volumes/CLE/Musique/a.flac", 7),
+            ("/Users", 2),
+            ("/Users/x", 2),
+            ("/Users/x/Documents", 2),
+        ]
+        .into_iter()
+        .collect();
+        let dev_of = |p: &Path| p.to_str().and_then(|s| devs.get(s).copied());
+
+        let cle = volume_by_dev(Path::new("/Volumes/CLE/Musique/a.flac"), dev_of).unwrap();
+        assert_eq!(cle.root, Path::new("/Volumes/CLE"));
+        let documents = volume_by_dev(Path::new("/Users/x/Documents/Sift/Trash"), dev_of).unwrap();
+        assert_eq!(documents.root, Path::new("/Users"));
+        assert_ne!(cle.id, documents.id);
+        assert_eq!(
+            volume_by_dev(Path::new("/Users/x/Documents/a.flac"), dev_of)
+                .unwrap()
+                .id,
+            documents.id,
+            "un fichier de Documents, même absent, est sur le volume de Documents"
+        );
+        assert!(volume_by_dev(Path::new("relatif/a.flac"), dev_of).is_none());
+    }
+
+    /// Windows : le volume est le préfixe du chemin — `C:` sous toutes ses formes, un partage UNC
+    /// sans égard à la casse — et sa racine, celle où vit sa `.sift-trash`.
+    #[cfg(windows)]
+    #[test]
+    fn sous_windows_le_volume_est_le_prefixe_du_chemin() {
+        let c = volume_by_prefix(Path::new(r"C:\Users\x\Music\a.flac")).unwrap();
+        assert_eq!(c.root, PathBuf::from(r"C:\"));
+        assert_eq!(
+            volume_by_prefix(Path::new("c:/Users/x/Documents"))
+                .unwrap()
+                .id,
+            c.id
+        );
+        assert_eq!(
+            volume_by_prefix(Path::new(r"\\?\C:\Users")).unwrap().id,
+            c.id
+        );
+        let d = volume_by_prefix(Path::new(r"D:\Musique\b.flac")).unwrap();
+        assert_ne!(d.id, c.id);
+        assert_eq!(d.root, PathBuf::from(r"D:\"));
+        let partage = volume_by_prefix(Path::new(r"\\Serveur\Musique\House\c.flac")).unwrap();
+        assert_eq!(
+            volume_by_prefix(Path::new(r"\\?\UNC\serveur\musique\d.flac"))
+                .unwrap()
+                .id,
+            partage.id
+        );
+        assert_eq!(partage.root, PathBuf::from(r"\\Serveur\Musique\"));
+        assert_ne!(partage.id, c.id);
+        assert!(volume_by_prefix(Path::new(r"Musique\a.flac")).is_none());
+    }
+
+    /// Même volume que la corbeille de Documents : le fichier y est RENOMMÉ. Sous Windows, un
+    /// handle qui interdit toute copie le prouve — l'ancienne corbeille (copie, vérification,
+    /// suppression) échouait ici.
+    #[test]
+    fn meme_volume_que_documents_le_fichier_y_est_renomme() {
+        let dir = tempfile::tempdir().unwrap();
+        let contenu = octets_temoins(1);
+        let (src, documents_trash) =
+            fichier_a_jeter(dir.path(), "Larry Heard - Mystery Of Love.flac", &contenu);
+
+        #[cfg(windows)]
+        let tenu = bloque_la_copie(&src);
+        let dest = move_to_trash(&src, 42, &documents_trash).expect("move_to_trash");
+        #[cfg(windows)]
+        drop(tenu);
+
+        assert_eq!(
+            dest,
+            documents_trash.join("42__Larry Heard - Mystery Of Love.flac")
+        );
+        assert!(!src.exists(), "la source a quitté sa place");
+        assert_eq!(std::fs::read(&dest).unwrap(), contenu, "octets intacts");
+    }
+
+    /// Un autre volume que celui de Documents : le fichier est renommé dans la `.sift-trash` à la
+    /// racine du SIEN. La corbeille de Documents ne reçoit rien, pas même son dossier.
+    #[test]
+    fn autre_volume_le_fichier_part_a_la_racine_du_sien() {
+        let dir = tempfile::tempdir().unwrap();
+        let contenu = octets_temoins(2);
+        let (src, documents_trash) = fichier_a_jeter(dir.path(), "x.flac", &contenu);
+        let racine = dir.path().join("disque-D");
+        std::fs::create_dir_all(&racine).unwrap();
+
+        let dest = move_to_trash_with(
+            &src,
+            7,
+            &documents_trash,
+            deux_disques(dir.path().join("Documents"), racine.clone()),
+            rename_file,
+        )
+        .expect("move_to_trash");
+
+        assert_eq!(dest, racine.join(".sift-trash").join("7__x.flac"));
+        assert!(!src.exists());
+        assert_eq!(std::fs::read(&dest).unwrap(), contenu);
+        assert!(!documents_trash.exists(), "rien n'est passé par Documents");
+    }
+
+    /// La racine du volume ne peut pas recevoir `.sift-trash` (ici un FICHIER se tient à sa place —
+    /// sur le terrain : volume en lecture seule, racine protégée) : le secours copie le fichier,
+    /// vérifié, dans la corbeille de Documents, et c'est ce chemin-là qui est rendu.
+    #[test]
+    fn racine_non_creable_le_secours_copie_vers_documents() {
+        let dir = tempfile::tempdir().unwrap();
+        let contenu = octets_temoins(3);
+        let (src, documents_trash) = fichier_a_jeter(dir.path(), "x.flac", &contenu);
+        let racine = dir.path().join("disque-protege");
+        std::fs::write(&racine, b"pas un dossier").unwrap();
+
+        let dest = move_to_trash_with(
+            &src,
+            8,
+            &documents_trash,
+            deux_disques(dir.path().join("Documents"), racine.clone()),
+            rename_file,
+        )
+        .expect("le secours doit aboutir");
+
+        assert_eq!(dest, documents_trash.join("8__x.flac"));
+        assert!(!src.exists());
+        assert_eq!(std::fs::read(&dest).unwrap(), contenu);
+        assert_eq!(std::fs::read(&racine).unwrap(), b"pas un dossier");
+    }
+
+    /// Le renommage refusé (forcé ici ; sur le terrain : partage réseau, verrou) : même secours, et
+    /// la `.sift-trash` créée pour le renommage ne garde rien.
+    #[test]
+    fn renommage_refuse_le_secours_copie_vers_documents() {
+        let dir = tempfile::tempdir().unwrap();
+        let contenu = octets_temoins(4);
+        let (src, documents_trash) = fichier_a_jeter(dir.path(), "x.flac", &contenu);
+        let racine = dir.path().join("disque-D");
+        std::fs::create_dir_all(&racine).unwrap();
+        let refuse = |_: &Path, _: &Path| {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "refusé pour le test",
+            ))
+        };
+
+        let dest = move_to_trash_with(
+            &src,
+            9,
+            &documents_trash,
+            deux_disques(dir.path().join("Documents"), racine.clone()),
+            refuse,
+        )
+        .expect("le secours doit aboutir");
+
+        assert_eq!(dest, documents_trash.join("9__x.flac"));
+        assert!(!src.exists());
+        assert_eq!(std::fs::read(&dest).unwrap(), contenu);
+        assert_eq!(
+            std::fs::read_dir(racine.join(".sift-trash"))
+                .unwrap()
+                .count(),
+            0,
+            "le renommage refusé n'a rien laissé à la racine"
+        );
+    }
+
+    /// Ni renommable ni supprimable (tenu ouvert sans partage de suppression) : le secours copie,
+    /// puis bute sur la suppression de la source. La copie repart avec l'échec — sinon un doublon
+    /// resterait dans la corbeille, sans ligne de journal qui le désigne — et la source est intacte.
+    #[cfg(windows)]
+    #[test]
+    fn une_source_qui_refuse_de_partir_ne_laisse_aucune_copie() {
+        use std::os::windows::fs::OpenOptionsExt;
+        const FILE_SHARE_READ: u32 = 0x0000_0001;
+        let dir = tempfile::tempdir().unwrap();
+        let contenu = octets_temoins(5);
+        let (src, documents_trash) = fichier_a_jeter(dir.path(), "x.flac", &contenu);
+        let tenu = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(FILE_SHARE_READ)
+            .open(&src)
+            .unwrap();
+
+        let err =
+            move_to_trash(&src, 10, &documents_trash).expect_err("ni renommable ni supprimable");
+        drop(tenu);
+
+        assert!(matches!(err, TrashError::Failed { .. }), "{err:?}");
+        assert_eq!(std::fs::read(&src).unwrap(), contenu, "source intacte");
+        let restes: Vec<_> = std::fs::read_dir(&documents_trash).unwrap().collect();
+        assert!(
+            restes.is_empty(),
+            "copie orpheline dans la corbeille : {restes:?}"
+        );
+    }
+
+    /// Un nom déjà pris dans la corbeille (`<id>__<nom>` d'un premier jet) n'est jamais écrasé — un
+    /// renommage remplace sa cible sous Windows comme sous Unix. Le second prend « (2) ».
+    #[test]
+    fn un_nom_deja_pris_dans_la_corbeille_n_est_jamais_ecrase() {
+        let dir = tempfile::tempdir().unwrap();
+        let contenu = octets_temoins(6);
+        let (src, documents_trash) = fichier_a_jeter(dir.path(), "x.flac", &contenu);
+        std::fs::create_dir_all(&documents_trash).unwrap();
+        let premier = documents_trash.join("11__x.flac");
+        std::fs::write(&premier, octets_temoins(60)).unwrap();
+
+        let dest = move_to_trash(&src, 11, &documents_trash).expect("move_to_trash");
+
+        assert_eq!(dest, documents_trash.join("11__x (2).flac"));
+        assert_eq!(std::fs::read(&premier).unwrap(), octets_temoins(60));
+        assert_eq!(std::fs::read(&dest).unwrap(), contenu);
+    }
+
+    /// Une source absente : `SourceMissing`, et rien n'est créé — ni corbeille, ni avertissement
+    /// qui accuserait un renommage.
+    #[test]
+    fn une_source_absente_n_envoie_rien_a_la_corbeille() {
+        let dir = tempfile::tempdir().unwrap();
+        let documents_trash = dir.path().join("Documents").join("Sift").join("Trash");
+
+        let err = move_to_trash(&dir.path().join("absent.flac"), 12, &documents_trash)
+            .expect_err("rien à jeter");
+
+        assert!(matches!(err, TrashError::SourceMissing(_)), "{err:?}");
+        assert!(!documents_trash.exists());
+    }
+
+    /// Le retour d'une corbeille passe par `move_cross_disk_safe` : il RECOPIE seulement quand le
+    /// renommage est refusé entre deux volumes (un fichier tombé dans la corbeille de Documents
+    /// d'un autre disque). Tout autre refus remonte tel quel — une copie buterait sur le même à sa
+    /// suppression, après avoir dupliqué le fichier.
+    #[test]
+    fn un_retour_ne_recopie_que_sur_un_refus_entre_volumes() {
+        let dir = tempfile::tempdir().unwrap();
+        let a = dir.path().join("a.flac");
+        std::fs::write(&a, octets_temoins(7)).unwrap();
+        let b = dir.path().join("retour").join("a.flac");
+        std::fs::create_dir_all(b.parent().unwrap()).unwrap();
+        let entre_volumes = if cfg!(windows) { 17 } else { 18 };
+
+        move_cross_disk_safe_with(&a, &b, |_, _| {
+            Err(std::io::Error::from_raw_os_error(entre_volumes))
+        })
+        .expect("la recopie doit aboutir");
+        assert!(!a.exists());
+        assert_eq!(std::fs::read(&b).unwrap(), octets_temoins(7));
+
+        let c = dir.path().join("c.flac");
+        let err = move_cross_disk_safe_with(&b, &c, |_, _| {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "refus",
+            ))
+        })
+        .expect_err("un refus ordinaire n'est pas une raison de copier");
+        assert!(matches!(err, FilingError::Io(_)), "{err:?}");
+        assert!(b.exists() && !c.exists(), "rien de copié");
+    }
+
+    /// Jeter puis Annuler (Ctrl+Z, `undo_last`) sur le même volume : le fichier revient à sa place
+    /// octet pour octet, la piste redevient `pending` sur le même `path`, la ligne `trash` est
+    /// défaite et la corbeille ne garde rien.
+    #[test]
+    fn aller_retour_jeter_puis_annuler() {
+        let conn = db();
+        let dir = tempfile::tempdir().unwrap();
+        let contenu = octets_temoins(20);
+        let (id, src, documents_trash) =
+            piste_a_jeter(&conn, dir.path(), "Kerri Chandler - Rain.flac", &contenu);
+        let src_s = src.to_str().unwrap();
+        let dest = move_to_trash(&src, id, &documents_trash).unwrap();
+        commit_trash(&conn, id, src_s, dest.to_str().unwrap()).unwrap();
+        assert_eq!(dest.parent(), Some(documents_trash.as_path()));
+        assert_eq!(etat_corbeille(&conn, id), ("trash".into(), src_s.into(), 0));
+
+        assert!(
+            actions::undo_last(&conn).unwrap().is_some(),
+            "un lot annulé"
+        );
+
+        assert_eq!(std::fs::read(&src).unwrap(), contenu, "revenu intact");
+        assert!(!dest.exists(), "la corbeille ne le garde pas");
+        assert_eq!(
+            etat_corbeille(&conn, id),
+            ("pending".into(), src_s.into(), 1)
+        );
+    }
+
+    /// Jeter puis Restaurer (écran Écartés) sur le même volume : même retour que l'annulation.
+    #[test]
+    fn aller_retour_jeter_puis_restaurer() {
+        let conn = db();
+        let dir = tempfile::tempdir().unwrap();
+        let contenu = octets_temoins(21);
+        let (id, src, documents_trash) =
+            piste_a_jeter(&conn, dir.path(), "Moodymann - Shades.flac", &contenu);
+        let src_s = src.to_str().unwrap();
+        let dest = move_to_trash(&src, id, &documents_trash).unwrap();
+        commit_trash(&conn, id, src_s, dest.to_str().unwrap()).unwrap();
+
+        crate::ecartes::restore_track(&conn, id).unwrap();
+
+        assert_eq!(std::fs::read(&src).unwrap(), contenu, "revenu intact");
+        assert!(!dest.exists());
+        assert_eq!(
+            etat_corbeille(&conn, id),
+            ("pending".into(), src_s.into(), 1)
+        );
+    }
+
+    /// Jeter puis Vider : le fichier jeté est supprimé pour de bon, il ne revient pas à la source,
+    /// et la piste passe `purged`.
+    #[test]
+    fn aller_retour_jeter_puis_vider() {
+        let conn = db();
+        let dir = tempfile::tempdir().unwrap();
+        let (id, src, documents_trash) = piste_a_jeter(
+            &conn,
+            dir.path(),
+            "Theo Parrish - Falling Up.flac",
+            &octets_temoins(22),
+        );
+        let src_s = src.to_str().unwrap();
+        let dest = move_to_trash(&src, id, &documents_trash).unwrap();
+        commit_trash(&conn, id, src_s, dest.to_str().unwrap()).unwrap();
+
+        let res = crate::ecartes::purge_trash(&conn).unwrap();
+
+        assert_eq!((res.purged, res.failed.len()), (1, 0));
+        assert!(!dest.exists(), "supprimé de la corbeille");
+        assert!(!src.exists(), "et pas revenu à la source");
+        assert_eq!(
+            etat_corbeille(&conn, id),
+            ("purged".into(), src_s.into(), 1)
+        );
+    }
+
+    /// Les trois gestes sur des fichiers jetés dans la `.sift-trash` d'un AUTRE volume (simulé) :
+    /// Annuler, Restaurer et Vider relisent le `to_path` du journal, quelle que soit la corbeille.
+    #[test]
+    fn corbeille_de_racine_annuler_restaurer_vider() {
+        let conn = db();
+        let dir = tempfile::tempdir().unwrap();
+        let racine = dir.path().join("disque-D");
+        std::fs::create_dir_all(&racine).unwrap();
+        let mut jetes = Vec::new();
+        for (graine, nom) in [(30u8, "a.flac"), (31, "b.flac"), (32, "c.flac")] {
+            let contenu = octets_temoins(graine);
+            let (id, src, documents_trash) = piste_a_jeter(&conn, dir.path(), nom, &contenu);
+            let dest = move_to_trash_with(
+                &src,
+                id,
+                &documents_trash,
+                deux_disques(dir.path().join("Documents"), racine.clone()),
+                rename_file,
+            )
+            .unwrap();
+            assert_eq!(dest.parent(), Some(racine.join(ROOT_TRASH_DIR).as_path()));
+            commit_trash(&conn, id, src.to_str().unwrap(), dest.to_str().unwrap()).unwrap();
+            jetes.push((id, src, dest, contenu));
+        }
+
+        // Annuler défait le DERNIER lot : c.flac.
+        assert!(actions::undo_last(&conn).unwrap().is_some());
+        let (id, src, dest, contenu) = &jetes[2];
+        assert_eq!(&std::fs::read(src).unwrap(), contenu);
+        assert!(!dest.exists());
+        assert_eq!(etat_corbeille(&conn, *id).0, "pending");
+
+        // Restaurer : b.flac.
+        let (id, src, dest, contenu) = &jetes[1];
+        crate::ecartes::restore_track(&conn, *id).unwrap();
+        assert_eq!(&std::fs::read(src).unwrap(), contenu);
+        assert!(!dest.exists());
+        assert_eq!(etat_corbeille(&conn, *id).0, "pending");
+
+        // Vider : il reste a.flac.
+        let res = crate::ecartes::purge_trash(&conn).unwrap();
+        assert_eq!((res.purged, res.failed.len()), (1, 0));
+        let (id, src, dest, _) = &jetes[0];
+        assert!(!dest.exists() && !src.exists());
+        assert_eq!(etat_corbeille(&conn, *id).0, "purged");
     }
 }

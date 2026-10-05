@@ -304,11 +304,12 @@ pub fn list_bins(root: &Path) -> Vec<Bin> {
         .filter_entry(|e| {
             // Les dossiers cachés sont écartés avec leur sous-arbre entier.
             //
-            // Ex-`is_hidden`, replié ici : un prédicat d'une ligne, un appelant. Son doc et celui
-            // du module justifiaient la règle par « la corbeille `.sift-trash` » — mais la
-            // corbeille a quitté la racine de bibliothèque à FIX-6, elle vit sous
-            // `{Documents}/Sift/Trash` (voir `filing::sift_trash_dir`). La règle survit pour les
-            // dossiers cachés de l'utilisateur ; l'exemple qui la nommait était mort.
+            // Ex-`is_hidden`, replié ici : un prédicat d'une ligne, un appelant. La corbeille
+            // `.sift-trash` a quitté la racine de bibliothèque à FIX-6 ; depuis la corbeille par
+            // disque (2026-10-05) elle revient à la racine d'un DISQUE autre que celui de
+            // Documents (`filing::trash_dir_for`). Une bibliothèque posée à la racine d'une clé la
+            // croise donc de nouveau, et cette règle l'écarte avec les dossiers cachés de
+            // l'utilisateur.
             !e.file_name()
                 .to_str()
                 .map(|n| n.starts_with('.'))

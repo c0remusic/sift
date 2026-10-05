@@ -975,7 +975,12 @@ pub(crate) fn revert_one_fs(
             }
             std::fs::rename(to, from).map_err(|e| RevertError::Blocked(format!("move back: {e}")))
         }
-        // file was trashed via copy→verify→delete (cross-disk safe); restore the same way
+        // The file went to a trash — Documents', or the `.sift-trash` at the root of its own volume
+        // (per-disk trash, 2026-10-05) — and `to` says which. Put it back by RENAME when both ends
+        // share a volume, by copy→verify→delete only when the rename is refused across devices
+        // (`filing::move_cross_disk_safe`): a file that fell back to the Documents trash of
+        // another disk. It was a copy every time until then — an undo re-copied, byte for byte, a
+        // file the trashing had only renamed.
         "trash" => {
             let from = from_path.ok_or_else(|| RevertError::Blocked("missing from_path".into()))?;
             let to = to_path.ok_or_else(|| RevertError::Blocked("missing to_path".into()))?;
@@ -998,26 +1003,8 @@ pub(crate) fn revert_one_fs(
                     RevertError::Blocked(format!("mkdir {}: {e}", parent.display()))
                 })?;
             }
-            let src_len = std::fs::metadata(to)
-                .map_err(|e| RevertError::Blocked(format!("stat trash file: {e}")))?
-                .len();
-            std::fs::copy(to, from)
-                .map_err(|e| RevertError::Blocked(format!("copy from trash: {e}")))?;
-            let dst_len = match std::fs::metadata(from) {
-                Ok(m) => m.len(),
-                Err(e) => {
-                    let _ = std::fs::remove_file(from);
-                    return Err(RevertError::Blocked(format!("stat restored copy: {e}")));
-                }
-            };
-            if dst_len != src_len {
-                let _ = std::fs::remove_file(from);
-                return Err(RevertError::Blocked(format!(
-                    "trash restore size mismatch (src {src_len} != dst {dst_len})"
-                )));
-            }
-            std::fs::remove_file(to)
-                .map_err(|e| RevertError::Blocked(format!("remove from trash after restore: {e}")))
+            crate::filing::move_cross_disk_safe(Path::new(to), Path::new(from))
+                .map_err(|e| RevertError::Blocked(format!("restore from trash: {e}")))
         }
         // a converted file was produced at `to` — remove it (idempotent if already gone). Unless it
         // REPLACED its source under the same name (#77, `meta` names the original): then `to` is
@@ -1949,6 +1936,40 @@ mod tests {
     #[test]
     fn revert_reject_is_noop() {
         assert!(revert_one_fs("reject", None, None, None).is_ok());
+    }
+
+    /// Corbeille par disque (2026-10-05) : sortir un fichier d'une corbeille qui partage son volume
+    /// est un RENOMMAGE. Le fichier jeté est tenu par un handle qui partage la suppression mais pas
+    /// la lecture : aucune copie ne peut le lire, un renommage passe. L'ancienne restauration
+    /// (copie, vérification, suppression) échouait ici — c'est ce qui prouve que le retour ne
+    /// recopie plus un fichier que la mise à la corbeille n'avait fait que renommer.
+    #[cfg(windows)]
+    #[test]
+    fn revert_trash_renames_back_when_the_trash_shares_the_volume() {
+        use std::os::windows::fs::OpenOptionsExt;
+        const FILE_SHARE_DELETE: u32 = 0x0000_0004;
+        let dir = tempfile::tempdir().unwrap();
+        let from = dir.path().join("Musique").join("orig.flac");
+        let to = dir.path().join(".sift-trash").join("1__orig.flac");
+        std::fs::create_dir_all(to.parent().unwrap()).unwrap();
+        std::fs::write(&to, b"original-flac").unwrap();
+        let tenu = std::fs::OpenOptions::new()
+            .read(true)
+            .share_mode(FILE_SHARE_DELETE)
+            .open(&to)
+            .unwrap();
+
+        let res = revert_one_fs(
+            "trash",
+            Some(from.to_str().unwrap()),
+            Some(to.to_str().unwrap()),
+            None,
+        );
+        drop(tenu);
+
+        assert!(res.is_ok(), "un renommage passe malgré le handle : {res:?}");
+        assert!(!to.exists(), "sorti de la corbeille");
+        assert_eq!(std::fs::read(&from).unwrap(), b"original-flac");
     }
 
     fn fixture(name: &str) -> Option<String> {

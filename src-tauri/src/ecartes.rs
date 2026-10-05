@@ -124,9 +124,10 @@ pub fn list_ecartes(conn: &Connection) -> rusqlite::Result<Vec<EcarteItem>> {
     Ok(out)
 }
 
-/// Move a trashed track's file back from `.sift-trash` to its original location and re-queue
-/// it (`status='pending'`). Guarded: refuses if the trashed file is gone or the original
-/// location is occupied. Marks the `trash` action undone.
+/// Move a trashed track's file back from its trash — whichever one the journal's `to_path` names:
+/// the Documents trash, or the `.sift-trash` at the root of its own volume — to its original
+/// location and re-queue it (`status='pending'`). Guarded: refuses if the trashed file is gone or
+/// the original location is occupied. Marks the `trash` action undone.
 ///
 /// FIX-5 (reviewed, no repair call added): does this need to re-trigger a linked Rekordbox XML
 /// repair? No. Since the FIX-1 fix (`actions::record_with_meta` no longer calls
@@ -150,10 +151,11 @@ pub fn restore_track(conn: &Connection, track_id: i64) -> Result<(), String> {
         })?;
     let from = from.ok_or("missing original path")?;
     let to = to.ok_or("missing trash path")?;
-    // FIX-5: route through the same guarded copy->verify->delete primitive `revert_batch` uses
-    // for a `trash` row (actions::revert_one_fs) instead of a direct `std::fs::rename` — the
-    // trash directory lives outside the library root (`{Documents}/Sift/Trash`), often on a
-    // different disk than the original source, where a plain rename fails outright.
+    // FIX-5: route through the same guarded primitive `revert_batch` uses for a `trash` row
+    // (actions::revert_one_fs) instead of a direct `std::fs::rename`. Since the per-disk trash
+    // (2026-10-05) that primitive renames when the trash shares the original's volume — the usual
+    // case now — and only copies→verifies→deletes when the file had fallen back to the Documents
+    // trash of another disk, where a plain rename fails outright.
     crate::actions::revert_one_fs("trash", Some(&from), Some(&to), None)
         .map_err(|e| e.to_string())?;
     conn.execute(
@@ -169,7 +171,8 @@ pub fn restore_track(conn: &Connection, track_id: i64) -> Result<(), String> {
     Ok(())
 }
 
-/// Outcome of a purge. `failed` holds the track ids whose file could NOT be deleted — they stay
+/// Outcome of a purge. `failed` holds the track ids whose file could NOT be deleted — refused by
+/// the OS, or out of reach on an unplugged volume (`filing::trash_volume_unreachable`) — they stay
 /// in the bin rather than being reported as gone. Mirrors `RejectBatchResult`'s shape (and its
 /// entry in `shared/contracts.ts`): a count of what worked, the ids of what didn't.
 #[derive(Debug, serde::Serialize)]
@@ -208,7 +211,21 @@ pub fn purge_trash(conn: &Connection) -> Result<PurgeResult, String> {
                 // Already gone IS the outcome we wanted, so it counts as purged. This is also
                 // what a pass interrupted after the deletions but before the commit leaves
                 // behind — tolerating it is what lets a retry converge instead of wedging.
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
+                //
+                // …but only when the place that held it still answers. Since the per-disk trash
+                // (2026-10-05) a trashed file can sit in the `.sift-trash` of an unplugged key or
+                // an unmounted disk: there, « not found » means OUT OF REACH, not deleted. Purging
+                // it would claim a deletion that never happened, and the file would come back
+                // with the key, in a folder no screen lists any more. It stays in the bin, reported.
+                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+                    if filing::trash_volume_unreachable(std::path::Path::new(p)) {
+                        log::warn!(
+                            "purge_trash: volume de {p} injoignable, la piste {tid} reste à la corbeille"
+                        );
+                        failed.push(tid);
+                        continue;
+                    }
+                }
                 // Anything else (typically the file held open by another program) leaves the
                 // track in the bin. Marking it `purged` would claim a deletion that never
                 // happened and remove the only screen where the user could still see the file.
@@ -504,5 +521,70 @@ mod tests {
         );
         assert_eq!(res.purged, 0);
         assert_eq!(res.failed, vec![tid]);
+    }
+
+    /// Une piste jetée vers `to`, journalisée comme `filing::commit_trash` le fait.
+    fn jetee(conn: &Connection, from: &str, to: &std::path::Path) -> i64 {
+        conn.execute(
+            "INSERT INTO tracks(path, status) VALUES(?1, 'trash')",
+            params![from],
+        )
+        .unwrap();
+        let tid = conn.last_insert_rowid();
+        crate::actions::record(
+            conn,
+            &format!("b{tid}"),
+            Some(tid),
+            "trash",
+            Some(from),
+            Some(to.to_str().unwrap()),
+        )
+        .unwrap();
+        tid
+    }
+
+    fn statut(conn: &Connection, tid: i64) -> String {
+        conn.query_row("SELECT status FROM tracks WHERE id=?1", params![tid], |r| {
+            r.get(0)
+        })
+        .unwrap()
+    }
+
+    /// Corbeille par disque (2026-10-05) : un fichier jeté dans la `.sift-trash` d'une clé
+    /// DÉBRANCHÉE n'est pas supprimé, il est hors de portée. Vider le laisse à la corbeille et le
+    /// signale ; la clé rebranchée, il part normalement. Une `.sift-trash` dont la racine répond,
+    /// elle, peut avoir perdu son fichier à la main : c'est une suppression déjà faite, purgée.
+    #[test]
+    fn vider_ne_purge_pas_un_fichier_sur_une_cle_debranchee() {
+        let conn = db();
+        let dir = tempfile::tempdir().unwrap();
+        let sur_la_cle = dir.path().join("CLE").join(".sift-trash").join("1__x.mp3");
+        let disque = dir.path().join("DISQUE");
+        std::fs::create_dir_all(disque.join(".sift-trash")).unwrap();
+        let deja_parti = disque.join(".sift-trash").join("2__y.mp3");
+        let tid_cle = jetee(&conn, "x.mp3", &sur_la_cle);
+        let tid_disque = jetee(&conn, "y.mp3", &deja_parti);
+
+        let res = purge_trash(&conn).unwrap();
+
+        assert_eq!(
+            res.failed,
+            vec![tid_cle],
+            "la clé débranchée reste à la corbeille"
+        );
+        assert_eq!(
+            res.purged, 1,
+            "le fichier déjà parti d'un disque présent est purgé"
+        );
+        assert_eq!(statut(&conn, tid_cle), "trash");
+        assert_eq!(statut(&conn, tid_disque), "purged");
+
+        // La clé revient, son fichier avec elle : cette fois il part.
+        std::fs::create_dir_all(sur_la_cle.parent().unwrap()).unwrap();
+        std::fs::write(&sur_la_cle, b"x").unwrap();
+        let res = purge_trash(&conn).unwrap();
+        assert_eq!((res.purged, res.failed.len()), (1, 0));
+        assert!(!sur_la_cle.exists());
+        assert_eq!(statut(&conn, tid_cle), "purged");
     }
 }

@@ -15,7 +15,8 @@
 //! plan is settled and the encode runs on a background thread that reports through
 //! `file:track:done` — the click is acknowledged, the conversion finishes behind it.
 //! The same rule now holds for every other disk-touching command here: `reconcile` (tag read),
-//! `trash_track` (byte-for-byte copy) and `list_bins` (recursive walk of the library tree) resolve
+//! `trash_track` (a rename into its own disk's trash, a byte-for-byte copy when the rename fails)
+//! and `list_bins` (recursive walk of the library tree) resolve
 //! what they need under the lock, release it, do the I/O, and only re-take it to write.
 
 use crate::actions::{self, JournalEntry};
@@ -1360,23 +1361,24 @@ fn reveal_in_file_manager(path: &str) -> Result<(), String> {
     open::that(dir).map_err(|e| e.to_string())
 }
 
-/// Move a track's file to `.sift-trash` (reversible via undo) and mark it trashed. FIX-6: no
-/// library-root precondition — the trash dir lives under Documents, not the library root.
+/// Move a track's file to the trash of its own disk (reversible via undo) and mark it trashed:
+/// `Documents/Sift/Trash` on the Documents disk, `.sift-trash` at the root of any other
+/// (`filing::trash_dir_for`). No library-root precondition.
 #[tauri::command]
 pub fn trash_track(
     app: AppHandle,
     conn: State<'_, Mutex<Connection>>,
     track_id: i64,
 ) -> Result<(), String> {
-    // Same plan/execute/commit split as `file_track`: the copy into the trash dir is a
-    // byte-for-byte copy across disks (the trash lives under Documents, the library rarely does),
-    // so it must not run under the global connection mutex.
+    // Same plan/execute/commit split as `file_track`: the move is a rename into the trash of the
+    // file's own disk, but it falls back to a byte-for-byte copy when the rename fails (read-only
+    // volume, network share), so it must not run under the global connection mutex.
     // (1) Source path under the lock.
     let source = {
         let conn = db::lock_conn(&conn)?;
         filing::track_path(&conn, track_id).map_err(|e| e.to_string())?
     };
-    // (2) The copy + verify + delete, lock released. If another thread moved or filed this track
+    // (2) The move (rename, or copy + verify + delete as fallback), lock released. If another thread moved or filed this track
     // in the meantime the source is simply gone and this fails HERE — before anything is
     // journaled and before the status changes, so the DB is left exactly as it was.
     let dest = filing::trash_file_fs(track_id, &source).map_err(|e| e.to_string())?;
