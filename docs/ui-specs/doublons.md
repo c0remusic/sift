@@ -239,7 +239,7 @@ Conséquence de la décision 1, pas une question : la nouvelle entrée du rail d
 raccourcis `Ctrl+2` à `Ctrl+8` (`shortcuts.ts:128`, ordre du rail). `Ctrl+2` ouvrira Doublons,
 Journal passe à `Ctrl+3`. Le manuel et la légende des raccourcis suivent dans le même geste.
 
-Défaut de l'app trouvé par la maquette, hors de cet écran : `report-view.ts:232` emploie
+Défaut de l'app trouvé par la maquette, hors de cet écran : `report-view.ts:232` employait
 `ti-music-note`, que Tabler 3.46.0 n'a pas (`package-lock.json:2161`) ; la pochette sans image
-reste vide. Rapporté par l'agent de maquette, confirmé : la feuille de Tabler 3.46.0 n'a aucune
-règle `ti-music-note`. Tâche séparée ouverte.
+restait vide. **Corrigé le 2026-10-05** : `ti-music`, la note de Tabler, et
+`test/tabler-glyphs.test.ts` confronte désormais chaque glyphe posé à la police installée.

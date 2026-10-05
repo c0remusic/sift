@@ -229,7 +229,10 @@ function playerHeaderHtml(name: string, path: string, opts: PlayerHeaderOptions 
     // Abstract note glyph, not a literal vinyl (annotation: "l'icone fait trop redondant avec le
     // bouton play... un délire plus minimaliste vectoriel"). Two adjacent circular shapes (the
     // play button + a drawn vinyl disc) read as duplicated; a plain icon sidesteps that entirely.
-    `<i class="ti ti-music-note sift-cover-fallback" aria-hidden="true"></i>` +
+    // `ti-music` et non `ti-music-note` (2026-10-05) : ce nom-là n'existe pas dans Tabler 3.46.0,
+    // et la pochette d'une piste sans image restait vide depuis le 2026-07-08. Gardé par
+    // `test/tabler-glyphs.test.ts`, qui confronte chaque glyphe posé à la police installée.
+    `<i class="ti ti-music sift-cover-fallback" aria-hidden="true"></i>` +
     `<img class="sift-report-cover sift-player-cover" hidden alt="${T().coverAlt(esc(name))}">` +
     `</div>` +
     `<div class="sift-player-header-body">` +
