@@ -669,6 +669,232 @@ pub const CASES: &[Case] = &[
         version: None,
         note: "PIÈGE: '-ism' ressemble à un suffixe scene mais c'est LE titre - ne pas le manger",
     },
+    // ---------- clé de groupe v2 (écran Doublons, 2026-10-05) : copies, débris, pièges ----------
+    // Relevés sur `%APPDATA%\com.sift.app\sift.db` (copie en lecture seule), 3 461 pistes.
+    Case {
+        folder: "About EP",
+        stem: "Dav - Dreams about me-1",
+        artist: "Dav",
+        title: "Dreams about me",
+        version: None,
+        note: "suffixe de copie '-1' collé au titre (24 cas mesurés, tous des copies)",
+    },
+    Case {
+        folder: "The Spectrum E.P",
+        stem: "Presence - I Believe (2022 remaster)-1",
+        artist: "Presence",
+        title: "I Believe",
+        version: Some("2022 remaster"),
+        note: "suffixe de copie '-1' collé APRÈS la version",
+    },
+    Case {
+        folder: "complete",
+        stem: "Hakan Lidbo - Dimm the Lights-01",
+        artist: "Hakan Lidbo",
+        title: "Dimm the Lights",
+        version: None,
+        note: "suffixe '-01' : ordinal de téléchargement à deux chiffres",
+    },
+    Case {
+        folder: "Environments",
+        stem: "H-Foundation - Soul Searchin'-1",
+        artist: "H-Foundation",
+        title: "Soul Searchin'",
+        version: None,
+        note: "PIÈGE: 'H-' est le début de l'artiste, pas une face vinyle ; + suffixe de copie '-1'",
+    },
+    Case {
+        folder: "Future Sound Of Budapest, Volume 3",
+        stem: "Balage- High in l.a.-1",
+        artist: "Balage",
+        title: "High in l.a.",
+        version: None,
+        note: "séparateur '- ' (espace d'un seul côté) + copie '-1' derrière une abréviation à points",
+    },
+    Case {
+        folder: "ftpdjemilio.com",
+        stem: "Ralph Lawson, Carl Finlow, Wolf n Flow - M-1",
+        artist: "Ralph Lawson, Carl Finlow, Wolf n Flow",
+        title: "M-1",
+        version: None,
+        note: "PIÈGE: 'M-1' est le TITRE (le jumeau 'M-2' existe) - un '-1' derrière une lettre seule n'est pas une copie",
+    },
+    Case {
+        folder: "complete",
+        stem: "03_wig_wam_boom_2",
+        artist: "",
+        title: "wig wam boom 2",
+        version: None,
+        note: "PIÈGE: '_2' fait partie du titre (jumeaux '_1' et '_4' au même dossier) - pas un suffixe de copie",
+    },
+    Case {
+        folder: "complete",
+        stem: "Jay Welsh - Weird Noises (Northface 2)",
+        artist: "Jay Welsh",
+        title: "Weird Noises",
+        version: Some("Northface 2"),
+        note: "version SANS mot de version, finie par un chiffre - distincte de '(Northface Remix 1)' du même titre",
+    },
+    Case {
+        folder: "2_040924",
+        stem: "[DBR 50108] N.F.D. - M.A.S.S. (Mix-1)",
+        artist: "N.F.D.",
+        title: "M.A.S.S.",
+        version: Some("Mix-1"),
+        note: "sigles à points des deux côtés + version 'Mix-1' (jumeau 'Mix-2') : le '-1' est DANS la parenthèse",
+    },
+    Case {
+        folder: "2_040924",
+        stem: "[DIS & DAT] 1. DZ - Jelena (Sava's Mood Mix)",
+        artist: "DZ",
+        title: "Jelena",
+        version: Some("Sava's Mood Mix"),
+        note: "label SANS chiffre en crochets de tête, PUIS numéro de piste '1. '",
+    },
+    Case {
+        folder: "Francesco Del Garda",
+        stem: "(09) [Telex] I Don't Like Music [stacey pullen mix]",
+        artist: "Telex",
+        title: "I Don't Like Music",
+        version: Some("stacey pullen mix"),
+        note: "numéro entre parenthèses, ARTISTE entre crochets, version entre crochets",
+    },
+    Case {
+        folder: "complete",
+        stem: "[YT2mp3.info] - DJ Lima & Evanz D - On The Way (320kbps)",
+        artist: "DJ Lima & Evanz D",
+        title: "On The Way",
+        version: None,
+        note: "domaine de convertisseur en crochets de tête + ' - ' résiduel + débit collé '(320kbps)'",
+    },
+    Case {
+        folder: "after gore",
+        stem: "Deja Vu - Sex In The Dark my-free-mp3s.com ",
+        artist: "Deja Vu",
+        title: "Sex In The Dark",
+        version: None,
+        note: "domaine SANS 'www.' en queue + espace final",
+    },
+    Case {
+        folder: "All Track Part Four",
+        stem: "02-dj_life-stopover-552637e3 - 0daymusic.org",
+        artist: "dj life",
+        title: "stopover",
+        version: None,
+        note: "hash scène PUIS domaine sans 'www.' derrière ' - '",
+    },
+    Case {
+        folder: "complete",
+        stem: "Nic Fanciulli, Blewett - Dockside (Full Strings Mix) Wav",
+        artist: "Nic Fanciulli, Blewett",
+        title: "Dockside",
+        version: Some("Full Strings Mix"),
+        note: "format 'Wav' en mot libre après la version",
+    },
+    Case {
+        folder: "All Track Part Four",
+        stem: "01 - DBBD, Miss Bashful - Boyfriendz(Explicit) TIDAL RIP {AudioQuality}",
+        artist: "DBBD, Miss Bashful",
+        title: "Boyfriendz",
+        version: Some("Explicit"),
+        note: "accolades de gabarit de ripper + 'TIDAL RIP' libre ; '(Explicit)' EST une version (≠ 'Clean')",
+    },
+    Case {
+        folder: "Love In Motion",
+        stem: "1000 Ohm - Love in Motion (instrumental)",
+        artist: "1000 Ohm",
+        title: "Love in Motion",
+        version: Some("instrumental"),
+        note: "PIÈGE: artiste commençant par quatre chiffres et une espace - pas un numéro de piste",
+    },
+    Case {
+        folder: "Francesco Del Garda's Track IDs",
+        stem: "100 Hz - Whisper",
+        artist: "100 Hz",
+        title: "Whisper",
+        version: None,
+        note: "PIÈGE: artiste commençant par trois chiffres et une espace - pas un numéro de piste",
+    },
+    Case {
+        folder: "complete",
+        stem: "0201 - St Germain - What's New",
+        artist: "St Germain",
+        title: "What's New",
+        version: None,
+        note: "disque+piste collés sur QUATRE chiffres (0201) - pas une année, pas un artiste",
+    },
+    Case {
+        folder: "complete",
+        stem: "105-dubdog_vs._sono_lakota-rise_and_fall",
+        artist: "dubdog vs. sono lakota",
+        title: "rise and fall",
+        version: None,
+        note: "disque+piste collés sur trois chiffres ('105-') + 'vs.' à point dans un artiste scène",
+    },
+    Case {
+        folder: "The Sound Of Fashion (2003 Musica Alternativa)",
+        stem: "2.12 Yann Fontaine - Burning",
+        artist: "Yann Fontaine",
+        title: "Burning",
+        version: None,
+        note: "disque.piste SANS point final ('2.12 ')",
+    },
+    Case {
+        folder: "Francesco Del Garda",
+        stem: "04._Kai_Alce-Smoov_Bumps",
+        artist: "Kai Alce",
+        title: "Smoov Bumps",
+        version: None,
+        note: "numéro '04._' (point PUIS souligné) + artiste-titre collés par un tiret",
+    },
+    Case {
+        folder: "1 prog 90's 5",
+        stem: "128 - 5A - Mindskap - Twist'n'Shout (Original Tribal Mix)",
+        artist: "Mindskap",
+        title: "Twist'n'Shout",
+        version: Some("Original Tribal Mix"),
+        note: "préfixe Mixed In Key : BPM puis clé Camelot avant l'artiste",
+    },
+    Case {
+        folder: "Francesco Del Garda",
+        stem: "B - Feel The Music (Acid Mix)",
+        artist: "",
+        title: "Feel The Music",
+        version: Some("Acid Mix"),
+        note: "face vinyle SANS chiffre suivie de ' - ', aucun artiste",
+    },
+    Case {
+        folder: "1 prog 90's 5",
+        stem: "A_-_Patrick_Turner_-_Buddhatech",
+        artist: "Patrick Turner",
+        title: "Buddhatech",
+        version: None,
+        note: "face sans chiffre + séparateur scène '_-_'",
+    },
+    Case {
+        folder: "complete",
+        stem: "10 - mandalay , deep love (charlie may remix)",
+        artist: "mandalay",
+        title: "deep love",
+        version: Some("charlie may remix"),
+        note: "VIRGULE comme séparateur artiste/titre",
+    },
+    Case {
+        folder: "complete",
+        stem: "Haris-Right Information",
+        artist: "Haris",
+        title: "Right Information",
+        version: None,
+        note: "PIÈGE: artiste et titre collés par un tiret sans espace (le même morceau existe en '09 Haris - Right Information')",
+    },
+    Case {
+        folder: "Lovage - Music To Make Love To Your Old Lady [2001]",
+        stem: "05 - Nathaniel Merriweather Presents Lovage - To Catch A Thie\u{301}f",
+        artist: "Nathaniel Merriweather Presents Lovage",
+        title: "To Catch A Thief",
+        version: None,
+        note: "accent COMBINANT U+0301 parasite sur 'Thief' (typo de la source) - l'attendu est le mot nu",
+    },
 ];
 
 #[cfg(test)]
@@ -717,10 +943,15 @@ mod tests {
     /// Lecture du 2026-07-28 : la version est déjà bien extraite (57 %), l'artiste presque jamais
     /// (20 %) — cohérent avec le diagnostic, `extract_trailing_version` est purement syntaxique
     /// alors que l'artiste dépend du portail de rejet.
-    const BASELINE_EXACT: usize = 5;
-    const BASELINE_ARTIST: usize = 15;
-    const BASELINE_TITLE: usize = 17;
-    const BASELINE_VERSION: usize = 44;
+    ///
+    /// 2026-10-05 : 28 cas ajoutés (motifs de la clé de groupe v2), de (5, 15, 17, 44) sur 78 cas
+    /// à (10, 26, 24, 65) sur 106. Le code que rejoue `reconcile` n'a pas bougé (le chantier
+    /// n'ajoute à `naming.rs` que `group_key` et `display_parts`) : seuls les nouveaux cas
+    /// déplacent l'aiguille, de +5 exacts, +11 artistes, +7 titres, +21 versions.
+    const BASELINE_EXACT: usize = 10;
+    const BASELINE_ARTIST: usize = 26;
+    const BASELINE_TITLE: usize = 24;
+    const BASELINE_VERSION: usize = 65;
 
     /// Rejoue le corpus contre le code ACTUEL. `reconcile` ne reçoit pas de tags (le corpus mesure
     /// l'extraction depuis le nom et le dossier) et ne reçoit pas le dossier du tout — il ne sait
@@ -807,10 +1038,23 @@ mod tests {
     ///
     /// 76/78 au 2026-09-23 : le cas `Cherry-Bomb---Elastic-(Original-Mix)` ajouté et résolu
     /// (issue #66). Les deux manqués sont les mêmes.
-    const TERMS_EXACT: usize = 76;
-    const TERMS_ARTIST: usize = 76;
-    const TERMS_TITLE: usize = 76;
-    const TERMS_VERSION: usize = 78;
+    ///
+    /// 94/106 au 2026-10-05 : 28 cas ajoutés pour la clé de groupe v2, `search_terms.rs` inchangé.
+    /// 18 sont résolus ; les 10 autres sont des motifs que la cascade ne connaît pas encore,
+    /// laissés au corpus DÉLIBÉRÉMENT, pour qu'un chantier Discogs les trouve chiffrés :
+    ///   - « … - M-1 » : le titre de deux caractères passe pour un résidu de découpage ;
+    ///   - « (Northface 2) » : une version sans mot de version passe pour un catalogue ;
+    ///   - « (09) [Telex] … » : l'artiste entre crochets de tête est retiré comme une référence ;
+    ///   - « [YT2mp3.info] - DJ Lima … » : le « - » résiduel reste collé à l'artiste ;
+    ///   - « … my-free-mp3s.com », « … - 0daymusic.org » : un domaine sans « www. » n'est pas vu ;
+    ///   - « … {AudioQuality} » : l'accolade de gabarit est prise pour la version ;
+    ///   - « 100 Hz - Whisper » : « 100 » est pris pour un numéro de piste ;
+    ///   - « mandalay , deep love » : la virgule n'est pas un séparateur connu ;
+    ///   - « Thie\u{301}f » : l'accent combinant passe tel quel dans le titre.
+    const TERMS_EXACT: usize = 94;
+    const TERMS_ARTIST: usize = 98;
+    const TERMS_TITLE: usize = 98;
+    const TERMS_VERSION: usize = 104;
 
     #[test]
     fn corpus_against_search_terms() {
