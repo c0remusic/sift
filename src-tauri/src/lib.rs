@@ -31,6 +31,7 @@ mod metadata;
 mod naming;
 mod queue;
 mod rekordbox_masterdb;
+mod rekordbox_presence;
 mod rekordbox_repairs;
 mod rekordbox_xml;
 mod reverdict;

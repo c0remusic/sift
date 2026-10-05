@@ -923,6 +923,66 @@ pub fn read_playlist_names(
     Ok(names)
 }
 
+/// Un couple (fichier, playlist) lu dans `master.db` par [`read_track_playlists`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct TrackPlaylistRow {
+    /// `djmdContent.FolderPath` — le chemin COMPLET du fichier, nom compris, barres `/`.
+    pub folder_path: String,
+    /// `djmdPlaylist.ID` d'une playlist qui contient la piste ; `None` pour une piste qui n'est
+    /// dans aucune playlist, ou dont l'entrée pointe sur une playlist qui n'existe plus.
+    pub playlist_id: Option<String>,
+}
+
+/// Chaque piste de la collection avec chaque playlist qui la contient, en UNE requête : une ligne
+/// par couple (piste, playlist), et une ligne `playlist_id: None` pour une piste dans aucune
+/// playlist — elle figure quand même, parce qu'être dans la collection, c'est déjà être joué par
+/// Rekordbox. Lecture seule, même forme que [`read_rekordbox_masterdb`] (déchiffrement en cache,
+/// base en mémoire, aucune écriture).
+///
+/// Brique de l'écran Doublons (`rekordbox_presence`), qui compte les playlists DISTINCTES par
+/// fichier : les lignes sortent brutes, une même playlist peut y revenir pour un même fichier
+/// (entrée en double dans la playlist, ou deux lignes `djmdContent` pour le même fichier).
+///
+/// Les colonnes lues sont celles que la fixture synthétique et le vrai schéma ont en commun
+/// (`ID`, `FolderPath`, `PlaylistID`, `ContentID`) : rien sur `Attribute` ni `rb_local_deleted`,
+/// que la fixture n'a pas. Une piste sans `FolderPath` n'a pas de fichier à reconnaître : elle
+/// est écartée par la requête elle-même.
+pub fn read_track_playlists(path: &Path) -> Result<Vec<TrackPlaylistRow>, MasterDbError> {
+    let plaintext = read_and_decrypt_cached(path)?;
+
+    let mut conn =
+        Connection::open_in_memory().map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+    let len = plaintext.len();
+    conn.deserialize_read_exact(rusqlite::MAIN_DB, Cursor::new(plaintext), len, true)
+        .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+
+    // Deux LEFT JOIN, et chacun a sa raison : le premier garde la piste qui n'est dans aucune
+    // playlist ; le second ne compte une entrée que si sa playlist existe encore.
+    let mut stmt = conn
+        .prepare(
+            "SELECT c.FolderPath, p.ID
+             FROM djmdContent c
+             LEFT JOIN djmdSongPlaylist sp ON sp.ContentID = c.ID
+             LEFT JOIN djmdPlaylist p ON p.ID = sp.PlaylistID
+             WHERE COALESCE(c.FolderPath, '') <> ''",
+        )
+        .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok(TrackPlaylistRow {
+                folder_path: row.get(0)?,
+                playlist_id: row.get(1)?,
+            })
+        })
+        .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+
+    let mut out = Vec::new();
+    for row in rows {
+        out.push(row.map_err(|e| MasterDbError::Sqlite(e.to_string()))?);
+    }
+    Ok(out)
+}
+
 /// Whether a Rekordbox process is currently running, checked by partial,
 /// case-insensitive process-name match ("rekordbox" matches both
 /// `rekordbox.exe` on Windows and `rekordbox` on macOS). Equivalent to
@@ -2155,6 +2215,37 @@ mod tests {
         let names = read_playlist_names(Path::new(FIXTURE)).expect("read playlist names");
         assert_eq!(names.get("50000001"), Some(&"Fixture Playlist".to_string()));
         assert_eq!(names.len(), 1, "fixture has exactly one playlist");
+    }
+
+    /// **Une piste dans aucune playlist sort quand même, avec `None`.**
+    ///
+    /// C'est le premier `LEFT JOIN` que ce test garde : la piste 3 de la fixture n'est dans aucune
+    /// playlist, et un `JOIN` la ferait disparaître — l'écran Doublons la dirait alors absente de
+    /// Rekordbox, alors qu'elle est dans sa collection. Les lignes sortent BRUTES : l'entrée en
+    /// double de la piste 1 dans la playlist 50000001 donne deux lignes, c'est à l'appelant de
+    /// compter les playlists distinctes.
+    ///
+    /// MUTATION : `LEFT JOIN djmdSongPlaylist` → `JOIN djmdSongPlaylist` — la ligne de la piste 3
+    /// manque et l'égalité tombe.
+    #[test]
+    fn read_track_playlists_garde_la_piste_qui_n_est_dans_aucune_playlist() {
+        let mut rows = read_track_playlists(Path::new(FIXTURE)).expect("lecture de la fixture");
+        rows.sort_by(|a, b| {
+            (&a.folder_path, &a.playlist_id).cmp(&(&b.folder_path, &b.playlist_id))
+        });
+        let row = |path: &str, playlist: Option<&str>| TrackPlaylistRow {
+            folder_path: path.to_string(),
+            playlist_id: playlist.map(str::to_string),
+        };
+        assert_eq!(
+            rows,
+            vec![
+                row("D:/FIXTURE/track1.mp3", Some("50000001")),
+                row("D:/FIXTURE/track1.mp3", Some("50000001")),
+                row("D:/FIXTURE/track2.flac", Some("50000001")),
+                row("D:/FIXTURE/track3.wav", None),
+            ]
+        );
     }
 
     #[test]
