@@ -119,12 +119,12 @@ enum State {
         source: PresenceSource,
         by_key: HashMap<String, u32>,
     },
-    Unknown(Unavailable),
+    /// Le pourquoi n'est lu que par les tests : l'écran Doublons ne dit pas encore d'où vient la
+    /// présence (question ouverte du 2026-10-05), et chaque échec de lecture est déjà journalisé
+    /// par [`rekordbox_presence`].
+    Unknown(#[allow(dead_code)] Unavailable),
 }
 
-// Les points d'entrée sont branchés par l'écran Doublons (lot 1, session d'intégration) : ces
-// `allow` tombent avec leur premier appelant de production.
-#[allow(dead_code)]
 impl RekordboxPresence {
     fn unknown(why: Unavailable) -> Self {
         Self {
@@ -153,6 +153,7 @@ impl RekordboxPresence {
     }
 
     /// Pourquoi rien n'est connu ; `None` quand une source a été lue.
+    #[cfg(test)]
     pub(crate) fn unavailable(&self) -> Option<&Unavailable> {
         match &self.state {
             State::Known { .. } => None,
@@ -163,7 +164,6 @@ impl RekordboxPresence {
 
 /// La moitié « base » : où lire. Un réglage et un chemin calculé, rien sur le disque — à appeler
 /// sous le verrou, puis à le relâcher avant [`rekordbox_presence`].
-#[allow(dead_code)]
 pub(crate) fn presence_sources(conn: &Connection) -> rusqlite::Result<PresenceSources> {
     Ok(PresenceSources {
         linked_xml: crate::settings::get(conn, crate::settings::REKORDBOX_XML_PATH)?
@@ -191,7 +191,6 @@ pub(crate) fn presence_sources(conn: &Connection) -> rusqlite::Result<PresenceSo
 ///   chemin, date de modification, taille), partagé avec l'écran Rekordbox ;
 /// - **3 461 recherches** par [`RekordboxPresence::of`] : ≈ 1,1 ms en tout ;
 /// - **repli sur le XML** : 41 à 122 ms (le plus long sur cache disque froid).
-#[allow(dead_code)]
 pub(crate) fn rekordbox_presence(sources: &PresenceSources) -> RekordboxPresence {
     let Some(xml) = &sources.linked_xml else {
         return RekordboxPresence::unknown(Unavailable::NotLinked);

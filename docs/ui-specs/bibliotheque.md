@@ -43,7 +43,8 @@ De gauche à droite après les contrôles de fenêtre :
    Le choix pilote le contenu du sélecteur de facette (ci-dessous).
 3. **Qualité** — trois chips : Tous · Lossless · MP3. Grammaire chip (filtre non
    exclusif de la facette), pas contrôle segmenté.
-4. **Doublons** — action, pas filtre. Lance le scan sur toute la bibliothèque.
+4. **Doublons** — action, pas filtre. Lance le scan sur toute la bibliothèque. ⚠️ **Retiré le
+   2026-10-05** : les doublons ont leur écran dans le rail (§ Section doublons).
 5. **Mode de vue** — contrôle segmenté, deux icônes : Table · Grille.
 6. **Recherche** — à droite, toujours. ⌘/Ctrl+F y place le focus.
 
@@ -196,8 +197,8 @@ file.
 | **Chargement, premier rendu** | Squelette de lignes dans la structure finale. Jamais un écran blanc |
 | **Chargement, re-rendu** | Les données valides restent affichées. Un rendu déclenché par une frappe, un clic de facette ou un changement de tri **ne blanchit jamais** l'écran |
 | **Recherche en cours** | Indicateur discret dans la barre unifiée, à droite du champ. Débounce 250 ms |
-| **Scan de doublons en cours** | Zone C en mode scan, progression déterminée, bouton Annuler présent |
-| **Erreur de scan** | Carte douce, encre `danger`, bouton Réessayer. **Rien n'est dit du contenu** : ne jamais afficher « aucun doublon » après un scan échoué |
+| **Scan de doublons en cours** — ⚠️ retiré le 2026-10-05 | Zone C en mode scan, progression déterminée, bouton Annuler présent |
+| **Erreur de scan** — ⚠️ retiré le 2026-10-05 | Carte douce, encre `danger`, bouton Réessayer. **Rien n'est dit du contenu** : ne jamais afficher « aucun doublon » après un scan échoué (la règle vit désormais dans l'écran Doublons) |
 | **Sélection** | `--color-background-secondary` sur les lignes, inspecteur en résumé agrégé |
 
 ## Interactions
@@ -249,9 +250,9 @@ Split views (volet tertiaire repliable par plusieurs chemins).
   du sol (`--color-background-primary`), opaque parce que sticky.
 - **La barre pilote tout.** Bouton de facette « Dossiers · Tous ⌄ » (pop-up button, popover
   inchangé, ancré sur `[data-bib="facetpop"]`) en tête des actions ; **compte dans
-  `#sift-tb-count`** à côté du titre, comme la file de Revue ; en mode doublons, « ← Retour
-  à la table » prend la place du bouton de facette (ce qui pilote la zone C reste au même
-  endroit) et le compte dit « Doublons — toute la bibliothèque ». La rangée
+  `#sift-tb-count`** à côté du titre, comme la file de Revue ; en mode doublons (retiré le
+  2026-10-05, § Section doublons), « ← Retour à la table » prenait la place du bouton de facette
+  et le compte disait « Doublons — toute la bibliothèque ». La rangée
   `.sift-bib-headline` disparaît.
 - **Colonnes : Artiste · Titre · Durée · Genre · Année.** **Verdict retirée** (« pas besoin de
   mettre le verdict ») — le verdict se lit dans l'inspecteur à l'ouverture ; le tri par rang

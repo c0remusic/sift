@@ -1,14 +1,14 @@
 //! Duplicate detection — name first (here), sound confirmation layered on later (see the M5
 //! spec). The cheap name pre-filter normalizes each track's name (from its filename) into a
-//! key (`naming::name_key`) and flags collisions: `name_dups` marks the queue, `find_duplicate`
+//! key (`naming::group_key`, via `doublons::cle_de_nom`) and flags collisions: `name_dups` marks
+//! the queue, `find_duplicate`
 //! reports the best name match for one track. The acoustic confirmation upgrades the match
 //! `kind` from `name` to `both` when the sound agrees.
 
-use crate::{fingerprint, naming};
+use crate::fingerprint;
 use rusqlite::{params, Connection};
 use serde::Serialize;
 use std::collections::{HashMap, HashSet};
-use std::path::Path;
 
 /// A candidate row loaded for matching: (id, path, status, folder, filename).
 type CandRow = (i64, String, String, Option<String>, Option<String>);
@@ -814,17 +814,16 @@ pub fn scan_library_duplicates(conn: &Connection) -> rusqlite::Result<Vec<DupGro
     Ok(group_duplicates(&rows, &built.fps))
 }
 
-/// Name key for a track derived from its FILENAME only (no tag read — cheap). Uses the
-/// filename parser when the name is clean, else normalizes the whole stem.
+/// Name key for a track derived from its FILENAME only (no tag read — cheap).
+///
+/// Depuis le 2026-10-05, c'est la clé de l'écran Doublons (`doublons::cle_de_nom` : artiste +
+/// titre + VERSION, noms sales nettoyés) : la pastille `DUPLICATE` de la file et le bandeau de
+/// Revue suivent la même clé que l'écran, donc une piste badgée a toujours un groupe à montrer
+/// (`docs/ui-specs/revue.md`, amendement du même jour). Avant, la version était jetée : « X - Y
+/// (Original Mix) » et « X - Y (Extended Mix) » se badgeaient l'un l'autre. Une clé vide ne relie
+/// rien.
 fn key_for_path(path: &str) -> String {
-    let stem = Path::new(path)
-        .file_stem()
-        .and_then(|s| s.to_str())
-        .unwrap_or("");
-    match naming::parse_filename(stem) {
-        Some((a, t, _)) => naming::name_key(&a, &t),
-        None => naming::name_key("", stem),
-    }
+    crate::doublons::cle_de_nom(path)
 }
 
 /// Pending track ids whose name key collides with another pending or filed track. Pure
@@ -834,7 +833,10 @@ fn key_for_path(path: &str) -> String {
 /// retire. Même forme que `filing::file_track`.
 #[cfg(test)]
 pub fn name_dups(conn: &Connection) -> rusqlite::Result<HashSet<i64>> {
-    Ok(group_name_dups(&load_name_dup_rows(conn)?))
+    Ok(group_name_dups(
+        &load_name_dup_rows(conn)?,
+        &crate::doublons::charger_refus(conn)?,
+    ))
 }
 
 /// Une ligne du pré-filtre par nom : `(id, path, is_pending)`.
@@ -855,27 +857,39 @@ pub(crate) fn load_name_dup_rows(conn: &Connection) -> rusqlite::Result<Vec<Name
 
 /// Le regroupement lui-même. Pur — aucune connexion touchée, donc exécutable verrou relâché.
 ///
-/// C'est la moitié coûteuse : une normalisation de nom (`naming::name_key`, minuscules, pliage
-/// des accents, ponctuation retirée) PAR PISTE de la bibliothèque entière. Elle tournait sous le
+/// C'est la moitié coûteuse : une normalisation de nom (`naming::group_key` : nettoyage du nom
+/// sale, minuscules, pliage des accents, ponctuation retirée) PAR PISTE de la bibliothèque entière. Elle tournait sous le
 /// verrou global de `list_queue`, c'est-à-dire à chaque ouverture de la file d'attente, pendant
 /// que le pool d'analyse attendait. Même découpage que `load_dup_scan_rows` /
 /// `build_fingerprints` / `group_duplicates` juste au-dessus.
-pub(crate) fn group_name_dups(rows: &[NameDupRow]) -> HashSet<i64> {
+///
+/// `refus` : les paires « Ce ne sont pas des doublons » (`doublons::charger_refus`, `a < b`). Une
+/// piste n'est badgée que si elle garde, dans son paquet de même clé, au moins un partenaire avec
+/// qui la paire n'est PAS refusée — sinon l'écran Doublons n'aurait aucun groupe à lui montrer.
+pub(crate) fn group_name_dups(rows: &[NameDupRow], refus: &HashSet<(i64, i64)>) -> HashSet<i64> {
     // key -> list of (id, is_pending)
     let mut groups: HashMap<String, Vec<(i64, bool)>> = HashMap::new();
     for (id, path, is_pending) in rows {
-        groups
-            .entry(key_for_path(path))
-            .or_default()
-            .push((*id, *is_pending));
+        let key = key_for_path(path);
+        if key.is_empty() {
+            continue;
+        }
+        groups.entry(key).or_default().push((*id, *is_pending));
     }
     let mut dups = HashSet::new();
-    for (_key, group) in groups {
-        if group.len() >= 2 {
-            for (id, is_pending) in group {
-                if is_pending {
-                    dups.insert(id);
-                }
+    for group in groups.values() {
+        if group.len() < 2 {
+            continue;
+        }
+        for &(id, is_pending) in group {
+            if !is_pending {
+                continue;
+            }
+            let partenaire = group
+                .iter()
+                .any(|&(autre, _)| autre != id && !refus.contains(&(id.min(autre), id.max(autre))));
+            if partenaire {
+                dups.insert(id);
             }
         }
     }
@@ -895,6 +909,11 @@ pub fn find_duplicate(conn: &Connection, track_id: i64) -> rusqlite::Result<Opti
         Err(_) => return Ok(None),
     };
     let key = key_for_path(&path);
+    if key.is_empty() {
+        return Ok(None);
+    }
+    // Une paire refusée (« Ce ne sont pas des doublons ») ne fait plus de bandeau.
+    let refus = crate::doublons::charger_refus(conn)?;
 
     let mut stmt = conn.prepare(
         "SELECT id, path, status, folder, filename FROM tracks
@@ -909,7 +928,8 @@ pub fn find_duplicate(conn: &Connection, track_id: i64) -> rusqlite::Result<Opti
     // Prefer a filed match (it's "already in your library") over another pending one.
     let mut best: Option<CandRow> = None;
     for (id, cand_path, status, folder, filename) in rows {
-        if key_for_path(&cand_path) != key {
+        if key_for_path(&cand_path) != key || refus.contains(&(track_id.min(id), track_id.max(id)))
+        {
             continue;
         }
         let is_filed = status == "filed";
@@ -1065,7 +1085,9 @@ mod tests {
             "INSERT INTO tracks(path, filename, status) VALUES(?1, ?2, ?3)",
             params![
                 path,
-                Path::new(path).file_name().and_then(|n| n.to_str()),
+                std::path::Path::new(path)
+                    .file_name()
+                    .and_then(|n| n.to_str()),
                 status
             ],
         )
@@ -1093,6 +1115,49 @@ mod tests {
         let dups = name_dups(&conn).unwrap();
         assert!(dups.contains(&a) && dups.contains(&b));
         assert_eq!(dups.len(), 2); // c is unique
+    }
+
+    /// La pastille suit la clé de l'écran Doublons (2026-10-05) : la version en fait partie.
+    #[test]
+    fn name_dups_distingue_les_versions() {
+        let conn = db();
+        let a = add(&conn, "/dl/Halden - Rivers (Original Mix).mp3", "pending");
+        let b = add(&conn, "/dl/Halden - Rivers (Extended Mix).aiff", "pending");
+        let dups = name_dups(&conn).unwrap();
+        assert!(
+            !dups.contains(&a) && !dups.contains(&b),
+            "deux versions, deux morceaux"
+        );
+    }
+
+    /// Une paire refusée ne badge plus ; un troisième homonyme, lui, garde un partenaire.
+    #[test]
+    fn name_dups_respecte_les_refus() {
+        let conn = db();
+        let a = add(&conn, "/dl/Okami Sound - Tidewater.mp3", "pending");
+        let b = add(&conn, "/dl2/Okami Sound - Tidewater.mp3", "pending");
+        crate::doublons::refuser(&conn, &[a, b]).unwrap();
+        assert!(
+            name_dups(&conn).unwrap().is_empty(),
+            "la seule paire est refusée"
+        );
+        let c = add(&conn, "/dl3/Okami Sound - Tidewater.wav", "pending");
+        let dups = name_dups(&conn).unwrap();
+        assert!(dups.contains(&a) && dups.contains(&b) && dups.contains(&c));
+        assert!(
+            find_duplicate(&conn, a).unwrap().is_some_and(|m| m.id == c),
+            "le bandeau saute la paire refusée"
+        );
+    }
+
+    /// Deux noms qui ne nomment rien (« Track 01 ») ont une clé vide : ni pastille ni bandeau.
+    #[test]
+    fn un_nom_qui_ne_nomme_rien_ne_relie_rien() {
+        let conn = db();
+        let a = add(&conn, "/cd1/Track 01.mp3", "pending");
+        let _b = add(&conn, "/cd2/Track 01.mp3", "pending");
+        assert!(name_dups(&conn).unwrap().is_empty());
+        assert!(find_duplicate(&conn, a).unwrap().is_none());
     }
 
     #[test]

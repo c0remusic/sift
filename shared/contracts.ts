@@ -568,6 +568,93 @@ export interface DupGroup {
   similarity: number;
 }
 
+// ---- Écran Doublons, lot 1 (miroir de src-tauri/src/doublons.rs) ----
+// Formes épinglées côté Rust par `doublons::tests::dup_screen_copy_shape_matches_contracts_ts`,
+// `dup_screen_group_shape_matches_contracts_ts` et `les_noms_serialises_sont_ceux_de_contracts_ts`.
+
+/** Ce qui fonde un groupe, du plus faible au plus fort. */
+export type DupProof = "same_name" | "same_sound" | "identical";
+
+/** Ce que Rekordbox sait d'une copie. `unknown` : ni master.db ni le XML lié ne sont lisibles. */
+export type RekordboxUse =
+  | { state: "unknown" }
+  | { state: "absent" }
+  | { state: "present"; playlists: number };
+
+export interface DupScreenCopy {
+  id: number;
+  path: string;
+  status: string;
+  source_id: number | null;
+  /** `ok` | `fake` | `grey`, ou null avant analyse. */
+  verdict: string | null;
+  cutoff_hz: number | null;
+  /** Extension réelle du fichier, en minuscules. */
+  format: string;
+  bitrate: number | null;
+  sample_rate: number | null;
+  duration: number | null;
+  size_bytes: number | null;
+  truncated: boolean;
+  /** Le fichier n'est plus sur le disque : jamais gardé, jamais envoyé. */
+  missing: boolean;
+  discogs_release_id: string | null;
+  year: number | null;
+  rekordbox: RekordboxUse;
+  /** Cochée par défaut : la meilleure selon la règle, plus les copies que Rekordbox joue. */
+  keep: boolean;
+  /** À égalité de qualité avec la meilleure : « Préférer ce dossier » peut la recocher. */
+  tied_with_best: boolean;
+  name_key: string;
+}
+
+/** Un lien plus fort que le nom ; deux copies de même `name_key` sont liées par le nom. */
+export interface DupScreenLink {
+  a: number;
+  b: number;
+  kind: DupProof;
+  similarity: number | null;
+}
+
+export interface DupScreenGroup {
+  /** Plus petit id de piste du groupe. */
+  id: number;
+  artist: string | null;
+  title: string;
+  version: string | null;
+  proof: DupProof;
+  /** Hors du plan : durées écartées sans preuve plus forte, ou aucune copie gardable. */
+  to_check: boolean;
+  duration_spread: number | null;
+  /** La meilleure d'abord, puis l'ordre de la règle. */
+  copies: DupScreenCopy[];
+  links: DupScreenLink[];
+}
+
+/** Une copie que l'application n'a pas pu envoyer, et pourquoi (message affichable). */
+export interface DupApplyFailure {
+  id: number;
+  error: string;
+}
+
+/** Le résultat d'une application de plan (miroir de `ipc_doublons.rs::DupApplyResult`). */
+export interface DupApplyResult {
+  /** Le lot du journal : un seul Ctrl+Z annule toute l'application. Null si rien n'est parti. */
+  batch_id: string | null;
+  trashed: number[];
+  failed: DupApplyFailure[];
+  /** Arrêtée par l'utilisateur entre deux copies : le reste n'a pas été touché. */
+  stopped: boolean;
+}
+
+/** Événement `duplicates:progress`, émis après chaque copie traitée. */
+export interface DupApplyProgress {
+  done: number;
+  total: number;
+  /** La copie qui vient d'être traitée. */
+  id: number;
+}
+
 // ---- M6b Lot 4: dashboard (mirror of src-tauri/src/library.rs) ----
 
 

@@ -306,7 +306,9 @@ par `6d1cc85`) · `shortcuts.ts` (clavier couches 1-2) · `report-view.ts` (Revu
 son-d'abord, waveform, verdict) · `bibliotheque-view.ts` + `library-columns.ts` /
 `library-views.ts` (table : colonnes persistées, rendus, tri) · `ecartes-view.ts` ·
 `rekordbox-view.ts` · `reglages-view.ts` · `usb-view.ts` (Clé USB) · `library-detail.ts` ·
-`context-menu.ts` (menu contextuel partagé).
+`context-menu.ts` (menu contextuel partagé) · `duplicates-view.ts` (écran Doublons, 2026-10-05)
++ `duplicates-rows.ts` (markup pur des rangées, exécuté par sa story) / `duplicates-model.ts`
+(plan, effets, encre de différence, filtres ; sans DOM, testable env Node).
 
 `sift-live.ts` reste le **point d'entrée du wiring et le dispatch de clic centralisé**
 pour la plupart des écrans. Un seul écart volontaire : `rekordbox-view.ts` porte son
@@ -355,7 +357,7 @@ envoyée par `save_annotation` qui append `docs/annotations.jsonl`.
   ⚠️ Cette ligne a dit « Aucun runtime async. Ni `tokio` ni `async-std` dans l'arbre » jusqu'au
   2026-09-16, et les deux moitiés étaient fausses : **tokio est dans `Cargo.lock` par
   transitivité de `tauri`**, et son runtime (`tauri::async_runtime`) tourne déjà pour la
-  plomberie de Tauri. **Deux** commandes y touchent, dont le corps part sur
+  plomberie de Tauri. **Quatre** commandes y touchent, dont le corps part sur
   `tauri::async_runtime::spawn_blocking`, chacune avec sa justification en doc-comment :
   - `ipc::analyze_path` (2026-09-16). Synchrone, elle s'exécutait sur le fil de la fenêtre
     (`wry` → `add_WebMessageReceived`, `tauri::protocol` en ligne, `tauri-macros` `Blocking` par
@@ -363,8 +365,12 @@ envoyée par `save_annotation` qui append `docs/annotations.jsonl`.
     fonctionnement.
   - `ipc_identify::identify` (2026-09-28, #74). La recherche Discogs gelait tout l'IPC :
     `get_setting` prend 3 à 9 ms au repos, 1 334 ms pendant une identification.
+  - `ipc_doublons::list_duplicate_groups` et `ipc_doublons::apply_duplicate_plan` (2026-10-05,
+    écran Doublons) : lire 3 400 pistes puis échantillonner des fichiers (≈ 4 s à la première
+    ouverture, mesuré sur une copie de la vraie base), et déplacer N fichiers. Décision ACTÉE avec
+    la spec `docs/ui-specs/doublons.md`, validée par Antoine — pas un suivi de motif.
   Même forme, gardée par un test de source chacune (`…_reste_hors_du_fil_de_la_fenetre`).
-  Étendre à une troisième commande reste une décision, pas un suivi de motif.
+  Étendre à une cinquième commande reste une décision, pas un suivi de motif.
 - **SQLite = `Mutex<Connection>` derrière un Tauri `State`.** Utiliser
   `db::lock_conn(&conn)`, jamais `.lock().map_err(...)` à la main.
 - **`db.rs::MIGRATIONS`** : index + 1 == version de schéma (`PRAGMA user_version`).
@@ -401,10 +407,13 @@ garde leurs tests exécutables sur n'importe quelle machine) ·
 `reverdict.rs` (passe de re-verdict au démarrage : rejoue le verdict sur les mesures déjà stockées,
 sans ré-analyse, pour toute ligne à `verdict_ver` périmée) ·
 `filing.rs` / `actions.rs` / `encode.rs` / `naming.rs` / `tagging.rs` (rangement) ·
-`dedup.rs` / `fingerprint.rs` · `library.rs` / `ecartes.rs` / `genres.rs` ·
-`rekordbox_xml.rs` / `rekordbox_masterdb.rs` / `rekordbox_repairs.rs` (M8 Tier 1/2/3) ·
+`dedup.rs` / `fingerprint.rs` / `doublons.rs` (groupes de l'écran Doublons : trois relations,
+règle de la copie gardée, À vérifier) · `library.rs` / `ecartes.rs` / `genres.rs` ·
+`rekordbox_xml.rs` / `rekordbox_masterdb.rs` / `rekordbox_repairs.rs` (M8 Tier 1/2/3) /
+`rekordbox_presence.rs` (Rekordbox joue-t-il ce fichier : `master.db` sinon le XML lié, LECTURE
+seule) ·
 `ipc.rs` + `ipc_filing.rs` / `ipc_identify.rs` / `ipc_library.rs` / `ipc_usb.rs` /
-`ipc_usage.rs` ·
+`ipc_usage.rs` / `ipc_doublons.rs` ·
 `db.rs` / `settings.rs` / `ffmpeg.rs` · `i18n.rs` (langue des messages affichés, macro `tr!`).
 
 Test-only : `bench_dedup.rs` (coût unitaire de `fingerprint::similarity`, taux de survie du
@@ -665,7 +674,8 @@ autorité : `install-non-signe.md`, `manuel.md`, `design-system-states.md`,
 `ressources-externes.md`, `cdj-metadata-formats.md`, `design-system/`, **`ui-specs/`**,
 **`design-refs/`**, `skills/`, `agents/`, et **chaque dossier de chantier** de
 `superpowers/changes/` pris un par un. ⚠️ Les **specs d'écran sont SUIVIES**
-(`docs/ui-specs/`, 7 fichiers) : une décision de design s'y consigne et se pousse. Restent
+(`docs/ui-specs/`, un fichier par écran — ce passage a dit « 7 fichiers » quand il y en avait
+déjà 8 ; le compte se lit par `ls`) : une décision de design s'y consigne et se pousse. Restent
 hors suivi : plans de jalons, revues et comptes rendus de chantier.
 
 - Un nouveau document sous `docs/` est ignoré **par défaut** ; le publier demande

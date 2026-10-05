@@ -29,17 +29,13 @@ describe("chrome — compte rendu d'un dépôt", () => {
 });
 
 describe("sift-live — toasts paramétrés", () => {
-  it("français inchangé : purge partielle, doublons, export", () => {
+  it("français inchangé : purge partielle, export", () => {
     expect(live.fr.purgePartial(1, 1)).toBe(
       "1 supprimé — 1 fichier impossible à supprimer (ouvert dans un autre programme ?)",
     );
     expect(live.fr.purgePartial(4, 2)).toBe(
       "4 supprimés — 2 fichiers impossibles à supprimer (ouvert dans un autre programme ?)",
     );
-    expect(live.fr.dupConfirm(1)).toBe(
-      "Envoyer 1 doublon à la corbeille ? Le morceau recommandé est conservé.",
-    );
-    expect(live.fr.dupPartial(2, 1)).toBe("2 doublons envoyés à la corbeille, 1 en échec");
     expect(live.fr.exportDone(12, 3)).toBe(
       "12 pistes dans 3 playlists Rekordbox — réimporte le XML dans Rekordbox pour resynchroniser.",
     );
@@ -48,8 +44,6 @@ describe("sift-live — toasts paramétrés", () => {
   it("anglais : pluriel à l'anglaise, 0 compris", () => {
     expect(live.en.xmlLinked(1, 1)).toBe("Rekordbox XML linked: 1 track, 1 playlist");
     expect(live.en.xmlLinked(0, 2)).toBe("Rekordbox XML linked: 0 tracks, 2 playlists");
-    expect(live.en.dupConfirm(1)).toBe("Move 1 duplicate to Trash? The recommended track stays.");
-    expect(live.en.dupPartial(3, 1)).toBe("3 duplicates moved to Trash, 1 failed");
     expect(live.en.purgePartial(2, 1)).toBe("2 deleted — couldn't delete 1 file (open in another program?)");
   });
 });

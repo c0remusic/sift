@@ -138,12 +138,12 @@ pub fn list_ecartes(conn: &Connection) -> rusqlite::Result<Vec<EcarteItem>> {
 /// and is still correct after this restore. A repair call here would be a no-op at best (nothing
 /// to patch — `from == from`) — not added.
 pub fn restore_track(conn: &Connection, track_id: i64) -> Result<(), String> {
-    let (action_id, from, to): (i64, Option<String>, Option<String>) = conn
+    let (action_id, from, to, meta): (i64, Option<String>, Option<String>, Option<String>) = conn
         .query_row(
-            "SELECT id, from_path, to_path FROM actions
+            "SELECT id, from_path, to_path, meta FROM actions
              WHERE track_id=?1 AND type='trash' AND undone=0 ORDER BY id DESC LIMIT 1",
             params![track_id],
-            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?, r.get(3)?)),
         )
         .map_err(|e| match e {
             rusqlite::Error::QueryReturnedNoRows => "no trashed file to restore".to_string(),
@@ -163,9 +163,14 @@ pub fn restore_track(conn: &Connection, track_id: i64) -> Result<(), String> {
         params![action_id],
     )
     .map_err(|e| e.to_string())?;
+    // Le statut d'avant la corbeille : une copie rangée jetée depuis l'écran Doublons retourne à
+    // Rangés, pas à la file (`actions::status_before_trash`).
     conn.execute(
-        "UPDATE tracks SET status='pending' WHERE id=?1",
-        params![track_id],
+        "UPDATE tracks SET status=?2 WHERE id=?1",
+        params![
+            track_id,
+            crate::actions::status_before_trash(meta.as_deref())
+        ],
     )
     .map_err(|e| e.to_string())?;
     Ok(())
@@ -416,6 +421,48 @@ mod tests {
             })
             .unwrap();
         assert_eq!(status, "pending");
+    }
+
+    /// Une copie RANGÉE jetée depuis l'écran Doublons retourne à Rangés, dossier compris : la
+    /// ligne `trash` garde son statut d'avant (`filing::commit_trash_in_batch`).
+    #[test]
+    fn restaurer_une_copie_rangee_la_rend_a_ranges() {
+        let conn = db();
+        let dir = tempfile::tempdir().unwrap();
+        let from = dir.path().join("orig.aiff");
+        let trash = dir.path().join(".sift-trash/1__orig.aiff");
+        std::fs::create_dir_all(trash.parent().unwrap()).unwrap();
+        std::fs::write(&from, b"x").unwrap();
+        conn.execute(
+            "INSERT INTO tracks(path, status, folder) VALUES(?1, 'filed', 'House')",
+            params![from.to_str().unwrap()],
+        )
+        .unwrap();
+        let tid = conn.last_insert_rowid();
+        std::fs::rename(&from, &trash).unwrap();
+        crate::filing::commit_trash_in_batch(
+            &conn,
+            "b1",
+            tid,
+            from.to_str().unwrap(),
+            trash.to_str().unwrap(),
+        )
+        .unwrap();
+
+        restore_track(&conn, tid).unwrap();
+
+        assert!(from.exists() && !trash.exists());
+        let (status, folder): (String, Option<String>) = conn
+            .query_row(
+                "SELECT status, folder FROM tracks WHERE id=?1",
+                params![tid],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap();
+        assert_eq!(
+            (status.as_str(), folder.as_deref()),
+            ("filed", Some("House"))
+        );
     }
 
     #[test]

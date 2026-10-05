@@ -341,8 +341,9 @@ function clearPane(mid: HTMLElement, emptyQueue = false): void {
 }
 
 /** Banner HTML for a duplicate match (filed = already in library, pending = dupe in queue;
- * `both` = sound-confirmed, `name` = same name only → cautious wording). */
-function dupBanner(m: DupMatch): string {
+ * `both` = sound-confirmed, `name` = same name only → cautious wording). Porte « Voir le groupe »
+ * depuis le 2026-10-05 : le bandeau mène à l'écran Doublons, sur la piste ouverte (`trackId`). */
+function dupBanner(m: DupMatch, trackId: number): string {
   const t = T();
   const where =
     m.status === "filed"
@@ -354,6 +355,7 @@ function dupBanner(m: DupMatch): string {
     icon: "ti-copy",
     head: sure ? t.dupSure : t.dupMaybe,
     body: where,
+    action: `<button type="button" class="sift-meta-ident-btn sift-dup-banner-action" data-dupsgo="${trackId}">${t.dupSeeGroup}</button>`,
   });
 }
 
@@ -438,7 +440,7 @@ export async function openFilingInto(
   void dupP.then((m) => {
     if (!m || state.track?.id !== item.id) return;
     const slot = mid.querySelector<HTMLElement>(".sift-fil-dup");
-    if (slot) slot.innerHTML = dupBanner(m);
+    if (slot) slot.innerHTML = dupBanner(m, item.id);
   });
 
   // Analysis report, metadata reconcile, the persisted release facts, and the file's REAL tags are

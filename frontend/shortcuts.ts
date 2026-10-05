@@ -34,8 +34,9 @@ import {
   closeFacetPopover,
 } from "./bibliotheque-view";
 
-/** Ordre des destinations pour ⌘/Ctrl + 1…8. Lu depuis le rail plutôt que codé ici : le rail EST
- *  l'ordre affiché, et une table parallèle divergerait au premier réarrangement. */
+/** Ordre des destinations pour ⌘/Ctrl + 1…9. Lu depuis le rail plutôt que codé ici : le rail EST
+ *  l'ordre affiché, et une table parallèle divergerait au premier réarrangement — l'entrée
+ *  Doublons (2026-10-05) a décalé d'un cran tout ce qui suit Revue sans toucher ce fichier. */
 function railViews(): ViewId[] {
   return Array.from(document.querySelectorAll<HTMLElement>("#nav .nv[data-view]"))
     .map((n) => n.dataset.view)

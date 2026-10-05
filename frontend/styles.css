@@ -696,6 +696,66 @@ body.sift-aside-hidden #sift-aside,body.sift-aside-hidden #sift-aside-resize{dis
 .sift-skel-line{display:block;width:40%;height:var(--space-16);margin:var(--space-12) 0}
 .sift-ec-fail{color:var(--color-text-danger);font-size:var(--text-md);display:flex;gap:var(--space-8);align-items:center;flex-wrap:wrap;padding:var(--space-12) 0}
 #sift-aside .sift-editor-input{width:100%}
+
+/* ---- Doublons, lot 1 (2026-10-05, `docs/ui-specs/doublons.md`) ----
+   Règles portées de la maquette hybride validée par Antoine, où chaque valeur a été recoupée avec
+   les tokens de ce fichier. Préfixe au pluriel exprès : `.sift-dup-banner*` (bandeau de Revue)
+   existe déjà. Une grille commune à l'en-tête, aux rangées de groupe et de copie : la rangée de
+   groupe pose ses valeurs DANS les colonnes, comme une rangée parente du Finder. Hauteur 32 px
+   partout (--row-h) : la liste reste virtualisable à hauteur constante (list-virtual.ts).
+   Colonnes : Garder · Fichier · Preuve · Verdict · Format · Débit · Durée · Dossier · Rekordbox,
+   calculées pour la zone C de 920 px (inspecteur ouvert, fenêtre de 1440) : 824 px de rangée. */
+.sift-dups-main{--sift-dups-cols:40px minmax(0,1.6fr) 64px 96px 44px 64px 40px minmax(0,1fr) 76px;display:flex;flex-direction:column;min-height:100%}
+/* Ancre de la feuille d'application : collante, de hauteur nulle, en tête de la table. La zone C
+   défile, la feuille reste en haut de ce qu'on voit sans pousser la table ; en absolu sur un hôte
+   non positionné, elle s'ancrait à la fenêtre et couvrait la barre (revue du 2026-10-05). */
+.sift-dups-sheet-anchor{position:sticky;top:0;height:0;z-index:var(--z-sheet)}
+.sift-lib-thead.sift-dups-row,.lr.sift-dups-row{display:grid;grid-template-columns:var(--sift-dups-cols);column-gap:var(--space-8);align-items:center}
+.sift-dups-r{text-align:right}
+.sift-dups-ck{width:16px;height:16px;margin:0;flex:none;accent-color:var(--color-accent-fill);border-radius:var(--border-radius-xs)}
+.sift-dups-keep{display:flex;align-items:center}
+/* Encre de différence : par colonne et par groupe. Les copies diffèrent : encre primaire ; elles
+   sont identiques : tertiaire. Pas de couleur — l'ambre reste à la vigilance (le « Delta Values »
+   orange de dupeGuru, transposé en encre). */
+.sift-dups-diff{color:var(--color-text-primary)}
+.sift-dups-same{color:var(--color-text-tertiary)}
+/* Nom de fichier : troncature AU MILIEU qui garde « (Version).ext » — la version est ce qui
+   distingue un remix. */
+.sift-dups-file{display:flex;min-width:0;white-space:nowrap}
+.sift-dups-file-a{overflow:hidden;text-overflow:ellipsis;min-width:0}
+.sift-dups-file-b{flex:none;white-space:pre}
+.sift-dups-mark{flex:none;margin-left:var(--space-8);font-size:var(--text-sm);font-weight:500;color:var(--color-text-warning)}
+.sift-dups-num{font-variant-numeric:tabular-nums;white-space:nowrap}
+.sift-dups-dur{font-family:var(--font-mono);font-variant-numeric:tabular-nums;white-space:nowrap}
+.sift-lib-thead .sift-dups-dur{font-family:var(--font-ui)}
+.sift-dups-where{display:flex;align-items:center;gap:var(--space-6);min-width:0}
+.sift-dups-where-t{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0}
+.sift-dups-rkb{display:flex;align-items:center;gap:var(--space-4);white-space:nowrap;min-width:0}
+.sift-dups-rkb i{font-size:var(--text-base);flex:none}
+.sift-dups-warn{color:var(--color-text-warning)}
+/* Rangée de groupe : la graisse et l'ESPACE la distinguent, jamais un filet ni un bouton
+   (components.md, rangée de table). Le contenu se cale en bas de ses 32 px : l'air vient au-dessus
+   du titre, contre le groupe précédent. Mesuré sur la maquette : 32,0 px, comme une copie (avec un
+   padding-top de 12, elle faisait 33,4 et décalait la virtualisation). */
+.lr.sift-dups-hd{align-items:end;padding-top:0;padding-bottom:var(--space-4)}
+.sift-dups-title{grid-column:1 / 3;display:flex;min-width:0;white-space:nowrap;font-size:var(--text-md);font-weight:600;color:var(--color-text-primary)}
+.sift-dups-title-a{overflow:hidden;text-overflow:ellipsis;min-width:0}
+.sift-dups-title-b{flex:none;white-space:pre}
+.sift-dups-proof{grid-column:3;font-size:var(--text-sm);font-weight:500;color:var(--color-text-secondary);white-space:nowrap}
+.sift-dups-meta{grid-column:4 / 10;display:flex;align-items:baseline;gap:var(--space-16);min-width:0;font-size:var(--text-sm)}
+.sift-dups-nature{flex:0 1 auto;min-width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--color-text-tertiary)}
+.sift-dups-effect{margin-left:auto;flex:none;white-space:nowrap;color:var(--color-text-secondary);font-variant-numeric:tabular-nums}
+/* Pied de zone C : la légende clavier de Revue sur le bord de conduite des rangées ; filet haut
+   qui borne, comme la rangée de statut de la file (revue.md). Collé en bas de la zone qui défile. */
+.sift-dups-foot{position:sticky;bottom:0;margin-top:auto;flex:none;min-height:var(--row-h);display:flex;align-items:center;padding:0 var(--space-24);background:var(--color-background-primary);border-top:1px solid var(--color-border-tertiary)}
+/* La copie ouverte contre la comparée (panneau Details de dupeGuru, en encre). */
+.sift-dups-cmp-sec{margin-top:var(--space-24)}
+.sift-dups-cmp-proof{margin-top:var(--space-4);font-size:var(--text-sm);color:var(--color-text-tertiary)}
+.sift-dups-cmp{display:grid;grid-template-columns:76px minmax(0,1fr) minmax(0,1fr);column-gap:var(--space-8);row-gap:var(--space-6);margin-top:var(--space-12);font-size:var(--text-md);align-items:baseline}
+.sift-dups-cmp-h,.sift-dups-cmp-l{font-size:var(--text-sm);color:var(--color-text-tertiary)}
+.sift-dups-cmp-v{min-width:0;overflow-wrap:anywhere}
+.sift-dups-why{margin-top:var(--space-12);font-size:var(--text-md);color:var(--color-text-secondary)}
+.sift-dups-rest-h{margin-top:var(--space-24)}
 /* Titre de page accessible, invisible à l'œil. Mesuré le 2026-08-05 : l'application ne
    contenait AUCUN `<h1>`–`<h6>`, ni dans `index.html`, ni dans `app.js`, ni dans un seul `.ts`,
    et aucun repli `role="heading"`/`aria-level` — un lecteur d'écran n'avait donc aucun plan de
@@ -1692,7 +1752,8 @@ body[data-view="revue"] .sift-pz-row.sift-pz-analyze{display:none}
    et « au repos » résolvaient donc à la même couleur, et le retour visuel que cette règle existe
    pour donner n'existait pas. Le survol de DESIGN.md § 8 est `--overlay-hover` : un voile alpha qui
    se COMPOSE sur ce qui le porte au lieu de nommer un plan, donc il se voit à tous les plans. C'est
-   déjà le token de `.chip`, `.lk-icon`, `.sift-cand`, `.sift-menu-item`, `.sift-bib-back`. */
+   déjà le token de `.chip`, `.lk-icon`, `.sift-cand`, `.sift-menu-item` (et de `.sift-bib-back`,
+   retiré le 2026-10-05 avec le mode Doublons de Rangés). */
 .fld:hover{background:var(--overlay-hover)}
 /* Item ACTIF d'une liste de navigation (catégories de Réglages, sections Rekordbox) : neutre.
    DESIGN.md § 8 : « Sélection : --color-background-secondary, promue au plan du contenu. Jamais
@@ -2171,8 +2232,8 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 /* [C3] "changer" / "Ouvrir Réglages" inline jump link */
 /* Grammaire de LIEN (2026-08-19) : ce contrôle saute ailleurs, il n'engage rien — il n'a donc pas
    à porter l'aplat gris d'un bouton secondaire, qu'il prenait du reset `button{}`. Fond
-   transparent, encre info, survol `--overlay-hover` (le geste de `.sift-bib-back`, l'autre
-   bouton-lien de l'app). Le fond `none` DOIT être réaffirmé au survol, sinon le générique le
+   transparent, encre info, survol `--overlay-hover` (le geste qu'avait `.sift-bib-back`, l'autre
+   bouton-lien de l'app jusqu'à son retrait du 2026-10-05). Le fond `none` DOIT être réaffirmé au survol, sinon le générique le
    repeint en gris.
    ⚠️ Correction d'un fait, pas seulement du style : son `border-color:var(--color-border-info)` ne
    peignait RIEN. Le reset pose `border:0`, donc cette déclaration était inerte faute de largeur —
@@ -3421,9 +3482,12 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .sift-filed-banner-revert i{font-size:var(--text-md);vertical-align:-2px}
 .sift-dup-banner{display:flex;align-items:flex-start;gap:var(--space-8);border-radius:var(--border-radius-md);padding:var(--space-8) var(--space-12);margin-bottom:var(--space-12);font-size:var(--text-sm)}
 .sift-dup-banner i{font-size:var(--text-lg);flex:none}
-.sift-dup-banner-body{min-width:0}
+.sift-dup-banner-body{min-width:0;flex:1}
 .sift-dup-banner-head{font-weight:500}
 .sift-dup-banner-where{color:var(--color-text-tertiary);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+/* « Voir le groupe » (2026-10-05) : en fin de ligne, centré sur la hauteur du bandeau ; le corps
+   (`flex:1` ci-dessus) garde la place qui reste et s'ellipse avant que le bouton ne se tasse. */
+.sift-dup-banner-action{margin-left:auto;align-self:center;flex:none}
 .sift-clear-pane{flex:1;display:flex;align-items:center;justify-content:center;color:var(--color-text-tertiary);font-size:var(--text-md);padding:var(--space-24);text-align:center}
 /* La rangée « Sur place » porte `.fld` depuis le 2026-08-25 : elle est un item du popover
    Destination comme les autres (gabarit kit Menu/Menu-items — voir son bloc plus haut), et non
@@ -3872,10 +3936,10 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .sift-bib-facet-btn .sift-bib-facet-val{font-weight:500}
 .sift-bib-facet-btn i{font-size:var(--text-md);color:var(--color-text-tertiary)}
 .sift-bib-count{font-size:var(--text-sm);color:var(--color-text-tertiary)}
-/* Porte de sortie du mode scan. Même place que le bouton de facette qu'elle remplace : ce qui
-   pilote la zone C reste au même endroit d'un mode à l'autre. */
-.sift-bib-back{display:inline-flex;align-items:center;gap:var(--space-4);padding:var(--space-4) var(--space-8);border:0;background:none;border-radius:var(--border-radius-sm);cursor:pointer;font-size:var(--text-base);color:var(--color-text-info)}
-.sift-bib-back:hover{background:var(--overlay-hover)}
+/* `.sift-bib-back` (« ← Retour à la table », la porte de sortie du mode scan de doublons) est partie
+   le 2026-10-05 avec ce mode : plus aucun markup ne la posait. Les groupes de doublons vivent dans
+   l'écran Doublons du rail (`duplicates-view.ts`, `docs/ui-specs/bibliotheque.md` § Section
+   doublons). */
 /* « Aucun résultat » : sous l'en-tête de colonnes, jamais à sa place (réf. shadcn data-table-demo,
    dont l'état vide est une ligne du corps). Centré et respirant, pour ne pas se lire comme une
    première ligne de données. */

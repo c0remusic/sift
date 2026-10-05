@@ -26,7 +26,9 @@ import type {
   MetadataEdit,
   TrackRelease,
   FileTags,
-  DupGroup,
+  DupScreenGroup,
+  DupApplyResult,
+  DupApplyProgress,
   RekordboxLinkStatus,
   PendingMasterdbRepair,
   ApplyRepairOutcome,
@@ -245,7 +247,7 @@ export const rejectBatch = (trackIds: number[]): Promise<RejectBatchResult> =>
 export const rejectTrack = (trackId: number): Promise<void> =>
   invoke("reject_track", { trackId });
 
-/** Move a track's file to .sift-trash (reversible via undo). */
+/** Move a track's file to the trash of its own disk (reversible via undo). */
 export const trashTrack = (trackId: number): Promise<void> =>
   invoke("trash_track", { trackId });
 
@@ -391,9 +393,25 @@ export const libraryFolders = (): Promise<LibraryFacets> =>
 export const updateMetadata = (trackId: number, edit: MetadataEdit): Promise<string> =>
   invoke("update_metadata", { trackId, edit });
 
-/** Scan `filed` tracks for acoustic duplicates, grouped with a recommended keeper. */
-export const scanLibraryDuplicates = (): Promise<DupGroup[]> =>
-  invoke("scan_library_duplicates");
+/** Écran Doublons : tous les groupes de la bibliothèque (file et Rangés), dans l'ordre de
+ *  l'écran. Calculé hors du fil de la fenêtre (`ipc_doublons.rs`). */
+export const listDuplicateGroups = (): Promise<DupScreenGroup[]> => invoke("list_duplicate_groups");
+
+/** « Ce ne sont pas des doublons » : les paires du groupe ne relient plus. Rend le nombre de
+ *  paires ajoutées. */
+export const refuseDuplicateGroup = (ids: number[]): Promise<number> =>
+  invoke("refuse_duplicate_group", { ids });
+
+/** Applique un plan : les copies `ids` partent dans la corbeille de leur disque, en UN lot du
+ *  journal (un seul Ctrl+Z annule tout). Progression par `duplicates:progress`. */
+export const applyDuplicatePlan = (ids: number[]): Promise<DupApplyResult> =>
+  invoke("apply_duplicate_plan", { ids });
+
+/** Arrête l'application en cours entre deux copies : rien n'est défait. */
+export const stopDuplicatePlan = (): Promise<void> => invoke("stop_duplicate_plan");
+
+export const onDuplicatePlanProgress = (cb: (p: DupApplyProgress) => void): Promise<UnlistenFn> =>
+  listen<DupApplyProgress>("duplicates:progress", (e) => cb(e.payload));
 
 /** Dashboard aggregate stats for the Bibliothèque. */
 

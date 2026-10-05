@@ -23,6 +23,7 @@ import { renderQueue } from "./queue-panel";
 import { renderEcartes } from "./ecartes-view";
 import { renderReglagesLive } from "./reglages-view";
 import { renderBiblioLive } from "./bibliotheque-view";
+import { registerDupsNavigator, renderDoublons } from "./duplicates-view";
 import { paintJournal } from "./journal";
 import { renderRekordboxLive } from "./rekordbox-view";
 import { renderUsbLive } from "./usb-view";
@@ -31,10 +32,11 @@ import { takeViewAfterReload } from "./lang-boot";
 import { T } from "./i18n/router";
 
 // `ecarts` est devenu `resourcing` + `trash` le 2026-09-08 : deux destinations du rail (index.html),
-// une corbeille chez Apple étant toujours un item de sidebar, jamais un filtre.
-export type ViewId = "revue" | "resourcing" | "trash" | "journal" | "biblio" | "rkb" | "cle" | "reglages";
+// une corbeille chez Apple étant toujours un item de sidebar, jamais un filtre. `doublons` rejoint
+// le rail le 2026-10-05, sous Revue (`docs/ui-specs/doublons.md`).
+export type ViewId = "revue" | "dups" | "resourcing" | "trash" | "journal" | "biblio" | "rkb" | "cle" | "reglages";
 
-const VIEWS: readonly ViewId[] = ["revue", "resourcing", "trash", "journal", "biblio", "rkb", "cle", "reglages"];
+const VIEWS: readonly ViewId[] = ["revue", "dups", "resourcing", "trash", "journal", "biblio", "rkb", "cle", "reglages"];
 
 function isViewId(v: string | undefined): v is ViewId {
   return !!v && (VIEWS as readonly string[]).includes(v);
@@ -259,6 +261,10 @@ export function render(): void {
       revueShell(content);
       void renderQueue();
       return;
+    case "dups":
+      blockShell(content);
+      void renderDoublons();
+      return;
     case "biblio":
       blockShell(content);
       void renderBiblioLive();
@@ -298,6 +304,8 @@ export function goTo(view: ViewId): void {
 /** Câble le routage et pose la première vue. Un seul écouteur, délégué sur `#pa` : chaque élément
  *  porteur d'un `data-view` navigue, où qu'il soit dans l'arbre (rail, état vide, bandeau). */
 export function installRouter(): void {
+  // Revue mène à l'écran Doublons (bandeau, menu de file) sans importer le routeur.
+  registerDupsNavigator(() => goTo("dups"));
   requireEl<HTMLElement>("#pa", "installRouter").addEventListener("click", (e) => {
     const el = (e.target as HTMLElement | null)?.closest<HTMLElement>("[data-view]");
     if (!el) return;

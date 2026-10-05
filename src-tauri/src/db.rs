@@ -574,6 +574,20 @@ const MIGRATIONS: &[&str] = &[
     DELETE FROM dup_scanned
     WHERE track_id IN (SELECT id FROM tracks WHERE fingerprint IS NULL);
     "#,
+    // v27 — « Ce ne sont pas des doublons » (écran Doublons, 2026-10-05) : les paires que
+    // l'utilisateur a refusées. Une paire refusée ne relie plus ses deux copies, par aucune des
+    // trois relations (`doublons::former_groupes`) ; une copie nouvelle forme une paire nouvelle,
+    // donc un groupe peut renaître autour d'elle, et c'est voulu. `a_id < b_id` comme `dup_edges`
+    // (v19) ; `ON DELETE CASCADE` : une piste purgée emporte ses refus.
+    r#"
+    CREATE TABLE dup_refused (
+        a_id INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+        b_id INTEGER NOT NULL REFERENCES tracks(id) ON DELETE CASCADE,
+        refused_at TEXT NOT NULL DEFAULT (datetime('now')),
+        PRIMARY KEY (a_id, b_id),
+        CHECK (a_id < b_id)
+    );
+    "#,
 ];
 
 /// Applies ONE migration and its `user_version` bump in a SINGLE transaction, so a batch that
@@ -648,8 +662,8 @@ mod tests {
         // v4 adds `settings`, v6 adds `track_genres`, v11 adds `rekordbox_masterdb_repairs`,
         // v13 adds `rekordbox_masterdb_metadata_syncs`, v14 adds `rekordbox_masterdb_artwork_syncs`,
         // v17 adds `volume_usage`, v19 adds `dup_edges` and `dup_scanned`, v25 adds
-        // `rekordbox_cleared_artwork`
-        assert_eq!(table_count(&conn).unwrap(), 14);
+        // `rekordbox_cleared_artwork`, v27 adds `dup_refused`
+        assert_eq!(table_count(&conn).unwrap(), 15);
     }
 
     /// Une migration qui casse à mi-parcours ne doit laisser NI la table déjà créée, NI la
@@ -1059,7 +1073,7 @@ mod tests {
         let conn = Connection::open_in_memory().unwrap();
         run_migrations(&conn).unwrap();
         run_migrations(&conn).unwrap(); // second run must not error or duplicate
-        assert_eq!(table_count(&conn).unwrap(), 14);
+        assert_eq!(table_count(&conn).unwrap(), 15);
     }
 
     /// v16 must actually WIPE the inflated report cache, not merely be declared. Applies v1..v15

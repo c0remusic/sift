@@ -470,9 +470,9 @@ const GROUP_TRAILING_RESIDUE: [char; 5] = [' ', '-', '_', ',', ';'];
 /// réunissait « 22 - Forever » (dossier d'un DJ) et « 2. Forever (Original Mix) » (album
 /// d'Aladdin), deux morceaux, mesuré le 2026-10-05. « 06 Gripen » et « 6. Gripen » restent réunis.
 /// Deux noms faibles peuvent donc s'afficher pareil et porter deux clés.
-// Appelant de production : le regroupement de `dedup.rs`, écrit en parallèle (écran « Doublons »,
-// lot 1). Cet `allow` tombe dans le commit qui le branche.
-#[allow(dead_code)]
+///
+/// Appelants : `doublons::cle_de_nom`, donc l'écran Doublons ET la pastille de Revue
+/// (`dedup::key_for_path`) — une seule clé de nom pour les deux.
 pub fn group_key(stem: &str) -> Option<String> {
     let (cleaned, position) = group_clean(stem);
     let (artist, title, version) = split_display(&cleaned);
@@ -499,8 +499,8 @@ pub fn group_key(stem: &str) -> Option<String> {
 /// Le découpage ne retire ni ne réordonne aucun caractère alphanumérique : il ne touche qu'aux
 /// séparateurs. C'est ce qui fait de `group_key` une fonction de ces trois parts (hors nom faible,
 /// voir `group_key`).
-// Même appelant à venir que `group_key` (en-tête de groupe de l'écran « Doublons »).
-#[allow(dead_code)]
+///
+/// Appelant : l'en-tête de groupe de l'écran Doublons (`doublons::assembler`).
 pub fn display_parts(stem: &str) -> (Option<String>, String, Option<String>) {
     split_display(&group_clean(stem).0)
 }

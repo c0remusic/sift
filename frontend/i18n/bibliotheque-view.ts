@@ -1,14 +1,11 @@
 // Écran Rangés (`bibliotheque-view.ts`) : résumé de sélection et résumé de la source dans
 // l'inspecteur, menus contextuels de la table et de son en-tête, confirmations et toasts des
-// actions de masse, scan de doublons, graphique d'occupation, barre (chips, facette, recherche,
-// compte), état vide, repli « aucun résultat » et échec de chargement.
+// actions de masse, graphique d'occupation, barre (chips, facette, recherche, compte), état vide,
+// repli « aucun résultat » et échec de chargement.
 //
 // Vocabulaire : `docs/design-system/content.md` § Locale `en` — « Écarter » devient « Set aside »,
 // jamais « Discard » ; « Corbeille » devient Trash, « À re-sourcer » To re-source, « Revue » Review.
 // Les pluriels anglais comptent zéro au pluriel (« 0 tracks »), le français au singulier.
-//
-// Les littéraux que `humanizeScanError` cherche dans l'erreur brute (« db lock », « poisoned »)
-// ne sont PAS ici : ce sont des marqueurs émis par le backend, pas du texte affiché.
 import { dict } from "../i18n";
 
 const fr = {
@@ -44,29 +41,18 @@ const fr = {
   discogsPage: "Fiche Discogs",
   changeCover: "Changer la pochette…",
   reanalyze: "Réanalyser",
-  dbBusy: "La base est occupée. Réessaie dans un instant.",
-  libraryUnreachable: "Vérifie que la bibliothèque est accessible, puis réessaie.",
-  recommended: "Recommandé",
-  trashDuplicates: (n: number) => `Envoyer ${n} doublon${n > 1 ? "s" : ""} à la corbeille`,
   usage: "Occupation",
   reading: "Lecture…",
   usageUnavailable: "Occupation indisponible.",
   retry: "Réessayer",
   loading: "Chargement…",
   loadFailed: "Impossible de charger la Bibliothèque. Vérifie la connexion à la base et réessaie.",
-  duplicates: "Doublons",
   folders: "Dossiers",
   genres: "Genres",
   artists: "Artistes",
   noFolder: "Aucun dossier pour l'instant.",
   noGenre: "Aucun genre pour l'instant.",
   noArtist: "Aucun artiste pour l'instant.",
-  scanRunning: "Scan en cours (toute la bibliothèque)…",
-  // `err` arrive déjà échappé par le site (`esc(bibDup.error)`).
-  scanFailed: (err: string) => `Le scan de doublons n'a pas abouti. ${err}`,
-  noDuplicates: "Aucun doublon dans toute la bibliothèque.",
-  duplicatesFound: "Doublons détectés dans toute la bibliothèque (pas seulement la vue filtrée actuelle)",
-  backToTable: "Retour à la table",
   tableView: "Vue tableau",
   gridView: "Vue grille",
   emptyTitle: "Bibliothèque vide",
@@ -74,7 +60,6 @@ const fr = {
     "Les pistes que tu convertis depuis Revue apparaissent ici, prêtes à exporter vers Rekordbox ou une clé USB.",
   noResult: "Aucun résultat pour ce filtre.",
   resetFilters: "Réinitialiser les filtres",
-  duplicatesScope: "Doublons — toute la bibliothèque",
   searchPlaceholder: "Rechercher…",
   searchAria: "Rechercher dans la bibliothèque",
 };
@@ -109,35 +94,24 @@ const en: typeof fr = {
   discogsPage: "Discogs page",
   changeCover: "Change cover…",
   reanalyze: "Reanalyze",
-  dbBusy: "The database is busy. Try again in a moment.",
-  libraryUnreachable: "Check that the library is reachable, then try again.",
-  recommended: "Recommended",
-  trashDuplicates: (n) => `Move ${n} duplicate${n === 1 ? "" : "s"} to Trash`,
   usage: "Disk usage",
   reading: "Loading…",
   usageUnavailable: "Disk usage unavailable.",
   retry: "Try again",
   loading: "Loading…",
   loadFailed: "Couldn't load the Library. Check the database connection and try again.",
-  duplicates: "Duplicates",
   folders: "Folders",
   genres: "Genres",
   artists: "Artists",
   noFolder: "No folders yet.",
   noGenre: "No genres yet.",
   noArtist: "No artists yet.",
-  scanRunning: "Scanning (whole library)…",
-  scanFailed: (err) => `The duplicate scan didn't finish. ${err}`,
-  noDuplicates: "No duplicates in the whole library.",
-  duplicatesFound: "Duplicates found across the whole library (not just the current filtered view)",
-  backToTable: "Back to the table",
   tableView: "Table view",
   gridView: "Grid view",
   emptyTitle: "Library is empty",
   emptyNote: "Tracks you convert from Review show up here, ready to export to Rekordbox or a USB drive.",
   noResult: "No results for this filter.",
   resetFilters: "Reset filters",
-  duplicatesScope: "Duplicates — whole library",
   searchPlaceholder: "Search…",
   searchAria: "Search the library",
 };

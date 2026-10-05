@@ -9,9 +9,12 @@
 
 type NoticeTone = "warning" | "neutral";
 
-/** Balisage du bandeau. `head` et `body` sont du MARKUP : l'appelant échappe ce qui vient de
- *  données (un nom de fichier dans le bandeau de doublon), jamais ce qui vient d'un dictionnaire. */
-export function noticeBannerHtml(o: { tone: NoticeTone; icon: string; head: string; body: string }): string {
+/** Balisage du bandeau. `head`, `body` et `action` sont du MARKUP : l'appelant échappe ce qui
+ *  vient de données (un nom de fichier dans le bandeau de doublon), jamais ce qui vient d'un
+ *  dictionnaire. `action` : un bouton texte en fin de ligne — « Voir le groupe » sur le bandeau
+ *  de doublon (`docs/ui-specs/revue.md`, amendement du 2026-10-05). Le bandeau informe, il ne
+ *  décide rien : l'action ne fait que mener ailleurs. */
+export function noticeBannerHtml(o: { tone: NoticeTone; icon: string; head: string; body: string; action?: string }): string {
   const fg = o.tone === "warning" ? "var(--color-text-warning)" : "var(--color-text-tertiary)";
   const bg = o.tone === "warning" ? "var(--color-background-warning)" : "var(--color-background-secondary)";
   return (
@@ -20,6 +23,6 @@ export function noticeBannerHtml(o: { tone: NoticeTone; icon: string; head: stri
     `<div class="sift-dup-banner-body">` +
     `<div class="sift-dup-banner-head" style="color:${fg}">${o.head}</div>` +
     `<div class="sift-dup-banner-where">${o.body}</div>` +
-    `</div></div>`
+    `</div>${o.action ?? ""}</div>`
   );
 }

@@ -55,6 +55,29 @@ pub fn record(
     record_with_meta(conn, batch_id, track_id, kind, from_path, to_path, None)
 }
 
+/// Le `meta` d'une ligne `trash` : le statut d'AVANT, seulement quand ce n'est pas `pending`. Tout
+/// ce qui partait à la corbeille venait de la file jusqu'au 2026-10-05 ; l'écran Doublons y envoie
+/// aussi des copies RANGÉES, qu'une annulation doit rendre à Rangés (`status_before_trash`).
+pub(crate) fn trash_meta(status_before: Option<&str>) -> Option<String> {
+    match status_before {
+        Some(s) if s != "pending" => Some(serde_json::json!({ "status_before": s }).to_string()),
+        _ => None,
+    }
+}
+
+/// Le statut qu'une piste retrouve quand on défait sa mise à la corbeille : celui que la ligne
+/// `trash` a gardé (`trash_meta`), sinon `pending`. Seul `filed` est rendu tel quel : une valeur
+/// inconnue, ou un `meta` illisible, ramène la piste dans la file, où elle se revoit.
+pub(crate) fn status_before_trash(meta: Option<&str>) -> &'static str {
+    let avant = meta
+        .and_then(|m| serde_json::from_str::<serde_json::Value>(m).ok())
+        .and_then(|v| v.get("status_before")?.as_str().map(str::to_owned));
+    match avant.as_deref() {
+        Some("filed") => "filed",
+        _ => "pending",
+    }
+}
+
 /// Like `record`, plus the free-form `meta` JSON column (v7). Used by `apply_tags` to stash the
 /// old-tags snapshot a `tag_edit` revert needs. `record` is the thin no-meta wrapper.
 pub fn record_with_meta(
@@ -1105,6 +1128,11 @@ struct ReleaseEnvelope {
 /// Reverse a whole user action (all live rows of `batch_id`), newest-first, then set the
 /// track back to `pending` (folder cleared) and mark the rows `undone`. Blocked if the
 /// batch has no live rows, or if a newer live action on the same track exists outside it.
+///
+/// Un lot peut toucher PLUSIEURS pistes depuis l'écran Doublons (2026-10-05) : une application
+/// journalise toutes ses copies `trash` dans un seul lot (`filing::commit_trash_in_batch`). La
+/// garde LIFO et le retour de statut valent alors pour CHACUNE ; une copie rangée retrouve
+/// `filed` (`status_before_trash`). Un lot de rangement, lui, ne touche jamais qu'une piste.
 pub fn revert_batch(conn: &Connection, batch_id: &str) -> Result<(), RevertError> {
     // TOUTES les lignes du lot, défaites comprises, plus récentes d'abord — et parmi elles les
     // seules vivantes, qui restent à défaire.
@@ -1152,6 +1180,14 @@ pub fn revert_batch(conn: &Connection, batch_id: &str) -> Result<(), RevertError
         )));
     };
     let track_id = batch.iter().find_map(|r| r.1);
+    // Toutes les pistes du lot, sans doublon : une seule pour un rangement, N pour une application
+    // de l'écran Doublons.
+    let mut track_ids: Vec<i64> = Vec::new();
+    for tid in batch.iter().filter_map(|r| r.1) {
+        if !track_ids.contains(&tid) {
+            track_ids.push(tid);
+        }
+    }
 
     // Chemin SOURCE de la piste, pour la restauration de `tracks.path` plus bas : le `from_path` de
     // la ligne `move`/`convert` la PLUS ANCIENNE du lot (trié id DESC, d'où le `.rev()`). C'est la
@@ -1164,8 +1200,8 @@ pub fn revert_batch(conn: &Connection, batch_id: &str) -> Result<(), RevertError
         .find(|(_, _, kind, _, _, _)| matches!(kind.as_str(), "move" | "convert"))
         .and_then(|(_, _, _, from_path, _, _)| from_path.clone());
 
-    // LIFO safety: refuse if a newer live action touches the same track outside this batch.
-    if let Some(tid) = track_id {
+    // LIFO safety: refuse if a newer live action touches one of the batch's tracks outside it.
+    for &tid in &track_ids {
         let newer: i64 = conn.query_row(
             "SELECT count(*) FROM actions
              WHERE track_id=?1 AND undone=0 AND batch_id<>?2 AND id>?3",
@@ -1346,12 +1382,27 @@ pub fn revert_batch(conn: &Connection, batch_id: &str) -> Result<(), RevertError
                 }
                 // Lot sans `move` ni `convert` (p. ex. un `trash` seul, journalisé par
                 // `filing::commit_trash`) : rien n'a jamais déplacé le fichier, `path` est déjà bon.
+                // Chaque piste du lot retrouve son statut : une copie rangée jetée depuis l'écran
+                // Doublons redevient `filed`, dossier compris ; tout le reste revient en file.
                 None => {
-                    conn.execute(
-                        "UPDATE tracks SET status='pending', folder=NULL, target_format=NULL, confidence=NULL
-                         WHERE id=?1",
-                        params![tid],
-                    )?;
+                    for &tid in &track_ids {
+                        let meta_trash = batch
+                            .iter()
+                            .find(|r| r.1 == Some(tid) && r.2 == "trash")
+                            .and_then(|r| r.5.as_deref());
+                        if status_before_trash(meta_trash) == "filed" {
+                            conn.execute(
+                                "UPDATE tracks SET status='filed' WHERE id=?1",
+                                params![tid],
+                            )?;
+                        } else {
+                            conn.execute(
+                                "UPDATE tracks SET status='pending', folder=NULL, target_format=NULL, confidence=NULL
+                                 WHERE id=?1",
+                                params![tid],
+                            )?;
+                        }
+                    }
                 }
             }
         }

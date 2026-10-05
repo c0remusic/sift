@@ -7,7 +7,7 @@
 use crate::encode::{self, EncodeError, EncodeProfile, Target};
 use crate::naming::{self, Canonical};
 use crate::{actions, library, tagging};
-use rusqlite::{params, Connection};
+use rusqlite::{params, Connection, OptionalExtension};
 use serde::Serialize;
 use std::path::{Path, PathBuf};
 
@@ -630,14 +630,38 @@ pub fn commit_trash(
     source: &str,
     dest: &str,
 ) -> Result<(), FilingError> {
-    let batch_id = new_batch_id(track_id);
-    actions::record(
+    commit_trash_in_batch(conn, &new_batch_id(track_id), track_id, source, dest)
+}
+
+/// `commit_trash` dans un lot DONNÉ : l'application d'un plan de l'écran Doublons
+/// (`ipc_doublons::appliquer`) journalise toutes ses copies dans UN lot, pour qu'un seul Ctrl+Z
+/// (`actions::undo_last`, qui défait le lot le plus récent) remette toute l'application en place.
+///
+/// La ligne `trash` garde le statut d'AVANT quand il n'est pas `pending` (`actions::trash_meta`) :
+/// l'écran Doublons jette aussi des copies RANGÉES, et les défaire doit les rendre à Rangés, pas à
+/// la file.
+pub(crate) fn commit_trash_in_batch(
+    conn: &Connection,
+    batch_id: &str,
+    track_id: i64,
+    source: &str,
+    dest: &str,
+) -> Result<(), FilingError> {
+    let avant: Option<String> = conn
+        .query_row(
+            "SELECT status FROM tracks WHERE id=?1",
+            params![track_id],
+            |r| r.get(0),
+        )
+        .optional()?;
+    actions::record_with_meta(
         conn,
-        &batch_id,
+        batch_id,
         Some(track_id),
         "trash",
         Some(source),
         Some(dest),
+        actions::trash_meta(avant.as_deref()).as_deref(),
     )
     .map_err(|e| FilingError::Db(e.to_string()))?;
     conn.execute(

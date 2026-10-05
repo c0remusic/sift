@@ -545,6 +545,14 @@ export function installQueueNavKeys(): void {
         },
         { label: L.reanalyze, onPick: () => void reanalyzeTrack(id) },
         changerDestination,
+        // Une ligne badgée mène à son groupe (revue.md, amendement du 2026-10-05) ; non badgée,
+        // l'entrée reste là, désactivée — un menu stable se pointe sans lire (context-menu.ts).
+        {
+          label: L.seeDupGroup,
+          onPick: currentItems.find((x) => x.id === id)?.dup
+            ? () => void import("./duplicates-view").then(({ showDuplicateGroupOf }) => showDuplicateGroupOf(id))
+            : undefined,
+        },
         {
           label: L.setAside,
           danger: true,

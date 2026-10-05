@@ -507,7 +507,7 @@ fn measure_list_queue(conn: &Connection, volume: usize) {
         "dedup::group_name_dups (verrou RELACHE)",
         measure(
             || {
-                let v = crate::dedup::group_name_dups(&rows);
+                let v = crate::dedup::group_name_dups(&rows, &std::collections::HashSet::new());
                 std::hint::black_box(v);
             },
             ITERS,
@@ -537,7 +537,8 @@ fn measure_list_queue(conn: &Connection, volume: usize) {
                     let rows = crate::dedup::load_name_dup_rows(conn).expect("load_name_dup_rows");
                     (items, rows)
                 };
-                let dups = crate::dedup::group_name_dups(&dup_rows);
+                let dups =
+                    crate::dedup::group_name_dups(&dup_rows, &std::collections::HashSet::new());
                 for it in &mut items {
                     it.dup = dups.contains(&it.id);
                 }

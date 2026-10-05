@@ -13,6 +13,7 @@ mod db;
 mod dedup;
 mod dev_annotate;
 mod dev_locate;
+mod doublons;
 mod ecartes;
 mod encode;
 mod ffmpeg;
@@ -21,6 +22,7 @@ mod fingerprint;
 mod genres;
 mod i18n;
 mod ipc;
+mod ipc_doublons;
 mod ipc_filing;
 mod ipc_identify;
 mod ipc_library;
@@ -380,6 +382,10 @@ pub fn run() {
             ipc_filing::requeue_track,
             ipc_filing::purge_trash,
             ipc_filing::find_duplicate,
+            ipc_doublons::list_duplicate_groups,
+            ipc_doublons::refuse_duplicate_group,
+            ipc_doublons::apply_duplicate_plan,
+            ipc_doublons::stop_duplicate_plan,
             ipc_identify::identify,
             ipc_identify::apply_release,
             ipc_identify::verify_discogs_token,

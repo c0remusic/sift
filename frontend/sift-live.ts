@@ -7,7 +7,6 @@ import {
   onScanFailed,
   onAnalysisChanged,
   analysisProgress,
-  trashTrack,
   purgeTrash,
   openUrl,
   exportRekordboxXml,
@@ -20,6 +19,7 @@ import { refreshBinsForBatch } from "./filing-bins";
 import { confirmAction } from "./confirm-modal";
 // Views/chrome extracted from this god-module (audit P-3) — kept stateless, wired here.
 import { renderEcartes, runEcarteAction } from "./ecartes-view";
+import { installDuplicatesLinks } from "./duplicates-view";
 import { installDragDrop, injectLeanStyle, injectTitlebar, installScrollAutohide, installNavKeyboard, installRailToggle, installAsideToggle } from "./chrome";
 import { initTheme } from "./theme";
 import { installRailSources, renderRailSources, noteScanFailure, pickAndAddFolder } from "./rail-sources";
@@ -48,8 +48,6 @@ import { humanizeError } from "./errors";
 import type { LibrarySortState } from "./library-views";
 import {
   bibState,
-  bibDup,
-  loadDuplicates,
   renderBiblioLive,
   openBiblioDetail,
   positionViewModeThumb,
@@ -220,6 +218,7 @@ export function installLiveWiring() {
   installRailToggle();
   installAsideToggle();
   installRailSources();
+  installDuplicatesLinks();
   // CTA « Ajouter un dossier à surveiller » de l'état vide de Revue (issue #53) : même geste que
   // le bouton du rail, même onChange — injecté ici parce que filing.ts ne peut pas importer
   // rail-sources sans refermer le cycle rail-sources → queue-panel → filing.
@@ -353,14 +352,6 @@ export function installLiveWiring() {
         } else if (stat === "lossless" || stat === "mp3") {
           bibState.filter.quality = stat;
           bibState.filter.verdict = undefined;
-        } else if (stat === "duplicates") {
-          bibDup.shown = !bibDup.shown;
-          // Relance aussi après une erreur : sans `|| bibDup.error`, un scan échoué laissait
-          // l'écran bloqué sur son message, le chip ne rejouant jamais rien.
-          if (bibDup.shown && (bibDup.groups === null || bibDup.error)) {
-            loadDuplicates();
-            return;
-          }
         } else if (stat === "fake") {
           bibState.filter.quality = undefined;
           bibState.filter.verdict = "fake";
@@ -483,61 +474,6 @@ export function installLiveWiring() {
         // EXPLICITE : écouter, identifier ou ouvrir une tuile n'a d'effet que dans la zone D — un
         // inspecteur masqué se révèle, et la piste déjà ouverte ne se referme pas.
         openBiblioDetail(Number(bibEl.dataset.id), true);
-      } else if (act === "dupscan") {
-        bibDup.shown = !bibDup.shown;
-        if (bibDup.shown && (bibDup.groups === null || bibDup.error)) {
-          loadDuplicates();
-        } else {
-          void renderBiblioLive();
-        }
-      } else if (act === "dupretry") {
-        // Bouton du bloc d'erreur : relance sans rebasculer l'affichage.
-        loadDuplicates();
-      } else if (act === "dupresolve") {
-        const idx = Number(bibEl.dataset.idx);
-        const group = bibDup.groups?.[idx];
-        if (!group) return;
-        const losers = group.members.filter((m) => !m.recommend_keep).map((m) => m.id);
-        void confirmAction(T().dupConfirm(losers.length), T().dupConfirmBtn).then((ok) => {
-          if (!ok) return;
-          // `Promise.all` rejette au PREMIER échec : sur 5 doublons dont un seul refuse, les 4
-          // autres partaient bien à la corbeille et l'écran annonçait « impossible d'envoyer les
-          // doublons », en gardant le groupe intact. L'utilisateur relançait donc une suppression
-          // sur des pistes déjà supprimées, qui échoue à `trash_file_fs` — impasse.
-          //
-          // `renderBiblioLive()` ne RESCANNE PAS les doublons : il repeint la section depuis
-          // `bibDup.groups` en mémoire. Rafraîchir ne suffit donc pas — il faut retirer du groupe
-          // les membres réellement supprimés, sinon ils restent listés avec leur bouton et la
-          // boucle recommence. Un groupe qui retombe sous deux membres n'est plus un groupe.
-          void Promise.allSettled(losers.map((id) => trashTrack(id)))
-            .then((results) => {
-              const groups = bibDup.groups || [];
-              const failedIds = new Set(
-                losers.filter((_, i) => results[i]?.status === "rejected"),
-              );
-              if (failedIds.size === 0) {
-                bibDup.groups = groups.filter((_, i) => i !== idx);
-                return renderBiblioLive();
-              }
-              results.forEach((r, i) => {
-                if (r.status === "rejected") {
-                  console.error(`dupresolve: trashTrack(${losers[i]}) failed`, r.reason);
-                }
-              });
-              const g = groups[idx];
-              if (g) {
-                g.members = g.members.filter((m) => m.recommend_keep || failedIds.has(m.id));
-                if (g.members.length < 2) bibDup.groups = groups.filter((_, i) => i !== idx);
-              }
-              const done = losers.length - failedIds.size;
-              toast(done === 0 ? T().dupNoneTrashed : T().dupPartial(done, failedIds.size));
-              return renderBiblioLive();
-            })
-            .catch((e: unknown) => {
-              console.error("dupresolve: refresh failed", e);
-              toast(T().refreshFailed);
-            });
-        });
       }
       return;
     }

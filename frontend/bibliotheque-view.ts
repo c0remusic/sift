@@ -1,14 +1,14 @@
 // Bibliothèque screen — extracted from sift-live.ts (clean-architecture audit F1, 2026-07-09).
 // Click handling for data-bib actions stays in sift-live.ts's delegated #pa handler (same split
-// as ecartes-view.ts: render+state live here, dispatch stays centralized). The 3 "doublons
-// internes" fields (dupGroups/dupLoading/dupShown) are reassigned from BOTH that handler and
-// renderBiblioLive here — bare `let`s can't be reassigned across an import boundary in ES
-// modules, so they're consolidated into the single exported `bibDup` object below and mutated by
-// property assignment instead (same pattern bibState already used).
+// as ecartes-view.ts: render+state live here, dispatch stays centralized). State that handler
+// writes is exported as an object mutated by property assignment (`bibState`), never as a bare
+// `let`: a `let` can't be reassigned across an import boundary in ES modules.
+// Le mode « Doublons » de la zone C (objet `bibDup`, chip `dupscan`) est retiré le 2026-10-05 : ses
+// groupes vivent dans l'écran Doublons du rail (`duplicates-view.ts`, `docs/ui-specs/bibliotheque.md`
+// § Section doublons).
 import {
   listLibrary,
   libraryFolders,
-  scanLibraryDuplicates,
   reanalyzeTracks,
   rejectBatch,
   trashTrack,
@@ -21,7 +21,7 @@ import { anchoredBelowPosition } from "./popover-position";
 import { installColumnGestures, resetColumns, columnsAreCustomized } from "./library-columns";
 import { confirmAction, BATCH_CONFIRM_THRESHOLD } from "./confirm-modal";
 import { toast } from "./filing-toast";
-import type { LibraryTrack, LibraryFacets, LibraryFilter, DupGroup } from "../shared/contracts";
+import type { LibraryTrack, LibraryFacets, LibraryFilter } from "../shared/contracts";
 import { requireEl, esc } from "./dom";
 import { T } from "./i18n/bibliotheque-view";
 import { slideSegThumb } from "./seg-thumb";
@@ -60,14 +60,6 @@ export const bibState: {
   sort: { field: "artist", dir: "asc" },
 };
 
-// Doublons internes panel state (Bibliothèque). `groups: null` = not run yet this session.
-// Reassigned both here and from sift-live.ts's click handler (the "Doublons" stat/chip and its
-// resolve action) — kept as one object rather than 3 loose lets precisely so that cross-module
-// reassignment is a property write, not a rebinding.
-// `error` distingue « le scan a échoué » de « le scan a rendu zéro groupe ». Les deux
-// collapsaient en `groups = []` dans les catch de sift-live.ts, donc un scan en ÉCHEC affichait
-// « Aucun doublon dans toute la bibliothèque » — une affirmation sur l'état du disque de
-// l'utilisateur, produite par une commande qui n'a jamais abouti. Audit 2026-07-28, CC-1.
 /** Minuterie du debounce de recherche. Au niveau module et non sur le nœud : le champ vit
  *  désormais dans la barre unifiée et survit aux rendus, mais il disparaît au changement d'écran —
  *  une minuterie accrochée à lui partirait alors avec lui, en laissant un rendu programmé. */
@@ -447,55 +439,6 @@ export function openBiblioContextMenu(x: number, y: number, id: number): void {
   ]);
 }
 
-export const bibDup: {
-  groups: DupGroup[] | null;
-  loading: boolean;
-  shown: boolean;
-  error: string | null;
-} = {
-  groups: null,
-  loading: false,
-  shown: false,
-  error: null,
-};
-
-/// Lance le scan de doublons et repeint, quel que soit l'issue.
-///
-/// Existe pour supprimer une duplication qui avait déjà divergé en pratique : `sift-live.ts`
-/// portait DEUX copies de cette séquence (chip « doublons » et bouton dupscan), chacune avec son
-/// `.catch` posant `groups = []` — donc chacune capable d'annoncer « aucun doublon » sur un scan
-/// échoué. Un seul endroit, un seul comportement. Audit 2026-07-28, CC-1.
-export function loadDuplicates(): void {
-  bibDup.loading = true;
-  bibDup.error = null;
-  void renderBiblioLive();
-  void scanLibraryDuplicates()
-    .then((groups) => {
-      bibDup.groups = groups;
-      bibDup.error = null;
-    })
-    .catch((e: unknown) => {
-      console.error("scan_library_duplicates failed", e);
-      // `groups` reste à null : sans résultat, on ne prétend RIEN sur la bibliothèque.
-      bibDup.groups = null;
-      bibDup.error = humanizeScanError(e);
-    })
-    .finally(() => {
-      bibDup.loading = false;
-      void renderBiblioLive();
-    });
-}
-
-/// Message court et actionnable à partir d'une erreur IPC brute. La chaîne brute reste en
-/// console.error ; l'écran n'affiche jamais un `Error: ...` non traduit.
-function humanizeScanError(e: unknown): string {
-  const raw = String(e);
-  if (raw.includes("db lock") || raw.includes("poisoned")) {
-    return T().dbBusy;
-  }
-  return T().libraryUnreachable;
-}
-
 // Virtualized library list controller. Torn down and recreated on each full renderBiblioLive
 // (which replaces #content.innerHTML, orphaning the old #biblist host — its scroll listener sits
 // on the PERMANENT #content, so it must be explicitly destroyed or it leaks + double-renders).
@@ -592,32 +535,6 @@ export function deselectAllBib(): void {
   clearBibSelection();
   bibOpenId = null;
   clearCurMarks();
-}
-
-function dupMemberHtml(m: DupGroup["members"][number]): string {
-  const name = esc(m.filename || m.path.split(/[\\/]/).pop() || m.path);
-  const fmt = (m.format || "?").toUpperCase();
-  const br = m.bitrate ? `${m.bitrate} kbps` : "";
-  return (
-    `<div style="display:flex;align-items:center;gap:var(--space-8);padding:var(--space-4) 0${m.recommend_keep ? "" : ";opacity:.6"}">` +
-    `<span style="flex:1;min-width:0;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${name}</span>` +
-    `<span class="pill" style="flex:none">${esc(fmt)}</span>` +
-    `<span style="flex:none;width:80px;text-align:right;font-size:var(--text-sm);color:var(--color-text-tertiary)">${esc(br)}</span>` +
-    (m.recommend_keep
-      ? `<span class="pill" style="flex:none;background:var(--color-background-success);color:var(--color-text-success)" title="${esc(m.reason || "")}">${T().recommended}</span>`
-      : "") +
-    `</div>`
-  );
-}
-
-function dupGroupHtml(g: DupGroup, idx: number): string {
-  const loserCount = g.members.filter((m) => !m.recommend_keep).length;
-  return (
-    `<div class="sift-dup-group" style="border:1px solid var(--color-border-tertiary);border-radius:var(--border-radius-md);padding:10px var(--space-12);margin-bottom:var(--space-8)">` +
-    g.members.map((m) => dupMemberHtml(m)).join("") +
-    `<div style="margin-top:var(--space-6)"><button data-bib="dupresolve" data-idx="${idx}">${T().trashDuplicates(loserCount)}</button></div>` +
-    `</div>`
-  );
 }
 
 /** Ouvre ou ferme le sélecteur de facette, ancré sous son bouton.
@@ -804,7 +721,7 @@ export async function renderBiblioLive() {
   // the FIRST paint would sit frozen (blank #content, nothing rendered yet). Same "Chargement…"
   // pattern as queue-panel.ts's renderQueue(), gated the same way: only when there's no prior
   // Bibliothèque render already on screen. Without this gate, every subsequent renderBiblioLive()
-  // call — search keystroke, facet/quality-chip click, table/grid toggle, sort change, dup scan —
+  // call — search keystroke, facet/quality-chip click, table/grid toggle, sort change —
   // would blank the whole panel (stats/facets/toolbar/list) before repainting, even though valid
   // data is already showing.
   // Le repère du « déjà rendu » est l'ÉPOQUE de la dernière peinture réussie, plus un nœud du DOM.
@@ -832,7 +749,7 @@ export async function renderBiblioLive() {
     if (isStaleViewRender(token)) return;
   } catch (e) {
     // Impasse A20 (issue #15) : cette carte était la seule des trois sans porte de sortie — Écartés
-    // (`ecartes-view.ts`) et le bloc doublons plus bas en ont une depuis leur audit respectif.
+    // (`ecartes-view.ts`) et le bloc doublons (retiré le 2026-10-05) en avaient une depuis leur audit.
     // « réessaie » sans bouton demande à l'utilisateur de deviner comment.
     if (isStaleViewRender(token)) return;
     teardownBibList();
@@ -852,15 +769,13 @@ export async function renderBiblioLive() {
 
   // Audit-ref B2 (Bibliothèque, 2026-07-09) : <span> converti en <button> pour un clavier natif
   // (pas besoin d'étendre installNavKeyboard — un vrai bouton gère déjà Enter/Espace lui-même).
-  const chips =
-    (["all", "lossless", "mp3"] as const)
-      .map((q) => {
-        const on = (bibState.filter.quality ?? "all") === q;
-        const label = q === "all" ? L.all : q === "lossless" ? "Lossless" : "MP3";
-        return `<button class="chip${on ? " on" : ""}" data-bib="qual" data-q="${q}">${label}</button>`;
-      })
-      .join("") +
-    `<button class="chip${bibDup.shown ? " on" : ""}" data-bib="dupscan">${L.duplicates}</button>`;
+  const chips = (["all", "lossless", "mp3"] as const)
+    .map((q) => {
+      const on = (bibState.filter.quality ?? "all") === q;
+      const label = q === "all" ? L.all : q === "lossless" ? "Lossless" : "MP3";
+      return `<button class="chip${on ? " on" : ""}" data-bib="qual" data-q="${q}">${label}</button>`;
+    })
+    .join("");
 
   const facetList =
     bibState.facet === "folder" ? facets.folders : bibState.facet === "genre" ? facets.genres : facets.artists;
@@ -944,31 +859,6 @@ export async function renderBiblioLive() {
     !bibState.filter.artist;
   const trulyEmpty = bibState.tracks.length === 0 && noFilter;
 
-  // L'état d'ERREUR passe avant tout le reste : tant qu'il est posé, on ne dit rien sur le
-  // contenu de la bibliothèque. Dire « aucun doublon » après un scan qui a échoué serait
-  // affirmer un fait qu'on n'a pas mesuré.
-  // Le scan est un MODE de la zone C depuis le 2026-08-19, plus un appendice sous la table
-  // (`docs/ui-specs/bibliotheque.md`) : « un scan est un résultat, pas un appendice de liste ».
-  // Rendu sous la table, il obligeait à faire défiler tout un inventaire pour lire la réponse à
-  // une question qu'on venait de poser, et laissait deux listes concurrentes à l'écran.
-  const dupSection = !bibDup.shown
-    ? ""
-    : bibDup.loading
-      ? `<div style="margin-top:10px;font-size:var(--text-md);color:var(--color-text-tertiary)">${L.scanRunning}</div>`
-      : bibDup.error
-        ? // Même forme que l'état d'erreur d'Écartés (ecartes-view.ts) : carte douce, texte
-          // danger, bouton Réessayer discret. Réutilisé plutôt que réinventé, pour que les deux
-          // écrans échouent de la même façon.
-          `<div class="sift-ui-card-soft sift-ui-card-soft-pad" style="margin-top:10px;color:var(--color-text-danger)">` +
-          L.scanFailed(esc(bibDup.error)) +
-          `<div style="margin-top:var(--space-8)"><button data-bib="dupretry" style="font-size:var(--text-xs);padding:var(--space-4) 10px;color:var(--color-text-info)">${L.retry}</button></div>` +
-          `</div>`
-        : bibDup.groups === null
-          ? ""
-          : bibDup.groups.length === 0
-            ? `<div style="margin-top:10px;font-size:var(--text-md);color:var(--color-text-tertiary)">${L.noDuplicates}</div>`
-            : `<div style="margin-top:10px"><div style="font-size:var(--text-xs);color:var(--color-text-tertiary);margin-bottom:var(--space-4)">${L.duplicatesFound}</div>${bibDup.groups.map((g, i) => dupGroupHtml(g, i)).join("")}</div>`;
-
   // Export (Rekordbox/Clé USB) lives in the nav rail now, not here — matches the maquette's
   // persistent Export section (index.html nav-export items, wired in installLiveWiring below).
   // Retour Antoine 2026-07-09 : le toolbar (recherche+chips) était sa PROPRE boîte flottante
@@ -985,14 +875,12 @@ export async function renderBiblioLive() {
   // Photos met son pop-up « Days / Months / Years » au centre de la toolbar (docs/design-refs/
   // 02-photos.png) ; HIG Toolbars, « center area : common, useful controls ». Le popover
   // `#sift-facet-pop` reste dans `#content` et s'ancre sur ce bouton par `[data-bib="facetpop"]`,
-  // donc son placement (`showFacetPopover`) n'a pas bougé. En mode doublons, la porte de sortie
-  // nommée prend SA place : ce qui pilote la zone C reste au même endroit d'un mode à l'autre.
-  const pilot = bibDup.shown
-    ? `<button data-bib="dupscan" class="sift-bib-back"><i class="ti ti-chevron-left" aria-hidden="true"></i> ${L.backToTable}</button>`
-    : `<button data-bib="facetpop" class="sift-bib-facet-btn" aria-haspopup="true" aria-expanded="false">` +
-      `<span class="sift-bib-facet-kind">${esc(facetLabel)}</span>` +
-      `<span class="sift-bib-facet-val">${esc(activeFacetVal || L.all)}</span>` +
-      `<i class="ti ti-chevron-down" aria-hidden="true"></i></button>`;
+  // donc son placement (`showFacetPopover`) n'a pas bougé.
+  const pilot =
+    `<button data-bib="facetpop" class="sift-bib-facet-btn" aria-haspopup="true" aria-expanded="false">` +
+    `<span class="sift-bib-facet-kind">${esc(facetLabel)}</span>` +
+    `<span class="sift-bib-facet-val">${esc(activeFacetVal || L.all)}</span>` +
+    `<i class="ti ti-chevron-down" aria-hidden="true"></i></button>`;
   const barActionsHtml =
     pilot +
     chips +
@@ -1016,24 +904,19 @@ export async function renderBiblioLive() {
     : // Plus de carte ni de rangée de tête depuis le 2026-09-08 (audit Rangés, #24, « F avec la barre
       // de M » — Antoine) : la table est AU SOL, même fond que la zone C de Revue (patterns.md, « une
       // surface de contenu ne peint rien », appliqué à Revue le 08-14 et ici ce jour-là), et tout ce
-      // qui la pilote — facette, compte, retour du mode doublons — vit dans la barre unifiée
+      // qui la pilote — facette, compte — vit dans la barre unifiée
       // (`barActionsHtml`, `#sift-tb-count`). Mesuré avant : zone C de Rangés peinte de la couleur de
       // la file de Revue (0.2939) sur le sol (0.2273), plus un cran pour l'en-tête — trois plans là
       // où Revue en a deux.
       `<div class="sift-library-main">` +
-      (bibDup.shown
-        ? // MODE SCAN. La table cède la place ; la porte de sortie nommée (« Retour à la table ») est
-          // dans la barre, à l'emplacement du bouton de facette — ce qui pilote la zone C reste au
-          // même endroit d'un mode à l'autre.
-          dupSection
-        : tableHead +
-          // « Aucun résultat » reste SOUS l'en-tête de colonnes, il ne le remplace pas.
-          // Référence : shadcn `data-table-demo`, dont l'état vide est une ligne du corps
-          // (`colSpan`, texte centré) et non un bloc à la place de la table. Le motif tient
-          // au-delà du style : remplacer la table emporte les en-têtes, donc les contrôles de
-          // tri — on retire à l'utilisateur les commandes qui pourraient défaire son filtre.
-          (rows ||
-            `<div class="sift-bib-noresult">${L.noResult} <button data-bib="stat" data-stat="all">${L.resetFilters}</button></div>`)) +
+      tableHead +
+      // « Aucun résultat » reste SOUS l'en-tête de colonnes, il ne le remplace pas.
+      // Référence : shadcn `data-table-demo`, dont l'état vide est une ligne du corps
+      // (`colSpan`, texte centré) et non un bloc à la place de la table. Le motif tient
+      // au-delà du style : remplacer la table emporte les en-têtes, donc les contrôles de
+      // tri — on retire à l'utilisateur les commandes qui pourraient défaire son filtre.
+      (rows ||
+        `<div class="sift-bib-noresult">${L.noResult} <button data-bib="stat" data-stat="all">${L.resetFilters}</button></div>`) +
       `</div>` +
       // Le popover de facette vit DANS `#content` mais en `position:fixed` : il est peint par le
       // même rendu que son bouton, donc il ne peut pas survivre à un changement d'écran — un
@@ -1092,10 +975,10 @@ export async function renderBiblioLive() {
   positionViewModeThumb(); // au premier montage le nœud est neuf — le placer après montage
   // Le compte vit dans la barre, à côté du titre, depuis le 2026-09-08 — comme la file de Revue
   // (`queue-panel.ts`, même slot `#sift-tb-count`, spec revue.md § Zone A). Il dit ce que la table
-  // MONTRE (filtre compris), jamais un total global ; en mode doublons il nomme la portée du scan.
+  // MONTRE (filtre compris), jamais un total global.
   const countEl = document.getElementById("sift-tb-count");
   if (countEl) {
-    countEl.textContent = bibDup.shown ? L.duplicatesScope : L.tracks(bibState.tracks.length);
+    countEl.textContent = L.tracks(bibState.tracks.length);
   }
 
   // La recherche est le seul contrôle frappé pendant que son écran se re-rend : `mountBarSearch`

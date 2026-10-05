@@ -111,15 +111,16 @@ pub fn list_queue(conn: State<'_, Mutex<Connection>>) -> Result<Vec<queue::Queue
     // verrou global, donc à chaque ouverture de la file d'attente, pendant que le pool d'analyse
     // attendait. Rien ici n'est un read-modify-write : les deux lectures ne servent qu'à annoter
     // des lignes déjà chargées, une piste ajoutée entre-temps sera vue au rafraîchissement suivant.
-    let (mut items, dup_rows) = {
+    let (mut items, dup_rows, refus) = {
         let conn = db::lock_conn(&conn)?;
         let items = queue::list_pending(&conn).map_err(|e| e.to_string())?;
         let rows = crate::dedup::load_name_dup_rows(&conn).map_err(|e| e.to_string())?;
-        (items, rows)
+        let refus = crate::doublons::charger_refus(&conn).map_err(|e| e.to_string())?;
+        (items, rows, refus)
     };
 
     // Annotate name-duplicate items so the queue can badge them before they're opened.
-    let dups = crate::dedup::group_name_dups(&dup_rows);
+    let dups = crate::dedup::group_name_dups(&dup_rows, &refus);
     for it in &mut items {
         it.dup = dups.contains(&it.id);
     }

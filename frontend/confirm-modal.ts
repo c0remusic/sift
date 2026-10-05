@@ -219,6 +219,136 @@ export function confirmBatchAlert(data: BatchAlertData): Promise<BatchAlertResul
   });
 }
 
+/** Ce qu'affiche la confirmation d'un envoi à la corbeille (écran Doublons). Le titre, le
+ *  récapitulatif et le bouton SUIVENT la case Rekordbox : ils disent ce que le clic va faire. */
+interface TrashPlanAlertData {
+  paint: (keepRekordbox: boolean) => { title: string; recap: string; confirm: string };
+  /** Ligne tertiaire : les groupes laissés hors du plan, l'annulation. */
+  note: string;
+  /** Copies jouées par Rekordbox que le plan enverrait. 0 : pas de case. */
+  rekordboxCount: number;
+  rekordboxLabel: string;
+}
+
+interface TrashPlanAlertResult {
+  confirmed: boolean;
+  keepRekordbox: boolean;
+}
+
+/** La VARIANTE DESTRUCTIVE de `confirmBatchAlert` (spec `docs/ui-specs/doublons.md`, tranchée le
+ *  2026-10-05) : même modale armée, même piège du focus, Annuler focalisé — mais le bouton
+ *  d'action est le secondaire danger de « Vider la corbeille » (`.sift-secondary-trash`), JAMAIS
+ *  le bleu primaire. HIG Buttons : « Don't assign the primary role to a button that performs a
+ *  destructive action ». La case « Garder aussi les copies que Rekordbox joue » s'ouvre cochée. */
+export function confirmTrashPlan(data: TrashPlanAlertData): Promise<TrashPlanAlertResult> {
+  activeFinish?.(false);
+  document.getElementById(OVERLAY_ID)?.remove();
+  const previouslyFocused = document.activeElement as HTMLElement | null;
+  return new Promise((resolve) => {
+    const L = T();
+    let keepRekordbox = true;
+
+    const overlay = document.createElement("div");
+    overlay.id = OVERLAY_ID;
+    overlay.className = "sift-report-overlay";
+
+    const card = document.createElement("div");
+    card.className = "sift-report-overlay-card sift-confirm-card sift-batch-alert";
+    card.setAttribute("role", "alertdialog");
+    card.setAttribute("aria-modal", "true");
+
+    const title = document.createElement("div");
+    title.className = "sift-batch-alert-title";
+    const recap = document.createElement("div");
+    recap.className = "sift-batch-alert-recap";
+    const note = document.createElement("div");
+    note.className = "sift-batch-alert-dest";
+    note.textContent = data.note;
+
+    const keepLabel = document.createElement("label");
+    keepLabel.className = "sift-batch-alert-skip";
+    const keepInput = document.createElement("input");
+    keepInput.type = "checkbox";
+    keepInput.checked = keepRekordbox;
+    keepLabel.append(keepInput, document.createTextNode(data.rekordboxLabel));
+
+    const actions = document.createElement("div");
+    actions.className = "sift-confirm-actions";
+    const cancelBtn = document.createElement("button");
+    cancelBtn.type = "button";
+    cancelBtn.className = "sift-settings-btn";
+    cancelBtn.textContent = L.cancel;
+    const confirmBtn = document.createElement("button");
+    confirmBtn.type = "button";
+    confirmBtn.className = "sift-secondary-trash";
+
+    const paint = () => {
+      const p = data.paint(keepRekordbox);
+      title.textContent = p.title;
+      recap.textContent = p.recap;
+      confirmBtn.textContent = p.confirm;
+      card.setAttribute("aria-label", p.title);
+    };
+    paint();
+    keepInput.addEventListener("change", () => {
+      keepRekordbox = keepInput.checked;
+      paint();
+    });
+
+    confirmBtn.disabled = true;
+    const armTimer = window.setTimeout(() => {
+      confirmBtn.disabled = false;
+    }, CONFIRM_ARM_MS);
+    const openedAt = Date.now();
+    actions.append(cancelBtn, confirmBtn);
+
+    card.append(title, recap, note);
+    if (data.rekordboxCount > 0) card.append(keepLabel);
+    card.append(actions);
+    overlay.appendChild(card);
+    document.body.appendChild(overlay);
+    playFadeIn(overlay);
+    cancelBtn.focus();
+
+    const finish = (confirmed: boolean) => {
+      document.removeEventListener("keydown", onKeydown);
+      clearTimeout(armTimer);
+      overlay.remove();
+      previouslyFocused?.focus();
+      activeFinish = null;
+      resolve({ confirmed, keepRekordbox: data.rekordboxCount > 0 ? keepRekordbox : true });
+    };
+    activeFinish = (result: boolean) => finish(result);
+    const onKeydown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        finish(false);
+        return;
+      }
+      if (e.key === "Tab") {
+        e.preventDefault();
+        const focusable: HTMLElement[] =
+          data.rekordboxCount > 0 ? [cancelBtn, keepInput, confirmBtn] : [cancelBtn, confirmBtn];
+        const idx = focusable.indexOf(document.activeElement as HTMLElement);
+        const next = e.shiftKey
+          ? (idx <= 0 ? focusable.length - 1 : idx - 1)
+          : idx >= focusable.length - 1
+            ? 0
+            : idx + 1;
+        (focusable[next] as HTMLElement).focus();
+      }
+    };
+    document.addEventListener("keydown", onKeydown);
+    cancelBtn.addEventListener("click", () => finish(false));
+    confirmBtn.addEventListener("click", () => {
+      if (Date.now() - openedAt < CONFIRM_ARM_MS) return;
+      finish(true);
+    });
+    overlay.addEventListener("click", (e) => {
+      if (e.target === overlay) finish(false);
+    });
+  });
+}
+
 export function confirmAction(message: string, confirmLabel = T().confirm): Promise<boolean> {
   // Settle any still-open prior call first — removes its keydown listener and resolves its
   // promise, instead of leaking both when this new call replaces its overlay below.

@@ -1,6 +1,6 @@
 // Le câblage live (`sift-live.ts`) : les toasts et confirmations des actions qu'il dispatche
-// lui-même — export et liaison du XML Rekordbox, purge de la corbeille, doublons envoyés à la
-// corbeille depuis Rangés, ouverture d'un emplacement, échec de scan d'un dossier surveillé.
+// lui-même — export et liaison du XML Rekordbox, purge de la corbeille, ouverture d'un
+// emplacement, échec de scan d'un dossier surveillé.
 //
 // ⚠️ `runNavExport` reconnaît la sentinelle `NO_LINKED_XML` du backend (`shared/contracts.ts`) — une
 // phrase française reconnue par `includes("aucun XML")` jusqu'au 2026-09-23 (design.md § Le
@@ -25,13 +25,6 @@ const fr = {
   purgeFailed: "Échec : purge de la corbeille impossible",
   xmlLinked: (tracks: number, playlists: number) => `XML Rekordbox lié : ${tracks} pistes, ${playlists} playlists`,
   linkFailed: (err: string) => `Liaison du XML Rekordbox échouée : ${err}`,
-  dupConfirm: (n: number) =>
-    `Envoyer ${n} doublon${n > 1 ? "s" : ""} à la corbeille ? Le morceau recommandé est conservé.`,
-  dupConfirmBtn: "Envoyer à la corbeille",
-  dupNoneTrashed: "Aucun doublon n'a pu être envoyé à la corbeille",
-  dupPartial: (done: number, failed: number) =>
-    `${done} doublon${done > 1 ? "s" : ""} envoyé${done > 1 ? "s" : ""} à la corbeille, ${failed} en échec`,
-  refreshFailed: "Échec : impossible de rafraîchir la liste",
   revealFailed: "Impossible d'ouvrir l'emplacement",
   scanFailed: (reason: string) => `Le scan du dossier surveillé a échoué : ${reason}`,
 };
@@ -50,11 +43,6 @@ const en: typeof fr = {
   xmlLinked: (tracks, playlists) =>
     `Rekordbox XML linked: ${tracks} track${s(tracks)}, ${playlists} playlist${s(playlists)}`,
   linkFailed: (err) => `Couldn't link the Rekordbox XML: ${err}`,
-  dupConfirm: (n) => `Move ${n} duplicate${s(n)} to Trash? The recommended track stays.`,
-  dupConfirmBtn: "Move to Trash",
-  dupNoneTrashed: "Couldn't move any duplicate to Trash",
-  dupPartial: (done, failed) => `${done} duplicate${s(done)} moved to Trash, ${failed} failed`,
-  refreshFailed: "Failed: couldn't refresh the list",
   revealFailed: "Couldn't open the location",
   scanFailed: (reason) => `Watched folder scan failed: ${reason}`,
 };

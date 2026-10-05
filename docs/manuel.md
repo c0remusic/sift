@@ -87,7 +87,7 @@ chacun avec sa couleur, le nombre de fichiers en attente et son état. Cliquer s
 limite la liste de Revue à ses fichiers. Un dossier sans aucun fichier audio reconnu porte la
 mention « 0 audio ».
 
-En dessous, huit **écrans**, dans l'ordre d'une session de travail. `Ctrl+1` à `Ctrl+8` y mènent
+En dessous, neuf **écrans**, dans l'ordre d'une session de travail. `Ctrl+1` à `Ctrl+9` y mènent
 directement (`⌘` sur Mac), et `Ctrl+B` replie la colonne.
 
 ### Revue
@@ -113,6 +113,26 @@ on écoute, puis on tranche.
 tout prendre, de ne rien prendre, de prendre une seule catégorie, ou tout sauf les faux ; `Ctrl+A`
 et `Ctrl+Maj+A` font de même. Au-delà d'un certain nombre de fichiers, Sift récapitule avant de
 partir, puis affiche la progression et un rapport.
+
+### Doublons
+
+Tous les doublons de la bibliothèque, ceux de la liste de Revue comme ceux qui sont rangés, dans
+une seule table : un groupe par morceau, une ligne par copie. Deux copies forment un groupe quand
+elles portent le même nom, version comprise (« Original Mix » et « Extended Mix » restent deux
+morceaux), quand elles ont le même contenu, ou quand leurs empreintes sonores concordent. Chaque
+groupe dit ce qui le fonde : **Identiques**, **Même son** ou **Même nom**.
+
+Dans chaque groupe, la meilleure copie est cochée **Garder** : VRAI avant FAUX, une copie entière
+avant une copie tronquée, un lossless avant un MP3. Cochez-en d'autres pour les garder aussi, ou
+décochez celle que vous ne voulez pas. Ce qui distingue les copies s'écrit en clair, le reste
+s'efface ; ouvrir une copie l'écoute et la compare à la copie gardée, fait par fait.
+
+Rien ne part avant d'avoir cliqué **Envoyer à la corbeille**, qui récapitule tout le plan. Chaque
+copie va dans une corbeille sur son propre disque, sans recopie, et un seul `Ctrl+Z` remet tout en
+place. Les copies que Rekordbox joue restent gardées, sauf si vous décochez la case de la
+confirmation. Un groupe **À vérifier**, deux copies de même nom mais de durées différentes, reste
+hors du plan tant que vous ne l'avez pas tranché. Un groupe qui n'en est pas un se retire par un clic
+droit, « Ce ne sont pas des doublons », et ne revient plus.
 
 ### Journal
 
@@ -191,7 +211,8 @@ pas de bouton Enregistrer.
 | `Ctrl+Z` | partout | annuler la dernière action |
 | `Ctrl+A` / `Ctrl+Maj+A` | Revue en mode Lot, tables | tout sélectionner, ne rien sélectionner |
 | `Ctrl+F` | écrans avec une recherche | aller à la recherche |
-| `Ctrl+1` à `Ctrl+8` | partout | l'écran correspondant, dans l'ordre du rail |
+| `Ctrl+Entrée` | Doublons | envoyer le plan à la corbeille, après confirmation |
+| `Ctrl+1` à `Ctrl+9` | partout | l'écran correspondant, dans l'ordre du rail |
 | `Ctrl+B` | partout | replier ou déplier le rail |
 | `Ctrl+Alt+I` | écrans à inspecteur | masquer ou afficher l'inspecteur, la colonne de droite (`⌥⌘I` sur Mac) |
 | `Ctrl+,` | partout | Réglages |
