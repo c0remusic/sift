@@ -186,7 +186,7 @@ footer a{color:var(--ink-2)}
           <a class="btn primary" id="dl-main" href="https://github.com/c0remusic/sift/releases/latest">Download <span class="k" id="dl-ver"></span></a>
           <span class="dl-alt" id="dl-alt"><a href="https://github.com/c0remusic/sift/releases/latest" data-os="win">Windows</a><span class="sep"> · </span><a href="https://github.com/c0remusic/sift/releases/latest" data-os="mac-arm">Mac Apple Silicon</a><span class="sep"> · </span><a href="https://github.com/c0remusic/sift/releases/latest" data-os="mac-intel">Mac Intel</a></span>
         </div>
-        <p class="dl-note">The app's interface is in French. Unsigned installers: the system shows a warning on first launch. <a href="/en/manuel.html#installer">What to do, in the manual.</a></p>
+        <p class="dl-note">The interface is in English or French, to choose in Settings. Unsigned installers: the system shows a warning on first launch. <a href="/en/manuel.html#installer">What to do, in the manual.</a></p>
       </div>
       <button type="button" class="win" data-avif="/screenshots/revue-4022.avif" data-webp="/screenshots/revue-4022.webp" data-png="/screenshots/revue.png" data-zoom="2" aria-label="Enlarge the screenshot of the Review screen (Revue)"><picture>
         <source media="(max-width: 860px)" type="image/avif" srcset="/screenshots/revue-mobile-750.avif 750w, /screenshots/revue-mobile-930.avif 930w" sizes="calc(100vw - 40px)" width="930" height="272">
@@ -202,26 +202,30 @@ footer a{color:var(--ink-2)}
     <h2>Features</h2>
     <div class="stack">
       <nav class="list" aria-label="Screens">
-        <h4>Process (Traiter)</h4><a href="#f-revue" class="on">Review (<span lang="fr">Revue</span>)</a><a href="#f-journal">Log (<span lang="fr">Journal</span>)</a>
-        <h4>Library (Bibliothèque)</h4><a href="#f-ranges">Filed (<span lang="fr">Rangés</span>)</a><a href="#f-resourcer">To re-source and Trash (À re-sourcer et Corbeille)</a>
-        <h4>Export (Exporter)</h4><a href="#f-rekordbox">Rekordbox</a><a href="#f-usb">USB drive (<span lang="fr">Clé USB</span>)</a>
+        <h4>Process</h4><a href="#f-revue" class="on">Review</a><a href="#f-doublons">Duplicates</a><a href="#f-journal">Log</a>
+        <h4>Library</h4><a href="#f-ranges">Filed</a><a href="#f-resourcer">To re-source and Trash</a>
+        <h4>Export</h4><a href="#f-rekordbox">Rekordbox</a><a href="#f-usb">USB drive</a>
       </nav>
       <div>
         <div class="blk" id="f-revue">
-          <h3>Review (<span lang="fr">Revue</span>)</h3>
-          <p>Every file that arrives in a watched folder is analyzed in the background: spectral cutoff, density of the highs, codec quantization grid, duplicates by acoustic fingerprint. Player, waveform, spectrogram. Discogs identification. Conversion to MP3, WAV or AIFF, filename built from the tags. Batch mode (<span lang="fr">mode Lot</span>) for a selection.</p>
+          <h3>Review</h3>
+          <p>Every file that arrives in a watched folder is analyzed in the background: spectral cutoff, density of the highs, codec quantization grid, duplicates by acoustic fingerprint. Player, waveform, spectrogram. Discogs identification. Conversion to MP3, WAV or AIFF, filename built from the tags. Batch mode for a selection.</p>
+        </div>
+        <div class="blk" id="f-doublons">
+          <h3>Duplicates</h3>
+          <p>Every copy of the same track, across the whole library: identical byte for byte, same sound, or same name, dirty names included. The best copy is kept for you, the others are compared before they go. A single move to the Trash, on each file's own disk, and a single Ctrl+Z to undo it all.</p>
         </div>
         <div class="blk" id="f-journal">
-          <h3>Log (<span lang="fr">Journal</span>)</h3>
+          <h3>Log</h3>
           <p>History of conversions, files set aside, identifications and syncs. Every row can be undone, even after a restart.</p>
         </div>
         <div class="blk" id="f-ranges">
-          <h3>Filed (<span lang="fr">Rangés</span>)</h3>
+          <h3>Filed</h3>
           <p>The library as it stands on disk: sortable table, remembered columns, search, multiple selection, space used per format, right-click actions.</p>
           <button type="button" class="win" data-avif="/screenshots/ranges-4022.avif" data-webp="/screenshots/ranges-4022.webp" data-png="/screenshots/ranges.png" data-zoom="2" aria-label="Enlarge the screenshot of the Rangés screen"><picture><source type="image/avif" srcset="/screenshots/ranges-1040.avif 1040w, /screenshots/ranges-2011.avif 2011w" sizes="(max-width: 860px) calc(100vw - 40px), 800px"><source type="image/webp" srcset="/screenshots/ranges-1040.webp 1040w, /screenshots/ranges-2011.webp 2011w" sizes="(max-width: 860px) calc(100vw - 40px), 800px"><img src="/screenshots/ranges.png" alt="Rangés, the Filed screen: the library table, with the space used per format" width="2011" height="950" loading="lazy"></picture></button>
         </div>
         <div class="blk" id="f-resourcer">
-          <h3>To re-source and Trash (À re-sourcer et Corbeille)</h3>
+          <h3>To re-source and Trash</h3>
           <p>Fakes and truncated files on one side, duplicates and mistakes on the other, each with its reason. Nothing is erased until the trash is emptied. Restore in one click.</p>
           <button type="button" class="win" data-avif="/screenshots/re-sourcer-4022.avif" data-webp="/screenshots/re-sourcer-4022.webp" data-png="/screenshots/re-sourcer.png" data-zoom="2" aria-label="Enlarge the screenshot of the To re-source screen (À re-sourcer)"><picture><source type="image/avif" srcset="/screenshots/re-sourcer-1040.avif 1040w, /screenshots/re-sourcer-2011.avif 2011w" sizes="(max-width: 860px) calc(100vw - 40px), 800px"><source type="image/webp" srcset="/screenshots/re-sourcer-1040.webp 1040w, /screenshots/re-sourcer-2011.webp 2011w" sizes="(max-width: 860px) calc(100vw - 40px), 800px"><img src="/screenshots/re-sourcer.png" alt="The To re-source screen (À re-sourcer): the files set aside, with the reason" width="2011" height="950" loading="lazy"></picture></button>
         </div>
@@ -231,7 +235,7 @@ footer a{color:var(--ink-2)}
           <button type="button" class="win" data-avif="/screenshots/rekordbox-4022.avif" data-webp="/screenshots/rekordbox-4022.webp" data-png="/screenshots/rekordbox.png" data-zoom="2" aria-label="Enlarge the screenshot of the Rekordbox screen"><picture><source type="image/avif" srcset="/screenshots/rekordbox-1040.avif 1040w, /screenshots/rekordbox-2011.avif 2011w" sizes="(max-width: 860px) calc(100vw - 40px), 800px"><source type="image/webp" srcset="/screenshots/rekordbox-1040.webp 1040w, /screenshots/rekordbox-2011.webp 2011w" sizes="(max-width: 860px) calc(100vw - 40px), 800px"><img src="/screenshots/rekordbox.png" alt="The Rekordbox screen: the comparison of the two libraries" width="2011" height="950" loading="lazy"></picture></button>
         </div>
         <div class="blk" id="f-usb">
-          <h3>USB drive (<span lang="fr">Clé USB</span>)</h3>
+          <h3>USB drive</h3>
           <p>Drive information, FAT32 formatting beyond the 32 GB Windows refuses, ejection. Double confirmation, with the volume name, before erasing.</p>
           <button type="button" class="win" data-avif="/screenshots/cle-usb-4022.avif" data-webp="/screenshots/cle-usb-4022.webp" data-png="/screenshots/cle-usb.png" data-zoom="2" aria-label="Enlarge the screenshot of the USB drive screen (Clé USB)"><picture><source type="image/avif" srcset="/screenshots/cle-usb-1040.avif 1040w, /screenshots/cle-usb-2011.avif 2011w" sizes="(max-width: 860px) calc(100vw - 40px), 800px"><source type="image/webp" srcset="/screenshots/cle-usb-1040.webp 1040w, /screenshots/cle-usb-2011.webp 2011w" sizes="(max-width: 860px) calc(100vw - 40px), 800px"><img src="/screenshots/cle-usb.png" alt="The USB drive screen (Clé USB): the chosen drive, its capacity and its usage per format" width="2011" height="950" loading="lazy"></picture></button>
         </div>
@@ -242,19 +246,19 @@ footer a{color:var(--ink-2)}
   <section class="wrap" id="verdict">
     <h2>Verdict</h2>
     <div class="vband">
-      <div><span class="verdict v-ok" lang="fr">VRAI</span><p>Genuine — nothing in the signal contradicts a lossless file.</p></div>
-      <div><span class="verdict v-fake" lang="fr">FAUX</span><p>Fake — compression measured. The file goes to <span lang="fr">À re-sourcer</span>, to re-source, without deletion.</p></div>
-      <div><span class="verdict v-grey" lang="fr">À VÉRIFIER</span><p>To check — one unusual measurement, without proof. To be judged on the spectrogram.</p></div>
+      <div><span class="verdict v-ok">GENUINE</span><p>Nothing in the signal contradicts a lossless file.</p></div>
+      <div><span class="verdict v-fake">FAKE</span><p>Compression measured. The file goes to To re-source, without deletion.</p></div>
+      <div><span class="verdict v-grey">TO CHECK</span><p>One unusual measurement, without proof. To be judged on the spectrogram.</p></div>
     </div>
   </section>
 
   <section class="wrap" id="garde-fous">
     <h2>Safeguards</h2>
     <ul class="rules">
-      <li><b>Nothing is deleted.</b> Setting a file aside — <span lang="fr">Écarter</span> — moves it. Only emptying the Trash (<span lang="fr">Corbeille</span>) erases, after confirmation.</li>
+      <li><b>Nothing is deleted.</b> Setting a file aside moves it. Only emptying the Trash erases, after confirmation.</li>
       <li><b>Watched folders are read-only.</b> Sift reads them, it does not rewrite them.</li>
       <li><b>Rekordbox is backed up before any write.</b> The backup is verified, otherwise nothing is written.</li>
-      <li><b>Everything can be undone.</b> From the Log (<span lang="fr">Journal</span>), action by action.</li>
+      <li><b>Everything can be undone.</b> From the Log, action by action.</li>
     </ul>
   </section>
 </main>

@@ -157,10 +157,10 @@ td:first-child{white-space:nowrap}
   <div class="bar">
     <div class="lights" aria-hidden="true"><i></i><i></i><i></i></div>
     <span class="title">Manuel</span>
-    <span class="count">8 écrans</span>
+    <span class="count">9 écrans</span>
     <span class="spacer"></span>
     <a class="lang" href="/en/manuel.html" hreflang="en" lang="en">English</a>
-    <span class="ver">v0.1.1</span>
+    <span class="ver">v0.1.4</span>
   </div>
   <div class="frame">
     <div class="railcol"><nav class="rail" aria-label="Sommaire">
@@ -226,7 +226,7 @@ td:first-child{white-space:nowrap}
           <tr><td><span class="verdict v-grey">À VÉRIFIER</span></td><td>Quelque chose d'inhabituel, sans preuve. Sift le signale et vous laisse décider, spectrogramme à l'appui.</td></tr>
         </tbody>
       </table></div>
-      <p><b>Écarter.</b> Sortir un fichier du circuit sans le supprimer. Deux destinations : <b>À re-sourcer</b> pour un faux ou un fichier tronqué, à racheter ailleurs, et <b>Corbeille</b> pour un doublon ou une erreur. Rien n'est effacé tant que vous ne videz pas la corbeille vous-même.</p>
+      <p><b>Écarter.</b> Sortir un fichier du circuit sans le supprimer : il part dans <b>À re-sourcer</b>, à racheter ou à retrouver ailleurs. La <b>Corbeille</b> reçoit ce que vous jetez depuis Rangés, Doublons ou À re-sourcer. Rien n'est effacé tant que vous ne videz pas la corbeille vous-même.</p>
       <h3>Les mots anglais gardés tels quels</h3>
       <p><code>LOSSLESS</code>, <code>DUPLICATE</code>, <code>MATCH</code>, <code>FAKE</code>, <code>XML</code>, <code>kbps</code>, <code>kHz</code>, <code>MP3</code>, <code>AIFF</code>, <code>WAV</code> restent en anglais dans les filtres, les étiquettes et les badges, parce que c'est sous cette forme qu'ils apparaissent partout ailleurs : dans Rekordbox, sur les boutiques, sur les forums. Le verdict, lui, est en français.</p>
 
@@ -243,16 +243,16 @@ td:first-child{white-space:nowrap}
         <div class="screen"><h3>Corbeille <span class="k">Ctrl+6</span></h3><p>Doublons et erreurs. Rien n'y est effacé tout seul.</p></div>
         <div class="screen"><h3>Rekordbox <span class="k">Ctrl+7</span></h3><p>Synchroniser la bibliothèque rangée avec Rekordbox.</p></div>
         <div class="screen"><h3>Clé USB <span class="k">Ctrl+8</span></h3><p>Formater et éjecter une clé pour les platines.</p></div>
-        <div class="screen"><h3>Réglages <span class="k">Ctrl+9</span></h3><p>Dossier racine, nommage, Discogs, apparence.</p></div>
+        <div class="screen"><h3>Réglages <span class="k">Ctrl+9</span></h3><p>Dossier racine, conversion, nommage, Discogs, apparence et langue.</p></div>
       </div>
 
       <h2 id="revue">Revue</h2>
       <p>L'écran principal : un morceau à la fois, on écoute, puis on décide. La liste des fichiers est à gauche, le morceau ouvert au centre, le diagnostic à droite. La liste se filtre par catégorie (Lossless, MP3, Faux, Doublons…) et par recherche, <kbd>Ctrl</kbd>+<kbd>F</kbd> y va directement.</p>
       <p>Pour chaque morceau, vous avez le lecteur, le verdict, une fiche de métadonnées modifiable sur place, l'identification Discogs et le diagnostic audio complet. Le son passe avant le verdict : on écoute, puis on tranche.</p>
-      <div class="hints"><span><b>ESPACE</b> écouter</span><span><b>ENTRÉE</b> convertir</span><span><b>RETOUR</b> écarter</span><span><b>HAUT/BAS</b> naviguer</span><span><b>I</b> identifier</span><span><b>CTRL+Z</b> annuler</span></div>
+      <div class="hints"><span><b>SPACE</b> écouter</span><span><b>ENTER</b> convertir</span><span><b>BKSP</b> écarter</span><span><b>HAUT/BAS</b> naviguer</span><span><b>I</b> identifier</span><span><b>CTRL+Z</b> annuler</span></div>
       <ul>
         <li><b>Convertir.</b> Le fichier part vers sa destination, converti en MP3, WAV ou AIFF selon votre choix, avec un nom de fichier construit depuis les tags. Le menu Destination propose l'arborescence de votre bibliothèque et vos autres dossiers.</li>
-        <li><b>Écarter.</b> Vers À re-sourcer si le verdict est FAUX ou si le fichier est tronqué, vers la Corbeille sinon. Un doublon est signalé comme tel, avec le morceau d'origine.</li>
+        <li><b>Écarter.</b> Vers À re-sourcer, avec sa raison ; sur un faux, le bouton s'appelle <b>Re-source</b>. Un doublon est signalé comme tel, avec le morceau d'origine, et se trie dans Doublons.</li>
         <li><b>Identifier.</b> Sift interroge Discogs, propose des correspondances et écrit dans le fichier les tags que vous retenez : artiste, titre, label, année, genres, pochette.</li>
       </ul>
       <h3>Le mode Lot</h3>
@@ -261,23 +261,23 @@ td:first-child{white-space:nowrap}
       <h2 id="doublons">Doublons</h2>
       <p>Tous les doublons de la bibliothèque, ceux de la liste de Revue comme ceux qui sont rangés, dans une seule table : un groupe par morceau, une ligne par copie. Deux copies forment un groupe quand elles portent le même nom, version comprise (« Original Mix » et « Extended Mix » restent deux morceaux), quand elles ont le même contenu, ou quand leurs empreintes sonores concordent. Chaque groupe dit ce qui le fonde : <b>Identiques</b>, <b>Même son</b> ou <b>Même nom</b>.</p>
       <p>Dans chaque groupe, la meilleure copie est cochée <b>Garder</b> : VRAI avant FAUX, une copie entière avant une copie tronquée, un lossless avant un MP3. Cochez-en d'autres pour les garder aussi, ou décochez celle que vous ne voulez pas. Ce qui distingue les copies s'écrit en clair, le reste s'efface ; ouvrir une copie l'écoute et la compare à la copie gardée, fait par fait.</p>
-      <div class="hints"><span><b>HAUT/BAS</b> copie précédente, suivante</span><span><b>ESPACE</b> écouter</span><span><b>ENTRÉE</b> garder seulement celle-ci</span><span><b>RETOUR</b> ne pas garder</span><span><b>CTRL+ENTRÉE</b> appliquer</span><span><b>CTRL+Z</b> annuler</span></div>
+      <div class="hints"><span><b>HAUT/BAS</b> copie précédente / suivante</span><span><b>SPACE</b> écouter</span><span><b>ENTER</b> garder seulement celle-ci</span><span><b>BKSP</b> ne pas garder</span><span><b>CTRL+ENTER</b> appliquer</span><span><b>CTRL+Z</b> annuler</span></div>
       <p>Rien ne part avant d'avoir cliqué <b>Envoyer à la corbeille</b>, qui récapitule tout le plan. Chaque copie va dans une corbeille sur son propre disque, sans recopie, et un seul <kbd>Ctrl</kbd>+<kbd>Z</kbd> remet tout en place. Les copies que Rekordbox joue restent gardées, sauf si vous décochez la case de la confirmation. Quand Rekordbox est ouvert, Sift ne voit pas ses derniers imports : la confirmation dit combien de copies envoyées n'ont pas pu être vérifiées — fermez Rekordbox et rouvrez Doublons pour les vérifier. Un groupe <b>À vérifier</b>, deux copies de même nom mais de durées différentes, reste hors du plan tant que vous ne l'avez pas tranché. Un groupe qui n'en est pas un se retire par un clic droit, « Ce ne sont pas des doublons », et ne revient plus.</p>
 
       <h2 id="journal">Journal</h2>
-      <p>L'historique complet de ce que Sift a fait, regroupé par session et par jour : conversions, fichiers écartés, identifications, synchronisations. Chaque ligne se défait d'un clic. Un rangement de masse parti au mauvais endroit revient d'ici, même après avoir redémarré l'application.</p>
+      <p>L'historique complet de ce que Sift a fait, regroupé par session et par jour : morceaux rangés, mis à la corbeille ou écartés. Chaque ligne se défait d'un clic. Un rangement de masse parti au mauvais endroit revient d'ici, même après avoir redémarré l'application.</p>
 
       <h2 id="ranges">Rangés</h2>
       <p>Votre bibliothèque, telle qu'elle est sur le disque, dans une table à la Finder : colonnes personnalisables et mémorisées, tri, recherche, sélection multiple avec un panneau récapitulatif. La pochette sert de bouton de lecture. Le clic droit ouvre l'emplacement du fichier, relance l'analyse, déplace ou écarte. Une barre montre l'espace occupé par chaque format.</p>
 
       <h2 id="resourcer">À re-sourcer</h2>
-      <p>Les fichiers faux ou tronqués, chacun avec la raison. Considérez cette liste comme une liste de courses : ces morceaux attendent d'être rachetés ou retrouvés ailleurs. Le bouton <b>Restaurer</b> remet un morceau dans la liste de Revue si le verdict vous semble trop prudent.</p>
+      <p>Les fichiers faux ou tronqués, chacun avec la raison. Considérez cette liste comme une liste de courses : ces morceaux attendent d'être rachetés ou retrouvés ailleurs. Le bouton <b>Remettre en file</b> renvoie un morceau dans la liste de Revue si le verdict vous semble trop prudent.</p>
 
       <h2 id="corbeille">Corbeille</h2>
-      <p>Les doublons et les erreurs. Rien n'est effacé du disque tant que vous ne videz pas la corbeille, et Sift demande confirmation avant de le faire. Un morceau se restaure de la même façon que depuis À re-sourcer.</p>
+      <p>Les doublons et les erreurs. Rien n'est effacé du disque tant que vous ne videz pas la corbeille, et Sift demande confirmation avant de le faire. Le bouton <b>Restaurer</b> remet un fichier à sa place : un morceau rangé retourne dans Rangés, les autres dans la liste de Revue.</p>
 
       <h2 id="rekordbox">Rekordbox</h2>
-      <p>Une seule action pour tout synchroniser : <b>Synchroniser la sélection</b> ou <b>Tout synchroniser</b>. Sift compare votre bibliothèque rangée avec celle de Rekordbox, regroupe ce qu'il propose par type (nouveaux morceaux, métadonnées, pochettes, fichiers liés à réparer) et nomme chaque élément « Artiste, Titre ». Deux façons d'écrire : un fichier XML que vous importez dans Rekordbox, ou l'écriture directe dans sa base de données.</p>
+      <p>Une seule action pour tout synchroniser : <b>Synchroniser la sélection</b> ou <b>Tout synchroniser</b>. Sift compare votre bibliothèque rangée avec celle de Rekordbox, regroupe ce qu'il propose en quatre sections — <b>Fichiers</b> (liens à réparer), <b>Métadonnées</b>, <b>Pochettes</b>, <b>Playlists</b> (entrées en double) — et nomme chaque élément « Artiste, Titre ». Deux façons d'écrire : un fichier XML que vous importez dans Rekordbox, ou l'écriture directe dans sa base de données.</p>
       <div class="note danger"><p><b>Rekordbox doit être fermé pendant l'écriture directe.</b> Sift sauvegarde la base avant d'y toucher, vérifie la sauvegarde, et refuse d'agir si le logiciel est ouvert.</p></div>
 
       <h2 id="usb">Clé USB</h2>
@@ -289,9 +289,10 @@ td:first-child{white-space:nowrap}
       <p>Les catégories à gauche, le panneau à droite. Chaque réglage s'applique immédiatement, il n'y a pas de bouton Enregistrer.</p>
       <ul>
         <li><b>Général</b> : le dossier racine de votre bibliothèque. Il définit l'arborescence de rangement, pas la conversion.</li>
+        <li><b>Conversion</b> : ce que vise chaque conversion, format par format — débit et fréquence pour le MP3, profondeur et fréquence pour l'AIFF et le WAV. Un MP3 source est déplacé tel quel, jamais réencodé.</li>
         <li><b>Nommage</b> : le modèle de nom de fichier, construit à partir des tags, avec un aperçu en direct.</li>
         <li><b>Identification</b> : votre jeton Discogs.</li>
-        <li><b>Apparence</b> : le thème, automatique, clair ou sombre.</li>
+        <li><b>Apparence</b> : le thème, automatique, clair ou sombre, et la <b>Langue</b>, français ou anglais — Auto suit le système, et changer de langue recharge la fenêtre.</li>
       </ul>
       <p><kbd>Ctrl</kbd>+<kbd>,</kbd> ouvre les Réglages depuis n'importe quel écran.</p>
 
@@ -326,10 +327,19 @@ td:first-child{white-space:nowrap}
       </ul>
 
       <h2 id="detection">Ce que la détection ne voit pas</h2>
-      <p>Aucun détecteur n'est parfait. Sift mesure trois choses dans le signal : la fréquence où le spectre s'arrête, la densité des aigus, et la grille que laisse l'encodeur dans les échantillons, rejouée pour le MP3 et pour l'AAC. Sur son jeu de test (8 achats vérifiés, 150 transcodages fabriqués depuis ces achats), il n'a accusé aucun fichier authentique : c'est la règle qui prime, il vaut mieux laisser passer un faux que vous faire racheter un bon fichier. Depuis la v0.1.2, tous les MP3 du jeu de test sont attrapés, quel que soit leur débit, 320 et V0 compris, et presque tous les AAC. Ce qui passe encore : une partie des transcodages Opus, Vorbis et WMA, rendus <span class="verdict v-grey">À VÉRIFIER</span> au mieux, et quelques AAC 128.</p>
+      <p>Aucun détecteur n'est parfait. Sift mesure quatre choses dans le signal : la fréquence où le spectre s'arrête, la densité des aigus, la grille que laisse l'encodeur dans les échantillons, rejouée pour le MP3 et pour l'AAC, et l'alignement des blocs du codec. Sur son jeu de test (8 achats vérifiés, 150 transcodages fabriqués depuis ces achats), il n'a accusé aucun fichier authentique : c'est la règle qui prime, il vaut mieux laisser passer un faux que vous faire racheter un bon fichier. Depuis la v0.1.2, tous les MP3 du jeu de test sont attrapés, quel que soit leur débit, 320 et V0 compris, et presque tous les AAC. Depuis la v0.1.4, grâce à l'alignement des blocs, les Vorbis et les WMA du jeu de test, jusque-là invisibles, sont attrapés eux aussi, dix sur dix chacun. Ce qui passe encore : une partie des transcodages Opus, rendus <span class="verdict v-grey">À VÉRIFIER</span> au mieux, et quelques AAC 128.</p>
       <p>En clair : un verdict <span class="verdict v-fake">FAUX</span> est fiable. Un verdict <span class="verdict v-ok">VRAI</span> signifie que rien de mesurable ne contredit le fichier, pas qu'il est garanti authentique.</p>
 
       <h2 id="nouveautes">Nouveautés</h2>
+      <p><b>v0.1.4</b> — trier les doublons, et Sift en anglais. Cette version s'installe à la main : la clé qui signe les mises à jour a changé, une installation 0.1.3 refuse la mise à jour automatique. Bibliothèque et réglages sont gardés.</p>
+      <ul>
+        <li><b>Un écran Doublons</b> : toutes les copies d'un même morceau, comparées, une case « Garder » par copie, un seul envoi à la corbeille et un seul <kbd>Ctrl</kbd>+<kbd>Z</kbd> pour tout défaire.</li>
+        <li><b>Jeter ne recopie plus</b> : chaque fichier part dans une corbeille sur son propre disque, instantanément.</li>
+        <li><b>L'interface en anglais</b>, au choix dans Réglages.</li>
+        <li><b>Revue</b> : le débit d'origine dans le verdict, les fichiers sous 320 kbps signalés, le spectrogramme agrandi, changer de release sans ré-identifier.</li>
+        <li><b>Détection</b> : les Vorbis et WMA déguisés en lossless sont attrapés.</li>
+      </ul>
+      <p><a href="https://github.com/c0remusic/sift/releases/tag/v0.1.4">Les notes de la v0.1.4</a>.</p>
       <p><b>v0.1.2</b> — la détection ne se laisse plus avoir par le débit :</p>
       <ul>
         <li><b>Les MP3 déguisés en lossless sont reconnus quel que soit leur débit</b>, 320 et V0 compris : la sonde rejoue l'encodeur MP3 et retrouve sa grille dans les échantillons. Un lossless qui coupe entre 20 000 et 20 750 Hz, la signature d'un MP3 320, passe À VÉRIFIER au lieu de VRAI.</li>
@@ -351,7 +361,7 @@ td:first-child{white-space:nowrap}
       <p>Les erreurs s'affichent dans l'application avec leur cause. Si un fichier refuse de s'analyser, son message reste visible sur sa ligne. Une mise à jour disponible se propose au démarrage.</p>
       <p>Pour signaler un problème : <a href="https://github.com/c0remusic/sift/issues">github.com/c0remusic/sift/issues</a>. Indiquez la version, votre machine, et ce que vous attendiez.</p>
 
-      <div class="foot">Sift v0.1.1, Windows et macOS.</div>
+      <div class="foot">Sift v0.1.4, Windows et macOS.</div>
     </main>
   </div>
 </div>

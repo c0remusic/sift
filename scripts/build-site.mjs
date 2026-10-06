@@ -66,7 +66,7 @@ const PAGES = [
     lang: "fr",
     url: "/manuel.html",
     groupe: "manuel",
-    description: "Manuel de Sift : installer, trois mots, les huit écrans, le clavier, ce que la détection laisse passer.",
+    description: "Manuel de Sift : installer, trois mots, les neuf écrans, le clavier, ce que la détection laisse passer.",
   },
   {
     src: "accueil.en.html",
@@ -74,7 +74,7 @@ const PAGES = [
     lang: "en",
     url: "/en/",
     groupe: "accueil",
-    description: "Sift, a free desktop app for DJs: fake lossless caught on the spectrogram, duplicates, filing in CDJ format, Rekordbox export, USB drive. Windows and macOS. French interface.",
+    description: "Sift, a free desktop app for DJs: fake lossless caught on the spectrogram, duplicates, filing in CDJ format, Rekordbox export, USB drive. Windows and macOS, in English or French.",
   },
   {
     src: "manuel.en.html",
@@ -82,7 +82,7 @@ const PAGES = [
     lang: "en",
     url: "/en/manuel.html",
     groupe: "manuel",
-    description: "Sift manual: installing, the three words, the eight screens, the keyboard, what detection lets through. The application's interface is in French.",
+    description: "Sift manual: installing, the three words, the nine screens, the keyboard, what detection lets through.",
   },
 ];
 

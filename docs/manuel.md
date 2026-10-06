@@ -67,13 +67,13 @@ C'est ce que Sift cherche.
 | **FAUX** | La compression est mesurable. Le fichier est mis de côté pour être racheté ailleurs, il n'est pas supprimé. |
 | **À VÉRIFIER** | Quelque chose d'inhabituel, sans preuve. Sift le signale et vous laisse décider, spectrogramme à l'appui. |
 
-**Écarter.** Sortir un fichier du circuit sans le supprimer. Deux destinations : **À re-sourcer**
-pour un faux ou un fichier tronqué, à racheter ailleurs, et **Corbeille** pour un doublon ou une
-erreur. Rien n'est effacé tant que vous ne videz pas la corbeille vous-même.
+**Écarter.** Sortir un fichier du circuit sans le supprimer : il part dans **À re-sourcer**, à
+racheter ou à retrouver ailleurs. La **Corbeille** reçoit ce que vous jetez depuis Rangés, Doublons
+ou À re-sourcer. Rien n'est effacé tant que vous ne videz pas la corbeille vous-même.
 
 ### Les mots anglais gardés tels quels
 
-`LOSSLESS`, `DUPLICATE`, `MATCH`, `CHECK MATCH`, `kbps`, `kHz`, `MP3`, `AIFF`, `WAV` restent en
+`LOSSLESS`, `DUPLICATE`, `MATCH`, `FAKE`, `XML`, `kbps`, `kHz`, `MP3`, `AIFF`, `WAV` restent en
 anglais dans les filtres, les étiquettes et les badges, parce que c'est sous cette forme qu'ils
 apparaissent partout ailleurs : dans Rekordbox, sur les boutiques, sur les forums. Le verdict, lui,
 est en français.
@@ -103,8 +103,9 @@ on écoute, puis on tranche.
 - **Convertir** (`Entrée`). Le fichier part vers sa destination, converti en MP3, WAV ou AIFF selon
   votre choix, avec un nom de fichier construit depuis les tags. Le menu Destination propose
   l'arborescence de votre bibliothèque et vos autres dossiers.
-- **Écarter** (`Retour` ou `X`). Vers À re-sourcer si le verdict est FAUX ou si le fichier est
-  tronqué, vers la Corbeille sinon. Un doublon est signalé comme tel, avec le morceau d'origine.
+- **Écarter** (`Retour` ou `X`). Vers À re-sourcer, avec sa raison ; sur un faux, le bouton
+  s'appelle **Re-source**. Un doublon est signalé comme tel, avec le morceau d'origine, et se trie
+  dans Doublons.
 - **Identifier** (`I`). Sift interroge Discogs, propose des correspondances et écrit dans le fichier
   les tags que vous retenez : artiste, titre, label, année, genres, pochette.
 
@@ -138,8 +139,8 @@ droit, « Ce ne sont pas des doublons », et ne revient plus.
 
 ### Journal
 
-L'historique complet de ce que Sift a fait, regroupé par session et par jour : conversions,
-fichiers écartés, identifications, synchronisations. Chaque ligne se défait d'un clic. Un
+L'historique complet de ce que Sift a fait, regroupé par session et par jour : morceaux
+rangés, mis à la corbeille ou écartés. Chaque ligne se défait d'un clic. Un
 rangement de masse parti au mauvais endroit revient d'ici, même après avoir redémarré
 l'application.
 
@@ -153,20 +154,21 @@ l'analyse, déplace ou écarte. Une barre montre l'espace occupé par chaque for
 ### À re-sourcer
 
 Les fichiers faux ou tronqués, chacun avec la raison. Considérez cette liste comme une liste de
-courses : ces morceaux attendent d'être rachetés ou retrouvés ailleurs. Le bouton **Restaurer**
-remet un morceau dans la liste de Revue si le verdict vous semble trop prudent.
+courses : ces morceaux attendent d'être rachetés ou retrouvés ailleurs. Le bouton **Remettre en
+file** renvoie un morceau dans la liste de Revue si le verdict vous semble trop prudent.
 
 ### Corbeille
 
 Les doublons et les erreurs. Rien n'est effacé du disque tant que vous ne videz pas la corbeille,
-et Sift demande confirmation avant de le faire. Un morceau se restaure de la même façon que depuis
-À re-sourcer.
+et Sift demande confirmation avant de le faire. Le bouton **Restaurer** remet un fichier à sa place :
+un morceau rangé retourne dans Rangés, les autres dans la liste de Revue.
 
 ### Rekordbox
 
 Une seule action pour tout synchroniser : **Synchroniser la sélection** ou **Tout synchroniser**.
-Sift compare votre bibliothèque rangée avec celle de Rekordbox, regroupe ce qu'il propose par type
-(nouveaux morceaux, métadonnées, pochettes, fichiers liés à réparer) et nomme chaque élément
+Sift compare votre bibliothèque rangée avec celle de Rekordbox, regroupe ce qu'il propose en quatre
+sections — **Fichiers** (liens à réparer), **Métadonnées**, **Pochettes**, **Playlists** (entrées en
+double) — et nomme chaque élément
 « Artiste, Titre ». Deux façons d'écrire : un fichier XML que vous importez dans Rekordbox, ou
 l'écriture directe dans sa base de données.
 
@@ -193,9 +195,13 @@ pas de bouton Enregistrer.
 
 - **Général** : le dossier racine de votre bibliothèque. Il définit l'arborescence de rangement,
   pas la conversion.
+- **Conversion** : ce que vise chaque conversion, format par format — débit et fréquence pour le
+  MP3, profondeur et fréquence pour l'AIFF et le WAV. Un MP3 source est déplacé tel quel, jamais
+  réencodé.
 - **Nommage** : le modèle de nom de fichier, construit à partir des tags, avec un aperçu en direct.
 - **Identification** : votre jeton Discogs.
-- **Apparence** : le thème, automatique, clair ou sombre.
+- **Apparence** : le thème, automatique, clair ou sombre, et la **Langue**, français ou anglais —
+  Auto suit le système, et changer de langue recharge la fenêtre.
 
 `Ctrl+,` ouvre les Réglages depuis n'importe quel écran.
 
@@ -237,14 +243,15 @@ Sur Mac, `⌘` remplace `Ctrl`.
 
 ## Ce que la détection ne voit pas
 
-Aucun détecteur n'est parfait. Sift mesure trois choses dans le signal : la fréquence où le spectre
-s'arrête, la densité des aigus, et la grille que laisse l'encodeur dans les échantillons, rejouée
-pour le MP3 et pour l'AAC. Sur son jeu de test (8 achats vérifiés, 150 transcodages fabriqués
+Aucun détecteur n'est parfait. Sift mesure quatre choses dans le signal : la fréquence où le spectre
+s'arrête, la densité des aigus, la grille que laisse l'encodeur dans les échantillons, rejouée pour
+le MP3 et pour l'AAC, et l'alignement des blocs du codec. Sur son jeu de test (8 achats vérifiés, 150 transcodages fabriqués
 depuis ces achats), il n'a accusé aucun fichier authentique : c'est la règle qui prime, il vaut
 mieux laisser passer un faux que vous faire racheter un bon fichier. Depuis la v0.1.2, tous les
 MP3 du jeu de test sont attrapés, quel que soit leur débit, 320 et V0 compris, et presque tous
-les AAC. Ce qui passe encore : une partie des transcodages Opus, Vorbis et WMA, rendus
-**À VÉRIFIER** au mieux, et quelques AAC 128.
+les AAC. Depuis la v0.1.4, grâce à l'alignement des blocs, les Vorbis et les WMA du jeu de test,
+jusque-là invisibles, sont attrapés eux aussi, dix sur dix chacun. Ce qui passe encore : une partie des transcodages Opus, rendus **À VÉRIFIER** au mieux, et
+quelques AAC 128.
 
 En clair : un verdict **FAUX** est fiable. Un verdict **VRAI** signifie que rien de mesurable ne
 contredit le fichier, pas qu'il est garanti authentique.

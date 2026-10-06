@@ -210,6 +210,13 @@ jargon y devient une note sur le réglage Langue et les verdicts ; `docs/accueil
 « The app's interface is in French » ; les deux PDF se réimpriment (procédé dans
 `scripts/build-site.mjs`) ; et la section `## vX.Y.Z` de `CHANGELOG.md` annonce le réglage.
 
+**Éteinte avec la v0.1.4** (branche `release-0.1.4`, préparée le 2026-10-06 ; la règle ne vaut plus
+dès que ce tag est publié). Le geste ci-dessus y est fait en entier : manuel et accueil anglais
+nomment les libellés anglais, la section de jargon du manuel est devenue une note sur la langue,
+les deux PDF sont réimprimés, `## v0.1.4` annonce l'interface anglaise. Les captures de l'accueil
+restent françaises : leurs textes alternatifs décrivent ce que l'image montre. Une doc anglaise
+écrite APRÈS ce tag nomme les libellés anglais, sans glose.
+
 ⚠️ **`CHECK MATCH` est MORT dans le produit** (`frontend/filing.ts:627`, ligne 624 au 2026-09-23 avant la migration i18n). Retiré de la liste de
 jargon ci-dessus et de `docs/manuel.html` le 2026-09-23 ; il survit dans `CLAUDE.md`, dont le
 retrait demande la validation d'Antoine.

@@ -157,10 +157,10 @@ td:first-child{white-space:nowrap}
   <div class="bar">
     <div class="lights" aria-hidden="true"><i></i><i></i><i></i></div>
     <span class="title">Manual</span>
-    <span class="count">8 screens</span>
+    <span class="count">9 screens</span>
     <span class="spacer"></span>
     <a class="lang" href="/manuel.html" hreflang="fr" lang="fr">Français</a>
-    <span class="ver">v0.1.1</span>
+    <span class="ver">v0.1.4</span>
   </div>
   <div class="frame">
     <div class="railcol"><nav class="rail" aria-label="Contents">
@@ -169,15 +169,15 @@ td:first-child{white-space:nowrap}
       <a href="#mots">Three words</a>
       <a href="#rail">The rail</a>
       <h4>Screens</h4>
-      <a href="#revue">Review (<span lang="fr">Revue</span>)<span class="k">1</span></a>
-      <a href="#doublons">Duplicates (<span lang="fr">Doublons</span>)<span class="k">2</span></a>
-      <a href="#journal">Log (<span lang="fr">Journal</span>)<span class="k">3</span></a>
-      <a href="#ranges">Filed (<span lang="fr">Rangés</span>)<span class="k">4</span></a>
-      <a href="#resourcer">To re-source (<span lang="fr">À re-sourcer</span>)<span class="k">5</span></a>
-      <a href="#corbeille">Trash (<span lang="fr">Corbeille</span>)<span class="k">6</span></a>
+      <a href="#revue">Review<span class="k">1</span></a>
+      <a href="#doublons">Duplicates<span class="k">2</span></a>
+      <a href="#journal">Log<span class="k">3</span></a>
+      <a href="#ranges">Filed<span class="k">4</span></a>
+      <a href="#resourcer">To re-source<span class="k">5</span></a>
+      <a href="#corbeille">Trash<span class="k">6</span></a>
       <a href="#rekordbox">Rekordbox<span class="k">7</span></a>
-      <a href="#usb">USB drive (<span lang="fr">Clé USB</span>)<span class="k">8</span></a>
-      <a href="#reglages">Settings (<span lang="fr">Réglages</span>)<span class="k">9</span></a>
+      <a href="#usb">USB drive<span class="k">8</span></a>
+      <a href="#reglages">Settings<span class="k">9</span></a>
       <h4>Next</h4>
       <a href="#clavier">The keyboard</a>
       <a href="#jamais">Your guarantees</a>
@@ -221,97 +221,99 @@ td:first-child{white-space:nowrap}
       <div class="tbl"><table>
         <thead><tr><th>Verdict</th><th>What it means</th></tr></thead>
         <tbody>
-          <tr><td><span class="verdict v-ok">VRAI</span> — genuine</td><td>Nothing in the signal contradicts a real lossless file.</td></tr>
-          <tr><td><span class="verdict v-fake">FAUX</span> — fake</td><td>The compression is measurable. The file is set aside to be bought again elsewhere, it is not deleted.</td></tr>
-          <tr><td><span class="verdict v-grey">À VÉRIFIER</span> — to check</td><td>Something unusual, without proof. Sift flags it and leaves you to decide, spectrogram in hand.</td></tr>
+          <tr><td><span class="verdict v-ok">GENUINE</span></td><td>Nothing in the signal contradicts a real lossless file.</td></tr>
+          <tr><td><span class="verdict v-fake">FAKE</span></td><td>The compression is measurable. The file is set aside to be bought again elsewhere, it is not deleted.</td></tr>
+          <tr><td><span class="verdict v-grey">TO CHECK</span></td><td>Something unusual, without proof. Sift flags it and leaves you to decide, spectrogram in hand.</td></tr>
         </tbody>
       </table></div>
-      <p><b lang="fr">Écarter</b> — set aside. Taking a file out of the flow without deleting it. Two destinations: <b lang="fr">À re-sourcer</b>, to re-source, for a fake or a truncated file to buy again elsewhere, and <b lang="fr">Corbeille</b>, the trash, for a duplicate or a mistake. Nothing is erased until you empty the trash yourself.</p>
-      <h3>The English words kept as they are</h3>
-      <p><code>LOSSLESS</code>, <code>DUPLICATE</code>, <code>MATCH</code>, <code>XML</code>, <code>kbps</code>, <code>kHz</code>, <code>MP3</code>, <code>AIFF</code>, <code>WAV</code> stay in English in the filters, the labels and the badges, because that is the form they take everywhere else: in Rekordbox, in the stores, on the forums. The verdict, on the other hand, is in French.</p>
+      <p><b>Set aside.</b> Taking a file out of the flow without deleting it: it goes to <b>To re-source</b>, to buy again or find elsewhere. The <b>Trash</b> receives what you throw away from Filed, Duplicates or To re-source. Nothing is erased until you empty the Trash yourself.</p>
+      <h3>The interface language</h3>
+      <p>Sift speaks English and French. You choose in <b>Settings › Appearance › Language</b>, where <b>Auto</b> follows your system; changing the language reloads the window. In French, the three verdicts read <span class="verdict v-ok">VRAI</span>, <span class="verdict v-fake">FAUX</span> and <span class="verdict v-grey">À VÉRIFIER</span>.</p>
+      <p><code>LOSSLESS</code>, <code>DUPLICATE</code>, <code>MATCH</code>, <code>XML</code>, <code>kbps</code>, <code>kHz</code>, <code>MP3</code>, <code>AIFF</code>, <code>WAV</code> are the same in both languages, because that is the form they take everywhere else: in Rekordbox, in the stores, on the forums.</p>
 
       <h2 id="rail">The rail, top to bottom</h2>
-      <p>The left column has two parts. At the top, your <b>sources</b>: the folders Sift watches, each with its color, its number of pending files and its state. Clicking a source narrows the list on the Review screen (<span lang="fr">Revue</span>) to its files. A folder with no recognized audio file is marked “0 audio”.</p>
+      <p>The left column has two parts. At the top, your <b>sources</b>: the folders Sift watches, each with its color, its number of pending files and its state. Clicking a source narrows the Review list to its files. A folder with no recognized audio file is marked “0 audio”.</p>
       <p>Below, nine <b>screens</b>, in the order of a working session. <kbd>Ctrl</kbd>+<kbd>1</kbd> through <kbd>Ctrl</kbd>+<kbd>9</kbd> go straight to them (<kbd>⌘</kbd> on Mac), and <kbd>Ctrl</kbd>+<kbd>B</kbd> collapses the column.</p>
 
       <div class="screens">
-        <div class="screen"><h3>Review (<span lang="fr">Revue</span>) <span class="k">Ctrl+1</span></h3><p>Decide, one track at a time. This is where the work happens.</p></div>
-        <div class="screen"><h3>Duplicates (<span lang="fr">Doublons</span>) <span class="k">Ctrl+2</span></h3><p>Every copy of the same track, compared: choose which to keep.</p></div>
-        <div class="screen"><h3>Log (<span lang="fr">Journal</span>) <span class="k">Ctrl+3</span></h3><p>Everything Sift has done, and the way to undo it.</p></div>
-        <div class="screen"><h3>Filed (<span lang="fr">Rangés</span>) <span class="k">Ctrl+4</span></h3><p>Your library, what is in its place.</p></div>
-        <div class="screen"><h3>To re-source (<span lang="fr">À re-sourcer</span>) <span class="k">Ctrl+5</span></h3><p>The fakes and the truncated files: a shopping list.</p></div>
-        <div class="screen"><h3>Trash (<span lang="fr">Corbeille</span>) <span class="k">Ctrl+6</span></h3><p>Duplicates and mistakes. Nothing is erased on its own.</p></div>
+        <div class="screen"><h3>Review <span class="k">Ctrl+1</span></h3><p>Decide, one track at a time. This is where the work happens.</p></div>
+        <div class="screen"><h3>Duplicates <span class="k">Ctrl+2</span></h3><p>Every copy of the same track, compared: choose which to keep.</p></div>
+        <div class="screen"><h3>Log <span class="k">Ctrl+3</span></h3><p>Everything Sift has done, and the way to undo it.</p></div>
+        <div class="screen"><h3>Filed <span class="k">Ctrl+4</span></h3><p>Your library, what is in its place.</p></div>
+        <div class="screen"><h3>To re-source <span class="k">Ctrl+5</span></h3><p>The fakes and the truncated files: a shopping list.</p></div>
+        <div class="screen"><h3>Trash <span class="k">Ctrl+6</span></h3><p>Duplicates and mistakes. Nothing is erased on its own.</p></div>
         <div class="screen"><h3>Rekordbox <span class="k">Ctrl+7</span></h3><p>Sync the filed library with Rekordbox.</p></div>
-        <div class="screen"><h3>USB drive (<span lang="fr">Clé USB</span>) <span class="k">Ctrl+8</span></h3><p>Format and eject a drive for the players.</p></div>
-        <div class="screen"><h3>Settings (<span lang="fr">Réglages</span>) <span class="k">Ctrl+9</span></h3><p>Root folder, naming, Discogs, appearance.</p></div>
+        <div class="screen"><h3>USB drive <span class="k">Ctrl+8</span></h3><p>Format and eject a drive for the players.</p></div>
+        <div class="screen"><h3>Settings <span class="k">Ctrl+9</span></h3><p>Root folder, conversion, naming, Discogs, appearance.</p></div>
       </div>
 
-      <h2 id="revue">Review (<span lang="fr">Revue</span>)</h2>
-      <p>The main screen: one track at a time, you listen, then you decide. The file list is on the left, the open track in the center, the diagnostics on the right. The list filters by category (Lossless, MP3, <span lang="fr">Faux</span> — the fakes, <span lang="fr">Doublons</span> — the duplicates…) and by search, <kbd>Ctrl</kbd>+<kbd>F</kbd> goes straight there.</p>
+      <h2 id="revue">Review</h2>
+      <p>The main screen: one track at a time, you listen, then you decide. The file list is on the left, the open track in the center, the diagnostics on the right. The list filters by category (Lossless, MP3, Fake, Duplicates…) and by search, <kbd>Ctrl</kbd>+<kbd>F</kbd> goes straight there.</p>
       <p>For each track you get the player, the verdict, a metadata sheet you can edit in place, Discogs identification and the full audio diagnostics. Sound comes before the verdict: you listen, then you call it.</p>
-      <div class="hints"><span><b>SPACE</b> <span lang="fr">écouter</span>, play</span><span><b>ENTER</b> <span lang="fr">convertir</span>, convert</span><span><b>BKSP</b> <span lang="fr">écarter</span>, set aside</span><span><b>HAUT/BAS</b> <span lang="fr">naviguer</span>, navigate</span><span><b>I</b> <span lang="fr">identifier</span>, identify</span><span><b>CTRL+Z</b> <span lang="fr">annuler</span>, undo</span></div>
+      <div class="hints"><span><b>SPACE</b> listen</span><span><b>ENTER</b> convert</span><span><b>BKSP</b> set aside</span><span><b>UP/DOWN</b> navigate</span><span><b>I</b> identify</span><span><b>CTRL+Z</b> undo</span></div>
       <ul>
-        <li><b lang="fr">Convertir</b> — convert. The file leaves for its destination, converted to MP3, WAV or AIFF as you choose, with a filename built from the tags. The Destination menu offers the tree of your library and your other folders.</li>
-        <li><b lang="fr">Écarter</b> — set aside. To À re-sourcer if the verdict is FAUX or if the file is truncated, to Corbeille otherwise. A duplicate is flagged as such, with the original track.</li>
-        <li><b lang="fr">Identifier</b> — identify. Sift queries Discogs, offers matches and writes the tags you keep into the file: artist, title, label, year, genres, cover art.</li>
+        <li><b>Convert.</b> The file leaves for its destination, converted to MP3, WAV or AIFF as you choose, with a filename built from the tags. The Destination menu offers the tree of your library and your other folders.</li>
+        <li><b>Set aside.</b> The file goes to To re-source, with its reason; on a fake, the button reads <b>Re-source</b>. A duplicate is flagged as such, with the original track, and is sorted out in Duplicates.</li>
+        <li><b>Identify.</b> Sift queries Discogs, offers matches and writes the tags you keep into the file: artist, title, label, year, genres, cover art.</li>
       </ul>
-      <h3>Batch mode (<span lang="fr">mode Lot</span>)</h3>
-      <p>Tick tracks in the list: the center area sums up the selection (verdicts, formats, total length) and a single button files all of it. The <b lang="fr">Sélection</b> menu takes everything, takes nothing, takes one category only, or everything but the fakes; <kbd>Ctrl</kbd>+<kbd>A</kbd> and <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>A</kbd> do the same. Past a certain number of files, Sift recaps before it starts, then shows progress and a report.</p>
+      <h3>Batch mode</h3>
+      <p>Tick tracks in the list: the center area sums up the selection (verdicts, formats, total length) and a single button files all of it. The <b>Selection</b> menu takes everything, takes nothing, takes one category only, or everything but the fakes; <kbd>Ctrl</kbd>+<kbd>A</kbd> and <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>A</kbd> do the same. Past a certain number of files, Sift recaps before it starts, then shows progress and a report.</p>
 
-      <h2 id="doublons">Duplicates (<span lang="fr">Doublons</span>)</h2>
+      <h2 id="doublons">Duplicates</h2>
       <p>Every duplicate in the library, those in the Review list as well as those already filed, in a single table: one group per track, one row per copy. Two copies form a group when they carry the same name, version included (“Original Mix” and “Extended Mix” stay two tracks), when they have the same content, or when their sound fingerprints agree. Each group says what it rests on: <b>Identical</b>, <b>Same sound</b> or <b>Same name</b>.</p>
       <p>In each group the best copy is ticked <b>Keep</b>: GENUINE before FAKE, a whole copy before a truncated one, lossless before MP3. Tick others to keep them as well, or untick the one you don't want. What sets the copies apart is written in full, the rest fades; opening a copy plays it and compares it with the kept copy, fact by fact.</p>
-      <div class="hints"><span><b>UP/DOWN</b> previous, next copy</span><span><b>SPACE</b> listen</span><span><b>ENTER</b> keep only this one</span><span><b>BKSP</b> don't keep</span><span><b>CTRL+ENTER</b> apply</span><span><b>CTRL+Z</b> undo</span></div>
+      <div class="hints"><span><b>UP/DOWN</b> previous / next copy</span><span><b>SPACE</b> listen</span><span><b>ENTER</b> keep only this one</span><span><b>BKSP</b> don't keep</span><span><b>CTRL+ENTER</b> apply</span><span><b>CTRL+Z</b> undo</span></div>
       <p>Nothing leaves until you click <b>Move to Trash</b>, which sums up the whole plan. Each copy goes to a trash on its own disk, without copying, and a single <kbd>Ctrl</kbd>+<kbd>Z</kbd> puts everything back. Copies Rekordbox plays stay kept, unless you untick the box in the confirmation. While Rekordbox is open, Sift can't see its latest imports: the confirmation says how many copies being moved couldn't be checked — quit Rekordbox and reopen Duplicates to check them. A <b>To check</b> group, two copies with the same name but different lengths, stays out of the plan until you decide it. A group that isn't one is removed with a right-click, “These aren't duplicates”, and doesn't come back.</p>
 
-      <h2 id="journal">Log (<span lang="fr">Journal</span>)</h2>
-      <p>The full history of what Sift has done, grouped by session and by day: conversions, files set aside, identifications, syncs. Every line undoes in one click. A bulk filing that went to the wrong place comes back from here, even after restarting the application.</p>
+      <h2 id="journal">Log</h2>
+      <p>The full history of what Sift has done, grouped by session and by day: tracks filed, moved to the Trash or set aside. Every line undoes in one click. A bulk filing that went to the wrong place comes back from here, even after restarting the application.</p>
 
-      <h2 id="ranges">Filed (<span lang="fr">Rangés</span>)</h2>
+      <h2 id="ranges">Filed</h2>
       <p>Your library as it sits on disk, in a Finder-style table: columns you customize and that are remembered, sorting, search, multiple selection with a summary panel. The cover art doubles as a play button. Right-click opens the file's location, re-runs the analysis, moves or sets aside. A bar shows the space each format takes.</p>
 
-      <h2 id="resourcer">To re-source (<span lang="fr">À re-sourcer</span>)</h2>
-      <p>The fake or truncated files, each with its reason. Treat this list as a shopping list: these tracks are waiting to be bought again or found elsewhere. The <b lang="fr">Restaurer</b> button — restore — puts a track back into the Review list (<span lang="fr">Revue</span>) if the verdict strikes you as too cautious.</p>
+      <h2 id="resourcer">To re-source</h2>
+      <p>The fake or truncated files, each with its reason. Treat this list as a shopping list: these tracks are waiting to be bought again or found elsewhere. The <b>Return to queue</b> button puts a track back into the Review list if the verdict strikes you as too cautious.</p>
 
-      <h2 id="corbeille">Trash (<span lang="fr">Corbeille</span>)</h2>
-      <p>The duplicates and the mistakes. Nothing is erased from the disk until you empty the trash, and Sift asks for confirmation before doing it. A track is restored the same way as from À re-sourcer.</p>
+      <h2 id="corbeille">Trash</h2>
+      <p>The duplicates and the mistakes. Nothing is erased from the disk until you empty the Trash, and Sift asks for confirmation before doing it. The <b>Restore</b> button puts a file back in its place: a filed track returns to Filed, the others to the Review list.</p>
 
       <h2 id="rekordbox">Rekordbox</h2>
-      <p>A single action syncs everything: <b lang="fr">Synchroniser la sélection</b>, sync the selection, or <b lang="fr">Tout synchroniser</b>, sync everything. Sift compares your filed library with the Rekordbox one, groups what it proposes by type (new tracks, metadata, cover art, linked files to repair) and names each item “Artist, Title”. Two ways to write: an XML file you import into Rekordbox, or writing straight into its database.</p>
+      <p>A single action syncs everything: <b>Sync selection</b> or <b>Sync all</b>. Sift compares your filed library with the Rekordbox one, groups what it proposes in four sections — <b>Files</b> (links to repair), <b>Metadata</b>, <b>Covers</b>, <b>Playlists</b> (duplicate entries) — and names each item “Artist, Title”. Two ways to write: an XML file you import into Rekordbox, or writing straight into its database.</p>
       <div class="note danger"><p><b>Rekordbox must be closed during a direct write.</b> Sift backs up the database before touching it, verifies the backup, and refuses to act if the software is open.</p></div>
 
-      <h2 id="usb">USB drive (<span lang="fr">Clé USB</span>)</h2>
-      <p>The left column lists the removable drives. For the drive you pick, you see the space taken by each format, its characteristics (mount point, format, capacity, free space, file count, model, health) and three actions: <b lang="fr">Formater…</b> to format, <b lang="fr">Éjecter</b> to eject, <b lang="fr">Relire le disque</b> to re-read the drive.</p>
+      <h2 id="usb">USB drive</h2>
+      <p>The left column lists the removable drives. For the drive you pick, you see the space taken by each format, its characteristics (mount point, format, capacity, free space, file count, model, health) and three actions: <b>Format…</b>, <b>Eject</b>, <b>Rescan drive</b>.</p>
       <p>Formatting writes FAT32, the format the players read, even past the 32 GB Windows refuses. It proceeds in blocks and shows the megabytes written.</p>
       <div class="note danger"><p><b>Formatting erases everything on the drive.</b> Sift asks twice, naming the volume, and refuses if the drive has changed in the meantime.</p></div>
 
-      <h2 id="reglages">Settings (<span lang="fr">Réglages</span>)</h2>
-      <p>The categories on the left, the panel on the right. Every setting applies immediately, there is no <b lang="fr">Enregistrer</b> (Save) button.</p>
+      <h2 id="reglages">Settings</h2>
+      <p>The categories on the left, the panel on the right. Every setting applies immediately, there is no Save button.</p>
       <ul>
-        <li><b lang="fr">Général</b>, general: the root folder of your library. It defines the filing tree, not the conversion.</li>
-        <li><b lang="fr">Nommage</b>, naming: the filename template, built from the tags, with a live preview.</li>
-        <li><b lang="fr">Identification</b>, identification: your Discogs token.</li>
-        <li><b lang="fr">Apparence</b>, appearance: the theme — automatic, light or dark.</li>
+        <li><b>General</b>: the root folder of your library. It defines the filing tree, not the conversion.</li>
+        <li><b>Conversion</b>: what each conversion aims for, format by format — bitrate and sample rate for MP3, bit depth and sample rate for AIFF and WAV. An MP3 source is moved as is, never re-encoded.</li>
+        <li><b>Naming</b>: the filename template, built from the tags, with a live preview.</li>
+        <li><b>Identification</b>: your Discogs token.</li>
+        <li><b>Appearance</b>: the theme (Auto, Light or Dark) and the language (Auto, English or Français). Changing the language reloads the window.</li>
       </ul>
-      <p><kbd>Ctrl</kbd>+<kbd>,</kbd> opens Settings (<span lang="fr">Réglages</span>) from any screen.</p>
+      <p><kbd>Ctrl</kbd>+<kbd>,</kbd> opens Settings from any screen.</p>
 
       <h2 id="clavier">The keyboard</h2>
       <div class="tbl"><table>
         <thead><tr><th>Key</th><th>Where</th><th>Effect</th></tr></thead>
         <tbody>
-          <tr><td><kbd>Space</kbd></td><td>Revue</td><td>play, pause</td></tr>
-          <tr><td><kbd>Enter</kbd></td><td>Revue</td><td>convert the open track</td></tr>
-          <tr><td><kbd>Backspace</kbd> or <kbd>X</kbd></td><td>Revue</td><td>set aside</td></tr>
-          <tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>Revue, tables</td><td>previous track, next track</td></tr>
-          <tr><td><kbd>I</kbd></td><td>Revue</td><td>identify on Discogs</td></tr>
+          <tr><td><kbd>Space</kbd></td><td>Review</td><td>play, pause</td></tr>
+          <tr><td><kbd>Enter</kbd></td><td>Review</td><td>convert the open track</td></tr>
+          <tr><td><kbd>Backspace</kbd> or <kbd>X</kbd></td><td>Review</td><td>set aside</td></tr>
+          <tr><td><kbd>↑</kbd> <kbd>↓</kbd></td><td>Review, tables</td><td>previous track, next track</td></tr>
+          <tr><td><kbd>I</kbd></td><td>Review</td><td>identify on Discogs</td></tr>
           <tr><td><kbd>Ctrl</kbd>+<kbd>Z</kbd></td><td>anywhere</td><td>undo the last action</td></tr>
-          <tr><td><kbd>Ctrl</kbd>+<kbd>A</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>A</kbd></td><td>Revue in batch mode, tables</td><td>select everything, select nothing</td></tr>
+          <tr><td><kbd>Ctrl</kbd>+<kbd>A</kbd> / <kbd>Ctrl</kbd>+<kbd>Shift</kbd>+<kbd>A</kbd></td><td>Review in Batch mode, tables</td><td>select everything, select nothing</td></tr>
           <tr><td><kbd>Ctrl</kbd>+<kbd>F</kbd></td><td>screens with a search</td><td>go to the search</td></tr>
           <tr><td><kbd>Ctrl</kbd>+<kbd>Enter</kbd></td><td>Duplicates</td><td>move the plan to the Trash, after confirmation</td></tr>
           <tr><td><kbd>Ctrl</kbd>+<kbd>1</kbd> to <kbd>9</kbd></td><td>anywhere</td><td>the matching screen, in rail order</td></tr>
           <tr><td><kbd>Ctrl</kbd>+<kbd>B</kbd></td><td>anywhere</td><td>collapse or expand the rail</td></tr>
           <tr><td><kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>I</kbd></td><td>screens with an inspector</td><td>hide or show the inspector, the right-hand column (<kbd>⌥</kbd><kbd>⌘</kbd><kbd>I</kbd> on Mac)</td></tr>
-          <tr><td><kbd>Ctrl</kbd>+<kbd>,</kbd></td><td>anywhere</td><td>Réglages</td></tr>
+          <tr><td><kbd>Ctrl</kbd>+<kbd>,</kbd></td><td>anywhere</td><td>Settings</td></tr>
           <tr><td><kbd>Esc</kbd></td><td>anywhere</td><td>close the open menu or window</td></tr>
         </tbody>
       </table></div>
@@ -319,29 +321,38 @@ td:first-child{white-space:nowrap}
 
       <h2 id="jamais">What Sift will never do without you</h2>
       <ul>
-        <li><b>Delete a file.</b> Setting a track aside — <b lang="fr">Écarter</b> — moves it. Only emptying the Trash (<b lang="fr">Corbeille</b>) erases, and it asks for confirmation.</li>
+        <li><b>Delete a file.</b> Setting a track aside moves it. Only emptying the Trash erases, and it asks for confirmation.</li>
         <li><b>Modify your download folders.</b> Sift reads them, it never writes them back.</li>
         <li><b>Write into Rekordbox</b> without having first backed up and verified its database.</li>
-        <li><b>Make an action final.</b> Everything Sift does can be undone from the Log (<span lang="fr">Journal</span>). On a large batch, the confirmation arms for a few moments so a double click cannot go through it.</li>
+        <li><b>Make an action final.</b> Everything Sift does can be undone from the Log. On a large batch, the confirmation arms for a few moments so a double click cannot go through it.</li>
       </ul>
 
       <h2 id="detection">What the detection does not see</h2>
-      <p>No detector is perfect. Sift measures three things in the signal: the frequency where the spectrum stops, the density of the highs, and the grid the encoder leaves in the samples, replayed for MP3 and for AAC. On its test set (8 verified purchases, 150 transcodes built from those purchases), it accused no authentic file: that is the rule that comes first, better to let a fake through than to make you buy a good file again. Since v0.1.2, every MP3 in the test set is caught, whatever its bitrate, 320 and V0 included, and almost every AAC. What still gets through: some of the Opus, Vorbis and WMA transcodes, rated <span class="verdict v-grey">À VÉRIFIER</span> at best, and a few AAC 128.</p>
-      <p>In plain terms: a <span class="verdict v-fake">FAUX</span> verdict — fake — is reliable. A <span class="verdict v-ok">VRAI</span> verdict — genuine — means that nothing measurable contradicts the file, not that it is guaranteed authentic.</p>
+      <p>No detector is perfect. Sift measures four things in the signal: the frequency where the spectrum stops, the density of the highs, the grid the encoder leaves in the samples, replayed for MP3 and for AAC, and the alignment of the codec's blocks. On its test set (8 verified purchases, 150 transcodes built from those purchases), it accused no authentic file: that is the rule that comes first, better to let a fake through than to make you buy a good file again. Since v0.1.2, every MP3 in the test set is caught, whatever its bitrate, 320 and V0 included, and almost every AAC. Since v0.1.4, thanks to the block alignment, the Vorbis and WMA files in the test set, invisible until then, are caught too, ten out of ten each. What still gets through: some of the Opus transcodes, rated <span class="verdict v-grey">TO CHECK</span> at best, and a few AAC 128.</p>
+      <p>In plain terms: a <span class="verdict v-fake">FAKE</span> verdict is reliable. A <span class="verdict v-ok">GENUINE</span> verdict means that nothing measurable contradicts the file, not that it is guaranteed authentic.</p>
 
       <h2 id="nouveautes">What's new</h2>
+      <p><b>v0.1.4</b> — sorting duplicates, and Sift in English. This version installs by hand: the key that signs updates has changed, so a 0.1.3 installation refuses the automatic update. Your library and settings are kept.</p>
+      <ul>
+        <li><b>A Duplicates screen</b>: every copy of the same track, compared, a “Keep” box per copy, a single move to the Trash and a single <kbd>Ctrl</kbd>+<kbd>Z</kbd> to undo it all.</li>
+        <li><b>Throwing away no longer copies</b>: each file goes to a trash on its own disk, instantly.</li>
+        <li><b>The interface in English</b>, to choose in Settings.</li>
+        <li><b>Review</b>: the original bitrate in the verdict, files under 320 kbps flagged, a spectrogram you can enlarge, switching releases without re-identifying.</li>
+        <li><b>Detection</b>: Vorbis and WMA files disguised as lossless are caught.</li>
+      </ul>
+      <p><a href="https://github.com/c0remusic/sift/releases/tag/v0.1.4">The v0.1.4 release notes</a>.</p>
       <p><b>v0.1.2</b> — the detection no longer lets bitrate fool it:</p>
       <ul>
-        <li><b>MP3s disguised as lossless are recognized whatever their bitrate</b>, 320 and V0 included: the probe replays the MP3 encoder and finds its grid in the samples. A lossless that cuts off between 20,000 and 20,750 Hz, the signature of a 320 MP3, turns À VÉRIFIER instead of VRAI.</li>
+        <li><b>MP3s disguised as lossless are recognized whatever their bitrate</b>, 320 and V0 included: the probe replays the MP3 encoder and finds its grid in the samples. A lossless that cuts off between 20,000 and 20,750 Hz, the signature of a 320 MP3, turns TO CHECK instead of GENUINE.</li>
         <li><b>AACs too</b>, including at 128 kbps: the probe looks at the long blocks with the window the encoder uses, and on the right bands.</li>
         <li>A track longer than 9 minutes is probed on its first 9 minutes instead of being skipped.</li>
       </ul>
       <p><a href="https://github.com/c0remusic/sift/releases/tag/v0.1.2">The v0.1.2 release notes</a>.</p>
       <p><b>v0.1.1</b> — first version published since 0.0.3. The essentials:</p>
       <ul>
-        <li><b>An interface redone screen by screen</b>, read against Finder, Music, Mail, Photos, Disk Utility and System Settings, then adapted to Windows habits. One bar, a sectioned rail carrying the sources (the Home screen, <span lang="fr">Accueil</span>, is gone), a one-word verdict, batch mode and the Sélection menu, Rangés Finder-style, Journal as a table, Rekordbox in a single sync, Clé USB and Réglages redrawn.</li>
+        <li><b>An interface redone screen by screen</b>, read against Finder, Music, Mail, Photos, Disk Utility and System Settings, then adapted to Windows habits. One bar, a sectioned rail carrying the sources (the Home screen is gone), a one-word verdict, Batch mode and the Selection menu, Filed Finder-style, Log as a table, Rekordbox in a single sync, USB drive and Settings redrawn.</li>
         <li><b>More reliable detection</b>: two more signals (density of the highs, the codec's trace in the samples), the verdict replayed at startup when the engine changes, without a new analysis.</li>
-        <li><b lang="fr">Clé USB</b>: FAT32 written in blocks, progress shown in megabytes, external SSDs ejected.</li>
+        <li><b>USB drive</b>: FAT32 written in blocks, progress shown in megabytes, external SSDs ejected.</li>
         <li><b>Speed</b>: analysis reports twenty times smaller, incremental deduplication.</li>
         <li><b>Intel Mac</b>: an installer, alongside Apple silicon and Windows.</li>
       </ul>
@@ -351,7 +362,7 @@ td:first-child{white-space:nowrap}
       <p>Errors appear in the application with their cause. If a file refuses to analyze, its message stays visible on its row. An available update offers itself at startup.</p>
       <p>To report a problem: <a href="https://github.com/c0remusic/sift/issues">github.com/c0remusic/sift/issues</a>. Give the version, your machine, and what you expected.</p>
 
-      <div class="foot">Sift v0.1.1, Windows and macOS.</div>
+      <div class="foot">Sift v0.1.4, Windows and macOS.</div>
     </main>
   </div>
 </div>
