@@ -58,7 +58,18 @@ describe("notes de release", () => {
     // n'ouvre pas forcément le dépôt : sans cette ligne, le manuel n'existe que pour qui le fait.
     expect(notes(premiereVersion())).toContain("docs/manuel.md");
     expect(notes(premiereVersion())).toContain("https://sift-music.vercel.app/manuel.html");
-    expect(notes(premiereVersion())).toContain(`/releases/download/${premiereVersion()}/manuel.pdf`);
+    // Le PDF vit sur le site, pas dans les assets de release : `releases/download/<tag>/manuel.pdf`
+    // n'a existé que pour la v0.1.1 (attaché à la main), et le lien des notes de la v0.1.2 et de la
+    // v0.1.3 répondait 404 — mesuré par `gh release view` le 2026-10-06.
+    expect(notes(premiereVersion())).toContain("https://sift-music.vercel.app/manuel.pdf");
+    expect(notes(premiereVersion())).not.toContain("/releases/download/");
+  });
+
+  it("mène au manuel anglais, pour l'interface anglaise (#75)", () => {
+    const sortie = notes(premiereVersion());
+    expect(sortie).toContain("https://sift-music.vercel.app/en/manuel.html");
+    expect(sortie).toContain("https://sift-music.vercel.app/manuel.en.pdf");
+    expect(sortie).not.toContain("in French for now");
   });
 
   it("contient les notes de la version, pas seulement le pied de page", () => {

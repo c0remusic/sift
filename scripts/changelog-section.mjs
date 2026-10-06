@@ -105,10 +105,10 @@ selon le message affiché :
 
 ### Se servir de Sift
 
-Le manuel — vocabulaire, les huit écrans, le clavier, et ce que la détection laisse passer :
+Le manuel — vocabulaire, les neuf écrans, le clavier, et ce que la détection laisse passer :
 
 - en ligne, dans le design de l'app : https://sift-music.vercel.app/manuel.html
-- en PDF, dans le design de l'app : https://github.com/c0remusic/sift/releases/download/${tag}/manuel.pdf
+- en PDF, dans le design de l'app : https://sift-music.vercel.app/manuel.pdf
 - en Markdown : https://github.com/c0remusic/sift/blob/main/docs/manuel.md
 
 ### Installation (English)
@@ -139,7 +139,12 @@ is LARGER than the \`.dmg\`, so it looks like the right one.
   \`xattr -dr com.apple.quarantine /Applications/Sift.app\`
   If the message persists: \`codesign --force --deep --sign - /Applications/Sift.app\`
 
-The manual is in French for now: https://sift-music.vercel.app/manuel.html
+### Using Sift
+
+The manual — vocabulary, the nine screens, the keyboard, and what detection lets through:
+
+- online, in the app's design: https://sift-music.vercel.app/en/manuel.html
+- as a PDF, in the app's design: https://sift-music.vercel.app/manuel.en.pdf
 `;
 
 process.stdout.write(body + "\n" + FOOTER);

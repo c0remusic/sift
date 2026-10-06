@@ -30,7 +30,7 @@ Les versions suivantes arrivent par la mise à jour automatique, depuis l'app.
 - **En PDF :** https://sift-music.vercel.app/manuel.pdf
 - En Markdown : [`docs/manuel.md`](docs/manuel.md)
 
-Installer, trois mots à connaître, les huit écrans, le clavier, et ce que la détection laisse
+Installer, trois mots à connaître, les neuf écrans, le clavier, et ce que la détection laisse
 passer.
 
 ## Ce que Sift fait

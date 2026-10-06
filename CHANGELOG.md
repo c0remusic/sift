@@ -14,6 +14,181 @@ et la bannière de mise à jour montre les notes dans la langue de l'app. La sec
 `### Français` puis `### English`, chacun suivi de ses rubriques en `####`. Une moitié manquante
 ou vide fait échouer la release, comme une section absente.
 
+## v0.1.4
+
+### Français
+
+#### À lire avant la mise à jour
+
+- **Cette version s'installe à la main.** La clé qui signe les mises à jour a changé : une
+  installation 0.1.3 ne peut pas vérifier la 0.1.4 et refuse la mise à jour automatique.
+  Téléchargez l'installeur (tableau plus bas) et installez par-dessus : bibliothèque et réglages
+  sont gardés. Les versions suivantes se mettront de nouveau à jour seules.
+
+#### Doublons, un nouvel écran
+
+- **Tous les doublons au même endroit.** Une entrée du rail, sous Revue, réunit les copies d'un
+  même morceau dans toute la bibliothèque, file d'attente et Rangés compris. Chaque groupe dit ce
+  qui le fonde : fichiers **identiques** à l'octet, **même son** (empreinte acoustique), ou **même
+  nom** — noms sales compris : numéro de piste, adresse de site, « (1) », « 320kbps ».
+  « (Original Mix) » vaut absence de version ; une autre version reste un autre morceau.
+- **Comparer avant de choisir.** Une case « Garder » par copie : la meilleure est cochée d'office
+  (VRAI avant FAUX, lossless avant MP3), et une copie que Rekordbox joue est gardée aussi. Ouvrir
+  une copie l'écoute et la compare à la copie gardée, fait par fait.
+- **Un seul geste, un seul Ctrl+Z.** Rien ne part avant « Envoyer à la corbeille », qui récapitule
+  tout le plan. Un groupe aux durées différentes reste **À vérifier**, hors du plan, tant que vous
+  ne l'avez pas tranché. Quand Rekordbox est ouvert, la confirmation dit combien de copies n'ont
+  pas pu être vérifiées. « Ce ne sont pas des doublons » retire un groupe pour de bon.
+- La pastille DUPLICATE de Revue mène au groupe de la piste. Le mode Doublons de Rangés disparaît,
+  remplacé par cet écran, et les raccourcis `Ctrl+2` à `Ctrl+9` se décalent d'un cran.
+
+#### Corbeille
+
+- **Jeter ne recopie plus.** Un fichier part dans une corbeille sur son propre disque —
+  `Documents/Sift/Trash` s'il est sur le même disque, sinon `.sift-trash` à la racine du sien —
+  par un simple déplacement, instantané. Annuler et Restaurer le remettent de la même façon. Avant,
+  tout était recopié dans Documents : jeter les doublons d'une vraie bibliothèque aurait recopié
+  23 Go.
+- Une copie de Rangés envoyée à la corbeille puis restaurée retourne dans Rangés.
+
+#### Sift parle anglais
+
+- L'interface entière existe en français et en anglais, au choix dans Réglages ; les messages du
+  moteur suivent. Les notes de mise à jour arrivent dans la langue de l'app. Le site et le manuel
+  ont leur version anglaise.
+
+#### Revue
+
+- Le verdict dit le **débit d'origine** du fichier, et un fichier lossy **sous 320 kbps** est
+  signalé, avec la proposition de le mettre à l'écart (#69).
+- Le **spectrogramme s'agrandit**, calculé à la résolution de l'écran (#72).
+- **Changer de release** sans relancer l'identification (#68).
+- Une édition des métadonnées survit à la réouverture de la piste.
+- Ouvrir une piste et l'identifier **ne figent plus la fenêtre**.
+- L'inspecteur se masque d'un bouton de la barre, et les poignées de redimensionnement se voient.
+- Une piste sans pochette montre une note de musique au lieu d'un carré vide.
+
+#### Détection
+
+- **Les Vorbis (OGG) et WMA déguisés en lossless ne passent plus inaperçus** : un nouveau banc
+  compte les blocs alignés sur la grille du codec. Mesuré : 22 détections de plus sur le corpus de
+  test, aucune régression.
+- Un AAC déguisé en `.flac` est reconnu lossy.
+- Un seul décodage par fichier, et l'ouverture du Diagnostic passe de 13 s à 0,4 s. Une piste dont
+  le rapport était périmé est de nouveau analysée — 1 384 l'attendaient dans une vraie
+  bibliothèque.
+- La durée enregistrée vient du décodage, plus de l'en-tête du fichier.
+
+#### Rangement
+
+- Le **profil de conversion se règle par format** (#71).
+- Une conversion en place garde son nom (#77) ; deux destinations qui ne diffèrent que par la casse
+  sont un seul fichier (#79) ; une conversion écrit le débit du fichier produit.
+- Graver des tags ne relance plus l'analyse complète et ne sort plus une piste de Rangés.
+- Mode Lot : le bouton compte ce qu'il range, et une analyse abandonnée ne passe plus pour en cours.
+
+#### Rekordbox
+
+- La synchro des métadonnées dit ce que Rekordbox garderait d'une release remplacée, et vide dans
+  `master.db` les champs que la nouvelle release n'a plus (#81).
+- Un « % » dans un nom de fichier ne fait plus échouer l'export XML.
+
+#### Journal et lecteur
+
+- Une mise à la corbeille ne s'affiche plus « Purgé », et la reprise d'une annulation interrompue
+  reste une annulation de rangement (#80).
+- La bulle de temps du lecteur suit le pouce pendant un glissement.
+
+#### macOS
+
+- Le paquet macOS est scellé (signature ad hoc), et chaque build le vérifie (#36).
+
+### English
+
+#### Read before updating
+
+- **This version installs by hand.** The key that signs updates has changed: a 0.1.3
+  installation cannot verify 0.1.4 and refuses the automatic update. Download the installer
+  (table below) and install over it: your library and settings are kept. Later versions will
+  update themselves again.
+
+#### Duplicates, a new screen
+
+- **Every duplicate in one place.** A rail entry under Review gathers the copies of the same track
+  across the whole library, queue and Filed included. Each group says what it rests on: files
+  **identical** byte for byte, **same sound** (acoustic fingerprint), or **same name** — dirty names
+  included: track number, website address, "(1)", "320kbps". "(Original Mix)" counts as no
+  version; another version stays another track.
+- **Compare before you choose.** One "Keep" box per copy: the best one is checked for you (GENUINE
+  before FAKE, lossless before MP3), and a copy Rekordbox plays is kept as well. Opening a copy
+  plays it and compares it with the kept copy, fact by fact.
+- **One gesture, one Ctrl+Z.** Nothing leaves before "Move to Trash", which sums up the whole plan.
+  A group whose copies differ in length stays **To check**, out of the plan, until you decide it.
+  While Rekordbox is open, the confirmation says how many copies couldn't be checked. "These aren't
+  duplicates" removes a group for good.
+- The DUPLICATE badge in Review leads to the track's group. Filed loses its Duplicates mode,
+  replaced by this screen, and the `Ctrl+2` to `Ctrl+9` shortcuts shift by one.
+
+#### Trash
+
+- **Throwing away no longer copies.** A file goes to a trash on its own disk —
+  `Documents/Sift/Trash` if it is on the same disk, otherwise `.sift-trash` at the root of its own —
+  with a plain, instant move. Undo and Restore put it back the same way. Before, everything was
+  copied into Documents: throwing away the duplicates of a real library would have copied 23 GB.
+- A Filed copy moved to the Trash and then restored goes back to Filed.
+
+#### Sift speaks English
+
+- The whole interface exists in French and in English, to choose in Settings; the engine's
+  messages follow. Update notes arrive in the app's language. The website and the manual have
+  their English version.
+
+#### Review
+
+- The verdict states the file's **original bitrate**, and a lossy file **under 320 kbps** is
+  flagged, with the offer to set it aside (#69).
+- The **spectrogram can be enlarged**, computed at the screen's resolution (#72).
+- **Change the release** without running the identification again (#68).
+- A metadata edit survives reopening the track.
+- Opening a track and identifying it **no longer freeze the window**.
+- The inspector hides with a button in the bar, and the resize handles are visible.
+- A track without a cover shows a music note instead of an empty square.
+
+#### Detection
+
+- **Vorbis (OGG) and WMA files disguised as lossless no longer go unnoticed**: a new bench counts
+  the blocks aligned on the codec's grid. Measured: 22 more detections on the test corpus, no
+  regression.
+- An AAC disguised as a `.flac` is recognised as lossy.
+- One decode per file, and opening the Diagnostic goes from 13 s to 0.4 s. A track whose report
+  was out of date is analysed again — 1,384 were waiting in a real library.
+- The stored length comes from decoding, no longer from the file header.
+
+#### Filing
+
+- The **conversion profile is set per format** (#71).
+- A conversion in place keeps its name (#77); two destinations that differ only by case are one
+  file (#79); a conversion writes the bitrate of the file it produced.
+- Writing tags no longer restarts the full analysis nor takes a track out of Filed.
+- Batch mode: the button counts what it files, and an abandoned analysis no longer passes for
+  one in progress.
+
+#### Rekordbox
+
+- The metadata sync says what Rekordbox would keep from a replaced release, and clears in
+  `master.db` the fields the new release no longer has (#81).
+- A "%" in a file name no longer breaks the XML export.
+
+#### Log and player
+
+- Moving a file to the Trash no longer shows as "Purged", and resuming an interrupted undo stays an
+  undo of a filing (#80).
+- The player's time bubble follows the thumb while dragging.
+
+#### macOS
+
+- The macOS bundle is sealed (ad hoc signature), and every build checks it (#36).
+
 ## v0.1.3
 
 ### Apparence
