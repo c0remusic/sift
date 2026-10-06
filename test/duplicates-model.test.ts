@@ -33,6 +33,8 @@ const copy = (id: number, path: string, over: Partial<DupScreenCopy> = {}): DupS
   size_bytes: 50_000_000,
   truncated: false,
   missing: false,
+  // Ce que le backend calcule pour une copie isolée ; le cas « toutes tronquées » se pose à la main.
+  keepable: !over.missing && !over.truncated,
   discogs_release_id: null,
   year: null,
   rekordbox: { state: "absent" },
@@ -74,6 +76,12 @@ describe("plan et effet d'un groupe", () => {
     ]);
     expect(isKept(plan, absente)).toBe(false);
     expect(isKept(plan, tronquee)).toBe(false);
+  });
+
+  it("une tronquée que le backend dit gardable (toutes le sont) se garde", () => {
+    const tronquee = copy(2, "C:/a/y.mp3", { truncated: true, keepable: true });
+    expect(isKept(new Map([[2, true]]), tronquee)).toBe(true);
+    expect(isKept(new Map([[2, false]]), tronquee)).toBe(false);
   });
 
   it("l'effet compte ce qui part, sa taille et ce que Rekordbox perdrait", () => {

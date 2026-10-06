@@ -604,6 +604,9 @@ export interface DupScreenCopy {
   truncated: boolean;
   /** Le fichier n'est plus sur le disque : jamais gardé, jamais envoyé. */
   missing: boolean;
+  /** La règle peut la garder : présente, et entière — sauf quand toutes les copies présentes du
+   *  groupe sont tronquées (tranché le 2026-10-06). Calculé côté Rust, jamais recalculé ici. */
+  keepable: boolean;
   discogs_release_id: string | null;
   year: number | null;
   rekordbox: RekordboxUse;

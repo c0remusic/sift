@@ -48,7 +48,11 @@ de nom en ratait au moins 50 groupes.
 
 **La durée ne scinde jamais un groupe.**
 - Une copie que l'analyse marque **tronquée** reste dans son groupe, marquée « tronquée », et
-  n'est jamais cochée par défaut.
+  n'est jamais cochée par défaut — **sauf quand toutes les copies présentes du groupe le sont**.
+  La troncature ne départage alors rien : la règle coche la meilleure comme ailleurs, la marque
+  reste affichée, les durées des tronquées servent à décider d'À vérifier. Tranché le 2026-10-06 :
+  sur la vraie bibliothèque, 16 groupes sur 672 sortaient tout décochés, cases désactivées, hors
+  du plan — aucun geste possible.
 - Un écart de durée de plus de 2 s **sans** troncature détectée rend le groupe **À vérifier** :
   deux versions possibles sous le même nom.
 
@@ -101,7 +105,7 @@ groupe À vérifier le dit en encre d'avertissement (« À vérifier · hors du 
 
 | # | Colonne | Rendu |
 |---|---|---|
-| 1 | **Garder** | case à cocher native, gabarit de `.qi-ck` ; la meilleure cochée par défaut, d'autres cochables ; désactivée sur une copie tronquée ou introuvable |
+| 1 | **Garder** | case à cocher native, gabarit de `.qi-ck` ; la meilleure cochée par défaut, d'autres cochables ; désactivée sur une copie introuvable, et sur une tronquée quand une autre copie présente est entière |
 | 2 | Fichier | nom complet, **tronqué au milieu pour garder la version et l'extension** (« Aldo Ostrova - … (Original Mix).flac ») ; « tronquée » ou « introuvable » en encre d'avertissement |
 | 3 | Preuve | vide sur une copie : la preuve est celle du groupe, sur sa rangée d'en-tête ; la relation entre deux copies se lit en zone D |
 | 4 | Verdict | pastille 6 px `currentColor` + mot, colonne de 96 px (`styles.css:1863`) ; **teinté seulement s'il diffère dans le groupe**, neutre sinon (un état permanent reste neutre, `tokens.md`) |
@@ -206,7 +210,8 @@ L'inspecteur écrit « non vérifiée » dans la ligne Rekordbox de la comparais
   copie : verdict, coupure, format, débit, fréquence, durée, taille, dossier, source, troncature,
   identification, présence Rekordbox, existence du fichier sur le disque. Calculés hors du fil de
   la fenêtre.
-- **Copie cochée par défaut** (`pick_keep` v2) : jamais tronquée, puis VRAI avant À VÉRIFIER avant
+- **Copie cochée par défaut** (`pick_keep` v2) : entière avant tronquée (une tronquée n'est cochée
+  que si toutes les copies présentes le sont), puis VRAI avant À VÉRIFIER avant
   FAUX, puis lossless avant lossy, puis le débit **entre copies lossy seulement**, puis la
   fréquence ; à égalité : dossier préféré, puis .aiff plutôt que .aif, puis la plus ancienne. Plus
   jamais l'ordre de lecture SQL. Le débit ne départage pas deux lossless (tranché le 2026-10-05,

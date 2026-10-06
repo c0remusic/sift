@@ -90,6 +90,9 @@ pub struct DupScreenCopy {
     pub truncated: bool,
     /// Le fichier n'est plus sur le disque : jamais gardé, jamais envoyé.
     pub missing: bool,
+    /// La règle peut la garder : présente, et entière — sauf quand toutes les copies présentes du
+    /// groupe sont tronquées, où la troncature ne départage plus rien (tranché le 2026-10-06).
+    pub keepable: bool,
     pub discogs_release_id: Option<String>,
     pub year: Option<i64>,
     pub rekordbox: RekordboxUse,
@@ -580,6 +583,7 @@ pub(crate) fn assembler(
                 size_bytes: l.size_bytes,
                 truncated: l.truncated,
                 missing: faits.absentes.contains(&l.id),
+                keepable: false,
                 discogs_release_id: l.discogs_release_id.clone(),
                 year: l.year,
                 rekordbox,
@@ -594,23 +598,32 @@ pub(crate) fn assembler(
         (qualite(b), departage(b, *mb)).cmp(&(qualite(a), departage(a, *ma)))
     });
 
-    let gardable = |c: &DupScreenCopy| !c.missing && !c.truncated;
+    // Quand TOUTES les copies présentes sont tronquées, la troncature ne départage plus rien : la
+    // règle garde la meilleure comme ailleurs, la marque « tronquée » reste affichée (tranché le
+    // 2026-10-06). Sans ça le groupe sortait tout décoché, cases grisées, sans geste possible.
+    let toutes_tronquees = copies
+        .iter()
+        .filter(|(c, _)| !c.missing)
+        .all(|(c, _)| c.truncated);
+    for (c, _) in copies.iter_mut() {
+        c.keepable = !c.missing && (!c.truncated || toutes_tronquees);
+    }
     let meilleure = copies.first().map(|(c, _)| qualite(c));
     for (c, _) in copies.iter_mut() {
         c.tied_with_best = meilleure == Some(qualite(c));
     }
     if let Some((premiere, _)) = copies.first_mut() {
-        premiere.keep = gardable(premiere);
+        premiere.keep = premiere.keepable;
     }
     for (c, _) in copies.iter_mut() {
-        if gardable(c) && matches!(c.rekordbox, RekordboxUse::Present { .. }) {
+        if c.keepable && matches!(c.rekordbox, RekordboxUse::Present { .. }) {
             c.keep = true;
         }
     }
 
     let durees: Vec<(i64, f64)> = copies
         .iter()
-        .filter(|(c, _)| !c.truncated && !c.missing)
+        .filter(|(c, _)| c.keepable)
         .filter_map(|(c, _)| c.duration.map(|d| (c.id, d)))
         .collect();
     let duration_spread = durees
@@ -639,14 +652,13 @@ pub(crate) fn assembler(
     // plus fort que le nom avec chacune des autres, le groupe est À vérifier. Sinon un radio edit et
     // une version longue de même nom, pas encore analysés, passaient au geste de masse.
     let duree_inconnue_sans_preuve = copies.iter().any(|(c, _)| {
-        !c.missing
-            && !c.truncated
+        c.keepable
             && c.duration.is_none()
             && copies
                 .iter()
                 .any(|(o, _)| o.id != c.id && !o.missing && !fort(c.id, o.id))
     });
-    let aucune_gardable = !copies.iter().any(|(c, _)| gardable(c));
+    let aucune_gardable = !copies.iter().any(|(c, _)| c.keepable);
 
     let proof = brut
         .liens
@@ -1015,6 +1027,34 @@ mod tests {
         );
     }
 
+    /// Rekordbox ne coche pas une copie que la règle ne peut pas garder : tronquée à côté d'une
+    /// entière, ou introuvable.
+    #[test]
+    fn rekordbox_ne_coche_pas_une_copie_non_gardable() {
+        let mut tronquee = ligne(2, "C:/b/Cielo - Overcast.aiff");
+        tronquee.truncated = true;
+        let lignes = [
+            ligne(1, "C:/a/Cielo - Overcast.wav"),
+            tronquee,
+            ligne(3, "C:/c/Cielo - Overcast.aiff"),
+        ];
+        let k = cles(&lignes);
+        let faits = Faits {
+            absentes: HashSet::from([3]),
+            rekordbox: HashMap::from([
+                (2, RekordboxUse::Present { playlists: 3 }),
+                (3, RekordboxUse::Present { playlists: 1 }),
+            ]),
+            rekordbox_connu: true,
+            ..Faits::default()
+        };
+        let brut = &former_groupes(&lignes, &k, &HashMap::new(), &[], &HashSet::new())[0];
+        let g = assembler(&lignes, &k, brut, &faits);
+        assert_eq!(ids(&g), vec![1, 2, 3]);
+        assert!(g.copies[0].keep);
+        assert!(!g.copies[1].keep && !g.copies[2].keep);
+    }
+
     #[test]
     fn rekordbox_illisible_rend_inconnu_pas_absent() {
         let lignes = [
@@ -1086,15 +1126,93 @@ mod tests {
         );
     }
 
+    /// Toutes tronquées : la troncature ne départage rien, la règle garde la meilleure comme
+    /// ailleurs, et le groupe entre dans le plan si les durées concordent (tranché le 2026-10-06).
     #[test]
-    fn aucune_copie_gardable_est_a_verifier() {
+    fn toutes_tronquees_la_meilleure_reste_gardee() {
+        let mut a = ligne(1, "C:/a/Kovacs - Lanterns.mp3");
+        a.truncated = true;
+        a.bitrate = Some(192);
+        let mut b = ligne(2, "C:/b/Kovacs - Lanterns.wav");
+        b.truncated = true;
+        let g = grouper(&[a.clone(), b.clone()]);
+        assert_eq!(ids(&g[0]), vec![2, 1]);
+        assert!(g[0].copies.iter().all(|c| c.keepable && c.truncated));
+        assert!(g[0].copies[0].keep && !g[0].copies[1].keep);
+        assert!(
+            !g[0].to_check,
+            "durées égales : le groupe entre dans le plan"
+        );
+
+        // Les durées des tronquées comptent alors : un écart sans preuve reste À vérifier.
+        let mut c = a.clone();
+        c.duration = Some(344.0);
+        let g = grouper(&[c, b.clone()]);
+        assert!(g[0].to_check);
+        assert_eq!(g[0].duration_spread, Some(44.0));
+
+        // Et une durée inconnue ne prouve rien chez elles non plus.
+        let mut d = a;
+        d.duration = None;
+        let g = grouper(&[d, b]);
+        assert!(
+            g[0].to_check,
+            "durée inconnue sans preuve plus forte que le nom"
+        );
+    }
+
+    /// Une seule copie entière suffit à rendre les tronquées non gardables.
+    #[test]
+    fn une_copie_entiere_rend_les_tronquees_non_gardables() {
         let mut a = ligne(1, "C:/a/Kovacs - Lanterns.wav");
         a.truncated = true;
         let mut b = ligne(2, "C:/b/Kovacs - Lanterns.wav");
         b.truncated = true;
-        let g = grouper(&[a, b]);
-        assert!(g[0].to_check);
-        assert!(g[0].copies.iter().all(|c| !c.keep));
+        let mut c = ligne(3, "C:/c/Kovacs - Lanterns.mp3");
+        c.bitrate = Some(128);
+        let g = grouper(&[a, b, c]);
+        assert_eq!(g[0].copies[0].id, 3);
+        assert!(g[0].copies[0].keepable && g[0].copies[0].keep);
+        assert!(g[0].copies[1..].iter().all(|c| !c.keepable && !c.keep));
+    }
+
+    /// Les introuvables ne comptent pas : une tronquée seule présente est gardable.
+    #[test]
+    fn toutes_tronquees_parmi_les_presentes_seulement() {
+        let lignes = {
+            let mut a = ligne(1, "C:/a/Pale - Halcyon.aiff");
+            a.truncated = true;
+            [a, ligne(2, "C:/b/Pale - Halcyon.aiff")]
+        };
+        let k = cles(&lignes);
+        let faits = Faits {
+            absentes: HashSet::from([2]),
+            rekordbox_connu: true,
+            ..Faits::default()
+        };
+        let brut = &former_groupes(&lignes, &k, &HashMap::new(), &[], &HashSet::new())[0];
+        let g = assembler(&lignes, &k, brut, &faits);
+        assert_eq!(ids(&g), vec![1, 2]);
+        assert!(g.copies[0].keepable && g.copies[0].keep);
+        assert!(!g.copies[1].keepable && !g.copies[1].keep);
+    }
+
+    #[test]
+    fn aucune_copie_gardable_est_a_verifier() {
+        let lignes = [
+            ligne(1, "C:/a/Kovacs - Lanterns.wav"),
+            ligne(2, "C:/b/Kovacs - Lanterns.wav"),
+        ];
+        let k = cles(&lignes);
+        let faits = Faits {
+            absentes: HashSet::from([1, 2]),
+            rekordbox_connu: true,
+            ..Faits::default()
+        };
+        let brut = &former_groupes(&lignes, &k, &HashMap::new(), &[], &HashSet::new())[0];
+        let g = assembler(&lignes, &k, brut, &faits);
+        assert!(g.to_check);
+        assert!(g.copies.iter().all(|c| !c.keep && !c.keepable));
     }
 
     #[test]
@@ -1156,6 +1274,7 @@ mod tests {
             size_bytes,
             truncated,
             missing,
+            keepable,
             discogs_release_id,
             year,
             rekordbox,
@@ -1178,6 +1297,7 @@ mod tests {
             size_bytes,
             truncated,
             missing,
+            keepable,
             discogs_release_id,
             year,
             rekordbox,
@@ -1230,6 +1350,115 @@ mod tests {
 
     fn json<T: Serialize>(v: &T) -> String {
         serde_json::to_string(v).unwrap()
+    }
+
+    /// Diagnostic sur une COPIE d'une vraie base : les groupes où la règle ne coche AUCUNE copie,
+    /// classés par cause, avec leurs copies. `SIFT_DOUBLONS_DB=<copie> cargo test --lib
+    /// diagnostic_groupes_sans_copie_gardee -- --ignored --nocapture`.
+    #[test]
+    #[ignore]
+    fn diagnostic_groupes_sans_copie_gardee() {
+        let Ok(chemin) = std::env::var("SIFT_DOUBLONS_DB") else {
+            eprintln!("SIFT_DOUBLONS_DB absent : diagnostic sauté");
+            return;
+        };
+        let conn = Connection::open_with_flags(
+            &chemin,
+            rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_URI,
+        )
+        .unwrap();
+        let lignes = charger_lignes(&conn).unwrap();
+        let aretes = charger_aretes_son(&conn).unwrap();
+        let refus = charger_refus(&conn).unwrap_or_default();
+        let k = cles(&lignes);
+        let sommes = echantillonner(&lignes);
+        let bruts = former_groupes(&lignes, &k, &sommes, &aretes, &refus);
+        let membres: Vec<i64> = bruts
+            .iter()
+            .flat_map(|b| b.membres.iter().map(|&i| lignes[i].id))
+            .collect();
+        let absentes: HashSet<i64> = bruts
+            .iter()
+            .flat_map(|b| b.membres.iter())
+            .filter(|&&i| !Path::new(&lignes[i].path).is_file())
+            .map(|&i| lignes[i].id)
+            .collect();
+        let faits = Faits {
+            frequences: charger_frequences(&conn, &membres).unwrap(),
+            absentes,
+            rekordbox_connu: false,
+            ..Faits::default()
+        };
+        let groupes: Vec<DupScreenGroup> = bruts
+            .iter()
+            .map(|b| assembler(&lignes, &k, b, &faits))
+            .collect();
+        let sans: Vec<&DupScreenGroup> = groupes
+            .iter()
+            .filter(|g| !g.copies.iter().any(|c| c.keep))
+            .collect();
+        let tous_tronques = sans
+            .iter()
+            .filter(|g| g.copies.iter().all(|c| c.truncated && !c.missing))
+            .count();
+        let tous_absents = sans
+            .iter()
+            .filter(|g| g.copies.iter().all(|c| c.missing))
+            .count();
+        let mixtes = sans.len() - tous_tronques - tous_absents;
+        let copies_tronquees = groupes
+            .iter()
+            .flat_map(|g| g.copies.iter())
+            .filter(|c| c.truncated)
+            .count();
+        let copies: usize = groupes.iter().map(|g| g.copies.len()).sum();
+        eprintln!(
+            "groupes {} · sans copie gardée {} (toutes tronquées {}, toutes introuvables {}, mélange tronquées/introuvables {}) · copies tronquées {} sur {}",
+            groupes.len(),
+            sans.len(),
+            tous_tronques,
+            tous_absents,
+            mixtes,
+            copies_tronquees,
+            copies
+        );
+        // Les groupes que la règle « toutes tronquées » (2026-10-06) garde désormais : combien
+        // restent À vérifier (durées discordantes ou inconnues), combien entrent dans le plan.
+        let toutes_tronquees: Vec<&DupScreenGroup> = groupes
+            .iter()
+            .filter(|g| {
+                g.copies.iter().any(|c| !c.missing)
+                    && g.copies.iter().filter(|c| !c.missing).all(|c| c.truncated)
+            })
+            .collect();
+        eprintln!(
+            "groupes dont toutes les copies présentes sont tronquées {} · dont À vérifier {}",
+            toutes_tronquees.len(),
+            toutes_tronquees.iter().filter(|g| g.to_check).count()
+        );
+        for g in sans.iter().take(12) {
+            eprintln!(
+                "  {} — {} · à vérifier {}",
+                g.artist.as_deref().unwrap_or("?"),
+                g.title,
+                g.to_check
+            );
+            for c in &g.copies {
+                eprintln!(
+                    "    tronquée {} · introuvable {} · {} · {:?} · {:?} s · {}",
+                    c.truncated,
+                    c.missing,
+                    c.format,
+                    c.verdict,
+                    c.duration.map(|d| d.round()),
+                    c.path
+                );
+            }
+        }
+        assert!(
+            sans.iter().all(|g| g.copies.iter().all(|c| c.missing)),
+            "un groupe a une copie présente et aucune cochée"
+        );
     }
 
     /// Mesure sur une COPIE d'une vraie base, ouverte en lecture seule : comptes et coût de

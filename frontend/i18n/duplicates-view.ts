@@ -97,7 +97,7 @@ const fr = {
   linkSameName: "Même nom que la comparée",
   // La phrase de la règle : ce qui sépare la copie gardée de l'autre.
   whyMissing: "L'autre copie est introuvable sur le disque.",
-  whyTruncated: "La règle ne garde jamais une copie tronquée.",
+  whyTruncated: "La règle préfère toujours une copie entière à une copie tronquée.",
   whyVerdict: (fmt: string) => `La règle garde la copie ${fmt} : un VRAI passe avant un FAUX.`,
   whyVerdictGrey: (fmt: string) => `La règle garde la copie ${fmt} : un VRAI passe avant un À VÉRIFIER.`,
   whyLossless: (fmt: string) => `La règle garde la copie ${fmt} : un lossless passe avant un lossy.`,
@@ -237,7 +237,7 @@ const en: typeof fr = {
   linkSameSound: (s: string) => `Same sound as the compared copy · fingerprint ${s}`,
   linkSameName: "Same name as the compared copy",
   whyMissing: "The other copy is missing from the disk.",
-  whyTruncated: "The rule never keeps a truncated copy.",
+  whyTruncated: "The rule always prefers a complete copy to a truncated one.",
   whyVerdict: (fmt: string) => `The rule keeps the ${fmt} copy: GENUINE beats FAKE.`,
   whyVerdictGrey: (fmt: string) => `The rule keeps the ${fmt} copy: GENUINE beats TO CHECK.`,
   whyLossless: (fmt: string) => `The rule keeps the ${fmt} copy: lossless beats lossy.`,

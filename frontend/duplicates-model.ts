@@ -30,9 +30,11 @@ export function initialPlan(groups: readonly DupScreenGroup[]): Plan {
   return plan;
 }
 
-/** Une copie absente ou tronquée ne se garde pas : sa case est désactivée (spec § Zone C). */
+/** Une copie absente, ou tronquée quand une autre est entière, ne se garde pas : sa case est
+ *  désactivée (spec § Zone C). Le backend en décide (`DupScreenCopy.keepable`) : il voit le
+ *  groupe entier, une copie seule ne dit pas si toutes les autres sont tronquées. */
 export function keepable(c: DupScreenCopy): boolean {
-  return !c.missing && !c.truncated;
+  return c.keepable;
 }
 
 export function isKept(plan: Plan, c: DupScreenCopy): boolean {

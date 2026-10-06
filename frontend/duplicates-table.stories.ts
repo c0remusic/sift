@@ -38,6 +38,8 @@ const copy = (path: string, over: Partial<DupScreenCopy> = {}): DupScreenCopy =>
   size_bytes: 72_000_000,
   truncated: false,
   missing: false,
+  // Ce que le backend calcule pour une copie isolée ; le cas « toutes tronquées » se pose à la main.
+  keepable: !over.missing && !over.truncated,
   discogs_release_id: null,
   year: null,
   rekordbox: { state: "absent" },
@@ -113,8 +115,17 @@ const pale = group(
   ],
   { artist: "Pale Circuit", title: "Halcyon" },
 );
+// Toutes les copies tronquées (pistes d'album enchaînées, typiquement) : la troncature ne départage
+// rien, le backend les rend gardables et coche la meilleure (tranché le 2026-10-06).
+const vesna = group(
+  [
+    copy(`${S}\\Vesna Arlo\\Vesna Arlo - Night Ferry.aiff`, { keep: true, keepable: true, truncated: true, duration: 385, tied_with_best: true }),
+    copy(`${M}\\Albums\\Vesna Arlo - Night Ferry.aif`, { keepable: true, truncated: true, duration: 385, tied_with_best: true }),
+  ],
+  { artist: "Vesna Arlo", title: "Night Ferry" },
+);
 
-const ALL = [aldo, bram, cielo, halden, kovacs, okami, pale];
+const ALL = [aldo, bram, cielo, halden, kovacs, okami, pale, vesna];
 
 function tableHtml(groups: DupScreenGroup[], view: DupRowView): string {
   const rows = flattenRows(groups)
@@ -154,6 +165,16 @@ export const RekordboxDecochee: Story = {
     const plan = initialPlan([cielo]);
     plan.set(cielo.copies[0].id, false);
     return mount(tableHtml([cielo], { plan, touched: new Set([cielo.id]), sources, openId: null }));
+  },
+};
+
+/** Toutes les copies tronquées : marque « tronquée » sur chacune, cases actives, la meilleure
+ *  cochée, et le groupe dans le plan (durées égales). */
+export const ToutesTronquees: Story = {
+  name: "Toutes tronquées",
+  render: () => {
+    const plan = initialPlan([vesna]);
+    return mount(tableHtml([vesna], { plan, touched: new Set(), sources, openId: null }));
   },
 };
 
