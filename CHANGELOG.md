@@ -14,6 +14,38 @@ et la bannière de mise à jour montre les notes dans la langue de l'app. La sec
 `### Français` puis `### English`, chacun suivi de ses rubriques en `####`. Une moitié manquante
 ou vide fait échouer la release, comme une section absente.
 
+## v0.1.5
+
+### Français
+
+#### À lire avant la mise à jour
+
+- Depuis la 0.1.4, cette version s'installe seule. Une installation 0.1.3 doit encore l'installer
+  à la main : la clé qui signe les mises à jour a changé avec la 0.1.4.
+
+#### Doublons
+
+- **Un groupe dont toutes les copies sont tronquées garde de nouveau sa meilleure copie.** Avant,
+  toutes ses cases étaient décochées et grisées : l'écran semblait proposer d'envoyer toutes les
+  copies à la corbeille, et aucun geste ne permettait de régler le groupe. Dans ce cas, la
+  troncature ne départage plus rien : la meilleure copie est cochée selon la règle habituelle, la
+  marque « tronquée » reste affichée, et le groupe entre dans le plan si les durées concordent.
+
+### English
+
+#### Read before updating
+
+- From 0.1.4 on, this version installs itself. A 0.1.3 installation still has to install it by
+  hand: the key that signs updates changed with 0.1.4.
+
+#### Duplicates
+
+- **A group whose copies are all truncated keeps its best copy again.** Before, all its boxes were
+  unchecked and greyed out: the screen seemed to offer to move every copy to the Trash, and nothing
+  could settle the group. In that case truncation no longer decides anything: the best copy is
+  checked by the usual rule, the "truncated" mark stays visible, and the group joins the plan if
+  the lengths match.
+
 ## v0.1.4
 
 ### Français
