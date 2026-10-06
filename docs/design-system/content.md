@@ -183,8 +183,8 @@ libellé propre.
 | VRAI | GENUINE | « TRUE » se lit comme un booléen ; « genuine » est le mot du domaine face à un faux |
 | À VÉRIFIER | TO CHECK | pas « CHECK » seul, qui se lit comme un bouton d'action et non comme un état |
 
-**Écrans du rail**, dans l'ordre : Review · Log · Filed · To re-source · Trash · Rekordbox ·
-USB drive · Settings. Accueil → Home.
+**Écrans du rail**, dans l'ordre : Review · Duplicates · Log · Filed · To re-source · Trash ·
+Rekordbox · USB drive · Settings. Accueil → Home.
 
 **Verbes préférés** : Convert · Set aside · Search · Apply · Choose · Open · Cancel.
 
