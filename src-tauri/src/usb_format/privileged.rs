@@ -12,8 +12,9 @@
 //! C'est la troisième. Le processus élevé ne démarre aucune interface, ne touche pas la base, ne
 //! lit aucun réglage : il partitionne, écrit le système de fichiers, et sort avec un code.
 //!
-//! **Une seule invite UAC.** `diskpart` et l'écriture brute ont tous deux besoin de l'élévation ;
-//! les faire depuis le même processus élevé évite d'en demander deux fois.
+//! **Une seule invite UAC.** Le partitionnement (cmdlets de stockage, plus `diskpart` depuis le
+//! 2026-10-07) et l'écriture brute ont tous deux besoin de l'élévation ; les faire depuis le même
+//! processus élevé évite d'en demander deux fois.
 
 use super::{fat32, raw_volume::RawVolume, sector_io::SectorIo, TargetFs};
 use std::io::Write;
@@ -138,22 +139,35 @@ pub const EXIT_VOLUME_LOCKED: i32 = 5;
 pub const EXIT_WRITE_FAILED: i32 = 6;
 
 /// Combien de temps attendre que Windows monte la partition fraîchement créée. Le montage est
-/// asynchrone : `diskpart` rend la main avant que la lettre existe.
+/// asynchrone : la partition peut exister avant sa lettre.
 const LETTER_POLL_ATTEMPTS: u32 = 20;
 const LETTER_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(400);
 
-/// Script `diskpart` qui prépare le disque SANS le formater — le formatage, c'est nous.
+/// Script PowerShell qui prépare le disque SANS le formater — le formatage, c'est nous.
 ///
-/// `clean` efface la table de partition, `create partition primary` en pose une neuve qui couvre
-/// tout le disque, `assign` lui donne une lettre. Pas de `format fs=...` : c'est précisément ce
-/// que Windows refuse au-delà de 32 Go, et toute la raison de ce module.
-pub fn partition_script(disk_index: u32) -> String {
-    // `id=0c` n'est PAS cosmétique. Sans lui, `diskpart` pose son type par défaut — 0x06, FAT16 —
-    // et nous écrivons ensuite du FAT32 dedans. Or FAT16 plafonne à 2 Go : une partition de
-    // 465 Go typée 0x06 est hors spécification, et Windows finit par la déclarer « endommagée et
-    // illisible » (os error 1392, constaté sur le SSD d'Antoine le 2026-08-03). 0x0C est le type
-    // FAT32 avec adressage LBA, le seul correct au-delà de 8 Go.
-    format!("select disk {disk_index}\nclean\ncreate partition primary id=0c\nassign\nexit\n")
+/// `Clear-Disk` efface la table de partition (sauté sur un disque vierge, où il échouerait),
+/// `Initialize-Disk` pose une table MBR, `New-Partition` une partition qui couvre tout le disque,
+/// avec sa lettre. Pas de `Format-Volume` : c'est précisément ce que Windows refuse au-delà de
+/// 32 Go, et toute la raison de ce module.
+///
+/// **Ce n'est plus `diskpart`** (2026-10-07). Chronométré sur le SSD de 500 Go d'Antoine :
+/// `diskpart` prenait 36,5 s des 39,6 s d'un formatage, dont ~26,5 s pour son seul démarrage —
+/// `list disk` seul, sans rien écrire, mesurait 26,8 s puis 26,4 s. Les cmdlets de stockage font
+/// le même travail en 4,6 s (`Clear-Disk` 2,7 s, `Initialize-Disk` 0,7 s, `New-Partition` 1,2 s)
+/// et rendent la même partition : 500 105 740 288 octets, type MBR 0x0C.
+pub fn storage_partition_script(disk_index: u32) -> String {
+    // `-MbrType FAT32` n'est PAS cosmétique : c'est le type 0x0C (FAT32 avec adressage LBA), le
+    // seul correct au-delà de 8 Go — mesuré `MbrType 12` sur la partition rendue. Le type par
+    // défaut d'une partition neuve n'est pas FAT32, et un FAT32 écrit dans une partition typée
+    // 0x06 (FAT16, plafond 2 Go) finit déclaré « endommagé et illisible » par Windows (os error
+    // 1392, SSD d'Antoine, 2026-08-03 — c'était alors le `id=0c` manquant de `diskpart`).
+    format!(
+        "$ErrorActionPreference = 'Stop'\n\
+         $d = Get-Disk -Number {disk_index}\n\
+         if ($d.PartitionStyle -ne 'RAW') {{ Clear-Disk -Number {disk_index} -RemoveData -RemoveOEM -Confirm:$false }}\n\
+         Initialize-Disk -Number {disk_index} -PartitionStyle MBR\n\
+         New-Partition -DiskNumber {disk_index} -UseMaximumSize -MbrType FAT32 -AssignDriveLetter | Out-Null\n"
+    )
 }
 
 /// Analyse les arguments du mode privilégié.
@@ -220,9 +234,9 @@ pub fn run(job: &PrivilegedJob) -> i32 {
         "Partitionnement du disque…",
         "Partitioning the disk…"
     ));
-    let script = partition_script(job.disk_index);
-    let partition = win::run_diskpart_script(&script);
-    chrono.etape("diskpart (clean, partition, lettre)");
+    let script = storage_partition_script(job.disk_index);
+    let partition = win::run_powershell_script(&script);
+    chrono.etape("partitionnement (Clear-Disk, Initialize-Disk, New-Partition)");
     match partition {
         Ok(()) => {}
         Err(e) => {
@@ -496,21 +510,42 @@ mod tests {
         assert!(parse_args(&args).expect("drapeau present").is_err());
     }
 
-    /// Le script ne doit JAMAIS contenir `format` : c'est ce que Windows refuse au-delà de 32 Go,
-    /// et le laisser passer ramènerait le bug que ce module existe pour contourner.
+    /// Le script ne doit JAMAIS formater : c'est ce que Windows refuse au-delà de 32 Go, et le
+    /// laisser passer ramènerait le bug que ce module existe pour contourner. Chaque commande vise
+    /// le disque demandé, et AUCUN autre.
     #[test]
-    fn partition_script_creates_but_never_formats() {
-        let s = partition_script(2);
-        assert!(s.starts_with("select disk 2\n"), "{s}");
-        assert!(s.contains("\nclean\n"), "{s}");
-        // `id=0c` est la seule chose que diskpart doit dire du système de fichiers : le type MBR.
-        // Sans lui il pose 0x06 (FAT16), et le FAT32 qu'on écrit ensuite devient illisible
-        // (os error 1392, constate le 2026-08-03). Le contenu, lui, reste notre travail.
-        assert!(s.contains("\ncreate partition primary id=0c\n"), "{s}");
-        assert!(s.contains("\nassign\n"), "{s}");
+    fn storage_partition_script_creates_but_never_formats() {
+        let s = storage_partition_script(2);
+        assert!(s.starts_with("$ErrorActionPreference = 'Stop'\n"), "{s}");
+        // Effacer seulement un disque déjà initialisé : `Clear-Disk` échoue sur un disque vierge.
         assert!(
-            !s.contains("format"),
-            "le formatage est notre travail, pas celui de diskpart: {s}"
+            s.contains("if ($d.PartitionStyle -ne 'RAW') { Clear-Disk -Number 2 -RemoveData -RemoveOEM -Confirm:$false }"),
+            "{s}"
+        );
+        assert!(
+            s.contains("\nInitialize-Disk -Number 2 -PartitionStyle MBR\n"),
+            "{s}"
+        );
+        // `-MbrType FAT32` (0x0C) est la seule chose que le script dit du système de fichiers.
+        // Sans lui, un FAT32 écrit dans une partition d'un autre type devient illisible (os error
+        // 1392, constaté le 2026-08-03). Le contenu, lui, reste notre travail.
+        assert!(
+            s.contains(
+                "\nNew-Partition -DiskNumber 2 -UseMaximumSize -MbrType FAT32 -AssignDriveLetter"
+            ),
+            "{s}"
+        );
+        let cibles: Vec<&str> = s
+            .split(|c: char| c.is_whitespace())
+            .collect::<Vec<_>>()
+            .windows(2)
+            .filter(|w| w[0] == "-Number" || w[0] == "-DiskNumber")
+            .map(|w| w[1])
+            .collect();
+        assert_eq!(cibles, vec!["2", "2", "2", "2"], "{s}");
+        assert!(
+            !s.to_lowercase().contains("format-volume"),
+            "le formatage est notre travail, pas celui de Windows: {s}"
         );
     }
 }

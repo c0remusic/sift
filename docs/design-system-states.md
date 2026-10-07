@@ -1813,12 +1813,12 @@ rappel visible de l'effacement est désormais le bouton armé (« Confirmer — 
 sera effacé »). Annuler et Formater… ont le même gabarit (`.sift-settings-btn`,
 22 px) ; l'encre danger seule distingue le second.
 
-**Le chemin FAT32 sur matériel réel a abouti** (2026-10-07) : le SSD de 500 Go
-d'Antoine, sans volume, formaté par la sheet (élévation, partition, écriture
-FAT32), monté en `J:` FAT32 de 465,6 Gio, puis renommé sans erreur et lu par
-l'écran. Le formatage reste ressenti comme long ; chaque étape est désormais
-chronométrée dans le journal (`format — <étape> : N ms`) — mesurer avant de
-corriger.
+**Le chemin FAT32 sur matériel réel a abouti** (2026-10-07) : SSD de 500 Go
+d'Antoine formaté par la sheet et monté en `J:` FAT32. Chronométré par étape
+(journal `format — <étape> : N ms`) : `diskpart` prenait 36,5 s des 39,6 s du
+chemin élevé, dont ~26,5 s de seul démarrage ; remplacé par `Clear-Disk`,
+`Initialize-Disk` et `New-Partition -MbrType FAT32`, le même formatage tient en
+5,6 s. Sans élévation (partition réutilisée) : moins d'une seconde.
 
 ## Menu contextuel `.sift-ctx-menu` / `.sift-ctx-item` — 2026-08-20
 

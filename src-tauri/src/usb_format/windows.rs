@@ -20,9 +20,11 @@
 //! D'où les deux chemins de `format_large_fat32` :
 //!
 //! - partition existante qui couvre le disque → `try_format_in_place`, **sans aucun UAC** ;
-//! - disque RAW, sans lettre, ou partition trop petite → `diskpart` dans un Sift relancé en
-//!   administrateur, qui **partitionne seulement** (`privileged.rs`, `run_diskpart_script`),
-//!   puis le même `write_fat32`.
+//! - disque RAW, sans lettre, ou partition trop petite → un Sift relancé en administrateur, qui
+//!   **partitionne seulement** — cmdlets de stockage depuis le 2026-10-07, `diskpart` avant
+//!   (`privileged::storage_partition_script`, `run_powershell_script`) — puis le même
+//!   `write_fat32`. ⚠️ Le chemin exFAT / FAT32 ≤ 32 Go (`diskpart_script`, plus bas) passe ENCORE
+//!   par `diskpart` et son démarrage mesuré à ~26,5 s ; non mesuré de bout en bout, non changé.
 //!
 //! Ce bloc a porté deux affirmations fausses successives : « `diskpart` est le seul chemin CLI
 //! qui formate FAT32 au-delà de 32 Go », puis « livrer FAT32 reste une décision produit ouverte »
@@ -242,31 +244,43 @@ pub(crate) fn diskpart_script(disk_index: u32, fs: TargetFs) -> String {
     )
 }
 
-/// Exécute un script `diskpart` **directement**, sans passer par le shim d'élévation.
+/// Exécute un script PowerShell **directement**, dans le processus courant — déjà élevé.
 ///
-/// Réservé au processus déjà élevé (`privileged::run`) : appelé depuis un Sift ordinaire, il
-/// échouerait au `CreateProcess` comme tout `diskpart` non élevé. Le shim reste le chemin normal.
-pub(crate) fn run_diskpart_script(script: &str) -> Result<(), String> {
+/// Réservé au processus élevé (`privileged::run`), pour le partitionnement : les cmdlets de
+/// stockage exigent l'administrateur. Il remplace `run_diskpart_script` depuis le 2026-10-07 —
+/// `diskpart` coûtait ~26,5 s de démarrage à chaque formatage (`privileged::storage_partition_script`).
+/// Le script passe par un FICHIER `.ps1` et `-File`, comme `diskpart /s` avant lui : aucune règle
+/// de guillemets de la ligne de commande ne peut le déformer, et sous `-File` une erreur non
+/// rattrapée sort en code 1 — ce que `-Command -` (script par l'entrée standard) ne garantit pas
+/// sous PowerShell 5.1. `$ErrorActionPreference = 'Stop'` en tête du script rend chaque échec de
+/// cmdlet terminal. `-ExecutionPolicy Bypass` ne vaut que pour CE processus.
+pub(crate) fn run_powershell_script(script: &str) -> Result<(), String> {
     let mut tmp = tempfile::Builder::new()
-        .suffix(".txt")
+        .suffix(".ps1")
         .tempfile()
         .map_err(|e| format!("tempfile: {e}"))?;
     tmp.write_all(script.as_bytes())
         .map_err(|e| format!("write script: {e}"))?;
     let path = tmp.into_temp_path();
 
-    let output = Command::new("diskpart")
-        .arg("/s")
+    let output = Command::new("powershell")
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-File",
+        ])
         .arg(&path)
         .output()
-        .map_err(|e| format!("spawn diskpart: {e}"))?;
+        .map_err(|e| format!("spawn powershell: {e}"))?;
     if output.status.success() {
         return Ok(());
     }
     Err(format!(
-        "diskpart {:?}: {}",
+        "powershell {:?}: {}",
         output.status.code(),
-        String::from_utf8_lossy(&output.stdout).trim()
+        String::from_utf8_lossy(&output.stderr).trim()
     ))
 }
 
