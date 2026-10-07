@@ -26,6 +26,24 @@ const CONFIRM_REARM_MS = 400; // mirrors sift-live.ts's batch-confirm floor (see
  * `fat32::WINDOWS_FAT32_CREATE_CEILING`. */
 const WINDOWS_FAT32_CEILING = 32 * 1024 ** 3;
 
+/** Bulle d'information : un bouton ⓘ focalisable, et son texte en `role="tooltip"` relié par
+ *  `aria-describedby`, ouvert au survol comme au focus clavier — le motif « Tooltip » du WAI-ARIA
+ *  APG, celui du Tooltip de shadcn/Radix. La bulle est DANS l'enveloppe survolée : y passer la
+ *  souris la garde ouverte, ce qu'exige WCAG 1.4.13.
+ *
+ *  Tranché par Antoine le 2026-10-07 (wireframe, variante C) : les deux avertissements de la
+ *  sheet étaient deux encadrés ambre, « les messages font peur ». Ils passent derrière ⓘ ; le
+ *  rappel de l'effacement que tout le monde voit est désormais le bouton armé (« Confirmer — tout
+ *  sera effacé »), avec l'armement horodaté qui reste le vrai garde-fou. */
+function infoTip(id: string, label: string, text: string): string {
+  return (
+    '<span class="sift-infotip">' +
+    `<button type="button" class="lk-icon sift-infotip-btn" aria-label="${esc(label)}" aria-describedby="${id}">` +
+    '<i class="ti ti-info-circle" aria-hidden="true"></i></button>' +
+    `<span class="sift-infotip-bubble" role="tooltip" id="${id}">${esc(text)}</span>` +
+    "</span>"
+  );
+}
 
 export function openUsbFormatModal(drive: RemovableDrive): void {
   document.getElementById("sift-usbfmt-overlay")?.remove();
@@ -90,9 +108,18 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
 
   function render() {
     const t = T();
+    // Ce que la bulle du système de fichiers explique : l'exFAT incertain sur les CDJ, et
+    // l'invite administrateur au-delà de 32 Go. Pas de bulle quand il n'y a rien à dire.
+    const fsNotes = [
+      fs === "ex_fat" ? t.avertissementExfat : null,
+      needsElevation() ? t.avertissementElevation : null,
+    ].filter((n): n is string => n !== null);
     card.innerHTML =
+      '<div class="sift-usbfmt-titlerow">' +
       '<div class="sift-usbfmt-title">' +
       t.titre(esc(displayName)) +
+      "</div>" +
+      infoTip("sift-usbfmt-tip-erase", t.aproposEffacement, t.avertissement) +
       "</div>" +
       '<div class="sift-usbfmt-desc">' +
       esc(drive.label || t.disqueAmovible) +
@@ -102,9 +129,7 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
       (lastError
         ? '<div class="sift-usbfmt-error">' + esc(lastError) + "</div>"
         : "") +
-      '<div class="sift-usbfmt-warning">' +
-      t.avertissement +
-      "</div>" +
+      '<div class="sift-usbfmt-fsrow">' +
       // Audit-ref G2 : <span> → <button>, incohérent avec le reste de l'app.
       '<div class="sift-seg">' +
       '<button class="sift-seg-opt' +
@@ -116,12 +141,8 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
       (fs === "ex_fat" ? " on" : "") +
       '" data-usbfmt-fs="ex_fat">exFAT</button>' +
       "</div>" +
-      (fs === "ex_fat"
-        ? '<div class="sift-usbfmt-exfat-warning">' + t.avertissementExfat + "</div>"
-        : "") +
-      (needsElevation()
-        ? '<div class="sift-usbfmt-exfat-warning">' + t.avertissementElevation + "</div>"
-        : "") +
+      (fsNotes.length > 0 ? infoTip("sift-usbfmt-tip-fs", t.aproposSysteme, fsNotes.join(" ")) : "") +
+      "</div>" +
       '<div class="sift-usbfmt-namerow">' +
       '<label for="sift-usbfmt-name">' +
       t.nomVolume +

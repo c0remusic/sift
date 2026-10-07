@@ -3049,8 +3049,18 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 .sift-usbfmt-card{padding:var(--space-24);width:380px;display:flex;flex-direction:column;gap:var(--space-12)}
 .sift-usbfmt-title{font-size:var(--text-lg);font-weight:600;color:var(--color-text-primary)}
 .sift-usbfmt-desc{font-size:var(--text-sm);color:var(--color-text-secondary)}
-.sift-usbfmt-warning{font-size:var(--text-sm);color:var(--color-text-warning);background:var(--color-background-warning);border-radius:var(--border-radius-md);padding:var(--space-8) var(--space-12)}
-.sift-usbfmt-exfat-warning{font-size:var(--text-sm);color:var(--color-text-warning);background:var(--color-background-warning);border-radius:var(--border-radius-md);padding:var(--space-8) var(--space-12)}
+/* Les deux avertissements de la sheet vivent dans des bulles ⓘ depuis le 2026-10-07 (wireframe,
+   variante C retenue par Antoine : deux encadrés ambre « font peur »). La rangée porte la bulle :
+   `position:relative` sur la RANGÉE, l'enveloppe `.sift-infotip` reste statique, donc la bulle prend
+   toute la largeur du contenu de la carte sous sa rangée, où que soit le bouton ⓘ. */
+.sift-usbfmt-titlerow,.sift-usbfmt-fsrow{position:relative;display:flex;align-items:center;gap:var(--space-6)}
+.sift-infotip{display:inline-flex}
+.sift-infotip-bubble{display:none;position:absolute;top:calc(100% + var(--space-6));left:0;right:0;z-index:var(--z-popover);background:var(--color-surface-raised);color:var(--color-text-primary);font-size:var(--text-sm);font-weight:400;line-height:1.45;border-radius:var(--border-radius-md);padding:var(--space-8) var(--space-12);box-shadow:var(--shadow-overlay)}
+.sift-infotip:hover .sift-infotip-bubble,.sift-infotip:focus-within .sift-infotip-bubble{display:block}
+/* La bulle du TITRE s'ouvre au-dessus : ouverte dessous, elle couvrait la rangée FAT32 et son ⓘ, et
+   un pointeur qui allait de l'un à l'autre restait pris dans la première bulle (elle reste ouverte
+   tant qu'on la survole) — mesuré par survol réel CDP le 2026-10-07, la seconde ne s'ouvrait pas. */
+.sift-usbfmt-titlerow .sift-infotip-bubble{top:auto;bottom:calc(100% + var(--space-6))}
 .sift-usbfmt-actions{display:flex;justify-content:flex-end;gap:var(--space-8);margin-top:var(--space-4)}
 /* DESTRUCTIF = un bouton NORMAL à encre rouge (2026-08-19). HIG : le rôle `destructive` de SwiftUI
    ne peint pas un aplat rouge, il teinte le libellé ; le kit n'a pas non plus de bouton rouge plein.

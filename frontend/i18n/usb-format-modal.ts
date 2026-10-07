@@ -26,6 +26,9 @@ const fr = {
     "Windows ne sait pas créer un FAT32 au-delà de " +
     "32 Go ; Sift l'écrit lui-même. Une autorisation administrateur sera demandée — c'est " +
     "ce qui permet d'écrire directement sur le disque.",
+  /** Libellés des boutons ⓘ (`aria-label`) : les avertissements vivent dans leurs bulles. */
+  aproposEffacement: "À propos de l'effacement",
+  aproposSysteme: "À propos du système de fichiers",
   nomVolume: "Nom du volume",
   annuler: "Annuler",
   formatageEnCours: "Formatage en cours…",
@@ -67,6 +70,8 @@ const en: typeof fr = {
     "Windows can't create a FAT32 volume larger than 32 GB; Sift writes it itself. " +
     "Windows will ask you for administrator permission — that's what lets Sift write " +
     "directly to the drive.",
+  aproposEffacement: "About erasing",
+  aproposSysteme: "About the file system",
   nomVolume: "Volume name",
   annuler: "Cancel",
   formatageEnCours: "Formatting…",

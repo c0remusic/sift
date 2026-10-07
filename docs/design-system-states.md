@@ -122,20 +122,20 @@
 - L1702 — Entrée disque amovible (écran Clé USB) — trois états, rendu `usbEntryHtml()` (07-31 ; entrée de colonne 09-09).
 - L1739 — Teintes pleines `-solid` — neuf tokens pour les surfaces de donnée (08-01), dix depuis 08-27 (`red`, pastille de verdict).
 - L1775 — Modale de formatage USB — états, trois corrections d'usage réel (08-02).
-- L1809 — Menu contextuel `.sift-ctx-menu` — états catalogués + rangée de pastilles couleur de source (08-20).
-- L1835 — Ligne de source du rail `.sift-rail-src` — teintes du cycle, `--error`, suspendue, « 0 audio » (#55), cadran de dépôt `.sift-rail-drop` (#56) ; story + module pur `rail-source-entry.ts` (08-20, 09-03).
-- L1891 — Lecteur simple de Revue — rangée d'audition : slider kit, play 28, temps unique, volume fin ; module pur + story (08-27).
-- L1942 — Pastille de verdict de file `verdictDot()` — teintes système pleines, 5 cas / 4 rendus ; module pur + story (08-27).
-- L1967 — Surfaces de Revue — trois plans : rail en retrait, file bord à bord, cadre de lecture, pied en surface (08-27).
-- L2010 — Carte de racine manquante du rail `.sift-railwarn` — remplace le bandeau `#sift-gate` supprimé ; états, survol en voile par-dessus l'ambre, rail replié ; module pur + story + vecteurs (09-02).
-- L2040 — À re-sourcer · Corbeille — ex-Écartés, deux destinations du rail, table de Rangés, inspecteur Racheter (09-08).
-- L2061 — Rekordbox — lu contre Finder › appareil et Photos › Importer : une seule synchronisation (Tout / sélection), faits à libellé aligné à droite, candidats en groupes nommés, colonne au plan de la file (09-08).
-- L2092 — Rangée de table `.lr` — grammaire Finder : fonds alternés par index, ni filet ni arrondi ni survol, colonne Format (09-10).
-- L2113 — Bandeaux de Revue `noticeBannerHtml()` — doublon, sous 320 kbps (#69) ; débit teinté du verdict, case de la confirmation du Lot ; module pur + story (09-28).
-- L2148 — Vue agrandie du spectrogramme `openSpectroEnlarged()` — par-dessus l'app, grille calculée à la taille du canevas (max-pool), trois états ; module + story (09-29, #72).
-- L2173 — Ligne de la release choisie `chosenRowHtml()` — contrôle « N autres » qui rouvre la liste de la session sans requête, release appliquée sélectionnée, Échap sans écrire ; module pur + story (09-29, #68).
-- L2205 — Inspecteur masquable `#sift-aside-toggle` et prises des poignées — bouton de barre, ⌥⌘I, révélé par les seules commandes de la zone D, jamais par une sélection ; prise visible au repos (10-05).
-- L2227 — Écran Doublons `duplicates-view.ts` — table de tous les groupes (grille commune, encre de différence, en-têtes de groupe à 32 px), plan et application, confirmation destructive, inspecteur qui compare ; modules purs + story (10-05).
+- L1822 — Menu contextuel `.sift-ctx-menu` — états catalogués + rangée de pastilles couleur de source (08-20).
+- L1848 — Ligne de source du rail `.sift-rail-src` — teintes du cycle, `--error`, suspendue, « 0 audio » (#55), cadran de dépôt `.sift-rail-drop` (#56) ; story + module pur `rail-source-entry.ts` (08-20, 09-03).
+- L1904 — Lecteur simple de Revue — rangée d'audition : slider kit, play 28, temps unique, volume fin ; module pur + story (08-27).
+- L1955 — Pastille de verdict de file `verdictDot()` — teintes système pleines, 5 cas / 4 rendus ; module pur + story (08-27).
+- L1980 — Surfaces de Revue — trois plans : rail en retrait, file bord à bord, cadre de lecture, pied en surface (08-27).
+- L2023 — Carte de racine manquante du rail `.sift-railwarn` — remplace le bandeau `#sift-gate` supprimé ; états, survol en voile par-dessus l'ambre, rail replié ; module pur + story + vecteurs (09-02).
+- L2053 — À re-sourcer · Corbeille — ex-Écartés, deux destinations du rail, table de Rangés, inspecteur Racheter (09-08).
+- L2074 — Rekordbox — lu contre Finder › appareil et Photos › Importer : une seule synchronisation (Tout / sélection), faits à libellé aligné à droite, candidats en groupes nommés, colonne au plan de la file (09-08).
+- L2104 — Rangée de table `.lr` — grammaire Finder : fonds alternés par index, ni filet ni arrondi ni survol, colonne Format (09-10).
+- L2126 — Bandeaux de Revue `noticeBannerHtml()` — doublon, sous 320 kbps (#69) ; débit teinté du verdict, case de la confirmation du Lot ; module pur + story (09-28).
+- L2161 — Vue agrandie du spectrogramme `openSpectroEnlarged()` — par-dessus l'app, grille calculée à la taille du canevas (max-pool), trois états ; module + story (09-29, #72).
+- L2186 — Ligne de la release choisie `chosenRowHtml()` — contrôle « N autres » qui rouvre la liste de la session sans requête, release appliquée sélectionnée, Échap sans écrire ; module pur + story (09-29, #68).
+- L2218 — Inspecteur masquable `#sift-aside-toggle` et prises des poignées — bouton de barre, ⌥⌘I, révélé par les seules commandes de la zone D, jamais par une sélection ; prise visible au repos (10-05).
+- L2240 — Écran Doublons `duplicates-view.ts` — table de tous les groupes (grille commune, encre de différence, en-têtes de groupe à 32 px), plan et application, confirmation destructive, inspecteur qui compare ; modules purs + story (10-05).
 
 ## Ligne de queue — `.qi` (`styles.css:1127-1214`, revérifié au grep le 2026-08-27)
 
@@ -1287,7 +1287,7 @@ pending/erreur), red (danger), blue (info)"*.
 | Player (`report-view.ts:416/722`) | `.sift-player-error` | `color:var(--color-text-warning)` | warning |
 | Codec (`report-view.ts:605`) | `.sift-codec-error` | `color:var(--color-text-warning)` | warning |
 | Échec d'analyse (`report-view.ts:1199`) | `.sift-analysis-fail` | `color:var(--color-text-warning)` | warning |
-| Formatage USB (`usb-format-modal.ts:76`) | `.sift-usbfmt-error` / `.sift-usbfmt-warning`/`-exfat-warning` | `error` = `color:var(--color-text-danger)` (irréversible) ; `warning` = ambre | danger (error) / warning |
+| Formatage USB (`usb-format-modal.ts`) | `.sift-usbfmt-error` ; avertissements dans `.sift-infotip-bubble` (2026-10-07) | `error` = `color:var(--color-text-danger)` (irréversible) ; bulles en encre primaire sur `--color-surface-raised`, plus d'ambre | danger (error) |
 | File d'attente (`.sift-pz-row.error`, `progress-zone.ts`) | `.sift-pz-fill` sur ligne `.error` | `background:var(--color-text-danger)` | danger |
 | ~~Toasts/bannières Journal~~ → Journal (`journal.ts`, refonte 2026-08-19) | `.jrnl-error` (lecture échouée) · `.jrnl-insp-fail` (motif d'une annulation échouée) · `.jrnl-row--failed` (la ligne) — `.jrnl-toast--warn`/`.jrnl-banner--warn` n'existent plus, les confirmations passent par le toast partagé `.sift-toast` | `color:var(--color-text-danger)` | danger |
 | Overlay modal (`styles.css:1052`) | `.sift-report-overlay-error` | `color:var(--color-text-danger)` | danger |
@@ -1802,10 +1802,23 @@ subissait le plafond de Windows ; il écrit maintenant les structures lui-même.
 bloc n'est plus une erreur mais une explication — une autorisation administrateur
 va être demandée, et l'utilisateur doit savoir pourquoi une invite surgit.
 
-⚠️ Le chemin de formatage FAT32 sur matériel réel **n'a pas encore abouti une
-seule fois**. Premier essai : partition créée, écriture de la FAT échouée sur un
-défaut d'alignement secteur, disque laissé RAW. Corrigé (`sector_io`) mais non
-rejoué. Ne pas documenter cet état comme acquis avant un succès mesuré.
+**Les avertissements passent dans des bulles ⓘ (2026-10-07).** Les deux encadrés
+ambre — l'effacement irréversible, puis l'explication FAT32 / administrateur (ou
+l'incertitude exFAT sur les CDJ) — « font peur » (Antoine, sur la vraie fenêtre).
+Variante C du wireframe, retenue par lui : chacun derrière un bouton ⓘ
+(`.sift-infotip`, `role="tooltip"` relié par `aria-describedby`, ouvert au survol
+et au focus). La bulle du titre s'ouvre AU-DESSUS : dessous, elle couvrait le ⓘ du
+système de fichiers, que le survol réel n'atteignait plus (mesuré par CDP). Le
+rappel visible de l'effacement est désormais le bouton armé (« Confirmer — tout
+sera effacé »). Annuler et Formater… ont le même gabarit (`.sift-settings-btn`,
+22 px) ; l'encre danger seule distingue le second.
+
+**Le chemin FAT32 sur matériel réel a abouti** (2026-10-07) : le SSD de 500 Go
+d'Antoine, sans volume, formaté par la sheet (élévation, partition, écriture
+FAT32), monté en `J:` FAT32 de 465,6 Gio, puis renommé sans erreur et lu par
+l'écran. Le formatage reste ressenti comme long ; chaque étape est désormais
+chronométrée dans le journal (`format — <étape> : N ms`) — mesurer avant de
+corriger.
 
 ## Menu contextuel `.sift-ctx-menu` / `.sift-ctx-item` — 2026-08-20
 
