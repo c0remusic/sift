@@ -489,6 +489,7 @@ impl WindowsBackend {
         // sur trois : quand un UAC est apparu là où il ne devait pas (2026-08-03), il était
         // impossible de dire laquelle avait décidé. `write_step` n'aide pas — il ÉCRASE, donc
         // l'étape suivante efface le diagnostic. C'est `log::info!` qui garde la trace.
+        let mut chrono = super::privileged::Chrono::new(None);
         let letter = drive
             .mount
             .split(',')
@@ -546,12 +547,15 @@ impl WindowsBackend {
             drive.id,
             drive.size_bytes
         );
+        chrono.etape("vérifications WMI (taille, type MBR)");
 
         super::privileged::write_step(&crate::tr!(
             "Verrouillage du volume…",
             "Locking the volume…"
         ));
-        let mut volume = match super::raw_volume::RawVolume::open(&letter) {
+        let ouvert = super::raw_volume::RawVolume::open(&letter);
+        chrono.etape("verrouillage du volume");
+        let mut volume = match ouvert {
             Ok(v) => v,
             // Le verrou refusé n'est PAS un échec silencieux : l'étape s'affiche, et l'appelant
             // enchaîne sur le chemin élevé, dont le `clean` sait forcer un volume récalcitrant.
@@ -588,10 +592,10 @@ impl WindowsBackend {
                 ));
             }
         }));
-        Some(
-            super::fat32::write_fat32(aligned, volume_bytes, label)
-                .map_err(|e| UsbFormatError::Format(e.to_string())),
-        )
+        let ecrit = super::fat32::write_fat32(aligned, volume_bytes, label)
+            .map_err(|e| UsbFormatError::Format(e.to_string()));
+        chrono.etape("écriture FAT32");
+        Some(ecrit)
     }
 
     /// FAT32 au-delà du plafond de 32 Go. Sans élévation quand la partition existante convient,
@@ -635,12 +639,29 @@ impl WindowsBackend {
                     ))
                 })?;
 
+        // Durées : le total vu d'ici compte l'invite UAC et le démarrage du processus élevé, que
+        // celui-ci ne voit pas ; ses propres étapes arrivent par le fichier de durées. Le fichier
+        // est retiré avant le départ : une invite refusée n'en écrirait aucun, et les durées d'un
+        // formatage précédent passeraient pour celles-ci.
+        let timings = super::privileged::timings_file();
+        let _ = std::fs::remove_file(&timings);
+        let debut = std::time::Instant::now();
         let output = Command::new("powershell")
             .args(["-NoProfile", "-Command", &ps])
             .output()
             .map_err(|e| UsbFormatError::Format(format!("spawn powershell: {e}")))?;
 
         let code = output.status.code().unwrap_or(-1);
+        log::info!(
+            "format {}: processus élevé terminé en {} ms (invite Windows comprise), code {code}",
+            drive.id,
+            debut.elapsed().as_millis()
+        );
+        if let Ok(lignes) = std::fs::read_to_string(&timings) {
+            for l in lignes.lines() {
+                log::info!("format {}: élevé — {l}", drive.id);
+            }
+        }
         if code == UAC_DECLINED_EXIT {
             return Err(UsbFormatError::ElevationDeclined);
         }

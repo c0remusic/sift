@@ -62,7 +62,14 @@ pub fn format_drive(
     label: String,
 ) -> Result<(), String> {
     let b = backend();
+    // Durée de l'énumération : elle se fait ICI, sur le fil de la commande, avant tout formatage —
+    // une énumération WMI lente se lirait comme un formatage lent (chronométrage du 2026-10-07).
+    let debut = std::time::Instant::now();
     let fresh = b.list().map_err(|e| e.to_string())?;
+    log::info!(
+        "format {drive_id}: énumération des disques {} ms",
+        debut.elapsed().as_millis()
+    );
     usb_format::verify_identity_unchanged(&drive_id, &identity, &fresh)
         .map_err(|e| e.to_string())?;
     let confirmed = fresh
@@ -93,7 +100,14 @@ pub fn format_drive(
             "Asking Windows for permission…"
         ));
         std::thread::spawn(move || {
+            let debut = std::time::Instant::now();
             let outcome = backend().format(&confirmed, fs, &label);
+            log::info!(
+                "format {}: formatage terminé en {} ms ({})",
+                confirmed.id,
+                debut.elapsed().as_millis(),
+                if outcome.is_ok() { "succès" } else { "échec" }
+            );
             // L'état terminal passe par le fichier d'étape, seul canal que le frontend interroge :
             // ce fil n'a personne à qui répondre, la commande a déjà rendu la main.
             match outcome {

@@ -37,6 +37,67 @@ pub fn write_step(step: &str) {
     }
 }
 
+/// Fichier où le processus élevé dépose la durée de chaque étape, que le parent relit à la fin et
+/// journalise. Même raison que `step_file` : la sortie d'un processus lancé par `-Verb RunAs` est
+/// perdue. Sans ces durées, « le formatage est encore long » (Antoine, 2026-10-07) ne dit pas
+/// quelle étape coûte — `diskpart`, l'attente de la lettre, le verrou ou l'écriture.
+/// Le chronométrage ne sert que le chemin Windows (macOS formate par `diskutil`) : d'où les
+/// `allow(dead_code)` hors Windows sur les trois éléments.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+pub fn timings_file() -> std::path::PathBuf {
+    std::env::temp_dir().join("sift-format-timings.txt")
+}
+
+/// Une ligne de chronométrage : l'étape, sa durée, le cumul depuis le début. Pure.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+pub fn timing_line(etape: &str, duree_ms: u128, cumul_ms: u128) -> String {
+    format!("{etape} : {duree_ms} ms (cumul {cumul_ms} ms)")
+}
+
+/// Chronomètre les étapes d'un formatage : chaque appel à `etape` clôt l'étape en cours, la
+/// journalise, et l'ajoute au fichier de durées quand il y en a un (le processus élevé, qui n'a
+/// pas de journal). Un échec d'écriture du fichier ne fait rien échouer : c'est une mesure.
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+pub struct Chrono {
+    debut: std::time::Instant,
+    dernier: std::time::Instant,
+    fichier: Option<std::path::PathBuf>,
+}
+
+#[cfg_attr(not(target_os = "windows"), allow(dead_code))]
+impl Chrono {
+    /// Démarre le chronomètre. Avec un fichier, le vide d'abord : des durées laissées par un
+    /// formatage précédent passeraient pour celles de celui-ci.
+    pub fn new(fichier: Option<std::path::PathBuf>) -> Self {
+        if let Some(f) = &fichier {
+            let _ = std::fs::File::create(f);
+        }
+        let maintenant = std::time::Instant::now();
+        Self {
+            debut: maintenant,
+            dernier: maintenant,
+            fichier,
+        }
+    }
+
+    /// Clôt l'étape `etape`.
+    pub fn etape(&mut self, etape: &str) {
+        let maintenant = std::time::Instant::now();
+        let ligne = timing_line(
+            etape,
+            (maintenant - self.dernier).as_millis(),
+            (maintenant - self.debut).as_millis(),
+        );
+        self.dernier = maintenant;
+        log::info!("format — {ligne}");
+        if let Some(f) = &self.fichier {
+            if let Ok(mut out) = std::fs::OpenOptions::new().append(true).open(f) {
+                let _ = writeln!(out, "{ligne}");
+            }
+        }
+    }
+}
+
 /// Dépose un état terminal d'ÉCHEC : `STEP_FAILED_PREFIX` suivi du message, qui porte la cause
 /// dans la langue de l'interface. Le seul chemin par lequel un échec entre dans le fichier.
 pub fn write_failed(message: &str) {
@@ -154,12 +215,15 @@ pub fn run(job: &PrivilegedJob) -> i32 {
         job.disk_index, job.fs, job.label
     );
 
+    let mut chrono = Chrono::new(Some(timings_file()));
     write_step(&crate::tr!(
         "Partitionnement du disque…",
         "Partitioning the disk…"
     ));
     let script = partition_script(job.disk_index);
-    match win::run_diskpart_script(&script) {
+    let partition = win::run_diskpart_script(&script);
+    chrono.etape("diskpart (clean, partition, lettre)");
+    match partition {
         Ok(()) => {}
         Err(e) => {
             write_failed(&crate::tr!(
@@ -176,7 +240,9 @@ pub fn run(job: &PrivilegedJob) -> i32 {
         "Waiting for Windows to mount the drive…"
     ));
     // Le montage est asynchrone : `diskpart` a rendu la main, la lettre n'existe pas encore.
-    let Some(letter) = wait_for_letter(job.disk_index) else {
+    let monte = wait_for_letter(job.disk_index);
+    chrono.etape("attente de la lettre");
+    let Some(letter) = monte else {
         eprintln!(
             "sift: aucune lettre montée pour le disque {}",
             job.disk_index
@@ -185,7 +251,9 @@ pub fn run(job: &PrivilegedJob) -> i32 {
     };
     eprintln!("sift: volume monté sur {letter}");
 
-    let total_bytes = match win::volume_size_bytes(&letter) {
+    let taille = win::volume_size_bytes(&letter);
+    chrono.etape("taille du volume (WMI)");
+    let total_bytes = match taille {
         Some(b) => b,
         None => {
             eprintln!("sift: taille du volume {letter} illisible");
@@ -197,7 +265,9 @@ pub fn run(job: &PrivilegedJob) -> i32 {
         "Verrouillage du volume…",
         "Locking the volume…"
     ));
-    let mut volume = match RawVolume::open(&letter) {
+    let ouvert = RawVolume::open(&letter);
+    chrono.etape("verrouillage du volume");
+    let mut volume = match ouvert {
         Ok(v) => v,
         Err(e) => {
             write_failed(&crate::tr!(
@@ -241,6 +311,7 @@ pub fn run(job: &PrivilegedJob) -> i32 {
             return EXIT_BAD_ARGS;
         }
     };
+    chrono.etape("écriture FAT32");
 
     match written {
         Ok(()) => {
@@ -277,6 +348,35 @@ fn wait_for_letter(disk_index: u32) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn une_ligne_de_duree_dit_l_etape_sa_duree_et_le_cumul() {
+        assert_eq!(
+            timing_line("écriture FAT32", 1234, 5678),
+            "écriture FAT32 : 1234 ms (cumul 5678 ms)"
+        );
+    }
+
+    /// Le fichier de durées repart vide à chaque formatage, puis reçoit une ligne par étape, dans
+    /// l'ordre : sans la remise à zéro, les durées d'un formatage précédent passeraient pour
+    /// celles du suivant.
+    #[test]
+    fn le_chrono_vide_le_fichier_puis_ajoute_une_ligne_par_etape() {
+        let dir = tempfile::tempdir().expect("tempdir");
+        let f = dir.path().join("durees.txt");
+        std::fs::write(&f, "reste d'un formatage précédent\n").expect("write");
+        let mut chrono = Chrono::new(Some(f.clone()));
+        chrono.etape("diskpart");
+        chrono.etape("écriture FAT32");
+        let lignes: Vec<String> = std::fs::read_to_string(&f)
+            .expect("read")
+            .lines()
+            .map(str::to_owned)
+            .collect();
+        assert_eq!(lignes.len(), 2, "{lignes:?}");
+        assert!(lignes[0].starts_with("diskpart : "), "{lignes:?}");
+        assert!(lignes[1].starts_with("écriture FAT32 : "), "{lignes:?}");
+    }
 
     #[test]
     fn absent_flag_means_normal_launch() {
