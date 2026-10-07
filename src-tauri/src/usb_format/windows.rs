@@ -1,6 +1,7 @@
 //! Windows backend: enumerate removable disks via WMI — `MSFT_Disk` for the bus type,
-//! `Win32_DiskDrive`'s associations for the volume description — and format via a scripted
-//! `diskpart`.
+//! `Win32_DiskDrive`'s associations for the volume description — and format: FAT32 written by
+//! Sift itself, exFAT by `Format-Volume`, partitioning by the Storage cmdlets in an elevated Sift.
+//! No `diskpart` anywhere since 2026-10-07.
 //!
 //! ⚠️ **`diskpart` does NOT lift the 32 GB FAT32 ceiling**, et c'est pour ça que Windows ne
 //! formate pas ici. La limite vit dans le pilote de formatage de Windows, partagé à l'identique
@@ -17,14 +18,16 @@
 //! `ACCESS_DENIED`. C'est toute l'explication du fait que `fat32format` n'affiche aucun UAC :
 //! il ne partitionne pas, on lui donne une lettre déjà montée.
 //!
-//! D'où les deux chemins de `format_large_fat32` :
+//! D'où les deux chemins de `format_fat32`, quelle que soit la taille depuis le 2026-10-07 :
 //!
 //! - partition existante qui couvre le disque → `try_format_in_place`, **sans aucun UAC** ;
-//! - disque RAW, sans lettre, ou partition trop petite → un Sift relancé en administrateur, qui
-//!   **partitionne seulement** — cmdlets de stockage depuis le 2026-10-07, `diskpart` avant
-//!   (`privileged::storage_partition_script`, `run_powershell_script`) — puis le même
-//!   `write_fat32`. ⚠️ Le chemin exFAT / FAT32 ≤ 32 Go (`diskpart_script`, plus bas) passe ENCORE
-//!   par `diskpart` et son démarrage mesuré à ~26,5 s ; non mesuré de bout en bout, non changé.
+//! - disque RAW, sans lettre, ou partition trop petite → un Sift relancé en administrateur
+//!   (`format_privileged`), qui **partitionne seulement** par les cmdlets de stockage
+//!   (`privileged::storage_script`, `run_powershell_script`), puis le même `write_fat32`.
+//!
+//! L'exFAT passe par le même Sift élevé : mêmes cmdlets, puis `Format-Volume`. Jusqu'au
+//! 2026-10-07, exFAT et FAT32 ≤ 32 Go passaient par un `diskpart` dont le shim d'élévation
+//! échouait AVANT l'invite (guillemets `\"` que PowerShell ne lit pas) : voir `format`.
 //!
 //! Ce bloc a porté deux affirmations fausses successives : « `diskpart` est le seul chemin CLI
 //! qui formate FAT32 au-delà de 32 Go », puis « livrer FAT32 reste une décision produit ouverte »
@@ -230,25 +233,11 @@ pub(crate) fn disk_index_from_id(id: &str) -> Option<u32> {
         .and_then(|(_, n)| n.trim().parse().ok())
 }
 
-/// `clean` + `create partition primary` is what makes a RAW or oddly-partitioned key formattable
-/// at all — `select volume <letter>` (what this used to do) needs a mounted volume, which is
-/// exactly what a new or corrupted key does not have. `assign` gives the result a drive letter so
-/// the key is usable the moment the modal closes.
-pub(crate) fn diskpart_script(disk_index: u32, fs: TargetFs) -> String {
-    let fs_name = match fs {
-        TargetFs::Fat32 => "fat32",
-        TargetFs::ExFat => "exfat",
-    };
-    format!(
-        "select disk {disk_index}\nclean\ncreate partition primary\nformat fs={fs_name} quick\nassign\nexit\n"
-    )
-}
-
 /// Exécute un script PowerShell **directement**, dans le processus courant — déjà élevé.
 ///
 /// Réservé au processus élevé (`privileged::run`), pour le partitionnement : les cmdlets de
 /// stockage exigent l'administrateur. Il remplace `run_diskpart_script` depuis le 2026-10-07 —
-/// `diskpart` coûtait ~26,5 s de démarrage à chaque formatage (`privileged::storage_partition_script`).
+/// `diskpart` coûtait ~26,5 s de démarrage à chaque formatage (`privileged::storage_script`).
 /// Le script passe par un FICHIER `.ps1` et `-File`, comme `diskpart /s` avant lui : aucune règle
 /// de guillemets de la ligne de commande ne peut le déformer, et sous `-File` une erreur non
 /// rattrapée sort en code 1 — ce que `-Command -` (script par l'entrée standard) ne garantit pas
@@ -308,41 +297,13 @@ pub(crate) fn volume_size_bytes(letter: &str) -> Option<u64> {
 }
 
 /// `ERROR_CANCELLED`. What Windows reports when the user dismisses the UAC prompt; reused as the
-/// exit code of the PowerShell shim below so the two outcomes stay distinguishable.
+/// exit code of the PowerShell shim below (`privileged_elevation_powershell`).
+///
+/// ⚠️ That shim's `catch` maps EVERY `Start-Process` failure to this code, not only a declined
+/// prompt. Its sibling for `diskpart` (removed 2026-10-07) failed on a quoting error before any
+/// prompt, for two months, and every failure read « invite refusée ». The `catch` now also writes
+/// the exception message to stderr, and `format_privileged` logs it with the code.
 pub(crate) const UAC_DECLINED_EXIT: i32 = 1223;
-
-/// `diskpart` cannot run from a normal user process at all — measured 2026-07-31, even a
-/// read-only `list disk` fails with "L'opération demandée nécessite une élévation" before the
-/// process starts. Sift is not elevated, so `Command::new("diskpart")` was failing at
-/// `CreateProcess` every single time: the format has never been able to run since M7.
-///
-/// Formatting a disk requires administrator rights on Windows, full stop. The app therefore asks
-/// for elevation for this one operation (the way Disk Management does) rather than running
-/// elevated for its whole life. `Start-Process -Verb RunAs` is what raises the UAC prompt from a
-/// non-elevated parent.
-///
-/// The nested `cmd /c … > log 2>&1` is not decoration: `-Verb RunAs` cannot redirect the elevated
-/// child's stdout, so without it diskpart's own diagnosis (the FAT32-too-big message, "no media",
-/// an access error) would be lost and every failure would read the same.
-///
-/// Refuses paths containing a quote instead of escaping them — these are our own tempfile paths,
-/// so a quote means something is wrong upstream, and a mis-escaped path here is a command
-/// injection into an *elevated* shell.
-pub(crate) fn elevation_powershell(script_path: &str, log_path: &str) -> Option<String> {
-    if [script_path, log_path]
-        .iter()
-        .any(|p| p.contains('\'') || p.contains('"'))
-    {
-        return None;
-    }
-    Some(format!(
-        "$ErrorActionPreference='Stop'; \
-         try {{ $p = Start-Process -FilePath cmd.exe \
-         -ArgumentList '/c',\"diskpart /s \\\"{script_path}\\\" > \\\"{log_path}\\\" 2>&1\" \
-         -Verb RunAs -Wait -PassThru -WindowStyle Hidden; exit $p.ExitCode }} \
-         catch {{ exit {UAC_DECLINED_EXIT} }}"
-    ))
-}
 
 fn variant_to_u64(v: Option<&Variant>) -> Option<u64> {
     match v {
@@ -420,7 +381,7 @@ pub(crate) fn privileged_elevation_powershell(
          try {{ $p = Start-Process -FilePath '{exe}' \
          -ArgumentList '{flag}','{disk_index}','{fs_name}','{label}','{lang_flag}','{lang}' \
          -Verb RunAs -Wait -PassThru -WindowStyle Hidden; exit $p.ExitCode }} \
-         catch {{ exit {UAC_DECLINED_EXIT} }}"
+         catch {{ [Console]::Error.WriteLine($_.Exception.Message); exit {UAC_DECLINED_EXIT} }}"
     ))
 }
 
@@ -612,16 +573,26 @@ impl WindowsBackend {
         Some(ecrit)
     }
 
-    /// FAT32 au-delà du plafond de 32 Go. Sans élévation quand la partition existante convient,
-    /// via un Sift relancé en administrateur seulement quand il faut repartitionner.
-    fn format_large_fat32(
-        &self,
-        drive: &RemovableDrive,
-        label: &str,
-    ) -> Result<(), UsbFormatError> {
+    /// FAT32, DE TOUTE TAILLE (2026-10-07 ; au-delà de 32 Go seulement avant). Sans élévation
+    /// quand la partition existante convient, via un Sift relancé en administrateur seulement
+    /// quand il faut repartitionner. L'écriture de Sift ne connaît pas de plafond, et elle ne
+    /// dépend plus de `diskpart`, dont le shim d'élévation n'a jamais pu démarrer (voir `format`).
+    fn format_fat32(&self, drive: &RemovableDrive, label: &str) -> Result<(), UsbFormatError> {
         if let Some(res) = self.try_format_in_place(drive, label) {
             return res;
         }
+        self.format_privileged(drive, TargetFs::Fat32, label)
+    }
+
+    /// Relance Sift en administrateur pour ce disque : partition par les cmdlets de stockage,
+    /// puis FAT32 écrit par Sift, ou exFAT par `Format-Volume` (`privileged::run`). Une seule
+    /// invite UAC.
+    fn format_privileged(
+        &self,
+        drive: &RemovableDrive,
+        fs: TargetFs,
+        label: &str,
+    ) -> Result<(), UsbFormatError> {
         let disk_index = disk_index_from_id(&drive.id).ok_or_else(|| {
             UsbFormatError::Format(crate::tr!(
                 "identifiant de disque non reconnu: {} — formatage refusé",
@@ -644,8 +615,12 @@ impl WindowsBackend {
             "Asking Windows for permission…"
         ));
         let safe = sanitize_label_for_command(label);
+        let fs_name = match fs {
+            TargetFs::Fat32 => "fat32",
+            TargetFs::ExFat => "exfat",
+        };
         let ps =
-            privileged_elevation_powershell(&exe, disk_index, "fat32", &safe, crate::i18n::lang())
+            privileged_elevation_powershell(&exe, disk_index, fs_name, &safe, crate::i18n::lang())
                 .ok_or_else(|| {
                     UsbFormatError::Format(crate::tr!(
                         "chemin d'exécutable contenant un guillemet — formatage refusé",
@@ -677,6 +652,13 @@ impl WindowsBackend {
             }
         }
         if code == UAC_DECLINED_EXIT {
+            // Le `catch` du shim range TOUT échec de `Start-Process` sous ce code : son message
+            // est la seule trace qui distingue une invite refusée d'un lancement impossible.
+            log::warn!(
+                "format {}: élévation non obtenue — {}",
+                drive.id,
+                String::from_utf8_lossy(&output.stderr).trim()
+            );
             return Err(UsbFormatError::ElevationDeclined);
         }
         if code == super::privileged::EXIT_OK {
@@ -944,76 +926,38 @@ impl RemovableDriveBackend for WindowsBackend {
         fs: TargetFs,
         label: &str,
     ) -> Result<(), UsbFormatError> {
-        // FAT32 au-delà de 32 Go : Windows refuse de le CRÉER, donc `diskpart` ne peut pas servir.
-        // On passe par notre propre écriture, dans un Sift relancé en administrateur — c'est la
-        // raison d'être de tout ce chemin, et le cas d'usage principal d'une clé DJ moderne.
-        if fs == TargetFs::Fat32 && drive.size_bytes > super::fat32::WINDOWS_FAT32_CREATE_CEILING {
-            return self.format_large_fat32(drive, label);
+        // Plus de `diskpart` ici (2026-10-07). Ce chemin — exFAT, et FAT32 jusqu'à 32 Go — passait
+        // par un shim d'élévation (`cmd /c "diskpart /s \"…\" > \"…\""`) dont les `\"` ne sont PAS
+        // des guillemets échappés pour PowerShell : `Start-Process` levait une
+        // `ParameterBindingException` AVANT toute invite UAC, et le `catch` la rangeait sous
+        // « invite refusée ». Rejoué hors élévation : « Impossible de trouver un paramètre positionnel
+        // acceptant l'argument … ». Ces formatages échouaient donc en ~1,25 s, à chaque fois, depuis
+        // `163720e` (2026-07-31, v0.0.3). Ils passent maintenant par le même chemin que le FAT32
+        // au-delà de 32 Go, qui fonctionne : sans élévation quand c'est possible, sinon un Sift
+        // élevé et ses cmdlets de stockage (`privileged::storage_script`).
+        match chemin_de_formatage(fs) {
+            CheminDeFormatage::Fat32SurPlaceSinonEleve => self.format_fat32(drive, label),
+            CheminDeFormatage::Eleve(fs) => self.format_privileged(drive, fs, label),
         }
+    }
+}
 
-        // Hard failure, never a fallback: the script below runs `clean` on this number.
-        let disk_index = disk_index_from_id(&drive.id).ok_or_else(|| {
-            UsbFormatError::Format(crate::tr!(
-                "identifiant de disque non reconnu: {} — formatage refusé",
-                "unrecognized disk id: {} — format refused",
-                drive.id
-            ))
-        })?;
-        let script = diskpart_script(disk_index, fs);
+/// Par où passe un formatage — décision pure, pour qu'un test la tienne : c'est un mauvais
+/// aiguillage (exFAT et FAT32 ≤ 32 Go vers un `diskpart` qui ne démarrait jamais) qui a rendu ces
+/// formatages impossibles pendant deux mois, sans qu'aucun test ne le voie.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub(crate) enum CheminDeFormatage {
+    /// FAT32 de toute taille : sur la partition existante sans élévation quand elle convient,
+    /// sinon un Sift élevé qui repartitionne puis écrit.
+    Fat32SurPlaceSinonEleve,
+    /// Un Sift élevé fait tout le travail.
+    Eleve(TargetFs),
+}
 
-        let mut tmp = tempfile::Builder::new()
-            .suffix(".txt")
-            .tempfile()
-            .map_err(|e| UsbFormatError::Format(format!("tempfile: {e}")))?;
-        tmp.write_all(script.as_bytes())
-            .map_err(|e| UsbFormatError::Format(format!("write script: {e}")))?;
-        // `into_temp_path` closes our handle while keeping the file (and its delete-on-drop): the
-        // elevated diskpart runs as a different process and must be able to open both paths.
-        let script_path = tmp.into_temp_path();
-        let log_path = tempfile::Builder::new()
-            .suffix(".log")
-            .tempfile()
-            .map_err(|e| UsbFormatError::Format(format!("tempfile: {e}")))?
-            .into_temp_path();
-
-        let ps = elevation_powershell(&script_path.to_string_lossy(), &log_path.to_string_lossy())
-            .ok_or_else(|| {
-                UsbFormatError::Format(crate::tr!(
-                    "chemin temporaire contenant un guillemet — formatage refusé",
-                    "temporary path contains a quote — format refused"
-                ))
-            })?;
-
-        let output = Command::new("powershell")
-            .args(["-NoProfile", "-Command", &ps])
-            .output()
-            .map_err(|e| UsbFormatError::Format(format!("spawn powershell: {e}")))?;
-
-        let code = output.status.code().unwrap_or(-1);
-        if code == UAC_DECLINED_EXIT {
-            return Err(UsbFormatError::ElevationDeclined);
-        }
-        // diskpart's own words, captured through the `cmd /c … > log` shim. Without them every
-        // failure — volume too big for FAT32, no media, disk write-protected — reads the same.
-        let diagnosis = std::fs::read_to_string(&log_path).unwrap_or_else(|e| {
-            log::error!("usb_format: could not read diskpart log: {e}");
-            String::new()
-        });
-        if code != 0 {
-            return Err(UsbFormatError::Format(format!(
-                "diskpart exited with {code}: {}",
-                diagnosis.trim()
-            )));
-        }
-        // diskpart can exit 0 having refused a step it printed an error for, so the log is checked
-        // even on success — a silent no-op that reports success is worse than a loud failure.
-        if diagnosis.contains("DiskPart has encountered an error")
-            || diagnosis.contains("DiskPart a rencontré une erreur")
-        {
-            return Err(UsbFormatError::Format(diagnosis.trim().to_string()));
-        }
-
-        Ok(())
+pub(crate) fn chemin_de_formatage(fs: TargetFs) -> CheminDeFormatage {
+    match fs {
+        TargetFs::Fat32 => CheminDeFormatage::Fat32SurPlaceSinonEleve,
+        TargetFs::ExFat => CheminDeFormatage::Eleve(TargetFs::ExFat),
     }
 }
 
@@ -1295,32 +1239,6 @@ mod tests {
         }
     }
 
-    #[test]
-    fn diskpart_script_cleans_and_recreates_the_partition() {
-        let s = diskpart_script(3, TargetFs::Fat32);
-        assert!(s.starts_with("select disk 3\n"), "got: {s}");
-        assert!(s.contains("\nclean\n"), "a RAW key needs clean: {s}");
-        assert!(
-            s.contains("\ncreate partition primary\n"),
-            "a cleaned disk has no partition to format: {s}"
-        );
-        assert!(s.contains("format fs=fat32 quick"), "got: {s}");
-        assert!(
-            s.contains("\nassign\n"),
-            "the key must come back mounted: {s}"
-        );
-    }
-
-    #[test]
-    fn diskpart_script_never_targets_a_volume_letter() {
-        let s = diskpart_script(2, TargetFs::ExFat);
-        assert!(
-            !s.contains("select volume"),
-            "selecting a volume is what made RAW keys unformattable: {s}"
-        );
-        assert!(s.contains("format fs=exfat quick"), "got: {s}");
-    }
-
     /// Two serial-less keys swapped in the same USB port share a `PNPDeviceID`; their volume
     /// serials are what tells them apart. A RAW disk has none — hence the composite.
     #[test]
@@ -1417,43 +1335,49 @@ mod tests {
         assert_eq!(eject_powershell("I\":"), None);
     }
 
+    /// L'aiguillage qui a cassé l'exFAT et le FAT32 ≤ 32 Go : chacun doit atteindre un chemin qui
+    /// FONCTIONNE — le FAT32, l'écriture de Sift (sur place, sinon élevée) ; l'exFAT, le Sift élevé
+    /// et ses cmdlets, jamais l'écriture FAT32.
     #[test]
-    fn elevation_shim_asks_for_uac_and_keeps_diskpart_output() {
-        let ps = elevation_powershell(r"C:\tmp\s.txt", r"C:\tmp\o.log").expect("shim");
-        assert!(
-            ps.contains("-Verb RunAs"),
-            "must raise the UAC prompt: {ps}"
+    fn chaque_systeme_de_fichiers_a_un_chemin_qui_fonctionne() {
+        assert_eq!(
+            chemin_de_formatage(TargetFs::Fat32),
+            CheminDeFormatage::Fat32SurPlaceSinonEleve
         );
-        assert!(
-            ps.contains("-Wait"),
-            "returning before diskpart finished would report success too early: {ps}"
-        );
-        assert!(
-            ps.contains(r"diskpart /s"),
-            "diskpart must still run the script: {ps}"
-        );
-        assert!(
-            ps.contains("o.log") && ps.contains("2>&1"),
-            "-Verb RunAs cannot redirect the child; the cmd shim is what keeps the diagnosis: {ps}"
-        );
-        assert!(
-            ps.contains(&UAC_DECLINED_EXIT.to_string()),
-            "a declined prompt must be distinguishable from a failure: {ps}"
+        assert_eq!(
+            chemin_de_formatage(TargetFs::ExFat),
+            CheminDeFormatage::Eleve(TargetFs::ExFat)
         );
     }
 
-    /// These are our own tempfile paths, so a quote means something is wrong upstream — and a
-    /// mis-escaped one is a command injection into a shell that is about to be *elevated*.
+    /// Le shim élevé ne doit contenir AUCUN `\"` : PowerShell ne le lit pas comme un guillemet
+    /// échappé, les arguments de `Start-Process` se découpent, et l'échec arrive AVANT l'invite.
+    /// C'est ce qui a rendu l'exFAT et le FAT32 ≤ 32 Go infaisables du 2026-07-31 au 2026-10-07
+    /// (`ParameterBindingException` rejouée hors élévation). Arguments en guillemets simples
+    /// seulement ; et le `catch`, qui range tout échec sous « invite refusée », écrit au moins
+    /// l'exception sur stderr pour que le journal dise laquelle.
     #[test]
-    fn elevation_shim_refuses_quoted_paths() {
-        assert_eq!(
-            elevation_powershell(r"C:\tmp\a'b.txt", r"C:\tmp\o.log"),
-            None
-        );
-        assert_eq!(
-            elevation_powershell(r"C:\tmp\s.txt", "C:\\tmp\\o\".log"),
-            None
-        );
+    fn privileged_shim_never_nests_escaped_double_quotes() {
+        for fs in ["fat32", "exfat"] {
+            let ps = privileged_elevation_powershell(
+                r"C:\Program Files\Sift\sift.exe",
+                6,
+                fs,
+                "SIFT",
+                crate::i18n::Lang::En,
+            )
+            .expect("shim");
+            assert!(!ps.contains("\\\""), "guillemet échappé à la mode C : {ps}");
+            assert!(
+                ps.contains(&format!("'{fs}'")),
+                "système de fichiers passé tel quel : {ps}"
+            );
+            assert!(ps.contains("-Verb RunAs") && ps.contains("-Wait"), "{ps}");
+            assert!(
+                ps.contains("[Console]::Error.WriteLine($_.Exception.Message)"),
+                "le catch doit dire POURQUOI il a échoué : {ps}"
+            );
+        }
     }
 
     /// Live probe against this machine's real WMI. `--ignored` — it reports whatever is

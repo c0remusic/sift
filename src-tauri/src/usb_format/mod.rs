@@ -158,16 +158,16 @@ pub trait RemovableDriveBackend {
     /// la chaîne reçue telle quelle (le champ `#sift-usbfmt-name` du modal borne la saisie à
     /// 11 caractères, sans filtrer un seul caractère). Ce contrat ne promet donc rien de commun :
     ///
-    /// - **FAT32 au-delà de `fat32::WINDOWS_FAT32_CREATE_CEILING`** (`windows.rs`,
-    ///   `format_large_fat32`) : assaini. `fat32::write_fat32` le réduit par `fat32::volume_label`
-    ///   (11 octets, majuscules, tout le reste en `_`) ; le bras privilégié le fait d'abord passer
-    ///   par `windows::sanitize_label_for_command` — même filtre, plus un repli sur
-    ///   `windows::DEFAULT_VOLUME_LABEL` quand le nom est vide — pour traverser la ligne de
-    ///   commande PowerShell de l'élévation.
-    /// - **`diskpart`** (tout le reste de `windows::WindowsBackend::format` : exFAT, ou FAT32 sous
-    ///   le plafond) : **JETÉ**. `windows::diskpart_script` ne prend que l'index de disque et le
-    ///   système de fichiers, et son `format fs=… quick` ne porte aucun `label=` — le nom demandé
-    ///   n'atteint jamais `diskpart`.
+    /// - **FAT32, de toute taille** (`windows.rs`, `format_fat32`) : assaini. `fat32::write_fat32` le
+    ///   réduit par `fat32::volume_label` (11 octets, majuscules, tout le reste en `_`) ; le bras
+    ///   privilégié le fait d'abord passer par `windows::sanitize_label_for_command` — même filtre,
+    ///   plus un repli sur `windows::DEFAULT_VOLUME_LABEL` quand le nom est vide — pour traverser
+    ///   la ligne de commande PowerShell de l'élévation.
+    /// - **exFAT** (`windows.rs`, `format_privileged`) : assaini de même, puis refiltré par
+    ///   `privileged::storage_script` avant d'entrer, entre guillemets simples, dans le
+    ///   `Format-Volume -NewFileSystemLabel` du script administrateur. JETÉ jusqu'au 2026-10-07 :
+    ///   l'ancien `diskpart` (`format fs=exfat quick`) ne portait aucun `label=` — et ne démarrait
+    ///   de toute façon jamais (shim d'élévation cassé, voir `windows::WindowsBackend::format`).
     /// - **macOS** (`macos::MacBackend::format`) : pris **tel quel**, passé en argument de process
     ///   à `diskutil eraseDisk`, sans assainissement côté Sift.
     ///

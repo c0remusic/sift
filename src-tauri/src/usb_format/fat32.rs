@@ -16,15 +16,17 @@
 //! **Deux chemins de production écrivent ici, tous deux sur Windows** — `mod.rs` compile ce module
 //! sous `cfg(any(target_os = "windows", test))`, macOS formatant par `diskutil`, qui ne connaît pas
 //! le plafond. Entrée commune : la commande IPC `ipc_usb::format_drive`, qui délègue à
-//! `WindowsBackend::format` ; celle-ci route vers `format_large_fat32` dès que la cible est FAT32
-//! au-delà de `WINDOWS_FAT32_CREATE_CEILING`. De là :
+//! `WindowsBackend::format` ; celle-ci route vers `format_fat32` dès que la cible est FAT32, DE
+//! TOUTE TAILLE depuis le 2026-10-07 (au-delà de `WINDOWS_FAT32_CREATE_CEILING` seulement avant :
+//! en dessous, un `diskpart` dont l'élévation ne démarrait jamais). De là :
 //!
 //! - `WindowsBackend::try_format_in_place`, **sans aucune relance élevée** : la partition déjà
 //!   montée couvre le disque et porte un type MBR FAT32, donc on ouvre son volume par lettre
 //!   (`RawVolume::open`) et `write_fat32` écrit depuis le processus ordinaire ;
 //! - sinon `privileged::run`, dans un Sift relancé en administrateur sur `PRIVILEGED_FLAG`
-//!   (intercepté par `run_privileged_if_asked`, avant que Tauri ne démarre) : `diskpart`
-//!   partitionne sans formater, puis `write_fat32` écrit depuis ce même processus élevé.
+//!   (intercepté par `run_privileged_if_asked`, avant que Tauri ne démarre) : les cmdlets de
+//!   stockage partitionnent sans formater (`diskpart` jusqu'au 2026-10-07), puis `write_fat32`
+//!   écrit depuis ce même processus élevé.
 //!
 //! Les deux passent par `SectorIo` : un handle de volume brut refuse les E/S qui ne tombent pas sur
 //! des multiples entiers de secteur, là où `fatfs` écrit comme dans un fichier.
@@ -176,6 +178,28 @@ mod tests {
         );
         let fs = format_and_reopen(forty_gb, "SIFT_TEST");
         assert_eq!(fs.fat_type(), FatType::Fat32);
+    }
+
+    /// Depuis le 2026-10-07, ce writer sert AUSSI les clés sous le plafond — avant, elles passaient
+    /// par un `diskpart` dont l'élévation ne démarrait jamais. Les tailles réelles des clés DJ :
+    /// chacune doit se monter en FAT32 et garder un fichier.
+    #[test]
+    fn formats_the_small_keys_too() {
+        for go in [1u64, 4, 8, 16, 31] {
+            let fs = format_and_reopen(go * 1024 * 1024 * 1024, "SIFT");
+            assert_eq!(fs.fat_type(), FatType::Fat32, "{go} Go");
+            let root = fs.root_dir();
+            {
+                let mut f = root.create_file("PISTE.TXT").expect("create");
+                f.write_all(b"une piste").expect("write");
+            }
+            let mut lu = String::new();
+            root.open_file("PISTE.TXT")
+                .expect("open")
+                .read_to_string(&mut lu)
+                .expect("read");
+            assert_eq!(lu, "une piste", "{go} Go");
+        }
     }
 
     /// 32 Kio est la valeur de compatibilité maximale, et celle que porte déjà un disque DJ

@@ -143,31 +143,61 @@ pub const EXIT_WRITE_FAILED: i32 = 6;
 const LETTER_POLL_ATTEMPTS: u32 = 20;
 const LETTER_POLL_INTERVAL: std::time::Duration = std::time::Duration::from_millis(400);
 
-/// Script PowerShell qui prépare le disque SANS le formater — le formatage, c'est nous.
+/// Script PowerShell qui prépare le disque, par les cmdlets de stockage.
 ///
 /// `Clear-Disk` efface la table de partition (sauté sur un disque vierge, où il échouerait),
 /// `Initialize-Disk` pose une table MBR, `New-Partition` une partition qui couvre tout le disque,
-/// avec sa lettre. Pas de `Format-Volume` : c'est précisément ce que Windows refuse au-delà de
-/// 32 Go, et toute la raison de ce module.
+/// avec sa lettre. Ensuite :
+/// - **FAT32** : RIEN de plus — le formatage, c'est nous (`write_fat32`). Pas de `Format-Volume` :
+///   c'est précisément ce que Windows refuse au-delà de 32 Go, et toute la raison de ce module.
+/// - **exFAT** : `Format-Volume`, que Windows sait faire à toute taille, avec le nom de volume —
+///   que l'ancien `diskpart` (`format fs=exfat quick`, sans `label=`) ignorait.
 ///
 /// **Ce n'est plus `diskpart`** (2026-10-07). Chronométré sur le SSD de 500 Go d'Antoine :
 /// `diskpart` prenait 36,5 s des 39,6 s d'un formatage, dont ~26,5 s pour son seul démarrage —
 /// `list disk` seul, sans rien écrire, mesurait 26,8 s puis 26,4 s. Les cmdlets de stockage font
 /// le même travail en 4,6 s (`Clear-Disk` 2,7 s, `Initialize-Disk` 0,7 s, `New-Partition` 1,2 s)
 /// et rendent la même partition : 500 105 740 288 octets, type MBR 0x0C.
-pub fn storage_partition_script(disk_index: u32) -> String {
-    // `-MbrType FAT32` n'est PAS cosmétique : c'est le type 0x0C (FAT32 avec adressage LBA), le
-    // seul correct au-delà de 8 Go — mesuré `MbrType 12` sur la partition rendue. Le type par
-    // défaut d'une partition neuve n'est pas FAT32, et un FAT32 écrit dans une partition typée
-    // 0x06 (FAT16, plafond 2 Go) finit déclaré « endommagé et illisible » par Windows (os error
-    // 1392, SSD d'Antoine, 2026-08-03 — c'était alors le `id=0c` manquant de `diskpart`).
-    format!(
+pub fn storage_script(disk_index: u32, fs: TargetFs, label: &str) -> String {
+    let tete = format!(
         "$ErrorActionPreference = 'Stop'\n\
          $d = Get-Disk -Number {disk_index}\n\
          if ($d.PartitionStyle -ne 'RAW') {{ Clear-Disk -Number {disk_index} -RemoveData -RemoveOEM -Confirm:$false }}\n\
-         Initialize-Disk -Number {disk_index} -PartitionStyle MBR\n\
-         New-Partition -DiskNumber {disk_index} -UseMaximumSize -MbrType FAT32 -AssignDriveLetter | Out-Null\n"
-    )
+         Initialize-Disk -Number {disk_index} -PartitionStyle MBR\n"
+    );
+    match fs {
+        // `-MbrType FAT32` n'est PAS cosmétique : c'est le type 0x0C (FAT32 avec adressage LBA), le
+        // seul correct au-delà de 8 Go — mesuré `MbrType 12` sur la partition rendue. Un FAT32
+        // écrit dans une partition typée 0x06 (FAT16, plafond 2 Go) finit déclaré « endommagé et
+        // illisible » par Windows (os error 1392, SSD d'Antoine, 2026-08-03 — c'était alors le
+        // `id=0c` manquant de `diskpart`).
+        TargetFs::Fat32 => format!(
+            "{tete}New-Partition -DiskNumber {disk_index} -UseMaximumSize -MbrType FAT32 -AssignDriveLetter | Out-Null\n"
+        ),
+        // `-MbrType IFS` = 0x07, le type des volumes exFAT (et NTFS).
+        TargetFs::ExFat => format!(
+            "{tete}New-Partition -DiskNumber {disk_index} -UseMaximumSize -MbrType IFS -AssignDriveLetter \
+             | Format-Volume -FileSystem exFAT -NewFileSystemLabel '{}' -Confirm:$false | Out-Null\n",
+            nom_de_volume_sur(label)
+        ),
+    }
+}
+
+/// Le nom de volume tel qu'il peut entrer, entre guillemets simples, dans un script élevé : lettres
+/// et chiffres ASCII, `_` et `-`, 11 au plus — la règle de `windows::sanitize_label_for_command`,
+/// déjà appliquée par le parent, réappliquée ici parce que CE texte part dans un script exécuté en
+/// administrateur. Vide après filtrage : `SIFT`.
+fn nom_de_volume_sur(label: &str) -> String {
+    let nom: String = label
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-')
+        .take(11)
+        .collect();
+    if nom.is_empty() {
+        "SIFT".to_string()
+    } else {
+        nom
+    }
 }
 
 /// Analyse les arguments du mode privilégié.
@@ -230,11 +260,42 @@ pub fn run(job: &PrivilegedJob) -> i32 {
     );
 
     let mut chrono = Chrono::new(Some(timings_file()));
+
+    // exFAT : Windows sait le créer à toute taille. Partition et `Format-Volume` dans le même
+    // script, et le travail est fini — ni attente de lettre, ni écriture brute.
+    if job.fs == TargetFs::ExFat {
+        write_step(&crate::tr!(
+            "Partitionnement et formatage exFAT…",
+            "Partitioning and formatting as exFAT…"
+        ));
+        let fait = win::run_powershell_script(&storage_script(
+            job.disk_index,
+            TargetFs::ExFat,
+            &job.label,
+        ));
+        chrono.etape("partitionnement et formatage exFAT (cmdlets)");
+        return match fait {
+            Ok(()) => {
+                write_step(STEP_DONE);
+                eprintln!("sift: exFAT écrit sur le disque {}", job.disk_index);
+                EXIT_OK
+            }
+            Err(e) => {
+                write_failed(&crate::tr!(
+                    "Échec du formatage exFAT : {e}",
+                    "exFAT formatting failed: {e}"
+                ));
+                eprintln!("sift: formatage exFAT impossible: {e}");
+                EXIT_PARTITION_FAILED
+            }
+        };
+    }
+
     write_step(&crate::tr!(
         "Partitionnement du disque…",
         "Partitioning the disk…"
     ));
-    let script = storage_partition_script(job.disk_index);
+    let script = storage_script(job.disk_index, TargetFs::Fat32, &job.label);
     let partition = win::run_powershell_script(&script);
     chrono.etape("partitionnement (Clear-Disk, Initialize-Disk, New-Partition)");
     match partition {
@@ -320,8 +381,10 @@ pub fn run(job: &PrivilegedJob) -> i32 {
         }
         // exFAT passe par diskpart, qui le sait faire sans plafond — ce mode ne devrait pas être
         // sollicité pour lui, mais refuser vaut mieux qu'écrire un FAT32 à sa place.
+        // Traité et rendu plus haut, avant l'attente de la lettre. Refuser vaut mieux qu'écrire un
+        // FAT32 à sa place si ce match redevenait atteignable.
         TargetFs::ExFat => {
-            eprintln!("sift: exFAT ne passe pas par le mode privilégié");
+            eprintln!("sift: exFAT atteint l'écriture FAT32 — refusé");
             return EXIT_BAD_ARGS;
         }
     };
@@ -510,12 +573,64 @@ mod tests {
         assert!(parse_args(&args).expect("drapeau present").is_err());
     }
 
-    /// Le script ne doit JAMAIS formater : c'est ce que Windows refuse au-delà de 32 Go, et le
-    /// laisser passer ramènerait le bug que ce module existe pour contourner. Chaque commande vise
-    /// le disque demandé, et AUCUN autre.
+    /// Les numéros de disque visés par un script : chaque `-Number` / `-DiskNumber`.
+    fn disques_vises(s: &str) -> Vec<String> {
+        s.split(|c: char| c.is_whitespace())
+            .collect::<Vec<_>>()
+            .windows(2)
+            .filter(|w| w[0] == "-Number" || w[0] == "-DiskNumber")
+            .map(|w| w[1].to_string())
+            .collect()
+    }
+
+    /// En exFAT, Windows formate — à toute taille — et le NOM du volume part avec : l'ancien
+    /// `diskpart` (`format fs=exfat quick`, sans `label=`) l'ignorait. Le type de partition est
+    /// IFS (0x07), jamais FAT32 ; et le nom, qui entre dans un script ADMINISTRATEUR entre
+    /// guillemets simples, ne garde que des caractères sûrs.
     #[test]
-    fn storage_partition_script_creates_but_never_formats() {
-        let s = storage_partition_script(2);
+    fn storage_script_exfat_formate_avec_le_nom_et_ne_vise_que_ce_disque() {
+        let s = storage_script(5, TargetFs::ExFat, "DJ-KEY_1");
+        assert!(s.starts_with("$ErrorActionPreference = 'Stop'\n"), "{s}");
+        assert!(
+            s.contains("\nInitialize-Disk -Number 5 -PartitionStyle MBR\n"),
+            "{s}"
+        );
+        assert!(
+            s.contains(
+                "New-Partition -DiskNumber 5 -UseMaximumSize -MbrType IFS -AssignDriveLetter"
+            ),
+            "{s}"
+        );
+        assert!(
+            s.contains(
+                "| Format-Volume -FileSystem exFAT -NewFileSystemLabel 'DJ-KEY_1' -Confirm:$false"
+            ),
+            "{s}"
+        );
+        assert!(
+            !s.contains("MbrType FAT32") && !s.contains("FileSystem FAT32"),
+            "{s}"
+        );
+        assert_eq!(disques_vises(&s), vec!["5", "5", "5", "5"], "{s}");
+
+        let piege = storage_script(5, TargetFs::ExFat, "A'; Clear-Disk -Number 0 #");
+        assert!(
+            piege.contains("-NewFileSystemLabel 'AClear-Disk'"),
+            "le nom ne doit garder que lettres, chiffres, _ et -, 11 au plus : {piege}"
+        );
+        assert_eq!(disques_vises(&piege), vec!["5", "5", "5", "5"], "{piege}");
+        assert!(
+            storage_script(5, TargetFs::ExFat, "'''").contains("-NewFileSystemLabel 'SIFT'"),
+            "nom vide après filtrage : SIFT"
+        );
+    }
+
+    /// Le script FAT32 ne doit JAMAIS formater : c'est ce que Windows refuse au-delà de 32 Go, et
+    /// le laisser passer ramènerait le bug que ce module existe pour contourner. Chaque commande
+    /// vise le disque demandé, et AUCUN autre.
+    #[test]
+    fn storage_script_fat32_creates_but_never_formats() {
+        let s = storage_script(2, TargetFs::Fat32, "SIFT");
         assert!(s.starts_with("$ErrorActionPreference = 'Stop'\n"), "{s}");
         // Effacer seulement un disque déjà initialisé : `Clear-Disk` échoue sur un disque vierge.
         assert!(
@@ -535,14 +650,7 @@ mod tests {
             ),
             "{s}"
         );
-        let cibles: Vec<&str> = s
-            .split(|c: char| c.is_whitespace())
-            .collect::<Vec<_>>()
-            .windows(2)
-            .filter(|w| w[0] == "-Number" || w[0] == "-DiskNumber")
-            .map(|w| w[1])
-            .collect();
-        assert_eq!(cibles, vec!["2", "2", "2", "2"], "{s}");
+        assert_eq!(disques_vises(&s), vec!["2", "2", "2", "2"], "{s}");
         assert!(
             !s.to_lowercase().contains("format-volume"),
             "le formatage est notre travail, pas celui de Windows: {s}"
