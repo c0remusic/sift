@@ -3060,9 +3060,14 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
    `--color-surface-raised`, aucune bordure, survol assombri) et garde le danger dans son encre :
    c'est mot pour mot ce que fait `.sift-secondary-trash` sur le rail de Revue, l'autre destructif
    de l'app. Le garde-fou réel de cette action n'a jamais été sa couleur — c'est la saisie du nom
-   du volume plus l'armement horodaté de la modale. */
-.sift-usbfmt-confirm-btn{padding:var(--space-8) var(--space-16);border-radius:var(--border-radius-md);border:none;color:var(--color-text-danger);cursor:pointer;font-family:inherit}
-.sift-usbfmt-confirm-btn:disabled{opacity:.4;cursor:not-allowed}
+   du volume plus l'armement horodaté de la modale.
+   GABARIT = celui d'Annuler (2026-10-07). Le bouton avait son propre padding 8/16 sans hauteur ni
+   taille de texte, contre `.sift-settings-btn` (hauteur `--h-control-sm`, texte `sm`) pour Annuler :
+   deux boutons de tailles différentes côte à côte, relevé par Antoine. Il porte désormais
+   `.sift-settings-btn`, et cette classe-ci ne garde que l'encre — à spécificité (0,2,0), car
+   `.sift-settings-btn` est déclarée PLUS BAS et poserait sinon son encre primaire. */
+.sift-settings-btn.sift-usbfmt-confirm-btn{color:var(--color-text-danger)}
+.sift-settings-btn.sift-usbfmt-confirm-btn:disabled{opacity:.4;cursor:not-allowed}
 /* shadcn Alert Dialog "sm" size (ui.shadcn.com/docs/components/base/alert-dialog) — narrower
    than the default alert-dialog width, footer buttons equal-width side by side instead of
    right-aligned at natural width. Reserved for plain yes/no confirms (confirmAction()); the USB

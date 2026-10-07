@@ -135,7 +135,7 @@ export function openUsbFormatModal(drive: RemovableDrive): void {
       '<button type="button" id="sift-usbfmt-cancel" class="sift-settings-btn">' +
       t.annuler +
       "</button>" +
-      '<button type="button" id="sift-usbfmt-confirm" class="sift-usbfmt-confirm-btn"' +
+      '<button type="button" id="sift-usbfmt-confirm" class="sift-settings-btn sift-usbfmt-confirm-btn"' +
       (busy || fatal ? " disabled" : "") +
       ">" +
       (busy
