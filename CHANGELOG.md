@@ -14,6 +14,46 @@ et la bannière de mise à jour montre les notes dans la langue de l'app. La sec
 `### Français` puis `### English`, chacun suivi de ses rubriques en `####`. Une moitié manquante
 ou vide fait échouer la release, comme une section absente.
 
+## v0.1.6
+
+### Français
+
+#### À lire avant la mise à jour
+
+- Depuis la 0.1.4, cette version s'installe seule. Une installation 0.1.3 doit encore l'installer
+  à la main : la clé qui signe les mises à jour a changé avec la 0.1.4.
+
+#### Clé USB
+
+- **Formater en exFAT, ou en FAT32 une clé de 32 Go ou moins, fonctionne enfin.** Depuis les
+  premières versions, ces formatages échouaient avant même l'invite de Windows, avec un message
+  qui affirmait à tort que l'autorisation avait été refusée. Le nom de volume choisi est
+  maintenant appliqué aussi en exFAT.
+- **Formater une clé vierge prend quelques secondes au lieu d'une quarantaine.** Sift ne passe
+  plus par l'outil de partitionnement de Windows, qui mettait à lui seul près de 30 s à démarrer.
+  Mesuré sur un SSD de 500 Go : 39,6 s avant, 5,6 s après.
+- La fenêtre de formatage est plus calme : les avertissements passent dans des bulles ⓘ, et les
+  boutons Annuler et Formater… ont la même taille.
+
+### English
+
+#### Read before updating
+
+- From 0.1.4 on, this version installs itself. A 0.1.3 installation still has to install it by
+  hand: the key that signs updates changed with 0.1.4.
+
+#### USB drive
+
+- **Formatting as exFAT, or a FAT32 drive of 32 GB or less, finally works.** Since the earliest
+  versions, these formats failed before the Windows prompt even appeared, with a message wrongly
+  saying the permission had been declined. The volume name you choose is now applied in exFAT
+  too.
+- **Formatting a blank drive takes a few seconds instead of about forty.** Sift no longer goes
+  through Windows' partitioning tool, which alone took nearly 30 s to start. Measured on a 500 GB
+  SSD: 39.6 s before, 5.6 s after.
+- The format window is calmer: the warnings move into ⓘ bubbles, and the Cancel and Format…
+  buttons are the same size.
+
 ## v0.1.5
 
 ### Français
