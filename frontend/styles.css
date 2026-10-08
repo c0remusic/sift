@@ -563,7 +563,14 @@ body:has(#sift-titlebar){border-radius:var(--border-radius-sm);overflow:hidden}
    deux qui n'y passaient pas (Revue, Accueil) posaient leurs propres colonnes : deux grammaires
    pour huit écrans. Le comportement est désormais dans la feuille, posé une fois, et les écrans
    ne touchent plus ni au display ni à l'overflow de leur hôte. */
-#content{flex:1;min-width:0;overflow-y:auto;padding:var(--space-24)}
+/* `--content-pad` : le padding de la zone qui défile, nommé pour que les éléments collants s'en
+   décalent (`.sift-lib-thead`, `.jrnl-thead`, `.sift-dups-foot`, `.sift-dups-sheet-anchor`). Un
+   élément `position:sticky` colle au bord INTÉRIEUR du padding de son conteneur de défilement :
+   avec `top:0`, l'en-tête restait 24 px sous le bord, et les rangées défilaient VISIBLES dans
+   cette bande, au-dessus de lui (et sous la légende de Doublons). Mesuré le 2026-10-08 dans la
+   vraie fenêtre, Doublons défilé de 1 200 px : en-tête à 72 px pour un bord à 48, une rangée
+   au-dessus ; légende à 805 pour un bord à 829, deux rangées dessous. */
+#content{flex:1;min-width:0;overflow-y:auto;--content-pad:var(--space-24);padding:var(--content-pad)}
 /* ZONE D — l'inspecteur. Largeur fixe --pane-w, défilement propre, et un filet à gauche plutôt
    qu'un fond distinct : la séparation vient du trait le plus discret possible, pas d'une surface
    de plus (DESIGN.md § 5, deux niveaux de boîte et pas cinq). */
@@ -709,7 +716,7 @@ body.sift-aside-hidden #sift-aside,body.sift-aside-hidden #sift-aside-resize{dis
 /* Ancre de la feuille d'application : collante, de hauteur nulle, en tête de la table. La zone C
    défile, la feuille reste en haut de ce qu'on voit sans pousser la table ; en absolu sur un hôte
    non positionné, elle s'ancrait à la fenêtre et couvrait la barre (revue du 2026-10-05). */
-.sift-dups-sheet-anchor{position:sticky;top:0;height:0;z-index:var(--z-sheet)}
+.sift-dups-sheet-anchor{position:sticky;top:calc(-1 * var(--content-pad, 0px));height:0;z-index:var(--z-sheet)}
 .sift-lib-thead.sift-dups-row,.lr.sift-dups-row{display:grid;grid-template-columns:var(--sift-dups-cols);column-gap:var(--space-8);align-items:center}
 .sift-dups-r{text-align:right}
 .sift-dups-ck{width:16px;height:16px;margin:0;flex:none;accent-color:var(--color-accent-fill);border-radius:var(--border-radius-xs)}
@@ -747,7 +754,7 @@ body.sift-aside-hidden #sift-aside,body.sift-aside-hidden #sift-aside-resize{dis
 .sift-dups-effect{margin-left:auto;flex:none;white-space:nowrap;color:var(--color-text-secondary);font-variant-numeric:tabular-nums}
 /* Pied de zone C : la légende clavier de Revue sur le bord de conduite des rangées ; filet haut
    qui borne, comme la rangée de statut de la file (revue.md). Collé en bas de la zone qui défile. */
-.sift-dups-foot{position:sticky;bottom:0;margin-top:auto;flex:none;min-height:var(--row-h);display:flex;align-items:center;padding:0 var(--space-24);background:var(--color-background-primary);border-top:1px solid var(--color-border-tertiary)}
+.sift-dups-foot{position:sticky;bottom:calc(-1 * var(--content-pad, 0px));margin-top:auto;flex:none;min-height:var(--row-h);display:flex;align-items:center;padding:0 var(--space-24);background:var(--color-background-primary);border-top:1px solid var(--color-border-tertiary)}
 /* La copie ouverte contre la comparée (panneau Details de dupeGuru, en encre). */
 .sift-dups-cmp-sec{margin-top:var(--space-24)}
 .sift-dups-cmp-proof{margin-top:var(--space-4);font-size:var(--text-sm);color:var(--color-text-tertiary)}
@@ -1866,8 +1873,10 @@ body[data-view="revue"] .sift-pz-row.sift-pz-analyze{display:none}
    défilement est `#content`, pas la table : `position:sticky` colle donc l'en-tête au haut de la
    zone, sans qu'aucun nombre n'ait à connaître la hauteur de ce qui le précède — c'est le même
    raisonnement qui avait fait retirer `calc(100dvh - 210px)` de l'ancienne colonne de facette.
-   `top:0` colle l'en-tête au bord intérieur du padding de `#content` — c'est le repère des
-   offsets sticky, pas le bord de la fenêtre.
+   `top:0` collait l'en-tête au bord intérieur du padding de `#content` — c'est le repère des
+   offsets sticky, pas le bord de la fenêtre — et laissait défiler les rangées, visibles, dans
+   ce padding au-dessus de lui. D'où `top:calc(-1 * var(--content-pad))` depuis le 2026-10-08
+   (voir `#content`).
    Le fond OPAQUE n'est pas décoratif : sans lui, les lignes défilent visiblement sous un en-tête
    translucide et les deux textes se superposent. Il reprend le ton de la surface qui le porte.
    Ni shadcn ni ui-thing n'exposent de composant d'en-tête figé (recherché le 2026-08-19, zéro
@@ -1886,7 +1895,7 @@ body[data-view="revue"] .sift-pz-row.sift-pz-analyze{display:none}
    <button>, dont la feuille UA remet `text-transform:none` — Rangés se lisait en casse mixte par
    accident, Journal (spans) en capitales par intention, Raison d'Écartés en capitales à côté
    d'« Artiste ». Une seule forme, écrite. */
-.sift-lib-thead{position:sticky;top:0;z-index:1;background:var(--color-background-primary);display:flex;align-items:center;gap:var(--space-8);padding:var(--space-4) var(--space-8);font-size:var(--text-sm);color:var(--color-text-secondary);border-bottom:1px solid var(--color-border-tertiary)}
+.sift-lib-thead{position:sticky;top:calc(-1 * var(--content-pad, 0px));z-index:1;background:var(--color-background-primary);display:flex;align-items:center;gap:var(--space-8);padding:var(--space-4) var(--space-8);font-size:var(--text-sm);color:var(--color-text-secondary);border-bottom:1px solid var(--color-border-tertiary)}
 /* COLONNES DE LA TABLE (DESIGN.md § 16). Les largeurs vivent ici et non en style inline sur
    chaque cellule : l'en-tête et la ligne doivent s'aligner, et deux listes de flex inline écrites
    à deux endroits divergent au premier ajout de colonne — ce qui est arrivé, l'en-tête ayant
@@ -2418,7 +2427,7 @@ input{font-family:inherit}input[type=range]{accent-color:var(--color-accent-fill
 /* Même grammaire que `.sift-lib-thead` (casse mixte, --text-sm, 2026-09-08) et même fond que le
    sol : `--color-background-secondary` était un plan au-dessus de la zone, le même écart que
    Rangés a corrigé la veille. */
-.jrnl-thead{position:sticky;top:0;z-index:1;background:var(--color-background-primary);display:flex;align-items:center;gap:var(--space-8);padding:var(--space-4) var(--space-8);font-size:var(--text-sm);color:var(--color-text-tertiary);border-bottom:1px solid var(--color-border-tertiary)}
+.jrnl-thead{position:sticky;top:calc(-1 * var(--content-pad, 0px));z-index:1;background:var(--color-background-primary);display:flex;align-items:center;gap:var(--space-8);padding:var(--space-4) var(--space-8);font-size:var(--text-sm);color:var(--color-text-tertiary);border-bottom:1px solid var(--color-border-tertiary)}
 /* Colonnes. Aucun zébrage : la séparation vient du filet de `.lr` et de l'espace (DESIGN.md § 16). */
 .jrnl-c{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .jrnl-c-time{flex:none;width:var(--jrnl-col-time)}
