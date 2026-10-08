@@ -352,9 +352,12 @@ pub(crate) const DEFAULT_VOLUME_LABEL: &str = "SIFT";
 
 /// Relance Sift **lui-même**, élevé, sur son drapeau de formatage privilégié.
 ///
-/// Même mécanique que `elevation_powershell`, mais la cible est notre propre exécutable au lieu de
-/// `diskpart` : partitionner et écrire un volume brut exigent tous deux l'administrateur, et les
-/// faire dans un seul processus élevé n'ouvre qu'une invite UAC au lieu de deux.
+/// `Start-Process -Verb RunAs` sur notre propre exécutable : partitionner et écrire un volume brut
+/// exigent tous deux l'administrateur, et les faire dans un seul processus élevé n'ouvre qu'une
+/// invite UAC au lieu de deux. Depuis le 2026-10-07, c'est le SEUL shim d'élévation : son frère
+/// `elevation_powershell`, qui lançait `diskpart` par `cmd /c`, est retiré — ses `\"` cassaient
+/// `Start-Process` avant l'invite. Les arguments passent ici en guillemets simples, et le test
+/// `privileged_shim_never_nests_escaped_double_quotes` le tient.
 ///
 /// Refuse tout chemin ou libellé contenant un guillemet — ils viennent de notre énumération et de
 /// nos constantes, donc un guillemet signale un problème en amont, et un échappement raté serait
