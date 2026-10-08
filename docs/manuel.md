@@ -179,11 +179,11 @@ toucher, vérifie la sauvegarde, et refuse d'agir si le logiciel est ouvert.
 
 La colonne de gauche liste les disques amovibles. Pour le disque choisi, vous voyez l'espace
 occupé par format, ses caractéristiques (point de montage, format, capacité, espace libre,
-nombre de fichiers, modèle, état de santé) et trois actions : **Formater…**, **Éjecter**,
+nombre de fichiers, modèle, périphérique, état de santé) et trois actions : **Formater…**, **Éjecter**,
 **Relire le disque**.
 
 Le formatage écrit du FAT32, le format que lisent les platines, même au-delà des 32 Go que Windows
-refuse. Il avance par blocs et affiche les mégaoctets écrits.
+refuse ; l'exFAT reste au choix. Il avance par blocs et affiche les mégaoctets écrits.
 
 **Formater efface tout le contenu de la clé.** Sift le demande deux fois en nommant le volume, et
 refuse si le disque a changé entre-temps.

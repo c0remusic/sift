@@ -160,7 +160,7 @@ td:first-child{white-space:nowrap}
     <span class="count">9 écrans</span>
     <span class="spacer"></span>
     <a class="lang" href="/en/manuel.html" hreflang="en" lang="en">English</a>
-    <span class="ver">v0.1.4</span>
+    <span class="ver">v0.1.6</span>
   </div>
   <div class="frame">
     <div class="railcol"><nav class="rail" aria-label="Sommaire">
@@ -281,8 +281,8 @@ td:first-child{white-space:nowrap}
       <div class="note danger"><p><b>Rekordbox doit être fermé pendant l'écriture directe.</b> Sift sauvegarde la base avant d'y toucher, vérifie la sauvegarde, et refuse d'agir si le logiciel est ouvert.</p></div>
 
       <h2 id="usb">Clé USB</h2>
-      <p>La colonne de gauche liste les disques amovibles. Pour le disque choisi, vous voyez l'espace occupé par format, ses caractéristiques (point de montage, format, capacité, espace libre, nombre de fichiers, modèle, état de santé) et trois actions : <b>Formater…</b>, <b>Éjecter</b>, <b>Relire le disque</b>.</p>
-      <p>Le formatage écrit du FAT32, le format que lisent les platines, même au-delà des 32 Go que Windows refuse. Il avance par blocs et affiche les mégaoctets écrits.</p>
+      <p>La colonne de gauche liste les disques amovibles. Pour le disque choisi, vous voyez l'espace occupé par format, ses caractéristiques (point de montage, format, capacité, espace libre, nombre de fichiers, modèle, périphérique, état de santé) et trois actions : <b>Formater…</b>, <b>Éjecter</b>, <b>Relire le disque</b>.</p>
+      <p>Le formatage écrit du FAT32, le format que lisent les platines, même au-delà des 32 Go que Windows refuse ; l'exFAT reste au choix. Il avance par blocs et affiche les mégaoctets écrits.</p>
       <div class="note danger"><p><b>Formater efface tout le contenu de la clé.</b> Sift le demande deux fois en nommant le volume, et refuse si le disque a changé entre-temps.</p></div>
 
       <h2 id="reglages">Réglages</h2>
@@ -331,6 +331,14 @@ td:first-child{white-space:nowrap}
       <p>En clair : un verdict <span class="verdict v-fake">FAUX</span> est fiable. Un verdict <span class="verdict v-ok">VRAI</span> signifie que rien de mesurable ne contredit le fichier, pas qu'il est garanti authentique.</p>
 
       <h2 id="nouveautes">Nouveautés</h2>
+      <p><b>v0.1.6</b> — la clé USB.</p>
+      <ul>
+        <li><b>Formater en exFAT, ou en FAT32 une clé de 32 Go ou moins, fonctionne enfin</b> : ces formatages échouaient avant même l'invite de Windows. Le nom de volume choisi est appliqué aussi en exFAT.</li>
+        <li><b>Formater une clé vierge prend quelques secondes</b> au lieu d'une quarantaine.</li>
+        <li>Les avertissements de la fenêtre de formatage passent dans des bulles ⓘ.</li>
+      </ul>
+      <p><a href="https://github.com/c0remusic/sift/releases/tag/v0.1.6">Les notes de la v0.1.6</a>.</p>
+      <p><b>v0.1.5</b> — un groupe de doublons dont toutes les copies sont tronquées garde sa meilleure copie, au lieu de proposer de tout envoyer à la corbeille.</p>
       <p><b>v0.1.4</b> — trier les doublons, et Sift en anglais. Cette version s'installe à la main : la clé qui signe les mises à jour a changé, une installation 0.1.3 refuse la mise à jour automatique. Bibliothèque et réglages sont gardés.</p>
       <ul>
         <li><b>Un écran Doublons</b> : toutes les copies d'un même morceau, comparées, une case « Garder » par copie, un seul envoi à la corbeille et un seul <kbd>Ctrl</kbd>+<kbd>Z</kbd> pour tout défaire.</li>
@@ -361,7 +369,7 @@ td:first-child{white-space:nowrap}
       <p>Les erreurs s'affichent dans l'application avec leur cause. Si un fichier refuse de s'analyser, son message reste visible sur sa ligne. Une mise à jour disponible se propose au démarrage.</p>
       <p>Pour signaler un problème : <a href="https://github.com/c0remusic/sift/issues">github.com/c0remusic/sift/issues</a>. Indiquez la version, votre machine, et ce que vous attendiez.</p>
 
-      <div class="foot">Sift v0.1.4, Windows et macOS.</div>
+      <div class="foot">Sift v0.1.6, Windows et macOS.</div>
     </main>
   </div>
 </div>

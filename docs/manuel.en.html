@@ -160,7 +160,7 @@ td:first-child{white-space:nowrap}
     <span class="count">9 screens</span>
     <span class="spacer"></span>
     <a class="lang" href="/manuel.html" hreflang="fr" lang="fr">Français</a>
-    <span class="ver">v0.1.4</span>
+    <span class="ver">v0.1.6</span>
   </div>
   <div class="frame">
     <div class="railcol"><nav class="rail" aria-label="Contents">
@@ -282,8 +282,8 @@ td:first-child{white-space:nowrap}
       <div class="note danger"><p><b>Rekordbox must be closed during a direct write.</b> Sift backs up the database before touching it, verifies the backup, and refuses to act if the software is open.</p></div>
 
       <h2 id="usb">USB drive</h2>
-      <p>The left column lists the removable drives. For the drive you pick, you see the space taken by each format, its characteristics (mount point, format, capacity, free space, file count, model, health) and three actions: <b>Format…</b>, <b>Eject</b>, <b>Rescan drive</b>.</p>
-      <p>Formatting writes FAT32, the format the players read, even past the 32 GB Windows refuses. It proceeds in blocks and shows the megabytes written.</p>
+      <p>The left column lists the removable drives. For the drive you pick, you see the space taken by each format, its characteristics (mount point, format, capacity, free space, file count, model, device, health) and three actions: <b>Format…</b>, <b>Eject</b>, <b>Rescan drive</b>.</p>
+      <p>Formatting writes FAT32, the format the players read, even past the 32 GB Windows refuses; exFAT remains an option. It proceeds in blocks and shows the megabytes written.</p>
       <div class="note danger"><p><b>Formatting erases everything on the drive.</b> Sift asks twice, naming the volume, and refuses if the drive has changed in the meantime.</p></div>
 
       <h2 id="reglages">Settings</h2>
@@ -332,6 +332,14 @@ td:first-child{white-space:nowrap}
       <p>In plain terms: a <span class="verdict v-fake">FAKE</span> verdict is reliable. A <span class="verdict v-ok">GENUINE</span> verdict means that nothing measurable contradicts the file, not that it is guaranteed authentic.</p>
 
       <h2 id="nouveautes">What's new</h2>
+      <p><b>v0.1.6</b> — the USB drive.</p>
+      <ul>
+        <li><b>Formatting as exFAT, or a FAT32 drive of 32 GB or less, finally works</b>: these formats failed before the Windows prompt even appeared. The volume name you choose is applied in exFAT too.</li>
+        <li><b>Formatting a blank drive takes a few seconds</b> instead of about forty.</li>
+        <li>The format window's warnings move into ⓘ bubbles.</li>
+      </ul>
+      <p><a href="https://github.com/c0remusic/sift/releases/tag/v0.1.6">The v0.1.6 release notes</a>.</p>
+      <p><b>v0.1.5</b> — a duplicates group whose copies are all truncated keeps its best copy, instead of offering to move everything to the Trash.</p>
       <p><b>v0.1.4</b> — sorting duplicates, and Sift in English. This version installs by hand: the key that signs updates has changed, so a 0.1.3 installation refuses the automatic update. Your library and settings are kept.</p>
       <ul>
         <li><b>A Duplicates screen</b>: every copy of the same track, compared, a “Keep” box per copy, a single move to the Trash and a single <kbd>Ctrl</kbd>+<kbd>Z</kbd> to undo it all.</li>
@@ -362,7 +370,7 @@ td:first-child{white-space:nowrap}
       <p>Errors appear in the application with their cause. If a file refuses to analyze, its message stays visible on its row. An available update offers itself at startup.</p>
       <p>To report a problem: <a href="https://github.com/c0remusic/sift/issues">github.com/c0remusic/sift/issues</a>. Give the version, your machine, and what you expected.</p>
 
-      <div class="foot">Sift v0.1.4, Windows and macOS.</div>
+      <div class="foot">Sift v0.1.6, Windows and macOS.</div>
     </main>
   </div>
 </div>
