@@ -144,6 +144,10 @@ disputent le lock du `target/` (attente, ou corruption du cache incrémental).
 binaire isolé directement — `Start-Process <isolé>\debug\sift.exe -WorkingDirectory src-tauri`
 avec `WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS=--remote-debugging-port=<port>` — il se branche sur
 tout Vite 5173 qui sert l'arbre (HMR, sans watcher Rust). Ticket #62.
+Remède plus court, mesuré deux fois le 2026-10-07 : supprimer
+`src-tauri/target/debug/incremental/sift_lib-*` puis toucher une source — `tauri dev` recompile
+`sift_lib` (~2 min) et relie. Lancer `tauri dev` avec `CARGO_INCREMENTAL=0` l'évite d'avance
+(2 min 45 de compilation pleine du crate).
 
 Storybook est le **miroir vivant** de `docs/design-system-states.md` : documenter un
 nouvel état veut dire ajouter sa story, pas seulement étendre le markdown.

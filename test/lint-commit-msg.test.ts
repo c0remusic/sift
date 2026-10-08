@@ -5,11 +5,15 @@
 // désaccentué » et « ce qui n'a pas d'accent à porter ». Mesuré sur les 1298 messages de
 // l'historique — 218 refusés, dont 13 relus un par un sans un seul faux positif — mais un chiffre
 // global ne dit pas OÙ passe la frontière. Ces vecteurs, si.
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+
+// Chaque cas lance un sous-processus node : sous charge (analyse en cours), le démarrage seul a
+// dépassé les 5 s par défaut le 2026-10-07, et rejoué à vide le même cas passait.
+vi.setConfig({ testTimeout: 20_000 });
 
 const DIR = mkdtempSync(join(tmpdir(), "sift-msg-"));
 let n = 0;

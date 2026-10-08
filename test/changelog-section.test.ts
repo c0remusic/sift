@@ -10,10 +10,14 @@
 //
 // Le test lance le VRAI script sur le VRAI `CHANGELOG.md`, pas une copie de son texte : une
 // constante recopiée ici ne tomberait pas si quelqu'un la retirait du script.
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { bilingualProblem, sectionOf } from "../scripts/changelog-lib.mjs";
+
+// Chaque cas lance un sous-processus node : sous charge (analyse en cours), le démarrage seul a
+// dépassé les 5 s par défaut le 2026-10-07, et rejoué à vide le même cas passait.
+vi.setConfig({ testTimeout: 20_000 });
 
 /** Première version réellement présente dans CHANGELOG.md — le test suit le fichier plutôt que
  *  d'épingler un numéro qui périmerait à la release suivante. */

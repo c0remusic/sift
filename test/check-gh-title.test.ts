@@ -1,9 +1,13 @@
 // Vecteurs du hook PreToolUse qui garde les titres `gh` (issue #43, dernier canal du strip).
 // Deux niveaux : l'extraction (import direct), et le hook ENTIER via stdin JSON — c'est le
 // contrat réel de Claude Code, et c'est lui qui doit bloquer (exit 2) ou laisser passer (0).
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { spawnSync } from "node:child_process";
 import { extraireTitres } from "../scripts/check-gh-title.mjs";
+
+// Le hook complet tourne en sous-processus node : sous charge (analyse en cours), le démarrage
+// seul a dépassé les 5 s par défaut le 2026-10-07, et rejoué à vide le même cas passait.
+vi.setConfig({ testTimeout: 20_000 });
 
 function hook(toolName: string, command: string): { code: number | null; stderr: string } {
   const r = spawnSync(process.execPath, ["scripts/check-gh-title.mjs"], {
