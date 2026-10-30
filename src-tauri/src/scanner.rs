@@ -150,6 +150,16 @@ fn walk_audio_files(root: &Path) -> impl Iterator<Item = DiskFile> {
 /// size or mtime changed (an unchanged re-scan must not disturb an already-filed track).
 /// Returns true if a NEW row was inserted.
 pub fn upsert_file(conn: &Connection, source_id: i64, f: &DiskFile) -> rusqlite::Result<bool> {
+    upsert_file_with(conn, source_id, f, false)
+}
+
+/// `upsert_file`, avec `keep_filed` : une piste rangée modifiée reste rangée (scan au lancement).
+fn upsert_file_with(
+    conn: &Connection,
+    source_id: i64,
+    f: &DiskFile,
+    keep_filed: bool,
+) -> rusqlite::Result<bool> {
     let existing: Option<(i64, i64)> = conn
         .query_row(
             "SELECT size_bytes, mtime FROM tracks WHERE path=?1",
@@ -175,11 +185,28 @@ pub fn upsert_file(conn: &Connection, source_id: i64, f: &DiskFile) -> rusqlite:
                 // vieux verdict en place (voir `worker::persist_failure`), et les deux doivent
                 // bouger ensemble ou pas du tout. `analyzed_at=NULL` suffit à faire repasser la
                 // piste par l'analyse.
+                //
+                // `keep_filed` (scan de rattrapage au lancement, 2026-10-30) : une piste RANGÉE
+                // modifiée app fermée (Rekordbox, un éditeur de tags) est réanalysée mais reste
+                // rangée — sinon chaque démarrage la remettait en file. Un rescan demandé et la
+                // surveillance gardent la règle d'avant : modifiée, elle revient en file. Une piste
+                // qui REVIENT en file y entre comme une arrivée : `created_at` repart, pour qu'elle
+                // porte la pastille NOUVEAU (`queue::QueueItem::is_new`).
                 "UPDATE tracks SET filename=?2, size_bytes=?3, mtime=?4, source_id=?5,
-                        status='pending', analyzed_at=NULL, fingerprint=NULL,
+                        created_at=CASE WHEN status='pending' OR (?6 AND status='filed')
+                                        THEN created_at ELSE datetime('now') END,
+                        status=CASE WHEN ?6 AND status='filed' THEN 'filed' ELSE 'pending' END,
+                        analyzed_at=NULL, fingerprint=NULL,
                         fingerprint_ver=NULL, report_json=NULL
                  WHERE path=?1",
-                rusqlite::params![f.path, f.filename, f.size_bytes, f.mtime, source_id],
+                rusqlite::params![
+                    f.path,
+                    f.filename,
+                    f.size_bytes,
+                    f.mtime,
+                    source_id,
+                    keep_filed
+                ],
             )?;
             Ok(false)
         }
@@ -250,7 +277,28 @@ pub fn reconcile_with_progress(
     conn: &Connection,
     source_id: i64,
     root: &Path,
+    on_batch: impl FnMut(usize),
+) -> rusqlite::Result<ReconcileStats> {
+    reconcile_inner(conn, source_id, root, on_batch, false)
+}
+
+/// Le scan de RATTRAPAGE à l'ouverture de l'app (`ipc::spawn_startup_scan`) : comme
+/// `reconcile_with_progress`, mais une piste rangée modifiée app fermée reste rangée.
+pub fn reconcile_catch_up(
+    conn: &Connection,
+    source_id: i64,
+    root: &Path,
+    on_batch: impl FnMut(usize),
+) -> rusqlite::Result<ReconcileStats> {
+    reconcile_inner(conn, source_id, root, on_batch, true)
+}
+
+fn reconcile_inner(
+    conn: &Connection,
+    source_id: i64,
+    root: &Path,
     mut on_batch: impl FnMut(usize),
+    keep_filed: bool,
 ) -> rusqlite::Result<ReconcileStats> {
     // Un dossier ABSENT (disque débranché, lecteur réseau hors ligne) ne se distingue pas, pour la
     // marche, d'un dossier vide : sans ce garde, chaque piste en attente de la source passait pour
@@ -290,12 +338,12 @@ pub fn reconcile_with_progress(
         }
         match existing.get(&f.path) {
             None => {
-                upsert_file(conn, source_id, &f)?;
+                upsert_file_with(conn, source_id, &f, keep_filed)?;
                 stats.added += 1;
             }
             Some(&(s, m)) if s == f.size_bytes && m == f.mtime => {}
             Some(_) => {
-                upsert_file(conn, source_id, &f)?;
+                upsert_file_with(conn, source_id, &f, keep_filed)?;
                 stats.updated += 1;
             }
         }
@@ -528,6 +576,48 @@ mod tests {
             )
             .unwrap();
         assert_eq!(status, "pending");
+    }
+
+    /// Le scan de RATTRAPAGE au lancement garde rangée une piste rangée modifiée app fermée (sinon
+    /// chaque démarrage la remettait en file), et une piste écartée qui revient en file y entre
+    /// comme une arrivée : `created_at` repart, d'où la pastille NOUVEAU.
+    #[test]
+    fn le_rattrapage_garde_rangee_une_piste_rangee_modifiee() {
+        let (conn, sid) = db_with_source();
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        fs::write(root.join("rangee.wav"), b"123").unwrap();
+        fs::write(root.join("ecartee.wav"), b"123").unwrap();
+        reconcile_with_progress(&conn, sid, root, |_| {}).unwrap();
+        conn.execute_batch(
+            "UPDATE tracks SET created_at='2000-01-01 00:00:00';
+             UPDATE tracks SET status='filed' WHERE filename='rangee.wav';
+             UPDATE tracks SET status='resourcing' WHERE filename='ecartee.wav';",
+        )
+        .unwrap();
+        fs::write(root.join("rangee.wav"), b"123456").unwrap();
+        fs::write(root.join("ecartee.wav"), b"123456").unwrap();
+
+        let s = reconcile_catch_up(&conn, sid, root, |_| {}).unwrap();
+        assert_eq!(s.updated, 2);
+        let etat = |nom: &str| -> (String, String) {
+            conn.query_row(
+                "SELECT status, created_at FROM tracks WHERE filename=?1",
+                [nom],
+                |r| Ok((r.get(0)?, r.get(1)?)),
+            )
+            .unwrap()
+        };
+        assert_eq!(
+            etat("rangee.wav"),
+            ("filed".into(), "2000-01-01 00:00:00".into())
+        );
+        let (statut, cree) = etat("ecartee.wav");
+        assert_eq!(statut, "pending");
+        assert_ne!(
+            cree, "2000-01-01 00:00:00",
+            "revenue en file : arrivée neuve"
+        );
     }
 
     #[test]

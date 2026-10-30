@@ -674,7 +674,8 @@ let batchAnchorId: number | null = null;
  *  seule ne repeignait que la file, et la zone C gardait un compte et des boutons périmés. */
 function clickQueueBatch(id: number, range: boolean): void {
   const order = visibleQueueItems().map((it) => it.id);
-  const r = clickedSelection(queueBatchSel, { id, range }, order, batchAnchorId);
+  const eligible = new Set(batchEligible().map((it) => it.id));
+  const r = clickedSelection(queueBatchSel, { id, range }, order, batchAnchorId, eligible);
   batchAnchorId = r.anchor;
   // Maj+clic sur du texte le sélectionnerait aussi : la plage de pistes suffit.
   if (range) window.getSelection()?.removeAllRanges();

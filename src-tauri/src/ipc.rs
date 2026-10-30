@@ -846,14 +846,21 @@ fn spawn_scans(app: AppHandle, target: ScanTarget) {
             // pendant le scan, en plus de l'émission finale ci-dessous — le front debounce déjà sa
             // redraw à 150ms (sift-live.ts) donc aucune saturation IPC/UI même sur une grosse
             // bibliothèque.
-            match scanner::reconcile_with_progress(
-                &conn,
-                source_id,
-                std::path::Path::new(&path),
-                |_done| {
+            //
+            // Le scan du LANCEMENT ne ré-émet rien en cours de route : chaque `queue:changed`
+            // relance côté front une marche récursive de la racine (`refreshBins`), et il en
+            // aurait coûté une par lot de 25 fichiers, à chaque démarrage, pendant que
+            // l'utilisateur commence à trier. Il garde aussi rangée une piste rangée modifiée
+            // (`reconcile_catch_up`). L'émission finale ci-dessous suffit.
+            let root = std::path::Path::new(&path);
+            let result = if startup {
+                scanner::reconcile_catch_up(&conn, source_id, root, |_done| {})
+            } else {
+                scanner::reconcile_with_progress(&conn, source_id, root, |_done| {
                     app.emit("queue:changed", ()).ok();
-                },
-            ) {
+                })
+            };
+            match result {
                 Ok(stats) => {
                     log::info!("scan source {source_id}: {stats:?}");
                     let done = ScanDone {

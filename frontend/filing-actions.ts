@@ -54,7 +54,9 @@ async function advanceAfter(
   }
   const next = pickNextAfter(order, doneId, items);
   if (!next) {
-    clearPane(mid, true);
+    // L'état vide formel seulement si la file l'est vraiment : la liste AFFICHÉE peut être épuisée
+    // (filtre de source) alors que d'autres pistes attendent ailleurs.
+    clearPane(mid, !items.some((it) => it.id !== doneId));
     return;
   }
   await openNext(mid, next);
@@ -410,7 +412,6 @@ export async function doSecondary(
         toast(humanizeError(e, ToastT().undoFailed, `${kind} undo`), false);
       });
     });
-    await advanceAfter(mid, trackId, order, openNext, clearPane);
   } catch (e) {
     toast(
       humanizeError(
@@ -421,6 +422,15 @@ export async function doSecondary(
       false,
     );
     setActionsDisabled(false);
+    openState.acting = false;
+    return;
+  }
+  // Hors du `try` de l'écart : la piste EST écartée à ce point, un échec de l'ouverture suivante ne
+  // doit pas se lire « impossible d'écarter » — l'utilisateur réessaierait sur la piste suivante.
+  try {
+    await advanceAfter(mid, trackId, order, openNext, clearPane);
+  } catch (e) {
+    console.error("opening the next track after a set-aside failed", e);
   } finally {
     openState.acting = false;
   }

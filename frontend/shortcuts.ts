@@ -87,7 +87,9 @@ function dismissTopmost(): boolean {
     return true;
   }
   // Le mode Lot en dernier : une surface ouverte par-dessus se ferme avant lui, comme Échap ferme
-  // un menu avant de quitter le mode sélection de Photos.
+  // un menu avant de quitter le mode sélection de Photos. Et jamais depuis un champ de saisie :
+  // Échap dans la recherche de la file en sort, il ne vide pas la sélection en cours.
+  if (inTextField(document.activeElement)) return false;
   return exitBatchModeOnEscape();
 }
 

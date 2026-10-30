@@ -16,9 +16,11 @@
  *  fraîche, déjà privée des conversions en cours.
  *
  *  Ordre de préférence : le premier id qui SUIVAIT `doneId` dans `order` et qui est encore dans
- *  `live` ; sinon le plus proche qui le PRÉCÉDAIT ; sinon le premier de `live`. Jamais `doneId`
- *  lui-même — une conversion échouée à l'instant le remet dans la file, et le rouvrir serait
- *  justement le « retour en arrière » qu'on corrige. */
+ *  `live` ; sinon le plus proche qui le PRÉCÉDAIT ; sinon `null` — la liste AFFICHÉE est épuisée,
+ *  et ouvrir une piste hors du filtre (une autre source) laisserait la zone C sur une piste que la
+ *  file ne montre pas. Le premier de `live` ne sert que si `doneId` n'était pas affiché du tout.
+ *  Jamais `doneId` lui-même — une conversion échouée à l'instant le remet dans la file, et le
+ *  rouvrir serait justement le « retour en arrière » qu'on corrige. */
 export function pickNextAfter<T extends { id: number }>(
   order: readonly number[],
   doneId: number,
@@ -37,6 +39,7 @@ export function pickNextAfter<T extends { id: number }>(
       const it = byId.get(order[i]);
       if (it) return it;
     }
+    return null;
   }
   return live.find((it) => it.id !== doneId) ?? null;
 }

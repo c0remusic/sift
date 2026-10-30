@@ -35,8 +35,10 @@ describe("pickNextAfter", () => {
     expect(pickNextAfter([], 9, live(7, 8))?.id).toBe(7);
   });
 
-  it("plus rien d'affiché ne reste : première de la file, sinon rien", () => {
-    expect(pickNextAfter([1, 2], 2, live(8, 9))?.id).toBe(8);
+  // Revue du 2026-10-30 : le repli puisait dans la file entière et ouvrait, filtre de source posé,
+  // une piste d'une autre source que la colonne ne montrait pas.
+  it("plus rien d'affiché ne reste : rien, même si la file contient d'autres pistes", () => {
+    expect(pickNextAfter([1, 2], 2, live(8, 9))).toBeNull();
     expect(pickNextAfter([1, 2], 2, [])).toBeNull();
   });
 });

@@ -21,18 +21,25 @@ type BatchClick = {
  *  l'ordre AFFICHÉ (`order`, après filtre et recherche), entre l'ancre et la piste cliquée — la
  *  plage s'AJOUTE, comme Maj+clic dans une liste du Finder, et l'ancre ne bouge pas, pour qu'un
  *  second Maj+clic redimensionne depuis le même point. Sans ancre visible (jamais posée, ou
- *  filtrée depuis), Maj+clic se comporte comme un clic simple. */
+ *  filtrée depuis), Maj+clic se comporte comme un clic simple.
+ *
+ *  La plage ne coche que les pistes `eligible` (celles qui ont un verdict) : même règle que
+ *  « Tout » et l'entrée dans le mode — sinon un Maj+clic sur vingt lignes embarquait des pistes
+ *  en cours d'analyse. Un clic simple, lui, coche ce qu'on vise, une ligne à la fois. */
 export function clickedSelection(
   sel: ReadonlySet<number>,
   click: BatchClick,
   order: readonly number[],
   anchor: number | null,
+  eligible: ReadonlySet<number>,
 ): { sel: Set<number>; anchor: number | null } {
   const next = new Set(sel);
   const from = anchor == null ? -1 : order.indexOf(anchor);
   const to = order.indexOf(click.id);
   if (click.range && from >= 0 && to >= 0) {
-    for (let i = Math.min(from, to); i <= Math.max(from, to); i++) next.add(order[i]);
+    for (let i = Math.min(from, to); i <= Math.max(from, to); i++) {
+      if (eligible.has(order[i])) next.add(order[i]);
+    }
     return { sel: next, anchor };
   }
   if (next.has(click.id)) next.delete(click.id);
