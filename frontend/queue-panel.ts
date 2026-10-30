@@ -1586,6 +1586,8 @@ function ensureQueueFacet(qcol: HTMLElement): void {
 // rows fast would otherwise fire a full fetch+decodeAudioData per row, most immediately
 // discarded. Row highlighting itself stays instant — only this load is deferred.
 let queueSelectTimer: ReturnType<typeof setTimeout> | undefined;
+/** Instant (`performance.now()`) de la dernière ouverture lancée par un clic de ligne. */
+let lastQueueOpen = 0;
 
 /** Queue row click (Revue): opens the filing pane after a 150ms debounce (flicking through rows
  *  fast must not fire a decode+fetch per row). Extracted from installLiveWiring's #pa click
@@ -1608,7 +1610,8 @@ export function handleQueueItemClick(qi: HTMLElement, e: MouseEvent): void {
   const ql = document.getElementById("ql");
   if (ql) renderQueueWindow(ql);
   clearTimeout(queueSelectTimer);
-  queueSelectTimer = setTimeout(() => {
+  const open = () => {
+    lastQueueOpen = performance.now();
     if (item && mid) {
       void openFilingInto(mid, item);
       prefetchNextAfter(item.id);
@@ -1617,7 +1620,12 @@ export function handleQueueItemClick(qi: HTMLElement, e: MouseEvent): void {
     // panneau de revue monté. Retirée le 2026-09-16 — troisième chemin de rendu du rapport à côté
     // de `renderReportInto` et `openReportInto`, pour un cas que l'app n'atteint pas : la Revue
     // monte toujours son `#mid`.
-  }, 150);
+  };
+  // Front MONTANT (2026-10-30) : un clic isolé ouvre tout de suite — mesuré, les 150 ms d'attente
+  // faisaient l'essentiel des ~165 ms d'une ouverture de piste déjà analysée. Seuls les clics qui
+  // se suivent à moins de 150 ms (on parcourt la file) sont regroupés sur le dernier.
+  if (performance.now() - lastQueueOpen > 150) open();
+  else queueSelectTimer = setTimeout(open, 150);
 }
 
 /** Raw reviewMode mutator, no side effects. Plus exporté depuis le 2026-08-26 : ses deux seuls

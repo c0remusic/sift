@@ -337,9 +337,14 @@ fn reconcile_inner(
             continue;
         }
         match existing.get(&f.path) {
+            // Absent des lignes DE CETTE SOURCE ne veut pas dire nouveau : une piste rangée dans
+            // un dossier surveillé (bibliothèque sous `D:\MUSIQUE`) a sa ligne sans cette source.
+            // Seule une vraie insertion compte — sinon chaque scan annonçait « 279 nouveaux »
+            // (mesuré le 2026-10-30), et le toast du lancement le répétait à chaque démarrage.
             None => {
-                upsert_file_with(conn, source_id, &f, keep_filed)?;
-                stats.added += 1;
+                if upsert_file_with(conn, source_id, &f, keep_filed)? {
+                    stats.added += 1;
+                }
             }
             Some(&(s, m)) if s == f.size_bytes && m == f.mtime => {}
             Some(_) => {
@@ -576,6 +581,22 @@ mod tests {
             )
             .unwrap();
         assert_eq!(status, "pending");
+    }
+
+    /// Une piste déjà en base sous une AUTRE source (ou sans source, rangée) n'est pas « ajoutée »
+    /// par le scan d'un dossier qui la contient : 279 faux ajouts par lancement le 2026-10-30.
+    #[test]
+    fn une_piste_deja_connue_ailleurs_n_est_pas_comptee_ajoutee() {
+        let (conn, sid) = db_with_source();
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        let f = root.join("rangee.aiff");
+        fs::write(&f, b"123").unwrap();
+        reconcile_with_progress(&conn, sid, root, |_| {}).unwrap();
+        conn.execute("UPDATE tracks SET source_id=NULL, status='filed'", [])
+            .unwrap();
+        let s = reconcile_with_progress(&conn, sid, root, |_| {}).unwrap();
+        assert_eq!(s.added, 0, "déjà en base : pas un ajout");
     }
 
     /// Le scan de RATTRAPAGE au lancement garde rangée une piste rangée modifiée app fermée (sinon

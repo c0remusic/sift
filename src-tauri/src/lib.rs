@@ -335,6 +335,18 @@ pub fn run() {
             // Après les watchers : un fichier qui arrive pendant la marche est vu par l'un ou
             // l'autre, jamais par aucun. Voir `ipc::spawn_startup_scan`.
             ipc::spawn_startup_scan(app.handle().clone());
+            // Le cache de lecture ramené sous son plafond au démarrage (43 Go mesurés le
+            // 2026-10-30, jamais purgés jusque-là). Sur un fil : effacer des Go prend du temps.
+            std::thread::spawn(|| {
+                let n = ipc::prune_play_cache(
+                    &ipc::play_cache_dir(),
+                    ipc::PLAY_CACHE_MAX_BYTES,
+                    None,
+                );
+                if n > 0 {
+                    log::info!("cache de lecture : {n} WAV anciens effacés");
+                }
+            });
             worker::init(app.handle());
             worker::refill(app.handle());
             spawn_journal_purge(app.handle());

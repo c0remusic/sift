@@ -652,7 +652,7 @@ pub fn playback_url(
     use std::hash::{Hash, Hasher};
     let mut h = std::collections::hash_map::DefaultHasher::new();
     path.hash(&mut h);
-    let dir = std::env::temp_dir().join("sift-play");
+    let dir = play_cache_dir();
     std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
     let out = dir.join(format!("{:x}.wav", h.finish()));
     // Re-encode unless a cached WAV exists AND is newer than the source — so a replaced file
@@ -664,19 +664,77 @@ pub fn playback_url(
         },
         _ => false,
     };
-    if !fresh {
+    if fresh {
+        // Servi depuis le cache : rafraîchi, pour que la purge le garde parmi les plus récents.
+        // Un échec ne coûte qu'une éviction un peu plus tôt.
+        if let Ok(f) = std::fs::File::options().write(true).open(&out) {
+            let _ = f.set_modified(std::time::SystemTime::now());
+        }
+    } else {
         crate::encode::encode(
             &path,
             &out.to_string_lossy(),
             crate::encode::Target::Wav1644,
         )
         .map_err(|e| e.to_string())?;
+        prune_play_cache(&dir, PLAY_CACHE_MAX_BYTES, Some(&out));
     }
     // The temp WAV, not the source: it is what the webview will actually fetch.
     app.asset_protocol_scope()
         .allow_file(&out)
         .map_err(|e| e.to_string())?;
     Ok(out.to_string_lossy().to_string())
+}
+
+/// Le cache des WAV de lecture (AIFF et ALAC transcodés pour le webview, `playback_url`).
+pub(crate) fn play_cache_dir() -> std::path::PathBuf {
+    std::env::temp_dir().join("sift-play")
+}
+
+/// Plafond du cache de lecture : 2 Go, soit une trentaine de pistes de 7 min. Mesuré le
+/// 2026-10-30 chez Antoine : sans plafond, `%TEMP%\sift-play` portait 673 WAV, 43 Go — chaque AIFF
+/// écouté une fois y restait pour toujours.
+pub(crate) const PLAY_CACHE_MAX_BYTES: u64 = 2 * 1024 * 1024 * 1024;
+
+/// Efface les WAV les plus anciens (date de modification, rafraîchie à chaque lecture) jusqu'à
+/// repasser sous `max` octets. `keep` (le fichier qu'on vient de servir) n'est jamais effacé. Rend
+/// le nombre de fichiers retirés. Les erreurs (fichier ouvert ailleurs) sautent ce fichier.
+pub(crate) fn prune_play_cache(
+    dir: &std::path::Path,
+    max: u64,
+    keep: Option<&std::path::Path>,
+) -> usize {
+    let Ok(lecture) = std::fs::read_dir(dir) else {
+        return 0;
+    };
+    let mut fichiers: Vec<(std::time::SystemTime, u64, std::path::PathBuf)> = lecture
+        .flatten()
+        .filter(|e| {
+            e.path()
+                .extension()
+                .is_some_and(|x| x.eq_ignore_ascii_case("wav"))
+        })
+        .filter_map(|e| {
+            let m = e.metadata().ok()?;
+            Some((m.modified().ok()?, m.len(), e.path()))
+        })
+        .collect();
+    let mut total: u64 = fichiers.iter().map(|f| f.1).sum();
+    fichiers.sort_by_key(|f| f.0);
+    let mut retires = 0;
+    for (_, taille, chemin) in fichiers {
+        if total <= max {
+            break;
+        }
+        if keep.is_some_and(|k| k == chemin) {
+            continue;
+        }
+        if std::fs::remove_file(&chemin).is_ok() {
+            total = total.saturating_sub(taille);
+            retires += 1;
+        }
+    }
+    retires
 }
 
 /// Open an external URL in the user's default browser (used by the Écartés buy links).
@@ -904,6 +962,46 @@ mod tests {
             startup: true,
         };
         let _ = (source_id, added, updated, removed, startup);
+    }
+
+    /// Le cache de lecture repasse sous son plafond en effaçant les plus ANCIENS, sans jamais
+    /// toucher le fichier qu'on vient de servir (2026-10-30 : 43 Go accumulés sans plafond).
+    #[test]
+    fn la_purge_du_cache_de_lecture_efface_les_plus_anciens() {
+        let dir = tempfile::tempdir().unwrap();
+        let ecrire = |nom: &str, age_s: u64| {
+            let p = dir.path().join(nom);
+            std::fs::write(&p, vec![0u8; 100]).unwrap();
+            let t = std::time::SystemTime::now() - std::time::Duration::from_secs(age_s);
+            std::fs::File::options()
+                .write(true)
+                .open(&p)
+                .unwrap()
+                .set_modified(t)
+                .unwrap();
+            p
+        };
+        let vieux = ecrire("vieux.wav", 300);
+        let moyen = ecrire("moyen.wav", 200);
+        let servi = ecrire("servi.wav", 400);
+        let recent = ecrire("recent.wav", 10);
+        std::fs::write(dir.path().join("notes.txt"), vec![0u8; 1000]).unwrap();
+
+        let n = prune_play_cache(dir.path(), 200, Some(&servi));
+        assert_eq!(n, 2);
+        assert!(
+            !vieux.exists() && !moyen.exists(),
+            "les plus anciens partent"
+        );
+        assert!(
+            servi.exists(),
+            "le fichier servi reste, même le plus ancien"
+        );
+        assert!(recent.exists());
+        assert!(
+            dir.path().join("notes.txt").exists(),
+            "seuls les .wav sont gérés"
+        );
     }
 
     /// Ce que le webview ne lit pas passe par un WAV : l'AIFF à l'extension, l'ALAC à son CODEC.
