@@ -996,7 +996,11 @@ pub(crate) fn revert_one_fs(
                     RevertError::Blocked(format!("mkdir {}: {e}", parent.display()))
                 })?;
             }
-            std::fs::rename(to, from).map_err(|e| RevertError::Blocked(format!("move back: {e}")))
+            // Par `move_cross_disk_safe`, comme l'aller : un rangement va souvent d'un disque à un
+            // autre (téléchargements sur C:, bibliothèque sur D:), et le `rename` nu d'ici échouait
+            // alors en os error 17 — « Annuler » ne faisait rien. Signalé par Antoine le 2026-10-30.
+            crate::filing::move_cross_disk_safe(Path::new(to), Path::new(from))
+                .map_err(|e| RevertError::Blocked(format!("move back: {e}")))
         }
         // The file went to a trash — Documents', or the `.sift-trash` at the root of its own volume
         // (per-disk trash, 2026-10-05) — and `to` says which. Put it back by RENAME when both ends
