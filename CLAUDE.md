@@ -735,8 +735,9 @@ famille : `APPLE_ID` sans `APPLE_TEAM_ID` casse le build — c'est la seule bran
 notarisation qui ne se contente pas d'un avertissement.
 
 `build.yml` porte une gate qui SORT EN ÉCHEC si le bundle n'est pas scellé (`codesign --verify
---deep --strict`). ⚠️ **`release.yml` ne l'a pas** : un tag peut encore publier sans passer par
-elle. Ce que la CI ne peut PAS mesurer, et qui demande un vrai Mac avec quarantaine : le message
+--deep --strict`). `release.yml` la porte aussi depuis le 2026-10-30, mais APRÈS le téléversement
+de `tauri-action` (construire et téléverser y sont une seule étape) : elle ne retient pas l'asset,
+elle rend le job rouge sur le brouillon — à regarder avant de cliquer « Publish release ». Ce que la CI ne peut PAS mesurer, et qui demande un vrai Mac avec quarantaine : le message
 que Gatekeeper affiche réellement.
 
 **Écrire la section `## vX.Y.Z` de `CHANGELOG.md` d'abord.** `release.yml` l'extrait via

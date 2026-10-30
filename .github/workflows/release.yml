@@ -96,3 +96,18 @@ jobs:
           releaseDraft: true
           prerelease: false
           args: --config src-tauri/tauri.release.conf.json
+
+      # Même gate que build.yml (#36) : le bundle publié doit être scellé. tauri-action construit
+      # ET téléverse dans la même étape, donc cette vérification vient après le téléversement —
+      # elle ne peut pas empêcher l'asset d'arriver sur le brouillon. Ce qu'elle empêche, c'est
+      # de le publier sans le savoir : un job rouge sur un brouillon (`releaseDraft: true`) se
+      # voit avant le clic « Publish release », qui est le seul geste qui rend la release
+      # visible à l'auto-update.
+      - name: Vérifier le sceau du bundle macOS (#36)
+        if: runner.os == 'macOS'
+        run: |
+          app="$(ls -d src-tauri/target/release/bundle/macos/*.app)"
+          echo "bundle : $app"
+          codesign --verify --deep --strict --verbose=4 "$app"
+          codesign -dvvv "$app"
+          codesign -dvvv "$app/Contents/MacOS/ffmpeg"
