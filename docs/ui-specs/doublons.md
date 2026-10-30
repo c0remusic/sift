@@ -4,6 +4,9 @@
 > hybride et ses réponses : ordre des groupes, confirmation destructive, copie gardée comparée à
 > la meilleure des autres (tranché sur wireframe), débit départageant les seules copies lossy.
 > `rail.md`, `revue.md` et `bibliotheque.md` portent leurs amendements du même jour.
+>
+> **Refonte du 2026-10-30** : l'écran passe à l'option B (file de tri, un groupe à la fois, mode
+> Lot, rangée « Issue »), § Layout. Groupes, preuve, règle et corbeille inchangés.
 
 ## Contexte dans le shell
 
@@ -65,130 +68,148 @@ de nom en ratait au moins 50 groupes.
 | **Même nom** | clé de nom seule, durées à 0,1 s près, ou seule différence une copie tronquée | oui |
 | **À vérifier** | même nom, durées écartées de plus de 2 s sans troncature | non : à trancher à la main |
 
-## Layout
+## Layout — file de tri (option B), décidée le 2026-10-30
+
+> **Refonte demandée par Antoine le 2026-10-30** : « la file de tri n'est pas très claire, je
+> voudrais revenir à l'option B, avec l'option de pouvoir batch. Il n'est pas clair non plus de
+> savoir si on GARDE ou SUPPRIME une release quand on la sélectionne. » L'option B est celle de
+> l'artefact « Trier les doublons » du 2026-10-05 (planches `B-file-de-tri-fenetre` et
+> `B-file-de-tri-etats`). Trois décisions du même jour l'adaptent :
+> 1. **une copie gardée par défaut, plusieurs possibles** (D4 tenue) ;
+> 2. **colonnes jusqu'à 3 copies, défilement horizontal au-delà**, l'étiquette des rangées fixe ;
+> 3. livrée sur sa propre branche après la PR #83.
+>
+> Ce qui ne change pas : la formation des groupes, la preuve, la copie recommandée (`pick_keep` v2,
+> § Ce que l'écran demande au backend), la corbeille par disque, la garde des copies Rekordbox.
+> La table de l'hybride (zone C) et l'inspecteur (zone D) décrits jusqu'ici sont **remplacés** ;
+> l'historique reste dans `git log -- docs/ui-specs/doublons.md`.
+
+Patron : la grammaire de **Revue** appliquée aux groupes — une file à gauche, UN groupe ouvert au
+centre, le clavier de Revue pour choisir et passer au suivant (motif « Merge N Items » de Photos
+pour le lot).
 
 ### Rail
 
-Entrée « Doublons » sous Revue, glyphe Tabler `ti-copy` en `--color-text-info`. **Pas de compte**
-dans le rail : la barre l'écrit déjà (règle de `rail.md`, un compte à un seul endroit). Les
-raccourcis `Ctrl+2` à `Ctrl+8` se décalent d'un cran (ordre du rail, `shortcuts.ts::railViews`).
+Inchangé : entrée « Doublons » sous Revue, `ti-copy`, pas de compte.
 
 ### Zone A — barre unifiée
 
-Titre « Doublons » · compte « N groupes » (`#sift-tb-count`, ce que la table montre) ·
-menu **Groupes ▾** (pop-up à choix exclusif, coché : Tous · Identiques · Même son · Même nom ·
-À vérifier · Avec Rekordbox, chacun avec son compte) · recherche · à droite des filtres, le
-bouton d'application **« Envoyer N copies à la corbeille »** en *push button* secondaire danger
-(`.sift-secondary-trash`, le précédent de « Vider la corbeille »). **Jamais le bleu primaire** :
-HIG Buttons, « Don't assign the primary role to a button that performs a destructive action ».
-Grisé tant que le plan ne retire rien.
+Titre « Doublons » · compte « N groupes » (ce que la file montre, filtre compris ; en mode Lot :
+« N sélectionnés », comme Revue) · recherche. Plus de bouton d'application dans la barre : chaque
+groupe se résout dans sa boîte, le lot se résout dans son résumé.
 
-### Zone C — table
+### Colonne de file (`#qcol`, gabarit de Revue)
 
-Au sol, aucune carte (`patterns.md`). En-tête figé `.sift-lib-thead`, rangées `.lr` de 32 px
-(`--row-h`), virtualisées (`createVirtualList`, une seule hauteur : les en-têtes de groupe font
-aussi 32 px). Fonds alternés **par index continu**, ni filet entre groupes ni bouton par rangée
-(`components.md`, rangée de table).
+- **Tête** : menu **Tous ▾** (Tous · Identiques · Même son · Même nom · À vérifier · Avec
+  Rekordbox, chacun avec son compte) à gauche, **Sélectionner** / **Terminé** à droite.
+- **Ligne de groupe**, 46 px comme `.qi` : « Artiste — Titre (Version) » en 500, une pastille de
+  verdict par copie collée au titre (même rendu que `verdictDot`) ; en dessous, en tertiaire,
+  « N copies · preuve · formats » (« 3 copies · même son · FLAC, MP3 »). Un groupe À vérifier le
+  dit en encre d'avertissement (« durées différentes »). Un groupe Rekordbox porte son glyphe au
+  bord droit.
+- **Ordre** : artiste de A à Z, puis titre, puis version (tranché le 2026-10-05, inchangé).
+- **Mode Lot** : case 16 px par ligne, toute la ligne coche, Maj+clic coche une plage, Échap ou
+  Terminé sortent — la mécanique de Revue (`queue-selection.ts`), réutilisée telle quelle.
 
-**Ordre — tranché le 2026-10-05** : les groupes par **artiste de A à Z**, puis titre, puis
-version, sur la clé normalisée (accents repliés, casse ignorée) ; un nom sale sans artiste
-lisible se range sur son radical nettoyé. C'est l'ordre de la maquette et celui où l'on cherche un
-morceau ; le menu Groupes filtre déjà par preuve. Dans un groupe, la copie cochée par défaut en
-premier, puis l'ordre de la règle.
+### Zone C — le groupe ouvert
 
-**Rangée d'en-tête de groupe** : « Artiste — Titre (Version) » en 600 ; dans la colonne Preuve,
-la preuve du groupe (Identiques · Même son · Même nom) ; puis en tertiaire la nature (« 3 copies ·
-autre qualité ») et, calé à droite, l'effet du plan (« 2 copies à la corbeille · 125,4 Mo »). Un
-groupe À vérifier le dit en encre d'avertissement (« À vérifier · hors du plan »).
+Une boîte, comme celle de Revue (V2b) :
 
-**Rangée de copie** (maquette hybride du 2026-10-05) :
+1. **En-tête** : pochette, « Titre » en titre, « Artiste · N copies » dessous, puis en tertiaire
+   « Différent par : verdict, format, taille, emplacement… » (les rangées qui diffèrent). À droite :
+   la preuve du groupe (« Même son · empreinte 0,98 »).
+2. **Lecteur** : celui de la fiche, sur la copie sous le curseur (« Copie 2 »). Passer d'une copie
+   à l'autre en lecture garde la position (écoute A/B).
+3. **Grille de comparaison** : une colonne d'étiquettes fixe à gauche, puis **une colonne par
+   copie**, numérotée 1…N. **Au-delà de 3 copies**, les colonnes gardent leur largeur et la grille
+   défile horizontalement ; l'étiquette reste fixe (décision 2). Rangées, dans l'ordre :
+   - tête de colonne : n° de copie, source › dossier, nom de fichier, état (« En file » /
+     « Rangée »), et **« Recommandée — raison »** sur la copie de la règle (« VRAIE, dans
+     Rekordbox ») ;
+   - Verdict (pastille + mot, teinté seulement s'il diffère dans le groupe) · Coupure · Format
+     (format · débit · fréquence) · Durée (mono) · Taille · Date du fichier · Identification ·
+     Rekordbox (« 2 playlists ») ;
+   - Spectres, repliables, alignés ;
+   - **Issue** — voir ci-dessous.
+   L'encre de différence de l'hybride est gardée : ce qui diffère d'une copie à l'autre en
+   primaire, l'identique en tertiaire. La colonne sous le curseur porte le fond de sélection.
+4. **Pied** : la phrase de conséquence, puis la légende clavier et les deux boutons.
 
-| # | Colonne | Rendu |
-|---|---|---|
-| 1 | **Garder** | case à cocher native, gabarit de `.qi-ck` ; la meilleure cochée par défaut, d'autres cochables ; désactivée sur une copie introuvable, et sur une tronquée quand une autre copie présente est entière |
-| 2 | Fichier | nom complet, **tronqué au milieu pour garder la version et l'extension** (« Aldo Ostrova - … (Original Mix).flac ») ; « tronquée » ou « introuvable » en encre d'avertissement |
-| 3 | Preuve | vide sur une copie : la preuve est celle du groupe, sur sa rangée d'en-tête ; la relation entre deux copies se lit en zone D |
-| 4 | Verdict | pastille 6 px `currentColor` + mot, colonne de 96 px (`styles.css:1863`) ; **teinté seulement s'il diffère dans le groupe**, neutre sinon (un état permanent reste neutre, `tokens.md`) |
-| 5 | Format | extension |
-| 6 | Débit | kbps |
-| 7 | Durée | `--font-mono`, seule colonne en mono |
-| 8 | Dossier | pastille de la source + chemin court |
-| 9 | Rekordbox | glyphe + « 3 playlists » si la copie y est jouée, sinon vide |
+**Issue — ce qui répond à « on GARDE ou on SUPPRIME ? »** (demande du 2026-10-30). Dernière rangée
+de la grille, une cellule par copie, qui dit EN TOUTES LETTRES ce que deviendra la copie si l'on
+valide :
+- **« Gardée »**, glyphe `ti-check`, encre primaire, poids 600 ;
+- **« Corbeille »**, glyphe `ti-trash`, encre d'avertissement ;
+- **« Introuvable »** (fichier disparu, jamais envoyé) et **« Tronquée »** (désactivée tant qu'une
+  autre copie présente est entière), en tertiaire.
+Cliquer une cellule Issue bascule la copie entre Gardée et Corbeille (décision 1) ; la règle
+remplit l'Issue à l'ouverture du groupe (une seule copie Gardée). Une copie gardée en plus se lit
+donc dans la grille avant toute action, jamais après.
 
-Fréquence, Taille et pochette ne vivent qu'en zone D : avec l'inspecteur ouvert, la zone C fait
-920 px à 1440 de large, et dix colonnes n'y tiennent pas. Tous les en-têtes de colonne sont en
-texte, Garder et Rekordbox compris (HIG Outline views).
+**Phrase de conséquence**, juste au-dessus de la légende, en secondaire : « Entrée : garder la
+copie 2 — les copies 1 et 3 partent à la Corbeille (53,8 Mo). Annulable. » ; avec deux gardées :
+« Entrée : garder les copies 1 et 3 — la copie 2 part à la Corbeille (14,9 Mo). » ; si une copie
+qui part est dans Rekordbox, une seconde ligne en encre d'avertissement le dit (« La copie 2 est
+dans Rekordbox (2 playlists) : ces entrées perdront leur fichier. Sift n'écrit rien dans
+Rekordbox. »).
 
-**Encre de différence** : dans un groupe, la valeur qui diffère d'une copie à l'autre est en
-encre primaire, la valeur identique en tertiaire. Une paire .aif / .aiff se lit d'un coup d'œil :
-seuls Format et Dossier restent allumés.
+**Boutons du pied**, à droite : « Pas des doublons » (secondaire) · **« Garder la copie N »** /
+« Garder les copies 1 et 3 » (primaire, répond à Entrée). Le primaire GARDE : il n'est pas
+destructif au sens de HIG Buttons, et la corbeille de Sift se restaure (Ctrl+Z, Restaurer) — c'est
+l'argument de la planche B, repris.
 
-### Zone D — inspecteur
+### Zone C en mode Lot — le résumé
 
-- **Au repos** : le résumé — groupes, copies en trop, Go récupérables **en vidant la corbeille**,
-  répartition par preuve, et la règle de la copie cochée, écrite.
-- **Une copie ouverte** (clic sur sa rangée) : pochette, nom, lecteur (le lecteur de la fiche,
-  `player-audition.ts`), puis **cette copie contre la copie gardée**, faits alignés en deux
-  colonnes (verdict, coupure, format, débit, fréquence, durée, taille, dossier, identification,
-  Rekordbox), la phrase de la règle (« la règle garde la copie MP3 : VRAI passe avant FAUX »),
-  et le spectrogramme à la demande.
-- **La copie ouverte est la gardée** — tranché sur wireframe le 2026-10-05 : elle se compare à
-  **la meilleure des autres copies** selon la règle, et l'en-tête le dit (« Comparée à : FLAC ·
-  Ostgut rips », puis en tertiaire « meilleure des 2 autres »). La zone D garde ainsi la même forme
-  en deux colonnes quelle que soit la copie ouverte. Écartées : la fiche seule (les autres copies
-  perdaient coupure et taille, la zone changeait de forme) et la copie ouverte juste avant
-  (l'historique, invisible, décidait ; au premier clic du groupe, rien à comparer).
-- **« Comparer les spectrogrammes »** ouvre la vue agrandie (`spectro-enlarge.ts`) avec les
-  spectrogrammes du groupe **empilés**, un par copie, à la même échelle de temps — jusqu'à 8 copies.
+Rien n'est ouvert : la zone C montre le résumé de la sélection (gabarit `.sift-bsel` de Revue) :
+« N groupes sélectionnés », puis en rangées chiffrées : copies qui vont à la Corbeille (et Go),
+groupes à égalité tranchés par la règle, copies Rekordbox gardées d'office, groupes **exclus** (À
+vérifier, et même nom sans durée concordante — pas de geste de masse sur une ressemblance). Un
+bouton **« Résoudre N groupes… »** ouvre la confirmation.
+
+### Zone D
+
+Fermée sur cet écran : la comparaison vit dans la grille.
 
 ## États
 
 | État | Rendu |
 |---|---|
-| Calcul des groupes | squelette de table (`.sift-skel-line`), compte vide ; la barre reste utilisable |
-| Groupes | la table, le plan coché par défaut |
-| Plan modifié | les en-têtes de groupe recalculent leur effet ; le bouton recompte « Envoyer N copies » |
-| Rekordbox décoché | pas de rangée en plus (toutes font 32 px, la liste est virtualisée) : le repère Rekordbox de la rangée passe en encre d'avertissement, et l'effet du groupe dit « Rekordbox la joue (3 playlists) » ; Sift n'écrit rien dans Rekordbox |
-| Confirmation | modale armée sur le patron de `confirmBatchAlert` : titre « Envoyer N copies à la corbeille ? », récapitulatif « N copies · X Go · G groupes », ligne tertiaire « Les K groupes à vérifier restent hors du plan. Un seul Ctrl+Z annule tout. », case cochée « Garder aussi les N copies que Rekordbox joue » ; si des copies envoyées n'ont pas pu être vérifiées dans Rekordbox, une ligne en encre d'avertissement le dit sous le récapitulatif, avec la raison (§ Interactions, « Copie non vérifiée ») ; Annuler a le focus ; bouton d'action désactivé 250 ms (armement), en **secondaire danger, pas le bleu** — **variante destructive** de `confirmBatchAlert`, tranchée le 2026-10-05 (HIG Buttons : « Don't assign the primary role to a button that performs a destructive action ») ; le mode Lot garde sa variante bleue |
-| Application | feuille non modale `.sift-batch-sheet` attachée en haut de la zone C : barre déterminée, « Copie 215 sur 421 · fichier courant », **Arrêter** (l'arrêt tombe entre deux copies : rien n'est défait), « Afficher les détails » ; le bouton de la barre attend, grisé |
-| Fini | la feuille se ferme sur le toast « N copies dans la corbeille · Annuler » ; les groupes réglés quittent la table ; restent les À vérifier et ceux où plusieurs copies sont gardées ; une seule entrée au Journal pour toute l'application |
-| Échec partiel | la feuille devient le rapport : les copies qui ont résisté et pourquoi ; le reste est appliqué et annulable |
-| Aucun doublon | l'état vide réel (`.sift-empty-state`, `emptyStateHtml`), **en haut à gauche** de la zone C : « Aucun doublon à trier », une phrase (les groupes « Ce ne sont pas des doublons » ne reviennent pas ; Go récupérables en vidant la corbeille), sortie « Ouvrir Revue » ; la zone D se ferme, le bouton d'application quitte la barre |
-| Erreur de lecture | jamais lue comme « aucun doublon » : le message brut et « Réessayer », sans carte (`bibliotheque.md` § États) |
-| Copie introuvable | le fichier a disparu du disque : marquée « introuvable », case désactivée, jamais envoyée ; la règle coche la suivante |
+| Calcul des groupes | squelette de file (`.sift-skel-line`), compte vide |
+| Groupe ouvert | la boîte, curseur sur la copie recommandée, Issue remplie par la règle |
+| Issue modifiée | la phrase de conséquence et le libellé du bouton suivent à la frappe |
+| Groupe À vérifier | aucune copie n'est Corbeille par défaut (toutes Gardées) ; la phrase dit « Durées écartées de 1 min 56 — deux versions ? » ; Entrée = « Pas des doublons » |
+| Résolu | le groupe quitte la file, le suivant s'ouvre (règle de `queue-next.ts` : le suivant dans la liste affichée) ; toast « Groupe résolu — N copies à la Corbeille · Annuler » |
+| Lot : confirmation | modale armée (`confirmBatchAlert`) : « Résoudre N groupes ? », « X copies vont à la Corbeille (Y Go). Dans les égalités, la règle garde … Un seul Ctrl+Z annule tout le lot. », case « Garder aussi les N copies que Rekordbox joue » |
+| Lot : application | feuille non modale `.sift-batch-sheet`, barre déterminée, Arrêter ; un seul lot de journal |
+| Aucun doublon | état vide réel, en haut à gauche de la zone C, sortie « Ouvrir Revue » |
+| Erreur de lecture | le message brut et « Réessayer », jamais « aucun doublon » |
 
 ## Interactions
 
-**Souris.** Clic sur une rangée : l'ouvre en zone D (la sélection se voit dans la table). Clic sur
-la case : modifie le plan, n'exécute rien. Double-clic : écouter.
+**Souris.** Clic sur une ligne de file : ouvre le groupe. Clic sur une colonne de copie : y pose
+le curseur (et le lecteur). Clic sur une cellule Issue : bascule Gardée / Corbeille. Clic droit sur
+une colonne : Garder seulement celle-ci · Garder aussi · Préférer ce dossier · Écouter · Ouvrir
+l'emplacement · *séparateur* · Ce ne sont pas des doublons.
 
-**Clic droit sur une copie.** Il l'ouvre d'abord (comme dans Rangés), puis le menu : Garder
-seulement celle-ci · Garder aussi · Préférer ce dossier · Écouter · Ouvrir l'emplacement ·
-*séparateur* · Ce ne sont pas des doublons (sur le groupe : il quitte la table et ne revient plus).
-Rien n'y exécute, tout touche le plan, sauf Écouter et Ouvrir l'emplacement. Une entrée sans effet
-(« Garder aussi » sur une copie déjà gardée) est désactivée, jamais retirée (`context-menu.ts`).
-
-**« Préférer ce dossier »** recoche, dans tous les groupes à égalité qui touchent ce dossier, la
-copie de ce dossier ; un bandeau neutre le dit (« Préféré : MUSIQUE A TRIER › Jay Tripwire —
-26 groupes recochés · Annuler »).
-
-**Clavier** (légende en pied, comme Revue) :
+**Clavier** — celui de Revue (planche B, « Clavier — couche 3 ») :
 
 | Touche | Action |
 |---|---|
-| `↑` `↓` | copie précédente / suivante |
-| `Espace` | écouter / pause |
-| `Entrée` | garder seulement cette copie (plan) |
-| `⌫` | ne pas garder cette copie (plan) |
-| `Ctrl+Entrée` | appliquer : ouvre la confirmation |
-| `Ctrl+Z` | annuler la dernière application, en entier |
+| `Espace` | écouter / pause la copie sous le curseur |
+| `←` `→` | copie précédente / suivante ; en lecture, bascule à la même position (A/B) |
+| `1` … `9` | aller à la copie N |
+| `G` | basculer la copie sous le curseur entre Gardée et Corbeille |
+| `Entrée` | **appliquer l'Issue du groupe** (le bouton primaire), groupe suivant |
+| `⌫` ou `X` | envoyer la copie sous le curseur à la Corbeille tout de suite ; le groupe reste ouvert s'il lui reste plusieurs copies |
+| `N` | pas des doublons : garder toutes les copies, ne plus proposer ce groupe |
+| `↑` `↓` | groupe précédent / suivant, sans rien décider |
+| `Ctrl+Z` | annuler la dernière résolution (un groupe, ou un lot entier) |
+| `Ctrl+A` / `Ctrl+Maj+A` | mode Lot : tout / aucun |
 
-Ni Entrée ni ⌫ n'exécutent quoi que ce soit : ils ne changent que le plan. Seuls le bouton de la
-barre et `Ctrl+Entrée`, confirmés, envoient des copies à la corbeille.
-
-**Geste de masse.** L'application couvre les groupes dont la preuve l'autorise (table plus haut),
-plus les groupes À vérifier que l'utilisateur a tranchés (case modifiée, ou Entrée). Les autres
-restent dans la table.
+**Ce qui change du modèle « plan puis une application »** (D5 de l'hybride) : un groupe se résout
+maintenant à l'unité, tout de suite, annulable — c'est le rythme de B, celui de Revue. Le plan
+survit à l'intérieur du groupe (la rangée Issue, modifiable avant Entrée) et dans le lot (le
+résumé, puis une seule application confirmée). Chaque résolution est un lot de journal.
 
 **Rekordbox.** Une copie que Rekordbox joue reste cochée par défaut. La confirmation la garde
 aussi (case cochée). Sift n'écrit rien dans Rekordbox à cette étape.
