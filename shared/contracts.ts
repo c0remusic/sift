@@ -426,6 +426,9 @@ export interface TrackFileOutcome {
   path: string | null;
   /** Failure cause, null on success. */
   error: string | null;
+  /** Réserve d'un succès, à dire à l'utilisateur (« une trame illisible ignorée — 90 ms en
+   *  moins », `encode.rs::tolerated_gap`), null sinon. */
+  note: string | null;
 }
 
 /** Per-file filing progress (mirror of ipc_filing.rs FileProgress). `done` = files processed so

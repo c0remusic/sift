@@ -336,7 +336,7 @@ pub fn codec_args(target: Target, profile: &EncodeProfile) -> Vec<String> {
 /// gardée pour l'aperçu de lecture (`ipc.rs`) et les bancs, qui ne dépendent pas des réglages.
 /// Le rangement passe par [`encode_with`] avec le profil lu dans les réglages.
 pub fn encode(src: &str, dst: &str, target: Target) -> Result<(), EncodeError> {
-    encode_with(src, dst, target, &EncodeProfile::default())
+    encode_with(src, dst, target, &EncodeProfile::default()).map(|_| ())
 }
 
 /// Transcode `src` into `dst` for `target` at `profile`, overwriting `dst`. Refuses a profile
@@ -355,7 +355,7 @@ pub fn encode_with(
     dst: &str,
     target: Target,
     profile: &EncodeProfile,
-) -> Result<(), EncodeError> {
+) -> Result<Option<String>, EncodeError> {
     profile.validate().map_err(EncodeError::InvalidProfile)?;
     let codec_args = codec_args(target, profile);
     // Un échec de ffmpeg peut survenir APRÈS l'écriture de la sortie : un FLAC abîmé au milieu fait
@@ -363,17 +363,100 @@ pub fn encode_with(
     // (mesuré sur le binaire embarqué, relecture de #71). `run_ffmpeg` rend alors Err, et le fichier
     // restait orphelin dans le dossier de destination, hors base — le rangement suivant posait
     // « … (2).aiff » à côté. Toute sortie d'un encodage raté est retirée.
-    if let Err(e) = run_ffmpeg(src, dst, &codec_args) {
-        remove_failed_output(dst);
-        return Err(e);
-    }
+    let note = match run_ffmpeg(src, dst, &codec_args) {
+        Ok(note) => note,
+        Err(e) => {
+            remove_failed_output(dst);
+            return Err(e);
+        }
+    };
     if target == Target::Wav1644 {
         if let Err(e) = wav_extensible_to_pcm(dst) {
             remove_failed_output(dst);
             return Err(EncodeError::WavHeader(e));
         }
     }
-    Ok(())
+    if let Some(n) = &note {
+        DERNIERE_RESERVE.with(|r| *r.borrow_mut() = Some(n.clone()));
+    }
+    Ok(note)
+}
+
+thread_local! {
+    /// La réserve du dernier encodage de CE fil (`tolerated_gap`). Le rangement unitaire encode sur
+    /// le fil qui l'exécute (`ipc_filing::file_track`), sous `filing::execute_file` qui ne rend que
+    /// son journal : la réserve passe par ici plutôt que d'élargir la signature d'`execute_file`,
+    /// appelée par une dizaine de tests et par le Lot.
+    static DERNIERE_RESERVE: std::cell::RefCell<Option<String>> = const { std::cell::RefCell::new(None) };
+}
+
+/// Prend (et efface) la réserve du dernier encodage de ce fil. L'appeler AVANT un encodage pour
+/// partir à vide, et après pour lire ce qu'il a laissé.
+pub fn take_reserve() -> Option<String> {
+    DERNIERE_RESERVE.with(|r| r.borrow_mut().take())
+}
+
+/// Écart de durée au-delà duquel une erreur de décodage n'est plus tolérée (secondes).
+const TOLERANCE_DECODE_S: f64 = 1.0;
+/// La queue du fichier où une erreur de décodage reste tolérable (secondes) — au-delà, au milieu.
+const QUEUE_TOLEREE_S: f64 = 2.0;
+
+/// Le fichier se décode-t-il SANS erreur jusqu'à `QUEUE_TOLEREE_S` avant sa fin ? Second passage
+/// de ffmpeg vers la sortie nulle, lancé seulement quand le premier a journalisé une erreur : le
+/// cas est rare, et c'est lui qui distingue une dernière trame abîmée (tolérable) d'une trame
+/// abîmée au milieu (un saut audible, refusé).
+fn debut_propre(src: &str, src_s: f64) -> bool {
+    let jusqu_a = src_s - QUEUE_TOLEREE_S;
+    if jusqu_a <= 0.0 {
+        return false;
+    }
+    let nul = if cfg!(windows) { "NUL" } else { "/dev/null" };
+    let Ok(mut child) = FfmpegCommand::new_with_path(crate::ffmpeg::chemin())
+        .input(src)
+        .args(["-t", &format!("{jusqu_a:.3}"), "-f", "null"])
+        .output(nul)
+        .spawn()
+    else {
+        return false;
+    };
+    let Ok(iter) = child.iter() else {
+        return false;
+    };
+    let erreur = iter
+        .into_iter()
+        .any(|ev| matches!(ev, FfmpegEvent::Log(LogLevel::Error, _)));
+    let fini = child.wait().map(|s| s.success()).unwrap_or(false);
+    fini && !erreur
+}
+
+/// Une erreur de décodage de ffmpeg se tolère-t-elle, et combien de secondes manquent ?
+///
+/// Décision d'Antoine du 2026-10-30, sur un ALAC dont la DERNIÈRE trame était abîmée : ffmpeg la
+/// saute et sort en 0, la sortie dure 7:28.80 pour 7:28.89 à la source, et Sift refusait toute la
+/// conversion sur la seule ligne `[error] invalid samples per frame: 0`. Toléré quand ffmpeg a fini
+/// normalement ET que la sortie a la durée de la source à `TOLERANCE_DECODE_S` près — et alors
+/// DIT à l'utilisateur (bandeau « Converti — … »), jamais avalé. Toute autre situation (sortie en
+/// échec, durée inconnue, écart plus grand) reste un refus.
+///
+/// La durée ne dit pas OÙ la trame manque : une trame abîmée au MILIEU passerait aussi, et
+/// s'entendrait comme un saut en plein morceau. D'où le second contrôle de `run_ffmpeg`
+/// (`debut_propre`) : la tolérance ne vaut que si tout le fichier hors de ses `QUEUE_TOLEREE_S`
+/// dernières secondes se décode sans erreur. Gelé par `un_encodage_rate_ne_laisse_pas_d_orphelin`
+/// (FLAC abîmé au milieu : refusé).
+fn tolerated_gap(exit_ok: bool, src_s: Option<f64>, out_s: Option<f64>) -> Option<f64> {
+    let (src, out) = (src_s?, out_s?);
+    if !exit_ok || out <= 0.0 || src <= 0.0 {
+        return None;
+    }
+    let gap = (src - out).abs();
+    (gap <= TOLERANCE_DECODE_S).then_some(gap)
+}
+
+/// Durée d'un fichier audio écrit par ffmpeg, lue par `lofty`, `None` si illisible.
+fn duree_sortie(path: &str) -> Option<f64> {
+    let tagged = Probe::open(path).ok()?.read().ok()?;
+    let d = tagged.properties().duration().as_secs_f64();
+    (d > 0.0).then_some(d)
 }
 
 /// Retire la sortie d'un encodage raté. Absente = rien à faire ; impossible à retirer = journalisé,
@@ -389,7 +472,7 @@ fn remove_failed_output(dst: &str) {
 }
 
 /// Lance ffmpeg `src` → `dst` avec `codec_args`, sans aucun post-traitement.
-fn run_ffmpeg(src: &str, dst: &str, codec_args: &[String]) -> Result<(), EncodeError> {
+fn run_ffmpeg(src: &str, dst: &str, codec_args: &[String]) -> Result<Option<String>, EncodeError> {
     // `new_with_path` et pas `new()` : `new()` résout par adjacence à `current_exe()`, ce qui
     // est correct en release mais retombe sur le PATH système sous `cargo test`, où l'exécutable
     // courant vit dans `deps/`. Voir le doc de tête de `crate::ffmpeg`.
@@ -406,8 +489,12 @@ fn run_ffmpeg(src: &str, dst: &str, codec_args: &[String]) -> Result<(), EncodeE
         .map_err(|e| EncodeError::Ffmpeg(format!("iter failed: {e}")))?;
 
     let mut err: Option<String> = None;
+    let mut src_s: Option<f64> = None;
     for ev in iter {
         match ev {
+            FfmpegEvent::ParsedDuration(d) => {
+                src_s.get_or_insert(d.duration);
+            }
             FfmpegEvent::Log(LogLevel::Error, msg) => {
                 err.get_or_insert(msg); // keep the FIRST error (usually the most informative)
             }
@@ -420,14 +507,29 @@ fn run_ffmpeg(src: &str, dst: &str, codec_args: &[String]) -> Result<(), EncodeE
             _ => {}
         }
     }
-    let _ = child.wait();
+    let exit_ok = child.wait().map(|s| s.success()).unwrap_or(false);
 
-    if let Some(e) = err {
-        return Err(EncodeError::Ffmpeg(e));
-    }
     match std::fs::metadata(dst) {
-        Ok(m) if m.len() > 0 => Ok(()),
-        _ => Err(EncodeError::Ffmpeg("no output produced".into())),
+        Ok(m) if m.len() > 0 => {}
+        _ => {
+            return Err(EncodeError::Ffmpeg(
+                err.unwrap_or_else(|| "no output produced".into()),
+            ))
+        }
+    }
+    let Some(e) = err else { return Ok(None) };
+    match tolerated_gap(exit_ok, src_s, duree_sortie(dst))
+        .filter(|_| src_s.is_some_and(|d| debut_propre(src, d)))
+    {
+        Some(gap) => {
+            log::warn!("encode {src}: erreur de décodage tolérée ({gap:.2} s manquent) : {e}");
+            let ms = (gap * 1000.0).round() as i64;
+            Ok(Some(crate::tr!(
+                "une trame illisible ignorée — {ms} ms en moins",
+                "one unreadable frame skipped — {ms} ms shorter"
+            )))
+        }
+        None => Err(EncodeError::Ffmpeg(e)),
     }
 }
 
@@ -613,6 +715,34 @@ fn wav_extensible_to_pcm(path: &str) -> Result<bool, String> {
 mod tests {
     use super::*;
 
+    /// Décision du 2026-10-30 : une erreur de décodage passe seulement quand ffmpeg a fini
+    /// normalement et que la sortie a la durée de la source à 1 s près.
+    #[test]
+    fn une_trame_illisible_se_tolere_seulement_a_duree_egale() {
+        let g = tolerated_gap(true, Some(448.89), Some(448.80)).expect("le cas d'Antoine passe");
+        assert!((g - 0.09).abs() < 1e-6);
+        assert_eq!(
+            tolerated_gap(false, Some(448.89), Some(448.80)),
+            None,
+            "sortie en échec"
+        );
+        assert_eq!(
+            tolerated_gap(true, Some(448.89), Some(440.0)),
+            None,
+            "8 s manquent"
+        );
+        assert_eq!(
+            tolerated_gap(true, None, Some(448.80)),
+            None,
+            "durée source inconnue"
+        );
+        assert_eq!(
+            tolerated_gap(true, Some(448.89), None),
+            None,
+            "sortie illisible"
+        );
+    }
+
     /// Les deux listes SQL sont la seule façon pour SQLite de connaître la règle
     /// `Target::rail()`. Ce test est ce qui remplace l'appel : ajouter une variante à l'enum sans
     /// la classer ici casse ici, pas plus tard sur un compteur faux. Il vérifie les DEUX sens —
@@ -684,6 +814,57 @@ mod tests {
             !dst.exists(),
             "la sortie d'un encodage raté ne doit pas rester sur le disque"
         );
+    }
+
+    /// Décision du 2026-10-30 : une trame abîmée en toute FIN de fichier se tolère et se dit.
+    /// Miroir du test ci-dessus : mêmes octets abîmés, mais dans la dernière trame.
+    #[test]
+    fn une_queue_abimee_se_convertit_avec_sa_reserve() {
+        let Some(src) = fixture("real_lossless.flac") else {
+            eprintln!("skip: no fixture");
+            return;
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let abime = dir.path().join("queue.flac");
+        let mut data = std::fs::read(&src).unwrap();
+        let fin = data.len() - 700;
+        for i in 0..600usize {
+            data[fin + i] = ((i * 37 + 11) & 0xFF) as u8;
+        }
+        std::fs::write(&abime, &data).unwrap();
+        let dst = dir.path().join("sortie.aiff");
+        let r = encode_with(
+            abime.to_str().unwrap(),
+            dst.to_str().unwrap(),
+            Target::Aiff1644,
+            &EncodeProfile::default(),
+        );
+        let note = r.expect("une queue abîmée se convertit");
+        assert!(note.is_some(), "la trame sautée doit se DIRE");
+        assert!(dst.exists());
+    }
+
+    /// Le fichier qui a motivé la tolérance (ALAC d'Antoine, dernière trame abîmée), désigné par
+    /// `SIFT_ALAC_ABIME` : `cargo test -- --ignored alac_reel`.
+    #[test]
+    #[ignore]
+    fn alac_reel_a_queue_abimee() {
+        let Ok(src) = std::env::var("SIFT_ALAC_ABIME") else {
+            eprintln!("skip: SIFT_ALAC_ABIME non posé");
+            return;
+        };
+        let src = src.as_str();
+        let dir = tempfile::tempdir().unwrap();
+        let dst = dir.path().join("sortie.aiff");
+        let note = encode_with(
+            src,
+            dst.to_str().unwrap(),
+            Target::Aiff1644,
+            &EncodeProfile::default(),
+        )
+        .expect("l'ALAC à la dernière trame abîmée se convertit");
+        eprintln!("réserve : {note:?}");
+        assert!(note.is_some());
     }
 
     /// Relecture de #71 : un WAV EXTENSIBLE à la bonne profondeur et à la bonne fréquence n'est PAS

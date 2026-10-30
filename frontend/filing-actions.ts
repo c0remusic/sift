@@ -348,8 +348,16 @@ function settleFilingBanner(o: TrackFileOutcome, started: InFlightFiling | null)
   // Rangé avec succès : compté pour le fork empty-state (Tout est trié vs Rien à revoir). Compte les
   // filings Détail ; le lot incrémentera de même en Lane 3 (onFileBatchDone, batch-panel.ts).
   state.filedThisSession++;
+  // Une réserve du backend (une trame illisible sautée par ffmpeg, `encode.rs::tolerated_gap`) se
+  // DIT, jamais avalée : sur le bandeau s'il est encore le sien, et en toast, que la piste suivante
+  // ait remplacé le bandeau ou non. Décision d'Antoine du 2026-10-30.
+  if (o.note) toast(T().convertedWithNote(started?.name ?? `#${o.track_id}`, o.note), false);
   if (mine) {
     paintFiledBanner(mine, "done");
+    if (o.note) {
+      const label = mine.querySelector<HTMLElement>('[data-fil="filed-label"]');
+      if (label) label.textContent = `${T().converted} — ${o.note}`;
+    }
     // Flash vert bref au rangement (DESIGN §8 : un état permanent reste neutre, seule la transition
     // se colore). Réutilise .sift-identified-flash, retiré à animationend (comme filing-identify.ts).
     mine.classList.add("sift-identified-flash");
