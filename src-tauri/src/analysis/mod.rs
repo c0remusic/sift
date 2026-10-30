@@ -358,6 +358,79 @@ fn default_peaks_step() -> usize {
 /// ([`retenir_pour_sonde`]) pour ne jamais décaler les canaux.
 const QUANT_MAX_PCM_SAMPLES: usize = 48_000_000;
 
+/// Plafond, pour TOUT le pool d'analyse, de la mémoire que les sondes retiennent en même temps
+/// (octets). Mesuré le 2026-10-30 : l'app atteignait ~2 Go chez Antoine, et la doc ci-dessus
+/// chiffre à elle seule 1 à 1,5 Go pour huit fils retenant chacun jusqu'à 192 Mo, plus le canal
+/// que les bancs dérivent pendant la sonde (~la moitié). 640 Mo laissent trois rétentions typiques
+/// (6 min stéréo : ~190 Mo avec le canal) avancer de front ; les autres fils lossless ATTENDENT
+/// leur tour. Le verdict ne change pas, seul le débit d'une rafale lossless baisse.
+const QUANT_RETENTION_BUDGET: usize = 640 * 1024 * 1024;
+
+/// Ce qu'une rétention réserve du budget : le PCM retenu, plus le canal que les bancs en dérivent
+/// pendant la sonde (`quant_trace::remplir_canal`, la moitié d'un tampon stéréo).
+fn cout_retention(echantillons: usize) -> usize {
+    echantillons * 4 * 3 / 2
+}
+
+/// Combien d'échantillons la sonde retiendra : la durée déclarée × taux × canaux, bornée par
+/// `QUANT_MAX_PCM_SAMPLES` ; le plafond quand la durée est inconnue. Sert à RÉSERVER le tampon à
+/// sa taille (plus de croissance par doublement, qui gonflait la capacité jusqu'à 2× et recopiait
+/// tout à chaque palier) et à réclamer au budget ce qui sera réellement retenu.
+fn echantillons_a_retenir(duree_s: f32, taux: u32, canaux: usize) -> usize {
+    let estime = (duree_s.max(0.0) as f64 * f64::from(taux) * canaux as f64).ceil();
+    if estime <= 0.0 {
+        return QUANT_MAX_PCM_SAMPLES;
+    }
+    // 1 % de marge : une durée d'en-tête un peu courte ne doit pas refaire grossir le tampon.
+    ((estime * 1.01) as usize).min(QUANT_MAX_PCM_SAMPLES)
+}
+
+/// Le budget partagé de `QUANT_RETENTION_BUDGET`. `acquerir` bloque tant que la réservation ne
+/// tient pas ; le permis rend sa part en tombant. Une réservation plus grosse que le budget entier
+/// passe quand le budget est VIDE, sans quoi elle attendrait pour toujours.
+struct BudgetRetention {
+    pris: std::sync::Mutex<usize>,
+    libere: std::sync::Condvar,
+    total: usize,
+}
+
+struct PermisRetention<'a> {
+    budget: &'a BudgetRetention,
+    octets: usize,
+}
+
+impl BudgetRetention {
+    const fn new(total: usize) -> Self {
+        Self {
+            pris: std::sync::Mutex::new(0),
+            libere: std::sync::Condvar::new(),
+            total,
+        }
+    }
+
+    fn acquerir(&self, octets: usize) -> PermisRetention<'_> {
+        let mut pris = self.pris.lock().unwrap_or_else(|e| e.into_inner());
+        while *pris > 0 && *pris + octets > self.total {
+            pris = self.libere.wait(pris).unwrap_or_else(|e| e.into_inner());
+        }
+        *pris += octets;
+        PermisRetention {
+            budget: self,
+            octets,
+        }
+    }
+}
+
+impl Drop for PermisRetention<'_> {
+    fn drop(&mut self) {
+        let mut pris = self.budget.pris.lock().unwrap_or_else(|e| e.into_inner());
+        *pris = pris.saturating_sub(self.octets);
+        self.budget.libere.notify_all();
+    }
+}
+
+static BUDGET_RETENTION: BudgetRetention = BudgetRetention::new(QUANT_RETENTION_BUDGET);
+
 /// Pousse un bloc de PCM entrelacé dans le tampon de la sonde, sans dépasser `plafond`
 /// échantillons. Rend `true` quand le plafond est atteint : le bloc a été coupé (ou ignoré), et
 /// l'appelant peut cesser de retenir.
@@ -488,7 +561,15 @@ pub fn analyze_with_grid(path: &str, grid: Option<GridSize>) -> Result<AnalysisR
         conteneur: tag.content_rail,
     };
     let quant_pregate = bancs::retention_utile(&bancs::BANCS_PRODUCTION, amont);
-    let mut quant_pcm: Vec<f32> = Vec::new();
+    // Budget mémoire partagé par le pool (`QUANT_RETENTION_BUDGET`), réclamé AVANT de décoder et
+    // rendu juste après la sonde (`drop(permis)` plus bas), et tampon réservé à sa taille.
+    let a_retenir = if quant_pregate {
+        echantillons_a_retenir(tag.duration_sec, sr, target_ch as usize)
+    } else {
+        0
+    };
+    let permis = quant_pregate.then(|| BUDGET_RETENTION.acquerir(cout_retention(a_retenir)));
+    let mut quant_pcm: Vec<f32> = Vec::with_capacity(a_retenir);
     let mut quant_pcm_tronque = false;
 
     let info = decode::decode_pcm(path, target_ch, |block| {
@@ -603,8 +684,10 @@ pub fn analyze_with_grid(path: &str, grid: Option<GridSize>) -> Result<AnalysisR
     } else {
         None
     };
-    // Le tampon peut peser jusqu'à `QUANT_MAX_PCM_SAMPLES` : il ne survit pas à son seul usage.
+    // Le tampon peut peser jusqu'à `QUANT_MAX_PCM_SAMPLES` : il ne survit pas à son seul usage, et
+    // sa part du budget est rendue avec lui.
     drop(quant_pcm);
+    drop(permis);
 
     let verdict = verdict::verdict(
         cutoff_hz,
@@ -782,6 +865,62 @@ mod tests {
     /// est coupé à un multiple du nombre de canaux — jamais au milieu d'une trame entrelacée, ce
     /// qui décalerait G et D pour tout le désentrelacement du banc ; (3) une fois plein, rien
     /// n'entre plus, et l'appel le dit.
+    /// Le budget de rétention ne laisse JAMAIS les réservations en cours dépasser son total, même
+    /// sous huit fils concurrents — c'est ce qui borne le pic mémoire du pool (2026-10-30).
+    #[test]
+    fn le_budget_de_retention_borne_le_pic() {
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        static BUDGET: BudgetRetention = BudgetRetention::new(300);
+        static EN_COURS: AtomicUsize = AtomicUsize::new(0);
+        static PIC: AtomicUsize = AtomicUsize::new(0);
+        let fils: Vec<_> = (0..8)
+            .map(|_| {
+                std::thread::spawn(|| {
+                    for _ in 0..20 {
+                        let _p = BUDGET.acquerir(100);
+                        let n = EN_COURS.fetch_add(100, Ordering::SeqCst) + 100;
+                        PIC.fetch_max(n, Ordering::SeqCst);
+                        std::thread::sleep(std::time::Duration::from_micros(200));
+                        EN_COURS.fetch_sub(100, Ordering::SeqCst);
+                    }
+                })
+            })
+            .collect();
+        for f in fils {
+            f.join().unwrap();
+        }
+        let pic = PIC.load(Ordering::SeqCst);
+        assert!(
+            (200..=300).contains(&pic),
+            "pic {pic} : le budget borne et laisse avancer de front"
+        );
+    }
+
+    /// Une réservation plus grosse que tout le budget passe seule au lieu d'attendre pour toujours.
+    #[test]
+    fn une_retention_hors_budget_passe_seule() {
+        let budget = BudgetRetention::new(100);
+        let p = budget.acquerir(500);
+        drop(p);
+        let _q = budget.acquerir(50);
+    }
+
+    /// La réservation suit la durée (6 min stéréo 44,1 kHz ≈ 31,75 M), bornée par le plafond, et
+    /// retombe au plafond quand la durée est inconnue.
+    #[test]
+    fn la_reservation_suit_la_duree() {
+        let n = echantillons_a_retenir(360.0, 44_100, 2);
+        assert!((31_750_000..32_200_000).contains(&n), "{n}");
+        assert_eq!(
+            echantillons_a_retenir(3600.0, 44_100, 2),
+            QUANT_MAX_PCM_SAMPLES
+        );
+        assert_eq!(
+            echantillons_a_retenir(0.0, 44_100, 2),
+            QUANT_MAX_PCM_SAMPLES
+        );
+    }
+
     #[test]
     fn la_retention_coupe_au_plafond_sur_une_trame_entiere() {
         let mut tampon = Vec::new();
