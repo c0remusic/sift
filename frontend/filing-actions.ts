@@ -16,9 +16,52 @@ import {
 } from "./filing-state";
 import { toast } from "./filing-toast";
 import { humanizeError } from "./errors";
-import { ffmpegMissingText } from "./conversion-error";
+import { conversionFailureText } from "./conversion-error";
+import { pickNextAfter } from "./queue-next";
 import { T } from "./i18n/filing-actions";
 import { T as ToastT } from "./i18n/filing-toast";
+
+/** L'ordre AFFICHÉ de la file, et le retour une fois la piste suivante ouverte — injectés par
+ *  `queue-panel.ts` (`registerQueueAdvance`), jamais importés : queue-panel → filing →
+ *  filing-actions, un import retour fermerait le cycle. Même motif que `registerOpenSettingsAction`. */
+type QueueAdvance = {
+  /** Ids de la liste telle que l'utilisateur la voit (filtre de source, recherche, facettes). */
+  order: () => number[];
+  /** La piste `id` vient d'être ouverte par l'avance : la file la surligne et la rend visible. */
+  opened: (id: number) => void;
+};
+let queueAdvance: QueueAdvance | null = null;
+export function registerQueueAdvance(a: QueueAdvance): void {
+  queueAdvance = a;
+}
+
+/** Ouvre la piste qui SUIVAIT `doneId` dans la liste affichée (`order`, relevé AVANT l'action :
+ *  ensuite la piste traitée a pu déjà quitter la liste), ou l'état vide si la file l'est. La règle
+ *  vit dans `queue-next.ts`, gelée par Vitest. Avant le 2026-10-30, Convertir ouvrait `items[0]` et
+ *  Écarter laissait `syncDetail` faire de même : l'utilisateur revenait en haut de la liste. */
+async function advanceAfter(
+  mid: HTMLElement,
+  doneId: number,
+  order: number[],
+  openNext: (mid: HTMLElement, item: QueueItem) => Promise<void>,
+  clearPane: (mid: HTMLElement, emptyQueue?: boolean) => void,
+): Promise<void> {
+  let items: QueueItem[] = [];
+  try {
+    items = (await listQueue()).filter((it) => !isFilingInFlight(it.id));
+  } catch (err) {
+    console.error("listQueue failed after a review action", err);
+  }
+  const next = pickNextAfter(order, doneId, items);
+  if (!next) {
+    // L'état vide formel seulement si la file l'est vraiment : la liste AFFICHÉE peut être épuisée
+    // (filtre de source) alors que d'autres pistes attendent ailleurs.
+    clearPane(mid, !items.some((it) => it.id !== doneId));
+    return;
+  }
+  await openNext(mid, next);
+  queueAdvance?.opened(next.id);
+}
 
 /** Ouvre l'écran Réglages — injecté par `sift-live.ts` (`registerOpenSettingsAction`), jamais
  *  importé : ce module ne peut pas importer `router.ts` sans refermer un cycle statique
@@ -88,6 +131,7 @@ export async function doRanger(
   if (!state.track || !state.canonical || openState.acting) return;
   const track = state.track;
   const canonical = state.canonical;
+  const order = queueAdvance?.order() ?? [];
   const inPlace = fileInPlaceChecked();
   const dest = inPlace ? FILE_IN_PLACE : getBinRel();
   if (dest === null) {
@@ -124,14 +168,7 @@ export async function doRanger(
           bin,
           name: filedPath.split(/[\\/]/).pop() || filedPath,
         });
-        let items: QueueItem[] = [];
-        try {
-          items = (await listQueue()).filter((it) => !isFilingInFlight(it.id));
-        } catch (err) {
-          console.error("listQueue failed after filing", err);
-        }
-        if (items.length) await openNext(mid, items[0]);
-        else clearPane(mid, true);
+        await advanceAfter(mid, track.id, order, openNext, clearPane);
         showFiledConfirm(track.id, batchId, bin, filedPath);
         return;
       } catch (e) {
@@ -168,7 +205,7 @@ export async function doRanger(
     // et son échec revient par `file:track:done` — voir `conversion-error.ts`, qui le reconnaît.
     else if (/permission|access|denied/i.test(msg)) toast(T().accessDenied, false);
     else if (/no such file|not found|introuvable/i.test(msg)) toast(T().fileNotFound, false);
-    else toast(T().convertFailed, false);
+    else toast(conversionFailureText(msg) ?? T().convertFailed(msg), false);
     console.error("file_track failed", e);
     setActionsDisabled(false);
     if (ranger && orig != null) ranger.innerHTML = orig;
@@ -302,16 +339,25 @@ function settleFilingBanner(o: TrackFileOutcome, started: InFlightFiling | null)
       state.filedConfirm = null;
     }
     const name = started?.name ?? `#${o.track_id}`;
-    // Sans FFmpeg, « de retour dans la file » invitait à réessayer une conversion qui ne peut
-    // jamais aboutir : nommer la cause (`conversion-error.ts`).
-    toast(ffmpegMissingText(o.error) ?? T().failedBackInQueue(name), false);
+    // Sans FFmpeg, ou face à des tags illisibles, « de retour dans la file » invitait à réessayer
+    // une conversion qui ne peut jamais aboutir : nommer la cause (`conversion-error.ts`).
+    const reason = conversionFailureText(o.error);
+    toast(reason ? T().failedBecause(name, reason) : T().failedBackInQueue(name), false);
     return;
   }
   // Rangé avec succès : compté pour le fork empty-state (Tout est trié vs Rien à revoir). Compte les
   // filings Détail ; le lot incrémentera de même en Lane 3 (onFileBatchDone, batch-panel.ts).
   state.filedThisSession++;
+  // Une réserve du backend (une trame illisible sautée par ffmpeg, `encode.rs::tolerated_gap`) se
+  // DIT, jamais avalée : sur le bandeau s'il est encore le sien, et en toast, que la piste suivante
+  // ait remplacé le bandeau ou non. Décision d'Antoine du 2026-10-30.
+  if (o.note) toast(T().convertedWithNote(started?.name ?? `#${o.track_id}`, o.note), false);
   if (mine) {
     paintFiledBanner(mine, "done");
+    if (o.note) {
+      const label = mine.querySelector<HTMLElement>('[data-fil="filed-label"]');
+      if (label) label.textContent = `${T().converted} — ${o.note}`;
+    }
     // Flash vert bref au rangement (DESIGN §8 : un état permanent reste neutre, seule la transition
     // se colore). Réutilise .sift-identified-flash, retiré à animationend (comme filing-identify.ts).
     mine.classList.add("sift-identified-flash");
@@ -359,10 +405,12 @@ async function doRevert(batchId: string): Promise<void> {
 export async function doSecondary(
   mid: HTMLElement,
   kind: "resource" | "trash",
+  openNext: (mid: HTMLElement, item: QueueItem) => Promise<void>,
   clearPane: (mid: HTMLElement, emptyQueue?: boolean) => void,
 ): Promise<void> {
   if (!state.track || openState.acting) return;
   const trackId = state.track.id;
+  const order = queueAdvance?.order() ?? [];
   openState.acting = true;
   setActionsDisabled(true);
   try {
@@ -372,7 +420,6 @@ export async function doSecondary(
         toast(humanizeError(e, ToastT().undoFailed, `${kind} undo`), false);
       });
     });
-    clearPane(mid);
   } catch (e) {
     toast(
       humanizeError(
@@ -383,6 +430,15 @@ export async function doSecondary(
       false,
     );
     setActionsDisabled(false);
+    openState.acting = false;
+    return;
+  }
+  // Hors du `try` de l'écart : la piste EST écartée à ce point, un échec de l'ouverture suivante ne
+  // doit pas se lire « impossible d'écarter » — l'utilisateur réessaierait sur la piste suivante.
+  try {
+    await advanceAfter(mid, trackId, order, openNext, clearPane);
+  } catch (e) {
+    console.error("opening the next track after a set-aside failed", e);
   } finally {
     openState.acting = false;
   }

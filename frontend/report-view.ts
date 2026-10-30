@@ -624,7 +624,10 @@ export function prefetchTrack(path: string): void {
       .catch(() => {});
   }
   const ext = path.split(".").pop()?.toLowerCase() ?? "";
-  if (ext === "aif" || ext === "aiff") void invoke<string>("playback_url", { path }).catch(() => {});
+  // `m4a` aussi : de l'ALAC y passe par le même WAV temporaire (`ipc.rs::webview_needs_wav`), et
+  // le backend seul sait le distinguer d'un AAC, qu'il sert alors tel quel sans rien encoder.
+  if (ext === "aif" || ext === "aiff" || ext === "m4a")
+    void invoke<string>("playback_url", { path }).catch(() => {});
 }
 
 /** Mounts a wavesurfer player on the report's player row. Tempo uses the browser's native
@@ -644,6 +647,13 @@ async function mountPlayer(root: HTMLElement, path: string, peaks?: number[], du
 
   ensureStyles();
   destroyPlayer();
+  // Sans pics (piste pas encore analysée, ou analyse plus lente que 300 ms), wavesurfer
+  // TÉLÉCHARGEAIT le fichier entier puis le décodait dans la page, pour un rendu… invisible
+  // (`height: 0`, ci-dessous) : 100 à 250 Mo transitoires par ouverture, dans la page ET dans le
+  // backend (le protocole `asset:` sert une requête sans Range d'un seul bloc). Des pics factices
+  // l'en dispensent : il lit alors la durée sur l'élément audio, qui joue en flux. Revue mémoire
+  // du 2026-10-30.
+  if (!peaks?.length) peaks = [0];
   // WaveSurfer n'est plus que le MOTEUR (2026-08-27, lecteur simple) : son rendu part dans un
   // conteneur réduit à zéro (.sift-progress-engine), donc plus aucune couleur à résoudre ici —
   // le visuel est le trio .sift-progress-track/-fill/-knob, en tokens CSS ordinaires.

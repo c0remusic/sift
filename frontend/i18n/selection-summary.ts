@@ -1,10 +1,10 @@
 // Le résumé de sélection du mode Lot (`selection-summary.ts`) : invite de sélection vide, compte de
-// pistes sélectionnées, pilules de verdict, boutons Convertir / Écarter.
+// pistes sélectionnées, pilules de verdict, boutons Convertir / Écarter / Corbeille.
 //
 // Pluriels : le français accorde à partir de 2 (`n > 1`), l'anglais dès que n ≠ 1. Le compte vaut
 // au moins 1 ici — une sélection vide rend l'invite, pas un compte — mais chaque fonction reste
-// juste à 0. « Écarter N faux » ne s'accorde pas (`faux` est invariable), mais l'anglais y lit le
-// NOM `fake`, qui prend un `s` : « Set aside 2 fakes ».
+// juste à 0. Écarter et Corbeille comptent TOUTE la sélection depuis le 2026-10-30 : « Écarter N
+// faux » ne visait que les faux.
 import { dict } from "../i18n";
 
 const fr = {
@@ -17,8 +17,8 @@ const fr = {
   selectedLabel: (n: number) => `piste${n > 1 ? "s" : ""} sélectionnée${n > 1 ? "s" : ""}`,
   convertN: (n: number) => `Convertir ${n} piste${n > 1 ? "s" : ""}`,
   convert: "Convertir",
-  setAsideN: (n: number) => `Écarter ${n} faux`,
-  setAside: "Écarter",
+  setAsideN: (n: number) => `Écarter ${n} piste${n > 1 ? "s" : ""}`,
+  trashN: (n: number) => `Envoyer ${n} piste${n > 1 ? "s" : ""} à la corbeille`,
 };
 
 const en: typeof fr = {
@@ -31,8 +31,8 @@ const en: typeof fr = {
   selectedLabel: (n) => `track${n === 1 ? "" : "s"} selected`,
   convertN: (n) => `Convert ${n} track${n === 1 ? "" : "s"}`,
   convert: "Convert",
-  setAsideN: (n) => `Set aside ${n} fake${n === 1 ? "" : "s"}`,
-  setAside: "Set aside",
+  setAsideN: (n) => `Set aside ${n} track${n === 1 ? "" : "s"}`,
+  trashN: (n) => `Move ${n} track${n === 1 ? "" : "s"} to Trash`,
 };
 
 export const D = { fr, en };

@@ -2,7 +2,7 @@
 //! filing time: the same canonical record that renders the filename (see naming.rs) is
 //! written here, so tags and name never diverge. Fields we don't own are left untouched.
 
-use lofty::config::WriteOptions;
+use lofty::config::{ParseOptions, ParsingMode, WriteOptions};
 use lofty::file::TaggedFileExt;
 use lofty::picture::{MimeType, Picture, PictureType};
 use lofty::prelude::{Accessor, TagExt};
@@ -10,6 +10,23 @@ use lofty::probe::Probe;
 use lofty::tag::items::Timestamp;
 use lofty::tag::{ItemKey, Tag};
 use serde::{Deserialize, Serialize};
+
+/// Lit un fichier taggé, avec un repli TOLÉRANT. En mode par défaut, `lofty` refuse le fichier
+/// ENTIER pour un seul champ mal formé : une date ID3 « 2005-xx », un texte UTF-16 de longueur
+/// impaire. Mesuré le 2026-10-30 sur les 8 364 pistes en attente d'Antoine : 27 fichiers sains
+/// mais aux tags abîmés étaient illisibles — métadonnées impossibles à charger dans Revue, et
+/// conversion refusée dès `read tags`. Le mode `Relaxed` jette le seul champ illisible et lit le
+/// reste ; il en rattrape 16 (dont les 14 dates). Il n'est essayé qu'APRÈS un échec : un fichier
+/// sain garde la lecture stricte, qui ne perd rien. Les champs jetés ne reviennent pas à
+/// l'écriture suivante — ils étaient déjà illisibles.
+fn read_tagged(path: &str) -> lofty::error::Result<lofty::file::TaggedFile> {
+    match Probe::open(path).and_then(|p| p.read()) {
+        Ok(tagged) => Ok(tagged),
+        Err(_) => Probe::open(path)?
+            .options(ParseOptions::new().parsing_mode(ParsingMode::Relaxed))
+            .read(),
+    }
+}
 
 /// Write the full canonical+enrichment set: artist, title, and optionally label, year,
 /// genres (joined as "A; B" in one Genre field — multi-item doesn't round-trip on ID3),
@@ -24,9 +41,7 @@ pub fn write_tags_full(
     genres: &[String],
     cover_path: Option<&str>,
 ) -> Result<(), String> {
-    let mut tagged = Probe::open(path)
-        .and_then(|p| p.read())
-        .map_err(|e| format!("read tags: {e}"))?;
+    let mut tagged = read_tagged(path).map_err(|e| format!("read tags: {e}"))?;
 
     if tagged.primary_tag_mut().is_none() {
         let tt = tagged.primary_tag_type();
@@ -95,16 +110,14 @@ pub fn joined_genres(genres: &[String]) -> Option<String> {
 /// Whether the file carries a picture in ANY of its tags — the rule `analysis::tags` uses to fill
 /// `tracks.has_cover`, re-read after a write that may have removed the front cover (#68).
 pub fn has_any_picture(path: &str) -> Result<bool, String> {
-    let tagged = Probe::open(path)
-        .and_then(|p| p.read())
-        .map_err(|e| format!("read tags: {e}"))?;
+    let tagged = read_tagged(path).map_err(|e| format!("read tags: {e}"))?;
     Ok(tagged.tags().iter().any(|t| !t.pictures().is_empty()))
 }
 
 /// Read embedded artist + title (empty strings when absent or unreadable). Used by filing
 /// to seed reconciliation.
 pub fn read_artist_title(path: &str) -> (String, String) {
-    match Probe::open(path).and_then(|p| p.read()) {
+    match read_tagged(path) {
         Ok(tagged) => match tagged.primary_tag() {
             Some(tag) => (
                 tag.artist().map(|s| s.to_string()).unwrap_or_default(),
@@ -153,9 +166,7 @@ pub struct TagsSnapshot {
 /// if the file can't be opened/parsed; a file with no tag yields an all-`None` snapshot (apply →
 /// revert then returns it to "no tags").
 pub fn read_tags_full(path: &str) -> Result<TagsSnapshot, String> {
-    let tagged = Probe::open(path)
-        .and_then(|p| p.read())
-        .map_err(|e| format!("read tags: {e}"))?;
+    let tagged = read_tagged(path).map_err(|e| format!("read tags: {e}"))?;
     let Some(tag) = tagged.primary_tag() else {
         return Ok(TagsSnapshot::default());
     };
@@ -183,9 +194,7 @@ pub fn read_tags_full(path: &str) -> Result<TagsSnapshot, String> {
 /// applied value. Used by the `tag_edit` revert branch. The save is the last step, so a failure
 /// before it leaves the file unchanged.
 pub fn restore_tags(path: &str, snap: &TagsSnapshot) -> Result<(), String> {
-    let mut tagged = Probe::open(path)
-        .and_then(|p| p.read())
-        .map_err(|e| format!("read tags: {e}"))?;
+    let mut tagged = read_tagged(path).map_err(|e| format!("read tags: {e}"))?;
     if tagged.primary_tag_mut().is_none() {
         let tt = tagged.primary_tag_type();
         tagged.insert_tag(Tag::new(tt));
@@ -255,6 +264,41 @@ mod tests {
         } else {
             None
         }
+    }
+
+    /// Un tag au champ abîmé (date ID3 « 2005-xx ») se lit ET se réécrit : avant le repli
+    /// `Relaxed` de `read_tagged`, `lofty` refusait le fichier entier, d'où « impossible de
+    /// charger les métadonnées » et une conversion refusée dès `read tags` (14 fichiers chez
+    /// Antoine, 2026-10-30). La fixture est un vrai MP3 dont ffmpeg a écrit la date illisible.
+    #[test]
+    fn un_tag_a_la_date_illisible_se_lit_et_se_reecrit() {
+        let Some(src) = fixture("bad_date.mp3") else {
+            eprintln!("skip: no fixture (node scripts/make-fixtures.mjs)");
+            return;
+        };
+        assert!(
+            Probe::open(&src).and_then(|p| p.read()).is_err(),
+            "la fixture doit être illisible en mode strict, sinon elle ne teste rien"
+        );
+        let snap = read_tags_full(&src).expect("lecture tolérante");
+        assert_eq!(snap.artist.as_deref(), Some("Artiste"));
+        let dir = tempfile::tempdir().unwrap();
+        let copie = dir.path().join("bad_date.mp3");
+        std::fs::copy(&src, &copie).unwrap();
+        let p = copie.to_str().unwrap();
+        write_tags_full(
+            p,
+            "Nouvel artiste",
+            "Nouveau titre",
+            None,
+            Some(2005),
+            &[],
+            None,
+        )
+        .expect("écriture après lecture tolérante");
+        let relu = read_tags_full(p).unwrap();
+        assert_eq!(relu.artist.as_deref(), Some("Nouvel artiste"));
+        assert_eq!(relu.year, Some(2005));
     }
 
     /// THE retro-compatibility guard for `actions.meta`. The end-to-end test

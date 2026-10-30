@@ -58,10 +58,33 @@ pub struct QueueItem {
     pub bitrate: Option<i64>,
     /// Declared format ("mp3" | "aac" | "flac" | …), NULL until analysed.
     pub declared_fmt: Option<String>,
+    /// Arrivée dans la file DEPUIS l'ouverture de l'app (scan de rattrapage au lancement, rescan,
+    /// surveillance) : `tracks.created_at` postérieur à `session_started_at`. La file ajoute les
+    /// nouveaux fichiers à la FIN, sans les reclasser — décision d'Antoine du 2026-10-30, pour que
+    /// la position de celui qui trie ne bouge jamais — et ce drapeau dit lesquels sont arrivés.
+    pub is_new: bool,
+}
+
+/// L'instant d'ouverture de l'app, au format de `tracks.created_at` (`datetime('now')`, UTC).
+/// Posé une fois au démarrage (`lib.rs`), AVANT le scan de rattrapage, pour que ses trouvailles
+/// comptent comme nouvelles. Non posé (tests, ou avant le setup) : rien n'est nouveau.
+static SESSION_STARTED_AT: std::sync::OnceLock<String> = std::sync::OnceLock::new();
+
+/// Relève l'instant d'ouverture de l'app dans l'horloge de SQLite — la même qui stampe
+/// `created_at`, donc comparable sans conversion de fuseau ni de format.
+pub fn mark_session_start(conn: &Connection) -> rusqlite::Result<()> {
+    let now: String = conn.query_row("SELECT datetime('now')", [], |r| r.get(0))?;
+    let _ = SESSION_STARTED_AT.set(now);
+    Ok(())
 }
 
 /// All pending tracks, oldest first.
 pub fn list_pending(conn: &Connection) -> rusqlite::Result<Vec<QueueItem>> {
+    list_pending_since(conn, SESSION_STARTED_AT.get().map(String::as_str))
+}
+
+/// `list_pending`, avec l'instant à partir duquel une piste compte comme nouvelle (`None` : aucune).
+fn list_pending_since(conn: &Connection, since: Option<&str>) -> rusqlite::Result<Vec<QueueItem>> {
     // `typeof(t.report_json)='null'`, NOT `t.report_json IS NULL`. Same answer, ~90x cheaper:
     // `IS NULL` makes SQLite LOAD the value, and report_json averages ~800 KB per row, so the
     // engine walks the overflow pages of every pending track — measured 2026-07-28 on the real
@@ -77,12 +100,13 @@ pub fn list_pending(conn: &Connection) -> rusqlite::Result<Vec<QueueItem>> {
                 (t.verdict IS NULL OR t.analyzed_at IS NULL OR typeof(t.report_json)='null'
                  OR (t.verdict IS NOT NULL AND t.verdict_ver IS NOT ?1)),
                 t.analysis_attempts, t.verdict_ver,
-                t.duration, t.bitrate, t.declared_fmt
+                t.duration, t.bitrate, t.declared_fmt,
+                (?2 IS NOT NULL AND t.created_at >= ?2)
          FROM tracks t LEFT JOIN metadata m ON m.track_id = t.id
          WHERE t.status='pending' ORDER BY t.id",
     )?;
     let rows = stmt.query_map(
-        rusqlite::params![crate::analysis::verdict::VERDICT_CACHE_VERSION],
+        rusqlite::params![crate::analysis::verdict::VERDICT_CACHE_VERSION, since],
         |r| {
             Ok(QueueItem {
                 id: r.get(0)?,
@@ -99,6 +123,7 @@ pub fn list_pending(conn: &Connection) -> rusqlite::Result<Vec<QueueItem>> {
                 duration: r.get(11)?,
                 bitrate: r.get(12)?,
                 declared_fmt: r.get(13)?,
+                is_new: r.get(14)?,
             })
         },
     )?;
@@ -190,6 +215,7 @@ mod tests {
             duration: None,
             bitrate: None,
             declared_fmt: None,
+            is_new: false,
         };
         let QueueItem {
             id,
@@ -206,6 +232,7 @@ mod tests {
             duration,
             bitrate,
             declared_fmt,
+            is_new,
         } = v;
         let _ = (
             id,
@@ -222,7 +249,33 @@ mod tests {
             duration,
             bitrate,
             declared_fmt,
+            is_new,
         );
+    }
+
+    /// Nouvelle = arrivée depuis l'ouverture de l'app, et rien d'autre : une piste plus ancienne ne
+    /// l'est pas, et sans instant posé (avant le setup) aucune ne l'est. L'ordre reste celui des
+    /// ids — la nouvelle s'ajoute à la fin, elle ne remonte pas.
+    #[test]
+    fn une_piste_arrivee_depuis_l_ouverture_est_nouvelle() {
+        let conn = db();
+        conn.execute(
+            "INSERT INTO tracks (path, status, created_at) VALUES ('/vieux.mp3','pending','2026-10-29 10:00:00')",
+            [],
+        )
+        .unwrap();
+        conn.execute(
+            "INSERT INTO tracks (path, status, created_at) VALUES ('/neuf.mp3','pending','2026-10-30 09:00:01')",
+            [],
+        )
+        .unwrap();
+        let q = list_pending_since(&conn, Some("2026-10-30 09:00:00")).unwrap();
+        let flags: Vec<(&str, bool)> = q.iter().map(|it| (it.path.as_str(), it.is_new)).collect();
+        assert_eq!(flags, vec![("/vieux.mp3", false), ("/neuf.mp3", true)]);
+        assert!(list_pending_since(&conn, None)
+            .unwrap()
+            .iter()
+            .all(|it| !it.is_new));
     }
 
     #[test]

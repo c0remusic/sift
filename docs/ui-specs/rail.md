@@ -147,9 +147,16 @@ glyphe accolé à un libellé — ce n'était pas ce patron.
 
 ### Souris
 
-- **Clic** item : navigue. **Clic** source : filtre Revue sur cette source.
+- **Clic** item : navigue. **Clic** source : filtre Revue sur cette source — déjà sur Revue,
+  sans reconstruire l'écran : la piste ouverte reste et sa ligne revient dans la vue
+  (2026-10-30, la liste remontait en haut et la lecture repartait).
 - **Clic droit** sur une source : Suspendre la surveillance · Rescanner · **Couleur**
   (rangée) · Couleur automatique · Ouvrir l'emplacement · Retirer.
+- **Scan de rattrapage à l'ouverture** (2026-10-30) : chaque source surveillée est rescannée au
+  lancement, l'une après l'autre — la surveillance ne voit que ce qui arrive app ouverte. Une
+  source en pause n'est pas scannée ; un dossier absent (disque débranché) est sauté et rien n'y
+  est effacé. Chaque scan dit ce qu'il a trouvé en toast (« 3 nouveaux, 1 disparu ») ; celui du
+  lancement se tait s'il ne trouve rien.
 - **Couleur — forme actée le 2026-08-20 (wireframe validé, variante A).** Rangée de
   pastilles *dans le menu même*, patron Finder Tags (guide macOS « Utiliser des tags » :
   « choisissez une couleur au-dessus de Tags » dans le menu contextuel ; jusqu'à sept tags

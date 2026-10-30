@@ -24,6 +24,17 @@ const fr = {
   discardFailed: "Échec de l'écartement — réessaie",
   setAsideDone: (n: number) =>
     n > 1 ? `${n} pistes sous 320 kbps écartées → À re-sourcer` : "1 piste sous 320 kbps écartée → À re-sourcer",
+  // Écarter / Corbeille sur toute la sélection (2026-10-30). Mêmes mots que Bibliothèque.
+  discardConfirm: (n: number) => `Écarter ${n} piste${n > 1 ? "s" : ""} ?`,
+  discardButton: "Écarter",
+  discarded: (n: number) => `${n} piste${n > 1 ? "s" : ""} écartée${n > 1 ? "s" : ""} → À re-sourcer`,
+  discardedPartial: (n: number, failed: number) =>
+    `${n} piste${n > 1 ? "s" : ""} écartée${n > 1 ? "s" : ""}, ${failed} en échec`,
+  trashConfirm: (n: number) => `Envoyer ${n} piste${n > 1 ? "s" : ""} à la corbeille ?`,
+  trashButton: "Envoyer à la corbeille",
+  trashed: (n: number) => `${n} piste${n > 1 ? "s" : ""} à la corbeille`,
+  trashedPartial: (n: number, failed: number) =>
+    `${n} piste${n > 1 ? "s" : ""} à la corbeille, ${failed} en échec`,
 };
 
 const en: typeof fr = {
@@ -42,6 +53,14 @@ const en: typeof fr = {
   discardFailed: "Couldn't set the tracks aside — try again",
   setAsideDone: (n) =>
     n > 1 ? `${n} tracks under 320 kbps set aside → To re-source` : "1 track under 320 kbps set aside → To re-source",
+  discardConfirm: (n) => `Set aside ${n} track${n === 1 ? "" : "s"}?`,
+  discardButton: "Set aside",
+  discarded: (n) => `${n} track${n === 1 ? "" : "s"} set aside → To re-source`,
+  discardedPartial: (n, failed) => `${n} track${n === 1 ? "" : "s"} set aside, ${failed} failed`,
+  trashConfirm: (n) => `Move ${n} track${n === 1 ? "" : "s"} to Trash?`,
+  trashButton: "Move to Trash",
+  trashed: (n) => `${n} track${n === 1 ? "" : "s"} moved to Trash`,
+  trashedPartial: (n, failed) => `${n} track${n === 1 ? "" : "s"} moved to Trash, ${failed} failed`,
 };
 
 export const D = { fr, en };

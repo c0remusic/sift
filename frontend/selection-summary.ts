@@ -71,7 +71,7 @@ export function splitBatchFile(
 
 /** Construit le HTML du panneau de résumé de sélection.
  *  Rendu EN TÊTE du batch board quand la sélection est non vide.
- *  Les boutons portent data-sift="batchqueuefile" / "batchqueuediscard"
+ *  Les boutons portent data-sift="batchqueuefile" / "batchqueuediscard" / "batchqueuetrash"
  *  pour le routing délégué de sift-live.ts.
  *  Classes de bouton : .sift-baction .sift-baction--primary / --quiet (grammaire batch existante). */
 export function selectionSummaryHtml(selected: QueueItem[]): string {
@@ -152,8 +152,7 @@ export function selectionSummaryHtml(selected: QueueItem[]): string {
     .filter(Boolean)
     .join("");
 
-  const fileN    = selected.filter(estRangeableEnLot).length;
-  const discardN = fake;
+  const fileN = selected.filter(estRangeableEnLot).length;
 
   return (
     `<div class="sift-bsel">` +
@@ -166,9 +165,10 @@ export function selectionSummaryHtml(selected: QueueItem[]): string {
     (fileN > 0
       ? `<button class="sift-baction sift-baction--primary" data-sift="batchqueuefile">${L.convertN(fileN)}</button>`
       : `<button class="sift-baction sift-baction--primary" disabled>${L.convert}</button>`) +
-    (discardN > 0
-      ? `<button class="sift-baction sift-baction--quiet" data-sift="batchqueuediscard">${L.setAsideN(discardN)}</button>`
-      : `<button class="sift-baction sift-baction--quiet" disabled>${L.setAside}</button>`) +
+    // Écarter et Corbeille portent sur TOUTE la sélection (2026-10-30) — n ≥ 1 ici, donc toujours
+    // actifs. Avant, « Écarter N faux » était grisé dès que la sélection ne contenait aucun faux.
+    `<button class="sift-baction sift-baction--quiet" data-sift="batchqueuediscard">${L.setAsideN(n)}</button>` +
+    `<button class="sift-baction sift-baction--quiet" data-sift="batchqueuetrash">${L.trashN(n)}</button>` +
     `</div>` +
     `</div>`
   );

@@ -551,6 +551,9 @@ pub struct TrackFileOutcome {
     pub path: Option<String>,
     /// Failure cause, `None` on success.
     pub error: Option<String>,
+    /// Réserve d'un succès à dire à l'utilisateur (une trame illisible sautée par ffmpeg,
+    /// `encode::tolerated_gap`), `None` sinon.
+    pub note: Option<String>,
 }
 
 /// Background body of `file_track` (off the invoke thread): phase 2 (the multi-second ffmpeg
@@ -606,6 +609,7 @@ fn run_file_track(app: &AppHandle, plan: filing::FilePlan) {
         // couvre que `execute_file`, pas la lecture de `master.db` ni le commit qui suivent. Sans
         // elle, N clics sur N pistes lançaient N ffmpeg concurrents (cf. `ENCODE_SLOTS`).
         let _slot = EncodeSlot::acquire();
+        let _ = crate::encode::take_reserve();
         match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| filing::execute_file(&plan)))
         {
             Ok(r) => r.map_err(|e| {
@@ -622,6 +626,8 @@ fn run_file_track(app: &AppHandle, plan: filing::FilePlan) {
             }
         }
     };
+    // Lue sur CE fil, juste après l'encodage qui l'a posée (`encode::take_reserve`).
+    let note = crate::encode::take_reserve();
 
     // Le `master.db` se lit AVANT de reprendre le verrou (déchiffrement SQLCipher multi-Mo) —
     // `commit_file` le faisait verrou tenu. Une seule piste ici, donc un seul déchiffrement dans
@@ -662,12 +668,14 @@ fn run_file_track(app: &AppHandle, plan: filing::FilePlan) {
             batch_id,
             path: Some(dest),
             error: None,
+            note,
         },
         Err(e) => TrackFileOutcome {
             track_id,
             batch_id,
             path: None,
             error: Some(e),
+            note: None,
         },
     };
     app.emit("file:track:done", &outcome).ok();
@@ -1900,14 +1908,16 @@ mod tests {
             batch_id: String::new(),
             path: None,
             error: None,
+            note: None,
         };
         let TrackFileOutcome {
             track_id,
             batch_id,
             path,
             error,
+            note,
         } = v;
-        let _ = (track_id, batch_id, path, error);
+        let _ = (track_id, batch_id, path, error, note);
     }
 
     /// Mirrors shared/contracts.ts's `TrackRelease`. Exhaustive destructure (no `..`): fails to

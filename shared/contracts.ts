@@ -140,6 +140,19 @@ export interface QueueItem {
   bitrate: number | null;
   /** Declared format ("mp3" | "aac" | "flac" | …), NULL until analysed. */
   declared_fmt: string | null;
+  /** Arrivée depuis l'ouverture de l'app (scan au lancement, rescan, surveillance). La file ajoute
+   *  ces pistes à la fin sans reclasser ; ce drapeau les signale (`queue.rs::QueueItem::is_new`). */
+  is_new: boolean;
+}
+
+/** Fin d'un scan de dossier source (`ipc.rs::spawn_scans`, événement `scan:done`). `startup` :
+ *  le scan de rattrapage lancé à l'ouverture de l'app, et non un « Rescanner » demandé. */
+export interface ScanDone {
+  source_id: number;
+  added: number;
+  updated: number;
+  removed: number;
+  startup: boolean;
 }
 
 /** Mirror of queue.rs::MAX_ANALYSIS_ATTEMPTS. After this many failures a stuck track drops out of
@@ -413,6 +426,9 @@ export interface TrackFileOutcome {
   path: string | null;
   /** Failure cause, null on success. */
   error: string | null;
+  /** Réserve d'un succès, à dire à l'utilisateur (« une trame illisible ignorée — 90 ms en
+   *  moins », `encode.rs::tolerated_gap`), null sinon. */
+  note: string | null;
 }
 
 /** Per-file filing progress (mirror of ipc_filing.rs FileProgress). `done` = files processed so

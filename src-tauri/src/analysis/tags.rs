@@ -134,6 +134,54 @@ fn rail_from_file_type(file_type: FileType) -> Rail {
     }
 }
 
+/// Rail d'un conteneur MP4 d'après son CODEC, `None` si le fichier ne se lit pas comme un MP4 ou
+/// si `lofty` ne connaît pas le codec. Le conteneur seul ne tranche pas : `.m4a` porte de l'AAC
+/// (lossy) comme de l'ALAC (lossless) — voir `un_m4a_alac_est_lossless_et_un_m4a_aac_reste_lossy`.
+/// Seconde lecture du fichier, sans tags ni pochette, payée uniquement par les MP4.
+fn mp4_codec_rail(path: &str) -> Option<Rail> {
+    use lofty::config::ParseOptions;
+    use lofty::mp4::{Mp4Codec, Mp4File};
+    let mut file = std::fs::File::open(path).ok()?;
+    let mp4 = Mp4File::read_from(
+        &mut file,
+        ParseOptions::new().read_tags(false).read_cover_art(false),
+    )
+    .ok()?;
+    match mp4.properties().codec() {
+        Mp4Codec::ALAC | Mp4Codec::FLAC => Some(Rail::Lossless),
+        Mp4Codec::AAC | Mp4Codec::MP3 => Some(Rail::Lossy),
+        _ => None,
+    }
+}
+
+/// Rail d'un fichier lu à son contenu : codec pour un MP4, sinon type de conteneur. Un MP4 au
+/// codec inconnu reste lossy, comme `rail_from_file_type` l'a toujours dit.
+fn content_rail_of(path: &str, file_type: FileType) -> Rail {
+    if file_type == FileType::Mp4 {
+        mp4_codec_rail(path).unwrap_or(Rail::Lossy)
+    } else {
+        rail_from_file_type(file_type)
+    }
+}
+
+/// Le rail DÉCLARÉ d'un fichier : celui de son extension, sauf `.m4a`, que seule la lecture du
+/// codec départage (un m4a illisible garde le repli lossy de son extension). C'est l'entrée du
+/// rangement (`filing.rs::plan_file`, cible et garde anti-upscale) et de la lecture
+/// (`ipc.rs::playback_url`). Une extension lossless n'est jamais réinterprétée ici : un MP3
+/// renommé `.flac` doit rester déclaré lossless pour que le garde RAIL_MISMATCH le voie.
+pub fn declared_rail(path: &str) -> Rail {
+    let ext = std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("");
+    let rail = rail_from_ext(ext);
+    if ext.eq_ignore_ascii_case("m4a") {
+        mp4_codec_rail(path).unwrap_or(rail)
+    } else {
+        rail
+    }
+}
+
 /// Lossless vs lossy from the file's ACTUAL content (lofty's content-sniffing probe, magic
 /// bytes — NOT the extension). Used where extension trust actually matters: the filing
 /// no-upscale guard (`filing.rs::plan_file`), to catch a lossy file mislabeled with a lossless
@@ -146,7 +194,7 @@ pub fn rail_from_content(path: &str) -> Rail {
         Probe::open(path)?.guess_file_type()?.read()
     }
     match try_read(path) {
-        Ok(tagged) => rail_from_file_type(tagged.file_type()),
+        Ok(tagged) => content_rail_of(path, tagged.file_type()),
         Err(_) => Rail::Unknown,
     }
 }
@@ -169,7 +217,13 @@ pub fn read(path: &str) -> TagInfo {
             // Le conteneur vient de ce que `lofty` a RECONNU dans les octets, pas de l'extension :
             // un WAV renommé `.mp3` doit rester jugé comme un WAV.
             let file_type = tagged.file_type();
-            let content_rail = rail_from_file_type(file_type);
+            let content_rail = content_rail_of(path, file_type);
+            // Un `.m4a` lisible : son codec tranche le rail déclaré (ALAC lossless, AAC lossy).
+            let rail = if ext.eq_ignore_ascii_case("m4a") && file_type == FileType::Mp4 {
+                content_rail
+            } else {
+                rail
+            };
             let props = tagged.properties();
             let has_cover = tagged.tags().iter().any(|t| !t.pictures().is_empty());
             // Capture honnête du porteur, en remplacement du stub `Some("ID3")` que l'extension
@@ -283,6 +337,67 @@ mod tests {
         // Contrôle : le lossless reste lossless, la table n'a pas été élargie au hasard.
         assert_eq!(rail_from_file_type(FileType::Flac), Rail::Lossless);
         assert_eq!(rail_from_file_type(FileType::Aiff), Rail::Lossless);
+    }
+
+    /// `.m4a` porte de l'ALAC (lossless) aussi bien que de l'AAC (lossy) : le rail vient du CODEC.
+    ///
+    /// Jusqu'au 2026-10-30 l'extension décidait seule (`rail_from_ext("m4a")` = Lossy). Mesuré sur
+    /// la bibliothèque d'Antoine : ses six `.m4a` étaient de l'ALAC à ~860 kbps, jugés lossy, donc
+    /// AIFF/WAV grisés et refusés, et une conversion MP3 aurait jeté l'original lossless. Les trois
+    /// entrées sont tenues : le rail déclaré (verdict, rangement), le rail du contenu (le garde
+    /// RAIL_MISMATCH, et `container_mismatch` qui verrait sinon un FAUX dans tout ALAC), et
+    /// `read()` qui alimente l'analyse.
+    #[test]
+    fn un_m4a_alac_est_lossless_et_un_m4a_aac_reste_lossy() {
+        let (Some(alac), Some(aac)) = (fixture("alac.m4a"), fixture("aac.m4a")) else {
+            eprintln!("skip: no fixture (node scripts/make-fixtures.mjs)");
+            return;
+        };
+        assert_eq!(declared_rail(&alac), Rail::Lossless, "ALAC déclaré");
+        assert_eq!(rail_from_content(&alac), Rail::Lossless, "ALAC contenu");
+        let info = read(&alac);
+        assert_eq!(
+            (info.declared_rail, info.content_rail),
+            (Rail::Lossless, Rail::Lossless),
+            "read() sur ALAC"
+        );
+
+        assert_eq!(declared_rail(&aac), Rail::Lossy, "AAC déclaré");
+        assert_eq!(rail_from_content(&aac), Rail::Lossy, "AAC contenu");
+        let info = read(&aac);
+        assert_eq!(
+            (info.declared_rail, info.content_rail),
+            (Rail::Lossy, Rail::Lossy),
+            "read() sur AAC"
+        );
+    }
+
+    /// Hors `.m4a`, le rail déclaré reste celui de l'extension : un MP3 ou un MP4/AAC renommé
+    /// `.flac` doit rester DÉCLARÉ lossless, sinon le garde RAIL_MISMATCH (extension lossless,
+    /// contenu lossy) ne verrait plus jamais le déguisement qu'il existe pour attraper. Le cas MP4
+    /// est celui qui compte : lire le codec d'un `.flac` qui est en fait un MP4 le déclarerait lossy
+    /// et ferait taire le garde.
+    #[test]
+    fn hors_m4a_le_rail_declare_reste_celui_de_l_extension() {
+        let (Some(mp3), Some(aac_flac)) = (fixture("real_320.mp3"), fixture("aac_disguised.flac"))
+        else {
+            eprintln!("skip: no fixture");
+            return;
+        };
+        let dir = tempfile::tempdir().unwrap();
+        let disguised = dir.path().join("disguised.flac");
+        std::fs::copy(&mp3, &disguised).unwrap();
+        assert_eq!(declared_rail(disguised.to_str().unwrap()), Rail::Lossless);
+        assert_eq!(
+            declared_rail(&aac_flac),
+            Rail::Lossless,
+            "MP4/AAC déguisé en .flac"
+        );
+        assert_eq!(
+            declared_rail("absent.m4a"),
+            Rail::Lossy,
+            "m4a illisible : repli lossy"
+        );
     }
 
     #[test]

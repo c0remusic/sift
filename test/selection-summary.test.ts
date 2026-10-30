@@ -23,6 +23,7 @@ function piste(id: number, verdict: QueueItem["verdict"], analysis_attempts = 0)
     duration: null,
     bitrate: null,
     declared_fmt: null,
+    is_new: false,
   };
 }
 
@@ -106,12 +107,13 @@ describe("le compte du bouton d'action principale est celui de l'action", () => 
     }
   });
 
-  // Le côté Écarter n'a jamais dérivé. Le geler ici empêche qu'une correction du côté Ranger le
-  // casse par symétrie mal comprise : « faux » est le seul verdict qu'on écarte, et un verdict nul
-  // n'est PAS un faux.
-  it("Écarter ne compte que les faux, jamais un verdict nul", () => {
+  // Écarter et Corbeille portent sur TOUTE la sélection depuis le 2026-10-30 (Antoine : « si on
+  // sélectionne 5 éléments on ne peut rien faire si on veut simplement les supprimer »). Avant,
+  // Écarter ne comptait que les faux, et cinq pistes sans faux ne laissaient aucune action.
+  it("Écarter et Corbeille comptent toute la sélection, faux ou pas", () => {
     const html = selectionSummaryHtml([piste(1, "fake"), piste(2, null), piste(3, "ok")]);
-    expect(html).toContain('data-sift="batchqueuediscard">Écarter 1 faux');
+    expect(html).toContain('data-sift="batchqueuediscard">Écarter 3 pistes</button>');
+    expect(html).toContain('data-sift="batchqueuetrash">Envoyer 3 pistes à la corbeille</button>');
   });
 
   // Le verdict nul recouvrait DEUX populations sous une seule pilule « en cours » : l'analyse en
@@ -135,10 +137,11 @@ describe("le compte du bouton d'action principale est celui de l'action", () => 
     expect(html).toContain("2 analyses abandonnées");
   });
 
-  it("une sélection sans aucun faux désactive Écarter, pas Ranger", () => {
+  it("une sélection sans aucun faux garde Écarter et Corbeille actifs", () => {
     const html = selectionSummaryHtml([piste(1, null), piste(2, "ok")]);
     expect(compteAffiche(html)).toBe(2);
-    expect(html).toContain('class="sift-baction sift-baction--quiet" disabled>Écarter</button>');
+    expect(html).not.toContain(" disabled>Écarter");
+    expect(html).toContain('data-sift="batchqueuediscard">Écarter 2 pistes</button>');
   });
 });
 
@@ -157,19 +160,16 @@ describe("en anglais, le vocabulaire canonique et ses accords", () => {
     expect(selectionSummaryHtml([piste(1, "ok")])).toContain('data-sift="batchqueuefile">Convert 1 track</button>');
   });
 
-  it("Écarter devient Set aside, jamais Discard — actif comme désactivé", () => {
+  it("Écarter devient Set aside, jamais Discard — et s'accorde au nombre de pistes", () => {
     setCurrentLang("en");
-    const avecFaux = selectionSummaryHtml([piste(1, "fake"), piste(2, "ok")]);
-    expect(avecFaux).toContain('data-sift="batchqueuediscard">Set aside 1 fake</button>');
-    // Le français « faux » est invariable, le nom anglais non : sans ce cas, « Set aside 2 fake »
-    // passait (relevé en revue le 2026-09-23).
-    const deuxFaux = selectionSummaryHtml([piste(1, "fake"), piste(2, "fake")]);
-    expect(deuxFaux).toContain('data-sift="batchqueuediscard">Set aside 2 fakes</button>');
-    const sansFaux = selectionSummaryHtml([piste(1, "ok")]);
-    expect(sansFaux).toContain('class="sift-baction sift-baction--quiet" disabled>Set aside</button>');
+    const une = selectionSummaryHtml([piste(1, "ok")]);
+    expect(une).toContain('data-sift="batchqueuediscard">Set aside 1 track</button>');
+    expect(une).toContain('data-sift="batchqueuetrash">Move 1 track to Trash</button>');
+    const deux = selectionSummaryHtml([piste(1, "fake"), piste(2, "ok")]);
+    expect(deux).toContain('data-sift="batchqueuediscard">Set aside 2 tracks</button>');
     // Borné au TEXTE affiché : l'identifiant `data-sift="batchqueuediscard"` est du protocole et
     // porte le mot, légitimement.
-    expect(avecFaux + sansFaux).not.toMatch(/>\s*Discard/i);
+    expect(une + deux).not.toMatch(/>\s*Discard/i);
   });
 
   it("le bouton désactivé dit Convert", () => {

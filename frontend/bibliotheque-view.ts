@@ -11,7 +11,7 @@ import {
   libraryFolders,
   reanalyzeTracks,
   rejectBatch,
-  trashTrack,
+  trashTracks,
   revealTrack,
   openUrl,
 } from "./ipc";
@@ -327,23 +327,10 @@ async function bulkTrash(ids: number[]): Promise<void> {
     !(await confirmAction(T().trashConfirm(ids.length), T().moveToTrash))
   )
     return;
-  // SÉQUENTIEL, et ce n'est pas un oubli : `trash_track` est unitaire côté IPC, et le backend est
-  // synchrone derrière un Mutex unique (`db::lock_conn`). Un `Promise.all` sur une grande sélection
-  // lancerait autant d'invokes concurrents sur une frontière qui les sérialise de toute façon, en
-  // bloquant tout le reste de l'IPC pendant ce temps.
-  let done = 0;
-  const failed: number[] = [];
-  for (const id of ids) {
-    try {
-      await trashTrack(id);
-      done++;
-    } catch (err: unknown) {
-      console.error("trash_track failed", id, err);
-      failed.push(id);
-    }
-  }
+  // Séquentiel, une piste à la fois : la raison est sur `trashTracks` (ipc.ts).
+  const { trashed, failed } = await trashTracks(ids);
   toast(
-    failed.length ? T().trashedPartial(done, failed.length) : T().trashed(done),
+    failed.length ? T().trashedPartial(trashed, failed.length) : T().trashed(trashed),
   );
   await afterBulkRemoval();
 }
