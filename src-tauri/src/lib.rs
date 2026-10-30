@@ -1,4 +1,5 @@
 mod actions;
+mod aiff_wav;
 pub mod analysis;
 mod b85_bytes;
 #[cfg(test)]

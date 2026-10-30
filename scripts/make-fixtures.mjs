@@ -69,4 +69,10 @@ run(["-y", "-i", join(OUT, "real_320.mp3"), "-c", "copy", "-id3v2_version", "4",
   "-metadata", "date=2005-xx", "-metadata", "artist=Artiste", "-metadata", "title=Titre",
   join(OUT, "bad_date.mp3")]);
 
+// AIFF 16 et 24 bits, et AIFF-C `sowt` (petit-boutiste) : ce que la réécriture directe en WAV de la
+// lecture (`aiff_wav.rs`) doit rendre à l'échantillon près (`le_wav_porte_les_memes_echantillons…`).
+run(["-y", "-i", join(OUT, "real_lossless.flac"), "-c:a", "pcm_s16be", join(OUT, "aiff16.aiff")]);
+run(["-y", "-i", join(OUT, "real_lossless.flac"), "-c:a", "pcm_s24be", join(OUT, "aiff24.aiff")]);
+run(["-y", "-i", join(OUT, "real_lossless.flac"), "-c:a", "pcm_s16le", join(OUT, "sowt.aifc")]);
+
 console.log("fixtures generated in", OUT);

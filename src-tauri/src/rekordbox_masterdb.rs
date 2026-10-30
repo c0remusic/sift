@@ -501,8 +501,13 @@ pub fn detect_playlist_duplicates(
     let mut conn =
         Connection::open_in_memory().map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
     let len = plaintext.len();
-    conn.deserialize_read_exact(rusqlite::MAIN_DB, Cursor::new(plaintext), len, true)
-        .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+    conn.deserialize_read_exact(
+        rusqlite::MAIN_DB,
+        Cursor::new(plaintext.as_slice()),
+        len,
+        true,
+    )
+    .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
 
     let mut stmt = conn
         .prepare("SELECT ID, PlaylistID, ContentID, TrackNo FROM djmdSongPlaylist ORDER BY PlaylistID, ContentID, TrackNo")
@@ -628,7 +633,7 @@ struct DecryptCache {
     path: PathBuf,
     mtime: std::time::SystemTime,
     len: u64,
-    plaintext: Vec<u8>,
+    plaintext: std::sync::Arc<Vec<u8>>,
 }
 
 static DECRYPT_CACHE: std::sync::OnceLock<std::sync::Mutex<Option<DecryptCache>>> =
@@ -641,7 +646,11 @@ static DECRYPT_CACHE: std::sync::OnceLock<std::sync::Mutex<Option<DecryptCache>>
 /// cache, each of those re-ran the full AES-CBC decrypt + per-page HMAC verify of the whole
 /// file on every call, several times per render. Poisoned-mutex/any-error paths fall back to
 /// an uncached read rather than failing the caller for a cache-layer problem alone.
-fn read_and_decrypt_cached(path: &Path) -> Result<Vec<u8>, MasterDbError> {
+///
+/// Rendu en `Arc` (2026-10-30) : chaque lecture recopiait le `master.db` déchiffré entier
+/// (`plaintext.clone()`, 21 Mo chez Antoine) avant que SQLite n'en fasse sa propre copie ; les
+/// appelants lisent maintenant le tampon partagé par emprunt (`Cursor<&[u8]>`).
+fn read_and_decrypt_cached(path: &Path) -> Result<std::sync::Arc<Vec<u8>>, MasterDbError> {
     let meta = std::fs::metadata(path).map_err(|e| MasterDbError::Io(e.to_string()))?;
     let mtime = meta
         .modified()
@@ -652,20 +661,21 @@ fn read_and_decrypt_cached(path: &Path) -> Result<Vec<u8>, MasterDbError> {
     if let Ok(guard) = cache.lock() {
         if let Some(c) = guard.as_ref() {
             if c.path == path && c.mtime == mtime && c.len == len {
-                return Ok(c.plaintext.clone());
+                return Ok(std::sync::Arc::clone(&c.plaintext));
             }
         }
     }
 
     let raw = std::fs::read(path).map_err(|e| MasterDbError::Io(e.to_string()))?;
-    let plaintext = decrypt_masterdb(&raw)?;
+    let plaintext = std::sync::Arc::new(decrypt_masterdb(&raw)?);
+    drop(raw);
 
     if let Ok(mut guard) = cache.lock() {
         *guard = Some(DecryptCache {
             path: path.to_path_buf(),
             mtime,
             len,
-            plaintext: plaintext.clone(),
+            plaintext: std::sync::Arc::clone(&plaintext),
         });
     }
     Ok(plaintext)
@@ -858,8 +868,13 @@ pub fn read_rekordbox_masterdb(path: &Path) -> Result<RekordboxIndex, MasterDbEr
     let mut conn =
         Connection::open_in_memory().map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
     let len = plaintext.len();
-    conn.deserialize_read_exact(rusqlite::MAIN_DB, Cursor::new(plaintext), len, true)
-        .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+    conn.deserialize_read_exact(
+        rusqlite::MAIN_DB,
+        Cursor::new(plaintext.as_slice()),
+        len,
+        true,
+    )
+    .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
 
     let mut stmt = conn
         .prepare(&format!(
@@ -903,8 +918,13 @@ pub fn read_playlist_names(
     let mut conn =
         Connection::open_in_memory().map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
     let len = plaintext.len();
-    conn.deserialize_read_exact(rusqlite::MAIN_DB, Cursor::new(plaintext), len, true)
-        .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+    conn.deserialize_read_exact(
+        rusqlite::MAIN_DB,
+        Cursor::new(plaintext.as_slice()),
+        len,
+        true,
+    )
+    .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
 
     let mut stmt = conn
         .prepare("SELECT ID, Name FROM djmdPlaylist")
@@ -953,8 +973,13 @@ pub fn read_track_playlists(path: &Path) -> Result<Vec<TrackPlaylistRow>, Master
     let mut conn =
         Connection::open_in_memory().map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
     let len = plaintext.len();
-    conn.deserialize_read_exact(rusqlite::MAIN_DB, Cursor::new(plaintext), len, true)
-        .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
+    conn.deserialize_read_exact(
+        rusqlite::MAIN_DB,
+        Cursor::new(plaintext.as_slice()),
+        len,
+        true,
+    )
+    .map_err(|e| MasterDbError::Sqlite(e.to_string()))?;
 
     // Deux LEFT JOIN, et chacun a sa raison : le premier garde la piste qui n'est dans aucune
     // playlist ; le second ne compte une entrée que si sa playlist existe encore.
@@ -2023,8 +2048,13 @@ mod tests {
         let plaintext = decrypt_masterdb(&raw).expect("decrypt fixture");
         let mut conn = Connection::open_in_memory().expect("open in-memory");
         let len = plaintext.len();
-        conn.deserialize_read_exact(rusqlite::MAIN_DB, Cursor::new(plaintext), len, true)
-            .expect("deserialize fixture");
+        conn.deserialize_read_exact(
+            rusqlite::MAIN_DB,
+            Cursor::new(plaintext.as_slice()),
+            len,
+            true,
+        )
+        .expect("deserialize fixture");
 
         let (file_name_l, rb_local_usn): (String, i64) = conn
             .query_row(
@@ -2052,8 +2082,13 @@ mod tests {
         let plaintext = decrypt_masterdb(&raw).expect("decrypt fixture");
         let mut conn = Connection::open_in_memory().expect("open in-memory");
         let len = plaintext.len();
-        conn.deserialize_read_exact(rusqlite::MAIN_DB, Cursor::new(plaintext), len, true)
-            .expect("deserialize fixture");
+        conn.deserialize_read_exact(
+            rusqlite::MAIN_DB,
+            Cursor::new(plaintext.as_slice()),
+            len,
+            true,
+        )
+        .expect("deserialize fixture");
 
         let count: i64 = conn
             .query_row(
@@ -2457,8 +2492,13 @@ mod tests {
         let plaintext = decrypt_masterdb(&raw).expect("decrypt real copy");
         let mut conn = Connection::open_in_memory().expect("open in-memory");
         let len = plaintext.len();
-        conn.deserialize_read_exact(rusqlite::MAIN_DB, Cursor::new(plaintext), len, true)
-            .expect("deserialize real copy");
+        conn.deserialize_read_exact(
+            rusqlite::MAIN_DB,
+            Cursor::new(plaintext.as_slice()),
+            len,
+            true,
+        )
+        .expect("deserialize real copy");
         let (orig_file_name_l, orig_file_name_s): (String, String) = conn
             .query_row(
                 "SELECT FileNameL, FileNameS FROM djmdContent WHERE ID = ?1",

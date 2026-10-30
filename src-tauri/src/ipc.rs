@@ -671,12 +671,25 @@ pub fn playback_url(
             let _ = f.set_modified(std::time::SystemTime::now());
         }
     } else {
-        crate::encode::encode(
-            &path,
-            &out.to_string_lossy(),
-            crate::encode::Target::Wav1644,
-        )
-        .map_err(|e| e.to_string())?;
+        // AIFF : réécriture directe en WAV (`aiff_wav`), un passage de copie sans décodage — le
+        // transcodage ffmpeg coûtait 0,4 à 0,9 s par piste jamais écoutée (mesuré le 2026-10-30).
+        // ffmpeg reste le repli : ALAC, AIFF-C compressé, flottant, fichier atypique.
+        let direct = (ext == "aif" || ext == "aiff")
+            && match crate::aiff_wav::convertir(std::path::Path::new(&path), &out) {
+                Ok(()) => true,
+                Err(e) => {
+                    log::info!("lecture : AIFF repris par ffmpeg ({e}) : {path}");
+                    false
+                }
+            };
+        if !direct {
+            crate::encode::encode(
+                &path,
+                &out.to_string_lossy(),
+                crate::encode::Target::Wav1644,
+            )
+            .map_err(|e| e.to_string())?;
+        }
         prune_play_cache(&dir, PLAY_CACHE_MAX_BYTES, Some(&out));
     }
     // The temp WAV, not the source: it is what the webview will actually fetch.
