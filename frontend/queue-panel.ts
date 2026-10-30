@@ -904,9 +904,10 @@ export async function renderQueue(touchDetail = true) {
     // `data-sift="qloading"` n'est pas décoratif : c'est ce qui permet au `catch` de `listQueue`
     // plus bas de savoir s'il regarde CE placeholder (à remplacer par une erreur) ou de vraies
     // lignes déjà peintes (à ne pas détruire). Sans marque, il faudrait deviner.
+    // Squelette statique, pas de spinner nu (`revue.md` § états, « Analyse en cours ») — #61.
     ql.innerHTML =
-      '<div data-sift="qloading" style="display:flex;align-items:center;gap:var(--space-8);padding:var(--space-8) 7px;color:var(--color-text-tertiary);font-size:var(--text-md)">' +
-      `<i class="ti ti-loader sift-spin" style="font-size:var(--text-md)"></i> ${T().loading}</div>`;
+      `<div data-sift="qloading"><span class="sift-skel sift-skel-line"></span>` +
+      `<span class="sift-sr-only">${T().loading}</span></div>`;
   }
   let items: QueueItem[] = [];
   try {
@@ -922,11 +923,10 @@ export async function renderQueue(touchDetail = true) {
     // `queue:changed` qui échoue) : les lignes affichées restent valides, les écraser perdrait
     // de l'information juste — un toast dit l'échec sans détruire l'état.
     if (ql.querySelector('[data-sift="qloading"]')) {
+      // Motif d'erreur d'Écartés : phrase en encre danger + « Réessayer », sans carte (#61).
       ql.innerHTML =
-        '<div class="sift-ui-card-soft sift-ui-card-soft-pad" style="color:var(--color-text-danger)">' +
-        esc(display) +
-        `<div style="margin-top:var(--space-8)"><button data-sift="retryqueue" style="font-size:var(--text-xs);color:var(--color-text-info)">${T().retry}</button></div>` +
-        "</div>";
+        `<div class="sift-ec-fail">${esc(display)} ` +
+        `<button data-sift="retryqueue" class="sift-meta-ident-btn">${T().retry}</button></div>`;
       ql.querySelector<HTMLButtonElement>('[data-sift="retryqueue"]')?.addEventListener(
         "click",
         () => {

@@ -721,11 +721,12 @@ export async function renderBiblioLive() {
   const L = T();
   if (!alreadyRendered) {
     teardownBibList();
+    // Squelette statique dans la structure finale, comme Écartés et Doublons — la spec
+    // (`bibliotheque.md` § états, « Chargement, premier rendu ») l'exige, le spinner nu
+    // ne la tenait pas (#61). Le mot reste pour un lecteur d'écran.
     content.innerHTML =
-      '<div style="display:flex;align-items:center;gap:var(--space-8);padding:var(--space-8) 7px;color:var(--color-text-tertiary);font-size:var(--text-md)">' +
-      '<i class="ti ti-loader sift-spin" style="font-size:var(--text-md)"></i> ' +
-      L.loading +
-      "</div>";
+      `<div class="sift-library-main"><span class="sift-skel sift-skel-line"></span>` +
+      `<span class="sift-sr-only">${L.loading}</span></div>`;
   }
   let facets: LibraryFacets = { folders: [], genres: [], artists: [] };
   try {
@@ -741,13 +742,12 @@ export async function renderBiblioLive() {
     if (isStaleViewRender(token)) return;
     teardownBibList();
     bibPaintedEpoch = -1;
+    // Motif d'erreur d'Écartés (`ecartes.md` § états) : phrase en encre danger + « Réessayer »,
+    // sans carte (#61).
     content.innerHTML =
-      '<div class="sift-ui-card-soft sift-ui-card-soft-pad" style="color:var(--color-text-danger)">' +
+      `<div class="sift-library-main"><div class="sift-ec-fail">` +
       esc(humanizeError(e, L.loadFailed, "library load")) +
-      '<div style="margin-top:var(--space-8)"><button data-bib="retryload" style="font-size:var(--text-xs);color:var(--color-text-info)">' +
-      L.retry +
-      "</button></div>" +
-      "</div>";
+      ` <button data-bib="retryload" class="sift-meta-ident-btn">${L.retry}</button></div></div>`;
     content
       .querySelector<HTMLButtonElement>('[data-bib="retryload"]')
       ?.addEventListener("click", () => void renderBiblioLive());
