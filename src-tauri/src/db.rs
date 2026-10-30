@@ -588,6 +588,16 @@ const MIGRATIONS: &[&str] = &[
         CHECK (a_id < b_id)
     );
     "#,
+    // v28 — les `.m4a` réanalysés (2026-10-30). Leur rail venait de l'extension, donc lossy, alors
+    // que `.m4a` porte aussi de l'ALAC : `tags::declared_rail` lit désormais le codec. Les rapports
+    // déjà en base portent l'ancien rail (`declared_rail` du rapport, `real_quality` qui nourrit la
+    // file) ; seuls les `.m4a` sont remis à l'analyse — un bump de `REPORT_CACHE_VERSION`
+    // réanalyserait toute la bibliothèque pour six fichiers. Effacer `report_json` et pas seulement
+    // `analyzed_at` : Revue servirait sinon le rapport en cache, et son ancien rail, à l'ouverture.
+    r#"
+    UPDATE tracks SET analyzed_at = NULL, report_json = NULL, real_quality = NULL
+    WHERE lower(path) LIKE '%.m4a';
+    "#,
 ];
 
 /// Applies ONE migration and its `user_version` bump in a SINGLE transaction, so a batch that
@@ -826,6 +836,53 @@ mod tests {
             "une autre version de cache est hors du périmètre gelé de v23 : {:?}",
             dur(4)
         );
+    }
+
+    /// v28 remet à l'analyse les `.m4a`, et eux seuls : un `.M4A` en majuscules compte, un `.mp3`
+    /// ou un `.aiff` garde son rapport (sinon toute la bibliothèque repasserait au décodeur).
+    #[test]
+    fn migration_v28_ne_remet_a_l_analyse_que_les_m4a() {
+        let conn = Connection::open_in_memory().unwrap();
+        for sql in MIGRATIONS.iter().take(27) {
+            conn.execute_batch(sql).unwrap();
+        }
+        conn.execute_batch("PRAGMA user_version = 27").unwrap();
+        for (id, path) in [(1, "/a.m4a"), (2, "/B.M4A"), (3, "/c.mp3"), (4, "/d.aiff")] {
+            conn.execute(
+                "INSERT INTO tracks (id, path, status, analyzed_at, report_json, real_quality)
+                 VALUES (?1, ?2, 'pending', '2026-10-01', '{}', 'lossy')",
+                rusqlite::params![id, path],
+            )
+            .unwrap();
+        }
+
+        run_migrations(&conn).unwrap();
+
+        let etat = |id: i64| -> (Option<String>, Option<String>, Option<String>) {
+            conn.query_row(
+                "SELECT analyzed_at, report_json, real_quality FROM tracks WHERE id=?1",
+                rusqlite::params![id],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap()
+        };
+        assert_eq!(etat(1), (None, None, None), "un .m4a repasse à l'analyse");
+        assert_eq!(
+            etat(2),
+            (None, None, None),
+            "l'extension se compare sans la casse"
+        );
+        for id in [3, 4] {
+            assert_eq!(
+                etat(id),
+                (
+                    Some("2026-10-01".into()),
+                    Some("{}".into()),
+                    Some("lossy".into())
+                ),
+                "piste {id} : hors .m4a, le rapport reste"
+            );
+        }
     }
 
     /// v26 garde les empreintes à 44,1 kHz (identiques sous l'algorithme corrigé) et efface les

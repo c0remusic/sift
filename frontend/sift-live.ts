@@ -5,6 +5,7 @@ import {
   onFileProgress,
   onQueueChanged,
   onScanFailed,
+  onScanDone,
   onAnalysisChanged,
   analysisProgress,
   purgeTrash,
@@ -38,6 +39,7 @@ import { sortTracks } from "./library-views";
 import { consumeSortSuppression } from "./library-columns";
 import { refreshRootWarning } from "./rail-root-warning";
 import { registerOpenSettingsAction } from "./filing-actions";
+import { scanDoneText } from "./scan-report";
 import { goTo } from "./router";
 import { selectSettingsCategory } from "./reglages-view";
 import { onRekordboxSectionPick } from "./rekordbox-view";
@@ -264,15 +266,11 @@ export function installLiveWiring() {
     }
     // Batch checkbox — handled by queue-panel.ts's own document listener; skip .qi dispatch
     if ((e.target as HTMLElement).dataset.sift === "queuepick") return;
-    // queue item → open the live filing pane (report + editor + actions) in #mid
+    // queue item → open the live filing pane (report + editor + actions) in #mid — or, in Lot
+    // mode, check/uncheck the row (Shift: a range) without ever leaving the mode (2026-10-30).
     const qi = (e.target as HTMLElement).closest<HTMLElement>(".qi[data-id]");
     if (qi?.dataset.id) {
       handleQueueItemClick(qi, e);
-      // Cliquer une ligne pendant que le mode Lot est armé veut dire « inspecter celle-ci » :
-      // `handleQueueItemClick` retombe alors en Détail par `enterDetailMode()`, sans passer par
-      // `setReviewMode`. Ce chemin contournait le commutateur et laissait l'icône de barre armée à
-      // tort — d'où une repeinture explicite ici jusqu'au 2026-08-26. Elle n'a plus lieu d'être :
-      // `enterDetailMode` repeint le bouton lui-même, donc le contournement n'en est plus un.
       return;
     }
     // Le « masquer pour la session » de la porte de racine manquante (`[data-gate="dismiss"]`) a
@@ -489,6 +487,9 @@ export function installLiveWiring() {
     } else if (act === "batchqueuediscard") {
       e.stopPropagation();
       void handleBatchQueueAction("discard");
+    } else if (act === "batchqueuetrash") {
+      e.stopPropagation();
+      void handleBatchQueueAction("trash");
     } else if (handleBatchAction(el, act ?? "", e)) {
       // handled — see batch-panel.ts
     } else if (handleRekordboxAction(el, act ?? "", e, () => void runNavExport())) {
@@ -563,6 +564,12 @@ export function installLiveWiring() {
   void onScanFailed((sourceId, reason) => {
     noteScanFailure(sourceId, reason);
     toast(T().scanFailed(reason));
+  });
+  // Ce qu'un scan a trouvé (`scan-report.ts`). Même fréquence que l'échec ci-dessus : un par
+  // dossier scanné, à l'ajout, au rescan, et une fois par dossier surveillé à l'ouverture.
+  void onScanDone((d) => {
+    const text = scanDoneText(d);
+    if (text) toast(text);
   });
   void onFileDone(onFileBatchDone);
   void onFileProgress(pushFileProgress);

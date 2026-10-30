@@ -5,6 +5,7 @@ import type {
   DbHealth,
   Source,
   QueueItem,
+  ScanDone,
   AnalysisReport,
   AnalysisProgress,
   Canonical,
@@ -164,6 +165,10 @@ export const onAnalysisChanged = (cb: () => void): Promise<UnlistenFn> =>
 export const onScanFailed = (cb: (sourceId: number, reason: string) => void): Promise<UnlistenFn> =>
   listen<[number, string]>("scan:failed", (e) => cb(e.payload[0], e.payload[1]));
 
+/** Un scan de dossier source a abouti — ce qu'il a ajouté, modifié, retiré (`ipc.rs::ScanDone`). */
+export const onScanDone = (cb: (d: ScanDone) => void): Promise<UnlistenFn> =>
+  listen<ScanDone>("scan:done", (e) => cb(e.payload));
+
 // ---- M4 filing loop (mirror of ipc_filing.rs) ----
 
 /** Reconcile a track's tags + filename into the canonical record + confidence. */
@@ -250,6 +255,27 @@ export const rejectTrack = (trackId: number): Promise<void> =>
 /** Move a track's file to the trash of its own disk (reversible via undo). */
 export const trashTrack = (trackId: number): Promise<void> =>
   invoke("trash_track", { trackId });
+
+/** Met plusieurs pistes à la corbeille, UNE À LA FOIS. Séquentiel, et ce n'est pas un oubli :
+ *  `trash_track` est unitaire côté IPC, et le backend est synchrone derrière un Mutex unique
+ *  (`db::lock_conn`) — un `Promise.all` sur une grande sélection lancerait autant d'invokes
+ *  concurrents sur une frontière qui les sérialise de toute façon, en bloquant tout le reste de
+ *  l'IPC pendant ce temps. Un échec n'arrête pas les suivants : il est journalisé et rendu.
+ *  Partagé par Bibliothèque et le mode Lot de Revue. */
+export async function trashTracks(trackIds: number[]): Promise<{ trashed: number; failed: number[] }> {
+  let trashed = 0;
+  const failed: number[] = [];
+  for (const id of trackIds) {
+    try {
+      await trashTrack(id);
+      trashed++;
+    } catch (err: unknown) {
+      console.error("trash_track failed", id, err);
+      failed.push(id);
+    }
+  }
+  return { trashed, failed };
+}
 
 /** Reveal a track's file in Explorer (Windows) or Finder (macOS), the file itself selected.
  *  Takes an id, never a path: the backend resolves it from the database, so this command can't be

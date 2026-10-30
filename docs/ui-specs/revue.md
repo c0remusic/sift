@@ -720,13 +720,24 @@ et le plancher horodaté de 250 ms reste le garde. In-app, **jamais** `window.co
 
 ### Souris
 
-- **Clic** ligne de file : ouvre la piste dans la zone C.
+- **Clic** ligne de file : ouvre la piste dans la zone C. En mode Batch, **toute la ligne coche
+  ou décoche** et **Maj+clic coche une plage** depuis la dernière ligne cliquée ; un clic ne fait
+  JAMAIS sortir du mode (décision d'Antoine du 2026-10-30 : un clic à côté de la case de 16 px
+  quittait le mode et vidait la sélection). On sort par « Terminé » ou `Échap`.
+- Après **Convertir** ou **Écarter**, la zone C ouvre la piste qui SUIVAIT dans la liste
+  affichée (la précédente en bout de liste), plus jamais la première (`queue-next.ts`,
+  2026-10-30).
+- La file garde l'ordre d'arrivée : un scan (au lancement, rescan, surveillance) ajoute ses
+  fichiers EN FIN de liste, marqués **NOUVEAU** (même pastille neutre que DUPLICATE), sans
+  reclasser — la position de celui qui trie ne bouge jamais (décision d'Antoine du 2026-10-30).
 - **Clic** sur **« Sélectionner »** (tête de file) : arme le mode Batch (cases par ligne) ; le
   bouton devient « Terminé » et désarme. **Clic** sur le **bouton de filtre** (même rangée, à
   gauche) : ouvre le menu cochable.
 - **Clic droit** ligne : Ouvrir l'emplacement · Réanalyser · Écarter · Changer la
   destination. En mode Batch, agit sur la sélection : Ranger N · Changer la destination ·
-  Écarter N. **Livré et vérifié le 2026-08-26** (`a31ebf2`) — le menu ne servait que le mode
+  Écarter N · Envoyer N à la corbeille — Écarter et Corbeille portent sur TOUTE la sélection
+  depuis le 2026-10-30 (ils ne visaient que les faux), confirmation au-delà de 10 comme
+  Bibliothèque. **Livré et vérifié le 2026-08-26** (`a31ebf2`) — le menu ne servait que le mode
   Batch jusque-là. En mode Détail le clic droit OUVRE d'abord la ligne, comme dans Finder ou
   Mail : « Écarter » et « Changer la destination » agissent sur la zone C, donc sur la piste
   ouverte, et non sur un identifiant.

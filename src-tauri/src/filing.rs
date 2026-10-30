@@ -858,7 +858,7 @@ pub fn plan_file(
         None => reconcile_track(conn, track_id)?,
     };
 
-    let source_rail = crate::analysis::tags::rail_from_ext(&ext_of(&source));
+    let source_rail = crate::analysis::tags::declared_rail(&source);
     // BUG-1 guard: the extension says lossless, but is the CONTENT actually lossy? (an MP3
     // renamed `.flac` would otherwise sail through and get "converted" into a fabricated
     // lossless AIFF/WAV — exactly what guard_no_upscale below exists to block, except it never

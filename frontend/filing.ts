@@ -274,10 +274,10 @@ function renderFoot(mid: HTMLElement, rail: string): void {
     ?.addEventListener("click", () => void doRanger(mid, openFilingInto, clearPane));
   foot
     .querySelector('[data-fil="resource"]')
-    ?.addEventListener("click", () => void doSecondary(mid, "resource", clearPane));
+    ?.addEventListener("click", () => void doSecondary(mid, "resource", openFilingInto, clearPane));
   foot
     .querySelector('[data-fil="trash"]')
-    ?.addEventListener("click", () => void doSecondary(mid, "trash", clearPane));
+    ?.addEventListener("click", () => void doSecondary(mid, "trash", openFilingInto, clearPane));
   repositionDestPopoverIfOpen(); // the destbtn above was just rebuilt — keep an open popover glued to it
 }
 

@@ -27,6 +27,13 @@ const fr = {
   linkFailed: (err: string) => `Liaison du XML Rekordbox échouée : ${err}`,
   revealFailed: "Impossible d'ouvrir l'emplacement",
   scanFailed: (reason: string) => `Le scan du dossier surveillé a échoué : ${reason}`,
+  // Fin de scan (`scan-report.ts`). « nouveau » prend un x au pluriel, les participes un s.
+  scanAdded: (n: number) => `${n} nouveau${n > 1 ? "x" : ""}`,
+  scanUpdated: (n: number) => `${n} modifié${n > 1 ? "s" : ""}`,
+  scanRemoved: (n: number) => `${n} disparu${n > 1 ? "s" : ""}`,
+  scanAtStartup: (parts: string) => `Arrivés pendant la fermeture : ${parts}`,
+  scanDone: (parts: string) => `Rescan terminé : ${parts}`,
+  scanNothing: "Rescan terminé : rien de nouveau",
 };
 
 const en: typeof fr = {
@@ -45,6 +52,12 @@ const en: typeof fr = {
   linkFailed: (err) => `Couldn't link the Rekordbox XML: ${err}`,
   revealFailed: "Couldn't open the location",
   scanFailed: (reason) => `Watched folder scan failed: ${reason}`,
+  scanAdded: (n) => `${n} new`,
+  scanUpdated: (n) => `${n} changed`,
+  scanRemoved: (n) => `${n} gone`,
+  scanAtStartup: (parts) => `Arrived while Sift was closed: ${parts}`,
+  scanDone: (parts) => `Rescan done: ${parts}`,
+  scanNothing: "Rescan done: nothing new",
 };
 
 export const D = { fr, en };

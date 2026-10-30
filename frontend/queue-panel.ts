@@ -11,6 +11,8 @@
 import { listQueue, reanalyzeTracks, revealTrack } from "./ipc";
 import { openFilingInto, syncDetail } from "./filing";
 import { refreshBins, clearBinPick } from "./filing-bins";
+import { registerQueueAdvance } from "./filing-actions";
+import { clickedSelection } from "./queue-selection";
 import { homeProgressZone, taskOf } from "./progress-zone";
 import { MAX_ANALYSIS_ATTEMPTS, type QueueItem } from "../shared/contracts";
 import { confirmAction } from "./confirm-modal";
@@ -24,7 +26,7 @@ import { anchoredBelowPosition } from "./popover-position";
 import { queueCountLabel } from "./queue-count-label";
 import { verdictDot } from "./queue-verdict-dot";
 import { numLocale } from "./i18n";
-import { ffmpegMissingText } from "./conversion-error";
+import { conversionFailureText } from "./conversion-error";
 import { belowClubBitrate } from "./rails";
 import { T } from "./i18n/queue-panel";
 
@@ -369,6 +371,41 @@ export function prefetchNextAfter(id: number): void {
   }, 400);
 }
 
+/** Keep the row at `index` (of `visibleQueueItems()`) inside the rendered window: scroll just
+ *  enough that it sits within view, never a full jump-to-top/bottom for a one-row step. */
+function scrollQueueRowIntoView(ql: HTMLElement, index: number): void {
+  const rowH = measureQueueRowHeight(ql);
+  const rowTop = index * rowH;
+  const rowBottom = rowTop + rowH;
+  if (rowTop < ql.scrollTop) ql.scrollTop = rowTop;
+  else if (rowBottom > ql.scrollTop + ql.clientHeight) ql.scrollTop = rowBottom - ql.clientHeight;
+}
+
+// Convertir et Écarter ouvrent la piste SUIVANTE (`filing-actions.ts::advanceAfter`) : ce module
+// lui prête l'ordre affiché, et reprend la main une fois la piste ouverte — surlignage, piste
+// traitée retirée de la liste (re-livraison sans toucher au volet), ligne ramenée dans la vue.
+// Injecté et pas importé : filing-actions ne peut pas importer ce module sans fermer un cycle.
+registerQueueAdvance({
+  order: () => visibleQueueItems().map((it) => it.id),
+  opened: (id) => {
+    currentOpenId = id;
+    void renderQueue(false).then(revealOpenQueueRow);
+    prefetchNextAfter(id);
+  },
+});
+
+/** Ramène la ligne de la piste ouverte dans la vue de la file, si la liste visible la contient.
+ *  Après l'avance de Convertir / Écarter (ci-dessus), et après un clic sur une source du rail
+ *  (`rail-sources.ts::pickSource`), qui re-livre la file sous un autre filtre. */
+export function revealOpenQueueRow(): void {
+  const ql = document.getElementById("ql");
+  const index = visibleQueueItems().findIndex((it) => it.id === currentOpenId);
+  if (ql && index >= 0) {
+    scrollQueueRowIntoView(ql, index);
+    renderQueueWindow(ql);
+  }
+}
+
 /** ArrowUp/ArrowDown queue navigation. Kept separate from filing.ts's installFilingKeys (Space/
  * Enter/Backspace/I) because stepping through a virtualized queue needs currentItems + the
  * ability to scroll a not-yet-rendered row into view — both owned here, not in filing.ts (which
@@ -384,13 +421,7 @@ function stepQueueSelection(delta: 1 | -1): void {
   currentOpenId = next.id;
   const ql = document.getElementById("ql");
   if (ql) {
-    const rowH = measureQueueRowHeight(ql);
-    // Keep the target row inside the rendered window: scroll just enough that nextIndex sits
-    // within view, never a full jump-to-top/bottom for a one-row step.
-    const rowTop = nextIndex * rowH;
-    const rowBottom = rowTop + rowH;
-    if (rowTop < ql.scrollTop) ql.scrollTop = rowTop;
-    else if (rowBottom > ql.scrollTop + ql.clientHeight) ql.scrollTop = rowBottom - ql.clientHeight;
+    scrollQueueRowIntoView(ql, nextIndex);
     renderQueueWindow(ql);
   }
   // Debounced like the row-click handler in installLiveWiring — arrow-key repeat shouldn't fire a
@@ -461,17 +492,14 @@ export function installQueueNavKeys(): void {
     stepQueueSelection(e.key === "ArrowDown" ? 1 : -1);
   });
 
-  // Clic sur case de lot — intercepte avant le handler .qi générique (case dans une .qi).
+  // Clic sur case de lot — intercepte avant le handler .qi générique (case dans une .qi). Le reste
+  // de la ligne coche aussi, par `handleQueueItemClick` : les deux passent par `clickQueueBatch`.
   // Sur `document` : #qcol est reconstruit à chaque navigation, un listener posé dessus
   // disparaîtrait. Même motif que le keydown ci-dessus.
   document.addEventListener("click", (e) => {
     if ((e.target as HTMLElement).dataset.sift !== "queuepick") return;
     e.stopPropagation();
-    const id = Number((e.target as HTMLElement).dataset.id);
-    if (queueBatchSel.has(id)) queueBatchSel.delete(id);
-    else queueBatchSel.add(id);
-    const ql = document.getElementById("ql");
-    if (ql) renderQueueWindow(ql);
+    clickQueueBatch(Number((e.target as HTMLElement).dataset.id), e.shiftKey);
   });
 
   // Clic droit sur une ligne de file — menu contextuel, dans LES DEUX modes depuis le 2026-08-26.
@@ -501,10 +529,9 @@ export function installQueueNavKeys(): void {
     };
 
     if (reviewMode === "batch") {
-      // Assure que la piste cliquée est dans la sélection
-      if (!queueBatchSel.has(id)) {
-        queueBatchSel.add(id);
-      }
+      // Assure que la piste cliquée est dans la sélection — et repeint la zone C avec elle :
+      // `setQueueBatchSelection` passe par le renderer du Lot, pas seulement par les cases.
+      if (!queueBatchSel.has(id)) setQueueBatchSelection([...queueBatchSel, id]);
       const n = queueBatchSel.size;
       void import("./context-menu").then(({ openContextMenu }) => {
         void import("./batch-panel").then(({ handleBatchQueueAction }) => {
@@ -517,11 +544,14 @@ export function installQueueNavKeys(): void {
               separated: true,
               onPick: () => handleBatchQueueAction("discard"),
             },
+            {
+              label: L.trashN(n),
+              danger: true,
+              onPick: () => handleBatchQueueAction("trash"),
+            },
           ]);
         });
       });
-      const ql = document.getElementById("ql");
-      if (ql) renderQueueWindow(ql);
       return;
     }
 
@@ -634,6 +664,32 @@ function setQueueBatchSelection(ids: Iterable<number>): void {
   if (reviewMode === "batch") batchRenderer?.();
 }
 
+/** Ancre du Maj+clic du mode Lot : la dernière piste cochée ou décochée d'un clic simple. Remise à
+ *  zéro à chaque changement de mode (`setReviewModeRaw`). */
+let batchAnchorId: number | null = null;
+
+/** Un clic sur une ligne du mode Lot, case ou ligne entière : bascule la piste, ou coche la plage
+ *  depuis l'ancre avec Maj. La règle vit dans `queue-selection.ts` (pure, testée) ; ce module la
+ *  joue sur l'ordre AFFICHÉ et repeint cases, compte ET zone C (`setQueueBatchSelection`) — la case
+ *  seule ne repeignait que la file, et la zone C gardait un compte et des boutons périmés. */
+function clickQueueBatch(id: number, range: boolean): void {
+  const order = visibleQueueItems().map((it) => it.id);
+  const r = clickedSelection(queueBatchSel, { id, range }, order, batchAnchorId);
+  batchAnchorId = r.anchor;
+  // Maj+clic sur du texte le sélectionnerait aussi : la plage de pistes suffit.
+  if (range) window.getSelection()?.removeAllRanges();
+  setQueueBatchSelection(r.sel);
+}
+
+/** Échap quitte le mode Lot, comme « Terminé » — seulement sur l'écran Revue (`#fldz` n'existe que
+ *  dans sa colonne) et quand aucun lot ne tourne. Rend `true` si Échap a été pris en charge.
+ *  Exportée pour `shortcuts.ts::dismissTopmost`. */
+export function exitBatchModeOnEscape(): boolean {
+  if (reviewMode !== "batch" || isBatchSheetOpen() || !document.getElementById("fldz")) return false;
+  enterDetailMode();
+  return true;
+}
+
 /** Tout sélectionner (mode Lot) — Finder : Édition › Tout sélectionner, `Ctrl+A`. Exportée pour
  *  `shortcuts.ts`. Sans effet hors mode Lot. */
 export function selectAllQueueBatch(): void {
@@ -720,7 +776,7 @@ function queueRowHtml(it: QueueItem, active: boolean, onCursor: boolean): string
   const artist = it.artist ? esc(it.artist) : "";
   const L = T();
   return (
-    `<div class="qi${active ? " cur" : ""}${onCursor ? " qi-kbd" : ""}" id="qi-${it.id}" role="option" aria-selected="${active}" data-id="${it.id}" data-path="${esc(it.path)}" title="${L.rowTitle}" style="cursor:pointer">` +
+    `<div class="qi${active ? " cur" : ""}${onCursor ? " qi-kbd" : ""}" id="qi-${it.id}" role="option" aria-selected="${active}" data-id="${it.id}" data-path="${esc(it.path)}" title="${reviewMode === "batch" ? L.rowTitleBatch : L.rowTitle}" style="cursor:pointer">` +
     (reviewMode === "batch"
       ? `<input type="checkbox" class="qi-ck" data-sift="queuepick" data-id="${it.id}" tabindex="-1"${queueBatchSel.has(it.id) ? " checked" : ""}>`
       : "") +
@@ -742,7 +798,7 @@ function queueRowHtml(it: QueueItem, active: boolean, onCursor: boolean): string
     // pastille ne le porte pas, et c'est un fait de fond que l'utilisateur doit voir sans survoler.
     // Le mot de VERDICT, lui, est parti le 2026-08-26 — il doublait la pastille (voir `verdictDot`).
     (failure
-      ? `<span title="${esc(ffmpegMissingText(failure) ?? failure)}" style="flex:none;display:inline-flex;align-items:center;gap:var(--space-4);font-size:var(--text-xs);color:var(--color-text-warning)"><i class="ti ti-alert-triangle"></i>${L.conversionFailed}</span>`
+      ? `<span title="${esc(conversionFailureText(failure) ?? failure)}" style="flex:none;display:inline-flex;align-items:center;gap:var(--space-4);font-size:var(--text-xs);color:var(--color-text-warning)"><i class="ti ti-alert-triangle"></i>${L.conversionFailed}</span>`
       : "") +
     // Pastille DUPLICATE, au BORD DROIT de la ligne (wireframe « Poste de décision » §§ 09-10 ;
     // spec `docs/ui-specs/revue.md` § Zone B′ : « rendu hors colonne verdict »). Elle a quitté la
@@ -757,6 +813,12 @@ function queueRowHtml(it: QueueItem, active: boolean, onCursor: boolean): string
     // boucle de `renderQueueWindow`, donc chaque attribut se paie en octets de chaîne à CHAQUE
     // fenêtre rendue — poll de 300 ms + scroll rAF-throttlé.
     (it.dup ? `<span class="qi-dup" title="${L.dupTitle}">DUPLICATE</span>` : "") +
+    // Pastille NOUVEAU (2026-10-30) : la piste est arrivée depuis l'ouverture de l'app (scan au
+    // lancement, rescan, surveillance). Les nouvelles s'ajoutent EN FIN de liste, sans reclasser
+    // (décision d'Antoine : la position de celui qui trie ne bouge jamais) ; la pastille dit
+    // lesquelles. Même grammaire neutre que DUPLICATE, et pour la même raison : un fait, pas un
+    // verdict.
+    (it.is_new ? `<span class="qi-dup" title="${L.newTitle}">${L.newBadge}</span>` : "") +
     // Only for a not-yet-analysed row — retry a track stuck without a verdict (e.g. a
     // transient decode error on first pass) instead of leaving it silently unreachable.
     // data-reanalyze is checked BEFORE the .qi row-open branch in the delegated click handler
@@ -1530,11 +1592,15 @@ let queueSelectTimer: ReturnType<typeof setTimeout> | undefined;
  *  this reads/writes (currentItems, currentOpenId, reviewMode) already lives in this module. */
 export function handleQueueItemClick(qi: HTMLElement, e: MouseEvent): void {
   e.stopPropagation();
-  // In batch mode a row-click means "inspect this one" → drop back to the detail pane.
-  // But NOT while a batch filing is running (sheet open) — the queue stays interactive for
-  // selecting the next batch (wireframe § 17: "non-modale, la file reste utilisable").
-  if (reviewMode === "batch" && !isBatchSheetOpen()) enterDetailMode();
   const id = Number(qi.dataset.id);
+  // En mode Lot, toute la ligne coche (Maj : une plage) et le mode ne se quitte JAMAIS par un clic
+  // — décision d'Antoine du 2026-10-30. Avant, un clic hors de la case de 16 px voulait dire
+  // « inspecter celle-ci » : il retombait en Détail et vidait la sélection en cours. On sort par
+  // « Terminé » ou Échap (`exitBatchModeOnEscape`).
+  if (reviewMode === "batch") {
+    clickQueueBatch(id, e.shiftKey);
+    return;
+  }
   const item = currentItems.find((it) => it.id === id);
   const mid = requireEl("#mid", "qi-click");
   currentOpenId = id;
@@ -1560,6 +1626,7 @@ export function handleQueueItemClick(qi: HTMLElement, e: MouseEvent): void {
 function setReviewModeRaw(m: "detail" | "batch"): void {
   reviewMode = m;
   queueRowHeightCache = null; // hauteur change entre détail et lot (case ajoutée)
+  batchAnchorId = null;
   if (m === "detail") queueBatchSel.clear();
 }
 

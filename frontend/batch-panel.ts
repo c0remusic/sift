@@ -17,13 +17,13 @@ import {
   toggleDestPopover,
   repositionDestPopoverIfOpen,
 } from "./filing-bins";
-import { fileBatch, fileCancel, rejectBatch, getEncodeProfile } from "./ipc";
+import { fileBatch, fileCancel, rejectBatch, trashTracks, getEncodeProfile } from "./ipc";
 import { lossyFormatLabel } from "./encode-profile";
 import { requireEl, esc } from "./dom";
 import { toast } from "./filing-toast";
 import { openSettingsScreen } from "./filing-actions";
 import { slideSegThumb } from "./seg-thumb";
-import type { BatchResult, FileProgress, Target } from "../shared/contracts";
+import type { BatchResult, FileProgress, RejectBatchResult, Target } from "../shared/contracts";
 import { FILE_IN_PLACE, EXTERNAL_DEST_PREFIX } from "../shared/contracts";
 import {
   setTask,
@@ -39,7 +39,7 @@ import {
 } from "./batch-tracklist";
 import { currentItems, reviewMode, prefetchNextAfter, enterDetailMode, queueBatchSel } from "./queue-panel";
 import { selectionSummaryHtml, planBatchFile, splitBatchFile } from "./selection-summary";
-import { confirmBatchAlert, BATCH_CONFIRM_THRESHOLD } from "./confirm-modal";
+import { confirmAction, confirmBatchAlert, BATCH_CONFIRM_THRESHOLD } from "./confirm-modal";
 import type { BatchAlertData } from "./confirm-modal";
 import { showBatchSheet, updateBatchSheet, transformToReport, closeBatchSheet } from "./batch-sheet";
 import { T } from "./i18n/batch-panel";
@@ -431,15 +431,36 @@ export async function onFileBatchDone(res: BatchResult) {
   transformToReport(res);
 }
 
-async function runBatchDiscard(ids: number[]) {
+/** Écarte `ids` (→ Écartés). Rend le résultat du backend, ou `null` si l'appel a échoué — l'échec
+ *  est alors déjà dit dans le rail. */
+async function runBatchDiscard(ids: number[]): Promise<RejectBatchResult | null> {
+  if (ids.length === 0) return null;
+  batchRunning = true;
+  renderBatchRail();
+  try {
+    return await rejectBatch(ids);
+  } catch (err) {
+    console.error("reject_batch failed", err);
+    fileNote(T().discardFailed, "var(--color-text-danger)");
+    return null;
+  } finally {
+    batchRunning = false;
+    await refreshHook?.();
+  }
+}
+
+/** Envoie `ids` à la corbeille de Sift (fichiers restaurables depuis l'écran Corbeille), une piste
+ *  à la fois (`ipc.ts::trashTracks`), puis dit le compte — échecs compris — dans le rail. */
+async function runBatchTrash(ids: number[]): Promise<void> {
   if (ids.length === 0) return;
   batchRunning = true;
   renderBatchRail();
   try {
-    await rejectBatch(ids);
-  } catch (err) {
-    console.error("reject_batch failed", err);
-    fileNote(T().discardFailed, "var(--color-text-danger)");
+    const { trashed, failed } = await trashTracks(ids);
+    fileNote(
+      failed.length ? T().trashedPartial(trashed, failed.length) : T().trashed(trashed),
+      failed.length ? "var(--color-text-warning)" : "var(--color-text-secondary)",
+    );
   } finally {
     batchRunning = false;
     await refreshHook?.();
@@ -508,7 +529,7 @@ export function handleBatchAction(el: HTMLElement, act: string, e: MouseEvent): 
  *  (window.confirm() est inutilisable — un clic synthétique l'a traversée, incident 2026-07-03).
  *  Format lossless : la cible du segmenté du rail est appliquée ; le reste dérive du rail source
  *  côté backend (`encode::target_for`), ce qui empêche l'upscale par construction. */
-export async function handleBatchQueueAction(action: "file" | "discard"): Promise<void> {
+export async function handleBatchQueueAction(action: "file" | "discard" | "trash"): Promise<void> {
   // Un seul lot à la fois. L'écart des sous-320 émet `queue:changed`, dont le rafraîchissement
   // retardé repeint le résumé de sélection — et son « Convertir N » actif — PENDANT la conversion
   // qui suit ; un clic y lançait un second `file_batch` sur les mêmes pistes (relecture de #69).
@@ -567,10 +588,34 @@ export async function handleBatchQueueAction(action: "file" | "discard"): Promis
       fileNote(T().setAsideDone(setAsideIds.length), "var(--color-text-secondary)");
     }
     if (fileIds.length > 0) void runBatchFile(fileIds);
-  } else {
-    const fakeIds = selected.filter((it) => it.verdict === "fake").map((it) => it.id);
-    void runBatchDiscard(fakeIds);
+    return;
   }
+
+  // Écarter et Corbeille portent sur TOUTE la sélection depuis le 2026-10-30 (décision d'Antoine).
+  // Écarter ne visait que les FAUX : cinq pistes cochées sans faux ne laissaient aucune action, et
+  // le menu contextuel annonçait « Écarter 5 pistes » pour ne rien faire, sans le dire. Même seuil
+  // de confirmation que Bibliothèque (`bulkReject` / `bulkTrash`), même modale in-app.
+  const ids = selected.map((it) => it.id);
+  const L = T();
+  const trash = action === "trash";
+  if (
+    ids.length > BATCH_CONFIRM_THRESHOLD &&
+    !(await confirmAction(
+      trash ? L.trashConfirm(ids.length) : L.discardConfirm(ids.length),
+      trash ? L.trashButton : L.discardButton,
+    ))
+  )
+    return;
+  if (trash) {
+    await runBatchTrash(ids);
+    return;
+  }
+  const r = await runBatchDiscard(ids);
+  if (r)
+    fileNote(
+      r.failed.length ? L.discardedPartial(r.rejected, r.failed.length) : L.discarded(r.rejected),
+      r.failed.length ? "var(--color-text-warning)" : "var(--color-text-secondary)",
+    );
 }
 
 /** Handles the "file in place" checkbox change. */

@@ -22,6 +22,7 @@ import {
   reviewMode,
   selectAllQueueBatch,
   clearQueueBatchSelection,
+  exitBatchModeOnEscape,
 } from "./queue-panel";
 import { toggleRail, toggleAside } from "./chrome";
 import { isInspectorToggleChord, selectionChord } from "./key-chords";
@@ -85,7 +86,9 @@ function dismissTopmost(): boolean {
     closeFacetPopover();
     return true;
   }
-  return false;
+  // Le mode Lot en dernier : une surface ouverte par-dessus se ferme avant lui, comme Échap ferme
+  // un menu avant de quitter le mode sélection de Photos.
+  return exitBatchModeOnEscape();
 }
 
 export function installWindowShortcuts(): void {

@@ -303,6 +303,12 @@ pub fn run() {
             );
             settings::set(&conn, settings::CURRENT_SESSION_ID, &session_id)
                 .map_err(|e| format!("écriture de l'identifiant de session impossible: {e}"))?;
+            // Avant le scan de rattrapage plus bas : ce qu'il trouve doit compter comme « nouveau »
+            // dans la file (`queue::QueueItem::is_new`). Un échec ne fait que priver la file de ce
+            // repère, l'app reste utilisable.
+            if let Err(e) = queue::mark_session_start(&conn) {
+                log::warn!("instant d'ouverture non relevé, aucune piste ne sera marquée nouvelle: {e}");
+            }
             app.manage(Mutex::new(conn));
             app.manage(ipc_filing::FilingCancel::default());
             // Le scope du protocole `asset:` part VIDE (`tauri.conf.json`) et se remplit ici, au
@@ -326,6 +332,9 @@ pub fn run() {
                 .allow_directory(&covers, false)
                 .map_err(|e| format!("autorisation du cache de pochettes impossible: {e}"))?;
             watcher::start_all(app.handle());
+            // Après les watchers : un fichier qui arrive pendant la marche est vu par l'un ou
+            // l'autre, jamais par aucun. Voir `ipc::spawn_startup_scan`.
+            ipc::spawn_startup_scan(app.handle().clone());
             worker::init(app.handle());
             worker::refill(app.handle());
             spawn_journal_purge(app.handle());

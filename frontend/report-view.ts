@@ -624,7 +624,10 @@ export function prefetchTrack(path: string): void {
       .catch(() => {});
   }
   const ext = path.split(".").pop()?.toLowerCase() ?? "";
-  if (ext === "aif" || ext === "aiff") void invoke<string>("playback_url", { path }).catch(() => {});
+  // `m4a` aussi : de l'ALAC y passe par le même WAV temporaire (`ipc.rs::webview_needs_wav`), et
+  // le backend seul sait le distinguer d'un AAC, qu'il sert alors tel quel sans rien encoder.
+  if (ext === "aif" || ext === "aiff" || ext === "m4a")
+    void invoke<string>("playback_url", { path }).catch(() => {});
 }
 
 /** Mounts a wavesurfer player on the report's player row. Tempo uses the browser's native

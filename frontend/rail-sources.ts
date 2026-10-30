@@ -13,8 +13,8 @@ import { open } from "@tauri-apps/plugin-dialog";
 import type { Source } from "../shared/contracts";
 import { resolveSourceColorKey, SOURCE_HUE_CYCLE } from "./source-color";
 import { baseName, railRowState, railShapeKey, sourceEntryHtml } from "./rail-source-entry";
-import { setQueueSourceFilter, activeQueueSource, renderQueue } from "./queue-panel";
-import { goTo } from "./router";
+import { setQueueSourceFilter, activeQueueSource, renderQueue, revealOpenQueueRow } from "./queue-panel";
+import { goTo, activeView } from "./router";
 import { openContextMenu } from "./context-menu";
 import { confirmAction } from "./confirm-modal";
 import { toast } from "./filing-toast";
@@ -165,7 +165,12 @@ export async function renderRailSources(): Promise<void> {
  *  qu'« appliquer » partout dans l'app. */
 function pickSource(id: number): void {
   setQueueSourceFilter(activeQueueSource() === id ? null : id);
-  goTo("revue");
+  // Déjà sur Revue : re-livrer la file sans reconstruire l'écran. `goTo` refait `#qcol` et `#mid`
+  // de zéro — la liste remontait en haut et la piste ouverte se rechargeait, lecture comprise. Le
+  // « on sait plus où on est » d'Antoine (2026-10-30). La ligne ouverte est ensuite ramenée dans
+  // la vue, si le filtre la garde.
+  if (activeView() === "revue") void renderQueue().then(revealOpenQueueRow);
+  else goTo("revue");
   void renderRailSources();
 }
 

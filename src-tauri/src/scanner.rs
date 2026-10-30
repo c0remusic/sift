@@ -252,6 +252,13 @@ pub fn reconcile_with_progress(
     root: &Path,
     mut on_batch: impl FnMut(usize),
 ) -> rusqlite::Result<ReconcileStats> {
+    // Un dossier ABSENT (disque débranché, lecteur réseau hors ligne) ne se distingue pas, pour la
+    // marche, d'un dossier vide : sans ce garde, chaque piste en attente de la source passait pour
+    // disparue et `forget_path` effaçait sa ligne. Relevé le 2026-10-30 en ajoutant le scan de
+    // rattrapage au lancement, qui l'aurait déclenché à chaque démarrage disque débranché.
+    if !root.is_dir() {
+        return Ok(ReconcileStats::default());
+    }
     let mut existing: HashMap<String, (i64, i64)> = HashMap::new();
     {
         let mut stmt =
@@ -568,6 +575,29 @@ mod tests {
         let s = reconcile_with_progress(&conn, sid, root, |_| {}).unwrap();
         assert_eq!(s.removed, 1);
         assert_eq!(pending_count(&conn, sid), 0);
+    }
+
+    /// Un dossier source ABSENT (disque débranché) n'est pas un dossier vide : ses pistes en attente
+    /// restent. Sans le garde, le scan de rattrapage au lancement les effaçait toutes à chaque
+    /// démarrage sans le disque (relevé le 2026-10-30).
+    #[test]
+    fn un_dossier_absent_n_efface_aucune_piste() {
+        let (conn, sid) = db_with_source();
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().join("disque");
+        fs::create_dir(&root).unwrap();
+        fs::write(root.join("a.mp3"), b"1").unwrap();
+        reconcile_with_progress(&conn, sid, &root, |_| {}).unwrap();
+        assert_eq!(pending_count(&conn, sid), 1);
+
+        fs::remove_dir_all(&root).unwrap();
+        let s = reconcile_with_progress(&conn, sid, &root, |_| {}).unwrap();
+        assert_eq!(s, ReconcileStats::default());
+        assert_eq!(
+            pending_count(&conn, sid),
+            1,
+            "la piste du disque débranché doit rester"
+        );
     }
 
     #[test]

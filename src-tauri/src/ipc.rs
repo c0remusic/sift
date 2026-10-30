@@ -595,9 +595,21 @@ fn cache_json(report: &mut crate::analysis::AnalysisReport) -> Option<String> {
     json
 }
 
+/// Le webview (Chromium) ne lit ni l'AIFF ni l'ALAC : ces deux-là passent par un WAV temporaire.
+/// L'ALAC se reconnaît à son CODEC, pas à son extension `.m4a`, qu'il partage avec l'AAC que le
+/// webview lit très bien. Le 2026-10-30, les six `.m4a` d'Antoine (tous ALAC) affichaient
+/// « Lecture impossible » : seul l'AIFF était transcodé.
+fn webview_needs_wav(path: &str, ext: &str) -> bool {
+    ext == "aif"
+        || ext == "aiff"
+        || (ext == "m4a"
+            && crate::analysis::tags::declared_rail(path) == crate::analysis::Rail::Lossless)
+}
+
 /// Return a filesystem path the webview's audio engine can actually play, AND grant the asset
-/// protocol read access to exactly that one file. Chromium plays mp3/wav/flac/m4a/ogg directly,
-/// but NOT AIFF — so for .aif/.aiff we transcode once to a cached temp WAV and return that.
+/// protocol read access to exactly that one file. Chromium plays mp3/wav/flac/AAC m4a/ogg
+/// directly, but NOT AIFF nor ALAC — so for those we transcode once to a cached temp WAV and
+/// return that (`webview_needs_wav`).
 /// The caller wraps the result with convertFileSrc.
 ///
 /// The `asset:` scope starts EMPTY (`tauri.conf.json`), so this command is the only door for
@@ -630,7 +642,7 @@ pub fn playback_url(
         .and_then(|e| e.to_str())
         .unwrap_or("")
         .to_ascii_lowercase();
-    if ext != "aif" && ext != "aiff" {
+    if !webview_needs_wav(&path, &ext) {
         // Browser can play it as-is — it just has to become readable first.
         app.asset_protocol_scope()
             .allow_file(&path)
@@ -694,11 +706,57 @@ fn emit_scan_failed(app: &AppHandle, source_id: i64, reason: String) {
     app.emit("scan:failed", (source_id, reason)).ok();
 }
 
+/// Fin d'un scan de dossier source, publiée au front par l'événement `scan:done`. Miroir de
+/// `ScanDone` dans `shared/contracts.ts`, épinglé par `scan_done_shape_matches_contracts_ts`.
+/// Avant le 2026-10-30, ces comptes n'allaient qu'au journal : le toast disait « Rescan lancé » et
+/// l'utilisateur ne savait jamais ce qu'un scan avait trouvé.
+#[derive(Debug, Clone, Serialize, PartialEq)]
+pub struct ScanDone {
+    pub source_id: i64,
+    pub added: usize,
+    pub updated: usize,
+    pub removed: usize,
+    /// Le scan de rattrapage de l'ouverture (`spawn_startup_scan`), pas un « Rescanner » demandé.
+    pub startup: bool,
+}
+
+/// Quels dossiers scanner.
+enum ScanTarget {
+    /// Un dossier demandé (ajout, glisser-déposer, « Rescanner ») : chacun de ses échecs se dit.
+    One(i64),
+    /// Tous les dossiers surveillés, à l'ouverture de l'app : un dossier absent (disque débranché)
+    /// se saute en silence — ce n'est pas une erreur, et le dire à chaque démarrage serait du bruit.
+    Startup,
+}
+
 /// Runs a reconcile for `source_id` on a background thread (walkdir is blocking IO),
 /// then starts the live watcher and notifies the front. Errors are logged AND surfaced to the
 /// front via `scan:failed` — see `emit_scan_failed` for why a log alone was not enough.
 fn spawn_scan(app: AppHandle, source_id: i64) {
+    spawn_scans(app, ScanTarget::One(source_id));
+}
+
+/// Le scan de RATTRAPAGE à l'ouverture de l'app, sur chaque dossier surveillé (`watched=1`).
+///
+/// La surveillance (`watcher::start_all`) ne voit que ce qui arrive pendant que l'app tourne : tout
+/// fichier téléchargé app fermée restait invisible jusqu'à un « Rescanner » manuel, et un fichier
+/// supprimé app fermée restait en file. Signalé par Antoine le 2026-10-30 (« pourquoi les dossiers
+/// ne sont pas automatiquement scannés au lancement ? ») ; aucune décision ne l'écartait, le PRD
+/// supposait seulement l'app toujours ouverte. Un dossier en pause (`watched=0`) n'est pas scanné :
+/// la pause dit « ne touche pas à ce dossier ». Les dossiers passent l'un après l'autre, sur UN fil,
+/// pour ne pas marcher plusieurs disques en parallèle au démarrage.
+pub(crate) fn spawn_startup_scan(app: AppHandle) {
+    spawn_scans(app, ScanTarget::Startup);
+}
+
+fn spawn_scans(app: AppHandle, target: ScanTarget) {
     std::thread::spawn(move || {
+        // Pour un échec qui précède le choix des dossiers : rapporté sur le dossier demandé, ou
+        // journalisé seul au démarrage (aucun dossier n'attend de réponse).
+        let fail_all = |reason: String| match target {
+            ScanTarget::One(id) => emit_scan_failed(&app, id, reason),
+            ScanTarget::Startup => log::error!("scan au lancement impossible : {reason}"),
+        };
         // Use a SEPARATE connection: a full-folder walkdir + per-file upserts must not hold
         // the shared Mutex<Connection> — doing so froze every IPC call and the analysis
         // workers for the whole scan. WAL + busy_timeout let this second connection write
@@ -706,71 +764,113 @@ fn spawn_scan(app: AppHandle, source_id: i64) {
         let db_path = match app.path().app_data_dir() {
             Ok(d) => d.join("sift.db"),
             Err(e) => {
-                emit_scan_failed(
-                    &app,
-                    source_id,
-                    crate::tr!(
-                        "dossier de données de l'application introuvable : {e}",
-                        "app data folder not found: {e}"
-                    ),
-                );
+                fail_all(crate::tr!(
+                    "dossier de données de l'application introuvable : {e}",
+                    "app data folder not found: {e}"
+                ));
                 return;
             }
         };
         let conn = match Connection::open(&db_path) {
             Ok(c) => c,
             Err(e) => {
-                emit_scan_failed(
-                    &app,
-                    source_id,
-                    crate::tr!(
-                        "ouverture de la base échouée : {e}",
-                        "couldn't open the database: {e}"
-                    ),
-                );
+                fail_all(crate::tr!(
+                    "ouverture de la base échouée : {e}",
+                    "couldn't open the database: {e}"
+                ));
                 return;
             }
         };
         let _ = conn.execute_batch("PRAGMA foreign_keys = ON; PRAGMA busy_timeout = 5000;");
 
-        let path: Option<String> = conn
-            .query_row(
-                "SELECT path FROM sources WHERE id=?1",
-                rusqlite::params![source_id],
-                |r| r.get(0),
-            )
-            .ok();
-        let Some(path) = path else {
-            // La ligne source a disparu entre l'ordre de scan et son exécution — un retrait
-            // concurrent, typiquement. Rien à scanner, mais le front doit cesser d'attendre.
-            emit_scan_failed(
-                &app,
-                source_id,
-                crate::tr!(
-                    "ce dossier surveillé n'existe plus en base",
-                    "this watched folder is no longer in the database"
-                ),
-            );
-            return;
+        let (startup, ids): (bool, Vec<i64>) = match target {
+            ScanTarget::One(id) => (false, vec![id]),
+            ScanTarget::Startup => {
+                let ids = conn
+                    .prepare("SELECT id FROM sources WHERE watched=1 ORDER BY id")
+                    .and_then(|mut st| {
+                        st.query_map([], |r| r.get::<_, i64>(0))?
+                            .collect::<rusqlite::Result<Vec<i64>>>()
+                    });
+                match ids {
+                    Ok(ids) => (true, ids),
+                    Err(e) => {
+                        fail_all(e.to_string());
+                        return;
+                    }
+                }
+            }
         };
 
-        // Ré-émet queue:changed tous les PROGRESS_BATCH fichiers net-changés (scanner.rs) pendant
-        // le scan, en plus de l'émission finale ci-dessous — le front debounce déjà sa redraw
-        // à 150ms (sift-live.ts) donc aucune saturation IPC/UI même sur une grosse bibliothèque.
-        match scanner::reconcile_with_progress(
-            &conn,
-            source_id,
-            std::path::Path::new(&path),
-            |_done| {
-                app.emit("queue:changed", ()).ok();
-            },
-        ) {
-            Ok(stats) => log::info!("scan source {source_id}: {stats:?}"),
-            Err(e) => emit_scan_failed(&app, source_id, e.to_string()),
+        for source_id in ids {
+            let path: Option<String> = conn
+                .query_row(
+                    "SELECT path FROM sources WHERE id=?1",
+                    rusqlite::params![source_id],
+                    |r| r.get(0),
+                )
+                .ok();
+            let Some(path) = path else {
+                // La ligne source a disparu entre l'ordre de scan et son exécution — un retrait
+                // concurrent, typiquement. Rien à scanner, mais le front doit cesser d'attendre.
+                emit_scan_failed(
+                    &app,
+                    source_id,
+                    crate::tr!(
+                        "ce dossier surveillé n'existe plus en base",
+                        "this watched folder is no longer in the database"
+                    ),
+                );
+                continue;
+            };
+            if !std::path::Path::new(&path).is_dir() {
+                // Disque débranché ou dossier déplacé. Demandé, l'échec se dit ; au lancement, il
+                // se saute. Dans les deux cas rien n'est effacé (`reconcile_with_progress` le
+                // garantit aussi de son côté).
+                if startup {
+                    log::info!("scan au lancement : dossier absent, sauté ({path})");
+                } else {
+                    emit_scan_failed(
+                        &app,
+                        source_id,
+                        crate::tr!(
+                            "dossier introuvable — disque débranché ou dossier déplacé : {path}",
+                            "folder not found — drive unplugged or folder moved: {path}"
+                        ),
+                    );
+                }
+                continue;
+            }
+
+            // Ré-émet queue:changed tous les PROGRESS_BATCH fichiers net-changés (scanner.rs)
+            // pendant le scan, en plus de l'émission finale ci-dessous — le front debounce déjà sa
+            // redraw à 150ms (sift-live.ts) donc aucune saturation IPC/UI même sur une grosse
+            // bibliothèque.
+            match scanner::reconcile_with_progress(
+                &conn,
+                source_id,
+                std::path::Path::new(&path),
+                |_done| {
+                    app.emit("queue:changed", ()).ok();
+                },
+            ) {
+                Ok(stats) => {
+                    log::info!("scan source {source_id}: {stats:?}");
+                    let done = ScanDone {
+                        source_id,
+                        added: stats.added,
+                        updated: stats.updated,
+                        removed: stats.removed,
+                        startup,
+                    };
+                    app.emit("scan:done", done).ok();
+                }
+                Err(e) => emit_scan_failed(&app, source_id, e.to_string()),
+            }
+            crate::watcher::start(&app, source_id, &path);
+            app.emit("queue:changed", ()).ok();
+            crate::worker::refill(&app);
         }
-        crate::watcher::start(&app, source_id, &path);
-        app.emit("queue:changed", ()).ok();
-        crate::worker::refill(&app);
     });
 }
 
@@ -778,6 +878,42 @@ fn spawn_scan(app: AppHandle, source_id: i64) {
 mod tests {
     use super::*;
     use crate::analysis::Spectrogram;
+
+    /// Mirrors `ScanDone` in shared/contracts.ts. Exhaustive destructure (no `..`): fails to compile
+    /// if a field is added/removed/renamed, the forcing function to update contracts.ts too.
+    #[test]
+    fn scan_done_shape_matches_contracts_ts() {
+        let ScanDone {
+            source_id,
+            added,
+            updated,
+            removed,
+            startup,
+        } = ScanDone {
+            source_id: 1,
+            added: 2,
+            updated: 0,
+            removed: 0,
+            startup: true,
+        };
+        let _ = (source_id, added, updated, removed, startup);
+    }
+
+    /// Ce que le webview ne lit pas passe par un WAV : l'AIFF à l'extension, l'ALAC à son CODEC.
+    /// Un AAC dans le même `.m4a` se lit tel quel — le transcoder ferait attendre pour rien.
+    #[test]
+    fn l_alac_passe_par_un_wav_mais_pas_l_aac() {
+        let f = |n: &str| format!("{}/fixtures/{n}", env!("CARGO_MANIFEST_DIR"));
+        let (alac, aac) = (f("alac.m4a"), f("aac.m4a"));
+        if !std::path::Path::new(&alac).exists() || !std::path::Path::new(&aac).exists() {
+            eprintln!("skip: no fixture (node scripts/make-fixtures.mjs)");
+            return;
+        }
+        assert!(webview_needs_wav(&alac, "m4a"), "ALAC");
+        assert!(!webview_needs_wav(&aac, "m4a"), "AAC");
+        assert!(webview_needs_wav("x.aiff", "aiff") && webview_needs_wav("x.aif", "aif"));
+        assert!(!webview_needs_wav("x.mp3", "mp3") && !webview_needs_wav("x.flac", "flac"));
+    }
 
     /// `analyze_path` ne doit JAMAIS redevenir une commande synchrone.
     ///

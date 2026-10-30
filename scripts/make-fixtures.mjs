@@ -56,4 +56,17 @@ run(["-y", "-i", join(OUT, "melodie.flac"), "-ar", "96000", join(OUT, "melodie_9
 run(["-y", "-i", join(OUT, "real_lossless.flac"), "-c:a", "aac", "-b:a", "192k", "-f", "mp4",
   join(OUT, "aac_disguised.flac")]);
 
+// Les deux codecs que porte l'extension `.m4a` : ALAC (lossless) et AAC (lossy). L'extension seule
+// ne dit donc pas le rail — c'est le codec (`tags::mp4_codec_rail`). Mesuré le 2026-10-30 sur la
+// bibliothèque d'Antoine : ses six `.m4a` étaient de l'ALAC, jugé lossy, donc interdit d'AIFF.
+run(["-y", "-i", join(OUT, "real_lossless.flac"), "-c:a", "alac", join(OUT, "alac.m4a")]);
+run(["-y", "-i", join(OUT, "real_lossless.flac"), "-c:a", "aac", "-b:a", "256k", join(OUT, "aac.m4a")]);
+
+// Un MP3 dont la date ID3v2.4 n'est pas numérique (« 2005-xx ») : `lofty` refuse le fichier
+// entier en mode strict. Cas le plus fréquent des tags abîmés mesurés le 2026-10-30 (14 sur 27),
+// sert `tagging::tests::un_tag_a_la_date_illisible_se_lit_et_se_reecrit`.
+run(["-y", "-i", join(OUT, "real_320.mp3"), "-c", "copy", "-id3v2_version", "4",
+  "-metadata", "date=2005-xx", "-metadata", "artist=Artiste", "-metadata", "title=Titre",
+  join(OUT, "bad_date.mp3")]);
+
 console.log("fixtures generated in", OUT);
